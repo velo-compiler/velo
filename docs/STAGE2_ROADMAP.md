@@ -65,13 +65,15 @@ flowchart TD
 
 ---
 
-### Milestone 2.4: Native C99 Code Generator in Velo
+### Milestone 2.4: Native C99 Code Generator in Velo [COMPLETED] 🛡️
 * **Goal**: Translate Velo AST directly into standard, formatted C99 source code.
 * **Deliverables**:
-  * `src/common/string_builder.vl`: Fast heap-backed dynamic string buffer.
+  * `src/common/string_builder.vl`: Fast heap/arena-backed dynamic string buffer.
+  * `src/backend/codegen_expr.vl`: Translates AST expression nodes into C expressions with auto-dereferencing (`->` vs `.`).
   * `src/backend/codegen_c.vl`: Emits struct declarations, prototypes, functions, control flow, defer unrolling (LIFO), and intrinsics (`mem.alloc`, `sys.fs`).
 * **Verification**:
-  - Unit test `tests/test_stage2_codegen.py` generating C code for all sample programs and confirming clean compilation via GCC.
+  - Live verification script `examples/13_stage2_codegen_test.vl` (PASSED).
+  - Unit test `tests/test_stage2_codegen.py` generating C code and compiling it natively with GCC (PASSED).
 
 ---
 

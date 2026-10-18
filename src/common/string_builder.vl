@@ -1,0 +1,125 @@
+// High-performance dynamic string builder for compiler code generation.
+use sys.mem
+
+// Maintains dynamic string buffer state.
+data StringBuilder {
+    buffer: @u8
+    len: usize
+    cap: usize
+}
+
+// Allocates and initializes a StringBuilder with an initial capacity.
+act create_sb(initial_cap: usize) -> StringBuilder {
+    mut cap = initial_cap
+    if cap < 128 {
+        cap = 128
+    }
+    mut buf: @u8 = mem.alloc(@u8, cap)
+    return StringBuilder{
+        buffer: buf,
+        len: 0,
+        cap: cap,
+    }
+}
+
+// Ensures the buffer has enough remaining capacity for `extra` bytes.
+act sb_ensure_cap(sb: @StringBuilder, extra: usize) {
+    if sb.len + extra + 1 >= sb.cap {
+        let new_cap = (sb.cap + extra + 1) * 2
+        mut new_buf: @u8 = mem.alloc(@u8, new_cap)
+        mut i: usize = 0
+        while i < sb.len {
+            new_buf[i] = sb.buffer[i]
+            i += 1
+        }
+        sb.buffer = new_buf
+        sb.cap = new_cap
+    }
+}
+
+// Appends a single byte character to the buffer.
+act sb_append_char(sb: @StringBuilder, c: u8) {
+    sb_ensure_cap(sb, 1)
+    sb.buffer[sb.len] = c
+    sb.len += 1
+}
+
+// Appends a null-terminated string to the buffer.
+act sb_append_str(sb: @StringBuilder, s: string) {
+    if s == null { return }
+    let slen = str.len(s)
+    if slen == 0 { return }
+
+    sb_ensure_cap(sb, slen)
+    mut i: usize = 0
+    while i < slen {
+        sb.buffer[sb.len + i] = s[i]
+        i += 1
+    }
+    sb.len += slen
+}
+
+// Appends an integer converted to ASCII digits.
+act sb_append_int(sb: @StringBuilder, val: i32) {
+    if val == 0 {
+        sb_append_char(sb, '0')
+        return
+    }
+    mut n = val
+    if n < 0 {
+        sb_append_char(sb, '-')
+        n = -n
+    }
+    mut temp: @u8 = mem.alloc(@u8, 16)
+    mut count: usize = 0
+    while n > 0 {
+        temp[count] = ('0' as u8) + ((n % 10) as u8)
+        n = n / 10
+        count += 1
+    }
+    mut i: usize = count
+    while i > 0 {
+        i -= 1
+        sb_append_char(sb, temp[i])
+    }
+}
+
+// Appends a float converted to formatted ASCII (e.g. `12.5f`).
+act sb_append_float(sb: @StringBuilder, val: f32) {
+    let int_part = val as i32
+    sb_append_int(sb, int_part)
+    sb_append_char(sb, '.')
+    mut frac = val - (int_part as f32)
+    if frac < 0.0 {
+        frac = -frac
+    }
+    let frac_int = ((frac * 100.0) + 0.5) as i32
+    if frac_int < 10 {
+        sb_append_char(sb, '0')
+    }
+    sb_append_int(sb, frac_int)
+    sb_append_char(sb, 'f')
+}
+
+// Appends 4-space indentation levels.
+act sb_append_indent(sb: @StringBuilder, indent: i32) {
+    mut i = 0
+    while i < indent {
+        sb_append_str(sb, "    ")
+        i += 1
+    }
+}
+
+// Appends an indented line followed by a newline separator.
+act sb_append_line(sb: @StringBuilder, s: string, indent: i32) {
+    sb_append_indent(sb, indent)
+    sb_append_str(sb, s)
+    sb_append_char(sb, '\n')
+}
+
+// Finalizes the StringBuilder and returns a null-terminated C string.
+act sb_to_string(sb: @StringBuilder) -> string {
+    sb_ensure_cap(sb, 1)
+    sb.buffer[sb.len] = 0 as u8
+    return sb.buffer as string
+}

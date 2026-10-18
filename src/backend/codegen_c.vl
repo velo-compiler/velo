@@ -1,0 +1,329 @@
+// Full C99 translation unit emitter and statement code generator in Velo.
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../common/string_builder.vl"
+use "codegen_expr.vl"
+
+// Intrusive linked list node maintaining active LIFO deferred statements.
+data DeferNode {
+    stmt: @StmtNode
+    next: @DeferNode
+}
+
+// Emits an individual statement into the C output stream.
+act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32, defers: @@DeferNode) {
+    if stmt == null { return }
+
+    // 1. Variable declaration
+    if stmt.kind == STMT_VAR_DECL {
+        define_variable(st, stmt.name, stmt.type_name, stmt.is_mut, stmt.line, stmt.col)
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, map_type_to_c(stmt.type_name))
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, stmt.name)
+        if stmt.val_expr != null {
+            sb_append_str(sb, " = ")
+            emit_c_expr(sb, st, stmt.val_expr)
+        }
+        sb_append_str(sb, ";\n")
+        return
+    }
+
+    // 2. Assignment statement
+    if stmt.kind == STMT_ASSIGN {
+        sb_append_indent(sb, indent)
+        emit_c_expr(sb, st, stmt.expr)
+        sb_append_char(sb, ' ')
+        if stmt.op == TOK_ASSIGN { sb_append_char(sb, '=') }
+        else if stmt.op == TOK_PLUS_ASSIGN { sb_append_str(sb, "+=") }
+        else if stmt.op == TOK_MINUS_ASSIGN { sb_append_str(sb, "-=") }
+        else if stmt.op == TOK_STAR_ASSIGN { sb_append_str(sb, "*=") }
+        else if stmt.op == TOK_SLASH_ASSIGN { sb_append_str(sb, "/=") }
+        sb_append_char(sb, ' ')
+        emit_c_expr(sb, st, stmt.val_expr)
+        sb_append_str(sb, ";\n")
+        return
+    }
+
+    // 3. Expression statement
+    if stmt.kind == STMT_EXPR {
+        sb_append_indent(sb, indent)
+        emit_c_expr(sb, st, stmt.expr)
+        sb_append_str(sb, ";\n")
+        return
+    }
+
+    // 4. If / Else statement
+    if stmt.kind == STMT_IF {
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "if (")
+        emit_c_expr(sb, st, stmt.expr)
+        sb_append_str(sb, ") {\n")
+        emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "}")
+        if stmt.else_branch != null {
+            if stmt.else_branch.kind == STMT_IF {
+                sb_append_str(sb, " else ")
+                emit_c_stmt(sb, st, stmt.else_branch, indent, defers)
+            } else {
+                sb_append_str(sb, " else {\n")
+                emit_c_block_stmts(sb, st, stmt.else_branch, indent + 1, defers)
+                sb_append_indent(sb, indent)
+                sb_append_str(sb, "}\n")
+            }
+        } else {
+            sb_append_char(sb, '\n')
+        }
+        return
+    }
+
+    // 5. While loop statement
+    if stmt.kind == STMT_WHILE {
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "while (")
+        emit_c_expr(sb, st, stmt.expr)
+        sb_append_str(sb, ") {\n")
+        emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "}\n")
+        return
+    }
+
+    // 6. Range loop statement
+    if stmt.kind == STMT_LOOP {
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "for (int32_t ")
+        sb_append_str(sb, stmt.loop_var)
+        sb_append_str(sb, " = ")
+        emit_c_expr(sb, st, stmt.loop_start)
+        sb_append_str(sb, "; ")
+        sb_append_str(sb, stmt.loop_var)
+        sb_append_str(sb, " < ")
+        emit_c_expr(sb, st, stmt.loop_end)
+        sb_append_str(sb, "; ")
+        sb_append_str(sb, stmt.loop_var)
+        sb_append_str(sb, "++) {\n")
+        emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "}\n")
+        return
+    }
+
+    // 7. Zone arena scoping statement
+    if stmt.kind == STMT_ZONE {
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "{\n")
+        sb_append_indent(sb, indent + 1)
+        sb_append_str(sb, "size_t __prev_zone = velo_zone_push();\n")
+        emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
+        sb_append_indent(sb, indent + 1)
+        sb_append_str(sb, "velo_zone_pop(__prev_zone);\n")
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "}\n")
+        return
+    }
+
+    // 8. Defer statement (records deferred statement on LIFO stack)
+    if stmt.kind == STMT_DEFER {
+        mut d: @DeferNode = mem.alloc(@DeferNode, 1)
+        d.stmt = stmt.deferred_stmt
+        d.next = defers.@
+        defers.@ = d
+        return
+    }
+
+    // 9. Return statement (unrolls active defers in LIFO order first)
+    if stmt.kind == STMT_RETURN {
+        mut cur_d = defers.@
+        while cur_d != null {
+            emit_c_stmt(sb, st, cur_d.stmt, indent, defers)
+            cur_d = cur_d.next
+        }
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "return")
+        if stmt.val_expr != null {
+            sb_append_char(sb, ' ')
+            emit_c_expr(sb, st, stmt.val_expr)
+        }
+        sb_append_str(sb, ";\n")
+        return
+    }
+}
+
+// Emits statements inside a block node.
+act emit_c_block_stmts(sb: @StringBuilder, st: @SymbolTable, block: @StmtNode, indent: i32, defers: @@DeferNode) {
+    if block == null { return }
+    mut cur = block.first_stmt
+    while cur != null {
+        emit_c_stmt(sb, st, cur, indent, defers)
+        cur = cur.next
+    }
+}
+
+// Emits complete C99 translation unit from an AST ProgramNode.
+act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
+    mut sb = create_sb(4096)
+
+    // 1. Header inclusions
+    sb_append_line(@sb, "/* Generated by Velo Stage 2 Self-Hosted Compiler */", 0)
+    sb_append_line(@sb, "#include \"velo_runtime.h\"", 0)
+    sb_append_line(@sb, "", 0)
+
+    // 2. Struct forward declarations
+    mut cur = prog.first_decl
+    while cur != null {
+        if cur.kind == DECL_DATA {
+            sb_append_str(@sb, "typedef struct ")
+            sb_append_str(@sb, cur.name)
+            sb_append_char(@sb, ' ')
+            sb_append_str(@sb, cur.name)
+            sb_append_str(@sb, ";\n")
+        }
+        cur = cur.next
+    }
+    sb_append_line(@sb, "", 0)
+
+    // 3. Struct full definitions
+    cur = prog.first_decl
+    while cur != null {
+        if cur.kind == DECL_DATA {
+            sb_append_str(@sb, "struct ")
+            sb_append_str(@sb, cur.name)
+            sb_append_str(@sb, " {\n")
+            mut cur_f = cur.first_field
+            while cur_f != null {
+                sb_append_indent(@sb, 1)
+                sb_append_str(@sb, map_type_to_c(cur_f.type_name))
+                sb_append_char(@sb, ' ')
+                sb_append_str(@sb, cur_f.name)
+                sb_append_str(@sb, ";\n")
+                cur_f = cur_f.next
+            }
+            sb_append_str(@sb, "};\n\n")
+        }
+        cur = cur.next
+    }
+
+    // 4. Extern function declarations
+    cur = prog.first_decl
+    while cur != null {
+        if cur.kind == DECL_EXTERN {
+            sb_append_str(@sb, "extern ")
+            sb_append_str(@sb, map_type_to_c(cur.return_type))
+            sb_append_char(@sb, ' ')
+            sb_append_str(@sb, cur.name)
+            sb_append_char(@sb, '(')
+            if cur.param_count == 0 {
+                sb_append_str(@sb, "void")
+            } else {
+                mut cur_p = cur.first_param
+                while cur_p != null {
+                    sb_append_str(@sb, map_type_to_c(cur_p.type_name))
+                    sb_append_char(@sb, ' ')
+                    sb_append_str(@sb, cur_p.name)
+                    if cur_p.next != null {
+                        sb_append_str(@sb, ", ")
+                    }
+                    cur_p = cur_p.next
+                }
+            }
+            sb_append_str(@sb, ");\n")
+        }
+        cur = cur.next
+    }
+    sb_append_line(@sb, "", 0)
+
+    // 5. Function forward prototypes
+    cur = prog.first_decl
+    while cur != null {
+        if cur.kind == DECL_FUNCTION and cur.name != "main" {
+            sb_append_str(@sb, map_type_to_c(cur.return_type))
+            sb_append_char(@sb, ' ')
+            sb_append_str(@sb, cur.name)
+            sb_append_char(@sb, '(')
+            if cur.param_count == 0 {
+                sb_append_str(@sb, "void")
+            } else {
+                mut cur_p = cur.first_param
+                while cur_p != null {
+                    sb_append_str(@sb, map_type_to_c(cur_p.type_name))
+                    sb_append_char(@sb, ' ')
+                    sb_append_str(@sb, cur_p.name)
+                    if cur_p.next != null {
+                        sb_append_str(@sb, ", ")
+                    }
+                    cur_p = cur_p.next
+                }
+            }
+            sb_append_str(@sb, ");\n")
+        }
+        cur = cur.next
+    }
+    sb_append_line(@sb, "", 0)
+
+    // 6. Function bodies
+    cur = prog.first_decl
+    while cur != null {
+        if cur.kind == DECL_FUNCTION {
+            if cur.name == "main" {
+                sb_append_str(@sb, "int main(int argc, char** argv) {\n")
+            } else {
+                sb_append_str(@sb, map_type_to_c(cur.return_type))
+                sb_append_char(@sb, ' ')
+                sb_append_str(@sb, cur.name)
+                sb_append_char(@sb, '(')
+                if cur.param_count == 0 {
+                    sb_append_str(@sb, "void")
+                } else {
+                    mut cur_p = cur.first_param
+                    while cur_p != null {
+                        sb_append_str(@sb, map_type_to_c(cur_p.type_name))
+                        sb_append_char(@sb, ' ')
+                        sb_append_str(@sb, cur_p.name)
+                        if cur_p.next != null {
+                            sb_append_str(@sb, ", ")
+                        }
+                        cur_p = cur_p.next
+                    }
+                }
+                sb_append_str(@sb, ") {\n")
+            }
+
+            enter_scope(st)
+            mut cur_param = cur.first_param
+            while cur_param != null {
+                define_parameter(st, cur_param.name, cur_param.type_name, cur_param.line, cur_param.col)
+                cur_param = cur_param.next
+            }
+
+            mut defers: @DeferNode = null
+            emit_c_block_stmts(@sb, st, cur.body, 1, @defers)
+
+            // Emit any remaining defers at end of body
+            mut cur_d = defers
+            while cur_d != null {
+                emit_c_stmt(@sb, st, cur_d.stmt, 1, @defers)
+                cur_d = cur_d.next
+            }
+
+            if cur.name == "main" {
+                sb_append_indent(@sb, 1)
+                sb_append_str(@sb, "return 0;\n")
+            }
+
+            exit_scope(st)
+
+            sb_append_str(@sb, "}\n\n")
+        }
+        cur = cur.next
+    }
+
+    return sb_to_string(@sb)
+}

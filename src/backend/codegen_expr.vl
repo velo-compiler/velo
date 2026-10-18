@@ -1,0 +1,291 @@
+// C99 expression code generator for Velo AST expressions.
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../common/string_builder.vl"
+
+// Maps a Velo type name to its standard C99 type string.
+act map_type_to_c(type_name: string) -> string {
+    if type_name == null or str.len(type_name) == 0 { return "void" }
+    if type_name == "void" { return "void" }
+    if type_name == "i8" { return "int8_t" }
+    if type_name == "i16" { return "int16_t" }
+    if type_name == "i32" { return "int32_t" }
+    if type_name == "i64" { return "int64_t" }
+    if type_name == "u8" { return "uint8_t" }
+    if type_name == "u16" { return "uint16_t" }
+    if type_name == "u32" { return "uint32_t" }
+    if type_name == "u64" { return "uint64_t" }
+    if type_name == "f32" { return "float" }
+    if type_name == "f64" { return "double" }
+    if type_name == "bool" { return "bool" }
+    if type_name == "usize" { return "size_t" }
+    if type_name == "isize" { return "ptrdiff_t" }
+    if type_name == "string" { return "const char*" }
+
+    // Pointer types (@T, @@T)
+    if type_name[0] == '@' {
+        let base = strip_pointer_prefix(type_name)
+        let base_c = map_type_to_c(base)
+        let plen = str.len(base_c) + 1
+        mut buf: @u8 = mem.alloc(@u8, plen + 1)
+        mut i: usize = 0
+        while i < str.len(base_c) {
+            buf[i] = base_c[i]
+            i += 1
+        }
+        buf[str.len(base_c)] = '*'
+        buf[plen] = 0 as u8
+        return buf as string
+    }
+
+    return type_name
+}
+
+// Maps a binary operator token kind to its C99 operator string.
+act op_to_c_str(op: i32) -> string {
+    if op == TOK_PLUS { return "+" }
+    if op == TOK_MINUS { return "-" }
+    if op == TOK_STAR { return "*" }
+    if op == TOK_SLASH { return "/" }
+    if op == TOK_PERCENT { return "%" }
+    if op == TOK_EQ { return "==" }
+    if op == TOK_NEQ { return "!=" }
+    if op == TOK_LT { return "<" }
+    if op == TOK_LTE { return "<=" }
+    if op == TOK_GT { return ">" }
+    if op == TOK_GTE { return ">=" }
+    if op == TOK_AND { return "&&" }
+    if op == TOK_OR { return "||" }
+    return "+"
+}
+
+// Emits C99 code for an AST expression into a StringBuilder.
+act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    if expr == null { return }
+
+    // 1. Literal expressions
+    if expr.kind == EXPR_INT {
+        sb_append_int(sb, expr.int_val)
+        return
+    }
+    if expr.kind == EXPR_FLOAT {
+        sb_append_float(sb, expr.float_val)
+        return
+    }
+    if expr.kind == EXPR_STRING {
+        sb_append_char(sb, '"')
+        sb_append_str(sb, expr.str_val)
+        sb_append_char(sb, '"')
+        return
+    }
+    if expr.kind == EXPR_BOOL {
+        if expr.bool_val {
+            sb_append_str(sb, "true")
+        } else {
+            sb_append_str(sb, "false")
+        }
+        return
+    }
+    if expr.kind == EXPR_NULL {
+        sb_append_str(sb, "NULL")
+        return
+    }
+    if expr.kind == EXPR_IDENT {
+        sb_append_str(sb, expr.str_val)
+        return
+    }
+
+    // 2. Unary & Address-of & Dereference
+    if expr.kind == EXPR_ADDRESS_OF {
+        sb_append_str(sb, "(&(")
+        emit_c_expr(sb, st, expr.operand)
+        sb_append_str(sb, "))")
+        return
+    }
+    if expr.kind == EXPR_DEREF {
+        sb_append_str(sb, "(*(")
+        emit_c_expr(sb, st, expr.operand)
+        sb_append_str(sb, "))")
+        return
+    }
+    if expr.kind == EXPR_UNARY {
+        sb_append_str(sb, "(")
+        if expr.op == TOK_NOT {
+            sb_append_str(sb, "!")
+        } else {
+            sb_append_str(sb, "-")
+        }
+        emit_c_expr(sb, st, expr.operand)
+        sb_append_str(sb, ")")
+        return
+    }
+
+    // 3. Member access with auto-dereference (-> vs .)
+    if expr.kind == EXPR_MEMBER {
+        let target_type = infer_expr_type(st, expr.target)
+        emit_c_expr(sb, st, expr.target)
+        if str.len(target_type) > 0 and target_type[0] == '@' {
+            sb_append_str(sb, "->")
+        } else {
+            sb_append_str(sb, ".")
+        }
+        sb_append_str(sb, expr.member_name)
+        return
+    }
+
+    // 4. Array indexing
+    if expr.kind == EXPR_INDEX {
+        emit_c_expr(sb, st, expr.target)
+        sb_append_char(sb, '[')
+        emit_c_expr(sb, st, expr.index)
+        sb_append_char(sb, ']')
+        return
+    }
+
+    // 5. Explicit cast
+    if expr.kind == EXPR_CAST {
+        sb_append_str(sb, "((")
+        sb_append_str(sb, map_type_to_c(expr.type_name))
+        sb_append_str(sb, ")(")
+        emit_c_expr(sb, st, expr.operand)
+        sb_append_str(sb, "))")
+        return
+    }
+
+    // 6. Struct instantiation literal
+    if expr.kind == EXPR_STRUCT_LIT {
+        sb_append_char(sb, '(')
+        sb_append_str(sb, expr.type_name)
+        sb_append_str(sb, "){ ")
+        mut cur_init = expr.first_init
+        while cur_init != null {
+            sb_append_char(sb, '.')
+            sb_append_str(sb, cur_init.name)
+            sb_append_str(sb, " = ")
+            emit_c_expr(sb, st, cur_init.value)
+            if cur_init.next != null {
+                sb_append_str(sb, ", ")
+            }
+            cur_init = cur_init.next
+        }
+        sb_append_str(sb, " }")
+        return
+    }
+
+    // 7. Binary expression
+    if expr.kind == EXPR_BINARY {
+        sb_append_char(sb, '(')
+        emit_c_expr(sb, st, expr.left)
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, op_to_c_str(expr.op))
+        sb_append_char(sb, ' ')
+        emit_c_expr(sb, st, expr.right)
+        sb_append_char(sb, ')')
+        return
+    }
+
+    // 8. Function call / Intrinsics
+    if expr.kind == EXPR_CALL {
+        if expr.callee.kind == EXPR_MEMBER {
+            let target = expr.callee.target
+            let member = expr.callee.member_name
+            if target.kind == EXPR_IDENT {
+                if target.str_val == "mem" {
+                    if member == "alloc" {
+                        let elem_type = strip_pointer_prefix(infer_expr_type(st, expr.first_arg))
+                        sb_append_str(sb, "((")
+                        sb_append_str(sb, elem_type)
+                        sb_append_str(sb, "*)velo_mem_alloc(sizeof(")
+                        sb_append_str(sb, elem_type)
+                        sb_append_str(sb, "), (size_t)(")
+                        emit_c_expr(sb, st, expr.first_arg.next)
+                        sb_append_str(sb, ")))")
+                        return
+                    }
+                    if member == "heap_alloc" {
+                        let elem_type = strip_pointer_prefix(infer_expr_type(st, expr.first_arg))
+                        sb_append_str(sb, "((")
+                        sb_append_str(sb, elem_type)
+                        sb_append_str(sb, "*)velo_heap_alloc(sizeof(")
+                        sb_append_str(sb, elem_type)
+                        sb_append_str(sb, "), (size_t)(")
+                        emit_c_expr(sb, st, expr.first_arg.next)
+                        sb_append_str(sb, ")))")
+                        return
+                    }
+                    if member == "free" {
+                        sb_append_str(sb, "velo_heap_free((void*)(")
+                        emit_c_expr(sb, st, expr.first_arg)
+                        sb_append_str(sb, "))")
+                        return
+                    }
+                    if member == "heap_used" {
+                        sb_append_str(sb, "velo_heap_used()")
+                        return
+                    }
+                }
+                if target.str_val == "fs" {
+                    if member == "read_file" {
+                        sb_append_str(sb, "velo_fs_read_file(")
+                        emit_c_expr(sb, st, expr.first_arg)
+                        sb_append_str(sb, ")")
+                        return
+                    }
+                    if member == "write_file" {
+                        sb_append_str(sb, "velo_fs_write_file(")
+                        emit_c_expr(sb, st, expr.first_arg)
+                        sb_append_str(sb, ", ")
+                        emit_c_expr(sb, st, expr.first_arg.next)
+                        sb_append_str(sb, ")")
+                        return
+                    }
+                    if member == "exists" {
+                        sb_append_str(sb, "velo_fs_exists(")
+                        emit_c_expr(sb, st, expr.first_arg)
+                        sb_append_str(sb, ")")
+                        return
+                    }
+                }
+                if target.str_val == "str" and member == "len" {
+                    sb_append_str(sb, "((usize)strlen(")
+                    emit_c_expr(sb, st, expr.first_arg)
+                    sb_append_str(sb, "))")
+                    return
+                }
+                if target.str_val == "io" {
+                    if member == "println" {
+                        sb_append_str(sb, "printf(\"%s\\n\", (const char*)(")
+                        emit_c_expr(sb, st, expr.first_arg)
+                        sb_append_str(sb, "))")
+                        return
+                    }
+                    if member == "print" {
+                        sb_append_str(sb, "printf(\"%s\", (const char*)(")
+                        emit_c_expr(sb, st, expr.first_arg)
+                        sb_append_str(sb, "))")
+                        return
+                    }
+                }
+            }
+        }
+
+        // Standard function call
+        emit_c_expr(sb, st, expr.callee)
+        sb_append_char(sb, '(')
+        mut cur_arg = expr.first_arg
+        while cur_arg != null {
+            emit_c_expr(sb, st, cur_arg)
+            if cur_arg.next != null {
+                sb_append_str(sb, ", ")
+            }
+            cur_arg = cur_arg.next
+        }
+        sb_append_char(sb, ')')
+    }
+}

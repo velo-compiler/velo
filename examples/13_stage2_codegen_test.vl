@@ -1,0 +1,52 @@
+// Milestone 2.4 Live Verification: Native C99 Code Generator in Velo
+use sys.io
+use sys.fs
+use "../src/frontend/token.vl"
+use "../src/frontend/lexer.vl"
+use "../src/ast/types.vl"
+use "../src/ast/expr.vl"
+use "../src/ast/stmt.vl"
+use "../src/frontend/parser.vl"
+use "../src/frontend/parser_expr.vl"
+use "../src/frontend/parser_stmt.vl"
+use "../src/analysis/symbol_table.vl"
+use "../src/analysis/type_checker.vl"
+use "../src/common/string_builder.vl"
+use "../src/backend/codegen_expr.vl"
+use "../src/backend/codegen_c.vl"
+
+act main() {
+    io.println("--- Velo Stage 2 Milestone 2.4: Native C99 Code Generator Verification ---")
+
+    let sample_code = "data Point {\n    x: f32\n    y: f32\n}\nact add_coords(p: @Point, delta: f32) -> f32 {\n    return p.x + p.y + delta\n}\nact main() {\n    let pt = Point{ x: 10.5, y: 20.25 }\n    let result = add_coords(@pt, 5.25)\n    io.println(\"Computed result successfully!\")\n}"
+    let sample_len: usize = str.len(sample_code)
+
+    zone {
+        mut lex = create_lexer(sample_code, sample_len, 512)
+        tokenize(@lex)
+
+        mut p: Parser
+        init_parser(@p, "sample_codegen.vl", sample_code, lex.tokens, lex.token_count)
+        let prog = parse_program(@p)
+
+        mut st: SymbolTable
+        init_symbol_table(@st)
+        let sem_ok = check_program(@st, prog)
+
+        io.println("AST parsed and semantic check passed: {sem_ok}")
+
+        // Generate C99 code
+        let c_output = emit_translation_unit(@st, prog)
+
+        io.println("--- Emitted C99 Translation Unit ---")
+        io.println(c_output)
+        io.println("--- End of Emitted C99 Translation Unit ---")
+
+        // Write emitted C code to cache
+        fs.write_file(".velo_cache/stage2_generated.c", c_output)
+        let file_exists = fs.exists(".velo_cache/stage2_generated.c")
+        io.println("Generated C source written to disk: {file_exists}")
+    }
+
+    io.println("--- Milestone 2.4 Complete! ---")
+}
