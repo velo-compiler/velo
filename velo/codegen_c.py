@@ -302,6 +302,13 @@ class CCodeGenerator:
         if isinstance(value, AddressOf):
             operand_type = self._resolve_expr_type(value.operand)
             return f"@{operand_type}"
+        if isinstance(value, IndexExpr):
+            target_type = self._resolve_expr_type(value.target)
+            if target_type == "string":
+                return "u8"
+            if target_type.startswith("@"):
+                return target_type[1:]
+            return "i32"
         if isinstance(value, CallExpr):
             if isinstance(value.callee, Identifier):
                 if value.callee.name in self.func_return_types:
@@ -317,6 +324,9 @@ class CCodeGenerator:
                     elif value.callee.member in ("write_file", "exists", "remove", "remove_file"):
                         return "bool"
                     elif value.callee.member == "size":
+                        return "usize"
+                elif value.callee.target.name == "str":
+                    if value.callee.member == "len":
                         return "usize"
         return "i32"
 
@@ -341,6 +351,8 @@ class CCodeGenerator:
             return sub_type
         elif isinstance(expr, IndexExpr):
             target_type = self._resolve_expr_type(expr.target)
+            if target_type == "string":
+                return "u8"
             if target_type.startswith("@"):
                 return target_type[1:]
             return target_type
@@ -376,6 +388,9 @@ class CCodeGenerator:
                     elif expr.callee.member in ("write_file", "exists", "remove", "remove_file"):
                         return "bool"
                     elif expr.callee.member == "size":
+                        return "usize"
+                elif expr.callee.target.name == "str":
+                    if expr.callee.member == "len":
                         return "usize"
         return "i32"
 
@@ -441,6 +456,8 @@ class CCodeGenerator:
                     if expr.callee.target.name == "io":
                         if expr.callee.member in ("println", "print"):
                             return self._lower_io_call(expr.callee.member, expr.args)
+                        elif expr.callee.member == "print_char":
+                            return f"velo_io_print_char((char)({self._emit_expression(expr.args[0])}))"
                     
                     elif expr.callee.target.name == "mem":
                         if expr.callee.member == "alloc":
@@ -465,6 +482,10 @@ class CCodeGenerator:
                             return self._lower_fs_size(expr.args)
                         elif expr.callee.member in ("remove", "remove_file"):
                             return self._lower_fs_remove(expr.args)
+
+                    elif expr.callee.target.name == "str":
+                        if expr.callee.member == "len":
+                            return f"((usize)strlen({self._emit_expression(expr.args[0])}))"
 
             callee_code = self._emit_expression(expr.callee)
             arg_codes = [self._emit_expression(arg) for arg in expr.args]

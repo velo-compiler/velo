@@ -1,0 +1,15 @@
+data Token {
+    kind: i32
+    start_pos: i32
+    length: i32
+    line: i32
+}
+
+data LexerSummary {
+    total_chars: i32
+    total_tokens: i32
+    keyword_count: i32
+    identifier_count: i32
+    number_count: i32
+    symbol_count: i32
+}

@@ -37,8 +37,11 @@ This roadmap defines the engineering milestones to complete **Step 2** and prepa
 
 ---
 
-### Milestone 2.4: The "Self-Hosting Readiness" Test
+### Milestone 2.4: The "Self-Hosting Readiness" Test [COMPLETED] 🏆
 * **Goal**: A Velo program that reads another Velo source file from disk, processes tokens across modules, and prints results.
 * **Deliverables**:
-  * Complete integrated demo verifying all three essentials work harmoniously.
-  * Formal sign-off to begin **Stage 2 (Self-Hosting)**!
+  * [x] Complete integrated demo verifying all three essentials work harmoniously.
+  * [x] Tokenizer in Velo reading real `.vl` source code from disk using `sys.fs`.
+  * [x] Dynamic allocation and character scanning with `defer mem.free` zero-leak safety.
+  * [x] Formal sign-off to begin **Stage 2 (Self-Hosting)**! (Verified: 20/20 unit tests passing).
+

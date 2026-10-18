@@ -122,6 +122,13 @@ class Lexer:
                 last_meaningful_token = tok
                 continue
 
+            # Character literals ('a', '\n', etc.)
+            if ch == "'":
+                tok = self._scan_char(start_line, start_col)
+                self.tokens.append(tok)
+                last_meaningful_token = tok
+                continue
+
             # Numbers
             if ch.isdigit():
                 tok = self._scan_number(start_line, start_col)
@@ -170,6 +177,30 @@ class Lexer:
             else:
                 chars.append(self._advance())
         return Token(TokenType.STRING_LIT, "".join(chars), line, col)
+
+    def _scan_char(self, line: int, col: int) -> Token:
+        self._advance() # Consume opening "'"
+        ch = self._advance()
+        if ch is None:
+            raise LexerError("Unterminated character literal", line, col)
+        if ch == '\\':
+            esc = self._advance()
+            if esc == 'n': val = ord('\n')
+            elif esc == 't': val = ord('\t')
+            elif esc == 'r': val = ord('\r')
+            elif esc == '0': val = 0
+            elif esc == '\'': val = ord('\'')
+            elif esc == '\\': val = ord('\\')
+            else: val = ord(esc) if esc else 0
+        else:
+            val = ord(ch)
+
+        if self._peek() == "'":
+            self._advance() # Consume closing "'"
+        else:
+            raise LexerError("Unclosed character literal", line, col)
+
+        return Token(TokenType.INT_LIT, val, line, col)
 
     def _scan_number(self, line: int, col: int) -> Token:
         chars = []

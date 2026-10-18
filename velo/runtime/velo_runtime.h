@@ -95,6 +95,11 @@ static inline void velo_io_print(const char* str) {
     printf("%s", str);
 }
 
+static inline void velo_io_print_char(char c) {
+    putchar(c);
+}
+
+
 // Built-in File System primitives (sys.fs)
 static inline char* velo_fs_read_file(const char* path) {
     if (!path) return NULL;
