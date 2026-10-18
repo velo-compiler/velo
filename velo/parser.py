@@ -2,8 +2,8 @@ from typing import List, Optional, Tuple
 from velo.tokens import Token, TokenType
 from velo.ast_nodes import (
     Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field,
-    Stmt, ExprStmt, ReturnStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt, ZoneStmt,
-    Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral,
+    Stmt, ExprStmt, ReturnStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt, ZoneStmt, DeferStmt,
+    Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr
 )
 
@@ -203,14 +203,20 @@ class Parser:
     def _parse_statement(self) -> Stmt:
         self._skip_newlines()
 
-        # 1. Zone statement
+        # 1. Defer statement
+        if self._check(TokenType.DEFER):
+            defer_tok = self._advance()
+            stmt = self._parse_statement()
+            return DeferStmt(statement=stmt, line=defer_tok.line, col=defer_tok.col)
+
+        # 2. Zone statement
         if self._check(TokenType.ZONE):
             zone_tok = self._advance()
             self._skip_newlines()
             body = self._parse_block()
             return ZoneStmt(body=body, line=zone_tok.line, col=zone_tok.col)
 
-        # 2. Variable declaration with 'mut'
+        # 3. Variable declaration with 'mut'
         if self._check(TokenType.MUT):
             mut_tok = self._advance()
             name_tok = self._consume(TokenType.IDENTIFIER, "Expected variable name after 'mut'")
@@ -223,7 +229,7 @@ class Parser:
             self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
             return VarDeclStmt(name=name_tok.value, type_name=type_name, value=val, is_mut=True, line=mut_tok.line, col=mut_tok.col)
 
-        # 3. Variable declaration with 'let'
+        # 4. Variable declaration with 'let'
         if self._check(TokenType.LET):
             let_tok = self._advance()
             name_tok = self._consume(TokenType.IDENTIFIER, "Expected variable name after 'let'")
@@ -236,7 +242,7 @@ class Parser:
             self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
             return VarDeclStmt(name=name_tok.value, type_name=type_name, value=val, is_mut=False, line=let_tok.line, col=let_tok.col)
 
-        # 4. Variable declaration with explicit type (e.g. x: i32 = 10, ptr: @Point = @p)
+        # 5. Variable declaration with explicit type (e.g. x: i32 = 10, ptr: @Point = @p)
         if self._peek().type == TokenType.IDENTIFIER and self._peek(1).type == TokenType.COLON:
             name_tok = self._advance()
             self._advance() # Consume ':'
@@ -247,19 +253,19 @@ class Parser:
             self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
             return VarDeclStmt(name=name_tok.value, type_name=type_name, value=val, is_mut=False, line=name_tok.line, col=name_tok.col)
 
-        # 5. If statement
+        # 6. If statement
         if self._check(TokenType.IF):
             return self._parse_if_stmt()
 
-        # 6. While statement
+        # 7. While statement
         if self._check(TokenType.WHILE):
             return self._parse_while_stmt()
 
-        # 7. Loop range statement
+        # 8. Loop range statement
         if self._check(TokenType.LOOP):
             return self._parse_loop_stmt()
 
-        # 8. Return statement
+        # 9. Return statement
         if self._check(TokenType.RETURN):
             ret_tok = self._advance()
             val = None
@@ -268,7 +274,7 @@ class Parser:
             self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
             return ReturnStmt(value=val, line=ret_tok.line, col=ret_tok.col)
 
-        # 9. Assignment or Expression Statement
+        # 10. Assignment or Expression Statement
         expr = self._parse_expression()
 
         assign_ops = (TokenType.ASSIGN, TokenType.PLUS_ASSIGN, TokenType.MINUS_ASSIGN, TokenType.STAR_ASSIGN, TokenType.SLASH_ASSIGN)
@@ -444,7 +450,7 @@ class Parser:
     def _parse_primary(self) -> Expr:
         if self._is_struct_literal():
             id_tok = self._advance()
-            self._advance() # '{'
+            self._advance()
             self._skip_newlines()
             field_inits: List[Tuple[str, Expr]] = []
             while not self._check(TokenType.RBRACE) and not self._is_at_end():
@@ -461,6 +467,8 @@ class Parser:
 
         tok = self._peek()
 
+        if self._match(TokenType.NULL):
+            return NullLiteral(line=tok.line, col=tok.col)
         if self._match(TokenType.INT_LIT):
             return IntLiteral(value=tok.value, line=tok.line, col=tok.col)
         if self._match(TokenType.FLOAT_LIT):

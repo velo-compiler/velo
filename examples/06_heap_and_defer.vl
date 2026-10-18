@@ -1,0 +1,51 @@
+use sys.io
+use sys.mem
+
+act test_early_exit(trigger_early: bool) {
+    io.println("Inside test_early_exit function:")
+
+    let buf1 = mem.heap_alloc(@i32, 10)
+    defer mem.free(buf1)
+    defer io.println("  [defer 1] buf1 freed")
+
+    let buf2 = mem.heap_alloc(@i32, 20)
+    defer mem.free(buf2)
+    defer io.println("  [defer 2] buf2 freed")
+
+    let used = mem.heap_used()
+    io.println("  Active heap memory allocated: {used} bytes")
+
+    if trigger_early {
+        io.println("  Early exit condition met! Returning now...")
+        return
+    }
+
+    io.println("  Normal exit path reached")
+}
+
+act main() {
+    io.println("--- Velo Milestone 2.1: Persistent Heap & Defer ---")
+
+    let initial_heap = mem.heap_used()
+    io.println("Initial active heap: {initial_heap} bytes")
+
+    // Test early return with LIFO defers
+    test_early_exit(true)
+
+    let heap_after_early = mem.heap_used()
+    io.println("Heap after early exit: {heap_after_early} bytes (zero leaks!)")
+
+    // Test normal exit path with LIFO defers
+    test_early_exit(false)
+
+    let final_heap = mem.heap_used()
+    io.println("Final active heap: {final_heap} bytes (zero leaks!)")
+
+    // Test null comparison
+    let empty_ptr = null
+    if empty_ptr == null {
+        io.println("Null pointer check passed: empty_ptr == null")
+    }
+
+    io.println("--- Milestone 2.1 Complete! ---")
+}

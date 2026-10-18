@@ -43,7 +43,6 @@ static inline size_t velo_mem_used(void) {
 
 static inline void* velo_mem_alloc(size_t size, size_t count) {
     size_t total = size * count;
-    // Align to 8 bytes for CPU speed
     size_t aligned = (total + 7) & ~((size_t)7);
     if (g_velo_arena_offset + aligned > VELO_ZONE_BUFFER_SIZE) {
         fprintf(stderr, "Velo Fatal Error: Zone Arena Out of Memory (16MB exceeded)!\n");
@@ -52,6 +51,39 @@ static inline void* velo_mem_alloc(size_t size, size_t count) {
     void* ptr = (void*)&g_velo_arena[g_velo_arena_offset];
     g_velo_arena_offset += aligned;
     return ptr;
+}
+
+// Persistent Heap Allocation with Memory Usage Tracking
+static size_t g_velo_heap_active = 0;
+
+static inline void* velo_heap_alloc(size_t size, size_t count) {
+    size_t total = size * count;
+    size_t header_size = (sizeof(size_t) + 15) & ~((size_t)15);
+    uint8_t* raw = (uint8_t*)malloc(total + header_size);
+    if (!raw) {
+        fprintf(stderr, "Velo Fatal Error: Out of Heap Memory!\n");
+        exit(1);
+    }
+    *((size_t*)raw) = total;
+    g_velo_heap_active += total;
+    return (void*)(raw + header_size);
+}
+
+static inline void velo_heap_free(void* ptr) {
+    if (!ptr) return;
+    size_t header_size = (sizeof(size_t) + 15) & ~((size_t)15);
+    uint8_t* raw = ((uint8_t*)ptr) - header_size;
+    size_t total = *((size_t*)raw);
+    if (g_velo_heap_active >= total) {
+        g_velo_heap_active -= total;
+    } else {
+        g_velo_heap_active = 0;
+    }
+    free(raw);
+}
+
+static inline size_t velo_heap_used(void) {
+    return g_velo_heap_active;
 }
 
 // Built-in IO primitives

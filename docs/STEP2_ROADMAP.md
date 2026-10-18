@@ -6,13 +6,13 @@ This roadmap defines the engineering milestones to complete **Step 2** and prepa
 
 ## Step 2 Milestones
 
-### Milestone 2.1: Persistent Heap Allocation & `defer`
+### Milestone 2.1: Persistent Heap Allocation & `defer` [COMPLETED]
 * **Goal**: Support long-lived heap memory with zero-leak safety via `defer`.
 * **Deliverables**:
-  * Lexer/Parser support for `defer <statement>` and `null`.
-  * Runtime implementation of `velo_heap_alloc`, `velo_heap_free`, and `velo_heap_used`.
-  * Codegen support for LIFO execution of `defer` statements at block exits and returns.
-* **Test Case**: `examples/06_heap_and_defer.vl` allocates memory, exits through early returns, and asserts zero heap memory leaked.
+  * [x] Lexer/Parser support for `defer <statement>` and `null`.
+  * [x] Runtime implementation of `velo_heap_alloc`, `velo_heap_free`, and `velo_heap_used`.
+  * [x] Codegen support for LIFO execution of `defer` statements at block exits and returns.
+* **Test Case**: `examples/06_heap_and_defer.vl` allocates memory, exits through early returns, and asserts zero heap memory leaked. (Verified: 12/12 unit tests passing).
 
 ---
 

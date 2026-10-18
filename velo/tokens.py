@@ -15,6 +15,7 @@ class TokenType(Enum):
     IN = auto()
     RETURN = auto()
     ZONE = auto()
+    DEFER = auto()
     EXTERN = auto()
     USE = auto()
     TRUE = auto()
@@ -84,6 +85,7 @@ KEYWORDS = {
     "in": TokenType.IN,
     "return": TokenType.RETURN,
     "zone": TokenType.ZONE,
+    "defer": TokenType.DEFER,
     "extern": TokenType.EXTERN,
     "use": TokenType.USE,
     "true": TokenType.TRUE,

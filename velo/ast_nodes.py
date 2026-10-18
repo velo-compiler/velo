@@ -40,6 +40,11 @@ class BoolLiteral(Expr):
     col: int
 
 @dataclass
+class NullLiteral(Expr):
+    line: int
+    col: int
+
+@dataclass
 class Identifier(Expr):
     name: str
     line: int
@@ -170,6 +175,12 @@ class LoopStmt(Stmt):
 @dataclass
 class ZoneStmt(Stmt):
     body: BlockStmt
+    line: int
+    col: int
+
+@dataclass
+class DeferStmt(Stmt):
+    statement: Stmt
     line: int
     col: int
 
