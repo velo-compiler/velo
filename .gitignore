@@ -1,0 +1,14 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Velo Build & Cache
+.velo_cache/
+*.exe
+*.o
+*.obj
+
+# Editor
+.vscode/
+.idea/

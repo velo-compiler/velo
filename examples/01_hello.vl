@@ -1,0 +1,5 @@
+use sys.io
+
+act main() {
+    io.println("Hello from Velo! High-velocity native code.")
+}
