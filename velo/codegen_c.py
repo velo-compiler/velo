@@ -60,6 +60,7 @@ class CCodeGenerator:
         self.output = []
         self.struct_defs = {}
         self.current_scope_types = {}
+        self.global_types: Dict[str, str] = {}
         self.func_return_types: Dict[str, str] = {}
         self.defer_stack = []
         self.zone_counter = 0
@@ -94,7 +95,26 @@ class CCodeGenerator:
                     self._emit_struct_definition(decl)
                     emitted_structs.add(decl.name)
 
-        # 3. Emit extern function declarations
+        # 3. Emit global constants and variables
+        seen_globals = set()
+        for decl in program.declarations:
+            if isinstance(decl, VarDeclStmt):
+                if decl.name not in seen_globals:
+                    type_str = self._infer_or_map_type(decl.type_name, decl.value)
+                    raw_velo_type = decl.type_name or self._infer_raw_velo_type(decl.value)
+                    self.global_types[decl.name] = raw_velo_type
+                    const_prefix = "" if decl.is_mut else "const "
+                    if decl.value:
+                        val_code = self._emit_expression(decl.value)
+                        self._emit_line(f"{const_prefix}{type_str} {decl.name} = {val_code};")
+                    else:
+                        self._emit_line(f"{type_str} {decl.name};")
+                    seen_globals.add(decl.name)
+
+        self._emit_line()
+
+        # 4. Emit extern function declarations
+
         seen_externs = set()
         for decl in program.declarations:
             if isinstance(decl, ExternDecl):
@@ -143,7 +163,7 @@ class CCodeGenerator:
     def _emit_function(self, func: FunctionDecl):
         self.current_function = func
         is_main = (func.name == "main")
-        self.current_scope_types = {}
+        self.current_scope_types = dict(self.global_types)
         self.defer_stack = [[]]
 
         for p in func.params:
@@ -302,6 +322,12 @@ class CCodeGenerator:
         if isinstance(value, AddressOf):
             operand_type = self._resolve_expr_type(value.operand)
             return f"@{operand_type}"
+        if isinstance(value, Identifier):
+            return self.current_scope_types.get(value.name, "i32")
+        if isinstance(value, DerefExpr):
+            return self._resolve_expr_type(value)
+        if isinstance(value, MemberAccess):
+            return self._resolve_expr_type(value)
         if isinstance(value, IndexExpr):
             target_type = self._resolve_expr_type(value.target)
             if target_type == "string":
@@ -329,6 +355,7 @@ class CCodeGenerator:
                     if value.callee.member == "len":
                         return "usize"
         return "i32"
+
 
     def _infer_or_map_type(self, type_name: Optional[str], value: Optional[Expr]) -> str:
         if type_name:
@@ -360,7 +387,8 @@ class CCodeGenerator:
             target_type = self._resolve_expr_type(expr.target)
             clean_type = target_type.lstrip("@")
             fields = self.struct_defs.get(clean_type, {})
-            return fields.get(expr.member, "f32")
+            return fields.get(expr.member, "i32")
+
         elif isinstance(expr, StructLiteral):
             return expr.struct_name
         elif isinstance(expr, FloatLiteral):

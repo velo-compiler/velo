@@ -1,0 +1,46 @@
+use sys.io
+use "../src/frontend/token.vl"
+use "../src/frontend/lexer.vl"
+
+act main() {
+    io.println("--- Velo Stage 2 Milestone 2.1: Native Lexer Verification ---")
+
+    let sample_code = "data Point {\n    x: f32\n    y: f32\n}\nact add(a: @Point) -> f32 {\n    return a.x + a.y\n}"
+    let sample_len: usize = str.len(sample_code)
+
+    zone {
+        mut lex = create_lexer(sample_code, sample_len, 128)
+        tokenize(@lex)
+
+        io.println("Successfully tokenized sample Velo source code!")
+        io.println("Total tokens produced: {lex.token_count}")
+
+        // Print first 10 tokens with their kinds and names
+        mut print_count = 10
+        if lex.token_count < 10 {
+            print_count = lex.token_count as i32
+        }
+
+        loop i in 0..print_count {
+            let tok = lex.tokens[i]
+            let name = token_name(tok.kind)
+            io.println("  Token[{i}]: kind={tok.kind} ({name}), len={tok.length}, line={tok.line}")
+        }
+
+        // Verify key tokens exist
+        let tok0 = lex.tokens[0] // data
+        let tok1 = lex.tokens[1] // Point
+        let tok2 = lex.tokens[2] // {
+
+        let name0 = token_name(tok0.kind)
+        let name1 = token_name(tok1.kind)
+        let name2 = token_name(tok2.kind)
+
+        io.println("Token 0 name: {name0}")
+        io.println("Token 1 name: {name1}")
+        io.println("Token 2 name: {name2}")
+
+    }
+
+    io.println("--- Milestone 2.1 Complete! ---")
+}

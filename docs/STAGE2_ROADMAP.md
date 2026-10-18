@@ -25,7 +25,7 @@ flowchart TD
 
 ## Detailed Milestone Specifications
 
-### Milestone 2.1: Infrastructure & Native Lexer in Velo
+### Milestone 2.1: Infrastructure & Native Lexer in Velo [COMPLETED] 🛡️
 * **Goal**: Implement high-performance token scanning and common utilities in pure Velo.
 * **Deliverables**:
   * `src/common/diagnostics.vl`: Source line/col error formatting.
@@ -34,7 +34,8 @@ flowchart TD
   * `src/frontend/lexer.vl`: Tokenizer supporting string literals, character literals, keywords, numbers, and Go-style newline insertion.
 * **Verification**:
   - Compile with Stage 1 compiler (`python velo.py`).
-  - Unit test `tests/test_stage2_lexer.py` tokenizing complex Velo code snippets and asserting exact token streams.
+  - Unit test `tests/test_stage2_lexer.py` tokenizing complex Velo code snippets and asserting exact token streams (PASSED).
+  - Live verification script `examples/10_stage2_lexer_test.vl` (PASSED).
 
 ---
 

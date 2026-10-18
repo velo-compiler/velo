@@ -1,0 +1,107 @@
+// Token definitions for the Velo programming language.
+
+// Special tokens
+let TOK_EOF: i32 = 0
+let TOK_NEWLINE: i32 = 1
+let TOK_SEMICOLON: i32 = 2
+
+// Literals
+let TOK_IDENTIFIER: i32 = 10
+let TOK_INT_LIT: i32 = 11
+let TOK_FLOAT_LIT: i32 = 12
+let TOK_STRING_LIT: i32 = 13
+
+// Keywords
+let TOK_ACT: i32 = 20
+let TOK_DATA: i32 = 21
+let TOK_MUT: i32 = 22
+let TOK_LET: i32 = 23
+let TOK_IF: i32 = 24
+let TOK_ELSE: i32 = 25
+let TOK_WHILE: i32 = 26
+let TOK_LOOP: i32 = 27
+let TOK_IN: i32 = 28
+let TOK_RETURN: i32 = 29
+let TOK_ZONE: i32 = 30
+let TOK_DEFER: i32 = 31
+let TOK_EXTERN: i32 = 32
+let TOK_USE: i32 = 33
+let TOK_TRUE: i32 = 34
+let TOK_FALSE: i32 = 35
+let TOK_NULL: i32 = 36
+let TOK_AS: i32 = 37
+let TOK_AND: i32 = 38
+let TOK_OR: i32 = 39
+let TOK_NOT: i32 = 40
+
+// Operators & Punctuation
+let TOK_AT: i32 = 50           // @
+let TOK_PLUS: i32 = 51         // +
+let TOK_MINUS: i32 = 52        // -
+let TOK_STAR: i32 = 53         // *
+let TOK_SLASH: i32 = 54        // /
+let TOK_PERCENT: i32 = 55      // %
+let TOK_DOT: i32 = 56          // .
+let TOK_DOTDOT: i32 = 57       // ..
+let TOK_ARROW: i32 = 58        // ->
+let TOK_COLON: i32 = 59        // :
+let TOK_COMMA: i32 = 60        // ,
+let TOK_ASSIGN: i32 = 61       // =
+let TOK_EQ: i32 = 62           // ==
+let TOK_NEQ: i32 = 63          // !=
+let TOK_LT: i32 = 64           // <
+let TOK_LTE: i32 = 65          // <=
+let TOK_GT: i32 = 66           // >
+let TOK_GTE: i32 = 67          // >=
+let TOK_PLUS_ASSIGN: i32 = 68  // +=
+let TOK_MINUS_ASSIGN: i32 = 69 // -=
+let TOK_STAR_ASSIGN: i32 = 70  // *=
+let TOK_SLASH_ASSIGN: i32 = 71 // /=
+let TOK_LPAREN: i32 = 72       // (
+let TOK_RPAREN: i32 = 73       // )
+let TOK_LBRACE: i32 = 74       // {
+let TOK_RBRACE: i32 = 75       // }
+let TOK_LBRACKET: i32 = 76     // [
+let TOK_RBRACKET: i32 = 77     // ]
+
+// Represents a single token descriptor.
+// To avoid string copies during lexing, the token holds offset and length into the source buffer.
+data Token {
+    kind: i32
+    start: usize
+    length: usize
+    line: i32
+    col: i32
+}
+
+// Returns human-readable representation of a token kind.
+act token_name(kind: i32) -> string {
+    if kind == TOK_EOF { return "EOF" }
+    if kind == TOK_NEWLINE { return "NEWLINE" }
+    if kind == TOK_SEMICOLON { return ";" }
+    if kind == TOK_IDENTIFIER { return "IDENTIFIER" }
+    if kind == TOK_INT_LIT { return "INT_LIT" }
+    if kind == TOK_FLOAT_LIT { return "FLOAT_LIT" }
+    if kind == TOK_STRING_LIT { return "STRING_LIT" }
+    if kind == TOK_ACT { return "act" }
+    if kind == TOK_DATA { return "data" }
+    if kind == TOK_MUT { return "mut" }
+    if kind == TOK_LET { return "let" }
+    if kind == TOK_IF { return "if" }
+    if kind == TOK_ELSE { return "else" }
+    if kind == TOK_WHILE { return "while" }
+    if kind == TOK_LOOP { return "loop" }
+    if kind == TOK_RETURN { return "return" }
+    if kind == TOK_ZONE { return "zone" }
+    if kind == TOK_DEFER { return "defer" }
+    if kind == TOK_USE { return "use" }
+    if kind == TOK_AT { return "@" }
+    if kind == TOK_LBRACE { return "{" }
+    if kind == TOK_RBRACE { return "}" }
+    if kind == TOK_LPAREN { return "(" }
+    if kind == TOK_RPAREN { return ")" }
+    if kind == TOK_COLON { return ":" }
+    if kind == TOK_ASSIGN { return "=" }
+    if kind == TOK_ARROW { return "->" }
+    return "TOKEN"
+}

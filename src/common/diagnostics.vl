@@ -1,0 +1,22 @@
+use sys.io
+
+// Formats and reports a compiler error at a specific source location.
+//
+// Parameters:
+//   filename: Path to the source file where the error occurred.
+//   line: 1-indexed source line number.
+//   col: 1-indexed source column number.
+//   message: Explanatory error message.
+act report_error(filename: string, line: i32, col: i32, message: string) {
+    io.println("[Velo Error] {filename}:{line}:{col} - {message}")
+}
+
+// Formats and reports a compiler warning at a specific source location.
+act report_warning(filename: string, line: i32, col: i32, message: string) {
+    io.println("[Velo Warning] {filename}:{line}:{col} - {message}")
+}
+
+// Reports a general compiler error not bound to a specific source line.
+act report_simple_error(message: string) {
+    io.println("[Velo Error] {message}")
+}

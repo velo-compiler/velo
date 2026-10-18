@@ -1,0 +1,49 @@
+// Character classification and scanning helper functions.
+
+// Checks if a byte is ASCII horizontal whitespace (space, tab, carriage return).
+act is_whitespace(c: u8) -> bool {
+    if c == ' ' or c == '\t' or c == '\r' {
+        return true
+    }
+    return false
+}
+
+// Checks if a byte is a newline separator.
+act is_newline(c: u8) -> bool {
+    if c == '\n' {
+        return true
+    }
+    return false
+}
+
+// Checks if a byte is an alphabetic character [a-zA-Z].
+act is_alpha(c: u8) -> bool {
+    if (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') {
+        return true
+    }
+    return false
+}
+
+// Checks if a byte is a decimal digit [0-9].
+act is_digit(c: u8) -> bool {
+    if c >= '0' and c <= '9' {
+        return true
+    }
+    return false
+}
+
+// Checks if a byte can begin an identifier [a-zA-Z_].
+act is_ident_start(c: u8) -> bool {
+    if is_alpha(c) or c == '_' {
+        return true
+    }
+    return false
+}
+
+// Checks if a byte can continue an identifier [a-zA-Z0-9_].
+act is_ident_part(c: u8) -> bool {
+    if is_alpha(c) or is_digit(c) or c == '_' {
+        return true
+    }
+    return false
+}

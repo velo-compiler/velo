@@ -72,8 +72,11 @@ class Parser:
             return self._parse_data_decl()
         elif self._check(TokenType.ACT):
             return self._parse_function_decl()
+        elif self._check(TokenType.LET) or self._check(TokenType.MUT):
+            return self._parse_statement()
         else:
             raise ParserError(f"Unexpected top-level token '{self._peek().value}'", self._peek())
+
 
     def _parse_use_decl(self) -> UseStmt:
         use_tok = self._consume(TokenType.USE, "Expected 'use'")
