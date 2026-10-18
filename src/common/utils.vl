@@ -1,3 +1,5 @@
+use sys.mem
+
 // Character classification and scanning helper functions.
 
 // Checks if a byte is ASCII horizontal whitespace (space, tab, carriage return).
@@ -47,3 +49,55 @@ act is_ident_part(c: u8) -> bool {
     }
     return false
 }
+
+// Allocates a null-terminated string copy of a slice inside the active zone arena.
+act copy_slice_to_string(source: string, start: usize, len: usize) -> string {
+    mut buf: @u8 = mem.alloc(@u8, len + 1)
+    mut i: usize = 0
+    while i < len {
+        buf[i] = source[start + i]
+        i += 1
+    }
+    buf[len] = 0 as u8
+    return buf as string
+}
+
+// Parses an integer value from an ASCII slice.
+act parse_int_from_slice(source: string, start: usize, len: usize) -> i32 {
+    mut result: i32 = 0
+    mut i: usize = 0
+    while i < len {
+        let c = source[start + i]
+        if c >= '0' and c <= '9' {
+            result = result * 10 + ((c as i32) - ('0' as i32))
+        }
+        i += 1
+    }
+    return result
+}
+
+// Parses a 32-bit floating point value from an ASCII slice.
+act parse_float_from_slice(source: string, start: usize, len: usize) -> f32 {
+    mut int_part: f32 = 0.0
+    mut frac_part: f32 = 0.0
+    mut divisor: f32 = 1.0
+    mut has_dot: bool = false
+    mut i: usize = 0
+    while i < len {
+        let c = source[start + i]
+        if c == '.' {
+            has_dot = true
+        } else if c >= '0' and c <= '9' {
+            let digit = ((c as i32) - ('0' as i32)) as f32
+            if not has_dot {
+                int_part = int_part * 10.0 + digit
+            } else {
+                divisor = divisor * 10.0
+                frac_part = frac_part + (digit / divisor)
+            }
+        }
+        i += 1
+    }
+    return int_part + frac_part
+}
+

@@ -1,0 +1,287 @@
+// Expression parsing algorithms and Pratt precedence parser for Velo.
+use sys.io
+use sys.mem
+use "token.vl"
+use "../common/utils.vl"
+use "../common/diagnostics.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "parser.vl"
+
+// Determines whether the lookahead matches a struct literal pattern:
+// UpperCamelCase identifier followed immediately by '{'.
+act is_struct_literal(p: @Parser) -> bool {
+    let tok0 = parser_peek(p, 0)
+    let tok1 = parser_peek(p, 1)
+    if tok0.kind != TOK_IDENTIFIER or tok1.kind != TOK_LBRACE {
+        return false
+    }
+    // Struct types must begin with an uppercase ASCII character
+    let first_char = p.source[tok0.start]
+    if first_char < 'A' or first_char > 'Z' {
+        return false
+    }
+
+    mut idx: usize = 2
+    while p.pos + idx < p.token_count {
+        let t = parser_peek(p, idx)
+        if t.kind != TOK_NEWLINE and t.kind != TOK_SEMICOLON {
+            if t.kind == TOK_RBRACE {
+                return true
+            }
+            if t.kind == TOK_IDENTIFIER {
+                let next_t = parser_peek(p, idx + 1)
+                if next_t.kind == TOK_COLON {
+                    return true
+                }
+            }
+            return false
+        }
+        idx += 1
+    }
+    return false
+}
+
+// Parses primary expressions: literals, identifiers, grouped expressions, struct literals.
+act parse_primary(p: @Parser) -> @ExprNode {
+    // 1. Struct instantiation literal (e.g. `Point{ x: 10, y: 20 }`)
+    if is_struct_literal(p) {
+        let id_tok = parser_advance(p)
+        let sname = copy_slice_to_string(p.source, id_tok.start, id_tok.length)
+        parser_advance(p) // consume '{'
+        parser_skip_newlines(p)
+
+        mut first_init: @FieldInit = null
+        mut last_init: @FieldInit = null
+
+        while not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
+            let fname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected field name in struct literal")
+            let fname = copy_slice_to_string(p.source, fname_tok.start, fname_tok.length)
+            parser_consume(p, TOK_COLON, "Expected ':' after field name")
+            let fval = parse_expression(p)
+            let init_node = make_field_init(fname, fval, fname_tok.line, fname_tok.col)
+
+            if first_init == null {
+                first_init = init_node
+                last_init = init_node
+            } else {
+                last_init.next = init_node
+                last_init = init_node
+            }
+
+            parser_skip_newlines(p)
+            if not parser_match(p, TOK_COMMA) {
+                parser_skip_newlines(p)
+                // If next is not comma or rbrace, stop or continue
+                if parser_check(p, TOK_RBRACE) {
+                    // end of struct
+                }
+            }
+            parser_skip_newlines(p)
+        }
+        parser_consume(p, TOK_RBRACE, "Expected '}' at end of struct literal")
+        return make_struct_lit_expr(sname, first_init, id_tok.line, id_tok.col)
+    }
+
+    // 2. Null literal
+    if parser_match(p, TOK_NULL) {
+        let tok = parser_peek(p, 0)
+        return make_null_expr(tok.line, tok.col)
+    }
+
+    // 3. Integer literal
+    if parser_check(p, TOK_INT_LIT) {
+        let tok = parser_advance(p)
+        let val = parse_int_from_slice(p.source, tok.start, tok.length)
+        return make_int_expr(val, tok.line, tok.col)
+    }
+
+    // 4. Float literal
+    if parser_check(p, TOK_FLOAT_LIT) {
+        let tok = parser_advance(p)
+        let val = parse_float_from_slice(p.source, tok.start, tok.length)
+        return make_float_expr(val, tok.line, tok.col)
+    }
+
+    // 5. String literal
+    if parser_check(p, TOK_STRING_LIT) {
+        let tok = parser_advance(p)
+        let val = get_string_literal_text(p.source, tok)
+        return make_string_expr(val, tok.line, tok.col)
+    }
+
+    // 6. Boolean literals
+    if parser_match(p, TOK_TRUE) {
+        let tok = parser_peek(p, 0)
+        return make_bool_expr(true, tok.line, tok.col)
+    }
+    if parser_match(p, TOK_FALSE) {
+        let tok = parser_peek(p, 0)
+        return make_bool_expr(false, tok.line, tok.col)
+    }
+
+    // 7. Identifier reference
+    if parser_check(p, TOK_IDENTIFIER) {
+        let tok = parser_advance(p)
+        let name = copy_slice_to_string(p.source, tok.start, tok.length)
+        return make_ident_expr(name, tok.line, tok.col)
+    }
+
+    // 8. Grouped expression `(expr)`
+    if parser_match(p, TOK_LPAREN) {
+        let expr = parse_expression(p)
+        parser_consume(p, TOK_RPAREN, "Expected ')' after grouped expression")
+        return expr
+    }
+
+    let tok = parser_peek(p, 0)
+    report_error(p.filename, tok.line, tok.col, "Unexpected token in expression")
+    p.had_error = true
+    return null
+}
+
+// Parses postfix operations: member access `.field`, dereference `.@`, array indexing `[idx]`,
+// type casts `as Type`, and function calls `(args...)`.
+act parse_postfix(p: @Parser) -> @ExprNode {
+    mut expr = parse_primary(p)
+    if expr == null {
+        return null
+    }
+
+    mut parsing_postfix = true
+    while parsing_postfix {
+        if parser_match(p, TOK_DOT) {
+            if parser_match(p, TOK_AT) {
+                let at_tok = parser_peek(p, 0)
+                expr = make_deref_expr(expr, at_tok.line, at_tok.col)
+            } else {
+                let mem_tok = parser_consume(p, TOK_IDENTIFIER, "Expected member name after '.'")
+                let mname = copy_slice_to_string(p.source, mem_tok.start, mem_tok.length)
+                expr = make_member_expr(expr, mname, mem_tok.line, mem_tok.col)
+            }
+        } else if parser_match(p, TOK_LBRACKET) {
+            let lb = parser_peek(p, 0)
+            let idx_expr = parse_expression(p)
+            parser_consume(p, TOK_RBRACKET, "Expected ']' after array index")
+            expr = make_index_expr(expr, idx_expr, lb.line, lb.col)
+        } else if parser_match(p, TOK_AS) {
+            let as_tok = parser_peek(p, 0)
+            let target_type = parse_type_annotation(p)
+            expr = make_cast_expr(expr, target_type, as_tok.line, as_tok.col)
+        } else if parser_match(p, TOK_LPAREN) {
+            let lp = parser_peek(p, 0)
+            mut first_arg: @ExprNode = null
+            mut last_arg: @ExprNode = null
+            mut count: usize = 0
+
+            if not parser_check(p, TOK_RPAREN) {
+                mut more_args = true
+                while more_args {
+                    let arg = parse_expression(p)
+                    if arg != null {
+                        if first_arg == null {
+                            first_arg = arg
+                            last_arg = arg
+                        } else {
+                            last_arg.next = arg
+                            last_arg = arg
+                        }
+                        count += 1
+                    }
+                    if not parser_match(p, TOK_COMMA) {
+                        more_args = false
+                    }
+                }
+            }
+            parser_consume(p, TOK_RPAREN, "Expected ')' after argument list")
+            expr = make_call_expr(expr, first_arg, count, lp.line, lp.col)
+        } else {
+            parsing_postfix = false
+        }
+    }
+    return expr
+}
+
+// Parses prefix unary operations: `@x` (address-of), `-x`, `!x`, `not x`.
+act parse_unary(p: @Parser) -> @ExprNode {
+    if parser_check(p, TOK_AT) or parser_check(p, TOK_MINUS) or parser_check(p, TOK_NOT) {
+        let op_tok = parser_advance(p)
+        let operand = parse_unary(p)
+        if op_tok.kind == TOK_AT {
+            return make_address_of_expr(operand, op_tok.line, op_tok.col)
+        }
+        return make_unary_expr(op_tok.kind, operand, op_tok.line, op_tok.col)
+    }
+    return parse_postfix(p)
+}
+
+// Parses multiplicative binary factors: `*`, `/`, `%`.
+act parse_factor(p: @Parser) -> @ExprNode {
+    mut expr = parse_unary(p)
+    while parser_check(p, TOK_STAR) or parser_check(p, TOK_SLASH) or parser_check(p, TOK_PERCENT) {
+        let op_tok = parser_advance(p)
+        let right = parse_unary(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses additive binary terms: `+`, `-`.
+act parse_term(p: @Parser) -> @ExprNode {
+    mut expr = parse_factor(p)
+    while parser_check(p, TOK_PLUS) or parser_check(p, TOK_MINUS) {
+        let op_tok = parser_advance(p)
+        let right = parse_factor(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses comparison binary expressions: `<`, `<=`, `>`, `>=`.
+act parse_comparison(p: @Parser) -> @ExprNode {
+    mut expr = parse_term(p)
+    while parser_check(p, TOK_LT) or parser_check(p, TOK_LTE) or parser_check(p, TOK_GT) or parser_check(p, TOK_GTE) {
+        let op_tok = parser_advance(p)
+        let right = parse_term(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses equality binary expressions: `==`, `!=`.
+act parse_equality(p: @Parser) -> @ExprNode {
+    mut expr = parse_comparison(p)
+    while parser_check(p, TOK_EQ) or parser_check(p, TOK_NEQ) {
+        let op_tok = parser_advance(p)
+        let right = parse_comparison(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses logical conjunction expressions: `and`.
+act parse_logical_and(p: @Parser) -> @ExprNode {
+    mut expr = parse_equality(p)
+    while parser_check(p, TOK_AND) {
+        let op_tok = parser_advance(p)
+        let right = parse_equality(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses logical disjunction expressions: `or`.
+act parse_logical_or(p: @Parser) -> @ExprNode {
+    mut expr = parse_logical_and(p)
+    while parser_check(p, TOK_OR) {
+        let op_tok = parser_advance(p)
+        let right = parse_logical_and(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses a complete expression matching the full Pratt operator precedence hierarchy.
+act parse_expression(p: @Parser) -> @ExprNode {
+    return parse_logical_or(p)
+}

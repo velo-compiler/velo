@@ -1,0 +1,263 @@
+// Abstract Syntax Tree statement and declaration nodes for the Velo programming language.
+use sys.mem
+use "expr.vl"
+
+// Statement kind constants
+let STMT_EXPR: i32 = 201
+let STMT_VAR_DECL: i32 = 202
+let STMT_ASSIGN: i32 = 203
+let STMT_RETURN: i32 = 204
+let STMT_IF: i32 = 205
+let STMT_WHILE: i32 = 206
+let STMT_LOOP: i32 = 207
+let STMT_ZONE: i32 = 208
+let STMT_DEFER: i32 = 209
+let STMT_BLOCK: i32 = 210
+
+// Top-level declaration kind constants
+let DECL_DATA: i32 = 301
+let DECL_FUNCTION: i32 = 302
+let DECL_EXTERN: i32 = 303
+let DECL_USE: i32 = 304
+
+// Represents a formal parameter in a function or extern declaration.
+data ParamNode {
+    name: string
+    type_name: string
+    line: i32
+    col: i32
+    next: @ParamNode
+}
+
+// Represents a field declaration in a struct data blueprint.
+data FieldNode {
+    name: string
+    type_name: string
+    line: i32
+    col: i32
+    next: @FieldNode
+}
+
+// Unified AST Statement & Declaration Node.
+// Memory Ownership: All nodes are allocated inside the active zone arena.
+data StmtNode {
+    kind: i32
+    line: i32
+    col: i32
+    // Identification & Types
+    name: string
+    type_name: string
+    is_mut: bool
+    // Expressions
+    expr: @ExprNode
+    val_expr: @ExprNode
+    op: i32
+    // Block / Control Flow children
+    first_stmt: @StmtNode
+    stmt_count: usize
+    else_branch: @StmtNode
+    body: @StmtNode
+    deferred_stmt: @StmtNode
+    // Loop constructs
+    loop_var: string
+    loop_start: @ExprNode
+    loop_end: @ExprNode
+    // Function / Struct / Extern / Use payloads
+    first_param: @ParamNode
+    param_count: usize
+    return_type: string
+    first_field: @FieldNode
+    field_count: usize
+    module_path: string
+    // Intrusive linked list pointer for sequence of statements / declarations
+    next: @StmtNode
+}
+
+// Represents the root AST node containing all top-level declarations.
+data ProgramNode {
+    first_decl: @StmtNode
+    decl_count: usize
+}
+
+// Creates an expression statement (`expr`).
+act make_expr_stmt(expr: @ExprNode, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_EXPR
+    node.expr = expr
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a variable declaration statement (`let x = val` or `mut y: i32 = val`).
+act make_var_decl_stmt(name: string, type_name: string, val: @ExprNode, is_mut: bool, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_VAR_DECL
+    node.name = name
+    node.type_name = type_name
+    node.val_expr = val
+    node.is_mut = is_mut
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates an assignment statement (`target = val`, `target += val`, etc.).
+act make_assign_stmt(target: @ExprNode, op: i32, val: @ExprNode, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_ASSIGN
+    node.expr = target
+    node.op = op
+    node.val_expr = val
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a return statement (`return` or `return expr`).
+act make_return_stmt(val: @ExprNode, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_RETURN
+    node.val_expr = val
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates an if statement with optional else/elif branch.
+act make_if_stmt(cond: @ExprNode, then_body: @StmtNode, else_branch: @StmtNode, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_IF
+    node.expr = cond
+    node.body = then_body
+    node.else_branch = else_branch
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a while loop statement (`while cond { ... }`).
+act make_while_stmt(cond: @ExprNode, body: @StmtNode, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_WHILE
+    node.expr = cond
+    node.body = body
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a range loop statement (`loop i in start..end { ... }`).
+act make_loop_stmt(var_name: string, start_expr: @ExprNode, end_expr: @ExprNode, body: @StmtNode, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_LOOP
+    node.loop_var = var_name
+    node.loop_start = start_expr
+    node.loop_end = end_expr
+    node.body = body
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a memory arena zone statement (`zone { ... }`).
+act make_zone_stmt(body: @StmtNode, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_ZONE
+    node.body = body
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a deferred execution statement (`defer <stmt>`).
+act make_defer_stmt(stmt: @StmtNode, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_DEFER
+    node.deferred_stmt = stmt
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a code block statement (`{ stmt1; stmt2; ... }`).
+act make_block_stmt(first_stmt: @StmtNode, count: usize, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_BLOCK
+    node.first_stmt = first_stmt
+    node.stmt_count = count
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a top-level struct data declaration (`data Name { ... }`).
+act make_data_decl(name: string, first_field: @FieldNode, count: usize, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = DECL_DATA
+    node.name = name
+    node.first_field = first_field
+    node.field_count = count
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a top-level function declaration (`act Name(params) -> RetType { ... }`).
+act make_function_decl(name: string, first_param: @ParamNode, param_count: usize, ret_type: string, body: @StmtNode, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = DECL_FUNCTION
+    node.name = name
+    node.first_param = first_param
+    node.param_count = param_count
+    node.return_type = ret_type
+    node.body = body
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates an external foreign function declaration (`extern act Name(params) -> RetType`).
+act make_extern_decl(name: string, first_param: @ParamNode, param_count: usize, ret_type: string, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = DECL_EXTERN
+    node.name = name
+    node.first_param = first_param
+    node.param_count = param_count
+    node.return_type = ret_type
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a module import statement (`use "module.vl"` or `use sys.io`).
+act make_use_decl(mod_path: string, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = DECL_USE
+    node.module_path = mod_path
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a parameter descriptor node.
+act make_param_node(name: string, type_name: string, line: i32, col: i32) -> @ParamNode {
+    mut p: @ParamNode = mem.alloc(@ParamNode, 1)
+    p.name = name
+    p.type_name = type_name
+    p.line = line
+    p.col = col
+    p.next = null
+    return p
+}
+
+// Creates a struct field descriptor node.
+act make_field_node(name: string, type_name: string, line: i32, col: i32) -> @FieldNode {
+    mut f: @FieldNode = mem.alloc(@FieldNode, 1)
+    f.name = name
+    f.type_name = type_name
+    f.line = line
+    f.col = col
+    f.next = null
+    return f
+}

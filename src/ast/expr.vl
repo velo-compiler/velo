@@ -1,0 +1,228 @@
+// Abstract Syntax Tree expression nodes for the Velo programming language.
+use sys.mem
+
+// Expression kind constants
+let EXPR_INT: i32 = 101
+let EXPR_FLOAT: i32 = 102
+let EXPR_STRING: i32 = 103
+let EXPR_BOOL: i32 = 104
+let EXPR_NULL: i32 = 105
+let EXPR_IDENT: i32 = 106
+let EXPR_BINARY: i32 = 107
+let EXPR_UNARY: i32 = 108
+let EXPR_ADDRESS_OF: i32 = 109
+let EXPR_DEREF: i32 = 110
+let EXPR_MEMBER: i32 = 111
+let EXPR_INDEX: i32 = 112
+let EXPR_CAST: i32 = 113
+let EXPR_CALL: i32 = 114
+let EXPR_STRUCT_LIT: i32 = 115
+
+// Represents a single field initializer in a struct instantiation (e.g. `x: 10.0`).
+// Linked via `next` to support arbitrary numbers of fields without dynamic heap buffers.
+data FieldInit {
+    name: string
+    value: @ExprNode
+    next: @FieldInit
+    line: i32
+    col: i32
+}
+
+// Unified AST Expression Node.
+// Represents literals, identifiers, unary/binary operations, calls, casts, and member accesses.
+// Memory Ownership: All nodes are allocated inside the active zone arena.
+data ExprNode {
+    kind: i32
+    line: i32
+    col: i32
+    // Value payloads
+    int_val: i32
+    float_val: f32
+    str_val: string
+    bool_val: bool
+    op: i32
+    // Child expression pointers
+    left: @ExprNode
+    right: @ExprNode
+    operand: @ExprNode
+    target: @ExprNode
+    index: @ExprNode
+    callee: @ExprNode
+    first_arg: @ExprNode
+    arg_count: usize
+    // Struct literal & Cast payloads
+    type_name: string
+    member_name: string
+    first_init: @FieldInit
+    // Intrusive linked list pointer for call argument sequences
+    next: @ExprNode
+}
+
+// Creates an integer literal expression node.
+act make_int_expr(val: i32, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_INT
+    node.int_val = val
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a float literal expression node.
+act make_float_expr(val: f32, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_FLOAT
+    node.float_val = val
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a string literal expression node.
+act make_string_expr(val: string, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_STRING
+    node.str_val = val
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a boolean literal expression node.
+act make_bool_expr(val: bool, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_BOOL
+    node.bool_val = val
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a null pointer literal expression node.
+act make_null_expr(line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_NULL
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates an identifier reference expression node.
+act make_ident_expr(name: string, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_IDENT
+    node.str_val = name
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a binary operator expression node (e.g. `a + b`, `x == y`).
+act make_binary_expr(left: @ExprNode, op: i32, right: @ExprNode, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_BINARY
+    node.left = left
+    node.op = op
+    node.right = right
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a unary operator expression node (e.g. `-x`, `!flag`).
+act make_unary_expr(op: i32, operand: @ExprNode, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_UNARY
+    node.op = op
+    node.operand = operand
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates an address-of expression node (`@val`).
+act make_address_of_expr(operand: @ExprNode, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_ADDRESS_OF
+    node.operand = operand
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a pointer dereference expression node (`ptr.@`).
+act make_deref_expr(operand: @ExprNode, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_DEREF
+    node.operand = operand
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a member access expression node (`target.member`).
+act make_member_expr(target: @ExprNode, member: string, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_MEMBER
+    node.target = target
+    node.member_name = member
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates an array index expression node (`target[index]`).
+act make_index_expr(target: @ExprNode, index: @ExprNode, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_INDEX
+    node.target = target
+    node.index = index
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a type cast expression node (`expr as target_type`).
+act make_cast_expr(expr: @ExprNode, target_type: string, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_CAST
+    node.operand = expr
+    node.type_name = target_type
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a function invocation call expression node (`callee(args...)`).
+act make_call_expr(callee: @ExprNode, first_arg: @ExprNode, count: usize, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_CALL
+    node.callee = callee
+    node.first_arg = first_arg
+    node.arg_count = count
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a struct instantiation literal expression node (`Point{ x: 10, y: 20 }`).
+act make_struct_lit_expr(struct_name: string, first_init: @FieldInit, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_STRUCT_LIT
+    node.type_name = struct_name
+    node.first_init = first_init
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a struct field initializer node.
+act make_field_init(name: string, value: @ExprNode, line: i32, col: i32) -> @FieldInit {
+    mut init_node: @FieldInit = mem.alloc(@FieldInit, 1)
+    init_node.name = name
+    init_node.value = value
+    init_node.next = null
+    init_node.line = line
+    init_node.col = col
+    return init_node
+}

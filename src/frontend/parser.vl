@@ -1,0 +1,364 @@
+// Main recursive descent parser driver and top-level declaration analyzer for Velo.
+use sys.io
+use sys.mem
+use "token.vl"
+use "../common/utils.vl"
+use "../common/diagnostics.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "parser_expr.vl"
+use "parser_stmt.vl"
+
+// Maintains the state of the recursive descent parser.
+data Parser {
+    filename: string
+    source: string
+    tokens: @Token
+    token_count: usize
+    pos: usize
+    had_error: bool
+}
+
+// Initializes a Parser instance.
+act init_parser(p: @Parser, filename: string, source: string, tokens: @Token, count: usize) {
+    p.filename = filename
+    p.source = source
+    p.tokens = tokens
+    p.token_count = count
+    p.pos = 0
+    p.had_error = false
+}
+
+// Peeks ahead at a token with an offset without consuming it.
+act parser_peek(p: @Parser, offset: usize) -> Token {
+    let idx = p.pos + offset
+    if idx < p.token_count {
+        return p.tokens[idx]
+    }
+    if p.token_count > 0 {
+        return p.tokens[p.token_count - 1]
+    }
+    return Token{ kind: TOK_EOF, start: 0, length: 0, line: 1, col: 1 }
+}
+
+// Checks if the parser has consumed all tokens.
+act parser_is_at_end(p: @Parser) -> bool {
+    let tok = parser_peek(p, 0)
+    return tok.kind == TOK_EOF
+}
+
+// Consumes and returns the current token, advancing parser position.
+act parser_advance(p: @Parser) -> Token {
+    let tok = parser_peek(p, 0)
+    if tok.kind != TOK_EOF {
+        p.pos += 1
+    }
+    return tok
+}
+
+// Checks if current token matches the expected kind.
+act parser_check(p: @Parser, kind: i32) -> bool {
+    let tok = parser_peek(p, 0)
+    return tok.kind == kind
+}
+
+// Consumes the current token if it matches kind, returning true.
+act parser_match(p: @Parser, kind: i32) -> bool {
+    if parser_check(p, kind) {
+        parser_advance(p)
+        return true
+    }
+    return false
+}
+
+// Consumes the expected token kind or reports a syntax error.
+act parser_consume(p: @Parser, kind: i32, err_msg: string) -> Token {
+    let tok = parser_peek(p, 0)
+    if tok.kind == kind {
+        return parser_advance(p)
+    }
+    report_error(p.filename, tok.line, tok.col, err_msg)
+    p.had_error = true
+    return tok
+}
+
+// Skips consecutive statement delimiters (newlines and semicolons).
+act parser_skip_newlines(p: @Parser) {
+    while parser_check(p, TOK_NEWLINE) or parser_check(p, TOK_SEMICOLON) {
+        parser_advance(p)
+    }
+}
+
+// Extracts unquoted string literal text.
+act get_string_literal_text(source: string, tok: Token) -> string {
+    if tok.length < 2 {
+        return ""
+    }
+    let content_len = tok.length - 2
+    mut buf: @u8 = mem.alloc(@u8, content_len + 1)
+    mut i: usize = 0
+    while i < content_len {
+        buf[i] = source[tok.start + 1 + i]
+        i += 1
+    }
+    buf[content_len] = 0 as u8
+    return buf as string
+}
+
+// Parses type annotations with pointer prefixes (e.g. `i32`, `@Point`, `@@u8`).
+act parse_type_annotation(p: @Parser) -> string {
+    mut at_count: usize = 0
+    while parser_match(p, TOK_AT) {
+        at_count += 1
+    }
+    let type_tok = parser_consume(p, TOK_IDENTIFIER, "Expected type name")
+    let raw_name = copy_slice_to_string(p.source, type_tok.start, type_tok.length)
+    if at_count == 0 {
+        return raw_name
+    }
+    let total_len = at_count + str.len(raw_name)
+    mut buf: @u8 = mem.alloc(@u8, total_len + 1)
+    mut i: usize = 0
+    while i < at_count {
+        buf[i] = '@'
+        i += 1
+    }
+    mut j: usize = 0
+    while j < str.len(raw_name) {
+        buf[at_count + j] = raw_name[j]
+        j += 1
+    }
+    buf[total_len] = 0 as u8
+    return buf as string
+}
+
+// Parses a module import declaration (`use "path.vl"` or `use sys.io`).
+act parse_use_decl(p: @Parser) -> @StmtNode {
+    let use_tok = parser_consume(p, TOK_USE, "Expected 'use'")
+    if parser_check(p, TOK_STRING_LIT) {
+        let str_tok = parser_advance(p)
+        let mod_path = get_string_literal_text(p.source, str_tok)
+        parser_skip_newlines(p)
+        return make_use_decl(mod_path, use_tok.line, use_tok.col)
+    }
+
+    let first_part_tok = parser_consume(p, TOK_IDENTIFIER, "Expected module path after 'use'")
+    mut mod_path = copy_slice_to_string(p.source, first_part_tok.start, first_part_tok.length)
+
+    while parser_match(p, TOK_DOT) {
+        let part_tok = parser_consume(p, TOK_IDENTIFIER, "Expected module component after '.'")
+        let part_str = copy_slice_to_string(p.source, part_tok.start, part_tok.length)
+        let total_len = str.len(mod_path) + 1 + str.len(part_str)
+        mut buf: @u8 = mem.alloc(@u8, total_len + 1)
+        mut i: usize = 0
+        while i < str.len(mod_path) {
+            buf[i] = mod_path[i]
+            i += 1
+        }
+        buf[str.len(mod_path)] = '.'
+        mut j: usize = 0
+        while j < str.len(part_str) {
+            buf[str.len(mod_path) + 1 + j] = part_str[j]
+            j += 1
+        }
+        buf[total_len] = 0 as u8
+        mod_path = buf as string
+    }
+
+    parser_skip_newlines(p)
+    return make_use_decl(mod_path, use_tok.line, use_tok.col)
+}
+
+// Parses a struct data blueprint declaration (`data Name { ... }`).
+act parse_data_decl(p: @Parser) -> @StmtNode {
+    let data_tok = parser_consume(p, TOK_DATA, "Expected 'data'")
+    let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected struct name after 'data'")
+    let sname = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
+
+    parser_skip_newlines(p)
+    parser_consume(p, TOK_LBRACE, "Expected '{' after struct name")
+    parser_skip_newlines(p)
+
+    mut first_field: @FieldNode = null
+    mut last_field: @FieldNode = null
+    mut count: usize = 0
+
+    while not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
+        let fname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected field name")
+        let fname = copy_slice_to_string(p.source, fname_tok.start, fname_tok.length)
+        parser_consume(p, TOK_COLON, "Expected ':' after field name")
+        let ftype = parse_type_annotation(p)
+        let fnode = make_field_node(fname, ftype, fname_tok.line, fname_tok.col)
+
+        if first_field == null {
+            first_field = fnode
+            last_field = fnode
+        } else {
+            last_field.next = fnode
+            last_field = fnode
+        }
+        count += 1
+
+        parser_skip_newlines(p)
+        parser_match(p, TOK_COMMA)
+        parser_skip_newlines(p)
+    }
+
+    parser_consume(p, TOK_RBRACE, "Expected '}' after struct body")
+    return make_data_decl(sname, first_field, count, data_tok.line, data_tok.col)
+}
+
+// Parses a function declaration (`act Name(params) -> RetType { ... }`).
+act parse_function_decl(p: @Parser) -> @StmtNode {
+    let act_tok = parser_consume(p, TOK_ACT, "Expected 'act'")
+    let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected function name")
+    let fname = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
+
+    parser_consume(p, TOK_LPAREN, "Expected '(' after function name")
+
+    mut first_param: @ParamNode = null
+    mut last_param: @ParamNode = null
+    mut count: usize = 0
+
+    if not parser_check(p, TOK_RPAREN) {
+        mut more_params = true
+        while more_params {
+            let pname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected parameter name")
+            let pname = copy_slice_to_string(p.source, pname_tok.start, pname_tok.length)
+            parser_consume(p, TOK_COLON, "Expected ':' after parameter name")
+            let ptype = parse_type_annotation(p)
+            let pnode = make_param_node(pname, ptype, pname_tok.line, pname_tok.col)
+
+            if first_param == null {
+                first_param = pnode
+                last_param = pnode
+            } else {
+                last_param.next = pnode
+                last_param = pnode
+            }
+            count += 1
+
+            if not parser_match(p, TOK_COMMA) {
+                more_params = false
+            }
+        }
+    }
+
+    parser_consume(p, TOK_RPAREN, "Expected ')' after parameters")
+
+    mut ret_type = "void"
+    if parser_match(p, TOK_ARROW) {
+        ret_type = parse_type_annotation(p)
+    }
+
+    parser_skip_newlines(p)
+    let body = parse_block(p)
+    return make_function_decl(fname, first_param, count, ret_type, body, act_tok.line, act_tok.col)
+}
+
+// Parses an external foreign function declaration (`extern act Name(...) -> RetType`).
+act parse_extern_decl(p: @Parser) -> @StmtNode {
+    let ext_tok = parser_consume(p, TOK_EXTERN, "Expected 'extern'")
+    parser_consume(p, TOK_ACT, "Expected 'act' after 'extern'")
+    let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected external function name")
+    let fname = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
+
+    parser_consume(p, TOK_LPAREN, "Expected '(' after function name")
+
+    mut first_param: @ParamNode = null
+    mut last_param: @ParamNode = null
+    mut count: usize = 0
+
+    if not parser_check(p, TOK_RPAREN) {
+        mut more_params = true
+        while more_params {
+            let pname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected parameter name")
+            let pname = copy_slice_to_string(p.source, pname_tok.start, pname_tok.length)
+            parser_consume(p, TOK_COLON, "Expected ':' after parameter name")
+            let ptype = parse_type_annotation(p)
+            let pnode = make_param_node(pname, ptype, pname_tok.line, pname_tok.col)
+
+            if first_param == null {
+                first_param = pnode
+                last_param = pnode
+            } else {
+                last_param.next = pnode
+                last_param = pnode
+            }
+            count += 1
+
+            if not parser_match(p, TOK_COMMA) {
+                more_params = false
+            }
+        }
+    }
+
+    parser_consume(p, TOK_RPAREN, "Expected ')' after parameters")
+
+    mut ret_type = "void"
+    if parser_match(p, TOK_ARROW) {
+        ret_type = parse_type_annotation(p)
+    }
+
+    parser_skip_newlines(p)
+    return make_extern_decl(fname, first_param, count, ret_type, ext_tok.line, ext_tok.col)
+}
+
+// Parses a top-level declaration (data, act, extern, use, global let/mut).
+act parse_top_level_declaration(p: @Parser) -> @StmtNode {
+    parser_skip_newlines(p)
+    if parser_is_at_end(p) {
+        return null
+    }
+
+    if parser_check(p, TOK_USE) {
+        return parse_use_decl(p)
+    }
+    if parser_check(p, TOK_DATA) {
+        return parse_data_decl(p)
+    }
+    if parser_check(p, TOK_ACT) {
+        return parse_function_decl(p)
+    }
+    if parser_check(p, TOK_EXTERN) {
+        return parse_extern_decl(p)
+    }
+    if parser_check(p, TOK_LET) or parser_check(p, TOK_MUT) {
+        return parse_statement(p)
+    }
+
+    let tok = parser_peek(p, 0)
+    report_error(p.filename, tok.line, tok.col, "Unexpected top-level token")
+    p.had_error = true
+    parser_advance(p)
+    return null
+}
+
+// Parses a complete Velo translation unit into an AST ProgramNode.
+act parse_program(p: @Parser) -> @ProgramNode {
+    parser_skip_newlines(p)
+    mut first_decl: @StmtNode = null
+    mut last_decl: @StmtNode = null
+    mut count: usize = 0
+
+    while not parser_is_at_end(p) {
+        let decl = parse_top_level_declaration(p)
+        if decl != null {
+            if first_decl == null {
+                first_decl = decl
+                last_decl = decl
+            } else {
+                last_decl.next = decl
+                last_decl = decl
+            }
+            count += 1
+        }
+        parser_skip_newlines(p)
+    }
+
+    mut prog: @ProgramNode = mem.alloc(@ProgramNode, 1)
+    prog.first_decl = first_decl
+    prog.decl_count = count
+    return prog
+}

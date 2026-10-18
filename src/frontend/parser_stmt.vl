@@ -1,0 +1,193 @@
+// Statement parsing and control flow AST generation for Velo.
+use sys.io
+use sys.mem
+use "token.vl"
+use "../common/utils.vl"
+use "../common/diagnostics.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "parser.vl"
+use "parser_expr.vl"
+
+// Parses a code block enclosed in curly braces `{ ... }`.
+act parse_block(p: @Parser) -> @StmtNode {
+    let lbrace = parser_consume(p, TOK_LBRACE, "Expected '{'")
+    parser_skip_newlines(p)
+
+    mut first_stmt: @StmtNode = null
+    mut last_stmt: @StmtNode = null
+    mut count: usize = 0
+
+    while not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
+        let stmt = parse_statement(p)
+        if stmt != null {
+            if first_stmt == null {
+                first_stmt = stmt
+                last_stmt = stmt
+            } else {
+                last_stmt.next = stmt
+                last_stmt = stmt
+            }
+            count += 1
+        }
+        parser_skip_newlines(p)
+    }
+
+    parser_consume(p, TOK_RBRACE, "Expected '}' at end of block")
+    return make_block_stmt(first_stmt, count, lbrace.line, lbrace.col)
+}
+
+// Parses an `if` conditional statement with optional `else` or `else if` branches.
+act parse_if_stmt(p: @Parser) -> @StmtNode {
+    let if_tok = parser_consume(p, TOK_IF, "Expected 'if'")
+    let condition = parse_expression(p)
+    parser_skip_newlines(p)
+    let then_branch = parse_block(p)
+
+    mut else_branch: @StmtNode = null
+    parser_skip_newlines(p)
+    if parser_match(p, TOK_ELSE) {
+        parser_skip_newlines(p)
+        if parser_check(p, TOK_IF) {
+            else_branch = parse_if_stmt(p)
+        } else {
+            else_branch = parse_block(p)
+        }
+    }
+    return make_if_stmt(condition, then_branch, else_branch, if_tok.line, if_tok.col)
+}
+
+// Parses a `while` loop statement.
+act parse_while_stmt(p: @Parser) -> @StmtNode {
+    let while_tok = parser_consume(p, TOK_WHILE, "Expected 'while'")
+    let condition = parse_expression(p)
+    parser_skip_newlines(p)
+    let body = parse_block(p)
+    return make_while_stmt(condition, body, while_tok.line, while_tok.col)
+}
+
+// Parses a `loop <var> in <start>..<end> { ... }` range loop statement.
+act parse_loop_stmt(p: @Parser) -> @StmtNode {
+    let loop_tok = parser_consume(p, TOK_LOOP, "Expected 'loop'")
+    let iter_tok = parser_consume(p, TOK_IDENTIFIER, "Expected loop variable name")
+    let iter_name = copy_slice_to_string(p.source, iter_tok.start, iter_tok.length)
+
+    parser_consume(p, TOK_IN, "Expected 'in' after loop variable")
+    let start_expr = parse_expression(p)
+    parser_consume(p, TOK_DOTDOT, "Expected '..' in range specification")
+    let end_expr = parse_expression(p)
+
+    parser_skip_newlines(p)
+    let body = parse_block(p)
+    return make_loop_stmt(iter_name, start_expr, end_expr, body, loop_tok.line, loop_tok.col)
+}
+
+// Parses any Velo statement (variable declarations, control flow, assignments, calls).
+act parse_statement(p: @Parser) -> @StmtNode {
+    parser_skip_newlines(p)
+
+    // 1. Defer statement
+    if parser_check(p, TOK_DEFER) {
+        let defer_tok = parser_advance(p)
+        let stmt = parse_statement(p)
+        return make_defer_stmt(stmt, defer_tok.line, defer_tok.col)
+    }
+
+    // 2. Zone statement
+    if parser_check(p, TOK_ZONE) {
+        let zone_tok = parser_advance(p)
+        parser_skip_newlines(p)
+        let body = parse_block(p)
+        return make_zone_stmt(body, zone_tok.line, zone_tok.col)
+    }
+
+    // 3. Mutable variable declaration: `mut x = val` or `mut x: Type = val`
+    if parser_check(p, TOK_MUT) {
+        let mut_tok = parser_advance(p)
+        let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected variable name after 'mut'")
+        let name = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
+        mut type_name = ""
+        if parser_match(p, TOK_COLON) {
+            type_name = parse_type_annotation(p)
+        }
+        mut val: @ExprNode = null
+        if parser_match(p, TOK_ASSIGN) {
+            val = parse_expression(p)
+        }
+        parser_skip_newlines(p)
+        return make_var_decl_stmt(name, type_name, val, true, mut_tok.line, mut_tok.col)
+    }
+
+    // 4. Immutable variable declaration: `let x = val` or `let x: Type = val`
+    if parser_check(p, TOK_LET) {
+        let let_tok = parser_advance(p)
+        let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected variable name after 'let'")
+        let name = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
+        mut type_name = ""
+        if parser_match(p, TOK_COLON) {
+            type_name = parse_type_annotation(p)
+        }
+        mut val: @ExprNode = null
+        if parser_match(p, TOK_ASSIGN) {
+            val = parse_expression(p)
+        }
+        parser_skip_newlines(p)
+        return make_var_decl_stmt(name, type_name, val, false, let_tok.line, let_tok.col)
+    }
+
+    // 5. Short explicit variable declaration: `name: Type = val`
+    if parser_check(p, TOK_IDENTIFIER) {
+        let next_tok = parser_peek(p, 1)
+        if next_tok.kind == TOK_COLON {
+            let name_tok = parser_advance(p)
+            parser_advance(p) // consume ':'
+            let type_name = parse_type_annotation(p)
+            mut val: @ExprNode = null
+            if parser_match(p, TOK_ASSIGN) {
+                val = parse_expression(p)
+            }
+            parser_skip_newlines(p)
+            return make_var_decl_stmt(copy_slice_to_string(p.source, name_tok.start, name_tok.length), type_name, val, false, name_tok.line, name_tok.col)
+        }
+    }
+
+    // 6. Control flow constructs
+    if parser_check(p, TOK_IF) {
+        return parse_if_stmt(p)
+    }
+    if parser_check(p, TOK_WHILE) {
+        return parse_while_stmt(p)
+    }
+    if parser_check(p, TOK_LOOP) {
+        return parse_loop_stmt(p)
+    }
+
+    // 7. Return statement
+    if parser_check(p, TOK_RETURN) {
+        let ret_tok = parser_advance(p)
+        mut val: @ExprNode = null
+        if not parser_check(p, TOK_NEWLINE) and not parser_check(p, TOK_SEMICOLON) and not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
+            val = parse_expression(p)
+        }
+        parser_skip_newlines(p)
+        return make_return_stmt(val, ret_tok.line, ret_tok.col)
+    }
+
+    // 8. Assignment or Expression Statement
+    let expr = parse_expression(p)
+    if expr == null {
+        return null
+    }
+
+    let cur = parser_peek(p, 0)
+    if cur.kind == TOK_ASSIGN or cur.kind == TOK_PLUS_ASSIGN or cur.kind == TOK_MINUS_ASSIGN or cur.kind == TOK_STAR_ASSIGN or cur.kind == TOK_SLASH_ASSIGN {
+        parser_advance(p)
+        let val = parse_expression(p)
+        parser_skip_newlines(p)
+        return make_assign_stmt(expr, cur.kind, val, expr.line, expr.col)
+    }
+
+    parser_skip_newlines(p)
+    return make_expr_stmt(expr, expr.line, expr.col)
+}

@@ -1,0 +1,93 @@
+// Type representation and descriptors for the Velo programming language AST.
+use sys.mem
+
+// Type kind constants
+let TYPE_KIND_PRIMITIVE: i32 = 1
+let TYPE_KIND_POINTER: i32 = 2
+let TYPE_KIND_USER: i32 = 3
+let TYPE_KIND_VOID: i32 = 4
+
+// Represents a type descriptor in the Velo AST.
+// Supports primitive types (i32, f32, bool, string, etc.),
+// pointers (@T, @@T), and user-defined struct types.
+data TypeNode {
+    kind: i32
+    name: string
+    elem_type: @TypeNode
+    line: i32
+    col: i32
+}
+
+// Allocates and initializes a primitive type descriptor.
+//
+// Parameters:
+//   name: Type identifier (e.g. "i32", "f32", "string", "bool").
+//   line: Source line number.
+//   col: Source column number.
+//
+// Memory Ownership:
+//   Allocated inside the active zone arena.
+act make_primitive_type(name: string, line: i32, col: i32) -> @TypeNode {
+    mut t: @TypeNode = mem.alloc(@TypeNode, 1)
+    t.kind = TYPE_KIND_PRIMITIVE
+    t.name = name
+    t.elem_type = null
+    t.line = line
+    t.col = col
+    return t
+}
+
+// Allocates and initializes a pointer type descriptor (@T).
+//
+// Parameters:
+//   elem: Pointee type descriptor.
+//   line: Source line number.
+//   col: Source column number.
+//
+// Memory Ownership:
+//   Allocated inside the active zone arena.
+act make_pointer_type(elem: @TypeNode, line: i32, col: i32) -> @TypeNode {
+    mut t: @TypeNode = mem.alloc(@TypeNode, 1)
+    t.kind = TYPE_KIND_POINTER
+    t.name = ""
+    t.elem_type = elem
+    t.line = line
+    t.col = col
+    return t
+}
+
+// Allocates and initializes a user-defined struct type descriptor.
+//
+// Parameters:
+//   name: Name of the struct (e.g. "Point", "Token").
+//   line: Source line number.
+//   col: Source column number.
+//
+// Memory Ownership:
+//   Allocated inside the active zone arena.
+act make_user_type(name: string, line: i32, col: i32) -> @TypeNode {
+    mut t: @TypeNode = mem.alloc(@TypeNode, 1)
+    t.kind = TYPE_KIND_USER
+    t.name = name
+    t.elem_type = null
+    t.line = line
+    t.col = col
+    return t
+}
+
+// Allocates and initializes a void return type descriptor.
+act make_void_type(line: i32, col: i32) -> @TypeNode {
+    mut t: @TypeNode = mem.alloc(@TypeNode, 1)
+    t.kind = TYPE_KIND_VOID
+    t.name = "void"
+    t.elem_type = null
+    t.line = line
+    t.col = col
+    return t
+}
+
+// Checks if a type descriptor represents a pointer type.
+act type_is_pointer(t: @TypeNode) -> bool {
+    if t == null { return false }
+    return t.kind == TYPE_KIND_POINTER
+}
