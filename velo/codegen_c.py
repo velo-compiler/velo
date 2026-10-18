@@ -527,15 +527,17 @@ class CCodeGenerator:
         if len(args) != 2:
             raise ValueError("mem.alloc expects exactly 2 arguments: (@Type, count)")
         type_name = self._extract_type_name(args[0])
+        c_type = self._map_type(type_name)
         count_code = self._emit_expression(args[1])
-        return f"({type_name}*)velo_mem_alloc(sizeof({type_name}), (size_t)({count_code}))"
+        return f"({c_type}*)velo_mem_alloc(sizeof({c_type}), (size_t)({count_code}))"
 
     def _lower_heap_alloc(self, args: List[Expr]) -> str:
         if len(args) != 2:
             raise ValueError("mem.heap_alloc expects exactly 2 arguments: (@Type, count)")
         type_name = self._extract_type_name(args[0])
+        c_type = self._map_type(type_name)
         count_code = self._emit_expression(args[1])
-        return f"({type_name}*)velo_heap_alloc(sizeof({type_name}), (size_t)({count_code}))"
+        return f"({c_type}*)velo_heap_alloc(sizeof({c_type}), (size_t)({count_code}))"
 
     def _lower_heap_free(self, args: List[Expr]) -> str:
         if len(args) != 1:

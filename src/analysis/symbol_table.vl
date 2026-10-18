@@ -137,7 +137,7 @@ act scope_lookup(sc: @Scope, name: string) -> @Symbol {
 act define_variable(st: @SymbolTable, name: string, type_name: string, is_mut: bool, line: i32, col: i32) -> bool {
     let existing = scope_lookup_immediate(st.current_scope, name)
     if existing != null {
-        report_error("semantic", line, col, "Redeclaration of variable in current scope")
+        io.println("[Velo Error] semantic:{line}:{col} - Redeclaration of variable '{name}' in current scope")
         st.error_count += 1
         return false
     }

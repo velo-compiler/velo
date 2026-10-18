@@ -30,12 +30,18 @@ data VisitedFile {
 data CompilerDriver {
     first_visited: @VisitedFile
     error_count: usize
+    first_decl: @StmtNode
+    last_decl: @StmtNode
+    total_decls: usize
 }
 
 // Initializes a CompilerDriver instance.
 act init_driver(d: @CompilerDriver) {
     d.first_visited = null
     d.error_count = 0
+    d.first_decl = null
+    d.last_decl = null
+    d.total_decls = 0
 }
 
 // Checks if a module path has already been parsed.
@@ -58,29 +64,30 @@ act mark_file_visited(d: @CompilerDriver, path: string) {
     d.first_visited = vf
 }
 
-// Compiles a single source file into an AST program with recursive multi-file resolution.
-act resolve_and_parse(d: @CompilerDriver, file_path: string) -> @ProgramNode {
+// Recursively loads a file and its imported dependencies in topological order.
+act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
+    let file_path = canonicalize_path(raw_path)
     if is_file_visited(d, file_path) {
-        return null
+        return
     }
     mark_file_visited(d, file_path)
 
     if not fs.exists(file_path) {
         io.println("[Velo Error] Source file does not exist: {file_path}")
         d.error_count += 1
-        return null
+        return
     }
 
     let source = fs.read_file(file_path)
     if source == null {
         io.println("[Velo Error] Failed to read source file: {file_path}")
         d.error_count += 1
-        return null
+        return
     }
     defer mem.free(source)
 
     let slen = str.len(source)
-    mut lex = create_lexer(source, slen, 4096)
+    mut lex = create_lexer(source, slen, 8192)
     tokenize(@lex)
 
     mut p: Parser
@@ -89,30 +96,57 @@ act resolve_and_parse(d: @CompilerDriver, file_path: string) -> @ProgramNode {
 
     let dir = get_dir_name(file_path)
 
-    // Recursively resolve imported modules (`use "module.vl"`)
+    // First pass: recursively load all imported dependencies
     mut cur = prog.first_decl
     while cur != null {
         if cur.kind == DECL_USE {
             let mod_path = cur.module_path
-            // Skip system modules (`sys.io`, `sys.mem`, `sys.fs`)
             if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" {
                 let resolved_path = combine_paths(dir, mod_path)
-                let sub_prog = resolve_and_parse(d, resolved_path)
-                if sub_prog != null and sub_prog.first_decl != null {
-                    // Splice sub-program declarations into main declaration sequence
-                    mut last_sub = sub_prog.first_decl
-                    while last_sub.next != null {
-                        last_sub = last_sub.next
-                    }
-                    last_sub.next = prog.first_decl
-                    prog.first_decl = sub_prog.first_decl
-                    prog.decl_count += sub_prog.decl_count
-                }
+                load_file_and_deps(d, resolved_path)
             }
         }
         cur = cur.next
     }
 
+    // Second pass: append current file's declarations to the accumulated driver decl list
+    mut decl = prog.first_decl
+    while decl != null {
+        let nxt = decl.next
+        decl.next = null
+
+        mut skip = false
+        if decl.kind == DECL_USE {
+            let mod_path = decl.module_path
+            if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" {
+                skip = true
+            }
+        }
+
+        if not skip {
+            if d.first_decl == null {
+                d.first_decl = decl
+                d.last_decl = decl
+            } else {
+                d.last_decl.next = decl
+                d.last_decl = decl
+            }
+            d.total_decls += 1
+        }
+
+        decl = nxt
+    }
+}
+
+// Compiles a single source file into an AST program with recursive multi-file resolution.
+act resolve_and_parse(d: @CompilerDriver, file_path: string) -> @ProgramNode {
+    load_file_and_deps(d, file_path)
+    if d.error_count > 0 or d.first_decl == null {
+        return null
+    }
+    mut prog: @ProgramNode = mem.alloc(@ProgramNode, 1)
+    prog.first_decl = d.first_decl
+    prog.decl_count = d.total_decls
     return prog
 }
 

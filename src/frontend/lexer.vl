@@ -108,11 +108,10 @@ act tokenize(lex: @Lexer) {
 
         // 0. End of string / null terminator
         if c == 0 or c == '\0' {
-            break
-        }
+            lex.pos = len
 
         // 1. Whitespace
-        if is_whitespace(c) {
+        } else if is_whitespace(c) {
             lex.pos += 1
             lex.col += 1
 
@@ -132,23 +131,23 @@ act tokenize(lex: @Lexer) {
             // Block comment
             lex.pos += 2
             lex.col += 2
-            mut closed = false
-            while lex.pos + 1 < len {
+            mut in_block = true
+            while lex.pos + 1 < len and in_block {
                 if src[lex.pos] == '*' and src[lex.pos + 1] == '/' {
                     lex.pos += 2
                     lex.col += 2
-                    closed = true
-                    break
-                }
-                if src[lex.pos] == '\n' {
-                    lex.line += 1
-                    lex.col = 1
+                    in_block = false
                 } else {
-                    lex.col += 1
+                    if src[lex.pos] == '\n' {
+                        lex.line += 1
+                        lex.col = 1
+                    } else {
+                        lex.col += 1
+                    }
+                    lex.pos += 1
                 }
-                lex.pos += 1
             }
-            if !closed {
+            if in_block {
                 report_warning("lexer", start_line, start_col, "Unclosed block comment")
             }
         } else if is_ident_start(c) {

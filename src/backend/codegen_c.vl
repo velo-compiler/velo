@@ -160,11 +160,13 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
 // Emits statements inside a block node.
 act emit_c_block_stmts(sb: @StringBuilder, st: @SymbolTable, block: @StmtNode, indent: i32, defers: @@DeferNode) {
     if block == null { return }
+    enter_scope(st)
     mut cur = block.first_stmt
     while cur != null {
         emit_c_stmt(sb, st, cur, indent, defers)
         cur = cur.next
     }
+    exit_scope(st)
 }
 
 // Emits complete C99 translation unit from an AST ProgramNode.
@@ -235,6 +237,31 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
                 }
             }
             sb_append_str(@sb, ");\n")
+        }
+        cur = cur.next
+    }
+    sb_append_line(@sb, "", 0)
+
+    // 4.5. Top-level global variables and constants
+    cur = prog.first_decl
+    while cur != null {
+        if cur.kind == STMT_VAR_DECL {
+            mut inferred_type = cur.type_name
+            if inferred_type == null or str.len(inferred_type) == 0 {
+                if cur.val_expr != null {
+                    inferred_type = infer_expr_type(st, cur.val_expr)
+                } else {
+                    inferred_type = "i32"
+                }
+            }
+            sb_append_str(@sb, map_type_to_c(inferred_type))
+            sb_append_char(@sb, ' ')
+            sb_append_str(@sb, cur.name)
+            if cur.val_expr != null {
+                sb_append_str(@sb, " = ")
+                emit_c_expr(@sb, st, cur.val_expr)
+            }
+            sb_append_str(@sb, ";\n")
         }
         cur = cur.next
     }
