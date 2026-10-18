@@ -227,6 +227,8 @@ class CCodeGenerator:
 
             if ret_val_code:
                 self._emit_line(f"return {ret_val_code};")
+            elif self.current_function and self.current_function.name == "main":
+                self._emit_line("return 0;")
             else:
                 self._emit_line("return;")
 

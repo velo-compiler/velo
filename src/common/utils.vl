@@ -101,3 +101,99 @@ act parse_float_from_slice(source: string, start: usize, len: usize) -> f32 {
     return int_part + frac_part
 }
 
+// Extracts the file stem from a path (e.g. "examples/01_hello.vl" -> "01_hello").
+act get_file_stem(path: string) -> string {
+    if path == null { return "output" }
+    let plen = str.len(path)
+    if plen == 0 { return "output" }
+
+    mut last_slash: i32 = -1
+    mut last_dot: i32 = -1
+    mut i: usize = 0
+    while i < plen {
+        let c = path[i]
+        if c == '/' or c == '\\' {
+            last_slash = i as i32
+        } else if c == '.' {
+            last_dot = i as i32
+        }
+        i += 1
+    }
+
+    let start = (last_slash + 1) as usize
+    mut end = plen
+    if last_dot > last_slash {
+        end = last_dot as usize
+    }
+    if end <= start {
+        return "output"
+    }
+    return copy_slice_to_string(path, start, end - start)
+}
+
+// Extracts the directory component from a path (e.g. "examples/08_mult/main.vl" -> "examples/08_mult").
+act get_dir_name(path: string) -> string {
+    if path == null { return "." }
+    let plen = str.len(path)
+    if plen == 0 { return "." }
+
+    mut last_slash: i32 = -1
+    mut i: usize = 0
+    while i < plen {
+        let c = path[i]
+        if c == '/' or c == '\\' {
+            last_slash = i as i32
+        }
+        i += 1
+    }
+
+    if last_slash <= 0 {
+        return "."
+    }
+    return copy_slice_to_string(path, 0, last_slash as usize)
+}
+
+// Combines a directory path and relative filename (e.g. "src" + "main.vl" -> "src/main.vl").
+act combine_paths(dir: string, file: string) -> string {
+    if dir == null or dir == "." { return file }
+    if file == null { return dir }
+    let dlen = str.len(dir)
+    let flen = str.len(file)
+    let total_len = dlen + 1 + flen
+    mut buf: @u8 = mem.alloc(@u8, total_len + 1)
+    mut i: usize = 0
+    while i < dlen {
+        buf[i] = dir[i]
+        i += 1
+    }
+    buf[dlen] = '/'
+    mut j: usize = 0
+    while j < flen {
+        buf[dlen + 1 + j] = file[j]
+        j += 1
+    }
+    buf[total_len] = 0 as u8
+    return buf as string
+}
+
+// Normalizes path separators to backslashes for shell command execution.
+act to_native_path(path: string) -> string {
+    if path == null { return null }
+    let plen = str.len(path)
+    mut buf: @u8 = mem.alloc(@u8, plen + 1)
+    mut i: usize = 0
+    while i < plen {
+        let c = path[i]
+        if c == '/' {
+            buf[i] = '\\'
+        } else {
+            buf[i] = c
+        }
+        i += 1
+    }
+    buf[plen] = 0 as u8
+    return buf as string
+}
+
+
+

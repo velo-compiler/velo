@@ -1,0 +1,208 @@
+// Standalone native compiler driver orchestrating compilation, code generation, and GCC linking.
+use sys.io
+use sys.fs
+use sys.mem
+use "../frontend/token.vl"
+use "../frontend/lexer.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../frontend/parser.vl"
+use "../frontend/parser_expr.vl"
+use "../frontend/parser_stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "codegen_expr.vl"
+use "codegen_c.vl"
+
+// Foreign C system() execution interface
+extern act system(command: string) -> i32
+
+// Linked list tracking visited files to prevent circular or duplicate module parsing.
+data VisitedFile {
+    path: string
+    next: @VisitedFile
+}
+
+// Driver state maintaining module resolution and compiler options.
+data CompilerDriver {
+    first_visited: @VisitedFile
+    error_count: usize
+}
+
+// Initializes a CompilerDriver instance.
+act init_driver(d: @CompilerDriver) {
+    d.first_visited = null
+    d.error_count = 0
+}
+
+// Checks if a module path has already been parsed.
+act is_file_visited(d: @CompilerDriver, path: string) -> bool {
+    mut cur = d.first_visited
+    while cur != null {
+        if cur.path == path {
+            return true
+        }
+        cur = cur.next
+    }
+    return false
+}
+
+// Marks a module path as visited.
+act mark_file_visited(d: @CompilerDriver, path: string) {
+    mut vf: @VisitedFile = mem.alloc(@VisitedFile, 1)
+    vf.path = path
+    vf.next = d.first_visited
+    d.first_visited = vf
+}
+
+// Compiles a single source file into an AST program with recursive multi-file resolution.
+act resolve_and_parse(d: @CompilerDriver, file_path: string) -> @ProgramNode {
+    if is_file_visited(d, file_path) {
+        return null
+    }
+    mark_file_visited(d, file_path)
+
+    if not fs.exists(file_path) {
+        io.println("[Velo Error] Source file does not exist: {file_path}")
+        d.error_count += 1
+        return null
+    }
+
+    let source = fs.read_file(file_path)
+    if source == null {
+        io.println("[Velo Error] Failed to read source file: {file_path}")
+        d.error_count += 1
+        return null
+    }
+    defer mem.free(source)
+
+    let slen = str.len(source)
+    mut lex = create_lexer(source, slen, 4096)
+    tokenize(@lex)
+
+    mut p: Parser
+    init_parser(@p, file_path, source, lex.tokens, lex.token_count)
+    let prog = parse_program(@p)
+
+    let dir = get_dir_name(file_path)
+
+    // Recursively resolve imported modules (`use "module.vl"`)
+    mut cur = prog.first_decl
+    while cur != null {
+        if cur.kind == DECL_USE {
+            let mod_path = cur.module_path
+            // Skip system modules (`sys.io`, `sys.mem`, `sys.fs`)
+            if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" {
+                let resolved_path = combine_paths(dir, mod_path)
+                let sub_prog = resolve_and_parse(d, resolved_path)
+                if sub_prog != null and sub_prog.first_decl != null {
+                    // Splice sub-program declarations into main declaration sequence
+                    mut last_sub = sub_prog.first_decl
+                    while last_sub.next != null {
+                        last_sub = last_sub.next
+                    }
+                    last_sub.next = prog.first_decl
+                    prog.first_decl = sub_prog.first_decl
+                    prog.decl_count += sub_prog.decl_count
+                }
+            }
+        }
+        cur = cur.next
+    }
+
+    return prog
+}
+
+// Translates a Velo source program into a complete, standalone C99 source string.
+act compile_source_to_c(source_path: string) -> string {
+    mut d: CompilerDriver
+    init_driver(@d)
+
+    let prog = resolve_and_parse(@d, source_path)
+    if prog == null or d.error_count > 0 {
+        return null
+    }
+
+    mut st: SymbolTable
+    init_symbol_table(@st)
+
+    let sem_ok = check_program(@st, prog)
+    if not sem_ok or st.error_count > 0 {
+        io.println("[Velo Error] Semantic analysis failed with {st.error_count} errors.")
+        return null
+    }
+
+    return emit_translation_unit(@st, prog)
+}
+
+// Builds a native executable from a Velo source file by compiling to C and invoking GCC.
+act build_executable(source_path: string, output_exe: string) -> bool {
+    let c_code = compile_source_to_c(source_path)
+    if c_code == null {
+        return false
+    }
+
+    let stem = get_file_stem(source_path)
+    mut c_path_sb = create_sb(128)
+    sb_append_str(@c_path_sb, ".velo_cache/")
+    sb_append_str(@c_path_sb, stem)
+    sb_append_str(@c_path_sb, ".c")
+    let c_file_path = sb_to_string(@c_path_sb)
+
+    fs.write_file(c_file_path, c_code)
+
+    mut out_path = output_exe
+    if out_path == null or str.len(out_path) == 0 {
+        mut out_sb = create_sb(128)
+        sb_append_str(@out_sb, ".velo_cache/")
+        sb_append_str(@out_sb, stem)
+        sb_append_str(@out_sb, ".exe")
+        out_path = sb_to_string(@out_sb)
+    }
+
+    // Assemble GCC compilation command
+    mut cmd_sb = create_sb(512)
+    if fs.exists("C:/msys64/ucrt64/bin/gcc.exe") {
+        sb_append_str(@cmd_sb, "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ")
+    }
+    sb_append_str(@cmd_sb, "gcc -O2 -std=c99 -I velo/runtime ")
+    sb_append_str(@cmd_sb, to_native_path(c_file_path))
+    sb_append_str(@cmd_sb, " -o ")
+    sb_append_str(@cmd_sb, to_native_path(out_path))
+    let cmd = sb_to_string(@cmd_sb)
+
+    let res = system(cmd)
+    if res != 0 {
+        io.println("[Velo Error] GCC compilation failed with exit code {res}")
+        return false
+    }
+
+    return fs.exists(out_path)
+}
+
+// Compiles and runs a Velo source file.
+act run_source_file(source_path: string) -> i32 {
+    let stem = get_file_stem(source_path)
+    mut exe_sb = create_sb(128)
+    sb_append_str(@exe_sb, ".velo_cache/")
+    sb_append_str(@exe_sb, stem)
+    sb_append_str(@exe_sb, ".exe")
+    let exe_path = sb_to_string(@exe_sb)
+
+    let ok = build_executable(source_path, exe_path)
+    if not ok {
+        return 1
+    }
+
+    mut run_sb = create_sb(256)
+    if fs.exists("C:/msys64/ucrt64/bin/gcc.exe") {
+        sb_append_str(@run_sb, "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ")
+    }
+    sb_append_str(@run_sb, to_native_path(exe_path))
+    let run_cmd = sb_to_string(@run_sb)
+
+    return system(run_cmd)
+}
