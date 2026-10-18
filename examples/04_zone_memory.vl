@@ -1,0 +1,50 @@
+use sys.io
+use sys.mem
+
+data Point {
+    x: f32
+    y: f32
+}
+
+// 1. Foreign Function Interface (bind to standard C rand)
+extern act rand() -> i32
+
+act main() {
+    io.println("--- Velo Milestone 4: Hardware Zone Arena & C FFI ---")
+
+    let r = rand()
+    io.println("C library rand() call: {r}")
+
+    // 2. Memory before zone
+    let used_before = mem.used()
+    io.println("Arena memory before zone: {used_before} bytes")
+
+    // 3. Hardware 'zone' block
+    zone {
+        count: i64 = 100
+        // Allocate 100 Points on the 16MB hardware arena
+        points: @Point = mem.alloc(@Point, count)
+
+        let used_inside = mem.used()
+        io.println("Arena memory inside zone: {used_inside} bytes (allocated 100 Points)")
+
+        // Initialize array of structs using pointer indexing
+        loop i in 0..count {
+            p: @Point = @points[i]
+            p.x = 10.0
+            p.y = 20.0
+        }
+
+        // Direct verification of elements
+        p_first: @Point = @points[0]
+        p_last: @Point = @points[count - 1]
+        io.println("First point: ({p_first.x}, {p_first.y})")
+        io.println("Last point: ({p_last.x}, {p_last.y})")
+    }
+
+    // 4. Memory after zone
+    let used_after = mem.used()
+    io.println("Arena memory after zone exit: {used_after} bytes (instant 1-cycle reset!)")
+
+    io.println("--- Milestone 4 Complete! ---")
+}

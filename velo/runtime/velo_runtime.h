@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stddef.h>
+#include <time.h>
 
 // Explicit bit-sized integer and float types
 typedef int8_t   i8;
@@ -34,6 +35,10 @@ static inline size_t velo_zone_push(void) {
 
 static inline void velo_zone_pop(size_t watermark) {
     g_velo_arena_offset = watermark;
+}
+
+static inline size_t velo_mem_used(void) {
+    return g_velo_arena_offset;
 }
 
 static inline void* velo_mem_alloc(size_t size, size_t count) {

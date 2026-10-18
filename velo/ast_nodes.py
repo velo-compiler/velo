@@ -53,6 +53,13 @@ class MemberAccess(Expr):
     col: int
 
 @dataclass
+class IndexExpr(Expr):
+    target: Expr
+    index: Expr
+    line: int
+    col: int
+
+@dataclass
 class DerefExpr(Expr):
     operand: Expr
     line: int
@@ -153,6 +160,12 @@ class LoopStmt(Stmt):
     line: int
     col: int
 
+@dataclass
+class ZoneStmt(Stmt):
+    body: BlockStmt
+    line: int
+    col: int
+
 # Top-level Declarations
 @dataclass
 class Field:
@@ -181,6 +194,14 @@ class FunctionDecl(Decl):
     params: List[Param]
     return_type: Optional[str]
     body: BlockStmt
+    line: int
+    col: int
+
+@dataclass
+class ExternDecl(Decl):
+    name: str
+    params: List[Param]
+    return_type: Optional[str]
     line: int
     col: int
 

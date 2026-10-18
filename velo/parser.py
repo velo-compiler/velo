@@ -1,10 +1,10 @@
 from typing import List, Optional, Tuple
 from velo.tokens import Token, TokenType
 from velo.ast_nodes import (
-    Program, Decl, UseStmt, FunctionDecl, Param, BlockStmt, DataDecl, Field,
-    Stmt, ExprStmt, ReturnStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt,
+    Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field,
+    Stmt, ExprStmt, ReturnStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt, ZoneStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral,
-    Identifier, MemberAccess, DerefExpr, StructLiteral, CallExpr, AddressOf, BinaryExpr, UnaryExpr
+    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CallExpr, AddressOf, BinaryExpr, UnaryExpr
 )
 
 class ParserError(Exception):
@@ -66,6 +66,8 @@ class Parser:
     def _parse_top_level_declaration(self) -> Optional[Decl]:
         if self._check(TokenType.USE):
             return self._parse_use_decl()
+        elif self._check(TokenType.EXTERN):
+            return self._parse_extern_decl()
         elif self._check(TokenType.DATA):
             return self._parse_data_decl()
         elif self._check(TokenType.ACT):
@@ -86,6 +88,39 @@ class Parser:
         module_path = ".".join(parts)
         self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
         return UseStmt(module_path=module_path, line=use_tok.line, col=use_tok.col)
+
+    def _parse_extern_decl(self) -> ExternDecl:
+        extern_tok = self._consume(TokenType.EXTERN, "Expected 'extern'")
+        self._consume(TokenType.ACT, "Expected 'act' after 'extern'")
+        name_tok = self._consume(TokenType.IDENTIFIER, "Expected external function name")
+
+        self._consume(TokenType.LPAREN, "Expected '(' after function name")
+        params: List[Param] = []
+
+        if not self._check(TokenType.RPAREN):
+            while True:
+                param_name = self._consume(TokenType.IDENTIFIER, "Expected parameter name")
+                self._consume(TokenType.COLON, "Expected ':' after parameter name")
+                param_type = self._parse_type_annotation()
+                params.append(Param(name=param_name.value, type_name=param_type, line=param_name.line, col=param_name.col))
+
+                if not self._match(TokenType.COMMA):
+                    break
+
+        self._consume(TokenType.RPAREN, "Expected ')' after parameters")
+
+        return_type: Optional[str] = None
+        if self._match(TokenType.ARROW):
+            return_type = self._parse_type_annotation()
+
+        self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
+        return ExternDecl(
+            name=name_tok.value,
+            params=params,
+            return_type=return_type,
+            line=extern_tok.line,
+            col=extern_tok.col
+        )
 
     def _parse_data_decl(self) -> DataDecl:
         data_tok = self._consume(TokenType.DATA, "Expected 'data'")
@@ -168,7 +203,14 @@ class Parser:
     def _parse_statement(self) -> Stmt:
         self._skip_newlines()
 
-        # 1. Variable declaration with 'mut'
+        # 1. Zone statement
+        if self._check(TokenType.ZONE):
+            zone_tok = self._advance()
+            self._skip_newlines()
+            body = self._parse_block()
+            return ZoneStmt(body=body, line=zone_tok.line, col=zone_tok.col)
+
+        # 2. Variable declaration with 'mut'
         if self._check(TokenType.MUT):
             mut_tok = self._advance()
             name_tok = self._consume(TokenType.IDENTIFIER, "Expected variable name after 'mut'")
@@ -181,7 +223,7 @@ class Parser:
             self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
             return VarDeclStmt(name=name_tok.value, type_name=type_name, value=val, is_mut=True, line=mut_tok.line, col=mut_tok.col)
 
-        # 2. Variable declaration with 'let'
+        # 3. Variable declaration with 'let'
         if self._check(TokenType.LET):
             let_tok = self._advance()
             name_tok = self._consume(TokenType.IDENTIFIER, "Expected variable name after 'let'")
@@ -194,7 +236,7 @@ class Parser:
             self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
             return VarDeclStmt(name=name_tok.value, type_name=type_name, value=val, is_mut=False, line=let_tok.line, col=let_tok.col)
 
-        # 3. Variable declaration with explicit type (e.g. x: i32 = 10, ptr: @Point = @p)
+        # 4. Variable declaration with explicit type (e.g. x: i32 = 10, ptr: @Point = @p)
         if self._peek().type == TokenType.IDENTIFIER and self._peek(1).type == TokenType.COLON:
             name_tok = self._advance()
             self._advance() # Consume ':'
@@ -205,19 +247,19 @@ class Parser:
             self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
             return VarDeclStmt(name=name_tok.value, type_name=type_name, value=val, is_mut=False, line=name_tok.line, col=name_tok.col)
 
-        # 4. If statement
+        # 5. If statement
         if self._check(TokenType.IF):
             return self._parse_if_stmt()
 
-        # 5. While statement
+        # 6. While statement
         if self._check(TokenType.WHILE):
             return self._parse_while_stmt()
 
-        # 6. Loop range statement
+        # 7. Loop range statement
         if self._check(TokenType.LOOP):
             return self._parse_loop_stmt()
 
-        # 7. Return statement
+        # 8. Return statement
         if self._check(TokenType.RETURN):
             ret_tok = self._advance()
             val = None
@@ -226,7 +268,7 @@ class Parser:
             self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
             return ReturnStmt(value=val, line=ret_tok.line, col=ret_tok.col)
 
-        # 8. Assignment or Expression Statement
+        # 9. Assignment or Expression Statement
         expr = self._parse_expression()
 
         assign_ops = (TokenType.ASSIGN, TokenType.PLUS_ASSIGN, TokenType.MINUS_ASSIGN, TokenType.STAR_ASSIGN, TokenType.SLASH_ASSIGN)
@@ -357,6 +399,11 @@ class Parser:
                 else:
                     member_tok = self._consume(TokenType.IDENTIFIER, "Expected member name after '.'")
                     expr = MemberAccess(target=expr, member=member_tok.value, line=member_tok.line, col=member_tok.col)
+            elif self._match(TokenType.LBRACKET):
+                lbracket = self.tokens[self.pos - 1]
+                idx_expr = self._parse_expression()
+                self._consume(TokenType.RBRACKET, "Expected ']' after array index")
+                expr = IndexExpr(target=expr, index=idx_expr, line=lbracket.line, col=lbracket.col)
             elif self._match(TokenType.LPAREN):
                 lparen = self.tokens[self.pos - 1]
                 args: List[Expr] = []
@@ -375,7 +422,12 @@ class Parser:
     def _is_struct_literal(self) -> bool:
         if not (self._check(TokenType.IDENTIFIER) and self._peek(1).type == TokenType.LBRACE):
             return False
-        # Look ahead inside the '{' to distinguish from block statements (e.g. loop i in 0..count { ...)
+        
+        # In Velo, struct types are PascalCase (start with uppercase)
+        ident_name = self._peek().value
+        if not ident_name or not ident_name[0].isupper():
+            return False
+
         idx = 2
         while self.pos + idx < len(self.tokens) and self.tokens[self.pos + idx].type in (TokenType.NEWLINE, TokenType.SEMICOLON):
             idx += 1
