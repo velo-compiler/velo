@@ -16,6 +16,7 @@ use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "codegen_expr.vl"
 use "codegen_c.vl"
+use "docgen.vl"
 
 // Foreign C system() execution interface
 extern act system(command: string) -> i32
@@ -239,4 +240,27 @@ act run_source_file(source_path: string) -> i32 {
     let run_cmd = sb_to_string(@run_sb)
 
     return system(run_cmd)
+}
+
+// Generates Markdown documentation for a Velo source file.
+act generate_docs_for_source(source_path: string) -> string {
+    let source = fs.read_file(source_path)
+    if source == null {
+        io.println("[Velo Error] Failed to read source file: {source_path}")
+        return null
+    }
+    defer mem.free(source)
+
+    let slen = str.len(source)
+    mut lex = create_lexer(source, slen, 8192)
+    tokenize(@lex)
+
+    mut p: Parser
+    init_parser(@p, source_path, source, lex.tokens, lex.token_count)
+    let prog = parse_program(@p)
+    if prog == null {
+        return null
+    }
+
+    return generate_markdown_docs(source_path, source, prog)
 }

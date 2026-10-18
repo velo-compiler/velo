@@ -136,3 +136,7 @@ class CompilerDriver:
         cmd = [exe_path] + (args or [])
         res = subprocess.run(cmd)
         return res.returncode
+
+    def generate_docs(self, source_path: str) -> str:
+        from velo.docgen import generate_markdown_docs
+        return generate_markdown_docs(source_path)

@@ -128,15 +128,19 @@ act tokenize(lex: @Lexer) {
                 lex.pos += 1
             }
         } else if c == '/' and lex.pos + 1 < len and src[lex.pos + 1] == '*' {
-            // Block comment
+            // Nested block comment
             lex.pos += 2
             lex.col += 2
-            mut in_block = true
-            while lex.pos + 1 < len and in_block {
-                if src[lex.pos] == '*' and src[lex.pos + 1] == '/' {
+            mut depth: usize = 1
+            while lex.pos + 1 < len and depth > 0 {
+                if src[lex.pos] == '/' and src[lex.pos + 1] == '*' {
                     lex.pos += 2
                     lex.col += 2
-                    in_block = false
+                    depth += 1
+                } else if src[lex.pos] == '*' and src[lex.pos + 1] == '/' {
+                    lex.pos += 2
+                    lex.col += 2
+                    depth -= 1
                 } else {
                     if src[lex.pos] == '\n' {
                         lex.line += 1
@@ -147,7 +151,7 @@ act tokenize(lex: @Lexer) {
                     lex.pos += 1
                 }
             }
-            if in_block {
+            if depth > 0 {
                 report_warning("lexer", start_line, start_col, "Unclosed block comment")
             }
         } else if is_ident_start(c) {

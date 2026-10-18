@@ -25,9 +25,10 @@ Velo is a working, self-hosted, triple-bootstrapped systems programming language
 * **Supported Operators**: Binary `&`, `|`, `^`, `<<`, `>>`, unary `~`, and compound assignments `&=`, `|=`, `^=`, `<<=`, `>>=`.
 * **Verified**: Full operator precedence hierarchy in Stage 1 and Stage 2 self-hosted compilers. Verified with `examples/14_bitwise_operators.vl` and `tests/test_bitwise_operators.py`.
 
-### 1.2 Comments & Documentation (🟡 P2 Ergonomic)
-* **No Block Comments**: Only single-line `//` is supported. Multi-line `/* ... */` comments do not exist in the lexer.
-* **No Docstrings**: No syntax for structured doc comments (e.g. `///` or `/** */`) that can be extracted into HTML/Markdown documentation.
+### 1.2 Comments & Documentation [COMPLETED] ✅
+* **Nested Block Comments**: Arbitrary-depth multi-line comments (`/* ... /* ... */ ... */`) implemented in both Stage 1 and Stage 2 self-hosted lexers with unclosed comment diagnostics.
+* **Structured Documentation**: Single-line `///` and block `/** ... */` doc comment recognition for top-level structs, functions, and externs.
+* **Native Doc Generator CLI**: Built-in CLI command `velo doc <source.vl> [-o output.md]` extracting clean GitHub-flavored Markdown API reference documentation tables and signatures directly from AST definitions. Verified with `examples/15_docs_and_comments.vl` and `tests/test_docs_and_comments.py`.
 
 ### 1.3 Literal Formatting (🟡 P2 Ergonomic)
 * **Numeric Bases**: No hexadecimal (`0xDEADBEEF`), binary (`0b101010`), or octal (`0o755`) literals. Colors in graphics programming are almost universally written in hex (`0xFF00FFFF`).

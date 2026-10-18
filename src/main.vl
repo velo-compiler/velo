@@ -10,6 +10,7 @@ act print_usage() {
     io.println("  velo run <source.vl>               Compile and run a Velo program")
     io.println("  velo build <source.vl> -o <binary> Compile to standalone native executable")
     io.println("  velo emit-c <source.vl>            Emit generated C99 code to stdout")
+    io.println("  velo doc <source.vl> [-o <out.md>] Extract API documentation to Markdown")
     io.println("  velo version                       Display compiler version")
     io.println("  velo help                          Display this help manual")
 }
@@ -87,6 +88,31 @@ act main(argc: i32, argv: @string) -> i32 {
             return 0
         }
         return 1
+    }
+
+    if cmd == "doc" {
+        if argc < 3 {
+            io.println("[Velo Error] 'doc' requires a source file path")
+            return 1
+        }
+        let source_file = argv[2]
+        mut output_file = ""
+        if argc >= 5 and argv[3] == "-o" {
+            output_file = argv[4]
+        }
+        zone {
+            let docs = generate_docs_for_source(source_file)
+            if docs == null {
+                return 1
+            }
+            if str.len(output_file) > 0 {
+                fs.write_file(output_file, docs)
+                io.println("[Velo] Successfully generated documentation: {output_file}")
+            } else {
+                io.print(docs)
+            }
+        }
+        return 0
     }
 
     io.println("[Velo Error] Unknown command: '{cmd}'. Run 'velo help' for usage.")

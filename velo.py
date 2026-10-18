@@ -24,6 +24,11 @@ def main():
     emit_parser = subparsers.add_parser("emit-c", help="Emit generated C99 code without compiling")
     emit_parser.add_argument("file", help="Path to the .vl source file")
 
+    # 'doc' command
+    doc_parser = subparsers.add_parser("doc", help="Generate Markdown API documentation from source")
+    doc_parser.add_argument("file", help="Path to the .vl source file")
+    doc_parser.add_argument("-o", "--output", help="Path for the output markdown file")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -42,6 +47,13 @@ def main():
         elif args.command == "emit-c":
             c_code = driver.compile_to_c(args.file)
             print(c_code)
+        elif args.command == "doc":
+            docs = driver.generate_docs(args.file)
+            if args.output:
+                Path(args.output).write_text(docs, encoding="utf-8")
+                print(f"[Velo] Successfully generated documentation: {args.output}")
+            else:
+                print(docs, end="")
     except Exception as e:
         print(f"\n[Velo Error] {e}", file=sys.stderr)
         sys.exit(1)

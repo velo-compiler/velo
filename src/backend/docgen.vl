@@ -1,0 +1,313 @@
+// Markdown API documentation generator for Velo source modules.
+use sys.io
+use sys.mem
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+
+// Scans backwards to extract block doc comments (/** ... */)
+act extract_block_doc(source: string, block_start: usize, block_end: usize) -> string {
+    mut sb = create_sb(512)
+    mut p = block_start
+    mut at_line_start = true
+    while p < block_end {
+        let c = source[p]
+        if c == '\n' {
+            if sb.len > 0 {
+                sb_append_str(@sb, "\n> ")
+            }
+            at_line_start = true
+            p += 1
+        } else if at_line_start and (c == ' ' or c == '\t' or c == '\r' or c == '*') {
+            p += 1
+        } else {
+            at_line_start = false
+            sb_append_char(@sb, c)
+            p += 1
+        }
+    }
+    // Trim trailing empty line markers if any
+    while sb.len > 0 and (sb.buffer[sb.len - 1] == ' ' or sb.buffer[sb.len - 1] == '\r' or sb.buffer[sb.len - 1] == '\n' or sb.buffer[sb.len - 1] == '>') {
+        sb.len -= 1
+    }
+    if sb.len > 0 {
+        sb.buffer[sb.len] = 0 as u8
+    }
+    return sb_to_string(@sb)
+}
+
+// Scans preceding lines of a declaration to extract doc comments (`///`, `//`, or `/** */`).
+act extract_doc_comment(source: string, target_line: i32) -> string {
+    if source == null or target_line <= 1 { return "" }
+    let slen = str.len(source)
+
+    // Locate the start offset of target_line (1-indexed)
+    mut cur_line: i32 = 1
+    mut line_start: usize = 0
+    mut i: usize = 0
+    while i < slen and cur_line < target_line {
+        if source[i] == '\n' {
+            cur_line += 1
+            line_start = i + 1
+        }
+        i += 1
+    }
+
+    if line_start == 0 { return "" }
+
+    // Check if the preceding text right before line_start contains block comment end `*/`
+    mut p: usize = line_start - 1
+    while p > 0 and (source[p] == '\n' or source[p] == '\r' or source[p] == ' ' or source[p] == '\t') {
+        p -= 1
+    }
+    if p >= 1 and source[p - 1] == '*' and source[p] == '/' {
+        // Find matching `/**`
+        mut b = p - 1
+        mut found_doc = false
+        while b >= 2 and not found_doc {
+            if source[b - 2] == '/' and source[b - 1] == '*' and source[b] == '*' {
+                found_doc = true
+            } else {
+                b -= 1
+            }
+        }
+        if found_doc {
+            return extract_block_doc(source, b + 1, p - 1)
+        }
+    }
+
+    // Otherwise, check for one or more preceding single-line `///` or `//` comments
+    mut end_line = target_line - 1
+
+    // Find bounds of end_line
+    mut l_end = line_start - 1
+    if l_end == 0 { return "" }
+    mut l_start: usize = 0
+    mut k: usize = l_end
+    while k > 0 {
+        k -= 1
+        if source[k] == '\n' {
+            l_start = k + 1
+            k = 0
+        }
+    }
+
+    // Check if line `end_line` starts with `//`
+    mut chk = l_start
+    while chk < l_end and (source[chk] == ' ' or source[chk] == '\t' or source[chk] == '\r') {
+        chk += 1
+    }
+    if chk + 1 >= l_end or source[chk] != '/' or source[chk + 1] != '/' {
+        return ""
+    }
+
+    // Scan backwards to find the first consecutive doc comment line
+    mut scan_line = end_line
+    mut scan_start = l_start
+    mut scanning = true
+    while scan_line > 1 and scanning {
+        if scan_start <= 1 {
+            scan_line = 1
+            scan_start = 0
+            scanning = false
+        } else {
+            let prev_e = scan_start - 1
+            mut prev_s: usize = 0
+            mut m: usize = prev_e
+            while m > 0 {
+                m -= 1
+                if source[m] == '\n' {
+                    prev_s = m + 1
+                    m = 0
+                }
+            }
+            mut cp = prev_s
+            while cp < prev_e and (source[cp] == ' ' or source[cp] == '\t' or source[cp] == '\r') {
+                cp += 1
+            }
+            if cp + 1 < prev_e and source[cp] == '/' and source[cp + 1] == '/' {
+                scan_line -= 1
+                scan_start = prev_s
+            } else {
+                scanning = false
+            }
+        }
+    }
+
+    // Extract lines from scan_line to end_line
+    mut sb = create_sb(1024)
+    mut cur_l = scan_line
+    mut cur_s = scan_start
+    while cur_l <= end_line {
+        mut cur_e = cur_s
+        while cur_e < slen and source[cur_e] != '\n' {
+            cur_e += 1
+        }
+
+        mut cstart = cur_s
+        while cstart < cur_e and (source[cstart] == ' ' or source[cstart] == '\t' or source[cstart] == '\r') {
+            cstart += 1
+        }
+        if cstart + 1 < cur_e and source[cstart] == '/' and source[cstart + 1] == '/' {
+            cstart += 2
+            if cstart < cur_e and source[cstart] == '/' {
+                cstart += 1
+            }
+            if cstart < cur_e and source[cstart] == ' ' {
+                cstart += 1
+            }
+            mut cend = cur_e
+            while cend > cstart and (source[cend - 1] == '\r' or source[cend - 1] == ' ') {
+                cend -= 1
+            }
+            if cend > cstart {
+                if sb.len > 0 {
+                    sb_append_str(@sb, "\n> ")
+                }
+                let line_str = copy_slice_to_string(source, cstart, cend - cstart)
+                sb_append_str(@sb, line_str)
+            }
+        }
+
+        cur_s = cur_e + 1
+        cur_l += 1
+    }
+
+    return sb_to_string(@sb)
+}
+
+// Generates complete GitHub-flavored Markdown API documentation from an AST program.
+act generate_markdown_docs(filename: string, source: string, prog: @ProgramNode) -> string {
+    mut sb = create_sb(4096)
+
+    sb_append_str(@sb, "# API Reference: `")
+    sb_append_str(@sb, filename)
+    sb_append_str(@sb, "`\n\n")
+
+    // 1. Structs / Data types
+    mut has_structs = false
+    mut cur = prog.first_decl
+    while cur != null {
+        if cur.kind == DECL_DATA {
+            has_structs = true
+        }
+        cur = cur.next
+    }
+
+    if has_structs {
+        sb_append_str(@sb, "## Data Structures\n\n")
+        cur = prog.first_decl
+        while cur != null {
+            if cur.kind == DECL_DATA {
+                sb_append_str(@sb, "### `data ")
+                sb_append_str(@sb, cur.name)
+                sb_append_str(@sb, "`\n\n")
+
+                let doc = extract_doc_comment(source, cur.line)
+                if str.len(doc) > 0 {
+                    sb_append_str(@sb, "> ")
+                    sb_append_str(@sb, doc)
+                    sb_append_str(@sb, "\n\n")
+                }
+
+                sb_append_str(@sb, "| Field | Type |\n")
+                sb_append_str(@sb, "| :--- | :--- |\n")
+                mut cur_f = cur.first_field
+                while cur_f != null {
+                    sb_append_str(@sb, "| `")
+                    sb_append_str(@sb, cur_f.name)
+                    sb_append_str(@sb, "` | `")
+                    sb_append_str(@sb, cur_f.type_name)
+                    sb_append_str(@sb, "` |\n")
+                    cur_f = cur_f.next
+                }
+                sb_append_str(@sb, "\n")
+            }
+            cur = cur.next
+        }
+    }
+
+    // 2. Functions
+    mut has_functions = false
+    cur = prog.first_decl
+    while cur != null {
+        if cur.kind == DECL_FUNCTION and cur.name != "main" {
+            has_functions = true
+        }
+        cur = cur.next
+    }
+
+    if has_functions {
+        sb_append_str(@sb, "## Functions\n\n")
+        cur = prog.first_decl
+        while cur != null {
+            if cur.kind == DECL_FUNCTION and cur.name != "main" {
+                sb_append_str(@sb, "### `act ")
+                sb_append_str(@sb, cur.name)
+                sb_append_char(@sb, '(')
+                mut cur_p = cur.first_param
+                while cur_p != null {
+                    sb_append_str(@sb, cur_p.name)
+                    sb_append_str(@sb, ": ")
+                    sb_append_str(@sb, cur_p.type_name)
+                    if cur_p.next != null {
+                        sb_append_str(@sb, ", ")
+                    }
+                    cur_p = cur_p.next
+                }
+                sb_append_str(@sb, ") -> ")
+                sb_append_str(@sb, cur.return_type)
+                sb_append_str(@sb, "`\n\n")
+
+                let doc = extract_doc_comment(source, cur.line)
+                if str.len(doc) > 0 {
+                    sb_append_str(@sb, "> ")
+                    sb_append_str(@sb, doc)
+                    sb_append_str(@sb, "\n\n")
+                }
+            }
+            cur = cur.next
+        }
+    }
+
+    // 3. Extern Declarations
+    mut has_externs = false
+    cur = prog.first_decl
+    while cur != null {
+        if cur.kind == DECL_EXTERN {
+            has_externs = true
+        }
+        cur = cur.next
+    }
+
+    if has_externs {
+        sb_append_str(@sb, "## External C Interfaces\n\n")
+        cur = prog.first_decl
+        while cur != null {
+            if cur.kind == DECL_EXTERN {
+                sb_append_str(@sb, "* `extern act ")
+                sb_append_str(@sb, cur.name)
+                sb_append_char(@sb, '(')
+                mut cur_p = cur.first_param
+                while cur_p != null {
+                    sb_append_str(@sb, cur_p.name)
+                    sb_append_str(@sb, ": ")
+                    sb_append_str(@sb, cur_p.type_name)
+                    if cur_p.next != null {
+                        sb_append_str(@sb, ", ")
+                    }
+                    cur_p = cur_p.next
+                }
+                sb_append_str(@sb, ") -> ")
+                sb_append_str(@sb, cur.return_type)
+                sb_append_str(@sb, "`\n")
+            }
+            cur = cur.next
+        }
+        sb_append_str(@sb, "\n")
+    }
+
+    return sb_to_string(@sb)
+}
