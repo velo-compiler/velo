@@ -133,7 +133,11 @@ python velo.py emit-c main.vl
 
 * [Language Specification](docs/SPECIFICATION.md)
 * [Step 2 Specification (Compiler Essentials)](docs/STEP2_SPECIFICATION.md)
-* [Compiler Architecture](docs/ARCHITECTURE.md)
+* [Compiler Architecture (Stage 1)](docs/ARCHITECTURE.md)
 * [Stage 1 Development Roadmap](docs/STAGE1_ROADMAP.md)
 * [Step 2 Development Roadmap](docs/STEP2_ROADMAP.md)
+* [Stage 2 Self-Hosting Architecture](docs/STAGE2_ARCHITECTURE.md)
+* [Stage 2 Development Roadmap](docs/STAGE2_ROADMAP.md)
+* [Stage 2 Production Code Standards](docs/STAGE2_CODE_STANDARDS.md)
+
 
