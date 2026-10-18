@@ -2,7 +2,7 @@ from typing import List, Optional
 from velo.tokens import Token, TokenType
 from velo.ast_nodes import (
     Program, Decl, UseStmt, FunctionDecl, Param, BlockStmt,
-    Stmt, ExprStmt, ReturnStmt, VarDeclStmt,
+    Stmt, ExprStmt, ReturnStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral,
     Identifier, MemberAccess, CallExpr, AddressOf, BinaryExpr, UnaryExpr
 )
@@ -73,7 +73,6 @@ class Parser:
 
     def _parse_use_decl(self) -> UseStmt:
         use_tok = self._consume(TokenType.USE, "Expected 'use'")
-        # Module path e.g. sys.io
         parts = []
         first_part = self._consume(TokenType.IDENTIFIER, "Expected module name after 'use'")
         parts.append(first_part.value)
@@ -122,7 +121,6 @@ class Parser:
         )
 
     def _parse_type_annotation(self) -> str:
-        # Handles @T, @@T, or regular types like i32, string, void
         prefix = ""
         while self._match(TokenType.AT):
             prefix += "@"
@@ -147,6 +145,56 @@ class Parser:
     def _parse_statement(self) -> Stmt:
         self._skip_newlines()
 
+        # 1. Variable declaration with 'mut'
+        if self._check(TokenType.MUT):
+            mut_tok = self._advance()
+            name_tok = self._consume(TokenType.IDENTIFIER, "Expected variable name after 'mut'")
+            type_name = None
+            if self._match(TokenType.COLON):
+                type_name = self._parse_type_annotation()
+            val = None
+            if self._match(TokenType.ASSIGN):
+                val = self._parse_expression()
+            self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
+            return VarDeclStmt(name=name_tok.value, type_name=type_name, value=val, is_mut=True, line=mut_tok.line, col=mut_tok.col)
+
+        # 2. Variable declaration with 'let'
+        if self._check(TokenType.LET):
+            let_tok = self._advance()
+            name_tok = self._consume(TokenType.IDENTIFIER, "Expected variable name after 'let'")
+            type_name = None
+            if self._match(TokenType.COLON):
+                type_name = self._parse_type_annotation()
+            val = None
+            if self._match(TokenType.ASSIGN):
+                val = self._parse_expression()
+            self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
+            return VarDeclStmt(name=name_tok.value, type_name=type_name, value=val, is_mut=False, line=let_tok.line, col=let_tok.col)
+
+        # 3. Variable declaration with explicit type (e.g. x: i32 = 10)
+        if self._peek().type == TokenType.IDENTIFIER and self._peek(1).type == TokenType.COLON:
+            name_tok = self._advance()
+            self._advance() # Consume ':'
+            type_name = self._parse_type_annotation()
+            val = None
+            if self._match(TokenType.ASSIGN):
+                val = self._parse_expression()
+            self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
+            return VarDeclStmt(name=name_tok.value, type_name=type_name, value=val, is_mut=False, line=name_tok.line, col=name_tok.col)
+
+        # 4. If statement
+        if self._check(TokenType.IF):
+            return self._parse_if_stmt()
+
+        # 5. While statement
+        if self._check(TokenType.WHILE):
+            return self._parse_while_stmt()
+
+        # 6. Loop range statement
+        if self._check(TokenType.LOOP):
+            return self._parse_loop_stmt()
+
+        # 7. Return statement
         if self._check(TokenType.RETURN):
             ret_tok = self._advance()
             val = None
@@ -155,13 +203,82 @@ class Parser:
             self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
             return ReturnStmt(value=val, line=ret_tok.line, col=ret_tok.col)
 
-        # Expression statement (e.g. io.println(...))
+        # 8. Assignment or Expression Statement
         expr = self._parse_expression()
+
+        # Check for assignment operators: =, +=, -=, *=, /=
+        assign_ops = (TokenType.ASSIGN, TokenType.PLUS_ASSIGN, TokenType.MINUS_ASSIGN, TokenType.STAR_ASSIGN, TokenType.SLASH_ASSIGN)
+        for op_type in assign_ops:
+            if self._match(op_type):
+                op_val = self.tokens[self.pos - 1].value
+                val = self._parse_expression()
+                self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
+                return AssignStmt(target=expr, op=op_val, value=val, line=expr.line, col=expr.col)
+
         self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
         return ExprStmt(expr=expr, line=expr.line, col=expr.col)
 
+    def _parse_if_stmt(self) -> IfStmt:
+        if_tok = self._consume(TokenType.IF, "Expected 'if'")
+        condition = self._parse_expression()
+        self._skip_newlines()
+        then_branch = self._parse_block()
+
+        else_branch = None
+        self._skip_newlines()
+        if self._match(TokenType.ELSE):
+            self._skip_newlines()
+            if self._check(TokenType.IF):
+                else_branch = self._parse_if_stmt()
+            else:
+                else_branch = self._parse_block()
+
+        return IfStmt(condition=condition, then_branch=then_branch, else_branch=else_branch, line=if_tok.line, col=if_tok.col)
+
+    def _parse_while_stmt(self) -> WhileStmt:
+        while_tok = self._consume(TokenType.WHILE, "Expected 'while'")
+        condition = self._parse_expression()
+        self._skip_newlines()
+        body = self._parse_block()
+        return WhileStmt(condition=condition, body=body, line=while_tok.line, col=while_tok.col)
+
+    def _parse_loop_stmt(self) -> LoopStmt:
+        loop_tok = self._consume(TokenType.LOOP, "Expected 'loop'")
+        iterator_tok = self._consume(TokenType.IDENTIFIER, "Expected loop variable name")
+        self._consume(TokenType.IN, "Expected 'in' after loop variable")
+        start_expr = self._parse_expression()
+        self._consume(TokenType.DOTDOT, "Expected '..' in range")
+        end_expr = self._parse_expression()
+        self._skip_newlines()
+        body = self._parse_block()
+        return LoopStmt(
+            iterator=iterator_tok.value,
+            start_expr=start_expr,
+            end_expr=end_expr,
+            body=body,
+            line=loop_tok.line,
+            col=loop_tok.col
+        )
+
+    # Expression Precedence Hierarchy
     def _parse_expression(self) -> Expr:
-        return self._parse_equality()
+        return self._parse_logical_or()
+
+    def _parse_logical_or(self) -> Expr:
+        expr = self._parse_logical_and()
+        while self._match(TokenType.OR):
+            op = self.tokens[self.pos - 1].value
+            right = self._parse_logical_and()
+            expr = BinaryExpr(left=expr, op=op, right=right, line=expr.line, col=expr.col)
+        return expr
+
+    def _parse_logical_and(self) -> Expr:
+        expr = self._parse_equality()
+        while self._match(TokenType.AND):
+            op = self.tokens[self.pos - 1].value
+            right = self._parse_equality()
+            expr = BinaryExpr(left=expr, op=op, right=right, line=expr.line, col=expr.col)
+        return expr
 
     def _parse_equality(self) -> Expr:
         expr = self._parse_comparison()
@@ -211,11 +328,9 @@ class Parser:
 
         while True:
             if self._match(TokenType.DOT):
-                # Member access e.g. io.println or p.x
                 member_tok = self._consume(TokenType.IDENTIFIER, "Expected member name after '.'")
                 expr = MemberAccess(target=expr, member=member_tok.value, line=member_tok.line, col=member_tok.col)
             elif self._match(TokenType.LPAREN):
-                # Call expression e.g. println("Hello")
                 lparen = self.tokens[self.pos - 1]
                 args: List[Expr] = []
                 if not self._check(TokenType.RPAREN):

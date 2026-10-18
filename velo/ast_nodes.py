@@ -103,8 +103,40 @@ class VarDeclStmt(Stmt):
     col: int
 
 @dataclass
+class AssignStmt(Stmt):
+    target: Expr
+    op: str
+    value: Expr
+    line: int
+    col: int
+
+@dataclass
 class BlockStmt(Stmt):
     statements: List[Stmt]
+    line: int
+    col: int
+
+@dataclass
+class IfStmt(Stmt):
+    condition: Expr
+    then_branch: BlockStmt
+    else_branch: Optional[Stmt] # BlockStmt or another IfStmt (for else if)
+    line: int
+    col: int
+
+@dataclass
+class WhileStmt(Stmt):
+    condition: Expr
+    body: BlockStmt
+    line: int
+    col: int
+
+@dataclass
+class LoopStmt(Stmt):
+    iterator: str
+    start_expr: Expr
+    end_expr: Expr
+    body: BlockStmt
     line: int
     col: int
 

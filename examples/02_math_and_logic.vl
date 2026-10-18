@@ -1,0 +1,42 @@
+use sys.io
+
+act fibonacci(n: i32) -> i32 {
+    if n <= 1 {
+        return n
+    }
+    return fibonacci(n - 1) + fibonacci(n - 2)
+}
+
+act main() {
+    io.println("--- Velo Milestone 2: Math, Logic & Loops ---")
+
+    // 1. Immutable vs Mutable variables
+    total_steps: i32 = 5
+    mut counter: i32 = 0
+
+    // 2. While loop with compound assignment
+    io.println("Testing while loop:")
+    while counter < 3 {
+        io.println("  While step: {counter}")
+        counter += 1
+    }
+
+    // 3. Loop range statement with if/else conditionals
+    io.println("Testing range loop with conditions:")
+    loop i in 0..total_steps {
+        if i == 0 {
+            io.println("  Loop start at 0")
+        } else if i == total_steps - 1 {
+            io.println("  Loop end at {i}")
+        } else {
+            io.println("  Loop middle step: {i}")
+        }
+    }
+
+    // 4. Function call with math calculation
+    let n = 7
+    let result = fibonacci(n)
+    io.println("Fibonacci({n}) = {result}")
+
+    io.println("--- Milestone 2 Complete! ---")
+}
