@@ -16,12 +16,13 @@ This roadmap defines the engineering milestones to complete **Step 2** and prepa
 
 ---
 
-### Milestone 2.2: File System I/O (`sys.fs`)
+### Milestone 2.2: File System I/O (`sys.fs`) [COMPLETED]
 * **Goal**: Enable Velo to read and write files on disk at native speed.
 * **Deliverables**:
-  * Runtime implementation of `fs.read_file`, `fs.write_file`, `fs.exists`, and `fs.size`.
-  * Safe memory management of read buffers using `defer mem.free(content)`.
-* **Test Case**: `examples/07_file_io.vl` writes a test file, checks existence and file size, reads it back, asserts content match, and cleans up.
+  * [x] Runtime implementation of `fs.read_file`, `fs.write_file`, `fs.exists`, `fs.size`, and `fs.remove`.
+  * [x] Safe memory management of read buffers using `defer mem.free(content)` and heap accounting.
+  * [x] Smart string value comparison (`str1 == str2`) and boolean string interpolation.
+* **Test Case**: `examples/07_file_io.vl` writes a test file, checks existence and file size, reads it back, asserts content match, and cleans up. (Verified: 14/14 unit tests passing).
 
 ---
 

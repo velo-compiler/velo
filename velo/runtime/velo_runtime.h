@@ -95,4 +95,71 @@ static inline void velo_io_print(const char* str) {
     printf("%s", str);
 }
 
+// Built-in File System primitives (sys.fs)
+static inline char* velo_fs_read_file(const char* path) {
+    if (!path) return NULL;
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    if (sz < 0) {
+        fclose(f);
+        return NULL;
+    }
+    fseek(f, 0, SEEK_SET);
+    char* buf = (char*)velo_heap_alloc(1, (size_t)sz + 1);
+    if (!buf) {
+        fclose(f);
+        return NULL;
+    }
+    size_t read_bytes = fread(buf, 1, (size_t)sz, f);
+    buf[read_bytes] = '\0';
+    fclose(f);
+    return buf;
+}
+
+static inline bool velo_fs_write_file(const char* path, const char* content) {
+    if (!path) return false;
+    FILE* f = fopen(path, "wb");
+    if (!f) return false;
+    if (content) {
+        size_t len = strlen(content);
+        if (len > 0) {
+            size_t written = fwrite(content, 1, len, f);
+            if (written != len) {
+                fclose(f);
+                return false;
+            }
+        }
+    }
+    fclose(f);
+    return true;
+}
+
+static inline bool velo_fs_exists(const char* path) {
+    if (!path) return false;
+    FILE* f = fopen(path, "rb");
+    if (f) {
+        fclose(f);
+        return true;
+    }
+    return false;
+}
+
+static inline size_t velo_fs_size(const char* path) {
+    if (!path) return 0;
+    FILE* f = fopen(path, "rb");
+    if (!f) return 0;
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fclose(f);
+    return sz > 0 ? (size_t)sz : 0;
+}
+
+static inline bool velo_fs_remove(const char* path) {
+    if (!path) return false;
+    return (remove(path) == 0);
+}
+
 #endif // VELO_RUNTIME_H
+

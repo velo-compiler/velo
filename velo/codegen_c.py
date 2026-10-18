@@ -285,6 +285,13 @@ class CCodeGenerator:
                     if len(value.args) >= 1:
                         type_name = self._extract_type_name(value.args[0])
                         return f"@{type_name}"
+                elif value.callee.target.name == "fs":
+                    if value.callee.member == "read_file":
+                        return "string"
+                    elif value.callee.member in ("write_file", "exists", "remove", "remove_file"):
+                        return "bool"
+                    elif value.callee.member == "size":
+                        return "usize"
         return "i32"
 
     def _infer_or_map_type(self, type_name: Optional[str], value: Optional[Expr]) -> str:
@@ -322,12 +329,25 @@ class CCodeGenerator:
             return "f32"
         elif isinstance(expr, IntLiteral):
             return "i32"
+        elif isinstance(expr, StringLiteral):
+            return "string"
+        elif isinstance(expr, BoolLiteral):
+            return "bool"
+        elif isinstance(expr, NullLiteral):
+            return "@void"
         elif isinstance(expr, CallExpr):
             if isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier):
                 if expr.callee.target.name == "mem" and expr.callee.member in ("alloc", "heap_alloc"):
                     if len(expr.args) >= 1:
                         type_name = self._extract_type_name(expr.args[0])
                         return f"@{type_name}"
+                elif expr.callee.target.name == "fs":
+                    if expr.callee.member == "read_file":
+                        return "string"
+                    elif expr.callee.member in ("write_file", "exists", "remove", "remove_file"):
+                        return "bool"
+                    elif expr.callee.member == "size":
+                        return "usize"
         return "i32"
 
     def _emit_expression(self, expr: Expr) -> str:
@@ -370,6 +390,15 @@ class CCodeGenerator:
             left = self._emit_expression(expr.left)
             right = self._emit_expression(expr.right)
             op = expr.op
+
+            # Smart string value comparison
+            if op in ("==", "!=") and not isinstance(expr.left, NullLiteral) and not isinstance(expr.right, NullLiteral):
+                l_type = self._resolve_expr_type(expr.left)
+                r_type = self._resolve_expr_type(expr.right)
+                if l_type == "string" and r_type == "string":
+                    cmp_op = "==" if op == "==" else "!="
+                    return f"(({left} != NULL && {right} != NULL) ? (strcmp({left}, {right}) {cmp_op} 0) : ({left} {op} {right}))"
+
             if op == "and": op = "&&"
             elif op == "or": op = "||"
             return f"({left} {op} {right})"
@@ -395,6 +424,18 @@ class CCodeGenerator:
                             return "velo_mem_used()"
                         elif expr.callee.member == "heap_used":
                             return "velo_heap_used()"
+                    
+                    elif expr.callee.target.name == "fs":
+                        if expr.callee.member == "read_file":
+                            return self._lower_fs_read_file(expr.args)
+                        elif expr.callee.member == "write_file":
+                            return self._lower_fs_write_file(expr.args)
+                        elif expr.callee.member == "exists":
+                            return self._lower_fs_exists(expr.args)
+                        elif expr.callee.member == "size":
+                            return self._lower_fs_size(expr.args)
+                        elif expr.callee.member in ("remove", "remove_file"):
+                            return self._lower_fs_remove(expr.args)
 
             callee_code = self._emit_expression(expr.callee)
             arg_codes = [self._emit_expression(arg) for arg in expr.args]
@@ -421,6 +462,37 @@ class CCodeGenerator:
             raise ValueError("mem.free expects exactly 1 argument: (ptr)")
         ptr_code = self._emit_expression(args[0])
         return f"velo_heap_free((void*)({ptr_code}))"
+
+    def _lower_fs_read_file(self, args: List[Expr]) -> str:
+        if len(args) != 1:
+            raise ValueError("fs.read_file expects exactly 1 argument: (path)")
+        path_code = self._emit_expression(args[0])
+        return f"velo_fs_read_file({path_code})"
+
+    def _lower_fs_write_file(self, args: List[Expr]) -> str:
+        if len(args) != 2:
+            raise ValueError("fs.write_file expects exactly 2 arguments: (path, content)")
+        path_code = self._emit_expression(args[0])
+        content_code = self._emit_expression(args[1])
+        return f"velo_fs_write_file({path_code}, {content_code})"
+
+    def _lower_fs_exists(self, args: List[Expr]) -> str:
+        if len(args) != 1:
+            raise ValueError("fs.exists expects exactly 1 argument: (path)")
+        path_code = self._emit_expression(args[0])
+        return f"velo_fs_exists({path_code})"
+
+    def _lower_fs_size(self, args: List[Expr]) -> str:
+        if len(args) != 1:
+            raise ValueError("fs.size expects exactly 1 argument: (path)")
+        path_code = self._emit_expression(args[0])
+        return f"velo_fs_size({path_code})"
+
+    def _lower_fs_remove(self, args: List[Expr]) -> str:
+        if len(args) != 1:
+            raise ValueError("fs.remove expects exactly 1 argument: (path)")
+        path_code = self._emit_expression(args[0])
+        return f"velo_fs_remove({path_code})"
 
     def _extract_type_name(self, expr: Expr) -> str:
         if isinstance(expr, AddressOf) and isinstance(expr.operand, Identifier):
@@ -455,6 +527,12 @@ class CCodeGenerator:
                     if resolved_type in ("f32", "f64"):
                         fmt_parts.append("%.2f")
                         c_args.append(f"(double)({c_expr})")
+                    elif resolved_type == "string":
+                        fmt_parts.append("%s")
+                        c_args.append(f"(const char*)({c_expr})")
+                    elif resolved_type == "bool":
+                        fmt_parts.append("%s")
+                        c_args.append(f"(({c_expr}) ? \"true\" : \"false\")")
                     else:
                         fmt_parts.append("%lld")
                         c_args.append(f"(long long)({c_expr})")
@@ -478,6 +556,12 @@ class CCodeGenerator:
         if resolved in ("f32", "f64"):
             fmt_str = "%f\\n" if member == "println" else "%f"
             return f'printf("{fmt_str}", (double)({arg_code}))'
+        elif resolved == "string":
+            fmt_str = "%s\\n" if member == "println" else "%s"
+            return f'printf("{fmt_str}", (const char*)({arg_code}))'
+        elif resolved == "bool":
+            fmt_str = "%s\\n" if member == "println" else "%s"
+            return f'printf("{fmt_str}", ({arg_code}) ? "true" : "false")'
         else:
             fmt_str = "%lld\\n" if member == "println" else "%lld"
             return f'printf("{fmt_str}", (long long)({arg_code}))'
