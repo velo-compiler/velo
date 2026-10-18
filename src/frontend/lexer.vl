@@ -255,11 +255,28 @@ act tokenize(lex: @Lexer) {
                 if lex.pos + 1 < len and src[lex.pos + 1] == '=' { op_len = 2; op_kind = TOK_NEQ }
                 else { op_kind = TOK_NOT }
             } else if c == '<' {
-                if lex.pos + 1 < len and src[lex.pos + 1] == '=' { op_len = 2; op_kind = TOK_LTE }
+                if lex.pos + 1 < len and src[lex.pos + 1] == '<' {
+                    if lex.pos + 2 < len and src[lex.pos + 2] == '=' { op_len = 3; op_kind = TOK_SHL_ASSIGN }
+                    else { op_len = 2; op_kind = TOK_SHL }
+                } else if lex.pos + 1 < len and src[lex.pos + 1] == '=' { op_len = 2; op_kind = TOK_LTE }
                 else { op_kind = TOK_LT }
             } else if c == '>' {
-                if lex.pos + 1 < len and src[lex.pos + 1] == '=' { op_len = 2; op_kind = TOK_GTE }
+                if lex.pos + 1 < len and src[lex.pos + 1] == '>' {
+                    if lex.pos + 2 < len and src[lex.pos + 2] == '=' { op_len = 3; op_kind = TOK_SHR_ASSIGN }
+                    else { op_len = 2; op_kind = TOK_SHR }
+                } else if lex.pos + 1 < len and src[lex.pos + 1] == '=' { op_len = 2; op_kind = TOK_GTE }
                 else { op_kind = TOK_GT }
+            } else if c == '&' {
+                if lex.pos + 1 < len and src[lex.pos + 1] == '=' { op_len = 2; op_kind = TOK_AMP_ASSIGN }
+                else { op_kind = TOK_AMP }
+            } else if c == '|' {
+                if lex.pos + 1 < len and src[lex.pos + 1] == '=' { op_len = 2; op_kind = TOK_PIPE_ASSIGN }
+                else { op_kind = TOK_PIPE }
+            } else if c == '^' {
+                if lex.pos + 1 < len and src[lex.pos + 1] == '=' { op_len = 2; op_kind = TOK_CARET_ASSIGN }
+                else { op_kind = TOK_CARET }
+            } else if c == '~' {
+                op_kind = TOK_TILDE
             } else if c == '(' { op_kind = TOK_LPAREN }
             else if c == ')' { op_kind = TOK_RPAREN }
             else if c == '{' { op_kind = TOK_LBRACE }

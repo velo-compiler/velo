@@ -45,6 +45,11 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         else if stmt.op == TOK_MINUS_ASSIGN { sb_append_str(sb, "-=") }
         else if stmt.op == TOK_STAR_ASSIGN { sb_append_str(sb, "*=") }
         else if stmt.op == TOK_SLASH_ASSIGN { sb_append_str(sb, "/=") }
+        else if stmt.op == TOK_AMP_ASSIGN { sb_append_str(sb, "&=") }
+        else if stmt.op == TOK_PIPE_ASSIGN { sb_append_str(sb, "|=") }
+        else if stmt.op == TOK_CARET_ASSIGN { sb_append_str(sb, "^=") }
+        else if stmt.op == TOK_SHL_ASSIGN { sb_append_str(sb, "<<=") }
+        else if stmt.op == TOK_SHR_ASSIGN { sb_append_str(sb, ">>=") }
         sb_append_char(sb, ' ')
         emit_c_expr(sb, st, stmt.val_expr)
         sb_append_str(sb, ";\n")

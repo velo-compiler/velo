@@ -21,9 +21,9 @@ Velo is a working, self-hosted, triple-bootstrapped systems programming language
 
 ## 1. Syntax, Lexer & Tokenizer Gaps
 
-### 1.1 Bitwise Operators (🔴 P0 Critical)
-* **Missing Operators**: Velo has no bitwise AND (`&`), bitwise OR (`|`), bitwise XOR (`^`), bitwise NOT (`~`), left-shift (`<<`), or right-shift (`>>`).
-* **Why it matters**: Game engines, graphics pipelines, hardware interfacing, and file formats rely constantly on bitmasks, entity flags, collision layers, and bit-packing. Currently, you cannot even write `flags & MASK`.
+### 1.1 Bitwise Operators [COMPLETED] ✅
+* **Supported Operators**: Binary `&`, `|`, `^`, `<<`, `>>`, unary `~`, and compound assignments `&=`, `|=`, `^=`, `<<=`, `>>=`.
+* **Verified**: Full operator precedence hierarchy in Stage 1 and Stage 2 self-hosted compilers. Verified with `examples/14_bitwise_operators.vl` and `tests/test_bitwise_operators.py`.
 
 ### 1.2 Comments & Documentation (🟡 P2 Ergonomic)
 * **No Block Comments**: Only single-line `//` is supported. Multi-line `/* ... */` comments do not exist in the lexer.

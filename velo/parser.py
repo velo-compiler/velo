@@ -286,7 +286,10 @@ class Parser:
         # 10. Assignment or Expression Statement
         expr = self._parse_expression()
 
-        assign_ops = (TokenType.ASSIGN, TokenType.PLUS_ASSIGN, TokenType.MINUS_ASSIGN, TokenType.STAR_ASSIGN, TokenType.SLASH_ASSIGN)
+        assign_ops = (
+            TokenType.ASSIGN, TokenType.PLUS_ASSIGN, TokenType.MINUS_ASSIGN, TokenType.STAR_ASSIGN, TokenType.SLASH_ASSIGN,
+            TokenType.AMP_ASSIGN, TokenType.PIPE_ASSIGN, TokenType.CARET_ASSIGN, TokenType.SHL_ASSIGN, TokenType.SHR_ASSIGN
+        )
         for op_type in assign_ops:
             if self._match(op_type):
                 op_val = self.tokens[self.pos - 1].value
@@ -352,8 +355,32 @@ class Parser:
         return expr
 
     def _parse_logical_and(self) -> Expr:
-        expr = self._parse_equality()
+        expr = self._parse_bitwise_or()
         while self._match(TokenType.AND):
+            op = self.tokens[self.pos - 1].value
+            right = self._parse_bitwise_or()
+            expr = BinaryExpr(left=expr, op=op, right=right, line=expr.line, col=expr.col)
+        return expr
+
+    def _parse_bitwise_or(self) -> Expr:
+        expr = self._parse_bitwise_xor()
+        while self._match(TokenType.PIPE):
+            op = self.tokens[self.pos - 1].value
+            right = self._parse_bitwise_xor()
+            expr = BinaryExpr(left=expr, op=op, right=right, line=expr.line, col=expr.col)
+        return expr
+
+    def _parse_bitwise_xor(self) -> Expr:
+        expr = self._parse_bitwise_and()
+        while self._match(TokenType.CARET):
+            op = self.tokens[self.pos - 1].value
+            right = self._parse_bitwise_and()
+            expr = BinaryExpr(left=expr, op=op, right=right, line=expr.line, col=expr.col)
+        return expr
+
+    def _parse_bitwise_and(self) -> Expr:
+        expr = self._parse_equality()
+        while self._match(TokenType.AMP):
             op = self.tokens[self.pos - 1].value
             right = self._parse_equality()
             expr = BinaryExpr(left=expr, op=op, right=right, line=expr.line, col=expr.col)
@@ -368,8 +395,16 @@ class Parser:
         return expr
 
     def _parse_comparison(self) -> Expr:
-        expr = self._parse_term()
+        expr = self._parse_shift()
         while self._match(TokenType.LT, TokenType.LE, TokenType.GT, TokenType.GE):
+            op = self.tokens[self.pos - 1].value
+            right = self._parse_shift()
+            expr = BinaryExpr(left=expr, op=op, right=right, line=expr.line, col=expr.col)
+        return expr
+
+    def _parse_shift(self) -> Expr:
+        expr = self._parse_term()
+        while self._match(TokenType.SHL, TokenType.SHR):
             op = self.tokens[self.pos - 1].value
             right = self._parse_term()
             expr = BinaryExpr(left=expr, op=op, right=right, line=expr.line, col=expr.col)
@@ -396,7 +431,7 @@ class Parser:
             tok = self.tokens[self.pos - 1]
             operand = self._parse_unary()
             return AddressOf(operand=operand, line=tok.line, col=tok.col)
-        if self._match(TokenType.MINUS, TokenType.BANG, TokenType.NOT):
+        if self._match(TokenType.MINUS, TokenType.BANG, TokenType.NOT, TokenType.TILDE):
             tok = self.tokens[self.pos - 1]
             operand = self._parse_unary()
             return UnaryExpr(op=tok.value, operand=operand, line=tok.line, col=tok.col)

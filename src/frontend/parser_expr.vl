@@ -202,9 +202,9 @@ act parse_postfix(p: @Parser) -> @ExprNode {
     return expr
 }
 
-// Parses prefix unary operations: `@x` (address-of), `-x`, `!x`, `not x`.
+// Parses prefix unary operations: `@x` (address-of), `-x`, `!x`, `not x`, `~x`.
 act parse_unary(p: @Parser) -> @ExprNode {
-    if parser_check(p, TOK_AT) or parser_check(p, TOK_MINUS) or parser_check(p, TOK_NOT) {
+    if parser_check(p, TOK_AT) or parser_check(p, TOK_MINUS) or parser_check(p, TOK_NOT) or parser_check(p, TOK_TILDE) {
         let op_tok = parser_advance(p)
         let operand = parse_unary(p)
         if op_tok.kind == TOK_AT {
@@ -237,12 +237,23 @@ act parse_term(p: @Parser) -> @ExprNode {
     return expr
 }
 
-// Parses comparison binary expressions: `<`, `<=`, `>`, `>=`.
-act parse_comparison(p: @Parser) -> @ExprNode {
+// Parses bitwise shift binary expressions: `<<`, `>>`.
+act parse_shift(p: @Parser) -> @ExprNode {
     mut expr = parse_term(p)
-    while parser_check(p, TOK_LT) or parser_check(p, TOK_LTE) or parser_check(p, TOK_GT) or parser_check(p, TOK_GTE) {
+    while parser_check(p, TOK_SHL) or parser_check(p, TOK_SHR) {
         let op_tok = parser_advance(p)
         let right = parse_term(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses comparison binary expressions: `<`, `<=`, `>`, `>=`.
+act parse_comparison(p: @Parser) -> @ExprNode {
+    mut expr = parse_shift(p)
+    while parser_check(p, TOK_LT) or parser_check(p, TOK_LTE) or parser_check(p, TOK_GT) or parser_check(p, TOK_GTE) {
+        let op_tok = parser_advance(p)
+        let right = parse_shift(p)
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
     }
     return expr
@@ -259,12 +270,45 @@ act parse_equality(p: @Parser) -> @ExprNode {
     return expr
 }
 
-// Parses logical conjunction expressions: `and`.
-act parse_logical_and(p: @Parser) -> @ExprNode {
+// Parses bitwise AND binary expressions: `&`.
+act parse_bitwise_and(p: @Parser) -> @ExprNode {
     mut expr = parse_equality(p)
-    while parser_check(p, TOK_AND) {
+    while parser_check(p, TOK_AMP) {
         let op_tok = parser_advance(p)
         let right = parse_equality(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses bitwise XOR binary expressions: `^`.
+act parse_bitwise_xor(p: @Parser) -> @ExprNode {
+    mut expr = parse_bitwise_and(p)
+    while parser_check(p, TOK_CARET) {
+        let op_tok = parser_advance(p)
+        let right = parse_bitwise_and(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses bitwise OR binary expressions: `|`.
+act parse_bitwise_or(p: @Parser) -> @ExprNode {
+    mut expr = parse_bitwise_xor(p)
+    while parser_check(p, TOK_PIPE) {
+        let op_tok = parser_advance(p)
+        let right = parse_bitwise_xor(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses logical conjunction expressions: `and`.
+act parse_logical_and(p: @Parser) -> @ExprNode {
+    mut expr = parse_bitwise_or(p)
+    while parser_check(p, TOK_AND) {
+        let op_tok = parser_advance(p)
+        let right = parse_bitwise_or(p)
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
     }
     return expr

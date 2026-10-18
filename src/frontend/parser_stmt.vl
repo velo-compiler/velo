@@ -181,7 +181,7 @@ act parse_statement(p: @Parser) -> @StmtNode {
     }
 
     let cur = parser_peek(p, 0)
-    if cur.kind == TOK_ASSIGN or cur.kind == TOK_PLUS_ASSIGN or cur.kind == TOK_MINUS_ASSIGN or cur.kind == TOK_STAR_ASSIGN or cur.kind == TOK_SLASH_ASSIGN {
+    if cur.kind == TOK_ASSIGN or cur.kind == TOK_PLUS_ASSIGN or cur.kind == TOK_MINUS_ASSIGN or cur.kind == TOK_STAR_ASSIGN or cur.kind == TOK_SLASH_ASSIGN or cur.kind == TOK_AMP_ASSIGN or cur.kind == TOK_PIPE_ASSIGN or cur.kind == TOK_CARET_ASSIGN or cur.kind == TOK_SHL_ASSIGN or cur.kind == TOK_SHR_ASSIGN {
         parser_advance(p)
         let val = parse_expression(p)
         parser_skip_newlines(p)

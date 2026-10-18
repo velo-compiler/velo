@@ -57,6 +57,18 @@ class TokenType(Enum):
     LE = auto()           # <=
     GT = auto()           # >
     GE = auto()           # >=
+    # Bitwise Operators & Assignments
+    AMP = auto()          # &
+    PIPE = auto()         # |
+    CARET = auto()        # ^
+    TILDE = auto()        # ~
+    SHL = auto()          # <<
+    SHR = auto()          # >>
+    AMP_ASSIGN = auto()   # &=
+    PIPE_ASSIGN = auto()  # |=
+    CARET_ASSIGN = auto() # ^=
+    SHL_ASSIGN = auto()   # <<=
+    SHR_ASSIGN = auto()   # >>=
 
     # Delimiters
     LPAREN = auto()       # (

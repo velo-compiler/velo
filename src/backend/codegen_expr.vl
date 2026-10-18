@@ -63,6 +63,11 @@ act op_to_c_str(op: i32) -> string {
     if op == TOK_GTE { return ">=" }
     if op == TOK_AND { return "&&" }
     if op == TOK_OR { return "||" }
+    if op == TOK_AMP { return "&" }
+    if op == TOK_PIPE { return "|" }
+    if op == TOK_CARET { return "^" }
+    if op == TOK_SHL { return "<<" }
+    if op == TOK_SHR { return ">>" }
     return "+"
 }
 
@@ -119,6 +124,8 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         sb_append_str(sb, "(")
         if expr.op == TOK_NOT {
             sb_append_str(sb, "!")
+        } else if expr.op == TOK_TILDE {
+            sb_append_str(sb, "~")
         } else {
             sb_append_str(sb, "-")
         }

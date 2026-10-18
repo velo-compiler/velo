@@ -64,6 +64,19 @@ let TOK_RBRACE: i32 = 75       // }
 let TOK_LBRACKET: i32 = 76     // [
 let TOK_RBRACKET: i32 = 77     // ]
 
+// Bitwise Operators & Assignments
+let TOK_AMP: i32 = 80          // &
+let TOK_PIPE: i32 = 81         // |
+let TOK_CARET: i32 = 82        // ^
+let TOK_TILDE: i32 = 83        // ~
+let TOK_SHL: i32 = 84          // <<
+let TOK_SHR: i32 = 85          // >>
+let TOK_AMP_ASSIGN: i32 = 86   // &=
+let TOK_PIPE_ASSIGN: i32 = 87  // |=
+let TOK_CARET_ASSIGN: i32 = 88 // ^=
+let TOK_SHL_ASSIGN: i32 = 89   // <<=
+let TOK_SHR_ASSIGN: i32 = 90   // >>=
+
 // Represents a single token descriptor.
 // To avoid string copies during lexing, the token holds offset and length into the source buffer.
 data Token {
@@ -103,5 +116,11 @@ act token_name(kind: i32) -> string {
     if kind == TOK_COLON { return ":" }
     if kind == TOK_ASSIGN { return "=" }
     if kind == TOK_ARROW { return "->" }
+    if kind == TOK_AMP { return "&" }
+    if kind == TOK_PIPE { return "|" }
+    if kind == TOK_CARET { return "^" }
+    if kind == TOK_TILDE { return "~" }
+    if kind == TOK_SHL { return "<<" }
+    if kind == TOK_SHR { return ">>" }
     return "TOKEN"
 }

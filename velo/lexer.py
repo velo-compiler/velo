@@ -258,11 +258,28 @@ class Lexer:
             if self._match('='): return Token(TokenType.NE, "!=", line, col)
             return Token(TokenType.BANG, "!", line, col)
         if ch == '<':
+            if self._match('<'):
+                if self._match('='): return Token(TokenType.SHL_ASSIGN, "<<=", line, col)
+                return Token(TokenType.SHL, "<<", line, col)
             if self._match('='): return Token(TokenType.LE, "<=", line, col)
             return Token(TokenType.LT, "<", line, col)
         if ch == '>':
+            if self._match('>'):
+                if self._match('='): return Token(TokenType.SHR_ASSIGN, ">>=", line, col)
+                return Token(TokenType.SHR, ">>", line, col)
             if self._match('='): return Token(TokenType.GE, ">=", line, col)
             return Token(TokenType.GT, ">", line, col)
+        if ch == '&':
+            if self._match('='): return Token(TokenType.AMP_ASSIGN, "&=", line, col)
+            return Token(TokenType.AMP, "&", line, col)
+        if ch == '|':
+            if self._match('='): return Token(TokenType.PIPE_ASSIGN, "|=", line, col)
+            return Token(TokenType.PIPE, "|", line, col)
+        if ch == '^':
+            if self._match('='): return Token(TokenType.CARET_ASSIGN, "^=", line, col)
+            return Token(TokenType.CARET, "^", line, col)
+        if ch == '~':
+            return Token(TokenType.TILDE, "~", line, col)
         if ch == '(': return Token(TokenType.LPAREN, "(", line, col)
         if ch == ')': return Token(TokenType.RPAREN, ")", line, col)
         if ch == '{': return Token(TokenType.LBRACE, "{", line, col)
