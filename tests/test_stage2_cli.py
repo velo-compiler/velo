@@ -83,7 +83,7 @@ def test_cli_string_interpolation_and_formatting():
     assert res.returncode == 0
     assert "Arena memory for particles: 120 bytes" in res.stdout
     assert "--- Frame 0 ---" in res.stdout
-    assert "Particle[0]: pos=(0.00, 0.20), life=0.03" in res.stdout
+    assert "Particle[0]: pos=(0.00, 0.16), life=0.03" in res.stdout
     assert "Arena memory after simulation exit: 0 bytes" in res.stdout
 
 def test_cli_build_and_run():

@@ -8,40 +8,6 @@ use "../ast/stmt.vl"
 use "symbol_table.vl"
 use "../common/diagnostics.vl"
 
-// Strips a leading pointer symbol '@' from a type string (e.g. "@Point" -> "Point").
-act strip_pointer_prefix(type_name: string) -> string {
-    if type_name == null { return "" }
-    let len = str.len(type_name)
-    if len > 0 and type_name[0] == '@' {
-        let plen = len - 1
-        mut buf: @u8 = mem.alloc(@u8, plen + 1)
-        mut i: usize = 0
-        while i < plen {
-            buf[i] = type_name[1 + i]
-            i += 1
-        }
-        buf[plen] = 0 as u8
-        return buf as string
-    }
-    return type_name
-}
-
-// Prepends a pointer symbol '@' to a type string (e.g. "i32" -> "@i32").
-act prepend_pointer_prefix(type_name: string) -> string {
-    if type_name == null { return "@void" }
-    let len = str.len(type_name)
-    let plen = len + 1
-    mut buf: @u8 = mem.alloc(@u8, plen + 1)
-    buf[0] = '@'
-    mut i: usize = 0
-    while i < len {
-        buf[1 + i] = type_name[i]
-        i += 1
-    }
-    buf[plen] = 0 as u8
-    return buf as string
-}
-
 // Checks if two type names are structurally or nominally compatible.
 act types_are_compatible(expected: string, actual: string) -> bool {
     if expected == null or actual == null { return false }
@@ -55,9 +21,11 @@ act types_are_compatible(expected: string, actual: string) -> bool {
         return true
     }
 
-    // Numeric integer family compatibility
-    if (expected == "i32" or expected == "usize" or expected == "isize" or expected == "i64" or expected == "u8" or expected == "i8") and
-       (actual == "i32" or actual == "usize" or actual == "isize" or actual == "i64" or actual == "u8" or actual == "i8") {
+    // Numeric integer and float family compatibility
+    if is_int_type(expected) and is_int_type(actual) {
+        return true
+    }
+    if is_float_type(expected) and is_float_type(actual) {
         return true
     }
 
@@ -72,9 +40,7 @@ act types_are_compatible(expected: string, actual: string) -> bool {
 // Checks if a type name corresponds to a primitive built-in type.
 act is_primitive_type(name: string) -> bool {
     if name == null { return false }
-    if name == "i32" or name == "i64" or name == "u8" or name == "i8" or
-       name == "usize" or name == "isize" or name == "f32" or name == "f64" or
-       name == "bool" or name == "string" or name == "void" {
+    if is_int_type(name) or is_float_type(name) or name == "bool" or name == "string" or name == "void" {
         return true
     }
     return false
@@ -93,8 +59,18 @@ act is_known_type(st: @SymbolTable, name: string) -> bool {
 act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr == null { return "void" }
 
-    if expr.kind == EXPR_INT { return "i32" }
-    if expr.kind == EXPR_FLOAT { return "f32" }
+    if expr.kind == EXPR_INT {
+        if expr.type_name != null and str.len(expr.type_name) > 0 {
+            return expr.type_name
+        }
+        return "i32"
+    }
+    if expr.kind == EXPR_FLOAT {
+        if expr.type_name != null and str.len(expr.type_name) > 0 {
+            return expr.type_name
+        }
+        return "f32"
+    }
     if expr.kind == EXPR_STRING { return "string" }
     if expr.kind == EXPR_BOOL { return "bool" }
     if expr.kind == EXPR_NULL { return "@void" }

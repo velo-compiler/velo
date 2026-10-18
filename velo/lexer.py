@@ -205,19 +205,89 @@ class Lexer:
     def _scan_number(self, line: int, col: int) -> Token:
         chars = []
         is_float = False
-        while self._peek() is not None and self._peek().isdigit():
+
+        # Check for numeric base prefixes: 0x, 0b, 0o
+        if self._peek() == '0' and self._peek(1) in ('x', 'X', 'b', 'B', 'o', 'O'):
+            chars.append(self._advance()) # '0'
+            base_char = self._advance()
+            chars.append(base_char)
+            if base_char in ('x', 'X'):
+                while self._peek() is not None and (self._peek().isdigit() or self._peek() in 'abcdefABCDEF_'):
+                    chars.append(self._advance())
+            elif base_char in ('b', 'B'):
+                while self._peek() is not None and (self._peek() in '01_'):
+                    chars.append(self._advance())
+            else: # octal
+                while self._peek() is not None and (self._peek() in '01234567_'):
+                    chars.append(self._advance())
+
+            # Optional integer suffix (e.g. 0xFFu8, 0x1000i64)
+            suffix_chars = []
+            if self._peek() is not None and self._peek().isalpha():
+                while self._peek() is not None and (self._peek().isalnum() or self._peek() == '_'):
+                    suffix_chars.append(self._advance())
+            chars.extend(suffix_chars)
+
+            raw_str = "".join(chars)
+            clean_str = "".join(c for c in chars if c != '_')
+            suffix = "".join(suffix_chars)
+            num_part = clean_str[:len(clean_str)-len(suffix)] if suffix else clean_str
+            if base_char in ('x', 'X'):
+                val = int(num_part, 16)
+            elif base_char in ('b', 'B'):
+                val = int(num_part, 2)
+            else:
+                val = int(num_part[2:], 8)
+            return Token(TokenType.INT_LIT, val, line, col, raw_str=raw_str, type_name=suffix if suffix else None)
+
+        # Decimal numbers with optional underscores
+        while self._peek() is not None and (self._peek().isdigit() or self._peek() == '_'):
             chars.append(self._advance())
 
+        # Check decimal point for float (ensuring not '..' range)
         if self._peek() == '.' and self._peek(1) is not None and self._peek(1).isdigit():
             is_float = True
             chars.append(self._advance()) # '.'
-            while self._peek() is not None and self._peek().isdigit():
+            while self._peek() is not None and (self._peek().isdigit() or self._peek() == '_'):
                 chars.append(self._advance())
 
-        num_str = "".join(chars)
+        # Check scientific notation exponent (e / E)
+        if self._peek() in ('e', 'E'):
+            has_exp_digit = False
+            if self._peek(1) is not None and self._peek(1).isdigit():
+                has_exp_digit = True
+            elif self._peek(1) in ('+', '-') and self._peek(2) is not None and self._peek(2).isdigit():
+                has_exp_digit = True
+            if has_exp_digit:
+                is_float = True
+                chars.append(self._advance()) # 'e' or 'E'
+                if self._peek() in ('+', '-'):
+                    chars.append(self._advance())
+                while self._peek() is not None and (self._peek().isdigit() or self._peek() == '_'):
+                    chars.append(self._advance())
+
+        # Check suffix
+        suffix_chars = []
+        if self._peek() is not None and self._peek().isalpha():
+            while self._peek() is not None and (self._peek().isalnum() or self._peek() == '_'):
+                suffix_chars.append(self._advance())
+            suffix = "".join(suffix_chars)
+            if suffix in ('f32', 'f64', 'f', 'F'):
+                is_float = True
+        else:
+            suffix = ""
+        chars.extend(suffix_chars)
+
+        raw_str = "".join(chars)
+        clean_str = "".join(c for c in chars if c != '_')
+        num_part = clean_str[:len(clean_str)-len(suffix)] if suffix else clean_str
+
         if is_float:
-            return Token(TokenType.FLOAT_LIT, float(num_str), line, col)
-        return Token(TokenType.INT_LIT, int(num_str), line, col)
+            val = float(num_part)
+            return Token(TokenType.FLOAT_LIT, val, line, col, raw_str=raw_str, type_name=suffix if suffix else None)
+        else:
+            val = int(num_part)
+            return Token(TokenType.INT_LIT, val, line, col, raw_str=raw_str, type_name=suffix if suffix else None)
 
     def _scan_identifier(self, line: int, col: int) -> Token:
         chars = []

@@ -91,3 +91,54 @@ act type_is_pointer(t: @TypeNode) -> bool {
     if t == null { return false }
     return t.kind == TYPE_KIND_POINTER
 }
+
+// Checks if a type name is an integer type.
+act is_int_type(name: string) -> bool {
+    if name == null { return false }
+    if name == "i32" or name == "i64" or name == "u8" or name == "i8" or
+       name == "u16" or name == "u32" or name == "u64" or name == "i16" or
+       name == "usize" or name == "isize" {
+        return true
+    }
+    return false
+}
+
+// Checks if a type name is a floating point type.
+act is_float_type(name: string) -> bool {
+    if name == null { return false }
+    return name == "f32" or name == "f64"
+}
+
+// Strips a leading pointer symbol '@' from a type string (e.g. "@Point" -> "Point").
+act strip_pointer_prefix(type_name: string) -> string {
+    if type_name == null { return "" }
+    let len = str.len(type_name)
+    if len > 0 and type_name[0] == '@' {
+        let plen = len - 1
+        mut buf: @u8 = mem.alloc(@u8, plen + 1)
+        mut i: usize = 0
+        while i < plen {
+            buf[i] = type_name[1 + i]
+            i += 1
+        }
+        buf[plen] = 0 as u8
+        return buf as string
+    }
+    return type_name
+}
+
+// Prepends a pointer symbol '@' to a type string (e.g. "i32" -> "@i32").
+act prepend_pointer_prefix(type_name: string) -> string {
+    if type_name == null { return "@void" }
+    let len = str.len(type_name)
+    let plen = len + 1
+    mut buf: @u8 = mem.alloc(@u8, plen + 1)
+    buf[0] = '@'
+    mut i: usize = 0
+    while i < len {
+        buf[1 + i] = type_name[i]
+        i += 1
+    }
+    buf[plen] = 0 as u8
+    return buf as string
+}

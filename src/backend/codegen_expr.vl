@@ -77,11 +77,19 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
 
     // 1. Literal expressions
     if expr.kind == EXPR_INT {
-        sb_append_int(sb, expr.int_val)
+        if expr.str_val != null and str.len(expr.str_val) > 0 {
+            sb_append_str(sb, expr.str_val)
+        } else {
+            sb_append_int(sb, expr.int_val)
+        }
         return
     }
     if expr.kind == EXPR_FLOAT {
-        sb_append_float(sb, expr.float_val)
+        if expr.str_val != null and str.len(expr.str_val) > 0 {
+            sb_append_str(sb, expr.str_val)
+        } else {
+            sb_append_float(sb, expr.float_val)
+        }
         return
     }
     if expr.kind == EXPR_STRING {

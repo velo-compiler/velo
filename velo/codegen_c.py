@@ -314,8 +314,8 @@ class CCodeGenerator:
             self._emit_line("}")
 
     def _infer_raw_velo_type(self, value: Optional[Expr]) -> str:
-        if isinstance(value, IntLiteral): return "i32"
-        if isinstance(value, FloatLiteral): return "f32"
+        if isinstance(value, IntLiteral): return value.type_name if value.type_name else "i32"
+        if isinstance(value, FloatLiteral): return value.type_name if value.type_name else "f32"
         if isinstance(value, StringLiteral): return "string"
         if isinstance(value, BoolLiteral): return "bool"
         if isinstance(value, NullLiteral): return "@void"
@@ -394,9 +394,9 @@ class CCodeGenerator:
         elif isinstance(expr, StructLiteral):
             return expr.struct_name
         elif isinstance(expr, FloatLiteral):
-            return "f32"
+            return expr.type_name if expr.type_name else "f32"
         elif isinstance(expr, IntLiteral):
-            return "i32"
+            return expr.type_name if expr.type_name else "i32"
         elif isinstance(expr, StringLiteral):
             return "string"
         elif isinstance(expr, BoolLiteral):
@@ -428,8 +428,35 @@ class CCodeGenerator:
         if isinstance(expr, NullLiteral):
             return "NULL"
         elif isinstance(expr, IntLiteral):
+            if expr.raw_str:
+                clean = "".join(c for c in expr.raw_str if c != '_')
+                if expr.type_name:
+                    sfx = expr.type_name
+                    digits = clean[:-len(sfx)]
+                    if sfx in ("u64", "usize"):
+                        return f"{digits}ULL"
+                    elif sfx in ("i64", "isize"):
+                        return f"{digits}LL"
+                    elif sfx in ("u8", "u16", "u32"):
+                        return f"{digits}U"
+                    return digits
+                elif clean.startswith("0b") or clean.startswith("0B") or clean.startswith("0o") or clean.startswith("0O"):
+                    return str(expr.value)
+                return clean
             return str(expr.value)
         elif isinstance(expr, FloatLiteral):
+            if expr.raw_str:
+                clean = "".join(c for c in expr.raw_str if c != '_')
+                if expr.type_name:
+                    sfx = expr.type_name
+                    digits = clean[:-len(sfx)]
+                    if sfx == "f64":
+                        return digits
+                    else:
+                        return f"{digits}f" if not digits.endswith("f") else digits
+                elif not clean.endswith("f") and not clean.endswith("F"):
+                    return f"{clean}f"
+                return clean
             return f"{expr.value}f"
         elif isinstance(expr, StringLiteral):
             escaped = expr.value.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\t', '\\t')

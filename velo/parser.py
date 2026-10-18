@@ -514,9 +514,11 @@ class Parser:
         if self._match(TokenType.NULL):
             return NullLiteral(line=tok.line, col=tok.col)
         if self._match(TokenType.INT_LIT):
-            return IntLiteral(value=tok.value, line=tok.line, col=tok.col)
+            prev = self.tokens[self.pos - 1]
+            return IntLiteral(value=prev.value, line=prev.line, col=prev.col, raw_str=prev.raw_str, type_name=prev.type_name)
         if self._match(TokenType.FLOAT_LIT):
-            return FloatLiteral(value=tok.value, line=tok.line, col=tok.col)
+            prev = self.tokens[self.pos - 1]
+            return FloatLiteral(value=prev.value, line=prev.line, col=prev.col, raw_str=prev.raw_str, type_name=prev.type_name)
         if self._match(TokenType.STRING_LIT):
             return StringLiteral(value=tok.value, line=tok.line, col=tok.col)
         if self._match(TokenType.TRUE):

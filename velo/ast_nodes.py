@@ -20,12 +20,16 @@ class IntLiteral(Expr):
     value: int
     line: int
     col: int
+    raw_str: Optional[str] = None
+    type_name: Optional[str] = None
 
 @dataclass
 class FloatLiteral(Expr):
     value: float
     line: int
     col: int
+    raw_str: Optional[str] = None
+    type_name: Optional[str] = None
 
 @dataclass
 class StringLiteral(Expr):

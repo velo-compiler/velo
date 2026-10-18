@@ -164,27 +164,94 @@ act tokenize(lex: @Lexer) {
             let kind = check_keyword(src, start_pos, tok_len)
             add_token(lex, kind, start_pos, tok_len, start_line, start_col)
         } else if is_digit(c) {
-            // Numbers
             mut is_float = false
-            while lex.pos < len and is_digit(src[lex.pos]) {
-                lex.pos += 1
-                lex.col += 1
-            }
-            if lex.pos + 1 < len and src[lex.pos] == '.' and is_digit(src[lex.pos + 1]) {
-                is_float = true
+            // Check base prefixes: 0x (hex), 0b (bin), 0o (oct)
+            if c == '0' and lex.pos + 1 < len and (src[lex.pos + 1] == 'x' or src[lex.pos + 1] == 'X' or src[lex.pos + 1] == 'b' or src[lex.pos + 1] == 'B' or src[lex.pos + 1] == 'o' or src[lex.pos + 1] == 'O') {
+                let base_char = src[lex.pos + 1]
                 lex.pos += 2
                 lex.col += 2
-                while lex.pos < len and is_digit(src[lex.pos]) {
+                if base_char == 'x' or base_char == 'X' {
+                    while lex.pos < len and (is_digit(src[lex.pos]) or (src[lex.pos] >= 'a' and src[lex.pos] <= 'f') or (src[lex.pos] >= 'A' and src[lex.pos] <= 'F') or src[lex.pos] == '_') {
+                        lex.pos += 1
+                        lex.col += 1
+                    }
+                } else if base_char == 'b' or base_char == 'B' {
+                    while lex.pos < len and (src[lex.pos] == '0' or src[lex.pos] == '1' or src[lex.pos] == '_') {
+                        lex.pos += 1
+                        lex.col += 1
+                    }
+                } else {
+                    while lex.pos < len and ((src[lex.pos] >= '0' and src[lex.pos] <= '7') or src[lex.pos] == '_') {
+                        lex.pos += 1
+                        lex.col += 1
+                    }
+                }
+                // Optional integer suffix (e.g. 0xFFu8, 0x1000i64)
+                if lex.pos < len and is_alpha(src[lex.pos]) {
+                    while lex.pos < len and is_ident_part(src[lex.pos]) {
+                        lex.pos += 1
+                        lex.col += 1
+                    }
+                }
+                let num_len = lex.pos - start_pos
+                add_token(lex, TOK_INT_LIT, start_pos, num_len, start_line, start_col)
+            } else {
+                // Decimal number with optional underscores
+                while lex.pos < len and (is_digit(src[lex.pos]) or src[lex.pos] == '_') {
                     lex.pos += 1
                     lex.col += 1
                 }
+                // Check decimal point for float (ensuring not '..' range)
+                if lex.pos + 1 < len and src[lex.pos] == '.' and is_digit(src[lex.pos + 1]) {
+                    is_float = true
+                    lex.pos += 2
+                    lex.col += 2
+                    while lex.pos < len and (is_digit(src[lex.pos]) or src[lex.pos] == '_') {
+                        lex.pos += 1
+                        lex.col += 1
+                    }
+                }
+                // Check scientific notation exponent (e / E)
+                if lex.pos < len and (src[lex.pos] == 'e' or src[lex.pos] == 'E') {
+                    mut has_exp_digit = false
+                    if lex.pos + 1 < len and is_digit(src[lex.pos + 1]) {
+                        has_exp_digit = true
+                    } else if lex.pos + 2 < len and (src[lex.pos + 1] == '+' or src[lex.pos + 1] == '-') and is_digit(src[lex.pos + 2]) {
+                        has_exp_digit = true
+                    }
+                    if has_exp_digit {
+                        is_float = true
+                        lex.pos += 1
+                        lex.col += 1
+                        if lex.pos < len and (src[lex.pos] == '+' or src[lex.pos] == '-') {
+                            lex.pos += 1
+                            lex.col += 1
+                        }
+                        while lex.pos < len and (is_digit(src[lex.pos]) or src[lex.pos] == '_') {
+                            lex.pos += 1
+                            lex.col += 1
+                        }
+                    }
+                }
+                // Check suffix: float (f32, f64) or integer (u8, i64, usize, etc.)
+                if lex.pos < len and is_alpha(src[lex.pos]) {
+                    let s_start = lex.pos
+                    while lex.pos < len and is_ident_part(src[lex.pos]) {
+                        lex.pos += 1
+                        lex.col += 1
+                    }
+                    let s_len = lex.pos - s_start
+                    if s_len >= 1 and (src[s_start] == 'f' or src[s_start] == 'F') {
+                        is_float = true
+                    }
+                }
+                let num_len = lex.pos - start_pos
+                mut kind = TOK_INT_LIT
+                if is_float {
+                    kind = TOK_FLOAT_LIT
+                }
+                add_token(lex, kind, start_pos, num_len, start_line, start_col)
             }
-            let num_len = lex.pos - start_pos
-            mut kind = TOK_INT_LIT
-            if is_float {
-                kind = TOK_FLOAT_LIT
-            }
-            add_token(lex, kind, start_pos, num_len, start_line, start_col)
 
         } else if c == '"' {
             // String literal

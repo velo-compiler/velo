@@ -30,11 +30,11 @@ Velo is a working, self-hosted, triple-bootstrapped systems programming language
 * **Structured Documentation**: Single-line `///` and block `/** ... */` doc comment recognition for top-level structs, functions, and externs.
 * **Native Doc Generator CLI**: Built-in CLI command `velo doc <source.vl> [-o output.md]` extracting clean GitHub-flavored Markdown API reference documentation tables and signatures directly from AST definitions. Verified with `examples/15_docs_and_comments.vl` and `tests/test_docs_and_comments.py`.
 
-### 1.3 Literal Formatting (🟡 P2 Ergonomic)
-* **Numeric Bases**: No hexadecimal (`0xDEADBEEF`), binary (`0b101010`), or octal (`0o755`) literals. Colors in graphics programming are almost universally written in hex (`0xFF00FFFF`).
-* **Digit Separators**: No support for underscores in numbers (e.g. `1_000_000` or `0xFF_AA_BB_CC`).
-* **Scientific Notation**: Floating point literals cannot use exponents (`1e-4`, `2.5e6`).
-* **Explicit Literal Suffixes**: Float literals default to `f32` (or whatever the context expects); there is no suffix syntax like `10.5f64`, `100u8`, `500i64`.
+### 1.3 Literal Formatting [COMPLETED] ✅
+* **Numeric Bases**: Hexadecimal (`0x` / `0X`), binary (`0b` / `0B`), and octal (`0o` / `0O`) literals with full type preservation and C99 emission.
+* **Digit Separators**: Underscore digit separators supported in all integer, hex, binary, octal, and floating point literals (e.g. `1_000_000`, `0xFF_AA_BB_CC`, `0b1010_1010`).
+* **Scientific Notation**: Full exponent support (`1e-4`, `2.5e6`, `1E3`, `3.14e+2`) in both Stage 1 and Stage 2 self-hosted compilers.
+* **Explicit Literal Suffixes**: Explicit integer (`u8`, `u16`, `u32`, `u64`, `usize`, `i8`, `i16`, `i32`, `i64`, `isize`) and float (`f32`, `f64`) suffixes with automatic type inference and C99 suffix mapping (`LL`, `ULL`, `U`, `f`). Verified with `examples/16_literal_formatting.vl` and `tests/test_literal_formatting.py`.
 
 ### 1.4 String & Character Escapes (🟡 P2 Ergonomic)
 * **Raw / Multi-line Strings**: No raw string literals (like `` `raw\text` `` or `"""multiline"""`). Writing shaders, SQL, or embedded JSON requires manual escaping of newlines.

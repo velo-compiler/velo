@@ -1,6 +1,6 @@
 from enum import Enum, auto
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 
 class TokenType(Enum):
     # Keywords
@@ -116,6 +116,8 @@ class Token:
     value: Any
     line: int
     col: int
+    raw_str: Optional[str] = None
+    type_name: Optional[str] = None
 
     def __repr__(self) -> str:
         return f"Token({self.type.name}, {self.value!r}, line={self.line}, col={self.col})"
