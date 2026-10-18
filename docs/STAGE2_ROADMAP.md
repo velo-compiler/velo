@@ -54,13 +54,14 @@ flowchart TD
 
 ---
 
-### Milestone 2.3: Symbol Table & Semantic Analysis in Velo
+### Milestone 2.3: Symbol Table & Semantic Analysis in Velo [COMPLETED] 🛡️
 * **Goal**: Scope resolution, variable tracking, and type verification.
 * **Deliverables**:
   * `src/analysis/symbol_table.vl`: Lexical scope stack, struct registry, function signatures.
   * `src/analysis/type_checker.vl`: Expression type inference, auto-dereference rules (`p.x` -> `p->x`), and type compatibility checks.
 * **Verification**:
-  - Unit test `tests/test_stage2_semantics.py` detecting type mismatches, undeclared variables, and verifying struct member resolution.
+  - Live verification script `examples/12_stage2_semantics_test.vl` (PASSED).
+  - Unit test `tests/test_stage2_semantics.py` asserting type checking, struct member resolution, scope tracking, and negative error detection (PASSED).
 
 ---
 

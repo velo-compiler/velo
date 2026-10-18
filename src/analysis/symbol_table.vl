@@ -1,0 +1,289 @@
+// Lexical scope stack, symbol registration, and struct/function registry for Velo.
+use sys.io
+use sys.mem
+use "../common/diagnostics.vl"
+
+// Symbol kind constants
+let SYM_VAR: i32 = 1
+let SYM_PARAM: i32 = 2
+let SYM_GLOBAL: i32 = 3
+
+// Represents an individual variable or parameter symbol in a lexical scope.
+data Symbol {
+    name: string
+    type_name: string
+    kind: i32
+    is_mut: bool
+    line: i32
+    col: i32
+    next: @Symbol
+}
+
+// Represents a nested lexical scope (e.g. block, function, loop).
+data Scope {
+    parent: @Scope
+    first_sym: @Symbol
+    sym_count: usize
+}
+
+// Represents a field member inside a registered struct blueprint.
+data StructFieldSym {
+    name: string
+    type_name: string
+    line: i32
+    col: i32
+    next: @StructFieldSym
+}
+
+// Represents a registered struct blueprint.
+data StructSym {
+    name: string
+    first_field: @StructFieldSym
+    field_count: usize
+    line: i32
+    col: i32
+    next: @StructSym
+}
+
+// Represents a formal parameter in a registered function signature.
+data ParamSym {
+    name: string
+    type_name: string
+    next: @ParamSym
+}
+
+// Represents a registered function or foreign extern signature.
+data FunctionSym {
+    name: string
+    return_type: string
+    first_param: @ParamSym
+    param_count: usize
+    is_extern: bool
+    line: i32
+    col: i32
+    next: @FunctionSym
+}
+
+// Unified Symbol Table maintaining global and nested lexical scopes.
+data SymbolTable {
+    first_struct: @StructSym
+    struct_count: usize
+    first_function: @FunctionSym
+    function_count: usize
+    global_scope: @Scope
+    current_scope: @Scope
+    error_count: usize
+}
+
+// Allocates and initializes an empty lexical scope.
+act create_scope(parent: @Scope) -> @Scope {
+    mut sc: @Scope = mem.alloc(@Scope, 1)
+    sc.parent = parent
+    sc.first_sym = null
+    sc.sym_count = 0
+    return sc
+}
+
+// Initializes the root Symbol Table.
+act init_symbol_table(st: @SymbolTable) {
+    st.first_struct = null
+    st.struct_count = 0
+    st.first_function = null
+    st.function_count = 0
+    st.global_scope = create_scope(null)
+    st.current_scope = st.global_scope
+    st.error_count = 0
+}
+
+// Pushes a new inner lexical scope onto the scope stack.
+act enter_scope(st: @SymbolTable) {
+    st.current_scope = create_scope(st.current_scope)
+}
+
+// Pops the current lexical scope, returning to its parent.
+act exit_scope(st: @SymbolTable) {
+    if st.current_scope != null and st.current_scope.parent != null {
+        st.current_scope = st.current_scope.parent
+    }
+}
+
+// Looks up a symbol only in the immediate current scope.
+act scope_lookup_immediate(sc: @Scope, name: string) -> @Symbol {
+    if sc == null { return null }
+    mut cur = sc.first_sym
+    while cur != null {
+        if cur.name == name {
+            return cur
+        }
+        cur = cur.next
+    }
+    return null
+}
+
+// Looks up a symbol in the current scope, traversing up to enclosing parent scopes.
+act scope_lookup(sc: @Scope, name: string) -> @Symbol {
+    mut cur_sc = sc
+    while cur_sc != null {
+        let sym = scope_lookup_immediate(cur_sc, name)
+        if sym != null {
+            return sym
+        }
+        cur_sc = cur_sc.parent
+    }
+    return null
+}
+
+// Defines a new variable symbol in the current scope.
+act define_variable(st: @SymbolTable, name: string, type_name: string, is_mut: bool, line: i32, col: i32) -> bool {
+    let existing = scope_lookup_immediate(st.current_scope, name)
+    if existing != null {
+        report_error("semantic", line, col, "Redeclaration of variable in current scope")
+        st.error_count += 1
+        return false
+    }
+
+    mut sym: @Symbol = mem.alloc(@Symbol, 1)
+    sym.name = name
+    sym.type_name = type_name
+    sym.kind = SYM_VAR
+    sym.is_mut = is_mut
+    sym.line = line
+    sym.col = col
+    sym.next = st.current_scope.first_sym
+
+    st.current_scope.first_sym = sym
+    st.current_scope.sym_count += 1
+    return true
+}
+
+// Defines a function parameter symbol in the current function scope.
+act define_parameter(st: @SymbolTable, name: string, type_name: string, line: i32, col: i32) -> bool {
+    mut sym: @Symbol = mem.alloc(@Symbol, 1)
+    sym.name = name
+    sym.type_name = type_name
+    sym.kind = SYM_PARAM
+    sym.is_mut = true
+    sym.line = line
+    sym.col = col
+    sym.next = st.current_scope.first_sym
+
+    st.current_scope.first_sym = sym
+    st.current_scope.sym_count += 1
+    return true
+}
+
+// Resolves a variable symbol from the active scope hierarchy.
+act resolve_variable(st: @SymbolTable, name: string) -> @Symbol {
+    return scope_lookup(st.current_scope, name)
+}
+
+// Registers a struct blueprint in the symbol table.
+act register_struct(st: @SymbolTable, name: string, line: i32, col: i32) -> @StructSym {
+    mut s: @StructSym = mem.alloc(@StructSym, 1)
+    s.name = name
+    s.first_field = null
+    s.field_count = 0
+    s.line = line
+    s.col = col
+    s.next = st.first_struct
+
+    st.first_struct = s
+    st.struct_count += 1
+    return s
+}
+
+// Adds a field to a registered struct blueprint.
+act struct_add_field(st_sym: @StructSym, fname: string, ftype: string, line: i32, col: i32) -> bool {
+    mut f: @StructFieldSym = mem.alloc(@StructFieldSym, 1)
+    f.name = fname
+    f.type_name = ftype
+    f.line = line
+    f.col = col
+    f.next = null
+
+    if st_sym.first_field == null {
+        st_sym.first_field = f
+    } else {
+        mut cur = st_sym.first_field
+        while cur.next != null {
+            cur = cur.next
+        }
+        cur.next = f
+    }
+    st_sym.field_count += 1
+    return true
+}
+
+// Finds a struct blueprint by name.
+act find_struct(st: @SymbolTable, name: string) -> @StructSym {
+    mut cur = st.first_struct
+    while cur != null {
+        if cur.name == name {
+            return cur
+        }
+        cur = cur.next
+    }
+    return null
+}
+
+// Finds a field inside a struct blueprint.
+act find_struct_field(st_sym: @StructSym, fname: string) -> @StructFieldSym {
+    if st_sym == null { return null }
+    mut cur = st_sym.first_field
+    while cur != null {
+        if cur.name == fname {
+            return cur
+        }
+        cur = cur.next
+    }
+    return null
+}
+
+// Registers a function signature in the symbol table.
+act register_function(st: @SymbolTable, name: string, ret_type: string, is_extern: bool, line: i32, col: i32) -> @FunctionSym {
+    mut fn_sym: @FunctionSym = mem.alloc(@FunctionSym, 1)
+    fn_sym.name = name
+    fn_sym.return_type = ret_type
+    fn_sym.first_param = null
+    fn_sym.param_count = 0
+    fn_sym.is_extern = is_extern
+    fn_sym.line = line
+    fn_sym.col = col
+    fn_sym.next = st.first_function
+
+    st.first_function = fn_sym
+    st.function_count += 1
+    return fn_sym
+}
+
+// Adds a parameter to a registered function signature.
+act function_add_param(fn_sym: @FunctionSym, pname: string, ptype: string) -> bool {
+    mut p: @ParamSym = mem.alloc(@ParamSym, 1)
+    p.name = pname
+    p.type_name = ptype
+    p.next = null
+
+    if fn_sym.first_param == null {
+        fn_sym.first_param = p
+    } else {
+        mut cur = fn_sym.first_param
+        while cur.next != null {
+            cur = cur.next
+        }
+        cur.next = p
+    }
+    fn_sym.param_count += 1
+    return true
+}
+
+// Finds a registered function by name.
+act find_function(st: @SymbolTable, name: string) -> @FunctionSym {
+    mut cur = st.first_function
+    while cur != null {
+        if cur.name == name {
+            return cur
+        }
+        cur = cur.next
+    }
+    return null
+}

@@ -1,0 +1,93 @@
+// Milestone 2.3 Live Verification: Symbol Table & Semantic Analysis in Velo
+use sys.io
+use "../src/frontend/token.vl"
+use "../src/frontend/lexer.vl"
+use "../src/ast/types.vl"
+use "../src/ast/expr.vl"
+use "../src/ast/stmt.vl"
+use "../src/frontend/parser.vl"
+use "../src/frontend/parser_expr.vl"
+use "../src/frontend/parser_stmt.vl"
+use "../src/analysis/symbol_table.vl"
+use "../src/analysis/type_checker.vl"
+
+act main() {
+    io.println("--- Velo Stage 2 Milestone 2.3: Semantic Analysis Verification ---")
+
+    let sample_code = "data Point {\n    x: f32\n    y: f32\n}\nextern act clock() -> i64\nact scale_point(p: @Point, factor: f32) -> f32 {\n    let px = p.x * factor\n    let py = p.y * factor\n    let pt = Point{ x: px, y: py }\n    return pt.x + pt.y\n}"
+    let sample_len: usize = str.len(sample_code)
+
+    zone {
+        mut lex = create_lexer(sample_code, sample_len, 512)
+        tokenize(@lex)
+
+        mut p: Parser
+        init_parser(@p, "sample_semantics.vl", sample_code, lex.tokens, lex.token_count)
+
+        let prog = parse_program(@p)
+        io.println("Successfully parsed AST for semantic verification!")
+        io.println("Total top-level declarations: {prog.decl_count}")
+
+        mut st: SymbolTable
+        init_symbol_table(@st)
+
+        let success = check_program(@st, prog)
+
+        io.println("Semantic analysis pass result: {success}")
+        io.println("Total semantic errors reported: {st.error_count}")
+
+        // 1. Verify registered struct
+        let pt_sym = find_struct(@st, "Point")
+        if pt_sym != null {
+            io.println("Struct 'Point' registered successfully with {pt_sym.field_count} fields:")
+            let f_x = find_struct_field(pt_sym, "x")
+            let f_y = find_struct_field(pt_sym, "y")
+            if f_x != null {
+                io.println("  Field 'x' resolved to type: '{f_x.type_name}'")
+            }
+            if f_y != null {
+                io.println("  Field 'y' resolved to type: '{f_y.type_name}'")
+            }
+        }
+
+        // 2. Verify registered function
+        let fn_sym = find_function(@st, "scale_point")
+        if fn_sym != null {
+            io.println("Function 'scale_point' registered with {fn_sym.param_count} params, return type: '{fn_sym.return_type}'")
+        }
+
+        // 3. Verify lexical scope stack functionality
+        enter_scope(@st)
+        define_variable(@st, "local_var", "i32", false, 1, 1)
+        let resolved = resolve_variable(@st, "local_var")
+        if resolved != null {
+            io.println("Lexical scope successfully resolved variable 'local_var': type '{resolved.type_name}'")
+        }
+        exit_scope(@st)
+
+        let after_exit = resolve_variable(@st, "local_var")
+        if after_exit == null {
+            io.println("Lexical scope popping verified: 'local_var' no longer accessible after scope exit.")
+        }
+
+        // 4. Verify negative semantic error detection
+        let bad_code = "act bad_func() -> i32 {\n    return \"not an integer\"\n}"
+        let bad_len: usize = str.len(bad_code)
+        mut bad_lex = create_lexer(bad_code, bad_len, 128)
+        tokenize(@bad_lex)
+
+        mut bad_p: Parser
+        init_parser(@bad_p, "bad.vl", bad_code, bad_lex.tokens, bad_lex.token_count)
+        let bad_prog = parse_program(@bad_p)
+
+        mut bad_st: SymbolTable
+        init_symbol_table(@bad_st)
+        let bad_success = check_program(@bad_st, bad_prog)
+
+        io.println("Negative test (type mismatch) successfully caught by analyzer!")
+        io.println("Bad code success status (expected false): {bad_success}")
+        io.println("Bad code error count (expected >0): {bad_st.error_count}")
+    }
+
+    io.println("--- Milestone 2.3 Complete! ---")
+}

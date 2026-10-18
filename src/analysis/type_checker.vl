@@ -1,0 +1,340 @@
+// Semantic analysis, type inference, and validation algorithms for Velo.
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "symbol_table.vl"
+use "../common/diagnostics.vl"
+
+// Strips a leading pointer symbol '@' from a type string (e.g. "@Point" -> "Point").
+act strip_pointer_prefix(type_name: string) -> string {
+    if type_name == null { return "" }
+    let len = str.len(type_name)
+    if len > 0 and type_name[0] == '@' {
+        let plen = len - 1
+        mut buf: @u8 = mem.alloc(@u8, plen + 1)
+        mut i: usize = 0
+        while i < plen {
+            buf[i] = type_name[1 + i]
+            i += 1
+        }
+        buf[plen] = 0 as u8
+        return buf as string
+    }
+    return type_name
+}
+
+// Prepends a pointer symbol '@' to a type string (e.g. "i32" -> "@i32").
+act prepend_pointer_prefix(type_name: string) -> string {
+    if type_name == null { return "@void" }
+    let len = str.len(type_name)
+    let plen = len + 1
+    mut buf: @u8 = mem.alloc(@u8, plen + 1)
+    buf[0] = '@'
+    mut i: usize = 0
+    while i < len {
+        buf[1 + i] = type_name[i]
+        i += 1
+    }
+    buf[plen] = 0 as u8
+    return buf as string
+}
+
+// Checks if two type names are structurally or nominally compatible.
+act types_are_compatible(expected: string, actual: string) -> bool {
+    if expected == null or actual == null { return false }
+    if expected == actual { return true }
+
+    // Null pointer '@void' is compatible with any pointer type '@T'
+    if actual == "@void" and str.len(expected) > 0 and expected[0] == '@' {
+        return true
+    }
+    if expected == "@void" and str.len(actual) > 0 and actual[0] == '@' {
+        return true
+    }
+
+    // Numeric integer family compatibility
+    if (expected == "i32" or expected == "usize" or expected == "isize" or expected == "i64") and
+       (actual == "i32" or actual == "usize" or actual == "isize" or actual == "i64") {
+        return true
+    }
+
+    return false
+}
+
+// Infers the static type of an expression AST node.
+act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
+    if expr == null { return "void" }
+
+    if expr.kind == EXPR_INT { return "i32" }
+    if expr.kind == EXPR_FLOAT { return "f32" }
+    if expr.kind == EXPR_STRING { return "string" }
+    if expr.kind == EXPR_BOOL { return "bool" }
+    if expr.kind == EXPR_NULL { return "@void" }
+
+    if expr.kind == EXPR_IDENT {
+        let sym = resolve_variable(st, expr.str_val)
+        if sym == null {
+            report_error("semantic", expr.line, expr.col, "Undeclared identifier")
+            st.error_count += 1
+            return "unknown"
+        }
+        return sym.type_name
+    }
+
+    if expr.kind == EXPR_MEMBER {
+        let target_type = infer_expr_type(st, expr.target)
+        let clean_type = strip_pointer_prefix(target_type)
+        let st_sym = find_struct(st, clean_type)
+        if st_sym == null {
+            report_error("semantic", expr.line, expr.col, "Member access on non-struct type")
+            st.error_count += 1
+            return "unknown"
+        }
+        let f_sym = find_struct_field(st_sym, expr.member_name)
+        if f_sym == null {
+            report_error("semantic", expr.line, expr.col, "Struct does not have member field")
+            st.error_count += 1
+            return "unknown"
+        }
+        return f_sym.type_name
+    }
+
+    if expr.kind == EXPR_INDEX {
+        let target_type = infer_expr_type(st, expr.target)
+        if target_type == "string" {
+            return "u8"
+        }
+        if str.len(target_type) > 0 and target_type[0] == '@' {
+            return strip_pointer_prefix(target_type)
+        }
+        report_error("semantic", expr.line, expr.col, "Cannot index non-pointer / non-string type")
+        st.error_count += 1
+        return "unknown"
+    }
+
+    if expr.kind == EXPR_DEREF {
+        let sub_type = infer_expr_type(st, expr.operand)
+        if str.len(sub_type) > 0 and sub_type[0] == '@' {
+            return strip_pointer_prefix(sub_type)
+        }
+        report_error("semantic", expr.line, expr.col, "Cannot dereference non-pointer value")
+        st.error_count += 1
+        return "unknown"
+    }
+
+    if expr.kind == EXPR_ADDRESS_OF {
+        let sub_type = infer_expr_type(st, expr.operand)
+        return prepend_pointer_prefix(sub_type)
+    }
+
+    if expr.kind == EXPR_CAST {
+        return expr.type_name
+    }
+
+    if expr.kind == EXPR_CALL {
+        // Builtin intrinsics
+        if expr.callee.kind == EXPR_MEMBER {
+            let target = expr.callee.target
+            let member = expr.callee.member_name
+            if target.kind == EXPR_IDENT {
+                if target.str_val == "mem" {
+                    if member == "alloc" or member == "heap_alloc" {
+                        if expr.first_arg != null {
+                            let arg_type = infer_expr_type(st, expr.first_arg)
+                            return arg_type
+                        }
+                    }
+                    if member == "heap_used" { return "usize" }
+                    return "void"
+                }
+                if target.str_val == "fs" {
+                    if member == "read_file" { return "string" }
+                    if member == "size" { return "usize" }
+                    if member == "exists" or member == "write_file" or member == "remove" { return "bool" }
+                }
+                if target.str_val == "str" {
+                    if member == "len" { return "usize" }
+                }
+                if target.str_val == "io" {
+                    return "void"
+                }
+            }
+        }
+
+        // User functions
+        if expr.callee.kind == EXPR_IDENT {
+            let fn_sym = find_function(st, expr.callee.str_val)
+            if fn_sym == null {
+                report_error("semantic", expr.line, expr.col, "Call to undefined function")
+                st.error_count += 1
+                return "unknown"
+            }
+            if expr.arg_count != fn_sym.param_count {
+                report_error("semantic", expr.line, expr.col, "Mismatched argument count in function call")
+                st.error_count += 1
+            }
+            return fn_sym.return_type
+        }
+        return "unknown"
+    }
+
+    if expr.kind == EXPR_STRUCT_LIT {
+        let st_sym = find_struct(st, expr.type_name)
+        if st_sym == null {
+            report_error("semantic", expr.line, expr.col, "Instantiating unknown struct type")
+            st.error_count += 1
+            return "unknown"
+        }
+        mut cur_init = expr.first_init
+        while cur_init != null {
+            let f_sym = find_struct_field(st_sym, cur_init.name)
+            if f_sym == null {
+                report_error("semantic", cur_init.line, cur_init.col, "Unknown field in struct literal")
+                st.error_count += 1
+            } else {
+                let val_type = infer_expr_type(st, cur_init.value)
+                if not types_are_compatible(f_sym.type_name, val_type) {
+                    report_error("semantic", cur_init.line, cur_init.col, "Type mismatch in field initializer")
+                    st.error_count += 1
+                }
+            }
+            cur_init = cur_init.next
+        }
+        return expr.type_name
+    }
+
+    if expr.kind == EXPR_BINARY {
+        let left_type = infer_expr_type(st, expr.left)
+        let right_type = infer_expr_type(st, expr.right)
+        if expr.op == TOK_EQ or expr.op == TOK_NEQ or expr.op == TOK_LT or expr.op == TOK_LTE or expr.op == TOK_GT or expr.op == TOK_GTE or expr.op == TOK_AND or expr.op == TOK_OR {
+            return "bool"
+        }
+        return left_type
+    }
+
+    if expr.kind == EXPR_UNARY {
+        let sub_type = infer_expr_type(st, expr.operand)
+        if expr.op == TOK_NOT {
+            return "bool"
+        }
+        return sub_type
+    }
+
+    return "unknown"
+}
+
+// Validates semantic correctness of a single statement.
+act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode) {
+    if stmt == null { return }
+
+    if stmt.kind == STMT_VAR_DECL {
+        if stmt.val_expr != null {
+            let val_type = infer_expr_type(st, stmt.val_expr)
+            if stmt.type_name != null and str.len(stmt.type_name) > 0 {
+                if not types_are_compatible(stmt.type_name, val_type) {
+                    report_error("semantic", stmt.line, stmt.col, "Type mismatch in variable declaration")
+                    st.error_count += 1
+                }
+            } else {
+                stmt.type_name = val_type
+            }
+        }
+        define_variable(st, stmt.name, stmt.type_name, stmt.is_mut, stmt.line, stmt.col)
+    } else if stmt.kind == STMT_ASSIGN {
+        let target_type = infer_expr_type(st, stmt.expr)
+        let val_type = infer_expr_type(st, stmt.val_expr)
+        if not types_are_compatible(target_type, val_type) {
+            report_error("semantic", stmt.line, stmt.col, "Type mismatch in assignment")
+            st.error_count += 1
+        }
+    } else if stmt.kind == STMT_IF {
+        infer_expr_type(st, stmt.expr)
+        check_statement(st, expected_ret_type, stmt.body)
+        if stmt.else_branch != null {
+            check_statement(st, expected_ret_type, stmt.else_branch)
+        }
+    } else if stmt.kind == STMT_WHILE {
+        infer_expr_type(st, stmt.expr)
+        check_statement(st, expected_ret_type, stmt.body)
+    } else if stmt.kind == STMT_LOOP {
+        enter_scope(st)
+        define_variable(st, stmt.loop_var, "i32", false, stmt.line, stmt.col)
+        check_statement(st, expected_ret_type, stmt.body)
+        exit_scope(st)
+    } else if stmt.kind == STMT_ZONE {
+        check_statement(st, expected_ret_type, stmt.body)
+    } else if stmt.kind == STMT_DEFER {
+        check_statement(st, expected_ret_type, stmt.deferred_stmt)
+    } else if stmt.kind == STMT_RETURN {
+        if stmt.val_expr != null {
+            let ret_type = infer_expr_type(st, stmt.val_expr)
+            if not types_are_compatible(expected_ret_type, ret_type) {
+                report_error("semantic", stmt.line, stmt.col, "Return type mismatch")
+                st.error_count += 1
+            }
+        }
+    } else if stmt.kind == STMT_BLOCK {
+        enter_scope(st)
+        mut cur = stmt.first_stmt
+        while cur != null {
+            check_statement(st, expected_ret_type, cur)
+            cur = cur.next
+        }
+        exit_scope(st)
+    } else if stmt.kind == STMT_EXPR {
+        infer_expr_type(st, stmt.expr)
+    }
+}
+
+// Executes multi-pass semantic analysis and type verification over an AST program.
+act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
+    // Pass 1: Register all struct declarations
+    mut cur = prog.first_decl
+    while cur != null {
+        if cur.kind == DECL_DATA {
+            let st_sym = register_struct(st, cur.name, cur.line, cur.col)
+            mut cur_f = cur.first_field
+            while cur_f != null {
+                struct_add_field(st_sym, cur_f.name, cur_f.type_name, cur_f.line, cur_f.col)
+                cur_f = cur_f.next
+            }
+        }
+        cur = cur.next
+    }
+
+    // Pass 2: Register all function & extern declarations
+    cur = prog.first_decl
+    while cur != null {
+        if cur.kind == DECL_FUNCTION or cur.kind == DECL_EXTERN {
+            let is_ext = cur.kind == DECL_EXTERN
+            let fn_sym = register_function(st, cur.name, cur.return_type, is_ext, cur.line, cur.col)
+            mut cur_p = cur.first_param
+            while cur_p != null {
+                function_add_param(fn_sym, cur_p.name, cur_p.type_name)
+                cur_p = cur_p.next
+            }
+        }
+        cur = cur.next
+    }
+
+    // Pass 3: Validate function bodies, statements, and expressions
+    cur = prog.first_decl
+    while cur != null {
+        if cur.kind == DECL_FUNCTION and cur.body != null {
+            enter_scope(st)
+            mut cur_p = cur.first_param
+            while cur_p != null {
+                define_parameter(st, cur_p.name, cur_p.type_name, cur_p.line, cur_p.col)
+                cur_p = cur_p.next
+            }
+            check_statement(st, cur.return_type, cur.body)
+            exit_scope(st)
+        }
+        cur = cur.next
+    }
+
+    return st.error_count == 0
+}
