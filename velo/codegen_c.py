@@ -4,7 +4,7 @@ from velo.ast_nodes import (
     Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field,
     Stmt, ExprStmt, ReturnStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt, ZoneStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral,
-    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CallExpr, AddressOf, BinaryExpr, UnaryExpr
+    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr
 )
 
 TYPE_MAP = {
@@ -240,6 +240,7 @@ class CCodeGenerator:
         if isinstance(value, StringLiteral): return "string"
         if isinstance(value, BoolLiteral): return "bool"
         if isinstance(value, StructLiteral): return value.struct_name
+        if isinstance(value, CastExpr): return value.target_type
         if isinstance(value, AddressOf):
             operand_type = self._resolve_expr_type(value.operand)
             return f"@{operand_type}"
@@ -254,6 +255,8 @@ class CCodeGenerator:
     def _resolve_expr_type(self, expr: Expr) -> str:
         if isinstance(expr, Identifier):
             return self.current_scope_types.get(expr.name, "i32")
+        elif isinstance(expr, CastExpr):
+            return expr.target_type
         elif isinstance(expr, AddressOf):
             sub_type = self._resolve_expr_type(expr.operand)
             return f"@{sub_type}"
@@ -302,6 +305,10 @@ class CCodeGenerator:
             target_code = self._emit_expression(expr.target)
             index_code = self._emit_expression(expr.index)
             return f"{target_code}[{index_code}]"
+        elif isinstance(expr, CastExpr):
+            sub = self._emit_expression(expr.expr)
+            c_type = self._map_type(expr.target_type)
+            return f"(({c_type})({sub}))"
         elif isinstance(expr, StructLiteral):
             inits = [f".{fname} = {self._emit_expression(fval)}" for fname, fval in expr.field_inits]
             return f"({expr.struct_name}){{ {', '.join(inits)} }}"
@@ -322,14 +329,12 @@ class CCodeGenerator:
             op = "!" if expr.op in ("!", "not") else expr.op
             return f"({op}{sub})"
         elif isinstance(expr, CallExpr):
-            # 1. Check for io.println and io.print
             if isinstance(expr.callee, MemberAccess):
                 if isinstance(expr.callee.target, Identifier):
                     if expr.callee.target.name == "io":
                         if expr.callee.member in ("println", "print"):
                             return self._lower_io_call(expr.callee.member, expr.args)
                     
-                    # 2. Check for mem.alloc and mem.used
                     elif expr.callee.target.name == "mem":
                         if expr.callee.member == "alloc":
                             return self._lower_mem_alloc(expr.args)
@@ -349,7 +354,6 @@ class CCodeGenerator:
         type_arg = args[0]
         count_arg = args[1]
 
-        # Extract type name from AddressOf(Identifier(T)) or Identifier(T)
         if isinstance(type_arg, AddressOf) and isinstance(type_arg.operand, Identifier):
             type_name = type_arg.operand.name
         elif isinstance(type_arg, Identifier):
@@ -419,7 +423,6 @@ class CCodeGenerator:
             base_type = self.current_scope_types.get(base, "i32")
             return base_type.lstrip("@")
 
-        # Handle indexing e.g. particles[i].x
         clean_path = re.sub(r'\[[a-zA-Z0-9_]+\]', '', path)
 
         parts = clean_path.split(".")
@@ -439,8 +442,6 @@ class CCodeGenerator:
             base = path.replace(".@", "")
             return f"(*{base})"
 
-        # Handle indexing e.g. particles[i].x
-        # If there's indexing, particles[i] is already a struct value, so next is '.'
         parts = path.split(".")
         if len(parts) == 1:
             return parts[0]

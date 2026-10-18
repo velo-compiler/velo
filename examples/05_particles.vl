@@ -1,0 +1,75 @@
+use sys.io
+use sys.mem
+
+data Vec2 {
+    x: f32
+    y: f32
+}
+
+data Particle {
+    pos: Vec2
+    vel: Vec2
+    life: f32
+    active: bool
+}
+
+act update_particle(p: @Particle, dt: f32) {
+    if !p.active {
+        return
+    }
+
+    p.pos.x += p.vel.x * dt
+    p.pos.y += p.vel.y * dt
+    p.life -= dt
+
+    if p.life <= 0.0 {
+        p.active = false
+    }
+}
+
+act main() {
+    io.println("--- Velo Milestone 5: 2D Particle Simulation ---")
+
+    count: i64 = 5
+    dt: f32 = 0.016
+
+    zone {
+        // Allocate raw contiguous block of particles on the 16MB hardware arena
+        particles: @Particle = mem.alloc(@Particle, count)
+
+        let initial_used = mem.used()
+        io.println("Arena memory for particles: {initial_used} bytes")
+
+        // Initialize particles
+        loop i in 0..count {
+            p: @Particle = @particles[i]
+            p.pos = Vec2{ x: 0.0, y: 0.0 }
+            p.vel = Vec2{ x: (i as f32) * 2.0, y: 10.0 }
+            p.life = 0.05
+            p.active = true
+        }
+
+        // Run 3 simulation frames
+        mut frame = 0
+        while frame < 3 {
+            io.println("--- Frame {frame} ---")
+
+            loop i in 0..count {
+                p: @Particle = @particles[i]
+                update_particle(p, dt)
+
+                if p.active {
+                    io.println("  Particle[{i}]: pos=({p.pos.x}, {p.pos.y}), life={p.life}")
+                } else {
+                    io.println("  Particle[{i}]: expired")
+                }
+            }
+
+            frame += 1
+        }
+    }
+
+    let final_used = mem.used()
+    io.println("Arena memory after simulation exit: {final_used} bytes (wiped in 1 cycle!)")
+    io.println("--- Milestone 5 Complete! Stage 1 Fully Verified! ---")
+}

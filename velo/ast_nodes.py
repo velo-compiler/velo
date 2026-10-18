@@ -73,6 +73,13 @@ class StructLiteral(Expr):
     col: int
 
 @dataclass
+class CastExpr(Expr):
+    expr: Expr
+    target_type: str
+    line: int
+    col: int
+
+@dataclass
 class CallExpr(Expr):
     callee: Expr
     args: List[Expr]

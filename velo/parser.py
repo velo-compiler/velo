@@ -4,7 +4,7 @@ from velo.ast_nodes import (
     Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field,
     Stmt, ExprStmt, ReturnStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt, ZoneStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral,
-    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CallExpr, AddressOf, BinaryExpr, UnaryExpr
+    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr
 )
 
 class ParserError(Exception):
@@ -392,7 +392,6 @@ class Parser:
 
         while True:
             if self._match(TokenType.DOT):
-                # Check for direct dereference: p.@
                 if self._match(TokenType.AT):
                     at_tok = self.tokens[self.pos - 1]
                     expr = DerefExpr(operand=expr, line=at_tok.line, col=at_tok.col)
@@ -404,6 +403,10 @@ class Parser:
                 idx_expr = self._parse_expression()
                 self._consume(TokenType.RBRACKET, "Expected ']' after array index")
                 expr = IndexExpr(target=expr, index=idx_expr, line=lbracket.line, col=lbracket.col)
+            elif self._match(TokenType.AS):
+                as_tok = self.tokens[self.pos - 1]
+                target_type = self._parse_type_annotation()
+                expr = CastExpr(expr=expr, target_type=target_type, line=as_tok.line, col=as_tok.col)
             elif self._match(TokenType.LPAREN):
                 lparen = self.tokens[self.pos - 1]
                 args: List[Expr] = []
@@ -423,7 +426,6 @@ class Parser:
         if not (self._check(TokenType.IDENTIFIER) and self._peek(1).type == TokenType.LBRACE):
             return False
         
-        # In Velo, struct types are PascalCase (start with uppercase)
         ident_name = self._peek().value
         if not ident_name or not ident_name[0].isupper():
             return False
@@ -440,10 +442,9 @@ class Parser:
         return False
 
     def _parse_primary(self) -> Expr:
-        # Struct literal: Point{ x: 10.0, y: 20.0 }
         if self._is_struct_literal():
-            id_tok = self._advance() # Consume struct name
-            self._advance() # Consume '{'
+            id_tok = self._advance()
+            self._advance() # '{'
             self._skip_newlines()
             field_inits: List[Tuple[str, Expr]] = []
             while not self._check(TokenType.RBRACE) and not self._is_at_end():
