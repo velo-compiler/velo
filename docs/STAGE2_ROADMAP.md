@@ -77,14 +77,16 @@ flowchart TD
 
 ---
 
-### Milestone 2.5: Native CLI Driver & Binary Compilation (`velo.exe`)
+### Milestone 2.5: Native CLI Driver & Binary Compilation (`velo.exe`) [COMPLETED] 🛡️
 * **Goal**: Build the full CLI executable that compiles `.vl` files into native `.exe` binaries.
 * **Deliverables**:
   * `src/backend/driver.vl`: Handles `.velo_cache` directory, writes generated C files, and invokes GCC with proper include paths.
-  * `src/main.vl`: Command-line dispatcher supporting `run`, `build`, and `emit-c`.
+  * `src/main.vl`: Command-line dispatcher supporting `run`, `build`, `emit-c`, `version`, and `help`.
 * **Verification**:
-  - Build `velo.exe` using Stage 1 Python compiler.
-  - Run `velo.exe run examples/01_hello.vl` and `velo.exe run examples/05_particles.vl` natively.
+  - Build `velo.exe` using Stage 1 Python compiler (PASSED).
+  - Run `velo.exe run examples/01_hello.vl` and `velo.exe run examples/02_math_and_logic.vl` natively (PASSED).
+  - Unit test `tests/test_stage2_cli.py` passing 8/8 tests (PASSED).
+
 
 ---
 
