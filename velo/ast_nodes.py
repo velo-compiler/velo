@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional, Any
+from typing import List, Optional, Tuple, Any
 
 # Base AST Node
 class ASTNode:
@@ -49,6 +49,19 @@ class Identifier(Expr):
 class MemberAccess(Expr):
     target: Expr
     member: str
+    line: int
+    col: int
+
+@dataclass
+class DerefExpr(Expr):
+    operand: Expr
+    line: int
+    col: int
+
+@dataclass
+class StructLiteral(Expr):
+    struct_name: str
+    field_inits: List[Tuple[str, Expr]]
     line: int
     col: int
 
@@ -120,7 +133,7 @@ class BlockStmt(Stmt):
 class IfStmt(Stmt):
     condition: Expr
     then_branch: BlockStmt
-    else_branch: Optional[Stmt] # BlockStmt or another IfStmt (for else if)
+    else_branch: Optional[Stmt]
     line: int
     col: int
 
@@ -141,6 +154,20 @@ class LoopStmt(Stmt):
     col: int
 
 # Top-level Declarations
+@dataclass
+class Field:
+    name: str
+    type_name: str
+    line: int
+    col: int
+
+@dataclass
+class DataDecl(Decl):
+    name: str
+    fields: List[Field]
+    line: int
+    col: int
+
 @dataclass
 class Param:
     name: str

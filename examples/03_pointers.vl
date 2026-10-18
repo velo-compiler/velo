@@ -1,0 +1,41 @@
+use sys.io
+
+data Point {
+    x: f32
+    y: f32
+}
+
+// Function accepting a pointer: auto-dereferenced with '.'
+act move_point(p: @Point, dx: f32, dy: f32) {
+    p.x += dx
+    p.y += dy
+}
+
+act main() {
+    io.println("--- Velo Milestone 3: Structs & The @ Pointer System ---")
+
+    // 1. Struct Instantiation
+    mut pt = Point{ x: 10.0, y: 20.0 }
+    io.println("Initial Point: ({pt.x}, {pt.y})")
+
+    // 2. Taking address with '@'
+    ptr: @Point = @pt
+
+    // 3. Modifying struct through pointer in function
+    move_point(ptr, 5.5, -2.5)
+    io.println("Point after move: ({pt.x}, {pt.y})")
+
+    // 4. Modifying struct directly through pointer (auto-dereference)
+    ptr.x = 100.0
+    io.println("Point after direct ptr.x: ({pt.x}, {pt.y})")
+
+    // 5. Primitive pointer dereference with '.@'
+    mut score: i32 = 42
+    p_score: @i32 = @score
+    io.println("Original score: {score}")
+
+    p_score.@ = 99
+    io.println("Modified score via p_score.@: {score}")
+
+    io.println("--- Milestone 3 Complete! ---")
+}

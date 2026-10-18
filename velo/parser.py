@@ -1,10 +1,10 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from velo.tokens import Token, TokenType
 from velo.ast_nodes import (
-    Program, Decl, UseStmt, FunctionDecl, Param, BlockStmt,
+    Program, Decl, UseStmt, FunctionDecl, Param, BlockStmt, DataDecl, Field,
     Stmt, ExprStmt, ReturnStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral,
-    Identifier, MemberAccess, CallExpr, AddressOf, BinaryExpr, UnaryExpr
+    Identifier, MemberAccess, DerefExpr, StructLiteral, CallExpr, AddressOf, BinaryExpr, UnaryExpr
 )
 
 class ParserError(Exception):
@@ -21,7 +21,7 @@ class Parser:
         idx = self.pos + offset
         if idx < len(self.tokens):
             return self.tokens[idx]
-        return self.tokens[-1] # Return EOF
+        return self.tokens[-1]
 
     def _is_at_end(self) -> bool:
         return self._peek().type == TokenType.EOF
@@ -66,6 +66,8 @@ class Parser:
     def _parse_top_level_declaration(self) -> Optional[Decl]:
         if self._check(TokenType.USE):
             return self._parse_use_decl()
+        elif self._check(TokenType.DATA):
+            return self._parse_data_decl()
         elif self._check(TokenType.ACT):
             return self._parse_function_decl()
         else:
@@ -84,6 +86,27 @@ class Parser:
         module_path = ".".join(parts)
         self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
         return UseStmt(module_path=module_path, line=use_tok.line, col=use_tok.col)
+
+    def _parse_data_decl(self) -> DataDecl:
+        data_tok = self._consume(TokenType.DATA, "Expected 'data'")
+        name_tok = self._consume(TokenType.IDENTIFIER, "Expected struct name after 'data'")
+
+        self._skip_newlines()
+        self._consume(TokenType.LBRACE, "Expected '{' after struct name")
+        self._skip_newlines()
+
+        fields: List[Field] = []
+        while not self._check(TokenType.RBRACE) and not self._is_at_end():
+            fname = self._consume(TokenType.IDENTIFIER, "Expected field name")
+            self._consume(TokenType.COLON, "Expected ':' after field name")
+            ftype = self._parse_type_annotation()
+            fields.append(Field(name=fname.value, type_name=ftype, line=fname.line, col=fname.col))
+            self._skip_newlines()
+            self._match(TokenType.COMMA)
+            self._skip_newlines()
+
+        self._consume(TokenType.RBRACE, "Expected '}' after struct body")
+        return DataDecl(name=name_tok.value, fields=fields, line=data_tok.line, col=data_tok.col)
 
     def _parse_function_decl(self) -> FunctionDecl:
         act_tok = self._consume(TokenType.ACT, "Expected 'act'")
@@ -171,7 +194,7 @@ class Parser:
             self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
             return VarDeclStmt(name=name_tok.value, type_name=type_name, value=val, is_mut=False, line=let_tok.line, col=let_tok.col)
 
-        # 3. Variable declaration with explicit type (e.g. x: i32 = 10)
+        # 3. Variable declaration with explicit type (e.g. x: i32 = 10, ptr: @Point = @p)
         if self._peek().type == TokenType.IDENTIFIER and self._peek(1).type == TokenType.COLON:
             name_tok = self._advance()
             self._advance() # Consume ':'
@@ -206,7 +229,6 @@ class Parser:
         # 8. Assignment or Expression Statement
         expr = self._parse_expression()
 
-        # Check for assignment operators: =, +=, -=, *=, /=
         assign_ops = (TokenType.ASSIGN, TokenType.PLUS_ASSIGN, TokenType.MINUS_ASSIGN, TokenType.STAR_ASSIGN, TokenType.SLASH_ASSIGN)
         for op_type in assign_ops:
             if self._match(op_type):
@@ -328,8 +350,13 @@ class Parser:
 
         while True:
             if self._match(TokenType.DOT):
-                member_tok = self._consume(TokenType.IDENTIFIER, "Expected member name after '.'")
-                expr = MemberAccess(target=expr, member=member_tok.value, line=member_tok.line, col=member_tok.col)
+                # Check for direct dereference: p.@
+                if self._match(TokenType.AT):
+                    at_tok = self.tokens[self.pos - 1]
+                    expr = DerefExpr(operand=expr, line=at_tok.line, col=at_tok.col)
+                else:
+                    member_tok = self._consume(TokenType.IDENTIFIER, "Expected member name after '.'")
+                    expr = MemberAccess(target=expr, member=member_tok.value, line=member_tok.line, col=member_tok.col)
             elif self._match(TokenType.LPAREN):
                 lparen = self.tokens[self.pos - 1]
                 args: List[Expr] = []
@@ -345,7 +372,40 @@ class Parser:
 
         return expr
 
+    def _is_struct_literal(self) -> bool:
+        if not (self._check(TokenType.IDENTIFIER) and self._peek(1).type == TokenType.LBRACE):
+            return False
+        # Look ahead inside the '{' to distinguish from block statements (e.g. loop i in 0..count { ...)
+        idx = 2
+        while self.pos + idx < len(self.tokens) and self.tokens[self.pos + idx].type in (TokenType.NEWLINE, TokenType.SEMICOLON):
+            idx += 1
+        
+        target_tok = self._peek(idx)
+        if target_tok.type == TokenType.RBRACE:
+            return True
+        if target_tok.type == TokenType.IDENTIFIER and self._peek(idx + 1).type == TokenType.COLON:
+            return True
+        return False
+
     def _parse_primary(self) -> Expr:
+        # Struct literal: Point{ x: 10.0, y: 20.0 }
+        if self._is_struct_literal():
+            id_tok = self._advance() # Consume struct name
+            self._advance() # Consume '{'
+            self._skip_newlines()
+            field_inits: List[Tuple[str, Expr]] = []
+            while not self._check(TokenType.RBRACE) and not self._is_at_end():
+                fname = self._consume(TokenType.IDENTIFIER, "Expected field name in struct literal")
+                self._consume(TokenType.COLON, "Expected ':' after field name")
+                fval = self._parse_expression()
+                field_inits.append((fname.value, fval))
+                self._skip_newlines()
+                if not self._match(TokenType.COMMA):
+                    self._skip_newlines()
+                    break
+            self._consume(TokenType.RBRACE, "Expected '}' at end of struct literal")
+            return StructLiteral(struct_name=id_tok.value, field_inits=field_inits, line=id_tok.line, col=id_tok.col)
+
         tok = self._peek()
 
         if self._match(TokenType.INT_LIT):
