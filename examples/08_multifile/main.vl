@@ -1,0 +1,21 @@
+use sys.io
+use "types.vl"
+use "math_utils.vl"
+
+act main() {
+    io.println("--- Velo Milestone 2.3: Multi-File Imports ---")
+
+    let a = Vector2{ x: 10.5, y: 20.0 }
+    let b = Vector2{ x: 5.5, y: -4.0 }
+
+    let sum = add_vectors(a, b)
+    io.println("Sum of vectors: ({sum.x}, {sum.y})")
+
+    let scaled = scale_vector(sum, 2.0)
+    io.println("Scaled vector: ({scaled.x}, {scaled.y})")
+
+    let s = Stats{ count: 42, total_score: 99.5 }
+    io.println("Stats: count={s.count}, score={s.total_score}")
+
+    io.println("--- Milestone 2.3 Complete! ---")
+}

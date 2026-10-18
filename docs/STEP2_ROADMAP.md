@@ -26,13 +26,14 @@ This roadmap defines the engineering milestones to complete **Step 2** and prepa
 
 ---
 
-### Milestone 2.3: Multi-File Imports (`use "module.vl"`)
+### Milestone 2.3: Multi-File Imports (`use "module.vl"`) [COMPLETED]
 * **Goal**: Split programs across multiple `.vl` files with automatic deduplication.
 * **Deliverables**:
-  * Parser support for string module paths in `use "filename.vl"`.
-  * Recursive AST resolver with dependency graph cycle detection and deduplication.
-  * Cross-module function calls and struct sharing.
-* **Test Case**: `examples/08_multifile/main.vl` imports `math_utils.vl` and `types.vl`, sharing structs and functions across files.
+  * [x] Parser support for string module paths in `use "filename.vl"`.
+  * [x] Recursive AST resolver with dependency graph cycle detection and deduplication.
+  * [x] Cross-module function calls and struct sharing.
+  * [x] Global function return type inference across all project modules.
+* **Test Case**: `examples/08_multifile/main.vl` imports `math_utils.vl` and `types.vl`, sharing structs and functions across files. (Verified: 18/18 unit tests passing).
 
 ---
 

@@ -77,8 +77,13 @@ class Parser:
 
     def _parse_use_decl(self) -> UseStmt:
         use_tok = self._consume(TokenType.USE, "Expected 'use'")
+        if self._check(TokenType.STRING_LIT):
+            str_tok = self._advance()
+            self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
+            return UseStmt(module_path=str_tok.value, line=use_tok.line, col=use_tok.col)
+
         parts = []
-        first_part = self._consume(TokenType.IDENTIFIER, "Expected module name after 'use'")
+        first_part = self._consume(TokenType.IDENTIFIER, "Expected module name or string path after 'use'")
         parts.append(first_part.value)
 
         while self._match(TokenType.DOT):
@@ -88,6 +93,7 @@ class Parser:
         module_path = ".".join(parts)
         self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
         return UseStmt(module_path=module_path, line=use_tok.line, col=use_tok.col)
+
 
     def _parse_extern_decl(self) -> ExternDecl:
         extern_tok = self._consume(TokenType.EXTERN, "Expected 'extern'")
