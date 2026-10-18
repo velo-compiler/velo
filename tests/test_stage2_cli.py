@@ -69,7 +69,22 @@ def test_cli_run_math():
     source_file = REPO_ROOT / "examples" / "02_math_and_logic.vl"
     res = run_velo(["run", str(source_file)])
     assert res.returncode == 0
+    assert "While step: 0" in res.stdout
+    assert "While step: 2" in res.stdout
+    assert "Loop start at 0" in res.stdout
+    assert "Loop middle step: 1" in res.stdout
+    assert "Loop end at 4" in res.stdout
+    assert "Fibonacci(7) = 13" in res.stdout
     assert "Milestone 2 Complete!" in res.stdout
+
+def test_cli_string_interpolation_and_formatting():
+    particles_file = REPO_ROOT / "examples" / "05_particles.vl"
+    res = run_velo(["run", str(particles_file)])
+    assert res.returncode == 0
+    assert "Arena memory for particles: 120 bytes" in res.stdout
+    assert "--- Frame 0 ---" in res.stdout
+    assert "Particle[0]: pos=(0.00, 0.20), life=0.03" in res.stdout
+    assert "Arena memory after simulation exit: 0 bytes" in res.stdout
 
 def test_cli_build_and_run():
     source_file = REPO_ROOT / "examples" / "01_hello.vl"

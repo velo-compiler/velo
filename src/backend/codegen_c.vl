@@ -110,7 +110,10 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         sb_append_str(sb, "; ")
         sb_append_str(sb, stmt.loop_var)
         sb_append_str(sb, "++) {\n")
+        enter_scope(st)
+        define_variable(st, stmt.loop_var, "i32", false, stmt.line, stmt.col)
         emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
+        exit_scope(st)
         sb_append_indent(sb, indent)
         sb_append_str(sb, "}\n")
         return

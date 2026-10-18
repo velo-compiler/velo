@@ -8,6 +8,7 @@ use "../ast/stmt.vl"
 use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
 use "../common/string_builder.vl"
+use "codegen_io.vl"
 
 // Maps a Velo type name to its standard C99 type string.
 act map_type_to_c(type_name: string) -> string {
@@ -252,6 +253,10 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                         sb_append_str(sb, "))")
                         return
                     }
+                    if member == "used" {
+                        sb_append_str(sb, "velo_mem_used()")
+                        return
+                    }
                     if member == "heap_used" {
                         sb_append_str(sb, "velo_heap_used()")
                         return
@@ -278,6 +283,18 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                         sb_append_str(sb, ")")
                         return
                     }
+                    if member == "size" {
+                        sb_append_str(sb, "velo_fs_size(")
+                        emit_c_expr(sb, st, expr.first_arg)
+                        sb_append_str(sb, ")")
+                        return
+                    }
+                    if member == "remove" or member == "remove_file" {
+                        sb_append_str(sb, "velo_fs_remove(")
+                        emit_c_expr(sb, st, expr.first_arg)
+                        sb_append_str(sb, ")")
+                        return
+                    }
                 }
                 if target.str_val == "str" and member == "len" {
                     sb_append_str(sb, "((usize)strlen(")
@@ -286,18 +303,8 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                     return
                 }
                 if target.str_val == "io" {
-                    if member == "println" {
-                        sb_append_str(sb, "printf(\"%s\\n\", (const char*)(")
-                        emit_c_expr(sb, st, expr.first_arg)
-                        sb_append_str(sb, "))")
-                        return
-                    }
-                    if member == "print" {
-                        sb_append_str(sb, "printf(\"%s\", (const char*)(")
-                        emit_c_expr(sb, st, expr.first_arg)
-                        sb_append_str(sb, "))")
-                        return
-                    }
+                    emit_io_call(sb, st, member, expr.first_arg)
+                    return
                 }
             }
         }

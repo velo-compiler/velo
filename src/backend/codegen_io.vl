@@ -1,0 +1,258 @@
+// C99 IO intrinsics and string interpolation code generator for Velo.
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "codegen_expr.vl"
+
+// Resolves the type of a member access or identifier path and formats its C representation.
+act resolve_path_type_and_c(st: @SymbolTable, path: string, out_c_expr: @StringBuilder) -> string {
+    if path == null { return "i32" }
+    let plen = str.len(path)
+    if plen == 0 { return "i32" }
+
+    // Check for pointer dereference postfix: `var.@`
+    if plen > 2 and path[plen - 2] == '.' and path[plen - 1] == '@' {
+        let base = copy_slice_to_string(path, 0, plen - 2)
+        sb_append_str(out_c_expr, "(*")
+        sb_append_str(out_c_expr, base)
+        sb_append_char(out_c_expr, ')')
+        let sym = resolve_variable(st, base)
+        if sym != null {
+            return strip_pointer_prefix(sym.type_name)
+        }
+        return "i32"
+    }
+
+    // Locate the first dot separator if one exists
+    mut dot_pos: i32 = -1
+    mut k: usize = 0
+    while k < plen {
+        if path[k] == '.' {
+            dot_pos = k as i32
+            k = plen
+        }
+        k += 1
+    }
+
+    // Simple variable without member accesses
+    if dot_pos == -1 {
+        sb_append_str(out_c_expr, path)
+        let sym = resolve_variable(st, path)
+        if sym != null {
+            return sym.type_name
+        }
+        return "i32"
+    }
+
+    // Compound dotted member path (e.g. `p.pos.x`, `tok.line`)
+    let base_name = copy_slice_to_string(path, 0, dot_pos as usize)
+    sb_append_str(out_c_expr, base_name)
+    let sym = resolve_variable(st, base_name)
+    mut curr_type = "unknown"
+    if sym != null {
+        curr_type = sym.type_name
+    }
+
+    mut seg_start: usize = (dot_pos + 1) as usize
+    while seg_start < plen {
+        mut seg_end = seg_start
+        while seg_end < plen and path[seg_end] != '.' {
+            seg_end += 1
+        }
+        let field_name = copy_slice_to_string(path, seg_start, seg_end - seg_start)
+        if str.len(curr_type) > 0 and curr_type[0] == '@' {
+            sb_append_str(out_c_expr, "->")
+        } else {
+            sb_append_char(out_c_expr, '.')
+        }
+        sb_append_str(out_c_expr, field_name)
+
+        let clean_type = strip_pointer_prefix(curr_type)
+        let st_sym = find_struct(st, clean_type)
+        if st_sym != null {
+            let f_sym = find_struct_field(st_sym, field_name)
+            if f_sym != null {
+                curr_type = f_sym.type_name
+            } else {
+                curr_type = "i32"
+            }
+        } else {
+            curr_type = "i32"
+        }
+        seg_start = seg_end + 1
+    }
+    return curr_type
+}
+
+// Emits code for `io.println` and `io.print` calls with full string interpolation and formatting.
+act emit_io_call(sb: @StringBuilder, st: @SymbolTable, member: string, first_arg: @ExprNode) {
+    let is_println = (member == "println")
+
+    // 1. Zero arguments: `io.println()` or `io.print()`
+    if first_arg == null {
+        if is_println {
+            sb_append_str(sb, "printf(\"\\n\")")
+        } else {
+            sb_append_str(sb, "((void)0)")
+        }
+        return
+    }
+
+    // 2. Direct non-string expression argument: `io.println(123)`, `io.println(val)`
+    if first_arg.kind != EXPR_STRING {
+        let arg_type = infer_expr_type(st, first_arg)
+        if arg_type == "f32" or arg_type == "f64" {
+            if is_println {
+                sb_append_str(sb, "printf(\"%f\\n\", (double)(")
+            } else {
+                sb_append_str(sb, "printf(\"%f\", (double)(")
+            }
+            emit_c_expr(sb, st, first_arg)
+            sb_append_str(sb, "))")
+            return
+        }
+        if arg_type == "string" {
+            if is_println {
+                sb_append_str(sb, "printf(\"%s\\n\", (const char*)(")
+            } else {
+                sb_append_str(sb, "printf(\"%s\", (const char*)(")
+            }
+            emit_c_expr(sb, st, first_arg)
+            sb_append_str(sb, "))")
+            return
+        }
+        if arg_type == "bool" {
+            if is_println {
+                sb_append_str(sb, "printf(\"%s\\n\", ((")
+            } else {
+                sb_append_str(sb, "printf(\"%s\", ((")
+            }
+            emit_c_expr(sb, st, first_arg)
+            sb_append_str(sb, ") ? \"true\" : \"false\"))")
+            return
+        }
+        // Integer or pointer types
+        if is_println {
+            sb_append_str(sb, "printf(\"%lld\\n\", (long long)(")
+        } else {
+            sb_append_str(sb, "printf(\"%lld\", (long long)(")
+        }
+        emit_c_expr(sb, st, first_arg)
+        sb_append_str(sb, "))")
+        return
+    }
+
+    // 3. String literal argument with potential interpolation `{...}`
+    let raw = first_arg.str_val
+    let len = str.len(raw)
+
+    // Check if string contains any `{...}` pattern
+    mut has_interp = false
+    mut scan_i: usize = 0
+    while scan_i < len {
+        if raw[scan_i] == '{' {
+            mut scan_j = scan_i + 1
+            while scan_j < len and raw[scan_j] != '}' and raw[scan_j] != '{' {
+                scan_j += 1
+            }
+            if scan_j < len and raw[scan_j] == '}' and scan_j > scan_i + 1 {
+                has_interp = true
+                scan_i = len
+            }
+        }
+        scan_i += 1
+    }
+
+    // Fast path: plain string literal without interpolation
+    if not has_interp {
+        if is_println {
+            sb_append_str(sb, "printf(\"%s\\n\", (const char*)(\"")
+        } else {
+            sb_append_str(sb, "printf(\"%s\", (const char*)(\"")
+        }
+        sb_append_str(sb, raw)
+        sb_append_str(sb, "\"))")
+        return
+    }
+
+    // Interpolation path: parse format string and extract arguments
+    mut fmt_sb = create_sb(len + 32)
+    mut args_sb = create_sb(len * 2 + 32)
+    mut arg_count: usize = 0
+
+    mut idx: usize = 0
+    while idx < len {
+        let c = raw[idx]
+        if c == '{' {
+            mut close_idx = idx + 1
+            while close_idx < len and raw[close_idx] != '}' {
+                close_idx += 1
+            }
+            if close_idx < len and raw[close_idx] == '}' and close_idx > idx + 1 {
+                let path = copy_slice_to_string(raw, idx + 1, close_idx - (idx + 1))
+                mut c_sb = create_sb(64)
+                let resolved_type = resolve_path_type_and_c(st, path, @c_sb)
+                let c_expr_str = sb_to_string(@c_sb)
+
+                if resolved_type == "f32" or resolved_type == "f64" {
+                    sb_append_str(@fmt_sb, "%.2f")
+                    if arg_count > 0 { sb_append_str(@args_sb, ", ") }
+                    sb_append_str(@args_sb, "(double)(")
+                    sb_append_str(@args_sb, c_expr_str)
+                    sb_append_char(@args_sb, ')')
+                    arg_count += 1
+                } else if resolved_type == "string" {
+                    sb_append_str(@fmt_sb, "%s")
+                    if arg_count > 0 { sb_append_str(@args_sb, ", ") }
+                    sb_append_str(@args_sb, "(const char*)(")
+                    sb_append_str(@args_sb, c_expr_str)
+                    sb_append_char(@args_sb, ')')
+                    arg_count += 1
+                } else if resolved_type == "bool" {
+                    sb_append_str(@fmt_sb, "%s")
+                    if arg_count > 0 { sb_append_str(@args_sb, ", ") }
+                    sb_append_str(@args_sb, "((")
+                    sb_append_str(@args_sb, c_expr_str)
+                    sb_append_str(@args_sb, ") ? \"true\" : \"false\")")
+                    arg_count += 1
+                } else {
+                    sb_append_str(@fmt_sb, "%lld")
+                    if arg_count > 0 { sb_append_str(@args_sb, ", ") }
+                    sb_append_str(@args_sb, "(long long)(")
+                    sb_append_str(@args_sb, c_expr_str)
+                    sb_append_char(@args_sb, ')')
+                    arg_count += 1
+                }
+                idx = close_idx + 1
+            } else {
+                sb_append_char(@fmt_sb, c)
+                idx += 1
+            }
+        } else if c == '%' {
+            sb_append_str(@fmt_sb, "%%")
+            idx += 1
+        } else {
+            sb_append_char(@fmt_sb, c)
+            idx += 1
+        }
+    }
+
+    sb_append_str(sb, "printf(\"")
+    sb_append_str(sb, sb_to_string(@fmt_sb))
+    if is_println {
+        sb_append_str(sb, "\\n")
+    }
+    sb_append_char(sb, '"')
+    if arg_count > 0 {
+        sb_append_str(sb, ", ")
+        sb_append_str(sb, sb_to_string(@args_sb))
+    }
+    sb_append_char(sb, ')')
+}

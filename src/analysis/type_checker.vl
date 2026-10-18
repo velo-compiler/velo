@@ -105,7 +105,10 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             if is_known_type(st, expr.str_val) {
                 return expr.str_val
             }
-            io.println("[Velo Error] semantic:{expr.line}:{expr.col} - Undeclared identifier: '{expr.str_val}'")
+            if expr.str_val == "io" or expr.str_val == "mem" or expr.str_val == "fs" or expr.str_val == "str" or expr.str_val == "sys" {
+                return expr.str_val
+            }
+            report_error("semantic", expr.line, expr.col, "Undeclared identifier")
             st.error_count += 1
             return "unknown"
         }
@@ -175,7 +178,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                             return arg_type
                         }
                     }
-                    if member == "heap_used" { return "usize" }
+                    if member == "used" or member == "heap_used" { return "usize" }
                     return "void"
                 }
                 if target.str_val == "fs" {
