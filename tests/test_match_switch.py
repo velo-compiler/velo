@@ -2,13 +2,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-def test_match_multi_value_and_else(tmp_path):
-    source = tmp_path / "test_match.vl"
+def test_on_multi_value_and_else(tmp_path):
+    source = tmp_path / "test_on_multi.vl"
     source.write_text("""
 use sys.io
 
 act classify(val: i32) -> string {
-    match val {
+    on val {
         1 => {
             return "one"
         }
@@ -46,25 +46,17 @@ act main() -> i32 {
     assert "r1=one, r2=two_or_three, r3=two_or_three, r5=four_to_six, r9=other" in res_sh.stdout
 
 
-def test_switch_c_style(tmp_path):
-    source = tmp_path / "test_switch.vl"
+def test_on_compact_arms(tmp_path):
+    source = tmp_path / "test_on_compact.vl"
     source.write_text("""
 use sys.io
 
 act get_speed(gear: i32) -> i32 {
-    switch gear {
-        case 1: {
-            return 15
-        }
-        case 2: {
-            return 30
-        }
-        case 3, 4: {
-            return 65
-        }
-        default: {
-            return 0
-        }
+    on gear {
+        1 => return 15
+        2 => return 30
+        3, 4 => return 65
+        else => return 0
     }
 }
 
@@ -89,7 +81,7 @@ act main() -> i32 {
     assert "g1=15, g3=65, g4=65, g9=0" in res_sh.stdout
 
 
-def test_match_single_statement_and_wildcard(tmp_path):
+def test_on_single_statement_and_wildcard(tmp_path):
     source = tmp_path / "test_wildcard.vl"
     source.write_text("""
 use sys.io
@@ -97,7 +89,7 @@ use sys.io
 act main() -> i32 {
     mut score: i32 = 0
     loop i in 0..6 {
-        match i {
+        on i {
             0 => score += 1
             1, 2 => score += 10
             3 => score += 100
@@ -121,6 +113,31 @@ act main() -> i32 {
     assert "final_score=2121" in res_sh.stdout
 
 
+def test_match_is_regular_identifier(tmp_path):
+    source = tmp_path / "test_identifiers.vl"
+    source.write_text("""
+use sys.io
+
+act main() -> i32 {
+    let match: i32 = 42
+    let val: i32 = 58
+    let total = match + val
+    io.println("total={total}")
+    return 0
+}
+""", encoding="utf-8")
+
+    # Python stage 1
+    res_py = subprocess.run([sys.executable, "velo.py", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    assert res_py.returncode == 0
+    assert "total=100" in res_py.stdout
+
+    # Self-hosted stage 2
+    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    assert res_sh.returncode == 0
+    assert "total=100" in res_sh.stdout
+
+
 def test_example_19_execution():
     example_path = Path("examples/19_match_switch.vl")
     assert example_path.exists()
@@ -140,38 +157,3 @@ def test_example_19_execution():
     assert "Score 10: A+" in res_sh.stdout
     assert "Total points across iterations 0..4 = 50" in res_sh.stdout
     assert "Action for key 2 = attack" in res_sh.stdout
-
-def test_on_statement(tmp_path):
-    source = tmp_path / "test_on.vl"
-    source.write_text("""
-use sys.io
-
-act handle_event(ev: i32) -> string {
-    on ev {
-        0 => return "idle"
-        1, 2 => return "move"
-        3 => return "jump"
-        else => return "unknown"
-    }
-}
-
-act main() -> i32 {
-    let e0 = handle_event(0)
-    let e2 = handle_event(2)
-    let e3 = handle_event(3)
-    let e9 = handle_event(9)
-    io.println("e0={e0}, e2={e2}, e3={e3}, e9={e9}")
-    return 0
-}
-""", encoding="utf-8")
-
-    # Python stage 1
-    res_py = subprocess.run([sys.executable, "velo.py", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
-    assert res_py.returncode == 0
-    assert "e0=idle, e2=move, e3=jump, e9=unknown" in res_py.stdout
-
-    # Self-hosted stage 2
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
-    assert res_sh.returncode == 0
-    assert "e0=idle, e2=move, e3=jump, e9=unknown" in res_sh.stdout
-

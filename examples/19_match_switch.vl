@@ -1,4 +1,4 @@
-// Example 19: Branching - on, match, and switch Statements (Milestone 2.2)
+// Example 19: Branching - on Statement (Milestone 2.2)
 // Demonstrates Velo's signature 'on' multi-way branching and jump tables.
 use sys.io
 
@@ -23,22 +23,12 @@ act classify_http_status(code: i32) -> string {
 }
 
 act grade_letter(score: i32) -> string {
-    switch score {
-        case 10: {
-            return "A+"
-        }
-        case 9: {
-            return "A"
-        }
-        case 8: {
-            return "B"
-        }
-        case 7: {
-            return "C"
-        }
-        default: {
-            return "F"
-        }
+    on score {
+        10 => return "A+"
+        9 => return "A"
+        8 => return "B"
+        7 => return "C"
+        else => return "F"
     }
 }
 
@@ -55,7 +45,7 @@ act main() -> i32 {
     io.println("Status 500: {s500}")
     io.println("Status 999: {s999}")
 
-    io.println("\n=== 2. Switch Statement with Case Colons ===")
+    io.println("\n=== 2. 'on' with Compact Return Arms ===")
     let g10 = grade_letter(10)
     let g9 = grade_letter(9)
     let g8 = grade_letter(8)
@@ -89,6 +79,6 @@ act main() -> i32 {
     }
     io.println("Action for key {key} = {action}")
 
-    io.println("\nAll branching tests passed successfully!")
+    io.println("\nAll 'on' branching tests passed successfully!")
     return 0
 }

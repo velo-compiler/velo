@@ -28,11 +28,9 @@ class TokenType(Enum):
     NOT = auto()
     BREAK = auto()
     CONTINUE = auto()
-    MATCH = auto()
-    SWITCH = auto()
+    ON = auto()
     CASE = auto()
     DEFAULT = auto()
-    ON = auto()
 
     # Literals
     IDENTIFIER = auto()
@@ -118,11 +116,9 @@ KEYWORDS = {
     "not": TokenType.NOT,
     "break": TokenType.BREAK,
     "continue": TokenType.CONTINUE,
-    "match": TokenType.MATCH,
-    "switch": TokenType.SWITCH,
+    "on": TokenType.ON,
     "case": TokenType.CASE,
     "default": TokenType.DEFAULT,
-    "on": TokenType.ON,
 }
 
 @dataclass

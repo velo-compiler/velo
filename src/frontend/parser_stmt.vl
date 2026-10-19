@@ -83,12 +83,12 @@ act parse_loop_stmt(p: @Parser) -> @StmtNode {
     return make_loop_stmt(iter_name, start_expr, end_expr, body, loop_tok.line, loop_tok.col)
 }
 
-// Parses a `match <expr> { ... }` or `switch <expr> { ... }` statement.
-act parse_match_stmt(p: @Parser) -> @StmtNode {
-    let match_tok = parser_advance(p)
+// Parses an `on <expr> { ... }` branching statement.
+act parse_on_stmt(p: @Parser) -> @StmtNode {
+    let on_tok = parser_consume(p, TOK_ON, "Expected 'on'")
     let expr = parse_expression(p)
     parser_skip_newlines(p)
-    parser_consume(p, TOK_LBRACE, "Expected '{' after match expression")
+    parser_consume(p, TOK_LBRACE, "Expected '{' after on expression")
     parser_skip_newlines(p)
 
     mut first_case: @CaseNode = null
@@ -157,8 +157,8 @@ act parse_match_stmt(p: @Parser) -> @StmtNode {
         parser_skip_newlines(p)
     }
 
-    parser_consume(p, TOK_RBRACE, "Expected '}' at end of match block")
-    return make_match_stmt(expr, first_case, case_count, match_tok.line, match_tok.col)
+    parser_consume(p, TOK_RBRACE, "Expected '}' at end of on block")
+    return make_match_stmt(expr, first_case, case_count, on_tok.line, on_tok.col)
 }
 
 // Parses any Velo statement (variable declarations, control flow, assignments, calls).
@@ -240,8 +240,8 @@ act parse_statement(p: @Parser) -> @StmtNode {
     if parser_check(p, TOK_LOOP) {
         return parse_loop_stmt(p)
     }
-    if parser_check(p, TOK_ON) or parser_check(p, TOK_MATCH) or parser_check(p, TOK_SWITCH) {
-        return parse_match_stmt(p)
+    if parser_check(p, TOK_ON) {
+        return parse_on_stmt(p)
     }
 
     // 7. Return statement

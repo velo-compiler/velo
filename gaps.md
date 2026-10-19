@@ -49,11 +49,10 @@ Velo is a working, self-hosted, triple-bootstrapped systems programming language
 * **Supported Controls**: Native `break` and `continue` statements in both `while` loops and `loop <var> in <start>..<end>` range loops.
 * **Semantics & Code Generation**: Direct mapping to C99 `break;` and `continue;` control flow with correct nested loop scoping and Go-style statement termination. Verified with `examples/18_break_continue.vl` and `tests/test_break_continue.py`.
 
-### 2.2 Branching: `on` / `match` / `switch` Statement [COMPLETED] ✅
-* **Signature `on` Keyword**: Velo introduces the punchy, unique 2-letter **`on <expr> { ... }`** keyword tailored for game engines and state dispatching, alongside `match` and `switch` aliases.
-* **Unified Modern & Classic Syntax**: Full support for fat-arrow (`=>`) or colon (`:`) arm separators, and optional `case` keyword.
-* **Multi-Value Patterns**: Matching comma-separated alternative values in a single case branch (e.g. `201, 202 => { ... }`).
-* **Default & Wildcard Fallbacks**: Flexible fallback handling supporting `else => { ... }`, `default: { ... }`, and wildcard `_ => { ... }`.
+### 2.2 Branching: `on` Statement [COMPLETED] ✅
+* **Signature `on` Keyword**: Velo exclusively standardizes on the punchy, unique 2-letter **`on <expr> { ... }`** keyword tailored for game engines and state dispatching (`match` and `switch` completely eliminated from the language).
+* **Multi-Value Patterns**: Matching comma-separated alternative values in a single branch (e.g. `201, 202 => { ... }`).
+* **Default & Wildcard Fallbacks**: Clean fallback handling supporting `else => { ... }` and wildcard `_ => { ... }`.
 * **Block and Single-Statement Arms**: Supports curly-brace scoped code blocks `{ ... }` as well as concise single-statement arm bodies (e.g. `1 => action = "jump"`).
 * **High-Performance C99 Jump Tables**: Emits native scoped C99 `switch (...) { case ...: { ... break; } default: { ... break; } }` blocks enabling $O(1)$ constant-time jump table optimizations by C compilers without accidental fallthrough. Verified with `examples/19_match_switch.vl` and `tests/test_match_switch.py`.
 

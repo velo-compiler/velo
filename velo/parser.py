@@ -275,9 +275,9 @@ class Parser:
         if self._check(TokenType.LOOP):
             return self._parse_loop_stmt()
 
-        # 8.5. Branching statement (on / match / switch)
-        if self._check(TokenType.ON) or self._check(TokenType.MATCH) or self._check(TokenType.SWITCH):
-            return self._parse_match_stmt()
+        # 8.5. 'on' Branching statement
+        if self._check(TokenType.ON):
+            return self._parse_on_stmt()
 
         # 9. Return statement
         if self._check(TokenType.RETURN):
@@ -359,11 +359,11 @@ class Parser:
             col=loop_tok.col
         )
 
-    def _parse_match_stmt(self) -> MatchStmt:
-        match_tok = self._advance() # consume 'match' or 'switch'
+    def _parse_on_stmt(self) -> MatchStmt:
+        on_tok = self._consume(TokenType.ON, "Expected 'on'")
         expr = self._parse_expression()
         self._skip_newlines()
-        self._consume(TokenType.LBRACE, "Expected '{' after match expression")
+        self._consume(TokenType.LBRACE, "Expected '{' after on expression")
         self._skip_newlines()
 
         cases: List[MatchCase] = []
@@ -399,8 +399,8 @@ class Parser:
             cases.append(MatchCase(values=values, is_default=is_default, body=body, line=case_start.line, col=case_start.col))
             self._skip_newlines()
 
-        self._consume(TokenType.RBRACE, "Expected '}' at end of match block")
-        return MatchStmt(expr=expr, cases=cases, line=match_tok.line, col=match_tok.col)
+        self._consume(TokenType.RBRACE, "Expected '}' at end of on block")
+        return MatchStmt(expr=expr, cases=cases, line=on_tok.line, col=on_tok.col)
 
     # Expression Precedence Hierarchy
     def _parse_expression(self) -> Expr:
