@@ -142,3 +142,24 @@ act prepend_pointer_prefix(type_name: string) -> string {
     buf[plen] = 0 as u8
     return buf as string
 }
+
+// Checks if a type name corresponds to a primitive built-in type.
+act is_primitive_type(name: string) -> bool {
+    if name == null { return false }
+    if is_int_type(name) or is_float_type(name) or name == "bool" or name == "string" or name == "void" {
+        return true
+    }
+    return false
+}
+
+// Checks if two type names are structurally or nominally compatible.
+act types_are_compatible(expected: string, actual: string) -> bool {
+    if expected == null or actual == null { return false }
+    if expected == actual { return true }
+    if actual == "@void" and ((str.len(expected) > 0 and expected[0] == '@') or expected == "string") { return true }
+    if expected == "@void" and ((str.len(actual) > 0 and actual[0] == '@') or actual == "string") { return true }
+    if is_int_type(expected) and is_int_type(actual) { return true }
+    if is_float_type(expected) and is_float_type(actual) { return true }
+    if (expected == "@u8" and actual == "string") or (expected == "string" and actual == "@u8") { return true }
+    return false
+}

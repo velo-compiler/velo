@@ -317,3 +317,73 @@ act parse_statement(p: @Parser) -> @StmtNode {
     parser_skip_newlines(p)
     return make_expr_stmt(expr, expr.line, expr.col)
 }
+
+// Parses an enum / tagged union declaration (`kind Name { ... }`).
+act parse_kind_decl(p: @Parser) -> @StmtNode {
+    let kind_tok = parser_consume(p, TOK_KIND, "Expected 'kind'")
+    let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected kind name after 'kind'")
+    let kname = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
+
+    parser_skip_newlines(p)
+    parser_consume(p, TOK_LBRACE, "Expected '{' after kind name")
+    parser_skip_newlines(p)
+
+    mut first_var: @VariantNode = null
+    mut last_var: @VariantNode = null
+    mut count: usize = 0
+
+    loop not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
+        let vname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected variant name")
+        let vname = copy_slice_to_string(p.source, vname_tok.start, vname_tok.length)
+        mut disc: i32 = 0
+        mut has_disc = false
+        mut ptype: string = null
+        mut first_field: @FieldNode = null
+        mut last_field: @FieldNode = null
+        mut f_count: usize = 0
+
+        if parser_match(p, TOK_ASSIGN) {
+            let num_tok = parser_consume(p, TOK_INT_LIT, "Expected integer discriminant after '='")
+            disc = parse_int_from_slice(p.source, num_tok.start, num_tok.length)
+            has_disc = true
+        } else if parser_match(p, TOK_COLON) {
+            ptype = parse_type_annotation(p)
+        } else if parser_match(p, TOK_LPAREN) {
+            if not parser_check(p, TOK_RPAREN) {
+                loop {
+                    let fname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected field name")
+                    let fname = copy_slice_to_string(p.source, fname_tok.start, fname_tok.length)
+                    parser_consume(p, TOK_COLON, "Expected ':' after field name")
+                    let ftype = parse_type_annotation(p)
+                    let f_node = make_field_node(fname, ftype, fname_tok.line, fname_tok.col)
+                    if first_field == null {
+                        first_field = f_node
+                        last_field = f_node
+                    } else {
+                        last_field.next = f_node
+                        last_field = f_node
+                    }
+                    f_count += 1
+                    if not parser_match(p, TOK_COMMA) { break }
+                }
+            }
+            parser_consume(p, TOK_RPAREN, "Expected ')' after variant fields")
+        }
+
+        let var_node = make_variant_node(vname, disc, has_disc, ptype, first_field, f_count, vname_tok.line, vname_tok.col)
+        if first_var == null {
+            first_var = var_node
+            last_var = var_node
+        } else {
+            last_var.next = var_node
+            last_var = var_node
+        }
+        count += 1
+        parser_skip_newlines(p)
+        parser_match(p, TOK_COMMA)
+        parser_skip_newlines(p)
+    }
+
+    parser_consume(p, TOK_RBRACE, "Expected '}' after kind body")
+    return make_kind_decl(kname, first_var, count, kind_tok.line, kind_tok.col)
+}

@@ -1,0 +1,71 @@
+// Example 21: First-Class Enums & Tagged Unions (kind)
+use sys.io
+
+kind Direction {
+    North
+    East
+    South
+    West
+}
+
+kind HttpStatus {
+    Ok = 200
+    NotFound = 404
+}
+
+kind Event {
+    Quit
+    KeyDown: i32
+    Click(button: i32, x: f32, y: f32)
+}
+
+act describe_direction(d: Direction) {
+    on d {
+        .North => { io.println("Facing North") }
+        .East => { io.println("Facing East") }
+        .South => { io.println("Facing South") }
+        .West => { io.println("Facing West") }
+    }
+}
+
+act handle_event(e: Event) {
+    on e {
+        .Quit => {
+            io.println("Event: Quit application")
+        }
+        .KeyDown(key) => {
+            io.println("Event: KeyDown = {key}")
+        }
+        .Click(button, x, y) => {
+            io.println("Event: Click button {button} at ({x}, {y})")
+        }
+    }
+}
+
+act main() -> i32 {
+    io.println("=== Testing Velo First-Class Enums & Tagged Unions ===")
+
+    // 1. Pure enum with dot-shorthand and fully-qualified syntax
+    let d1: Direction = .North
+    let d2 = Direction.East
+    describe_direction(d1)
+    describe_direction(d2)
+
+    // 2. Enum with explicit discriminants
+    let status: HttpStatus = .Ok
+    if status == .Ok {
+        io.println("HTTP status is OK (200)")
+    }
+
+    // 3. Tagged union with unit variant, single payload, and multi-field payload
+    let e_quit: Event = .Quit
+    let e_key: Event = .KeyDown(65)
+    let e_click: Event = .Click(1, 120.5, 340.0)
+
+    handle_event(e_quit)
+    handle_event(e_key)
+    handle_event(e_click)
+
+    io.println("=== All Enum & Tagged Union tests passed successfully! ===")
+    return 0
+}

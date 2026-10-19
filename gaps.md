@@ -68,17 +68,12 @@ Velo is a working, self-hosted, triple-bootstrapped systems programming language
 
 ## 3. Type System & Data Modeling
 
-### 3.1 First-Class Enums & Tagged Unions (🟠 P1 Major)
-* **No `enum` Declarations**: All constants and states must currently be declared as standalone global integers (`let TOKEN_INT: i32 = 101`).
-* **No Tagged Unions (Sum Types)**: You cannot define algebraic data types like:
-  ```velo
-  enum Event {
-      Quit,
-      KeyDown: i32,
-      MouseMove: Vec2
-  }
-  ```
-  Instead, developers must use C-style untyped payloads with manual discriminator flags.
+### 3.1 First-Class Enums & Tagged Unions (`kind`) [COMPLETED] ✅
+* **Unified 4-Letter Keyword**: Velo standardizes on `kind` (harmonizing with `data`, `act`, `zone`, `loop`).
+* **Pure Scalar Enums**: Unit variants (`North`, `East`) and explicit discriminants (`Ok = 200`, `NotFound = 404`) with zero runtime overhead, lowering directly to C99 `int32_t` scalars.
+* **Payload-Bearing Tagged Unions**: Supports single-payload variants (`KeyDown: i32`) and multi-field payloads (`Click(button: i32, x: f32, y: f32)`), lowering to C99 `struct { int32_t kind; union { ... } as; }`.
+* **Contextual Dot-Shorthand**: `let d: Direction = .North`, `let e: Event = .KeyDown(65)`, `let c: Event = .Click(1, 10.0, 20.0)` whenever target type is known; fully-qualified `Direction.North` always valid.
+* **Pattern Matching Destructuring (`on`)**: Directly match with `on e { .KeyDown(key) => ..., .Click(btn, x, y) => ... }` with automatic payload variable bindings scoped to each arm. Verified with `examples/21_enums_and_unions.vl` and `tests/test_enums_and_unions.py`.
 
 ### 3.2 Generics / Parametric Polymorphism (🟠 P1 Major)
 * **Current State**: All functions and structs must have concrete, monomorphic types.

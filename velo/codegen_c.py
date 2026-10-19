@@ -1,10 +1,10 @@
 import re
 from typing import List, Optional, Tuple, Dict, Any
 from velo.ast_nodes import (
-    Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field,
+    Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field, KindDecl, VariantDecl,
     Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, LoopStmt, ZoneStmt, DeferStmt,
     MatchCase, MatchStmt,
-    Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
+    Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr
 )
 
@@ -31,10 +31,13 @@ class CCodeGenerator:
         self.output: List[str] = []
         self.indent_level = 0
         self.struct_defs: Dict[str, Dict[str, str]] = {}
+        self.kind_defs: Dict[str, KindDecl] = {}
+        self.variant_to_kind: Dict[str, str] = {}
         self.current_scope_types: Dict[str, str] = {}
         self.current_function: Optional[FunctionDecl] = None
         self.defer_stack: List[List[Stmt]] = []
         self.zone_counter = 0
+        self.match_counter = 0
 
     def _indent(self) -> str:
         return "    " * self.indent_level
@@ -77,7 +80,17 @@ class CCodeGenerator:
         self._emit_line('#include "velo_runtime.h"')
         self._emit_line()
 
-        # 1. Forward-declare all structs
+        # Collect kind declarations
+        self.kind_defs = {}
+        self.variant_to_kind = {}
+        self.match_counter = 0
+        for decl in program.declarations:
+            if isinstance(decl, KindDecl):
+                self.kind_defs[decl.name] = decl
+                for v in decl.variants:
+                    self.variant_to_kind[v.name] = decl.name
+
+        # 1. Forward-declare all structs and kinds
         seen_structs = set()
         for decl in program.declarations:
             if isinstance(decl, DataDecl):
@@ -85,10 +98,21 @@ class CCodeGenerator:
                     self._emit_line(f"typedef struct {decl.name} {decl.name};")
                     self.struct_defs[decl.name] = {f.name: f.type_name for f in decl.fields}
                     seen_structs.add(decl.name)
+            elif isinstance(decl, KindDecl):
+                if decl.name not in seen_structs:
+                    if self._is_tagged_union(decl):
+                        self._emit_line(f"typedef struct {decl.name} {decl.name};")
+                    else:
+                        self._emit_line(f"typedef int32_t {decl.name};")
+                    seen_structs.add(decl.name)
 
         self._emit_line()
 
-        # 2. Emit struct definitions
+        # 2. Emit kind and struct definitions
+        for decl in program.declarations:
+            if isinstance(decl, KindDecl):
+                self._emit_kind_definition(decl)
+
         emitted_structs = set()
         for decl in program.declarations:
             if isinstance(decl, DataDecl):
@@ -160,6 +184,66 @@ class CCodeGenerator:
         self.indent_level -= 1
         self._emit_line("};")
         self._emit_line()
+
+    def _is_tagged_union(self, decl: KindDecl) -> bool:
+        for v in decl.variants:
+            if v.payload_type is not None or (v.fields is not None and len(v.fields) > 0):
+                return True
+        return False
+
+    def _emit_kind_definition(self, decl: KindDecl):
+        if not self._is_tagged_union(decl):
+            self._emit_line("enum {")
+            self.indent_level += 1
+            for i, v in enumerate(decl.variants):
+                if v.discriminant is not None:
+                    self._emit_line(f"{decl.name}_{v.name} = {v.discriminant},")
+                else:
+                    self._emit_line(f"{decl.name}_{v.name} = {i},")
+            self.indent_level -= 1
+            self._emit_line("};")
+            self._emit_line()
+        else:
+            self._emit_line("enum {")
+            self.indent_level += 1
+            for i, v in enumerate(decl.variants):
+                if v.discriminant is not None:
+                    self._emit_line(f"{decl.name}_{v.name} = {v.discriminant},")
+                else:
+                    self._emit_line(f"{decl.name}_{v.name} = {i},")
+            self.indent_level -= 1
+            self._emit_line("};")
+            self._emit_line()
+
+            for v in decl.variants:
+                if v.fields and len(v.fields) > 0:
+                    self._emit_line(f"typedef struct {decl.name}_{v.name}_Payload {{")
+                    self.indent_level += 1
+                    for f in v.fields:
+                        c_type = self._map_type(f.type_name)
+                        self._emit_line(f"{c_type} {f.name};")
+                    self.indent_level -= 1
+                    self._emit_line(f"}} {decl.name}_{v.name}_Payload;")
+                    self._emit_line()
+
+            self._emit_line(f"struct {decl.name} {{")
+            self.indent_level += 1
+            self._emit_line("int32_t kind;")
+            has_any_payload = any(v.payload_type is not None or (v.fields and len(v.fields) > 0) for v in decl.variants)
+            if has_any_payload:
+                self._emit_line("union {")
+                self.indent_level += 1
+                for v in decl.variants:
+                    if v.fields and len(v.fields) > 0:
+                        self._emit_line(f"{decl.name}_{v.name}_Payload {v.name};")
+                    elif v.payload_type is not None:
+                        c_type = self._map_type(v.payload_type)
+                        self._emit_line(f"{c_type} {v.name};")
+                self.indent_level -= 1
+                self._emit_line("} as;")
+            self.indent_level -= 1
+            self._emit_line("};")
+            self._emit_line()
 
     def _emit_function(self, func: FunctionDecl):
         self.current_function = func
@@ -334,24 +418,94 @@ class CCodeGenerator:
             self._emit_line("}")
 
         elif isinstance(stmt, MatchStmt):
-            expr_code = self._emit_expression(stmt.expr)
-            self._emit_line(f"switch ({expr_code}) {{")
-            for c in stmt.cases:
-                if c.is_default:
-                    self._emit_line("default: {")
+            subj_type = self._resolve_expr_type(stmt.expr)
+            kdecl = self.kind_defs.get(subj_type)
+            if kdecl and self._is_tagged_union(kdecl):
+                if isinstance(stmt.expr, Identifier):
+                    subj_var = stmt.expr.name
                 else:
-                    for v in c.values:
-                        v_code = self._emit_expression(v)
-                        self._emit_line(f"case {v_code}:")
-                    self._emit_line("{")
-                self.indent_level += 1
-                self.defer_stack.append([])
-                self._emit_block_body(c.body.statements)
-                if not (c.body.statements and isinstance(c.body.statements[-1], (ReturnStmt, BreakStmt))):
-                    self._emit_line("break;")
-                self.indent_level -= 1
+                    self.match_counter += 1
+                    subj_var = f"_match_subj_{self.match_counter}"
+                    self._emit_line(f"{subj_type} {subj_var} = {self._emit_expression(stmt.expr)};")
+                self._emit_line(f"switch ({subj_var}.kind) {{")
+                for c in stmt.cases:
+                    if c.is_default:
+                        self._emit_line("default: {")
+                    else:
+                        for v in c.values:
+                            vname = v.variant_name if isinstance(v, VariantExpr) else self._emit_expression(v)
+                            self._emit_line(f"case {subj_type}_{vname}:")
+                        self._emit_line("{")
+                    self.indent_level += 1
+                    self.defer_stack.append([])
+                    if not c.is_default and len(c.values) > 0 and isinstance(c.values[0], VariantExpr):
+                        v_expr = c.values[0]
+                        v_decl = next((vd for vd in kdecl.variants if vd.name == v_expr.variant_name), None)
+                        if v_decl and v_expr.args:
+                            if v_decl.fields:
+                                for f_decl, arg in zip(v_decl.fields, v_expr.args):
+                                    if isinstance(arg, Identifier):
+                                        c_type = self._map_type(f_decl.type_name)
+                                        self._emit_line(f"{c_type} {arg.name} = {subj_var}.as.{v_expr.variant_name}.{f_decl.name};")
+                                        self.current_scope_types[arg.name] = f_decl.type_name
+                            elif v_decl.payload_type:
+                                arg = v_expr.args[0]
+                                if isinstance(arg, Identifier):
+                                    c_type = self._map_type(v_decl.payload_type)
+                                    self._emit_line(f"{c_type} {arg.name} = {subj_var}.as.{v_expr.variant_name};")
+                                    self.current_scope_types[arg.name] = v_decl.payload_type
+                    self._emit_block_body(c.body.statements)
+                    if not (c.body.statements and isinstance(c.body.statements[-1], (ReturnStmt, BreakStmt))):
+                        self._emit_line("break;")
+                    self.indent_level -= 1
+                    self._emit_line("}")
                 self._emit_line("}")
-            self._emit_line("}")
+            elif kdecl and not self._is_tagged_union(kdecl):
+                expr_code = self._emit_expression(stmt.expr)
+                self._emit_line(f"switch ({expr_code}) {{")
+                for c in stmt.cases:
+                    if c.is_default:
+                        self._emit_line("default: {")
+                    else:
+                        for v in c.values:
+                            if isinstance(v, VariantExpr):
+                                self._emit_line(f"case {kdecl.name}_{v.variant_name}:")
+                            else:
+                                v_code = self._emit_expression(v)
+                                self._emit_line(f"case {v_code}:")
+                        self._emit_line("{")
+                    self.indent_level += 1
+                    self.defer_stack.append([])
+                    self._emit_block_body(c.body.statements)
+                    if not (c.body.statements and isinstance(c.body.statements[-1], (ReturnStmt, BreakStmt))):
+                        self._emit_line("break;")
+                    self.indent_level -= 1
+                    self._emit_line("}")
+                self._emit_line("}")
+            else:
+                expr_code = self._emit_expression(stmt.expr)
+                self._emit_line(f"switch ({expr_code}) {{")
+                for c in stmt.cases:
+                    if c.is_default:
+                        self._emit_line("default: {")
+                    else:
+                        for v in c.values:
+                            if isinstance(v, VariantExpr):
+                                kname = v.kind_name or self.variant_to_kind.get(v.variant_name, "")
+                                prefix = f"{kname}_" if kname else ""
+                                self._emit_line(f"case {prefix}{v.variant_name}:")
+                            else:
+                                v_code = self._emit_expression(v)
+                                self._emit_line(f"case {v_code}:")
+                        self._emit_line("{")
+                    self.indent_level += 1
+                    self.defer_stack.append([])
+                    self._emit_block_body(c.body.statements)
+                    if not (c.body.statements and isinstance(c.body.statements[-1], (ReturnStmt, BreakStmt))):
+                        self._emit_line("break;")
+                    self.indent_level -= 1
+                    self._emit_line("}")
+                self._emit_line("}")
 
     def _emit_if(self, stmt: IfStmt):
         cond_code = self._emit_expression(stmt.condition)
@@ -383,6 +537,9 @@ class CCodeGenerator:
         if isinstance(value, StringLiteral): return "string"
         if isinstance(value, BoolLiteral): return "bool"
         if isinstance(value, NullLiteral): return "@void"
+        if isinstance(value, VariantExpr):
+            if value.kind_name: return value.kind_name
+            return self.variant_to_kind.get(value.variant_name, "i32")
         if isinstance(value, StructLiteral): return value.struct_name
         if isinstance(value, CastExpr): return value.target_type
         if isinstance(value, AddressOf):
@@ -393,6 +550,8 @@ class CCodeGenerator:
         if isinstance(value, DerefExpr):
             return self._resolve_expr_type(value)
         if isinstance(value, MemberAccess):
+            if isinstance(value.target, Identifier) and value.target.name in self.kind_defs:
+                return value.target.name
             return self._resolve_expr_type(value)
         if isinstance(value, IndexExpr):
             target_type = self._resolve_expr_type(value.target)
@@ -402,6 +561,8 @@ class CCodeGenerator:
                 return target_type[1:]
             return "i32"
         if isinstance(value, CallExpr):
+            if isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier) and value.callee.target.name in self.kind_defs:
+                return value.callee.target.name
             if isinstance(value.callee, Identifier):
                 if value.callee.name in self.func_return_types:
                     return self.func_return_types[value.callee.name]
@@ -432,6 +593,9 @@ class CCodeGenerator:
     def _resolve_expr_type(self, expr: Expr) -> str:
         if isinstance(expr, Identifier):
             return self.current_scope_types.get(expr.name, "i32")
+        elif isinstance(expr, VariantExpr):
+            if expr.kind_name: return expr.kind_name
+            return self.variant_to_kind.get(expr.variant_name, "i32")
         elif isinstance(expr, CastExpr):
             return expr.target_type
         elif isinstance(expr, AddressOf):
@@ -450,10 +614,15 @@ class CCodeGenerator:
                 return target_type[1:]
             return target_type
         elif isinstance(expr, MemberAccess):
+            if isinstance(expr.target, Identifier) and expr.target.name in self.kind_defs:
+                return expr.target.name
             target_type = self._resolve_expr_type(expr.target)
             clean_type = target_type.lstrip("@")
             fields = self.struct_defs.get(clean_type, {})
             return fields.get(expr.member, "i32")
+        elif isinstance(expr, CallExpr):
+            if isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier) and expr.callee.target.name in self.kind_defs:
+                return expr.callee.target.name
 
         elif isinstance(expr, StructLiteral):
             return expr.struct_name
@@ -552,7 +721,28 @@ class CCodeGenerator:
         elif isinstance(expr, StructLiteral):
             inits = [f".{fname} = {self._emit_expression(fval)}" for fname, fval in expr.field_inits]
             return f"({expr.struct_name}){{ {', '.join(inits)} }}"
+        elif isinstance(expr, VariantExpr):
+            kname = expr.kind_name or self.variant_to_kind.get(expr.variant_name)
+            kdecl = self.kind_defs.get(kname) if kname else None
+            if not kdecl or not self._is_tagged_union(kdecl):
+                prefix = f"{kname}_" if kname else ""
+                return f"{prefix}{expr.variant_name}"
+            vdecl = next((v for v in kdecl.variants if v.name == expr.variant_name), None)
+            if not expr.args:
+                return f"({kname}){{ .kind = {kname}_{expr.variant_name} }}"
+            if vdecl and vdecl.fields and len(vdecl.fields) > 0:
+                inits = [f".{f.name} = {self._emit_expression(a)}" for f, a in zip(vdecl.fields, expr.args)]
+                return f"({kname}){{ .kind = {kname}_{expr.variant_name}, .as = {{ .{expr.variant_name} = {{ {', '.join(inits)} }} }} }}"
+            elif vdecl and vdecl.payload_type:
+                arg_code = self._emit_expression(expr.args[0])
+                return f"({kname}){{ .kind = {kname}_{expr.variant_name}, .as = {{ .{expr.variant_name} = {arg_code} }} }}"
+            return f"({kname}){{ .kind = {kname}_{expr.variant_name} }}"
         elif isinstance(expr, MemberAccess):
+            if isinstance(expr.target, Identifier) and expr.target.name in self.kind_defs:
+                kdecl = self.kind_defs[expr.target.name]
+                if not self._is_tagged_union(kdecl):
+                    return f"{expr.target.name}_{expr.member}"
+                return f"({expr.target.name}){{ .kind = {expr.target.name}_{expr.member} }}"
             target_code = self._emit_expression(expr.target)
             target_type = self._resolve_expr_type(expr.target)
             arrow = "->" if target_type.startswith("@") else "."
@@ -578,6 +768,18 @@ class CCodeGenerator:
             op = "!" if expr.op in ("!", "not") else expr.op
             return f"({op}{sub})"
         elif isinstance(expr, CallExpr):
+            if isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier) and expr.callee.target.name in self.kind_defs:
+                kname = expr.callee.target.name
+                vname = expr.callee.member
+                kdecl = self.kind_defs[kname]
+                vdecl = next((v for v in kdecl.variants if v.name == vname), None)
+                if vdecl and vdecl.fields and len(vdecl.fields) > 0:
+                    inits = [f".{f.name} = {self._emit_expression(a)}" for f, a in zip(vdecl.fields, expr.args)]
+                    return f"({kname}){{ .kind = {kname}_{vname}, .as = {{ .{vname} = {{ {', '.join(inits)} }} }} }}"
+                elif vdecl and vdecl.payload_type:
+                    arg_code = self._emit_expression(expr.args[0])
+                    return f"({kname}){{ .kind = {kname}_{vname}, .as = {{ .{vname} = {arg_code} }} }}"
+                return f"({kname}){{ .kind = {kname}_{vname} }}"
             if isinstance(expr.callee, MemberAccess):
                 if isinstance(expr.callee.target, Identifier):
                     if expr.callee.target.name == "io":

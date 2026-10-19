@@ -60,6 +60,7 @@ act parser_advance(p: @Parser) -> Token {
 // Checks if current token matches the expected kind.
 act parser_check(p: @Parser, kind: i32) -> bool {
     let tok = parser_peek(p, 0)
+    if kind == TOK_IDENTIFIER and tok.kind == TOK_KIND { return true }
     return tok.kind == kind
 }
 
@@ -75,7 +76,7 @@ act parser_match(p: @Parser, kind: i32) -> bool {
 // Consumes the expected token kind or reports a syntax error.
 act parser_consume(p: @Parser, kind: i32, err_msg: string) -> Token {
     let tok = parser_peek(p, 0)
-    if tok.kind == kind {
+    if tok.kind == kind or (kind == TOK_IDENTIFIER and tok.kind == TOK_KIND) {
         return parser_advance(p)
     }
     report_error(p.filename, tok.line, tok.col, err_msg)
@@ -306,6 +307,9 @@ act parse_top_level_declaration(p: @Parser) -> @StmtNode {
     }
     if parser_check(p, TOK_DATA) {
         return parse_data_decl(p)
+    }
+    if parser_check(p, TOK_KIND) {
+        return parse_kind_decl(p)
     }
     if parser_check(p, TOK_ACT) {
         return parse_function_decl(p)

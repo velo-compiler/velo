@@ -1,11 +1,11 @@
 from typing import List, Optional, Tuple
 from velo.tokens import Token, TokenType
 from velo.ast_nodes import (
-    Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field,
+    Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field, KindDecl, VariantDecl,
     Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, LoopStmt, ZoneStmt, DeferStmt,
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
-    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr
+    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, VariantExpr
 )
 
 class ParserError(Exception):
@@ -34,7 +34,10 @@ class Parser:
         return tok
 
     def _check(self, token_type: TokenType) -> bool:
-        return self._peek().type == token_type
+        cur_type = self._peek().type
+        if token_type == TokenType.IDENTIFIER:
+            return cur_type in (TokenType.IDENTIFIER, TokenType.KIND)
+        return cur_type == token_type
 
     def _match(self, *types: TokenType) -> bool:
         for t in types:
@@ -71,6 +74,8 @@ class Parser:
             return self._parse_extern_decl()
         elif self._check(TokenType.DATA):
             return self._parse_data_decl()
+        elif self._check(TokenType.KIND):
+            return self._parse_kind_decl()
         elif self._check(TokenType.ACT):
             return self._parse_function_decl()
         elif self._check(TokenType.LET) or self._check(TokenType.MUT):
@@ -152,6 +157,53 @@ class Parser:
 
         self._consume(TokenType.RBRACE, "Expected '}' after struct body")
         return DataDecl(name=name_tok.value, fields=fields, line=data_tok.line, col=data_tok.col)
+
+    def _parse_kind_decl(self) -> KindDecl:
+        kind_tok = self._consume(TokenType.KIND, "Expected 'kind'")
+        name_tok = self._consume(TokenType.IDENTIFIER, "Expected kind name after 'kind'")
+
+        self._skip_newlines()
+        self._consume(TokenType.LBRACE, "Expected '{' after kind name")
+        self._skip_newlines()
+
+        variants: List[VariantDecl] = []
+        while not self._check(TokenType.RBRACE) and not self._is_at_end():
+            vname = self._consume(TokenType.IDENTIFIER, "Expected variant name")
+            disc = None
+            ptype = None
+            fields = None
+
+            if self._match(TokenType.ASSIGN):
+                num_tok = self._consume(TokenType.INT_LIT, "Expected integer discriminant after '='")
+                disc = num_tok.value
+            elif self._match(TokenType.COLON):
+                ptype = self._parse_type_annotation()
+            elif self._match(TokenType.LPAREN):
+                fields = []
+                if not self._check(TokenType.RPAREN):
+                    while True:
+                        fname = self._consume(TokenType.IDENTIFIER, "Expected field name")
+                        self._consume(TokenType.COLON, "Expected ':' after field name")
+                        ftype = self._parse_type_annotation()
+                        fields.append(Field(name=fname.value, type_name=ftype, line=fname.line, col=fname.col))
+                        if not self._match(TokenType.COMMA):
+                            break
+                self._consume(TokenType.RPAREN, "Expected ')' after variant fields")
+
+            variants.append(VariantDecl(
+                name=vname.value,
+                line=vname.line,
+                col=vname.col,
+                discriminant=disc,
+                payload_type=ptype,
+                fields=fields,
+            ))
+            self._skip_newlines()
+            self._match(TokenType.COMMA)
+            self._skip_newlines()
+
+        self._consume(TokenType.RBRACE, "Expected '}' after kind body")
+        return KindDecl(name=name_tok.value, variants=variants, line=kind_tok.line, col=kind_tok.col)
 
     def _parse_function_decl(self) -> FunctionDecl:
         act_tok = self._consume(TokenType.ACT, "Expected 'act'")
@@ -598,7 +650,7 @@ class Parser:
         target_tok = self._peek(idx)
         if target_tok.type == TokenType.RBRACE:
             return True
-        if target_tok.type == TokenType.IDENTIFIER and self._peek(idx + 1).type == TokenType.COLON:
+        if target_tok.type in (TokenType.IDENTIFIER, TokenType.KIND) and self._peek(idx + 1).type == TokenType.COLON:
             return True
         return False
 
@@ -638,6 +690,18 @@ class Parser:
             return BoolLiteral(value=False, line=tok.line, col=tok.col)
         if self._match(TokenType.IDENTIFIER):
             return Identifier(name=tok.value, line=tok.line, col=tok.col)
+        if self._match(TokenType.DOT):
+            dot_tok = self.tokens[self.pos - 1]
+            var_tok = self._consume(TokenType.IDENTIFIER, "Expected variant name after '.'")
+            args: List[Expr] = []
+            if self._match(TokenType.LPAREN):
+                if not self._check(TokenType.RPAREN):
+                    while True:
+                        args.append(self._parse_expression())
+                        if not self._match(TokenType.COMMA):
+                            break
+                self._consume(TokenType.RPAREN, "Expected ')' after variant arguments")
+            return VariantExpr(kind_name=None, variant_name=var_tok.value, args=args, line=dot_tok.line, col=dot_tok.col)
         if self._match(TokenType.LPAREN):
             expr = self._parse_expression()
             self._consume(TokenType.RPAREN, "Expected ')' after grouped expression")

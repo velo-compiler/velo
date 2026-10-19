@@ -45,6 +45,30 @@ data StructSym {
     next: @StructSym
 }
 
+// Represents a variant inside a registered kind.
+data VariantSym {
+    name: string
+    discriminant: i32
+    has_discriminant: bool
+    payload_type: string
+    first_field: @StructFieldSym
+    field_count: usize
+    line: i32
+    col: i32
+    next: @VariantSym
+}
+
+// Represents a registered kind (enum / tagged union).
+data KindSym {
+    name: string
+    first_variant: @VariantSym
+    variant_count: usize
+    is_tagged_union: bool
+    line: i32
+    col: i32
+    next: @KindSym
+}
+
 // Represents a formal parameter in a registered function signature.
 data ParamSym {
     name: string
@@ -68,6 +92,8 @@ data FunctionSym {
 data SymbolTable {
     first_struct: @StructSym
     struct_count: usize
+    first_kind: @KindSym
+    kind_count: usize
     first_function: @FunctionSym
     function_count: usize
     global_scope: @Scope
@@ -88,6 +114,8 @@ act create_scope(parent: @Scope) -> @Scope {
 act init_symbol_table(st: @SymbolTable) {
     st.first_struct = null
     st.struct_count = 0
+    st.first_kind = null
+    st.kind_count = 0
     st.first_function = null
     st.function_count = 0
     st.global_scope = create_scope(null)
@@ -284,6 +312,78 @@ act find_function(st: @SymbolTable, name: string) -> @FunctionSym {
             return cur
         }
         cur = cur.next
+    }
+    return null
+}
+
+// Registers a kind in the symbol table.
+act register_kind(st: @SymbolTable, name: string, is_tagged_union: bool, line: i32, col: i32) -> @KindSym {
+    mut k: @KindSym = mem.alloc(@KindSym, 1)
+    k.name = name
+    k.first_variant = null
+    k.variant_count = 0
+    k.is_tagged_union = is_tagged_union
+    k.line = line
+    k.col = col
+    k.next = st.first_kind
+    st.first_kind = k
+    st.kind_count += 1
+    return k
+}
+
+// Adds a variant to a registered kind.
+act kind_add_variant(k_sym: @KindSym, name: string, disc: i32, has_disc: bool, ptype: string, f_field: @StructFieldSym, f_count: usize, line: i32, col: i32) -> bool {
+    mut v: @VariantSym = mem.alloc(@VariantSym, 1)
+    v.name = name
+    v.discriminant = disc
+    v.has_discriminant = has_disc
+    v.payload_type = ptype
+    v.first_field = f_field
+    v.field_count = f_count
+    v.line = line
+    v.col = col
+    v.next = null
+
+    if k_sym.first_variant == null {
+        k_sym.first_variant = v
+    } else {
+        mut cur = k_sym.first_variant
+        loop cur.next != null { cur = cur.next }
+        cur.next = v
+    }
+    k_sym.variant_count += 1
+    return true
+}
+
+// Finds a registered kind by name.
+act find_kind(st: @SymbolTable, name: string) -> @KindSym {
+    if st == null or name == null { return null }
+    mut cur = st.first_kind
+    loop cur != null {
+        if cur.name == name { return cur }
+        cur = cur.next
+    }
+    return null
+}
+
+// Finds a variant inside a kind symbol.
+act find_variant(k_sym: @KindSym, vname: string) -> @VariantSym {
+    if k_sym == null or vname == null { return null }
+    mut cur = k_sym.first_variant
+    loop cur != null {
+        if cur.name == vname { return cur }
+        cur = cur.next
+    }
+    return null
+}
+
+// Finds a kind containing a variant name (used for contextual resolution).
+act find_kind_by_variant(st: @SymbolTable, vname: string) -> @KindSym {
+    if st == null or vname == null { return null }
+    mut cur_k = st.first_kind
+    loop cur_k != null {
+        if find_variant(cur_k, vname) != null { return cur_k }
+        cur_k = cur_k.next
     }
     return null
 }

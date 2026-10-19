@@ -21,6 +21,20 @@ let DECL_DATA: i32 = 301
 let DECL_FUNCTION: i32 = 302
 let DECL_EXTERN: i32 = 303
 let DECL_USE: i32 = 304
+let DECL_KIND: i32 = 305
+
+// Represents a variant in a kind (enum / tagged union).
+data VariantNode {
+    name: string
+    discriminant: i32
+    has_discriminant: bool
+    payload_type: string
+    first_field: @FieldNode
+    field_count: usize
+    line: i32
+    col: i32
+    next: @VariantNode
+}
 
 // Represents a single branch in a match / switch statement.
 data CaseNode {
@@ -81,12 +95,14 @@ data StmtNode {
     // Match / Switch constructs
     first_case: @CaseNode
     case_count: usize
-    // Function / Struct / Extern / Use payloads
+    // Function / Struct / Extern / Kind / Use payloads
     first_param: @ParamNode
     param_count: usize
     return_type: string
     first_field: @FieldNode
     field_count: usize
+    first_variant: @VariantNode
+    variant_count: usize
     module_path: string
     // Intrusive linked list pointer for sequence of statements / declarations
     next: @StmtNode
@@ -336,4 +352,31 @@ act make_field_node(name: string, type_name: string, line: i32, col: i32) -> @Fi
     f.col = col
     f.next = null
     return f
+}
+
+// Creates a kind (enum / tagged union) declaration node.
+act make_kind_decl(name: string, first_variant: @VariantNode, count: usize, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = DECL_KIND
+    node.name = name
+    node.first_variant = first_variant
+    node.variant_count = count
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a variant descriptor node.
+act make_variant_node(name: string, disc: i32, has_disc: bool, ptype: string, f_field: @FieldNode, f_count: usize, line: i32, col: i32) -> @VariantNode {
+    mut v: @VariantNode = mem.alloc(@VariantNode, 1)
+    v.name = name
+    v.discriminant = disc
+    v.has_discriminant = has_disc
+    v.payload_type = ptype
+    v.first_field = f_field
+    v.field_count = f_count
+    v.line = line
+    v.col = col
+    v.next = null
+    return v
 }

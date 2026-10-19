@@ -29,7 +29,7 @@ act is_struct_literal(p: @Parser) -> bool {
             if t.kind == TOK_RBRACE {
                 return true
             }
-            if t.kind == TOK_IDENTIFIER {
+            if t.kind == TOK_IDENTIFIER or t.kind == TOK_KIND {
                 let next_t = parser_peek(p, idx + 1)
                 if next_t.kind == TOK_COLON {
                     return true
@@ -154,6 +154,34 @@ act parse_primary(p: @Parser) -> @ExprNode {
         let expr = parse_expression(p)
         parser_consume(p, TOK_RPAREN, "Expected ')' after grouped expression")
         return expr
+    }
+
+    // 8.5. Contextual variant expression `.Variant` or `.Variant(args...)`
+    if parser_match(p, TOK_DOT) {
+        let dot_tok = parser_peek(p, 0)
+        let vname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected variant name after '.'")
+        let vname = copy_slice_to_string(p.source, vname_tok.start, vname_tok.length)
+        mut first_arg: @ExprNode = null
+        mut last_arg: @ExprNode = null
+        mut count: usize = 0
+        if parser_match(p, TOK_LPAREN) {
+            if not parser_check(p, TOK_RPAREN) {
+                loop {
+                    let arg = parse_expression(p)
+                    if first_arg == null {
+                        first_arg = arg
+                        last_arg = arg
+                    } else {
+                        last_arg.next = arg
+                        last_arg = arg
+                    }
+                    count += 1
+                    if not parser_match(p, TOK_COMMA) { break }
+                }
+            }
+            parser_consume(p, TOK_RPAREN, "Expected ')' after variant arguments")
+        }
+        return make_variant_expr(null, vname, first_arg, count, dot_tok.line, dot_tok.col)
     }
 
     let tok = parser_peek(p, 0)

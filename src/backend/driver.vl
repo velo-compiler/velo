@@ -16,6 +16,7 @@ use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "../common/path.vl"
 use "codegen_expr.vl"
+use "codegen_stmt.vl"
 use "codegen_c.vl"
 use "docgen.vl"
 

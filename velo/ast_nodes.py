@@ -116,6 +116,14 @@ class UnaryExpr(Expr):
     line: int
     col: int
 
+@dataclass
+class VariantExpr(Expr):
+    kind_name: Optional[str]
+    variant_name: str
+    args: List[Expr]
+    line: int
+    col: int
+
 # Statements
 @dataclass
 class ExprStmt(Stmt):
@@ -222,6 +230,22 @@ class Field:
 class DataDecl(Decl):
     name: str
     fields: List[Field]
+    line: int
+    col: int
+
+@dataclass
+class VariantDecl:
+    name: str
+    line: int
+    col: int
+    discriminant: Optional[int] = None
+    payload_type: Optional[str] = None
+    fields: Optional[List[Field]] = None
+
+@dataclass
+class KindDecl(Decl):
+    name: str
+    variants: List[VariantDecl]
     line: int
     col: int
 

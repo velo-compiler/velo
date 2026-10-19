@@ -46,6 +46,7 @@ act check_keyword(source: string, start: usize, len: usize) -> i32 {
         if source[start] == 'e' and source[start + 1] == 'l' and source[start + 2] == 's' and source[start + 3] == 'e' { return TOK_ELSE }
         if source[start] == 'l' and source[start + 1] == 'o' and source[start + 2] == 'o' and source[start + 3] == 'p' { return TOK_LOOP }
         if source[start] == 'z' and source[start + 1] == 'o' and source[start + 2] == 'n' and source[start + 3] == 'e' { return TOK_ZONE }
+        if source[start] == 'k' and source[start + 1] == 'i' and source[start + 2] == 'n' and source[start + 3] == 'd' { return TOK_KIND }
         if source[start] == 't' and source[start + 1] == 'r' and source[start + 2] == 'u' and source[start + 3] == 'e' { return TOK_TRUE }
         if source[start] == 'n' and source[start + 1] == 'u' and source[start + 2] == 'l' and source[start + 3] == 'l' { return TOK_NULL }
     } else if len == 5 {

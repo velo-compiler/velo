@@ -1,0 +1,306 @@
+// C99 statement code generator for Velo AST statements.
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../common/string_builder.vl"
+use "codegen_expr.vl"
+
+// Intrusive linked list node maintaining active LIFO deferred statements.
+data DeferNode {
+    stmt: @StmtNode
+    next: @DeferNode
+}
+
+// Emits statements inside a block node.
+act emit_c_block_stmts(sb: @StringBuilder, st: @SymbolTable, block: @StmtNode, indent: i32, defers: @@DeferNode) {
+    if block == null { return }
+    enter_scope(st)
+    mut cur = block.first_stmt
+    loop cur != null {
+        emit_c_stmt(sb, st, cur, indent, defers)
+        cur = cur.next
+    }
+    exit_scope(st)
+}
+
+// Emits an individual statement into the C output stream.
+act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32, defers: @@DeferNode) {
+    if stmt == null { return }
+
+    // 1. Variable declaration
+    if stmt.kind == STMT_VAR_DECL {
+        define_variable(st, stmt.name, stmt.type_name, stmt.is_mut, stmt.line, stmt.col)
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, map_type_to_c(stmt.type_name))
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, stmt.name)
+        if stmt.val_expr != null {
+            sb_append_str(sb, " = ")
+            emit_c_expr(sb, st, stmt.val_expr)
+        }
+        sb_append_str(sb, ";\n")
+        return
+    }
+
+    // 2. Assignment statement
+    if stmt.kind == STMT_ASSIGN {
+        sb_append_indent(sb, indent)
+        emit_c_expr(sb, st, stmt.expr)
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, map_assign_op(stmt.op))
+        sb_append_char(sb, ' ')
+        emit_c_expr(sb, st, stmt.val_expr)
+        sb_append_str(sb, ";\n")
+        return
+    }
+
+    // 3. Expression statement
+    if stmt.kind == STMT_EXPR {
+        sb_append_indent(sb, indent)
+        emit_c_expr(sb, st, stmt.expr)
+        sb_append_str(sb, ";\n")
+        return
+    }
+
+    // 4. If / Else statement
+    if stmt.kind == STMT_IF {
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "if ("); emit_c_expr(sb, st, stmt.expr); sb_append_str(sb, ") {\n")
+        emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
+        sb_append_indent(sb, indent); sb_append_str(sb, "}")
+        if stmt.else_branch != null {
+            if stmt.else_branch.kind == STMT_IF {
+                sb_append_str(sb, " else ")
+                emit_c_stmt(sb, st, stmt.else_branch, indent, defers)
+            } else {
+                sb_append_str(sb, " else {\n")
+                emit_c_block_stmts(sb, st, stmt.else_branch, indent + 1, defers)
+                sb_append_indent(sb, indent); sb_append_str(sb, "}\n")
+            }
+        } else { sb_append_char(sb, '\n') }
+        return
+    }
+
+    // 5. Unified loop statement (infinite, repeat, condition, and range)
+    if stmt.kind == STMT_LOOP {
+        mut vname = "it"
+        if stmt.loop_var != null and str.len(stmt.loop_var) > 0 { vname = stmt.loop_var }
+        sb_append_indent(sb, indent)
+        if stmt.loop_start == null and stmt.loop_end == null {
+            if stmt.expr != null {
+                mut is_cnt = stmt.is_count
+                if not is_cnt and stmt.expr.kind == EXPR_IDENT {
+                    let et = infer_expr_type(st, stmt.expr)
+                    if et == "i32" or et == "i64" or et == "u32" or et == "usize" { is_cnt = true }
+                }
+                sb_append_str(sb, "for (int32_t "); sb_append_str(sb, vname); sb_append_str(sb, " = 0; ")
+                if is_cnt { sb_append_str(sb, vname); sb_append_str(sb, " < ("); emit_c_expr(sb, st, stmt.expr); sb_append_char(sb, ')') }
+                else { sb_append_char(sb, '('); emit_c_expr(sb, st, stmt.expr); sb_append_char(sb, ')') }
+                sb_append_str(sb, "; "); sb_append_str(sb, vname); sb_append_str(sb, "++) {\n")
+            } else {
+                sb_append_str(sb, "for (int32_t "); sb_append_str(sb, vname); sb_append_str(sb, " = 0; ; "); sb_append_str(sb, vname); sb_append_str(sb, "++) {\n")
+            }
+        } else {
+            mut is_rev = false
+            if stmt.loop_start.kind == EXPR_INT and stmt.loop_end.kind == EXPR_INT {
+                if stmt.loop_start.int_val > stmt.loop_end.int_val { is_rev = true }
+            }
+            sb_append_str(sb, "for (int32_t "); sb_append_str(sb, vname); sb_append_str(sb, " = ")
+            emit_c_expr(sb, st, stmt.loop_start)
+            sb_append_str(sb, "; "); sb_append_str(sb, vname)
+            if is_rev {
+                if stmt.is_inclusive { sb_append_str(sb, " >= ") } else { sb_append_str(sb, " > ") }
+            } else {
+                if stmt.is_inclusive { sb_append_str(sb, " <= ") } else { sb_append_str(sb, " < ") }
+            }
+            emit_c_expr(sb, st, stmt.loop_end)
+            sb_append_str(sb, "; "); sb_append_str(sb, vname)
+            if stmt.loop_step != null {
+                if is_rev { sb_append_str(sb, " -= ") } else { sb_append_str(sb, " += ") }
+                emit_c_expr(sb, st, stmt.loop_step)
+            } else {
+                if is_rev { sb_append_str(sb, "--") } else { sb_append_str(sb, "++") }
+            }
+            sb_append_str(sb, ") {\n")
+        }
+        enter_scope(st)
+        define_variable(st, vname, "i32", false, stmt.line, stmt.col)
+        emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
+        exit_scope(st)
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "}\n")
+        return
+    }
+
+    // 7. Zone arena scoping statement
+    if stmt.kind == STMT_ZONE {
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "{\n")
+        sb_append_indent(sb, indent + 1)
+        sb_append_str(sb, "size_t __prev_zone = velo_zone_push();\n")
+        emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
+        sb_append_indent(sb, indent + 1)
+        sb_append_str(sb, "velo_zone_pop(__prev_zone);\n")
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "}\n")
+        return
+    }
+
+    // 8. Defer statement (records deferred statement on LIFO stack)
+    if stmt.kind == STMT_DEFER {
+        mut d: @DeferNode = mem.alloc(@DeferNode, 1)
+        d.stmt = stmt.deferred_stmt
+        d.next = defers.@
+        defers.@ = d
+        return
+    }
+
+    // 9. Return statement (unrolls active defers in LIFO order first)
+    if stmt.kind == STMT_RETURN {
+        mut cur_d = defers.@
+        loop cur_d != null {
+            emit_c_stmt(sb, st, cur_d.stmt, indent, defers)
+            cur_d = cur_d.next
+        }
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "return")
+        if stmt.val_expr != null {
+            sb_append_char(sb, ' ')
+            emit_c_expr(sb, st, stmt.val_expr)
+        }
+        sb_append_str(sb, ";\n")
+        return
+    }
+
+    // 10. Break statement
+    if stmt.kind == STMT_BREAK {
+        sb_append_indent(sb, indent); sb_append_str(sb, "break;\n"); return
+    }
+
+    // 11. Continue statement
+    if stmt.kind == STMT_CONTINUE {
+        sb_append_indent(sb, indent); sb_append_str(sb, "continue;\n"); return
+    }
+
+    // 12. Match / Switch statement
+    if stmt.kind == STMT_MATCH {
+        let subj_type = infer_expr_type(st, stmt.expr)
+        let k_sym = find_kind(st, subj_type)
+        if k_sym != null and k_sym.is_tagged_union {
+            sb_append_indent(sb, indent)
+            sb_append_str(sb, "switch ((")
+            emit_c_expr(sb, st, stmt.expr)
+            sb_append_str(sb, ").kind) {\n")
+            mut cur_case = stmt.first_case
+            loop cur_case != null {
+                if cur_case.is_default {
+                    sb_append_indent(sb, indent)
+                    sb_append_str(sb, "default: {\n")
+                } else {
+                    mut val = cur_case.first_val
+                    loop val != null {
+                        sb_append_indent(sb, indent)
+                        sb_append_str(sb, "case ")
+                        sb_append_str(sb, k_sym.name)
+                        sb_append_char(sb, '_')
+                        sb_append_str(sb, val.member_name)
+                        sb_append_str(sb, ":\n")
+                        val = val.next
+                    }
+                    sb_append_indent(sb, indent)
+                    sb_append_str(sb, "{\n")
+                }
+                enter_scope(st)
+                if not cur_case.is_default and cur_case.first_val != null and cur_case.first_val.kind == EXPR_VARIANT {
+                    let v_node = cur_case.first_val
+                    let v_sym = find_variant(k_sym, v_node.member_name)
+                    if v_sym != null and v_node.first_arg != null {
+                        if v_sym.field_count > 0 {
+                            mut cur_b = v_node.first_arg; mut cur_f = v_sym.first_field
+                            loop cur_b != null and cur_f != null {
+                                if cur_b.kind == EXPR_IDENT {
+                                    define_variable(st, cur_b.str_val, cur_f.type_name, false, cur_b.line, cur_b.col)
+                                    sb_append_indent(sb, indent + 1)
+                                    sb_append_str(sb, map_type_to_c(cur_f.type_name))
+                                    sb_append_char(sb, ' ')
+                                    sb_append_str(sb, cur_b.str_val)
+                                    sb_append_str(sb, " = (")
+                                    emit_c_expr(sb, st, stmt.expr)
+                                    sb_append_str(sb, ").as.")
+                                    sb_append_str(sb, v_node.member_name)
+                                    sb_append_char(sb, '.')
+                                    sb_append_str(sb, cur_f.name)
+                                    sb_append_str(sb, ";\n")
+                                }
+                                cur_b = cur_b.next; cur_f = cur_f.next
+                            }
+                        } else if v_sym.payload_type != null {
+                            if v_node.first_arg.kind == EXPR_IDENT {
+                                define_variable(st, v_node.first_arg.str_val, v_sym.payload_type, false, v_node.first_arg.line, v_node.first_arg.col)
+                                sb_append_indent(sb, indent + 1)
+                                sb_append_str(sb, map_type_to_c(v_sym.payload_type))
+                                sb_append_char(sb, ' ')
+                                sb_append_str(sb, v_node.first_arg.str_val)
+                                sb_append_str(sb, " = (")
+                                emit_c_expr(sb, st, stmt.expr)
+                                sb_append_str(sb, ").as.")
+                                sb_append_str(sb, v_node.member_name)
+                                sb_append_str(sb, ";\n")
+                            }
+                        }
+                    }
+                }
+                mut cur_stmt = cur_case.body.first_stmt
+                loop cur_stmt != null { emit_c_stmt(sb, st, cur_stmt, indent + 1, defers); cur_stmt = cur_stmt.next }
+                exit_scope(st)
+                sb_append_indent(sb, indent + 1)
+                sb_append_str(sb, "break;\n")
+                sb_append_indent(sb, indent)
+                sb_append_str(sb, "}\n")
+                cur_case = cur_case.next
+            }
+            sb_append_indent(sb, indent)
+            sb_append_str(sb, "}\n")
+            return
+        }
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "switch (")
+        emit_c_expr(sb, st, stmt.expr)
+        sb_append_str(sb, ") {\n")
+        mut cur_case = stmt.first_case
+        loop cur_case != null {
+            if cur_case.is_default {
+                sb_append_indent(sb, indent)
+                sb_append_str(sb, "default: {\n")
+            } else {
+                mut val = cur_case.first_val
+                loop val != null {
+                    sb_append_indent(sb, indent)
+                    sb_append_str(sb, "case ")
+                    if val.kind == EXPR_VARIANT and (val.type_name == null or str.len(val.type_name) == 0) and k_sym != null {
+                        val.type_name = k_sym.name
+                    }
+                    emit_c_expr(sb, st, val)
+                    sb_append_str(sb, ":\n")
+                    val = val.next
+                }
+                sb_append_indent(sb, indent)
+                sb_append_str(sb, "{\n")
+            }
+            emit_c_block_stmts(sb, st, cur_case.body, indent + 1, defers)
+            sb_append_indent(sb, indent + 1)
+            sb_append_str(sb, "break;\n")
+            sb_append_indent(sb, indent)
+            sb_append_str(sb, "}\n")
+            cur_case = cur_case.next
+        }
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "}\n")
+        return
+    }
+}

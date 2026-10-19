@@ -29,6 +29,7 @@ act       data      mut       let       if        else
 loop      in        return    zone      extern    defer
 use       true      false     null      sizeof    as
 break     continue  on        and       or        not
+kind
 ```
 
 ### 1.5 Punctuation & Semicolons
@@ -91,6 +92,43 @@ data Point {
     y: f32
 }
 ```
+
+### 2.4 First-Class Enums & Tagged Unions (`kind`)
+Sum types and enumerations are declared using the 4-letter `kind` keyword. Velo supports pure scalar enums, explicit discriminants, and payload-bearing tagged unions:
+
+```rust
+// 1. Pure scalar enum (0 overhead, int32_t in C)
+kind Direction {
+    North
+    East
+    South
+    West
+}
+
+// 2. Enum with explicit discriminants
+kind HttpStatus {
+    Ok = 200
+    NotFound = 404
+}
+
+// 3. Tagged union with single and multi-field payloads
+kind Event {
+    Quit
+    KeyDown: i32
+    Click(button: i32, x: f32, y: f32)
+}
+```
+
+#### Instantiation & Dot-Shorthand:
+* Contextual dot-shorthand is supported whenever the target type is known:
+  ```rust
+  let d: Direction = .North
+  let e: Event = .KeyDown(65)
+  let click: Event = .Click(1, 100.0, 200.0)
+  ```
+* Fully-qualified syntax is always valid: `Direction.North`, `Event.Quit`.
+* Pure enums lower directly to C99 `int32_t` scalar values.
+* Tagged unions lower to a C99 `struct` containing `int32_t kind;` and a payload `union { ... } as;`.
 
 ---
 
@@ -283,6 +321,23 @@ Use `..=` for inclusive ranges:
 ```rust
 loop i in 1..=5 {
     io.println("{i}") // 1, 2, 3, 4, 5
+}
+```
+
+### 7.3 Pattern Matching (`on`)
+The `on` statement performs pattern matching over scalar values, pure enums, and tagged unions. Payload variables are automatically extracted and bound within arm scope:
+
+```rust
+on e {
+    .Quit => {
+        io.println("Quit received")
+    }
+    .KeyDown(key) => {
+        io.println("Key code: {key}")
+    }
+    .Click(button, x, y) => {
+        io.println("Button {button} at ({x}, {y})")
+    }
 }
 ```
 

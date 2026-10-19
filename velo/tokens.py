@@ -28,6 +28,7 @@ class TokenType(Enum):
     BREAK = auto()
     CONTINUE = auto()
     ON = auto()
+    KIND = auto()
 
     # Literals
     IDENTIFIER = auto()
@@ -114,6 +115,7 @@ KEYWORDS = {
     "break": TokenType.BREAK,
     "continue": TokenType.CONTINUE,
     "on": TokenType.ON,
+    "kind": TokenType.KIND,
 }
 
 @dataclass

@@ -17,6 +17,7 @@ let EXPR_INDEX: i32 = 112
 let EXPR_CAST: i32 = 113
 let EXPR_CALL: i32 = 114
 let EXPR_STRUCT_LIT: i32 = 115
+let EXPR_VARIANT: i32 = 116
 
 // Represents a single field initializer in a struct instantiation (e.g. `x: 10.0`).
 // Linked via `next` to support arbitrary numbers of fields without dynamic heap buffers.
@@ -225,4 +226,17 @@ act make_field_init(name: string, value: @ExprNode, line: i32, col: i32) -> @Fie
     init_node.line = line
     init_node.col = col
     return init_node
+}
+
+// Creates an enum / tagged union variant expression node (`.Variant` or `Kind.Variant`).
+act make_variant_expr(kind_name: string, variant_name: string, first_arg: @ExprNode, count: usize, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_VARIANT
+    node.type_name = kind_name
+    node.member_name = variant_name
+    node.first_arg = first_arg
+    node.arg_count = count
+    node.line = line
+    node.col = col
+    return node
 }
