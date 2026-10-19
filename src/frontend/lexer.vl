@@ -19,15 +19,9 @@ data Lexer {
 
 // Determines if a token kind can terminate a statement (Go-style newline rule).
 act can_terminate_stmt(kind: i32) -> bool {
-    if kind == TOK_IDENTIFIER or kind == TOK_INT_LIT or kind == TOK_FLOAT_LIT or kind == TOK_STRING_LIT {
-        return true
-    }
-    if kind == TOK_TRUE or kind == TOK_FALSE or kind == TOK_NULL or kind == TOK_RETURN {
-        return true
-    }
-    if kind == TOK_RPAREN or kind == TOK_RBRACE or kind == TOK_RBRACKET {
-        return true
-    }
+    if kind == TOK_IDENTIFIER or kind == TOK_INT_LIT or kind == TOK_FLOAT_LIT or kind == TOK_STRING_LIT { return true }
+    if kind == TOK_TRUE or kind == TOK_FALSE or kind == TOK_NULL or kind == TOK_RETURN { return true }
+    if kind == TOK_RPAREN or kind == TOK_RBRACE or kind == TOK_RBRACKET { return true }
     return false
 }
 
@@ -253,6 +247,26 @@ act tokenize(lex: @Lexer) {
                 add_token(lex, kind, start_pos, num_len, start_line, start_col)
             }
 
+        } else if c == '`' {
+            // Raw multi-line string literal
+            lex.pos += 1
+            lex.col += 1
+            while lex.pos < len and src[lex.pos] != '`' {
+                if src[lex.pos] == '\n' {
+                    lex.line += 1
+                    lex.col = 1
+                    lex.pos += 1
+                } else {
+                    lex.pos += 1
+                    lex.col += 1
+                }
+            }
+            if lex.pos < len and src[lex.pos] == '`' {
+                lex.pos += 1
+                lex.col += 1
+            }
+            let str_len = lex.pos - start_pos
+            add_token(lex, TOK_STRING_LIT, start_pos, str_len, start_line, start_col)
         } else if c == '"' {
             // String literal
             lex.pos += 1
@@ -281,8 +295,16 @@ act tokenize(lex: @Lexer) {
             lex.pos += 1
             lex.col += 1
             if lex.pos < len and src[lex.pos] == '\\' {
-                lex.pos += 2
-                lex.col += 2
+                if lex.pos + 1 < len and src[lex.pos + 1] == 'u' {
+                    lex.pos += 6
+                    lex.col += 6
+                } else if lex.pos + 1 < len and src[lex.pos + 1] == 'x' {
+                    lex.pos += 4
+                    lex.col += 4
+                } else {
+                    lex.pos += 2
+                    lex.col += 2
+                }
             } else if lex.pos < len {
                 lex.pos += 1
                 lex.col += 1

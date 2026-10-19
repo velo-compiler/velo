@@ -95,7 +95,11 @@ act parse_primary(p: @Parser) -> @ExprNode {
         let val = parse_int_from_slice(p.source, tok.start, tok.length)
         mut node = make_int_expr(val, tok.line, tok.col)
         if tok.length >= 1 and p.source[tok.start] == '\'' {
-            node.str_val = copy_slice_to_string(p.source, tok.start, tok.length)
+            if tok.length >= 3 and p.source[tok.start + 1] == '\\' and (p.source[tok.start + 2] == 'u' or p.source[tok.start + 2] == 'x') {
+                node.str_val = ""
+            } else {
+                node.str_val = copy_slice_to_string(p.source, tok.start, tok.length)
+            }
         } else {
             let c_str = format_c_number_literal(p.source, tok.start, tok.length, false)
             let sfx = extract_literal_suffix(p.source, tok.start, tok.length)

@@ -5,50 +5,32 @@ use "path.vl"
 
 // Checks if a byte is ASCII horizontal whitespace (space, tab, carriage return).
 act is_whitespace(c: u8) -> bool {
-    if c == ' ' or c == '\t' or c == '\r' {
-        return true
-    }
-    return false
+    return c == ' ' or c == '\t' or c == '\r'
 }
 
 // Checks if a byte is a newline separator.
 act is_newline(c: u8) -> bool {
-    if c == '\n' {
-        return true
-    }
-    return false
+    return c == '\n'
 }
 
 // Checks if a byte is an alphabetic character [a-zA-Z].
 act is_alpha(c: u8) -> bool {
-    if (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') {
-        return true
-    }
-    return false
+    return (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z')
 }
 
 // Checks if a byte is a decimal digit [0-9].
 act is_digit(c: u8) -> bool {
-    if c >= '0' and c <= '9' {
-        return true
-    }
-    return false
+    return c >= '0' and c <= '9'
 }
 
 // Checks if a byte can begin an identifier [a-zA-Z_].
 act is_ident_start(c: u8) -> bool {
-    if is_alpha(c) or c == '_' {
-        return true
-    }
-    return false
+    return is_alpha(c) or c == '_'
 }
 
 // Checks if a byte can continue an identifier [a-zA-Z0-9_].
 act is_ident_part(c: u8) -> bool {
-    if is_alpha(c) or is_digit(c) or c == '_' {
-        return true
-    }
-    return false
+    return is_alpha(c) or is_digit(c) or c == '_'
 }
 
 // Allocates a null-terminated string copy of a slice inside the active zone arena.
@@ -63,6 +45,14 @@ act copy_slice_to_string(source: string, start: usize, len: usize) -> string {
     return buf as string
 }
 
+// Returns the numeric value (0-15) of an ASCII hexadecimal character.
+act parse_hex_digit(c: u8) -> i32 {
+    if c >= '0' and c <= '9' { return (c as i32) - ('0' as i32) }
+    if c >= 'a' and c <= 'f' { return (c as i32) - ('a' as i32) + 10 }
+    if c >= 'A' and c <= 'F' { return (c as i32) - ('A' as i32) + 10 }
+    return 0
+}
+
 // Parses an integer or character literal value from an ASCII slice.
 act parse_int_from_slice(source: string, start: usize, len: usize) -> i32 {
     if len >= 2 and source[start] == '\'' {
@@ -74,7 +64,16 @@ act parse_int_from_slice(source: string, start: usize, len: usize) -> i32 {
                 if esc == 'r' { return 13 }
                 if esc == '0' { return 0 }
                 if esc == '\'' { return 39 }
+                if esc == '"' { return 34 }
                 if esc == '\\' { return 92 }
+                if esc == 'x' and len >= 5 {
+                    let p = start + 3
+                    return (parse_hex_digit(source[p]) << 4) | parse_hex_digit(source[p + 1])
+                }
+                if esc == 'u' and len >= 7 {
+                    let p = start + 3
+                    return (parse_hex_digit(source[p]) << 12) | (parse_hex_digit(source[p + 1]) << 8) | (parse_hex_digit(source[p + 2]) << 4) | parse_hex_digit(source[p + 3])
+                }
                 return esc as i32
             }
         }
@@ -227,42 +226,8 @@ act format_c_number_literal(source: string, start: usize, len: usize, is_float: 
     let s_len = str.len(suffix)
     let digits_len = len - s_len
 
-    // Binary literals (0b...) -> convert to integer decimal string
-    if digits_len >= 2 and source[start] == '0' and (source[start + 1] == 'b' or source[start + 1] == 'B') {
-        let val = parse_int_from_slice(source, start, len)
-        mut buf: @u8 = mem.alloc(@u8, 32)
-        mut count: usize = 0
-        mut n = val
-        if n == 0 {
-            buf[0] = '0'
-            count = 1
-        } else {
-            mut temp: @u8 = mem.alloc(@u8, 16)
-            mut tc: usize = 0
-            while n > 0 {
-                temp[tc] = ('0' as u8) + ((n % 10) as u8)
-                n = n / 10
-                tc += 1
-            }
-            while tc > 0 {
-                tc -= 1
-                buf[count] = temp[tc]
-                count += 1
-            }
-        }
-        if suffix == "u64" or suffix == "usize" {
-            buf[count] = 'U'; buf[count + 1] = 'L'; buf[count + 2] = 'L'; count += 3
-        } else if suffix == "i64" or suffix == "isize" {
-            buf[count] = 'L'; buf[count + 1] = 'L'; count += 2
-        } else if suffix == "u32" or suffix == "u16" or suffix == "u8" {
-            buf[count] = 'U'; count += 1
-        }
-        buf[count] = 0 as u8
-        return buf as string
-    }
-
-    // Octal literals (0o...) -> convert to integer decimal string
-    if digits_len >= 2 and source[start] == '0' and (source[start + 1] == 'o' or source[start + 1] == 'O') {
+    // Binary and Octal literals (0b..., 0o...) -> convert to integer decimal string
+    if digits_len >= 2 and source[start] == '0' and (source[start + 1] == 'b' or source[start + 1] == 'B' or source[start + 1] == 'o' or source[start + 1] == 'O') {
         let val = parse_int_from_slice(source, start, len)
         mut buf: @u8 = mem.alloc(@u8, 32)
         mut count: usize = 0
@@ -329,6 +294,88 @@ act format_c_number_literal(source: string, start: usize, len: usize, is_float: 
         }
     }
 
+    buf[count] = 0 as u8
+    return buf as string
+}
+
+// Decodes a string literal (raw backtick or standard double-quoted) into C-ready escaped format.
+act process_string_literal(source: string, start: usize, len: usize) -> string {
+    if len < 2 { return "" }
+    let quote = source[start]
+    let content_len = len - 2
+
+    // 1. Raw multi-line string literal (`...`)
+    if quote == '`' {
+        mut buf: @u8 = mem.alloc(@u8, content_len * 2 + 1)
+        mut count: usize = 0
+        mut i: usize = 0
+        while i < content_len {
+            let c = source[start + 1 + i]
+            if c == '\r' {
+                if i + 1 < content_len and source[start + 1 + i + 1] == '\n' { i += 1 }
+                buf[count] = '\\'; buf[count + 1] = 'n'; count += 2
+            } else if c == '\n' {
+                buf[count] = '\\'; buf[count + 1] = 'n'; count += 2
+            } else if c == '\\' {
+                buf[count] = '\\'; buf[count + 1] = '\\'; count += 2
+            } else if c == '"' {
+                buf[count] = '\\'; buf[count + 1] = '"'; count += 2
+            } else {
+                buf[count] = c; count += 1
+            }
+            i += 1
+        }
+        buf[count] = 0 as u8
+        return buf as string
+    }
+
+    // 2. Standard double-quoted string literal ("...")
+    mut buf: @u8 = mem.alloc(@u8, content_len * 2 + 1)
+    mut count: usize = 0
+    mut i: usize = 0
+    while i < content_len {
+        let c = source[start + 1 + i]
+        if c == '\\' and i + 1 < content_len {
+            let esc = source[start + 1 + i + 1]
+            if esc == 'u' and i + 5 < content_len {
+                let p = start + 1 + i + 2
+                let cp = (parse_hex_digit(source[p]) << 12) | (parse_hex_digit(source[p + 1]) << 8) | (parse_hex_digit(source[p + 2]) << 4) | parse_hex_digit(source[p + 3])
+                i += 6
+                if cp < 128 {
+                    if cp == 10 { buf[count] = '\\'; buf[count + 1] = 'n'; count += 2 }
+                    else if cp == 9 { buf[count] = '\\'; buf[count + 1] = 't'; count += 2 }
+                    else if cp == 13 { buf[count] = '\\'; buf[count + 1] = 'r'; count += 2 }
+                    else if cp == 34 { buf[count] = '\\'; buf[count + 1] = '"'; count += 2 }
+                    else if cp == 92 { buf[count] = '\\'; buf[count + 1] = '\\'; count += 2 }
+                    else if cp == 0 { buf[count] = '\\'; buf[count + 1] = '0'; count += 2 }
+                    else { buf[count] = cp as u8; count += 1 }
+                } else if cp <= 2047 {
+                    buf[count] = (192 | (cp >> 6)) as u8; count += 1
+                    buf[count] = (128 | (cp & 63)) as u8; count += 1
+                } else {
+                    buf[count] = (224 | (cp >> 12)) as u8; count += 1
+                    buf[count] = (128 | ((cp >> 6) & 63)) as u8; count += 1
+                    buf[count] = (128 | (cp & 63)) as u8; count += 1
+                }
+            } else if esc == 'x' and i + 3 < content_len {
+                let p = start + 1 + i + 2
+                let b = (parse_hex_digit(source[p]) << 4) | parse_hex_digit(source[p + 1])
+                i += 4
+                if b == 10 { buf[count] = '\\'; buf[count + 1] = 'n'; count += 2 }
+                else if b == 9 { buf[count] = '\\'; buf[count + 1] = 't'; count += 2 }
+                else if b == 13 { buf[count] = '\\'; buf[count + 1] = 'r'; count += 2 }
+                else if b == 34 { buf[count] = '\\'; buf[count + 1] = '"'; count += 2 }
+                else if b == 92 { buf[count] = '\\'; buf[count + 1] = '\\'; count += 2 }
+                else if b == 0 { buf[count] = '\\'; buf[count + 1] = '0'; count += 2 }
+                else { buf[count] = b as u8; count += 1 }
+            } else {
+                buf[count] = '\\'; buf[count + 1] = esc; count += 2
+                i += 2
+            }
+        } else {
+            buf[count] = c; count += 1; i += 1
+        }
+    }
     buf[count] = 0 as u8
     return buf as string
 }

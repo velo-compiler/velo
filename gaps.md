@@ -36,10 +36,10 @@ Velo is a working, self-hosted, triple-bootstrapped systems programming language
 * **Scientific Notation**: Full exponent support (`1e-4`, `2.5e6`, `1E3`, `3.14e+2`) in both Stage 1 and Stage 2 self-hosted compilers.
 * **Explicit Literal Suffixes**: Explicit integer (`u8`, `u16`, `u32`, `u64`, `usize`, `i8`, `i16`, `i32`, `i64`, `isize`) and float (`f32`, `f64`) suffixes with automatic type inference and C99 suffix mapping (`LL`, `ULL`, `U`, `f`). Verified with `examples/16_literal_formatting.vl` and `tests/test_literal_formatting.py`.
 
-### 1.4 String & Character Escapes (🟡 P2 Ergonomic)
-* **Raw / Multi-line Strings**: No raw string literals (like `` `raw\text` `` or `"""multiline"""`). Writing shaders, SQL, or embedded JSON requires manual escaping of newlines.
-* **Unicode Escapes**: No `\uXXXX` or `\UXXXXXXXX` escape sequences for UTF-8 character points.
-* **Character Type**: Characters are treated as raw integer byte values (`u8`). There is no distinct `char` or `rune` type.
+### 1.4 String & Character Escapes [COMPLETED] ✅
+* **Raw / Multi-line Strings**: Supported via backticks (`` `...` ``). Preserves literal backslashes, quotes, and newlines across multiple lines without escape decoding. Automatically normalized and formatted into standard C99 string literals.
+* **Unicode Escapes (`\uXXXX`)**: Full 4-digit hexadecimal Unicode escape support in standard string and character literals, encoded automatically into compliant UTF-8 multi-byte sequences (`0x00A9` -> `0xC2 0xA9`, `0x2764` -> `0xE2 0x9D 0xA4`).
+* **Character Literals & Escapes**: Character literals support standard escapes (`\n`, `\t`, `\r`, `\0`, `\\`, `\'`, `\"`), 2-digit hex escapes (`\xNN`), and 4-digit Unicode escapes (`\uXXXX`), correctly evaluating to their numeric integer values. Verified with `examples/17_string_escapes.vl` and `tests/test_string_escapes.py`.
 
 ---
 

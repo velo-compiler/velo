@@ -1,0 +1,58 @@
+// Example 17: String & Character Escapes (Milestone 1.4)
+// Demonstrates raw multi-line strings (`...`), unicode escapes (\uXXXX),
+// hex byte escapes (\xNN), and standard escape sequences.
+use sys.io
+
+act main() -> i32 {
+    io.println("=== 1. Standard Escape Sequences ===")
+    let s_escaped = "Line 1\tTabbed\nLine 2 with \"quotes\" and \\backslash\\"
+    io.println(s_escaped)
+
+    io.println("\n=== 2. Character Literals & Escapes ===")
+    let c_a = 'A'
+    let c_nl = '\n'
+    let c_tab = '\t'
+    let c_hex = '\x41'      // 65 ('A')
+    let c_u_ascii = '\u0041'// 65 ('A')
+    let c_u_copy = '\u00A9' // 169
+    let c_u_heart = '\u2764'// 10084
+
+    if c_a == 65 and c_hex == 65 and c_u_ascii == 65 {
+        io.println("ASCII character escapes verified: 'A' == \\x41 == \\u0041")
+    }
+    if c_nl == 10 and c_tab == 9 {
+        io.println("Standard escapes verified: \\n == 10, \\t == 9")
+    }
+    if c_u_copy == 169 and c_u_heart == 10084 {
+        io.println("Unicode code point values verified: \\u00A9 == 169, \\u2764 == 10084")
+    }
+
+    io.println("\n=== 3. Unicode Escapes in Strings (UTF-8) ===")
+    let copyright_msg = "Copyright \u00A9 2026 Velo Systems"
+    let price_msg = "Item price: \u002499 USD"
+    let heart_msg = "Made with \u2764 in Velo"
+    io.println(copyright_msg)
+    io.println(price_msg)
+    io.println(heart_msg)
+
+    io.println("\n=== 4. Raw Multi-line Strings ===")
+    let raw_path = `C:\new\project\target\debug`
+    io.println(raw_path)
+
+    let raw_json = `{"status": 200, "message": "OK", "regex": "\\d+"}`
+    io.println(raw_json)
+
+    let raw_multiline = `SELECT id, username, email
+FROM users
+WHERE status = 'active'
+ORDER BY id DESC;`
+    io.println(raw_multiline)
+
+    io.println("\n=== 5. Raw String Interpolation ===")
+    let engine_name = "VeloEngine"
+    let frame_count = 60
+    io.println(`[Engine] Running {engine_name} at {frame_count} FPS`)
+
+    io.println("\n[SUCCESS] Milestone 1.4: String & Character Escapes Verified!")
+    return 0
+}

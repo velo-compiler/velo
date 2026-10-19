@@ -459,7 +459,13 @@ class CCodeGenerator:
                 return clean
             return f"{expr.value}f"
         elif isinstance(expr, StringLiteral):
-            escaped = expr.value.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\t', '\\t')
+            escaped = (expr.value
+                       .replace('\\', '\\\\')
+                       .replace('"', '\\"')
+                       .replace('\n', '\\n')
+                       .replace('\r', '\\r')
+                       .replace('\t', '\\t')
+                       .replace('\0', '\\0'))
             return f'"{escaped}"'
         elif isinstance(expr, BoolLiteral):
             return "true" if expr.value else "false"

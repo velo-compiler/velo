@@ -90,20 +90,9 @@ act parser_skip_newlines(p: @Parser) {
     }
 }
 
-// Extracts unquoted string literal text.
+// Extracts unquoted and formatted string literal text.
 act get_string_literal_text(source: string, tok: Token) -> string {
-    if tok.length < 2 {
-        return ""
-    }
-    let content_len = tok.length - 2
-    mut buf: @u8 = mem.alloc(@u8, content_len + 1)
-    mut i: usize = 0
-    while i < content_len {
-        buf[i] = source[tok.start + 1 + i]
-        i += 1
-    }
-    buf[content_len] = 0 as u8
-    return buf as string
+    return process_string_literal(source, tok.start, tok.length)
 }
 
 // Parses type annotations with pointer prefixes (e.g. `i32`, `@Point`, `@@u8`).

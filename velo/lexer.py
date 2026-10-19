@@ -115,6 +115,13 @@ class Lexer:
             start_line = self.line
             start_col = self.col
 
+            # Raw multi-line string literals (`raw`)
+            if ch == '`':
+                tok = self._scan_raw_string(start_line, start_col)
+                self.tokens.append(tok)
+                last_meaningful_token = tok
+                continue
+
             # String literals
             if ch == '"':
                 tok = self._scan_string(start_line, start_col)
@@ -152,6 +159,32 @@ class Lexer:
         self.tokens.append(Token(TokenType.EOF, "", self.line, self.col))
         return self.tokens
 
+    def _scan_raw_string(self, line: int, col: int) -> Token:
+        self._advance() # Consume opening '`'
+        chars = []
+        while True:
+            ch = self._peek()
+            if ch is None:
+                raise LexerError("Unterminated raw string literal", line, col)
+            if ch == '`':
+                self._advance() # Consume closing '`'
+                break
+            if ch == '\r':
+                self._advance()
+                if self._peek() == '\n':
+                    self._advance()
+                self.line += 1
+                self.col = 1
+                chars.append('\n')
+            elif ch == '\n':
+                self.line += 1
+                self.col = 1
+                self._advance()
+                chars.append('\n')
+            else:
+                chars.append(self._advance())
+        return Token(TokenType.STRING_LIT, "".join(chars), line, col)
+
     def _scan_string(self, line: int, col: int) -> Token:
         self._advance() # Consume opening '"'
         chars = []
@@ -168,10 +201,26 @@ class Lexer:
                 if escape == 'n': chars.append('\n')
                 elif escape == 't': chars.append('\t')
                 elif escape == 'r': chars.append('\r')
+                elif escape == '0': chars.append('\0')
                 elif escape == '"': chars.append('"')
+                elif escape == '\'': chars.append('\'')
                 elif escape == '\\': chars.append('\\')
                 elif escape == '{': chars.append('{')
                 elif escape == '}': chars.append('}')
+                elif escape == 'x':
+                    h1 = self._advance()
+                    h2 = self._advance()
+                    if h1 is None or h2 is None:
+                        raise LexerError("Invalid hex escape in string literal", line, col)
+                    chars.append(chr(int(h1 + h2, 16)))
+                elif escape == 'u':
+                    h = ""
+                    for _ in range(4):
+                        hc = self._advance()
+                        if hc is None:
+                            raise LexerError("Invalid unicode escape in string literal", line, col)
+                        h += hc
+                    chars.append(chr(int(h, 16)))
                 else:
                     raise LexerError(f"Unknown escape sequence '\\{escape}'", line, col)
             else:
@@ -190,7 +239,22 @@ class Lexer:
             elif esc == 'r': val = ord('\r')
             elif esc == '0': val = 0
             elif esc == '\'': val = ord('\'')
+            elif esc == '"': val = ord('"')
             elif esc == '\\': val = ord('\\')
+            elif esc == 'x':
+                h1 = self._advance()
+                h2 = self._advance()
+                if h1 is None or h2 is None:
+                    raise LexerError("Invalid hex escape in character literal", line, col)
+                val = int(h1 + h2, 16)
+            elif esc == 'u':
+                h = ""
+                for _ in range(4):
+                    hc = self._advance()
+                    if hc is None:
+                        raise LexerError("Invalid unicode escape in character literal", line, col)
+                    h += hc
+                val = int(h, 16)
             else: val = ord(esc) if esc else 0
         else:
             val = ord(ch)
