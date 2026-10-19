@@ -1,0 +1,163 @@
+// ============================================================================
+// PROBLEM 9: 2D Spatial Hash Grid Partitioning & Broadphase Collision Engine
+// Category:  Advanced - Game Physics, Spatial Data Structures & Computational Geometry
+//
+// PROBLEM DESCRIPTION:
+// In 2D game physics, particle simulations, and swarm robotics, detecting
+// potential collisions between N dynamic entities naively requires an O(N^2)
+// all-pairs distance comparison. For large entity counts, this saturates the
+// CPU frame budget and causes severe framerate drops.
+//
+// Professional game engines utilize Spatial Hash Grids (Broadphase Partitioning)
+// to discretize continuous 2D space into uniform grid cells. By hashing entity
+// floating-point coordinates into integer grid buckets, physics systems reject
+// distant pairs in O(1) time and perform narrowphase collision tests only on
+// entities sharing identical spatial buckets.
+//
+// Requirements:
+// 1. Define 'Particle' struct:
+//    - id: i32
+//    - x: f32
+//    - y: f32
+//    - cell_hash: i32
+// 2. Implement spatial hashing function 'compute_cell_hash(x: f32, y: f32, cell_size: f32) -> i32':
+//    - Discretize continuous coordinates:
+//      cx = (x / cell_size) as i32
+//      cy = (y / cell_size) as i32
+//    - Produce a unique spatial hash: (cy * 100) + cx
+// 3. Allocate a cluster of particles on the 16MB hardware 'zone' arena.
+// 4. Implement Broadphase & Narrowphase Collision Pipeline:
+//    - Assign cell hashes to each particle.
+//    - Perform candidate pair scanning.
+//    - Early-reject particles in different grid buckets.
+//    - For particles in the same bucket, calculate squared Euclidean distance:
+//      dist_sq = (dx * dx) + (dy * dy)
+//    - Flag potential contact collisions where dist_sq <= contact_radius_sq.
+// 5. Output broadphase pruning efficiency stats and verify 1-cycle arena cleanup.
+// ============================================================================
+
+use sys.io
+use sys.mem
+
+data Particle {
+    id: i32
+    x: f32
+    y: f32
+    cell_hash: i32
+}
+
+act compute_cell_hash(x: f32, y: f32, cell_size: f32) -> i32 {
+    let cx = (x / cell_size) as i32
+    let cy = (y / cell_size) as i32
+    return (cy * 100) + cx
+}
+
+act distance_sq(p1: @Particle, p2: @Particle) -> f32 {
+    let dx = p1.x - p2.x
+    let dy = p1.y - p2.y
+    return (dx * dx) + (dy * dy)
+}
+
+act main() -> i32 {
+    io.println("==================================================")
+    io.println("   2D SPATIAL HASH GRID & BROADPHASE COLLIDER     ")
+    io.println("==================================================")
+
+    particle_count: usize = 8
+    cell_size: f32 = 25.0
+    collision_threshold_sq: f32 = 16.0 // Collision radius <= 4.0 units (4^2 = 16)
+
+    zone {
+        let particles: @Particle = mem.alloc(@Particle, particle_count)
+
+        // Cluster A in Cell (1, 1) -> hash 101: 3 close particles
+        particles[0].id = 0
+        particles[0].x = 30.0
+        particles[0].y = 30.0
+
+        particles[1].id = 1
+        particles[1].x = 32.0 // Dist to p0 is sqrt(4+4) = 2.82 -> COLLISION!
+        particles[1].y = 32.0
+
+        particles[2].id = 2
+        particles[2].x = 45.0 // In same cell, but dist > 4.0 -> No collision
+        particles[2].y = 45.0
+
+        // Cluster B in Cell (3, 2) -> hash 203: 2 colliding particles
+        particles[3].id = 3
+        particles[3].x = 80.0
+        particles[3].y = 55.0
+
+        particles[4].id = 4
+        particles[4].x = 81.5 // Dist to p3 is 1.5 units -> COLLISION!
+        particles[4].y = 55.0
+
+        // Cluster C in Cell (0, 0) -> hash 0: isolated particle
+        particles[5].id = 5
+        particles[5].x = 5.0
+        particles[5].y = 5.0
+
+        // Cluster D in Cell (4, 4) -> hash 404: 2 separated particles
+        particles[6].id = 6
+        particles[6].x = 110.0
+        particles[6].y = 110.0
+
+        particles[7].id = 7
+        particles[7].x = 120.0
+        particles[7].y = 120.0
+
+        io.println("--- Assigning Spatial Grid Buckets (Cell Size = {cell_size}) ---")
+        loop i in 0..particle_count {
+            let p: @Particle = @particles[i]
+            p.cell_hash = compute_cell_hash(p.x, p.y, cell_size)
+            io.println("  Particle #{p.id} at ({p.x}, {p.y}) -> Spatial Hash: {p.cell_hash}")
+        }
+
+        io.println("\n--- Broadphase & Narrowphase Collision Detection ---")
+        mut total_pairs: i32 = 0
+        mut pruned_pairs: i32 = 0
+        mut narrowphase_tests: i32 = 0
+        mut collisions_detected: i32 = 0
+
+        loop i in 0..particle_count {
+            let p1: @Particle = @particles[i]
+
+            loop j in (i + 1)..particle_count {
+                total_pairs += 1
+                let p2: @Particle = @particles[j]
+
+                // Broadphase Spatial Hash Early Rejection Gate
+                if p1.cell_hash != p2.cell_hash {
+                    pruned_pairs += 1
+                    continue
+                }
+
+                // Narrowphase Euclidean Distance Check
+                narrowphase_tests += 1
+                let d_sq = distance_sq(p1, p2)
+                io.println("  [NARROWPHASE CANDIDATE] Particles #{p1.id} & #{p2.id} share Bucket {p1.cell_hash} (d^2 = {d_sq})")
+
+                if d_sq <= collision_threshold_sq {
+                    collisions_detected += 1
+                    io.println("    [! COLLISION DETECTED] Particle #{p1.id} collided with Particle #{p2.id}!")
+                }
+            }
+        }
+
+        io.println("\n--------------------------------------------------")
+        io.println("          SPATIAL PARTITIONING EFFICIENCY         ")
+        io.println("--------------------------------------------------")
+        io.println("Total Potential Pairs  : {total_pairs}")
+        io.println("Broadphase Pruned      : {pruned_pairs} pairs rejected in O(1)")
+        io.println("Narrowphase Tested     : {narrowphase_tests} candidate pairs")
+        io.println("Active Collisions      : {collisions_detected} confirmed contact points")
+
+        let pruning_efficiency = (pruned_pairs * 100) / total_pairs
+        io.println("Pruning Efficiency     : {pruning_efficiency}% work eliminated")
+    }
+
+    let arena_after = mem.used()
+    io.println("Zone Arena Memory After: {arena_after} bytes (1-cycle reset)")
+    io.println("==================================================")
+    return 0
+}

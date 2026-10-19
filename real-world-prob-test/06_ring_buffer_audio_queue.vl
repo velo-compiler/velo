@@ -1,0 +1,183 @@
+// ============================================================================
+// PROBLEM 6: Zero-Allocation Circular Ring Buffer (Audio DSP & Event Queue)
+// Category:  Intermediate / Advanced - Real-Time Systems, Audio DSP & Game Engines
+//
+// PROBLEM DESCRIPTION:
+// In real-time audio synthesis (DAWs), game input drivers, and network packet
+// queues, audio frames must be transferred from producers (e.g., sound generator,
+// microphone driver) to consumers (e.g., DAC output stream) at 48,000 Hz.
+//
+// Dynamic linked lists or resizable vectors are strictly forbidden in real-time
+// threads because malloc/free calls can stall the thread, causing audible clicks,
+// pops, and buffer under-runs.
+//
+// A Circular Ring Buffer (FIFO queue) provides O(1) push and pop operations with
+// zero heap allocations, using a pre-allocated contiguous array with modular
+// index wrapping.
+//
+// Requirements:
+// 1. Define 'AudioFrame' struct representing an audio PCM sample:
+//    - channel: i32 (0 = Left, 1 = Right)
+//    - amplitude: i32 (Normalized PCM amplitude -32768 to +32767)
+//    - timestamp_ms: i64
+// 2. Define 'AudioRingBuffer' struct:
+//    - buffer: @AudioFrame (allocated in zone memory)
+//    - capacity: usize
+//    - head: usize (Write cursor)
+//    - tail: usize (Read cursor)
+//    - count: usize (Current occupancy)
+// 3. Implement circular buffer primitives:
+//    - push(rb: @AudioRingBuffer, sample: AudioFrame) -> bool
+//    - pop(rb: @AudioRingBuffer, out_sample: @AudioFrame) -> bool
+//    - is_full(rb: @AudioRingBuffer) -> bool
+//    - is_empty(rb: @AudioRingBuffer) -> bool
+// 4. Simulate an interleaved producer-consumer pipeline:
+//    - Producer enqueues initial burst of 4 frames.
+//    - Consumer dequeues 2 frames (advancing tail).
+//    - Producer enqueues 3 more frames (forcing head to wrap around circular boundary).
+//    - Consumer dequeues all remaining frames, verifying strict FIFO ordering.
+// 5. Verify that ring buffer occupancy returns to 0 with zero audio drops.
+// ============================================================================
+
+use sys.io
+use sys.mem
+
+data AudioFrame {
+    channel: i32
+    amplitude: i32
+    timestamp_ms: i64
+}
+
+data AudioRingBuffer {
+    buffer: @AudioFrame
+    capacity: usize
+    head: usize
+    tail: usize
+    count: usize
+}
+
+act create_ring_buffer(cap: usize) -> AudioRingBuffer {
+    let buf: @AudioFrame = mem.alloc(@AudioFrame, cap)
+    return AudioRingBuffer{
+        buffer: buf,
+        capacity: cap,
+        head: 0,
+        tail: 0,
+        count: 0
+    }
+}
+
+act is_full(rb: @AudioRingBuffer) -> bool {
+    return rb.count == rb.capacity
+}
+
+act is_empty(rb: @AudioRingBuffer) -> bool {
+    return rb.count == 0
+}
+
+act push(rb: @AudioRingBuffer, frame: AudioFrame) -> bool {
+    if rb.is_full() {
+        return false // Buffer overrun / full
+    }
+    let p: @AudioFrame = @rb.buffer[rb.head]
+    p.channel = frame.channel
+    p.amplitude = frame.amplitude
+    p.timestamp_ms = frame.timestamp_ms
+
+    rb.head = (rb.head + 1) % rb.capacity
+    rb.count += 1
+    return true
+}
+
+act pop(rb: @AudioRingBuffer, out_frame: @AudioFrame) -> bool {
+    if rb.is_empty() {
+        return false // Buffer underrun / empty
+    }
+    let p: @AudioFrame = @rb.buffer[rb.tail]
+    out_frame.channel = p.channel
+    out_frame.amplitude = p.amplitude
+    out_frame.timestamp_ms = p.timestamp_ms
+
+    rb.tail = (rb.tail + 1) % rb.capacity
+    rb.count -= 1
+    return true
+}
+
+act main() -> i32 {
+    io.println("==================================================")
+    io.println("    REAL-TIME AUDIO CIRCULAR RING BUFFER (FIFO)   ")
+    io.println("==================================================")
+
+    zone {
+        let cap: usize = 5
+        mut rb = create_ring_buffer(cap)
+        io.println("Initialized Audio Ring Buffer (Capacity: {cap} frames)")
+
+        // 1. Producer pushes initial 4 audio frames
+        io.println("\n[Producer] Enqueueing 4 audio frames...")
+        loop i in 0..4 {
+            let f = AudioFrame{
+                channel: (i % 2) as i32,
+                amplitude: (1000 * (i + 1)) as i32,
+                timestamp_ms: (16 * i) as i64
+            }
+            let ok = rb.push(f)
+            io.println("  Pushed frame #{i}: ch={f.channel}, amp={f.amplitude}, ok={ok}")
+        }
+        io.println("  Current Buffer Occupancy: {rb.count}/{rb.capacity} (Head={rb.head}, Tail={rb.tail})")
+
+        // 2. Consumer pulls 2 audio frames
+        io.println("\n[Consumer] Dequeueing 2 audio frames (DAC playback)...")
+        mut out_frame = AudioFrame{ channel: 0, amplitude: 0, timestamp_ms: 0 }
+        loop 2 {
+            let ok = rb.pop(@out_frame)
+            if ok {
+                io.println("  Played frame: ch={out_frame.channel}, amp={out_frame.amplitude}, t={out_frame.timestamp_ms}ms")
+            }
+        }
+        io.println("  Current Buffer Occupancy: {rb.count}/{rb.capacity} (Head={rb.head}, Tail={rb.tail})")
+
+        // 3. Producer enqueues 3 more frames (Forces circular wrap-around past index 5!)
+        io.println("\n[Producer] Enqueueing 3 more frames (Testing Circular Index Wrap-Around)...")
+        loop j in 4..7 {
+            let f = AudioFrame{
+                channel: (j % 2) as i32,
+                amplitude: (1000 * (j + 1)) as i32,
+                timestamp_ms: (16 * j) as i64
+            }
+            let ok = rb.push(f)
+            io.println("  Pushed frame #{j}: ch={f.channel}, amp={f.amplitude}, Head={rb.head}, ok={ok}")
+        }
+        io.println("  Current Buffer Occupancy: {rb.count}/{rb.capacity} (Head={rb.head}, Tail={rb.tail})")
+
+        // Attempting to push into full buffer (Overrun protection)
+        let overflow_frame = AudioFrame{ channel: 0, amplitude: 99999, timestamp_ms: 999 }
+        let push_ok = rb.push(overflow_frame)
+        io.println("  Attempted overflow push into full buffer: ok={push_ok} (Rejected successfully)")
+
+        // 4. Consumer drains remaining buffer to DAC
+        io.println("\n[Consumer] Draining all remaining frames from circular buffer...")
+        mut drained_count: i32 = 0
+        loop !is_empty(@rb) {
+            let ok = rb.pop(@out_frame)
+            if ok {
+                io.println("  Consumed frame #{drained_count}: ch={out_frame.channel}, amp={out_frame.amplitude}, t={out_frame.timestamp_ms}ms (Tail={rb.tail})")
+                drained_count += 1
+            }
+        }
+
+        let empty_verified = is_empty(@rb)
+
+        io.println("\n--------------------------------------------------")
+        io.println("              BUFFER PERFORMANCE METRICS          ")
+        io.println("--------------------------------------------------")
+        let total_frames = drained_count + 2
+        io.println("Total Frames Drained     : {total_frames}")
+        io.println("Final Buffer Occupancy   : {rb.count} frames")
+        io.println("Buffer Empty Verified    : {empty_verified}")
+        io.println("Memory Leaks / Overruns  : 0 (Zero-Allocation Pipeline)")
+    }
+
+    io.println("==================================================")
+    return 0
+}

@@ -1,0 +1,151 @@
+// ============================================================================
+// PROBLEM 5: Zero-Copy CSV Telemetry Scanner & IoT Metric Pipeline
+// Category:  Intermediate - IoT, Sensor Telemetry & Edge Computing
+//
+// PROBLEM DESCRIPTION:
+// In industrial IoT controllers, weather telemetry hubs, and factory floor
+// edge devices, sensor clusters transmit comma-separated ASCII streams over
+// serial UART/CAN bus interfaces.
+//
+// Due to strict microsecond deadlines and memory constraints, standard regex
+// engines and dynamic string allocators cannot be used. Edge systems must parse
+// raw character buffers manually into integer measurements, filter noise,
+// calculate statistical telemetry (Min, Max, Mean Average), and flag critical
+// heat or voltage anomaly spikes.
+//
+// Requirements:
+// 1. Ingest a raw CSV telemetry buffer containing integer temperature readings:
+//    "23,25,28,31,24,22,89,27,26,94,25,23,21"
+// 2. Implement a manual zero-copy ASCII digit parser:
+//    - Identify comma (',') boundaries and end-of-string null terminators.
+//    - Accumulate ASCII characters ('0'..'9') into integer values:
+//      val = val * 10 + (char - '0')
+// 3. Store extracted readings inside an arena-allocated @i32 buffer.
+// 4. Implement a statistical analysis pass:
+//    - Calculate Minimum and Maximum readings.
+//    - Calculate Integer Arithmetic Mean (sum / count).
+//    - Identify and log Anomaly Spikes exceeding the safety threshold (e.g. >= 60 C).
+// 5. Output a structured IoT Edge Health Report and ensure zero memory leakage.
+// ============================================================================
+
+use sys.io
+use sys.mem
+
+data SensorStats {
+    count: i32
+    min_val: i32
+    max_val: i32
+    sum_val: i64
+    mean_val: i32
+    anomaly_count: i32
+}
+
+act is_digit(c: u8) -> bool {
+    return c >= 48 and c <= 57 // ASCII '0' = 48, '9' = 57
+}
+
+act parse_csv_stream(raw: string, out_buffer: @i32, max_capacity: usize) -> usize {
+    let len = str.len(raw)
+    mut count: usize = 0
+    mut current_num: i32 = 0
+    mut in_number = false
+
+    loop i in 0..=len {
+        mut c: u8 = 0 as u8
+        if i < len {
+            c = raw[i] as u8
+        }
+
+        if is_digit(c) {
+            current_num = current_num * 10 + ((c - 48) as i32)
+            in_number = true
+        } else {
+            // Reached delimiter ',' or end of string
+            if in_number {
+                if count < max_capacity {
+                    out_buffer[count] = current_num
+                    count += 1
+                }
+                current_num = 0
+                in_number = false
+            }
+        }
+    }
+
+    return count
+}
+
+act analyze_telemetry(readings: @i32, count: usize, threshold: i32) -> SensorStats {
+    mut stats = SensorStats{
+        count: count as i32,
+        min_val: 999999,
+        max_val: -999999,
+        sum_val: 0,
+        mean_val: 0,
+        anomaly_count: 0
+    }
+
+    if count == 0 {
+        return stats
+    }
+
+    loop i in 0..count {
+        let val = readings[i]
+        stats.sum_val += val as i64
+
+        if val < stats.min_val {
+            stats.min_val = val
+        }
+        if val > stats.max_val {
+            stats.max_val = val
+        }
+
+        if val >= threshold {
+            stats.anomaly_count += 1
+            io.println("  [! ALERT] Temperature spike anomaly detected: {val} C at index #{i}")
+        }
+    }
+
+    stats.mean_val = (stats.sum_val / (count as i64)) as i32
+    return stats
+}
+
+act main() -> i32 {
+    io.println("==================================================")
+    io.println("     IoT EDGE SENSOR TELEMETRY PROCESSOR          ")
+    io.println("==================================================")
+
+    let raw_payload = "23,25,28,31,24,22,89,27,26,94,25,23,21,19,30"
+    io.println("Raw Serial Stream: \"{raw_payload}\"")
+
+    zone {
+        let max_samples: usize = 64
+        let readings: @i32 = mem.alloc(@i32, max_samples)
+
+        let parsed_count = parse_csv_stream(raw_payload, readings, max_samples)
+        io.println("\nSuccessfully ingested {parsed_count} sensor readings.")
+
+        io.println("\n--- Telemetry Spike Detection (Threshold >= 60 C) ---")
+        let stats = analyze_telemetry(readings, parsed_count, 60)
+
+        io.println("\n--------------------------------------------------")
+        io.println("             SENSOR METRIC AUDIT REPORT           ")
+        io.println("--------------------------------------------------")
+        io.println("Total Samples Received : {stats.count}")
+        io.println("Minimum Temperature    : {stats.min_val} C")
+        io.println("Maximum Temperature    : {stats.max_val} C")
+        let temp_range = stats.max_val - stats.min_val
+        io.println("Dynamic Range (Spread) : {temp_range} C")
+        io.println("Arithmetic Mean (Avg)  : {stats.mean_val} C")
+        io.println("Critical Spikes Logged : {stats.anomaly_count}")
+
+        if stats.anomaly_count > 0 {
+            io.println("Thermal Status         : WARNING (Threshold Exceeded)")
+        } else {
+            io.println("Thermal Status         : NORMAL (Within Limits)")
+        }
+    }
+
+    io.println("==================================================")
+    return 0
+}

@@ -1,0 +1,164 @@
+// ============================================================================
+// PROBLEM 10: Decoupled Reactive Event Bus with First-Class Callbacks
+// Category:   Advanced - Reactive Architecture, UI Frameworks & Functional Systems
+//
+// PROBLEM DESCRIPTION:
+// In graphical user interface (GUI) toolkits, reactive game engines, and microkernel
+// architectures, subsystems must communicate without tight coupling. A physics
+// engine shouldn't directly reference the audio system, and a button shouldn't
+// directly depend on a database writer.
+//
+// Modern reactive architectures solve this via a Publish-Subscribe Event Bus.
+// Handlers register themselves as first-class function callbacks, allowing
+// arbitrary listeners—analytics trackers, audio triggers, and custom UI closures—
+// to react to events dynamically.
+//
+// Requirements:
+// 1. Define 'UIEvent' struct:
+//    - source_id: i32
+//    - event_type: i32 (1 = Click, 2 = Focus, 3 = KeyPress)
+//    - payload: i32
+// 2. Define 'Listener' struct storing first-class function pointer:
+//    - name: string
+//    - on_event: act(@UIEvent) -> void
+// 3. Define 'EventBus' struct:
+//    - listeners: @Listener (contiguous array in zone memory)
+//    - capacity: usize
+//    - count: usize
+// 4. Implement Bus primitives:
+//    - subscribe(bus: @EventBus, name: string, handler: act(@UIEvent) -> void) -> bool
+//    - publish(bus: @EventBus, event: @UIEvent) -> void
+// 5. Register multiple diverse listeners:
+//    - Named telemetry analytics logger.
+//    - Named sound effects dispatcher.
+//    - Inline anonymous function listener tracking key presses.
+// 6. Broadcast several simulated UI events through the bus, verifying that all
+//    active listeners are notified in order with correct payloads.
+// ============================================================================
+
+use sys.io
+use sys.mem
+
+data UIEvent {
+    source_id: i32
+    event_type: i32
+    payload: i32
+}
+
+data Listener {
+    name: string
+    on_event: act(@UIEvent) -> void
+}
+
+data EventBus {
+    listeners: @Listener
+    capacity: usize
+    count: usize
+}
+
+act create_event_bus(cap: usize) -> EventBus {
+    let buf: @Listener = mem.alloc(@Listener, cap)
+    return EventBus{
+        listeners: buf,
+        capacity: cap,
+        count: 0
+    }
+}
+
+act subscribe(bus: @EventBus, name: string, handler: act(@UIEvent) -> void) -> bool {
+    if bus.count >= bus.capacity {
+        return false // Bus full
+    }
+    let p: @Listener = @bus.listeners[bus.count]
+    p.name = name
+    p.on_event = handler
+    bus.count += 1
+    return true
+}
+
+act publish(bus: @EventBus, ev: @UIEvent) {
+    loop i in 0..bus.count {
+        let p: @Listener = @bus.listeners[i]
+        if p.on_event != null {
+            p.on_event(ev)
+        }
+    }
+}
+
+// 1. Subscriber: Telemetry Analytics
+act analytics_logger(e: @UIEvent) {
+    io.println("  [ANALYTICS] Ingested event type {e.event_type} from source #{e.source_id}")
+}
+
+// 2. Subscriber: Audio System
+act audio_sound_trigger(e: @UIEvent) {
+    if e.event_type == 1 { // Click
+        io.println("  [AUDIO]     Playing 'ui_click.wav' (button clicked)")
+    } else if e.event_type == 3 { // KeyPress
+        io.println("  [AUDIO]     Playing 'key_tap.wav' (keyboard typing)")
+    }
+}
+
+act main() -> i32 {
+    io.println("==================================================")
+    io.println("    DECOUPLED FUNCTIONAL REACTIVE EVENT BUS       ")
+    io.println("==================================================")
+
+    zone {
+        mut bus = create_event_bus(8)
+        io.println("Initialized Event Bus (Capacity: 8 listeners)")
+
+        // Register Subscriber 1: Named Analytics Logger
+        let sub1 = subscribe(@bus, "Analytics", analytics_logger)
+        io.println("Registered [analytics_logger]   : ok={sub1}")
+
+        // Register Subscriber 2: Named Audio Trigger
+        let sub2 = subscribe(@bus, "Audio", audio_sound_trigger)
+        io.println("Registered [audio_sound_trigger] : ok={sub2}")
+
+        // Register Subscriber 3: Inline Anonymous Function (Audit Security Guard)
+        let sub3 = subscribe(@bus, "SecurityGuard", act(e: @UIEvent) {
+            if e.event_type == 3 and e.payload == 27 { // Escape key (27)
+                io.println("  [AUDIT]     ESCAPE key pressed! Modal window dismissal requested.")
+            } else if e.payload < 0 {
+                io.println("  [AUDIT]     WARNING: Negative payload value received: {e.payload}")
+            }
+        })
+        io.println("Registered [inline_audit_guard]  : ok={sub3}")
+
+        io.println("\nActive Event Listeners Subscribed: {bus.count}")
+
+        // Broadcast Event A: Button Click (Source = 101, Payload = 1)
+        io.println("\n--- [Broadcasting Event A: Button Click] ---")
+        mut ev_a = UIEvent{ source_id: 101, event_type: 1, payload: 1 }
+        publish(@bus, @ev_a)
+
+        // Broadcast Event B: Normal Keypress (Source = 200, Payload = 65 'A')
+        io.println("\n--- [Broadcasting Event B: Keypress 'A'] ---")
+        mut ev_b = UIEvent{ source_id: 200, event_type: 3, payload: 65 }
+        publish(@bus, @ev_b)
+
+        // Broadcast Event C: Special Escape Key (Source = 200, Payload = 27 'ESC')
+        io.println("\n--- [Broadcasting Event C: Keypress 'ESC'] ---")
+        mut ev_c = UIEvent{ source_id: 200, event_type: 3, payload: 27 }
+        publish(@bus, @ev_c)
+
+        // Broadcast Event D: Erroneous Focus with negative payload
+        io.println("\n--- [Broadcasting Event D: Corrupt Focus Event] ---")
+        mut ev_d = UIEvent{ source_id: 300, event_type: 2, payload: -5 }
+        publish(@bus, @ev_d)
+
+        io.println("\n--------------------------------------------------")
+        io.println("             EVENT BUS DISPATCH AUDIT             ")
+        io.println("--------------------------------------------------")
+        io.println("Total Events Dispatched : 4")
+        let total_invocations = 4 * (bus.count as i32)
+        io.println("Subscriber Invocations  : {total_invocations}")
+        io.println("Callback Architecture   : Zero-Overhead C99 Function Pointers")
+    }
+
+    let mem_remaining = mem.used()
+    io.println("Zone Memory After Exit  : {mem_remaining} bytes (Instant 1-Cycle Cleanup)")
+    io.println("==================================================")
+    return 0
+}

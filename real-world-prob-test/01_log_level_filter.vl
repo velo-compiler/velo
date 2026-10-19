@@ -1,0 +1,113 @@
+// ============================================================================
+// PROBLEM 1: Real-Time Server Log Severity Classifier & Metric Aggregator
+// Category:  Basic - Systems & DevOps Infrastructure
+//
+// PROBLEM DESCRIPTION:
+// In high-throughput backend services and web gateways, millions of network
+// responses are logged every minute. To monitor system health in real-time,
+// the gateway must classify incoming HTTP/RPC status codes into severity tiers,
+// filter critical alerts, and compute operational health metrics.
+//
+// Requirements:
+// 1. Process a stream of telemetry status codes representing recent transactions.
+// 2. Use Velo's signature 'on' multi-branching statement with comma-separated
+//    multi-value patterns to classify codes into:
+//    - 100: DEBUG (Trace diagnostic)
+//    - 200, 201, 204: SUCCESS (Normal transaction)
+//    - 301, 302, 304: REDIRECT (Routing & cache event)
+//    - 400, 401, 403, 404: CLIENT_ERROR (Bad request, unauthorized, not found)
+//    - 500, 502, 503, 504: SERVER_ERROR (Gateway timeout, internal failure)
+//    - Any other code: UNKNOWN_STATUS (Anomaly)
+// 3. Accumulate metric counters for total requests, successes, client errors,
+//    and server errors.
+// 4. Output structured alert messages for all client/server errors.
+// 5. Calculate and print the overall Service Availability percentage.
+// ============================================================================
+
+use sys.io
+use sys.mem
+
+act main() -> i32 {
+    io.println("==================================================")
+    io.println("   REAL-TIME SERVICE TELEMETRY & LOG CLASSIFIER   ")
+    io.println("==================================================")
+
+    total_events: usize = 12
+
+    zone {
+        let codes: @i32 = mem.alloc(@i32, total_events)
+        codes[0] = 200
+        codes[1] = 201
+        codes[2] = 404
+        codes[3] = 200
+        codes[4] = 500
+        codes[5] = 304
+        codes[6] = 401
+        codes[7] = 200
+        codes[8] = 503
+        codes[9] = 204
+        codes[10] = 400
+        codes[11] = 200
+
+        mut count_success: i32 = 0
+        mut count_redirect: i32 = 0
+        mut count_client_err: i32 = 0
+        mut count_server_err: i32 = 0
+        mut count_debug: i32 = 0
+        mut count_unknown: i32 = 0
+
+        io.println("[Ingesting {total_events} Transaction Events]")
+
+        loop i in 0..total_events {
+            let code = codes[i]
+
+            on code {
+                100 => {
+                    count_debug += 1
+                }
+                200, 201, 204 => {
+                    count_success += 1
+                }
+                301, 302, 304 => {
+                    count_redirect += 1
+                }
+                400, 401, 403, 404 => {
+                    count_client_err += 1
+                    io.println("  [! WARN] Client Error Detected: Status {code} on request #{i}")
+                }
+                500, 502, 503, 504 => {
+                    count_server_err += 1
+                    io.println("  [!! CRIT] Server Outage Detected: Status {code} on request #{i}")
+                }
+                else => {
+                    count_unknown += 1
+                    io.println("  [? ANOMALY] Unknown status code: {code}")
+                }
+            }
+        }
+
+        io.println("\n--------------------------------------------------")
+        io.println("              SYSTEM TELEMETRY SUMMARY            ")
+        io.println("--------------------------------------------------")
+        io.println("Total Processed Requests : {total_events}")
+        io.println("Successful (2xx)         : {count_success}")
+        io.println("Redirects (3xx)          : {count_redirect}")
+        io.println("Client Errors (4xx)      : {count_client_err}")
+        io.println("Server Failures (5xx)    : {count_server_err}")
+
+        // Calculate integer availability score (percentage of non-5xx requests)
+        let non_fatal = total_events as i32 - count_server_err
+        let availability_pct = (non_fatal * 100) / total_events as i32
+
+        io.println("Service Availability     : {availability_pct}%")
+
+        if availability_pct >= 90 {
+            io.println("System Health Status     : HEALTHY (SLA Met)")
+        } else {
+            io.println("System Health Status     : DEGRADED (SLA Breach)")
+        }
+    }
+
+    io.println("==================================================")
+    return 0
+}

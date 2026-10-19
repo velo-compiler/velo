@@ -1,0 +1,132 @@
+// ============================================================================
+// PROBLEM 7: Polymorphic Game Engine Frame Scheduler via Tagged Unions
+// Category:  Advanced - Game Engine Architecture & Event Dispatch Systems
+//
+// PROBLEM DESCRIPTION:
+// In modern high-framerate game engines, thousands of heterogeneous subsystem
+// commands—render draw calls, audio playback triggers, physics impulses, and
+// particle spawns—are generated across game systems during an update tick.
+//
+// Object-Oriented polymorphism (using abstract base classes, heap-allocated
+// task pointers, and virtual method tables) ruins CPU L1/L2 cache locality
+// and causes catastrophic memory fragmentation.
+//
+// High-performance game engines standardize on Tagged Unions (Sum Types) to
+// represent polymorphic commands in flat, contiguous memory buffers that can
+// be dispatched in constant time via hardware jump tables without dynamic dispatch.
+//
+// Requirements:
+// 1. Declare a first-class tagged union 'kind Task' in Velo with variants:
+//    - RenderMesh(mesh_id: i32, layer: i32)
+//    - PlaySound(sound_id: i32, volume_pct: i32)
+//    - ApplyForce(entity_id: i32, fx: f32, fy: f32)
+//    - SpawnEntity(entity_type: i32, x: f32, y: f32)
+//    - Shutdown
+// 2. Define an 'EngineState' struct tracking live game metrics:
+//    - active_entities: i32
+//    - draw_calls: i32
+//    - sounds_playing: i32
+//    - physics_impulses: i32
+//    - is_running: bool
+// 3. Implement 'dispatch_task(state: @EngineState, t: Task)' using Velo's
+//    signature 'on' statement with scoped payload destructuring.
+// 4. Ingest a queue of tasks using contextual dot-shorthand (.RenderMesh, .PlaySound),
+//    execute the frame loop, update engine states, and verify clean termination.
+// ============================================================================
+
+use sys.io
+use sys.mem
+
+kind Task {
+    RenderMesh(mesh_id: i32, layer: i32)
+    PlaySound(sound_id: i32, volume_pct: i32)
+    ApplyForce(entity_id: i32, fx: f32, fy: f32)
+    SpawnEntity(entity_type: i32, x: f32, y: f32)
+    Shutdown
+}
+
+data EngineState {
+    active_entities: i32
+    draw_calls: i32
+    sounds_playing: i32
+    physics_impulses: i32
+    is_running: bool
+}
+
+act dispatch_task(state: @EngineState, t: Task) {
+    on t {
+        .RenderMesh(mesh_id, layer) => {
+            state.draw_calls += 1
+            io.println("  [RENDER] Drawing mesh #{mesh_id} on layer {layer}")
+        }
+        .PlaySound(sound_id, volume) => {
+            state.sounds_playing += 1
+            io.println("  [AUDIO]  Triggering sound fx #{sound_id} at volume {volume}%")
+        }
+        .ApplyForce(entity_id, fx, fy) => {
+            state.physics_impulses += 1
+            io.println("  [PHYSICS] Applying impulse vector ({fx}, {fy}) to entity #{entity_id}")
+        }
+        .SpawnEntity(entity_type, x, y) => {
+            state.active_entities += 1
+            io.println("  [ENTITY] Spawned entity type {entity_type} at world pos ({x}, {y})")
+        }
+        .Shutdown => {
+            state.is_running = false
+            io.println("  [ENGINE] Received shutdown signal. Halting frame dispatcher.")
+        }
+    }
+}
+
+act main() -> i32 {
+    io.println("==================================================")
+    io.println("   POLYMORPHIC GAME ENGINE TASK SCHEDULER (KIND)  ")
+    io.println("==================================================")
+
+    mut state = EngineState{
+        active_entities: 10,
+        draw_calls: 0,
+        sounds_playing: 0,
+        physics_impulses: 0,
+        is_running: true
+    }
+
+    total_tasks: usize = 7
+
+    zone {
+        let task_queue: @Task = mem.alloc(@Task, total_tasks)
+
+        // Queue polymorphic tasks into flat contiguous arena buffer
+        task_queue[0] = Task.SpawnEntity(1, 100.0, 250.0)
+        task_queue[1] = Task.RenderMesh(402, 1)
+        task_queue[2] = Task.PlaySound(50, 80)
+        task_queue[3] = Task.ApplyForce(1, 15.5, -9.8)
+        task_queue[4] = Task.RenderMesh(403, 2)
+        task_queue[5] = Task.PlaySound(51, 100)
+        task_queue[6] = Task.Shutdown
+
+        io.println("Dispatching {total_tasks} polymorphic commands through jump table:")
+
+        loop i in 0..total_tasks {
+            if !state.is_running {
+                io.println("  [INFO] Engine stopped. Skipping remaining queue.")
+                break
+            }
+            let task = task_queue[i]
+            dispatch_task(@state, task)
+        }
+
+        io.println("\n--------------------------------------------------")
+        io.println("          POST-DISPATCH ENGINE METRICS            ")
+        io.println("--------------------------------------------------")
+        io.println("Active Entities        : {state.active_entities}")
+        io.println("Render Draw Calls      : {state.draw_calls}")
+        io.println("Audio Channels Active  : {state.sounds_playing}")
+        io.println("Physics Impulses Run   : {state.physics_impulses}")
+        io.println("Engine Running State   : {state.is_running}")
+        io.println("Dispatch Latency       : O(1) Jump Table Lowering")
+    }
+
+    io.println("==================================================")
+    return 0
+}

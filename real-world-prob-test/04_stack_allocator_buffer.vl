@@ -1,0 +1,168 @@
+// ============================================================================
+// PROBLEM 4: Arena-Backed LIFO Stack & Delimiter Syntax Validator
+// Category:  Intermediate - Systems Programming & Compiler Frontend
+//
+// PROBLEM DESCRIPTION:
+// In embedded microcontrollers, compiler parsers, and game scripting engines,
+// arbitrary heap allocations induce memory fragmentation and unpredictable
+// latencies. Embedded engines rely on hardware-bounded, arena-allocated LIFO
+// stacks to validate syntax trees and parse nested configuration formats.
+//
+// A fundamental algorithmic challenge in compiler frontends and JSON/XML
+// deserializers is verifying whether grouping delimiters—parentheses '()',
+// curly braces '{}', and square brackets '[]'—are properly matched and nested.
+//
+// Requirements:
+// 1. Implement a bounded LIFO CharStack data structure in Velo:
+//    - buffer: @u8 (allocated on the 16MB hardware zone arena)
+//    - capacity: usize
+//    - top: usize
+// 2. Implement stack primitives using Velo's Uniform Function Call Syntax (UFCS):
+//    - stack.push(char) -> bool
+//    - stack.pop() -> u8
+//    - stack.peek() -> u8
+//    - stack.is_empty() -> bool
+// 3. Write a delimiter matching predicate:
+//    - '(' matches ')'
+//    - '{' matches '}'
+//    - '[' matches ']'
+// 4. Implement 'validate_delimiters(expr: string) -> bool':
+//    - Push opening delimiters onto the arena stack.
+//    - For closing delimiters, pop the top element and verify the pair.
+//    - Ensure proper handling of early mismatches and leftover unclosed brackets.
+// 5. Test multiple valid and malformed expressions, reporting validation status
+//    and ensuring instant 1-cycle arena cleanup upon exit.
+// ============================================================================
+
+use sys.io
+use sys.mem
+
+data CharStack {
+    buffer: @u8
+    capacity: usize
+    top: usize
+}
+
+act create_stack(cap: usize) -> CharStack {
+    let buf: @u8 = mem.alloc(@u8, cap)
+    return CharStack{
+        buffer: buf,
+        capacity: cap,
+        top: 0
+    }
+}
+
+act is_empty(s: @CharStack) -> bool {
+    return s.top == 0
+}
+
+act push(s: @CharStack, val: u8) -> bool {
+    if s.top >= s.capacity {
+        return false // Stack overflow
+    }
+    s.buffer[s.top] = val
+    s.top += 1
+    return true
+}
+
+act pop(s: @CharStack) -> u8 {
+    if s.top == 0 {
+        return 0 // Stack underflow
+    }
+    s.top -= 1
+    return s.buffer[s.top]
+}
+
+act peek(s: @CharStack) -> u8 {
+    if s.top == 0 {
+        return 0
+    }
+    return s.buffer[s.top - 1]
+}
+
+act is_pair(open: u8, close: u8) -> bool {
+    // ASCII codes: '(' = 40, ')' = 41
+    if open == 40 and close == 41 { return true }
+    // ASCII codes: '[' = 91, ']' = 93
+    if open == 91 and close == 93 { return true }
+    // ASCII codes: '{' = 123, '}' = 125
+    if open == 123 and close == 125 { return true }
+    return false
+}
+
+act validate_syntax(expr: string) -> bool {
+    let len = str.len(expr)
+    mut stack = create_stack(len + 16)
+
+    loop i in 0..len {
+        let ch: u8 = expr[i] as u8
+
+        // Opening delimiters: '(', '{', '['
+        if ch == 40 or ch == 123 or ch == 91 {
+            stack.push(ch)
+        }
+        // Closing delimiters: ')', '}', ']'
+        else if ch == 41 or ch == 125 or ch == 93 {
+            if stack.is_empty() {
+                return false // Unexpected closing delimiter with empty stack
+            }
+            let top_ch = stack.pop()
+            if !is_pair(top_ch, ch) {
+                return false // Mismatched pair
+            }
+        }
+    }
+
+    return stack.is_empty()
+}
+
+act check_case(id: i32, input: string) {
+    let valid = validate_syntax(input)
+    if valid {
+        io.println("  [Case #{id}] VALID   : \"{input}\"")
+    } else {
+        io.println("  [Case #{id}] INVALID : \"{input}\"")
+    }
+}
+
+act main() -> i32 {
+    io.println("==================================================")
+    io.println("    ARENA-ALLOCATED LIFO SYNTAX VALIDATOR         ")
+    io.println("==================================================")
+
+    zone {
+        let used_initial = mem.used()
+        io.println("Zone memory active at start: {used_initial} bytes")
+
+        io.println("\nExecuting Delimiter Balancer Test Cases:")
+
+        // Case 1: Simple matched pair
+        check_case(1, "act main() { return 0 }")
+
+        // Case 2: Deeply nested valid structures
+        check_case(2, "{ let arr = [1, 2, (3 + 4)]; if (true) { } }")
+
+        // Case 3: Empty string (trivially valid)
+        check_case(3, "")
+
+        // Case 4: Mismatched closing delimiter
+        check_case(4, "data Point { pos: [2]f32 )")
+
+        // Case 5: Unclosed opening bracket
+        check_case(5, "{ [ ( 10 + 20 ) ] ")
+
+        // Case 6: Interleaved crossing delimiters
+        check_case(6, "( [ ) ]")
+
+        // Case 7: Stray trailing closing bracket
+        check_case(7, "() }")
+
+        let used_peak = mem.used()
+        io.println("\nPeak zone memory utilized: {used_peak} bytes")
+    }
+
+    let used_after = mem.used()
+    io.println("Zone memory after exit: {used_after} bytes (1-cycle reset)")
+    io.println("==================================================")
+    return 0
+}

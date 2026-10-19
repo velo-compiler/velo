@@ -1,0 +1,143 @@
+// ============================================================================
+// PROBLEM 2: High-Precision Fixed-Point Monetary Engine & Invoice Calculator
+// Category:  Basic - FinTech & E-Commerce Systems
+//
+// PROBLEM DESCRIPTION:
+// In financial ledgers, banking cores, and point-of-sale checkout systems,
+// standard IEEE-754 floating-point types (f32/f64) are strictly prohibited
+// because binary fraction representations introduce inexact rounding errors
+// (e.g. 0.10 + 0.20 != 0.30).
+//
+// Financial software mandates fixed-point integer arithmetic, where all monetary
+// amounts are represented as discrete minor currency units (e.g., cents, pennies)
+// using 64-bit signed integers (i64).
+//
+// Requirements:
+// 1. Define a 'CartItem' struct representing an e-commerce line item:
+//    - sku: i32
+//    - name: string
+//    - unit_cents: i64 (e.g., 1999 = $19.99)
+//    - quantity: i32
+// 2. Calculate the gross line item price in cents (unit_cents * quantity).
+// 3. Compute the cart subtotal across multiple items.
+// 4. Implement tiered volume discounts:
+//    - Subtotal >= $100.00 (10,000 cents): 10% discount
+//    - Subtotal >= $50.00 (5,000 cents): 5% discount
+//    - Otherwise: 0% discount
+// 5. Calculate 8% state sales tax on the discounted net total using integer math:
+//    tax_cents = (discounted_subtotal * 8) / 100
+// 6. Apply shipping rules:
+//    - Standard shipping: $4.99 (499 cents)
+//    - Free shipping if discounted subtotal exceeds $75.00 (7,500 cents)
+// 7. Write a formatted receipt printer that outputs dollar and cent amounts
+//    with proper two-digit zero padding (e.g. $12.05, not $12.5).
+// ============================================================================
+
+use sys.io
+use sys.mem
+
+data CartItem {
+    sku: i32
+    name: string
+    unit_cents: i64
+    quantity: i32
+}
+
+act print_currency(label: string, cents: i64) {
+    let dollars = cents / 100
+    let rem = cents % 100
+    if rem < 10 {
+        io.println("  {label}: ${dollars}.0{rem}")
+    } else {
+        io.println("  {label}: ${dollars}.{rem}")
+    }
+}
+
+act main() -> i32 {
+    io.println("==================================================")
+    io.println("       POINT-OF-SALE FIXED-POINT INVOICE          ")
+    io.println("==================================================")
+
+    item_count: usize = 3
+
+    zone {
+        let items: @CartItem = mem.alloc(@CartItem, item_count)
+
+        // Item 1: Mechanical Keyboard ($79.99)
+        items[0].sku = 1001
+        items[0].name = "Mechanical Keyboard"
+        items[0].unit_cents = 7999
+        items[0].quantity = 1
+
+        // Item 2: USB-C Braided Cable ($12.50 x 2 = $25.00)
+        items[1].sku = 1002
+        items[1].name = "USB-C Braided Cable"
+        items[1].unit_cents = 1250
+        items[1].quantity = 2
+
+        // Item 3: Gaming Mousepad ($14.95)
+        items[2].sku = 1003
+        items[2].name = "Gaming Mousepad"
+        items[2].unit_cents = 1495
+        items[2].quantity = 1
+
+        io.println("ITEMIZED LINE ITEMS:")
+        mut subtotal_cents: i64 = 0
+
+        loop i in 0..item_count {
+            let item = @items[i]
+            let line_cost = item.unit_cents * (item.quantity as i64)
+            subtotal_cents += line_cost
+
+            let dollars = item.unit_cents / 100
+            let cents = item.unit_cents % 100
+            if cents < 10 {
+                io.println("  [{item.sku}] {item.name} x{item.quantity} @ ${dollars}.0{cents}")
+            } else {
+                io.println("  [{item.sku}] {item.name} x{item.quantity} @ ${dollars}.{cents}")
+            }
+        }
+
+        io.println("--------------------------------------------------")
+        print_currency("Gross Subtotal     ", subtotal_cents)
+
+        // Tiered volume discount
+        mut discount_pct: i64 = 0
+        if subtotal_cents >= 10000 {
+            discount_pct = 10
+        } else if subtotal_cents >= 5000 {
+            discount_pct = 5
+        }
+
+        let discount_cents = (subtotal_cents * discount_pct) / 100
+        let net_subtotal = subtotal_cents - discount_cents
+        if discount_pct == 10 {
+            print_currency("Discount (10%)    ", discount_cents)
+        } else if discount_pct == 5 {
+            print_currency("Discount (5%)     ", discount_cents)
+        } else {
+            print_currency("Discount (0%)     ", discount_cents)
+        }
+        print_currency("Net Subtotal       ", net_subtotal)
+
+        // 8% Sales Tax on net subtotal
+        let tax_cents = (net_subtotal * 8) / 100
+        print_currency("Sales Tax (8%)     ", tax_cents)
+
+        // Shipping Policy
+        mut shipping_cents: i64 = 499
+        if net_subtotal >= 7500 {
+            shipping_cents = 0
+            io.println("  Shipping           : $0.00 (FREE SHIPPING QUALIFIED)")
+        } else {
+            print_currency("Shipping           ", shipping_cents)
+        }
+
+        let total_cents = net_subtotal + tax_cents + shipping_cents
+        io.println("--------------------------------------------------")
+        print_currency("TOTAL INVOICE DUE  ", total_cents)
+    }
+
+    io.println("==================================================")
+    return 0
+}

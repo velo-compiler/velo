@@ -1,0 +1,157 @@
+// ============================================================================
+// PROBLEM 8: Leak-Free File System Configuration Ingestion Daemon
+// Category:  Advanced - Infrastructure, Systems IO & Memory Invariants
+//
+// PROBLEM DESCRIPTION:
+// In long-running background daemons, HTTP proxy gateways, and cloud microservices,
+// configuration files must be dynamically reloaded from disk during runtime
+// without service restarts.
+//
+// In systems programming (C/C++), subtle early return statements or forgotten
+// free() calls cause insidious memory leaks that slowly exhaust system RAM,
+// eventually triggering OS Out-Of-Memory (OOM) kernel panics.
+//
+// Velo eliminates memory leaks through its deterministic 'defer' keyword,
+// guaranteeing that resources allocated via 'mem.heap_alloc' or 'fs.read_file'
+// are automatically released in strict Last-In, First-Out (LIFO) order when
+// the enclosing scope terminates.
+//
+// Requirements:
+// 1. Write an automated configuration file to disk using 'sys.fs':
+//    "port=8080\nworkers=16\nmax_conns=2500\ntimeout_ms=500\n"
+// 2. Implement 'load_and_audit_config(path: string) -> bool':
+//    - Verify file existence via 'fs.exists(path)' and obtain 'fs.size(path)'.
+//    - Load the raw buffer into heap memory via 'fs.read_file(path)'.
+//    - Guarantee zero leaks by immediately placing 'defer mem.free(content)'.
+//    - Scan the buffer, parse key-value lines, and extract the integer values.
+// 3. Track active heap memory using 'mem.heap_used()':
+//    - Assert heap usage rises during file ingestion.
+//    - Assert heap usage returns to 0 immediately upon function scope exit.
+// 4. Remove the temporary configuration snapshot and verify system purity.
+// ============================================================================
+
+use sys.io
+use sys.fs
+use sys.mem
+
+data ServerConfig {
+    port: i32
+    workers: i32
+    max_conns: i32
+    timeout_ms: i32
+}
+
+act is_digit(c: u8) -> bool {
+    return c >= 48 and c <= 57
+}
+
+act load_and_audit_config(path: string, out_cfg: @ServerConfig) -> bool {
+    io.println("--- Entering load_and_audit_config scope ---")
+
+    if !fs.exists(path) {
+        io.println("  [ERROR] File does not exist: {path}")
+        return false
+    }
+
+    let file_bytes = fs.size(path)
+    io.println("  Verified file exists: {path} ({file_bytes} bytes on disk)")
+
+    // Read file into persistent heap memory
+    let content = fs.read_file(path)
+    if content == null {
+        io.println("  [ERROR] Failed to read file content into memory buffer.")
+        return false
+    }
+
+    // MANDATORY DEFER: Guarantees buffer memory is reclaimed on any return path!
+    defer mem.free(content)
+    defer io.println("  [DEFER HOOK] Successfully freed persistent heap file buffer!")
+
+    let heap_during_read = mem.heap_used()
+    io.println("  Active heap memory during processing: {heap_during_read} bytes")
+
+    // Parse simple key-value integer settings
+    let len = str.len(content)
+    mut idx: usize = 0
+    mut current_val: i32 = 0
+    mut in_val = false
+
+    loop idx in 0..len {
+        let ch: u8 = content[idx] as u8
+        if ch == 61 { // ASCII '='
+            in_val = true
+            current_val = 0
+        } else if ch == 10 or ch == 13 { // ASCII newline '\n' or '\r'
+            if in_val {
+                if out_cfg.port == 0 {
+                    out_cfg.port = current_val
+                } else if out_cfg.workers == 0 {
+                    out_cfg.workers = current_val
+                } else if out_cfg.max_conns == 0 {
+                    out_cfg.max_conns = current_val
+                } else if out_cfg.timeout_ms == 0 {
+                    out_cfg.timeout_ms = current_val
+                }
+                in_val = false
+            }
+        } else if in_val and is_digit(ch) {
+            current_val = current_val * 10 + ((ch - 48) as i32)
+        }
+    }
+
+    io.println("  Parsing completed successfully. Exiting function scope...")
+    return true
+}
+
+act main() -> i32 {
+    io.println("==================================================")
+    io.println("   ZERO-LEAK CONFIGURATION INGESTION DAEMON       ")
+    io.println("==================================================")
+
+    let initial_heap = mem.heap_used()
+    io.println("Initial Active Heap Memory: {initial_heap} bytes")
+
+    let cfg_path = ".velo_cache/daemon_config.ini"
+    let cfg_data = "port=8080\nworkers=16\nmax_conns=2500\ntimeout_ms=500\n"
+
+    // 1. Write configuration file to disk
+    io.println("Writing configuration snapshot to disk: {cfg_path}")
+    let write_ok = fs.write_file(cfg_path, cfg_data)
+    if !write_ok {
+        io.println("Fatal: Could not write configuration file!")
+        return 1
+    }
+
+    // 2. Ingest and parse with automatic LIFO defer cleanup
+    mut cfg = ServerConfig{ port: 0, workers: 0, max_conns: 0, timeout_ms: 0 }
+    let load_ok = load_and_audit_config(cfg_path, @cfg)
+
+    let heap_after_scope = mem.heap_used()
+    io.println("Active Heap Memory After Function Exit: {heap_after_scope} bytes")
+
+    io.println("\n--------------------------------------------------")
+    io.println("          PARSED SERVER CONFIGURATION             ")
+    io.println("--------------------------------------------------")
+    io.println("Listening Port         : {cfg.port}")
+    io.println("Worker Threads         : {cfg.workers}")
+    io.println("Max Concurrent Conns   : {cfg.max_conns}")
+    io.println("Socket Timeout         : {cfg.timeout_ms} ms")
+
+    // Clean up temporary config file
+    let rm_ok = fs.remove(cfg_path)
+    io.println("Removed temporary disk artifact: {rm_ok}")
+
+    let final_heap = mem.heap_used()
+    io.println("--------------------------------------------------")
+    io.println("Final Heap Memory Used : {final_heap} bytes")
+
+    if final_heap == 0 and load_ok {
+        io.println("Memory Safety Verdict  : 100% LEAK-FREE (ZERO ACTIVE BYTES)")
+    } else {
+        io.println("Memory Safety Verdict  : MEMORY LEAK DETECTED!")
+        return 1
+    }
+
+    io.println("==================================================")
+    return 0
+}
