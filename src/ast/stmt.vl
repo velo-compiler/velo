@@ -13,6 +13,8 @@ let STMT_LOOP: i32 = 207
 let STMT_ZONE: i32 = 208
 let STMT_DEFER: i32 = 209
 let STMT_BLOCK: i32 = 210
+let STMT_BREAK: i32 = 211
+let STMT_CONTINUE: i32 = 212
 
 // Top-level declaration kind constants
 let DECL_DATA: i32 = 301
@@ -186,6 +188,24 @@ act make_block_stmt(first_stmt: @StmtNode, count: usize, line: i32, col: i32) ->
     node.kind = STMT_BLOCK
     node.first_stmt = first_stmt
     node.stmt_count = count
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a break statement (`break`).
+act make_break_stmt(line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_BREAK
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a continue statement (`continue`).
+act make_continue_stmt(line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_CONTINUE
     node.line = line
     node.col = col
     return node

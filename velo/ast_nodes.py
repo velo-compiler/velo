@@ -130,6 +130,16 @@ class ReturnStmt(Stmt):
     col: int
 
 @dataclass
+class BreakStmt(Stmt):
+    line: int
+    col: int
+
+@dataclass
+class ContinueStmt(Stmt):
+    line: int
+    col: int
+
+@dataclass
 class VarDeclStmt(Stmt):
     name: str
     type_name: Optional[str]

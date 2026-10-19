@@ -2,7 +2,7 @@ import re
 from typing import List, Optional, Tuple, Dict, Any
 from velo.ast_nodes import (
     Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field,
-    Stmt, ExprStmt, ReturnStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt, ZoneStmt, DeferStmt,
+    Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt, ZoneStmt, DeferStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr
 )
@@ -231,6 +231,12 @@ class CCodeGenerator:
                 self._emit_line("return 0;")
             else:
                 self._emit_line("return;")
+
+        elif isinstance(stmt, BreakStmt):
+            self._emit_line("break;")
+
+        elif isinstance(stmt, ContinueStmt):
+            self._emit_line("continue;")
 
         elif isinstance(stmt, VarDeclStmt):
             type_str = self._infer_or_map_type(stmt.type_name, stmt.value)

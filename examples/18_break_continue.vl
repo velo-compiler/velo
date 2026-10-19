@@ -1,0 +1,68 @@
+// Example 18: Loop Controls - break and continue (Milestone 2.1)
+// Demonstrates early loop exit (break) and iteration skip (continue) in while and loop ranges.
+use sys.io
+
+act main() -> i32 {
+    io.println("=== 1. While Loop with break ===")
+    mut counter: i32 = 0
+    while true {
+        counter += 1
+        if counter == 5 {
+            io.println("Breaking out of while loop at counter == 5")
+            break
+        }
+    }
+    io.println("After while break: counter = {counter}")
+
+    io.println("\n=== 2. While Loop with continue ===")
+    mut n: i32 = 0
+    mut even_sum: i32 = 0
+    while n < 10 {
+        n += 1
+        if n % 2 != 0 {
+            continue
+        }
+        even_sum += n
+    }
+    io.println("Sum of even numbers 1..10 = {even_sum}") // 2 + 4 + 6 + 8 + 10 = 30
+
+    io.println("\n=== 3. Range Loop with break ===")
+    mut loop_break_at: i32 = -1
+    loop i in 0..10 {
+        if i == 6 {
+            loop_break_at = i
+            break
+        }
+    }
+    io.println("Range loop broke at i = {loop_break_at}")
+
+    io.println("\n=== 4. Range Loop with continue ===")
+    mut skipped_sum: i32 = 0
+    loop i in 1..6 {
+        if i == 3 {
+            continue
+        }
+        skipped_sum += i
+    }
+    io.println("Sum of 1..5 skipping 3 = {skipped_sum}") // 1 + 2 + 4 + 5 = 12
+
+    io.println("\n=== 5. Nested Loops with break ===")
+    mut inner_breaks: i32 = 0
+    loop row in 0..3 {
+        loop col in 0..5 {
+            if col == 2 {
+                inner_breaks += 1
+                break
+            }
+        }
+    }
+    io.println("Nested loop completed with inner_breaks = {inner_breaks}") // 3
+
+    if counter == 5 and even_sum == 30 and loop_break_at == 6 and skipped_sum == 12 and inner_breaks == 3 {
+        io.println("\n[SUCCESS] Milestone 2.1: Loop Controls (break & continue) Verified!")
+        return 0
+    }
+
+    io.println("\n[FAILURE] Assertions failed in loop controls.")
+    return 1
+}

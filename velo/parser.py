@@ -2,7 +2,7 @@ from typing import List, Optional, Tuple
 from velo.tokens import Token, TokenType
 from velo.ast_nodes import (
     Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field,
-    Stmt, ExprStmt, ReturnStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt, ZoneStmt, DeferStmt,
+    Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt, ZoneStmt, DeferStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr
 )
@@ -282,6 +282,18 @@ class Parser:
                 val = self._parse_expression()
             self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
             return ReturnStmt(value=val, line=ret_tok.line, col=ret_tok.col)
+
+        # 9.5. Break statement
+        if self._check(TokenType.BREAK):
+            tok = self._advance()
+            self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
+            return BreakStmt(line=tok.line, col=tok.col)
+
+        # 9.6. Continue statement
+        if self._check(TokenType.CONTINUE):
+            tok = self._advance()
+            self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
+            return ContinueStmt(line=tok.line, col=tok.col)
 
         # 10. Assignment or Expression Statement
         expr = self._parse_expression()

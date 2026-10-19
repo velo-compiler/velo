@@ -33,6 +33,8 @@ let TOK_AS: i32 = 37
 let TOK_AND: i32 = 38
 let TOK_OR: i32 = 39
 let TOK_NOT: i32 = 40
+let TOK_BREAK: i32 = 41
+let TOK_CONTINUE: i32 = 42
 
 // Operators & Punctuation
 let TOK_AT: i32 = 50           // @

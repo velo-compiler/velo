@@ -163,6 +163,20 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         sb_append_str(sb, ";\n")
         return
     }
+
+    // 10. Break statement
+    if stmt.kind == STMT_BREAK {
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "break;\n")
+        return
+    }
+
+    // 11. Continue statement
+    if stmt.kind == STMT_CONTINUE {
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "continue;\n")
+        return
+    }
 }
 
 // Emits statements inside a block node.

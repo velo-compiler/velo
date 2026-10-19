@@ -26,6 +26,8 @@ class TokenType(Enum):
     AND = auto()
     OR = auto()
     NOT = auto()
+    BREAK = auto()
+    CONTINUE = auto()
 
     # Literals
     IDENTIFIER = auto()
@@ -108,6 +110,8 @@ KEYWORDS = {
     "and": TokenType.AND,
     "or": TokenType.OR,
     "not": TokenType.NOT,
+    "break": TokenType.BREAK,
+    "continue": TokenType.CONTINUE,
 }
 
 @dataclass

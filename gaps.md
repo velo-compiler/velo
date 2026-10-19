@@ -45,10 +45,9 @@ Velo is a working, self-hosted, triple-bootstrapped systems programming language
 
 ## 2. Control Flow & Language Statements
 
-### 2.1 Loop Controls: `break` and `continue` (🔴 P0 Critical)
-* **Missing Control Flow**: Neither `while` nor `loop` statements support `break` or `continue`.
-* **Impact**: Early exit from loops currently requires cumbersome boolean flags (e.g. `mut found = false; while !found { ... }`), adding unnecessary branching and indentation.
-* **Labeled Breaks**: In nested loops (e.g. tilemap iteration `y` and `x`), there is no `break :outer` or `break label`.
+### 2.1 Loop Controls: `break` and `continue` [COMPLETED] ✅
+* **Supported Controls**: Native `break` and `continue` statements in both `while` loops and `loop <var> in <start>..<end>` range loops.
+* **Semantics & Code Generation**: Direct mapping to C99 `break;` and `continue;` control flow with correct nested loop scoping and Go-style statement termination. Verified with `examples/18_break_continue.vl` and `tests/test_break_continue.py`.
 
 ### 2.2 Branching: `switch` / `match` Statement (🟠 P1 Major)
 * **Missing Construct**: Velo only has `if / else if / else`.
