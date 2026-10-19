@@ -198,6 +198,21 @@ class DeferStmt(Stmt):
     line: int
     col: int
 
+@dataclass
+class MatchCase:
+    values: List[Expr]
+    is_default: bool
+    body: BlockStmt
+    line: int
+    col: int
+
+@dataclass
+class MatchStmt(Stmt):
+    expr: Expr
+    cases: List[MatchCase]
+    line: int
+    col: int
+
 # Top-level Declarations
 @dataclass
 class Field:

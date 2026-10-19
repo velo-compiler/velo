@@ -15,12 +15,24 @@ let STMT_DEFER: i32 = 209
 let STMT_BLOCK: i32 = 210
 let STMT_BREAK: i32 = 211
 let STMT_CONTINUE: i32 = 212
+let STMT_MATCH: i32 = 213
 
 // Top-level declaration kind constants
 let DECL_DATA: i32 = 301
 let DECL_FUNCTION: i32 = 302
 let DECL_EXTERN: i32 = 303
 let DECL_USE: i32 = 304
+
+// Represents a single branch in a match / switch statement.
+data CaseNode {
+    first_val: @ExprNode
+    val_count: usize
+    is_default: bool
+    body: @StmtNode
+    line: i32
+    col: i32
+    next: @CaseNode
+}
 
 // Represents a formal parameter in a function or extern declaration.
 data ParamNode {
@@ -64,6 +76,9 @@ data StmtNode {
     loop_var: string
     loop_start: @ExprNode
     loop_end: @ExprNode
+    // Match / Switch constructs
+    first_case: @CaseNode
+    case_count: usize
     // Function / Struct / Extern / Use payloads
     first_param: @ParamNode
     param_count: usize
@@ -206,6 +221,30 @@ act make_break_stmt(line: i32, col: i32) -> @StmtNode {
 act make_continue_stmt(line: i32, col: i32) -> @StmtNode {
     mut node: @StmtNode = mem.alloc(@StmtNode, 1)
     node.kind = STMT_CONTINUE
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a match branch case node.
+act make_case_node(first_val: @ExprNode, val_count: usize, is_default: bool, body: @StmtNode, line: i32, col: i32) -> @CaseNode {
+    mut node: @CaseNode = mem.alloc(@CaseNode, 1)
+    node.first_val = first_val
+    node.val_count = val_count
+    node.is_default = is_default
+    node.body = body
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a match / switch statement.
+act make_match_stmt(expr: @ExprNode, first_case: @CaseNode, case_count: usize, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_MATCH
+    node.expr = expr
+    node.first_case = first_case
+    node.case_count = case_count
     node.line = line
     node.col = col
     return node

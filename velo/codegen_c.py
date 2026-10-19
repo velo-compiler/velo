@@ -3,6 +3,7 @@ from typing import List, Optional, Tuple, Dict, Any
 from velo.ast_nodes import (
     Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field,
     Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt, ZoneStmt, DeferStmt,
+    MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr
 )
@@ -293,6 +294,26 @@ class CCodeGenerator:
             self._emit_block_body(stmt.body.statements)
             self._emit_line(f"velo_zone_pop({wm});")
             self.indent_level -= 1
+            self._emit_line("}")
+
+        elif isinstance(stmt, MatchStmt):
+            expr_code = self._emit_expression(stmt.expr)
+            self._emit_line(f"switch ({expr_code}) {{")
+            for c in stmt.cases:
+                if c.is_default:
+                    self._emit_line("default: {")
+                else:
+                    for v in c.values:
+                        v_code = self._emit_expression(v)
+                        self._emit_line(f"case {v_code}:")
+                    self._emit_line("{")
+                self.indent_level += 1
+                self.defer_stack.append([])
+                self._emit_block_body(c.body.statements)
+                if not (c.body.statements and isinstance(c.body.statements[-1], (ReturnStmt, BreakStmt))):
+                    self._emit_line("break;")
+                self.indent_level -= 1
+                self._emit_line("}")
             self._emit_line("}")
 
     def _emit_if(self, stmt: IfStmt):

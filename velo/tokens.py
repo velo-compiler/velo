@@ -28,6 +28,10 @@ class TokenType(Enum):
     NOT = auto()
     BREAK = auto()
     CONTINUE = auto()
+    MATCH = auto()
+    SWITCH = auto()
+    CASE = auto()
+    DEFAULT = auto()
 
     # Literals
     IDENTIFIER = auto()
@@ -45,6 +49,7 @@ class TokenType(Enum):
     DOT = auto()          # .
     DOTDOT = auto()       # ..
     ARROW = auto()        # ->
+    FAT_ARROW = auto()    # =>
     BANG = auto()         # !
 
     # Comparisons & Assignments
@@ -112,6 +117,10 @@ KEYWORDS = {
     "not": TokenType.NOT,
     "break": TokenType.BREAK,
     "continue": TokenType.CONTINUE,
+    "match": TokenType.MATCH,
+    "switch": TokenType.SWITCH,
+    "case": TokenType.CASE,
+    "default": TokenType.DEFAULT,
 }
 
 @dataclass

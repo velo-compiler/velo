@@ -1,0 +1,94 @@
+// Example 19: Branching - switch and match Statements (Milestone 2.2)
+// Demonstrates pattern matching and multi-way branching with match and switch.
+use sys.io
+
+act classify_http_status(code: i32) -> string {
+    match code {
+        200 => {
+            return "OK"
+        }
+        201, 202 => {
+            return "Created / Accepted"
+        }
+        400, 404 => {
+            return "Client Error"
+        }
+        500, 502, 503 => {
+            return "Server Error"
+        }
+        else => {
+            return "Unknown Status"
+        }
+    }
+}
+
+act grade_letter(score: i32) -> string {
+    switch score {
+        case 10: {
+            return "A+"
+        }
+        case 9: {
+            return "A"
+        }
+        case 8: {
+            return "B"
+        }
+        case 7: {
+            return "C"
+        }
+        default: {
+            return "F"
+        }
+    }
+}
+
+act main() -> i32 {
+    io.println("=== 1. Match with Multi-Value Patterns ===")
+    let s200 = classify_http_status(200)
+    let s201 = classify_http_status(201)
+    let s404 = classify_http_status(404)
+    let s500 = classify_http_status(500)
+    let s999 = classify_http_status(999)
+    io.println("Status 200: {s200}")
+    io.println("Status 201: {s201}")
+    io.println("Status 404: {s404}")
+    io.println("Status 500: {s500}")
+    io.println("Status 999: {s999}")
+
+    io.println("\n=== 2. Switch Statement with Case Colons ===")
+    let g10 = grade_letter(10)
+    let g9 = grade_letter(9)
+    let g8 = grade_letter(8)
+    let g7 = grade_letter(7)
+    let g5 = grade_letter(5)
+    io.println("Score 10: {g10}")
+    io.println("Score 9: {g9}")
+    io.println("Score 8: {g8}")
+    io.println("Score 7: {g7}")
+    io.println("Score 5: {g5}")
+
+    io.println("\n=== 3. Match with Single Statement Arms and Wildcard ===")
+    mut total_points: i32 = 0
+    loop i in 0..5 {
+        match i {
+            0, 1 => total_points += 10
+            2 => total_points += 20
+            _ => total_points += 5
+        }
+    }
+    io.println("Total points across iterations 0..4 = {total_points}") // 10 + 10 + 20 + 5 + 5 = 50
+
+    io.println("\n=== 4. Keycode / Game Action Dispatch ===")
+    let key: i32 = 2
+    mut action = "idle"
+    switch key {
+        case 1 => action = "jump"
+        case 2 => action = "attack"
+        case 3 => action = "defend"
+        default => action = "none"
+    }
+    io.println("Action for key {key} = {action}")
+
+    io.println("\nAll switch / match branching tests passed successfully!")
+    return 0
+}

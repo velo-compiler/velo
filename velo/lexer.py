@@ -389,6 +389,7 @@ class Lexer:
             return Token(TokenType.DOT, ".", line, col)
         if ch == '=':
             if self._match('='): return Token(TokenType.EQ, "==", line, col)
+            if self._match('>'): return Token(TokenType.FAT_ARROW, "=>", line, col)
             return Token(TokenType.ASSIGN, "=", line, col)
         if ch == '!':
             if self._match('='): return Token(TokenType.NE, "!=", line, col)

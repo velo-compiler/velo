@@ -49,9 +49,12 @@ Velo is a working, self-hosted, triple-bootstrapped systems programming language
 * **Supported Controls**: Native `break` and `continue` statements in both `while` loops and `loop <var> in <start>..<end>` range loops.
 * **Semantics & Code Generation**: Direct mapping to C99 `break;` and `continue;` control flow with correct nested loop scoping and Go-style statement termination. Verified with `examples/18_break_continue.vl` and `tests/test_break_continue.py`.
 
-### 2.2 Branching: `switch` / `match` Statement (🟠 P1 Major)
-* **Missing Construct**: Velo only has `if / else if / else`.
-* **Impact**: Dispatching over token kinds, state machines, game states, or input keycodes requires 20-40 chained `if / else if` branches, which cannot be optimized into C jump tables (`switch`).
+### 2.2 Branching: `switch` / `match` Statement [COMPLETED] ✅
+* **Unified Modern & Classic Syntax**: Full support for both `match <expr> { ... }` and `switch <expr> { ... }` with fat-arrow (`=>`) or colon (`:`) arm separators, and optional `case` keyword.
+* **Multi-Value Patterns**: Matching comma-separated alternative values in a single case branch (e.g. `201, 202 => { ... }`).
+* **Default & Wildcard Fallbacks**: Flexible fallback handling supporting `else => { ... }`, `default: { ... }`, and wildcard `_ => { ... }`.
+* **Block and Single-Statement Arms**: Supports curly-brace scoped code blocks `{ ... }` as well as concise single-statement arm bodies (e.g. `1 => action = "jump"`).
+* **High-Performance C99 Jump Tables**: Emits native scoped C99 `switch (...) { case ...: { ... break; } default: { ... break; } }` blocks enabling $O(1)$ constant-time jump table optimizations by C compilers without accidental fallthrough. Verified with `examples/19_match_switch.vl` and `tests/test_match_switch.py`.
 
 ### 2.3 Range Loop Flexibility (🟡 P2 Ergonomic)
 * **Fixed Step**: `loop i in 0..N` only counts forward by `+1`.

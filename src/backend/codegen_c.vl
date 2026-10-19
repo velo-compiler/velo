@@ -177,6 +177,41 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         sb_append_str(sb, "continue;\n")
         return
     }
+
+    // 12. Match / Switch statement
+    if stmt.kind == STMT_MATCH {
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "switch (")
+        emit_c_expr(sb, st, stmt.expr)
+        sb_append_str(sb, ") {\n")
+        mut cur_case = stmt.first_case
+        while cur_case != null {
+            if cur_case.is_default {
+                sb_append_indent(sb, indent)
+                sb_append_str(sb, "default: {\n")
+            } else {
+                mut val = cur_case.first_val
+                while val != null {
+                    sb_append_indent(sb, indent)
+                    sb_append_str(sb, "case ")
+                    emit_c_expr(sb, st, val)
+                    sb_append_str(sb, ":\n")
+                    val = val.next
+                }
+                sb_append_indent(sb, indent)
+                sb_append_str(sb, "{\n")
+            }
+            emit_c_block_stmts(sb, st, cur_case.body, indent + 1, defers)
+            sb_append_indent(sb, indent + 1)
+            sb_append_str(sb, "break;\n")
+            sb_append_indent(sb, indent)
+            sb_append_str(sb, "}\n")
+            cur_case = cur_case.next
+        }
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "}\n")
+        return
+    }
 }
 
 // Emits statements inside a block node.
@@ -189,6 +224,24 @@ act emit_c_block_stmts(sb: @StringBuilder, st: @SymbolTable, block: @StmtNode, i
         cur = cur.next
     }
     exit_scope(st)
+}
+
+// Emits C function parameter list `(type1 p1, type2 p2)`.
+act emit_param_list(sb: @StringBuilder, first_param: @ParamNode, param_count: usize) {
+    sb_append_char(sb, '(')
+    if param_count == 0 {
+        sb_append_str(sb, "void")
+    } else {
+        mut cur_p = first_param
+        while cur_p != null {
+            sb_append_str(sb, map_type_to_c(cur_p.type_name))
+            sb_append_char(sb, ' ')
+            sb_append_str(sb, cur_p.name)
+            if cur_p.next != null { sb_append_str(sb, ", ") }
+            cur_p = cur_p.next
+        }
+    }
+    sb_append_char(sb, ')')
 }
 
 // Emits complete C99 translation unit from an AST ProgramNode.
@@ -243,22 +296,8 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
             sb_append_str(@sb, map_type_to_c(cur.return_type))
             sb_append_char(@sb, ' ')
             sb_append_str(@sb, cur.name)
-            sb_append_char(@sb, '(')
-            if cur.param_count == 0 {
-                sb_append_str(@sb, "void")
-            } else {
-                mut cur_p = cur.first_param
-                while cur_p != null {
-                    sb_append_str(@sb, map_type_to_c(cur_p.type_name))
-                    sb_append_char(@sb, ' ')
-                    sb_append_str(@sb, cur_p.name)
-                    if cur_p.next != null {
-                        sb_append_str(@sb, ", ")
-                    }
-                    cur_p = cur_p.next
-                }
-            }
-            sb_append_str(@sb, ");\n")
+            emit_param_list(@sb, cur.first_param, cur.param_count)
+            sb_append_str(@sb, ";\n")
         }
         cur = cur.next
     }
@@ -296,22 +335,8 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
             sb_append_str(@sb, map_type_to_c(cur.return_type))
             sb_append_char(@sb, ' ')
             sb_append_str(@sb, cur.name)
-            sb_append_char(@sb, '(')
-            if cur.param_count == 0 {
-                sb_append_str(@sb, "void")
-            } else {
-                mut cur_p = cur.first_param
-                while cur_p != null {
-                    sb_append_str(@sb, map_type_to_c(cur_p.type_name))
-                    sb_append_char(@sb, ' ')
-                    sb_append_str(@sb, cur_p.name)
-                    if cur_p.next != null {
-                        sb_append_str(@sb, ", ")
-                    }
-                    cur_p = cur_p.next
-                }
-            }
-            sb_append_str(@sb, ");\n")
+            emit_param_list(@sb, cur.first_param, cur.param_count)
+            sb_append_str(@sb, ";\n")
         }
         cur = cur.next
     }
@@ -327,22 +352,8 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
                 sb_append_str(@sb, map_type_to_c(cur.return_type))
                 sb_append_char(@sb, ' ')
                 sb_append_str(@sb, cur.name)
-                sb_append_char(@sb, '(')
-                if cur.param_count == 0 {
-                    sb_append_str(@sb, "void")
-                } else {
-                    mut cur_p = cur.first_param
-                    while cur_p != null {
-                        sb_append_str(@sb, map_type_to_c(cur_p.type_name))
-                        sb_append_char(@sb, ' ')
-                        sb_append_str(@sb, cur_p.name)
-                        if cur_p.next != null {
-                            sb_append_str(@sb, ", ")
-                        }
-                        cur_p = cur_p.next
-                    }
-                }
-                sb_append_str(@sb, ") {\n")
+                emit_param_list(@sb, cur.first_param, cur.param_count)
+                sb_append_str(@sb, " {\n")
             }
 
             enter_scope(st)

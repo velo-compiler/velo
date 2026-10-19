@@ -285,6 +285,20 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
         }
     } else if stmt.kind == STMT_BREAK or stmt.kind == STMT_CONTINUE {
         return
+    } else if stmt.kind == STMT_MATCH {
+        infer_expr_type(st, stmt.expr)
+        mut cur_case = stmt.first_case
+        while cur_case != null {
+            mut val = cur_case.first_val
+            while val != null {
+                infer_expr_type(st, val)
+                val = val.next
+            }
+            if cur_case.body != null {
+                check_statement(st, expected_ret_type, cur_case.body)
+            }
+            cur_case = cur_case.next
+        }
     } else if stmt.kind == STMT_BLOCK {
         enter_scope(st)
         mut cur = stmt.first_stmt
