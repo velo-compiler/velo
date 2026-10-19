@@ -1,0 +1,167 @@
+// Expression cloning and type inference for AST monomorphization.
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../common/utils.vl"
+use "../common/string_builder.vl"
+use "monomorphize_types.vl"
+
+act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
+    if e == null { return "i32" }
+    if e.kind == EXPR_INT { return "i32" }
+    if e.kind == EXPR_FLOAT { return "f32" }
+    if e.kind == EXPR_STRING { return "string" }
+    if e.kind == EXPR_BOOL { return "bool" }
+    if e.kind == EXPR_STRUCT_LIT { return e.type_name }
+    if e.kind == EXPR_VARIANT { return e.type_name }
+    if e.kind == EXPR_ADDRESS_OF {
+        let sub = mono_infer_type(e.operand, scope)
+        return mono_concat("@", sub)
+    }
+    if e.kind == EXPR_DEREF {
+        let sub = mono_infer_type(e.operand, scope)
+        if str.len(sub) > 1 and sub[0] == '@' {
+            return copy_slice_to_string(sub, 1, str.len(sub) - 1)
+        }
+        return sub
+    }
+    if e.kind == EXPR_IDENT {
+        mut cur = scope
+        loop cur != null {
+            if cur.name == e.str_val { return cur.type_name }
+            cur = cur.next
+        }
+    }
+    return "i32"
+}
+
+act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params: string, args: string) -> @ExprNode {
+    if e == null { return null }
+    if e.kind == EXPR_INT {
+        mut node = make_int_expr(e.int_val, e.line, e.col)
+        node.str_val = e.str_val
+        node.type_name = e.type_name
+        return node
+    }
+    if e.kind == EXPR_FLOAT {
+        mut node = make_float_expr(e.float_val, e.line, e.col)
+        node.str_val = e.str_val
+        node.type_name = e.type_name
+        return node
+    }
+    if e.kind == EXPR_STRING { return make_string_expr(e.str_val, e.line, e.col) }
+    if e.kind == EXPR_BOOL { return make_bool_expr(e.bool_val, e.line, e.col) }
+    if e.kind == EXPR_NULL { return make_null_expr(e.line, e.col) }
+    if e.kind == EXPR_IDENT { return make_ident_expr(e.str_val, e.line, e.col) }
+
+    if e.kind == EXPR_BINARY {
+        let l = mono_clone_expr(m, e.left, scope, params, args)
+        let r = mono_clone_expr(m, e.right, scope, params, args)
+        return make_binary_expr(l, e.op, r, e.line, e.col)
+    }
+    if e.kind == EXPR_UNARY {
+        let sub = mono_clone_expr(m, e.operand, scope, params, args)
+        return make_unary_expr(e.op, sub, e.line, e.col)
+    }
+    if e.kind == EXPR_ADDRESS_OF {
+        let sub = mono_clone_expr(m, e.operand, scope, params, args)
+        return make_address_of_expr(sub, e.line, e.col)
+    }
+    if e.kind == EXPR_DEREF {
+        let sub = mono_clone_expr(m, e.operand, scope, params, args)
+        return make_deref_expr(sub, e.line, e.col)
+    }
+    if e.kind == EXPR_MEMBER {
+        let sub = mono_clone_expr(m, e.target, scope, params, args)
+        return make_member_expr(sub, e.member_name, e.line, e.col)
+    }
+    if e.kind == EXPR_INDEX {
+        let sub = mono_clone_expr(m, e.target, scope, params, args)
+        let idx = mono_clone_expr(m, e.index, scope, params, args)
+        return make_index_expr(sub, idx, e.line, e.col)
+    }
+    if e.kind == EXPR_CAST {
+        let sub = mono_clone_expr(m, e.operand, scope, params, args)
+        mut tt = mono_subst(e.type_name, params, args)
+        mono_check_type(m, tt)
+        tt = mono_normalize_type(tt)
+        return make_cast_expr(sub, tt, e.line, e.col)
+    }
+    if e.kind == EXPR_STRUCT_LIT {
+        mut stype = mono_subst(e.type_name, params, args)
+        mono_check_type(m, stype)
+        stype = mono_normalize_type(stype)
+        mut cur = e.first_init
+        mut first_fi: @FieldInit = null
+        mut last_fi: @FieldInit = null
+        loop cur != null {
+            let fval = mono_clone_expr(m, cur.value, scope, params, args)
+            mut fi: @FieldInit = mem.alloc(@FieldInit, 1)
+            fi.name = cur.name
+            fi.value = fval
+            fi.line = cur.line
+            fi.col = cur.col
+            fi.next = null
+            if first_fi == null { first_fi = fi; last_fi = fi }
+            else { last_fi.next = fi; last_fi = fi }
+            cur = cur.next
+        }
+        return make_struct_lit_expr(stype, first_fi, e.line, e.col)
+    }
+    if e.kind == EXPR_VARIANT {
+        mut kname = mono_subst(e.type_name, params, args)
+        if kname != null {
+            mono_check_type(m, kname)
+            kname = mono_normalize_type(kname)
+        }
+        mut cur = e.first_arg
+        mut first_a: @ExprNode = null
+        mut last_a: @ExprNode = null
+        loop cur != null {
+            let a = mono_clone_expr(m, cur, scope, params, args)
+            if first_a == null { first_a = a; last_a = a }
+            else { last_a.next = a; last_a = a }
+            cur = cur.next
+        }
+        return make_variant_expr(kname, e.member_name, first_a, e.arg_count, e.line, e.col)
+    }
+    if e.kind == EXPR_CALL {
+        mut first_a: @ExprNode = null
+        mut last_a: @ExprNode = null
+        mut cur = e.first_arg
+        loop cur != null {
+            let a = mono_clone_expr(m, cur, scope, params, args)
+            if first_a == null { first_a = a; last_a = a }
+            else { last_a.next = a; last_a = a }
+            cur = cur.next
+        }
+        mut callee = mono_clone_expr(m, e.callee, scope, params, args)
+        if callee != null and callee.kind == EXPR_IDENT {
+            let fn_tmpl = mono_find_template(m, callee.str_val)
+            if fn_tmpl != null and fn_tmpl.kind == DECL_FUNCTION {
+                mut call_targs = e.type_name
+                if call_targs != null and str.len(call_targs) > 0 {
+                    call_targs = mono_subst(call_targs, params, args)
+                } else if first_a != null {
+                    let a_type = mono_infer_type(first_a, scope)
+                    if fn_tmpl.node.first_param != null and fn_tmpl.node.first_param.type_name == "@T" and str.len(a_type) > 1 and a_type[0] == '@' {
+                        call_targs = copy_slice_to_string(a_type, 1, str.len(a_type) - 1)
+                    } else {
+                        call_targs = a_type
+                    }
+                }
+                if call_targs != null {
+                    let mangled = mono_concat(callee.str_val, mono_concat("_", mono_mangle_type(call_targs)))
+                    mono_request(m, DECL_FUNCTION, callee.str_val, call_targs, mangled)
+                    callee.str_val = mangled
+                }
+            }
+        }
+        let call_res = make_call_expr(callee, first_a, e.arg_count, e.line, e.col)
+        return call_res
+    }
+    return e
+}

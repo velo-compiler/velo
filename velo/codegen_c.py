@@ -7,6 +7,7 @@ from velo.ast_nodes import (
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr
 )
+from velo.monomorphize import Monomorphizer
 
 TYPE_MAP = {
     "i8": "i8",
@@ -61,6 +62,8 @@ class CCodeGenerator:
         return base_c_type + ("*" * pointer_count)
 
     def generate(self, program: Program) -> str:
+        program = Monomorphizer().monomorphize(program)
+
         self.output = []
         self.struct_defs = {}
         self.current_scope_types = {}

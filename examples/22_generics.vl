@@ -1,0 +1,85 @@
+// Milestone 3.2: Generics / Parametric Polymorphism
+use sys.io
+
+// 1. Generic Structs
+data Box[T] {
+    value: T
+}
+
+data Pair[K, V] {
+    key: K
+    val: V
+}
+
+// 2. Generic Tagged Unions
+kind Option[T] {
+    None,
+    Some: T
+}
+
+// 3. Generic Functions
+act min[T](a: T, b: T) -> T {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+act swap[T](a: @T, b: @T) {
+    let tmp = a.@
+    a.@ = b.@
+    b.@ = tmp
+}
+
+act print_opt(opt: Option[string]) {
+    on opt {
+        .Some(msg) => {
+            io.println("Option Some: {msg}")
+        }
+        .None => {
+            io.println("Option None")
+        }
+    }
+}
+
+act main() -> i32 {
+    io.println("=== Testing Velo Generics / Parametric Polymorphism ===")
+
+    // Test Generic Struct Box[i32]
+    let b: Box[i32] = Box[i32]{ value: 42 }
+    io.println("Box value: {b.value}")
+
+    // Test Generic Struct Pair[string, i32]
+    let p: Pair[string, i32] = Pair[string, i32]{ key: "score", val: 100 }
+    io.println("Pair key: {p.key}, val: {p.val}")
+
+    // Test Generic Tagged Union Option[string]
+    let s1: Option[string] = .Some("Velo Generics")
+    let s2: Option[string] = .None
+    print_opt(s1)
+    print_opt(s2)
+
+    // Test Generic Function Call with type inference
+    let m1 = min(15, 25)
+    io.println("min(15, 25) = {m1}")
+
+    // Test Generic Function Call with explicit type args
+    let m2 = min[f32](3.14, 2.71)
+    if m2 < 3.0 {
+        io.println("min[f32](3.14, 2.71) is less than 3: true")
+    } else {
+        io.println("min[f32](3.14, 2.71) is less than 3: false")
+    }
+
+    // Test Generic Swap with pointer types
+    mut x: i32 = 111
+    mut y: i32 = 222
+    io.println("Before swap: x={x}, y={y}")
+
+    swap(@x, @y)
+
+    io.println("After swap: x={x}, y={y}")
+
+    io.println("=== Generics Verification Complete ===")
+    return 0
+}

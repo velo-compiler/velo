@@ -130,6 +130,59 @@ kind Event {
 * Pure enums lower directly to C99 `int32_t` scalar values.
 * Tagged unions lower to a C99 `struct` containing `int32_t kind;` and a payload `union { ... } as;`.
 
+### 2.5 Generics & Parametric Polymorphism
+Velo provides zero-runtime-cost parametric polymorphism using square-bracket generic parameters (`[T]`, `[K, V]`). Generic templates for data structs, kinds (tagged unions), and functions are monomorphized into specialized C99 code at compile-time:
+
+#### Generic Structs (`data`):
+```rust
+data Box[T] {
+    value: T
+}
+
+data Pair[K, V] {
+    key: K
+    val: V
+}
+```
+
+#### Generic Tagged Unions (`kind`):
+```rust
+kind Option[T] {
+    None
+    Some: T
+}
+```
+
+#### Generic Functions (`act`):
+```rust
+act min[T](a: T, b: T) -> T {
+    if a < b { return a }
+    return b
+}
+
+act swap[T](a: @T, b: @T) {
+    let tmp = a.@
+    a.@ = b.@
+    b.@ = tmp
+}
+```
+
+#### Instantiation & Type Inference:
+* **Struct & Kind Literals**: Instantiated using concrete type arguments:
+  ```rust
+  let b: Box[i32] = Box[i32]{ value: 42 }
+  let opt: Option[string] = .Some("ready")
+  ```
+* **Call-Site Type Inference**: Generic functions can be called directly without explicit type arguments; Velo automatically infers `T` from argument types:
+  ```rust
+  let m = min(15, 25) // infers T = i32 -> calls min_i32
+  ```
+* **Explicit Type Arguments**: Can also be supplied explicitly:
+  ```rust
+  let mf = min[f32](3.14, 2.71) // calls min_f32
+  ```
+* **Zero Overhead**: Generics are monomorphized into specialized C99 functions and types (`Box_i32`, `Option_string`, `min_i32`, `Pair_string_i32`) with zero runtime indirection or virtual method table overhead.
+
 ---
 
 ## 3. Variables & Mutability

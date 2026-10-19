@@ -4,16 +4,18 @@ use sys.mem
 use "token.vl"
 use "../common/utils.vl"
 use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"
 use "parser.vl"
+use "parser_binary.vl"
 
 // Determines whether the lookahead matches a struct literal pattern:
-// UpperCamelCase identifier followed immediately by '{'.
+// UpperCamelCase identifier followed optionally by `[TypeArgs]` and `{`.
 act is_struct_literal(p: @Parser) -> bool {
     let tok0 = parser_peek(p, 0)
     let tok1 = parser_peek(p, 1)
-    if tok0.kind != TOK_IDENTIFIER or tok1.kind != TOK_LBRACE {
+    if tok0.kind != TOK_IDENTIFIER {
         return false
     }
     // Struct types must begin with an uppercase ASCII character
@@ -22,7 +24,30 @@ act is_struct_literal(p: @Parser) -> bool {
         return false
     }
 
-    mut idx: usize = 2
+    mut idx: usize = 1
+    if tok1.kind == TOK_LBRACKET {
+        mut depth: usize = 1
+        idx = 2
+        loop p.pos + idx < p.token_count and depth > 0 {
+            let t = parser_peek(p, idx)
+            if t.kind == TOK_LBRACKET {
+                depth += 1
+            } else if t.kind == TOK_RBRACKET {
+                depth -= 1
+            }
+            idx += 1
+        }
+        if depth > 0 {
+            return false
+        }
+    }
+
+    let brace_tok = parser_peek(p, idx)
+    if brace_tok.kind != TOK_LBRACE {
+        return false
+    }
+    idx += 1
+
     loop p.pos + idx < p.token_count {
         let t = parser_peek(p, idx)
         if t.kind != TOK_NEWLINE and t.kind != TOK_SEMICOLON {
@@ -44,10 +69,30 @@ act is_struct_literal(p: @Parser) -> bool {
 
 // Parses primary expressions: literals, identifiers, grouped expressions, struct literals.
 act parse_primary(p: @Parser) -> @ExprNode {
-    // 1. Struct instantiation literal (e.g. `Point{ x: 10, y: 20 }`)
+    // 1. Struct instantiation literal (e.g. `Point{ x: 10, y: 20 }` or `Box[i32]{ value: 42 }`)
     if is_struct_literal(p) {
         let id_tok = parser_advance(p)
-        let sname = copy_slice_to_string(p.source, id_tok.start, id_tok.length)
+        mut sname = copy_slice_to_string(p.source, id_tok.start, id_tok.length)
+        if parser_match(p, TOK_LBRACKET) {
+            mut sb = create_sb(64)
+            sb_append_str(@sb, sname)
+            sb_append_char(@sb, '[')
+            mut arg_count: usize = 0
+            loop not parser_check(p, TOK_RBRACKET) and not parser_check(p, TOK_EOF) {
+                let atype = parse_type_annotation(p)
+                if arg_count > 0 {
+                    sb_append_str(@sb, ", ")
+                }
+                sb_append_str(@sb, atype)
+                arg_count += 1
+                if not parser_match(p, TOK_COMMA) {
+                    break
+                }
+            }
+            parser_consume(p, TOK_RBRACKET, "Expected ']' after type arguments in struct literal")
+            sb_append_char(@sb, ']')
+            sname = sb_to_string(@sb)
+        }
         parser_advance(p) // consume '{'
         parser_skip_newlines(p)
 
@@ -72,7 +117,6 @@ act parse_primary(p: @Parser) -> @ExprNode {
             parser_skip_newlines(p)
             if not parser_match(p, TOK_COMMA) {
                 parser_skip_newlines(p)
-                // If next is not comma or rbrace, stop or continue
                 if parser_check(p, TOK_RBRACE) {
                     // end of struct
                 }
@@ -132,7 +176,7 @@ act parse_primary(p: @Parser) -> @ExprNode {
         return make_string_expr(val, tok.line, tok.col)
     }
 
-    // 6. Boolean literals
+    // 6. Boolean literals: `true`, `false`
     if parser_match(p, TOK_TRUE) {
         let tok = parser_peek(p, 0)
         return make_bool_expr(true, tok.line, tok.col)
@@ -142,56 +186,87 @@ act parse_primary(p: @Parser) -> @ExprNode {
         return make_bool_expr(false, tok.line, tok.col)
     }
 
-    // 7. Identifier reference
+    // 7. Dot-prefixed variant literal e.g. `.Quit`, `.Some(42)`
+    if parser_match(p, TOK_DOT) {
+        let dot_tok = parser_peek(p, 0)
+        let var_tok = parser_consume(p, TOK_IDENTIFIER, "Expected variant name after '.'")
+        let vname = copy_slice_to_string(p.source, var_tok.start, var_tok.length)
+
+        mut first_arg: @ExprNode = null
+        mut last_arg: @ExprNode = null
+        mut count: usize = 0
+
+        if parser_match(p, TOK_LPAREN) {
+            if not parser_check(p, TOK_RPAREN) {
+                mut more_args = true
+                loop more_args {
+                    let arg = parse_expression(p)
+                    if arg != null {
+                        if first_arg == null {
+                            first_arg = arg
+                            last_arg = arg
+                        } else {
+                            last_arg.next = arg
+                            last_arg = arg
+                        }
+                        count += 1
+                    }
+                    if not parser_match(p, TOK_COMMA) {
+                        more_args = false
+                    }
+                }
+            }
+            parser_consume(p, TOK_RPAREN, "Expected ')' after variant arguments")
+        }
+
+        return make_variant_expr(null, vname, first_arg, count, dot_tok.line, dot_tok.col)
+    }
+
+    // 8. Identifier variable reference
     if parser_check(p, TOK_IDENTIFIER) {
         let tok = parser_advance(p)
         let name = copy_slice_to_string(p.source, tok.start, tok.length)
         return make_ident_expr(name, tok.line, tok.col)
     }
 
-    // 8. Grouped expression `(expr)`
+    // 9. Parenthesized grouping expression: `(expr)`
     if parser_match(p, TOK_LPAREN) {
         let expr = parse_expression(p)
         parser_consume(p, TOK_RPAREN, "Expected ')' after grouped expression")
         return expr
     }
 
-    // 8.5. Contextual variant expression `.Variant` or `.Variant(args...)`
-    if parser_match(p, TOK_DOT) {
-        let dot_tok = parser_peek(p, 0)
-        let vname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected variant name after '.'")
-        let vname = copy_slice_to_string(p.source, vname_tok.start, vname_tok.length)
-        mut first_arg: @ExprNode = null
-        mut last_arg: @ExprNode = null
-        mut count: usize = 0
-        if parser_match(p, TOK_LPAREN) {
-            if not parser_check(p, TOK_RPAREN) {
-                loop {
-                    let arg = parse_expression(p)
-                    if first_arg == null {
-                        first_arg = arg
-                        last_arg = arg
-                    } else {
-                        last_arg.next = arg
-                        last_arg = arg
-                    }
-                    count += 1
-                    if not parser_match(p, TOK_COMMA) { break }
-                }
-            }
-            parser_consume(p, TOK_RPAREN, "Expected ')' after variant arguments")
-        }
-        return make_variant_expr(null, vname, first_arg, count, dot_tok.line, dot_tok.col)
-    }
-
     let tok = parser_peek(p, 0)
     report_error(p.filename, tok.line, tok.col, "Unexpected token in expression")
     p.had_error = true
+    parser_advance(p)
     return null
 }
 
-// Parses postfix operations: member access `.field`, dereference `.@`, array indexing `[idx]`,
-// type casts `as Type`, and function calls `(args...)`.
+// Checks if lookahead matches a generic function call `[TypeArgs](...)`.
+act is_generic_call(p: @Parser) -> bool {
+    if not parser_check(p, TOK_LBRACKET) {
+        return false
+    }
+    mut depth: usize = 1
+    mut idx: usize = 1
+    loop p.pos + idx < p.token_count and depth > 0 {
+        let t = parser_peek(p, idx)
+        if t.kind == TOK_LBRACKET {
+            depth += 1
+        } else if t.kind == TOK_RBRACKET {
+            depth -= 1
+        }
+        idx += 1
+    }
+    if depth > 0 {
+        return false
+    }
+    let next_tok = parser_peek(p, idx)
+    return next_tok.kind == TOK_LPAREN
+}
+
+// Parses postfix expressions: field access, dereference, array indexing, casting, function calls.
 act parse_postfix(p: @Parser) -> @ExprNode {
     mut expr = parse_primary(p)
     if expr == null {
@@ -209,6 +284,50 @@ act parse_postfix(p: @Parser) -> @ExprNode {
                 let mname = copy_slice_to_string(p.source, mem_tok.start, mem_tok.length)
                 expr = make_member_expr(expr, mname, mem_tok.line, mem_tok.col)
             }
+        } else if parser_check(p, TOK_LBRACKET) and is_generic_call(p) {
+            parser_advance(p) // consume '['
+            mut sb = create_sb(64)
+            mut count: usize = 0
+            loop not parser_check(p, TOK_RBRACKET) and not parser_check(p, TOK_EOF) {
+                let atype = parse_type_annotation(p)
+                if count > 0 {
+                    sb_append_str(@sb, ", ")
+                }
+                sb_append_str(@sb, atype)
+                count += 1
+                if not parser_match(p, TOK_COMMA) {
+                    break
+                }
+            }
+            parser_consume(p, TOK_RBRACKET, "Expected ']' after generic type arguments")
+            let type_args_str = sb_to_string(@sb)
+
+            let lp = parser_consume(p, TOK_LPAREN, "Expected '(' after generic type arguments")
+            mut first_arg: @ExprNode = null
+            mut last_arg: @ExprNode = null
+            mut arg_count: usize = 0
+            if not parser_check(p, TOK_RPAREN) {
+                mut more_args = true
+                loop more_args {
+                    let arg = parse_expression(p)
+                    if arg != null {
+                        if first_arg == null {
+                            first_arg = arg
+                            last_arg = arg
+                        } else {
+                            last_arg.next = arg
+                            last_arg = arg
+                        }
+                        arg_count += 1
+                    }
+                    if not parser_match(p, TOK_COMMA) {
+                        more_args = false
+                    }
+                }
+            }
+            parser_consume(p, TOK_RPAREN, "Expected ')' after argument list")
+            expr = make_call_expr(expr, first_arg, arg_count, lp.line, lp.col)
+            expr.type_name = type_args_str
         } else if parser_match(p, TOK_LBRACKET) {
             let lb = parser_peek(p, 0)
             let idx_expr = parse_expression(p)
@@ -263,119 +382,4 @@ act parse_unary(p: @Parser) -> @ExprNode {
         return make_unary_expr(op_tok.kind, operand, op_tok.line, op_tok.col)
     }
     return parse_postfix(p)
-}
-
-// Parses multiplicative binary factors: `*`, `/`, `%`.
-act parse_factor(p: @Parser) -> @ExprNode {
-    mut expr = parse_unary(p)
-    loop parser_check(p, TOK_STAR) or parser_check(p, TOK_SLASH) or parser_check(p, TOK_PERCENT) {
-        let op_tok = parser_advance(p)
-        let right = parse_unary(p)
-        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
-    }
-    return expr
-}
-
-// Parses additive binary terms: `+`, `-`.
-act parse_term(p: @Parser) -> @ExprNode {
-    mut expr = parse_factor(p)
-    loop parser_check(p, TOK_PLUS) or parser_check(p, TOK_MINUS) {
-        let op_tok = parser_advance(p)
-        let right = parse_factor(p)
-        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
-    }
-    return expr
-}
-
-// Parses bitwise shift binary expressions: `<<`, `>>`.
-act parse_shift(p: @Parser) -> @ExprNode {
-    mut expr = parse_term(p)
-    loop parser_check(p, TOK_SHL) or parser_check(p, TOK_SHR) {
-        let op_tok = parser_advance(p)
-        let right = parse_term(p)
-        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
-    }
-    return expr
-}
-
-// Parses comparison binary expressions: `<`, `<=`, `>`, `>=`.
-act parse_comparison(p: @Parser) -> @ExprNode {
-    mut expr = parse_shift(p)
-    loop parser_check(p, TOK_LT) or parser_check(p, TOK_LTE) or parser_check(p, TOK_GT) or parser_check(p, TOK_GTE) {
-        let op_tok = parser_advance(p)
-        let right = parse_shift(p)
-        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
-    }
-    return expr
-}
-
-// Parses equality binary expressions: `==`, `!=`.
-act parse_equality(p: @Parser) -> @ExprNode {
-    mut expr = parse_comparison(p)
-    loop parser_check(p, TOK_EQ) or parser_check(p, TOK_NEQ) {
-        let op_tok = parser_advance(p)
-        let right = parse_comparison(p)
-        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
-    }
-    return expr
-}
-
-// Parses bitwise AND binary expressions: `&`.
-act parse_bitwise_and(p: @Parser) -> @ExprNode {
-    mut expr = parse_equality(p)
-    loop parser_check(p, TOK_AMP) {
-        let op_tok = parser_advance(p)
-        let right = parse_equality(p)
-        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
-    }
-    return expr
-}
-
-// Parses bitwise XOR binary expressions: `^`.
-act parse_bitwise_xor(p: @Parser) -> @ExprNode {
-    mut expr = parse_bitwise_and(p)
-    loop parser_check(p, TOK_CARET) {
-        let op_tok = parser_advance(p)
-        let right = parse_bitwise_and(p)
-        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
-    }
-    return expr
-}
-
-// Parses bitwise OR binary expressions: `|`.
-act parse_bitwise_or(p: @Parser) -> @ExprNode {
-    mut expr = parse_bitwise_xor(p)
-    loop parser_check(p, TOK_PIPE) {
-        let op_tok = parser_advance(p)
-        let right = parse_bitwise_xor(p)
-        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
-    }
-    return expr
-}
-
-// Parses logical conjunction expressions: `and`.
-act parse_logical_and(p: @Parser) -> @ExprNode {
-    mut expr = parse_bitwise_or(p)
-    loop parser_check(p, TOK_AND) {
-        let op_tok = parser_advance(p)
-        let right = parse_bitwise_or(p)
-        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
-    }
-    return expr
-}
-
-// Parses logical disjunction expressions: `or`.
-act parse_logical_or(p: @Parser) -> @ExprNode {
-    mut expr = parse_logical_and(p)
-    loop parser_check(p, TOK_OR) {
-        let op_tok = parser_advance(p)
-        let right = parse_logical_and(p)
-        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
-    }
-    return expr
-}
-
-// Parses a complete expression matching the full Pratt operator precedence hierarchy.
-act parse_expression(p: @Parser) -> @ExprNode {
-    return parse_logical_or(p)
 }

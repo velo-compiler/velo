@@ -94,6 +94,7 @@ class CallExpr(Expr):
     args: List[Expr]
     line: int
     col: int
+    type_args: Optional[List[str]] = None
 
 @dataclass
 class AddressOf(Expr):
@@ -232,6 +233,7 @@ class DataDecl(Decl):
     fields: List[Field]
     line: int
     col: int
+    type_params: Optional[List[str]] = None
 
 @dataclass
 class VariantDecl:
@@ -248,6 +250,7 @@ class KindDecl(Decl):
     variants: List[VariantDecl]
     line: int
     col: int
+    type_params: Optional[List[str]] = None
 
 @dataclass
 class Param:
@@ -264,6 +267,7 @@ class FunctionDecl(Decl):
     body: BlockStmt
     line: int
     col: int
+    type_params: Optional[List[str]] = None
 
 @dataclass
 class ExternDecl(Decl):

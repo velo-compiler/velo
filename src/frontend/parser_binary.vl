@@ -1,0 +1,123 @@
+// Pratt binary expression parser and operator precedence hierarchy for Velo.
+use sys.io
+use sys.mem
+use "token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "parser.vl"
+use "parser_expr.vl"
+
+// Parses multiplicative binary factors: `*`, `/`, `%`.
+act parse_factor(p: @Parser) -> @ExprNode {
+    mut expr = parse_unary(p)
+    loop parser_check(p, TOK_STAR) or parser_check(p, TOK_SLASH) or parser_check(p, TOK_PERCENT) {
+        let op_tok = parser_advance(p)
+        let right = parse_unary(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses additive binary terms: `+`, `-`.
+act parse_term(p: @Parser) -> @ExprNode {
+    mut expr = parse_factor(p)
+    loop parser_check(p, TOK_PLUS) or parser_check(p, TOK_MINUS) {
+        let op_tok = parser_advance(p)
+        let right = parse_factor(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses bitwise shift binary expressions: `<<`, `>>`.
+act parse_shift(p: @Parser) -> @ExprNode {
+    mut expr = parse_term(p)
+    loop parser_check(p, TOK_SHL) or parser_check(p, TOK_SHR) {
+        let op_tok = parser_advance(p)
+        let right = parse_term(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses comparison binary expressions: `<`, `<=`, `>`, `>=`.
+act parse_comparison(p: @Parser) -> @ExprNode {
+    mut expr = parse_shift(p)
+    loop parser_check(p, TOK_LT) or parser_check(p, TOK_LTE) or parser_check(p, TOK_GT) or parser_check(p, TOK_GTE) {
+        let op_tok = parser_advance(p)
+        let right = parse_shift(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses equality binary expressions: `==`, `!=`.
+act parse_equality(p: @Parser) -> @ExprNode {
+    mut expr = parse_comparison(p)
+    loop parser_check(p, TOK_EQ) or parser_check(p, TOK_NEQ) {
+        let op_tok = parser_advance(p)
+        let right = parse_comparison(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses bitwise AND binary expressions: `&`.
+act parse_bitwise_and(p: @Parser) -> @ExprNode {
+    mut expr = parse_equality(p)
+    loop parser_check(p, TOK_AMP) {
+        let op_tok = parser_advance(p)
+        let right = parse_equality(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses bitwise XOR binary expressions: `^`.
+act parse_bitwise_xor(p: @Parser) -> @ExprNode {
+    mut expr = parse_bitwise_and(p)
+    loop parser_check(p, TOK_CARET) {
+        let op_tok = parser_advance(p)
+        let right = parse_bitwise_and(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses bitwise OR binary expressions: `|`.
+act parse_bitwise_or(p: @Parser) -> @ExprNode {
+    mut expr = parse_bitwise_xor(p)
+    loop parser_check(p, TOK_PIPE) {
+        let op_tok = parser_advance(p)
+        let right = parse_bitwise_xor(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses logical conjunction expressions: `and`.
+act parse_logical_and(p: @Parser) -> @ExprNode {
+    mut expr = parse_bitwise_or(p)
+    loop parser_check(p, TOK_AND) {
+        let op_tok = parser_advance(p)
+        let right = parse_bitwise_or(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses logical disjunction expressions: `or`.
+act parse_logical_or(p: @Parser) -> @ExprNode {
+    mut expr = parse_logical_and(p)
+    loop parser_check(p, TOK_OR) {
+        let op_tok = parser_advance(p)
+        let right = parse_logical_and(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
+// Parses a complete expression matching the full Pratt operator precedence hierarchy.
+act parse_expression(p: @Parser) -> @ExprNode {
+    return parse_logical_or(p)
+}

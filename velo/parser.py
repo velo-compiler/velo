@@ -137,9 +137,22 @@ class Parser:
             col=extern_tok.col
         )
 
+    def _parse_type_params(self) -> List[str]:
+        if not self._match(TokenType.LBRACKET):
+            return []
+        params: List[str] = []
+        while not self._check(TokenType.RBRACKET) and not self._is_at_end():
+            p_tok = self._consume(TokenType.IDENTIFIER, "Expected type parameter name")
+            params.append(p_tok.value)
+            if not self._match(TokenType.COMMA):
+                break
+        self._consume(TokenType.RBRACKET, "Expected ']' after type parameters")
+        return params
+
     def _parse_data_decl(self) -> DataDecl:
         data_tok = self._consume(TokenType.DATA, "Expected 'data'")
         name_tok = self._consume(TokenType.IDENTIFIER, "Expected struct name after 'data'")
+        type_params = self._parse_type_params()
 
         self._skip_newlines()
         self._consume(TokenType.LBRACE, "Expected '{' after struct name")
@@ -156,11 +169,12 @@ class Parser:
             self._skip_newlines()
 
         self._consume(TokenType.RBRACE, "Expected '}' after struct body")
-        return DataDecl(name=name_tok.value, fields=fields, line=data_tok.line, col=data_tok.col)
+        return DataDecl(name=name_tok.value, fields=fields, line=data_tok.line, col=data_tok.col, type_params=type_params)
 
     def _parse_kind_decl(self) -> KindDecl:
         kind_tok = self._consume(TokenType.KIND, "Expected 'kind'")
         name_tok = self._consume(TokenType.IDENTIFIER, "Expected kind name after 'kind'")
+        type_params = self._parse_type_params()
 
         self._skip_newlines()
         self._consume(TokenType.LBRACE, "Expected '{' after kind name")
@@ -203,11 +217,12 @@ class Parser:
             self._skip_newlines()
 
         self._consume(TokenType.RBRACE, "Expected '}' after kind body")
-        return KindDecl(name=name_tok.value, variants=variants, line=kind_tok.line, col=kind_tok.col)
+        return KindDecl(name=name_tok.value, variants=variants, line=kind_tok.line, col=kind_tok.col, type_params=type_params)
 
     def _parse_function_decl(self) -> FunctionDecl:
         act_tok = self._consume(TokenType.ACT, "Expected 'act'")
         name_tok = self._consume(TokenType.IDENTIFIER, "Expected function name")
+        type_params = self._parse_type_params()
 
         self._consume(TokenType.LPAREN, "Expected '(' after function name")
         params: List[Param] = []
@@ -237,7 +252,8 @@ class Parser:
             return_type=return_type,
             body=body,
             line=act_tok.line,
-            col=act_tok.col
+            col=act_tok.col,
+            type_params=type_params
         )
 
     def _parse_type_annotation(self) -> str:
@@ -246,7 +262,17 @@ class Parser:
             prefix += "@"
 
         type_tok = self._consume(TokenType.IDENTIFIER, "Expected type name")
-        return prefix + type_tok.value
+        base_name = type_tok.value
+        if self._match(TokenType.LBRACKET):
+            args = []
+            while not self._check(TokenType.RBRACKET) and not self._is_at_end():
+                args.append(self._parse_type_annotation())
+                if not self._match(TokenType.COMMA):
+                    break
+            self._consume(TokenType.RBRACKET, "Expected ']' after type arguments")
+            base_name += "[" + ", ".join(args) + "]"
+
+        return prefix + base_name
 
     def _parse_block(self) -> BlockStmt:
         lbrace = self._consume(TokenType.LBRACE, "Expected '{'")
@@ -600,6 +626,24 @@ class Parser:
             return UnaryExpr(op=tok.value, operand=operand, line=tok.line, col=tok.col)
         return self._parse_postfix()
 
+    def _is_generic_call(self) -> bool:
+        if not self._check(TokenType.LBRACKET):
+            return False
+        depth = 1
+        idx = 1
+        while self.pos + idx < len(self.tokens) and depth > 0:
+            tok = self.tokens[self.pos + idx]
+            if tok.type == TokenType.LBRACKET:
+                depth += 1
+            elif tok.type == TokenType.RBRACKET:
+                depth -= 1
+            idx += 1
+        if depth != 0:
+            return False
+        if self.pos + idx < len(self.tokens) and self.tokens[self.pos + idx].type == TokenType.LPAREN:
+            return True
+        return False
+
     def _parse_postfix(self) -> Expr:
         expr = self._parse_primary()
 
@@ -611,6 +655,23 @@ class Parser:
                 else:
                     member_tok = self._consume(TokenType.IDENTIFIER, "Expected member name after '.'")
                     expr = MemberAccess(target=expr, member=member_tok.value, line=member_tok.line, col=member_tok.col)
+            elif self._check(TokenType.LBRACKET) and self._is_generic_call():
+                self._advance()
+                type_args: List[str] = []
+                while not self._check(TokenType.RBRACKET) and not self._is_at_end():
+                    type_args.append(self._parse_type_annotation())
+                    if not self._match(TokenType.COMMA):
+                        break
+                self._consume(TokenType.RBRACKET, "Expected ']' after generic type arguments")
+                lparen = self._consume(TokenType.LPAREN, "Expected '(' after generic type arguments")
+                args: List[Expr] = []
+                if not self._check(TokenType.RPAREN):
+                    while True:
+                        args.append(self._parse_expression())
+                        if not self._match(TokenType.COMMA):
+                            break
+                self._consume(TokenType.RPAREN, "Expected ')' after arguments")
+                expr = CallExpr(callee=expr, args=args, line=lparen.line, col=lparen.col, type_args=type_args)
             elif self._match(TokenType.LBRACKET):
                 lbracket = self.tokens[self.pos - 1]
                 idx_expr = self._parse_expression()
@@ -636,14 +697,31 @@ class Parser:
         return expr
 
     def _is_struct_literal(self) -> bool:
-        if not (self._check(TokenType.IDENTIFIER) and self._peek(1).type == TokenType.LBRACE):
+        if not self._check(TokenType.IDENTIFIER):
             return False
         
         ident_name = self._peek().value
         if not ident_name or not ident_name[0].isupper():
             return False
 
-        idx = 2
+        idx = 1
+        if self._peek(idx).type == TokenType.LBRACKET:
+            depth = 1
+            idx += 1
+            while self.pos + idx < len(self.tokens) and depth > 0:
+                tok = self.tokens[self.pos + idx]
+                if tok.type == TokenType.LBRACKET:
+                    depth += 1
+                elif tok.type == TokenType.RBRACKET:
+                    depth -= 1
+                idx += 1
+            if depth != 0:
+                return False
+
+        if self._peek(idx).type != TokenType.LBRACE:
+            return False
+
+        idx += 1
         while self.pos + idx < len(self.tokens) and self.tokens[self.pos + idx].type in (TokenType.NEWLINE, TokenType.SEMICOLON):
             idx += 1
         
@@ -657,7 +735,16 @@ class Parser:
     def _parse_primary(self) -> Expr:
         if self._is_struct_literal():
             id_tok = self._advance()
-            self._advance()
+            struct_name = id_tok.value
+            if self._match(TokenType.LBRACKET):
+                args = []
+                while not self._check(TokenType.RBRACKET) and not self._is_at_end():
+                    args.append(self._parse_type_annotation())
+                    if not self._match(TokenType.COMMA):
+                        break
+                self._consume(TokenType.RBRACKET, "Expected ']' after type arguments in struct literal")
+                struct_name += "[" + ", ".join(args) + "]"
+            self._consume(TokenType.LBRACE, "Expected '{' after struct name")
             self._skip_newlines()
             field_inits: List[Tuple[str, Expr]] = []
             while not self._check(TokenType.RBRACE) and not self._is_at_end():
@@ -670,7 +757,7 @@ class Parser:
                     self._skip_newlines()
                     break
             self._consume(TokenType.RBRACE, "Expected '}' at end of struct literal")
-            return StructLiteral(struct_name=id_tok.value, field_inits=field_inits, line=id_tok.line, col=id_tok.col)
+            return StructLiteral(struct_name=struct_name, field_inits=field_inits, line=id_tok.line, col=id_tok.col)
 
         tok = self._peek()
 

@@ -103,6 +103,7 @@ data StmtNode {
     field_count: usize
     first_variant: @VariantNode
     variant_count: usize
+    type_params: string
     module_path: string
     // Intrusive linked list pointer for sequence of statements / declarations
     next: @StmtNode

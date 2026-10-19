@@ -75,9 +75,12 @@ Velo is a working, self-hosted, triple-bootstrapped systems programming language
 * **Contextual Dot-Shorthand**: `let d: Direction = .North`, `let e: Event = .KeyDown(65)`, `let c: Event = .Click(1, 10.0, 20.0)` whenever target type is known; fully-qualified `Direction.North` always valid.
 * **Pattern Matching Destructuring (`on`)**: Directly match with `on e { .KeyDown(key) => ..., .Click(btn, x, y) => ... }` with automatic payload variable bindings scoped to each arm. Verified with `examples/21_enums_and_unions.vl` and `tests/test_enums_and_unions.py`.
 
-### 3.2 Generics / Parametric Polymorphism (🟠 P1 Major)
-* **Current State**: All functions and structs must have concrete, monomorphic types.
-* **Impact**: You cannot write a generic `List[T]`, `Queue[T]`, or `min[T](a: T, b: T)`. To have a list of `Particle` and a list of `i32`, you must copy-paste the struct definition or write untyped `@void` buffers.
+### 3.2 Generics / Parametric Polymorphism [COMPLETED] ✅
+* **Syntax Choice**: Proposal A (`[T]`): `data Box[T]`, `kind Option[T]`, `act min[T]`, `act swap[T](a: @T, b: @T)`, multi-param `data Pair[K, V]`.
+* **Zero-Cost C99 Monomorphization**: AST specialization pass monomorphizes generic structs, kinds, and functions on demand into concrete C99 types (`Box_i32`, `Option_string`, `min_i32`, `Pair_string_i32`) with zero virtual dispatch or boxing overhead.
+* **Call-Site Type Inference**: Functions can be invoked directly as `min(15, 25)` without type arguments, inferring type arguments from parameters; explicit instantiation `min[f32](3.14, 2.71)` also supported.
+* **Pointer & Struct Specialization**: Pointer types like `@T` cleanly unify and specialize (e.g. `swap[i32](@x, @y)`).
+* **Self-Hosted Monomorphizer**: Fully integrated into both Python (`velo/monomorphize.py`) and self-hosted Stage 2 compiler (`src/analysis/monomorphize.vl`). Verified with `examples/22_generics.vl` and `tests/test_generics.py`.
 
 ### 3.3 Function Pointers & First-Class Callbacks (🟠 P1 Major)
 * **Current State**: Functions cannot be stored in variables, passed as parameters, or placed in struct fields.

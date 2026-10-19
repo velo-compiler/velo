@@ -9,7 +9,12 @@ use "../ast/expr.vl"
 use "../ast/stmt.vl"
 use "../frontend/parser.vl"
 use "../frontend/parser_expr.vl"
+use "../frontend/parser_binary.vl"
 use "../frontend/parser_stmt.vl"
+use "../frontend/parser_decl.vl"
+use "../analysis/monomorphize_types.vl"
+use "../analysis/monomorphize_expr.vl"
+use "../analysis/monomorphize.vl"
 use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
 use "../common/string_builder.vl"
@@ -158,10 +163,12 @@ act compile_source_to_c(source_path: string) -> string {
     mut d: CompilerDriver
     init_driver(@d)
 
-    let prog = resolve_and_parse(@d, source_path)
-    if prog == null or d.error_count > 0 {
+    let raw_prog = resolve_and_parse(@d, source_path)
+    if raw_prog == null or d.error_count > 0 {
         return null
     }
+
+    let prog = monomorphize_program(raw_prog)
 
     mut st: SymbolTable
     init_symbol_table(@st)

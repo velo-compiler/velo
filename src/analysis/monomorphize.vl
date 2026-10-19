@@ -1,0 +1,371 @@
+// Monomorphization pass orchestrating whole-program generic AST specialization.
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../common/utils.vl"
+use "../common/string_builder.vl"
+use "monomorphize_types.vl"
+use "monomorphize_expr.vl"
+
+act mono_clone_stmt(m: @Monomorphizer, s: @StmtNode, scope: @ScopeEntry, params: string, args: string, ret_type: string) -> @StmtNode {
+    if s == null { return null }
+    if s.kind == STMT_EXPR {
+        let ex = mono_clone_expr(m, s.expr, scope, params, args)
+        return make_expr_stmt(ex, s.line, s.col)
+    }
+    if s.kind == STMT_RETURN {
+        let ex = mono_clone_expr(m, s.val_expr, scope, params, args)
+        if ex != null and ex.kind == EXPR_VARIANT and ex.type_name == null {
+            ex.type_name = ret_type
+        }
+        return make_return_stmt(ex, s.line, s.col)
+    }
+    if s.kind == STMT_BREAK { return make_break_stmt(s.line, s.col) }
+    if s.kind == STMT_CONTINUE { return make_continue_stmt(s.line, s.col) }
+
+    if s.kind == STMT_VAR_DECL {
+        mut vt = mono_subst(s.type_name, params, args)
+        if vt != null {
+            mono_check_type(m, vt)
+            vt = mono_normalize_type(vt)
+        }
+        let ve = mono_clone_expr(m, s.val_expr, scope, params, args)
+        if ve != null and ve.kind == EXPR_VARIANT and ve.type_name == null {
+            ve.type_name = vt
+        }
+        if ve != null and ve.kind == EXPR_STRUCT_LIT and vt != null {
+            ve.type_name = vt
+        }
+        mut inferred = vt
+        if inferred == null {
+            inferred = mono_infer_type(ve, scope)
+        }
+        mut new_sc: @ScopeEntry = mem.alloc(@ScopeEntry, 1)
+        new_sc.name = s.name
+        new_sc.type_name = inferred
+        new_sc.next = scope
+        let res = make_var_decl_stmt(s.name, vt, ve, s.is_mut, s.line, s.col)
+        return res
+    }
+    if s.kind == STMT_ASSIGN {
+        let tgt = mono_clone_expr(m, s.expr, scope, params, args)
+        let ve = mono_clone_expr(m, s.val_expr, scope, params, args)
+        return make_assign_stmt(tgt, s.op, ve, s.line, s.col)
+    }
+    if s.kind == STMT_IF {
+        let cond = mono_clone_expr(m, s.expr, scope, params, args)
+        let then_b = mono_clone_stmt(m, s.body, scope, params, args, ret_type)
+        let else_b = mono_clone_stmt(m, s.else_branch, scope, params, args, ret_type)
+        return make_if_stmt(cond, then_b, else_b, s.line, s.col)
+    }
+    if s.kind == STMT_BLOCK {
+        mut first_s: @StmtNode = null
+        mut last_s: @StmtNode = null
+        mut cur = s.first_stmt
+        mut cur_scope = scope
+        loop cur != null {
+            let cs = mono_clone_stmt(m, cur, cur_scope, params, args, ret_type)
+            if cs != null {
+                if cs.kind == STMT_VAR_DECL {
+                    mut sc: @ScopeEntry = mem.alloc(@ScopeEntry, 1)
+                    sc.name = cs.name
+                    mut sc_t = cs.type_name
+                    if sc_t == null { sc_t = "i32" }
+                    sc.type_name = sc_t
+                    sc.next = cur_scope
+                    cur_scope = sc
+                }
+                if first_s == null { first_s = cs; last_s = cs }
+                else { last_s.next = cs; last_s = cs }
+            }
+            cur = cur.next
+        }
+        return make_block_stmt(first_s, s.stmt_count, s.line, s.col)
+    }
+    if s.kind == STMT_MATCH {
+        let subj = mono_clone_expr(m, s.expr, scope, params, args)
+        let subj_type = mono_infer_type(subj, scope)
+        mut cur_c = s.first_case
+        mut first_case: @CaseNode = null
+        mut last_case: @CaseNode = null
+        loop cur_c != null {
+            mut first_v: @ExprNode = null
+            mut last_v: @ExprNode = null
+            mut cv = cur_c.first_val
+            loop cv != null {
+                let v = mono_clone_expr(m, cv, scope, params, args)
+                if v != null and v.kind == EXPR_VARIANT and v.type_name == null {
+                    v.type_name = subj_type
+                }
+                if first_v == null { first_v = v; last_v = v }
+                else { last_v.next = v; last_v = v }
+                cv = cv.next
+            }
+            let c_body = mono_clone_stmt(m, cur_c.body, scope, params, args, ret_type)
+            let case_node = make_case_node(first_v, cur_c.val_count, cur_c.is_default, c_body, cur_c.line, cur_c.col)
+            if first_case == null { first_case = case_node; last_case = case_node }
+            else { last_case.next = case_node; last_case = case_node }
+            cur_c = cur_c.next
+        }
+        return make_match_stmt(subj, first_case, s.case_count, s.line, s.col)
+    }
+    if s.kind == STMT_LOOP {
+        let b = mono_clone_stmt(m, s.body, scope, params, args, ret_type)
+        if s.loop_start != null or s.loop_end != null {
+            let st = mono_clone_expr(m, s.loop_start, scope, params, args)
+            let en = mono_clone_expr(m, s.loop_end, scope, params, args)
+            let sp = mono_clone_expr(m, s.loop_step, scope, params, args)
+            return make_loop_stmt(s.loop_var, st, en, sp, s.is_inclusive, b, s.line, s.col)
+        }
+        if s.expr != null {
+            let ex = mono_clone_expr(m, s.expr, scope, params, args)
+            return make_loop_expr_stmt(ex, s.is_count, b, s.line, s.col)
+        }
+        return make_loop_inf_stmt(b, s.line, s.col)
+    }
+    if s.kind == STMT_ZONE {
+        let b = mono_clone_stmt(m, s.body, scope, params, args, ret_type)
+        return make_zone_stmt(b, s.line, s.col)
+    }
+    if s.kind == STMT_DEFER {
+        let ds = mono_clone_stmt(m, s.deferred_stmt, scope, params, args, ret_type)
+        return make_defer_stmt(ds, s.line, s.col)
+    }
+    return s
+}
+
+act mono_instantiate_struct(m: @Monomorphizer, tmpl: @GenericTemplate, type_args: string, mangled_name: string) -> @StmtNode {
+    mut cur_f = tmpl.node.first_field
+    mut first_f: @FieldNode = null
+    mut last_f: @FieldNode = null
+    mut count: usize = 0
+    loop cur_f != null {
+        mut ft = mono_subst(cur_f.type_name, tmpl.type_params, type_args)
+        mono_check_type(m, ft)
+        ft = mono_normalize_type(ft)
+        let f = make_field_node(cur_f.name, ft, cur_f.line, cur_f.col)
+        if first_f == null { first_f = f; last_f = f }
+        else { last_f.next = f; last_f = f }
+        count += 1
+        cur_f = cur_f.next
+    }
+    return make_data_decl(mangled_name, first_f, count, tmpl.node.line, tmpl.node.col)
+}
+
+act mono_instantiate_kind(m: @Monomorphizer, tmpl: @GenericTemplate, type_args: string, mangled_name: string) -> @StmtNode {
+    mut cur_v = tmpl.node.first_variant
+    mut first_v: @VariantNode = null
+    mut last_v: @VariantNode = null
+    mut count: usize = 0
+    loop cur_v != null {
+        mut pt = cur_v.payload_type
+        if pt != null {
+            pt = mono_subst(pt, tmpl.type_params, type_args)
+            mono_check_type(m, pt)
+            pt = mono_normalize_type(pt)
+        }
+        let v = make_variant_node(cur_v.name, cur_v.discriminant, cur_v.has_discriminant, pt, null, 0, cur_v.line, cur_v.col)
+        if first_v == null { first_v = v; last_v = v }
+        else { last_v.next = v; last_v = v }
+        count += 1
+        cur_v = cur_v.next
+    }
+    return make_kind_decl(mangled_name, first_v, count, tmpl.node.line, tmpl.node.col)
+}
+
+act mono_instantiate_func(m: @Monomorphizer, tmpl: @GenericTemplate, type_args: string, mangled_name: string) -> @StmtNode {
+    mut cur_p = tmpl.node.first_param
+    mut first_p: @ParamNode = null
+    mut last_p: @ParamNode = null
+    mut count: usize = 0
+    mut scope: @ScopeEntry = null
+    loop cur_p != null {
+        mut pt = mono_subst(cur_p.type_name, tmpl.type_params, type_args)
+        mono_check_type(m, pt)
+        pt = mono_normalize_type(pt)
+        let p = make_param_node(cur_p.name, pt, cur_p.line, cur_p.col)
+        if first_p == null { first_p = p; last_p = p }
+        else { last_p.next = p; last_p = p }
+        mut sc: @ScopeEntry = mem.alloc(@ScopeEntry, 1)
+        sc.name = cur_p.name
+        sc.type_name = pt
+        sc.next = scope
+        scope = sc
+        count += 1
+        cur_p = cur_p.next
+    }
+    mut rt = mono_subst(tmpl.node.return_type, tmpl.type_params, type_args)
+    if rt != null {
+        mono_check_type(m, rt)
+        rt = mono_normalize_type(rt)
+    }
+    let body = mono_clone_stmt(m, tmpl.node.body, scope, tmpl.type_params, type_args, rt)
+    return make_function_decl(mangled_name, first_p, count, rt, body, tmpl.node.line, tmpl.node.col)
+}
+
+// Main entry point for AST monomorphization.
+act monomorphize_program(prog: @ProgramNode) -> @ProgramNode {
+    if prog == null { return null }
+    mut m: Monomorphizer
+    mono_init(@m)
+
+    // Pass 1: Separate generic templates from regular declarations
+    mut cur = prog.first_decl
+    mut reg_first: @StmtNode = null
+    mut reg_last: @StmtNode = null
+    loop cur != null {
+        let nxt = cur.next
+        cur.next = null
+        if cur.type_params != null and str.len(cur.type_params) > 0 {
+            mut tmpl: @GenericTemplate = mem.alloc(@GenericTemplate, 1)
+            tmpl.kind = cur.kind
+            tmpl.name = cur.name
+            tmpl.type_params = cur.type_params
+            tmpl.node = cur
+            tmpl.next = m.first_template
+            m.first_template = tmpl
+        } else {
+            if reg_first == null { reg_first = cur; reg_last = cur }
+            else { reg_last.next = cur; reg_last = cur }
+        }
+        cur = nxt
+    }
+
+    if m.first_template == null {
+        prog.first_decl = reg_first
+        return prog
+    }
+
+    // Pass 2: Walk regular declarations to trigger and rewrite generic instantiations
+    mut r = reg_first
+    mut trans_first: @StmtNode = null
+    mut trans_last: @StmtNode = null
+    loop r != null {
+        let nxt = r.next
+        r.next = null
+        if r.kind == DECL_DATA {
+            mut f = r.first_field
+            loop f != null {
+                mono_check_type(@m, f.type_name)
+                f.type_name = mono_normalize_type(f.type_name)
+                f = f.next
+            }
+            if trans_first == null { trans_first = r; trans_last = r }
+            else { trans_last.next = r; trans_last = r }
+        } else if r.kind == DECL_KIND {
+            mut v = r.first_variant
+            loop v != null {
+                if v.payload_type != null {
+                    mono_check_type(@m, v.payload_type)
+                    v.payload_type = mono_normalize_type(v.payload_type)
+                }
+                v = v.next
+            }
+            if trans_first == null { trans_first = r; trans_last = r }
+            else { trans_last.next = r; trans_last = r }
+        } else if r.kind == DECL_FUNCTION {
+            mut cur_p = r.first_param
+            mut first_p: @ParamNode = null
+            mut last_p: @ParamNode = null
+            mut scope: @ScopeEntry = null
+            loop cur_p != null {
+                mono_check_type(@m, cur_p.type_name)
+                let pt = mono_normalize_type(cur_p.type_name)
+                let p = make_param_node(cur_p.name, pt, cur_p.line, cur_p.col)
+                if first_p == null { first_p = p; last_p = p }
+                else { last_p.next = p; last_p = p }
+                mut sc: @ScopeEntry = mem.alloc(@ScopeEntry, 1)
+                sc.name = cur_p.name
+                sc.type_name = pt
+                sc.next = scope
+                scope = sc
+                cur_p = cur_p.next
+            }
+            mono_check_type(@m, r.return_type)
+            let rt = mono_normalize_type(r.return_type)
+            let new_body = mono_clone_stmt(@m, r.body, scope, null, null, rt)
+            let tr_fn = make_function_decl(r.name, first_p, r.param_count, rt, new_body, r.line, r.col)
+            if trans_first == null { trans_first = tr_fn; trans_last = tr_fn }
+            else { trans_last.next = tr_fn; trans_last = tr_fn }
+        } else {
+            let tr_s = mono_clone_stmt(@m, r, null, null, null, null)
+            if trans_first == null { trans_first = tr_s; trans_last = tr_s }
+            else { trans_last.next = tr_s; trans_last = tr_s }
+        }
+        r = nxt
+    }
+
+    // Pass 3: Process worklist until all dependencies are instantiated
+    loop m.worklist_head != null {
+        let item = m.worklist_head
+        m.worklist_head = item.next
+        if m.worklist_head == null { m.worklist_tail = null }
+
+        let tmpl = mono_find_template(@m, item.template_name)
+        if tmpl != null {
+            mut inst_decl: @StmtNode = null
+            if item.kind == DECL_DATA {
+                inst_decl = mono_instantiate_struct(@m, tmpl, item.type_args, item.mangled_name)
+            } else if item.kind == DECL_KIND {
+                inst_decl = mono_instantiate_kind(@m, tmpl, item.type_args, item.mangled_name)
+            } else if item.kind == DECL_FUNCTION {
+                inst_decl = mono_instantiate_func(@m, tmpl, item.type_args, item.mangled_name)
+            }
+            if inst_decl != null {
+                mut entry: @InstantiatedEntry = mem.alloc(@InstantiatedEntry, 1)
+                entry.mangled_name = item.mangled_name
+                entry.decl = inst_decl
+                entry.next = m.first_inst
+                m.first_inst = entry
+            }
+        }
+    }
+
+    // Pass 4: Assemble final program (instantiated types first, then regular, then instantiated funcs)
+    mut final_first: @StmtNode = null
+    mut final_last: @StmtNode = null
+    mut total_count: usize = 0
+
+    // Add instantiated kinds & structs
+    mut e = m.first_inst
+    loop e != null {
+        if e.decl.kind == DECL_KIND or e.decl.kind == DECL_DATA {
+            e.decl.next = null
+            if final_first == null { final_first = e.decl; final_last = e.decl }
+            else { final_last.next = e.decl; final_last = e.decl }
+            total_count += 1
+        }
+        e = e.next
+    }
+
+    // Add regular declarations
+    mut rd = trans_first
+    loop rd != null {
+        let nxt = rd.next
+        rd.next = null
+        if final_first == null { final_first = rd; final_last = rd }
+        else { final_last.next = rd; final_last = rd }
+        total_count += 1
+        rd = nxt
+    }
+
+    // Add instantiated functions
+    e = m.first_inst
+    loop e != null {
+        if e.decl.kind == DECL_FUNCTION {
+            e.decl.next = null
+            if final_first == null { final_first = e.decl; final_last = e.decl }
+            else { final_last.next = e.decl; final_last = e.decl }
+            total_count += 1
+        }
+        e = e.next
+    }
+
+    mut final_prog: @ProgramNode = mem.alloc(@ProgramNode, 1)
+    final_prog.first_decl = final_first
+    final_prog.decl_count = total_count
+    return final_prog
+}
