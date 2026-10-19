@@ -56,10 +56,13 @@ Velo is a working, self-hosted, triple-bootstrapped systems programming language
 * **Block and Single-Statement Arms**: Supports curly-brace scoped code blocks `{ ... }` as well as concise single-statement arm bodies (e.g. `1 => action = "jump"`).
 * **High-Performance C99 Jump Tables**: Emits native scoped C99 `switch (...) { case ...: { ... break; } default: { ... break; } }` blocks enabling $O(1)$ constant-time jump table optimizations by C compilers without accidental fallthrough. Verified with `examples/19_match_switch.vl` and `tests/test_match_switch.py`.
 
-### 2.3 Range Loop Flexibility (🟡 P2 Ergonomic)
-* **Fixed Step**: `loop i in 0..N` only counts forward by `+1`.
-* **Missing Steps**: No syntax for reverse ranges (`loop i in N..0`), custom step increments (`0..100 step 2`), or inclusive vs exclusive ranges (`0..=N`).
-* **Collection Iteration**: Cannot iterate over an array or list directly (`loop item in items`).
+### 2.3 Range Loop Flexibility [COMPLETED] 🛡️
+* **Unified Loop Syntax**: Consolidated all loops (`while`, `loop .. in`, `repeat`, `infinite`) into a single expressive `loop` keyword.
+* **Custom Step Increments**: Slicing syntax `loop i in 0..10:2` for forward custom steps.
+* **Smart Auto-Countdown**: When $start > end$ (`loop 5..0`), loops automatically decrement by `-1` without needing `:-1`. Custom decrement steps like `loop 10..0:2` also supported.
+* **Inclusive & Exclusive Ranges**: Supports both half-open ranges `0..10` and fully inclusive ranges `0..=10` via `..=` operator.
+* **Implicit Variable**: Anonymous ranges (`loop 0..10:2`), repeat loops (`loop 5`), condition loops (`loop cond`), and infinite loops (`loop`) automatically provide the `it` iteration counter starting at 0.
+* **Retirement of `while`**: Retired `while` keyword across the entire language, compiler, test suite, and examples. Verified with `examples/20_range_loops.vl` and `tests/test_range_loops.py`.
 
 ---
 
