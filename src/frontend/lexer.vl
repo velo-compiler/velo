@@ -43,7 +43,6 @@ act check_keyword(source: string, start: usize, len: usize) -> i32 {
         if source[start] == 'n' and source[start + 1] == 'o' and source[start + 2] == 't' { return TOK_NOT }
     } else if len == 4 {
         if source[start] == 'd' and source[start + 1] == 'a' and source[start + 2] == 't' and source[start + 3] == 'a' { return TOK_DATA }
-        if source[start] == 'c' and source[start + 1] == 'a' and source[start + 2] == 's' and source[start + 3] == 'e' { return TOK_CASE }
         if source[start] == 'e' and source[start + 1] == 'l' and source[start + 2] == 's' and source[start + 3] == 'e' { return TOK_ELSE }
         if source[start] == 'l' and source[start + 1] == 'o' and source[start + 2] == 'o' and source[start + 3] == 'p' { return TOK_LOOP }
         if source[start] == 'z' and source[start + 1] == 'o' and source[start + 2] == 'n' and source[start + 3] == 'e' { return TOK_ZONE }
@@ -57,8 +56,6 @@ act check_keyword(source: string, start: usize, len: usize) -> i32 {
     } else if len == 6 {
         if source[start] == 'r' and source[start + 1] == 'e' and source[start + 2] == 't' and source[start + 3] == 'u' and source[start + 4] == 'r' and source[start + 5] == 'n' { return TOK_RETURN }
         if source[start] == 'e' and source[start + 1] == 'x' and source[start + 2] == 't' and source[start + 3] == 'e' and source[start + 4] == 'r' and source[start + 5] == 'n' { return TOK_EXTERN }
-    } else if len == 7 {
-        if source[start] == 'd' and source[start + 1] == 'e' and source[start + 2] == 'f' and source[start + 3] == 'a' and source[start + 4] == 'u' and source[start + 5] == 'l' and source[start + 6] == 't' { return TOK_DEFAULT }
     } else if len == 8 {
         if source[start] == 'c' and source[start + 1] == 'o' and source[start + 2] == 'n' and source[start + 3] == 't' and source[start + 4] == 'i' and source[start + 5] == 'n' and source[start + 6] == 'u' and source[start + 7] == 'e' { return TOK_CONTINUE }
     }

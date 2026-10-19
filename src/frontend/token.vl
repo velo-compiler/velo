@@ -36,8 +36,6 @@ let TOK_NOT: i32 = 40
 let TOK_BREAK: i32 = 41
 let TOK_CONTINUE: i32 = 42
 let TOK_ON: i32 = 43
-let TOK_CASE: i32 = 44
-let TOK_DEFAULT: i32 = 45
 
 // Operators & Punctuation
 let TOK_AT: i32 = 50           // @
@@ -129,8 +127,6 @@ act token_name(kind: i32) -> string {
     if kind == TOK_SHL { return "<<" }
     if kind == TOK_SHR { return ">>" }
     if kind == TOK_ON { return "on" }
-    if kind == TOK_CASE { return "case" }
-    if kind == TOK_DEFAULT { return "default" }
     if kind == TOK_FAT_ARROW { return "=>" }
     return "TOKEN"
 }

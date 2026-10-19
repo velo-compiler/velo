@@ -372,22 +372,20 @@ class Parser:
             is_default = False
             values: List[Expr] = []
 
-            # Check if default / else / _ branch
-            if self._check(TokenType.DEFAULT) or self._check(TokenType.ELSE) or (self._check(TokenType.IDENTIFIER) and self._peek().value == "_"):
+            # Check if else / _ fallback branch
+            if self._check(TokenType.ELSE) or (self._check(TokenType.IDENTIFIER) and self._peek().value == "_"):
                 self._advance()
                 is_default = True
                 if self._check(TokenType.FAT_ARROW) or self._check(TokenType.COLON):
                     self._advance()
             else:
-                if self._check(TokenType.CASE):
-                    self._advance()
                 values.append(self._parse_expression())
                 while self._match(TokenType.COMMA):
                     values.append(self._parse_expression())
                 if self._check(TokenType.FAT_ARROW) or self._check(TokenType.COLON):
                     self._advance()
                 else:
-                    raise ParserError("Expected '=>' or ':' after case pattern", self._peek())
+                    raise ParserError("Expected '=>' or ':' after pattern", self._peek())
 
             self._skip_newlines()
             if self._check(TokenType.LBRACE):

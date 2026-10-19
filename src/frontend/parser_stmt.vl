@@ -101,7 +101,7 @@ act parse_on_stmt(p: @Parser) -> @StmtNode {
         mut first_val: @ExprNode = null
         mut val_count: usize = 0
 
-        if cur.kind == TOK_DEFAULT or cur.kind == TOK_ELSE {
+        if cur.kind == TOK_ELSE {
             parser_advance(p)
             is_default = true
             if parser_check(p, TOK_FAT_ARROW) or parser_check(p, TOK_COLON) {
@@ -114,9 +114,6 @@ act parse_on_stmt(p: @Parser) -> @StmtNode {
                 parser_advance(p)
             }
         } else {
-            if parser_check(p, TOK_CASE) {
-                parser_advance(p)
-            }
             first_val = parse_expression(p)
             mut cur_val = first_val
             val_count = 1
@@ -129,7 +126,7 @@ act parse_on_stmt(p: @Parser) -> @StmtNode {
             if parser_check(p, TOK_FAT_ARROW) or parser_check(p, TOK_COLON) {
                 parser_advance(p)
             } else {
-                report_error("parser", cur.line, cur.col, "Expected '=>' or ':' after case pattern")
+                report_error("parser", cur.line, cur.col, "Expected '=>' or ':' after pattern")
                 p.had_error = true
             }
         }

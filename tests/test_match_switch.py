@@ -157,3 +157,24 @@ def test_example_19_execution():
     assert "Score 10: A+" in res_sh.stdout
     assert "Total points across iterations 0..4 = 50" in res_sh.stdout
     assert "Action for key 2 = attack" in res_sh.stdout
+
+
+def test_case_keyword_removed(tmp_path):
+    source = tmp_path / "test_case_removed.vl"
+    source.write_text("""
+act main() -> i32 {
+    let x = 1
+    on x {
+        case 1 => return 0
+        else => return 1
+    }
+}
+""", encoding="utf-8")
+
+    # Both Python compiler and native binary must reject 'case 1 =>'
+    res_py = subprocess.run([sys.executable, "velo.py", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    assert res_py.returncode != 0
+
+    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    assert res_sh.returncode != 0
+
