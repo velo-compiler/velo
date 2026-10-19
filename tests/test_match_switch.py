@@ -140,3 +140,38 @@ def test_example_19_execution():
     assert "Score 10: A+" in res_sh.stdout
     assert "Total points across iterations 0..4 = 50" in res_sh.stdout
     assert "Action for key 2 = attack" in res_sh.stdout
+
+def test_on_statement(tmp_path):
+    source = tmp_path / "test_on.vl"
+    source.write_text("""
+use sys.io
+
+act handle_event(ev: i32) -> string {
+    on ev {
+        0 => return "idle"
+        1, 2 => return "move"
+        3 => return "jump"
+        else => return "unknown"
+    }
+}
+
+act main() -> i32 {
+    let e0 = handle_event(0)
+    let e2 = handle_event(2)
+    let e3 = handle_event(3)
+    let e9 = handle_event(9)
+    io.println("e0={e0}, e2={e2}, e3={e3}, e9={e9}")
+    return 0
+}
+""", encoding="utf-8")
+
+    # Python stage 1
+    res_py = subprocess.run([sys.executable, "velo.py", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    assert res_py.returncode == 0
+    assert "e0=idle, e2=move, e3=jump, e9=unknown" in res_py.stdout
+
+    # Self-hosted stage 2
+    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    assert res_sh.returncode == 0
+    assert "e0=idle, e2=move, e3=jump, e9=unknown" in res_sh.stdout
+

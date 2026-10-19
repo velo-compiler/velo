@@ -240,7 +240,7 @@ act parse_statement(p: @Parser) -> @StmtNode {
     if parser_check(p, TOK_LOOP) {
         return parse_loop_stmt(p)
     }
-    if parser_check(p, TOK_MATCH) or parser_check(p, TOK_SWITCH) {
+    if parser_check(p, TOK_ON) or parser_check(p, TOK_MATCH) or parser_check(p, TOK_SWITCH) {
         return parse_match_stmt(p)
     }
 

@@ -32,6 +32,7 @@ class TokenType(Enum):
     SWITCH = auto()
     CASE = auto()
     DEFAULT = auto()
+    ON = auto()
 
     # Literals
     IDENTIFIER = auto()
@@ -121,6 +122,7 @@ KEYWORDS = {
     "switch": TokenType.SWITCH,
     "case": TokenType.CASE,
     "default": TokenType.DEFAULT,
+    "on": TokenType.ON,
 }
 
 @dataclass

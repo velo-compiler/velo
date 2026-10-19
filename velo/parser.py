@@ -275,8 +275,8 @@ class Parser:
         if self._check(TokenType.LOOP):
             return self._parse_loop_stmt()
 
-        # 8.5. Match / Switch statement
-        if self._check(TokenType.MATCH) or self._check(TokenType.SWITCH):
+        # 8.5. Branching statement (on / match / switch)
+        if self._check(TokenType.ON) or self._check(TokenType.MATCH) or self._check(TokenType.SWITCH):
             return self._parse_match_stmt()
 
         # 9. Return statement

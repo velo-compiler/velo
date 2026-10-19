@@ -39,6 +39,7 @@ let TOK_MATCH: i32 = 43
 let TOK_SWITCH: i32 = 44
 let TOK_CASE: i32 = 45
 let TOK_DEFAULT: i32 = 46
+let TOK_ON: i32 = 47
 
 // Operators & Punctuation
 let TOK_AT: i32 = 50           // @
@@ -133,6 +134,7 @@ act token_name(kind: i32) -> string {
     if kind == TOK_SWITCH { return "switch" }
     if kind == TOK_CASE { return "case" }
     if kind == TOK_DEFAULT { return "default" }
+    if kind == TOK_ON { return "on" }
     if kind == TOK_FAT_ARROW { return "=>" }
     return "TOKEN"
 }
