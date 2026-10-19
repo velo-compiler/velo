@@ -85,7 +85,7 @@ act parser_consume(p: @Parser, kind: i32, err_msg: string) -> Token {
 
 // Skips consecutive statement delimiters (newlines and semicolons).
 act parser_skip_newlines(p: @Parser) {
-    while parser_check(p, TOK_NEWLINE) or parser_check(p, TOK_SEMICOLON) {
+    loop parser_check(p, TOK_NEWLINE) or parser_check(p, TOK_SEMICOLON) {
         parser_advance(p)
     }
 }
@@ -98,7 +98,7 @@ act get_string_literal_text(source: string, tok: Token) -> string {
 // Parses type annotations with pointer prefixes (e.g. `i32`, `@Point`, `@@u8`).
 act parse_type_annotation(p: @Parser) -> string {
     mut at_count: usize = 0
-    while parser_match(p, TOK_AT) {
+    loop parser_match(p, TOK_AT) {
         at_count += 1
     }
     let type_tok = parser_consume(p, TOK_IDENTIFIER, "Expected type name")
@@ -109,12 +109,12 @@ act parse_type_annotation(p: @Parser) -> string {
     let total_len = at_count + str.len(raw_name)
     mut buf: @u8 = mem.alloc(@u8, total_len + 1)
     mut i: usize = 0
-    while i < at_count {
+    loop i < at_count {
         buf[i] = '@'
         i += 1
     }
     mut j: usize = 0
-    while j < str.len(raw_name) {
+    loop j < str.len(raw_name) {
         buf[at_count + j] = raw_name[j]
         j += 1
     }
@@ -135,19 +135,19 @@ act parse_use_decl(p: @Parser) -> @StmtNode {
     let first_part_tok = parser_consume(p, TOK_IDENTIFIER, "Expected module path after 'use'")
     mut mod_path = copy_slice_to_string(p.source, first_part_tok.start, first_part_tok.length)
 
-    while parser_match(p, TOK_DOT) {
+    loop parser_match(p, TOK_DOT) {
         let part_tok = parser_consume(p, TOK_IDENTIFIER, "Expected module component after '.'")
         let part_str = copy_slice_to_string(p.source, part_tok.start, part_tok.length)
         let total_len = str.len(mod_path) + 1 + str.len(part_str)
         mut buf: @u8 = mem.alloc(@u8, total_len + 1)
         mut i: usize = 0
-        while i < str.len(mod_path) {
+        loop i < str.len(mod_path) {
             buf[i] = mod_path[i]
             i += 1
         }
         buf[str.len(mod_path)] = '.'
         mut j: usize = 0
-        while j < str.len(part_str) {
+        loop j < str.len(part_str) {
             buf[str.len(mod_path) + 1 + j] = part_str[j]
             j += 1
         }
@@ -173,7 +173,7 @@ act parse_data_decl(p: @Parser) -> @StmtNode {
     mut last_field: @FieldNode = null
     mut count: usize = 0
 
-    while not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
+    loop not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
         let fname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected field name")
         let fname = copy_slice_to_string(p.source, fname_tok.start, fname_tok.length)
         parser_consume(p, TOK_COLON, "Expected ':' after field name")
@@ -212,7 +212,7 @@ act parse_function_decl(p: @Parser) -> @StmtNode {
 
     if not parser_check(p, TOK_RPAREN) {
         mut more_params = true
-        while more_params {
+        loop more_params {
             let pname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected parameter name")
             let pname = copy_slice_to_string(p.source, pname_tok.start, pname_tok.length)
             parser_consume(p, TOK_COLON, "Expected ':' after parameter name")
@@ -261,7 +261,7 @@ act parse_extern_decl(p: @Parser) -> @StmtNode {
 
     if not parser_check(p, TOK_RPAREN) {
         mut more_params = true
-        while more_params {
+        loop more_params {
             let pname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected parameter name")
             let pname = copy_slice_to_string(p.source, pname_tok.start, pname_tok.length)
             parser_consume(p, TOK_COLON, "Expected ':' after parameter name")
@@ -331,7 +331,7 @@ act parse_program(p: @Parser) -> @ProgramNode {
     mut last_decl: @StmtNode = null
     mut count: usize = 0
 
-    while not parser_is_at_end(p) {
+    loop not parser_is_at_end(p) {
         let decl = parse_top_level_declaration(p)
         if decl != null {
             if first_decl == null {

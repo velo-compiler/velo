@@ -11,7 +11,7 @@ act get_file_stem(path: string) -> string {
     mut last_slash: i32 = -1
     mut last_dot: i32 = -1
     mut i: usize = 0
-    while i < plen {
+    loop i < plen {
         let c = path[i]
         if c == '/' or c == '\\' {
             last_slash = i as i32
@@ -40,7 +40,7 @@ act get_dir_name(path: string) -> string {
 
     mut last_slash: i32 = -1
     mut i: usize = 0
-    while i < plen {
+    loop i < plen {
         let c = path[i]
         if c == '/' or c == '\\' {
             last_slash = i as i32
@@ -67,7 +67,7 @@ act canonicalize_path(path: string) -> string {
 
     mut seg_start: usize = 0
     mut i: usize = 0
-    while i <= plen {
+    loop i <= plen {
         mut c: u8 = '/'
         if i < plen {
             c = path[i]
@@ -117,7 +117,7 @@ act canonicalize_path(path: string) -> string {
     // Calculate total joined length
     mut total_len: usize = 0
     mut k: usize = 0
-    while k < stack_size {
+    loop k < stack_size {
         total_len += stack_lens[k]
         if k + 1 < stack_size {
             total_len += 1
@@ -128,11 +128,11 @@ act canonicalize_path(path: string) -> string {
     mut out_buf: @u8 = mem.alloc(@u8, total_len + 1)
     mut pos: usize = 0
     mut m: usize = 0
-    while m < stack_size {
+    loop m < stack_size {
         let seg_len = stack_lens[m]
         let seg_ptr = stack[m]
         mut b: usize = 0
-        while b < seg_len {
+        loop b < seg_len {
             out_buf[pos] = seg_ptr[b]
             pos += 1
             b += 1
@@ -156,13 +156,13 @@ act combine_paths(dir: string, file: string) -> string {
     let total_len = dlen + 1 + flen
     mut buf: @u8 = mem.alloc(@u8, total_len + 1)
     mut i: usize = 0
-    while i < dlen {
+    loop i < dlen {
         buf[i] = dir[i]
         i += 1
     }
     buf[dlen] = '/'
     mut j: usize = 0
-    while j < flen {
+    loop j < flen {
         buf[dlen + 1 + j] = file[j]
         j += 1
     }
@@ -176,7 +176,7 @@ act to_native_path(path: string) -> string {
     let plen = str.len(path)
     mut buf: @u8 = mem.alloc(@u8, plen + 1)
     mut i: usize = 0
-    while i < plen {
+    loop i < plen {
         let c = path[i]
         if c == '/' {
             buf[i] = '\\'

@@ -49,7 +49,7 @@ act init_driver(d: @CompilerDriver) {
 // Checks if a module path has already been parsed.
 act is_file_visited(d: @CompilerDriver, path: string) -> bool {
     mut cur = d.first_visited
-    while cur != null {
+    loop cur != null {
         if cur.path == path {
             return true
         }
@@ -100,7 +100,7 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
 
     // First pass: recursively load all imported dependencies
     mut cur = prog.first_decl
-    while cur != null {
+    loop cur != null {
         if cur.kind == DECL_USE {
             let mod_path = cur.module_path
             if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" {
@@ -113,7 +113,7 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
 
     // Second pass: append current file's declarations to the accumulated driver decl list
     mut decl = prog.first_decl
-    while decl != null {
+    loop decl != null {
         let nxt = decl.next
         decl.next = null
 

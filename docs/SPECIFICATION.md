@@ -26,9 +26,9 @@ Identifiers name variables, functions, types, and fields.
 The following keywords are reserved in Stage 1:
 ```
 act       data      mut       let       if        else
-while     loop      in        return    zone      extern
+loop      in        return    zone      extern    defer
 use       true      false     null      sizeof    as
-and       or        not
+break     continue  on        and       or        not
 ```
 
 ### 1.5 Punctuation & Semicolons
@@ -233,20 +233,56 @@ if health <= 0 {
 }
 ```
 
-### 7.2 Loops
+### 7.2 Loops (`loop`)
+Velo standardizes on a single, expressive `loop` keyword covering all iteration patterns:
 
-#### `while` Loop:
+#### 1. Infinite Loop (`loop { ... }`)
+Runs indefinitely; the implicit `it` counter tracks iterations starting at 0:
 ```rust
-mut step = 0
-while step < 10 {
-    step += 1
+loop {
+    if it == 5 { break }
 }
 ```
 
-#### `loop .. in` Range Loop:
+#### 2. Count / Repeat Loop (`loop <count> { ... }`)
+Repeats `<count>` times with `it` taking values `0` through `<count> - 1`:
 ```rust
-loop i in 0..100 {
-    io.println("{i}")
+loop 5 {
+    io.println("Iteration {it}")
+}
+```
+
+#### 3. Condition Loop (`loop <condition> { ... }`)
+Executes while the boolean expression is true (replacing `while`), with `it` counter:
+```rust
+mut x = 10
+loop x > 0 {
+    io.println("tick #{it}, x is {x}")
+    x -= 1
+}
+```
+
+#### 4. Named Range Loop (`loop <var> in <start>..<end>[:<step>]`)
+Iterates over a range with an explicit variable name and optional `:step` slice:
+```rust
+loop i in 0..10:2 {
+    io.println("Step 2: {i}") // 0, 2, 4, 6, 8
+}
+```
+
+#### 5. Smart Reverse Auto-Countdown (`loop <start>..<end>`)
+When `start > end`, the loop automatically counts down without needing `:-1`:
+```rust
+loop 5..0 {
+    io.println("Liftoff in {it}...") // 5, 4, 3, 2, 1
+}
+```
+
+#### 6. Inclusive Range (`..=`)
+Use `..=` for inclusive ranges:
+```rust
+loop i in 1..=5 {
+    io.println("{i}") // 1, 2, 3, 4, 5
 }
 ```
 

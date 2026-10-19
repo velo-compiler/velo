@@ -10,7 +10,6 @@ class TokenType(Enum):
     LET = auto()
     IF = auto()
     ELSE = auto()
-    WHILE = auto()
     LOOP = auto()
     IN = auto()
     RETURN = auto()
@@ -45,6 +44,7 @@ class TokenType(Enum):
     PERCENT = auto()      # %
     DOT = auto()          # .
     DOTDOT = auto()       # ..
+    DOTDOTEQ = auto()     # ..=
     ARROW = auto()        # ->
     FAT_ARROW = auto()    # =>
     BANG = auto()         # !
@@ -96,7 +96,6 @@ KEYWORDS = {
     "let": TokenType.LET,
     "if": TokenType.IF,
     "else": TokenType.ELSE,
-    "while": TokenType.WHILE,
     "loop": TokenType.LOOP,
     "in": TokenType.IN,
     "return": TokenType.RETURN,

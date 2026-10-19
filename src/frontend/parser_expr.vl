@@ -23,7 +23,7 @@ act is_struct_literal(p: @Parser) -> bool {
     }
 
     mut idx: usize = 2
-    while p.pos + idx < p.token_count {
+    loop p.pos + idx < p.token_count {
         let t = parser_peek(p, idx)
         if t.kind != TOK_NEWLINE and t.kind != TOK_SEMICOLON {
             if t.kind == TOK_RBRACE {
@@ -54,7 +54,7 @@ act parse_primary(p: @Parser) -> @ExprNode {
         mut first_init: @FieldInit = null
         mut last_init: @FieldInit = null
 
-        while not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
+        loop not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
             let fname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected field name in struct literal")
             let fname = copy_slice_to_string(p.source, fname_tok.start, fname_tok.length)
             parser_consume(p, TOK_COLON, "Expected ':' after field name")
@@ -171,7 +171,7 @@ act parse_postfix(p: @Parser) -> @ExprNode {
     }
 
     mut parsing_postfix = true
-    while parsing_postfix {
+    loop parsing_postfix {
         if parser_match(p, TOK_DOT) {
             if parser_match(p, TOK_AT) {
                 let at_tok = parser_peek(p, 0)
@@ -198,7 +198,7 @@ act parse_postfix(p: @Parser) -> @ExprNode {
 
             if not parser_check(p, TOK_RPAREN) {
                 mut more_args = true
-                while more_args {
+                loop more_args {
                     let arg = parse_expression(p)
                     if arg != null {
                         if first_arg == null {
@@ -240,7 +240,7 @@ act parse_unary(p: @Parser) -> @ExprNode {
 // Parses multiplicative binary factors: `*`, `/`, `%`.
 act parse_factor(p: @Parser) -> @ExprNode {
     mut expr = parse_unary(p)
-    while parser_check(p, TOK_STAR) or parser_check(p, TOK_SLASH) or parser_check(p, TOK_PERCENT) {
+    loop parser_check(p, TOK_STAR) or parser_check(p, TOK_SLASH) or parser_check(p, TOK_PERCENT) {
         let op_tok = parser_advance(p)
         let right = parse_unary(p)
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
@@ -251,7 +251,7 @@ act parse_factor(p: @Parser) -> @ExprNode {
 // Parses additive binary terms: `+`, `-`.
 act parse_term(p: @Parser) -> @ExprNode {
     mut expr = parse_factor(p)
-    while parser_check(p, TOK_PLUS) or parser_check(p, TOK_MINUS) {
+    loop parser_check(p, TOK_PLUS) or parser_check(p, TOK_MINUS) {
         let op_tok = parser_advance(p)
         let right = parse_factor(p)
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
@@ -262,7 +262,7 @@ act parse_term(p: @Parser) -> @ExprNode {
 // Parses bitwise shift binary expressions: `<<`, `>>`.
 act parse_shift(p: @Parser) -> @ExprNode {
     mut expr = parse_term(p)
-    while parser_check(p, TOK_SHL) or parser_check(p, TOK_SHR) {
+    loop parser_check(p, TOK_SHL) or parser_check(p, TOK_SHR) {
         let op_tok = parser_advance(p)
         let right = parse_term(p)
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
@@ -273,7 +273,7 @@ act parse_shift(p: @Parser) -> @ExprNode {
 // Parses comparison binary expressions: `<`, `<=`, `>`, `>=`.
 act parse_comparison(p: @Parser) -> @ExprNode {
     mut expr = parse_shift(p)
-    while parser_check(p, TOK_LT) or parser_check(p, TOK_LTE) or parser_check(p, TOK_GT) or parser_check(p, TOK_GTE) {
+    loop parser_check(p, TOK_LT) or parser_check(p, TOK_LTE) or parser_check(p, TOK_GT) or parser_check(p, TOK_GTE) {
         let op_tok = parser_advance(p)
         let right = parse_shift(p)
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
@@ -284,7 +284,7 @@ act parse_comparison(p: @Parser) -> @ExprNode {
 // Parses equality binary expressions: `==`, `!=`.
 act parse_equality(p: @Parser) -> @ExprNode {
     mut expr = parse_comparison(p)
-    while parser_check(p, TOK_EQ) or parser_check(p, TOK_NEQ) {
+    loop parser_check(p, TOK_EQ) or parser_check(p, TOK_NEQ) {
         let op_tok = parser_advance(p)
         let right = parse_comparison(p)
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
@@ -295,7 +295,7 @@ act parse_equality(p: @Parser) -> @ExprNode {
 // Parses bitwise AND binary expressions: `&`.
 act parse_bitwise_and(p: @Parser) -> @ExprNode {
     mut expr = parse_equality(p)
-    while parser_check(p, TOK_AMP) {
+    loop parser_check(p, TOK_AMP) {
         let op_tok = parser_advance(p)
         let right = parse_equality(p)
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
@@ -306,7 +306,7 @@ act parse_bitwise_and(p: @Parser) -> @ExprNode {
 // Parses bitwise XOR binary expressions: `^`.
 act parse_bitwise_xor(p: @Parser) -> @ExprNode {
     mut expr = parse_bitwise_and(p)
-    while parser_check(p, TOK_CARET) {
+    loop parser_check(p, TOK_CARET) {
         let op_tok = parser_advance(p)
         let right = parse_bitwise_and(p)
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
@@ -317,7 +317,7 @@ act parse_bitwise_xor(p: @Parser) -> @ExprNode {
 // Parses bitwise OR binary expressions: `|`.
 act parse_bitwise_or(p: @Parser) -> @ExprNode {
     mut expr = parse_bitwise_xor(p)
-    while parser_check(p, TOK_PIPE) {
+    loop parser_check(p, TOK_PIPE) {
         let op_tok = parser_advance(p)
         let right = parse_bitwise_xor(p)
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
@@ -328,7 +328,7 @@ act parse_bitwise_or(p: @Parser) -> @ExprNode {
 // Parses logical conjunction expressions: `and`.
 act parse_logical_and(p: @Parser) -> @ExprNode {
     mut expr = parse_bitwise_or(p)
-    while parser_check(p, TOK_AND) {
+    loop parser_check(p, TOK_AND) {
         let op_tok = parser_advance(p)
         let right = parse_bitwise_or(p)
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
@@ -339,7 +339,7 @@ act parse_logical_and(p: @Parser) -> @ExprNode {
 // Parses logical disjunction expressions: `or`.
 act parse_logical_or(p: @Parser) -> @ExprNode {
     mut expr = parse_logical_and(p)
-    while parser_check(p, TOK_OR) {
+    loop parser_check(p, TOK_OR) {
         let op_tok = parser_advance(p)
         let right = parse_logical_and(p)
         expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)

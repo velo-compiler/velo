@@ -39,7 +39,7 @@ act tokenize_source(content: string, len: i32) -> LexerSummary {
     }
 
     mut i = 0
-    while i < len {
+    loop i < len {
         let c = content[i]
 
         // Skip whitespace
@@ -48,7 +48,7 @@ act tokenize_source(content: string, len: i32) -> LexerSummary {
         } else if is_alpha(c) {
             // Scan word (identifier or keyword)
             mut word_len = 0
-            while i < len and is_alpha(content[i]) {
+            loop i < len and is_alpha(content[i]) {
                 word_len += 1
                 i += 1
             }
@@ -61,7 +61,7 @@ act tokenize_source(content: string, len: i32) -> LexerSummary {
             }
         } else if is_digit(c) {
             // Scan number
-            while i < len and (is_digit(content[i]) or content[i] == '.') {
+            loop i < len and (is_digit(content[i]) or content[i] == '.') {
                 i += 1
             }
             summary.total_tokens += 1

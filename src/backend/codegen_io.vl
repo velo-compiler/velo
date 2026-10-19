@@ -33,7 +33,7 @@ act resolve_path_type_and_c(st: @SymbolTable, path: string, out_c_expr: @StringB
     // Locate the first dot separator if one exists
     mut dot_pos: i32 = -1
     mut k: usize = 0
-    while k < plen {
+    loop k < plen {
         if path[k] == '.' {
             dot_pos = k as i32
             k = plen
@@ -61,9 +61,9 @@ act resolve_path_type_and_c(st: @SymbolTable, path: string, out_c_expr: @StringB
     }
 
     mut seg_start: usize = (dot_pos + 1) as usize
-    while seg_start < plen {
+    loop seg_start < plen {
         mut seg_end = seg_start
-        while seg_end < plen and path[seg_end] != '.' {
+        loop seg_end < plen and path[seg_end] != '.' {
             seg_end += 1
         }
         let field_name = copy_slice_to_string(path, seg_start, seg_end - seg_start)
@@ -156,10 +156,10 @@ act emit_io_call(sb: @StringBuilder, st: @SymbolTable, member: string, first_arg
     // Check if string contains any `{...}` pattern
     mut has_interp = false
     mut scan_i: usize = 0
-    while scan_i < len {
+    loop scan_i < len {
         if raw[scan_i] == '{' {
             mut scan_j = scan_i + 1
-            while scan_j < len and raw[scan_j] != '}' and raw[scan_j] != '{' {
+            loop scan_j < len and raw[scan_j] != '}' and raw[scan_j] != '{' {
                 scan_j += 1
             }
             if scan_j < len and raw[scan_j] == '}' and scan_j > scan_i + 1 {
@@ -188,11 +188,11 @@ act emit_io_call(sb: @StringBuilder, st: @SymbolTable, member: string, first_arg
     mut arg_count: usize = 0
 
     mut idx: usize = 0
-    while idx < len {
+    loop idx < len {
         let c = raw[idx]
         if c == '{' {
             mut close_idx = idx + 1
-            while close_idx < len and raw[close_idx] != '}' {
+            loop close_idx < len and raw[close_idx] != '}' {
                 close_idx += 1
             }
             if close_idx < len and raw[close_idx] == '}' and close_idx > idx + 1 {

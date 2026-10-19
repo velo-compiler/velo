@@ -16,7 +16,7 @@ act main() {
 
     // 2. While loop with compound assignment
     io.println("Testing while loop:")
-    while counter < 3 {
+    loop counter < 3 {
         io.println("  While step: {counter}")
         counter += 1
     }

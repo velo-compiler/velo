@@ -8,7 +8,7 @@ def test_while_break_and_continue(tmp_path):
 use sys.io
 act main() -> i32 {
     mut count = 0
-    while true {
+    loop {
         count += 1
         if count == 7 {
             break
@@ -16,7 +16,7 @@ act main() -> i32 {
     }
     mut odds = 0
     mut i = 0
-    while i < 10 {
+    loop i < 10 {
         i += 1
         if i % 2 == 0 {
             continue

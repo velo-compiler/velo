@@ -2,7 +2,7 @@ import re
 from typing import List, Optional, Tuple, Dict, Any
 from velo.ast_nodes import (
     Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field,
-    Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt, ZoneStmt, DeferStmt,
+    Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, LoopStmt, ZoneStmt, DeferStmt,
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr
@@ -263,21 +263,58 @@ class CCodeGenerator:
         elif isinstance(stmt, IfStmt):
             self._emit_if(stmt)
 
-        elif isinstance(stmt, WhileStmt):
-            cond_code = self._emit_expression(stmt.condition)
-            self._emit_line(f"while ({cond_code}) {{")
-            self.indent_level += 1
-            self.defer_stack.append([])
-            self._emit_block_body(stmt.body.statements)
-            self.indent_level -= 1
-            self._emit_line("}")
-
         elif isinstance(stmt, LoopStmt):
-            start_code = self._emit_expression(stmt.start_expr)
-            end_code = self._emit_expression(stmt.end_expr)
-            it = stmt.iterator
+            it = stmt.iterator or "it"
             self.current_scope_types[it] = "i64"
-            self._emit_line(f"for (i64 {it} = ({start_code}); {it} < ({end_code}); ++{it}) {{")
+            if stmt.start_expr is None and stmt.end_expr is None:
+                if stmt.expr is not None:
+                    is_count = getattr(stmt, 'is_count', False)
+                    if not is_count:
+                        if isinstance(stmt.expr, IntLiteral):
+                            is_count = True
+                        elif isinstance(stmt.expr, Identifier) and self.current_scope_types.get(stmt.expr.name) in ("i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize"):
+                            is_count = True
+                        elif isinstance(stmt.expr, BinaryExpr) and stmt.expr.op in ('+', '-', '*', '/', '%'):
+                            is_count = True
+                        elif isinstance(stmt.expr, CallExpr) and isinstance(stmt.expr.callee, Identifier) and self.func_return_types.get(stmt.expr.callee.name) in ("i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize"):
+                            is_count = True
+
+                    expr_code = self._emit_expression(stmt.expr)
+                    if is_count:
+                        self._emit_line(f"for (i64 {it} = 0; {it} < ({expr_code}); ++{it}) {{")
+                    else:
+                        self._emit_line(f"for (i64 {it} = 0; ({expr_code}); ++{it}) {{")
+                else:
+                    self._emit_line(f"for (i64 {it} = 0; ; ++{it}) {{")
+            else:
+                start_code = self._emit_expression(stmt.start_expr)
+                end_code = self._emit_expression(stmt.end_expr)
+                is_reverse = False
+                if isinstance(stmt.start_expr, IntLiteral) and isinstance(stmt.end_expr, IntLiteral):
+                    if stmt.start_expr.value > stmt.end_expr.value:
+                        is_reverse = True
+
+                if stmt.step_expr is not None:
+                    step_code = self._emit_expression(stmt.step_expr)
+                    if isinstance(stmt.step_expr, IntLiteral) and stmt.step_expr.value < 0:
+                        cmp_op = ">=" if stmt.is_inclusive else ">"
+                        update_clause = f"{it} += ({step_code})"
+                    elif is_reverse:
+                        cmp_op = ">=" if stmt.is_inclusive else ">"
+                        update_clause = f"{it} -= ({step_code})"
+                    else:
+                        cmp_op = "<=" if stmt.is_inclusive else "<"
+                        update_clause = f"{it} += ({step_code})"
+                else:
+                    if is_reverse:
+                        cmp_op = ">=" if stmt.is_inclusive else ">"
+                        update_clause = f"--{it}"
+                    else:
+                        cmp_op = "<=" if stmt.is_inclusive else "<"
+                        update_clause = f"++{it}"
+
+                self._emit_line(f"for (i64 {it} = ({start_code}); {it} {cmp_op} ({end_code}); {update_clause}) {{")
+
             self.indent_level += 1
             self.defer_stack.append([])
             self._emit_block_body(stmt.body.statements)

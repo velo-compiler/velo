@@ -58,7 +58,7 @@ src/
 ├── ast/                         # AST Node definitions (data layouts)
 │   ├── types.vl                 # Type expressions & annotations
 │   ├── expr.vl                  # Literal, Binary, Unary, MemberAccess, Call AST nodes
-│   └── stmt.vl                  # VarDecl, Assign, If, While, Loop, Zone, Defer, Function AST nodes
+│   └── stmt.vl                  # VarDecl, Assign, If, Loop, Zone, Defer, Function AST nodes
 │
 ├── analysis/                    # Semantic checks & scope resolution
 │   ├── symbol_table.vl          # Scope stacks, variable & function declarations

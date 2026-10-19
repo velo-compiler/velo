@@ -44,7 +44,7 @@ flowchart TD
 * **Deliverables**:
   * `src/ast/types.vl`: Type descriptors (`i32`, `f32`, `usize`, `@T`, user structs).
   * `src/ast/expr.vl`: Expression nodes (Literals, Binary, Unary, Calls, Index, Struct Literals).
-  * `src/ast/stmt.vl`: Statement nodes (`VarDecl`, `Assign`, `If`, `While`, `Loop`, `Zone`, `Defer`, `Return`).
+  * `src/ast/stmt.vl`: Statement nodes (`VarDecl`, `Assign`, `If`, `Loop`, `Zone`, `Defer`, `Return`).
   * `src/frontend/parser_expr.vl`: Pratt precedence parser for expressions.
   * `src/frontend/parser_stmt.vl`: Recursive descent parser for statements and control flow.
   * `src/frontend/parser.vl`: Main parser driver and top-level declaration analyzer.

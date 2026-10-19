@@ -18,7 +18,6 @@ let TOK_MUT: i32 = 22
 let TOK_LET: i32 = 23
 let TOK_IF: i32 = 24
 let TOK_ELSE: i32 = 25
-let TOK_WHILE: i32 = 26
 let TOK_LOOP: i32 = 27
 let TOK_IN: i32 = 28
 let TOK_RETURN: i32 = 29
@@ -36,6 +35,7 @@ let TOK_NOT: i32 = 40
 let TOK_BREAK: i32 = 41
 let TOK_CONTINUE: i32 = 42
 let TOK_ON: i32 = 43
+let TOK_DOTDOTEQ: i32 = 44
 
 // Operators & Punctuation
 let TOK_AT: i32 = 50           // @
@@ -106,7 +106,6 @@ act token_name(kind: i32) -> string {
     if kind == TOK_LET { return "let" }
     if kind == TOK_IF { return "if" }
     if kind == TOK_ELSE { return "else" }
-    if kind == TOK_WHILE { return "while" }
     if kind == TOK_LOOP { return "loop" }
     if kind == TOK_RETURN { return "return" }
     if kind == TOK_ZONE { return "zone" }
@@ -128,5 +127,6 @@ act token_name(kind: i32) -> string {
     if kind == TOK_SHR { return ">>" }
     if kind == TOK_ON { return "on" }
     if kind == TOK_FAT_ARROW { return "=>" }
+    if kind == TOK_DOTDOTEQ { return "..=" }
     return "TOKEN"
 }

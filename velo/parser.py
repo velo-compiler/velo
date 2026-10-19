@@ -2,7 +2,7 @@ from typing import List, Optional, Tuple
 from velo.tokens import Token, TokenType
 from velo.ast_nodes import (
     Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field,
-    Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, WhileStmt, LoopStmt, ZoneStmt, DeferStmt,
+    Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, LoopStmt, ZoneStmt, DeferStmt,
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr
@@ -267,11 +267,7 @@ class Parser:
         if self._check(TokenType.IF):
             return self._parse_if_stmt()
 
-        # 7. While statement
-        if self._check(TokenType.WHILE):
-            return self._parse_while_stmt()
-
-        # 8. Loop range statement
+        # 7. Loop statement
         if self._check(TokenType.LOOP):
             return self._parse_loop_stmt()
 
@@ -334,30 +330,87 @@ class Parser:
 
         return IfStmt(condition=condition, then_branch=then_branch, else_branch=else_branch, line=if_tok.line, col=if_tok.col)
 
-    def _parse_while_stmt(self) -> WhileStmt:
-        while_tok = self._consume(TokenType.WHILE, "Expected 'while'")
-        condition = self._parse_expression()
-        self._skip_newlines()
-        body = self._parse_block()
-        return WhileStmt(condition=condition, body=body, line=while_tok.line, col=while_tok.col)
-
     def _parse_loop_stmt(self) -> LoopStmt:
         loop_tok = self._consume(TokenType.LOOP, "Expected 'loop'")
-        iterator_tok = self._consume(TokenType.IDENTIFIER, "Expected loop variable name")
-        self._consume(TokenType.IN, "Expected 'in' after loop variable")
-        start_expr = self._parse_expression()
-        self._consume(TokenType.DOTDOT, "Expected '..' in range")
-        end_expr = self._parse_expression()
         self._skip_newlines()
-        body = self._parse_block()
-        return LoopStmt(
-            iterator=iterator_tok.value,
-            start_expr=start_expr,
-            end_expr=end_expr,
-            body=body,
-            line=loop_tok.line,
-            col=loop_tok.col
-        )
+
+        # 1. Infinite loop: loop { ... }
+        if self._check(TokenType.LBRACE):
+            body = self._parse_block()
+            return LoopStmt(
+                iterator="it",
+                start_expr=None,
+                end_expr=None,
+                body=body,
+                line=loop_tok.line,
+                col=loop_tok.col,
+            )
+
+        # 2. Named range loop: loop <var> in <start>..<end>[:<step>] { ... }
+        if self._check(TokenType.IDENTIFIER) and self._peek(1).type == TokenType.IN:
+            iterator_tok = self._advance()
+            self._consume(TokenType.IN, "Expected 'in' after loop variable")
+            start_expr = self._parse_expression()
+            is_inclusive = False
+            if self._match(TokenType.DOTDOTEQ):
+                is_inclusive = True
+            else:
+                self._consume(TokenType.DOTDOT, "Expected '..' or '..=' in range")
+            end_expr = self._parse_expression()
+            step_expr = None
+            if self._match(TokenType.COLON):
+                step_expr = self._parse_expression()
+            self._skip_newlines()
+            body = self._parse_block()
+            return LoopStmt(
+                iterator=iterator_tok.value,
+                start_expr=start_expr,
+                end_expr=end_expr,
+                step_expr=step_expr,
+                is_inclusive=is_inclusive,
+                body=body,
+                line=loop_tok.line,
+                col=loop_tok.col,
+            )
+
+        # 3. Anonymous range or expression (count / condition) loop:
+        first_expr = self._parse_expression()
+        if self._check(TokenType.DOTDOT) or self._check(TokenType.DOTDOTEQ):
+            is_inclusive = False
+            if self._match(TokenType.DOTDOTEQ):
+                is_inclusive = True
+            else:
+                self._advance()
+            end_expr = self._parse_expression()
+            step_expr = None
+            if self._match(TokenType.COLON):
+                step_expr = self._parse_expression()
+            self._skip_newlines()
+            body = self._parse_block()
+            return LoopStmt(
+                iterator="it",
+                start_expr=first_expr,
+                end_expr=end_expr,
+                step_expr=step_expr,
+                is_inclusive=is_inclusive,
+                body=body,
+                line=loop_tok.line,
+                col=loop_tok.col,
+            )
+        else:
+            self._skip_newlines()
+            body = self._parse_block()
+            is_count = isinstance(first_expr, IntLiteral)
+            return LoopStmt(
+                iterator="it",
+                start_expr=None,
+                end_expr=None,
+                expr=first_expr,
+                body=body,
+                line=loop_tok.line,
+                col=loop_tok.col,
+                is_count=is_count,
+            )
 
     def _parse_on_stmt(self) -> MatchStmt:
         on_tok = self._consume(TokenType.ON, "Expected 'on'")

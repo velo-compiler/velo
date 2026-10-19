@@ -40,16 +40,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         sb_append_indent(sb, indent)
         emit_c_expr(sb, st, stmt.expr)
         sb_append_char(sb, ' ')
-        if stmt.op == TOK_ASSIGN { sb_append_char(sb, '=') }
-        else if stmt.op == TOK_PLUS_ASSIGN { sb_append_str(sb, "+=") }
-        else if stmt.op == TOK_MINUS_ASSIGN { sb_append_str(sb, "-=") }
-        else if stmt.op == TOK_STAR_ASSIGN { sb_append_str(sb, "*=") }
-        else if stmt.op == TOK_SLASH_ASSIGN { sb_append_str(sb, "/=") }
-        else if stmt.op == TOK_AMP_ASSIGN { sb_append_str(sb, "&=") }
-        else if stmt.op == TOK_PIPE_ASSIGN { sb_append_str(sb, "|=") }
-        else if stmt.op == TOK_CARET_ASSIGN { sb_append_str(sb, "^=") }
-        else if stmt.op == TOK_SHL_ASSIGN { sb_append_str(sb, "<<=") }
-        else if stmt.op == TOK_SHR_ASSIGN { sb_append_str(sb, ">>=") }
+        sb_append_str(sb, map_assign_op(stmt.op))
         sb_append_char(sb, ' ')
         emit_c_expr(sb, st, stmt.val_expr)
         sb_append_str(sb, ";\n")
@@ -67,12 +58,9 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
     // 4. If / Else statement
     if stmt.kind == STMT_IF {
         sb_append_indent(sb, indent)
-        sb_append_str(sb, "if (")
-        emit_c_expr(sb, st, stmt.expr)
-        sb_append_str(sb, ") {\n")
+        sb_append_str(sb, "if ("); emit_c_expr(sb, st, stmt.expr); sb_append_str(sb, ") {\n")
         emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
-        sb_append_indent(sb, indent)
-        sb_append_str(sb, "}")
+        sb_append_indent(sb, indent); sb_append_str(sb, "}")
         if stmt.else_branch != null {
             if stmt.else_branch.kind == STMT_IF {
                 sb_append_str(sb, " else ")
@@ -80,43 +68,56 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
             } else {
                 sb_append_str(sb, " else {\n")
                 emit_c_block_stmts(sb, st, stmt.else_branch, indent + 1, defers)
-                sb_append_indent(sb, indent)
-                sb_append_str(sb, "}\n")
+                sb_append_indent(sb, indent); sb_append_str(sb, "}\n")
+            }
+        } else { sb_append_char(sb, '\n') }
+        return
+    }
+
+    // 5. Unified loop statement (infinite, repeat, condition, and range)
+    if stmt.kind == STMT_LOOP {
+        mut vname = "it"
+        if stmt.loop_var != null and str.len(stmt.loop_var) > 0 { vname = stmt.loop_var }
+        sb_append_indent(sb, indent)
+        if stmt.loop_start == null and stmt.loop_end == null {
+            if stmt.expr != null {
+                mut is_cnt = stmt.is_count
+                if not is_cnt and stmt.expr.kind == EXPR_IDENT {
+                    let et = infer_expr_type(st, stmt.expr)
+                    if et == "i32" or et == "i64" or et == "u32" or et == "usize" { is_cnt = true }
+                }
+                sb_append_str(sb, "for (int32_t "); sb_append_str(sb, vname); sb_append_str(sb, " = 0; ")
+                if is_cnt { sb_append_str(sb, vname); sb_append_str(sb, " < ("); emit_c_expr(sb, st, stmt.expr); sb_append_char(sb, ')') }
+                else { sb_append_char(sb, '('); emit_c_expr(sb, st, stmt.expr); sb_append_char(sb, ')') }
+                sb_append_str(sb, "; "); sb_append_str(sb, vname); sb_append_str(sb, "++) {\n")
+            } else {
+                sb_append_str(sb, "for (int32_t "); sb_append_str(sb, vname); sb_append_str(sb, " = 0; ; "); sb_append_str(sb, vname); sb_append_str(sb, "++) {\n")
             }
         } else {
-            sb_append_char(sb, '\n')
+            mut is_rev = false
+            if stmt.loop_start.kind == EXPR_INT and stmt.loop_end.kind == EXPR_INT {
+                if stmt.loop_start.int_val > stmt.loop_end.int_val { is_rev = true }
+            }
+            sb_append_str(sb, "for (int32_t "); sb_append_str(sb, vname); sb_append_str(sb, " = ")
+            emit_c_expr(sb, st, stmt.loop_start)
+            sb_append_str(sb, "; "); sb_append_str(sb, vname)
+            if is_rev {
+                if stmt.is_inclusive { sb_append_str(sb, " >= ") } else { sb_append_str(sb, " > ") }
+            } else {
+                if stmt.is_inclusive { sb_append_str(sb, " <= ") } else { sb_append_str(sb, " < ") }
+            }
+            emit_c_expr(sb, st, stmt.loop_end)
+            sb_append_str(sb, "; "); sb_append_str(sb, vname)
+            if stmt.loop_step != null {
+                if is_rev { sb_append_str(sb, " -= ") } else { sb_append_str(sb, " += ") }
+                emit_c_expr(sb, st, stmt.loop_step)
+            } else {
+                if is_rev { sb_append_str(sb, "--") } else { sb_append_str(sb, "++") }
+            }
+            sb_append_str(sb, ") {\n")
         }
-        return
-    }
-
-    // 5. While loop statement
-    if stmt.kind == STMT_WHILE {
-        sb_append_indent(sb, indent)
-        sb_append_str(sb, "while (")
-        emit_c_expr(sb, st, stmt.expr)
-        sb_append_str(sb, ") {\n")
-        emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
-        sb_append_indent(sb, indent)
-        sb_append_str(sb, "}\n")
-        return
-    }
-
-    // 6. Range loop statement
-    if stmt.kind == STMT_LOOP {
-        sb_append_indent(sb, indent)
-        sb_append_str(sb, "for (int32_t ")
-        sb_append_str(sb, stmt.loop_var)
-        sb_append_str(sb, " = ")
-        emit_c_expr(sb, st, stmt.loop_start)
-        sb_append_str(sb, "; ")
-        sb_append_str(sb, stmt.loop_var)
-        sb_append_str(sb, " < ")
-        emit_c_expr(sb, st, stmt.loop_end)
-        sb_append_str(sb, "; ")
-        sb_append_str(sb, stmt.loop_var)
-        sb_append_str(sb, "++) {\n")
         enter_scope(st)
-        define_variable(st, stmt.loop_var, "i32", false, stmt.line, stmt.col)
+        define_variable(st, vname, "i32", false, stmt.line, stmt.col)
         emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
         exit_scope(st)
         sb_append_indent(sb, indent)
@@ -150,7 +151,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
     // 9. Return statement (unrolls active defers in LIFO order first)
     if stmt.kind == STMT_RETURN {
         mut cur_d = defers.@
-        while cur_d != null {
+        loop cur_d != null {
             emit_c_stmt(sb, st, cur_d.stmt, indent, defers)
             cur_d = cur_d.next
         }
@@ -185,13 +186,13 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         emit_c_expr(sb, st, stmt.expr)
         sb_append_str(sb, ") {\n")
         mut cur_case = stmt.first_case
-        while cur_case != null {
+        loop cur_case != null {
             if cur_case.is_default {
                 sb_append_indent(sb, indent)
                 sb_append_str(sb, "default: {\n")
             } else {
                 mut val = cur_case.first_val
-                while val != null {
+                loop val != null {
                     sb_append_indent(sb, indent)
                     sb_append_str(sb, "case ")
                     emit_c_expr(sb, st, val)
@@ -219,7 +220,7 @@ act emit_c_block_stmts(sb: @StringBuilder, st: @SymbolTable, block: @StmtNode, i
     if block == null { return }
     enter_scope(st)
     mut cur = block.first_stmt
-    while cur != null {
+    loop cur != null {
         emit_c_stmt(sb, st, cur, indent, defers)
         cur = cur.next
     }
@@ -233,7 +234,7 @@ act emit_param_list(sb: @StringBuilder, first_param: @ParamNode, param_count: us
         sb_append_str(sb, "void")
     } else {
         mut cur_p = first_param
-        while cur_p != null {
+        loop cur_p != null {
             sb_append_str(sb, map_type_to_c(cur_p.type_name))
             sb_append_char(sb, ' ')
             sb_append_str(sb, cur_p.name)
@@ -255,13 +256,9 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
 
     // 2. Struct forward declarations
     mut cur = prog.first_decl
-    while cur != null {
+    loop cur != null {
         if cur.kind == DECL_DATA {
-            sb_append_str(@sb, "typedef struct ")
-            sb_append_str(@sb, cur.name)
-            sb_append_char(@sb, ' ')
-            sb_append_str(@sb, cur.name)
-            sb_append_str(@sb, ";\n")
+            sb_append_str(@sb, "typedef struct "); sb_append_str(@sb, cur.name); sb_append_char(@sb, ' '); sb_append_str(@sb, cur.name); sb_append_str(@sb, ";\n")
         }
         cur = cur.next
     }
@@ -269,13 +266,13 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
 
     // 3. Struct full definitions
     cur = prog.first_decl
-    while cur != null {
+    loop cur != null {
         if cur.kind == DECL_DATA {
             sb_append_str(@sb, "struct ")
             sb_append_str(@sb, cur.name)
             sb_append_str(@sb, " {\n")
             mut cur_f = cur.first_field
-            while cur_f != null {
+            loop cur_f != null {
                 sb_append_indent(@sb, 1)
                 sb_append_str(@sb, map_type_to_c(cur_f.type_name))
                 sb_append_char(@sb, ' ')
@@ -290,7 +287,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
 
     // 4. Extern function declarations
     cur = prog.first_decl
-    while cur != null {
+    loop cur != null {
         if cur.kind == DECL_EXTERN {
             sb_append_str(@sb, "extern ")
             sb_append_str(@sb, map_type_to_c(cur.return_type))
@@ -305,7 +302,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
 
     // 4.5. Top-level global variables and constants
     cur = prog.first_decl
-    while cur != null {
+    loop cur != null {
         if cur.kind == STMT_VAR_DECL {
             mut inferred_type = cur.type_name
             if inferred_type == null or str.len(inferred_type) == 0 {
@@ -330,7 +327,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
 
     // 5. Function forward prototypes
     cur = prog.first_decl
-    while cur != null {
+    loop cur != null {
         if cur.kind == DECL_FUNCTION and cur.name != "main" {
             sb_append_str(@sb, map_type_to_c(cur.return_type))
             sb_append_char(@sb, ' ')
@@ -344,7 +341,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
 
     // 6. Function bodies
     cur = prog.first_decl
-    while cur != null {
+    loop cur != null {
         if cur.kind == DECL_FUNCTION {
             if cur.name == "main" {
                 sb_append_str(@sb, "int main(int argc, char** argv) {\n")
@@ -358,7 +355,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
 
             enter_scope(st)
             mut cur_param = cur.first_param
-            while cur_param != null {
+            loop cur_param != null {
                 define_parameter(st, cur_param.name, cur_param.type_name, cur_param.line, cur_param.col)
                 cur_param = cur_param.next
             }
@@ -368,7 +365,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
 
             // Emit any remaining defers at end of body
             mut cur_d = defers
-            while cur_d != null {
+            loop cur_d != null {
                 emit_c_stmt(@sb, st, cur_d.stmt, 1, @defers)
                 cur_d = cur_d.next
             }

@@ -36,7 +36,7 @@ act map_type_to_c(type_name: string) -> string {
         let plen = str.len(base_c) + 1
         mut buf: @u8 = mem.alloc(@u8, plen + 1)
         mut i: usize = 0
-        while i < str.len(base_c) {
+        loop i < str.len(base_c) {
             buf[i] = base_c[i]
             i += 1
         }
@@ -46,6 +46,20 @@ act map_type_to_c(type_name: string) -> string {
     }
 
     return type_name
+}
+
+// Maps an assignment operator token to its C representation.
+act map_assign_op(op: i32) -> string {
+    if op == TOK_PLUS_ASSIGN { return "+=" }
+    if op == TOK_MINUS_ASSIGN { return "-=" }
+    if op == TOK_STAR_ASSIGN { return "*=" }
+    if op == TOK_SLASH_ASSIGN { return "/=" }
+    if op == TOK_AMP_ASSIGN { return "&=" }
+    if op == TOK_PIPE_ASSIGN { return "|=" }
+    if op == TOK_CARET_ASSIGN { return "^=" }
+    if op == TOK_SHL_ASSIGN { return "<<=" }
+    if op == TOK_SHR_ASSIGN { return ">>=" }
+    return "="
 }
 
 // Maps a binary operator token kind to its C99 operator string.
@@ -180,7 +194,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         sb_append_str(sb, expr.type_name)
         sb_append_str(sb, "){ ")
         mut cur_init = expr.first_init
-        while cur_init != null {
+        loop cur_init != null {
             sb_append_char(sb, '.')
             sb_append_str(sb, cur_init.name)
             sb_append_str(sb, " = ")
@@ -328,7 +342,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         emit_c_expr(sb, st, expr.callee)
         sb_append_char(sb, '(')
         mut cur_arg = expr.first_arg
-        while cur_arg != null {
+        loop cur_arg != null {
             emit_c_expr(sb, st, cur_arg)
             if cur_arg.next != null {
                 sb_append_str(sb, ", ")

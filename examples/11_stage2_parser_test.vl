@@ -12,7 +12,7 @@ use "../src/frontend/parser_stmt.vl"
 act main() {
     io.println("--- Velo Stage 2 Milestone 2.2: Native Parser Verification ---")
 
-    let sample_code = "data Point {\n    x: f32\n    y: f32\n}\nextern act clock() -> i64\nact compute(p: @Point, delta: f32) -> f32 {\n    mut total: f32 = 0.0\n    if delta > 0.0 {\n        total += delta\n    } else {\n        total -= delta\n    }\n    while total < 10.0 {\n        total += 1.0\n    }\n    loop i in 0..5 {\n        total += i as f32\n    }\n    zone {\n        let pt = Point{ x: 10.0, y: 20.0 }\n        defer total += 1.0\n    }\n    return total\n}"
+    let sample_code = "data Point {\n    x: f32\n    y: f32\n}\nextern act clock() -> i64\nact compute(p: @Point, delta: f32) -> f32 {\n    mut total: f32 = 0.0\n    if delta > 0.0 {\n        total += delta\n    } else {\n        total -= delta\n    }\n    loop total < 10.0 {\n        total += 1.0\n    }\n    loop i in 0..5 {\n        total += i as f32\n    }\n    zone {\n        let pt = Point{ x: 10.0, y: 20.0 }\n        defer total += 1.0\n    }\n    return total\n}"
     let sample_len: usize = str.len(sample_code)
 
     zone {
@@ -31,11 +31,11 @@ act main() {
 
         mut cur_decl = prog.first_decl
         mut decl_idx = 0
-        while cur_decl != null {
+        loop cur_decl != null {
             if cur_decl.kind == DECL_DATA {
                 io.println("  Decl[{decl_idx}]: Struct 'data {cur_decl.name}' with {cur_decl.field_count} fields")
                 mut cur_field = cur_decl.first_field
-                while cur_field != null {
+                loop cur_field != null {
                     io.println("    Field: '{cur_field.name}' of type '{cur_field.type_name}'")
                     cur_field = cur_field.next
                 }
@@ -44,7 +44,7 @@ act main() {
             } else if cur_decl.kind == DECL_FUNCTION {
                 io.println("  Decl[{decl_idx}]: Function 'act {cur_decl.name}' -> '{cur_decl.return_type}' with {cur_decl.param_count} params")
                 mut cur_param = cur_decl.first_param
-                while cur_param != null {
+                loop cur_param != null {
                     io.println("    Param: '{cur_param.name}' of type '{cur_param.type_name}'")
                     cur_param = cur_param.next
                 }
@@ -52,7 +52,7 @@ act main() {
                     io.println("    Function body contains {cur_decl.body.stmt_count} top-level statements in block")
                     mut cur_stmt = cur_decl.body.first_stmt
                     mut stmt_idx = 0
-                    while cur_stmt != null {
+                    loop cur_stmt != null {
                         io.println("      Stmt[{stmt_idx}]: kind={cur_stmt.kind}")
                         cur_stmt = cur_stmt.next
                         stmt_idx += 1

@@ -196,7 +196,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             return "unknown"
         }
         mut cur_init = expr.first_init
-        while cur_init != null {
+        loop cur_init != null {
             let f_sym = find_struct_field(st_sym, cur_init.name)
             if f_sym == null {
                 report_error("semantic", cur_init.line, cur_init.col, "Unknown field in struct literal")
@@ -263,12 +263,18 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
         if stmt.else_branch != null {
             check_statement(st, expected_ret_type, stmt.else_branch)
         }
-    } else if stmt.kind == STMT_WHILE {
-        infer_expr_type(st, stmt.expr)
-        check_statement(st, expected_ret_type, stmt.body)
     } else if stmt.kind == STMT_LOOP {
+        if stmt.loop_start != null {
+            infer_expr_type(st, stmt.loop_start)
+            infer_expr_type(st, stmt.loop_end)
+            if stmt.loop_step != null { infer_expr_type(st, stmt.loop_step) }
+        } else if stmt.expr != null {
+            infer_expr_type(st, stmt.expr)
+        }
         enter_scope(st)
-        define_variable(st, stmt.loop_var, "i32", false, stmt.line, stmt.col)
+        mut vname = "it"
+        if stmt.loop_var != null and str.len(stmt.loop_var) > 0 { vname = stmt.loop_var }
+        define_variable(st, vname, "i32", false, stmt.line, stmt.col)
         check_statement(st, expected_ret_type, stmt.body)
         exit_scope(st)
     } else if stmt.kind == STMT_ZONE {
@@ -288,9 +294,9 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
     } else if stmt.kind == STMT_MATCH {
         infer_expr_type(st, stmt.expr)
         mut cur_case = stmt.first_case
-        while cur_case != null {
+        loop cur_case != null {
             mut val = cur_case.first_val
-            while val != null {
+            loop val != null {
                 infer_expr_type(st, val)
                 val = val.next
             }
@@ -302,7 +308,7 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
     } else if stmt.kind == STMT_BLOCK {
         enter_scope(st)
         mut cur = stmt.first_stmt
-        while cur != null {
+        loop cur != null {
             check_statement(st, expected_ret_type, cur)
             cur = cur.next
         }
@@ -316,11 +322,11 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
 act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
     // Pass 1: Register all struct declarations
     mut cur = prog.first_decl
-    while cur != null {
+    loop cur != null {
         if cur.kind == DECL_DATA {
             let st_sym = register_struct(st, cur.name, cur.line, cur.col)
             mut cur_f = cur.first_field
-            while cur_f != null {
+            loop cur_f != null {
                 struct_add_field(st_sym, cur_f.name, cur_f.type_name, cur_f.line, cur_f.col)
                 cur_f = cur_f.next
             }
@@ -330,7 +336,7 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
 
     // Pass 1.5: Register all top-level global variables and constants
     cur = prog.first_decl
-    while cur != null {
+    loop cur != null {
         if cur.kind == STMT_VAR_DECL {
             mut inferred_type = cur.type_name
             if inferred_type == null or str.len(inferred_type) == 0 {
@@ -347,12 +353,12 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
 
     // Pass 2: Register all function & extern declarations
     cur = prog.first_decl
-    while cur != null {
+    loop cur != null {
         if cur.kind == DECL_FUNCTION or cur.kind == DECL_EXTERN {
             let is_ext = cur.kind == DECL_EXTERN
             let fn_sym = register_function(st, cur.name, cur.return_type, is_ext, cur.line, cur.col)
             mut cur_p = cur.first_param
-            while cur_p != null {
+            loop cur_p != null {
                 function_add_param(fn_sym, cur_p.name, cur_p.type_name)
                 cur_p = cur_p.next
             }
@@ -362,11 +368,11 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
 
     // Pass 3: Validate function bodies, statements, and expressions
     cur = prog.first_decl
-    while cur != null {
+    loop cur != null {
         if cur.kind == DECL_FUNCTION and cur.body != null {
             enter_scope(st)
             mut cur_p = cur.first_param
-            while cur_p != null {
+            loop cur_p != null {
                 define_parameter(st, cur_p.name, cur_p.type_name, cur_p.line, cur_p.col)
                 cur_p = cur_p.next
             }

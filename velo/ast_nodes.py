@@ -171,20 +171,17 @@ class IfStmt(Stmt):
     col: int
 
 @dataclass
-class WhileStmt(Stmt):
-    condition: Expr
-    body: BlockStmt
-    line: int
-    col: int
-
-@dataclass
 class LoopStmt(Stmt):
     iterator: str
-    start_expr: Expr
-    end_expr: Expr
+    start_expr: Optional[Expr]
+    end_expr: Optional[Expr]
     body: BlockStmt
     line: int
     col: int
+    step_expr: Optional[Expr] = None
+    is_inclusive: bool = False
+    expr: Optional[Expr] = None
+    is_count: bool = False
 
 @dataclass
 class ZoneStmt(Stmt):

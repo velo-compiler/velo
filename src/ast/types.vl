@@ -117,7 +117,7 @@ act strip_pointer_prefix(type_name: string) -> string {
         let plen = len - 1
         mut buf: @u8 = mem.alloc(@u8, plen + 1)
         mut i: usize = 0
-        while i < plen {
+        loop i < plen {
             buf[i] = type_name[1 + i]
             i += 1
         }
@@ -135,7 +135,7 @@ act prepend_pointer_prefix(type_name: string) -> string {
     mut buf: @u8 = mem.alloc(@u8, plen + 1)
     buf[0] = '@'
     mut i: usize = 0
-    while i < len {
+    loop i < len {
         buf[1 + i] = type_name[i]
         i += 1
     }

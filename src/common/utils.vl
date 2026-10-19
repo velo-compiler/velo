@@ -37,7 +37,7 @@ act is_ident_part(c: u8) -> bool {
 act copy_slice_to_string(source: string, start: usize, len: usize) -> string {
     mut buf: @u8 = mem.alloc(@u8, len + 1)
     mut i: usize = 0
-    while i < len {
+    loop i < len {
         buf[i] = source[start + i]
         i += 1
     }
@@ -98,7 +98,7 @@ act parse_int_from_slice(source: string, start: usize, len: usize) -> i32 {
     }
 
     mut result: i32 = 0
-    while i < end {
+    loop i < end {
         let c = source[i]
         if c == '_' {
             i += 1
@@ -135,7 +135,7 @@ act parse_float_from_slice(source: string, start: usize, len: usize) -> f32 {
     mut exp_neg: bool = false
     mut exp_val: i32 = 0
 
-    while i < end {
+    loop i < end {
         let c = source[i]
         if c == '_' {
             i += 1
@@ -171,7 +171,7 @@ act parse_float_from_slice(source: string, start: usize, len: usize) -> f32 {
     if in_exponent and exp_val > 0 {
         mut factor: f32 = 1.0
         mut k = 0
-        while k < exp_val {
+        loop k < exp_val {
             factor = factor * 10.0
             k += 1
         }
@@ -238,12 +238,12 @@ act format_c_number_literal(source: string, start: usize, len: usize, is_float: 
         } else {
             mut temp: @u8 = mem.alloc(@u8, 16)
             mut tc: usize = 0
-            while n > 0 {
+            loop n > 0 {
                 temp[tc] = ('0' as u8) + ((n % 10) as u8)
                 n = n / 10
                 tc += 1
             }
-            while tc > 0 {
+            loop tc > 0 {
                 tc -= 1
                 buf[count] = temp[tc]
                 count += 1
@@ -266,7 +266,7 @@ act format_c_number_literal(source: string, start: usize, len: usize, is_float: 
     mut has_dot = false
     mut has_exp = false
     mut i = start
-    while i < start + digits_len {
+    loop i < start + digits_len {
         let c = source[i]
         if c == '.' { has_dot = true }
         if c == 'e' or c == 'E' { has_exp = true }
@@ -309,7 +309,7 @@ act process_string_literal(source: string, start: usize, len: usize) -> string {
         mut buf: @u8 = mem.alloc(@u8, content_len * 2 + 1)
         mut count: usize = 0
         mut i: usize = 0
-        while i < content_len {
+        loop i < content_len {
             let c = source[start + 1 + i]
             if c == '\r' {
                 if i + 1 < content_len and source[start + 1 + i + 1] == '\n' { i += 1 }
@@ -333,7 +333,7 @@ act process_string_literal(source: string, start: usize, len: usize) -> string {
     mut buf: @u8 = mem.alloc(@u8, content_len * 2 + 1)
     mut count: usize = 0
     mut i: usize = 0
-    while i < content_len {
+    loop i < content_len {
         let c = source[start + 1 + i]
         if c == '\\' and i + 1 < content_len {
             let esc = source[start + 1 + i + 1]

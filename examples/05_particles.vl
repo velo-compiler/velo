@@ -51,7 +51,7 @@ act main() {
 
         // Run 3 simulation frames
         mut frame = 0
-        while frame < 3 {
+        loop frame < 3 {
             io.println("--- Frame {frame} ---")
 
             loop i in 0..count {

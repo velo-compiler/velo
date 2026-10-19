@@ -28,7 +28,7 @@ act sb_ensure_cap(sb: @StringBuilder, extra: usize) {
         let new_cap = (sb.cap + extra + 1) * 2
         mut new_buf: @u8 = mem.alloc(@u8, new_cap)
         mut i: usize = 0
-        while i < sb.len {
+        loop i < sb.len {
             new_buf[i] = sb.buffer[i]
             i += 1
         }
@@ -52,7 +52,7 @@ act sb_append_str(sb: @StringBuilder, s: string) {
 
     sb_ensure_cap(sb, slen)
     mut i: usize = 0
-    while i < slen {
+    loop i < slen {
         sb.buffer[sb.len + i] = s[i]
         i += 1
     }
@@ -72,13 +72,13 @@ act sb_append_int(sb: @StringBuilder, val: i32) {
     }
     mut temp: @u8 = mem.alloc(@u8, 16)
     mut count: usize = 0
-    while n > 0 {
+    loop n > 0 {
         temp[count] = ('0' as u8) + ((n % 10) as u8)
         n = n / 10
         count += 1
     }
     mut i: usize = count
-    while i > 0 {
+    loop i > 0 {
         i -= 1
         sb_append_char(sb, temp[i])
     }
@@ -104,7 +104,7 @@ act sb_append_float(sb: @StringBuilder, val: f32) {
 // Appends 4-space indentation levels.
 act sb_append_indent(sb: @StringBuilder, indent: i32) {
     mut i = 0
-    while i < indent {
+    loop i < indent {
         sb_append_str(sb, "    ")
         i += 1
     }

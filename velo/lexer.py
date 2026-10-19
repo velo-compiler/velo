@@ -385,7 +385,9 @@ class Lexer:
         if ch == '%':
             return Token(TokenType.PERCENT, "%", line, col)
         if ch == '.':
-            if self._match('.'): return Token(TokenType.DOTDOT, "..", line, col)
+            if self._match('.'):
+                if self._match('='): return Token(TokenType.DOTDOTEQ, "..=", line, col)
+                return Token(TokenType.DOTDOT, "..", line, col)
             return Token(TokenType.DOT, ".", line, col)
         if ch == '=':
             if self._match('='): return Token(TokenType.EQ, "==", line, col)

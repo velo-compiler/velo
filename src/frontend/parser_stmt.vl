@@ -19,7 +19,7 @@ act parse_block(p: @Parser) -> @StmtNode {
     mut last_stmt: @StmtNode = null
     mut count: usize = 0
 
-    while not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
+    loop not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
         let stmt = parse_statement(p)
         if stmt != null {
             if first_stmt == null {
@@ -58,29 +58,66 @@ act parse_if_stmt(p: @Parser) -> @StmtNode {
     return make_if_stmt(condition, then_branch, else_branch, if_tok.line, if_tok.col)
 }
 
-// Parses a `while` loop statement.
-act parse_while_stmt(p: @Parser) -> @StmtNode {
-    let while_tok = parser_consume(p, TOK_WHILE, "Expected 'while'")
-    let condition = parse_expression(p)
-    parser_skip_newlines(p)
-    let body = parse_block(p)
-    return make_while_stmt(condition, body, while_tok.line, while_tok.col)
-}
-
-// Parses a `loop <var> in <start>..<end> { ... }` range loop statement.
+// Parses a `loop` statement supporting infinite, repeat, named range, and anonymous range loops.
 act parse_loop_stmt(p: @Parser) -> @StmtNode {
     let loop_tok = parser_consume(p, TOK_LOOP, "Expected 'loop'")
-    let iter_tok = parser_consume(p, TOK_IDENTIFIER, "Expected loop variable name")
-    let iter_name = copy_slice_to_string(p.source, iter_tok.start, iter_tok.length)
+    parser_skip_newlines(p)
 
-    parser_consume(p, TOK_IN, "Expected 'in' after loop variable")
-    let start_expr = parse_expression(p)
-    parser_consume(p, TOK_DOTDOT, "Expected '..' in range specification")
-    let end_expr = parse_expression(p)
+    // 1. Infinite loop: loop { ... }
+    if parser_check(p, TOK_LBRACE) {
+        let body = parse_block(p)
+        return make_loop_inf_stmt(body, loop_tok.line, loop_tok.col)
+    }
 
+    // 2. Named range loop: loop <var> in <start>..<end>[:<step>] { ... }
+    if parser_check(p, TOK_IDENTIFIER) {
+        let next_tok = parser_peek(p, 1)
+        if next_tok.kind == TOK_IN {
+            let iter_tok = parser_advance(p)
+            let iter_name = copy_slice_to_string(p.source, iter_tok.start, iter_tok.length)
+            parser_consume(p, TOK_IN, "Expected 'in' after loop variable")
+            let start_expr = parse_expression(p)
+            mut is_inc = false
+            if parser_match(p, TOK_DOTDOTEQ) {
+                is_inc = true
+            } else {
+                parser_consume(p, TOK_DOTDOT, "Expected '..' or '..=' in range specification")
+            }
+            let end_expr = parse_expression(p)
+            mut step_expr: @ExprNode = null
+            if parser_match(p, TOK_COLON) {
+                step_expr = parse_expression(p)
+            }
+            parser_skip_newlines(p)
+            let body = parse_block(p)
+            return make_loop_stmt(iter_name, start_expr, end_expr, step_expr, is_inc, body, loop_tok.line, loop_tok.col)
+        }
+    }
+
+    // 3. Anonymous range or expression (count / condition) loop:
+    let first_expr = parse_expression(p)
+    if parser_check(p, TOK_DOTDOT) or parser_check(p, TOK_DOTDOTEQ) {
+        mut is_inc = false
+        if parser_match(p, TOK_DOTDOTEQ) {
+            is_inc = true
+        } else {
+            parser_advance(p)
+        }
+        let end_expr = parse_expression(p)
+        mut step_expr: @ExprNode = null
+        if parser_match(p, TOK_COLON) {
+            step_expr = parse_expression(p)
+        }
+        parser_skip_newlines(p)
+        let body = parse_block(p)
+        return make_loop_stmt("it", first_expr, end_expr, step_expr, is_inc, body, loop_tok.line, loop_tok.col)
+    }
+
+    // Expression loop: count repeat or boolean condition
     parser_skip_newlines(p)
     let body = parse_block(p)
-    return make_loop_stmt(iter_name, start_expr, end_expr, body, loop_tok.line, loop_tok.col)
+    let is_count = (first_expr.kind == EXPR_INT)
+    return make_loop_expr_stmt(first_expr, is_count, body, loop_tok.line, loop_tok.col)
 }
 
 // Parses an `on <expr> { ... }` branching statement.
@@ -95,7 +132,7 @@ act parse_on_stmt(p: @Parser) -> @StmtNode {
     mut last_case: @CaseNode = null
     mut case_count: usize = 0
 
-    while not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
+    loop not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
         let cur = parser_peek(p, 0)
         mut is_default = false
         mut first_val: @ExprNode = null
@@ -117,7 +154,7 @@ act parse_on_stmt(p: @Parser) -> @StmtNode {
             first_val = parse_expression(p)
             mut cur_val = first_val
             val_count = 1
-            while parser_match(p, TOK_COMMA) {
+            loop parser_match(p, TOK_COMMA) {
                 let next_val = parse_expression(p)
                 cur_val.next = next_val
                 cur_val = next_val
@@ -230,9 +267,6 @@ act parse_statement(p: @Parser) -> @StmtNode {
     // 6. Control flow constructs
     if parser_check(p, TOK_IF) {
         return parse_if_stmt(p)
-    }
-    if parser_check(p, TOK_WHILE) {
-        return parse_while_stmt(p)
     }
     if parser_check(p, TOK_LOOP) {
         return parse_loop_stmt(p)

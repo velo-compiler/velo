@@ -111,7 +111,7 @@ act exit_scope(st: @SymbolTable) {
 act scope_lookup_immediate(sc: @Scope, name: string) -> @Symbol {
     if sc == null { return null }
     mut cur = sc.first_sym
-    while cur != null {
+    loop cur != null {
         if cur.name == name {
             return cur
         }
@@ -123,7 +123,7 @@ act scope_lookup_immediate(sc: @Scope, name: string) -> @Symbol {
 // Looks up a symbol in the current scope, traversing up to enclosing parent scopes.
 act scope_lookup(sc: @Scope, name: string) -> @Symbol {
     mut cur_sc = sc
-    while cur_sc != null {
+    loop cur_sc != null {
         let sym = scope_lookup_immediate(cur_sc, name)
         if sym != null {
             return sym
@@ -205,7 +205,7 @@ act struct_add_field(st_sym: @StructSym, fname: string, ftype: string, line: i32
         st_sym.first_field = f
     } else {
         mut cur = st_sym.first_field
-        while cur.next != null {
+        loop cur.next != null {
             cur = cur.next
         }
         cur.next = f
@@ -217,7 +217,7 @@ act struct_add_field(st_sym: @StructSym, fname: string, ftype: string, line: i32
 // Finds a struct blueprint by name.
 act find_struct(st: @SymbolTable, name: string) -> @StructSym {
     mut cur = st.first_struct
-    while cur != null {
+    loop cur != null {
         if cur.name == name {
             return cur
         }
@@ -230,7 +230,7 @@ act find_struct(st: @SymbolTable, name: string) -> @StructSym {
 act find_struct_field(st_sym: @StructSym, fname: string) -> @StructFieldSym {
     if st_sym == null { return null }
     mut cur = st_sym.first_field
-    while cur != null {
+    loop cur != null {
         if cur.name == fname {
             return cur
         }
@@ -267,7 +267,7 @@ act function_add_param(fn_sym: @FunctionSym, pname: string, ptype: string) -> bo
         fn_sym.first_param = p
     } else {
         mut cur = fn_sym.first_param
-        while cur.next != null {
+        loop cur.next != null {
             cur = cur.next
         }
         cur.next = p
@@ -279,7 +279,7 @@ act function_add_param(fn_sym: @FunctionSym, pname: string, ptype: string) -> bo
 // Finds a registered function by name.
 act find_function(st: @SymbolTable, name: string) -> @FunctionSym {
     mut cur = st.first_function
-    while cur != null {
+    loop cur != null {
         if cur.name == name {
             return cur
         }

@@ -1,0 +1,59 @@
+// Example 20: Unified Loop System & Flexible Ranges (Milestone 2.3)
+// Demonstrates Velo's clean, unified 'loop' keyword:
+// 1. Infinite loops with auto-incrementing 'it'
+// 2. Count loops (repeat N times)
+// 3. Condition loops (loop while condition holds)
+// 4. Anonymous and named range loops with custom step (:step)
+// 5. Automatic countdown (start > end) and inclusive ranges (..=)
+use sys.io
+
+act main() -> i32 {
+    io.println("=== 1. Repeat Count Loop (loop 5) ===")
+    mut repeat_sum: i32 = 0
+    loop 5 {
+        io.println("Iteration {it}")
+        repeat_sum += it as i32
+    }
+    io.println("Repeat sum: {repeat_sum}") // 0 + 1 + 2 + 3 + 4 = 10
+
+    io.println("\n=== 2. Condition Loop (replacing while) ===")
+    mut energy: i32 = 100
+    loop energy > 60 {
+        io.println("Energy: {energy}, tick #{it}")
+        energy -= 15
+    }
+
+    io.println("\n=== 3. Range with Custom Step (0..10:2) ===")
+    loop i in 0..10:2 {
+        io.println("Step 2: {i}") // 0, 2, 4, 6, 8
+    }
+
+    io.println("\n=== 4. Smart Auto Countdown (10..0) ===")
+    loop 5..0 {
+        io.println("Liftoff in {it}...") // 5, 4, 3, 2, 1
+    }
+    io.println("Blast off!")
+
+    io.println("\n=== 5. Countdown with Custom Step (10..0:2) ===")
+    loop 10..0:2 {
+        io.println("Countdown: {it}") // 10, 8, 6, 4, 2
+    }
+
+    io.println("\n=== 6. Inclusive Range (1..=5) ===")
+    loop i in 1..=5 {
+        io.println("Inclusive: {i}") // 1, 2, 3, 4, 5
+    }
+
+    io.println("\n=== 7. Infinite Loop with Break (loop) ===")
+    mut ticks: i32 = 0
+    loop {
+        ticks += 1
+        if it == 3 {
+            io.println("Broke infinite loop at tick #{it}")
+            break
+        }
+    }
+
+    io.println("\nAll unified loop tests executed successfully!")
+    return 0
+}
