@@ -1,0 +1,97 @@
+// Comprehensive test of Uniform Function Call Syntax (UFCS) and Auto-Referencing in Velo.
+use sys.io
+
+data Vector2 {
+    x: f32
+    y: f32
+}
+
+// 1. Value method (takes Vector2 by value)
+act length_sq(v: Vector2) -> f32 {
+    return v.x * v.x + v.y * v.y
+}
+
+// 2. Pointer method (takes @Vector2 to mutate in place)
+act scale(v: @Vector2, factor: f32) {
+    v.x = v.x * factor
+    v.y = v.y * factor
+}
+
+// 3. Value chaining method (returns new Vector2)
+act add(a: Vector2, b: Vector2) -> Vector2 {
+    return Vector2{ x: a.x + b.x, y: a.y + b.y }
+}
+
+// 4. Primitive extension method
+act square(n: i32) -> i32 {
+    return n * n
+}
+
+// 5. Struct field callback priority test
+data Button {
+    tag: i32
+    on_click: act(@Button)
+}
+
+act on_click(b: @Button) {
+    io.println("Free function on_click should NOT be called directly when field exists!")
+}
+
+act custom_handler(b: @Button) {
+    io.println("Button clicked! Tag = {b.tag}")
+}
+
+// 6. Generic UFCS test
+data Box[T] {
+    val: T
+}
+
+act unwrap[T](b: @Box[T]) -> T {
+    return b.val
+}
+
+act main() {
+    io.println("=== Testing UFCS & Method Syntax ===")
+
+    // Test 1: Auto-referencing on value lvalue
+    mut v = Vector2{ x: 3.0, y: 4.0 }
+    let initial_len = v.length_sq()
+    io.println("Initial length_sq: {initial_len}")
+    
+    // v is Vector2, scale expects @Vector2 -> auto-references &v
+    v.scale(2.0)
+    io.println("After scale(2.0): x={v.x}, y={v.y}")
+    let scaled_len = v.length_sq()
+    io.println("Scaled length_sq: {scaled_len}")
+
+    // Test 2: Pointer receiver calling pointer method
+    let pv = @v
+    pv.scale(0.5)
+    io.println("After pv.scale(0.5): x={v.x}, y={v.y}")
+
+    // Test 3: Pointer receiver calling value method (auto-dereference)
+    let len_from_ptr = pv.length_sq()
+    io.println("Length via pointer receiver: {len_from_ptr}")
+
+    // Test 4: Method chaining
+    let v2 = Vector2{ x: 1.0, y: 1.0 }
+    let v3 = Vector2{ x: 2.0, y: 3.0 }
+    let chained = v.add(v2).add(v3)
+    io.println("Chained add: x={chained.x}, y={chained.y}")
+
+    // Test 5: Extension method on primitive
+    let num = 7
+    let sq = num.square()
+    io.println("7.square() = {sq}")
+
+    // Test 6: Struct field priority over free function
+    mut btn = Button{ tag: 42, on_click: custom_handler }
+    btn.on_click(@btn)
+
+    // Test 7: Generic method call via UFCS
+    let b: Box[i32] = Box[i32]{ val: 999 }
+    let unwrapped = b.unwrap()
+    io.println("Generic Box unwrap: {unwrapped}")
+
+    io.println("=== UFCS Method Syntax: SUCCESS ===")
+}

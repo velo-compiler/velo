@@ -10,57 +10,7 @@ use "../analysis/type_checker.vl"
 use "../common/string_builder.vl"
 use "../common/act_types.vl"
 use "codegen_io.vl"
-
-// Maps a Velo type name to its standard C99 type string.
-act map_type_to_c(type_name: string) -> string {
-    if type_name == null or str.len(type_name) == 0 or type_name == "void" { return "void" }
-    if type_name == "i8" { return "int8_t" }; if type_name == "i16" { return "int16_t" }; if type_name == "i32" { return "int32_t" }
-    if type_name == "i64" { return "int64_t" }; if type_name == "u8" { return "uint8_t" }; if type_name == "u16" { return "uint16_t" }
-    if type_name == "u32" { return "uint32_t" }; if type_name == "u64" { return "uint64_t" }; if type_name == "f32" { return "float" }
-    if type_name == "f64" { return "double" }; if type_name == "bool" { return "bool" }; if type_name == "usize" { return "size_t" }
-    if type_name == "isize" { return "ptrdiff_t" }; if type_name == "string" { return "const char*" }
-
-    if is_act_type(type_name) {
-        return mangle_act_type(type_name)
-    }
-
-    // Pointer types (@T, @@T)
-    if type_name[0] == '@' {
-        let base = strip_pointer_prefix(type_name)
-        let base_c = map_type_to_c(base)
-        let plen = str.len(base_c) + 1
-        mut buf: @u8 = mem.alloc(@u8, plen + 1)
-        mut i: usize = 0
-        loop i < str.len(base_c) {
-            buf[i] = base_c[i]
-            i += 1
-        }
-        buf[str.len(base_c)] = '*'
-        buf[plen] = 0 as u8
-        return buf as string
-    }
-
-    return type_name
-}
-
-// Maps an assignment operator token to its C representation.
-act map_assign_op(op: i32) -> string {
-    if op == TOK_PLUS_ASSIGN { return "+=" }; if op == TOK_MINUS_ASSIGN { return "-=" }; if op == TOK_STAR_ASSIGN { return "*=" }
-    if op == TOK_SLASH_ASSIGN { return "/=" }; if op == TOK_AMP_ASSIGN { return "&=" }; if op == TOK_PIPE_ASSIGN { return "|=" }
-    if op == TOK_CARET_ASSIGN { return "^=" }; if op == TOK_SHL_ASSIGN { return "<<=" }; if op == TOK_SHR_ASSIGN { return ">>=" }
-    return "="
-}
-
-// Maps a binary operator token kind to its C99 operator string.
-act op_to_c_str(op: i32) -> string {
-    if op == TOK_PLUS { return "+" }; if op == TOK_MINUS { return "-" }; if op == TOK_STAR { return "*" }
-    if op == TOK_SLASH { return "/" }; if op == TOK_PERCENT { return "%" }; if op == TOK_EQ { return "==" }
-    if op == TOK_NEQ { return "!=" }; if op == TOK_LT { return "<" }; if op == TOK_LTE { return "<=" }
-    if op == TOK_GT { return ">" }; if op == TOK_GTE { return ">=" }; if op == TOK_AND { return "&&" }
-    if op == TOK_OR { return "||" }; if op == TOK_AMP { return "&" }; if op == TOK_PIPE { return "|" }
-    if op == TOK_CARET { return "^" }; if op == TOK_SHL { return "<<" }; if op == TOK_SHR { return ">>" }
-    return "+"
-}
+use "codegen_types.vl"
 
 // Emits C99 code for an AST expression into a StringBuilder.
 act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
@@ -351,6 +301,45 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                 }
                 if target.str_val == "io" {
                     emit_io_call(sb, st, member, expr.first_arg)
+                    return
+                }
+            }
+        }
+        if expr.callee.kind == EXPR_MEMBER {
+            let target_type = infer_expr_type(st, expr.callee.target)
+            let clean_type = strip_pointer_prefix(target_type)
+            let st_sym = find_struct(st, clean_type)
+            if st_sym == null or find_struct_field(st_sym, expr.callee.member_name) == null {
+                let fn_sym = find_function(st, expr.callee.member_name)
+                if fn_sym != null {
+                    sb_append_str(sb, fn_sym.name)
+                    sb_append_char(sb, '(')
+                    let p0_type = fn_sym.first_param.type_name
+                    let is_tgt_ptr = target_type != null and str.len(target_type) > 0 and target_type[0] == '@'
+                    let is_p0_ptr = p0_type != null and str.len(p0_type) > 0 and p0_type[0] == '@'
+                    if is_p0_ptr and not is_tgt_ptr {
+                        sb_append_str(sb, "(&(")
+                        emit_c_expr(sb, st, expr.callee.target)
+                        sb_append_str(sb, "))")
+                    } else if is_tgt_ptr and not is_p0_ptr {
+                        sb_append_str(sb, "(*(")
+                        emit_c_expr(sb, st, expr.callee.target)
+                        sb_append_str(sb, "))")
+                    } else {
+                        emit_c_expr(sb, st, expr.callee.target)
+                    }
+                    if expr.first_arg != null {
+                        sb_append_str(sb, ", ")
+                    }
+                    mut cur_a = expr.first_arg
+                    loop cur_a != null {
+                        emit_c_expr(sb, st, cur_a)
+                        if cur_a.next != null {
+                            sb_append_str(sb, ", ")
+                        }
+                        cur_a = cur_a.next
+                    }
+                    sb_append_char(sb, ')')
                     return
                 }
             }

@@ -90,9 +90,15 @@ Velo is a working, self-hosted, triple-bootstrapped systems programming language
 * **Inline Anonymous Functions**: Anonymous callbacks with parameter inference and block bodies: `act(b: @Button) { ... }`, `act(x: i32, y: i32) -> i32 { return x - y }`.
 * **C99 Function Pointer Typedef Lowering**: Zero-overhead function pointer typedefs (`typedef int32_t (*velo_act_i32_i32_to_i32)(int32_t, int32_t);`), with anonymous functions lifted to `static` C functions with forward prototypes. Verified across Stage 1 Python compiler and Stage 2 self-hosted native compiler with `examples/23_function_pointers.vl` and `tests/test_function_pointers.py`.
 
-### 3.4 Method Syntax / Uniform Function Call Syntax (UFCS) (🟡 P2 Ergonomic)
-* **Current State**: All functions are free functions: `update_particle(p, dt)`.
-* **Desired State**: Method syntax `p.update(dt)` syntax sugar that automatically passes `p` as the first argument (`self` / `this`).
+### 3.4 Method Syntax / Uniform Function Call Syntax (UFCS) [COMPLETED] ✅
+* **Pure UFCS Without OOP Keywords**: Any free function `act foo(self: T, ...)` or `act foo(self: @T, ...)` can be invoked using method call syntax: `x.foo(...)`. No `class`, `struct impl`, or OOP ceremony required.
+* **Smart Auto-Referencing & Auto-Dereferencing**:
+  - If a function expects a pointer `@T` and the receiver is a value lvalue of type `T`, the compiler automatically passes its address (`&x`).
+  - If a function expects a value `T` and the receiver is a pointer `@T`, the compiler automatically dereferences the pointer (`*x`).
+  - If the receiver type matches the first parameter type directly, it is passed directly without modification.
+* **Struct Field Priority**: Struct fields (such as callback function pointers `btn.on_click(...)`) always take priority over free functions with the same name, preserving callback and vtable mechanics.
+* **Method Chaining & Extensibility**: Supports fluent chaining (e.g. `p.translate(1.0, 2.0).scale(2.0)`) and extension methods on both structs and primitive types (e.g. `7.square()`).
+* **Generic Method Specialization**: Works seamlessly with generic functions and data types (e.g. `box.unwrap()`), inferring type arguments from the receiver and arguments. Verified across Stage 1 Python compiler and Stage 2 self-hosted native compiler with `examples/24_ufcs_methods.vl` and `tests/test_ufcs_methods.py`.
 
 ### 3.5 Operator Overloading for Game Math (🟡 P2 Ergonomic)
 * **Current State**: Arithmetic operators (`+`, `-`, `*`, `/`) only work on built-in numeric primitives.

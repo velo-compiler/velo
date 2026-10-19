@@ -27,20 +27,21 @@ act mono_clone_stmt(m: @Monomorphizer, s: @StmtNode, scope: @ScopeEntry, params:
     if s.kind == STMT_CONTINUE { return make_continue_stmt(s.line, s.col) }
 
     if s.kind == STMT_VAR_DECL {
-        mut vt = mono_subst(s.type_name, params, args)
-        if vt != null {
+        mut vt: string = null
+        if s.type_name != null and str.len(s.type_name) > 0 {
+            vt = mono_subst(s.type_name, params, args)
             mono_check_type(m, vt)
             vt = mono_normalize_type(vt)
         }
         let ve = mono_clone_expr(m, s.val_expr, scope, params, args)
-        if ve != null and ve.kind == EXPR_VARIANT and ve.type_name == null {
+        if ve != null and ve.kind == EXPR_VARIANT and (ve.type_name == null or str.len(ve.type_name) == 0) {
             ve.type_name = vt
         }
-        if ve != null and ve.kind == EXPR_STRUCT_LIT and vt != null {
+        if ve != null and ve.kind == EXPR_STRUCT_LIT and vt != null and str.len(vt) > 0 {
             ve.type_name = vt
         }
         mut inferred = vt
-        if inferred == null {
+        if inferred == null or str.len(inferred) == 0 {
             inferred = mono_infer_type(ve, scope)
         }
         mut new_sc: @ScopeEntry = mem.alloc(@ScopeEntry, 1)
@@ -73,7 +74,9 @@ act mono_clone_stmt(m: @Monomorphizer, s: @StmtNode, scope: @ScopeEntry, params:
                     mut sc: @ScopeEntry = mem.alloc(@ScopeEntry, 1)
                     sc.name = cs.name
                     mut sc_t = cs.type_name
-                    if sc_t == null { sc_t = "i32" }
+                    if sc_t == null or str.len(sc_t) == 0 {
+                        sc_t = mono_infer_type(cs.val_expr, cur_scope)
+                    }
                     sc.type_name = sc_t
                     sc.next = cur_scope
                     cur_scope = sc

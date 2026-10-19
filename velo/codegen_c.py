@@ -814,11 +814,32 @@ class CCodeGenerator:
                 elif expr.callee.target.name == "str":
                     if expr.callee.member == "len":
                         return "usize"
+                target_type = self._resolve_expr_type(expr.callee.target)
+                clean_type = target_type.lstrip("@")
+                fields = self.struct_defs.get(clean_type, {})
+                if expr.callee.member in fields:
+                    callee_type = fields[expr.callee.member]
+                    parsed = parse_act_type(callee_type)
+                    if parsed:
+                        return parsed[2]
+                elif expr.callee.member in self.func_return_types:
+                    return self.func_return_types[expr.callee.member]
                 callee_type = self._resolve_expr_type(expr.callee)
                 parsed = parse_act_type(callee_type)
                 if parsed:
                     return parsed[2]
             else:
+                if isinstance(expr.callee, MemberAccess):
+                    target_type = self._resolve_expr_type(expr.callee.target)
+                    clean_type = target_type.lstrip("@")
+                    fields = self.struct_defs.get(clean_type, {})
+                    if expr.callee.member in fields:
+                        callee_type = fields[expr.callee.member]
+                        parsed = parse_act_type(callee_type)
+                        if parsed:
+                            return parsed[2]
+                    elif expr.callee.member in self.func_return_types:
+                        return self.func_return_types[expr.callee.member]
                 callee_type = self._resolve_expr_type(expr.callee)
                 parsed = parse_act_type(callee_type)
                 if parsed:
@@ -983,6 +1004,22 @@ class CCodeGenerator:
                     elif expr.callee.target.name == "str":
                         if expr.callee.member == "len":
                             return f"((usize)strlen({self._emit_expression(expr.args[0])}))"
+
+                target_type = self._resolve_expr_type(expr.callee.target)
+                clean_type = target_type.lstrip("@")
+                struct_fields = self.struct_defs.get(clean_type, {})
+                if expr.callee.member not in struct_fields and expr.callee.member in self.func_decls:
+                    fn = self.func_decls[expr.callee.member]
+                    target_code = self._emit_expression(expr.callee.target)
+                    p0_type = fn.params[0].type_name if fn.params else ""
+                    if p0_type.startswith("@") and not target_type.startswith("@"):
+                        first_arg_code = f"(&({target_code}))"
+                    elif target_type.startswith("@") and not p0_type.startswith("@"):
+                        first_arg_code = f"(*({target_code}))"
+                    else:
+                        first_arg_code = target_code
+                    arg_codes = [first_arg_code] + [self._emit_expression(arg) for arg in expr.args]
+                    return f"{expr.callee.member}({', '.join(arg_codes)})"
 
             callee_code = self._emit_expression(expr.callee)
             arg_codes = [self._emit_expression(arg) for arg in expr.args]

@@ -172,6 +172,9 @@ class Monomorphizer:
 
         self.func_return_types: Dict[str, str] = {}
         self.func_param_types: Dict[str, List[str]] = {}
+        self.struct_fields: Dict[str, Set[str]] = {}
+        self.struct_field_types: Dict[str, Dict[str, str]] = {}
+        self.kind_names: Set[str] = set()
 
     def request_instantiation(self, kind: str, template_name: str, args: Tuple[str, ...]):
         key = (kind, template_name, args)
@@ -183,10 +186,20 @@ class Monomorphizer:
         # Pass 1: Collect generic templates and regular declarations
         regular_decls: List[Decl] = []
         for decl in program.declarations:
-            if isinstance(decl, DataDecl) and decl.type_params:
-                self.generic_structs[decl.name] = decl
-            elif isinstance(decl, KindDecl) and decl.type_params:
-                self.generic_kinds[decl.name] = decl
+            if isinstance(decl, DataDecl):
+                if decl.type_params:
+                    self.generic_structs[decl.name] = decl
+                else:
+                    regular_decls.append(decl)
+                f_map = {f.name: (normalize_type_name(f.type_name) or f.type_name) for f in decl.fields}
+                self.struct_fields[decl.name] = set(f_map.keys())
+                self.struct_field_types[decl.name] = f_map
+            elif isinstance(decl, KindDecl):
+                if decl.type_params:
+                    self.generic_kinds[decl.name] = decl
+                else:
+                    regular_decls.append(decl)
+                self.kind_names.add(decl.name)
             elif isinstance(decl, FunctionDecl) and decl.type_params:
                 self.generic_funcs[decl.name] = decl
             else:
@@ -303,6 +316,9 @@ class Monomorphizer:
 
         decl = DataDecl(name=mangled_name, fields=new_fields, line=template.line, col=template.col)
         self.instantiated_structs[mangled_name] = decl
+        f_map = {f.name: f.type_name for f in new_fields}
+        self.struct_fields[mangled_name] = set(f_map.keys())
+        self.struct_field_types[mangled_name] = f_map
 
     def _instantiate_kind(self, name: str, args: Tuple[str, ...]):
         template = self.generic_kinds[name]
@@ -518,8 +534,49 @@ class Monomorphizer:
             ttype = normalize_type_name(ttype) or "i32"
             return CastExpr(expr=self._transform_expr(expr.expr, scope, subst, ttype), target_type=ttype, line=expr.line, col=expr.col)
         elif isinstance(expr, CallExpr):
-            new_args = [self._transform_expr(a, scope, subst, None) for a in expr.args]
-            new_callee = self._transform_expr(expr.callee, scope, subst, None)
+            is_ufcs = False
+            first_arg = None
+            fn_name = None
+
+            if isinstance(expr.callee, MemberAccess):
+                member = expr.callee.member
+                target = expr.callee.target
+                is_module = isinstance(target, Identifier) and target.name in {"io", "mem", "fs", "str", "sys"}
+                is_kind = isinstance(target, Identifier) and (target.name in self.kind_names or target.name in self.generic_kinds)
+                if not is_module and not is_kind:
+                    # Check if target struct has this field
+                    t_type_raw = self._infer_expr_type(target, scope)
+                    clean_t = t_type_raw.lstrip("@")
+                    prefix, base, _ = parse_type_signature(clean_t)
+                    fields = self.struct_fields.get(clean_t) or self.struct_fields.get(base) or self.struct_fields.get(clean_t.split('_')[0], set())
+                    if member not in fields:
+                        # Check if member is a known function
+                        if member in self.func_param_types or member in self.generic_funcs:
+                            is_ufcs = True
+                            fn_name = member
+                            # Transform target
+                            new_target = self._transform_expr(target, scope, subst, None)
+                            target_type = self._infer_expr_type(new_target, scope)
+                            p0_type = None
+                            if member in self.func_param_types and self.func_param_types[member]:
+                                p0_type = self.func_param_types[member][0]
+                            elif member in self.generic_funcs and self.generic_funcs[member].params:
+                                p0_type = self.generic_funcs[member].params[0].type_name
+
+                            # Auto-reference or auto-dereference
+                            if p0_type and p0_type.startswith("@") and not target_type.startswith("@"):
+                                first_arg = AddressOf(operand=new_target, line=new_target.line, col=new_target.col)
+                            elif p0_type and not p0_type.startswith("@") and target_type.startswith("@"):
+                                first_arg = DerefExpr(operand=new_target, line=new_target.line, col=new_target.col)
+                            else:
+                                first_arg = new_target
+
+            if is_ufcs:
+                new_args = [first_arg] + [self._transform_expr(a, scope, subst, None) for a in expr.args]
+                new_callee = Identifier(name=fn_name, line=expr.callee.line, col=expr.callee.col)
+            else:
+                new_args = [self._transform_expr(a, scope, subst, None) for a in expr.args]
+                new_callee = self._transform_expr(expr.callee, scope, subst, None)
 
             if isinstance(new_callee, Identifier) and new_callee.name in self.generic_funcs:
                 template_name = new_callee.name
@@ -601,9 +658,25 @@ class Monomorphizer:
         if isinstance(expr, DerefExpr):
             sub = self._infer_expr_type(expr.operand, scope)
             return sub[1:] if sub.startswith("@") else sub
+        if isinstance(expr, MemberAccess):
+            target_type = self._infer_expr_type(expr.target, scope)
+            clean_type = target_type.lstrip("@")
+            prefix, base, _ = parse_type_signature(clean_type)
+            f_types = self.struct_field_types.get(clean_type) or self.struct_field_types.get(base) or self.struct_field_types.get(clean_type.split('_')[0], {})
+            if expr.member in f_types:
+                return f_types[expr.member]
+            return "i32"
         if isinstance(expr, CallExpr):
-            if isinstance(expr.callee, Identifier) and expr.callee.name in self.func_return_types:
-                return self.func_return_types[expr.callee.name]
+            if isinstance(expr.callee, Identifier):
+                if expr.callee.name in self.func_return_types:
+                    return self.func_return_types[expr.callee.name]
+                if expr.callee.name in self.generic_funcs:
+                    return self.generic_funcs[expr.callee.name].return_type or "void"
+            elif isinstance(expr.callee, MemberAccess):
+                if expr.callee.member in self.func_return_types:
+                    return self.func_return_types[expr.callee.member]
+                if expr.callee.member in self.generic_funcs:
+                    return self.generic_funcs[expr.callee.member].return_type or "void"
         if isinstance(expr, BinaryExpr):
             return self._infer_expr_type(expr.left, scope)
         return "i32"
@@ -620,3 +693,9 @@ class Monomorphizer:
         if p_base == a_base and len(p_args) == len(a_args):
             for pa, aa in zip(p_args, a_args):
                 self._unify_types(pa, aa, type_params, inferred)
+        elif not a_args and a_base.startswith(p_base + "_"):
+            suffix = a_base[len(p_base) + 1:]
+            actual_args = suffix.split("_")
+            if len(p_args) == len(actual_args):
+                for pa, aa in zip(p_args, actual_args):
+                    self._unify_types(pa, aa, type_params, inferred)

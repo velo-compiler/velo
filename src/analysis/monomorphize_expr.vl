@@ -38,6 +38,26 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
     return "i32"
 }
 
+act mono_extract_type_arg(t: string) -> string {
+    if t == null { return "i32" }
+    mut clean = t
+    if str.len(clean) > 0 and clean[0] == '@' {
+        clean = copy_slice_to_string(clean, 1, str.len(clean) - 1)
+    }
+    let bracket = mono_find_char(clean, '[')
+    if bracket >= 0 {
+        let rbracket = mono_find_char(clean, ']')
+        if rbracket > bracket {
+            return copy_slice_to_string(clean, (bracket + 1) as usize, (rbracket - bracket - 1) as usize)
+        }
+    }
+    let under = mono_find_char(clean, '_')
+    if under >= 0 {
+        return copy_slice_to_string(clean, (under + 1) as usize, str.len(clean) - (under as usize) - 1)
+    }
+    return clean
+}
+
 act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params: string, args: string) -> @ExprNode {
     if e == null { return null }
     if e.kind == EXPR_INT {
@@ -129,6 +149,7 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
         return make_variant_expr(kname, e.member_name, first_a, e.arg_count, e.line, e.col)
     }
     if e.kind == EXPR_CALL {
+        mut arg_count = e.arg_count
         mut first_a: @ExprNode = null
         mut last_a: @ExprNode = null
         mut cur = e.first_arg
@@ -139,6 +160,23 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
             cur = cur.next
         }
         mut callee = mono_clone_expr(m, e.callee, scope, params, args)
+        if callee != null and callee.kind == EXPR_MEMBER {
+            let fn_tmpl = mono_find_template(m, callee.member_name)
+            if fn_tmpl != null and fn_tmpl.kind == DECL_FUNCTION {
+                mut recv = callee.target
+                let t_type = mono_infer_type(recv, scope)
+                let p0_type = fn_tmpl.node.first_param.type_name
+                let is_p0_ptr = p0_type != null and str.len(p0_type) > 0 and p0_type[0] == '@'
+                let is_tgt_ptr = t_type != null and str.len(t_type) > 0 and t_type[0] == '@'
+                if is_p0_ptr and not is_tgt_ptr {
+                    recv = make_address_of_expr(recv, recv.line, recv.col)
+                }
+                recv.next = first_a
+                first_a = recv
+                arg_count += 1
+                callee = make_ident_expr(callee.member_name, callee.line, callee.col)
+            }
+        }
         if callee != null and callee.kind == EXPR_IDENT {
             let fn_tmpl = mono_find_template(m, callee.str_val)
             if fn_tmpl != null and fn_tmpl.kind == DECL_FUNCTION {
@@ -147,11 +185,7 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
                     call_targs = mono_subst(call_targs, params, args)
                 } else if first_a != null {
                     let a_type = mono_infer_type(first_a, scope)
-                    if fn_tmpl.node.first_param != null and fn_tmpl.node.first_param.type_name == "@T" and str.len(a_type) > 1 and a_type[0] == '@' {
-                        call_targs = copy_slice_to_string(a_type, 1, str.len(a_type) - 1)
-                    } else {
-                        call_targs = a_type
-                    }
+                    call_targs = mono_extract_type_arg(a_type)
                 }
                 if call_targs != null {
                     let mangled = mono_concat(callee.str_val, mono_concat("_", mono_mangle_type(call_targs)))
@@ -160,7 +194,7 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
                 }
             }
         }
-        let call_res = make_call_expr(callee, first_a, e.arg_count, e.line, e.col)
+        let call_res = make_call_expr(callee, first_a, arg_count, e.line, e.col)
         return call_res
     }
     return e

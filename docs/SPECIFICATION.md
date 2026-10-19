@@ -239,6 +239,60 @@ let val = calc(10, 5) // 25
 * Each unique `act(...) -> Ret` signature generates a C function pointer typedef (e.g. `typedef int32_t (*velo_act_i32_i32_to_i32)(int32_t, int32_t);`).
 * Anonymous functions are lifted into static C functions with forward prototypes and definitions.
 
+### 2.7 Method Syntax / Uniform Function Call Syntax (UFCS)
+Velo supports pure Uniform Function Call Syntax (UFCS) without requiring `class`, `impl`, or object-oriented keywords. Any top-level function whose first parameter matches the receiver type can be called using method syntax (`receiver.method(args...)`):
+
+```rust
+data Vector2 {
+    x: f32
+    y: f32
+}
+
+act length_sq(v: Vector2) -> f32 {
+    return v.x * v.x + v.y * v.y
+}
+
+act scale(v: @Vector2, factor: f32) {
+    v.x *= factor
+    v.y *= factor
+}
+
+mut vec = Vector2{ x: 3.0, y: 4.0 }
+
+// Direct UFCS calls:
+let len = vec.length_sq()    // calls length_sq(vec) -> 25.0
+vec.scale(2.0)              // auto-borrows address: scale(&vec, 2.0)
+```
+
+#### Auto-Referencing and Auto-Dereferencing:
+* **Auto-Borrow (`&`)**: If the target function expects a pointer `@T` and the caller provides an lvalue of value type `T`, the compiler automatically passes the address of the receiver (`&receiver`).
+* **Auto-Dereference (`*`)**: If the target function expects a value `T` and the caller provides a pointer `@T`, the compiler automatically dereferences the pointer (`*receiver`).
+* **Direct Match**: If the receiver type already matches the first parameter type (e.g. pointer-to-pointer or value-to-value), it is passed directly without transformation.
+
+#### Struct Field Priority:
+Struct fields always take priority over free functions with the same name. If a struct has a function pointer field `on_click`, invoking `btn.on_click(...)` calls the struct's callback field, not a top-level `act on_click(...)`.
+
+#### Method Chaining & Primitive Extension:
+* Functions returning struct values or pointers can be chained fluently:
+  ```rust
+  let result = pt.translate(1.0, 2.0).scale(2.0)
+  ```
+* Functions on primitive types can also be invoked as methods:
+  ```rust
+  act square(n: i32) -> i32 { return n * n }
+  let s = 7.square() // 49
+  ```
+
+#### Generic Method Specialization:
+UFCS seamlessly integrates with generic functions and structs:
+```rust
+data Box[T] { value: T }
+act unwrap[T](b: @Box[T]) -> T { return b.value }
+
+mut b = Box[i32]{ value: 999 }
+let val = b.unwrap() // specializes unwrap[i32] and auto-borrows &b
+```
+
 ---
 
 ## 3. Variables & Mutability
