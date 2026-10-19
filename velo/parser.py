@@ -5,7 +5,7 @@ from velo.ast_nodes import (
     Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, LoopStmt, ZoneStmt, DeferStmt,
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
-    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, VariantExpr
+    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, VariantExpr, AnonFuncExpr
 )
 
 class ParserError(Exception):
@@ -260,6 +260,24 @@ class Parser:
         prefix = ""
         while self._match(TokenType.AT):
             prefix += "@"
+
+        if self._match(TokenType.ACT):
+            self._consume(TokenType.LPAREN, "Expected '(' after 'act' in function type")
+            params = []
+            if not self._check(TokenType.RPAREN):
+                while True:
+                    if self._check(TokenType.IDENTIFIER) and self._peek(1).type == TokenType.COLON:
+                        self._advance()
+                        self._advance()
+                    param_type = self._parse_type_annotation()
+                    params.append(param_type)
+                    if not self._match(TokenType.COMMA):
+                        break
+            self._consume(TokenType.RPAREN, "Expected ')' after parameter types in function type")
+            ret_type = "void"
+            if self._match(TokenType.ARROW):
+                ret_type = self._parse_type_annotation()
+            return prefix + f"act({', '.join(params)}) -> {ret_type}"
 
         type_tok = self._consume(TokenType.IDENTIFIER, "Expected type name")
         base_name = type_tok.value
@@ -793,5 +811,24 @@ class Parser:
             expr = self._parse_expression()
             self._consume(TokenType.RPAREN, "Expected ')' after grouped expression")
             return expr
+        if self._match(TokenType.ACT):
+            act_tok = self.tokens[self.pos - 1]
+            self._consume(TokenType.LPAREN, "Expected '(' after 'act' in anonymous function")
+            params: List[Param] = []
+            if not self._check(TokenType.RPAREN):
+                while True:
+                    pname_tok = self._consume(TokenType.IDENTIFIER, "Expected parameter name")
+                    self._consume(TokenType.COLON, "Expected ':' after parameter name")
+                    ptype = self._parse_type_annotation()
+                    params.append(Param(name=pname_tok.value, type_name=ptype, line=pname_tok.line, col=pname_tok.col))
+                    if not self._match(TokenType.COMMA):
+                        break
+            self._consume(TokenType.RPAREN, "Expected ')' after parameters")
+            ret_type = "void"
+            if self._match(TokenType.ARROW):
+                ret_type = self._parse_type_annotation()
+            self._skip_newlines()
+            body = self._parse_block()
+            return AnonFuncExpr(params=params, return_type=ret_type, body=body, line=act_tok.line, col=act_tok.col)
 
         raise ParserError(f"Unexpected token in expression: {tok.type.name} ('{tok.value}')", tok)

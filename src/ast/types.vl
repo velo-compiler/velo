@@ -152,14 +152,31 @@ act is_primitive_type(name: string) -> bool {
     return false
 }
 
+// Checks if a type name is a function pointer type (e.g. `act(...) -> Ret`).
+act is_act_type_name(name: string) -> bool {
+    if name == null { return false }
+    let clean = strip_pointer_prefix(name)
+    let len = str.len(clean)
+    if len >= 4 and clean[0] == 'a' and clean[1] == 'c' and clean[2] == 't' and clean[3] == '(' {
+        return true
+    }
+    return false
+}
+
 // Checks if two type names are structurally or nominally compatible.
 act types_are_compatible(expected: string, actual: string) -> bool {
     if expected == null or actual == null { return false }
     if expected == actual { return true }
-    if actual == "@void" and ((str.len(expected) > 0 and expected[0] == '@') or expected == "string") { return true }
-    if expected == "@void" and ((str.len(actual) > 0 and actual[0] == '@') or actual == "string") { return true }
+    if is_act_type_name(expected) and is_act_type_name(actual) {
+        let e_clean = strip_pointer_prefix(expected)
+        let a_clean = strip_pointer_prefix(actual)
+        if e_clean == a_clean { return true }
+    }
+    if actual == "@void" and ((str.len(expected) > 0 and expected[0] == '@') or expected == "string" or is_act_type_name(expected)) { return true }
+    if expected == "@void" and ((str.len(actual) > 0 and actual[0] == '@') or actual == "string" or is_act_type_name(actual)) { return true }
     if is_int_type(expected) and is_int_type(actual) { return true }
     if is_float_type(expected) and is_float_type(actual) { return true }
     if (expected == "@u8" and actual == "string") or (expected == "string" and actual == "@u8") { return true }
     return false
 }
+

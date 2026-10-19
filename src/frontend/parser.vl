@@ -21,6 +21,10 @@ data Parser {
     token_count: usize
     pos: usize
     had_error: bool
+    anon_counter: i32
+    first_anon: @StmtNode
+    last_anon: @StmtNode
+    anon_count: usize
 }
 
 // Initializes a Parser instance.
@@ -31,6 +35,33 @@ act init_parser(p: @Parser, filename: string, source: string, tokens: @Token, co
     p.token_count = count
     p.pos = 0
     p.had_error = false
+    p.anon_counter = 0
+    p.first_anon = null
+    p.last_anon = null
+    p.anon_count = 0
+}
+
+// Appends a lifted anonymous function declaration to the parser's collection.
+act parser_add_anon_decl(p: @Parser, decl: @StmtNode) {
+    if decl == null { return }
+    if p.first_anon == null {
+        p.first_anon = decl
+        p.last_anon = decl
+    } else {
+        p.last_anon.next = decl
+        p.last_anon = decl
+    }
+    p.anon_count += 1
+}
+
+// Generates the next unique lifted anonymous function identifier.
+act parser_next_anon_name(p: @Parser) -> string {
+    let id = p.anon_counter
+    p.anon_counter += 1
+    mut sb = create_sb(32)
+    sb_append_str(@sb, "_velo_anon_act_")
+    sb_append_int(@sb, id)
+    return sb_to_string(@sb)
 }
 
 // Peeks ahead at a token with an offset without consuming it.
@@ -99,12 +130,106 @@ act get_string_literal_text(source: string, tok: Token) -> string {
     return process_string_literal(source, tok.start, tok.length)
 }
 
-// Parses type annotations with pointer prefixes and generic arguments (e.g. `i32`, `@Point`, `Box[i32]`, `Option[string]`).
+// Determines whether the lookahead matches a struct literal pattern.
+act is_struct_literal(p: @Parser) -> bool {
+    let tok0 = parser_peek(p, 0)
+    let tok1 = parser_peek(p, 1)
+    if tok0.kind != TOK_IDENTIFIER { return false }
+    let first_char = p.source[tok0.start]
+    if first_char < 'A' or first_char > 'Z' { return false }
+
+    mut idx: usize = 1
+    if tok1.kind == TOK_LBRACKET {
+        mut depth: usize = 1
+        idx = 2
+        loop p.pos + idx < p.token_count and depth > 0 {
+            let t = parser_peek(p, idx)
+            if t.kind == TOK_LBRACKET { depth += 1 }
+            else if t.kind == TOK_RBRACKET { depth -= 1 }
+            idx += 1
+        }
+        if depth > 0 { return false }
+    }
+
+    let brace_tok = parser_peek(p, idx)
+    if brace_tok.kind != TOK_LBRACE { return false }
+    idx += 1
+
+    loop p.pos + idx < p.token_count {
+        let t = parser_peek(p, idx)
+        if t.kind != TOK_NEWLINE and t.kind != TOK_SEMICOLON {
+            if t.kind == TOK_RBRACE { return true }
+            if t.kind == TOK_IDENTIFIER or t.kind == TOK_KIND {
+                let next_t = parser_peek(p, idx + 1)
+                if next_t.kind == TOK_COLON { return true }
+            }
+            return false
+        }
+        idx += 1
+    }
+    return false
+}
+
+// Checks if lookahead matches a generic function call `[TypeArgs](...)`.
+act is_generic_call(p: @Parser) -> bool {
+    if not parser_check(p, TOK_LBRACKET) { return false }
+    mut depth: usize = 1
+    mut idx: usize = 1
+    loop p.pos + idx < p.token_count and depth > 0 {
+        let t = parser_peek(p, idx)
+        if t.kind == TOK_LBRACKET { depth += 1 }
+        else if t.kind == TOK_RBRACKET { depth -= 1 }
+        idx += 1
+    }
+    if depth > 0 { return false }
+    let next_tok = parser_peek(p, idx)
+    return next_tok.kind == TOK_LPAREN
+}
+
+// Parses type annotations with pointer prefixes, function pointer types, and generic arguments.
 act parse_type_annotation(p: @Parser) -> string {
     mut at_count: usize = 0
     loop parser_match(p, TOK_AT) {
         at_count += 1
     }
+
+    if parser_match(p, TOK_ACT) {
+        parser_consume(p, TOK_LPAREN, "Expected '(' after 'act' in function type")
+        mut sb = create_sb(64)
+        sb_append_str(@sb, "act(")
+        mut count: usize = 0
+        loop not parser_check(p, TOK_RPAREN) and not parser_check(p, TOK_EOF) {
+            let atype = parse_type_annotation(p)
+            if count > 0 {
+                sb_append_str(@sb, ", ")
+            }
+            sb_append_str(@sb, atype)
+            count += 1
+            if not parser_match(p, TOK_COMMA) {
+                break
+            }
+        }
+        parser_consume(p, TOK_RPAREN, "Expected ')' after parameter types in function type")
+        sb_append_str(@sb, ") -> ")
+        mut ret_type = "void"
+        if parser_match(p, TOK_ARROW) {
+            ret_type = parse_type_annotation(p)
+        }
+        sb_append_str(@sb, ret_type)
+        let act_str = sb_to_string(@sb)
+        if at_count == 0 {
+            return act_str
+        }
+        let total_len = at_count + str.len(act_str)
+        mut buf: @u8 = mem.alloc(@u8, total_len + 1)
+        mut i: usize = 0
+        loop i < at_count { buf[i] = '@'; i += 1 }
+        mut j: usize = 0
+        loop j < str.len(act_str) { buf[at_count + j] = act_str[j]; j += 1 }
+        buf[total_len] = 0 as u8
+        return buf as string
+    }
+
     let type_tok = parser_consume(p, TOK_IDENTIFIER, "Expected type name")
     let raw_name = copy_slice_to_string(p.source, type_tok.start, type_tok.length)
 
@@ -202,6 +327,15 @@ act parse_program(p: @Parser) -> @ProgramNode {
             count += 1
         }
         parser_skip_newlines(p)
+    }
+
+    if p.first_anon != null {
+        if first_decl == null {
+            first_decl = p.first_anon
+        } else {
+            last_decl.next = p.first_anon
+        }
+        count += p.anon_count
     }
 
     mut prog: @ProgramNode = mem.alloc(@ProgramNode, 1)

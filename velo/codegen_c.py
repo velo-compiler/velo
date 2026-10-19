@@ -5,9 +5,9 @@ from velo.ast_nodes import (
     Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, LoopStmt, ZoneStmt, DeferStmt,
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
-    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr
+    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr
 )
-from velo.monomorphize import Monomorphizer
+from velo.monomorphize import Monomorphizer, parse_act_type, mangle_act_type
 
 TYPE_MAP = {
     "i8": "i8",
@@ -53,6 +53,14 @@ class CCodeGenerator:
         if not type_str or type_str == "void":
             return "void"
         
+        parsed = parse_act_type(type_str)
+        if parsed:
+            prefix, params, ret = parsed
+            if hasattr(self, 'used_act_types'):
+                self.used_act_types.add((tuple(params), ret))
+            mangled = mangle_act_type(params, ret)
+            return mangled + ("*" * len(prefix))
+
         pointer_count = 0
         while type_str.startswith("@"):
             pointer_count += 1
@@ -72,12 +80,117 @@ class CCodeGenerator:
         self.defer_stack = []
         self.zone_counter = 0
 
-        # Collect function return types for type inference
+        self.func_decls: Dict[str, FunctionDecl] = {}
+        self.used_act_types: Set[Tuple[Tuple[str, ...], str]] = set()
+        self.anon_funcs: List[Tuple[str, AnonFuncExpr]] = []
+        self.anon_func_set: Set[int] = set()
+        self.anon_expr_to_name: Dict[int, str] = {}
+
+        # Collect function return types and declarations for type inference
         for decl in program.declarations:
             if isinstance(decl, FunctionDecl):
+                self.func_decls[decl.name] = decl
                 self.func_return_types[decl.name] = decl.return_type or "void"
             elif isinstance(decl, ExternDecl):
                 self.func_return_types[decl.name] = decl.return_type or "void"
+
+        # Pre-scan for all act types and anonymous functions
+        def collect_types(t: Optional[str]):
+            if not t: return
+            parsed = parse_act_type(t)
+            if parsed:
+                _, p_params, p_ret = parsed
+                self.used_act_types.add((tuple(p_params), p_ret))
+                for p in p_params: collect_types(p)
+                collect_types(p_ret)
+
+        def scan_expr(e: Optional[Expr]):
+            if not e: return
+            if isinstance(e, AnonFuncExpr):
+                eid = id(e)
+                if eid not in self.anon_func_set:
+                    self.anon_func_set.add(eid)
+                    anon_name = f"_velo_anon_act_{len(self.anon_funcs)}"
+                    self.anon_funcs.append((anon_name, e))
+                    self.anon_expr_to_name[eid] = anon_name
+                param_types = [p.type_name for p in e.params]
+                self.used_act_types.add((tuple(param_types), e.return_type))
+                for pt in param_types: collect_types(pt)
+                collect_types(e.return_type)
+                scan_stmt(e.body)
+            elif isinstance(e, CastExpr):
+                collect_types(e.target_type)
+                scan_expr(e.expr)
+            elif isinstance(e, BinaryExpr):
+                scan_expr(e.left); scan_expr(e.right)
+            elif isinstance(e, UnaryExpr):
+                scan_expr(e.operand)
+            elif isinstance(e, CallExpr):
+                scan_expr(e.callee)
+                for a in e.args: scan_expr(a)
+            elif isinstance(e, MemberAccess):
+                scan_expr(e.target)
+            elif isinstance(e, IndexExpr):
+                scan_expr(e.target); scan_expr(e.index)
+            elif isinstance(e, AddressOf):
+                scan_expr(e.operand)
+            elif isinstance(e, DerefExpr):
+                scan_expr(e.operand)
+            elif isinstance(e, StructLiteral):
+                for _, fv in e.field_inits: scan_expr(fv)
+            elif isinstance(e, VariantExpr):
+                for a in e.args: scan_expr(a)
+
+        def scan_stmt(s: Optional[Stmt]):
+            if not s: return
+            if isinstance(s, VarDeclStmt):
+                collect_types(s.type_name)
+                scan_expr(s.value)
+            elif isinstance(s, ExprStmt):
+                scan_expr(s.expr)
+            elif isinstance(s, ReturnStmt):
+                scan_expr(s.value)
+            elif isinstance(s, AssignStmt):
+                scan_expr(s.target); scan_expr(s.value)
+            elif isinstance(s, IfStmt):
+                scan_expr(s.condition); scan_stmt(s.then_branch)
+                if s.else_branch: scan_stmt(s.else_branch)
+            elif isinstance(s, LoopStmt):
+                if s.expr: scan_expr(s.expr)
+                if s.start_expr: scan_expr(s.start_expr)
+                if s.end_expr: scan_expr(s.end_expr)
+                if s.step_expr: scan_expr(s.step_expr)
+                scan_stmt(s.body)
+            elif isinstance(s, BlockStmt):
+                for st in s.statements: scan_stmt(st)
+            elif isinstance(s, ZoneStmt):
+                scan_stmt(s.body)
+            elif isinstance(s, DeferStmt):
+                scan_stmt(s.statement)
+            elif isinstance(s, MatchStmt):
+                scan_expr(s.expr)
+                for c in s.cases:
+                    for v in c.values: scan_expr(v)
+                    scan_stmt(c.body)
+
+        for decl in program.declarations:
+            if isinstance(decl, FunctionDecl):
+                for p in decl.params: collect_types(p.type_name)
+                collect_types(decl.return_type)
+                scan_stmt(decl.body)
+            elif isinstance(decl, ExternDecl):
+                for p in decl.params: collect_types(p.type_name)
+                collect_types(decl.return_type)
+            elif isinstance(decl, DataDecl):
+                for f in decl.fields: collect_types(f.type_name)
+            elif isinstance(decl, KindDecl):
+                for v in decl.variants:
+                    collect_types(v.payload_type)
+                    if v.fields:
+                        for f in v.fields: collect_types(f.type_name)
+            elif isinstance(decl, VarDeclStmt):
+                collect_types(decl.type_name)
+                scan_expr(decl.value)
 
         self._emit_line("/* Generated by Velo Stage 1 Compiler */")
         self._emit_line('#include "velo_runtime.h"')
@@ -110,6 +223,16 @@ class CCodeGenerator:
                     seen_structs.add(decl.name)
 
         self._emit_line()
+
+        # 1.5 Emit function pointer typedefs
+        if self.used_act_types:
+            self._emit_line("/* Function pointer typedefs */")
+            for params, ret in sorted(self.used_act_types, key=lambda x: mangle_act_type(list(x[0]), x[1])):
+                mangled_name = mangle_act_type(list(params), ret)
+                ret_c = self._map_type(ret)
+                param_c = ", ".join(self._map_type(p) for p in params) if params else "void"
+                self._emit_line(f"typedef {ret_c} (*{mangled_name})({param_c});")
+            self._emit_line()
 
         # 2. Emit kind and struct definitions
         for decl in program.declarations:
@@ -166,7 +289,18 @@ class CCodeGenerator:
                     self._emit_line(f"{ret_type} {decl.name}({params_joined});")
                     seen_funcs.add(decl.name)
 
+        # Emit anonymous function forward declarations
+        for anon_name, anon_expr in self.anon_funcs:
+            ret_type = self._map_type(anon_expr.return_type)
+            param_strs = [f"{self._map_type(p.type_name)} {p.name}" for p in anon_expr.params]
+            params_joined = ", ".join(param_strs) if param_strs else "void"
+            self._emit_line(f"static {ret_type} {anon_name}({params_joined});")
+
         self._emit_line()
+
+        # Emit anonymous function bodies
+        for anon_name, anon_expr in self.anon_funcs:
+            self._emit_anon_func_def(anon_name, anon_expr)
 
         # 5. Emit function bodies
         emitted_funcs = set()
@@ -177,6 +311,24 @@ class CCodeGenerator:
                     emitted_funcs.add(decl.name)
 
         return "".join(self.output)
+
+    def _emit_anon_func_def(self, name: str, expr: AnonFuncExpr):
+        ret_type_c = self._map_type(expr.return_type)
+        param_strs = []
+        for p in expr.params:
+            ptype_c = self._map_type(p.type_name)
+            param_strs.append(f"{ptype_c} {p.name}")
+        params_c = ", ".join(param_strs) if param_strs else "void"
+        self._emit_line(f"static {ret_type_c} {name}({params_c}) {{")
+        self.indent_level += 1
+        old_scope = self.current_scope_types.copy()
+        for p in expr.params:
+            self.current_scope_types[p.name] = p.type_name
+        self._emit_block_body(expr.body.statements)
+        self.current_scope_types = old_scope
+        self.indent_level -= 1
+        self._emit_line("}")
+        self._emit_line()
 
     def _emit_struct_definition(self, decl: DataDecl):
         self._emit_line(f"struct {decl.name} {{")
@@ -548,7 +700,12 @@ class CCodeGenerator:
         if isinstance(value, AddressOf):
             operand_type = self._resolve_expr_type(value.operand)
             return f"@{operand_type}"
+        if isinstance(value, AnonFuncExpr):
+            return f"act({', '.join(p.type_name for p in value.params)}) -> {value.return_type}"
         if isinstance(value, Identifier):
+            if value.name in self.func_decls:
+                fdecl = self.func_decls[value.name]
+                return f"act({', '.join(p.type_name for p in fdecl.params)}) -> {fdecl.return_type}"
             return self.current_scope_types.get(value.name, "i32")
         if isinstance(value, DerefExpr):
             return self._resolve_expr_type(value)
@@ -594,6 +751,12 @@ class CCodeGenerator:
         return self._map_type(raw)
 
     def _resolve_expr_type(self, expr: Expr) -> str:
+        if isinstance(expr, IntLiteral): return expr.type_name if expr.type_name else "i32"
+        if isinstance(expr, FloatLiteral): return expr.type_name if expr.type_name else "f32"
+        if isinstance(expr, StringLiteral): return "string"
+        if isinstance(expr, BoolLiteral): return "bool"
+        if isinstance(expr, NullLiteral): return "@void"
+        if isinstance(expr, StructLiteral): return expr.struct_name
         if isinstance(expr, Identifier):
             return self.current_scope_types.get(expr.name, "i32")
         elif isinstance(expr, VariantExpr):
@@ -623,26 +786,19 @@ class CCodeGenerator:
             clean_type = target_type.lstrip("@")
             fields = self.struct_defs.get(clean_type, {})
             return fields.get(expr.member, "i32")
+        elif isinstance(expr, AnonFuncExpr):
+            return f"act({', '.join(p.type_name for p in expr.params)}) -> {expr.return_type}"
         elif isinstance(expr, CallExpr):
             if isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier) and expr.callee.target.name in self.kind_defs:
                 return expr.callee.target.name
-
-        elif isinstance(expr, StructLiteral):
-            return expr.struct_name
-        elif isinstance(expr, FloatLiteral):
-            return expr.type_name if expr.type_name else "f32"
-        elif isinstance(expr, IntLiteral):
-            return expr.type_name if expr.type_name else "i32"
-        elif isinstance(expr, StringLiteral):
-            return "string"
-        elif isinstance(expr, BoolLiteral):
-            return "bool"
-        elif isinstance(expr, NullLiteral):
-            return "@void"
-        elif isinstance(expr, CallExpr):
             if isinstance(expr.callee, Identifier):
                 if expr.callee.name in self.func_return_types:
                     return self.func_return_types[expr.callee.name]
+                callee_type = self.current_scope_types.get(expr.callee.name)
+                if callee_type:
+                    parsed = parse_act_type(callee_type)
+                    if parsed:
+                        return parsed[2]
             elif isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier):
                 if expr.callee.target.name == "mem" and expr.callee.member in ("alloc", "heap_alloc"):
                     if len(expr.args) >= 1:
@@ -658,6 +814,15 @@ class CCodeGenerator:
                 elif expr.callee.target.name == "str":
                     if expr.callee.member == "len":
                         return "usize"
+                callee_type = self._resolve_expr_type(expr.callee)
+                parsed = parse_act_type(callee_type)
+                if parsed:
+                    return parsed[2]
+            else:
+                callee_type = self._resolve_expr_type(expr.callee)
+                parsed = parse_act_type(callee_type)
+                if parsed:
+                    return parsed[2]
         return "i32"
 
     def _emit_expression(self, expr: Expr) -> str:
@@ -822,6 +987,8 @@ class CCodeGenerator:
             callee_code = self._emit_expression(expr.callee)
             arg_codes = [self._emit_expression(arg) for arg in expr.args]
             return f"{callee_code}({', '.join(arg_codes)})"
+        elif isinstance(expr, AnonFuncExpr):
+            return self.anon_expr_to_name.get(id(expr), f"_velo_anon_act_{len(self.anon_funcs)}")
 
         raise ValueError(f"Unknown expression node: {type(expr)}")
 

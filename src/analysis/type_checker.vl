@@ -7,12 +7,15 @@ use "../ast/expr.vl"
 use "../ast/stmt.vl"
 use "symbol_table.vl"
 use "../common/diagnostics.vl"
-
+use "../common/string_builder.vl"
+use "../common/act_types.vl"
+use "type_check_program.vl"
 
 // Checks if a name represents a recognized type (primitive or user-defined struct or kind).
 act is_known_type(st: @SymbolTable, name: string) -> bool {
     if name == null { return false }
     let clean = strip_pointer_prefix(name)
+    if is_act_type(clean) { return true }
     if is_primitive_type(clean) { return true }
     if find_struct(st, clean) != null { return true }
     if find_kind(st, clean) != null { return true }
@@ -44,6 +47,22 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.kind == EXPR_IDENT {
         let sym = resolve_variable(st, expr.str_val)
         if sym == null {
+            let fn_sym = find_function(st, expr.str_val)
+            if fn_sym != null {
+                mut sb = create_sb(64)
+                sb_append_str(@sb, "act(")
+                mut cur_p = fn_sym.first_param
+                mut p_idx: usize = 0
+                loop cur_p != null {
+                    if p_idx > 0 { sb_append_str(@sb, ", ") }
+                    sb_append_str(@sb, cur_p.type_name)
+                    p_idx += 1
+                    cur_p = cur_p.next
+                }
+                sb_append_str(@sb, ") -> ")
+                sb_append_str(@sb, fn_sym.return_type)
+                return sb_to_string(@sb)
+            }
             if is_known_type(st, expr.str_val) {
                 return expr.str_val
             }
@@ -144,25 +163,34 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         }
         if expr.callee.kind == EXPR_IDENT {
             let fn_sym = find_function(st, expr.callee.str_val)
-            if fn_sym == null {
-                report_error("semantic", expr.line, expr.col, "Call to undefined function")
-                st.error_count += 1
-                return "unknown"
-            }
-            if expr.arg_count != fn_sym.param_count {
-                report_error("semantic", expr.line, expr.col, "Mismatched argument count in function call")
-                st.error_count += 1
-            }
-            mut cur_a = expr.first_arg
-            mut cur_p = fn_sym.first_param
-            loop cur_a != null and cur_p != null {
-                if cur_a.kind == EXPR_VARIANT and (cur_a.type_name == null or str.len(cur_a.type_name) == 0) {
-                    cur_a.type_name = cur_p.type_name
+            if fn_sym != null {
+                if expr.arg_count != fn_sym.param_count {
+                    report_error("semantic", expr.line, expr.col, "Mismatched argument count in function call")
+                    st.error_count += 1
                 }
-                cur_a = cur_a.next
-                cur_p = cur_p.next
+                mut cur_a = expr.first_arg
+                mut cur_p = fn_sym.first_param
+                loop cur_a != null and cur_p != null {
+                    if cur_a.kind == EXPR_VARIANT and (cur_a.type_name == null or str.len(cur_a.type_name) == 0) {
+                        cur_a.type_name = cur_p.type_name
+                    }
+                    cur_a = cur_a.next
+                    cur_p = cur_p.next
+                }
+                return fn_sym.return_type
             }
-            return fn_sym.return_type
+            let var_sym = resolve_variable(st, expr.callee.str_val)
+            if var_sym != null and is_act_type(var_sym.type_name) {
+                return get_act_return_type(var_sym.type_name)
+            }
+            report_error("semantic", expr.line, expr.col, "Call to undefined function")
+            st.error_count += 1
+            return "unknown"
+        }
+
+        let callee_type = infer_expr_type(st, expr.callee)
+        if is_act_type(callee_type) {
+            return get_act_return_type(callee_type)
         }
         return "unknown"
     }
@@ -315,71 +343,3 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
     } else if stmt.kind == STMT_EXPR { infer_expr_type(st, stmt.expr) }
 }
 
-// Executes multi-pass semantic analysis and type verification over an AST program.
-act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
-    // Pass 1: Register all struct and kind declarations
-    mut cur = prog.first_decl
-    loop cur != null {
-        if cur.kind == DECL_DATA {
-            let st_sym = register_struct(st, cur.name, cur.line, cur.col)
-            mut cur_f = cur.first_field
-            loop cur_f != null { struct_add_field(st_sym, cur_f.name, cur_f.type_name, cur_f.line, cur_f.col); cur_f = cur_f.next }
-        } else if cur.kind == DECL_KIND {
-            mut is_tu = false; mut v = cur.first_variant
-            loop v != null { if v.payload_type != null or v.field_count > 0 { is_tu = true }; v = v.next }
-            let k_sym = register_kind(st, cur.name, is_tu, cur.line, cur.col)
-            mut cv = cur.first_variant
-            loop cv != null {
-                mut f_sym: @StructFieldSym = null; mut last_f: @StructFieldSym = null; mut cf = cv.first_field
-                loop cf != null {
-                    mut fn: @StructFieldSym = mem.alloc(@StructFieldSym, 1)
-                    fn.name = cf.name; fn.type_name = cf.type_name; fn.line = cf.line; fn.col = cf.col; fn.next = null
-                    if f_sym == null { f_sym = fn; last_f = fn } else { last_f.next = fn; last_f = fn }
-                    cf = cf.next
-                }
-                kind_add_variant(k_sym, cv.name, cv.discriminant, cv.has_discriminant, cv.payload_type, f_sym, cv.field_count, cv.line, cv.col)
-                cv = cv.next
-            }
-        }
-        cur = cur.next
-    }
-
-    // Pass 1.5: Register all top-level global variables and constants
-    cur = prog.first_decl
-    loop cur != null {
-        if cur.kind == STMT_VAR_DECL {
-            mut inf_type = cur.type_name
-            if inf_type == null or str.len(inf_type) == 0 {
-                if cur.val_expr != null { inf_type = infer_expr_type(st, cur.val_expr) } else { inf_type = "i32" }
-            }
-            define_variable(st, cur.name, inf_type, cur.is_mut, cur.line, cur.col)
-        }
-        cur = cur.next
-    }
-
-    // Pass 2: Register all function & extern declarations
-    cur = prog.first_decl
-    loop cur != null {
-        if cur.kind == DECL_FUNCTION or cur.kind == DECL_EXTERN {
-            let fn_sym = register_function(st, cur.name, cur.return_type, cur.kind == DECL_EXTERN, cur.line, cur.col)
-            mut cur_p = cur.first_param
-            loop cur_p != null { function_add_param(fn_sym, cur_p.name, cur_p.type_name); cur_p = cur_p.next }
-        }
-        cur = cur.next
-    }
-
-    // Pass 3: Validate function bodies, statements, and expressions
-    cur = prog.first_decl
-    loop cur != null {
-        if cur.kind == DECL_FUNCTION and cur.body != null {
-            enter_scope(st)
-            mut cur_p = cur.first_param
-            loop cur_p != null { define_parameter(st, cur_p.name, cur_p.type_name, cur_p.line, cur_p.col); cur_p = cur_p.next }
-            check_statement(st, cur.return_type, cur.body)
-            exit_scope(st)
-        }
-        cur = cur.next
-    }
-
-    return st.error_count == 0
-}

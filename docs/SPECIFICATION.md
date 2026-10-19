@@ -183,6 +183,62 @@ act swap[T](a: @T, b: @T) {
   ```
 * **Zero Overhead**: Generics are monomorphized into specialized C99 functions and types (`Box_i32`, `Option_string`, `min_i32`, `Pair_string_i32`) with zero runtime indirection or virtual method table overhead.
 
+### 2.6 Function Pointers & First-Class Callbacks (`act(...) -> Ret`)
+Velo supports first-class function pointer types using the canonical `act(...) -> Ret` syntax, harmonizing directly with the function definition keyword `act`.
+
+#### Function Type Signatures:
+```rust
+act(i32, i32) -> i32        // Takes two i32, returns i32
+act(@Button) -> void         // Takes pointer to Button, returns void
+act() -> void                // Takes no arguments, returns void
+```
+
+#### Storing & Passing Function Pointers:
+Named functions can be referenced as expressions and stored in variables or passed as arguments to higher-order functions:
+```rust
+act add(a: i32, b: i32) -> i32 { return a + b }
+
+let op: act(i32, i32) -> i32 = add
+let res = op(10, 20) // Direct execution: 30
+
+act apply_binary(a: i32, b: i32, op: act(i32, i32) -> i32) -> i32 {
+    return op(a, b)
+}
+let sum = apply_binary(7, 8, add)
+```
+
+#### Struct Callback Fields & Vtables:
+Structs can store function pointer fields for callbacks, event handlers, and manual vtables:
+```rust
+data Button {
+    id: i32
+    label: string
+    on_click: act(@Button) -> void
+}
+
+mut btn = Button{ id: 101, label: "OK", on_click: handle_click }
+
+// Null checking & direct invocation
+if btn.on_click != null {
+    btn.on_click(@btn)
+}
+```
+
+#### Inline Anonymous Functions:
+Anonymous functions can be defined inline with parameter types and optional return type (defaults to `void`):
+```rust
+btn.on_click = act(b: @Button) {
+    io.println("Clicked button: {b.id}")
+}
+
+let calc = act(x: i32, y: i32) -> i32 { return x * 2 + y }
+let val = calc(10, 5) // 25
+```
+
+#### C99 Lowering:
+* Each unique `act(...) -> Ret` signature generates a C function pointer typedef (e.g. `typedef int32_t (*velo_act_i32_i32_to_i32)(int32_t, int32_t);`).
+* Anonymous functions are lifted into static C functions with forward prototypes and definitions.
+
 ---
 
 ## 3. Variables & Mutability

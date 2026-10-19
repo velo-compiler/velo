@@ -125,6 +125,14 @@ class VariantExpr(Expr):
     line: int
     col: int
 
+@dataclass
+class AnonFuncExpr(Expr):
+    params: List[Any]
+    return_type: str
+    body: Any
+    line: int
+    col: int
+
 # Statements
 @dataclass
 class ExprStmt(Stmt):

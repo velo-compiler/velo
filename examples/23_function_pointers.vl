@@ -1,0 +1,69 @@
+// Example 23: First-Class Function Pointers and Callbacks
+use sys.io
+
+act add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+act multiply(a: i32, b: i32) -> i32 {
+    return a * b
+}
+
+act apply_binary(a: i32, b: i32, op: act(i32, i32) -> i32) -> i32 {
+    return op(a, b)
+}
+
+data Button {
+    id: i32
+    label: string
+    on_click: act(@Button) -> void
+}
+
+act on_button_click(btn: @Button) {
+    io.println("Named handler: Button {btn.id} ('{btn.label}') was clicked!")
+}
+
+act main() {
+    io.println("=== Milestone 3.3: Function Pointers Test ===")
+
+    // 1. Storing function pointers in variables
+    let op_add: act(i32, i32) -> i32 = add
+    let op_mul: act(i32, i32) -> i32 = multiply
+
+    let direct_add = op_add(10, 20)
+    let direct_mul = op_mul(10, 20)
+    io.println("Direct call op_add(10, 20): {direct_add}")
+    io.println("Direct call op_mul(10, 20): {direct_mul}")
+
+    // 2. Passing function pointers to higher-order functions
+    let res_add = apply_binary(7, 8, op_add)
+    let res_mul = apply_binary(7, 8, multiply)
+    io.println("apply_binary(7, 8, add): {res_add}")
+    io.println("apply_binary(7, 8, multiply): {res_mul}")
+
+    // 3. Struct function pointers (callbacks / vtables)
+    mut btn = Button{
+        id: 101,
+        label: "Submit",
+        on_click: on_button_click
+    }
+
+    if btn.on_click != null {
+        btn.on_click(@btn)
+    }
+
+    // 4. Anonymous callbacks (inline act)
+    btn.on_click = act(b: @Button) {
+        io.println("Anonymous handler: Button {b.id} clicked anonymously!")
+    }
+
+    btn.on_click(@btn)
+
+    // 5. Higher-order function with inline anonymous callback
+    let diff = apply_binary(100, 40, act(x: i32, y: i32) -> i32 {
+        return x - y
+    })
+    io.println("apply_binary with inline act: {diff}")
+
+    io.println("=== Function Pointers Test Complete ===")
+}

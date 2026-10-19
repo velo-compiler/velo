@@ -10,7 +10,7 @@ from velo.ast_nodes import (
     Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, LoopStmt, ZoneStmt, DeferStmt,
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
-    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr
+    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr
 )
 
 
@@ -82,6 +82,57 @@ def normalize_type_name(t: Optional[str]) -> Optional[str]:
     return f"{prefix}{base}_{'_'.join(mangled_args)}"
 
 
+def parse_act_type(type_str: str) -> Optional[Tuple[str, List[str], str]]:
+    if not type_str:
+        return None
+    prefix = ""
+    while type_str.startswith("@"):
+        prefix += "@"
+        type_str = type_str[1:]
+    if not type_str.startswith("act("):
+        return None
+    arrow_idx = type_str.rfind("->")
+    if arrow_idx != -1:
+        ret_type = type_str[arrow_idx + 2:].strip()
+        params_str = type_str[4:arrow_idx].strip()
+    else:
+        ret_type = "void"
+        params_str = type_str[4:].strip()
+    if params_str.endswith(")"):
+        params_str = params_str[:-1].strip()
+    params = []
+    if params_str:
+        depth = 0
+        cur = []
+        for ch in params_str:
+            if ch in "([":
+                depth += 1
+                cur.append(ch)
+            elif ch in ")]":
+                depth -= 1
+                cur.append(ch)
+            elif ch == "," and depth == 0:
+                params.append("".join(cur).strip())
+                cur = []
+            else:
+                cur.append(ch)
+        if cur:
+            params.append("".join(cur).strip())
+    return prefix, params, ret_type
+
+
+def mangle_act_type(params: List[str], ret_type: str) -> str:
+    def clean(t: str) -> str:
+        parsed = parse_act_type(t)
+        if parsed:
+            _, sub_params, sub_ret = parsed
+            return mangle_act_type(sub_params, sub_ret)
+        return t.replace("@", "ptr_").replace("[", "_").replace("]", "").replace(" ", "").replace(",", "_")
+    p_str = "_".join(clean(p) for p in params) if params else "void"
+    r_str = clean(ret_type)
+    return f"velo_act_{p_str}_to_{r_str}"
+
+
 def subst_type(t: Optional[str], subst: Dict[str, str]) -> Optional[str]:
     """
     Replaces type parameters with concrete types.
@@ -89,6 +140,13 @@ def subst_type(t: Optional[str], subst: Dict[str, str]) -> Optional[str]:
     """
     if not t:
         return t
+    parsed_act = parse_act_type(t)
+    if parsed_act:
+        p_prefix, p_params, p_ret = parsed_act
+        new_params = [subst_type(p, subst) or p for p in p_params]
+        new_ret = subst_type(p_ret, subst) or p_ret
+        return f"{p_prefix}act({', '.join(new_params)}) -> {new_ret}"
+
     prefix, base, args = parse_type_signature(t)
     if base in subst:
         replacement = subst[base]
@@ -504,11 +562,21 @@ class Monomorphizer:
             return BinaryExpr(left=self._transform_expr(expr.left, scope, subst, None), op=expr.op, right=self._transform_expr(expr.right, scope, subst, None), line=expr.line, col=expr.col)
         elif isinstance(expr, UnaryExpr):
             return UnaryExpr(op=expr.op, operand=self._transform_expr(expr.operand, scope, subst, None), line=expr.line, col=expr.col)
+        elif isinstance(expr, AnonFuncExpr):
+            new_params = [Param(name=p.name, type_name=subst_type(p.type_name, subst) or p.type_name, line=p.line, col=p.col) for p in expr.params]
+            new_ret = subst_type(expr.return_type, subst) or expr.return_type
+            inner_scope = scope.copy()
+            for p in new_params:
+                inner_scope[p.name] = p.type_name
+            new_body = self._transform_stmt(expr.body, inner_scope, subst, new_ret)
+            return AnonFuncExpr(params=new_params, return_type=new_ret, body=new_body, line=expr.line, col=expr.col)
         return expr
 
     def _infer_expr_type(self, expr: Optional[Expr], scope: Dict[str, str]) -> str:
         if not expr:
             return "i32"
+        if isinstance(expr, AnonFuncExpr):
+            return f"act({', '.join(p.type_name for p in expr.params)}) -> {expr.return_type}"
         if isinstance(expr, IntLiteral):
             return expr.type_name if expr.type_name else "i32"
         if isinstance(expr, FloatLiteral):

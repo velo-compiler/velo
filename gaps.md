@@ -82,12 +82,13 @@ Velo is a working, self-hosted, triple-bootstrapped systems programming language
 * **Pointer & Struct Specialization**: Pointer types like `@T` cleanly unify and specialize (e.g. `swap[i32](@x, @y)`).
 * **Self-Hosted Monomorphizer**: Fully integrated into both Python (`velo/monomorphize.py`) and self-hosted Stage 2 compiler (`src/analysis/monomorphize.vl`). Verified with `examples/22_generics.vl` and `tests/test_generics.py`.
 
-### 3.3 Function Pointers & First-Class Callbacks (🟠 P1 Major)
-* **Current State**: Functions cannot be stored in variables, passed as parameters, or placed in struct fields.
-* **Impact**:
-  - Cannot build UI event handlers (`button.on_click = callback`).
-  - Cannot write higher-order functions like `sort(items, compare_fn)` or `filter` / `map`.
-  - Cannot build polymorphic vtables or custom dynamic dispatch.
+### 3.3 Function Pointers & First-Class Callbacks [COMPLETED] ✅
+* **Native `act(...) -> Ret` Syntax**: First-class function type signature harmonizing with Velo's `act` keyword (e.g. `act(i32, i32) -> i32`, `act(@Button) -> void`, `act() -> void`).
+* **Variable Storage & Higher-Order Functions**: Storing named functions in variables (`let op: act(i32, i32) -> i32 = add`), passing callbacks to higher-order functions (`apply_binary(7, 8, op)`).
+* **Struct Function Pointer Fields (Callbacks & Vtables)**: Storing function pointers in struct data fields (e.g. `data Button { on_click: act(@Button) -> void }`).
+* **Direct Execution & Null Safety**: Calling function pointers directly via variable (`op(10, 20)`) or member access (`btn.on_click(@btn)`). Full null check compatibility (`if btn.on_click != null { btn.on_click(@btn) }`).
+* **Inline Anonymous Functions**: Anonymous callbacks with parameter inference and block bodies: `act(b: @Button) { ... }`, `act(x: i32, y: i32) -> i32 { return x - y }`.
+* **C99 Function Pointer Typedef Lowering**: Zero-overhead function pointer typedefs (`typedef int32_t (*velo_act_i32_i32_to_i32)(int32_t, int32_t);`), with anonymous functions lifted to `static` C functions with forward prototypes. Verified across Stage 1 Python compiler and Stage 2 self-hosted native compiler with `examples/23_function_pointers.vl` and `tests/test_function_pointers.py`.
 
 ### 3.4 Method Syntax / Uniform Function Call Syntax (UFCS) (🟡 P2 Ergonomic)
 * **Current State**: All functions are free functions: `update_particle(p, dt)`.

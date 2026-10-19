@@ -1,0 +1,128 @@
+// Function pointer and first-class callback type utilities for Velo.
+use sys.mem
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "../ast/types.vl"
+
+// Checks if a type string represents a function type (e.g. `act(i32, i32) -> i32`).
+act is_act_type(name: string) -> bool {
+    if name == null { return false }
+    let clean = strip_pointer_prefix(name)
+    let len = str.len(clean)
+    if len >= 4 and clean[0] == 'a' and clean[1] == 'c' and clean[2] == 't' and clean[3] == '(' {
+        return true
+    }
+    return false
+}
+
+// Extracts the return type from a function type string (defaults to "void").
+act get_act_return_type(name: string) -> string {
+    if name == null { return "void" }
+    let clean = strip_pointer_prefix(name)
+    let len = str.len(clean)
+    mut i: usize = 0
+    loop i + 2 <= len {
+        if clean[i] == '-' and clean[i + 1] == '>' {
+            mut start = i + 2
+            loop start < len and (clean[start] == ' ' or clean[start] == '\t') {
+                start += 1
+            }
+            return copy_slice_to_string(clean, start, len - start)
+        }
+        i += 1
+    }
+    return "void"
+}
+
+// Mangles a function type string into a valid C identifier (e.g. `velo_act_i32_i32_to_i32`).
+act mangle_act_type(t: string) -> string {
+    if t == null { return "velo_act_void" }
+    let clean = strip_pointer_prefix(t)
+    let len = str.len(clean)
+    mut sb = create_sb(len + 16)
+    sb_append_str(@sb, "velo_act")
+
+    // Find '('
+    mut i: usize = 0
+    loop i < len and clean[i] != '(' { i += 1 }
+    if i >= len { return sb_to_string(@sb) }
+    i += 1
+
+    // Scan parameters inside `(...)`
+    mut has_param = false
+    loop i < len and clean[i] != ')' {
+        let c = clean[i]
+        if c == ' ' or c == '\t' or c == ']' {
+            // skip formatting whitespace and closing bracket
+        } else if c == ',' {
+            sb_append_char(@sb, '_')
+        } else if c == '@' or c == '*' {
+            if not has_param { sb_append_char(@sb, '_'); has_param = true }
+            sb_append_str(@sb, "ptr_")
+        } else if c == '[' {
+            sb_append_char(@sb, '_')
+        } else {
+            if not has_param { sb_append_char(@sb, '_'); has_param = true }
+            sb_append_char(@sb, c)
+        }
+        i += 1
+    }
+    if i < len and clean[i] == ')' { i += 1 }
+
+    sb_append_str(@sb, "_to_")
+
+    // Locate return arrow `->`
+    loop i + 1 < len and not (clean[i] == '-' and clean[i + 1] == '>') {
+        i += 1
+    }
+    if i + 1 < len {
+        i += 2
+    }
+
+    // Scan return type
+    loop i < len {
+        let c = clean[i]
+        if c == ' ' or c == '\t' or c == ']' {
+            // skip
+        } else if c == '@' or c == '*' {
+            sb_append_str(@sb, "ptr_")
+        } else if c == '[' {
+            sb_append_char(@sb, '_')
+        } else {
+            sb_append_char(@sb, c)
+        }
+        i += 1
+    }
+
+    return sb_to_string(@sb)
+}
+
+// Linked list node for tracking unique function types used across the program.
+data ActTypeNode {
+    type_name: string
+    mangled_name: string
+    next: @ActTypeNode
+}
+
+// Checks if a function type is already registered in the list.
+act act_types_contains(list: @ActTypeNode, type_name: string) -> bool {
+    mut cur = list
+    loop cur != null {
+        if cur.type_name == type_name { return true }
+        cur = cur.next
+    }
+    return false
+}
+
+// Registers a function type in the unique list if not already present.
+act act_types_add(list: @@ActTypeNode, type_name: string) {
+    if type_name == null or not is_act_type(type_name) { return }
+    let clean = strip_pointer_prefix(type_name)
+    if act_types_contains(list.@, clean) { return }
+
+    mut node: @ActTypeNode = mem.alloc(@ActTypeNode, 1)
+    node.type_name = clean
+    node.mangled_name = mangle_act_type(clean)
+    node.next = list.@
+    list.@ = node
+}

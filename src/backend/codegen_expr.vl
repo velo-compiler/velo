@@ -8,6 +8,7 @@ use "../ast/stmt.vl"
 use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
 use "../common/string_builder.vl"
+use "../common/act_types.vl"
 use "codegen_io.vl"
 
 // Maps a Velo type name to its standard C99 type string.
@@ -18,6 +19,10 @@ act map_type_to_c(type_name: string) -> string {
     if type_name == "u32" { return "uint32_t" }; if type_name == "u64" { return "uint64_t" }; if type_name == "f32" { return "float" }
     if type_name == "f64" { return "double" }; if type_name == "bool" { return "bool" }; if type_name == "usize" { return "size_t" }
     if type_name == "isize" { return "ptrdiff_t" }; if type_name == "string" { return "const char*" }
+
+    if is_act_type(type_name) {
+        return mangle_act_type(type_name)
+    }
 
     // Pointer types (@T, @@T)
     if type_name[0] == '@' {
