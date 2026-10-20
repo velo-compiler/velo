@@ -98,8 +98,17 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
     defer mem.free(source)
 
     let slen = str.len(source)
-    mut lex = create_lexer(source, slen, 8192)
+    // Capacity must cover the absolute worst case: one token per source
+    // character, plus EOF. A fixed cap silently truncates large files.
+    mut lex = create_lexer(source, slen, slen + 2)
     tokenize(@lex)
+
+    if lex.dropped_count > 0 {
+        let dropped = lex.dropped_count
+        io.println("[Velo Error] {file_path}: lexer token buffer too small; {dropped} tokens were truncated. Split this file into smaller modules.")
+        d.error_count += 1
+        return
+    }
 
     mut p: Parser
     init_parser(@p, file_path, source, lex.tokens, lex.token_count)
@@ -264,8 +273,15 @@ act generate_docs_for_source(source_path: string) -> string {
     defer mem.free(source)
 
     let slen = str.len(source)
-    mut lex = create_lexer(source, slen, 8192)
+    // Same capacity rule and overflow guard as load_file_and_deps.
+    mut lex = create_lexer(source, slen, slen + 2)
     tokenize(@lex)
+
+    if lex.dropped_count > 0 {
+        let dropped = lex.dropped_count
+        io.println("[Velo Error] {source_path}: lexer token buffer too small; {dropped} tokens were truncated; documentation output would be incomplete.")
+        return null
+    }
 
     mut p: Parser
     init_parser(@p, source_path, source, lex.tokens, lex.token_count)

@@ -14,6 +14,8 @@ data Lexer {
     tokens: @Token
     token_count: usize
     token_cap: usize
+    // Number of tokens silently discarded because the buffer was full.
+    dropped_count: usize
     last_kind: i32
 }
 
@@ -63,19 +65,23 @@ act check_keyword(source: string, start: usize, len: usize) -> i32 {
     return TOK_IDENTIFIER
 }
 
-// Appends a token to the lexer's token array.
+// Appends a token to the lexer's token array. Overflow is counted so the
+// driver can report a real diagnostic instead of silently corrupting the
+// token stream.
 act add_token(lex: @Lexer, kind: i32, start: usize, len: usize, line: i32, col: i32) {
     if lex.token_count < lex.token_cap {
         lex.tokens[lex.token_count] = Token{ kind: kind, start: start, length: len, line: line, col: col }
         lex.token_count += 1
         lex.last_kind = kind
+    } else {
+        lex.dropped_count += 1
     }
 }
 
 // Initializes a new Lexer for the provided source string buffer.
 act create_lexer(source: string, source_len: usize, capacity: usize) -> Lexer {
     let buf: @Token = mem.alloc(@Token, capacity)
-    return Lexer{ source: source, source_len: source_len, pos: 0, line: 1, col: 1, tokens: buf, token_count: 0, token_cap: capacity, last_kind: TOK_EOF }
+    return Lexer{ source: source, source_len: source_len, pos: 0, line: 1, col: 1, tokens: buf, token_count: 0, token_cap: capacity, dropped_count: 0, last_kind: TOK_EOF }
 }
 
 // Tokenizes the entire source code into the pre-allocated token buffer.
