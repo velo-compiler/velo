@@ -1,0 +1,90 @@
+// Milestone 3.5: Operator Overloading for Game Math
+use sys.io
+
+data Vector2 {
+    x: f32
+    y: f32
+}
+
+// 1. Binary addition: Vector2 + Vector2
+act op +(a: Vector2, b: Vector2) -> Vector2 {
+    return Vector2{ x: a.x + b.x, y: a.y + b.y }
+}
+
+// 2. Binary subtraction: Vector2 - Vector2
+act op -(a: Vector2, b: Vector2) -> Vector2 {
+    return Vector2{ x: a.x - b.x, y: a.y - b.y }
+}
+
+// 3. Scalar multiplication: Vector2 * f32
+act op *(v: Vector2, s: f32) -> Vector2 {
+    return Vector2{ x: v.x * s, y: v.y * s }
+}
+
+// 4. Scalar multiplication: f32 * Vector2
+act op *(s: f32, v: Vector2) -> Vector2 {
+    return Vector2{ x: v.x * s, y: v.y * s }
+}
+
+// 5. Unary negation: -Vector2 (syntax without space: op-)
+act op-(v: Vector2) -> Vector2 {
+    return Vector2{ x: -v.x, y: -v.y }
+}
+
+// 6. Equality: Vector2 == Vector2
+act op ==(a: Vector2, b: Vector2) -> bool {
+    return a.x == b.x and a.y == b.y
+}
+
+// 7. Inequality: Vector2 != Vector2
+act op !=(a: Vector2, b: Vector2) -> bool {
+    return not (a == b)
+}
+
+act main() {
+    io.println("=== Testing Operator Overloading for Game Math ===")
+
+    let pos = Vector2{ x: 10.0, y: 20.0 }
+    let vel = Vector2{ x: 2.0, y: -3.0 }
+    let dt: f32 = 0.5
+
+    // Binary + and * precedence: vel * dt evaluated first, then added to pos
+    let next_pos = pos + vel * dt
+    io.println("next_pos: x={next_pos.x}, y={next_pos.y}")
+
+    // Scalar * Vector2
+    let scaled_pos = 2.0 * pos
+    io.println("scaled_pos: x={scaled_pos.x}, y={scaled_pos.y}")
+
+    // Subtraction
+    let diff = next_pos - pos
+    io.println("diff: x={diff.x}, y={diff.y}")
+
+    // Unary negation
+    let neg_vel = -vel
+    io.println("neg_vel: x={neg_vel.x}, y={neg_vel.y}")
+
+    // Equality comparisons
+    let v_copy = Vector2{ x: 10.0, y: 20.0 }
+    if pos == v_copy {
+        io.println("pos == v_copy: true")
+    } else {
+        io.println("pos == v_copy: false")
+    }
+
+    if pos != vel {
+        io.println("pos != vel: true")
+    } else {
+        io.println("pos != vel: false")
+    }
+
+    // Compound assignment += and *=
+    mut current = Vector2{ x: 1.0, y: 1.0 }
+    current += Vector2{ x: 4.0, y: 9.0 }
+    io.println("after +=: x={current.x}, y={current.y}")
+
+    current *= 2.0
+    io.println("after *=: x={current.x}, y={current.y}")
+
+    io.println("=== Operator Overloading Verification Complete ===")
+}

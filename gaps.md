@@ -100,15 +100,13 @@ Velo is a working, self-hosted, triple-bootstrapped systems programming language
 * **Method Chaining & Extensibility**: Supports fluent chaining (e.g. `p.translate(1.0, 2.0).scale(2.0)`) and extension methods on both structs and primitive types (e.g. `7.square()`).
 * **Generic Method Specialization**: Works seamlessly with generic functions and data types (e.g. `box.unwrap()`), inferring type arguments from the receiver and arguments. Verified across Stage 1 Python compiler and Stage 2 self-hosted native compiler with `examples/24_ufcs_methods.vl` and `tests/test_ufcs_methods.py`.
 
-### 3.5 Operator Overloading for Game Math (🟡 P2 Ergonomic)
-* **Current State**: Arithmetic operators (`+`, `-`, `*`, `/`) only work on built-in numeric primitives.
-* **Impact**: Vector and matrix math in game engines becomes verbose and hard to read:
-  ```velo
-  // Current:
-  let final_pos = vec2_add(vec2_add(pos, vec2_scale(vel, dt)), offset)
-  // Desired:
-  let final_pos = pos + vel * dt + offset
-  ```
+### 3.5 Operator Overloading for Game Math [COMPLETED] ✅
+* **Signature `act op <symbol>` Syntax**: Clean 2-letter `op` prefix aligning with Velo's keyword philosophy (`on`, `in`, `as`, `op`). Supports both `act op +(...)` and `act op+(...)`.
+* **Disambiguation by Parameter Count**: Single-parameter declarations define unary operators (e.g. `act op -(v: Vector2)` for negation); two-parameter declarations define binary operators (e.g. `+`, `-`, `*`, `/`, `%`, `==`, `!=`, `<`, `<=`, `>`, `>=`).
+* **Zero Runtime Overhead & C99 Name Mangling**: Deterministic C function identifier mangling based on operator name and operand types (`velo_op_add_Vector2_Vector2`, `velo_op_mul_Vector2_f32`, `velo_op_neg_Vector2`).
+* **Automatic Compound Assignment**: Statements like `pos += vel` and `pos *= 2.0` automatically desugar into `pos = pos + vel` and `pos = pos * 2.0`, executing overloaded operators without duplicate boilerplate.
+* **Smart Auto-Referencing / Auto-Dereferencing**: Functions expecting pointer parameters `@Vector2` automatically receive `&v` when invoked with value lvalues.
+* **Bit-for-Bit Triple-Bootstrap Determinism**: Verified with `examples/25_operator_overloading.vl` and `tests/test_operator_overloading.py` across Python reference compiler and Stage 2 self-hosted native compiler.
 
 ### 3.6 Advanced Struct Features (🟡 P2 Ergonomic)
 * **Default Field Initializers**: Cannot declare `data Point { x: f32 = 0.0, y: f32 = 0.0 }`. All fields must be explicitly enumerated in struct literals.

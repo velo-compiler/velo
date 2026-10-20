@@ -293,6 +293,60 @@ mut b = Box[i32]{ value: 999 }
 let val = b.unwrap() // specializes unwrap[i32] and auto-borrows &b
 ```
 
+### 2.8 Operator Overloading (`act op <symbol>`)
+Velo enables custom types (such as game math vectors, matrices, and colors) to overload standard binary and unary operators using the punchy 2-letter `op` prefix. Overloaded operators have zero runtime overhead and compile directly to specialized C99 function calls.
+
+#### Declaration Syntax:
+```rust
+data Vector2 {
+    x: f32
+    y: f32
+}
+
+// 1. Binary addition: Vector2 + Vector2
+act op +(a: Vector2, b: Vector2) -> Vector2 {
+    return Vector2{ x: a.x + b.x, y: a.y + b.y }
+}
+
+// 2. Scalar multiplication: Vector2 * f32 and f32 * Vector2
+act op *(v: Vector2, s: f32) -> Vector2 {
+    return Vector2{ x: v.x * s, y: v.y * s }
+}
+act op *(s: f32, v: Vector2) -> Vector2 {
+    return Vector2{ x: v.x * s, y: v.y * s }
+}
+
+// 3. Unary negation (single parameter, optional space)
+act op -(v: Vector2) -> Vector2 {
+    return Vector2{ x: -v.x, y: -v.y }
+}
+
+// 4. Equality and Inequality comparisons
+act op ==(a: Vector2, b: Vector2) -> bool {
+    return a.x == b.x and a.y == b.y
+}
+act op !=(a: Vector2, b: Vector2) -> bool {
+    return not (a == b)
+}
+```
+
+#### Natural Mathematical Usage:
+```rust
+let pos = Vector2{ x: 10.0, y: 20.0 }
+let vel = Vector2{ x: 2.0, y: -3.0 }
+let dt: f32 = 0.5
+
+// Operator precedence is preserved: vel * dt runs first, then pos + ...
+let next_pos = pos + vel * dt
+let opposite = -vel
+```
+
+#### Automatic Compound Assignment:
+Statements like `pos += vel` or `pos *= 2.0` automatically desugar into `pos = pos + vel` and `pos = pos * 2.0`, calling the corresponding overloaded binary operator without requiring separate `+=` methods.
+
+#### Auto-Referencing / Auto-Dereferencing:
+Operators declared with pointer parameters (`act op +(a: @Vector2, b: @Vector2)`) automatically receive the address of value lvalues (`&a`, `&b`), and vice-versa, avoiding unnecessary struct copying.
+
 ---
 
 ## 3. Variables & Mutability

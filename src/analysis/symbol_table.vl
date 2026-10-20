@@ -99,6 +99,7 @@ data SymbolTable {
     global_scope: @Scope
     current_scope: @Scope
     error_count: usize
+    has_operator_overloads: bool
 }
 
 // Allocates and initializes an empty lexical scope.
@@ -121,6 +122,7 @@ act init_symbol_table(st: @SymbolTable) {
     st.global_scope = create_scope(null)
     st.current_scope = st.global_scope
     st.error_count = 0
+    st.has_operator_overloads = false
 }
 
 // Pushes a new inner lexical scope onto the scope stack.
@@ -281,6 +283,9 @@ act register_function(st: @SymbolTable, name: string, ret_type: string, is_exter
 
     st.first_function = fn_sym
     st.function_count += 1
+    if name != null and str.len(name) >= 8 and name[0] == 'v' and name[1] == 'e' and name[2] == 'l' and name[3] == 'o' and name[4] == '_' and name[5] == 'o' and name[6] == 'p' and name[7] == '_' {
+        st.has_operator_overloads = true
+    }
     return fn_sym
 }
 

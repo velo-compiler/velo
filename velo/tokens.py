@@ -29,6 +29,7 @@ class TokenType(Enum):
     CONTINUE = auto()
     ON = auto()
     KIND = auto()
+    OP = auto()
 
     # Literals
     IDENTIFIER = auto()
@@ -116,6 +117,7 @@ KEYWORDS = {
     "continue": TokenType.CONTINUE,
     "on": TokenType.ON,
     "kind": TokenType.KIND,
+    "op": TokenType.OP,
 }
 
 @dataclass

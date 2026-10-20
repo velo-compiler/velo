@@ -1,0 +1,100 @@
+// Operator overloading resolver for semantic analysis and code generation.
+use sys.mem
+use "../frontend/token.vl"
+use "../common/utils.vl"
+use "../common/op_types.vl"
+use "symbol_table.vl"
+
+// Extracts the base binary operator token for compound assignments (e.g. += -> +).
+act get_base_assign_op(op: i32) -> i32 {
+    if op == TOK_PLUS_ASSIGN { return TOK_PLUS }
+    if op == TOK_MINUS_ASSIGN { return TOK_MINUS }
+    if op == TOK_STAR_ASSIGN { return TOK_STAR }
+    if op == TOK_SLASH_ASSIGN { return TOK_SLASH }
+    return 0
+}
+
+// Helper to construct a pointer type string (`@` + type).
+act make_ptr_type_str(t: string) -> string {
+    if t == null { return "@void" }
+    let len = str.len(t)
+    mut buf: @u8 = mem.alloc(@u8, len + 2)
+    buf[0] = '@' as u8
+    mut i: usize = 0
+    loop i < len {
+        buf[i + 1] = t[i]
+        i += 1
+    }
+    buf[len + 1] = 0 as u8
+    return buf as string
+}
+
+// Searches symbol table for an overloaded binary operator matching the operand types.
+// Checks if a type is a built-in primitive scalar type.
+act is_primitive_scalar(t: string) -> bool {
+    if t == null { return false }
+    if t == "i32" or t == "i64" or t == "u8" or t == "usize" { return true }
+    if t == "f32" or t == "f64" or t == "bool" or t == "string" { return true }
+    if t == "i8" or t == "i16" or t == "u16" or t == "u32" or t == "u64" or t == "isize" { return true }
+    return false
+}
+
+act find_binary_op(st: @SymbolTable, op: i32, t0: string, t1: string) -> @FunctionSym {
+    if st == null or not st.has_operator_overloads { return null }
+    if t0 == null or t1 == null { return null }
+    if str.len(t0) == 0 or str.len(t1) == 0 { return null }
+    if is_primitive_scalar(t0) and is_primitive_scalar(t1) { return null }
+
+    // 1. Direct match: velo_op_<op>_<t0>_<t1>
+    let name1 = mangle_binary_op_call_name(op, t0, t1)
+    let fn1 = find_function(st, name1)
+    if fn1 != null { return fn1 }
+
+    // 2. Auto-borrow: try (@t0, @t1)
+    mut p0 = t0
+    if str.len(p0) > 0 and p0[0] != '@' { p0 = make_ptr_type_str(t0) }
+    mut p1 = t1
+    if str.len(p1) > 0 and p1[0] != '@' { p1 = make_ptr_type_str(t1) }
+    let name2 = mangle_binary_op_call_name(op, p0, p1)
+    let fn2 = find_function(st, name2)
+    if fn2 != null { return fn2 }
+
+    // 3. Auto-dereference: try stripped pointer types
+    mut v0 = t0
+    if str.len(v0) > 0 and v0[0] == '@' { v0 = copy_slice_to_string(t0, 1, str.len(t0) - 1) }
+    mut v1 = t1
+    if str.len(v1) > 0 and v1[0] == '@' { v1 = copy_slice_to_string(t1, 1, str.len(t1) - 1) }
+    let name3 = mangle_binary_op_call_name(op, v0, v1)
+    let fn3 = find_function(st, name3)
+    if fn3 != null { return fn3 }
+
+    return null
+}
+
+// Searches symbol table for an overloaded unary operator matching the operand type.
+act find_unary_op(st: @SymbolTable, op: i32, t0: string) -> @FunctionSym {
+    if st == null or not st.has_operator_overloads { return null }
+    if t0 == null or str.len(t0) == 0 { return null }
+    if is_primitive_scalar(t0) { return null }
+
+    // 1. Direct match: velo_op_<op>_<t0>
+    let name1 = mangle_unary_op_call_name(op, t0)
+    let fn1 = find_function(st, name1)
+    if fn1 != null { return fn1 }
+
+    // 2. Auto-borrow: try @t0
+    mut p0 = t0
+    if str.len(p0) > 0 and p0[0] != '@' { p0 = make_ptr_type_str(t0) }
+    let name2 = mangle_unary_op_call_name(op, p0)
+    let fn2 = find_function(st, name2)
+    if fn2 != null { return fn2 }
+
+    // 3. Auto-dereference: try stripped pointer
+    mut v0 = t0
+    if str.len(v0) > 0 and v0[0] == '@' { v0 = copy_slice_to_string(t0, 1, str.len(t0) - 1) }
+    let name3 = mangle_unary_op_call_name(op, v0)
+    let fn3 = find_function(st, name3)
+    if fn3 != null { return fn3 }
+
+    return null
+}

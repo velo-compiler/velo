@@ -1,0 +1,106 @@
+// Operator name mangling and resolution utilities for Velo.
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/stmt.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+
+// Checks if a token kind is an overloadable operator.
+act is_op_token(kind: i32) -> bool {
+    if kind == TOK_PLUS or kind == TOK_MINUS or kind == TOK_STAR or kind == TOK_SLASH or kind == TOK_PERCENT { return true }
+    if kind == TOK_EQ or kind == TOK_NEQ or kind == TOK_LT or kind == TOK_LTE or kind == TOK_GT or kind == TOK_GTE { return true }
+    if kind == TOK_NOT or kind == TOK_TILDE or kind == TOK_AMP or kind == TOK_PIPE or kind == TOK_CARET { return true }
+    if kind == TOK_SHL or kind == TOK_SHR { return true }
+    return false
+}
+
+// Maps an operator token and parameter count to an operator name string.
+act op_tok_to_name(op: i32, param_count: usize) -> string {
+    if param_count == 1 and op == TOK_MINUS { return "neg" }
+    if param_count == 1 and op == TOK_NOT { return "not" }
+    if param_count == 1 and op == TOK_TILDE { return "bitnot" }
+    if op == TOK_PLUS { return "add" }
+    if op == TOK_MINUS { return "sub" }
+    if op == TOK_STAR { return "mul" }
+    if op == TOK_SLASH { return "div" }
+    if op == TOK_PERCENT { return "mod" }
+    if op == TOK_EQ { return "eq" }
+    if op == TOK_NEQ { return "ne" }
+    if op == TOK_LT { return "lt" }
+    if op == TOK_LTE { return "le" }
+    if op == TOK_GT { return "gt" }
+    if op == TOK_GTE { return "ge" }
+    if op == TOK_AMP { return "bitand" }
+    if op == TOK_PIPE { return "bitor" }
+    if op == TOK_CARET { return "bitxor" }
+    if op == TOK_SHL { return "shl" }
+    if op == TOK_SHR { return "shr" }
+    return "op"
+}
+
+// Mangles a type name for operator function identifiers.
+act mangle_type_for_op(t: string) -> string {
+    if t == null or str.len(t) == 0 { return "void" }
+    let len = str.len(t)
+    mut ptr_count: usize = 0
+    loop ptr_count < len and t[ptr_count] == '@' {
+        ptr_count += 1
+    }
+    mut sb = create_sb(len + 16)
+    mut p: usize = 0
+    loop p < ptr_count {
+        sb_append_str(@sb, "ptr_")
+        p += 1
+    }
+    mut i = ptr_count
+    loop i < len {
+        let c = t[i]
+        if c == '[' or c == ',' {
+            sb_append_char(@sb, '_')
+        } else if c != ']' and c != ' ' and c != '\t' {
+            sb_append_char(@sb, c)
+        }
+        i += 1
+    }
+    return sb_to_string(@sb)
+}
+
+// Mangles an operator function declaration into a unique C function name.
+act mangle_op_func_name(op: i32, first_param: @ParamNode, param_count: usize) -> string {
+    let op_name = op_tok_to_name(op, param_count)
+    mut sb = create_sb(64)
+    sb_append_str(@sb, "velo_op_")
+    sb_append_str(@sb, op_name)
+    mut cur = first_param
+    loop cur != null {
+        sb_append_char(@sb, '_')
+        let mangled_t = mangle_type_for_op(cur.type_name)
+        sb_append_str(@sb, mangled_t)
+        cur = cur.next
+    }
+    return sb_to_string(@sb)
+}
+
+// Constructs a mangled binary operator function call name.
+act mangle_binary_op_call_name(op: i32, t0: string, t1: string) -> string {
+    let op_name = op_tok_to_name(op, 2)
+    mut sb = create_sb(64)
+    sb_append_str(@sb, "velo_op_")
+    sb_append_str(@sb, op_name)
+    sb_append_char(@sb, '_')
+    sb_append_str(@sb, mangle_type_for_op(t0))
+    sb_append_char(@sb, '_')
+    sb_append_str(@sb, mangle_type_for_op(t1))
+    return sb_to_string(@sb)
+}
+
+// Constructs a mangled unary operator function call name.
+act mangle_unary_op_call_name(op: i32, t0: string) -> string {
+    let op_name = op_tok_to_name(op, 1)
+    mut sb = create_sb(64)
+    sb_append_str(@sb, "velo_op_")
+    sb_append_str(@sb, op_name)
+    sb_append_char(@sb, '_')
+    sb_append_str(@sb, mangle_type_for_op(t0))
+    return sb_to_string(@sb)
+}

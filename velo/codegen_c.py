@@ -844,6 +844,14 @@ class CCodeGenerator:
                 parsed = parse_act_type(callee_type)
                 if parsed:
                     return parsed[2]
+        elif isinstance(expr, BinaryExpr):
+            if expr.op in ("==", "!=", "<", "<=", ">", ">="):
+                return "bool"
+            return self._resolve_expr_type(expr.left)
+        elif isinstance(expr, UnaryExpr):
+            if expr.op in ("!", "not"):
+                return "bool"
+            return self._resolve_expr_type(expr.operand)
         return "i32"
 
     def _emit_expression(self, expr: Expr) -> str:

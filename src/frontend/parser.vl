@@ -94,7 +94,7 @@ act parser_advance(p: @Parser) -> Token {
 // Checks if current token matches the expected kind.
 act parser_check(p: @Parser, kind: i32) -> bool {
     let tok = parser_peek(p, 0)
-    if kind == TOK_IDENTIFIER and tok.kind == TOK_KIND { return true }
+    if kind == TOK_IDENTIFIER and (tok.kind == TOK_KIND or tok.kind == TOK_OP) { return true }
     return tok.kind == kind
 }
 
@@ -110,7 +110,7 @@ act parser_match(p: @Parser, kind: i32) -> bool {
 // Consumes the expected token kind or reports a syntax error.
 act parser_consume(p: @Parser, kind: i32, err_msg: string) -> Token {
     let tok = parser_peek(p, 0)
-    if tok.kind == kind or (kind == TOK_IDENTIFIER and tok.kind == TOK_KIND) {
+    if parser_check(p, kind) {
         return parser_advance(p)
     }
     report_error(p.filename, tok.line, tok.col, err_msg)

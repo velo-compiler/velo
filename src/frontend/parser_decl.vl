@@ -5,6 +5,7 @@ use "token.vl"
 use "../common/utils.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
+use "../common/op_types.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"
 use "../ast/stmt.vl"
@@ -187,11 +188,21 @@ act parse_kind_decl(p: @Parser) -> @StmtNode {
     return node
 }
 
-// Parses a function declaration (`act Name[T](params) -> RetType { ... }`).
+// Parses a function declaration (`act Name[T](params) -> RetType { ... }` or `act op +(...)`).
 act parse_function_decl(p: @Parser) -> @StmtNode {
     let act_tok = parser_consume(p, TOK_ACT, "Expected 'act'")
-    let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected function name")
-    let fname = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
+    mut fname = ""
+    mut is_op = false
+    mut op_kind = 0
+    if parser_check(p, TOK_OP) and is_op_token(parser_peek(p, 1).kind) {
+        parser_advance(p)
+        is_op = true
+        let op_tok = parser_advance(p)
+        op_kind = op_tok.kind
+    } else {
+        let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected function name")
+        fname = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
+    }
     let type_params = parse_type_params(p)
 
     parser_consume(p, TOK_LPAREN, "Expected '(' after function name")
@@ -231,10 +242,15 @@ act parse_function_decl(p: @Parser) -> @StmtNode {
         ret_type = parse_type_annotation(p)
     }
 
+    if is_op {
+        fname = mangle_op_func_name(op_kind, first_param, count)
+    }
+
     parser_skip_newlines(p)
     let body = parse_block(p)
     mut node = make_function_decl(fname, first_param, count, ret_type, body, act_tok.line, act_tok.col)
     node.type_params = type_params
+    node.op = op_kind
     return node
 }
 

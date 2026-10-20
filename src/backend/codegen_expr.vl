@@ -10,6 +10,7 @@ use "../analysis/type_checker.vl"
 use "../common/string_builder.vl"
 use "../common/act_types.vl"
 use "codegen_io.vl"
+use "../analysis/op_resolver.vl"
 use "codegen_types.vl"
 
 // Emits C99 code for an AST expression into a StringBuilder.
@@ -40,21 +41,11 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         return
     }
     if expr.kind == EXPR_BOOL {
-        if expr.bool_val {
-            sb_append_str(sb, "true")
-        } else {
-            sb_append_str(sb, "false")
-        }
+        if expr.bool_val { sb_append_str(sb, "true") } else { sb_append_str(sb, "false") }
         return
     }
-    if expr.kind == EXPR_NULL {
-        sb_append_str(sb, "NULL")
-        return
-    }
-    if expr.kind == EXPR_IDENT {
-        sb_append_str(sb, expr.str_val)
-        return
-    }
+    if expr.kind == EXPR_NULL { sb_append_str(sb, "NULL"); return }
+    if expr.kind == EXPR_IDENT { sb_append_str(sb, expr.str_val); return }
     if expr.kind == EXPR_VARIANT {
         mut kname = expr.type_name
         mut k_sym: @KindSym = null
@@ -103,6 +94,20 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         return
     }
     if expr.kind == EXPR_UNARY {
+        let sub_type = infer_expr_type(st, expr.operand)
+        let op_fn = find_unary_op(st, expr.op, sub_type)
+        if op_fn != null {
+            sb_append_str(sb, op_fn.name); sb_append_char(sb, '(')
+            let p0 = op_fn.first_param
+            let p0_ptr = p0 != null and str.len(p0.type_name) > 0 and p0.type_name[0] == '@'
+            let s_ptr = str.len(sub_type) > 0 and sub_type[0] == '@'
+            if p0_ptr and not s_ptr { sb_append_str(sb, "&(") }
+            if s_ptr and not p0_ptr { sb_append_str(sb, "*(") }
+            emit_c_expr(sb, st, expr.operand)
+            if (p0_ptr and not s_ptr) or (s_ptr and not p0_ptr) { sb_append_char(sb, ')') }
+            sb_append_char(sb, ')')
+            return
+        }
         sb_append_str(sb, "(")
         if expr.op == TOK_NOT {
             sb_append_str(sb, "!")
@@ -182,6 +187,30 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
 
     // 7. Binary expression
     if expr.kind == EXPR_BINARY {
+        let ltype = infer_expr_type(st, expr.left)
+        let rtype = infer_expr_type(st, expr.right)
+        let op_fn = find_binary_op(st, expr.op, ltype, rtype)
+        if op_fn != null {
+            sb_append_str(sb, op_fn.name); sb_append_char(sb, '(')
+            let p0 = op_fn.first_param
+            mut p1: @ParamSym = null
+            if p0 != null { p1 = p0.next }
+            let p0_ptr = p0 != null and str.len(p0.type_name) > 0 and p0.type_name[0] == '@'
+            let l_ptr = str.len(ltype) > 0 and ltype[0] == '@'
+            if p0_ptr and not l_ptr { sb_append_str(sb, "&(") }
+            if l_ptr and not p0_ptr { sb_append_str(sb, "*(") }
+            emit_c_expr(sb, st, expr.left)
+            if (p0_ptr and not l_ptr) or (l_ptr and not p0_ptr) { sb_append_char(sb, ')') }
+            sb_append_str(sb, ", ")
+            let p1_ptr = p1 != null and str.len(p1.type_name) > 0 and p1.type_name[0] == '@'
+            let r_ptr = str.len(rtype) > 0 and rtype[0] == '@'
+            if p1_ptr and not r_ptr { sb_append_str(sb, "&(") }
+            if r_ptr and not p1_ptr { sb_append_str(sb, "*(") }
+            emit_c_expr(sb, st, expr.right)
+            if (p1_ptr and not r_ptr) or (r_ptr and not p1_ptr) { sb_append_char(sb, ')') }
+            sb_append_char(sb, ')')
+            return
+        }
         if expr.op == TOK_EQ or expr.op == TOK_NEQ {
             let ltype = infer_expr_type(st, expr.left)
             let rtype = infer_expr_type(st, expr.right)

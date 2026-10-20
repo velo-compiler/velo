@@ -37,6 +37,7 @@ let TOK_CONTINUE: i32 = 42
 let TOK_ON: i32 = 43
 let TOK_DOTDOTEQ: i32 = 44
 let TOK_KIND: i32 = 45
+let TOK_OP: i32 = 46
 
 // Operators & Punctuation
 let TOK_AT: i32 = 50           // @
@@ -130,5 +131,6 @@ act token_name(kind: i32) -> string {
     if kind == TOK_FAT_ARROW { return "=>" }
     if kind == TOK_DOTDOTEQ { return "..=" }
     if kind == TOK_KIND { return "kind" }
+    if kind == TOK_OP { return "op" }
     return "TOKEN"
 }

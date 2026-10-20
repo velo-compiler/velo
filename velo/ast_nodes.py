@@ -276,6 +276,50 @@ class FunctionDecl(Decl):
     line: int
     col: int
     type_params: Optional[List[str]] = None
+    is_operator: bool = False
+    operator_symbol: Optional[str] = None
+
+OP_SYMBOL_TO_NAME = {
+    "+": "add",
+    "-": "sub",
+    "*": "mul",
+    "/": "div",
+    "%": "mod",
+    "==": "eq",
+    "!=": "ne",
+    "<": "lt",
+    "<=": "le",
+    ">": "gt",
+    ">=": "ge",
+    "!": "not",
+    "not": "not",
+    "~": "bitnot",
+    "&": "bitand",
+    "|": "bitor",
+    "^": "bitxor",
+    "<<": "shl",
+    ">>": "shr",
+}
+
+def mangle_type_for_op(t: str) -> str:
+    if not t:
+        return t
+    ptr_count = 0
+    clean = t
+    while clean.startswith("@"):
+        ptr_count += 1
+        clean = clean[1:]
+    prefix = "ptr_" * ptr_count
+    clean = clean.replace("[", "_").replace("]", "").replace(", ", "_").replace(",", "_")
+    return prefix + clean
+
+def mangle_op_name(op_sym: str, param_types: List[str]) -> str:
+    if len(param_types) == 1 and op_sym == "-":
+        op_name = "neg"
+    else:
+        op_name = OP_SYMBOL_TO_NAME.get(op_sym, op_sym)
+    mangled_params = [mangle_type_for_op(p) for p in param_types]
+    return f"velo_op_{op_name}_{'_'.join(mangled_params)}"
 
 @dataclass
 class ExternDecl(Decl):

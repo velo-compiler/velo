@@ -8,6 +8,7 @@ use "../ast/stmt.vl"
 use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
 use "../common/string_builder.vl"
+use "../analysis/op_resolver.vl"
 use "codegen_expr.vl"
 
 // Intrusive linked list node maintaining active LIFO deferred statements.
@@ -49,6 +50,37 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
 
     // 2. Assignment statement
     if stmt.kind == STMT_ASSIGN {
+        let base_op = get_base_assign_op(stmt.op)
+        if base_op != 0 and st.has_operator_overloads {
+            let target_t = infer_expr_type(st, stmt.expr)
+            let val_t = infer_expr_type(st, stmt.val_expr)
+            let op_fn = find_binary_op(st, base_op, target_t, val_t)
+            if op_fn != null {
+                sb_append_indent(sb, indent)
+                emit_c_expr(sb, st, stmt.expr)
+                sb_append_str(sb, " = ")
+                sb_append_str(sb, op_fn.name)
+                sb_append_char(sb, '(')
+                let p0 = op_fn.first_param
+                mut p1: @ParamSym = null
+                if p0 != null { p1 = p0.next }
+                let p0_ptr = p0 != null and str.len(p0.type_name) > 0 and p0.type_name[0] == '@'
+                let t_ptr = str.len(target_t) > 0 and target_t[0] == '@'
+                if p0_ptr and not t_ptr { sb_append_str(sb, "&(") }
+                if t_ptr and not p0_ptr { sb_append_str(sb, "*(") }
+                emit_c_expr(sb, st, stmt.expr)
+                if (p0_ptr and not t_ptr) or (t_ptr and not p0_ptr) { sb_append_char(sb, ')') }
+                sb_append_str(sb, ", ")
+                let p1_ptr = p1 != null and str.len(p1.type_name) > 0 and p1.type_name[0] == '@'
+                let v_ptr = str.len(val_t) > 0 and val_t[0] == '@'
+                if p1_ptr and not v_ptr { sb_append_str(sb, "&(") }
+                if v_ptr and not p1_ptr { sb_append_str(sb, "*(") }
+                emit_c_expr(sb, st, stmt.val_expr)
+                if (p1_ptr and not v_ptr) or (v_ptr and not p1_ptr) { sb_append_char(sb, ')') }
+                sb_append_str(sb, ");\n")
+                return
+            }
+        }
         sb_append_indent(sb, indent)
         emit_c_expr(sb, st, stmt.expr)
         sb_append_char(sb, ' ')

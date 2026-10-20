@@ -10,7 +10,8 @@ from velo.ast_nodes import (
     Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, LoopStmt, ZoneStmt, DeferStmt,
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
-    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr
+    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr,
+    mangle_op_name, OP_SYMBOL_TO_NAME
 )
 
 
@@ -175,6 +176,8 @@ class Monomorphizer:
         self.struct_fields: Dict[str, Set[str]] = {}
         self.struct_field_types: Dict[str, Dict[str, str]] = {}
         self.kind_names: Set[str] = set()
+        self.op_overloads: Dict[Tuple[str, int, Tuple[str, ...]], str] = {}
+        self.generic_op_overloads: Dict[Tuple[str, int], FunctionDecl] = {}
 
     def request_instantiation(self, kind: str, template_name: str, args: Tuple[str, ...]):
         key = (kind, template_name, args)
@@ -202,8 +205,13 @@ class Monomorphizer:
                 self.kind_names.add(decl.name)
             elif isinstance(decl, FunctionDecl) and decl.type_params:
                 self.generic_funcs[decl.name] = decl
+                if getattr(decl, 'is_operator', False):
+                    self.generic_op_overloads[(decl.operator_symbol, len(decl.params))] = decl
             else:
                 regular_decls.append(decl)
+                if isinstance(decl, FunctionDecl) and getattr(decl, 'is_operator', False):
+                    param_types = tuple(normalize_type_name(p.type_name) or "i32" for p in decl.params)
+                    self.op_overloads[(decl.operator_symbol, len(param_types), param_types)] = decl.name
 
         # Collect return and parameter types for all known non-generic functions and externs
         for decl in regular_decls:
@@ -382,8 +390,13 @@ class Monomorphizer:
             return_type=ret_type,
             body=new_body,
             line=template.line,
-            col=template.col
+            col=template.col,
+            is_operator=getattr(template, 'is_operator', False),
+            operator_symbol=getattr(template, 'operator_symbol', None)
         )
+        if decl.is_operator:
+            param_types = tuple(p.type_name for p in new_params)
+            self.op_overloads[(decl.operator_symbol, len(param_types), param_types)] = mangled_name
         self.instantiated_funcs[mangled_name] = decl
 
     def _transform_function(self, fn: FunctionDecl, subst: Dict[str, str]) -> FunctionDecl:
@@ -407,7 +420,9 @@ class Monomorphizer:
             return_type=ret_type,
             body=new_body,
             line=fn.line,
-            col=fn.col
+            col=fn.col,
+            is_operator=getattr(fn, 'is_operator', False),
+            operator_symbol=getattr(fn, 'operator_symbol', None)
         )
 
     def _transform_block(self, block: BlockStmt, scope: Dict[str, str], subst: Dict[str, str], current_ret_type: Optional[str]) -> BlockStmt:
@@ -435,9 +450,16 @@ class Monomorphizer:
                 col=stmt.col
             )
         elif isinstance(stmt, AssignStmt):
-            target_type = self._infer_expr_type(stmt.target, scope)
             new_target = self._transform_expr(stmt.target, scope, subst, None)
+            target_type = self._infer_expr_type(new_target, scope)
             new_val = self._transform_expr(stmt.value, scope, subst, target_type)
+            if stmt.op in ("+=", "-=", "*=", "/=", "%="):
+                base_op = stmt.op[:-1]
+                val_type = self._infer_expr_type(new_val, scope)
+                match_fn, arg0, arg1 = self._find_binary_op_overload(base_op, new_target, target_type, new_val, val_type)
+                if match_fn:
+                    call_node = CallExpr(callee=Identifier(name=match_fn, line=stmt.line, col=stmt.col), args=[arg0, arg1], line=stmt.line, col=stmt.col)
+                    return AssignStmt(target=new_target, op="=", value=call_node, line=stmt.line, col=stmt.col)
             return AssignStmt(target=new_target, op=stmt.op, value=new_val, line=stmt.line, col=stmt.col)
         elif isinstance(stmt, ReturnStmt):
             new_val = self._transform_expr(stmt.value, scope, subst, current_ret_type) if stmt.value else None
@@ -616,9 +638,21 @@ class Monomorphizer:
         elif isinstance(expr, AddressOf):
             return AddressOf(operand=self._transform_expr(expr.operand, scope, subst, None), line=expr.line, col=expr.col)
         elif isinstance(expr, BinaryExpr):
-            return BinaryExpr(left=self._transform_expr(expr.left, scope, subst, None), op=expr.op, right=self._transform_expr(expr.right, scope, subst, None), line=expr.line, col=expr.col)
+            new_left = self._transform_expr(expr.left, scope, subst, None)
+            new_right = self._transform_expr(expr.right, scope, subst, None)
+            l_type = self._infer_expr_type(new_left, scope)
+            r_type = self._infer_expr_type(new_right, scope)
+            match_fn, arg0, arg1 = self._find_binary_op_overload(expr.op, new_left, l_type, new_right, r_type)
+            if match_fn:
+                return CallExpr(callee=Identifier(name=match_fn, line=expr.line, col=expr.col), args=[arg0, arg1], line=expr.line, col=expr.col)
+            return BinaryExpr(left=new_left, op=expr.op, right=new_right, line=expr.line, col=expr.col)
         elif isinstance(expr, UnaryExpr):
-            return UnaryExpr(op=expr.op, operand=self._transform_expr(expr.operand, scope, subst, None), line=expr.line, col=expr.col)
+            new_operand = self._transform_expr(expr.operand, scope, subst, None)
+            op_type = self._infer_expr_type(new_operand, scope)
+            match_fn, arg0 = self._find_unary_op_overload(expr.op, new_operand, op_type)
+            if match_fn:
+                return CallExpr(callee=Identifier(name=match_fn, line=expr.line, col=expr.col), args=[arg0], line=expr.line, col=expr.col)
+            return UnaryExpr(op=expr.op, operand=new_operand, line=expr.line, col=expr.col)
         elif isinstance(expr, AnonFuncExpr):
             new_params = [Param(name=p.name, type_name=subst_type(p.type_name, subst) or p.type_name, line=p.line, col=p.col) for p in expr.params]
             new_ret = subst_type(expr.return_type, subst) or expr.return_type
@@ -678,8 +712,108 @@ class Monomorphizer:
                 if expr.callee.member in self.generic_funcs:
                     return self.generic_funcs[expr.callee.member].return_type or "void"
         if isinstance(expr, BinaryExpr):
-            return self._infer_expr_type(expr.left, scope)
+            if expr.op in ("==", "!=", "<", "<=", ">", ">="):
+                return "bool"
+            l_t = self._infer_expr_type(expr.left, scope)
+            r_t = self._infer_expr_type(expr.right, scope)
+            match_fn, _, _ = self._find_binary_op_overload(expr.op, expr.left, l_t, expr.right, r_t)
+            if match_fn and match_fn in self.func_return_types:
+                return self.func_return_types[match_fn]
+            return l_t
+        if isinstance(expr, UnaryExpr):
+            if expr.op in ("!", "not"):
+                return "bool"
+            op_t = self._infer_expr_type(expr.operand, scope)
+            match_fn, _ = self._find_unary_op_overload(expr.op, expr.operand, op_t)
+            if match_fn and match_fn in self.func_return_types:
+                return self.func_return_types[match_fn]
+            return op_t
         return "i32"
+
+    def _find_binary_op_overload(self, op: str, left: Expr, l_type: str, right: Expr, r_type: str) -> Tuple[Optional[str], Optional[Expr], Optional[Expr]]:
+        key = (op, 2, (l_type, r_type))
+        if key in self.op_overloads:
+            return self.op_overloads[key], left, right
+
+        for (cand_op, cand_len, cand_params), fn_name in self.op_overloads.items():
+            if cand_op == op and cand_len == 2:
+                p0_t, p1_t = cand_params
+                a0 = self._adapt_arg(left, l_type, p0_t)
+                a1 = self._adapt_arg(right, r_type, p1_t)
+                if a0 is not None and a1 is not None:
+                    return fn_name, a0, a1
+
+        if (op, 2) in self.generic_op_overloads:
+            template = self.generic_op_overloads[(op, 2)]
+            try:
+                inferred: Dict[str, str] = {}
+                self._unify_types(template.params[0].type_name, l_type, template.type_params or [], inferred)
+                self._unify_types(template.params[1].type_name, r_type, template.type_params or [], inferred)
+                concrete_args = []
+                for tp in (template.type_params or []):
+                    if tp in inferred:
+                        self._check_type_usage(inferred[tp])
+                        concrete_args.append(normalize_type_name(inferred[tp]) or inferred[tp])
+                    else:
+                        return None, None, None
+                norm_args_tuple = tuple(concrete_args)
+                mangled_name = f"{template.name}_{'_'.join(mangle_type_name(a) for a in concrete_args)}"
+                self.request_instantiation("func", template.name, norm_args_tuple)
+                p0_t = normalize_type_name(subst_type(template.params[0].type_name, inferred))
+                p1_t = normalize_type_name(subst_type(template.params[1].type_name, inferred))
+                a0 = self._adapt_arg(left, l_type, p0_t)
+                a1 = self._adapt_arg(right, r_type, p1_t)
+                if a0 is not None and a1 is not None:
+                    return mangled_name, a0, a1
+            except Exception:
+                pass
+
+        return None, None, None
+
+    def _find_unary_op_overload(self, op: str, operand: Expr, op_type: str) -> Tuple[Optional[str], Optional[Expr]]:
+        key = (op, 1, (op_type,))
+        if key in self.op_overloads:
+            return self.op_overloads[key], operand
+
+        for (cand_op, cand_len, cand_params), fn_name in self.op_overloads.items():
+            if cand_op == op and cand_len == 1:
+                p0_t = cand_params[0]
+                a0 = self._adapt_arg(operand, op_type, p0_t)
+                if a0 is not None:
+                    return fn_name, a0
+
+        if (op, 1) in self.generic_op_overloads:
+            template = self.generic_op_overloads[(op, 1)]
+            try:
+                inferred: Dict[str, str] = {}
+                self._unify_types(template.params[0].type_name, op_type, template.type_params or [], inferred)
+                concrete_args = []
+                for tp in (template.type_params or []):
+                    if tp in inferred:
+                        self._check_type_usage(inferred[tp])
+                        concrete_args.append(normalize_type_name(inferred[tp]) or inferred[tp])
+                    else:
+                        return None, None
+                norm_args_tuple = tuple(concrete_args)
+                mangled_name = f"{template.name}_{'_'.join(mangle_type_name(a) for a in concrete_args)}"
+                self.request_instantiation("func", template.name, norm_args_tuple)
+                p0_t = normalize_type_name(subst_type(template.params[0].type_name, inferred))
+                a0 = self._adapt_arg(operand, op_type, p0_t)
+                if a0 is not None:
+                    return mangled_name, a0
+            except Exception:
+                pass
+
+        return None, None
+
+    def _adapt_arg(self, expr: Expr, actual_t: str, formal_t: str) -> Optional[Expr]:
+        if actual_t == formal_t:
+            return expr
+        if formal_t == f"@{actual_t}":
+            return AddressOf(operand=expr, line=expr.line, col=expr.col)
+        if actual_t == f"@{formal_t}":
+            return DerefExpr(operand=expr, line=expr.line, col=expr.col)
+        return None
 
     def _unify_types(self, formal: str, actual: str, type_params: List[str], inferred: Dict[str, str]):
         if formal in type_params:

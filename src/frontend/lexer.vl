@@ -34,6 +34,7 @@ act check_keyword(source: string, start: usize, len: usize) -> i32 {
         if source[start] == 'a' and source[start + 1] == 's' { return TOK_AS }
         if source[start] == 'o' and source[start + 1] == 'r' { return TOK_OR }
         if source[start] == 'o' and source[start + 1] == 'n' { return TOK_ON }
+        if source[start] == 'o' and source[start + 1] == 'p' { return TOK_OP }
     } else if len == 3 {
         if source[start] == 'a' and source[start + 1] == 'c' and source[start + 2] == 't' { return TOK_ACT }
         if source[start] == 'm' and source[start + 1] == 'u' and source[start + 2] == 't' { return TOK_MUT }

@@ -5,7 +5,8 @@ from velo.ast_nodes import (
     Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, LoopStmt, ZoneStmt, DeferStmt,
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
-    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, VariantExpr, AnonFuncExpr
+    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, VariantExpr, AnonFuncExpr,
+    mangle_op_name
 )
 
 class ParserError(Exception):
@@ -36,7 +37,7 @@ class Parser:
     def _check(self, token_type: TokenType) -> bool:
         cur_type = self._peek().type
         if token_type == TokenType.IDENTIFIER:
-            return cur_type in (TokenType.IDENTIFIER, TokenType.KIND)
+            return cur_type in (TokenType.IDENTIFIER, TokenType.KIND, TokenType.OP)
         return cur_type == token_type
 
     def _match(self, *types: TokenType) -> bool:
@@ -221,7 +222,23 @@ class Parser:
 
     def _parse_function_decl(self) -> FunctionDecl:
         act_tok = self._consume(TokenType.ACT, "Expected 'act'")
-        name_tok = self._consume(TokenType.IDENTIFIER, "Expected function name")
+        is_operator = False
+        op_symbol = None
+        valid_op_types = (
+            TokenType.PLUS, TokenType.MINUS, TokenType.STAR, TokenType.SLASH, TokenType.PERCENT,
+            TokenType.EQ, TokenType.NE, TokenType.LT, TokenType.LE, TokenType.GT, TokenType.GE,
+            TokenType.BANG, TokenType.NOT, TokenType.TILDE, TokenType.AMP, TokenType.PIPE,
+            TokenType.CARET, TokenType.SHL, TokenType.SHR
+        )
+        if self._peek().type == TokenType.OP and self._peek(1).type in valid_op_types:
+            self._advance()
+            is_operator = True
+            op_tok = self._advance()
+            op_symbol = op_tok.value
+            name = None
+        else:
+            name_tok = self._consume(TokenType.IDENTIFIER, "Expected function name")
+            name = name_tok.value
         type_params = self._parse_type_params()
 
         self._consume(TokenType.LPAREN, "Expected '(' after function name")
@@ -246,14 +263,20 @@ class Parser:
         self._skip_newlines()
         body = self._parse_block()
 
+        if is_operator:
+            param_types = [p.type_name for p in params]
+            name = mangle_op_name(op_symbol, param_types)
+
         return FunctionDecl(
-            name=name_tok.value,
+            name=name,
             params=params,
             return_type=return_type,
             body=body,
             line=act_tok.line,
             col=act_tok.col,
-            type_params=type_params
+            type_params=type_params,
+            is_operator=is_operator,
+            operator_symbol=op_symbol
         )
 
     def _parse_type_annotation(self) -> str:

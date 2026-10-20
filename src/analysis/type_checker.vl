@@ -9,6 +9,7 @@ use "symbol_table.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../common/act_types.vl"
+use "op_resolver.vl"
 use "type_check_program.vl"
 
 // Checks if a name represents a recognized type (primitive or user-defined struct or kind).
@@ -242,6 +243,10 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.kind == EXPR_BINARY {
         let left_type = infer_expr_type(st, expr.left)
         let right_type = infer_expr_type(st, expr.right)
+        let op_fn = find_binary_op(st, expr.op, left_type, right_type)
+        if op_fn != null {
+            return op_fn.return_type
+        }
         if expr.op == TOK_EQ or expr.op == TOK_NEQ or expr.op == TOK_LT or expr.op == TOK_LTE or expr.op == TOK_GT or expr.op == TOK_GTE or expr.op == TOK_AND or expr.op == TOK_OR {
             return "bool"
         }
@@ -250,6 +255,10 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
 
     if expr.kind == EXPR_UNARY {
         let sub_type = infer_expr_type(st, expr.operand)
+        let op_fn = find_unary_op(st, expr.op, sub_type)
+        if op_fn != null {
+            return op_fn.return_type
+        }
         if expr.op == TOK_NOT {
             return "bool"
         }
@@ -287,7 +296,15 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
             stmt.val_expr.type_name = target_type
         }
         let val_type = infer_expr_type(st, stmt.val_expr)
-        if not types_are_compatible(target_type, val_type) {
+        let base_op = get_base_assign_op(stmt.op)
+        mut is_valid = types_are_compatible(target_type, val_type)
+        if not is_valid and base_op != 0 {
+            let op_fn = find_binary_op(st, base_op, target_type, val_type)
+            if op_fn != null and types_are_compatible(target_type, op_fn.return_type) {
+                is_valid = true
+            }
+        }
+        if not is_valid {
             report_error("semantic", stmt.line, stmt.col, "Type mismatch in assignment")
             st.error_count += 1
         }
