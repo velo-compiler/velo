@@ -286,7 +286,12 @@ act run_check_json(src_path: string) -> i32 {
         check_print_minimal_json(src_path, "internal error: stdout capture failed")
         return 1
     }
-    let ok: bool = compile_source_to_c(src_path) != null
+    // NOTE: bind the call to a local before comparing with null. The Stage 2
+    // codegen expands `f(x) != null` into a null-guarded ternary that
+    // re-evaluates f(x) (a known defect recorded in gaps.md 6.7), which would
+    // run the pipeline twice and duplicate captured diagnostics.
+    let c_code = compile_source_to_c(src_path)
+    let ok: bool = c_code != null
     velo_capture_end()
 
     let captured = fs.read_file(tmp)
@@ -318,9 +323,11 @@ act run_check_pretty(src_path: string) -> bool {
     let tmp = "velo_check_capture.tmp"
     if velo_capture_begin(tmp) != 0 {
         // Capture unavailable: degrade to the compiler's own verdict.
-        return compile_source_to_c(src_path) != null
+        let c_code = compile_source_to_c(src_path)
+        return c_code != null
     }
-    let ok: bool = compile_source_to_c(src_path) != null
+    let c_code = compile_source_to_c(src_path)
+    let ok: bool = c_code != null
     velo_capture_end()
 
     let captured = fs.read_file(tmp)

@@ -179,6 +179,10 @@ def test_check_json_parse_error_native(tmp_path):
     assert report["ok"] is False
     assert len(report["diagnostics"]) >= 1
     assert report["diagnostics"][0]["severity"] == "error"
+    # Guard against the Stage 2 codegen double-evaluation class
+    # (`f(x) != null` re-running the pipeline; gaps.md 6.7 item 8).
+    seen = {(d["line"], d["col"], d["message"]) for d in report["diagnostics"]}
+    assert len(seen) == len(report["diagnostics"]), "duplicate diagnostics detected"
 
 
 def test_check_json_semantic_error_native(tmp_path):
