@@ -5,7 +5,8 @@ from velo.ast_nodes import (
     Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, LoopStmt, ZoneStmt, DeferStmt,
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
-    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr
+    Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr,
+    TypeAliasDecl
 )
 from velo.monomorphize import Monomorphizer, parse_act_type, mangle_act_type
 
@@ -32,6 +33,8 @@ class CCodeGenerator:
         self.output: List[str] = []
         self.indent_level = 0
         self.struct_defs: Dict[str, Dict[str, str]] = {}
+        self.struct_field_decls: Dict[str, List[Field]] = {}
+        self.type_aliases: Dict[str, str] = {}
         self.kind_defs: Dict[str, KindDecl] = {}
         self.variant_to_kind: Dict[str, str] = {}
         self.current_scope_types: Dict[str, str] = {}
@@ -65,7 +68,11 @@ class CCodeGenerator:
         while type_str.startswith("@"):
             pointer_count += 1
             type_str = type_str[1:]
-        
+
+        # Belt-and-braces: resolve a primitive type alias that escaped Pass 0 canonicalization
+        if type_str in self.type_aliases:
+            type_str = self.type_aliases[type_str]
+
         base_c_type = TYPE_MAP.get(type_str, type_str)
         return base_c_type + ("*" * pointer_count)
 
@@ -213,6 +220,7 @@ class CCodeGenerator:
                 if decl.name not in seen_structs:
                     self._emit_line(f"typedef struct {decl.name} {decl.name};")
                     self.struct_defs[decl.name] = {f.name: f.type_name for f in decl.fields}
+                    self.struct_field_decls[decl.name] = decl.fields
                     seen_structs.add(decl.name)
             elif isinstance(decl, KindDecl):
                 if decl.name not in seen_structs:
@@ -223,6 +231,18 @@ class CCodeGenerator:
                     seen_structs.add(decl.name)
 
         self._emit_line()
+
+        # 1. Register and emit type aliases (`type EntityId = u64`)
+        for decl in program.declarations:
+            if isinstance(decl, TypeAliasDecl):
+                if decl.name not in self.type_aliases:
+                    self.type_aliases[decl.name] = decl.target_type
+        alias_decls = [d for d in program.declarations if isinstance(d, TypeAliasDecl)]
+        if alias_decls:
+            self._emit_line("/* Type aliases */")
+            for decl in alias_decls:
+                self._emit_line(f"typedef {self._map_type(decl.target_type)} {decl.name};")
+            self._emit_line()
 
         # 1.5 Emit function pointer typedefs
         if self.used_act_types:
@@ -331,7 +351,15 @@ class CCodeGenerator:
         self._emit_line()
 
     def _emit_struct_definition(self, decl: DataDecl):
-        self._emit_line(f"struct {decl.name} {{")
+        attrs = ""
+        attr_parts = []
+        if decl.align:
+            attr_parts.append(f"aligned({decl.align})")
+        if decl.packed:
+            attr_parts.append("packed")
+        if attr_parts:
+            attrs = f"__attribute__(({', '.join(attr_parts)})) "
+        self._emit_line(f"struct {attrs}{decl.name} {{")
         self.indent_level += 1
         for field in decl.fields:
             c_type = self._map_type(field.type_name)
@@ -917,6 +945,15 @@ class CCodeGenerator:
             return f"(({c_type})({sub}))"
         elif isinstance(expr, StructLiteral):
             inits = [f".{fname} = {self._emit_expression(fval)}" for fname, fval in expr.field_inits]
+            field_decls = self.struct_field_decls.get(expr.struct_name)
+            if field_decls:
+                covered = {fname for fname, _ in expr.field_inits}
+                for f in field_decls:
+                    if f.name in covered:
+                        continue
+                    if f.default_expr is None:
+                        raise ValueError(f"Struct literal '{expr.struct_name}' is missing field '{f.name}' and it has no default initializer")
+                    inits.append(f".{f.name} = {self._emit_expression(f.default_expr)}")
             return f"({expr.struct_name}){{ {', '.join(inits)} }}"
         elif isinstance(expr, VariantExpr):
             kname = expr.kind_name or self.variant_to_kind.get(expr.variant_name)

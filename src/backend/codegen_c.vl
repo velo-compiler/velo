@@ -186,6 +186,19 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
     }
     sb_append_line(@sb, "", 0)
 
+    // 2.2 Type alias declarations (`type EntityId = u64`)
+    cur = prog.first_decl
+    mut found_alias = false
+    loop cur != null {
+        if cur.kind == DECL_TYPE_ALIAS {
+            if not found_alias { sb_append_str(@sb, "/* Type aliases */\n"); found_alias = true }
+            sb_append_str(@sb, "typedef "); sb_append_str(@sb, map_type_to_c(cur.type_name)); sb_append_char(@sb, ' ')
+            sb_append_str(@sb, cur.name); sb_append_str(@sb, ";\n")
+        }
+        cur = cur.next
+    }
+    if found_alias { sb_append_line(@sb, "", 0) }
+
     // 2.1 Function pointer typedefs
     mut act_list: @ActTypeNode = null
     scan_program_act_types(prog, @act_list)
@@ -267,7 +280,17 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
     cur = prog.first_decl
     loop cur != null {
         if cur.kind == DECL_DATA {
-            sb_append_str(@sb, "struct "); sb_append_str(@sb, cur.name); sb_append_str(@sb, " {\n")
+            if cur.align_bytes > 0 or cur.is_packed {
+                sb_append_str(@sb, "struct __attribute__((")
+                mut attr_first = true
+                if cur.align_bytes > 0 {
+                    sb_append_str(@sb, "aligned("); sb_append_int(@sb, cur.align_bytes); sb_append_char(@sb, ')')
+                    attr_first = false
+                }
+                if cur.is_packed { if not attr_first { sb_append_str(@sb, ", ") }; sb_append_str(@sb, "packed") }
+                sb_append_str(@sb, ")) ")
+            } else { sb_append_str(@sb, "struct ") }
+            sb_append_str(@sb, cur.name); sb_append_str(@sb, " {\n")
             mut cur_f = cur.first_field
             loop cur_f != null {
                 sb_append_indent(@sb, 1)

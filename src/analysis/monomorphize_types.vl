@@ -7,6 +7,7 @@ use "../ast/expr.vl"
 use "../ast/stmt.vl"
 use "../common/utils.vl"
 use "../common/string_builder.vl"
+use "../common/diagnostics.vl"
 
 // Tracks a registered generic template.
 data GenericTemplate {
@@ -46,6 +47,14 @@ data Monomorphizer {
     first_inst: @InstantiatedEntry
     worklist_head: @WorklistNode
     worklist_tail: @WorklistNode
+    first_alias: @TypeAliasEntry
+}
+
+// Tracks a registered primitive type alias (`type Foo = u64`).
+data TypeAliasEntry {
+    name: string
+    target: string
+    next: @TypeAliasEntry
 }
 
 act mono_init(m: @Monomorphizer) {
@@ -53,6 +62,7 @@ act mono_init(m: @Monomorphizer) {
     m.first_inst = null
     m.worklist_head = null
     m.worklist_tail = null
+    m.first_alias = null
 }
 
 act mono_find_template(m: @Monomorphizer, name: string) -> @GenericTemplate {

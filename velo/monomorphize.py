@@ -11,6 +11,7 @@ from velo.ast_nodes import (
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr,
+    TypeAliasDecl,
     mangle_op_name, OP_SYMBOL_TO_NAME
 )
 
@@ -186,6 +187,16 @@ class Monomorphizer:
             self.worklist.append(key)
 
     def monomorphize(self, program: Program) -> Program:
+        # Pass 0: Canonicalize primitive type aliases (`type Foo = u64`) in place,
+        # so every downstream stage sees the concrete target type everywhere.
+        self.type_aliases: Dict[str, str] = {}
+        for decl in program.declarations:
+            if isinstance(decl, TypeAliasDecl):
+                if decl.name in self.type_aliases:
+                    raise ValueError(f"Duplicate type alias '{decl.name}'")
+                self.type_aliases[decl.name] = decl.target_type
+        self._canonicalize_program_types(program)
+
         # Pass 1: Collect generic templates and regular declarations
         regular_decls: List[Decl] = []
         for decl in program.declarations:
@@ -233,8 +244,9 @@ class Monomorphizer:
                 new_fields: List[Field] = []
                 for f in decl.fields:
                     self._check_type_usage(f.type_name)
-                    new_fields.append(Field(name=f.name, type_name=normalize_type_name(f.type_name) or "i32", line=f.line, col=f.col))
-                transformed_regular_decls.append(DataDecl(name=decl.name, fields=new_fields, line=decl.line, col=decl.col))
+                    new_fields.append(Field(name=f.name, type_name=normalize_type_name(f.type_name) or "i32", line=f.line, col=f.col, default_expr=f.default_expr))
+                transformed_regular_decls.append(DataDecl(name=decl.name, fields=new_fields, line=decl.line, col=decl.col,
+                                                          type_params=decl.type_params, align=decl.align, packed=decl.packed))
             elif isinstance(decl, KindDecl):
                 new_variants: List[VariantDecl] = []
                 for v in decl.variants:
@@ -247,7 +259,7 @@ class Monomorphizer:
                         vf = []
                         for f in v.fields:
                             self._check_type_usage(f.type_name)
-                            vf.append(Field(name=f.name, type_name=normalize_type_name(f.type_name) or "i32", line=f.line, col=f.col))
+                            vf.append(Field(name=f.name, type_name=normalize_type_name(f.type_name) or "i32", line=f.line, col=f.col, default_expr=f.default_expr))
                     new_variants.append(VariantDecl(name=v.name, line=v.line, col=v.col, discriminant=v.discriminant, payload_type=ptype, fields=vf))
                 transformed_regular_decls.append(KindDecl(name=decl.name, variants=new_variants, line=decl.line, col=decl.col))
             elif isinstance(decl, VarDeclStmt):
@@ -293,6 +305,116 @@ class Monomorphizer:
 
         return Program(declarations=final_decls)
 
+    def _canon_type(self, t: Optional[str]) -> Optional[str]:
+        if not t:
+            return t
+        ptr = 0
+        base = t
+        while base.startswith("@"):
+            ptr += 1
+            base = base[1:]
+        if base not in self.type_aliases:
+            return t
+        return self.type_aliases[base] + ("@" * ptr)
+
+    def _canonicalize_program_types(self, program: Program):
+        for decl in program.declarations:
+            if isinstance(decl, DataDecl):
+                for f in decl.fields:
+                    f.type_name = self._canon_type(f.type_name)
+            elif isinstance(decl, KindDecl):
+                for v in decl.variants:
+                    if v.payload_type:
+                        v.payload_type = self._canon_type(v.payload_type)
+                    if v.fields:
+                        for f in v.fields:
+                            f.type_name = self._canon_type(f.type_name)
+            elif isinstance(decl, FunctionDecl):
+                for p in decl.params:
+                    p.type_name = self._canon_type(p.type_name)
+                decl.return_type = self._canon_type(decl.return_type)
+                self._canonicalize_stmt_types(decl.body)
+            elif isinstance(decl, ExternDecl):
+                for p in decl.params:
+                    p.type_name = self._canon_type(p.type_name)
+                decl.return_type = self._canon_type(decl.return_type)
+            elif isinstance(decl, VarDeclStmt):
+                decl.type_name = self._canon_type(decl.type_name)
+                self._canonicalize_expr_types(decl.value)
+
+    def _canonicalize_stmt_types(self, stmt: Optional[Stmt]):
+        if stmt is None:
+            return
+        if isinstance(stmt, BlockStmt):
+            for s in stmt.statements:
+                self._canonicalize_stmt_types(s)
+        elif isinstance(stmt, VarDeclStmt):
+            stmt.type_name = self._canon_type(stmt.type_name)
+            self._canonicalize_expr_types(stmt.value)
+        elif isinstance(stmt, AssignStmt):
+            self._canonicalize_expr_types(stmt.target)
+            self._canonicalize_expr_types(stmt.value)
+        elif isinstance(stmt, IfStmt):
+            self._canonicalize_expr_types(stmt.condition)
+            self._canonicalize_stmt_types(stmt.then_branch)
+            self._canonicalize_stmt_types(stmt.else_branch)
+        elif isinstance(stmt, LoopStmt):
+            self._canonicalize_expr_types(stmt.start_expr)
+            self._canonicalize_expr_types(stmt.end_expr)
+            self._canonicalize_expr_types(stmt.step_expr)
+            self._canonicalize_expr_types(stmt.expr)
+            self._canonicalize_stmt_types(stmt.body)
+        elif isinstance(stmt, ZoneStmt):
+            self._canonicalize_stmt_types(stmt.body)
+        elif isinstance(stmt, DeferStmt):
+            self._canonicalize_stmt_types(stmt.statement)
+        elif isinstance(stmt, MatchStmt):
+            self._canonicalize_expr_types(stmt.expr)
+            for c in stmt.cases:
+                for v in c.values:
+                    self._canonicalize_expr_types(v)
+                self._canonicalize_stmt_types(c.body)
+        elif isinstance(stmt, ExprStmt):
+            self._canonicalize_expr_types(stmt.expr)
+        elif isinstance(stmt, ReturnStmt):
+            self._canonicalize_expr_types(stmt.value)
+
+    def _canonicalize_expr_types(self, expr: Optional[Expr]):
+        if expr is None:
+            return
+        if isinstance(expr, CastExpr):
+            expr.target_type = self._canon_type(expr.target_type)
+            self._canonicalize_expr_types(expr.expr)
+        elif isinstance(expr, UnaryExpr):
+            self._canonicalize_expr_types(expr.operand)
+        elif isinstance(expr, AddressOf):
+            self._canonicalize_expr_types(expr.operand)
+        elif isinstance(expr, DerefExpr):
+            self._canonicalize_expr_types(expr.operand)
+        elif isinstance(expr, BinaryExpr):
+            self._canonicalize_expr_types(expr.left)
+            self._canonicalize_expr_types(expr.right)
+        elif isinstance(expr, MemberAccess):
+            self._canonicalize_expr_types(expr.target)
+        elif isinstance(expr, IndexExpr):
+            self._canonicalize_expr_types(expr.target)
+            self._canonicalize_expr_types(expr.index)
+        elif isinstance(expr, StructLiteral):
+            for _, val in expr.field_inits:
+                self._canonicalize_expr_types(val)
+        elif isinstance(expr, CallExpr):
+            self._canonicalize_expr_types(expr.callee)
+            for a in expr.args:
+                self._canonicalize_expr_types(a)
+        elif isinstance(expr, VariantExpr):
+            for a in expr.args:
+                self._canonicalize_expr_types(a)
+        elif isinstance(expr, AnonFuncExpr):
+            for p in expr.params:
+                p.type_name = self._canon_type(p.type_name)
+            expr.return_type = self._canon_type(expr.return_type)
+            self._canonicalize_stmt_types(expr.body)
+
     def _check_type_usage(self, type_str: Optional[str]):
         if not type_str:
             return
@@ -320,9 +442,11 @@ class Monomorphizer:
             ftype = subst_type(f.type_name, subst)
             self._check_type_usage(ftype)
             norm_ftype = normalize_type_name(ftype) or "i32"
-            new_fields.append(Field(name=f.name, type_name=norm_ftype, line=f.line, col=f.col))
+            new_fields.append(Field(name=f.name, type_name=norm_ftype, line=f.line, col=f.col, default_expr=f.default_expr))
 
         decl = DataDecl(name=mangled_name, fields=new_fields, line=template.line, col=template.col)
+        decl.align = template.align
+        decl.packed = template.packed
         self.instantiated_structs[mangled_name] = decl
         f_map = {f.name: f.type_name for f in new_fields}
         self.struct_fields[mangled_name] = set(f_map.keys())
@@ -347,7 +471,7 @@ class Monomorphizer:
                 for f in v.fields:
                     ftype = subst_type(f.type_name, subst)
                     self._check_type_usage(ftype)
-                    vf.append(Field(name=f.name, type_name=normalize_type_name(ftype) or "i32", line=f.line, col=f.col))
+                    vf.append(Field(name=f.name, type_name=normalize_type_name(ftype) or "i32", line=f.line, col=f.col, default_expr=f.default_expr))
             new_variants.append(VariantDecl(
                 name=v.name,
                 line=v.line,

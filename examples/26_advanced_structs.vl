@@ -1,0 +1,62 @@
+// Milestone 3.6: Advanced Struct Features — type aliases, field defaults, #align/#packed
+use sys.io
+
+// 1. Type aliases: primitive types with domain meaning (emitted as C typedef)
+type EntityId = u64
+type HealthPoints = i32
+type TexBuf = @u8
+
+// 2. `#align(16)`: SIMD-friendly layout; omitted fields fall back to their defaults
+data Vec4 #align(16) {
+    x: f32 = 0.0
+    y: f32 = 0.0
+    z: f32 = 0.0
+    w: f32 = 1.0
+}
+
+// 3. `#packed`: dense wire format, no padding between fields
+data Header #packed {
+    magic: u16 = 7
+    version: u16 = 1
+    size: u16 = 8
+}
+
+// 4. Struct fields may use aliases and default initializers
+data Particle {
+    pos: Vec4
+    id: EntityId = 1
+    hp: HealthPoints = 100
+}
+
+act main() {
+    io.println("=== Testing Advanced Struct Features (Milestone 3.6) ===")
+
+    // Type alias variable and alias-target arithmetic
+    let entity: EntityId = 42
+    let next_entity: EntityId = entity + 1
+    io.println("entity={entity}, next_entity={next_entity}")
+
+    // Alias to a pointer primitive
+    let tex: TexBuf = null
+    if tex == null {
+        io.println("tex is null: true")
+    }
+
+    // Default initializers fill omitted fields
+    let v = Vec4{ x: 2.5 }
+    io.println("v: x={v.x}, y={v.y}, z={v.z}, w={v.w}")
+
+    // A full literal overrides every default
+    let full = Vec4{ x: 1.0, y: 2.0, z: 3.0, w: 4.0 }
+    io.println("full: x={full.x}, y={full.y}, z={full.z}, w={full.w}")
+
+    // Empty literal: every field comes from its default
+    let h = Header{}
+    io.println("header: magic={h.magic}, version={h.version}, size={h.size}")
+
+    // Nested struct literal; the inner omitted fields are defaulted
+    let p = Particle{ pos: Vec4{ x: 2.5 } }
+    io.println("particle: id={p.id}, hp={p.hp}, pos.x={p.pos.x}, pos.w={p.pos.w}")
+
+    io.println("=== Advanced Struct Verification Complete ===")
+}

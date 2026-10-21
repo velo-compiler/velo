@@ -86,6 +86,7 @@ class TokenType(Enum):
     COMMA = auto()        # ,
     COLON = auto()        # :
     SEMICOLON = auto()    # ;
+    HASH = auto()         # # (struct attribute marker)
 
     # Formatting / Stream
     NEWLINE = auto()

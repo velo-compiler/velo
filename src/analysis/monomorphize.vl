@@ -9,6 +9,7 @@ use "../common/utils.vl"
 use "../common/string_builder.vl"
 use "monomorphize_types.vl"
 use "monomorphize_expr.vl"
+use "alias_resolve.vl"
 
 act mono_clone_stmt(m: @Monomorphizer, s: @StmtNode, scope: @ScopeEntry, params: string, args: string, ret_type: string) -> @StmtNode {
     if s == null { return null }
@@ -149,13 +150,13 @@ act mono_instantiate_struct(m: @Monomorphizer, tmpl: @GenericTemplate, type_args
         mut ft = mono_subst(cur_f.type_name, tmpl.type_params, type_args)
         mono_check_type(m, ft)
         ft = mono_normalize_type(ft)
-        let f = make_field_node(cur_f.name, ft, cur_f.line, cur_f.col)
+        let f = make_field_node(cur_f.name, ft, cur_f.has_default, cur_f.default_value, cur_f.line, cur_f.col)
         if first_f == null { first_f = f; last_f = f }
         else { last_f.next = f; last_f = f }
         count += 1
         cur_f = cur_f.next
     }
-    return make_data_decl(mangled_name, first_f, count, tmpl.node.line, tmpl.node.col)
+    return make_data_decl(mangled_name, first_f, count, tmpl.node.align_bytes, tmpl.node.is_packed, tmpl.node.line, tmpl.node.col)
 }
 
 act mono_instantiate_kind(m: @Monomorphizer, tmpl: @GenericTemplate, type_args: string, mangled_name: string) -> @StmtNode {
@@ -214,6 +215,8 @@ act monomorphize_program(prog: @ProgramNode) -> @ProgramNode {
     if prog == null { return null }
     mut m: Monomorphizer
     mono_init(@m)
+    mono_register_aliases(@m, prog)
+    mono_alias_resolve_prog(@m, prog)
 
     // Pass 1: Separate generic templates from regular declarations
     mut cur = prog.first_decl

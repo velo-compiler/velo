@@ -6,8 +6,13 @@ from velo.ast_nodes import (
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, VariantExpr, AnonFuncExpr,
+    TypeAliasDecl,
     mangle_op_name
 )
+
+# Types permitted as `type Alias = <target>` targets (primitive aliases only).
+ALIAS_TARGET_PRIMITIVES = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+                           "f32", "f64", "bool", "usize", "isize", "string"}
 
 class ParserError(Exception):
     def __init__(self, message: str, token: Token):
@@ -81,6 +86,8 @@ class Parser:
             return self._parse_function_decl()
         elif self._check(TokenType.LET) or self._check(TokenType.MUT):
             return self._parse_statement()
+        elif self._check(TokenType.IDENTIFIER) and self._peek().value == "type":
+            return self._parse_type_alias_decl()
         else:
             raise ParserError(f"Unexpected top-level token '{self._peek().value}'", self._peek())
 
@@ -150,12 +157,68 @@ class Parser:
         self._consume(TokenType.RBRACKET, "Expected ']' after type parameters")
         return params
 
+    def _parse_data_attributes(self) -> Tuple[Optional[int], bool]:
+        """Parses `#align(N)` and `#packed` markers between the header and '{'."""
+        align_value: Optional[int] = None
+        is_packed = False
+        while self._check(TokenType.HASH):
+            hash_tok = self._advance()
+            attr_tok = self._consume(TokenType.IDENTIFIER, "Expected attribute name after '#'")
+            if attr_tok.value == "align":
+                self._consume(TokenType.LPAREN, "Expected '(' after '#align'")
+                num_tok = self._consume(TokenType.INT_LIT, "Expected integer alignment after '#align('")
+                align_raw = str(num_tok.value).replace("_", "")
+                align_value = int(align_raw, 0)
+                if align_value <= 0:
+                    raise ParserError(f"#align(N) requires a positive integer, got {align_value}", num_tok)
+                self._consume(TokenType.RPAREN, "Expected ')' after alignment value")
+            elif attr_tok.value == "packed":
+                is_packed = True
+            else:
+                raise ParserError(f"Unknown data attribute '#{attr_tok.value}' (expected 'align' or 'packed')", attr_tok)
+        return align_value, is_packed
+
+    def _parse_field_default(self) -> Expr:
+        """Parses a constant field default: literal or unary `-` on a numeric literal."""
+        if self._match(TokenType.MINUS):
+            num_tok = self._peek()
+            if not (num_tok.type == TokenType.INT_LIT or num_tok.type == TokenType.FLOAT_LIT):
+                raise ParserError("Field default after '-' must be a numeric literal", num_tok)
+            self._advance()
+            prev = self.tokens[self.pos - 1]
+            if prev.type == TokenType.FLOAT_LIT:
+                return FloatLiteral(value=-prev.value, line=prev.line, col=prev.col,
+                                    raw_str="-" + (prev.raw_str or str(prev.value)), type_name=prev.type_name)
+            return IntLiteral(value=-prev.value, line=prev.line, col=prev.col,
+                              raw_str="-" + (prev.raw_str or str(prev.value)), type_name=prev.type_name)
+        lit_tok = self._peek()
+        if lit_tok.type == TokenType.INT_LIT:
+            self._advance()
+            prev = self.tokens[self.pos - 1]
+            return IntLiteral(value=prev.value, line=prev.line, col=prev.col, raw_str=prev.raw_str, type_name=prev.type_name)
+        if lit_tok.type == TokenType.FLOAT_LIT:
+            self._advance()
+            prev = self.tokens[self.pos - 1]
+            return FloatLiteral(value=prev.value, line=prev.line, col=prev.col, raw_str=prev.raw_str, type_name=prev.type_name)
+        if lit_tok.type == TokenType.STRING_LIT:
+            self._advance()
+            return StringLiteral(value=lit_tok.value, line=lit_tok.line, col=lit_tok.col)
+        if lit_tok.type == TokenType.TRUE:
+            self._advance()
+            return BoolLiteral(value=True, line=lit_tok.line, col=lit_tok.col)
+        if lit_tok.type == TokenType.FALSE:
+            self._advance()
+            return BoolLiteral(value=False, line=lit_tok.line, col=lit_tok.col)
+        raise ParserError("Field default must be a constant literal (number, string, or bool)", lit_tok)
+
     def _parse_data_decl(self) -> DataDecl:
         data_tok = self._consume(TokenType.DATA, "Expected 'data'")
         name_tok = self._consume(TokenType.IDENTIFIER, "Expected struct name after 'data'")
         type_params = self._parse_type_params()
 
         self._skip_newlines()
+        align_value, is_packed = self._parse_data_attributes()
+
         self._consume(TokenType.LBRACE, "Expected '{' after struct name")
         self._skip_newlines()
 
@@ -164,13 +227,30 @@ class Parser:
             fname = self._consume(TokenType.IDENTIFIER, "Expected field name")
             self._consume(TokenType.COLON, "Expected ':' after field name")
             ftype = self._parse_type_annotation()
-            fields.append(Field(name=fname.value, type_name=ftype, line=fname.line, col=fname.col))
+            default_expr = None
+            if self._match(TokenType.ASSIGN):
+                default_expr = self._parse_field_default()
+            fields.append(Field(name=fname.value, type_name=ftype, line=fname.line, col=fname.col, default_expr=default_expr))
             self._skip_newlines()
             self._match(TokenType.COMMA)
             self._skip_newlines()
 
         self._consume(TokenType.RBRACE, "Expected '}' after struct body")
-        return DataDecl(name=name_tok.value, fields=fields, line=data_tok.line, col=data_tok.col, type_params=type_params)
+        decl = DataDecl(name=name_tok.value, fields=fields, line=data_tok.line, col=data_tok.col, type_params=type_params)
+        decl.align = align_value
+        decl.packed = is_packed
+        return decl
+
+    def _parse_type_alias_decl(self) -> TypeAliasDecl:
+        self._consume(TokenType.IDENTIFIER, "Expected 'type'")
+        name_tok = self._consume(TokenType.IDENTIFIER, "Expected alias name after 'type'")
+        self._consume(TokenType.ASSIGN, "Expected '=' in type alias")
+        target = self._parse_type_annotation()
+        base = target[1:] if target.startswith("@") else target
+        if base not in ALIAS_TARGET_PRIMITIVES:
+            raise ParserError(f"Type alias '{name_tok.value}' must target a primitive type (or @primitive), got '{target}'", name_tok)
+        self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
+        return TypeAliasDecl(name=name_tok.value, target_type=target, line=name_tok.line, col=name_tok.col)
 
     def _parse_kind_decl(self) -> KindDecl:
         kind_tok = self._consume(TokenType.KIND, "Expected 'kind'")

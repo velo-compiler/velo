@@ -234,6 +234,7 @@ class Field:
     type_name: str
     line: int
     col: int
+    default_expr: Optional[Expr] = None  # constant initializer from `x: f32 = 0.0`
 
 @dataclass
 class DataDecl(Decl):
@@ -242,6 +243,16 @@ class DataDecl(Decl):
     line: int
     col: int
     type_params: Optional[List[str]] = None
+    align: Optional[int] = None          # from `#align(N)`; None = natural alignment
+    packed: bool = False                 # from `#packed`
+
+@dataclass
+class TypeAliasDecl(Decl):
+    # `type EntityId = u64` — target must be a primitive (or pointer-to-primitive).
+    name: str
+    target_type: str
+    line: int
+    col: int
 
 @dataclass
 class VariantDecl:

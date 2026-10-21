@@ -374,6 +374,7 @@ act tokenize(lex: @Lexer) {
             else if c == '}' { op_kind = TOK_RBRACE }
             else if c == '[' { op_kind = TOK_LBRACKET }
             else if c == ']' { op_kind = TOK_RBRACKET }
+            else if c == '#' { op_kind = TOK_HASH }
 
             if op_kind != TOK_EOF {
                 add_token(lex, op_kind, start_pos, op_len, start_line, start_col)

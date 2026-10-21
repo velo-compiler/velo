@@ -22,8 +22,8 @@ let DECL_FUNCTION: i32 = 302
 let DECL_EXTERN: i32 = 303
 let DECL_USE: i32 = 304
 let DECL_KIND: i32 = 305
+let DECL_TYPE_ALIAS: i32 = 306
 
-// Represents a variant in a kind (enum / tagged union).
 data VariantNode {
     name: string
     discriminant: i32
@@ -36,7 +36,6 @@ data VariantNode {
     next: @VariantNode
 }
 
-// Represents a single branch in a match / switch statement.
 data CaseNode {
     first_val: @ExprNode
     val_count: usize
@@ -47,7 +46,6 @@ data CaseNode {
     next: @CaseNode
 }
 
-// Represents a formal parameter in a function or extern declaration.
 data ParamNode {
     name: string
     type_name: string
@@ -56,17 +54,17 @@ data ParamNode {
     next: @ParamNode
 }
 
-// Represents a field declaration in a struct data blueprint.
 data FieldNode {
     name: string
     type_name: string
+    has_default: bool
+    default_value: @ExprNode
     line: i32
     col: i32
     next: @FieldNode
 }
 
-// Unified AST Statement & Declaration Node.
-// Memory Ownership: All nodes are allocated inside the active zone arena.
+// Unified AST Statement & Declaration Node (allocated inside the active zone arena).
 data StmtNode {
     kind: i32
     line: i32
@@ -105,6 +103,9 @@ data StmtNode {
     variant_count: usize
     type_params: string
     module_path: string
+    // Struct layout attributes (`#align(N)` / `#packed`); DECL_DATA only
+    align_bytes: i32
+    is_packed: bool
     // Intrusive linked list pointer for sequence of statements / declarations
     next: @StmtNode
 }
@@ -285,12 +286,25 @@ act make_match_stmt(expr: @ExprNode, first_case: @CaseNode, case_count: usize, l
 }
 
 // Creates a top-level struct data declaration (`data Name { ... }`).
-act make_data_decl(name: string, first_field: @FieldNode, count: usize, line: i32, col: i32) -> @StmtNode {
+act make_data_decl(name: string, first_field: @FieldNode, count: usize, align_bytes: i32, is_packed: bool, line: i32, col: i32) -> @StmtNode {
     mut node: @StmtNode = mem.alloc(@StmtNode, 1)
     node.kind = DECL_DATA
     node.name = name
     node.first_field = first_field
     node.field_count = count
+    node.align_bytes = align_bytes
+    node.is_packed = is_packed
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a top-level type alias declaration (`type EntityId = u64`).
+act make_type_alias_decl(name: string, target: string, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = DECL_TYPE_ALIAS
+    node.name = name
+    node.type_name = target
     node.line = line
     node.col = col
     return node
@@ -345,10 +359,12 @@ act make_param_node(name: string, type_name: string, line: i32, col: i32) -> @Pa
 }
 
 // Creates a struct field descriptor node.
-act make_field_node(name: string, type_name: string, line: i32, col: i32) -> @FieldNode {
+act make_field_node(name: string, type_name: string, has_default: bool, default_value: @ExprNode, line: i32, col: i32) -> @FieldNode {
     mut f: @FieldNode = mem.alloc(@FieldNode, 1)
     f.name = name
     f.type_name = type_name
+    f.has_default = has_default
+    f.default_value = default_value
     f.line = line
     f.col = col
     f.next = null

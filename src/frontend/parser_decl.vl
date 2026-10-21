@@ -73,6 +73,52 @@ act parse_use_decl(p: @Parser) -> @StmtNode {
     return make_use_decl(mod_path, use_tok.line, use_tok.col)
 }
 
+// Parses a constant field default initializer (literal or unary minus on a numeric literal).
+act parse_field_default(p: @Parser) -> @ExprNode {
+    if parser_match(p, TOK_MINUS) {
+        let tok = parser_peek(p, 0)
+        if tok.kind != TOK_INT_LIT and tok.kind != TOK_FLOAT_LIT {
+            report_error("parse", tok.line, tok.col, "Field default after '-' must be a numeric literal")
+        }
+        let val = parse_expression(p)
+        return make_unary_expr(TOK_MINUS, val, tok.line, tok.col)
+    }
+    let tok = parser_peek(p, 0)
+    if not (tok.kind == TOK_INT_LIT or tok.kind == TOK_FLOAT_LIT or tok.kind == TOK_STRING_LIT or tok.kind == TOK_TRUE or tok.kind == TOK_FALSE) {
+        report_error("parse", tok.line, tok.col, "Field default must be a constant literal (number, string, or bool)")
+    }
+    return parse_expression(p)
+}
+
+// Reports whether a type alias target base is a supported primitive.
+act is_alias_target_primitive(base: string) -> bool {
+    if base == "i8" { return true } else if base == "i16" { return true } else if base == "i32" { return true }
+    else if base == "i64" { return true } else if base == "u8" { return true } else if base == "u16" { return true }
+    else if base == "u32" { return true } else if base == "u64" { return true } else if base == "f32" { return true }
+    else if base == "f64" { return true } else if base == "bool" { return true } else if base == "usize" { return true }
+    else if base == "isize" { return true } else if base == "string" { return true }
+    return false
+}
+
+// Parses a primitive type alias declaration (`type EntityId = u64`).
+act parse_type_alias_decl(p: @Parser) -> @StmtNode {
+    parser_advance(p)
+    let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected alias name after 'type'")
+    let aname = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
+    parser_consume(p, TOK_ASSIGN, "Expected '=' in type alias")
+    let target = parse_type_annotation(p)
+    mut base = target
+    if str.len(base) > 0 and base[0] == '@' {
+        base = copy_slice_to_string(base, 1, str.len(base) - 1)
+    }
+    if not is_alias_target_primitive(base) {
+        report_error("parse", name_tok.line, name_tok.col, "Type alias target must be a primitive type (or @primitive)")
+    }
+    parser_match(p, TOK_SEMICOLON)
+    parser_skip_newlines(p)
+    return make_type_alias_decl(aname, target, name_tok.line, name_tok.col)
+}
+
 // Parses a struct data blueprint declaration (`data Name[T] { ... }`).
 act parse_data_decl(p: @Parser) -> @StmtNode {
     let data_tok = parser_consume(p, TOK_DATA, "Expected 'data'")
@@ -81,6 +127,26 @@ act parse_data_decl(p: @Parser) -> @StmtNode {
     let type_params = parse_type_params(p)
 
     parser_skip_newlines(p)
+
+    // Struct layout attributes: `#align(N)` and `#packed` (contextual names).
+    mut align_bytes: i32 = 0
+    mut is_packed = false
+    loop parser_check(p, TOK_HASH) {
+        parser_advance(p)
+        let attr_tok = parser_consume(p, TOK_IDENTIFIER, "Expected attribute name after '#'")
+        let attr_name = copy_slice_to_string(p.source, attr_tok.start, attr_tok.length)
+        if attr_name == "align" {
+            parser_consume(p, TOK_LPAREN, "Expected '(' after '#align'")
+            let align_tok = parser_consume(p, TOK_INT_LIT, "Expected integer alignment after '#align('")
+            align_bytes = parse_int_from_slice(p.source, align_tok.start, align_tok.length)
+            parser_consume(p, TOK_RPAREN, "Expected ')' after alignment value")
+        } else if attr_name == "packed" {
+            is_packed = true
+        } else {
+            report_error("parse", attr_tok.line, attr_tok.col, "Unknown data attribute (expected 'align' or 'packed')")
+        }
+    }
+
     parser_consume(p, TOK_LBRACE, "Expected '{' after struct name")
     parser_skip_newlines(p)
 
@@ -93,7 +159,13 @@ act parse_data_decl(p: @Parser) -> @StmtNode {
         let fname = copy_slice_to_string(p.source, fname_tok.start, fname_tok.length)
         parser_consume(p, TOK_COLON, "Expected ':' after field name")
         let ftype = parse_type_annotation(p)
-        let fnode = make_field_node(fname, ftype, fname_tok.line, fname_tok.col)
+        mut f_default: @ExprNode = null
+        mut f_has_def = false
+        if parser_match(p, TOK_ASSIGN) {
+            f_default = parse_field_default(p)
+            f_has_def = true
+        }
+        let fnode = make_field_node(fname, ftype, f_has_def, f_default, fname_tok.line, fname_tok.col)
 
         if first_field == null {
             first_field = fnode
@@ -110,7 +182,7 @@ act parse_data_decl(p: @Parser) -> @StmtNode {
     }
 
     parser_consume(p, TOK_RBRACE, "Expected '}' after struct body")
-    mut node = make_data_decl(sname, first_field, count, data_tok.line, data_tok.col)
+    mut node = make_data_decl(sname, first_field, count, align_bytes, is_packed, data_tok.line, data_tok.col)
     node.type_params = type_params
     return node
 }
@@ -153,7 +225,7 @@ act parse_kind_decl(p: @Parser) -> @StmtNode {
                     let fname = copy_slice_to_string(p.source, fname_tok.start, fname_tok.length)
                     parser_consume(p, TOK_COLON, "Expected ':' after field name")
                     let ftype = parse_type_annotation(p)
-                    let f_node = make_field_node(fname, ftype, fname_tok.line, fname_tok.col)
+                    let f_node = make_field_node(fname, ftype, false, null, fname_tok.line, fname_tok.col)
                     if first_field == null {
                         first_field = f_node
                         last_field = f_node

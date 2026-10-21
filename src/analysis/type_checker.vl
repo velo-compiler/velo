@@ -237,6 +237,21 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             }
             cur_init = cur_init.next
         }
+        // Fields without defaults must be provided in the literal
+        mut sf = st_sym.first_field
+        loop sf != null {
+            mut seen_init = expr.first_init
+            mut covered = false
+            loop seen_init != null {
+                if seen_init.name == sf.name { covered = true }
+                seen_init = seen_init.next
+            }
+            if not covered and not sf.has_default {
+                report_error("semantic", expr.line, expr.col, "Struct literal is missing field with no default")
+                st.error_count += 1
+            }
+            sf = sf.next
+        }
         return expr.type_name
     }
 

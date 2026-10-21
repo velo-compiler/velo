@@ -349,6 +349,60 @@ Operators declared with pointer parameters (`act op +(a: @Vector2, b: @Vector2)`
 
 ---
 
+### 2.9 Advanced Struct Features (Type Aliases, Field Defaults, `#align`/`#packed`)
+
+#### Type Aliases (`type Name = T`):
+A type alias gives a primitive type a domain-specific name. `type` is a contextual keyword recognized only at top level; the target must be a primitive type, optionally preceded by a single pointer marker:
+
+```rust
+type EntityId = u64
+type HealthPoints = i32
+type TexBuf = @u8
+
+let entity: EntityId = 42
+let next = entity + 1   // alias resolves to u64 statically
+```
+
+Semantics:
+- The target must be a primitive (`i8`..`i64`, `u8`..`u64`, `f32`, `f64`, `bool`, `usize`, `isize`, `string`) or `@<primitive>`; aliasing a struct or kind is a compile error.
+- No alias-of-alias: the target is validated at parse time.
+- Resolution is order-free: aliases are collected from the whole program (including across `use`d files) before any use site is canonicalized, so an alias may be declared after its uses.
+- Both compilers canonicalize every type string (struct fields, kind payloads, parameters, return types, local declarations, casts) before code generation; the emitted C also carries a decorative `typedef <target> <Name>;`.
+
+#### Default Field Initializers:
+Struct fields may declare constant default initializers. Struct literal fields that are omitted are filled from their defaults, in declaration order, via C99 designated initializers:
+
+```rust
+data Vec4 {
+    x: f32 = 0.0
+    y: f32 = 0.0
+    z: f32 = 0.0
+    w: f32 = 1.0
+}
+
+let v = Vec4{ x: 2.5 }   // v.y == 0.0, v.z == 0.0, v.w == 1.0
+```
+
+Rules:
+- Defaults must be constant literals (integer, float, string, bool) or a unary `-` applied to a numeric literal.
+- An omitted field **without** a default is a compile error ("missing field ... no default initializer"); a literal must remain complete with respect to non-defaulted fields.
+- Field defaults may also reference other declared types (e.g. `id: EntityId = 1`).
+- Defaults in generic struct templates are carried into every specialization.
+
+#### Struct Layout Attributes (`#align(N)` / `#packed`):
+Data declarations accept layout attributes between the header and the struct body; both compile to GCC/Clang `__attribute__` markers on the struct definition:
+
+```rust
+data Vec4 #align(16) { ... }    // struct __attribute__((aligned(16))) Vec4 { ... };
+data Blob #packed { ... }       // struct __attribute__((packed)) Blob { ... };
+data Item #align(64) #packed { ... }   // __attribute__((aligned(64), packed))
+```
+
+- `#align(N)` takes a positive integer literal; the forward `typedef struct T T;` is emitted without attributes (which is valid C and does not affect layout).
+- Attributes appear on every specialization of a generic struct declaration.
+
+---
+
 ## 3. Variables & Mutability
 
 ### 3.1 Immutable by Default

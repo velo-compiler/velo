@@ -2,6 +2,7 @@
 use sys.io
 use sys.mem
 use "../common/diagnostics.vl"
+use "../ast/expr.vl"
 
 // Symbol kind constants
 let SYM_VAR: i32 = 1
@@ -30,6 +31,8 @@ data Scope {
 data StructFieldSym {
     name: string
     type_name: string
+    has_default: bool
+    default_value: @ExprNode
     line: i32
     col: i32
     next: @StructFieldSym
@@ -223,10 +226,12 @@ act register_struct(st: @SymbolTable, name: string, line: i32, col: i32) -> @Str
 }
 
 // Adds a field to a registered struct blueprint.
-act struct_add_field(st_sym: @StructSym, fname: string, ftype: string, line: i32, col: i32) -> bool {
+act struct_add_field(st_sym: @StructSym, fname: string, ftype: string, has_default: bool, default_value: @ExprNode, line: i32, col: i32) -> bool {
     mut f: @StructFieldSym = mem.alloc(@StructFieldSym, 1)
     f.name = fname
     f.type_name = ftype
+    f.has_default = has_default
+    f.default_value = default_value
     f.line = line
     f.col = col
     f.next = null

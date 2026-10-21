@@ -34,16 +34,8 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         }
         return
     }
-    if expr.kind == EXPR_STRING {
-        sb_append_char(sb, '"')
-        sb_append_str(sb, expr.str_val)
-        sb_append_char(sb, '"')
-        return
-    }
-    if expr.kind == EXPR_BOOL {
-        if expr.bool_val { sb_append_str(sb, "true") } else { sb_append_str(sb, "false") }
-        return
-    }
+    if expr.kind == EXPR_STRING { sb_append_char(sb, '"'); sb_append_str(sb, expr.str_val); sb_append_char(sb, '"'); return }
+    if expr.kind == EXPR_BOOL { if expr.bool_val { sb_append_str(sb, "true") } else { sb_append_str(sb, "false") }; return }
     if expr.kind == EXPR_NULL { sb_append_str(sb, "NULL"); return }
     if expr.kind == EXPR_IDENT { sb_append_str(sb, expr.str_val); return }
     if expr.kind == EXPR_VARIANT {
@@ -81,18 +73,8 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     }
 
     // 2. Unary & Address-of & Dereference
-    if expr.kind == EXPR_ADDRESS_OF {
-        sb_append_str(sb, "(&(")
-        emit_c_expr(sb, st, expr.operand)
-        sb_append_str(sb, "))")
-        return
-    }
-    if expr.kind == EXPR_DEREF {
-        sb_append_str(sb, "(*(")
-        emit_c_expr(sb, st, expr.operand)
-        sb_append_str(sb, "))")
-        return
-    }
+    if expr.kind == EXPR_ADDRESS_OF { sb_append_str(sb, "(&("); emit_c_expr(sb, st, expr.operand); sb_append_str(sb, "))"); return }
+    if expr.kind == EXPR_DEREF { sb_append_str(sb, "(*("); emit_c_expr(sb, st, expr.operand); sb_append_str(sb, "))"); return }
     if expr.kind == EXPR_UNARY {
         let sub_type = infer_expr_type(st, expr.operand)
         let op_fn = find_unary_op(st, expr.op, sub_type)
@@ -157,29 +139,48 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
 
     // 5. Explicit cast
     if expr.kind == EXPR_CAST {
-        sb_append_str(sb, "((")
-        sb_append_str(sb, map_type_to_c(expr.type_name))
-        sb_append_str(sb, ")(")
+        sb_append_str(sb, "(("); sb_append_str(sb, map_type_to_c(expr.type_name)); sb_append_str(sb, ")(")
         emit_c_expr(sb, st, expr.operand)
         sb_append_str(sb, "))")
         return
     }
 
-    // 6. Struct instantiation literal
+    // 6. Struct instantiation literal (omitted fields fall back to their declared defaults)
     if expr.kind == EXPR_STRUCT_LIT {
         sb_append_char(sb, '(')
         sb_append_str(sb, expr.type_name)
         sb_append_str(sb, "){ ")
+        mut need_sep = false
         mut cur_init = expr.first_init
         loop cur_init != null {
+            if need_sep { sb_append_str(sb, ", ") }
             sb_append_char(sb, '.')
             sb_append_str(sb, cur_init.name)
             sb_append_str(sb, " = ")
             emit_c_expr(sb, st, cur_init.value)
-            if cur_init.next != null {
-                sb_append_str(sb, ", ")
-            }
+            need_sep = true
             cur_init = cur_init.next
+        }
+        let st_sym = find_struct(st, expr.type_name)
+        if st_sym != null {
+            mut sf = st_sym.first_field
+            loop sf != null {
+                mut seen = expr.first_init
+                mut covered = false
+                loop seen != null {
+                    if seen.name == sf.name { covered = true }
+                    seen = seen.next
+                }
+                if not covered and sf.has_default {
+                    if need_sep { sb_append_str(sb, ", ") }
+                    sb_append_char(sb, '.')
+                    sb_append_str(sb, sf.name)
+                    sb_append_str(sb, " = ")
+                    emit_c_expr(sb, st, sf.default_value)
+                    need_sep = true
+                }
+                sf = sf.next
+            }
         }
         sb_append_str(sb, " }")
         return

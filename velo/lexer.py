@@ -427,5 +427,6 @@ class Lexer:
         if ch == ']': return Token(TokenType.RBRACKET, "]", line, col)
         if ch == ',': return Token(TokenType.COMMA, ",", line, col)
         if ch == ':': return Token(TokenType.COLON, ":", line, col)
+        if ch == '#': return Token(TokenType.HASH, "#", line, col)
 
         raise LexerError(f"Unexpected character '{ch}'", line, col)

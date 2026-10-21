@@ -1,0 +1,184 @@
+// Type alias registration and Pass 0 canonicalization for the self-hosted compiler.
+// A dedicated stage that runs before every monomorphization pass so alias names
+// (`type EntityId = u64`) resolve to their primitive targets everywhere, even in
+// programs that contain no generics.
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../common/utils.vl"
+use "../common/string_builder.vl"
+use "../common/diagnostics.vl"
+use "monomorphize_types.vl"
+
+// Finds a registered alias by name.
+act mono_find_alias(m: @Monomorphizer, name: string) -> @TypeAliasEntry {
+    mut cur = m.first_alias
+    loop cur != null {
+        if cur.name == name { return cur }
+        cur = cur.next
+    }
+    return null
+}
+
+// Registers type alias declarations so any use site can resolve to its target.
+act mono_register_aliases(m: @Monomorphizer, prog: @ProgramNode) {
+    mut cur = prog.first_decl
+    loop cur != null {
+        if cur.kind == DECL_TYPE_ALIAS {
+            if mono_find_alias(m, cur.name) != null {
+                report_warning("semantic", cur.line, cur.col, "Duplicate type alias; first declaration wins")
+            } else {
+                mut entry: @TypeAliasEntry = mem.alloc(@TypeAliasEntry, 1)
+                entry.name = cur.name
+                entry.target = cur.type_name
+                entry.next = m.first_alias
+                m.first_alias = entry
+            }
+        }
+        cur = cur.next
+    }
+}
+
+// Replaces an alias name with its primitive target, preserving pointer prefixes.
+act mono_canon_type(m: @Monomorphizer, t: string) -> string {
+    if t == null { return t }
+    mut base = t
+    mut depth: usize = 0
+    loop str.len(base) > 0 and base[0] == '@' {
+        depth += 1
+        base = copy_slice_to_string(base, 1, str.len(base) - 1)
+    }
+    let entry = mono_find_alias(m, base)
+    if entry != null {
+        mut sb = create_sb(str.len(entry.target) + depth + 1)
+        sb_append_str(@sb, entry.target)
+        loop depth > 0 {
+            sb_append_char(@sb, '@')
+            depth -= 1
+        }
+        return sb_to_string(@sb)
+    }
+    return t
+}
+
+// Rewrites alias names inside an expression tree in place.
+act mono_alias_resolve_expr(m: @Monomorphizer, e: @ExprNode) {
+    if e == null { return }
+    if e.kind == EXPR_CAST {
+        e.type_name = mono_canon_type(m, e.type_name)
+        mono_alias_resolve_expr(m, e.operand)
+    } else if e.kind == EXPR_UNARY or e.kind == EXPR_ADDRESS_OF or e.kind == EXPR_DEREF {
+        mono_alias_resolve_expr(m, e.operand)
+    } else if e.kind == EXPR_BINARY {
+        mono_alias_resolve_expr(m, e.left)
+        mono_alias_resolve_expr(m, e.right)
+    } else if e.kind == EXPR_MEMBER {
+        mono_alias_resolve_expr(m, e.target)
+    } else if e.kind == EXPR_INDEX {
+        mono_alias_resolve_expr(m, e.target)
+        mono_alias_resolve_expr(m, e.index)
+    } else if e.kind == EXPR_STRUCT_LIT {
+        mut cur = e.first_init
+        loop cur != null {
+            mono_alias_resolve_expr(m, cur.value)
+            cur = cur.next
+        }
+    } else if e.kind == EXPR_CALL {
+        mut cur_a = e.first_arg
+        loop cur_a != null {
+            mono_alias_resolve_expr(m, cur_a)
+            cur_a = cur_a.next
+        }
+    }
+}
+
+// Rewrites alias names inside a statement tree in place.
+act mono_alias_resolve_stmt(m: @Monomorphizer, s: @StmtNode) {
+    if s == null { return }
+    if s.kind == STMT_BLOCK {
+        mut cur = s.first_stmt
+        loop cur != null {
+            mono_alias_resolve_stmt(m, cur)
+            cur = cur.next
+        }
+    } else if s.kind == STMT_VAR_DECL {
+        s.type_name = mono_canon_type(m, s.type_name)
+        mono_alias_resolve_expr(m, s.val_expr)
+    } else if s.kind == STMT_ASSIGN {
+        mono_alias_resolve_expr(m, s.expr)
+        mono_alias_resolve_expr(m, s.val_expr)
+    } else if s.kind == STMT_IF {
+        mono_alias_resolve_expr(m, s.expr)
+        mono_alias_resolve_stmt(m, s.body)
+        mono_alias_resolve_stmt(m, s.else_branch)
+    } else if s.kind == STMT_LOOP {
+        mono_alias_resolve_expr(m, s.loop_start)
+        mono_alias_resolve_expr(m, s.loop_end)
+        mono_alias_resolve_expr(m, s.loop_step)
+        mono_alias_resolve_expr(m, s.expr)
+        mono_alias_resolve_stmt(m, s.body)
+    } else if s.kind == STMT_ZONE {
+        mono_alias_resolve_stmt(m, s.body)
+    } else if s.kind == STMT_DEFER {
+        mono_alias_resolve_stmt(m, s.deferred_stmt)
+    } else if s.kind == STMT_RETURN {
+        mono_alias_resolve_expr(m, s.val_expr)
+    } else if s.kind == STMT_MATCH {
+        mono_alias_resolve_expr(m, s.expr)
+        mut cur_case = s.first_case
+        loop cur_case != null {
+            mut cur_val = cur_case.first_val
+            loop cur_val != null {
+                mono_alias_resolve_expr(m, cur_val)
+                cur_val = cur_val.next
+            }
+            mono_alias_resolve_stmt(m, cur_case.body)
+            cur_case = cur_case.next
+        }
+    } else if s.kind == STMT_EXPR {
+        mono_alias_resolve_expr(m, s.expr)
+    }
+}
+
+// Rewrites alias names across every declaration in the program (Pass 0).
+act mono_alias_resolve_prog(m: @Monomorphizer, prog: @ProgramNode) {
+    if m.first_alias == null { return }
+    mut cur = prog.first_decl
+    loop cur != null {
+        if cur.kind == DECL_DATA {
+            mut cur_f = cur.first_field
+            loop cur_f != null {
+                cur_f.type_name = mono_canon_type(m, cur_f.type_name)
+                cur_f = cur_f.next
+            }
+            // Field default expressions may contain alias casts
+            mut cur_fd = cur.first_field
+            loop cur_fd != null {
+                mono_alias_resolve_expr(m, cur_fd.default_value)
+                cur_fd = cur_fd.next
+            }
+        } else if cur.kind == DECL_KIND {
+            mut v = cur.first_variant
+            loop v != null {
+                v.payload_type = mono_canon_type(m, v.payload_type)
+                mut cur_vf = v.first_field
+                loop cur_vf != null {
+                    cur_vf.type_name = mono_canon_type(m, cur_vf.type_name)
+                    cur_vf = cur_vf.next
+                }
+                v = v.next
+            }
+        } else if cur.kind == DECL_FUNCTION or cur.kind == DECL_EXTERN {
+            mut cur_p = cur.first_param
+            loop cur_p != null {
+                cur_p.type_name = mono_canon_type(m, cur_p.type_name)
+                cur_p = cur_p.next
+            }
+            cur.return_type = mono_canon_type(m, cur.return_type)
+            mono_alias_resolve_stmt(m, cur.body)
+        }
+        cur = cur.next
+    }
+}
