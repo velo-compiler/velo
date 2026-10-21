@@ -219,8 +219,13 @@ Velo currently has a bare-minimum runtime (`velo_runtime.h`). To be a viable dev
   ```
 
 ### 6.4 Developer Tooling: Language Server Protocol (LSP) (🟢 P3 Ecosystem)
-* No VS Code syntax highlighter extension.
-* No LSP server providing autocomplete, jump-to-definition, hover documentation, or red squiggly error diagnostics in the editor.
+* A declarative VS Code extension (TextMate grammar + snippets + language configuration)
+  exists as local owner material (`editors/vscode/`), untracked and unpublished. It colors
+  text but cannot report any compiler diagnostic.
+* No LSP server providing autocomplete, jump-to-definition, hover documentation, or red
+  squiggly error diagnostics in the editor. The enabling step is a `velo check [--json]`
+  diagnostics-only CLI covering both compilers (see `editors/vscode/ROADMAP.md`, Phases 2–3);
+  grammar currently misses `aka`, `#align`/`#packed`, and `op` (extension Phases 0).
 
 ### 6.5 Native Integrated Test Runner (🟢 P3 Ecosystem)
 * Currently, tests are driven via Python `pytest` and subprocess invocations.
