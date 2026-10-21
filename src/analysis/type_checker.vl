@@ -143,7 +143,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 if target.str_val == "fs" {
                     if member == "read_file" { return "string" }
                     if member == "size" { return "usize" }
-                    if member == "exists" or member == "write_file" or member == "remove" { return "bool" }
+                    if member == "exists" or member == "write_file" or member == "remove" or member == "remove_file" { return "bool" }
                 }
                 if target.str_val == "str" {
                     if member == "len" { return "usize" }

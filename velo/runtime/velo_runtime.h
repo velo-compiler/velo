@@ -23,8 +23,10 @@ typedef double   f64;
 typedef size_t   usize;
 typedef ptrdiff_t isize;
 
-// 16 MB Zone Arena Buffer
-#define VELO_ZONE_BUFFER_SIZE (16 * 1024 * 1024)
+// 32 MB Zone Arena Buffer
+// (Doubled from 16 MB when the compiler source outgrew its margin during the
+// 'velo check' milestone; §4.1 multi-arena remains the real long-term fix.)
+#define VELO_ZONE_BUFFER_SIZE (32 * 1024 * 1024)
 
 static uint8_t  g_velo_arena[VELO_ZONE_BUFFER_SIZE];
 static size_t   g_velo_arena_offset = 0;
@@ -166,5 +168,49 @@ static inline bool velo_fs_remove(const char* path) {
     return (remove(path) == 0);
 }
 
-#endif // VELO_RUNTIME_H
 
+// --- stdout capture support (structured diagnostics for 'velo check --json') ---
+// Redirects fd 1 into a file, isolating diagnostics from the JSON stream on
+// stdout. The saved descriptor is not explicitly closed (process-exit reclaims).
+#ifdef _WIN32
+#include <io.h>
+#define VELO_FILENO_(f) _fileno(f)
+#define VELO_DUP_(fd) _dup(fd)
+#define VELO_DUP2_(a, b) _dup2(a, b)
+#else
+#include <unistd.h>
+#define VELO_FILENO_(f) fileno(f)
+#define VELO_DUP_(fd) dup(fd)
+#define VELO_DUP2_(a, b) dup2(a, b)
+#endif
+
+static FILE* g_velo_capture_file = NULL;
+static int   g_velo_backup_fd    = -1;
+
+static inline int velo_capture_begin(const char* path) {
+    if (g_velo_capture_file) return 0;
+    g_velo_capture_file = fopen(path, "w");
+    if (!g_velo_capture_file) return -1;
+    g_velo_backup_fd = VELO_DUP_(VELO_FILENO_(stdout));
+    if (g_velo_backup_fd < 0) {
+        fclose(g_velo_capture_file);
+        g_velo_capture_file = NULL;
+        return -2;
+    }
+    VELO_DUP2_(VELO_FILENO_(g_velo_capture_file), VELO_FILENO_(stdout));
+    return 0;
+}
+
+static inline int velo_capture_end(void) {
+    if (!g_velo_capture_file) return -1;
+    fflush(stdout);
+    if (g_velo_backup_fd >= 0) {
+        VELO_DUP2_(g_velo_backup_fd, VELO_FILENO_(stdout));
+        g_velo_backup_fd = -1;
+    }
+    fclose(g_velo_capture_file);
+    g_velo_capture_file = NULL;
+    return 0;
+}
+
+#endif // VELO_RUNTIME_H

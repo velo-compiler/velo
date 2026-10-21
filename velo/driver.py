@@ -5,8 +5,8 @@ import shutil
 from pathlib import Path
 from typing import Optional, Set, List
 
-from velo.lexer import Lexer
-from velo.parser import Parser
+from velo.lexer import Lexer, LexerError
+from velo.parser import Parser, ParserError
 from velo.codegen_c import CCodeGenerator
 from velo.ast_nodes import Program, Decl, UseStmt
 
@@ -89,6 +89,47 @@ class CompilerDriver:
         codegen = CCodeGenerator()
         c_code = codegen.generate(ast)
         return c_code
+
+    def check(self, source_path: str) -> dict:
+        """Validate a program (lex, parse, semantic analysis, monomorphization)
+        without emitting code or executing.
+
+        Returns a machine-readable report:
+            {"file": <invoked path>, "ok": <bool>, "diagnostics": [
+                {"file", "line", "col", "severity", "message"}]}
+
+        line/col are 1-based; 0/0 marks unpositioned diagnostics (load errors
+        and semantic-stage ValueErrors, which carry no position today). This
+        compiler fails fast at the first lex/parse error, so typically one
+        diagnostic is reported where the self-hosted compiler collects many
+        (see gaps.md 6.7)."""
+        diagnostics: List[dict] = []
+
+        def add_error(message: str, line: int = 0, col: int = 0) -> None:
+            diagnostics.append({
+                "file": source_path,
+                "line": line,
+                "col": col,
+                "severity": "error",
+                "message": message,
+            })
+
+        try:
+            ast = self.resolve_program(source_path)
+            CCodeGenerator().generate(ast)  # semantic validation; C output discarded
+            return {"file": source_path, "ok": True, "diagnostics": []}
+        except LexerError as exc:
+            text = str(exc)
+            prefix = f"Lexer Error at line {exc.line}, col {exc.col}: "
+            add_error(text[len(prefix):] if text.startswith(prefix) else text, exc.line, exc.col)
+        except ParserError as exc:
+            tok = exc.token
+            text = str(exc)
+            prefix = f"Parser Error at line {tok.line}, col {tok.col}: "
+            add_error(text[len(prefix):] if text.startswith(prefix) else text, tok.line, tok.col)
+        except Exception as exc:
+            add_error(str(exc))
+        return {"file": source_path, "ok": False, "diagnostics": diagnostics}
 
 
     def build(self, source_path: str, output_path: Optional[str] = None) -> str:

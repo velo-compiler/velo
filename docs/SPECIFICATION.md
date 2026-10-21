@@ -624,3 +624,32 @@ Directly bind to any existing C library function with zero runtime overhead:
 extern act puts(s: @u8) -> i32
 extern act sqrtf(val: f32) -> f32
 ```
+
+## 9. Command-Line Interface
+
+Both compilers expose the same CLI surface (Stage 1: `python velo.py`; Stage 2: a built `velo` binary):
+
+| Command | Behavior |
+| --- | --- |
+| `velo run <file> [args...]` | Compile and immediately execute the program |
+| `velo build <file> [-o <out>]` | Compile to a standalone native executable |
+| `velo emit-c <file>` | Print the generated C99 translation unit to stdout |
+| `velo check <file> [--json]` | Validate only: lex, parse, semantic analysis, monomorphization; no codegen or execution |
+| `velo doc <file> [-o <out.md>]` | Extract Markdown API documentation |
+| `velo version` / `velo help` | Version banner / usage manual |
+
+### 9.1 `velo check`
+
+`velo check` runs the full validation pipeline and stops before code generation. It exits 0 when the program is clean and 1 when diagnostics were reported. Without `--json`, diagnostics print in their habitual formats; with `--json`, exactly one JSON object is printed on stdout:
+
+```json
+{
+  "file": "app.vl",
+  "ok": false,
+  "diagnostics": [
+    {"file": "app.vl", "line": 3, "col": 5, "severity": "error", "message": "..."}
+  ]
+}
+```
+
+`file` echoes the invoked source path. `line`/`col` are 1-based; `0/0` marks unpositioned diagnostics (load errors and semantic ValueErrors, which carry no position today). `severity` is `error` or `warning`. Diagnostic counts and message wording may differ between compilers (each keeps its existing pipeline behavior; see gaps.md 6.7), while the schema, `ok` verdict, and exit codes are shared.

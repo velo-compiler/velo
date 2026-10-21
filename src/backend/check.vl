@@ -1,0 +1,334 @@
+// Structured diagnostics mode for the self-hosted compiler CLI ("velo check").
+//
+// Design note: Velo has no module-level mutable state, so a real in-core
+// diagnostics collector would require threading a buffer through every parser
+// and checker signature. Instead, JSON mode captures the existing pretty
+// diagnostics stream (fd 1) into a temp file via runtime helpers, then
+// re-emits each captured line in a stable JSON schema. The runtime covers
+// Windows and POSIX. Residuals: the JSON re-shapes exactly the messages the
+// pretty CLI prints, and per-file attribution follows the compiler's existing
+// merged-program behavior.
+//
+// Output schema:
+//   {"file": <argv path>, "ok": <bool>, "diagnostics": [
+//     {"file": ..., "line": <0 if unpositioned>, "col": <0>, "severity": "error|warning", "message": ...}]}
+// Lines skipped: blank lines, "[Velo] ..." confirmations, and the
+// "[Velo Error] Semantic analysis failed with N errors." summary (the
+// constituent diagnostics are already captured individually).
+
+use sys.io
+use sys.mem
+use sys.fs
+use "../common/utils.vl"
+use "../common/string_builder.vl"
+use "driver.vl"
+
+extern act velo_capture_begin(path: string) -> i32
+extern act velo_capture_end() -> i32
+
+// True when s starts with prefix (byte comparison).
+act check_starts_with(s: string, prefix: string) -> bool {
+    let slen = str.len(s)
+    let plen = str.len(prefix)
+    if plen > slen {
+        return false
+    }
+    mut i: usize = 0
+    loop i < plen {
+        if s[i] != prefix[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// 1-based index of the LAST occurrence of needle in s (0 = absent).
+act check_rfind(s: string, needle: string) -> i32 {
+    let slen = str.len(s)
+    let nlen = str.len(needle)
+    if nlen == 0 or nlen > slen {
+        return 0
+    }
+    mut last: i32 = 0
+    let stop: i32 = slen - nlen
+    mut i: usize = 0
+    loop i <= stop {
+        let all = check_match_at(s, needle, i)
+        if all {
+            last = i + 1
+        }
+        i += 1
+    }
+    return last
+}
+
+// True when needle matches s byte-for-byte at index start.
+act check_match_at(s: string, needle: string, start: usize) -> bool {
+    let nlen = str.len(needle)
+    mut j: usize = 0
+    loop j < nlen {
+        if s[start + j] != needle[j] {
+            return false
+        }
+        j += 1
+    }
+    return true
+}
+
+// Appends the JSON-escaped form of s.
+act check_json_escape(sb: @StringBuilder, s: string) {
+    let n = str.len(s)
+    mut i: usize = 0
+    loop i < n {
+        let c = s[i]
+        if c == '"' {
+            sb_append_str(sb, "\\\"")
+        } else if c == '\\' {
+            sb_append_str(sb, "\\\\")
+        } else if c == '\n' {
+            sb_append_str(sb, "\\n")
+        } else if c == '\r' {
+            sb_append_str(sb, "\\r")
+        } else if c == '\t' {
+            sb_append_str(sb, "\\t")
+        } else {
+            sb_append_char(sb, c)
+        }
+        i += 1
+    }
+}
+
+// Builds one JSON diagnostic object from a captured error/warning line.
+//
+// Positioned form: [Velo Error] <file>:<line>:<col> - <msg>
+// Unpositioned:    [Velo Error] <message text>
+act check_diag_to_json(sb: @StringBuilder, line_text: string, src_path: string) {
+    let n = str.len(line_text)
+    mut name: string = "error"
+    mut rest: string = line_text
+    if check_starts_with(line_text, "[Velo Warning] ") {
+        name = "warning"
+        rest = copy_slice_to_string(line_text, 15, n - 15)
+    } else if check_starts_with(line_text, "[Velo Error] ") {
+        rest = copy_slice_to_string(line_text, 13, n - 13)
+    }
+
+    let rlen = str.len(rest)
+    let dash = check_rfind(rest, " - ")
+    mut positioned: bool = false
+
+    if dash > 0 {
+        // Left of " - " may be "<file>:<line>:<col>"; peel from the right.
+        let le: usize = dash - 1
+        mut cs: usize = le
+        loop cs > 0 and is_digit(rest[cs - 1]) {
+            cs -= 1
+        }
+        if cs < le and cs > 0 and rest[cs - 1] == ':' {
+            mut ls: usize = cs - 1
+            loop ls > 0 and is_digit(rest[ls - 1]) {
+                ls -= 1
+            }
+            if ls < cs - 1 and ls > 0 and rest[ls - 1] == ':' and ls > 1 {
+                let ffile = copy_slice_to_string(rest, 0, ls - 1)
+                let flines = parse_int_from_slice(rest, ls, (cs - 1) - ls)
+                let fcols = parse_int_from_slice(rest, cs, le - cs)
+                // Checker/parser stages report against pseudo-filenames
+                // ("semantic"/"parser"/"parse"); attribute those to the file
+                // being checked so consumers can place the diagnostic.
+                mut fname: string = ffile
+                if ffile == "semantic" or ffile == "parser" or ffile == "parse" {
+                    fname = src_path
+                }
+
+                sb_append_str(sb, "{\"file\": \"")
+                check_json_escape(sb, fname)
+                sb_append_str(sb, "\", \"line\": ")
+                sb_append_int(sb, flines)
+                sb_append_str(sb, ", \"col\": ")
+                sb_append_int(sb, fcols)
+                sb_append_str(sb, ", \"severity\": \"")
+                sb_append_str(sb, name)
+                sb_append_str(sb, "\", \"message\": \"")
+                check_json_escape(sb, copy_slice_to_string(rest, dash + 2, rlen - dash - 2))
+                sb_append_str(sb, "\"}")
+                positioned = true
+            }
+        }
+    }
+    if not positioned {
+        // Unpositioned diagnostic: attribution stays with the invoked path.
+        sb_append_str(sb, "{\"file\": \"")
+        check_json_escape(sb, src_path)
+        sb_append_str(sb, "\", \"line\": 0, \"col\": 0, \"severity\": \"")
+        sb_append_str(sb, name)
+        sb_append_str(sb, "\", \"message\": \"")
+        check_json_escape(sb, rest)
+        sb_append_str(sb, "\"}")
+    }
+}
+
+// True for lines that must not become diagnostics (confirmations, summary).
+act check_is_noise(line_text: string) -> bool {
+    if check_starts_with(line_text, "[Velo] ") {
+        return true
+    }
+    if check_starts_with(line_text, "Semantic analysis failed with") {
+        return true
+    }
+    if check_starts_with(line_text, "[Velo Error] Semantic analysis failed with") {
+        return true
+    }
+    let n = str.len(line_text)
+    mut all_blank: bool = true
+    mut i: usize = 0
+    loop i < n {
+        if not is_whitespace(line_text[i]) {
+            all_blank = false
+            i += n
+        }
+        i += 1
+    }
+    return all_blank
+}
+
+// Counts non-noise "[Velo Error] ..." lines in the captured stream. Needed
+// because recovered parse errors do not abort compilation: the compiler's own
+// success verdict must be ANDed with the captured error count.
+act check_count_errors(captured: string) -> i32 {
+    let n = str.len(captured)
+    mut count: i32 = 0
+    let stop: usize = n
+    mut line_start: usize = 0
+    mut i: usize = 0
+    loop i <= stop {
+        if i == stop or captured[i] == '\n' {
+            mut llen: usize = i - line_start
+            if llen > 0 and captured[i - 1] == '\r' {
+                llen -= 1
+            }
+            if llen > 0 {
+                let line_text = copy_slice_to_string(captured, line_start, llen)
+                if check_starts_with(line_text, "[Velo Error] ") and not check_is_noise(line_text) {
+                    count += 1
+                }
+            }
+            line_start = i + 1
+        }
+        i += 1
+    }
+    return count
+}
+
+// Builds the full check JSON document from the captured pretty stream.
+act check_build_json(captured: string, src_path: string, ok: bool) -> string {
+    let n = str.len(captured)
+    mut body = create_sb(n + 256)
+    mut have_diag: bool = false
+
+    let stop: usize = n
+    mut line_start: usize = 0
+    mut i: usize = 0
+    loop i <= stop {
+        if i == stop or captured[i] == '\n' {
+            mut llen: usize = i - line_start
+            if llen > 0 and captured[i - 1] == '\r' {
+                llen -= 1
+            }
+            if llen > 0 {
+                let line_text = copy_slice_to_string(captured, line_start, llen)
+                if not check_is_noise(line_text) {
+                    if have_diag {
+                        sb_append_str(@body, ", ")
+                    }
+                    check_diag_to_json(@body, line_text, src_path)
+                    have_diag = true
+                }
+            }
+            line_start = i + 1
+        }
+        i += 1
+    }
+
+    mut out = create_sb(n + 256)
+    sb_append_str(@out, "{\"file\": \"")
+    check_json_escape(@out, src_path)
+    sb_append_str(@out, "\", \"ok\": ")
+    if ok {
+        sb_append_str(@out, "true")
+    } else {
+        sb_append_str(@out, "false")
+    }
+    sb_append_str(@out, ", \"diagnostics\": [")
+    sb_append_str(@out, sb_to_string(@body))
+    sb_append_str(@out, "]}")
+    return sb_to_string(@out)
+}
+
+// Prints a minimal JSON document for infrastructure-level failures only.
+act check_print_minimal_json(src_path: string, message: string) {
+    mut out = create_sb(str.len(src_path) + str.len(message) + 128)
+    sb_append_str(@out, "{\"file\": \"")
+    check_json_escape(@out, src_path)
+    sb_append_str(@out, "\", \"ok\": false, \"diagnostics\": [{\"file\": \"")
+    check_json_escape(@out, src_path)
+    sb_append_str(@out, "\", \"line\": 0, \"col\": 0, \"severity\": \"error\", \"message\": \"")
+    check_json_escape(@out, message)
+    sb_append_str(@out, "\"}]}")
+    io.println(sb_to_string(@out))
+}
+
+// Runs 'velo check --json'. Returns the process exit code (0 = clean).
+act run_check_json(src_path: string) -> i32 {
+    let tmp = "velo_check_capture.tmp"
+    if velo_capture_begin(tmp) != 0 {
+        check_print_minimal_json(src_path, "internal error: stdout capture failed")
+        return 1
+    }
+    let ok: bool = compile_source_to_c(src_path) != null
+    velo_capture_end()
+
+    let captured = fs.read_file(tmp)
+    if captured == null {
+        check_print_minimal_json(src_path, "internal error: capture file unreadable")
+        fs.remove_file(tmp)
+        return 1
+    }
+    defer mem.free(captured)
+
+    if check_count_errors(captured) > 0 {
+        io.println(check_build_json(captured, src_path, false))
+        fs.remove_file(tmp)
+        return 1
+    }
+    let out = check_build_json(captured, src_path, ok)
+    io.println(out)
+    fs.remove_file(tmp)
+    if ok {
+        return 0
+    }
+    return 1
+}
+
+// Runs 'velo check' in pretty mode. The compile stage's own success verdict
+// ignores recovered parse errors, so the captured stream is echoed and ANDed
+// with an error-line scan, exactly like the JSON path.
+act run_check_pretty(src_path: string) -> bool {
+    let tmp = "velo_check_capture.tmp"
+    if velo_capture_begin(tmp) != 0 {
+        // Capture unavailable: degrade to the compiler's own verdict.
+        return compile_source_to_c(src_path) != null
+    }
+    let ok: bool = compile_source_to_c(src_path) != null
+    velo_capture_end()
+
+    let captured = fs.read_file(tmp)
+    fs.remove_file(tmp)
+    if captured == null {
+        return ok
+    }
+    defer mem.free(captured)
+    io.println(captured)
+    return ok and check_count_errors(captured) == 0
+}

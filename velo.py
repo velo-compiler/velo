@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import sys
+import json
 import argparse
+from pathlib import Path
 from velo.driver import CompilerDriver
 
 def main():
@@ -23,6 +25,11 @@ def main():
     # 'emit-c' command
     emit_parser = subparsers.add_parser("emit-c", help="Emit generated C99 code without compiling")
     emit_parser.add_argument("file", help="Path to the .vl source file")
+
+    # 'check' command
+    check_parser = subparsers.add_parser("check", help="Validate a Velo program without generating code")
+    check_parser.add_argument("file", help="Path to the .vl source file")
+    check_parser.add_argument("--json", action="store_true", dest="json_mode", help="Emit diagnostics as machine-readable JSON")
 
     # 'doc' command
     doc_parser = subparsers.add_parser("doc", help="Generate Markdown API documentation from source")
@@ -47,6 +54,20 @@ def main():
         elif args.command == "emit-c":
             c_code = driver.compile_to_c(args.file)
             print(c_code)
+        elif args.command == "check":
+            report = driver.check(args.file)
+            if args.json_mode:
+                print(json.dumps(report, ensure_ascii=False))
+            else:
+                for diag in report["diagnostics"]:
+                    tag = "Warning" if diag["severity"] == "warning" else "Error"
+                    if diag["line"] > 0:
+                        print(f"[Velo {tag}] {diag['file']}:{diag['line']}:{diag['col']} - {diag['message']}", file=sys.stderr)
+                    else:
+                        print(f"[Velo {tag}] {diag['message']}", file=sys.stderr)
+            if report["ok"] and not args.json_mode:
+                print(f"[Velo] Check passed: {args.file}")
+            sys.exit(0 if report["ok"] else 1)
         elif args.command == "doc":
             docs = driver.generate_docs(args.file)
             if args.output:
