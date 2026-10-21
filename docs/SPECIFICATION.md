@@ -366,6 +366,7 @@ let next = entity + 1   // alias resolves to u64 statically
 Semantics:
 - The target must be a primitive (`i8`..`i64`, `u8`..`u64`, `f32`, `f64`, `bool`, `usize`, `isize`, `string`) or `@<primitive>`; aliasing a struct or kind is a compile error.
 - No alias-of-alias: the target is validated at parse time.
+- Extra pointer levels compose over aliases and are applied before the alias target (`let p: @EntityId` where `type EntityId = u64` has type `@u64`).
 - Resolution is order-free: aliases are collected from the whole program (including across `use`d files) before any use site is canonicalized, so an alias may be declared after its uses.
 - Both compilers canonicalize every type string (struct fields, kind payloads, parameters, return types, local declarations, casts) before code generation; the emitted C also carries a decorative `typedef <target> <Name>;`.
 
@@ -388,6 +389,7 @@ Rules:
 - An omitted field **without** a default is a compile error ("missing field ... no default initializer"); a literal must remain complete with respect to non-defaulted fields.
 - Field defaults may also reference other declared types (e.g. `id: EntityId = 1`).
 - Defaults in generic struct templates are carried into every specialization.
+- Defaults apply to `data` struct fields only; `kind` variant payload fields do not support default initializers.
 
 #### Struct Layout Attributes (`#align(N)` / `#packed`):
 Data declarations accept layout attributes between the header and the struct body; both compile to GCC/Clang `__attribute__` markers on the struct definition:

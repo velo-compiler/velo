@@ -36,10 +36,14 @@ act main() {
     let next_entity: EntityId = entity + 1
     io.println("entity={entity}, next_entity={next_entity}")
 
-    // Alias to a pointer primitive
+    // Alias to a pointer primitive, and pointer-level composition over an alias
     let tex: TexBuf = null
     if tex == null {
         io.println("tex is null: true")
+    }
+    let ep: @EntityId = null
+    if ep == null {
+        io.println("p is null: true")
     }
 
     // Default initializers fill omitted fields

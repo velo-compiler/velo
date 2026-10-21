@@ -315,7 +315,7 @@ class Monomorphizer:
             base = base[1:]
         if base not in self.type_aliases:
             return t
-        return self.type_aliases[base] + ("@" * ptr)
+        return ("@" * ptr) + self.type_aliases[base]
 
     def _canonicalize_program_types(self, program: Program):
         for decl in program.declarations:

@@ -53,11 +53,11 @@ act mono_canon_type(m: @Monomorphizer, t: string) -> string {
     let entry = mono_find_alias(m, base)
     if entry != null {
         mut sb = create_sb(str.len(entry.target) + depth + 1)
-        sb_append_str(@sb, entry.target)
         loop depth > 0 {
             sb_append_char(@sb, '@')
             depth -= 1
         }
+        sb_append_str(@sb, entry.target)
         return sb_to_string(@sb)
     }
     return t
