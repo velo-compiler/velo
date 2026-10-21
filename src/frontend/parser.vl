@@ -94,7 +94,9 @@ act parser_advance(p: @Parser) -> Token {
 // Checks if current token matches the expected kind.
 act parser_check(p: @Parser, kind: i32) -> bool {
     let tok = parser_peek(p, 0)
-    if kind == TOK_IDENTIFIER and (tok.kind == TOK_KIND or tok.kind == TOK_OP) { return true }
+    // TOK_KIND, TOK_OP, and TOK_DATA are reserved keywords that are also valid
+    // as identifier spellings in name positions (contextual keywords).
+    if kind == TOK_IDENTIFIER and (tok.kind == TOK_KIND or tok.kind == TOK_OP or tok.kind == TOK_DATA) { return true }
     return tok.kind == kind
 }
 

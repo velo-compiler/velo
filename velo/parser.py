@@ -42,7 +42,9 @@ class Parser:
     def _check(self, token_type: TokenType) -> bool:
         cur_type = self._peek().type
         if token_type == TokenType.IDENTIFIER:
-            return cur_type in (TokenType.IDENTIFIER, TokenType.KIND, TokenType.OP)
+            # DATA is a reserved keyword but is contextually valid as an identifier
+            # (variable name) in positions where _check(IDENTIFIER) is called.
+            return cur_type in (TokenType.IDENTIFIER, TokenType.KIND, TokenType.OP, TokenType.DATA)
         return cur_type == token_type
 
     def _match(self, *types: TokenType) -> bool:
@@ -422,8 +424,12 @@ class Parser:
         if self._check(TokenType.ZONE):
             zone_tok = self._advance()
             self._skip_newlines()
+            size = None  # §4.1: `zone <bytes> { ... }` scrimps a private arena; plain `zone {` uses the default one
+            if not self._check(TokenType.LBRACE):
+                size = self._parse_expression()
+                self._skip_newlines()
             body = self._parse_block()
-            return ZoneStmt(body=body, line=zone_tok.line, col=zone_tok.col)
+            return ZoneStmt(body=body, size=size, line=zone_tok.line, col=zone_tok.col)
 
         # 3. Variable declaration with 'mut'
         if self._check(TokenType.MUT):

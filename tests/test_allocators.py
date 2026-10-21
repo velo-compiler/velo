@@ -1,0 +1,256 @@
+import unittest
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).parent.parent.resolve()
+VELO_PY = ROOT / "velo.py"
+VELO_EXE = ROOT / "bin" / "velo.exe"
+
+
+def run_stage(stage: str, program: str, name: str) -> subprocess.CompletedProcess:
+    """Compile+run `program` on the given stage ('stage1' | 'stage2') and return
+    the finished process (stdout/stderr captured)."""
+    tmp = Path(__file__).parent.parent / ".velo_cache" / f"alloc_test_{name}"
+    tmp.mkdir(parents=True, exist_ok=True)
+    src = tmp / f"{name}.vl"
+    src.write_text(program, encoding="utf-8")
+    if stage == "stage1":
+        exe = tmp / f"{name}_s1.exe"
+        res = subprocess.run(
+            [sys.executable, str(VELO_PY), "build", str(src), "-o", str(exe)],
+            capture_output=True, text=True, cwd=ROOT,
+        )
+        if res.returncode != 0:
+            raise AssertionError(f"stage1 build failed: {res.stderr[-2000:]}")
+    else:
+        exe = tmp / f"{name}_s2.exe"
+        res = subprocess.run(
+            [str(VELO_EXE), "build", str(src), "-o", str(exe)],
+            capture_output=True, text=True, cwd=ROOT,
+        )
+        if res.returncode != 0:
+            raise AssertionError(f"stage2 build failed: {res.stdout[-2000:]}")
+    return subprocess.run([str(exe)], capture_output=True, text=True, timeout=60)
+
+
+def assert_parity(program: str, name: str, expected_lines=None):
+    """Both compilers must produce byte-identical stdout (and pass)."""
+    s1 = run_stage("stage1", program, name)
+    s2 = run_stage("stage2", program, name)
+    for label, res in (("stage1", s1), ("stage2", s2)):
+        assert res.returncode == 0, f"{label} run failed: {res.stderr[-2000:]}"
+    assert s1.stdout == s2.stdout, (
+        f"stage1 vs stage2 output diverged:\n--- stage1 ---\n{s1.stdout}\n--- stage2 ---\n{s2.stdout}")
+    if expected_lines:
+        actual = s1.stdout.strip().splitlines()
+        assert actual == expected_lines, f"expected {expected_lines}, got {actual}"
+    return s1
+
+
+class TestAllocatorArchitecture(unittest.TestCase):
+    """gaps.md 4.1 Extensible Allocator Architecture — private `zone <bytes>`
+    arenas, configurable capacity, active-arena semantics, on both compilers."""
+
+    EXAMPLE = ROOT / "examples" / "27_multi_zone.vl"
+
+    def test_example_multi_zone_run_and_parity(self):
+        src = self.EXAMPLE.read_text(encoding="utf-8")
+        s1 = run_stage("stage1", src, "example27")
+        s2 = run_stage("stage2", src, "example27")
+        self.assertEqual(s1.returncode, 0, s1.stderr)
+        self.assertEqual(s2.returncode, 0, s2.stderr)
+        self.assertEqual(s1.stdout, s2.stdout, "example outputs diverged")
+        self.assertIn("default arena before = 0", s1.stdout)
+        self.assertIn("private arena 1 used = 8192", s1.stdout)
+        self.assertIn("private arena 2 used = 8192", s1.stdout)
+        self.assertIn("frame arena used inside = 8192", s1.stdout)
+        self.assertIn("default arena after = 0", s1.stdout)
+
+    def test_emit_c_keeps_default_zone_and_adds_private_arena_calls(self):
+        plain = "use sys.mem\nact main() { zone { let a: @i32 = mem.alloc(@i32, 1) } }"
+        sized = "use sys.mem\nact main() { zone 4096 { let a: @i32 = mem.alloc(@i32, 1) } }"
+        for mode, program in (("plain", plain), ("sized", sized)):
+            tmp = ROOT / ".velo_cache" / "alloc_test_emit" / f"emit_{mode}.vl"
+            tmp.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(program, encoding="utf-8")
+            res = subprocess.run(
+                [sys.executable, str(VELO_PY), "emit-c", str(tmp)],
+                capture_output=True, text=True, cwd=ROOT,
+            )
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertIn("velo_zone_push();", res.stdout)
+            self.assertIn("velo_zone_pop(", res.stdout)
+            if mode == "sized":
+                self.assertIn("velo_zone_enter((size_t)(", res.stdout)
+                self.assertIn("velo_zone_leave(", res.stdout)
+            else:
+                self.assertNotIn("velo_zone_enter(", res.stdout)
+
+    def test_private_arena_isolation_and_o1_reset(self):
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act main() {\n"
+            "    let before: usize = mem.used()\n"
+            "    io.println(\"before = {before}\")\n"
+            "    zone 4096 {\n"
+            "        let a: @i32 = mem.alloc(@i32, 1000)\n"
+            "        let inside: usize = mem.used()\n"
+            "        io.println(\"inside = {inside}\")\n"
+            "    }\n"
+            "    let after: usize = mem.used()\n"
+            "    io.println(\"after = {after}\")\n"
+            "}\n"
+        )
+        assert_parity(program, "isol", ["before = 0", "inside = 4000", "after = 0"])
+
+    def test_capacity_from_runtime_parameter(self):
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act probe(cap: usize) -> usize {\n"
+            "    mut live: usize = 0\n"
+            "    zone cap {\n"
+            "        let marks: @usize = mem.alloc(@usize, 1024)\n"
+            "        live = mem.used()\n"
+            "    }\n"
+            "    return live\n"
+            "}\n"
+            "act main() -> i32 {\n"
+            "    let p = probe(65536)\n"
+            "    io.println(\"probe = {p}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        assert_parity(program, "param", ["probe = 8192"])
+
+    def test_zone_inside_generic_function(self):
+        # Guards the monomorphization path: the capacity expression and the
+        # Guards the monomorphization path: the zone node and its capacity
+        # expression must survive generic instantiation. (Bare `mem.alloc(@T,
+        # n)` inside generic acts is an unsupported language surface today and
+        # belongs to the 4.1 step-2 Allocator interface design.)
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act probe[T](v: T, lo: usize) -> usize {\n"
+            "    mut live: usize = 0\n"
+            "    zone lo * 64 {\n"
+            "        mut bump: usize = mem.used()\n"
+            "        bump = bump + 0\n"
+            "        live = bump\n"
+            "    }\n"
+            "    return live\n"
+            "}\n"
+            "act main() -> i32 {\n"
+            "    let v1: i32 = 1\n"
+            "    let lo: usize = 4\n"
+            "    let r1: usize = probe(v1, lo)\n"
+            "    let r2: usize = probe(v1, lo)\n"
+            "    io.println(\"inside = {r1}\")\n"
+            "    io.println(\"again = {r2}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        assert_parity(program, "generic", ["inside = 0", "again = 0"])
+
+    def test_default_zone_arena_unchanged(self):
+        # Compat: bare `zone { }` keeps the pre-§4.1 semantics exactly — the
+        # watermark wraps allocations on the DEFAULT arena and resets on exit.
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act main() {\n"
+            "    let before: usize = mem.used()\n"
+            "    zone {\n"
+            "        let a: @f64 = mem.alloc(@f64, 100)\n"
+            "        let inside: usize = mem.used()\n"
+            "        io.println(\"inside = {inside}\")\n"
+            "    }\n"
+            "    let after: usize = mem.used()\n"
+            "    io.println(\"after = {after}\")\n"
+            "    let _keep_before: usize = before\n"
+            "}\n"
+        )
+        assert_parity(program, "plainzone", ["inside = 800", "after = 0"])
+
+    def test_defer_inside_zone_runs_before_watermark_reset(self):
+        # Stage 2 used to flush zone defers at act end (after the arena had
+        # popped); now both stages scope zone-local defers to the block.
+        program = (
+            "use sys.io\n"
+            "act main() {\n"
+            "    io.println(\"outer-1\")\n"
+            "    zone {\n"
+            "        io.println(\"zone-body\")\n"
+            "        defer io.println(\"zone-defer\")\n"
+            "    }\n"
+            "    io.println(\"after-zone\")\n"
+            "    defer io.println(\"outer-defer\")\n"
+            "    io.println(\"outer-2\")\n"
+            "}\n"
+        )
+        assert_parity(
+            program, "zonefer",
+            ["outer-1", "zone-body", "zone-defer", "after-zone", "outer-2", "outer-defer"],
+        )
+
+    def test_private_arena_oom_is_fatal(self):
+        program = (
+            "use sys.mem\n"
+            "act main() {\n"
+            "    zone 8 {\n"
+            "        let a: @u64 = mem.alloc(@u64, 100)\n"
+            "    }\n"
+            "}\n"
+        )
+        for stage in ("stage1", "stage2"):
+            res = run_stage(stage, program, "oom")
+            self.assertNotEqual(res.returncode, 0, f"{stage} survived OOM!")
+            self.assertIn("Out of Memory", res.stderr, f"{stage} stderr: {res.stderr}")
+
+    def test_zero_capacity_is_fatal(self):
+        program = (
+            "use sys.io\n"
+            "act main() {\n"
+            "    zone 0 {\n"
+            "        io.println(\"never\")\n"
+            "    }\n"
+            "}\n"
+        )
+        for stage in ("stage1", "stage2"):
+            res = run_stage(stage, program, "zerocap")
+            self.assertNotEqual(res.returncode, 0, f"{stage} survived zero capacity!")
+            self.assertIn("capacity must be > 0", res.stderr, f"{stage} stderr: {res.stderr}")
+
+    def test_pool_reuse_across_repeated_entries(self):
+        # Allocate far more than one huge arena worth of memory across
+        # repeated re-entries; only pool reuse makes this cheap AND safe.
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act tick() -> usize {\n"
+            "    mut live: usize = 0\n"
+            "    zone 2097152 {\n"  # 2 MB private arena
+            "        let data: @u8 = mem.alloc(@u8, 2097152)\n"
+            "        live = mem.used()\n"
+            "    }\n"
+            "    return live\n"
+            "}\n"
+            "act main() -> i32 {\n"
+            "    mut total: usize = 0\n"
+            "    loop i in 0..16 {\n"
+            "        total = total + tick()\n"
+            "    }\n"
+            "    io.println(\"total = {total}\")\n"
+            "    let after: usize = mem.used()\n"
+            "    io.println(\"after = {after}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        assert_parity(program, "pool", ["total = 33554432", "after = 0"])
+
+
+if __name__ == "__main__":
+    unittest.main()
