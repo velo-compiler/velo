@@ -248,7 +248,7 @@ class DataDecl(Decl):
 
 @dataclass
 class TypeAliasDecl(Decl):
-    # `type EntityId = u64` — target must be a primitive (or pointer-to-primitive).
+    # `aka EntityId = u64` - target must be a primitive (or pointer-to-primitive).
     name: str
     target_type: str
     line: int

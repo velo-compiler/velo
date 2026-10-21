@@ -186,7 +186,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
     }
     sb_append_line(@sb, "", 0)
 
-    // 2.2 Type alias declarations (`type EntityId = u64`)
+    // 2.2 Type alias declarations (`aka EntityId = u64`)
     cur = prog.first_decl
     mut found_alias = false
     loop cur != null {

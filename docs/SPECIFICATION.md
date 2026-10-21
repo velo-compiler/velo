@@ -351,13 +351,13 @@ Operators declared with pointer parameters (`act op +(a: @Vector2, b: @Vector2)`
 
 ### 2.9 Advanced Struct Features (Type Aliases, Field Defaults, `#align`/`#packed`)
 
-#### Type Aliases (`type Name = T`):
-A type alias gives a primitive type a domain-specific name. `type` is a contextual keyword recognized only at top level; the target must be a primitive type, optionally preceded by a single pointer marker:
+#### Type Aliases (`aka Name = T`):
+A type alias gives a primitive type a domain-specific name. `aka` is a contextual keyword recognized only at top level; the target must be a primitive type, optionally preceded by a single pointer marker:
 
 ```rust
-type EntityId = u64
-type HealthPoints = i32
-type TexBuf = @u8
+aka EntityId = u64
+aka HealthPoints = i32
+aka TexBuf = @u8
 
 let entity: EntityId = 42
 let next = entity + 1   // alias resolves to u64 statically
@@ -366,7 +366,7 @@ let next = entity + 1   // alias resolves to u64 statically
 Semantics:
 - The target must be a primitive (`i8`..`i64`, `u8`..`u64`, `f32`, `f64`, `bool`, `usize`, `isize`, `string`) or `@<primitive>`; aliasing a struct or kind is a compile error.
 - No alias-of-alias: the target is validated at parse time.
-- Extra pointer levels compose over aliases and are applied before the alias target (`let p: @EntityId` where `type EntityId = u64` has type `@u64`).
+- Extra pointer levels compose over aliases and are applied before the alias target (`let p: @EntityId` where `aka EntityId = u64` has type `@u64`).
 - Resolution is order-free: aliases are collected from the whole program (including across `use`d files) before any use site is canonicalized, so an alias may be declared after its uses.
 - Both compilers canonicalize every type string (struct fields, kind payloads, parameters, return types, local declarations, casts) before code generation; the emitted C also carries a decorative `typedef <target> <Name>;`.
 

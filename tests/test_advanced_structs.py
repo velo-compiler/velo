@@ -5,7 +5,7 @@ import pytest
 
 NEG_TEMPLATE_MISSING_FIELD = """use sys.io
 
-type EntityId = u64
+aka EntityId = u64
 
 data Vec4 #align(16) {
     x: f32 = 0.0
@@ -24,7 +24,7 @@ data Point {
     x: f32
 }
 
-type Vec = Point
+aka Vec = Point
 """
 
 def _write(tmp_path, name, content):

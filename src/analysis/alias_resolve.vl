@@ -1,6 +1,6 @@
 // Type alias registration and Pass 0 canonicalization for the self-hosted compiler.
 // A dedicated stage that runs before every monomorphization pass so alias names
-// (`type EntityId = u64`) resolve to their primitive targets everywhere, even in
+// (`aka EntityId = u64`) resolve to their primitive targets everywhere, even in
 // programs that contain no generics.
 use sys.mem
 use "../frontend/token.vl"

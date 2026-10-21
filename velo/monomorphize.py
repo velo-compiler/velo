@@ -187,7 +187,7 @@ class Monomorphizer:
             self.worklist.append(key)
 
     def monomorphize(self, program: Program) -> Program:
-        # Pass 0: Canonicalize primitive type aliases (`type Foo = u64`) in place,
+        # Pass 0: Canonicalize primitive type aliases (`aka Foo = u64`) in place,
         # so every downstream stage sees the concrete target type everywhere.
         self.type_aliases: Dict[str, str] = {}
         for decl in program.declarations:

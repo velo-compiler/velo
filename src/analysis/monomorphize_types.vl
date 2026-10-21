@@ -50,7 +50,7 @@ data Monomorphizer {
     first_alias: @TypeAliasEntry
 }
 
-// Tracks a registered primitive type alias (`type Foo = u64`).
+// Tracks a registered primitive type alias (`aka Foo = u64`).
 data TypeAliasEntry {
     name: string
     target: string

@@ -299,11 +299,11 @@ act parse_top_level_declaration(p: @Parser) -> @StmtNode {
     if parser_check(p, TOK_LET) or parser_check(p, TOK_MUT) {
         return parse_statement(p)
     }
-    // Contextual 'type' keyword: `type Alias = <primitive>` at top level.
+    // Contextual 'aka' keyword: `aka Alias = <primitive>` at top level.
     let top_tok = parser_peek(p, 0)
-    if top_tok.kind == TOK_IDENTIFIER and top_tok.length == 4 {
+    if top_tok.kind == TOK_IDENTIFIER and top_tok.length == 3 {
         let src = p.source
-        if src[top_tok.start] == 't' and src[top_tok.start + 1] == 'y' and src[top_tok.start + 2] == 'p' and src[top_tok.start + 3] == 'e' {
+        if src[top_tok.start] == 'a' and src[top_tok.start + 1] == 'k' and src[top_tok.start + 2] == 'a' {
             if parser_peek(p, 1).kind == TOK_IDENTIFIER {
                 return parse_type_alias_decl(p)
             }

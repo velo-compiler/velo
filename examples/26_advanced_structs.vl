@@ -2,9 +2,9 @@
 use sys.io
 
 // 1. Type aliases: primitive types with domain meaning (emitted as C typedef)
-type EntityId = u64
-type HealthPoints = i32
-type TexBuf = @u8
+aka EntityId = u64
+aka HealthPoints = i32
+aka TexBuf = @u8
 
 // 2. `#align(16)`: SIMD-friendly layout; omitted fields fall back to their defaults
 data Vec4 #align(16) {

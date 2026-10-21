@@ -100,10 +100,10 @@ act is_alias_target_primitive(base: string) -> bool {
     return false
 }
 
-// Parses a primitive type alias declaration (`type EntityId = u64`).
+// Parses a primitive type alias declaration (`aka EntityId = u64`).
 act parse_type_alias_decl(p: @Parser) -> @StmtNode {
     parser_advance(p)
-    let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected alias name after 'type'")
+    let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected alias name after 'aka'")
     let aname = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
     parser_consume(p, TOK_ASSIGN, "Expected '=' in type alias")
     let target = parse_type_annotation(p)

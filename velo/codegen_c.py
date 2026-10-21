@@ -232,7 +232,7 @@ class CCodeGenerator:
 
         self._emit_line()
 
-        # 1. Register and emit type aliases (`type EntityId = u64`)
+        # 1. Register and emit type aliases (`aka EntityId = u64`)
         for decl in program.declarations:
             if isinstance(decl, TypeAliasDecl):
                 if decl.name not in self.type_aliases:

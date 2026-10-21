@@ -299,7 +299,7 @@ act make_data_decl(name: string, first_field: @FieldNode, count: usize, align_by
     return node
 }
 
-// Creates a top-level type alias declaration (`type EntityId = u64`).
+// Creates a top-level type alias declaration (`aka EntityId = u64`).
 act make_type_alias_decl(name: string, target: string, line: i32, col: i32) -> @StmtNode {
     mut node: @StmtNode = mem.alloc(@StmtNode, 1)
     node.kind = DECL_TYPE_ALIAS

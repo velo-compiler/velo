@@ -10,7 +10,7 @@ from velo.ast_nodes import (
     mangle_op_name
 )
 
-# Types permitted as `type Alias = <target>` targets (primitive aliases only).
+# Types permitted as `aka Alias = <target>` targets (primitive aliases only).
 ALIAS_TARGET_PRIMITIVES = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
                            "f32", "f64", "bool", "usize", "isize", "string"}
 
@@ -86,7 +86,7 @@ class Parser:
             return self._parse_function_decl()
         elif self._check(TokenType.LET) or self._check(TokenType.MUT):
             return self._parse_statement()
-        elif self._check(TokenType.IDENTIFIER) and self._peek().value == "type":
+        elif self._check(TokenType.IDENTIFIER) and self._peek().value == "aka":
             return self._parse_type_alias_decl()
         else:
             raise ParserError(f"Unexpected top-level token '{self._peek().value}'", self._peek())
@@ -242,8 +242,8 @@ class Parser:
         return decl
 
     def _parse_type_alias_decl(self) -> TypeAliasDecl:
-        self._consume(TokenType.IDENTIFIER, "Expected 'type'")
-        name_tok = self._consume(TokenType.IDENTIFIER, "Expected alias name after 'type'")
+        self._consume(TokenType.IDENTIFIER, "Expected 'aka'")
+        name_tok = self._consume(TokenType.IDENTIFIER, "Expected alias name after 'aka'")
         self._consume(TokenType.ASSIGN, "Expected '=' in type alias")
         target = self._parse_type_annotation()
         base = target[1:] if target.startswith("@") else target
