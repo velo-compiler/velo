@@ -54,10 +54,11 @@ act main() -> i32 {
     mem.free(left)
     mem.free(greeting)
 
-    // split: NULL-terminated @string array. Delimiters SEPARATE — empty
-    // tokens are preserved, a trailing delimiter yields a trailing empty
-    // token, and multi-char delimiters work. mem.free(parts) releases the
-    // array block; each token is its own heap block (reclaimed at exit).
+    // split: ONE heap block holds the NULL-terminated pointer array AND
+    // every token byte behind it — mem.free(parts) reclaims everything
+    // (never mem.free an individual token: it has no size header).
+    // Delimiters SEPARATE — empty tokens are preserved, a trailing
+    // delimiter yields a trailing empty token, and multi-char delimiters work.
     let parts: @string = str.split("v1.2..7", ".")
     mut i: usize = 0
     loop parts[i] != null {

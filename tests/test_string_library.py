@@ -119,6 +119,42 @@ EDGE_LINES = [
     "split(long-delim) = 1",
 ]
 
+# Single-block split ownership: one heap block holds the pointer array AND
+# every token byte, so mem.free(parts) reclaims everything. held = 48 array
+# bytes (6 pointers: 5 tokens + NULL terminator) + 20 token bytes
+# ("one\0 two\0 three\0 \0 five\0") — 68 exactly, on every run of both stages.
+# After the single free the ledger is back to exactly the starting value:
+# the token leak is closed. DO NOT mem.free an individual token (interior
+# pointer, no size header — the same non-header-pointer class as
+# mem.free on any other bad pointer).
+SPLIT_OWNERSHIP = """use sys.io
+use sys.mem
+
+act main() -> i32 {
+    let base: usize = mem.heap_used()
+    let parts: @string = str.split("one,two,three,,five", ",")
+    let tok0: string = parts[0]
+    let tok3: string = parts[3]
+    let l0: usize = str.len(tok0)
+    let l3: usize = str.len(tok3)
+    let held: usize = mem.heap_used()
+    io.println("lens = {l0} {l3}")
+    io.println("held = {held}")
+    mem.free(parts)
+    let after: usize = mem.heap_used()
+    io.println("after = {after}")
+    if after == base { io.println("ledger balanced") }
+    return 0
+}
+"""
+
+SPLIT_OWNERSHIP_LINES = [
+    "lens = 3 0",
+    "held = 68",
+    "after = 0",
+    "ledger balanced",
+]
+
 # One fatal per runtime guard: each mini-harness is its own process (a fatal
 # exits the process) and must die loudly with the exact message instead of
 # letting C strlen/strstr walk a NULL or scan on an empty delimiter.
@@ -222,6 +258,16 @@ class TestStringLibrary(unittest.TestCase):
         self.assertEqual(
             s1.stdout.strip().splitlines(), EDGE_LINES, "edge-case outputs unrecognized"
         )
+
+    def test_split_single_block_ownership(self):
+        """One heap block owns the pointer array AND every token: a single
+        mem.free(parts) returns the heap ledger to exactly its starting value."""
+        for stage, name in (("stage1", "str51_owners_s1"), ("stage2", "str51_owners_s2")):
+            res = run_stage(stage, SPLIT_OWNERSHIP, name)
+            self.assertEqual(res.returncode, 0, f"{stage} run failed: {res.stderr[-2000:]}")
+            self.assertEqual(
+                res.stdout.strip().splitlines(), SPLIT_OWNERSHIP_LINES, f"{stage} ownership output diverged"
+            )
 
     def test_compile_time_rejections(self):
         for body, want_msg, name in REJECTIONS:

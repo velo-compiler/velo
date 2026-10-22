@@ -814,10 +814,12 @@ static inline char* velo_str_concat(const char* a, const char* b) {
 // Python-style tokenization: delimiters SEPARATE, they do not merge — empty
 // tokens are preserved ("a,,b" → "a","","b"), a trailing delimiter yields a
 // trailing empty token ("a," → "a",""), and "" → one empty token. Returns a
-// NULL-terminated heap array of heap token strings (@string in Velo); no
-// token array slot is ever NULL and every token is distinct memory. The
-// delimiter may be any length. An empty delimiter cannot split anything and
-// dies loudly.
+// NULL-terminated @string array whose tokens AND pointer array live in ONE
+// heap block (pointers first, token bytes behind them): mem.free(parts)
+// reclaims everything exactly once and the heap ledger moves by a single
+// atomic op — do NOT free an individual token (it has no header). The
+// delimiter may be any length. An empty delimiter cannot split anything
+// and dies loudly.
 static inline const char** velo_str_split(const char* s, const char* delim) {
     const char* a = velo_str_nonnull(s, "str.split");
     const char* d = velo_str_nonnull(delim, "str.split");
@@ -827,21 +829,37 @@ static inline const char** velo_str_split(const char* s, const char* delim) {
         exit(1);
     }
     size_t ntok = 1;
+    size_t tok_bytes = 0;
     const char* p = a;
     const char* hit;
     while ((hit = strstr(p, d)) != NULL) {
+        tok_bytes += (size_t)(hit - p) + 1;
         ntok++;
         p = hit + dlen;
     }
-    const char** parts = (const char**)velo_heap_alloc(sizeof(const char*), ntok + 1);
+    tok_bytes += strlen(p) + 1;
+    // One block: (ntok + 1) pointers (pointer-aligned, the array slice is a
+    // multiple of sizeof(char*)) followed by every token's bytes + NUL.
+    size_t arr_bytes = (ntok + 1) * sizeof(char*);
+    char* block = (char*)velo_heap_alloc(1, arr_bytes + tok_bytes);
+    const char** parts = (const char**)block;
+    char* w = block + arr_bytes;
     p = a;
     size_t k = 0;
     while ((hit = strstr(p, d)) != NULL) {
-        parts[k++] = velo_str_copy_heap(p, (size_t)(hit - p));
+        size_t len = (size_t)(hit - p);
+        parts[k] = w;
+        memcpy(w, p, len);
+        w[len] = 0;
+        w += len + 1;
+        k++;
         p = hit + dlen;
     }
-    parts[k++] = velo_str_copy_heap(p, strlen(p));
-    parts[k] = NULL;
+    size_t len = strlen(p);
+    parts[k] = w;
+    memcpy(w, p, len);
+    w[len] = 0;
+    parts[k + 1] = NULL;
     return parts;
 }
 
