@@ -187,6 +187,13 @@ act mono_mangle_type(t: string) -> string {
 
 act mono_normalize_type(t: string) -> string {
     if t == null { return null }
+    // 5.2: `shelf[T]` passes through UNCHANGED — codegen extracts the element
+    // type from the kept bracket form, so a mangled shelf name would corrupt
+    // every elem extraction.
+    let len0 = str.len(t)
+    mut at0: usize = 0
+    loop at0 < len0 and t[at0] == '@' { at0 += 1 }
+    if t[at0] == 's' and len0 >= at0 + 5 and t[at0 + 1] == 'h' and t[at0 + 2] == 'e' and t[at0 + 3] == 'l' and t[at0 + 4] == 'f' { return t }
     let len = str.len(t)
     mut at_count: usize = 0
     loop at_count < len and t[at_count] == '@' { at_count += 1 }
@@ -246,6 +253,21 @@ act mono_subst(t: string, params: string, args: string) -> string {
     let a2 = mono_trim(copy_slice_to_string(args, (comma_a + 1) as usize, (str.len(args) - comma_a - 1) as usize))
     let step1 = mono_subst_single(t, p1, a1)
     return mono_subst_single(step1, p2, a2)
+}
+
+// 5.2: extracts the element type from shelf[T] / @shelf[T]; null otherwise.
+act mono_shelf_elem(t: string) -> string {
+    if t == null { return null }
+    let len = str.len(t)
+    mut at: usize = 0
+    loop at < len and t[at] == '@' { at += 1 }
+    if len < at + 7 { return null }
+    if t[at] == 's' and t[at + 1] == 'h' and t[at + 2] == 'e' and t[at + 3] == 'l' and t[at + 4] == 'f' and t[at + 5] == '[' and t[len - 1] == ']' {
+        let inner_len = (len - 1) - (at + 6)
+        if inner_len == 0 { return null }
+        return copy_slice_to_string(t, at + 6, inner_len)
+    }
+    return null
 }
 
 act mono_check_type(m: @Monomorphizer, t: string) {

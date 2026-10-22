@@ -1,0 +1,47 @@
+// Struct literal emission: (T){ .field = value, ... } with declared defaults
+// filling every omitted field (extracted from codegen_expr.vl to keep it lean).
+use sys.io
+use sys.mem
+use "../ast/expr.vl"
+use "../analysis/symbol_table.vl"
+use "../common/string_builder.vl"
+use "codegen_expr.vl"
+
+act emit_struct_lit_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    sb_append_char(sb, '(')
+    sb_append_str(sb, expr.type_name)
+    sb_append_str(sb, "){ ")
+    mut need_sep = false
+    mut cur_init = expr.first_init
+    loop cur_init != null {
+        if need_sep { sb_append_str(sb, ", ") }
+        sb_append_char(sb, '.')
+        sb_append_str(sb, cur_init.name)
+        sb_append_str(sb, " = ")
+        emit_c_expr(sb, st, cur_init.value)
+        need_sep = true
+        cur_init = cur_init.next
+    }
+    let st_sym = find_struct(st, expr.type_name)
+    if st_sym != null {
+        mut sf = st_sym.first_field
+        loop sf != null {
+            mut seen = expr.first_init
+            mut covered = false
+            loop seen != null {
+                if seen.name == sf.name { covered = true }
+                seen = seen.next
+            }
+            if not covered and sf.has_default {
+                if need_sep { sb_append_str(sb, ", ") }
+                sb_append_char(sb, '.')
+                sb_append_str(sb, sf.name)
+                sb_append_str(sb, " = ")
+                emit_c_expr(sb, st, sf.default_value)
+                need_sep = true
+            }
+            sf = sf.next
+        }
+    }
+    sb_append_str(sb, " }")
+}

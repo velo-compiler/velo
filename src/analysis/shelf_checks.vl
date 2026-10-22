@@ -1,0 +1,300 @@
+// ============================================================================
+// 5.2 Dynamic Collections (shelf) — compile-time surface checks.
+//
+// Mutual mirror of velo/codegen_c.py's shelf support: both compiler stages
+// reject the same programs with the same words. Reporting acts bump
+// st.error_count and return "unknown" (or null for type extractors) so that
+// infer branches forward the failure without re-reporting.
+// ============================================================================
+use "type_checker.vl"
+use "symbol_table.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "../ast/expr.vl"
+use "../ast/types.vl"
+use "../frontend/token.vl"
+
+// Index-capable element types. Keep in exact sync with Stage 1's SHELF_INT_TYPES.
+act is_shelf_index_type(name: string) -> bool {
+    if name == null { return false }
+    if name == "i8" or name == "i16" or name == "i32" or name == "i64" { return true }
+    if name == "u8" or name == "u16" or name == "u32" or name == "u64" { return true }
+    if name == "usize" or name == "isize" { return true }
+    return false
+}
+
+// True when the type string is a shelf (optionally an @-pointer to one).
+act is_shelf_type(type_name: string) -> bool {
+    if type_name == null { return false }
+    let clean = strip_pointer_prefix(type_name)
+    let len = str.len(clean)
+    if len < 6 { return false }
+    if clean[0] == 's' and clean[1] == 'h' and clean[2] == 'e' and clean[3] == 'l' and clean[4] == 'f' { return true }
+    return false
+}
+
+// Extracts the element type from `shelf[T]` / `@shelf[T]`; null when not a
+// shelf or when the brackets are empty (the literal needs a pin to be typed).
+act shelf_elem_type(type_name: string) -> string {
+    if type_name == null { return null }
+    let clean = strip_pointer_prefix(type_name)
+    let len = str.len(clean)
+    if len < 7 { return null }
+    if clean[0] != 's' or clean[1] != 'h' or clean[2] != 'e' or clean[3] != 'l' or clean[4] != 'f' or clean[5] != '[' { return null }
+    if clean[len - 1] != ']' { return null }
+    let inner_len = (len - 1) - 6
+    if inner_len == 0 { return null }
+    return copy_slice_to_string(clean, 6, inner_len)
+}
+
+// Walks member / index / cast / deref chains to the root binding name;
+// null when the chain leaves tree space (the receiver is not a plain path).
+act shelf_root_binding_name(expr: @ExprNode) -> string {
+    let cur = expr
+    loop cur != null {
+        if cur.kind == EXPR_IDENT { return cur.str_val }
+        if cur.kind == EXPR_MEMBER { cur = cur.target; continue }
+        if cur.kind == EXPR_INDEX { cur = cur.target; continue }
+        if cur.kind == EXPR_CAST { cur = cur.operand; continue }
+        if cur.kind == EXPR_DEREF { cur = cur.operand; continue }
+        return null
+    }
+    return null
+}
+
+// Mut doctrine: put / take / index-write require a mut root binding.
+// Params count as mut; a let-held root is a loud error.
+act check_shelf_mut_binding(st: @SymbolTable, receiver: @ExprNode, verb: string, word: string) {
+    if receiver == null { return }
+    let root = shelf_root_binding_name(receiver)
+    if root != null {
+        let sym = resolve_variable(st, root)
+        if sym != null and not sym.is_mut {
+            mut sb = create_sb(str.len(verb) + 64)
+            sb_append_str(@sb, "cannot ")
+            sb_append_str(@sb, verb)
+            sb_append_str(@sb, " ")
+            sb_append_str(@sb, word)
+            sb_append_str(@sb, " a shelf held by a let (declare with mut)")
+            report_error("semantic", receiver.line, receiver.col, sb_to_string(@sb))
+            st.error_count += 1
+        }
+    }
+}
+
+// Runs the shelf literal checks and MEMOIZES the element type on the node
+// (bare elem string on success, "unknown" on failure) via bool_val, so later
+// infer passes return the cached verdict instead of re-reporting.
+act shelf_literal_elem(st: @SymbolTable, expr: @ExprNode) -> string {
+    if expr.bool_val { return expr.type_name }
+    if expr.arg_count == 0 {
+        if expr.type_name != null and str.len(expr.type_name) > 0 {
+            expr.bool_val = true
+            return expr.type_name  // element type pinned by the annotation
+        }
+        report_error("semantic", expr.line, expr.col, "cannot infer element type of empty shelf literal — annotate it (e.g. let e: shelf[i32] = shelf[])"); st.error_count += 1
+        expr.type_name = "unknown"; expr.bool_val = true
+        return "unknown"
+    }
+    let elem = infer_expr_type(st, expr.first_arg)
+    if elem == "unknown" {
+        expr.type_name = "unknown"; expr.bool_val = true
+        return "unknown"  // the element inference already reported
+    }
+    if elem == "@void" {
+        report_error("semantic", expr.first_arg.line, expr.first_arg.col, "shelf elements cannot be null (use a @T pointer element)"); st.error_count += 1
+        expr.type_name = "unknown"; expr.bool_val = true
+        return "unknown"
+    }
+    // sequence scan: strictly homogeneous elements (string-compared)
+    mut cur = expr.first_arg.next
+    loop cur != null {
+        let t = infer_expr_type(st, cur)
+        if t != elem {
+            mut msg = create_sb(str.len(elem) + str.len(t) + 80)
+            sb_append_str(@msg, "shelf literal element types differ: ")
+            sb_append_str(@msg, elem); sb_append_str(@msg, " vs "); sb_append_str(@msg, t)
+            sb_append_str(@msg, " (widening and shelf[dyn] are not available yet)")
+            report_error("semantic", cur.line, cur.col, sb_to_string(@msg)); st.error_count += 1
+            expr.type_name = "unknown"; expr.bool_val = true
+            return "unknown"
+        }
+        cur = cur.next
+    }
+    expr.type_name = elem; expr.bool_val = true
+    return elem
+}
+
+// Property reads on a shelf: only `.len` (usize) exists as a property.
+act check_shelf_member_access(st: @SymbolTable, expr: @ExprNode) -> string {
+    if expr.member_name == "len" { return "usize" }
+    mut msg = create_sb(str.len(expr.member_name) + 64)
+    sb_append_str(@msg, "unknown shelf member '")
+    sb_append_str(@msg, expr.member_name)
+    sb_append_str(@msg, "' (put, take, len are available)")
+    report_error("semantic", expr.line, expr.col, sb_to_string(@msg))
+    st.error_count += 1
+    return "unknown"
+}
+
+// Member call on a shelf receiver: put(v) grows, take() pops.
+act check_shelf_member_call(st: @SymbolTable, expr: @ExprNode) -> string {
+    let member = expr.callee.member_name
+    if member == "put" {
+        if expr.arg_count != 1 {
+            report_error("semantic", expr.line, expr.col, "shelf.put expects exactly 1 argument: (shelf s, element value)"); st.error_count += 1
+            return "unknown"
+        }
+        let recv_t = infer_expr_type(st, expr.callee.target)
+        let elem = shelf_elem_type(recv_t)
+        let got = infer_expr_type(st, expr.first_arg)
+        if elem != null and got != elem and got != "void" and got != "@void" {
+            mut msg = create_sb(str.len(elem) + str.len(got) + 48)
+            sb_append_str(@msg, "shelf.put element mismatch: expected ")
+            sb_append_str(@msg, elem)
+            sb_append_str(@msg, " (got ")
+            sb_append_str(@msg, got)
+            sb_append_str(@msg, ")")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+            return "unknown"
+        }
+        check_shelf_mut_binding(st, expr.callee.target, "put", "into")
+        return "void"
+    }
+    if member == "take" {
+        if expr.arg_count != 0 {
+            report_error("semantic", expr.line, expr.col, "shelf.take takes no arguments"); st.error_count += 1
+            return "unknown"
+        }
+        check_shelf_mut_binding(st, expr.callee.target, "take", "from")
+        let recv_t = infer_expr_type(st, expr.callee.target)
+        return shelf_elem_type(recv_t)
+    }
+    // `.len` must be a property read, not a call; anything else is unknown
+    mut msg = create_sb(str.len(member) + 64)
+    sb_append_str(@msg, "unknown shelf member '")
+    sb_append_str(@msg, member)
+    sb_append_str(@msg, "' (put, take, len are available)")
+    report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+    return "unknown"
+}
+
+// Index reads: the index must be an index-capable integer type.
+act check_shelf_index_read(st: @SymbolTable, expr: @ExprNode) -> string {
+    let it = infer_expr_type(st, expr.index)
+    if not is_shelf_index_type(it) {
+        mut msg = create_sb(str.len(it) + 48)
+        sb_append_str(@msg, "shelf index must be an integer (got ")
+        sb_append_str(@msg, it)
+        sb_append_str(@msg, ")")
+        report_error("semantic", expr.index.line, expr.index.col, sb_to_string(@msg)); st.error_count += 1
+        return "unknown"
+    }
+    return shelf_elem_type(infer_expr_type(st, expr.target))
+}
+
+// Index assignment targets: explicit '=' only, mut root binding, no writes
+// through snapshot row copies (unless the element type is itself a pointer).
+act check_shelf_assign(st: @SymbolTable, stmt: @StmtNode) {
+    if stmt.op != TOK_ASSIGN {
+        report_error("semantic", stmt.line, stmt.col, "compound assignments on shelves are not supported yet — use an explicit '=' write"); st.error_count += 1
+        return
+    }
+    check_shelf_mut_binding(st, stmt.expr.target, "write", "into")
+    if stmt.expr.target.kind == EXPR_INDEX {
+        let row_t = shelf_elem_type(infer_expr_type(st, stmt.expr.target))
+        if row_t != null {
+            if str.len(row_t) == 0 or row_t[0] != '@' {
+                report_error("semantic", stmt.line, stmt.col, "cannot write through a shelf row copy (snapshot rows) — use @shelf[int] rows for in-place mutation"); st.error_count += 1
+                return
+            }
+        }
+    }
+    let it = infer_expr_type(st, stmt.expr.index)
+    if not is_shelf_index_type(it) {
+        mut msg = create_sb(str.len(it) + 48)
+        sb_append_str(@msg, "shelf index must be an integer (got ")
+        sb_append_str(@msg, it)
+        sb_append_str(@msg, ")")
+        report_error("semantic", stmt.expr.index.line, stmt.expr.index.col, sb_to_string(@msg)); st.error_count += 1
+    }
+}
+
+// `loop v of coll` requires a shelf source; returns its element type.
+act check_shelf_loop_elem(st: @SymbolTable, stmt: @StmtNode) -> string {
+    let coll_t = infer_expr_type(st, stmt.expr)
+    let elem = shelf_elem_type(coll_t)
+    if elem == null {
+        mut msg = create_sb(str.len(coll_t) + 56)
+        sb_append_str(@msg, "the 'of' source of a loop must be a shelf (got ")
+        sb_append_str(@msg, coll_t)
+        sb_append_str(@msg, ")")
+        report_error("semantic", stmt.line, stmt.col, sb_to_string(@msg)); st.error_count += 1
+        return "unknown"
+    }
+    return elem
+}
+
+// 5.2: annotated shelf declarations — pin empty literals from the annotation,
+// reject literal-vs-annotation element mismatches with the Stage 1 wording.
+act check_shelf_annotation(st: @SymbolTable, decl_t: string, val: @ExprNode, line: i32, col: i32) {
+    if val == null or val.kind != EXPR_SHELF_LIT { return }
+    if not is_shelf_type(decl_t) { return }
+    let ann_elem = shelf_elem_type(decl_t)
+    if val.arg_count == 0 {
+        if ann_elem != null { val.type_name = ann_elem }
+        return
+    }
+    let lit_elem = shelf_literal_elem(st, val)
+    if ann_elem != null and lit_elem != null and lit_elem != "unknown" and lit_elem != ann_elem {
+        mut msg = create_sb(str.len(lit_elem) + str.len(decl_t) + 64)
+        sb_append_str(@msg, "shelf literal element type shelf[")
+        sb_append_str(@msg, lit_elem)
+        sb_append_str(@msg, "] does not match annotation ")
+        sb_append_str(@msg, decl_t)
+        report_error("semantic", line, col, sb_to_string(@msg)); st.error_count += 1
+    }
+}
+
+// 5.2: an empty shelf literal in a return borrows the declared return type's elem.
+act pin_empty_shelf_return(st: @SymbolTable, val: @ExprNode, ret_t: string) {
+    if val == null or val.kind != EXPR_SHELF_LIT or val.arg_count != 0 { return }
+    if ret_t == null or not is_shelf_type(ret_t) { return }
+    val.type_name = shelf_elem_type(ret_t)
+}
+
+// 5.2: builds the shelf[T] type string from the (memoized) literal element.
+act shelf_inferred_type(st: @SymbolTable, expr: @ExprNode) -> string {
+    let elem = shelf_literal_elem(st, expr)
+    if elem == null or elem == "unknown" { return "unknown" }
+    mut sb = create_sb(str.len(elem) + 9)
+    sb_append_str(@sb, "shelf[")
+    sb_append_str(@sb, elem)
+    sb_append_str(@sb, "]")
+    return sb_to_string(@sb)
+}
+
+// Cross-call boundary: a shelf argument's element type must string-match the
+// parameter's (a silent pass-through would corrupt reads via mixed element
+// sizes in the shared VeloShelf layout).
+act check_shelf_call_args(st: @SymbolTable, expr: @ExprNode, fn_sym: @FunctionSym) {
+    mut cur_p = fn_sym.first_param
+    mut cur_a = expr.first_arg
+    loop cur_p != null and cur_a != null {
+        let want = cur_p.type_name
+        if is_shelf_type(want) {
+            let got = infer_expr_type(st, cur_a)
+            if is_shelf_type(got) and got != want {
+                mut msg = create_sb(str.len(got) + str.len(want) + 64)
+                sb_append_str(@msg, "shelf argument element types must match exactly: got ")
+                sb_append_str(@msg, got)
+                sb_append_str(@msg, ", expected ")
+                sb_append_str(@msg, want)
+                report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+            }
+        }
+        cur_p = cur_p.next
+        cur_a = cur_a.next
+    }
+}

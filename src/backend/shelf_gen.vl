@@ -1,0 +1,253 @@
+// ============================================================================
+// 5.2 Dynamic Collections (shelf) — C99 emission helpers.
+// Lowers the shelf surface onto the shared runtime layout (VeloShelf +
+// velo_shelf_* helpers in velo_runtime.h). Semantic checks (mut doctrine,
+// homogeneous literals, row-copy writes, index types) already ran in the
+// checker; this file only shapes the C.
+// ============================================================================
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../common/string_builder.vl"
+use "../common/act_types.vl"
+use "codegen_types.vl"
+use "codegen_expr.vl"
+use "codegen_stmt.vl"
+
+// Detects the shelf shape (raw `shelf[...]` or @-pointer `@shelf[...]`).
+
+act is_shelf_form(type_name: string) -> bool {
+    if type_name == null { return false }
+    let len = str.len(type_name)
+    mut at: usize = 0
+    loop at < len and type_name[at] == '@' { at += 1 }
+    if len < at + 5 { return false }
+    if type_name[at] == 's' and type_name[at + 1] == 'h' and type_name[at + 2] == 'e' and type_name[at + 3] == 'l' and type_name[at + 4] == 'f' { return true }
+    return false
+}
+
+// Extracts the element type string from shelf[T] / @shelf[T]; null otherwise.
+act shelf_raw_elem(type_name: string) -> string {
+    if type_name == null { return null }
+    let len = str.len(type_name)
+    mut at: usize = 0
+    loop at < len and type_name[at] == '@' { at += 1 }
+    if len < at + 7 { return null }
+    if type_name[at] != 's' or type_name[at + 1] != 'h' or type_name[at + 2] != 'e' or type_name[at + 3] != 'l' or type_name[at + 4] != 'f' or type_name[at + 5] != '[' { return null }
+    if type_name[len - 1] != ']' { return null }
+    let inner_len = (len - 1) - (at + 6)
+    if inner_len == 0 { return null }
+    return copy_slice_to_string(type_name, at + 6, inner_len)
+}
+
+// ------------------------- 8. Shelf constructors -------------------------
+
+// Emits the shelf constructor literal as a GCC statement expression that
+// binds each element once into a typed temp (left-to-right) and puts it.
+act emit_shelf_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    mut elem = expr.type_name
+    if elem == null or str.len(elem) == 0 { 
+        // inline literals bypassed by the checker's assign path self-infer
+        elem = infer_expr_type(st, expr.first_arg)
+    }
+    let elem_c = map_type_to_c(elem)
+    let shl = shelf_fresh_name(st, "shl_")
+    sb_append_str(sb, "({ VeloShelf ")
+    sb_append_str(sb, shl)
+    sb_append_str(sb, " = { 0 };")
+    mut cur = expr.first_arg
+    loop cur != null {
+        let esl = shelf_fresh_name(st, "esl_")
+        sb_append_str(sb, " { ")
+        sb_append_str(sb, elem_c)
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, esl)
+        sb_append_str(sb, " = (")
+        emit_c_expr(sb, st, cur)
+        sb_append_str(sb, "); velo_shelf_put(&(")
+        sb_append_str(sb, shl)
+        sb_append_str(sb, "), (const void*)(&(")
+        sb_append_str(sb, esl)
+        sb_append_str(sb, ")), (usize)sizeof(")
+        sb_append_str(sb, elem_c)
+        sb_append_str(sb, ")); };")
+        cur = cur.next
+    }
+    sb_append_str(sb, " ")
+    sb_append_str(sb, shl)
+    sb_append_str(sb, "; })")
+}
+
+// A shelf read lowers onto velo_shelf_get; value receivers take &, @-receivers
+// pass their own pointer.
+act emit_shelf_get(sb: @StringBuilder, st: @SymbolTable, recv: @ExprNode, idx: @ExprNode, elem_c: string) {
+    sb_append_str(sb, "(*((")
+    sb_append_str(sb, elem_c)
+    sb_append_str(sb, "*)velo_shelf_get(")
+    emit_shelf_recv(sb, st, recv)
+    sb_append_str(sb, ", (usize)(")
+    emit_c_expr(sb, st, idx)
+    sb_append_str(sb, "))))")
+}
+
+act emit_shelf_recv(sb: @StringBuilder, st: @SymbolTable, recv: @ExprNode) {
+    let recv_t = infer_expr_type(st, recv)
+    if str.len(recv_t) > 0 and recv_t[0] == '@' {
+        sb_append_str(sb, "(")
+        emit_c_expr(sb, st, recv)
+        sb_append_str(sb, ")")
+    } else {
+        sb_append_str(sb, "&(")
+        emit_c_expr(sb, st, recv)
+        sb_append_str(sb, ")")
+    }
+}
+
+// Index read: `(*((T*)velo_shelf_get(recv, (usize)(idx))))` with loud OOB in the helper.
+act emit_shelf_index(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    let recv_t = infer_expr_type(st, expr.target)
+    emit_shelf_get(sb, st, expr.target, expr.index, map_type_to_c(shelf_raw_elem(recv_t)))
+}
+
+// put / take member calls on a shelf receiver.
+act emit_shelf_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    let member = expr.callee.member_name
+    let recv_t = infer_expr_type(st, expr.callee.target)
+    let elem = shelf_raw_elem(recv_t)
+    if member == "put" {
+        let esl = shelf_fresh_name(st, "esl_")
+        sb_append_str(sb, "({ ")
+        sb_append_str(sb, map_type_to_c(elem))
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, esl)
+        sb_append_str(sb, " = (")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, "); velo_shelf_put(")
+        emit_shelf_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (const void*)(&(")
+        sb_append_str(sb, esl)
+        sb_append_str(sb, ")), (usize)sizeof(")
+        sb_append_str(sb, map_type_to_c(elem))
+        sb_append_str(sb, ")); })")
+        return
+    }
+    if member == "take" {
+        sb_append_str(sb, "(*((")
+        sb_append_str(sb, map_type_to_c(elem))
+        sb_append_str(sb, "*)velo_shelf_take(")
+        emit_shelf_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ")))")
+        return
+    }
+    // checker handles unknown members; emit the property for totality
+    emit_c_expr(sb, st, expr.callee.target)
+    sb_append_char(sb, '.')
+    sb_append_str(sb, member)
+}
+
+// Generator: unique temporary names for shelf statement expressions.
+act shelf_fresh_name(st: @SymbolTable, prefix: string) -> string {
+    mut sb = create_sb(str.len(prefix) + 22)
+    sb_append_str(@sb, "_velo_")
+    sb_append_str(@sb, prefix)
+    sb_append_int(@sb, st.fresh_counter + 1)
+    st.fresh_counter += 1
+    return sb_to_string(@sb)
+}
+
+// Indexed write: `{ T _velo_set_N = (v); velo_shelf_set(recv, (usize)(i),
+// (const void*)(&(_velo_set_N)), (usize)sizeof(T)); }`
+act emit_shelf_set(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32) {
+    let recv_t = infer_expr_type(st, stmt.expr.target)
+    let elem_c = map_type_to_c(shelf_raw_elem(recv_t))
+    let slot = shelf_fresh_name(st, "set_")
+    sb_append_indent(sb, indent)
+    sb_append_str(sb, "{ ")
+    sb_append_str(sb, elem_c)
+    sb_append_char(sb, ' ')
+    sb_append_str(sb, slot)
+    sb_append_str(sb, " = (")
+    emit_c_expr(sb, st, stmt.val_expr)
+    sb_append_str(sb, "); velo_shelf_set(")
+    emit_shelf_recv(sb, st, stmt.expr.target)
+    sb_append_str(sb, ", (usize)(")
+    emit_c_expr(sb, st, stmt.expr.index)
+    sb_append_str(sb, "), (const void*)(&(")
+    sb_append_str(sb, slot)
+    sb_append_str(sb, ")), (usize)sizeof(")
+    sb_append_str(sb, elem_c)
+    sb_append_str(sb, ")); }\n")
+}
+
+// `loop v of coll` — snapshot semantics: evaluate the source ONCE into a
+// stable view (copied struct header + copied data pointer/len), then walk.
+// Puts inside the body mutate the shelf, never the view.
+act emit_shelf_loop(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32, defers: @@DeferNode) {
+    let coll_t = infer_expr_type(st, stmt.expr)
+    let elem = shelf_raw_elem(coll_t)
+    let elem_c = map_type_to_c(elem)
+    let src = shelf_fresh_name(st, "lsrc_")
+    let cnt = shelf_fresh_name(st, "lcnt_")
+    let idx = shelf_fresh_name(st, "lidx_")
+    let dat = shelf_fresh_name(st, "ldat_")
+    mut vname = "it"
+    if stmt.loop_var != null and str.len(stmt.loop_var) > 0 { vname = stmt.loop_var }
+    sb_append_indent(sb, indent)
+    sb_append_str(sb, "{ VeloShelf ")
+    sb_append_str(sb, src)
+    sb_append_str(sb, " = (")
+    if str.len(coll_t) > 0 and coll_t[0] == '@' {
+        // @-pointer sources are unpacked into the stable view header
+        sb_append_str(sb, "*(")
+        emit_c_expr(sb, st, stmt.expr)
+        sb_append_str(sb, ")")
+    } else {
+        emit_c_expr(sb, st, stmt.expr)
+    }
+    sb_append_str(sb, "); ")
+    sb_append_str(sb, "const usize ")
+    sb_append_str(sb, cnt)
+    sb_append_str(sb, " = ")
+    sb_append_str(sb, src)
+    sb_append_str(sb, ".len; void* ")
+    sb_append_str(sb, dat)
+    sb_append_str(sb, " = ")
+    sb_append_str(sb, src)
+    sb_append_str(sb, ".data;")
+    sb_append_str(sb, "\n")
+    sb_append_indent(sb, indent)
+    sb_append_str(sb, "for (usize ")
+    sb_append_str(sb, idx)
+    sb_append_str(sb, " = 0; ")
+    sb_append_str(sb, idx)
+    sb_append_str(sb, " < ")
+    sb_append_str(sb, cnt)
+    sb_append_str(sb, "; ++")
+    sb_append_str(sb, idx)
+    sb_append_str(sb, ") {\n")
+    enter_scope(st)
+    define_variable(st, vname, elem, false, stmt.line, stmt.col)
+    sb_append_indent(sb, indent + 1)
+    sb_append_str(sb, "const ")
+    sb_append_str(sb, elem_c)
+    sb_append_char(sb, ' ')
+    sb_append_str(sb, vname)
+    sb_append_str(sb, " = ((")
+    sb_append_str(sb, elem_c)
+    sb_append_str(sb, "*)")
+    sb_append_str(sb, dat)
+    sb_append_str(sb, ")[")
+    sb_append_str(sb, idx)
+    sb_append_str(sb, "];\n")
+    emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
+    exit_scope(st)
+    sb_append_indent(sb, indent)   // for-body close
+    sb_append_str(sb, "}\n")
+    sb_append_indent(sb, indent)   // snapshot view block close
+    sb_append_str(sb, "}\n")
+}

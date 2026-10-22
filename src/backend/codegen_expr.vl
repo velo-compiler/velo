@@ -13,6 +13,8 @@ use "../common/act_types.vl"
 use "codegen_io.vl"
 use "../analysis/op_resolver.vl"
 use "codegen_types.vl"
+use "shelf_gen.vl"
+use "struct_lit_gen.vl"
 
 // Emits C99 code for an AST expression into a StringBuilder.
 act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
@@ -39,6 +41,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr.kind == EXPR_BOOL { if expr.bool_val { sb_append_str(sb, "true") } else { sb_append_str(sb, "false") }; return }
     if expr.kind == EXPR_NULL { sb_append_str(sb, "NULL"); return }
     if expr.kind == EXPR_IDENT { sb_append_str(sb, expr.str_val); return }
+    if expr.kind == EXPR_SHELF_LIT { emit_shelf_literal(sb, st, expr); return }  // 5.2
     if expr.kind == EXPR_VARIANT {
         mut kname = expr.type_name
         mut k_sym: @KindSym = null
@@ -131,6 +134,11 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
 
     // 4. Array indexing
     if expr.kind == EXPR_INDEX {
+        // 5.2: shelf element reads lower onto velo_shelf_get (bounds-checked)
+        if is_shelf_form(infer_expr_type(st, expr.target)) {
+            emit_shelf_index(sb, st, expr)
+            return
+        }
         emit_c_expr(sb, st, expr.target)
         sb_append_char(sb, '[')
         emit_c_expr(sb, st, expr.index)
@@ -147,45 +155,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     }
 
     // 6. Struct instantiation literal (omitted fields fall back to their declared defaults)
-    if expr.kind == EXPR_STRUCT_LIT {
-        sb_append_char(sb, '(')
-        sb_append_str(sb, expr.type_name)
-        sb_append_str(sb, "){ ")
-        mut need_sep = false
-        mut cur_init = expr.first_init
-        loop cur_init != null {
-            if need_sep { sb_append_str(sb, ", ") }
-            sb_append_char(sb, '.')
-            sb_append_str(sb, cur_init.name)
-            sb_append_str(sb, " = ")
-            emit_c_expr(sb, st, cur_init.value)
-            need_sep = true
-            cur_init = cur_init.next
-        }
-        let st_sym = find_struct(st, expr.type_name)
-        if st_sym != null {
-            mut sf = st_sym.first_field
-            loop sf != null {
-                mut seen = expr.first_init
-                mut covered = false
-                loop seen != null {
-                    if seen.name == sf.name { covered = true }
-                    seen = seen.next
-                }
-                if not covered and sf.has_default {
-                    if need_sep { sb_append_str(sb, ", ") }
-                    sb_append_char(sb, '.')
-                    sb_append_str(sb, sf.name)
-                    sb_append_str(sb, " = ")
-                    emit_c_expr(sb, st, sf.default_value)
-                    need_sep = true
-                }
-                sf = sf.next
-            }
-        }
-        sb_append_str(sb, " }")
-        return
-    }
+    if expr.kind == EXPR_STRUCT_LIT { emit_struct_lit_expr(sb, st, expr); return }
 
     // 7. Binary expression
     if expr.kind == EXPR_BINARY {
@@ -339,6 +309,13 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                     sb_append_char(sb, ')'); return
                 }
                 if target.str_val == "io" { emit_io_call(sb, st, member, expr.first_arg); return }
+            }
+        }
+        // 5.2: shelf receivers — put / take lower onto VeloShelf helpers
+        if expr.callee.kind == EXPR_MEMBER {
+            if is_shelf_form(infer_expr_type(st, expr.callee.target)) {
+                emit_shelf_member_call(sb, st, expr)
+                return
             }
         }
         if expr.callee.kind == EXPR_MEMBER {

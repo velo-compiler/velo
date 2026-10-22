@@ -1,0 +1,90 @@
+/* 5.2 Dynamic Collections (shelf)
+ *
+ * The growable dynamic shelf: typed literals `shelf[T]`, the `.len`
+ * property, put/take member calls (the LIFO stack core — take pops FROM
+ * THE END), `xs[i]` reads/writes, `loop v of xs` snapshot iteration, and
+ * value-typed pass-through into acts with exact element types. `shelf`
+ * is a reserved keyword; empty literals need an annotation to type their
+ * elements; a let-held shelf is immutable; rows are snapshot copies.
+ * NO calls inside interpolations (both compilers print those untranslated
+ * — gaps 6.7); values are bound to locals first. Output is byte-identical
+ * on the Stage 1 Python compiler and the self-hosted Stage 2 compiler.
+ */
+use sys.io
+use sys.mem
+
+// Shelves pass through calls by value with their exact element type.
+act sum_shelf(src: shelf[i32]) -> i32 {
+    mut total: i32 = 0
+    loop v of src {
+        total = total + v
+    }
+    return total
+}
+
+act main() -> i32 {
+    // Typed literals: homogeneous elements, snapshot-copied at construction.
+    let nums: shelf[i32] = shelf[4, 8, 15, 16]
+    let n0: usize = nums.len
+    io.println("len: {n0}")
+
+    // Indexing is 0-based and bounds-checked at runtime (fatal on OOB).
+    let third: i32 = nums[2]
+    io.println("third: {third}")
+
+    // Indexed write needs a mut binding; let-held shelves are immutable.
+    mut xs = shelf[10, 20, 30]
+    xs[1] = 99
+    let m: i32 = xs[1]
+    io.println("mutated: {m}")
+
+    // put appends at the end; take pops FROM THE END (LIFO stack core).
+    xs.put(40)
+    let n1: usize = xs.len
+    let top: i32 = xs.take()
+    io.println("grown: {n1} top: {top}")
+    let n2: usize = xs.len
+    io.println("after take: {n2}")
+
+    // loop-of walks a SNAPSHOT: growing inside the body extends no walk.
+    mut walked: usize = 0
+    loop v of xs {
+        walked += 1
+        xs.put(1000)  // grows the shelf, not the view
+    }
+    let n3: usize = xs.len
+    io.println("walked: {walked} grown-during: {n3}")
+
+    // Exact element types at call boundaries — no widening, no dyn shelf.
+    let total: i32 = sum_shelf(nums)
+    io.println("sum: {total}")
+
+    // Shelves of strings put/take pointer elements.
+    mut names: shelf[string] = shelf["ada", "grace"]
+    names.put("eal")
+    let n4: usize = names.len
+    let snd: string = names[1]
+    let popped: string = names.take()
+    io.println("names: {n4} / {snd} / {popped}")
+
+    // Nested shelves: a growable grid. Rows are values (snapshot rows) —
+    // replace a whole row via an indexed write.
+    mut grid: shelf[shelf[i32]] = shelf[shelf[1, 2], shelf[3, 4]]
+    let r0: shelf[i32] = grid[0]
+    let g01: i32 = r0[1]
+    io.println("g01: {g01}")
+    grid[1] = shelf[7, 8]
+    let r1: shelf[i32] = grid[1]
+    let g10: i32 = r1[0]
+    io.println("g10: {g10}")
+
+    // Empty literals borrow their element type from the annotation.
+    mut queue: shelf[i32] = shelf[]
+    queue.put(5)
+    queue.put(6)
+    let qtop: i32 = queue.take()
+    let qleft: usize = queue.len
+    io.println("q: {qtop} len: {qleft}")
+
+    return 0
+}

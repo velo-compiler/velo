@@ -103,6 +103,8 @@ data SymbolTable {
     current_scope: @Scope
     error_count: usize
     has_operator_overloads: bool
+    // 5.2: shared counter for unique shelf temp names during C emission
+    fresh_counter: usize
 }
 
 // Allocates and initializes an empty lexical scope.
@@ -126,6 +128,7 @@ act init_symbol_table(st: @SymbolTable) {
     st.current_scope = st.global_scope
     st.error_count = 0
     st.has_operator_overloads = false
+    st.fresh_counter = 0
 }
 
 // Pushes a new inner lexical scope onto the scope stack.
@@ -145,9 +148,7 @@ act scope_lookup_immediate(sc: @Scope, name: string) -> @Symbol {
     if sc == null { return null }
     mut cur = sc.first_sym
     loop cur != null {
-        if cur.name == name {
-            return cur
-        }
+        if cur.name == name { return cur }
         cur = cur.next
     }
     return null
@@ -158,9 +159,7 @@ act scope_lookup(sc: @Scope, name: string) -> @Symbol {
     mut cur_sc = sc
     loop cur_sc != null {
         let sym = scope_lookup_immediate(cur_sc, name)
-        if sym != null {
-            return sym
-        }
+        if sym != null { return sym }
         cur_sc = cur_sc.parent
     }
     return null

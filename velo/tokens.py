@@ -30,6 +30,8 @@ class TokenType(Enum):
     ON = auto()
     KIND = auto()
     OP = auto()
+    SHELF = auto()
+    OF = auto()
 
     # Literals
     IDENTIFIER = auto()
@@ -119,6 +121,11 @@ KEYWORDS = {
     "on": TokenType.ON,
     "kind": TokenType.KIND,
     "op": TokenType.OP,
+    # 5.2: `shelf` (dynamic collections) and `of` (value iteration) are
+    # reserved words. `shelf[` must be grammar-stable, NOT scope-dependent,
+    # so `shelf` is a true keyword (documented trade in gaps.md §5.2).
+    "shelf": TokenType.SHELF,
+    "of": TokenType.OF,
 }
 
 @dataclass

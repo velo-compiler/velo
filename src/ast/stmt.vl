@@ -90,6 +90,7 @@ data StmtNode {
     loop_step: @ExprNode
     is_inclusive: bool
     is_count: bool
+    is_of: bool
     // Match / Switch constructs
     first_case: @CaseNode
     case_count: usize
@@ -176,39 +177,37 @@ act make_if_stmt(cond: @ExprNode, then_body: @StmtNode, else_branch: @StmtNode, 
 // Creates a range loop statement (`loop i in start..end:step { ... }`).
 act make_loop_stmt(var_name: string, start_expr: @ExprNode, end_expr: @ExprNode, step_expr: @ExprNode, is_inclusive: bool, body: @StmtNode, line: i32, col: i32) -> @StmtNode {
     mut node: @StmtNode = mem.alloc(@StmtNode, 1)
-    node.kind = STMT_LOOP
-    node.loop_var = var_name
-    node.loop_start = start_expr
-    node.loop_end = end_expr
-    node.loop_step = step_expr
-    node.is_inclusive = is_inclusive
-    node.body = body
-    node.line = line
-    node.col = col
+    node.kind = STMT_LOOP; node.loop_var = var_name; node.loop_start = start_expr; node.loop_end = end_expr
+    node.loop_step = step_expr; node.is_inclusive = is_inclusive; node.is_of = false; node.body = body
+    node.line = line; node.col = col
     return node
 }
 
 // Creates an expression loop statement (count repeat or condition).
 act make_loop_expr_stmt(expr: @ExprNode, is_count: bool, body: @StmtNode, line: i32, col: i32) -> @StmtNode {
     mut node: @StmtNode = mem.alloc(@StmtNode, 1)
-    node.kind = STMT_LOOP
-    node.loop_var = "it"
-    node.expr = expr
-    node.is_count = is_count
-    node.body = body
-    node.line = line
-    node.col = col
+    node.kind = STMT_LOOP; node.loop_var = "it"; node.expr = expr; node.is_count = is_count
+    node.is_of = false; node.body = body
+    node.line = line; node.col = col
     return node
 }
 
 // Creates an infinite loop statement (`loop { ... }`).
 act make_loop_inf_stmt(body: @StmtNode, line: i32, col: i32) -> @StmtNode {
     mut node: @StmtNode = mem.alloc(@StmtNode, 1)
-    node.kind = STMT_LOOP
-    node.loop_var = "it"
-    node.body = body
-    node.line = line
-    node.col = col
+    node.kind = STMT_LOOP; node.loop_var = "it"; node.is_of = false; node.body = body
+    node.line = line; node.col = col
+    return node
+}
+
+// 5.2: creates a shelf value loop statement (`loop v of coll { ... }`).
+// The collection expression rides the shared `expr` slot; `is_of` selects
+// snapshot iteration over `expr`'s elements.
+act make_loop_of_stmt(var_name: string, coll_expr: @ExprNode, body: @StmtNode, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_LOOP; node.loop_var = var_name; node.expr = coll_expr
+    node.is_of = true; node.body = body
+    node.line = line; node.col = col
     return node
 }
 

@@ -7,6 +7,9 @@ use "../ast/expr.vl"
 use "../ast/stmt.vl"
 use "symbol_table.vl"
 use "type_checker.vl"
+use "shelf_checks.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
 
 // Executes multi-pass semantic analysis and type verification over an AST program.
 act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
@@ -42,6 +45,7 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
     cur = prog.first_decl
     loop cur != null {
         if cur.kind == STMT_VAR_DECL {
+            check_shelf_annotation(st, cur.type_name, cur.val_expr, cur.line, cur.col)  // 5.2: pin/reject
             mut inf_type = cur.type_name
             if inf_type == null or str.len(inf_type) == 0 {
                 if cur.val_expr != null { inf_type = infer_expr_type(st, cur.val_expr) } else { inf_type = "i32" }

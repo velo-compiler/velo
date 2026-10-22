@@ -38,6 +38,8 @@ let TOK_ON: i32 = 43
 let TOK_DOTDOTEQ: i32 = 44
 let TOK_KIND: i32 = 45
 let TOK_OP: i32 = 46
+let TOK_SHELF: i32 = 47
+let TOK_OF: i32 = 48
 
 // Operators & Punctuation
 let TOK_AT: i32 = 50           // @

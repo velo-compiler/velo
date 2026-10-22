@@ -35,6 +35,48 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
             cur = cur.next
         }
     }
+    if e.kind == EXPR_SHELF_LIT {
+        // 5.2: shelf[T] inference — pinned elem, else the first element's type
+        if e.type_name != null and str.len(e.type_name) > 0 {
+            mut sb = create_sb(str.len(e.type_name) + 9)
+            sb_append_str(@sb, "shelf[")
+            sb_append_str(@sb, e.type_name)
+            sb_append_str(@sb, "]")
+            return sb_to_string(@sb)
+        }
+        if e.first_arg != null {
+            let t0 = mono_infer_type(e.first_arg, scope)
+            mut sb = create_sb(str.len(t0) + 9)
+            sb_append_str(@sb, "shelf[")
+            sb_append_str(@sb, t0)
+            sb_append_str(@sb, "]")
+            return sb_to_string(@sb)
+        }
+        return "i32"  // unannotated empty: the checker rejects it upstream
+    }
+    if e.kind == EXPR_INDEX {
+        // 5.2: shelf element reads type as their element
+        let tt = mono_infer_type(e.target, scope)
+        let ee = mono_shelf_elem(tt)
+        if ee != null { return ee }
+        return "i32"
+    }
+    if e.kind == EXPR_MEMBER {
+        // 5.2: shelf .len is usize; other reads fall through to "i32"
+        let tt = mono_infer_type(e.target, scope)
+        if mono_shelf_elem(tt) != null and e.member_name == "len" { return "usize" }
+    }
+    if e.kind == EXPR_CALL {
+        // 5.2: shelf receiver calls — put yields void, take yields the element
+        if e.callee != null and e.callee.kind == EXPR_MEMBER {
+            let rt = mono_infer_type(e.callee.target, scope)
+            let ee = mono_shelf_elem(rt)
+            if ee != null {
+                if e.callee.member_name == "put" { return "void" }
+                if e.callee.member_name == "take" { return ee }
+            }
+        }
+    }
     return "i32"
 }
 
@@ -147,6 +189,19 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
             cur = cur.next
         }
         return make_variant_expr(kname, e.member_name, first_a, e.arg_count, e.line, e.col)
+    }
+    if e.kind == EXPR_SHELF_LIT {
+        // 5.2: clone the bracket-arg chain; pinned elems ride type_name
+        mut first_a: @ExprNode = null
+        mut last_a: @ExprNode = null
+        mut cur = e.first_arg
+        loop cur != null {
+            let a = mono_clone_expr(m, cur, scope, params, args)
+            if first_a == null { first_a = a; last_a = a }
+            else { last_a.next = a; last_a = a }
+            cur = cur.next
+        }
+        return make_shelf_lit_expr(first_a, e.arg_count, e.type_name, e.line, e.col)
     }
     if e.kind == EXPR_CALL {
         mut arg_count = e.arg_count

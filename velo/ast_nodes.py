@@ -133,6 +133,17 @@ class AnonFuncExpr(Expr):
     line: int
     col: int
 
+# 5.2: `shelf[v0, v1, ...]` — constructor literal of a dynamic collection.
+# Elements must be homogeneous (strict, slice-1 ladder); empty literals only
+# infer when an annotation pins the element type (elem_type is set by the
+# VarDeclStmt/ReturnStmt handlers before emission).
+@dataclass
+class ShelfLiteral(Expr):
+    args: List[Expr]
+    line: int
+    col: int
+    elem_type: Optional[str] = None
+
 # Statements
 @dataclass
 class ExprStmt(Stmt):
@@ -199,6 +210,7 @@ class LoopStmt(Stmt):
     is_inclusive: bool = False
     expr: Optional[Expr] = None
     is_count: bool = False
+    of_expr: Optional[Expr] = None  # 5.2: `loop v of coll { }` — value iteration over a shelf
 
 @dataclass
 class ZoneStmt(Stmt):

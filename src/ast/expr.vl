@@ -18,6 +18,8 @@ let EXPR_CAST: i32 = 113
 let EXPR_CALL: i32 = 114
 let EXPR_STRUCT_LIT: i32 = 115
 let EXPR_VARIANT: i32 = 116
+// 5.2: `shelf[v0, v1, ...]` constructor literal; elements ride the first_arg/next arg chain
+let EXPR_SHELF_LIT: i32 = 117
 
 // Represents a single field initializer in a struct instantiation (e.g. `x: 10.0`).
 // Linked via `next` to support arbitrary numbers of fields without dynamic heap buffers.
@@ -201,6 +203,20 @@ act make_call_expr(callee: @ExprNode, first_arg: @ExprNode, count: usize, line: 
     node.callee = callee
     node.first_arg = first_arg
     node.arg_count = count
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a shelf constructor literal node (`shelf[1, 2, 3]`).
+// Elements are stored in the first_arg/next chain (same shape as call args).
+// An empty literal sets type_name only when an annotation pins the element type.
+act make_shelf_lit_expr(first_elem: @ExprNode, count: usize, elem_type: string, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_SHELF_LIT
+    node.first_arg = first_elem
+    node.arg_count = count
+    node.type_name = elem_type
     node.line = line
     node.col = col
     return node

@@ -6,6 +6,7 @@ from velo.ast_nodes import (
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, VariantExpr, AnonFuncExpr,
+    ShelfLiteral,
     TypeAliasDecl,
     mangle_op_name
 )
@@ -384,7 +385,7 @@ class Parser:
                 ret_type = self._parse_type_annotation()
             return prefix + f"act({', '.join(params)}) -> {ret_type}"
 
-        type_tok = self._consume(TokenType.IDENTIFIER, "Expected type name")
+        type_tok = self._consume(TokenType.SHELF if self._check(TokenType.SHELF) else TokenType.IDENTIFIER, "Expected type name")
         base_name = type_tok.value
         if self._match(TokenType.LBRACKET):
             args = []
@@ -546,6 +547,23 @@ class Parser:
                 iterator="it",
                 start_expr=None,
                 end_expr=None,
+                body=body,
+                line=loop_tok.line,
+                col=loop_tok.col,
+            )
+
+        # 2. Shelf value loop: loop <var> of <collection> { ... }
+        if self._check(TokenType.IDENTIFIER) and self._peek(1).type == TokenType.OF:
+            iterator_tok = self._advance()
+            self._consume(TokenType.OF, "Expected 'of' after loop variable")
+            of_expr = self._parse_expression()
+            self._skip_newlines()
+            body = self._parse_block()
+            return LoopStmt(
+                iterator=iterator_tok.value,
+                start_expr=None,
+                end_expr=None,
+                of_expr=of_expr,
                 body=body,
                 line=loop_tok.line,
                 col=loop_tok.col,
@@ -902,6 +920,22 @@ class Parser:
             return BoolLiteral(value=True, line=tok.line, col=tok.col)
         if self._match(TokenType.FALSE):
             return BoolLiteral(value=False, line=tok.line, col=tok.col)
+        if self._match(TokenType.SHELF):
+            # 5.2: shelf constructor literal — bracket args are VALUES
+            # (homogeneous; empty `shelf[]` needs a type annotation).
+            shelf_tok = self.tokens[self.pos - 1]
+            self._consume(TokenType.LBRACKET, "Expected '[' after 'shelf' (shelf literal: shelf[1, 2, 3])")
+            self._skip_newlines()
+            args: List[Expr] = []
+            while not self._check(TokenType.RBRACKET) and not self._is_at_end():
+                args.append(self._parse_expression())
+                self._skip_newlines()
+                if not self._match(TokenType.COMMA):
+                    break
+                self._skip_newlines()
+            self._consume(TokenType.RBRACKET, "Expected ']' at end of shelf literal")
+            return ShelfLiteral(args=args, line=shelf_tok.line, col=shelf_tok.col)
+
         if self._match(TokenType.IDENTIFIER):
             return Identifier(name=tok.value, line=tok.line, col=tok.col)
         if self._match(TokenType.DOT):

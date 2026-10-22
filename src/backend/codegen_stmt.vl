@@ -10,6 +10,7 @@ use "../analysis/type_checker.vl"
 use "../common/string_builder.vl"
 use "../analysis/op_resolver.vl"
 use "codegen_expr.vl"
+use "shelf_gen.vl"
 
 // Intrusive linked list node maintaining active LIFO deferred statements.
 data DeferNode {
@@ -50,6 +51,13 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
 
     // 2. Assignment statement
     if stmt.kind == STMT_ASSIGN {
+        // 5.2: shelf indexed writes (xs[i] = v) lower onto velo_shelf_set
+        if stmt.expr != null and stmt.expr.kind == EXPR_INDEX {
+            if is_shelf_form(infer_expr_type(st, stmt.expr.target)) {
+                emit_shelf_set(sb, st, stmt, indent)
+                return
+            }
+        }
         let base_op = get_base_assign_op(stmt.op)
         if base_op != 0 and st.has_operator_overloads {
             let target_t = infer_expr_type(st, stmt.expr)
@@ -122,6 +130,11 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
     if stmt.kind == STMT_LOOP {
         mut vname = "it"
         if stmt.loop_var != null and str.len(stmt.loop_var) > 0 { vname = stmt.loop_var }
+        // 5.2: shelf value loop — snapshot iteration with an element-typed var
+        if stmt.is_of {
+            emit_shelf_loop(sb, st, stmt, indent, defers)
+            return
+        }
         sb_append_indent(sb, indent)
         if stmt.loop_start == null and stmt.loop_end == null {
             if stmt.expr != null {

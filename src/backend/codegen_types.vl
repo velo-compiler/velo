@@ -22,6 +22,12 @@ act map_type_to_c(type_name: string) -> string {
         return mangle_act_type(type_name)
     }
 
+    // 5.2: `shelf[T]` / `@shelf[T]` → the single shared VeloShelf layout
+    if is_shelf_form(type_name) {
+        if type_name[0] == '@' { return "VeloShelf*" }
+        return "VeloShelf"
+    }
+
     // Pointer types (@T, @@T)
     if type_name[0] == '@' {
         let base = strip_pointer_prefix(type_name)

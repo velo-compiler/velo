@@ -219,6 +219,37 @@ act parse_primary(p: @Parser) -> @ExprNode {
         return make_variant_expr(null, vname, first_arg, count, dot_tok.line, dot_tok.col)
     }
 
+    // 7.5. Shelf constructor literal: `shelf[v0, v1, ...]` — bracket args are VALUES.
+    // An empty `shelf[]` needs a type annotation to have its element type pinned.
+    if parser_check(p, TOK_SHELF) {
+        let shelf_tok = parser_advance(p)
+        parser_consume(p, TOK_LBRACKET, "Expected '[' after 'shelf' (shelf literal: shelf[1, 2, 3])")
+        mut first_elem: @ExprNode = null
+        mut last_elem: @ExprNode = null
+        mut elem_count: usize = 0
+        if not parser_check(p, TOK_RBRACKET) {
+            mut more_elems = true
+            loop more_elems {
+                let e = parse_expression(p)
+                if e != null {
+                    if first_elem == null {
+                        first_elem = e
+                        last_elem = e
+                    } else {
+                        last_elem.next = e
+                        last_elem = e
+                    }
+                    elem_count += 1
+                }
+                if not parser_match(p, TOK_COMMA) {
+                    more_elems = false
+                }
+            }
+        }
+        parser_consume(p, TOK_RBRACKET, "Expected ']' at end of shelf literal")
+        return make_shelf_lit_expr(first_elem, elem_count, null, shelf_tok.line, shelf_tok.col)
+    }
+
     // 8. Identifier variable reference
     if parser_check(p, TOK_IDENTIFIER) {
         let tok = parser_advance(p)

@@ -6,6 +6,7 @@ from velo.ast_nodes import (
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr,
+    ShelfLiteral,
     TypeAliasDecl
 )
 from velo.monomorphize import Monomorphizer, parse_act_type, mangle_act_type
@@ -64,6 +65,11 @@ _STR_SIGS = {
     "split": ": (string s, string delimiter)",
 }
 
+# 5.2 Dynamic Collections: the shelf surface is compile-checked per member
+# (mirrored by Stage 2's src/analysis/shelf_checks.vl — identical wording)
+# and lowered onto the runtime's single VeloShelf struct + velo_shelf_* helpers.
+SHELF_INT_TYPES = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize"}
+
 class CCodeGenerator:
     def __init__(self):
         self.output: List[str] = []
@@ -74,10 +80,13 @@ class CCodeGenerator:
         self.kind_defs: Dict[str, KindDecl] = {}
         self.variant_to_kind: Dict[str, str] = {}
         self.current_scope_types: Dict[str, str] = {}
+        self.current_scope_mut: Dict[str, bool] = {}
+        self.global_scope_mut: Dict[str, bool] = {}
         self.current_function: Optional[FunctionDecl] = None
         self.defer_stack: List[List[Stmt]] = []
         self.zone_counter = 0
         self.match_counter = 0
+        self.fresh_counter = 0
 
     def _indent(self) -> str:
         return "    " * self.indent_level
@@ -109,8 +118,103 @@ class CCodeGenerator:
         if type_str in self.type_aliases:
             type_str = self.type_aliases[type_str]
 
+        # 5.2: every shelf[T] maps onto the runtime's single VeloShelf struct
+        if type_str.startswith("shelf[") or type_str == "shelf[]":
+            return "VeloShelf" + ("*" * pointer_count)
+        if type_str == "shelf":
+            raise ValueError("a bare 'shelf' needs an element type: use shelf[T]")
+
         base_c_type = TYPE_MAP.get(type_str, type_str)
         return base_c_type + ("*" * pointer_count)
+
+    def _fresh_name(self, prefix: str) -> str:
+        self.fresh_counter += 1
+        return f"_velo_{prefix}{self.fresh_counter}"
+
+    def _shelf_elem_type(self, type_str: Optional[str]) -> Optional[str]:
+        """Extracts the element type from a `shelf[T]` (or `@shelf[T]`) type
+        string, or None when the type is not a shelf."""
+        if not type_str:
+            return None
+        raw = type_str.lstrip("@").strip()
+        if raw.startswith("shelf[") and raw.endswith("]"):
+            inner = raw[6:-1].strip()
+            return inner if inner else None
+        return None
+
+    def _shelf_root_binding(self, expr: Optional[Expr]) -> Optional[str]:
+        """Walks a receiver chain down to its root binding name (or None for
+        call results etc). Used by the mut-binding check for put/take/set."""
+        node = expr
+        while node is not None and not isinstance(node, Identifier):
+            if isinstance(node, (MemberAccess, IndexExpr)):
+                node = node.target
+            elif isinstance(node, CastExpr):
+                node = node.expr
+            elif isinstance(node, DerefExpr):
+                node = node.operand
+            else:
+                return None
+        return node.name if isinstance(node, Identifier) else None
+
+    def _shelf_expect(self, member: str, target_expr: Expr, args: List[Expr]) -> None:
+        """5.2 compile-checks shelf surface calls (put/take). Mirrored by the
+        Stage 2 checker — both stages reject the same programs with the same
+        messages."""
+        if member not in ("put", "take"):
+            raise ValueError(f"unknown shelf member '{member}' (put, take, len are available)")
+        if member == "put":
+            if len(args) != 1:
+                raise ValueError("shelf.put expects exactly 1 argument: (shelf s, element value)")
+            recv = self._resolve_expr_type(target_expr)
+            elem = self._shelf_elem_type(recv)
+            if elem:
+                got = self._thread_arg_type(args[0])
+                if got != elem and got not in ("void", "@void"):
+                    raise ValueError(f"shelf.put element mismatch: expected {elem} (got {got})")
+        elif len(args) != 0:
+            raise ValueError("shelf.take takes no arguments")
+        root = self._shelf_root_binding(target_expr)
+        if root is not None and not self.current_scope_mut.get(root, False):
+            word = "into" if member == "put" else "from"
+            raise ValueError(f"cannot {member} {word} a shelf held by a let (declare with mut)")
+
+    def _check_shelf_annotation(self, decl_type: Optional[str], value: Optional[Expr]) -> None:
+        """5.2 contract: annotated shelf declarations — an empty literal borrows
+        the annotation's element type; a non-empty literal must match it
+        exactly. Mirrored by the Stage 2 checker's check_shelf_annotation."""
+        if not isinstance(value, ShelfLiteral) or not decl_type or not decl_type.startswith("shelf["):
+            return
+        ann_elem = self._shelf_elem_type(decl_type)
+        if not value.args:
+            if ann_elem is not None:
+                value.elem_type = ann_elem
+            return
+        if ann_elem is None:
+            return
+        lit_elem = self._shelf_elem_type(self._infer_raw_velo_type(value))
+        if lit_elem is not None and lit_elem != ann_elem:
+            raise ValueError(f"shelf literal element type shelf[{lit_elem}] does not match annotation {decl_type}")
+
+    def _emit_shelf_literal(self, lit: ShelfLiteral) -> str:
+        """5.2: lowers `shelf[..., ...]` into a GCC statement-expression so the
+        literal can live in any value position. Each element is bound exactly
+        once into a typed temp (left-to-right evaluation order guaranteed)."""
+        raw = self._infer_raw_velo_type(lit)
+        elem = self._shelf_elem_type(raw)
+        if elem is None:
+            raise ValueError("cannot infer element type of empty shelf literal — annotate it (e.g. let e: shelf[i32] = shelf[])")
+        elem_c = self._map_type(elem)
+        recv = self._fresh_name("shl_")
+        parts = [f"VeloShelf {recv} = {{0}}"]
+        for a in lit.args:
+            slot = self._fresh_name("esl_")
+            parts.append(
+                f"{{ {elem_c} {slot} = ({self._emit_expression(a)}); "
+                f"velo_shelf_put(&{recv}, (const void*)(&{slot}), (usize)sizeof({elem_c})); }}"
+            )
+        parts.append(f"{recv}")
+        return "({ " + "; ".join(parts) + "; })"
 
     def generate(self, program: Program) -> str:
         program = Monomorphizer().monomorphize(program)
@@ -118,10 +222,13 @@ class CCodeGenerator:
         self.output = []
         self.struct_defs = {}
         self.current_scope_types = {}
+        self.current_scope_mut = {}
         self.global_types: Dict[str, str] = {}
+        self.global_scope_mut: Dict[str, bool] = {}
         self.func_return_types: Dict[str, str] = {}
         self.defer_stack = []
         self.zone_counter = 0
+        self.fresh_counter = 0
 
         self.func_decls: Dict[str, FunctionDecl] = {}
         self.used_act_types: Set[Tuple[Tuple[str, ...], str]] = set()
@@ -183,6 +290,8 @@ class CCodeGenerator:
                 for _, fv in e.field_inits: scan_expr(fv)
             elif isinstance(e, VariantExpr):
                 for a in e.args: scan_expr(a)
+            elif isinstance(e, ShelfLiteral):
+                for a in e.args: scan_expr(a)
 
         def scan_stmt(s: Optional[Stmt]):
             if not s: return
@@ -200,6 +309,7 @@ class CCodeGenerator:
                 if s.else_branch: scan_stmt(s.else_branch)
             elif isinstance(s, LoopStmt):
                 if s.expr: scan_expr(s.expr)
+                if s.of_expr: scan_expr(s.of_expr)
                 if s.start_expr: scan_expr(s.start_expr)
                 if s.end_expr: scan_expr(s.end_expr)
                 if s.step_expr: scan_expr(s.step_expr)
@@ -307,9 +417,12 @@ class CCodeGenerator:
         for decl in program.declarations:
             if isinstance(decl, VarDeclStmt):
                 if decl.name not in seen_globals:
+                    # 5.2: annotated shelf decls pin empties / reject mismatches
+                    self._check_shelf_annotation(decl.type_name, decl.value)
                     type_str = self._infer_or_map_type(decl.type_name, decl.value)
                     raw_velo_type = decl.type_name or self._infer_raw_velo_type(decl.value)
                     self.global_types[decl.name] = raw_velo_type
+                    self.global_scope_mut[decl.name] = decl.is_mut
                     const_prefix = "" if decl.is_mut else "const "
                     if decl.value:
                         val_code = self._emit_expression(decl.value)
@@ -468,10 +581,12 @@ class CCodeGenerator:
         self.current_function = func
         is_main = (func.name == "main")
         self.current_scope_types = dict(self.global_types)
+        self.current_scope_mut = dict(self.global_scope_mut)
         self.defer_stack = [[]]
 
         for p in func.params:
             self.current_scope_types[p.name] = p.type_name
+            self.current_scope_mut[p.name] = True
         
         if is_main:
             self._emit_line("int main(int argc, char** argv) {")
@@ -519,6 +634,12 @@ class CCodeGenerator:
 
         elif isinstance(stmt, ReturnStmt):
             ret_val_code = None
+            # 5.2: an empty shelf literal in a return borrows its element type
+            # from the act's declared return type
+            if stmt.value and isinstance(stmt.value, ShelfLiteral) and not stmt.value.args:
+                ret_t = self.current_function.return_type if self.current_function else None
+                if ret_t and ret_t.lstrip("@").startswith("shelf["):
+                    stmt.value.elem_type = self._shelf_elem_type(ret_t)
             if stmt.value:
                 ret_val_code = self._emit_expression(stmt.value)
 
@@ -543,9 +664,12 @@ class CCodeGenerator:
             self._emit_line("continue;")
 
         elif isinstance(stmt, VarDeclStmt):
+            # 5.2: annotated shelf decls pin empties / reject mismatches
+            self._check_shelf_annotation(stmt.type_name, stmt.value)
             type_str = self._infer_or_map_type(stmt.type_name, stmt.value)
             raw_velo_type = stmt.type_name or self._infer_raw_velo_type(stmt.value)
             self.current_scope_types[stmt.name] = raw_velo_type
+            self.current_scope_mut[stmt.name] = stmt.is_mut
 
             if type_str.endswith("*"):
                 const_prefix = ""
@@ -559,6 +683,32 @@ class CCodeGenerator:
                 self._emit_line(f"{type_str} {stmt.name};")
 
         elif isinstance(stmt, AssignStmt):
+            # 5.2: shelf indexed write (xs[i] = v) — bounds-checked via helper
+            if isinstance(stmt.target, IndexExpr):
+                base_type = self._resolve_expr_type(stmt.target.target)
+                shelf_elem = self._shelf_elem_type(base_type)
+                if shelf_elem is not None:
+                    if stmt.op != "=":
+                        raise ValueError("compound assignments on shelves are not supported yet — use an explicit '=' write")
+                    root = self._shelf_root_binding(stmt.target)
+                    if root is not None and not self.current_scope_mut.get(root, False):
+                        raise ValueError("cannot write into a shelf held by a let (declare with mut)")
+                    if isinstance(stmt.target.target, IndexExpr) and not shelf_elem.startswith("@"):
+                        raise ValueError("cannot write through a shelf row copy (snapshot rows) — use @shelf[int] rows for in-place mutation")
+                    itype = self._resolve_expr_type(stmt.target.index)
+                    if itype not in SHELF_INT_TYPES:
+                        raise ValueError(f"shelf index must be an integer (got {itype})")
+                    elem_c = self._map_type(shelf_elem)
+                    target_code = self._emit_expression(stmt.target.target)
+                    rec = f"({target_code})" if base_type.startswith("@") else f"&({target_code})"
+                    slot = self._fresh_name("set_")
+                    val_code = self._emit_expression(stmt.value)
+                    self._emit_line(
+                        f"{{ {elem_c} {slot} = ({val_code}); "
+                        f"velo_shelf_set({rec}, (usize)({self._emit_expression(stmt.target.index)}), "
+                        f"(const void*)(&{slot}), (usize)sizeof({elem_c})); }}"
+                    )
+                    return
             target_code = self._emit_expression(stmt.target)
             val_code = self._emit_expression(stmt.value)
             self._emit_line(f"{target_code} {stmt.op} {val_code};")
@@ -567,8 +717,43 @@ class CCodeGenerator:
             self._emit_if(stmt)
 
         elif isinstance(stmt, LoopStmt):
+            # 5.2: `loop v of coll { }` — snapshot iteration. The source is
+            # evaluated ONCE into a stable view (data pointer + length); puts
+            # or takes during the body mutate the shelf, never the view.
+            if stmt.of_expr is not None:
+                coll_type = self._resolve_expr_type(stmt.of_expr)
+                elem = self._shelf_elem_type(coll_type)
+                if elem is None:
+                    raise ValueError(f"the 'of' source of a loop must be a shelf (got {coll_type})")
+                it = stmt.iterator or "v"
+                elem_c = self._map_type(elem)
+                src = self._fresh_name("lsrc_")
+                cnt = self._fresh_name("lcnt_")
+                idx = self._fresh_name("lidx_")
+                dat = self._fresh_name("ldat_")
+                coll_code = self._emit_expression(stmt.of_expr)
+                cap = f"(*({coll_code}))" if coll_type.startswith("@") else f"({coll_code})"
+                self._emit_line("{")
+                self.indent_level += 1
+                self._emit_line(f"VeloShelf {src} = {cap};")
+                self._emit_line(f"const usize {cnt} = {src}.len;")
+                self._emit_line(f"void* {dat} = {src}.data;")
+                self._emit_line(f"for (usize {idx} = 0; {idx} < {cnt}; ++{idx}) {{")
+                self.indent_level += 1
+                self._emit_line(f"const {elem_c} {it} = (({elem_c}*){dat})[{idx}];")
+                self.current_scope_types[it] = elem
+                self.current_scope_mut[it] = False
+                self.defer_stack.append([])
+                self._emit_block_body(stmt.body.statements)
+                self.indent_level -= 1
+                self._emit_line("}")
+                self.indent_level -= 1
+                self._emit_line("}")
+                return
+
             it = stmt.iterator or "it"
             self.current_scope_types[it] = "i64"
+            self.current_scope_mut[it] = False
             if stmt.start_expr is None and stmt.end_expr is None:
                 if stmt.expr is not None:
                     is_count = getattr(stmt, 'is_count', False)
@@ -762,6 +947,21 @@ class CCodeGenerator:
         if isinstance(value, StringLiteral): return "string"
         if isinstance(value, BoolLiteral): return "bool"
         if isinstance(value, NullLiteral): return "@void"
+        if isinstance(value, ShelfLiteral):
+            # 5.2: strict-homogeneous inference; empty literals only infer
+            # when an annotation established elem_type beforehand.
+            if value.elem_type:
+                return f"shelf[{value.elem_type}]"
+            if not value.args:
+                raise ValueError("cannot infer element type of empty shelf literal — annotate it (e.g. let e: shelf[i32] = shelf[])")
+            types = [self._infer_raw_velo_type(a) for a in value.args]
+            first = types[0]
+            if first == "@void":
+                raise ValueError("shelf elements cannot be null (use a @T pointer element)")
+            for t in types[1:]:
+                if t != first:
+                    raise ValueError(f"shelf literal element types differ: {first} vs {t} (widening and shelf[dyn] are not available yet)")
+            return f"shelf[{first}]"
         if isinstance(value, VariantExpr):
             if value.kind_name: return value.kind_name
             return self.variant_to_kind.get(value.variant_name, "i32")
@@ -787,10 +987,23 @@ class CCodeGenerator:
             target_type = self._resolve_expr_type(value.target)
             if target_type == "string":
                 return "u8"
+            shelf_elem = self._shelf_elem_type(target_type)
+            if shelf_elem is not None:
+                return shelf_elem
             if target_type.startswith("@"):
                 return target_type[1:]
             return "i32"
         if isinstance(value, CallExpr):
+            # 5.2: shelf receiver calls — put returns void, take the element
+            if isinstance(value.callee, MemberAccess):
+                recv = self._resolve_expr_type(value.callee.target)
+                shelf_elem = self._shelf_elem_type(recv)
+                if shelf_elem is not None:
+                    if value.callee.member == "put":
+                        return "void"
+                    if value.callee.member == "take":
+                        return shelf_elem
+                    raise ValueError(f"unknown shelf member '{value.callee.member}' (put, take, len are available)")
             if isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier) and value.callee.target.name in self.kind_defs:
                 return value.callee.target.name
             if isinstance(value.callee, Identifier):
@@ -852,6 +1065,8 @@ class CCodeGenerator:
         if isinstance(expr, BoolLiteral): return "bool"
         if isinstance(expr, NullLiteral): return "@void"
         if isinstance(expr, StructLiteral): return expr.struct_name
+        if isinstance(expr, ShelfLiteral):
+            return self._infer_raw_velo_type(expr)
         if isinstance(expr, Identifier):
             return self.current_scope_types.get(expr.name, "i32")
         elif isinstance(expr, VariantExpr):
@@ -869,6 +1084,9 @@ class CCodeGenerator:
             return sub_type
         elif isinstance(expr, IndexExpr):
             target_type = self._resolve_expr_type(expr.target)
+            shelf_elem = self._shelf_elem_type(target_type)
+            if shelf_elem is not None:
+                return shelf_elem
             if target_type == "string":
                 return "u8"
             if target_type.startswith("@"):
@@ -878,12 +1096,27 @@ class CCodeGenerator:
             if isinstance(expr.target, Identifier) and expr.target.name in self.kind_defs:
                 return expr.target.name
             target_type = self._resolve_expr_type(expr.target)
+            # 5.2: shelf property reads (len); other members are loud errors
+            if self._shelf_elem_type(target_type) is not None:
+                if expr.member == "len":
+                    return "usize"
+                raise ValueError(f"unknown shelf member '{expr.member}' (put, take, len are available)")
             clean_type = target_type.lstrip("@")
             fields = self.struct_defs.get(clean_type, {})
             return fields.get(expr.member, "i32")
         elif isinstance(expr, AnonFuncExpr):
             return f"act({', '.join(p.type_name for p in expr.params)}) -> {expr.return_type}"
         elif isinstance(expr, CallExpr):
+            # 5.2: shelf receiver calls — put returns void, take the element
+            if isinstance(expr.callee, MemberAccess):
+                recv = self._resolve_expr_type(expr.callee.target)
+                shelf_elem = self._shelf_elem_type(recv)
+                if shelf_elem is not None:
+                    if expr.callee.member == "put":
+                        return "void"
+                    if expr.callee.member == "take":
+                        return shelf_elem
+                    raise ValueError(f"unknown shelf member '{expr.callee.member}' (put, take, len are available)")
             if isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier) and expr.callee.target.name in self.kind_defs:
                 return expr.callee.target.name
             if isinstance(expr.callee, Identifier):
@@ -1037,9 +1270,23 @@ class CCodeGenerator:
             sub = self._emit_expression(expr.operand)
             return f"(*{sub})"
         elif isinstance(expr, IndexExpr):
+            target_type = self._resolve_expr_type(expr.target)
+            shelf_elem = self._shelf_elem_type(target_type)
+            if shelf_elem is not None:
+                # 5.2: bounds-checked shelf read through the runtime helper
+                itype = self._resolve_expr_type(expr.index)
+                if itype not in SHELF_INT_TYPES:
+                    raise ValueError(f"shelf index must be an integer (got {itype})")
+                target_code = self._emit_expression(expr.target)
+                index_code = self._emit_expression(expr.index)
+                recv = f"({target_code})" if target_type.startswith("@") else f"&({target_code})"
+                elem_c = self._map_type(shelf_elem)
+                return f"(*(({elem_c}*)velo_shelf_get({recv}, (usize)({index_code}))))"
             target_code = self._emit_expression(expr.target)
             index_code = self._emit_expression(expr.index)
             return f"{target_code}[{index_code}]"
+        elif isinstance(expr, ShelfLiteral):
+            return self._emit_shelf_literal(expr)
         elif isinstance(expr, CastExpr):
             sub = self._emit_expression(expr.expr)
             c_type = self._map_type(expr.target_type)
@@ -1192,7 +1439,20 @@ class CCodeGenerator:
                             codes = [self._emit_expression(a) for a in expr.args]
                             return f"velo_str_{expr.callee.member}({', '.join(codes)})"
 
+                # 5.2: shelf receiver member calls — put/take helpers, compile-checked
                 target_type = self._resolve_expr_type(expr.callee.target)
+                if self._shelf_elem_type(target_type) is not None:
+                    self._shelf_expect(expr.callee.member, expr.callee.target, expr.args)
+                    elem = self._shelf_elem_type(target_type)
+                    target_code = self._emit_expression(expr.callee.target)
+                    rec = f"({target_code})" if target_type.startswith("@") else f"&({target_code})"
+                    elem_c = self._map_type(elem)
+                    if expr.callee.member == "put":
+                        slot = self._fresh_name("esl_")
+                        return (f"({{ {elem_c} {slot} = ({self._emit_expression(expr.args[0])}); "
+                                f"velo_shelf_put({rec}, (const void*)(&{slot}), (usize)sizeof({elem_c})); }})")
+                    return f"(*(({elem_c}*)velo_shelf_take({rec})))"
+
                 clean_type = target_type.lstrip("@")
                 struct_fields = self.struct_defs.get(clean_type, {})
                 if expr.callee.member not in struct_fields and expr.callee.member in self.func_decls:
@@ -1208,6 +1468,17 @@ class CCodeGenerator:
                     arg_codes = [first_arg_code] + [self._emit_expression(arg) for arg in expr.args]
                     return f"{expr.callee.member}({', '.join(arg_codes)})"
 
+            # 5.2: shelf element types must string-match across call boundaries —
+            # a silent VeloShelf↔VeloShelf pass-through would corrupt reads (esz)
+            decl = self.func_decls.get(expr.callee.name) if isinstance(expr.callee, Identifier) else None
+            if decl is not None:
+                for p, a in zip(decl.params, expr.args):
+                    want = (p.type_name or "").strip()
+                    if not want.lstrip("@").startswith("shelf["):
+                        continue
+                    got = self._resolve_expr_type(a)
+                    if got.lstrip("@").startswith("shelf[") and got != want:
+                        raise ValueError(f"shelf argument element types must match exactly: got {got}, expected {want}")
             callee_code = self._emit_expression(expr.callee)
             arg_codes = [self._emit_expression(arg) for arg in expr.args]
             return f"{callee_code}({', '.join(arg_codes)})"

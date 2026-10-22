@@ -11,6 +11,7 @@ from velo.ast_nodes import (
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr,
+    ShelfLiteral,
     TypeAliasDecl,
     mangle_op_name, OP_SYMBOL_TO_NAME
 )
@@ -70,14 +71,29 @@ def mangle_type_name(t: str) -> str:
     return clean_prefix + clean_base
 
 
+def _shelf_elem_of(t: Optional[str]) -> Optional[str]:
+    """5.2: extracts the element type from 'shelf[T]' / '@shelf[T]', or None."""
+    if not t:
+        return None
+    raw = t.lstrip("@").strip()
+    if raw.startswith("shelf[") and raw.endswith("]"):
+        inner = raw[6:-1].strip()
+        return inner or None
+    return None
+
+
 def normalize_type_name(t: Optional[str]) -> Optional[str]:
     """
     Normalizes a generic type signature in AST to its mangled concrete name, preserving leading '@'.
     E.g. '@Box[i32]' -> '@Box_i32', 'Option[string]' -> 'Option_string', 'i32' -> 'i32'.
+    5.2: `shelf[T]` passes through UNCHANGED — the codegen extracts the element
+    type from the kept bracket form (`_shelf_elem_type`), never from a mangled name.
     """
     if not t:
         return t
     prefix, base, args = parse_type_signature(t)
+    if base == "shelf":
+        return t  # 5.2: keep the bracket form; elem extraction needs it
     if not args:
         return prefix + base
     mangled_args = [mangle_type_name(a) for a in args]
@@ -402,6 +418,9 @@ class Monomorphizer:
         elif isinstance(expr, StructLiteral):
             for _, val in expr.field_inits:
                 self._canonicalize_expr_types(val)
+        elif isinstance(expr, ShelfLiteral):
+            for a in expr.args:
+                self._canonicalize_expr_types(a)
         elif isinstance(expr, CallExpr):
             self._canonicalize_expr_types(expr.callee)
             for a in expr.args:
@@ -601,6 +620,24 @@ class Monomorphizer:
                     new_else = self._transform_stmt(stmt.else_branch, scope, subst, current_ret_type)
             return IfStmt(condition=new_cond, then_branch=new_then, else_branch=new_else, line=stmt.line, col=stmt.col)
         elif isinstance(stmt, LoopStmt):
+            if stmt.of_expr is not None:
+                # 5.2: `loop v of coll` — transform the source, then register the
+                # iterator with the shelf's ELEMENT type in the loop scope.
+                new_of = self._transform_expr(stmt.of_expr, scope, subst, None)
+                of_t = self._infer_expr_type(new_of, scope)
+                loop_scope = dict(scope)
+                if stmt.iterator:
+                    loop_scope[stmt.iterator] = _shelf_elem_of(of_t) or "i32"
+                new_body = self._transform_block(stmt.body, loop_scope, subst, current_ret_type)
+                return LoopStmt(
+                    iterator=stmt.iterator,
+                    start_expr=None,
+                    end_expr=None,
+                    of_expr=new_of,
+                    body=new_body,
+                    line=stmt.line,
+                    col=stmt.col
+                )
             new_start = self._transform_expr(stmt.start_expr, scope, subst, "i32") if stmt.start_expr else None
             new_end = self._transform_expr(stmt.end_expr, scope, subst, "i32") if stmt.end_expr else None
             new_step = self._transform_expr(stmt.step_expr, scope, subst, "i32") if stmt.step_expr else None
@@ -778,6 +815,11 @@ class Monomorphizer:
             return CallExpr(callee=new_callee, args=new_args, line=expr.line, col=expr.col)
         elif isinstance(expr, MemberAccess):
             return MemberAccess(target=self._transform_expr(expr.target, scope, subst, None), member=expr.member, line=expr.line, col=expr.col)
+        elif isinstance(expr, ShelfLiteral):
+            new_args = [self._transform_expr(a, scope, subst, None) for a in expr.args]
+            new_lit = ShelfLiteral(args=new_args, line=expr.line, col=expr.col)
+            new_lit.elem_type = expr.elem_type
+            return new_lit
         elif isinstance(expr, IndexExpr):
             return IndexExpr(target=self._transform_expr(expr.target, scope, subst, None), index=self._transform_expr(expr.index, scope, subst, "usize"), line=expr.line, col=expr.col)
         elif isinstance(expr, DerefExpr):
@@ -846,6 +888,24 @@ class Monomorphizer:
             f_types = self.struct_field_types.get(clean_type) or self.struct_field_types.get(base) or self.struct_field_types.get(clean_type.split('_')[0], {})
             if expr.member in f_types:
                 return f_types[expr.member]
+            # 5.2: shelf property reads (len = usize); others are downstream errors
+            if _shelf_elem_of(target_type) is not None and expr.member == "len":
+                return "usize"
+            return "i32"
+        if isinstance(expr, ShelfLiteral):
+            # 5.2: homogeneous best-effort inference (generic T unification);
+            # the strict check runs in the checker/codegen
+            if expr.elem_type:
+                return f"shelf[{expr.elem_type}]"
+            if not expr.args:
+                return "i32"
+            return f"shelf[{self._infer_expr_type(expr.args[0], scope)}]"
+        if isinstance(expr, IndexExpr):
+            # 5.2: shelf element reads
+            target_type = self._infer_expr_type(expr.target, scope)
+            elem = _shelf_elem_of(target_type)
+            if elem is not None:
+                return elem
             return "i32"
         if isinstance(expr, CallExpr):
             if isinstance(expr.callee, Identifier):
@@ -854,6 +914,14 @@ class Monomorphizer:
                 if expr.callee.name in self.generic_funcs:
                     return self.generic_funcs[expr.callee.name].return_type or "void"
             elif isinstance(expr.callee, MemberAccess):
+                # 5.2: shelf receiver calls — put is void, take yields the element
+                recv = self._infer_expr_type(expr.callee.target, scope)
+                elem = _shelf_elem_of(recv)
+                if elem is not None:
+                    if expr.callee.member == "put":
+                        return "void"
+                    if expr.callee.member == "take":
+                        return elem
                 if expr.callee.member in self.func_return_types:
                     return self.func_return_types[expr.callee.member]
                 if expr.callee.member in self.generic_funcs:

@@ -13,6 +13,7 @@ use "op_resolver.vl"
 use "type_check_program.vl"
 use "mem_checks.vl"
 use "str_checks.vl"
+use "shelf_checks.vl"
 
 // Checks if a name represents a recognized type (primitive or user-defined struct or kind).
 act is_known_type(st: @SymbolTable, name: string) -> bool {
@@ -20,6 +21,7 @@ act is_known_type(st: @SymbolTable, name: string) -> bool {
     let clean = strip_pointer_prefix(name)
     if is_act_type(clean) { return true }
     if is_primitive_type(clean) { return true }; if clean == "Allocator" { return true }; if clean == "Thread" { return true }; if clean == "Mutex" { return true }  // §4.1/§4.2 handles
+    if is_shelf_type(clean) { return true }  // 5.2: shelf[T] is a first-class type
     if find_struct(st, clean) != null { return true }
     if find_kind(st, clean) != null { return true }
     return false
@@ -42,6 +44,8 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         return "unknown"
     }
 
+    if expr.kind == EXPR_SHELF_LIT { return shelf_inferred_type(st, expr) }  // 5.2: shelf constructor literal
+
     if expr.kind == EXPR_IDENT {
         let sym = resolve_variable(st, expr.str_val)
         if sym == null {
@@ -51,9 +55,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 loop cur_p != null { if p_idx > 0 { sb_append_str(@sb, ", ") }; sb_append_str(@sb, cur_p.type_name); p_idx += 1; cur_p = cur_p.next }
                 sb_append_str(@sb, ") -> "); sb_append_str(@sb, fn_sym.return_type); return sb_to_string(@sb)
             }
-            if is_known_type(st, expr.str_val) {
-                return expr.str_val
-            }
+            if is_known_type(st, expr.str_val) { return expr.str_val }
             if expr.str_val == "io" or expr.str_val == "mem" or expr.str_val == "fs" or expr.str_val == "str" or expr.str_val == "sys" or expr.str_val == "thread" { return expr.str_val }
             report_error("semantic", expr.line, expr.col, "Undeclared identifier"); st.error_count += 1
             return "unknown"
@@ -71,6 +73,8 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         }
         let target_type = infer_expr_type(st, expr.target)
         let clean_type = strip_pointer_prefix(target_type)
+        // 5.2: shelf property reads (len = usize; others are loud errors)
+        if is_shelf_type(target_type) { return check_shelf_member_access(st, expr) }
         let st_sym = find_struct(st, clean_type)
         if st_sym == null {
             report_error("semantic", expr.line, expr.col, "Member access on non-struct type"); st.error_count += 1
@@ -78,14 +82,15 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         }
         let f_sym = find_struct_field(st_sym, expr.member_name)
         if f_sym == null {
-            report_error("semantic", expr.line, expr.col, "Struct does not have member field"); st.error_count += 1
-            return "unknown"
+            report_error("semantic", expr.line, expr.col, "Struct does not have member field"); st.error_count += 1; return "unknown"
         }
         return f_sym.type_name
     }
 
     if expr.kind == EXPR_INDEX {
         let target_type = infer_expr_type(st, expr.target)
+        // 5.2: shelf element read (bounds are runtime-checked; index type here)
+        if is_shelf_type(target_type) { return check_shelf_index_read(st, expr) }
         if target_type == "string" { return "u8" }
         if str.len(target_type) > 0 and target_type[0] == '@' { return strip_pointer_prefix(target_type) }
         report_error("semantic", expr.line, expr.col, "Cannot index non-pointer / non-string type"); st.error_count += 1; return "unknown"
@@ -114,12 +119,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             if target.kind == EXPR_IDENT {
                 if target.str_val == "mem" {
                     if !check_mem_call(st, expr, member) { return "unknown" }
-                    if member == "alloc" or member == "heap_alloc" {
-                        if expr.first_arg != null {
-                            let arg_type = infer_expr_type(st, expr.first_arg)
-                            return arg_type
-                        }
-                    }
+                    if member == "alloc" or member == "heap_alloc" { if expr.first_arg != null { return infer_expr_type(st, expr.first_arg) } }
                     if member == "used" or member == "heap_used" { return "usize" }
                     // §4.1: mem.current() -> @Allocator; mem.alloc_with(a, @T, count) -> @T
                     if member == "current" { return "@Allocator" }
@@ -139,6 +139,9 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 if target.str_val == "io" { return "void" }
             }
         }
+
+        // 5.2: shelf receivers — put / take member calls
+        if expr.callee.kind == EXPR_MEMBER and expr.callee.target != null and is_shelf_type(infer_expr_type(st, expr.callee.target)) { return check_shelf_member_call(st, expr) }
 
         // User functions or Kind variant constructors
         if expr.callee.kind == EXPR_MEMBER and expr.callee.target.kind == EXPR_IDENT {
@@ -183,6 +186,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                     cur_a = cur_a.next
                     cur_p = cur_p.next
                 }
+                check_shelf_call_args(st, expr, fn_sym)  // 5.2: shelf elems must string-match
                 return fn_sym.return_type
             }
             let var_sym = resolve_variable(st, expr.callee.str_val)
@@ -204,21 +208,17 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.kind == EXPR_STRUCT_LIT {
         let st_sym = find_struct(st, expr.type_name)
         if st_sym == null {
-            report_error("semantic", expr.line, expr.col, "Instantiating unknown struct type")
-            st.error_count += 1
-            return "unknown"
+            report_error("semantic", expr.line, expr.col, "Instantiating unknown struct type"); st.error_count += 1; return "unknown"
         }
         mut cur_init = expr.first_init
         loop cur_init != null {
             let f_sym = find_struct_field(st_sym, cur_init.name)
             if f_sym == null {
-                report_error("semantic", cur_init.line, cur_init.col, "Unknown field in struct literal")
-                st.error_count += 1
+                report_error("semantic", cur_init.line, cur_init.col, "Unknown field in struct literal"); st.error_count += 1
             } else {
                 let val_type = infer_expr_type(st, cur_init.value)
                 if not types_are_compatible(f_sym.type_name, val_type) {
-                    report_error("semantic", cur_init.line, cur_init.col, "Type mismatch in field initializer")
-                    st.error_count += 1
+                    report_error("semantic", cur_init.line, cur_init.col, "Type mismatch in field initializer"); st.error_count += 1
                 }
             }
             cur_init = cur_init.next
@@ -228,13 +228,9 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         loop sf != null {
             mut seen_init = expr.first_init
             mut covered = false
-            loop seen_init != null {
-                if seen_init.name == sf.name { covered = true }
-                seen_init = seen_init.next
-            }
+            loop seen_init != null { if seen_init.name == sf.name { covered = true }; seen_init = seen_init.next }
             if not covered and not sf.has_default {
-                report_error("semantic", expr.line, expr.col, "Struct literal is missing field with no default")
-                st.error_count += 1
+                report_error("semantic", expr.line, expr.col, "Struct literal is missing field with no default"); st.error_count += 1
             }
             sf = sf.next
         }
@@ -257,12 +253,8 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.kind == EXPR_UNARY {
         let sub_type = infer_expr_type(st, expr.operand)
         let op_fn = find_unary_op(st, expr.op, sub_type)
-        if op_fn != null {
-            return op_fn.return_type
-        }
-        if expr.op == TOK_NOT {
-            return "bool"
-        }
+        if op_fn != null { return op_fn.return_type }
+        if expr.op == TOK_NOT { return "bool" }
         return sub_type
     }
 
@@ -274,24 +266,24 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
     if stmt == null { return }
 
     if stmt.kind == STMT_VAR_DECL {
+        // 5.2: annotated shelf pins/rejects (empty literals borrow the elem)
+        check_shelf_annotation(st, stmt.type_name, stmt.val_expr, stmt.line, stmt.col)
         if stmt.val_expr != null {
             if stmt.type_name != null and str.len(stmt.type_name) > 0 {
-                if stmt.val_expr.kind == EXPR_VARIANT and (stmt.val_expr.type_name == null or str.len(stmt.val_expr.type_name) == 0) {
-                    stmt.val_expr.type_name = stmt.type_name
-                }
+                if stmt.val_expr.kind == EXPR_VARIANT and (stmt.val_expr.type_name == null or str.len(stmt.val_expr.type_name) == 0) { stmt.val_expr.type_name = stmt.type_name }
             }
             let val_type = infer_expr_type(st, stmt.val_expr)
             if stmt.type_name != null and str.len(stmt.type_name) > 0 {
-                if not types_are_compatible(stmt.type_name, val_type) {
-                    report_error("semantic", stmt.line, stmt.col, "Type mismatch in variable declaration")
-                    st.error_count += 1
-                }
+                if not types_are_compatible(stmt.type_name, val_type) { report_error("semantic", stmt.line, stmt.col, "Type mismatch in variable declaration"); st.error_count += 1 }
             } else {
                 stmt.type_name = val_type
             }
         }
         define_variable(st, stmt.name, stmt.type_name, stmt.is_mut, stmt.line, stmt.col)
     } else if stmt.kind == STMT_ASSIGN {
+        // 5.2: shelf indexed writes get the dedicated check (mut / row-copy /
+        // compound-assign / index type) instead of the scalar compat flow
+        if stmt.expr != null and stmt.expr.kind == EXPR_INDEX and is_shelf_type(infer_expr_type(st, stmt.expr.target)) { check_shelf_assign(st, stmt); infer_expr_type(st, stmt.val_expr) } else {
         let target_type = infer_expr_type(st, stmt.expr)
         if stmt.val_expr.kind == EXPR_VARIANT and (stmt.val_expr.type_name == null or str.len(stmt.val_expr.type_name) == 0) {
             stmt.val_expr.type_name = target_type
@@ -304,28 +296,29 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
             if op_fn != null and types_are_compatible(target_type, op_fn.return_type) { is_valid = true }
         }
         if not is_valid { report_error("semantic", stmt.line, stmt.col, "Type mismatch in assignment"); st.error_count += 1 }
+        }
     } else if stmt.kind == STMT_IF {
         infer_expr_type(st, stmt.expr)
         check_statement(st, expected_ret_type, stmt.body)
         if stmt.else_branch != null { check_statement(st, expected_ret_type, stmt.else_branch) }
     } else if stmt.kind == STMT_LOOP {
-        if stmt.loop_start != null {
-            infer_expr_type(st, stmt.loop_start)
-            infer_expr_type(st, stmt.loop_end)
-            if stmt.loop_step != null { infer_expr_type(st, stmt.loop_step) }
-        } else if stmt.expr != null {
-            infer_expr_type(st, stmt.expr)
-        }
+        // 5.2: `loop v of shelf` — the iterator takes the element type;
+        // range/count/condition/infinite loops keep the house "i32" var
+        mut of_elem = "i32"
+        if stmt.is_of { of_elem = check_shelf_loop_elem(st, stmt)
+        } else if stmt.loop_start != null { infer_expr_type(st, stmt.loop_start); infer_expr_type(st, stmt.loop_end); if stmt.loop_step != null { infer_expr_type(st, stmt.loop_step) }
+        } else if stmt.expr != null { infer_expr_type(st, stmt.expr) }
         enter_scope(st)
         mut vname = "it"
         if stmt.loop_var != null and str.len(stmt.loop_var) > 0 { vname = stmt.loop_var }
-        define_variable(st, vname, "i32", false, stmt.line, stmt.col)
+        define_variable(st, vname, of_elem, false, stmt.line, stmt.col)
         check_statement(st, expected_ret_type, stmt.body)
         exit_scope(st)
     } else if stmt.kind == STMT_ZONE { check_statement(st, expected_ret_type, stmt.body)
     } else if stmt.kind == STMT_DEFER { check_statement(st, expected_ret_type, stmt.deferred_stmt)
     } else if stmt.kind == STMT_RETURN {
         if stmt.val_expr != null {
+            pin_empty_shelf_return(st, stmt.val_expr, expected_ret_type)  // 5.2
             if stmt.val_expr.kind == EXPR_VARIANT and (stmt.val_expr.type_name == null or str.len(stmt.val_expr.type_name) == 0) {
                 stmt.val_expr.type_name = expected_ret_type
             }

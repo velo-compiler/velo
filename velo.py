@@ -6,6 +6,17 @@ from pathlib import Path
 from velo.driver import CompilerDriver
 
 def main():
+    # 5.2: diagnostics (and all tool output) must carry the same bytes as the
+    # self-hosted compiler — UTF-8 everywhere, so identical wording means
+    # identical bytes on both stages (em-dash in shelf messages, gaps 6.7).
+    try:
+        if sys.stdout.encoding and sys.stdout.encoding.lower().replace('-', '') != 'utf8':
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        if sys.stderr.encoding and sys.stderr.encoding.lower().replace('-', '') != 'utf8':
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass  # non-reconfigurable streams keep their locale encoding
+
     parser = argparse.ArgumentParser(
         prog="velo",
         description="Velo Programming Language Compiler (Stage 1 Bootstrap)"

@@ -864,6 +864,87 @@ static inline const char** velo_str_split(const char* s, const char* delim) {
 }
 
 
+// ============================================================================
+// 5.2 Dynamic Collections (shelf)
+//
+// ONE struct serves every element type: per-element C knowledge lives at each
+// use site (the compiler casts `((T*)s->data)[i]` per element type and passes
+// sizeof(elem) as esz). Payload grows in the ACTIVE arena (velo_mem_alloc):
+// growth allocates a new block (capacity doubling from 4), copies, and
+// continues — the arena reclaims every growth generation wholesale on
+// `zone { }` exit, so a zone-lived shelf never needs a free.
+//
+// Elements are copied by BYTES (memcpy, esz wide) — a string element copies
+// its pointer, not the characters (Velo strings are immutable C strings, so
+// this is safe). Bounds/fatality tiering matches mem.*/str.*: an out-of-range
+// index, an empty take, or a zero-size shell are loud deterministic fatals,
+// never silent UB.
+//
+// take() returns a pointer INTO the payload, dereferenced by the compiler in
+// the same expression — valid until the NEXT growth (a put may relocate data;
+// take results are not put()'s argument since then, the compiler evaluates
+// take results before the relocation).
+// ============================================================================
+typedef struct VeloShelf {
+    void*  data;  // element storage (allocated in the active arena on growth)
+    size_t len;   // element count
+    size_t cap;   // element capacity
+    size_t esz;   // element size in bytes (established at the first put)
+} VeloShelf;
+
+static inline void velo_shelf_oob(size_t idx, size_t len) {
+    fprintf(stderr, "Velo Fatal Error: shelf index out of bounds: %llu (len %llu)!\n",
+            (unsigned long long)idx, (unsigned long long)len);
+    exit(1);
+}
+
+// Bounds-checked read slot (caller derefs immediately).
+static inline void* velo_shelf_get(const VeloShelf* s, size_t idx) {
+    if (idx >= s->len) velo_shelf_oob(idx, s->len);
+    return (void*)((char*)s->data + idx * s->esz);
+}
+
+static inline void velo_shelf_put(VeloShelf* s, const void* val, size_t esz) {
+    if (esz == 0) {
+        fprintf(stderr, "Velo Fatal Error: shelf put of a zero-size element!\n");
+        exit(1);
+    }
+    if (s->esz == 0) s->esz = esz;
+    else if (s->esz != esz) {
+        fprintf(stderr, "Velo Fatal Error: shelf element size mismatch: %llu vs %llu!\n",
+                (unsigned long long)esz, (unsigned long long)s->esz);
+        exit(1);
+    }
+    if (s->data == NULL || s->len == s->cap) {
+        size_t new_cap = s->cap ? s->cap : 4;
+        while (new_cap < s->len + 1) new_cap *= 2;
+        void* next = velo_mem_alloc(esz, new_cap);
+        if (s->len > 0) memcpy(next, s->data, s->len * esz);
+        s->data = next;
+        s->cap = new_cap;
+    }
+    memcpy((char*)s->data + s->len * esz, val, esz);
+    s->len += 1;
+}
+
+// Bounds-checked write slot (memcpy esz bytes from val).
+static inline void velo_shelf_set(VeloShelf* s, size_t idx, const void* val, size_t esz) {
+    if (idx >= s->len) velo_shelf_oob(idx, s->len);
+    memcpy((char*)s->data + idx * s->esz, val, esz);
+}
+
+// Pop the last element; returns a pointer INTO the payload (deref now).
+// An empty shelf take is a loud fatal (same tiering as the byte helpers).
+static inline void* velo_shelf_take(VeloShelf* s) {
+    if (s->len == 0) {
+        fprintf(stderr, "Velo Fatal Error: shelf take from an empty shelf!\n");
+        exit(1);
+    }
+    s->len -= 1;
+    return (void*)((char*)s->data + s->len * s->esz);
+}
+
+
 // --- stdout capture support (structured diagnostics for 'velo check --json') ---
 // Redirects fd 1 into a file, isolating diagnostics from the JSON stream on
 // stdout. The saved descriptor is not explicitly closed (process-exit reclaims).

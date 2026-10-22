@@ -117,13 +117,27 @@ act mono_clone_stmt(m: @Monomorphizer, s: @StmtNode, scope: @ScopeEntry, params:
         return make_match_stmt(subj, first_case, s.case_count, s.line, s.col)
     }
     if s.kind == STMT_LOOP {
-        let b = mono_clone_stmt(m, s.body, scope, params, args, ret_type)
         if s.loop_start != null or s.loop_end != null {
+            let b = mono_clone_stmt(m, s.body, scope, params, args, ret_type)
             let st = mono_clone_expr(m, s.loop_start, scope, params, args)
             let en = mono_clone_expr(m, s.loop_end, scope, params, args)
             let sp = mono_clone_expr(m, s.loop_step, scope, params, args)
             return make_loop_stmt(s.loop_var, st, en, sp, s.is_inclusive, b, s.line, s.col)
         }
+        // 5.2: shelf value loop — the iterator takes the substituted element
+        // type and is pushed onto the body's scope BEFORE cloning it
+        if s.is_of {
+            let coll = mono_clone_expr(m, s.expr, scope, params, args)
+            let coll_t = mono_infer_type(coll, scope)
+            let ee = mono_shelf_elem(coll_t)
+            mut of_scope: @ScopeEntry = mem.alloc(@ScopeEntry, 1)
+            of_scope.name = s.loop_var
+            of_scope.type_name = ee
+            of_scope.next = scope
+            let of_body = mono_clone_stmt(m, s.body, of_scope, params, args, ret_type)
+            return make_loop_of_stmt(s.loop_var, coll, of_body, s.line, s.col)
+        }
+        let b = mono_clone_stmt(m, s.body, scope, params, args, ret_type)
         if s.expr != null {
             let ex = mono_clone_expr(m, s.expr, scope, params, args)
             return make_loop_expr_stmt(ex, s.is_count, b, s.line, s.col)
