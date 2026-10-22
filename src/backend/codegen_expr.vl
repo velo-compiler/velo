@@ -286,26 +286,12 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             if target.kind == EXPR_IDENT {
                 if target.str_val == "mem" {
                     if member == "alloc" {
-                        let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg)))
-                        sb_append_str(sb, "((")
-                        sb_append_str(sb, elem_type)
-                        sb_append_str(sb, "*)velo_mem_alloc(sizeof(")
-                        sb_append_str(sb, elem_type)
-                        sb_append_str(sb, "), (size_t)(")
-                        emit_c_expr(sb, st, expr.first_arg.next)
-                        sb_append_str(sb, ")))")
-                        return
+                        let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg))); sb_append_str(sb, "(("); sb_append_str(sb, elem_type); sb_append_str(sb, "*)velo_mem_alloc(sizeof(")
+                        sb_append_str(sb, elem_type); sb_append_str(sb, "), (size_t)("); emit_c_expr(sb, st, expr.first_arg.next); sb_append_str(sb, ")))"); return
                     }
                     if member == "heap_alloc" {
-                        let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg)))
-                        sb_append_str(sb, "((")
-                        sb_append_str(sb, elem_type)
-                        sb_append_str(sb, "*)velo_heap_alloc(sizeof(")
-                        sb_append_str(sb, elem_type)
-                        sb_append_str(sb, "), (size_t)(")
-                        emit_c_expr(sb, st, expr.first_arg.next)
-                        sb_append_str(sb, ")))")
-                        return
+                        let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg))); sb_append_str(sb, "(("); sb_append_str(sb, elem_type); sb_append_str(sb, "*)velo_heap_alloc(sizeof(")
+                        sb_append_str(sb, elem_type); sb_append_str(sb, "), (size_t)("); emit_c_expr(sb, st, expr.first_arg.next); sb_append_str(sb, ")))"); return
                     }
                     if member == "free" { sb_append_str(sb, "velo_heap_free((void*)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
                     if member == "used" { sb_append_str(sb, "velo_mem_used()"); return }
@@ -313,12 +299,15 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                     // §4.1: mem.current() -> active arena; mem.alloc_with(a, @T, count) -> @T
                     if member == "current" { sb_append_str(sb, "velo_zone_active()"); return }  // §4.1/§4.2
                     if member == "alloc_with" {
-                        let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg.next)))
-                        sb_append_str(sb, "(("); sb_append_str(sb, elem_type); sb_append_str(sb, "*)velo_alloc_with((VeloAllocator)(")
+                        let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg.next))); sb_append_str(sb, "(("); sb_append_str(sb, elem_type); sb_append_str(sb, "*)velo_alloc_with((VeloAllocator)(")
                         emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "), sizeof("); sb_append_str(sb, elem_type); sb_append_str(sb, "), (size_t)(")
                         emit_c_expr(sb, st, expr.first_arg.next.next); sb_append_str(sb, ")))"); return
                     }
                 }
+                // §4.2: spawn/join zero-arg i32 acts (@Thread = VeloThreadCtx*); @Mutex ops are opaque void*
+                if target.str_val == "thread" and member == "spawn" { sb_append_str(sb, "velo_thread_spawn((VeloThreadFn)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }; if target.str_val == "thread" and member == "join" { sb_append_str(sb, "velo_thread_join("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
+                if target.str_val == "thread" and member == "mutex" { sb_append_str(sb, "velo_mutex_create()"); return }; if target.str_val == "thread" and member == "acquire" { sb_append_str(sb, "velo_mutex_acquire((void*)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+                if target.str_val == "thread" and member == "release" { sb_append_str(sb, "velo_mutex_release((void*)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }; if target.str_val == "thread" and member == "free" { sb_append_str(sb, "velo_mutex_destroy((void*)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
                 if target.str_val == "fs" {
                     if member == "read_file" { sb_append_str(sb, "velo_fs_read_file("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
                     if member == "write_file" {

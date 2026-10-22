@@ -92,6 +92,73 @@ int main(void) {
 }
 """
 
+# Second harness (§4.2 thread surface): the runtime's own spawn/join/mutex
+# API, driven from C. Three checks — zero-arg i32 fns (Velo acts) spawn and
+# return their value through join; a shared mutex makes 4 threads × 1000
+# increments land at exactly 4000; repeated spawn/join cycles stay stable
+# (each thread releases its per-thread arena set on exit).
+HARNESS_THREADS = r"""
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include "velo_runtime.h"
+
+#define WT 4
+#define INC 1000
+
+static i32 plain_fn(void) { return 42; }
+
+static long long g_shared = 0;
+static void* g_lock = NULL;
+
+static i32 counting_fn(void) {
+    for (i32 i = 0; i < INC; ++i) {
+        velo_mutex_acquire(g_lock);
+        g_shared += 1;
+        velo_mutex_release(g_lock);
+    }
+    // also touch this thread's arena, so tls_release must free a live arena
+    u8* p = (u8*)velo_mem_alloc(8, 64);
+    for (i32 j = 0; j < 64; ++j) p[j] = (u8)j;
+    return 7;
+}
+
+static i32 fn17(void) { return 17; }
+
+int main(void) {
+    g_lock = velo_mutex_create();
+    if (!g_lock) { fprintf(stderr, "mutex create failed\n"); return 2; }
+
+    // Check A: spawn/join of plain zero-arg i32 fns publishes return values.
+    if (velo_thread_join(velo_thread_spawn((VeloThreadFn)plain_fn)) != 42) return 30;
+    if (velo_thread_join(velo_thread_spawn((VeloThreadFn)fn17)) != 17) return 31;
+
+    // Check B: join of a handle-less spawn is a must-fail contract (-1).
+    if (velo_thread_join(NULL) != -1) return 32;
+
+    // Check C: 4 concurrent counting fns under one mutex.
+    VeloThreadCtx* th[WT];
+    for (long i = 0; i < WT; ++i) {
+        th[i] = velo_thread_spawn((VeloThreadFn)counting_fn);
+        if (!th[i]) { fprintf(stderr, "spawn %ld failed\n", i); return 2; }
+    }
+    for (long i = 0; i < WT; ++i) {
+        if (velo_thread_join(th[i]) != 7) { fprintf(stderr, "join %ld value wrong\n", i); return 3; }
+    }
+    if (g_shared != (long long)WT * INC) return 40;  // lost/big update = broken mutex
+
+    // Check D: repeated spawn/join cycles stay stable (release path re-runs).
+    for (int cycle = 0; cycle < 100; ++cycle) {
+        VeloThreadCtx* c = velo_thread_spawn((VeloThreadFn)plain_fn);
+        if (!c) return 2;
+        if (velo_thread_join(c) != 42) return 41;
+    }
+    velo_mutex_destroy(g_lock);
+    printf("THREADS-OK\n");
+    return 0;
+}
+"""
+
 
 def find_gcc() -> str:
     found = shutil.which("gcc")
@@ -133,6 +200,35 @@ class TestThreadLocalZoneRuntime(unittest.TestCase):
         self.assertEqual(run.returncode, 0,
                          f"harness run failed:\nSTDOUT:\n{run.stdout}\nSTDERR:\n{run.stderr}")
         self.assertIn("TLS-OK", run.stdout)
+
+    def test_spawn_join_mutex_runtime_api(self):
+        tmp = ROOT / ".velo_cache" / "thread_api_test"
+        tmp.mkdir(parents=True, exist_ok=True)
+        c_file = tmp / "thread_api_harness.c"
+        exe = tmp / "thread_api_harness.exe"
+        c_file.write_text(HARNESS_THREADS, encoding="utf-8")
+
+        gcc = find_gcc()
+        gcc_bin_dir = str(Path(gcc).parent.resolve())
+        # Pure CRT threads (_beginthreadex): no -pthread needed on Windows.
+        # The runtime stays thread-API-agnostic; this harness drives it
+        # directly at the C level, exactly like a Velo-generated program.
+        cmd = [
+            gcc, "-O2", "-std=c99",
+            "-I", str(RUNTIME),
+            str(c_file), "-o", str(exe),
+            "-static",
+        ]
+        env = os.environ.copy()
+        env["PATH"] = f"{gcc_bin_dir}{os.pathsep}{env.get('PATH', '')}"
+        res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, env=env)
+        self.assertEqual(res.returncode, 0,
+                         f"harness compile failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}")
+
+        run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=120)
+        self.assertEqual(run.returncode, 0,
+                         f"harness run failed:\nSTDOUT:\n{run.stdout}\nSTDERR:\n{run.stderr}")
+        self.assertIn("THREADS-OK", run.stdout)
 
 
 if __name__ == "__main__":

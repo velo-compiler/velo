@@ -28,6 +28,9 @@ TYPE_MAP = {
     "void": "void",
     # §4.1 passable allocator handle: @Allocator in Velo → VeloZoneArena* in C
     "Allocator": "VeloZoneArena",
+    # §4.2 thread surface: @Thread → VeloThreadCtx*, @Mutex → void*
+    "Thread": "VeloThreadCtx",
+    "Mutex": "void",
 }
 
 class CCodeGenerator:
@@ -774,6 +777,15 @@ class CCodeGenerator:
                     if len(value.args) >= 2:
                         type_name = self._extract_type_name(value.args[1])
                         return f"@{type_name}"
+                elif value.callee.target.name == "thread":
+                    # §4.2: spawn/join zero-arg i32 acts; opaque @Mutex ops
+                    if value.callee.member == "spawn":
+                        return "@Thread"
+                    if value.callee.member == "join":
+                        return "i32"
+                    if value.callee.member == "mutex":
+                        return "@Mutex"
+                    return "void"  # acquire / release / free
                 elif value.callee.target.name == "fs":
                     if value.callee.member == "read_file":
                         return "string"
@@ -854,6 +866,15 @@ class CCodeGenerator:
                     if len(expr.args) >= 2:
                         type_name = self._extract_type_name(expr.args[1])
                         return f"@{type_name}"
+                elif expr.callee.target.name == "thread":
+                    # §4.2: spawn/join zero-arg i32 acts; opaque @Mutex ops
+                    if expr.callee.member == "spawn":
+                        return "@Thread"
+                    if expr.callee.member == "join":
+                        return "i32"
+                    if expr.callee.member == "mutex":
+                        return "@Mutex"
+                    return "void"  # acquire / release / free
                 elif expr.callee.target.name == "fs":
                     if expr.callee.member == "read_file":
                         return "string"
@@ -1062,7 +1083,27 @@ class CCodeGenerator:
                         elif expr.callee.member == "alloc_with":
                             # §4.1: allocate into an explicit @Allocator handle
                             return self._lower_mem_alloc_with(expr.args)
-                    
+
+                    elif expr.callee.target.name == "thread":
+                        # §4.2: spawn/join zero-arg i32 acts; opaque @Mutex ops
+                        if expr.callee.member == "spawn":
+                            arg_code = self._emit_expression(expr.args[0]) if expr.args else "0"
+                            return f"velo_thread_spawn((VeloThreadFn)({arg_code}))"
+                        elif expr.callee.member == "join":
+                            arg_code = self._emit_expression(expr.args[0]) if expr.args else "0"
+                            return f"velo_thread_join({arg_code})"
+                        elif expr.callee.member == "mutex":
+                            return "velo_mutex_create()"
+                        elif expr.callee.member == "acquire":
+                            arg_code = self._emit_expression(expr.args[0])
+                            return f"velo_mutex_acquire((void*)({arg_code}))"
+                        elif expr.callee.member == "release":
+                            arg_code = self._emit_expression(expr.args[0])
+                            return f"velo_mutex_release((void*)({arg_code}))"
+                        elif expr.callee.member == "free":
+                            arg_code = self._emit_expression(expr.args[0])
+                            return f"velo_mutex_destroy((void*)({arg_code}))"
+
                     elif expr.callee.target.name == "fs":
                         if expr.callee.member == "read_file":
                             return self._lower_fs_read_file(expr.args)

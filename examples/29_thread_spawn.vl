@@ -1,0 +1,52 @@
+use sys.io
+use sys.mem
+use sys.thread
+
+// §4.2 Thread Surface Demo
+// Spawns real OS threads from Velo: zero-arg i32-returning acts run on
+// their own thread, each with a fresh zone arena; @Mutex guards shared
+// globals; `thread.join` returns the worker's i32.
+
+// Shared state: a global lock (assigned once in main, before any spawn)
+// and a counter only ever touched under that lock.
+mut glock: @Mutex
+mut gcount: i64 = 0
+
+act worker() -> i32 {
+    // 1. Every spawned thread starts on its own fresh zone arena:
+    //    mem.used() here is this thread's ledger, not main's.
+    if mem.used() != 0 { return 1 }
+    let buf: @u8 = mem.alloc(@u8, 128)
+    if mem.used() != 128 { return 2 }
+
+    // 2. Shared data changes go through the shared mutex.
+    thread.acquire(glock)
+    gcount = gcount + 1
+    thread.release(glock)
+
+    if mem.used() != 128 { return 3 }
+    return 7
+}
+
+act main() -> i32 {
+    io.println("=== §4.2 Thread Surface Demo ===")
+    glock = thread.mutex()
+
+    mut h1: @Thread = thread.spawn(worker)
+    mut h2: @Thread = thread.spawn(worker)
+    mut h3: @Thread = thread.spawn(worker)
+    mut h4: @Thread = thread.spawn(worker)
+
+    let r1: i32 = thread.join(h1)
+    let r2: i32 = thread.join(h2)
+    let r3: i32 = thread.join(h3)
+    let r4: i32 = thread.join(h4)
+
+    io.println("workers r1..r4 = {r1} {r2} {r3} {r4}")
+    io.println("locked increments = {gcount}")
+
+    // Per-thread heap accounting: workers allocated on their own ledger.
+    let h: usize = mem.heap_used()
+    io.println("main heap_used after joins = {h}")
+    return 0
+}

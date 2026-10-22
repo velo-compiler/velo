@@ -9,6 +9,16 @@
 #include <stddef.h>
 #include <time.h>
 
+// §4.2 platform plumbing for the thread surface (spawn/join + mutex).
+// Windows uses the CRT's _beginthreadex (no windows.h, no default-library
+// change) plus a handful of kernel32 prototypes declared below; other
+// platforms use pthreads directly.
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <pthread.h>
+#endif
+
 // Explicit bit-sized integer and float types
 typedef int8_t   i8;
 typedef int16_t  i16;
@@ -207,8 +217,185 @@ static inline size_t velo_alloc_used(VeloAllocator a) {
     return a->offset;
 }
 
+// ============================================================================
+// §4.2 Thread Surface: spawn / join / mutex
+//
+// Runs zero-parameter, i32-returning Velo acts on real OS threads. Every
+// spawned thread lazily builds its own zone arena state (§4.2 above) and,
+// on exit, releases that whole per-thread set (default arena + pool
+// buffers) — no arena reservation is left behind per dead thread.
+// Handles are opaque mirrors of the C level:
+//   `@Thread` = VeloThreadCtx*   `@Mutex` = void*
+// join() returns the entry act's i32. The trampoline publishes the status
+// before thread exit; pthread_join / WaitForSingleObject synchronize that
+// write with join's read (thread-creation/join is ordered in the OS).
+// ============================================================================
+
+typedef i32 (*VeloThreadFn)(void);
+
+typedef struct VeloThreadCtx {
+    void* fn;      // entry act pointer (cast to VeloThreadFn)
+    i32   status;  // entry act's return value, published before thread exit
+#if defined(_WIN32)
+    void* native;  // Win32 thread handle (WaitForSingleObject + CloseHandle)
+#else
+    pthread_t native;  // pthread join target
+#endif
+} VeloThreadCtx;
+
+// Releases the calling thread's whole per-thread arena set. Idempotent.
+// Threads must be OUTSIDE all zone blocks when this runs (invariant held:
+// the entry act returns only after all its zone blocks have closed, which
+// rests the active pointer on the default arena).
+static inline void velo_thread_tls_release(void) {
+    if (g_velo_zone_tls_active == g_velo_zone_tls_default) {
+        g_velo_zone_tls_active = NULL;
+    }
+    if (g_velo_zone_tls_default) {
+        free(g_velo_zone_tls_default->base);
+        free(g_velo_zone_tls_default);
+        g_velo_zone_tls_default = NULL;
+    }
+    for (size_t i = 0; i < g_velo_zone_tls_pool_count; ++i) {
+        free(g_velo_zone_tls_pool[i].base);
+    }
+    g_velo_zone_tls_pool_count = 0;
+}
+
+// Opaque shared mutex: `@Mutex` in Velo is a `void*` native handle.
+// Semantics: create → acquire/release (recursive creation of the same
+// mutex by separate threads is a fresh lock; sharing happens via Velo
+// globals/structs, and cross-thread sharing is ordered by spawn/join).
+#if defined(_WIN32)
+unsigned long __stdcall WaitForSingleObject(void* h, unsigned long ms);
+int __stdcall CloseHandle(void* h);
+void* __stdcall CreateMutexW(void* attrs, int initial, void* name);
+int __stdcall ReleaseMutex(void* h);
+#define VELO_WAIT_INFINITE 0xFFFFFFFFu
+
+static unsigned int __stdcall velo_thread_trampoline(void* raw) {
+    VeloThreadCtx* ctx = (VeloThreadCtx*)raw;
+    ctx->status = ((VeloThreadFn)ctx->fn)();
+    velo_thread_tls_release();
+    return 0;
+}
+
+static inline VeloThreadCtx* velo_thread_spawn(VeloThreadFn fn) {
+    VeloThreadCtx* ctx = (VeloThreadCtx*)malloc(sizeof(VeloThreadCtx));
+    if (!ctx) return NULL;
+    ctx->fn = (void*)fn;
+    ctx->status = 0;
+    uintptr_t raw = (uintptr_t)_beginthreadex(NULL, 0, velo_thread_trampoline, (void*)ctx, 0, NULL);
+    if (raw == 0) {
+        free(ctx);
+        return NULL;
+    }
+    ctx->native = (void*)raw;
+    return ctx;
+}
+
+static inline i32 velo_thread_join(VeloThreadCtx* ctx) {
+    if (!ctx) return -1;
+    WaitForSingleObject(ctx->native, VELO_WAIT_INFINITE);
+    CloseHandle(ctx->native);
+    i32 status = ctx->status;
+    free(ctx);
+    return status;
+}
+
+static inline void* velo_mutex_create(void) {
+    void* m = CreateMutexW(NULL, 0, NULL);
+    if (!m) {
+        fprintf(stderr, "Velo Fatal Error: Mutex creation failed!\n");
+        exit(1);
+    }
+    return m;
+}
+
+static inline void velo_mutex_acquire(void* m) {
+    // WAIT_OBJECT_0 (0) and WAIT_ABANDONED (0x80) both mean ownership was
+    // taken; anything else is an operating-system-level failure.
+    unsigned long r = WaitForSingleObject(m, VELO_WAIT_INFINITE);
+    if (!(r == 0 || r == 0x80u)) {
+        fprintf(stderr, "Velo Fatal Error: Mutex acquire failed!\n");
+        exit(1);
+    }
+}
+
+static inline void velo_mutex_release(void* m) {
+    if (!ReleaseMutex(m)) {
+        fprintf(stderr, "Velo Fatal Error: Mutex release failed!\n");
+        exit(1);
+    }
+}
+
+static inline void velo_mutex_destroy(void* m) {
+    CloseHandle(m);
+}
+
+#else  // pthreads
+
+static void* velo_thread_trampoline(void* raw) {
+    VeloThreadCtx* ctx = (VeloThreadCtx*)raw;
+    ctx->status = ((VeloThreadFn)ctx->fn)();
+    velo_thread_tls_release();
+    return NULL;
+}
+
+static inline VeloThreadCtx* velo_thread_spawn(VeloThreadFn fn) {
+    VeloThreadCtx* ctx = (VeloThreadCtx*)malloc(sizeof(VeloThreadCtx));
+    if (!ctx) return NULL;
+    ctx->fn = (void*)fn;
+    ctx->status = 0;
+    if (pthread_create(&ctx->native, NULL, velo_thread_trampoline, (void*)ctx) != 0) {
+        free(ctx);
+        return NULL;
+    }
+    return ctx;
+}
+
+static inline i32 velo_thread_join(VeloThreadCtx* ctx) {
+    if (!ctx) return -1;
+    pthread_join(ctx->native, NULL);
+    i32 status = ctx->status;
+    free(ctx);
+    return status;
+}
+
+static inline void* velo_mutex_create(void) {
+    pthread_mutex_t* m = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
+    if (!m) {
+        fprintf(stderr, "Velo Fatal Error: Mutex creation failed!\n");
+        exit(1);
+    }
+    if (pthread_mutex_init(m, NULL) != 0) {
+        fprintf(stderr, "Velo Fatal Error: Mutex creation failed!\n");
+        exit(1);
+    }
+    return (void*)m;
+}
+
+static inline void velo_mutex_acquire(void* m) {
+    pthread_mutex_lock((pthread_mutex_t*)m);
+}
+
+static inline void velo_mutex_release(void* m) {
+    pthread_mutex_unlock((pthread_mutex_t*)m);
+}
+
+static inline void velo_mutex_destroy(void* m) {
+    pthread_mutex_destroy((pthread_mutex_t*)m);
+    free(m);
+}
+
+#endif  // §4.2 thread surface
+
 // Persistent Heap Allocation with Memory Usage Tracking
-static size_t g_velo_heap_active = 0;
+// §4.2: the counter is per-thread (thread-local). malloc/free are
+// thread-safe already; a shared counter would only ever skew the
+// diagnostic to a torn value. `velo_heap_used()` now reports the
+// current thread's outstanding heap bytes.
+static VELO_TLS size_t g_velo_heap_active = 0;
 
 static inline void* velo_heap_alloc(size_t size, size_t count) {
     size_t total = size * count;
