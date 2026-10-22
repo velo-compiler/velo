@@ -656,6 +656,196 @@ static inline bool velo_fs_remove(const char* path) {
 }
 
 
+// ============================================================================
+// 5.1 String Processing Library (sys.str)
+//
+// Pure string helpers over NUL-terminated C strings. Every function that
+// RETURNS a string (or a token array) allocates its result with
+// velo_heap_alloc — the same base as velo_fs_read_file — so callers own the
+// result and release it with mem.free (or let process exit reclaim it);
+// heap blocks stay valid across zone { } exits, so results can outlive the
+// zone they were produced in. Bool/index functions allocate nothing.
+//
+// Null arguments are caller bugs: each helper dies loudly instead of
+// letting C strlen/strstr/strcmp walk a NULL (deterministic fatal, trade of
+// the raw-pointer class — same tiering as the mem.* wrappers). Legacy
+// str.len keeps its plain strlen lowering and is intentionally untouched.
+//
+// to_upper/to_lower are ASCII-only and locale-independent BY DESIGN: the C
+// toupper/tolower tables are locale-dependent, and this project pins
+// bit-for-bit cross-stage determinism.
+// ============================================================================
+static inline const char* velo_str_nonnull(const char* s, const char* fn) {
+    if (!s) {
+        fprintf(stderr, "Velo Fatal Error: %s got a null string!\n", fn);
+        exit(1);
+    }
+    return s;
+}
+
+// One heap allocation holds the NUL-terminated copy: n bytes + terminator.
+static inline char* velo_str_copy_heap(const char* src, size_t n) {
+    char* out = (char*)velo_heap_alloc(1, n + 1);
+    if (n > 0) memcpy(out, src, n);
+    out[n] = 0;
+    return out;
+}
+
+static inline bool velo_str_contains(const char* s, const char* sub) {
+    return strstr(velo_str_nonnull(s, "str.contains"),
+                  velo_str_nonnull(sub, "str.contains")) != NULL;
+}
+
+static inline bool velo_str_starts_with(const char* s, const char* prefix) {
+    const char* a = velo_str_nonnull(s, "str.starts_with");
+    const char* b = velo_str_nonnull(prefix, "str.starts_with");
+    // strncmp over the prefix length: a shorter haystack stops at its NUL
+    // (mismatch), an empty prefix matches anything (strncmp(_, _, 0) == 0).
+    return strncmp(a, b, strlen(b)) == 0;
+}
+
+static inline bool velo_str_ends_with(const char* s, const char* suffix) {
+    const char* a = velo_str_nonnull(s, "str.ends_with");
+    const char* b = velo_str_nonnull(suffix, "str.ends_with");
+    size_t slen = strlen(a);
+    size_t flen = strlen(b);
+    if (flen > slen) return false;
+    return strcmp(a + (slen - flen), b) == 0;
+}
+
+// First byte offset of `needle` in `s`, or -1 when absent (i64 — a usize
+// result has no room for "not found"). Empty needle found at 0, mirroring
+// strstr; needle is a substring, which subsumes single-char search.
+static inline i64 velo_str_index_of(const char* s, const char* needle) {
+    const char* a = velo_str_nonnull(s, "str.index_of");
+    const char* b = velo_str_nonnull(needle, "str.index_of");
+    const char* hit = strstr(a, b);
+    return hit ? (i64)(hit - a) : (i64)(-1);
+}
+
+// ASCII whitespace only (space, \t, \n, \v, \f, \r) — locale-independent,
+// unlike C isspace. Always returns a fresh heap copy (even "": callers can
+// mem.free either way without ownership ambiguity).
+static inline char* velo_str_trim(const char* s) {
+    const char* a = velo_str_nonnull(s, "str.trim");
+    const char* p = a;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\v' || *p == '\f' || *p == '\r') p++;
+    const char* end = p + strlen(p);
+    while (end > p && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\n' ||
+                       end[-1] == '\v' || end[-1] == '\f' || end[-1] == '\r')) end--;
+    return velo_str_copy_heap(p, (size_t)(end - p));
+}
+
+// Replaces ALL non-overlapping occurrences left-to-right (C-style scanning,
+// count pass then fill pass — allocation is exact with no over-reserve).
+// An empty `from` cannot be replaced (would loop forever in any naive
+// scheme): the result is a byte-identical heap copy of `s`. An empty `to`
+// deletes occurrences.
+static inline char* velo_str_replace(const char* s, const char* from, const char* to) {
+    const char* a = velo_str_nonnull(s, "str.replace");
+    const char* f = velo_str_nonnull(from, "str.replace");
+    const char* t = velo_str_nonnull(to, "str.replace");
+    size_t alen = strlen(a);
+    size_t flen = strlen(f);
+    size_t tlen = strlen(t);
+    if (flen == 0) return velo_str_copy_heap(a, alen);
+    size_t hits = 0;
+    const char* p = a;
+    const char* hit;
+    while ((hit = strstr(p, f)) != NULL) {
+        hits++;
+        p = hit + flen;
+    }
+    char* out = (char*)velo_heap_alloc(1, alen - (hits * flen) + (hits * tlen) + 1);
+    char* w = out;
+    p = a;
+    while ((hit = strstr(p, f)) != NULL) {
+        size_t keep = (size_t)(hit - p);
+        memcpy(w, p, keep);
+        w += keep;
+        if (tlen > 0) {
+            memcpy(w, t, tlen);
+            w += tlen;
+        }
+        p = hit + flen;
+    }
+    strcpy(w, p);
+    return out;
+}
+
+static inline char* velo_str_to_upper(const char* s) {
+    const char* a = velo_str_nonnull(s, "str.to_upper");
+    size_t n = strlen(a);
+    char* out = (char*)velo_heap_alloc(1, n + 1);
+    for (size_t i = 0; i < n; i++) {
+        char c = a[i];
+        if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
+        out[i] = c;
+    }
+    out[n] = 0;
+    return out;
+}
+
+static inline char* velo_str_to_lower(const char* s) {
+    const char* a = velo_str_nonnull(s, "str.to_lower");
+    size_t n = strlen(a);
+    char* out = (char*)velo_heap_alloc(1, n + 1);
+    for (size_t i = 0; i < n; i++) {
+        char c = a[i];
+        if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
+        out[i] = c;
+    }
+    out[n] = 0;
+    return out;
+}
+
+static inline char* velo_str_concat(const char* a, const char* b) {
+    const char* x = velo_str_nonnull(a, "str.concat");
+    const char* y = velo_str_nonnull(b, "str.concat");
+    size_t flen = strlen(x);
+    size_t tlen = strlen(y);
+    char* out = (char*)velo_heap_alloc(1, flen + tlen + 1);
+    memcpy(out, x, flen);
+    if (tlen > 0) memcpy(out + flen, y, tlen);
+    out[flen + tlen] = 0;
+    return out;
+}
+
+// Python-style tokenization: delimiters SEPARATE, they do not merge — empty
+// tokens are preserved ("a,,b" → "a","","b"), a trailing delimiter yields a
+// trailing empty token ("a," → "a",""), and "" → one empty token. Returns a
+// NULL-terminated heap array of heap token strings (@string in Velo); no
+// token array slot is ever NULL and every token is distinct memory. The
+// delimiter may be any length. An empty delimiter cannot split anything and
+// dies loudly.
+static inline const char** velo_str_split(const char* s, const char* delim) {
+    const char* a = velo_str_nonnull(s, "str.split");
+    const char* d = velo_str_nonnull(delim, "str.split");
+    size_t dlen = strlen(d);
+    if (dlen == 0) {
+        fprintf(stderr, "Velo Fatal Error: str.split got an empty delimiter!\n");
+        exit(1);
+    }
+    size_t ntok = 1;
+    const char* p = a;
+    const char* hit;
+    while ((hit = strstr(p, d)) != NULL) {
+        ntok++;
+        p = hit + dlen;
+    }
+    const char** parts = (const char**)velo_heap_alloc(sizeof(const char*), ntok + 1);
+    p = a;
+    size_t k = 0;
+    while ((hit = strstr(p, d)) != NULL) {
+        parts[k++] = velo_str_copy_heap(p, (size_t)(hit - p));
+        p = hit + dlen;
+    }
+    parts[k++] = velo_str_copy_heap(p, strlen(p));
+    parts[k] = NULL;
+    return parts;
+}
+
+
 // --- stdout capture support (structured diagnostics for 'velo check --json') ---
 // Redirects fd 1 into a file, isolating diagnostics from the JSON stream on
 // stdout. The saved descriptor is not explicitly closed (process-exit reclaims).

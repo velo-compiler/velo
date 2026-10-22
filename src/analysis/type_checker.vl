@@ -12,6 +12,7 @@ use "../common/act_types.vl"
 use "op_resolver.vl"
 use "type_check_program.vl"
 use "mem_checks.vl"
+use "str_checks.vl"
 
 // Checks if a name represents a recognized type (primitive or user-defined struct or kind).
 act is_known_type(st: @SymbolTable, name: string) -> bool {
@@ -134,7 +135,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 if target.str_val == "fs" {
                     if member == "read_file" { return "string" }; if member == "size" { return "usize" }; if member == "exists" or member == "write_file" or member == "remove" or member == "remove_file" { return "bool" }
                 }
-                if target.str_val == "str" { if member == "len" { return "usize" } }
+                if target.str_val == "str" { if !check_str_call(st, expr, member) { return "unknown" }; if member == "len" { return "usize" }; if member == "contains" or member == "starts_with" or member == "ends_with" { return "bool" }; if member == "trim" or member == "replace" or member == "to_upper" or member == "to_lower" or member == "concat" { return "string" }; if member == "index_of" { return "i64" }; if member == "split" { return "@string" } }  // 5.1: -1 = not found; @string = NULL-terminated split array
                 if target.str_val == "io" { return "void" }
             }
         }

@@ -1,0 +1,91 @@
+/* 5.1 String Processing Library (sys.str)
+ *
+ * The ten str.* built-ins on top of legacy str.len. Every function that
+ * returns a string (or token array) allocates the result on the heap —
+ * release it with mem.free, or let process exit reclaim it. Predicate
+ * (bool) and index_of calls allocate nothing. All output here is
+ * byte-identical on the Stage 1 Python compiler and the self-hosted
+ * Stage 2 native compiler. NO function calls inside interpolations (both
+ * compilers print those untranslated — gaps 6.7); values are bound to
+ * locals first.
+ */
+use sys.io
+use sys.mem
+
+act main() -> i32 {
+    // Predicates allocate nothing. Empty affixes/substrings match.
+    if str.contains("hello world", "o w") { io.println("contains: yes") }
+    if str.contains("hello world", "") { io.println("contains empty: yes") }
+    if str.starts_with("hello world", "hell") { io.println("starts_with: yes") }
+    if str.ends_with("hello world", "world") { io.println("ends_with: yes") }
+
+    // index_of is i64: -1 means not-found (usize has no room for it).
+    // It searches substrings, which subsumes single-char search.
+    let idx: i64 = str.index_of("hello world", "o w")
+    let miss: i64 = str.index_of("hello world", "zzz")
+    io.println("index_of: {idx} / miss: {miss}")
+
+    // trim removes ASCII whitespace from both ends (always a fresh copy).
+    let raw: string = "   trim me   "
+    let trimmed: string = str.trim(raw)
+    let tlen: usize = str.len(trimmed)
+    io.println("trim: [{trimmed}] len: {tlen}")
+
+    // replace: ALL occurrences, left-to-right, non-overlapping. An empty
+    // needle is a byte-identical copy; an empty replacement deletes.
+    let csv: string = "a-b-c"
+    let joined: string = str.replace(csv, "-", " + ")
+    let deleted: string = str.replace(csv, "-", "")
+    let noop: string = str.replace(csv, "", "X")
+    io.println("replace: [{joined}] [{deleted}] [{noop}]")
+
+    // Case mapping is ASCII-only and locale-independent BY DESIGN — the
+    // C ctype tables would vary with locale and break determinism.
+    let mixed: string = "MiXeD 1337 _-!"
+    let upper: string = str.to_upper(mixed)
+    let lower: string = str.to_lower(mixed)
+    io.println("upper: {upper}")
+    io.println("lower: {lower}")
+
+    // concat: the "string + string" the language does not have.
+    let left: string = str.concat("Velo", " ")
+    let greeting: string = str.concat(left, "rocks")
+    io.println("concat: {greeting}")
+    mem.free(left)
+    mem.free(greeting)
+
+    // split: NULL-terminated @string array. Delimiters SEPARATE — empty
+    // tokens are preserved, a trailing delimiter yields a trailing empty
+    // token, and multi-char delimiters work. mem.free(parts) releases the
+    // array block; each token is its own heap block (reclaimed at exit).
+    let parts: @string = str.split("v1.2..7", ".")
+    mut i: usize = 0
+    loop parts[i] != null {
+        let tok: string = parts[i]
+        io.println("split[{i}] = '{tok}'")
+        i = i + 1
+    }
+    io.println("split count: {i}")
+    mem.free(parts)
+
+    let rows: @string = str.split("a=>b=>c", "=>")
+    let r0: string = rows[0]
+    let r1: string = rows[1]
+    let r2: string = rows[2]
+    io.println("multi-char delim: {r0} / {r1} / {r2}")
+    mem.free(rows)
+
+    // Composition: transform ugliness in one expression (each argument is
+    // evaluated exactly once — the runtime helpers take real parameters).
+    let deep: string = str.replace(str.trim("  hi  "), "hi", "there")
+    io.println("composed: {deep}")
+
+    mem.free(trimmed)
+    mem.free(joined)
+    mem.free(deleted)
+    mem.free(noop)
+    mem.free(upper)
+    mem.free(lower)
+    mem.free(deep)
+    return 0
+}

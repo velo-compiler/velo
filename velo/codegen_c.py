@@ -33,6 +33,37 @@ TYPE_MAP = {
     "Mutex": "void",
 }
 
+# 5.1 String Processing Library: sys.str intrinsics backed by velo_str_*
+# runtime helpers (velo_runtime.h). Legacy str.len keeps its inline strlen
+# lowering; every other member is compile-checked by _str_expect (mirrored
+# by Stage 2's src/analysis/str_checks.vl — identical wording) and emits a
+# single runtime helper call so each argument is evaluated exactly once.
+STR_RUNTIME_MEMBERS = {
+    "contains": 2,
+    "starts_with": 2,
+    "ends_with": 2,
+    "index_of": 2,
+    "trim": 1,
+    "replace": 3,
+    "to_upper": 1,
+    "to_lower": 1,
+    "concat": 2,
+    "split": 2,
+}
+
+_STR_SIGS = {
+    "contains": ": (string s, string sub)",
+    "starts_with": ": (string s, string prefix)",
+    "ends_with": ": (string s, string suffix)",
+    "index_of": ": (string s, string needle)",
+    "trim": ": (string s)",
+    "replace": ": (string s, string old, string new)",
+    "to_upper": ": (string s)",
+    "to_lower": ": (string s)",
+    "concat": ": (string a, string b)",
+    "split": ": (string s, string delimiter)",
+}
+
 class CCodeGenerator:
     def __init__(self):
         self.output: List[str] = []
@@ -794,8 +825,17 @@ class CCodeGenerator:
                     elif value.callee.member == "size":
                         return "usize"
                 elif value.callee.target.name == "str":
-                    if value.callee.member == "len":
+                    m = value.callee.member
+                    if m == "len":
                         return "usize"
+                    if m in ("contains", "starts_with", "ends_with"):
+                        return "bool"
+                    if m in ("trim", "replace", "to_upper", "to_lower", "concat"):
+                        return "string"
+                    if m == "index_of":
+                        return "i64"  # -1 = not found; usize has no room for it
+                    if m == "split":
+                        return "@string"  # NULL-terminated token array
         return "i32"
 
 
@@ -888,8 +928,17 @@ class CCodeGenerator:
                     elif expr.callee.member == "size":
                         return "usize"
                 elif expr.callee.target.name == "str":
-                    if expr.callee.member == "len":
+                    m = expr.callee.member
+                    if m == "len":
                         return "usize"
+                    if m in ("contains", "starts_with", "ends_with"):
+                        return "bool"
+                    if m in ("trim", "replace", "to_upper", "to_lower", "concat"):
+                        return "string"
+                    if m == "index_of":
+                        return "i64"  # -1 = not found; usize has no room for it
+                    if m == "split":
+                        return "@string"  # NULL-terminated token array
                 elif expr.callee.target.name == "io":
                     # All io calls are void (mirrors type_checker.vl), so
                     # mem count/fill checks can render and reject them.
@@ -1136,6 +1185,12 @@ class CCodeGenerator:
                     elif expr.callee.target.name == "str":
                         if expr.callee.member == "len":
                             return f"((usize)strlen({self._emit_expression(expr.args[0])}))"
+                        if expr.callee.member in STR_RUNTIME_MEMBERS:
+                            # 5.1: compile-check, then one runtime helper call
+                            # (single evaluation per argument, guaranteed).
+                            self._str_expect(expr.callee.member, expr.args)
+                            codes = [self._emit_expression(a) for a in expr.args]
+                            return f"velo_str_{expr.callee.member}({', '.join(codes)})"
 
                 target_type = self._resolve_expr_type(expr.callee.target)
                 clean_type = target_type.lstrip("@")
@@ -1278,6 +1333,20 @@ class CCodeGenerator:
         # negatives are caught at runtime by the velo_byte_* wrappers).
         if isinstance(args[2], UnaryExpr) and args[2].op == "-" and isinstance(args[2].operand, IntLiteral):
             raise ValueError(f"mem.{member} expects a non-negative byte count")
+
+    def _str_expect(self, member: str, args: List[Expr]) -> None:
+        """5.1: compile-checks the sys.str intrinsics beyond legacy .len.
+        Mirrored by Stage 2's src/analysis/str_checks.vl — both stages must
+        reject the same programs with the same messages."""
+        expect_n = STR_RUNTIME_MEMBERS[member]
+        sig = _STR_SIGS[member]
+        if len(args) != expect_n:
+            plural = "" if expect_n == 1 else "s"
+            raise ValueError(f"str.{member} expects exactly {expect_n} argument{plural}{sig}")
+        for arg in args:
+            got = self._thread_arg_type(arg)
+            if got != "string":
+                raise ValueError(f"str.{member} expects string arguments (got {got})")
 
     def _lower_mem_alloc(self, args: List[Expr]) -> str:
         if len(args) != 2:
