@@ -68,6 +68,31 @@ act main() -> i32 {
 }
 """
 
+# memmove-vs-memcpy proof: distinct payload under a true element-shifting
+# overlap preserves the ORIGINAL values (as-if temp buffer); a wrong
+# cascading memcpy would fabricate an all-10s run. count is bytes: a
+# 7-element shift of @i64 is 56 bytes.
+MEMMOVE_DISTINCT = """use sys.io
+use sys.mem
+
+act main() -> i32 {
+    let src: @i64 = mem.alloc(@i64, 8)
+    src[0] = 10
+    src[1] = 11
+    src[2] = 12
+    src[3] = 13
+    src[4] = 14
+    src[5] = 15
+    src[6] = 16
+    src[7] = 17
+    let off: @i64 = src + 1
+    mem.move(off, src, 56)
+    io.println("m = {src[0]} {src[1]} {src[2]} {src[3]}")
+    io.println("n = {src[4]} {src[5]} {src[6]} {src[7]}")
+    return 0
+}
+"""
+
 BAD_COPY_INT = """use sys.io
 use sys.mem
 act main() -> i32 {
@@ -187,6 +212,16 @@ class TestMemIntrinsics(unittest.TestCase):
             BYTE_COPY,
             "mem43_bytes",
             expected_lines=["b = 99 0", "end = 0"],
+        )
+
+    def test_move_overlap_preserves_originals(self):
+        # memmove semantics under a real 7-element overlapping shift with
+        # distinct payload - the committed MEM43 overlap case uses equal
+        # bytes and could not distinguish memmove from a cascading memcpy.
+        assert_parity(
+            MEMMOVE_DISTINCT,
+            "mem43_memoved",
+            expected_lines=["m = 10 10 11 12", "n = 13 14 15 16"],
         )
 
 
