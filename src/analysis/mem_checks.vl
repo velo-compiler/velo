@@ -18,13 +18,16 @@ act mem_is_ptrty(t: string) -> bool {
     return str.len(t) > 0 and t[0] == '@'
 }
 
-// Countable/fillable: anything that is NOT a pointer, string, or act value.
-// Anything else (ints, floats, bools) casts to a number - precision is the
-// caller's business.
+// Countable/fillable: anything that is NOT a pointer, string, act, or void
+// value. Anything else (ints, floats, bools) casts to a number - precision
+// is the caller's business. void is rejected explicitly: io calls infer to
+// void and the stages diverge on void acceptance (Stage 2 inlines io as
+// int-valued printf, which would silently produce count = chars-printed).
 act mem_is_countable(t: string) -> bool {
     if t == null or str.len(t) == 0 { return false }
     if mem_is_ptrty(t) { return false }
     if t == "string" { return false }
+    if t == "void" { return false }
     if is_act_type(strip_type_spaces(t)) { return false }
     return true
 }

@@ -95,6 +95,45 @@ act main() -> i32 {
 }
 """
 
+# Acceptance-class coverage: the checker admits any non-pointer/string/act
+# type as count/fill by design; these pin the exact resulting behavior.
+# (float count truncates via the (long long) cast: 2.9 -> 2 bytes)
+FLOAT_COUNT = """use sys.io
+use sys.mem
+act main() -> i32 {
+    let d: @u8 = mem.alloc(@u8, 8)
+    mem.set(d, 65, 2.9)
+    io.println("f = {d[0]} {d[1]} {d[2]}")
+    return 0
+}
+"""
+
+# A named act as count must render its act type (Stage 1 previously fell
+# back to "i32" here and would have emitted a function-pointer-to-int
+# count - found and fixed in the untested-list audit).
+ACT_COUNT = """use sys.io
+use sys.mem
+act worker() -> i32 { return 3 }
+act main() -> i32 {
+    let d: @u8 = mem.alloc(@u8, 8)
+    mem.set(d, 65, worker)
+    return 0
+}
+"""
+
+# void as count: both stages now REJECT it (checker-level) instead of
+# diverging — Stage 2 inlines io emission as int-valued printf, so the old
+# admission ran silently with count = chars-printed on Stage 2 while
+# Stage 1 failed at the C-compile step.
+VOID_COUNT = """use sys.io
+use sys.mem
+act main() -> i32 {
+    let d: @u8 = mem.alloc(@u8, 8)
+    mem.set(d, 65, io.println("x"))
+    return 0
+}
+"""
+
 BAD_COPY_INT = """use sys.io
 use sys.mem
 act main() -> i32 {
@@ -337,6 +376,29 @@ class TestMemIntrinsics(unittest.TestCase):
         assert run.returncode != 0, f"OOM survived silently: {run.stdout}"
         assert "Velo Fatal Error: Out of Heap Memory!" in (run.stdout + run.stderr), (
             f"wrong fatal:\n{run.stdout}\n{run.stderr}")
+
+    def test_rejects_act_as_count(self):
+        # Audit finding: Stage 1 lacked the act render (fell back to i32
+        # and would emit a function-pointer-as-count crash); now both
+        # stages reject identically.
+        self._build_rejected(ACT_COUNT, "bad_act_count",
+                             "mem.set expects an integer fill value (got act() -> i32)")
+
+    def test_accepts_noninteger_numeric_counts(self):
+        # Documented rule made concrete: floats are admitted, precision is
+        # the caller's business — 2.9 truncates through (long long) to 2.
+        assert_parity(
+            FLOAT_COUNT,
+            "mem43_floatcount",
+            expected_lines=["f = 65 65 0"],
+        )
+
+    def test_void_count_is_rejected_on_both_stages(self):
+        # Audit finding: admitting void diverged the stages (Stage 1
+        # failed at C; Stage 2 silently ran with count = printf's return
+        # value). Both stages now reject it at the checker level.
+        self._build_rejected(VOID_COUNT, "bad_void_count",
+                             "mem.set expects an integer fill value (got void)")
 
     def test_byte_primitives_and_realloc(self):
         assert_parity(

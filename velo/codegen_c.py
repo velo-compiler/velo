@@ -890,6 +890,10 @@ class CCodeGenerator:
                 elif expr.callee.target.name == "str":
                     if expr.callee.member == "len":
                         return "usize"
+                elif expr.callee.target.name == "io":
+                    # All io calls are void (mirrors type_checker.vl), so
+                    # mem count/fill checks can render and reject them.
+                    return "void"
                 target_type = self._resolve_expr_type(expr.callee.target)
                 clean_type = target_type.lstrip("@")
                 fields = self.struct_defs.get(clean_type, {})
@@ -1213,9 +1217,13 @@ class CCodeGenerator:
 
     def _is_count_like(self, got: str) -> bool:
         # §4.3: byte counts / fill values must not be pointers, strings,
-        # or act values — anything else (ints, floats, bools) casts to a
-        # number and is the caller's precision business.
-        if not got or got[0] == "@" or got == "string":
+        # acts, or void — anything else (ints, floats, bools) casts to a
+        # number and is the caller's precision business. void matters
+        # because callers reach it via io calls (io.println returns void)
+        # and the stages DIVERGE on it: Stage 2 inlines io emission as
+        # int-valued printf, so admitting void would silently produce
+        # count = chars-printed instead of failing like Stage 1.
+        if not got or got[0] == "@" or got == "string" or got == "void":
             return False
         t = got.replace(" ", "").replace("\t", "")
         return not t.startswith("act(")
@@ -1234,7 +1242,13 @@ class CCodeGenerator:
             return  # alloc/heap_alloc/free etc. keep their legacy checks
         if len(args) != 3:
             raise ValueError(f"mem.{member} expects exactly 3 arguments{sigs[member]}")
-        got = self._resolve_expr_type(args[0])
+        # _thread_arg_type (shared with 4.2) instead of bare resolve: it ALSO
+        # renders named-function identifiers as their act types, matching
+        # Stage 2's infer of a bare act name — without this, a bare act name
+        # as count fell back to "i32" and sailed to a runtime crash while
+        # Stage 2 rejected it (parity divergence found in the untested-list
+        # audit).
+        got = self._thread_arg_type(args[0])
         if not self._is_ptr_like(got):
             raise ValueError(f"mem.{member} expects pointer arguments (got {got})")
         if member == "realloc":
@@ -1244,18 +1258,18 @@ class CCodeGenerator:
             if isinstance(args[1], Identifier) and args[1].name in TYPE_MAP:
                 ty = args[1].name
             else:
-                ty = self._resolve_expr_type(args[1])
+                ty = self._thread_arg_type(args[1])
             if not self._is_ptr_like(ty):
                 raise ValueError(f"mem.realloc expects a @Type argument (got {ty})")
         elif member != "set":
-            src_got = self._resolve_expr_type(args[1])
+            src_got = self._thread_arg_type(args[1])
             if not self._is_ptr_like(src_got):
                 raise ValueError(f"mem.{member} expects pointer arguments (got {src_got})")
         else:
-            val_got = self._resolve_expr_type(args[1])
+            val_got = self._thread_arg_type(args[1])
             if not self._is_count_like(val_got):
                 raise ValueError(f"mem.set expects an integer fill value (got {val_got})")
-        cnt = self._resolve_expr_type(args[2])
+        cnt = self._thread_arg_type(args[2])
         if not self._is_count_like(cnt):
             word = "fill value" if member == "set" else "byte count"
             raise ValueError(f"mem.{member} expects an integer {word} (got {cnt})")
