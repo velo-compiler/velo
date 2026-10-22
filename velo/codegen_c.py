@@ -1057,7 +1057,8 @@ class CCodeGenerator:
                             return "velo_heap_used()"
                         elif expr.callee.member == "current":
                             # §4.1: capture the active arena as a passable @Allocator handle
-                            return "g_velo_zone_active"
+                            # §4.1/§4.2: per-thread active arena as a passable handle
+                            return "velo_zone_active()"
                         elif expr.callee.member == "alloc_with":
                             # §4.1: allocate into an explicit @Allocator handle
                             return self._lower_mem_alloc_with(expr.args)

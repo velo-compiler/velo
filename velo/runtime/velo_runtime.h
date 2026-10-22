@@ -24,19 +24,23 @@ typedef size_t   usize;
 typedef ptrdiff_t isize;
 
 // ============================================================================
-// §4.1 Extensible Allocator Architecture
+// §4.1 Extensible Allocator Architecture + §4.2 Multithreaded Memory Safety
 //
 // Allocation model (in allocation-cost order, all O(1)):
 //   * Active zone arena  — bump region produced by `zone { ... }` / sized
 //     `zone <bytes> { ... }` blocks and by `mem.alloc(...)` calls.
 //   * Persistent heap    — malloc-backed, tracked (`mem.heap_alloc` / free).
 //
-// Zone arenas are first-class objects (VeloZoneArena): the default arena uses
-// a static buffer so bare `zone { }` blocks keep their exact previous
-// behavior and zero startup cost; `zone <bytes> { }` blocks acquire a
-// private heap-backed arena from a reuse pool (capacity >= requested, reused
-// across re-entries) for the block's duration. Allocation always targets the
-// ACTIVE arena, so nested zones scope independently.
+// Zone arenas are first-class objects (VeloZoneArena). Per §4.2 the arena
+// state is per-thread thread-local storage (TLS): every thread lazily gets
+// its own 32 MB heap-backed default arena and its own reuse pool, so two
+// threads calling `mem.alloc(...)` bump into independent watermarks and
+// `velo_zone_enter/leave` pool operations cannot race. `zone <bytes> { }`
+// blocks acquire a private arena from the thread's pool (capacity >=
+// requested, reused across re-entries) for the block's duration.
+// Allocation always targets the thread's ACTIVE arena, so nested zones
+// scope independently. Explicit `@Allocator` handles (§4.1) are raw arena
+// pointers and remain single-threaded until an atomic/locked variant lands.
 // ============================================================================
 typedef struct VeloZoneArena {
     uint8_t* base;    // start of the bump region
@@ -45,25 +49,59 @@ typedef struct VeloZoneArena {
 } VeloZoneArena;
 
 #define VELO_ZONE_BUFFER_SIZE (32 * 1024 * 1024)
-static uint8_t        g_velo_arena_buffer[VELO_ZONE_BUFFER_SIZE];
-static VeloZoneArena  g_velo_arena_default = { g_velo_arena_buffer, VELO_ZONE_BUFFER_SIZE, 0 };
-static VeloZoneArena* g_velo_zone_active    = &g_velo_arena_default;
 
-// Reuse pool for private arenas (cycled across re-entries of `zone <b> { }`)
 #define VELO_ZONE_POOL_MAX 32
-static VeloZoneArena  g_velo_zone_pool[VELO_ZONE_POOL_MAX];
-static size_t         g_velo_zone_pool_count = 0;
+
+// §4.2 thread-local storage shim: both compilers emit C compiled with
+// `-std=c99`, where the C11 keyword `_Thread_local` is unavailable. GCC and
+// Clang still accept the GNU `__thread` extension; MSVC uses
+// `__declspec(thread)`.
+#if defined(_MSC_VER)
+#define VELO_TLS __declspec(thread)
+#else
+#define VELO_TLS __thread
+#endif
+
+static inline VeloZoneArena* velo_zone_create_default(void) {
+    VeloZoneArena* z = (VeloZoneArena*)malloc(sizeof(VeloZoneArena));
+    uint8_t* buf = (uint8_t*)malloc((size_t)VELO_ZONE_BUFFER_SIZE);
+    if (!z || !buf) {
+        fprintf(stderr, "Velo Fatal Error: Zone Arena allocation failed (%llu bytes)!\n",
+                (unsigned long long)VELO_ZONE_BUFFER_SIZE);
+        exit(1);
+    }
+    z->base = buf;
+    z->cap = (size_t)VELO_ZONE_BUFFER_SIZE;
+    z->offset = 0;
+    return z;
+}
+
+// Per-thread arena state (§4.2). The default arena and the reuse pool are
+// created lazily on a thread's first allocation touch, keeping the zero-cost
+// startup of the old static-buffer design.
+static VELO_TLS VeloZoneArena* g_velo_zone_tls_default = NULL;
+static VELO_TLS VeloZoneArena* g_velo_zone_tls_active  = NULL;
+static VELO_TLS VeloZoneArena  g_velo_zone_tls_pool[VELO_ZONE_POOL_MAX];
+static VELO_TLS size_t         g_velo_zone_tls_pool_count = 0;
+
+static inline VeloZoneArena* velo_zone_active(void) {
+    if (!g_velo_zone_tls_active) {
+        g_velo_zone_tls_active = velo_zone_create_default();
+        g_velo_zone_tls_default = g_velo_zone_tls_active;
+    }
+    return g_velo_zone_tls_active;
+}
 
 static inline size_t velo_zone_push(void) {
-    return g_velo_zone_active->offset;
+    return velo_zone_active()->offset;
 }
 
 static inline void velo_zone_pop(size_t watermark) {
-    g_velo_zone_active->offset = watermark;
+    velo_zone_active()->offset = watermark;
 }
 
 static inline size_t velo_mem_used(void) {
-    return g_velo_zone_active->offset;
+    return velo_zone_active()->offset;
 }
 
 // Enters a private arena of exactly `bytes` capacity: acquires a pooled or
@@ -78,19 +116,19 @@ static inline VeloZoneArena* velo_zone_enter(size_t bytes) {
         fprintf(stderr, "Velo Fatal Error: Zone Arena capacity must be > 0!\n");
         exit(1);
     }
-    VeloZoneArena* prev = g_velo_zone_active;
+    VeloZoneArena* prev = velo_zone_active();  // §4.2: per-thread active state
     VeloZoneArena* z = (VeloZoneArena*)malloc(sizeof(VeloZoneArena));
-    size_t pick = g_velo_zone_pool_count;
-    for (size_t i = 0; i < g_velo_zone_pool_count; ++i) {
-        if (g_velo_zone_pool[i].cap >= bytes) {  // reuse any arena that fits
+    size_t pick = g_velo_zone_tls_pool_count;
+    for (size_t i = 0; i < g_velo_zone_tls_pool_count; ++i) {
+        if (g_velo_zone_tls_pool[i].cap >= bytes) {  // reuse any arena that fits
             pick = i;
             break;
         }
     }
-    if (pick < g_velo_zone_pool_count) {
-        *z = g_velo_zone_pool[pick];  // buffer ownership moves to the copy
-        g_velo_zone_pool[pick] = g_velo_zone_pool[g_velo_zone_pool_count - 1];
-        g_velo_zone_pool_count--;
+    if (pick < g_velo_zone_tls_pool_count) {
+        *z = g_velo_zone_tls_pool[pick];  // buffer ownership moves to the copy
+        g_velo_zone_tls_pool[pick] = g_velo_zone_tls_pool[g_velo_zone_tls_pool_count - 1];
+        g_velo_zone_tls_pool_count--;
     } else {
         z->base = (uint8_t*)malloc(bytes);
         if (!z || !z->base) {
@@ -101,27 +139,28 @@ static inline VeloZoneArena* velo_zone_enter(size_t bytes) {
         z->cap = bytes;
     }
     z->offset = 0;
-    g_velo_zone_active = z;
+    g_velo_zone_tls_active = z;
     return prev;
 }
 
-// Exits a zone block: returns the active arena to the reuse pool (dropping
-// its buffer only if the pool is saturated) and restores the previous one.
+// Exits a zone block: returns the active arena to the thread-local reuse
+// pool (dropping its buffer only if the pool is saturated) and restores the
+// previous one (§4.2: the pool is per-thread, so this cannot race).
 static inline void velo_zone_leave(VeloZoneArena* prev) {
-    VeloZoneArena* z = g_velo_zone_active;
-    if (z != &g_velo_arena_default) {
-        if (g_velo_zone_pool_count < VELO_ZONE_POOL_MAX) {
-            g_velo_zone_pool[g_velo_zone_pool_count++] = *z;
+    VeloZoneArena* z = g_velo_zone_tls_active;
+    if (z != g_velo_zone_tls_default) {
+        if (g_velo_zone_tls_pool_count < VELO_ZONE_POOL_MAX) {
+            g_velo_zone_tls_pool[g_velo_zone_tls_pool_count++] = *z;
         } else {
             free(z->base);
         }
         free(z);
     }
-    g_velo_zone_active = prev;
+    g_velo_zone_tls_active = prev;
 }
 
 static inline void* velo_mem_alloc(size_t size, size_t count) {
-    VeloZoneArena* z = g_velo_zone_active;
+    VeloZoneArena* z = velo_zone_active();
     size_t total = size * count;
     size_t aligned = (total + 7) & ~((size_t)7);
     if (z->offset + aligned > z->cap) {
@@ -144,6 +183,9 @@ static inline void* velo_mem_alloc(size_t size, size_t count) {
 // `mem.alloc_with(a, @T, n)` allocates n elements of type T into arena `a`
 // instead of the implicit active arena, giving callers explicit control over
 // which arena absorbs the allocation.
+// §4.2 contract: `mem.current()` / `mem.alloc_with` are per-thread safe, but
+// a handle captured in one thread must not be allocated through by another
+// thread — bumping a shared watermark is not synchronized.
 // ============================================================================
 typedef VeloZoneArena* VeloAllocator;
 

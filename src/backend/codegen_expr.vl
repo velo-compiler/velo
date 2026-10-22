@@ -311,7 +311,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                     if member == "used" { sb_append_str(sb, "velo_mem_used()"); return }
                     if member == "heap_used" { sb_append_str(sb, "velo_heap_used()"); return }
                     // §4.1: mem.current() -> active arena; mem.alloc_with(a, @T, count) -> @T
-                    if member == "current" { sb_append_str(sb, "g_velo_zone_active"); return }
+                    if member == "current" { sb_append_str(sb, "velo_zone_active()"); return }  // §4.1/§4.2
                     if member == "alloc_with" {
                         let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg.next)))
                         sb_append_str(sb, "(("); sb_append_str(sb, elem_type); sb_append_str(sb, "*)velo_alloc_with((VeloAllocator)(")
