@@ -1,6 +1,8 @@
+import os
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 
 from test_allocators import assert_parity, run_stage, ROOT, VELO_PY, VELO_EXE
 
@@ -152,6 +154,90 @@ act main() -> i32 {
 }
 """
 
+# A negative literal count is a caller bug the checker rejects statically
+# when knowable; variable-held negatives die at runtime via the
+# velo_byte_* wrappers instead of wrapping into gigantic size_t wipes.
+BAD_COPY_NEG_LIT = """use sys.io
+use sys.mem
+act main() -> i32 {
+    let d: @u8 = mem.alloc(@u8, 8)
+    let s: @u8 = mem.alloc(@u8, 8)
+    mem.copy(d, s, -1)
+    return 0
+}
+"""
+
+BAD_SET_NEG_LIT = """use sys.io
+use sys.mem
+act main() -> i32 {
+    let d: @u8 = mem.alloc(@u8, 8)
+    mem.set(d, 65, -1)
+    return 0
+}
+"""
+
+# Variable-held negatives: i32 -1 becomes (long long)(-1) at the runtime
+# wrapper, which fatals instead of memset()ing SIZE_MAX bytes.
+NEG_VAR_RUNTIME = """use sys.io
+use sys.mem
+act main() -> i32 {
+    let d: @u8 = mem.alloc(@u8, 8)
+    let n: i32 = -1
+    mem.set(d, 65, n)
+    io.println("unreachable")
+    return 0
+}
+"""
+
+# Four worker threads, ~120 reallocs each (grow to 120, shrink to 1),
+# private blocks, shared atomic ledger — the final ledger must be exactly
+# 0 regardless of interleaving: every op's delta is fixed, the atomics
+# only change the ORDER. Exercises mem.realloc under real contention,
+# which the single-threaded cases cannot.
+THREAD_REALLOC = """use sys.io
+use sys.mem
+use sys.thread
+
+act worker() -> i32 {
+    mut p: @i64 = mem.heap_alloc(@i64, 2)
+    mut k: i32 = 0
+    loop k < 120 {
+        mut n: i32 = k + 1
+        if k > 60 { n = 120 - k }
+        p = mem.realloc(p, @i64, n)
+        k = k + 1
+    }
+    mem.free(p)
+    return 0
+}
+
+act main() -> i32 {
+    mut h1: @Thread = thread.spawn(worker)
+    mut h2: @Thread = thread.spawn(worker)
+    mut h3: @Thread = thread.spawn(worker)
+    mut h4: @Thread = thread.spawn(worker)
+    let r1: i32 = thread.join(h1)
+    let r2: i32 = thread.join(h2)
+    let r3: i32 = thread.join(h3)
+    let r4: i32 = thread.join(h4)
+    let h: usize = mem.heap_used()
+    io.println("ledger = {h}")
+    return 0
+}
+"""
+
+# OOM: 8 * 2^58 = 2^61 bytes is beyond every sane VA space, so the
+# underlying realloc/malloc deterministically fails and velo_heap_realloc
+# must die with Velo's fatal (not return a lying non-null, not crash).
+OOM_HARNESS = """#include "velo_runtime.h"
+#include <stdio.h>
+int main(void) {
+    void* p = velo_heap_realloc(NULL, 8, 1LL << 58); /* 2^61 bytes > VA space */
+    printf("NOT REACHED %p\\n", p);
+    return 0;
+}
+"""
+
 
 class TestMemIntrinsics(unittest.TestCase):
     """gaps.md 4.3 Low-Level Memory Intrinsics — mem.set/copy/move over the
@@ -168,8 +254,8 @@ class TestMemIntrinsics(unittest.TestCase):
         src = tmp / f"{name}.vl"
         src.write_text(program, encoding="utf-8")
         for stage, cmd in (
-            ("stage1", [sys.executable, str(VELO_PY), "build", str(src)]),
-            ("stage2", [str(VELO_EXE), "build", str(src)]),
+            ("stage1", [sys.executable, str(VELO_PY), "build", str(src), "-o", str(src.with_suffix(".exe"))]),
+            ("stage2", [str(VELO_EXE), "build", str(src), "-o", str(src.with_suffix(".exe"))]),
         ):
             res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
             assert res.returncode != 0, (
@@ -191,6 +277,66 @@ class TestMemIntrinsics(unittest.TestCase):
                              "mem.realloc expects a @Type argument (got i64)")
         self._build_rejected(BAD_REALLOC_ARITY, "bad_realloc_arity",
                              "mem.realloc expects exactly 3 arguments: (pointer, @Type, count)")
+        self._build_rejected(BAD_COPY_NEG_LIT, "bad_copy_neg_lit",
+                             "mem.copy expects a non-negative byte count")
+        self._build_rejected(BAD_SET_NEG_LIT, "bad_set_neg_lit",
+                             "mem.set expects a non-negative byte count")
+
+    def test_runtime_negatives_not_statically_knowable(self):
+        """A variable-held negative count slips past the compile-time
+        check (it IS countable); the runtime wrapper must fatal loudly on
+        BOTH stages rather than laundering -1 into a gigantic size_t."""
+        tmp = ROOT / ".velo_cache" / "mem_neg_var"
+        tmp.mkdir(parents=True, exist_ok=True)
+        src = tmp / "neg_var.vl"
+        src.write_text(NEG_VAR_RUNTIME, encoding="utf-8")
+        want_msg = "negative byte count"
+        for stage, cmd in (
+            ("stage1", [sys.executable, str(VELO_PY), "build", str(src), "-o", str(src.with_suffix(".exe"))]),
+            ("stage2", [str(VELO_EXE), "build", str(src), "-o", str(src.with_suffix(".exe"))]),
+        ):
+            res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+            assert res.returncode == 0, (
+                f"{stage} rejected a valid program:\n{res.stdout}{res.stderr}")
+            exe = src.with_suffix(".exe")
+            run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=120)
+            assert run.returncode != 0, (
+                f"{stage} survived a negative count: {run.stdout}")
+            assert want_msg in (run.stdout + run.stderr), (
+                f"{stage} died without the fatal message:\n{run.stdout}\n{run.stderr}")
+
+    def test_concurrent_realloc_ledger(self):
+        """4 threads × ~120 reallocs (grow 1→120 → shrink), private blocks,
+        shared atomic ledger. Every op's delta is fixed, so the final
+        ledger must be exactly 0 no matter the interleaving."""
+        assert_parity(
+            THREAD_REALLOC,
+            "mem43_threads",
+            expected_lines=["ledger = 0"],
+        )
+
+    def test_oom_is_deterministic_fatal(self):
+        """velo_heap_realloc(NULL, 8, 2^58) — 2^61 bytes, beyond any VA
+        space — must reach OUR fatal ('Out of Heap Memory'), not return a
+        lying handle nor crash before logging. C mini-harness, same
+        pattern as the runtime lifecycle checks."""
+        from test_thread_local_runtime import find_gcc, RUNTIME
+        tmp = ROOT / ".velo_cache" / "mem_oom"
+        tmp.mkdir(parents=True, exist_ok=True)
+        c_file = tmp / "oom_harness.c"
+        exe = tmp / "oom_harness.exe"
+        c_file.write_text(OOM_HARNESS, encoding="utf-8")
+        gcc = find_gcc()
+        env = os.environ.copy()
+        env["PATH"] = f"{Path(gcc).parent.resolve()}{os.pathsep}{env.get('PATH', '')}"
+        res = subprocess.run(
+            [gcc, "-O2", "-std=c99", "-I", str(RUNTIME), str(c_file), "-o", str(exe)],
+            capture_output=True, text=True, cwd=ROOT, env=env)
+        assert res.returncode == 0, f"harness compile failed:\n{res.stderr}"
+        run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=120)
+        assert run.returncode != 0, f"OOM survived silently: {run.stdout}"
+        assert "Velo Fatal Error: Out of Heap Memory!" in (run.stdout + run.stderr), (
+            f"wrong fatal:\n{run.stdout}\n{run.stderr}")
 
     def test_byte_primitives_and_realloc(self):
         assert_parity(

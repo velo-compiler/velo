@@ -1259,6 +1259,11 @@ class CCodeGenerator:
         if not self._is_count_like(cnt):
             word = "fill value" if member == "set" else "byte count"
             raise ValueError(f"mem.{member} expects an integer {word} (got {cnt})")
+        # §4.3 hardening: a negative literal count is a caller bug — reject
+        # it at compile time when statically knowable (variable-held
+        # negatives are caught at runtime by the velo_byte_* wrappers).
+        if isinstance(args[2], UnaryExpr) and args[2].op == "-" and isinstance(args[2].operand, IntLiteral):
+            raise ValueError(f"mem.{member} expects a non-negative byte count")
 
     def _lower_mem_alloc(self, args: List[Expr]) -> str:
         if len(args) != 2:
@@ -1290,7 +1295,7 @@ class CCodeGenerator:
         c_type = self._map_type(type_name)
         ptr_code = self._emit_expression(args[0])
         cnt_code = self._emit_expression(args[2])
-        return f"({c_type}*)velo_heap_realloc((void*)({ptr_code}), sizeof({c_type}), (size_t)({cnt_code}))"
+        return f"({c_type}*)velo_heap_realloc((void*)({ptr_code}), sizeof({c_type}), (long long)({cnt_code}))"
 
     def _lower_mem_byte_op(self, member: str, args: List[Expr]) -> str:
         # §4.3: mem.copy/move/set map straight onto the C trio; type
@@ -1300,9 +1305,9 @@ class CCodeGenerator:
         s = self._emit_expression(args[1])
         c = self._emit_expression(args[2])
         if member == "set":
-            return f"memset((void*)({d}), (int)({s}), (size_t)({c}))"
-        cfn = "memcpy" if member == "copy" else "memmove"
-        return f"{cfn}((void*)({d}), (void*)({s}), (size_t)({c}))"
+            return f"velo_byte_set((void*)({d}), (int)({s}), (long long)({c}))"
+        cfn = "velo_byte_copy" if member == "copy" else "velo_byte_move"
+        return f"{cfn}((void*)({d}), (void*)({s}), (long long)({c}))"
 
     def _lower_mem_alloc_with(self, args: List[Expr]) -> str:
         # §4.1: mem.alloc_with(allocator, @Type, count)

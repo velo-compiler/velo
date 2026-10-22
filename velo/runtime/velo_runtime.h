@@ -504,6 +504,34 @@ static inline void velo_heap_free(void* ptr) {
     free(raw);
 }
 
+// §4.3 hardening: byte-trio runtime wrappers. A negative byte count is a
+// caller bug that the raw C trio would silently launder into a gigantic
+// size_t (an instant wipe/write of huge size — UB); Velo turns it into a
+// loud fatal instead. Both compilers emit these wrappers.
+static inline void velo_byte_copy(void* dest, const void* src, long long count) {
+    if (count < 0) {
+        fprintf(stderr, "Velo Fatal Error: mem.copy got a negative byte count!\n");
+        exit(1);
+    }
+    memcpy(dest, src, (size_t)count);
+}
+
+static inline void velo_byte_move(void* dest, const void* src, long long count) {
+    if (count < 0) {
+        fprintf(stderr, "Velo Fatal Error: mem.move got a negative byte count!\n");
+        exit(1);
+    }
+    memmove(dest, src, (size_t)count);
+}
+
+static inline void velo_byte_set(void* dest, int val, long long count) {
+    if (count < 0) {
+        fprintf(stderr, "Velo Fatal Error: mem.set got a negative byte count!\n");
+        exit(1);
+    }
+    memset(dest, val, (size_t)count);
+}
+
 // §4.3: realloc for persistent heap blocks that keeps the size-header
 // protocol and the shared atomic ledger exact — plain C realloc can do
 // neither. resizes the RAW block (header + payload) so the size word
@@ -513,12 +541,18 @@ static inline void velo_heap_free(void* ptr) {
 // C's realloc(NULL, n). A realloc on a non-heap pointer is the same
 // raw-pointer UB class as `velo_heap_free` on one. OOM is fatal — the
 // old block stays valid until exit, matching heap_alloc's philosophy.
-static inline void* velo_heap_realloc(void* ptr, size_t size, size_t count) {
-    if (!ptr) return velo_heap_alloc(size, count);
+// count is signed so a negative caller bug dies loudly instead of
+// wrapping into a gigantic size_t.
+static inline void* velo_heap_realloc(void* ptr, size_t size, long long count) {
+    if (count < 0) {
+        fprintf(stderr, "Velo Fatal Error: mem.realloc got a negative byte count!\n");
+        exit(1);
+    }
+    if (!ptr) return velo_heap_alloc(size, (size_t)count);
     size_t header_size = (sizeof(size_t) + 15) & ~((size_t)15);
     uint8_t* raw = ((uint8_t*)ptr) - header_size;
     size_t old_total = *((size_t*)raw);
-    size_t new_total = size * count;
+    size_t new_total = size * (size_t)count;
     if (new_total == 0) {
         velo_heap_free(ptr);
         return NULL;

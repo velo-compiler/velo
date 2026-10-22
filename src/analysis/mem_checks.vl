@@ -8,6 +8,7 @@ use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../common/act_types.vl"
 use "../ast/expr.vl"
+use "../frontend/token.vl"
 
 // Pointer-ish values only: @T handles (and "@void" from a null literal).
 // A plain "string" is deliberately NOT accepted as a byte buffer - writing
@@ -79,6 +80,16 @@ act check_mem_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
         let msb = create_sb(224)
         sb_append_str(@msb, "mem."); sb_append_str(@msb, member); sb_append_str(@msb, " expects an integer "); sb_append_str(@msb, word)
         sb_append_str(@msb, " (got "); sb_append_str(@msb, c); sb_append_str(@msb, ")")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+        return false
+    }
+    // cm43 hardening: a negative literal count is a caller bug - reject it
+    // at compile time when statically knowable (variable-held negatives are
+    // caught at runtime by the velo_byte_* wrappers). Mirror of Stage 1's
+    // UnaryExpr-minus-over-IntLiteral check.
+    if expr.first_arg.next.next.kind == EXPR_UNARY and expr.first_arg.next.next.op == TOK_MINUS and expr.first_arg.next.next.operand.kind == EXPR_INT {
+        let msb = create_sb(160)
+        sb_append_str(@msb, "mem."); sb_append_str(@msb, member); sb_append_str(@msb, " expects a non-negative byte count")
         report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
         return false
     }
