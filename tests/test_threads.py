@@ -1,6 +1,8 @@
+import subprocess
+import sys
 import unittest
 
-from test_allocators import assert_parity, run_stage, ROOT
+from test_allocators import assert_parity, run_stage, ROOT, VELO_PY, VELO_EXE
 
 PROBE_SPAWN_JOIN = """use sys.io
 use sys.mem
@@ -65,15 +67,18 @@ act main() -> i32 {
 }
 """
 
-# The heap ledger is thread-local (gaps 4.2): a worker's undeleted heap bytes
-# must vanish from `mem.heap_used()` as seen by main after joining it.
-HEAP_COUNTER_PER_THREAD = """use sys.io
+# §4.2 heap ledger: a single shared counter updated with true atomics, so a
+# cross-thread `mem.free` is attributed correctly and workers' alloc/free
+# storms keep the diagnostic exactly consistent — after joining both
+# workers, the whole process reports 0 outstanding heap bytes.
+HEAP_COUNTER_BUSY_WORKERS = """use sys.io
 use sys.mem
 use sys.thread
 
 act worker() -> i32 {
     let p: @i64 = mem.heap_alloc(@i64, 8)
     p[0] = 42
+    mem.free(p)
     return 7
 }
 
@@ -91,12 +96,103 @@ act main() -> i32 {
 """
 
 
+BAD_SPAWN_INT = """use sys.io
+use sys.thread
+
+act main() -> i32 {
+    let h: @Thread = thread.spawn(42)
+    return 0
+}
+"""
+
+BAD_SPAWN_SIG = """use sys.io
+use sys.thread
+
+act wrongsig(a: i32) -> i32 { return a }
+
+act main() -> i32 {
+    let h: @Thread = thread.spawn(wrongsig)
+    return 0
+}
+"""
+
+BAD_JOIN_INT = """use sys.io
+use sys.thread
+
+act main() -> i32 {
+    thread.join(42)
+    return 0
+}
+"""
+
+BAD_JOIN_NONE = """use sys.io
+use sys.thread
+
+act main() -> i32 {
+    thread.join()
+    return 0
+}
+"""
+
+BAD_MUTEX_ARG = """use sys.io
+use sys.thread
+
+act main() -> i32 {
+    let m: @Mutex = thread.mutex()
+    thread.acquire(42)
+    return 0
+}
+"""
+
+BAD_MUTEX_EXTRA = """use sys.io
+use sys.thread
+
+act main() -> i32 {
+    let m: @Mutex = thread.mutex(1)
+    return 0
+}
+"""
+
+
 class TestThreadSurface(unittest.TestCase):
     """gaps.md 4.2 Multithreaded Memory Safety — the language-level thread
     surface (`use sys.thread`): spawn/join of zero-arg i32 acts, opaque
     @Thread handles, @Mutex acquire/release, per-thread arena isolation and
-    per-thread heap accounting. Every case must run identically on both
-    compilers."""
+    a shared atomic heap ledger. Invalid thread intrinsic arguments are
+    compile-time errors on BOTH stages with identical wording. Every case
+    must run identically on both compilers."""
+
+    def _build_rejected(self, program: str, name: str, want_msg: str):
+        """Both compilers must REJECT this program at build time with the
+        same message substring (threads surface contract, gaps §4.2)."""
+        tmp = ROOT / ".velo_cache" / f"thread_reject_{name}"
+        tmp.mkdir(parents=True, exist_ok=True)
+        src = tmp / f"{name}.vl"
+        src.write_text(program, encoding="utf-8")
+        for stage, cmd in (
+            ("stage1", [sys.executable, str(VELO_PY), "build", str(src)]),
+            ("stage2", [str(VELO_EXE), "build", str(src)]),
+        ):
+            res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+            assert res.returncode != 0, (
+                f"{stage} accepted an invalid program ({name}):\n{res.stdout}")
+            assert want_msg in (res.stdout + res.stderr), (
+                f"{stage} rejected {name} but without expected message "
+                f"{want_msg!r}:\n{res.stdout}\n{res.stderr}")
+
+    def test_compile_rejects_bad_thread_args(self):
+        self._build_rejected(BAD_SPAWN_INT, "bad_spawn_int",
+                             "thread.spawn expects act() -> i32 (got i32)")
+        self._build_rejected(BAD_SPAWN_SIG, "bad_spawn_sig",
+                             "thread.spawn expects act() -> i32 (got act(i32) -> i32)")
+        self._build_rejected(BAD_JOIN_INT, "bad_join_int",
+                             "thread.join expects @Thread (got i32)")
+        self._build_rejected(BAD_MUTEX_ARG, "bad_mutex_arg",
+                             "thread.acquire expects @Mutex (got i32)")
+        self._build_rejected(BAD_MUTEX_EXTRA, "bad_mutex_extra",
+                             "thread.mutex takes no arguments")
+        self._build_rejected(BAD_JOIN_NONE, "bad_join_none",
+                             "thread.join takes exactly 1 argument")
 
     def test_spawn_join_arena_isolation_and_mutex_counter(self):
         assert_parity(
@@ -113,9 +209,9 @@ class TestThreadSurface(unittest.TestCase):
     def test_mutex_basic_ops_single_thread(self):
         assert_parity(MUTEX_BASIC, "thread_mutex", expected_lines=["mutex basic = ok"])
 
-    def test_heap_counter_is_per_thread(self):
+    def test_heap_ledger_consistent_under_threads(self):
         assert_parity(
-            HEAP_COUNTER_PER_THREAD,
+            HEAP_COUNTER_BUSY_WORKERS,
             "thread_heap",
             expected_lines=[
                 "w = 7", "w = 7", "main heap_used = 0",

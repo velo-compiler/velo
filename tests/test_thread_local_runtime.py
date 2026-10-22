@@ -133,8 +133,9 @@ int main(void) {
     if (velo_thread_join(velo_thread_spawn((VeloThreadFn)plain_fn)) != 42) return 30;
     if (velo_thread_join(velo_thread_spawn((VeloThreadFn)fn17)) != 17) return 31;
 
-    // Check B: join of a handle-less spawn is a must-fail contract (-1).
-    if (velo_thread_join(NULL) != -1) return 32;
+    // Check B (lifecycle): a second join of the same handle must be caught
+    // by the tombstone magic — this harness only exercises the healthy
+    // paths; the fatal ones live in the mini-harnesses below.
 
     // Check C: 4 concurrent counting fns under one mutex.
     VeloThreadCtx* th[WT];
@@ -171,6 +172,58 @@ def find_gcc() -> str:
     raise AssertionError("GCC not found — install GCC (MinGW/MSYS2) like the build drivers require")
 
 
+# Fatal-path mini-harnesses (§4.2 lifecycle checking): each drives exactly one
+# invalid runtime operation. exit(1) cannot be intercepted in-process, so each
+# is compiled separately and expected to terminate non-zero with its specific
+# "Velo Fatal Error" message. Tombstoned handles are *never freed* — their
+# addresses can never be recycled by malloc — so replays always read the DEAD
+# tag deterministically.
+MINI_NULL_JOIN = r"""
+#include "velo_runtime.h"
+int main(void) {
+    void* never_stored = 0;
+    velo_thread_join(never_stored);
+    return 0;
+}
+"""
+
+MINI_DOUBLE_JOIN = r"""
+#include "velo_runtime.h"
+static i32 f42(void) { return 42; }
+static i32 f7(void) { return 7; }
+int main(void) {
+    VeloThreadCtx* a = velo_thread_spawn((VeloThreadFn)f42);
+    VeloThreadCtx* b = velo_thread_spawn((VeloThreadFn)f7);
+    if (velo_thread_join(a) != 42) return 9;
+    if (velo_thread_join(b) != 7) return 9;
+    velo_thread_join(a);  // replayed handle: fatal, no UB
+    return 0;
+}
+"""
+
+MINI_MUTEX_AFTER_FREE = r"""
+#include "velo_runtime.h"
+int main(void) {
+    void* m = velo_mutex_create();
+    velo_mutex_acquire(m);
+    velo_mutex_release(m);
+    velo_mutex_destroy(m);
+    velo_mutex_acquire(m);  // use after free: fatal, no silent UB
+    return 0;
+}
+"""
+
+MINI_MUTEX_DOUBLE_FREE = r"""
+#include "velo_runtime.h"
+int main(void) {
+    void* m = velo_mutex_create();
+    velo_mutex_destroy(m);
+    velo_mutex_destroy(m);  // double free: fatal, no silent UB
+    return 0;
+}
+"""
+
+
 class TestThreadLocalZoneRuntime(unittest.TestCase):
     def test_zone_state_is_per_thread_under_concurrency(self):
         tmp = ROOT / ".velo_cache" / "thread_tls_test"
@@ -200,6 +253,38 @@ class TestThreadLocalZoneRuntime(unittest.TestCase):
         self.assertEqual(run.returncode, 0,
                          f"harness run failed:\nSTDOUT:\n{run.stdout}\nSTDERR:\n{run.stderr}")
         self.assertIn("TLS-OK", run.stdout)
+
+    def test_runtime_lifecycle_fatals(self):
+        cases = [
+            (MINI_NULL_JOIN, "thread join on a null handle", "mini_null_join"),
+            (MINI_DOUBLE_JOIN, "already-joined thread handle", "mini_double_join"),
+            (MINI_MUTEX_AFTER_FREE, "mutex operation on a freed mutex", "mini_mutex_after_free"),
+            (MINI_MUTEX_DOUBLE_FREE, "mutex operation on a freed mutex", "mini_mutex_double_free"),
+        ]
+        for src_code, want_msg, name in cases:
+            tmp = ROOT / ".velo_cache" / "thread_lifecycle_test"
+            tmp.mkdir(parents=True, exist_ok=True)
+            c_file = tmp / f"{name}.c"
+            exe = tmp / f"{name}.exe"
+            c_file.write_text(src_code, encoding="utf-8")
+            gcc = find_gcc()
+            gcc_bin_dir = str(Path(gcc).parent.resolve())
+            env = os.environ.copy()
+            env["PATH"] = f"{gcc_bin_dir}{os.pathsep}{env.get('PATH', '')}"
+            cmd = [
+                gcc, "-O2", "-std=c99",
+                "-I", str(RUNTIME),
+                str(c_file), "-o", str(exe),
+                "-static",
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, env=env)
+            self.assertEqual(res.returncode, 0,
+                             f"{name} compile failed:\nSTDERR:\n{res.stderr}")
+            run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=120)
+            self.assertNotEqual(run.returncode, 0,
+                                f"{name}: expected fatal exit, got rc=0 with stdout {run.stdout!r}")
+            self.assertIn("Velo Fatal Error", run.stderr, f"{name}: stderr was {run.stderr!r}")
+            self.assertIn(want_msg, run.stderr, f"{name}: stderr was {run.stderr!r}")
 
     def test_spawn_join_mutex_runtime_api(self):
         tmp = ROOT / ".velo_cache" / "thread_api_test"

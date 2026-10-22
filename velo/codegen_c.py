@@ -1086,6 +1086,8 @@ class CCodeGenerator:
 
                     elif expr.callee.target.name == "thread":
                         # §4.2: spawn/join zero-arg i32 acts; opaque @Mutex ops
+                        # Args are compile-checked — never blindly cast.
+                        self._thread_expect(expr.callee.member, expr.args)
                         if expr.callee.member == "spawn":
                             arg_code = self._emit_expression(expr.args[0]) if expr.args else "0"
                             return f"velo_thread_spawn((VeloThreadFn)({arg_code}))"
@@ -1143,6 +1145,54 @@ class CCodeGenerator:
             return self.anon_expr_to_name.get(id(expr), f"_velo_anon_act_{len(self.anon_funcs)}")
 
         raise ValueError(f"Unknown expression node: {type(expr)}")
+
+    def _is_thread_entry(self, expr: Expr) -> bool:
+        """§4.2: is `expr` a zero-arg, i32-returning act value? Accepts a
+        named top-level act, an act-typed local/global, or an anonymous act.
+        Anything else must fail loudly, never reach a C-level cast."""
+        if isinstance(expr, AnonFuncExpr):
+            return len(expr.params) == 0 and expr.return_type == "i32"
+        if isinstance(expr, Identifier):
+            sig = self.current_scope_types.get(expr.name)
+            if sig and sig.replace(" ", "").replace("\t", "") == "act()->i32":
+                return True
+            decl = self.func_decls.get(expr.name)
+            if decl is not None:
+                return len(decl.params) == 0 and (decl.return_type or "void") == "i32"
+        return False
+
+    def _thread_arg_type(self, expr: Expr) -> str:
+        if isinstance(expr, AnonFuncExpr):
+            return f"act({', '.join(p.type_name for p in expr.params)}) -> {expr.return_type}"
+        if isinstance(expr, Identifier):
+            decl = self.func_decls.get(expr.name)
+            if decl is not None:
+                params = ", ".join(p.type_name for p in decl.params)
+                return f"act({params}) -> {decl.return_type or 'void'}"
+        return self._resolve_expr_type(expr)
+
+    def _thread_expect(self, member: str, args: List[Expr]) -> None:
+        """§4.2: compile-checks thread intrinsic arguments. Mirrored by the
+        Stage 2 type checker — both stages must reject the same programs
+        with the same messages."""
+        counts = {"spawn": 1, "join": 1, "acquire": 1, "release": 1, "free": 1, "mutex": 0}
+        if member not in counts:
+            return  # unknown member: falls through to the generic error path
+        if member == "mutex":
+            if args:
+                raise ValueError("thread.mutex takes no arguments")
+            return
+        if len(args) != counts[member]:
+            raise ValueError(f"thread.{member} takes exactly 1 argument")
+        if member == "mutex":
+            return
+        if member == "spawn" and self._is_thread_entry(args[0]):
+            return
+        got = self._thread_arg_type(args[0])
+        want = {"spawn": "act() -> i32", "join": "@Thread", "acquire": "@Mutex",
+                "release": "@Mutex", "free": "@Mutex"}[member]
+        if got.replace(" ", "").replace("\t", "") != want.replace(" ", ""):
+            raise ValueError(f"thread.{member} expects {want} (got {got})")
 
     def _lower_mem_alloc(self, args: List[Expr]) -> str:
         if len(args) != 2:

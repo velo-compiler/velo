@@ -126,3 +126,19 @@ act act_types_add(list: @@ActTypeNode, type_name: string) {
     node.next = list.@
     list.@ = node
 }
+
+// §4.2: strips every space/tab from a type string so user-written and
+// compiler-constructed spellings compare equal (`act( ) -> i32` ≡
+// `act() -> i32`). Used by thread intrinsic argument checking.
+act strip_type_spaces(t: string) -> string {
+    if t == null { return "" }
+    let n = str.len(t)
+    mut sb = create_sb(n)
+    mut i: usize = 0
+    loop i < n {
+        let c = t[i]
+        if c != ' ' { sb_append_char(@sb, c) }
+        i += 1
+    }
+    return sb_to_string(@sb)
+}

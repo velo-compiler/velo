@@ -224,24 +224,73 @@ static inline size_t velo_alloc_used(VeloAllocator a) {
 // spawned thread lazily builds its own zone arena state (§4.2 above) and,
 // on exit, releases that whole per-thread set (default arena + pool
 // buffers) — no arena reservation is left behind per dead thread.
-// Handles are opaque mirrors of the C level:
-//   `@Thread` = VeloThreadCtx*   `@Mutex` = void*
-// join() returns the entry act's i32. The trampoline publishes the status
-// before thread exit; pthread_join / WaitForSingleObject synchronize that
-// write with join's read (thread-creation/join is ordered in the OS).
+// Handles are opaque and LIFECYCLE-CHECKED:
+//   `@Thread` = VeloThreadCtx*   `@Mutex` = VeloMutexCell* (passed as void*)
+// Both handle kinds carry a magic tag. Operating on an already-joined
+// thread, on a freed mutex, or double-freeing either is a LOUD fatal error
+// instead of silent UB: every released handle becomes a never-freed
+// "tombstone" — its address is parked on a dead-list and can never be
+// recycled by malloc, so a replayed or stale handle always reads the DEAD
+// magic. join() on a null handle (never-spawned / OOM) is likewise fatal —
+// join never fabricates a fake return value; it returns the entry act's
+// real i32 exactly once. The trampoline publishes the status before
+// thread exit; pthread_join / WaitForSingleObject synchronize that write
+// with join's read (thread-creation/join is ordered in the OS).
+// NOTE: spawning an act that does not match act() -> i32 is rejected at
+// compile time by both stage checkers; the C-level (VeloThreadFn) cast is
+// only for hand-written C using the runtime directly.
 // ============================================================================
+
+#define VELO_HANDLE_LIVE 0x1BF35A21u
+#define VELO_HANDLE_DEAD 0x2E4C90B7u
+
+static void velo_fatal_msg(const char* why) {
+    fprintf(stderr, "Velo Fatal Error: %s\n", why);
+    exit(1);
+}
 
 typedef i32 (*VeloThreadFn)(void);
 
 typedef struct VeloThreadCtx {
     void* fn;      // entry act pointer (cast to VeloThreadFn)
     i32   status;  // entry act's return value, published before thread exit
+    u32   magic;   // VELO_HANDLE_LIVE until joined, then DEAD (tombstone)
+    struct VeloThreadCtx* next_reaped;
 #if defined(_WIN32)
     void* native;  // Win32 thread handle (WaitForSingleObject + CloseHandle)
 #else
     pthread_t native;  // pthread join target
 #endif
 } VeloThreadCtx;
+
+typedef struct VeloMutexCell {
+    void* native;  // Win32 HANDLE / pthread_mutex_t*
+    u32   magic;   // VELO_HANDLE_LIVE until destroyed, then DEAD (tombstone)
+    struct VeloMutexCell* next_reaped;
+} VeloMutexCell;
+
+static VeloThreadCtx* g_velo_thread_tombstones = NULL;
+static VeloMutexCell* g_velo_mutex_tombstones = NULL;
+
+// Rejects operations on null / freed / foreign mutex handles. Tombstones
+// (never freed, address never recycled) guarantee a stale handle always
+// reads VELO_HANDLE_DEAD — no heap-reuse false-positive is possible.
+static inline void velo_mutex_assert_live(void* m) {
+    VeloMutexCell* c = (VeloMutexCell*)m;
+    if (!c) velo_fatal_msg("mutex operation on a null handle");
+    if (c->magic != VELO_HANDLE_LIVE) {
+        if (c->magic == VELO_HANDLE_DEAD) velo_fatal_msg("mutex operation on a freed mutex");
+        velo_fatal_msg("mutex operation on an invalid mutex handle");
+    }
+}
+
+static inline void velo_thread_assert_live(VeloThreadCtx* ctx) {
+    if (!ctx) velo_fatal_msg("thread join on a null handle (spawn failed or handle never stored)");
+    if (ctx->magic != VELO_HANDLE_LIVE) {
+        if (ctx->magic == VELO_HANDLE_DEAD) velo_fatal_msg("thread join on an already-joined thread handle");
+        velo_fatal_msg("thread join on an invalid thread handle");
+    }
+}
 
 // Releases the calling thread's whole per-thread arena set. Idempotent.
 // Threads must be OUTSIDE all zone blocks when this runs (invariant held:
@@ -262,10 +311,10 @@ static inline void velo_thread_tls_release(void) {
     g_velo_zone_tls_pool_count = 0;
 }
 
-// Opaque shared mutex: `@Mutex` in Velo is a `void*` native handle.
-// Semantics: create → acquire/release (recursive creation of the same
-// mutex by separate threads is a fresh lock; sharing happens via Velo
-// globals/structs, and cross-thread sharing is ordered by spawn/join).
+// Opaque shared mutex: `@Mutex` in Velo is a `void*` VeloMutexCell handle.
+// Semantics: create → acquire/release; sharing happens via Velo
+// globals/structs, ordered by spawn/join. Destroy parks the cell for good,
+// so every later operation on the same (or stale) address exits loudly.
 #if defined(_WIN32)
 unsigned long __stdcall WaitForSingleObject(void* h, unsigned long ms);
 int __stdcall CloseHandle(void* h);
@@ -282,55 +331,65 @@ static unsigned int __stdcall velo_thread_trampoline(void* raw) {
 
 static inline VeloThreadCtx* velo_thread_spawn(VeloThreadFn fn) {
     VeloThreadCtx* ctx = (VeloThreadCtx*)malloc(sizeof(VeloThreadCtx));
-    if (!ctx) return NULL;
+    if (!ctx) velo_fatal_msg("thread spawn out of memory");
     ctx->fn = (void*)fn;
     ctx->status = 0;
+    ctx->magic = VELO_HANDLE_LIVE;
     uintptr_t raw = (uintptr_t)_beginthreadex(NULL, 0, velo_thread_trampoline, (void*)ctx, 0, NULL);
     if (raw == 0) {
-        free(ctx);
-        return NULL;
+        // Kernel refused the thread; park the (unused) ctx as a dead
+        // tombstone and fail loudly — join would otherwise lie with -1.
+        ctx->native = NULL;
+        velo_fatal_msg("thread spawn failed (OS refused to create the thread)");
     }
     ctx->native = (void*)raw;
     return ctx;
 }
 
 static inline i32 velo_thread_join(VeloThreadCtx* ctx) {
-    if (!ctx) return -1;
+    velo_thread_assert_live(ctx);
     WaitForSingleObject(ctx->native, VELO_WAIT_INFINITE);
     CloseHandle(ctx->native);
     i32 status = ctx->status;
-    free(ctx);
+    ctx->status = 0;
+    ctx->magic = VELO_HANDLE_DEAD;
+    ctx->next_reaped = g_velo_thread_tombstones;
+    g_velo_thread_tombstones = ctx;
     return status;
 }
 
 static inline void* velo_mutex_create(void) {
-    void* m = CreateMutexW(NULL, 0, NULL);
-    if (!m) {
-        fprintf(stderr, "Velo Fatal Error: Mutex creation failed!\n");
-        exit(1);
+    VeloMutexCell* c = (VeloMutexCell*)malloc(sizeof(VeloMutexCell));
+    void* native = (c != NULL) ? CreateMutexW(NULL, 0, NULL) : NULL;
+    if (!native) {
+        free(c);  // frees NULL harmlessly
+        velo_fatal_msg("mutex creation failed");
     }
-    return m;
+    c->native = native;
+    c->magic = VELO_HANDLE_LIVE;
+    return (void*)c;
 }
 
 static inline void velo_mutex_acquire(void* m) {
     // WAIT_OBJECT_0 (0) and WAIT_ABANDONED (0x80) both mean ownership was
     // taken; anything else is an operating-system-level failure.
-    unsigned long r = WaitForSingleObject(m, VELO_WAIT_INFINITE);
-    if (!(r == 0 || r == 0x80u)) {
-        fprintf(stderr, "Velo Fatal Error: Mutex acquire failed!\n");
-        exit(1);
-    }
+    velo_mutex_assert_live(m);
+    unsigned long r = WaitForSingleObject(((VeloMutexCell*)m)->native, VELO_WAIT_INFINITE);
+    if (!(r == 0 || r == 0x80u)) velo_fatal_msg("mutex acquire failed");
 }
 
 static inline void velo_mutex_release(void* m) {
-    if (!ReleaseMutex(m)) {
-        fprintf(stderr, "Velo Fatal Error: Mutex release failed!\n");
-        exit(1);
-    }
+    velo_mutex_assert_live(m);
+    if (!ReleaseMutex(((VeloMutexCell*)m)->native)) velo_fatal_msg("mutex release failed");
 }
 
 static inline void velo_mutex_destroy(void* m) {
-    CloseHandle(m);
+    velo_mutex_assert_live(m);
+    VeloMutexCell* c = (VeloMutexCell*)m;
+    if (!CloseHandle(c->native)) velo_fatal_msg("mutex destroy failed");
+    c->magic = VELO_HANDLE_DEAD;
+    c->next_reaped = g_velo_mutex_tombstones;
+    g_velo_mutex_tombstones = c;
 }
 
 #else  // pthreads
@@ -344,58 +403,78 @@ static void* velo_thread_trampoline(void* raw) {
 
 static inline VeloThreadCtx* velo_thread_spawn(VeloThreadFn fn) {
     VeloThreadCtx* ctx = (VeloThreadCtx*)malloc(sizeof(VeloThreadCtx));
-    if (!ctx) return NULL;
+    if (!ctx) velo_fatal_msg("thread spawn out of memory");
     ctx->fn = (void*)fn;
     ctx->status = 0;
+    ctx->magic = VELO_HANDLE_LIVE;
     if (pthread_create(&ctx->native, NULL, velo_thread_trampoline, (void*)ctx) != 0) {
-        free(ctx);
-        return NULL;
+        velo_fatal_msg("thread spawn failed (OS refused to create the thread)");
     }
     return ctx;
 }
 
 static inline i32 velo_thread_join(VeloThreadCtx* ctx) {
-    if (!ctx) return -1;
+    velo_thread_assert_live(ctx);
     pthread_join(ctx->native, NULL);
     i32 status = ctx->status;
-    free(ctx);
+    ctx->status = 0;
+    ctx->magic = VELO_HANDLE_DEAD;
+    ctx->next_reaped = g_velo_thread_tombstones;
+    g_velo_thread_tombstones = ctx;
     return status;
 }
 
 static inline void* velo_mutex_create(void) {
-    pthread_mutex_t* m = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
-    if (!m) {
-        fprintf(stderr, "Velo Fatal Error: Mutex creation failed!\n");
-        exit(1);
+    VeloMutexCell* c = (VeloMutexCell*)malloc(sizeof(VeloMutexCell));
+    pthread_mutex_t* native = (c != NULL) ? (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t)) : NULL;
+    if (!native || pthread_mutex_init(native, NULL) != 0) {
+        free(native);  // frees NULL harmlessly
+        free(c);
+        velo_fatal_msg("mutex creation failed");
     }
-    if (pthread_mutex_init(m, NULL) != 0) {
-        fprintf(stderr, "Velo Fatal Error: Mutex creation failed!\n");
-        exit(1);
-    }
-    return (void*)m;
+    c->native = (void*)native;
+    c->magic = VELO_HANDLE_LIVE;
+    return (void*)c;
 }
 
 static inline void velo_mutex_acquire(void* m) {
-    pthread_mutex_lock((pthread_mutex_t*)m);
+    velo_mutex_assert_live(m);
+    pthread_mutex_lock((pthread_mutex_t*)((VeloMutexCell*)m)->native);
 }
 
 static inline void velo_mutex_release(void* m) {
-    pthread_mutex_unlock((pthread_mutex_t*)m);
+    velo_mutex_assert_live(m);
+    pthread_mutex_unlock((pthread_mutex_t*)((VeloMutexCell*)m)->native);
 }
 
 static inline void velo_mutex_destroy(void* m) {
-    pthread_mutex_destroy((pthread_mutex_t*)m);
-    free(m);
+    velo_mutex_assert_live(m);
+    VeloMutexCell* c = (VeloMutexCell*)m;
+    pthread_mutex_destroy((pthread_mutex_t*)c->native);
+    free(c->native);
+    c->magic = VELO_HANDLE_DEAD;
+    c->next_reaped = g_velo_mutex_tombstones;
+    g_velo_mutex_tombstones = c;
 }
 
 #endif  // §4.2 thread surface
 
 // Persistent Heap Allocation with Memory Usage Tracking
-// §4.2: the counter is per-thread (thread-local). malloc/free are
-// thread-safe already; a shared counter would only ever skew the
-// diagnostic to a torn value. `velo_heap_used()` now reports the
-// current thread's outstanding heap bytes.
-static VELO_TLS size_t g_velo_heap_active = 0;
+// §4.2 (revised): the ledger is a single shared counter updated with true
+// atomics — __sync_fetch_and_add (GCC, the only driver toolchain; on MinGW
+// this emits native locked instructions) or _InterlockedExchangeAdd64
+// (MSVC intrinsics, untested path). A per-thread ledger cannot attribute a
+// cross-thread `mem.free` to the allocating thread, and a plain += would
+// tear under concurrent alloc/free. malloc/free themselves were already
+// thread-safe.
+#if defined(_MSC_VER)
+#include <intrin.h>
+#define VELO_ATOMIC_ADD64(p, v) ((size_t)((unsigned long long)_InterlockedExchangeAdd64((long long volatile*)(p), (long long)(v))))
+#else
+#define VELO_ATOMIC_ADD64(p, v) ((size_t)((unsigned long long)__sync_fetch_and_add((long long volatile*)(p), (long long)(v))))
+#endif
+
+static size_t g_velo_heap_active = 0;
 
 static inline void* velo_heap_alloc(size_t size, size_t count) {
     size_t total = size * count;
@@ -406,7 +485,7 @@ static inline void* velo_heap_alloc(size_t size, size_t count) {
         exit(1);
     }
     *((size_t*)raw) = total;
-    g_velo_heap_active += total;
+    VELO_ATOMIC_ADD64(&g_velo_heap_active, (long long)total);
     return (void*)(raw + header_size);
 }
 
@@ -415,10 +494,12 @@ static inline void velo_heap_free(void* ptr) {
     size_t header_size = (sizeof(size_t) + 15) & ~((size_t)15);
     uint8_t* raw = ((uint8_t*)ptr) - header_size;
     size_t total = *((size_t*)raw);
-    if (g_velo_heap_active >= total) {
-        g_velo_heap_active -= total;
-    } else {
-        g_velo_heap_active = 0;
+    size_t prev = VELO_ATOMIC_ADD64(&g_velo_heap_active, -(long long)total);
+    if (prev < total) {
+        // Best-effort clamp: freeing a wild pointer can underflow the
+        // diagnostic; restore it toward zero rather than letting it go
+        // negative (accounting only — allocation safety is unaffected).
+        VELO_ATOMIC_ADD64(&g_velo_heap_active, (long long)(total - prev));
     }
     free(raw);
 }
