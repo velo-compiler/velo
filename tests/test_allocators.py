@@ -251,6 +251,64 @@ class TestAllocatorArchitecture(unittest.TestCase):
         )
         assert_parity(program, "pool", ["total = 33554432", "after = 0"])
 
+    def test_allocator_passable_handle(self):
+        """§4.1: mem.current() captures active arena; mem.alloc_with(a, @T, n)
+        allocates n elements of T into arena `a` rather than the implicit active arena."""
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act fill(a: @Allocator, n: usize) -> usize {\n"
+            "    let buf: @u8 = mem.alloc_with(a, @u8, n)\n"
+            "    return mem.used()\n"
+            "}\n"
+            "act main() {\n"
+            "    zone 65536 {\n"
+            "        let a: @Allocator = mem.current()\n"
+            "        let used: usize = fill(a, 1024)\n"
+            "        io.println(\"used = {used}\")\n"
+            "    }\n"
+            "}\n"
+        )
+        assert_parity(program, "allochandle", ["used = 1024"])
+
+    def test_allocator_stored_in_struct(self):
+        """§4.1: @Allocator can be stored in a data struct field and used later."""
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "data Pool {\n"
+            "    a: @Allocator\n"
+            "}\n"
+            "act pool_alloc_bytes(p: @Pool, n: usize) -> @u8 {\n"
+            "    return mem.alloc_with(p.a, @u8, n)\n"
+            "}\n"
+            "act main() {\n"
+            "    zone 32768 {\n"
+            "        mut p: Pool = Pool { a: mem.current() }\n"
+            "        let buf: @u8 = pool_alloc_bytes(@p, 512)\n"
+            "        let used: usize = mem.used()\n"
+            "        io.println(\"used = {used}\")\n"
+            "    }\n"
+            "}\n"
+        )
+        assert_parity(program, "allocstruct", ["used = 512"])
+
+    def test_allocator_oom_is_fatal(self):
+        """§4.1: alloc_with into an @Allocator that has no space left must abort."""
+        program = (
+            "use sys.mem\n"
+            "act main() {\n"
+            "    zone 8 {\n"
+            "        let a: @Allocator = mem.current()\n"
+            "        let buf: @u8 = mem.alloc_with(a, @u8, 1000)\n"
+            "    }\n"
+            "}\n"
+        )
+        for stage in ("stage1", "stage2"):
+            res = run_stage(stage, program, "allocoom")
+            self.assertNotEqual(res.returncode, 0, f"{stage} survived alloc_with OOM!")
+            self.assertIn("Out of Memory", res.stderr, f"{stage} stderr: {res.stderr}")
+
 
 if __name__ == "__main__":
     unittest.main()

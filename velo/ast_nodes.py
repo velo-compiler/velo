@@ -203,8 +203,9 @@ class LoopStmt(Stmt):
 @dataclass
 class ZoneStmt(Stmt):
     body: BlockStmt
-    line: int
-    col: int
+    size: Optional[Expr] = None   # §4.1: private arena capacity (usize bytes); None = default arena
+    line: int = 0
+    col: int = 0
 
 @dataclass
 class DeferStmt(Stmt):

@@ -1,0 +1,48 @@
+use sys.io
+use sys.mem
+
+// §4.1 Allocator Interface Demo
+// Demonstrates passing a @Allocator handle to functions so they can
+// allocate into a caller-chosen arena (Zig/Odin style).
+
+data Pool {
+    a: @Allocator
+    used: usize
+}
+
+act pool_alloc(p: @Pool, n: usize) -> @u8 {
+    let buf: @u8 = mem.alloc_with(p.a, @u8, n)
+    p.used = mem.used()
+    return buf
+}
+
+act fill_bytes(a: @Allocator, n: usize) -> usize {
+    let buf: @u8 = mem.alloc_with(a, @u8, n)
+    return mem.used()
+}
+
+act main() {
+    io.println("--- @Allocator interface demo ---")
+
+    // Capture the active arena BEFORE the zone so we can see it's 0
+    let outer_used: usize = mem.used()
+    io.println("outer arena before = {outer_used}")
+
+    zone 65536 {
+        // Capture the private arena as a passable handle
+        let a: @Allocator = mem.current()
+
+        // Pass allocator to a plain function
+        let used1: usize = fill_bytes(a, 1024)
+        io.println("after fill 1024 bytes = {used1}")
+
+        // Pass via a struct field
+        mut p: Pool = Pool { a: a, used: 0 }
+        let buf: @u8 = pool_alloc(@p, 512)
+        io.println("after pool_alloc 512 bytes = {p.used}")
+    }
+
+    // Arena reset — back to zero on the default arena
+    let outer_after: usize = mem.used()
+    io.println("outer arena after = {outer_after}")
+}

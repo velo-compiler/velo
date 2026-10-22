@@ -310,6 +310,14 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                     if member == "free" { sb_append_str(sb, "velo_heap_free((void*)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
                     if member == "used" { sb_append_str(sb, "velo_mem_used()"); return }
                     if member == "heap_used" { sb_append_str(sb, "velo_heap_used()"); return }
+                    // §4.1: mem.current() -> active arena; mem.alloc_with(a, @T, count) -> @T
+                    if member == "current" { sb_append_str(sb, "g_velo_zone_active"); return }
+                    if member == "alloc_with" {
+                        let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg.next)))
+                        sb_append_str(sb, "(("); sb_append_str(sb, elem_type); sb_append_str(sb, "*)velo_alloc_with((VeloAllocator)(")
+                        emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "), sizeof("); sb_append_str(sb, elem_type); sb_append_str(sb, "), (size_t)(")
+                        emit_c_expr(sb, st, expr.first_arg.next.next); sb_append_str(sb, ")))"); return
+                    }
                 }
                 if target.str_val == "fs" {
                     if member == "read_file" { sb_append_str(sb, "velo_fs_read_file("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }

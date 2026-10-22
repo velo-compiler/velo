@@ -206,12 +206,17 @@ act parse_statement(p: @Parser) -> @StmtNode {
         return make_defer_stmt(stmt, defer_tok.line, defer_tok.col)
     }
 
-    // 2. Zone statement
+    // 2. Zone statement (`zone { ... }` or §4.1 `zone <bytes> { ... }`)
     if parser_check(p, TOK_ZONE) {
         let zone_tok = parser_advance(p)
         parser_skip_newlines(p)
+        mut size: @ExprNode = null
+        if not parser_check(p, TOK_LBRACE) {
+            size = parse_expression(p)
+            parser_skip_newlines(p)
+        }
         let body = parse_block(p)
-        return make_zone_stmt(body, zone_tok.line, zone_tok.col)
+        return make_zone_stmt(body, size, zone_tok.line, zone_tok.col)
     }
 
     // 3. Mutable variable declaration: `mut x = val` or `mut x: Type = val`

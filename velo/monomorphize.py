@@ -622,7 +622,13 @@ class Monomorphizer:
                 col=stmt.col
             )
         elif isinstance(stmt, ZoneStmt):
-            return ZoneStmt(body=self._transform_block(stmt.body, scope, subst, current_ret_type), line=stmt.line, col=stmt.col)
+            new_size = self._transform_expr(stmt.size, scope, subst, "usize") if stmt.size else None
+            return ZoneStmt(
+                body=self._transform_block(stmt.body, scope, subst, current_ret_type),
+                size=new_size,
+                line=stmt.line,
+                col=stmt.col
+            )
         elif isinstance(stmt, DeferStmt):
             return DeferStmt(statement=self._transform_stmt(stmt.statement, scope, subst, current_ret_type), line=stmt.line, col=stmt.col)
         elif isinstance(stmt, BlockStmt):
@@ -723,6 +729,23 @@ class Monomorphizer:
             else:
                 new_args = [self._transform_expr(a, scope, subst, None) for a in expr.args]
                 new_callee = self._transform_expr(expr.callee, scope, subst, None)
+
+            # mem.alloc / mem.heap_alloc's first argument is a type symbol
+            # (`@T`), not a value: it must be substituted through the same
+            # generic map as every other type name (gaps §4.1 adjacency).
+            if (isinstance(expr.callee, MemberAccess)
+                    and isinstance(expr.callee.target, Identifier)
+                    and expr.callee.target.name == "mem"
+                    and expr.callee.member in ("alloc", "heap_alloc")
+                    and expr.args and isinstance(expr.args[0], AddressOf)
+                    and isinstance(expr.args[0].operand, Identifier)):
+                raw_type = expr.args[0].operand.name
+                concrete_type = subst_type(raw_type, subst) or raw_type
+                self._check_type_usage(concrete_type)
+                concrete_type = normalize_type_name(concrete_type) or concrete_type
+                new_args[0] = AddressOf(
+                    operand=Identifier(name=concrete_type, line=expr.args[0].operand.line, col=expr.args[0].operand.col),
+                    line=expr.args[0].line, col=expr.args[0].col)
 
             if isinstance(new_callee, Identifier) and new_callee.name in self.generic_funcs:
                 template_name = new_callee.name

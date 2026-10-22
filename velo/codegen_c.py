@@ -26,6 +26,8 @@ TYPE_MAP = {
     "isize": "isize",
     "string": "const char*",
     "void": "void",
+    # §4.1 passable allocator handle: @Allocator in Velo → VeloZoneArena* in C
+    "Allocator": "VeloZoneArena",
 }
 
 class CCodeGenerator:
@@ -593,10 +595,16 @@ class CCodeGenerator:
             wm = f"_zone_wm_{self.zone_counter}"
             self._emit_line("{")
             self.indent_level += 1
+            if stmt.size is not None:  # §4.1: private pool-backed arena scoped to this block
+                prev = f"_zone_prev_{self.zone_counter}"
+                size_code = self._emit_expression(stmt.size)
+                self._emit_line(f"VeloZoneArena* {prev} = velo_zone_enter((size_t)({size_code}));")
             self._emit_line(f"size_t {wm} = velo_zone_push();")
             self.defer_stack.append([])
             self._emit_block_body(stmt.body.statements)
             self._emit_line(f"velo_zone_pop({wm});")
+            if stmt.size is not None:
+                self._emit_line(f"velo_zone_leave(_zone_prev_{self.zone_counter});")
             self.indent_level -= 1
             self._emit_line("}")
 
@@ -759,6 +767,13 @@ class CCodeGenerator:
                     if len(value.args) >= 1:
                         type_name = self._extract_type_name(value.args[0])
                         return f"@{type_name}"
+                elif value.callee.target.name == "mem" and value.callee.member == "current":
+                    return "@Allocator"  # §4.1: active arena as a passable handle
+                elif value.callee.target.name == "mem" and value.callee.member == "alloc_with":
+                    # §4.1: returns @T where T is the type arg (args[1])
+                    if len(value.args) >= 2:
+                        type_name = self._extract_type_name(value.args[1])
+                        return f"@{type_name}"
                 elif value.callee.target.name == "fs":
                     if value.callee.member == "read_file":
                         return "string"
@@ -831,6 +846,13 @@ class CCodeGenerator:
                 if expr.callee.target.name == "mem" and expr.callee.member in ("alloc", "heap_alloc"):
                     if len(expr.args) >= 1:
                         type_name = self._extract_type_name(expr.args[0])
+                        return f"@{type_name}"
+                elif expr.callee.target.name == "mem" and expr.callee.member == "current":
+                    return "@Allocator"  # §4.1
+                elif expr.callee.target.name == "mem" and expr.callee.member == "alloc_with":
+                    # §4.1: type is @T where T is the type arg (args[1])
+                    if len(expr.args) >= 2:
+                        type_name = self._extract_type_name(expr.args[1])
                         return f"@{type_name}"
                 elif expr.callee.target.name == "fs":
                     if expr.callee.member == "read_file":
@@ -1033,6 +1055,12 @@ class CCodeGenerator:
                             return "velo_mem_used()"
                         elif expr.callee.member == "heap_used":
                             return "velo_heap_used()"
+                        elif expr.callee.member == "current":
+                            # §4.1: capture the active arena as a passable @Allocator handle
+                            return "g_velo_zone_active"
+                        elif expr.callee.member == "alloc_with":
+                            # §4.1: allocate into an explicit @Allocator handle
+                            return self._lower_mem_alloc_with(expr.args)
                     
                     elif expr.callee.target.name == "fs":
                         if expr.callee.member == "read_file":
@@ -1095,6 +1123,16 @@ class CCodeGenerator:
             raise ValueError("mem.free expects exactly 1 argument: (ptr)")
         ptr_code = self._emit_expression(args[0])
         return f"velo_heap_free((void*)({ptr_code}))"
+
+    def _lower_mem_alloc_with(self, args: List[Expr]) -> str:
+        # §4.1: mem.alloc_with(allocator, @Type, count)
+        if len(args) != 3:
+            raise ValueError("mem.alloc_with expects exactly 3 arguments: (allocator, @Type, count)")
+        alloc_code = self._emit_expression(args[0])
+        type_name = self._extract_type_name(args[1])
+        c_type = self._map_type(type_name)
+        count_code = self._emit_expression(args[2])
+        return f"({c_type}*)velo_alloc_with((VeloAllocator)({alloc_code}), sizeof({c_type}), (size_t)({count_code}))"
 
     def _lower_fs_read_file(self, args: List[Expr]) -> str:
         if len(args) != 1:

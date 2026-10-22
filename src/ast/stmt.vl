@@ -212,11 +212,11 @@ act make_loop_inf_stmt(body: @StmtNode, line: i32, col: i32) -> @StmtNode {
     return node
 }
 
-// Creates a memory arena zone statement (`zone { ... }`).
-act make_zone_stmt(body: @StmtNode, line: i32, col: i32) -> @StmtNode {
+// Creates a memory arena zone statement. `size` (optional) = §4.1 private-arena capacity; null = default arena.
+act make_zone_stmt(body: @StmtNode, size: @ExprNode, line: i32, col: i32) -> @StmtNode {
     mut node: @StmtNode = mem.alloc(@StmtNode, 1)
-    node.kind = STMT_ZONE
-    node.body = body
+    node.kind = STMT_ZONE; node.body = body
+    node.expr = size
     node.line = line
     node.col = col
     return node

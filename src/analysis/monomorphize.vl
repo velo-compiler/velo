@@ -132,7 +132,11 @@ act mono_clone_stmt(m: @Monomorphizer, s: @StmtNode, scope: @ScopeEntry, params:
     }
     if s.kind == STMT_ZONE {
         let b = mono_clone_stmt(m, s.body, scope, params, args, ret_type)
-        return make_zone_stmt(b, s.line, s.col)
+        mut zs: @ExprNode = null
+        if s.expr != null {
+            zs = mono_clone_expr(m, s.expr, scope, params, args)
+        }
+        return make_zone_stmt(b, zs, s.line, s.col)
     }
     if s.kind == STMT_DEFER {
         let ds = mono_clone_stmt(m, s.deferred_stmt, scope, params, args, ret_type)

@@ -1,0 +1,37 @@
+use sys.io
+use sys.mem
+
+// gaps.md 4.1 Extensible Allocator Architecture — demonstration:
+// `zone <bytes> { ... }` runs the block in a private, pool-backed arena with
+// O(1) scoped allocation and O(1) reset on exit. The default arena stays
+// untouched by private-arena allocations; `mem.alloc` / `mem.used` always
+// target the ACTIVE arena.
+act pool_probe(cap: usize) -> usize {
+    mut live: usize = 0
+    zone cap {
+        let marks: @usize = mem.alloc(@usize, 1024)
+        live = mem.used()
+    }
+    return live
+}
+
+act main() -> i32 {
+    let before: usize = mem.used()
+    io.println("default arena before = {before}")
+
+    let first = pool_probe(65536)
+    io.println("private arena 1 used = {first}")
+
+    let second = pool_probe(65536)
+    io.println("private arena 2 used = {second}")
+
+    zone 32768 {
+        let dots: @i32 = mem.alloc(@i32, 2048)
+        let frame_used: usize = mem.used()
+        io.println("frame arena used inside = {frame_used}")
+    }
+
+    let after: usize = mem.used()
+    io.println("default arena after = {after}")
+    return 0
+}

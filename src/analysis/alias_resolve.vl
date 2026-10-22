@@ -120,6 +120,7 @@ act mono_alias_resolve_stmt(m: @Monomorphizer, s: @StmtNode) {
         mono_alias_resolve_expr(m, s.expr)
         mono_alias_resolve_stmt(m, s.body)
     } else if s.kind == STMT_ZONE {
+        mono_alias_resolve_expr(m, s.expr)   // §4.1: capacity expr may name aliases
         mono_alias_resolve_stmt(m, s.body)
     } else if s.kind == STMT_DEFER {
         mono_alias_resolve_stmt(m, s.deferred_stmt)

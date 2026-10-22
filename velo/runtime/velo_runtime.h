@@ -23,36 +23,146 @@ typedef double   f64;
 typedef size_t   usize;
 typedef ptrdiff_t isize;
 
-// 32 MB Zone Arena Buffer
-// (Doubled from 16 MB when the compiler source outgrew its margin during the
-// 'velo check' milestone; §4.1 multi-arena remains the real long-term fix.)
-#define VELO_ZONE_BUFFER_SIZE (32 * 1024 * 1024)
+// ============================================================================
+// §4.1 Extensible Allocator Architecture
+//
+// Allocation model (in allocation-cost order, all O(1)):
+//   * Active zone arena  — bump region produced by `zone { ... }` / sized
+//     `zone <bytes> { ... }` blocks and by `mem.alloc(...)` calls.
+//   * Persistent heap    — malloc-backed, tracked (`mem.heap_alloc` / free).
+//
+// Zone arenas are first-class objects (VeloZoneArena): the default arena uses
+// a static buffer so bare `zone { }` blocks keep their exact previous
+// behavior and zero startup cost; `zone <bytes> { }` blocks acquire a
+// private heap-backed arena from a reuse pool (capacity >= requested, reused
+// across re-entries) for the block's duration. Allocation always targets the
+// ACTIVE arena, so nested zones scope independently.
+// ============================================================================
+typedef struct VeloZoneArena {
+    uint8_t* base;    // start of the bump region
+    size_t   cap;     // usable capacity in bytes
+    size_t   offset;  // bump watermark (== allocated bytes right now)
+} VeloZoneArena;
 
-static uint8_t  g_velo_arena[VELO_ZONE_BUFFER_SIZE];
-static size_t   g_velo_arena_offset = 0;
+#define VELO_ZONE_BUFFER_SIZE (32 * 1024 * 1024)
+static uint8_t        g_velo_arena_buffer[VELO_ZONE_BUFFER_SIZE];
+static VeloZoneArena  g_velo_arena_default = { g_velo_arena_buffer, VELO_ZONE_BUFFER_SIZE, 0 };
+static VeloZoneArena* g_velo_zone_active    = &g_velo_arena_default;
+
+// Reuse pool for private arenas (cycled across re-entries of `zone <b> { }`)
+#define VELO_ZONE_POOL_MAX 32
+static VeloZoneArena  g_velo_zone_pool[VELO_ZONE_POOL_MAX];
+static size_t         g_velo_zone_pool_count = 0;
 
 static inline size_t velo_zone_push(void) {
-    return g_velo_arena_offset;
+    return g_velo_zone_active->offset;
 }
 
 static inline void velo_zone_pop(size_t watermark) {
-    g_velo_arena_offset = watermark;
+    g_velo_zone_active->offset = watermark;
 }
 
 static inline size_t velo_mem_used(void) {
-    return g_velo_arena_offset;
+    return g_velo_zone_active->offset;
+}
+
+// Enters a private arena of exactly `bytes` capacity: acquires a pooled or
+// fresh arena, makes it the active zone, and returns the previous active
+// arena (pass it back to velo_zone_leave on block exit). Paired with
+// velo_zone_pop this yields O(1) scoped allocation + O(1) reset.
+// The returned struct is ALWAYS heap-owned (pool candidates are copied out),
+// so velo_zone_leave can free it and so nested blocks can never alias pool
+// slots while another zone is still active.
+static inline VeloZoneArena* velo_zone_enter(size_t bytes) {
+    if (bytes == 0) {
+        fprintf(stderr, "Velo Fatal Error: Zone Arena capacity must be > 0!\n");
+        exit(1);
+    }
+    VeloZoneArena* prev = g_velo_zone_active;
+    VeloZoneArena* z = (VeloZoneArena*)malloc(sizeof(VeloZoneArena));
+    size_t pick = g_velo_zone_pool_count;
+    for (size_t i = 0; i < g_velo_zone_pool_count; ++i) {
+        if (g_velo_zone_pool[i].cap >= bytes) {  // reuse any arena that fits
+            pick = i;
+            break;
+        }
+    }
+    if (pick < g_velo_zone_pool_count) {
+        *z = g_velo_zone_pool[pick];  // buffer ownership moves to the copy
+        g_velo_zone_pool[pick] = g_velo_zone_pool[g_velo_zone_pool_count - 1];
+        g_velo_zone_pool_count--;
+    } else {
+        z->base = (uint8_t*)malloc(bytes);
+        if (!z || !z->base) {
+            fprintf(stderr, "Velo Fatal Error: Zone Arena allocation failed (%llu bytes)!\n",
+                    (unsigned long long)bytes);
+            exit(1);
+        }
+        z->cap = bytes;
+    }
+    z->offset = 0;
+    g_velo_zone_active = z;
+    return prev;
+}
+
+// Exits a zone block: returns the active arena to the reuse pool (dropping
+// its buffer only if the pool is saturated) and restores the previous one.
+static inline void velo_zone_leave(VeloZoneArena* prev) {
+    VeloZoneArena* z = g_velo_zone_active;
+    if (z != &g_velo_arena_default) {
+        if (g_velo_zone_pool_count < VELO_ZONE_POOL_MAX) {
+            g_velo_zone_pool[g_velo_zone_pool_count++] = *z;
+        } else {
+            free(z->base);
+        }
+        free(z);
+    }
+    g_velo_zone_active = prev;
 }
 
 static inline void* velo_mem_alloc(size_t size, size_t count) {
+    VeloZoneArena* z = g_velo_zone_active;
     size_t total = size * count;
     size_t aligned = (total + 7) & ~((size_t)7);
-    if (g_velo_arena_offset + aligned > VELO_ZONE_BUFFER_SIZE) {
-        fprintf(stderr, "Velo Fatal Error: Zone Arena Out of Memory (16MB exceeded)!\n");
+    if (z->offset + aligned > z->cap) {
+        fprintf(stderr, "Velo Fatal Error: Zone Arena Out of Memory (active arena capacity %llu bytes, requested %llu more)!\n",
+                (unsigned long long)z->cap, (unsigned long long)aligned);
         exit(1);
     }
-    void* ptr = (void*)&g_velo_arena[g_velo_arena_offset];
-    g_velo_arena_offset += aligned;
+    void* ptr = (void*)&z->base[z->offset];
+    z->offset += aligned;
     return ptr;
+}
+
+// ============================================================================
+// §4.1 Passable Allocator handle
+//
+// `@Allocator` in Velo is a pointer to a VeloZoneArena (i.e. VeloZoneArena*).
+// `mem.current()` returns the active arena pointer so it can be stored in a
+// variable or passed as a function parameter — enabling Zig/Odin-style
+// allocator-parameterised APIs without introducing a vtable.
+// `mem.alloc_with(a, @T, n)` allocates n elements of type T into arena `a`
+// instead of the implicit active arena, giving callers explicit control over
+// which arena absorbs the allocation.
+// ============================================================================
+typedef VeloZoneArena* VeloAllocator;
+
+static inline void* velo_alloc_with(VeloAllocator a, size_t size, size_t count) {
+    size_t total = size * count;
+    size_t aligned = (total + 7) & ~((size_t)7);
+    if (a->offset + aligned > a->cap) {
+        fprintf(stderr, "Velo Fatal Error: Allocator Out of Memory (capacity %llu bytes, requested %llu more)!\n",
+                (unsigned long long)a->cap, (unsigned long long)aligned);
+        exit(1);
+    }
+    void* ptr = (void*)&a->base[a->offset];
+    a->offset += aligned;
+    return ptr;
+}
+
+// Returns the number of bytes currently used in allocator `a`.
+static inline size_t velo_alloc_used(VeloAllocator a) {
+    return a->offset;
 }
 
 // Persistent Heap Allocation with Memory Usage Tracking

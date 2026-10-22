@@ -17,7 +17,7 @@ act is_known_type(st: @SymbolTable, name: string) -> bool {
     if name == null { return false }
     let clean = strip_pointer_prefix(name)
     if is_act_type(clean) { return true }
-    if is_primitive_type(clean) { return true }
+    if is_primitive_type(clean) { return true }; if clean == "Allocator" { return true }  // §4.1: passable arena handle
     if find_struct(st, clean) != null { return true }
     if find_kind(st, clean) != null { return true }
     return false
@@ -138,6 +138,9 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                         }
                     }
                     if member == "used" or member == "heap_used" { return "usize" }
+                    // §4.1: mem.current() -> @Allocator; mem.alloc_with(a, @T, count) -> @T
+                    if member == "current" { return "@Allocator" }
+                    if member == "alloc_with" { if expr.first_arg != null and expr.first_arg.next != null { return infer_expr_type(st, expr.first_arg.next) } }
                     return "void"
                 }
                 if target.str_val == "fs" {

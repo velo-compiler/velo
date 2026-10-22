@@ -125,12 +125,17 @@ Velo is a working, self-hosted, triple-bootstrapped systems programming language
 
 ## 4. Memory Management & Hardware Access
 
-### 4.1 Extensible Allocator Architecture (🟠 P1 Major)
-* **Current State**: Fixed, single global 16MB zone arena (`VELO_ZONE_BUFFER_SIZE`) + a single global malloc heap.
-* **Impact**:
-  - The 16MB buffer cannot be dynamically resized or configured per game.
-  - You cannot instantiate multiple distinct arenas (e.g. `PerFrameArena`, `LevelLoadingArena`, `UIArena`).
-  - No `Allocator` interface (like Zig or Odin) where functions receive `allocator: @Allocator`.
+### 4.1 Extensible Allocator Architecture [COMPLETED] ✅
+* **Former Defect (Incomplete Architecture)**: The memory subsystem had the arena infrastructure (`VeloZoneArena`, `zone <bytes> { }` scoped blocks, a reuse pool of up to 32 arenas) but lacked the language-level `@Allocator` interface — functions could not receive an arena handle as a parameter, meaning every allocation always targeted the implicit thread-global active arena.
+* **Fix Applied**:
+  - **Runtime** (`velo/runtime/velo_runtime.h`): Added `typedef VeloZoneArena* VeloAllocator`, `velo_alloc_with(a, size, count)` (bump-allocates into an explicit arena handle), and `velo_alloc_used(a)` (reads its watermark).
+  - **Language surface**: `@Allocator` is now a recognized Velo type (maps to `VeloZoneArena*` in C). Two new builtin intrinsics: `mem.current()` (captures the currently-active arena as a passable `@Allocator`) and `mem.alloc_with(a, @T, n)` (allocates `n` elements of `T` into arena `a`).
+  - **Stage 1** (`velo/codegen_c.py`): `TYPE_MAP` extended with `"Allocator": "VeloZoneArena"`. `_emit_expression`, `_infer_raw_velo_type`, and `_resolve_expr_type` handle the two new intrinsics.
+  - **Stage 2** (`src/backend/codegen_types.vl`, `src/backend/codegen_expr.vl`, `src/analysis/type_checker.vl`): `map_type_to_c` maps `Allocator → VeloZoneArena`; `infer_expr_type` returns `@Allocator` / `@T`; `emit_c_expr` emits the correct C for both new intrinsics. `is_known_type` accepts `Allocator`.
+  - **Tests** (`tests/test_allocators.py`): 3 new parity tests — `test_allocator_passable_handle` (pass allocator to a function), `test_allocator_stored_in_struct` (store in a `data` field), `test_allocator_oom_is_fatal` (alloc_with into exhausted arena aborts with a legible error). All pass on both Stage 1 and Stage 2.
+  - **Example** (`examples/28_allocator_interface.vl`): end-to-end demo including a `Pool` struct holding an `@Allocator`.
+* **Residual Limitation**: `@Allocator` is a raw arena pointer (single bump-allocator strategy). Pluggable vtable-based allocators (heap, pool, slab) are not yet supported — `mem.heap_alloc` has no passable handle form. Handles are lifetime-untracked: using one after its `zone <bytes> { }` block exits is silent UB (no detection in either stage). `velo_alloc_used` exists in the runtime only — no language intrinsic reads a non-active arena's watermark. Thread-safety (§4.2) is unchanged.
+* **Verification**: Triple-bootstrap chain rebuilt (Gen1 → Gen2 → Gen3, `bin/velo.exe` updated); SHA-256 fixed-point preserved (Gen2 ≡ Gen3 bit-for-bit). Full suite: **120/120 passing**.
 
 ### 4.2 Multithreaded Memory Safety (🟠 P1 Major)
 * **Current State**: `g_velo_arena` and `g_velo_arena_offset` are global, unsynchronized C static variables.
