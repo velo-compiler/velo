@@ -866,6 +866,11 @@ class CCodeGenerator:
                     if len(expr.args) >= 2:
                         type_name = self._extract_type_name(expr.args[1])
                         return f"@{type_name}"
+                elif expr.callee.target.name == "mem" and expr.callee.member == "realloc":
+                    # §4.3: mem.realloc(ptr, @T, count) -> @T (like alloc_with)
+                    if len(expr.args) >= 2:
+                        type_name = self._extract_type_name(expr.args[1])
+                        return f"@{type_name}"
                 elif expr.callee.target.name == "thread":
                     # §4.2: spawn/join zero-arg i32 acts; opaque @Mutex ops
                     if expr.callee.member == "spawn":
@@ -1083,6 +1088,12 @@ class CCodeGenerator:
                         elif expr.callee.member == "alloc_with":
                             # §4.1: allocate into an explicit @Allocator handle
                             return self._lower_mem_alloc_with(expr.args)
+                        elif expr.callee.member == "realloc":
+                            # §4.3: resize a persistent heap block
+                            return self._lower_mem_realloc(expr.args)
+                        elif expr.callee.member in ("copy", "move", "set"):
+                            # §4.3: raw byte primitives (C memcpy trio)
+                            return self._lower_mem_byte_op(expr.callee.member, expr.args)
 
                     elif expr.callee.target.name == "thread":
                         # §4.2: spawn/join zero-arg i32 acts; opaque @Mutex ops
@@ -1194,6 +1205,61 @@ class CCodeGenerator:
         if got.replace(" ", "").replace("\t", "") != want.replace(" ", ""):
             raise ValueError(f"thread.{member} expects {want} (got {got})")
 
+    def _is_ptr_like(self, got: str) -> bool:
+        # §4.3: pointer-ish values (@T handles, @void from null). Plain
+        # "string" is deliberately NOT accepted as a byte buffer — writing
+        # through a const char* is UB; use @u8 for buffers.
+        return bool(got) and got[0] == "@"
+
+    def _is_count_like(self, got: str) -> bool:
+        # §4.3: byte counts / fill values must not be pointers, strings,
+        # or act values — anything else (ints, floats, bools) casts to a
+        # number and is the caller's precision business.
+        if not got or got[0] == "@" or got == "string":
+            return False
+        t = got.replace(" ", "").replace("\t", "")
+        return not t.startswith("act(")
+
+    def _mem_expect(self, member: str, args: List[Expr]) -> None:
+        """§4.3: compile-checks mem.copy/move/set/realloc arguments.
+        Mirrored by the Stage 2 type checker — both stages must reject
+        the same programs with the same messages."""
+        sigs = {
+            "copy": ": (pointer dest, pointer src, byte count)",
+            "move": ": (pointer dest, pointer src, byte count)",
+            "set": ": (pointer dest, byte value, byte count)",
+            "realloc": ": (pointer, @Type, count)",
+        }
+        if member not in sigs:
+            return  # alloc/heap_alloc/free etc. keep their legacy checks
+        if len(args) != 3:
+            raise ValueError(f"mem.{member} expects exactly 3 arguments{sigs[member]}")
+        got = self._resolve_expr_type(args[0])
+        if not self._is_ptr_like(got):
+            raise ValueError(f"mem.{member} expects pointer arguments (got {got})")
+        if member == "realloc":
+            # @T type arg: render type names as written (Stage 2's
+            # is_known_type path reports "i64" for a bare `i64`, not the
+            # variable-scope fallback "i32").
+            if isinstance(args[1], Identifier) and args[1].name in TYPE_MAP:
+                ty = args[1].name
+            else:
+                ty = self._resolve_expr_type(args[1])
+            if not self._is_ptr_like(ty):
+                raise ValueError(f"mem.realloc expects a @Type argument (got {ty})")
+        elif member != "set":
+            src_got = self._resolve_expr_type(args[1])
+            if not self._is_ptr_like(src_got):
+                raise ValueError(f"mem.{member} expects pointer arguments (got {src_got})")
+        else:
+            val_got = self._resolve_expr_type(args[1])
+            if not self._is_count_like(val_got):
+                raise ValueError(f"mem.set expects an integer fill value (got {val_got})")
+        cnt = self._resolve_expr_type(args[2])
+        if not self._is_count_like(cnt):
+            word = "fill value" if member == "set" else "byte count"
+            raise ValueError(f"mem.{member} expects an integer {word} (got {cnt})")
+
     def _lower_mem_alloc(self, args: List[Expr]) -> str:
         if len(args) != 2:
             raise ValueError("mem.alloc expects exactly 2 arguments: (@Type, count)")
@@ -1215,6 +1281,28 @@ class CCodeGenerator:
             raise ValueError("mem.free expects exactly 1 argument: (ptr)")
         ptr_code = self._emit_expression(args[0])
         return f"velo_heap_free((void*)({ptr_code}))"
+
+    def _lower_mem_realloc(self, args: List[Expr]) -> str:
+        # §4.3: mem.realloc(ptr, @Type, count) -> @Type — keeps the heap
+        # size-header protocol and the atomic ledger exact.
+        self._mem_expect("realloc", args)
+        type_name = self._extract_type_name(args[1])
+        c_type = self._map_type(type_name)
+        ptr_code = self._emit_expression(args[0])
+        cnt_code = self._emit_expression(args[2])
+        return f"({c_type}*)velo_heap_realloc((void*)({ptr_code}), sizeof({c_type}), (size_t)({cnt_code}))"
+
+    def _lower_mem_byte_op(self, member: str, args: List[Expr]) -> str:
+        # §4.3: mem.copy/move/set map straight onto the C trio; type
+        # checking happened in _mem_expect, emission is byte-level.
+        self._mem_expect(member, args)
+        d = self._emit_expression(args[0])
+        s = self._emit_expression(args[1])
+        c = self._emit_expression(args[2])
+        if member == "set":
+            return f"memset((void*)({d}), (int)({s}), (size_t)({c}))"
+        cfn = "memcpy" if member == "copy" else "memmove"
+        return f"{cfn}((void*)({d}), (void*)({s}), (size_t)({c}))"
 
     def _lower_mem_alloc_with(self, args: List[Expr]) -> str:
         # §4.1: mem.alloc_with(allocator, @Type, count)

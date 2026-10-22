@@ -1,0 +1,86 @@
+// cm43: compile-time argument checks for the mem.copy/move/set/realloc
+// byte primitives (§4.3). Mutual mirror of velo/codegen_c.py::_mem_expect
+// - both stages must reject the same programs with the same words.
+// Returns false after reporting; the infer branch then yields "unknown".
+use "type_checker.vl"
+use "symbol_table.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../common/act_types.vl"
+use "../ast/expr.vl"
+
+// Pointer-ish values only: @T handles (and "@void" from a null literal).
+// A plain "string" is deliberately NOT accepted as a byte buffer - writing
+// through a const char* is UB; use @u8 for buffers.
+act mem_is_ptrty(t: string) -> bool {
+    if t == null { return false }
+    return str.len(t) > 0 and t[0] == '@'
+}
+
+// Countable/fillable: anything that is NOT a pointer, string, or act value.
+// Anything else (ints, floats, bools) casts to a number - precision is the
+// caller's business.
+act mem_is_countable(t: string) -> bool {
+    if t == null or str.len(t) == 0 { return false }
+    if mem_is_ptrty(t) { return false }
+    if t == "string" { return false }
+    if is_act_type(strip_type_spaces(t)) { return false }
+    return true
+}
+
+act mem_got_msg(member: string, wantpart: string, gotpart: string) -> string {
+    let msb = create_sb(224)
+    sb_append_str(@msb, "mem."); sb_append_str(@msb, member); sb_append_str(@msb, wantpart)
+    sb_append_str(@msb, " (got "); sb_append_str(@msb, gotpart); sb_append_str(@msb, ")")
+    return sb_to_string(@msb)
+}
+
+act check_mem_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
+    if member != "copy" and member != "move" and member != "set" and member != "realloc" { return true }
+    if expr.first_arg == null or expr.first_arg.next == null or expr.first_arg.next.next == null or expr.first_arg.next.next.next != null {
+        let sig = ""
+        if member == "copy" or member == "move" { sig = ": (pointer dest, pointer src, byte count)" }
+        if member == "set" { sig = ": (pointer dest, byte value, byte count)" }
+        if member == "realloc" { sig = ": (pointer, @Type, count)" }
+        let msb = create_sb(192); sb_append_str(@msb, "mem."); sb_append_str(@msb, member); sb_append_str(@msb, " expects exactly 3 arguments"); sb_append_str(@msb, sig)
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+        return false
+    }
+    let d = infer_expr_type(st, expr.first_arg)
+    if not mem_is_ptrty(d) {
+        report_error("semantic", expr.line, expr.col, mem_got_msg(member, " expects pointer arguments", d)); st.error_count += 1
+        return false
+    }
+    if member == "realloc" {
+        let ty = infer_expr_type(st, expr.first_arg.next)
+        if not mem_is_ptrty(ty) {
+            report_error("semantic", expr.line, expr.col, mem_got_msg("realloc", " expects a @Type argument", ty)); st.error_count += 1
+            return false
+        }
+    }
+    if member == "copy" or member == "move" {
+        let s = infer_expr_type(st, expr.first_arg.next)
+        if not mem_is_ptrty(s) {
+            report_error("semantic", expr.line, expr.col, mem_got_msg(member, " expects pointer arguments", s)); st.error_count += 1
+            return false
+        }
+    }
+    if member == "set" {
+        let v = infer_expr_type(st, expr.first_arg.next)
+        if not mem_is_countable(v) {
+            report_error("semantic", expr.line, expr.col, mem_got_msg("set", " expects an integer fill value", v)); st.error_count += 1
+            return false
+        }
+    }
+    let word = "byte count"
+    if member == "set" { word = "fill value" }
+    let c = infer_expr_type(st, expr.first_arg.next.next)
+    if not mem_is_countable(c) {
+        let msb = create_sb(224)
+        sb_append_str(@msb, "mem."); sb_append_str(@msb, member); sb_append_str(@msb, " expects an integer "); sb_append_str(@msb, word)
+        sb_append_str(@msb, " (got "); sb_append_str(@msb, c); sb_append_str(@msb, ")")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+        return false
+    }
+    return true
+}

@@ -294,6 +294,17 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                         sb_append_str(sb, elem_type); sb_append_str(sb, "), (size_t)("); emit_c_expr(sb, st, expr.first_arg.next); sb_append_str(sb, ")))"); return
                     }
                     if member == "free" { sb_append_str(sb, "velo_heap_free((void*)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+                    // cm43: realloc keeps heap size-header + ledger; copy/move/set map onto the C memcpy trio
+                    if member == "realloc" {
+                        let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg.next))); sb_append_str(sb, "(("); sb_append_str(sb, elem_type); sb_append_str(sb, "*)velo_heap_realloc((void*)(")
+                        if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "), sizeof("); sb_append_str(sb, elem_type); sb_append_str(sb, "), (size_t)("); if expr.first_arg.next.next != null { emit_c_expr(sb, st, expr.first_arg.next.next) } else { sb_append_str(sb, "0") }; sb_append_str(sb, ")))"); return
+                    }
+                    if member == "copy" or member == "move" or member == "set" { let cfn = "memcpy"
+                        if member == "move" { cfn = "memmove" }; if member == "set" { cfn = "memset" }; sb_append_str(sb, cfn); sb_append_str(sb, "("); sb_append_str(sb, "(void*)(")
+                        if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) }; sb_append_str(sb, ")")
+                        if member == "set" { sb_append_str(sb, ", (int)(") } else { sb_append_str(sb, ", (void*)(") }; if expr.first_arg.next != null { emit_c_expr(sb, st, expr.first_arg.next) }; sb_append_str(sb, ")"); sb_append_str(sb, ", (size_t)(")
+                        if expr.first_arg.next.next != null { emit_c_expr(sb, st, expr.first_arg.next.next) } else { sb_append_str(sb, "0") }; sb_append_str(sb, "))"); return
+                    }
                     if member == "used" { sb_append_str(sb, "velo_mem_used()"); return }
                     if member == "heap_used" { sb_append_str(sb, "velo_heap_used()"); return }
                     // §4.1: mem.current() -> active arena; mem.alloc_with(a, @T, count) -> @T

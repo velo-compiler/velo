@@ -504,6 +504,39 @@ static inline void velo_heap_free(void* ptr) {
     free(raw);
 }
 
+// §4.3: realloc for persistent heap blocks that keeps the size-header
+// protocol and the shared atomic ledger exact — plain C realloc can do
+// neither. resizes the RAW block (header + payload) so the size word
+// moves with it, then adjusts the ledger by the delta. `count == 0`
+// frees and yields NULL (documented Velo semantics, like the C idiom
+// realloc(p, 0)); a NULL pointer behaves like an allocation, mirroring
+// C's realloc(NULL, n). A realloc on a non-heap pointer is the same
+// raw-pointer UB class as `velo_heap_free` on one. OOM is fatal — the
+// old block stays valid until exit, matching heap_alloc's philosophy.
+static inline void* velo_heap_realloc(void* ptr, size_t size, size_t count) {
+    if (!ptr) return velo_heap_alloc(size, count);
+    size_t header_size = (sizeof(size_t) + 15) & ~((size_t)15);
+    uint8_t* raw = ((uint8_t*)ptr) - header_size;
+    size_t old_total = *((size_t*)raw);
+    size_t new_total = size * count;
+    if (new_total == 0) {
+        velo_heap_free(ptr);
+        return NULL;
+    }
+    uint8_t* nraw = (uint8_t*)realloc(raw, new_total + header_size);
+    if (!nraw) {
+        fprintf(stderr, "Velo Fatal Error: Out of Heap Memory!\n");
+        exit(1);
+    }
+    *((size_t*)nraw) = new_total;
+    if (new_total > old_total) {
+        VELO_ATOMIC_ADD64(&g_velo_heap_active, (long long)(new_total - old_total));
+    } else if (new_total < old_total) {
+        VELO_ATOMIC_ADD64(&g_velo_heap_active, -(long long)(old_total - new_total));
+    }
+    return (void*)(nraw + header_size);
+}
+
 static inline size_t velo_heap_used(void) {
     return g_velo_heap_active;
 }
