@@ -1,0 +1,276 @@
+// ============================================================================
+// 5.2 slice 6 — Map[K, V] core: C99 emission helpers.
+//
+// Lowers the map surface onto the shared runtime layout (VeloMap +
+// velo_map_* helpers in velo_runtime.h). Semantic checks (mut doctrine,
+// uniform key families, the value ladder, strict key/value slots) already
+// ran in the checker; this file only shapes the C. Emit shapes mirror
+// velo/codegen_c.py's _emit_map_literal / map subscript / map member-call
+// branches.
+// ============================================================================
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../analysis/map_checks.vl"
+use "../analysis/shelf_checks.vl"
+use "../common/string_builder.vl"
+use "../common/act_types.vl"
+use "codegen_types.vl"
+use "codegen_expr.vl"
+use "codegen_stmt.vl"
+
+// Detects the map shape (raw `Map[K, V]` or @-pointer `@Map[K, V]`).
+act is_map_form(type_name: string) -> bool {
+    return is_map_type(type_name)
+}
+
+// The C slot type for key bytes: string keys store the pointer; every other
+// pinned family stores its scalar value (Stage 1's `_map_key_slot_c`).
+act map_key_slot_c(key: string) -> string {
+    if key == "string" { return "const char*" }
+    return map_type_to_c(key)
+}
+
+// The kstring flag for velo_map_init (string keys hash CONTENT + strcmp).
+act map_kstring_c(key: string) -> string {
+    if key == "string" { return "true" }
+    return "false"
+}
+
+// The receiver contract: @-pointer receivers pass their own pointer (the
+// first C parameter is `const VeloMap*` either way); value receivers take &.
+act emit_map_recv(sb: @StringBuilder, st: @SymbolTable, recv: @ExprNode) {
+    let recv_t = infer_expr_type(st, recv)
+    if str.len(recv_t) > 0 and recv_t[0] == '@' {
+        sb_append_str(sb, "(")
+        emit_c_expr(sb, st, recv)
+        sb_append_str(sb, ")")
+    } else {
+        sb_append_str(sb, "&(")
+        emit_c_expr(sb, st, recv)
+        sb_append_str(sb, ")")
+    }
+}
+
+// Emits a value expression with the dyn-box pass (raw dyn flows unchanged;
+// non-numeric mixes were checker-validated to box at build time).
+act emit_map_value_c(sb: @StringBuilder, st: @SymbolTable, node: @ExprNode, val: string) {
+    if val == "dyn" {
+        let raw = infer_expr_type(st, node)
+        if raw == "dyn" {
+            emit_c_expr(sb, st, node)
+        } else {
+            emit_dyn_box(sb, st, raw, node)
+        }
+    } else {
+        emit_c_expr(sb, st, node)
+    }
+}
+
+// Emits the map constructor literal as a GCC statement expression binding
+// each key and value exactly once into a typed temp (left-to-right eval
+// order), putting them, and yielding the fresh header.
+act emit_map_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    let kv = map_literal_kv(st, expr)
+    let k_t = map_key_type(kv)
+    let v_t = map_value_type(kv)
+    let key_c = map_key_slot_c(k_t)
+    let val_c = map_type_to_c(v_t)
+    let recv = shelf_fresh_name(st, "mpt_")
+    sb_append_str(sb, "({ VeloMap ")
+    sb_append_str(sb, recv)
+    sb_append_str(sb, " = { 0 }; velo_map_init(&")
+    sb_append_str(sb, recv)
+    sb_append_str(sb, ", (usize)sizeof(")
+    sb_append_str(sb, key_c)
+    sb_append_str(sb, "), ")
+    sb_append_str(sb, map_kstring_c(k_t))
+    sb_append_str(sb, ", (usize)sizeof(")
+    sb_append_str(sb, val_c)
+    sb_append_str(sb, "))")
+    mut cur = expr.first_arg
+    loop cur != null {
+        let v_node = cur.next
+        if v_node == null { break }  // an odd chain means the parser already fired
+        let mk = shelf_fresh_name(st, "mk_")
+        let mv = shelf_fresh_name(st, "mv_")
+        sb_append_str(sb, "; { ")
+        sb_append_str(sb, key_c)
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, mk)
+        sb_append_str(sb, " = (")
+        emit_c_expr(sb, st, cur)
+        sb_append_str(sb, "); ")
+        sb_append_str(sb, val_c)
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, mv)
+        sb_append_str(sb, " = (")
+        emit_map_value_c(sb, st, v_node, v_t)
+        sb_append_str(sb, "); velo_map_put(&")
+        sb_append_str(sb, recv)
+        sb_append_str(sb, ", (const void*)(&(")
+        sb_append_str(sb, mk)
+        sb_append_str(sb, ")), (const void*)(&(")
+        sb_append_str(sb, mv)
+        sb_append_str(sb, "))); }")
+        cur = v_node.next
+    }
+    sb_append_str(sb, "; ")
+    sb_append_str(sb, recv)
+    sb_append_str(sb, "; })")
+}
+
+// Index read: binds the key into its slot (eval order key → value), copies
+// the value out, and the miss is a loud fatal — the key-family token drives
+// the runtime's S5 repr writers (`map key not found: <krepr>`).
+act emit_map_index(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    let recv_t = infer_expr_type(st, expr.target)
+    let k_t = map_key_type(recv_t)
+    let v_t = map_value_type(recv_t)
+    let key_c = map_key_slot_c(k_t)
+    let val_c = map_type_to_c(v_t)
+    let mk = shelf_fresh_name(st, "mk_")
+    let mv = shelf_fresh_name(st, "mv_")
+    sb_append_str(sb, "({ ")
+    sb_append_str(sb, key_c)
+    sb_append_char(sb, ' ')
+    sb_append_str(sb, mk)
+    sb_append_str(sb, " = (")
+    emit_c_expr(sb, st, expr.index)
+    sb_append_str(sb, "); ")
+    sb_append_str(sb, val_c)
+    sb_append_char(sb, ' ')
+    sb_append_str(sb, mv)
+    sb_append_str(sb, "; if (!velo_map_copy_out(")
+    emit_map_recv(sb, st, expr.target)
+    sb_append_str(sb, ", (const void*)(&(")
+    sb_append_str(sb, mk)
+    sb_append_str(sb, ")), (void*)(&(")
+    sb_append_str(sb, mv)
+    sb_append_str(sb, ")))) velo_map_fatal_missing(")
+    emit_map_recv(sb, st, expr.target)
+    sb_append_str(sb, ", (const void*)(&(")
+    sb_append_str(sb, mk)
+    sb_append_str(sb, ")), \"")
+    sb_append_str(sb, k_t)
+    sb_append_str(sb, "\"); ")
+    sb_append_str(sb, mv)
+    sb_append_str(sb, "; })")
+}
+
+// Member calls: put (upsert) / get (fatal-on-miss copy-out) / has (bool).
+// The checker already enforced arity, key/value slots, and the mut doctrine.
+act emit_map_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    let member = expr.callee.member_name
+    let recv_t = infer_expr_type(st, expr.callee.target)
+    let k_t = map_key_type(recv_t)
+    let v_t = map_value_type(recv_t)
+    let key_c = map_key_slot_c(k_t)
+    let val_c = map_type_to_c(v_t)
+    let mk = shelf_fresh_name(st, "mk_")
+    if member == "put" {
+        let mv = shelf_fresh_name(st, "mv_")
+        sb_append_str(sb, "({ ")
+        sb_append_str(sb, key_c)
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, mk)
+        sb_append_str(sb, " = (")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, "); ")
+        sb_append_str(sb, val_c)
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, mv)
+        sb_append_str(sb, " = (")
+        emit_map_value_c(sb, st, expr.first_arg.next, v_t)
+        sb_append_str(sb, "); velo_map_put(")
+        emit_map_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (const void*)(&(")
+        sb_append_str(sb, mk)
+        sb_append_str(sb, ")), (const void*)(&(")
+        sb_append_str(sb, mv)
+        sb_append_str(sb, "))); })")
+        return
+    }
+    if member == "get" {
+        let mv = shelf_fresh_name(st, "mv_")
+        sb_append_str(sb, "({ ")
+        sb_append_str(sb, key_c)
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, mk)
+        sb_append_str(sb, " = (")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, "); ")
+        sb_append_str(sb, val_c)
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, mv)
+        sb_append_str(sb, "; if (!velo_map_copy_out(")
+        emit_map_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (const void*)(&(")
+        sb_append_str(sb, mk)
+        sb_append_str(sb, ")), (void*)(&(")
+        sb_append_str(sb, mv)
+        sb_append_str(sb, ")))) velo_map_fatal_missing(")
+        emit_map_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (const void*)(&(")
+        sb_append_str(sb, mk)
+        sb_append_str(sb, ")), \"")
+        sb_append_str(sb, k_t)
+        sb_append_str(sb, "\"); ")
+        sb_append_str(sb, mv)
+        sb_append_str(sb, "; })")
+        return
+    }
+    if member == "has" {
+        sb_append_str(sb, "({ ")
+        sb_append_str(sb, key_c)
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, mk)
+        sb_append_str(sb, " = (")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, "); velo_map_has(")
+        emit_map_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (const void*)(&(")
+        sb_append_str(sb, mk)
+        sb_append_str(sb, "))); })")
+        return
+    }
+    // unreachable — the checker rejects unknown members before emission
+}
+
+// Indexed write: keys and values bind into their slots (value first would
+// break the key-slot naming contract), then one upsert put. A plain block —
+// writes are statements, not value positions.
+act emit_map_set(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32) {
+    let recv_t = infer_expr_type(st, stmt.expr.target)
+    let k_t = map_key_type(recv_t)
+    let v_t = map_value_type(recv_t)
+    let key_c = map_key_slot_c(k_t)
+    let val_c = map_type_to_c(v_t)
+    let mk = shelf_fresh_name(st, "mk_")
+    let mv = shelf_fresh_name(st, "mv_")
+    sb_append_indent(sb, indent)
+    sb_append_str(sb, "{ ")
+    sb_append_str(sb, key_c)
+    sb_append_char(sb, ' ')
+    sb_append_str(sb, mk)
+    sb_append_str(sb, " = (")
+    emit_c_expr(sb, st, stmt.expr.index)
+    sb_append_str(sb, "); ")
+    sb_append_str(sb, val_c)
+    sb_append_char(sb, ' ')
+    sb_append_str(sb, mv)
+    sb_append_str(sb, " = (")
+    emit_map_value_c(sb, st, stmt.val_expr, v_t)
+    sb_append_str(sb, "); velo_map_put(")
+    emit_map_recv(sb, st, stmt.expr.target)
+    sb_append_str(sb, ", (const void*)(&(")
+    sb_append_str(sb, mk)
+    sb_append_str(sb, ")), (const void*)(&(")
+    sb_append_str(sb, mv)
+    sb_append_str(sb, "))); }\n")
+}

@@ -20,6 +20,7 @@ let EXPR_STRUCT_LIT: i32 = 115
 let EXPR_VARIANT: i32 = 116
 // 5.2: `shelf[v0, v1, ...]` constructor literal; elements ride the first_arg/next arg chain
 let EXPR_SHELF_LIT: i32 = 117
+let EXPR_MAP_LIT: i32 = 118   // 5.2 slice 6: first_arg chain holds K,V,K,V…; arg_count = 2*pair_count
 
 // Represents a single field initializer in a struct instantiation (e.g. `x: 10.0`).
 // Linked via `next` to support arbitrary numbers of fields without dynamic heap buffers.
@@ -217,6 +218,21 @@ act make_shelf_lit_expr(first_elem: @ExprNode, count: usize, elem_type: string, 
     node.first_arg = first_elem
     node.arg_count = count
     node.type_name = elem_type
+    node.line = line
+    node.col = col
+    return node
+}
+
+// 5.2 slice 6: creates a map literal node (`map[k0: v0, k1: v1, ...]`).
+// FIRST_ARG / NEXT chain holds K,V alternating; ARG_COUNT = 2*pair count.
+// Empty literals set type_name only when an annotation pins BOTH slots
+// (the annotation's `Map[K, V]` spelling, canonical comma-space join).
+act make_map_lit_expr(first_elem: @ExprNode, pair_count: usize, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_MAP_LIT
+    node.first_arg = first_elem
+    node.arg_count = pair_count * 2
+    node.type_name = null
     node.line = line
     node.col = col
     return node

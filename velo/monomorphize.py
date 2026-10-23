@@ -11,7 +11,7 @@ from velo.ast_nodes import (
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr,
-    ShelfLiteral,
+    ShelfLiteral, MapLiteral,
     TypeAliasDecl,
     mangle_op_name, OP_SYMBOL_TO_NAME
 )
@@ -82,6 +82,28 @@ def _shelf_elem_of(t: Optional[str]) -> Optional[str]:
     return None
 
 
+def _map_kv_of(t: Optional[str]) -> Optional[Tuple[str, str]]:
+    """5.2 slice 6: extracts (key, value) from 'Map[K, V]' / '@Map[K, V]',
+    or None. Bracket-depth aware — value slots may themselves be maps."""
+    if not t:
+        return None
+    raw = t.lstrip("@").strip()
+    if raw.startswith("Map[") and raw.endswith("]"):
+        inner = raw[4:-1].strip()
+        depth = 0
+        for i, ch in enumerate(inner):
+            if ch == "[":
+                depth += 1
+            elif ch == "]":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                key = inner[:i].strip()
+                val = inner[i + 1:].strip()
+                if key and val:
+                    return key, val
+    return None
+
+
 # 5.2 slice 2 (shelf[dyn]): the numeric families of the inference ladder. The
 # widen rule is int+float → f64; any other mix lowers to shelf[dyn] (tagged
 # boxes). Shared with codegen_c — one spelling of the ladder policy per stage.
@@ -101,6 +123,8 @@ def normalize_type_name(t: Optional[str]) -> Optional[str]:
     prefix, base, args = parse_type_signature(t)
     if base == "shelf":
         return t  # 5.2: keep the bracket form; elem extraction needs it
+    if base == "Map":
+        return t  # 5.2 slice 6: keep `Map[K, V]`; the two-slot extraction needs it
     if not args:
         return prefix + base
     mangled_args = [mangle_type_name(a) for a in args]
@@ -427,6 +451,11 @@ class Monomorphizer:
                 self._canonicalize_expr_types(val)
         elif isinstance(expr, ShelfLiteral):
             for a in expr.args:
+                self._canonicalize_expr_types(a)
+        elif isinstance(expr, MapLiteral):
+            for a in expr.keys:
+                self._canonicalize_expr_types(a)
+            for a in expr.vals:
                 self._canonicalize_expr_types(a)
         elif isinstance(expr, CallExpr):
             self._canonicalize_expr_types(expr.callee)
@@ -831,6 +860,12 @@ class Monomorphizer:
             new_lit = ShelfLiteral(args=new_args, line=expr.line, col=expr.col)
             new_lit.elem_type = expr.elem_type
             return new_lit
+        elif isinstance(expr, MapLiteral):
+            new_keys = [self._transform_expr(a, scope, subst, None) for a in expr.keys]
+            new_vals = [self._transform_expr(a, scope, subst, None) for a in expr.vals]
+            new_lit = MapLiteral(keys=new_keys, vals=new_vals, line=expr.line, col=expr.col)
+            new_lit.kv_type = expr.kv_type
+            return new_lit
         elif isinstance(expr, IndexExpr):
             return IndexExpr(target=self._transform_expr(expr.target, scope, subst, None), index=self._transform_expr(expr.index, scope, subst, "usize"), line=expr.line, col=expr.col)
         elif isinstance(expr, DerefExpr):
@@ -902,7 +937,28 @@ class Monomorphizer:
             # 5.2: shelf property reads (len = usize); others are downstream errors
             if _shelf_elem_of(target_type) is not None and expr.member == "len":
                 return "usize"
+            # 5.2 slice 6: map reads mirror the shelf surface best-effort
+            map_kv = _map_kv_of(target_type)
+            if map_kv is not None and expr.member == "len":
+                return "usize"
             return "i32"
+        if isinstance(expr, MapLiteral):
+            # 5.2 slice 6: best-effort only (the strict key/value ladders run
+            # in the checker/codegen); generic T unification needs the type
+            if expr.kv_type:
+                return expr.kv_type
+            if not expr.keys:
+                return "i32"
+            key_types = [self._infer_expr_type(a, scope) for a in expr.keys]
+            val_types = [self._infer_expr_type(a, scope) for a in expr.vals]
+            k0 = key_types[0]
+            if all(t == k0 for t in key_types):
+                if all(t == val_types[0] for t in val_types):
+                    return f"Map[{k0}, {val_types[0]}]"
+                if all(t in DYN_INT_TYPES or t in DYN_FLOAT_TYPES for t in val_types) and any(t in DYN_FLOAT_TYPES for t in val_types):
+                    return f"Map[{k0}, f64]"
+                return f"Map[{k0}, dyn]"
+            return "Map[dyn, dyn]"  # best-effort for heterogeneous keys (checker rejects)
         if isinstance(expr, ShelfLiteral):
             # 5.2: homogeneous best-effort inference (generic T unification);
             # the strict check runs in the checker/codegen
@@ -920,11 +976,14 @@ class Monomorphizer:
                 return "shelf[f64]"
             return "shelf[dyn]"
         if isinstance(expr, IndexExpr):
-            # 5.2: shelf element reads
+            # 5.2: shelf element reads; slice 6: map value reads
             target_type = self._infer_expr_type(expr.target, scope)
             elem = _shelf_elem_of(target_type)
             if elem is not None:
                 return elem
+            map_kv = _map_kv_of(target_type)
+            if map_kv is not None:
+                return map_kv[1]
             return "i32"
         if isinstance(expr, CallExpr):
             if isinstance(expr.callee, Identifier):
@@ -944,6 +1003,15 @@ class Monomorphizer:
                         return elem
                     if expr.callee.member == "sorted":
                         return f"shelf[{elem}]"
+                # 5.2 slice 6: map receiver calls — put void / get value / has bool
+                map_kv = _map_kv_of(recv)
+                if map_kv is not None:
+                    if expr.callee.member == "put":
+                        return "void"
+                    if expr.callee.member == "get":
+                        return map_kv[1]
+                    if expr.callee.member == "has":
+                        return "bool"
                 if expr.callee.member in self.func_return_types:
                     return self.func_return_types[expr.callee.member]
                 if expr.callee.member in self.generic_funcs:

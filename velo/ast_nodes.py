@@ -144,6 +144,20 @@ class ShelfLiteral(Expr):
     col: int
     elem_type: Optional[str] = None
 
+# 5.2 slice 6: `map[k0: v0, k1: v1, ...]` — constructor literal of an
+# associated array. Keys must match the pinned key families in spelling;
+# values ride the shelf element ladder (homogeneous, f64 widen, dyn bags).
+# Empty literals only infer when an annotation pins BOTH slots (kv_type is
+# set by the VarDeclStmt/ReturnStmt handlers before emission, spelling
+# `Map[K, V]` with the canonical comma-space join).
+@dataclass
+class MapLiteral(Expr):
+    keys: List[Expr]
+    vals: List[Expr]
+    line: int
+    col: int
+    kv_type: Optional[str] = None
+
 # Statements
 @dataclass
 class ExprStmt(Stmt):

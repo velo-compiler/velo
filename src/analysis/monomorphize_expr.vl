@@ -88,17 +88,56 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
         }
         return "i32"  // unannotated empty: the checker rejects it upstream
     }
+    if e.kind == EXPR_MAP_LIT {
+        // 5.2 slice 6: best-effort Map[K, V] inference (generic T unification
+        // needs the type; the strict key/value ladders ran in the checker).
+        // Pinned literals return their full spelling as-is, like Stage 1.
+        if e.type_name != null and str.len(e.type_name) > 0 { return e.type_name }
+        if e.first_arg == null or e.first_arg.next == null { return "i32" }
+        let k0 = mono_infer_type(e.first_arg, scope)
+        let vk0 = mono_infer_type(e.first_arg.next, scope)
+        mut keys_uniform = true
+        mut vals_uniform = true
+        mut all_numeric = true
+        mut has_float = false
+        mut cur = e.first_arg.next.next
+        mut expect_key = true
+        loop cur != null {
+            let t = mono_infer_type(cur, scope)
+            if expect_key {
+                if t != k0 { keys_uniform = false }
+            } else {
+                if t != vk0 { vals_uniform = false }
+                if is_mono_dyn_int(t) or is_mono_dyn_float(t) {
+                    if is_mono_dyn_float(t) { has_float = true }
+                } else {
+                    all_numeric = false
+                }
+            }
+            expect_key = not expect_key
+            cur = cur.next
+        }
+        if not keys_uniform { return mono_map_spelling("dyn", "dyn") }  // checker rejects
+        if vals_uniform { return mono_map_spelling(k0, vk0) }
+        if all_numeric and has_float { return mono_map_spelling(k0, "f64") }
+        return mono_map_spelling(k0, "dyn")
+    }
     if e.kind == EXPR_INDEX {
         // 5.2: shelf element reads type as their element
         let tt = mono_infer_type(e.target, scope)
         let ee = mono_shelf_elem(tt)
         if ee != null { return ee }
+        // 5.2 slice 6: map value reads type as the value slot
+        let mv = mono_map_value(tt)
+        if mv != null { return mv }
         return "i32"
     }
     if e.kind == EXPR_MEMBER {
         // 5.2: shelf .len is usize; other reads fall through to "i32"
         let tt = mono_infer_type(e.target, scope)
         if mono_shelf_elem(tt) != null and e.member_name == "len" { return "usize" }
+        // 5.2 slice 6: map .len is usize; others fall through
+        if mono_map_value(tt) != null and e.member_name == "len" { return "usize" }
     }
     if e.kind == EXPR_CALL {
         // 5.2: shelf receiver calls — put/insert yield void, take/remove_at
@@ -116,6 +155,13 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
                     sb_append_str(@sb, "]")
                     return sb_to_string(@sb)
                 }
+            }
+            // 5.2 slice 6: map receiver calls — put void / get value / has bool
+            let mv = mono_map_value(rt)
+            if mv != null {
+                if e.callee.member_name == "put" { return "void" }
+                if e.callee.member_name == "get" { return mv }
+                if e.callee.member_name == "has" { return "bool" }
             }
         }
     }
@@ -244,6 +290,22 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
             cur = cur.next
         }
         return make_shelf_lit_expr(first_a, e.arg_count, e.type_name, e.line, e.col)
+    }
+    if e.kind == EXPR_MAP_LIT {
+        // 5.2 slice 6: clone the K,V alternating chain; the pinned spelling
+        // rides type_name exactly like Stage 1's kv_type carry
+        mut first_a: @ExprNode = null
+        mut last_a: @ExprNode = null
+        mut cur = e.first_arg
+        loop cur != null {
+            let a = mono_clone_expr(m, cur, scope, params, args)
+            if first_a == null { first_a = a; last_a = a }
+            else { last_a.next = a; last_a = a }
+            cur = cur.next
+        }
+        let lit = make_map_lit_expr(first_a, e.arg_count / 2, e.line, e.col)
+        lit.type_name = e.type_name
+        return lit
     }
     if e.kind == EXPR_CALL {
         mut arg_count = e.arg_count

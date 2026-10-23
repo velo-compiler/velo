@@ -15,8 +15,8 @@ use "mem_checks.vl"
 use "str_checks.vl"
 use "shelf_checks.vl"
 use "shelf_calls.vl"
+use "map_checks.vl"
 use "dyn_checks.vl"
-
 // Checks if a name represents a recognized type (primitive or user-defined struct or kind).
 act is_known_type(st: @SymbolTable, name: string) -> bool {
     if name == null { return false }
@@ -32,13 +32,11 @@ act is_known_type(st: @SymbolTable, name: string) -> bool {
 // Infers the static type of an expression AST node.
 act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr == null { return "void" }
-
     if expr.kind == EXPR_INT { if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name } return "i32" }
     if expr.kind == EXPR_FLOAT { if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name } return "f32" }
     if expr.kind == EXPR_STRING { return "string" }
     if expr.kind == EXPR_BOOL { return "bool" }
     if expr.kind == EXPR_NULL { return "@void" }
-
     if expr.kind == EXPR_VARIANT {
         if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name }
         let k_sym = find_kind_by_variant(st, expr.member_name); if k_sym != null { expr.type_name = k_sym.name; return k_sym.name }
@@ -47,7 +45,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     }
 
     if expr.kind == EXPR_SHELF_LIT { return shelf_inferred_type(st, expr) }  // 5.2: shelf constructor literal
-
+    if expr.kind == EXPR_MAP_LIT { return map_inferred_type(st, expr) }  // 5.2 slice 6: map constructor literal
     if expr.kind == EXPR_IDENT {
         let sym = resolve_variable(st, expr.str_val)
         if sym == null {
@@ -80,6 +78,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         if target_type == "dyn" { report_error("semantic", expr.line, expr.col, dyn_gate_error()); st.error_count += 1; return "unknown" }
         // 5.2: shelf property reads (len = usize; others are loud errors)
         if is_shelf_type(target_type) { return check_shelf_member_access(st, expr) }
+        if is_map_type(target_type) { return check_map_member_access(st, expr) }  // 5.2 slice 6: len = usize; others name the map surface
         let st_sym = find_struct(st, clean_type)
         if st_sym == null {
             report_error("semantic", expr.line, expr.col, "Member access on non-struct type"); st.error_count += 1
@@ -96,20 +95,19 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         let target_type = infer_expr_type(st, expr.target)
         // 5.2: shelf element read (bounds are runtime-checked; index type here)
         if is_shelf_type(target_type) { return check_shelf_index_read(st, expr) }
+        if is_map_type(target_type) { return check_map_index_read(st, expr) }  // 5.2 slice 6: strict key; the miss fatal is runtime
         if target_type == "string" { return "u8" }
         if str.len(target_type) > 0 and target_type[0] == '@' { return strip_pointer_prefix(target_type) }
         report_error("semantic", expr.line, expr.col, "Cannot index non-pointer / non-string type"); st.error_count += 1; return "unknown"
     }
 
     if expr.kind == EXPR_DEREF {
-        let sub_type = infer_expr_type(st, expr.operand)
-        if str.len(sub_type) > 0 and sub_type[0] == '@' { return strip_pointer_prefix(sub_type) }
+        let sub_type = infer_expr_type(st, expr.operand); if str.len(sub_type) > 0 and sub_type[0] == '@' { return strip_pointer_prefix(sub_type) }
         report_error("semantic", expr.line, expr.col, "Cannot dereference non-pointer value"); st.error_count += 1; return "unknown"
     }
 
     if expr.kind == EXPR_ADDRESS_OF {
-        let sub_type = infer_expr_type(st, expr.operand)
-        return prepend_pointer_prefix(sub_type)
+        return prepend_pointer_prefix(infer_expr_type(st, expr.operand))
     }
 
     if expr.kind == EXPR_CAST {
@@ -148,7 +146,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         }
         // 5.2: shelf receivers — put / take member calls
         if expr.callee.kind == EXPR_MEMBER and expr.callee.target != null and is_shelf_type(infer_expr_type(st, expr.callee.target)) { return check_shelf_member_call(st, expr) }
-
+        if expr.callee.kind == EXPR_MEMBER and expr.callee.target != null and is_map_type(infer_expr_type(st, expr.callee.target)) { return check_map_member_call(st, expr) }  // 5.2 slice 6: put / get / has
         // User functions or Kind variant constructors
         if expr.callee.kind == EXPR_MEMBER and expr.callee.target.kind == EXPR_IDENT {
             let k_sym = find_kind(st, expr.callee.target.str_val)
@@ -193,6 +191,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                     cur_p = cur_p.next
                 }
                 check_shelf_call_args(st, expr, fn_sym)  // 5.2: shelf elems must string-match
+                check_map_call_args(st, expr, fn_sym)    // 5.2 slice 6: maps match BOTH slots
                 return fn_sym.return_type
             }
             let var_sym = resolve_variable(st, expr.callee.str_val)
@@ -274,10 +273,10 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
 // Validates semantic correctness of a single statement.
 act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode) {
     if stmt == null { return }
-
     if stmt.kind == STMT_VAR_DECL {
         // 5.2: annotated shelf pins/rejects (empty literals borrow the elem)
         check_shelf_annotation(st, stmt.type_name, stmt.val_expr, stmt.line, stmt.col)
+        check_map_annotation(st, stmt.type_name, stmt.val_expr, stmt.line, stmt.col)  // 5.2 slice 6: empty literals borrow BOTH slots / reject mismatches
         if stmt.val_expr != null {
             if stmt.type_name != null and str.len(stmt.type_name) > 0 {
                 if stmt.val_expr.kind == EXPR_VARIANT and (stmt.val_expr.type_name == null or str.len(stmt.val_expr.type_name) == 0) { stmt.val_expr.type_name = stmt.type_name }
@@ -293,7 +292,9 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
     } else if stmt.kind == STMT_ASSIGN {
         // 5.2: shelf indexed writes get the dedicated check (mut / row-copy /
         // compound-assign / index type) instead of the scalar compat flow
-        if stmt.expr != null and stmt.expr.kind == EXPR_INDEX and is_shelf_type(infer_expr_type(st, stmt.expr.target)) { check_shelf_assign(st, stmt); infer_expr_type(st, stmt.val_expr) } else {
+        if stmt.expr != null and stmt.expr.kind == EXPR_INDEX and is_map_type(infer_expr_type(st, stmt.expr.target)) {  // 5.2 slice 6: mut / compound-assign / strict key and value
+            check_map_assign(st, stmt); infer_expr_type(st, stmt.val_expr)
+        } else if stmt.expr != null and stmt.expr.kind == EXPR_INDEX and is_shelf_type(infer_expr_type(st, stmt.expr.target)) { check_shelf_assign(st, stmt); infer_expr_type(st, stmt.val_expr) } else {
         let target_type = infer_expr_type(st, stmt.expr)
         if stmt.val_expr.kind == EXPR_VARIANT and (stmt.val_expr.type_name == null or str.len(stmt.val_expr.type_name) == 0) {
             stmt.val_expr.type_name = target_type
@@ -328,6 +329,7 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
     } else if stmt.kind == STMT_RETURN {
         if stmt.val_expr != null {
             pin_empty_shelf_return(st, stmt.val_expr, expected_ret_type)  // 5.2
+            pin_empty_map_return(st, stmt.val_expr, expected_ret_type)    // 5.2 slice 6
             if stmt.val_expr.kind == EXPR_VARIANT and (stmt.val_expr.type_name == null or str.len(stmt.val_expr.type_name) == 0) {
                 stmt.val_expr.type_name = expected_ret_type
             }
@@ -395,4 +397,3 @@ act check_thread_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool
     }
     return true
 }
-

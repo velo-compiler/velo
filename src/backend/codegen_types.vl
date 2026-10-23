@@ -30,6 +30,12 @@ act map_type_to_c(type_name: string) -> string {
         return "VeloShelf"
     }
 
+    // 5.2 slice 6: `Map[K, V]` / `@Map[K, V]` → the single shared VeloMap layout
+    if is_map_form(type_name) {
+        if type_name[0] == '@' { return "VeloMap*" }
+        return "VeloMap"
+    }
+
     // Pointer types (@T, @@T)
     if type_name[0] == '@' {
         let base = strip_pointer_prefix(type_name)

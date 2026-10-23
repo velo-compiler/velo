@@ -45,6 +45,8 @@ act check_keyword(source: string, start: usize, len: usize) -> i32 {
         if source[start] == 'u' and source[start + 1] == 's' and source[start + 2] == 'e' { return TOK_USE }
         if source[start] == 'a' and source[start + 1] == 'n' and source[start + 2] == 'd' { return TOK_AND }
         if source[start] == 'n' and source[start + 1] == 'o' and source[start + 2] == 't' { return TOK_NOT }
+        // 5.2 slice 6: `map` joins the reserved set (type `Map[K, V]` stays an identifier)
+        if source[start] == 'm' and source[start + 1] == 'a' and source[start + 2] == 'p' { return TOK_MAP }
     } else if len == 4 {
         if source[start] == 'd' and source[start + 1] == 'a' and source[start + 2] == 't' and source[start + 3] == 'a' { return TOK_DATA }
         if source[start] == 'e' and source[start + 1] == 'l' and source[start + 2] == 's' and source[start + 3] == 'e' { return TOK_ELSE }

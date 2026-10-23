@@ -246,6 +246,12 @@ act parse_type_annotation(p: @Parser) -> string {
         report_error(p.filename, type_tok.line, type_tok.col, "a bare 'shelf' needs an element type: use shelf[T]")
         p.had_error = true
     }
+    // 5.2 slice 6: a bare `Map` needs BOTH slots — same-trade parse reject,
+    // identical wording to Stage 1's lower-time error
+    if raw_name == "Map" and not parser_check(p, TOK_LBRACKET) {
+        report_error(p.filename, type_tok.line, type_tok.col, "a bare 'Map' needs key and value types: use Map[K, V]")
+        p.had_error = true
+    }
     mut base_name = raw_name
     if parser_match(p, TOK_LBRACKET) {
         mut sb = create_sb(64)

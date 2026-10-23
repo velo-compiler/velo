@@ -1193,6 +1193,176 @@ static inline void* velo_shelf_take(VeloShelf* s) {
 }
 
 // ============================================================================
+// 5.2 (slice 6) — Map[K, V] core.
+//
+// ONE struct serves every key/value pairing: per-slot C knowledge lives at
+// each use site (the compiler copies keys by VALUE off the typed key slot
+// and passes sizeof(K)/sizeof(V) plus one key-family token at build time).
+// Open addressing with linear probing; 64-bit FNV-1a over the key BYTES.
+// STRING keys hash CONTENT (the characters — equality via strcmp), NOT the
+// pointer: safe only because Velo strings are immutable, so a stored key can
+// never alias-mutate away from its recorded hash. All other families hash
+// their bytes and compare with memcmp (pinned key families never mix widths).
+//
+// Capacity is a power of two, growing ×2 when load passes 0.75. Every table
+// stores its 64-bit hash pre-OR'ed with 1, so hash == 0 is the unambiguous
+// EMPTY slot sentinel (no tombstate array in slice 6 — no removal surface
+// yet; S7 take() migrates the layout when it lands). Storage (keys, values,
+// hashes) grows in the ACTIVE arena (velo_mem_alloc) and REGENERATES on
+// rehash — no per-entry frees, zones reclaim wholesale (shelf doctrine).
+//
+// Assignment copies the HEADER; two headers share backing storage until
+// either one rehashes (severed sharing — the put-through-copy window is
+// documented, not an error).
+//
+// Probe order derives from the hash bits: patch-order iteration (S7) will be
+// HASH-ordered, not insertion-ordered — pinned.
+// ============================================================================
+typedef struct VeloMap {
+    void*     keys;    // cap * ksz key bytes (inline; strings store the pointer)
+    void*     vals;    // cap * vsz value bytes
+    uint64_t* hashes;  // cap hash slots (0 = empty; live slots hold h | 1)
+    size_t    len;     // live entries
+    size_t    cap;     // capacity (power of two)
+    size_t    ksz;     // key size in bytes (sizeof(K))
+    size_t    vsz;     // value size in bytes (sizeof(V))
+    bool      kstring; // string keys: content hash + strcmp equality
+} VeloMap;
+
+static inline void velo_map_init(VeloMap* m, size_t ksz, bool kstring, size_t vsz) {
+    m->keys = NULL; m->vals = NULL; m->hashes = NULL;
+    m->len = 0; m->cap = 0; m->ksz = ksz; m->vsz = vsz; m->kstring = kstring;
+}
+
+static inline uint64_t velo_map_fnv1a(const uint8_t* p, size_t n) {
+    uint64_t h = (uint64_t)14695981039346656037ULL;
+    for (size_t i = 0; i < n; i++) {
+        h ^= (uint64_t)p[i];
+        h *= (uint64_t)1099511628211ULL;
+    }
+    return h;
+}
+
+static inline uint64_t velo_map_key_hash(const VeloMap* m, const void* key) {
+    if (m->kstring) {
+        const char* s = *(const char* const*)key;
+        size_t n = s != NULL ? strlen(s) : 0;
+        if (n > 0) return velo_map_fnv1a((const uint8_t*)s, n) | 1;
+        return 1; // ("" and NULL share the lowest hash; strcmp still orders them)
+    }
+    return velo_map_fnv1a((const uint8_t*)key, m->ksz) | 1;
+}
+
+static inline bool velo_map_key_eq(const VeloMap* m, const void* a, const void* b) {
+    if (m->kstring) {
+        const char* x = *(const char* const*)a;
+        const char* y = *(const char* const*)b;
+        if (x == y) return true;
+        if (x == NULL || y == NULL) return false;
+        return strcmp(x, y) == 0;
+    }
+    return memcmp(a, b, m->ksz) == 0;
+}
+
+// ×2 regenerate: rebuild every live row into fresh arena tables (the old
+// generation becomes arena garbage, reclaimed wholesale at zone exit).
+static inline void velo_map_grow(VeloMap* m) {
+    size_t new_cap = m->cap != 0 ? m->cap * 2 : 8;
+    void* nkeys = velo_mem_alloc(m->ksz, new_cap);
+    void* nvals = velo_mem_alloc(m->vsz, new_cap);
+    uint64_t* nhash = (uint64_t*)velo_mem_alloc(sizeof(uint64_t), new_cap);
+    if (m->cap > 0) {
+        for (size_t i = 0; i < m->cap; i++) {
+            if (m->hashes[i] == 0) continue;
+            size_t at = (size_t)m->hashes[i] & (new_cap - 1);
+            while (nhash[at] != 0) at = (at + 1) & (new_cap - 1);
+            nhash[at] = m->hashes[i];
+            memcpy((char*)nkeys + at * m->ksz, (const char*)m->keys + i * m->ksz, m->ksz);
+            memcpy((char*)nvals + at * m->vsz, (const char*)m->vals + i * m->vsz, m->vsz);
+        }
+    }
+    m->keys = nkeys;
+    m->vals = nvals;
+    m->hashes = nhash;
+    m->cap = new_cap;
+}
+
+// Upsert: overwrite the value when the key is already home (len unchanged,
+// no growth), else take the first empty slot past the probe start. Growth
+// happens BEFORE the probe so the table always retains an empty slot
+// (the probe loop below can then never wrap a full table).
+static inline void velo_map_put(VeloMap* m, const void* key, const void* val) {
+    if (m->ksz == 0 || m->vsz == 0) {
+        fprintf(stderr, "Velo Fatal Error: map put with a zero-size key or value!\n");
+        exit(1);
+    }
+    if ((m->len + 1) * 4 > m->cap * 3) velo_map_grow(m);
+    uint64_t h = velo_map_key_hash(m, key);
+    size_t at = (size_t)h & (m->cap - 1);
+    while (m->hashes[at] != 0) {
+        if (m->hashes[at] == h && velo_map_key_eq(m, key, (const char*)m->keys + at * m->ksz)) {
+            memcpy((char*)m->vals + at * m->vsz, val, m->vsz);
+            return;
+        }
+        at = (at + 1) & (m->cap - 1);
+    }
+    m->hashes[at] = h;
+    memcpy((char*)m->keys + at * m->ksz, key, m->ksz);
+    memcpy((char*)m->vals + at * m->vsz, val, m->vsz);
+    m->len += 1;
+}
+
+static inline bool velo_map_has(const VeloMap* m, const void* key) {
+    if (m->cap == 0) return false;
+    uint64_t h = velo_map_key_hash(m, key);
+    size_t at = (size_t)h & (m->cap - 1);
+    while (m->hashes[at] != 0) {
+        if (m->hashes[at] == h && velo_map_key_eq(m, key, (const char*)m->keys + at * m->ksz)) return true;
+        at = (at + 1) & (m->cap - 1);
+    }
+    return false;
+}
+
+// Look up and copy the value OUT into the caller's slot (the deref happens
+// in the same expression, so a later rehash cannot strand the pointer —
+// the take() discipline applies without pointer exposure).
+static inline bool velo_map_copy_out(const VeloMap* m, const void* key, void* out) {
+    if (m->cap == 0) return false;
+    uint64_t h = velo_map_key_hash(m, key);
+    size_t at = (size_t)h & (m->cap - 1);
+    while (m->hashes[at] != 0) {
+        if (m->hashes[at] == h && velo_map_key_eq(m, key, (const char*)m->keys + at * m->ksz)) {
+            memcpy(out, (const char*)m->vals + at * m->vsz, m->vsz);
+            return true;
+        }
+        at = (at + 1) & (m->cap - 1);
+    }
+    return false;
+}
+
+// The fatal repr: one dispatch per key-family token onto the slice-5 writers
+// (dst == NULL measure pass, then render into a fresh exact fatal buffer) —
+// `map key not found: <krepr>` is byte-identical to interpolation by design.
+static inline size_t velo_map_key_repr(const void* key, const char* token, char* dst) {
+    if (0) {}
+#define VELO_MAP_REPR_T(fam) \
+    else if (strcmp(token, #fam) == 0) { return velo_join_w_##fam(dst, key); }
+    VELO_MAP_REPR_T(i8) VELO_MAP_REPR_T(i16) VELO_MAP_REPR_T(i32) VELO_MAP_REPR_T(i64)
+    VELO_MAP_REPR_T(u8) VELO_MAP_REPR_T(u16) VELO_MAP_REPR_T(u32) VELO_MAP_REPR_T(u64)
+    VELO_MAP_REPR_T(usize) VELO_MAP_REPR_T(isize) VELO_MAP_REPR_T(bool) VELO_MAP_REPR_T(string)
+#undef VELO_MAP_REPR_T
+    return velo_join_w_string(dst, key); // total family (tokens are compiler-pinned)
+}
+
+static inline void velo_map_fatal_missing(const VeloMap* m, const void* key, const char* token) {
+    size_t need = velo_map_key_repr(key, token, NULL) + 1;
+    char* buf = (char*)velo_mem_alloc(1, need);
+    velo_map_key_repr(key, token, buf);
+    fprintf(stderr, "Velo Fatal Error: map key not found: %s!\n", buf);
+    exit(1);
+}
+
+// ============================================================================
 // 5.2 (slice 2) — shelf[dyn] tagged-box mixed shelves.
 //
 // A `shelf[dyn]` is a normal VeloShelf whose element size is sizeof(VeloDyn):

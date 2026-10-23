@@ -6,7 +6,7 @@ from velo.ast_nodes import (
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, VariantExpr, AnonFuncExpr,
-    ShelfLiteral,
+    ShelfLiteral, MapLiteral,
     TypeAliasDecl,
     mangle_op_name
 )
@@ -946,6 +946,27 @@ class Parser:
                 self._skip_newlines()
             self._consume(TokenType.RBRACKET, "Expected ']' at end of shelf literal")
             return ShelfLiteral(args=args, line=shelf_tok.line, col=shelf_tok.col)
+
+        if self._match(TokenType.MAP):
+            # 5.2 slice 6: map constructor literal `map[k0: v0, k1: v1, ...]`.
+            # Alternating key/value pairs; empty `map[]` needs an annotation.
+            map_tok = self.tokens[self.pos - 1]
+            self._consume(TokenType.LBRACKET, "Expected '[' after 'map' (map literal: map[1: \"a\", 2: \"b\"])")
+            self._skip_newlines()
+            keys: List[Expr] = []
+            vals: List[Expr] = []
+            while not self._check(TokenType.RBRACKET) and not self._is_at_end():
+                keys.append(self._parse_expression())
+                self._skip_newlines()
+                self._consume(TokenType.COLON, "Expected ':' between a map key and value (map[k: v])")
+                self._skip_newlines()
+                vals.append(self._parse_expression())
+                self._skip_newlines()
+                if not self._match(TokenType.COMMA):
+                    break
+                self._skip_newlines()
+            self._consume(TokenType.RBRACKET, "Expected ']' at end of map literal")
+            return MapLiteral(keys=keys, vals=vals, line=map_tok.line, col=map_tok.col)
 
         if self._match(TokenType.IDENTIFIER):
             return Identifier(name=tok.value, line=tok.line, col=tok.col)

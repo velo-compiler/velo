@@ -40,6 +40,7 @@ let TOK_KIND: i32 = 45
 let TOK_OP: i32 = 46
 let TOK_SHELF: i32 = 47
 let TOK_OF: i32 = 48
+let TOK_MAP: i32 = 49          // 5.2 slice 6: `map` (literal keyword; `Map[K, V]` stays an identifier)
 
 // Operators & Punctuation
 let TOK_AT: i32 = 50           // @

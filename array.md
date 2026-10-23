@@ -90,52 +90,55 @@ Tests:
 
 Missing surface:
 
-* [ ] `Map[K, V]` in all type positions (annotations, params, returns,
+* [x] `Map[K, V]` in all type positions (annotations, params, returns,
       struct fields, `@Map[...]` pointers), literal `map[1: "a", 2: "b"]`,
       empty map needs an annotation (shelf precedent).
       First TWO-bracket generic type in the parser — generalize the shelf
       type path, do not fork it.
-* [ ] Key families (PINNED): all int widths, bool, string.
+* [x] Key families (PINNED): all int widths, bool, string.
       String keys hash CONTENT (characters), not the pointer — differs
       from shelf strings and must be documented explicitly.
       Floats/struct/pointer/dyn keys reject at compile (NaN is unordered —
       the pinned reason).
-* [ ] Value family: ANY shelf-legal element — memcpy by-value semantics,
+* [x] Value family: ANY shelf-legal element — memcpy by-value semantics,
       including `shelf[dyn]` boxes and child shelves/child maps
       (snapshot-row doctrine applies).
-* [ ] Members: `m.put(k, v)` (upsert, mut-root, put-family element wording),
+* [x] Members: `m.put(k, v)` (upsert, mut-root, put-family element wording),
       `m.get(k)` → V fatal-on-miss, `m[k]` read (same as get),
       `m[k] = v` upsert (same bounds spirit as shelf writes),
       `m.has(k)` → bool, `m.len`.
-* [ ] Fatal wording (runtime source of truth, repr from §S5):
+* [x] Fatal wording (runtime source of truth, repr from §S5):
       `Velo Fatal Error: map key not found: <krepr>!`
-* [ ] Cross-call equality string-compared on BOTH type params
+* [x] Cross-call equality string-compared on BOTH type params
       (`Map[i32, string]` vs `Map[i64, string]` differ — shelf precedent).
 
 Runtime:
 
-* [ ] `VeloMap` — open addressing, FNV-1a hash, power-of-two capacity,
-      ×2 rehash at 0.75 load; tombstones for deletes with rehash when
-      tombstones exceed half the table.
-* [ ] Table storage in the ACTIVE arena (regenerate-on-rehash churn —
+* [x] `VeloMap` — open addressing, FNV-1a hash, power-of-two capacity,
+      ×2 rehash at 0.75 load; *(tombstones deferred to S7 — S6 has no
+      delete surface; the layout reserves growth shape so S7's `take`
+      adds tombstate without a migration, per the pin in gaps.md)*.
+* [x] Table storage in the ACTIVE arena (regenerate-on-rehash churn —
       exactly the shelf growth doctrine: no free inside a zone, no leak
       divergence from the allocator architecture).
-* [ ] Deterministic probe order ⇒ deterministic hash-order iteration;
+* [x] Deterministic probe order ⇒ deterministic hash-order iteration;
       NOT insertion-ordered — pinned and documented.
 
 Files (budget strategy):
 
-* [ ] NEW `src/analysis/map_checks.vl` + NEW `src/backend/map_gen.vl`;
-      wiring through `type_check_program.vl` (83 lines, room) — NOT through
-      `type_checker.vl` (399).
+* [x] NEW `src/analysis/map_checks.vl` (375) + NEW `src/backend/map_gen.vl`
+      (276); wiring through `type_check_program.vl` (Pass-1.5 pin twin)
+      AND `type_checker.vl` infer dispatches (the checker placements must
+      mirror stage-1's `_map_expect` tier to keep reject order identical —
+      in-place one-line dispatches, all files ≤399).
 
 Tests:
 
-* [ ] Accept: literal + annotation maps over int/string keys, upsert
+* [x] Accept: literal + annotation maps over int/string keys, upsert
       overwrites, has/get/len battery, dyn values in V.
-* [ ] Reject: `Map[Point, i32]` / `Map[f32, i32]` key families, key-type
+* [x] Reject: `Map[Point, i32]` / `Map[f32, i32]` key families, key-type
       mismatch on put/get cross-call, K literal/annotation mismatch wording.
-* [ ] Fatals: missing-key reprs (string key reprs vs int reprs), exit 1.
+* [x] Fatals: missing-key reprs (string key reprs vs int reprs), exit 1.
 
 ## S7 — Map advanced (medium)
 

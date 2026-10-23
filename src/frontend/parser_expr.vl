@@ -11,16 +11,13 @@ use "../ast/stmt.vl"
 use "parser.vl"
 use "parser_binary.vl"
 use "parser_stmt.vl"
-
 // Parses an anonymous function expression: `act(params) [-> Ret] { body }`.
 act parse_anon_act(p: @Parser) -> @ExprNode {
     let act_tok = parser_consume(p, TOK_ACT, "Expected 'act'")
     parser_consume(p, TOK_LPAREN, "Expected '(' after 'act'")
-
     mut first_param: @ParamNode = null
     mut last_param: @ParamNode = null
     mut count: usize = 0
-
     if not parser_check(p, TOK_RPAREN) {
         mut more_params = true
         loop more_params {
@@ -29,7 +26,6 @@ act parse_anon_act(p: @Parser) -> @ExprNode {
             parser_consume(p, TOK_COLON, "Expected ':' after parameter name")
             let ptype = parse_type_annotation(p)
             let pnode = make_param_node(pname, ptype, pname_tok.line, pname_tok.col)
-
             if first_param == null {
                 first_param = pnode
                 last_param = pnode
@@ -38,14 +34,12 @@ act parse_anon_act(p: @Parser) -> @ExprNode {
                 last_param = pnode
             }
             count += 1
-
             if not parser_match(p, TOK_COMMA) {
                 more_params = false
             }
         }
     }
     parser_consume(p, TOK_RPAREN, "Expected ')' after parameters")
-
     mut ret_type = "void"
     if parser_match(p, TOK_ARROW) {
         ret_type = parse_type_annotation(p)
@@ -55,7 +49,6 @@ act parse_anon_act(p: @Parser) -> @ExprNode {
     let anon_name = parser_next_anon_name(p)
     let func_node = make_function_decl(anon_name, first_param, count, ret_type, body, act_tok.line, act_tok.col)
     parser_add_anon_decl(p, func_node)
-
     return make_ident_expr(anon_name, act_tok.line, act_tok.col)
 }
 
@@ -92,17 +85,14 @@ act parse_primary(p: @Parser) -> @ExprNode {
         }
         parser_advance(p) // consume '{'
         parser_skip_newlines(p)
-
         mut first_init: @FieldInit = null
         mut last_init: @FieldInit = null
-
         loop not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
             let fname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected field name in struct literal")
             let fname = copy_slice_to_string(p.source, fname_tok.start, fname_tok.length)
             parser_consume(p, TOK_COLON, "Expected ':' after field name")
             let fval = parse_expression(p)
             let init_node = make_field_init(fname, fval, fname_tok.line, fname_tok.col)
-
             if first_init == null {
                 first_init = init_node
                 last_init = init_node
@@ -188,11 +178,9 @@ act parse_primary(p: @Parser) -> @ExprNode {
         let dot_tok = parser_peek(p, 0)
         let var_tok = parser_consume(p, TOK_IDENTIFIER, "Expected variant name after '.'")
         let vname = copy_slice_to_string(p.source, var_tok.start, var_tok.length)
-
         mut first_arg: @ExprNode = null
         mut last_arg: @ExprNode = null
         mut count: usize = 0
-
         if parser_match(p, TOK_LPAREN) {
             if not parser_check(p, TOK_RPAREN) {
                 mut more_args = true
@@ -248,6 +236,28 @@ act parse_primary(p: @Parser) -> @ExprNode {
         }
         parser_consume(p, TOK_RBRACKET, "Expected ']' at end of shelf literal")
         return make_shelf_lit_expr(first_elem, elem_count, null, shelf_tok.line, shelf_tok.col)
+    }
+
+    // 7.6. Map constructor literal (5.2 slice 6): `map[k0: v0, k1: v1, ...]`.
+    // First_arg/next chain holds K,V alternating; an empty `map[]` needs an
+    // annotation pinning BOTH slots (the checker rejects the empty infer).
+    if parser_check(p, TOK_MAP) {
+        let map_tok = parser_advance(p)
+        parser_consume(p, TOK_LBRACKET, "Expected '[' after 'map' (map literal: map[1: \"a\", 2: \"b\"])")
+        mut first_elem: @ExprNode = null; mut last_elem: @ExprNode = null; mut elem_count: usize = 0
+        if not parser_check(p, TOK_RBRACKET) {
+            mut more_pairs = true
+            loop more_pairs {
+                let ka = parse_expression(p)
+                if ka != null { if first_elem == null { first_elem = ka; last_elem = ka } else { last_elem.next = ka; last_elem = ka }; elem_count += 1 }
+                parser_consume(p, TOK_COLON, "Expected ':' between a map key and value (map[k: v])")
+                let va = parse_expression(p)
+                if va != null { if first_elem == null { first_elem = va; last_elem = va } else { last_elem.next = va; last_elem = va }; elem_count += 1 }
+                if not parser_match(p, TOK_COMMA) { more_pairs = false }
+            }
+        }
+        parser_consume(p, TOK_RBRACKET, "Expected ']' at end of map literal")
+        return make_map_lit_expr(first_elem, elem_count / 2, map_tok.line, map_tok.col)
     }
 
     // 8. Identifier variable reference
@@ -306,7 +316,6 @@ act parse_postfix(p: @Parser) -> @ExprNode {
             }
             parser_consume(p, TOK_RBRACKET, "Expected ']' after generic type arguments")
             let type_args_str = sb_to_string(@sb)
-
             let lp = parser_consume(p, TOK_LPAREN, "Expected '(' after generic type arguments")
             mut first_arg: @ExprNode = null
             mut last_arg: @ExprNode = null
@@ -347,7 +356,6 @@ act parse_postfix(p: @Parser) -> @ExprNode {
             mut first_arg: @ExprNode = null
             mut last_arg: @ExprNode = null
             mut count: usize = 0
-
             if not parser_check(p, TOK_RPAREN) {
                 mut more_args = true
                 loop more_args {

@@ -31,6 +31,7 @@ class TokenType(Enum):
     KIND = auto()
     OP = auto()
     SHELF = auto()
+    MAP = auto()
     OF = auto()
 
     # Literals
@@ -125,6 +126,10 @@ KEYWORDS = {
     # reserved words. `shelf[` must be grammar-stable, NOT scope-dependent,
     # so `shelf` is a true keyword (documented trade in gaps.md §5.2).
     "shelf": TokenType.SHELF,
+    # 5.2 slice 6: `map` is reserved for the literal form `map[k: v, ...]`;
+    # the TYPE spelling `Map[K, V]` stays a plain identifier (capital). Same
+    # grammar-stability trade as `shelf` documented in gaps.md §5.2.
+    "map": TokenType.MAP,
     "of": TokenType.OF,
 }
 

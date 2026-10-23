@@ -6,7 +6,7 @@ from velo.ast_nodes import (
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr,
-    ShelfLiteral,
+    ShelfLiteral, MapLiteral,
     TypeAliasDecl
 )
 from velo.monomorphize import Monomorphizer, parse_act_type, mangle_act_type, DYN_INT_TYPES, DYN_FLOAT_TYPES
@@ -125,6 +125,11 @@ class CCodeGenerator:
             return "VeloShelf" + ("*" * pointer_count)
         if type_str == "shelf":
             raise ValueError("a bare 'shelf' needs an element type: use shelf[T]")
+        # 5.2 slice 6: every Map[K, V] maps onto the runtime's single VeloMap
+        if type_str.startswith("Map["):
+            return "VeloMap" + ("*" * pointer_count)
+        if type_str == "Map":
+            raise ValueError("a bare 'Map' needs key and value types: use Map[K, V]")
 
         base_c_type = TYPE_MAP.get(type_str, type_str)
         return base_c_type + ("*" * pointer_count)
@@ -143,6 +148,197 @@ class CCodeGenerator:
             inner = raw[6:-1].strip()
             return inner if inner else None
         return None
+
+    # ------------------------------------------------------------------
+    # 5.2 slice 6 — Map[K, V] core. Mirrored by the Stage 2 checker
+    # (src/analysis/map_checks.vl) and emitter (map_gen.vl) with identical
+    # wording; the engine + fatal repr live in velo_runtime.h (VeloMap).
+    # ------------------------------------------------------------------
+
+    def is_map_type(self, type_str: Optional[str]) -> bool:
+        """True for `Map[K, V]` (or `@Map[K, V]`). Bare `Map` reads as a map
+        ONLY at lowering time, where it raises the bare-type error."""
+        if not type_str:
+            return False
+        raw = type_str.lstrip("@").strip()
+        return raw.startswith("Map[")
+
+    def _map_kv(self, type_str: Optional[str]) -> Optional[Tuple[str, str]]:
+        """Extracts (key_type, value_type) from a `Map[K, V]` spelling, or
+        None. The comma carrier scan is bracket-depth aware — value slots
+        may be child maps (Map[i32, Map[string, i64]])."""
+        if not type_str:
+            return None
+        raw = type_str.lstrip("@").strip()
+        if not raw.startswith("Map[") or not raw.endswith("]"):
+            return None
+        inner = raw[4:-1].strip()
+        depth = 0
+        for i, ch in enumerate(inner):
+            if ch == "[":
+                depth += 1
+            elif ch == "]":
+                depth -= 1
+            elif ch == "," and depth == 0:
+                key = inner[:i].strip()
+                val = inner[i + 1:].strip()
+                if key and val:
+                    # the key-family gate fires at first touch — every map
+                    # spelling with an illegal key family rejects here, at
+                    # declares, uses, and borrows alike (mirrored in stage 2)
+                    err = self._map_family_error(key)
+                    if err:
+                        raise ValueError(err)
+                    return key, val
+        return None
+
+    def _map_family_error(self, key: Optional[str]) -> Optional[str]:
+        """None when `key` is in the pinned key families (10 int widths +
+        bool + string); else the uniform compile reject. Floats stand on
+        NaN being unordered; struct/dyn/@T rows are unordered object rows."""
+        if key in DYN_INT_TYPES or key in ("string", "bool"):
+            return None
+        return f"map keys must be integer, bool, or string (got {key})"
+
+    def _map_key_slot_c(self, key: str) -> str:
+        """The C slot type for key bytes: string keys store a pointer; every
+        other pinned family stores its scalar value."""
+        return "const char*" if key == "string" else self._map_type(key)
+
+    def _map_value_ladder(self, types: List[str]) -> str:
+        """The value slot of a map literal mirrors the shelf element ladder
+        exactly: homogeneous unchanged; all-numeric with a float widens to
+        f64; mixed int widths stay a strict differ; any other mix lowers to
+        dyn (boxability wording reused verbatim from the shelf machinery)."""
+        first = types[0]
+        if first == "@void":
+            raise ValueError("map values cannot be null (use a @T pointer value)")
+        for t in types:
+            if t == "@void":
+                raise ValueError("map values cannot be null (use a @T pointer value)")
+        mixed = any(t != first for t in types)
+        if not mixed:
+            return first
+        if all(t in DYN_INT_TYPES or t in DYN_FLOAT_TYPES for t in types):
+            if any(t in DYN_FLOAT_TYPES for t in types):
+                return "f64"
+            second = next(t for t in types if t != first)
+            raise ValueError(f"map literal value types differ: {first} vs {second}")
+        for t in types:
+            err = self._dyn_boxable_error(t)
+            if err:
+                raise ValueError(err)
+        return "dyn"
+
+    def _infer_map_literal_type(self, lit: "MapLiteral") -> str:
+        """Infers the `Map[K, V]` spelling of a map literal. Empty literals
+        only infer when an annotation established kv_type beforehand."""
+        if lit.kv_type:
+            return lit.kv_type
+        if not lit.keys:
+            raise ValueError("cannot infer key and value types of empty map literal — annotate it (e.g. let m: Map[i32, string] = map[])")
+        key_types = [self._infer_raw_velo_type(k) for k in lit.keys]
+        val_types = [self._infer_raw_velo_type(v) for v in lit.vals]
+        key0 = key_types[0]
+        for kt in key_types[1:]:
+            if kt != key0:
+                raise ValueError(f"map literal key types differ: {key0} vs {kt}")
+        err = self._map_family_error(key0)
+        if err:
+            raise ValueError(err)
+        val = self._map_value_ladder(val_types)
+        return f"Map[{key0}, {val}]"
+
+    def _check_map_annotation(self, decl_type: Optional[str], value: Optional[Expr]) -> None:
+        """5.2 slice 6 contract: annotated map declarations — an empty literal
+        borrows BOTH slots from the annotation's `Map[K, V]` spelling; a
+        non-empty literal must match it exactly (one combined message).
+        Mirrored by the Stage 2 checker's check_map_annotation."""
+        if not isinstance(value, MapLiteral) or not decl_type or not decl_type.startswith("Map["):
+            return
+        ann_kv = self._map_kv(decl_type)
+        if not value.keys:
+            if ann_kv is not None:
+                value.kv_type = decl_type
+            return
+        if ann_kv is None:
+            return
+        lit_kv = self._map_kv(self._infer_map_literal_type(value))
+        if lit_kv is not None and lit_kv != ann_kv:
+            raise ValueError(f"map literal type Map[{lit_kv[0]}, {lit_kv[1]}] does not match annotation Map[{ann_kv[0]}, {ann_kv[1]}]")
+
+    def _check_map_value(self, member: str, val: str, got: str) -> None:
+        """Value-slot contract shared by put and subscript writes: exact V,
+        dyn values box any boxable element (void/null reject; the boxability
+        wording is the shelf machinery's, reused verbatim)."""
+        if val == "dyn":
+            if got == "unknown":
+                return  # the argument itself already failed to infer
+            if got == "void":
+                raise ValueError(f"shelf[dyn] {member}: cannot box a void value")
+            if got == "@void":
+                raise ValueError("map values cannot be null (use a @T pointer value)")
+            err = self._dyn_boxable_error(got)
+            if err:
+                raise ValueError(err)
+        elif got != val:
+            raise ValueError(f"map value mismatch: expected {val} (got {got})")
+
+    def _map_expect(self, member: str, target_expr: Expr, args: List[Expr], kv: Optional[Tuple[str, str]]) -> None:
+        """5.2 slice 6 compile-checks map member calls (put/get/has) and the
+        subscript forms. Mirrored by the Stage 2 checker — both stages
+        reject the same programs with the same messages. `kv` carries the
+        receiver's (K, V) when known (None flows to mono like shelves do)."""
+        if member not in ("put", "get", "has"):
+            raise ValueError(f"unknown map member '{member}' (put, get, has, len are available)")
+        expected_args = {"put": 2, "get": 1, "has": 1}[member]
+        arg_names = {"put": "(map m, key, value)", "get": "(map m, key)", "has": "(map m, key)"}
+        if len(args) != expected_args:
+            raise ValueError(f"map.{member} expects exactly {expected_args} argument{'s' * (expected_args != 1)}: {arg_names[member]}")
+        if kv is not None and member in ("put", "get", "has"):
+            key_t = self._resolve_expr_type(args[0])
+            if key_t is not None and key_t != kv[0]:
+                raise ValueError(f"map key mismatch: expected {kv[0]} (got {key_t})")
+            if member == "put":
+                got = self._thread_arg_type(args[1])
+                self._check_map_value(member, kv[1], got)
+        if member == "put":
+            root = self._shelf_root_binding(target_expr)
+            if root is not None and not self.current_scope_mut.get(root, False):
+                raise ValueError("cannot put into a map held by a let (declare with mut)")
+
+    def _emit_map_literal(self, lit: "MapLiteral") -> str:
+        """5.2 slice 6: lowers `map[k0: v0, ...]` into a GCC statement
+        expression so the literal can live in any value position. Each key
+        and each value is bound exactly once into a typed temp (left-to-right
+        evaluation order guaranteed)."""
+        raw = self._infer_map_literal_type(lit)
+        kv = self._map_kv(raw)
+        if kv is None:
+            raise ValueError("cannot infer key and value types of empty map literal — annotate it (e.g. let m: Map[i32, string] = map[])")
+        key_c = self._map_key_slot_c(kv[0])
+        val_c = self._map_type(kv[1])
+        kstring = "true" if kv[0] == "string" else "false"
+        recv = self._fresh_name("mpt_")
+        parts = [
+            f"VeloMap {recv} = {{0}}",
+            f"velo_map_init(&{recv}, (usize)sizeof({key_c}), {kstring}, (usize)sizeof({val_c}))",
+        ]
+        for k, v in zip(lit.keys, lit.vals):
+            k_slot = self._fresh_name("mk_")
+            v_slot = self._fresh_name("mv_")
+            k_code = self._emit_expression(k)
+            v_code = self._emit_expression(v)
+            if kv[1] == "dyn":
+                v_raw = self._infer_raw_velo_type(v)
+                if v_raw != "dyn":
+                    v_code = self._emit_dyn_box(v_raw, v_code)
+            parts.append(
+                f"{{ {key_c} {k_slot} = ({k_code}); {val_c} {v_slot} = ({v_code}); "
+                f"velo_map_put(&{recv}, (const void*)(&{k_slot}), (const void*)(&{v_slot})); }}"
+            )
+        parts.append(f"{recv}")
+        return "({ " + "; ".join(parts) + "; })"
 
     # ------------------------------------------------------------------
     # 5.2 slice 2 — shelf[dyn] tagged boxes. Mirrored by Stage 2's
@@ -463,6 +659,9 @@ class CCodeGenerator:
                 for a in e.args: scan_expr(a)
             elif isinstance(e, ShelfLiteral):
                 for a in e.args: scan_expr(a)
+            elif isinstance(e, MapLiteral):
+                for a in e.keys: scan_expr(a)
+                for a in e.vals: scan_expr(a)
 
         def scan_stmt(s: Optional[Stmt]):
             if not s: return
@@ -589,7 +788,9 @@ class CCodeGenerator:
             if isinstance(decl, VarDeclStmt):
                 if decl.name not in seen_globals:
                     # 5.2: annotated shelf decls pin empties / reject mismatches
+                    # 5.2 slice 6: same contract for annotated map decls
                     self._check_shelf_annotation(decl.type_name, decl.value)
+                    self._check_map_annotation(decl.type_name, decl.value)
                     type_str = self._infer_or_map_type(decl.type_name, decl.value)
                     raw_velo_type = decl.type_name or self._infer_raw_velo_type(decl.value)
                     self.global_types[decl.name] = raw_velo_type
@@ -806,11 +1007,16 @@ class CCodeGenerator:
         elif isinstance(stmt, ReturnStmt):
             ret_val_code = None
             # 5.2: an empty shelf literal in a return borrows its element type
-            # from the act's declared return type
+            # from the act's declared return type; slice 6: an empty map
+            # literal borrows BOTH slots the same way
             if stmt.value and isinstance(stmt.value, ShelfLiteral) and not stmt.value.args:
                 ret_t = self.current_function.return_type if self.current_function else None
                 if ret_t and ret_t.lstrip("@").startswith("shelf["):
                     stmt.value.elem_type = self._shelf_elem_type(ret_t)
+            if stmt.value and isinstance(stmt.value, MapLiteral) and not stmt.value.keys:
+                ret_t = self.current_function.return_type if self.current_function else None
+                if ret_t and ret_t.lstrip("@").startswith("Map["):
+                    stmt.value.kv_type = ret_t
             if stmt.value:
                 ret_val_code = self._emit_expression(stmt.value)
 
@@ -836,7 +1042,9 @@ class CCodeGenerator:
 
         elif isinstance(stmt, VarDeclStmt):
             # 5.2: annotated shelf decls pin empties / reject mismatches
+            # 5.2 slice 6: same contract for annotated map decls
             self._check_shelf_annotation(stmt.type_name, stmt.value)
+            self._check_map_annotation(stmt.type_name, stmt.value)
             type_str = self._infer_or_map_type(stmt.type_name, stmt.value)
             raw_velo_type = stmt.type_name or self._infer_raw_velo_type(stmt.value)
             self.current_scope_types[stmt.name] = raw_velo_type
@@ -883,6 +1091,37 @@ class CCodeGenerator:
                         f"{{ {elem_c} {slot} = ({val_code}); "
                         f"velo_shelf_set({rec}, (usize)({self._emit_expression(stmt.target.index)}), "
                         f"(const void*)(&{slot}), (usize)sizeof({elem_c})); }}"
+                    )
+                    return
+                kv = self._map_kv(base_type)
+                if kv is not None:
+                    # 5.2 slice 6: map subscript upsert — the `put` payload twin
+                    if stmt.op != "=":
+                        raise ValueError("compound assignments on maps are not supported yet — use an explicit '=' write")
+                    root = self._shelf_root_binding(stmt.target)
+                    if root is not None and not self.current_scope_mut.get(root, False):
+                        raise ValueError("cannot write into a map held by a let (declare with mut)")
+                    key_t = self._resolve_expr_type(stmt.target.index)
+                    if key_t != kv[0]:
+                        raise ValueError(f"map key mismatch: expected {kv[0]} (got {key_t})")
+                    got = self._thread_arg_type(stmt.value)
+                    self._check_map_value("put", kv[1], got)
+                    key_c = self._map_key_slot_c(kv[0])
+                    val_c = self._map_type(kv[1])
+                    target_code = self._emit_expression(stmt.target.target)
+                    rec = f"({target_code})" if base_type.startswith("@") else f"&({target_code})"
+                    k_slot = self._fresh_name("mk_")
+                    v_slot = self._fresh_name("mv_")
+                    key_code = self._emit_expression(stmt.target.index)
+                    val_code = self._emit_expression(stmt.value)
+                    if kv[1] == "dyn":
+                        # 5.2 slice 2: box the written value into the tag
+                        raw = self._infer_raw_velo_type(stmt.value)
+                        if raw != "dyn":
+                            val_code = self._emit_dyn_box(raw, val_code)
+                    self._emit_line(
+                        f"{{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot} = ({val_code}); "
+                        f"velo_map_put({rec}, (const void*)(&{k_slot}), (const void*)(&{v_slot})); }}"
                     )
                     return
             target_code = self._emit_expression(stmt.target)
@@ -1159,6 +1398,15 @@ class CCodeGenerator:
                 if err:
                     raise ValueError(err)
             return "shelf[dyn]"
+        if isinstance(value, MapLiteral):
+            # 5.2 slice 6: the map literal ladder. Annotated empties return
+            # the pinned `Map[K, V]`; non-empty literals run the key gate +
+            # the value ladder (mirrored by Stage 2's map_checks.vl).
+            if value.kv_type:
+                return value.kv_type
+            if not value.keys:
+                raise ValueError("cannot infer key and value types of empty map literal — annotate it (e.g. let m: Map[i32, string] = map[])")
+            return self._infer_map_literal_type(value)
         if isinstance(value, VariantExpr):
             if value.kind_name: return value.kind_name
             return self.variant_to_kind.get(value.variant_name, "i32")
@@ -1198,6 +1446,11 @@ class CCodeGenerator:
             shelf_elem = self._shelf_elem_type(target_type)
             if shelf_elem is not None:
                 return shelf_elem
+            map_kv = self._map_kv(target_type)
+            if map_kv is not None:
+                # 5.2 slice 6: a map read yields V (the strict key check and
+                # the fatal live in the emitter for the same expression)
+                return map_kv[1]
             if target_type.startswith("@"):
                 return target_type[1:]
             return "i32"
@@ -1218,6 +1471,18 @@ class CCodeGenerator:
                     if value.callee.member == "sorted" or value.callee.member == "reversed":
                         return f"shelf[{shelf_elem}]"
                     raise ValueError(f"unknown shelf member '{value.callee.member}' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
+            if isinstance(value.callee, MemberAccess):
+                # 5.2 slice 6: map receiver calls — put is void, get returns
+                # the value; has returns bool (unknown members stay loud)
+                recv_kv = self._map_kv(self._resolve_expr_type(value.callee.target))
+                if recv_kv is not None:
+                    if value.callee.member == "put":
+                        return "void"
+                    if value.callee.member == "get":
+                        return recv_kv[1]
+                    if value.callee.member == "has":
+                        return "bool"
+                    raise ValueError(f"unknown map member '{value.callee.member}' (put, get, has, len are available)")
             if isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier) and value.callee.target.name in self.kind_defs:
                 return value.callee.target.name
             if isinstance(value.callee, Identifier):
@@ -1281,6 +1546,8 @@ class CCodeGenerator:
         if isinstance(expr, StructLiteral): return expr.struct_name
         if isinstance(expr, ShelfLiteral):
             return self._infer_raw_velo_type(expr)
+        if isinstance(expr, MapLiteral):
+            return self._infer_raw_velo_type(expr)
         if isinstance(expr, Identifier):
             return self.current_scope_types.get(expr.name, "i32")
         elif isinstance(expr, VariantExpr):
@@ -1301,6 +1568,11 @@ class CCodeGenerator:
             shelf_elem = self._shelf_elem_type(target_type)
             if shelf_elem is not None:
                 return shelf_elem
+            map_kv = self._map_kv(target_type)
+            if map_kv is not None:
+                # 5.2 slice 6: a map read yields V (the strict key check and
+                # the fatal live in the emitter for the same expression)
+                return map_kv[1]
             if target_type == "string":
                 return "u8"
             if target_type.startswith("@"):
@@ -1315,6 +1587,13 @@ class CCodeGenerator:
                 if expr.member == "len":
                     return "usize"
                 raise ValueError(f"unknown shelf member '{expr.member}' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
+            # 5.2 slice 6: map property reads (len); other members are loud
+            # errors naming the map surface
+            map_kv = self._map_kv(target_type)
+            if map_kv is not None:
+                if expr.member == "len":
+                    return "usize"
+                raise ValueError(f"unknown map member '{expr.member}' (put, get, has, len are available)")
             clean_type = target_type.lstrip("@")
             fields = self.struct_defs.get(clean_type, {})
             return fields.get(expr.member, "i32")
@@ -1337,6 +1616,16 @@ class CCodeGenerator:
                     if expr.callee.member == "sorted" or expr.callee.member == "reversed":
                         return f"shelf[{shelf_elem}]"
                     raise ValueError(f"unknown shelf member '{expr.callee.member}' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
+                # 5.2 slice 6: map receiver calls — put void / get value / has bool
+                recv_kv = self._map_kv(recv)
+                if recv_kv is not None:
+                    if expr.callee.member == "put":
+                        return "void"
+                    if expr.callee.member == "get":
+                        return recv_kv[1]
+                    if expr.callee.member == "has":
+                        return "bool"
+                    raise ValueError(f"unknown map member '{expr.callee.member}' (put, get, has, len are available)")
             if isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier) and expr.callee.target.name in self.kind_defs:
                 return expr.callee.target.name
             if isinstance(expr.callee, Identifier):
@@ -1502,11 +1791,31 @@ class CCodeGenerator:
                 recv = f"({target_code})" if target_type.startswith("@") else f"&({target_code})"
                 elem_c = self._map_type(shelf_elem)
                 return f"(*(({elem_c}*)velo_shelf_get({recv}, (usize)({index_code}))))"
+            kv = self._map_kv(target_type)
+            if kv is not None:
+                # 5.2 slice 6: fatal-on-miss map read via velo_map_copy_out —
+                # key and value bind into slots first (eval order key → value),
+                # the key-family token drives the fatal repr (S5 writers).
+                key_t = self._resolve_expr_type(expr.index)
+                if key_t != kv[0]:
+                    raise ValueError(f"map key mismatch: expected {kv[0]} (got {key_t})")
+                target_code = self._emit_expression(expr.target)
+                key_code = self._emit_expression(expr.index)
+                recv = f"({target_code})" if target_type.startswith("@") else f"&({target_code})"
+                key_c = self._map_key_slot_c(kv[0])
+                val_c = self._map_type(kv[1])
+                k_slot = self._fresh_name("mk_")
+                v_slot = self._fresh_name("mv_")
+                return (f"({{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot}; "
+                        f"if (!velo_map_copy_out({recv}, (const void*)(&{k_slot}), (void*)(&{v_slot}))) "
+                        f"velo_map_fatal_missing({recv}, (const void*)(&{k_slot}), \"{kv[0]}\"); {v_slot}; }})")
             target_code = self._emit_expression(expr.target)
             index_code = self._emit_expression(expr.index)
             return f"{target_code}[{index_code}]"
         elif isinstance(expr, ShelfLiteral):
             return self._emit_shelf_literal(expr)
+        elif isinstance(expr, MapLiteral):
+            return self._emit_map_literal(expr)
         elif isinstance(expr, CastExpr):
             sub_t = self._resolve_expr_type(expr.expr)
             sub = self._emit_expression(expr.expr)
@@ -1730,6 +2039,35 @@ class CCodeGenerator:
                                 f"(const char*)({sep_code})); {out}; }})")
                     return f"(*(({elem_c}*)velo_shelf_take({rec})))"
 
+                # 5.2 slice 6: map receiver member calls — put/get/has,
+                # compile-checked; `_map_expect` mirrors the Stage 2 checker
+                kv = self._map_kv(target_type)
+                if kv is not None:
+                    self._map_expect(expr.callee.member, expr.callee.target, expr.args, kv)
+                    target_code = self._emit_expression(expr.callee.target)
+                    rec = f"({target_code})" if target_type.startswith("@") else f"&({target_code})"
+                    key_c = self._map_key_slot_c(kv[0])
+                    val_c = self._map_type(kv[1])
+                    k_slot = self._fresh_name("mk_")
+                    key_code = self._emit_expression(expr.args[0])
+                    if expr.callee.member == "put":
+                        v_slot = self._fresh_name("mv_")
+                        val_code = self._emit_expression(expr.args[1])
+                        if kv[1] == "dyn":
+                            # 5.2 slice 2: box the stored value into the tag
+                            raw = self._infer_raw_velo_type(expr.args[1])
+                            if raw != "dyn":
+                                val_code = self._emit_dyn_box(raw, val_code)
+                        return (f"({{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot} = ({val_code}); "
+                                f"velo_map_put({rec}, (const void*)(&{k_slot}), (const void*)(&{v_slot})); }})")
+                    if expr.callee.member == "get":
+                        v_slot = self._fresh_name("mv_")
+                        return (f"({{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot}; "
+                                f"if (!velo_map_copy_out({rec}, (const void*)(&{k_slot}), (void*)(&{v_slot}))) "
+                                f"velo_map_fatal_missing({rec}, (const void*)(&{k_slot}), \"{kv[0]}\"); {v_slot}; }})")
+                    return (f"({{ {key_c} {k_slot} = ({key_code}); "
+                            f"velo_map_has({rec}, (const void*)(&{k_slot})); }})")
+
                 clean_type = target_type.lstrip("@")
                 struct_fields = self.struct_defs.get(clean_type, {})
                 if expr.callee.member not in struct_fields and expr.callee.member in self.func_decls:
@@ -1751,11 +2089,19 @@ class CCodeGenerator:
             if decl is not None:
                 for p, a in zip(decl.params, expr.args):
                     want = (p.type_name or "").strip()
-                    if not want.lstrip("@").startswith("shelf["):
-                        continue
-                    got = self._resolve_expr_type(a)
-                    if got.lstrip("@").startswith("shelf[") and got != want:
-                        raise ValueError(f"shelf argument element types must match exactly: got {got}, expected {want}")
+                    want_l = want.lstrip("@")
+                    if want_l.startswith("shelf["):
+                        # 5.2: shelf element types must string-match across call
+                        # boundaries — a silent VeloShelf↔VeloShelf pass-through
+                        # would corrupt reads (esz)
+                        got = self._resolve_expr_type(a)
+                        if got.lstrip("@").startswith("shelf[") and got != want:
+                            raise ValueError(f"shelf argument element types must match exactly: got {got}, expected {want}")
+                    elif want_l.startswith("Map["):
+                        # 5.2 slice 6: maps string-match BOTH slots across calls
+                        got = self._resolve_expr_type(a)
+                        if got.lstrip("@").startswith("Map[") and got != want:
+                            raise ValueError(f"map argument types must match exactly: got {got}, expected {want}")
             callee_code = self._emit_expression(expr.callee)
             arg_codes = [self._emit_expression(arg) for arg in expr.args]
             return f"{callee_code}({', '.join(arg_codes)})"

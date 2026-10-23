@@ -12,7 +12,7 @@ import sys
 import unittest
 from pathlib import Path
 
-from test_allocators import run_stage, ROOT, VELO_PY, VELO_EXE
+from test_allocators import run_stage, assert_parity, ROOT, VELO_PY, VELO_EXE
 
 EXAMPLE31 = ROOT / "examples" / "31_shelf_basics.vl"
 EXAMPLE31_LINES = [
@@ -746,6 +746,222 @@ class TestShelfRejections(unittest.TestCase):
         for program, want, name in RUNTIME_FATALS:
             for stage in ("stage1", "stage2"):
                 res = run_stage(stage, program, f"shelf52_{name}")
+                self.assertNotEqual(res.returncode, 0, f"{stage} survived {name}!")
+                text = res.stdout + res.stderr
+                self.assertIn(want, text, f"{stage} fatal wording mismatch:\n{text[-2000:]}")
+
+
+# ======================================================================
+# 5.2 slice 6 — Map[K, V] core: parity surface (gaps.md map contract).
+# Canonical comma-space spellings; open-addressing engine (VeloMap);
+# string keys hash CONTENT (FNV-1a + strcmp); the value ladder rides the
+# shelf machinery; fatal-on-miss reads speak the S5 repr writers.
+# ======================================================================
+
+MAP_ACCEPTS = [
+    ("""use sys.io
+act main() -> i32 {
+    mut m: Map[i32, string] = map[1: "one", 2: "two"]
+    let n0: usize = m.len
+    let got2 = m.get(2)
+    m.put(3, "three")
+    m.put(1, "uno")
+    let uno = m.get(1)
+    let three = m.get(3)
+    m[2] = "dos"
+    let dos: string = m[2]
+    let h99 = m.has(99)
+    let h1 = m.has(1)
+    let h2 = m.has(2)
+    io.println("len: {n0}")
+    io.println("get 2: {got2}")
+    io.println("after: {uno} {three}")
+    io.println("bracket: {dos}")
+    io.println("has 99: {h99} has 1: {h1} has 2: {h2}")
+    return 0
+}""",
+     ["len: 2", "get 2: two", "after: uno three", "bracket: dos",
+      "has 99: false has 1: true has 2: true"],
+     "map_int_upsert"),
+    ("""use sys.io
+act main() -> i32 {
+    mut m: Map[string, i32] = map[]
+    m.put("alpha", 1)
+    m.put("beta", 2)
+    m.put("alpha", 11)
+    m["gamma"] = 3
+    let n: usize = m.len
+    let a: i32 = m.get("alpha")
+    let b: i32 = m.get("beta")
+    let g: i32 = m["gamma"]
+    io.println("len: {n} alpha: {a} beta: {b} gamma: {g}")
+    return 0
+}""",
+     ["len: 3 alpha: 11 beta: 2 gamma: 3"],
+     "map_string_keys"),
+    ("""use sys.io
+data Point { x: i32, y: i32 }
+act main() -> i32 {
+    mut names: Map[string, Point] = map["a": Point{ x: 1, y: 2 }, "b": Point{ x: 3, y: 4 }]
+    names["c"] = Point{ x: 5, y: 6 }
+    let p = names.get("b")
+    let q = names["c"]
+    let px: i32 = p.x
+    let py: i32 = p.y
+    let qx: i32 = q.x
+    let qy: i32 = q.y
+    io.println("child: {px}/{py}")
+    io.println("child2: {qx}/{qy}")
+    return 0
+}""",
+     ["child: 3/4", "child2: 5/6"],
+     "map_child_values"),
+    ("""use sys.io
+act main() -> i32 {
+    mut mixed: Map[i32, dyn] = map[1: 15, 2: "box", 3: 2.5]
+    mixed[4] = true
+    let d1 = (mixed.get(1) as i32)
+    let d2 = (mixed.get(2) as string)
+    let d3 = (mixed.get(3) as f64)
+    let d4 = (mixed[4] as bool)
+    io.println("dyn: {d1} {d2} {d3} {d4}")
+    return 0
+}""",
+     ["dyn: 15 box 2.50 true"],
+     "map_dyn_values"),
+    ("""use sys.io
+act main() -> i32 {
+    let say: Map[bool, i32] = map[true: 10, false: 20]
+    let bt = say.get(true)
+    let bf = say[false]
+    io.println("bool key: {bt}/{bf}")
+    return 0
+}""",
+     ["bool key: 10/20"],
+     "map_bool_keys"),
+]
+
+# 5.2 slice 6 — struct values ride the map as dyn elements, so the
+# cross-call boundary pins exact-KV spellings on both stages.
+MAP_CALL_PARITY = [
+    ("""use sys.io
+act grab(m: Map[i32, string]) -> string {
+    return m.get(42)
+}
+act main() -> i32 {
+    mut m: Map[i32, string] = map[42: "everything"]
+    let v = grab(m)
+    io.println(v)
+    return 0
+}""",
+     ["everything"],
+     "map_call_exact"),
+    ("""use sys.io
+act count(m: Map[string, i32]) -> usize {
+    return m.len
+}
+act main() -> i32 {
+    mut m: Map[string, i32] = map["a": 1]
+    let v: usize = count(m)
+    io.println("len: {v}")
+    return 0
+}""",
+     ["len: 1"],
+     "map_call_len"),
+]
+
+MAP_REJECTIONS = [
+    ("act main() -> i32 { mut m: Map[Point, string] = map[] return 0 }",
+     "map keys must be integer, bool, or string (got Point)", "key_struct"),
+    ("act main() -> i32 { mut m: Map[f32, string] = map[] return 0 }",
+     "map keys must be integer, bool, or string (got f32)", "key_float"),
+    ("act main() -> i32 { mut m = map[1: \"a\", \"b\": \"c\"] return 0 }",
+     "map literal key types differ: i32 vs string", "key_differ"),
+    ("act main() -> i32 { mut m = map[1: 5, 2: (7 as i64)] return 0 }",
+     "map literal value types differ: i32 vs i64", "val_differ"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.put(1) return 0 }",
+     "map.put expects exactly 2 arguments: (map m, key, value)", "put_arity"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.get() return 0 }",
+     "map.get expects exactly 1 argument: (map m, key)", "get_arity"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.get(1, 2) return 0 }",
+     "map.get expects exactly 1 argument: (map m, key)", "get_arity2"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.has() return 0 }",
+     "map.has expects exactly 1 argument: (map m, key)", "has_arity"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.nope() return 0 }",
+     "unknown map member 'nope' (put, get, has, len are available)", "unknown_member"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] let w = m.nope return 0 }",
+     "unknown map member 'nope' (put, get, has, len are available)", "unknown_prop"),
+    ("act main() -> i32 { let n: Map[i32, string] = map[0: \"a\"] n.put(1, \"b\") return 0 }",
+     "cannot put into a map held by a let (declare with mut)", "put_on_let"),
+    ("act main() -> i32 { let n: Map[i32, string] = map[0: \"a\"] n[1] = \"b\" return 0 }",
+     "cannot write into a map held by a let (declare with mut)", "write_on_let"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.put(\"w\", \"v\") return 0 }",
+     "map key mismatch: expected i32 (got string)", "put_key_mismatch"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.get(\"w\") return 0 }",
+     "map key mismatch: expected i32 (got string)", "get_key_mismatch"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.put(1, 7) return 0 }",
+     "map value mismatch: expected string (got i32)", "put_val_mismatch"),
+    ("act main() -> i32 { let n: Map[i64, string] = map[1: \"a\"] return 0 }",
+     "map literal type Map[i32, string] does not match annotation Map[i64, string]", "ann_mismatch"),
+    ("act main() -> i32 { let e = map[] return 0 }",
+     "cannot infer key and value types of empty map literal — annotate it (e.g. let m: Map[i32, string] = map[])", "empty_no_ann"),
+    ("act main() -> i32 { mut m = map[1: null] return 0 }",
+     "map values cannot be null (use a @T pointer value)", "null_value"),
+    ("act main() -> i32 { mut m: Map[dyn, string] = map[] return 0 }",
+     "map keys must be integer, bool, or string (got dyn)", "illegalDynKey"),
+    ("act main() -> i32 { let n: Map = map[] return 0 }",
+     "a bare 'Map' needs key and value types: use Map[K, V]", "bare_map"),
+    # cross-call boundary: distinct spellings of the SAME two slots reject
+    ("use sys.io\nact grab(m: Map[i32, string]) -> string { return m.get(1) }\n"
+     "act main() -> i32 { mut other: Map[string, i32] = map[\"a\": 1] let v = grab(other) return 0 }",
+     "map argument types must match exactly: got Map[string, i32], expected Map[i32, string]", "cross_map_mismatch"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m[0] += \"x\" return 0 }",
+     "compound assignments on maps are not supported yet — use an explicit '=' write", "compound"),
+]
+
+MAP_FATALS = [
+    ("use sys.io\nact main() -> i32 { mut m: Map[string, i32] = map[\"a\": 1] let n = m.get(\"zz\") io.println(n) return 0 }",
+     "Velo Fatal Error: map key not found: zz!", "fatal_str"),
+    ("use sys.io\nact main() -> i32 { mut m: Map[bool, i32] = map[true: 1] let n = m.get(false) io.println(n) return 0 }",
+     "Velo Fatal Error: map key not found: false!", "fatal_bool"),
+    ("use sys.io\nact main() -> i32 { mut m: Map[i32, string] = map[1: \"a\"] let n: string = m[9] io.println(n) return 0 }",
+     "Velo Fatal Error: map key not found: 9!", "fatal_sub"),
+]
+
+
+class TestMapBasics(unittest.TestCase):
+    """gaps.md 5.2 slice 6 — Map[K, V] core surface parity."""
+
+    def test_map_accepts_parity(self):
+        for program, expected, name in MAP_ACCEPTS:
+            with self.subTest(name=name):
+                assert_parity(program, f"map52_{name}", expected)
+
+    def test_map_call_boundary_parity(self):
+        for program, expected, name in MAP_CALL_PARITY:
+            with self.subTest(name=name):
+                assert_parity(program, f"map52_{name}", expected)
+
+
+class TestMapRejections(unittest.TestCase):
+    """Both stages must reject the same programs with the same words."""
+
+    def test_compile_rejections(self):
+        tmp = ROOT / ".velo_cache" / "map52_reject"
+        tmp.mkdir(parents=True, exist_ok=True)
+        for program, want, name in MAP_REJECTIONS:
+            src = tmp / f"{name}.vl"
+            src.write_text(program, encoding="utf-8")
+            for stage, res in (("stage1", check_result("stage1", src)),
+                               ("stage2", check_result("stage2", src))):
+                text = res.stdout + res.stderr
+                self.assertNotEqual(res.returncode, 0, f"{stage} accepted {name}:\n{text[-2000:]}")
+                self.assertIn(want, text, f"{stage} wording mismatch for {name}:\n{text[-2000:]}")
+
+    def test_runtime_fatals(self):
+        for program, want, name in MAP_FATALS:
+            for stage in ("stage1", "stage2"):
+                res = run_stage(stage, program, f"map52_{name}")
                 self.assertNotEqual(res.returncode, 0, f"{stage} survived {name}!")
                 text = res.stdout + res.stderr
                 self.assertIn(want, text, f"{stage} fatal wording mismatch:\n{text[-2000:]}")
