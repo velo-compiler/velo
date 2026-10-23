@@ -241,10 +241,24 @@ class CCodeGenerator:
 
     def _shelf_expect(self, member: str, target_expr: Expr, args: List[Expr]) -> None:
         """5.2 compile-checks shelf surface calls (put/take/sorted/insert/
-        remove_at). Mirrored by the Stage 2 checker — both stages reject the
-        same programs with the same messages."""
-        if member not in ("put", "take", "sorted", "insert", "remove_at", "reversed"):
-            raise ValueError(f"unknown shelf member '{member}' (put, take, len, sorted, insert, remove_at, reversed are available)")
+        remove_at/reversed/join). Mirrored by the Stage 2 checker — both
+        stages reject the same programs with the same messages."""
+        if member not in ("put", "take", "sorted", "insert", "remove_at", "reversed", "join"):
+            raise ValueError(f"unknown shelf member '{member}' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
+        if member == "join":
+            # 5.2 slice 5: read-only stringify glue (legal on a let)
+            if len(args) != 1:
+                raise ValueError("shelf.join expects exactly 1 argument: (shelf s, separator)")
+            sep_t = self._resolve_expr_type(args[0])
+            if sep_t != "string":
+                raise ValueError(f"shelf.join separator must be a string (got {sep_t})")
+            recv = self._resolve_expr_type(target_expr)
+            elem = self._shelf_elem_type(recv)
+            if elem:
+                err = self._join_family_error(elem)
+                if err:
+                    raise ValueError(err)
+            return
         if member == "sorted":
             if len(args) != 0:
                 raise ValueError("shelf.sorted takes no arguments")
@@ -317,6 +331,17 @@ class CCodeGenerator:
         if elem in self.struct_defs or elem in self.kind_defs:
             return f"shelf.sorted() supports numeric or string elements (got {elem})"
         return None
+
+    def _join_family_error(self, elem: str):
+        """None when `join()` can stringify `elem`; else the pinned reject
+        (5.2 slice 5). bool IS joinable (it is not sorted-joinable); dyn has
+        no repr (tagged boxes), struct/pointer/shelf rows follow. Bare type
+        parameters (generic bodies) flow through mono."""
+        if elem in DYN_INT_TYPES or elem in DYN_FLOAT_TYPES or elem in ("string", "bool"):
+            return None
+        if elem == "dyn":
+            return "shelf[dyn] join is not supported — cast elements first"
+        return f"shelf.join is not supported on {elem} elements"
 
     def _check_shelf_annotation(self, decl_type: Optional[str], value: Optional[Expr]) -> None:
         """5.2 contract: annotated shelf declarations — an empty literal borrows
@@ -1187,9 +1212,12 @@ class CCodeGenerator:
                         return "void"
                     if value.callee.member in ("take", "remove_at"):
                         return shelf_elem
+                    if value.callee.member == "join":
+                        # 5.2 slice 5: join renders into a fresh string
+                        return "string"
                     if value.callee.member == "sorted" or value.callee.member == "reversed":
                         return f"shelf[{shelf_elem}]"
-                    raise ValueError(f"unknown shelf member '{value.callee.member}' (put, take, len, sorted, insert, remove_at, reversed are available)")
+                    raise ValueError(f"unknown shelf member '{value.callee.member}' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
             if isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier) and value.callee.target.name in self.kind_defs:
                 return value.callee.target.name
             if isinstance(value.callee, Identifier):
@@ -1286,7 +1314,7 @@ class CCodeGenerator:
             if self._shelf_elem_type(target_type) is not None:
                 if expr.member == "len":
                     return "usize"
-                raise ValueError(f"unknown shelf member '{expr.member}' (put, take, len, sorted, insert, remove_at, reversed are available)")
+                raise ValueError(f"unknown shelf member '{expr.member}' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
             clean_type = target_type.lstrip("@")
             fields = self.struct_defs.get(clean_type, {})
             return fields.get(expr.member, "i32")
@@ -1303,9 +1331,12 @@ class CCodeGenerator:
                         return "void"
                     if expr.callee.member in ("take", "remove_at"):
                         return shelf_elem
+                    if expr.callee.member == "join":
+                        # 5.2 slice 5: join renders into a fresh string
+                        return "string"
                     if expr.callee.member == "sorted" or expr.callee.member == "reversed":
                         return f"shelf[{shelf_elem}]"
-                    raise ValueError(f"unknown shelf member '{expr.callee.member}' (put, take, len, sorted, insert, remove_at, reversed are available)")
+                    raise ValueError(f"unknown shelf member '{expr.callee.member}' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
             if isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier) and expr.callee.target.name in self.kind_defs:
                 return expr.callee.target.name
             if isinstance(expr.callee, Identifier):
@@ -1689,6 +1720,14 @@ class CCodeGenerator:
                         # runtime function for every element family
                         out = self._fresh_name("rev_")
                         return f"({{ VeloShelf {out} = velo_shelf_reversed({rec}); {out}; }})"
+                    if expr.callee.member == "join":
+                        # 5.2 slice 5: per-family stringify at runtime (the
+                        # interpolation printf ladder), separator verbatim;
+                        # fresh arena string returned by value
+                        out = self._fresh_name("jj_")
+                        sep_code = self._emit_expression(expr.args[0])
+                        return (f"({{ const char* {out} = velo_shelf_join_{elem}({rec}, "
+                                f"(const char*)({sep_code})); {out}; }})")
                     return f"(*(({elem_c}*)velo_shelf_take({rec})))"
 
                 clean_type = target_type.lstrip("@")

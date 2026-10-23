@@ -411,6 +411,111 @@ class TestShelfBasics(unittest.TestCase):
         self.assertEqual(s1.stdout, s2.stdout, "reversed outputs diverged")
         self.assertEqual(s1.stdout.strip().splitlines(), expected)
 
+    # ------------------------------------------------------------------
+    # 5.2 slice 5 — join(sep) and the shared repr machinery. bool is
+    # joinable (it is NOT sorted-joinable) — deliberate closure contrast.
+    # ------------------------------------------------------------------
+    def test_shelf_join_families(self):
+        # Per-family stringify (interpolation ladder): ints %lld, floats
+        # %.2f, bools true/false, strings verbatim, any separator (incl.
+        # ""), empty shelf -> empty string. join is read-only, legal on
+        # let and mut alike.
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    let xs = shelf[9, -1, 5, 3]\n"
+            "    let s = xs.join(\", \")\n"
+            "    let big = shelf[-61 as i64, 8191 as i64]\n"
+            "    let bsj = big.join(\"|\")\n"
+            "    let tiny = shelf[7 as u8, 255 as u8]\n"
+            "    let tsj = tiny.join(\",\")\n"
+            "    let fl = shelf[2.5, 0.5, 1.0]\n"
+            "    let fs = fl.join(\"|\")\n"
+            "    let words = shelf[\"pear\", \"apple\", \"mango\"]\n"
+            "    let ws = words.join(\"\")\n"
+            "    let bs = shelf[true, false, true]\n"
+            "    let bb = bs.join(\"/\")\n"
+            "    let e: shelf[i32] = shelf[]\n"
+            "    let es = e.join(\"-\")\n"
+            "    let en = e.len\n"
+            "    io.println(\"s {s} b {bsj} t {tsj}\")\n"
+            "    io.println(\"f {fs} w {ws} b2 {bb}\")\n"
+            "    io.println(\"e[{es}] n {en}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        s1 = run_stage("stage1", program, "shelf55_join")
+        s2 = run_stage("stage2", program, "shelf55_join")
+        self.assertEqual(s1.returncode, 0, s1.stderr)
+        self.assertEqual(s2.returncode, 0, s2.stderr)
+        self.assertEqual(s1.stdout, s2.stdout, "join outputs diverged")
+        self.assertEqual(
+            s1.stdout.strip().splitlines(),
+            ["s 9, -1, 5, 3 b -61|8191 t 7,255",
+             "f 2.50|0.50|1.00 w pearapplemango b2 true/false/true",
+             "e[] n 0"],
+        )
+
+    def test_shelf_join_interpolation_parity(self):
+        # The pinned contract: join's per-family runtime writers render
+        # EXACTLY like io-string interpolation (ints (long long)/%lld,
+        # floats (double)/%.2f, bools true/false, strings verbatim).
+        # Each pair below prints the JOIN line and the equivalent
+        # interpolation line; the harness asserts the payload bytes match.
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    let xs = shelf[9, -1, 5, 3]\n"
+            "    let a = xs[0]\n"
+            "    let b = xs[1]\n"
+            "    let c = xs[2]\n"
+            "    let d = xs[3]\n"
+            "    let j = xs.join(\", \")\n"
+            "    io.println(j)\n"
+            "    io.println(\"q {a}, {b}, {c}, {d}\")\n"
+            "    let fl = shelf[2.5, 0.5]\n"
+            "    let f0 = fl[0]\n"
+            "    let f1 = fl[1]\n"
+            "    let fj = fl.join(\"|\")\n"
+            "    io.println(fj)\n"
+            "    io.println(\"q {f0}|{f1}\")\n"
+            "    let bs = shelf[true, false]\n"
+            "    let y = bs[0]\n"
+            "    let n = bs[1]\n"
+            "    let bj = bs.join(\":\")\n"
+            "    io.println(bj)\n"
+            "    io.println(\"q {y}:{n}\")\n"
+            "    let words = shelf[\"pear\", \"apple\"]\n"
+            "    let w0 = words[0]\n"
+            "    let w1 = words[1]\n"
+            "    let wj = words.join(\"~\")\n"
+            "    io.println(wj)\n"
+            "    io.println(\"q {w0}~{w1}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        s1 = run_stage("stage1", program, "shelf55_joinpar")
+        s2 = run_stage("stage2", program, "shelf55_joinpar")
+        self.assertEqual(s1.returncode, 0, s1.stderr)
+        self.assertEqual(s2.returncode, 0, s2.stderr)
+        self.assertEqual(s1.stdout, s2.stdout, "join parity outputs diverged")
+        lines = s1.stdout.strip().splitlines()
+        self.assertEqual(lines, [
+            "9, -1, 5, 3",
+            "q 9, -1, 5, 3",
+            "2.50|0.50",
+            "q 2.50|0.50",
+            "true:false",
+            "q true:false",
+            "pear~apple",
+            "q pear~apple",
+        ])
+        # byte-parity of the two paths: join vs interpolation payload
+        self.assertEqual(lines[0], lines[1][2:])
+        self.assertEqual(lines[2], lines[3][2:])
+        self.assertEqual(lines[4], lines[5][2:])
+        self.assertEqual(lines[6], lines[7][2:])
+
 
 def find_gcc() -> str:
     import shutil
@@ -489,7 +594,7 @@ REJECTIONS = [
      "shelf literal element type shelf[i32] does not match annotation shelf[i64]",
      "rej_annotation"),
     ("use sys.io\nact main() -> i32 {\n    mut xs = shelf[1]\n    let n = xs.push(3)\n    return 0\n}",
-     "unknown shelf member 'push' (put, take, len, sorted, insert, remove_at, reversed are available)",
+     "unknown shelf member 'push' (put, take, len, sorted, insert, remove_at, reversed, join are available)",
      "rej_push"),
     ("use sys.io\nact main() -> i32 {\n    mut xs = shelf[1]\n    xs.put(1, 2)\n    return 0\n}",
      "shelf.put expects exactly 1 argument: (shelf s, element value)",
@@ -561,6 +666,23 @@ REJECTIONS = [
     ("use sys.io\nact main() -> i32 {\n    let xs = shelf[1]\n    let s = xs.reversed(1)\n    return 0\n}",
      "shelf.reversed takes no arguments",
      "rej_reversed_args"),
+    # 5.2 slice 5 — join(sep): arity, separator typing, family closures.
+    ("use sys.io\nact main() -> i32 {\n    let xs = shelf[1]\n    let s = xs.join()\n    return 0\n}",
+     "shelf.join expects exactly 1 argument: (shelf s, separator)",
+     "rej_join_args"),
+    ("use sys.io\nact main() -> i32 {\n    let xs = shelf[1]\n    let s = xs.join(3)\n    return 0\n}",
+     "shelf.join separator must be a string (got i32)",
+     "rej_join_sep"),
+    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let s = bad.join(\",\")\n    return 0\n}",
+     "shelf[dyn] join is not supported — cast elements first",
+     "rej_join_dyn"),
+    ("use sys.io\ndata Point { a: i32; b: i32 }\nact main() -> i32 {\n"
+     "    let p = Point{ a: 1, b: 2 }\n    let ps = shelf[@p]\n    let s = ps.join(\",\")\n    return 0\n}",
+     "shelf.join is not supported on @Point elements",
+     "rej_join_ptrrow"),
+    ("use sys.io\nact main() -> i32 {\n    let rows = shelf[shelf[1, 2]]\n    let s = rows.join(\",\")\n    return 0\n}",
+     "shelf.join is not supported on shelf[i32] elements",
+     "rej_join_childrow"),
 ]
 
 RUNTIME_FATALS = [

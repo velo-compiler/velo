@@ -1076,6 +1076,111 @@ static inline VeloShelf velo_shelf_reversed(const VeloShelf* s) {
     return out;
 }
 
+// ============================================================================
+// 5.2 slice 5: shelf join + the shared repr machinery. Each writer renders
+// ONE element exactly the way io-string interpolation renders it (ints
+// `snprintf("%lld", (long long))`, floats `%.2f` of (double), bool
+// `true`/`false`, string characters verbatim). Called with dst == NULL the
+// writer is the MEASURE pass (the C99 "snprintf(NULL, 0)" would-be length);
+// with a real dst it renders in place. The wrappers are the compiler's
+// `xs.join(sep)` targets — one per joinable family token.
+// ============================================================================
+typedef size_t (*VeloJoinWriteFn)(char* dst, const void* elem);
+
+#define VELO_JOIN_MEASURE_CAP(dst) ((dst) != NULL ? (size_t)-1 : (size_t)0)
+
+#define VELO_JOIN_W_INT(token, ctype) \
+    static inline size_t velo_join_w_##token(char* dst, const void* e) { \
+        return (size_t)snprintf(dst, VELO_JOIN_MEASURE_CAP(dst), "%lld", \
+                                (long long)(*(const ctype*)e)); \
+    }
+
+VELO_JOIN_W_INT(i8, int8_t)
+VELO_JOIN_W_INT(i16, int16_t)
+VELO_JOIN_W_INT(i32, int32_t)
+VELO_JOIN_W_INT(i64, int64_t)
+VELO_JOIN_W_INT(u8, uint8_t)
+VELO_JOIN_W_INT(u16, uint16_t)
+VELO_JOIN_W_INT(u32, uint32_t)
+VELO_JOIN_W_INT(u64, uint64_t)
+VELO_JOIN_W_INT(usize, size_t)
+VELO_JOIN_W_INT(isize, ptrdiff_t)
+#undef VELO_JOIN_W_INT
+
+#define VELO_JOIN_W_FLOAT(token, ctype) \
+    static inline size_t velo_join_w_##token(char* dst, const void* e) { \
+        return (size_t)snprintf(dst, VELO_JOIN_MEASURE_CAP(dst), "%.2f", \
+                                (double)(*(const ctype*)e)); \
+    }
+
+VELO_JOIN_W_FLOAT(f32, float)
+VELO_JOIN_W_FLOAT(f64, double)
+#undef VELO_JOIN_W_FLOAT
+
+static inline size_t velo_join_w_bool(char* dst, const void* e) {
+    const char* word = (*(const uint8_t*)e) ? "true" : "false";
+    size_t len = strlen(word);
+    if (dst != NULL) {
+        memcpy(dst, word, len);
+    }
+    return len;
+}
+
+static inline size_t velo_join_w_string(char* dst, const void* e) {
+    const char* s = *(const char* const*)e;
+    size_t len = s != NULL ? strlen(s) : 0;
+    if (dst != NULL && len > 0) {
+        memcpy(dst, s, len);
+    }
+    return len;
+}
+
+// Two-pass join: measure (exact byte count), then render into one fresh
+// arena buffer. The separator is copied verbatim between rendered elements.
+static inline const char* velo_shelf_join_generic(const VeloShelf* s, const char* sep, VeloJoinWriteFn wr) {
+    size_t seplen = sep != NULL ? strlen(sep) : 0;
+    size_t total = 0;
+    for (size_t i = 0; i < s->len; i++) {
+        if (i > 0) {
+            total += seplen;
+        }
+        total += wr(NULL, (const char*)s->data + i * s->esz);
+    }
+    char* out = (char*)velo_mem_alloc(1, total + 1);
+    size_t at = 0;
+    for (size_t i = 0; i < s->len; i++) {
+        if (i > 0) {
+            if (seplen > 0) {
+                memcpy(out + at, sep, seplen);
+            }
+            at += seplen;
+        }
+        at += wr(out + at, (const char*)s->data + i * s->esz);
+    }
+    out[at] = '\0';
+    return out;
+}
+
+#define VELO_SHELF_JOIN(suffix) \
+    static inline const char* velo_shelf_join_##suffix(const VeloShelf* s, const char* sep) { \
+        return velo_shelf_join_generic(s, sep, velo_join_w_##suffix); \
+    }
+VELO_SHELF_JOIN(i8)
+VELO_SHELF_JOIN(i16)
+VELO_SHELF_JOIN(i32)
+VELO_SHELF_JOIN(i64)
+VELO_SHELF_JOIN(u8)
+VELO_SHELF_JOIN(u16)
+VELO_SHELF_JOIN(u32)
+VELO_SHELF_JOIN(u64)
+VELO_SHELF_JOIN(usize)
+VELO_SHELF_JOIN(isize)
+VELO_SHELF_JOIN(f32)
+VELO_SHELF_JOIN(f64)
+VELO_SHELF_JOIN(bool)
+VELO_SHELF_JOIN(string)
+#undef VELO_SHELF_JOIN
+
 // Pop the last element; returns a pointer INTO the payload (deref now).
 // An empty shelf take is a loud fatal (same tiering as the byte helpers).
 static inline void* velo_shelf_take(VeloShelf* s) {

@@ -57,31 +57,33 @@ Tests:
 
 Missing surface:
 
-* [ ] `xs.join(sep)` → `string`. Separator must be a string (compile-reject
+* [x] `xs.join(sep)` → `string`. Separator must be a string (compile-reject
       otherwise). Legal on `let` (read-only). `len 0` → empty string.
-* [ ] Formatting MUST match io-interpolation print formatting exactly
+* [x] Formatting MUST match io-interpolation print formatting exactly
       (pinned in a small table: i32 → `1`, i64 widths per printf ladder,
       f32/f64 → `0.50` style, bool → `true`/`false`, string pass-through
       verbatim). Elements are stringified per-family by the compiler.
-* [ ] Joinable families: all int widths, f32/f64, string, bool.
+* [x] Joinable families: all int widths, f32/f64, string, bool.
       Compile rejects (pinned wordings):
       - `shelf[dyn] join is not supported — cast elements first`
       - struct/pointer-row join (same closure of the reject).
-* [ ] The per-family stringify acts become the SHARED repr machinery that
+      (Child `shelf[T]` rows also reject — join's family check catches them
+      explicitly; sorted()'s pre-existing child-row hole left as-is.)
+* [x] The per-family stringify acts become the SHARED repr machinery that
       §S6 map fatal wording reuses (`map key not found: <krepr>`).
 
 Runtime:
 
-* [ ] `velo_shelf_join_<token>(const VeloShelf*, const char* sep)` →
+* [x] `velo_shelf_join_<token>(const VeloShelf*, const char* sep)` →
       `const char*` (arena): one wrapper per joinable family, snprintf-based
       (stdio already linked; no new deps).
 
 Tests:
 
-* [ ] Accept: ints (multi-width), floats (`0.50` style), strings (passthrough,
+* [x] Accept: ints (multi-width), floats (`0.50` style), strings (passthrough,
       no quotes), bools; custom separators incl. `", "` and `""`; empty shelf.
-* [ ] Reject: dyn bag join, struct-row join, non-string separator.
-* [ ] Parity: join output byte-identical to the equivalent interpolation
+* [x] Reject: dyn bag join, struct-row join, non-string separator.
+* [x] Parity: join output byte-identical to the equivalent interpolation
       print of each element (both stages).
 
 ## S6 — `Map[K, V]` core (largest slice)

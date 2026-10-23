@@ -130,6 +130,23 @@ act emit_shelf_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode
         sb_append_str(sb, "; })")
         return
     }
+    if member == "join" {
+        // 5.2 slice 5: per-family stringify at runtime (the interpolation
+        // ladder), separator verbatim; fresh arena string returned by value
+        let out = shelf_fresh_name(st, "jj_")
+        sb_append_str(sb, "({ const char* ")
+        sb_append_str(sb, out)
+        sb_append_str(sb, " = velo_shelf_join_")
+        sb_append_str(sb, elem)
+        sb_append_str(sb, "(")
+        emit_shelf_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (const char*)(")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, ")); ")
+        sb_append_str(sb, out)
+        sb_append_str(sb, "; })")
+        return
+    }
     // checker handles unknown members; emit the property for totality
     emit_c_expr(sb, st, expr.callee.target)
     sb_append_char(sb, '.')
