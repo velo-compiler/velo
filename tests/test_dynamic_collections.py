@@ -562,9 +562,9 @@ REJECTIONS = [
     ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let p = bad[0] as Point\n    return 0\n}",
      "cannot unbox a shelf[dyn] value into Point — targets: int family, f32/f64, bool, string, @T, shelf[T]",
      "rej_dyn_unbox_struct"),
-    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let r = bad[0] as @shelf[i32]\n    return 0\n}",
-     "cannot unbox a shelf[dyn] child as @shelf — the header copy would dangle; use as shelf[...] instead",
-     "rej_dyn_unbox_shelfptr"),
+    # 5.2 slice 10 RETIRED the `as @shelf` dangle reject (the PTR box holds a
+    # real pointer the user owns — trust doctrine); the roundtrip is now an
+    # ACCEPT in TestSharedRows.
     ("use sys.io\nact hit() {\n    return\n}\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    mut m = bad\n    m.put(hit())\n    return 0\n}",
      "shelf[dyn] put: cannot box a void value",
      "rej_dyn_put_void"),
@@ -1481,6 +1481,132 @@ class TestRingBitset(unittest.TestCase):
                 self.assertNotEqual(res.returncode, 0, f"{stage} survived {name}!")
                 text = res.stdout + res.stderr
                 self.assertIn(want, text, f"{stage} fatal wording mismatch:\n{text[-2000:]}")
+
+
+# ======================================================================
+# 5.2 slice 10 — the memory model: `heap shelf` (the VeloShelf.src
+# allocator selector — zone-backed NULL default, heap sentinel for
+# outliving zones) and the shared-rows closure (the row-copy guard
+# tests the row type's pointer-ness; @shelf rows share; value rows
+# keep the reject). The `as @shelf` dyn unbox re-opens (identity
+# roundtrip). Both stages lower identical C onto the shared runtime.
+# ======================================================================
+
+S10_REJECTIONS = [
+    ("use sys.io\nact main() -> i32 {\n    let h: shelf[i32] = heap shelf[1]\n    return 0\n}",
+     "shelf literal element type heap shelf[i32] does not match annotation shelf[i32]", "s10_h_to_zone"),
+    ("use sys.io\nact main() -> i32 {\n    let h: heap shelf[i32] = shelf[1]\n    return 0\n}",
+     "shelf literal element type shelf[i32] does not match annotation heap shelf[i32]", "s10_zone_to_h"),
+    ("use sys.io\nact main() -> i32 {\n    let h: heap shelf = heap shelf[]\n    return 0\n}",
+     "a bare 'heap shelf' needs an element type: use heap shelf[T]", "s10_bare"),
+    ("use sys.io\nact main() -> i32 {\n    let h = heap shelf[]\n    return 0\n}",
+     "cannot infer element type of empty shelf literal", "s10_empty_infer"),
+    ("act show(h: shelf[i32]) -> i32 {\n    return 0\n}\nuse sys.io\nact main() -> i32 {\n    mut h = heap shelf[1]\n    show(h)\n    return 0\n}",
+     "shelf argument element types must match exactly: got heap shelf[i32], expected shelf[i32]", "s10_cross_call"),
+    ("use sys.io\nact main() -> i32 {\n    mut grid = shelf[shelf[1, 2]]\n    grid[0][1] = 5\n    return 0\n}",
+     "cannot write through a shelf row copy (snapshot rows) — use @shelf[int] rows for in-place mutation", "s10_valrow"),
+    ("use sys.io\nact main() -> i32 {\n    let h = heap shelf[1]\n    h.put(2)\n    return 0\n}",
+     "cannot put into a shelf held by a let (declare with mut)", "s10_heap_on_let"),
+]
+
+
+class TestHeapShelf(unittest.TestCase):
+    """gaps.md 5.2 slice 10 — the heap shelf + shared-rows surface parity."""
+
+    def test_heap_outlives_zone_and_act(self):
+        # The sheet's pinned rows: a heap shelf returned from an act, and a
+        # heap shelf grown INSIDE a `zone { }` that stays intact after the
+        # exit (the arena reclaims its own blocks; the heap ledger keeps the
+        # shelf's).
+        program = (
+            "use sys.io\n"
+            "act make() -> heap shelf[i32] {\n"
+            "    mut h = heap shelf[1, 2]\n"
+            "    loop 50 { h.put(it as i32) }\n"
+            "    return h\n"
+            "}\n"
+            "act main() -> i32 {\n"
+            "    let h = make()\n"
+            "    mut g: heap shelf[i32] = heap shelf[]\n"
+            "    zone 1024 {\n"
+            "        loop 100 { g.put(it as i32) }\n"
+            "    }\n"
+            "    let ln = h.len as i32\n"
+            "    let v51 = h[51]\n"
+            "    let gn = g.len as i32\n"
+            "    let last = g[99]\n"
+            "    io.println(\"len {ln} v51 {v51} gn {gn} last {last}\")\n"
+            "    return 0\n"
+            "}"
+        )
+        s1 = run_stage("stage1", program, "s10_heap")
+        s2 = run_stage("stage2", program, "s10_heap")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-2000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-2000:])
+        self.assertEqual(s1.stdout, s2.stdout, "S10 heap outputs diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), ["len 52 v51 49 gn 100 last 99"])
+
+    def test_shared_rows(self):
+        # The slice-1 residual (1) closure: @shelf rows share their storage —
+        # `grid[i].put(v)` AND `grid[i][j] = v` mutate the SHARED row (the
+        # sibling binding sees it); value rows keep the row-copy reject.
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    mut r1: shelf[i32] = shelf[1, 2]\n"
+            "    mut r2: shelf[i32] = shelf[3, 4]\n"
+            "    mut grid: shelf[@shelf[i32]] = shelf[@r1, @r2]\n"
+            "    grid[0].put(9)\n"
+            "    grid[0][1] = 7\n"
+            "    let a = r1[1]\n"
+            "    let b = r1[2]\n"
+            "    let c = r2.len as i32\n"
+            "    io.println(\"a {a} b {b} c {c}\")\n"
+            "    return 0\n"
+            "}"
+        )
+        s1 = run_stage("stage1", program, "s10_shared")
+        s2 = run_stage("stage2", program, "s10_shared")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-2000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-2000:])
+        self.assertEqual(s1.stdout, s2.stdout, "S10 shared-row outputs diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), ["a 7 b 9 c 2"])
+
+    def test_as_shelfptr_roundtrip(self):
+        # The slice-2 dangle reject retires: the PTR box holds a real pointer
+        # the user owns; the unbox keeps IDENTITY (the same row comes back).
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    mut r1: shelf[i32] = shelf[5]\n"
+            "    mut bag: shelf[dyn] = shelf[@r1, \"x\"]\n"
+            "    mut p = bag[0] as @shelf[i32]\n"
+            "    p.put(6)\n"
+            "    let v = p[1]\n"
+            "    mut back = bag[0] as @shelf[i32]\n"
+            "    let ln = back.len as i32\n"
+            "    io.println(\"v {v} ln {ln}\")\n"
+            "    return 0\n"
+            "}"
+        )
+        s1 = run_stage("stage1", program, "s10_unbox")
+        s2 = run_stage("stage2", program, "s10_unbox")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-2000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-2000:])
+        self.assertEqual(s1.stdout, s2.stdout, "S10 unbox outputs diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), ["v 6 ln 2"])
+
+    def test_s10_rejections(self):
+        tmp = ROOT / ".velo_cache" / "s10_reject"
+        tmp.mkdir(parents=True, exist_ok=True)
+        for program, want, name in S10_REJECTIONS:
+            src = tmp / f"{name}.vl"
+            src.write_text(program, encoding="utf-8")
+            for stage, res in (("stage1", check_result("stage1", src)),
+                               ("stage2", check_result("stage2", src))):
+                text = res.stdout + res.stderr
+                self.assertNotEqual(res.returncode, 0, f"{stage} accepted {name}:\n{text[-2000:]}")
+                self.assertIn(want, text, f"{stage} wording mismatch for {name}:\n{text[-2000:]}")
 
 
 if __name__ == "__main__":

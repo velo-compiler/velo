@@ -21,24 +21,31 @@ use "codegen_types.vl"
 use "codegen_expr.vl"
 use "codegen_stmt.vl"
 
-// Detects the shelf shape (raw `shelf[...]` or @-pointer `@shelf[...]`).
-
+// Detects the shelf shape (raw `shelf[...]`, @-pointer `@shelf[...]`, or the
+// slice-10 heap `heap shelf[...]`).
 act is_shelf_form(type_name: string) -> bool {
     if type_name == null { return false }
     let len = str.len(type_name)
     mut at: usize = 0
     loop at < len and type_name[at] == '@' { at += 1 }
+    if len >= at + 11 and type_name[at] == 'h' and type_name[at + 1] == 'e' and type_name[at + 2] == 'a' and type_name[at + 3] == 'p' and type_name[at + 4] == ' ' {
+        at += 5   // strip the heap modifier; the shelf spell follows
+    }
     if len < at + 5 { return false }
     if type_name[at] == 's' and type_name[at + 1] == 'h' and type_name[at + 2] == 'e' and type_name[at + 3] == 'l' and type_name[at + 4] == 'f' { return true }
     return false
 }
 
-// Extracts the element type string from shelf[T] / @shelf[T]; null otherwise.
+// Extracts the element type string from shelf[T] / @shelf[T] / (slice 10)
+// heap shelf[T]; null otherwise.
 act shelf_raw_elem(type_name: string) -> string {
     if type_name == null { return null }
     let len = str.len(type_name)
     mut at: usize = 0
     loop at < len and type_name[at] == '@' { at += 1 }
+    if len >= at + 11 and type_name[at] == 'h' and type_name[at + 1] == 'e' and type_name[at + 2] == 'a' and type_name[at + 3] == 'p' and type_name[at + 4] == ' ' {
+        at += 5   // strip the heap modifier
+    }
     if len < at + 7 { return null }
     if type_name[at] != 's' or type_name[at + 1] != 'h' or type_name[at + 2] != 'e' or type_name[at + 3] != 'l' or type_name[at + 4] != 'f' or type_name[at + 5] != '[' { return null }
     if type_name[len - 1] != ']' { return null }
@@ -174,6 +181,13 @@ act emit_shelf_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     sb_append_str(sb, "({ VeloShelf ")
     sb_append_str(sb, shl)
     sb_append_str(sb, " = { 0 };")
+    if expr.kind == EXPR_HEAP_SHELF_LIT {
+        // 5.2 slice 10: the heap sentinel routes every growth/put through
+        // velo_heap_alloc — the shelf outlives its zone
+        sb_append_str(sb, " ")
+        sb_append_str(sb, shl)
+        sb_append_str(sb, ".src = VELO_SHELF_HEAP_SRC;")
+    }
     mut cur = expr.first_arg
     loop cur != null {
         let esl = shelf_fresh_name(st, "esl_")

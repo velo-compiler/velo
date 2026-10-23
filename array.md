@@ -271,30 +271,41 @@ Tests:
 
 Missing surface:
 
-* [ ] `heap shelf[T]` type spelling + `heap shelf[...]` literal prefix.
+* [x] `heap shelf[T]` type spelling + `heap shelf[...]` literal prefix.
       Growth allocates via `velo_heap_alloc` so the shelf OUTLIVES its
       zone: returnable from acts, storable in globals/parents outside the
       Enclosing `zone { }`. Zone-backed shelves are the default; heap
-      shelves pay persistent-block pricing (documented).
-* [ ] `VeloShelf` grows a source field (`NULL` = active arena; zero-init =
+      shelves pay persistent-block pricing (documented). Battery: heap
+      shelf returned from an act AND grown inside a zone, intact after
+      the exit (`len 52 v51 49 gn 100 last 99`).
+* [x] `VeloShelf` grows a source field (`NULL` = active arena; zero-init =
       today's behavior, ALL helpers honor it via one allocator selector —
-      layout change pinned in the runtime header).
-* [ ] Shared rows closure (slice-1 residual (1) promise):
+      layout change pinned in the runtime header). `velo_shelf_alloc`:
+      growth, the take/remove_at victim stash, and sorted()/reversed()
+      result rows (a derived shelf inherits the source).
+* [x] Shared rows closure (slice-1 residual (1) promise):
       `@shelf[T]` as a child element — `grid[i]` yields the pointer,
       `grid[i].put(v)` and `grid[i][j] = v` mutate the SHARED row; the
-      row-copy guard only trips for value rows (non-pointer elements).
-* [ ] `as @shelf[T]` unbox RE-OPENED (slice-2 reject retires): the box
+      row-copy guard only trips for value rows (non-pointer elements) —
+      both stages' guards re-based onto the row type's pointer-ness
+      (battery: `a 7 b 9` — both write routes mutate the shared row).
+      Heap-shelf-value rows share through the copied header's data
+      pointer (the self-owning route).
+* [x] `as @shelf[T]` unbox RE-OPENED (slice-2 reject retires): the box
       holds a real pointer the user owns; the dangle wording is replaced
       with a documented trust doctrine + pointer to slice-2 residual (2)
       (`@T{...}` inline temporaries remain the one footgun — heap shelf is
-      the safe way to OWN shared rows).
+      the safe way to OWN shared rows). Battery: identity roundtrip
+      (`v 6 ln 2` — the same row comes back).
 
 Tests:
 
-* [ ] Heap shelf returned from an act, kept past a `zone { }` exit, growth
-      inside a zone leaks nothing into the zone ledger; shared-row battery
-      (mutate through grid[i], sibling index sees it); `as @shelf` roundtrip
-      keeps identity; copy-row `as shelf` behavior unchanged.
+* [x] Heap shelf returned from an act, kept past a `zone { }` exit, growth
+      inside a zone leaks nothing into the zone ledger (the heap ledger
+      accounts it); shared-row battery (mutate through grid[i], sibling
+      index sees it); `as @shelf` roundtrip keeps identity; copy-row `as
+      shelf` behavior unchanged. Battery: +3 acceptance pairs, +7 rejects
+      (dual-stage; sweep 73/73; suite 177/177).
 
 ## S11 — section sweep: retitles 5.2 to ✅
 

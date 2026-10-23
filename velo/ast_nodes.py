@@ -143,6 +143,9 @@ class ShelfLiteral(Expr):
     line: int
     col: int
     elem_type: Optional[str] = None
+    # 5.2 slice 10: `heap shelf[...]` — the payload allocates on the heap
+    # (VeloShelf.src = the heap sentinel) so the shelf outlives its zone.
+    is_heap: bool = False
 
 # 5.2 slice 6: `map[k0: v0, k1: v1, ...]` — constructor literal of an
 # associated array. Keys must match the pinned key families in spelling;

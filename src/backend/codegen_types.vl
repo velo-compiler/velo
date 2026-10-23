@@ -25,7 +25,8 @@ act map_type_to_c(type_name: string) -> string {
         return mangle_act_type(type_name)
     }
 
-    // 5.2: `shelf[T]` / `@shelf[T]` → the single shared VeloShelf layout
+    // 5.2: `shelf[T]` / `@shelf[T]` / (slice 10) `heap shelf[T]` → the single
+    // shared VeloShelf layout (is_shelf_form strips the heap modifier)
     if is_shelf_form(type_name) {
         if type_name[0] == '@' { return "VeloShelf*" }
         return "VeloShelf"

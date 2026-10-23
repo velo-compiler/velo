@@ -76,3 +76,15 @@ act parse_coll9_literal(p: @Parser) -> @ExprNode {
     if parser_check(p, TOK_RING) { return parse_ring_literal(p) }
     return parse_bitset_literal(p)
 }
+
+// 5.2 slice 10: `heap shelf[...]` — the shelf bracket-value shape with the
+// heap-backed payload (EXPR_HEAP_SHELF_LIT; the src sentinel rides the emit).
+// An empty `heap shelf[]` needs an annotation carrying the prefix.
+act parse_heap_shelf_literal(p: @Parser) -> @ExprNode {
+    parser_advance(p)   // `heap`
+    let shelf_tok = parser_advance(p)   // `shelf`
+    parser_consume(p, TOK_LBRACKET, "Expected '[' after 'heap shelf' (heap shelf literal: heap shelf[1, 2])")
+    let first = parse_lit_bracket_list(p)
+    parser_consume(p, TOK_RBRACKET, "Expected ']' at end of heap shelf literal")
+    return make_heap_shelf_lit_expr(first, lit_chain_count(first), shelf_tok.line, shelf_tok.col)
+}

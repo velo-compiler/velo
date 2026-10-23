@@ -27,9 +27,10 @@ act mono_ring_spelling(elem: string) -> string {
     return mono_concat("ring[", mono_concat(elem, "]"))
 }
 
-// 5.2: builds the canonical `shelf[T]` spelling.
-act mono_shelf_spelling(elem: string) -> string {
-    return mono_concat("shelf[", mono_concat(elem, "]"))
+// 5.2: builds the canonical `shelf[T]` spelling. Slice 10: the optional heap
+// prefix rides in front (`heap shelf[T]`).
+act mono_shelf_spelling(heap_pfx: string, elem: string) -> string {
+    return mono_concat(heap_pfx, mono_concat("shelf[", mono_concat(elem, "]")))
 }
 
 // 5.2: the shared literal-ladder scan (the mono twin of the shelf/ring
@@ -83,12 +84,15 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
             cur = cur.next
         }
     }
-    if e.kind == EXPR_SHELF_LIT {
+    if e.kind == EXPR_SHELF_LIT or e.kind == EXPR_HEAP_SHELF_LIT {
         // 5.2: shelf[T] inference — pinned elem, else the shared ladder scan
         // (the ladder scans ALL args — a heterogeneous literal inside a
-        // generic must not infer from the first element)
-        if e.type_name != null and str.len(e.type_name) > 0 { return mono_shelf_spelling(e.type_name) }
-        if e.first_arg != null { return mono_shelf_spelling(mono_lit_elem_scan(e, scope, "dyn")) }
+        // generic must not infer from the first element). Slice 10: a heap
+        // literal's spelling carries the `heap ` prefix.
+        mut heap_pfx = ""
+        if e.kind == EXPR_HEAP_SHELF_LIT { heap_pfx = "heap " }
+        if e.type_name != null and str.len(e.type_name) > 0 { return mono_shelf_spelling(heap_pfx, e.type_name) }
+        if e.first_arg != null { return mono_shelf_spelling(heap_pfx, mono_lit_elem_scan(e, scope, "dyn")) }
         return "i32"  // unannotated empty: the checker rejects it upstream
     }
     if e.kind == EXPR_RING_LIT {
@@ -292,8 +296,9 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
         }
         return make_variant_expr(kname, e.member_name, first_a, e.arg_count, e.line, e.col)
     }
-    if e.kind == EXPR_SHELF_LIT {
-        // 5.2: clone the bracket-arg chain; pinned elems ride type_name
+    if e.kind == EXPR_SHELF_LIT or e.kind == EXPR_HEAP_SHELF_LIT {
+        // 5.2: clone the bracket-arg chain; pinned elems ride type_name.
+        // Slice 10: the heap kind distinguishes the storage modifier.
         mut first_a: @ExprNode = null
         mut last_a: @ExprNode = null
         mut cur = e.first_arg
@@ -303,7 +308,9 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
             else { last_a.next = a; last_a = a }
             cur = cur.next
         }
-        return make_shelf_lit_expr(first_a, e.arg_count, e.type_name, e.line, e.col)
+        let lit = make_shelf_lit_expr(first_a, e.arg_count, e.type_name, e.line, e.col)
+        if e.kind == EXPR_HEAP_SHELF_LIT { lit.kind = EXPR_HEAP_SHELF_LIT }
+        return lit
     }
     if e.kind == EXPR_MAP_LIT {
         // 5.2 slice 6: clone the K,V alternating chain; the pinned spelling

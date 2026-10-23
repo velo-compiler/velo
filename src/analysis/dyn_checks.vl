@@ -76,16 +76,9 @@ act is_dyn_unbox_target(target: string) -> bool {
 act check_dyn_unbox_target(st: @SymbolTable, target: string, line: i32, col: i32) {
     if target == null { return }
     if target == "dyn" { return }
-    if str.len(target) > 0 and target[0] == '@' {
-        // the copied child header would escape as a dangling pointer into the
-        // box — value copies only (Stage 1: same words in _emit_dyn_unbox)
-        let base = strip_pointer_prefix(target)
-        if dyn_base_is_shelf_spelling(base) {
-            report_error("semantic", line, col, "cannot unbox a shelf[dyn] child as @shelf — the header copy would dangle; use as shelf[...] instead")
-            st.error_count += 1
-            return
-        }
-    }
+    // 5.2 slice 10: `as @shelf[T]` is RE-OPENED — the PTR box holds a real
+    // pointer the user owns (trust doctrine; the slice-2 dangle reject
+    // retires on both stages)
     if is_dyn_unbox_target(target) { return }
     mut sb = create_sb(str.len(target) + 96)
     sb_append_str(@sb, "cannot unbox a shelf[dyn] value into ")

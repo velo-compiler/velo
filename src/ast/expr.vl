@@ -23,6 +23,7 @@ let EXPR_SHELF_LIT: i32 = 117
 let EXPR_MAP_LIT: i32 = 118   // 5.2 slice 6: first_arg chain holds K,V,K,V…; arg_count = 2*pair_count
 let EXPR_RING_LIT: i32 = 150  // 5.2 slice 9: first_arg chain holds the elements; type_name = pinned elem
 let EXPR_BITSET_LIT: i32 = 151  // 5.2 slice 9: first_arg chain holds the index expressions
+let EXPR_HEAP_SHELF_LIT: i32 = 153  // 5.2 slice 10: a shelf literal whose payload is heap-backed
 
 // Represents a single field initializer in a struct instantiation (e.g. `x: 10.0`).
 // Linked via `next` to support arbitrary numbers of fields without dynamic heap buffers.
@@ -246,6 +247,19 @@ act make_map_lit_expr(first_elem: @ExprNode, pair_count: usize, line: i32, col: 
 act make_ring_lit_expr(first_elem: @ExprNode, count: usize, line: i32, col: i32) -> @ExprNode {
     mut node: @ExprNode = mem.alloc(@ExprNode, 1)
     node.kind = EXPR_RING_LIT
+    node.first_arg = first_elem
+    node.arg_count = count
+    node.type_name = null
+    node.line = line
+    node.col = col
+    return node
+}
+
+// 5.2 slice 10: creates a HEAP shelf literal node (`heap shelf[...]`) — the
+// shelf literal shape with the heap-backed payload (VeloShelf.src sentinel).
+act make_heap_shelf_lit_expr(first_elem: @ExprNode, count: usize, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_HEAP_SHELF_LIT
     node.first_arg = first_elem
     node.arg_count = count
     node.type_name = null

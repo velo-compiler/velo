@@ -72,10 +72,13 @@ def mangle_type_name(t: str) -> str:
 
 
 def _shelf_elem_of(t: Optional[str]) -> Optional[str]:
-    """5.2: extracts the element type from 'shelf[T]' / '@shelf[T]', or None."""
+    """5.2: extracts the element type from 'shelf[T]' / '@shelf[T]', or None.
+    Slice 10: 'heap shelf[T]' strips the modifier first."""
     if not t:
         return None
     raw = t.lstrip("@").strip()
+    if raw.startswith("heap shelf[") and raw.endswith("]"):
+        raw = raw[5:]
     if raw.startswith("shelf[") and raw.endswith("]"):
         inner = raw[6:-1].strip()
         return inner or None
@@ -120,6 +123,11 @@ def normalize_type_name(t: Optional[str]) -> Optional[str]:
     """
     if not t:
         return t
+    # 5.2 slice 10: `heap shelf[...]` passes through UNCHANGED like shelf — the
+    # heap prefix must reach the emit tier (the src sentinel) intact. Checked
+    # before parse_type_signature (the space splits oddly there).
+    if t.lstrip("@").startswith("heap shelf"):
+        return t
     prefix, base, args = parse_type_signature(t)
     if base == "shelf":
         return t  # 5.2: keep the bracket form; elem extraction needs it
@@ -127,7 +135,7 @@ def normalize_type_name(t: Optional[str]) -> Optional[str]:
         return t  # 5.2 slice 6: keep `Map[K, V]`; the two-slot extraction needs it
     if base == "ring":
         return t  # 5.2 slice 9: keep `ring[T]`; elem extraction needs it
-    # 5.2 slice 9: `bitset` is bare (no bracket args) — passes through below.
+    # 5.2 slice 9: `bitset` is bare (no bracket args) and passes through below.
     if not args:
         return prefix + base
     mangled_args = [mangle_type_name(a) for a in args]
@@ -862,6 +870,7 @@ class Monomorphizer:
             new_args = [self._transform_expr(a, scope, subst, None) for a in expr.args]
             new_lit = ShelfLiteral(args=new_args, line=expr.line, col=expr.col)
             new_lit.elem_type = expr.elem_type
+            new_lit.is_heap = expr.is_heap   # slice 10: the storage modifier rides the clone
             return new_lit
         elif isinstance(expr, MapLiteral):
             new_keys = [self._transform_expr(a, scope, subst, None) for a in expr.keys]
@@ -972,9 +981,11 @@ class Monomorphizer:
             return "Map[dyn, dyn]"  # best-effort for heterogeneous keys (checker rejects)
         if isinstance(expr, ShelfLiteral):
             # 5.2: homogeneous best-effort inference (generic T unification);
-            # the strict check runs in the checker/codegen
+            # the strict check runs in the checker/codegen. Slice 10: a heap
+            # literal's inferred spelling carries the `heap ` prefix.
+            heap_pfx = "heap " if expr.is_heap else ""
             if expr.elem_type:
-                return f"shelf[{expr.elem_type}]"
+                return f"{heap_pfx}shelf[{expr.elem_type}]"
             if not expr.args:
                 return "i32"
             # 5.2 slice 2: the ladder runs over ALL args (a heterogeneous
@@ -982,10 +993,10 @@ class Monomorphizer:
             types = [self._infer_expr_type(a, scope) for a in expr.args]
             first = types[0]
             if all(t == first for t in types):
-                return f"shelf[{first}]"
+                return f"{heap_pfx}shelf[{first}]"
             if all(t in DYN_INT_TYPES or t in DYN_FLOAT_TYPES for t in types) and any(t in DYN_FLOAT_TYPES for t in types):
-                return "shelf[f64]"
-            return "shelf[dyn]"
+                return f"{heap_pfx}shelf[f64]"
+            return f"{heap_pfx}shelf[dyn]"
         if isinstance(expr, RingLiteral):
             # 5.2 slice 9: best-effort ring ladder (no dyn arm — a mixed
             # non-numeric generic literal is a checker-rejected corner)

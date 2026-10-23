@@ -45,7 +45,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         return "unknown"
     }
 
-    if expr.kind == EXPR_SHELF_LIT { return shelf_inferred_type(st, expr) }  // 5.2: shelf constructor literal
+    if expr.kind == EXPR_SHELF_LIT or expr.kind == EXPR_HEAP_SHELF_LIT { return shelf_inferred_type(st, expr) }  // 5.2: shelf constructor literal (heap: slice 10)
     if expr.kind == EXPR_MAP_LIT { return map_inferred_type(st, expr) }  // 5.2 slice 6: map constructor literal
     if expr.kind == EXPR_RING_LIT or expr.kind == EXPR_BITSET_LIT { return check_coll9_inferred_type(st, expr) }  // 5.2 slice 9
     if expr.kind == EXPR_IDENT {

@@ -884,13 +884,36 @@ static inline const char** velo_str_split(const char* s, const char* delim) {
 // the same expression — valid until the NEXT growth (a put may relocate data;
 // take results are not put()'s argument since then, the compiler evaluates
 // take results before the relocation).
+//
+// 5.2 (slice 10) — the memory-model selector: VeloShelf grows `src`, the
+// allocation source. NULL (zero-init) = the ACTIVE arena — every shelf built
+// before slice 10 behaves byte-identically. A non-NULL src = HEAP storage
+// (velo_heap_alloc, persistent blocks on the shared ledger): the shelf
+// outlives its zone and can be returned from acts. ONE selector serves every
+// allocating helper (growth, the take/remove_at victim stashes, and the
+// sorted()/reversed() result rows — a derived shelf inherits the receiver's
+// source). Freeing heap shelves is a later slice; the heap ledger accounts
+// them (persistent-block pricing).
 // ============================================================================
 typedef struct VeloShelf {
-    void*  data;  // element storage (allocated in the active arena on growth)
+    void*  data;  // element storage (allocated via the src selector on growth)
     size_t len;   // element count
     size_t cap;   // element capacity
     size_t esz;   // element size in bytes (established at the first put)
+    VeloAllocator src;  // slice 10: NULL = active arena; non-NULL = heap
 } VeloShelf;
+
+// The pinned sentinel the compilers store into `src` for `heap shelf` — any
+// non-NULL source selects heap allocation.
+#define VELO_SHELF_HEAP_SRC ((VeloAllocator)1)
+
+// The one allocator selector (slice 10): zone-backed shelves bump the active
+// arena (reclaimed wholesale at the zone exit); heap shelves allocate
+// persistent blocks on the shared ledger and never touch the zone.
+static inline void* velo_shelf_alloc(const VeloShelf* s, size_t esz, size_t count) {
+    if (s->src) return velo_heap_alloc(esz, count);
+    return velo_mem_alloc(esz, count);
+}
 
 static inline void velo_shelf_oob(size_t idx, size_t len) {
     fprintf(stderr, "Velo Fatal Error: shelf index out of bounds: %llu (len %llu)!\n",
@@ -911,7 +934,7 @@ static inline void velo_shelf_reserve(VeloShelf* s) {
     if (s->data == NULL || s->len == s->cap) {
         size_t new_cap = s->cap ? s->cap : 4;
         while (new_cap < s->len + 1) new_cap *= 2;
-        void* next = velo_mem_alloc(s->esz, new_cap);
+        void* next = velo_shelf_alloc(s, s->esz, new_cap);   // slice 10: the src selector
         if (s->len > 0) memcpy(next, s->data, s->len * s->esz);
         s->data = next;
         s->cap = new_cap;
@@ -970,7 +993,7 @@ static inline void* velo_shelf_remove_at(VeloShelf* s, size_t idx) {
         exit(1);
     }
     char* cell = (char*)s->data + idx * s->esz;
-    void* stash = velo_mem_alloc(s->esz, 1);
+    void* stash = velo_shelf_alloc(s, s->esz, 1);   // slice 10: heap stashes survive the zone
     memcpy(stash, cell, s->esz);
     memmove(cell, cell + s->esz, (s->len - idx - 1) * s->esz);
     s->len -= 1;
@@ -1024,14 +1047,16 @@ static int velo_shelf_cmp_string(const void* a, const void* b) {
     return strcmp(x, y);
 }
 
-// Copy-and-sort engine: fresh backing storage (never the receiver's row).
+// Copy-and-sort engine: fresh backing storage (never the receiver's row);
+// slice 10: the result inherits the receiver's allocation source.
 static inline VeloShelf velo_shelf_sorted_copy(const VeloShelf* s, int (*cmp)(const void*, const void*)) {
     VeloShelf out = {0};
     out.esz = s->esz;
     out.len = s->len;
     out.cap = s->len;
+    out.src = s->src;
     if (s->len > 0) {
-        out.data = velo_mem_alloc(s->esz, s->len);
+        out.data = velo_shelf_alloc(&out, s->esz, s->len);
         memcpy(out.data, s->data, s->len * s->esz);
         qsort(out.data, s->len, s->esz, cmp);
     }
@@ -1065,8 +1090,9 @@ static inline VeloShelf velo_shelf_reversed(const VeloShelf* s) {
     out.esz = s->esz;
     out.len = s->len;
     out.cap = s->len;
+    out.src = s->src;   // slice 10: a derived shelf inherits the source
     if (s->len > 0) {
-        out.data = velo_mem_alloc(s->esz, s->len);
+        out.data = velo_shelf_alloc(&out, s->esz, s->len);
         const char* src = (const char*)s->data;
         char* dst = (char*)out.data;
         for (size_t i = 0; i < s->len; i++) {

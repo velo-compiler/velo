@@ -137,6 +137,11 @@ class CCodeGenerator:
             return "VeloShelf" + ("*" * pointer_count)
         if type_str == "shelf":
             raise ValueError("a bare 'shelf' needs an element type: use shelf[T]")
+        # 5.2 slice 10: `heap shelf[T]` — the same layout, heap-backed payload
+        if type_str.lstrip("@").startswith("heap shelf["):
+            return "VeloShelf" + ("*" * pointer_count)
+        if type_str.lstrip("@") == "heap shelf":
+            raise ValueError("a bare 'heap shelf' needs an element type: use heap shelf[T]")
         # 5.2 slice 6: every Map[K, V] maps onto the runtime's single VeloMap
         if type_str.startswith("Map["):
             return "VeloMap" + ("*" * pointer_count)
@@ -159,11 +164,13 @@ class CCodeGenerator:
         return f"_velo_{prefix}{self.fresh_counter}"
 
     def _shelf_elem_type(self, type_str: Optional[str]) -> Optional[str]:
-        """Extracts the element type from a `shelf[T]` (or `@shelf[T]`) type
-        string, or None when the type is not a shelf."""
+        """Extracts the element type from a `shelf[T]`, `@shelf[T]`, or
+        (slice 10) `heap shelf[T]` type string, or None otherwise."""
         if not type_str:
             return None
         raw = type_str.lstrip("@").strip()
+        if raw.startswith("heap shelf[") and raw.endswith("]"):
+            raw = raw[5:]   # strip the heap modifier; the shelf spell follows
         if raw.startswith("shelf[") and raw.endswith("]"):
             inner = raw[6:-1].strip()
             return inner if inner else None
@@ -600,8 +607,9 @@ class CCodeGenerator:
         base = target.strip()
         if base == "dyn":
             return code
-        if base.lstrip("@").startswith("shelf") and base.startswith("@"):
-            raise ValueError("cannot unbox a shelf[dyn] child as @shelf — the header copy would dangle; use as shelf[...] instead")
+        # 5.2 slice 10: `as @shelf[T]` is RE-OPENED — the PTR box holds a real
+        # pointer the user owns (trust doctrine; a heap shelf is the safe way
+        # to own shared rows). The slice-2 dangle reject retires.
         if base in DYN_INT_TYPES:
             tag, family = "VELO_DYN_I64", "int"
             cast_c = self._map_type(base)
@@ -796,10 +804,25 @@ class CCodeGenerator:
     def _check_shelf_annotation(self, decl_type: Optional[str], value: Optional[Expr]) -> None:
         """5.2 contract: annotated shelf declarations — an empty literal borrows
         the annotation's element type; a non-empty literal must match it
-        exactly. Mirrored by the Stage 2 checker's check_shelf_annotation."""
-        if not isinstance(value, ShelfLiteral) or not decl_type or not decl_type.startswith("shelf["):
+        exactly. Mirrored by the Stage 2 checker's check_shelf_annotation.
+        Slice 10: `heap shelf[T]` annotations ride the same check (the
+        storage modifier is part of the compared spelling)."""
+        if not isinstance(value, ShelfLiteral) or not decl_type:
+            return
+        clean_decl = decl_type.lstrip("@")
+        if not clean_decl.startswith("shelf[") and not clean_decl.startswith("heap shelf["):
             return
         ann_elem = self._shelf_elem_type(decl_type)
+        # 5.2 slice 10: the storage modifier is part of the spelling — a heap
+        # literal under a zone-backed annotation (or the reverse) rejects with
+        # the full literal spelling in the elem slot, BEFORE the empty borrow
+        ann_is_heap = clean_decl.startswith("heap ")
+        if value.is_heap != ann_is_heap:
+            if value.args:
+                lit_full = self._infer_raw_velo_type(value)
+            else:
+                lit_full = "heap shelf[]" if value.is_heap else "shelf[]"
+            raise ValueError(f"shelf literal element type {lit_full} does not match annotation {decl_type}")
         if not value.args:
             if ann_elem is not None:
                 value.elem_type = ann_elem
@@ -821,6 +844,10 @@ class CCodeGenerator:
         elem_c = self._map_type(elem)
         recv = self._fresh_name("shl_")
         parts = [f"VeloShelf {recv} = {{0}}"]
+        if lit.is_heap:
+            # 5.2 slice 10: the heap sentinel routes every growth/put through
+            # velo_heap_alloc — the shelf outlives its zone
+            parts.append(f"{recv}.src = VELO_SHELF_HEAP_SRC")
         for a in lit.args:
             slot = self._fresh_name("esl_")
             val_code = self._emit_expression(a)
@@ -1267,7 +1294,7 @@ class CCodeGenerator:
             # literal borrows BOTH slots the same way
             if stmt.value and isinstance(stmt.value, ShelfLiteral) and not stmt.value.args:
                 ret_t = self.current_function.return_type if self.current_function else None
-                if ret_t and ret_t.lstrip("@").startswith("shelf["):
+                if ret_t and (ret_t.lstrip("@").startswith("shelf[") or ret_t.lstrip("@").startswith("heap shelf[")):
                     stmt.value.elem_type = self._shelf_elem_type(ret_t)
             if stmt.value and isinstance(stmt.value, MapLiteral) and not stmt.value.keys:
                 ret_t = self.current_function.return_type if self.current_function else None
@@ -1336,7 +1363,11 @@ class CCodeGenerator:
                     root = self._shelf_root_binding(stmt.target)
                     if root is not None and not self.current_scope_mut.get(root, False):
                         raise ValueError("cannot write into a shelf held by a let (declare with mut)")
-                    if isinstance(stmt.target.target, IndexExpr) and not shelf_elem.startswith("@"):
+                    if isinstance(stmt.target.target, IndexExpr) and not base_type.startswith("@"):
+                        # 5.2 slice 10: the guard tests the ROW TYPE's pointer-
+                        # ness — @shelf[..] rows share their storage, so writes
+                        # through them are the shared-rows closure; value rows
+                        # (shelf[T]) stay rejected
                         raise ValueError("cannot write through a shelf row copy (snapshot rows) — use @shelf[int] rows for in-place mutation")
                     itype = self._resolve_expr_type(stmt.target.index)
                     if itype not in SHELF_INT_TYPES:
@@ -1715,9 +1746,11 @@ class CCodeGenerator:
         if isinstance(value, NullLiteral): return "@void"
         if isinstance(value, ShelfLiteral):
             # 5.2: strict-homogeneous inference; empty literals only infer
-            # when an annotation established elem_type beforehand.
+            # when an annotation established elem_type beforehand. Slice 10:
+            # a heap literal's inferred spelling carries the `heap ` prefix.
+            heap_pfx = "heap " if value.is_heap else ""
             if value.elem_type:
-                return f"shelf[{value.elem_type}]"
+                return f"{heap_pfx}shelf[{value.elem_type}]"
             if not value.args:
                 raise ValueError("cannot infer element type of empty shelf literal — annotate it (e.g. let e: shelf[i32] = shelf[])")
             types = [self._infer_raw_velo_type(a) for a in value.args]
@@ -1733,17 +1766,17 @@ class CCodeGenerator:
             # any other mix lowers to shelf[dyn] (every element must box).
             mixed = any(t != first for t in types)
             if not mixed:
-                return f"shelf[{first}]"
+                return f"{heap_pfx}shelf[{first}]"
             if all(t in DYN_INT_TYPES or t in DYN_FLOAT_TYPES for t in types):
                 if any(t in DYN_FLOAT_TYPES for t in types):
-                    return "shelf[f64]"
+                    return f"{heap_pfx}shelf[f64]"
                 second = next(t for t in types if t != first)
                 raise ValueError(f"shelf literal element types differ: {first} vs {second}")
             for t in types:
                 err = self._dyn_boxable_error(t)
                 if err:
                     raise ValueError(err)
-            return "shelf[dyn]"
+            return f"{heap_pfx}shelf[dyn]"
         if isinstance(value, MapLiteral):
             # 5.2 slice 6: the map literal ladder. Annotated empties return
             # the pinned `Map[K, V]`; non-empty literals run the key gate +
@@ -2609,9 +2642,11 @@ class CCodeGenerator:
                     if want_l.startswith("shelf["):
                         # 5.2: shelf element types must string-match across call
                         # boundaries — a silent VeloShelf↔VeloShelf pass-through
-                        # would corrupt reads (esz)
+                        # would corrupt reads (esz). Slice 10: heap spellings
+                        # count as shelf spellings (strict, both directions)
                         got = self._resolve_expr_type(a)
-                        if got.lstrip("@").startswith("shelf[") and got != want:
+                        got_l = got.lstrip("@")
+                        if (got_l.startswith("shelf[") or got_l.startswith("heap shelf[")) and got != want:
                             raise ValueError(f"shelf argument element types must match exactly: got {got}, expected {want}")
                     elif want_l.startswith("Map["):
                         # 5.2 slice 6: maps string-match BOTH slots across calls

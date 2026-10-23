@@ -44,7 +44,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr.kind == EXPR_BOOL { if expr.bool_val { sb_append_str(sb, "true") } else { sb_append_str(sb, "false") }; return }
     if expr.kind == EXPR_NULL { sb_append_str(sb, "NULL"); return }
     if expr.kind == EXPR_IDENT { sb_append_str(sb, expr.str_val); return }
-    if expr.kind == EXPR_SHELF_LIT { emit_shelf_literal(sb, st, expr); return }  // 5.2
+    if expr.kind == EXPR_SHELF_LIT or expr.kind == EXPR_HEAP_SHELF_LIT { emit_shelf_literal(sb, st, expr); return }  // 5.2 (heap: slice 10)
     if expr.kind == EXPR_MAP_LIT { emit_map_literal(sb, st, expr); return }  // 5.2 slice 6
     if expr.kind == EXPR_RING_LIT or expr.kind == EXPR_BITSET_LIT { emit_coll9_literal(sb, st, expr); return }  // 5.2 slice 9
     if expr.kind == EXPR_VARIANT {

@@ -35,6 +35,8 @@ class TokenType(Enum):
     # 5.2 slice 9: `ring` / `bitset` — reserved for the literal forms.
     RING = auto()
     BITSET = auto()
+    # 5.2 slice 10: `heap` — the heap-shelf storage modifier.
+    HEAP = auto()
     OF = auto()
 
     # Literals
@@ -136,6 +138,9 @@ KEYWORDS = {
     # 5.2 slice 9: `ring` / `bitset` are reserved for their literal forms.
     "ring": TokenType.RING,
     "bitset": TokenType.BITSET,
+    # 5.2 slice 10: `heap` is reserved — the heap-shelf storage modifier
+    # (`heap shelf[T]` types, `heap shelf[...]` literals).
+    "heap": TokenType.HEAP,
     "of": TokenType.OF,
 }
 

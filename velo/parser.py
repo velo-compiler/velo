@@ -385,11 +385,18 @@ class Parser:
                 ret_type = self._parse_type_annotation()
             return prefix + f"act({', '.join(params)}) -> {ret_type}"
 
-        if self._check(TokenType.SHELF) or self._check(TokenType.RING) or self._check(TokenType.BITSET):
+        if self._check(TokenType.HEAP):
+            # 5.2 slice 10: `heap shelf[T]` — the storage modifier prefixes the
+            # shelf spelling; the canonical type string carries `heap ` verbatim
+            self._advance()
+            self._consume(TokenType.SHELF, "Expected 'shelf' after 'heap'")
+            base_name = "heap shelf"
+        elif self._check(TokenType.SHELF) or self._check(TokenType.RING) or self._check(TokenType.BITSET):
             type_tok = self._consume(self.tokens[self.pos].type, "Expected type name")
+            base_name = type_tok.value
         else:
             type_tok = self._consume(TokenType.IDENTIFIER, "Expected type name")
-        base_name = type_tok.value
+            base_name = type_tok.value
         if self._match(TokenType.LBRACKET):
             args = []
             while not self._check(TokenType.RBRACKET) and not self._is_at_end():
@@ -940,6 +947,23 @@ class Parser:
             return BoolLiteral(value=True, line=tok.line, col=tok.col)
         if self._match(TokenType.FALSE):
             return BoolLiteral(value=False, line=tok.line, col=tok.col)
+        if self._match(TokenType.HEAP):
+            # 5.2 slice 10: `heap shelf[...]` — the heap-storage shelf literal;
+            # the element ladder is the shelf's, the payload lands on the heap
+            self._consume(TokenType.SHELF, "Expected 'shelf' after 'heap' (heap shelf literal: heap shelf[1, 2])")
+            heap_tok = self.tokens[self.pos - 2]
+            self._consume(TokenType.LBRACKET, "Expected '[' after 'heap shelf' (heap shelf literal: heap shelf[1, 2])")
+            self._skip_newlines()
+            args: List[Expr] = []
+            while not self._check(TokenType.RBRACKET) and not self._is_at_end():
+                args.append(self._parse_expression())
+                self._skip_newlines()
+                if not self._match(TokenType.COMMA):
+                    break
+                self._skip_newlines()
+            self._consume(TokenType.RBRACKET, "Expected ']' at end of heap shelf literal")
+            return ShelfLiteral(args=args, line=heap_tok.line, col=heap_tok.col, is_heap=True)
+
         if self._match(TokenType.SHELF):
             # 5.2: shelf constructor literal — bracket args are VALUES
             # (homogeneous; empty `shelf[]` needs a type annotation).

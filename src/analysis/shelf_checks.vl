@@ -35,16 +35,20 @@ act is_shelf_type(type_name: string) -> bool {
     if type_name == null { return false }
     let clean = strip_pointer_prefix(type_name)
     let len = str.len(clean)
+    // 5.2 slice 10: `heap shelf[...]` carries the storage modifier prefix
+    if starts_with_heap_shelf(clean) { return true }
     if len < 6 { return false }
     if clean[0] == 's' and clean[1] == 'h' and clean[2] == 'e' and clean[3] == 'l' and clean[4] == 'f' { return true }
     return false
 }
 
-// Extracts the element type from `shelf[T]` / `@shelf[T]`; null when not a
-// shelf or when the brackets are empty (the literal needs a pin to be typed).
+// Extracts the element type from `shelf[T]` / `@shelf[T]` / (slice 10)
+// `heap shelf[T]`; null when not a shelf or when the brackets are empty (the
+// literal needs a pin to be typed).
 act shelf_elem_type(type_name: string) -> string {
     if type_name == null { return null }
-    let clean = strip_pointer_prefix(type_name)
+    mut clean = strip_pointer_prefix(type_name)
+    if starts_with_heap_shelf(clean) { clean = copy_slice_to_string(clean, 5, str.len(clean) - 5) }
     let len = str.len(clean)
     if len < 7 { return null }
     if clean[0] != 's' or clean[1] != 'h' or clean[2] != 'e' or clean[3] != 'l' or clean[4] != 'f' or clean[5] != '[' { return null }
@@ -222,12 +226,14 @@ act check_shelf_assign(st: @SymbolTable, stmt: @StmtNode) {
     }
     check_shelf_mut_binding(st, stmt.expr.target, "write", "into")
     if stmt.expr.target.kind == EXPR_INDEX {
-        let row_t = shelf_elem_type(infer_expr_type(st, stmt.expr.target))
-        if row_t != null {
-            if str.len(row_t) == 0 or row_t[0] != '@' {
-                report_error("semantic", stmt.line, stmt.col, "cannot write through a shelf row copy (snapshot rows) — use @shelf[int] rows for in-place mutation"); st.error_count += 1
-                return
-            }
+        // 5.2 slice 10 (the slice-1 residual (1) closure): the row-copy guard
+        // tests the ROW TYPE's pointer-ness — @shelf[..] rows share their
+        // storage, so writes through them are the shared-rows closure; value
+        // rows (shelf[T]) keep the reject (Stage 1: the same basis)
+        let row_t = infer_expr_type(st, stmt.expr.target)
+        if is_shelf_type(row_t) and row_t[0] != '@' {
+            report_error("semantic", stmt.line, stmt.col, "cannot write through a shelf row copy (snapshot rows) — use @shelf[int] rows for in-place mutation"); st.error_count += 1
+            return
         }
     }
     let it = infer_expr_type(st, stmt.expr.index)
@@ -257,9 +263,31 @@ act check_shelf_loop_elem(st: @SymbolTable, stmt: @StmtNode) -> string {
 
 // 5.2: annotated shelf declarations — pin empty literals from the annotation,
 // reject literal-vs-annotation element mismatches with the Stage 1 wording.
+// Slice 10: `heap shelf[T]` annotations ride the same check; the storage
+// modifier is part of the compared spelling (the full literal spelling sits
+// in the elem slot of the mismatch wording — Stage 1: the same words).
 act check_shelf_annotation(st: @SymbolTable, decl_t: string, val: @ExprNode, line: i32, col: i32) {
-    if val == null or val.kind != EXPR_SHELF_LIT { return }
-    if not is_shelf_type(decl_t) { return }
+    if val == null { return }
+    if val.kind != EXPR_SHELF_LIT and val.kind != EXPR_HEAP_SHELF_LIT { return }
+    let clean = strip_pointer_prefix(decl_t)
+    let ann_is_heap = starts_with_heap_shelf(clean)
+    if not is_shelf_type(decl_t) and not ann_is_heap { return }
+    let lit_is_heap = val.kind == EXPR_HEAP_SHELF_LIT
+    if lit_is_heap != ann_is_heap {
+        mut msg = create_sb(str.len(decl_t) + 64)
+        sb_append_str(@msg, "shelf literal element type ")
+        if val.arg_count > 0 {
+            sb_append_str(@msg, infer_expr_type(st, val))
+        } else if lit_is_heap {
+            sb_append_str(@msg, "heap shelf[]")
+        } else {
+            sb_append_str(@msg, "shelf[]")
+        }
+        sb_append_str(@msg, " does not match annotation ")
+        sb_append_str(@msg, decl_t)
+        report_error("semantic", line, col, sb_to_string(@msg)); st.error_count += 1
+        return
+    }
     let ann_elem = shelf_elem_type(decl_t)
     if val.arg_count == 0 {
         if ann_elem != null { val.type_name = ann_elem }
@@ -276,18 +304,34 @@ act check_shelf_annotation(st: @SymbolTable, decl_t: string, val: @ExprNode, lin
     }
 }
 
-// 5.2: an empty shelf literal in a return borrows the declared return type's elem.
+// 5.2 slice 10: true when the (already @-stripped) spelling carries the heap
+// shelf modifier.
+act starts_with_heap_shelf(t: string) -> bool {
+    if t == null { return false }
+    let len = str.len(t)
+    if len < 11 { return false }
+    return t[0] == 'h' and t[1] == 'e' and t[2] == 'a' and t[3] == 'p' and t[4] == ' ' and t[5] == 's' and t[6] == 'h' and t[7] == 'e' and t[8] == 'l' and t[9] == 'f' and t[10] == '['
+}
+
+// 5.2: an empty shelf literal in a return borrows the declared return type's
+// elem. Slice 10: heap shelf returns ride the same pin.
 act pin_empty_shelf_return(st: @SymbolTable, val: @ExprNode, ret_t: string) {
-    if val == null or val.kind != EXPR_SHELF_LIT or val.arg_count != 0 { return }
-    if ret_t == null or not is_shelf_type(ret_t) { return }
+    if val == null { return }
+    if val.kind != EXPR_SHELF_LIT and val.kind != EXPR_HEAP_SHELF_LIT { return }
+    if val.arg_count != 0 { return }
+    if ret_t == null { return }
+    let clean = strip_pointer_prefix(ret_t)
+    if not is_shelf_type(ret_t) and not starts_with_heap_shelf(clean) { return }
     val.type_name = shelf_elem_type(ret_t)
 }
 
 // 5.2: builds the shelf[T] type string from the (memoized) literal element.
+// Slice 10: a heap literal's spelling carries the `heap ` prefix.
 act shelf_inferred_type(st: @SymbolTable, expr: @ExprNode) -> string {
     let elem = shelf_literal_elem(st, expr)
     if elem == null or elem == "unknown" { return "unknown" }
-    mut sb = create_sb(str.len(elem) + 9)
+    mut sb = create_sb(str.len(elem) + 16)
+    if expr.kind == EXPR_HEAP_SHELF_LIT { sb_append_str(@sb, "heap ") }
     sb_append_str(@sb, "shelf[")
     sb_append_str(@sb, elem)
     sb_append_str(@sb, "]")
