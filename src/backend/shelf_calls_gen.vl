@@ -117,6 +117,19 @@ act emit_shelf_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode
         sb_append_str(sb, "; })")
         return
     }
+    if member == "reversed" {
+        // 5.2 slice 4: fresh copy, elements reversed — one runtime function
+        // for every element family (byte-swap on the copied row)
+        let out = shelf_fresh_name(st, "rev_")
+        sb_append_str(sb, "({ VeloShelf ")
+        sb_append_str(sb, out)
+        sb_append_str(sb, " = velo_shelf_reversed(")
+        emit_shelf_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, "); ")
+        sb_append_str(sb, out)
+        sb_append_str(sb, "; })")
+        return
+    }
     // checker handles unknown members; emit the property for totality
     emit_c_expr(sb, st, expr.callee.target)
     sb_append_char(sb, '.')

@@ -243,8 +243,8 @@ class CCodeGenerator:
         """5.2 compile-checks shelf surface calls (put/take/sorted/insert/
         remove_at). Mirrored by the Stage 2 checker — both stages reject the
         same programs with the same messages."""
-        if member not in ("put", "take", "sorted", "insert", "remove_at"):
-            raise ValueError(f"unknown shelf member '{member}' (put, take, len, sorted, insert, remove_at are available)")
+        if member not in ("put", "take", "sorted", "insert", "remove_at", "reversed"):
+            raise ValueError(f"unknown shelf member '{member}' (put, take, len, sorted, insert, remove_at, reversed are available)")
         if member == "sorted":
             if len(args) != 0:
                 raise ValueError("shelf.sorted takes no arguments")
@@ -255,6 +255,10 @@ class CCodeGenerator:
                 if err:
                     raise ValueError(err)
             return  # NOT a mutation: a sorted copy is legal on a let
+        if member == "reversed":
+            if len(args) != 0:
+                raise ValueError("shelf.reversed takes no arguments")
+            return  # NOT a mutation: a reversed copy is legal on a let (no family restriction)
         if member == "insert":
             if len(args) != 2:
                 raise ValueError("shelf.insert expects exactly 2 arguments: (shelf s, index, element value)")
@@ -877,6 +881,7 @@ class CCodeGenerator:
                 src = self._fresh_name("lsrc_")
                 cnt = self._fresh_name("lcnt_")
                 idx = self._fresh_name("lidx_")
+                iname = stmt.of_index or idx  # 5.2 slice 4: the optional user index binding
                 dat = self._fresh_name("ldat_")
                 coll_code = self._emit_expression(stmt.of_expr)
                 cap = f"(*({coll_code}))" if coll_type.startswith("@") else f"({coll_code})"
@@ -885,11 +890,15 @@ class CCodeGenerator:
                 self._emit_line(f"VeloShelf {src} = {cap};")
                 self._emit_line(f"const usize {cnt} = {src}.len;")
                 self._emit_line(f"void* {dat} = {src}.data;")
-                self._emit_line(f"for (usize {idx} = 0; {idx} < {cnt}; ++{idx}) {{")
+                self._emit_line(f"for (usize {iname} = 0; {iname} < {cnt}; ++{iname}) {{")
                 self.indent_level += 1
-                self._emit_line(f"const {elem_c} {it} = (({elem_c}*){dat})[{idx}];")
+                self._emit_line(f"const {elem_c} {it} = (({elem_c}*){dat})[{iname}];")
                 self.current_scope_types[it] = elem
                 self.current_scope_mut[it] = False
+                if stmt.of_index:
+                    # 5.2 slice 4: the second binding names the step index (usize)
+                    self.current_scope_types[iname] = "usize"
+                    self.current_scope_mut[iname] = False
                 self.defer_stack.append([])
                 self._emit_block_body(stmt.body.statements)
                 self.indent_level -= 1
@@ -1178,9 +1187,9 @@ class CCodeGenerator:
                         return "void"
                     if value.callee.member in ("take", "remove_at"):
                         return shelf_elem
-                    if value.callee.member == "sorted":
+                    if value.callee.member == "sorted" or value.callee.member == "reversed":
                         return f"shelf[{shelf_elem}]"
-                    raise ValueError(f"unknown shelf member '{value.callee.member}' (put, take, len, sorted, insert, remove_at are available)")
+                    raise ValueError(f"unknown shelf member '{value.callee.member}' (put, take, len, sorted, insert, remove_at, reversed are available)")
             if isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier) and value.callee.target.name in self.kind_defs:
                 return value.callee.target.name
             if isinstance(value.callee, Identifier):
@@ -1277,7 +1286,7 @@ class CCodeGenerator:
             if self._shelf_elem_type(target_type) is not None:
                 if expr.member == "len":
                     return "usize"
-                raise ValueError(f"unknown shelf member '{expr.member}' (put, take, len, sorted, insert, remove_at are available)")
+                raise ValueError(f"unknown shelf member '{expr.member}' (put, take, len, sorted, insert, remove_at, reversed are available)")
             clean_type = target_type.lstrip("@")
             fields = self.struct_defs.get(clean_type, {})
             return fields.get(expr.member, "i32")
@@ -1294,9 +1303,9 @@ class CCodeGenerator:
                         return "void"
                     if expr.callee.member in ("take", "remove_at"):
                         return shelf_elem
-                    if expr.callee.member == "sorted":
+                    if expr.callee.member == "sorted" or expr.callee.member == "reversed":
                         return f"shelf[{shelf_elem}]"
-                    raise ValueError(f"unknown shelf member '{expr.callee.member}' (put, take, len, sorted, insert, remove_at are available)")
+                    raise ValueError(f"unknown shelf member '{expr.callee.member}' (put, take, len, sorted, insert, remove_at, reversed are available)")
             if isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier) and expr.callee.target.name in self.kind_defs:
                 return expr.callee.target.name
             if isinstance(expr.callee, Identifier):
@@ -1675,6 +1684,11 @@ class CCodeGenerator:
                         # the wrapper token is the ELEMENT SPELLING (i32/f64/string)
                         out = self._fresh_name("srt_")
                         return f"({{ VeloShelf {out} = velo_shelf_sorted_{elem}({rec}); {out}; }})"
+                    if expr.callee.member == "reversed":
+                        # 5.2 slice 4: fresh copy, elements reversed — one
+                        # runtime function for every element family
+                        out = self._fresh_name("rev_")
+                        return f"({{ VeloShelf {out} = velo_shelf_reversed({rec}); {out}; }})"
                     return f"(*(({elem_c}*)velo_shelf_take({rec})))"
 
                 clean_type = target_type.lstrip("@")

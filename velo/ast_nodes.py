@@ -211,6 +211,7 @@ class LoopStmt(Stmt):
     expr: Optional[Expr] = None
     is_count: bool = False
     of_expr: Optional[Expr] = None  # 5.2: `loop v of coll { }` — value iteration over a shelf
+    of_index: Optional[str] = None  # 5.2 slice 4: optional second binding (the usize index)
 
 @dataclass
 class ZoneStmt(Stmt):

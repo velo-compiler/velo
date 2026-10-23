@@ -553,9 +553,19 @@ class Parser:
             )
 
         # 2. Shelf value loop: loop <var> of <collection> { ... }
-        if self._check(TokenType.IDENTIFIER) and self._peek(1).type == TokenType.OF:
+        #    5.2 slice 4: optional second binding — `loop v, i of coll { }`
+        #    (value, then index). More than two bindings rejects at parse.
+        if self._check(TokenType.IDENTIFIER) and self._peek(1).type in (TokenType.OF, TokenType.COMMA):
             iterator_tok = self._advance()
-            self._consume(TokenType.OF, "Expected 'of' after loop variable")
+            of_index = None
+            if self._match(TokenType.COMMA):
+                index_tok = self._advance()
+                if self._check(TokenType.COMMA):
+                    raise ValueError("loop of takes at most two bindings (value, then index)")
+                self._consume(TokenType.OF, "Expected 'of' after loop bindings")
+                of_index = index_tok.value
+            else:
+                self._consume(TokenType.OF, "Expected 'of' after loop variable")
             of_expr = self._parse_expression()
             self._skip_newlines()
             body = self._parse_block()
@@ -564,6 +574,7 @@ class Parser:
                 start_expr=None,
                 end_expr=None,
                 of_expr=of_expr,
+                of_index=of_index,
                 body=body,
                 line=loop_tok.line,
                 col=loop_tok.col,

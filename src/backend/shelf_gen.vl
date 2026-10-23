@@ -272,6 +272,10 @@ act emit_shelf_loop(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, inden
     let dat = shelf_fresh_name(st, "ldat_")
     mut vname = "it"
     if stmt.loop_var != null and str.len(stmt.loop_var) > 0 { vname = stmt.loop_var }
+    // 5.2 slice 4: an explicit second binding names the step index (usize);
+    // the C counter uses the user's name so the index is readable in the body.
+    mut iname = idx
+    if stmt.loop_index != null and str.len(stmt.loop_index) > 0 { iname = stmt.loop_index }
     sb_append_indent(sb, indent)
     sb_append_str(sb, "{ VeloShelf ")
     sb_append_str(sb, src)
@@ -297,16 +301,17 @@ act emit_shelf_loop(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, inden
     sb_append_str(sb, "\n")
     sb_append_indent(sb, indent)
     sb_append_str(sb, "for (usize ")
-    sb_append_str(sb, idx)
+    sb_append_str(sb, iname)
     sb_append_str(sb, " = 0; ")
-    sb_append_str(sb, idx)
+    sb_append_str(sb, iname)
     sb_append_str(sb, " < ")
     sb_append_str(sb, cnt)
     sb_append_str(sb, "; ++")
-    sb_append_str(sb, idx)
+    sb_append_str(sb, iname)
     sb_append_str(sb, ") {\n")
     enter_scope(st)
     define_variable(st, vname, elem, false, stmt.line, stmt.col)
+    if stmt.loop_index != null and str.len(stmt.loop_index) > 0 { define_variable(st, iname, "usize", false, stmt.line, stmt.col) }
     sb_append_indent(sb, indent + 1)
     sb_append_str(sb, "const ")
     sb_append_str(sb, elem_c)
@@ -317,7 +322,7 @@ act emit_shelf_loop(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, inden
     sb_append_str(sb, "*)")
     sb_append_str(sb, dat)
     sb_append_str(sb, ")[")
-    sb_append_str(sb, idx)
+    sb_append_str(sb, iname)
     sb_append_str(sb, "];\n")
     emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
     exit_scope(st)

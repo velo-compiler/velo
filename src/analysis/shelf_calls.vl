@@ -168,11 +168,27 @@ act check_shelf_member_call(st: @SymbolTable, expr: @ExprNode) -> string {
         let recv_t = infer_expr_type(st, expr.callee.target)
         return shelf_elem_type(recv_t)
     }
+    // 5.2 slice 4: reversed is a fresh COPY — legal on a let, no family
+    // restriction (the byte-swap orders nothing).
+    if member == "reversed" {
+        if expr.arg_count != 0 {
+            report_error("semantic", expr.line, expr.col, "shelf.reversed takes no arguments"); st.error_count += 1
+            return "unknown"
+        }
+        let recv_t = infer_expr_type(st, expr.callee.target)
+        let elem = shelf_elem_type(recv_t)
+        if elem == null { return "unknown" }
+        mut out = create_sb(str.len(elem) + 9)
+        sb_append_str(@out, "shelf[")
+        sb_append_str(@out, elem)
+        sb_append_str(@out, "]")
+        return sb_to_string(@out)
+    }
     // `.len` must be a property read, not a call; anything else is unknown
     mut msg = create_sb(str.len(member) + 64)
     sb_append_str(@msg, "unknown shelf member '")
     sb_append_str(@msg, member)
-    sb_append_str(@msg, "' (put, take, len, sorted, insert, remove_at are available)")
+    sb_append_str(@msg, "' (put, take, len, sorted, insert, remove_at, reversed are available)")
     report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
     return "unknown"
 }

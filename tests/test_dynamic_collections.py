@@ -343,6 +343,74 @@ class TestShelfBasics(unittest.TestCase):
         self.assertEqual(s1.stdout, s2.stdout, "dyn bag outputs diverged")
         self.assertEqual(s1.stdout.strip().splitlines(), ["dn 3 d2 15 w sx"])
 
+    # ------------------------------------------------------------------
+    # 5.2 slice 4 — the loop index binding + the reversed() copy.
+    # ------------------------------------------------------------------
+    def test_loop_of_index_binding(self):
+        # `loop v, i of xs` — first binding is the VALUE, second the step
+        # index (usize). Exercised through a GENERIC body so mono has to
+        # carry the usize index scope on both stages.
+        program = (
+            "use sys.io\n"
+            "act walk[T](xs: shelf[T]) -> i32 {\n"
+            "    loop v, i of xs {\n"
+            "        io.println(\"i {i} v {v}\")\n"
+            "    }\n"
+            "    return 0\n"
+            "}\n"
+            "act main() -> i32 {\n"
+            "    let xs = shelf[9, 1, 5, 3]\n"
+            "    walk(xs)\n"
+            "    return 0\n"
+            "}\n"
+        )
+        expected = ["i 0 v 9", "i 1 v 1", "i 2 v 5", "i 3 v 3"]
+        s1 = run_stage("stage1", program, "shelf54_loopidx")
+        s2 = run_stage("stage2", program, "shelf54_loopidx")
+        self.assertEqual(s1.returncode, 0, s1.stderr)
+        self.assertEqual(s2.returncode, 0, s2.stderr)
+        self.assertEqual(s1.stdout, s2.stdout, "loop-index outputs diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), expected)
+
+    def test_shelf_reversed_copy(self):
+        # reversed() returns a NEW shelf (receiver untouched — legal on let,
+        # no family restriction: dyn boxes keep their tags); empty reverses
+        # to empty.
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    let xs = shelf[9, 1, 5, 3]\n"
+            "    let rv = xs.reversed()\n"
+            "    let r0 = rv[0]\n"
+            "    let r1 = rv[1]\n"
+            "    let r3 = rv[3]\n"
+            "    let keep = xs[0]\n"
+            "    let words = shelf[\"pear\", \"apple\"]\n"
+            "    let wb = words.reversed()\n"
+            "    let w0 = wb[0]\n"
+            "    let e: shelf[i32] = shelf[]\n"
+            "    let er = e.reversed()\n"
+            "    let n = er.len\n"
+            "    io.println(\"rev {r0} mid {r1} last {r3} keep {keep}\")\n"
+            "    io.println(\"w {w0} en {n}\")\n"
+            "    mut bag: shelf[dyn] = shelf[]\n"
+            "    bag.insert(0, \"sx\")\n"
+            "    bag.insert(0, 15)\n"
+            "    let rb = bag.reversed()\n"
+            "    let b0 = rb[0] as string\n"
+            "    let b1 = rb[1] as i32\n"
+            "    io.println(\"b0 {b0} b1 {b1}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        expected = ["rev 3 mid 5 last 9 keep 9", "w apple en 0", "b0 sx b1 15"]
+        s1 = run_stage("stage1", program, "shelf54_rev")
+        s2 = run_stage("stage2", program, "shelf54_rev")
+        self.assertEqual(s1.returncode, 0, s1.stderr)
+        self.assertEqual(s2.returncode, 0, s2.stderr)
+        self.assertEqual(s1.stdout, s2.stdout, "reversed outputs diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), expected)
+
 
 def find_gcc() -> str:
     import shutil
@@ -421,7 +489,7 @@ REJECTIONS = [
      "shelf literal element type shelf[i32] does not match annotation shelf[i64]",
      "rej_annotation"),
     ("use sys.io\nact main() -> i32 {\n    mut xs = shelf[1]\n    let n = xs.push(3)\n    return 0\n}",
-     "unknown shelf member 'push' (put, take, len, sorted, insert, remove_at are available)",
+     "unknown shelf member 'push' (put, take, len, sorted, insert, remove_at, reversed are available)",
      "rej_push"),
     ("use sys.io\nact main() -> i32 {\n    mut xs = shelf[1]\n    xs.put(1, 2)\n    return 0\n}",
      "shelf.put expects exactly 1 argument: (shelf s, element value)",
@@ -485,6 +553,14 @@ REJECTIONS = [
      "    mut m: shelf[dyn] = shelf[]\n    m.insert(0, hit())\n    return 0\n}",
      "shelf[dyn] insert: cannot box a void value",
      "rej_dyn_insert_void"),
+    # 5.2 slice 4 — loop-index arity + reversed arity.
+    ("use sys.io\nact main() -> i32 {\n    let xs = shelf[1]\n"
+     "    loop v, i, w of xs {\n        io.println(\"x\")\n    }\n    return 0\n}",
+     "loop of takes at most two bindings (value, then index)",
+     "rej_loop_third_binding"),
+    ("use sys.io\nact main() -> i32 {\n    let xs = shelf[1]\n    let s = xs.reversed(1)\n    return 0\n}",
+     "shelf.reversed takes no arguments",
+     "rej_reversed_args"),
 ]
 
 RUNTIME_FATALS = [

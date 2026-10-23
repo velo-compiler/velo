@@ -1057,6 +1057,25 @@ VELO_SHELF_SORT(f64)
 VELO_SHELF_SORT(string)
 #undef VELO_SHELF_SORT
 
+// Reversed COPY of a shelf: fresh arena backing, receiver untouched, no
+// element-family restriction (a byte-swap orders nothing — every family
+// ships, dyn boxes keep their tags).
+static inline VeloShelf velo_shelf_reversed(const VeloShelf* s) {
+    VeloShelf out = {0};
+    out.esz = s->esz;
+    out.len = s->len;
+    out.cap = s->len;
+    if (s->len > 0) {
+        out.data = velo_mem_alloc(s->esz, s->len);
+        const char* src = (const char*)s->data;
+        char* dst = (char*)out.data;
+        for (size_t i = 0; i < s->len; i++) {
+            memcpy(dst + (s->len - 1 - i) * s->esz, src + i * s->esz, s->esz);
+        }
+    }
+    return out;
+}
+
 // Pop the last element; returns a pointer INTO the payload (deref now).
 // An empty shelf take is a loud fatal (same tiering as the byte helpers).
 static inline void* velo_shelf_take(VeloShelf* s) {

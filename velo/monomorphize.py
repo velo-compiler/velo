@@ -630,17 +630,21 @@ class Monomorphizer:
             if stmt.of_expr is not None:
                 # 5.2: `loop v of coll` — transform the source, then register the
                 # iterator with the shelf's ELEMENT type in the loop scope.
+                # Slice 4: the optional index binding is a usize scope entry.
                 new_of = self._transform_expr(stmt.of_expr, scope, subst, None)
                 of_t = self._infer_expr_type(new_of, scope)
                 loop_scope = dict(scope)
                 if stmt.iterator:
                     loop_scope[stmt.iterator] = _shelf_elem_of(of_t) or "i32"
+                if stmt.of_index:
+                    loop_scope[stmt.of_index] = "usize"
                 new_body = self._transform_block(stmt.body, loop_scope, subst, current_ret_type)
                 return LoopStmt(
                     iterator=stmt.iterator,
                     start_expr=None,
                     end_expr=None,
                     of_expr=new_of,
+                    of_index=stmt.of_index,
                     body=new_body,
                     line=stmt.line,
                     col=stmt.col
