@@ -9,6 +9,20 @@ use "../common/utils.vl"
 use "../common/string_builder.vl"
 use "monomorphize_types.vl"
 
+// 5.2 slice 2 ladder families (mono helper — same sets as Stage 1's
+// DYN_INT_TYPES / DYN_FLOAT_TYPES in velo/monomorphize.py)
+act is_mono_dyn_int(name: string) -> bool {
+    if name == null { return false }
+    if name == "i8" or name == "i16" or name == "i32" or name == "i64" { return true }
+    if name == "u8" or name == "u16" or name == "u32" or name == "u64" { return true }
+    if name == "usize" or name == "isize" { return true }
+    return false
+}
+
+act is_mono_dyn_float(name: string) -> bool {
+    return name != null and (name == "f32" or name == "f64")
+}
+
 act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
     if e == null { return "i32" }
     if e.kind == EXPR_INT { return "i32" }
@@ -36,7 +50,9 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
         }
     }
     if e.kind == EXPR_SHELF_LIT {
-        // 5.2: shelf[T] inference — pinned elem, else the first element's type
+        // 5.2: shelf[T] inference — pinned elem, else the inference ladder
+        // (5.2 slice 2: the ladder scans ALL args — a heterogeneous literal
+        // inside a generic must not infer from the first element)
         if e.type_name != null and str.len(e.type_name) > 0 {
             mut sb = create_sb(str.len(e.type_name) + 9)
             sb_append_str(@sb, "shelf[")
@@ -46,9 +62,27 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
         }
         if e.first_arg != null {
             let t0 = mono_infer_type(e.first_arg, scope)
-            mut sb = create_sb(str.len(t0) + 9)
+            mut is_mixed = false
+            mut all_numeric = true
+            mut has_float = false
+            mut cur = e.first_arg.next
+            loop cur != null {
+                let t = mono_infer_type(cur, scope)
+                if t != t0 { is_mixed = true }
+                if is_mono_dyn_int(t) or is_mono_dyn_float(t) {
+                    if is_mono_dyn_float(t) { has_float = true }
+                } else {
+                    all_numeric = false
+                }
+                cur = cur.next
+            }
+            mut elem = t0
+            if is_mixed {
+                if all_numeric and has_float { elem = "f64" } else { elem = "dyn" }
+            }
+            mut sb = create_sb(str.len(elem) + 9)
             sb_append_str(@sb, "shelf[")
-            sb_append_str(@sb, t0)
+            sb_append_str(@sb, elem)
             sb_append_str(@sb, "]")
             return sb_to_string(@sb)
         }

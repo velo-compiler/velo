@@ -146,8 +146,12 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         return
     }
 
-    // 5. Explicit cast
+    // 5. Explicit cast (5.2 slice 2: a cast off a raw dyn unboxes instead)
     if expr.kind == EXPR_CAST {
+        if infer_expr_type(st, expr.operand) == "dyn" {
+            emit_dyn_unbox(sb, st, expr.operand, expr.type_name)
+            return
+        }
         sb_append_str(sb, "(("); sb_append_str(sb, map_type_to_c(expr.type_name)); sb_append_str(sb, ")(")
         emit_c_expr(sb, st, expr.operand)
         sb_append_str(sb, "))")

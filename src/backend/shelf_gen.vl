@@ -13,6 +13,8 @@ use "../ast/expr.vl"
 use "../ast/stmt.vl"
 use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
+use "../analysis/shelf_checks.vl"
+use "../analysis/dyn_checks.vl"
 use "../common/string_builder.vl"
 use "../common/act_types.vl"
 use "codegen_types.vl"
@@ -45,7 +47,95 @@ act shelf_raw_elem(type_name: string) -> string {
     return copy_slice_to_string(type_name, at + 6, inner_len)
 }
 
-// ------------------------- 8. Shelf constructors -------------------------
+// 5.2 slice 2 — boxes an element value into the VeloDyn tag by its source
+// Velo type (Stage 1: _emit_dyn_box — identical C shape and tag labels).
+act emit_dyn_box(sb: @StringBuilder, st: @SymbolTable, raw: string, arg: @ExprNode) {
+    sb_append_str(sb, "(VeloDyn){ .tag = ")
+    if is_dyn_int_family(raw) {
+        sb_append_str(sb, "VELO_DYN_I64, .as = { .i64 = (int64_t)(")
+    } else if is_dyn_float_family(raw) {
+        sb_append_str(sb, "VELO_DYN_F64, .as = { .f64 = (double)(")
+    } else {
+        let len = str.len(raw)
+        if raw == "bool" {
+            sb_append_str(sb, "VELO_DYN_BOOL, .as = { .b = (")
+        } else if raw == "string" {
+            sb_append_str(sb, "VELO_DYN_STR, .as = { .s = (const char*)(")
+        } else if len > 0 and raw[0] == '@' {
+            sb_append_str(sb, "VELO_DYN_PTR, .as = { .p = (void*)(")
+        } else if is_shelf_form(raw) {
+            sb_append_str(sb, "VELO_DYN_CHILD, .as = { .child = (")
+        } else {
+            sb_append_str(sb, "VELO_DYN_I64, .as = { .i64 = (int64_t)(")
+        }
+    }
+    emit_c_expr(sb, st, arg)
+    if raw == "bool" {
+        sb_append_str(sb, ") ? 1 : 0 } }")
+    } else {
+        sb_append_str(sb, ") } }")
+    }
+}
+
+// 5.2 slice 2 — unboxes a raw dyn value under an explicit `as` cast to a
+// concrete target (Stage 1: _emit_dyn_unbox — identical C shape; the expect
+// fatal and its wording live in velo_runtime.h so the stages cannot diverge).
+// Target VALIDITY already ran in the checker (check_dyn_unbox_target) — the
+// emission below covers every accepted spelling, with @-targets (incl. the
+// checker-rejected @shelf) taking the pointer branch for totality.
+act emit_dyn_unbox(sb: @StringBuilder, st: @SymbolTable, operand: @ExprNode, target: string) {
+    if target == null or target == "dyn" {
+        emit_c_expr(sb, st, operand)   // identity: the whole box passes through
+        return
+    }
+    mut fam_c = "VELO_DYN_I64"
+    mut fam_word = "\"int\""
+    mut cast_c = map_type_to_c(target)
+    mut member_c = "i64"
+    if str.len(target) > 0 and target[0] == '@' {
+        fam_c = "VELO_DYN_PTR"
+        fam_word = "\"pointer\""
+        member_c = "p"
+    } else if is_dyn_float_family(target) {
+        fam_c = "VELO_DYN_F64"
+        fam_word = "\"float\""
+        member_c = "f64"
+    } else if target == "bool" {
+        fam_c = "VELO_DYN_BOOL"
+        fam_word = "\"bool\""
+        cast_c = "bool"
+        member_c = "b"
+    } else if target == "string" {
+        fam_c = "VELO_DYN_STR"
+        fam_word = "\"string\""
+        cast_c = "const char*"
+        member_c = "s"
+    } else if is_shelf_form(target) {
+        fam_c = "VELO_DYN_CHILD"
+        fam_word = "\"shelf\""
+        cast_c = "VeloShelf"
+        member_c = "child"
+    }
+    let dyn_tmp = shelf_fresh_name(st, "dyn_")
+    sb_append_str(sb, "({ VeloDyn ")
+    sb_append_str(sb, dyn_tmp)
+    sb_append_str(sb, " = (")
+    emit_c_expr(sb, st, operand)
+    sb_append_str(sb, "); velo_dyn_expect(")
+    sb_append_str(sb, dyn_tmp)
+    sb_append_str(sb, ", ")
+    sb_append_str(sb, fam_c)
+    sb_append_str(sb, ", ")
+    sb_append_str(sb, fam_word)
+    sb_append_str(sb, "); (")
+    sb_append_str(sb, cast_c)
+    sb_append_str(sb, ")(")
+    sb_append_str(sb, dyn_tmp)
+    sb_append_str(sb, ".as.")
+    sb_append_str(sb, member_c)
+    sb_append_str(sb, "); })")
+}
+
 
 // Emits the shelf constructor literal as a GCC statement expression that
 // binds each element once into a typed temp (left-to-right) and puts it.
@@ -68,7 +158,17 @@ act emit_shelf_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         sb_append_char(sb, ' ')
         sb_append_str(sb, esl)
         sb_append_str(sb, " = (")
-        emit_c_expr(sb, st, cur)
+        if elem == "dyn" {
+            // 5.2 slice 2: box each element into the tag (raw dyn passes through)
+            let raw = infer_expr_type(st, cur)
+            if raw == "dyn" {
+                emit_c_expr(sb, st, cur)
+            } else {
+                emit_dyn_box(sb, st, raw, cur)
+            }
+        } else {
+            emit_c_expr(sb, st, cur)
+        }
         sb_append_str(sb, "); velo_shelf_put(&(")
         sb_append_str(sb, shl)
         sb_append_str(sb, "), (const void*)(&(")
@@ -126,7 +226,17 @@ act emit_shelf_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode
         sb_append_char(sb, ' ')
         sb_append_str(sb, esl)
         sb_append_str(sb, " = (")
-        emit_c_expr(sb, st, expr.first_arg)
+        if elem == "dyn" {
+            // 5.2 slice 2: box the appended value into the tag
+            let raw = infer_expr_type(st, expr.first_arg)
+            if raw == "dyn" {
+                emit_c_expr(sb, st, expr.first_arg)
+            } else {
+                emit_dyn_box(sb, st, raw, expr.first_arg)
+            }
+        } else {
+            emit_c_expr(sb, st, expr.first_arg)
+        }
         sb_append_str(sb, "); velo_shelf_put(")
         emit_shelf_recv(sb, st, expr.callee.target)
         sb_append_str(sb, ", (const void*)(&(")
@@ -164,7 +274,8 @@ act shelf_fresh_name(st: @SymbolTable, prefix: string) -> string {
 // (const void*)(&(_velo_set_N)), (usize)sizeof(T)); }`
 act emit_shelf_set(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32) {
     let recv_t = infer_expr_type(st, stmt.expr.target)
-    let elem_c = map_type_to_c(shelf_raw_elem(recv_t))
+    let elem = shelf_raw_elem(recv_t)
+    let elem_c = map_type_to_c(elem)
     let slot = shelf_fresh_name(st, "set_")
     sb_append_indent(sb, indent)
     sb_append_str(sb, "{ ")
@@ -172,7 +283,17 @@ act emit_shelf_set(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent
     sb_append_char(sb, ' ')
     sb_append_str(sb, slot)
     sb_append_str(sb, " = (")
-    emit_c_expr(sb, st, stmt.val_expr)
+    if elem == "dyn" {
+        // 5.2 slice 2: box the written value into the tag
+        let raw = infer_expr_type(st, stmt.val_expr)
+        if raw == "dyn" {
+            emit_c_expr(sb, st, stmt.val_expr)
+        } else {
+            emit_dyn_box(sb, st, raw, stmt.val_expr)
+        }
+    } else {
+        emit_c_expr(sb, st, stmt.val_expr)
+    }
     sb_append_str(sb, "); velo_shelf_set(")
     emit_shelf_recv(sb, st, stmt.expr.target)
     sb_append_str(sb, ", (usize)(")

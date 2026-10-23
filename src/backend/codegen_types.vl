@@ -13,6 +13,8 @@ act map_type_to_c(type_name: string) -> string {
     if type_name == "u32" { return "uint32_t" }; if type_name == "u64" { return "uint64_t" }; if type_name == "f32" { return "float" }
     if type_name == "f64" { return "double" }; if type_name == "bool" { return "bool" }; if type_name == "usize" { return "size_t" }
     if type_name == "isize" { return "ptrdiff_t" }; if type_name == "string" { return "const char*" }
+    // 5.2 slice 2: the shelf[dyn] tagged box (VeloDyn lives in velo_runtime.h)
+    if type_name == "dyn" { return "VeloDyn" }
     // §4.1: @Allocator in Velo → VeloZoneArena in C (the @ prefix adds the * making VeloZoneArena*)
     if type_name == "Allocator" { return "VeloZoneArena" }
     // §4.2: @Thread → VeloThreadCtx (@ adds *); @Mutex stays an opaque void*

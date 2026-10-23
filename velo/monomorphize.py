@@ -82,6 +82,13 @@ def _shelf_elem_of(t: Optional[str]) -> Optional[str]:
     return None
 
 
+# 5.2 slice 2 (shelf[dyn]): the numeric families of the inference ladder. The
+# widen rule is int+float → f64; any other mix lowers to shelf[dyn] (tagged
+# boxes). Shared with codegen_c — one spelling of the ladder policy per stage.
+DYN_INT_TYPES = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize"}
+DYN_FLOAT_TYPES = {"f32", "f64"}
+
+
 def normalize_type_name(t: Optional[str]) -> Optional[str]:
     """
     Normalizes a generic type signature in AST to its mangled concrete name, preserving leading '@'.
@@ -899,7 +906,15 @@ class Monomorphizer:
                 return f"shelf[{expr.elem_type}]"
             if not expr.args:
                 return "i32"
-            return f"shelf[{self._infer_expr_type(expr.args[0], scope)}]"
+            # 5.2 slice 2: the ladder runs over ALL args (a heterogeneous
+            # literal inside a generic must not infer from the first element)
+            types = [self._infer_expr_type(a, scope) for a in expr.args]
+            first = types[0]
+            if all(t == first for t in types):
+                return f"shelf[{first}]"
+            if all(t in DYN_INT_TYPES or t in DYN_FLOAT_TYPES for t in types) and any(t in DYN_FLOAT_TYPES for t in types):
+                return "shelf[f64]"
+            return "shelf[dyn]"
         if isinstance(expr, IndexExpr):
             # 5.2: shelf element reads
             target_type = self._infer_expr_type(expr.target, scope)

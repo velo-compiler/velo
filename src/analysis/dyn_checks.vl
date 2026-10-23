@@ -1,0 +1,94 @@
+// ============================================================================
+// 5.2 Dynamic Collections, slice 2 (shelf[dyn]) — the tagged-box element
+// contract helpers: the ladder's numeric families, boxability, and unbox
+// target validation. Mutual mirror of Stage 1's helpers in velo/codegen_c.py
+// (_dyn_boxable_error / _emit_dyn_unbox accept set / DYN_INT_TYPES &
+// DYN_FLOAT_TYPES in velo/monomorphize.py — identical wording). The unbox
+// fatal itself lives in velo_runtime.h so the stages cannot diverge on it.
+// Kept free of shelf_checks.vl to avoid a use cycle; the shelf-shape sniff
+// here is a local prefix scan, not the canonical is_shelf_type.
+// ============================================================================
+use sys.io
+use "symbol_table.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+
+// 5.2 slice 2 (shelf[dyn]) ladder families — keep in exact sync with Stage 1's
+// DYN_INT_TYPES (= SHELF_INT_TYPES) / DYN_FLOAT_TYPES in velo/monomorphize.py.
+// The widen rule is int+float → f64; mixed integer widths stay strict; other
+// mixes box into dyn.
+act is_dyn_int_family(name: string) -> bool {
+    if name == null { return false }
+    if name == "i8" or name == "i16" or name == "i32" or name == "i64" { return true }
+    if name == "u8" or name == "u16" or name == "u32" or name == "u64" { return true }
+    if name == "usize" or name == "isize" { return true }
+    return false
+}
+
+act is_dyn_float_family(name: string) -> bool {
+    return name != null and (name == "f32" or name == "f64")
+}
+
+// Local shelf-spelling sniff for the boxable/unbox sets (no shelf_checks use).
+act dyn_base_is_shelf_spelling(base: string) -> bool {
+    if base == null { return false }
+    let len = str.len(base)
+    if len < 6 { return false }
+    return base[0] == 's' and base[1] == 'h' and base[2] == 'e' and base[3] == 'l' and base[4] == 'f'
+}
+
+// Returns null when boxable into the dyn tag, else the staged error text
+// (Stage 1: _dyn_boxable_error — identical wording).
+act dyn_boxable_error(raw: string) -> string {
+    if raw == "@void" {
+        return "shelf elements cannot be null (use a @T pointer element)"
+    }
+    if is_dyn_int_family(raw) or is_dyn_float_family(raw) { return null }
+    if raw == "bool" or raw == "string" or raw == "dyn" { return null }
+    if str.len(raw) > 0 and raw[0] == '@' { return null }  // any @T pointers
+    if dyn_base_is_shelf_spelling(raw) { return null }
+    mut sb = create_sb(str.len(raw) + 72)
+    sb_append_str(@sb, "shelf[dyn] element type ")
+    sb_append_str(@sb, raw)
+    sb_append_str(@sb, " cannot be boxed — use a @")
+    sb_append_str(@sb, raw)
+    sb_append_str(@sb, " pointer element")
+    return sb_to_string(@sb)
+}
+
+// 5.2 slice 2: is `target` an accepted unbox spelling? Accepted set (mirrors
+// Stage 1's _emit_dyn_unbox): 'dyn' identity, int family, f32/f64, bool,
+// string, any @T pointer, and value shelf[T]. (@shelf is rejected below with
+// its own wording; struct values / anything else fall to the generic text.)
+act is_dyn_unbox_target(target: string) -> bool {
+    if target == null or target == "dyn" { return true }
+    if is_dyn_int_family(target) { return true }
+    if is_dyn_float_family(target) { return true }
+    if target == "bool" or target == "string" { return true }
+    if str.len(target) > 0 and target[0] == '@' { return true }
+    if dyn_base_is_shelf_spelling(target) { return true }
+    return false
+}
+
+act check_dyn_unbox_target(st: @SymbolTable, target: string, line: i32, col: i32) {
+    if target == null { return }
+    if target == "dyn" { return }
+    if str.len(target) > 0 and target[0] == '@' {
+        // the copied child header would escape as a dangling pointer into the
+        // box — value copies only (Stage 1: same words in _emit_dyn_unbox)
+        let base = strip_pointer_prefix(target)
+        if dyn_base_is_shelf_spelling(base) {
+            report_error("semantic", line, col, "cannot unbox a shelf[dyn] child as @shelf — the header copy would dangle; use as shelf[...] instead")
+            st.error_count += 1
+            return
+        }
+    }
+    if is_dyn_unbox_target(target) { return }
+    mut sb = create_sb(str.len(target) + 96)
+    sb_append_str(@sb, "cannot unbox a shelf[dyn] value into ")
+    sb_append_str(@sb, target)
+    sb_append_str(@sb, " — targets: int family, f32/f64, bool, string, @T, shelf[T]")
+    report_error("semantic", line, col, sb_to_string(@sb))
+    st.error_count += 1
+}

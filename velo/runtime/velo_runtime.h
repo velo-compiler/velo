@@ -944,6 +944,60 @@ static inline void* velo_shelf_take(VeloShelf* s) {
     return (void*)((char*)s->data + s->len * s->esz);
 }
 
+// ============================================================================
+// 5.2 (slice 2) — shelf[dyn] tagged-box mixed shelves.
+//
+// A `shelf[dyn]` is a normal VeloShelf whose element size is sizeof(VeloDyn):
+// every element is a tagged box. The compilers box at literal/put/set sites
+// (by the value's Velo type) and unbox at `as`-cast reads. The tag set:
+// one boxed-int tag (every Velo integer width boxes into I64 — u64 values
+// above 2^63 wrap), F64, BOOL, STR (pointer copy — immutable C strings),
+// PTR (any @T, unbox shape unchecked — C-pointer trust semantics), CHILD
+// (a nested shelf header copied BY VALUE — snapshot doctrine applies).
+//
+// Plain struct values are NOT boxable: the compilers reject them at compile
+// time (the runtime cannot learn their size later); use a @T pointer element.
+// Unbox tag mismatches are loud deterministic fatals, and the wording lives
+// here so both compiler stages cannot diverge on it.
+// ============================================================================
+typedef enum {
+    VELO_DYN_NONE = 0,
+    VELO_DYN_I64 = 1,
+    VELO_DYN_F64 = 2,
+    VELO_DYN_BOOL = 3,
+    VELO_DYN_STR = 4,
+    VELO_DYN_PTR = 5,
+    VELO_DYN_CHILD = 6
+} VeloDynTag;
+
+typedef struct VeloDyn {
+    uint8_t tag;
+    union { int64_t i64; double f64; _Bool b; const char* s; void* p; VeloShelf child; } as;
+} VeloDyn;
+
+static inline const char* velo_dyn_tag_name(uint8_t tag) {
+    switch (tag) {
+        case VELO_DYN_I64:   return "int";
+        case VELO_DYN_F64:   return "float";
+        case VELO_DYN_BOOL:  return "bool";
+        case VELO_DYN_STR:   return "string";
+        case VELO_DYN_PTR:   return "pointer";
+        case VELO_DYN_CHILD: return "shelf";
+        default:             return "none";
+    }
+}
+
+// Unbox gate: the box must carry the requested family (int widths read off
+// the I64 box; f32/f64 off F64; child shelves come back as value copies).
+// A wrong tag is a loud deterministic fatal (same tier as the shelf bounds).
+static inline void velo_dyn_expect(VeloDyn v, uint8_t tag, const char* family) {
+    if (v.tag != tag) {
+        fprintf(stderr, "Velo Fatal Error: shelf[dyn] unbox: expected %s, found %s!\n",
+                family, velo_dyn_tag_name(v.tag));
+        exit(1);
+    }
+}
+
 
 // --- stdout capture support (structured diagnostics for 'velo check --json') ---
 // Redirects fd 1 into a file, isolating diagnostics from the JSON stream on

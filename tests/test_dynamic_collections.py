@@ -2,9 +2,11 @@
 `.len`, put/take (the LIFO stack core — take pops FROM THE END), index
 reads/writes, `loop v of xs` snapshot iteration, homogeneous elements,
 exact element types across call boundaries, annotation pinning of empty
-literals, and the mut doctrine. Every case runs identically on the
-Stage 1 Python compiler and the self-hosted Stage 2 native compiler
-(gaps.md 5.2)."""
+literals, and the mut doctrine. Slice 2 adds the element inference ladder
+(int+float → f64 widening, mixed → shelf[dyn] tagged boxes), `as`-cast
+unboxing, the raw-dyn gates, and their two-stage parity (gaps.md 5.2).
+Every case runs identically on the Stage 1 Python compiler and the
+self-hosted Stage 2 native compiler."""
 import subprocess
 import sys
 import unittest
@@ -52,6 +54,138 @@ class TestShelfBasics(unittest.TestCase):
         self.assertEqual(s2.returncode, 0, s2.stderr)
         self.assertEqual(s1.stdout, s2.stdout, "example 31 outputs diverged")
         self.assertEqual(s1.stdout.strip().splitlines(), EXAMPLE31_LINES)
+
+    # ------------------------------------------------------------------
+    # 5.2 slice 2 — shelf[dyn] acceptance: the JS-array surface.
+    # ------------------------------------------------------------------
+    def test_dyn_mixed_bag_basics(self):
+        # shelf[15, true, "sx"] lowers to tagged boxes; reads unbox via `as`.
+        program = (
+            "use sys.io\n"
+            "data Pair { a: i32; b: i32 }\n"
+            "act main() -> i32 {\n"
+            "    let xs = shelf[15, true, \"sx\"]\n"
+            "    let n = xs.len\n"
+            "    io.println(\"n {n}\")\n"
+            "    let a = xs[0] as i32\n"
+            "    let b = xs[1] as bool\n"
+            "    let c = xs[2] as string\n"
+            "    io.println(\"a {a} b {b} c {c}\")\n"
+            "    let pr = Pair{ a: 12, b: 56 }\n"
+            "    mut grow = xs\n"
+            "    grow.put(64)\n"
+            "    grow.put(@pr)\n"
+            "    let n2 = grow.len\n"
+            "    let p = grow[4] as @Pair\n"
+            "    let pa = p.a\n"
+            "    let pb = p.b\n"
+            "    let lastp = grow.take() as @Pair\n"
+            "    let lb = lastp.b\n"
+            "    io.println(\"n2 {n2} key {pa} val {pb} top {lb}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        expected = ["n 3", "a 15 b true c sx", "n2 5 key 12 val 56 top 56"]
+        s1 = run_stage("stage1", program, "dyn_basics")
+        s2 = run_stage("stage2", program, "dyn_basics")
+        self.assertEqual(s1.returncode, 0, s1.stderr)
+        self.assertEqual(s2.returncode, 0, s2.stderr)
+        self.assertEqual(s1.stdout, s2.stdout, "dyn bag outputs diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), expected)
+
+    def test_dyn_widen_ladder_f64(self):
+        # int+float mixes widen to f64 (either order), leaving no box.
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    let ws = shelf[1, 2.5]\n"
+            "    let t = ws[0] + ws[1]\n"
+            "    let ws2 = shelf[2.5, 1]\n"
+            "    let u = ws2[0] + ws2[1]\n"
+            "    io.println(\"t {t} u {u}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        expected = ["t 3.50 u 3.50"]
+        s1 = run_stage("stage1", program, "dyn_widen")
+        s2 = run_stage("stage2", program, "dyn_widen")
+        self.assertEqual(s1.returncode, 0, s1.stderr)
+        self.assertEqual(s2.returncode, 0, s2.stderr)
+        self.assertEqual(s1.stdout, s2.stdout, "f64 widen diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), expected)
+
+    def test_dyn_nested_child_shelf(self):
+        # A child shelf inside a mixed literal boxes as tag CHILD and comes
+        # back as a value copy via `as shelf[...]`.
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    let ys = shelf[shelf[1, 2], \"c\"]\n"
+            "    let row = ys[0] as shelf[i32]\n"
+            "    let f0 = row[0]\n"
+            "    let w = ys[1] as string\n"
+            "    io.println(\"f0 {f0} w {w}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        expected = ["f0 1 w c"]
+        s1 = run_stage("stage1", program, "dyn_child")
+        s2 = run_stage("stage2", program, "dyn_child")
+        self.assertEqual(s1.returncode, 0, s1.stderr)
+        self.assertEqual(s2.returncode, 0, s2.stderr)
+        self.assertEqual(s1.stdout, s2.stdout, "dyn child-shelf diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), expected)
+
+    def test_dyn_generic_over_dyn(self):
+        # A generic act over `shelf[T]` called with a mixed shelf: the mono
+        # ladder must deduce T = dyn (it has to scan ALL literal args).
+        program = (
+            "use sys.io\n"
+            "act len_once[T](xs: shelf[T]) -> i32 {\n"
+            "    let n = xs.len\n"
+            "    return n as i32\n"
+            "}\n"
+            "act main() -> i32 {\n"
+            "    let bag = shelf[15, true, \"sx\"]\n"
+            "    let k = len_once(bag)\n"
+            "    io.println(\"k {k}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        expected = ["k 3"]
+        s1 = run_stage("stage1", program, "dyn_generic")
+        s2 = run_stage("stage2", program, "dyn_generic")
+        self.assertEqual(s1.returncode, 0, s1.stderr)
+        self.assertEqual(s2.returncode, 0, s2.stderr)
+        self.assertEqual(s1.stdout, s2.stdout, "dyn generic diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), expected)
+
+    def test_dyn_empty_annotation_and_put(self):
+        # An empty shelf[dyn] borrows the dyn elem from the annotation; puts
+        # box by the source type and a dyn pass-through keeps the tag.
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    mut e: shelf[dyn] = shelf[]\n"
+            "    e.put(7)\n"
+            "    e.put(\"grade\")\n"
+            "    e.put(e[0])\n"
+            "    let n = e.len\n"
+            "    let one = e[0] as i32\n"
+            "    let two = e[1] as string\n"
+            "    let three = e[2] as i64\n"
+            "    io.println(\"n {n} one {one} two {two} three {three}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        expected = ["n 3 one 7 two grade three 7"]
+        s1 = run_stage("stage1", program, "dyn_empty_put")
+        s2 = run_stage("stage2", program, "dyn_empty_put")
+        self.assertEqual(s1.returncode, 0, s1.stderr)
+        self.assertEqual(s2.returncode, 0, s2.stderr)
+        self.assertEqual(s1.stdout, s2.stdout, "dyn empty-put diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), expected)
+
 
     def test_put_take_get_set_stack_core(self):
         # put appends at the end; take() pops FROM THE END (LIFO core).
@@ -142,9 +276,47 @@ def find_gcc() -> str:
 # Compile-time rejections — identical wording on both stages (the position
 # prefixes differ by the historical per-compiler taxonomy, gaps 6.7).
 REJECTIONS = [
-    ("use sys.io\nact main() -> i32 {\n    mut bad = shelf[1, \"two\"]\n    return 0\n}",
-     "shelf literal element types differ: i32 vs string (widening and shelf[dyn] are not available yet)",
-     "rej_mixed"),
+    # 5.2 slice 2: the int+float ladder widened ([1, "two"] alone is now a
+    # LEGAL dyn mix) — mixed integer WIDTHS stay a strict differ error.
+    ("use sys.io\nact main() -> i32 {\n    let wid: i64 = 9\n    let bad = shelf[1, wid]\n    return 0\n}",
+     "shelf literal element types differ: i32 vs i64",
+     "rej_int_widths"),
+    ("use sys.io\ndata Point { a: i32; b: i32 }\nact main() -> i32 {\n    let bad = shelf[Point{ a: 1 }, \"s\"]\n    return 0\n}",
+     "shelf[dyn] element type Point cannot be boxed — use a @Point pointer element",
+     "rej_dyn_boxed"),
+    ("use sys.io\nact main() -> i32 {\n    let bad: shelf[i32] = shelf[15, true]\n    return 0\n}",
+     "shelf literal element type shelf[dyn] does not match annotation shelf[i32]",
+     "rej_dyn_ann"),
+    ("use sys.io\nact main() -> i32 {\n    let bad: shelf[dyn] = shelf[1, 2]\n    return 0\n}",
+     "shelf literal element type shelf[i32] does not match annotation shelf[dyn]",
+     "rej_dyn_ann_homo"),
+    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let n = bad[0] + 1\n    return 0\n}",
+     "shelf[dyn] unbox: raw dyn values must be cast (as) to a concrete type first",
+     "rej_dyn_gate_add"),
+    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let same = bad[0] == bad[1]\n    return 0\n}",
+     "shelf[dyn] unbox: raw dyn values must be cast (as) to a concrete type first",
+     "rej_dyn_gate_cmp"),
+    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    io.println(bad[0])\n    return 0\n}",
+     "shelf[dyn] unbox: raw dyn values must be cast (as) to a concrete type first",
+     "rej_dyn_gate_print"),
+    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let v = bad[0]\n    io.println(\"v {v}\")\n    return 0\n}",
+     "shelf[dyn] unbox: raw dyn values must be cast (as) to a concrete type first",
+     "rej_dyn_gate_interp"),
+    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let f = bad[1].b\n    return 0\n}",
+     "shelf[dyn] unbox: raw dyn values must be cast (as) to a concrete type first",
+     "rej_dyn_member"),
+    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let p = bad[0] as Point\n    return 0\n}",
+     "cannot unbox a shelf[dyn] value into Point — targets: int family, f32/f64, bool, string, @T, shelf[T]",
+     "rej_dyn_unbox_struct"),
+    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let r = bad[0] as @shelf[i32]\n    return 0\n}",
+     "cannot unbox a shelf[dyn] child as @shelf — the header copy would dangle; use as shelf[...] instead",
+     "rej_dyn_unbox_shelfptr"),
+    ("use sys.io\nact hit() {\n    return\n}\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    mut m = bad\n    m.put(hit())\n    return 0\n}",
+     "shelf[dyn] put: cannot box a void value",
+     "rej_dyn_put_void"),
+    ("use sys.io\ndata Point { a: i32; b: i32 }\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    mut m = bad\n    m.put(Point{ a: 1, b: 2 })\n    return 0\n}",
+     "shelf[dyn] element type Point cannot be boxed — use a @Point pointer element",
+     "rej_dyn_put_struct"),
     ("use sys.io\nact main() -> i32 {\n    let xs = shelf[1]\n    xs.put(4)\n    return 0\n}",
      "cannot put into a shelf held by a let (declare with mut)",
      "rej_put_let"),
@@ -199,6 +371,22 @@ RUNTIME_FATALS = [
      "    let boom = xs.take()\n    io.println(\"never\")\n    return 0\n}",
      "Velo Fatal Error: shelf take from an empty shelf!",
      "take_empty"),
+    # 5.2 slice 2: a wrong-family unbox is a loud fatal (words live in the
+    # shared runtime header — both stages cannot diverge).
+    ("use sys.io\nact main() -> i32 {\n"
+     "    let bad = shelf[15, \"sx\"]\n"
+     "    let boom = bad[1] as i64\n"
+     "    io.println(\"never\")\n"
+     "    return 0\n}",
+     "Velo Fatal Error: shelf[dyn] unbox: expected int, found string!",
+     "wrong_unbox"),
+    ("use sys.io\nact main() -> i32 {\n"
+     "    let bad = shelf[15, \"sx\"]\n"
+     "    let boom = bad[0] as f64\n"
+     "    io.println(\"never\")\n"
+     "    return 0\n}",
+     "Velo Fatal Error: shelf[dyn] unbox: expected float, found int!",
+     "wrong_unbox_float"),
 ]
 
 

@@ -9,7 +9,7 @@ from velo.ast_nodes import (
     ShelfLiteral,
     TypeAliasDecl
 )
-from velo.monomorphize import Monomorphizer, parse_act_type, mangle_act_type
+from velo.monomorphize import Monomorphizer, parse_act_type, mangle_act_type, DYN_INT_TYPES, DYN_FLOAT_TYPES
 
 TYPE_MAP = {
     "i8": "i8",
@@ -32,6 +32,8 @@ TYPE_MAP = {
     # §4.2 thread surface: @Thread → VeloThreadCtx*, @Mutex → void*
     "Thread": "VeloThreadCtx",
     "Mutex": "void",
+    # 5.2 slice 2: the shelf[dyn] tagged box (VeloDyn lives in velo_runtime.h)
+    "dyn": "VeloDyn",
 }
 
 # 5.1 String Processing Library: sys.str intrinsics backed by velo_str_*
@@ -142,6 +144,86 @@ class CCodeGenerator:
             return inner if inner else None
         return None
 
+    # ------------------------------------------------------------------
+    # 5.2 slice 2 — shelf[dyn] tagged boxes. Mirrored by Stage 2's
+    # src/analysis/shelf_checks.vl + src/backend/shelf_gen.vl (identical
+    # wording); the unbox fatal lives in velo_runtime.h (velo_dyn_expect).
+    # ------------------------------------------------------------------
+    DYN_GATE_ERROR = "shelf[dyn] unbox: raw dyn values must be cast (as) to a concrete type first"
+
+    def _dyn_boxable_error(self, raw: Optional[str]) -> Optional[str]:
+        """Returns the compile error for a non-boxable element type, or None."""
+        if raw == "@void":
+            return "shelf elements cannot be null (use a @T pointer element)"
+        if raw in DYN_INT_TYPES or raw in DYN_FLOAT_TYPES:
+            return None
+        if raw in ("bool", "string", "dyn"):
+            return None
+        if raw and raw.startswith("@"):
+            return None  # any @T pointer boxes (unchecked shape at unbox)
+        if raw and (raw.startswith("shelf[") or raw == "shelf"):
+            return None
+        return f"shelf[dyn] element type {raw} cannot be boxed — use a @{raw} pointer element"
+
+    def _emit_dyn_box(self, raw: str, code: str) -> str:
+        """Boxes one element value (already emitted as `code`) into a VeloDyn
+        literal by its source Velo type. Raw dyn values pass through whole."""
+        if raw in DYN_INT_TYPES:
+            return f"(VeloDyn){{ .tag = VELO_DYN_I64, .as = {{ .i64 = (int64_t)({code}) }} }}"
+        if raw in DYN_FLOAT_TYPES:
+            return f"(VeloDyn){{ .tag = VELO_DYN_F64, .as = {{ .f64 = (double)({code}) }} }}"
+        if raw == "bool":
+            return f"(VeloDyn){{ .tag = VELO_DYN_BOOL, .as = {{ .b = ({code}) ? 1 : 0 }} }}"
+        if raw == "string":
+            return f"(VeloDyn){{ .tag = VELO_DYN_STR, .as = {{ .s = (const char*)({code}) }} }}"
+        if raw.startswith("@"):
+            return f"(VeloDyn){{ .tag = VELO_DYN_PTR, .as = {{ .p = (void*)({code}) }} }}"
+        if raw.startswith("shelf[") or raw == "shelf":
+            return f"(VeloDyn){{ .tag = VELO_DYN_CHILD, .as = {{ .child = ({code}) }} }}"
+        return code  # raw dyn pass-through (tag preserved)
+
+    def _emit_dyn_unbox(self, code: str, target: str) -> str:
+        """Unboxes a raw dyn value via an explicit `as` cast to a concrete
+        type. Family targets share one ring: int widths read off the I64 box,
+        f32/f64 off F64, bool/string, @T pointers (unchecked shape), and
+        shelf[T] child copies (`@shelf` is rejected — the header copy would
+        dangle). Empty target 'dyn' is an identity pass-through."""
+        base = target.strip()
+        if base == "dyn":
+            return code
+        if base.lstrip("@").startswith("shelf") and base.startswith("@"):
+            raise ValueError("cannot unbox a shelf[dyn] child as @shelf — the header copy would dangle; use as shelf[...] instead")
+        if base in DYN_INT_TYPES:
+            tag, family = "VELO_DYN_I64", "int"
+            cast_c = self._map_type(base)
+            member = "i64"
+        elif base in DYN_FLOAT_TYPES:
+            tag, family = "VELO_DYN_F64", "float"
+            cast_c = self._map_type(base)
+            member = "f64"
+        elif base == "bool":
+            tag, family = "VELO_DYN_BOOL", "bool"
+            cast_c = "bool"
+            member = "b"
+        elif base == "string":
+            tag, family = "VELO_DYN_STR", "string"
+            cast_c = "const char*"
+            member = "s"
+        elif base.startswith("@"):
+            tag, family = "VELO_DYN_PTR", "pointer"
+            cast_c = self._map_type(base)
+            member = "p"
+        elif base.startswith("shelf[") or base == "shelf":
+            tag, family = "VELO_DYN_CHILD", "shelf"
+            cast_c = "VeloShelf"
+            member = "child"
+        else:
+            raise ValueError(
+                f"cannot unbox a shelf[dyn] value into {base} — targets: int family, f32/f64, bool, string, @T, shelf[T]")
+        temp = self._fresh_name("dyn_")
+        return (f"({{ VeloDyn {temp} = ({code}); velo_dyn_expect({temp}, {tag}, \"{family}\"); "
+                f"({cast_c})({temp}.as.{member}); }})")
+
     def _shelf_root_binding(self, expr: Optional[Expr]) -> Optional[str]:
         """Walks a receiver chain down to its root binding name (or None for
         call results etc). Used by the mut-binding check for put/take/set."""
@@ -170,7 +252,20 @@ class CCodeGenerator:
             elem = self._shelf_elem_type(recv)
             if elem:
                 got = self._thread_arg_type(args[0])
-                if got != elem and got not in ("void", "@void"):
+                if elem == "dyn":
+                    # 5.2 slice 2: any boxable element goes in (boxed by the
+                    # emitter); the tag-based mismatch check is skipped
+                    if got == "unknown":
+                        pass  # the argument itself already failed to infer
+                    elif got == "void":
+                        raise ValueError("shelf[dyn] put: cannot box a void value")
+                    elif got == "@void":
+                        raise ValueError("shelf elements cannot be null (use a @T pointer element)")
+                    else:
+                        err = self._dyn_boxable_error(got)
+                        if err:
+                            raise ValueError(err)
+                elif got != elem and got not in ("void", "@void"):
                     raise ValueError(f"shelf.put element mismatch: expected {elem} (got {got})")
         elif len(args) != 0:
             raise ValueError("shelf.take takes no arguments")
@@ -209,8 +304,15 @@ class CCodeGenerator:
         parts = [f"VeloShelf {recv} = {{0}}"]
         for a in lit.args:
             slot = self._fresh_name("esl_")
+            val_code = self._emit_expression(a)
+            if elem == "dyn":
+                # 5.2 slice 2: box each element into the tag (raw dyn passes
+                # through whole); f64-widened elements ride the slot cast
+                raw = self._infer_raw_velo_type(a)
+                if raw != "dyn":
+                    val_code = self._emit_dyn_box(raw, val_code)
             parts.append(
-                f"{{ {elem_c} {slot} = ({self._emit_expression(a)}); "
+                f"{{ {elem_c} {slot} = ({val_code}); "
                 f"velo_shelf_put(&{recv}, (const void*)(&{slot}), (usize)sizeof({elem_c})); }}"
             )
         parts.append(f"{recv}")
@@ -703,6 +805,11 @@ class CCodeGenerator:
                     rec = f"({target_code})" if base_type.startswith("@") else f"&({target_code})"
                     slot = self._fresh_name("set_")
                     val_code = self._emit_expression(stmt.value)
+                    if shelf_elem == "dyn":
+                        # 5.2 slice 2: box the written value into the tag
+                        raw = self._infer_raw_velo_type(stmt.value)
+                        if raw != "dyn":
+                            val_code = self._emit_dyn_box(raw, val_code)
                     self._emit_line(
                         f"{{ {elem_c} {slot} = ({val_code}); "
                         f"velo_shelf_set({rec}, (usize)({self._emit_expression(stmt.target.index)}), "
@@ -958,10 +1065,26 @@ class CCodeGenerator:
             first = types[0]
             if first == "@void":
                 raise ValueError("shelf elements cannot be null (use a @T pointer element)")
-            for t in types[1:]:
-                if t != first:
-                    raise ValueError(f"shelf literal element types differ: {first} vs {t} (widening and shelf[dyn] are not available yet)")
-            return f"shelf[{first}]"
+            for t in types:
+                if t == "@void":
+                    raise ValueError("shelf elements cannot be null (use a @T pointer element)")
+            # 5.2 slice 2 — the element inference ladder: homogeneous unchanged;
+            # an all-numeric mix with a float widens to f64; a mixed-width
+            # all-integer literal stays a strict differ error (deliberate);
+            # any other mix lowers to shelf[dyn] (every element must box).
+            mixed = any(t != first for t in types)
+            if not mixed:
+                return f"shelf[{first}]"
+            if all(t in DYN_INT_TYPES or t in DYN_FLOAT_TYPES for t in types):
+                if any(t in DYN_FLOAT_TYPES for t in types):
+                    return "shelf[f64]"
+                second = next(t for t in types if t != first)
+                raise ValueError(f"shelf literal element types differ: {first} vs {second}")
+            for t in types:
+                err = self._dyn_boxable_error(t)
+                if err:
+                    raise ValueError(err)
+            return "shelf[dyn]"
         if isinstance(value, VariantExpr):
             if value.kind_name: return value.kind_name
             return self.variant_to_kind.get(value.variant_name, "i32")
@@ -979,6 +1102,17 @@ class CCodeGenerator:
             return self.current_scope_types.get(value.name, "i32")
         if isinstance(value, DerefExpr):
             return self._resolve_expr_type(value)
+        if isinstance(value, BinaryExpr):
+            # 5.2 slice 2 parity fix: unannotated arith/comparison lets infer
+            # like Stage 2's checker (comparisons are bool, otherwise the left
+            # operand's type — widened dyn literals read f64 through clauses).
+            if value.op in ("==", "!=", "<", "<=", ">", ">=", "and", "or"):
+                return "bool"
+            return self._resolve_expr_type(value.left)
+        if isinstance(value, UnaryExpr):
+            if value.op in ("!", "not"):
+                return "bool"
+            return self._resolve_expr_type(value.operand)
         if isinstance(value, MemberAccess):
             if isinstance(value.target, Identifier) and value.target.name in self.kind_defs:
                 return value.target.name
@@ -1288,7 +1422,11 @@ class CCodeGenerator:
         elif isinstance(expr, ShelfLiteral):
             return self._emit_shelf_literal(expr)
         elif isinstance(expr, CastExpr):
+            sub_t = self._resolve_expr_type(expr.expr)
             sub = self._emit_expression(expr.expr)
+            if sub_t == "dyn":
+                # 5.2 slice 2: the only extraction from a raw dyn
+                return self._emit_dyn_unbox(sub, expr.target_type)
             c_type = self._map_type(expr.target_type)
             return f"(({c_type})({sub}))"
         elif isinstance(expr, StructLiteral):
@@ -1327,9 +1465,18 @@ class CCodeGenerator:
                 return f"({expr.target.name}){{ .kind = {expr.target.name}_{expr.member} }}"
             target_code = self._emit_expression(expr.target)
             target_type = self._resolve_expr_type(expr.target)
+            if target_type == "dyn":
+                # 5.2 slice 2: raw dyn values expose no members — cast (as) first
+                raise ValueError(self.DYN_GATE_ERROR)
             arrow = "->" if target_type.startswith("@") else "."
             return f"{target_code}{arrow}{expr.member}"
         elif isinstance(expr, BinaryExpr):
+            # 5.2 slice 2: raw dyn values refuse operators — unbox with `as`
+            # first (same wording as the Stage 2 checker)
+            l_t = self._resolve_expr_type(expr.left)
+            r_t = self._resolve_expr_type(expr.right)
+            if l_t == "dyn" or r_t == "dyn":
+                raise ValueError(self.DYN_GATE_ERROR)
             left = self._emit_expression(expr.left)
             right = self._emit_expression(expr.right)
             op = expr.op
@@ -1346,6 +1493,8 @@ class CCodeGenerator:
             elif op == "or": op = "||"
             return f"({left} {op} {right})"
         elif isinstance(expr, UnaryExpr):
+            if self._resolve_expr_type(expr.operand) == "dyn":
+                raise ValueError(self.DYN_GATE_ERROR)
             sub = self._emit_expression(expr.operand)
             op = "!" if expr.op in ("!", "not") else expr.op
             return f"({op}{sub})"
@@ -1449,7 +1598,13 @@ class CCodeGenerator:
                     elem_c = self._map_type(elem)
                     if expr.callee.member == "put":
                         slot = self._fresh_name("esl_")
-                        return (f"({{ {elem_c} {slot} = ({self._emit_expression(expr.args[0])}); "
+                        arg_code = self._emit_expression(expr.args[0])
+                        if elem == "dyn":
+                            # 5.2 slice 2: box the appended value into the tag
+                            raw = self._infer_raw_velo_type(expr.args[0])
+                            if raw != "dyn":
+                                arg_code = self._emit_dyn_box(raw, arg_code)
+                        return (f"({{ {elem_c} {slot} = ({arg_code}); "
                                 f"velo_shelf_put({rec}, (const void*)(&{slot}), (usize)sizeof({elem_c})); }})")
                     return f"(*(({elem_c}*)velo_shelf_take({rec})))"
 
@@ -1734,6 +1889,10 @@ class CCodeGenerator:
                     resolved_type = self._resolve_path_type(var_path)
                     c_expr = self._convert_path_to_c(var_path)
 
+                    if resolved_type == "dyn":
+                        # 5.2 slice 2: raw dyn prints nothing useful — cast (as) first
+                        raise ValueError(self.DYN_GATE_ERROR)
+
                     if resolved_type in ("f32", "f64"):
                         fmt_parts.append("%.2f")
                         c_args.append(f"(double)({c_expr})")
@@ -1763,6 +1922,8 @@ class CCodeGenerator:
 
         arg_code = self._emit_expression(first_arg)
         resolved = self._resolve_expr_type(first_arg)
+        if resolved == "dyn":
+            raise ValueError(self.DYN_GATE_ERROR)
         if resolved in ("f32", "f64"):
             fmt_str = "%f\\n" if member == "println" else "%f"
             return f'printf("{fmt_str}", (double)({arg_code}))'

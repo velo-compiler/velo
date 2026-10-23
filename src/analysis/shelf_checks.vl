@@ -8,6 +8,7 @@
 // ============================================================================
 use "type_checker.vl"
 use "symbol_table.vl"
+use "dyn_checks.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
@@ -22,6 +23,13 @@ act is_shelf_index_type(name: string) -> bool {
     if name == "u8" or name == "u16" or name == "u32" or name == "u64" { return true }
     if name == "usize" or name == "isize" { return true }
     return false
+}
+
+// 5.2 slice 2 (shelf[dyn]) contract helpers live in dyn_checks.vl (ladder
+// families, boxability, unbox-target validation); the pinned gate words are
+// here since every consumer of the shelf checker imports this file.
+act dyn_gate_error() -> string {
+    return "shelf[dyn] unbox: raw dyn values must be cast (as) to a concrete type first"
 }
 
 // True when the type string is a shelf (optionally an @-pointer to one).
@@ -107,23 +115,78 @@ act shelf_literal_elem(st: @SymbolTable, expr: @ExprNode) -> string {
         expr.type_name = "unknown"; expr.bool_val = true
         return "unknown"
     }
-    // sequence scan: strictly homogeneous elements (string-compared)
+    // 5.2 slice 2 — sequence scan + element inference ladder over ALL args:
+    // homogeneous unchanged; all-numeric mix with a float → f64 (widen);
+    // mixed integer widths stay a strict differ error; any other mix lowers
+    // to shelf[dyn] (every element must box into the tag).
+    mut is_mixed = false
+    mut all_numeric = true
+    mut has_float = false
+    mut second = ""   // first element type that differs from the first one
+    if is_dyn_int_family(elem) or is_dyn_float_family(elem) {
+        if is_dyn_float_family(elem) { has_float = true }
+    } else {
+        all_numeric = false
+    }
     mut cur = expr.first_arg.next
     loop cur != null {
         let t = infer_expr_type(st, cur)
-        if t != elem {
-            mut msg = create_sb(str.len(elem) + str.len(t) + 80)
-            sb_append_str(@msg, "shelf literal element types differ: ")
-            sb_append_str(@msg, elem); sb_append_str(@msg, " vs "); sb_append_str(@msg, t)
-            sb_append_str(@msg, " (widening and shelf[dyn] are not available yet)")
-            report_error("semantic", cur.line, cur.col, sb_to_string(@msg)); st.error_count += 1
+        if t == "@void" {
+            report_error("semantic", cur.line, cur.col, "shelf elements cannot be null (use a @T pointer element)"); st.error_count += 1
+            expr.type_name = "unknown"; expr.bool_val = true
+            return "unknown"
+        }
+        if t != elem { is_mixed = true; if str.len(second) == 0 { second = t } }
+        if is_dyn_int_family(t) or is_dyn_float_family(t) {
+            if is_dyn_float_family(t) { has_float = true }
+        } else {
+            all_numeric = false
+        }
+        cur = cur.next
+    }
+    if not is_mixed {
+        expr.type_name = elem; expr.bool_val = true
+        return elem
+    }
+    if all_numeric {
+        if has_float {
+            expr.type_name = "f64"; expr.bool_val = true
+            return "f64"
+        }
+        // mixed integer widths: strict differ error (deliberate soundness wall)
+        mut msg = create_sb(str.len(elem) + str.len(second) + 48)
+        sb_append_str(@msg, "shelf literal element types differ: ")
+        sb_append_str(@msg, elem)
+        sb_append_str(@msg, " vs ")
+        sb_append_str(@msg, second)
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+        expr.type_name = "unknown"; expr.bool_val = true
+        return "unknown"
+    }
+    // non-numeric mix → shelf[dyn]: validate every element boxability
+    let err0 = dyn_boxable_error(elem)
+    if err0 != null {
+        report_error("semantic", expr.first_arg.line, expr.first_arg.col, err0); st.error_count += 1
+        expr.type_name = "unknown"; expr.bool_val = true
+        return "unknown"
+    }
+    cur = expr.first_arg.next
+    loop cur != null {
+        let t = infer_expr_type(st, cur)
+        if t == "unknown" {
+            expr.type_name = "unknown"; expr.bool_val = true
+            return "unknown"  // already reported upstream
+        }
+        let err = dyn_boxable_error(t)
+        if err != null {
+            report_error("semantic", cur.line, cur.col, err); st.error_count += 1
             expr.type_name = "unknown"; expr.bool_val = true
             return "unknown"
         }
         cur = cur.next
     }
-    expr.type_name = elem; expr.bool_val = true
-    return elem
+    expr.type_name = "dyn"; expr.bool_val = true
+    return "dyn"
 }
 
 // Property reads on a shelf: only `.len` (usize) exists as a property.
@@ -148,6 +211,23 @@ act check_shelf_member_call(st: @SymbolTable, expr: @ExprNode) -> string {
         }
         let recv_t = infer_expr_type(st, expr.callee.target)
         let elem = shelf_elem_type(recv_t)
+        if elem == "dyn" {
+            // 5.2 slice 2: any boxable element goes in (the backend boxes it);
+            // the tag-based mismatch check is skipped, void values reject.
+            let got = infer_expr_type(st, expr.first_arg)
+            if got == "unknown" { return "unknown" }
+            if got == "void" {
+                report_error("semantic", expr.line, expr.col, "shelf[dyn] put: cannot box a void value"); st.error_count += 1
+                return "unknown"
+            }
+            let err = dyn_boxable_error(got)
+            if err != null {
+                report_error("semantic", expr.first_arg.line, expr.first_arg.col, err); st.error_count += 1
+                return "unknown"
+            }
+            check_shelf_mut_binding(st, expr.callee.target, "put", "into")
+            return "void"
+        }
         let got = infer_expr_type(st, expr.first_arg)
         if elem != null and got != elem and got != "void" and got != "@void" {
             mut msg = create_sb(str.len(elem) + str.len(got) + 48)

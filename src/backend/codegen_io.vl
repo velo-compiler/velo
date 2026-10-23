@@ -7,6 +7,7 @@ use "../ast/expr.vl"
 use "../ast/stmt.vl"
 use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
+use "../analysis/shelf_checks.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "codegen_expr.vl"
@@ -108,6 +109,12 @@ act emit_io_call(sb: @StringBuilder, st: @SymbolTable, member: string, first_arg
     // 2. Direct non-string expression argument: `io.println(123)`, `io.println(val)`
     if first_arg.kind != EXPR_STRING {
         let arg_type = infer_expr_type(st, first_arg)
+        // 5.2 slice 2: raw dyn prints nothing useful — cast (as) first
+        if arg_type == "dyn" {
+            report_error("backend", first_arg.line, first_arg.col, dyn_gate_error())
+            st.error_count += 1
+            return
+        }
         if arg_type == "f32" or arg_type == "f64" {
             if is_println {
                 sb_append_str(sb, "printf(\"%f\\n\", (double)(")
@@ -200,6 +207,11 @@ act emit_io_call(sb: @StringBuilder, st: @SymbolTable, member: string, first_arg
                 mut c_sb = create_sb(64)
                 let resolved_type = resolve_path_type_and_c(st, path, @c_sb)
                 let c_expr_str = sb_to_string(@c_sb)
+                // 5.2 slice 2: raw dyn prints nothing useful — cast (as) first
+                if resolved_type == "dyn" {
+                    report_error("backend", first_arg.line, first_arg.col, dyn_gate_error())
+                    st.error_count += 1
+                }
 
                 if resolved_type == "f32" or resolved_type == "f64" {
                     sb_append_str(@fmt_sb, "%.2f")
