@@ -6,7 +6,7 @@ from velo.ast_nodes import (
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr,
-    ShelfLiteral, MapLiteral,
+    ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral,
     TypeAliasDecl
 )
 from velo.monomorphize import Monomorphizer, parse_act_type, mangle_act_type, DYN_INT_TYPES, DYN_FLOAT_TYPES
@@ -142,6 +142,14 @@ class CCodeGenerator:
             return "VeloMap" + ("*" * pointer_count)
         if type_str == "Map":
             raise ValueError("a bare 'Map' needs key and value types: use Map[K, V]")
+        # 5.2 slice 9: ring[T] maps onto the runtime's single VeloRing struct;
+        # `bitset` is the first bare collection type (VeloBitset)
+        if type_str.startswith("ring["):
+            return "VeloRing" + ("*" * pointer_count)
+        if type_str == "ring":
+            raise ValueError("a bare 'ring' needs an element type: use ring[T]")
+        if type_str == "bitset":
+            return "VeloBitset" + ("*" * pointer_count)
 
         base_c_type = TYPE_MAP.get(type_str, type_str)
         return base_c_type + ("*" * pointer_count)
@@ -355,6 +363,186 @@ class CCodeGenerator:
                 f"{{ {key_c} {k_slot} = ({k_code}); {val_c} {v_slot} = ({v_code}); "
                 f"velo_map_put(&{recv}, (const void*)(&{k_slot}), (const void*)(&{v_slot})); }}"
             )
+        parts.append(f"{recv}")
+        return "({ " + "; ".join(parts) + "; })"
+
+    # ------------------------------------------------------------------
+    # 5.2 slice 9 — ring[T] + bitset. Mirrored by Stage 2's
+    # src/analysis/ring_checks.vl + src/analysis/bitset_checks.vl and the
+    # src/backend/ring_gen.vl / bitset_gen.vl emitters (identical wording);
+    # the runtime fatals live in velo_runtime.h.
+    # ------------------------------------------------------------------
+    def _ring_elem_type(self, type_str: Optional[str]) -> Optional[str]:
+        """Extracts the element type from a `ring[T]` (or `@ring[T]`) type
+        string, or None when the type is not a ring."""
+        if not type_str:
+            return None
+        raw = type_str.lstrip("@").strip()
+        if raw.startswith("ring[") and raw.endswith("]"):
+            inner = raw[5:-1].strip()
+            return inner or None
+        return None
+
+    def _ring_elem_error(self, raw: Optional[str]) -> Optional[str]:
+        """Returns the compile error for a non-family ring element, or None.
+        The shelf families minus dyn (the tagged-box machinery is shelf-
+        specific; ring[dyn] is a later slice)."""
+        if raw is None:
+            return None
+        if raw in DYN_INT_TYPES or raw in DYN_FLOAT_TYPES or raw in ("bool", "string"):
+            return None
+        if raw.startswith("@"):
+            return None
+        if raw.startswith("shelf[") or raw.startswith("Map["):
+            return None
+        if raw in self.struct_defs:
+            return None
+        return f"ring element type {raw} is not supported — use a @{raw} pointer element"
+
+    def _ring_literal_elem(self, value: "RingLiteral") -> str:
+        """The ring literal element ladder (pre-slice-2 shelf spirit, no dyn
+        arm): homogeneous unchanged, all-numeric-with-float widens to f64,
+        ANY other mix is one strict differ error."""
+        if value.elem_type:
+            return value.elem_type
+        if not value.args:
+            raise ValueError("cannot infer element type of empty ring literal — annotate it (e.g. let r: ring[i32] = ring[])")
+        types = [self._infer_raw_velo_type(a) for a in value.args]
+        first = types[0]
+        mixed = any(t != first for t in types)
+        if not mixed:
+            err = self._ring_elem_error(first)
+            if err:
+                raise ValueError(err)
+            return first
+        second = next(t for t in types if t != first)
+        if all(t in DYN_INT_TYPES or t in DYN_FLOAT_TYPES for t in types):
+            if any(t in DYN_FLOAT_TYPES for t in types):
+                return "f64"
+        raise ValueError(f"ring literal element types differ: {first} vs {second}")
+
+    def _check_ring_annotation(self, decl_type: Optional[str], value: Optional[Expr]) -> None:
+        """5.2 slice 9 contract: annotated ring declarations — an empty
+        literal borrows the annotation's element (validated against the ring
+        families); a non-empty literal must match it. Mirrored by the Stage 2
+        checker's check_ring_annotation."""
+        if not isinstance(value, RingLiteral) or not decl_type:
+            return
+        if not decl_type.lstrip("@").startswith("ring["):
+            return
+        ann_elem = self._ring_elem_type(decl_type)
+        if ann_elem is not None:
+            err = self._ring_elem_error(ann_elem)
+            if err:
+                raise ValueError(err)
+        if not value.args:
+            if ann_elem is not None:
+                value.elem_type = ann_elem
+            return
+        if ann_elem is None:
+            return
+        lit_elem = self._ring_literal_elem(value)
+        if lit_elem != ann_elem:
+            raise ValueError(f"ring literal element type ring[{lit_elem}] does not match annotation {decl_type}")
+
+    def _check_bitset_annotation(self, decl_type: Optional[str], value: Optional[Expr]) -> None:
+        """5.2 slice 9: a bitset literal under a non-bitset annotation rejects
+        (`bitset[]` needs no annotation at all — no element ladder exists)."""
+        if not isinstance(value, BitsetLiteral) or not decl_type:
+            return
+        if decl_type.lstrip("@") != "bitset":
+            raise ValueError(f"bitset literal does not match annotation {decl_type}")
+        value.pinned = True
+
+    BITSET_MEMBERS = ("set", "clear", "toggle", "has", "count", "first_unset", "and", "or_with", "xor_with", "flip")
+
+    def _bitset_index_type(self, arg: Expr, member: str) -> str:
+        it = self._resolve_expr_type(arg)
+        if it not in DYN_INT_TYPES:
+            raise ValueError(f"bitset index must be an integer (got {it})")
+        return it
+
+    def _bitset_expect(self, member: str, target_expr: Expr, args: List[Expr]) -> None:
+        """5.2 slice 9 compile-checks bitset member calls. Mirrored by the
+        Stage 2 checker — both stages reject the same programs with the same
+        messages."""
+        if member not in self.BITSET_MEMBERS:
+            raise ValueError(f"unknown bitset member '{member}' (set, clear, toggle, has, count, first_unset, and, or_with, xor_with, flip are available)")
+        if member in ("set", "clear", "toggle"):
+            if len(args) != 1:
+                raise ValueError(f"bitset.{member} expects exactly 1 argument: (bitset b, index)")
+            self._bitset_index_type(args[0], member)
+        elif member == "has":
+            if len(args) != 1:
+                raise ValueError(f"bitset.has expects exactly 1 argument: (bitset b, index)")
+            self._bitset_index_type(args[0], member)
+        elif member in ("count", "first_unset", "flip"):
+            if args:
+                raise ValueError(f"bitset.{member} takes no arguments")
+        else:  # and / or_with / xor_with
+            if len(args) != 1:
+                raise ValueError(f"bitset.{member} expects exactly 1 argument: (bitset b, other)")
+            got = self._resolve_expr_type(args[0])
+            if got != "unknown" and got.lstrip("@") != "bitset":
+                raise ValueError(f"bitset.{member} expects a bitset argument (got {got})")
+        if member in ("set", "clear", "toggle", "and", "or_with", "xor_with", "flip"):
+            root = self._shelf_root_binding(target_expr)
+            if root is not None and not self.current_scope_mut.get(root, False):
+                raise ValueError("cannot mutate a bitset held by a let (declare with mut)")
+
+    def _ring_expect(self, member: str, target_expr: Expr, args: List[Expr], elem: Optional[str]) -> None:
+        """5.2 slice 9 compile-checks ring member calls (put/pop/peek).
+        `elem` carries the receiver's element when known (None flows to mono
+        like shelves do)."""
+        if member not in ("put", "pop", "peek"):
+            raise ValueError(f"unknown ring member '{member}' (put, pop, peek, len are available)")
+        expected = {"put": 1, "pop": 0, "peek": 0}[member]
+        if len(args) != expected:
+            if expected == 0:
+                # the zero-arity verb template (the shelf.take shape)
+                raise ValueError(f"ring.{member} takes no arguments")
+            raise ValueError("ring.put expects exactly 1 argument: (ring r, element value)")
+        if member == "put" and elem is not None:
+            got = self._thread_arg_type(args[0])
+            if got == "unknown":
+                return  # the argument itself already failed to infer
+            if got != elem:
+                raise ValueError(f"ring.put element mismatch: expected {elem} (got {got})")
+        if member in ("put", "pop"):
+            root = self._shelf_root_binding(target_expr)
+            if root is not None and not self.current_scope_mut.get(root, False):
+                if member == "put":
+                    raise ValueError("cannot put into a ring held by a let (declare with mut)")
+                raise ValueError("cannot pop from a ring held by a let (declare with mut)")
+
+    def _emit_ring_literal(self, lit: "RingLiteral") -> str:
+        """5.2 slice 9: lowers `ring[...]` into a GCC statement expression —
+        a fresh VeloRing header plus one typed slot per element (left-to-right
+        evaluation order guaranteed)."""
+        elem = self._ring_literal_elem(lit)
+        elem_c = self._map_type(elem)
+        recv = self._fresh_name("rng_")
+        parts = [f"VeloRing {recv} = {{0}}"]
+        for a in lit.args:
+            slot = self._fresh_name("rel_")
+            val_code = self._emit_expression(a)
+            parts.append(
+                f"{{ {elem_c} {slot} = ({val_code}); "
+                f"velo_ring_put(&{recv}, (const void*)(&{slot}), (usize)sizeof({elem_c})); }}"
+            )
+        parts.append(f"{recv}")
+        return "({ " + "; ".join(parts) + "; })"
+
+    def _emit_bitset_literal(self, lit: "BitsetLiteral") -> str:
+        """5.2 slice 9: lowers `bitset[...]` — a fresh VeloBitset header plus
+        one runtime set() per integer element (negative elements ride the
+        runtime OOB fatal)."""
+        recv = self._fresh_name("bst_")
+        parts = [f"VeloBitset {recv} = {{0}}"]
+        for a in lit.args:
+            self._bitset_index_type(a, "set")
+            code = self._emit_expression(a)
+            parts.append(f"velo_bitset_set(&{recv}, (int64_t)({code}))")
         parts.append(f"{recv}")
         return "({ " + "; ".join(parts) + "; })"
 
@@ -857,6 +1045,8 @@ class CCodeGenerator:
                     # 5.2 slice 6: same contract for annotated map decls
                     self._check_shelf_annotation(decl.type_name, decl.value)
                     self._check_map_annotation(decl.type_name, decl.value)
+                    self._check_ring_annotation(decl.type_name, decl.value)
+                    self._check_bitset_annotation(decl.type_name, decl.value)
                     type_str = self._infer_or_map_type(decl.type_name, decl.value)
                     raw_velo_type = decl.type_name or self._infer_raw_velo_type(decl.value)
                     self.global_types[decl.name] = raw_velo_type
@@ -1083,6 +1273,12 @@ class CCodeGenerator:
                 ret_t = self.current_function.return_type if self.current_function else None
                 if ret_t and ret_t.lstrip("@").startswith("Map["):
                     stmt.value.kv_type = ret_t
+            # 5.2 slice 9: an empty ring literal in a return borrows its
+            # element type the same way; a bitset literal needs no pinning
+            if stmt.value and isinstance(stmt.value, RingLiteral) and not stmt.value.args:
+                ret_t = self.current_function.return_type if self.current_function else None
+                if ret_t and ret_t.lstrip("@").startswith("ring["):
+                    stmt.value.elem_type = self._ring_elem_type(ret_t)
             if stmt.value:
                 ret_val_code = self._emit_expression(stmt.value)
 
@@ -1111,6 +1307,8 @@ class CCodeGenerator:
             # 5.2 slice 6: same contract for annotated map decls
             self._check_shelf_annotation(stmt.type_name, stmt.value)
             self._check_map_annotation(stmt.type_name, stmt.value)
+            self._check_ring_annotation(stmt.type_name, stmt.value)
+            self._check_bitset_annotation(stmt.type_name, stmt.value)
             type_str = self._infer_or_map_type(stmt.type_name, stmt.value)
             raw_velo_type = stmt.type_name or self._infer_raw_velo_type(stmt.value)
             self.current_scope_types[stmt.name] = raw_velo_type
@@ -1247,9 +1445,47 @@ class CCodeGenerator:
                     self.indent_level -= 1
                     self._emit_line("}")
                     return
+                # 5.2 slice 9: `loop v of r { }` — FIFO snapshot iteration.
+                # At entry the live elements are copied front-to-back into a
+                # fresh element-typed arena array; put/pop during the body
+                # mutate the live ring, never the view.
+                ring_elem = self._ring_elem_type(coll_type)
+                if ring_elem is not None:
+                    it = stmt.iterator or "v"
+                    elem_c = self._map_type(ring_elem)
+                    elem_sz = f"sizeof({elem_c})"
+                    src = self._fresh_name("lsrc_")
+                    cnt = self._fresh_name("lcnt_")
+                    iname = stmt.of_index or self._fresh_name("lidx_")
+                    dat = self._fresh_name("ldat_")
+                    run = self._fresh_name("lrun_")
+                    coll_code = self._emit_expression(stmt.of_expr)
+                    cap_src = f"(*({coll_code}))" if coll_type.startswith("@") else f"({coll_code})"
+                    self._emit_line("{")
+                    self.indent_level += 1
+                    self._emit_line(f"VeloRing {src} = {cap_src};")
+                    self._emit_line(f"const usize {cnt} = {src}.len;")
+                    self._emit_line(f"void* {dat} = velo_mem_alloc((usize){elem_sz}, {cnt});")
+                    self._emit_line(f"for (size_t {run} = 0; {run} < {cnt}; ++{run}) {{ memcpy((char*){dat} + {run} * (usize){elem_sz}, (const char*){src}.data + ((({src}.head + {run}) & ({src}.cap - 1)) * (usize){elem_sz}), (usize){elem_sz}); }}")
+                    self._emit_line(f"for (usize {iname} = 0; {iname} < {cnt}; ++{iname}) {{")
+                    self.indent_level += 1
+                    self._emit_line(f"const {elem_c} {it} = (({elem_c}*){dat})[{iname}];")
+                    self.current_scope_types[it] = ring_elem
+                    self.current_scope_mut[it] = False
+                    if stmt.of_index:
+                        # the second binding names the step index (usize)
+                        self.current_scope_types[iname] = "usize"
+                        self.current_scope_mut[iname] = False
+                    self.defer_stack.append([])
+                    self._emit_block_body(stmt.body.statements)
+                    self.indent_level -= 1
+                    self._emit_line("}")
+                    self.indent_level -= 1
+                    self._emit_line("}")
+                    return
                 elem = self._shelf_elem_type(coll_type)
                 if elem is None:
-                    raise ValueError(f"the 'of' source of a loop must be a shelf or map (got {coll_type})")
+                    raise ValueError(f"the 'of' source of a loop must be a shelf, map, or ring (got {coll_type})")
                 it = stmt.iterator or "v"
                 elem_c = self._map_type(elem)
                 src = self._fresh_name("lsrc_")
@@ -1517,6 +1753,15 @@ class CCodeGenerator:
             if not value.keys:
                 raise ValueError("cannot infer key and value types of empty map literal — annotate it (e.g. let m: Map[i32, string] = map[])")
             return self._infer_map_literal_type(value)
+        if isinstance(value, RingLiteral):
+            # 5.2 slice 9: the ring ladder (no dyn arm) — annotated empties
+            # return the pinned ring[T]; non-empty run the element ladder.
+            if value.elem_type:
+                return f"ring[{value.elem_type}]"
+            return f"ring[{self._ring_literal_elem(value)}]"
+        if isinstance(value, BitsetLiteral):
+            # 5.2 slice 9: bitset is monomorphic — no element ladder exists
+            return "bitset"
         if isinstance(value, VariantExpr):
             if value.kind_name: return value.kind_name
             return self.variant_to_kind.get(value.variant_name, "i32")
@@ -1566,6 +1811,12 @@ class CCodeGenerator:
                 # 5.2 slice 6: a map read yields V (the strict key check and
                 # the fatal live in the emitter for the same expression)
                 return map_kv[1]
+            if self._ring_elem_type(target_type) is not None:
+                # 5.2 slice 9: rings have no subscript — the differentiator
+                # is pop/peek, not indexing
+                raise ValueError("ring does not support subscript reads — use peek()")
+            if target_type.lstrip("@") == "bitset":
+                raise ValueError("bitset does not support subscript reads — use has()")
             if target_type.startswith("@"):
                 return target_type[1:]
             return "i32"
@@ -1599,6 +1850,25 @@ class CCodeGenerator:
                     if value.callee.member == "has":
                         return "bool"
                     raise ValueError(f"unknown map member '{value.callee.member}' (put, get, has, len, get_or, take are available)")
+                # 5.2 slice 9: ring/bitset receiver calls
+                recv_ring = self._ring_elem_type(self._resolve_expr_type(value.callee.target))
+                if recv_ring is not None:
+                    if value.callee.member == "put":
+                        return "void"
+                    if value.callee.member in ("pop", "peek"):
+                        return recv_ring
+                    raise ValueError(f"unknown ring member '{value.callee.member}' (put, pop, peek, len are available)")
+                recv_bs = self._resolve_expr_type(value.callee.target).lstrip("@")
+                if recv_bs == "bitset":
+                    if value.callee.member in ("set", "clear", "toggle", "and", "or_with", "xor_with", "flip"):
+                        return "void"
+                    if value.callee.member == "has":
+                        return "bool"
+                    if value.callee.member == "count":
+                        return "usize"
+                    if value.callee.member == "first_unset":
+                        return "i32"
+                    raise ValueError(f"unknown bitset member '{value.callee.member}' (set, clear, toggle, has, count, first_unset, and, or_with, xor_with, flip are available)")
             if isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier) and value.callee.target.name in self.kind_defs:
                 return value.callee.target.name
             if isinstance(value.callee, Identifier):
@@ -1689,6 +1959,12 @@ class CCodeGenerator:
                 # 5.2 slice 6: a map read yields V (the strict key check and
                 # the fatal live in the emitter for the same expression)
                 return map_kv[1]
+            if self._ring_elem_type(target_type) is not None:
+                # 5.2 slice 9: rings have no subscript — the differentiator
+                # is pop/peek, not indexing
+                raise ValueError("ring does not support subscript reads — use peek()")
+            if target_type.lstrip("@") == "bitset":
+                raise ValueError("bitset does not support subscript reads — use has()")
             if target_type == "string":
                 return "u8"
             if target_type.startswith("@"):
@@ -1710,6 +1986,14 @@ class CCodeGenerator:
                 if expr.member == "len":
                     return "usize"
                 raise ValueError(f"unknown map member '{expr.member}' (put, get, has, len, get_or, take are available)")
+            # 5.2 slice 9: ring property reads (len); bitset has NO property
+            # members (count/first_unset are calls)
+            if self._ring_elem_type(target_type) is not None:
+                if expr.member == "len":
+                    return "usize"
+                raise ValueError(f"unknown ring member '{expr.member}' (put, pop, peek, len are available)")
+            if target_type.lstrip("@") == "bitset":
+                raise ValueError(f"unknown bitset member '{expr.member}' (set, clear, toggle, has, count, first_unset, and, or_with, xor_with, flip are available)")
             clean_type = target_type.lstrip("@")
             fields = self.struct_defs.get(clean_type, {})
             return fields.get(expr.member, "i32")
@@ -1743,6 +2027,25 @@ class CCodeGenerator:
                     if expr.callee.member == "has":
                         return "bool"
                     raise ValueError(f"unknown map member '{expr.callee.member}' (put, get, has, len, get_or, take are available)")
+                # 5.2 slice 9: ring receiver calls — put void, pop/peek the
+                # element; bitset calls — mutators void, has bool
+                ring_elem = self._ring_elem_type(recv)
+                if ring_elem is not None:
+                    if expr.callee.member == "put":
+                        return "void"
+                    if expr.callee.member in ("pop", "peek"):
+                        return ring_elem
+                    raise ValueError(f"unknown ring member '{expr.callee.member}' (put, pop, peek, len are available)")
+                if recv.lstrip("@") == "bitset":
+                    if expr.callee.member in ("set", "clear", "toggle", "and", "or_with", "xor_with", "flip"):
+                        return "void"
+                    if expr.callee.member == "has":
+                        return "bool"
+                    if expr.callee.member == "count":
+                        return "usize"
+                    if expr.callee.member == "first_unset":
+                        return "i32"
+                    raise ValueError(f"unknown bitset member '{expr.callee.member}' (set, clear, toggle, has, count, first_unset, and, or_with, xor_with, flip are available)")
             if isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier) and expr.callee.target.name in self.kind_defs:
                 return expr.callee.target.name
             if isinstance(expr.callee, Identifier):
@@ -1926,6 +2229,12 @@ class CCodeGenerator:
                 return (f"({{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot}; "
                         f"if (!velo_map_copy_out({recv}, (const void*)(&{k_slot}), (void*)(&{v_slot}))) "
                         f"velo_map_fatal_missing({recv}, (const void*)(&{k_slot}), \"{kv[0]}\"); {v_slot}; }})")
+            # 5.2 slice 9: rings/bitsets have no subscript — loud, before C
+            sub_t = self._resolve_expr_type(expr.target)
+            if self._ring_elem_type(sub_t) is not None:
+                raise ValueError("ring does not support subscript reads — use peek()")
+            if sub_t.lstrip("@") == "bitset":
+                raise ValueError("bitset does not support subscript reads — use has()")
             target_code = self._emit_expression(expr.target)
             index_code = self._emit_expression(expr.index)
             return f"{target_code}[{index_code}]"
@@ -1933,6 +2242,10 @@ class CCodeGenerator:
             return self._emit_shelf_literal(expr)
         elif isinstance(expr, MapLiteral):
             return self._emit_map_literal(expr)
+        elif isinstance(expr, RingLiteral):
+            return self._emit_ring_literal(expr)
+        elif isinstance(expr, BitsetLiteral):
+            return self._emit_bitset_literal(expr)
         elif isinstance(expr, CastExpr):
             sub_t = self._resolve_expr_type(expr.expr)
             sub = self._emit_expression(expr.expr)
@@ -2226,6 +2539,51 @@ class CCodeGenerator:
                     return (f"({{ {key_c} {k_slot} = ({key_code}); "
                             f"velo_map_has({rec}, (const void*)(&{k_slot})); }})")
 
+                # 5.2 slice 9: ring receiver member calls — put/pop/peek,
+                # compile-checked; `_ring_expect` mirrors the Stage 2 checker
+                ring_elem = self._ring_elem_type(target_type)
+                if ring_elem is not None:
+                    self._ring_expect(expr.callee.member, expr.callee.target, expr.args, ring_elem)
+                    target_code = self._emit_expression(expr.callee.target)
+                    rec = f"({target_code})" if target_type.startswith("@") else f"&({target_code})"
+                    elem_c = self._map_type(ring_elem)
+                    if expr.callee.member == "put":
+                        slot = self._fresh_name("rpl_")
+                        val_code = self._emit_expression(expr.args[0])
+                        return (f"({{ {elem_c} {slot} = ({val_code}); "
+                                f"velo_ring_put({rec}, (const void*)(&{slot}), (usize)sizeof({elem_c})); }})")
+                    if expr.callee.member == "pop":
+                        # value copies out FIRST, then the head advances (the
+                        # take discipline); empty is the loud fatal family
+                        slot = self._fresh_name("rpo_")
+                        return (f"({{ {elem_c} {slot}; velo_ring_pop({rec}, (void*)(&{slot}), (usize)sizeof({elem_c})); {slot}; }})")
+                    slot = self._fresh_name("rpk_")
+                    return (f"({{ {elem_c} {slot}; velo_ring_peek({rec}, (void*)(&{slot}), (usize)sizeof({elem_c})); {slot}; }})")
+
+                # 5.2 slice 9: bitset receiver member calls
+                if target_type.lstrip("@") == "bitset":
+                    self._bitset_expect(expr.callee.member, expr.callee.target, expr.args)
+                    target_code = self._emit_expression(expr.callee.target)
+                    rec = f"({target_code})" if target_type.startswith("@") else f"&({target_code})"
+                    if expr.callee.member in ("set", "clear", "toggle"):
+                        idx_code = self._emit_expression(expr.args[0])
+                        return f"velo_bitset_{expr.callee.member}({rec}, (int64_t)({idx_code}))"
+                    if expr.callee.member == "has":
+                        idx_code = self._emit_expression(expr.args[0])
+                        return f"velo_bitset_has({rec}, (int64_t)({idx_code}))"
+                    if expr.callee.member == "count":
+                        return f"velo_bitset_count({rec})"
+                    if expr.callee.member == "first_unset":
+                        return f"((int32_t)velo_bitset_first_unset({rec}))"
+                    if expr.callee.member == "flip":
+                        return f"velo_bitset_flip({rec})"
+                    # and / or_with / xor_with — the other binds first
+                    other_code = self._emit_expression(expr.args[0])
+                    other_t = self._resolve_expr_type(expr.args[0])
+                    other_rec = f"({other_code})" if other_t.startswith("@") else f"&({other_code})"
+                    rt = {"and": "and", "or_with": "or", "xor_with": "xor"}[expr.callee.member]
+                    return f"velo_bitset_{rt}({rec}, {other_rec})"
+
                 clean_type = target_type.lstrip("@")
                 struct_fields = self.struct_defs.get(clean_type, {})
                 if expr.callee.member not in struct_fields and expr.callee.member in self.func_decls:
@@ -2260,6 +2618,11 @@ class CCodeGenerator:
                         got = self._resolve_expr_type(a)
                         if got.lstrip("@").startswith("Map[") and got != want:
                             raise ValueError(f"map argument types must match exactly: got {got}, expected {want}")
+                    elif want_l.startswith("ring["):
+                        # 5.2 slice 9: rings string-match the element slot
+                        got = self._resolve_expr_type(a)
+                        if got.lstrip("@").startswith("ring[") and got != want:
+                            raise ValueError(f"ring argument element types must match exactly: got {got}, expected {want}")
             callee_code = self._emit_expression(expr.callee)
             arg_codes = [self._emit_expression(arg) for arg in expr.args]
             return f"{callee_code}({', '.join(arg_codes)})"

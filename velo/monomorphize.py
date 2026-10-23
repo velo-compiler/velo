@@ -11,7 +11,7 @@ from velo.ast_nodes import (
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr,
-    ShelfLiteral, MapLiteral,
+    ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral,
     TypeAliasDecl,
     mangle_op_name, OP_SYMBOL_TO_NAME
 )
@@ -125,6 +125,9 @@ def normalize_type_name(t: Optional[str]) -> Optional[str]:
         return t  # 5.2: keep the bracket form; elem extraction needs it
     if base == "Map":
         return t  # 5.2 slice 6: keep `Map[K, V]`; the two-slot extraction needs it
+    if base == "ring":
+        return t  # 5.2 slice 9: keep `ring[T]`; elem extraction needs it
+    # 5.2 slice 9: `bitset` is bare (no bracket args) — passes through below.
     if not args:
         return prefix + base
     mangled_args = [mangle_type_name(a) for a in args]
@@ -866,6 +869,14 @@ class Monomorphizer:
             new_lit = MapLiteral(keys=new_keys, vals=new_vals, line=expr.line, col=expr.col)
             new_lit.kv_type = expr.kv_type
             return new_lit
+        elif isinstance(expr, RingLiteral):
+            new_args = [self._transform_expr(a, scope, subst, None) for a in expr.args]
+            new_lit = RingLiteral(args=new_args, line=expr.line, col=expr.col)
+            new_lit.elem_type = expr.elem_type
+            return new_lit
+        elif isinstance(expr, BitsetLiteral):
+            new_args = [self._transform_expr(a, scope, subst, None) for a in expr.args]
+            return BitsetLiteral(args=new_args, line=expr.line, col=expr.col)
         elif isinstance(expr, IndexExpr):
             return IndexExpr(target=self._transform_expr(expr.target, scope, subst, None), index=self._transform_expr(expr.index, scope, subst, "usize"), line=expr.line, col=expr.col)
         elif isinstance(expr, DerefExpr):
@@ -975,6 +986,23 @@ class Monomorphizer:
             if all(t in DYN_INT_TYPES or t in DYN_FLOAT_TYPES for t in types) and any(t in DYN_FLOAT_TYPES for t in types):
                 return "shelf[f64]"
             return "shelf[dyn]"
+        if isinstance(expr, RingLiteral):
+            # 5.2 slice 9: best-effort ring ladder (no dyn arm — a mixed
+            # non-numeric generic literal is a checker-rejected corner)
+            if expr.elem_type:
+                return f"ring[{expr.elem_type}]"
+            if not expr.args:
+                return "i32"
+            types = [self._infer_expr_type(a, scope) for a in expr.args]
+            first = types[0]
+            if all(t == first for t in types):
+                return f"ring[{first}]"
+            if all(t in DYN_INT_TYPES or t in DYN_FLOAT_TYPES for t in types) and any(t in DYN_FLOAT_TYPES for t in types):
+                return "ring[f64]"
+            second = next((t for t in types if t != first), first)
+            return f"ring[{first}]"  # checker rejects the mix upstream
+        if isinstance(expr, BitsetLiteral):
+            return "bitset"
         if isinstance(expr, IndexExpr):
             # 5.2: shelf element reads; slice 6: map value reads
             target_type = self._infer_expr_type(expr.target, scope)

@@ -197,6 +197,9 @@ act mono_normalize_type(t: string) -> string {
     // 5.2 slice 6: `Map[K, V]` passes through UNCHANGED like shelf[T] — the
     // two-slot extraction needs the bracket form intact.
     if t[at0] == 'M' and len0 >= at0 + 4 and t[at0 + 1] == 'a' and t[at0 + 2] == 'p' and t[at0 + 3] == '[' { return t }
+    // 5.2 slice 9: `ring[T]` passes through UNCHANGED (elem extraction needs
+    // the bracket form); `bitset` is bare and passes through below anyway.
+    if t[at0] == 'r' and len0 >= at0 + 5 and t[at0 + 1] == 'i' and t[at0 + 2] == 'n' and t[at0 + 3] == 'g' and t[at0 + 4] == '[' { return t }
     let len = str.len(t)
     mut at_count: usize = 0
     loop at_count < len and t[at_count] == '@' { at_count += 1 }
@@ -325,6 +328,8 @@ act mono_map_value(t: string) -> string {
 act mono_map_spelling(k: string, v: string) -> string {
     return mono_concat("Map[", mono_concat(k, mono_concat(", ", mono_concat(v, "]"))))
 }
+// 5.2 slice 9: the canonical `ring[T]` spelling lives in monomorphize_expr.vl
+// (mono_ring_spelling) beside its caller.
 
 act mono_check_type(m: @Monomorphizer, t: string) {
     if t == null { return }

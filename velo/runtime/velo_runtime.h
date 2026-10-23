@@ -1563,6 +1563,198 @@ static inline int64_t velo_dyn_compare(VeloDyn l, VeloDyn r) {
     return (int64_t)(l.as.b ? 1 : 0) - (int64_t)(r.as.b ? 1 : 0);
 }
 
+// ============================================================================
+// 5.2 (slice 9) — ring[T]: an unbounded FIFO queue with O(1) front removal.
+//
+// A `ring[T]` is a zero-init VeloRing header; slots are esz-sized bytes in
+// the ACTIVE arena. `head` names the front element in mask space; put
+// enqueues at (head + len) & (cap-1), pop/peek read head and advance it.
+// Growth doubles the capacity (min 8) and REGENERATES the slot array
+// unrolled (front -> slot 0) in fresh arena storage — no per-element frees
+// (the shelf/map regeneration doctrine). The differentiator vs shelf is
+// O(1) FRONT removal; bounded capacity can layer on later.
+// ============================================================================
+typedef struct VeloRing {
+    size_t esz;     // element size (compiler-known slot layout knowledge)
+    size_t cap;     // power-of-two slot capacity (0 = empty)
+    size_t head;    // front index in mask space
+    size_t len;     // live elements
+    void* data;     // arena-backed slot array (esz * cap bytes)
+} VeloRing;
+
+static inline void velo_ring_fatal_empty(const char* what) {
+    fprintf(stderr, "Velo Fatal Error: ring %s from an empty ring!\n", what);
+    exit(1);
+}
+
+// Growth for the next enqueue: double the capacity, copy the live elements
+// UNROLLED (front first) into fresh arena storage.
+static inline void velo_ring_reserve(VeloRing* r, size_t esz) {
+    if (r->data != NULL && r->len < r->cap) return;
+    size_t new_cap = r->cap ? r->cap * 2 : 8;
+    void* next = velo_mem_alloc(esz, new_cap);
+    for (size_t i = 0; i < r->len; ++i) {
+        memcpy((char*)next + i * esz,
+               (const char*)r->data + ((r->head + i) & (r->cap - 1)) * esz, esz);
+    }
+    r->data = next;
+    r->cap = new_cap;
+    r->head = 0;
+}
+
+static inline void velo_ring_put(VeloRing* r, const void* val, size_t esz) {
+    if (r->esz == 0) r->esz = esz;
+    else if (r->esz != esz) {
+        fprintf(stderr, "Velo Fatal Error: ring element size mismatch: %llu vs %llu!\n",
+                (unsigned long long)esz, (unsigned long long)r->esz);
+        exit(1);
+    }
+    velo_ring_reserve(r, esz);
+    memcpy((char*)r->data + ((r->head + r->len) & (r->cap - 1)) * esz, val, esz);
+    r->len += 1;
+}
+
+// Dequeue-front: the value copies out FIRST, then the head advances (the
+// take discipline). Empty is the loud deterministic fatal family.
+static inline void velo_ring_pop(VeloRing* r, void* out, size_t esz) {
+    if (r->esz == 0) r->esz = esz;
+    else if (r->esz != esz) {
+        fprintf(stderr, "Velo Fatal Error: ring element size mismatch: %llu vs %llu!\n",
+                (unsigned long long)esz, (unsigned long long)r->esz);
+        exit(1);
+    }
+    if (r->len == 0) velo_ring_fatal_empty("pop");
+    memcpy(out, (const char*)r->data + r->head * esz, esz);
+    r->head = (r->head + 1) & (r->cap - 1);
+    r->len -= 1;
+}
+
+// Read-front without consuming (read tier — legal on a let). The empty
+// check comes FIRST: a zero-init ring has esz 0, which is not a mismatch.
+static inline void velo_ring_peek(const VeloRing* r, void* out, size_t esz) {
+    if (r->len == 0) velo_ring_fatal_empty("peek");
+    if (r->esz != esz) {
+        fprintf(stderr, "Velo Fatal Error: ring element size mismatch: %llu vs %llu!\n",
+                (unsigned long long)esz, (unsigned long long)r->esz);
+        exit(1);
+    }
+    memcpy(out, (const char*)r->data + r->head * esz, esz);
+}
+
+// ============================================================================
+// 5.2 (slice 9) — bitset: an arena-backed u64 word array, grow-on-set.
+//
+// A `bitset` is a zero-init VeloBitset header; set/toggle GROW the word
+// array to cover the index (grow-on-set like shelf), clear beyond coverage
+// is a no-op (the bit is already unset) and has beyond coverage reads false
+// (an unset bit — required so first_unset composes). A NEGATIVE index is
+// the only out-of-bounds: a loud deterministic fatal on every index-taking
+// op. Pair ops (and/or_with/xor_with) operate IN PLACE over the target's
+// words with the other's out-of-range words read as 0; flip complements the
+// MATERIALIZED words (a bitset models its materialized words, not an
+// infinite bit plane — documented).
+// ============================================================================
+typedef struct VeloBitset {
+    size_t words;   // materialized 64-bit words
+    uint64_t* bits; // arena-backed
+} VeloBitset;
+
+static inline void velo_bitset_oob(int64_t i) {
+    fprintf(stderr, "Velo Fatal Error: bitset index out of bounds: %lld!\n",
+            (long long)i);
+    exit(1);
+}
+
+static inline void velo_bitset_grow(VeloBitset* b, size_t need_words) {
+    if (b->words >= need_words) return;
+    uint64_t* next = (uint64_t*)velo_mem_alloc(sizeof(uint64_t), need_words);
+    for (size_t i = 0; i < b->words; ++i) next[i] = b->bits[i];
+    for (size_t i = b->words; i < need_words; ++i) next[i] = 0;
+    b->bits = next;
+    b->words = need_words;
+}
+
+static inline void velo_bitset_set(VeloBitset* b, int64_t i) {
+    if (i < 0) velo_bitset_oob(i);
+    size_t w = (size_t)i / 64;
+    velo_bitset_grow(b, w + 1);
+    b->bits[w] |= (uint64_t)1 << (i % 64);
+}
+
+static inline void velo_bitset_clear(VeloBitset* b, int64_t i) {
+    if (i < 0) velo_bitset_oob(i);
+    size_t w = (size_t)i / 64;
+    if (w >= b->words) return;   // beyond coverage: already unset
+    b->bits[w] &= ~((uint64_t)1 << (i % 64));
+}
+
+static inline void velo_bitset_toggle(VeloBitset* b, int64_t i) {
+    if (i < 0) velo_bitset_oob(i);
+    size_t w = (size_t)i / 64;
+    velo_bitset_grow(b, w + 1);
+    b->bits[w] ^= (uint64_t)1 << (i % 64);
+}
+
+static inline bool velo_bitset_has(const VeloBitset* b, int64_t i) {
+    if (i < 0) velo_bitset_oob(i);
+    size_t w = (size_t)i / 64;
+    if (w >= b->words) return false;
+    return (b->bits[w] >> (i % 64)) & 1;
+}
+
+static inline size_t velo_bitset_count(const VeloBitset* b) {
+    size_t n = 0;
+    for (size_t w = 0; w < b->words; ++w) {
+        uint64_t v = b->bits[w];
+        while (v) { v &= v - 1; n += 1; }   // Kernighan popcount (no builtins)
+    }
+    return n;
+}
+
+// The first zero bit from index 0; on an all-ones bitset this is words*64
+// (the next unset — the slot the next set would grow into). Total function.
+static inline int64_t velo_bitset_first_unset(const VeloBitset* b) {
+    for (size_t w = 0; w < b->words; ++w) {
+        if (b->bits[w] != UINT64_MAX) {
+            uint64_t inv = ~b->bits[w];
+            int64_t bit = 0;
+            while (((inv >> bit) & 1) == 0) bit += 1;
+            return (int64_t)(w * 64) + bit;
+        }
+    }
+    return (int64_t)(b->words * 64);
+}
+
+static inline void velo_bitset_and(VeloBitset* a, const VeloBitset* o) {
+    for (size_t w = 0; w < a->words; ++w) {
+        uint64_t other = (w < o->words) ? o->bits[w] : 0;
+        a->bits[w] &= other;
+    }
+}
+
+// or/xor must MATERIALIZE the other's beyond-coverage bits (a union that
+// drops them is not a union), so both grow the target first; and treats the
+// other's out-of-range words as 0 (zeroing target bits beyond — exact).
+static inline void velo_bitset_or(VeloBitset* a, const VeloBitset* o) {
+    if (o->words > a->words) velo_bitset_grow(a, o->words);
+    for (size_t w = 0; w < a->words; ++w) {
+        uint64_t other = (w < o->words) ? o->bits[w] : 0;
+        a->bits[w] |= other;
+    }
+}
+
+static inline void velo_bitset_xor(VeloBitset* a, const VeloBitset* o) {
+    if (o->words > a->words) velo_bitset_grow(a, o->words);
+    for (size_t w = 0; w < a->words; ++w) {
+        uint64_t other = (w < o->words) ? o->bits[w] : 0;
+        a->bits[w] ^= other;
+    }
+}
+
+static inline void velo_bitset_flip(VeloBitset* b) {
+    for (size_t w = 0; w < b->words; ++w) b->bits[w] = ~b->bits[w];
+}
+
 
 // --- stdout capture support (structured diagnostics for 'velo check --json') ---
 // Redirects fd 1 into a file, isolating diagnostics from the JSON stream on

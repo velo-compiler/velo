@@ -4,6 +4,7 @@ use "../frontend/token.vl"
 use "../ast/types.vl"
 use "../common/utils.vl"
 use "../common/act_types.vl"
+use "../analysis/misc_checks.vl"
 
 // Maps a Velo type name to its standard C99 type string.
 act map_type_to_c(type_name: string) -> string {
@@ -34,6 +35,17 @@ act map_type_to_c(type_name: string) -> string {
     if is_map_form(type_name) {
         if type_name[0] == '@' { return "VeloMap*" }
         return "VeloMap"
+    }
+
+    // 5.2 slice 9: `ring[T]` / `@ring[T]` → the single shared VeloRing layout;
+    // `bitset` / `@bitset` → VeloBitset (the bare collection type)
+    if is_ring_type(type_name) {
+        if type_name[0] == '@' { return "VeloRing*" }
+        return "VeloRing"
+    }
+    if is_bitset_type(type_name) {
+        if type_name[0] == '@' { return "VeloBitset*" }
+        return "VeloBitset"
     }
 
     // Pointer types (@T, @@T)

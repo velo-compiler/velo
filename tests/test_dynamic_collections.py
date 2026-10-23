@@ -1144,7 +1144,7 @@ MAP_REJECTIONS = [
     ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.take(\"w\") return 0 }",
      "map key mismatch: expected i32 (got string)", "take_key_mismatch"),
     ("act main() -> i32 { loop x of 3 { io.println(\"x\") } return 0 }",
-     "the 'of' source of a loop must be a shelf or map (got i32)", "of_odd_source"),
+     "the 'of' source of a loop must be a shelf, map, or ring (got i32)", "of_odd_source"),
 ]
 
 MAP_FATALS = [
@@ -1290,6 +1290,197 @@ class TestDynOperators(unittest.TestCase):
             s1.stdout.strip().splitlines(),
             ["exact", "signed view", "v 7"],
         )
+
+
+# ======================================================================
+# 5.2 slice 9 — ring[T] + bitset: FIFO rings with O(1) front removal
+# (wrap-boundary battery, snapshot iteration, the fatal family) and the
+# word-array bitset (set/clear/toggle/has/count/first_unset, the in-place
+# pair ops). Both stages lower identical C onto the shared runtime engines.
+# ======================================================================
+
+RING_REJECTIONS = [
+    ("use sys.io\nact main() -> i32 {\n    let r: ring = ring[]\n    return 0\n}",
+     "a bare 'ring' needs an element type: use ring[T]", "r_bare_ring"),
+    ("use sys.io\nact main() -> i32 {\n    mut r: ring[i32] = ring[]\n    r.put(\"s\")\n    return 0\n}",
+     "ring.put element mismatch: expected i32 (got string)", "r_put_mismatch"),
+    ("use sys.io\nact main() -> i32 {\n    mut r: ring[i32] = ring[]\n    r.put()\n    return 0\n}",
+     "ring.put expects exactly 1 argument: (ring r, element value)", "r_put_arity"),
+    ("use sys.io\nact main() -> i32 {\n    mut r: ring[i32] = ring[]\n    let v = r.pop(1)\n    return 0\n}",
+     "ring.pop takes no arguments", "r_pop_arity"),
+    ("use sys.io\nact main() -> i32 {\n    let r: ring[i32] = ring[]\n    r.put(1)\n    return 0\n}",
+     "cannot put into a ring held by a let (declare with mut)", "r_put_on_let"),
+    ("use sys.io\nact main() -> i32 {\n    let r: ring[i32] = ring[]\n    let v = r.pop()\n    return 0\n}",
+     "cannot pop from a ring held by a let (declare with mut)", "r_pop_on_let"),
+    ("use sys.io\nact main() -> i32 {\n    let r = ring[]\n    return 0\n}",
+     "cannot infer element type of empty ring literal", "r_empty_infer"),
+    ("use sys.io\nact main() -> i32 {\n    let a: i64 = 5\n    let r = ring[1, a]\n    return 0\n}",
+     "ring literal element types differ: i32 vs i64", "r_lit_differ"),
+    ("use sys.io\nact main() -> i32 {\n    mut bag: shelf[dyn] = shelf[1, \"x\"]\n    let r = ring[bag[0]]\n    return 0\n}",
+     "ring element type dyn is not supported — use a @dyn pointer element", "r_dyn_elem"),
+    ("use sys.io\nact main() -> i32 {\n    let r: ring[i32] = ring[1]\n    let v = r[0]\n    return 0\n}",
+     "ring does not support subscript reads — use peek()", "r_subscript"),
+    ("use sys.io\nact main() -> i32 {\n    let r: ring[i32] = ring[]\n    let n = r.push(1)\n    return 0\n}",
+     "unknown ring member 'push' (put, pop, peek, len are available)", "r_unknown"),
+    ("act show(r: ring[i64]) -> i32 {\n    return 0\n}\nuse sys.io\nact main() -> i32 {\n    mut r: ring[i32] = ring[5, 6]\n    show(r)\n    return 0\n}",
+     "ring argument element types must match exactly: got ring[i32], expected ring[i64]", "r_cross_call"),
+    # bitset walls
+    ("use sys.io\nact main() -> i32 {\n    mut b: bitset = bitset[]\n    b.set(\"s\")\n    return 0\n}",
+     "bitset index must be an integer (got string)", "r_bs_index"),
+    ("use sys.io\nact main() -> i32 {\n    let b: bitset = bitset[]\n    b.set(1)\n    return 0\n}",
+     "cannot mutate a bitset held by a let (declare with mut)", "r_bs_on_let"),
+    ("use sys.io\nact main() -> i32 {\n    mut b: bitset = bitset[]\n    b.set()\n    return 0\n}",
+     "bitset.set expects exactly 1 argument: (bitset b, index)", "r_bs_arity"),
+    ("use sys.io\nact main() -> i32 {\n    mut a: bitset = bitset[]\n    a.and(5)\n    return 0\n}",
+     "bitset.and expects a bitset argument (got i32)", "r_bs_arg"),
+    ("use sys.io\nact main() -> i32 {\n    let b: bitset = bitset[]\n    let n = b.count2\n    return 0\n}",
+     "unknown bitset member 'count2' (set, clear, toggle, has, count, first_unset, and, or_with, xor_with, flip are available)", "r_bs_unknown"),
+    ("use sys.io\nact main() -> i32 {\n    let b: i32 = bitset[1]\n    return 0\n}",
+     "bitset literal does not match annotation i32", "r_bs_ann"),
+]
+
+RING_FATALS = [
+    ("use sys.io\nact main() -> i32 {\n    mut r: ring[i32] = ring[]\n    let v = r.pop()\n    io.println(\"never\")\n    return 0\n}",
+     "Velo Fatal Error: ring pop from an empty ring!", "f_pop_empty"),
+    ("use sys.io\nact main() -> i32 {\n    let r: ring[i32] = ring[]\n    let v = r.peek()\n    io.println(\"never\")\n    return 0\n}",
+     "Velo Fatal Error: ring peek from an empty ring!", "f_peek_empty"),
+    ("use sys.io\nact main() -> i32 {\n    mut b: bitset = bitset[]\n    b.set(-1)\n    io.println(\"never\")\n    return 0\n}",
+     "Velo Fatal Error: bitset index out of bounds: -1!", "f_bs_neg"),
+]
+
+
+class TestRingBitset(unittest.TestCase):
+    """gaps.md 5.2 slice 9 — the ring[T] + bitset surface parity."""
+
+    def test_ring_fifo_and_of(self):
+        # FIFO order across the wrap boundary: 12 puts (capacity 8 -> 16
+        # unroll), 10 pops, 6 more puts; peek is non-destructive; `loop of`
+        # walks the snapshot front-to-back and the live ring is untouched.
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    mut r: ring[i32] = ring[]\n"
+            "    loop 12 { r.put(it as i32) }\n"
+            "    mut acc = 0\n"
+            "    loop 10 { let v = r.pop() acc = acc + v }\n"
+            "    loop 6 { r.put(100 + it as i32) }\n"
+            "    let ln = r.len as i32\n"
+            "    let fr = r.peek() as i32\n"
+            "    io.println(\"len {ln} acc {acc} front {fr}\")\n"
+            "    loop v, i of r {\n"
+            "        io.println(\"v {v}\")\n"
+            "    }\n"
+            "    let ln2 = r.len as i32\n"
+            "    io.println(\"after of {ln2}\")\n"
+            "    return 0\n"
+            "}"
+        )
+        s1 = run_stage("stage1", program, "ring9_fifo")
+        s2 = run_stage("stage2", program, "ring9_fifo")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-2000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-2000:])
+        self.assertEqual(s1.stdout, s2.stdout, "S9 ring FIFO outputs diverged")
+        self.assertEqual(
+            s1.stdout.strip().splitlines(),
+            ["len 8 acc 45 front 10", "v 10", "v 11", "v 100", "v 101", "v 102", "v 103", "v 104", "v 105",
+             "after of 8"],
+        )
+
+    def test_ring_literals_and_families(self):
+        # The literal ladder: homogeneous i32, the f64 widen, strings; pops
+        # run FIFO from a mut ring; peek reads the head on a let.
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    let r = ring[1, 2, 3]\n"
+            "    let ln = r.len as i32\n"
+            "    io.println(\"len {ln}\")\n"
+            "    mut w = ring[1, 2.5, 3]\n"
+            "    let v = w.pop() as f64\n"
+            "    io.println(\"v {v}\")\n"
+            "    mut s = ring[\"a\", \"b\"]\n"
+            "    let head = s.peek()\n"
+            "    io.println(\"head {head}\")\n"
+            "    return 0\n"
+            "}"
+        )
+        s1 = run_stage("stage1", program, "ring9_lits")
+        s2 = run_stage("stage2", program, "ring9_lits")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-2000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-2000:])
+        self.assertEqual(s1.stdout, s2.stdout, "S9 ring literal outputs diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), ["len 3", "v 1.00", "head a"])
+
+    def test_bitset_surface(self):
+        # set/clear/toggle/has/count/first_unset against hand-computed words;
+        # the pair ops (and truncates to the other's coverage, or/xor
+        # materialize it, flip complements the materialized words); `bitset[]`
+        # infers with no annotation.
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    mut b = bitset[1, 9, 100]\n"
+            "    let c1 = b.count() as i32\n"
+            "    let f1 = b.first_unset() as i32\n"
+            "    let h1 = b.has(1)\n"
+            "    let h2 = b.has(2)\n"
+            "    io.println(\"c1 {c1} first {f1} h1 {h1} h2 {h2}\")\n"
+            "    b.clear(9)\n"
+            "    b.toggle(2)\n"
+            "    let c2 = b.count() as i32\n"
+            "    let h2b = b.has(2)\n"
+            "    io.println(\"c2 {c2} h2b {h2b}\")\n"
+            "    mut a = bitset[1, 9]\n"
+            "    mut o = bitset[9, 100]\n"
+            "    a.and(o)\n"
+            "    let ca = a.count() as i32\n"
+            "    a.or_with(o)\n"
+            "    let cb = a.count() as i32\n"
+            "    let h100 = a.has(100)\n"
+            "    a.xor_with(o)\n"
+            "    let cc = a.count() as i32\n"
+            "    a.flip()\n"
+            "    let h1f = a.has(1)\n"
+            "    let h0f = a.has(0)\n"
+            "    io.println(\"and {ca} or {cb} h100 {h100}\")\n"
+            "    io.println(\"xor {cc} flip h1 {h1f} h0 {h0f}\")\n"
+            "    let e = bitset[]\n"
+            "    let ce = e.count() as i32\n"
+            "    let fe = e.first_unset() as i32\n"
+            "    io.println(\"empty {ce} {fe}\")\n"
+            "    return 0\n"
+            "}"
+        )
+        s1 = run_stage("stage1", program, "ring9_bitset")
+        s2 = run_stage("stage2", program, "ring9_bitset")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-2000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-2000:])
+        self.assertEqual(s1.stdout, s2.stdout, "S9 bitset outputs diverged")
+        self.assertEqual(
+            s1.stdout.strip().splitlines(),
+            ["c1 3 first 0 h1 true h2 false", "c2 3 h2b true",
+             "and 1 or 2 h100 true", "xor 0 flip h1 true h0 true", "empty 0 0"],
+        )
+
+    def test_ring_rejections(self):
+        tmp = ROOT / ".velo_cache" / "ring9_reject"
+        tmp.mkdir(parents=True, exist_ok=True)
+        for program, want, name in RING_REJECTIONS:
+            src = tmp / f"{name}.vl"
+            src.write_text(program, encoding="utf-8")
+            for stage, res in (("stage1", check_result("stage1", src)),
+                               ("stage2", check_result("stage2", src))):
+                text = res.stdout + res.stderr
+                self.assertNotEqual(res.returncode, 0, f"{stage} accepted {name}:\n{text[-2000:]}")
+                self.assertIn(want, text, f"{stage} wording mismatch for {name}:\n{text[-2000:]}")
+
+    def test_ring_fatals(self):
+        for program, want, name in RING_FATALS:
+            for stage in ("stage1", "stage2"):
+                res = run_stage(stage, program, f"ring9_{name}")
+                self.assertNotEqual(res.returncode, 0, f"{stage} survived {name}!")
+                text = res.stdout + res.stderr
+                self.assertIn(want, text, f"{stage} fatal wording mismatch:\n{text[-2000:]}")
 
 
 if __name__ == "__main__":

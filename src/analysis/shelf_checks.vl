@@ -246,7 +246,7 @@ act check_shelf_loop_elem(st: @SymbolTable, stmt: @StmtNode) -> string {
     let elem = shelf_elem_type(coll_t)
     if elem == null {
         mut msg = create_sb(str.len(coll_t) + 56)
-        sb_append_str(@msg, "the 'of' source of a loop must be a shelf or map (got ")
+        sb_append_str(@msg, "the 'of' source of a loop must be a shelf, map, or ring (got ")
         sb_append_str(@msg, coll_t)
         sb_append_str(@msg, ")")
         report_error("semantic", stmt.line, stmt.col, sb_to_string(@msg)); st.error_count += 1
@@ -296,7 +296,8 @@ act shelf_inferred_type(st: @SymbolTable, expr: @ExprNode) -> string {
 
 // Cross-call boundary: a shelf argument's element type must string-match the
 // parameter's (a silent pass-through would corrupt reads via mixed element
-// sizes in the shared VeloShelf layout).
+// sizes in the shared VeloShelf layout). Slice 9: rings string-match the
+// element slot the same way (the shared VeloRing esz corruption).
 act check_shelf_call_args(st: @SymbolTable, expr: @ExprNode, fn_sym: @FunctionSym) {
     mut cur_p = fn_sym.first_param
     mut cur_a = expr.first_arg
@@ -307,6 +308,17 @@ act check_shelf_call_args(st: @SymbolTable, expr: @ExprNode, fn_sym: @FunctionSy
             if is_shelf_type(got) and got != want {
                 mut msg = create_sb(str.len(got) + str.len(want) + 64)
                 sb_append_str(@msg, "shelf argument element types must match exactly: got ")
+                sb_append_str(@msg, got)
+                sb_append_str(@msg, ", expected ")
+                sb_append_str(@msg, want)
+                report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+            }
+        }
+        if is_ring_type(want) {
+            let got = infer_expr_type(st, cur_a)
+            if is_ring_type(got) and got != want {
+                mut msg = create_sb(str.len(got) + str.len(want) + 64)
+                sb_append_str(@msg, "ring argument element types must match exactly: got ")
                 sb_append_str(@msg, got)
                 sb_append_str(@msg, ", expected ")
                 sb_append_str(@msg, want)

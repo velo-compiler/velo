@@ -158,6 +158,28 @@ class MapLiteral(Expr):
     col: int
     kv_type: Optional[str] = None
 
+# 5.2 slice 9: `ring[v0, v1, ...]` — constructor literal of the FIFO ring.
+# The element ladder is the pre-slice-2 shelf spirit WITHOUT the dyn arm
+# (homogeneous, f64 widen, strict differ); empty literals only infer when an
+# annotation pins the element (elem_type set by the VarDeclStmt/ReturnStmt
+# handlers before emission).
+@dataclass
+class RingLiteral(Expr):
+    args: List[Expr]
+    line: int
+    col: int
+    elem_type: Optional[str] = None
+
+# 5.2 slice 9: `bitset[i0, i1, ...]` — constructor literal of the word-array
+# bitset. Elements are integer-typed expressions lowered to set() calls;
+# `bitset[]` infers `bitset` with no annotation (no element ladder exists).
+@dataclass
+class BitsetLiteral(Expr):
+    args: List[Expr]
+    line: int
+    col: int
+    pinned: bool = False
+
 # Statements
 @dataclass
 class ExprStmt(Stmt):

@@ -6,7 +6,7 @@ from velo.ast_nodes import (
     MatchCase, MatchStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, VariantExpr, AnonFuncExpr,
-    ShelfLiteral, MapLiteral,
+    ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral,
     TypeAliasDecl,
     mangle_op_name
 )
@@ -385,7 +385,10 @@ class Parser:
                 ret_type = self._parse_type_annotation()
             return prefix + f"act({', '.join(params)}) -> {ret_type}"
 
-        type_tok = self._consume(TokenType.SHELF if self._check(TokenType.SHELF) else TokenType.IDENTIFIER, "Expected type name")
+        if self._check(TokenType.SHELF) or self._check(TokenType.RING) or self._check(TokenType.BITSET):
+            type_tok = self._consume(self.tokens[self.pos].type, "Expected type name")
+        else:
+            type_tok = self._consume(TokenType.IDENTIFIER, "Expected type name")
         base_name = type_tok.value
         if self._match(TokenType.LBRACKET):
             args = []
@@ -395,6 +398,8 @@ class Parser:
                     break
             self._consume(TokenType.RBRACKET, "Expected ']' after type arguments")
             base_name += "[" + ", ".join(args) + "]"
+        # 5.2 slice 9: a bare `ring` lowers to the loud codegen reject (the
+        # bare-shelf pattern); `bitset` is legal bare by design.
 
         return prefix + base_name
 
@@ -809,7 +814,11 @@ class Parser:
                     at_tok = self.tokens[self.pos - 1]
                     expr = DerefExpr(operand=expr, line=at_tok.line, col=at_tok.col)
                 else:
-                    member_tok = self._consume(TokenType.IDENTIFIER, "Expected member name after '.'")
+                    # 5.2 slice 9: `.and(` — the AND keyword is contextual after a
+                    # dot (the pinned bitset pair-op surface)
+                    if not (self._check(TokenType.IDENTIFIER) or self._check(TokenType.AND)):
+                        raise ParserError("Expected member name after '.'", self._peek())
+                    member_tok = self._advance()
                     expr = MemberAccess(target=expr, member=member_tok.value, line=member_tok.line, col=member_tok.col)
             elif self._check(TokenType.LBRACKET) and self._is_generic_call():
                 self._advance()
@@ -967,6 +976,40 @@ class Parser:
                 self._skip_newlines()
             self._consume(TokenType.RBRACKET, "Expected ']' at end of map literal")
             return MapLiteral(keys=keys, vals=vals, line=map_tok.line, col=map_tok.col)
+
+        if self._match(TokenType.RING):
+            # 5.2 slice 9: ring constructor literal `ring[v0, v1, ...]` —
+            # the shelf bracket-value shape; the element ladder (no dyn arm)
+            # lives in the checker. Empty `ring[]` needs an annotation.
+            ring_tok = self.tokens[self.pos - 1]
+            self._consume(TokenType.LBRACKET, "Expected '[' after 'ring' (ring literal: ring[1, 2, 3])")
+            self._skip_newlines()
+            args = []
+            while not self._check(TokenType.RBRACKET) and not self._is_at_end():
+                args.append(self._parse_expression())
+                self._skip_newlines()
+                if not self._match(TokenType.COMMA):
+                    break
+                self._skip_newlines()
+            self._consume(TokenType.RBRACKET, "Expected ']' at end of ring literal")
+            return RingLiteral(args=args, line=ring_tok.line, col=ring_tok.col)
+
+        if self._match(TokenType.BITSET):
+            # 5.2 slice 9: bitset constructor literal `bitset[i0, i1, ...]` —
+            # integer-typed elements lower to set() calls; `bitset[]` infers
+            # `bitset` with no annotation.
+            bs_tok = self.tokens[self.pos - 1]
+            self._consume(TokenType.LBRACKET, "Expected '[' after 'bitset' (bitset literal: bitset[1, 9])")
+            self._skip_newlines()
+            args = []
+            while not self._check(TokenType.RBRACKET) and not self._is_at_end():
+                args.append(self._parse_expression())
+                self._skip_newlines()
+                if not self._match(TokenType.COMMA):
+                    break
+                self._skip_newlines()
+            self._consume(TokenType.RBRACKET, "Expected ']' at end of bitset literal")
+            return BitsetLiteral(args=args, line=bs_tok.line, col=bs_tok.col)
 
         if self._match(TokenType.IDENTIFIER):
             return Identifier(name=tok.value, line=tok.line, col=tok.col)

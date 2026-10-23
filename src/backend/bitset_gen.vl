@@ -1,0 +1,124 @@
+// ============================================================================
+// 5.2 slice 9 — bitset C99 emission (the runtime VeloBitset engine; the C
+// text matches velo/codegen_c.py's S9 branches byte for byte). Semantic
+// checks (arity, integer indices, mut doctrine) already ran in the checker.
+// ============================================================================
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../analysis/shelf_checks.vl"
+use "../analysis/misc_checks.vl"
+use "../common/string_builder.vl"
+use "../common/act_types.vl"
+use "codegen_types.vl"
+use "codegen_expr.vl"
+use "codegen_stmt.vl"
+use "shelf_gen.vl"
+
+// The receiver contract (the map recv doctrine): @-pointer receivers pass
+// their own pointer (the first C parameter is `VeloBitset*` either way);
+// value receivers take &.
+act emit_bitset_recv(sb: @StringBuilder, st: @SymbolTable, recv: @ExprNode) {
+    let recv_t = infer_expr_type(st, recv)
+    if str.len(recv_t) > 0 and recv_t[0] == '@' {
+        sb_append_str(sb, "(")
+        emit_c_expr(sb, st, recv)
+        sb_append_str(sb, ")")
+    } else {
+        sb_append_str(sb, "&(")
+        emit_c_expr(sb, st, recv)
+        sb_append_str(sb, ")")
+    }
+}
+
+// 5.2 slice 9: lowers `bitset[...]` — a fresh VeloBitset header plus one
+// runtime set() per integer element (negative elements ride the runtime OOB
+// fatal). Elements bind in order, each evaluated exactly once.
+act emit_bitset_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    let bst = shelf_fresh_name(st, "bst_")
+    sb_append_str(sb, "({ VeloBitset ")
+    sb_append_str(sb, bst)
+    sb_append_str(sb, " = { 0 };")
+    mut cur = expr.first_arg
+    loop cur != null {
+        sb_append_str(sb, " velo_bitset_set(&(")
+        sb_append_str(sb, bst)
+        sb_append_str(sb, "), (int64_t)(")
+        emit_c_expr(sb, st, cur)
+        sb_append_str(sb, "));")
+        cur = cur.next
+    }
+    sb_append_str(sb, " ")
+    sb_append_str(sb, bst)
+    sb_append_str(sb, "; })")
+}
+
+// Member calls: the three index mutators are void statements; has/count/
+// first_unset are reads; the pair ops bind the other bitset by address.
+act emit_bitset_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    let member = expr.callee.member_name
+    if member == "set" or member == "clear" or member == "toggle" {
+        sb_append_str(sb, "velo_bitset_")
+        sb_append_str(sb, member)
+        sb_append_str(sb, "(")
+        emit_bitset_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (int64_t)(")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, "))")
+        return
+    }
+    if member == "has" {
+        sb_append_str(sb, "velo_bitset_has(")
+        emit_bitset_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (int64_t)(")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, "))")
+        return
+    }
+    if member == "count" {
+        sb_append_str(sb, "velo_bitset_count(")
+        emit_bitset_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ")")
+        return
+    }
+    if member == "first_unset" {
+        sb_append_str(sb, "((int32_t)velo_bitset_first_unset(")
+        emit_bitset_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, "))")
+        return
+    }
+    if member == "flip" {
+        sb_append_str(sb, "velo_bitset_flip(")
+        emit_bitset_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ")")
+        return
+    }
+    // and / or_with / xor_with — the runtime names drop the _with suffix
+    sb_append_str(sb, "velo_bitset_")
+    if member == "and" {
+        sb_append_str(sb, "and")
+    } else if member == "or_with" {
+        sb_append_str(sb, "or")
+    } else {
+        sb_append_str(sb, "xor")
+    }
+    sb_append_str(sb, "(")
+    emit_bitset_recv(sb, st, expr.callee.target)
+    sb_append_str(sb, ", ")
+    let other_t = infer_expr_type(st, expr.first_arg)
+    if str.len(other_t) > 0 and other_t[0] == '@' {
+        sb_append_str(sb, "(")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, ")")
+    } else {
+        sb_append_str(sb, "&(")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, ")")
+    }
+    sb_append_str(sb, ")")
+}

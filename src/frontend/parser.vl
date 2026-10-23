@@ -237,6 +237,14 @@ act parse_type_annotation(p: @Parser) -> string {
     if parser_check(p, TOK_SHELF) {
         base_tok_kind = TOK_SHELF
     }
+    // 5.2 slice 9: `ring`/`bitset` are reserved keywords — ring[T] needs its
+    // slot, bitset is legal bare (the first bare collection type)
+    if parser_check(p, TOK_RING) {
+        base_tok_kind = TOK_RING
+    }
+    if parser_check(p, TOK_BITSET) {
+        base_tok_kind = TOK_BITSET
+    }
     let type_tok = parser_consume(p, base_tok_kind, "Expected type name")
     let raw_name = copy_slice_to_string(p.source, type_tok.start, type_tok.length)
 
@@ -244,6 +252,11 @@ act parse_type_annotation(p: @Parser) -> string {
     // (same wording as Stage 1's map-time error)
     if base_tok_kind == TOK_SHELF and not parser_check(p, TOK_LBRACKET) {
         report_error(p.filename, type_tok.line, type_tok.col, "a bare 'shelf' needs an element type: use shelf[T]")
+        p.had_error = true
+    }
+    // 5.2 slice 9: a bare `ring` needs its element — same-trade parse reject
+    if base_tok_kind == TOK_RING and not parser_check(p, TOK_LBRACKET) {
+        report_error(p.filename, type_tok.line, type_tok.col, "a bare 'ring' needs an element type: use ring[T]")
         p.had_error = true
     }
     // 5.2 slice 6: a bare `Map` needs BOTH slots — same-trade parse reject,

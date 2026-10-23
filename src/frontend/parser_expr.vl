@@ -11,6 +11,7 @@ use "../ast/stmt.vl"
 use "parser.vl"
 use "parser_binary.vl"
 use "parser_stmt.vl"
+use "parser_lit.vl"
 // Parses an anonymous function expression: `act(params) [-> Ret] { body }`.
 act parse_anon_act(p: @Parser) -> @ExprNode {
     let act_tok = parser_consume(p, TOK_ACT, "Expected 'act'")
@@ -207,28 +208,16 @@ act parse_primary(p: @Parser) -> @ExprNode {
         return make_variant_expr(null, vname, first_arg, count, dot_tok.line, dot_tok.col)
     }
 
-    // 7.5. Shelf constructor literal: `shelf[v0, v1, ...]` — bracket args are VALUES.
-    // An empty `shelf[]` needs a type annotation to have its element type pinned.
+    // 7.5. Shelf constructor literal `shelf[v0, v1, ...]` — bracket args are VALUES; empty `shelf[]` needs a type annotation.
     if parser_check(p, TOK_SHELF) {
         let shelf_tok = parser_advance(p)
         parser_consume(p, TOK_LBRACKET, "Expected '[' after 'shelf' (shelf literal: shelf[1, 2, 3])")
-        mut first_elem: @ExprNode = null
-        mut last_elem: @ExprNode = null
-        mut elem_count: usize = 0
+        mut first_elem: @ExprNode = null; mut last_elem: @ExprNode = null; mut elem_count: usize = 0
         if not parser_check(p, TOK_RBRACKET) {
             mut more_elems = true
             loop more_elems {
                 let e = parse_expression(p)
-                if e != null {
-                    if first_elem == null {
-                        first_elem = e
-                        last_elem = e
-                    } else {
-                        last_elem.next = e
-                        last_elem = e
-                    }
-                    elem_count += 1
-                }
+                if e != null { if first_elem == null { first_elem = e; last_elem = e } else { last_elem.next = e; last_elem = e }; elem_count += 1 }
                 if not parser_match(p, TOK_COMMA) {
                     more_elems = false
                 }
@@ -238,9 +227,8 @@ act parse_primary(p: @Parser) -> @ExprNode {
         return make_shelf_lit_expr(first_elem, elem_count, null, shelf_tok.line, shelf_tok.col)
     }
 
-    // 7.6. Map constructor literal (5.2 slice 6): `map[k0: v0, k1: v1, ...]`.
-    // First_arg/next chain holds K,V alternating; an empty `map[]` needs an
-    // annotation pinning BOTH slots (the checker rejects the empty infer).
+    // 7.6. Map constructor literal (5.2 slice 6): `map[k0: v0, k1: v1, ...]`; the first_arg/next
+    // chain holds K,V alternating; empty `map[]` needs an annotation (the checker rejects it).
     if parser_check(p, TOK_MAP) {
         let map_tok = parser_advance(p)
         parser_consume(p, TOK_LBRACKET, "Expected '[' after 'map' (map literal: map[1: \"a\", 2: \"b\"])")
@@ -259,6 +247,9 @@ act parse_primary(p: @Parser) -> @ExprNode {
         parser_consume(p, TOK_RBRACKET, "Expected ']' at end of map literal")
         return make_map_lit_expr(first_elem, elem_count / 2, map_tok.line, map_tok.col)
     }
+
+    // 7.7. Ring/bitset constructor literals (5.2 slice 9) — parsed in parser_lit.vl
+    if parser_check(p, TOK_RING) or parser_check(p, TOK_BITSET) { return parse_coll9_literal(p) }
 
     // 8. Identifier variable reference
     if parser_check(p, TOK_IDENTIFIER) {
@@ -294,10 +285,14 @@ act parse_postfix(p: @Parser) -> @ExprNode {
             if parser_match(p, TOK_AT) {
                 let at_tok = parser_peek(p, 0)
                 expr = make_deref_expr(expr, at_tok.line, at_tok.col)
-            } else {
-                let mem_tok = parser_consume(p, TOK_IDENTIFIER, "Expected member name after '.'")
+            } else if parser_check(p, TOK_IDENTIFIER) or parser_check(p, TOK_AND) {  // 5.2 slice 9: `.and(` — the AND keyword is contextual after a dot
+                let mem_tok = parser_advance(p)
                 let mname = copy_slice_to_string(p.source, mem_tok.start, mem_tok.length)
                 expr = make_member_expr(expr, mname, mem_tok.line, mem_tok.col)
+            } else {
+                let mem_tok = parser_peek(p, 0)
+                report_error(p.filename, mem_tok.line, mem_tok.col, "Expected member name after '.'")
+                p.had_error = true
             }
         } else if parser_check(p, TOK_LBRACKET) and is_generic_call(p) {
             parser_advance(p) // consume '['

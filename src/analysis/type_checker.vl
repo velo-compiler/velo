@@ -17,6 +17,7 @@ use "shelf_checks.vl"
 use "shelf_calls.vl"
 use "map_checks.vl"
 use "dyn_checks.vl"
+use "misc_checks.vl"
 // Checks if a name represents a recognized type (primitive or user-defined struct or kind).
 act is_known_type(st: @SymbolTable, name: string) -> bool {
     if name == null { return false }
@@ -46,6 +47,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
 
     if expr.kind == EXPR_SHELF_LIT { return shelf_inferred_type(st, expr) }  // 5.2: shelf constructor literal
     if expr.kind == EXPR_MAP_LIT { return map_inferred_type(st, expr) }  // 5.2 slice 6: map constructor literal
+    if expr.kind == EXPR_RING_LIT or expr.kind == EXPR_BITSET_LIT { return check_coll9_inferred_type(st, expr) }  // 5.2 slice 9
     if expr.kind == EXPR_IDENT {
         let sym = resolve_variable(st, expr.str_val)
         if sym == null {
@@ -73,11 +75,10 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         }
         let target_type = infer_expr_type(st, expr.target)
         let clean_type = strip_pointer_prefix(target_type)
-        // 5.2 slice 2: raw dyn values expose no members — cast (as) first
-        if target_type == "dyn" { report_error("semantic", expr.line, expr.col, dyn_gate_error()); st.error_count += 1; return "unknown" }
-        // 5.2: shelf property reads (len = usize; others are loud errors)
-        if is_shelf_type(target_type) { return check_shelf_member_access(st, expr) }
+        if target_type == "dyn" { report_error("semantic", expr.line, expr.col, dyn_gate_error()); st.error_count += 1; return "unknown" }  // 5.2 slice 2: raw dyn exposes no members — cast (as) first; Stage 1 raises the same words
+        if is_shelf_type(target_type) { return check_shelf_member_access(st, expr) }  // 5.2: shelf property reads (len = usize; others are loud errors)
         if is_map_type(target_type) { return check_map_member_access(st, expr) }  // 5.2 slice 6: len = usize; others name the map surface
+        if is_ring_type(target_type) or is_bitset_type(target_type) { return check_coll9_member_access(st, expr) }  // 5.2 slice 9
         let st_sym = find_struct(st, clean_type)
         if st_sym == null {
             report_error("semantic", expr.line, expr.col, "Member access on non-struct type"); st.error_count += 1
@@ -95,6 +96,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         // 5.2: shelf element read (bounds are runtime-checked; index type here)
         if is_shelf_type(target_type) { return check_shelf_index_read(st, expr) }
         if is_map_type(target_type) { return check_map_index_read(st, expr) }  // 5.2 slice 6: strict key; the miss fatal is runtime
+        if is_ring_type(target_type) or is_bitset_type(target_type) { return check_coll9_index(st, expr) }  // 5.2 slice 9: no subscript
         if target_type == "string" { return "u8" }
         if str.len(target_type) > 0 and target_type[0] == '@' { return strip_pointer_prefix(target_type) }
         report_error("semantic", expr.line, expr.col, "Cannot index non-pointer / non-string type"); st.error_count += 1; return "unknown"
@@ -143,9 +145,10 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 if target.str_val == "io" { return "void" }
             }
         }
-        // 5.2: shelf receivers — put / take member calls
+        // 5.2: shelf receivers — put / take member calls; slice 6: map receivers
         if expr.callee.kind == EXPR_MEMBER and expr.callee.target != null and is_shelf_type(infer_expr_type(st, expr.callee.target)) { return check_shelf_member_call(st, expr) }
         if expr.callee.kind == EXPR_MEMBER and expr.callee.target != null and is_map_type(infer_expr_type(st, expr.callee.target)) { return check_map_member_call(st, expr) }  // 5.2 slice 6: put / get / has
+        if expr.callee.kind == EXPR_MEMBER and expr.callee.target != null and (is_ring_type(infer_expr_type(st, expr.callee.target)) or is_bitset_type(infer_expr_type(st, expr.callee.target))) { return check_coll9_member_call(st, expr) }  // 5.2 slice 9
         // User functions or Kind variant constructors
         if expr.callee.kind == EXPR_MEMBER and expr.callee.target.kind == EXPR_IDENT {
             let k_sym = find_kind(st, expr.callee.target.str_val)
@@ -244,8 +247,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.kind == EXPR_BINARY {
         let left_type = infer_expr_type(st, expr.left)
         let right_type = infer_expr_type(st, expr.right)
-        // 5.2 slice 8: raw dyn arithmetic/compares auto-unbox; the concrete
-        // mixed-compare and string-concat walls live in dyn_checks.vl too
+        // 5.2 slice 8: raw dyn arithmetic/compares auto-unbox; the concrete mixed-compare and string-concat walls live in dyn_checks.vl too
         let bin_t = check_dyn_binary(st, expr, left_type, right_type)
         if bin_t != null { return bin_t }
         let op_fn = find_binary_op(st, expr.op, left_type, right_type)
@@ -278,6 +280,7 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
         // 5.2: annotated shelf pins/rejects (empty literals borrow the elem)
         check_shelf_annotation(st, stmt.type_name, stmt.val_expr, stmt.line, stmt.col)
         check_map_annotation(st, stmt.type_name, stmt.val_expr, stmt.line, stmt.col)  // 5.2 slice 6: empty literals borrow BOTH slots / reject mismatches
+        check_coll9_annotation(st, stmt.type_name, stmt.val_expr, stmt.line, stmt.col)  // 5.2 slice 9: ring + bitset
         if stmt.val_expr != null {
             if stmt.type_name != null and str.len(stmt.type_name) > 0 {
                 if stmt.val_expr.kind == EXPR_VARIANT and (stmt.val_expr.type_name == null or str.len(stmt.val_expr.type_name) == 0) { stmt.val_expr.type_name = stmt.type_name }
@@ -313,8 +316,7 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
         check_statement(st, expected_ret_type, stmt.body)
         if stmt.else_branch != null { check_statement(st, expected_ret_type, stmt.else_branch) }
     } else if stmt.kind == STMT_LOOP {
-        // 5.2 slice 4/7: `loop v of coll` — the iterator takes the element
-        // (K for maps); range/count/condition loops keep the house "i32" var
+        // 5.2 slice 4/7: `loop v of coll` — the iterator takes the element (K for maps); range/count/condition loops keep the house "i32" var
         mut of_elem = "i32"
         if stmt.is_of { of_elem = check_map_loop_source(st, stmt) } else if stmt.loop_start != null { infer_expr_type(st, stmt.loop_start); infer_expr_type(st, stmt.loop_end); if stmt.loop_step != null { infer_expr_type(st, stmt.loop_step) } } else if stmt.expr != null { infer_expr_type(st, stmt.expr) }
         enter_scope(st)
@@ -379,9 +381,7 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
     } else if stmt.kind == STMT_EXPR { infer_expr_type(st, stmt.expr) }
 }
 
-// cm42: compile-checks thread.* intrinsic arguments. Mirror of
-// velo/codegen_c.py::_thread_expect - both stages must reject the same
-// programs with the same words. Returns false after reporting.
+// cm42: compile-checks thread.* intrinsic arguments — the mirror of velo/codegen_c.py::_thread_expect (both stages reject with the same words). Returns false after reporting.
 act check_thread_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
     if member == "mutex" { if expr.first_arg != null { report_error("semantic", expr.line, expr.col, "thread.mutex takes no arguments"); st.error_count += 1; return false }; return true }
     let want = ""

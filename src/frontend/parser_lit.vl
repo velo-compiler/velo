@@ -1,0 +1,78 @@
+// ============================================================================
+// 5.2 slice 9 — ring[T] + bitset literal parsing. Split from parser_expr.vl
+// to stay under the 400-line budget (the shelf_calls_gen.vl doctrine). The
+// bracket-list walk mirrors the shelf literal arm; the element ladders and
+// mut/arity contracts live in the checkers (ring_checks.vl/bitset_checks.vl).
+// ============================================================================
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "token.vl"
+use "parser.vl"
+use "parser_binary.vl"
+
+// Walks `e0, e1, ...` inside already-consumed brackets into the first_arg
+// chain. Empty lists leave first null with count 0.
+act parse_lit_bracket_list(p: @Parser) -> @ExprNode {
+    mut first: @ExprNode = null
+    mut last: @ExprNode = null
+    mut count: usize = 0
+    if not parser_check(p, TOK_RBRACKET) {
+        mut more = true
+        loop more {
+            let e = parse_expression(p)
+            if e != null {
+                if first == null {
+                    first = e
+                    last = e
+                } else {
+                    last.next = e
+                    last = e
+                }
+                count += 1
+            }
+            if not parser_match(p, TOK_COMMA) {
+                more = false
+            }
+        }
+    }
+    return first
+}
+
+// Captures the parsed chain shape without a second walk: the caller needs
+// BOTH the head and the count, so this wrapper rebuilds count from the chain.
+act lit_chain_count(first: @ExprNode) -> usize {
+    mut n: usize = 0
+    mut cur = first
+    loop cur != null {
+        n += 1
+        cur = cur.next
+    }
+    return n
+}
+
+// 5.2 slice 9: `ring[v0, v1, ...]` — the shelf bracket-value shape. An empty
+// `ring[]` needs an annotation (the checker rejects the empty infer).
+act parse_ring_literal(p: @Parser) -> @ExprNode {
+    let ring_tok = parser_advance(p)
+    parser_consume(p, TOK_LBRACKET, "Expected '[' after 'ring' (ring literal: ring[1, 2, 3])")
+    let first = parse_lit_bracket_list(p)
+    parser_consume(p, TOK_RBRACKET, "Expected ']' at end of ring literal")
+    return make_ring_lit_expr(first, lit_chain_count(first), ring_tok.line, ring_tok.col)
+}
+
+// 5.2 slice 9: `bitset[i0, i1, ...]` — integer-typed elements lower to set()
+// calls; `bitset[]` infers `bitset` with no annotation.
+act parse_bitset_literal(p: @Parser) -> @ExprNode {
+    let bs_tok = parser_advance(p)
+    parser_consume(p, TOK_LBRACKET, "Expected '[' after 'bitset' (bitset literal: bitset[1, 9])")
+    let first = parse_lit_bracket_list(p)
+    parser_consume(p, TOK_RBRACKET, "Expected ']' at end of bitset literal")
+    return make_bitset_lit_expr(first, lit_chain_count(first), bs_tok.line, bs_tok.col)
+}
+
+// The parser_expr dispatch twin — one line up there, two arms here.
+act parse_coll9_literal(p: @Parser) -> @ExprNode {
+    if parser_check(p, TOK_RING) { return parse_ring_literal(p) }
+    return parse_bitset_literal(p)
+}

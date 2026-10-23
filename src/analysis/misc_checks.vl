@@ -1,0 +1,397 @@
+// ============================================================================
+// 5.2 slice 9 — ring[T] + bitset compile-time checks (the sheet's shared misc_checks.vl option);
+// mutual mirror of Stage 1's velo/codegen_c.py S9 block; the fatals live in velo_runtime.h.
+// ============================================================================
+use sys.io
+use "symbol_table.vl"
+use "shelf_checks.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "dyn_checks.vl"
+
+// True when the type string is a ring (optionally an @-pointer to one).
+act is_ring_type(type_name: string) -> bool {
+    if type_name == null { return false }
+    return starts_with_ring(strip_pointer_prefix(type_name))
+}
+
+// True when the type string is the bare bitset (optionally @-pointered).
+act is_bitset_type(type_name: string) -> bool {
+    if type_name == null { return false }
+    return strip_pointer_prefix(type_name) == "bitset"
+}
+
+// Extracts the element type from ring[T] / @ring[T]; null otherwise.
+act ring_elem_type(type_name: string) -> string {
+    if type_name == null { return null }
+    let clean = strip_pointer_prefix(type_name)
+    if not starts_with_ring(clean) { return null }
+    let len = str.len(clean)
+    if len < 7 { return null }
+    if clean[len - 1] != ']' { return null }
+    let inner_len = (len - 1) - 5
+    if inner_len == 0 { return null }
+    return copy_slice_to_string(clean, 5, inner_len)
+}
+
+// The family gate: the shelf element families MINUS dyn (ring[dyn] is a later
+// slice). Returns null when the element is usable, else the staged error text.
+act ring_elem_error(st: @SymbolTable, raw: string) -> string {
+    if raw == null { return null }
+    if is_dyn_int_family(raw) or is_dyn_float_family(raw) { return null }
+    if raw == "bool" or raw == "string" { return null }
+    if str.len(raw) > 0 and raw[0] == '@' { return null }
+    if is_shelf_type(raw) or starts_with_map(raw) { return null }
+    if find_kind(st, raw) != null { return null }
+    mut sb = create_sb(str.len(raw) + 72)
+    sb_append_str(@sb, "ring element type ")
+    sb_append_str(@sb, raw)
+    sb_append_str(@sb, " is not supported — use a @")
+    sb_append_str(@sb, raw)
+    sb_append_str(@sb, " pointer element")
+    return sb_to_string(@sb)
+}
+
+act starts_with_ring(t: string) -> bool {
+    if t == null { return false }
+    let len = str.len(t)
+    if len < 6 { return false }
+    return t[0] == 'r' and t[1] == 'i' and t[2] == 'n' and t[3] == 'g' and t[4] == '['
+}
+
+act starts_with_map(t: string) -> bool {
+    if t == null { return false }
+    let len = str.len(t)
+    if len < 5 { return false }
+    return t[0] == 'M' and t[1] == 'a' and t[2] == 'p' and t[3] == '['
+}
+
+// 5.2 slice 9: the ring literal element ladder (pre-slice-2 shelf spirit, no
+// dyn arm): homogeneous unchanged, all-numeric-with-float widens to f64, ANY other mix is one strict differ error. Memoized like the shelf ladder.
+act check_coll9_literal_elem(st: @SymbolTable, expr: @ExprNode) -> string {
+    if expr.kind == EXPR_BITSET_LIT { return "bitset" }   // monomorphic — no ladder exists
+    if expr.bool_val { return expr.type_name }
+    if expr.arg_count == 0 {
+        if expr.type_name != null and str.len(expr.type_name) > 0 {
+            expr.bool_val = true
+            return expr.type_name  // element type pinned by the annotation
+        }
+        report_error("semantic", expr.line, expr.col, "cannot infer element type of empty ring literal — annotate it (e.g. let r: ring[i32] = ring[])"); st.error_count += 1
+        expr.type_name = "unknown"; expr.bool_val = true
+        return "unknown"
+    }
+    let elem = infer_expr_type(st, expr.first_arg)
+    if elem == "unknown" {
+        expr.type_name = "unknown"; expr.bool_val = true
+        return "unknown"  // the element inference already reported
+    }
+    mut is_mixed = false
+    mut second = ""
+    mut all_numeric = true
+    mut has_float = false
+    if is_dyn_int_family(elem) or is_dyn_float_family(elem) {
+        if is_dyn_float_family(elem) { has_float = true }
+    } else {
+        all_numeric = false
+    }
+    let err0 = ring_elem_error(st, elem)
+    if err0 != null {
+        report_error("semantic", expr.first_arg.line, expr.first_arg.col, err0); st.error_count += 1
+        expr.type_name = "unknown"; expr.bool_val = true
+        return "unknown"
+    }
+    mut cur = expr.first_arg.next
+    loop cur != null {
+        let t = infer_expr_type(st, cur)
+        if t == "unknown" {
+            expr.type_name = "unknown"; expr.bool_val = true
+            return "unknown"  // already reported upstream
+        }
+        if t != elem { is_mixed = true; if str.len(second) == 0 { second = t } }
+        if is_dyn_int_family(t) or is_dyn_float_family(t) {
+            if is_dyn_float_family(t) { has_float = true }
+        } else {
+            all_numeric = false
+        }
+        let err = ring_elem_error(st, t)
+        if err != null {
+            report_error("semantic", cur.line, cur.col, err); st.error_count += 1
+            expr.type_name = "unknown"; expr.bool_val = true
+            return "unknown"
+        }
+        cur = cur.next
+    }
+    if not is_mixed {
+        expr.type_name = elem; expr.bool_val = true
+        return elem
+    }
+    if all_numeric and has_float {
+        expr.type_name = "f64"; expr.bool_val = true
+        return "f64"
+    }
+    mut msg = create_sb(str.len(elem) + str.len(second) + 48)
+    sb_append_str(@msg, "ring literal element types differ: ")
+    sb_append_str(@msg, elem)
+    sb_append_str(@msg, " vs ")
+    sb_append_str(@msg, second)
+    report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+    expr.type_name = "unknown"; expr.bool_val = true
+    return "unknown"
+}
+
+// The infer-tier wrapper: ring literals build the canonical ring[<elem>] spelling from the memoized ladder verdict; bitset infers directly.
+act check_coll9_inferred_type(st: @SymbolTable, expr: @ExprNode) -> string {
+    if expr.kind == EXPR_BITSET_LIT { return "bitset" }
+    let elem = check_coll9_literal_elem(st, expr)
+    if elem == "unknown" { return "unknown" }
+    mut sb = create_sb(str.len(elem) + 8)
+    sb_append_str(@sb, "ring[")
+    sb_append_str(@sb, elem)
+    sb_append_str(@sb, "]")
+    return sb_to_string(@sb)
+}
+
+// --- annotations -------------------------------------------------------------
+
+// 5.2 slice 9: annotated ring/bitset declarations: an empty ring literal borrows the
+// annotation's element; a non-empty one must match it; a bitset literal under a non-
+// bitset annotation rejects; `bitset[]` needs no annotation at all.
+act check_coll9_annotation(st: @SymbolTable, decl_t: string, val: @ExprNode, line: i32, col: i32) {
+    if val == null { return }
+    if val.kind == EXPR_BITSET_LIT {
+        if decl_t == null or str.len(decl_t) == 0 { return }
+        if strip_pointer_prefix(decl_t) != "bitset" {
+            mut sb = create_sb(str.len(decl_t) + 48)
+            sb_append_str(@sb, "bitset literal does not match annotation ")
+            sb_append_str(@sb, decl_t)
+            report_error("semantic", line, col, sb_to_string(@sb)); st.error_count += 1
+        }
+        return
+    }
+    if val.kind != EXPR_RING_LIT { return }
+    if decl_t == null or not is_ring_type(decl_t) { return }
+    let ann_elem = ring_elem_type(decl_t)
+    if ann_elem != null {
+        let err = ring_elem_error(st, ann_elem)
+        if err != null {
+            report_error("semantic", line, col, err); st.error_count += 1
+            return
+        }
+    }
+    if val.arg_count == 0 {
+        if ann_elem != null { val.type_name = ann_elem }
+        return
+    }
+    let lit_elem = check_coll9_literal_elem(st, val)
+    if ann_elem != null and lit_elem != null and lit_elem != "unknown" and lit_elem != ann_elem {
+        mut msg = create_sb(str.len(lit_elem) + str.len(decl_t) + 64)
+        sb_append_str(@msg, "ring literal element type ring[")
+        sb_append_str(@msg, lit_elem)
+        sb_append_str(@msg, "] does not match annotation ")
+        sb_append_str(@msg, decl_t)
+        report_error("semantic", line, col, sb_to_string(@msg)); st.error_count += 1
+    }
+}
+
+// --- property reads ----------------------------------------------------------
+
+// 5.2 slice 9: ring property reads (len only); bitset has NO property members.
+act check_coll9_member_access(st: @SymbolTable, expr: @ExprNode) -> string {
+    let target_type = infer_expr_type(st, expr.target)
+    if is_ring_type(target_type) {
+        if expr.member_name == "len" { return "usize" }
+        mut msg = create_sb(str.len(expr.member_name) + 64)
+        sb_append_str(@msg, "unknown ring member '")
+        sb_append_str(@msg, expr.member_name)
+        sb_append_str(@msg, "' (put, pop, peek, len are available)")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msg))
+        st.error_count += 1
+        return "unknown"
+    }
+    mut msg = create_sb(str.len(expr.member_name) + 128)
+    sb_append_str(@msg, "unknown bitset member '")
+    sb_append_str(@msg, expr.member_name)
+    sb_append_str(@msg, "' (set, clear, toggle, has, count, first_unset, and, or_with, xor_with, flip are available)")
+    report_error("semantic", expr.line, expr.col, sb_to_string(@msg))
+    st.error_count += 1
+    return "unknown"
+}
+
+// --- member calls ------------------------------------------------------------
+
+// 5.2 slice 9: the mut-root gate for every ring/bitset mutator (the shelf mut-binding API).
+act check_coll9_mut_root(st: @SymbolTable, target: @ExprNode, verb: string, word: string, tail: string) {
+    if target == null { return }
+    let root = shelf_root_binding_name(target)
+    if root != null {
+        let sym = resolve_variable(st, root)
+        if sym != null and not sym.is_mut {
+            mut sb = create_sb(str.len(verb) + str.len(tail) + 64)
+            sb_append_str(@sb, "cannot ")
+            sb_append_str(@sb, verb)
+            sb_append_str(@sb, " ")
+            sb_append_str(@sb, word)
+            sb_append_str(@sb, tail)
+            report_error("semantic", target.line, target.col, sb_to_string(@sb))
+            st.error_count += 1
+        }
+    }
+}
+
+act check_coll9_member_call(st: @SymbolTable, expr: @ExprNode) -> string {
+    let recv_t = infer_expr_type(st, expr.callee.target)
+    if is_ring_type(recv_t) { return check_ring_call(st, expr, ring_elem_type(recv_t)) }
+    return check_bitset_call(st, expr)
+}
+
+act check_ring_call(st: @SymbolTable, expr: @ExprNode, elem: string) -> string {
+    let member = expr.callee.member_name
+    if member == "put" {
+        if expr.arg_count != 1 {
+            report_error("semantic", expr.line, expr.col, "ring.put expects exactly 1 argument: (ring r, element value)"); st.error_count += 1
+            return "unknown"
+        }
+        check_coll9_mut_root(st, expr.callee.target, "put", "into a ring", " held by a let (declare with mut)")
+        let got = infer_expr_type(st, expr.first_arg)
+        if got != "unknown" and got != elem {
+            mut msg = create_sb(str.len(elem) + str.len(got) + 56)
+            sb_append_str(@msg, "ring.put element mismatch: expected ")
+            sb_append_str(@msg, elem)
+            sb_append_str(@msg, " (got ")
+            sb_append_str(@msg, got)
+            sb_append_str(@msg, ")")
+            report_error("semantic", expr.first_arg.line, expr.first_arg.col, sb_to_string(@msg)); st.error_count += 1
+            return "unknown"
+        }
+        return "void"
+    }
+    if member == "pop" {
+        if expr.arg_count != 0 {
+            report_error("semantic", expr.line, expr.col, "ring.pop takes no arguments"); st.error_count += 1
+            return "unknown"
+        }
+        check_coll9_mut_root(st, expr.callee.target, "pop", "from a ring", " held by a let (declare with mut)")
+        return elem
+    }
+    if member == "peek" {
+        if expr.arg_count != 0 {
+            report_error("semantic", expr.line, expr.col, "ring.peek takes no arguments"); st.error_count += 1
+            return "unknown"
+        }
+        return elem  // read tier — legal on a let
+    }
+    mut msg = create_sb(str.len(member) + 64)
+    sb_append_str(@msg, "unknown ring member '")
+    sb_append_str(@msg, member)
+    sb_append_str(@msg, "' (put, pop, peek, len are available)")
+    report_error("semantic", expr.line, expr.col, sb_to_string(@msg))
+    st.error_count += 1
+    return "unknown"
+}
+
+act check_bitset_call(st: @SymbolTable, expr: @ExprNode) -> string {
+    let member = expr.callee.member_name
+    if member != "set" and member != "clear" and member != "toggle" and member != "has" and member != "count" and member != "first_unset" and member != "and" and member != "or_with" and member != "xor_with" and member != "flip" {
+        mut msg = create_sb(str.len(member) + 128)
+        sb_append_str(@msg, "unknown bitset member '")
+        sb_append_str(@msg, member)
+        sb_append_str(@msg, "' (set, clear, toggle, has, count, first_unset, and, or_with, xor_with, flip are available)")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msg))
+        st.error_count += 1
+        return "unknown"
+    }
+    if member == "set" or member == "clear" or member == "toggle" {
+        if expr.arg_count != 1 {
+            mut msg = create_sb(str.len(member) + 64)
+            sb_append_str(@msg, "bitset.")
+            sb_append_str(@msg, member)
+            sb_append_str(@msg, " expects exactly 1 argument: (bitset b, index)")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+            return "unknown"
+        }
+        if not coll9_index_int(st, expr.first_arg) { return "unknown" }
+        check_coll9_mut_root(st, expr.callee.target, "mutate", "a bitset", " held by a let (declare with mut)")
+        return "void"
+    }
+    if member == "has" {
+        if expr.arg_count != 1 {
+            report_error("semantic", expr.line, expr.col, "bitset.has expects exactly 1 argument: (bitset b, index)"); st.error_count += 1
+            return "unknown"
+        }
+        if not coll9_index_int(st, expr.first_arg) { return "unknown" }
+        return "bool"
+    }
+    if member == "count" or member == "first_unset" or member == "flip" {
+        if expr.arg_count != 0 {
+            mut msg = create_sb(str.len(member) + 48)
+            sb_append_str(@msg, "bitset.")
+            sb_append_str(@msg, member)
+            sb_append_str(@msg, " takes no arguments")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+            return "unknown"
+        }
+        if member == "count" { return "usize" }
+        if member == "first_unset" { return "i32" }
+        check_coll9_mut_root(st, expr.callee.target, "mutate", "a bitset", " held by a let (declare with mut)")
+        return "void"
+    }
+    // and / or_with / xor_with
+    if expr.arg_count != 1 {
+        mut msg = create_sb(str.len(member) + 64)
+        sb_append_str(@msg, "bitset.")
+        sb_append_str(@msg, member)
+        sb_append_str(@msg, " expects exactly 1 argument: (bitset b, other)")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+        return "unknown"
+    }
+    let got = infer_expr_type(st, expr.first_arg)
+    if got != "unknown" and strip_pointer_prefix(got) != "bitset" {
+        mut msg = create_sb(str.len(member) + str.len(got) + 56)
+        sb_append_str(@msg, "bitset.")
+        sb_append_str(@msg, member)
+        sb_append_str(@msg, " expects a bitset argument (got ")
+        sb_append_str(@msg, got)
+        sb_append_str(@msg, ")")
+        report_error("semantic", expr.first_arg.line, expr.first_arg.col, sb_to_string(@msg)); st.error_count += 1
+        return "unknown"
+    }
+    check_coll9_mut_root(st, expr.callee.target, "mutate", "a bitset", " held by a let (declare with mut)")
+    return "void"
+}
+
+// The bitset index must be an integer (the shelf index-type gate's wording).
+act coll9_index_int(st: @SymbolTable, arg: @ExprNode) -> bool {
+    let it = infer_expr_type(st, arg)
+    if is_dyn_int_family(it) { return true }
+    mut msg = create_sb(str.len(it) + 48)
+    sb_append_str(@msg, "bitset index must be an integer (got ")
+    sb_append_str(@msg, it)
+    sb_append_str(@msg, ")")
+    report_error("semantic", arg.line, arg.col, sb_to_string(@msg)); st.error_count += 1
+    return false
+}
+
+// 5.2 slice 9: no subscript on either type — the differentiators are peek()/has().
+act check_coll9_index(st: @SymbolTable, expr: @ExprNode) -> string {
+    let target_type = infer_expr_type(st, expr.target)
+    if is_ring_type(target_type) {
+        report_error("semantic", expr.line, expr.col, "ring does not support subscript reads — use peek()"); st.error_count += 1
+        return "unknown"
+    }
+    report_error("semantic", expr.line, expr.col, "bitset does not support subscript reads — use has()"); st.error_count += 1
+    return "unknown"
+}
+
+// --- iteration ---------------------------------------------------------------
+
+// 5.2 slice 9: `loop v of r { }` — FIFO snapshot iteration; returns T.
+act check_ring_loop_elem(st: @SymbolTable, stmt: @StmtNode) -> string {
+    let coll_t = infer_expr_type(st, stmt.expr)
+    let elem = ring_elem_type(coll_t)
+    if elem == null { return "unknown" }
+    return elem
+}

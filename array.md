@@ -218,34 +218,54 @@ Tests:
 
 Ring — missing surface:
 
-* [ ] `ring[T]` UNBOUNDED (grows with capacity doubling, power-of-two
+* [x] `ring[T]` UNBOUNDED (grows with capacity doubling, power-of-two
       masking, arena-backed): `r.put(v)` enqueue-back, `r.pop()`
       dequeue-front (take-style fatal: `Velo Fatal Error: ring pop from an
-      empty ring!`), `r.peek()` (fatal on empty), `r.len`, `loop v of r`.
+      empty ring!`), `r.peek()` (fatal on empty: `…ring peek from an empty
+      ring!`), `r.len`, `loop v of r` (FIFO snapshot; the of-union wording
+      grew to `a shelf, map, or ring` as S7 residual (5) planned).
       Rationale pinned: the differentiator vs shelf is O(1) FRONT removal;
-      bounded capacity can layer on later.
+      bounded capacity can layer on later. `ring[dyn]` is a later slice
+      (the ladder has no dyn arm; a dyn element rejects with the family
+      gate). Literal `ring[...]` rides the pre-slice-2 shelf ladder minus
+      dyn (one differ wording); `ring[]` needs an annotation; cross-call
+      arguments string-match the element exactly.
 
 Bitset — missing surface:
 
-* [ ] `bitset` — arena-backed word array (grow-on-set like shelf):
+* [x] `bitset` — arena-backed word array (grow-on-set like shelf):
       `b.set(i)`, `b.clear(i)`, `b.toggle(i)`, `b.has(i)` → bool,
       `b.count()` → usize, `b.first_unset()` (ECS slug allocation helper).
-* [ ] Pair ops logical in-place: `b.and(o)`, `b.or_with(o)`, `b.xor_with(o)`,
-      `b.flip()` (mut-root doctrine for all four; Velo has no operator
-      overloading — methods are the pinned surface).
-* [ ] Literal `bitset[1, 9, 100]` (bits set), annotation `bitset` (empty).
+      Negative index = the only OOB (`Velo Fatal Error: bitset index out
+      of bounds: <i>!`); positive beyond-coverage: set/toggle grow, clear
+      no-ops, has reads false.
+* [x] Pair ops logical in-place: `b.and(o)` (other's out-of-range words
+      read as 0 — truncates, never grows), `b.or_with(o)`/`b.xor_with(o)`
+      (grow the target to the other's coverage — a union that drops the
+      other's bits is not a union; the engine smoke caught the original
+      symmetric design), `b.flip()` (complements the materialized words;
+      mut-root doctrine for all four; Velo has no operator overloading —
+      methods are the pinned surface). `.and(` required making the AND
+      keyword contextual after a dot on both parsers.
+* [x] Literal `bitset[1, 9, 100]` (bits set), annotation `bitset` (empty);
+      `bitset[]` infers `bitset` with NO annotation (no element ladder
+      exists).
 
 Files:
 
-* [ ] Runtime `VeloRing` / `VeloBitset`; NEW checks/gen files
-      (`ring_checks.vl`, `bitset_checks.vl` or a shared `misc_checks.vl`
-      depending on budget).
+* [x] Runtime `VeloRing` / `VeloBitset`; NEW `src/analysis/misc_checks.vl`
+      (the sheet's shared-file option) + `src/frontend/parser_lit.vl` +
+      `src/backend/ring_gen.vl` + `bitset_gen.vl`.
 
 Tests:
 
-* [ ] Ring FIFO order across the wrap boundary battery; ring fatals
-      (pop/peek empty); bitset set/clear/toggle/has/count; pair ops vs
-      hand-computed words; literal sizes; OOB on has/set is loud fatal.
+* [x] Ring FIFO order across the wrap boundary battery (`len 8 acc 45
+      front 10`, the 8-element FIFO `loop of` walk, snapshot untouched);
+      ring fatals (pop/peek empty); bitset set/clear/toggle/has/count/
+      first_unset vs hand-computed words; pair ops vs hand-computed words
+      (incl. the or-growth semantics); literal sizes; OOB (negative index)
+      on has/set is loud fatal. Battery: +3 acceptance pairs, +19 rejects,
+      +3 fatals (all dual-stage; sweep 73/73 wordings byte-identical).
 
 ## S10 — memory model: `heap shelf` + shared rows (large)
 

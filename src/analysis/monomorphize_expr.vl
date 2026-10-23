@@ -9,8 +9,7 @@ use "../common/utils.vl"
 use "../common/string_builder.vl"
 use "monomorphize_types.vl"
 
-// 5.2 slice 2 ladder families (mono helper — same sets as Stage 1's
-// DYN_INT_TYPES / DYN_FLOAT_TYPES in velo/monomorphize.py)
+// 5.2 slice 2 ladder families (mono helper — same sets as Stage 1's DYN_INT_TYPES/DYN_FLOAT_TYPES)
 act is_mono_dyn_int(name: string) -> bool {
     if name == null { return false }
     if name == "i8" or name == "i16" or name == "i32" or name == "i64" { return true }
@@ -21,6 +20,41 @@ act is_mono_dyn_int(name: string) -> bool {
 
 act is_mono_dyn_float(name: string) -> bool {
     return name != null and (name == "f32" or name == "f64")
+}
+
+// 5.2 slice 9: builds the canonical `ring[T]` spelling.
+act mono_ring_spelling(elem: string) -> string {
+    return mono_concat("ring[", mono_concat(elem, "]"))
+}
+
+// 5.2: builds the canonical `shelf[T]` spelling.
+act mono_shelf_spelling(elem: string) -> string {
+    return mono_concat("shelf[", mono_concat(elem, "]"))
+}
+
+// 5.2: the shared literal-ladder scan (the mono twin of the shelf/ring
+// element ladders): homogeneous -> t0; the numeric float mix -> f64; any
+// other mix -> the caller's fallback (shelf: "dyn"; ring: t0 — the checker
+// rejects the mix upstream).
+act mono_lit_elem_scan(e: @ExprNode, scope: @ScopeEntry, fallback: string) -> string {
+    let t0 = mono_infer_type(e.first_arg, scope)
+    mut is_mixed = false
+    mut all_numeric = true
+    mut has_float = false
+    mut cur = e.first_arg.next
+    loop cur != null {
+        let t = mono_infer_type(cur, scope)
+        if t != t0 { is_mixed = true }
+        if is_mono_dyn_int(t) or is_mono_dyn_float(t) {
+            if is_mono_dyn_float(t) { has_float = true }
+        } else {
+            all_numeric = false
+        }
+        cur = cur.next
+    }
+    if not is_mixed { return t0 }
+    if all_numeric and has_float { return "f64" }
+    return fallback
 }
 
 act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
@@ -50,48 +84,27 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
         }
     }
     if e.kind == EXPR_SHELF_LIT {
-        // 5.2: shelf[T] inference — pinned elem, else the inference ladder
-        // (5.2 slice 2: the ladder scans ALL args — a heterogeneous literal
-        // inside a generic must not infer from the first element)
-        if e.type_name != null and str.len(e.type_name) > 0 {
-            mut sb = create_sb(str.len(e.type_name) + 9)
-            sb_append_str(@sb, "shelf[")
-            sb_append_str(@sb, e.type_name)
-            sb_append_str(@sb, "]")
-            return sb_to_string(@sb)
-        }
+        // 5.2: shelf[T] inference — pinned elem, else the shared ladder scan
+        // (the ladder scans ALL args — a heterogeneous literal inside a
+        // generic must not infer from the first element)
+        if e.type_name != null and str.len(e.type_name) > 0 { return mono_shelf_spelling(e.type_name) }
+        if e.first_arg != null { return mono_shelf_spelling(mono_lit_elem_scan(e, scope, "dyn")) }
+        return "i32"  // unannotated empty: the checker rejects it upstream
+    }
+    if e.kind == EXPR_RING_LIT {
+        // 5.2 slice 9: best-effort ring ladder (no dyn arm — non-widenable mixes are checker-rejected corners)
+        if e.type_name != null and str.len(e.type_name) > 0 { return mono_ring_spelling(e.type_name) }
         if e.first_arg != null {
             let t0 = mono_infer_type(e.first_arg, scope)
-            mut is_mixed = false
-            mut all_numeric = true
-            mut has_float = false
-            mut cur = e.first_arg.next
-            loop cur != null {
-                let t = mono_infer_type(cur, scope)
-                if t != t0 { is_mixed = true }
-                if is_mono_dyn_int(t) or is_mono_dyn_float(t) {
-                    if is_mono_dyn_float(t) { has_float = true }
-                } else {
-                    all_numeric = false
-                }
-                cur = cur.next
-            }
-            mut elem = t0
-            if is_mixed {
-                if all_numeric and has_float { elem = "f64" } else { elem = "dyn" }
-            }
-            mut sb = create_sb(str.len(elem) + 9)
-            sb_append_str(@sb, "shelf[")
-            sb_append_str(@sb, elem)
-            sb_append_str(@sb, "]")
-            return sb_to_string(@sb)
+            return mono_ring_spelling(mono_lit_elem_scan(e, scope, t0))
         }
         return "i32"  // unannotated empty: the checker rejects it upstream
     }
+    if e.kind == EXPR_BITSET_LIT { return "bitset" }
     if e.kind == EXPR_MAP_LIT {
-        // 5.2 slice 6: best-effort Map[K, V] inference (generic T unification
-        // needs the type; the strict key/value ladders ran in the checker).
-        // Pinned literals return their full spelling as-is, like Stage 1.
+        // 5.2 slice 6: best-effort Map[K, V] inference (generic T unification needs the
+        // type; the strict key/value ladders ran in the checker). Pinned literals return
+        // their full spelling as-is, like Stage 1.
         if e.type_name != null and str.len(e.type_name) > 0 { return e.type_name }
         if e.first_arg == null or e.first_arg.next == null { return "i32" }
         let k0 = mono_infer_type(e.first_arg, scope)
@@ -307,6 +320,24 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
         let lit = make_map_lit_expr(first_a, e.arg_count / 2, e.line, e.col)
         lit.type_name = e.type_name
         return lit
+    }
+    if e.kind == EXPR_RING_LIT or e.kind == EXPR_BITSET_LIT {
+        // 5.2 slice 9: clone the bracket-arg chain; a pinned ring elem rides type_name
+        mut first_a: @ExprNode = null
+        mut last_a: @ExprNode = null
+        mut cur = e.first_arg
+        loop cur != null {
+            let a = mono_clone_expr(m, cur, scope, params, args)
+            if first_a == null { first_a = a; last_a = a }
+            else { last_a.next = a; last_a = a }
+            cur = cur.next
+        }
+        if e.kind == EXPR_RING_LIT {
+            let lit = make_ring_lit_expr(first_a, e.arg_count, e.line, e.col)
+            lit.type_name = e.type_name   // the pinned elem rides like Stage 1
+            return lit
+        }
+        return make_bitset_lit_expr(first_a, e.arg_count, e.line, e.col)
     }
     if e.kind == EXPR_CALL {
         mut arg_count = e.arg_count

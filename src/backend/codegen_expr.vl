@@ -15,6 +15,7 @@ use "../analysis/op_resolver.vl"
 use "codegen_types.vl"
 use "shelf_gen.vl"
 use "shelf_calls_gen.vl"
+use "ring_gen.vl"
 use "struct_lit_gen.vl"
 use "map_gen.vl"
 
@@ -45,6 +46,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr.kind == EXPR_IDENT { sb_append_str(sb, expr.str_val); return }
     if expr.kind == EXPR_SHELF_LIT { emit_shelf_literal(sb, st, expr); return }  // 5.2
     if expr.kind == EXPR_MAP_LIT { emit_map_literal(sb, st, expr); return }  // 5.2 slice 6
+    if expr.kind == EXPR_RING_LIT or expr.kind == EXPR_BITSET_LIT { emit_coll9_literal(sb, st, expr); return }  // 5.2 slice 9
     if expr.kind == EXPR_VARIANT {
         mut kname = expr.type_name
         mut k_sym: @KindSym = null
@@ -173,8 +175,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr.kind == EXPR_BINARY {
         let ltype = infer_expr_type(st, expr.left)
         let rtype = infer_expr_type(st, expr.right)
-        // 5.2 slice 8: raw dyn arithmetic/compares auto-unbox — identical C
-        // with Stage 1's _emit_dyn_binop (temps + box + runtime helper)
+        // 5.2 slice 8: raw dyn arithmetic/compares auto-unbox — identical C with Stage 1's _emit_dyn_binop
         if ltype == "dyn" or rtype == "dyn" {
             emit_dyn_binop(sb, st, expr, ltype, rtype)
             return
@@ -339,6 +340,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                 emit_map_member_call(sb, st, expr)
                 return
             }
+            if is_ring_type(infer_expr_type(st, expr.callee.target)) or is_bitset_type(infer_expr_type(st, expr.callee.target)) { emit_coll9_call(sb, st, expr); return }  // 5.2 slice 9
         }
         if expr.callee.kind == EXPR_MEMBER {
             let target_type = infer_expr_type(st, expr.callee.target)

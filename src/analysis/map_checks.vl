@@ -11,6 +11,7 @@ use "type_checker.vl"
 use "symbol_table.vl"
 use "dyn_checks.vl"
 use "shelf_checks.vl"
+use "misc_checks.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
@@ -382,12 +383,14 @@ act check_map_loop_keys(st: @SymbolTable, stmt: @StmtNode) -> string {
     let coll_t = infer_expr_type(st, stmt.expr)
     let k_t = map_checked_key(st, map_key_type(coll_t), stmt.line, stmt.col)
     if k_t != null { return k_t }
-    return map_fail(st, stmt.expr, stmt.line, stmt.col, map_join3("the 'of' source of a loop must be a shelf or map (got ", coll_t, ")"))
+    return map_fail(st, stmt.expr, stmt.line, stmt.col, map_join3("the 'of' source of a loop must be a shelf, map, or ring (got ", coll_t, ")"))
 }
 
-// Loop-of dispatch: map sources iterate keys; the shelf walker keeps the rest
-// (its own wording now covers the same union).
+// Loop-of dispatch: map sources iterate keys; ring sources iterate FIFO
+// (5.2 slice 9); the shelf walker keeps the rest (its own wording now
+// covers the same union).
 act check_map_loop_source(st: @SymbolTable, stmt: @StmtNode) -> string {
     if is_map_type(infer_expr_type(st, stmt.expr)) { return check_map_loop_keys(st, stmt) }
+    if is_ring_type(infer_expr_type(st, stmt.expr)) { return check_ring_loop_elem(st, stmt) }
     return check_shelf_loop_elem(st, stmt)
 }

@@ -21,6 +21,8 @@ let EXPR_VARIANT: i32 = 116
 // 5.2: `shelf[v0, v1, ...]` constructor literal; elements ride the first_arg/next arg chain
 let EXPR_SHELF_LIT: i32 = 117
 let EXPR_MAP_LIT: i32 = 118   // 5.2 slice 6: first_arg chain holds K,V,K,V…; arg_count = 2*pair_count
+let EXPR_RING_LIT: i32 = 150  // 5.2 slice 9: first_arg chain holds the elements; type_name = pinned elem
+let EXPR_BITSET_LIT: i32 = 151  // 5.2 slice 9: first_arg chain holds the index expressions
 
 // Represents a single field initializer in a struct instantiation (e.g. `x: 10.0`).
 // Linked via `next` to support arbitrary numbers of fields without dynamic heap buffers.
@@ -233,6 +235,32 @@ act make_map_lit_expr(first_elem: @ExprNode, pair_count: usize, line: i32, col: 
     node.first_arg = first_elem
     node.arg_count = pair_count * 2
     node.type_name = null
+    node.line = line
+    node.col = col
+    return node
+}
+
+// 5.2 slice 9: creates a ring literal node (`ring[v0, v1, ...]`); the
+// element ladder lives in ring_checks.vl (no dyn arm). Empty literals set
+// type_name only when an annotation pins the element (ring[T] spelling).
+act make_ring_lit_expr(first_elem: @ExprNode, count: usize, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_RING_LIT
+    node.first_arg = first_elem
+    node.arg_count = count
+    node.type_name = null
+    node.line = line
+    node.col = col
+    return node
+}
+
+// 5.2 slice 9: creates a bitset literal node (`bitset[i0, i1, ...]`); the
+// integer-element checks live in bitset_checks.vl.
+act make_bitset_lit_expr(first_elem: @ExprNode, count: usize, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_BITSET_LIT
+    node.first_arg = first_elem
+    node.arg_count = count
     node.line = line
     node.col = col
     return node

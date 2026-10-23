@@ -32,6 +32,9 @@ class TokenType(Enum):
     OP = auto()
     SHELF = auto()
     MAP = auto()
+    # 5.2 slice 9: `ring` / `bitset` — reserved for the literal forms.
+    RING = auto()
+    BITSET = auto()
     OF = auto()
 
     # Literals
@@ -130,6 +133,9 @@ KEYWORDS = {
     # the TYPE spelling `Map[K, V]` stays a plain identifier (capital). Same
     # grammar-stability trade as `shelf` documented in gaps.md §5.2.
     "map": TokenType.MAP,
+    # 5.2 slice 9: `ring` / `bitset` are reserved for their literal forms.
+    "ring": TokenType.RING,
+    "bitset": TokenType.BITSET,
     "of": TokenType.OF,
 }
 
