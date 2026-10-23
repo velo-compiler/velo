@@ -1003,12 +1003,13 @@ class Monomorphizer:
                         return elem
                     if expr.callee.member == "sorted":
                         return f"shelf[{elem}]"
-                # 5.2 slice 6: map receiver calls — put void / get value / has bool
+                # 5.2 slice 6/7: map receiver calls — put void / get, get_or,
+                # take value / has bool
                 map_kv = _map_kv_of(recv)
                 if map_kv is not None:
                     if expr.callee.member == "put":
                         return "void"
-                    if expr.callee.member == "get":
+                    if expr.callee.member in ("get", "get_or", "take"):
                         return map_kv[1]
                     if expr.callee.member == "has":
                         return "bool"

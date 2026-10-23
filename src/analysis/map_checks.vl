@@ -247,7 +247,7 @@ act map_inferred_type(st: @SymbolTable, expr: @ExprNode) -> string {
 // Property reads on a map: only `.len` (usize) exists as a property.
 act check_map_member_access(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.member_name == "len" { return "usize" }
-    return map_fail(st, expr, expr.line, expr.col, map_join5("unknown map member '", expr.member_name, "' (put, get, has, len are available)", "", ""))
+    return map_fail(st, expr, expr.line, expr.col, map_join5("unknown map member '", expr.member_name, "' (put, get, has, len, get_or, take are available)", "", ""))
 }
 
 // Index reads: strict key typing; a read yields V (the miss fatal is runtime).
@@ -291,20 +291,19 @@ act check_map_assign(st: @SymbolTable, stmt: @StmtNode) {
     check_map_value_slot(st, stmt.val_expr, map_value_type(recv_t))
 }
 
-// Member calls: put (upsert, mut root) / get (V, fatal-on-miss) / has (bool).
-// Order mirrors Stage 1's `_map_expect` exactly: unknown member, arity, the
-// strict key contract, the put value slot, and LAST the put mut doctrine.
+// Member calls: put (upsert, mut root) / get (V, fatal-on-miss) / has (bool)
+// and the slice-7 twins get_or (V, lazy default) / take (V, mut root, fatal).
+// Order mirrors Stage 1's `_map_expect`: unknown member, arity, strict key,
+// put/get_or value slot, and LAST the put/take mut doctrine.
 act check_map_member_call(st: @SymbolTable, expr: @ExprNode) -> string {
     let member = expr.callee.member_name
     let recv_t = infer_expr_type(st, expr.callee.target)
-    if member != "put" and member != "get" and member != "has" {
-        return map_fail(st, expr, expr.line, expr.col, map_join5("unknown map member '", member, "' (put, get, has, len are available)", "", ""))
+    if member != "put" and member != "get" and member != "has" and member != "get_or" and member != "take" {
+        return map_fail(st, expr, expr.line, expr.col, map_join5("unknown map member '", member, "' (put, get, has, len, get_or, take are available)", "", ""))
     }
-    if member == "put" {
-        if expr.arg_count != 2 { return map_fail(st, expr, expr.line, expr.col, "map.put expects exactly 2 arguments: (map m, key, value)") }
-    } else {
-        if expr.arg_count != 1 { return map_fail(st, expr, expr.line, expr.col, map_join5("map.", member, " expects exactly 1 argument: (map m, key)", "", "")) }
-    }
+    if member == "put" { if expr.arg_count != 2 { return map_fail(st, expr, expr.line, expr.col, "map.put expects exactly 2 arguments: (map m, key, value)") } }
+    else if member == "get_or" { if expr.arg_count != 2 { return map_fail(st, expr, expr.line, expr.col, "map.get_or expects exactly 2 arguments: (map m, key, default)") } }
+    else { if expr.arg_count != 1 { return map_fail(st, expr, expr.line, expr.col, map_join5("map.", member, " expects exactly 1 argument: (map m, key)", "", "")) } }
     let k_t = map_checked_key(st, map_key_type(recv_t), expr.callee.target.line, expr.callee.target.col)
     if k_t == null { return "unknown" }
     let got_key = infer_expr_type(st, expr.first_arg)
@@ -315,6 +314,8 @@ act check_map_member_call(st: @SymbolTable, expr: @ExprNode) -> string {
         check_map_mut_binding(st, expr.callee.target, "put", "into")
         return "void"
     }
+    if member == "get_or" { check_map_value_slot(st, expr.first_arg.next, map_value_type(recv_t)); return map_value_type(recv_t) }  // slice 7: the default rides the put value-slot gates verbatim
+    if member == "take" { check_map_mut_binding(st, expr.callee.target, "take", "from"); return map_value_type(recv_t) }  // slice 7: removal is a mutation — the mut doctrine rides last
     if member == "get" { return map_value_type(recv_t) }
     return "bool"
 }
@@ -372,4 +373,21 @@ act check_map_call_args(st: @SymbolTable, expr: @ExprNode, fn_sym: @FunctionSym)
         cur_p = cur_p.next
         cur_a = cur_a.next
     }
+}
+
+// 5.2 slice 7: `loop k of m { }` — the KEYS iterate in HASH order (a
+// deterministic FNV derivation, NOT insertion order), snapshotted at entry;
+// put/take in the body mutate the live map, never the view. Returns K.
+act check_map_loop_keys(st: @SymbolTable, stmt: @StmtNode) -> string {
+    let coll_t = infer_expr_type(st, stmt.expr)
+    let k_t = map_checked_key(st, map_key_type(coll_t), stmt.line, stmt.col)
+    if k_t != null { return k_t }
+    return map_fail(st, stmt.expr, stmt.line, stmt.col, map_join3("the 'of' source of a loop must be a shelf or map (got ", coll_t, ")"))
+}
+
+// Loop-of dispatch: map sources iterate keys; the shelf walker keeps the rest
+// (its own wording now covers the same union).
+act check_map_loop_source(st: @SymbolTable, stmt: @StmtNode) -> string {
+    if is_map_type(infer_expr_type(st, stmt.expr)) { return check_map_loop_keys(st, stmt) }
+    return check_shelf_loop_elem(st, stmt)
 }

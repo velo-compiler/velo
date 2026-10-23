@@ -285,27 +285,33 @@ class CCodeGenerator:
             raise ValueError(f"map value mismatch: expected {val} (got {got})")
 
     def _map_expect(self, member: str, target_expr: Expr, args: List[Expr], kv: Optional[Tuple[str, str]]) -> None:
-        """5.2 slice 6 compile-checks map member calls (put/get/has) and the
-        subscript forms. Mirrored by the Stage 2 checker — both stages
-        reject the same programs with the same messages. `kv` carries the
-        receiver's (K, V) when known (None flows to mono like shelves do)."""
-        if member not in ("put", "get", "has"):
-            raise ValueError(f"unknown map member '{member}' (put, get, has, len are available)")
-        expected_args = {"put": 2, "get": 1, "has": 1}[member]
-        arg_names = {"put": "(map m, key, value)", "get": "(map m, key)", "has": "(map m, key)"}
+        """5.2 compile-checks map member calls (put/get/has and the slice-7
+        get_or/take twins) and the subscript forms. Mirrored by the Stage 2
+        checker — both stages reject the same programs with the same
+        messages. `kv` carries the receiver's (K, V) when known (None flows
+        to mono like shelves do)."""
+        if member not in ("put", "get", "has", "get_or", "take"):
+            raise ValueError(f"unknown map member '{member}' (put, get, has, len, get_or, take are available)")
+        expected_args = {"put": 2, "get": 1, "has": 1, "get_or": 2, "take": 1}[member]
+        arg_names = {"put": "(map m, key, value)", "get": "(map m, key)", "has": "(map m, key)",
+                     "get_or": "(map m, key, default)", "take": "(map m, key)"}
         if len(args) != expected_args:
             raise ValueError(f"map.{member} expects exactly {expected_args} argument{'s' * (expected_args != 1)}: {arg_names[member]}")
-        if kv is not None and member in ("put", "get", "has"):
+        if kv is not None and member in ("put", "get", "has", "get_or", "take"):
             key_t = self._resolve_expr_type(args[0])
             if key_t is not None and key_t != kv[0]:
                 raise ValueError(f"map key mismatch: expected {kv[0]} (got {key_t})")
-            if member == "put":
+            if member in ("put", "get_or"):
+                # 5.2 slice 7: the get_or default rides the put value-slot
+                # gates verbatim ("put" keeps the dyn-void wording identical).
                 got = self._thread_arg_type(args[1])
-                self._check_map_value(member, kv[1], got)
-        if member == "put":
+                self._check_map_value("put", kv[1], got)
+        if member in ("put", "take"):
             root = self._shelf_root_binding(target_expr)
             if root is not None and not self.current_scope_mut.get(root, False):
-                raise ValueError("cannot put into a map held by a let (declare with mut)")
+                if member == "put":
+                    raise ValueError("cannot put into a map held by a let (declare with mut)")
+                raise ValueError("cannot take from a map held by a let (declare with mut)")
 
     def _emit_map_literal(self, lit: "MapLiteral") -> str:
         """5.2 slice 6: lowers `map[k0: v0, ...]` into a GCC statement
@@ -1137,9 +1143,53 @@ class CCodeGenerator:
             # or takes during the body mutate the shelf, never the view.
             if stmt.of_expr is not None:
                 coll_type = self._resolve_expr_type(stmt.of_expr)
+                kv = self._map_kv(coll_type)
+                if kv is not None:
+                    # 5.2 slice 7: `loop k of m { }` — key iteration in HASH
+                    # order (deterministic FNV derivation, NOT insertion
+                    # order). Snapshot doctrine: at entry the live rows are
+                    # scanned once and their key bytes copied into a fresh
+                    # key-typed array in the active arena; put/take during
+                    # the body mutate the live map, never the view.
+                    it = stmt.iterator or "v"
+                    key_c = self._map_key_slot_c(kv[0])
+                    key_usz = "sizeof(char*)" if kv[0] == "string" else f"sizeof({self._map_type(kv[0])})"
+                    src = self._fresh_name("lsrc_")
+                    cnt = self._fresh_name("lcnt_")
+                    idx = self._fresh_name("lidx_")
+                    iname = stmt.of_index or idx  # the optional user index binding
+                    dat = self._fresh_name("ldat_")
+                    run = self._fresh_name("lrun_")
+                    fill = self._fresh_name("lfill_")
+                    scan = self._fresh_name("lscan_")
+                    coll_code = self._emit_expression(stmt.of_expr)
+                    cap_src = f"(*({coll_code}))" if coll_type.startswith("@") else f"({coll_code})"
+                    alive = f"({src}.hashes[{scan}] != 0 && {src}.hashes[{scan}] != VELO_MAP_TOMB)"
+                    self._emit_line("{")
+                    self.indent_level += 1
+                    self._emit_line(f"VeloMap {src} = {cap_src};")
+                    self._emit_line(f"const usize {cnt} = ({{ size_t {run} = 0; for (size_t {scan} = 0; {scan} < {src}.cap; ++{scan}) if ({alive}) ++{run}; {run}; }});")
+                    self._emit_line(f"void* {dat} = velo_mem_alloc((usize){key_usz}, {cnt});")
+                    self._emit_line(f"{{ size_t {fill} = 0; for (size_t {scan} = 0; {scan} < {src}.cap; ++{scan}) if ({alive}) {{ memcpy((char*){dat} + {fill} * (usize){key_usz}, (const char*){src}.keys + {scan} * (usize){key_usz}, (usize){key_usz}); ++{fill}; }} }}")
+                    self._emit_line(f"for (usize {iname} = 0; {iname} < {cnt}; ++{iname}) {{")
+                    self.indent_level += 1
+                    self._emit_line(f"const {key_c} {it} = (({key_c}*){dat})[{iname}];")
+                    self.current_scope_types[it] = kv[0]
+                    self.current_scope_mut[it] = False
+                    if stmt.of_index:
+                        # the second binding names the step index (usize)
+                        self.current_scope_types[iname] = "usize"
+                        self.current_scope_mut[iname] = False
+                    self.defer_stack.append([])
+                    self._emit_block_body(stmt.body.statements)
+                    self.indent_level -= 1
+                    self._emit_line("}")
+                    self.indent_level -= 1
+                    self._emit_line("}")
+                    return
                 elem = self._shelf_elem_type(coll_type)
                 if elem is None:
-                    raise ValueError(f"the 'of' source of a loop must be a shelf (got {coll_type})")
+                    raise ValueError(f"the 'of' source of a loop must be a shelf or map (got {coll_type})")
                 it = stmt.iterator or "v"
                 elem_c = self._map_type(elem)
                 src = self._fresh_name("lsrc_")
@@ -1472,17 +1522,18 @@ class CCodeGenerator:
                         return f"shelf[{shelf_elem}]"
                     raise ValueError(f"unknown shelf member '{value.callee.member}' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
             if isinstance(value.callee, MemberAccess):
-                # 5.2 slice 6: map receiver calls — put is void, get returns
-                # the value; has returns bool (unknown members stay loud)
+                # 5.2 slice 6/7: map receiver calls — put is void, get and
+                # the get_or/take twins return the value, has returns bool
+                # (unknown members stay loud)
                 recv_kv = self._map_kv(self._resolve_expr_type(value.callee.target))
                 if recv_kv is not None:
                     if value.callee.member == "put":
                         return "void"
-                    if value.callee.member == "get":
+                    if value.callee.member in ("get", "get_or", "take"):
                         return recv_kv[1]
                     if value.callee.member == "has":
                         return "bool"
-                    raise ValueError(f"unknown map member '{value.callee.member}' (put, get, has, len are available)")
+                    raise ValueError(f"unknown map member '{value.callee.member}' (put, get, has, len, get_or, take are available)")
             if isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier) and value.callee.target.name in self.kind_defs:
                 return value.callee.target.name
             if isinstance(value.callee, Identifier):
@@ -1593,7 +1644,7 @@ class CCodeGenerator:
             if map_kv is not None:
                 if expr.member == "len":
                     return "usize"
-                raise ValueError(f"unknown map member '{expr.member}' (put, get, has, len are available)")
+                raise ValueError(f"unknown map member '{expr.member}' (put, get, has, len, get_or, take are available)")
             clean_type = target_type.lstrip("@")
             fields = self.struct_defs.get(clean_type, {})
             return fields.get(expr.member, "i32")
@@ -1616,16 +1667,17 @@ class CCodeGenerator:
                     if expr.callee.member == "sorted" or expr.callee.member == "reversed":
                         return f"shelf[{shelf_elem}]"
                     raise ValueError(f"unknown shelf member '{expr.callee.member}' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
-                # 5.2 slice 6: map receiver calls — put void / get value / has bool
+                # 5.2 slice 6/7: map receiver calls — put void / get,
+                # get_or, take value / has bool
                 recv_kv = self._map_kv(recv)
                 if recv_kv is not None:
                     if expr.callee.member == "put":
                         return "void"
-                    if expr.callee.member == "get":
+                    if expr.callee.member in ("get", "get_or", "take"):
                         return recv_kv[1]
                     if expr.callee.member == "has":
                         return "bool"
-                    raise ValueError(f"unknown map member '{expr.callee.member}' (put, get, has, len are available)")
+                    raise ValueError(f"unknown map member '{expr.callee.member}' (put, get, has, len, get_or, take are available)")
             if isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier) and expr.callee.target.name in self.kind_defs:
                 return expr.callee.target.name
             if isinstance(expr.callee, Identifier):
@@ -2064,6 +2116,28 @@ class CCodeGenerator:
                         v_slot = self._fresh_name("mv_")
                         return (f"({{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot}; "
                                 f"if (!velo_map_copy_out({rec}, (const void*)(&{k_slot}), (void*)(&{v_slot}))) "
+                                f"velo_map_fatal_missing({rec}, (const void*)(&{k_slot}), \"{kv[0]}\"); {v_slot}; }})")
+                    if expr.callee.member == "get_or":
+                        # 5.2 slice 7: absence without an option type. The key
+                        # binds first; the default is LAZY — evaluated only
+                        # inside the miss branch, never on the hit. A dyn V
+                        # boxes the default at the miss-assign.
+                        v_slot = self._fresh_name("mv_")
+                        val_code = self._emit_expression(expr.args[1])
+                        if kv[1] == "dyn":
+                            raw = self._infer_raw_velo_type(expr.args[1])
+                            if raw != "dyn":
+                                val_code = self._emit_dyn_box(raw, val_code)
+                        return (f"({{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot}; "
+                                f"if (!velo_map_copy_out({rec}, (const void*)(&{k_slot}), (void*)(&{v_slot}))) "
+                                f"{{ {v_slot} = ({val_code}); }} {v_slot}; }})")
+                    if expr.callee.member == "take":
+                        # 5.2 slice 7: remove at most once — value copies out
+                        # FIRST, then the slot tombstones; a miss is the loud
+                        # fatal family byte-identical with get/subscript.
+                        v_slot = self._fresh_name("mv_")
+                        return (f"({{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot}; "
+                                f"if (!velo_map_take({rec}, (const void*)(&{k_slot}), (void*)(&{v_slot}))) "
                                 f"velo_map_fatal_missing({rec}, (const void*)(&{k_slot}), \"{kv[0]}\"); {v_slot}; }})")
                     return (f"({{ {key_c} {k_slot} = ({key_code}); "
                             f"velo_map_has({rec}, (const void*)(&{k_slot})); }})")

@@ -248,7 +248,7 @@ act check_shelf_loop_elem(st: @SymbolTable, stmt: @StmtNode) -> string {
     let elem = shelf_elem_type(coll_t)
     if elem == null {
         mut msg = create_sb(str.len(coll_t) + 56)
-        sb_append_str(@msg, "the 'of' source of a loop must be a shelf (got ")
+        sb_append_str(@msg, "the 'of' source of a loop must be a shelf or map (got ")
         sb_append_str(@msg, coll_t)
         sb_append_str(@msg, ")")
         report_error("semantic", stmt.line, stmt.col, sb_to_string(@msg)); st.error_count += 1

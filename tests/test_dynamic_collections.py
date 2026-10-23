@@ -758,6 +758,36 @@ class TestShelfRejections(unittest.TestCase):
 # shelf machinery; fatal-on-miss reads speak the S5 repr writers.
 # ======================================================================
 
+# 5.2 slice 7 — key-iteration visit orders replay the engine's own
+# placement (FNV-1a-64 over key bytes, |1; ≤6 entries keep cap 8; linear
+# probe past collisions) so the battery pins the HASH-ordered rows exactly.
+def _fnv1a_64(key: str) -> int:
+    h = 14695981039346656037
+    for b in key.encode():
+        h = ((h ^ b) * 1099511628211) % (1 << 64)
+    return h | 1
+
+
+def _map_key_visit_order(keys, cap: int = 8):
+    slots = {}
+    for k in keys:
+        s = _fnv1a_64(k) & (cap - 1)
+        while s in slots:
+            s = (s + 1) % cap
+        slots[s] = k
+    return [slots[s] for s in sorted(slots)]
+
+
+def _map_loop_expect_lines(keys):
+    """Expected stdout rows for the map_loop_keys program (values pinned in
+    the program source below: alpha 1, gamma 2, beta 3)."""
+    order = _map_key_visit_order(keys)
+    values = {"alpha": 1, "gamma": 2, "beta": 3}
+    rows = [f"k: {k} i: {i}" for i, k in enumerate(order)]
+    rows += [f"lookup {k}: {values[k]}" for k in order]
+    return rows
+
+
 MAP_ACCEPTS = [
     ("""use sys.io
 act main() -> i32 {
@@ -839,6 +869,128 @@ act main() -> i32 {
 }""",
      ["bool key: 10/20"],
      "map_bool_keys"),
+    # 5.2 slice 7 — get_or / take / key iteration / V edges
+    ("""use sys.io
+act main() -> i32 {
+    mut m: Map[i32, string] = map[1: "one", 2: "two"]
+    let hit = m.get_or(1, "?")
+    let miss = m.get_or(9, "?")
+    let n: usize = m.len
+    let ro: Map[string, i32] = map["a": 1]
+    let dv = ro.get_or("a", 99)
+    let dm = ro.get_or("zz", 99)
+    io.println("hit: {hit} miss: {miss} len: {n}")
+    io.println("let: {dv} {dm}")
+    return 0
+}""",
+     ["hit: one miss: ? len: 2", "let: 1 99"],
+     "map_get_or_defaults"),
+    ("""use sys.io
+act main() -> i32 {
+    mut m: Map[string, i32] = map["a": 7]
+    let hit = m.get_or("a", m.take("zz"))
+    io.println("hit: {hit}")
+    let n: usize = m.len
+    io.println("len: {n}")
+    return 0
+}""",
+     ["hit: 7", "len: 1"],
+     "map_get_or_lazy_default"),
+    ("""use sys.io
+act main() -> i32 {
+    mut m: Map[i32, i32] = map[1: 10, 2: 20, 3: 30]
+    let got = m.take(2)
+    let n1: usize = m.len
+    let h2 = m.has(2)
+    m.put(2, 22)
+    let back = m.get_or(2, 0)
+    let n2: usize = m.len
+    let got3 = m.take(3)
+    let n3: usize = m.len
+    io.println("got: {got} n1: {n1} has2: {h2} back: {back} n2: {n2} got3: {got3} n3: {n3}")
+    return 0
+}""",
+     ["got: 20 n1: 2 has2: false back: 22 n2: 3 got3: 30 n3: 2"],
+     "map_take_recycle"),
+    ("""use sys.io
+act main() -> i32 {
+    mut d: Map[i32, dyn] = map[1: 15, 2: "box"]
+    let hit = d.get_or(1, "none")
+    let miss = d.get_or(9, "none")
+    let u1 = (hit as i32)
+    let u2 = (miss as string)
+    let taken = d.take(1)
+    let u3 = (taken as i32)
+    let n: usize = d.len
+    io.println("dyn: {u1} {u2} {u3} len: {n}")
+    return 0
+}""",
+     ["dyn: 15 none 15 len: 1"],
+     "map_dyn_get_or"),
+    ("""use sys.io
+act main() -> i32 {
+    mut km: Map[string, shelf[i32]] = map["a": shelf[1, 2]]
+    let got = km.get("a")
+    let g: usize = got.len
+    let orv = km.get_or("b", shelf[7])
+    let o: usize = orv.len
+    let taken = km.take("a")
+    let t: usize = taken.len
+    io.println("child: {g} {o} {t}")
+    return 0
+}""",
+     ["child: 2 1 2"],
+     "map_child_header"),
+    ("""use sys.io
+act main() -> i32 {
+    mut mm: Map[string, Map[i32, i32]] = map["a": map[1: 11]]
+    let child = mm.take("a")
+    let c: usize = child.len
+    let inner = child.get(1)
+    io.println("child map: {c} {inner}")
+    return 0
+}""",
+     ["child map: 1 11"],
+     "map_child_map_header"),
+    ("""use sys.io
+act main() -> i32 {
+    mut mm: Map[string, Map[i32, i32]] = map["a": map[1: 11]]
+    mut child = mm.get("a")
+    child.put(2, 22)
+    let c: usize = child.len
+    let n: usize = mm.len
+    let r1 = child.get(2)
+    io.println("child: {c} outer: {n} own: {r1}")
+    return 0
+}""",
+     ["child: 2 outer: 1 own: 22"],
+     "map_child_mut_copy"),
+    ("""use sys.io
+act main() -> i32 {
+    mut km: Map[string, i32] = map["alpha": 1, "gamma": 2, "beta": 3]
+    loop kx, i of km {
+        io.println("k: {kx} i: {i}")
+    }
+    loop key of km {
+        let v = km.get_or(key, 0)
+        io.println("lookup {key}: {v}")
+    }
+    return 0
+}""",
+     _map_loop_expect_lines(["alpha", "gamma", "beta"]),
+     "map_loop_keys"),
+    ("""use sys.io
+act main() -> i32 {
+    let empty: Map[string, i32] = map[]
+    mut ran = 0
+    loop ek of empty {
+        ran = ran + 1
+    }
+    io.println("ran: {ran}")
+    return 0
+}""",
+     ["ran: 0"],
+     "map_loop_empty"),
 ]
 
 # 5.2 slice 6 — struct values ride the map as dyn elements, so the
@@ -888,9 +1040,9 @@ MAP_REJECTIONS = [
     ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.has() return 0 }",
      "map.has expects exactly 1 argument: (map m, key)", "has_arity"),
     ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.nope() return 0 }",
-     "unknown map member 'nope' (put, get, has, len are available)", "unknown_member"),
+     "unknown map member 'nope' (put, get, has, len, get_or, take are available)", "unknown_member"),
     ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] let w = m.nope return 0 }",
-     "unknown map member 'nope' (put, get, has, len are available)", "unknown_prop"),
+     "unknown map member 'nope' (put, get, has, len, get_or, take are available)", "unknown_prop"),
     ("act main() -> i32 { let n: Map[i32, string] = map[0: \"a\"] n.put(1, \"b\") return 0 }",
      "cannot put into a map held by a let (declare with mut)", "put_on_let"),
     ("act main() -> i32 { let n: Map[i32, string] = map[0: \"a\"] n[1] = \"b\" return 0 }",
@@ -917,6 +1069,27 @@ MAP_REJECTIONS = [
      "map argument types must match exactly: got Map[string, i32], expected Map[i32, string]", "cross_map_mismatch"),
     ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m[0] += \"x\" return 0 }",
      "compound assignments on maps are not supported yet — use an explicit '=' write", "compound"),
+    # 5.2 slice 7 — get_or / take / of-source rejects
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.get_or(1) return 0 }",
+     "map.get_or expects exactly 2 arguments: (map m, key, default)", "getor_arity1"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.get_or(1, \"b\", \"c\") return 0 }",
+     "map.get_or expects exactly 2 arguments: (map m, key, default)", "getor_arity3"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] let x = m.get_or(\"w\", \"v\") return 0 }",
+     "map key mismatch: expected i32 (got string)", "getor_key_mismatch"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] let x = m.get_or(0, 7) return 0 }",
+     "map value mismatch: expected string (got i32)", "getor_default_mismatch"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] let x = m.get_or(2, null) return 0 }",
+     "map value mismatch: expected string (got @void)", "getor_null_default"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.take(1, 2) return 0 }",
+     "map.take expects exactly 1 argument: (map m, key)", "take_arity"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.take() return 0 }",
+     "map.take expects exactly 1 argument: (map m, key)", "take_arity0"),
+    ("act main() -> i32 { let n: Map[i32, string] = map[0: \"a\"] let x = n.take(0) return 0 }",
+     "cannot take from a map held by a let (declare with mut)", "take_on_let"),
+    ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.take(\"w\") return 0 }",
+     "map key mismatch: expected i32 (got string)", "take_key_mismatch"),
+    ("act main() -> i32 { loop x of 3 { io.println(\"x\") } return 0 }",
+     "the 'of' source of a loop must be a shelf or map (got i32)", "of_odd_source"),
 ]
 
 MAP_FATALS = [
@@ -926,6 +1099,11 @@ MAP_FATALS = [
      "Velo Fatal Error: map key not found: false!", "fatal_bool"),
     ("use sys.io\nact main() -> i32 { mut m: Map[i32, string] = map[1: \"a\"] let n: string = m[9] io.println(n) return 0 }",
      "Velo Fatal Error: map key not found: 9!", "fatal_sub"),
+    # 5.2 slice 7 — take's fatal family: miss and second take
+    ("use sys.io\nact main() -> i32 { mut m: Map[string, i32] = map[\"a\": 1] let n = m.take(\"zz\") io.println(n) return 0 }",
+     "Velo Fatal Error: map key not found: zz!", "fatal_take_miss"),
+    ("use sys.io\nact main() -> i32 { mut m: Map[i32, i32] = map[5: 55] let a = m.take(5) let b = m.take(5) io.println(a) return 0 }",
+     "Velo Fatal Error: map key not found: 5!", "fatal_take_second"),
 ]
 
 

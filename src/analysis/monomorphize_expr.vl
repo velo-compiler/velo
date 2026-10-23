@@ -156,11 +156,12 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
                     return sb_to_string(@sb)
                 }
             }
-            // 5.2 slice 6: map receiver calls — put void / get value / has bool
+            // 5.2 slice 6/7: map receiver calls — put void / get, get_or,
+            // take value / has bool
             let mv = mono_map_value(rt)
             if mv != null {
                 if e.callee.member_name == "put" { return "void" }
-                if e.callee.member_name == "get" { return mv }
+                if e.callee.member_name == "get" or e.callee.member_name == "get_or" or e.callee.member_name == "take" { return mv }
                 if e.callee.member_name == "has" { return "bool" }
             }
         }

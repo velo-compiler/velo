@@ -225,6 +225,37 @@ act emit_map_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) 
         sb_append_str(sb, "; })")
         return
     }
+    if member == "get_or" {
+        // 5.2 slice 7: absence without an option type — key binds first,
+        // the default is LAZY (evaluated only inside the miss branch, a
+        // dyn V boxes it there); a hit leaves len untouched.
+        let mv = shelf_fresh_name(st, "mv_")
+        sb_append_str(sb, "({ "); sb_append_str(sb, key_c); sb_append_char(sb, ' '); sb_append_str(sb, mk); sb_append_str(sb, " = (")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, "); "); sb_append_str(sb, val_c); sb_append_char(sb, ' '); sb_append_str(sb, mv); sb_append_str(sb, "; if (!velo_map_copy_out(")
+        emit_map_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (const void*)(&("); sb_append_str(sb, mk); sb_append_str(sb, ")), (void*)(&("); sb_append_str(sb, mv)
+        sb_append_str(sb, ")))) { "); sb_append_str(sb, mv); sb_append_str(sb, " = (")
+        emit_map_value_c(sb, st, expr.first_arg.next, v_t)
+        sb_append_str(sb, "); } "); sb_append_str(sb, mv); sb_append_str(sb, "; })")
+        return
+    }
+    if member == "take" {
+        // 5.2 slice 7: remove at most once — the value copies out FIRST,
+        // the slot tombstones; a miss is the loud fatal family.
+        let mv = shelf_fresh_name(st, "mv_")
+        sb_append_str(sb, "({ "); sb_append_str(sb, key_c); sb_append_char(sb, ' '); sb_append_str(sb, mk); sb_append_str(sb, " = (")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, "); "); sb_append_str(sb, val_c); sb_append_char(sb, ' '); sb_append_str(sb, mv); sb_append_str(sb, "; if (!velo_map_take(")
+        emit_map_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (const void*)(&("); sb_append_str(sb, mk); sb_append_str(sb, ")), (void*)(&("); sb_append_str(sb, mv)
+        sb_append_str(sb, ")))) velo_map_fatal_missing(")
+        emit_map_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (const void*)(&("); sb_append_str(sb, mk); sb_append_str(sb, ")), \"")
+        sb_append_str(sb, k_t)
+        sb_append_str(sb, "\"); "); sb_append_str(sb, mv); sb_append_str(sb, "; })")
+        return
+    }
     if member == "has" {
         sb_append_str(sb, "({ ")
         sb_append_str(sb, key_c)
@@ -240,6 +271,66 @@ act emit_map_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) 
         return
     }
     // unreachable — the checker rejects unknown members before emission
+}
+
+// 5.2 slice 7: `loop k of m { }` — key iteration in HASH order (a
+// deterministic FNV derivation, NOT insertion order). Snapshot doctrine
+// mirrors the shelf walker: at entry the live rows are scanned once into a
+// fresh key-typed array in the active arena (empty and tombstone slots
+// skip); put/take during the body mutate the live map, never the view.
+act emit_map_alive(sb: @StringBuilder, src: string, scan: string) {
+    sb_append_str(sb, src); sb_append_str(sb, ".hashes["); sb_append_str(sb, scan)
+    sb_append_str(sb, "] != 0 && "); sb_append_str(sb, src); sb_append_str(sb, ".hashes["); sb_append_str(sb, scan); sb_append_str(sb, "]")
+}
+
+act emit_map_loop(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32, defers: @@DeferNode) {
+    let coll_t = infer_expr_type(st, stmt.expr)
+    let k_t = map_key_type(coll_t)
+    let key_c = map_key_slot_c(k_t)
+    let src = shelf_fresh_name(st, "lsrc_")
+    let cnt = shelf_fresh_name(st, "lcnt_")
+    let idx = shelf_fresh_name(st, "lidx_")
+    let dat = shelf_fresh_name(st, "ldat_")
+    let run = shelf_fresh_name(st, "lrun_")
+    let fill = shelf_fresh_name(st, "lfill_")
+    let scan = shelf_fresh_name(st, "lscan_")
+    mut vname = "it"
+    if stmt.loop_var != null and str.len(stmt.loop_var) > 0 { vname = stmt.loop_var }
+    mut iname = idx  // an explicit second binding names the step index
+    if stmt.loop_index != null and str.len(stmt.loop_index) > 0 { iname = stmt.loop_index }
+    sb_append_indent(sb, indent)
+    sb_append_str(sb, "{ VeloMap "); sb_append_str(sb, src); sb_append_str(sb, " = (")
+    if str.len(coll_t) > 0 and coll_t[0] == '@' { sb_append_str(sb, "*("); emit_c_expr(sb, st, stmt.expr); sb_append_str(sb, ")") } else { emit_c_expr(sb, st, stmt.expr) }  // @-pointers unpack to the stable view header
+    sb_append_str(sb, "); const usize "); sb_append_str(sb, cnt)
+    sb_append_str(sb, " = ({ size_t "); sb_append_str(sb, run); sb_append_str(sb, " = 0; for (size_t ")
+    sb_append_str(sb, scan); sb_append_str(sb, " = 0; "); sb_append_str(sb, scan); sb_append_str(sb, " < "); sb_append_str(sb, src)
+    sb_append_str(sb, ".cap; ++"); sb_append_str(sb, scan); sb_append_str(sb, ") if (")
+    emit_map_alive(sb, src, scan)
+    sb_append_str(sb, " != VELO_MAP_TOMB) ++"); sb_append_str(sb, run); sb_append_str(sb, "; "); sb_append_str(sb, run); sb_append_str(sb, "; }); void* ")
+    sb_append_str(sb, dat)
+    sb_append_str(sb, " = velo_mem_alloc((usize)sizeof("); sb_append_str(sb, key_c); sb_append_str(sb, "), "); sb_append_str(sb, cnt)
+    sb_append_str(sb, "); { size_t "); sb_append_str(sb, fill); sb_append_str(sb, " = 0; for (size_t ")
+    sb_append_str(sb, scan); sb_append_str(sb, " = 0; "); sb_append_str(sb, scan); sb_append_str(sb, " < "); sb_append_str(sb, src)
+    sb_append_str(sb, ".cap; ++"); sb_append_str(sb, scan); sb_append_str(sb, ") if (")
+    emit_map_alive(sb, src, scan)
+    sb_append_str(sb, " != VELO_MAP_TOMB) { memcpy((char*)"); sb_append_str(sb, dat); sb_append_str(sb, " + "); sb_append_str(sb, fill)
+    sb_append_str(sb, " * (usize)sizeof("); sb_append_str(sb, key_c); sb_append_str(sb, "), (const char*)"); sb_append_str(sb, src)
+    sb_append_str(sb, ".keys + "); sb_append_str(sb, scan); sb_append_str(sb, " * (usize)sizeof("); sb_append_str(sb, key_c)
+    sb_append_str(sb, "), (usize)sizeof("); sb_append_str(sb, key_c); sb_append_str(sb, ")); ++"); sb_append_str(sb, fill); sb_append_str(sb, "; } }\n")
+    enter_scope(st)
+    define_variable(st, vname, k_t, false, stmt.line, stmt.col)
+    if stmt.loop_index != null and str.len(stmt.loop_index) > 0 { define_variable(st, iname, "usize", false, stmt.line, stmt.col) }
+    sb_append_indent(sb, indent)
+    sb_append_str(sb, "for (usize "); sb_append_str(sb, iname); sb_append_str(sb, " = 0; "); sb_append_str(sb, iname)
+    sb_append_str(sb, " < "); sb_append_str(sb, cnt); sb_append_str(sb, "; ++"); sb_append_str(sb, iname); sb_append_str(sb, ") {\n")
+    sb_append_indent(sb, indent + 1)
+    sb_append_str(sb, "const "); sb_append_str(sb, key_c); sb_append_char(sb, ' '); sb_append_str(sb, vname)
+    sb_append_str(sb, " = ((const "); sb_append_str(sb, key_c); sb_append_str(sb, "*)"); sb_append_str(sb, dat)
+    sb_append_str(sb, ")["); sb_append_str(sb, iname); sb_append_str(sb, "];\n")
+    emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
+    exit_scope(st)
+    sb_append_indent(sb, indent); sb_append_str(sb, "}\n")   // for-body close
+    sb_append_indent(sb, indent); sb_append_str(sb, "}\n")   // snapshot view block close
 }
 
 // Indexed write: keys and values bind into their slots (value first would

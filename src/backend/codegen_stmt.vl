@@ -7,6 +7,7 @@ use "../ast/expr.vl"
 use "../ast/stmt.vl"
 use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
+use "../analysis/map_checks.vl"
 use "../common/string_builder.vl"
 use "../analysis/op_resolver.vl"
 use "codegen_expr.vl"
@@ -141,6 +142,11 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         if stmt.loop_var != null and str.len(stmt.loop_var) > 0 { vname = stmt.loop_var }
         // 5.2: shelf value loop — snapshot iteration with an element-typed var
         if stmt.is_of {
+            // 5.2 slice 7: map sources iterate KEYS (K-typed, hash order)
+            if is_map_type(infer_expr_type(st, stmt.expr)) {
+                emit_map_loop(sb, st, stmt, indent, defers)
+                return
+            }
             emit_shelf_loop(sb, st, stmt, indent, defers)
             return
         }

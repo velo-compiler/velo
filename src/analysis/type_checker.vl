@@ -313,10 +313,10 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
         check_statement(st, expected_ret_type, stmt.body)
         if stmt.else_branch != null { check_statement(st, expected_ret_type, stmt.else_branch) }
     } else if stmt.kind == STMT_LOOP {
-        // 5.2: `loop v of shelf` — the iterator takes the element type;
-        // range/count/condition/infinite loops keep the house "i32" var
+        // 5.2 slice 4/7: `loop v of coll` — the iterator takes the element
+        // (K for maps); range/count/condition loops keep the house "i32" var
         mut of_elem = "i32"
-        if stmt.is_of { of_elem = check_shelf_loop_elem(st, stmt) } else if stmt.loop_start != null { infer_expr_type(st, stmt.loop_start); infer_expr_type(st, stmt.loop_end); if stmt.loop_step != null { infer_expr_type(st, stmt.loop_step) } } else if stmt.expr != null { infer_expr_type(st, stmt.expr) }
+        if stmt.is_of { of_elem = check_map_loop_source(st, stmt) } else if stmt.loop_start != null { infer_expr_type(st, stmt.loop_start); infer_expr_type(st, stmt.loop_end); if stmt.loop_step != null { infer_expr_type(st, stmt.loop_step) } } else if stmt.expr != null { infer_expr_type(st, stmt.expr) }
         enter_scope(st)
         mut vname = "it"
         if stmt.loop_var != null and str.len(stmt.loop_var) > 0 { vname = stmt.loop_var }

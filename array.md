@@ -144,18 +144,34 @@ Tests:
 
 Missing surface:
 
-* [ ] `m.get_or(k, default)` → V (absence handled without an option type).
-* [ ] `m.take(k)` → V removed by value (fatal on miss, same wording family).
-* [ ] `loop k of m { }` — iterates KEYS (hash order, documented ordering
-      caveat vs shelf iteration).
-* [ ] V edges: `V = dyn` boxed put/get-or flow, V = child `Map[…]`/`shelf[…]`
-      value-copied headers.
+* [x] `m.get_or(k, default)` → V (absence handled without an option type).
+      Arity 2; key rides the family gate + strict mismatch; the default
+      rides the put value-slot gates verbatim; LAZY default (evaluated only
+      on the miss); legal on a `let` (read-tier).
+* [x] `m.take(k)` → V removed by value (fatal on miss, same wording family).
+      Arity 1; MUT root required (`cannot take from a map held by a let`);
+      tombstone migration shipped — taken slots park `VELO_MAP_TOMB` (2),
+      put recycles them, `velo_map_regen` compacts in place past half-cap.
+* [x] `loop k of m { }` — iterates KEYS (hash order, documented ordering
+      caveat vs shelf iteration). Snapshot at entry into a fresh key array;
+      put/take in the body mutate the live map, never the view; the slice-4
+      second binding works (`loop k, i of m`); empty map → zero iterations.
+      The of-source gate is the union wording (`shelf or map`) on both
+      stages.
+* [x] V edges: `V = dyn` boxed put/get-or flow (the get_or default is the
+      one new boxing site; take unboxes via `as`), V = child `Map[…]`/
+      `shelf[…]` value-copied headers (get_or/take copy the child header;
+      put through a read-out child mutates its own copy — outer map len
+      untouched, pinned by `map_child_mut_copy`).
 
 Tests:
 
-* [ ] get_or default both taken and not-taken; take removes (len drops,
-      second take fatals with repr); loop over map keys battery; empty-map
-      loop is a no-op; nested map values mutate through their own copy only.
+* [x] get_or default both taken and not-taken; take removes (len drops,
+      second take fatals with repr); loop over map keys battery (hash-visit
+      order computed from the engine's FNV placement); empty-map loop is a
+      no-op; nested map values mutate through their own copy only.
+      Battery: +9 accepts, +10 rejects, +2 fatals (all dual-stage, swept
+      37/37 wordings byte-identical).
 
 ## S8 — dyn engine: auto-unbox operators + U64 tag (medium)
 

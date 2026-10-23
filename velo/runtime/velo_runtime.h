@@ -1204,10 +1204,12 @@ static inline void* velo_shelf_take(VeloShelf* s) {
 // never alias-mutate away from its recorded hash. All other families hash
 // their bytes and compare with memcmp (pinned key families never mix widths).
 //
-// Capacity is a power of two, growing ×2 when load passes 0.75. Every table
-// stores its 64-bit hash pre-OR'ed with 1, so hash == 0 is the unambiguous
-// EMPTY slot sentinel (no tombstate array in slice 6 — no removal surface
-// yet; S7 take() migrates the layout when it lands). Storage (keys, values,
+// Capacity is a power of two, growing ×2 when occupancy (len + tombstones)
+// passes 0.75. Every table stores its 64-bit hash pre-OR'ed with 1, so a
+// real mark is always ODD (≥ 1) — hash == 0 is the unambiguous EMPTY sentinel
+// and VELO_MAP_TOMB (2) the TAKEN marker. Because tomb is even and every
+// stored hash odd, the has/copy_out probe loops needed NO new guard when the
+// slice-7 take() landed the reserved migration. Storage (keys, values,
 // hashes) grows in the ACTIVE arena (velo_mem_alloc) and REGENERATES on
 // rehash — no per-entry frees, zones reclaim wholesale (shelf doctrine).
 //
@@ -1215,14 +1217,16 @@ static inline void* velo_shelf_take(VeloShelf* s) {
 // either one rehashes (severed sharing — the put-through-copy window is
 // documented, not an error).
 //
-// Probe order derives from the hash bits: patch-order iteration (S7) will be
+// Probe order derives from the hash bits: patch-order iteration (S7) is
 // HASH-ordered, not insertion-ordered — pinned.
 // ============================================================================
+#define VELO_MAP_TOMB ((uint64_t)2)
 typedef struct VeloMap {
     void*     keys;    // cap * ksz key bytes (inline; strings store the pointer)
     void*     vals;    // cap * vsz value bytes
-    uint64_t* hashes;  // cap hash slots (0 = empty; live slots hold h | 1)
+    uint64_t* hashes;  // cap hash slots (0 = empty; live hold h | 1; TOMB = 2)
     size_t    len;     // live entries
+    size_t    tomb;    // tombstone slots (probes skip them; put recycles)
     size_t    cap;     // capacity (power of two)
     size_t    ksz;     // key size in bytes (sizeof(K))
     size_t    vsz;     // value size in bytes (sizeof(V))
@@ -1231,7 +1235,7 @@ typedef struct VeloMap {
 
 static inline void velo_map_init(VeloMap* m, size_t ksz, bool kstring, size_t vsz) {
     m->keys = NULL; m->vals = NULL; m->hashes = NULL;
-    m->len = 0; m->cap = 0; m->ksz = ksz; m->vsz = vsz; m->kstring = kstring;
+    m->len = 0; m->tomb = 0; m->cap = 0; m->ksz = ksz; m->vsz = vsz; m->kstring = kstring;
 }
 
 static inline uint64_t velo_map_fnv1a(const uint8_t* p, size_t n) {
@@ -1264,16 +1268,17 @@ static inline bool velo_map_key_eq(const VeloMap* m, const void* a, const void* 
     return memcmp(a, b, m->ksz) == 0;
 }
 
-// ×2 regenerate: rebuild every live row into fresh arena tables (the old
-// generation becomes arena garbage, reclaimed wholesale at zone exit).
-static inline void velo_map_grow(VeloMap* m) {
-    size_t new_cap = m->cap != 0 ? m->cap * 2 : 8;
+// Regenerate: rebuild every LIVE row into fresh arena tables (tombs and the
+// old generation become arena garbage, reclaimed wholesale at zone exit).
+// `new_cap` carries the ×2 grow AND the slice-7 half-cap compact (same cap,
+// tomb purge) through one code path.
+static inline void velo_map_regen(VeloMap* m, size_t new_cap) {
     void* nkeys = velo_mem_alloc(m->ksz, new_cap);
     void* nvals = velo_mem_alloc(m->vsz, new_cap);
     uint64_t* nhash = (uint64_t*)velo_mem_alloc(sizeof(uint64_t), new_cap);
     if (m->cap > 0) {
         for (size_t i = 0; i < m->cap; i++) {
-            if (m->hashes[i] == 0) continue;
+            if (m->hashes[i] == 0 || m->hashes[i] == VELO_MAP_TOMB) continue;
             size_t at = (size_t)m->hashes[i] & (new_cap - 1);
             while (nhash[at] != 0) at = (at + 1) & (new_cap - 1);
             nhash[at] = m->hashes[i];
@@ -1285,27 +1290,36 @@ static inline void velo_map_grow(VeloMap* m) {
     m->vals = nvals;
     m->hashes = nhash;
     m->cap = new_cap;
+    m->tomb = 0;
+}
+
+static inline void velo_map_grow(VeloMap* m) {
+    velo_map_regen(m, m->cap != 0 ? m->cap * 2 : 8);
 }
 
 // Upsert: overwrite the value when the key is already home (len unchanged,
-// no growth), else take the first empty slot past the probe start. Growth
-// happens BEFORE the probe so the table always retains an empty slot
-// (the probe loop below can then never wrap a full table).
+// no growth), else take a tombstone (the slice-7 recycle: len unchanged,
+// tomb -= 1) or the first empty slot past the probe start. Growth happens
+// BEFORE the probe so the table always retains an empty slot (the probe
+// loop below can then never wrap a full table).
 static inline void velo_map_put(VeloMap* m, const void* key, const void* val) {
     if (m->ksz == 0 || m->vsz == 0) {
         fprintf(stderr, "Velo Fatal Error: map put with a zero-size key or value!\n");
         exit(1);
     }
-    if ((m->len + 1) * 4 > m->cap * 3) velo_map_grow(m);
+    if ((m->len + m->tomb + 1) * 4 > m->cap * 3) velo_map_grow(m);
     uint64_t h = velo_map_key_hash(m, key);
     size_t at = (size_t)h & (m->cap - 1);
+    size_t reuse = m->cap;
     while (m->hashes[at] != 0) {
         if (m->hashes[at] == h && velo_map_key_eq(m, key, (const char*)m->keys + at * m->ksz)) {
             memcpy((char*)m->vals + at * m->vsz, val, m->vsz);
             return;
         }
+        if (m->hashes[at] == VELO_MAP_TOMB && reuse == m->cap) reuse = at;
         at = (at + 1) & (m->cap - 1);
     }
+    if (reuse != m->cap) { at = reuse; m->tomb -= 1; }
     m->hashes[at] = h;
     memcpy((char*)m->keys + at * m->ksz, key, m->ksz);
     memcpy((char*)m->vals + at * m->vsz, val, m->vsz);
@@ -1333,6 +1347,29 @@ static inline bool velo_map_copy_out(const VeloMap* m, const void* key, void* ou
     while (m->hashes[at] != 0) {
         if (m->hashes[at] == h && velo_map_key_eq(m, key, (const char*)m->keys + at * m->ksz)) {
             memcpy(out, (const char*)m->vals + at * m->vsz, m->vsz);
+            return true;
+        }
+        at = (at + 1) & (m->cap - 1);
+    }
+    return false;
+}
+
+// 5.2 slice 7: remove by key — the value copies out FIRST (the take()
+// discipline), then the slot parks a tombstone, len drops by one. When
+// tombstones pass half the cap the table compacts in place (same cap, no
+// growth) so probe chains cannot rot on delete-heavy traffic. Miss returns
+// false and the caller fires the loud fatal family (get/subscript words).
+static inline bool velo_map_take(VeloMap* m, const void* key, void* out) {
+    if (m->cap == 0) return false;
+    uint64_t h = velo_map_key_hash(m, key);
+    size_t at = (size_t)h & (m->cap - 1);
+    while (m->hashes[at] != 0) {
+        if (m->hashes[at] == h && velo_map_key_eq(m, key, (const char*)m->keys + at * m->ksz)) {
+            memcpy(out, (const char*)m->vals + at * m->vsz, m->vsz);
+            m->hashes[at] = VELO_MAP_TOMB;
+            m->len -= 1;
+            m->tomb += 1;
+            if (m->tomb > (m->cap >> 1)) velo_map_regen(m, m->cap);
             return true;
         }
         at = (at + 1) & (m->cap - 1);
