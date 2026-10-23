@@ -1,0 +1,124 @@
+// ============================================================================
+// 5.2 Dynamic Collections — shelf member-call C emission (put/take from
+// slice 1; sorted/insert/remove_at from slice 3). Split from shelf_gen.vl
+// to stay under the 400-line budget. The C text matches velo/codegen_c.py's
+// emit branches byte for byte.
+// ============================================================================
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../analysis/shelf_checks.vl"
+use "../analysis/dyn_checks.vl"
+use "../common/string_builder.vl"
+use "../common/act_types.vl"
+use "codegen_types.vl"
+use "codegen_expr.vl"
+use "shelf_gen.vl"
+
+act emit_shelf_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    let member = expr.callee.member_name
+    let recv_t = infer_expr_type(st, expr.callee.target)
+    let elem = shelf_raw_elem(recv_t)
+    if member == "put" {
+        let esl = shelf_fresh_name(st, "esl_")
+        sb_append_str(sb, "({ ")
+        sb_append_str(sb, map_type_to_c(elem))
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, esl)
+        sb_append_str(sb, " = (")
+        if elem == "dyn" {
+            // 5.2 slice 2: box the appended value into the tag
+            let raw = infer_expr_type(st, expr.first_arg)
+            if raw == "dyn" {
+                emit_c_expr(sb, st, expr.first_arg)
+            } else {
+                emit_dyn_box(sb, st, raw, expr.first_arg)
+            }
+        } else {
+            emit_c_expr(sb, st, expr.first_arg)
+        }
+        sb_append_str(sb, "); velo_shelf_put(")
+        emit_shelf_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (const void*)(&(")
+        sb_append_str(sb, esl)
+        sb_append_str(sb, ")), (usize)sizeof(")
+        sb_append_str(sb, map_type_to_c(elem))
+        sb_append_str(sb, ")); })")
+        return
+    }
+    if member == "take" {
+        sb_append_str(sb, "(*((")
+        sb_append_str(sb, map_type_to_c(elem))
+        sb_append_str(sb, "*)velo_shelf_take(")
+        emit_shelf_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ")))")
+        return
+    }
+    if member == "insert" {
+        // 5.2 slice 3: grow-and-shift; i == len appends; the element
+        // contract matches put (dyn values box)
+        let esl = shelf_fresh_name(st, "esl_")
+        let elem_arg = expr.first_arg.next
+        sb_append_str(sb, "({ ")
+        sb_append_str(sb, map_type_to_c(elem))
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, esl)
+        sb_append_str(sb, " = (")
+        if elem == "dyn" {
+            let raw = infer_expr_type(st, elem_arg)
+            if raw == "dyn" {
+                emit_c_expr(sb, st, elem_arg)
+            } else {
+                emit_dyn_box(sb, st, raw, elem_arg)
+            }
+        } else {
+            emit_c_expr(sb, st, elem_arg)
+        }
+        sb_append_str(sb, "); velo_shelf_insert(")
+        emit_shelf_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (usize)(")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, "), (const void*)(&(")
+        sb_append_str(sb, esl)
+        sb_append_str(sb, ")), (usize)sizeof(")
+        sb_append_str(sb, map_type_to_c(elem))
+        sb_append_str(sb, ")); })")
+        return
+    }
+    if member == "remove_at" {
+        // Returns the removed element BY VALUE (the runtime stash-copies
+        // the victim before shifting the tail).
+        sb_append_str(sb, "(*((")
+        sb_append_str(sb, map_type_to_c(elem))
+        sb_append_str(sb, "*)velo_shelf_remove_at(")
+        emit_shelf_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (usize)(")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, "))))")
+        return
+    }
+    if member == "sorted" {
+        // 5.2 slice 3: fresh copy, ascending natural order — the wrapper
+        // token is the ELEMENT SPELLING (velo_shelf_sorted_i32)
+        let out = shelf_fresh_name(st, "srt_")
+        sb_append_str(sb, "({ VeloShelf ")
+        sb_append_str(sb, out)
+        sb_append_str(sb, " = velo_shelf_sorted_")
+        sb_append_str(sb, elem)
+        sb_append_str(sb, "(")
+        emit_shelf_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, "); ")
+        sb_append_str(sb, out)
+        sb_append_str(sb, "; })")
+        return
+    }
+    // checker handles unknown members; emit the property for totality
+    emit_c_expr(sb, st, expr.callee.target)
+    sb_append_char(sb, '.')
+    sb_append_str(sb, member)
+}

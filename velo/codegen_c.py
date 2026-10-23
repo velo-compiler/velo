@@ -240,39 +240,79 @@ class CCodeGenerator:
         return node.name if isinstance(node, Identifier) else None
 
     def _shelf_expect(self, member: str, target_expr: Expr, args: List[Expr]) -> None:
-        """5.2 compile-checks shelf surface calls (put/take). Mirrored by the
-        Stage 2 checker — both stages reject the same programs with the same
-        messages."""
-        if member not in ("put", "take"):
-            raise ValueError(f"unknown shelf member '{member}' (put, take, len are available)")
-        if member == "put":
-            if len(args) != 1:
-                raise ValueError("shelf.put expects exactly 1 argument: (shelf s, element value)")
+        """5.2 compile-checks shelf surface calls (put/take/sorted/insert/
+        remove_at). Mirrored by the Stage 2 checker — both stages reject the
+        same programs with the same messages."""
+        if member not in ("put", "take", "sorted", "insert", "remove_at"):
+            raise ValueError(f"unknown shelf member '{member}' (put, take, len, sorted, insert, remove_at are available)")
+        if member == "sorted":
+            if len(args) != 0:
+                raise ValueError("shelf.sorted takes no arguments")
             recv = self._resolve_expr_type(target_expr)
             elem = self._shelf_elem_type(recv)
             if elem:
-                got = self._thread_arg_type(args[0])
-                if elem == "dyn":
-                    # 5.2 slice 2: any boxable element goes in (boxed by the
-                    # emitter); the tag-based mismatch check is skipped
-                    if got == "unknown":
-                        pass  # the argument itself already failed to infer
-                    elif got == "void":
-                        raise ValueError("shelf[dyn] put: cannot box a void value")
-                    elif got == "@void":
-                        raise ValueError("shelf elements cannot be null (use a @T pointer element)")
-                    else:
-                        err = self._dyn_boxable_error(got)
-                        if err:
-                            raise ValueError(err)
-                elif got != elem and got not in ("void", "@void"):
-                    raise ValueError(f"shelf.put element mismatch: expected {elem} (got {got})")
-        elif len(args) != 0:
+                err = self._sorted_family_error(elem)
+                if err:
+                    raise ValueError(err)
+            return  # NOT a mutation: a sorted copy is legal on a let
+        if member == "insert":
+            if len(args) != 2:
+                raise ValueError("shelf.insert expects exactly 2 arguments: (shelf s, index, element value)")
+        elif member == "remove_at":
+            if len(args) != 1:
+                raise ValueError("shelf.remove_at expects exactly 1 argument: (shelf s, index)")
+        elif member == "put" and len(args) != 1:
+            raise ValueError("shelf.put expects exactly 1 argument: (shelf s, element value)")
+        elif member == "take" and len(args) != 0:
             raise ValueError("shelf.take takes no arguments")
+        if member in ("insert", "remove_at"):
+            it = self._thread_arg_type(args[0])
+            if it not in DYN_INT_TYPES:
+                raise ValueError(f"shelf index must be an integer (got {it})")
+        if member in ("put", "insert"):
+            recv = self._resolve_expr_type(target_expr)
+            elem = self._shelf_elem_type(recv)
+            if elem:
+                got = self._thread_arg_type(args[-1])
+                self._check_shelf_put_element(member, elem, got)
         root = self._shelf_root_binding(target_expr)
         if root is not None and not self.current_scope_mut.get(root, False):
-            word = "into" if member == "put" else "from"
-            raise ValueError(f"cannot {member} {word} a shelf held by a let (declare with mut)")
+            # verbs mirror the put/take doctrine: remove_at speaks "remove"
+            verb = "remove" if member == "remove_at" else member
+            word = "into" if member in ("put", "insert") else "from"
+            raise ValueError(f"cannot {verb} {word} a shelf held by a let (declare with mut)")
+
+    def _check_shelf_put_element(self, member: str, elem: str, got: str) -> None:
+        """Element-type contract shared by put and insert (5.2 slice 1/2/3):
+        exact match, dyn shelves box any boxable element (void/null reject)."""
+        if elem == "dyn":
+            # 5.2 slice 2: any boxable element goes in (boxed by the emitter);
+            # the tag-based mismatch check is skipped
+            if got == "unknown":
+                return  # the argument itself already failed to infer
+            if got == "void":
+                raise ValueError(f"shelf[dyn] {member}: cannot box a void value")
+            if got == "@void":
+                raise ValueError("shelf elements cannot be null (use a @T pointer element)")
+            err = self._dyn_boxable_error(got)
+            if err:
+                raise ValueError(err)
+        elif got != elem and got not in ("void", "@void"):
+            raise ValueError(f"shelf.{member} element mismatch: expected {elem} (got {got})")
+
+    def _sorted_family_error(self, elem: str):
+        """None when `sorted()` can order `elem`; else the pinned reject.
+        Bare type parameters (generic bodies) flow through mono — everything
+        else non-numeric/non-string is rejected concretely."""
+        if elem in DYN_INT_TYPES or elem in DYN_FLOAT_TYPES or elem == "string":
+            return None
+        if elem == "bool" or elem == "dyn":
+            return f"shelf.sorted() supports numeric or string elements (got {elem})"
+        if elem.startswith("@"):
+            return f"shelf.sorted() supports numeric or string elements (got {elem})"
+        if elem in self.struct_defs or elem in self.kind_defs:
+            return f"shelf.sorted() supports numeric or string elements (got {elem})"
+        return None
 
     def _check_shelf_annotation(self, decl_type: Optional[str], value: Optional[Expr]) -> None:
         """5.2 contract: annotated shelf declarations — an empty literal borrows
@@ -1128,16 +1168,19 @@ class CCodeGenerator:
                 return target_type[1:]
             return "i32"
         if isinstance(value, CallExpr):
-            # 5.2: shelf receiver calls — put returns void, take the element
+            # 5.2: shelf receiver calls — put/insert return void, take/
+            # remove_at the element, sorted() a new shelf[elem]
             if isinstance(value.callee, MemberAccess):
                 recv = self._resolve_expr_type(value.callee.target)
                 shelf_elem = self._shelf_elem_type(recv)
                 if shelf_elem is not None:
-                    if value.callee.member == "put":
+                    if value.callee.member in ("put", "insert"):
                         return "void"
-                    if value.callee.member == "take":
+                    if value.callee.member in ("take", "remove_at"):
                         return shelf_elem
-                    raise ValueError(f"unknown shelf member '{value.callee.member}' (put, take, len are available)")
+                    if value.callee.member == "sorted":
+                        return f"shelf[{shelf_elem}]"
+                    raise ValueError(f"unknown shelf member '{value.callee.member}' (put, take, len, sorted, insert, remove_at are available)")
             if isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier) and value.callee.target.name in self.kind_defs:
                 return value.callee.target.name
             if isinstance(value.callee, Identifier):
@@ -1234,23 +1277,26 @@ class CCodeGenerator:
             if self._shelf_elem_type(target_type) is not None:
                 if expr.member == "len":
                     return "usize"
-                raise ValueError(f"unknown shelf member '{expr.member}' (put, take, len are available)")
+                raise ValueError(f"unknown shelf member '{expr.member}' (put, take, len, sorted, insert, remove_at are available)")
             clean_type = target_type.lstrip("@")
             fields = self.struct_defs.get(clean_type, {})
             return fields.get(expr.member, "i32")
         elif isinstance(expr, AnonFuncExpr):
             return f"act({', '.join(p.type_name for p in expr.params)}) -> {expr.return_type}"
         elif isinstance(expr, CallExpr):
-            # 5.2: shelf receiver calls — put returns void, take the element
+            # 5.2: shelf receiver calls — put/insert void, take/remove_at the
+            # element, sorted() shelf[elem]
             if isinstance(expr.callee, MemberAccess):
                 recv = self._resolve_expr_type(expr.callee.target)
                 shelf_elem = self._shelf_elem_type(recv)
                 if shelf_elem is not None:
-                    if expr.callee.member == "put":
+                    if expr.callee.member in ("put", "insert"):
                         return "void"
-                    if expr.callee.member == "take":
+                    if expr.callee.member in ("take", "remove_at"):
                         return shelf_elem
-                    raise ValueError(f"unknown shelf member '{expr.callee.member}' (put, take, len are available)")
+                    if expr.callee.member == "sorted":
+                        return f"shelf[{shelf_elem}]"
+                    raise ValueError(f"unknown shelf member '{expr.callee.member}' (put, take, len, sorted, insert, remove_at are available)")
             if isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier) and expr.callee.target.name in self.kind_defs:
                 return expr.callee.target.name
             if isinstance(expr.callee, Identifier):
@@ -1606,6 +1652,29 @@ class CCodeGenerator:
                                 arg_code = self._emit_dyn_box(raw, arg_code)
                         return (f"({{ {elem_c} {slot} = ({arg_code}); "
                                 f"velo_shelf_put({rec}, (const void*)(&{slot}), (usize)sizeof({elem_c})); }})")
+                    if expr.callee.member == "insert":
+                        # 5.2 slice 3: grow-and-shift; i == len appends; the
+                        # element contract matches put (dyn values box)
+                        slot = self._fresh_name("esl_")
+                        idx_code = self._emit_expression(expr.args[0])
+                        arg_code = self._emit_expression(expr.args[1])
+                        if elem == "dyn":
+                            raw = self._infer_raw_velo_type(expr.args[1])
+                            if raw != "dyn":
+                                arg_code = self._emit_dyn_box(raw, arg_code)
+                        return (f"({{ {elem_c} {slot} = ({arg_code}); "
+                                f"velo_shelf_insert({rec}, (usize)({idx_code}), (const void*)(&{slot}), "
+                                f"(usize)sizeof({elem_c})); }})")
+                    if expr.callee.member == "remove_at":
+                        # returns the removed element BY VALUE (the runtime
+                        # stash-copies the victim before shifting the tail)
+                        idx_code = self._emit_expression(expr.args[0])
+                        return f"(*(({elem_c}*)velo_shelf_remove_at({rec}, (usize)({idx_code}))))"
+                    if expr.callee.member == "sorted":
+                        # 5.2 slice 3: fresh copy, ascending natural order —
+                        # the wrapper token is the ELEMENT SPELLING (i32/f64/string)
+                        out = self._fresh_name("srt_")
+                        return f"({{ VeloShelf {out} = velo_shelf_sorted_{elem}({rec}); {out}; }})"
                     return f"(*(({elem_c}*)velo_shelf_take({rec})))"
 
                 clean_type = target_type.lstrip("@")

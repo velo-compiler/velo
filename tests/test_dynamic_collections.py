@@ -261,6 +261,88 @@ class TestShelfBasics(unittest.TestCase):
         self.assertEqual(s1.stdout, s2.stdout)
         self.assertIn("pinned top 5", s1.stdout)
 
+    # ------------------------------------------------------------------
+    # 5.2 slice 3 — the vector surface: sorted() / insert / remove_at.
+    # ------------------------------------------------------------------
+    def test_shelf_sorted_families(self):
+        # sorted() returns a NEW shelf (receiver untouched — legal on let);
+        # per-width numeric compares for ints/floats, strcmp for strings.
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    let xs = shelf[9, 1, 5, 3]\n"
+            "    let by = xs.sorted()\n"
+            "    let fl = shelf[2.5, 0.5, 1.5]\n"
+            "    let fb = fl.sorted()\n"
+            "    let words = shelf[\"pear\", \"apple\", \"mango\"]\n"
+            "    let wb = words.sorted()\n"
+            "    let a = by[0]\n"
+            "    let b = by[3]\n"
+            "    let c = fb[0]\n"
+            "    let d = wb[0]\n"
+            "    let keep = xs[0]\n"
+            "    io.println(\"a {a} b {b} c {c} d {d} keep {keep}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        s1 = run_stage("stage1", program, "shelf53_sorted")
+        s2 = run_stage("stage2", program, "shelf53_sorted")
+        self.assertEqual(s1.returncode, 0, s1.stderr)
+        self.assertEqual(s2.returncode, 0, s2.stderr)
+        self.assertEqual(s1.stdout, s2.stdout, "sorted outputs diverged")
+        self.assertEqual(
+            s1.stdout.strip().splitlines(),
+            ["a 1 b 9 c 0.50 d apple keep 9"],
+        )
+
+    def test_shelf_insert_remove_at(self):
+        # insert shifts the tail right (i == len appends); remove_at returns
+        # the removed element BY VALUE and collapses the hole.
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    mut ns: shelf[i32] = shelf[1, 2, 3]\n"
+            "    ns.insert(1, 99)\n"
+            "    let gone = ns.remove_at(2)\n"
+            "    ns.insert(3, 7)\n"
+            "    let n = ns.len\n"
+            "    let last = ns[3]\n"
+            "    io.println(\"gone {gone} n {n} last {last}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        s1 = run_stage("stage1", program, "shelf53_insrem")
+        s2 = run_stage("stage2", program, "shelf53_insrem")
+        self.assertEqual(s1.returncode, 0, s1.stderr)
+        self.assertEqual(s2.returncode, 0, s2.stderr)
+        self.assertEqual(s1.stdout, s2.stdout, "insert/remove outputs diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), ["gone 2 n 4 last 7"])
+
+    def test_shelf_dyn_insert_remove(self):
+        # The dyn battery: insert boxes (mixed bag passthrough keeps the tag),
+        # remove_at yields the raw dyn box for as-casting downstream.
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    mut bag: shelf[dyn] = shelf[]\n"
+            "    bag.insert(0, \"sx\")\n"
+            "    bag.insert(0, 15)\n"
+            "    bag.insert(2, bag[0])\n"
+            "    let dn = bag.len\n"
+            "    let d2 = bag.remove_at(0)\n"
+            "    let d2n = d2 as i32\n"
+            "    let w = bag[0] as string\n"
+            "    io.println(\"dn {dn} d2 {d2n} w {w}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        s1 = run_stage("stage1", program, "shelf53_dynbag")
+        s2 = run_stage("stage2", program, "shelf53_dynbag")
+        self.assertEqual(s1.returncode, 0, s1.stderr)
+        self.assertEqual(s2.returncode, 0, s2.stderr)
+        self.assertEqual(s1.stdout, s2.stdout, "dyn bag outputs diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), ["dn 3 d2 15 w sx"])
+
 
 def find_gcc() -> str:
     import shutil
@@ -339,7 +421,7 @@ REJECTIONS = [
      "shelf literal element type shelf[i32] does not match annotation shelf[i64]",
      "rej_annotation"),
     ("use sys.io\nact main() -> i32 {\n    mut xs = shelf[1]\n    let n = xs.push(3)\n    return 0\n}",
-     "unknown shelf member 'push' (put, take, len are available)",
+     "unknown shelf member 'push' (put, take, len, sorted, insert, remove_at are available)",
      "rej_push"),
     ("use sys.io\nact main() -> i32 {\n    mut xs = shelf[1]\n    xs.put(1, 2)\n    return 0\n}",
      "shelf.put expects exactly 1 argument: (shelf s, element value)",
@@ -360,6 +442,49 @@ REJECTIONS = [
      "act main() -> i32 {\n    let ok = hold(shelf[1])\n    return 0\n}",
      "shelf argument element types must match exactly: got shelf[i32], expected shelf[i64]",
      "rej_cross_call"),
+    # 5.2 slice 3 — sorted / insert / remove_at surface.
+    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let s = bad.sorted()\n    return 0\n}",
+     "shelf.sorted() supports numeric or string elements (got dyn)",
+     "rej_sorted_dyn"),
+    ("use sys.io\nact main() -> i32 {\n    let xs = shelf[true, false]\n    let s = xs.sorted()\n    return 0\n}",
+     "shelf.sorted() supports numeric or string elements (got bool)",
+     "rej_sorted_bool"),
+    ("use sys.io\ndata Point { a: i32; b: i32 }\nact main() -> i32 {\n"
+     "    let ps = shelf[Point{ a: 1, b: 2 }]\n    let s = ps.sorted()\n    return 0\n}",
+     "shelf.sorted() supports numeric or string elements (got Point)",
+     "rej_sorted_struct"),
+    ("use sys.io\ndata Point { a: i32; b: i32 }\nact main() -> i32 {\n"
+     "    let p = Point{ a: 1, b: 2 }\n    let ps = shelf[@p]\n    let s = ps.sorted()\n    return 0\n}",
+     "shelf.sorted() supports numeric or string elements (got @Point)",
+     "rej_sorted_ptrrow"),
+    ("use sys.io\nact main() -> i32 {\n    let xs = shelf[1]\n    xs.insert(0, 5)\n    return 0\n}",
+     "cannot insert into a shelf held by a let (declare with mut)",
+     "rej_insert_let"),
+    ("use sys.io\nact main() -> i32 {\n    let xs = shelf[1]\n    let g = xs.remove_at(0)\n    return 0\n}",
+     "cannot remove from a shelf held by a let (declare with mut)",
+     "rej_remove_let"),
+    ("use sys.io\nact main() -> i32 {\n    mut xs = shelf[1]\n    xs.insert(0, \"s\")\n    return 0\n}",
+     "shelf.insert element mismatch: expected i32 (got string)",
+     "rej_insert_type"),
+    ("use sys.io\nact main() -> i32 {\n    mut xs = shelf[1]\n    xs.insert(0.5, 2)\n    return 0\n}",
+     "shelf index must be an integer (got f32)",
+     "rej_insert_index"),
+    ("use sys.io\nact main() -> i32 {\n    mut xs = shelf[1]\n    let g = xs.remove_at(\"x\")\n    return 0\n}",
+     "shelf index must be an integer (got string)",
+     "rej_remove_index"),
+    ("use sys.io\nact main() -> i32 {\n    mut xs = shelf[1]\n    let s = xs.sorted(1)\n    return 0\n}",
+     "shelf.sorted takes no arguments",
+     "rej_sorted_args"),
+    ("use sys.io\nact main() -> i32 {\n    mut xs = shelf[1]\n    xs.insert(0)\n    return 0\n}",
+     "shelf.insert expects exactly 2 arguments: (shelf s, index, element value)",
+     "rej_insert_arity"),
+    ("use sys.io\nact main() -> i32 {\n    mut xs = shelf[1]\n    xs.remove_at()\n    return 0\n}",
+     "shelf.remove_at expects exactly 1 argument: (shelf s, index)",
+     "rej_remove_arity"),
+    ("use sys.io\nact hit() {\n    return\n}\nact main() -> i32 {\n"
+     "    mut m: shelf[dyn] = shelf[]\n    m.insert(0, hit())\n    return 0\n}",
+     "shelf[dyn] insert: cannot box a void value",
+     "rej_dyn_insert_void"),
 ]
 
 RUNTIME_FATALS = [
@@ -387,6 +512,20 @@ RUNTIME_FATALS = [
      "    return 0\n}",
      "Velo Fatal Error: shelf[dyn] unbox: expected float, found int!",
      "wrong_unbox_float"),
+    # 5.2 slice 3: insert/remove bounds tiering (the shared runtime header
+    # words it — both stages cannot diverge).
+    ("use sys.io\nact main() -> i32 {\n    mut xs: shelf[i32] = shelf[1, 2]\n"
+     "    xs.insert(4, 9)\n    io.println(\"never\")\n    return 0\n}",
+     "Velo Fatal Error: shelf insert index out of bounds: 4 (len 2)!",
+     "insert_oob"),
+    ("use sys.io\nact main() -> i32 {\n    mut xs: shelf[i32] = shelf[1, 2]\n"
+     "    let boom = xs.remove_at(4)\n    io.println(\"never\")\n    return 0\n}",
+     "Velo Fatal Error: shelf remove index out of bounds: 4 (len 2)!",
+     "remove_oob"),
+    ("use sys.io\nact main() -> i32 {\n    mut xs: shelf[i32] = shelf[]\n"
+     "    let boom = xs.remove_at(0)\n    io.println(\"never\")\n    return 0\n}",
+     "Velo Fatal Error: shelf remove index out of bounds: 0 (len 0)!",
+     "remove_empty"),
 ]
 
 

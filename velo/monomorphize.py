@@ -929,14 +929,17 @@ class Monomorphizer:
                 if expr.callee.name in self.generic_funcs:
                     return self.generic_funcs[expr.callee.name].return_type or "void"
             elif isinstance(expr.callee, MemberAccess):
-                # 5.2: shelf receiver calls — put is void, take yields the element
+                # 5.2: shelf receiver calls — put/insert are void, take/
+                # remove_at yield the element, sorted() a new shelf[elem]
                 recv = self._infer_expr_type(expr.callee.target, scope)
                 elem = _shelf_elem_of(recv)
                 if elem is not None:
-                    if expr.callee.member == "put":
+                    if expr.callee.member in ("put", "insert"):
                         return "void"
-                    if expr.callee.member == "take":
+                    if expr.callee.member in ("take", "remove_at"):
                         return elem
+                    if expr.callee.member == "sorted":
+                        return f"shelf[{elem}]"
                 if expr.callee.member in self.func_return_types:
                     return self.func_return_types[expr.callee.member]
                 if expr.callee.member in self.generic_funcs:

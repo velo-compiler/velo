@@ -101,13 +101,21 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
         if mono_shelf_elem(tt) != null and e.member_name == "len" { return "usize" }
     }
     if e.kind == EXPR_CALL {
-        // 5.2: shelf receiver calls — put yields void, take yields the element
+        // 5.2: shelf receiver calls — put/insert yield void, take/remove_at
+        // the element, sorted() a new shelf[elem]
         if e.callee != null and e.callee.kind == EXPR_MEMBER {
             let rt = mono_infer_type(e.callee.target, scope)
             let ee = mono_shelf_elem(rt)
             if ee != null {
-                if e.callee.member_name == "put" { return "void" }
-                if e.callee.member_name == "take" { return ee }
+                if e.callee.member_name == "put" or e.callee.member_name == "insert" { return "void" }
+                if e.callee.member_name == "take" or e.callee.member_name == "remove_at" { return ee }
+                if e.callee.member_name == "sorted" {
+                    mut sb = create_sb(str.len(ee) + 9)
+                    sb_append_str(@sb, "shelf[")
+                    sb_append_str(@sb, ee)
+                    sb_append_str(@sb, "]")
+                    return sb_to_string(@sb)
+                }
             }
         }
     }

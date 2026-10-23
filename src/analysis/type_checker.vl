@@ -14,6 +14,7 @@ use "type_check_program.vl"
 use "mem_checks.vl"
 use "str_checks.vl"
 use "shelf_checks.vl"
+use "shelf_calls.vl"
 use "dyn_checks.vl"
 
 // Checks if a name represents a recognized type (primitive or user-defined struct or kind).
@@ -145,7 +146,6 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 if target.str_val == "io" { return "void" }
             }
         }
-
         // 5.2: shelf receivers — put / take member calls
         if expr.callee.kind == EXPR_MEMBER and expr.callee.target != null and is_shelf_type(infer_expr_type(st, expr.callee.target)) { return check_shelf_member_call(st, expr) }
 

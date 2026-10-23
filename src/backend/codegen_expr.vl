@@ -14,6 +14,7 @@ use "codegen_io.vl"
 use "../analysis/op_resolver.vl"
 use "codegen_types.vl"
 use "shelf_gen.vl"
+use "shelf_calls_gen.vl"
 use "struct_lit_gen.vl"
 
 // Emits C99 code for an AST expression into a StringBuilder.

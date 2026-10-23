@@ -904,6 +904,20 @@ static inline void* velo_shelf_get(const VeloShelf* s, size_t idx) {
     return (void*)((char*)s->data + idx * s->esz);
 }
 
+// Growth for one more element (put/insert): double the capacity, copy the
+// live rows into fresh arena storage (put may relocate the payload — the
+// take/remove_at stashes must be consumed before the next growth).
+static inline void velo_shelf_reserve(VeloShelf* s) {
+    if (s->data == NULL || s->len == s->cap) {
+        size_t new_cap = s->cap ? s->cap : 4;
+        while (new_cap < s->len + 1) new_cap *= 2;
+        void* next = velo_mem_alloc(s->esz, new_cap);
+        if (s->len > 0) memcpy(next, s->data, s->len * s->esz);
+        s->data = next;
+        s->cap = new_cap;
+    }
+}
+
 static inline void velo_shelf_put(VeloShelf* s, const void* val, size_t esz) {
     if (esz == 0) {
         fprintf(stderr, "Velo Fatal Error: shelf put of a zero-size element!\n");
@@ -915,16 +929,52 @@ static inline void velo_shelf_put(VeloShelf* s, const void* val, size_t esz) {
                 (unsigned long long)esz, (unsigned long long)s->esz);
         exit(1);
     }
-    if (s->data == NULL || s->len == s->cap) {
-        size_t new_cap = s->cap ? s->cap : 4;
-        while (new_cap < s->len + 1) new_cap *= 2;
-        void* next = velo_mem_alloc(esz, new_cap);
-        if (s->len > 0) memcpy(next, s->data, s->len * esz);
-        s->data = next;
-        s->cap = new_cap;
-    }
+    velo_shelf_reserve(s);
     memcpy((char*)s->data + s->len * esz, val, esz);
     s->len += 1;
+}
+
+// Insert `val` at `idx`, shifting the tail right; idx == len appends (the
+// nest way to grow), idx > len is a loud fatal matching the bounds tier.
+static inline void velo_shelf_insert(VeloShelf* s, size_t idx, const void* val, size_t esz) {
+    if (esz == 0) {
+        fprintf(stderr, "Velo Fatal Error: shelf put of a zero-size element!\n");
+        exit(1);
+    }
+    if (s->esz == 0) s->esz = esz;
+    else if (s->esz != esz) {
+        fprintf(stderr, "Velo Fatal Error: shelf element size mismatch: %llu vs %llu!\n",
+                (unsigned long long)esz, (unsigned long long)s->esz);
+        exit(1);
+    }
+    if (idx > s->len) {
+        fprintf(stderr, "Velo Fatal Error: shelf insert index out of bounds: %llu (len %llu)!\n",
+                (unsigned long long)idx, (unsigned long long)s->len);
+        exit(1);
+    }
+    velo_shelf_reserve(s);
+    char* base = (char*)s->data;
+    memmove(base + (idx + 1) * s->esz, base + idx * s->esz, (s->len - idx) * s->esz);
+    memcpy(base + idx * s->esz, val, esz);
+    s->len += 1;
+}
+
+// Remove the element at `idx` and return it BY VALUE: the victim is
+// stash-copied to fresh arena storage BEFORE the tail shift (a take-style
+// pointer into the hole would read the shifted neighbor instead). Returns a
+// pointer to the stash — deref it now, exactly like take().
+static inline void* velo_shelf_remove_at(VeloShelf* s, size_t idx) {
+    if ((s->len == 0) || (idx >= s->len)) {
+        fprintf(stderr, "Velo Fatal Error: shelf remove index out of bounds: %llu (len %llu)!\n",
+                (unsigned long long)idx, (unsigned long long)s->len);
+        exit(1);
+    }
+    char* cell = (char*)s->data + idx * s->esz;
+    void* stash = velo_mem_alloc(s->esz, 1);
+    memcpy(stash, cell, s->esz);
+    memmove(cell, cell + s->esz, (s->len - idx - 1) * s->esz);
+    s->len -= 1;
+    return stash;
 }
 
 // Bounds-checked write slot (memcpy esz bytes from val).
@@ -932,6 +982,80 @@ static inline void velo_shelf_set(VeloShelf* s, size_t idx, const void* val, siz
     if (idx >= s->len) velo_shelf_oob(idx, s->len);
     memcpy((char*)s->data + idx * s->esz, val, esz);
 }
+
+// ============================================================================
+// 5.2 (slice 3) — the vector-operations surface: sorted() / insert /
+// remove_at. The comparators are macro-generated per element TOKEN (the
+// wrapper names use the Velo element spelling so both compilers emit the
+// same call: velo_shelf_sorted_i32 / velo_shelf_sorted_f64 /
+// velo_shelf_sorted_string). sorted() copies to fresh arena storage — the
+// receiver is untouched, so it is legal on a let shelf. insert/remove_at
+// mutate (the compilers enforce the mut doctrine) and share take's loud
+// deterministic fatal tiering.
+// ============================================================================
+#define VELO_SHELF_CMP_SCALAR(suffix, cty) \
+    static int velo_shelf_cmp_##suffix(const void* a, const void* b) { \
+        cty x = *(const cty*)a; cty y = *(const cty*)b; \
+        return (x > y) - (x < y); \
+    }
+VELO_SHELF_CMP_SCALAR(i8, i8)
+VELO_SHELF_CMP_SCALAR(i16, i16)
+VELO_SHELF_CMP_SCALAR(i32, i32)
+VELO_SHELF_CMP_SCALAR(i64, i64)
+VELO_SHELF_CMP_SCALAR(u8, u8)
+VELO_SHELF_CMP_SCALAR(u16, u16)
+VELO_SHELF_CMP_SCALAR(u32, u32)
+VELO_SHELF_CMP_SCALAR(u64, u64)
+VELO_SHELF_CMP_SCALAR(usize, usize)
+VELO_SHELF_CMP_SCALAR(isize, isize)
+VELO_SHELF_CMP_SCALAR(f32, f32)
+VELO_SHELF_CMP_SCALAR(f64, f64)
+#undef VELO_SHELF_CMP_SCALAR
+
+// Strings sort ascending by strcmp; equal pointers short-circuit and NULLs
+// sort before everything. (f32/f64 rows sort with the plain compares — a NaN
+// reports 0 forever, so its placement is unspecified, documented policy.)
+static int velo_shelf_cmp_string(const void* a, const void* b) {
+    const char* x = *(const char* const*)a;
+    const char* y = *(const char* const*)b;
+    if (x == y) return 0;
+    if (x == NULL) return -1;
+    if (y == NULL) return 1;
+    return strcmp(x, y);
+}
+
+// Copy-and-sort engine: fresh backing storage (never the receiver's row).
+static inline VeloShelf velo_shelf_sorted_copy(const VeloShelf* s, int (*cmp)(const void*, const void*)) {
+    VeloShelf out = {0};
+    out.esz = s->esz;
+    out.len = s->len;
+    out.cap = s->len;
+    if (s->len > 0) {
+        out.data = velo_mem_alloc(s->esz, s->len);
+        memcpy(out.data, s->data, s->len * s->esz);
+        qsort(out.data, s->len, s->esz, cmp);
+    }
+    return out;
+}
+
+#define VELO_SHELF_SORT(suffix) \
+    static inline VeloShelf velo_shelf_sorted_##suffix(const VeloShelf* s) { \
+        return velo_shelf_sorted_copy(s, velo_shelf_cmp_##suffix); \
+    }
+VELO_SHELF_SORT(i8)
+VELO_SHELF_SORT(i16)
+VELO_SHELF_SORT(i32)
+VELO_SHELF_SORT(i64)
+VELO_SHELF_SORT(u8)
+VELO_SHELF_SORT(u16)
+VELO_SHELF_SORT(u32)
+VELO_SHELF_SORT(u64)
+VELO_SHELF_SORT(usize)
+VELO_SHELF_SORT(isize)
+VELO_SHELF_SORT(f32)
+VELO_SHELF_SORT(f64)
+VELO_SHELF_SORT(string)
+#undef VELO_SHELF_SORT
 
 // Pop the last element; returns a pointer INTO the payload (deref now).
 // An empty shelf take is a loud fatal (same tiering as the byte helpers).
@@ -972,7 +1096,7 @@ typedef enum {
 
 typedef struct VeloDyn {
     uint8_t tag;
-    union { int64_t i64; double f64; _Bool b; const char* s; void* p; VeloShelf child; } as;
+    union { int64_t i64; double f64; bool b; const char* s; void* p; VeloShelf child; } as;
 } VeloDyn;
 
 static inline const char* velo_dyn_tag_name(uint8_t tag) {

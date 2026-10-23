@@ -214,52 +214,6 @@ act emit_shelf_index(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     emit_shelf_get(sb, st, expr.target, expr.index, map_type_to_c(shelf_raw_elem(recv_t)))
 }
 
-// put / take member calls on a shelf receiver.
-act emit_shelf_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
-    let member = expr.callee.member_name
-    let recv_t = infer_expr_type(st, expr.callee.target)
-    let elem = shelf_raw_elem(recv_t)
-    if member == "put" {
-        let esl = shelf_fresh_name(st, "esl_")
-        sb_append_str(sb, "({ ")
-        sb_append_str(sb, map_type_to_c(elem))
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, esl)
-        sb_append_str(sb, " = (")
-        if elem == "dyn" {
-            // 5.2 slice 2: box the appended value into the tag
-            let raw = infer_expr_type(st, expr.first_arg)
-            if raw == "dyn" {
-                emit_c_expr(sb, st, expr.first_arg)
-            } else {
-                emit_dyn_box(sb, st, raw, expr.first_arg)
-            }
-        } else {
-            emit_c_expr(sb, st, expr.first_arg)
-        }
-        sb_append_str(sb, "); velo_shelf_put(")
-        emit_shelf_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", (const void*)(&(")
-        sb_append_str(sb, esl)
-        sb_append_str(sb, ")), (usize)sizeof(")
-        sb_append_str(sb, map_type_to_c(elem))
-        sb_append_str(sb, ")); })")
-        return
-    }
-    if member == "take" {
-        sb_append_str(sb, "(*((")
-        sb_append_str(sb, map_type_to_c(elem))
-        sb_append_str(sb, "*)velo_shelf_take(")
-        emit_shelf_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ")))")
-        return
-    }
-    // checker handles unknown members; emit the property for totality
-    emit_c_expr(sb, st, expr.callee.target)
-    sb_append_char(sb, '.')
-    sb_append_str(sb, member)
-}
-
 // Generator: unique temporary names for shelf statement expressions.
 act shelf_fresh_name(st: @SymbolTable, prefix: string) -> string {
     mut sb = create_sb(str.len(prefix) + 22)

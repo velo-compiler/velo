@@ -1,0 +1,178 @@
+// ============================================================================
+// 5.2 Dynamic Collections, slice 3 — the shelf member-CALL surface checks.
+//
+// Mutual mirror of velo/codegen_c.py's _shelf_expect: put(v)/take() (slice 1)
+// plus sorted()/insert(i, v)/remove_at(i) (slice 3). Both compiler stages
+// reject the same programs with the same words. Split from shelf_checks.vl
+// (elements, literals, ladder) to stay under the 400-line budget.
+// ============================================================================
+use "type_checker.vl"
+use "shelf_checks.vl"
+use "dyn_checks.vl"
+use "symbol_table.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "../ast/expr.vl"
+use "../ast/types.vl"
+use "../frontend/token.vl"
+
+// sorted() element families: any integer width, f32/f64 (per-width compares),
+// string (strcmp). bool / tagged dyn boxes / concrete user rows / pointer
+// rows are not comparable (pinned wording). A bare type parameter (generic
+// body) passes — mono re-validates against the concrete element.
+act is_sorted_elem_family(elem: string, st: @SymbolTable) -> bool {
+    if is_shelf_index_type(elem) { return true }
+    if is_dyn_float_family(elem) { return true }
+    if elem == "string" { return true }
+    if elem == "bool" or elem == "dyn" { return false }
+    if str.len(elem) > 0 and elem[0] == '@' { return false }
+    if find_struct(st, elem) != null { return false }
+    if find_kind(st, elem) != null { return false }
+    return true
+}
+
+// Member call on a shelf receiver: put(v) grows, take() pops;
+// sorted() copies ascending, insert(i, v) shifts right, remove_at(i)
+// pops at an index returning the victim. Mut roots required for insert/
+// remove_at (same doctrine as put); sorted is a pure read.
+act check_shelf_member_call(st: @SymbolTable, expr: @ExprNode) -> string {
+    let member = expr.callee.member_name
+    if member == "put" {
+        if expr.arg_count != 1 {
+            report_error("semantic", expr.line, expr.col, "shelf.put expects exactly 1 argument: (shelf s, element value)"); st.error_count += 1
+            return "unknown"
+        }
+        let recv_t = infer_expr_type(st, expr.callee.target)
+        let elem = shelf_elem_type(recv_t)
+        if elem == "dyn" {
+            // 5.2 slice 2: any boxable element goes in (the backend boxes it);
+            // the tag-based mismatch check is skipped, void values reject.
+            let got = infer_expr_type(st, expr.first_arg)
+            if got == "unknown" { return "unknown" }
+            if got == "void" {
+                report_error("semantic", expr.line, expr.col, "shelf[dyn] put: cannot box a void value"); st.error_count += 1
+                return "unknown"
+            }
+            let err = dyn_boxable_error(got)
+            if err != null {
+                report_error("semantic", expr.first_arg.line, expr.first_arg.col, err); st.error_count += 1
+                return "unknown"
+            }
+            check_shelf_mut_binding(st, expr.callee.target, "put", "into")
+            return "void"
+        }
+        let got = infer_expr_type(st, expr.first_arg)
+        if elem != null and got != elem and got != "void" and got != "@void" {
+            mut msg = create_sb(str.len(elem) + str.len(got) + 48)
+            sb_append_str(@msg, "shelf.put element mismatch: expected ")
+            sb_append_str(@msg, elem)
+            sb_append_str(@msg, " (got ")
+            sb_append_str(@msg, got)
+            sb_append_str(@msg, ")")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+            return "unknown"
+        }
+        check_shelf_mut_binding(st, expr.callee.target, "put", "into")
+        return "void"
+    }
+    if member == "take" {
+        if expr.arg_count != 0 {
+            report_error("semantic", expr.line, expr.col, "shelf.take takes no arguments"); st.error_count += 1
+            return "unknown"
+        }
+        check_shelf_mut_binding(st, expr.callee.target, "take", "from")
+        let recv_t = infer_expr_type(st, expr.callee.target)
+        return shelf_elem_type(recv_t)
+    }
+    if member == "sorted" {
+        if expr.arg_count != 0 {
+            report_error("semantic", expr.line, expr.col, "shelf.sorted takes no arguments"); st.error_count += 1
+            return "unknown"
+        }
+        let recv_t = infer_expr_type(st, expr.callee.target)
+        let elem = shelf_elem_type(recv_t)
+        if elem != null and not is_sorted_elem_family(elem, st) {
+            mut msg = create_sb(str.len(elem) + 64)
+            sb_append_str(@msg, "shelf.sorted() supports numeric or string elements (got ")
+            sb_append_str(@msg, elem)
+            sb_append_str(@msg, ")")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+            return "unknown"
+        }
+        if elem == null { return "unknown" }
+        mut out = create_sb(str.len(elem) + 9)
+        sb_append_str(@out, "shelf[")
+        sb_append_str(@out, elem)
+        sb_append_str(@out, "]")
+        return sb_to_string(@out)
+    }
+    if member == "insert" {
+        if expr.arg_count != 2 {
+            report_error("semantic", expr.line, expr.col, "shelf.insert expects exactly 2 arguments: (shelf s, index, element value)"); st.error_count += 1
+            return "unknown"
+        }
+        let it = infer_expr_type(st, expr.first_arg)
+        if not is_shelf_index_type(it) {
+            mut msg = create_sb(str.len(it) + 48)
+            sb_append_str(@msg, "shelf index must be an integer (got ")
+            sb_append_str(@msg, it)
+            sb_append_str(@msg, ")")
+            report_error("semantic", expr.first_arg.line, expr.first_arg.col, sb_to_string(@msg)); st.error_count += 1
+            return "unknown"
+        }
+        let recv_t = infer_expr_type(st, expr.callee.target)
+        let elem = shelf_elem_type(recv_t)
+        let elem_arg = expr.first_arg.next
+        let got = infer_expr_type(st, elem_arg)
+        if got == "unknown" { return "unknown" }
+        if elem == "dyn" {
+            // slice 3: same boxability contract as put (void rejects)
+            if got == "void" {
+                report_error("semantic", expr.line, expr.col, "shelf[dyn] insert: cannot box a void value"); st.error_count += 1
+                return "unknown"
+            }
+            let err = dyn_boxable_error(got)
+            if err != null {
+                report_error("semantic", elem_arg.line, elem_arg.col, err); st.error_count += 1
+                return "unknown"
+            }
+        } else if elem != null and got != elem and got != "void" and got != "@void" {
+            mut msg = create_sb(str.len(elem) + str.len(got) + 48)
+            sb_append_str(@msg, "shelf.insert element mismatch: expected ")
+            sb_append_str(@msg, elem)
+            sb_append_str(@msg, " (got ")
+            sb_append_str(@msg, got)
+            sb_append_str(@msg, ")")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+            return "unknown"
+        }
+        check_shelf_mut_binding(st, expr.callee.target, "insert", "into")
+        return "void"
+    }
+    if member == "remove_at" {
+        if expr.arg_count != 1 {
+            report_error("semantic", expr.line, expr.col, "shelf.remove_at expects exactly 1 argument: (shelf s, index)"); st.error_count += 1
+            return "unknown"
+        }
+        let it = infer_expr_type(st, expr.first_arg)
+        if not is_shelf_index_type(it) {
+            mut msg = create_sb(str.len(it) + 48)
+            sb_append_str(@msg, "shelf index must be an integer (got ")
+            sb_append_str(@msg, it)
+            sb_append_str(@msg, ")")
+            report_error("semantic", expr.first_arg.line, expr.first_arg.col, sb_to_string(@msg)); st.error_count += 1
+            return "unknown"
+        }
+        check_shelf_mut_binding(st, expr.callee.target, "remove", "from")
+        let recv_t = infer_expr_type(st, expr.callee.target)
+        return shelf_elem_type(recv_t)
+    }
+    // `.len` must be a property read, not a call; anything else is unknown
+    mut msg = create_sb(str.len(member) + 64)
+    sb_append_str(@msg, "unknown shelf member '")
+    sb_append_str(@msg, member)
+    sb_append_str(@msg, "' (put, take, len, sorted, insert, remove_at are available)")
+    report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+    return "unknown"
+}
