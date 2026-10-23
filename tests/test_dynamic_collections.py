@@ -545,12 +545,11 @@ REJECTIONS = [
     ("use sys.io\nact main() -> i32 {\n    let bad: shelf[dyn] = shelf[1, 2]\n    return 0\n}",
      "shelf literal element type shelf[i32] does not match annotation shelf[dyn]",
      "rej_dyn_ann_homo"),
-    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let n = bad[0] + 1\n    return 0\n}",
-     "shelf[dyn] unbox: raw dyn values must be cast (as) to a concrete type first",
-     "rej_dyn_gate_add"),
-    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let same = bad[0] == bad[1]\n    return 0\n}",
-     "shelf[dyn] unbox: raw dyn values must be cast (as) to a concrete type first",
-     "rej_dyn_gate_cmp"),
+    # 5.2 slice 8 REPLACED the slice-2 blanket gate rows `rej_dyn_gate_add`
+    # (`bad[0] + 1`) and `rej_dyn_gate_cmp` (`bad[0] == bad[1]`) — raw-dyn
+    # arithmetic and same-family compares now auto-unbox (see
+    # TestDynOperators); the gates that REMAIN are pinned below and in the
+    # print/interp/member rows above.
     ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    io.println(bad[0])\n    return 0\n}",
      "shelf[dyn] unbox: raw dyn values must be cast (as) to a concrete type first",
      "rej_dyn_gate_print"),
@@ -683,6 +682,40 @@ REJECTIONS = [
     ("use sys.io\nact main() -> i32 {\n    let rows = shelf[shelf[1, 2]]\n    let s = rows.join(\",\")\n    return 0\n}",
      "shelf.join is not supported on shelf[i32] elements",
      "rej_join_childrow"),
+    # 5.2 slice 8 — raw-dyn operators: the pinned reject walls.
+    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let z = bad[0] + \"a\"\n    return 0\n}",
+     "shelf[dyn] op: cannot apply '+' between dyn and string — unbox with as first",
+     "rej_s8_dyn_plus_str"),
+    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, true]\n    let z = bad[0] % true\n    return 0\n}",
+     "shelf[dyn] op: cannot apply '%' between dyn and bool — unbox with as first",
+     "rej_s8_dyn_mod_bool"),
+    ("use sys.io\nact main() -> i32 {\n    let a = \"x\"\n    let b = a + \"y\"\n    io.println(b)\n    return 0\n}",
+     "cannot apply '+' to string operands (concatenation is str.concat)",
+     "rej_s8_str_concat"),
+    ("use sys.io\nact main() -> i32 {\n    let a = \"x\"\n    let b = a - \"y\"\n    io.println(b)\n    return 0\n}",
+     "cannot apply '-' to string operands (concatenation is str.concat)",
+     "rej_s8_str_sub"),
+    ("use sys.io\nact main() -> i32 {\n    let xs = shelf[1]\n    let b = xs[0] < \"a\"\n    io.println(b)\n    return 0\n}",
+     "mismatched compare operand families: i32 and string (no implicit conversion)",
+     "rej_s8_mixed_cmp"),
+    ("use sys.io\nact main() -> i32 {\n    let b = 1 < \"a\"\n    io.println(b)\n    return 0\n}",
+     "mismatched compare operand families: i32 and string (no implicit conversion)",
+     "rej_s8_mixed_cmp_lit"),
+    ("use sys.io\nact main() -> i32 {\n    let b = true == \"a\"\n    io.println(b)\n    return 0\n}",
+     "mismatched compare operand families: bool and string (no implicit conversion)",
+     "rej_s8_bool_str_cmp"),
+    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let z = bad[0] and true\n    return 0\n}",
+     "shelf[dyn] unbox: raw dyn values must be cast (as) to a concrete type first",
+     "rej_s8_dyn_and"),
+    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    let z = -bad[0]\n    return 0\n}",
+     "shelf[dyn] unbox: raw dyn values must be cast (as) to a concrete type first",
+     "rej_s8_dyn_unary"),
+    ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, \"s\"]\n    if bad[0] == null {\n        io.println(\"n\")\n    }\n    return 0\n}",
+     "shelf elements cannot be null (use a @T pointer element)",
+     "rej_s8_dyn_null_cmp"),
+    ("use sys.io\nact main() -> i32 {\n    let bad: shelf[dyn] = shelf[18446744073709551615]\n    return 0\n}",
+     "shelf literal element type shelf[i32] does not match annotation shelf[dyn]",
+     "rej_s8_u64_lone"),
 ]
 
 RUNTIME_FATALS = [
@@ -724,6 +757,28 @@ RUNTIME_FATALS = [
      "    let boom = xs.remove_at(0)\n    io.println(\"never\")\n    return 0\n}",
      "Velo Fatal Error: shelf remove index out of bounds: 0 (len 0)!",
      "remove_empty"),
+    # 5.2 slice 8 — raw-dyn operator runtime fatals (words live in the
+    # shared runtime header — the stages cannot diverge).
+    ("use sys.io\nact main() -> i32 {\n"
+     "    let bad = shelf[15, \"sx\"]\n"
+     "    if bad[0] < \"zz\" {\n        io.println(\"never\")\n    }\n"
+     "    return 0\n}",
+     "Velo Fatal Error: shelf[dyn] unbox: expected string, found int!",
+     "s8_cmp_family"),
+    ("use sys.io\nact main() -> i32 {\n"
+     "    let bad = shelf[15, \"sx\"]\n"
+     "    let boom = bad[0] + bad[1]\n"
+     "    io.println(\"never\")\n"
+     "    return 0\n}",
+     "Velo Fatal Error: shelf[dyn] arith: cannot apply '+' to int and string!",
+     "s8_arith_family"),
+    ("use sys.io\nact main() -> i32 {\n"
+     "    let bad = shelf[18446744073709551615, \"sx\"]\n"
+     "    let boom = bad[0] as f64\n"
+     "    io.println(\"never\")\n"
+     "    return 0\n}",
+     "Velo Fatal Error: shelf[dyn] unbox: expected float, found int!",
+     "s8_u64_f64"),
 ]
 
 
@@ -1143,6 +1198,98 @@ class TestMapRejections(unittest.TestCase):
                 self.assertNotEqual(res.returncode, 0, f"{stage} survived {name}!")
                 text = res.stdout + res.stderr
                 self.assertIn(want, text, f"{stage} fatal wording mismatch:\n{text[-2000:]}")
+
+
+# ======================================================================
+# 5.2 slice 8 — raw-dyn operators + the U64 tag: auto-unbox arithmetic
+# (result RE-BOXED as dyn), same-family compares (plain bool), warning-
+# free u64 boxing, and the U64 roundtrip. Both stages lower identical C
+# (temps + box + the runtime ladder helpers), so outputs must be
+# byte-identical by construction — this class pins it anyway.
+# ======================================================================
+
+class TestDynOperators(unittest.TestCase):
+    """gaps.md 5.2 slice 8 — the auto-unbox operator surface parity."""
+
+    def test_dyn_arith_and_compare_accepts(self):
+        # dyn+concrete (both sides), dyn+dyn, the float ladder, compares
+        # per family (int/int, float/float, string strcmp, bool/bool).
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    mut bag: shelf[dyn] = shelf[10, 3, \"z\"]\n"
+            "    let a = bag[0] + 2\n"
+            "    let b = 2 + bag[0]\n"
+            "    let c = bag[0] + bag[1]\n"
+            "    let av = a as i32\n"
+            "    let bv = b as i32\n"
+            "    let cv = c as i32\n"
+            "    io.println(\"a {av} b {bv} c {cv}\")\n"
+            "    let f = bag[0] + 0.5\n"
+            "    let fv = f as f64\n"
+            "    io.println(\"f {fv}\")\n"
+            "    mut fb: shelf[dyn] = shelf[2, 0.5, \"z\"]\n"
+            "    let g = fb[0] + fb[1]\n"
+            "    let gv = g as f64\n"
+            "    io.println(\"g {gv}\")\n"
+            "    let c1 = bag[0] < 100\n"
+            "    let c2 = bag[0] == bag[1]\n"
+            "    let c3 = fb[1] > 0.25\n"
+            "    io.println(\"c1 {c1} c2 {c2} c3 {c3}\")\n"
+            "    mut sb: shelf[dyn] = shelf[1, \"abc\", \"z\"]\n"
+            "    let s1 = sb[1] == \"abc\"\n"
+            "    let s2 = sb[1] < \"abd\"\n"
+            "    io.println(\"s1 {s1} s2 {s2}\")\n"
+            "    mut bb: shelf[dyn] = shelf[1, true, \"z\"]\n"
+            "    let b1 = bb[1] == true\n"
+            "    io.println(\"b1 {b1}\")\n"
+            "    return 0\n"
+            "}"
+        )
+        s1 = run_stage("stage1", program, "shelf52_s8_arith")
+        s2 = run_stage("stage2", program, "shelf52_s8_arith")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-2000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-2000:])
+        self.assertEqual(s1.stdout, s2.stdout, "S8 arith/compare outputs diverged")
+        self.assertEqual(
+            s1.stdout.strip().splitlines(),
+            ["a 12 b 12 c 13", "f 10.50", "g 2.50",
+             "c1 true c2 false c3 true", "s1 true s2 true", "b1 true"],
+        )
+
+    def test_u64_box_roundtrip(self):
+        # The slice-2 residual closed: a big literal in a mixed bag boxes the
+        # U64 tag (warning-free) and `as u64` reads it exactly; u64-typed
+        # sources box U64 too; `as i64` off the U64 box is the signed view.
+        program = (
+            "use sys.io\n"
+            "act main() -> i32 {\n"
+            "    mut bag: shelf[dyn] = shelf[18446744073709551615, \"z\"]\n"
+            "    let u = bag[0] as u64\n"
+            "    if u == 18446744073709551615 {\n"
+            "        io.println(\"exact\")\n"
+            "    }\n"
+            "    let w = bag[0] as i64\n"
+            "    if w == -1 {\n"
+            "        io.println(\"signed view\")\n"
+            "    }\n"
+            "    let small: u64 = 7\n"
+            "    mut sb: shelf[dyn] = shelf[small, \"z\"]\n"
+            "    let v = sb[0] as u64\n"
+            "    let vi = v as i64\n"
+            "    io.println(\"v {vi}\")\n"
+            "    return 0\n"
+            "}"
+        )
+        s1 = run_stage("stage1", program, "shelf52_s8_u64")
+        s2 = run_stage("stage2", program, "shelf52_s8_u64")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-2000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-2000:])
+        self.assertEqual(s1.stdout, s2.stdout, "S8 u64 roundtrip outputs diverged")
+        self.assertEqual(
+            s1.stdout.strip().splitlines(),
+            ["exact", "signed view", "v 7"],
+        )
 
 
 if __name__ == "__main__":

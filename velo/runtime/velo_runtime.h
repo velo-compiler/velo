@@ -1410,6 +1410,11 @@ static inline void velo_map_fatal_missing(const VeloMap* m, const void* key, con
 // PTR (any @T, unbox shape unchecked — C-pointer trust semantics), CHILD
 // (a nested shelf header copied BY VALUE — snapshot doctrine applies).
 //
+// 5.2 (slice 8) — the U64 tag closes the wrap residual: u64-typed sources
+// (and integer literals above the i64 range at the dyn box sites) box as
+// VELO_DYN_U64 with the full uint64 payload. The tag NAME stays "int" —
+// families, not tag names, are what the fatals print.
+//
 // Plain struct values are NOT boxable: the compilers reject them at compile
 // time (the runtime cannot learn their size later); use a @T pointer element.
 // Unbox tag mismatches are loud deterministic fatals, and the wording lives
@@ -1422,17 +1427,19 @@ typedef enum {
     VELO_DYN_BOOL = 3,
     VELO_DYN_STR = 4,
     VELO_DYN_PTR = 5,
-    VELO_DYN_CHILD = 6
+    VELO_DYN_CHILD = 6,
+    VELO_DYN_U64 = 7
 } VeloDynTag;
 
 typedef struct VeloDyn {
     uint8_t tag;
-    union { int64_t i64; double f64; bool b; const char* s; void* p; VeloShelf child; } as;
+    union { int64_t i64; uint64_t u64; double f64; bool b; const char* s; void* p; VeloShelf child; } as;
 } VeloDyn;
 
 static inline const char* velo_dyn_tag_name(uint8_t tag) {
     switch (tag) {
         case VELO_DYN_I64:   return "int";
+        case VELO_DYN_U64:   return "int";   // slice 8: same family name
         case VELO_DYN_F64:   return "float";
         case VELO_DYN_BOOL:  return "bool";
         case VELO_DYN_STR:   return "string";
@@ -1451,6 +1458,109 @@ static inline void velo_dyn_expect(VeloDyn v, uint8_t tag, const char* family) {
                 family, velo_dyn_tag_name(v.tag));
         exit(1);
     }
+}
+
+// ============================================================================
+// 5.2 (slice 8) — raw-dyn operators. Both compiler stages lower a binop with
+// a raw dyn operand to the same C: both operands bound once into VeloDyn
+// temps (left first — evaluation order pinned), the concrete side boxed by
+// its Velo type, then one of the helpers below. The numeric ladder and the
+// family rules live ONLY here, so the stages cannot diverge on them.
+// ============================================================================
+
+// The int-family unbox ring: I64 and U64 boxes both serve integer reads
+// (the union's i64/u64 members bit-alias). Same fatal wording shape as
+// velo_dyn_expect — `expected int, found <family>!`.
+static inline void velo_dyn_expect_int(VeloDyn v) {
+    if (v.tag != VELO_DYN_I64 && v.tag != VELO_DYN_U64) {
+        fprintf(stderr, "Velo Fatal Error: shelf[dyn] unbox: expected int, found %s!\n",
+                velo_dyn_tag_name(v.tag));
+        exit(1);
+    }
+}
+
+// Compare-lattice rank: 1 = int ring (I64/U64), 2 = float, 3 = string,
+// 4 = bool, 0 = pointer/shelf/none (boxed but not comparable).
+static inline int velo_dyn_family_rank(uint8_t tag) {
+    switch (tag) {
+        case VELO_DYN_I64: case VELO_DYN_U64: return 1;
+        case VELO_DYN_F64:  return 2;
+        case VELO_DYN_STR:  return 3;
+        case VELO_DYN_BOOL: return 4;
+        default:            return 0;
+    }
+}
+
+// fmod equivalent without <math.h> (no link-surface dependency): C99
+// truncation toward zero gives fmod semantics exactly while the quotient
+// fits int64 — the realistic range for display/game math.
+static inline double velo_dyn_fmod(double a, double b) {
+    double t = (double)(int64_t)(a / b);
+    return a - t * b;
+}
+
+// Raw-dyn arithmetic. Numeric pairs only: int ring → i64 math (the i64
+// VIEW of a U64 box — wrap residual, exact u64 math stays concrete); any
+// float in the pair → f64 math (an int side promotes). Result re-boxed at
+// the ladder's tag. Any other pair is a loud deterministic fatal.
+static inline VeloDyn velo_dyn_arith(char op, VeloDyn l, VeloDyn r) {
+    int lf = velo_dyn_family_rank(l.tag), rf = velo_dyn_family_rank(r.tag);
+    if ((lf != 1 && lf != 2) || (rf != 1 && rf != 2)) {
+        fprintf(stderr, "Velo Fatal Error: shelf[dyn] arith: cannot apply '%c' to %s and %s!\n",
+                op, velo_dyn_tag_name(l.tag), velo_dyn_tag_name(r.tag));
+        exit(1);
+    }
+    if (lf == 2 || rf == 2) {
+        double a = (lf == 2) ? l.as.f64 : (double)l.as.i64;
+        double b = (rf == 2) ? r.as.f64 : (double)r.as.i64;
+        double v = 0;
+        if (op == '+') { v = a + b; }
+        else if (op == '-') { v = a - b; }
+        else if (op == '*') { v = a * b; }
+        else if (op == '/') { v = a / b; }
+        else { v = velo_dyn_fmod(a, b); }
+        return (VeloDyn){ .tag = VELO_DYN_F64, .as = { .f64 = v } };
+    }
+    int64_t a = l.as.i64, b = r.as.i64, v = 0;
+    if (op == '+') { v = a + b; }
+    else if (op == '-') { v = a - b; }
+    else if (op == '*') { v = a * b; }
+    else if (op == '/') { v = a / b; }
+    else { v = a % b; }
+    return (VeloDyn){ .tag = VELO_DYN_I64, .as = { .i64 = v } };
+}
+
+// Raw-dyn compare: tri-state (<0 / 0 / >0) — the caller maps the operator
+// against 0. Same family required: mixed pairs fatal with the unbox wording
+// (expected <right-family>, found <left-family>); same-tag pointer/shelf
+// pairs are boxed but outside the compare lattice and get their own words.
+static inline int64_t velo_dyn_compare(VeloDyn l, VeloDyn r) {
+    int lf = velo_dyn_family_rank(l.tag), rf = velo_dyn_family_rank(r.tag);
+    if (lf == 0 || rf == 0 || lf != rf) {
+        if (lf == 0 && rf == 0 && l.tag == r.tag) {
+            fprintf(stderr, "Velo Fatal Error: shelf[dyn] compare: %s boxes are not comparable!\n",
+                    velo_dyn_tag_name(l.tag));
+        } else {
+            fprintf(stderr, "Velo Fatal Error: shelf[dyn] unbox: expected %s, found %s!\n",
+                    velo_dyn_tag_name(r.tag), velo_dyn_tag_name(l.tag));
+        }
+        exit(1);
+    }
+    if (lf == 1) {
+        if (l.tag == VELO_DYN_U64 && r.tag == VELO_DYN_U64) {
+            return (l.as.u64 < r.as.u64) ? -1 : ((l.as.u64 > r.as.u64) ? 1 : 0);
+        }
+        int64_t a = l.as.i64, b = r.as.i64;
+        return (a < b) ? -1 : ((a > b) ? 1 : 0);
+    }
+    if (lf == 2) {
+        double a = l.as.f64, b = r.as.f64;
+        return (a < b) ? -1 : ((a > b) ? 1 : 0);
+    }
+    if (lf == 3) {
+        return (int64_t)strcmp(l.as.s, r.as.s);
+    }
+    return (int64_t)(l.as.b ? 1 : 0) - (int64_t)(r.as.b ? 1 : 0);
 }
 
 

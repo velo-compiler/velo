@@ -49,10 +49,19 @@ act shelf_raw_elem(type_name: string) -> string {
 
 // 5.2 slice 2 — boxes an element value into the VeloDyn tag by its source
 // Velo type (Stage 1: _emit_dyn_box — identical C shape and tag labels).
+// Slice 8: u64-typed sources (and integer literals above the i64 range,
+// detected through the literal TEXT — the parser's i32 int_val wraps) box
+// the VELO_DYN_U64 tag with the full uint64 payload.
 act emit_dyn_box(sb: @StringBuilder, st: @SymbolTable, raw: string, arg: @ExprNode) {
     sb_append_str(sb, "(VeloDyn){ .tag = ")
-    if is_dyn_int_family(raw) {
-        sb_append_str(sb, "VELO_DYN_I64, .as = { .i64 = (int64_t)(")
+    if raw == "u64" {
+        sb_append_str(sb, "VELO_DYN_U64, .as = { .u64 = (uint64_t)(")
+    } else if is_dyn_int_family(raw) {
+        if arg != null and arg.kind == EXPR_INT and int_literal_exceeds_i64(arg.str_val) {
+            sb_append_str(sb, "VELO_DYN_U64, .as = { .u64 = (uint64_t)(")
+        } else {
+            sb_append_str(sb, "VELO_DYN_I64, .as = { .i64 = (int64_t)(")
+        }
     } else if is_dyn_float_family(raw) {
         sb_append_str(sb, "VELO_DYN_F64, .as = { .f64 = (double)(")
     } else {
@@ -92,6 +101,7 @@ act emit_dyn_unbox(sb: @StringBuilder, st: @SymbolTable, operand: @ExprNode, tar
     mut fam_word = "\"int\""
     mut cast_c = map_type_to_c(target)
     mut member_c = "i64"
+    mut int_ring = false
     if str.len(target) > 0 and target[0] == '@' {
         fam_c = "VELO_DYN_PTR"
         fam_word = "\"pointer\""
@@ -100,6 +110,9 @@ act emit_dyn_unbox(sb: @StringBuilder, st: @SymbolTable, operand: @ExprNode, tar
         fam_c = "VELO_DYN_F64"
         fam_word = "\"float\""
         member_c = "f64"
+    } else if is_dyn_int_family(target) {
+        // 5.2 slice 8: int targets unbox through the I64/U64 ring gate
+        int_ring = true
     } else if target == "bool" {
         fam_c = "VELO_DYN_BOOL"
         fam_word = "\"bool\""
@@ -121,13 +134,21 @@ act emit_dyn_unbox(sb: @StringBuilder, st: @SymbolTable, operand: @ExprNode, tar
     sb_append_str(sb, dyn_tmp)
     sb_append_str(sb, " = (")
     emit_c_expr(sb, st, operand)
-    sb_append_str(sb, "); velo_dyn_expect(")
-    sb_append_str(sb, dyn_tmp)
-    sb_append_str(sb, ", ")
-    sb_append_str(sb, fam_c)
-    sb_append_str(sb, ", ")
-    sb_append_str(sb, fam_word)
-    sb_append_str(sb, "); (")
+    sb_append_str(sb, "); ")
+    if int_ring {
+        sb_append_str(sb, "velo_dyn_expect_int(")
+        sb_append_str(sb, dyn_tmp)
+        sb_append_str(sb, ")")
+    } else {
+        sb_append_str(sb, "velo_dyn_expect(")
+        sb_append_str(sb, dyn_tmp)
+        sb_append_str(sb, ", ")
+        sb_append_str(sb, fam_c)
+        sb_append_str(sb, ", ")
+        sb_append_str(sb, fam_word)
+        sb_append_str(sb, ")")
+    }
+    sb_append_str(sb, "; (")
     sb_append_str(sb, cast_c)
     sb_append_str(sb, ")(")
     sb_append_str(sb, dyn_tmp)
@@ -136,6 +157,9 @@ act emit_dyn_unbox(sb: @StringBuilder, st: @SymbolTable, operand: @ExprNode, tar
     sb_append_str(sb, "); })")
 }
 
+// 5.2 slice 8 — the raw-dyn binop emit (emit_dyn_binop) and its op mappers
+// live in shelf_calls_gen.vl beside the member-call emitters (the 400-line
+// budget split); the box/unbox helpers stay here.
 
 // Emits the shelf constructor literal as a GCC statement expression that
 // binds each element once into a typed temp (left-to-right) and puts it.

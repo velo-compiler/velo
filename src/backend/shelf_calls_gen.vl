@@ -20,6 +20,71 @@ use "codegen_types.vl"
 use "codegen_expr.vl"
 use "shelf_gen.vl"
 
+// The C operator fragment for a raw-dyn compare (tri-state mapped against 0)
+// and the arith op character for velo_dyn_arith (Stage 1: the f-string
+// literals in _emit_dyn_binop — same characters).
+act dyn_compare_c_op(op: i32) -> string {
+    if op == TOK_EQ { return "== 0" }
+    if op == TOK_NEQ { return "!= 0" }
+    if op == TOK_LT { return "< 0" }
+    if op == TOK_LTE { return "<= 0" }
+    if op == TOK_GT { return "> 0" }
+    return ">= 0"
+}
+
+act dyn_arith_c_char(op: i32) -> string {
+    if op == TOK_PLUS { return "+" }
+    if op == TOK_MINUS { return "-" }
+    if op == TOK_STAR { return "*" }
+    if op == TOK_SLASH { return "/" }
+    return "%"
+}
+
+// 5.2 slice 8 — lowers a raw-dyn binop: both operands bound once into
+// VeloDyn temps (left first — evaluation order pinned), the concrete side
+// boxed by its Velo type through emit_dyn_box, then the runtime ladder
+// helper. The ladder and family rules live ONLY in velo_runtime.h, so the
+// stages cannot diverge on them (Stage 1: _emit_dyn_binop — identical C).
+act emit_dyn_binop(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode, ltype: string, rtype: string) {
+    let tl = shelf_fresh_name(st, "dynl_")
+    let tr = shelf_fresh_name(st, "dynr_")
+    sb_append_str(sb, "({ VeloDyn ")
+    sb_append_str(sb, tl)
+    sb_append_str(sb, " = (")
+    if ltype == "dyn" {
+        emit_c_expr(sb, st, expr.left)
+    } else {
+        emit_dyn_box(sb, st, ltype, expr.left)
+    }
+    sb_append_str(sb, "); VeloDyn ")
+    sb_append_str(sb, tr)
+    sb_append_str(sb, " = (")
+    if rtype == "dyn" {
+        emit_c_expr(sb, st, expr.right)
+    } else {
+        emit_dyn_box(sb, st, rtype, expr.right)
+    }
+    sb_append_str(sb, "); ")
+    if expr.op == TOK_PLUS or expr.op == TOK_MINUS or expr.op == TOK_STAR or expr.op == TOK_SLASH or expr.op == TOK_PERCENT {
+        sb_append_str(sb, "velo_dyn_arith('")
+        sb_append_str(sb, dyn_arith_c_char(expr.op))
+        sb_append_str(sb, "', ")
+        sb_append_str(sb, tl)
+        sb_append_str(sb, ", ")
+        sb_append_str(sb, tr)
+        sb_append_str(sb, ")")
+    } else {
+        sb_append_str(sb, "(velo_dyn_compare(")
+        sb_append_str(sb, tl)
+        sb_append_str(sb, ", ")
+        sb_append_str(sb, tr)
+        sb_append_str(sb, ") ")
+        sb_append_str(sb, dyn_compare_c_op(expr.op))
+        sb_append_str(sb, ")")
+    }
+    sb_append_str(sb, "; })")
+}
+
 act emit_shelf_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     let member = expr.callee.member_name
     let recv_t = infer_expr_type(st, expr.callee.target)

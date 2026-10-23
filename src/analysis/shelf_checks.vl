@@ -26,11 +26,9 @@ act is_shelf_index_type(name: string) -> bool {
 }
 
 // 5.2 slice 2 (shelf[dyn]) contract helpers live in dyn_checks.vl (ladder
-// families, boxability, unbox-target validation); the pinned gate words are
-// here since every consumer of the shelf checker imports this file.
-act dyn_gate_error() -> string {
-    return "shelf[dyn] unbox: raw dyn values must be cast (as) to a concrete type first"
-}
+// families, boxability, unbox-target validation); slice 8 moved the pinned
+// gate words there too (dyn_gate_error) — every consumer imports dyn_checks
+// directly, and shelf_checks cannot be used from dyn_checks without a cycle.
 
 // True when the type string is a shelf (optionally an @-pointer to one).
 act is_shelf_type(type_name: string) -> bool {

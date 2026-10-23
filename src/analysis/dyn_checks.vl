@@ -10,9 +10,11 @@
 // ============================================================================
 use sys.io
 use "symbol_table.vl"
+use "op_resolver.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
+use "../frontend/token.vl"
 
 // 5.2 slice 2 (shelf[dyn]) ladder families — keep in exact sync with Stage 1's
 // DYN_INT_TYPES (= SHELF_INT_TYPES) / DYN_FLOAT_TYPES in velo/monomorphize.py.
@@ -91,4 +93,191 @@ act check_dyn_unbox_target(st: @SymbolTable, target: string, line: i32, col: i32
     sb_append_str(@sb, " — targets: int family, f32/f64, bool, string, @T, shelf[T]")
     report_error("semantic", line, col, sb_to_string(@sb))
     st.error_count += 1
+}
+
+// 5.2 slice 2/8: raw dyn values expose no operators outside the slice-8
+// arithmetic/compare surface — unbox with `as` first. Moved here from
+// shelf_checks.vl (the wording belongs to the dyn engine; shelf_checks
+// cannot be used from this file without a use cycle).
+act dyn_gate_error() -> string {
+    return "shelf[dyn] unbox: raw dyn values must be cast (as) to a concrete type first"
+}
+
+// 5.2 slice 8: the concrete compare lattice — 1 numeric, 2 string, 3 bool,
+// 0 everything else (pointer identity compares stay untouched by the wall).
+act dyn_compare_family(t: string) -> i32 {
+    if t == null { return 0 }
+    if is_dyn_int_family(t) or is_dyn_float_family(t) { return 1 }
+    if t == "string" { return 2 }
+    if t == "bool" { return 3 }
+    return 0
+}
+
+// The arithmetic op symbol for the pinned wordings (Stage 1: the f-string
+// '{op}' interpolation — same characters).
+act dyn_arith_op_symbol(op: i32) -> string {
+    if op == TOK_PLUS { return "+" }
+    if op == TOK_MINUS { return "-" }
+    if op == TOK_STAR { return "*" }
+    if op == TOK_SLASH { return "/" }
+    return "%"
+}
+
+// 5.2 slice 8: the concrete witness of a raw-dyn arithmetic must be numeric
+// (Stage 1: the _emit_dyn_binop dyn-op wall — identical wording).
+act dyn_arith_witness_error(op: i32, other: string) -> string {
+    let sym = dyn_arith_op_symbol(op)
+    mut sb = create_sb(str.len(sym) + str.len(other) + 80)
+    sb_append_str(@sb, "shelf[dyn] op: cannot apply '")
+    sb_append_str(@sb, sym)
+    sb_append_str(@sb, "' between dyn and ")
+    sb_append_str(@sb, other)
+    sb_append_str(@sb, " — unbox with as first")
+    return sb_to_string(@sb)
+}
+
+// 5.2 slice 8: arithmetic on two concrete strings rejects (concatenation is
+// str.concat — one pinned wording per reject class).
+act dyn_concat_error(op: i32) -> string {
+    let sym = dyn_arith_op_symbol(op)
+    mut sb = create_sb(str.len(sym) + 72)
+    sb_append_str(@sb, "cannot apply '")
+    sb_append_str(@sb, sym)
+    sb_append_str(@sb, "' to string operands (concatenation is str.concat)")
+    return sb_to_string(@sb)
+}
+
+// 5.2 slice 8: concrete mixed-family compares reject (formalizing the old
+// GCC warning tier — one pinned wording).
+act dyn_mixed_compare_error(ltype: string, rtype: string) -> string {
+    mut sb = create_sb(str.len(ltype) + str.len(rtype) + 72)
+    sb_append_str(@sb, "mismatched compare operand families: ")
+    sb_append_str(@sb, ltype)
+    sb_append_str(@sb, " and ")
+    sb_append_str(@sb, rtype)
+    sb_append_str(@sb, " (no implicit conversion)")
+    return sb_to_string(@sb)
+}
+
+// 5.2 slice 8 — the binary-operator dyn surface (mutual mirror of Stage 1's
+// _emit_dyn_binop gates + _compare_family wall): raw dyn arithmetic/compares
+// auto-unbox (the ladder lives in velo_runtime.h; the C shapes are identical
+// on both stages); concrete mixed-family compares and string concat reject.
+// Returns null when the legacy flow should proceed, else the result type
+// ("dyn" / "bool") or "unknown" (already reported).
+act check_dyn_binary(st: @SymbolTable, expr: @ExprNode, left_type: string, right_type: string) -> string {
+    let is_cmp = expr.op == TOK_EQ or expr.op == TOK_NEQ or expr.op == TOK_LT or expr.op == TOK_LTE or expr.op == TOK_GT or expr.op == TOK_GTE
+    let is_arith = expr.op == TOK_PLUS or expr.op == TOK_MINUS or expr.op == TOK_STAR or expr.op == TOK_SLASH or expr.op == TOK_PERCENT
+    if left_type == "dyn" or right_type == "dyn" {
+        if is_arith {
+            // the concrete witness must be numeric (the dyn-op wall)
+            if left_type != "dyn" and not is_dyn_int_family(left_type) and not is_dyn_float_family(left_type) {
+                report_error("semantic", expr.line, expr.col, dyn_arith_witness_error(expr.op, left_type)); st.error_count += 1
+                return "unknown"
+            }
+            if right_type != "dyn" and not is_dyn_int_family(right_type) and not is_dyn_float_family(right_type) {
+                report_error("semantic", expr.line, expr.col, dyn_arith_witness_error(expr.op, right_type)); st.error_count += 1
+                return "unknown"
+            }
+            return "dyn"   // the result re-boxes (decl tier yields VeloDyn)
+        }
+        if is_cmp {
+            // compares accept every boxable family; the runtime ring gate
+            // (velo_dyn_expect / velo_dyn_compare) speaks the family fatals
+            if left_type != "dyn" {
+                if left_type == "@void" {
+                    report_error("semantic", expr.line, expr.col, "shelf elements cannot be null (use a @T pointer element)"); st.error_count += 1
+                    return "unknown"
+                }
+                let err = dyn_boxable_error(left_type)
+                if err != null { report_error("semantic", expr.line, expr.col, err); st.error_count += 1; return "unknown" }
+            }
+            if right_type != "dyn" {
+                if right_type == "@void" {
+                    report_error("semantic", expr.line, expr.col, "shelf elements cannot be null (use a @T pointer element)"); st.error_count += 1
+                    return "unknown"
+                }
+                let err = dyn_boxable_error(right_type)
+                if err != null { report_error("semantic", expr.line, expr.col, err); st.error_count += 1; return "unknown" }
+            }
+            return "bool"   // plain bool — compares are NOT boxed
+        }
+        // and/or (and any other op spelling) stay gated — the slice-2 words
+        report_error("semantic", expr.line, expr.col, dyn_gate_error()); st.error_count += 1
+        return "unknown"
+    }
+    // concrete path: a user op overload wins first, then the two walls
+    if find_binary_op(st, expr.op, left_type, right_type) != null { return null }
+    if is_cmp {
+        let lf = dyn_compare_family(left_type)
+        let rf = dyn_compare_family(right_type)
+        if lf != 0 and rf != 0 and lf != rf {
+            report_error("semantic", expr.line, expr.col, dyn_mixed_compare_error(left_type, right_type)); st.error_count += 1
+            return "unknown"
+        }
+        return null
+    }
+    if is_arith and left_type == "string" and right_type == "string" {
+        report_error("semantic", expr.line, expr.col, dyn_concat_error(expr.op)); st.error_count += 1
+        return "unknown"
+    }
+    return null
+}
+
+// 5.2 slice 8: does this C literal text exceed the i64 range? Decimal and
+// hex spellings (the parser's i32 int_val cannot hold the magnitude, so the
+// box sites read the literal TEXT). Other spellings keep the wrap residual.
+act int_literal_exceeds_i64(text: string) -> bool {
+    if text == null { return false }
+    let len = str.len(text)
+    if len == 0 { return false }
+    let hex = len > 2 and text[0] == '0' and (text[1] == 'x' or text[1] == 'X')
+    // significant digits after leading zeros; letters (C suffixes) end the scan
+    mut digits: usize = 0
+    mut first_at: usize = 0
+    mut at: usize = 0
+    if hex { at = 2 }
+    loop at < len {
+        let c = text[at]
+        let d = parse_hex_digit(c)
+        mut ok = false
+        if hex { ok = d >= 0 } else { ok = c >= '0' and c <= '9' }
+        if not ok { break }
+        if d != 0 or c != '0' {
+            if digits == 0 { first_at = at }
+            digits += 1
+        }
+        at += 1
+    }
+    if digits == 0 { return false }   // zero
+    if hex {
+        if digits > 16 { return true }
+        if digits < 16 { return false }
+        // 16 hex digits: big iff lexicographically >= "8000000000000000"
+        mut bound = create_sb(17)
+        sb_append_str(@bound, "8000000000000000")
+        let b = sb_to_string(@bound)
+        mut i: usize = 0
+        loop i < 16 {
+            let lc = parse_hex_digit(text[first_at + i])
+            let rc = parse_hex_digit(b[i])
+            if lc < rc { return false }
+            if lc > rc { return true }
+            i += 1
+        }
+        return true   // exactly 0x8000000000000000 = 2^63 > i64 max
+    }
+    if digits > 19 { return true }
+    if digits < 19 { return false }
+    // 19 decimal digits: big iff lexicographically > "9223372036854775807"
+    mut bound = create_sb(20)
+    sb_append_str(@bound, "9223372036854775807")
+    let b = sb_to_string(@bound)
+    mut i: usize = 0
+    loop i < 19 {
+        if text[first_at + i] < b[i] { return false }
+        if text[first_at + i] > b[i] { return true }
+        i += 1
+    }
+    return false   // exactly i64 max
 }

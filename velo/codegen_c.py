@@ -72,6 +72,18 @@ _STR_SIGS = {
 # and lowered onto the runtime's single VeloShelf struct + velo_shelf_* helpers.
 SHELF_INT_TYPES = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize"}
 
+# 5.2 slice 8: the concrete compare lattice — numeric, string, bool. Mixed
+# families reject; pointer/shelf/struct sides return None (pointer identity
+# compares like `p == q` stay untouched by the wall).
+def _compare_family(t: Optional[str]) -> Optional[str]:
+    if t in DYN_INT_TYPES or t in DYN_FLOAT_TYPES:
+        return "n"
+    if t == "string":
+        return "s"
+    if t == "bool":
+        return "b"
+    return None
+
 class CCodeGenerator:
     def __init__(self):
         self.output: List[str] = []
@@ -338,7 +350,7 @@ class CCodeGenerator:
             if kv[1] == "dyn":
                 v_raw = self._infer_raw_velo_type(v)
                 if v_raw != "dyn":
-                    v_code = self._emit_dyn_box(v_raw, v_code)
+                    v_code = self._emit_dyn_box(v_raw, v_code, v)
             parts.append(
                 f"{{ {key_c} {k_slot} = ({k_code}); {val_c} {v_slot} = ({v_code}); "
                 f"velo_map_put(&{recv}, (const void*)(&{k_slot}), (const void*)(&{v_slot})); }}"
@@ -367,10 +379,17 @@ class CCodeGenerator:
             return None
         return f"shelf[dyn] element type {raw} cannot be boxed — use a @{raw} pointer element"
 
-    def _emit_dyn_box(self, raw: str, code: str) -> str:
+    def _emit_dyn_box(self, raw: str, code: str, expr: Optional[Expr] = None) -> str:
         """Boxes one element value (already emitted as `code`) into a VeloDyn
-        literal by its source Velo type. Raw dyn values pass through whole."""
+        literal by its source Velo type. Raw dyn values pass through whole.
+        5.2 slice 8: u64-typed sources box the U64 tag (full uint64 payload,
+        no impl-defined i64 cast); an integer literal above the i64 range
+        promotes too — the callers hand over the expr node for that check."""
+        if raw == "u64":
+            return f"(VeloDyn){{ .tag = VELO_DYN_U64, .as = {{ .u64 = (uint64_t)({code}) }} }}"
         if raw in DYN_INT_TYPES:
+            if isinstance(expr, IntLiteral) and expr.value > 9223372036854775807:
+                return f"(VeloDyn){{ .tag = VELO_DYN_U64, .as = {{ .u64 = (uint64_t)({code}) }} }}"
             return f"(VeloDyn){{ .tag = VELO_DYN_I64, .as = {{ .i64 = (int64_t)({code}) }} }}"
         if raw in DYN_FLOAT_TYPES:
             return f"(VeloDyn){{ .tag = VELO_DYN_F64, .as = {{ .f64 = (double)({code}) }} }}"
@@ -423,8 +442,49 @@ class CCodeGenerator:
             raise ValueError(
                 f"cannot unbox a shelf[dyn] value into {base} — targets: int family, f32/f64, bool, string, @T, shelf[T]")
         temp = self._fresh_name("dyn_")
-        return (f"({{ VeloDyn {temp} = ({code}); velo_dyn_expect({temp}, {tag}, \"{family}\"); "
+        # 5.2 slice 8: int targets unbox through the I64/U64 ring gate
+        expect = f"velo_dyn_expect({temp}, {tag}, \"{family}\")"
+        if tag == "VELO_DYN_I64":
+            expect = f"velo_dyn_expect_int({temp})"
+        return (f"({{ VeloDyn {temp} = ({code}); {expect}; "
                 f"({cast_c})({temp}.as.{member}); }})")
+
+    def _emit_dyn_binop(self, expr: BinaryExpr, l_t: Optional[str], r_t: Optional[str],
+                        op: str, arith: bool) -> str:
+        """5.2 slice 8: lowers a raw-dyn binop — both operands bound once into
+        VeloDyn temps (left first, evaluation order pinned), the concrete side
+        boxed by its Velo type through _emit_dyn_box, then the runtime ladder
+        helper (velo_dyn_arith / velo_dyn_compare). Identical C on both
+        stages; the ladder and family rules live only in velo_runtime.h."""
+        for side_t in (l_t, r_t):
+            if side_t != "dyn":
+                if arith:
+                    # the arithmetic witness must be numeric (the dyn-op wall)
+                    if side_t not in DYN_INT_TYPES and side_t not in DYN_FLOAT_TYPES:
+                        raise ValueError(
+                            f"shelf[dyn] op: cannot apply '{op}' between dyn and {side_t} — unbox with as first")
+                else:
+                    # compares accept every boxable family; null rejects with
+                    # the boxable-null words, structs with the boxable wall
+                    if side_t == "@void":
+                        raise ValueError("shelf elements cannot be null (use a @T pointer element)")
+                    err = self._dyn_boxable_error(side_t)
+                    if err:
+                        raise ValueError(err)
+        left = self._emit_expression(expr.left)
+        right = self._emit_expression(expr.right)
+        if l_t != "dyn":
+            left = self._emit_dyn_box(l_t, left, expr.left)
+        if r_t != "dyn":
+            right = self._emit_dyn_box(r_t, right, expr.right)
+        tl = self._fresh_name("dynl_")
+        tr = self._fresh_name("dynr_")
+        if arith:
+            return (f"({{ VeloDyn {tl} = ({left}); VeloDyn {tr} = ({right}); "
+                    f"velo_dyn_arith('{op}', {tl}, {tr}); }})")
+        cmp_map = {"==": "== 0", "!=": "!= 0", "<": "< 0", "<=": "<= 0", ">": "> 0", ">=": ">= 0"}
+        return (f"({{ VeloDyn {tl} = ({left}); VeloDyn {tr} = ({right}); "
+                f"(velo_dyn_compare({tl}, {tr}) {cmp_map[op]}); }})")
 
     def _shelf_root_binding(self, expr: Optional[Expr]) -> Optional[str]:
         """Walks a receiver chain down to its root binding name (or None for
@@ -581,7 +641,7 @@ class CCodeGenerator:
                 # through whole); f64-widened elements ride the slot cast
                 raw = self._infer_raw_velo_type(a)
                 if raw != "dyn":
-                    val_code = self._emit_dyn_box(raw, val_code)
+                    val_code = self._emit_dyn_box(raw, val_code, a)
             parts.append(
                 f"{{ {elem_c} {slot} = ({val_code}); "
                 f"velo_shelf_put(&{recv}, (const void*)(&{slot}), (usize)sizeof({elem_c})); }}"
@@ -1092,7 +1152,7 @@ class CCodeGenerator:
                         # 5.2 slice 2: box the written value into the tag
                         raw = self._infer_raw_velo_type(stmt.value)
                         if raw != "dyn":
-                            val_code = self._emit_dyn_box(raw, val_code)
+                            val_code = self._emit_dyn_box(raw, val_code, stmt.value)
                     self._emit_line(
                         f"{{ {elem_c} {slot} = ({val_code}); "
                         f"velo_shelf_set({rec}, (usize)({self._emit_expression(stmt.target.index)}), "
@@ -1124,7 +1184,7 @@ class CCodeGenerator:
                         # 5.2 slice 2: box the written value into the tag
                         raw = self._infer_raw_velo_type(stmt.value)
                         if raw != "dyn":
-                            val_code = self._emit_dyn_box(raw, val_code)
+                            val_code = self._emit_dyn_box(raw, val_code, stmt.value)
                     self._emit_line(
                         f"{{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot} = ({val_code}); "
                         f"velo_map_put({rec}, (const void*)(&{k_slot}), (const void*)(&{v_slot})); }}"
@@ -1480,6 +1540,11 @@ class CCodeGenerator:
             # operand's type — widened dyn literals read f64 through clauses).
             if value.op in ("==", "!=", "<", "<=", ">", ">=", "and", "or"):
                 return "bool"
+            # 5.2 slice 8: arithmetic with a raw dyn operand re-boxes — the
+            # result type is dyn regardless of which side carries it
+            if value.op in ("+", "-", "*", "/", "%"):
+                if self._resolve_expr_type(value.left) == "dyn" or self._resolve_expr_type(value.right) == "dyn":
+                    return "dyn"
             return self._resolve_expr_type(value.left)
         if isinstance(value, UnaryExpr):
             if value.op in ("!", "not"):
@@ -1918,15 +1983,34 @@ class CCodeGenerator:
             arrow = "->" if target_type.startswith("@") else "."
             return f"{target_code}{arrow}{expr.member}"
         elif isinstance(expr, BinaryExpr):
-            # 5.2 slice 2: raw dyn values refuse operators — unbox with `as`
-            # first (same wording as the Stage 2 checker)
             l_t = self._resolve_expr_type(expr.left)
             r_t = self._resolve_expr_type(expr.right)
+            op = expr.op
             if l_t == "dyn" or r_t == "dyn":
+                # 5.2 slice 8: raw dyn arithmetic/compares auto-unbox — both
+                # operands bound once into VeloDyn temps (left first), the
+                # concrete side boxed by its Velo type, the ladder living in
+                # velo_runtime.h so the stages cannot diverge on it. Unary
+                # and logic operators stay gated below.
+                if op in ("+", "-", "*", "/", "%"):
+                    return self._emit_dyn_binop(expr, l_t, r_t, op, True)
+                if op in ("==", "!=", "<", "<=", ">", ">="):
+                    return self._emit_dyn_binop(expr, l_t, r_t, op, False)
                 raise ValueError(self.DYN_GATE_ERROR)
+            # 5.2 slice 8: concrete mixed-family compares reject (the old
+            # pointer-vs-int GCC warning tier is now a pinned semantic wall;
+            # pointer identity compares like `p == q` stay untouched)
+            if op in ("==", "!=", "<", "<=", ">", ">="):
+                lf = _compare_family(l_t)
+                rf = _compare_family(r_t)
+                if lf is not None and rf is not None and lf != rf:
+                    raise ValueError(
+                        f"mismatched compare operand families: {l_t} and {r_t} (no implicit conversion)")
+            elif op in ("+", "-", "*", "/", "%") and l_t == "string" and r_t == "string":
+                # 5.2 slice 8: `+` is not concatenation — the pinned wording
+                raise ValueError(f"cannot apply '{op}' to string operands (concatenation is str.concat)")
             left = self._emit_expression(expr.left)
             right = self._emit_expression(expr.right)
-            op = expr.op
 
             # Smart string value comparison
             if op in ("==", "!=") and not isinstance(expr.left, NullLiteral) and not isinstance(expr.right, NullLiteral):
@@ -2050,7 +2134,7 @@ class CCodeGenerator:
                             # 5.2 slice 2: box the appended value into the tag
                             raw = self._infer_raw_velo_type(expr.args[0])
                             if raw != "dyn":
-                                arg_code = self._emit_dyn_box(raw, arg_code)
+                                arg_code = self._emit_dyn_box(raw, arg_code, expr.args[0])
                         return (f"({{ {elem_c} {slot} = ({arg_code}); "
                                 f"velo_shelf_put({rec}, (const void*)(&{slot}), (usize)sizeof({elem_c})); }})")
                     if expr.callee.member == "insert":
@@ -2062,7 +2146,7 @@ class CCodeGenerator:
                         if elem == "dyn":
                             raw = self._infer_raw_velo_type(expr.args[1])
                             if raw != "dyn":
-                                arg_code = self._emit_dyn_box(raw, arg_code)
+                                arg_code = self._emit_dyn_box(raw, arg_code, expr.args[1])
                         return (f"({{ {elem_c} {slot} = ({arg_code}); "
                                 f"velo_shelf_insert({rec}, (usize)({idx_code}), (const void*)(&{slot}), "
                                 f"(usize)sizeof({elem_c})); }})")
@@ -2109,7 +2193,7 @@ class CCodeGenerator:
                             # 5.2 slice 2: box the stored value into the tag
                             raw = self._infer_raw_velo_type(expr.args[1])
                             if raw != "dyn":
-                                val_code = self._emit_dyn_box(raw, val_code)
+                                val_code = self._emit_dyn_box(raw, val_code, expr.args[1])
                         return (f"({{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot} = ({val_code}); "
                                 f"velo_map_put({rec}, (const void*)(&{k_slot}), (const void*)(&{v_slot})); }})")
                     if expr.callee.member == "get":
@@ -2127,7 +2211,7 @@ class CCodeGenerator:
                         if kv[1] == "dyn":
                             raw = self._infer_raw_velo_type(expr.args[1])
                             if raw != "dyn":
-                                val_code = self._emit_dyn_box(raw, val_code)
+                                val_code = self._emit_dyn_box(raw, val_code, expr.args[1])
                         return (f"({{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot}; "
                                 f"if (!velo_map_copy_out({rec}, (const void*)(&{k_slot}), (void*)(&{v_slot}))) "
                                 f"{{ {v_slot} = ({val_code}); }} {v_slot}; }})")

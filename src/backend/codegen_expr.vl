@@ -173,6 +173,12 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr.kind == EXPR_BINARY {
         let ltype = infer_expr_type(st, expr.left)
         let rtype = infer_expr_type(st, expr.right)
+        // 5.2 slice 8: raw dyn arithmetic/compares auto-unbox — identical C
+        // with Stage 1's _emit_dyn_binop (temps + box + runtime helper)
+        if ltype == "dyn" or rtype == "dyn" {
+            emit_dyn_binop(sb, st, expr, ltype, rtype)
+            return
+        }
         let op_fn = find_binary_op(st, expr.op, ltype, rtype)
         if op_fn != null {
             sb_append_str(sb, op_fn.name); sb_append_char(sb, '(')

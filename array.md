@@ -177,31 +177,42 @@ Tests:
 
 Missing surface:
 
-* [ ] Raw dyn binary operators (currently ALL compile-rejected):
+* [x] Raw dyn binary operators (currently ALL compile-rejected):
       `dyn ⊙ dyn`, `dyn ⊙ concrete`, `concrete ⊙ dyn` → result RE-BOXED as
       dyn. Numeric ladder (same spirit as slice 2): int family → I64 math
-      (a concrete `i32` widens to i64), any float → F64.
-* [ ] Same-family dyn compares → `bool`: int/int, float/float, string strcmp,
-      bool/bool; mixed-family compares and `string + string` concat STAY
-      rejected (one pinned wording; concat remains `str.concat`).
-* [ ] `VELO_DYN_U64` tag — u64 boxes above 2^63 stay intact; `as u64`/`as i64`
-      off the U64 box. Closes slice-2 residual (3). Fatal wording survives
-      (families, not tag names, are what `velo_dyn_expect` prints).
+      (a concrete `i32` widens to i64), any float → F64. Both stages lower
+      identical C (temps + box + `velo_dyn_arith`/`velo_dyn_compare` — the
+      ladder lives only in velo_runtime.h); decl tier `2 + bag[0]` infers
+      `dyn` too.
+* [x] Same-family dyn compares → `bool`: int/int (both-U64 unsigned),
+      float/float, string strcmp, bool/bool; mixed-family compares fatal
+      with the unbox wording and concrete mixed-family compares + `string
+      + string` concat are new compile-reject walls (one pinned wording
+      per class; concat remains `str.concat`).
+* [x] `VELO_DYN_U64` tag — u64 boxes above 2^63 stay intact; `as u64`/`as i64`
+      off the U64 box (the int-family ring gate `velo_dyn_expect_int`
+      accepts I64 and U64). Closes slice-2 residual (3). Fatal wording
+      survives (families, not tag names, are what `velo_dyn_expect` prints;
+      `velo_dyn_tag_name(U64)` still prints "int").
 
 Still rejected (pinned forever for this section):
 
-* [ ] Struct-in-dyn BY VALUE (union would grow to the struct max size and
+* [x] Struct-in-dyn BY VALUE (union would grow to the struct max size and
       slow every box read — `@T` pointers cover it; documented).
-* [ ] Raw-dyn io printing (stays: one cast line is the idiomatic bar).
+* [x] Raw-dyn io printing (stays: one cast line is the idiomatic bar).
+* [x] `and`/`or` + unary on raw dyn (the slice-2 gate wording stays).
 
 Tests:
 
-* [ ] Accept: `bag[0] + 2`, `(bag[1] * bag[2]) as f64` chains, dyn-dyn and
+* [x] Accept: `bag[0] + 2`, `(bag[1] * bag[2]) as f64` chains, dyn-dyn and
       dyn-concrete and concrete-dyn both sides, mixed ladder to f64, U64
-      roundtrip `shelf[18446744073709551615]` → `as u64` exact value.
-* [ ] Reject: `dyn + string` (wording), `string + string`, mixed-family
+      roundtrip `shelf[18446744073709551615]` → `as u64` exact value
+      (mixed bag forces `dyn` — the lone literal keeps its ladder reject).
+* [x] Reject: `dyn + string` (wording), `string + string`, mixed-family
       compare `<` across int-vs-string, raw-dyn io print regression (stays).
-* [ ] Fatals: U64-tag unbox mismatch wording unchanged shape.
+* [x] Fatals: U64-tag unbox mismatch wording unchanged shape; dyn-dyn
+      mixed-family compares + non-numeric arith pairs speak the shared
+      runtime fatal family (unbox wording + one new arith wording).
 
 ## S9 — `ring[T]` + `bitset` (medium)
 

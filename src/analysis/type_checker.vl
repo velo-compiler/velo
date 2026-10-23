@@ -74,7 +74,6 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         let target_type = infer_expr_type(st, expr.target)
         let clean_type = strip_pointer_prefix(target_type)
         // 5.2 slice 2: raw dyn values expose no members — cast (as) first
-        // (Stage 1 raises the same words from the MemberAccess emitter)
         if target_type == "dyn" { report_error("semantic", expr.line, expr.col, dyn_gate_error()); st.error_count += 1; return "unknown" }
         // 5.2: shelf property reads (len = usize; others are loud errors)
         if is_shelf_type(target_type) { return check_shelf_member_access(st, expr) }
@@ -245,8 +244,10 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.kind == EXPR_BINARY {
         let left_type = infer_expr_type(st, expr.left)
         let right_type = infer_expr_type(st, expr.right)
-        // 5.2 slice 2: raw dyn values refuse operators — unbox with `as` first
-        if left_type == "dyn" or right_type == "dyn" { report_error("semantic", expr.line, expr.col, dyn_gate_error()); st.error_count += 1; return "unknown" }
+        // 5.2 slice 8: raw dyn arithmetic/compares auto-unbox; the concrete
+        // mixed-compare and string-concat walls live in dyn_checks.vl too
+        let bin_t = check_dyn_binary(st, expr, left_type, right_type)
+        if bin_t != null { return bin_t }
         let op_fn = find_binary_op(st, expr.op, left_type, right_type)
         if op_fn != null {
             return op_fn.return_type
@@ -290,8 +291,7 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
         }
         define_variable(st, stmt.name, stmt.type_name, stmt.is_mut, stmt.line, stmt.col)
     } else if stmt.kind == STMT_ASSIGN {
-        // 5.2: shelf indexed writes get the dedicated check (mut / row-copy /
-        // compound-assign / index type) instead of the scalar compat flow
+        // 5.2: shelf indexed writes get the dedicated check (mut / row-copy / compound-assign / index type)
         if stmt.expr != null and stmt.expr.kind == EXPR_INDEX and is_map_type(infer_expr_type(st, stmt.expr.target)) {  // 5.2 slice 6: mut / compound-assign / strict key and value
             check_map_assign(st, stmt); infer_expr_type(st, stmt.val_expr)
         } else if stmt.expr != null and stmt.expr.kind == EXPR_INDEX and is_shelf_type(infer_expr_type(st, stmt.expr.target)) { check_shelf_assign(st, stmt); infer_expr_type(st, stmt.val_expr) } else {
