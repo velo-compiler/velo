@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from velo.tokens import KEYWORDS as COMPILER_KEYWORDS
+from velo.ast_nodes import TestDecl
 
 # ---------------------------------------------------------------------------
 # Builtin module tables
@@ -403,6 +404,12 @@ class VeloAnalysis:
                     "detail": "aka", "range": full,
                     "selectionRange": self._name_range(rec, name, decl.line, decl.col)
                 })
+            elif isinstance(decl, TestDecl):
+                symbols.append({
+                    "name": f'test "{name}"', "kind": 12, "detail": "test",
+                    "range": full,
+                    "selectionRange": to_range(decl.line, decl.col)
+                })
             elif hasattr(decl, "body"):
                 params = ", ".join(f"{p.name}: {p.type_name}" for p in (decl.params or []))
                 ret = getattr(decl, "return_type", None) or "void"
@@ -509,6 +516,9 @@ class VeloAnalysis:
         if not span:
             return None
         name = span["value"]
+        if name == "assert":
+            md = "**builtin** `assert(cond: bool, msg: string = null) -> void`  \nAsserts that a condition holds. In test runs, fails the test without aborting the suite."
+            return {"contents": {"kind": "markdown", "value": md}, "range": self._span_range(span)}
         doc = self.documents[uri]
         try:
             index = self._index(doc["path"])
@@ -603,6 +613,8 @@ class VeloAnalysis:
                 continue
             seen.add(kw)
             items.append({"label": kw, "kind": 14})
+        if not token or "assert".startswith(token):
+            items.append({"label": "assert", "kind": 3, "detail": "builtin"})
         try:
             index = self._index(doc["path"])
         except Exception:

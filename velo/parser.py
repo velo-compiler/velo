@@ -7,7 +7,7 @@ from velo.ast_nodes import (
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, VariantExpr, AnonFuncExpr,
     ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral,
-    TypeAliasDecl,
+    TypeAliasDecl, TestDecl,
     mangle_op_name
 )
 
@@ -43,9 +43,9 @@ class Parser:
     def _check(self, token_type: TokenType) -> bool:
         cur_type = self._peek().type
         if token_type == TokenType.IDENTIFIER:
-            # DATA is a reserved keyword but is contextually valid as an identifier
-            # (variable name) in positions where _check(IDENTIFIER) is called.
-            return cur_type in (TokenType.IDENTIFIER, TokenType.KIND, TokenType.OP, TokenType.DATA)
+            # DATA and TEST are reserved keywords but contextually valid as identifiers
+            # (variable / field names) where _check(IDENTIFIER) is called.
+            return cur_type in (TokenType.IDENTIFIER, TokenType.KIND, TokenType.OP, TokenType.DATA, TokenType.TEST)
         return cur_type == token_type
 
     def _match(self, *types: TokenType) -> bool:
@@ -87,12 +87,28 @@ class Parser:
             return self._parse_kind_decl()
         elif self._check(TokenType.ACT):
             return self._parse_function_decl()
+        elif self._check(TokenType.TEST):
+            return self._parse_test_decl()
         elif self._check(TokenType.LET) or self._check(TokenType.MUT):
             return self._parse_statement()
         elif self._check(TokenType.IDENTIFIER) and self._peek().value == "aka":
             return self._parse_type_alias_decl()
         else:
             raise ParserError(f"Unexpected top-level token '{self._peek().value}'", self._peek())
+
+    def _parse_test_decl(self) -> TestDecl:
+        test_tok = self._consume(TokenType.TEST, "Expected 'test'")
+        if self._check(TokenType.STRING_LIT):
+            name_tok = self._advance()
+            name = name_tok.value
+        elif self._check(TokenType.IDENTIFIER):
+            name_tok = self._advance()
+            name = name_tok.value
+        else:
+            raise ParserError("Expected test name string literal or identifier after 'test'", self._peek())
+        self._skip_newlines()
+        body = self._parse_block()
+        return TestDecl(name=name, body=body, line=test_tok.line, col=test_tok.col)
 
 
     def _parse_use_decl(self) -> UseStmt:

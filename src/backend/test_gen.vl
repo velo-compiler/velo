@@ -1,0 +1,136 @@
+// Code generator for native Velo test blocks and the test runner harness.
+use sys.io
+use sys.mem
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "codegen_stmt.vl"
+
+// Counts the number of DECL_TEST blocks in the program.
+act count_test_decls(prog: @ProgramNode) -> usize {
+    mut count: usize = 0
+    mut cur = prog.first_decl
+    loop cur != null {
+        if cur.kind == DECL_TEST { count += 1 }
+        cur = cur.next
+    }
+    return count
+}
+
+// Emits forward prototypes for all test functions: static void _velo_test_N(void);
+act emit_test_prototypes(sb: @StringBuilder, prog: @ProgramNode) {
+    mut idx: usize = 0
+    mut cur = prog.first_decl
+    loop cur != null {
+        if cur.kind == DECL_TEST {
+            sb_append_str(sb, "static void _velo_test_")
+            sb_append_int(sb, idx as i32)
+            sb_append_str(sb, "(void);\n")
+            idx += 1
+        }
+        cur = cur.next
+    }
+    if idx > 0 { sb_append_str(sb, "\n") }
+}
+
+// Emits function bodies for each test block:
+// static void _velo_test_N(void) { ... }
+act emit_test_functions(sb: @StringBuilder, st: @SymbolTable, prog: @ProgramNode) {
+    mut idx: usize = 0
+    mut cur = prog.first_decl
+    loop cur != null {
+        if cur.kind == DECL_TEST {
+            sb_append_str(sb, "static void _velo_test_")
+            sb_append_int(sb, idx as i32)
+            sb_append_str(sb, "(void) {\n")
+
+            enter_scope(st)
+            mut defers: @DeferNode = null
+            emit_c_block_stmts(sb, st, cur.body, 1, @defers)
+
+            mut cur_d = defers
+            loop cur_d != null {
+                emit_c_stmt(sb, st, cur_d.stmt, 1, @defers)
+                cur_d = cur_d.next
+            }
+            exit_scope(st)
+
+            sb_append_str(sb, "}\n\n")
+            idx += 1
+        }
+        cur = cur.next
+    }
+}
+
+// Emits the test runner main() entry point.
+act emit_test_harness_main(sb: @StringBuilder, prog: @ProgramNode) {
+    let total = count_test_decls(prog)
+    sb_append_str(sb, "int main(int argc, char** argv) {\n")
+    sb_append_str(sb, "    g_velo_os_argc = argc;\n    g_velo_os_argv = argv;\n")
+    sb_append_str(sb, "    velo_mem_init();\n\n")
+
+    if total == 0 {
+        sb_append_str(sb, "    printf(\"\\nrunning 0 tests\\n\\ntest result: ok. 0 passed; 0 failed\\n\\n\");\n")
+        sb_append_str(sb, "    return 0;\n}\n")
+        return
+    }
+
+    sb_append_str(sb, "    const char* filter = NULL;\n")
+    sb_append_str(sb, "    for (int i = 1; i < argc; i++) {\n")
+    sb_append_str(sb, "        if ((strcmp(argv[i], \"--filter\") == 0 || strcmp(argv[i], \"-k\") == 0) && i + 1 < argc) {\n")
+    sb_append_str(sb, "            filter = argv[i + 1]; i++;\n")
+    sb_append_str(sb, "        }\n    }\n\n")
+
+    sb_append_str(sb, "    struct { const char* name; void (*fn)(void); } tests[] = {\n")
+    mut idx: usize = 0
+    mut cur = prog.first_decl
+    loop cur != null {
+        if cur.kind == DECL_TEST {
+            sb_append_str(sb, "        { \"")
+            sb_append_str(sb, cur.name)
+            sb_append_str(sb, "\", _velo_test_")
+            sb_append_int(sb, idx as i32)
+            sb_append_str(sb, " },\n")
+            idx += 1
+        }
+        cur = cur.next
+    }
+    sb_append_str(sb, "    };\n")
+    sb_append_str(sb, "    int total_tests = (int)(sizeof(tests) / sizeof(tests[0]));\n")
+    sb_append_str(sb, "    int ran_tests = 0;\n    int passed = 0;\n    int failed = 0;\n    int filtered_out = 0;\n\n")
+
+    sb_append_str(sb, "    for (int i = 0; i < total_tests; i++) {\n")
+    sb_append_str(sb, "        if (filter && strstr(tests[i].name, filter) == NULL) { filtered_out++; continue; }\n")
+    sb_append_str(sb, "        ran_tests++;\n    }\n\n")
+
+    sb_append_str(sb, "    if (filtered_out > 0) {\n")
+    sb_append_str(sb, "        printf(\"\\nrunning %d test%s (%d filtered out)\\n\", ran_tests, ran_tests == 1 ? \"\" : \"s\", filtered_out);\n")
+    sb_append_str(sb, "    } else {\n")
+    sb_append_str(sb, "        printf(\"\\nrunning %d test%s\\n\", ran_tests, ran_tests == 1 ? \"\" : \"s\");\n    }\n\n")
+
+    sb_append_str(sb, "    for (int i = 0; i < total_tests; i++) {\n")
+    sb_append_str(sb, "        if (filter && strstr(tests[i].name, filter) == NULL) continue;\n")
+    sb_append_str(sb, "        VeloTestContext tc;\n        memset(&tc, 0, sizeof(tc));\n")
+    sb_append_str(sb, "        g_velo_current_test = &tc;\n")
+    sb_append_str(sb, "        if (setjmp(tc.jmp) == 0) {\n")
+    sb_append_str(sb, "            tests[i].fn();\n")
+    sb_append_str(sb, "            printf(\"test \\\"%s\\\" ... ok\\n\", tests[i].name);\n")
+    sb_append_str(sb, "            passed++;\n")
+    sb_append_str(sb, "        } else {\n")
+    sb_append_str(sb, "            printf(\"test \\\"%s\\\" ... FAILED\\n\", tests[i].name);\n")
+    sb_append_str(sb, "            if (tc.failure_msg && tc.failure_msg[0]) {\n")
+    sb_append_str(sb, "                printf(\"  assertion failed at %s:%d: assert(%s): %s\\n\", tc.failure_file ? tc.failure_file : \"\", tc.failure_line, tc.failure_expr ? tc.failure_expr : \"\", tc.failure_msg);\n")
+    sb_append_str(sb, "            } else {\n")
+    sb_append_str(sb, "                printf(\"  assertion failed at %s:%d: assert(%s)\\n\", tc.failure_file ? tc.failure_file : \"\", tc.failure_line, tc.failure_expr ? tc.failure_expr : \"\");\n")
+    sb_append_str(sb, "            }\n")
+    sb_append_str(sb, "            failed++;\n")
+    sb_append_str(sb, "        }\n")
+    sb_append_str(sb, "        g_velo_current_test = NULL;\n")
+    sb_append_str(sb, "        velo_mem_reset();\n    }\n\n")
+
+    sb_append_str(sb, "    printf(\"\\ntest result: %s. %d passed; %d failed\\n\\n\", (failed == 0 ? \"ok\" : \"FAILED\"), passed, failed);\n")
+    sb_append_str(sb, "    return (failed == 0 ? 0 : 1);\n}\n")
+}

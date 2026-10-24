@@ -38,6 +38,8 @@ class TokenType(Enum):
     # 5.2 slice 10: `heap` — the heap-shelf storage modifier.
     HEAP = auto()
     OF = auto()
+    # 6.5: `test` keyword for native test declarations
+    TEST = auto()
 
     # Literals
     IDENTIFIER = auto()
@@ -142,6 +144,7 @@ KEYWORDS = {
     # (`heap shelf[T]` types, `heap shelf[...]` literals).
     "heap": TokenType.HEAP,
     "of": TokenType.OF,
+    "test": TokenType.TEST,
 }
 
 @dataclass

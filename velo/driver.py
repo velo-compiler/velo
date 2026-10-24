@@ -86,10 +86,12 @@ class CompilerDriver:
         load_file(root_path)
         return Program(declarations=all_declarations)
 
-    def compile_to_c(self, source_path: str) -> str:
+    def compile_to_c(self, source_path: str, is_test: bool = False) -> str:
         ast = self.resolve_program(source_path)
         codegen = CCodeGenerator()
         codegen.unsafe_shelf_index = self.unsafe_index_flag   # 5.2 slice 11: the knob
+        codegen.is_test = is_test
+        codegen.source_path = source_path
         c_code = codegen.generate(ast)
         return c_code
 
@@ -139,12 +141,13 @@ class CompilerDriver:
 
     def build(self, source_path: str, output_path: Optional[str] = None,
               debug: bool = False, release: bool = False, opt_level: Optional[str] = None,
-              libs: Optional[list] = None, lib_dirs: Optional[list] = None) -> str:
+              libs: Optional[list] = None, lib_dirs: Optional[list] = None,
+              is_test: bool = False) -> str:
         path = Path(source_path).resolve()
-        c_code = self.compile_to_c(source_path)
+        c_code = self.compile_to_c(source_path, is_test=is_test)
 
         # Write generated C code
-        stem = path.stem
+        stem = f"{path.stem}_test" if is_test else path.stem
         c_file = self.cache_dir / f"{stem}.c"
         c_file.write_text(c_code, encoding="utf-8")
 
@@ -217,6 +220,42 @@ class CompilerDriver:
         cmd = [exe_path] + (args or [])
         res = subprocess.run(cmd)
         return res.returncode
+
+    def test(self, target_path: Optional[str] = None, filter_str: Optional[str] = None,
+             debug: bool = False, release: bool = False, opt_level: Optional[str] = None,
+             libs: Optional[list] = None, lib_dirs: Optional[list] = None) -> int:
+        target_str = target_path if target_path is not None else "."
+        p = Path(target_str).resolve()
+        test_files: List[Path] = []
+        if p.is_file():
+            test_files.append(p)
+        elif p.is_dir():
+            for f in sorted(p.rglob("*.vl")):
+                # Check if file has test declarations
+                try:
+                    txt = f.read_text(encoding="utf-8")
+                    if 'test "' in txt or "test '" in txt:
+                        test_files.append(f)
+                except Exception:
+                    pass
+        else:
+            raise FileNotFoundError(f"Test target not found: {target_str}")
+
+        if not test_files:
+            print("No test files found.")
+            return 0
+
+        overall_exit = 0
+        for tf in test_files:
+            exe_path = self.build(str(tf), is_test=True, debug=debug, release=release,
+                                  opt_level=opt_level, libs=libs, lib_dirs=lib_dirs)
+            cmd = [exe_path]
+            if filter_str:
+                cmd.extend(["--filter", filter_str])
+            res = subprocess.run(cmd)
+            if res.returncode != 0:
+                overall_exit = res.returncode
+        return overall_exit
 
     def generate_docs(self, source_path: str) -> str:
         from velo.docgen import generate_markdown_docs

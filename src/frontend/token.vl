@@ -44,6 +44,7 @@ let TOK_MAP: i32 = 49          // 5.2 slice 6: `map` (literal keyword; `Map[K, V
 let TOK_RING: i32 = 148        // 5.2 slice 9: `ring` (literal keyword; type spelling ring[T])
 let TOK_BITSET: i32 = 149      // 5.2 slice 9: `bitset` (literal keyword; bare type spelling)
 let TOK_HEAP: i32 = 152        // 5.2 slice 10: `heap` (the heap-shelf storage modifier)
+let TOK_TEST: i32 = 153        // 6.5: `test` keyword for native test declarations
 
 // Operators & Punctuation
 let TOK_AT: i32 = 50           // @

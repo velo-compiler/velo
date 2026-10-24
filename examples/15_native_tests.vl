@@ -1,0 +1,25 @@
+// 6.5 Native Integrated Test Runner Example
+use sys.io
+use sys.mem
+
+test "basic math operations" {
+    let a = 15
+    let b = 27
+    assert(a + b == 42)
+    assert(b - a == 12)
+}
+
+test "string assertions with message" {
+    let greeting = "hello"
+    assert(greeting != null, "greeting should not be null")
+}
+
+test "memory arena isolation" {
+    let ptr = mem.alloc(@i32, 10)
+    assert(ptr != null)
+}
+
+act main() -> i32 {
+    io.println("Running normal main application")
+    return 0
+}

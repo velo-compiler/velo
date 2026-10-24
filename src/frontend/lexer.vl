@@ -56,6 +56,7 @@ act check_keyword(source: string, start: usize, len: usize) -> i32 {
         if source[start] == 'n' and source[start + 1] == 'u' and source[start + 2] == 'l' and source[start + 3] == 'l' { return TOK_NULL }
         if source[start] == 'r' and source[start + 1] == 'i' and source[start + 2] == 'n' and source[start + 3] == 'g' { return TOK_RING }   // 5.2 slice 9
         if source[start] == 'h' and source[start + 1] == 'e' and source[start + 2] == 'a' and source[start + 3] == 'p' { return TOK_HEAP }   // 5.2 slice 10
+        if source[start] == 't' and source[start + 1] == 'e' and source[start + 2] == 's' and source[start + 3] == 't' { return TOK_TEST }   // 6.5 test
     } else if len == 5 {
         if source[start] == 's' and source[start + 1] == 'h' and source[start + 2] == 'e' and source[start + 3] == 'l' and source[start + 4] == 'f' { return TOK_SHELF }
         if source[start] == 'b' and source[start + 1] == 'r' and source[start + 2] == 'e' and source[start + 3] == 'a' and source[start + 4] == 'k' { return TOK_BREAK }
@@ -370,14 +371,10 @@ act tokenize(lex: @Lexer) {
             } else if c == '^' {
                 if lex.pos + 1 < len and src[lex.pos + 1] == '=' { op_len = 2; op_kind = TOK_CARET_ASSIGN }
                 else { op_kind = TOK_CARET }
-            } else if c == '~' {
-                op_kind = TOK_TILDE
-            } else if c == '(' { op_kind = TOK_LPAREN }
-            else if c == ')' { op_kind = TOK_RPAREN }
-            else if c == '{' { op_kind = TOK_LBRACE }
-            else if c == '}' { op_kind = TOK_RBRACE }
-            else if c == '[' { op_kind = TOK_LBRACKET }
-            else if c == ']' { op_kind = TOK_RBRACKET }
+            } else if c == '~' { op_kind = TOK_TILDE }
+            else if c == '(' { op_kind = TOK_LPAREN } else if c == ')' { op_kind = TOK_RPAREN }
+            else if c == '{' { op_kind = TOK_LBRACE } else if c == '}' { op_kind = TOK_RBRACE }
+            else if c == '[' { op_kind = TOK_LBRACKET } else if c == ']' { op_kind = TOK_RBRACKET }
             else if c == '#' { op_kind = TOK_HASH }
 
             if op_kind != TOK_EOF {

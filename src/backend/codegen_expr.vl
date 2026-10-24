@@ -30,19 +30,11 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
 
     // 1. Literal expressions
     if expr.kind == EXPR_INT {
-        if expr.str_val != null and str.len(expr.str_val) > 0 {
-            sb_append_str(sb, expr.str_val)
-        } else {
-            sb_append_int(sb, expr.int_val)
-        }
+        if expr.str_val != null and str.len(expr.str_val) > 0 { sb_append_str(sb, expr.str_val) } else { sb_append_int(sb, expr.int_val) }
         return
     }
     if expr.kind == EXPR_FLOAT {
-        if expr.str_val != null and str.len(expr.str_val) > 0 {
-            sb_append_str(sb, expr.str_val)
-        } else {
-            sb_append_float(sb, expr.float_val)
-        }
+        if expr.str_val != null and str.len(expr.str_val) > 0 { sb_append_str(sb, expr.str_val) } else { sb_append_float(sb, expr.float_val) }
         return
     }
     if expr.kind == EXPR_STRING { sb_append_char(sb, '"'); sb_append_str(sb, expr.str_val); sb_append_char(sb, '"'); return }
@@ -370,6 +362,20 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                     return
                 }
             }
+        }
+
+        if expr.callee != null and expr.callee.kind == EXPR_IDENT and expr.callee.str_val == "assert" {
+            sb_append_str(sb, "velo_assert(("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "), \"")
+            if st.source_file != null and str.len(st.source_file) > 0 {
+                mut i: usize = 0
+                loop i < str.len(st.source_file) {
+                    if st.source_file[i] == '\\' { sb_append_char(sb, '/') } else { sb_append_char(sb, st.source_file[i]) }
+                    i += 1
+                }
+            } else { sb_append_str(sb, "<source>") }
+            sb_append_str(sb, "\", "); sb_append_int(sb, expr.line); sb_append_str(sb, ", ")
+            if expr.first_arg != null and expr.first_arg.next != null { emit_c_expr(sb, st, expr.first_arg.next) } else { sb_append_str(sb, "NULL") }
+            sb_append_char(sb, ')'); return
         }
 
         // Standard function call

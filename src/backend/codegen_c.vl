@@ -12,6 +12,7 @@ use "../common/utils.vl"
 use "../common/act_types.vl"
 use "codegen_expr.vl"
 use "codegen_stmt.vl"
+use "test_gen.vl"
 
 // Checks if a function name corresponds to an anonymous lifted function.
 act is_anon_act_name(name: string) -> bool {
@@ -293,11 +294,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
             sb_append_str(@sb, cur.name); sb_append_str(@sb, " {\n")
             mut cur_f = cur.first_field
             loop cur_f != null {
-                sb_append_indent(@sb, 1)
-                sb_append_str(@sb, map_type_to_c(cur_f.type_name))
-                sb_append_char(@sb, ' ')
-                sb_append_str(@sb, cur_f.name)
-                sb_append_str(@sb, ";\n")
+                sb_append_indent(@sb, 1); sb_append_str(@sb, map_type_to_c(cur_f.type_name)); sb_append_char(@sb, ' '); sb_append_str(@sb, cur_f.name); sb_append_str(@sb, ";\n")
                 cur_f = cur_f.next
             }
             sb_append_str(@sb, "};\n\n")
@@ -325,13 +322,8 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
             if inferred_type == null or str.len(inferred_type) == 0 {
                 if cur.val_expr != null { inferred_type = infer_expr_type(st, cur.val_expr) } else { inferred_type = "i32" }
             }
-            sb_append_str(@sb, map_type_to_c(inferred_type))
-            sb_append_char(@sb, ' ')
-            sb_append_str(@sb, cur.name)
-            if cur.val_expr != null {
-                sb_append_str(@sb, " = ")
-                emit_c_expr(@sb, st, cur.val_expr)
-            }
+            sb_append_str(@sb, map_type_to_c(inferred_type)); sb_append_char(@sb, ' '); sb_append_str(@sb, cur.name)
+            if cur.val_expr != null { sb_append_str(@sb, " = "); emit_c_expr(@sb, st, cur.val_expr) }
             sb_append_str(@sb, ";\n")
         }
         cur = cur.next
@@ -339,13 +331,13 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
     sb_append_line(@sb, "", 0)
 
     // 5. Function forward prototypes
+    if st.is_test { emit_test_prototypes(@sb, prog) }
     cur = prog.first_decl
     loop cur != null {
         if cur.kind == DECL_FUNCTION and cur.name != "main" {
             if is_anon_act_name(cur.name) { sb_append_str(@sb, "static ") }
             sb_append_str(@sb, map_type_to_c(cur.return_type)); sb_append_char(@sb, ' '); sb_append_str(@sb, cur.name)
-            emit_param_list(@sb, cur.first_param, cur.param_count)
-            sb_append_str(@sb, ";\n")
+            emit_param_list(@sb, cur.first_param, cur.param_count); sb_append_str(@sb, ";\n")
         }
         cur = cur.next
     }
@@ -356,14 +348,12 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
     loop cur != null {
         if cur.kind == DECL_FUNCTION {
             if cur.name == "main" {
-                sb_append_str(@sb, "int main(int argc, char** argv) {\n"); sb_append_str(@sb, "g_velo_os_argc = argc;\n"); sb_append_str(@sb, "g_velo_os_argv = argv;\n")  // 5.4 S1: stash argv for sys.os — the same two indent-0 lines the stage-1 emitter writes
+                if st.is_test { sb_append_str(@sb, "static int _velo_user_main(int argc, char** argv) {\n") } else { sb_append_str(@sb, "int main(int argc, char** argv) {\n") }
+                sb_append_str(@sb, "g_velo_os_argc = argc;\n"); sb_append_str(@sb, "g_velo_os_argv = argv;\n")
             } else {
                 if is_anon_act_name(cur.name) { sb_append_str(@sb, "static ") }
-                sb_append_str(@sb, map_type_to_c(cur.return_type))
-                sb_append_char(@sb, ' ')
-                sb_append_str(@sb, cur.name)
-                emit_param_list(@sb, cur.first_param, cur.param_count)
-                sb_append_str(@sb, " {\n")
+                sb_append_str(@sb, map_type_to_c(cur.return_type)); sb_append_char(@sb, ' '); sb_append_str(@sb, cur.name)
+                emit_param_list(@sb, cur.first_param, cur.param_count); sb_append_str(@sb, " {\n")
             }
 
             enter_scope(st)
@@ -382,15 +372,16 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
                 cur_d = cur_d.next
             }
 
-            if cur.name == "main" {
-                sb_append_indent(@sb, 1)
-                sb_append_str(@sb, "return 0;\n")
-            }
-
+            if cur.name == "main" { sb_append_indent(@sb, 1); sb_append_str(@sb, "return 0;\n") }
             exit_scope(st)
             sb_append_str(@sb, "}\n\n")
         }
         cur = cur.next
+    }
+
+    if st.is_test {
+        emit_test_functions(@sb, st, prog)
+        emit_test_harness_main(@sb, prog)
     }
 
     return sb_to_string(@sb)

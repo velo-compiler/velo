@@ -373,3 +373,22 @@ act parse_extern_decl(p: @Parser) -> @StmtNode {
     parser_skip_newlines(p)
     return make_extern_decl(fname, first_param, count, ret_type, ext_tok.line, ext_tok.col)
 }
+
+// Parses a test block declaration (`test "name" { ... }`).
+act parse_test_decl(p: @Parser) -> @StmtNode {
+    let test_tok = parser_consume(p, TOK_TEST, "Expected 'test'")
+    mut name = "unnamed"
+    if parser_check(p, TOK_STRING_LIT) {
+        let name_tok = parser_advance(p)
+        name = get_string_literal_text(p.source, name_tok)
+    } else if parser_check(p, TOK_IDENTIFIER) {
+        let name_tok = parser_advance(p)
+        name = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
+    } else {
+        report_parse(p, p.filename, test_tok.line, test_tok.col, test_tok.length, "Expected test name string literal or identifier after 'test'")
+        p.had_error = true
+    }
+    parser_skip_newlines(p)
+    let body = parse_block(p)
+    return make_test_decl(name, body, test_tok.line, test_tok.col)
+}

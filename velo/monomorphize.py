@@ -12,7 +12,7 @@ from velo.ast_nodes import (
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr,
     ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral,
-    TypeAliasDecl,
+    TypeAliasDecl, TestDecl,
     mangle_op_name, OP_SYMBOL_TO_NAME
 )
 
@@ -333,6 +333,9 @@ class Monomorphizer:
                     line=decl.line,
                     col=decl.col
                 ))
+            elif isinstance(decl, TestDecl):
+                new_body = self._transform_block(decl.body, {}, {}, "void")
+                transformed_regular_decls.append(TestDecl(name=decl.name, body=new_body, line=decl.line, col=decl.col))
             else:
                 transformed_regular_decls.append(decl)
 

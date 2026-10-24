@@ -699,16 +699,24 @@ The chapter ships in full: slice 1 parse-row snippet blocks on both stages (addi
   - Line count ceilings: all files ≤ 399 lines (`src/main.vl` 304).
   - Build sheet: `lsp.md`.
 
-### 6.5 Native Integrated Test Runner (🟢 P3 Ecosystem)
-* Currently, tests are driven via Python `pytest` and subprocess invocations.
-* Velo lacks an in-language test primitive:
-  ```velo
-  test "vector addition" {
-      let v = Vec2{ x: 1.0, y: 2.0 }
-      assert(v.x == 1.0)
-  }
-  ```
-  and a `velo test` CLI subcommand.
+### 6.5 Native Integrated Test Runner [COMPLETED] ✅
+* **Former Defect (Missing Native Test Infrastructure)**: Velo had no in-language test primitive or test execution subcommand. All testing was driven externally via Python `pytest` and subprocess invocations. Developers could not write unit tests alongside their code, assertions in Velo programs caused hard process aborts without contextual failure diagnosis, and there was no memory isolation between test cases.
+* **Fix Applied**:
+  * **In-Language Test Blocks**: First-class `test "name" { <body> }` top-level declarations implemented in both Stage 1 Python (`velo/parser.py`, `velo/ast_nodes.py`, `velo/codegen_c.py`) and Stage 2 self-hosted (`src/frontend/token.vl`, `src/frontend/lexer.vl`, `src/ast/stmt.vl`, `src/frontend/parser_decl.vl`, `src/backend/test_gen.vl`, `src/backend/codegen_c.vl`). Contextual keyword handling ensures `let test = ...` remains valid.
+  * **Native Assertions with Zero-Crash Jumping**: `assert(condition)` and `assert(condition, "message")` lowered into runtime macro `velo_assert((cond), file, line, msg)`. In test runs, assertion failure records file, line, stringified condition expression (`#cond`), and failure message into thread-local `VeloTestContext`, then uses C99 `setjmp`/`longjmp` to cleanly abort only the current test and allow remaining tests to execute. In normal non-test code, failed assertions output `[Velo Fatal] Assertion failed at file:line: assert(cond): msg` and terminate with status 1.
+  * **Per-Test Memory Isolation**: Each test run resets the active arena offset via `velo_mem_reset()` (`g_velo_zone_tls_active->offset = 0`), ensuring allocations made inside a test do not leak across test boundaries. Bumped default zone arena `VELO_ZONE_BUFFER_SIZE` to 64 MB to provide ample headroom during large compilations.
+  * **Production Build Stripping**: In standard `velo build` and `velo run` modes, all `test` blocks are completely omitted from C code emission; normal user `main()` executes without test harness overhead. In test mode, user `main()` is renamed to `_velo_user_main()` to avoid symbol collisions with the generated test harness `main()`.
+  * **First-Class CLI Subcommand (`velo test`)**: Available on both Stage 1 (`python velo.py test [path] [--filter <pattern>]`) and Stage 2 (`bin/velo.exe test [path] [--filter <pattern>]`), supporting both individual `.vl` source files and directory discovery, reporting standard test harness output (`running N tests`, `test "..." ... ok`, `test "..." ... FAILED`, `test result: ok/FAILED. N passed; N failed`).
+  * **Developer Tooling Parity**: `velo/analysis.py` updated with `test` block document symbols, `assert` builtin hover tooltips, and completion items.
+* **Residual Limitations**: (1) Test discovery currently checks for files containing `test "` in the source text; AST-level module graph traversal for test discovery in multi-module packages without top-level test files can be added in a future pass. (2) Concurrency within tests is single-threaded per test runner; parallel test worker execution across multiple processes/threads is left for future enhancement.
+* **Verification**:
+  * New unit test suite `tests/test_native_tests.py` covering passing tests, assertion failures with custom messages, filtering (`--filter`), memory isolation, production build stripping, and normal non-test assertion aborts: **6/6 passed**.
+  * Full pytest test suite: **274/274 passed** (was 268).
+  * Triple-bootstrap chain rebuilt (Gen1 → Gen2 → Gen3 → `bin/velo.exe`); bit-for-bit determinism verified with Gen2 ≡ Gen3 SHA-256 fixed point:
+    `0e83dc130262d1483068de2fa3ccb81e383a6d78e0d2321124792a041c987c34`.
+  * Line count standards: all 57 source files in `src/` strictly ≤ 399 lines (`scripts/count_lines.py`).
+  * Example test fixture: `examples/15_native_tests.vl` verified working on both Python Stage 1 and native `bin/velo.exe`.
+  * Build sheet: `test_runner.md`.
 
 ### 6.6 Lexer Token Buffer Sizing & Overflow Diagnostics [COMPLETED] ✅
 * **Former Defect (Silent Compiler Corruption)**: The self-hosted lexer (`src/frontend/lexer.vl`) used a hardcoded **8,192-token** capacity, and `add_token` **silently discarded** tokens beyond it. Any valid file past the cap (~2,000+ statements; large real-world or generated modules) produced a truncated token stream, derailing the parser into a runaway allocation loop that crashed with a **misleading `Zone Arena Out of Memory` fatal error** — the message blamed memory while the actual cause was lexer truncation. Notably masked because the compiler's own corpus obeys the `<= 400 lines/file` standard and never crossed the cap.

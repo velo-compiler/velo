@@ -400,5 +400,12 @@ class UseStmt(Decl):
     col: int
 
 @dataclass
+class TestDecl(Decl):
+    name: str
+    body: Any  # BlockStmt
+    line: int
+    col: int
+
+@dataclass
 class Program(ASTNode):
     declarations: List[Decl]

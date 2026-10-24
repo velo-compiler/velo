@@ -77,6 +77,11 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
             check_statement(st, cur.return_type, cur.body)
             exit_scope(st)
         }
+        if cur.kind == DECL_TEST and cur.body != null {
+            enter_scope(st)
+            check_statement(st, "void", cur.body)
+            exit_scope(st)
+        }
         cur = cur.next
     }
 

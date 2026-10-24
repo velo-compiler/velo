@@ -69,6 +69,17 @@ def main():
     lsp_parser = subparsers.add_parser("lsp", help="Run the Velo Language Server (stdio JSON-RPC)")
     lsp_parser.add_argument("repo_root", nargs="?", default=None, help="Root repository directory (default: auto-detected)")
 
+    # 'test' command
+    test_parser = subparsers.add_parser("test", help="Run tests defined via 'test' blocks")
+    test_parser.add_argument("target", nargs="?", default=".", help="Path to .vl source file or directory (default: current directory)")
+    test_parser.add_argument("-k", "--filter", dest="filter", default=None, help="Filter tests by name substring")
+    test_parser.add_argument("--unsafe-shelf-index", action="store_true", help="Lower shelf index reads unguarded (out-of-range becomes silent UB)")
+    test_parser.add_argument("--debug", action="store_true", help="Compile with debug symbols (-O0 -g)")
+    test_parser.add_argument("--release", action="store_true", help="Compile with release optimizations and LTO (-O3 -flto)")
+    test_parser.add_argument("-O", "--optimize", choices=["0", "1", "2", "3", "s", "fast"], help="GCC optimization level")
+    test_parser.add_argument("-l", dest="libs", action="append", default=[], help="Link with external library (e.g. -lraylib)")
+    test_parser.add_argument("-L", dest="lib_dirs", action="append", default=[], help="Add library directory to search path (e.g. -L./lib)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -168,6 +179,20 @@ def main():
         elif args.command == "lsp":
             from velo.lsp import run_server
             sys.exit(run_server(args.repo_root))
+        elif args.command == "test":
+            if getattr(args, "debug", False) and getattr(args, "release", False):
+                print("[Velo Error] Cannot specify both --debug and --release", file=sys.stderr)
+                sys.exit(1)
+            exit_code = driver.test(
+                args.target,
+                filter_str=args.filter,
+                debug=getattr(args, "debug", False),
+                release=getattr(args, "release", False),
+                opt_level=getattr(args, "optimize", None),
+                libs=getattr(args, "libs", None),
+                lib_dirs=getattr(args, "lib_dirs", None)
+            )
+            sys.exit(exit_code)
     except Exception as e:
         print(f"\n[Velo Error] {e}", file=sys.stderr)
         # 6.3 S1/S4: run/build/emit-c doc failures carrying a position (Lexer /

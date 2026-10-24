@@ -20,6 +20,7 @@
 #include <string.h>
 #include <stddef.h>
 #include <time.h>
+#include <setjmp.h>
 // 5.3 Math Library: sys.math lowers directly onto C99 libm (sqrt/pow/cbrt
 // shipped in slice 1); no -lm is needed — MinGW ucrt64 satisfies these via
 // libmingwex/msvcrt, which the driver links by default.
@@ -86,7 +87,7 @@ typedef struct VeloZoneArena {
     size_t   offset;  // bump watermark (== allocated bytes right now)
 } VeloZoneArena;
 
-#define VELO_ZONE_BUFFER_SIZE (32 * 1024 * 1024)
+#define VELO_ZONE_BUFFER_SIZE (64 * 1024 * 1024)
 
 #define VELO_ZONE_POOL_MAX 32
 
@@ -2190,5 +2191,54 @@ static inline int velo_capture_end(void) {
     g_velo_capture_file = NULL;
     return 0;
 }
+
+// ============================================================================
+// 6.5 Native Integrated Test Runner: assertions & test context
+// ============================================================================
+
+typedef struct VeloTestContext {
+    jmp_buf jmp;
+    int current_test_failed;
+    const char* failure_file;
+    int failure_line;
+    const char* failure_expr;
+    const char* failure_msg;
+} VeloTestContext;
+
+static __thread VeloTestContext* g_velo_current_test = NULL;
+
+static inline void velo_mem_init(void) {
+    velo_zone_active();
+}
+
+static inline void velo_mem_reset(void) {
+    if (g_velo_zone_tls_active) {
+        g_velo_zone_tls_active->offset = 0;
+    }
+}
+
+static inline void velo_assert_fail(const char* expr_str, const char* file, int line, const char* msg) {
+    if (g_velo_current_test) {
+        g_velo_current_test->current_test_failed = 1;
+        g_velo_current_test->failure_file = file;
+        g_velo_current_test->failure_line = line;
+        g_velo_current_test->failure_expr = expr_str;
+        g_velo_current_test->failure_msg = msg;
+        longjmp(g_velo_current_test->jmp, 1);
+    } else {
+        if (msg && msg[0]) {
+            fprintf(stderr, "[Velo Fatal] Assertion failed at %s:%d: assert(%s): %s\n", file, line, expr_str, msg);
+        } else {
+            fprintf(stderr, "[Velo Fatal] Assertion failed at %s:%d: assert(%s)\n", file, line, expr_str);
+        }
+        exit(1);
+    }
+}
+
+#define velo_assert(cond, file, line, msg) do { \
+    if (!(cond)) { \
+        velo_assert_fail(#cond, file, line, msg); \
+    } \
+} while (0)
 
 #endif // VELO_RUNTIME_H

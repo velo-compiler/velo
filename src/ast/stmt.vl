@@ -23,6 +23,7 @@ let DECL_EXTERN: i32 = 303
 let DECL_USE: i32 = 304
 let DECL_KIND: i32 = 305
 let DECL_TYPE_ALIAS: i32 = 306
+let DECL_TEST: i32 = 307
 
 data VariantNode {
     name: string
@@ -340,60 +341,41 @@ act make_extern_decl(name: string, first_param: @ParamNode, param_count: usize, 
 // Creates a module import statement (`use "module.vl"` or `use sys.io`).
 act make_use_decl(mod_path: string, line: i32, col: i32) -> @StmtNode {
     mut node: @StmtNode = mem.alloc(@StmtNode, 1)
-    node.kind = DECL_USE
-    node.module_path = mod_path
-    node.line = line
-    node.col = col
+    node.kind = DECL_USE; node.module_path = mod_path; node.line = line; node.col = col
     return node
 }
 
 // Creates a parameter descriptor node.
 act make_param_node(name: string, type_name: string, line: i32, col: i32) -> @ParamNode {
     mut p: @ParamNode = mem.alloc(@ParamNode, 1)
-    p.name = name
-    p.type_name = type_name
-    p.line = line
-    p.col = col
-    p.next = null
+    p.name = name; p.type_name = type_name; p.line = line; p.col = col; p.next = null
     return p
 }
 
 // Creates a struct field descriptor node.
 act make_field_node(name: string, type_name: string, has_default: bool, default_value: @ExprNode, line: i32, col: i32) -> @FieldNode {
     mut f: @FieldNode = mem.alloc(@FieldNode, 1)
-    f.name = name
-    f.type_name = type_name
-    f.has_default = has_default
-    f.default_value = default_value
-    f.line = line
-    f.col = col
-    f.next = null
+    f.name = name; f.type_name = type_name; f.has_default = has_default; f.default_value = default_value; f.line = line; f.col = col; f.next = null
     return f
 }
 
 // Creates a kind (enum / tagged union) declaration node.
 act make_kind_decl(name: string, first_variant: @VariantNode, count: usize, line: i32, col: i32) -> @StmtNode {
     mut node: @StmtNode = mem.alloc(@StmtNode, 1)
-    node.kind = DECL_KIND
-    node.name = name
-    node.first_variant = first_variant
-    node.variant_count = count
-    node.line = line
-    node.col = col
+    node.kind = DECL_KIND; node.name = name; node.first_variant = first_variant; node.variant_count = count; node.line = line; node.col = col
     return node
 }
 
 // Creates a variant descriptor node.
 act make_variant_node(name: string, disc: i32, has_disc: bool, ptype: string, f_field: @FieldNode, f_count: usize, line: i32, col: i32) -> @VariantNode {
     mut v: @VariantNode = mem.alloc(@VariantNode, 1)
-    v.name = name
-    v.discriminant = disc
-    v.has_discriminant = has_disc
-    v.payload_type = ptype
-    v.first_field = f_field
-    v.field_count = f_count
-    v.line = line
-    v.col = col
-    v.next = null
+    v.name = name; v.discriminant = disc; v.has_discriminant = has_disc; v.payload_type = ptype; v.first_field = f_field; v.field_count = f_count; v.line = line; v.col = col; v.next = null
     return v
+}
+
+// Creates a test declaration node (`test "name" { ... }`).
+act make_test_decl(name: string, body: @StmtNode, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = DECL_TEST; node.name = name; node.body = body; node.line = line; node.col = col
+    return node
 }

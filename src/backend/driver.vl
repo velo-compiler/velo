@@ -173,7 +173,7 @@ act resolve_and_parse(d: @CompilerDriver, file_path: string) -> @ProgramNode {
 
 // Translates a Velo source program into a complete, standalone C99 source string.
 // Slice 11: unsafe_index carries the --unsafe-shelf-index knob to the emitter.
-act compile_source_to_c(source_path: string, unsafe_index: bool) -> string {
+act compile_source_to_c_test(source_path: string, unsafe_index: bool, is_test: bool) -> string {
     mut d: CompilerDriver
     init_driver(@d)
 
@@ -187,6 +187,8 @@ act compile_source_to_c(source_path: string, unsafe_index: bool) -> string {
     mut st: SymbolTable
     init_symbol_table(@st)
     st.unsafe_shelf_index = unsafe_index
+    st.is_test = is_test
+    st.source_file = source_path
 
     let sem_ok = check_program(@st, prog)
     if not sem_ok or st.error_count > 0 {
@@ -195,6 +197,10 @@ act compile_source_to_c(source_path: string, unsafe_index: bool) -> string {
     }
 
     return emit_translation_unit(@st, prog)
+}
+
+act compile_source_to_c(source_path: string, unsafe_index: bool) -> string {
+    return compile_source_to_c_test(source_path, unsafe_index, false)
 }
 
 // Builds a native executable from a Velo source file by compiling to C and invoking GCC.
@@ -275,6 +281,82 @@ act run_source_file(source_path: string, unsafe_index: bool, opt_flags: string, 
     let run_cmd = sb_to_string(@run_sb)
 
     return system(run_cmd)
+}
+
+// Compiles and runs tests in a single Velo source file.
+act test_source_file(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, filter_arg: string) -> i32 {
+    let c_code = compile_source_to_c_test(source_path, unsafe_index, true)
+    if c_code == null { return 1 }
+
+    let stem = get_file_stem(source_path)
+    mut c_path_sb = create_sb(128)
+    sb_append_str(@c_path_sb, ".velo_cache/"); sb_append_str(@c_path_sb, stem); sb_append_str(@c_path_sb, "_test.c")
+    let c_file_path = sb_to_string(@c_path_sb)
+    fs.write_file(c_file_path, c_code)
+
+    mut out_sb = create_sb(128)
+    sb_append_str(@out_sb, ".velo_cache/"); sb_append_str(@out_sb, stem); sb_append_str(@out_sb, "_test.exe")
+    let exe_path = sb_to_string(@out_sb)
+
+    mut cmd_sb = create_sb(512)
+    if fs.exists("C:/msys64/ucrt64/bin/gcc.exe") { sb_append_str(@cmd_sb, "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ") }
+    sb_append_str(@cmd_sb, "gcc ")
+    if opt_flags != null and str.len(opt_flags) > 0 { sb_append_str(@cmd_sb, opt_flags); sb_append_str(@cmd_sb, " ") } else { sb_append_str(@cmd_sb, "-O2 ") }
+    sb_append_str(@cmd_sb, "-std=c99 -I velo/runtime "); sb_append_str(@cmd_sb, to_native_path(c_file_path))
+    if linker_flags != null and str.len(linker_flags) > 0 { sb_append_str(@cmd_sb, " "); sb_append_str(@cmd_sb, linker_flags) }
+    sb_append_str(@cmd_sb, " -o "); sb_append_str(@cmd_sb, to_native_path(exe_path))
+    let cmd = sb_to_string(@cmd_sb)
+
+    let res = system(cmd)
+    if res != 0 {
+        io.println("[Velo Error] GCC compilation failed with exit code {res}")
+        return 1
+    }
+
+    mut run_sb = create_sb(256)
+    if fs.exists("C:/msys64/ucrt64/bin/gcc.exe") { sb_append_str(@run_sb, "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ") }
+    sb_append_str(@run_sb, to_native_path(exe_path))
+    if filter_arg != null and str.len(filter_arg) > 0 {
+        sb_append_str(@run_sb, " --filter "); sb_append_str(@run_sb, filter_arg)
+    }
+    let run_cmd = sb_to_string(@run_sb)
+    return system(run_cmd)
+}
+
+// Runs tests on a file or all .vl test files within a directory.
+act test_target(target_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, filter_arg: string) -> i32 {
+    if fs.is_file(target_path) {
+        return test_source_file(target_path, unsafe_index, opt_flags, linker_flags, filter_arg)
+    }
+    if fs.is_dir(target_path) {
+        let entries = fs.read_dir(target_path)
+        mut overall: i32 = 0
+        mut found = false
+        mut i: usize = 0
+        loop i < entries.len {
+            let entry = entries[i]
+            let elen = str.len(entry)
+            if elen > 3 and entry[elen - 3] == '.' and entry[elen - 2] == 'v' and entry[elen - 1] == 'l' {
+                mut path_sb = create_sb(256)
+                sb_append_str(@path_sb, target_path); sb_append_char(@path_sb, '/'); sb_append_str(@path_sb, entry)
+                let full_path = sb_to_string(@path_sb)
+                let content = fs.read_file(full_path)
+                if content != null {
+                    if str.contains(content, "test \"") or str.contains(content, "test '") {
+                        found = true
+                        let rc = test_source_file(full_path, unsafe_index, opt_flags, linker_flags, filter_arg)
+                        if rc != 0 { overall = rc }
+                    }
+                    mem.free(content)
+                }
+            }
+            i += 1
+        }
+        if not found { io.println("No test files found in directory."); return 0 }
+        return overall
+    }
+    io.println("[Velo Error] Target path not found: {target_path}")
+    return 1
 }
 
 // Generates Markdown documentation for a Velo source file.
