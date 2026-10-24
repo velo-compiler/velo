@@ -1,0 +1,150 @@
+/* 5.2 Array Mastery — advanced manipulation across the collections toolkit.
+ *
+ * One program exercising every collection family shipped in 5.2: pipeline
+ * surgery on a typed shelf (indexed writes, insert/remove_at, the
+ * sorted()/reversed() copies, join), the widening ladder with tagged dyn
+ * boxes and `as` unboxing, a text pipeline built on the slice-11
+ * str.split -> shelf[string] owning result, Map has/get/put with hash-order
+ * key iteration, the FIFO ring across its wrap boundary, bitset masks,
+ * shared @shelf rows that write through to their originals, and heap
+ * shelves that survive zone exits and act returns on the heap ledger.
+ * NO calls/indexing inside {..} interpolations — both compilers lower
+ * those untranslated (gaps 6.7); every value binds to a local first.
+ * Output is byte-identical on the Stage 1 Python compiler and the
+ * self-hosted Stage 2 compiler.
+ */
+use sys.io
+use sys.mem
+
+// Aggregators ride exact element spellings: shelf[i32] in, i32 out.
+act sum(xs: shelf[i32]) -> i32 {
+    mut total: i32 = 0
+    loop v of xs {
+        total = total + v
+    }
+    return total
+}
+
+act max_of(xs: shelf[i32]) -> i32 {
+    mut high: i32 = xs[0]
+    loop v of xs {
+        if v > high { high = v }
+    }
+    return high
+}
+
+// A heap shelf outlives its act: the payload rides the heap ledger.
+act make_stock() -> heap shelf[i32] {
+    mut h = heap shelf[100, 200]
+    loop 4 { h.put(7 + it as i32) }
+    return h
+}
+
+act main() -> i32 {
+    // 1) Pipeline surgery on a mut shelf: write, shift, pluck, sort.
+    mut seed: shelf[i32] = shelf[9, 2, 7, 2, 5]
+    seed[0] = 11
+    seed.insert(1, 4)
+    let gone: i32 = seed.remove_at(3)
+    let hi: i32 = max_of(seed)
+    let total: i32 = sum(seed)
+    let asc = seed.sorted()
+    let desc = seed.reversed()
+    let clean: string = asc.join(" / ")
+    let raw: string = desc.join(" / ")
+    let n0: usize = seed.len
+    io.println("gone: {gone} hi: {hi} sum: {total} len: {n0}")
+    io.println("asc: {clean}")
+    io.println("desc: {raw}")
+
+    // 2) The widening ladder: a mixed bag is dyn-tagged; reads unbox via as.
+    mut bag: shelf[dyn] = shelf[15, true, "sx"]
+    bag.insert(0, 2.5)
+    let d0 = bag[0] as f64
+    let d1 = bag[1] as i64
+    let d3 = bag[3] as string
+    let bn: usize = bag.len
+    io.println("bag: {d0} {d1} {d3} len: {bn}")
+
+    // 3) Text pipeline: str.split returns the OWNING shelf[string].
+    let csv: string = "kilo,victor,alpha,echo"
+    let parts: shelf[string] = str.split(csv, ",")
+    loop tok, i of parts {
+        io.println("part {i} = '{tok}'")
+    }
+    let alpha = parts.sorted()
+    let rebuilt: string = alpha.join(" | ")
+    let pn: usize = parts.len
+    io.println("split count: {pn} sorted: {rebuilt}")
+
+    // 4) Map ledger: upsert puts, fatal-on-miss gets, hash-order keys.
+    mut stock: Map[string, i32] = map["bow": 1, "axe": 3, "cup": 2]
+    stock.put("cup", 9)
+    stock.put("dye", 4)
+    let has_bow: bool = stock.has("bow")
+    let bow_q: i32 = stock.get("bow")
+    let cup_q: i32 = stock.get("cup")
+    let dye_q: i32 = stock.get("dye")
+    let sn: usize = stock.len
+    io.println("stock: bow {bow_q} cup {cup_q} dye {dye_q} size {sn}")
+    if has_bow { io.println("bow present") }
+    loop key, i of stock {
+        let q: i32 = stock.get(key)
+        io.println("inv {i}: {key} x {q}")
+    }
+
+    // 5) FIFO ring across the wrap boundary: puts roll, pops drain the head.
+    mut ringq: ring[i32] = ring[]
+    loop 5 { ringq.put(it as i32) }
+    let fr = ringq.peek() as i32
+    let popped = ringq.pop()
+    let popped2 = ringq.pop()
+    let rn: usize = ringq.len
+    io.println("front: {fr} head pops: {popped} {popped2} left: {rn}")
+    loop v, i of ringq {
+        io.println("ring {i} holds {v}")
+    }
+
+    // 6) Bitset mask: set/has/clear/toggle/count + the first open slot.
+    mut mask: bitset = bitset[]
+    mask.set(0)
+    mask.set(3)
+    mask.set(10)
+    let mc: usize = mask.count()
+    io.println("mask bits: {mc}")
+    if mask.has(3) { io.println("bit 3 armed") }
+    mask.clear(3)
+    if mask.has(3) { io.println("bit 3 still armed") } else { io.println("bit 3 disarmed") }
+    let fu: i32 = mask.first_unset()
+    io.println("first open slot: {fu}")
+    mask.set(1)
+    mask.toggle(1)
+    if mask.has(1) { io.println("bit 1 toggled on") } else { io.println("bit 1 toggled off") }
+
+    // 7) Shared @shelf rows: grid cells write through to their originals.
+    mut r1: shelf[i32] = shelf[1, 2]
+    mut r2: shelf[i32] = shelf[3, 4]
+    mut grid: shelf[@shelf[i32]] = shelf[@r1, @r2]
+    grid[0][1] = 70
+    grid[0].put(9)
+    let s1v: i32 = r1[1]
+    let s1n = r1.len as i32
+    let r1joined: string = r1.join(",")
+    io.println("write-through: {s1v} len {s1n} row: {r1joined}")
+
+    // 8) Heap shelves survive the zone and the act; the heap ledger keeps them
+    let h = make_stock()
+    mut g: heap shelf[i32] = heap shelf[]
+    zone 1024 {
+        loop 3 { g.put(it as i32) }
+    }
+    let hn = h.len as i32
+    let h2: i32 = h[1]
+    let gn = g.len as i32
+    let g2: i32 = g[2]
+    let ledger: usize = mem.heap_used()
+    io.println("stock len {hn} second {h2} zone-grown {gn} last {g2}")
+    io.println("heap ledger: {ledger}")
+
+    return 0
+}

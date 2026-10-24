@@ -352,9 +352,14 @@ Tests:
 
 * [x] Suite target ~185–200 parity tests; every fatal pinned in the runtime
       header; every reject wording byte-identical across stages. (S11 state:
-      **178/178**, sweep **81/81** — the wording parity is the sweep itself.)
-* [x] `examples/` gains one example per milestone type (shelf 4/map 28/ring-
-      bitset 29 from the earlier slices — the sweep re-titled the section
-      instead of adding a new example: slice 11 migrates example 30 in place).
+      **178/178**, sweep **81/81**; example 32's parity test brings the suite
+      to **179**. The wording parity is the sweep itself.)
+* [x] `examples/` gains one example per milestone type (examples 4/28/29/30
+      cover shelf-zone/map/ring-bitset/string-library; example 32
+      (`32_array_mastery.vl`) crosses EVERY family in one deterministic
+      program — pipeline surgery, dyn unboxing, the split text pipeline,
+      Map hash-order iteration, ring wrap, bitset masks, shared @shelf
+      rows, heap shelves — pinned byte-identical by
+      `tests/test_array_mastery.py`.
 * [x] gaps.md 5.2 heading retitled: `COMPLETE (slices 1–11) ✅`.
 * [x] This sheet updated (checkboxes ticked) in the same commit as its slice.
