@@ -138,7 +138,8 @@ class CompilerDriver:
 
 
     def build(self, source_path: str, output_path: Optional[str] = None,
-              debug: bool = False, release: bool = False, opt_level: Optional[str] = None) -> str:
+              debug: bool = False, release: bool = False, opt_level: Optional[str] = None,
+              libs: Optional[list] = None, lib_dirs: Optional[list] = None) -> str:
         path = Path(source_path).resolve()
         c_code = self.compile_to_c(source_path)
 
@@ -181,12 +182,22 @@ class CompilerDriver:
         if release:
             flags.append("-flto")
 
+        # 6.1 Linker Flags for Third-Party C Libraries (-l<lib>, -L<dir>)
+        linker_flags = []
+        if lib_dirs:
+            for d in lib_dirs:
+                linker_flags.append(d if d.startswith("-L") else f"-L{d}")
+        if libs:
+            for lib in libs:
+                linker_flags.append(lib if lib.startswith("-l") else f"-l{lib}")
+
         cmd = [
             gcc,
             *flags,
             "-std=c99",
             str(c_file),
             f"-I{self.runtime_dir}",
+            *linker_flags,
             "-o",
             str(exe_file)
         ]
@@ -199,8 +210,10 @@ class CompilerDriver:
         return str(exe_file)
 
     def run(self, source_path: str, args: Optional[list] = None,
-            debug: bool = False, release: bool = False, opt_level: Optional[str] = None) -> int:
-        exe_path = self.build(source_path, debug=debug, release=release, opt_level=opt_level)
+            debug: bool = False, release: bool = False, opt_level: Optional[str] = None,
+            libs: Optional[list] = None, lib_dirs: Optional[list] = None) -> int:
+        exe_path = self.build(source_path, debug=debug, release=release, opt_level=opt_level,
+                              libs=libs, lib_dirs=lib_dirs)
         cmd = [exe_path] + (args or [])
         res = subprocess.run(cmd)
         return res.returncode

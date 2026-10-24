@@ -198,7 +198,7 @@ act compile_source_to_c(source_path: string, unsafe_index: bool) -> string {
 }
 
 // Builds a native executable from a Velo source file by compiling to C and invoking GCC.
-act build_executable(source_path: string, output_exe: string, unsafe_index: bool, opt_flags: string) -> bool {
+act build_executable(source_path: string, output_exe: string, unsafe_index: bool, opt_flags: string, linker_flags: string) -> bool {
     let c_code = compile_source_to_c(source_path, unsafe_index)
     if c_code == null {
         return false
@@ -236,6 +236,10 @@ act build_executable(source_path: string, output_exe: string, unsafe_index: bool
     }
     sb_append_str(@cmd_sb, "-std=c99 -I velo/runtime ")
     sb_append_str(@cmd_sb, to_native_path(c_file_path))
+    if linker_flags != null and str.len(linker_flags) > 0 {
+        sb_append_str(@cmd_sb, " ")
+        sb_append_str(@cmd_sb, linker_flags)
+    }
     sb_append_str(@cmd_sb, " -o ")
     sb_append_str(@cmd_sb, to_native_path(out_path))
     let cmd = sb_to_string(@cmd_sb)
@@ -250,7 +254,7 @@ act build_executable(source_path: string, output_exe: string, unsafe_index: bool
 }
 
 // Compiles and runs a Velo source file.
-act run_source_file(source_path: string, unsafe_index: bool, opt_flags: string) -> i32 {
+act run_source_file(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string) -> i32 {
     let stem = get_file_stem(source_path)
     mut exe_sb = create_sb(128)
     sb_append_str(@exe_sb, ".velo_cache/")
@@ -258,7 +262,7 @@ act run_source_file(source_path: string, unsafe_index: bool, opt_flags: string) 
     sb_append_str(@exe_sb, ".exe")
     let exe_path = sb_to_string(@exe_sb)
 
-    let ok = build_executable(source_path, exe_path, unsafe_index, opt_flags)
+    let ok = build_executable(source_path, exe_path, unsafe_index, opt_flags, linker_flags)
     if not ok {
         return 1
     }

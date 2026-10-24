@@ -541,12 +541,23 @@ The chapter ships in full: slice 1 scaffold + now/delta/sleep_ms (closed namespa
 
 ## 6. Compiler, Tooling & Build System Gaps
 
-### 6.1 Linker Flags for Third-Party C Libraries (🔴 P0 Critical)
-* **Current State**: `bin/velo.exe` hardcodes `gcc -O2 <c_file> -o <binary>`.
-* **Impact**: You cannot link external libraries such as **Raylib, SDL2, OpenGL, Vulkan, Box2D, or SQLite** without manually running GCC in the terminal.
-* **Needed Solution**:
-  - `velo build main.vl -o game.exe -lraylib -lopengl32 -lgdi32 -lwinmm`
-  - Or `#link "raylib"` / `#link "opengl32"` pragma in source code.
+### 6.1 Linker Flags for Third-Party C Libraries [COMPLETED] ✅
+* **Former Defect (No External C Library Linking)**: Both `velo.py` and `bin/velo.exe` hardcoded the GCC invocation without any CLI surface to pass library link flags (`-l<lib>`) or search path flags (`-L<dir>`). Any Velo program using `extern act` to call third-party C or system libraries (e.g. Raylib, SDL2, OpenGL, Box2D, SQLite, or Windows API like `winmm`/`gdi32`) failed linking with `undefined reference` unless GCC was invoked manually outside the toolchain.
+* **Fix Applied**: Both compilers (Stage 1 Python and Stage 2 self-hosted) implement standard linker and library search path CLI flags for both `velo build` and `velo run`:
+  - `-l<lib>` / `-l <lib>`: appends `-l<lib>` directly to the GCC link command.
+  - `-L<dir>` / `-L <dir>`: appends `-L<dir>` library directory search path to the GCC link command.
+  - Argument ordering guarantee: `-L<dir>` and `-l<lib>` flags are placed strictly **after** the emitted `.c` source file in the GCC command, satisfying GCC's single-pass left-to-right linker symbol resolution.
+  - Multi-flag support: multiple `-l` and `-L` flags can be specified in any order (e.g. `velo build main.vl -lwinmm -lgdi32 -L./lib`).
+  - Flag position flexibility: flags can appear before or after the source file or output binary (`velo run main.vl -lwinmm`, `velo build main.vl -l winmm -o app.exe`).
+  - Seamless combination with §6.2 build modes: compatible with `--debug`, `--release`, and `-O<level>`.
+* **Residual Limitation**: In-source `#link "lib"` pragmas are not yet parsed or lowered (deferred to future module/package manifest design); external library dependencies are currently specified on the CLI. Dynamic library (.dll/.so) auto-copying to output directories is not performed by the driver.
+* **Verification**:
+  - Test suite `tests/test_linker_flags.py`: 11 tests covering GCC argument ordering, Stage 1 and Stage 2 build and run, attached (`-lwinmm`, `-L./lib`) and separated (`-l winmm`, `-L ./lib`) syntax, link failure without `-lwinmm`, successful execution with `-lwinmm`, and combinations with `--debug` and `--release`.
+  - Finale sweep `.velo_cache/sweep_61_final.py`: **22/22 clean, 0 diffs** across both compilers.
+  - Full test suite: **260/260 passing** (was 249).
+  - Triple-bootstrap chain rebuilt (Gen1 → Gen2 → Gen3 → `bin/velo.exe`); bit-for-bit determinism verified with Gen2 ≡ Gen3 SHA-256 fixed point `D5F9F45C607718895C8AC9A5C7E7AA68E485EC3F53B614358F5706C000945E3D`.
+  - Line count ceilings: all files ≤ 399 lines (`src/main.vl` 298, `src/backend/driver.vl` 309).
+  - Build sheet: `linker_flags.md`.
 
 ### 6.2 Optimization Flags & Build Modes [COMPLETED] ✅
 * **Former Limitation**: The compiler hardcoded GCC `-O2` across all compilation paths (`velo build` and `velo run`), offering no debug symbols for GDB/LLDB inspection and no release/LTO optimization controls for production benchmarks.
@@ -715,7 +726,7 @@ The chapter ships in full: slice 1 parse-row snippet blocks on both stages (addi
 
 | Engine Subsystem | Missing Velo Feature | Workaround Today |
 | :--- | :--- | :--- |
-| **Windowing & Input** | No C library linking flag in CLI | Manually invoke GCC with `-lraylib` / `-lSDL2` |
+| **Windowing & Input** | External C library linking (`-l`, `-L`) | [COMPLETED] §6.1 ✅ (`velo build -lraylib`) |
 | **Math & Physics** | No Operator Overloading (`+`, `*`) | Must write `vec3_add(a, b)` |
 | **Physics / Collision** | No Bitwise Operators (`&`, `|`, `^`) | Must use integer arithmetic or avoid bitmasks |
 | **Asset Loading** | No streaming file seek (`fseek`) | Must load entire audio/texture files into RAM at once |
@@ -742,7 +753,7 @@ flowchart TD
 ### Phase 1: Game Foundations (The "Make a Window" Milestone)
 1. **Bitwise Operators**: Implement `&`, `|`, `^`, `~`, `<<`, `>>` in lexer, parser, semantics, and C codegen.
 2. **Loop Controls**: Implement `break` and `continue` in `while` and `loop`.
-3. **Linker Flag Passing**: Add `-l<lib>` and `-L<dir>` support to `velo build` and `velo run`.
+3. **Linker Flag Passing**: Add `-l<lib>` and `-L<dir>` support to `velo build` and `velo run`. [COMPLETED] §6.1 ✅
 4. **Validation**: Write an `extern` Raylib script that opens a window, captures keyboard input, and draws a rectangle at 60 FPS.
 
 ### Phase 2: Engine Essentials (The "Playable Gameplay" Milestone)

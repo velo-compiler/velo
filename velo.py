@@ -34,6 +34,8 @@ def main():
     run_parser.add_argument("--debug", action="store_true", help="Compile with debug symbols (-O0 -g)")
     run_parser.add_argument("--release", action="store_true", help="Compile with release optimizations and LTO (-O3 -flto)")
     run_parser.add_argument("-O", "--optimize", choices=["0", "1", "2", "3", "s", "fast"], help="GCC optimization level")
+    run_parser.add_argument("-l", dest="libs", action="append", default=[], help="Link with external library (e.g. -lraylib)")
+    run_parser.add_argument("-L", dest="lib_dirs", action="append", default=[], help="Add library directory to search path (e.g. -L./lib)")
 
     # 'build' command
     build_parser = subparsers.add_parser("build", help="Compile a Velo program into a native executable")
@@ -43,6 +45,8 @@ def main():
     build_parser.add_argument("--debug", action="store_true", help="Compile with debug symbols (-O0 -g)")
     build_parser.add_argument("--release", action="store_true", help="Compile with release optimizations and LTO (-O3 -flto)")
     build_parser.add_argument("-O", "--optimize", choices=["0", "1", "2", "3", "s", "fast"], help="GCC optimization level")
+    build_parser.add_argument("-l", dest="libs", action="append", default=[], help="Link with external library (e.g. -lraylib)")
+    build_parser.add_argument("-L", dest="lib_dirs", action="append", default=[], help="Add library directory to search path (e.g. -L./lib)")
 
     # 'emit-c' command
     emit_parser = subparsers.add_parser("emit-c", help="Emit generated C99 code without compiling")
@@ -78,6 +82,8 @@ def main():
             debug_mode = getattr(args, "debug", False)
             release_mode = getattr(args, "release", False)
             opt_level = getattr(args, "optimize", None)
+            libs = list(getattr(args, "libs", []) or [])
+            lib_dirs = list(getattr(args, "lib_dirs", []) or [])
 
             i = 0
             raw_args = args.args or []
@@ -94,6 +100,16 @@ def main():
                     driver.unsafe_index_flag = True
                 elif arg.startswith("-O"):
                     opt_level = arg[2:]
+                elif arg == "-l" and i + 1 < len(raw_args):
+                    libs.append(raw_args[i + 1])
+                    i += 1
+                elif arg.startswith("-l"):
+                    libs.append(arg[2:])
+                elif arg == "-L" and i + 1 < len(raw_args):
+                    lib_dirs.append(raw_args[i + 1])
+                    i += 1
+                elif arg.startswith("-L"):
+                    lib_dirs.append(arg[2:])
                 else:
                     clean_args.append(arg)
                 i += 1
@@ -102,7 +118,8 @@ def main():
                 print("[Velo Error] Cannot specify both --debug and --release", file=sys.stderr)
                 sys.exit(1)
 
-            exit_code = driver.run(args.file, clean_args, debug=debug_mode, release=release_mode, opt_level=opt_level)
+            exit_code = driver.run(args.file, clean_args, debug=debug_mode, release=release_mode,
+                                   opt_level=opt_level, libs=libs, lib_dirs=lib_dirs)
             sys.exit(exit_code)
         elif args.command == "build":
             if getattr(args, "debug", False) and getattr(args, "release", False):
@@ -111,7 +128,9 @@ def main():
             exe_path = driver.build(args.file, args.output,
                                     debug=getattr(args, "debug", False),
                                     release=getattr(args, "release", False),
-                                    opt_level=getattr(args, "optimize", None))
+                                    opt_level=getattr(args, "optimize", None),
+                                    libs=getattr(args, "libs", None),
+                                    lib_dirs=getattr(args, "lib_dirs", None))
             print(f"[Velo] Successfully built: {exe_path}")
         elif args.command == "emit-c":
             c_code = driver.compile_to_c(args.file)
