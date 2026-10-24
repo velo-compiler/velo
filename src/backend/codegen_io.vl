@@ -9,6 +9,7 @@ use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
 use "../analysis/shelf_checks.vl"
 use "../analysis/dyn_checks.vl"
+use "../analysis/math_checks.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "codegen_expr.vl"
@@ -30,6 +31,19 @@ act resolve_path_type_and_c(st: @SymbolTable, path: string, out_c_expr: @StringB
             return strip_pointer_prefix(sym.type_name)
         }
         return "i32"
+    }
+
+    // 5.3: math constants ride interpolations as bare member paths — the
+    // shared decimal literals go into the C expr, typed f64 (mirrors stage
+    // 1's _resolve_path_type / _convert_path_to_c guards)
+    if plen > 5 and path[0] == 'm' and path[1] == 'a' and path[2] == 't' and path[3] == 'h' and path[4] == '.' {
+        let digits = math_constant_digits(copy_slice_to_string(path, 5, plen - 5))
+        if str.len(digits) > 0 {
+            sb_append_str(out_c_expr, "(")
+            sb_append_str(out_c_expr, digits)
+            sb_append_str(out_c_expr, ")")
+            return "f64"
+        }
     }
 
     // Locate the first dot separator if one exists

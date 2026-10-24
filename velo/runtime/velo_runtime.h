@@ -8,6 +8,10 @@
 #include <string.h>
 #include <stddef.h>
 #include <time.h>
+// 5.3 Math Library: sys.math lowers directly onto C99 libm (sqrt/pow/cbrt
+// shipped in slice 1); no -lm is needed — MinGW ucrt64 satisfies these via
+// libmingwex/msvcrt, which the driver links by default.
+#include <math.h>
 
 // §4.2 platform plumbing for the thread surface (spawn/join + mutex).
 // Windows uses the CRT's _beginthreadex (no windows.h, no default-library

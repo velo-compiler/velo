@@ -67,6 +67,28 @@ _STR_SIGS = {
     "split": ": (string s, string delimiter)",
 }
 
+# 5.3 Math Library: sys.math is compiled directly onto C99 libm — no runtime
+# helpers, so the arithmetic cannot diverge between stages (the shared
+# velo_runtime.h carries #include <math.h> once). Constants are bare member
+# properties emitted as full-precision decimal literals (WRAPS THE DIGITS in
+# parens); the digit strings must stay character-identical with Stage 2's
+# src/analysis/math_checks.vl math_constant_tables. Function members are
+# compile-checked by _math_expect (arg spellings widen to (double); bool /
+# string / collection args reject with the mirrored wording).
+MATH_CONSTANTS = {
+    "PI": "3.14159265358979323846",
+    "TAU": "6.28318530717958647692",
+    "RAD2DEG": "57.2957795130823208768",
+    "DEG2RAD": "0.01745329251994329577",
+}
+
+MATH_CALLS = {
+    "sqrt": (1, ": (f64 x)"),
+    "pow": (2, ": (f64 base, f64 exp)"),
+    "cbrt": (1, ": (f64 x)"),
+}
+
+
 # 5.2 Dynamic Collections: the shelf surface is compile-checked per member
 # (mirrored by Stage 2's src/analysis/shelf_checks.vl — identical wording)
 # and lowered onto the runtime's single VeloShelf struct + velo_shelf_* helpers.
@@ -1968,6 +1990,11 @@ class CCodeGenerator:
                         return "i64"  # -1 = not found; usize has no room for it
                     if m == "split":
                         return "shelf[string]"  # slice 11: the owning-shelf swap
+                elif value.callee.target.name == "math":
+                    # 5.3: math calls are f64 (mirrors the checker ladder) —
+                    # library-literal element estimation stays exact
+                    if value.callee.member in MATH_CALLS:
+                        return "f64"
         return "i32"
 
 
@@ -2027,6 +2054,14 @@ class CCodeGenerator:
         elif isinstance(expr, MemberAccess):
             if isinstance(expr.target, Identifier) and expr.target.name in self.kind_defs:
                 return expr.target.name
+            # 5.3: math constants are bare member properties on the math
+            # receiver (no parens); unknown names reject with the mirrored
+            # wording (functions need parens hint rides along)
+            if isinstance(expr.target, Identifier) and expr.target.name == "math":
+                if expr.member in MATH_CONSTANTS:
+                    return "f64"
+                hint = f" (functions need parens: math.{expr.member}(...))" if expr.member in MATH_CALLS else ""
+                raise ValueError(f"unknown math constant '{expr.member}' (constants: PI, TAU, RAD2DEG, DEG2RAD){hint}")
             target_type = self._resolve_expr_type(expr.target)
             # 5.2: shelf property reads (len); other members are loud errors
             if self._shelf_elem_type(target_type) is not None:
@@ -2155,6 +2190,11 @@ class CCodeGenerator:
                         return "i64"  # -1 = not found; usize has no room for it
                     if m == "split":
                         return "shelf[string]"  # slice 11: the owning-shelf swap
+                elif expr.callee.target.name == "math":
+                    # 5.3: every shipped math call yields f64; the ladder grows
+                    # per slice (sqrt/pow/cbrt shipped in slice 1)
+                    if expr.callee.member in MATH_CALLS:
+                        return "f64"
                 elif expr.callee.target.name == "io":
                     # All io calls are void (mirrors type_checker.vl), so
                     # mem count/fill checks can render and reject them.
@@ -2347,6 +2387,14 @@ class CCodeGenerator:
                 if not self._is_tagged_union(kdecl):
                     return f"{expr.target.name}_{expr.member}"
                 return f"({expr.target.name}){{ .kind = {expr.target.name}_{expr.member} }}"
+            # 5.3: math constants emit the shared decimal literals wrapped in
+            # parens (digit strings identical to math_checks.vl); unknown
+            # names reject with the mirrored wording
+            if isinstance(expr.target, Identifier) and expr.target.name == "math":
+                if expr.member in MATH_CONSTANTS:
+                    return f"({MATH_CONSTANTS[expr.member]})"
+                hint = f" (functions need parens: math.{expr.member}(...))" if expr.member in MATH_CALLS else ""
+                raise ValueError(f"unknown math constant '{expr.member}' (constants: PI, TAU, RAD2DEG, DEG2RAD){hint}")
             target_code = self._emit_expression(expr.target)
             target_type = self._resolve_expr_type(expr.target)
             if target_type == "dyn":
@@ -2490,6 +2538,12 @@ class CCodeGenerator:
                             self._str_expect(expr.callee.member, expr.args)
                             codes = [self._emit_expression(a) for a in expr.args]
                             return f"velo_str_{expr.callee.member}({', '.join(codes)})"
+
+                    elif expr.callee.target.name == "math":
+                        # 5.3: direct C99 libm lowering — int/float args widen
+                        # through (double)(...) casts (math.sqrt(2) is legal);
+                        # bool/string/collection args reject in _math_expect.
+                        return self._emit_math_call(expr.callee.member, expr.args)
 
                 # 5.2: shelf receiver member calls — put/take helpers, compile-checked
                 target_type = self._resolve_expr_type(expr.callee.target)
@@ -2824,6 +2878,40 @@ class CCodeGenerator:
             if got != "string":
                 raise ValueError(f"str.{member} expects string arguments (got {got})")
 
+    def _math_expect(self, member: str, args: List[Expr]) -> None:
+        """5.3: compile-checks the sys.math call surface (constants live on
+        the property path below). Mirrored by Stage 2's
+        src/analysis/math_checks.vl — both stages must reject the same
+        programs with the same messages. Args widen: every int spell and
+        f32/f64 ride an emitted (double)(...) cast; bool/string/collections
+        reject."""
+        if member not in MATH_CALLS:
+            # 5.3: the math namespace is CLOSED for calls (shelf unknown
+            # member precedent): both stages reject with the same words.
+            raise ValueError(
+                f"unknown math member '{member}' (functions: sqrt, pow, cbrt; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
+        expect_n, sig = MATH_CALLS[member]
+        if len(args) != expect_n:
+            plural = "" if expect_n == 1 else "s"
+            raise ValueError(f"math.{member} expects exactly {expect_n} argument{plural}{sig}")
+        for arg in args:
+            got = self._thread_arg_type(arg)
+            if got not in DYN_INT_TYPES and got not in DYN_FLOAT_TYPES:
+                raise ValueError(f"math.{member} expects f64 (or int) arguments (got {got})")
+
+    def _emit_math_call(self, member: str, args: List[Expr]) -> str:
+        # 5.3: direct C99 libm lowering (single evaluation per argument,
+        # guaranteed — codes are emitted exactly once each).
+        self._math_expect(member, args)
+        codes = [self._emit_expression(a) for a in args]
+        if member == "sqrt":
+            return f"sqrt((double)({codes[0]}))"
+        if member == "pow":
+            return f"pow((double)({codes[0]}), (double)({codes[1]}))"
+        if member == "cbrt":
+            return f"cbrt((double)({codes[0]}))"
+        raise ValueError(f"unknown math member '{member}'")
+
     def _lower_mem_alloc(self, args: List[Expr]) -> str:
         if len(args) != 2:
             raise ValueError("mem.alloc expects exactly 2 arguments: (@Type, count)")
@@ -2993,6 +3081,11 @@ class CCodeGenerator:
             base_type = self.current_scope_types.get(base, "i32")
             return base_type.lstrip("@")
 
+        # 5.3: math constants ride interpolations as bare member paths
+        # ({math.PI} → f64 — the emit side spells the shared digits)
+        if path.startswith("math.") and path[5:] in MATH_CONSTANTS:
+            return "f64"
+
         clean_path = re.sub(r'\[[a-zA-Z0-9_]+\]', '', path)
 
         parts = clean_path.split(".")
@@ -3011,6 +3104,11 @@ class CCodeGenerator:
         if ".@" in path:
             base = path.replace(".@", "")
             return f"(*{base})"
+
+        # 5.3: math constants emit the shared decimal literals (digits
+        # identical to math_checks.vl) wrapped in parens
+        if path.startswith("math.") and path[5:] in MATH_CONSTANTS:
+            return f"({MATH_CONSTANTS[path[5:]]})"
 
         parts = path.split(".")
         if len(parts) == 1:

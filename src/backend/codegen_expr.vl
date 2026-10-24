@@ -8,6 +8,7 @@ use "../ast/stmt.vl"
 use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
 use "../analysis/str_checks.vl"
+use "../analysis/math_checks.vl"
 use "../common/string_builder.vl"
 use "../common/act_types.vl"
 use "codegen_io.vl"
@@ -114,6 +115,10 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
 
     // 3. Member access with auto-dereference (-> vs .)
     if expr.kind == EXPR_MEMBER {
+        if expr.target.kind == EXPR_IDENT and expr.target.str_val == "math" and find_kind(st, expr.target.str_val) == null {  // 5.3: constants emit the shared decimal literals; typing happened in check_math_constant
+            let digits = math_constant_digits(expr.member_name)
+            if str.len(digits) > 0 { sb_append_str(sb, "("); sb_append_str(sb, digits); sb_append_str(sb, ")"); return }
+        }
         if expr.target.kind == EXPR_IDENT {
             let k_sym = find_kind(st, expr.target.str_val)
             if k_sym != null {
@@ -121,20 +126,16 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                 if v_sym != null {
                     if not k_sym.is_tagged_union {
                         sb_append_str(sb, k_sym.name); sb_append_char(sb, '_'); sb_append_str(sb, expr.member_name)
-                    } else {
-                        sb_append_char(sb, '('); sb_append_str(sb, k_sym.name); sb_append_str(sb, "){ .kind = ")
-                        sb_append_str(sb, k_sym.name); sb_append_char(sb, '_'); sb_append_str(sb, expr.member_name)
-                        sb_append_str(sb, " }")
+                    } else {  // tagged union: a struct literal wrap (compressed — 5.3 ceiling discipline)
+                        sb_append_char(sb, '('); sb_append_str(sb, k_sym.name); sb_append_str(sb, "){ .kind = "); sb_append_str(sb, k_sym.name); sb_append_char(sb, '_'); sb_append_str(sb, expr.member_name); sb_append_str(sb, " }")
                     }
                     return
                 }
             }
         }
-        let target_type = infer_expr_type(st, expr.target)
-        emit_c_expr(sb, st, expr.target)
+        let target_type = infer_expr_type(st, expr.target); emit_c_expr(sb, st, expr.target)
         if str.len(target_type) > 0 and target_type[0] == '@' { sb_append_str(sb, "->") } else { sb_append_str(sb, ".") }
-        sb_append_str(sb, expr.member_name)
-        return
+        sb_append_str(sb, expr.member_name); return
     }
 
     // 4. Array indexing
@@ -145,15 +146,10 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             return
         }
         // 5.2 slice 6: map value reads lower onto velo_map_copy_out (fatal miss)
-        if is_map_form(infer_expr_type(st, expr.target)) {
-            emit_map_index(sb, st, expr)
-            return
-        }
-        emit_c_expr(sb, st, expr.target)
-        sb_append_char(sb, '[')
-        emit_c_expr(sb, st, expr.index)
-        sb_append_char(sb, ']')
-        return
+        if is_map_form(infer_expr_type(st, expr.target)) { emit_map_index(sb, st, expr); return }
+        // (index fallthrough compressed — 5.3 ceiling discipline)
+        emit_c_expr(sb, st, expr.target); sb_append_char(sb, '[')
+        emit_c_expr(sb, st, expr.index); sb_append_char(sb, ']'); return
     }
 
     // 5. Explicit cast (5.2 slice 2: a cast off a raw dyn unboxes instead)
@@ -295,8 +291,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                         if member == "set" { sb_append_str(sb, ", (int)(") } else { sb_append_str(sb, ", (void*)(") }; if expr.first_arg.next != null { emit_c_expr(sb, st, expr.first_arg.next) }; sb_append_str(sb, ")"); sb_append_str(sb, ", (long long)(")
                         if expr.first_arg.next.next != null { emit_c_expr(sb, st, expr.first_arg.next.next) } else { sb_append_str(sb, "0") }; sb_append_str(sb, "))"); return
                     }
-                    if member == "used" { sb_append_str(sb, "velo_mem_used()"); return }
-                    if member == "heap_used" { sb_append_str(sb, "velo_heap_used()"); return }
+                    if member == "used" { sb_append_str(sb, "velo_mem_used()"); return } if member == "heap_used" { sb_append_str(sb, "velo_heap_used()"); return }  // compressed pair — 5.3 ceiling discipline
                     // §4.1: mem.current() -> active arena; mem.alloc_with(a, @T, count) -> @T
                     if member == "current" { sb_append_str(sb, "velo_zone_active()"); return }  // §4.1/§4.2
                     if member == "alloc_with" {
@@ -322,6 +317,11 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                     if member == "remove" or member == "remove_file" { sb_append_str(sb, "velo_fs_remove("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
                 }
                 if target.str_val == "str" and member == "len" { sb_append_str(sb, "((usize)strlen("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+                if target.str_val == "math" {  // 5.3: direct C99 libm lower (args compile-checked at inference — types already widened by hand here)
+                    if member == "sqrt" { sb_append_str(sb, "sqrt((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+                    if member == "pow" { sb_append_str(sb, "pow((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "), (double)("); emit_c_expr(sb, st, expr.first_arg.next); sb_append_str(sb, "))"); return }
+                    if member == "cbrt" { sb_append_str(sb, "cbrt((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+                }
                 if target.str_val == "str" and str.len(str_member_sig(member)) > 0 {  // 5.1: library members map 1:1 onto velo_str_* runtime helpers
                     sb_append_str(sb, "velo_str_"); sb_append_str(sb, member); sb_append_char(sb, '(')
                     mut a = expr.first_arg; loop a != null { emit_c_expr(sb, st, a); if a.next != null { sb_append_str(sb, ", ") }; a = a.next }
