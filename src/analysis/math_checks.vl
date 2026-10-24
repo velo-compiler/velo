@@ -27,25 +27,35 @@ act math_constant_digits(name: string) -> string {
 }
 
 // Signature text per checked member ("" = not a checked math member).
-// Must stay character-identical with velo/codegen_c.py::MATH_CALLS.
+// Must stay character-identical with velo/codegen_c.py::MATH_CALLS
+// (S2 grows the trig family — atan2 is 2-ary).
 act math_member_sig(member: string) -> string {
     if member == "sqrt" { return ": (f64 x)" }
     if member == "pow" { return ": (f64 base, f64 exp)" }
     if member == "cbrt" { return ": (f64 x)" }
+    if member == "sin" { return ": (f64 x)" }
+    if member == "cos" { return ": (f64 x)" }
+    if member == "tan" { return ": (f64 x)" }
+    if member == "atan2" { return ": (f64 y, f64 x)" }
+    if member == "acos" { return ": (f64 x)" }
+    if member == "asin" { return ": (f64 x)" }
     return ""
 }
 
 // Expected argument count per checked member (same curves as MATH_CALLS).
 act math_member_arity(member: string) -> i32 {
-    if member == "pow" { return 2 }
+    if member == "pow" or member == "atan2" { return 2 }
     if member == "sqrt" or member == "cbrt" { return 1 }
+    if member == "sin" or member == "cos" or member == "tan" { return 1 }
+    if member == "acos" or member == "asin" { return 1 }
     return -1
 }
 
-// 5.3: every shipped math call yields f64 (the type ladder twin - callers
-// treat "" as "unknown math member", not a type).
+// 5.3: every shipped math call yields f64 — arity-membership-driven so each
+// new slice lands here for free ("" = unknown math member, not a type; the
+// compare-constant hint semantics match stage 1's `member in MATH_CALLS`).
 act math_member_ret(member: string) -> string {
-    if member == "sqrt" or member == "pow" or member == "cbrt" { return "f64" }
+    if math_member_arity(member) > -1 { return "f64" }
     return ""
 }
 
@@ -78,14 +88,14 @@ act math_got_msg(member: string, got: string) -> string {
 }
 
 // Entry point: returns false after reporting (the infer branch then yields
-// "unknown"); an unknown member returns true so the legacy path still runs.
+// "unknown"); unknown members report the closed-set wording and return false.
 act check_math_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
     let arity = math_member_arity(member)
     if arity < 0 {
         // 5.3: the math namespace is CLOSED for calls (shelf unknown member
         // precedent) — wording mirror of stage 1's _math_expect raise.
         let msb = create_sb(256)
-        sb_append_str(@msb, "unknown math member '"); sb_append_str(@msb, member); sb_append_str(@msb, "' (functions: sqrt, pow, cbrt; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
+        sb_append_str(@msb, "unknown math member '"); sb_append_str(@msb, member); sb_append_str(@msb, "' (functions: sqrt, pow, cbrt, sin, cos, tan, atan2, acos, asin; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
         report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
         return false
     }

@@ -1,0 +1,36 @@
+// ============================================================================
+// 5.3 Math Library — sys.math call lowering onto C99 libm.
+//
+// S2 refactor: the per-member emit ladder lives HERE (off codegen_expr.vl's
+// line budget) so new families grow this file, not the ceiling. Emit shapes
+// MUST mirror velo/codegen_c.py::_emit_math_call byte-for-byte: every
+// argument rides exactly one (double)(...) widen; two-arg members
+// (pow/atan2) split at ONE closing paren — "), (double)(" — then close with
+// "))". Args were compile-checked (arity + widening ladder) at inference by
+// src/analysis/math_checks.vl; unknown members never reach the emitter.
+// ============================================================================
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../common/string_builder.vl"
+use "codegen_types.vl"
+use "codegen_expr.vl"
+
+act emit_math_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @ExprNode) {
+    // slice 1: shape family
+    if member == "sqrt" { sb_append_str(sb, "sqrt((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+    if member == "pow" { sb_append_str(sb, "pow((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "), (double)("); emit_c_expr(sb, st, expr.first_arg.next); sb_append_str(sb, "))"); return }
+    if member == "cbrt" { sb_append_str(sb, "cbrt((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+    // slice 2: trig family (atan2 is 2-ary — C(atan2(y, x)) argument order)
+    if member == "sin" { sb_append_str(sb, "sin((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+    if member == "cos" { sb_append_str(sb, "cos((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+    if member == "tan" { sb_append_str(sb, "tan((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+    if member == "atan2" { sb_append_str(sb, "atan2((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "), (double)("); emit_c_expr(sb, st, expr.first_arg.next); sb_append_str(sb, "))"); return }
+    if member == "acos" { sb_append_str(sb, "acos((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+    if member == "asin" { sb_append_str(sb, "asin((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+}

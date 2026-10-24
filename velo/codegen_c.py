@@ -86,6 +86,12 @@ MATH_CALLS = {
     "sqrt": (1, ": (f64 x)"),
     "pow": (2, ": (f64 base, f64 exp)"),
     "cbrt": (1, ": (f64 x)"),
+    "sin": (1, ": (f64 x)"),
+    "cos": (1, ": (f64 x)"),
+    "tan": (1, ": (f64 x)"),
+    "atan2": (2, ": (f64 y, f64 x)"),
+    "acos": (1, ": (f64 x)"),
+    "asin": (1, ": (f64 x)"),
 }
 
 
@@ -2888,8 +2894,9 @@ class CCodeGenerator:
         if member not in MATH_CALLS:
             # 5.3: the math namespace is CLOSED for calls (shelf unknown
             # member precedent): both stages reject with the same words.
+            # The functions list grows per slice (S2 adds the trig family).
             raise ValueError(
-                f"unknown math member '{member}' (functions: sqrt, pow, cbrt; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
+                f"unknown math member '{member}' (functions: sqrt, pow, cbrt, sin, cos, tan, atan2, acos, asin; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
         expect_n, sig = MATH_CALLS[member]
         if len(args) != expect_n:
             plural = "" if expect_n == 1 else "s"
@@ -2910,6 +2917,19 @@ class CCodeGenerator:
             return f"pow((double)({codes[0]}), (double)({codes[1]}))"
         if member == "cbrt":
             return f"cbrt((double)({codes[0]}))"
+        # 5.3 slice 2: the trig family — same widening shape, atan2 is 2-ary
+        if member == "sin":
+            return f"sin((double)({codes[0]}))"
+        if member == "cos":
+            return f"cos((double)({codes[0]}))"
+        if member == "tan":
+            return f"tan((double)({codes[0]}))"
+        if member == "atan2":
+            return f"atan2((double)({codes[0]}), (double)({codes[1]}))"
+        if member == "acos":
+            return f"acos((double)({codes[0]}))"
+        if member == "asin":
+            return f"asin((double)({codes[0]}))"
         raise ValueError(f"unknown math member '{member}'")
 
     def _lower_mem_alloc(self, args: List[Expr]) -> str:

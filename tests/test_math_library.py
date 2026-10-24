@@ -103,6 +103,46 @@ class TestMathSlice1(unittest.TestCase):
         self.assertEqual(s2.returncode, 0, s2.stderr[-3000:])
         self.assertEqual(s1.stdout, s2.stdout, "math slice-1 outputs diverged")
 
+    def test_accepts_trig_family(self):
+        """5.3 S2: sin/cos/tan/atan2/acos/asin — same widening contract; arc
+        legs pin exact IEEE values (acos(1)=0, acos(0)=asin(1)=π/2); atan2 is
+        2-ary with C argument order (y, x)."""
+        src = (
+            "use sys.io\n"
+            "use sys.math\n"
+            "\n"
+            "act main() -> i32 {\n"
+            "    io.println(math.sin(0.0))\n"
+            "    io.println(math.cos(0.0))\n"
+            "    io.println(math.tan(0.0))\n"
+            "    let pi4 = math.atan2(1.0, 1.0)\n"
+            "    io.println(\"{pi4}\")\n"
+            "    io.println(math.atan2(0.0, 1.0))\n"
+            "    io.println(math.acos(1.0))\n"
+            "    io.println(math.acos(0.0))\n"
+            "    io.println(math.asin(0.0))\n"
+            "    io.println(math.asin(1.0))\n"
+            "    let zero: i32 = 0\n"
+            "    io.println(math.sin(zero))\n"
+            "    let one: f32 = 1.0\n"
+            "    io.println(math.cos(one))\n"
+            "    let w: i64 = 1\n"
+            "    io.println(math.atan2(w, w))\n"
+            "    io.println(math.sin(1.0) + math.sin(0.0))\n"
+            "    return 0\n"
+            "}\n"
+        )
+        expected = (
+            "0.000000\n1.000000\n0.000000\n0.79\n0.000000\n0.000000\n"
+            "1.570796\n0.000000\n1.570796\n0.000000\n0.540302\n0.785398\n0.841471\n"
+        )
+        s1 = run_stage("stage1", src, "example_math_s2")
+        s2 = run_stage("stage2", src, "example_math_s2")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-3000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-3000:])
+        self.assertEqual(s1.stdout, expected, "trig pins moved (libc event)")
+        self.assertEqual(s1.stdout, s2.stdout, "math slice-2 outputs diverged")
+
     def test_rejects_bool_and_string_args(self):
         outs = check_program(
             "rej_math_bool.vl",
@@ -133,12 +173,21 @@ class TestMathSlice1(unittest.TestCase):
         self.assertEqual(outs[0], "math.sqrt expects exactly 1 argument: (f64 x)")
         self.assertEqual(outs[0], outs[1])
 
+        outs = check_program(
+            "rej_math_arity3.vl",
+            "use sys.io\nuse sys.math\nact main() -> i32 {\n"
+            "    io.println(math.atan2(1.0))\n    return 0\n}\n")
+        self.assertEqual(outs[0], "math.atan2 expects exactly 2 arguments: (f64 y, f64 x)")
+        self.assertEqual(outs[0], outs[1])
+
     def test_rejects_unknown_member_and_constant(self):
+        # S2 note: 'sin' IS a member now — the closed-set row uses a member
+        # from a NOT-yet-shipped family; the wording grows per slice.
         outs = check_program(
             "rej_math_member.vl",
             "use sys.io\nuse sys.math\nact main() -> i32 {\n"
-            "    io.println(math.sin(1.0))\n    return 0\n}\n")
-        self.assertEqual(outs[0], "unknown math member 'sin' (functions: sqrt, pow, cbrt; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
+            "    io.println(math.floor(1.0))\n    return 0\n}\n")
+        self.assertEqual(outs[0], "unknown math member 'floor' (functions: sqrt, pow, cbrt, sin, cos, tan, atan2, acos, asin; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
         self.assertEqual(outs[0], outs[1])
 
         outs = check_program(

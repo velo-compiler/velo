@@ -64,17 +64,43 @@ Missing surface:
 Verification snapshot: suite 183/183 · sweep 20/20 · fixed point `30ED5F3C3F2EF7378A1695745E7C157DFAF378DAE7D99937A7208BE4A2F21EDB` (Gen2 ≡ Gen3) · count_lines max 399 (math logic in `math_checks.vl` = 130).
 
 
-## S2 — trigonometry (sin/cos/tan/atan2/acos/asin)
+## S2 — trigonometry (sin/cos/tan/atan2/acos/asin) ✅ ([COMPLETED] in gaps.md 5.3)
 
 Missing surface:
 
-* [ ] `math.sin(x)`, `math.cos(x)`, `math.tan(x)`, `math.atan2(y, x)`,
+* [x] `math.sin(x)`, `math.cos(x)`, `math.tan(x)`, `math.atan2(y, x)`,
       `math.acos(x)`, `math.asin(x)` → `f64`, S1 widening/reject contract
-      reused as-is (pure low-diff members; atan2 is 2-ary).
-* [ ] Pins: standard %.2f probes (sin(0), cos(0), tan(0), atan2(1.0, 1.0),
-      domain-edge probes are NOT pinned — libc-domain residual).
-* [ ] Unknown/arc-domain behavior unpinned beyond %f formatting stability.
-* [ ] Batteries + sweep rows appended; example untouched.
+      reused as-is (pure low-diff members; atan2 is 2-ary). Stage-1
+      `MATH_CALLS`/`_emit_math_call`/`_math_expect` grew the 6 members;
+      stage-2 `math_member_sig`/`math_member_arity` grew the same curves and
+      `math_member_ret` SIMPLIFIED to arity-membership (`arity > -1` → f64),
+      so every future family needs no ret-ladder edit.
+* [x] Emit refactor: the stage-2 per-member emit ladder moved OUT of
+      `codegen_expr.vl` (398→395) into NEW `src/backend/math_gen.vl` (36
+      lines, `emit_math_call(sb, st, member, expr)` carrying all 9 forms
+      with the S1 pow-split discipline — one closing paren for 2-arg
+      members); `codegen_expr.vl`'s math branch is now a single call line.
+* [x] Pins: exact-IEEE arc legs `acos(1)=0.000000`, `acos(0)=asin(1)=1.570796`
+      (π/2); `sin(0)=0.000000`, `cos(0)=1.000000`, `tan(0)=0.000000`;
+      `atan2(1.0, 1.0)` → `%.2f` = `0.79`; int/f32-widened spellings
+      (`sin(i32)`, `atan2(i64, i64)`, `cos(f32)`) match stage 1 byte-for-byte.
+      Domain-edge probes beyond these stay unpinned (libc residual).
+* [x] Closed-set wording grew per slice rule: `unknown math member '<m>'
+      (functions: sqrt, pow, cbrt, sin, cos, tan, atan2, acos, asin;
+      constants: PI, TAU, RAD2DEG, DEG2RAD are available)` — updated in ALL
+      copies (stage-1 `_math_expect`, stage-2 `check_math_call`, battery row,
+      sweep row).
+* [x] Batteries: `test_accepts_trig_family` (13 rows incl. `sin(1.0)+sin(0.0)`
+      arithmetic and a math element in the shelf[f64] ladder), `atan2` arity
+      wall (`rej_math_arity3`), unknown-member row moved to `math.floor`
+      (still unshipped in S2).
+* [x] Sweep: `sweep_53_s2.py` — cumulative rows for S1+S2, **25/25 clean,
+      0 diffs** (15 accepts + 10 reject wordings).
+
+Verification snapshot: suite **184/184** · sweep 25/25 · fixed point
+`54DC6F7D9A504704D8D8651EE29691CDEB9DCE64D6246B60319A7E8ACA08EB08` (Gen2 ≡
+Gen3) · count_lines max 399 (`math_gen.vl`=36, `math_checks.vl`=140,
+`codegen_expr.vl` 395).
 
 ## S3 — exponentials & logs (exp/log/log2)
 

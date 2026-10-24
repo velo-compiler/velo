@@ -19,6 +19,7 @@ use "shelf_calls_gen.vl"
 use "ring_gen.vl"
 use "struct_lit_gen.vl"
 use "map_gen.vl"
+use "math_gen.vl"
 
 // Emits C99 code for an AST expression into a StringBuilder.
 act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
@@ -317,11 +318,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                     if member == "remove" or member == "remove_file" { sb_append_str(sb, "velo_fs_remove("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
                 }
                 if target.str_val == "str" and member == "len" { sb_append_str(sb, "((usize)strlen("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
-                if target.str_val == "math" {  // 5.3: direct C99 libm lower (args compile-checked at inference — types already widened by hand here)
-                    if member == "sqrt" { sb_append_str(sb, "sqrt((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
-                    if member == "pow" { sb_append_str(sb, "pow((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "), (double)("); emit_c_expr(sb, st, expr.first_arg.next); sb_append_str(sb, "))"); return }
-                    if member == "cbrt" { sb_append_str(sb, "cbrt((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
-                }
+                if target.str_val == "math" { emit_math_call(sb, st, member, expr); return }  // 5.3 (S2): the ladder lives in math_gen.vl — compile-checks already ran at inference
                 if target.str_val == "str" and str.len(str_member_sig(member)) > 0 {  // 5.1: library members map 1:1 onto velo_str_* runtime helpers
                     sb_append_str(sb, "velo_str_"); sb_append_str(sb, member); sb_append_char(sb, '(')
                     mut a = expr.first_arg; loop a != null { emit_c_expr(sb, st, a); if a.next != null { sb_append_str(sb, ", ") }; a = a.next }
