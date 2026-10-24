@@ -224,6 +224,19 @@ act emit_shelf_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
 // A shelf read lowers onto velo_shelf_get; value receivers take &, @-receivers
 // pass their own pointer.
 act emit_shelf_get(sb: @StringBuilder, st: @SymbolTable, recv: @ExprNode, idx: @ExprNode, elem_c: string) {
+    // 5.2 slice 11: the --unsafe-shelf-index knob — the unguarded read;
+    // out-of-range indexes are silent UB (documented; flag-gated, writes
+    // stay guarded because they mutate length state)
+    if st.unsafe_shelf_index {
+        sb_append_str(sb, "(((")
+        sb_append_str(sb, elem_c)
+        sb_append_str(sb, "*)(")
+        emit_shelf_recv(sb, st, recv)
+        sb_append_str(sb, ")->data)[(usize)(")
+        emit_c_expr(sb, st, idx)
+        sb_append_str(sb, ")])")
+        return
+    }
     sb_append_str(sb, "(*((")
     sb_append_str(sb, elem_c)
     sb_append_str(sb, "*)velo_shelf_get(")

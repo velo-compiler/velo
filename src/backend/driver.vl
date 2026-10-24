@@ -171,7 +171,8 @@ act resolve_and_parse(d: @CompilerDriver, file_path: string) -> @ProgramNode {
 }
 
 // Translates a Velo source program into a complete, standalone C99 source string.
-act compile_source_to_c(source_path: string) -> string {
+// Slice 11: unsafe_index carries the --unsafe-shelf-index knob to the emitter.
+act compile_source_to_c(source_path: string, unsafe_index: bool) -> string {
     mut d: CompilerDriver
     init_driver(@d)
 
@@ -184,6 +185,7 @@ act compile_source_to_c(source_path: string) -> string {
 
     mut st: SymbolTable
     init_symbol_table(@st)
+    st.unsafe_shelf_index = unsafe_index
 
     let sem_ok = check_program(@st, prog)
     if not sem_ok or st.error_count > 0 {
@@ -195,8 +197,8 @@ act compile_source_to_c(source_path: string) -> string {
 }
 
 // Builds a native executable from a Velo source file by compiling to C and invoking GCC.
-act build_executable(source_path: string, output_exe: string) -> bool {
-    let c_code = compile_source_to_c(source_path)
+act build_executable(source_path: string, output_exe: string, unsafe_index: bool) -> bool {
+    let c_code = compile_source_to_c(source_path, unsafe_index)
     if c_code == null {
         return false
     }
@@ -240,7 +242,7 @@ act build_executable(source_path: string, output_exe: string) -> bool {
 }
 
 // Compiles and runs a Velo source file.
-act run_source_file(source_path: string) -> i32 {
+act run_source_file(source_path: string, unsafe_index: bool) -> i32 {
     let stem = get_file_stem(source_path)
     mut exe_sb = create_sb(128)
     sb_append_str(@exe_sb, ".velo_cache/")
@@ -248,7 +250,7 @@ act run_source_file(source_path: string) -> i32 {
     sb_append_str(@exe_sb, ".exe")
     let exe_path = sb_to_string(@exe_sb)
 
-    let ok = build_executable(source_path, exe_path)
+    let ok = build_executable(source_path, exe_path, unsafe_index)
     if not ok {
         return 1
     }

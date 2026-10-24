@@ -261,6 +261,25 @@ act check_shelf_loop_elem(st: @SymbolTable, stmt: @StmtNode) -> string {
     return elem
 }
 
+// 5.2 slice 11: the `@string` token-array spelling retired — the split
+// pairing (a string-ish annotation holding a str.split shelf[string] result)
+// reports the dedicated retire words INSTEAD of the generic mismatch walls
+// (Stage 1 wording, byte-identical). Python's wall raises; here the wall
+// branches on the pair predicate first.
+act is_split_retire_pair(declared: string, val_type: string) -> bool {
+    if declared == null or val_type == null { return false }
+    if strip_pointer_prefix(declared) != "string" { return false }
+    return val_type == "shelf[string]"
+}
+
+act split_retire_message(decl_t: string) -> string {
+    mut msg = create_sb(str.len(decl_t) + 48)
+    sb_append_str(@msg, "str.split returns shelf[string] — annotating ")
+    sb_append_str(@msg, decl_t)
+    sb_append_str(@msg, " is retired (slice 11)")
+    return sb_to_string(@msg)
+}
+
 // 5.2: annotated shelf declarations — pin empty literals from the annotation,
 // reject literal-vs-annotation element mismatches with the Stage 1 wording.
 // Slice 10: `heap shelf[T]` annotations ride the same check; the storage

@@ -18,7 +18,6 @@ use "shelf_calls.vl"
 use "map_checks.vl"
 use "dyn_checks.vl"
 use "misc_checks.vl"
-// Checks if a name represents a recognized type (primitive or user-defined struct or kind).
 act is_known_type(st: @SymbolTable, name: string) -> bool {
     if name == null { return false }
     let clean = strip_pointer_prefix(name)
@@ -30,7 +29,7 @@ act is_known_type(st: @SymbolTable, name: string) -> bool {
     return false
 }
 
-// Infers the static type of an expression AST node.
+// Infers the static type of an expression AST node (the wall vocabulary).
 act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr == null { return "void" }
     if expr.kind == EXPR_INT { if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name } return "i32" }
@@ -93,8 +92,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
 
     if expr.kind == EXPR_INDEX {
         let target_type = infer_expr_type(st, expr.target)
-        // 5.2: shelf element read (bounds are runtime-checked; index type here)
-        if is_shelf_type(target_type) { return check_shelf_index_read(st, expr) }
+        if is_shelf_type(target_type) { return check_shelf_index_read(st, expr) }  // 5.2: bounds are runtime-checked; index type here
         if is_map_type(target_type) { return check_map_index_read(st, expr) }  // 5.2 slice 6: strict key; the miss fatal is runtime
         if is_ring_type(target_type) or is_bitset_type(target_type) { return check_coll9_index(st, expr) }  // 5.2 slice 9: no subscript
         if target_type == "string" { return "u8" }
@@ -118,8 +116,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     }
 
     if expr.kind == EXPR_CALL {
-        // Builtin intrinsics
-        if expr.callee.kind == EXPR_MEMBER {
+        if expr.callee.kind == EXPR_MEMBER {  // builtin intrinsics + str/sys receivers ride the member path
             let target = expr.callee.target
             let member = expr.callee.member_name
             if target.kind == EXPR_IDENT {
@@ -141,15 +138,14 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 if target.str_val == "fs" {
                     if member == "read_file" { return "string" }; if member == "size" { return "usize" }; if member == "exists" or member == "write_file" or member == "remove" or member == "remove_file" { return "bool" }
                 }
-                if target.str_val == "str" { if !check_str_call(st, expr, member) { return "unknown" }; if member == "len" { return "usize" }; if member == "contains" or member == "starts_with" or member == "ends_with" { return "bool" }; if member == "trim" or member == "replace" or member == "to_upper" or member == "to_lower" or member == "concat" { return "string" }; if member == "index_of" { return "i64" }; if member == "split" { return "@string" } }  // 5.1: -1 = not found; @string = NULL-terminated split array
+                if target.str_val == "str" { if !check_str_call(st, expr, member) { return "unknown" }; if member == "len" { return "usize" }; if member == "contains" or member == "starts_with" or member == "ends_with" { return "bool" }; if member == "trim" or member == "replace" or member == "to_upper" or member == "to_lower" or member == "concat" { return "string" }; if member == "index_of" { return "i64" }; if member == "split" { return "shelf[string]" } }  // 5.1: -1 = not found; slice 11: split owns its tokens as a shelf
                 if target.str_val == "io" { return "void" }
             }
         }
-        // 5.2: shelf receivers — put / take member calls; slice 6: map receivers
-        if expr.callee.kind == EXPR_MEMBER and expr.callee.target != null and is_shelf_type(infer_expr_type(st, expr.callee.target)) { return check_shelf_member_call(st, expr) }
+        if expr.callee.kind == EXPR_MEMBER and expr.callee.target != null and is_shelf_type(infer_expr_type(st, expr.callee.target)) { return check_shelf_member_call(st, expr) }  // 5.2: shelf receivers — put / take; slice 6: map receivers
         if expr.callee.kind == EXPR_MEMBER and expr.callee.target != null and is_map_type(infer_expr_type(st, expr.callee.target)) { return check_map_member_call(st, expr) }  // 5.2 slice 6: put / get / has
         if expr.callee.kind == EXPR_MEMBER and expr.callee.target != null and (is_ring_type(infer_expr_type(st, expr.callee.target)) or is_bitset_type(infer_expr_type(st, expr.callee.target))) { return check_coll9_member_call(st, expr) }  // 5.2 slice 9
-        // User functions or Kind variant constructors
+        // 5.2 slice 9 user fns or Kind variant constructors
         if expr.callee.kind == EXPR_MEMBER and expr.callee.target.kind == EXPR_IDENT {
             let k_sym = find_kind(st, expr.callee.target.str_val)
             if k_sym != null {
@@ -230,8 +226,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             }
             cur_init = cur_init.next
         }
-        // Fields without defaults must be provided in the literal
-        mut sf = st_sym.first_field
+        mut sf = st_sym.first_field  // fields without defaults must be provided
         loop sf != null {
             mut seen_init = expr.first_init
             mut covered = false
@@ -262,8 +257,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
 
     if expr.kind == EXPR_UNARY {
         let sub_type = infer_expr_type(st, expr.operand)
-        // 5.2 slice 2: raw dyn values refuse operators — unbox with `as` first
-        if sub_type == "dyn" { report_error("semantic", expr.line, expr.col, dyn_gate_error()); st.error_count += 1; return "unknown" }
+        if sub_type == "dyn" { report_error("semantic", expr.line, expr.col, dyn_gate_error()); st.error_count += 1; return "unknown" }  // slice 2: unbox with `as` first
         let op_fn = find_unary_op(st, expr.op, sub_type)
         if op_fn != null { return op_fn.return_type }
         if expr.op == TOK_NOT { return "bool" }
@@ -277,8 +271,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
 act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode) {
     if stmt == null { return }
     if stmt.kind == STMT_VAR_DECL {
-        // 5.2: annotated shelf pins/rejects (empty literals borrow the elem)
-        check_shelf_annotation(st, stmt.type_name, stmt.val_expr, stmt.line, stmt.col)
+        check_shelf_annotation(st, stmt.type_name, stmt.val_expr, stmt.line, stmt.col)  // 5.2: annotated shelf pins/rejects (empty literals borrow the elem)
         check_map_annotation(st, stmt.type_name, stmt.val_expr, stmt.line, stmt.col)  // 5.2 slice 6: empty literals borrow BOTH slots / reject mismatches
         check_coll9_annotation(st, stmt.type_name, stmt.val_expr, stmt.line, stmt.col)  // 5.2 slice 9: ring + bitset
         if stmt.val_expr != null {
@@ -287,14 +280,19 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
             }
             let val_type = infer_expr_type(st, stmt.val_expr)
             if stmt.type_name != null and str.len(stmt.type_name) > 0 {
-                if not types_are_compatible(stmt.type_name, val_type) { report_error("semantic", stmt.line, stmt.col, "Type mismatch in variable declaration"); st.error_count += 1 }
+                // slice 11: contextual lexing routes a bare `shelf` annotation as an
+                // identifier, so the wall is name-based (Stage 1 raises in _map_type)
+                if strip_pointer_prefix(stmt.type_name) == "shelf" { report_error("semantic", stmt.line, stmt.col, "a bare 'shelf' needs an element type: use shelf[T]"); st.error_count += 1 }
+                else if not types_are_compatible(stmt.type_name, val_type) {
+                    // 5.2 slice 11: the retired split pairing gets the dedicated words
+                    if is_split_retire_pair(stmt.type_name, val_type) { report_error("semantic", stmt.line, stmt.col, split_retire_message(stmt.type_name)); st.error_count += 1 } else { report_error("semantic", stmt.line, stmt.col, "Type mismatch in variable declaration"); st.error_count += 1 }
+                }
             } else {
                 stmt.type_name = val_type
             }
         }
         define_variable(st, stmt.name, stmt.type_name, stmt.is_mut, stmt.line, stmt.col)
     } else if stmt.kind == STMT_ASSIGN {
-        // 5.2: shelf indexed writes get the dedicated check (mut / row-copy / compound-assign / index type)
         if stmt.expr != null and stmt.expr.kind == EXPR_INDEX and is_map_type(infer_expr_type(st, stmt.expr.target)) {  // 5.2 slice 6: mut / compound-assign / strict key and value
             check_map_assign(st, stmt); infer_expr_type(st, stmt.val_expr)
         } else if stmt.expr != null and stmt.expr.kind == EXPR_INDEX and is_shelf_type(infer_expr_type(st, stmt.expr.target)) { check_shelf_assign(st, stmt); infer_expr_type(st, stmt.val_expr) } else {
@@ -309,7 +307,9 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
             let op_fn = find_binary_op(st, base_op, target_type, val_type)
             if op_fn != null and types_are_compatible(target_type, op_fn.return_type) { is_valid = true }
         }
-        if not is_valid { report_error("semantic", stmt.line, stmt.col, "Type mismatch in assignment"); st.error_count += 1 }
+        if not is_valid {
+            if is_split_retire_pair(target_type, val_type) { report_error("semantic", stmt.line, stmt.col, split_retire_message(target_type)); st.error_count += 1 } else { report_error("semantic", stmt.line, stmt.col, "Type mismatch in assignment"); st.error_count += 1 }  // slice 11: retired split pairing words
+        }
         }
     } else if stmt.kind == STMT_IF {
         infer_expr_type(st, stmt.expr)

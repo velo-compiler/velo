@@ -38,14 +38,9 @@ EXAMPLE30_LINES = [
 # Edge cases the happy-path example cannot show: empty inputs, non-overlap
 # rules, position 0, single-token splits, no-match delimiters, and a
 # function-call argument (each argument must be evaluated exactly once).
-# \x0b \x0c are VT/FF — Velo has no \v \f escapes.
+# \x0b \x0c are VT/FF — Velo has no \v \f escapes. Split reads ride the 5.2
+# slice-11 owning shelf[string] (.len + bounds-checked indexing).
 EDGE = """use sys.io
-
-act count_tokens(parts: @string) -> usize {
-    mut n: usize = 0
-    loop parts[n] != null { n += 1 }
-    return n
-}
 
 act heap_seed() -> string {
     return "abcabc"
@@ -82,20 +77,17 @@ act main() -> i32 {
     if str.ends_with(e, e) { io.println("ends('','') = yes") }
     if str.starts_with("solo", e) { io.println("starts('solo','') = yes") }
 
-    let s0: @string = str.split("no-delim", ",")
-    let s0n: usize = count_tokens(s0)
+    let s0: shelf[string] = str.split("no-delim", ",")
+    let s0n: usize = s0.len
     let s0t: string = s0[0]
     io.println("split(1-token) = {s0n} [{s0t}]")
-    let s1: @string = str.split(e, ",")
-    let s1n: usize = count_tokens(s1)
+    let s1: shelf[string] = str.split(e, ",")
+    let s1n: usize = s1.len
     let s1t: string = s1[0]
     io.println("split('') = {s1n} [{s1t}]")
-    let s2: @string = str.split("x", "xy")
-    let s2n: usize = count_tokens(s2)
+    let s2: shelf[string] = str.split("x", "xy")
+    let s2n: usize = s2.len
     io.println("split(long-delim) = {s2n}")
-    mem.free(s0)
-    mem.free(s1)
-    mem.free(s2)
     return 0
 }
 """
@@ -119,40 +111,34 @@ EDGE_LINES = [
     "split(long-delim) = 1",
 ]
 
-# Single-block split ownership: one heap block holds the pointer array AND
-# every token byte, so mem.free(parts) reclaims everything. held = 48 array
-# bytes (6 pointers: 5 tokens + NULL terminator) + 20 token bytes
-# ("one\0 two\0 three\0 \0 five\0") — 68 exactly, on every run of both stages.
-# After the single free the ledger is back to exactly the starting value:
-# the token leak is closed. DO NOT mem.free an individual token (interior
-# pointer, no size header — the same non-header-pointer class as
-# mem.free on any other bad pointer).
+# Slice 11 ownership story: str.split returns an OWNING shelf[string] whose
+# tokens are arena strings — the zone reclaims the tokens *and* the payload
+# wholesale, so the HEAP ledger does not move at all (held == base == 0).
+# The old single-block + single mem.free rows retired with the @string
+# spelling; a shelf is NOT mem.free-able (mem_checks rejects it — residuals).
 SPLIT_OWNERSHIP = """use sys.io
 use sys.mem
 
 act main() -> i32 {
     let base: usize = mem.heap_used()
-    let parts: @string = str.split("one,two,three,,five", ",")
+    let parts: shelf[string] = str.split("one,two,three,,five", ",")
     let tok0: string = parts[0]
     let tok3: string = parts[3]
     let l0: usize = str.len(tok0)
     let l3: usize = str.len(tok3)
     let held: usize = mem.heap_used()
-    io.println("lens = {l0} {l3}")
+    let n: usize = parts.len
+    io.println("lens = {l0} {l3} n = {n}")
     io.println("held = {held}")
-    mem.free(parts)
-    let after: usize = mem.heap_used()
-    io.println("after = {after}")
-    if after == base { io.println("ledger balanced") }
+    if held == base { io.println("zone-owned (ledger untouched)") }
     return 0
 }
 """
 
 SPLIT_OWNERSHIP_LINES = [
-    "lens = 3 0",
-    "held = 68",
-    "after = 0",
-    "ledger balanced",
+    "lens = 3 0 n = 5",
+    "held = 0",
+    "zone-owned (ledger untouched)",
 ]
 
 # One fatal per runtime guard: each mini-harness is its own process (a fatal
@@ -201,6 +187,9 @@ REJECTIONS = [
     ('if str.split("a,b", str.contains("a", "a")) != null { io.println("y") }',
      "str.split expects string arguments (got bool)",
      "rej_split_bool"),
+    ("let p: @string = str.split(\"a,b\", \",\")",
+     "str.split returns shelf[string] — annotating @string is retired (slice 11)",
+     "rej_split_retired_anno"),
 ]
 
 REJ_PROGRAM = """use sys.io
@@ -221,7 +210,8 @@ def expect_build_failure(body: str, name: str, want_msg: str):
     src.write_text(REJ_PROGRAM.format(body=body), encoding="utf-8")
     for stage, cmd in (("stage1", [sys.executable, str(VELO_PY), "check", str(src)]),
                        ("stage2", [str(VELO_EXE), "check", str(src)])):
-        res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+        res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT,
+                             encoding="utf-8", errors="replace")
         text = res.stdout + res.stderr
         assert res.returncode != 0, f"{stage} accepted:\n{text[-2000:]}"
         assert want_msg in text, f"{stage} message mismatch:\n{text[-2000:]}"
@@ -259,9 +249,10 @@ class TestStringLibrary(unittest.TestCase):
             s1.stdout.strip().splitlines(), EDGE_LINES, "edge-case outputs unrecognized"
         )
 
-    def test_split_single_block_ownership(self):
-        """One heap block owns the pointer array AND every token: a single
-        mem.free(parts) returns the heap ledger to exactly its starting value."""
+    def test_split_zone_owned_tokens(self):
+        """Slice 11: split tokens are ARENA-owned (the shelf owns them, the
+        zone reclaims wholesale) — the heap ledger never moves and indexing
+        is bounds-checked."""
         for stage, name in (("stage1", "str51_owners_s1"), ("stage2", "str51_owners_s2")):
             res = run_stage(stage, SPLIT_OWNERSHIP, name)
             self.assertEqual(res.returncode, 0, f"{stage} run failed: {res.stderr[-2000:]}")
@@ -275,12 +266,10 @@ class TestStringLibrary(unittest.TestCase):
 
     def test_empty_delimiter_fatal_via_language(self):
         program = """use sys.io
-use sys.mem
 
 act main() -> i32 {
-    let parts: @string = str.split("a,b", "")
+    let parts: shelf[string] = str.split("a,b", "")
     io.println("unreachable")
-    mem.free(parts)
     return 0
 }
 """
@@ -307,6 +296,72 @@ act main() -> i32 {
             run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=120)
             self.assertNotEqual(run.returncode, 0, f"{name} survived: {call}")
             self.assertIn(want_msg, run.stderr, f"{name} message mismatch:\n{run.stderr}")
+
+    def test_shelf_contextual_and_unsafe_knob(self):
+        """Slice 11: contextual `shelf` accepts (indentifiers/params named
+        shelf; `shelf[` still parses as a literal — the pinned trade), the
+        split result runs through the flag-gated --unsafe-shelf-index knob
+        on both stages (OOB stays SILENT with the flag, loud without)."""
+        ctx_program = """use sys.io
+
+act f(shelf: i32) -> i32 {
+    return shelf
+}
+
+act main() -> i32 {
+    let shelf = 5
+    io.println("var shelf: {shelf}")
+    let pr = f(7)
+    io.println("param shelf: {pr}")
+    let lit = shelf[3]
+    let n: usize = lit.len
+    io.println("shelf[3] rides the literal path: {n}")
+    let parts: shelf[string] = str.split("a,b,c", ",")
+    let pn: usize = parts.len
+    let w: string = parts[1]
+    io.println("pinned token: {w} of {pn}")
+    return 0
+}
+"""
+        ctx_lines = [
+            "var shelf: 5",
+            "param shelf: 7",
+            "shelf[3] rides the literal path: 1",
+            "pinned token: b of 3",
+        ]
+        oob_program = """use sys.io
+
+act main() -> i32 {
+    let parts: shelf[string] = str.split("a,b,c", ",")
+    let w: string = parts[7]
+    io.println("oob token = [{w}]")
+    return 0
+}
+"""
+        for stage, name in (("stage1", "str51_ctx_s1"), ("stage2", "str51_ctx_s2")):
+            res = run_stage(stage, ctx_program, name)
+            self.assertEqual(res.returncode, 0, f"{stage} contextuality failed: {res.stderr[-2000:]}")
+            self.assertEqual(
+                res.stdout.strip().splitlines(), ctx_lines, f"{stage} contextuality output diverged"
+            )
+        # WITHOUT the flag the OOB read is a loud fatal on both stages
+        for stage, name in (("stage1", "str51_oob_safe_s1"), ("stage2", "str51_oob_safe_s2")):
+            res = run_stage(stage, oob_program, name)
+            self.assertNotEqual(res.returncode, 0, f"{stage} survived an OOB shelf read")
+            self.assertIn("shelf index out of bounds: 7 (len 3)!", res.stderr)
+        # WITH the flag the read lowers unguarded: silent, exit 0, no fatal
+        flag_programs = {
+            "stage1": [sys.executable, str(VELO_PY), "run", "--unsafe-shelf-index", "{src}"],
+            "stage2": [str(VELO_EXE), "run", "{src}", "--unsafe-shelf-index"],
+        }
+        for stage, cmd in flag_programs.items():
+            tmp = ROOT / ".velo_cache" / f"str51_oob_unsafe_{stage}.vl"
+            tmp.parent.mkdir(parents=True, exist_ok=True)
+            tmp.write_text(oob_program, encoding="utf-8")
+            cmd = [c.replace("{src}", str(tmp)) for c in cmd]
+            res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, timeout=300)
+            self.assertEqual(res.returncode, 0, f"{stage} unsafe knob crashed:\n{res.stderr[-1500:]}")
+            self.assertNotIn("shelf index out of bounds", res.stderr)
 
 
 if __name__ == "__main__":

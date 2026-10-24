@@ -311,37 +311,50 @@ Tests:
 
 Missing surface:
 
-* [ ] `str.split` → `shelf[string]` HARD SWAP (breaking change): both stages,
-      every call site, the example, and §2 docs updated in the same commit;
-      the `@string` token-array spelling retires with a changelog note.
-      Rationale: one owning-shelf return shape instead of the two idioms.
-* [ ] Contextual `shelf`: usable as an identifier when NOT immediately
-      followed by `[` — `shelf[` stays permanently keyword in expression
-      position (the `let x = shelf[i]` literal-vs-index ambiguity is
-      genuinely unresolvable, which is why slice 1 reserved the word; this
-      resolves what is resolvable). Parser rule identical on both stages.
-* [ ] `--unsafe-shelf-index` CLI knob (BOTH stages): lowers `xs[i]` to the
-      unguarded `((T*)data)[i]` read. Silent-OOB warning documented; NOT
-      exercised by the default suite (flag-gated).
-* [ ] MSVC: MOVED OUT of 5.2 into a standalone infra gap — statement-
-      expression-free lowering is a whole-emitter rewrite; GCC-only already
-      matches the `__thread` precedent, and no collection feature depends
-      on it. Honest carve-out, recorded in gaps.md.
+* [x] `str.split` → `shelf[string]` HARD SWAP (breaking change): both stages,
+      every call site, the example, and the 5.1 str docs updated in the same
+      commit; the `@string` token-array spelling retires with a dedicated
+      wording wall (`str.split returns shelf[string] — annotating @string is
+      retired (slice 11)`, firing on decls and plain assignments). Rationale:
+      one owning-shelf return shape instead of the two idioms.
+* [x] Contextual `shelf`: usable as an identifier when NOT immediately
+      followed by `[` AND not immediately after `heap` (the heap exception
+      keeps the bare `heap shelf` annotation wall parse-level, as slice 10
+      pinned it) — `shelf[` stays permanently keyword in expression position
+      (the `let x = shelf[i]` literal-vs-index ambiguity is genuinely
+      unresolvable, which is why slice 1 reserved the word; this resolves
+      what is resolvable). Parser rule identical on both stages; stage 2's
+      bare-`shelf` wall went name-based in the VarDecl checker.
+* [x] `--unsafe-shelf-index` CLI knob (BOTH stages): lowers `xs[i]` to the
+      unguarded `((T*)data)[i]` read. Silent-OOB warning documented; the
+      default suite pins the flag-gated runs (safe paths stay the default).
+      Stage 1 `run` needs the flag BEFORE the file (argparse REMAINDER);
+      stage 2 accepts it anywhere.
+* [x] MSVC: MOVED OUT of 5.2 into a standalone infra gap (gaps.md §6.9) —
+      statement-expression-free lowering is a whole-emitter rewrite;
+      GCC-only already matches the `__thread` precedent, and no collection
+      feature depends on it. Honest carve-out, recorded in gaps.md.
 
 Tests:
 
-* [ ] split battery (existing split tests migrated to shelf[string]),
-      contextuality accept (vars named `shelf`) + reject (`xs` named shelf
-      still literal/index collision rules), unsafe flag compiles+runs with
-      an intentionally-OOB program (flag-gated, not in default suite).
+* [x] split battery (existing split tests migrated to shelf[string] —
+      `.len` + bounds-checked reads + the of-loop; the single-block
+      `mem.free` rows became the zone-owned ledger story), contextuality
+      accepts (vars/params named `shelf`; `shelf[` on a shelf-named var
+      rides the literal path — pinned trade), unsafe flag pinned with an
+      intentionally-OOB program (loud fatal without the flag, silent with),
+      dual-stage sweep 81 pins / 0 diffs, chain + fixed point
+      `FD563E7A…`, count_lines clean (max 399).
 
 ---
 
 ## End-state checks
 
-* [ ] Suite target ~185–200 parity tests; every fatal pinned in the runtime
-      header; every reject wording byte-identical across stages.
-* [ ] `examples/` gains one example per milestone type (shelf/mixed/sorted
-      plate → map/ring/bitset when they land).
-* [ ] gaps.md 5.2 heading retitled: `slices 1..11 — full collections section ✅`.
-* [ ] This sheet updated (checkboxes ticked) in the same commit as its slice.
+* [x] Suite target ~185–200 parity tests; every fatal pinned in the runtime
+      header; every reject wording byte-identical across stages. (S11 state:
+      **178/178**, sweep **81/81** — the wording parity is the sweep itself.)
+* [x] `examples/` gains one example per milestone type (shelf 4/map 28/ring-
+      bitset 29 from the earlier slices — the sweep re-titled the section
+      instead of adding a new example: slice 11 migrates example 30 in place).
+* [x] gaps.md 5.2 heading retitled: `COMPLETE (slices 1–11) ✅`.
+* [x] This sheet updated (checkboxes ticked) in the same commit as its slice.

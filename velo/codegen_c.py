@@ -101,6 +101,9 @@ class CCodeGenerator:
         self.zone_counter = 0
         self.match_counter = 0
         self.fresh_counter = 0
+        # 5.2 slice 11: the --unsafe-shelf-index knob — lowers shelf index
+        # READS to the unguarded data-pointer read (writes stay guarded)
+        self.unsafe_shelf_index = False
 
     def _indent(self) -> str:
         return "    " * self.indent_level
@@ -833,6 +836,20 @@ class CCodeGenerator:
         if lit_elem is not None and lit_elem != ann_elem:
             raise ValueError(f"shelf literal element type shelf[{lit_elem}] does not match annotation {decl_type}")
 
+    def _check_split_retire(self, type_str: Optional[str], value: Optional[Expr]) -> None:
+        """5.2 slice 11: the `@string` token-array spelling retired — a
+        str.split result binds to shelf[string] only, so the retired pairing
+        rejects at the type wall instead of the GCC stage. Mirrored by the
+        Stage 2 checker with identical wording."""
+        if not type_str or value is None:
+            return
+        base = type_str.lstrip("@").strip()
+        if base != "string":
+            return
+        if self._infer_raw_velo_type(value) != "shelf[string]":
+            return
+        raise ValueError(f"str.split returns shelf[string] — annotating {type_str} is retired (slice 11)")
+
     def _emit_shelf_literal(self, lit: ShelfLiteral) -> str:
         """5.2: lowers `shelf[..., ...]` into a GCC statement-expression so the
         literal can live in any value position. Each element is bound exactly
@@ -1336,6 +1353,7 @@ class CCodeGenerator:
             self._check_map_annotation(stmt.type_name, stmt.value)
             self._check_ring_annotation(stmt.type_name, stmt.value)
             self._check_bitset_annotation(stmt.type_name, stmt.value)
+            self._check_split_retire(stmt.type_name, stmt.value)  # slice 11
             type_str = self._infer_or_map_type(stmt.type_name, stmt.value)
             raw_velo_type = stmt.type_name or self._infer_raw_velo_type(stmt.value)
             self.current_scope_types[stmt.name] = raw_velo_type
@@ -1420,6 +1438,9 @@ class CCodeGenerator:
                     )
                     return
             target_code = self._emit_expression(stmt.target)
+            # 5.2 slice 11: the retire wall rides plain assignments too
+            if isinstance(stmt.target, Identifier):
+                self._check_split_retire(self.current_scope_types.get(stmt.target.name), stmt.value)
             val_code = self._emit_expression(stmt.value)
             self._emit_line(f"{target_code} {stmt.op} {val_code};")
 
@@ -1946,7 +1967,7 @@ class CCodeGenerator:
                     if m == "index_of":
                         return "i64"  # -1 = not found; usize has no room for it
                     if m == "split":
-                        return "@string"  # NULL-terminated token array
+                        return "shelf[string]"  # slice 11: the owning-shelf swap
         return "i32"
 
 
@@ -2133,7 +2154,7 @@ class CCodeGenerator:
                     if m == "index_of":
                         return "i64"  # -1 = not found; usize has no room for it
                     if m == "split":
-                        return "@string"  # NULL-terminated token array
+                        return "shelf[string]"  # slice 11: the owning-shelf swap
                 elif expr.callee.target.name == "io":
                     # All io calls are void (mirrors type_checker.vl), so
                     # mem count/fill checks can render and reject them.
@@ -2243,6 +2264,11 @@ class CCodeGenerator:
                 index_code = self._emit_expression(expr.index)
                 recv = f"({target_code})" if target_type.startswith("@") else f"&({target_code})"
                 elem_c = self._map_type(shelf_elem)
+                if self.unsafe_shelf_index:
+                    # 5.2 slice 11: the --unsafe-shelf-index knob — the
+                    # unguarded read; out-of-range indexes are silent UB
+                    # (documented; flag-gated, not exercised by the suite)
+                    return f"((({elem_c}*)({recv})->data)[(usize)({index_code})])"
                 return f"(*(({elem_c}*)velo_shelf_get({recv}, (usize)({index_code}))))"
             kv = self._map_kv(target_type)
             if kv is not None:

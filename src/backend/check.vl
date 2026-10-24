@@ -280,7 +280,7 @@ act check_print_minimal_json(src_path: string, message: string) {
 }
 
 // Runs 'velo check --json'. Returns the process exit code (0 = clean).
-act run_check_json(src_path: string) -> i32 {
+act run_check_json(src_path: string, unsafe_index: bool) -> i32 {
     let tmp = "velo_check_capture.tmp"
     if velo_capture_begin(tmp) != 0 {
         check_print_minimal_json(src_path, "internal error: stdout capture failed")
@@ -290,7 +290,7 @@ act run_check_json(src_path: string) -> i32 {
     // codegen expands `f(x) != null` into a null-guarded ternary that
     // re-evaluates f(x) (a known defect recorded in gaps.md 6.7), which would
     // run the pipeline twice and duplicate captured diagnostics.
-    let c_code = compile_source_to_c(src_path)
+    let c_code = compile_source_to_c(src_path, unsafe_index)
     let ok: bool = c_code != null
     velo_capture_end()
 
@@ -319,14 +319,14 @@ act run_check_json(src_path: string) -> i32 {
 // Runs 'velo check' in pretty mode. The compile stage's own success verdict
 // ignores recovered parse errors, so the captured stream is echoed and ANDed
 // with an error-line scan, exactly like the JSON path.
-act run_check_pretty(src_path: string) -> bool {
+act run_check_pretty(src_path: string, unsafe_index: bool) -> bool {
     let tmp = "velo_check_capture.tmp"
     if velo_capture_begin(tmp) != 0 {
         // Capture unavailable: degrade to the compiler's own verdict.
-        let c_code = compile_source_to_c(src_path)
+        let c_code = compile_source_to_c(src_path, unsafe_index)
         return c_code != null
     }
-    let c_code = compile_source_to_c(src_path)
+    let c_code = compile_source_to_c(src_path, unsafe_index)
     let ok: bool = c_code != null
     velo_capture_end()
 

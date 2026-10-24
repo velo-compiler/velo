@@ -25,6 +25,14 @@ act main(argc: i32, argv: @string) -> i32 {
     }
 
     let cmd = argv[1]
+    // 5.2 slice 11: the --unsafe-shelf-index knob rides any argument position
+    // (run/build/emit-c consume positional + -o slots; scan once up top).
+    mut unsafe_index: bool = false
+    mut si: i32 = 2
+    loop si < argc {
+        if argv[si] == "--unsafe-shelf-index" { unsafe_index = true }
+        si += 1
+    }
 
     if cmd == "version" or cmd == "--version" {
         io.println("Velo v2.0 (Self-Hosted Native Compiler)")
@@ -45,7 +53,7 @@ act main(argc: i32, argv: @string) -> i32 {
         let source_file = argv[2]
         mut exit_code = 0
         zone {
-            exit_code = run_source_file(source_file)
+            exit_code = run_source_file(source_file, unsafe_index)
         }
         return exit_code
     }
@@ -57,7 +65,7 @@ act main(argc: i32, argv: @string) -> i32 {
         }
         let source_file = argv[2]
         zone {
-            let c_code = compile_source_to_c(source_file)
+            let c_code = compile_source_to_c(source_file, unsafe_index)
             if c_code != null {
                 io.println(c_code)
             } else {
@@ -79,7 +87,7 @@ act main(argc: i32, argv: @string) -> i32 {
         }
         mut ok = false
         zone {
-            ok = build_executable(source_file, output_exe)
+            ok = build_executable(source_file, output_exe, unsafe_index)
             if ok {
                 io.println("[Velo] Successfully built binary!")
             } else {
@@ -109,13 +117,13 @@ act main(argc: i32, argv: @string) -> i32 {
         if json_mode {
             mut rc: i32 = 0
             zone {
-                rc = run_check_json(source_file)
+                rc = run_check_json(source_file, unsafe_index)
             }
             return rc
         }
         mut ok: bool = false
         zone {
-            ok = run_check_pretty(source_file)
+            ok = run_check_pretty(source_file, unsafe_index)
         }
         if ok {
             io.println("[Velo] Check passed: {source_file}")

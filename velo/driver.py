@@ -16,6 +16,8 @@ class CompilerDriver:
         self.runtime_dir = (self.root_dir / "velo" / "runtime").resolve()
         self.cache_dir = Path(cache_dir) if cache_dir else (self.root_dir / ".velo_cache")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        # 5.2 slice 11: the --unsafe-shelf-index knob (set once by the CLI)
+        self.unsafe_index_flag = False
 
     def _find_gcc(self) -> str:
         gcc_path = shutil.which("gcc")
@@ -87,6 +89,7 @@ class CompilerDriver:
     def compile_to_c(self, source_path: str) -> str:
         ast = self.resolve_program(source_path)
         codegen = CCodeGenerator()
+        codegen.unsafe_shelf_index = self.unsafe_index_flag   # 5.2 slice 11: the knob
         c_code = codegen.generate(ast)
         return c_code
 
@@ -116,7 +119,9 @@ class CompilerDriver:
 
         try:
             ast = self.resolve_program(source_path)
-            CCodeGenerator().generate(ast)  # semantic validation; C output discarded
+            codegen = CCodeGenerator()
+            codegen.unsafe_shelf_index = self.unsafe_index_flag  # 5.2 slice 11
+            codegen.generate(ast)  # semantic validation; C output discarded
             return {"file": source_path, "ok": True, "diagnostics": []}
         except LexerError as exc:
             text = str(exc)

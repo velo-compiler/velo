@@ -54,27 +54,22 @@ act main() -> i32 {
     mem.free(left)
     mem.free(greeting)
 
-    // split: ONE heap block holds the NULL-terminated pointer array AND
-    // every token byte behind it — mem.free(parts) reclaims everything
-    // (never mem.free an individual token: it has no size header).
-    // Delimiters SEPARATE — empty tokens are preserved, a trailing
-    // delimiter yields a trailing empty token, and multi-char delimiters work.
-    let parts: @string = str.split("v1.2..7", ".")
-    mut i: usize = 0
-    loop parts[i] != null {
-        let tok: string = parts[i]
+    // split (5.2 slice 11): the result is an OWNing shelf[string] — every
+    // read is bounds-checked, `.len` counts the tokens, and the tokens live
+    // and die with the active zone. The old NULL-terminated @string array +
+    // mem.free idiom RETIRED (one owning-shelf return shape instead of two).
+    let parts: shelf[string] = str.split("v1.2..7", ".")
+    loop tok, i of parts {
         io.println("split[{i}] = '{tok}'")
-        i = i + 1
     }
-    io.println("split count: {i}")
-    mem.free(parts)
+    let sn: usize = parts.len
+    io.println("split count: {sn}")
 
-    let rows: @string = str.split("a=>b=>c", "=>")
+    let rows: shelf[string] = str.split("a=>b=>c", "=>")
     let r0: string = rows[0]
     let r1: string = rows[1]
     let r2: string = rows[2]
     io.println("multi-char delim: {r0} / {r1} / {r2}")
-    mem.free(rows)
 
     // Composition: transform ugliness in one expression (each argument is
     // evaluated exactly once — the runtime helpers take real parameters).

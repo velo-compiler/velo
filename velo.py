@@ -27,20 +27,24 @@ def main():
     run_parser = subparsers.add_parser("run", help="Compile and immediately execute a Velo program")
     run_parser.add_argument("file", help="Path to the .vl source file")
     run_parser.add_argument("args", nargs=argparse.REMAINDER, help="Arguments passed to the program")
+    run_parser.add_argument("--unsafe-shelf-index", action="store_true", help="Lower shelf index reads unguarded (out-of-range becomes silent UB)")
 
     # 'build' command
     build_parser = subparsers.add_parser("build", help="Compile a Velo program into a native executable")
     build_parser.add_argument("file", help="Path to the .vl source file")
     build_parser.add_argument("-o", "--output", help="Path for the output executable")
+    build_parser.add_argument("--unsafe-shelf-index", action="store_true", help="Lower shelf index reads unguarded (out-of-range becomes silent UB)")
 
     # 'emit-c' command
     emit_parser = subparsers.add_parser("emit-c", help="Emit generated C99 code without compiling")
     emit_parser.add_argument("file", help="Path to the .vl source file")
+    emit_parser.add_argument("--unsafe-shelf-index", action="store_true", help="Lower shelf index reads unguarded (out-of-range becomes silent UB)")
 
     # 'check' command
     check_parser = subparsers.add_parser("check", help="Validate a Velo program without generating code")
     check_parser.add_argument("file", help="Path to the .vl source file")
     check_parser.add_argument("--json", action="store_true", dest="json_mode", help="Emit diagnostics as machine-readable JSON")
+    check_parser.add_argument("--unsafe-shelf-index", action="store_true", help="Lower shelf index reads unguarded (out-of-range becomes silent UB)")
 
     # 'doc' command
     doc_parser = subparsers.add_parser("doc", help="Generate Markdown API documentation from source")
@@ -54,6 +58,9 @@ def main():
         sys.exit(1)
 
     driver = CompilerDriver()
+    # 5.2 slice 11: --unsafe-shelf-index lowers shelf index READS unguarded
+    # (writes stay guarded). Doc command doesn't emit, so it stays unset.
+    driver.unsafe_index_flag = getattr(args, "unsafe_shelf_index", False)
 
     try:
         if args.command == "run":

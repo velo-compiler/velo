@@ -361,6 +361,11 @@ class Lexer:
             chars.append(self._advance())
         name = "".join(chars)
         token_type = KEYWORDS.get(name, TokenType.IDENTIFIER)
+        # 5.2 slice 11: contextual `shelf` — identifier unless immediately
+        # followed by `[` or preceded by `heap` (the heap pair stays parse-level)
+        if (name == "shelf" and token_type == TokenType.SHELF
+                and self._peek() != "[" and (not self.tokens or self.tokens[-1].type != TokenType.HEAP)):
+            token_type = TokenType.IDENTIFIER
         return Token(token_type, name, line, col)
 
     def _scan_operator(self, line: int, col: int) -> Token:

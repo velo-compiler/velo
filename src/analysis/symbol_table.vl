@@ -103,8 +103,8 @@ data SymbolTable {
     current_scope: @Scope
     error_count: usize
     has_operator_overloads: bool
-    // 5.2: shared counter for unique shelf temp names during C emission
-    fresh_counter: usize
+    fresh_counter: usize  // 5.2: unique shelf temp names during C emission
+    unsafe_shelf_index: bool  // 5.2 slice 11: --unsafe-shelf-index lowers index READS unguarded
 }
 
 // Allocates and initializes an empty lexical scope.
@@ -129,6 +129,7 @@ act init_symbol_table(st: @SymbolTable) {
     st.error_count = 0
     st.has_operator_overloads = false
     st.fresh_counter = 0
+    st.unsafe_shelf_index = false
 }
 
 // Pushes a new inner lexical scope onto the scope stack.
