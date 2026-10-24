@@ -356,7 +356,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
     loop cur != null {
         if cur.kind == DECL_FUNCTION {
             if cur.name == "main" {
-                sb_append_str(@sb, "int main(int argc, char** argv) {\n")
+                sb_append_str(@sb, "int main(int argc, char** argv) {\n"); sb_append_str(@sb, "g_velo_os_argc = argc;\n"); sb_append_str(@sb, "g_velo_os_argv = argv;\n")  // 5.4 S1: stash argv for sys.os — the same two indent-0 lines the stage-1 emitter writes
             } else {
                 if is_anon_act_name(cur.name) { sb_append_str(@sb, "static ") }
                 sb_append_str(@sb, map_type_to_c(cur.return_type))

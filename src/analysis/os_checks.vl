@@ -1,0 +1,145 @@
+// 5.4 Extended File System & OS Primitives — compile-time checks for the
+// sys.os namespace (slice 1: args/get_env/set_env/exit). Mutual mirror of
+// velo/codegen_c.py::_os_expect / OS_CALLS / OS_SIGS - both stages must
+// reject the same programs with the same words.
+// The namespace is CLOSED on both lanes: unknown CALL members report the
+// closed-set wording (time unknown-member precedent); os has NO constants,
+// so the property lane rejects every bare read (with the parens hint when
+// the member names a known function).
+use "type_checker.vl"
+use "symbol_table.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../ast/expr.vl"
+use "../frontend/token.vl"
+
+// Signature text per checked member ("" = no sig tail — args carries none).
+// Must stay character-identical with velo/codegen_c.py::OS_SIGS — the 0-ary
+// wall has no tail; the sigs decorate the get_env/set_env/exit walls only.
+act os_member_sig(member: string) -> string {
+    if member == "get_env" { return ": (string key)" }
+    if member == "set_env" { return ": (string key, string val)" }
+    if member == "exit" { return ": (i64 code)" }
+    return ""
+}
+
+// Expected argument count per member (same curve as OS_CALLS).
+act os_member_arity(member: string) -> i32 {
+    if member == "args" { return 0 }
+    if member == "get_env" { return 1 }
+    if member == "set_env" { return 2 }
+    if member == "exit" { return 1 }
+    return -1
+}
+
+// How many of the member's LEADING arguments are strings (S1 os members
+// are homogeneous per member: get_env/set_env all strings, exit int-only).
+act os_string_arg_count(member: string) -> i32 {
+    if member == "get_env" { return 1 }
+    if member == "set_env" { return 2 }
+    return 0
+}
+
+// Result spell per member — must stay character-identical with stage 1's
+// os_member_result_type.
+act os_member_ret(member: string) -> string {
+    if member == "args" { return "shelf[string]" }
+    if member == "get_env" { return "string" }
+    if member == "set_env" { return "bool" }
+    if member == "exit" { return "void" }
+    return ""
+}
+
+// The int accept set (exit's duration class) — same spells as time's
+// int wall (ints only; floats/bool/string reject).
+act os_int_arg_ok(t: string) -> bool {
+    if t == "i8" { return true }
+    if t == "i16" { return true }
+    if t == "i32" { return true }
+    if t == "i64" { return true }
+    if t == "u8" { return true }
+    if t == "u16" { return true }
+    if t == "u32" { return true }
+    if t == "u64" { return true }
+    if t == "usize" { return true }
+    if t == "isize" { return true }
+    return false
+}
+
+// The string accept set — exactly the string spell (keys/values).
+act os_arg_is_string(t: string) -> bool {
+    return t == "string"
+}
+
+// Entry point: returns the call's RESULT spell — "unknown" after reporting
+// (the infer branch then yields "unknown"). Zero-ary walls carry no sig
+// tail; get_env/set_env/exit carry their sigs like every time wall.
+act check_os_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
+    let arity = os_member_arity(member)
+    if arity < 0 {
+        // 5.4: the os namespace is CLOSED for calls (time unknown-member
+        // precedent) — wording mirror of stage 1's _os_expect raise.
+        let msb = create_sb(192)
+        sb_append_str(@msb, "unknown os member '"); sb_append_str(@msb, member)
+        sb_append_str(@msb, "' (functions: args, exit, get_env, set_env)")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+        return "unknown"
+    }
+    mut argc: usize = 0
+    mut cur_a = expr.first_arg
+    loop cur_a != null { argc += 1; cur_a = cur_a.next }
+    if argc != (arity as usize) {
+        let msb = create_sb(192)
+        sb_append_str(@msb, "os."); sb_append_str(@msb, member); sb_append_str(@msb, " expects exactly ")
+        sb_append_int(@msb, arity)
+        if arity == 1 { sb_append_str(@msb, " argument") } else { sb_append_str(@msb, " arguments") }
+        sb_append_str(@msb, os_member_sig(member))
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+        return "unknown"
+    }
+    let n_str = os_string_arg_count(member)
+    mut idx: usize = 0
+    mut cur = expr.first_arg
+    loop cur != null {
+        let t = infer_expr_type(st, cur)
+        if idx < n_str {
+            if !os_arg_is_string(t) {
+                // Homogeneous string members: the wall names the member.
+                let msb = create_sb(160)
+                sb_append_str(@msb, "os."); sb_append_str(@msb, member)
+                sb_append_str(@msb, " expects string arguments (got ")
+                sb_append_str(@msb, t); sb_append_str(@msb, ")")
+                report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+                return "unknown"
+            }
+        } else {
+            if !os_int_arg_ok(t) {
+                let msb = create_sb(160)
+                sb_append_str(@msb, "os."); sb_append_str(@msb, member)
+                sb_append_str(@msb, " expects int arguments (got ")
+                sb_append_str(@msb, t); sb_append_str(@msb, ")")
+                report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+                return "unknown"
+            }
+        }
+        idx += 1
+        cur = cur.next
+    }
+    return os_member_ret(member)
+}
+
+// The bare-property path (os.PATH): os has NO constants, so every bare
+// read rejects — the parens hint rides when the member names a known
+// function (time's bare-`time.now` precedent).
+act check_os_constant(st: @SymbolTable, expr: @ExprNode) -> string {
+    let msb = create_sb(256)
+    sb_append_str(@msb, "unknown os constant '"); sb_append_str(@msb, expr.member_name)
+    sb_append_str(@msb, "' (os functions are: args, exit, get_env, set_env)")
+    if str.len(os_member_ret(expr.member_name)) > 0 {  // member names a known function shape
+        sb_append_str(@msb, " (functions need parens: os.")
+        sb_append_str(@msb, expr.member_name)
+        sb_append_str(@msb, "())")
+    }
+    report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+    return "unknown"
+}

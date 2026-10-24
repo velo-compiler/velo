@@ -20,6 +20,7 @@ use "dyn_checks.vl"
 use "misc_checks.vl"
 use "math_checks.vl"
 use "time_checks.vl"
+use "os_checks.vl"
 act is_known_type(st: @SymbolTable, name: string) -> bool {
     if name == null { return false }
     let clean = strip_pointer_prefix(name)
@@ -59,7 +60,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 sb_append_str(@sb, ") -> "); sb_append_str(@sb, fn_sym.return_type); return sb_to_string(@sb)
             }
             if is_known_type(st, expr.str_val) { return expr.str_val }
-            if expr.str_val == "io" or expr.str_val == "mem" or expr.str_val == "fs" or expr.str_val == "str" or expr.str_val == "sys" or expr.str_val == "thread" or expr.str_val == "math" or expr.str_val == "time" { return expr.str_val }  // 5.3/5.5: math + time ride the module pseudo-type
+            if expr.str_val == "io" or expr.str_val == "mem" or expr.str_val == "fs" or expr.str_val == "str" or expr.str_val == "sys" or expr.str_val == "thread" or expr.str_val == "math" or expr.str_val == "time" or expr.str_val == "os" { return expr.str_val }  // 5.3/5.4/5.5: math + time + os ride the module pseudo-type
             report_error("semantic", expr.line, expr.col, "Undeclared identifier"); st.error_count += 1
             return "unknown"
         }
@@ -67,8 +68,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     }
 
     if expr.kind == EXPR_MEMBER {
-        if expr.target.kind == EXPR_IDENT and expr.target.str_val == "math" and find_kind(st, expr.target.str_val) == null { return check_math_constant(st, expr) }  // 5.3: constants are bare properties; unknown names reject with the mirrored wording
-        if expr.target.kind == EXPR_IDENT and expr.target.str_val == "time" and find_kind(st, expr.target.str_val) == null { return check_time_constant(st, expr) }  // 5.5: time has no constants — bare reads reject with the mirrored wording
+        if expr.target.kind == EXPR_IDENT and expr.target.str_val == "math" and find_kind(st, expr.target.str_val) == null { return check_math_constant(st, expr) }; if expr.target.kind == EXPR_IDENT and expr.target.str_val == "time" and find_kind(st, expr.target.str_val) == null { return check_time_constant(st, expr) }; if expr.target.kind == EXPR_IDENT and expr.target.str_val == "os" and find_kind(st, expr.target.str_val) == null { return check_os_constant(st, expr) }  // 5.3/5.4/5.5: math has bare-property constants; time + os reject every bare read — mirrored wording
         if expr.target.kind == EXPR_IDENT {
             let k_sym = find_kind(st, expr.target.str_val)
             if k_sym != null {
@@ -144,8 +144,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 }
                 if target.str_val == "str" { if !check_str_call(st, expr, member) { return "unknown" }; if member == "len" { return "usize" }; if member == "contains" or member == "starts_with" or member == "ends_with" { return "bool" }; if member == "trim" or member == "replace" or member == "to_upper" or member == "to_lower" or member == "concat" { return "string" }; if member == "index_of" { return "i64" }; if member == "split" { return "shelf[string]" } }  // 5.1: -1 = not found; slice 11: split owns its tokens as a shelf
                 if target.str_val == "io" { return "void" }
-                if target.str_val == "math" { return check_math_call(st, expr, member) }  // 5.3 S4: arg-aware result spell; "unknown" after reporting
-                if target.str_val == "time" { return check_time_call(st, expr, member) }  // 5.5: i64 clocks + void sleep; "unknown" after reporting
+                if target.str_val == "math" { return check_math_call(st, expr, member) }; if target.str_val == "time" { return check_time_call(st, expr, member) }; if target.str_val == "os" { return check_os_call(st, expr, member) }  // 5.3/5.4/5.5: checked namespaces; "unknown" after reporting
             }
         }
         if expr.callee.kind == EXPR_MEMBER and expr.callee.target != null and is_shelf_type(infer_expr_type(st, expr.callee.target)) { return check_shelf_member_call(st, expr) }  // 5.2: shelf receivers — put / take; slice 6: map receivers

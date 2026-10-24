@@ -781,7 +781,7 @@ class Monomorphizer:
             if isinstance(expr.callee, MemberAccess):
                 member = expr.callee.member
                 target = expr.callee.target
-                is_module = isinstance(target, Identifier) and target.name in {"io", "mem", "fs", "str", "sys", "math", "time"}  # 5.3/5.5: sys.math + sys.time ride the module-receiver path
+                is_module = isinstance(target, Identifier) and target.name in {"io", "mem", "fs", "str", "sys", "math", "time", "os"}  # 5.3/5.4/5.5: sys.math + sys.time + sys.os ride the module-receiver path
                 is_kind = isinstance(target, Identifier) and (target.name in self.kind_names or target.name in self.generic_kinds)
                 if not is_module and not is_kind:
                     # Check if target struct has this field

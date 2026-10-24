@@ -134,6 +134,49 @@ def time_member_result_type(member: str, arg_types: List[str]) -> str:
     return ""
 
 
+# 5.4 Extended File System & OS Primitives (sys.os): closed-namespace call
+# set. args reads the full argv (argv[0] included); get_env/set_env ride the
+# environment surface; exit terminates with a process code (direct C exit).
+# Mirrored by stage 2's src/analysis/os_checks.vl — both stages must reject
+# the same programs with the same words and emit the same helper bytes.
+OS_CALLS = {
+    "args": 0,
+    "get_env": 1,
+    "set_env": 2,
+    "exit": 1,
+}
+# 0-ary members carry no sig tail; the sig only decorates the arity walls.
+# Must stay character-identical with stage 2's os_member_sig.
+OS_SIGS = {
+    "get_env": ": (string key)",
+    "set_env": ": (string key, string val)",
+    "exit": ": (i64 code)",
+}
+OS_FUNCS_TEXT = "args, exit, get_env, set_env"
+# every leading N argument of these members is a STRING (keys/values); the
+# remaining members take ints. S1 os members are homogeneous per member —
+# a mixed-arg member would need per-position wording (sheet: open design).
+OS_STRING_ARGS = {
+    "get_env": 1,
+    "set_env": 2,
+}
+OS_INT_ARGS = {
+    "exit": 1,
+}
+
+def os_member_result_type(member: str) -> str:
+    """5.4 S1: result spell per os member (empty = unknown member)."""
+    if member == "args":
+        return "shelf[string]"
+    if member == "get_env":
+        return "string"
+    if member == "set_env":
+        return "bool"
+    if member == "exit":
+        return "void"
+    return ""
+
+
 # 5.3 slice 4: the math RESULT type stops being constant-f64 and becomes
 # arg-aware. Floats lift everything to f64; abs mirrors its argument's int
 # spell back (float args pin to f64); min/max keep the same-spell int type
@@ -1348,6 +1391,10 @@ class CCodeGenerator:
         
         if is_main:
             self._emit_line("int main(int argc, char** argv) {")
+            # 5.4 S1: stash argv for sys.os (both stages emit these two
+            # identical indent-0 lines as the first lines of main).
+            self._emit_line("g_velo_os_argc = argc;")
+            self._emit_line("g_velo_os_argv = argv;")
         else:
             ret_type = self._map_type(func.return_type)
             param_strs = [f"{self._map_type(p.type_name)} {p.name}" for p in func.params]
@@ -2069,6 +2116,11 @@ class CCodeGenerator:
                     # math unknown-member shape).
                     if value.callee.member in TIME_CALLS:
                         return time_member_result_type(value.callee.member, [])
+                elif value.callee.target.name == "os":
+                    # 5.4 S1: os result spells (time-style closed namespace).
+                    # Unknown members fall through to the default — the emit
+                    # path's checker raises.
+                    return os_member_result_type(value.callee.member)
         return "i32"
 
 
@@ -2142,6 +2194,11 @@ class CCodeGenerator:
             if isinstance(expr.target, Identifier) and expr.target.name == "time":
                 hint = f" (functions need parens: time.{expr.member}())" if expr.member in TIME_CALLS else ""
                 raise ValueError(f"unknown time constant '{expr.member}' (time functions are: {TIME_FUNCS_TEXT}){hint}")
+            # 5.4: os has NO constants — bare member reads reject with the
+            # mirrored wording
+            if isinstance(expr.target, Identifier) and expr.target.name == "os":
+                hint = f" (functions need parens: os.{expr.member}())" if expr.member in OS_CALLS else ""
+                raise ValueError(f"unknown os constant '{expr.member}' (os functions are: {OS_FUNCS_TEXT}){hint}")
             target_type = self._resolve_expr_type(expr.target)
             # 5.2: shelf property reads (len); other members are loud errors
             if self._shelf_elem_type(target_type) is not None:
@@ -2283,6 +2340,10 @@ class CCodeGenerator:
                     # _infer_raw_velo_type branch above)
                     if expr.callee.member in TIME_CALLS:
                         return time_member_result_type(expr.callee.member, [])
+                elif expr.callee.target.name == "os":
+                    # 5.4 S1: args -> shelf[string], get_env -> string,
+                    # set_env -> bool, exit -> void (mirror of the infer branch)
+                    return os_member_result_type(expr.callee.member)
                 elif expr.callee.target.name == "io":
                     # All io calls are void (mirrors type_checker.vl), so
                     # mem count/fill checks can render and reject them.
@@ -2638,6 +2699,12 @@ class CCodeGenerator:
                         # lives on the emit path — checker + emitter in one).
                         return self._emit_time_call(expr.callee.member, expr.args)
 
+                    elif expr.callee.target.name == "os":
+                        # 5.4 S1: one runtime helper per member — exit
+                        # lowers straight onto C's exit (_os_expect lives on
+                        # the emit path — checker + emitter in one).
+                        return self._emit_os_call(expr.callee.member, expr.args)
+
                 # 5.2: shelf receiver member calls — put/take helpers, compile-checked
                 target_type = self._resolve_expr_type(expr.callee.target)
                 if self._shelf_elem_type(target_type) is not None:
@@ -2970,6 +3037,45 @@ class CCodeGenerator:
             got = self._thread_arg_type(arg)
             if got != "string":
                 raise ValueError(f"str.{member} expects string arguments (got {got})")
+
+    def _os_expect(self, member: str, args: List[Expr]) -> None:
+        """5.4 S1: compile-checks the sys.os call surface. Mirrored by
+        Stage 2's src/analysis/os_checks.vl — both stages must reject the
+        same programs with the same messages. args is zero-ary; get_env
+        takes one string key, set_env takes two strings; exit takes one INT
+        code (floats/bool/string reject). The namespace is CLOSED for both
+        lanes."""
+        if member not in OS_CALLS:
+            raise ValueError(
+                f"unknown os member '{member}' (functions: {OS_FUNCS_TEXT})")
+        expect_n = OS_CALLS[member]
+        if len(args) != expect_n:
+            sig = OS_SIGS.get(member, "")
+            plural = "" if expect_n == 1 else "s"
+            raise ValueError(f"os.{member} expects exactly {expect_n} argument{plural}{sig}")
+        n_str = OS_STRING_ARGS.get(member, 0)
+        for i, arg in enumerate(args):
+            got = self._thread_arg_type(arg)
+            if i < n_str:
+                if got != "string":
+                    raise ValueError(f"os.{member} expects string arguments (got {got})")
+            else:
+                if got not in DYN_INT_TYPES:
+                    raise ValueError(f"os.{member} expects int arguments (got {got})")
+
+    def _emit_os_call(self, member: str, args: List[Expr]) -> str:
+        # 5.4 S1: one runtime helper per member — exit lowers DIRECTLY onto
+        # C's exit (stdlib.h is already in the runtime). Single evaluation
+        # per argument — codes are emitted exactly once each.
+        self._os_expect(member, args)
+        if member == "args":
+            return "velo_os_args()"
+        if member == "get_env":
+            return f"velo_os_get_env({self._emit_expression(args[0])})"
+        if member == "set_env":
+            return (f"velo_os_set_env({self._emit_expression(args[0])}, "
+                    f"{self._emit_expression(args[1])})")
+        return f"exit((int)({self._emit_expression(args[0])}))"
 
     def _time_expect(self, member: str, args: List[Expr]) -> None:
         """5.5: compile-checks the sys.time call surface. Mirrored by

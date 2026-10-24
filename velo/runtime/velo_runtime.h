@@ -5,10 +5,12 @@
 // (clock_gettime / CLOCK_MONOTONIC / nanosleep) is only declared by <time.h>
 // under POSIX feature-test flags, and -std=c99 withholds the defaults — so
 // the flags are requested here, BEFORE the first system include (glibc and
-// friends chain <time.h> through stdio as well). Windows keeps its own
-// QueryPerformanceCounter branch below, untouched by these flags.
+// friends chain <time.h> through stdio as well). 5.4 bumps 199309L to
+// 200112L (strict superset — the clock APIs stay declared) so that
+// setenv joins the surface. Windows keeps its own branches below, untouched
+// by these flags.
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
-#define _POSIX_C_SOURCE 199309L
+#define _POSIX_C_SOURCE 200112L
 #endif
 
 #include <stdio.h>
@@ -556,6 +558,38 @@ static inline i64 velo_time_delta_us(void) {
     g_velo_time_delta_anchor = now_us;
     return (i64)elapsed;
 }
+
+// ============================================================================
+// 5.4 Extended File System & OS Primitives (sys.os): environment + argv.
+// The argv statics are stashed by BOTH compilers' main wrappers (the two
+// identical stash lines they emit at the top of main). getenv returns a
+// borrowed pointer — the helper copies it into owned arena memory (str
+// token doctrine: velo_mem_alloc, zone-reclaimed); an unset key reads as
+// the empty string. set_env splits per platform: CRT _putenv_s on Windows,
+// setenv(key, val, 1) on POSIX (declared via the 200112L flags above).
+// velo_os_args itself lives with the shelf machinery (needs VeloShelf).
+// ============================================================================
+static int g_velo_os_argc = 0;
+static char** g_velo_os_argv = NULL;
+
+static inline char* velo_os_get_env(const char* key) {
+    const char* raw = (key != NULL) ? getenv(key) : NULL;
+    size_t len = (raw != NULL) ? strlen(raw) : 0;
+    char* out = (char*)velo_mem_alloc(1, len + 1);
+    if (raw != NULL) {
+        memcpy(out, raw, len + 1);
+    }
+    return out;
+}
+
+static inline bool velo_os_set_env(const char* key, const char* val) {
+#if defined(_WIN32)
+    return _putenv_s(key, val) == 0;
+#else
+    return setenv(key, val, 1) == 0;
+#endif
+}
+
 
 
 // Persistent Heap Allocation with Memory Usage Tracking
@@ -1306,6 +1340,27 @@ static inline VeloShelf velo_str_split(const char* s, const char* delim) {
     memcpy(tok, p, len);
     tok[len] = 0;
     velo_shelf_put(&out, &tok, sizeof(const char*));
+    return out;
+}
+
+// 5.4 (sys.os): full argv as a shelf[string] — argv[0] (the program) is
+// INCLUDED (documented); every entry is an OWNED copy off the argv table,
+// so later CRT rewrites of argv can never alias into the Velo surface.
+// An argv-less run (argc 0 — never seen on a hosted OS) yields an empty
+// shelf.
+static inline VeloShelf velo_os_args(void) {
+    VeloShelf out = {0};
+    out.esz = sizeof(const char*);
+    if (g_velo_os_argv != NULL) {
+        for (int i = 0; i < g_velo_os_argc; ++i) {
+            const char* arg = (g_velo_os_argv[i] != NULL) ? g_velo_os_argv[i] : "";
+            size_t len = strlen(arg);
+            char* tok = (char*)velo_mem_alloc(1, len + 1);
+            memcpy(tok, arg, len);
+            tok[len] = 0;
+            velo_shelf_put(&out, &tok, sizeof(const char*));
+        }
+    }
     return out;
 }
 // ============================================================================

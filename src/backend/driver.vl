@@ -121,7 +121,7 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
     loop cur != null {
         if cur.kind == DECL_USE {
             let mod_path = cur.module_path
-            if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" and mod_path != "sys.thread" and mod_path != "sys.math" and mod_path != "sys.time" {  // 5.3/5.5: sys.math + sys.time ride the module-marker set
+            if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" and mod_path != "sys.thread" and mod_path != "sys.math" and mod_path != "sys.time" and mod_path != "sys.os" {  // 5.3/5.4/5.5: sys.math + sys.time + sys.os ride the module-marker set
                 let resolved_path = combine_paths(dir, mod_path)
                 load_file_and_deps(d, resolved_path)
             }
@@ -138,7 +138,7 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
         mut skip = false
         if decl.kind == DECL_USE {
             let mod_path = decl.module_path
-            if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" and mod_path != "sys.thread" and mod_path != "sys.math" and mod_path != "sys.time" {  // 5.3/5.5: sys.math + sys.time ride the module-marker set
+            if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" and mod_path != "sys.thread" and mod_path != "sys.math" and mod_path != "sys.time" and mod_path != "sys.os" {  // 5.3/5.4/5.5: sys.math + sys.time + sys.os ride the module-marker set
                 skip = true
             }
         }
