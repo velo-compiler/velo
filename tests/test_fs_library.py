@@ -1,5 +1,6 @@
-"""5.4 Extended File System & OS Primitives (sys.fs) — slice 2 battery:
-the metadata family + the closed-namespace migration.
+"""5.4 Extended File System & OS Primitives (sys.fs) — slice 2–4 battery:
+the metadata family, the closed-namespace migration, read_dir listings,
+and the S4 streaming family (@File handles).
 
 Slice 2 ships six runtime helpers over narrow CRT paths (no kernel32, no
 windows.h): velo_fs_is_dir/is_file (stat + S_ISDIR/S_ISREG — answering
@@ -41,6 +42,12 @@ from pathlib import Path
 from test_allocators import run_stage, ROOT, VELO_PY, VELO_EXE
 
 CACHE = Path(VELO_PY).parent / ".velo_cache"
+
+# The closed-member listing as the wording rows spell it (S4 appended the
+# streaming family; grows once per slice).
+FS_FUNCS = ("read_file, write_file, size, exists, remove, remove_file, "
+            "is_dir, is_file, create_dir, create_dir_all, copy, rename, "
+            "read_dir, fopen, fclose, fread, fwrite, fseek")
 
 
 def _strip_stageWrappers(text: str) -> str:
@@ -408,9 +415,8 @@ class TestFsSlice2(unittest.TestCase):
         rows = [
             ("rej_fs_unknown_member.vl",
              "    let n = fs.no_such()\n",
-             "unknown fs member 'no_such' (functions: read_file, write_file, "
-             "size, exists, remove, remove_file, is_dir, is_file, "
-             "create_dir, create_dir_all, copy, rename, read_dir)"),
+             "unknown fs member 'no_such' (functions: "
+             f"{FS_FUNCS})"),
             ("rej_fs_readfile_zero.vl",
              "    let n = fs.read_file()\n",
              "fs.read_file expects exactly 1 argument: (string path)"),
@@ -454,9 +460,7 @@ class TestFsSlice2(unittest.TestCase):
 
     def test_rejects_property_lane(self):
         header = "use sys.io\nuse sys.fs\nact main() -> i32 {\n"
-        funcs = ("read_file, write_file, size, exists, remove, remove_file, "
-                 "is_dir, is_file, create_dir, create_dir_all, copy, rename, "
-                 "read_dir")
+        funcs = FS_FUNCS
         src_fn = header + "    let x = fs.exists\n" + "    return 0\n}\n"
         outs = check_program("rej_fs_bare_fn.vl", src_fn)
         self.assertEqual(
@@ -644,9 +648,7 @@ class TestFsSlice3(unittest.TestCase):
 
     def test_rejects_read_dir_surface(self):
         header = "use sys.io\nuse sys.fs\nact main() -> i32 {\n"
-        funcs = ("read_file, write_file, size, exists, remove, remove_file, "
-                 "is_dir, is_file, create_dir, create_dir_all, copy, rename, "
-                 "read_dir")
+        funcs = FS_FUNCS
         rows = [
             ("rej_fs_readdir_unknown.vl",
              "    let n = fs.no_such()\n",
@@ -671,4 +673,255 @@ class TestFsSlice3(unittest.TestCase):
             outs[0],
             f"unknown fs constant 'read_dir' (fs functions are: {funcs})"
             " (functions need parens: fs.read_dir())")
+        self.assertEqual(outs[0], outs[1])
+
+
+def stream_program() -> str:
+    """S4 round-trip: two fwrites through one handle, closed, then the
+    whole-file read back must contain BOTH chunks (the whole point of the
+    handle — appending across calls without holding the payload)."""
+    return """use sys.io
+use sys.fs
+
+act main() -> i32 {
+    let tag: string = fs.read_file(".velo_cache/fs54_tag.txt")
+    let path = str.concat(".velo_cache/fs54_rt_", tag)
+    let fh: @File = fs.fopen(path, "wb")
+    let w1 = fs.fwrite(fh, "stream-first|")
+    let w2 = fs.fwrite(fh, "stream-second")
+    if w1 { io.println("w1 ok") } else { io.println("w1 bad") }
+    if w2 { io.println("w2 ok") } else { io.println("w2 bad") }
+    let closed = fs.fclose(fh)
+    if closed { io.println("close ok") } else { io.println("close bad") }
+    let back: string = fs.read_file(path)
+    if str.contains(back, "stream-first|") { io.println("first ok") } else { io.println("first bad") }
+    if str.contains(back, "stream-second") { io.println("second ok") } else { io.println("second bad") }
+    return 0
+}
+"""
+
+
+STREAM_LINES = ["w1 ok", "w2 ok", "close ok", "first ok", "second ok"]
+
+
+def append_program() -> str:
+    """Append mode: fopen "ab" continues after the seed (length grows past
+    the seed by exactly the appended byte)."""
+    return """use sys.io
+use sys.fs
+
+act main() -> i32 {
+    let tag: string = fs.read_file(".velo_cache/fs54_tag.txt")
+    let path = str.concat(".velo_cache/fs54_ap_", tag)
+    let seeded = fs.write_file(path, "seed")
+    let fh: @File = fs.fopen(path, "ab")
+    let w = fs.fwrite(fh, "!")
+    let closed = fs.fclose(fh)
+    if seeded { io.println("seed ok") } else { io.println("seed bad") }
+    if w { io.println("w ok") } else { io.println("w bad") }
+    if closed { io.println("close ok") } else { io.println("close bad") }
+    let back: string = fs.read_file(path)
+    let l: usize = str.len(back)
+    if l == 5 { io.println("len ok") } else { io.println("len bad") }
+    if str.contains(back, "seed!") { io.println("app ok") } else { io.println("app bad") }
+    return 0
+}
+"""
+
+
+APPEND_LINES = ["seed ok", "w ok", "close ok", "len ok", "app ok"]
+
+
+def chunks_program() -> str:
+    """Chunked reads over a 12-byte payload: bytes 0-5, then the NEXT six
+    (position advances), then EOF as an owned empty, then rewind via
+    fseek(fh, 0) re-reads the head — the streaming loop shape."""
+    return """use sys.io
+use sys.fs
+
+act main() -> i32 {
+    let tag: string = fs.read_file(".velo_cache/fs54_tag.txt")
+    let path = str.concat(".velo_cache/fs54_ch_", tag)
+    let seeded = fs.write_file(path, "chunkAchunkB")
+    let fh: @File = fs.fopen(path, "rb")
+    let c1: string = fs.fread(fh, 6)
+    let c2: string = fs.fread(fh, 6)
+    if str.contains(c1, "chunkA") { io.println("c1 ok") } else { io.println("c1 bad") }
+    if str.contains(c2, "chunkB") { io.println("c2 ok") } else { io.println("c2 bad") }
+    let c3: string = fs.fread(fh, 6)
+    let l3: usize = str.len(c3)
+    if l3 == 0 { io.println("eof ok") } else { io.println("eof bad") }
+    let rew = fs.fseek(fh, 0)
+    if rew { io.println("seek ok") } else { io.println("seek bad") }
+    let c4: string = fs.fread(fh, 6)
+    if str.contains(c4, "chunkA") { io.println("re ok") } else { io.println("re bad") }
+    let cl = fs.fclose(fh)
+    if cl { io.println("close ok") } else { io.println("close bad") }
+    return 0
+}
+"""
+
+
+CHUNKS_LINES = ["c1 ok", "c2 ok", "eof ok", "seek ok", "re ok", "close ok"]
+
+
+def fread_zero_program() -> str:
+    """Non-positive count contract: fread(fh, 0) is an owned empty (never
+    NULL) even on a dead (NULL-from-failed-fopen) handle; fclose on a dead
+    handle reports false."""
+    return """use sys.io
+use sys.fs
+
+act main() -> i32 {
+    let fh: @File = fs.fopen("missing_absent_file", "rb")
+    let c: string = fs.fread(fh, 0)
+    let l: usize = str.len(c)
+    if l == 0 { io.println("zero ok") } else { io.println("zero bad") }
+    let closed = fs.fclose(fh)
+    if closed { io.println("close bad") } else { io.println("close ok") }
+    return 0
+}
+"""
+
+
+ZERO_LINES = ["zero ok", "close ok"]
+
+
+def dead_handle_program() -> str:
+    """Dead handle: a failed fopen gives the NULL handle and every helper
+    REPORTS (false / empty) instead of crashing — the fs.read_dir
+    empty-on-failure doctrine carried to the streaming members."""
+    return """use sys.io
+use sys.fs
+
+act main() -> i32 {
+    let fh: @File = fs.fopen("missing_absent_file", "rb")
+    let w = fs.fwrite(fh, "x")
+    if w { io.println("w bad") } else { io.println("w ok") }
+    let c: string = fs.fread(fh, 5)
+    let l: usize = str.len(c)
+    if l == 0 { io.println("read ok") } else { io.println("read bad") }
+    let closed = fs.fclose(fh)
+    if closed { io.println("close bad") } else { io.println("close ok") }
+    return 0
+}
+"""
+
+
+DEAD_LINES = ["w ok", "read ok", "close ok"]
+
+
+class TestFsSlice4(unittest.TestCase):
+    """gaps.md 5.4 slice 4 — the streaming family: fs.fopen/fclose/fread/
+    fwrite/fseek with @File lowered onto FILE* on both stages. The
+    homogeneous string wall becomes PER-POSITION argument kinds (S/F/I —
+    the math-family curve). Contracts: fopen is the CRT call (NULL on
+    failure), fread NEVER returns NULL (owned empty for a dead handle, a
+    non-positive count, or a count over the 1 GiB chunk cap; NUL-
+    terminated at the bytes actually read — EOF surfaces as the empty
+    string), fwrite reports all-bytes-written, fseek is SEEK_SET-only
+    within the Windows CRT's 32-bit long reach."""
+
+    def test_accepts_stream_roundtrip(self):
+        _write_tag()
+        s1 = run_stage("stage1", stream_program(), "fs_stream_roundtrip")
+        _write_tag()
+        s2 = run_stage("stage2", stream_program(), "fs_stream_roundtrip")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-3000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-3000:])
+        out1 = s1.stdout.replace("\r\n", "\n")
+        out2 = s2.stdout.replace("\r\n", "\n")
+        self.assertEqual(out1, out2, "sys.fs streaming outputs diverged")
+        self.assertEqual(out1.strip().splitlines(), STREAM_LINES)
+
+    def test_accepts_append_mode(self):
+        _write_tag()
+        s1 = run_stage("stage1", append_program(), "fs_stream_append")
+        _write_tag()
+        s2 = run_stage("stage2", append_program(), "fs_stream_append")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-3000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-3000:])
+        out1 = s1.stdout.replace("\r\n", "\n")
+        out2 = s2.stdout.replace("\r\n", "\n")
+        self.assertEqual(out1, out2, "sys.fs append outputs diverged")
+        self.assertEqual(out1.strip().splitlines(), APPEND_LINES)
+
+    def test_accepts_chunked_reads_and_rewind(self):
+        _write_tag()
+        s1 = run_stage("stage1", chunks_program(), "fs_stream_chunks")
+        _write_tag()
+        s2 = run_stage("stage2", chunks_program(), "fs_stream_chunks")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-3000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-3000:])
+        out1 = s1.stdout.replace("\r\n", "\n")
+        out2 = s2.stdout.replace("\r\n", "\n")
+        self.assertEqual(out1, out2, "sys.fs chunked-read outputs diverged")
+        self.assertEqual(out1.strip().splitlines(), CHUNKS_LINES)
+
+    def test_accepts_zero_count_and_dead_handle(self):
+        s1 = run_stage("stage1", fread_zero_program(), "fs_fread_zero")
+        s2 = run_stage("stage2", fread_zero_program(), "fs_fread_zero")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-3000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-3000:])
+        out1 = s1.stdout.replace("\r\n", "\n")
+        out2 = s2.stdout.replace("\r\n", "\n")
+        self.assertEqual(out1, out2, "sys.fs fread-zero outputs diverged")
+        self.assertEqual(out1.strip().splitlines(), ZERO_LINES)
+        s1 = run_stage("stage1", dead_handle_program(), "fs_dead_handle")
+        s2 = run_stage("stage2", dead_handle_program(), "fs_dead_handle")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-3000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-3000:])
+        out1 = s1.stdout.replace("\r\n", "\n")
+        out2 = s2.stdout.replace("\r\n", "\n")
+        self.assertEqual(out1, out2, "sys.fs dead-handle outputs diverged")
+        self.assertEqual(out1.strip().splitlines(), DEAD_LINES)
+
+    def test_rejects_streaming_surface(self):
+        header = "use sys.io\nuse sys.fs\nact main() -> i32 {\n"
+        funcs = FS_FUNCS
+        rows = [
+            ("rej_fs_stream_unknown.vl",
+             "    let n = fs.no_such()\n",
+             f"unknown fs member 'no_such' (functions: {funcs})"),
+            ("rej_fs_fopen_zero.vl",
+             "    let f = fs.fopen()\n",
+             "fs.fopen expects exactly 2 arguments: (string path, string mode)"),
+            ("rej_fs_fopen_int.vl",
+             "    let f = fs.fopen(1, \"wb\")\n",
+             "fs.fopen expects string arguments (got i32)"),
+            ("rej_fs_fopen_mode_int.vl",
+             "    let f = fs.fopen(\"p\", 2)\n",
+             "fs.fopen expects string arguments (got i32)"),
+            ("rej_fs_fread_str_handle.vl",
+             "    let c = fs.fread(\"path.txt\", 4)\n",
+             "fs.fread expects @File (got string)"),
+            ("rej_fs_fread_count_str.vl",
+             "    let fh: @File = fs.fopen(\"p\", \"rb\")\n    let c = fs.fread(fh, \"x\")\n",
+             "fs.fread expects int arguments (got string)"),
+            ("rej_fs_fwrite_str_handle.vl",
+             "    let w = fs.fwrite(\"p\", \"x\")\n",
+             "fs.fwrite expects @File (got string)"),
+            ("rej_fs_fclose_str.vl",
+             "    let b = fs.fclose(\"x\")\n",
+             "fs.fclose expects @File (got string)"),
+            ("rej_fs_fclose_zero.vl",
+             "    let b = fs.fclose()\n",
+             "fs.fclose expects exactly 1 argument: (@File file)"),
+            ("rej_fs_fseek_off_str.vl",
+             "    let fh: @File = fs.fopen(\"p\", \"rb\")\n    let b = fs.fseek(fh, \"x\")\n",
+             "fs.fseek expects int arguments (got string)"),
+        ]
+        for name, body, wording in rows:
+            with self.subTest(row=name):
+                src = header + body + "    return 0\n}\n"
+                outs = check_program(name, src)
+                self.assertEqual(outs[0], wording, f"stage 1 wording for {name}: {outs[0]!r}")
+                self.assertEqual(outs[0], outs[1], f"stages disagree for {name}")
+        # the bare-identifier hint names fopen itself and lists all 18
+        src = header + "    let x = fs.fopen\n" + "    return 0\n}\n"
+        outs = check_program("rej_fs_fopen_bare.vl", src)
+        self.assertEqual(
+            outs[0],
+            f"unknown fs constant 'fopen' (fs functions are: {funcs})"
+            " (functions need parens: fs.fopen())")
         self.assertEqual(outs[0], outs[1])

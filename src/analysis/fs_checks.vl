@@ -34,6 +34,11 @@ act fs_member_sig(member: string) -> string {
     if member == "copy" { return ": (string src, string dst)" }
     if member == "rename" { return ": (string src, string dst)" }
     if member == "read_dir" { return ": (string path)" }
+    if member == "fopen" { return ": (string path, string mode)" }
+    if member == "fclose" { return ": (@File file)" }
+    if member == "fread" { return ": (@File file, i64 count)" }
+    if member == "fwrite" { return ": (@File file, string data)" }
+    if member == "fseek" { return ": (@File file, i64 offset)" }
     return ""
 }
 
@@ -52,6 +57,11 @@ act fs_member_arity(member: string) -> i32 {
     if member == "copy" { return 2 }
     if member == "rename" { return 2 }
     if member == "read_dir" { return 1 }
+    if member == "fopen" { return 2 }
+    if member == "fclose" { return 1 }
+    if member == "fread" { return 2 }
+    if member == "fwrite" { return 2 }
+    if member == "fseek" { return 2 }
     return -1
 }
 
@@ -71,13 +81,56 @@ act fs_member_ret(member: string) -> string {
     if member == "copy" { return "bool" }
     if member == "rename" { return "bool" }
     if member == "read_dir" { return "shelf[string]" }
+    if member == "fopen" { return "@File" }
+    if member == "fread" { return "string" }
+    if member == "fclose" { return "bool" }
+    if member == "fwrite" { return "bool" }
+    if member == "fseek" { return "bool" }
     return ""
 }
 
-// The string accept set — exactly the string spell (every fs member
-// joins on strings in S2: paths, file contents, copy/rename targets).
+// The string accept set — exactly the string spell (paths, contents,
+// copy/rename targets, fopen's mode).
 act fs_arg_is_string(t: string) -> bool {
     return t == "string"
+}
+
+// The @File accept set — exactly the @File handle spell (the streaming
+// members' first position; null/@void and strings reject as non-handles).
+act fs_arg_is_file(t: string) -> bool {
+    return t == "@File"
+}
+
+// Per-position argument KIND for the member: "S" = string, "F" = @File
+// handle, "I" = int (the os family's int-wall class). The metadata
+// members are all-string; streaming introduces the mixed members (the
+// math-family curve for mixed-argument checks). Must stay
+// character-identical with velo/codegen_c.py::FS_ARG_KINDS.
+act fs_arg_kind(member: string, idx: usize) -> string {
+    if member == "fopen" { return "S" }          // (string path, string mode)
+    if member == "fclose" { return "F" }         // (@File file)
+    if member == "fread" { if idx == 0 { return "F" }; return "I" }
+    if member == "fwrite" { if idx == 0 { return "F" }; return "S" }
+    if member == "fseek" { if idx == 0 { return "F" }; return "I" }
+    return "S"  // every other (metadata-era) member is all-string
+}
+
+// The int accept set (the streaming members' count/offset positions) —
+// same spells as the os family's int wall (ints only; floats/bool/string
+// reject). Local mirror of os_checks.vl's os_int_arg_ok (that module's
+// acts are not in this file's scope).
+act fs_arg_is_int(t: string) -> bool {
+    if t == "i8" { return true }
+    if t == "i16" { return true }
+    if t == "i32" { return true }
+    if t == "i64" { return true }
+    if t == "u8" { return true }
+    if t == "u16" { return true }
+    if t == "u32" { return true }
+    if t == "u64" { return true }
+    if t == "usize" { return true }
+    if t == "isize" { return true }
+    return false
 }
 
 // Entry point: returns the call's RESULT spell — "unknown" after
@@ -91,7 +144,7 @@ act check_fs_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
         // stage 1's _fs_expect raise (legacy six listed first).
         let msb = create_sb(256)
         sb_append_str(@msb, "unknown fs member '"); sb_append_str(@msb, member)
-        sb_append_str(@msb, "' (functions: read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename, read_dir)")
+        sb_append_str(@msb, "' (functions: read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename, read_dir, fopen, fclose, fread, fwrite, fseek)")
         report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
         return "unknown"
     }
@@ -107,17 +160,43 @@ act check_fs_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
         report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
         return "unknown"
     }
+    mut k_idx: usize = 0
     mut cur = expr.first_arg
     loop cur != null {
         let t = infer_expr_type(st, cur)
-        if !fs_arg_is_string(t) {
-            let msb = create_sb(160)
-            sb_append_str(@msb, "fs."); sb_append_str(@msb, member)
-            sb_append_str(@msb, " expects string arguments (got ")
-            sb_append_str(@msb, t); sb_append_str(@msb, ")")
-            report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
-            return "unknown"
+        let kind = fs_arg_kind(member, k_idx)
+        if kind == "S" {
+            if !fs_arg_is_string(t) {
+                let msb = create_sb(160)
+                sb_append_str(@msb, "fs."); sb_append_str(@msb, member)
+                sb_append_str(@msb, " expects string arguments (got ")
+                sb_append_str(@msb, t); sb_append_str(@msb, ")")
+                report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+                return "unknown"
+            }
         }
+        if kind == "F" {
+            if !fs_arg_is_file(t) {
+                // The thread-family handle curve: the handle spell verbatim.
+                let msb = create_sb(160)
+                sb_append_str(@msb, "fs."); sb_append_str(@msb, member)
+                sb_append_str(@msb, " expects @File (got ")
+                sb_append_str(@msb, t); sb_append_str(@msb, ")")
+                report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+                return "unknown"
+            }
+        }
+        if kind == "I" {
+            if !fs_arg_is_int(t) {
+                let msb = create_sb(160)
+                sb_append_str(@msb, "fs."); sb_append_str(@msb, member)
+                sb_append_str(@msb, " expects int arguments (got ")
+                sb_append_str(@msb, t); sb_append_str(@msb, ")")
+                report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+                return "unknown"
+            }
+        }
+        k_idx += 1
         cur = cur.next
     }
     return fs_member_ret(member)
@@ -129,7 +208,7 @@ act check_fs_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
 act check_fs_constant(st: @SymbolTable, expr: @ExprNode) -> string {
     let msb = create_sb(384)
     sb_append_str(@msb, "unknown fs constant '"); sb_append_str(@msb, expr.member_name)
-    sb_append_str(@msb, "' (fs functions are: read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename, read_dir)")
+    sb_append_str(@msb, "' (fs functions are: read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename, read_dir, fopen, fclose, fread, fwrite, fseek)")
     if str.len(fs_member_ret(expr.member_name)) > 0 {  // member names a known function shape
         sb_append_str(@msb, " (functions need parens: fs.")
         sb_append_str(@msb, expr.member_name)

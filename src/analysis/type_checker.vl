@@ -26,7 +26,7 @@ act is_known_type(st: @SymbolTable, name: string) -> bool {
     if name == null { return false }
     let clean = strip_pointer_prefix(name)
     if is_act_type(clean) { return true }
-    if is_primitive_type(clean) { return true }; if clean == "Allocator" { return true }; if clean == "Thread" { return true }; if clean == "Mutex" { return true }  // §4.1/§4.2 handles
+    if is_primitive_type(clean) { return true }; if clean == "Allocator" { return true }; if clean == "Thread" { return true }; if clean == "Mutex" { return true }; if clean == "File" { return true }  // §4.1/§4.2 handles + 5.4 S4 streaming handle
     if is_shelf_type(clean) { return true }  // 5.2: shelf[T] is a first-class type
     if find_struct(st, clean) != null { return true }
     if find_kind(st, clean) != null { return true }

@@ -2,7 +2,9 @@
 // 5.4 Extended File System & OS Primitives — sys.fs call lowering onto the
 // runtime helpers (legacy six: velo_fs_read_file/write_file/exists/size/
 // remove; slice-2 metadata family: velo_fs_is_dir/is_file/create_dir/
-// create_dir_all/copy/rename — pure CRT lowers in velo_runtime.h).
+// create_dir_all/copy/rename — pure CRT lowers in velo_runtime.h;
+// slice-4 streaming family: velo_fs_fopen/fclose/fread/fwrite/fseek —
+// @File lowers onto FILE* in both stage type maps).
 //
 // The per-member emit ladder lives HERE (time_gen.vl precedent — off
 // codegen_expr.vl's line budget). The legacy six moved in VERBATIM from
@@ -45,6 +47,34 @@ act emit_fs_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @Ex
     if member == "create_dir" { sb_append_str(sb, "velo_fs_create_dir("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
     if member == "create_dir_all" { sb_append_str(sb, "velo_fs_create_dir_all("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
     if member == "read_dir" { sb_append_str(sb, "velo_fs_read_dir("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }  // 5.4 S3: shelf[string] of entry names
+    // 5.4 S4: the streaming family — @File handles pass straight through
+    // (standard C semantics; the runtime helpers carry the NULL/dead-handle
+    // contracts so no casts or guards appear at the emit sites).
+    if member == "fopen" {
+        sb_append_str(sb, "velo_fs_fopen(")
+        emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ", "); emit_c_expr(sb, st, expr.first_arg.next)
+        sb_append_str(sb, ")")
+        return
+    }
+    if member == "fclose" { sb_append_str(sb, "velo_fs_fclose("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
+    if member == "fread" {
+        sb_append_str(sb, "velo_fs_fread(")
+        emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ", "); emit_c_expr(sb, st, expr.first_arg.next)
+        sb_append_str(sb, ")")
+        return
+    }
+    if member == "fwrite" {
+        sb_append_str(sb, "velo_fs_fwrite(")
+        emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ", "); emit_c_expr(sb, st, expr.first_arg.next)
+        sb_append_str(sb, ")")
+        return
+    }
+    if member == "fseek" {
+        sb_append_str(sb, "velo_fs_fseek(")
+        emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ", "); emit_c_expr(sb, st, expr.first_arg.next)
+        sb_append_str(sb, ")")
+        return
+    }
     if member == "copy" {
         sb_append_str(sb, "velo_fs_copy(")
         emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ", "); emit_c_expr(sb, st, expr.first_arg.next)

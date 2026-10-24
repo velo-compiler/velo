@@ -903,6 +903,54 @@ static inline bool velo_fs_rename(const char* src, const char* dst) {
     return rename(src, dst) == 0;
 }
 
+// 5.4 (slice 4): the streaming family — FILE* handles pass through Velo
+// (@File lowers onto FILE* in both stages' type maps). Contracts: fopen is
+// the CRT call (NULL on failure); fclose false on a NULL handle; fread
+// NEVER returns NULL — an owned empty string covers a dead handle, a
+// non-positive count, or a count over the 1 GiB chunk cap — and it
+// NUL-terminates at the bytes actually read (EOF surfaces naturally as a
+// zero-length read). fwrite reports ALL-BYTES-WRITTEN (empty data is a
+// trivial true, mirroring write_file's empty-contents success). fseek is
+// a SEEK_SET-only jump: negative offsets and anything beyond the Windows
+// CRT's 32-bit long reach reject (rewind/0 is the common case; bigger
+// positioning rides the chapter's whole-file members). Pure CRT, no
+// kernel32 — same doctrine as the whole fs block.
+static inline FILE* velo_fs_fopen(const char* path, const char* mode) {
+    if (path == NULL || mode == NULL) return NULL;
+    return fopen(path, mode);
+}
+
+static inline bool velo_fs_fclose(FILE* f) {
+    if (f == NULL) return false;
+    return fclose(f) == 0;
+}
+
+static inline char* velo_fs_fread(FILE* f, i64 count) {
+    if (f != NULL && count > 0 && count <= 1073741824LL) {
+        char* buf = (char*)velo_mem_alloc(1, (size_t)count + 1);
+        size_t got = fread(buf, 1, (size_t)count, f);
+        buf[got] = '\0';
+        return buf;
+    }
+    // dead handle / non-positive count / over-cap: owned empty (never NULL)
+    char* empty = (char*)velo_mem_alloc(1, 1);
+    empty[0] = '\0';
+    return empty;
+}
+
+static inline bool velo_fs_fwrite(FILE* f, const char* data) {
+    if (f == NULL || data == NULL) return false;
+    size_t len = strlen(data);
+    if (len == 0) return true;
+    return fwrite(data, 1, len, f) == len;
+}
+
+static inline bool velo_fs_fseek(FILE* f, i64 offset) {
+    if (f == NULL) return false;
+    if (offset < 0 || offset > 2147483647LL) return false;  // CRT long reach
+    return fseek(f, (long)offset, SEEK_SET) == 0;
+}
+
 
 // ============================================================================
 // 5.1 String Processing Library (sys.str)

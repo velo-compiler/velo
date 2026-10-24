@@ -77,14 +77,21 @@ battery + sweep each slice.
   set-membership (`str.contains` over a joined subject), never sequence;
   the single-entry case pins the exact name. Member listing grows to 13
   (`..., copy, rename, read_dir`) in BOTH stages' wording lanes.
-* **S4 — file streaming**: `fs.fopen(path, mode) -> @File`,
-  `fs.fread(file, count) -> string`?/buffer shape,
-  `fs.fwrite(file, data)`, `fs.fseek(...)` (+ close implied by RAII-less
-  explicit `fs.fclose`), mirroring the @Thread/@Mutex opaque-handle
-  doctrine. OPEN design questions at S4 start: the fread buffer shape
-  (owned string return vs read-into shelf[u8]), mode validation (CRT mode
-  string "rb"/"wb"), and whether @FILE* values ride var storage unboxed.
-  Final check/emit shapes land with the slice.
+* **S4 — file streaming (SHIPPED)**: `fs.fopen(path, mode) -> @File`,
+  `fs.fread(file, count) -> string`,
+  `fs.fwrite(file, data) -> bool`, `fs.fseek(file, offset) -> bool`, plus
+  explicit `fs.fclose(file) -> bool` (RAII-less chapter). Decided during
+  this slice: the fread buffer shape is the **owned-string return** (up-to-
+  count bytes, NUL-terminated at the bytes actually read — text-oriented;
+  binary-NUL payloads truncate `str.len` like every other Velo string);
+  modes ride the CRT mode string verbatim (value-level mode validation is
+  out of scope — garbage modes fail malloc-soft via fopen's NULL);
+  `@File` rides var storage as an unboxed `FILE*` (the @Thread/@Mutex
+  opaque-handle doctrine — one typer line + one emit line on both
+  stages). The homogeneous string wall grew into PER-POSITION argument
+  kinds (S/F/I — the math-family curve for mixed-argument checks), with
+  the F wall carrying the thread-family handle wording
+  (`fs.fread expects @File (got string)`). Member listing grows to 18.
 * **S5 — example 35 + chapter close** (mirrors 5.3 S5 / 5.5 S2).
 
 ## S1 — sys.os scaffold (SHIPPING NOW)
@@ -214,6 +221,48 @@ f32-literal row (5.5 lesson, applied directly this time).
 * [x] Full suite **209/209**; chain rebuilt (Gen1→Gen2→Gen3 + `bin/velo.exe`); fixed point `E99B1C7C517BA9F99BE7613F2C5F9BF87F7B619F91ADEAD51A0FEE7E0272DF3B` (Gen2 ≡ Gen3); count_lines clean —
       fs-edited ceilings unchanged at 397/397/388 (fs_checks 140, fs_gen
       58).
+
+## S4 verification snapshot (streaming family)
+
+* [x] Runtime: five pure-CRT helpers after `velo_fs_rename` (all `FILE*`-
+      shaped — no VeloShelf dependency, so the fs block stays safe).
+      Contracts: `fopen` = CRT (NULL on failure; dead handles never kill
+      the program); `fclose` false on NULL; **fread never returns NULL** —
+      an owned empty covers a dead handle, a non-positive count, or a
+      count over the 1 GiB chunk cap (a typo'd giant read must not OOM-
+      kill), NUL-terminated at the bytes actually read (EOF ⇒ "");
+      `fwrite` = all-bytes-written (empty data is a trivial true,
+      mirroring write_file's empty-contents success); `fseek` is
+      SEEK_SET-only, rejecting negative offsets and anything past the
+      Windows CRT's 32-bit `long` reach (2147483647).
+* [x] Stage 1: `TYPE_MAP` "File"→"FILE"; `FS_CALLS`/`FS_SIGS` +
+      `FS_ARG_KINDS` (S/F/I per-position kinds); `fs_member_result_type`
+      branches (fopen `@File`, fread `string`, fclose/fwrite/fseek
+      `bool`); `_fs_expect` swaps the homogeneous loop for the kind walk
+      (F wall: thread-family wording). NO emit edits — the S2 generic
+      tail lowers all five via `velo_fs_<member>(...)`.
+* [x] Stage 2: `codegen_types.vl` File→FILE (one line, the Thread/Mutex
+      row); `type_checker.vl` is_known_type "File" (the @-handle
+      registry); `fs_checks.vl` — sig/arity/ret rows, new `fs_arg_is_file`
+      /`fs_arg_is_int`/`fs_arg_kind` acts, the kind walk replacing the
+      homogeneous loop, both wording strings grown to the 18-list;
+      `fs_gen.vl` rows (fopen/fread/fwrite/fseek multi-line 2-arg +
+      fclose one-liner, byte-matching the generic join).
+* [x] Sweep `sweep_54_s4.py` **16/16 clean, 0 diffs** (5 accepts —
+      round-trip, append mode, chunked reads + rewind, non-positive
+      count, dead-handle rows — + 11 rejects: string walls both fopen
+      positions, the @File wall on arg0 of fread/fwrite, int walls on
+      fread/fseek counts, fopen/fclose arities, the 18-list
+      unknown-member wording, the bare-fopen hint).
+* [x] Battery `tests/test_fs_library.py` — wording rows share a module
+      constant grown to the 18-list; `TestFsSlice4`: round-trip, append,
+      chunks+rewind, zero-count + dead-handle rows, and the streaming
+      reject surface (10 rows + the bare-fopen hint pair).
+* [x] Full suite **214/214**; chain rebuilt (Gen1→Gen2→Gen3 +
+      `bin/velo.exe`); fixed point
+      `52987ED66F62C2A3D0066357659E2DBDC99F17989C3D02600A0E1276D854C484`
+      (Gen2 ≡ Gen3 — moved from S3's `E99B1C7C…`); count_lines clean —
+      fs-edited files at 219/88, overall max unchanged at 399.
 
 ## S1 verification ladder
 

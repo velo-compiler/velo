@@ -32,6 +32,8 @@ TYPE_MAP = {
     # §4.2 thread surface: @Thread → VeloThreadCtx*, @Mutex → void*
     "Thread": "VeloThreadCtx",
     "Mutex": "void",
+    # 5.4 slice 4: @File → FILE* (streaming handles pass straight through)
+    "File": "FILE",
     # 5.2 slice 2: the shelf[dyn] tagged box (VeloDyn lives in velo_runtime.h)
     "dyn": "VeloDyn",
 }
@@ -199,6 +201,11 @@ FS_CALLS = {
     "copy": 2,
     "rename": 2,
     "read_dir": 1,
+    "fopen": 2,
+    "fclose": 1,
+    "fread": 2,
+    "fwrite": 2,
+    "fseek": 2,
 }
 # Must stay character-identical with stage 2's fs_member_sig.
 FS_SIGS = {
@@ -215,8 +222,25 @@ FS_SIGS = {
     "copy": ": (string src, string dst)",
     "rename": ": (string src, string dst)",
     "read_dir": ": (string path)",
+    "fopen": ": (string path, string mode)",
+    "fclose": ": (@File file)",
+    "fread": ": (@File file, i64 count)",
+    "fwrite": ": (@File file, string data)",
+    "fseek": ": (@File file, i64 offset)",
 }
-FS_FUNCS_TEXT = "read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename, read_dir"
+FS_FUNCS_TEXT = "read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename, read_dir, fopen, fclose, fread, fwrite, fseek"
+# 5.4 S4: per-position argument KINDS — 'S' string, 'F' @File handle, 'I'
+# int (the os family's int-wall class). All-metadata members stayed
+# all-string through S3; streaming introduces the mixed members (the
+# math-family curve for mixed-argument checks).
+FS_ARG_KINDS = {
+    "read_file": "S", "write_file": "SS", "size": "S", "exists": "S",
+    "remove": "S", "remove_file": "S", "is_dir": "S", "is_file": "S",
+    "create_dir": "S", "create_dir_all": "S", "copy": "SS", "rename": "SS",
+    "read_dir": "S",
+    "fopen": "SS", "fclose": "F", "fread": "FI", "fwrite": "FS",
+    "fseek": "FI",
+}
 
 def fs_member_result_type(member: str) -> str:
     """5.4 S2: result spell per fs member (empty = unknown member). The
@@ -231,6 +255,12 @@ def fs_member_result_type(member: str) -> str:
         return "bool"
     if member == "read_dir":
         return "shelf[string]"  # 5.4 S3: entry NAMES, in platform order
+    if member == "fopen":
+        return "@File"  # 5.4 S4: the streaming handle (NULL on failure)
+    if member == "fread":
+        return "string"  # owned/up-to-count/NUL-terminated (see runtime)
+    if member in ("fclose", "fwrite", "fseek"):
+        return "bool"
     return ""
 
 
@@ -3105,10 +3135,19 @@ class CCodeGenerator:
             sig = FS_SIGS[member]
             plural = "" if expect_n == 1 else "s"
             raise ValueError(f"fs.{member} expects exactly {expect_n} argument{plural}{sig}")
-        for arg in args:
+        kinds = FS_ARG_KINDS[member]
+        for i, arg in enumerate(args):
             got = self._thread_arg_type(arg)
-            if got != "string":
-                raise ValueError(f"fs.{member} expects string arguments (got {got})")
+            kind = kinds[i]
+            if kind == "S":
+                if got != "string":
+                    raise ValueError(f"fs.{member} expects string arguments (got {got})")
+            elif kind == "F":
+                if got != "@File":
+                    raise ValueError(f"fs.{member} expects @File (got {got})")
+            else:  # "I"
+                if got not in DYN_INT_TYPES:
+                    raise ValueError(f"fs.{member} expects int arguments (got {got})")
 
     def _emit_fs_call(self, member: str, args: List[Expr]) -> str:
         # 5.4 S2: the closed-namespace lowering — the legacy six ride their

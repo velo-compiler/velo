@@ -19,7 +19,7 @@ act map_type_to_c(type_name: string) -> string {
     // §4.1: @Allocator in Velo → VeloZoneArena in C (the @ prefix adds the * making VeloZoneArena*)
     if type_name == "Allocator" { return "VeloZoneArena" }
     // §4.2: @Thread → VeloThreadCtx (@ adds *); @Mutex stays an opaque void*
-    if type_name == "Thread" { return "VeloThreadCtx" }; if type_name == "Mutex" { return "void" }
+    if type_name == "Thread" { return "VeloThreadCtx" }; if type_name == "Mutex" { return "void" }; if type_name == "File" { return "FILE" }  // 5.4 S4: @File → FILE* (streaming handles pass straight through)
 
     if is_act_type(type_name) {
         return mangle_act_type(type_name)
