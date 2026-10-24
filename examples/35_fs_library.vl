@@ -1,0 +1,183 @@
+/* 5.4 File System & OS Primitives — the sys.fs / sys.os chapter, one
+ * deterministic sweep.
+ *
+ * One program exercising the whole shipped surface: the sys.fs lane runs
+ * the legacy whole-file six (write_file seed, read_file/size/exists
+ * inspection), the metadata family (is_dir vs is_file classification,
+ * create_dir, the create_dir_all segment walker), the single-entry
+ * read_dir pin, the copy/rename round trip with the Windows CRT
+ * no-overwrite recipe (free the target before renaming), and the slice-4
+ * streaming family (fopen "wb" with stacked fwrites, "ab" appending,
+ * chunked fread where EOF reads as the empty string, fseek rewind,
+ * explicit fclose, and dead-handle rows that REPORT instead of
+ * crashing). The sys.os lane sets the stage around it: set_env/get_env
+ * round trip with unset-reads-empty, argv canon (argv[0] rides along),
+ * and os.exit closing the run with the success status.
+ *
+ * Fixtures live under .velo_cache/ (gitignored), planted with FIXED
+ * names and pinned through state-verdict rows: create_dir_all is
+ * idempotent, write_file overwrites, and the rename target is freed
+ * first — so reruns agree with fresh-checkout runs and the output stays
+ * stable everywhere. Every {..} interpolation binds a local first (gaps
+ * 6.7): NO calls/indexing inside interpolations on either compiler.
+ * Output is byte-identical on the Stage 1 Python compiler and the
+ * self-hosted Stage 2 compiler.
+ */
+use sys.io
+use sys.fs
+use sys.os
+
+act main() -> i32 {
+    // 1) Self-sufficient fixtures: create_dir_all is the idempotent
+    //    segment walker — fresh runs and reruns agree.
+    let base_ready = fs.create_dir_all(".velo_cache")
+    if base_ready { io.println("base ok") } else { io.println("base bad") }
+
+    // 2) Whole-file basics: write_file seeds, read_file inspects,
+    //    size/exists classify.
+    let seed: string = "velo54 seed payload"
+    let seeded = fs.write_file(".velo_cache/velo54_seed.txt", seed)
+    if seeded { io.println("w ok") } else { io.println("w bad") }
+    let back: string = fs.read_file(".velo_cache/velo54_seed.txt")
+    let bl: usize = str.len(back)
+    let has = str.contains(back, "seed")
+    if bl == 19 { io.println("len ok") } else { io.println("len bad") }
+    if has { io.println("has ok") } else { io.println("has bad") }
+    let sz: usize = fs.size(".velo_cache/velo54_seed.txt")
+    if sz == 19 { io.println("size ok") } else { io.println("size bad") }
+    let ex = fs.exists(".velo_cache/velo54_seed.txt")
+    if ex { io.println("exists ok") } else { io.println("exists bad") }
+
+    // 3) Metadata: is_dir vs is_file classify; create_dir makes one
+    //    level; create_dir_all walks the segments.
+    let isdc = fs.is_dir(".velo_cache")
+    if isdc { io.println("dir ok") } else { io.println("dir bad") }
+    let istf = fs.is_file(".velo_cache")
+    if istf { io.println("class bad") } else { io.println("class ok") }
+    // create_dir is the ONE-LEVEL maker: it succeeds on a fresh level
+    // and does NOT report success over an existing one (the idempotent
+    // re-run is create_dir_all's job below — so this row pins the
+    // through-STATE, never the rerun-dependent result).
+    fs.create_dir(".velo_cache/velo54_demo_dir")
+    let isdd = fs.is_dir(".velo_cache/velo54_demo_dir")
+    if isdd { io.println("demo dir ok") } else { io.println("demo dir bad") }
+    let deep3: string = ".velo_cache/velo54_deep/l2/l3"
+    let walked = fs.create_dir_all(deep3)
+    if walked { io.println("walk ok") } else { io.println("walk bad") }
+    let planted = fs.write_file(".velo_cache/velo54_deep/l2/l3/leaf.txt", "leaf")
+    if planted { io.println("leaf ok") } else { io.println("leaf bad") }
+    let isl = fs.is_file(".velo_cache/velo54_deep/l2/l3/leaf.txt")
+    if isl { io.println("leaf file ok") } else { io.println("leaf file bad") }
+
+    // 4) The listing: exactly one entry (the only file this program ever
+    //    puts in its demo dir), so the name pins byte-exactly.
+    let listed = fs.write_file(".velo_cache/velo54_demo_dir/only.txt", "listing payload")
+    if listed { io.println("put ok") } else { io.println("put bad") }
+    let names = fs.read_dir(".velo_cache/velo54_demo_dir")
+    let cnt: usize = names.len
+    if cnt == 1 { io.println("count ok") } else { io.println("count bad") }
+    let n0: string = names[0]
+    let hitn = str.contains(n0, "only.txt")
+    if hitn { io.println("name ok") } else { io.println("name bad") }
+
+    // 5) Copy & rename: copy overwrites; the Windows CRT rename does not
+    //    — free the target first (hygiene step, deliberately unpinned),
+    //    then move, then clean.
+    fs.remove_file(".velo_cache/velo54_moved.txt")
+    let cp = fs.copy(".velo_cache/velo54_seed.txt", ".velo_cache/velo54_copy.txt")
+    if cp { io.println("copy ok") } else { io.println("copy bad") }
+    let copied = fs.is_file(".velo_cache/velo54_copy.txt")
+    if copied { io.println("copied ok") } else { io.println("copied bad") }
+    let dstread: string = fs.read_file(".velo_cache/velo54_copy.txt")
+    let dl: usize = str.len(dstread)
+    if dl == 19 { io.println("copy bytes ok") } else { io.println("copy bytes bad") }
+    let moved = fs.rename(".velo_cache/velo54_copy.txt", ".velo_cache/velo54_moved.txt")
+    if moved { io.println("rename ok") } else { io.println("rename bad") }
+    let renamed = fs.is_file(".velo_cache/velo54_moved.txt")
+    if renamed { io.println("renamed ok") } else { io.println("renamed bad") }
+    let gonec = fs.exists(".velo_cache/velo54_copy.txt")
+    if gonec { io.println("gone bad") } else { io.println("gone ok") }
+    let cleaned = fs.remove_file(".velo_cache/velo54_moved.txt")
+    if cleaned { io.println("clean ok") } else { io.println("clean bad") }
+
+    // 6) Streaming write: "wb" opens fresh, two fwrites stack into one
+    //    stream, "ab" appends after them, explicit closes everywhere (no
+    //    RAII — close what you open).
+    let streamp: string = ".velo_cache/velo54_stream.txt"
+    let fh: @File = fs.fopen(streamp, "wb")
+    let w1 = fs.fwrite(fh, "velo head")
+    let w2 = fs.fwrite(fh, "/tail-54")
+    let clen = fs.fclose(fh)
+    if w1 { io.println("sw1 ok") } else { io.println("sw1 bad") }
+    if w2 { io.println("sw2 ok") } else { io.println("sw2 bad") }
+    if clen { io.println("sclose ok") } else { io.println("sclose bad") }
+    let app: @File = fs.fopen(streamp, "ab")
+    let bang = fs.fwrite(app, "!")
+    let aclose = fs.fclose(app)
+    if bang { io.println("sbang ok") } else { io.println("sbang bad") }
+    if aclose { io.println("aclose ok") } else { io.println("aclose bad") }
+    let whole: string = fs.read_file(streamp)
+    let wl: usize = str.len(whole)
+    if wl == 18 { io.println("stream len ok") } else { io.println("stream len bad") }
+    let pt = str.contains(whole, "/tail-54!")
+    if pt { io.println("stream part ok") } else { io.println("stream part bad") }
+    let ssz = fs.size(streamp)
+    if ssz == 18 { io.println("stream size ok") } else { io.println("stream size bad") }
+
+    // 7) Streaming read: chunks advance the position, EOF reads as the
+    //    empty string, fseek(0) rewinds to the head.
+    let rh: @File = fs.fopen(streamp, "rb")
+    let c1: string = fs.fread(rh, 9)
+    let c2: string = fs.fread(rh, 9)
+    let l1: usize = str.len(c1)
+    if l1 == 9 { io.println("chunk1 ok") } else { io.println("chunk1 bad") }
+    if str.contains(c1, "velo head") { io.println("head ok") } else { io.println("head bad") }
+    if str.contains(c2, "/tail-54!") { io.println("chunk2 ok") } else { io.println("chunk2 bad") }
+    let c3: string = fs.fread(rh, 9)
+    let l3: usize = str.len(c3)
+    if l3 == 0 { io.println("eof ok") } else { io.println("eof bad") }
+    let rew = fs.fseek(rh, 0)
+    if rew { io.println("seek ok") } else { io.println("seek bad") }
+    let c4: string = fs.fread(rh, 9)
+    if str.contains(c4, "velo head") { io.println("re ok") } else { io.println("re bad") }
+    let rclose = fs.fclose(rh)
+    if rclose { io.println("rclose ok") } else { io.println("rclose bad") }
+    let erased = fs.remove(streamp)
+    if erased { io.println("erase ok") } else { io.println("erase bad") }
+
+    // 8) Dead handles REPORT instead of crashing: a failed fopen yields
+    //    the NULL handle, and every helper answers (false / empty).
+    let dh: @File = fs.fopen("velo54_no_such_path.bin", "rb")
+    let dw = fs.fwrite(dh, "x")
+    if dw { io.println("dead write bad") } else { io.println("dead write ok") }
+    let dc: string = fs.fread(dh, 5)
+    let dcl: usize = str.len(dc)
+    if dcl == 0 { io.println("dead read ok") } else { io.println("dead read bad") }
+    let dclose = fs.fclose(dh)
+    if dclose { io.println("dead close bad") } else { io.println("dead close ok") }
+
+    // 9) The environment lane: set_env/get_env round trip; an unset key
+    //    reads as the empty string (the unset-reads-empty contract).
+    let envset = os.set_env("VELO54_DEMO", "fs ready")
+    if envset { io.println("env set ok") } else { io.println("env set bad") }
+    let got = os.get_env("VELO54_DEMO")
+    io.println("env {got}")
+    let missing = os.get_env("VELO54_DEMO_ABSENT")
+    io.println("missing:[{missing}]")
+
+    // 10) The argv lane: argv[0] rides along even under velo run. (The
+    //     local cannot be named argv/argc — main's C parameter names are
+    //     reserved by the S1 argv stash injected into the main wrapper.)
+    let vlist = os.args()
+    let ac: usize = vlist.len
+    if ac >= 1 { io.println("args ok") } else { io.println("args bad") }
+    let a0: string = vlist[0]
+    let a0len: usize = str.len(a0)
+    if a0len > 0 { io.println("argv0 ok") } else { io.println("argv0 bad") }
+
+    // 11) The gate: os.exit lowers straight to C exit (stdio flushes on
+    //     the way out); the return below never executes but keeps the
+    //     i32 act shape honest.
+    os.exit(0)
+    return 0
+}

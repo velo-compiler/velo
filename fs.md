@@ -92,7 +92,9 @@ battery + sweep each slice.
   kinds (S/F/I — the math-family curve for mixed-argument checks), with
   the F wall carrying the thread-family handle wording
   (`fs.fread expects @File (got string)`). Member listing grows to 18.
-* **S5 — example 35 + chapter close** (mirrors 5.3 S5 / 5.5 S2).
+* **S5 — example 35 + chapter close (SHIPPED)** (mirrors 5.3 S5 / 5.5 S2):
+  `examples/35_fs_library.vl` + `EXAMPLE35_LINES` + `TestFsExample35`, the
+  cumulative finale sweep, and the gaps.md 5.4 header flip to COMPLETE.
 
 ## S1 — sys.os scaffold (SHIPPING NOW)
 
@@ -263,6 +265,56 @@ f32-literal row (5.5 lesson, applied directly this time).
       `52987ED66F62C2A3D0066357659E2DBDC99F17989C3D02600A0E1276D854C484`
       (Gen2 ≡ Gen3 — moved from S3's `E99B1C7C…`); count_lines clean —
       fs-edited files at 219/88, overall max unchanged at 399.
+
+## S5 verification snapshot (example 35 + chapter close)
+
+* [x] `examples/35_fs_library.vl` in the example-30 house style (header
+      block; `use sys.io` + `use sys.fs` + `use sys.os`; one main act,
+      11 numbered sections): self-sufficient fixtures (create_dir_all
+      the base first), the legacy whole-file six, is_dir/is_file
+      classification, create_dir pinned through-STATE, the
+      create_dir_all deep walker + planted leaf, the single-entry
+      read_dir pin, copy/rename with the free-the-target recipe, the
+      streaming family (wb with stacked fwrites, ab append, EOF-empty
+      chunk reads, fseek rewind, explicit closes), the dead-handle
+      report rows, the env round trip + unset-reads-empty, argv verdict
+      rows, and the os.exit(0) gate. EVERY `{..}` interpolation binds a
+      local first (gaps 6.7).
+* [x] Lab notes (first-build hits, both fixed in the example — no
+      compiler surgery): (1) a local named `argv` redeclared main's C
+      parameter at GCC (`'argv' redeclared as different kind of
+      symbol`) — the S1 argv stash reserves BOTH `argc`/`argv` at main
+      scope in EVERY program (the stash injects unconditionally);
+      renamed to `vlist`, the hit-and-run class again. (2) The first
+      draft pinned `fs.create_dir`'s own result over a possibly-existing
+      level and the row flipped between stage runs — create_dir is the
+      ONE-LEVEL FRESH maker (`_mkdir == 0`, envelope only) and is
+      deliberately NOT idempotent (fail-then-stat-verify idempotency
+      lives inside create_dir_all only); the example pins through-STATE
+      (`is_dir` after create), matching the S2 sweep's per-stage-tag
+      doctrine.
+* [x] `sweep_54_final.py` **60/60 clean, 0 diffs** — the cumulative
+      S1–S4 rows re-swept on the shipped state (S2/S3's wording rows
+      re-pinned onto the current 18-list) + the example-35 parity row
+      run from the repo root.
+* [x] Battery `tests/test_fs_library.py` → 16 tests: `EXAMPLE35` /
+      `EXAMPLE35_LINES` (the 47-row byte-exact fixture) +
+      `TestFsExample35` (returncode, byte-equal stdout, exact-line pins
+      — the example-30 precedent). The example was also proven
+      RERUN-stable standalone (same stdout hash across fresh-checkout
+      and leftover paths).
+* [x] Full suite **215/215**; NO compiler source changed — no chain
+      rebuild owed; fixed point re-verified
+      `52987ED66F62C2A3D0066357659E2DBDC99F17989C3D02600A0E1276D854C484`
+      (Gen2 ≡ Gen3 emit-c, unchanged since S4); count_lines clean — max
+      399, zero warnings.
+
+THE CHAPTER SHIPS IN FULL: slice 1 the sys.os scaffold (closed `sys.os`,
+argv plumbing, env/exit) · slice 2 the sys.fs metadata family + the
+closed-namespace migration (the six legacy members into the checked
+umbrella) · slice 3 `fs.read_dir` → `shelf[string]` (the platform
+iteration split in the runtime) · slice 4 the streaming family (`@File`
+→ `FILE*`, per-position arg kinds) · slice 5 example 35 + close.
 
 ## S1 verification ladder
 

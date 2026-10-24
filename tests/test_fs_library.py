@@ -925,3 +925,70 @@ class TestFsSlice4(unittest.TestCase):
             f"unknown fs constant 'fopen' (fs functions are: {funcs})"
             " (functions need parens: fs.fopen())")
         self.assertEqual(outs[0], outs[1])
+
+
+EXAMPLE35 = ROOT / "examples" / "35_fs_library.vl"
+
+EXAMPLE35_LINES = [
+    "base ok",
+    "w ok",
+    "len ok",
+    "has ok",
+    "size ok",
+    "exists ok",
+    "dir ok",
+    "class ok",
+    "demo dir ok",
+    "walk ok",
+    "leaf ok",
+    "leaf file ok",
+    "put ok",
+    "count ok",
+    "name ok",
+    "copy ok",
+    "copied ok",
+    "copy bytes ok",
+    "rename ok",
+    "renamed ok",
+    "gone ok",
+    "clean ok",
+    "sw1 ok",
+    "sw2 ok",
+    "sclose ok",
+    "sbang ok",
+    "aclose ok",
+    "stream len ok",
+    "stream part ok",
+    "stream size ok",
+    "chunk1 ok",
+    "head ok",
+    "chunk2 ok",
+    "eof ok",
+    "seek ok",
+    "re ok",
+    "rclose ok",
+    "erase ok",
+    "dead write ok",
+    "dead read ok",
+    "dead close ok",
+    "env set ok",
+    "env fs ready",
+    "missing:[]",
+    "args ok",
+    "argv0 ok",
+]
+
+
+class TestFsExample35(unittest.TestCase):
+    """gaps.md 5.4 → close: the chapter example is the byte-identical
+    parity row (example-30 house style: header comment, deterministic
+    program, every interpolation binds locals first)."""
+
+    def test_example35_parity_and_output(self):
+        src = EXAMPLE35.read_text(encoding="utf-8")
+        s1 = run_stage("stage1", src, "example35")
+        s2 = run_stage("stage2", src, "example35")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-3000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-3000:])
+        self.assertEqual(s1.stdout, s2.stdout, "example 35 outputs diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), EXAMPLE35_LINES)
