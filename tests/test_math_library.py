@@ -346,5 +346,43 @@ class TestMathSlice4(unittest.TestCase):
         self.assertEqual(outs[0], outs[1])
 
 
+EXAMPLE33 = ROOT / "examples" / "33_math_library.vl"
+
+EXAMPLE33_LINES = [
+    "pi 3.14 tau 6.28",
+    "rad2deg 57.30 deg2rad 0.02 semi 3.14",
+    "right 1.57",
+    "sqrt 1.41 1.73",
+    "pow 1024.00 243.00",
+    "cbrt 3.00 4.48",
+    "trig 0.00 1.00 0.00",
+    "arcs 1.57 0.00 0.79",
+    "exp 1.00 log 0.00 log2 3.00",
+    "exp(log(5.0)) 5.00",
+    "round 2.00 3.00 3.00 -3.00",
+    "abs 5.50 7 81",
+    "minmax 3 9",
+    "floats 1.50 2.50",
+    "wide 5",
+    "clamp 3.00 0.00 1.50",
+    "lerp 5.00 3.00 shelf 3.00",
+]
+
+
+class TestMathExample33(unittest.TestCase):
+    """gaps.md 5.3 → close: the chapter example is the byte-identical
+    parity row (example-30 house style: header comment, deterministic
+    program, every interpolation binds locals first)."""
+
+    def test_example33_parity_and_output(self):
+        src = EXAMPLE33.read_text(encoding="utf-8")
+        s1 = run_stage("stage1", src, "example33")
+        s2 = run_stage("stage2", src, "example33")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-3000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-3000:])
+        self.assertEqual(s1.stdout, s2.stdout, "example 33 outputs diverged")
+        self.assertEqual(s1.stdout.strip().splitlines(), EXAMPLE33_LINES)
+
+
 if __name__ == "__main__":
     unittest.main()

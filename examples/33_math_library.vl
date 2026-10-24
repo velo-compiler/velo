@@ -1,0 +1,102 @@
+/* 5.3 Math Library — the sys.math chapter, one deterministic sweep.
+ *
+ * One program exercising the whole shipped surface: the four constants with
+ * their degree/radian fan-out, the root/power family (sqrt/pow/cbrt riding
+ * the int-widening contract), the trig family with the exact anchors
+ * (acos(1)=0, acos(0)=asin(1)=pi/2, atan2 in C argument order), exponentials
+ * & logs with the exp/log round-trip, the rounding trio (floor/ceil/round,
+ * half away from zero), the type-dispatched abs (floats -> f64, ints keep
+ * their spell), the min/max spread (same-spell ints, float lanes, mixed
+ * widths lift to i64), and clamp/lerp onto the canonical lowering. Sits on
+ * the S1 widening contract: every int spell and f32/f64 widens through a
+ * (double)(...) cast; bool/string args stay compile-time rejected.
+ * NO calls/indexing inside {..} interpolations — both compilers lower
+ * those untranslated (gaps 6.7); every value binds to a local first.
+ * Output is byte-identical on the Stage 1 Python compiler and the
+ * self-hosted Stage 2 compiler.
+ */
+use sys.io
+use sys.math
+
+act main() -> i32 {
+    // 1) Constants: full-precision digits behind every derived value.
+    let pi = math.PI
+    let tau = math.TAU
+    let rad2deg = math.RAD2DEG
+    let deg2rad = math.DEG2RAD
+    let semi = tau / 2.0
+    let right = deg2rad * 90
+    io.println("pi {pi} tau {tau}")
+    io.println("rad2deg {rad2deg} deg2rad {deg2rad} semi {semi}")
+    io.println("right {right}")
+
+    // 2) Roots & powers: f64 in, f64 out, ints widen through (double).
+    let r2 = math.sqrt(2.0)
+    let r3 = math.sqrt(3)
+    let p2 = math.pow(2.0, 10.0)
+    let p3 = math.pow(3, 5)
+    let c3 = math.cbrt(27.0)
+    let c90 = math.cbrt(90)
+    io.println("sqrt {r2} {r3}")
+    io.println("pow {p2} {p3}")
+    io.println("cbrt {c3} {c90}")
+
+    // 3) Trig: zero legs and the exact anchors.
+    let s0 = math.sin(0.0)
+    let c0 = math.cos(0.0)
+    let a0 = math.acos(0.0)
+    let a1 = math.acos(1.0)
+    let q = math.atan2(1.0, 1.0)
+    let zero: i32 = 0
+    let sz = math.sin(zero)
+    io.println("trig {s0} {c0} {sz}")
+    io.println("arcs {a0} {a1} {q}")
+
+    // 4) Exponentials & logs: the anchors and the round-trip.
+    let e0 = math.exp(0.0)
+    let l1 = math.log(1.0)
+    let g8 = math.log2(8.0)
+    let back = math.exp(math.log(5.0))
+    io.println("exp {e0} log {l1} log2 {g8}")
+    io.println("exp(log(5.0)) {back}")
+
+    // 5) Rounding: floor/ceil/round, half away from zero.
+    let fl = math.floor(2.7)
+    let ce = math.ceil(2.1)
+    let ro = math.round(2.5)
+    let rn = math.round(-2.5)
+    io.println("round {fl} {ce} {ro} {rn}")
+
+    // 6) abs: one spelling, three decision lanes across arg types.
+    let av = math.abs(-5.5)
+    let neg: i32 = -7
+    let ai = math.abs(neg)
+    let unum: u64 = 81
+    let au = math.abs(unum)
+    io.println("abs {av} {ai} {au}")
+
+    // 7) min/max: same spell, float lanes, width mix lifts to i64.
+    let small: i32 = math.min(3, 9)
+    let big: i32 = math.max(3, 9)
+    let fminv = math.min(2.5, 1.5)
+    let fmaxv = math.max(2.5, 1.5)
+    let n32: i32 = 5
+    let n64: i64 = 9
+    let lo = math.min(n32, n64)
+    io.println("minmax {small} {big}")
+    io.println("floats {fminv} {fmaxv}")
+    io.println("wide {lo}")
+
+    // 8) clamp & lerp: canonical lowering, three lanes plus a shelf payoff.
+    let cv = math.clamp(5.0, 0.0, 3.0)
+    let cn = math.clamp(-1.0, 0.0, 3.0)
+    let cm = math.clamp(1.5, 0.0, 3.0)
+    let ld = math.lerp(0.0, 10.0, 0.5)
+    let li = math.lerp(2, 4, 0.5)
+    let mix: shelf[f64] = shelf[math.clamp(9.0, 0.0, 3.0), 1]
+    let m0: f64 = mix[0]
+    io.println("clamp {cv} {cn} {cm}")
+    io.println("lerp {ld} {li} shelf {m0}")
+
+    return 0
+}

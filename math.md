@@ -184,17 +184,27 @@ Missing surface:
 
 Missing surface:
 
-* [ ] `examples/33_math_library.vl` (example-30 house style: header comment,
+* [x] `examples/33_math_library.vl` (example-30 house style: header comment,
       one deterministic program covering constants, sqrt/pow/cbrt, trig,
       exp/log, utility family; every interpolation binds locals first —
-      gaps 6.7).
-* [ ] `tests/test_math_library.py` gains the example-33 parity row
-      (`EXAMPLE33_LINES`, byte-identical both stages).
-* [ ] `gaps.md` 5.3 → `[COMPLETED] ✅` with the Final-form slice entry
-      (Former Defect → Fix → Residual → Verification).
-* [ ] Sweep finale (full-row recount) + chain fixed point + count_lines
-      max ≤ 399 verified in the close commit.
-* [ ] docs: array.md untouched (5.2 is closed); VELO.md stays untracked.
+      gaps 6.7). Eight numbered sections; the shelf[f64] payoff closes the
+      widening ladder. Lab note: a local named `fmin` shadows libc at GCC —
+      example renamed to `fminv` (same class as the S1 `unum` case).
+* [x] `tests/test_math_library.py` gains the example-33 parity row
+      (`EXAMPLE33_LINES`, byte-identical both stages) — 17-line fixture,
+      `TestMathExample33` returncode + byte-equal + exact-line pins.
+* [x] `gaps.md` 5.3 → `[COMPLETED] ✅` with the Final-form slice entry
+      (Former Defect → Fix → Residual → Verification) — chapter header is
+      now `COMPLETE (slices 1–5)`.
+* [x] Sweep finale (full-row recount) + chain fixed point + count_lines
+      max ≤ 399 verified in the close commit — `sweep_53_final.py` 48/48;
+      fixed point `634B77C5…` re-verified (no compiler source touched in
+      S5 — nothing to rebuild); count_lines 399 max.
+* [x] docs: array.md untouched (5.2 is closed); VELO.md stays untracked.
+
+S5 verification snapshot: suite **188/188** · finale sweep 48/48 · fixed
+point `634B77C5CFBCDABD1C8824011BC872E77644A6CB8405D1C813798A143AFB37B2`
+(unchanged — no compiler source in the close) · count_lines max 399.
 
 ## Verification ladder (every slice)
 
