@@ -129,27 +129,56 @@ Verification snapshot: suite **185/185** · sweep 34/34 · fixed point
 Gen3) · count_lines max 399 (`math_checks.vl`=144, `math_gen.vl`=41,
 `codegen_expr.vl` 395 — ceiling-file compression from S2 still holds).
 
+S4 batteries: `test_accepts_utility_family` (22-row pinned fixture —
+floor/ceil/round pins incl. `round(-2.5) = -3.000000` half-away-from-zero;
+abs through f64/i32/i64/u64-identity/usize/i8/f32; min/max same-spell via
+bindings, width-mix → i64, float lanes, int+float widen; clamp rows;
+int-arg lerp; chained `max(min(1.0, 2.0), 1.5)`) + `test_rejects_utility_family`
+(abs/min got-walls, clamp/lerp arity walls); sweep `sweep_53_s4.py` —
+cumulative S1+S2+S3 rows re-swept + 10 accepts + 5 reject wordings (incl.
+the 3-ary walls and the 20-function unknown-member row moved onto `log10`),
+**47/47 clean, 0 diffs**.
+
+S4 verification snapshot: suite **187/187** · sweep 47/47 · fixed point
+`634B77C5CFBCDABD1C8824011BC872E77644A6CB8405D1C813798A143AFB37B2` (Gen2 ≡
+Gen3) · count_lines max 399 (`math_checks.vl`=188, `math_gen.vl`=147,
+`type_checker.vl` held at 396 — the call branch COLLAPSED to one line,
+`codegen_expr.vl` still 395).
+
 ## S4 — utility family (abs/floor/ceil/round/min/max/clamp/lerp)
 
 Missing surface:
 
-* [ ] `math.floor(x)`, `math.ceil(x)`, `math.round(x)` → `f64` (C floor/ceil/
+* [x] `math.floor(x)`, `math.ceil(x)`, `math.round(x)` → `f64` (C floor/ceil/
       round doubles; .5 rounding behaviour is libc C99 `round`, half away from
       zero — pinned modulo libc equality between stages only).
-* [ ] `math.abs(x)` — TYPE-DISPATCHED: `f32`/`f64` → `fabs` → same float type
-      as the argument? PINNED DECISION: always returns `f64` for float args
-      (emit `(double)fabs(...)`); int widths return the SAME int type
-      (i32→labs→i32, i64/u64/usize→llabs→matching spell on both stages;
-      bool/string reject).
-* [ ] `math.min(a, b)` / `math.max(a, b)` — 2-ary, same spell enforcement:
-      both f32/f64 → fmin/fmax → f64; both ints of the SAME width → C ternary
-      over that width, same type back; mixed int/f64 → widen to f64 (fmin/fmax);
-      bool/string reject. Mixed int WIDTHS (i32 vs i64) → decide+pin: widen
-      to i64 (ternary over i64) — mirror the shelf widening int-ladder spirit.
-* [ ] `math.clamp(v, lo, hi)` → f64 (all three widened; return f64).
-* [ ] `math.lerp(a, b, t)` → f64, emitted as `(a + (b - a) * t)` double expr
-      (parenthesized, single evaluation — args are emitted inline twice-safe? NO: args must bind-or-be-pure; battery pins idempotent spellings; document the double-eval residual if any).
-* [ ] Batteries + sweep rows appended.
+* [x] `math.abs(x)` — TYPE-DISPATCHED: `f32`/`f64` → `fabs` → pinned `f64`
+      result (single-eval `fabs((double)(...))`); int widths return the SAME
+      int type back. Shipped refinement vs the pre-S4 note (see gaps 5.3 S4):
+      ALL signed spells (i8/i16/i32/i64/isize) ride ONE uniform
+      `(({T})llabs((long long)(...)))` shape (labs would hard-depend on the
+      target's `long` width for i64 — llabs keeps the emitted C portable);
+      unsigned spells (u8/u16/u32/u64/usize) are the IDENTITY `({x})` (abs of
+      a non-negative value — llabs on u64 past the sign bit is meaningless);
+      bool/string reject.
+* [x] `math.min(a, b)` / `math.max(a, b)` — 2-ary: any float arg →
+      `fmin/fmax((double)(a), (double)(b))` → `f64` (each arg emitted once);
+      both ints SAME spell → `(({T})((a) OP (b) ? (a) : (b)))` — same type
+      back; mixed int widths (incl. u64 mixes) → pre-cast both sides
+      `(i64)(...)` then ternary → `i64` (signedness-safe; u64 > i64 range
+      documented residual). The ternary shapes re-evaluate each argument
+      twice (documented residual — libm has no int min/max; battery pins
+      literal/local spellings only).
+* [x] `math.clamp(v, lo, hi)` → f64, canonical order:
+      `fmin(fmax((double)(v), (double)(lo)), (double)(hi))` — inner fmax
+      clamps the floor, outer fmin the ceiling; each argument emitted
+      exactly once (no double-eval residual for clamp).
+* [x] `math.lerp(a, b, t)` → f64, emitted as
+      `(((double)(a)) + (((double)(b)) - ((double)(a))) * ((double)(t)))` —
+      a appears twice (documented double-eval residual; battery pins
+      literal/local spellings).
+* [x] Batteries + sweep rows appended (S4 accept + 4 new walls; closed-set
+      row moved off `floor` (shipped) onto `log10` + 20-function wording).
 
 ## S5 — example 33 + chapter close
 

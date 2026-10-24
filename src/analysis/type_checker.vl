@@ -142,7 +142,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 }
                 if target.str_val == "str" { if !check_str_call(st, expr, member) { return "unknown" }; if member == "len" { return "usize" }; if member == "contains" or member == "starts_with" or member == "ends_with" { return "bool" }; if member == "trim" or member == "replace" or member == "to_upper" or member == "to_lower" or member == "concat" { return "string" }; if member == "index_of" { return "i64" }; if member == "split" { return "shelf[string]" } }  // 5.1: -1 = not found; slice 11: split owns its tokens as a shelf
                 if target.str_val == "io" { return "void" }
-                if target.str_val == "math" { if !check_math_call(st, expr, member) { return "unknown" }; let mret = math_member_ret(member); if str.len(mret) > 0 { return mret } }  // 5.3: f64 for shipped members; unknown falls through
+                if target.str_val == "math" { return check_math_call(st, expr, member) }  // 5.3 S4: arg-aware result spell; "unknown" after reporting
             }
         }
         if expr.callee.kind == EXPR_MEMBER and expr.callee.target != null and is_shelf_type(infer_expr_type(st, expr.callee.target)) { return check_shelf_member_call(st, expr) }  // 5.2: shelf receivers — put / take; slice 6: map receivers

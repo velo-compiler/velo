@@ -21,6 +21,32 @@ use "../common/string_builder.vl"
 use "codegen_types.vl"
 use "codegen_expr.vl"
 
+// S4 int min/max — byte-verified shapes (single helper, wrap selects the lane):
+//   same spell (wrap ""):        "((T)((a) OP (b) ? (a) : (b)))"
+//   mixed widths (wrap "(i64)("):"((i64)(((i64)(a)) OP ((i64)(b)) ? ((i64)(a)) : ((i64)(b))))"
+// Each argument expression appears at two sites (ternary expansion);
+// the mixed lane pre-casts both sides to i64 for signedness safety.
+act emit_int_minmax(sb: @StringBuilder, st: @SymbolTable, op: string, spell: string, wrap: string, ea: @ExprNode, eb: @ExprNode) {
+    sb_append_str(sb, "((")
+    sb_append_str(sb, spell)
+    sb_append_str(sb, ")((")
+    sb_append_str(sb, wrap)
+    emit_c_expr(sb, st, ea)
+    if str.len(wrap) == 0 { sb_append_str(sb, ") ") } else { sb_append_str(sb, ")) ") }
+    sb_append_str(sb, op)
+    sb_append_str(sb, " (")
+    sb_append_str(sb, wrap)
+    emit_c_expr(sb, st, eb)
+    if str.len(wrap) == 0 { sb_append_str(sb, ") ? (") } else { sb_append_str(sb, ")) ? (") }
+    sb_append_str(sb, wrap)
+    emit_c_expr(sb, st, ea)
+    if str.len(wrap) == 0 { sb_append_str(sb, ") : (") } else { sb_append_str(sb, ")) : (") }
+    sb_append_str(sb, wrap)
+    emit_c_expr(sb, st, eb)
+    if str.len(wrap) == 0 { sb_append_str(sb, ")") } else { sb_append_str(sb, "))") }
+    sb_append_str(sb, "))")
+}
+
 act emit_math_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @ExprNode) {
     // slice 1: shape family
     if member == "sqrt" { sb_append_str(sb, "sqrt((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
@@ -38,4 +64,84 @@ act emit_math_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @
     if member == "exp" { sb_append_str(sb, "exp((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
     if member == "log" { sb_append_str(sb, "log((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
     if member == "log2" { sb_append_str(sb, "log2((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+    // slice 4: utility family — shapes mirror stage 1's byte-verified renders
+    if member == "floor" { sb_append_str(sb, "floor((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+    if member == "ceil" { sb_append_str(sb, "ceil((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+    if member == "round" { sb_append_str(sb, "round((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+    if member == "abs" {
+        // float -> fabs -> f64; unsigned ints are the identity (abs of a
+        // non-negative value); signed ints ride llabs at the exact spell
+        let t = infer_expr_type(st, expr.first_arg)
+        if t == "f32" or t == "f64" {
+            sb_append_str(sb, "fabs((double)(")
+            emit_c_expr(sb, st, expr.first_arg)
+            sb_append_str(sb, "))")
+        } else if t == "u8" or t == "u16" or t == "u32" or t == "u64" or t == "usize" {
+            sb_append_str(sb, "(")
+            emit_c_expr(sb, st, expr.first_arg)
+            sb_append_str(sb, ")")
+        } else {
+            sb_append_str(sb, "(")
+            sb_append_str(sb, t)
+            sb_append_str(sb, ")llabs((long long)(")
+            emit_c_expr(sb, st, expr.first_arg)
+            sb_append_str(sb, "))")
+        }
+        return
+    }
+    if member == "min" or member == "max" {
+        let t1 = infer_expr_type(st, expr.first_arg)
+        let t2 = infer_expr_type(st, expr.first_arg.next)
+        if t1 == "f32" or t1 == "f64" or t2 == "f32" or t2 == "f64" {
+            // float lane: fmin/fmax — each argument emitted exactly once
+            mut fn = "fmin"
+            if member == "max" { fn = "fmax" }
+            sb_append_str(sb, fn)
+            sb_append_str(sb, "((double)(")
+            emit_c_expr(sb, st, expr.first_arg)
+            sb_append_str(sb, "), (double)(")
+            emit_c_expr(sb, st, expr.first_arg.next)
+            sb_append_str(sb, "))")
+            return
+        }
+        // int lane: same spell -> ternary over that spell; mixed widths ->
+        // ternary over (i64)(...) casts (documented double-eval residual)
+        mut op = "<"
+        if member == "max" { op = ">" }
+        if t1 == t2 {
+            emit_int_minmax(sb, st, op, t1, "", expr.first_arg, expr.first_arg.next)
+        } else {
+            emit_int_minmax(sb, st, op, "i64", "(i64)(", expr.first_arg, expr.first_arg.next)
+        }
+        return
+    }
+    if member == "clamp" {
+        // canonical order (v, lo, hi): inner fmax clamps the floor, outer
+        // fmin clamps the ceiling — each argument emitted once
+        sb_append_str(sb, "fmin(fmax((double)(")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, "), (double)(")
+        emit_c_expr(sb, st, expr.first_arg.next)
+        sb_append_str(sb, ")), (double)(")
+        emit_c_expr(sb, st, expr.first_arg.next.next)
+        sb_append_str(sb, "))")
+        return
+    }
+    if member == "lerp" {
+        // (a + (b - a) * t) with every argument widened through (double)(...);
+        // a appears twice (documented double-eval residual)
+        let ea = expr.first_arg
+        let eb = ea.next
+        let et = eb.next
+        sb_append_str(sb, "(((double)(")
+        emit_c_expr(sb, st, ea)
+        sb_append_str(sb, ")) + (((double)(")
+        emit_c_expr(sb, st, eb)
+        sb_append_str(sb, ")) - ((double)(")
+        emit_c_expr(sb, st, ea)
+        sb_append_str(sb, "))) * ((double)(")
+        emit_c_expr(sb, st, et)
+        sb_append_str(sb, ")))")
+        return
+    }
 }

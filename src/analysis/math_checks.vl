@@ -42,6 +42,15 @@ act math_member_sig(member: string) -> string {
     if member == "exp" { return ": (f64 x)" }
     if member == "log" { return ": (f64 x)" }
     if member == "log2" { return ": (f64 x)" }
+    // S4 utility family
+    if member == "abs" { return ": (f64 x)" }
+    if member == "min" { return ": (f64 a, f64 b)" }
+    if member == "max" { return ": (f64 a, f64 b)" }
+    if member == "floor" { return ": (f64 x)" }
+    if member == "ceil" { return ": (f64 x)" }
+    if member == "round" { return ": (f64 x)" }
+    if member == "clamp" { return ": (f64 v, f64 lo, f64 hi)" }
+    if member == "lerp" { return ": (f64 a, f64 b, f64 t)" }
     return ""
 }
 
@@ -52,6 +61,10 @@ act math_member_arity(member: string) -> i32 {
     if member == "sin" or member == "cos" or member == "tan" { return 1 }
     if member == "acos" or member == "asin" { return 1 }
     if member == "exp" or member == "log" or member == "log2" { return 1 }
+    // S4 utility family
+    if member == "abs" or member == "floor" or member == "ceil" or member == "round" { return 1 }
+    if member == "min" or member == "max" { return 2 }
+    if member == "clamp" or member == "lerp" { return 3 }
     return -1
 }
 
@@ -61,6 +74,23 @@ act math_member_arity(member: string) -> i32 {
 act math_member_ret(member: string) -> string {
     if math_member_arity(member) > -1 { return "f64" }
     return ""
+}
+
+// S4: abs result spell — float args pin to f64; int args ride through
+// unchanged (the caller already validated the spell via math_arg_ok).
+// Mirror of math_member_result_type's abs branch in velo/codegen_c.py.
+act math_abs_ret(t: string) -> string {
+    if t == "f32" or t == "f64" { return "f64" }
+    return t
+}
+
+// S4: min/max spread — any float argument lifts the pair to f64;
+// same-spell ints keep their spell; any other int mix widens to i64
+// (self widening-ladder spirit — u64 > i64 range documented residual).
+act math_minmax_ret(a: string, b: string) -> string {
+    if a == "f32" or a == "f64" or b == "f32" or b == "f64" { return "f64" }
+    if a == b { return a }
+    return "i64"
 }
 
 // The widening accept set, identical spell list on both stages: every int
@@ -91,17 +121,21 @@ act math_got_msg(member: string, got: string) -> string {
     return sb_to_string(@msb)
 }
 
-// Entry point: returns false after reporting (the infer branch then yields
-// "unknown"); unknown members report the closed-set wording and return false.
-act check_math_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
+// Entry point: returns the call's RESULT spell — "unknown" after reporting
+// (the infer branch then yields "unknown"). S4: the result is arg-aware
+// (abs mirrors its argument, min/max keep same-spell ints else lift to
+// i64, everything else f64) so the walk collects arg spellings as it
+// validates — single pass, because infer_expr_type reports for nested
+// errors and re-walking the same nodes would duplicate reports.
+act check_math_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
     let arity = math_member_arity(member)
     if arity < 0 {
         // 5.3: the math namespace is CLOSED for calls (shelf unknown member
         // precedent) — wording mirror of stage 1's _math_expect raise.
-        let msb = create_sb(256)
-        sb_append_str(@msb, "unknown math member '"); sb_append_str(@msb, member); sb_append_str(@msb, "' (functions: sqrt, pow, cbrt, sin, cos, tan, atan2, acos, asin, exp, log, log2; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
+        let msb = create_sb(320)
+        sb_append_str(@msb, "unknown math member '"); sb_append_str(@msb, member); sb_append_str(@msb, "' (functions: sqrt, pow, cbrt, sin, cos, tan, atan2, acos, asin, exp, log, log2, abs, min, max, floor, ceil, round, clamp, lerp; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
         report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
-        return false
+        return "unknown"
     }
     mut argc: usize = 0
     mut cur_a = expr.first_arg
@@ -113,18 +147,28 @@ act check_math_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
         if arity == 1 { sb_append_str(@msb, " argument") } else { sb_append_str(@msb, " arguments") }
         sb_append_str(@msb, math_member_sig(member))
         report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
-        return false
+        return "unknown"
     }
+    mut at1 = ""
+    mut at2 = ""
+    mut at3 = ""
+    mut idx: usize = 0
     mut cur = expr.first_arg
     loop cur != null {
         let t = infer_expr_type(st, cur)
         if !math_arg_ok(t) {
             report_error("semantic", expr.line, expr.col, math_got_msg(member, t)); st.error_count += 1
-            return false
+            return "unknown"
         }
+        if idx == 0 { at1 = t }
+        if idx == 1 { at2 = t }
+        if idx == 2 { at3 = t }
+        idx += 1
         cur = cur.next
     }
-    return true
+    if member == "min" or member == "max" { return math_minmax_ret(at1, at2) }
+    if member == "abs" { return math_abs_ret(at1) }
+    return "f64"
 }
 
 // The bare-property path (math.PI): "f64" for the four constants; the

@@ -95,7 +95,35 @@ MATH_CALLS = {
     "exp": (1, ": (f64 x)"),
     "log": (1, ": (f64 x)"),
     "log2": (1, ": (f64 x)"),
+    # 5.3 slice 4: the utility family — abs/min/max dispatch on their arg
+    # spells; floor/ceil/round/clamp/lerp are plain f64 libm lowers.
+    "abs": (1, ": (f64 x)"),
+    "min": (2, ": (f64 a, f64 b)"),
+    "max": (2, ": (f64 a, f64 b)"),
+    "floor": (1, ": (f64 x)"),
+    "ceil": (1, ": (f64 x)"),
+    "round": (1, ": (f64 x)"),
+    "clamp": (3, ": (f64 v, f64 lo, f64 hi)"),
+    "lerp": (3, ": (f64 a, f64 b, f64 t)"),
 }
+
+# 5.3 slice 4: the math RESULT type stops being constant-f64 and becomes
+# arg-aware. Floats lift everything to f64; abs mirrors its argument's int
+# spell back (float args pin to f64); min/max keep the same-spell int type
+# and lift mixed widths to i64 (self widening-ladder spirit). Two ladder
+# consumers here (_infer_raw_velo_type + _resolve_expr_type) and Stage 2's
+# math_abs_ret / math_minmax_ret acts must compute the same spread.
+def math_member_result_type(member: str, arg_types: List[str]) -> str:
+    if member == "abs":
+        t = arg_types[0] if arg_types else "f64"
+        return "f64" if t in DYN_FLOAT_TYPES else t
+    if member in ("min", "max"):
+        if any(t in DYN_FLOAT_TYPES for t in arg_types):
+            return "f64"
+        if len(arg_types) == 2 and arg_types[0] == arg_types[1]:
+            return arg_types[0]
+        return "i64"
+    return "f64"
 
 
 # 5.2 Dynamic Collections: the shelf surface is compile-checked per member
@@ -2000,10 +2028,13 @@ class CCodeGenerator:
                     if m == "split":
                         return "shelf[string]"  # slice 11: the owning-shelf swap
                 elif value.callee.target.name == "math":
-                    # 5.3: math calls are f64 (mirrors the checker ladder) —
-                    # library-literal element estimation stays exact
+                    # 5.3 S4: the result spell is arg-aware (abs/min/max
+                    # dispatch on their arguments) — library-literal element
+                    # estimation stays exact
                     if value.callee.member in MATH_CALLS:
-                        return "f64"
+                        return math_member_result_type(
+                            value.callee.member,
+                            [self._thread_arg_type(a) for a in value.args])
         return "i32"
 
 
@@ -2200,10 +2231,13 @@ class CCodeGenerator:
                     if m == "split":
                         return "shelf[string]"  # slice 11: the owning-shelf swap
                 elif expr.callee.target.name == "math":
-                    # 5.3: every shipped math call yields f64; the ladder grows
-                    # per slice (sqrt/pow/cbrt shipped in slice 1)
+                    # 5.3 S4: arg-aware result spell — see
+                    # math_member_result_type (abs/min/max branch, all
+                    # other members stay f64)
                     if expr.callee.member in MATH_CALLS:
-                        return "f64"
+                        return math_member_result_type(
+                            expr.callee.member,
+                            [self._thread_arg_type(a) for a in expr.args])
                 elif expr.callee.target.name == "io":
                     # All io calls are void (mirrors type_checker.vl), so
                     # mem count/fill checks can render and reject them.
@@ -2899,7 +2933,7 @@ class CCodeGenerator:
             # member precedent): both stages reject with the same words.
             # The functions list grows per slice (S2 adds the trig family).
             raise ValueError(
-                f"unknown math member '{member}' (functions: sqrt, pow, cbrt, sin, cos, tan, atan2, acos, asin, exp, log, log2; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
+                f"unknown math member '{member}' (functions: sqrt, pow, cbrt, sin, cos, tan, atan2, acos, asin, exp, log, log2, abs, min, max, floor, ceil, round, clamp, lerp; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
         expect_n, sig = MATH_CALLS[member]
         if len(args) != expect_n:
             plural = "" if expect_n == 1 else "s"
@@ -2914,6 +2948,9 @@ class CCodeGenerator:
         # guaranteed — codes are emitted exactly once each).
         self._math_expect(member, args)
         codes = [self._emit_expression(a) for a in args]
+        # S4: abs/min/max branch on the argument spells (verified valid by
+        # _math_expect above — every spelling is in the int/float set).
+        types = [self._thread_arg_type(a) for a in args]
         if member == "sqrt":
             return f"sqrt((double)({codes[0]}))"
         if member == "pow":
@@ -2941,6 +2978,51 @@ class CCodeGenerator:
             return f"log((double)({codes[0]}))"
         if member == "log2":
             return f"log2((double)({codes[0]}))"
+        # 5.3 slice 4: the utility family. abs rides fabs for floats;
+        # unsigned ints are the identity (abs of a non-negative value);
+        # signed ints go through llabs at the argument's exact spell.
+        # min/max: any float arg lifts to fmin/fmax (each argument emitted
+        # exactly once); equal int spells use a C ternary over that spell;
+        # mixed int widths cast both sides to i64 first (signedness-safe).
+        # The ternary shapes re-evaluate each argument twice (documented
+        # residual — battery pins literal/local spellings only).
+        if member == "floor":
+            return f"floor((double)({codes[0]}))"
+        if member == "ceil":
+            return f"ceil((double)({codes[0]}))"
+        if member == "round":
+            return f"round((double)({codes[0]}))"
+        if member == "abs":
+            t = types[0]
+            if t in DYN_FLOAT_TYPES:
+                return f"fabs((double)({codes[0]}))"
+            if t in ("u8", "u16", "u32", "u64", "usize"):
+                return f"({codes[0]})"
+            return f"({t})llabs((long long)({codes[0]}))"
+        if member in ("min", "max"):
+            op = "<" if member == "min" else ">"
+            if types[0] in DYN_FLOAT_TYPES or types[1] in DYN_FLOAT_TYPES:
+                fn = "fmin" if member == "min" else "fmax"
+                return f"{fn}((double)({codes[0]}), (double)({codes[1]}))"
+            if types[0] == types[1]:
+                spell = types[0]
+                return (f"(({spell})(({codes[0]}) {op} ({codes[1]}) "
+                        f"? ({codes[0]}) : ({codes[1]})))")
+            w0 = f"(i64)({codes[0]})"
+            w1 = f"(i64)({codes[1]})"
+            return f"((i64)(({w0}) {op} ({w1}) ? ({w0}) : ({w1})))"
+        if member == "clamp":
+            # Canonical order (v, lo, hi): inner fmax clamps the floor,
+            # outer fmin clamps the ceiling — each argument emitted once.
+            return (f"fmin(fmax((double)({codes[0]}), (double)({codes[1]})), "
+                    f"(double)({codes[2]}))")
+        if member == "lerp":
+            # (a + (b - a) * t) with every argument widened through
+            # (double)(...); a appears twice (documented residual).
+            d0 = f"(double)({codes[0]})"
+            d1 = f"(double)({codes[1]})"
+            d2 = f"(double)({codes[2]})"
+            return f"(({d0}) + (({d1}) - ({d0})) * ({d2}))"
         raise ValueError(f"unknown math member '{member}'")
 
     def _lower_mem_alloc(self, args: List[Expr]) -> str:
