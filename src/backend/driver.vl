@@ -198,7 +198,7 @@ act compile_source_to_c(source_path: string, unsafe_index: bool) -> string {
 }
 
 // Builds a native executable from a Velo source file by compiling to C and invoking GCC.
-act build_executable(source_path: string, output_exe: string, unsafe_index: bool) -> bool {
+act build_executable(source_path: string, output_exe: string, unsafe_index: bool, opt_flags: string) -> bool {
     let c_code = compile_source_to_c(source_path, unsafe_index)
     if c_code == null {
         return false
@@ -227,7 +227,14 @@ act build_executable(source_path: string, output_exe: string, unsafe_index: bool
     if fs.exists("C:/msys64/ucrt64/bin/gcc.exe") {
         sb_append_str(@cmd_sb, "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ")
     }
-    sb_append_str(@cmd_sb, "gcc -O2 -std=c99 -I velo/runtime ")
+    sb_append_str(@cmd_sb, "gcc ")
+    if opt_flags != null and str.len(opt_flags) > 0 {
+        sb_append_str(@cmd_sb, opt_flags)
+        sb_append_str(@cmd_sb, " ")
+    } else {
+        sb_append_str(@cmd_sb, "-O2 ")
+    }
+    sb_append_str(@cmd_sb, "-std=c99 -I velo/runtime ")
     sb_append_str(@cmd_sb, to_native_path(c_file_path))
     sb_append_str(@cmd_sb, " -o ")
     sb_append_str(@cmd_sb, to_native_path(out_path))
@@ -243,7 +250,7 @@ act build_executable(source_path: string, output_exe: string, unsafe_index: bool
 }
 
 // Compiles and runs a Velo source file.
-act run_source_file(source_path: string, unsafe_index: bool) -> i32 {
+act run_source_file(source_path: string, unsafe_index: bool, opt_flags: string) -> i32 {
     let stem = get_file_stem(source_path)
     mut exe_sb = create_sb(128)
     sb_append_str(@exe_sb, ".velo_cache/")
@@ -251,7 +258,7 @@ act run_source_file(source_path: string, unsafe_index: bool) -> i32 {
     sb_append_str(@exe_sb, ".exe")
     let exe_path = sb_to_string(@exe_sb)
 
-    let ok = build_executable(source_path, exe_path, unsafe_index)
+    let ok = build_executable(source_path, exe_path, unsafe_index, opt_flags)
     if not ok {
         return 1
     }

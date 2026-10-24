@@ -31,12 +31,18 @@ def main():
     run_parser.add_argument("file", help="Path to the .vl source file")
     run_parser.add_argument("args", nargs=argparse.REMAINDER, help="Arguments passed to the program")
     run_parser.add_argument("--unsafe-shelf-index", action="store_true", help="Lower shelf index reads unguarded (out-of-range becomes silent UB)")
+    run_parser.add_argument("--debug", action="store_true", help="Compile with debug symbols (-O0 -g)")
+    run_parser.add_argument("--release", action="store_true", help="Compile with release optimizations and LTO (-O3 -flto)")
+    run_parser.add_argument("-O", "--optimize", choices=["0", "1", "2", "3", "s", "fast"], help="GCC optimization level")
 
     # 'build' command
     build_parser = subparsers.add_parser("build", help="Compile a Velo program into a native executable")
     build_parser.add_argument("file", help="Path to the .vl source file")
     build_parser.add_argument("-o", "--output", help="Path for the output executable")
     build_parser.add_argument("--unsafe-shelf-index", action="store_true", help="Lower shelf index reads unguarded (out-of-range becomes silent UB)")
+    build_parser.add_argument("--debug", action="store_true", help="Compile with debug symbols (-O0 -g)")
+    build_parser.add_argument("--release", action="store_true", help="Compile with release optimizations and LTO (-O3 -flto)")
+    build_parser.add_argument("-O", "--optimize", choices=["0", "1", "2", "3", "s", "fast"], help="GCC optimization level")
 
     # 'emit-c' command
     emit_parser = subparsers.add_parser("emit-c", help="Emit generated C99 code without compiling")
@@ -68,10 +74,44 @@ def main():
 
     try:
         if args.command == "run":
-            exit_code = driver.run(args.file, args.args)
+            clean_args = []
+            debug_mode = getattr(args, "debug", False)
+            release_mode = getattr(args, "release", False)
+            opt_level = getattr(args, "optimize", None)
+
+            i = 0
+            raw_args = args.args or []
+            while i < len(raw_args):
+                arg = raw_args[i]
+                if arg == "--":
+                    clean_args.extend(raw_args[i + 1:])
+                    break
+                elif arg == "--debug":
+                    debug_mode = True
+                elif arg == "--release":
+                    release_mode = True
+                elif arg == "--unsafe-shelf-index":
+                    driver.unsafe_index_flag = True
+                elif arg.startswith("-O"):
+                    opt_level = arg[2:]
+                else:
+                    clean_args.append(arg)
+                i += 1
+
+            if debug_mode and release_mode:
+                print("[Velo Error] Cannot specify both --debug and --release", file=sys.stderr)
+                sys.exit(1)
+
+            exit_code = driver.run(args.file, clean_args, debug=debug_mode, release=release_mode, opt_level=opt_level)
             sys.exit(exit_code)
         elif args.command == "build":
-            exe_path = driver.build(args.file, args.output)
+            if getattr(args, "debug", False) and getattr(args, "release", False):
+                print("[Velo Error] Cannot specify both --debug and --release", file=sys.stderr)
+                sys.exit(1)
+            exe_path = driver.build(args.file, args.output,
+                                    debug=getattr(args, "debug", False),
+                                    release=getattr(args, "release", False),
+                                    opt_level=getattr(args, "optimize", None))
             print(f"[Velo] Successfully built: {exe_path}")
         elif args.command == "emit-c":
             c_code = driver.compile_to_c(args.file)

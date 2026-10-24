@@ -548,11 +548,22 @@ The chapter ships in full: slice 1 scaffold + now/delta/sleep_ms (closed namespa
   - `velo build main.vl -o game.exe -lraylib -lopengl32 -lgdi32 -lwinmm`
   - Or `#link "raylib"` / `#link "opengl32"` pragma in source code.
 
-### 6.2 Optimization Flags & Build Modes (🟠 P1 Major)
-* **Current State**: Always compiles with `-O2`.
-* **Missing Modes**:
-  - `velo build --debug` (emits `-O0 -g` with full debug symbols).
-  - `velo build --release` (emits `-O3 -flto` with link-time optimization).
+### 6.2 Optimization Flags & Build Modes [COMPLETED] ✅
+* **Former Limitation**: The compiler hardcoded GCC `-O2` across all compilation paths (`velo build` and `velo run`), offering no debug symbols for GDB/LLDB inspection and no release/LTO optimization controls for production benchmarks.
+* **Fix Applied**: Both compilers (Stage 1 Python and Stage 2 self-hosted) implement standard build modes and optimization flag controls:
+  - Default mode: `-O2` (backward-compatible; identical to former behavior).
+  - `--debug` mode: compiles with `-O0 -g`, providing unoptimized machine code and full DWARF debug symbols for GDB/LLDB debugging.
+  - `--release` mode: compiles with `-O3 -flto`, applying maximum compiler optimizations and Link-Time Optimization.
+  - `-O<level>` / `-O <level>` optimization flags: supports `-O0`, `-O1`, `-O2`, `-O3`, `-Os`, `-Ofast` (e.g. `velo build -O1`, or combined with debug `velo build --debug -O1`).
+  - Conflict detection: specifying both `--debug` and `--release` triggers `[Velo Error] Cannot specify both --debug and --release` (exit code 1).
+  - Flag position flexibility: flags can be placed before or after the input file or output binary (`velo build <file> --debug -o <bin>`, `velo run <file> --release`).
+* **Verification**:
+  - Test suite `tests/test_build_modes.py`: 12 tests covering default flags, `--debug`, `--release`, custom `-O<level>`, mutual exclusion conflict detection, binary size verification (debug binary larger than release due to debug symbols and LTO), and both CLI build and run commands across Stage 1 and Stage 2.
+  - Finale sweep `sweep_62_final.py`: 23/23 clean across both compilers.
+  - Full pytest suite: **249/249 passing** (was 237).
+  - Triple-bootstrap chain rebuilt (Gen1 → Gen2 → Gen3 → `bin/velo.exe`); bit-for-bit determinism verified with Gen2 ≡ Gen3 SHA-256 fixed point `64B604F2B44C74C92C92494C396A9C9ED8945101AE999FFB2E75994C7167C911`.
+  - All source files ≤ 399 lines (`src/main.vl` 262, `src/backend/driver.vl` 305).
+  - Build sheet: `build_modes.md`.
 
 ### 6.3 Diagnostic Formatting & Error Visuals (🟡 P2 Ergonomic) — COMPLETE (slices 1–5) ✅
 * Current errors print: `[Velo Error] semantic:line:col - message`.

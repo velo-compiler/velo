@@ -137,7 +137,8 @@ class CompilerDriver:
         return {"file": source_path, "ok": False, "diagnostics": diagnostics}
 
 
-    def build(self, source_path: str, output_path: Optional[str] = None) -> str:
+    def build(self, source_path: str, output_path: Optional[str] = None,
+              debug: bool = False, release: bool = False, opt_level: Optional[str] = None) -> str:
         path = Path(source_path).resolve()
         c_code = self.compile_to_c(source_path)
 
@@ -161,15 +162,35 @@ class CompilerDriver:
         current_path = env.get("PATH", "")
         env["PATH"] = f"{gcc_bin_dir}{os.pathsep}{current_path}"
 
+        # 6.2 Optimization Flags & Build Modes
+        if debug and release:
+            raise ValueError("Cannot specify both --debug and --release")
+
+        flags = []
+        if opt_level is not None:
+            flags.append(f"-O{opt_level}")
+        elif debug:
+            flags.append("-O0")
+        elif release:
+            flags.append("-O3")
+        else:
+            flags.append("-O2")
+
+        if debug:
+            flags.append("-g")
+        if release:
+            flags.append("-flto")
+
         cmd = [
             gcc,
-            "-O2",
+            *flags,
             "-std=c99",
             str(c_file),
             f"-I{self.runtime_dir}",
             "-o",
             str(exe_file)
         ]
+        self.last_gcc_cmd = cmd
 
         result = subprocess.run(cmd, capture_output=True, text=True, env=env)
         if result.returncode != 0:
@@ -177,8 +198,9 @@ class CompilerDriver:
 
         return str(exe_file)
 
-    def run(self, source_path: str, args: Optional[list] = None) -> int:
-        exe_path = self.build(source_path)
+    def run(self, source_path: str, args: Optional[list] = None,
+            debug: bool = False, release: bool = False, opt_level: Optional[str] = None) -> int:
+        exe_path = self.build(source_path, debug=debug, release=release, opt_level=opt_level)
         cmd = [exe_path] + (args or [])
         res = subprocess.run(cmd)
         return res.returncode
