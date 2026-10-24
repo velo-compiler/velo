@@ -1,6 +1,16 @@
 #ifndef VELO_RUNTIME_H
 #define VELO_RUNTIME_H
 
+// 5.5 High-Resolution Clock & Timing (sys.time): the POSIX clock surface
+// (clock_gettime / CLOCK_MONOTONIC / nanosleep) is only declared by <time.h>
+// under POSIX feature-test flags, and -std=c99 withholds the defaults — so
+// the flags are requested here, BEFORE the first system include (glibc and
+// friends chain <time.h> through stdio as well). Windows keeps its own
+// QueryPerformanceCounter branch below, untouched by these flags.
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 199309L
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -462,6 +472,91 @@ static inline void velo_mutex_destroy(void* m) {
 }
 
 #endif  // §4.2 thread surface
+
+// ============================================================================
+// 5.5 High-Resolution Clock & Timing (sys.time): the shared clock/sleep
+// helpers. Windows rides QueryPerformanceCounter/QueryPerformanceFrequency
+// through self-declared kernel32 prototypes (the §4.2 thread-surface
+// precedent: no windows.h, kernel32 is default-linked); Sleep rides the
+// kernel32 Sleep. POSIX rides clock_gettime(CLOCK_MONOTONIC) / nanosleep —
+// declared by <time.h> itself once the _POSIX_C_SOURCE flags above are set.
+// Both compiler emitters lower onto these helpers, so the platform #if
+// lives here — once — with identical emitted call shapes on both stages.
+// The clock is MONOTONIC microseconds since boot: perfect for game-loop dt,
+// deliberately NOT wall-epoch time.
+// ============================================================================
+#if defined(_WIN32)
+// Win64 layout of kernel32's LARGE_INTEGER (LLP64: unsigned long is 32-bit;
+// the struct is exactly 8 bytes, paddable away inside the union).
+typedef union velo_time_li {
+    struct { unsigned long low; long high; } u;
+    long long quad;
+} velo_time_li;
+int __stdcall QueryPerformanceCounter(velo_time_li* counter);
+int __stdcall QueryPerformanceFrequency(velo_time_li* frequency);
+void __stdcall Sleep(unsigned long ms);
+
+static inline i64 velo_time_now_us(void) {
+    velo_time_li counter;
+    velo_time_li frequency;
+    if (!QueryPerformanceCounter(&counter) || !QueryPerformanceFrequency(&frequency) || frequency.quad <= 0) {
+        velo_fatal_msg("qpc clock failure");
+    }
+    // Overflow-safe microseconds split: seconds * 1e6 + remainder * 1e6 / freq.
+    // The naive (counter * 1e6) / freq overflows i64 after ~2 weeks of uptime
+    // at a 10 MHz counter; this split never does (rem * 1e6 < 1e13 for any
+    // sane frequency).
+    long long whole = counter.quad / frequency.quad;
+    long long rem = counter.quad % frequency.quad;
+    return (i64)(whole * 1000000LL + rem * 1000000LL / frequency.quad);
+}
+
+static inline void velo_time_sleep(long long ms) {
+    // Windows Sleep takes a 32-bit unsigned DWORD; clamp at the API's own
+    // ceiling (49.7 days — no game-loop dt ever gets there).
+    if (ms < 0) { ms = 0; }
+    if (ms > 4294967294LL) { ms = 4294967294LL; }
+    Sleep((unsigned long)ms);
+}
+#else
+#include <errno.h>  // nanosleep's EINTR re-arm reads errno
+
+static inline i64 velo_time_now_us(void) {
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+        velo_fatal_msg("clock_gettime failure");
+    }
+    return (i64)(ts.tv_sec * 1000000LL + ts.tv_nsec / 1000);
+}
+
+static inline void velo_time_sleep(long long ms) {
+    // nanosleep reports mid-sleep interrupts with EINTR and hands the
+    // remainder back through its second argument — re-arm until it squares.
+    struct timespec req;
+    long long m = ms > 0 ? ms : 0;
+    req.tv_sec = (time_t)(m / 1000LL);
+    req.tv_nsec = (long)((m % 1000LL) * 1000000LL);
+    while (nanosleep(&req, &req) != 0 && errno == EINTR) { }
+}
+#endif
+
+// time.delta(): microseconds since the previous call — the FIRST call
+// anchors and returns 0 (so the battery can pin it exactly). The anchor is
+// a function-local static: single translation unit per binary, and the dt
+// loop is one thread's job (single-threaded usage contract — documented
+// residual; mutex-guarding a timer read would measure the mutex).
+static inline i64 velo_time_delta_us(void) {
+    static long long g_velo_time_delta_anchor = -1;
+    long long now_us = velo_time_now_us();
+    if (g_velo_time_delta_anchor < 0) {
+        g_velo_time_delta_anchor = now_us;
+        return 0;
+    }
+    long long elapsed = now_us - g_velo_time_delta_anchor;
+    g_velo_time_delta_anchor = now_us;
+    return (i64)elapsed;
+}
+
 
 // Persistent Heap Allocation with Memory Usage Tracking
 // §4.2 (revised): the ledger is a single shared counter updated with true

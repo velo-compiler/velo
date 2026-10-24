@@ -1,0 +1,121 @@
+// 5.5 High-Resolution Clock & Timing: compile-time checks for the sys.time
+// namespace — now/delta (zero-arg i64 microsecond clocks) + sleep_ms (one
+// int duration, void). Mutual mirror of velo/codegen_c.py::_time_expect /
+// TIME_CALLS / TIME_SIGS - both stages must reject the same programs with
+// the same words.
+// The namespace is CLOSED on both lanes: unknown CALL members report the
+// closed-set wording (math unknown-member precedent); time has NO
+// constants, so the property lane rejects every bare read (with the
+// parens hint when the member names a known function).
+use "type_checker.vl"
+use "symbol_table.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../ast/expr.vl"
+use "../frontend/token.vl"
+
+// Signature text per checked member ("" = no sig tail — the 0-ary walls
+// carry none).Must stay character-identical with velo/codegen_c.py
+// TIME_SIGS.
+act time_member_sig(member: string) -> string {
+    if member == "sleep_ms" { return ": (i64 ms)" }
+    return ""
+}
+
+// Expected argument count per member (same curve as TIME_CALLS).
+act time_member_arity(member: string) -> i32 {
+    if member == "now" { return 0 }
+    if member == "delta" { return 0 }
+    if member == "sleep_ms" { return 1 }
+    return -1
+}
+
+// Result spell per member — the two clocks ride i64, the sleep is void.
+// Must stay character-identical with stage 1's time_member_result_type.
+act time_member_ret(member: string) -> string {
+    if member == "now" { return "i64" }
+    if member == "delta" { return "i64" }
+    if member == "sleep_ms" { return "void" }
+    return ""
+}
+
+// 5.5: sleep_ms takes an INT duration ONLY — every int spell rides an
+// emitted (long long)(...) widen; f32/f64/bool/string/collections reject.
+// Mirrors stage 1's `got not in DYN_INT_TYPES` wall (ints-only subset of
+// the math widening ladder).
+act time_arg_ok(t: string) -> bool {
+    if t == "i8" { return true }
+    if t == "i16" { return true }
+    if t == "i32" { return true }
+    if t == "i64" { return true }
+    if t == "u8" { return true }
+    if t == "u16" { return true }
+    if t == "u32" { return true }
+    if t == "u64" { return true }
+    if t == "usize" { return true }
+    if t == "isize" { return true }
+    return false
+}
+
+// Wording mirror of stage 1's got-reject (math_got_msg house pattern).
+// Only sleep_ms takes arguments, so the message is fixed.
+act time_got_msg(got: string) -> string {
+    let msb = create_sb(160)
+    sb_append_str(@msb, "time.sleep_ms expects int arguments (got ")
+    sb_append_str(@msb, got); sb_append_str(@msb, ")")
+    return sb_to_string(@msb)
+}
+
+// Entry point: returns the call's RESULT spell — "unknown" after reporting
+// (the infer branch then yields "unknown"). Zero-arg walls carry no sig
+// tail; sleep_ms carries the (i64 ms) sig like every math wall.
+act check_time_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
+    let arity = time_member_arity(member)
+    if arity < 0 {
+        // 5.5: the time namespace is CLOSED for calls (math unknown-member
+        // precedent) — wording mirror of stage 1's _time_expect raise.
+        let msb = create_sb(192)
+        sb_append_str(@msb, "unknown time member '"); sb_append_str(@msb, member)
+        sb_append_str(@msb, "' (functions: now, delta, sleep_ms)")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+        return "unknown"
+    }
+    mut argc: usize = 0
+    mut cur_a = expr.first_arg
+    loop cur_a != null { argc += 1; cur_a = cur_a.next }
+    if argc != (arity as usize) {
+        let msb = create_sb(192)
+        sb_append_str(@msb, "time."); sb_append_str(@msb, member); sb_append_str(@msb, " expects exactly ")
+        sb_append_int(@msb, arity)
+        if arity == 1 { sb_append_str(@msb, " argument") } else { sb_append_str(@msb, " arguments") }
+        sb_append_str(@msb, time_member_sig(member))
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+        return "unknown"
+    }
+    mut cur = expr.first_arg
+    loop cur != null {
+        let t = infer_expr_type(st, cur)
+        if !time_arg_ok(t) {
+            report_error("semantic", expr.line, expr.col, time_got_msg(t)); st.error_count += 1
+            return "unknown"
+        }
+        cur = cur.next
+    }
+    return time_member_ret(member)
+}
+
+// The bare-property path (time.now without parens): time has NO constants,
+// so every bare read rejects — the parens hint rides when the member names
+// a known function (math's bare-`math.sqrt` precedent).
+act check_time_constant(st: @SymbolTable, expr: @ExprNode) -> string {
+    let msb = create_sb(256)
+    sb_append_str(@msb, "unknown time constant '"); sb_append_str(@msb, expr.member_name)
+    sb_append_str(@msb, "' (time functions are: now, delta, sleep_ms)")
+    if str.len(time_member_ret(expr.member_name)) > 0 {  // member names a known function shape
+        sb_append_str(@msb, " (functions need parens: time.")
+        sb_append_str(@msb, expr.member_name)
+        sb_append_str(@msb, "())")
+    }
+    report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+    return "unknown"
+}

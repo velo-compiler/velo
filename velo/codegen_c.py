@@ -107,6 +107,33 @@ MATH_CALLS = {
     "lerp": (3, ": (f64 a, f64 b, f64 t)"),
 }
 
+# 5.5 High-Resolution Clock & Timing (sys.time): closed-namespace call set.
+# now/delta are zero-arg i64 microsecond clocks; sleep_ms takes ONE int
+# duration (floats reject). Mirrored by stage 2's src/analysis/time_checks.vl
+# and velo/runtime/velo_runtime.h helpers — both stages must reject the same
+# programs with the same words and emit the same helper call bytes.
+TIME_CALLS = {
+    "now": 0,
+    "delta": 0,
+    "sleep_ms": 1,
+}
+# 0-ary members carry no sig tail (a ": ()" would read wrong); the sig only
+# decorates the sleep_ms arity wall. Must stay character-identical with
+# stage 2's time_member_sig.
+TIME_SIGS = {
+    "sleep_ms": ": (i64 ms)",
+}
+TIME_FUNCS_TEXT = "now, delta, sleep_ms"
+
+def time_member_result_type(member: str, arg_types: List[str]) -> str:
+    """5.5: result spell per time member (args validated elsewhere)."""
+    if member == "sleep_ms":
+        return "void"
+    if member in ("now", "delta"):
+        return "i64"
+    return ""
+
+
 # 5.3 slice 4: the math RESULT type stops being constant-f64 and becomes
 # arg-aware. Floats lift everything to f64; abs mirrors its argument's int
 # spell back (float args pin to f64); min/max keep the same-spell int type
@@ -2035,6 +2062,13 @@ class CCodeGenerator:
                         return math_member_result_type(
                             value.callee.member,
                             [self._thread_arg_type(a) for a in value.args])
+                elif value.callee.target.name == "time":
+                    # 5.5: now/delta are zero-arg i64 microsecond clocks;
+                    # sleep_ms is void. Unknown members fall through to the
+                    # default below (the emit path's checker raises — the
+                    # math unknown-member shape).
+                    if value.callee.member in TIME_CALLS:
+                        return time_member_result_type(value.callee.member, [])
         return "i32"
 
 
@@ -2102,6 +2136,12 @@ class CCodeGenerator:
                     return "f64"
                 hint = f" (functions need parens: math.{expr.member}(...))" if expr.member in MATH_CALLS else ""
                 raise ValueError(f"unknown math constant '{expr.member}' (constants: PI, TAU, RAD2DEG, DEG2RAD){hint}")
+            # 5.5: time has NO constants — bare member reads reject with the
+            # mirrored wording (the parens hint rides when the member names
+            # a known function; math's bare-`math.sqrt` precedent)
+            if isinstance(expr.target, Identifier) and expr.target.name == "time":
+                hint = f" (functions need parens: time.{expr.member}())" if expr.member in TIME_CALLS else ""
+                raise ValueError(f"unknown time constant '{expr.member}' (time functions are: {TIME_FUNCS_TEXT}){hint}")
             target_type = self._resolve_expr_type(expr.target)
             # 5.2: shelf property reads (len); other members are loud errors
             if self._shelf_elem_type(target_type) is not None:
@@ -2238,6 +2278,11 @@ class CCodeGenerator:
                         return math_member_result_type(
                             expr.callee.member,
                             [self._thread_arg_type(a) for a in expr.args])
+                elif expr.callee.target.name == "time":
+                    # 5.5: now/delta -> i64, sleep_ms -> void (mirror of the
+                    # _infer_raw_velo_type branch above)
+                    if expr.callee.member in TIME_CALLS:
+                        return time_member_result_type(expr.callee.member, [])
                 elif expr.callee.target.name == "io":
                     # All io calls are void (mirrors type_checker.vl), so
                     # mem count/fill checks can render and reject them.
@@ -2588,6 +2633,11 @@ class CCodeGenerator:
                         # bool/string/collection args reject in _math_expect.
                         return self._emit_math_call(expr.callee.member, expr.args)
 
+                    elif expr.callee.target.name == "time":
+                        # 5.5: one runtime helper per member (_time_expect
+                        # lives on the emit path — checker + emitter in one).
+                        return self._emit_time_call(expr.callee.member, expr.args)
+
                 # 5.2: shelf receiver member calls — put/take helpers, compile-checked
                 target_type = self._resolve_expr_type(expr.callee.target)
                 if self._shelf_elem_type(target_type) is not None:
@@ -2920,6 +2970,37 @@ class CCodeGenerator:
             got = self._thread_arg_type(arg)
             if got != "string":
                 raise ValueError(f"str.{member} expects string arguments (got {got})")
+
+    def _time_expect(self, member: str, args: List[Expr]) -> None:
+        """5.5: compile-checks the sys.time call surface. Mirrored by
+        Stage 2's src/analysis/time_checks.vl — both stages must reject the
+        same programs with the same messages. now/delta are zero-ary;
+        sleep_ms takes exactly one INT duration (every int spell rides an
+        emitted (long long)(...) widen; f32/f64/bool/string/collections
+        reject). The namespace is CLOSED for both lanes."""
+        if member not in TIME_CALLS:
+            raise ValueError(
+                f"unknown time member '{member}' (functions: {TIME_FUNCS_TEXT})")
+        expect_n = TIME_CALLS[member]
+        if len(args) != expect_n:
+            sig = TIME_SIGS.get(member, "")
+            plural = "" if expect_n == 1 else "s"
+            raise ValueError(f"time.{member} expects exactly {expect_n} argument{plural}{sig}")
+        for arg in args:
+            got = self._thread_arg_type(arg)
+            if got not in DYN_INT_TYPES:
+                raise ValueError(f"time.sleep_ms expects int arguments (got {got})")
+
+    def _emit_time_call(self, member: str, args: List[Expr]) -> str:
+        # 5.5: one runtime helper per member (velo_runtime.h owns the
+        # platform #if). Single evaluation per argument — codes are emitted
+        # exactly once each; the duration rides a (long long)(...) widen.
+        self._time_expect(member, args)
+        if member == "now":
+            return "velo_time_now_us()"
+        if member == "delta":
+            return "velo_time_delta_us()"
+        return f"velo_time_sleep((long long)({self._emit_expression(args[0])}))"
 
     def _math_expect(self, member: str, args: List[Expr]) -> None:
         """5.3: compile-checks the sys.math call surface (constants live on
