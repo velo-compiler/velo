@@ -39,6 +39,9 @@ act math_member_sig(member: string) -> string {
     if member == "atan2" { return ": (f64 y, f64 x)" }
     if member == "acos" { return ": (f64 x)" }
     if member == "asin" { return ": (f64 x)" }
+    if member == "exp" { return ": (f64 x)" }
+    if member == "log" { return ": (f64 x)" }
+    if member == "log2" { return ": (f64 x)" }
     return ""
 }
 
@@ -48,6 +51,7 @@ act math_member_arity(member: string) -> i32 {
     if member == "sqrt" or member == "cbrt" { return 1 }
     if member == "sin" or member == "cos" or member == "tan" { return 1 }
     if member == "acos" or member == "asin" { return 1 }
+    if member == "exp" or member == "log" or member == "log2" { return 1 }
     return -1
 }
 
@@ -95,7 +99,7 @@ act check_math_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
         // 5.3: the math namespace is CLOSED for calls (shelf unknown member
         // precedent) — wording mirror of stage 1's _math_expect raise.
         let msb = create_sb(256)
-        sb_append_str(@msb, "unknown math member '"); sb_append_str(@msb, member); sb_append_str(@msb, "' (functions: sqrt, pow, cbrt, sin, cos, tan, atan2, acos, asin; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
+        sb_append_str(@msb, "unknown math member '"); sb_append_str(@msb, member); sb_append_str(@msb, "' (functions: sqrt, pow, cbrt, sin, cos, tan, atan2, acos, asin, exp, log, log2; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
         report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
         return false
     }

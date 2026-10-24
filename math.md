@@ -102,15 +102,32 @@ Verification snapshot: suite **184/184** · sweep 25/25 · fixed point
 Gen3) · count_lines max 399 (`math_gen.vl`=36, `math_checks.vl`=140,
 `codegen_expr.vl` 395).
 
-## S3 — exponentials & logs (exp/log/log2)
+## S3 — exponentials & logs (exp/log/log2) ✅ ([COMPLETED] in gaps.md 5.3)
 
 Missing surface:
 
-* [ ] `math.exp(x)`, `math.log(x)`, `math.log2(x)` → `f64`; S1 contract
-      reused. `log10` deliberately NOT shipped (not on the gaps list).
-* [ ] Pins: exp(0)=1.00, log(1)=0.00, log2(8.0)=3.00 etc.; domain residuals
-      documented as above.
-* [ ] Batteries + sweep rows appended.
+* [x] `math.exp(x)`, `math.log(x)`, `math.log2(x)` → `f64`; S1 contract
+      reused. `log10` deliberately NOT shipped (not on the gaps list — it
+      rides the closed-set wording, which grew to the 12-function list in
+      all copies: stage-1 `_math_expect`, stage-2 `check_math_call`,
+      battery row, sweep row).
+* [x] Pins: `exp(0.0)=1.000000` (exact IEEE), `exp(1.0)=2.718282`,
+      `log(1.0)=0.000000` (exact), `log2(8.0)=3.000000` (exact);
+      `exp(math.log(5.0))` round-trip at `%.2f` = `5.00`; int widening
+      (`log2(i64 1024)=10.000000`, `exp(0)=1.000000`; plain int literal
+      `log2(1024)=10.000000`); f32 widening (`log(f32 1.0)`);
+      `shelf[f64]` mix element (`log2(8.0)` → `3.00`).
+      Domain residuals (log(0)=-Inf, log(neg)=NaN, exp overflow=Inf) stay
+      libc-defined on identical C — documented, unpinned.
+* [x] Batteries: `test_accepts_explog_family` (10-row pinned fixture);
+      sweep `sweep_53_s3.py` — cumulative S1+S2 rows re-swept + 8 accepts +
+      5 reject wordings (incl. `s3_rej_log2_zero` arity wall and the grown
+      unknown-member wording), **34/34 clean, 0 diffs**.
+
+Verification snapshot: suite **185/185** · sweep 34/34 · fixed point
+`8ED2798FA05D6554710754A4DEA0B5931483AD1E38937F0D800A55A5FD2EE67B` (Gen2 ≡
+Gen3) · count_lines max 399 (`math_checks.vl`=144, `math_gen.vl`=41,
+`codegen_expr.vl` 395 — ceiling-file compression from S2 still holds).
 
 ## S4 — utility family (abs/floor/ceil/round/min/max/clamp/lerp)
 

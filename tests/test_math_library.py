@@ -143,6 +143,45 @@ class TestMathSlice1(unittest.TestCase):
         self.assertEqual(s1.stdout, expected, "trig pins moved (libc event)")
         self.assertEqual(s1.stdout, s2.stdout, "math slice-2 outputs diverged")
 
+    def test_accepts_explog_family(self):
+        """5.3 S3: exp/log/log2 — exact IEEE anchors (exp(0)=1, log(1)=0,
+        log2(8)=3), the exp/log round-trip at %.2f, int/f32 widening, and a
+        math element in the shelf[f64] ladder. log10 stays unshipped (not on
+        the gaps list — it rides the closed-set wording)."""
+        src = (
+            "use sys.io\n"
+            "use sys.math\n"
+            "\n"
+            "act main() -> i32 {\n"
+            "    io.println(math.exp(0.0))\n"
+            "    io.println(math.exp(1.0))\n"
+            "    io.println(math.log(1.0))\n"
+            "    io.println(math.log2(8.0))\n"
+            "    let back = math.exp(math.log(5.0))\n"
+            "    io.println(\"{back}\")\n"
+            "    let wide: i64 = 1024\n"
+            "    io.println(math.log2(wide))\n"
+            "    io.println(math.exp(0))\n"
+            "    let f32v: f32 = 1.0\n"
+            "    io.println(math.log(f32v))\n"
+            "    io.println(math.log2(1024))\n"
+            "    let mix: shelf[f64] = shelf[math.log2(8.0), 1]\n"
+            "    let m0: f64 = mix[0]\n"
+            "    io.println(\"{m0}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        expected = (
+            "1.000000\n2.718282\n0.000000\n3.000000\n5.00\n10.000000\n"
+            "1.000000\n0.000000\n10.000000\n3.00\n"
+        )
+        s1 = run_stage("stage1", src, "example_math_s3")
+        s2 = run_stage("stage2", src, "example_math_s3")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-3000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-3000:])
+        self.assertEqual(s1.stdout, expected, "exp/log pins moved (libc event)")
+        self.assertEqual(s1.stdout, s2.stdout, "math slice-3 outputs diverged")
+
     def test_rejects_bool_and_string_args(self):
         outs = check_program(
             "rej_math_bool.vl",
@@ -187,7 +226,7 @@ class TestMathSlice1(unittest.TestCase):
             "rej_math_member.vl",
             "use sys.io\nuse sys.math\nact main() -> i32 {\n"
             "    io.println(math.floor(1.0))\n    return 0\n}\n")
-        self.assertEqual(outs[0], "unknown math member 'floor' (functions: sqrt, pow, cbrt, sin, cos, tan, atan2, acos, asin; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
+        self.assertEqual(outs[0], "unknown math member 'floor' (functions: sqrt, pow, cbrt, sin, cos, tan, atan2, acos, asin, exp, log, log2; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
         self.assertEqual(outs[0], outs[1])
 
         outs = check_program(

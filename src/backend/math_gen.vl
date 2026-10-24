@@ -33,4 +33,9 @@ act emit_math_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @
     if member == "atan2" { sb_append_str(sb, "atan2((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "), (double)("); emit_c_expr(sb, st, expr.first_arg.next); sb_append_str(sb, "))"); return }
     if member == "acos" { sb_append_str(sb, "acos((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
     if member == "asin" { sb_append_str(sb, "asin((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+    // slice 3: exponentials & logs (log10 deliberately unshipped — mirrors
+    // stage 1's _math_expect closed set)
+    if member == "exp" { sb_append_str(sb, "exp((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+    if member == "log" { sb_append_str(sb, "log((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+    if member == "log2" { sb_append_str(sb, "log2((double)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
 }

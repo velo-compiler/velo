@@ -92,6 +92,9 @@ MATH_CALLS = {
     "atan2": (2, ": (f64 y, f64 x)"),
     "acos": (1, ": (f64 x)"),
     "asin": (1, ": (f64 x)"),
+    "exp": (1, ": (f64 x)"),
+    "log": (1, ": (f64 x)"),
+    "log2": (1, ": (f64 x)"),
 }
 
 
@@ -2896,7 +2899,7 @@ class CCodeGenerator:
             # member precedent): both stages reject with the same words.
             # The functions list grows per slice (S2 adds the trig family).
             raise ValueError(
-                f"unknown math member '{member}' (functions: sqrt, pow, cbrt, sin, cos, tan, atan2, acos, asin; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
+                f"unknown math member '{member}' (functions: sqrt, pow, cbrt, sin, cos, tan, atan2, acos, asin, exp, log, log2; constants: PI, TAU, RAD2DEG, DEG2RAD are available)")
         expect_n, sig = MATH_CALLS[member]
         if len(args) != expect_n:
             plural = "" if expect_n == 1 else "s"
@@ -2930,6 +2933,14 @@ class CCodeGenerator:
             return f"acos((double)({codes[0]}))"
         if member == "asin":
             return f"asin((double)({codes[0]}))"
+        # 5.3 slice 3: exponentials & logs (log10 deliberately unshipped —
+        # not on the gaps 5.3 list; it rides the closed-set wording)
+        if member == "exp":
+            return f"exp((double)({codes[0]}))"
+        if member == "log":
+            return f"log((double)({codes[0]}))"
+        if member == "log2":
+            return f"log2((double)({codes[0]}))"
         raise ValueError(f"unknown math member '{member}'")
 
     def _lower_mem_alloc(self, args: List[Expr]) -> str:
