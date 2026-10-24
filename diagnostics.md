@@ -420,4 +420,23 @@ sweep rc, chain SHA, suite totals, ceilings.)
   `87257A5E45A53C1062ED897BA1CFF57233DD0F1EB2E4594ADD5D1CFB7E59F871`.
 * [x] Ceilings: every source <= 399 (`pretty_recon.vl` 276, `main.vl` 182, `diagnostics.vl` 157).
 
+### S5 — finale sweep + chapter close (shipped 2026-10-24)
+
+* [x] Cumulative finale sweep `sweep_63_final.py`: **22/22 clean, 0 diffs** across both
+  compiler stages (valid checks, S1 parse blocks, past-EOF snippets, tab flattening,
+  S2 semantic blocks & multi-file block-less residual, S3 span carets and lexer warning
+  blocks, S4 `--color auto|always|never` rendering and `--json` invariance).
+* [x] Battery `tests/test_diagnostics_pretty.py`: 22 passed; full suite **237/237** clean.
+* [x] No compiler source changed in S5: bootstrap chain and determinism fixed point preserved
+  at `87257A5E45A53C1062ED897BA1CFF57233DD0F1EB2E4594ADD5D1CFB7E59F871` (Gen2 ≡ Gen3 emit-c).
+* [x] Ceilings: every source <= 399 (`pretty_recon.vl` 276, `main.vl` 182, `diagnostics.vl` 157).
+* [x] `gaps.md` §6.3 header flipped to `— COMPLETE (slices 1–5) ✅`.
+
+THE CHAPTER SHIPS IN FULL: slice 1 parse-row snippet blocks on both stages (additive blocks,
+point caret, JSON noise guard) · slice 2 semantic-row blocks on stage 2 via capture reconstruction
+(pseudo-name re-attribution, multi-file block-less residual) · slice 3 span carets (^^^) and
+lexer warning blocks · slice 4 colors & --color auto|always|never flag plumbing · slice 5
+finale sweep + chapter close.
+
+
 

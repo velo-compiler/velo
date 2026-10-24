@@ -554,7 +554,7 @@ The chapter ships in full: slice 1 scaffold + now/delta/sleep_ms (closed namespa
   - `velo build --debug` (emits `-O0 -g` with full debug symbols).
   - `velo build --release` (emits `-O3 -flto` with link-time optimization).
 
-### 6.3 Diagnostic Formatting & Error Visuals (🟡 P2 Ergonomic)
+### 6.3 Diagnostic Formatting & Error Visuals (🟡 P2 Ergonomic) — COMPLETE (slices 1–5) ✅
 * Current errors print: `[Velo Error] semantic:line:col - message`.
 * Modern compilers (Clang, Rust, Zig) print colorized source code snippets with arrows pointing to the exact token:
   ```text
@@ -637,6 +637,19 @@ The chapter ships in full: slice 1 scaffold + now/delta/sleep_ms (closed namespa
     chain rebuilt Gen1→Gen2→Gen3 and `bin/velo.exe` updated with new fixed point SHA-256
     `87257A5E45A53C1062ED897BA1CFF57233DD0F1EB2E4594ADD5D1CFB7E59F871`; all ceilings ≤ 399.
     Sheet: `diagnostics.md` §S4 snapshot.
+* **Slice 5 (S5) [SHIPPED ✅ 2026-10-24]**: finale sweep + chapter close.
+  - Cumulative finale sweep `sweep_63_final.py`: **22/22 clean, 0 diffs** covering all S1–S4
+    invariants across both compilers: valid accepts, parse errors with additive snippet blocks
+    and span carets (`^^^^^^`), past-EOF snippets, tab flattening, single-file semantic snippet
+    blocks, multi-file block-less residual, lexer warning blocks with span carets (`^^`),
+    `--color auto|always|never` resolution and ANSI coloring (error in red 31, warning in yellow 33,
+    caret and summary in bold 1), and `--json` color-free invariance on both stages.
+  - Battery `tests/test_diagnostics_pretty.py`: 22 tests passing; full test suite **237/237** clean.
+  - No compiler source modified in S5: bootstrap chain and determinism fixed point preserved
+    at `87257A5E45A53C1062ED897BA1CFF57233DD0F1EB2E4594ADD5D1CFB7E59F871` (Gen2 ≡ Gen3 emit-c).
+  - Ceilings: all compiler sources ≤ 399 lines (`scripts/count_lines.py`).
+
+The chapter ships in full: slice 1 parse-row snippet blocks on both stages (additive blocks, point caret, JSON noise guard) · slice 2 semantic-row snippet blocks on stage 2 via capture reconstruction (pseudo-name re-attribution, multi-file block-less residual) · slice 3 span carets (^^^) and lexer warning blocks · slice 4 colors & --color auto|always|never flag plumbing · slice 5 finale sweep + chapter close.
 
 ### 6.4 Developer Tooling: Language Server Protocol (LSP) (🟢 P3 Ecosystem)
 * A declarative VS Code extension (TextMate grammar + snippets + language configuration)
