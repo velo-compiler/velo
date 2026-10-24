@@ -398,3 +398,82 @@ def test_run_lane_span_caret_stage1(tmp_path):
     assert res.returncode == 1
     assert "  | ^^^^^^" in res.stderr
 
+
+# ---------------- 6.3 S4: Colors & --color auto|always|never ----------------
+
+def test_color_modes_stage1(tmp_path):
+    path = _write(tmp_path, "broken.vl", PARSE_BROKEN)
+
+    # auto (default) resolves to never on Stage 1
+    res_default = _run_stage1(["check", path])
+    assert "\x1b[" not in res_default.stderr
+    assert "\x1b[" not in res_default.stdout
+
+    # explicit never matches default
+    res_never = _run_stage1(["check", path, "--color=never"])
+    assert res_never.stderr == res_default.stderr
+
+    # explicit always renders colors
+    res_always = _run_stage1(["check", path, "--color=always"])
+    err = res_always.stderr
+    assert "\x1b[31merror\x1b[0m" in err
+    assert "\x1b[1m^^^^^^\x1b[0m" in err
+    # Sacred wire row is never colored
+    assert "[Velo Error] " in err
+    assert "\x1b[31m[Velo Error]" not in err
+
+    # --json with --color=always stays strictly color-free
+    res_json = _run_stage1(["check", path, "--json", "--color=always"])
+    assert "\x1b[" not in res_json.stdout
+    assert "\x1b[" not in res_json.stderr
+    data = json.loads(res_json.stdout)
+    assert data["ok"] is False
+
+
+def test_color_modes_native(tmp_path):
+    if not os.path.exists("bin/velo.exe"):
+        pytest.skip("bin/velo.exe not built; skipping native test")
+    path = _write(tmp_path, "broken.vl", PARSE_BROKEN)
+
+    # auto (default) resolves to never on Stage 2
+    res_default = _run_native(["check", path])
+    out_default = res_default.stdout + res_default.stderr
+    assert "\x1b[" not in out_default
+
+    # explicit never matches default
+    res_never = _run_native(["check", path, "--color=never"])
+    out_never = res_never.stdout + res_never.stderr
+    assert out_never == out_default
+
+    # explicit always renders colors: error (red 31) and carets (bold 1)
+    res_always = _run_native(["check", path, "--color=always"])
+    out_always = res_always.stdout + res_always.stderr
+    assert "\x1b[31merror\x1b[0m" in out_always
+    assert "\x1b[1m^^^^^^\x1b[0m" in out_always
+    # Sacred wire row is never colored
+    assert "[Velo Error] " in out_always
+    assert "\x1b[31m[Velo Error]" not in out_always
+
+    # Warning severity (yellow 33) and carets (bold 1)
+    p_warn = _write(tmp_path, "warn.vl", "/* unclosed\nact main() -> i32 { return 0; }\n")
+    res_warn = _run_native(["check", p_warn, "--color=always"])
+    out_warn = res_warn.stdout + res_warn.stderr
+    assert "\x1b[33mwarning\x1b[0m" in out_warn
+    assert "\x1b[1m^^\x1b[0m" in out_warn
+    assert "[Velo Warning] " in out_warn
+    assert "\x1b[33m[Velo Warning]" not in out_warn
+
+    # Semantic error summary line in bold 1
+    p_sem = _write(tmp_path, "sem.vl", SEMANTIC_MULTI_ERROR)
+    res_sem = _run_native(["check", p_sem, "--color=always"])
+    out_sem = res_sem.stdout + res_sem.stderr
+    assert "\x1b[1m[Velo Error] Semantic analysis failed with 2 errors.\x1b[0m" in out_sem
+
+    # --json with --color=always stays strictly color-free
+    res_json = _run_native(["check", path, "--json", "--color=always"])
+    out_json = res_json.stdout + res_json.stderr
+    assert "\x1b[" not in out_json
+    data = json.loads(res_json.stdout)
+    assert data["ok"] is False
+
+

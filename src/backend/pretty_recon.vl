@@ -217,7 +217,11 @@ act recon_emit_pretty(captured: string, src_path: string) {
         let llen = lens[k]
         if llen > 0 or k + 1 < line_count {
             let line_text = copy_slice_to_string(captured, starts[k], llen)
-            io.println(line_text)
+            if pretty_get_color() and (recon_starts_with(line_text, "Semantic analysis failed with ") or recon_starts_with(line_text, "[Velo Error] Semantic analysis failed with ")) {
+                io.println("\x1b[1m{line_text}\x1b[0m")
+            } else {
+                io.println(line_text)
+            }
 
             // A row already carries a block if the line immediately following it is not a [Velo row.
             mut next_is_row_or_end: bool = true

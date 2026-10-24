@@ -616,6 +616,27 @@ The chapter ships in full: slice 1 scaffold + now/delta/sleep_ms (closed namespa
     chain rebuilt Gen1→Gen2→Gen3 and `bin/velo.exe` updated with new fixed point SHA-256
     `375B55A400CBFCBBD1E47E359C217F6F207F3E1A25AF80F74CB4227CE6B7E902`; all ceilings ≤ 399.
     Sheet: `diagnostics.md` §S3 snapshot.
+* **Slice 4 (S4) [SHIPPED ✅ 2026-10-24]**: colors and `--color auto|always|never`
+  flag plumbing.
+  - Mode resolution: `--color auto|always|never` (default `auto`). Mode `auto`
+    resolves to `never` on both stages (documented residual until true TTY detection
+    lands in runtime); `never` keeps exact uncolored output; `always` wraps error
+    severity word in red 31 (`\x1b[31merror\x1b[0m`), warning in yellow 33
+    (`\x1b[33mwarning\x1b[0m`), and caret row in bold 1 (`\x1b[1m^^^^^^\x1b[0m`).
+  - Stage 2: `src/common/diagnostics.vl` gains `g_pretty_color: bool`, `pretty_set_color`,
+    `pretty_get_color` and colored snippet block rendering; `src/main.vl` parses
+    `--color auto|always|never` and `--color=...` next to `--json`, setting color state
+    for check pretty runs and ensuring `--json` remains strictly color-free;
+    `src/backend/pretty_recon.vl` wraps semantic analysis summary rows in bold 1.
+  - Stage 1: `velo/pretty_diag.py` `render_block` and `print_block` gain `color: bool = False`;
+    `velo.py` CLI parser accepts `--color` (`auto|always|never`) and plumbs `color_enabled`
+    to diagnostic blocks and unhandled exception catch-alls.
+  - Sacred wire format preservation: wire rows (`[Velo Error|Warning]`) are never colored;
+    `velo check --json` stays color-free ALWAYS on both stages.
+  - Battery `tests/test_diagnostics_pretty.py`: +2 tests (22 passed; suite **237/237**);
+    chain rebuilt Gen1→Gen2→Gen3 and `bin/velo.exe` updated with new fixed point SHA-256
+    `87257A5E45A53C1062ED897BA1CFF57233DD0F1EB2E4594ADD5D1CFB7E59F871`; all ceilings ≤ 399.
+    Sheet: `diagnostics.md` §S4 snapshot.
 
 ### 6.4 Developer Tooling: Language Server Protocol (LSP) (🟢 P3 Ecosystem)
 * A declarative VS Code extension (TextMate grammar + snippets + language configuration)

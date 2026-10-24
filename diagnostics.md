@@ -393,3 +393,31 @@ sweep rc, chain SHA, suite totals, ceilings.)
 * [x] Ceilings: every source <= 399 (`driver.vl` 298, `lexer.vl` 397, `parser.vl` 396,
   `diagnostics.vl` 130).
 
+### S4 — colors, `--color auto|always|never` (shipped 2026-10-24)
+
+* [x] Mode resolution: `--color auto|always|never` (default `auto`). `auto` resolves to
+  `never` on both stages (documented residual until true TTY detector is implemented).
+  `never` outputs verbatim uncolored bytes (today's exact bytes).
+* [x] Stage 2 renderer & plumbing:
+  - `src/common/diagnostics.vl` (157 lines): `g_pretty_color: bool`, `pretty_set_color(enabled: bool)`,
+    `pretty_get_color() -> bool`; `pretty_render_block` renders ANSI colored severity word
+    (`\x1b[31merror\x1b[0m` in red 31, `\x1b[33mwarning\x1b[0m` in yellow 33) and wraps carets in
+    bold 1 (`\x1b[1m{carets}\x1b[0m`).
+  - `src/main.vl` (182 lines): parses `--color auto|always|never` and `--color=...` next to `--json`.
+    Sets `pretty_set_color(color_always)` on pretty check and `pretty_set_color(false)` on JSON check.
+  - `src/backend/pretty_recon.vl` (276 lines): wraps semantic analysis summary rows in bold 1
+    (`\x1b[1m{summary_line}\x1b[0m`) when `pretty_get_color()` is active.
+* [x] Stage 1 twin:
+  - `velo/pretty_diag.py`: `render_block` and `print_block` gain `color: bool = False`; wraps error
+    in red 31, warning in yellow 33, and carets in bold 1.
+  - `velo.py`: `check_parser` adds `--color` argument with choices `["auto", "always", "never"]`
+    and default `"auto"`; passes `color=color_enabled` in check diagnostics loop and catch-all.
+* [x] Sacred wire format preservation:
+  - `[Velo Error]` / `[Velo Warning]` wire rows are NEVER colored (remain 100% byte-identical).
+  - `--json` check output remains strictly color-free on both stages even with `--color=always`.
+* [x] Battery `tests/test_diagnostics_pretty.py`: +2 tests (22 passed; suite **237/237** from 235 prior).
+* [x] Chain rebuilt Gen1→Gen2→Gen3, `bin/velo.exe` updated; fixed point SHA-256
+  `87257A5E45A53C1062ED897BA1CFF57233DD0F1EB2E4594ADD5D1CFB7E59F871`.
+* [x] Ceilings: every source <= 399 (`pretty_recon.vl` 276, `main.vl` 182, `diagnostics.vl` 157).
+
+

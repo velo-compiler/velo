@@ -48,6 +48,7 @@ def main():
     check_parser.add_argument("file", help="Path to the .vl source file")
     check_parser.add_argument("--json", action="store_true", dest="json_mode", help="Emit diagnostics as machine-readable JSON")
     check_parser.add_argument("--unsafe-shelf-index", action="store_true", help="Lower shelf index reads unguarded (out-of-range becomes silent UB)")
+    check_parser.add_argument("--color", choices=["auto", "always", "never"], default="auto", help="Configure diagnostic coloring: auto|always|never")
 
     # 'doc' command
     doc_parser = subparsers.add_parser("doc", help="Generate Markdown API documentation from source")
@@ -80,13 +81,15 @@ def main():
             if args.json_mode:
                 print(json.dumps(report, ensure_ascii=False))
             else:
+                color_enabled = (getattr(args, "color", "auto") == "always")
                 for diag in report["diagnostics"]:
                     tag = "Warning" if diag["severity"] == "warning" else "Error"
                     if diag["line"] > 0:
                         print(f"[Velo {tag}] {diag['file']}:{diag['line']}:{diag['col']} - {diag['message']}", file=sys.stderr)
-                        # 6.3 S1: the additive source-snippet block rides the row.
+                        # 6.3 S1/S4: the additive source-snippet block rides the row.
                         print_block(diag["file"], diag["line"], diag["col"],
-                                    diag["message"], diag["severity"], sys.stderr)
+                                    diag["message"], diag["severity"], sys.stderr,
+                                    color=color_enabled)
                     else:
                         print(f"[Velo {tag}] {diag['message']}", file=sys.stderr)
             if report["ok"] and not args.json_mode:
@@ -101,20 +104,23 @@ def main():
                 print(docs, end="")
     except Exception as e:
         print(f"\n[Velo Error] {e}", file=sys.stderr)
-        # 6.3 S1: run/build/emit-c doc failures carrying a position (Lexer /
+        # 6.3 S1/S4: run/build/emit-c doc failures carrying a position (Lexer /
         # Parser errors) get the same additive source-snippet block. Prefix
         # stripping mirrors driver.check's row-building logic verbatim.
+        color_enabled = (getattr(args, "color", "auto") == "always")
         if isinstance(e, LexerError):
             prefix = f"Lexer Error at line {e.line}, col {e.col}: "
             text = str(e)
             message = text[len(prefix):] if text.startswith(prefix) else text
-            print_block(args.file, e.line, e.col, message, "error", sys.stderr, length=getattr(e, "length", 1))
+            print_block(args.file, e.line, e.col, message, "error", sys.stderr,
+                        length=getattr(e, "length", 1), color=color_enabled)
         elif isinstance(e, ParserError):
             tok = e.token
             prefix = f"Parser Error at line {tok.line}, col {tok.col}: "
             text = str(e)
             message = text[len(prefix):] if text.startswith(prefix) else text
-            print_block(args.file, tok.line, tok.col, message, "error", sys.stderr, length=getattr(tok, "length", 1))
+            print_block(args.file, tok.line, tok.col, message, "error", sys.stderr,
+                        length=getattr(tok, "length", 1), color=color_enabled)
         sys.exit(1)
 
 if __name__ == "__main__":

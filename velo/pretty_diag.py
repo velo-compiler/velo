@@ -80,19 +80,32 @@ def _infer_token_len(source: str, want_line: int, col: int) -> int:
     return 1
 
 
-def render_block(file, line, col, message, severity, source, length=1):
+def render_block(file, line, col, message, severity, source, length=1, color=False):
     """The exact block bytes — useful for tests and for print_block."""
     w = _digit_count(line)
     caret_pad = max(0, col - 1)
     span_len = max(1, length if length is not None else 1)
+    carets = "^" * span_len
+    if color:
+        if severity == "error":
+            sev_str = "\x1b[31merror\x1b[0m"
+        elif severity == "warning":
+            sev_str = "\x1b[33mwarning\x1b[0m"
+        else:
+            sev_str = severity
+        caret_str = f"\x1b[1m{carets}\x1b[0m"
+    else:
+        sev_str = severity
+        caret_str = carets
+
     return "\n".join((
-        f"{file}:{line}:{col}: {severity}: {message}",
+        f"{file}:{line}:{col}: {sev_str}: {message}",
         f"{line} | {_line_text(source, line)}",
-        " " * (w + 1) + "| " + " " * caret_pad + "^" * span_len,
+        " " * (w + 1) + "| " + " " * caret_pad + caret_str,
     ))
 
 
-def print_block(path, line, col, message, severity, stream=None, length=None):
+def print_block(path, line, col, message, severity, stream=None, length=None, color=False):
     """Reads `path` from disk and prints the block to `stream` (stderr by
     default). Prints NOTHING when the file is unreadable or absent — the
     block is additive garnish, never worth a crash or a row-byte change.
@@ -105,5 +118,5 @@ def print_block(path, line, col, message, severity, stream=None, length=None):
         return
     if length is None:
         length = _infer_token_len(source, line, col)
-    print(render_block(path, line, col, message, severity, source, length=length),
+    print(render_block(path, line, col, message, severity, source, length=length, color=color),
           file=stream if stream is not None else sys.stderr)
