@@ -55,18 +55,44 @@ def _line_text(source: str, want_line: int) -> str:
     return source[start:end].replace('\t', ' ')
 
 
-def render_block(file, line, col, message, severity, source):
+def _infer_token_len(source: str, want_line: int, col: int) -> int:
+    """Infers offending token span for check mode from source text."""
+    n = len(source)
+    start = 0
+    line_no = 1
+    while line_no < want_line and start < n:
+        if source[start] == '\n':
+            line_no += 1
+        start += 1
+    idx = start + max(0, col - 1)
+    if idx >= n or idx < 0:
+        return 1
+    ch = source[idx]
+    if ch.isalnum() or ch == '_':
+        end = idx
+        while end < n and (source[end].isalnum() or source[end] == '_'):
+            end += 1
+        return max(1, end - idx)
+    if idx + 3 <= n and source[idx:idx + 3] in ("..=", "<<=", ">>="):
+        return 3
+    if idx + 2 <= n and source[idx:idx + 2] in ("->", "=>", "==", "!=", "<=", ">=", "..", "/*", "+=", "-=", "*=", "/=", "<<", ">>", "&&", "||"):
+        return 2
+    return 1
+
+
+def render_block(file, line, col, message, severity, source, length=1):
     """The exact block bytes — useful for tests and for print_block."""
     w = _digit_count(line)
     caret_pad = max(0, col - 1)
+    span_len = max(1, length if length is not None else 1)
     return "\n".join((
         f"{file}:{line}:{col}: {severity}: {message}",
         f"{line} | {_line_text(source, line)}",
-        " " * (w + 1) + "| " + " " * caret_pad + "^",
+        " " * (w + 1) + "| " + " " * caret_pad + "^" * span_len,
     ))
 
 
-def print_block(path, line, col, message, severity, stream=None):
+def print_block(path, line, col, message, severity, stream=None, length=None):
     """Reads `path` from disk and prints the block to `stream` (stderr by
     default). Prints NOTHING when the file is unreadable or absent — the
     block is additive garnish, never worth a crash or a row-byte change.
@@ -77,5 +103,7 @@ def print_block(path, line, col, message, severity, stream=None):
             source = fh.read()
     except OSError:
         return
-    print(render_block(path, line, col, message, severity, source),
+    if length is None:
+        length = _infer_token_len(source, line, col)
+    print(render_block(path, line, col, message, severity, source, length=length),
           file=stream if stream is not None else sys.stderr)

@@ -114,7 +114,7 @@ act parser_consume(p: @Parser, kind: i32, err_msg: string) -> Token {
     if parser_check(p, kind) {
         return parser_advance(p)
     }
-    report_parse(p, p.filename, tok.line, tok.col, err_msg)
+    report_parse(p, p.filename, tok.line, tok.col, tok.length, err_msg)
     p.had_error = true
     return tok
 }
@@ -263,22 +263,22 @@ act parse_type_annotation(p: @Parser) -> string {
 
     // 5.2: a bare `shelf` has no element type to lower — the loud parse error (Stage 1's words)
     if base_tok_kind == TOK_SHELF and not heap_prefix and not parser_check(p, TOK_LBRACKET) {
-        report_parse(p, p.filename, type_tok.line, type_tok.col, "a bare 'shelf' needs an element type: use shelf[T]")
+        report_parse(p, p.filename, type_tok.line, type_tok.col, type_tok.length, "a bare 'shelf' needs an element type: use shelf[T]")
         p.had_error = true
     }
     // 5.2 slice 10: a bare `heap shelf` needs its element — same-trade reject
     if heap_prefix and not parser_check(p, TOK_LBRACKET) {
-        report_parse(p, p.filename, type_tok.line, type_tok.col, "a bare 'heap shelf' needs an element type: use heap shelf[T]")
+        report_parse(p, p.filename, type_tok.line, type_tok.col, type_tok.length, "a bare 'heap shelf' needs an element type: use heap shelf[T]")
         p.had_error = true
     }
     // 5.2 slice 9: a bare `ring` needs its element — same-trade parse reject
     if base_tok_kind == TOK_RING and not parser_check(p, TOK_LBRACKET) {
-        report_parse(p, p.filename, type_tok.line, type_tok.col, "a bare 'ring' needs an element type: use ring[T]")
+        report_parse(p, p.filename, type_tok.line, type_tok.col, type_tok.length, "a bare 'ring' needs an element type: use ring[T]")
         p.had_error = true
     }
     // 5.2 slice 6: a bare `Map` needs BOTH slots — the same-trade parse reject (Stage 1's words)
     if raw_name == "Map" and not parser_check(p, TOK_LBRACKET) {
-        report_parse(p, p.filename, type_tok.line, type_tok.col, "a bare 'Map' needs key and value types: use Map[K, V]")
+        report_parse(p, p.filename, type_tok.line, type_tok.col, type_tok.length, "a bare 'Map' needs key and value types: use Map[K, V]")
         p.had_error = true
     }
     if parser_match(p, TOK_LBRACKET) {
@@ -352,7 +352,7 @@ act parse_top_level_declaration(p: @Parser) -> @StmtNode {
     }
 
     let tok = parser_peek(p, 0)
-    report_parse(p, p.filename, tok.line, tok.col, "Unexpected top-level token")
+    report_parse(p, p.filename, tok.line, tok.col, tok.length, "Unexpected top-level token")
     p.had_error = true
     parser_advance(p)
     return null

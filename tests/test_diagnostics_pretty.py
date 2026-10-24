@@ -128,7 +128,7 @@ def test_row_plus_block_stage1(tmp_path):
     # The additive block: header, gutter, caret — in that order.
     header_pos = err.index(f"{path}:3:1: error: Unexpected top-level token 'pickle'")
     gutter_pos = err.index("3 | pickle = definitely_not_a_decl")
-    caret_pos = err.index("  | ^")
+    caret_pos = err.index("  | ^^^^^^")
     row_pos = err.index("[Velo Error]")
     assert row_pos < header_pos < gutter_pos < caret_pos
 
@@ -194,9 +194,9 @@ def test_row_plus_block_native(tmp_path):
     assert ":3:10: error: Unexpected top-level token" in err
     gutters = [ln for ln in err.splitlines() if ln == "3 | pickle = definitely_not_a_decl"]
     assert len(gutters) == 3
-    assert err.count("  | ^") == 1  # only the col-1 caret has this exact bytes
-    assert "  |        ^" in err  # col 8
-    assert "  |          ^" in err  # col 10
+    assert "  | ^^^^^^" in err  # col 1: pickle (len 6)
+    assert "  |        ^" in err  # col 8: = (len 1)
+    assert "  |          ^^^^^^^^^^^^^^^^^^^^^" in err  # col 10: definitely_not_a_decl (len 21)
 
 
 def test_json_lane_block_free_native(tmp_path):
@@ -354,7 +354,7 @@ def test_block_shape_parity_gutter_and_caret(tmp_path):
     g1 = [ln for ln in s1.stderr.splitlines() if ln == "3 | pickle = definitely_not_a_decl"]
     g2 = [ln for ln in (s2.stdout + s2.stderr).splitlines() if ln == "3 | pickle = definitely_not_a_decl"]
     assert g1 and g2
-    assert "  | ^" in s1.stderr and "  | ^" in (s2.stdout + s2.stderr)
+    assert "  | ^^^^^^" in s1.stderr and "  | ^^^^^^" in (s2.stdout + s2.stderr)
 
 
 def test_block_position_parity_first_row(tmp_path):
@@ -366,3 +366,35 @@ def test_block_position_parity_first_row(tmp_path):
     py_first = py_report["diagnostics"][0]
     native_first = native_report["diagnostics"][0]
     assert (py_first["line"], py_first["col"]) == (native_first["line"], native_first["col"]) == (5, 1)
+
+
+# ---------------- 6.3 S3: Span carets and lexer warnings ----------------
+
+def test_lexer_warning_blocks_native(tmp_path):
+    if not os.path.exists("bin/velo.exe"):
+        pytest.skip("bin/velo.exe not built; skipping native test")
+    # Unclosed block comment: warning row + warning block with span carets (^^)
+    p1 = _write(tmp_path, "warn_comment.vl", "/* unclosed comment\nact main() -> i32 { return 0; }\n")
+    res1 = _run_native(["check", p1])
+    err1 = res1.stdout + res1.stderr
+    assert "[Velo Warning] lexer:1:1 - Unclosed block comment" in err1
+    assert f"{p1}:1:1: warning: Unclosed block comment" in err1
+    assert "1 | /* unclosed comment" in err1
+    assert "  | ^^" in err1
+
+    # Unknown character: warning row + warning block with point caret (^)
+    p2 = _write(tmp_path, "warn_char.vl", "act main() -> i32 { let $ = 0; return 0; }\n")
+    res2 = _run_native(["check", p2])
+    err2 = res2.stdout + res2.stderr
+    assert "[Velo Warning] lexer:1:25 - Unknown character encountered" in err2
+    assert f"{p2}:1:25: warning: Unknown character encountered" in err2
+    assert "1 | act main() -> i32 { let $ = 0; return 0; }" in err2
+    assert "  |                         ^" in err2
+
+
+def test_run_lane_span_caret_stage1(tmp_path):
+    path = _write(tmp_path, "broken.vl", PARSE_BROKEN)
+    res = _run_stage1(["run", path])
+    assert res.returncode == 1
+    assert "  | ^^^^^^" in res.stderr
+

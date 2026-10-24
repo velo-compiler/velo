@@ -128,7 +128,7 @@ act parse_expression(p: @Parser) -> @ExprNode {
 // or the `parse`/`parser` pseudo-name), then rides the additive source-snippet
 // block below it. Severity is always "error" for parse rows (warnings are
 // lexer-only for now).
-act report_parse(p: @Parser, label: string, line: i32, col: i32, msg: string) {
+act report_parse(p: @Parser, label: string, line: i32, col: i32, length: usize, msg: string) {
     report_error(label, line, col, msg)
-    pretty_render_block(p.filename, line, col, msg, "error", p.source)
+    pretty_render_block(p.filename, line, col, length, msg, "error", p.source)
 }

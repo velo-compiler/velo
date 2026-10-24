@@ -108,13 +108,13 @@ def main():
             prefix = f"Lexer Error at line {e.line}, col {e.col}: "
             text = str(e)
             message = text[len(prefix):] if text.startswith(prefix) else text
-            print_block(args.file, e.line, e.col, message, "error", sys.stderr)
+            print_block(args.file, e.line, e.col, message, "error", sys.stderr, length=getattr(e, "length", 1))
         elif isinstance(e, ParserError):
             tok = e.token
             prefix = f"Parser Error at line {tok.line}, col {tok.col}: "
             text = str(e)
             message = text[len(prefix):] if text.startswith(prefix) else text
-            print_block(args.file, tok.line, tok.col, message, "error", sys.stderr)
+            print_block(args.file, tok.line, tok.col, message, "error", sys.stderr, length=getattr(tok, "length", 1))
         sys.exit(1)
 
 if __name__ == "__main__":

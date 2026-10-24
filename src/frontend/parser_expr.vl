@@ -268,7 +268,7 @@ act parse_primary(p: @Parser) -> @ExprNode {
     }
 
     let tok = parser_peek(p, 0)
-    report_parse(p, p.filename, tok.line, tok.col, "Unexpected token in expression")
+    report_parse(p, p.filename, tok.line, tok.col, tok.length, "Unexpected token in expression")
     p.had_error = true
     parser_advance(p)
     return null
@@ -293,7 +293,7 @@ act parse_postfix(p: @Parser) -> @ExprNode {
                 expr = make_member_expr(expr, mname, mem_tok.line, mem_tok.col)
             } else {
                 let mem_tok = parser_peek(p, 0)
-                report_parse(p, p.filename, mem_tok.line, mem_tok.col, "Expected member name after '.'")
+                report_parse(p, p.filename, mem_tok.line, mem_tok.col, mem_tok.length, "Expected member name after '.'")
                 p.had_error = true
             }
         } else if parser_check(p, TOK_LBRACKET) and is_generic_call(p) {

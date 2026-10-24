@@ -78,14 +78,14 @@ act parse_field_default(p: @Parser) -> @ExprNode {
     if parser_match(p, TOK_MINUS) {
         let tok = parser_peek(p, 0)
         if tok.kind != TOK_INT_LIT and tok.kind != TOK_FLOAT_LIT {
-            report_parse(p, "parse", tok.line, tok.col, "Field default after '-' must be a numeric literal")
+            report_parse(p, "parse", tok.line, tok.col, tok.length, "Field default after '-' must be a numeric literal")
         }
         let val = parse_expression(p)
         return make_unary_expr(TOK_MINUS, val, tok.line, tok.col)
     }
     let tok = parser_peek(p, 0)
     if not (tok.kind == TOK_INT_LIT or tok.kind == TOK_FLOAT_LIT or tok.kind == TOK_STRING_LIT or tok.kind == TOK_TRUE or tok.kind == TOK_FALSE) {
-        report_parse(p, "parse", tok.line, tok.col, "Field default must be a constant literal (number, string, or bool)")
+        report_parse(p, "parse", tok.line, tok.col, tok.length, "Field default must be a constant literal (number, string, or bool)")
     }
     return parse_expression(p)
 }
@@ -112,7 +112,7 @@ act parse_type_alias_decl(p: @Parser) -> @StmtNode {
         base = copy_slice_to_string(base, 1, str.len(base) - 1)
     }
     if not is_alias_target_primitive(base) {
-        report_parse(p, "parse", name_tok.line, name_tok.col, "Type alias target must be a primitive type (or @primitive)")
+        report_parse(p, "parse", name_tok.line, name_tok.col, name_tok.length, "Type alias target must be a primitive type (or @primitive)")
     }
     parser_match(p, TOK_SEMICOLON)
     parser_skip_newlines(p)
@@ -143,7 +143,7 @@ act parse_data_decl(p: @Parser) -> @StmtNode {
         } else if attr_name == "packed" {
             is_packed = true
         } else {
-            report_parse(p, "parse", attr_tok.line, attr_tok.col, "Unknown data attribute (expected 'align' or 'packed')")
+            report_parse(p, "parse", attr_tok.line, attr_tok.col, attr_tok.length, "Unknown data attribute (expected 'align' or 'packed')")
         }
     }
 

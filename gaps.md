@@ -593,6 +593,29 @@ The chapter ships in full: slice 1 scaffold + now/delta/sleep_ms (closed namespa
   **233/233**), chain rebuilt Gen1→Gen2→Gen3 and `bin/velo.exe` updated with new
   fixed point SHA-256 `4EFBFD05966A777AE656C04FDEF8C108DFDBD6725F8A204C901B78987D653CE4`;
   all ceilings ≤ 399. Sheet: `diagnostics.md` §S2 snapshot.
+* **Slice 3 (S3) [SHIPPED ✅ 2026-10-24]**: span carets (`^^^`) where token span is
+  known + lexer warning blocks with `warning:` headers.
+  - Stage 2: `pretty_render_block` (`src/common/diagnostics.vl`, 122 → 130 lines)
+    gains `length: usize` and renders `^` * max(1, length); wrapper `report_parse`
+    (`src/frontend/parser_binary.vl`) gains `length: usize` and passes `tok.length`
+    to `pretty_render_block`; all 14 parse-report sites updated to pass token length
+    (`tok.length` / `type_tok.length` / `name_tok.length` / `attr_tok.length` /
+    `mem_tok.length` / `idx_tok.length` / `cur.length`). Reconstructed semantic rows
+    (`pretty_recon.vl`) pass `length = 1` (point caret residual).
+  - Lexer warnings: `src/frontend/lexer.vl` gains `file_path: string` in `Lexer` struct;
+    `create_lexer` retains backward-compatible 3-arg signature initializing `file_path: "<input>"`,
+    and `driver.vl` explicitly assigns `lex.file_path` for compilation (line 103) and docgen (line 279);
+    both lexer warning sites (unclosed block comment with length 2, unknown character with length 1)
+    render snippet blocks with `warning:` headers. Comments shaved in `lexer.vl` so file stays at 397 lines.
+  - Stage 1: `velo/tokens.py` `Token` gains `start: int = 0, length: int = 0`; `velo/lexer.py`
+    `tokenize()` populates `tok.start` and `tok.length`, and `LexerError` gains `length: int = 1`
+    (length 2 on unclosed comment); `velo/pretty_diag.py` `render_block` and `print_block` support
+    `length` parameter and `_infer_token_len` (so `driver.py`'s report dict gains NO fields, keeping
+    `--json` schema untouched); `velo.py` passes `length` in run/build catch-all.
+  - Battery `tests/test_diagnostics_pretty.py`: +2 tests (20 passed; suite **235/235**);
+    chain rebuilt Gen1→Gen2→Gen3 and `bin/velo.exe` updated with new fixed point SHA-256
+    `375B55A400CBFCBBD1E47E359C217F6F207F3E1A25AF80F74CB4227CE6B7E902`; all ceilings ≤ 399.
+    Sheet: `diagnostics.md` §S3 snapshot.
 
 ### 6.4 Developer Tooling: Language Server Protocol (LSP) (🟢 P3 Ecosystem)
 * A declarative VS Code extension (TextMate grammar + snippets + language configuration)

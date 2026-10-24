@@ -2,10 +2,11 @@ from typing import List, Optional
 from velo.tokens import Token, TokenType, KEYWORDS
 
 class LexerError(Exception):
-    def __init__(self, message: str, line: int, col: int):
+    def __init__(self, message: str, line: int, col: int, length: int = 1):
         super().__init__(f"Lexer Error at line {line}, col {col}: {message}")
         self.line = line
         self.col = col
+        self.length = length
 
 class Lexer:
     def __init__(self, source: str, filename: str = "<stdin>"):
@@ -66,7 +67,7 @@ class Lexer:
                 while depth > 0:
                     curr = self._peek()
                     if curr is None:
-                        raise LexerError("Unterminated block comment", start_line, start_col)
+                        raise LexerError("Unterminated block comment", start_line, start_col, length=2)
                     if curr == '/' and self._peek(1) == '*':
                         self._advance()
                         self._advance()
@@ -81,6 +82,7 @@ class Lexer:
 
             # Newline handling (Go-style statement termination)
             if ch == '\n':
+                token_pos = self.pos
                 token_line = self.line
                 token_col = self.col
                 self._advance()
@@ -101,64 +103,44 @@ class Lexer:
                     TokenType.RBRACE,
                     TokenType.RBRACKET,
                 ):
-                    tok = Token(TokenType.NEWLINE, "\n", token_line, token_col)
+                    tok = Token(TokenType.NEWLINE, "\n", token_line, token_col, start=token_pos, length=1)
                     self.tokens.append(tok)
                     last_meaningful_token = tok
                 continue
 
             # Semicolon (explicit statement separator)
             if ch == ';':
-                tok = Token(TokenType.SEMICOLON, ";", self.line, self.col)
+                tok = Token(TokenType.SEMICOLON, ";", self.line, self.col, start=self.pos, length=1)
                 self._advance()
                 self.tokens.append(tok)
                 last_meaningful_token = tok
                 continue
 
+            start_pos = self.pos
             start_line = self.line
             start_col = self.col
 
             # Raw multi-line string literals (`raw`)
             if ch == '`':
                 tok = self._scan_raw_string(start_line, start_col)
-                self.tokens.append(tok)
-                last_meaningful_token = tok
-                continue
-
-            # String literals
-            if ch == '"':
+            elif ch == '"':
                 tok = self._scan_string(start_line, start_col)
-                self.tokens.append(tok)
-                last_meaningful_token = tok
-                continue
-
-            # Character literals ('a', '\n', etc.)
-            if ch == "'":
+            elif ch == "'":
                 tok = self._scan_char(start_line, start_col)
-                self.tokens.append(tok)
-                last_meaningful_token = tok
-                continue
-
-            # Numbers
-            if ch.isdigit():
+            elif ch.isdigit():
                 tok = self._scan_number(start_line, start_col)
-                self.tokens.append(tok)
-                last_meaningful_token = tok
-                continue
-
-            # Identifiers and Keywords
-            if ch.isalpha() or ch == '_':
+            elif ch.isalpha() or ch == '_':
                 tok = self._scan_identifier(start_line, start_col)
-                self.tokens.append(tok)
-                last_meaningful_token = tok
-                continue
+            else:
+                tok = self._scan_operator(start_line, start_col)
 
-            # Multi-character & Single-character operators
-            tok = self._scan_operator(start_line, start_col)
+            tok.start = start_pos
+            tok.length = self.pos - start_pos
             self.tokens.append(tok)
             last_meaningful_token = tok
 
         # End of File token
-        self.tokens.append(Token(TokenType.EOF, "", self.line, self.col))
+        self.tokens.append(Token(TokenType.EOF, "", self.line, self.col, start=self.pos, length=0))
         return self.tokens
 
     def _scan_raw_string(self, line: int, col: int) -> Token:

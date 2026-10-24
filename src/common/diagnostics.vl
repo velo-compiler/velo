@@ -104,12 +104,16 @@ act pretty_pad_spaces(sb: @StringBuilder, count: usize) {
 // Renders one diagnostic's source-snippet block (spec above). Stage 2 calls
 // it via report_parse for parse rows; Stage 1 mirrors the exact bytes in
 // velo/pretty_diag.py.
-act pretty_render_block(file: string, line: i32, col: i32, message: string, sev: string, source: string) {
+act pretty_render_block(file: string, line: i32, col: i32, length: usize, message: string, sev: string, source: string) {
     io.println("{file}:{line}:{col}: {sev}: {message}")
     let src_line = pretty_line_text(source, line)
     io.println("{line} | {src_line}")
     let w = pretty_digit_count(line)
-    mut pad = create_sb(w + (col as usize) + 6)
+    mut span_len: usize = 1
+    if length > 1 {
+        span_len = length
+    }
+    mut pad = create_sb(w + (col as usize) + span_len + 6)
     pretty_pad_spaces(@pad, w + 1)
     sb_append_str(@pad, "| ")
     mut caret_pad: usize = 0
@@ -117,6 +121,10 @@ act pretty_render_block(file: string, line: i32, col: i32, message: string, sev:
         caret_pad = (col - 1) as usize
     }
     pretty_pad_spaces(@pad, caret_pad)
-    sb_append_char(@pad, '^')
+    mut s: usize = 0
+    loop s < span_len {
+        sb_append_char(@pad, '^')
+        s += 1
+    }
     io.println(sb_to_string(@pad))
 }

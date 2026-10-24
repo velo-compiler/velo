@@ -101,6 +101,7 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
     // Capacity must cover the absolute worst case: one token per source
     // character, plus EOF. A fixed cap silently truncates large files.
     mut lex = create_lexer(source, slen, slen + 2)
+    lex.file_path = file_path
     tokenize(@lex)
 
     if lex.dropped_count > 0 {
@@ -277,6 +278,7 @@ act generate_docs_for_source(source_path: string) -> string {
     let slen = str.len(source)
     // Same capacity rule and overflow guard as load_file_and_deps.
     mut lex = create_lexer(source, slen, slen + 2)
+    lex.file_path = source_path
     tokenize(@lex)
 
     if lex.dropped_count > 0 {

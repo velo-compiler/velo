@@ -256,7 +256,7 @@ act recon_emit_pretty(captured: string, src_path: string) {
                                 fname = src_path
                             }
                             if fname == src_path and flines > 0 {
-                                pretty_render_block(fname, flines, fcols, msg, "error", source)
+                                pretty_render_block(fname, flines, fcols, 1, msg, "error", source)
                             }
                         }
                     }

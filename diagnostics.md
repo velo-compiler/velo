@@ -365,3 +365,31 @@ sweep rc, chain SHA, suite totals, ceilings.)
   (Gen2 ≡ Gen3 emit-c).
 * [x] Ceilings: every source ≤ 399 (`pretty_recon.vl` 272, `check.vl` 348,
   `diagnostics.vl` 122).
+
+### S3 — span carets (^^^) and lexer warning blocks (shipped 2026-10-24)
+
+* [x] Stage 2 renderer: `pretty_render_block` (`src/common/diagnostics.vl`, 130 lines)
+  gains `length: usize` and renders `span_len = max(1, length)` carets via loop.
+* [x] Stage 2 parse wrapper: `report_parse` (`src/frontend/parser_binary.vl`, 134 lines)
+  gains `length: usize` and passes it to `pretty_render_block`. All 14 parse report
+  sites across `parser.vl` (6), `parser_decl.vl` (4), `parser_expr.vl` (2),
+  and `parser_stmt.vl` (2) pass the offending token's `.length`.
+* [x] Semantic rows: `src/backend/pretty_recon.vl` passes `length = 1` (point caret residual).
+* [x] Lexer warnings: `src/frontend/lexer.vl` `Lexer` struct gains `file_path: string`;
+  `create_lexer` retains backward-compatible signature initializing `file_path: "<input>"`,
+  and `driver.vl` sets `lex.file_path = file_path` / `lex.file_path = source_path`;
+  the 2 warning sites in `lexer.vl` (unclosed comment length 2, unknown character length 1)
+  render `warning:` snippet blocks with exact span carets. Comments shaved so `lexer.vl`
+  stays at 397 lines (<= 399 ceiling).
+* [x] Stage 1 twin: `velo/tokens.py` `Token` gains `start: int = 0, length: int = 0`;
+  `velo/lexer.py` records `start` and `length` on each `Token`, `LexerError` accepts `length`;
+  `velo/pretty_diag.py` adds `_infer_token_len` when `length` is omitted (preserving the
+  `--json` schema without adding fields to `driver.check` report dict); `velo.py` catch-all
+  passes `tok.length` for `ParserError` and `e.length` for `LexerError`.
+* [x] Battery `tests/test_diagnostics_pretty.py`: +2 tests (20 passed; suite **235/235**
+  from 233 prior).
+* [x] Chain rebuilt Gen1→Gen2→Gen3, `bin/velo.exe` updated; fixed point SHA-256
+  `375B55A400CBFCBBD1E47E359C217F6F207F3E1A25AF80F74CB4227CE6B7E902`.
+* [x] Ceilings: every source <= 399 (`driver.vl` 298, `lexer.vl` 397, `parser.vl` 396,
+  `diagnostics.vl` 130).
+

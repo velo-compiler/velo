@@ -152,6 +152,8 @@ class Token:
     col: int
     raw_str: Optional[str] = None
     type_name: Optional[str] = None
+    start: int = 0
+    length: int = 0
 
     def __repr__(self) -> str:
         return f"Token({self.type.name}, {self.value!r}, line={self.line}, col={self.col})"

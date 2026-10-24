@@ -6,6 +6,7 @@ use "../common/utils.vl"
 use "../common/diagnostics.vl"
 
 data Lexer {
+    file_path: string
     source: string
     source_len: usize
     pos: usize
@@ -14,7 +15,6 @@ data Lexer {
     tokens: @Token
     token_count: usize
     token_cap: usize
-    // Number of tokens silently discarded because the buffer was full.
     dropped_count: usize
     last_kind: i32
 }
@@ -45,7 +45,6 @@ act check_keyword(source: string, start: usize, len: usize) -> i32 {
         if source[start] == 'u' and source[start + 1] == 's' and source[start + 2] == 'e' { return TOK_USE }
         if source[start] == 'a' and source[start + 1] == 'n' and source[start + 2] == 'd' { return TOK_AND }
         if source[start] == 'n' and source[start + 1] == 'o' and source[start + 2] == 't' { return TOK_NOT }
-        // 5.2 slice 6: `map` joins the reserved set (type `Map[K, V]` stays an identifier)
         if source[start] == 'm' and source[start + 1] == 'a' and source[start + 2] == 'p' { return TOK_MAP }
     } else if len == 4 {
         if source[start] == 'd' and source[start + 1] == 'a' and source[start + 2] == 't' and source[start + 3] == 'a' { return TOK_DATA }
@@ -86,7 +85,7 @@ act add_token(lex: @Lexer, kind: i32, start: usize, len: usize, line: i32, col: 
 // Initializes a new Lexer for the provided source string buffer.
 act create_lexer(source: string, source_len: usize, capacity: usize) -> Lexer {
     let buf: @Token = mem.alloc(@Token, capacity)
-    return Lexer{ source: source, source_len: source_len, pos: 0, line: 1, col: 1, tokens: buf, token_count: 0, token_cap: capacity, dropped_count: 0, last_kind: TOK_EOF }
+    return Lexer{ file_path: "<input>", source: source, source_len: source_len, pos: 0, line: 1, col: 1, tokens: buf, token_count: 0, token_cap: capacity, dropped_count: 0, last_kind: TOK_EOF }
 }
 
 // Tokenizes the entire source code into the pre-allocated token buffer.
@@ -143,6 +142,7 @@ act tokenize(lex: @Lexer) {
             }
             if depth > 0 {
                 report_warning("lexer", start_line, start_col, "Unclosed block comment")
+                pretty_render_block(lex.file_path, start_line, start_col, 2, "Unclosed block comment", "warning", lex.source)
             }
         } else if is_ident_start(c) {  // identifier or keyword: keyword table at check_keyword
             loop lex.pos < len and is_ident_part(src[lex.pos]) {
@@ -151,8 +151,7 @@ act tokenize(lex: @Lexer) {
             }
             let tok_len = lex.pos - start_pos
             mut kind = check_keyword(src, start_pos, tok_len)
-            // slice 11: contextual `shelf` — identifier unless immediately
-            // followed by `[` or preceded by `heap` (identical on both stages)
+            // contextual 'shelf': identifier unless followed by '[' or preceded by 'heap'
             if kind == TOK_SHELF and lex.last_kind != TOK_HEAP and (lex.pos >= len or src[lex.pos] != '[') {
                 kind = TOK_IDENTIFIER
             }
@@ -386,14 +385,13 @@ act tokenize(lex: @Lexer) {
                 lex.pos += op_len
                 lex.col += (op_len as i32)
             } else {
-                // Unknown character
                 report_warning("lexer", start_line, start_col, "Unknown character encountered")
+                pretty_render_block(lex.file_path, start_line, start_col, 1, "Unknown character encountered", "warning", lex.source)
                 lex.pos += 1
                 lex.col += 1
             }
         }
     }
 
-    // Append EOF token
     add_token(lex, TOK_EOF, lex.pos, 0, lex.line, lex.col)
 }

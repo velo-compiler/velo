@@ -83,7 +83,7 @@ act parse_loop_stmt(p: @Parser) -> @StmtNode {
                 index_name = copy_slice_to_string(p.source, idx_tok.start, idx_tok.length)
                 if parser_check(p, TOK_COMMA) {
                     parser_advance(p)
-                    report_parse(p, p.filename, idx_tok.line, idx_tok.col, "loop of takes at most two bindings (value, then index)")
+                    report_parse(p, p.filename, idx_tok.line, idx_tok.col, idx_tok.length, "loop of takes at most two bindings (value, then index)")
                     p.had_error = true
                     // best effort: drop the extra bindings so parsing resumes
                     // at the collection (one defect, one error)
@@ -197,7 +197,7 @@ act parse_on_stmt(p: @Parser) -> @StmtNode {
             if parser_check(p, TOK_FAT_ARROW) or parser_check(p, TOK_COLON) {
                 parser_advance(p)
             } else {
-                report_parse(p, "parser", cur.line, cur.col, "Expected '=>' or ':' after pattern")
+                report_parse(p, "parser", cur.line, cur.col, cur.length, "Expected '=>' or ':' after pattern")
                 p.had_error = true
             }
         }
