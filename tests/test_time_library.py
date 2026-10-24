@@ -222,3 +222,33 @@ class TestTimeSlice1(unittest.TestCase):
             outs[0],
             "unknown time constant 'PI' (time functions are: now, delta, sleep_ms)")
         self.assertEqual(outs[0], outs[1])
+
+
+EXAMPLE34 = ROOT / "examples" / "34_time_basics.vl"
+
+EXAMPLE34_LINES = [
+    "anchor 0",
+    "clock ok",
+    "dt ok",
+    "arith ok",
+    "lane ok",
+    "ticks ok",
+]
+
+
+class TestTimeExample34(unittest.TestCase):
+    """gaps.md 5.5 → close: the chapter example is the byte-identical
+    parity row (example-30 house style: header comment, deterministic
+    program, every interpolation binds locals first; margins validated
+    IN the program so only fixed verdict strings reach stdout)."""
+
+    def test_example34_parity_and_output(self):
+        src = EXAMPLE34.read_text(encoding="utf-8")
+        s1 = run_stage("stage1", src, "time_example34")
+        s2 = run_stage("stage2", src, "time_example34")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-3000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-3000:])
+        out1 = s1.stdout.replace("\r\n", "\n")
+        out2 = s2.stdout.replace("\r\n", "\n")
+        self.assertEqual(out1, out2, "example 34 outputs diverged")
+        self.assertEqual(out1.strip().splitlines(), EXAMPLE34_LINES)

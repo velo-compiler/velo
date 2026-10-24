@@ -1,0 +1,78 @@
+/* 5.5 High-Resolution Clock & Timing — the sys.time chapter, one
+ * deterministic sweep.
+ *
+ * One program exercising the whole shipped surface: the zero-anchored
+ * delta clock (the first time.delta() call returns EXACTLY 0 — the one
+ * element of the surface that pins byte-exactly), the monotonic
+ * microsecond pair across a real sleep, delta-time through the game-loop
+ * round trip, plain i64 dt arithmetic, sleep on the statement lane across
+ * int spells (machine rendering + literal + negative clamp), and a
+ * shelf[i64] tick log whose monotonicity is validated program-side.
+ * Raw tick prints are impossible — elapsed values are machine-dependent —
+ * so every margin is validated IN the program (sleep 50 ms must measure
+ * in [45_000, 2_000_000] us; spans stay under the 10 s sanity rail) and
+ * only fixed verdict strings reach stdout. That is the byte-parity
+ * mechanic: both compilers lower the SAME helper calls, and the verdicts
+ * agree by construction.
+ * NO calls/indexing inside {..} interpolations — both compilers lower
+ * those untranslated (gaps 6.7); every value binds to a local first.
+ * Output is byte-identical on the Stage 1 Python compiler and the
+ * self-hosted Stage 2 compiler.
+ */
+use sys.io
+use sys.time
+
+act main() -> i32 {
+    // 1) The zero anchor: first delta() pins exactly 0.
+    let anchor = time.delta()
+    io.println("anchor {anchor}")
+
+    // 2) The monotonic pair across a real sleep (window-validated verdict).
+    let t0 = time.now()
+    time.sleep_ms(50)
+    let t1 = time.now()
+    let span = t1 - t0
+    if span >= 45000 and span <= 2000000 {
+        io.println("clock ok")
+    } else {
+        io.println("clock bad")
+    }
+
+    // 3) delta(): the game-loop round trip rides the same window.
+    let dt = time.delta()
+    if dt >= 45000 and dt <= 2000000 {
+        io.println("dt ok")
+    } else {
+        io.println("dt bad")
+    }
+
+    // 4) dt arithmetic: microseconds are plain i64 (doubled tracks dt 2x).
+    let doubled = dt + dt
+    if doubled > dt and doubled <= 4000000 {
+        io.println("arith ok")
+    } else {
+        io.println("arith bad")
+    }
+
+    // 5) The statement lane: sleep as a bare void call across int spells —
+    //    an i8 machine word, a default-spelled literal, and the negative
+    //    clamp (contract: the duration is an int count; floats reject).
+    let tiny: i8 = 5
+    time.sleep_ms(tiny)
+    time.sleep_ms(10)
+    time.sleep_ms(-3)
+    io.println("lane ok")
+
+    // 6) A tick log: three monotonic ticks on a shelf[i64], sanity-railed.
+    mut ticks: shelf[i64] = shelf[time.now(), time.now(), time.now()]
+    let a: i64 = ticks[0]
+    let b: i64 = ticks[1]
+    let c: i64 = ticks[2]
+    if b >= a and c >= b and c - a <= 10000000 {
+        io.println("ticks ok")
+    } else {
+        io.println("ticks bad")
+    }
+
+    return 0
+}

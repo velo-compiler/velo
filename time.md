@@ -104,17 +104,34 @@ literal is f32 by default (house literal curve) and both stages agreed on
 
 Missing surface:
 
-* [ ] `examples/34_time_basics.vl` (example-30 house style: header comment;
-      deterministic single-frame timing shape — bind raw locals, validate
-      WINDOWS in the program, print fixed verdict strings; every
-      interpolation binds locals first — gaps 6.7; NO raw tick prints).
-* [ ] `tests/test_time_library.py` gains the example-34 parity row
-      (`EXAMPLE34_LINES`, byte-identical both stages).
-* [ ] `gaps.md` 5.5 → `[COMPLETED] ✅` with the Final-form slice entry
-      (Former Defect → Fix → Residual → Verification).
-* [ ] Sweep finale (full-row recount) + chain fixed point + count_lines
-      max ≤ 399 verified in the close commit.
-* [ ] docs: math.md untouched (5.3 is closed); VELO.md stays untracked.
+* [x] `examples/34_time_basics.vl` (example-30 house style: header comment,
+      deterministic single-sweep program — six numbered sections: the zero
+      anchor, the monotonic pair across a real sleep, the delta round trip,
+      plain i64 dt arithmetic, the statement-lane sleep across int spells
+      (i8 word, default literal, negative clamp), and the shelf[i64] tick
+      log; every margin validated IN the program so only fixed verdict
+      strings reach stdout; every interpolation binds locals first —
+      gaps 6.7. Lab note: locals deliberately dodge the libc-shadow class —
+      `log` (libc log!) and the C-keyword `short` were both avoided at
+      authoring time; the file aired clean on the FIRST build on both
+      stages).
+* [x] `tests/test_time_library.py` gains the example-34 parity row
+      (`EXAMPLE34_LINES`, byte-identical both stages) — 6-line fixture,
+      `TestTimeExample34` returncode + byte-equal + exact-line pins.
+* [x] `gaps.md` 5.5 → `[COMPLETED] ✅` with the Final-form slice entry
+      (Former Defect → Fix → Residual → Verification) — chapter header is
+      now `COMPLETE (slices 1–2)`.
+* [x] Sweep finale (full-row recount) + chain fixed point + count_lines
+      max ≤ 399 verified in the close commit — `sweep_55_final.py` 22/22;
+      fixed point `60791243…` re-verified (no compiler source touched in
+      S2 — nothing to rebuild); count_lines 399 max.
+* [x] docs: math.md untouched (5.3 is closed); VELO.md stays untracked.
+
+S2 verification snapshot: suite **193/193** (192 + the example-34 parity
+row) · finale sweep 22/22 (the full 21-row S1 recount + the example-34 row
+run from the repo root) · fixed point
+`60791243D6D09B187E9EB4341FD6B45DA9C0B278697BA9DB83872D1560EB220F`
+(unchanged — no compiler source in the close) · count_lines max 399.
 
 ## Verification ladder (S1)
 
