@@ -33,6 +33,7 @@ act fs_member_sig(member: string) -> string {
     if member == "create_dir_all" { return ": (string path)" }
     if member == "copy" { return ": (string src, string dst)" }
     if member == "rename" { return ": (string src, string dst)" }
+    if member == "read_dir" { return ": (string path)" }
     return ""
 }
 
@@ -50,6 +51,7 @@ act fs_member_arity(member: string) -> i32 {
     if member == "create_dir_all" { return 1 }
     if member == "copy" { return 2 }
     if member == "rename" { return 2 }
+    if member == "read_dir" { return 1 }
     return -1
 }
 
@@ -68,6 +70,7 @@ act fs_member_ret(member: string) -> string {
     if member == "create_dir_all" { return "bool" }
     if member == "copy" { return "bool" }
     if member == "rename" { return "bool" }
+    if member == "read_dir" { return "shelf[string]" }
     return ""
 }
 
@@ -88,7 +91,7 @@ act check_fs_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
         // stage 1's _fs_expect raise (legacy six listed first).
         let msb = create_sb(256)
         sb_append_str(@msb, "unknown fs member '"); sb_append_str(@msb, member)
-        sb_append_str(@msb, "' (functions: read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename)")
+        sb_append_str(@msb, "' (functions: read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename, read_dir)")
         report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
         return "unknown"
     }
@@ -126,7 +129,7 @@ act check_fs_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
 act check_fs_constant(st: @SymbolTable, expr: @ExprNode) -> string {
     let msb = create_sb(384)
     sb_append_str(@msb, "unknown fs constant '"); sb_append_str(@msb, expr.member_name)
-    sb_append_str(@msb, "' (fs functions are: read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename)")
+    sb_append_str(@msb, "' (fs functions are: read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename, read_dir)")
     if str.len(fs_member_ret(expr.member_name)) > 0 {  // member names a known function shape
         sb_append_str(@msb, " (functions need parens: fs.")
         sb_append_str(@msb, expr.member_name)

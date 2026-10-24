@@ -29,6 +29,12 @@
 #include <sys/stat.h>
 #if defined(_WIN32)
 #include <direct.h>
+// 5.4 (S3): _findfirst/_findnext/_findclose + struct _finddata_t for the
+// directory listing helper.
+#include <io.h>
+#else
+// 5.4 (S3): POSIX directory iteration (declared under the 200112L flags).
+#include <dirent.h>
 #endif
 
 // §4.2 platform plumbing for the thread surface (spawn/join + mutex).
@@ -1470,6 +1476,63 @@ static inline VeloShelf velo_os_args(void) {
             velo_shelf_put(&out, &tok, sizeof(const char*));
         }
     }
+    return out;
+}
+// 5.4 (slice 3): fs.read_dir — the directory listing as a shelf[string] of
+// entry NAMES (bare names, no paths; "." and ".." are filtered — the
+// usable surface). A missing or unreadable directory yields an EMPTY
+// shelf: the list operation never kills the program — pair it with
+// fs.is_dir when the missing-vs-empty distinction matters. Ordering is
+// platform/filesystem-defined (callers that need order must sort
+// themselves — the batteries pin set-membership, never sequence).
+// Windows rides the CRT's narrow _findfirst/_findnext/_findclose (<io.h> —
+// always probed as "<path>/*" because a bare directory path would match
+// only itself); POSIX rides <dirent.h> (declared under the 200112L
+// flags). Shelf construction is the velo_str_split owning-token pattern
+// (velo_mem_alloc + velo_shelf_put). No kernel32, no windows.h.
+static inline VeloShelf velo_fs_read_dir(const char* path) {
+    VeloShelf out = {0};
+    out.esz = sizeof(const char*);
+    if (path == NULL) return out;
+#if defined(_WIN32)
+    char pattern[1024];
+    size_t plen = strlen(path);
+    if (plen == 0 || plen + 3 >= sizeof(pattern)) return out;
+    memcpy(pattern, path, plen);
+    // Normalize the joiner so both separators accept sub-listing.
+    if (pattern[plen - 1] != '/' && pattern[plen - 1] != '\\') {
+        pattern[plen++] = '/';
+    }
+    pattern[plen++] = '*';
+    pattern[plen] = '\0';
+    struct _finddata_t fd;
+    intptr_t h = _findfirst(pattern, &fd);
+    if (h == -1) return out;
+    do {
+        const char* nm = fd.name;
+        if (nm[0] == '.' && (nm[1] == '\0' || (nm[1] == '.' && nm[2] == '\0'))) continue;
+        size_t len = strlen(nm);
+        char* tok = (char*)velo_mem_alloc(1, len + 1);
+        memcpy(tok, nm, len);
+        tok[len] = 0;
+        velo_shelf_put(&out, &tok, sizeof(const char*));
+    } while (_findnext(h, &fd) == 0);
+    _findclose(h);
+#else
+    DIR* dir = opendir(path);
+    if (dir == NULL) return out;
+    struct dirent* ent;
+    while ((ent = readdir(dir)) != NULL) {
+        const char* nm = ent->d_name;
+        if (nm[0] == '.' && (nm[1] == '\0' || (nm[1] == '.' && nm[2] == '\0'))) continue;
+        size_t len = strlen(nm);
+        char* tok = (char*)velo_mem_alloc(1, len + 1);
+        memcpy(tok, nm, len);
+        tok[len] = 0;
+        velo_shelf_put(&out, &tok, sizeof(const char*));
+    }
+    closedir(dir);
+#endif
     return out;
 }
 // ============================================================================

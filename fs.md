@@ -63,12 +63,20 @@ battery + sweep each slice.
   `_mkdir`/`mkdir(path, 0777)` create one level, a portable stdio loop
   ("rb"/"wb") copies, CRT `rename` moves; no kernel32, no windows.h, no
   `errno` — the "already exists" race is resolved by stat-verification).
-* **S3 — `fs.read_dir(path) -> shelf[string]`**: entry NAMES split across
-  the platform directory iteration (Windows `FindFirstFileW`/`FindNextFileW`
-  self-declared; POSIX <dirent.h> — system-declared, no feature risk);
-  shelf construction rides the `velo_str_split` owning-token pattern
-  (`VeloShelf` + `velo_shelf_put`). The listing itself is
-  order-nondeterministic — battery sorts in-program before printing.
+* **S3 — `fs.read_dir(path) -> shelf[string]`**: entry NAMES only (no
+  paths; "." and ".." filtered — the usable surface). Platform iteration
+  in the runtime helper (Windows: the CRT's narrow `_findfirst/_findnext/
+  _findclose` over a `<path>/*` probe — a bare directory path would match
+  only itself; POSIX: <dirent.h> opendir/readdir/closedir). Shelf
+  construction rides the `velo_str_split` owning-token pattern
+  (`VeloShelf` + `velo_shelf_put`) — the helper lives BESIDE THE SHELF
+  MACHINERY (next to `velo_os_args`/`velo_str_split`, after VeloShelf is
+  defined — S1's forward-definition lesson). Contract: missing or
+  unreadable dir ⇒ EMPTY shelf (the list never kills the program — pair
+  with `fs.is_dir`); ordering is platform/filesystem-defined — pins use
+  set-membership (`str.contains` over a joined subject), never sequence;
+  the single-entry case pins the exact name. Member listing grows to 13
+  (`..., copy, rename, read_dir`) in BOTH stages' wording lanes.
 * **S4 — file streaming**: `fs.fopen(path, mode) -> @File`,
   `fs.fread(file, count) -> string`?/buffer shape,
   `fs.fwrite(file, data)`, `fs.fseek(...)` (+ close implied by RAII-less
@@ -175,6 +183,37 @@ f32-literal row (5.5 lesson, applied directly this time).
       `199933160AFB9DE44D753406CBB06B4EDD38BEA6387294832B089DCFFB76AB55`
       (Gen2 ≡ Gen3 — moved from S1's `73AD4D29…`); count_lines clean —
       fs-edited files at 397/397/388.
+
+## S3 verification snapshot
+
+* [x] Runtime: `io.h` (Windows) / `dirent.h` (POSIX) joins the platform
+      include block; `velo_fs_read_dir` placed BESIDE THE SHELF MACHINERY
+      (after `velo_os_args`, before the 5.2 map section) — the first chain
+      build caught the S1 forward-definition lesson the hard way
+      (`unknown type name 'VeloShelf'` when the helper sat in the fs
+      block; one duplicated-insertion detour during the move, collapsed
+      back to a single definition — grep-pinned before recompiling).
+* [x] Stage 1: `FS_CALLS`/`FS_SIGS`/`FS_FUNCS_TEXT` grow read_dir;
+      `fs_member_result_type` → `shelf[string]`; NO other stage-1 code
+      changed — `_emit_fs_call`'s generic tail already lowers any member
+      via `velo_fs_<member>(...)` (the S2 dispatch design paying off).
+* [x] Stage 2: `fs_checks.vl` tables grow read_dir (arity/sig/ret) and
+      BOTH unknown-member/constant wording strings grow to the 13-list;
+      `fs_gen.vl` gains the one-liner `velo_fs_read_dir(...)` row.
+      `type_checker.vl`/`codegen_expr.vl`/`codegen_c.vl`/`driver.vl`/
+      `monomorphize.py` all UNCHANGED.
+* [x] Sweep `sweep_54_s3.py` **8/8 clean, 0 diffs** (4 accepts — two-entry
+      order-independent row, single-entry exact row, empty dir, missing
+      dir pinning the empty-on-failure contract — + 4 rejects incl. the
+      grown closed-set wording and read_dir's own walls + bare-read hint).
+* [x] Battery `tests/test_fs_library.py` — S2 wording rows updated to the
+      13-list (the unknown-member + shared property funcs var), and a
+      `TestFsSlice3` class: two-entry listing (count + contains-pins),
+      single-entry exact pin, empty+missing edges, read_dir reject
+      surface (3 rows + the bare-read hint pair).
+* [x] Full suite **209/209**; chain rebuilt (Gen1→Gen2→Gen3 + `bin/velo.exe`); fixed point `E99B1C7C517BA9F99BE7613F2C5F9BF87F7B619F91ADEAD51A0FEE7E0272DF3B` (Gen2 ≡ Gen3); count_lines clean —
+      fs-edited ceilings unchanged at 397/397/388 (fs_checks 140, fs_gen
+      58).
 
 ## S1 verification ladder
 

@@ -410,7 +410,7 @@ class TestFsSlice2(unittest.TestCase):
              "    let n = fs.no_such()\n",
              "unknown fs member 'no_such' (functions: read_file, write_file, "
              "size, exists, remove, remove_file, is_dir, is_file, "
-             "create_dir, create_dir_all, copy, rename)"),
+             "create_dir, create_dir_all, copy, rename, read_dir)"),
             ("rej_fs_readfile_zero.vl",
              "    let n = fs.read_file()\n",
              "fs.read_file expects exactly 1 argument: (string path)"),
@@ -455,7 +455,8 @@ class TestFsSlice2(unittest.TestCase):
     def test_rejects_property_lane(self):
         header = "use sys.io\nuse sys.fs\nact main() -> i32 {\n"
         funcs = ("read_file, write_file, size, exists, remove, remove_file, "
-                 "is_dir, is_file, create_dir, create_dir_all, copy, rename")
+                 "is_dir, is_file, create_dir, create_dir_all, copy, rename, "
+                 "read_dir")
         src_fn = header + "    let x = fs.exists\n" + "    return 0\n}\n"
         outs = check_program("rej_fs_bare_fn.vl", src_fn)
         self.assertEqual(
@@ -468,4 +469,206 @@ class TestFsSlice2(unittest.TestCase):
         self.assertEqual(
             outs[0],
             f"unknown fs constant 'SEPARATOR' (fs functions are: {funcs})")
+        self.assertEqual(outs[0], outs[1])
+
+
+def read_dir_program() -> str:
+    """The two-entry listing: count-pinned + set-membership-pinned (the
+    platform listing order is filesystem-defined — contains over a joined
+    subject, never sequence)."""
+    return """use sys.io
+use sys.fs
+
+act main() -> i32 {
+    let tag: string = fs.read_file(".velo_cache/fs54_tag.txt")
+    let dir = str.concat(".velo_cache/fs54_list_", tag)
+    let made = fs.create_dir(dir)
+    let fa = str.concat(dir, "/alpha.txt")
+    let fb = str.concat(dir, "/beta.bin")
+    if fs.write_file(fa, "A") {
+        io.println("fa ok")
+    } else {
+        io.println("fa bad")
+    }
+    if fs.write_file(fb, "B") {
+        io.println("fb ok")
+    } else {
+        io.println("fb bad")
+    }
+    let names = fs.read_dir(dir)
+    let c: usize = names.len
+    if c == 2 {
+        io.println("count ok")
+    } else {
+        io.println("count bad")
+    }
+    let a0: string = names[0]
+    let a1: string = names[1]
+    let joined = str.concat(a0, str.concat("|", a1))
+    let hasa = str.contains(joined, "alpha")
+    let hasb = str.contains(joined, "beta")
+    if hasa {
+        io.println("alpha ok")
+    } else {
+        io.println("alpha bad")
+    }
+    if hasb {
+        io.println("beta ok")
+    } else {
+        io.println("beta bad")
+    }
+    return 0
+}
+"""
+
+
+READ_DIR_LINES = ["fa ok", "fb ok", "count ok", "alpha ok", "beta ok"]
+
+
+def lone_program() -> str:
+    """Single-entry listing: the pinned name rides the lone element."""
+    return """use sys.io
+use sys.fs
+
+act main() -> i32 {
+    let tag: string = fs.read_file(".velo_cache/fs54_tag.txt")
+    let dir = str.concat(".velo_cache/fs54_one_", tag)
+    let made = fs.create_dir(dir)
+    let fl = str.concat(dir, "/only.txt")
+    if fs.write_file(fl, "") {
+        io.println("seed ok")
+    } else {
+        io.println("seed bad")
+    }
+    let names = fs.read_dir(dir)
+    let c: usize = names.len
+    if c == 1 {
+        io.println("count ok")
+    } else {
+        io.println("count bad")
+    }
+    let e0: string = names[0]
+    if str.contains(e0, "only.txt") {
+        io.println("exact ok")
+    } else {
+        io.println("exact bad")
+    }
+    return 0
+}
+"""
+
+
+LONE_LINES = ["seed ok", "count ok", "exact ok"]
+
+
+def edge_program() -> str:
+    """The documented edge contract: empty dir lists zero; a missing dir
+    yields an empty shelf too (pair with is_dir for the distinction)."""
+    return """use sys.io
+use sys.fs
+
+act main() -> i32 {
+    let tag: string = fs.read_file(".velo_cache/fs54_tag.txt")
+    let fresh = str.concat(".velo_cache/fs54_empty_", tag)
+    let made = fs.create_dir(fresh)
+    let e = fs.read_dir(fresh)
+    let ce: usize = e.len
+    if ce == 0 {
+        io.println("empty ok")
+    } else {
+        io.println("empty bad")
+    }
+    let gone = str.concat(".velo_cache/fs54_absent_", tag)
+    let names = fs.read_dir(gone)
+    let c: usize = names.len
+    if c == 0 {
+        io.println("missing ok")
+    } else {
+        io.println("missing bad")
+    }
+    let nope = fs.is_dir(gone)
+    if nope {
+        io.println("isdir bad")
+    } else {
+        io.println("isdir ok")
+    }
+    return 0
+}
+"""
+
+
+EDGE_LINES = ["empty ok", "missing ok", "isdir ok"]
+
+
+class TestFsSlice3(unittest.TestCase):
+    """gaps.md 5.4 slice 3 — fs.read_dir -> shelf[string]: the platform
+    iteration split (CRT _findfirst on Windows / dirent.h on POSIX),
+    names-only "." / ".."-filtered listings, empty-on-failure contract,
+    order-independent battery pins."""
+
+    def test_accepts_two_entry_listing(self):
+        _write_tag()
+        s1 = run_stage("stage1", read_dir_program(), "fs_read_dir_two")
+        _write_tag()
+        s2 = run_stage("stage2", read_dir_program(), "fs_read_dir_two")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-3000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-3000:])
+        out1 = s1.stdout.replace("\r\n", "\n")
+        out2 = s2.stdout.replace("\r\n", "\n")
+        self.assertEqual(out1, out2, "sys.fs read_dir outputs diverged")
+        self.assertEqual(out1.strip().splitlines(), READ_DIR_LINES)
+
+    def test_accepts_single_entry_listing(self):
+        _write_tag()
+        s1 = run_stage("stage1", lone_program(), "fs_read_dir_one")
+        _write_tag()
+        s2 = run_stage("stage2", lone_program(), "fs_read_dir_one")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-3000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-3000:])
+        out1 = s1.stdout.replace("\r\n", "\n")
+        out2 = s2.stdout.replace("\r\n", "\n")
+        self.assertEqual(out1, out2, "sys.fs single-entry outputs diverged")
+        self.assertEqual(out1.strip().splitlines(), LONE_LINES)
+
+    def test_accepts_empty_and_missing_dirs(self):
+        _write_tag()
+        s1 = run_stage("stage1", edge_program(), "fs_read_dir_edges")
+        _write_tag()
+        s2 = run_stage("stage2", edge_program(), "fs_read_dir_edges")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-3000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-3000:])
+        out1 = s1.stdout.replace("\r\n", "\n")
+        out2 = s2.stdout.replace("\r\n", "\n")
+        self.assertEqual(out1, out2, "sys.fs edge outputs diverged")
+        self.assertEqual(out1.strip().splitlines(), EDGE_LINES)
+
+    def test_rejects_read_dir_surface(self):
+        header = "use sys.io\nuse sys.fs\nact main() -> i32 {\n"
+        funcs = ("read_file, write_file, size, exists, remove, remove_file, "
+                 "is_dir, is_file, create_dir, create_dir_all, copy, rename, "
+                 "read_dir")
+        rows = [
+            ("rej_fs_readdir_unknown.vl",
+             "    let n = fs.no_such()\n",
+             f"unknown fs member 'no_such' (functions: {funcs})"),
+            ("rej_fs_readdir_zero.vl",
+             "    let n = fs.read_dir()\n",
+             "fs.read_dir expects exactly 1 argument: (string path)"),
+            ("rej_fs_readdir_int.vl",
+             "    let n = fs.read_dir(1)\n",
+             "fs.read_dir expects string arguments (got i32)"),
+        ]
+        for name, body, wording in rows:
+            with self.subTest(row=name):
+                src = header + body + "    return 0\n}\n"
+                outs = check_program(name, src)
+                self.assertEqual(outs[0], wording, f"stage 1 wording for {name}: {outs[0]!r}")
+                self.assertEqual(outs[0], outs[1], f"stages disagree for {name}")
+        # the bare-read hint names read_dir itself
+        src = header + "    let x = fs.read_dir\n" + "    return 0\n}\n"
+        outs = check_program("rej_fs_readdir_bare.vl", src)
+        self.assertEqual(
+            outs[0],
+            f"unknown fs constant 'read_dir' (fs functions are: {funcs})"
+            " (functions need parens: fs.read_dir())")
         self.assertEqual(outs[0], outs[1])

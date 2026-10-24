@@ -198,6 +198,7 @@ FS_CALLS = {
     "create_dir_all": 1,
     "copy": 2,
     "rename": 2,
+    "read_dir": 1,
 }
 # Must stay character-identical with stage 2's fs_member_sig.
 FS_SIGS = {
@@ -213,8 +214,9 @@ FS_SIGS = {
     "create_dir_all": ": (string path)",
     "copy": ": (string src, string dst)",
     "rename": ": (string src, string dst)",
+    "read_dir": ": (string path)",
 }
-FS_FUNCS_TEXT = "read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename"
+FS_FUNCS_TEXT = "read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename, read_dir"
 
 def fs_member_result_type(member: str) -> str:
     """5.4 S2: result spell per fs member (empty = unknown member). The
@@ -227,6 +229,8 @@ def fs_member_result_type(member: str) -> str:
                   "is_dir", "is_file", "create_dir", "create_dir_all",
                   "copy", "rename"):
         return "bool"
+    if member == "read_dir":
+        return "shelf[string]"  # 5.4 S3: entry NAMES, in platform order
     return ""
 
 
