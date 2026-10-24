@@ -24,6 +24,12 @@
 // shipped in slice 1); no -lm is needed — MinGW ucrt64 satisfies these via
 // libmingwex/msvcrt, which the driver links by default.
 #include <math.h>
+// 5.4 (sys.fs): struct stat + S_ISDIR/S_ISREG classify paths for
+// is_dir/is_file; direct.h (Windows only) declares _mkdir for create_dir.
+#include <sys/stat.h>
+#if defined(_WIN32)
+#include <direct.h>
+#endif
 
 // §4.2 platform plumbing for the thread surface (spawn/join + mutex).
 // Windows uses the CRT's _beginthreadex (no windows.h, no default-library
@@ -786,6 +792,109 @@ static inline size_t velo_fs_size(const char* path) {
 static inline bool velo_fs_remove(const char* path) {
     if (!path) return false;
     return (remove(path) == 0);
+}
+
+
+// ============================================================================
+// 5.4 (slice 2): the fs metadata family — same doctrine as the legacy six
+// (bool results over narrow char* paths, zero allocations), built on the
+// plain CRT: stat() classifies (is_dir/is_file also answer the fopen-trick
+// exists blind spot for directories), _mkdir/mkdir create one level,
+// rename is its own CRT call, and copy is a portable stdio loop with
+// binary modes (no text translation on either platform). create_dir_all
+// walks the path segment by segment (both separators normalized to '/'
+// inside the working copy; the drive prefix "C:" is skipped — it always
+// exists) and treats an existing level as success (idempotent, like every
+// language's mkdir -p). No kernel32, no windows.h.
+// ============================================================================
+static inline bool velo_fs_is_dir(const char* path) {
+    if (!path) return false;
+    struct stat st;
+    if (stat(path, &st) != 0) return false;
+    return S_ISDIR(st.st_mode) ? true : false;
+}
+
+static inline bool velo_fs_is_file(const char* path) {
+    if (!path) return false;
+    struct stat st;
+    if (stat(path, &st) != 0) return false;
+    return S_ISREG(st.st_mode) ? true : false;
+}
+
+static inline bool velo_fs_create_dir(const char* path) {
+    if (!path) return false;
+#if defined(_WIN32)
+    return _mkdir(path) == 0;
+#else
+    return mkdir(path, 0777) == 0;
+#endif
+}
+
+static inline bool velo_fs_create_dir_all(const char* path) {
+    if (!path) return false;
+    size_t len = strlen(path);
+    if (len == 0) return false;
+    // Working copy of the path, separators normalized to '/'. Every
+    // separator boundary (and the NUL) triggers a create of everything
+    // accumulated so far.
+    char* acc = (char*)velo_mem_alloc(1, len + 1);
+    if (!acc) return false;
+    size_t out = 0;
+    for (size_t i = 0; i <= len; ++i) {
+        char c = path[i];
+        if (c == '/' || c == '\\' || c == '\0') {
+            acc[out] = '\0';
+            // Pure drive prefixes ("C:") are never created — they always
+            // exist, and _mkdir("C:") is meaningless.
+            if (out > 0 && acc[out - 1] != ':') {
+                if (!velo_fs_create_dir(acc)) {
+                    // Already there? Then keep going (idempotent target).
+                    struct stat st;
+                    if (stat(acc, &st) != 0 || !S_ISDIR(st.st_mode)) {
+                        return false;
+                    }
+                }
+            }
+            if (c != '\0' && out > 0 && acc[out - 1] != '/') {
+                acc[out++] = '/';
+            } else if (c != '\0' && out == 0) {
+                // Leading separator — keep it (absolute paths).
+                acc[out++] = c;
+            }
+            continue;
+        }
+        acc[out++] = c;
+    }
+    return true;
+}
+
+static inline bool velo_fs_copy(const char* src, const char* dst) {
+    if (!src || !dst) return false;
+    FILE* in = fopen(src, "rb");
+    if (!in) return false;
+    FILE* out = fopen(dst, "wb");
+    if (!out) {
+        fclose(in);
+        return false;
+    }
+    char chunk[4096];
+    size_t n;
+    bool ok = true;
+    while ((n = fread(chunk, 1, sizeof(chunk), in)) > 0) {
+        if (fwrite(chunk, 1, n, out) != n) {
+            ok = false;
+            break;
+        }
+    }
+    if (ferror(in) != 0) ok = false;
+    if (fclose(out) != 0) ok = false;
+    fclose(in);
+    return ok;
+}
+
+static inline bool velo_fs_rename(const char* src, const char* dst) {
+    if (!src || !dst) return false;
+    return rename(src, dst) == 0;
 }
 
 

@@ -55,11 +55,14 @@ battery + sweep each slice.
   `fs.rename(src, dst) -> bool`. The fs namespace goes CLOSED: the six
   legacy members (`read_file`, `write_file`, `size`, `exists`, `remove`,
   `remove_file` — old §4.2 unchecked era) migrate INTO the checked umbrella
-  with result spells preserved exactly; wording lists ALL members. Runtime
-  helpers own the platform split (Windows kernel32 `GetFileAttributesW` /
-  `CreateDirectoryW` / `CopyFileW` / `MoveFileW` self-declared prototypes,
-  wide-string conversion helpers for Velo `char*` paths; POSIX `stat`/
-  `mkdir -p` loop / rename(2)).
+  with result spells preserved exactly; wording lists ALL members (ship
+  order: legacy six first, then the metadata family). Runtime helpers own
+  the platform split — DECIDED DURING THIS SLICE: **pure CRT everywhere**
+  (the kernel32/wide-string sketch in this plan was superseded — Velo
+  paths are narrow `char*`, so `struct stat`+`S_ISDIR` classify,
+  `_mkdir`/`mkdir(path, 0777)` create one level, a portable stdio loop
+  ("rb"/"wb") copies, CRT `rename` moves; no kernel32, no windows.h, no
+  `errno` — the "already exists" race is resolved by stat-verification).
 * **S3 — `fs.read_dir(path) -> shelf[string]`**: entry NAMES split across
   the platform directory iteration (Windows `FindFirstFileW`/`FindNextFileW`
   self-declared; POSIX <dirent.h> — system-declared, no feature risk);
@@ -125,6 +128,53 @@ copied. Lab notes: (1) `use sys.str` is NOT a whitelisted marker on stage
 sweep's first args row probed it and was rewritten bare; (2) `1.5`
 defaults to f32, so `os.exit(1.5)` reads "got f32" — battery pins the
 f32-literal row (5.5 lesson, applied directly this time).
+
+## S2 verification snapshot
+
+* [x] Runtime: `#include <sys/stat.h>` (+ `direct.h` under `_WIN32`) and
+      the six helpers after the legacy block — `velo_fs_is_dir/is_file`
+      (stat + S_ISDIR/S_ISREG), `velo_fs_create_dir`,
+      `velo_fs_create_dir_all` (segment walker: both separators normalized
+      to `'/'` in the working copy, drive prefix skipped, EEXIST resolved
+      by stat-verify — idempotent like `mkdir -p`), `velo_fs_copy`
+      (portable 4 KiB stdio loop), `velo_fs_rename` (CRT rename).
+* [x] Stage 1 `velo/codegen_c.py`: FS tables (12 members, arity/sig/funcs
+      text) + `fs_member_result_type`; `_fs_expect` (closed set, arity
+      walls with era-consistent sigs, homogeneous string got-walls) +
+      `_emit_fs_call`; result lanes ×2 → one-line `fs_member_result_type`
+      returns; emit dispatch → `_emit_fs_call` (legacy `_lower_fs_*`
+      emitters kept byte-identically, their dead arity raises deleted);
+      property twin after the os twin.
+* [x] Stage 2: NEW `src/analysis/fs_checks.vl` (os_checks shape, 12-member
+      tables + `check_fs_call`/`check_fs_constant`); NEW
+      `src/backend/fs_gen.vl` (legacy six VERBATIM from codegen_expr.vl +
+      the six new rows); `type_checker.vl` — the 3-line legacy fs block →
+      one-liner `check_fs_call` dispatch (−3), use line (+1), property
+      twin appended to the consolidated lane (0) → **397**;
+      `codegen_expr.vl` — the inline ladder moved to fs_gen.vl (−11), use
+      line (+1), one-liner dispatch → **388**. `driver.vl`/`monomorphize.py`
+      needed NO edits (fs already whitelisted); THE COMPILER'S OWN
+      `src/check.vl`/`src/driver.vl` fs uses passed the new walls live
+      during the chain rebuild (Gen1→Gen3).
+* [x] Sweep `sweep_54_s2.py` **18/18 clean, 0 diffs, rerun-clean** (4
+      accepts — legacy six regression, metadata family, copy/rename,
+      empty-payload round trip — + 14 rejects word-pinned after the
+      stage-envelope strip). Fixture hygiene: per-STAGE tag files read
+      through `fs.read_file` → unique fixtures per stage run; the obstacle
+      row pins create_dir failing under a FILE parent (deterministic
+      ENOTDIR). Lab note from the pass: the arity wall names the EXPECTED
+      count — "expects exactly 1 argument" is the correct reject for a
+      2-arg call of a 1-ary member (the first draft wanted the given
+      count; both stages agreed on the expectation wording).
+* [x] Battery `tests/test_fs_library.py` — 6 tests (legacy round trip,
+      metadata family incl. fresh create rows + obstacle, copy/rename via
+      unique tags honoring the Windows CRT rename no-overwrite rule,
+      empty-payload round trip, 12 reject wordings, property pair).
+* [x] Full suite **205/205**; chain rebuilt Gen1→Gen2→Gen3 +
+      `bin/velo.exe`; fixed point
+      `199933160AFB9DE44D753406CBB06B4EDD38BEA6387294832B089DCFFB76AB55`
+      (Gen2 ≡ Gen3 — moved from S1's `73AD4D29…`); count_lines clean —
+      fs-edited files at 397/397/388.
 
 ## S1 verification ladder
 

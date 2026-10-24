@@ -1,0 +1,57 @@
+// ============================================================================
+// 5.4 Extended File System & OS Primitives — sys.fs call lowering onto the
+// runtime helpers (legacy six: velo_fs_read_file/write_file/exists/size/
+// remove; slice-2 metadata family: velo_fs_is_dir/is_file/create_dir/
+// create_dir_all/copy/rename — pure CRT lowers in velo_runtime.h).
+//
+// The per-member emit ladder lives HERE (time_gen.vl precedent — off
+// codegen_expr.vl's line budget). The legacy six moved in VERBATIM from
+// codegen_expr.vl (§4.2-era emit shapes untouched); the metadata family
+// rides the same one-helper-per-member shape. Emit shapes MUST mirror
+// velo/codegen_c.py::_emit_fs_call byte-for-byte: single evaluation per
+// argument, args emit exactly once each, two-arg members split at ONE
+// ", ".
+// Args were compile-checked (closed set + arity + string walls) at
+// inference by src/analysis/fs_checks.vl; unknown members never reach the
+// emitter.
+// ============================================================================
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../common/string_builder.vl"
+use "codegen_types.vl"
+use "codegen_expr.vl"
+
+act emit_fs_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @ExprNode) {
+    // legacy six (moved verbatim from codegen_expr.vl)
+    if member == "read_file" { sb_append_str(sb, "velo_fs_read_file("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
+    if member == "write_file" {
+        sb_append_str(sb, "velo_fs_write_file(")
+        emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ", "); emit_c_expr(sb, st, expr.first_arg.next)
+        sb_append_str(sb, ")")
+        return
+    }
+    if member == "exists" { sb_append_str(sb, "velo_fs_exists("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
+    if member == "size" { sb_append_str(sb, "velo_fs_size("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
+    if member == "remove" or member == "remove_file" { sb_append_str(sb, "velo_fs_remove("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
+    // 5.4 S2: the metadata family — one runtime helper per member.
+    if member == "is_dir" { sb_append_str(sb, "velo_fs_is_dir("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
+    if member == "is_file" { sb_append_str(sb, "velo_fs_is_file("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
+    if member == "create_dir" { sb_append_str(sb, "velo_fs_create_dir("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
+    if member == "create_dir_all" { sb_append_str(sb, "velo_fs_create_dir_all("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
+    if member == "copy" {
+        sb_append_str(sb, "velo_fs_copy(")
+        emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ", "); emit_c_expr(sb, st, expr.first_arg.next)
+        sb_append_str(sb, ")")
+        return
+    }
+    // rename — the last closed-set member.
+    sb_append_str(sb, "velo_fs_rename(")
+    emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ", "); emit_c_expr(sb, st, expr.first_arg.next)
+    sb_append_str(sb, ")")
+}

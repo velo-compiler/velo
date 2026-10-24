@@ -1,0 +1,137 @@
+// 5.4 Extended File System & OS Primitives — compile-time checks for the
+// sys.fs namespace (slice 2: the metadata family + the closed-namespace
+// migration). Mutual mirror of velo/codegen_c.py::_fs_expect / FS_CALLS /
+// FS_SIGS — both stages must reject the same programs with the same
+// words. The SIX LEGACY members (read_file/write_file/size/exists/
+// remove/remove_file — the old §4.2 unchecked era) migrate INTO this
+// closed umbrella preserving their exact result spells; the six NEW
+// members (is_dir/is_file/create_dir/create_dir_all/copy/rename) join
+// them. Member listing order = ship order (legacy six first).
+// The namespace is CLOSED on both lanes: unknown CALL members report the
+// closed-set wording; fs has NO constants, so the property lane rejects
+// every bare read (with the parens hint when the member names a known
+// function).
+use "type_checker.vl"
+use "symbol_table.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../ast/expr.vl"
+use "../frontend/token.vl"
+
+// Signature text per checked member. Must stay character-identical with
+// velo/codegen_c.py::FS_SIGS.
+act fs_member_sig(member: string) -> string {
+    if member == "read_file" { return ": (string path)" }
+    if member == "write_file" { return ": (string path, string contents)" }
+    if member == "size" { return ": (string path)" }
+    if member == "exists" { return ": (string path)" }
+    if member == "remove" { return ": (string path)" }
+    if member == "remove_file" { return ": (string path)" }
+    if member == "is_dir" { return ": (string path)" }
+    if member == "is_file" { return ": (string path)" }
+    if member == "create_dir" { return ": (string path)" }
+    if member == "create_dir_all" { return ": (string path)" }
+    if member == "copy" { return ": (string src, string dst)" }
+    if member == "rename" { return ": (string src, string dst)" }
+    return ""
+}
+
+// Expected argument count per member (same curve as FS_CALLS).
+act fs_member_arity(member: string) -> i32 {
+    if member == "read_file" { return 1 }
+    if member == "write_file" { return 2 }
+    if member == "size" { return 1 }
+    if member == "exists" { return 1 }
+    if member == "remove" { return 1 }
+    if member == "remove_file" { return 1 }
+    if member == "is_dir" { return 1 }
+    if member == "is_file" { return 1 }
+    if member == "create_dir" { return 1 }
+    if member == "create_dir_all" { return 1 }
+    if member == "copy" { return 2 }
+    if member == "rename" { return 2 }
+    return -1
+}
+
+// Result spell per member — must stay character-identical with stage 1's
+// fs_member_result_type. The legacy six keep their exact old spells.
+act fs_member_ret(member: string) -> string {
+    if member == "read_file" { return "string" }
+    if member == "size" { return "usize" }
+    if member == "write_file" { return "bool" }
+    if member == "exists" { return "bool" }
+    if member == "remove" { return "bool" }
+    if member == "remove_file" { return "bool" }
+    if member == "is_dir" { return "bool" }
+    if member == "is_file" { return "bool" }
+    if member == "create_dir" { return "bool" }
+    if member == "create_dir_all" { return "bool" }
+    if member == "copy" { return "bool" }
+    if member == "rename" { return "bool" }
+    return ""
+}
+
+// The string accept set — exactly the string spell (every fs member
+// joins on strings in S2: paths, file contents, copy/rename targets).
+act fs_arg_is_string(t: string) -> bool {
+    return t == "string"
+}
+
+// Entry point: returns the call's RESULT spell — "unknown" after
+// reporting (the infer branch then yields "unknown"). Arity walls carry
+// their sigs like every family wall; a non-string argument reports the
+// FIRST failure (os family shape).
+act check_fs_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
+    let arity = fs_member_arity(member)
+    if arity < 0 {
+        // 5.4: the fs namespace is CLOSED for calls — wording mirror of
+        // stage 1's _fs_expect raise (legacy six listed first).
+        let msb = create_sb(256)
+        sb_append_str(@msb, "unknown fs member '"); sb_append_str(@msb, member)
+        sb_append_str(@msb, "' (functions: read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename)")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+        return "unknown"
+    }
+    mut argc: usize = 0
+    mut cur_a = expr.first_arg
+    loop cur_a != null { argc += 1; cur_a = cur_a.next }
+    if argc != (arity as usize) {
+        let msb = create_sb(192)
+        sb_append_str(@msb, "fs."); sb_append_str(@msb, member); sb_append_str(@msb, " expects exactly ")
+        sb_append_int(@msb, arity)
+        if arity == 1 { sb_append_str(@msb, " argument") } else { sb_append_str(@msb, " arguments") }
+        sb_append_str(@msb, fs_member_sig(member))
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+        return "unknown"
+    }
+    mut cur = expr.first_arg
+    loop cur != null {
+        let t = infer_expr_type(st, cur)
+        if !fs_arg_is_string(t) {
+            let msb = create_sb(160)
+            sb_append_str(@msb, "fs."); sb_append_str(@msb, member)
+            sb_append_str(@msb, " expects string arguments (got ")
+            sb_append_str(@msb, t); sb_append_str(@msb, ")")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+            return "unknown"
+        }
+        cur = cur.next
+    }
+    return fs_member_ret(member)
+}
+
+// The bare-property path (fs.exists): fs has NO constants, so every bare
+// read rejects — the parens hint rides when the member names a known
+// function (time/os family precedent).
+act check_fs_constant(st: @SymbolTable, expr: @ExprNode) -> string {
+    let msb = create_sb(384)
+    sb_append_str(@msb, "unknown fs constant '"); sb_append_str(@msb, expr.member_name)
+    sb_append_str(@msb, "' (fs functions are: read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename)")
+    if str.len(fs_member_ret(expr.member_name)) > 0 {  // member names a known function shape
+        sb_append_str(@msb, " (functions need parens: fs.")
+        sb_append_str(@msb, expr.member_name)
+        sb_append_str(@msb, "())")
+    }
+    report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+    return "unknown"
+}

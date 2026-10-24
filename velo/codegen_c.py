@@ -177,6 +177,59 @@ def os_member_result_type(member: str) -> str:
     return ""
 
 
+# 5.4 slice 2 — sys.fs metadata family: the fs namespace goes CLOSED. The
+# six legacy members (old §4.2) migrate into the checked umbrella with
+# their result spells preserved exactly; the six new members ride the rt
+# helpers (velo_fs_is_dir/is_file/create_dir/create_dir_all/copy/rename).
+# Mirrored by stage 2's src/analysis/fs_checks.vl — both stages must
+# reject the same programs with the same words and emit the same helper
+# bytes. Member listing order = ship order (legacy six first, then the
+# metadata family).
+FS_CALLS = {
+    "read_file": 1,
+    "write_file": 2,
+    "size": 1,
+    "exists": 1,
+    "remove": 1,
+    "remove_file": 1,
+    "is_dir": 1,
+    "is_file": 1,
+    "create_dir": 1,
+    "create_dir_all": 1,
+    "copy": 2,
+    "rename": 2,
+}
+# Must stay character-identical with stage 2's fs_member_sig.
+FS_SIGS = {
+    "read_file": ": (string path)",
+    "write_file": ": (string path, string contents)",
+    "size": ": (string path)",
+    "exists": ": (string path)",
+    "remove": ": (string path)",
+    "remove_file": ": (string path)",
+    "is_dir": ": (string path)",
+    "is_file": ": (string path)",
+    "create_dir": ": (string path)",
+    "create_dir_all": ": (string path)",
+    "copy": ": (string src, string dst)",
+    "rename": ": (string src, string dst)",
+}
+FS_FUNCS_TEXT = "read_file, write_file, size, exists, remove, remove_file, is_dir, is_file, create_dir, create_dir_all, copy, rename"
+
+def fs_member_result_type(member: str) -> str:
+    """5.4 S2: result spell per fs member (empty = unknown member). The
+    legacy six keep their exact old spells."""
+    if member == "read_file":
+        return "string"
+    if member == "size":
+        return "usize"
+    if member in ("write_file", "exists", "remove", "remove_file",
+                  "is_dir", "is_file", "create_dir", "create_dir_all",
+                  "copy", "rename"):
+        return "bool"
+    return ""
+
+
 # 5.3 slice 4: the math RESULT type stops being constant-f64 and becomes
 # arg-aware. Floats lift everything to f64; abs mirrors its argument's int
 # spell back (float args pin to f64); min/max keep the same-spell int type
@@ -2083,12 +2136,10 @@ class CCodeGenerator:
                         return "@Mutex"
                     return "void"  # acquire / release / free
                 elif value.callee.target.name == "fs":
-                    if value.callee.member == "read_file":
-                        return "string"
-                    elif value.callee.member in ("write_file", "exists", "remove", "remove_file"):
-                        return "bool"
-                    elif value.callee.member == "size":
-                        return "usize"
+                    # 5.4 S2: fs is a closed namespace — the legacy six keep
+                    # their exact spells; unknown members fall through to
+                    # the default (the emit path's checker raises).
+                    return fs_member_result_type(value.callee.member)
                 elif value.callee.target.name == "str":
                     m = value.callee.member
                     if m == "len":
@@ -2199,6 +2250,11 @@ class CCodeGenerator:
             if isinstance(expr.target, Identifier) and expr.target.name == "os":
                 hint = f" (functions need parens: os.{expr.member}())" if expr.member in OS_CALLS else ""
                 raise ValueError(f"unknown os constant '{expr.member}' (os functions are: {OS_FUNCS_TEXT}){hint}")
+            # 5.4 S2: the fs namespace goes CLOSED — bare member reads
+            # reject with the mirrored wording (fs has no constants)
+            if isinstance(expr.target, Identifier) and expr.target.name == "fs":
+                hint = f" (functions need parens: fs.{expr.member}())" if expr.member in FS_CALLS else ""
+                raise ValueError(f"unknown fs constant '{expr.member}' (fs functions are: {FS_FUNCS_TEXT}){hint}")
             target_type = self._resolve_expr_type(expr.target)
             # 5.2: shelf property reads (len); other members are loud errors
             if self._shelf_elem_type(target_type) is not None:
@@ -2309,12 +2365,8 @@ class CCodeGenerator:
                         return "@Mutex"
                     return "void"  # acquire / release / free
                 elif expr.callee.target.name == "fs":
-                    if expr.callee.member == "read_file":
-                        return "string"
-                    elif expr.callee.member in ("write_file", "exists", "remove", "remove_file"):
-                        return "bool"
-                    elif expr.callee.member == "size":
-                        return "usize"
+                    # 5.4 S2: closed namespace (mirror of the infer branch)
+                    return fs_member_result_type(expr.callee.member)
                 elif expr.callee.target.name == "str":
                     m = expr.callee.member
                     if m == "len":
@@ -2667,16 +2719,12 @@ class CCodeGenerator:
                             return f"velo_mutex_destroy((void*)({arg_code}))"
 
                     elif expr.callee.target.name == "fs":
-                        if expr.callee.member == "read_file":
-                            return self._lower_fs_read_file(expr.args)
-                        elif expr.callee.member == "write_file":
-                            return self._lower_fs_write_file(expr.args)
-                        elif expr.callee.member == "exists":
-                            return self._lower_fs_exists(expr.args)
-                        elif expr.callee.member == "size":
-                            return self._lower_fs_size(expr.args)
-                        elif expr.callee.member in ("remove", "remove_file"):
-                            return self._lower_fs_remove(expr.args)
+                        # 5.4 S2: closed-namespace lowering — _fs_expect
+                        # lives on the emit path (checker + emitter in one);
+                        # the legacy six keep their _lower_fs_* emitters
+                        # byte-identically, the metadata family rides the
+                        # new runtime helpers.
+                        return self._emit_fs_call(expr.callee.member, expr.args)
 
                     elif expr.callee.target.name == "str":
                         if expr.callee.member == "len":
@@ -3038,6 +3086,45 @@ class CCodeGenerator:
             if got != "string":
                 raise ValueError(f"str.{member} expects string arguments (got {got})")
 
+    def _fs_expect(self, member: str, args: List[Expr]) -> None:
+        """5.4 S2: compile-checks the sys.fs call surface — the SIX LEGACY
+        members migrate into this closed umbrella (result spells preserved
+        exactly), joining the six new metadata members. Mirrored by Stage
+        2's src/analysis/fs_checks.vl. Every member joins on strings; a
+        non-string argument rejects with the os-family got wall (first
+        failing argument reported)."""
+        if member not in FS_CALLS:
+            raise ValueError(
+                f"unknown fs member '{member}' (functions: {FS_FUNCS_TEXT})")
+        expect_n = FS_CALLS[member]
+        if len(args) != expect_n:
+            sig = FS_SIGS[member]
+            plural = "" if expect_n == 1 else "s"
+            raise ValueError(f"fs.{member} expects exactly {expect_n} argument{plural}{sig}")
+        for arg in args:
+            got = self._thread_arg_type(arg)
+            if got != "string":
+                raise ValueError(f"fs.{member} expects string arguments (got {got})")
+
+    def _emit_fs_call(self, member: str, args: List[Expr]) -> str:
+        # 5.4 S2: the closed-namespace lowering — the legacy six ride their
+        # existing _lower_fs_* emitters byte-identically (now pre-checked);
+        # the metadata family rides the new runtime helpers. Single
+        # evaluation per argument — codes are emitted exactly once each.
+        self._fs_expect(member, args)
+        if member == "read_file":
+            return self._lower_fs_read_file(args)
+        if member == "write_file":
+            return self._lower_fs_write_file(args)
+        if member == "exists":
+            return self._lower_fs_exists(args)
+        if member == "size":
+            return self._lower_fs_size(args)
+        if member in ("remove", "remove_file"):
+            return self._lower_fs_remove(args)
+        code = ", ".join(self._emit_expression(a) for a in args)
+        return f"velo_fs_{member}({code})"
+
     def _os_expect(self, member: str, args: List[Expr]) -> None:
         """5.4 S1: compile-checks the sys.os call surface. Mirrored by
         Stage 2's src/analysis/os_checks.vl — both stages must reject the
@@ -3267,33 +3354,23 @@ class CCodeGenerator:
         return f"({c_type}*)velo_alloc_with((VeloAllocator)({alloc_code}), sizeof({c_type}), (size_t)({count_code}))"
 
     def _lower_fs_read_file(self, args: List[Expr]) -> str:
-        if len(args) != 1:
-            raise ValueError("fs.read_file expects exactly 1 argument: (path)")
         path_code = self._emit_expression(args[0])
         return f"velo_fs_read_file({path_code})"
 
     def _lower_fs_write_file(self, args: List[Expr]) -> str:
-        if len(args) != 2:
-            raise ValueError("fs.write_file expects exactly 2 arguments: (path, content)")
         path_code = self._emit_expression(args[0])
         content_code = self._emit_expression(args[1])
         return f"velo_fs_write_file({path_code}, {content_code})"
 
     def _lower_fs_exists(self, args: List[Expr]) -> str:
-        if len(args) != 1:
-            raise ValueError("fs.exists expects exactly 1 argument: (path)")
         path_code = self._emit_expression(args[0])
         return f"velo_fs_exists({path_code})"
 
     def _lower_fs_size(self, args: List[Expr]) -> str:
-        if len(args) != 1:
-            raise ValueError("fs.size expects exactly 1 argument: (path)")
         path_code = self._emit_expression(args[0])
         return f"velo_fs_size({path_code})"
 
     def _lower_fs_remove(self, args: List[Expr]) -> str:
-        if len(args) != 1:
-            raise ValueError("fs.remove expects exactly 1 argument: (path)")
         path_code = self._emit_expression(args[0])
         return f"velo_fs_remove({path_code})"
 

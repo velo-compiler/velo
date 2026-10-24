@@ -22,6 +22,7 @@ use "map_gen.vl"
 use "math_gen.vl"
 use "time_gen.vl"
 use "os_gen.vl"
+use "fs_gen.vl"
 
 // Emits C99 code for an AST expression into a StringBuilder.
 act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
@@ -307,18 +308,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                 if target.str_val == "thread" and member == "spawn" { sb_append_str(sb, "velo_thread_spawn((VeloThreadFn)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }; if target.str_val == "thread" and member == "join" { sb_append_str(sb, "velo_thread_join("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, ")"); return }
                 if target.str_val == "thread" and member == "mutex" { sb_append_str(sb, "velo_mutex_create()"); return }; if target.str_val == "thread" and member == "acquire" { sb_append_str(sb, "velo_mutex_acquire((void*)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }
                 if target.str_val == "thread" and member == "release" { sb_append_str(sb, "velo_mutex_release((void*)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }; if target.str_val == "thread" and member == "free" { sb_append_str(sb, "velo_mutex_destroy((void*)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }
-                if target.str_val == "fs" {
-                    if member == "read_file" { sb_append_str(sb, "velo_fs_read_file("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
-                    if member == "write_file" {
-                        sb_append_str(sb, "velo_fs_write_file(")
-                        emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ", "); emit_c_expr(sb, st, expr.first_arg.next)
-                        sb_append_str(sb, ")")
-                        return
-                    }
-                    if member == "exists" { sb_append_str(sb, "velo_fs_exists("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
-                    if member == "size" { sb_append_str(sb, "velo_fs_size("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
-                    if member == "remove" or member == "remove_file" { sb_append_str(sb, "velo_fs_remove("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")"); return }
-                }
+                if target.str_val == "fs" { emit_fs_call(sb, st, member, expr); return }  // 5.4 S2: the ladder lives in fs_gen.vl — legacy six moved in verbatim, joining the metadata family; checks ran at inference
                 if target.str_val == "str" and member == "len" { sb_append_str(sb, "((usize)strlen("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
                 if target.str_val == "math" { emit_math_call(sb, st, member, expr); return }  // 5.3 (S2): the ladder lives in math_gen.vl — compile-checks already ran at inference
                 if target.str_val == "time" { emit_time_call(sb, st, member, expr); return }; if target.str_val == "os" { emit_os_call(sb, st, member, expr); return }  // 5.4/5.5: the ladders live in time_gen.vl / os_gen.vl — compile-checks already ran at inference

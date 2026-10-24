@@ -21,6 +21,7 @@ use "misc_checks.vl"
 use "math_checks.vl"
 use "time_checks.vl"
 use "os_checks.vl"
+use "fs_checks.vl"
 act is_known_type(st: @SymbolTable, name: string) -> bool {
     if name == null { return false }
     let clean = strip_pointer_prefix(name)
@@ -68,7 +69,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     }
 
     if expr.kind == EXPR_MEMBER {
-        if expr.target.kind == EXPR_IDENT and expr.target.str_val == "math" and find_kind(st, expr.target.str_val) == null { return check_math_constant(st, expr) }; if expr.target.kind == EXPR_IDENT and expr.target.str_val == "time" and find_kind(st, expr.target.str_val) == null { return check_time_constant(st, expr) }; if expr.target.kind == EXPR_IDENT and expr.target.str_val == "os" and find_kind(st, expr.target.str_val) == null { return check_os_constant(st, expr) }  // 5.3/5.4/5.5: math has bare-property constants; time + os reject every bare read — mirrored wording
+        if expr.target.kind == EXPR_IDENT and expr.target.str_val == "math" and find_kind(st, expr.target.str_val) == null { return check_math_constant(st, expr) }; if expr.target.kind == EXPR_IDENT and expr.target.str_val == "time" and find_kind(st, expr.target.str_val) == null { return check_time_constant(st, expr) }; if expr.target.kind == EXPR_IDENT and expr.target.str_val == "os" and find_kind(st, expr.target.str_val) == null { return check_os_constant(st, expr) }; if expr.target.kind == EXPR_IDENT and expr.target.str_val == "fs" and find_kind(st, expr.target.str_val) == null { return check_fs_constant(st, expr) }  // 5.3/5.4/5.5: math has bare-property constants; time + os + fs reject every bare read — mirrored wording
         if expr.target.kind == EXPR_IDENT {
             let k_sym = find_kind(st, expr.target.str_val)
             if k_sym != null {
@@ -139,9 +140,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 if target.str_val == "thread" {
                     if !check_thread_call(st, expr, member) { return "unknown" }; if member == "spawn" { return "@Thread" }; if member == "join" { return "i32" }; if member == "mutex" { return "@Mutex" }; return "void"
                 }
-                if target.str_val == "fs" {
-                    if member == "read_file" { return "string" }; if member == "size" { return "usize" }; if member == "exists" or member == "write_file" or member == "remove" or member == "remove_file" { return "bool" }
-                }
+                if target.str_val == "fs" { return check_fs_call(st, expr, member) }  // 5.4 S2: fs goes CLOSED — the legacy six migrate in with their exact spells, joining the metadata family
                 if target.str_val == "str" { if !check_str_call(st, expr, member) { return "unknown" }; if member == "len" { return "usize" }; if member == "contains" or member == "starts_with" or member == "ends_with" { return "bool" }; if member == "trim" or member == "replace" or member == "to_upper" or member == "to_lower" or member == "concat" { return "string" }; if member == "index_of" { return "i64" }; if member == "split" { return "shelf[string]" } }  // 5.1: -1 = not found; slice 11: split owns its tokens as a shelf
                 if target.str_val == "io" { return "void" }
                 if target.str_val == "math" { return check_math_call(st, expr, member) }; if target.str_val == "time" { return check_time_call(st, expr, member) }; if target.str_val == "os" { return check_os_call(st, expr, member) }  // 5.3/5.4/5.5: checked namespaces; "unknown" after reporting
