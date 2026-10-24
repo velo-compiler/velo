@@ -65,6 +65,10 @@ def main():
     doc_parser.add_argument("file", help="Path to the .vl source file")
     doc_parser.add_argument("-o", "--output", help="Path for the output markdown file")
 
+    # 'lsp' command
+    lsp_parser = subparsers.add_parser("lsp", help="Run the Velo Language Server (stdio JSON-RPC)")
+    lsp_parser.add_argument("repo_root", nargs="?", default=None, help="Root repository directory (default: auto-detected)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -161,6 +165,9 @@ def main():
                 print(f"[Velo] Successfully generated documentation: {args.output}")
             else:
                 print(docs, end="")
+        elif args.command == "lsp":
+            from velo.lsp import run_server
+            sys.exit(run_server(args.repo_root))
     except Exception as e:
         print(f"\n[Velo Error] {e}", file=sys.stderr)
         # 6.3 S1/S4: run/build/emit-c doc failures carrying a position (Lexer /

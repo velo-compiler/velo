@@ -673,14 +673,31 @@ The chapter ships in full: slice 1 scaffold + now/delta/sleep_ms (closed namespa
 
 The chapter ships in full: slice 1 parse-row snippet blocks on both stages (additive blocks, point caret, JSON noise guard) · slice 2 semantic-row snippet blocks on stage 2 via capture reconstruction (pseudo-name re-attribution, multi-file block-less residual) · slice 3 span carets (^^^) and lexer warning blocks · slice 4 colors & --color auto|always|never flag plumbing · slice 5 finale sweep + chapter close.
 
-### 6.4 Developer Tooling: Language Server Protocol (LSP) (🟢 P3 Ecosystem)
-* A declarative VS Code extension (TextMate grammar + snippets + language configuration)
-  exists as local owner material (`editors/vscode/`), untracked and unpublished. It colors
-  text but cannot report any compiler diagnostic.
-* No LSP server providing autocomplete, jump-to-definition, hover documentation, or red
-  squiggly error diagnostics in the editor. The enabling step is a `velo check [--json]`
-  diagnostics-only CLI covering both compilers (see `editors/vscode/ROADMAP.md`, Phases 2–3);
-  grammar currently misses `aka`, `#align`/`#packed`, and `op` (extension Phases 0).
+### 6.4 Developer Tooling: Language Server Protocol (LSP) [COMPLETED] ✅
+* **Former Defect (No Real-Time Language Server Protocol Support)**: Velo possessed no interactive language server for modern IDEs and editors (VS Code, Neovim, Helix, Sublime Text, Emacs). Editors were limited to static syntax highlighting without live error squiggles on unsaved buffers, semantic hover tooltips, go-to-definition, document outline symbols, or autocompletion.
+* **Fix Applied**: Both compilers implement standard LSP 3.17 server support and integration tooling:
+  - First-class CLI command: `velo lsp [repo_root]` on both Stage 1 (`python velo.py lsp`) and Stage 2 (`bin/velo.exe lsp`), speaking standard stdio JSON-RPC 2.0 with `Content-Length` framing.
+  - Zero third-party dependencies: uses standard library stdio framing and JSON-RPC dispatching.
+  - Analysis layer (`velo.analysis.VeloAnalysis`):
+    * In-memory buffer overlay: unsaved editor buffers are analyzed on-the-fly via an active `Path.read_text` intercept with zero temporary files written to disk.
+    * Live diagnostics: `textDocument/didOpen`, `textDocument/didChange`, `textDocument/didClose` publish compiler errors and warnings via `CompilerDriver.check()`.
+    * Document symbols: `textDocument/documentSymbol` extracts hierarchical outlines for `data` structs (with child fields), `kind` enums (with child variants), `aka` aliases, and `act` functions.
+    * Hover tooltips: `textDocument/hover` generates markdown signatures, parameter names and types, return types, local variable types, and struct definitions.
+    * Go-to-definition: `textDocument/definition` resolves identifiers across local variables, functions, structs, and imported modules (`use "<file>"`).
+    * Autocompletion: `textDocument/completion` offers context-aware completions on `.` for builtin modules (`io.`, `mem.`, `fs.`, `str.`, `math.`, `time.`, `os.`, `thread.`), keywords (including Chapter 5.2 collections: `shelf`, `map`, `ring`, `bitset`, `heap`, `of`), and primitive types (`dyn`, `usize`, etc.).
+  - VS Code extension (`editors/vscode`):
+    * Grammar parity (`syntaxes/velo.tmLanguage.json`): updated with all collection keywords (`shelf`, `map`, `ring`, `bitset`, `heap`, `of`), primitive `dyn`, and all builtin module members (`io`, `mem`, `fs`, `str`, `math`, `time`, `os`, `thread`).
+    * Analyzer parity: `_server/velo_analysis.py` mirrors the compiler's tables and keywords.
+    * Packaged extension: re-packed `velo-lang-0.4.0.vsix` with updated grammar and server.
+* **Residual Limitations**: (1) Struct field member completion after custom variables (e.g. `point.<caret>`) requires full semantic type inference at expression points; currently member autocompletion triggers on builtin modules and namespaces. (2) Astral Unicode columns (emoji inside string literals) produce column shifts due to UTF-16 code unit vs Python character length differences.
+* **Verification**:
+  - Test suite `tests/test_lsp.py`: 8 tests covering protocol framing, initialize/shutdown lifecycle, didOpen/didChange live diagnostics, document symbols, hover tooltips, go-to-definition, autocompletion, and `python velo.py lsp` subprocess stdio execution.
+  - VS Code test runner `editors/vscode/tests/run_tests.py --real`: **6/6 suites passed** (parity compiler, match spotcheck, sim extension, sim lsp, sim lsp ext, sim real).
+  - Full test suite: **268/268 passing** (was 260).
+  - Triple-bootstrap chain rebuilt (Gen1 → Gen2 → Gen3 → `bin/velo.exe`); bit-for-bit determinism verified with Gen2 ≡ Gen3 SHA-256 fixed point:
+    `AA592D3D36BD1E93E6DA54682C7CDBEFE12F95F408EBDFECEA7A22221DBF712D`.
+  - Line count ceilings: all files ≤ 399 lines (`src/main.vl` 304).
+  - Build sheet: `lsp.md`.
 
 ### 6.5 Native Integrated Test Runner (🟢 P3 Ecosystem)
 * Currently, tests are driven via Python `pytest` and subprocess invocations.

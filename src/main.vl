@@ -14,6 +14,7 @@ act print_usage() {
     io.println("  velo emit-c <source.vl>            Emit generated C99 code to stdout")
     io.println("  velo check <source.vl> [--json] [--color auto|always|never]")
     io.println("  velo doc <source.vl> [-o <out.md>] Extract API documentation to Markdown")
+    io.println("  velo lsp                           Start Velo Language Server (LSP stdio)")
     io.println("  velo version                       Display compiler version")
     io.println("  velo help                          Display this help manual")
 }
@@ -291,6 +292,11 @@ act main(argc: i32, argv: @string) -> i32 {
             }
         }
         return 0
+    }
+
+    if cmd == "lsp" {
+        let rc = system("python -m velo.lsp")
+        return rc
     }
 
     io.println("[Velo Error] Unknown command: '{cmd}'. Run 'velo help' for usage.")
