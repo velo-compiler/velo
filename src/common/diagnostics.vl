@@ -1,4 +1,6 @@
 use sys.io
+use sys.mem
+use "string_builder.vl"
 
 // Formats and reports a compiler error at a specific source location.
 //
@@ -19,4 +21,102 @@ act report_warning(filename: string, line: i32, col: i32, message: string) {
 // Reports a general compiler error not bound to a specific source line.
 act report_simple_error(message: string) {
     io.println("[Velo Error] {message}")
+}
+
+// ---------------------------------------------------------------------------
+// 6.3 S1: the source-snippet block renderer. A block is ADDITIVE output
+// printed right after a positioned one-liner wire row (whose bytes never
+// change). Byte spec:
+//     {file}:{line}:{col}: {severity}: {message}
+//     {line} | {line_text}
+//     " "*(w+1) + "| " + " "*(col-1) + "^"       (w = decimal digits of line)
+// line_text is the row's source line with each tab flattened to one space and
+// a trailing \r stripped; a past-EOF line yields an empty text row with the
+// caret at the formula position. Cols count BYTES here (Stage 1 counts code
+// points; identical for all ASCII house fixtures — documented residue).
+// ---------------------------------------------------------------------------
+
+// Copies the wanted 1-based line's bytes: tabs flattened to one space, a
+// trailing \r stripped, and interior bytes kept verbatim (byte model).
+act pretty_line_text(source: string, want_line: i32) -> string {
+    let n = str.len(source)
+    // Advance to the first byte of the wanted line (or EOF for past-EOF rows).
+    mut start: usize = 0
+    mut line_no: i32 = 1
+    loop line_no < want_line and start < n {
+        if source[start] == '\n' {
+            line_no += 1
+        }
+        start += 1
+    }
+    // The line ends at the next newline (or EOF); strip one trailing \r.
+    mut end = start
+    loop end < n {
+        if source[end] == '\n' {
+            break
+        }
+        end += 1
+    }
+    if end > start and source[end - 1] == '\r' {
+        end -= 1
+    }
+    // Byte-copy with tabs flattened (deterministic; no width-dependent pad).
+    let raw_len = end - start
+    mut buf: @u8 = mem.alloc(@u8, raw_len + 1)
+    mut w: usize = 0
+    mut k = start
+    loop k < end {
+        if source[k] == '\t' {
+            buf[w] = ' '
+        } else {
+            buf[w] = source[k]
+        }
+        w += 1
+        k += 1
+    }
+    buf[w] = 0 as u8
+    return buf as string
+}
+
+// Counts the decimal digits of n — the gutter width (no min-width padding).
+act pretty_digit_count(n: i32) -> usize {
+    if n <= 0 {
+        return 1
+    }
+    mut v = n
+    mut c: usize = 1
+    loop v > 9 {
+        v /= 10
+        c += 1
+    }
+    return c
+}
+
+// Appends `count` spaces to sb — the alignment/caret pad construction helper.
+act pretty_pad_spaces(sb: @StringBuilder, count: usize) {
+    mut i: usize = 0
+    loop i < count {
+        sb_append_char(sb, ' ')
+        i += 1
+    }
+}
+
+// Renders one diagnostic's source-snippet block (spec above). Stage 2 calls
+// it via report_parse for parse rows; Stage 1 mirrors the exact bytes in
+// velo/pretty_diag.py.
+act pretty_render_block(file: string, line: i32, col: i32, message: string, sev: string, source: string) {
+    io.println("{file}:{line}:{col}: {sev}: {message}")
+    let src_line = pretty_line_text(source, line)
+    io.println("{line} | {src_line}")
+    let w = pretty_digit_count(line)
+    mut pad = create_sb(w + (col as usize) + 6)
+    pretty_pad_spaces(@pad, w + 1)
+    sb_append_str(@pad, "| ")
+    mut caret_pad: usize = 0
+    if col > 1 {
+        caret_pad = (col - 1) as usize
+    }
+    pretty_pad_spaces(@pad, caret_pad)
+    sb_append_char(@pad, '^')
+    io.println(sb_to_string(@pad))
 }

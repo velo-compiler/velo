@@ -4,6 +4,9 @@ import json
 import argparse
 from pathlib import Path
 from velo.driver import CompilerDriver
+from velo.lexer import LexerError            # 6.3 S1: catch-all block positions
+from velo.parser import ParserError          # 6.3 S1: catch-all block positions
+from velo.pretty_diag import print_block     # 6.3 S1: additive source-snippet blocks
 
 def main():
     # 5.2: diagnostics (and all tool output) must carry the same bytes as the
@@ -81,6 +84,9 @@ def main():
                     tag = "Warning" if diag["severity"] == "warning" else "Error"
                     if diag["line"] > 0:
                         print(f"[Velo {tag}] {diag['file']}:{diag['line']}:{diag['col']} - {diag['message']}", file=sys.stderr)
+                        # 6.3 S1: the additive source-snippet block rides the row.
+                        print_block(diag["file"], diag["line"], diag["col"],
+                                    diag["message"], diag["severity"], sys.stderr)
                     else:
                         print(f"[Velo {tag}] {diag['message']}", file=sys.stderr)
             if report["ok"] and not args.json_mode:
@@ -95,6 +101,20 @@ def main():
                 print(docs, end="")
     except Exception as e:
         print(f"\n[Velo Error] {e}", file=sys.stderr)
+        # 6.3 S1: run/build/emit-c doc failures carrying a position (Lexer /
+        # Parser errors) get the same additive source-snippet block. Prefix
+        # stripping mirrors driver.check's row-building logic verbatim.
+        if isinstance(e, LexerError):
+            prefix = f"Lexer Error at line {e.line}, col {e.col}: "
+            text = str(e)
+            message = text[len(prefix):] if text.startswith(prefix) else text
+            print_block(args.file, e.line, e.col, message, "error", sys.stderr)
+        elif isinstance(e, ParserError):
+            tok = e.token
+            prefix = f"Parser Error at line {tok.line}, col {tok.col}: "
+            text = str(e)
+            message = text[len(prefix):] if text.startswith(prefix) else text
+            print_block(args.file, tok.line, tok.col, message, "error", sys.stderr)
         sys.exit(1)
 
 if __name__ == "__main__":

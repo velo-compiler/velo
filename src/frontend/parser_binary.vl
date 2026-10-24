@@ -2,6 +2,7 @@
 use sys.io
 use sys.mem
 use "token.vl"
+use "../common/diagnostics.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"
 use "parser.vl"
@@ -120,4 +121,14 @@ act parse_logical_or(p: @Parser) -> @ExprNode {
 // Parses a complete expression matching the full Pratt operator precedence hierarchy.
 act parse_expression(p: @Parser) -> @ExprNode {
     return parse_logical_or(p)
+}
+
+// 6.3 S1: the parse-row report wrapper. Prints the pinned one-liner wire row
+// VERBATIM (the label stays whatever the site passed today: the real filename
+// or the `parse`/`parser` pseudo-name), then rides the additive source-snippet
+// block below it. Severity is always "error" for parse rows (warnings are
+// lexer-only for now).
+act report_parse(p: @Parser, label: string, line: i32, col: i32, msg: string) {
+    report_error(label, line, col, msg)
+    pretty_render_block(p.filename, line, col, msg, "error", p.source)
 }

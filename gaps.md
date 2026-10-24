@@ -562,6 +562,23 @@ The chapter ships in full: slice 1 scaffold + now/delta/sleep_ms (closed namespa
      29 |     let x = foo + 10;
         |             ^^^
   ```
+* **Slice 1 (S1) [SHIPPED ✅ 2026-10-24]**: parse-row snippet blocks on both
+  stages. Renderer acts (`pretty_render_block`/`pretty_line_text`/
+  `pretty_digit_count`) in `src/common/diagnostics.vl` (22 → 122 lines);
+  `report_parse` wrapper in `src/frontend/parser_binary.vl`; 14 parse-report
+  sites swapped (`parser.vl` 6, `parser_decl.vl` 4, `parser_expr.vl` 2,
+  `parser_stmt.vl` 2) with wire rows byte-net-zero; blocks are ADDITIVE on
+  the same stream (stage 2 stdout, stage 1 stderr) and `--json` stays
+  block-free (`check_is_noise` now skips non-`[Velo` lines). Stage 1 twins
+  it in new `velo/pretty_diag.py` (check-loop positioned rows + run/build
+  catch-all `LexerError`/`ParserError`). Point caret only (`^`); multi-char
+  spans (`^^^`) and colors are S3/S4. Battery `tests/test_diagnostics_pretty.py`
+  (13 tests; suite **228/228**), sweep **57/57**, chain rebuilt with fixed
+  point `DD0988C3A97516445660DEF7F6B59FAC60083CAF3B4B177FB331C3383B3D3520`,
+  all ceilings ≤ 399. Cross-stage: positions + gutter + caret bytes pinned
+  equal; row/block-header wordings remain per-stage (pre-existing 6.7
+  divergence — stage 1 appends `(got …)`, and adds the token text to
+  `Unexpected …` rows). Sheet: `diagnostics.md` §S1 snapshot.
 
 ### 6.4 Developer Tooling: Language Server Protocol (LSP) (🟢 P3 Ecosystem)
 * A declarative VS Code extension (TextMate grammar + snippets + language configuration)

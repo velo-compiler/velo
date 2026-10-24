@@ -171,6 +171,12 @@ act check_diag_to_json(sb: @StringBuilder, line_text: string, src_path: string) 
 
 // True for lines that must not become diagnostics (confirmations, summary).
 act check_is_noise(line_text: string) -> bool {
+    // 6.3 S1: snippet-block lines under a diagnostic row (header, gutter,
+    // caret) never carry a [Velo tag — they are not rows, so the JSON lane
+    // must skip them just like the tagged confirmations below are.
+    if not check_starts_with(line_text, "[Velo") {
+        return true
+    }
     if check_starts_with(line_text, "[Velo] ") {
         return true
     }
