@@ -578,7 +578,21 @@ The chapter ships in full: slice 1 scaffold + now/delta/sleep_ms (closed namespa
   all ceilings ≤ 399. Cross-stage: positions + gutter + caret bytes pinned
   equal; row/block-header wordings remain per-stage (pre-existing 6.7
   divergence — stage 1 appends `(got …)`, and adds the token text to
-  `Unexpected …` rows). Sheet: `diagnostics.md` §S1 snapshot.
+* **Slice 2 (S2) [SHIPPED ✅ 2026-10-24]**: semantic-row snippet blocks on Stage 2
+  via capture reconstruction. New `src/backend/pretty_recon.vl` (272 lines)
+  reconstructs the captured compiler output stream without editing any of the
+  ~140 semantic error sites: every wire row (`[Velo Error|Warning]`) is reprinted
+  verbatim, followed by an additive source-snippet block under positioned error
+  rows matching the single-visited-file case against the re-read `src_path`
+  source (pseudo-names `semantic` and `backend` re-attributed to `src_path`).
+  Multi-file programs (`use "<file>"`) keep one-liner-only output (block-less)
+  with a documented residual (the merged AST carries no per-node file provenance).
+  Parse errors from S1 pass through cleanly with zero block duplication (lookahead
+  detects existing block lines). Stage 1 semantic rows stay block-less (documented
+  6.7 divergence). Battery `tests/test_diagnostics_pretty.py` (+5 tests; suite
+  **233/233**), chain rebuilt Gen1→Gen2→Gen3 and `bin/velo.exe` updated with new
+  fixed point SHA-256 `4EFBFD05966A777AE656C04FDEF8C108DFDBD6725F8A204C901B78987D653CE4`;
+  all ceilings ≤ 399. Sheet: `diagnostics.md` §S2 snapshot.
 
 ### 6.4 Developer Tooling: Language Server Protocol (LSP) (🟢 P3 Ecosystem)
 * A declarative VS Code extension (TextMate grammar + snippets + language configuration)

@@ -22,6 +22,7 @@ use sys.fs
 use "../common/utils.vl"
 use "../common/string_builder.vl"
 use "driver.vl"
+use "pretty_recon.vl"
 
 extern act velo_capture_begin(path: string) -> i32
 extern act velo_capture_end() -> i32
@@ -342,6 +343,6 @@ act run_check_pretty(src_path: string, unsafe_index: bool) -> bool {
         return ok
     }
     defer mem.free(captured)
-    io.println(captured)
+    recon_emit_pretty(captured, src_path)
     return ok and check_count_errors(captured) == 0
 }

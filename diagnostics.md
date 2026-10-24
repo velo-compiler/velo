@@ -335,3 +335,33 @@ sweep rc, chain SHA, suite totals, ceilings.)
   and the wording sweeps collapse it; `--json` lane clean); stage-2 `run` on
   parse-broken input exits 0 (best-effort execute path — `check` is the
   rc-gated lane).
+
+### S2 — semantic-row blocks on stage 2 (shipped 2026-10-24)
+
+* [x] Stream reconstructor in new `src/backend/pretty_recon.vl` (272 lines);
+  wired into `src/backend/check.vl` `run_check_pretty` (347 → 348 lines):
+  reconstructs the captured stdout stream so that positioned semantic error
+  rows gain source-snippet blocks identical to parse-row blocks, without
+  modifying any of the ~140 semantic report sites in `src/analysis/*.vl`.
+* [x] Pseudo-name re-attribution: `semantic`, `backend`, `parser`, `parse`
+  peeled labels are re-attributed to `src_path` (matching check.vl:141 logic)
+  and render snippet blocks from the re-read source file.
+* [x] Single-file vs multi-file distinction: `recon_is_single_file` scans
+  the source for non-sys `use` statements. Multi-file programs (visited
+  list ≥ 2) keep one-liner-only output (block-less) with a documented
+  residual (AST lacks per-node file provenance).
+* [x] Zero duplication on S1 parse blocks: lookahead check ensures that
+  positioned rows whose subsequent line is already a snippet block line
+  (i.e. not starting `[Velo`) pass through verbatim without re-rendering.
+* [x] Stage-1 semantic rows stay block-less (documented 6.7 divergence).
+* [x] JSON lane stability: `velo check --json` remains block-free on both
+  stages (covered by S1's `check_is_noise` rule).
+* [x] Battery `tests/test_diagnostics_pretty.py`: +5 tests (single semantic
+  error row+block, multi-row semantic errors with summary, multi-file
+  block-less pin, JSON lane stability, Stage 1 block-less parity). Full suite
+  **233/233** (228 prior + 5).
+* [x] Chain rebuilt Gen1→Gen2→Gen3, `bin/velo.exe` updated; fixed point
+  SHA-256 `4EFBFD05966A777AE656C04FDEF8C108DFDBD6725F8A204C901B78987D653CE4`
+  (Gen2 ≡ Gen3 emit-c).
+* [x] Ceilings: every source ≤ 399 (`pretty_recon.vl` 272, `check.vl` 348,
+  `diagnostics.vl` 122).

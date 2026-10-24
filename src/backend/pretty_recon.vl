@@ -1,0 +1,272 @@
+// Stream reconstruction engine for self-hosted 'velo check' pretty diagnostics.
+//
+// 6.3 S2: Reconstructs the captured stdout stream so that positioned semantic
+// analysis rows (and backend diagnostic rows) gain source-snippet blocks
+// identical to parse-row blocks, without modifying the ~140 individual semantic
+// report_error sites.
+//
+// Multi-file programs (visited list >= 2) keep one-liner-only output (block-less)
+// as a documented residual because the merged AST does not carry per-node file
+// provenance.
+
+use sys.io
+use sys.mem
+use sys.fs
+use "../common/utils.vl"
+use "../common/diagnostics.vl"
+
+// Returns true if s starts with prefix (byte-by-byte comparison).
+act recon_starts_with(s: string, prefix: string) -> bool {
+    let slen = str.len(s)
+    let plen = str.len(prefix)
+    if plen > slen {
+        return false
+    }
+    mut i: usize = 0
+    loop i < plen {
+        if s[i] != prefix[i] {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// 1-based index of the LAST occurrence of needle in s (0 = absent).
+act recon_rfind(s: string, needle: string) -> i32 {
+    let slen = str.len(s)
+    let nlen = str.len(needle)
+    if nlen == 0 or nlen > slen {
+        return 0
+    }
+    mut last: i32 = 0
+    let stop: i32 = slen - nlen
+    mut i: usize = 0
+    loop i <= stop {
+        mut matches: bool = true
+        mut j: usize = 0
+        loop j < nlen {
+            if s[i + j] != needle[j] {
+                matches = false
+                break
+            }
+            j += 1
+        }
+        if matches {
+            last = (i as i32) + 1
+        }
+        i += 1
+    }
+    return last
+}
+
+// Returns true if mod_name is a standard built-in sys.* module that does not load external files.
+act recon_is_builtin_mod(mod_name: string) -> bool {
+    return mod_name == "sys.io" or mod_name == "sys.mem" or mod_name == "sys.fs" or mod_name == "sys.thread" or mod_name == "sys.math" or mod_name == "sys.time" or mod_name == "sys.os"
+}
+
+// Scans source text to check whether it contains any non-sys module imports.
+// Returns true if the program is self-contained (single visited file).
+act recon_is_single_file(source: string) -> bool {
+    let n = str.len(source)
+    mut i: usize = 0
+    loop i < n {
+        let c = source[i]
+        if c == ' ' or c == '\t' or c == '\r' or c == '\n' {
+            i += 1
+        } else if c == '/' and i + 1 < n and source[i + 1] == '/' {
+            i += 2
+            loop i < n and source[i] != '\n' {
+                i += 1
+            }
+        } else if c == '/' and i + 1 < n and source[i + 1] == '*' {
+            i += 2
+            loop i + 1 < n and not (source[i] == '*' and source[i + 1] == '/') {
+                i += 1
+            }
+            if i + 1 < n {
+                i += 2
+            } else {
+                i = n
+            }
+        } else if c == '"' {
+            i += 1
+            loop i < n and source[i] != '"' {
+                if source[i] == '\\' and i + 1 < n {
+                    i += 1
+                }
+                i += 1
+            }
+            if i < n {
+                i += 1
+            }
+        } else if c == '`' {
+            i += 1
+            loop i < n and source[i] != '`' {
+                i += 1
+            }
+            if i < n {
+                i += 1
+            }
+        } else if is_ident_start(c) {
+            let start = i
+            loop i < n and is_ident_part(source[i]) {
+                i += 1
+            }
+            let id = copy_slice_to_string(source, start, i - start)
+            if id == "use" {
+                mut scanning: bool = true
+                loop scanning and i < n {
+                    let sc = source[i]
+                    if sc == ' ' or sc == '\t' or sc == '\r' or sc == '\n' {
+                        i += 1
+                    } else if sc == '/' and i + 1 < n and source[i + 1] == '/' {
+                        i += 2
+                        loop i < n and source[i] != '\n' {
+                            i += 1
+                        }
+                    } else if sc == '/' and i + 1 < n and source[i + 1] == '*' {
+                        i += 2
+                        loop i + 1 < n and not (source[i] == '*' and source[i + 1] == '/') {
+                            i += 1
+                        }
+                        if i + 1 < n {
+                            i += 2
+                        } else {
+                            i = n
+                        }
+                    } else {
+                        scanning = false
+                    }
+                }
+                if i < n and source[i] == '"' {
+                    i += 1
+                    let qstart = i
+                    loop i < n and source[i] != '"' {
+                        if source[i] == '\\' and i + 1 < n {
+                            i += 1
+                        }
+                        i += 1
+                    }
+                    let qmod = copy_slice_to_string(source, qstart, i - qstart)
+                    if i < n {
+                        i += 1
+                    }
+                    if not recon_is_builtin_mod(qmod) {
+                        return false
+                    }
+                } else if i < n and is_ident_start(source[i]) {
+                    let mstart = i
+                    loop i < n and (is_ident_part(source[i]) or source[i] == '.') {
+                        i += 1
+                    }
+                    let dmod = copy_slice_to_string(source, mstart, i - mstart)
+                    if not recon_is_builtin_mod(dmod) {
+                        return false
+                    }
+                }
+            }
+        } else {
+            i += 1
+        }
+    }
+    return true
+}
+
+// Reconstructs and emits the captured compiler output stream.
+// Positioned semantic error rows gain snippet blocks from re-read src_path.
+act recon_emit_pretty(captured: string, src_path: string) {
+    let source = fs.read_file(src_path)
+    mut single_file: bool = false
+    if source != null {
+        single_file = recon_is_single_file(source)
+    }
+
+    let n = str.len(captured)
+    mut line_count: usize = 0
+    mut i: usize = 0
+    loop i <= n {
+        if i == n or captured[i] == '\n' {
+            line_count += 1
+        }
+        i += 1
+    }
+
+    mut starts: @usize = mem.alloc(@usize, line_count)
+    mut lens: @usize = mem.alloc(@usize, line_count)
+
+    mut cur_start: usize = 0
+    mut idx: usize = 0
+    i = 0
+    loop i <= n {
+        if i == n or captured[i] == '\n' {
+            mut llen = i - cur_start
+            if llen > 0 and captured[i - 1] == '\r' {
+                llen -= 1
+            }
+            starts[idx] = cur_start
+            lens[idx] = llen
+            idx += 1
+            cur_start = i + 1
+        }
+        i += 1
+    }
+
+    mut k: usize = 0
+    loop k < line_count {
+        let llen = lens[k]
+        if llen > 0 or k + 1 < line_count {
+            let line_text = copy_slice_to_string(captured, starts[k], llen)
+            io.println(line_text)
+
+            // A row already carries a block if the line immediately following it is not a [Velo row.
+            mut next_is_row_or_end: bool = true
+            if k + 1 < line_count and lens[k + 1] > 0 {
+                let nstart = starts[k + 1]
+                let nlen = lens[k + 1]
+                if nlen >= 6 and captured[nstart] == '[' and captured[nstart + 1] == 'V' and captured[nstart + 2] == 'e' and captured[nstart + 3] == 'l' and captured[nstart + 4] == 'o' {
+                    next_is_row_or_end = true
+                } else {
+                    next_is_row_or_end = false
+                }
+            }
+
+            if single_file and source != null and next_is_row_or_end and llen > 13 and recon_starts_with(line_text, "[Velo Error] ") {
+                let rest = copy_slice_to_string(line_text, 13, llen - 13)
+                let rlen = str.len(rest)
+                let dash = recon_rfind(rest, " - ")
+                if dash > 0 {
+                    let le: usize = (dash - 1) as usize
+                    mut cs: usize = le
+                    loop cs > 0 and is_digit(rest[cs - 1]) {
+                        cs -= 1
+                    }
+                    if cs < le and cs > 0 and rest[cs - 1] == ':' {
+                        mut ls: usize = cs - 1
+                        loop ls > 0 and is_digit(rest[ls - 1]) {
+                            ls -= 1
+                        }
+                        if ls < cs - 1 and ls > 0 and rest[ls - 1] == ':' and ls > 1 {
+                            let ffile = copy_slice_to_string(rest, 0, ls - 1)
+                            let flines = parse_int_from_slice(rest, ls, (cs - 1) - ls)
+                            let fcols = parse_int_from_slice(rest, cs, le - cs)
+                            let msg = copy_slice_to_string(rest, (dash + 2) as usize, rlen - (dash + 2) as usize)
+                            mut fname: string = ffile
+                            if ffile == "semantic" or ffile == "backend" or ffile == "parser" or ffile == "parse" {
+                                fname = src_path
+                            }
+                            if fname == src_path and flines > 0 {
+                                pretty_render_block(fname, flines, fcols, msg, "error", source)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        k += 1
+    }
+
+    if source != null {
+        mem.free(source)
+    }
+}

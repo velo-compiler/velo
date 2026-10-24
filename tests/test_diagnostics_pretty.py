@@ -60,6 +60,36 @@ act main() -> i32 {
 }
 """
 
+SEMANTIC_UNDECLARED = """use sys.io
+
+act main() -> i32 {
+    let x = foo + 10
+    return 0
+}
+"""
+
+SEMANTIC_MULTI_ERROR = """use sys.io
+
+act main() -> i32 {
+    let x = foo + 10
+    return "mismatch"
+}
+"""
+
+MULTI_FILE_MAIN = """use sys.io
+use "sub.vl"
+
+act main() -> i32 {
+    let x = foo + 10
+    return helper()
+}
+"""
+
+MULTI_FILE_SUB = """act helper() -> i32 {
+    return 42
+}
+"""
+
 
 def _write(tmp_path, name, content):
     p = tmp_path / name
@@ -225,6 +255,90 @@ def test_warning_rows_get_no_block_native(tmp_path):
     # No block ever rides a warning row.
     assert "error: Duplicate type alias" not in err
     assert "warning: Duplicate type alias" not in err
+
+
+# ---------------- 6.3 S2: Semantic-row blocks (Stage 2) ----------------
+
+def test_semantic_row_plus_block_native(tmp_path):
+    path = _write(tmp_path, "sem_undec.vl", SEMANTIC_UNDECLARED)
+    result = _run_native(["check", path])
+    assert result.returncode == 1
+    err = result.stdout + result.stderr
+    assert f"[Velo Error] semantic:4:13 - Undeclared identifier" in err
+    header_pos = err.index(f"{path}:4:13: error: Undeclared identifier")
+    gutter_pos = err.index("4 |     let x = foo + 10")
+    caret_pos = err.index("  |             ^")
+    row_pos = err.index("[Velo Error] semantic:4:13 - Undeclared identifier")
+    assert row_pos < header_pos < gutter_pos < caret_pos
+    assert "[Velo Error] Semantic analysis failed with 1 errors." in err
+    assert "error: Semantic analysis failed" not in err
+
+
+def test_semantic_multi_row_blocks_native(tmp_path):
+    path = _write(tmp_path, "sem_multi.vl", SEMANTIC_MULTI_ERROR)
+    result = _run_native(["check", path])
+    assert result.returncode == 1
+    err = result.stdout + result.stderr
+    assert "[Velo Error] semantic:4:13 - Undeclared identifier" in err
+    assert f"{path}:4:13: error: Undeclared identifier" in err
+    assert "4 |     let x = foo + 10" in err
+    assert "  |             ^" in err
+    assert "[Velo Error] semantic:5:5 - Return type mismatch" in err
+    assert f"{path}:5:5: error: Return type mismatch" in err
+    assert "5 |     return \"mismatch\"" in err
+    assert "  |     ^" in err
+    assert "[Velo Error] Semantic analysis failed with 2 errors." in err
+
+
+def test_semantic_multi_file_block_less_native(tmp_path):
+    _write(tmp_path, "sub.vl", MULTI_FILE_SUB)
+    path = _write(tmp_path, "main.vl", MULTI_FILE_MAIN)
+    result = _run_native(["check", path])
+    assert result.returncode == 1
+    err = result.stdout + result.stderr
+    assert "[Velo Error] semantic:5:13 - Undeclared identifier" in err
+    assert f"{path}:5:13: error: Undeclared identifier" not in err
+    assert "5 |     let x = foo + 10" not in err
+    assert "[Velo Error] Semantic analysis failed with 1 errors." in err
+
+
+def test_semantic_json_lane_block_free_native(tmp_path):
+    path = _write(tmp_path, "sem_multi.vl", SEMANTIC_MULTI_ERROR)
+    result = _run_native(["check", path, "--json"])
+    assert result.returncode == 1
+    report = json.loads(result.stdout)
+    assert report["ok"] is False
+    assert len(report["diagnostics"]) == 2
+    assert report["diagnostics"][0]["file"] == path
+    assert (report["diagnostics"][0]["line"], report["diagnostics"][0]["col"]) == (4, 13)
+    assert (report["diagnostics"][1]["line"], report["diagnostics"][1]["col"]) == (5, 5)
+    assert "^" not in result.stdout
+    assert "let x = foo" not in result.stdout
+
+
+SEM_STAGE1 = """use sys.io
+
+data Vec4 {
+    x: f32 = 0.0
+    z: f32
+}
+
+act main() -> i32 {
+    let v = Vec4{ x: 1.0 }
+    return 0
+}
+"""
+
+
+def test_semantic_row_stage1_block_free(tmp_path):
+    path = _write(tmp_path, "sem_st1.vl", SEM_STAGE1)
+    result = _run_stage1(["check", path])
+    assert result.returncode == 1
+    err = result.stderr
+    assert "[Velo Error] Struct literal 'Vec4' is missing field 'z'" in err
+    # Unpositioned semantic rows in Stage 1 stay block-less.
+    assert "^" not in err
+    assert "8 | " not in err
 
 
 # ---------------- Cross-stage parity (shape, not wording) ----------------
