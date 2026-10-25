@@ -22,9 +22,9 @@ act cast_voxel_ray(w: @VoxelWorld, eye: Vector3, dir: Vector3) -> RayHit {
     let max_dist: f32 = 5.5
     let n_steps = (max_dist / step_len) as i32
 
-    mut lx = eye.x as i32
-    mut ly = eye.y as i32
-    mut lz = eye.z as i32
+    mut lx = floor_to_i32(eye.x)
+    mut ly = floor_to_i32(eye.y)
+    mut lz = floor_to_i32(eye.z)
 
     mut i: i32 = 0
     loop i < n_steps {
@@ -33,11 +33,11 @@ act cast_voxel_ray(w: @VoxelWorld, eye: Vector3, dir: Vector3) -> RayHit {
         let sample_y = eye.y + dir.y * dist
         let sample_z = eye.z + dir.z * dist
 
-        let cx = sample_x as i32
-        let cy = sample_y as i32
-        let cz = sample_z as i32
+        let cx = floor_to_i32(sample_x)
+        let cy = floor_to_i32(sample_y)
+        let cz = floor_to_i32(sample_z)
 
-        if world_in_bounds(cx, cy, cz) {
+        if cy >= 0 and cy <= 15 {
             let block_id = world_get(w, cx, cy, cz)
             if block_id != BLOCK_AIR {
                 hit.has_hit = true

@@ -82,14 +82,15 @@ act draw_hud(screen_w: f32, screen_h: f32, p: @Player, hit: @RayHit, cursor_lock
     }
 
     // 3. Top-Left Status Card (Coordinates, Active Block, Day/Night Phase)
-    DrawRectangle(10, 10, 230, 86, make_color(15, 20, 25, 190))
-    DrawRectangleLines(10, 10, 230, 86, make_color(60, 70, 85, 255))
+    DrawRectangle(10, 10, 240, 104, make_color(15, 20, 25, 190))
+    DrawRectangleLines(10, 10, 240, 104, make_color(60, 70, 85, 255))
     DrawText("VELOCRAFT 3D", 18, 15, 18, make_color(255, 220, 50, 255))
 
     let active_name = get_slot_name(p.active_slot)
     DrawText(active_name, 18, 36, 14, make_color(100, 220, 120, 255))
     DrawText(time_str, 18, 54, 14, time_col)
-    DrawText("Hold [T] to Speed Up Time", 18, 72, 11, make_color(180, 200, 220, 200))
+    DrawText("Infinite Multi-Chunk Terrain", 18, 72, 12, make_color(160, 220, 255, 255))
+    DrawText("Hold [T] to Speed Up Time", 18, 88, 11, make_color(180, 200, 220, 200))
 
     // 4. Top-Right Controls Hint
     DrawRectangle((screen_w - 490.0) as i32, 10, 480, 28, make_color(15, 20, 25, 180))
@@ -139,6 +140,9 @@ act main() -> i32 {
     mut cursor_locked = true
     DisableCursor()
 
+    // Initialize chunks around player spawn position
+    update_world_chunks(@world, player.pos.x, player.pos.z)
+
     mut prev_slot = player.active_slot
     mut day_time: f32 = 0.25 // Start at pleasant morning/noon
 
@@ -155,21 +159,21 @@ act main() -> i32 {
         day_time += dt * time_speed
         loop day_time >= 1.0 { day_time -= 1.0 }
 
-        // Orbital angles for Sun & Moon
+        // Orbital angles for Sun & Moon centered around player position
         let sun_angle = day_time * 6.28318
         let sun_cos = approx_cos(sun_angle)
         let sun_sin = approx_sin(sun_angle)
 
         let orb_r: f32 = 48.0
         let sun_pos = Vector3{
-            x: 16.0 + sun_cos * orb_r,
+            x: player.pos.x + sun_cos * orb_r,
             y: 6.0 + sun_sin * orb_r,
-            z: 16.0 + sun_sin * 14.0
+            z: player.pos.z + sun_sin * 14.0
         }
         let moon_pos = Vector3{
-            x: 16.0 - sun_cos * orb_r,
+            x: player.pos.x - sun_cos * orb_r,
             y: 6.0 - sun_sin * orb_r,
-            z: 16.0 - sun_sin * 14.0
+            z: player.pos.z - sun_sin * 14.0
         }
 
         // Lighting, Sky Color, and Atmosphere
@@ -224,12 +228,13 @@ act main() -> i32 {
             DisableCursor()
         }
 
-        // 4. Update Player (only when active)
+        // 4. Update Player & Stream Chunks (only when active)
         if cursor_locked {
             let played_step = update_player(@player, @world, dt, cursor_locked)
             if played_step {
                 PlaySound(snd_step)
             }
+            update_world_chunks(@world, player.pos.x, player.pos.z)
         }
 
         // Check hotbar switch sound
@@ -257,12 +262,12 @@ act main() -> i32 {
                 let py = ray_hit.place_y
                 let pz = ray_hit.place_z
 
-                let pl_bx = player.pos.x as i32
-                let pl_by = player.pos.y as i32
-                let pl_bz = player.pos.z as i32
+                let pl_bx = floor_to_i32(player.pos.x)
+                let pl_by = floor_to_i32(player.pos.y)
+                let pl_bz = floor_to_i32(player.pos.z)
                 let hits_player = (px == pl_bx and pz == pl_bz and (py == pl_by or py == pl_by + 1))
 
-                if world_in_bounds(px, py, pz) and not hits_player {
+                if py >= 0 and py <= 15 and not hits_player {
                     let block_to_place = get_slot_block(player.active_slot)
                     world_set(@world, px, py, pz, block_to_place)
                     PlaySound(snd_place)
@@ -294,8 +299,8 @@ act main() -> i32 {
             DrawCubeWires(moon_pos, 4.8, 4.8, 4.8, make_color(180, 205, 250, 120))
         }
 
-        // Voxel World with Dynamic Lighting
-        draw_world(@world, light_mult, block_tint)
+        // Voxel World with Dynamic Lighting and Distance Culling
+        draw_world(@world, light_mult, block_tint, cam.position.x, cam.position.z)
 
         if cursor_locked {
             draw_target_highlight(@ray_hit)

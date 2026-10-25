@@ -79,3 +79,13 @@ act vec3_horizontal_right(yaw: f32) -> Vector3 {
         z: 0.0 - approx_sin(yaw)
     }
 }
+
+// Exact mathematical floor conversion from float to integer for negative and positive coordinates
+act floor_to_i32(v: f32) -> i32 {
+    let i = v as i32
+    if v < (i as f32) {
+        return i - 1
+    }
+    return i
+}
+

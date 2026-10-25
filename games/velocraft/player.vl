@@ -16,7 +16,7 @@ data Player {
 
 act init_player() -> Player {
     mut p: Player
-    p.pos = Vector3{ x: 16.0, y: 12.0, z: 16.0 }
+    p.pos = Vector3{ x: 8.0, y: 14.0, z: 8.0 }
     p.yaw = 0.0
     p.pitch = 0.0
     p.vel_y = 0.0
@@ -89,11 +89,9 @@ act update_player(p: @Player, w: @VoxelWorld, dt: f32, cursor_locked: bool) -> b
         let step_x = move_x * inv_len * speed * dt
         let step_z = move_z * inv_len * speed * dt
 
-        // Collision check on new X/Z coords
-        let target_x = p.pos.x + step_x
-        let target_z = p.pos.z + step_z
-        if target_x > 0.5 and target_x < 31.5 { p.pos.x = target_x }
-        if target_z > 0.5 and target_z < 31.5 { p.pos.z = target_z }
+        // Infinite movement without world bounds restriction
+        p.pos.x += step_x
+        p.pos.z += step_z
 
         if p.is_grounded {
             p.step_timer += dt
@@ -105,12 +103,12 @@ act update_player(p: @Player, w: @VoxelWorld, dt: f32, cursor_locked: bool) -> b
     }
 
     // 4. Ground Collision & Gravity
-    let bx = p.pos.x as i32
-    let bz = p.pos.z as i32
+    let bx = floor_to_i32(p.pos.x)
+    let bz = floor_to_i32(p.pos.z)
 
     // Find highest solid block below or at player's feet
     mut ground_y: f32 = 0.0
-    mut check_y: i32 = (p.pos.y + 0.4) as i32
+    mut check_y = floor_to_i32(p.pos.y + 0.4)
     if check_y > 15 { check_y = 15 }
     loop check_y >= 0 {
         if world_get(w, bx, check_y, bz) != BLOCK_AIR {
