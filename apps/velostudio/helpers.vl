@@ -1,0 +1,79 @@
+// VeloStudio UI & Data Export Helpers
+
+use sys.mem
+use sys.fs
+use "sqlite.vl"
+
+act int_to_str(val: i64) -> string {
+    if val == 0 { return "0" }
+    mut n = val
+    mut is_neg = false
+    if n < 0 {
+        is_neg = true
+        n = 0 - n
+    }
+    mut buf: @u8 = mem.alloc(@u8, 32)
+    mut count: usize = 0
+    loop n > 0 {
+        buf[count] = ('0' as u8) + ((n % 10) as u8)
+        n = n / 10
+        count += 1
+    }
+    mut res: @u8 = mem.alloc(@u8, count + 2)
+    mut pos: usize = 0
+    if is_neg {
+        res[0] = '-'
+        pos = 1
+    }
+    mut i = count
+    loop i > 0 {
+        i -= 1
+        res[pos] = buf[i]
+        pos += 1
+    }
+    res[pos] = 0 as u8
+    return res as string
+}
+
+act point_in_rect(px: i32, py: i32, rx: i32, ry: i32, rw: i32, rh: i32) -> bool {
+    return px >= rx and px <= (rx + rw) and py >= ry and py <= (ry + rh)
+}
+
+// Exports active query result to a CSV file
+act export_query_csv(filename: string, q: @QueryResult) -> bool {
+    if q.col_count <= 0 { return false }
+    let fh: @File = fs.fopen(filename, "wb")
+    if fh == null { return false }
+
+    // 1. Column Headers
+    mut c: i32 = 0
+    loop c < q.col_count {
+        fs.fwrite(fh, q.col_names[c as usize])
+        if c + 1 < q.col_count {
+            fs.fwrite(fh, ",")
+        }
+        c += 1
+    }
+    fs.fwrite(fh, "\r\n")
+
+    // 2. Rows
+    mut r: i32 = 0
+    loop r < q.row_count {
+        let row = q.rows[r as usize]
+        mut ci: i32 = 0
+        loop ci < q.col_count {
+            fs.fwrite(fh, "\"")
+            fs.fwrite(fh, row[ci as usize])
+            fs.fwrite(fh, "\"")
+            if ci + 1 < q.col_count {
+                fs.fwrite(fh, ",")
+            }
+            ci += 1
+        }
+        fs.fwrite(fh, "\r\n")
+        r += 1
+    }
+
+    fs.fclose(fh)
+    return true
+}

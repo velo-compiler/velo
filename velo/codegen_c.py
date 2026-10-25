@@ -3476,8 +3476,15 @@ class CCodeGenerator:
         return f"velo_fs_remove({path_code})"
 
     def _extract_type_name(self, expr: Expr) -> str:
-        if isinstance(expr, AddressOf) and isinstance(expr.operand, Identifier):
-            return expr.operand.name
+        if isinstance(expr, AddressOf):
+            curr = expr.operand
+            prefix = ""
+            while isinstance(curr, AddressOf):
+                prefix += "@"
+                curr = curr.operand
+            if isinstance(curr, Identifier):
+                return prefix + curr.name
+            return "void"
         elif isinstance(expr, Identifier):
             return expr.name
         return "void"

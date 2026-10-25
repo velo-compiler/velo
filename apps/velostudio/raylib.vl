@@ -1,0 +1,67 @@
+// VeloStudio Raylib 5.0 C-FFI Windowing, Input & 2D Graphics Engine
+
+data Color {
+    r: u8
+    g: u8
+    b: u8
+    a: u8
+}
+
+act make_color(r: u8, g: u8, b: u8, a: u8) -> Color {
+    return Color{ r: r, g: g, b: b, a: a }
+}
+
+// Window Management
+extern act InitWindow(width: i32, height: i32, title: string) -> void
+extern act CloseWindow() -> void
+extern act WindowShouldClose() -> bool
+extern act SetTargetFPS(fps: i32) -> void
+extern act SetWindowTitle(title: string) -> void
+extern act GetFPS() -> i32
+
+// Timing
+extern act GetFrameTime() -> f32
+extern act GetTime() -> f64
+
+// Drawing Lifecycle
+extern act BeginDrawing() -> void
+extern act EndDrawing() -> void
+extern act ClearBackground(color: Color) -> void
+
+// Shapes & Primitives
+extern act DrawRectangle(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
+extern act DrawRectangleLines(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
+extern act DrawLine(startPosX: i32, startPosY: i32, endPosX: i32, endPosY: i32, color: Color) -> void
+extern act DrawCircle(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
+
+// Typography
+extern act DrawText(text: string, posX: i32, posY: i32, fontSize: i32, color: Color) -> void
+extern act MeasureText(text: string, fontSize: i32) -> i32
+
+// Mouse Input
+extern act GetMouseX() -> i32
+extern act GetMouseY() -> i32
+extern act IsMouseButtonPressed(button: i32) -> bool
+extern act IsMouseButtonDown(button: i32) -> bool
+extern act GetMouseWheelMove() -> f32
+
+// Keyboard Input
+extern act IsKeyPressed(key: i32) -> bool
+extern act IsKeyDown(key: i32) -> bool
+extern act GetCharPressed() -> i32
+
+// Input Constants
+let MOUSE_BUTTON_LEFT: i32 = 0
+let MOUSE_BUTTON_RIGHT: i32 = 1
+
+let KEY_BACKSPACE: i32 = 259
+let KEY_ENTER: i32 = 257
+let KEY_ESCAPE: i32 = 256
+let KEY_TAB: i32 = 258
+let KEY_RIGHT: i32 = 262
+let KEY_LEFT: i32 = 263
+let KEY_DOWN: i32 = 264
+let KEY_UP: i32 = 265
+let KEY_DELETE: i32 = 261
+let KEY_HOME: i32 = 268
+let KEY_END: i32 = 269

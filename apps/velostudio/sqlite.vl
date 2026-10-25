@@ -1,0 +1,204 @@
+// VeloStudio SQLite3 C-FFI Engine & Query Subsystem
+
+use sys.mem
+use sys.time
+
+// SQLite3 C API Bindings
+extern act sqlite3_open(filename: string, ppDb: @usize) -> i32
+extern act sqlite3_close(db: usize) -> i32
+extern act sqlite3_errmsg(db: usize) -> string
+extern act sqlite3_exec(db: usize, sql: string, callback: usize, arg: usize, errmsg: usize) -> i32
+extern act sqlite3_prepare_v2(db: usize, zSql: string, nByte: i32, ppStmt: @usize, pzTail: usize) -> i32
+extern act sqlite3_step(stmt: usize) -> i32
+extern act sqlite3_column_count(stmt: usize) -> i32
+extern act sqlite3_column_name(stmt: usize, col: i32) -> string
+extern act sqlite3_column_text(stmt: usize, col: i32) -> string
+extern act sqlite3_finalize(stmt: usize) -> i32
+extern act sqlite3_changes(db: usize) -> i32
+
+let SQLITE_OK: i32 = 0
+let SQLITE_ROW: i32 = 100
+let SQLITE_DONE: i32 = 101
+
+data QueryResult {
+    col_count: i32
+    row_count: i32
+    col_names: @string
+    rows: @@string // rows[row_idx][col_idx]
+    exec_time_us: i64
+    error_msg: string
+    is_error: bool
+    affected_rows: i32
+}
+
+data TableMeta {
+    name: string
+    row_count: i32
+}
+
+act copy_c_str(s: string) -> string {
+    if s == null { return "" }
+    let len = str.len(s)
+    if len == 0 { return "" }
+    mut dest: @u8 = mem.alloc(@u8, len + 1)
+    mut i: usize = 0
+    loop i < len {
+        dest[i] = s[i]
+        i += 1
+    }
+    dest[len] = 0 as u8
+    return dest as string
+}
+
+act sqlite_open_db(filename: string) -> usize {
+    mut db: usize = 0
+    let rc = sqlite3_open(filename, @db)
+    if rc != SQLITE_OK {
+        return 0
+    }
+    return db
+}
+
+act sqlite_close_db(db: usize) {
+    if db != 0 {
+        sqlite3_close(db)
+    }
+}
+
+act sqlite_execute_raw(db: usize, sql: string) -> bool {
+    if db == 0 { return false }
+    let rc = sqlite3_exec(db, sql, 0, 0, 0)
+    return rc == SQLITE_OK
+}
+
+act sqlite_query(db: usize, sql: string, max_rows: i32) -> QueryResult {
+    mut res: QueryResult
+    res.col_count = 0
+    res.row_count = 0
+    res.col_names = mem.alloc(@string, 1)
+    res.rows = mem.alloc(@@string, 1)
+    res.exec_time_us = 0
+    res.error_msg = ""
+    res.is_error = false
+    res.affected_rows = 0
+
+    if db == 0 {
+        res.is_error = true
+        res.error_msg = "Database connection is not open"
+        return res
+    }
+
+    let t0 = time.now()
+    mut stmt: usize = 0
+    let prep_rc = sqlite3_prepare_v2(db, sql, -1, @stmt, 0)
+    if prep_rc != SQLITE_OK {
+        res.is_error = true
+        let raw_err = sqlite3_errmsg(db)
+        res.error_msg = copy_c_str(raw_err)
+        res.exec_time_us = time.now() - t0
+        return res
+    }
+
+    let cols = sqlite3_column_count(stmt)
+    res.col_count = cols
+
+    // If query returns no columns (e.g. INSERT, UPDATE, DELETE, CREATE TABLE)
+    if cols <= 0 {
+        let step_rc = sqlite3_step(stmt)
+        res.affected_rows = sqlite3_changes(db)
+        sqlite3_finalize(stmt)
+        res.exec_time_us = time.now() - t0
+        if step_rc != SQLITE_DONE and step_rc != SQLITE_OK {
+            res.is_error = true
+            let raw_err = sqlite3_errmsg(db)
+            res.error_msg = copy_c_str(raw_err)
+        }
+        return res
+    }
+
+    // Extract column names
+    res.col_names = mem.alloc(@string, cols as usize)
+    mut c: i32 = 0
+    loop c < cols {
+        let cname = sqlite3_column_name(stmt, c)
+        res.col_names[c as usize] = copy_c_str(cname)
+        c += 1
+    }
+
+    // Extract rows up to max_rows
+    let cap = max_rows as usize
+    res.rows = mem.alloc(@@string, cap)
+    mut r: i32 = 0
+
+    loop r < max_rows {
+        let step_rc = sqlite3_step(stmt)
+        if step_rc == SQLITE_ROW {
+            mut row_data: @string = mem.alloc(@string, cols as usize)
+            mut ci: i32 = 0
+            loop ci < cols {
+                let text_val = sqlite3_column_text(stmt, ci)
+                if text_val == null {
+                    row_data[ci as usize] = "NULL"
+                } else {
+                    row_data[ci as usize] = copy_c_str(text_val)
+                }
+                ci += 1
+            }
+            res.rows[r as usize] = row_data
+            r += 1
+        } else {
+            break
+        }
+    }
+
+    res.row_count = r
+    sqlite3_finalize(stmt)
+    res.exec_time_us = time.now() - t0
+    return res
+}
+
+act sqlite_fetch_tables(db: usize, out_tables: @TableMeta, max_tables: i32) -> i32 {
+    if db == 0 { return 0 }
+    let sql = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;"
+    let q = sqlite_query(db, sql, max_tables)
+    if q.is_error or q.row_count <= 0 {
+        return 0
+    }
+
+    mut count: i32 = 0
+    loop count < q.row_count and count < max_tables {
+        let row = q.rows[count as usize]
+        let tbl_name = row[0]
+        let tm = @out_tables[count as usize]
+        tm.name = tbl_name
+
+        // Query row count for this table
+        let count_sql = str.concat("SELECT COUNT(*) FROM ", str.concat(tbl_name, ";"))
+        let cq = sqlite_query(db, count_sql, 1)
+        if cq.row_count > 0 and cq.col_count > 0 {
+            let count_row = cq.rows[0]
+            tm.row_count = parse_int_safe(count_row[0])
+        } else {
+            tm.row_count = 0
+        }
+        count += 1
+    }
+    return count
+}
+
+act parse_int_safe(s: string) -> i32 {
+    let len = str.len(s)
+    if len == 0 { return 0 }
+    mut acc: i64 = 0
+    mut i: usize = 0
+    loop i < len {
+        let b = s[i]
+        if b >= '0' and b <= '9' {
+            acc = acc * 10 + ((b - '0') as i64)
+        } else {
+            break
+        }
+        i += 1
+    }
+    return acc as i32
+}

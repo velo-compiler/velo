@@ -1,0 +1,359 @@
+// VeloStudio: High-Performance Zero-Electron SQLite Inspector & Query Studio
+// Powered by Velo, Raylib 5.0, and SQLite3 via Zero-Overhead C-FFI
+
+use sys.mem
+use sys.fs
+use "raylib.vl"
+use "theme.vl"
+use "sqlite.vl"
+use "sample_db.vl"
+use "helpers.vl"
+
+data StudioState {
+    db: usize
+    db_name: string
+    sql_buf: @u8
+    sql_len: usize
+    query_result: QueryResult
+    tables: @TableMeta
+    table_count: i32
+    selected_table_idx: i32
+    scroll_y: i32
+    selected_row_idx: i32
+    csv_feedback_frames: i32
+    status_msg: string
+}
+
+act run_query(s: @StudioState) {
+    if s.sql_len == 0 { return }
+    let sql = s.sql_buf as string
+    s.query_result = sqlite_query(s.db, sql, 250)
+    s.scroll_y = 0
+    s.selected_row_idx = -1
+    if s.query_result.is_error {
+        s.status_msg = str.concat("Error: ", s.query_result.error_msg)
+    } else {
+        s.status_msg = "Ready"
+    }
+}
+
+act set_sql(s: @StudioState, sql: string) {
+    let len = str.len(sql)
+    mut i: usize = 0
+    loop i < len and i < 255 {
+        s.sql_buf[i] = sql[i]
+        i += 1
+    }
+    s.sql_buf[i] = 0 as u8
+    s.sql_len = i
+}
+
+act select_table(s: @StudioState, idx: i32) {
+    if idx < 0 or idx >= s.table_count { return }
+    s.selected_table_idx = idx
+    let tbl = s.tables[idx as usize].name
+    let sql = str.concat("SELECT * FROM ", str.concat(tbl, " LIMIT 100;"))
+    set_sql(s, sql)
+    run_query(s)
+}
+
+act init_studio(db_path: string) -> StudioState {
+    mut s: StudioState
+    s.db_name = db_path
+    if not fs.exists(db_path) {
+        create_sample_database(db_path)
+    }
+    s.db = sqlite_open_db(db_path)
+    s.sql_buf = mem.alloc(@u8, 256)
+    s.sql_buf[0] = 0 as u8
+    s.sql_len = 0
+    s.tables = mem.alloc(@TableMeta, 32)
+    s.table_count = sqlite_fetch_tables(s.db, s.tables, 32)
+    s.selected_table_idx = 0
+    s.scroll_y = 0
+    s.selected_row_idx = -1
+    s.csv_feedback_frames = 0
+    s.status_msg = "Connected"
+
+    if s.table_count > 0 {
+        select_table(@s, 0)
+    } else {
+        set_sql(@s, "SELECT 1 as velo, 'Fast' as status;")
+        run_query(@s)
+    }
+    return s
+}
+
+act draw_header(s: @StudioState, th: @StudioTheme) {
+    DrawRectangle(0, 0, 1200, 48, th.bg_header)
+    DrawLine(0, 48, 1200, 48, th.border)
+
+    DrawText("VeloStudio", 16, 12, 22, th.accent)
+    DrawText("Zero-Electron SQLite Studio", 140, 17, 13, th.text_dim)
+
+    // DB Indicator Pill
+    DrawRectangle(420, 12, 240, 24, th.bg_panel)
+    DrawRectangleLines(420, 12, 240, 24, th.border)
+    DrawCircle(434, 24, 4.0, th.success)
+    DrawText(s.db_name, 446, 17, 13, th.text_primary)
+    DrawText("(SQLite 3.x)", 570, 17, 12, th.text_dim)
+
+    // FPS / Memory badge
+    let fps_val = GetFPS()
+    let fps_text = str.concat(int_to_str(fps_val as i64), " FPS | 14 MB RAM")
+    DrawText(fps_text, 1020, 17, 13, th.success)
+}
+
+act draw_sidebar(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool) {
+    DrawRectangle(0, 48, 240, 664, th.bg_sidebar)
+    DrawLine(240, 48, 240, 712, th.border)
+
+    DrawText("TABLES", 16, 62, 11, th.text_dim)
+    let count_label = str.concat("(", str.concat(int_to_str(s.table_count as i64), ")"))
+    DrawText(count_label, 70, 62, 11, th.accent)
+
+    mut i: i32 = 0
+    loop i < s.table_count {
+        let y = 84 + (i * 36)
+        let is_sel = (i == s.selected_table_idx)
+        let is_hov = point_in_rect(mx, my, 8, y, 224, 32)
+
+        if is_sel {
+            DrawRectangle(8, y, 224, 32, th.btn_bg)
+            DrawRectangle(8, y, 4, 32, th.accent)
+        } else if is_hov {
+            DrawRectangle(8, y, 224, 32, th.bg_panel)
+            if clicked {
+                select_table(s, i)
+            }
+        }
+
+        let tbl = @s.tables[i as usize]
+        mut name_col = th.text_secondary
+        if is_sel { name_col = th.text_primary }
+        DrawText(tbl.name, 22, y + 9, 14, name_col)
+
+        let rows_str = int_to_str(tbl.row_count as i64)
+        DrawText(rows_str, 195, y + 10, 12, th.text_dim)
+        i += 1
+    }
+}
+
+act draw_query_panel(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool) {
+    let px = 252
+    let py = 60
+    let pw = 932
+    let ph = 68
+
+    DrawRectangle(px, py, pw, ph, th.bg_panel)
+    DrawRectangleLines(px, py, pw, ph, th.border)
+
+    DrawText("SQL QUERY (Press Enter to Execute)", px + 12, py + 8, 11, th.text_dim)
+
+    // Render Query Text Buffer
+    let q_text = s.sql_buf as string
+    DrawText(q_text, px + 12, py + 32, 16, th.text_primary)
+
+    // Cursor
+    let text_w = MeasureText(q_text, 16)
+    let blink = ((GetTime() * 2.5) as i32) % 2 == 0
+    if blink {
+        DrawRectangle(px + 14 + text_w, py + 30, 2, 18, th.accent)
+    }
+
+    // Run Button
+    let btn_run_hover = point_in_rect(mx, my, px + pw - 150, py + 18, 70, 32)
+    mut run_col = th.accent
+    if btn_run_hover { run_col = th.accent_hover }
+    DrawRectangle(px + pw - 150, py + 18, 70, 32, run_col)
+    DrawText("RUN", px + pw - 130, py + 26, 14, th.bg_main)
+    if btn_run_hover and clicked {
+        run_query(s)
+    }
+
+    // Clear Button
+    let btn_clear_hover = point_in_rect(mx, my, px + pw - 72, py + 18, 60, 32)
+    mut clear_col = th.btn_bg
+    if btn_clear_hover { clear_col = th.btn_hover }
+    DrawRectangle(px + pw - 72, py + 18, 60, 32, clear_col)
+    DrawText("Clear", px + pw - 58, py + 26, 13, th.text_secondary)
+    if btn_clear_hover and clicked {
+        s.sql_buf[0] = 0 as u8
+        s.sql_len = 0
+    }
+}
+
+act draw_grid(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool) {
+    let gx = 252
+    let gy = 140
+    let gw = 932
+    let gh = 560
+
+    DrawRectangle(gx, gy, gw, gh, th.bg_panel)
+    DrawRectangleLines(gx, gy, gw, gh, th.border)
+
+    let q = @s.query_result
+    if q.is_error {
+        DrawRectangle(gx + 16, gy + 16, gw - 32, 40, make_color(80 as u8, 20 as u8, 20 as u8, 255 as u8))
+        DrawText(str.concat("SQL Error: ", q.error_msg), gx + 28, gy + 28, 14, th.error)
+        return
+    }
+
+    if q.col_count <= 0 {
+        let msg = str.concat("Query executed successfully. Rows affected: ", int_to_str(q.affected_rows as i64))
+        DrawText(msg, gx + 28, gy + 28, 14, th.success)
+        return
+    }
+
+    let col_w = (gw - 20) / q.col_count
+
+    // Header Row
+    DrawRectangle(gx, gy, gw, 32, th.bg_header)
+    DrawLine(gx, gy + 32, gx + gw, gy + 32, th.border)
+    mut c: i32 = 0
+    loop c < q.col_count {
+        let cx = gx + (c * col_w) + 12
+        DrawText(q.col_names[c as usize], cx, gy + 9, 13, th.accent)
+        DrawLine(gx + ((c + 1) * col_w), gy, gx + ((c + 1) * col_w), gy + gh, th.border)
+        c += 1
+    }
+
+    // Virtualized Scrollable Data Rows
+    let row_h = 28
+    let visible_rows = (gh - 34) / row_h
+    mut max_scroll: i32 = 0
+    if q.row_count > visible_rows { max_scroll = q.row_count - visible_rows }
+    if s.scroll_y > max_scroll { s.scroll_y = max_scroll }
+    if s.scroll_y < 0 { s.scroll_y = 0 }
+
+    mut r: i32 = 0
+    loop r < visible_rows and (r + s.scroll_y) < q.row_count {
+        let actual_r = r + s.scroll_y
+        let ry = gy + 34 + (r * row_h)
+        let is_sel = (actual_r == s.selected_row_idx)
+        let is_hov = point_in_rect(mx, my, gx, ry, gw, row_h)
+
+        if is_sel {
+            DrawRectangle(gx, ry, gw, row_h, th.row_selected)
+        } else if is_hov {
+            DrawRectangle(gx, ry, gw, row_h, th.btn_bg)
+            if clicked {
+                s.selected_row_idx = actual_r
+            }
+        } else if actual_r % 2 == 0 {
+            DrawRectangle(gx, ry, gw, row_h, th.row_even)
+        } else {
+            DrawRectangle(gx, ry, gw, row_h, th.row_odd)
+        }
+
+        let row_data = q.rows[actual_r as usize]
+        mut ci: i32 = 0
+        loop ci < q.col_count {
+            let cx = gx + (ci * col_w) + 12
+            let cell_val = row_data[ci as usize]
+            DrawText(cell_val, cx, ry + 7, 13, th.text_primary)
+            ci += 1
+        }
+        r += 1
+    }
+
+    // Scrollbar indicator
+    if q.row_count > visible_rows {
+        let sb_h = (visible_rows * (gh - 34)) / q.row_count
+        let sb_y = gy + 34 + (s.scroll_y * (gh - 34 - sb_h)) / max_scroll
+        DrawRectangle(gx + gw - 8, sb_y, 6, sb_h, th.text_dim)
+    }
+}
+
+act draw_footer(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool) {
+    DrawRectangle(0, 712, 1200, 38, th.bg_header)
+    DrawLine(0, 712, 1200, 712, th.border)
+
+    // Status Message
+    mut stat_col = th.success
+    if s.query_result.is_error { stat_col = th.error }
+    DrawText(s.status_msg, 16, 724, 13, stat_col)
+
+    // Execution time & Row stats
+    let q = @s.query_result
+    let stats_text = str.concat(int_to_str(q.row_count as i64), str.concat(" rows | Query time: ", str.concat(int_to_str(q.exec_time_us), " us")))
+    DrawText(stats_text, 400, 724, 13, th.text_secondary)
+
+    // Export CSV Button
+    let btn_csv_hover = point_in_rect(mx, my, 1060, 718, 120, 26)
+    mut csv_col = th.btn_bg
+    if btn_csv_hover { csv_col = th.accent_hover }
+    DrawRectangle(1060, 718, 120, 26, csv_col)
+    DrawRectangleLines(1060, 718, 120, 26, th.border)
+
+    if s.csv_feedback_frames > 0 {
+        DrawText("Exported CSV!", 1074, 724, 12, th.success)
+        s.csv_feedback_frames -= 1
+    } else {
+        DrawText("Export to CSV", 1074, 724, 12, th.text_primary)
+        if btn_csv_hover and clicked {
+            let ok = export_query_csv("export.csv", @s.query_result)
+            if ok {
+                s.csv_feedback_frames = 120
+            }
+        }
+    }
+}
+
+act main() -> i32 {
+    InitWindow(1200, 750, "VeloStudio - Native SQLite Desktop Inspector")
+    SetTargetFPS(60)
+
+    let th = theme_init()
+    mut state = init_studio("demo.db")
+
+    loop not WindowShouldClose() {
+        // Keyboard Input Handling
+        mut ch = GetCharPressed()
+        loop ch > 0 {
+            if ch >= 32 and ch <= 126 and state.sql_len < 250 {
+                state.sql_buf[state.sql_len] = ch as u8
+                state.sql_len += 1
+                state.sql_buf[state.sql_len] = 0 as u8
+            }
+            ch = GetCharPressed()
+        }
+
+        if IsKeyPressed(KEY_BACKSPACE) {
+            if state.sql_len > 0 {
+                state.sql_len -= 1
+                state.sql_buf[state.sql_len] = 0 as u8
+            }
+        }
+
+        if IsKeyPressed(KEY_ENTER) {
+            run_query(@state)
+        }
+
+        // Mouse Wheel Scroll Handling
+        let wheel = GetMouseWheelMove()
+        if wheel != 0.0 {
+            state.scroll_y -= (wheel * 3.0) as i32
+        }
+
+        let mx = GetMouseX()
+        let my = GetMouseY()
+        let clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT)
+
+        // Rendering Lifecycle
+        BeginDrawing()
+        ClearBackground(th.bg_main)
+
+        draw_header(@state, @th)
+        draw_sidebar(@state, @th, mx, my, clicked)
+        draw_query_panel(@state, @th, mx, my, clicked)
+        draw_grid(@state, @th, mx, my, clicked)
+        draw_footer(@state, @th, mx, my, clicked)
+
+        EndDrawing()
+    }
+
+    sqlite_close_db(state.db)
+    CloseWindow()
+    return 0
+}

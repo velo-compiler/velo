@@ -1,0 +1,59 @@
+// VeloStudio Native In-Engine Test Suite
+// Run via: bin/velo.exe test apps/velostudio/test_velostudio.vl -l sqlite3
+
+use sys.mem
+use sys.fs
+use sys.io
+use "sqlite.vl"
+use "sample_db.vl"
+use "helpers.vl"
+
+test "helpers: int_to_str and point_in_rect" {
+    assert(int_to_str(0) == "0")
+    assert(int_to_str(42) == "42")
+    assert(int_to_str(123456) == "123456")
+    assert(int_to_str(-99) == "-99")
+    assert(point_in_rect(10, 10, 0, 0, 50, 50))
+    assert(not point_in_rect(100, 10, 0, 0, 50, 50))
+}
+
+test "sample_db and sqlite integration" {
+    let db_path = "test_velostudio.db"
+    assert(create_sample_database(db_path))
+
+    let db = sqlite_open_db(db_path)
+    assert(db != 0)
+
+    // Verify table fetching
+    mut tables: @TableMeta = mem.alloc(@TableMeta, 16)
+    let tbl_count = sqlite_fetch_tables(db, tables, 16)
+    assert(tbl_count >= 4)
+
+    // Verify query execution
+    let q = sqlite_query(db, "SELECT name, department FROM users ORDER BY id LIMIT 3;", 10)
+    assert(not q.is_error)
+    assert(q.col_count == 2)
+    assert(q.row_count == 3)
+    assert(q.col_names[0] == "name")
+    assert(q.col_names[1] == "department")
+    let row0 = q.rows[0]
+    assert(row0[0] == "Alice Chen")
+    assert(row0[1] == "Engineering")
+
+    // Verify error reporting on bad query
+    let q_err = sqlite_query(db, "SELECT * FROM imaginary_table;", 10)
+    assert(q_err.is_error)
+    assert(str.len(q_err.error_msg) > 0)
+
+    // Verify CSV export
+    let csv_path = "test_velostudio_out.csv"
+    let exported = export_query_csv(csv_path, @q)
+    assert(exported)
+    assert(fs.exists(csv_path))
+
+    sqlite_close_db(db)
+
+    // Cleanup
+    fs.remove_file(db_path)
+    fs.remove_file(csv_path)
+}

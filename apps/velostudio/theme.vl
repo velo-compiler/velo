@@ -1,0 +1,46 @@
+// VeloStudio Theme and Visual Palette Definition
+use "raylib.vl"
+
+data StudioTheme {
+    bg_main: Color
+    bg_sidebar: Color
+    bg_header: Color
+    bg_panel: Color
+    border: Color
+    border_focus: Color
+    accent: Color
+    accent_hover: Color
+    success: Color
+    error: Color
+    text_primary: Color
+    text_secondary: Color
+    text_dim: Color
+    row_even: Color
+    row_odd: Color
+    row_selected: Color
+    btn_bg: Color
+    btn_hover: Color
+}
+
+act theme_init() -> StudioTheme {
+    return StudioTheme{
+        bg_main: make_color(18 as u8, 19 as u8, 22 as u8, 255 as u8),
+        bg_sidebar: make_color(26 as u8, 27 as u8, 32 as u8, 255 as u8),
+        bg_header: make_color(34 as u8, 36 as u8, 43 as u8, 255 as u8),
+        bg_panel: make_color(22 as u8, 23 as u8, 28 as u8, 255 as u8),
+        border: make_color(50 as u8, 53 as u8, 62 as u8, 255 as u8),
+        border_focus: make_color(56 as u8, 189 as u8, 248 as u8, 255 as u8),
+        accent: make_color(56 as u8, 189 as u8, 248 as u8, 255 as u8),
+        accent_hover: make_color(14 as u8, 165 as u8, 233 as u8, 255 as u8),
+        success: make_color(74 as u8, 222 as u8, 128 as u8, 255 as u8),
+        error: make_color(248 as u8, 113 as u8, 113 as u8, 255 as u8),
+        text_primary: make_color(244 as u8, 244 as u8, 245 as u8, 255 as u8),
+        text_secondary: make_color(148 as u8, 163 as u8, 184 as u8, 255 as u8),
+        text_dim: make_color(100 as u8, 116 as u8, 139 as u8, 255 as u8),
+        row_even: make_color(24 as u8, 26 as u8, 31 as u8, 255 as u8),
+        row_odd: make_color(20 as u8, 22 as u8, 26 as u8, 255 as u8),
+        row_selected: make_color(30 as u8, 58 as u8, 95 as u8, 255 as u8),
+        btn_bg: make_color(42 as u8, 45 as u8, 54 as u8, 255 as u8),
+        btn_hover: make_color(58 as u8, 63 as u8, 76 as u8, 255 as u8)
+    }
+}
