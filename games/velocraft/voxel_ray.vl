@@ -58,15 +58,3 @@ act cast_voxel_ray(w: @VoxelWorld, eye: Vector3, dir: Vector3) -> RayHit {
     }
     return hit
 }
-
-act draw_target_highlight(hit: @RayHit) {
-    if hit.has_hit {
-        let pos = Vector3{
-            x: (hit.hit_x as f32) + 0.5,
-            y: (hit.hit_y as f32) + 0.5,
-            z: (hit.hit_z as f32) + 0.5
-        }
-        let highlight_col = make_color(255, 255, 255, 180)
-        DrawCubeWires(pos, 1.02, 1.02, 1.02, highlight_col)
-    }
-}

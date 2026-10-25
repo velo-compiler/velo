@@ -311,9 +311,6 @@ act main() -> i32 {
         // Voxel World with Dynamic Lighting, River Valleys, and Distance Fog
         draw_world(@world, light_mult, block_tint, sky_col, cam.position.x, cam.position.z, anim_time)
 
-        if cursor_locked {
-            draw_target_highlight(@ray_hit)
-        }
         EndMode3D()
 
         // 2D HUD Pass
