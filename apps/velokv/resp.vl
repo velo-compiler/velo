@@ -1,0 +1,212 @@
+// VeloKV Redis Serialization Protocol (RESP2) Parser & Serializer
+
+use sys.mem
+
+data RedisCommand {
+    argc: i32
+    args: @string
+    consumed_bytes: i32
+    valid: bool
+}
+
+act parse_int(s: string) -> i64 {
+    let len = str.len(s)
+    if len == 0 { return 0 }
+
+    mut is_neg = false
+    mut start: usize = 0
+    if s[0] == '-' {
+        is_neg = true
+        start = 1
+    }
+
+    mut acc: i64 = 0
+    mut i = start
+    loop i < len {
+        let b = s[i]
+        if b >= '0' and b <= '9' {
+            acc = acc * 10 + ((b - '0') as i64)
+        } else {
+            break
+        }
+        i += 1
+    }
+    if is_neg { return 0 - acc }
+    return acc
+}
+
+act slice_to_string(bytes: @u8, start: usize, len: usize) -> string {
+    if len == 0 { return "" }
+    mut dest: @u8 = mem.alloc(@u8, len + 1)
+    mut i: usize = 0
+    loop i < len {
+        dest[i] = bytes[start + i]
+        i += 1
+    }
+    dest[len] = 0 as u8
+    return dest as string
+}
+
+act find_crlf(bytes: @u8, start: usize, total_len: usize) -> i32 {
+    mut i = start
+    loop i + 1 < total_len {
+        if bytes[i] == 13 and bytes[i + 1] == 10 { // \r\n
+            return i as i32
+        }
+        i += 1
+    }
+    return -1
+}
+
+// Parses RESP2 Array (*N\r\n...) or Inline command (SET k v\r\n) from read buffer
+act parse_redis_command(buf: @u8, buf_len: i32) -> RedisCommand {
+    mut cmd: RedisCommand
+    cmd.argc = 0
+    cmd.args = mem.alloc(@string, 16)
+    cmd.consumed_bytes = 0
+    cmd.valid = false
+
+    if buf_len <= 0 { return cmd }
+    let ulen = buf_len as usize
+
+    // 1. Standard RESP Array: *<argc>\r\n...
+    if buf[0] == 42 { // '*'
+        let first_crlf = find_crlf(buf, 1, ulen)
+        if first_crlf < 0 { return cmd } // Incomplete packet
+
+        let argc_str = slice_to_string(buf, 1, (first_crlf - 1) as usize)
+        let total_args = parse_int(argc_str) as i32
+        if total_args <= 0 or total_args > 32 { return cmd }
+
+        cmd.args = mem.alloc(@string, total_args as usize)
+        mut cur_pos = (first_crlf + 2) as usize
+
+        mut arg_idx: i32 = 0
+        loop arg_idx < total_args {
+            if cur_pos >= ulen or buf[cur_pos] != 36 { // '$'
+                return cmd // Malformed or incomplete
+            }
+
+            let len_crlf = find_crlf(buf, cur_pos + 1, ulen)
+            if len_crlf < 0 { return cmd }
+
+            let bulk_len_str = slice_to_string(buf, cur_pos + 1, (len_crlf - (cur_pos as i32) - 1) as usize)
+            let bulk_len = parse_int(bulk_len_str) as usize
+
+            let data_start = (len_crlf + 2) as usize
+            if data_start + bulk_len + 2 > ulen {
+                return cmd // Incomplete payload bytes
+            }
+
+            cmd.args[arg_idx as usize] = slice_to_string(buf, data_start, bulk_len)
+            cur_pos = data_start + bulk_len + 2 // Skip payload and trailing \r\n
+            arg_idx += 1
+        }
+
+        cmd.argc = total_args
+        cmd.consumed_bytes = cur_pos as i32
+        cmd.valid = true
+        return cmd
+    }
+
+    // 2. Inline Command (e.g. "PING\r\n" or "SET foo bar\r\n")
+    let line_end = find_crlf(buf, 0, ulen)
+    if line_end < 0 { return cmd } // Incomplete line
+
+    mut cur: usize = 0
+    let end = line_end as usize
+    mut count: i32 = 0
+
+    // Split line by spaces
+    loop cur < end and count < 16 {
+        // Skip leading spaces
+        loop cur < end and (buf[cur] == 32 or buf[cur] == 9) {
+            cur += 1
+        }
+        if cur >= end { break }
+
+        let tok_start = cur
+        loop cur < end and buf[cur] != 32 and buf[cur] != 9 {
+            cur += 1
+        }
+        let tok_len = cur - tok_start
+        if tok_len > 0 {
+            cmd.args[count as usize] = slice_to_string(buf, tok_start, tok_len)
+            count += 1
+        }
+    }
+
+    if count > 0 {
+        cmd.argc = count
+        cmd.consumed_bytes = line_end + 2
+        cmd.valid = true
+    }
+    return cmd
+}
+
+act int_to_str(val: i64) -> string {
+    if val == 0 { return "0" }
+    mut n = val
+    mut is_neg = false
+    if n < 0 {
+        is_neg = true
+        n = 0 - n
+    }
+    mut buf: @u8 = mem.alloc(@u8, 32)
+    mut count: usize = 0
+    loop n > 0 {
+        buf[count] = ('0' as u8) + ((n % 10) as u8)
+        n = n / 10
+        count += 1
+    }
+    mut res: @u8 = mem.alloc(@u8, count + 2)
+    mut pos: usize = 0
+    if is_neg {
+        res[0] = '-'
+        pos = 1
+    }
+    mut i = count
+    loop i > 0 {
+        i -= 1
+        res[pos] = buf[i]
+        pos += 1
+    }
+    res[pos] = 0 as u8
+    return res as string
+}
+
+// RESP Serializers
+act resp_ok() -> string { return "+OK\r\n" }
+act resp_pong() -> string { return "+PONG\r\n" }
+act resp_nil() -> string { return "$-1\r\n" }
+
+act resp_simple(msg: string) -> string {
+    let s1 = str.concat("+", msg)
+    return str.concat(s1, "\r\n")
+}
+
+act resp_err(err: string) -> string {
+    let s1 = str.concat("-ERR ", err)
+    return str.concat(s1, "\r\n")
+}
+
+act resp_int(val: i64) -> string {
+    let sval = int_to_str(val)
+    let s1 = str.concat(":", sval)
+    return str.concat(s1, "\r\n")
+}
+
+act resp_bulk(val: string) -> string {
+    let vlen = str.len(val)
+    let slen = int_to_str(vlen as i64)
+    let s1 = str.concat("$", slen)
+    let s2 = str.concat(s1, "\r\n")
+    let s3 = str.concat(s2, val)
+    return str.concat(s3, "\r\n")
+}
+
+act resp_array_header(count: i32) -> string {
+    let scnt = int_to_str(count as i64)
+    let s1 = str.concat("*", scnt)
+    return str.concat(s1, "\r\n")
+}

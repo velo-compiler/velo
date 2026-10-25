@@ -1,0 +1,255 @@
+// VeloKV Command Execution and Routing Engine
+
+use sys.mem
+use "store.vl"
+use "resp.vl"
+use "aof.vl"
+
+act format_aof_set(key: string, val: string) -> string {
+    let klen = int_to_str(str.len(key) as i64)
+    let vlen = int_to_str(str.len(val) as i64)
+    mut s = "*3\r\n$3\r\nSET\r\n$"
+    s = str.concat(s, klen)
+    s = str.concat(s, "\r\n")
+    s = str.concat(s, key)
+    s = str.concat(s, "\r\n$")
+    s = str.concat(s, vlen)
+    s = str.concat(s, "\r\n")
+    s = str.concat(s, val)
+    s = str.concat(s, "\r\n")
+    return s
+}
+
+act format_aof_del(key: string) -> string {
+    let klen = int_to_str(str.len(key) as i64)
+    mut s = "*2\r\n$3\r\nDEL\r\n$"
+    s = str.concat(s, klen)
+    s = str.concat(s, "\r\n")
+    s = str.concat(s, key)
+    s = str.concat(s, "\r\n")
+    return s
+}
+
+act build_info_str(size: i32, total_cmds: i64, sets: i64, gets: i64, hits: i64, misses: i64) -> string {
+    mut s = "# Server\r\nvelokv_version:1.0.0\r\nos:windows\r\narch:x86_64\r\n\r\n# Keyspace\r\ndb0:keys="
+    s = str.concat(s, int_to_str(size as i64))
+    s = str.concat(s, ",expires=0\r\n\r\n# Stats\r\ntotal_commands_processed=")
+    s = str.concat(s, int_to_str(total_cmds))
+    s = str.concat(s, "\r\ntotal_connections_received=1\r\ntotal_sets=")
+    s = str.concat(s, int_to_str(sets))
+    s = str.concat(s, "\r\ntotal_gets=")
+    s = str.concat(s, int_to_str(gets))
+    s = str.concat(s, "\r\nkeyspace_hits=")
+    s = str.concat(s, int_to_str(hits))
+    s = str.concat(s, "\r\nkeyspace_misses=")
+    s = str.concat(s, int_to_str(misses))
+    s = str.concat(s, "\r\n")
+    return s
+}
+
+act execute_command(cmd: @RedisCommand, store: @KeyValueStore, aof: @AofLogger) -> string {
+    if cmd.argc <= 0 {
+        return resp_err("empty command")
+    }
+
+    let raw_op = cmd.args[0]
+    let op = str.to_upper(raw_op)
+
+    // 1. PING [message]
+    if op == "PING" {
+        if cmd.argc >= 2 {
+            return resp_bulk(cmd.args[1])
+        }
+        return resp_pong()
+    }
+
+    // 2. ECHO <message>
+    if op == "ECHO" {
+        if cmd.argc < 2 { return resp_err("wrong number of arguments for 'echo' command") }
+        return resp_bulk(cmd.args[1])
+    }
+
+    // 3. SET <key> <value> [EX seconds]
+    if op == "SET" {
+        if cmd.argc < 3 { return resp_err("wrong number of arguments for 'set' command") }
+        let key = cmd.args[1]
+        let val = cmd.args[2]
+
+        mut ttl_ms: i64 = 0
+        if cmd.argc >= 5 {
+            let opt = str.to_upper(cmd.args[3])
+            if opt == "EX" {
+                let sec = parse_int(cmd.args[4])
+                if sec > 0 { ttl_ms = sec * 1000 }
+            } else if opt == "PX" {
+                ttl_ms = parse_int(cmd.args[4])
+            }
+        }
+
+        store_set(store, key, val, ttl_ms)
+        let aof_line = format_aof_set(key, val)
+        aof_log_command(aof, aof_line)
+        return resp_ok()
+    }
+
+    // 4. GET <key>
+    if op == "GET" {
+        if cmd.argc < 2 { return resp_err("wrong number of arguments for 'get' command") }
+        let key = cmd.args[1]
+        if not store_has(store, key) {
+            return resp_nil()
+        }
+        let val = store_get(store, key)
+        return resp_bulk(val)
+    }
+
+    // 5. DEL <key> [keys...]
+    if op == "DEL" {
+        if cmd.argc < 2 { return resp_err("wrong number of arguments for 'del' command") }
+        mut deleted: i64 = 0
+        mut i: i32 = 1
+        loop i < cmd.argc {
+            let key = cmd.args[i as usize]
+            if store_del(store, key) {
+                deleted += 1
+                let aof_line = format_aof_del(key)
+                aof_log_command(aof, aof_line)
+            }
+            i += 1
+        }
+        return resp_int(deleted)
+    }
+
+    // 6. EXISTS <key>
+    if op == "EXISTS" {
+        if cmd.argc < 2 { return resp_err("wrong number of arguments for 'exists' command") }
+        let key = cmd.args[1]
+        if store_has(store, key) {
+            return resp_int(1)
+        }
+        return resp_int(0)
+    }
+
+    // 7. INCR <key>
+    if op == "INCR" {
+        if cmd.argc < 2 { return resp_err("wrong number of arguments for 'incr' command") }
+        let key = cmd.args[1]
+        mut cur_val: i64 = 0
+        if store_has(store, key) {
+            let str_val = store_get(store, key)
+            cur_val = parse_int(str_val)
+        }
+        cur_val += 1
+        let new_str = int_to_str(cur_val)
+        store_set(store, key, new_str, 0)
+        let aof_line = format_aof_set(key, new_str)
+        aof_log_command(aof, aof_line)
+        return resp_int(cur_val)
+    }
+
+    // 8. DECR <key>
+    if op == "DECR" {
+        if cmd.argc < 2 { return resp_err("wrong number of arguments for 'decr' command") }
+        let key = cmd.args[1]
+        mut cur_val: i64 = 0
+        if store_has(store, key) {
+            let str_val = store_get(store, key)
+            cur_val = parse_int(str_val)
+        }
+        cur_val -= 1
+        let new_str = int_to_str(cur_val)
+        store_set(store, key, new_str, 0)
+        let aof_line = format_aof_set(key, new_str)
+        aof_log_command(aof, aof_line)
+        return resp_int(cur_val)
+    }
+
+    // 9. EXPIRE <key> <seconds>
+    if op == "EXPIRE" {
+        if cmd.argc < 3 { return resp_err("wrong number of arguments for 'expire' command") }
+        let key = cmd.args[1]
+        let sec = parse_int(cmd.args[2])
+        if store_expire(store, key, sec) {
+            return resp_int(1)
+        }
+        return resp_int(0)
+    }
+
+    // 10. TTL <key>
+    if op == "TTL" {
+        if cmd.argc < 2 { return resp_err("wrong number of arguments for 'ttl' command") }
+        let key = cmd.args[1]
+        let remaining = store_ttl(store, key)
+        return resp_int(remaining)
+    }
+
+    // 11. PERSIST <key>
+    if op == "PERSIST" {
+        if cmd.argc < 2 { return resp_err("wrong number of arguments for 'persist' command") }
+        let key = cmd.args[1]
+        if store_persist(store, key) {
+            return resp_int(1)
+        }
+        return resp_int(0)
+    }
+
+    // 12. DBSIZE
+    if op == "DBSIZE" {
+        let size = store_dbsize(store)
+        return resp_int(size as i64)
+    }
+
+    // 13. FLUSHDB
+    if op == "FLUSHDB" {
+        store_flushdb(store)
+        aof_log_command(aof, "*1\r\n$7\r\nFLUSHDB\r\n")
+        return resp_ok()
+    }
+
+    // 14. MSET <k1> <v1> [k2 v2...]
+    if op == "MSET" {
+        if cmd.argc < 3 or ((cmd.argc - 1) % 2 != 0) {
+            return resp_err("wrong number of arguments for 'mset' command")
+        }
+        mut i: i32 = 1
+        loop i < cmd.argc {
+            let k = cmd.args[i as usize]
+            let v = cmd.args[(i + 1) as usize]
+            store_set(store, k, v, 0)
+            let aof_line = format_aof_set(k, v)
+            aof_log_command(aof, aof_line)
+            i += 2
+        }
+        return resp_ok()
+    }
+
+    // 15. INFO
+    if op == "INFO" {
+        let size = store_dbsize(store)
+        let sets = store.total_sets
+        let gets = store.total_gets
+        let hits = store.total_hits
+        let misses = store.total_misses
+        let total_cmds = sets + gets
+        let info_str = build_info_str(size, total_cmds, sets, gets, hits, misses)
+        return resp_bulk(info_str)
+    }
+
+    // 16. COMMAND / COMMAND DOCS (Redis client handshake)
+    if op == "COMMAND" {
+        return "*0\r\n"
+    }
+
+    // 17. CONFIG
+    if op == "CONFIG" {
+        return "*0\r\n"
+    }
+
+    // 18. QUIT
+    if op == "QUIT" {
+        return resp_ok()
+    }
+
+    let err_msg = str.concat("unknown command '", str.concat(raw_op, "'"))
+    return resp_err(err_msg)
+}

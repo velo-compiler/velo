@@ -1,0 +1,250 @@
+// VeloKV High-Performance In-Memory Key-Value Storage & TTL Engine
+
+use sys.mem
+use sys.time
+
+data KeyValueEntry {
+    key: string
+    value: string
+    expire_at_ms: i64 // 0 = permanent (no expiration)
+    active: bool
+}
+
+data KeyValueStore {
+    allocator: @Allocator
+    entries: @KeyValueEntry
+    capacity: usize
+    count: i32
+    total_sets: i64
+    total_gets: i64
+    total_hits: i64
+    total_misses: i64
+}
+
+act store_copy_str(a: @Allocator, s: string) -> string {
+    let slen = str.len(s)
+    if slen == 0 { return "" }
+    mut buf: @u8 = mem.alloc_with(a, @u8, slen + 1)
+    mut i: usize = 0
+    loop i < slen {
+        buf[i] = s[i]
+        i += 1
+    }
+    buf[slen] = 0 as u8
+    return buf as string
+}
+
+act get_current_time_ms() -> i64 {
+    return time.now() / 1000
+}
+
+act hash_key(s: string) -> usize {
+    let len = str.len(s)
+    mut h: u32 = 2166136261
+    mut i: usize = 0
+    loop i < len {
+        h = (h ^ (s[i] as u32)) * 16777619
+        i += 1
+    }
+    return (h as usize)
+}
+
+act store_init(capacity: usize) -> KeyValueStore {
+    mut s: KeyValueStore
+    s.allocator = mem.current()
+    s.capacity = capacity
+    s.count = 0
+    s.total_sets = 0
+    s.total_gets = 0
+    s.total_hits = 0
+    s.total_misses = 0
+    s.entries = mem.alloc_with(s.allocator, @KeyValueEntry, capacity)
+
+    mut i: usize = 0
+    loop i < capacity {
+        let e = @s.entries[i]
+        e.key = ""
+        e.value = ""
+        e.expire_at_ms = 0
+        e.active = false
+        i += 1
+    }
+    return s
+}
+
+// Internal lookup: returns slot index if found, or slot for insertion if not found
+act store_find_slot(s: @KeyValueStore, key: string) -> i64 {
+    let mask = s.capacity - 1
+    let initial_idx = hash_key(key) & mask
+    mut idx = initial_idx
+    mut first_free: i64 = -1
+
+    mut step: usize = 0
+    loop step < s.capacity {
+        let e = @s.entries[idx]
+        if not e.active {
+            if first_free < 0 { first_free = idx as i64 }
+            return first_free
+        }
+        if e.key == key {
+            return idx as i64
+        }
+        idx = (idx + 1) & mask
+        step += 1
+    }
+    return first_free
+}
+
+act store_set(s: @KeyValueStore, key: string, val: string, ttl_ms: i64) -> bool {
+    let slot_idx = store_find_slot(s, key)
+    if slot_idx < 0 { return false } // Store full
+
+    let e = @s.entries[slot_idx as usize]
+    if not e.active {
+        s.count += 1
+        e.key = store_copy_str(s.allocator, key)
+    }
+    e.value = store_copy_str(s.allocator, val)
+    if ttl_ms > 0 {
+        e.expire_at_ms = get_current_time_ms() + ttl_ms
+    } else {
+        e.expire_at_ms = 0
+    }
+    e.active = true
+    s.total_sets += 1
+    return true
+}
+
+act store_has(s: @KeyValueStore, key: string) -> bool {
+    let slot_idx = store_find_slot(s, key)
+    if slot_idx < 0 { return false }
+    let e = @s.entries[slot_idx as usize]
+    if not e.active { return false }
+
+    // Check passive TTL expiration
+    if e.expire_at_ms > 0 and get_current_time_ms() >= e.expire_at_ms {
+        e.active = false
+        e.key = ""
+        e.value = ""
+        e.expire_at_ms = 0
+        s.count -= 1
+        return false
+    }
+    return true
+}
+
+act store_get(s: @KeyValueStore, key: string) -> string {
+    s.total_gets += 1
+    let slot_idx = store_find_slot(s, key)
+    if slot_idx < 0 {
+        s.total_misses += 1
+        return ""
+    }
+    let e = @s.entries[slot_idx as usize]
+    if not e.active {
+        s.total_misses += 1
+        return ""
+    }
+
+    // Passive eviction on expiration
+    if e.expire_at_ms > 0 and get_current_time_ms() >= e.expire_at_ms {
+        e.active = false
+        e.key = ""
+        e.value = ""
+        e.expire_at_ms = 0
+        s.count -= 1
+        s.total_misses += 1
+        return ""
+    }
+
+    s.total_hits += 1
+    return e.value
+}
+
+act store_del(s: @KeyValueStore, key: string) -> bool {
+    let slot_idx = store_find_slot(s, key)
+    if slot_idx < 0 { return false }
+    let e = @s.entries[slot_idx as usize]
+    if not e.active { return false }
+
+    e.active = false
+    e.key = ""
+    e.value = ""
+    e.expire_at_ms = 0
+    s.count -= 1
+    return true
+}
+
+act store_expire(s: @KeyValueStore, key: string, ttl_sec: i64) -> bool {
+    let slot_idx = store_find_slot(s, key)
+    if slot_idx < 0 { return false }
+    let e = @s.entries[slot_idx as usize]
+    if not e.active { return false }
+
+    if ttl_sec <= 0 {
+        // Immediate expiration
+        e.active = false
+        e.key = ""
+        e.value = ""
+        e.expire_at_ms = 0
+        s.count -= 1
+        return true
+    }
+
+    e.expire_at_ms = get_current_time_ms() + ttl_sec * 1000
+    return true
+}
+
+act store_ttl(s: @KeyValueStore, key: string) -> i64 {
+    let slot_idx = store_find_slot(s, key)
+    if slot_idx < 0 { return -2 } // Key does not exist
+    let e = @s.entries[slot_idx as usize]
+    if not e.active { return -2 }
+
+    if e.expire_at_ms == 0 {
+        return -1 // No expiration set
+    }
+
+    let now = get_current_time_ms()
+    if now >= e.expire_at_ms {
+        // Already expired
+        e.active = false
+        e.key = ""
+        e.value = ""
+        e.expire_at_ms = 0
+        s.count -= 1
+        return -2
+    }
+
+    return (e.expire_at_ms - now + 999) / 1000
+}
+
+act store_persist(s: @KeyValueStore, key: string) -> bool {
+    let slot_idx = store_find_slot(s, key)
+    if slot_idx < 0 { return false }
+    let e = @s.entries[slot_idx as usize]
+    if not e.active { return false }
+
+    if e.expire_at_ms > 0 {
+        e.expire_at_ms = 0
+        return true
+    }
+    return false
+}
+
+act store_dbsize(s: @KeyValueStore) -> i32 {
+    return s.count
+}
+
+act store_flushdb(s: @KeyValueStore) {
+    mut i: usize = 0
+    loop i < s.capacity {
+        let e = @s.entries[i]
+        e.active = false
+        e.key = ""
+        e.value = ""
+        e.expire_at_ms = 0
+        i += 1
+    }
+    s.count = 0
+}

@@ -1,0 +1,201 @@
+// VeloKV High-Performance Non-Blocking TCP Networking Subsystem (Winsock2 C-FFI)
+
+use sys.mem
+
+data SockAddrIn {
+    family: i16
+    port: u16
+    addr: u32
+    zero1: i32
+    zero2: i32
+}
+
+data ClientSession {
+    fd: i64
+    active: bool
+    read_buf: @u8
+    read_len: i32
+    remote_port: u16
+}
+
+data ServerNetwork {
+    server_fd: i64
+    port: i32
+    clients: @ClientSession
+    max_clients: i32
+    active_count: i32
+}
+
+// Winsock2 API bindings
+extern act WSAStartup(wVersionRequired: u16, lpWSAData: @u8) -> i32
+extern act WSACleanup() -> i32
+extern act socket(af: i32, type_: i32, protocol: i32) -> i64
+extern act bind(s: i64, name: @SockAddrIn, namelen: i32) -> i32
+extern act listen(s: i64, backlog: i32) -> i32
+extern act accept(s: i64, addr: @SockAddrIn, addrlen: @i32) -> i64
+extern act recv(s: i64, buf: @u8, len: i32, flags: i32) -> i32
+extern act send(s: i64, buf: @u8, len: i32, flags: i32) -> i32
+extern act closesocket(s: i64) -> i32
+extern act ioctlsocket(s: i64, cmd: i32, argp: @u32) -> i32
+extern act setsockopt(s: i64, level: i32, optname: i32, optval: @i32, optlen: i32) -> i32
+extern act htons(hostshort: u16) -> u16
+extern act ntohs(netshort: u16) -> u16
+
+let AF_INET: i32 = 2
+let SOCK_STREAM: i32 = 1
+let IPPROTO_TCP: i32 = 6
+let FIONBIO: i32 = -2147195266 // 0x8004667E: non-blocking I/O mode
+let SOL_SOCKET: i32 = 65535
+let SO_REUSEADDR: i32 = 4
+
+act net_init() -> bool {
+    let wsadata: @u8 = mem.alloc(@u8, 512)
+    let res = WSAStartup(0x0202, wsadata)
+    return res == 0
+}
+
+act net_shutdown() {
+    WSACleanup()
+}
+
+act set_nonblocking(fd: i64) -> bool {
+    mut mode: u32 = 1
+    let res = ioctlsocket(fd, FIONBIO, @mode)
+    return res == 0
+}
+
+act net_start_server(port: i32, max_clients: i32) -> ServerNetwork {
+    mut net: ServerNetwork
+    net.server_fd = -1
+    net.port = port
+    net.max_clients = max_clients
+    net.active_count = 0
+    net.clients = mem.alloc(@ClientSession, max_clients as usize)
+
+    mut i: usize = 0
+    loop i < (max_clients as usize) {
+        let c = @net.clients[i]
+        c.fd = -1
+        c.active = false
+        c.read_buf = mem.alloc(@u8, 4096)
+        c.read_len = 0
+        c.remote_port = 0
+        i += 1
+    }
+
+    let s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+    if s < 0 {
+        return net
+    }
+
+    mut reuse: i32 = 1
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, @reuse, 4)
+
+    mut addr: SockAddrIn
+    addr.family = 2
+    addr.port = htons(port as u16)
+    addr.addr = 0 // INADDR_ANY
+    addr.zero1 = 0
+    addr.zero2 = 0
+
+    let b_res = bind(s, @addr, 16)
+    if b_res != 0 {
+        closesocket(s)
+        return net
+    }
+
+    let l_res = listen(s, 128)
+    if l_res != 0 {
+        closesocket(s)
+        return net
+    }
+
+    set_nonblocking(s)
+    net.server_fd = s
+    return net
+}
+
+act net_poll_accept(net: @ServerNetwork) -> i32 {
+    if net.server_fd < 0 { return -1 }
+
+    mut client_addr: SockAddrIn
+    mut addr_len: i32 = 16
+    let client_fd = accept(net.server_fd, @client_addr, @addr_len)
+    if client_fd < 0 {
+        return -1 // No pending connections (EWOULDBLOCK)
+    }
+
+    // Find free client slot
+    mut slot: i32 = -1
+    mut i: usize = 0
+    loop i < (net.max_clients as usize) {
+        let c = @net.clients[i]
+        if not c.active {
+            slot = i as i32
+            break
+        }
+        i += 1
+    }
+
+    if slot < 0 {
+        closesocket(client_fd)
+        return -1
+    }
+
+    set_nonblocking(client_fd)
+    let c = @net.clients[slot as usize]
+    c.fd = client_fd
+    c.active = true
+    c.read_len = 0
+    c.remote_port = ntohs(client_addr.port)
+    net.active_count += 1
+    return slot
+}
+
+act net_close_client(net: @ServerNetwork, slot: i32) {
+    if slot >= 0 and slot < net.max_clients {
+        let c = @net.clients[slot as usize]
+        if c.active {
+            closesocket(c.fd)
+            c.fd = -1
+            c.active = false
+            c.read_len = 0
+            net.active_count -= 1
+        }
+    }
+}
+
+act net_read_client(c: @ClientSession) -> i32 {
+    if not c.active or c.fd < 0 { return -1 }
+    let buf_ptr = (c.read_buf as usize + c.read_len as usize) as @u8
+    let max_read = 4096 - c.read_len
+    if max_read <= 0 { return 0 }
+
+    let n = recv(c.fd, buf_ptr, max_read, 0)
+    if n > 0 {
+        c.read_len += n
+        return n
+    }
+    if n == 0 {
+        return -2 // Clean client disconnect
+    }
+    return -1 // EWOULDBLOCK (no data available)
+}
+
+act net_send_response(c: @ClientSession, msg: string) -> bool {
+    if not c.active or c.fd < 0 { return false }
+    let str_bytes = msg as @u8
+    let len = str.len(msg) as i32
+    if len <= 0 { return true }
+
+    mut total_sent: i32 = 0
+    loop total_sent < len {
+        let buf_ptr = (str_bytes as usize + total_sent as usize) as @u8
+        let sent = send(c.fd, buf_ptr, len - total_sent, 0)
+        if sent <= 0 {
+            return false
+        }
+        total_sent += sent
+    }
+    return true
+}
