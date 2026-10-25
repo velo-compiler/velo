@@ -2761,6 +2761,9 @@ class CCodeGenerator:
                 l_type = self._resolve_expr_type(expr.left)
                 r_type = self._resolve_expr_type(expr.right)
                 if l_type == "string" and r_type == "string":
+                    if isinstance(expr.left, CallExpr) or isinstance(expr.right, CallExpr):
+                        fn_name = "velo_str_eq" if op == "==" else "velo_str_neq"
+                        return f"{fn_name}({left}, {right})"
                     cmp_op = "==" if op == "==" else "!="
                     return f"(({left} != NULL && {right} != NULL) ? (strcmp({left}, {right}) {cmp_op} 0) : ({left} {op} {right}))"
 

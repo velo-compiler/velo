@@ -92,16 +92,26 @@ flowchart TD
   - No UTF-8 BOM in any `.vl` file.
   - Full test suite passing (281 tests passed).
 
-#### Task 1.3: Single-Evaluation Null Comparisons for Function Calls
-* **Problem**: In Stage 2 codegen, `expr != null` where `expr` is a function call expands into a null-guarded ternary that evaluates the call twice, running side effects twice (documented in §6.7 residual 8).
-* **Specification**:
-  - In `src/backend/codegen_expr.vl`, when checking an expression against `null`, detect if the target is an `EXPR_CALL` or compound expression with side-effects.
-  - Lower the comparison via an inline single-evaluation helper or bound local slot rather than repeating the call expression on both sides of the ternary.
-* **Target Files**:
-  - `src/backend/codegen_expr.vl`
+#### Task 1.3: Single-Evaluation Null Comparisons for Function Calls [COMPLETED] ✅
+* **Former Defect**:
+  - In Stage 2 (`src/backend/codegen_expr.vl`), checking a string-returning function call against `null` (e.g. `call_count() != null`) matched `if ltype == "string" or rtype == "string"` without checking for `null` literals (`EXPR_NULL` / `@void`). This lowered the check into a redundant null-guarded ternary: `((call_count() != NULL && NULL != NULL) ? (strcmp(call_count(), NULL) != 0) : (call_count() != NULL))`. As a result, `call_count()` was evaluated in both the ternary test and the else branch, executing its side effects twice.
+  - In string equality comparisons (`call_count() == "hello"`), both Stage 1 and Stage 2 evaluated the function call twice across the condition and branches of the ternary.
+* **Fix Applied**:
+  - In `src/backend/codegen_expr.vl`, updated equality / inequality emission:
+    * Gated the string comparison block with `expr.left.kind != EXPR_NULL and expr.right.kind != EXPR_NULL and ltype != "@void" and rtype != "@void" and (ltype == "string" and rtype == "string")`. When comparing against `null`, it falls through to direct C pointer comparisons `(expr != NULL)` / `(expr == NULL)`, evaluating `expr` exactly once.
+    * For string comparisons where either operand is an `EXPR_CALL`, lowered the comparison to `velo_str_eq(left, right)` or `velo_str_neq(left, right)`, evaluating arguments exactly once.
+    * Re-condensed the emission logic in `codegen_expr.vl`, reducing line count from 395 to 384 lines.
+  - In `velo/codegen_c.py` (Stage 1), added `velo_str_eq` / `velo_str_neq` emission when comparing strings where either operand is a `CallExpr`.
+  - In `velo/runtime/velo_runtime.h`, added C99 portable static inline helper functions `velo_str_eq` and `velo_str_neq`.
+* **Residual Limitation**:
+  - None. Both null comparisons (`!= null`, `== null`) and string comparisons with function calls evaluate arguments exactly once on both stages.
 * **Verification**:
-  - Verify a counter function `call_count()` compared against `null` increments its counter exactly once.
-  - Rebuild 3-stage bootstrap chain and verify determinism.
+  - Added dedicated test suite `tests/test_null_comparisons.py` verifying single evaluation for `get_str() != null`, `null != get_str()`, `get_null_str() == null`, `get_node() == null`, `get_str() == "gamma"`, and `get_str() != "epsilon"` across Stage 1 and Stage 2.
+  - 3-stage bootstrap chain completed (`Gen1 -> Gen2 -> Gen3 -> bin/velo.exe`) with bit-for-bit SHA-256 determinism verified (`3B0CE93693C8DA26BA366546F2976F80DC5A4B1899B22541A7901C68E1E93FD6`).
+  - Native test suite `bin/velo.exe test examples/15_native_tests.vl` passed all 105 tests.
+  - All source files $\le 399$ lines (`scripts/count_lines.py`).
+  - No UTF-8 BOM in any `.vl` file.
+  - Full test suite passing (282 tests passed).
 
 ---
 

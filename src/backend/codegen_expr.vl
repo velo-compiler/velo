@@ -197,26 +197,16 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         if expr.op == TOK_EQ or expr.op == TOK_NEQ {
             let ltype = infer_expr_type(st, expr.left)
             let rtype = infer_expr_type(st, expr.right)
-            if ltype == "string" or rtype == "string" {
-                sb_append_str(sb, "((")
-                emit_c_expr(sb, st, expr.left)
-                sb_append_str(sb, " != NULL && ")
-                emit_c_expr(sb, st, expr.right)
-                sb_append_str(sb, " != NULL) ? (strcmp(")
-                emit_c_expr(sb, st, expr.left)
-                sb_append_str(sb, ", ")
-                emit_c_expr(sb, st, expr.right)
-                if expr.op == TOK_EQ {
-                    sb_append_str(sb, ") == 0) : (")
-                } else {
-                    sb_append_str(sb, ") != 0) : (")
+            if expr.left.kind != EXPR_NULL and expr.right.kind != EXPR_NULL and ltype != "@void" and rtype != "@void" and (ltype == "string" and rtype == "string") {
+                if expr.left.kind == EXPR_CALL or expr.right.kind == EXPR_CALL {
+                    if expr.op == TOK_EQ { sb_append_str(sb, "velo_str_eq(") } else { sb_append_str(sb, "velo_str_neq(") }
+                    emit_c_expr(sb, st, expr.left); sb_append_str(sb, ", "); emit_c_expr(sb, st, expr.right); sb_append_char(sb, ')')
+                    return
                 }
-                emit_c_expr(sb, st, expr.left)
-                sb_append_char(sb, ' ')
-                sb_append_str(sb, op_to_c_str(expr.op))
-                sb_append_char(sb, ' ')
-                emit_c_expr(sb, st, expr.right)
-                sb_append_str(sb, "))")
+                sb_append_str(sb, "(("); emit_c_expr(sb, st, expr.left); sb_append_str(sb, " != NULL && "); emit_c_expr(sb, st, expr.right); sb_append_str(sb, " != NULL) ? (strcmp(")
+                emit_c_expr(sb, st, expr.left); sb_append_str(sb, ", "); emit_c_expr(sb, st, expr.right)
+                if expr.op == TOK_EQ { sb_append_str(sb, ") == 0) : (") } else { sb_append_str(sb, ") != 0) : (") }
+                emit_c_expr(sb, st, expr.left); sb_append_char(sb, ' '); sb_append_str(sb, op_to_c_str(expr.op)); sb_append_char(sb, ' '); emit_c_expr(sb, st, expr.right); sb_append_str(sb, "))")
                 return
             }
         }

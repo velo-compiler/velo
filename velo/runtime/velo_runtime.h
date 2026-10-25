@@ -1000,6 +1000,18 @@ static inline char* velo_str_copy_heap(const char* src, size_t n) {
     return out;
 }
 
+static inline bool velo_str_eq(const char* a, const char* b) {
+    if (a == b) return true;
+    if (!a || !b) return false;
+    return strcmp(a, b) == 0;
+}
+
+static inline bool velo_str_neq(const char* a, const char* b) {
+    if (a == b) return false;
+    if (!a || !b) return true;
+    return strcmp(a, b) != 0;
+}
+
 static inline bool velo_str_contains(const char* s, const char* sub) {
     return strstr(velo_str_nonnull(s, "str.contains"),
                   velo_str_nonnull(sub, "str.contains")) != NULL;
