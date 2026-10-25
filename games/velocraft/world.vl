@@ -3,6 +3,7 @@
 use sys.mem
 use "raylib.vl"
 use "math3d.vl"
+use "fx.vl"
 
 let BLOCK_AIR: u8 = 0
 let BLOCK_GRASS: u8 = 1
@@ -12,6 +13,10 @@ let BLOCK_WOOD: u8 = 4
 let BLOCK_LEAVES: u8 = 5
 let BLOCK_BRICK: u8 = 6
 let BLOCK_GOLD: u8 = 7
+let BLOCK_WATER: u8 = 8
+let BLOCK_FLOWER_RED: u8 = 9
+let BLOCK_FLOWER_YEL: u8 = 10
+let BLOCK_SAND: u8 = 11
 
 data Chunk {
     cx: i32
@@ -24,6 +29,17 @@ data VoxelWorld {
     chunks: @Chunk
     center_cx: i32
     center_cz: i32
+}
+
+act is_solid_block(id: u8) -> bool {
+    if id == BLOCK_AIR or id == BLOCK_WATER or id == BLOCK_FLOWER_RED or id == BLOCK_FLOWER_YEL {
+        return false
+    }
+    return true
+}
+
+act is_transparent(id: u8) -> bool {
+    return id == BLOCK_AIR or id == BLOCK_WATER or id == BLOCK_FLOWER_RED or id == BLOCK_FLOWER_YEL
 }
 
 act floor_div16(v: i32) -> i32 {
@@ -46,15 +62,11 @@ act get_terrain_height(wx: i32, wz: i32) -> i32 {
     let fx = (wx as f32) * 0.05
     let fz = (wz as f32) * 0.05
 
-    // Octave 1: broad rolling hills
     let h1 = 5.5 + 2.8 * approx_sin(fx * 0.7) + 2.4 * approx_cos(fz * 0.7)
-    // Octave 2: medium ridge variance
     let h2 = 1.2 * approx_sin(fx * 1.8 + fz * 1.2)
-    // Octave 3: fine local detail
     let h3 = 0.5 * approx_cos(fx * 3.4 - fz * 2.6)
 
-    let total = h1 + h2 + h3
-    mut h_int = total as i32
+    mut h_int = (h1 + h2 + h3) as i32
     if h_int < 3 { h_int = 3 }
     if h_int > 13 { h_int = 13 }
     return h_int
@@ -81,7 +93,7 @@ act generate_chunk(ch: @Chunk, cx: i32, cz: i32) {
     let base_wx = cx * 16
     let base_wz = cz * 16
 
-    // 1. Generate base strata (bedrock, stone, dirt, grass)
+    // 1. Generate strata with river valleys, sandbanks, and flora
     mut lx: i32 = 0
     loop lx < 16 {
         mut lz: i32 = 0
@@ -97,11 +109,28 @@ act generate_chunk(ch: @Chunk, cx: i32, cz: i32) {
                 } else if ly < height {
                     if ly == 3 and ((wx * 13 + wz * 7) % 23 == 0) {
                         chunk_set_local(ch, lx, ly, lz, BLOCK_GOLD)
+                    } else if height <= 4 {
+                        chunk_set_local(ch, lx, ly, lz, BLOCK_SAND)
                     } else {
                         chunk_set_local(ch, lx, ly, lz, BLOCK_DIRT)
                     }
                 } else if ly == height {
-                    chunk_set_local(ch, lx, ly, lz, BLOCK_GRASS)
+                    if height <= 4 {
+                        chunk_set_local(ch, lx, ly, lz, BLOCK_SAND)
+                    } else {
+                        chunk_set_local(ch, lx, ly, lz, BLOCK_GRASS)
+                    }
+                } else if ly <= 4 {
+                    chunk_set_local(ch, lx, ly, lz, BLOCK_WATER)
+                } else if ly == height + 1 and height > 4 {
+                    let flower_rnd = (chunk_hash(wx, wz) + 17) % 31
+                    if flower_rnd == 1 {
+                        chunk_set_local(ch, lx, ly, lz, BLOCK_FLOWER_RED)
+                    } else if flower_rnd == 2 {
+                        chunk_set_local(ch, lx, ly, lz, BLOCK_FLOWER_YEL)
+                    } else {
+                        chunk_set_local(ch, lx, ly, lz, BLOCK_AIR)
+                    }
                 } else {
                     chunk_set_local(ch, lx, ly, lz, BLOCK_AIR)
                 }
@@ -112,7 +141,7 @@ act generate_chunk(ch: @Chunk, cx: i32, cz: i32) {
         lx += 1
     }
 
-    // 2. Procedural Trees based on chunk hash
+    // 2. Procedural Trees on dry land (height > 4)
     let ch_rnd = chunk_hash(cx, cz)
     if (ch_rnd % 5) != 0 {
         let tx = 3 + (ch_rnd % 10)
@@ -120,23 +149,17 @@ act generate_chunk(ch: @Chunk, cx: i32, cz: i32) {
         let tree_h = get_terrain_height(base_wx + tx, base_wz + tz)
         let base_y = tree_h + 1
 
-        if base_y <= 11 {
-            // Wood Trunk
+        if tree_h > 4 and base_y <= 11 {
             chunk_set_local(ch, tx, base_y, tz, BLOCK_WOOD)
             chunk_set_local(ch, tx, base_y + 1, tz, BLOCK_WOOD)
             chunk_set_local(ch, tx, base_y + 2, tz, BLOCK_WOOD)
 
-            // Leaves canopy
             mut clx = tx - 1
             loop clx <= tx + 1 {
                 mut clz = tz - 1
                 loop clz <= tz + 1 {
-                    if chunk_get_local(ch, clx, base_y + 2, clz) == BLOCK_AIR {
-                        chunk_set_local(ch, clx, base_y + 2, clz, BLOCK_LEAVES)
-                    }
-                    if chunk_get_local(ch, clx, base_y + 3, clz) == BLOCK_AIR and (clx == tx or clz == tz) {
-                        chunk_set_local(ch, clx, base_y + 3, clz, BLOCK_LEAVES)
-                    }
+                    if chunk_get_local(ch, clx, base_y + 2, clz) == BLOCK_AIR { chunk_set_local(ch, clx, base_y + 2, clz, BLOCK_LEAVES) }
+                    if chunk_get_local(ch, clx, base_y + 3, clz) == BLOCK_AIR and (clx == tx or clz == tz) { chunk_set_local(ch, clx, base_y + 3, clz, BLOCK_LEAVES) }
                     clz += 1
                 }
                 clx += 1
@@ -150,9 +173,7 @@ act find_chunk_slot(w: @VoxelWorld, cx: i32, cz: i32) -> i32 {
     mut i: usize = 0
     loop i < 9 {
         let ch = @w.chunks[i]
-        if ch.active and ch.cx == cx and ch.cz == cz {
-            return i as i32
-        }
+        if ch.active and ch.cx == cx and ch.cz == cz { return i as i32 }
         i += 1
     }
     return -1
@@ -165,9 +186,7 @@ act world_get(w: @VoxelWorld, wx: i32, wy: i32, wz: i32) -> u8 {
     let slot = find_chunk_slot(w, cx, cz)
     if slot < 0 { return BLOCK_AIR }
     let ch = @w.chunks[slot as usize]
-    let lx = local_coord(wx, cx)
-    let lz = local_coord(wz, cz)
-    return chunk_get_local(ch, lx, wy, lz)
+    return chunk_get_local(ch, local_coord(wx, cx), wy, local_coord(wz, cz))
 }
 
 act world_set(w: @VoxelWorld, wx: i32, wy: i32, wz: i32, id: u8) {
@@ -176,20 +195,14 @@ act world_set(w: @VoxelWorld, wx: i32, wy: i32, wz: i32, id: u8) {
     let cz = floor_div16(wz)
     let slot = find_chunk_slot(w, cx, cz)
     if slot >= 0 {
-        let ch = @w.chunks[slot as usize]
-        let lx = local_coord(wx, cx)
-        let lz = local_coord(wz, cz)
-        chunk_set_local(ch, lx, wy, lz, id)
+        chunk_set_local(@w.chunks[slot as usize], local_coord(wx, cx), wy, local_coord(wz, cz), id)
     }
 }
 
 act update_world_chunks(w: @VoxelWorld, player_x: f32, player_z: f32) {
     let pcx = floor_div16(player_x as i32)
     let pcz = floor_div16(player_z as i32)
-
-    if pcx == w.center_cx and pcz == w.center_cz and w.chunks[0].active {
-        return
-    }
+    if pcx == w.center_cx and pcz == w.center_cz and w.chunks[0].active { return }
 
     w.center_cx = pcx
     w.center_cz = pcz
@@ -217,23 +230,16 @@ act update_world_chunks(w: @VoxelWorld, player_x: f32, player_z: f32) {
                 mut k: usize = 0
                 loop k < 9 {
                     let ch = @w.chunks[k]
-                    if not ch.active {
-                        free_slot = k as i32
-                        break
-                    }
-                    if ch.cx < (pcx - 1) or ch.cx > (pcx + 1) or ch.cz < (pcz - 1) or ch.cz > (pcz + 1) {
+                    if not ch.active or ch.cx < (pcx - 1) or ch.cx > (pcx + 1) or ch.cz < (pcz - 1) or ch.cz > (pcz + 1) {
                         free_slot = k as i32
                         break
                     }
                     k += 1
                 }
-
                 if free_slot >= 0 {
-                    let new_ch = @w.chunks[free_slot as usize]
-                    generate_chunk(new_ch, target_cx, target_cz)
+                    generate_chunk(@w.chunks[free_slot as usize], target_cx, target_cz)
                 }
             }
-
             dx += 1
         }
         dz += 1
@@ -255,7 +261,6 @@ act init_world() -> VoxelWorld {
         ch.active = false
         i += 1
     }
-
     update_world_chunks(@w, 16.0, 16.0)
     return w
 }
@@ -268,32 +273,25 @@ act get_block_color(id: u8) -> Color {
     if id == BLOCK_LEAVES { return make_color(45, 140, 60, 255) }
     if id == BLOCK_BRICK { return make_color(195, 75, 65, 255) }
     if id == BLOCK_GOLD { return make_color(245, 205, 50, 255) }
+    if id == BLOCK_WATER { return make_color(45, 135, 220, 185) }
+    if id == BLOCK_FLOWER_RED { return make_color(235, 55, 70, 255) }
+    if id == BLOCK_FLOWER_YEL { return make_color(255, 215, 60, 255) }
+    if id == BLOCK_SAND { return make_color(225, 210, 155, 255) }
     return make_color(0, 0, 0, 0)
 }
 
-act shade_block_color(base_col: Color, light_mult: f32, tint: Color) -> Color {
-    mut r = ((base_col.r as f32) * light_mult * ((tint.r as f32) / 255.0)) as i32
-    mut g = ((base_col.g as f32) * light_mult * ((tint.g as f32) / 255.0)) as i32
-    mut b = ((base_col.b as f32) * light_mult * ((tint.b as f32) / 255.0)) as i32
-    if r > 255 { r = 255 }
-    if g > 255 { g = 255 }
-    if b > 255 { b = 255 }
-    return make_color(r as u8, g as u8, b as u8, base_col.a)
+act is_water_visible(w: @VoxelWorld, wx: i32, wy: i32, wz: i32) -> bool {
+    if wy == 15 { return true }
+    return world_get(w, wx, wy + 1, wz) == BLOCK_AIR or world_get(w, wx + 1, wy, wz) == BLOCK_AIR or world_get(w, wx - 1, wy, wz) == BLOCK_AIR or world_get(w, wx, wy, wz + 1) == BLOCK_AIR or world_get(w, wx, wy, wz - 1) == BLOCK_AIR
 }
 
 act is_block_visible(w: @VoxelWorld, wx: i32, wy: i32, wz: i32) -> bool {
     if wy == 15 { return true }
-    if world_get(w, wx + 1, wy, wz) == BLOCK_AIR { return true }
-    if world_get(w, wx - 1, wy, wz) == BLOCK_AIR { return true }
-    if world_get(w, wx, wy + 1, wz) == BLOCK_AIR { return true }
-    if world_get(w, wx, wy - 1, wz) == BLOCK_AIR { return true }
-    if world_get(w, wx, wy, wz + 1) == BLOCK_AIR { return true }
-    if world_get(w, wx, wy, wz - 1) == BLOCK_AIR { return true }
-    return false
+    return is_transparent(world_get(w, wx + 1, wy, wz)) or is_transparent(world_get(w, wx - 1, wy, wz)) or is_transparent(world_get(w, wx, wy + 1, wz)) or is_transparent(world_get(w, wx, wy - 1, wz)) or is_transparent(world_get(w, wx, wy, wz + 1)) or is_transparent(world_get(w, wx, wy, wz - 1))
 }
 
-act draw_world(w: @VoxelWorld, light_mult: f32, tint: Color, cam_x: f32, cam_z: f32) {
-    let wire_col = make_color(20, 20, 25, 60)
+act draw_world(w: @VoxelWorld, light_mult: f32, tint: Color, sky_col: Color, cam_x: f32, cam_z: f32, anim_time: f32) {
+    let wire_col = make_color(20, 20, 25, 50)
     let max_dist_sq: f32 = 36.0 * 36.0
 
     mut ci: usize = 0
@@ -317,16 +315,36 @@ act draw_world(w: @VoxelWorld, light_mult: f32, tint: Color, cam_x: f32, cam_z: 
                     let dist_sq = dx * dx + dz * dz
 
                     if dist_sq < max_dist_sq {
+                        let dist = approx_sqrt(dist_sq)
+
                         mut ly: i32 = 0
                         loop ly < 16 {
                             let id = chunk_get_local(ch, lx, ly, lz)
                             if id != BLOCK_AIR {
-                                if is_block_visible(w, wx, ly, wz) {
-                                    let pos = Vector3{ x: fwx, y: (ly as f32) + 0.5, z: fwz }
-                                    let base_col = get_block_color(id)
-                                    let lit_col = shade_block_color(base_col, light_mult, tint)
-                                    DrawCube(pos, 1.0, 1.0, 1.0, lit_col)
-                                    DrawCubeWires(pos, 1.0, 1.0, 1.0, wire_col)
+                                if id == BLOCK_WATER {
+                                    if is_water_visible(w, wx, ly, wz) {
+                                        let wave_y = (ly as f32) + 0.44 + 0.03 * approx_sin(anim_time * 3.0 + fwx * 0.4 + fwz * 0.3)
+                                        let lit_col = apply_fog(shade_voxel_color(get_block_color(BLOCK_WATER), light_mult, tint, true), sky_col, dist, 18.0, 36.0)
+                                        DrawCube(Vector3{ x: fwx, y: wave_y, z: fwz }, 1.0, 0.88, 1.0, lit_col)
+                                    }
+                                } else if id == BLOCK_FLOWER_RED or id == BLOCK_FLOWER_YEL {
+                                    let lit_col = apply_fog(shade_voxel_color(get_block_color(id), light_mult, tint, true), sky_col, dist, 16.0, 36.0)
+                                    DrawCube(Vector3{ x: fwx, y: (ly as f32) + 0.35, z: fwz }, 0.35, 0.70, 0.35, lit_col)
+                                } else if is_block_visible(w, wx, ly, wz) {
+                                    let is_top_exposed = is_transparent(world_get(w, wx, ly + 1, wz))
+                                    if id == BLOCK_GRASS and is_top_exposed {
+                                        let lit_dirt = apply_fog(shade_voxel_color(get_block_color(BLOCK_DIRT), light_mult, tint, false), sky_col, dist, 18.0, 36.0)
+                                        DrawCube(Vector3{ x: fwx, y: (ly as f32) + 0.44, z: fwz }, 1.0, 0.88, 1.0, lit_dirt)
+                                        DrawCubeWires(Vector3{ x: fwx, y: (ly as f32) + 0.44, z: fwz }, 1.0, 0.88, 1.0, wire_col)
+
+                                        let lit_grass = apply_fog(shade_voxel_color(get_block_color(BLOCK_GRASS), light_mult, tint, true), sky_col, dist, 18.0, 36.0)
+                                        DrawCube(Vector3{ x: fwx, y: (ly as f32) + 0.94, z: fwz }, 1.002, 0.13, 1.002, lit_grass)
+                                    } else {
+                                        let pos = Vector3{ x: fwx, y: (ly as f32) + 0.5, z: fwz }
+                                        let lit_col = apply_fog(shade_voxel_color(get_block_color(id), light_mult, tint, is_top_exposed), sky_col, dist, 18.0, 36.0)
+                                        DrawCube(pos, 1.0, 1.0, 1.0, lit_col)
+                                        DrawCubeWires(pos, 1.0, 1.0, 1.0, wire_col)
+                                    }
                                 }
                             }
                             ly += 1

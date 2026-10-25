@@ -39,7 +39,7 @@ act cast_voxel_ray(w: @VoxelWorld, eye: Vector3, dir: Vector3) -> RayHit {
 
         if cy >= 0 and cy <= 15 {
             let block_id = world_get(w, cx, cy, cz)
-            if block_id != BLOCK_AIR {
+            if block_id != BLOCK_AIR and block_id != BLOCK_WATER {
                 hit.has_hit = true
                 hit.hit_x = cx
                 hit.hit_y = cy

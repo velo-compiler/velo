@@ -1,0 +1,96 @@
+// Visual FX, Atmospheric Distance Fog, Volumetric Clouds, and Shading for VeloCraft.
+
+use "raylib.vl"
+use "math3d.vl"
+
+// Exponential distance fog blending voxel colors into horizon sky
+act apply_fog(base_col: Color, sky_col: Color, dist: f32, fog_start: f32, fog_end: f32) -> Color {
+    if dist <= fog_start { return base_col }
+    if dist >= fog_end {
+        return make_color(sky_col.r, sky_col.g, sky_col.b, base_col.a)
+    }
+    let f = (dist - fog_start) / (fog_end - fog_start)
+    let inv_f = 1.0 - f
+
+    let r = ((base_col.r as f32) * inv_f + (sky_col.r as f32) * f) as u8
+    let g = ((base_col.g as f32) * inv_f + (sky_col.g as f32) * f) as u8
+    let b = ((base_col.b as f32) * inv_f + (sky_col.b as f32) * f) as u8
+    return make_color(r, g, b, base_col.a)
+}
+
+// Directional and Ambient Occlusion block color shading
+act shade_voxel_color(base_col: Color, light_mult: f32, tint: Color, is_top_exposed: bool) -> Color {
+    mut ao_mult: f32 = 1.08
+    if not is_top_exposed {
+        ao_mult = 0.78 // Ambient contact shadow when blocked from above
+    }
+
+    mut r = ((base_col.r as f32) * light_mult * ao_mult * ((tint.r as f32) / 255.0)) as i32
+    mut g = ((base_col.g as f32) * light_mult * ao_mult * ((tint.g as f32) / 255.0)) as i32
+    mut b = ((base_col.b as f32) * light_mult * ao_mult * ((tint.b as f32) / 255.0)) as i32
+
+    if r > 255 { r = 255 }
+    if g > 255 { g = 255 }
+    if b > 255 { b = 255 }
+    return make_color(r as u8, g as u8, b as u8, base_col.a)
+}
+
+// Procedural 2D density noise for drifting cloud layer
+act cloud_noise(x: f32, z: f32) -> f32 {
+    let n1 = approx_sin(x * 0.05) * approx_cos(z * 0.05)
+    let n2 = approx_sin(x * 0.11 + z * 0.07) * 0.4
+    return n1 + n2
+}
+
+// Renders volumetric cloud layer drifting high in the sky (y = 22)
+act draw_clouds(cam_x: f32, cam_z: f32, wind: f32, light_mult: f32, sky_col: Color) {
+    let cloud_y: f32 = 22.0
+    let step: f32 = 5.0
+    let cloud_size: f32 = 4.8
+    let cloud_h: f32 = 1.5
+
+    // Dynamic cloud tint matching daylight cycle
+    mut cr = (245.0 * light_mult) as i32
+    mut cg = (248.0 * light_mult) as i32
+    mut cb = (255.0 * light_mult) as i32
+    if light_mult < 0.5 {
+        // Moonlit cloud tint
+        cr = (140.0 * light_mult + 30.0) as i32
+        cg = (160.0 * light_mult + 40.0) as i32
+        cb = (210.0 * light_mult + 60.0) as i32
+    }
+    if cr > 255 { cr = 255 }
+    if cg > 255 { cg = 255 }
+    if cb > 255 { cb = 255 }
+    let cloud_col = make_color(cr as u8, cg as u8, cb as u8, 190)
+    let cloud_wire = make_color(cr as u8, cg as u8, cb as u8, 70)
+
+    let center_ix = floor_to_i32(cam_x / step)
+    let center_iz = floor_to_i32(cam_z / step)
+
+    mut rz: i32 = -8
+    loop rz <= 8 {
+        let gz = (center_iz + rz) as f32 * step
+        let dz = gz - cam_z
+
+        mut rx: i32 = -8
+        loop rx <= 8 {
+            let gx = (center_ix + rx) as f32 * step
+            let dx = gx - cam_x
+            let dist_sq = dx * dx + dz * dz
+
+            if dist_sq < (42.0 * 42.0) {
+                let d = cloud_noise(gx + wind, gz + wind * 0.4)
+                if d > 0.18 {
+                    let dist = approx_sqrt(dist_sq)
+                    let lit_cloud = apply_fog(cloud_col, sky_col, dist, 24.0, 42.0)
+                    let pos = Vector3{ x: gx, y: cloud_y, z: gz }
+                    DrawCube(pos, cloud_size, cloud_h, cloud_size, lit_cloud)
+                    DrawCubeWires(pos, cloud_size, cloud_h, cloud_size, cloud_wire)
+                }
+            }
+            rx += 1
+        }
+        rz += 1
+    }
+}

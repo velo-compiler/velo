@@ -5,6 +5,7 @@ use "math3d.vl"
 use "world.vl"
 use "player.vl"
 use "voxel_ray.vl"
+use "fx.vl"
 
 act get_slot_name(slot: i32) -> string {
     if slot == 1 { return "Grass Block" }
@@ -82,15 +83,16 @@ act draw_hud(screen_w: f32, screen_h: f32, p: @Player, hit: @RayHit, cursor_lock
     }
 
     // 3. Top-Left Status Card (Coordinates, Active Block, Day/Night Phase)
-    DrawRectangle(10, 10, 240, 104, make_color(15, 20, 25, 190))
-    DrawRectangleLines(10, 10, 240, 104, make_color(60, 70, 85, 255))
+    DrawRectangle(10, 10, 240, 122, make_color(15, 20, 25, 190))
+    DrawRectangleLines(10, 10, 240, 122, make_color(60, 70, 85, 255))
     DrawText("VELOCRAFT 3D", 18, 15, 18, make_color(255, 220, 50, 255))
 
     let active_name = get_slot_name(p.active_slot)
     DrawText(active_name, 18, 36, 14, make_color(100, 220, 120, 255))
     DrawText(time_str, 18, 54, 14, time_col)
-    DrawText("Infinite Multi-Chunk Terrain", 18, 72, 12, make_color(160, 220, 255, 255))
-    DrawText("Hold [T] to Speed Up Time", 18, 88, 11, make_color(180, 200, 220, 200))
+    DrawText("Infinite Multi-Chunk World", 18, 72, 12, make_color(160, 220, 255, 255))
+    DrawText("Fog * Clouds * Water * AO", 18, 88, 11, make_color(140, 240, 190, 255))
+    DrawText("Hold [T] to Speed Up Time", 18, 104, 11, make_color(180, 200, 220, 200))
 
     // 4. Top-Right Controls Hint
     DrawRectangle((screen_w - 490.0) as i32, 10, 480, 28, make_color(15, 20, 25, 180))
@@ -145,9 +147,13 @@ act main() -> i32 {
 
     mut prev_slot = player.active_slot
     mut day_time: f32 = 0.25 // Start at pleasant morning/noon
+    mut anim_time: f32 = 0.0
+    mut wind_timer: f32 = 0.0
 
     loop not WindowShouldClose() {
         let dt = GetFrameTime()
+        anim_time += dt
+        wind_timer += dt * 1.5
         let screen_w = GetScreenWidth() as f32
         let screen_h = GetScreenHeight() as f32
 
@@ -299,8 +305,11 @@ act main() -> i32 {
             DrawCubeWires(moon_pos, 4.8, 4.8, 4.8, make_color(180, 205, 250, 120))
         }
 
-        // Voxel World with Dynamic Lighting and Distance Culling
-        draw_world(@world, light_mult, block_tint, cam.position.x, cam.position.z)
+        // Volumetric Drifting Clouds Layer
+        draw_clouds(cam.position.x, cam.position.z, wind_timer, light_mult, sky_col)
+
+        // Voxel World with Dynamic Lighting, River Valleys, and Distance Fog
+        draw_world(@world, light_mult, block_tint, sky_col, cam.position.x, cam.position.z, anim_time)
 
         if cursor_locked {
             draw_target_highlight(@ray_hit)
