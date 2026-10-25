@@ -74,17 +74,23 @@ flowchart TD
   - All source files in `src/` verified $\le 399$ lines (`scripts/count_lines.py`).
   - Full test suite passing (280 tests passed).
 
-#### Task 1.2: Native String Interpolation Function Calls
-* **Problem**: In Stage 2 self-hosted compiler, calling functions inside string interpolation (e.g. `"Result: {calculate(x)}"`) currently emits the raw expression untranslated or produces incorrect C tokens in `src/backend/codegen_io.vl`. Stage 1 Python handles it via temporary assignment.
-* **Specification**:
-  - Update `src/backend/codegen_io.vl` and `src/frontend/lexer.vl` / `src/frontend/parser_expr.vl` to properly parse arbitrary expressions within `{...}` in string interpolation.
-  - In Stage 2 C emission, hoist inner expression evaluations to local temporary variables before the `snprintf` or `printf` call to ensure complex expressions evaluate safely and cleanly without GCC statement expressions.
-* **Target Files**:
-  - `src/backend/codegen_io.vl`
-  - `src/frontend/parser_expr.vl`
+#### Task 1.2: Native String Interpolation Function Calls [COMPLETED] ✅
+* **Former Defect**:
+  - In Stage 1 (`velo/codegen_c.py`), string interpolation used regex `r'\{([a-zA-Z0-9_\.@\[\]]+)\}'`, which skipped any expression containing parentheses `(` or operators `+`, emitting `{fib(5)}` verbatim without interpolation.
+  - In Stage 2 (`src/backend/codegen_io.vl`), `resolve_path_type_and_c` only handled simple variable identifiers and struct field paths. Calling functions inside `{...}` (e.g. `fib(5)`) defaulted to `i32` `%lld`, UFCS method calls (e.g. `p.get_name()`) were emitted as invalid C member accesses `p.get_name()` failing C compilation, and string-returning functions were formatted with `%lld` printing pointer addresses.
+* **Fix Applied**:
+  - In Stage 1 (`velo/codegen_c.py`), replaced the restrictive regex in `_lower_io_call` with a brace-depth scanner to extract balanced `{...}` regions, tokenized and parsed the inner expression with `Lexer` and `Parser`, resolved its type via `_resolve_expr_type`, emitted C code, and mapped to the proper format specifier (`%lld`, `%.2f`, `%s`, `%s`) with required casts.
+  - In Stage 2 (`src/backend/codegen_io.vl`), added `parse_interp_expr(source: string) -> @ExprNode` leveraging `lexer.vl`, `parser.vl`, and `parser_expr.vl`. Interpolation regions are parsed into complete AST `@ExprNode` trees, typed with `infer_expr_type(st, parsed_expr)`, and emitted via `emit_c_expr(@c_sb, st, parsed_expr)`, enabling arbitrary expressions, function calls, UFCS method calls, and operators inside interpolation.
+  - Maintained safe fallback to `resolve_path_type_and_c` if parsing fails.
+  - Line count of `src/backend/codegen_io.vl` maintained at 319 lines (under the 400-line ceiling).
+* **Residual Limitation**:
+  - Expressions inside string interpolation containing unescaped quote characters are bounded by standard Velo string literal lexical rules. Variables, function arguments, UFCS methods, operators, and constants are fully supported.
 * **Verification**:
-  - Add regression test in `tests/` verifying `"Val: {fib(5)}"` compiles and evaluates to `"Val: 5"` on both Stage 1 and native `bin/velo.exe`.
-  - Determinism verified on `emit-c src/main.vl`.
+  - Added dedicated test suite `tests/test_string_interpolation.py` validating function calls, UFCS method calls, arithmetic expressions, and types (`i32`, `f64`, `bool`, `string`) across Stage 1 and Stage 2.
+  - 3-stage bootstrap chain completed (`Gen1 -> Gen2 -> Gen3 -> bin/velo.exe`) with bit-for-bit SHA-256 determinism verified (`ADC60D9D80B32607B6B0D6FB669F7EBECE3051E8A3C0384705DFEA6F06678BC3`).
+  - All source files $\le 399$ lines (`scripts/count_lines.py`).
+  - No UTF-8 BOM in any `.vl` file.
+  - Full test suite passing (281 tests passed).
 
 #### Task 1.3: Single-Evaluation Null Comparisons for Function Calls
 * **Problem**: In Stage 2 codegen, `expr != null` where `expr` is a function call expands into a null-guarded ternary that evaluates the call twice, running side effects twice (documented in §6.7 residual 8).

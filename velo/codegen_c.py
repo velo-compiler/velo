@@ -3487,20 +3487,47 @@ class CCodeGenerator:
         first_arg = args[0]
         if isinstance(first_arg, StringLiteral):
             text = first_arg.value
-            pattern = re.compile(r'\{([a-zA-Z0-9_\.@\[\]]+)\}')
-            matches = list(pattern.finditer(text))
+            matches = []
+            idx = 0
+            while idx < len(text):
+                if text[idx] == '{':
+                    depth = 1
+                    close_idx = idx + 1
+                    while close_idx < len(text) and depth > 0:
+                        if text[close_idx] == '{':
+                            depth += 1
+                        elif text[close_idx] == '}':
+                            depth -= 1
+                        if depth > 0:
+                            close_idx += 1
+                    if depth == 0 and close_idx > idx + 1:
+                        matches.append((idx, close_idx, text[idx + 1:close_idx]))
+                        idx = close_idx + 1
+                        continue
+                idx += 1
 
             if matches:
                 fmt_parts = []
                 c_args = []
                 last_idx = 0
 
-                for m in matches:
-                    fmt_parts.append(text[last_idx:m.start()])
-                    var_path = m.group(1)
+                for start, end, var_path in matches:
+                    fmt_parts.append(text[last_idx:start].replace('%', '%%'))
+                    sub_expr = None
+                    try:
+                        from .lexer import Lexer
+                        from .parser import Parser
+                        sub_tokens = Lexer(var_path).tokenize()
+                        sub_expr = Parser(sub_tokens)._parse_expression()
+                    except Exception:
+                        sub_expr = None
 
-                    resolved_type = self._resolve_path_type(var_path)
-                    c_expr = self._convert_path_to_c(var_path)
+                    if sub_expr is not None:
+                        resolved_type = self._resolve_expr_type(sub_expr)
+                        c_expr = self._emit_expression(sub_expr)
+                    else:
+                        resolved_type = self._resolve_path_type(var_path)
+                        c_expr = self._convert_path_to_c(var_path)
 
                     if resolved_type == "dyn":
                         # 5.2 slice 2: raw dyn prints nothing useful — cast (as) first
@@ -3519,9 +3546,9 @@ class CCodeGenerator:
                         fmt_parts.append("%lld")
                         c_args.append(f"(long long)({c_expr})")
 
-                    last_idx = m.end()
+                    last_idx = end + 1
 
-                fmt_parts.append(text[last_idx:])
+                fmt_parts.append(text[last_idx:].replace('%', '%%'))
                 full_fmt = "".join(fmt_parts) + nl_char
                 escaped_fmt = full_fmt.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\t', '\\t')
 

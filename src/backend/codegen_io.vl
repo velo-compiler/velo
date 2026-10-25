@@ -2,6 +2,10 @@
 use sys.io
 use sys.mem
 use "../frontend/token.vl"
+use "../frontend/lexer.vl"
+use "../frontend/parser.vl"
+use "../frontend/parser_binary.vl"
+use "../frontend/parser_expr.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"
 use "../ast/stmt.vl"
@@ -105,6 +109,21 @@ act resolve_path_type_and_c(st: @SymbolTable, path: string, out_c_expr: @StringB
         seg_start = seg_end + 1
     }
     return curr_type
+}
+
+// Parses an expression extracted from string interpolation `{...}`.
+act parse_interp_expr(source: string) -> @ExprNode {
+    if source == null { return null }
+    let slen = str.len(source)
+    if slen == 0 { return null }
+    mut lex = create_lexer(source, slen, slen + 4)
+    tokenize(@lex)
+    if lex.token_count <= 1 { return null }
+    mut p: Parser
+    init_parser(@p, "<interpolated>", source, lex.tokens, lex.token_count)
+    let expr = parse_expression(@p)
+    if p.had_error { return null }
+    return expr
 }
 
 // Emits code for `io.println` and `io.print` calls with full string interpolation and formatting.
@@ -213,14 +232,29 @@ act emit_io_call(sb: @StringBuilder, st: @SymbolTable, member: string, first_arg
     loop idx < len {
         let c = raw[idx]
         if c == '{' {
+            mut depth: usize = 1
             mut close_idx = idx + 1
-            loop close_idx < len and raw[close_idx] != '}' {
-                close_idx += 1
+            loop close_idx < len and depth > 0 {
+                if raw[close_idx] == '{' {
+                    depth += 1
+                } else if raw[close_idx] == '}' {
+                    depth -= 1
+                }
+                if depth > 0 {
+                    close_idx += 1
+                }
             }
-            if close_idx < len and raw[close_idx] == '}' and close_idx > idx + 1 {
+            if close_idx < len and depth == 0 and close_idx > idx + 1 {
                 let path = copy_slice_to_string(raw, idx + 1, close_idx - (idx + 1))
+                mut resolved_type = "i32"
                 mut c_sb = create_sb(64)
-                let resolved_type = resolve_path_type_and_c(st, path, @c_sb)
+                let parsed_expr = parse_interp_expr(path)
+                if parsed_expr != null {
+                    resolved_type = infer_expr_type(st, parsed_expr)
+                    emit_c_expr(@c_sb, st, parsed_expr)
+                } else {
+                    resolved_type = resolve_path_type_and_c(st, path, @c_sb)
+                }
                 let c_expr_str = sb_to_string(@c_sb)
                 // 5.2 slice 2: raw dyn prints nothing useful — cast (as) first
                 if resolved_type == "dyn" {
