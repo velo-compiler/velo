@@ -1,25 +1,283 @@
-// 6.5 Native Integrated Test Runner Example
+// 6.5 Native Integrated Test Runner Comprehensive Edge Case Suite
+//
+// Demonstrates writing native tests for Velo applications.
+// Run with:
+//   velo test examples/15_native_tests.vl
+//   velo test examples/15_native_tests.vl --filter math
+// Run production app (tests stripped):
+//   velo run examples/15_native_tests.vl
+
 use sys.io
 use sys.mem
 
-test "basic math operations" {
+data Vector2D {
+    x: i32
+    y: i32
+}
+
+data Rectangle {
+    origin: Vector2D
+    width: i32
+    height: i32
+}
+
+act calculate_factorial(n: i32) -> i64 {
+    if n <= 1 { return 1 }
+    mut result: i64 = 1
+    mut i: i32 = 2
+    loop i <= n {
+        result = result * (i as i64)
+        i += 1
+    }
+    return result
+}
+
+act gcd(a: i32, b: i32) -> i32 {
+    mut x = a
+    mut y = b
+    loop y != 0 {
+        let temp = y
+        y = x % y
+        x = temp
+    }
+    return x
+}
+
+act classify_status(code: i32) -> string {
+    on code {
+        200 => return "OK"
+        201, 204 => return "Success"
+        400, 404 => return "Client Error"
+        500 => return "Server Error"
+        else => return "Unknown"
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Test Suite: Arithmetic, Precedence & Bitwise Operators
+// -----------------------------------------------------------------------------
+test "arithmetic operator precedence and signed arithmetic" {
     let a = 15
-    let b = 27
-    assert(a + b == 42)
-    assert(b - a == 12)
+    let b = 4
+    assert(a + b == 19)
+    assert(a - b == 11)
+    assert(a * b == 60)
+    assert(a / b == 3)
+    assert(a % b == 3)
+
+    // Operator precedence: * and / before + and -
+    let calc = 10 + 4 * 5 - 12 / 3
+    assert(calc == 26, "expected 10 + 20 - 4 = 26")
+
+    // Negative numbers and signed operations
+    let neg = -50
+    let pos = 25
+    assert(neg + pos == -25)
+    assert(neg * -1 == 50)
 }
 
-test "string assertions with message" {
-    let greeting = "hello"
-    assert(greeting != null, "greeting should not be null")
+test "bitwise operators and bit manipulation" {
+    let x = 0xAA // 10101010
+    let y = 0x55 // 01010101
+
+    assert((x & y) == 0, "bitwise AND should be 0")
+    assert((x | y) == 0xFF, "bitwise OR should be 0xFF")
+    assert((x ^ y) == 0xFF, "bitwise XOR should be 0xFF")
+
+    // Shift operators
+    let val = 1
+    assert((val << 4) == 16, "1 << 4 should equal 16")
+    assert((16 >> 2) == 4, "16 >> 2 should equal 4")
+    assert((0xFF00 >> 8) == 0xFF, "0xFF00 >> 8 should equal 0xFF")
 }
 
-test "memory arena isolation" {
-    let ptr = mem.alloc(@i32, 10)
-    assert(ptr != null)
+// -----------------------------------------------------------------------------
+// Test Suite: Boolean Logic & De Morgan Laws
+// -----------------------------------------------------------------------------
+test "boolean logic and short-circuit relations" {
+    let t = true
+    let f = false
+
+    assert(t and not f)
+    assert(not (t and f))
+    assert(t or f)
+    assert(not (f or f))
+
+    // De Morgan's Laws: not (A and B) == not A or not B
+    let de_morgan_1 = not (t and f) == (not t or not f)
+    assert(de_morgan_1, "De Morgan Law 1 verification failed")
+
+    // not (A or B) == not A and not B
+    let de_morgan_2 = not (t or f) == (not t and not f)
+    assert(de_morgan_2, "De Morgan Law 2 verification failed")
 }
 
+// -----------------------------------------------------------------------------
+// Test Suite: Loops, Mutation & Flow Control
+// -----------------------------------------------------------------------------
+test "loops with break and continue edge cases" {
+    // Sum only even numbers up to 10
+    mut sum_even = 0
+    mut i = 0
+    loop i <= 10 {
+        if i % 2 != 0 {
+            i += 1
+            continue
+        }
+        sum_even += i
+        i += 1
+    }
+    // 0 + 2 + 4 + 6 + 8 + 10 = 30
+    assert(sum_even == 30, "sum of evens up to 10 should be 30")
+
+    // Loop with break
+    mut count = 0
+    loop {
+        if count == 7 {
+            break
+        }
+        count += 1
+    }
+    assert(count == 7, "break condition should terminate loop at 7")
+}
+
+test "recursion and mathematical algorithms" {
+    assert(calculate_factorial(0) == 1)
+    assert(calculate_factorial(1) == 1)
+    assert(calculate_factorial(5) == 120)
+    assert(calculate_factorial(6) == 720)
+
+    assert(gcd(48, 18) == 6, "gcd(48, 18) should be 6")
+    assert(gcd(101, 103) == 1, "gcd of primes should be 1")
+    assert(gcd(100, 25) == 25, "gcd(100, 25) should be 25")
+}
+
+// -----------------------------------------------------------------------------
+// Test Suite: Structs, Pointer Indirection & Value Copies
+// -----------------------------------------------------------------------------
+test "struct instantiations, field access and mutability" {
+    mut pt = Vector2D{ x: 10, y: 20 }
+    assert(pt.x == 10 and pt.y == 20)
+
+    pt.x = 42
+    pt.y = 99
+    assert(pt.x == 42 and pt.y == 99, "struct field mutation failed")
+
+    let rect = Rectangle{
+        origin: Vector2D{ x: 5, y: 10 },
+        width: 100,
+        height: 50
+    }
+    assert(rect.origin.x == 5)
+    assert(rect.origin.y == 10)
+    assert(rect.width * rect.height == 5000, "area calculation should be 5000")
+}
+
+// -----------------------------------------------------------------------------
+// Test Suite: Pattern Matching & Multi-Way Branching
+// -----------------------------------------------------------------------------
+test "pattern matching on expressions" {
+    assert(classify_status(200) == "OK")
+    assert(classify_status(201) == "Success")
+    assert(classify_status(204) == "Success")
+    assert(classify_status(400) == "Client Error")
+    assert(classify_status(404) == "Client Error")
+    assert(classify_status(500) == "Server Error")
+    assert(classify_status(999) == "Unknown")
+}
+
+// -----------------------------------------------------------------------------
+// Test Suite: String Library Builtins
+// -----------------------------------------------------------------------------
+test "string operations from sys.str" {
+    let s = "hello world"
+    assert(str.len(s) == 11, "string length should be 11")
+    assert(str.len("") == 0, "empty string length should be 0")
+
+    assert(str.starts_with(s, "hello"))
+    assert(not str.starts_with(s, "world"))
+
+    assert(str.ends_with(s, "world"))
+    assert(not str.ends_with(s, "hello"))
+
+    assert(str.contains(s, "lo wo"))
+    assert(not str.contains(s, "xyz"))
+
+    assert(str.index_of("banana", "na") == 2)
+    assert(str.index_of("banana", "xyz") == -1)
+
+    assert(str.trim("   padded string   ") == "padded string")
+}
+
+// -----------------------------------------------------------------------------
+// Test Suite: Dynamic Collections (shelf)
+// -----------------------------------------------------------------------------
+test "dynamic shelf operations: length, mutation, put, take and iteration" {
+    mut s: shelf[i32] = shelf[10, 20, 30]
+    assert(s.len == 3, "initial shelf length should be 3")
+    assert(s[0] == 10 and s[1] == 20 and s[2] == 30)
+
+    // Mutation by index
+    s[1] = 99
+    assert(s[1] == 99, "indexed write should update value")
+
+    // Growth (put)
+    s.put(40)
+    assert(s.len == 4, "shelf should grow after put")
+    assert(s[3] == 40)
+
+    // LIFO Pop (take)
+    let popped = s.take()
+    assert(popped == 40, "take() should pop last element")
+    assert(s.len == 3, "shelf length should decrease after take")
+
+    // Shelf iteration
+    mut total = 0
+    loop v of s {
+        total += v
+    }
+    // 10 + 99 + 30 = 139
+    assert(total == 139, "sum across shelf iteration should be 139")
+}
+
+// -----------------------------------------------------------------------------
+// Test Suite: Memory Allocations, Raw Pointers & Scope Isolation
+// -----------------------------------------------------------------------------
+test "memory allocation and raw pointer read/writes" {
+    let size: usize = 16
+    let buf: @i32 = mem.alloc(@i32, size)
+    assert(buf != null, "allocated buffer should not be null")
+
+    mut k: usize = 0
+    loop k < size {
+        buf[k] = (k * 10) as i32
+        k += 1
+    }
+
+    assert(buf[0] == 0)
+    assert(buf[5] == 50)
+    assert(buf[15] == 150)
+}
+
+test "zone allocation scoping and clean execution" {
+    mut outside_val = 0
+    zone {
+        let local_buf: @i32 = mem.alloc(@i32, 32)
+        assert(local_buf != null)
+        local_buf[0] = 777
+        outside_val = local_buf[0]
+    }
+    assert(outside_val == 777, "zone computed value should escape via outer binding")
+}
+
+// -----------------------------------------------------------------------------
+// Main Application Entry Point
+// -----------------------------------------------------------------------------
 act main() -> i32 {
-    io.println("Running normal main application")
+    io.println("==================================================")
+    io.println("Velo Native Test Runner Demonstration App")
+    io.println("To execute the native test suite, run:")
+    io.println("  ./bin/velo test examples/15_native_tests.vl")
+    io.println("==================================================")
     return 0
 }

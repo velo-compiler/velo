@@ -28,6 +28,12 @@
 // 5.4 (sys.fs): struct stat + S_ISDIR/S_ISREG classify paths for
 // is_dir/is_file; direct.h (Windows only) declares _mkdir for create_dir.
 #include <sys/stat.h>
+#ifndef S_ISDIR
+#define S_ISDIR(mode) (((mode) & S_IFMT) == S_IFDIR)
+#endif
+#ifndef S_ISREG
+#define S_ISREG(mode) (((mode) & S_IFMT) == S_IFREG)
+#endif
 #if defined(_WIN32)
 #include <direct.h>
 // 5.4 (S3): _findfirst/_findnext/_findclose + struct _finddata_t for the
