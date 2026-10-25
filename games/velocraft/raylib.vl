@@ -118,3 +118,4 @@ let KEY_FIVE: i32 = 53
 let KEY_SIX: i32 = 54
 let KEY_F: i32 = 70
 let KEY_F11: i32 = 300
+let KEY_T: i32 = 84

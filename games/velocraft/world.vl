@@ -146,9 +146,19 @@ act is_block_visible(w: @VoxelWorld, x: i32, y: i32, z: i32) -> bool {
     return false
 }
 
-// Renders only visible surface blocks using DrawCube and DrawCubeWires
-act draw_world(w: @VoxelWorld) {
-    let wire_col = make_color(30, 30, 30, 70)
+act shade_block_color(base_col: Color, light_mult: f32, tint: Color) -> Color {
+    mut r = ((base_col.r as f32) * light_mult * ((tint.r as f32) / 255.0)) as i32
+    mut g = ((base_col.g as f32) * light_mult * ((tint.g as f32) / 255.0)) as i32
+    mut b = ((base_col.b as f32) * light_mult * ((tint.b as f32) / 255.0)) as i32
+    if r > 255 { r = 255 }
+    if g > 255 { g = 255 }
+    if b > 255 { b = 255 }
+    return make_color(r as u8, g as u8, b as u8, base_col.a)
+}
+
+// Renders only visible surface blocks using DrawCube and DrawCubeWires with dynamic lighting
+act draw_world(w: @VoxelWorld, light_mult: f32, tint: Color) {
+    let wire_col = make_color(20, 20, 25, 60)
     mut x: i32 = 0
     loop x < 32 {
         mut z: i32 = 0
@@ -159,8 +169,9 @@ act draw_world(w: @VoxelWorld) {
                 if id != BLOCK_AIR {
                     if is_block_visible(w, x, y, z) {
                         let pos = Vector3{ x: (x as f32) + 0.5, y: (y as f32) + 0.5, z: (z as f32) + 0.5 }
-                        let col = get_block_color(id)
-                        DrawCube(pos, 1.0, 1.0, 1.0, col)
+                        let base_col = get_block_color(id)
+                        let lit_col = shade_block_color(base_col, light_mult, tint)
+                        DrawCube(pos, 1.0, 1.0, 1.0, lit_col)
                         DrawCubeWires(pos, 1.0, 1.0, 1.0, wire_col)
                     }
                 }
