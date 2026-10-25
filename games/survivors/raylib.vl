@@ -1,0 +1,80 @@
+// Raylib 6.0 C-FFI Bindings for Velo Survivors.
+
+data Color {
+    r: u8
+    g: u8
+    b: u8
+    a: u8
+}
+
+act make_color(r: u8, g: u8, b: u8, a: u8) -> Color {
+    return Color{ r: r, g: g, b: b, a: a }
+}
+
+data AudioStream {
+    buffer: @void
+    processor: @void
+    sampleRate: u32
+    sampleSize: u32
+    channels: u32
+}
+
+data Sound {
+    stream: AudioStream
+    frameCount: u32
+}
+
+// Window Management
+extern act InitWindow(width: i32, height: i32, title: string) -> void
+extern act CloseWindow() -> void
+extern act WindowShouldClose() -> bool
+extern act SetTargetFPS(fps: i32) -> void
+
+// Audio Management
+extern act InitAudioDevice() -> void
+extern act CloseAudioDevice() -> void
+extern act LoadSound(fileName: string) -> Sound
+extern act PlaySound(sound: Sound) -> void
+extern act UnloadSound(sound: Sound) -> void
+
+// Timing
+extern act GetFrameTime() -> f32
+extern act GetTime() -> f64
+extern act GetFPS() -> i32
+extern act DrawFPS(posX: i32, posY: i32) -> void
+
+// Input Handling
+extern act IsKeyPressed(key: i32) -> bool
+extern act IsKeyDown(key: i32) -> bool
+
+// Drawing
+extern act BeginDrawing() -> void
+extern act EndDrawing() -> void
+extern act ClearBackground(color: Color) -> void
+extern act DrawRectangle(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
+extern act DrawRectangleLines(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
+extern act DrawCircle(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
+extern act DrawCircleLines(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
+extern act DrawLine(startPosX: i32, startPosY: i32, endPosX: i32, endPosY: i32, color: Color) -> void
+extern act DrawText(text: string, posX: i32, posY: i32, fontSize: i32, color: Color) -> void
+extern act MeasureText(text: string, fontSize: i32) -> i32
+
+// Math & Random
+extern act GetRandomValue(min: i32, max: i32) -> i32
+
+// Raylib Key Codes
+let KEY_SPACE: i32 = 32
+let KEY_ENTER: i32 = 257
+let KEY_ESCAPE: i32 = 256
+let KEY_R: i32 = 82
+let KEY_W: i32 = 87
+let KEY_A: i32 = 65
+let KEY_S: i32 = 83
+let KEY_D: i32 = 68
+let KEY_UP: i32 = 265
+let KEY_DOWN: i32 = 264
+let KEY_LEFT: i32 = 263
+let KEY_RIGHT: i32 = 262
+let KEY_ONE: i32 = 49
+let KEY_TWO: i32 = 50
+let KEY_THREE: i32 = 51

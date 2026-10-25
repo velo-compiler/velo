@@ -1,0 +1,95 @@
+// Floating Damage Numbers and Hit Visual Effects for Velo Survivors.
+
+use sys.mem
+use "raylib.vl"
+
+data DamageNum {
+    x: f32
+    y: f32
+    val: i32
+    life: f32
+    active: bool
+}
+
+data ParticlePool {
+    nums: @DamageNum
+    capacity: usize
+}
+
+act init_particle_pool() -> ParticlePool {
+    mut pp: ParticlePool
+    pp.capacity = 40
+    pp.nums = mem.alloc(@DamageNum, 40)
+    mut i: usize = 0
+    loop i < pp.capacity {
+        let n = @pp.nums[i]
+        n.active = false
+        i += 1
+    }
+    return pp
+}
+
+act spawn_damage_num(pp: @ParticlePool, x: f32, y: f32, val: i32) -> bool {
+    mut i: usize = 0
+    loop i < pp.capacity {
+        let n = @pp.nums[i]
+        if not n.active {
+            // Slight random scatter
+            let ox = (GetRandomValue(0, 16) - 8) as f32
+            let oy = (GetRandomValue(0, 10) - 5) as f32
+            n.x = x + ox
+            n.y = y + oy
+            n.val = val
+            n.life = 0.55
+            n.active = true
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+act update_particles(pp: @ParticlePool, dt: f32) {
+    mut i: usize = 0
+    loop i < pp.capacity {
+        let n = @pp.nums[i]
+        if n.active {
+            n.y -= 45.0 * dt
+            n.life -= dt
+            if n.life <= 0.0 {
+                n.active = false
+            }
+        }
+        i += 1
+    }
+}
+
+act draw_particles(pp: @ParticlePool, cam_x: f32, cam_y: f32, screen_w: f32, screen_h: f32) {
+    mut i: usize = 0
+    loop i < pp.capacity {
+        let n = @pp.nums[i]
+        if n.active {
+            let sx = n.x - cam_x + screen_w * 0.5
+            let sy = n.y - cam_y + screen_h * 0.5
+
+            if sx > -30.0 and sx < (screen_w + 30.0) and sy > -30.0 and sy < (screen_h + 30.0) {
+                let isx = sx as i32
+                let isy = sy as i32
+                let val = n.val
+
+                // Format short string
+                mut txt = "15"
+                if val < 10 { txt = "8" }
+                else if val < 20 { txt = "16" }
+                else if val < 30 { txt = "25" }
+                else if val < 45 { txt = "38" }
+                else { txt = "50" }
+
+                // Shadow and bright text
+                DrawText(txt, isx + 1, isy + 1, 16, make_color(20, 20, 20, 200))
+                DrawText(txt, isx, isy, 16, make_color(255, 220, 50, 255))
+            }
+        }
+        i += 1
+    }
+}

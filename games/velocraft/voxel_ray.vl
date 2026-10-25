@@ -1,0 +1,72 @@
+// 3D Voxel Raycasting (DDA) for Block Targeting, Mining, and Building in VeloCraft.
+
+use "raylib.vl"
+use "math3d.vl"
+use "world.vl"
+
+data RayHit {
+    has_hit: bool
+    hit_x: i32
+    hit_y: i32
+    hit_z: i32
+    place_x: i32
+    place_y: i32
+    place_z: i32
+}
+
+act cast_voxel_ray(w: @VoxelWorld, eye: Vector3, dir: Vector3) -> RayHit {
+    mut hit: RayHit
+    hit.has_hit = false
+
+    let step_len: f32 = 0.08
+    let max_dist: f32 = 5.5
+    let n_steps = (max_dist / step_len) as i32
+
+    mut lx = eye.x as i32
+    mut ly = eye.y as i32
+    mut lz = eye.z as i32
+
+    mut i: i32 = 0
+    loop i < n_steps {
+        let dist = (i as f32) * step_len
+        let sample_x = eye.x + dir.x * dist
+        let sample_y = eye.y + dir.y * dist
+        let sample_z = eye.z + dir.z * dist
+
+        let cx = sample_x as i32
+        let cy = sample_y as i32
+        let cz = sample_z as i32
+
+        if world_in_bounds(cx, cy, cz) {
+            let block_id = world_get(w, cx, cy, cz)
+            if block_id != BLOCK_AIR {
+                hit.has_hit = true
+                hit.hit_x = cx
+                hit.hit_y = cy
+                hit.hit_z = cz
+                hit.place_x = lx
+                hit.place_y = ly
+                hit.place_z = lz
+                return hit
+            }
+        }
+
+        lx = cx
+        ly = cy
+        lz = cz
+        i += 1
+    }
+    return hit
+}
+
+act draw_target_highlight(hit: @RayHit) {
+    if hit.has_hit {
+        let pos = Vector3{
+            x: (hit.hit_x as f32) + 0.5,
+            y: (hit.hit_y as f32) + 0.5,
+            z: (hit.hit_z as f32) + 0.5
+        }
+        let highlight_col = make_color(255, 255, 255, 180)
+        DrawCubeWires(pos, 1.02, 1.02, 1.02, highlight_col)
+    }
+}

@@ -1,0 +1,94 @@
+// Experience Gem Drop Pool and Magnetic Attraction for Velo Survivors.
+
+use sys.mem
+use "raylib.vl"
+use "math.vl"
+
+data Gem {
+    x: f32
+    y: f32
+    value: i32
+    active: bool
+}
+
+data GemPool {
+    gems: @Gem
+    capacity: usize
+}
+
+act init_gem_pool() -> GemPool {
+    mut gp: GemPool
+    gp.capacity = 140
+    gp.gems = mem.alloc(@Gem, 140)
+    mut i: usize = 0
+    loop i < gp.capacity {
+        let g = @gp.gems[i]
+        g.active = false
+        i += 1
+    }
+    return gp
+}
+
+act spawn_gem(gp: @GemPool, x: f32, y: f32, value: i32) -> bool {
+    mut i: usize = 0
+    loop i < gp.capacity {
+        let g = @gp.gems[i]
+        if not g.active {
+            g.x = x
+            g.y = y
+            g.value = value
+            g.active = true
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+act update_gems(gp: @GemPool, px: f32, py: f32, magnet_r: f32, dt: f32) {
+    let mag_r_sq = magnet_r * magnet_r
+    mut i: usize = 0
+    loop i < gp.capacity {
+        let g = @gp.gems[i]
+        if g.active {
+            let gx = g.x
+            let gy = g.y
+            let d_sq = vec2_dist_sq(gx, gy, px, py)
+
+            // If inside magnet radius, pull towards player
+            if d_sq < mag_r_sq {
+                let dir = vec2_norm(px - gx, py - gy)
+                let pull_speed: f32 = 380.0
+                g.x += dir.x * pull_speed * dt
+                g.y += dir.y * pull_speed * dt
+            }
+        }
+        i += 1
+    }
+}
+
+act draw_gems(gp: @GemPool, cam_x: f32, cam_y: f32, screen_w: f32, screen_h: f32) {
+    mut i: usize = 0
+    loop i < gp.capacity {
+        let g = @gp.gems[i]
+        if g.active {
+            let sx = g.x - cam_x + screen_w * 0.5
+            let sy = g.y - cam_y + screen_h * 0.5
+
+            if sx > -20.0 and sx < (screen_w + 20.0) and sy > -20.0 and sy < (screen_h + 20.0) {
+                let isx = sx as i32
+                let isy = sy as i32
+                let val = g.value
+
+                mut col = make_color(80, 220, 255, 255) // Cyan (Bat drop)
+                if val == 2 { col = make_color(60, 255, 120, 255) } // Emerald (Skeleton drop)
+                else if val >= 5 { col = make_color(255, 70, 90, 255) } // Ruby (Orc drop)
+
+                // Diamond shape
+                DrawRectangle(isx - 3, isy - 3, 6, 6, col)
+                DrawCircle(isx, isy, 2.0, make_color(255, 255, 255, 255))
+            }
+        }
+        i += 1
+    }
+}

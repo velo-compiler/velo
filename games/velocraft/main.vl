@@ -1,0 +1,199 @@
+// VeloCraft — 3D Voxel Sandbox in Velo powered by Raylib 6.0 3D C-FFI.
+
+use "raylib.vl"
+use "math3d.vl"
+use "world.vl"
+use "player.vl"
+use "voxel_ray.vl"
+
+act get_slot_name(slot: i32) -> string {
+    if slot == 1 { return "Grass Block" }
+    if slot == 2 { return "Dirt" }
+    if slot == 3 { return "Stone" }
+    if slot == 4 { return "Wood Log" }
+    if slot == 5 { return "Leaves" }
+    if slot == 6 { return "Brick" }
+    return "Block"
+}
+
+act draw_hud(screen_w: f32, screen_h: f32, p: @Player, hit: @RayHit, cursor_locked: bool) {
+    let cx = (screen_w * 0.5) as i32
+    let cy = (screen_h * 0.5) as i32
+
+    // 1. Center Crosshair (+)
+    DrawRectangle(cx - 9, cy - 1, 18, 2, make_color(255, 255, 255, 210))
+    DrawRectangle(cx - 1, cy - 9, 2, 18, make_color(255, 255, 255, 210))
+    DrawCircle(cx, cy, 1.5, make_color(20, 20, 20, 255))
+
+    // 2. Hotbar at Bottom
+    let slot_size: i32 = 44
+    let spacing: i32 = 6
+    let total_w = 6 * slot_size + 5 * spacing
+    let start_x = ((screen_w - (total_w as f32)) * 0.5) as i32
+    let bar_y = (screen_h - 58.0) as i32
+
+    mut s: i32 = 1
+    loop s <= 6 {
+        let sx = start_x + (s - 1) * (slot_size + spacing)
+        let is_active = (s == p.active_slot)
+
+        // Slot Background & Border
+        mut bg_col = make_color(25, 28, 34, 210)
+        mut border_col = make_color(70, 75, 85, 255)
+        if is_active {
+            bg_col = make_color(45, 50, 60, 240)
+            border_col = make_color(255, 215, 50, 255)
+        }
+
+        DrawRectangle(sx, bar_y, slot_size, slot_size, bg_col)
+        DrawRectangleLines(sx, bar_y, slot_size, slot_size, border_col)
+        if is_active {
+            DrawRectangleLines(sx - 1, bar_y - 1, slot_size + 2, slot_size + 2, border_col)
+        }
+
+        // Inner Block Preview
+        let block_id = get_slot_block(s)
+        let block_col = get_block_color(block_id)
+        DrawRectangle(sx + 10, bar_y + 10, 24, 24, block_col)
+        DrawRectangleLines(sx + 10, bar_y + 10, 24, 24, make_color(20, 20, 20, 100))
+
+        // Slot number key badge
+        mut num_str = "1"
+        if s == 2 { num_str = "2" }
+        else if s == 3 { num_str = "3" }
+        else if s == 4 { num_str = "4" }
+        else if s == 5 { num_str = "5" }
+        else if s == 6 { num_str = "6" }
+        DrawText(num_str, sx + 4, bar_y + 3, 12, make_color(200, 200, 200, 220))
+
+        s += 1
+    }
+
+    // 3. Top-Left Status Card
+    DrawRectangle(10, 10, 230, 68, make_color(15, 20, 25, 180))
+    DrawRectangleLines(10, 10, 230, 68, make_color(60, 70, 85, 255))
+    DrawText("VELOCRAFT 3D", 18, 16, 18, make_color(255, 220, 50, 255))
+
+    let px_i = p.pos.x as i32
+    let py_i = p.pos.y as i32
+    let pz_i = p.pos.z as i32
+    DrawText("XYZ: In-World Position", 18, 38, 14, make_color(200, 220, 240, 255))
+
+    let active_name = get_slot_name(p.active_slot)
+    DrawText(active_name, 18, 55, 14, make_color(100, 220, 120, 255))
+
+    // 4. Top-Right Controls Hint
+    DrawRectangle((screen_w - 380.0) as i32, 10, 370, 28, make_color(15, 20, 25, 180))
+    DrawText("[W][A][S][D] Move | [SPACE] Jump | [LMB] Mine | [RMB] Place", (screen_w - 370.0) as i32, 16, 13, make_color(220, 220, 220, 255))
+
+    // 5. Mouse lock status notification if unlocked
+    if not cursor_locked {
+        DrawRectangle(cx - 150, 100, 300, 36, make_color(30, 15, 15, 230))
+        DrawRectangleLines(cx - 150, 100, 300, 36, make_color(240, 70, 70, 255))
+        DrawText("CURSOR UNLOCKED - PRESS [TAB] TO RESUME", cx - 140, 110, 14, make_color(255, 255, 255, 255))
+    }
+
+    // 6. Bottom-Left Real-Time FPS Badge
+    DrawRectangle(10, (screen_h - 34.0) as i32, 95, 24, make_color(0, 0, 0, 160))
+    DrawFPS(16, (screen_h - 31.0) as i32)
+}
+
+act main() -> i32 {
+    let screen_w: f32 = 960.0
+    let screen_h: f32 = 640.0
+
+    InitWindow(screen_w as i32, screen_h as i32, "VeloCraft - 3D Voxel Sandbox in Velo")
+    SetTargetFPS(60)
+
+    InitAudioDevice()
+    let snd_break = LoadSound("games/velocraft/assets/break.wav")
+    let snd_place = LoadSound("games/velocraft/assets/place.wav")
+    let snd_step = LoadSound("games/velocraft/assets/step.wav")
+    let snd_switch = LoadSound("games/velocraft/assets/switch.wav")
+
+    mut world = init_world()
+    mut player = init_player()
+    mut cursor_locked = true
+    DisableCursor()
+
+    mut prev_slot = player.active_slot
+
+    loop not WindowShouldClose() {
+        let dt = GetFrameTime()
+
+        // 1. Toggle Mouse Cursor with [TAB] or [ESC]
+        if IsKeyPressed(KEY_TAB) {
+            cursor_locked = not cursor_locked
+            if cursor_locked { DisableCursor() }
+            else { EnableCursor() }
+        }
+
+        // 2. Update Player
+        let played_step = update_player(@player, @world, dt, cursor_locked)
+        if played_step {
+            PlaySound(snd_step)
+        }
+
+        // Check hotbar switch sound
+        if player.active_slot != prev_slot {
+            PlaySound(snd_switch)
+            prev_slot = player.active_slot
+        }
+
+        // 3. Compute Camera and Raycast Target Block
+        let cam = get_player_camera(@player)
+        let look_dir = vec3_dir_from_angles(player.yaw, player.pitch)
+        let ray_hit = cast_voxel_ray(@world, cam.position, look_dir)
+
+        // 4. Block Interaction (Mining & Building)
+        if cursor_locked and ray_hit.has_hit {
+            // Left Mouse Button: Break targeted block
+            if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+                world_set(@world, ray_hit.hit_x, ray_hit.hit_y, ray_hit.hit_z, BLOCK_AIR)
+                PlaySound(snd_break)
+            }
+
+            // Right Mouse Button: Place active block
+            if IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) {
+                let px = ray_hit.place_x
+                let py = ray_hit.place_y
+                let pz = ray_hit.place_z
+
+                // Ensure placement does not trap player inside block
+                let pl_bx = player.pos.x as i32
+                let pl_by = player.pos.y as i32
+                let pl_bz = player.pos.z as i32
+                let hits_player = (px == pl_bx and pz == pl_bz and (py == pl_by or py == pl_by + 1))
+
+                if world_in_bounds(px, py, pz) and not hits_player {
+                    let block_to_place = get_slot_block(player.active_slot)
+                    world_set(@world, px, py, pz, block_to_place)
+                    PlaySound(snd_place)
+                }
+            }
+        }
+
+        // 5. Render Scene
+        BeginDrawing()
+        ClearBackground(make_color(135, 195, 245, 255)) // Morning Sky Blue
+
+        // 3D Pass
+        BeginMode3D(cam)
+        draw_world(@world)
+        draw_target_highlight(@ray_hit)
+        EndMode3D()
+
+        // 2D HUD Pass
+        draw_hud(screen_w, screen_h, @player, @ray_hit, cursor_locked)
+        EndDrawing()
+    }
+
+    // Cleanup
+    UnloadSound(snd_break)
+    UnloadSound(snd_place)
+    UnloadSound(snd_step)
+    UnloadSound(snd_switch)
+    CloseAudioDevice()
+    CloseWindow()
+    return 0
+}

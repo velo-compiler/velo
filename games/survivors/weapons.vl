@@ -1,0 +1,173 @@
+// Auto-Firing Weapon Systems for Velo Survivors.
+
+use sys.mem
+use "raylib.vl"
+use "math.vl"
+
+act approx_sin(a: f32) -> f32 {
+    mut x = a
+    loop x > 3.14159 { x -= 6.28318 }
+    loop x < (0.0 - 3.14159) { x += 6.28318 }
+    let x2 = x * x
+    return x * (1.0 - x2 * (0.166666 - x2 * 0.008333))
+}
+
+act approx_cos(a: f32) -> f32 {
+    return approx_sin(a + 1.57079)
+}
+
+data WandShot {
+    x: f32
+    y: f32
+    vx: f32
+    vy: f32
+    life: f32
+    damage: f32
+    active: bool
+}
+
+data Weapons {
+    // 1. Orbiting Blades
+    blades_level: i32
+    blades_count: i32
+    blades_angle: f32
+    blades_radius: f32
+    blades_damage: f32
+
+    // 2. Magic Wand
+    wand_level: i32
+    wand_timer: f32
+    wand_cooldown: f32
+    wand_damage: f32
+    wand_shots: @WandShot
+    wand_cap: usize
+
+    // 3. Holy Aura
+    aura_level: i32
+    aura_radius: f32
+    aura_timer: f32
+    aura_damage: f32
+}
+
+act init_weapons() -> Weapons {
+    mut w: Weapons
+    w.blades_level = 1
+    w.blades_count = 2
+    w.blades_angle = 0.0
+    w.blades_radius = 75.0
+    w.blades_damage = 22.0
+
+    w.wand_level = 1
+    w.wand_timer = 0.5
+    w.wand_cooldown = 1.1
+    w.wand_damage = 30.0
+    w.wand_cap = 16
+    w.wand_shots = mem.alloc(@WandShot, 16)
+
+    w.aura_level = 0 // unlocked via level up
+    w.aura_radius = 65.0
+    w.aura_timer = 0.0
+    w.aura_damage = 15.0
+
+    mut i: usize = 0
+    loop i < w.wand_cap {
+        let shot = @w.wand_shots[i]
+        shot.active = false
+        i += 1
+    }
+    return w
+}
+
+act spawn_wand_shot(w: @Weapons, px: f32, py: f32, target_x: f32, target_y: f32) -> bool {
+    mut i: usize = 0
+    loop i < w.wand_cap {
+        let shot = @w.wand_shots[i]
+        if not shot.active {
+            let dir = vec2_norm(target_x - px, target_y - py)
+            let speed: f32 = 420.0
+            shot.x = px
+            shot.y = py
+            shot.vx = dir.x * speed
+            shot.vy = dir.y * speed
+            shot.life = 1.2
+            shot.damage = w.wand_damage
+            shot.active = true
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+act update_weapons(w: @Weapons, dt: f32) {
+    // 1. Orbiting blades rotation
+    if w.blades_level > 0 {
+        w.blades_angle += 3.6 * dt
+        if w.blades_angle > 6.28318 { w.blades_angle -= 6.28318 }
+    }
+
+    // 2. Wand projectiles update
+    mut i: usize = 0
+    loop i < w.wand_cap {
+        let shot = @w.wand_shots[i]
+        if shot.active {
+            shot.x += shot.vx * dt
+            shot.y += shot.vy * dt
+            shot.life -= dt
+            if shot.life <= 0.0 {
+                shot.active = false
+            }
+        }
+        i += 1
+    }
+
+    // 3. Aura timer
+    if w.aura_level > 0 {
+        w.aura_timer += dt
+    }
+}
+
+act draw_weapons(w: @Weapons, player_wx: f32, player_wy: f32, cam_x: f32, cam_y: f32, screen_w: f32, screen_h: f32) {
+    let px = player_wx - cam_x + screen_w * 0.5
+    let py = player_wy - cam_y + screen_h * 0.5
+
+    // 1. Draw Holy Aura
+    if w.aura_level > 0 {
+        let ar = w.aura_radius
+        DrawCircleLines(px as i32, py as i32, ar, make_color(255, 230, 100, 180))
+        DrawCircleLines(px as i32, py as i32, ar - 2.0, make_color(255, 240, 160, 120))
+        DrawCircle(px as i32, py as i32, ar, make_color(255, 240, 180, 25))
+    }
+
+    // 2. Draw Orbiting Blades
+    if w.blades_level > 0 and w.blades_count > 0 {
+        let step = 6.28318 / (w.blades_count as f32)
+        mut b_idx: i32 = 0
+        loop b_idx < w.blades_count {
+            let a = w.blades_angle + (b_idx as f32) * step
+            let bx = px + approx_cos(a) * w.blades_radius
+            let by = py + approx_sin(a) * w.blades_radius
+            let ibx = bx as i32
+            let iby = by as i32
+
+            // Sword hilt & blade
+            DrawCircle(ibx, iby, 7.0, make_color(220, 240, 255, 240))
+            DrawCircle(ibx, iby, 4.0, make_color(100, 180, 255, 255))
+            DrawCircleLines(ibx, iby, 7.0, make_color(255, 255, 255, 255))
+            b_idx += 1
+        }
+    }
+
+    // 3. Draw Wand Projectiles
+    mut i: usize = 0
+    loop i < w.wand_cap {
+        let shot = @w.wand_shots[i]
+        if shot.active {
+            let sx = shot.x - cam_x + screen_w * 0.5
+            let sy = shot.y - cam_y + screen_h * 0.5
+            DrawCircle(sx as i32, sy as i32, 6.0, make_color(240, 70, 255, 230))
+            DrawCircle(sx as i32, sy as i32, 3.0, make_color(255, 255, 255, 255))
+        }
+        i += 1
+    }
+}

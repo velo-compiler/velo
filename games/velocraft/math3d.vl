@@ -1,0 +1,81 @@
+// 3D Vector Math and Trigonometric Helpers for VeloCraft.
+
+use "raylib.vl"
+
+act approx_sqrt(v: f32) -> f32 {
+    if v <= 0.0 { return 0.0 }
+    mut guess = v * 0.5
+    if guess < 1.0 { guess = 1.0 }
+    mut i = 0
+    loop i < 5 {
+        guess = 0.5 * (guess + v / guess)
+        i += 1
+    }
+    return guess
+}
+
+act approx_sin(a: f32) -> f32 {
+    mut x = a
+    loop x > 3.14159 { x -= 6.28318 }
+    loop x < (0.0 - 3.14159) { x += 6.28318 }
+    let x2 = x * x
+    return x * (1.0 - x2 * (0.166666 - x2 * 0.008333))
+}
+
+act approx_cos(a: f32) -> f32 {
+    return approx_sin(a + 1.57079)
+}
+
+act vec3_add(a: Vector3, b: Vector3) -> Vector3 {
+    return Vector3{ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }
+}
+
+act vec3_sub(a: Vector3, b: Vector3) -> Vector3 {
+    return Vector3{ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z }
+}
+
+act vec3_scale(v: Vector3, s: f32) -> Vector3 {
+    return Vector3{ x: v.x * s, y: v.y * s, z: v.z * s }
+}
+
+act vec3_dist_sq(ax: f32, ay: f32, az: f32, bx: f32, by: f32, bz: f32) -> f32 {
+    let dx = ax - bx
+    let dy = ay - by
+    let dz = az - bz
+    return dx * dx + dy * dy + dz * dz
+}
+
+act vec3_norm(v: Vector3) -> Vector3 {
+    let d_sq = v.x * v.x + v.y * v.y + v.z * v.z
+    if d_sq <= 0.00001 { return Vector3{ x: 0.0, y: 0.0, z: 0.0 } }
+    let len = approx_sqrt(d_sq)
+    return Vector3{ x: v.x / len, y: v.y / len, z: v.z / len }
+}
+
+// Computes 3D forward look direction vector from yaw and pitch (in radians)
+act vec3_dir_from_angles(yaw: f32, pitch: f32) -> Vector3 {
+    let cp = approx_cos(pitch)
+    return Vector3{
+        x: cp * approx_sin(yaw),
+        y: approx_sin(pitch),
+        z: cp * approx_cos(yaw)
+    }
+}
+
+// Computes 2D horizontal forward vector (XZ plane) for walking
+act vec3_horizontal_forward(yaw: f32) -> Vector3 {
+    return Vector3{
+        x: approx_sin(yaw),
+        y: 0.0,
+        z: approx_cos(yaw)
+    }
+}
+
+// Computes 2D horizontal right strafe vector
+act vec3_horizontal_right(yaw: f32) -> Vector3 {
+    return Vector3{
+        x: approx_cos(yaw),
+        y: 0.0,
+        z: 0.0 - approx_sin(yaw)
+    }
+}

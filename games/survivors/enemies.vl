@@ -1,0 +1,180 @@
+// Enemy Horde AI, Types, Spawner, and Rendering for Velo Survivors.
+
+use sys.mem
+use "raylib.vl"
+use "math.vl"
+
+data Enemy {
+    x: f32
+    y: f32
+    hp: f32
+    max_hp: f32
+    speed: f32
+    radius: f32
+    enemy_type: i32 // 0 = Bat, 1 = Skeleton, 2 = Orc
+    exp_val: i32
+    hit_flash: f32
+    active: bool
+}
+
+data EnemyPool {
+    enemies: @Enemy
+    capacity: usize
+    spawn_timer: f32
+    total_spawned: i32
+}
+
+act init_enemy_pool() -> EnemyPool {
+    mut ep: EnemyPool
+    ep.capacity = 160
+    ep.enemies = mem.alloc(@Enemy, 160)
+    ep.spawn_timer = 0.0
+    ep.total_spawned = 0
+    mut i: usize = 0
+    loop i < ep.capacity {
+        let e = @ep.enemies[i]
+        e.active = false
+        i += 1
+    }
+    return ep
+}
+
+act spawn_single_enemy(ep: @EnemyPool, px: f32, py: f32, etype: i32, hp_mult: f32) -> bool {
+    mut i: usize = 0
+    loop i < ep.capacity {
+        let e = @ep.enemies[i]
+        if not e.active {
+            let angle = (GetRandomValue(0, 628) as f32) * 0.01
+            let dist: f32 = 540.0
+            e.x = px + approx_cos(angle) * dist
+            e.y = py + approx_sin(angle) * dist
+            e.enemy_type = etype
+            e.hit_flash = 0.0
+            e.active = true
+
+            if etype == 0 {
+                // Bat: Fast, Fragile Swarmer
+                e.hp = 18.0 * hp_mult
+                e.max_hp = e.hp
+                e.speed = 165.0
+                e.radius = 10.0
+                e.exp_val = 1
+            } else if etype == 1 {
+                // Skeleton: Balanced Trooper
+                e.hp = 50.0 * hp_mult
+                e.max_hp = e.hp
+                e.speed = 110.0
+                e.radius = 13.0
+                e.exp_val = 2
+            } else {
+                // Orc: Heavy Tank
+                e.hp = 130.0 * hp_mult
+                e.max_hp = e.hp
+                e.speed = 78.0
+                e.radius = 18.0
+                e.exp_val = 5
+            }
+
+            ep.total_spawned += 1
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+act update_enemies(ep: @EnemyPool, px: f32, py: f32, dt: f32, game_time: f32) {
+    // Wave Spawner
+    ep.spawn_timer += dt
+    mut spawn_interval: f32 = 0.65 - (game_time * 0.003)
+    if spawn_interval < 0.14 { spawn_interval = 0.14 }
+
+    let hp_mult: f32 = 1.0 + (game_time * 0.008)
+
+    loop ep.spawn_timer >= spawn_interval {
+        ep.spawn_timer -= spawn_interval
+
+        mut etype: i32 = 0
+        let roll = GetRandomValue(1, 100)
+        if game_time > 60.0 and roll > 70 {
+            etype = 2 // Orc
+        } else if game_time > 20.0 and roll > 40 {
+            etype = 1 // Skeleton
+        } else {
+            etype = 0 // Bat
+        }
+
+        spawn_single_enemy(ep, px, py, etype, hp_mult)
+    }
+
+    // Move Active Enemies toward Player
+    mut i: usize = 0
+    loop i < ep.capacity {
+        let e = @ep.enemies[i]
+        if e.active {
+            if e.hit_flash > 0.0 {
+                e.hit_flash -= dt
+            }
+
+            let ex = e.x
+            let ey = e.y
+            let dir = vec2_norm(px - ex, py - ey)
+
+            e.x += dir.x * e.speed * dt
+            e.y += dir.y * e.speed * dt
+        }
+        i += 1
+    }
+}
+
+act draw_enemies(ep: @EnemyPool, cam_x: f32, cam_y: f32, screen_w: f32, screen_h: f32) {
+    mut i: usize = 0
+    loop i < ep.capacity {
+        let e = @ep.enemies[i]
+        if e.active {
+            let sx = e.x - cam_x + screen_w * 0.5
+            let sy = e.y - cam_y + screen_h * 0.5
+
+            if sx > -40.0 and sx < (screen_w + 40.0) and sy > -40.0 and sy < (screen_h + 40.0) {
+                let isx = sx as i32
+                let isy = sy as i32
+                let r = e.radius
+                let etype = e.enemy_type
+
+                mut body_col = make_color(150, 50, 180, 255)
+                if etype == 1 { body_col = make_color(225, 225, 230, 255) } // Skeleton
+                else if etype == 2 { body_col = make_color(60, 140, 50, 255) }  // Orc
+
+                if e.hit_flash > 0.0 {
+                    body_col = make_color(255, 255, 255, 255) // White hit flash
+                }
+
+                DrawCircle(isx, isy + (r as i32) - 2, r * 0.8, make_color(0, 0, 0, 60))
+
+                if etype == 0 {
+                    // Bat
+                    DrawCircle(isx, isy, r, body_col)
+                    DrawCircle(isx - 7, isy - 3, 5.0, body_col)
+                    DrawCircle(isx + 7, isy - 3, 5.0, body_col)
+                    DrawCircle(isx - 2, isy - 1, 1.5, make_color(255, 0, 0, 255))
+                    DrawCircle(isx + 2, isy - 1, 1.5, make_color(255, 0, 0, 255))
+                } else if etype == 1 {
+                    // Skeleton
+                    DrawCircle(isx, isy, r, body_col)
+                    DrawRectangle(isx - 4, isy + 4, 8, 5, body_col)
+                    DrawCircle(isx - 3, isy - 1, 2.0, make_color(20, 20, 30, 255))
+                    DrawCircle(isx + 3, isy - 1, 2.0, make_color(20, 20, 30, 255))
+                } else {
+                    // Orc
+                    DrawCircle(isx, isy, r, body_col)
+                    DrawCircleLines(isx, isy, r, make_color(30, 80, 20, 255))
+                    DrawRectangle(isx - 10, isy - 12, 4, 6, make_color(220, 200, 150, 255))
+                    DrawRectangle(isx + 6, isy - 12, 4, 6, make_color(220, 200, 150, 255))
+                    DrawCircle(isx - 4, isy - 1, 2.5, make_color(255, 200, 0, 255))
+                    DrawCircle(isx + 4, isy - 1, 2.5, make_color(255, 200, 0, 255))
+                }
+            }
+        }
+        i += 1
+    }
+}

@@ -1,0 +1,301 @@
+// Flappy Bird — Native 2D Desktop Game written in Velo.
+// Powered by Raylib 6.0 C-FFI with 60 FPS physics, rendering, and sound effects.
+
+use "raylib.vl"
+
+data Pipe {
+    x: f32
+    top_h: f32
+    passed: bool
+}
+
+act reset_pipe(p: @Pipe, start_x: f32) {
+    p.x = start_x
+    p.top_h = (GetRandomValue(80, 280) as f32)
+    p.passed = false
+}
+
+act circle_rect_collision(cx: f32, cy: f32, r: f32, rx: f32, ry: f32, rw: f32, rh: f32) -> bool {
+    mut closest_x = cx
+    if closest_x < rx { closest_x = rx }
+    if closest_x > rx + rw { closest_x = rx + rw }
+
+    mut closest_y = cy
+    if closest_y < ry { closest_y = ry }
+    if closest_y > ry + rh { closest_y = ry + rh }
+
+    let dx = cx - closest_x
+    let dy = cy - closest_y
+    return (dx * dx + dy * dy) < (r * r)
+}
+
+act draw_bird(x: f32, y: f32, r: f32, vy: f32) {
+    let ix = x as i32
+    let iy = y as i32
+    let ir = r as i32
+
+    // Outline / shadow
+    DrawCircle(ix, iy, r + 2.0, make_color(50, 50, 50, 255))
+    // Yellow body
+    DrawCircle(ix, iy, r, make_color(255, 215, 0, 255))
+    // Wing
+    mut wing_dy: i32 = 1
+    if vy < 0.0 { wing_dy = -3 }
+    DrawCircle(ix - 5, iy + wing_dy, 6.0, make_color(230, 160, 20, 255))
+    // Cartoon eye
+    DrawCircle(ix + 5, iy - 4, 4.0, make_color(255, 255, 255, 255))
+    DrawCircle(ix + 6, iy - 4, 2.0, make_color(20, 20, 20, 255))
+    // Orange beak
+    DrawRectangle(ix + 9, iy - 2, 7, 5, make_color(255, 120, 0, 255))
+}
+
+act draw_pipe(p: @Pipe, pipe_w: f32, pipe_gap: f32, ground_y: f32) {
+    let ix = p.x as i32
+    let iw = pipe_w as i32
+    let top_h_i = p.top_h as i32
+    let bottom_y = p.top_h + pipe_gap
+    let bottom_y_i = bottom_y as i32
+    let bottom_h_i = (ground_y - bottom_y) as i32
+
+    let pipe_green = make_color(115, 191, 46, 255)
+    let pipe_dark = make_color(70, 130, 30, 255)
+    let pipe_cap = make_color(135, 215, 55, 255)
+
+    // Top Pipe Stem
+    DrawRectangle(ix, 0, iw, top_h_i - 20, pipe_green)
+    DrawRectangle(ix, 0, 6, top_h_i - 20, pipe_cap)
+    DrawRectangle(ix + iw - 6, 0, 6, top_h_i - 20, pipe_dark)
+    // Top Pipe Collar / Cap
+    DrawRectangle(ix - 4, top_h_i - 20, iw + 8, 20, pipe_green)
+    DrawRectangleLines(ix - 4, top_h_i - 20, iw + 8, 20, pipe_dark)
+
+    // Bottom Pipe Collar / Cap
+    DrawRectangle(ix - 4, bottom_y_i, iw + 8, 20, pipe_green)
+    DrawRectangleLines(ix - 4, bottom_y_i, iw + 8, 20, pipe_dark)
+    // Bottom Pipe Stem
+    DrawRectangle(ix, bottom_y_i + 20, iw, bottom_h_i - 20, pipe_green)
+    DrawRectangle(ix, bottom_y_i + 20, 6, bottom_h_i - 20, pipe_cap)
+    DrawRectangle(ix + iw - 6, bottom_y_i + 20, 6, bottom_h_i - 20, pipe_dark)
+}
+
+act main() -> i32 {
+    let screen_w: i32 = 400
+    let screen_h: i32 = 600
+
+    InitWindow(screen_w, screen_h, "Flappy Bird - Powered by Velo")
+    SetTargetFPS(60)
+
+    InitAudioDevice()
+    let snd_flap = LoadSound("games/flappy_bird/assets/flap.wav")
+    let snd_score = LoadSound("games/flappy_bird/assets/score.wav")
+    let snd_hit = LoadSound("games/flappy_bird/assets/hit.wav")
+
+    let ground_y: f32 = 520.0
+    let pipe_w: f32 = 64.0
+    let pipe_gap: f32 = 140.0
+    let pipe_speed: f32 = 175.0
+    let gravity: f32 = 980.0
+    let jump_impulse: f32 = -320.0
+    let bird_radius: f32 = 13.0
+
+    mut bird_x: f32 = 90.0
+    mut bird_y: f32 = 260.0
+    mut bird_vy: f32 = 0.0
+
+    mut p0: Pipe
+    mut p1: Pipe
+    mut p2: Pipe
+    reset_pipe(@p0, 420.0)
+    reset_pipe(@p1, 630.0)
+    reset_pipe(@p2, 840.0)
+
+    mut state: i32 = 0 // 0 = Title, 1 = Playing, 2 = GameOver
+    mut score: i32 = 0
+    mut high_score: i32 = 0
+    mut ground_scroll: f32 = 0.0
+    mut hover_timer: f32 = 0.0
+
+    loop not WindowShouldClose() {
+        let dt = GetFrameTime()
+
+        // 1. Update Game State
+        if state == 0 {
+            // Title screen hover animation
+            hover_timer += dt * 4.0
+            if hover_timer > 6.28 { hover_timer -= 6.28 }
+            bird_y = 250.0 + (hover_timer * 3.0)
+            if bird_y > 265.0 { bird_y = 245.0 }
+            ground_scroll += pipe_speed * dt
+            if ground_scroll >= 24.0 { ground_scroll -= 24.0 }
+
+            if IsKeyPressed(KEY_SPACE) {
+                state = 1
+                bird_vy = jump_impulse
+                PlaySound(snd_flap)
+            }
+        } else if state == 1 {
+            // Gameplay physics
+            if IsKeyPressed(KEY_SPACE) {
+                bird_vy = jump_impulse
+                PlaySound(snd_flap)
+            }
+            bird_vy += gravity * dt
+            if bird_vy > 650.0 { bird_vy = 650.0 }
+            bird_y += bird_vy * dt
+
+            // Ground & ceiling bounds
+            if bird_y - bird_radius <= 0.0 {
+                bird_y = bird_radius
+                bird_vy = 0.0
+            }
+            if bird_y + bird_radius >= ground_y {
+                bird_y = ground_y - bird_radius
+                state = 2
+                PlaySound(snd_hit)
+            }
+
+            // Scroll ground
+            ground_scroll += pipe_speed * dt
+            if ground_scroll >= 24.0 { ground_scroll -= 24.0 }
+
+            // Move and recycle Pipe 0
+            p0.x -= pipe_speed * dt
+            if p0.x < (0.0 - pipe_w) {
+                p0.x += 630.0
+                p0.top_h = (GetRandomValue(80, 280) as f32)
+                p0.passed = false
+            }
+            if not p0.passed and (bird_x > p0.x + pipe_w / 2.0) {
+                p0.passed = true
+                score += 1
+                PlaySound(snd_score)
+                if score > high_score { high_score = score }
+            }
+
+            // Move and recycle Pipe 1
+            p1.x -= pipe_speed * dt
+            if p1.x < (0.0 - pipe_w) {
+                p1.x += 630.0
+                p1.top_h = (GetRandomValue(80, 280) as f32)
+                p1.passed = false
+            }
+            if not p1.passed and (bird_x > p1.x + pipe_w / 2.0) {
+                p1.passed = true
+                score += 1
+                PlaySound(snd_score)
+                if score > high_score { high_score = score }
+            }
+
+            // Move and recycle Pipe 2
+            p2.x -= pipe_speed * dt
+            if p2.x < (0.0 - pipe_w) {
+                p2.x += 630.0
+                p2.top_h = (GetRandomValue(80, 280) as f32)
+                p2.passed = false
+            }
+            if not p2.passed and (bird_x > p2.x + pipe_w / 2.0) {
+                p2.passed = true
+                score += 1
+                PlaySound(snd_score)
+                if score > high_score { high_score = score }
+            }
+
+            // Collision Detection
+            let c0_top = circle_rect_collision(bird_x, bird_y, bird_radius, p0.x, 0.0, pipe_w, p0.top_h)
+            let c0_bot = circle_rect_collision(bird_x, bird_y, bird_radius, p0.x, p0.top_h + pipe_gap, pipe_w, ground_y - (p0.top_h + pipe_gap))
+            let c1_top = circle_rect_collision(bird_x, bird_y, bird_radius, p1.x, 0.0, pipe_w, p1.top_h)
+            let c1_bot = circle_rect_collision(bird_x, bird_y, bird_radius, p1.x, p1.top_h + pipe_gap, pipe_w, ground_y - (p1.top_h + pipe_gap))
+            let c2_top = circle_rect_collision(bird_x, bird_y, bird_radius, p2.x, 0.0, pipe_w, p2.top_h)
+            let c2_bot = circle_rect_collision(bird_x, bird_y, bird_radius, p2.x, p2.top_h + pipe_gap, pipe_w, ground_y - (p2.top_h + pipe_gap))
+
+            if c0_top or c0_bot or c1_top or c1_bot or c2_top or c2_bot {
+                state = 2
+                PlaySound(snd_hit)
+            }
+        } else {
+            // Game Over state: bird falls to ground if in air
+            if bird_y + bird_radius < ground_y {
+                bird_vy += gravity * dt
+                bird_y += bird_vy * dt
+            }
+            if IsKeyPressed(KEY_SPACE) or IsKeyPressed(KEY_R) {
+                state = 1
+                bird_y = 260.0
+                bird_vy = jump_impulse
+                score = 0
+                reset_pipe(@p0, 420.0)
+                reset_pipe(@p1, 630.0)
+                reset_pipe(@p2, 840.0)
+                PlaySound(snd_flap)
+            }
+        }
+
+        // 2. Render Frame
+        BeginDrawing()
+        ClearBackground(make_color(112, 197, 206, 255)) // Classic sky blue
+
+        // Background clouds
+        DrawCircle(60, 420, 40.0, make_color(170, 225, 230, 255))
+        DrawCircle(100, 410, 55.0, make_color(170, 225, 230, 255))
+        DrawCircle(145, 425, 35.0, make_color(170, 225, 230, 255))
+        DrawCircle(280, 430, 45.0, make_color(170, 225, 230, 255))
+        DrawCircle(330, 415, 50.0, make_color(170, 225, 230, 255))
+
+        // Draw Pipes
+        draw_pipe(@p0, pipe_w, pipe_gap, ground_y)
+        draw_pipe(@p1, pipe_w, pipe_gap, ground_y)
+        draw_pipe(@p2, pipe_w, pipe_gap, ground_y)
+
+        // Draw Ground
+        let gy = ground_y as i32
+        DrawRectangle(0, gy, screen_w, 80, make_color(222, 216, 149, 255)) // Dirt
+        DrawRectangle(0, gy, screen_w, 14, make_color(115, 191, 46, 255))  // Grass trim
+        DrawRectangle(0, gy + 14, screen_w, 3, make_color(80, 140, 30, 255))
+        // Ground notches moving left
+        mut notch_x = 0 - (ground_scroll as i32)
+        loop notch_x < screen_w + 30 {
+            DrawRectangle(notch_x, gy + 17, 10, 5, make_color(200, 190, 120, 255))
+            notch_x += 24
+        }
+
+        // Draw Bird
+        draw_bird(bird_x, bird_y, bird_radius, bird_vy)
+
+        // HUD / Overlay
+        if state == 0 {
+            DrawText("FLAPPY BIRD", 82, 132, 40, make_color(30, 30, 30, 180))
+            DrawText("FLAPPY BIRD", 80, 130, 40, make_color(255, 215, 0, 255))
+            DrawText("PRESS [SPACE] TO FLAP", 72, 330, 20, make_color(255, 255, 255, 255))
+            DrawText("PRESS [SPACE] TO FLAP", 70, 328, 20, make_color(40, 40, 40, 255))
+        } else if state == 1 {
+            // Live score banner
+            mut score_str = "0"
+            if score == 1 { score_str = "1" } else if score == 2 { score_str = "2" } else if score == 3 { score_str = "3" }
+            else if score == 4 { score_str = "4" } else if score == 5 { score_str = "5" } else if score == 6 { score_str = "6" }
+            else if score == 7 { score_str = "7" } else if score == 8 { score_str = "8" } else if score == 9 { score_str = "9" }
+            else if score == 10 { score_str = "10" } else if score > 10 { score_str = "10+" }
+
+            DrawText(score_str, 192, 42, 48, make_color(0, 0, 0, 180))
+            DrawText(score_str, 190, 40, 48, make_color(255, 255, 255, 255))
+        } else {
+            // Game Over Card
+            DrawRectangle(50, 170, 300, 210, make_color(245, 240, 215, 255))
+            DrawRectangleLines(50, 170, 300, 210, make_color(180, 160, 110, 255))
+            DrawText("GAME OVER", 92, 192, 36, make_color(180, 40, 40, 255))
+
+            DrawText("SCORE", 90, 250, 20, make_color(100, 100, 100, 255))
+            DrawText("BEST", 240, 250, 20, make_color(100, 100, 100, 255))
+
+            DrawText("PRESS [SPACE] TO REPLAY", 75, 335, 18, make_color(60, 60, 60, 255))
+        }
+
+        EndDrawing()
+    }
+
+    UnloadSound(snd_flap)
+    UnloadSound(snd_score)
+    UnloadSound(snd_hit)
+    CloseAudioDevice()
+    CloseWindow()
+    return 0
+}

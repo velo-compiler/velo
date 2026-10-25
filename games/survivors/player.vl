@@ -1,0 +1,132 @@
+// Player Entity, Movement, Stats, and Progression for Velo Survivors.
+
+use "raylib.vl"
+use "math.vl"
+
+data Player {
+    x: f32
+    y: f32
+    radius: f32
+    speed: f32
+    hp: f32
+    max_hp: f32
+    level: i32
+    exp: i32
+    next_exp: i32
+    magnet_radius: f32
+    invuln_timer: f32
+    facing_right: bool
+    kills: i32
+    alive: bool
+}
+
+act init_player() -> Player {
+    return Player{
+        x: 0.0,
+        y: 0.0,
+        radius: 14.0,
+        speed: 195.0,
+        hp: 100.0,
+        max_hp: 100.0,
+        level: 1,
+        exp: 0,
+        next_exp: 10,
+        magnet_radius: 130.0,
+        invuln_timer: 0.0,
+        facing_right: true,
+        kills: 0,
+        alive: true
+    }
+}
+
+act update_player(p: @Player, dt: f32) {
+    if not p.alive { return }
+
+    if p.invuln_timer > 0.0 {
+        p.invuln_timer -= dt
+    }
+
+    mut dx: f32 = 0.0
+    mut dy: f32 = 0.0
+
+    if IsKeyDown(KEY_W) or IsKeyDown(KEY_UP) { dy -= 1.0 }
+    if IsKeyDown(KEY_S) or IsKeyDown(KEY_DOWN) { dy += 1.0 }
+    if IsKeyDown(KEY_A) or IsKeyDown(KEY_LEFT) { dx -= 1.0; p.facing_right = false }
+    if IsKeyDown(KEY_D) or IsKeyDown(KEY_RIGHT) { dx += 1.0; p.facing_right = true }
+
+    if dx != 0.0 and dy != 0.0 {
+        dx *= 0.7071
+        dy *= 0.7071
+    }
+
+    p.x += dx * p.speed * dt
+    p.y += dy * p.speed * dt
+}
+
+act add_player_exp(p: @Player, amount: i32) -> bool {
+    p.exp += amount
+    if p.exp >= p.next_exp {
+        p.exp -= p.next_exp
+        p.level += 1
+        p.next_exp = p.level * 12 + 15
+        // Small heal on level up
+        p.hp += 20.0
+        if p.hp > p.max_hp { p.hp = p.max_hp }
+        return true
+    }
+    return false
+}
+
+act damage_player(p: @Player, amount: f32) -> bool {
+    if not p.alive { return false }
+    if p.invuln_timer <= 0.0 {
+        p.hp -= amount
+        p.invuln_timer = 0.4
+        if p.hp <= 0.0 {
+            p.hp = 0.0
+            p.alive = false
+        }
+        return true
+    }
+    return false
+}
+
+act draw_player(p: @Player, sx: f32, sy: f32) {
+    let ix = sx as i32
+    let iy = sy as i32
+
+    // Flash white when invulnerable
+    mut body_col = make_color(50, 110, 220, 255)
+    if p.invuln_timer > 0.0 {
+        body_col = make_color(220, 80, 80, 255)
+    }
+
+    // Shadow
+    DrawCircle(ix, iy + 10, 12.0, make_color(0, 0, 0, 70))
+    // Cape
+    DrawRectangle(ix - 8, iy - 2, 16, 14, make_color(180, 40, 50, 255))
+    // Main Body
+    DrawCircle(ix, iy, p.radius, body_col)
+    DrawCircleLines(ix, iy, p.radius, make_color(20, 40, 90, 255))
+
+    // Wizard Hat / Helmet
+    DrawRectangle(ix - 7, iy - 14, 14, 6, make_color(30, 60, 140, 255))
+    DrawCircle(ix, iy - 14, 5.0, make_color(255, 215, 0, 255)) // Gold crest
+
+    // Eyes
+    mut eye_off: i32 = 4
+    if not p.facing_right { eye_off = -4 }
+    DrawCircle(ix + eye_off, iy - 2, 3.0, make_color(255, 255, 255, 255))
+    DrawCircle(ix + eye_off + 1, iy - 2, 1.5, make_color(10, 10, 10, 255))
+
+    // Floating HP bar above player
+    let bar_w = 32
+    let bar_h = 5
+    let bx = ix - 16
+    let by = iy - 22
+    DrawRectangle(bx - 1, by - 1, bar_w + 2, bar_h + 2, make_color(30, 30, 30, 200))
+    DrawRectangle(bx, by, bar_w, bar_h, make_color(160, 30, 30, 255))
+    let hp_ratio = p.hp / p.max_hp
+    let hp_w = (bar_w as f32) * hp_ratio
+    DrawRectangle(bx, by, hp_w as i32, bar_h, make_color(50, 220, 70, 255))
+}

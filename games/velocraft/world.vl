@@ -1,0 +1,173 @@
+// 3D Voxel World Storage, Terrain Generation, and Culling for VeloCraft.
+
+use sys.mem
+use "raylib.vl"
+use "math3d.vl"
+
+let BLOCK_AIR: u8 = 0
+let BLOCK_GRASS: u8 = 1
+let BLOCK_DIRT: u8 = 2
+let BLOCK_STONE: u8 = 3
+let BLOCK_WOOD: u8 = 4
+let BLOCK_LEAVES: u8 = 5
+let BLOCK_BRICK: u8 = 6
+let BLOCK_GOLD: u8 = 7
+
+data VoxelWorld {
+    blocks: @u8
+    size_x: i32
+    size_y: i32
+    size_z: i32
+}
+
+act world_idx(x: i32, y: i32, z: i32) -> usize {
+    return ((y * 32 + z) * 32 + x) as usize
+}
+
+act world_in_bounds(x: i32, y: i32, z: i32) -> bool {
+    return x >= 0 and x < 32 and y >= 0 and y < 16 and z >= 0 and z < 32
+}
+
+act world_get(w: @VoxelWorld, x: i32, y: i32, z: i32) -> u8 {
+    if not world_in_bounds(x, y, z) { return 0 }
+    return w.blocks[world_idx(x, y, z)]
+}
+
+act world_set(w: @VoxelWorld, x: i32, y: i32, z: i32, id: u8) {
+    if world_in_bounds(x, y, z) {
+        w.blocks[world_idx(x, y, z)] = id
+    }
+}
+
+act spawn_tree(w: @VoxelWorld, tx: i32, tz: i32) {
+    // Find grass surface height
+    mut ty: i32 = 14
+    loop ty > 0 {
+        if world_get(w, tx, ty, tz) != BLOCK_AIR {
+            break
+        }
+        ty -= 1
+    }
+    let base_y = ty + 1
+
+    // Trunk (3 blocks high)
+    world_set(w, tx, base_y, tz, BLOCK_WOOD)
+    world_set(w, tx, base_y + 1, tz, BLOCK_WOOD)
+    world_set(w, tx, base_y + 2, tz, BLOCK_WOOD)
+
+    // Leaves canopy (3x3 layer around trunk top)
+    mut lx: i32 = tx - 1
+    loop lx <= tx + 1 {
+        mut lz: i32 = tz - 1
+        loop lz <= tz + 1 {
+            if world_get(w, lx, base_y + 2, lz) == BLOCK_AIR {
+                world_set(w, lx, base_y + 2, lz, BLOCK_LEAVES)
+            }
+            if world_get(w, lx, base_y + 3, lz) == BLOCK_AIR and (lx == tx or lz == tz) {
+                world_set(w, lx, base_y + 3, lz, BLOCK_LEAVES)
+            }
+            lz += 1
+        }
+        lx += 1
+    }
+    world_set(w, tx, base_y + 4, tz, BLOCK_LEAVES)
+}
+
+act init_world() -> VoxelWorld {
+    mut w: VoxelWorld
+    w.size_x = 32
+    w.size_y = 16
+    w.size_z = 32
+    w.blocks = mem.alloc(@u8, 8192)
+
+    // 1. Generate rolling hills with stone & dirt layers
+    mut x: i32 = 0
+    loop x < 32 {
+        mut z: i32 = 0
+        loop z < 32 {
+            let fx = (x as f32) * 0.2
+            let fz = (z as f32) * 0.2
+            let h_val = 5.0 + 1.8 * approx_sin(fx) + 1.4 * approx_cos(fz)
+            let height = h_val as i32
+
+            mut y: i32 = 0
+            loop y < 16 {
+                if y <= 2 {
+                    world_set(@w, x, y, z, BLOCK_STONE)
+                } else if y < height {
+                    // Random gold vein in deep dirt/stone
+                    if y == 3 and (x % 7 == 0) and (z % 5 == 0) {
+                        world_set(@w, x, y, z, BLOCK_GOLD)
+                    } else {
+                        world_set(@w, x, y, z, BLOCK_DIRT)
+                    }
+                } else if y == height {
+                    world_set(@w, x, y, z, BLOCK_GRASS)
+                } else {
+                    world_set(@w, x, y, z, BLOCK_AIR)
+                }
+                y += 1
+            }
+            z += 1
+        }
+        x += 1
+    }
+
+    // 2. Add scenic voxel trees
+    spawn_tree(@w, 7, 7)
+    spawn_tree(@w, 23, 9)
+    spawn_tree(@w, 11, 23)
+    spawn_tree(@w, 24, 24)
+    spawn_tree(@w, 6, 19)
+
+    return w
+}
+
+act get_block_color(id: u8) -> Color {
+    if id == BLOCK_GRASS { return make_color(85, 175, 55, 255) }   // Grass green
+    if id == BLOCK_DIRT { return make_color(135, 85, 45, 255) }   // Dirt brown
+    if id == BLOCK_STONE { return make_color(130, 130, 135, 255) } // Stone grey
+    if id == BLOCK_WOOD { return make_color(105, 65, 35, 255) }   // Wood log brown
+    if id == BLOCK_LEAVES { return make_color(45, 140, 60, 255) } // Foliage green
+    if id == BLOCK_BRICK { return make_color(195, 75, 65, 255) }  // Brick red
+    if id == BLOCK_GOLD { return make_color(245, 205, 50, 255) }  // Gold ore yellow
+    return make_color(0, 0, 0, 0)
+}
+
+// Checks if a block at (x, y, z) is exposed to air on any of 6 faces
+act is_block_visible(w: @VoxelWorld, x: i32, y: i32, z: i32) -> bool {
+    if y == 15 { return true }
+    if world_get(w, x + 1, y, z) == BLOCK_AIR { return true }
+    if world_get(w, x - 1, y, z) == BLOCK_AIR { return true }
+    if world_get(w, x, y + 1, z) == BLOCK_AIR { return true }
+    if world_get(w, x, y - 1, z) == BLOCK_AIR { return true }
+    if world_get(w, x, y, z + 1) == BLOCK_AIR { return true }
+    if world_get(w, x, y, z - 1) == BLOCK_AIR { return true }
+    return false
+}
+
+// Renders only visible surface blocks using DrawCube and DrawCubeWires
+act draw_world(w: @VoxelWorld) {
+    let wire_col = make_color(30, 30, 30, 70)
+    mut x: i32 = 0
+    loop x < 32 {
+        mut z: i32 = 0
+        loop z < 32 {
+            mut y: i32 = 0
+            loop y < 16 {
+                let id = world_get(w, x, y, z)
+                if id != BLOCK_AIR {
+                    if is_block_visible(w, x, y, z) {
+                        let pos = Vector3{ x: (x as f32) + 0.5, y: (y as f32) + 0.5, z: (z as f32) + 0.5 }
+                        let col = get_block_color(id)
+                        DrawCube(pos, 1.0, 1.0, 1.0, col)
+                        DrawCubeWires(pos, 1.0, 1.0, 1.0, wire_col)
+                    }
+                }
+                y += 1
+            }
+            z += 1
+        }
+        x += 1
+    }
+}

@@ -1,0 +1,382 @@
+// Velo Survivors — High-Performance Horde Survival / Bullet Hell Game.
+// Built entirely in Velo powered by Raylib 6.0 C-FFI.
+
+use "raylib.vl"
+use "math.vl"
+use "player.vl"
+use "weapons.vl"
+use "enemies.vl"
+use "gems.vl"
+use "particles.vl"
+
+act draw_infinite_grid(cam_x: f32, cam_y: f32, screen_w: f32, screen_h: f32) {
+    let cell_size: f32 = 64.0
+    let start_x = 0.0 - (cam_x - ((cam_x / cell_size) as i32 as f32) * cell_size)
+    let start_y = 0.0 - (cam_y - ((cam_y / cell_size) as i32 as f32) * cell_size)
+    let grid_col = make_color(38, 64, 38, 255)
+
+    mut x = start_x
+    loop x < screen_w + cell_size {
+        DrawLine(x as i32, 0, x as i32, screen_h as i32, grid_col)
+        x += cell_size
+    }
+
+    mut y = start_y
+    loop y < screen_h + cell_size {
+        DrawLine(0, y as i32, screen_w as i32, y as i32, grid_col)
+        y += cell_size
+    }
+}
+
+act draw_fps_counter(screen_w: f32, screen_h: f32) {
+    DrawRectangle(10, (screen_h - 34.0) as i32, 95, 24, make_color(0, 0, 0, 160))
+    DrawFPS(16, (screen_h - 31.0) as i32)
+}
+
+act main() -> i32 {
+    let screen_w: f32 = 960.0
+    let screen_h: f32 = 640.0
+
+    InitWindow(screen_w as i32, screen_h as i32, "Velo Survivors - 60 FPS Horde Bullet Hell")
+    SetTargetFPS(60)
+
+    InitAudioDevice()
+    let snd_gem = LoadSound("games/survivors/assets/gem.wav")
+    let snd_hit = LoadSound("games/survivors/assets/hit.wav")
+    let snd_hurt = LoadSound("games/survivors/assets/hurt.wav")
+    let snd_level = LoadSound("games/survivors/assets/levelup.wav")
+    let snd_magic = LoadSound("games/survivors/assets/magic.wav")
+    let snd_slash = LoadSound("games/survivors/assets/slash.wav")
+
+    mut player = init_player()
+    mut weapons = init_weapons()
+    mut enemy_pool = init_enemy_pool()
+    mut gem_pool = init_gem_pool()
+    mut particle_pool = init_particle_pool()
+
+    mut state: i32 = 0 // 0 = Title, 1 = Playing, 2 = LevelUp Modal, 3 = GameOver
+    mut game_time: f32 = 0.0
+
+    loop not WindowShouldClose() {
+        let dt = GetFrameTime()
+
+        // -------------------------------------------------------------
+        // STATE 0: TITLE SCREEN
+        // -------------------------------------------------------------
+        if state == 0 {
+            if IsKeyPressed(KEY_SPACE) or IsKeyPressed(KEY_ENTER) {
+                state = 1
+            }
+
+            BeginDrawing()
+            ClearBackground(make_color(26, 44, 28, 255))
+            draw_infinite_grid(0.0, 0.0, screen_w, screen_h)
+
+            DrawText("VELO SURVIVORS", 242, 182, 54, make_color(10, 20, 10, 200))
+            DrawText("VELO SURVIVORS", 240, 180, 54, make_color(255, 215, 50, 255))
+            DrawText("High-Performance Horde Survival in Velo", 270, 250, 20, make_color(200, 230, 200, 255))
+            DrawText("PRESS [SPACE] TO START THE HORDE", 262, 380, 22, make_color(255, 255, 255, 255))
+            DrawText("Controls: [W][A][S][D] or Arrows to Move", 280, 430, 18, make_color(160, 190, 160, 255))
+            draw_fps_counter(screen_w, screen_h)
+            EndDrawing()
+        }
+
+        // -------------------------------------------------------------
+        // STATE 1: ACTIVE GAMEPLAY
+        // -------------------------------------------------------------
+        else if state == 1 {
+            game_time += dt
+
+            // 1. Player & Weapons Movement
+            update_player(@player, dt)
+            update_weapons(@weapons, dt)
+            update_enemies(@enemy_pool, player.x, player.y, dt, game_time)
+            update_gems(@gem_pool, player.x, player.y, player.magnet_radius, dt)
+            update_particles(@particle_pool, dt)
+
+            // 2. Magic Wand Auto-Targeting
+            if weapons.wand_level > 0 {
+                weapons.wand_timer += dt
+                if weapons.wand_timer >= weapons.wand_cooldown {
+                    weapons.wand_timer = 0.0
+                    // Find nearest enemy
+                    mut closest_idx: i32 = -1
+                    mut closest_d_sq: f32 = 130000.0 // ~360 px range
+                    mut ei: usize = 0
+                    loop ei < enemy_pool.capacity {
+                        let e = @enemy_pool.enemies[ei]
+                        if e.active {
+                            let d_sq = vec2_dist_sq(player.x, player.y, e.x, e.y)
+                            if d_sq < closest_d_sq {
+                                closest_d_sq = d_sq
+                                closest_idx = ei as i32
+                            }
+                        }
+                        ei += 1
+                    }
+                    if closest_idx >= 0 {
+                        let target_enemy = @enemy_pool.enemies[closest_idx as usize]
+                        spawn_wand_shot(@weapons, player.x, player.y, target_enemy.x, target_enemy.y)
+                        PlaySound(snd_magic)
+                    }
+                }
+            }
+
+            // 3. Wand Projectiles vs Enemies
+            mut wi: usize = 0
+            loop wi < weapons.wand_cap {
+                let shot = @weapons.wand_shots[wi]
+                if shot.active {
+                    let wx = shot.x
+                    let wy = shot.y
+                    mut ei: usize = 0
+                    loop ei < enemy_pool.capacity {
+                        let e = @enemy_pool.enemies[ei]
+                        if e.active {
+                            if check_circle_collision(wx, wy, 5.0, e.x, e.y, e.radius) {
+                                shot.active = false
+                                e.hp -= shot.damage
+                                e.hit_flash = 0.08
+                                spawn_damage_num(@particle_pool, e.x, e.y, shot.damage as i32)
+                                PlaySound(snd_hit)
+
+                                if e.hp <= 0.0 {
+                                    e.active = false
+                                    player.kills += 1
+                                    spawn_gem(@gem_pool, e.x, e.y, e.exp_val)
+                                }
+                                break
+                            }
+                        }
+                        ei += 1
+                    }
+                }
+                wi += 1
+            }
+
+            // 4. Orbiting Blades vs Enemies
+            if weapons.blades_level > 0 and weapons.blades_count > 0 {
+                let step = 6.28318 / (weapons.blades_count as f32)
+                mut bi: i32 = 0
+                loop bi < weapons.blades_count {
+                    let a = weapons.blades_angle + (bi as f32) * step
+                    let bx = player.x + approx_cos(a) * weapons.blades_radius
+                    let by = player.y + approx_sin(a) * weapons.blades_radius
+
+                    mut ei: usize = 0
+                    loop ei < enemy_pool.capacity {
+                        let e = @enemy_pool.enemies[ei]
+                        if e.active {
+                            if check_circle_collision(bx, by, 8.0, e.x, e.y, e.radius) {
+                                if e.hit_flash <= 0.0 {
+                                    e.hp -= weapons.blades_damage
+                                    e.hit_flash = 0.12
+                                    spawn_damage_num(@particle_pool, e.x, e.y, weapons.blades_damage as i32)
+                                    PlaySound(snd_slash)
+
+                                    if e.hp <= 0.0 {
+                                        e.active = false
+                                        player.kills += 1
+                                        spawn_gem(@gem_pool, e.x, e.y, e.exp_val)
+                                    }
+                                }
+                            }
+                        }
+                        ei += 1
+                    }
+                    bi += 1
+                }
+            }
+
+            // 5. Holy Garlic Aura vs Enemies
+            if weapons.aura_level > 0 and weapons.aura_timer >= 0.45 {
+                weapons.aura_timer = 0.0
+                mut ei: usize = 0
+                loop ei < enemy_pool.capacity {
+                    let e = @enemy_pool.enemies[ei]
+                    if e.active {
+                        if check_circle_collision(player.x, player.y, weapons.aura_radius, e.x, e.y, e.radius) {
+                            e.hp -= weapons.aura_damage
+                            e.hit_flash = 0.1
+                            spawn_damage_num(@particle_pool, e.x, e.y, weapons.aura_damage as i32)
+
+                            if e.hp <= 0.0 {
+                                e.active = false
+                                player.kills += 1
+                                spawn_gem(@gem_pool, e.x, e.y, e.exp_val)
+                            }
+                        }
+                    }
+                    ei += 1
+                }
+            }
+
+            // 6. Enemies vs Player
+            mut ei: usize = 0
+            loop ei < enemy_pool.capacity {
+                let e = @enemy_pool.enemies[ei]
+                if e.active {
+                    if check_circle_collision(player.x, player.y, player.radius, e.x, e.y, e.radius) {
+                        if damage_player(@player, 12.0) {
+                            PlaySound(snd_hurt)
+                            if not player.alive {
+                                state = 3 // Game Over
+                            }
+                        }
+                    }
+                }
+                ei += 1
+            }
+
+            // 7. Gems Pickup
+            mut gi: usize = 0
+            loop gi < gem_pool.capacity {
+                let g = @gem_pool.gems[gi]
+                if g.active {
+                    if check_circle_collision(player.x, player.y, player.radius + 6.0, g.x, g.y, 4.0) {
+                        g.active = false
+                        PlaySound(snd_gem)
+                        if add_player_exp(@player, g.value) {
+                            PlaySound(snd_level)
+                            state = 2 // Level up modal
+                        }
+                    }
+                }
+                gi += 1
+            }
+
+            // 8. Render Frame
+            BeginDrawing()
+            ClearBackground(make_color(26, 44, 28, 255))
+            draw_infinite_grid(player.x, player.y, screen_w, screen_h)
+
+            draw_gems(@gem_pool, player.x, player.y, screen_w, screen_h)
+            draw_enemies(@enemy_pool, player.x, player.y, screen_w, screen_h)
+            draw_weapons(@weapons, player.x, player.y, player.x, player.y, screen_w, screen_h)
+            draw_player(@player, screen_w * 0.5, screen_h * 0.5)
+            draw_particles(@particle_pool, player.x, player.y, screen_w, screen_h)
+
+            // Top EXP Bar
+            DrawRectangle(0, 0, screen_w as i32, 14, make_color(20, 25, 30, 220))
+            let exp_ratio = (player.exp as f32) / (player.next_exp as f32)
+            let exp_bar_w = screen_w * exp_ratio
+            DrawRectangle(0, 0, exp_bar_w as i32, 14, make_color(50, 160, 255, 255))
+
+            // HUD Badges
+            DrawRectangle(10, 22, 110, 26, make_color(0, 0, 0, 140))
+            DrawText("LVL", 18, 27, 16, make_color(255, 215, 0, 255))
+            mut lvl_str = "1"
+            if player.level == 2 { lvl_str = "2" } else if player.level == 3 { lvl_str = "3" } else if player.level == 4 { lvl_str = "4" }
+            else if player.level == 5 { lvl_str = "5" } else if player.level == 6 { lvl_str = "6" } else if player.level == 7 { lvl_str = "7" }
+            else if player.level >= 8 { lvl_str = "8+" }
+            DrawText(lvl_str, 55, 27, 16, make_color(255, 255, 255, 255))
+
+            // Timer & Kills
+            DrawRectangle((screen_w * 0.5 - 50.0) as i32, 22, 100, 26, make_color(0, 0, 0, 140))
+            DrawText("SURVIVED", (screen_w * 0.5 - 40.0) as i32, 27, 16, make_color(255, 255, 255, 255))
+
+            DrawRectangle((screen_w - 120.0) as i32, 22, 110, 26, make_color(0, 0, 0, 140))
+            DrawText("KILLS", (screen_w - 110.0) as i32, 27, 16, make_color(255, 80, 80, 255))
+
+            draw_fps_counter(screen_w, screen_h)
+            EndDrawing()
+        }
+
+        // -------------------------------------------------------------
+        // STATE 2: LEVEL UP UPGRADE MODAL
+        // -------------------------------------------------------------
+        else if state == 2 {
+            // Check upgrade keys [1], [2], [3]
+            if IsKeyPressed(KEY_ONE) {
+                weapons.blades_level += 1
+                weapons.blades_count += 1
+                if weapons.blades_count > 6 {
+                    weapons.blades_count = 6
+                    weapons.blades_damage += 10.0
+                }
+                state = 1
+            } else if IsKeyPressed(KEY_TWO) {
+                weapons.wand_level += 1
+                weapons.wand_cooldown *= 0.8
+                weapons.wand_damage += 12.0
+                state = 1
+            } else if IsKeyPressed(KEY_THREE) {
+                weapons.aura_level += 1
+                weapons.aura_radius += 18.0
+                weapons.aura_damage += 8.0
+                state = 1
+            }
+
+            BeginDrawing()
+            DrawRectangle(0, 0, screen_w as i32, screen_h as i32, make_color(10, 15, 20, 190))
+
+            DrawText("LEVEL UP!", 390, 130, 38, make_color(255, 220, 50, 255))
+            DrawText("Choose an upgrade to enhance your arsenal:", 295, 185, 18, make_color(220, 220, 220, 255))
+
+            // Card 1: Orbiting Blades
+            DrawRectangle(140, 240, 200, 220, make_color(30, 40, 55, 255))
+            DrawRectangleLines(140, 240, 200, 220, make_color(80, 140, 220, 255))
+            DrawText("[1] ORBIT BLADE", 160, 260, 18, make_color(100, 180, 255, 255))
+            DrawText("+1 Orbiting Sword", 160, 310, 15, make_color(220, 220, 220, 255))
+            DrawText("Slices nearby foes", 160, 335, 14, make_color(160, 160, 160, 255))
+
+            // Card 2: Magic Wand
+            DrawRectangle(380, 240, 200, 220, make_color(45, 30, 55, 255))
+            DrawRectangleLines(380, 240, 200, 220, make_color(180, 90, 240, 255))
+            DrawText("[2] MAGIC WAND", 405, 260, 18, make_color(220, 120, 255, 255))
+            DrawText("-20% Cooldown", 405, 310, 15, make_color(220, 220, 220, 255))
+            DrawText("+12 Wand Damage", 405, 335, 14, make_color(160, 160, 160, 255))
+
+            // Card 3: Garlic Aura
+            DrawRectangle(620, 240, 200, 220, make_color(50, 45, 25, 255))
+            DrawRectangleLines(620, 240, 200, 220, make_color(230, 190, 70, 255))
+            DrawText("[3] HOLY AURA", 650, 260, 18, make_color(255, 220, 90, 255))
+            DrawText("+18 Aura Radius", 645, 310, 15, make_color(220, 220, 220, 255))
+            DrawText("Radiates pulses", 645, 335, 14, make_color(160, 160, 160, 255))
+
+            DrawText("Press [1], [2], or [3] to select", 370, 500, 18, make_color(180, 180, 180, 255))
+            draw_fps_counter(screen_w, screen_h)
+            EndDrawing()
+        }
+
+        // -------------------------------------------------------------
+        // STATE 3: GAME OVER
+        // -------------------------------------------------------------
+        else {
+            if IsKeyPressed(KEY_SPACE) or IsKeyPressed(KEY_R) {
+                // Reset entire game
+                player = init_player()
+                weapons = init_weapons()
+                enemy_pool = init_enemy_pool()
+                gem_pool = init_gem_pool()
+                particle_pool = init_particle_pool()
+                game_time = 0.0
+                state = 1
+            }
+
+            BeginDrawing()
+            DrawRectangle(0, 0, screen_w as i32, screen_h as i32, make_color(25, 10, 10, 200))
+
+            DrawText("YOU WERE OVERWHELMED", 240, 210, 36, make_color(240, 50, 50, 255))
+            DrawText("The horde consumed your essence...", 315, 265, 18, make_color(200, 200, 200, 255))
+
+            DrawRectangle(320, 320, 320, 130, make_color(40, 20, 20, 255))
+            DrawRectangleLines(320, 320, 320, 130, make_color(140, 40, 40, 255))
+
+            DrawText("FINAL LEVEL REACHED", 370, 345, 18, make_color(255, 215, 0, 255))
+            DrawText("PRESS [SPACE] OR [R] TO RETRY", 335, 405, 16, make_color(220, 220, 220, 255))
+            draw_fps_counter(screen_w, screen_h)
+            EndDrawing()
+        }
+    }
+
+    UnloadSound(snd_gem)
+    UnloadSound(snd_hit)
+    UnloadSound(snd_hurt)
+    UnloadSound(snd_level)
+    UnloadSound(snd_magic)
+    UnloadSound(snd_slash)
+    CloseAudioDevice()
+    CloseWindow()
+    return 0
+}
