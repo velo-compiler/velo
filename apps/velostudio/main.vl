@@ -3,6 +3,7 @@
 
 use sys.mem
 use sys.fs
+use sys.os
 use "raylib.vl"
 use "theme.vl"
 use "sqlite.vl"
@@ -58,15 +59,30 @@ act select_table(s: @StudioState, idx: i32) {
     run_query(s)
 }
 
+act switch_database(s: @StudioState, new_path: string) {
+    sqlite_close_db(s.db)
+    s.db = sqlite_open_db(new_path)
+    s.db_name = new_path
+    if s.db == 0 {
+        s.status_msg = str.concat("Failed to open: ", new_path)
+        s.table_count = 0
+        return
+    }
+    s.table_count = sqlite_fetch_tables(s.db, s.tables, 32)
+    s.selected_table_idx = 0
+    s.scroll_y = 0
+    s.selected_row_idx = -1
+    s.status_msg = str.concat("Connected: ", new_path)
+    if s.table_count > 0 {
+        select_table(s, 0)
+    } else {
+        set_sql(s, "SELECT 'Database opened - no tables found' as info;")
+        run_query(s)
+    }
+}
+
 act init_studio(db_path: string) -> StudioState {
     mut s: StudioState
-    s.db_name = db_path
-    if not fs.exists(db_path) {
-        create_sample_database(db_path)
-    }
-    s.db = sqlite_open_db(db_path)
-
-    // Load Crisp Vector TrueType Font with Bilinear Filtering
     let font_path = "C:/Windows/Fonts/segoeui.ttf"
     if fs.exists(font_path) {
         s.font = LoadFontEx(font_path, 32, 0, 0)
@@ -82,37 +98,29 @@ act init_studio(db_path: string) -> StudioState {
     s.sql_buf[0] = 0 as u8
     s.sql_len = 0
     s.tables = mem.alloc(@TableMeta, 32)
-    s.table_count = sqlite_fetch_tables(s.db, s.tables, 32)
-    s.selected_table_idx = 0
-    s.scroll_y = 0
-    s.selected_row_idx = -1
+    s.table_count = 0
+    s.db = 0
     s.csv_feedback_frames = 0
-    s.status_msg = "Connected"
 
-    if s.table_count > 0 {
-        select_table(@s, 0)
-    } else {
-        set_sql(@s, "SELECT 1 as velo, 'Fast' as status;")
-        run_query(@s)
+    if db_path == "demo.db" and not fs.exists(db_path) {
+        create_sample_database(db_path)
     }
+    switch_database(@s, db_path)
     return s
 }
 
 act draw_header(s: @StudioState, th: @StudioTheme) {
     DrawRectangle(0, 0, 1200, 48, th.bg_header)
     DrawLine(0, 48, 1200, 48, th.border)
-
     draw_ui_text(s.font, "VeloStudio", 16, 12, 22.0, th.accent)
-    draw_ui_text(s.font, "Zero-Electron SQLite Studio", 145, 17, 14.0, th.text_dim)
+    draw_ui_text(s.font, "Drag & Drop any .db file onto window", 145, 17, 13.0, th.text_dim)
 
-    // DB Indicator Pill
-    DrawRectangle(420, 12, 250, 24, th.bg_panel)
-    DrawRectangleLines(420, 12, 250, 24, th.border)
-    DrawCircle(434, 24, 4.0, th.success)
-    draw_ui_text(s.font, s.db_name, 446, 15, 14.0, th.text_primary)
-    draw_ui_text(s.font, "(SQLite 3.x)", 575, 15, 13.0, th.text_dim)
+    DrawRectangle(440, 12, 240, 24, th.bg_panel)
+    DrawRectangleLines(440, 12, 240, 24, th.border)
+    DrawCircle(454, 24, 4.0, th.success)
+    draw_ui_text(s.font, s.db_name, 466, 15, 14.0, th.text_primary)
+    draw_ui_text(s.font, "(SQLite)", 605, 15, 13.0, th.text_dim)
 
-    // Live FPS & Real-Time Windows Process Working Set Memory
     let fps_val = GetFPS()
     let mem_str = get_live_memory_str()
     let badge_text = str.concat(int_to_str(fps_val as i64), str.concat(" FPS | ", mem_str))
@@ -122,7 +130,6 @@ act draw_header(s: @StudioState, th: @StudioTheme) {
 act draw_sidebar(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool) {
     DrawRectangle(0, 48, 240, 664, th.bg_sidebar)
     DrawLine(240, 48, 240, 712, th.border)
-
     draw_ui_text(s.font, "TABLES", 16, 62, 12.0, th.text_dim)
     let count_label = str.concat("(", str.concat(int_to_str(s.table_count as i64), ")"))
     draw_ui_text(s.font, count_label, 75, 62, 12.0, th.accent)
@@ -132,22 +139,18 @@ act draw_sidebar(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: b
         let y = 84 + (i * 36)
         let is_sel = (i == s.selected_table_idx)
         let is_hov = point_in_rect(mx, my, 8, y, 224, 32)
-
         if is_sel {
             DrawRectangle(8, y, 224, 32, th.btn_bg)
             DrawRectangle(8, y, 4, 32, th.accent)
         } else if is_hov {
             DrawRectangle(8, y, 224, 32, th.bg_panel)
-            if clicked {
-                select_table(s, i)
-            }
+            if clicked { select_table(s, i) }
         }
 
         let tbl = @s.tables[i as usize]
         mut name_col = th.text_secondary
         if is_sel { name_col = th.text_primary }
         draw_ui_text(s.font, tbl.name, 22, y + 8, 15.0, name_col)
-
         let rows_str = int_to_str(tbl.row_count as i64)
         draw_ui_text(s.font, rows_str, 195, y + 8, 13.0, th.text_dim)
         i += 1
@@ -155,38 +158,25 @@ act draw_sidebar(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: b
 }
 
 act draw_query_panel(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool) {
-    let px = 252
-    let py = 60
-    let pw = 932
-    let ph = 68
-
+    let px = 252; let py = 60; let pw = 932; let ph = 68
     DrawRectangle(px, py, pw, ph, th.bg_panel)
     DrawRectangleLines(px, py, pw, ph, th.border)
-
     draw_ui_text(s.font, "SQL QUERY (Press Enter to Execute)", px + 12, py + 8, 12.0, th.text_dim)
 
-    // Render Query Text Buffer
     let q_text = s.sql_buf as string
     draw_ui_text(s.font, q_text, px + 12, py + 32, 16.0, th.text_primary)
 
-    // Cursor
     let text_w = measure_ui_text_width(s.font, q_text, 16.0)
     let blink = ((GetTime() * 2.5) as i32) % 2 == 0
-    if blink {
-        DrawRectangle(px + 14 + text_w, py + 30, 2, 18, th.accent)
-    }
+    if blink { DrawRectangle(px + 14 + text_w, py + 30, 2, 18, th.accent) }
 
-    // Run Button
     let btn_run_hover = point_in_rect(mx, my, px + pw - 150, py + 18, 70, 32)
     mut run_col = th.accent
     if btn_run_hover { run_col = th.accent_hover }
     DrawRectangle(px + pw - 150, py + 18, 70, 32, run_col)
     draw_ui_text(s.font, "RUN", px + pw - 130, py + 25, 15.0, th.bg_main)
-    if btn_run_hover and clicked {
-        run_query(s)
-    }
+    if btn_run_hover and clicked { run_query(s) }
 
-    // Clear Button
     let btn_clear_hover = point_in_rect(mx, my, px + pw - 72, py + 18, 60, 32)
     mut clear_col = th.btn_bg
     if btn_clear_hover { clear_col = th.btn_hover }
@@ -199,11 +189,7 @@ act draw_query_panel(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicke
 }
 
 act draw_grid(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool) {
-    let gx = 252
-    let gy = 140
-    let gw = 932
-    let gh = 560
-
+    let gx = 252; let gy = 140; let gw = 932; let gh = 560
     DrawRectangle(gx, gy, gw, gh, th.bg_panel)
     DrawRectangleLines(gx, gy, gw, gh, th.border)
 
@@ -222,7 +208,6 @@ act draw_grid(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool
 
     let col_w = (gw - 20) / q.col_count
 
-    // Header Row
     DrawRectangle(gx, gy, gw, 32, th.bg_header)
     DrawLine(gx, gy + 32, gx + gw, gy + 32, th.border)
     mut c: i32 = 0
@@ -233,7 +218,6 @@ act draw_grid(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool
         c += 1
     }
 
-    // Virtualized Scrollable Data Rows
     let row_h = 28
     let visible_rows = (gh - 34) / row_h
     mut max_scroll: i32 = 0
@@ -252,9 +236,7 @@ act draw_grid(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool
             DrawRectangle(gx, ry, gw, row_h, th.row_selected)
         } else if is_hov {
             DrawRectangle(gx, ry, gw, row_h, th.btn_bg)
-            if clicked {
-                s.selected_row_idx = actual_r
-            }
+            if clicked { s.selected_row_idx = actual_r }
         } else if actual_r % 2 == 0 {
             DrawRectangle(gx, ry, gw, row_h, th.row_even)
         } else {
@@ -265,14 +247,12 @@ act draw_grid(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool
         mut ci: i32 = 0
         loop ci < q.col_count {
             let cx = gx + (ci * col_w) + 12
-            let cell_val = row_data[ci as usize]
-            draw_ui_text(s.font, cell_val, cx, ry + 6, 14.0, th.text_primary)
+            draw_ui_text(s.font, row_data[ci as usize], cx, ry + 6, 14.0, th.text_primary)
             ci += 1
         }
         r += 1
     }
 
-    // Scrollbar indicator
     if q.row_count > visible_rows {
         let sb_h = (visible_rows * (gh - 34)) / q.row_count
         let sb_y = gy + 34 + (s.scroll_y * (gh - 34 - sb_h)) / max_scroll
@@ -284,17 +264,14 @@ act draw_footer(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bo
     DrawRectangle(0, 712, 1200, 38, th.bg_header)
     DrawLine(0, 712, 1200, 712, th.border)
 
-    // Status Message
     mut stat_col = th.success
     if s.query_result.is_error { stat_col = th.error }
     draw_ui_text(s.font, s.status_msg, 16, 722, 14.0, stat_col)
 
-    // Execution time & Row stats
     let q = @s.query_result
     let stats_text = str.concat(int_to_str(q.row_count as i64), str.concat(" rows | Query time: ", str.concat(int_to_str(q.exec_time_us), " us")))
     draw_ui_text(s.font, stats_text, 400, 722, 14.0, th.text_secondary)
 
-    // Export CSV Button
     let btn_csv_hover = point_in_rect(mx, my, 1060, 718, 120, 26)
     mut csv_col = th.btn_bg
     if btn_csv_hover { csv_col = th.accent_hover }
@@ -308,22 +285,34 @@ act draw_footer(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bo
         draw_ui_text(s.font, "Export to CSV", 1074, 722, 13.0, th.text_primary)
         if btn_csv_hover and clicked {
             let ok = export_query_csv("export.csv", @s.query_result)
-            if ok {
-                s.csv_feedback_frames = 120
-            }
+            if ok { s.csv_feedback_frames = 120 }
         }
     }
 }
 
 act main() -> i32 {
+    let args = os.args()
+    mut initial_db = "demo.db"
+    if args.len > 1 {
+        initial_db = args[1]
+    }
+
     InitWindow(1200, 750, "VeloStudio - Native SQLite Desktop Inspector")
     SetTargetFPS(60)
 
     let th = theme_init()
-    mut state = init_studio("demo.db")
+    mut state = init_studio(initial_db)
 
     loop not WindowShouldClose() {
-        // Keyboard Input Handling
+        if IsFileDropped() {
+            let dropped = LoadDroppedFiles()
+            if dropped.count > 0 {
+                let dropped_path = dropped.paths[0]
+                switch_database(@state, dropped_path)
+            }
+            UnloadDroppedFiles(dropped)
+        }
+
         mut ch = GetCharPressed()
         loop ch > 0 {
             if ch >= 32 and ch <= 126 and state.sql_len < 250 {
@@ -345,7 +334,6 @@ act main() -> i32 {
             run_query(@state)
         }
 
-        // Mouse Wheel Scroll Handling
         let wheel = GetMouseWheelMove()
         if wheel != 0.0 {
             state.scroll_y -= (wheel * 3.0) as i32
@@ -355,7 +343,6 @@ act main() -> i32 {
         let my = GetMouseY()
         let clicked = IsMouseButtonPressed(MOUSE_BUTTON_LEFT)
 
-        // Rendering Lifecycle
         BeginDrawing()
         ClearBackground(th.bg_main)
 

@@ -102,3 +102,14 @@ let KEY_UP: i32 = 265
 let KEY_DELETE: i32 = 261
 let KEY_HOME: i32 = 268
 let KEY_END: i32 = 269
+
+// File Drag & Drop
+data FilePathList {
+    count: u32
+    paths: @string
+}
+
+extern act IsFileDropped() -> bool
+extern act LoadDroppedFiles() -> FilePathList
+extern act UnloadDroppedFiles(files: FilePathList) -> void
+
