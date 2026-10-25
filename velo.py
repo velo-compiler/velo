@@ -199,18 +199,19 @@ def main():
         # Parser errors) get the same additive source-snippet block. Prefix
         # stripping mirrors driver.check's row-building logic verbatim.
         color_enabled = (getattr(args, "color", "auto") == "always")
+        err_path = getattr(args, "file", None) or getattr(args, "target", "<unknown>")
         if isinstance(e, LexerError):
             prefix = f"Lexer Error at line {e.line}, col {e.col}: "
             text = str(e)
             message = text[len(prefix):] if text.startswith(prefix) else text
-            print_block(args.file, e.line, e.col, message, "error", sys.stderr,
+            print_block(err_path, e.line, e.col, message, "error", sys.stderr,
                         length=getattr(e, "length", 1), color=color_enabled)
         elif isinstance(e, ParserError):
             tok = e.token
             prefix = f"Parser Error at line {tok.line}, col {tok.col}: "
             text = str(e)
             message = text[len(prefix):] if text.startswith(prefix) else text
-            print_block(args.file, tok.line, tok.col, message, "error", sys.stderr,
+            print_block(err_path, tok.line, tok.col, message, "error", sys.stderr,
                         length=getattr(tok, "length", 1), color=color_enabled)
         sys.exit(1)
 

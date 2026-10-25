@@ -715,7 +715,7 @@ The chapter ships in full: slice 1 parse-row snippet blocks on both stages (addi
   * Triple-bootstrap chain rebuilt (Gen1 → Gen2 → Gen3 → `bin/velo.exe`); bit-for-bit determinism verified with Gen2 ≡ Gen3 SHA-256 fixed point:
     `0e83dc130262d1483068de2fa3ccb81e383a6d78e0d2321124792a041c987c34`.
   * Line count standards: all 57 source files in `src/` strictly ≤ 399 lines (`scripts/count_lines.py`).
-  * Example test fixture: `examples/15_native_tests.vl` verified working on both Python Stage 1 and native `bin/velo.exe`.
+  * Example test fixture: `examples/15_native_tests.vl` verified working on both Python Stage 1 and native `bin/velo.exe` with a comprehensive 105-test suite covering 10 real-world edge-case domains (number theory, bitwise/endianness, sorting/search, string algorithms, linear algebra & geometry, state machines & games, 2D grids & graphs, raw pointer buffers & memory zones, calendars & parsers, and data structure invariants).
   * Build sheet: `test_runner.md`.
 
 ### 6.6 Lexer Token Buffer Sizing & Overflow Diagnostics [COMPLETED] ✅
