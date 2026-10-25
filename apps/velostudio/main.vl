@@ -12,6 +12,7 @@ use "helpers.vl"
 data StudioState {
     db: usize
     db_name: string
+    font: Font
     sql_buf: @u8
     sql_len: usize
     query_result: QueryResult
@@ -64,6 +65,19 @@ act init_studio(db_path: string) -> StudioState {
         create_sample_database(db_path)
     }
     s.db = sqlite_open_db(db_path)
+
+    // Load Crisp Vector TrueType Font with Bilinear Filtering
+    let font_path = "C:/Windows/Fonts/segoeui.ttf"
+    if fs.exists(font_path) {
+        s.font = LoadFontEx(font_path, 32, 0, 0)
+        SetTextureFilter(s.font.texture, 1)
+    } else if fs.exists("C:/Windows/Fonts/arial.ttf") {
+        s.font = LoadFontEx("C:/Windows/Fonts/arial.ttf", 32, 0, 0)
+        SetTextureFilter(s.font.texture, 1)
+    } else {
+        s.font = LoadFontEx("", 32, 0, 0)
+    }
+
     s.sql_buf = mem.alloc(@u8, 256)
     s.sql_buf[0] = 0 as u8
     s.sql_len = 0
@@ -88,29 +102,29 @@ act draw_header(s: @StudioState, th: @StudioTheme) {
     DrawRectangle(0, 0, 1200, 48, th.bg_header)
     DrawLine(0, 48, 1200, 48, th.border)
 
-    DrawText("VeloStudio", 16, 12, 22, th.accent)
-    DrawText("Zero-Electron SQLite Studio", 140, 17, 13, th.text_dim)
+    draw_ui_text(s.font, "VeloStudio", 16, 12, 22.0, th.accent)
+    draw_ui_text(s.font, "Zero-Electron SQLite Studio", 145, 17, 14.0, th.text_dim)
 
     // DB Indicator Pill
-    DrawRectangle(420, 12, 240, 24, th.bg_panel)
-    DrawRectangleLines(420, 12, 240, 24, th.border)
+    DrawRectangle(420, 12, 250, 24, th.bg_panel)
+    DrawRectangleLines(420, 12, 250, 24, th.border)
     DrawCircle(434, 24, 4.0, th.success)
-    DrawText(s.db_name, 446, 17, 13, th.text_primary)
-    DrawText("(SQLite 3.x)", 570, 17, 12, th.text_dim)
+    draw_ui_text(s.font, s.db_name, 446, 15, 14.0, th.text_primary)
+    draw_ui_text(s.font, "(SQLite 3.x)", 575, 15, 13.0, th.text_dim)
 
     // FPS / Memory badge
     let fps_val = GetFPS()
     let fps_text = str.concat(int_to_str(fps_val as i64), " FPS | 14 MB RAM")
-    DrawText(fps_text, 1020, 17, 13, th.success)
+    draw_ui_text(s.font, fps_text, 1010, 15, 14.0, th.success)
 }
 
 act draw_sidebar(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool) {
     DrawRectangle(0, 48, 240, 664, th.bg_sidebar)
     DrawLine(240, 48, 240, 712, th.border)
 
-    DrawText("TABLES", 16, 62, 11, th.text_dim)
+    draw_ui_text(s.font, "TABLES", 16, 62, 12.0, th.text_dim)
     let count_label = str.concat("(", str.concat(int_to_str(s.table_count as i64), ")"))
-    DrawText(count_label, 70, 62, 11, th.accent)
+    draw_ui_text(s.font, count_label, 75, 62, 12.0, th.accent)
 
     mut i: i32 = 0
     loop i < s.table_count {
@@ -131,10 +145,10 @@ act draw_sidebar(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: b
         let tbl = @s.tables[i as usize]
         mut name_col = th.text_secondary
         if is_sel { name_col = th.text_primary }
-        DrawText(tbl.name, 22, y + 9, 14, name_col)
+        draw_ui_text(s.font, tbl.name, 22, y + 8, 15.0, name_col)
 
         let rows_str = int_to_str(tbl.row_count as i64)
-        DrawText(rows_str, 195, y + 10, 12, th.text_dim)
+        draw_ui_text(s.font, rows_str, 195, y + 8, 13.0, th.text_dim)
         i += 1
     }
 }
@@ -148,14 +162,14 @@ act draw_query_panel(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicke
     DrawRectangle(px, py, pw, ph, th.bg_panel)
     DrawRectangleLines(px, py, pw, ph, th.border)
 
-    DrawText("SQL QUERY (Press Enter to Execute)", px + 12, py + 8, 11, th.text_dim)
+    draw_ui_text(s.font, "SQL QUERY (Press Enter to Execute)", px + 12, py + 8, 12.0, th.text_dim)
 
     // Render Query Text Buffer
     let q_text = s.sql_buf as string
-    DrawText(q_text, px + 12, py + 32, 16, th.text_primary)
+    draw_ui_text(s.font, q_text, px + 12, py + 32, 16.0, th.text_primary)
 
     // Cursor
-    let text_w = MeasureText(q_text, 16)
+    let text_w = measure_ui_text_width(s.font, q_text, 16.0)
     let blink = ((GetTime() * 2.5) as i32) % 2 == 0
     if blink {
         DrawRectangle(px + 14 + text_w, py + 30, 2, 18, th.accent)
@@ -166,7 +180,7 @@ act draw_query_panel(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicke
     mut run_col = th.accent
     if btn_run_hover { run_col = th.accent_hover }
     DrawRectangle(px + pw - 150, py + 18, 70, 32, run_col)
-    DrawText("RUN", px + pw - 130, py + 26, 14, th.bg_main)
+    draw_ui_text(s.font, "RUN", px + pw - 130, py + 25, 15.0, th.bg_main)
     if btn_run_hover and clicked {
         run_query(s)
     }
@@ -176,7 +190,7 @@ act draw_query_panel(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicke
     mut clear_col = th.btn_bg
     if btn_clear_hover { clear_col = th.btn_hover }
     DrawRectangle(px + pw - 72, py + 18, 60, 32, clear_col)
-    DrawText("Clear", px + pw - 58, py + 26, 13, th.text_secondary)
+    draw_ui_text(s.font, "Clear", px + pw - 58, py + 25, 14.0, th.text_secondary)
     if btn_clear_hover and clicked {
         s.sql_buf[0] = 0 as u8
         s.sql_len = 0
@@ -195,13 +209,13 @@ act draw_grid(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool
     let q = @s.query_result
     if q.is_error {
         DrawRectangle(gx + 16, gy + 16, gw - 32, 40, make_color(80 as u8, 20 as u8, 20 as u8, 255 as u8))
-        DrawText(str.concat("SQL Error: ", q.error_msg), gx + 28, gy + 28, 14, th.error)
+        draw_ui_text(s.font, str.concat("SQL Error: ", q.error_msg), gx + 28, gy + 26, 15.0, th.error)
         return
     }
 
     if q.col_count <= 0 {
         let msg = str.concat("Query executed successfully. Rows affected: ", int_to_str(q.affected_rows as i64))
-        DrawText(msg, gx + 28, gy + 28, 14, th.success)
+        draw_ui_text(s.font, msg, gx + 28, gy + 26, 15.0, th.success)
         return
     }
 
@@ -213,7 +227,7 @@ act draw_grid(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool
     mut c: i32 = 0
     loop c < q.col_count {
         let cx = gx + (c * col_w) + 12
-        DrawText(q.col_names[c as usize], cx, gy + 9, 13, th.accent)
+        draw_ui_text(s.font, q.col_names[c as usize], cx, gy + 7, 14.0, th.accent)
         DrawLine(gx + ((c + 1) * col_w), gy, gx + ((c + 1) * col_w), gy + gh, th.border)
         c += 1
     }
@@ -251,7 +265,7 @@ act draw_grid(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool
         loop ci < q.col_count {
             let cx = gx + (ci * col_w) + 12
             let cell_val = row_data[ci as usize]
-            DrawText(cell_val, cx, ry + 7, 13, th.text_primary)
+            draw_ui_text(s.font, cell_val, cx, ry + 6, 14.0, th.text_primary)
             ci += 1
         }
         r += 1
@@ -272,12 +286,12 @@ act draw_footer(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bo
     // Status Message
     mut stat_col = th.success
     if s.query_result.is_error { stat_col = th.error }
-    DrawText(s.status_msg, 16, 724, 13, stat_col)
+    draw_ui_text(s.font, s.status_msg, 16, 722, 14.0, stat_col)
 
     // Execution time & Row stats
     let q = @s.query_result
     let stats_text = str.concat(int_to_str(q.row_count as i64), str.concat(" rows | Query time: ", str.concat(int_to_str(q.exec_time_us), " us")))
-    DrawText(stats_text, 400, 724, 13, th.text_secondary)
+    draw_ui_text(s.font, stats_text, 400, 722, 14.0, th.text_secondary)
 
     // Export CSV Button
     let btn_csv_hover = point_in_rect(mx, my, 1060, 718, 120, 26)
@@ -287,10 +301,10 @@ act draw_footer(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bo
     DrawRectangleLines(1060, 718, 120, 26, th.border)
 
     if s.csv_feedback_frames > 0 {
-        DrawText("Exported CSV!", 1074, 724, 12, th.success)
+        draw_ui_text(s.font, "Exported CSV!", 1074, 722, 13.0, th.success)
         s.csv_feedback_frames -= 1
     } else {
-        DrawText("Export to CSV", 1074, 724, 12, th.text_primary)
+        draw_ui_text(s.font, "Export to CSV", 1074, 722, 13.0, th.text_primary)
         if btn_csv_hover and clicked {
             let ok = export_query_csv("export.csv", @s.query_result)
             if ok {
@@ -354,6 +368,7 @@ act main() -> i32 {
     }
 
     sqlite_close_db(state.db)
+    UnloadFont(state.font)
     CloseWindow()
     return 0
 }

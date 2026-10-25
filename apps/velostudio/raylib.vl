@@ -11,6 +11,28 @@ act make_color(r: u8, g: u8, b: u8, a: u8) -> Color {
     return Color{ r: r, g: g, b: b, a: a }
 }
 
+data Vector2 {
+    x: f32
+    y: f32
+}
+
+data Texture2D {
+    id: u32
+    width: i32
+    height: i32
+    mipmaps: i32
+    format: i32
+}
+
+data Font {
+    baseSize: i32
+    glyphCount: i32
+    glyphPadding: i32
+    texture: Texture2D
+    recs: usize
+    glyphs: usize
+}
+
 // Window Management
 extern act InitWindow(width: i32, height: i32, title: string) -> void
 extern act CloseWindow() -> void
@@ -34,9 +56,24 @@ extern act DrawRectangleLines(posX: i32, posY: i32, width: i32, height: i32, col
 extern act DrawLine(startPosX: i32, startPosY: i32, endPosX: i32, endPosY: i32, color: Color) -> void
 extern act DrawCircle(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
 
-// Typography
+// Typography (Bitmap & Vector TrueType Fonts)
 extern act DrawText(text: string, posX: i32, posY: i32, fontSize: i32, color: Color) -> void
 extern act MeasureText(text: string, fontSize: i32) -> i32
+extern act LoadFontEx(fileName: string, fontSize: i32, fontChars: usize, glyphCount: i32) -> Font
+extern act SetTextureFilter(texture: Texture2D, filter: i32) -> void
+extern act DrawTextEx(font: Font, text: string, position: Vector2, fontSize: f32, spacing: f32, tint: Color) -> void
+extern act MeasureTextEx(font: Font, text: string, fontSize: f32, spacing: f32) -> Vector2
+extern act UnloadFont(font: Font) -> void
+
+act draw_ui_text(font: Font, text: string, posX: i32, posY: i32, fontSize: f32, color: Color) {
+    let pos = Vector2{ x: posX as f32, y: posY as f32 }
+    DrawTextEx(font, text, pos, fontSize, 1.0, color)
+}
+
+act measure_ui_text_width(font: Font, text: string, fontSize: f32) -> i32 {
+    let sz = MeasureTextEx(font, text, fontSize, 1.0)
+    return sz.x as i32
+}
 
 // Mouse Input
 extern act GetMouseX() -> i32
