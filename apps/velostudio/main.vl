@@ -112,10 +112,11 @@ act draw_header(s: @StudioState, th: @StudioTheme) {
     draw_ui_text(s.font, s.db_name, 446, 15, 14.0, th.text_primary)
     draw_ui_text(s.font, "(SQLite 3.x)", 575, 15, 13.0, th.text_dim)
 
-    // FPS / Memory badge
+    // Live FPS & Real-Time Windows Process Working Set Memory
     let fps_val = GetFPS()
-    let fps_text = str.concat(int_to_str(fps_val as i64), " FPS | 14 MB RAM")
-    draw_ui_text(s.font, fps_text, 1010, 15, 14.0, th.success)
+    let mem_str = get_live_memory_str()
+    let badge_text = str.concat(int_to_str(fps_val as i64), str.concat(" FPS | ", mem_str))
+    draw_ui_text(s.font, badge_text, 990, 15, 14.0, th.success)
 }
 
 act draw_sidebar(s: @StudioState, th: @StudioTheme, mx: i32, my: i32, clicked: bool) {

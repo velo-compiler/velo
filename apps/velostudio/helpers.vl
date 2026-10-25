@@ -77,3 +77,33 @@ act export_query_csv(filename: string, q: @QueryResult) -> bool {
     fs.fclose(fh)
     return true
 }
+
+data ProcessMemoryCounters {
+    cb: u32
+    page_fault_count: u32
+    peak_working_set: usize
+    working_set: usize
+    quota_peak_paged: usize
+    quota_paged: usize
+    quota_peak_non_paged: usize
+    quota_non_paged: usize
+    pagefile_usage: usize
+    peak_pagefile: usize
+}
+
+extern act GetCurrentProcess() -> usize
+extern act K32GetProcessMemoryInfo(hProcess: usize, ppsmps: @ProcessMemoryCounters, cb: u32) -> i32
+
+act get_live_memory_str() -> string {
+    mut pmc: ProcessMemoryCounters
+    pmc.cb = 72 as u32
+    let hProcess = GetCurrentProcess()
+    let rc = K32GetProcessMemoryInfo(hProcess, @pmc, 72 as u32)
+    if rc == 0 { return "N/A" }
+    let kb = pmc.working_set / 1024
+    let mb = kb / 1024
+    let dec = ((kb % 1024) * 10) / 1024
+    let s_mb = int_to_str(mb as i64)
+    let s_dec = int_to_str(dec as i64)
+    return str.concat(s_mb, str.concat(".", str.concat(s_dec, " MB RAM")))
+}

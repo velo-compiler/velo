@@ -33,6 +33,8 @@ class TestVeloStudio(unittest.TestCase):
             "apps/velostudio/test_velostudio.vl",
             "-l",
             "sqlite3",
+            "-l",
+            "psapi",
         ]
         res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, env=self.env)
         self.assertEqual(res.returncode, 0, f"velo.exe test failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}")
@@ -47,6 +49,8 @@ class TestVeloStudio(unittest.TestCase):
             "apps/velostudio/test_velostudio.vl",
             "-l",
             "sqlite3",
+            "-l",
+            "psapi",
         ]
         res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, env=self.env)
         self.assertEqual(res.returncode, 0, f"python velo.py test failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}")
@@ -66,6 +70,7 @@ class TestVeloStudio(unittest.TestCase):
             "-l", "gdi32",
             "-l", "winmm",
             "-l", "sqlite3",
+            "-l", "psapi",
         ]
         res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, env=self.env)
         self.assertEqual(res.returncode, 0, f"Compilation failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}")

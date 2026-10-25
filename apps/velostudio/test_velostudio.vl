@@ -8,13 +8,15 @@ use "sqlite.vl"
 use "sample_db.vl"
 use "helpers.vl"
 
-test "helpers: int_to_str and point_in_rect" {
+test "helpers: int_to_str, point_in_rect, and live_memory" {
     assert(int_to_str(0) == "0")
     assert(int_to_str(42) == "42")
     assert(int_to_str(123456) == "123456")
     assert(int_to_str(-99) == "-99")
     assert(point_in_rect(10, 10, 0, 0, 50, 50))
     assert(not point_in_rect(100, 10, 0, 0, 50, 50))
+    let mem_str = get_live_memory_str()
+    assert(str.len(mem_str) > 0)
 }
 
 test "sample_db and sqlite integration" {
