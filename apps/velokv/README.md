@@ -144,7 +144,18 @@ print(r.get("greeting").decode())  # Hello from Python!
 
 ## 🧪 Automated Test Suite
 
-Run all 9 unit, integration, protocol, and recovery tests:
+### 1. Native In-Engine Tests (Zero Dependencies)
+Run all 9 native unit and TCP loopback integration tests directly with the Velo toolchain:
 ```bash
-python -m pytest tests/test_velokv.py -v
+bin/velo.exe test apps/velokv/test_velokv.vl -l ws2_32
+```
+Or with the Stage 1 compiler:
+```bash
+python velo.py test apps/velokv/test_velokv.vl -l ws2_32
+```
+
+### 2. External TCP Supervisor & Benchmarks (Python)
+Run end-to-end loopback TCP client, crash recovery, and microbenchmark tests:
+```bash
+python -m pytest tests/test_velokv.py -v -s
 ```

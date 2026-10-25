@@ -1,0 +1,224 @@
+// VeloKV Native In-Engine Test Suite
+// Run via: bin/velo.exe test apps/velokv/test_velokv.vl
+
+use sys.mem
+use "net.vl"
+use "store.vl"
+use "resp.vl"
+use "aof.vl"
+use "command.vl"
+
+test "resp serializer primitives" {
+    assert(resp_ok() == "+OK\r\n")
+    assert(resp_pong() == "+PONG\r\n")
+    assert(resp_nil() == "$-1\r\n")
+    assert(resp_int(0) == ":0\r\n")
+    assert(resp_int(42) == ":42\r\n")
+    assert(resp_int(-17) == ":-17\r\n")
+    assert(resp_bulk("velo") == "$4\r\nvelo\r\n")
+    assert(resp_bulk("") == "$0\r\n\r\n")
+    assert(resp_err("bad syntax") == "-ERR bad syntax\r\n")
+}
+
+test "parse_int conversions" {
+    assert(parse_int("0") == 0)
+    assert(parse_int("12345") == 12345)
+    assert(parse_int("-987") == -987)
+    assert(parse_int("42abc") == 42)
+}
+
+test "parse_redis_command array protocol" {
+    // *3\r\n$3\r\nSET\r\n$4\r\nuser\r\n$5\r\nalice\r\n
+    let raw = "*3\r\n$3\r\nSET\r\n$4\r\nuser\r\n$5\r\nalice\r\n"
+    let bytes = raw as @u8
+    let len = str.len(raw) as i32
+
+    let cmd = parse_redis_command(bytes, len)
+    assert(cmd.valid)
+    assert(cmd.argc == 3)
+    assert(cmd.args[0] == "SET")
+    assert(cmd.args[1] == "user")
+    assert(cmd.args[2] == "alice")
+    assert(cmd.consumed_bytes == len)
+}
+
+test "parse_redis_command inline telnet protocol" {
+    let raw = "PING my_message\r\n"
+    let bytes = raw as @u8
+    let len = str.len(raw) as i32
+
+    let cmd = parse_redis_command(bytes, len)
+    assert(cmd.valid)
+    assert(cmd.argc == 2)
+    assert(cmd.args[0] == "PING")
+    assert(cmd.args[1] == "my_message")
+    assert(cmd.consumed_bytes == len)
+}
+
+test "store key-value operations" {
+    mut store = store_init(256)
+    assert(store_dbsize(@store) == 0)
+
+    // SET and GET
+    let ok = store_set(@store, "alpha", "100", 0)
+    assert(ok)
+    assert(store_dbsize(@store) == 1)
+    assert(store_has(@store, "alpha"))
+    assert(store_get(@store, "alpha") == "100")
+
+    // Missing key
+    assert(not store_has(@store, "beta"))
+    assert(store_get(@store, "beta") == "")
+
+    // Overwrite existing key
+    store_set(@store, "alpha", "200", 0)
+    assert(store_dbsize(@store) == 1)
+    assert(store_get(@store, "alpha") == "200")
+
+    // DEL
+    let del_ok = store_del(@store, "alpha")
+    assert(del_ok)
+    assert(store_dbsize(@store) == 0)
+    assert(not store_has(@store, "alpha"))
+}
+
+test "store ttl and expiration" {
+    mut store = store_init(256)
+
+    // Permanent key
+    store_set(@store, "perm", "val", 0)
+    assert(store_ttl(@store, "perm") == -1)
+
+    // Expiring key
+    store_set(@store, "temp", "val", 5000) // 5 seconds
+    let remaining = store_ttl(@store, "temp")
+    assert(remaining >= 4 and remaining <= 5)
+
+    // Persist key
+    let p_ok = store_persist(@store, "temp")
+    assert(p_ok)
+    assert(store_ttl(@store, "temp") == -1)
+
+    // Missing key TTL
+    assert(store_ttl(@store, "nonexistent") == -2)
+}
+
+test "store flushdb" {
+    mut store = store_init(256)
+    store_set(@store, "k1", "v1", 0)
+    store_set(@store, "k2", "v2", 0)
+    store_set(@store, "k3", "v3", 0)
+    assert(store_dbsize(@store) == 3)
+
+    store_flushdb(@store)
+    assert(store_dbsize(@store) == 0)
+    assert(not store_has(@store, "k1"))
+    assert(not store_has(@store, "k2"))
+    assert(not store_has(@store, "k3"))
+}
+
+test "command execution pipeline" {
+    mut store = store_init(256)
+    mut aof = aof_open("test_dummy.aof", false) // disabled persistence for unit test
+
+    // 1. PING
+    mut ping_cmd: RedisCommand
+    ping_cmd.argc = 1
+    ping_cmd.args = mem.alloc(@string, 2)
+    ping_cmd.args[0] = "PING"
+    assert(execute_command(@ping_cmd, @store, @aof) == "+PONG\r\n")
+
+    // 2. SET k v
+    mut set_cmd: RedisCommand
+    set_cmd.argc = 3
+    set_cmd.args = mem.alloc(@string, 4)
+    set_cmd.args[0] = "SET"
+    set_cmd.args[1] = "score"
+    set_cmd.args[2] = "42"
+    assert(execute_command(@set_cmd, @store, @aof) == "+OK\r\n")
+
+    // 3. GET k
+    mut get_cmd: RedisCommand
+    get_cmd.argc = 2
+    get_cmd.args = mem.alloc(@string, 2)
+    get_cmd.args[0] = "GET"
+    get_cmd.args[1] = "score"
+    assert(execute_command(@get_cmd, @store, @aof) == "$2\r\n42\r\n")
+
+    // 4. INCR k
+    mut incr_cmd: RedisCommand
+    incr_cmd.argc = 2
+    incr_cmd.args = mem.alloc(@string, 2)
+    incr_cmd.args[0] = "INCR"
+    incr_cmd.args[1] = "score"
+    assert(execute_command(@incr_cmd, @store, @aof) == ":43\r\n")
+
+    // 5. DECR k
+    mut decr_cmd: RedisCommand
+    decr_cmd.argc = 2
+    decr_cmd.args = mem.alloc(@string, 2)
+    decr_cmd.args[0] = "DECR"
+    decr_cmd.args[1] = "score"
+    assert(execute_command(@decr_cmd, @store, @aof) == ":42\r\n")
+
+    // 6. DBSIZE
+    mut dbsize_cmd: RedisCommand
+    dbsize_cmd.argc = 1
+    dbsize_cmd.args = mem.alloc(@string, 1)
+    dbsize_cmd.args[0] = "DBSIZE"
+    assert(execute_command(@dbsize_cmd, @store, @aof) == ":1\r\n")
+
+    // 7. INFO
+    mut info_cmd: RedisCommand
+    info_cmd.argc = 1
+    info_cmd.args = mem.alloc(@string, 1)
+    info_cmd.args[0] = "INFO"
+    let info_res = execute_command(@info_cmd, @store, @aof)
+    assert(str.starts_with(info_res, "$"))
+    assert(str.contains(info_res, "velokv_version:1.0.0"))
+}
+
+test "tcp network loopback integration" {
+    assert(net_init())
+    mut server = net_start_server(6399, 4)
+    assert(server.server_fd >= 0)
+
+    let client_fd = net_connect_local(6399)
+    assert(client_fd >= 0)
+
+    let accepted_slot = net_poll_accept(@server)
+    assert(accepted_slot >= 0)
+
+    // Client sends PING\r\n
+    let ping_msg = "PING\r\n"
+    let sent = send(client_fd, ping_msg as @u8, 6, 0)
+    assert(sent == 6)
+
+    // Server reads PING\r\n
+    let c = @server.clients[accepted_slot as usize]
+    let n = net_read_client(c)
+    assert(n == 6)
+
+    // Server parses and executes
+    let cmd = parse_redis_command(c.read_buf, c.read_len)
+    assert(cmd.valid)
+    assert(cmd.argc == 1)
+    assert(cmd.args[0] == "PING")
+
+    // Server responds with +PONG\r\n
+    net_send_response(c, "+PONG\r\n")
+
+    // Client receives +PONG\r\n
+    mut recv_buf: @u8 = mem.alloc(@u8, 64)
+    let cr = recv(client_fd, recv_buf, 64, 0)
+    assert(cr == 7) // +PONG\r\n
+    recv_buf[7] = 0 as u8
+    let resp_str = recv_buf as string
+    assert(resp_str == "+PONG\r\n")
+
+    // Clean shutdown
+    closesocket(client_fd)
+    net_close_client(@server, accepted_slot)
+    closesocket(server.server_fd)
+    net_shutdown()
+}

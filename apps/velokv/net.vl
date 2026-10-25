@@ -40,6 +40,7 @@ extern act ioctlsocket(s: i64, cmd: i32, argp: @u32) -> i32
 extern act setsockopt(s: i64, level: i32, optname: i32, optval: @i32, optlen: i32) -> i32
 extern act htons(hostshort: u16) -> u16
 extern act ntohs(netshort: u16) -> u16
+extern act connect(s: i64, name: @SockAddrIn, namelen: i32) -> i32
 
 let AF_INET: i32 = 2
 let SOCK_STREAM: i32 = 1
@@ -198,4 +199,23 @@ act net_send_response(c: @ClientSession, msg: string) -> bool {
         total_sent += sent
     }
     return true
+}
+
+act net_connect_local(port: i32) -> i64 {
+    let s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+    if s < 0 { return -1 }
+
+    mut addr: SockAddrIn
+    addr.family = 2
+    addr.port = htons(port as u16)
+    addr.addr = 16777343 // 127.0.0.1 in network byte order (0x0100007F)
+    addr.zero1 = 0
+    addr.zero2 = 0
+
+    let res = connect(s, @addr, 16)
+    if res != 0 {
+        closesocket(s)
+        return -1
+    }
+    return s
 }
