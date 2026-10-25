@@ -157,16 +157,25 @@ flowchart TD
   - All source files $\le 399$ lines (`scripts/count_lines.py`).
   - No UTF-8 BOM in any `.vl` file.
 
-#### Task 2.3: Type Checking Default Struct Field Initializers
-* **Problem**: In §3.6, default field values (`data Point { x: f32 = 0.0 }`) are parsed and emitted, but their constant values are not strictly type-checked against the field's declared type during semantic analysis (e.g. `x: f32 = "invalid"` was not caught at semantic time).
-* **Specification**:
-  - In `velo/codegen_c.py` and `src/analysis/type_checker.vl`, validate that the literal initializer's inferred type is compatible with the field's declared type.
-  - Emit compile error `Default value type mismatch for field '<name>': expected <T>, got <U>` if types differ.
-* **Target Files**:
-  - `velo/codegen_c.py`
-  - `src/analysis/type_checker.vl`
+#### Task 2.3: Type Checking Default Struct Field Initializers [COMPLETED] ✅
+* **Former Defect**: In §3.6, default field values (`data Point { x: f32 = 0.0 }`) were parsed and emitted, but their constant initializer values were not type-checked against the field's declared type during semantic analysis (e.g. `x: f32 = "invalid"` or `count: i32 = 1.5` passed without error).
+* **Fix Applied**:
+  - In `velo/codegen_c.py` (Stage 1), added `_types_are_compatible(expected, actual)` and validated each `f.default_expr` during `DataDecl` registration, raising `ValueError(f"Default value type mismatch for field '{f.name}': expected {f.type_name}, got {actual_t}")`.
+  - In `src/analysis/type_check_program.vl` (Stage 2), added `check_struct_default_field(st, cur_f)` during Pass 1 struct registration in `check_program()`, verifying `infer_expr_type` against `cur_f.type_name` via `types_are_compatible` and emitting `report_error("semantic", cur_f.line, cur_f.col, "Default value type mismatch for field '...': expected ..., got ...")`.
+  - Annotated in `src/analysis/type_checker.vl` that struct default initializers are validated in `check_program`.
+* **Residual Limitation**: Field defaults remain restricted to constant literals (`number`, `string`, `bool`, or unary `-` on numeric literals); dynamic expressions or non-literal expressions in struct field defaults are not supported.
 * **Verification**:
-  - Add negative test ensuring invalid default values are rejected with exact error diagnostics.
+  - Added `tests/test_default_field_types.py` covering:
+    1. Negative tests on Stage 1 for `f32 = "invalid"`, `i32 = 1.5`, `bool = 1`, `string = 42`.
+    2. Negative tests on Stage 2 (`bin/velo.exe`) with identical error messages.
+    3. `velo check --json` error diagnostics verifying machine-readable outputs on both stages.
+    4. Positive execution tests verifying omitted fields correctly receive default initializers.
+  - Rebuilt 3-stage bootstrap chain (`velo_gen1.exe` -> `velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe`).
+  - Verified determinism: Gen2 and Gen3 `emit-c src/main.vl` SHA-256 match exactly (`b14a8de470bc459e9be20b40ab296d684110a004dd98f772cac4601932fc1f95`).
+  - Native test runner passed all 105 tests (`bin/velo.exe test examples/15_native_tests.vl`).
+  - Pytest full test suite passed (308 tests passed in 203s).
+  - All source files $\le 399$ lines (`scripts/count_lines.py`).
+  - No UTF-8 BOM in any `.vl` file.
 
 ---
 

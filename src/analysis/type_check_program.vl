@@ -11,6 +11,23 @@ use "shelf_checks.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 
+// 2.3: Validates that a default field initializer's inferred type is compatible with the declared field type.
+act check_struct_default_field(st: @SymbolTable, cur_f: @FieldNode) {
+    if not cur_f.has_default or cur_f.default_value == null { return }
+    let def_t = infer_expr_type(st, cur_f.default_value)
+    if not types_are_compatible(cur_f.type_name, def_t) {
+        mut sb = create_sb(96)
+        sb_append_str(@sb, "Default value type mismatch for field '")
+        sb_append_str(@sb, cur_f.name)
+        sb_append_str(@sb, "': expected ")
+        sb_append_str(@sb, cur_f.type_name)
+        sb_append_str(@sb, ", got ")
+        sb_append_str(@sb, def_t)
+        report_error("semantic", cur_f.line, cur_f.col, sb_to_string(@sb))
+        st.error_count += 1
+    }
+}
+
 // Executes multi-pass semantic analysis and type verification over an AST program.
 act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
     // Pass 1: Register all struct and kind declarations
@@ -19,7 +36,11 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
         if cur.kind == DECL_DATA {
             let st_sym = register_struct(st, cur.name, cur.line, cur.col)
             mut cur_f = cur.first_field
-            loop cur_f != null { struct_add_field(st_sym, cur_f.name, cur_f.type_name, cur_f.has_default, cur_f.default_value, cur_f.line, cur_f.col); cur_f = cur_f.next }
+            loop cur_f != null {
+                struct_add_field(st_sym, cur_f.name, cur_f.type_name, cur_f.has_default, cur_f.default_value, cur_f.line, cur_f.col)
+                check_struct_default_field(st, cur_f)
+                cur_f = cur_f.next
+            }
         } else if cur.kind == DECL_KIND {
             mut is_tu = false; mut v = cur.first_variant
             loop v != null { if v.payload_type != null or v.field_count > 0 { is_tu = true }; v = v.next }

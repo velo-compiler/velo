@@ -1210,6 +1210,11 @@ class CCodeGenerator:
         seen_structs = set()
         for decl in program.declarations:
             if isinstance(decl, DataDecl):
+                for f in decl.fields:
+                    if f.default_expr is not None:
+                        actual_t = self._infer_raw_velo_type(f.default_expr)
+                        if not self._types_are_compatible(f.type_name, actual_t):
+                            raise ValueError(f"Default value type mismatch for field '{f.name}': expected {f.type_name}, got {actual_t}")
                 if decl.name not in seen_structs:
                     self._emit_line(f"typedef struct {decl.name} {decl.name};")
                     self.struct_defs[decl.name] = {f.name: f.type_name for f in decl.fields}
@@ -2069,6 +2074,30 @@ class CCodeGenerator:
                 self._emit_line("}")
         else:
             self._emit_line("}")
+
+    def _types_are_compatible(self, expected: str, actual: str) -> bool:
+        if not expected or not actual:
+            return False
+        if expected == actual:
+            return True
+        if expected.startswith("act(") and actual.startswith("act("):
+            e_clean = expected.lstrip("@")
+            a_clean = actual.lstrip("@")
+            if e_clean == a_clean:
+                return True
+        if actual == "@void" and (expected.startswith("@") or expected == "string" or expected.startswith("act(")):
+            return True
+        if expected == "@void" and (actual.startswith("@") or actual == "string" or actual.startswith("act(")):
+            return True
+        INT_TYPES = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize"}
+        FLOAT_TYPES = {"f32", "f64"}
+        if expected in INT_TYPES and actual in INT_TYPES:
+            return True
+        if expected in FLOAT_TYPES and actual in FLOAT_TYPES:
+            return True
+        if (expected == "@u8" and actual == "string") or (expected == "string" and actual == "@u8"):
+            return True
+        return False
 
     def _infer_raw_velo_type(self, value: Optional[Expr]) -> str:
         if isinstance(value, IntLiteral): return value.type_name if value.type_name else "i32"

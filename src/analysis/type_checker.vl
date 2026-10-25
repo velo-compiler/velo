@@ -233,7 +233,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             }
             cur_init = cur_init.next
         }
-        mut sf = st_sym.first_field  // fields without defaults must be provided
+        mut sf = st_sym.first_field  // fields without defaults must be provided (defaults validated in check_program)
         loop sf != null {
             mut seen_init = expr.first_init; mut covered = false
             loop seen_init != null { if seen_init.name == sf.name { covered = true }; seen_init = seen_init.next }
