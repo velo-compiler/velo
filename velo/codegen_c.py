@@ -573,26 +573,24 @@ class CCodeGenerator:
         key_c = self._map_key_slot_c(kv[0])
         val_c = self._map_type(kv[1])
         kstring = "true" if kv[0] == "string" else "false"
-        recv = self._fresh_name("mpt_")
-        parts = [
-            f"VeloMap {recv} = {{0}}",
-            f"velo_map_init(&{recv}, (usize)sizeof({key_c}), {kstring}, (usize)sizeof({val_c}))",
-        ]
-        for k, v in zip(lit.keys, lit.vals):
-            k_slot = self._fresh_name("mk_")
-            v_slot = self._fresh_name("mv_")
-            k_code = self._emit_expression(k)
-            v_code = self._emit_expression(v)
+        if not lit.keys:
+            return f"velo_map_create_empty((usize)sizeof({key_c}), {kstring}, (usize)sizeof({val_c}))"
+        k_codes = [self._emit_expression(k) for k in lit.keys]
+        v_codes = []
+        for v in lit.vals:
+            vc = self._emit_expression(v)
             if kv[1] == "dyn":
                 v_raw = self._infer_raw_velo_type(v)
                 if v_raw != "dyn":
-                    v_code = self._emit_dyn_box(v_raw, v_code, v)
-            parts.append(
-                f"{{ {key_c} {k_slot} = ({k_code}); {val_c} {v_slot} = ({v_code}); "
-                f"velo_map_put(&{recv}, (const void*)(&{k_slot}), (const void*)(&{v_slot})); }}"
-            )
-        parts.append(f"{recv}")
-        return "({ " + "; ".join(parts) + "; })"
+                    vc = self._emit_dyn_box(v_raw, vc, v)
+            v_codes.append(vc)
+        k_arr = ", ".join(f"({k})" for k in k_codes)
+        v_arr = ", ".join(f"({v})" for v in v_codes)
+        count = len(lit.keys)
+        key_arr_ty = key_c if key_c.startswith("const ") else f"const {key_c}"
+        val_arr_ty = val_c if val_c.startswith("const ") else f"const {val_c}"
+        return (f"velo_map_create_lit((usize)sizeof({key_c}), {kstring}, (usize)sizeof({val_c}), {count}, "
+                f"({key_arr_ty}[]){{ {k_arr} }}, ({val_arr_ty}[]){{ {v_arr} }})")
 
     # ------------------------------------------------------------------
     # 5.2 slice 9 — ring[T] + bitset. Mirrored by Stage 2's
@@ -744,35 +742,28 @@ class CCodeGenerator:
                 raise ValueError("cannot pop from a ring held by a let (declare with mut)")
 
     def _emit_ring_literal(self, lit: "RingLiteral") -> str:
-        """5.2 slice 9: lowers `ring[...]` into a GCC statement expression —
-        a fresh VeloRing header plus one typed slot per element (left-to-right
-        evaluation order guaranteed)."""
+        """5.2 slice 9: lowers `ring[...]` — a fresh VeloRing header plus typed elements."""
         elem = self._ring_literal_elem(lit)
         elem_c = self._map_type(elem)
-        recv = self._fresh_name("rng_")
-        parts = [f"VeloRing {recv} = {{0}}"]
-        for a in lit.args:
-            slot = self._fresh_name("rel_")
-            val_code = self._emit_expression(a)
-            parts.append(
-                f"{{ {elem_c} {slot} = ({val_code}); "
-                f"velo_ring_put(&{recv}, (const void*)(&{slot}), (usize)sizeof({elem_c})); }}"
-            )
-        parts.append(f"{recv}")
-        return "({ " + "; ".join(parts) + "; })"
+        if not lit.args:
+            return f"velo_ring_create_empty((usize)sizeof({elem_c}))"
+        val_codes = [self._emit_expression(a) for a in lit.args]
+        arr = ", ".join(f"({v})" for v in val_codes)
+        count = len(lit.args)
+        elem_arr_ty = elem_c if elem_c.startswith("const ") else f"const {elem_c}"
+        return f"velo_ring_create_lit((usize)sizeof({elem_c}), {count}, ({elem_arr_ty}[]){{ {arr} }})"
 
     def _emit_bitset_literal(self, lit: "BitsetLiteral") -> str:
         """5.2 slice 9: lowers `bitset[...]` — a fresh VeloBitset header plus
-        one runtime set() per integer element (negative elements ride the
-        runtime OOB fatal)."""
-        recv = self._fresh_name("bst_")
-        parts = [f"VeloBitset {recv} = {{0}}"]
+        one runtime set() per integer element."""
+        if not lit.args:
+            return "(VeloBitset){0}"
         for a in lit.args:
             self._bitset_index_type(a, "set")
-            code = self._emit_expression(a)
-            parts.append(f"velo_bitset_set(&{recv}, (int64_t)({code}))")
-        parts.append(f"{recv}")
-        return "({ " + "; ".join(parts) + "; })"
+        val_codes = [f"(int64_t)({self._emit_expression(a)})" for a in lit.args]
+        arr = ", ".join(val_codes)
+        count = len(lit.args)
+        return f"velo_bitset_create_lit({count}, (const int64_t[]){{ {arr} }})"
 
     # ------------------------------------------------------------------
     # 5.2 slice 2 — shelf[dyn] tagged boxes. Mirrored by Stage 2's
@@ -831,40 +822,18 @@ class CCodeGenerator:
         # 5.2 slice 10: `as @shelf[T]` is RE-OPENED — the PTR box holds a real
         # pointer the user owns (trust doctrine; a heap shelf is the safe way
         # to own shared rows). The slice-2 dangle reject retires.
-        if base in DYN_INT_TYPES:
-            tag, family = "VELO_DYN_I64", "int"
-            cast_c = self._map_type(base)
-            member = "i64"
-        elif base in DYN_FLOAT_TYPES:
-            tag, family = "VELO_DYN_F64", "float"
-            cast_c = self._map_type(base)
-            member = "f64"
-        elif base == "bool":
-            tag, family = "VELO_DYN_BOOL", "bool"
-            cast_c = "bool"
-            member = "b"
-        elif base == "string":
-            tag, family = "VELO_DYN_STR", "string"
-            cast_c = "const char*"
-            member = "s"
+        if base in ("i64", "i32", "i16", "i8", "u64", "u32", "u16", "u8", "usize", "isize"):
+            return f"velo_dyn_unbox_{base}({code})"
+        elif base in ("f64", "f32", "bool", "string"):
+            return f"velo_dyn_unbox_{base}({code})"
         elif base.startswith("@"):
-            tag, family = "VELO_DYN_PTR", "pointer"
             cast_c = self._map_type(base)
-            member = "p"
+            return f"({cast_c})velo_dyn_unbox_ptr({code})"
         elif base.startswith("shelf[") or base == "shelf":
-            tag, family = "VELO_DYN_CHILD", "shelf"
-            cast_c = "VeloShelf"
-            member = "child"
+            return f"velo_dyn_unbox_shelf({code})"
         else:
             raise ValueError(
                 f"cannot unbox a shelf[dyn] value into {base} — targets: int family, f32/f64, bool, string, @T, shelf[T]")
-        temp = self._fresh_name("dyn_")
-        # 5.2 slice 8: int targets unbox through the I64/U64 ring gate
-        expect = f"velo_dyn_expect({temp}, {tag}, \"{family}\")"
-        if tag == "VELO_DYN_I64":
-            expect = f"velo_dyn_expect_int({temp})"
-        return (f"({{ VeloDyn {temp} = ({code}); {expect}; "
-                f"({cast_c})({temp}.as.{member}); }})")
 
     def _emit_dyn_binop(self, expr: BinaryExpr, l_t: Optional[str], r_t: Optional[str],
                         op: str, arith: bool) -> str:
@@ -894,14 +863,10 @@ class CCodeGenerator:
             left = self._emit_dyn_box(l_t, left, expr.left)
         if r_t != "dyn":
             right = self._emit_dyn_box(r_t, right, expr.right)
-        tl = self._fresh_name("dynl_")
-        tr = self._fresh_name("dynr_")
         if arith:
-            return (f"({{ VeloDyn {tl} = ({left}); VeloDyn {tr} = ({right}); "
-                    f"velo_dyn_arith('{op}', {tl}, {tr}); }})")
+            return f"velo_dyn_arith('{op}', ({left}), ({right}))"
         cmp_map = {"==": "== 0", "!=": "!= 0", "<": "< 0", "<=": "<= 0", ">": "> 0", ">=": ">= 0"}
-        return (f"({{ VeloDyn {tl} = ({left}); VeloDyn {tr} = ({right}); "
-                f"(velo_dyn_compare({tl}, {tr}) {cmp_map[op]}); }})")
+        return f"(velo_dyn_compare(({left}), ({right})) {cmp_map[op]})"
 
     def _shelf_root_binding(self, expr: Optional[Expr]) -> Optional[str]:
         """Walks a receiver chain down to its root binding name (or None for
@@ -1077,27 +1042,21 @@ class CCodeGenerator:
         if elem is None:
             raise ValueError("cannot infer element type of empty shelf literal — annotate it (e.g. let e: shelf[i32] = shelf[])")
         elem_c = self._map_type(elem)
-        recv = self._fresh_name("shl_")
-        parts = [f"VeloShelf {recv} = {{0}}"]
-        if lit.is_heap:
-            # 5.2 slice 10: the heap sentinel routes every growth/put through
-            # velo_heap_alloc — the shelf outlives its zone
-            parts.append(f"{recv}.src = VELO_SHELF_HEAP_SRC")
+        src_arg = "VELO_SHELF_HEAP_SRC" if lit.is_heap else "0"
+        if not lit.args:
+            return f"velo_shelf_create_empty((usize)sizeof({elem_c}), {src_arg})"
+        elems_code = []
         for a in lit.args:
-            slot = self._fresh_name("esl_")
             val_code = self._emit_expression(a)
             if elem == "dyn":
-                # 5.2 slice 2: box each element into the tag (raw dyn passes
-                # through whole); f64-widened elements ride the slot cast
                 raw = self._infer_raw_velo_type(a)
                 if raw != "dyn":
                     val_code = self._emit_dyn_box(raw, val_code, a)
-            parts.append(
-                f"{{ {elem_c} {slot} = ({val_code}); "
-                f"velo_shelf_put(&{recv}, (const void*)(&{slot}), (usize)sizeof({elem_c})); }}"
-            )
-        parts.append(f"{recv}")
-        return "({ " + "; ".join(parts) + "; })"
+            elems_code.append(val_code)
+        elems_arr = ", ".join(f"({c})" for c in elems_code)
+        count = len(lit.args)
+        elem_arr_ty = elem_c if elem_c.startswith("const ") else f"const {elem_c}"
+        return f"velo_shelf_create_lit((usize)sizeof({elem_c}), {count}, ({elem_arr_ty}[]){{ {elems_arr} }}, {src_arg})"
 
     def generate(self, program: Program) -> str:
         program = Monomorphizer().monomorphize(program)
@@ -1829,7 +1788,8 @@ class CCodeGenerator:
                     self._emit_line("{")
                     self.indent_level += 1
                     self._emit_line(f"VeloMap {src} = {cap_src};")
-                    self._emit_line(f"const usize {cnt} = ({{ size_t {run} = 0; for (size_t {scan} = 0; {scan} < {src}.cap; ++{scan}) if ({alive}) ++{run}; {run}; }});")
+                    self._emit_line(f"usize {cnt} = 0;")
+                    self._emit_line(f"for (size_t {scan} = 0; {scan} < {src}.cap; ++{scan}) if ({alive}) ++{cnt};")
                     self._emit_line(f"void* {dat} = velo_mem_alloc((usize){key_usz}, {cnt});")
                     self._emit_line(f"{{ size_t {fill} = 0; for (size_t {scan} = 0; {scan} < {src}.cap; ++{scan}) if ({alive}) {{ memcpy((char*){dat} + {fill} * (usize){key_usz}, (const char*){src}.keys + {scan} * (usize){key_usz}, (usize){key_usz}); ++{fill}; }} }}")
                     self._emit_line(f"for (usize {iname} = 0; {iname} < {cnt}; ++{iname}) {{")
@@ -2691,11 +2651,7 @@ class CCodeGenerator:
                 recv = f"({target_code})" if target_type.startswith("@") else f"&({target_code})"
                 key_c = self._map_key_slot_c(kv[0])
                 val_c = self._map_type(kv[1])
-                k_slot = self._fresh_name("mk_")
-                v_slot = self._fresh_name("mv_")
-                return (f"({{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot}; "
-                        f"if (!velo_map_copy_out({recv}, (const void*)(&{k_slot}), (void*)(&{v_slot}))) "
-                        f"velo_map_fatal_missing({recv}, (const void*)(&{k_slot}), \"{kv[0]}\"); {v_slot}; }})")
+                return f"(*(const {val_c}*)velo_map_get_ref({recv}, &(const {key_c}){{ {key_code} }}, \"{kv[0]}\"))"
             # 5.2 slice 9: rings/bitsets have no subscript — loud, before C
             sub_t = self._resolve_expr_type(expr.target)
             if self._ring_elem_type(sub_t) is not None:
@@ -2929,51 +2885,34 @@ class CCodeGenerator:
                     rec = f"({target_code})" if target_type.startswith("@") else f"&({target_code})"
                     elem_c = self._map_type(elem)
                     if expr.callee.member == "put":
-                        slot = self._fresh_name("esl_")
                         arg_code = self._emit_expression(expr.args[0])
                         if elem == "dyn":
-                            # 5.2 slice 2: box the appended value into the tag
                             raw = self._infer_raw_velo_type(expr.args[0])
                             if raw != "dyn":
                                 arg_code = self._emit_dyn_box(raw, arg_code, expr.args[0])
-                        return (f"({{ {elem_c} {slot} = ({arg_code}); "
-                                f"velo_shelf_put({rec}, (const void*)(&{slot}), (usize)sizeof({elem_c})); }})")
+                            return f"velo_shelf_put_dyn({rec}, {arg_code})"
+                        elem_arr_ty = elem_c if elem_c.startswith("const ") else f"const {elem_c}"
+                        return f"velo_shelf_put({rec}, &({elem_arr_ty}){{ {arg_code} }}, (usize)sizeof({elem_c}))"
                     if expr.callee.member == "insert":
-                        # 5.2 slice 3: grow-and-shift; i == len appends; the
-                        # element contract matches put (dyn values box)
-                        slot = self._fresh_name("esl_")
                         idx_code = self._emit_expression(expr.args[0])
                         arg_code = self._emit_expression(expr.args[1])
                         if elem == "dyn":
                             raw = self._infer_raw_velo_type(expr.args[1])
                             if raw != "dyn":
                                 arg_code = self._emit_dyn_box(raw, arg_code, expr.args[1])
-                        return (f"({{ {elem_c} {slot} = ({arg_code}); "
-                                f"velo_shelf_insert({rec}, (usize)({idx_code}), (const void*)(&{slot}), "
-                                f"(usize)sizeof({elem_c})); }})")
+                            return f"velo_shelf_insert_dyn({rec}, (usize)({idx_code}), {arg_code})"
+                        elem_arr_ty = elem_c if elem_c.startswith("const ") else f"const {elem_c}"
+                        return f"velo_shelf_insert({rec}, (usize)({idx_code}), &({elem_arr_ty}){{ {arg_code} }}, (usize)sizeof({elem_c}))"
                     if expr.callee.member == "remove_at":
-                        # returns the removed element BY VALUE (the runtime
-                        # stash-copies the victim before shifting the tail)
                         idx_code = self._emit_expression(expr.args[0])
                         return f"(*(({elem_c}*)velo_shelf_remove_at({rec}, (usize)({idx_code}))))"
                     if expr.callee.member == "sorted":
-                        # 5.2 slice 3: fresh copy, ascending natural order —
-                        # the wrapper token is the ELEMENT SPELLING (i32/f64/string)
-                        out = self._fresh_name("srt_")
-                        return f"({{ VeloShelf {out} = velo_shelf_sorted_{elem}({rec}); {out}; }})"
+                        return f"velo_shelf_sorted_{elem}({rec})"
                     if expr.callee.member == "reversed":
-                        # 5.2 slice 4: fresh copy, elements reversed — one
-                        # runtime function for every element family
-                        out = self._fresh_name("rev_")
-                        return f"({{ VeloShelf {out} = velo_shelf_reversed({rec}); {out}; }})"
+                        return f"velo_shelf_reversed({rec})"
                     if expr.callee.member == "join":
-                        # 5.2 slice 5: per-family stringify at runtime (the
-                        # interpolation printf ladder), separator verbatim;
-                        # fresh arena string returned by value
-                        out = self._fresh_name("jj_")
                         sep_code = self._emit_expression(expr.args[0])
-                        return (f"({{ const char* {out} = velo_shelf_join_{elem}({rec}, "
-                                f"(const char*)({sep_code})); {out}; }})")
+                        return f"velo_shelf_join_{elem}({rec}, (const char*)({sep_code}))"
                     return f"(*(({elem_c}*)velo_shelf_take({rec})))"
 
                 # 5.2 slice 6: map receiver member calls — put/get/has,
@@ -2985,47 +2924,29 @@ class CCodeGenerator:
                     rec = f"({target_code})" if target_type.startswith("@") else f"&({target_code})"
                     key_c = self._map_key_slot_c(kv[0])
                     val_c = self._map_type(kv[1])
-                    k_slot = self._fresh_name("mk_")
                     key_code = self._emit_expression(expr.args[0])
+                    key_arr_ty = key_c if key_c.startswith("const ") else f"const {key_c}"
                     if expr.callee.member == "put":
-                        v_slot = self._fresh_name("mv_")
                         val_code = self._emit_expression(expr.args[1])
                         if kv[1] == "dyn":
-                            # 5.2 slice 2: box the stored value into the tag
                             raw = self._infer_raw_velo_type(expr.args[1])
                             if raw != "dyn":
                                 val_code = self._emit_dyn_box(raw, val_code, expr.args[1])
-                        return (f"({{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot} = ({val_code}); "
-                                f"velo_map_put({rec}, (const void*)(&{k_slot}), (const void*)(&{v_slot})); }})")
+                            return f"velo_map_put_dyn({rec}, &({key_arr_ty}){{ {key_code} }}, {val_code})"
+                        val_arr_ty = val_c if val_c.startswith("const ") else f"const {val_c}"
+                        return f"velo_map_put({rec}, &({key_arr_ty}){{ {key_code} }}, &({val_arr_ty}){{ {val_code} }})"
                     if expr.callee.member == "get":
-                        v_slot = self._fresh_name("mv_")
-                        return (f"({{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot}; "
-                                f"if (!velo_map_copy_out({rec}, (const void*)(&{k_slot}), (void*)(&{v_slot}))) "
-                                f"velo_map_fatal_missing({rec}, (const void*)(&{k_slot}), \"{kv[0]}\"); {v_slot}; }})")
+                        return f"(*(const {val_c}*)velo_map_get_ref({rec}, &({key_arr_ty}){{ {key_code} }}, \"{kv[0]}\"))"
                     if expr.callee.member == "get_or":
-                        # 5.2 slice 7: absence without an option type. The key
-                        # binds first; the default is LAZY — evaluated only
-                        # inside the miss branch, never on the hit. A dyn V
-                        # boxes the default at the miss-assign.
-                        v_slot = self._fresh_name("mv_")
                         val_code = self._emit_expression(expr.args[1])
                         if kv[1] == "dyn":
                             raw = self._infer_raw_velo_type(expr.args[1])
                             if raw != "dyn":
                                 val_code = self._emit_dyn_box(raw, val_code, expr.args[1])
-                        return (f"({{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot}; "
-                                f"if (!velo_map_copy_out({rec}, (const void*)(&{k_slot}), (void*)(&{v_slot}))) "
-                                f"{{ {v_slot} = ({val_code}); }} {v_slot}; }})")
+                        return f"(velo_map_has({rec}, &({key_arr_ty}){{ {key_code} }}) ? *(const {val_c}*)velo_map_get_ptr({rec}, &({key_arr_ty}){{ {key_code} }}) : ({val_code}))"
                     if expr.callee.member == "take":
-                        # 5.2 slice 7: remove at most once — value copies out
-                        # FIRST, then the slot tombstones; a miss is the loud
-                        # fatal family byte-identical with get/subscript.
-                        v_slot = self._fresh_name("mv_")
-                        return (f"({{ {key_c} {k_slot} = ({key_code}); {val_c} {v_slot}; "
-                                f"if (!velo_map_take({rec}, (const void*)(&{k_slot}), (void*)(&{v_slot}))) "
-                                f"velo_map_fatal_missing({rec}, (const void*)(&{k_slot}), \"{kv[0]}\"); {v_slot}; }})")
-                    return (f"({{ {key_c} {k_slot} = ({key_code}); "
-                            f"velo_map_has({rec}, (const void*)(&{k_slot})); }})")
+                        return f"(*(const {val_c}*)velo_map_take_ref({rec}, &({key_arr_ty}){{ {key_code} }}, \"{kv[0]}\"))"
+                    return f"velo_map_has({rec}, &({key_arr_ty}){{ {key_code} }})"
 
                 # 5.2 slice 9: ring receiver member calls — put/pop/peek,
                 # compile-checked; `_ring_expect` mirrors the Stage 2 checker
@@ -3036,17 +2957,11 @@ class CCodeGenerator:
                     rec = f"({target_code})" if target_type.startswith("@") else f"&({target_code})"
                     elem_c = self._map_type(ring_elem)
                     if expr.callee.member == "put":
-                        slot = self._fresh_name("rpl_")
                         val_code = self._emit_expression(expr.args[0])
-                        return (f"({{ {elem_c} {slot} = ({val_code}); "
-                                f"velo_ring_put({rec}, (const void*)(&{slot}), (usize)sizeof({elem_c})); }})")
+                        return f"velo_ring_put({rec}, &(const {elem_c}){{ {val_code} }}, (usize)sizeof({elem_c}))"
                     if expr.callee.member == "pop":
-                        # value copies out FIRST, then the head advances (the
-                        # take discipline); empty is the loud fatal family
-                        slot = self._fresh_name("rpo_")
-                        return (f"({{ {elem_c} {slot}; velo_ring_pop({rec}, (void*)(&{slot}), (usize)sizeof({elem_c})); {slot}; }})")
-                    slot = self._fresh_name("rpk_")
-                    return (f"({{ {elem_c} {slot}; velo_ring_peek({rec}, (void*)(&{slot}), (usize)sizeof({elem_c})); {slot}; }})")
+                        return f"(*(const {elem_c}*)velo_ring_pop_ref({rec}, (usize)sizeof({elem_c})))"
+                    return f"(*(const {elem_c}*)velo_ring_peek_ref({rec}, (usize)sizeof({elem_c})))"
 
                 # 5.2 slice 9: bitset receiver member calls
                 if target_type.lstrip("@") == "bitset":

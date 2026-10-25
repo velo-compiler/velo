@@ -1,6 +1,10 @@
 #ifndef VELO_RUNTIME_H
 #define VELO_RUNTIME_H
 
+#ifndef _CRT_SECURE_NO_WARNINGS
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 // 5.5 High-Resolution Clock & Timing (sys.time): the POSIX clock surface
 // (clock_gettime / CLOCK_MONOTONIC / nanosleep) is only declared by <time.h>
 // under POSIX feature-test flags, and -std=c99 withholds the defaults — so
@@ -103,8 +107,10 @@ typedef struct VeloZoneArena {
 // `__declspec(thread)`.
 #if defined(_MSC_VER)
 #define VELO_TLS __declspec(thread)
+#define VELO_ALIGNED(n) __declspec(align(n))
 #else
 #define VELO_TLS __thread
+#define VELO_ALIGNED(n) __attribute__((aligned(n)))
 #endif
 
 static inline VeloZoneArena* velo_zone_create_default(void) {
@@ -1261,6 +1267,28 @@ static inline void velo_shelf_set(VeloShelf* s, size_t idx, const void* val, siz
     memcpy((char*)s->data + idx * s->esz, val, esz);
 }
 
+static inline VeloShelf velo_shelf_create_empty(size_t esz, VeloAllocator src) {
+    VeloShelf s = {0};
+    s.esz = esz;
+    s.src = src;
+    return s;
+}
+
+static inline VeloShelf velo_shelf_create_lit(size_t esz, size_t count, const void* elems, VeloAllocator src) {
+    VeloShelf s = {0};
+    s.esz = esz;
+    s.src = src;
+    if (count > 0 && elems != NULL) {
+        size_t cap = 4;
+        while (cap < count) cap *= 2;
+        s.data = velo_shelf_alloc(&s, esz, cap);
+        s.cap = cap;
+        s.len = count;
+        memcpy(s.data, elems, count * esz);
+    }
+    return s;
+}
+
 // ============================================================================
 // 5.2 (slice 3) — the vector-operations surface: sorted() / insert /
 // remove_at. The comparators are macro-generated per element TOKEN (the
@@ -1797,6 +1825,62 @@ static inline void velo_map_fatal_missing(const VeloMap* m, const void* key, con
     exit(1);
 }
 
+static inline VeloMap velo_map_create_empty(size_t ksz, bool kstring, size_t vsz) {
+    VeloMap m = {0};
+    velo_map_init(&m, ksz, kstring, vsz);
+    return m;
+}
+
+static inline VeloMap velo_map_create_lit(size_t ksz, bool kstring, size_t vsz, size_t count, const void* keys, const void* vals) {
+    VeloMap m = {0};
+    velo_map_init(&m, ksz, kstring, vsz);
+    for (size_t i = 0; i < count; i++) {
+        velo_map_put(&m, (const char*)keys + i * ksz, (const char*)vals + i * vsz);
+    }
+    return m;
+}
+
+static inline const void* velo_map_get_ptr(const VeloMap* m, const void* key) {
+    if (m->cap == 0) return NULL;
+    uint64_t h = velo_map_key_hash(m, key);
+    size_t at = (size_t)h & (m->cap - 1);
+    while (m->hashes[at] != 0) {
+        if (m->hashes[at] == h && velo_map_key_eq(m, key, (const char*)m->keys + at * m->ksz)) {
+            return (const char*)m->vals + at * m->vsz;
+        }
+        at = (at + 1) & (m->cap - 1);
+    }
+    return NULL;
+}
+
+static inline const void* velo_map_get_ref(const VeloMap* m, const void* key, const char* token) {
+    const void* ptr = velo_map_get_ptr(m, key);
+    if (!ptr) {
+        velo_map_fatal_missing(m, key, token);
+    }
+    return ptr;
+}
+
+static inline void* velo_map_take_ref(VeloMap* m, const void* key, const char* token) {
+    if (m->cap == 0) { velo_map_fatal_missing(m, key, token); }
+    uint64_t h = velo_map_key_hash(m, key);
+    size_t at = (size_t)h & (m->cap - 1);
+    while (m->hashes[at] != 0) {
+        if (m->hashes[at] == h && velo_map_key_eq(m, key, (const char*)m->keys + at * m->ksz)) {
+            void* out = velo_mem_alloc(1, m->vsz);
+            memcpy(out, (const char*)m->vals + at * m->vsz, m->vsz);
+            m->hashes[at] = VELO_MAP_TOMB;
+            m->len -= 1;
+            m->tomb += 1;
+            if (m->tomb > (m->cap >> 1)) velo_map_regen(m, m->cap);
+            return out;
+        }
+        at = (at + 1) & (m->cap - 1);
+    }
+    velo_map_fatal_missing(m, key, token);
+    return NULL;
+}
+
 // ============================================================================
 // 5.2 (slice 2) — shelf[dyn] tagged-box mixed shelves.
 //
@@ -1875,6 +1959,35 @@ static inline void velo_dyn_expect_int(VeloDyn v) {
                 velo_dyn_tag_name(v.tag));
         exit(1);
     }
+}
+
+static inline int64_t velo_dyn_unbox_i64(VeloDyn d) { velo_dyn_expect_int(d); return d.as.i64; }
+static inline int32_t velo_dyn_unbox_i32(VeloDyn d) { velo_dyn_expect_int(d); return (int32_t)d.as.i64; }
+static inline int16_t velo_dyn_unbox_i16(VeloDyn d) { velo_dyn_expect_int(d); return (int16_t)d.as.i64; }
+static inline int8_t  velo_dyn_unbox_i8(VeloDyn d)  { velo_dyn_expect_int(d); return (int8_t)d.as.i64; }
+static inline uint64_t velo_dyn_unbox_u64(VeloDyn d) { velo_dyn_expect_int(d); return d.as.u64; }
+static inline uint32_t velo_dyn_unbox_u32(VeloDyn d) { velo_dyn_expect_int(d); return (uint32_t)d.as.u64; }
+static inline uint16_t velo_dyn_unbox_u16(VeloDyn d) { velo_dyn_expect_int(d); return (uint16_t)d.as.u64; }
+static inline uint8_t  velo_dyn_unbox_u8(VeloDyn d)  { velo_dyn_expect_int(d); return (uint8_t)d.as.u64; }
+static inline size_t  velo_dyn_unbox_usize(VeloDyn d) { velo_dyn_expect_int(d); return (size_t)d.as.u64; }
+static inline int64_t velo_dyn_unbox_isize(VeloDyn d) { velo_dyn_expect_int(d); return d.as.i64; }
+static inline double  velo_dyn_unbox_f64(VeloDyn d) { velo_dyn_expect(d, VELO_DYN_F64, "float"); return d.as.f64; }
+static inline float   velo_dyn_unbox_f32(VeloDyn d) { velo_dyn_expect(d, VELO_DYN_F64, "float"); return (float)d.as.f64; }
+static inline bool    velo_dyn_unbox_bool(VeloDyn d) { velo_dyn_expect(d, VELO_DYN_BOOL, "bool"); return d.as.b; }
+static inline const char* velo_dyn_unbox_string(VeloDyn d) { velo_dyn_expect(d, VELO_DYN_STR, "string"); return d.as.s; }
+static inline void*   velo_dyn_unbox_ptr(VeloDyn d) { velo_dyn_expect(d, VELO_DYN_PTR, "pointer"); return d.as.p; }
+static inline VeloShelf velo_dyn_unbox_shelf(VeloDyn d) { velo_dyn_expect(d, VELO_DYN_CHILD, "shelf"); return d.as.child; }
+
+static inline void velo_shelf_put_dyn(VeloShelf* s, VeloDyn val) {
+    velo_shelf_put(s, &val, sizeof(VeloDyn));
+}
+
+static inline void velo_shelf_insert_dyn(VeloShelf* s, size_t idx, VeloDyn val) {
+    velo_shelf_insert(s, idx, &val, sizeof(VeloDyn));
+}
+
+static inline void velo_map_put_dyn(VeloMap* m, const void* key, VeloDyn val) {
+    velo_map_put(m, key, &val);
 }
 
 // Compare-lattice rank: 1 = int ring (I64/U64), 2 = float, 3 = string,
@@ -2039,6 +2152,45 @@ static inline void velo_ring_peek(const VeloRing* r, void* out, size_t esz) {
     memcpy(out, (const char*)r->data + r->head * esz, esz);
 }
 
+static inline VeloRing velo_ring_create_empty(size_t esz) {
+    VeloRing r = {0};
+    r.esz = esz;
+    return r;
+}
+
+static inline VeloRing velo_ring_create_lit(size_t esz, size_t count, const void* elems) {
+    VeloRing r = {0};
+    r.esz = esz;
+    for (size_t i = 0; i < count; i++) {
+        velo_ring_put(&r, (const char*)elems + i * esz, esz);
+    }
+    return r;
+}
+
+static inline void* velo_ring_pop_ref(VeloRing* r, size_t esz) {
+    if (r->esz == 0) r->esz = esz;
+    else if (r->esz != esz) {
+        fprintf(stderr, "Velo Fatal Error: ring element size mismatch: %llu vs %llu!\n",
+                (unsigned long long)esz, (unsigned long long)r->esz);
+        exit(1);
+    }
+    if (r->len == 0) velo_ring_fatal_empty("pop");
+    void* val_ptr = (char*)r->data + r->head * esz;
+    r->head = (r->head + 1) & (r->cap - 1);
+    r->len -= 1;
+    return val_ptr;
+}
+
+static inline const void* velo_ring_peek_ref(const VeloRing* r, size_t esz) {
+    if (r->len == 0) velo_ring_fatal_empty("peek");
+    if (r->esz != esz) {
+        fprintf(stderr, "Velo Fatal Error: ring element size mismatch: %llu vs %llu!\n",
+                (unsigned long long)esz, (unsigned long long)r->esz);
+        exit(1);
+    }
+    return (const char*)r->data + r->head * esz;
+}
+
 // ============================================================================
 // 5.2 (slice 9) — bitset: an arena-backed u64 word array, grow-on-set.
 //
@@ -2153,6 +2305,14 @@ static inline void velo_bitset_flip(VeloBitset* b) {
     for (size_t w = 0; w < b->words; ++w) b->bits[w] = ~b->bits[w];
 }
 
+static inline VeloBitset velo_bitset_create_lit(size_t count, const int64_t* items) {
+    VeloBitset b = {0};
+    for (size_t i = 0; i < count; i++) {
+        velo_bitset_set(&b, items[i]);
+    }
+    return b;
+}
+
 
 // --- stdout capture support (structured diagnostics for 'velo check --json') ---
 // Redirects fd 1 into a file, isolating diagnostics from the JSON stream on
@@ -2211,7 +2371,7 @@ typedef struct VeloTestContext {
     const char* failure_msg;
 } VeloTestContext;
 
-static __thread VeloTestContext* g_velo_current_test = NULL;
+static VELO_TLS VeloTestContext* g_velo_current_test = NULL;
 
 static inline void velo_mem_init(void) {
     velo_zone_active();

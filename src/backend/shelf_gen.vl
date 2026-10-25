@@ -101,67 +101,29 @@ act emit_dyn_box(sb: @StringBuilder, st: @SymbolTable, raw: string, arg: @ExprNo
 // checker-rejected @shelf) taking the pointer branch for totality.
 act emit_dyn_unbox(sb: @StringBuilder, st: @SymbolTable, operand: @ExprNode, target: string) {
     if target == null or target == "dyn" {
-        emit_c_expr(sb, st, operand)   // identity: the whole box passes through
+        emit_c_expr(sb, st, operand)
         return
     }
-    mut fam_c = "VELO_DYN_I64"
-    mut fam_word = "\"int\""
-    mut cast_c = map_type_to_c(target)
-    mut member_c = "i64"
-    mut int_ring = false
+    if is_shelf_form(target) {
+        sb_append_str(sb, "velo_dyn_unbox_shelf(")
+        emit_c_expr(sb, st, operand)
+        sb_append_char(sb, ')')
+        return
+    }
     if str.len(target) > 0 and target[0] == '@' {
-        fam_c = "VELO_DYN_PTR"
-        fam_word = "\"pointer\""
-        member_c = "p"
-    } else if is_dyn_float_family(target) {
-        fam_c = "VELO_DYN_F64"
-        fam_word = "\"float\""
-        member_c = "f64"
-    } else if is_dyn_int_family(target) {
-        // 5.2 slice 8: int targets unbox through the I64/U64 ring gate
-        int_ring = true
-    } else if target == "bool" {
-        fam_c = "VELO_DYN_BOOL"
-        fam_word = "\"bool\""
-        cast_c = "bool"
-        member_c = "b"
-    } else if target == "string" {
-        fam_c = "VELO_DYN_STR"
-        fam_word = "\"string\""
-        cast_c = "const char*"
-        member_c = "s"
-    } else if is_shelf_form(target) {
-        fam_c = "VELO_DYN_CHILD"
-        fam_word = "\"shelf\""
-        cast_c = "VeloShelf"
-        member_c = "child"
+        let cast_c = map_type_to_c(target)
+        sb_append_char(sb, '(')
+        sb_append_str(sb, cast_c)
+        sb_append_str(sb, ")velo_dyn_unbox_ptr(")
+        emit_c_expr(sb, st, operand)
+        sb_append_char(sb, ')')
+        return
     }
-    let dyn_tmp = shelf_fresh_name(st, "dyn_")
-    sb_append_str(sb, "({ VeloDyn ")
-    sb_append_str(sb, dyn_tmp)
-    sb_append_str(sb, " = (")
+    sb_append_str(sb, "velo_dyn_unbox_")
+    sb_append_str(sb, target)
+    sb_append_char(sb, '(')
     emit_c_expr(sb, st, operand)
-    sb_append_str(sb, "); ")
-    if int_ring {
-        sb_append_str(sb, "velo_dyn_expect_int(")
-        sb_append_str(sb, dyn_tmp)
-        sb_append_str(sb, ")")
-    } else {
-        sb_append_str(sb, "velo_dyn_expect(")
-        sb_append_str(sb, dyn_tmp)
-        sb_append_str(sb, ", ")
-        sb_append_str(sb, fam_c)
-        sb_append_str(sb, ", ")
-        sb_append_str(sb, fam_word)
-        sb_append_str(sb, ")")
-    }
-    sb_append_str(sb, "; (")
-    sb_append_str(sb, cast_c)
-    sb_append_str(sb, ")(")
-    sb_append_str(sb, dyn_tmp)
-    sb_append_str(sb, ".as.")
-    sb_append_str(sb, member_c)
-    sb_append_str(sb, "); })")
+    sb_append_char(sb, ')')
 }
 
 // 5.2 slice 8 — the raw-dyn binop emit (emit_dyn_binop) and its op mappers
@@ -173,31 +135,44 @@ act emit_dyn_unbox(sb: @StringBuilder, st: @SymbolTable, operand: @ExprNode, tar
 act emit_shelf_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     mut elem = expr.type_name
     if elem == null or str.len(elem) == 0 { 
-        // inline literals bypassed by the checker's assign path self-infer
         elem = infer_expr_type(st, expr.first_arg)
     }
     let elem_c = map_type_to_c(elem)
-    let shl = shelf_fresh_name(st, "shl_")
-    sb_append_str(sb, "({ VeloShelf ")
-    sb_append_str(sb, shl)
-    sb_append_str(sb, " = { 0 };")
+    mut src_c = "0"
     if expr.kind == EXPR_HEAP_SHELF_LIT {
-        // 5.2 slice 10: the heap sentinel routes every growth/put through
-        // velo_heap_alloc — the shelf outlives its zone
-        sb_append_str(sb, " ")
-        sb_append_str(sb, shl)
-        sb_append_str(sb, ".src = VELO_SHELF_HEAP_SRC;")
+        src_c = "VELO_SHELF_HEAP_SRC"
     }
+    if expr.first_arg == null {
+        sb_append_str(sb, "velo_shelf_create_empty((usize)sizeof(")
+        sb_append_str(sb, elem_c)
+        sb_append_str(sb, "), ")
+        sb_append_str(sb, src_c)
+        sb_append_char(sb, ')')
+        return
+    }
+    mut count = 0
     mut cur = expr.first_arg
     loop cur != null {
-        let esl = shelf_fresh_name(st, "esl_")
-        sb_append_str(sb, " { ")
-        sb_append_str(sb, elem_c)
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, esl)
-        sb_append_str(sb, " = (")
+        count += 1
+        cur = cur.next
+    }
+    sb_append_str(sb, "velo_shelf_create_lit((usize)sizeof(")
+    sb_append_str(sb, elem_c)
+    sb_append_str(sb, "), ")
+    sb_append_int(sb, count)
+    sb_append_str(sb, ", (")
+    if not str.starts_with(elem_c, "const ") {
+        sb_append_str(sb, "const ")
+    }
+    sb_append_str(sb, elem_c)
+    sb_append_str(sb, "[]){ ")
+    cur = expr.first_arg
+    mut first = true
+    loop cur != null {
+        if not first { sb_append_str(sb, ", ") }
+        first = false
+        sb_append_char(sb, '(')
         if elem == "dyn" {
-            // 5.2 slice 2: box each element into the tag (raw dyn passes through)
             let raw = infer_expr_type(st, cur)
             if raw == "dyn" {
                 emit_c_expr(sb, st, cur)
@@ -207,18 +182,12 @@ act emit_shelf_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         } else {
             emit_c_expr(sb, st, cur)
         }
-        sb_append_str(sb, "); velo_shelf_put(&(")
-        sb_append_str(sb, shl)
-        sb_append_str(sb, "), (const void*)(&(")
-        sb_append_str(sb, esl)
-        sb_append_str(sb, ")), (usize)sizeof(")
-        sb_append_str(sb, elem_c)
-        sb_append_str(sb, ")); };")
+        sb_append_char(sb, ')')
         cur = cur.next
     }
-    sb_append_str(sb, " ")
-    sb_append_str(sb, shl)
-    sb_append_str(sb, "; })")
+    sb_append_str(sb, " }, ")
+    sb_append_str(sb, src_c)
+    sb_append_char(sb, ')')
 }
 
 // A shelf read lowers onto velo_shelf_get; value receivers take &, @-receivers

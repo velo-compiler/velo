@@ -739,11 +739,38 @@ The chapter ships in full: slice 1 parse-row snippet blocks on both stages (addi
 * **Residual Limitation**: Other reserved keywords (`use`, `act`, `loop`, `zone`, `defer`, `return`, `break`, `continue`, `on`, `extern`, `aka`) are not yet contextually re-accepted as variable names and will still produce parser errors if used as identifiers. These rarely conflict in practice.
 * **Verification**: Triple-bootstrap chain rebuilt (Gen1 → Gen2 → Gen3, `bin/velo.exe` updated); SHA-256 fixed point preserved (Gen2 ≡ Gen3 bit-for-bit). Full suite: **117/117 passing** (was 115).
 
-### 6.9 MSVC Portability of the Emitted C (🟠 P1 Major — carved out of 5.2 slice 11)
-* **Former Defect (Statement-Expression Dependence)**: the emitted C99 relies on GCC statement expressions (`({ ... })`) at expression positions (map reads/writes, shelf read slots) and `__thread` for the arena — GCC-only. The `__thread` precedent already matches trunk doctrine (§6 statement-expression class predates slice 3); but a whole-emitter rewrite to statement-expression-free lowering (hoisted slot declarations + explicit sequencing on every multi-step expression) is a whole-emitter rewrite, far beyond a collection-library slice.
-* **Slice-11 Carve-Out**: MOVED OUT of the 5.2 scope at pin time — no collection feature depends on it, the trunk is [ex]GCC-only (`velo.py` shells out to `gcc`, the self-hosted chain is built by gcc, `scripts/` and the sweep assume msys64 ucrt64 in PATH), and §6.2 (build modes) will re-open the toolchain question anyway.
-* **What the port needs (recorded for the eventual pass)**: (1) replace every `({ ... })` expression with hoisted statements at the enclosing statement level (the emitters know their statement containers — the rewrite is mechanical but touches ~every emit site); (2) `__thread` → a thread-local storage abstraction (C23 `thread_local` or a shim header per target); (3) MSVC's `strcpy`-family deprecation warnings / arbitrary `/MT` CRT linking; (4) the `velo.exe` chain's determinism mandate re-verified per host compiler (SHA-256 fixed point is gcc-bound TODAY).
-* **Verification**: none required by the carve-out — the gap stays open until the emitter rewrite lands.
+### 6.9 MSVC Portability of the Emitted C [COMPLETED] ✅
+* **Former Defect (GCC-Specific Extensions in Emitted C)**: The emitted C99 code from both Stage 1 Python (`velo/`) and Stage 2 self-hosted (`src/`) relied on GCC statement expressions (`({ ... })`) across collection literals (`shelf[...]`, `map[...]`, `ring[...]`, `bitset[...]`), dynamic unboxing, arithmetic/compare ladder expressions, map subscript indexing/member calls (`put`, `get`, `get_or`, `take`, `has`), and shelf/ring mutating operations. Additionally, `velo_runtime.h` used raw GCC `__thread` and `__attribute__((aligned(n)))` without MSVC equivalents, causing Microsoft Visual Studio C (`cl.exe` / MSVC) to reject the emitted C with syntax errors (`C2059: syntax error: '{'`, `C2054: expected '(' to follow '__thread'`).
+* **Fix Applied**:
+  - **Thread-Local Storage & Alignment Shims (`velo/runtime/velo_runtime.h`)**:
+    * Added `#define _CRT_SECURE_NO_WARNINGS` before system headers to eliminate MSVC CRT security deprecation warnings.
+    * Defined `VELO_TLS` (`__declspec(thread)` under `_MSC_VER`, `__thread` under GCC/Clang) and `VELO_ALIGNED(n)` (`__declspec(align(n))` under `_MSC_VER`, `__attribute__((aligned(n)))` under GCC/Clang). Fixed hardcoded `__thread` in `g_velo_current_test` to use `VELO_TLS`.
+  - **Runtime Direct Helper & Reference Accessors**:
+    * Added `velo_shelf_create_empty(esz, src)` and `velo_shelf_create_lit(esz, count, elements, src)` accepting C99 compound literal arrays (`(const T[]){ ... }`).
+    * Added `velo_map_create_empty(ksz, kstr, vsz)` and `velo_map_create_lit(ksz, kstr, vsz, count, keys, vals)` taking compound literal arrays for parallel key/val initialization.
+    * Added `velo_map_get_ptr`, `velo_map_get_ref`, and `velo_map_take_ref` returning pointers/references to elements to allow dereference expressions (`*(const T*)velo_map_get_ref(...)`) without statement expressions.
+    * Added dedicated by-value helpers `velo_shelf_put_dyn(s, val)`, `velo_shelf_insert_dyn(s, idx, val)`, and `velo_map_put_dyn(m, key, val)` avoiding nested brace ambiguity on `VeloDyn` struct literals.
+    * Added `velo_dyn_unbox_<type>` inline extraction helpers for all primitive types (`i64`, `i32`, `i16`, `i8`, `u64`, `u32`, `u16`, `u8`, `usize`, `isize`, `f64`, `f32`, `bool`, `string`, `ptr`, `shelf`).
+    * Added `velo_ring_create_empty`, `velo_ring_create_lit`, `velo_ring_pop_ref`, `velo_ring_peek_ref`, and `velo_bitset_create_lit`.
+  - **Stage 1 (`velo/codegen_c.py`) & Stage 2 (`src/backend/`) Lowering Parity**:
+    * Replaced all collection literals (`shelf`, `map`, `ring`, `bitset`) with compound literal array constructors.
+    * Replaced `emit_dyn_unbox` with direct `velo_dyn_unbox_<type>` calls.
+    * Lowered dyn arithmetic and comparisons directly into `velo_dyn_arith` / `(velo_dyn_compare(...) <op>)`.
+    * Lowered map indexing `m[k]` into `(*(const T*)velo_map_get_ref(m, &(key_ty){ k }, "k_type"))`.
+    * Lowered shelf/map/ring member calls (`put`, `insert`, `sorted`, `reversed`, `join`, `get`, `get_or`, `take`, `has`, `pop`, `peek`) into pure expressions with compound literal arguments.
+    * Lowered `for k in map` / `loop k of map` element counting from statement expressions into standard sequential statements (`usize cnt = 0; for (...) if (...) ++cnt;`).
+    * Zero statement expressions (`({ ... })`) remain anywhere in the emitted C across both compilers.
+* **Residual Limitations**:
+  * Default driver invocation (`velo build`, `velo run`) on Windows continues to default to `gcc` (MinGW-w64 / ucrt64). Explicit MSVC driver backend flag (`--cc cl`) or MSVC auto-detection can be integrated into the CLI driver in future toolchain work (§6.2 build modes).
+  * Direct invocation with MSVC (`cl /TC /I velo\runtime`) requires passing `/wd4090` or `/wd4996` if compiling with `/W4` or without standard warnings suppressed.
+* **Verification**:
+  * Verified 0 statement expressions in `velo/codegen_c.py` and across all 57 `src/**/*.vl` files.
+  * Verified MSVC compilation on `cl.exe /TC /W3 /wd4090 /wd4996 /I velo\runtime` with `examples/31_shelf_basics.vl` and `examples/15_native_tests.vl` — both compiled cleanly with exit code 0 and executed with 100% correct output.
+  * Full pytest suite passed: **274/274 passed**.
+  * Native test runner executed on `examples/15_native_tests.vl` via standalone `bin/velo.exe`: **105/105 passed**.
+  * Rebuilt triple-bootstrap chain (Gen1 → Gen2 → Gen3 → `bin/velo.exe`).
+  * Bit-for-bit determinism verified: SHA-256 of `emit-c src/main.vl` is identical between Gen2 and Gen3 (`1F208F72BCF31C9D7578588A14F628176ECF7F072FBD658D6C361E53F988EE81`).
+  * Code standards maintained: all compiler files ≤ 399 lines (`python scripts/count_lines.py`).
 
 ---
 

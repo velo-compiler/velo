@@ -46,43 +46,39 @@ act dyn_arith_c_char(op: i32) -> string {
 // helper. The ladder and family rules live ONLY in velo_runtime.h, so the
 // stages cannot diverge on them (Stage 1: _emit_dyn_binop — identical C).
 act emit_dyn_binop(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode, ltype: string, rtype: string) {
-    let tl = shelf_fresh_name(st, "dynl_")
-    let tr = shelf_fresh_name(st, "dynr_")
-    sb_append_str(sb, "({ VeloDyn ")
-    sb_append_str(sb, tl)
-    sb_append_str(sb, " = (")
-    if ltype == "dyn" {
-        emit_c_expr(sb, st, expr.left)
-    } else {
-        emit_dyn_box(sb, st, ltype, expr.left)
-    }
-    sb_append_str(sb, "); VeloDyn ")
-    sb_append_str(sb, tr)
-    sb_append_str(sb, " = (")
-    if rtype == "dyn" {
-        emit_c_expr(sb, st, expr.right)
-    } else {
-        emit_dyn_box(sb, st, rtype, expr.right)
-    }
-    sb_append_str(sb, "); ")
     if expr.op == TOK_PLUS or expr.op == TOK_MINUS or expr.op == TOK_STAR or expr.op == TOK_SLASH or expr.op == TOK_PERCENT {
         sb_append_str(sb, "velo_dyn_arith('")
         sb_append_str(sb, dyn_arith_c_char(expr.op))
-        sb_append_str(sb, "', ")
-        sb_append_str(sb, tl)
-        sb_append_str(sb, ", ")
-        sb_append_str(sb, tr)
-        sb_append_str(sb, ")")
+        sb_append_str(sb, "', (")
+        if ltype == "dyn" {
+            emit_c_expr(sb, st, expr.left)
+        } else {
+            emit_dyn_box(sb, st, ltype, expr.left)
+        }
+        sb_append_str(sb, "), (")
+        if rtype == "dyn" {
+            emit_c_expr(sb, st, expr.right)
+        } else {
+            emit_dyn_box(sb, st, rtype, expr.right)
+        }
+        sb_append_str(sb, "))")
     } else {
-        sb_append_str(sb, "(velo_dyn_compare(")
-        sb_append_str(sb, tl)
-        sb_append_str(sb, ", ")
-        sb_append_str(sb, tr)
-        sb_append_str(sb, ") ")
+        sb_append_str(sb, "(velo_dyn_compare((")
+        if ltype == "dyn" {
+            emit_c_expr(sb, st, expr.left)
+        } else {
+            emit_dyn_box(sb, st, ltype, expr.left)
+        }
+        sb_append_str(sb, "), (")
+        if rtype == "dyn" {
+            emit_c_expr(sb, st, expr.right)
+        } else {
+            emit_dyn_box(sb, st, rtype, expr.right)
+        }
+        sb_append_str(sb, ")) ")
         sb_append_str(sb, dyn_compare_c_op(expr.op))
         sb_append_str(sb, ")")
     }
-    sb_append_str(sb, "; })")
 }
 
 act emit_shelf_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
@@ -90,30 +86,32 @@ act emit_shelf_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode
     let recv_t = infer_expr_type(st, expr.callee.target)
     let elem = shelf_raw_elem(recv_t)
     if member == "put" {
-        let esl = shelf_fresh_name(st, "esl_")
-        sb_append_str(sb, "({ ")
-        sb_append_str(sb, map_type_to_c(elem))
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, esl)
-        sb_append_str(sb, " = (")
         if elem == "dyn" {
-            // 5.2 slice 2: box the appended value into the tag
+            sb_append_str(sb, "velo_shelf_put_dyn(")
+            emit_shelf_recv(sb, st, expr.callee.target)
+            sb_append_str(sb, ", (")
             let raw = infer_expr_type(st, expr.first_arg)
             if raw == "dyn" {
                 emit_c_expr(sb, st, expr.first_arg)
             } else {
                 emit_dyn_box(sb, st, raw, expr.first_arg)
             }
-        } else {
-            emit_c_expr(sb, st, expr.first_arg)
+            sb_append_str(sb, "))")
+            return
         }
-        sb_append_str(sb, "); velo_shelf_put(")
+        let elem_c = map_type_to_c(elem)
+        sb_append_str(sb, "velo_shelf_put(")
         emit_shelf_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", (const void*)(&(")
-        sb_append_str(sb, esl)
-        sb_append_str(sb, ")), (usize)sizeof(")
-        sb_append_str(sb, map_type_to_c(elem))
-        sb_append_str(sb, ")); })")
+        sb_append_str(sb, ", &(")
+        if not str.starts_with(elem_c, "const ") {
+            sb_append_str(sb, "const ")
+        }
+        sb_append_str(sb, elem_c)
+        sb_append_str(sb, "){ ")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, " }, (usize)sizeof(")
+        sb_append_str(sb, elem_c)
+        sb_append_str(sb, "))")
         return
     }
     if member == "take" {
@@ -125,34 +123,37 @@ act emit_shelf_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode
         return
     }
     if member == "insert" {
-        // 5.2 slice 3: grow-and-shift; i == len appends; the element
-        // contract matches put (dyn values box)
-        let esl = shelf_fresh_name(st, "esl_")
         let elem_arg = expr.first_arg.next
-        sb_append_str(sb, "({ ")
-        sb_append_str(sb, map_type_to_c(elem))
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, esl)
-        sb_append_str(sb, " = (")
         if elem == "dyn" {
+            sb_append_str(sb, "velo_shelf_insert_dyn(")
+            emit_shelf_recv(sb, st, expr.callee.target)
+            sb_append_str(sb, ", (usize)(")
+            emit_c_expr(sb, st, expr.first_arg)
+            sb_append_str(sb, "), (")
             let raw = infer_expr_type(st, elem_arg)
             if raw == "dyn" {
                 emit_c_expr(sb, st, elem_arg)
             } else {
                 emit_dyn_box(sb, st, raw, elem_arg)
             }
-        } else {
-            emit_c_expr(sb, st, elem_arg)
+            sb_append_str(sb, "))")
+            return
         }
-        sb_append_str(sb, "); velo_shelf_insert(")
+        let elem_c = map_type_to_c(elem)
+        sb_append_str(sb, "velo_shelf_insert(")
         emit_shelf_recv(sb, st, expr.callee.target)
         sb_append_str(sb, ", (usize)(")
         emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, "), (const void*)(&(")
-        sb_append_str(sb, esl)
-        sb_append_str(sb, ")), (usize)sizeof(")
-        sb_append_str(sb, map_type_to_c(elem))
-        sb_append_str(sb, ")); })")
+        sb_append_str(sb, "), &(")
+        if not str.starts_with(elem_c, "const ") {
+            sb_append_str(sb, "const ")
+        }
+        sb_append_str(sb, elem_c)
+        sb_append_str(sb, "){ ")
+        emit_c_expr(sb, st, elem_arg)
+        sb_append_str(sb, " }, (usize)sizeof(")
+        sb_append_str(sb, elem_c)
+        sb_append_str(sb, "))")
         return
     }
     if member == "remove_at" {
@@ -168,48 +169,27 @@ act emit_shelf_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode
         return
     }
     if member == "sorted" {
-        // 5.2 slice 3: fresh copy, ascending natural order — the wrapper
-        // token is the ELEMENT SPELLING (velo_shelf_sorted_i32)
-        let out = shelf_fresh_name(st, "srt_")
-        sb_append_str(sb, "({ VeloShelf ")
-        sb_append_str(sb, out)
-        sb_append_str(sb, " = velo_shelf_sorted_")
+        sb_append_str(sb, "velo_shelf_sorted_")
         sb_append_str(sb, elem)
         sb_append_str(sb, "(")
         emit_shelf_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, "); ")
-        sb_append_str(sb, out)
-        sb_append_str(sb, "; })")
+        sb_append_str(sb, ")")
         return
     }
     if member == "reversed" {
-        // 5.2 slice 4: fresh copy, elements reversed — one runtime function
-        // for every element family (byte-swap on the copied row)
-        let out = shelf_fresh_name(st, "rev_")
-        sb_append_str(sb, "({ VeloShelf ")
-        sb_append_str(sb, out)
-        sb_append_str(sb, " = velo_shelf_reversed(")
+        sb_append_str(sb, "velo_shelf_reversed(")
         emit_shelf_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, "); ")
-        sb_append_str(sb, out)
-        sb_append_str(sb, "; })")
+        sb_append_str(sb, ")")
         return
     }
     if member == "join" {
-        // 5.2 slice 5: per-family stringify at runtime (the interpolation
-        // ladder), separator verbatim; fresh arena string returned by value
-        let out = shelf_fresh_name(st, "jj_")
-        sb_append_str(sb, "({ const char* ")
-        sb_append_str(sb, out)
-        sb_append_str(sb, " = velo_shelf_join_")
+        sb_append_str(sb, "velo_shelf_join_")
         sb_append_str(sb, elem)
         sb_append_str(sb, "(")
         emit_shelf_recv(sb, st, expr.callee.target)
         sb_append_str(sb, ", (const char*)(")
         emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, ")); ")
-        sb_append_str(sb, out)
-        sb_append_str(sb, "; })")
+        sb_append_str(sb, "))")
         return
     }
     // checker handles unknown members; emit the property for totality

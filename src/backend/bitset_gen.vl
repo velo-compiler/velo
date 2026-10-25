@@ -40,22 +40,30 @@ act emit_bitset_recv(sb: @StringBuilder, st: @SymbolTable, recv: @ExprNode) {
 // runtime set() per integer element (negative elements ride the runtime OOB
 // fatal). Elements bind in order, each evaluated exactly once.
 act emit_bitset_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
-    let bst = shelf_fresh_name(st, "bst_")
-    sb_append_str(sb, "({ VeloBitset ")
-    sb_append_str(sb, bst)
-    sb_append_str(sb, " = { 0 };")
+    if expr.first_arg == null {
+        sb_append_str(sb, "(VeloBitset){ 0 }")
+        return
+    }
+    mut count = 0
     mut cur = expr.first_arg
     loop cur != null {
-        sb_append_str(sb, " velo_bitset_set(&(")
-        sb_append_str(sb, bst)
-        sb_append_str(sb, "), (int64_t)(")
-        emit_c_expr(sb, st, cur)
-        sb_append_str(sb, "));")
+        count += 1
         cur = cur.next
     }
-    sb_append_str(sb, " ")
-    sb_append_str(sb, bst)
-    sb_append_str(sb, "; })")
+    sb_append_str(sb, "velo_bitset_create_lit(")
+    sb_append_int(sb, count)
+    sb_append_str(sb, ", (const int64_t[]){ ")
+    cur = expr.first_arg
+    mut first = true
+    loop cur != null {
+        if not first { sb_append_str(sb, ", ") }
+        first = false
+        sb_append_str(sb, "(int64_t)(")
+        emit_c_expr(sb, st, cur)
+        sb_append_char(sb, ')')
+        cur = cur.next
+    }
+    sb_append_str(sb, " })")
 }
 
 // Member calls: the three index mutators are void statements; has/count/

@@ -42,35 +42,46 @@ act emit_ring_recv(sb: @StringBuilder, st: @SymbolTable, recv: @ExprNode) {
 act emit_ring_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     mut elem = expr.type_name
     if elem == null or str.len(elem) == 0 {
-        // inline literals bypassed by the checker's assign path self-infer
-        elem = infer_expr_type(st, expr.first_arg)
+        if expr.first_arg != null {
+            elem = infer_expr_type(st, expr.first_arg)
+        } else {
+            elem = "i64"
+        }
     }
     let elem_c = map_type_to_c(elem)
-    let rng = shelf_fresh_name(st, "rng_")
-    sb_append_str(sb, "({ VeloRing ")
-    sb_append_str(sb, rng)
-    sb_append_str(sb, " = { 0 };")
+    if expr.first_arg == null {
+        sb_append_str(sb, "velo_ring_create_empty((usize)sizeof(")
+        sb_append_str(sb, elem_c)
+        sb_append_str(sb, "))")
+        return
+    }
+    mut count = 0
     mut cur = expr.first_arg
     loop cur != null {
-        let rel = shelf_fresh_name(st, "rel_")
-        sb_append_str(sb, " { ")
-        sb_append_str(sb, elem_c)
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, rel)
-        sb_append_str(sb, " = (")
-        emit_c_expr(sb, st, cur)
-        sb_append_str(sb, "); velo_ring_put(&(")
-        sb_append_str(sb, rng)
-        sb_append_str(sb, "), (const void*)(&(")
-        sb_append_str(sb, rel)
-        sb_append_str(sb, ")), (usize)sizeof(")
-        sb_append_str(sb, elem_c)
-        sb_append_str(sb, ")); };")
+        count += 1
         cur = cur.next
     }
-    sb_append_str(sb, " ")
-    sb_append_str(sb, rng)
-    sb_append_str(sb, "; })")
+    sb_append_str(sb, "velo_ring_create_lit((usize)sizeof(")
+    sb_append_str(sb, elem_c)
+    sb_append_str(sb, "), ")
+    sb_append_int(sb, count)
+    sb_append_str(sb, ", (")
+    if not str.starts_with(elem_c, "const ") {
+        sb_append_str(sb, "const ")
+    }
+    sb_append_str(sb, elem_c)
+    sb_append_str(sb, "[]){ ")
+    cur = expr.first_arg
+    mut first = true
+    loop cur != null {
+        if not first { sb_append_str(sb, ", ") }
+        first = false
+        sb_append_char(sb, '(')
+        emit_c_expr(sb, st, cur)
+        sb_append_char(sb, ')')
+        cur = cur.next
+    }
+    sb_append_str(sb, " })")
 }
 
 // Member calls: put void / pop value (copies out FIRST, then the head
@@ -80,39 +91,41 @@ act emit_ring_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     let recv_t = infer_expr_type(st, expr.callee.target)
     let elem = ring_elem_type(recv_t)
     let elem_c = map_type_to_c(elem)
-    let slot = shelf_fresh_name(st, "rp_")
     if member == "put" {
-        sb_append_str(sb, "({ ")
-        sb_append_str(sb, elem_c)
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, slot)
-        sb_append_str(sb, " = (")
-        emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, "); velo_ring_put(")
+        sb_append_str(sb, "velo_ring_put(")
         emit_ring_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", (const void*)(&(")
-        sb_append_str(sb, slot)
-        sb_append_str(sb, ")), (usize)sizeof(")
+        sb_append_str(sb, ", &(")
+        if not str.starts_with(elem_c, "const ") {
+            sb_append_str(sb, "const ")
+        }
         sb_append_str(sb, elem_c)
-        sb_append_str(sb, ")); })")
+        sb_append_str(sb, "){ ")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, " }, (usize)sizeof(")
+        sb_append_str(sb, elem_c)
+        sb_append_str(sb, "))")
         return
     }
-    // pop / peek: declare, copy out (fatal on empty), yield the value
-    sb_append_str(sb, "({ ")
-    sb_append_str(sb, elem_c)
-    sb_append_char(sb, ' ')
-    sb_append_str(sb, slot)
-    sb_append_str(sb, "; velo_ring_")
-    sb_append_str(sb, member)
-    sb_append_str(sb, "(")
-    emit_ring_recv(sb, st, expr.callee.target)
-    sb_append_str(sb, ", (void*)(&(")
-    sb_append_str(sb, slot)
-    sb_append_str(sb, ")), (usize)sizeof(")
-    sb_append_str(sb, elem_c)
-    sb_append_str(sb, ")); ")
-    sb_append_str(sb, slot)
-    sb_append_str(sb, "; })")
+    if member == "pop" {
+        sb_append_str(sb, "(*((")
+        sb_append_str(sb, elem_c)
+        sb_append_str(sb, "*)velo_ring_pop_ref(")
+        emit_ring_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (usize)sizeof(")
+        sb_append_str(sb, elem_c)
+        sb_append_str(sb, "))))")
+        return
+    }
+    if member == "peek" {
+        sb_append_str(sb, "(*((const ")
+        sb_append_str(sb, elem_c)
+        sb_append_str(sb, "*)velo_ring_peek_ref(")
+        emit_ring_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", (usize)sizeof(")
+        sb_append_str(sb, elem_c)
+        sb_append_str(sb, "))))")
+        return
+    }
 }
 
 // 5.2 slice 9: `loop v of r { }` — FIFO snapshot: at entry the live

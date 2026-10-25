@@ -81,48 +81,70 @@ act emit_map_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     let v_t = map_value_type(kv)
     let key_c = map_key_slot_c(k_t)
     let val_c = map_type_to_c(v_t)
-    let recv = shelf_fresh_name(st, "mpt_")
-    sb_append_str(sb, "({ VeloMap ")
-    sb_append_str(sb, recv)
-    sb_append_str(sb, " = { 0 }; velo_map_init(&")
-    sb_append_str(sb, recv)
-    sb_append_str(sb, ", (usize)sizeof(")
-    sb_append_str(sb, key_c)
-    sb_append_str(sb, "), ")
-    sb_append_str(sb, map_kstring_c(k_t))
-    sb_append_str(sb, ", (usize)sizeof(")
-    sb_append_str(sb, val_c)
-    sb_append_str(sb, "))")
+    let kstring = map_kstring_c(k_t)
+    if expr.first_arg == null {
+        sb_append_str(sb, "velo_map_create_empty((usize)sizeof(")
+        sb_append_str(sb, key_c)
+        sb_append_str(sb, "), ")
+        sb_append_str(sb, kstring)
+        sb_append_str(sb, ", (usize)sizeof(")
+        sb_append_str(sb, val_c)
+        sb_append_str(sb, "))")
+        return
+    }
+    mut count = 0
     mut cur = expr.first_arg
     loop cur != null {
         let v_node = cur.next
-        if v_node == null { break }  // an odd chain means the parser already fired
-        let mk = shelf_fresh_name(st, "mk_")
-        let mv = shelf_fresh_name(st, "mv_")
-        sb_append_str(sb, "; { ")
-        sb_append_str(sb, key_c)
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, mk)
-        sb_append_str(sb, " = (")
-        emit_c_expr(sb, st, cur)
-        sb_append_str(sb, "); ")
-        sb_append_str(sb, val_c)
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, mv)
-        sb_append_str(sb, " = (")
-        emit_map_value_c(sb, st, v_node, v_t)
-        sb_append_str(sb, "); velo_map_put(&")
-        sb_append_str(sb, recv)
-        sb_append_str(sb, ", (const void*)(&(")
-        sb_append_str(sb, mk)
-        sb_append_str(sb, ")), (const void*)(&(")
-        sb_append_str(sb, mv)
-        sb_append_str(sb, "))); }")
+        if v_node == null { break }
+        count += 1
         cur = v_node.next
     }
-    sb_append_str(sb, "; ")
-    sb_append_str(sb, recv)
-    sb_append_str(sb, "; })")
+    sb_append_str(sb, "velo_map_create_lit((usize)sizeof(")
+    sb_append_str(sb, key_c)
+    sb_append_str(sb, "), ")
+    sb_append_str(sb, kstring)
+    sb_append_str(sb, ", (usize)sizeof(")
+    sb_append_str(sb, val_c)
+    sb_append_str(sb, "), ")
+    sb_append_int(sb, count)
+    sb_append_str(sb, ", (")
+    if not str.starts_with(key_c, "const ") {
+        sb_append_str(sb, "const ")
+    }
+    sb_append_str(sb, key_c)
+    sb_append_str(sb, "[]){ ")
+    cur = expr.first_arg
+    mut first = true
+    loop cur != null {
+        let v_node = cur.next
+        if v_node == null { break }
+        if not first { sb_append_str(sb, ", ") }
+        first = false
+        sb_append_char(sb, '(')
+        emit_c_expr(sb, st, cur)
+        sb_append_char(sb, ')')
+        cur = v_node.next
+    }
+    sb_append_str(sb, " }, (")
+    if not str.starts_with(val_c, "const ") {
+        sb_append_str(sb, "const ")
+    }
+    sb_append_str(sb, val_c)
+    sb_append_str(sb, "[]){ ")
+    cur = expr.first_arg
+    first = true
+    loop cur != null {
+        let v_node = cur.next
+        if v_node == null { break }
+        if not first { sb_append_str(sb, ", ") }
+        first = false
+        sb_append_char(sb, '(')
+        emit_map_value_c(sb, st, v_node, v_t)
+        sb_append_char(sb, ')')
+        cur = v_node.next
+    }
+    sb_append_str(sb, " })")
 }
 
 // Index read: binds the key into its slot (eval order key → value), copies
@@ -134,33 +156,20 @@ act emit_map_index(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     let v_t = map_value_type(recv_t)
     let key_c = map_key_slot_c(k_t)
     let val_c = map_type_to_c(v_t)
-    let mk = shelf_fresh_name(st, "mk_")
-    let mv = shelf_fresh_name(st, "mv_")
-    sb_append_str(sb, "({ ")
-    sb_append_str(sb, key_c)
-    sb_append_char(sb, ' ')
-    sb_append_str(sb, mk)
-    sb_append_str(sb, " = (")
-    emit_c_expr(sb, st, expr.index)
-    sb_append_str(sb, "); ")
+    sb_append_str(sb, "(*(const ")
     sb_append_str(sb, val_c)
-    sb_append_char(sb, ' ')
-    sb_append_str(sb, mv)
-    sb_append_str(sb, "; if (!velo_map_copy_out(")
+    sb_append_str(sb, "*)velo_map_get_ref(")
     emit_map_recv(sb, st, expr.target)
-    sb_append_str(sb, ", (const void*)(&(")
-    sb_append_str(sb, mk)
-    sb_append_str(sb, ")), (void*)(&(")
-    sb_append_str(sb, mv)
-    sb_append_str(sb, ")))) velo_map_fatal_missing(")
-    emit_map_recv(sb, st, expr.target)
-    sb_append_str(sb, ", (const void*)(&(")
-    sb_append_str(sb, mk)
-    sb_append_str(sb, ")), \"")
+    sb_append_str(sb, ", &(")
+    if not str.starts_with(key_c, "const ") {
+        sb_append_str(sb, "const ")
+    }
+    sb_append_str(sb, key_c)
+    sb_append_str(sb, "){ ")
+    emit_c_expr(sb, st, expr.index)
+    sb_append_str(sb, " }, \"")
     sb_append_str(sb, k_t)
-    sb_append_str(sb, "\"); ")
-    sb_append_str(sb, mv)
-    sb_append_str(sb, "; })")
+    sb_append_str(sb, "\"))")
 }
 
 // Member calls: put (upsert) / get (fatal-on-miss copy-out) / has (bool).
@@ -172,102 +181,113 @@ act emit_map_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) 
     let v_t = map_value_type(recv_t)
     let key_c = map_key_slot_c(k_t)
     let val_c = map_type_to_c(v_t)
-    let mk = shelf_fresh_name(st, "mk_")
     if member == "put" {
-        let mv = shelf_fresh_name(st, "mv_")
-        sb_append_str(sb, "({ ")
-        sb_append_str(sb, key_c)
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, mk)
-        sb_append_str(sb, " = (")
-        emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, "); ")
-        sb_append_str(sb, val_c)
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, mv)
-        sb_append_str(sb, " = (")
-        emit_map_value_c(sb, st, expr.first_arg.next, v_t)
-        sb_append_str(sb, "); velo_map_put(")
+        let v_node = expr.first_arg.next
+        if v_t == "dyn" {
+            sb_append_str(sb, "velo_map_put_dyn(")
+            emit_map_recv(sb, st, expr.callee.target)
+            sb_append_str(sb, ", &(")
+            if not str.starts_with(key_c, "const ") {
+                sb_append_str(sb, "const ")
+            }
+            sb_append_str(sb, key_c)
+            sb_append_str(sb, "){ ")
+            emit_c_expr(sb, st, expr.first_arg)
+            sb_append_str(sb, " }, (")
+            emit_map_value_c(sb, st, v_node, v_t)
+            sb_append_str(sb, "))")
+            return
+        }
+        sb_append_str(sb, "velo_map_put(")
         emit_map_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", (const void*)(&(")
-        sb_append_str(sb, mk)
-        sb_append_str(sb, ")), (const void*)(&(")
-        sb_append_str(sb, mv)
-        sb_append_str(sb, "))); })")
+        sb_append_str(sb, ", &(")
+        if not str.starts_with(key_c, "const ") {
+            sb_append_str(sb, "const ")
+        }
+        sb_append_str(sb, key_c)
+        sb_append_str(sb, "){ ")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, " }, &(")
+        if not str.starts_with(val_c, "const ") {
+            sb_append_str(sb, "const ")
+        }
+        sb_append_str(sb, val_c)
+        sb_append_str(sb, "){ ")
+        emit_map_value_c(sb, st, v_node, v_t)
+        sb_append_str(sb, " })")
         return
     }
     if member == "get" {
-        let mv = shelf_fresh_name(st, "mv_")
-        sb_append_str(sb, "({ ")
-        sb_append_str(sb, key_c)
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, mk)
-        sb_append_str(sb, " = (")
-        emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, "); ")
+        sb_append_str(sb, "(*(const ")
         sb_append_str(sb, val_c)
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, mv)
-        sb_append_str(sb, "; if (!velo_map_copy_out(")
+        sb_append_str(sb, "*)velo_map_get_ref(")
         emit_map_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", (const void*)(&(")
-        sb_append_str(sb, mk)
-        sb_append_str(sb, ")), (void*)(&(")
-        sb_append_str(sb, mv)
-        sb_append_str(sb, ")))) velo_map_fatal_missing(")
-        emit_map_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", (const void*)(&(")
-        sb_append_str(sb, mk)
-        sb_append_str(sb, ")), \"")
+        sb_append_str(sb, ", &(")
+        if not str.starts_with(key_c, "const ") {
+            sb_append_str(sb, "const ")
+        }
+        sb_append_str(sb, key_c)
+        sb_append_str(sb, "){ ")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, " }, \"")
         sb_append_str(sb, k_t)
-        sb_append_str(sb, "\"); ")
-        sb_append_str(sb, mv)
-        sb_append_str(sb, "; })")
+        sb_append_str(sb, "\"))")
         return
     }
     if member == "get_or" {
-        // 5.2 slice 7: absence without an option type — key binds first,
-        // the default is LAZY (evaluated only inside the miss branch, a
-        // dyn V boxes it there); a hit leaves len untouched.
-        let mv = shelf_fresh_name(st, "mv_")
-        sb_append_str(sb, "({ "); sb_append_str(sb, key_c); sb_append_char(sb, ' '); sb_append_str(sb, mk); sb_append_str(sb, " = (")
-        emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, "); "); sb_append_str(sb, val_c); sb_append_char(sb, ' '); sb_append_str(sb, mv); sb_append_str(sb, "; if (!velo_map_copy_out(")
+        sb_append_str(sb, "(velo_map_has(")
         emit_map_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", (const void*)(&("); sb_append_str(sb, mk); sb_append_str(sb, ")), (void*)(&("); sb_append_str(sb, mv)
-        sb_append_str(sb, ")))) { "); sb_append_str(sb, mv); sb_append_str(sb, " = (")
+        sb_append_str(sb, ", &(")
+        if not str.starts_with(key_c, "const ") {
+            sb_append_str(sb, "const ")
+        }
+        sb_append_str(sb, key_c)
+        sb_append_str(sb, "){ ")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, " }) ? *(const ")
+        sb_append_str(sb, val_c)
+        sb_append_str(sb, "*)velo_map_get_ptr(")
+        emit_map_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", &(")
+        if not str.starts_with(key_c, "const ") {
+            sb_append_str(sb, "const ")
+        }
+        sb_append_str(sb, key_c)
+        sb_append_str(sb, "){ ")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, " }) : (")
         emit_map_value_c(sb, st, expr.first_arg.next, v_t)
-        sb_append_str(sb, "); } "); sb_append_str(sb, mv); sb_append_str(sb, "; })")
+        sb_append_str(sb, "))")
         return
     }
     if member == "take" {
-        // 5.2 slice 7: remove at most once — the value copies out FIRST,
-        // the slot tombstones; a miss is the loud fatal family.
-        let mv = shelf_fresh_name(st, "mv_")
-        sb_append_str(sb, "({ "); sb_append_str(sb, key_c); sb_append_char(sb, ' '); sb_append_str(sb, mk); sb_append_str(sb, " = (")
+        sb_append_str(sb, "(*(const ")
+        sb_append_str(sb, val_c)
+        sb_append_str(sb, "*)velo_map_take_ref(")
+        emit_map_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", &(")
+        if not str.starts_with(key_c, "const ") {
+            sb_append_str(sb, "const ")
+        }
+        sb_append_str(sb, key_c)
+        sb_append_str(sb, "){ ")
         emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, "); "); sb_append_str(sb, val_c); sb_append_char(sb, ' '); sb_append_str(sb, mv); sb_append_str(sb, "; if (!velo_map_take(")
-        emit_map_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", (const void*)(&("); sb_append_str(sb, mk); sb_append_str(sb, ")), (void*)(&("); sb_append_str(sb, mv)
-        sb_append_str(sb, ")))) velo_map_fatal_missing(")
-        emit_map_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", (const void*)(&("); sb_append_str(sb, mk); sb_append_str(sb, ")), \"")
+        sb_append_str(sb, " }, \"")
         sb_append_str(sb, k_t)
-        sb_append_str(sb, "\"); "); sb_append_str(sb, mv); sb_append_str(sb, "; })")
+        sb_append_str(sb, "\"))")
         return
     }
     if member == "has" {
-        sb_append_str(sb, "({ ")
-        sb_append_str(sb, key_c)
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, mk)
-        sb_append_str(sb, " = (")
-        emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, "); velo_map_has(")
+        sb_append_str(sb, "velo_map_has(")
         emit_map_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", (const void*)(&(")
-        sb_append_str(sb, mk)
-        sb_append_str(sb, "))); })")
+        sb_append_str(sb, ", &(")
+        if not str.starts_with(key_c, "const ") {
+            sb_append_str(sb, "const ")
+        }
+        sb_append_str(sb, key_c)
+        sb_append_str(sb, "){ ")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, " })")
         return
     }
     // unreachable — the checker rejects unknown members before emission
@@ -291,7 +311,6 @@ act emit_map_loop(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent:
     let cnt = shelf_fresh_name(st, "lcnt_")
     let idx = shelf_fresh_name(st, "lidx_")
     let dat = shelf_fresh_name(st, "ldat_")
-    let run = shelf_fresh_name(st, "lrun_")
     let fill = shelf_fresh_name(st, "lfill_")
     let scan = shelf_fresh_name(st, "lscan_")
     mut vname = "it"
@@ -301,12 +320,12 @@ act emit_map_loop(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent:
     sb_append_indent(sb, indent)
     sb_append_str(sb, "{ VeloMap "); sb_append_str(sb, src); sb_append_str(sb, " = (")
     if str.len(coll_t) > 0 and coll_t[0] == '@' { sb_append_str(sb, "*("); emit_c_expr(sb, st, stmt.expr); sb_append_str(sb, ")") } else { emit_c_expr(sb, st, stmt.expr) }  // @-pointers unpack to the stable view header
-    sb_append_str(sb, "); const usize "); sb_append_str(sb, cnt)
-    sb_append_str(sb, " = ({ size_t "); sb_append_str(sb, run); sb_append_str(sb, " = 0; for (size_t ")
+    sb_append_str(sb, "); usize "); sb_append_str(sb, cnt)
+    sb_append_str(sb, " = 0; for (size_t ")
     sb_append_str(sb, scan); sb_append_str(sb, " = 0; "); sb_append_str(sb, scan); sb_append_str(sb, " < "); sb_append_str(sb, src)
     sb_append_str(sb, ".cap; ++"); sb_append_str(sb, scan); sb_append_str(sb, ") if (")
     emit_map_alive(sb, src, scan)
-    sb_append_str(sb, " != VELO_MAP_TOMB) ++"); sb_append_str(sb, run); sb_append_str(sb, "; "); sb_append_str(sb, run); sb_append_str(sb, "; }); void* ")
+    sb_append_str(sb, " != VELO_MAP_TOMB) ++"); sb_append_str(sb, cnt); sb_append_str(sb, "; void* ")
     sb_append_str(sb, dat)
     sb_append_str(sb, " = velo_mem_alloc((usize)sizeof("); sb_append_str(sb, key_c); sb_append_str(sb, "), "); sb_append_str(sb, cnt)
     sb_append_str(sb, "); { size_t "); sb_append_str(sb, fill); sb_append_str(sb, " = 0; for (size_t ")
