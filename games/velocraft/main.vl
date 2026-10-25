@@ -80,17 +80,31 @@ act draw_hud(screen_w: f32, screen_h: f32, p: @Player, hit: @RayHit, cursor_lock
     DrawText("XYZ: In-World Position", 18, 38, 14, make_color(200, 220, 240, 255))
 
     let active_name = get_slot_name(p.active_slot)
-    DrawText(active_name, 18, 55, 14, make_color(100, 220, 120, 255))
+    DrawText(active_name, 18, 55, 14, make_color(100, 220, 120, 255))    // 4. Top-Right Controls Hint
+    DrawRectangle((screen_w - 490.0) as i32, 10, 480, 28, make_color(15, 20, 25, 180))
+    DrawText("[W][A][S][D] Move | [SPACE] Jump | [LMB] Mine | [RMB] Place | [ESC] Pause | [F11] Fullscreen", ((screen_w - 482.0) as i32), 16, 12, make_color(220, 220, 220, 255))
 
-    // 4. Top-Right Controls Hint
-    DrawRectangle((screen_w - 380.0) as i32, 10, 370, 28, make_color(15, 20, 25, 180))
-    DrawText("[W][A][S][D] Move | [SPACE] Jump | [LMB] Mine | [RMB] Place", (screen_w - 370.0) as i32, 16, 13, make_color(220, 220, 220, 255))
-
-    // 5. Mouse lock status notification if unlocked
+    // 5. Mouse lock status & pause modal when released
     if not cursor_locked {
-        DrawRectangle(cx - 150, 100, 300, 36, make_color(30, 15, 15, 230))
-        DrawRectangleLines(cx - 150, 100, 300, 36, make_color(240, 70, 70, 255))
-        DrawText("CURSOR UNLOCKED - PRESS [TAB] TO RESUME", cx - 140, 110, 14, make_color(255, 255, 255, 255))
+        DrawRectangle(0, 0, screen_w as i32, screen_h as i32, make_color(10, 15, 20, 160))
+
+        let box_w: i32 = 440
+        let box_h: i32 = 220
+        let box_x = cx - 220
+        let box_y = cy - 110
+
+        DrawRectangle(box_x, box_y, box_w, box_h, make_color(25, 30, 40, 245))
+        DrawRectangleLines(box_x, box_y, box_w, box_h, make_color(255, 215, 50, 255))
+
+        DrawText("GAME PAUSED", cx - 95, box_y + 24, 26, make_color(255, 220, 50, 255))
+        DrawText("Mouse Cursor is Released", cx - 94, box_y + 64, 16, make_color(200, 220, 240, 255))
+
+        DrawRectangle(cx - 165, box_y + 102, 330, 36, make_color(40, 55, 75, 255))
+        DrawRectangleLines(cx - 165, box_y + 102, 330, 36, make_color(100, 180, 255, 255))
+        DrawText("CLICK ANYWHERE OR [ESC] TO RESUME", cx - 148, box_y + 112, 14, make_color(255, 255, 255, 255))
+
+        DrawText("Press [F11] or [F] to Toggle Fullscreen", cx - 132, box_y + 155, 15, make_color(160, 220, 160, 255))
+        DrawText("Press [Close Window] to Exit", cx - 100, box_y + 182, 14, make_color(180, 180, 180, 200))
     }
 
     // 6. Bottom-Left Real-Time FPS Badge
@@ -99,11 +113,9 @@ act draw_hud(screen_w: f32, screen_h: f32, p: @Player, hit: @RayHit, cursor_lock
 }
 
 act main() -> i32 {
-    let screen_w: f32 = 960.0
-    let screen_h: f32 = 640.0
-
-    InitWindow(screen_w as i32, screen_h as i32, "VeloCraft - 3D Voxel Sandbox in Velo")
+    InitWindow(960, 640, "VeloCraft - 3D Voxel Sandbox in Velo")
     SetTargetFPS(60)
+    SetExitKey(0) // Free ESC key for mouse release & pause instead of hard quitting
 
     InitAudioDevice()
     let snd_break = LoadSound("games/velocraft/assets/break.wav")
@@ -120,18 +132,33 @@ act main() -> i32 {
 
     loop not WindowShouldClose() {
         let dt = GetFrameTime()
+        let screen_w = GetScreenWidth() as f32
+        let screen_h = GetScreenHeight() as f32
 
-        // 1. Toggle Mouse Cursor with [TAB] or [ESC]
-        if IsKeyPressed(KEY_TAB) {
+        // 1. Fullscreen Toggle with [F11] or [F] (when paused)
+        if IsKeyPressed(KEY_F11) or (not cursor_locked and IsKeyPressed(KEY_F)) {
+            ToggleFullscreen()
+        }
+
+        // 2. Toggle Mouse Lock / Release with [ESC] or [TAB]
+        if IsKeyPressed(KEY_ESCAPE) or IsKeyPressed(KEY_TAB) {
             cursor_locked = not cursor_locked
             if cursor_locked { DisableCursor() }
             else { EnableCursor() }
         }
 
-        // 2. Update Player
-        let played_step = update_player(@player, @world, dt, cursor_locked)
-        if played_step {
-            PlaySound(snd_step)
+        // Click anywhere to re-capture mouse when released
+        if not cursor_locked and IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
+            cursor_locked = true
+            DisableCursor()
+        }
+
+        // 3. Update Player (only when active)
+        if cursor_locked {
+            let played_step = update_player(@player, @world, dt, cursor_locked)
+            if played_step {
+                PlaySound(snd_step)
+            }
         }
 
         // Check hotbar switch sound
@@ -140,12 +167,12 @@ act main() -> i32 {
             prev_slot = player.active_slot
         }
 
-        // 3. Compute Camera and Raycast Target Block
+        // 4. Compute Camera and Raycast Target Block
         let cam = get_player_camera(@player)
         let look_dir = vec3_dir_from_angles(player.yaw, player.pitch)
         let ray_hit = cast_voxel_ray(@world, cam.position, look_dir)
 
-        // 4. Block Interaction (Mining & Building)
+        // 5. Block Interaction (Mining & Building)
         if cursor_locked and ray_hit.has_hit {
             // Left Mouse Button: Break targeted block
             if IsMouseButtonPressed(MOUSE_BUTTON_LEFT) {
@@ -173,14 +200,16 @@ act main() -> i32 {
             }
         }
 
-        // 5. Render Scene
+        // 6. Render Scene
         BeginDrawing()
         ClearBackground(make_color(135, 195, 245, 255)) // Morning Sky Blue
 
         // 3D Pass
         BeginMode3D(cam)
         draw_world(@world)
-        draw_target_highlight(@ray_hit)
+        if cursor_locked {
+            draw_target_highlight(@ray_hit)
+        }
         EndMode3D()
 
         // 2D HUD Pass

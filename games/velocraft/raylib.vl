@@ -48,6 +48,11 @@ extern act InitWindow(width: i32, height: i32, title: string) -> void
 extern act CloseWindow() -> void
 extern act WindowShouldClose() -> bool
 extern act SetTargetFPS(fps: i32) -> void
+extern act ToggleFullscreen() -> void
+extern act IsWindowFullscreen() -> bool
+extern act GetScreenWidth() -> i32
+extern act GetScreenHeight() -> i32
+extern act SetExitKey(key: i32) -> void
 
 // Cursor Management
 extern act DisableCursor() -> void
@@ -111,3 +116,5 @@ let KEY_THREE: i32 = 51
 let KEY_FOUR: i32 = 52
 let KEY_FIVE: i32 = 53
 let KEY_SIX: i32 = 54
+let KEY_F: i32 = 70
+let KEY_F11: i32 = 300
