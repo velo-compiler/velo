@@ -22,7 +22,7 @@ act parse_anon_act(p: @Parser) -> @ExprNode {
     if not parser_check(p, TOK_RPAREN) {
         mut more_params = true
         loop more_params {
-            let pname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected parameter name")
+            let pname_tok = parser_consume_ident(p, "Expected parameter name")
             let pname = copy_slice_to_string(p.source, pname_tok.start, pname_tok.length)
             parser_consume(p, TOK_COLON, "Expected ':' after parameter name")
             let ptype = parse_type_annotation(p)
@@ -89,7 +89,7 @@ act parse_primary(p: @Parser) -> @ExprNode {
         mut first_init: @FieldInit = null
         mut last_init: @FieldInit = null
         loop not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
-            let fname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected field name in struct literal")
+            let fname_tok = parser_consume_ident(p, "Expected field name in struct literal")
             let fname = copy_slice_to_string(p.source, fname_tok.start, fname_tok.length)
             parser_consume(p, TOK_COLON, "Expected ':' after field name")
             let fval = parse_expression(p)
@@ -287,7 +287,7 @@ act parse_postfix(p: @Parser) -> @ExprNode {
             if parser_match(p, TOK_AT) {
                 let at_tok = parser_peek(p, 0)
                 expr = make_deref_expr(expr, at_tok.line, at_tok.col)
-            } else if parser_check(p, TOK_IDENTIFIER) or parser_check(p, TOK_AND) {  // 5.2 slice 9: `.and(` — the AND keyword is contextual after a dot
+            } else if is_contextual_ident_tok(parser_peek(p, 0).kind) or parser_check(p, TOK_AND) {
                 let mem_tok = parser_advance(p)
                 let mname = copy_slice_to_string(p.source, mem_tok.start, mem_tok.length)
                 expr = make_member_expr(expr, mname, mem_tok.line, mem_tok.col)

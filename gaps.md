@@ -117,17 +117,22 @@ flowchart TD
 
 ### Phase 2: Language Ergonomics & Tooling Polish
 
-#### Task 2.1: Contextual Re-acceptance of Remaining Reserved Keywords
-* **Problem**: Currently, only `data`, `kind`, and `op` are treated contextually as identifiers (§6.8). Using keywords like `use`, `act`, `loop`, `zone`, `defer`, `return`, `break`, `continue`, `on`, `extern`, `aka` as struct field names (e.g. `event.action`, `node.return`, `token.kind`) or function arguments is rejected at parse time.
-* **Specification**:
-  - Modify `velo/parser.py` and `src/frontend/parser.vl` so that when parsing struct field definitions, field accesses (`x.<field>`), and variable declarations, identifiers can match any keyword that does not introduce syntactic ambiguity in that position.
-* **Target Files**:
-  - `velo/parser.py`
-  - `src/frontend/parser.vl`
-  - `src/frontend/parser_decl.vl`
+#### Task 2.1: Contextual Re-acceptance of Remaining Reserved Keywords [COMPLETED] ✅
+* **Former Defect**:
+  - Previously, only `data`, `kind`, `op`, and `test` were accepted contextually in identifier positions. Using reserved keywords such as `use`, `act`, `loop`, `zone`, `defer`, `return`, `break`, `continue`, `on`, `extern`, and `aka` as struct field names (e.g. `node.return`, `event.action`, `task.loop`), struct literal field initializers (`Node { return: 1, loop: 2 }`), member accesses (`n.return`, `n.loop`), function parameters, or variable declarations failed at parse time with syntax errors.
+* **Fix Applied**:
+  - In Stage 1 (`velo/parser.py`), defined `CONTEXTUAL_IDENT_TOKENS` and added `_consume_ident()`. Updated struct field definitions, enum variant fields, struct literal initializers (`_is_struct_literal` & `_parse_struct_literal`), member dot-access (`_parse_postfix`), function/extern/anonymous parameters, and `let`/`mut`/typed variable declarations to accept contextual identifiers.
+  - In Stage 2 (`src/frontend/parser.vl`, `src/frontend/parser_decl.vl`, `src/frontend/parser_stmt.vl`, `src/frontend/parser_expr.vl`), added `is_contextual_ident_tok()` and `parser_consume_ident()`. Updated `is_struct_literal`, struct field parsing, function parameters, `let`/`mut` statements, struct literal instantiations, and member accesses after `.` to accept contextual keyword identifiers.
+  - Maintained expression/statement disambiguation: statement-level keywords starting statements or following line continuations preserve strict syntax error semantics for incomplete expressions (e.g., in LSP live diagnostics).
+* **Residual Limitation**:
+  - Reserved keywords with statement-level control flow syntax (`return`, `loop`, `defer`, etc.) remain reserved at the start of statements. Contextual re-acceptance applies cleanly where syntactic position is unambiguous (struct fields, member access, parameter lists, literal keys, and explicit declarations).
 * **Verification**:
-  - New test `tests/test_contextual_keywords.py` exercising structs with field names `return`, `loop`, `use`, `defer`.
-  - Both compilers pass with identical C emission.
+  - Added dedicated test suite `tests/test_contextual_keywords.py` verifying struct field definitions with `return`, `loop`, `use`, `defer`, `act`, `zone`, `break`, `continue`, `on`, `extern`, `aka`, `data`, `kind`, `op`, `test`, member accesses, struct literal initialization, and execution parity between Stage 1 and Stage 2.
+  - 3-stage bootstrap chain completed (`Gen1 -> Gen2 -> Gen3 -> bin/velo.exe`) with bit-for-bit SHA-256 determinism verified (`DE75DE1C3ED69ECC0F712F6DABD2BD96CB25FD0FDF179193777920D2C31FF77F`).
+  - Native test suite `bin/velo.exe test examples/15_native_tests.vl` passed all 105 tests.
+  - All source files $\le 399$ lines (`scripts/count_lines.py`).
+  - No UTF-8 BOM in any `.vl` file.
+  - Full test suite passing (296 tests passed).
 
 #### Task 2.2: Struct Field Dot-Autocomplete in LSP (`velo lsp`)
 * **Problem**: The LSP server (`velo/analysis.py` / `_server/velo_analysis.py`) provides autocompletion on module prefixes (`sys.`, `io.`), but does not provide completion items when typing `.` after a custom struct variable (`player.<caret>`).

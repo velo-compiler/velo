@@ -155,7 +155,7 @@ act parse_data_decl(p: @Parser) -> @StmtNode {
     mut count: usize = 0
 
     loop not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
-        let fname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected field name")
+        let fname_tok = parser_consume_ident(p, "Expected field name")
         let fname = copy_slice_to_string(p.source, fname_tok.start, fname_tok.length)
         parser_consume(p, TOK_COLON, "Expected ':' after field name")
         let ftype = parse_type_annotation(p)
@@ -221,7 +221,7 @@ act parse_kind_decl(p: @Parser) -> @StmtNode {
         } else if parser_match(p, TOK_LPAREN) {
             if not parser_check(p, TOK_RPAREN) {
                 loop {
-                    let fname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected field name")
+                    let fname_tok = parser_consume_ident(p, "Expected field name")
                     let fname = copy_slice_to_string(p.source, fname_tok.start, fname_tok.length)
                     parser_consume(p, TOK_COLON, "Expected ':' after field name")
                     let ftype = parse_type_annotation(p)
@@ -286,7 +286,7 @@ act parse_function_decl(p: @Parser) -> @StmtNode {
     if not parser_check(p, TOK_RPAREN) {
         mut more_params = true
         loop more_params {
-            let pname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected parameter name")
+            let pname_tok = parser_consume_ident(p, "Expected parameter name")
             let pname = copy_slice_to_string(p.source, pname_tok.start, pname_tok.length)
             parser_consume(p, TOK_COLON, "Expected ':' after parameter name")
             let ptype = parse_type_annotation(p)
@@ -342,7 +342,7 @@ act parse_extern_decl(p: @Parser) -> @StmtNode {
     if not parser_check(p, TOK_RPAREN) {
         mut more_params = true
         loop more_params {
-            let pname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected parameter name")
+            let pname_tok = parser_consume_ident(p, "Expected parameter name")
             let pname = copy_slice_to_string(p.source, pname_tok.start, pname_tok.length)
             parser_consume(p, TOK_COLON, "Expected ':' after parameter name")
             let ptype = parse_type_annotation(p)

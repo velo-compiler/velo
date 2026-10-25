@@ -64,42 +64,48 @@ act parser_next_anon_name(p: @Parser) -> string {
     return sb_to_string(@sb)
 }
 
-// Peeks ahead at a token with an offset without consuming it.
 act parser_peek(p: @Parser, offset: usize) -> Token {
     let idx = p.pos + offset
-    if idx < p.token_count {
-        return p.tokens[idx]
-    }
-    if p.token_count > 0 {
-        return p.tokens[p.token_count - 1]
-    }
+    if idx < p.token_count { return p.tokens[idx] }
+    if p.token_count > 0 { return p.tokens[p.token_count - 1] }
     return Token{ kind: TOK_EOF, start: 0, length: 0, line: 1, col: 1 }
 }
 
-// Checks if the parser has consumed all tokens.
 act parser_is_at_end(p: @Parser) -> bool {
     let tok = parser_peek(p, 0)
     return tok.kind == TOK_EOF
 }
 
-// Consumes and returns the current token, advancing parser position.
 act parser_advance(p: @Parser) -> Token {
     let tok = parser_peek(p, 0)
-    if tok.kind != TOK_EOF {
-        p.pos += 1
-    }
+    if tok.kind != TOK_EOF { p.pos += 1 }
     return tok
 }
 
-// Checks if current token matches the expected kind. TOK_KIND/TOK_OP/TOK_DATA
-// are reserved keywords also valid as identifier spellings (contextual).
+// Contextual identifier re-acceptance: keywords valid in identifier positions.
+act is_contextual_ident_tok(k: i32) -> bool {
+    if k == TOK_IDENTIFIER or k == TOK_KIND or k == TOK_OP or k == TOK_DATA or k == TOK_TEST { return true }
+    if k == TOK_USE or k == TOK_ACT or k == TOK_LOOP or k == TOK_ZONE or k == TOK_DEFER { return true }
+    if k == TOK_RETURN or k == TOK_BREAK or k == TOK_CONTINUE or k == TOK_ON or k == TOK_EXTERN { return true }
+    return false
+}
+
+// Checks if current token matches the expected kind.
 act parser_check(p: @Parser, kind: i32) -> bool {
     let tok = parser_peek(p, 0)
     if kind == TOK_IDENTIFIER and (tok.kind == TOK_KIND or tok.kind == TOK_OP or tok.kind == TOK_DATA or tok.kind == TOK_TEST) { return true }
     return tok.kind == kind
 }
 
-// Consumes the current token if it matches kind, returning true.
+// Consumes an identifier or contextual keyword.
+act parser_consume_ident(p: @Parser, err_msg: string) -> Token {
+    let tok = parser_peek(p, 0)
+    if is_contextual_ident_tok(tok.kind) { return parser_advance(p) }
+    report_parse(p, p.filename, tok.line, tok.col, tok.length, err_msg)
+    p.had_error = true
+    return tok
+}
+
 act parser_match(p: @Parser, kind: i32) -> bool {
     if parser_check(p, kind) {
         parser_advance(p)
@@ -108,12 +114,9 @@ act parser_match(p: @Parser, kind: i32) -> bool {
     return false
 }
 
-// Consumes the expected token kind or reports a syntax error.
 act parser_consume(p: @Parser, kind: i32, err_msg: string) -> Token {
     let tok = parser_peek(p, 0)
-    if parser_check(p, kind) {
-        return parser_advance(p)
-    }
+    if parser_check(p, kind) { return parser_advance(p) }
     report_parse(p, p.filename, tok.line, tok.col, tok.length, err_msg)
     p.had_error = true
     return tok
@@ -160,7 +163,7 @@ act is_struct_literal(p: @Parser) -> bool {
         let t = parser_peek(p, idx)
         if t.kind != TOK_NEWLINE and t.kind != TOK_SEMICOLON {
             if t.kind == TOK_RBRACE { return true }
-            if t.kind == TOK_IDENTIFIER or t.kind == TOK_KIND {
+            if is_contextual_ident_tok(t.kind) {
                 let next_t = parser_peek(p, idx + 1)
                 if next_t.kind == TOK_COLON { return true }
             }

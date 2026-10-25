@@ -256,7 +256,7 @@ act parse_statement(p: @Parser) -> @StmtNode {
     // 3. Mutable variable declaration: `mut x = val` or `mut x: Type = val`
     if parser_check(p, TOK_MUT) {
         let mut_tok = parser_advance(p)
-        let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected variable name after 'mut'")
+        let name_tok = parser_consume_ident(p, "Expected variable name after 'mut'")
         let name = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
         mut type_name = ""
         if parser_match(p, TOK_COLON) {
@@ -273,7 +273,7 @@ act parse_statement(p: @Parser) -> @StmtNode {
     // 4. Immutable variable declaration: `let x = val` or `let x: Type = val`
     if parser_check(p, TOK_LET) {
         let let_tok = parser_advance(p)
-        let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected variable name after 'let'")
+        let name_tok = parser_consume_ident(p, "Expected variable name after 'let'")
         let name = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
         mut type_name = ""
         if parser_match(p, TOK_COLON) {
@@ -288,7 +288,7 @@ act parse_statement(p: @Parser) -> @StmtNode {
     }
 
     // 5. Short explicit variable declaration: `name: Type = val`
-    if parser_check(p, TOK_IDENTIFIER) {
+    if is_contextual_ident_tok(parser_peek(p, 0).kind) {
         let next_tok = parser_peek(p, 1)
         if next_tok.kind == TOK_COLON {
             let name_tok = parser_advance(p)

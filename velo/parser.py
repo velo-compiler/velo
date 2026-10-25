@@ -15,6 +15,24 @@ from velo.ast_nodes import (
 ALIAS_TARGET_PRIMITIVES = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
                            "f32", "f64", "bool", "usize", "isize", "string"}
 
+CONTEXTUAL_IDENT_TOKENS = (
+    TokenType.IDENTIFIER,
+    TokenType.KIND,
+    TokenType.OP,
+    TokenType.DATA,
+    TokenType.TEST,
+    TokenType.USE,
+    TokenType.ACT,
+    TokenType.LOOP,
+    TokenType.ZONE,
+    TokenType.DEFER,
+    TokenType.RETURN,
+    TokenType.BREAK,
+    TokenType.CONTINUE,
+    TokenType.ON,
+    TokenType.EXTERN,
+)
+
 class ParserError(Exception):
     def __init__(self, message: str, token: Token):
         super().__init__(f"Parser Error at line {token.line}, col {token.col}: {message}")
@@ -43,8 +61,6 @@ class Parser:
     def _check(self, token_type: TokenType) -> bool:
         cur_type = self._peek().type
         if token_type == TokenType.IDENTIFIER:
-            # DATA and TEST are reserved keywords but contextually valid as identifiers
-            # (variable / field names) where _check(IDENTIFIER) is called.
             return cur_type in (TokenType.IDENTIFIER, TokenType.KIND, TokenType.OP, TokenType.DATA, TokenType.TEST)
         return cur_type == token_type
 
@@ -57,6 +73,11 @@ class Parser:
 
     def _consume(self, token_type: TokenType, err_msg: str) -> Token:
         if self._check(token_type):
+            return self._advance()
+        raise ParserError(f"{err_msg} (got {self._peek().type.name} '{self._peek().value}')", self._peek())
+
+    def _consume_ident(self, err_msg: str) -> Token:
+        if self._peek().type in CONTEXTUAL_IDENT_TOKENS:
             return self._advance()
         raise ParserError(f"{err_msg} (got {self._peek().type.name} '{self._peek().value}')", self._peek())
 
@@ -141,7 +162,7 @@ class Parser:
 
         if not self._check(TokenType.RPAREN):
             while True:
-                param_name = self._consume(TokenType.IDENTIFIER, "Expected parameter name")
+                param_name = self._consume_ident("Expected parameter name")
                 self._consume(TokenType.COLON, "Expected ':' after parameter name")
                 param_type = self._parse_type_annotation()
                 params.append(Param(name=param_name.value, type_name=param_type, line=param_name.line, col=param_name.col))
@@ -243,7 +264,7 @@ class Parser:
 
         fields: List[Field] = []
         while not self._check(TokenType.RBRACE) and not self._is_at_end():
-            fname = self._consume(TokenType.IDENTIFIER, "Expected field name")
+            fname = self._consume_ident("Expected field name")
             self._consume(TokenType.COLON, "Expected ':' after field name")
             ftype = self._parse_type_annotation()
             default_expr = None
@@ -296,7 +317,7 @@ class Parser:
                 fields = []
                 if not self._check(TokenType.RPAREN):
                     while True:
-                        fname = self._consume(TokenType.IDENTIFIER, "Expected field name")
+                        fname = self._consume_ident("Expected field name")
                         self._consume(TokenType.COLON, "Expected ':' after field name")
                         ftype = self._parse_type_annotation()
                         fields.append(Field(name=fname.value, type_name=ftype, line=fname.line, col=fname.col))
@@ -345,7 +366,7 @@ class Parser:
 
         if not self._check(TokenType.RPAREN):
             while True:
-                param_name = self._consume(TokenType.IDENTIFIER, "Expected parameter name")
+                param_name = self._consume_ident("Expected parameter name")
                 self._consume(TokenType.COLON, "Expected ':' after parameter name")
                 param_type = self._parse_type_annotation()
                 params.append(Param(name=param_name.value, type_name=param_type, line=param_name.line, col=param_name.col))
@@ -463,7 +484,7 @@ class Parser:
         # 3. Variable declaration with 'mut'
         if self._check(TokenType.MUT):
             mut_tok = self._advance()
-            name_tok = self._consume(TokenType.IDENTIFIER, "Expected variable name after 'mut'")
+            name_tok = self._consume_ident("Expected variable name after 'mut'")
             type_name = None
             if self._match(TokenType.COLON):
                 type_name = self._parse_type_annotation()
@@ -476,7 +497,7 @@ class Parser:
         # 4. Variable declaration with 'let'
         if self._check(TokenType.LET):
             let_tok = self._advance()
-            name_tok = self._consume(TokenType.IDENTIFIER, "Expected variable name after 'let'")
+            name_tok = self._consume_ident("Expected variable name after 'let'")
             type_name = None
             if self._match(TokenType.COLON):
                 type_name = self._parse_type_annotation()
@@ -487,7 +508,7 @@ class Parser:
             return VarDeclStmt(name=name_tok.value, type_name=type_name, value=val, is_mut=False, line=let_tok.line, col=let_tok.col)
 
         # 5. Variable declaration with explicit type (e.g. x: i32 = 10, ptr: @Point = @p)
-        if self._peek().type == TokenType.IDENTIFIER and self._peek(1).type == TokenType.COLON:
+        if self._peek().type in CONTEXTUAL_IDENT_TOKENS and self._peek(1).type == TokenType.COLON:
             name_tok = self._advance()
             self._advance() # Consume ':'
             type_name = self._parse_type_annotation()
@@ -839,7 +860,7 @@ class Parser:
                 else:
                     # 5.2 slice 9: `.and(` — the AND keyword is contextual after a
                     # dot (the pinned bitset pair-op surface)
-                    if not (self._check(TokenType.IDENTIFIER) or self._check(TokenType.AND)):
+                    if not (self._check(TokenType.IDENTIFIER) or self._peek().type in CONTEXTUAL_IDENT_TOKENS or self._check(TokenType.AND)):
                         raise ParserError("Expected member name after '.'", self._peek())
                     member_tok = self._advance()
                     expr = MemberAccess(target=expr, member=member_tok.value, line=member_tok.line, col=member_tok.col)
@@ -916,7 +937,7 @@ class Parser:
         target_tok = self._peek(idx)
         if target_tok.type == TokenType.RBRACE:
             return True
-        if target_tok.type in (TokenType.IDENTIFIER, TokenType.KIND) and self._peek(idx + 1).type == TokenType.COLON:
+        if target_tok.type in CONTEXTUAL_IDENT_TOKENS and self._peek(idx + 1).type == TokenType.COLON:
             return True
         return False
 
@@ -936,7 +957,7 @@ class Parser:
             self._skip_newlines()
             field_inits: List[Tuple[str, Expr]] = []
             while not self._check(TokenType.RBRACE) and not self._is_at_end():
-                fname = self._consume(TokenType.IDENTIFIER, "Expected field name in struct literal")
+                fname = self._consume_ident("Expected field name in struct literal")
                 self._consume(TokenType.COLON, "Expected ':' after field name")
                 fval = self._parse_expression()
                 field_inits.append((fname.value, fval))
@@ -1075,7 +1096,7 @@ class Parser:
             params: List[Param] = []
             if not self._check(TokenType.RPAREN):
                 while True:
-                    pname_tok = self._consume(TokenType.IDENTIFIER, "Expected parameter name")
+                    pname_tok = self._consume_ident("Expected parameter name")
                     self._consume(TokenType.COLON, "Expected ':' after parameter name")
                     ptype = self._parse_type_annotation()
                     params.append(Param(name=pname_tok.value, type_name=ptype, line=pname_tok.line, col=pname_tok.col))
