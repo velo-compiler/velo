@@ -362,6 +362,65 @@ def test_lsp_completion(tmp_path):
     assert "sin" in math_labels
     assert "clamp" in math_labels
 
+    # 6. Member completions after custom struct variable `pt.`
+    code_pt = "data Point {\n    x: f32\n    y: f32\n}\nact main() {\n    let pt = Point{ x: 1.0, y: 2.0 }\n    pt.\n}\n"
+    dispatcher.did_change({
+        "textDocument": {"uri": uri, "version": 6},
+        "contentChanges": [{"text": code_pt}]
+    })
+    comps_pt = dispatcher.completion({
+        "textDocument": {"uri": uri},
+        "position": {"line": 6, "character": 7}
+    })
+    pt_labels = {c["label"] for c in comps_pt}
+    assert "x" in pt_labels
+    assert "y" in pt_labels
+    assert all(c["kind"] == 5 for c in comps_pt)  # CompletionItemKind.Field
+
+    # 7. Member completions with prefix filter `pt.x`
+    code_pt_prefix = "data Point {\n    x: f32\n    y: f32\n}\nact main() {\n    let pt = Point{ x: 1.0, y: 2.0 }\n    pt.x\n}\n"
+    dispatcher.did_change({
+        "textDocument": {"uri": uri, "version": 7},
+        "contentChanges": [{"text": code_pt_prefix}]
+    })
+    comps_pt_prefix = dispatcher.completion({
+        "textDocument": {"uri": uri},
+        "position": {"line": 6, "character": 8}
+    })
+    prefix_labels = {c["label"] for c in comps_pt_prefix}
+    assert "x" in prefix_labels
+    assert "y" not in prefix_labels
+
+    # 8. Member completions on a struct pointer parameter `p: @Point`
+    code_ptr = "data Point {\n    x: f32\n    y: f32\n}\nact update(p: @Point) {\n    p.\n}\n"
+    dispatcher.did_change({
+        "textDocument": {"uri": uri, "version": 8},
+        "contentChanges": [{"text": code_ptr}]
+    })
+    comps_ptr = dispatcher.completion({
+        "textDocument": {"uri": uri},
+        "position": {"line": 5, "character": 6}
+    })
+    ptr_labels = {c["label"] for c in comps_ptr}
+    assert "x" in ptr_labels
+    assert "y" in ptr_labels
+    assert all(c["kind"] == 5 for c in comps_ptr)
+
+    # 9. Member completions on nested struct field `player.pos.`
+    code_nested = "data Point {\n    x: f32\n    y: f32\n}\ndata Player {\n    name: string\n    pos: Point\n}\nact main() {\n    let player = Player{ name: \"hero\", pos: Point{ x: 1.0, y: 2.0 } }\n    player.pos.\n}\n"
+    dispatcher.did_change({
+        "textDocument": {"uri": uri, "version": 9},
+        "contentChanges": [{"text": code_nested}]
+    })
+    comps_nested = dispatcher.completion({
+        "textDocument": {"uri": uri},
+        "position": {"line": 10, "character": 15}
+    })
+    nested_labels = {c["label"] for c in comps_nested}
+    assert "x" in nested_labels
+    assert "y" in nested_labels
+
+
 
 def test_lsp_cli_subprocess():
     """Verify python velo.py lsp operates as a real stdio JSON-RPC subprocess."""

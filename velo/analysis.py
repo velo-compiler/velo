@@ -173,10 +173,43 @@ def _from_velo_ast():
     return A
 
 
-def _locals_of(act_decl) -> list:
+def _infer_node_type(val_node, local_types: dict, index: Optional[dict] = None) -> Optional[str]:
+    if val_node is None:
+        return None
+    A = _from_velo_ast()
+    if isinstance(val_node, A.StructLiteral):
+        return val_node.struct_name
+    if isinstance(val_node, A.AddressOf):
+        sub = _infer_node_type(val_node.operand, local_types, index)
+        return ("@" + sub) if sub else None
+    if isinstance(val_node, A.DerefExpr):
+        sub = _infer_node_type(val_node.operand, local_types, index)
+        return sub.lstrip("@") if sub else None
+    if isinstance(val_node, A.Identifier):
+        return local_types.get(val_node.name)
+    if isinstance(val_node, A.CallExpr):
+        callee_name = getattr(val_node.callee, "name", None)
+        if callee_name and index and callee_name in index:
+            decl = index[callee_name][0]["decl"]
+            return getattr(decl, "return_type", None)
+    if isinstance(val_node, A.MemberAccess):
+        target_t = _infer_node_type(val_node.target, local_types, index)
+        if target_t and index:
+            struct_name = target_t.lstrip("@").split("[")[0]
+            if struct_name in index:
+                decl = index[struct_name][0]["decl"]
+                for f in getattr(decl, "fields", []):
+                    if f.name == val_node.member:
+                        return f.type_name
+    return None
+
+
+def _locals_of(act_decl, index: Optional[dict] = None) -> list:
     """(line, col, name, type_name, is_param) locals inside one act."""
     out = []
+    local_types = {}
     for p in (act_decl.params or []):
+        local_types[p.name] = p.type_name
         out.append({
             "line": p.line, "col": p.col, "name": p.name,
             "type": p.type_name, "is_param": True
@@ -192,9 +225,11 @@ def _locals_of(act_decl) -> list:
             return
         if isinstance(node, A.VarDeclStmt):
             if node.name:
+                t = node.type_name or _infer_node_type(node.value, local_types, index) or "inferred"
+                local_types[node.name] = t
                 out.append({
                     "line": node.line, "col": node.col, "name": node.name,
-                    "type": node.type_name or "inferred", "is_param": False
+                    "type": t, "is_param": False
                 })
         if is_dataclass(node):
             for f in dc_fields(node):
@@ -495,11 +530,11 @@ class VeloAnalysis:
                 break
         return chosen
 
-    def _local_lookup(self, uri: str, name: str, line0: int):
+    def _local_lookup(self, uri: str, name: str, line0: int, index: Optional[dict] = None):
         act = self._enclosing_act(uri, line0)
         if act is None:
             return None
-        cands = [loc for loc in _locals_of(act) if loc["name"] == name]
+        cands = [loc for loc in _locals_of(act, index) if loc["name"] == name]
         if not cands:
             return None
         above = [loc for loc in cands if loc["line"] - 1 <= line0]
@@ -508,6 +543,42 @@ class VeloAnalysis:
             "range": _span(to_position(loc["line"], loc["col"]), len(name)),
             "type": loc["type"], "is_param": loc["is_param"], "file": None
         }
+
+    def _resolve_expr_type_at(self, uri: str, expr_str: str, line0: int, index: dict) -> Optional[str]:
+        if not expr_str:
+            return None
+        parts = expr_str.split(".")
+        base_name = parts[0]
+        curr_type = None
+
+        local = self._local_lookup(uri, base_name, line0, index)
+        if local and local["type"] and local["type"] != "inferred":
+            curr_type = local["type"]
+        elif base_name in index:
+            decl = index[base_name][0]["decl"]
+            if hasattr(decl, "target_type"):
+                curr_type = decl.target_type
+            elif hasattr(decl, "fields"):
+                curr_type = base_name
+
+        if not curr_type:
+            return None
+
+        for part in parts[1:]:
+            struct_name = curr_type.lstrip("@").split("[")[0]
+            if struct_name not in index:
+                return None
+            decl = index[struct_name][0]["decl"]
+            found = False
+            for f in getattr(decl, "fields", []):
+                if f.name == part:
+                    curr_type = f.type_name
+                    found = True
+                    break
+            if not found:
+                return None
+
+        return curr_type
 
     # -- hover / definition / completion -----------------------------------------
 
@@ -530,7 +601,7 @@ class VeloAnalysis:
             rec_path = entries[0]["rec"].path
             md = self._decl_markdown(decl) + "\n\n*declared in " + Path(rec_path).name + ":" + str(decl.line) + "*"
             return {"contents": {"kind": "markdown", "value": md}, "range": self._span_range(span)}
-        local = self._local_lookup(uri, name, line0)
+        local = self._local_lookup(uri, name, line0, index)
         if local:
             kind = "param" if local["is_param"] else "local"
             md = f"`{kind} **{name}**: {local['type']}`"
@@ -573,7 +644,7 @@ class VeloAnalysis:
                 "uri": _path_to_uri(first["rec"].path),
                 "range": self._decl_name_range(first["rec"], first["decl"])
             }
-        local = self._local_lookup(uri, name, line0)
+        local = self._local_lookup(uri, name, line0, index)
         if local and local["range"]:
             return {"uri": uri, "range": local["range"]}
         return None
@@ -592,19 +663,55 @@ class VeloAnalysis:
         items = []
 
         if "." in stripped:
+            import re
             head, after = stripped.rsplit(".", 1)
-            mod_key = _last_word(head)
-            if mod_key == "sys":
+            m = re.search(r"([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)$", head.rstrip())
+            target_expr = m.group(1) if m else _last_word(head)
+            if target_expr == "sys":
                 for mod in ("sys.io", "sys.mem", "sys.fs", "sys.math", "sys.time", "sys.os", "sys.thread"):
                     tail = mod[len("sys."):]
                     if not after or tail.startswith(after):
                         items.append({"label": mod, "kind": 9, "detail": "module"})
                 return items
-            table = BUILTIN_MODULES.get(mod_key) or _BUILTIN_ALIASES.get(mod_key, [])
+            table = BUILTIN_MODULES.get(target_expr) or _BUILTIN_ALIASES.get(target_expr, [])
             if table:
                 for fn in table:
                     if not after or fn.startswith(after):
-                        items.append({"label": fn, "kind": 3, "detail": mod_key})
+                        items.append({"label": fn, "kind": 3, "detail": target_expr})
+                return items
+
+            # Custom struct dot-autocomplete (Task 2.2)
+            orig_text = doc["text"]
+            orig_record = doc["record"]
+            try:
+                if not after and 0 <= line0 < len(lines):
+                    repaired_lines = list(lines)
+                    repaired_lines[line0] = lines[line0][:char0] + "__velo_caret__" + lines[line0][char0:]
+                    doc["text"] = "\n".join(repaired_lines)
+                    doc["record"] = None
+                try:
+                    index = self._index(doc["path"])
+                except Exception:
+                    index = {}
+
+                resolved_type = self._resolve_expr_type_at(uri, target_expr, line0, index)
+                if resolved_type:
+                    struct_name = resolved_type.lstrip("@").split("[")[0]
+                    if struct_name in index:
+                        decl = index[struct_name][0]["decl"]
+                        if hasattr(decl, "fields") and decl.fields:
+                            for f in decl.fields:
+                                if not after or f.name.startswith(after):
+                                    items.append({
+                                        "label": f.name,
+                                        "kind": 5,  # CompletionItemKind.Field
+                                        "detail": getattr(f, "type_name", "") or ""
+                                    })
+                            return items
+            finally:
+                doc["text"] = orig_text
+                doc["record"] = orig_record
+
             return items
 
         seen = set()

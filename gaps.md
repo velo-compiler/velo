@@ -134,16 +134,28 @@ flowchart TD
   - No UTF-8 BOM in any `.vl` file.
   - Full test suite passing (296 tests passed).
 
-#### Task 2.2: Struct Field Dot-Autocomplete in LSP (`velo lsp`)
-* **Problem**: The LSP server (`velo/analysis.py` / `_server/velo_analysis.py`) provides autocompletion on module prefixes (`sys.`, `io.`), but does not provide completion items when typing `.` after a custom struct variable (`player.<caret>`).
-* **Specification**:
-  - In `VeloAnalysis.completion`, resolve the AST type of the expression preceding the `.` cursor.
-  - When the type resolves to a `data` struct or `@Struct` pointer, query the symbol table for its declared fields and return them as `CompletionItemKind.Field` completions.
-* **Target Files**:
-  - `velo/analysis.py`
-  - `editors/vscode/syntaxes/_server/velo_analysis.py`
+#### Task 2.2: Struct Field Dot-Autocomplete in LSP (`velo lsp`) [COMPLETED] ✅
+* **Former Defect**:
+  - The LSP analysis server (`velo/analysis.py` and `editors/vscode/_server/velo_analysis.py`) provided member completion only for builtin modules (`sys.io`, `sys.mem`, `io.`, `fs.`, etc.). Typing `.` after custom struct variables (`pt.<caret>`, `player.<caret>`), pointer parameters (`p: @Point`), or nested member paths (`player.pos.<caret>`) yielded an empty completion list with no field inference. Additionally, live buffers with an uncompleted trailing dot caused parse failures that cleared the symbol table index during completion requests.
+* **Fix Applied**:
+  - In `velo/analysis.py` (and mirrored in `editors/vscode/_server/velo_analysis.py`), implemented AST type inference for local variable declarations and expressions:
+    * Added `_infer_node_type()` handling `StructLiteral`, `AddressOf`, `DerefExpr`, `CallExpr`, `Identifier`, and `MemberAccess`.
+    * Updated `_locals_of()` and `_local_lookup()` to track inferred struct types for untyped variable bindings and parameters.
+    * Added `_resolve_expr_type_at()` to resolve the type of arbitrary dot-chained paths (`player.pos`) against the symbol table and local scopes.
+    * In `VeloAnalysis.completions()`, safely handled live buffers with trailing dots by inserting a transient `__velo_caret__` placeholder during symbol indexing, resolving the target expression type, and returning declared struct fields as `CompletionItemKind.Field` (`kind: 5`) with field type details and prefix filtering.
+* **Residual Limitation**:
+  - Autocompletion resolves fields on static and local `data` struct variables, pointers, and nested member chains. Dynamic UFCS acts without declared receiver types default to general global symbol completion.
 * **Verification**:
-  - Add LSP unit test in `tests/test_lsp.py` verifying completion on a struct instance returns its field names.
+  - Expanded `test_lsp_completion` in `tests/test_lsp.py` with 4 test scenarios verifying:
+    1. Direct struct instance variable completion (`pt.` -> `x`, `y` with `kind: 5`).
+    2. Prefix filtering on field names (`pt.x` -> only `x`).
+    3. Pointer parameter completion (`p: @Point` -> `x`, `y` with `kind: 5`).
+    4. Nested member path completion (`player.pos.` -> `x`, `y`).
+  - Pytest LSP suite passed all 8 tests in 0.37s.
+  - Full test suite passing (296 tests passed).
+  - Native test suite `bin/velo.exe test examples/15_native_tests.vl` passed all 105 tests.
+  - All source files $\le 399$ lines (`scripts/count_lines.py`).
+  - No UTF-8 BOM in any `.vl` file.
 
 #### Task 2.3: Type Checking Default Struct Field Initializers
 * **Problem**: In §3.6, default field values (`data Point { x: f32 = 0.0 }`) are parsed and emitted, but their constant values are not strictly type-checked against the field's declared type during semantic analysis (e.g. `x: f32 = "invalid"` was not caught at semantic time).
