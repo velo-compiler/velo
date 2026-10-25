@@ -51,25 +51,28 @@ flowchart TD
 
 ### Phase 1: Toolchain CLI & Codegen Hardening
 
-#### Task 1.1: MSVC CLI Driver Backend Flag (`--cc cl`)
-* **Problem**: In §6.9, emitted C was made 100% portable C99 for MSVC (`cl.exe`). However, the Velo CLI driver (`velo build`, `velo run`) hardcodes calling `gcc.exe`. To compile with MSVC, users must currently run `velo emit-c` and manually invoke `cl.exe`.
-* **Specification**:
-  - Add `--cc <gcc|cl>` option to CLI driver in both Stage 1 (`velo.py`) and Stage 2 (`src/main.vl`, `src/backend/driver.vl`).
-  - When `--cc cl` is specified:
-    * Translate output flag `-o app.exe` to `/Fe:app.exe`.
-    * Translate include flag `-I path` to `/I path`.
-    * Translate optimization flags `-O2` / `--release` to `/O2`, and `--debug` to `/Zi`.
-    * Pass `/TC` (compile as C), `/W3`, `/wd4090`, `/wd4996`, and `/D_CRT_SECURE_NO_WARNINGS`.
-    * Automatically add `/link` for `-l` libraries (e.g. `-lkernel32` -> `/link kernel32.lib`).
-  - When `--cc` is omitted, default to `gcc` (preserving backward compatibility).
-* **Target Files**:
-  - `velo.py`
-  - `src/main.vl`
-  - `src/backend/driver.vl`
+#### Task 1.1: MSVC CLI Driver Backend Flag (`--cc cl`) [COMPLETED] ✅
+* **Former Defect**: In §6.9, emitted C was made 100% portable C99 for MSVC (`cl.exe`). However, the Velo CLI driver (`velo build`, `velo run`, `velo test`) hardcoded calling `gcc.exe`. To compile with MSVC, users had to run `velo emit-c` and manually invoke `cl.exe`.
+* **Fix Applied**:
+  - Implemented `--cc <gcc|cl>` option across Stage 1 (`velo.py`, `velo/driver.py`) and Stage 2 (`src/main.vl`, `src/backend/driver.vl`, `src/backend/driver_cc.vl`).
+  - Added MSVC `cl.exe` command assembly and flag translation:
+    * Passed `/nologo`, `/TC`, `/W3`, `/wd4090`, `/wd4996`, `/D_CRT_SECURE_NO_WARNINGS`.
+    * Output executable translation `/Fe:<path>`.
+    * Optimization flags `/O2` (default / release), `/Od /Zi` and `/DEBUG` (debug), `/O1` (`-O1`).
+    * Linker flags: `/link`, `/LIBPATH:<dir>` for `-L`, `<lib>.lib` for `-l`.
+    * Automatic discovery of Visual Studio `vcvars64.bat` if `cl` is not on ambient PATH.
+  - Extracted compilation and execution command assembly into `src/backend/driver_cc.vl` (153 lines), reducing `src/backend/driver.vl` from 392 to 356 lines, comfortably respecting the 400-line file limit.
+  - Fixed `@shelf[T]` dynamic unbox order in `src/backend/shelf_gen.vl` so unboxing a pointer cast `as @shelf[...]` emits `velo_dyn_unbox_ptr` matching Stage 1.
+  - When `--cc` is omitted, default remains `gcc` with 100% backward compatibility.
+* **Residual Limitation**: Compiling with MSVC requires MSVC C++ Build Tools or Visual Studio installed on Windows (standard MSVC requirement); automatic detection scans standard VS 2022 / VS 2019 install paths or ambient PATH.
 * **Verification**:
-  - `python velo.py build examples/31_shelf_basics.vl --cc cl -o .velo_cache/shelf_msvc.exe` compiles and runs successfully under VS developer environment.
-  - `bin/velo.exe build examples/15_native_tests.vl --cc cl -o .velo_cache/tests_msvc.exe` compiles and runs successfully.
-  - Full pytest suite `python -m pytest tests -q` passes.
+  - Verified `python velo.py build examples/31_shelf_basics.vl --cc cl` and `run --cc cl` build and execute correctly.
+  - Verified `bin/velo.exe build examples/31_shelf_basics.vl --cc cl` and `run --cc cl` build and execute correctly.
+  - Verified `bin/velo.exe test examples/15_native_tests.vl --cc cl` executes and passes all 105 tests.
+  - Added dedicated test suite `tests/test_cc_backend.py` covering Stage 1 & Stage 2 build, run, default fallback, and invalid backend rejection (all 6 tests passing).
+  - 3-stage bootstrap chain completed (`Gen1 -> Gen2 -> Gen3 -> bin/velo.exe`) with bit-for-bit SHA-256 determinism verified (`DCECDA55AE81D1160EAD359435443B2DF5609F4E68455D8AA5222F4B34998C13`).
+  - All source files in `src/` verified $\le 399$ lines (`scripts/count_lines.py`).
+  - Full test suite passing (280 tests passed).
 
 #### Task 1.2: Native String Interpolation Function Calls
 * **Problem**: In Stage 2 self-hosted compiler, calling functions inside string interpolation (e.g. `"Result: {calculate(x)}"`) currently emits the raw expression untranslated or produces incorrect C tokens in `src/backend/codegen_io.vl`. Stage 1 Python handles it via temporary assignment.

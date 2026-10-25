@@ -104,17 +104,17 @@ act emit_dyn_unbox(sb: @StringBuilder, st: @SymbolTable, operand: @ExprNode, tar
         emit_c_expr(sb, st, operand)
         return
     }
-    if is_shelf_form(target) {
-        sb_append_str(sb, "velo_dyn_unbox_shelf(")
-        emit_c_expr(sb, st, operand)
-        sb_append_char(sb, ')')
-        return
-    }
     if str.len(target) > 0 and target[0] == '@' {
         let cast_c = map_type_to_c(target)
         sb_append_char(sb, '(')
         sb_append_str(sb, cast_c)
         sb_append_str(sb, ")velo_dyn_unbox_ptr(")
+        emit_c_expr(sb, st, operand)
+        sb_append_char(sb, ')')
+        return
+    }
+    if is_shelf_form(target) {
+        sb_append_str(sb, "velo_dyn_unbox_shelf(")
         emit_c_expr(sb, st, operand)
         sb_append_char(sb, ')')
         return

@@ -1,0 +1,153 @@
+// Backend compiler driver helper for GCC and MSVC (cl.exe).
+use sys.fs
+use sys.mem
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "../common/path.vl"
+
+// Probes known Visual Studio installations for vcvars64.bat.
+act find_vcvars() -> string {
+    if fs.exists("C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat") {
+        return "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"
+    }
+    if fs.exists("C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Auxiliary/Build/vcvars64.bat") {
+        return "C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Auxiliary\\Build\\vcvars64.bat"
+    }
+    if fs.exists("C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat") {
+        return "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Auxiliary\\Build\\vcvars64.bat"
+    }
+    if fs.exists("C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Auxiliary/Build/vcvars64.bat") {
+        return "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat"
+    }
+    if fs.exists("C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Auxiliary/Build/vcvars64.bat") {
+        return "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"
+    }
+    if fs.exists("C:/Program Files (x86)/Microsoft Visual Studio/2019/Professional/VC/Auxiliary/Build/vcvars64.bat") {
+        return "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\VC\\Auxiliary\\Build\\vcvars64.bat"
+    }
+    if fs.exists("C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Auxiliary/Build/vcvars64.bat") {
+        return "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\VC\\Auxiliary\\Build\\vcvars64.bat"
+    }
+    if fs.exists("C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Auxiliary/Build/vcvars64.bat") {
+        return "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat"
+    }
+    return null
+}
+
+// Translates linker flags (-Ldir, -llib) into MSVC /link options.
+act append_msvc_linker_flags(sb: @StringBuilder, linker_flags: string, debug_mode: bool) {
+    if (linker_flags == null or str.len(linker_flags) == 0) and not debug_mode {
+        return
+    }
+    sb_append_str(sb, " /link")
+    if debug_mode {
+        sb_append_str(sb, " /DEBUG")
+    }
+    if linker_flags == null or str.len(linker_flags) == 0 {
+        return
+    }
+    let len = str.len(linker_flags)
+    mut i: usize = 0
+    loop i < len {
+        loop i < len and linker_flags[i] == ' ' {
+            i += 1
+        }
+        if i >= len {
+            break
+        }
+        let start = i
+        loop i < len and linker_flags[i] != ' ' {
+            i += 1
+        }
+        let token = copy_slice_to_string(linker_flags, start, i - start)
+        let tlen = str.len(token)
+        sb_append_char(sb, ' ')
+        if tlen > 2 and token[0] == '-' and token[1] == 'L' {
+            sb_append_str(sb, "/LIBPATH:")
+            sb_append_str(sb, copy_slice_to_string(token, 2, tlen - 2))
+        } else if tlen > 2 and token[0] == '-' and token[1] == 'l' {
+            let lib_name = copy_slice_to_string(token, 2, tlen - 2)
+            let llen = str.len(lib_name)
+            sb_append_str(sb, lib_name)
+            if not (llen > 4 and lib_name[llen - 4] == '.' and lib_name[llen - 3] == 'l' and lib_name[llen - 2] == 'i' and lib_name[llen - 1] == 'b') {
+                sb_append_str(sb, ".lib")
+            }
+        } else {
+            sb_append_str(sb, token)
+        }
+    }
+}
+
+// Assembles MSVC cl.exe compilation command.
+act assemble_msvc_compile_cmd(c_file_path: string, out_exe_path: string, opt_flags: string, linker_flags: string) -> string {
+    mut cmd_sb = create_sb(512)
+    let vcvars = find_vcvars()
+    if vcvars != null {
+        sb_append_str(@cmd_sb, "call \"")
+        sb_append_str(@cmd_sb, vcvars)
+        sb_append_str(@cmd_sb, "\" >nul && ")
+    }
+    sb_append_str(@cmd_sb, "cl /nologo /TC /W3 /wd4090 /wd4996 /D_CRT_SECURE_NO_WARNINGS /I velo/runtime ")
+    mut is_debug = false
+    if opt_flags == null or str.len(opt_flags) == 0 {
+        sb_append_str(@cmd_sb, "/O2 ")
+    } else if str.contains(opt_flags, "-O0") or str.contains(opt_flags, "-g") {
+        is_debug = true
+        sb_append_str(@cmd_sb, "/Od /Zi ")
+    } else if str.contains(opt_flags, "-O1") {
+        sb_append_str(@cmd_sb, "/O1 ")
+    } else {
+        sb_append_str(@cmd_sb, "/O2 ")
+    }
+    sb_append_str(@cmd_sb, to_native_path(c_file_path))
+    sb_append_str(@cmd_sb, " /Fe:")
+    sb_append_str(@cmd_sb, to_native_path(out_exe_path))
+    append_msvc_linker_flags(@cmd_sb, linker_flags, is_debug)
+    return sb_to_string(@cmd_sb)
+}
+
+// Assembles GCC compilation command.
+act assemble_gcc_compile_cmd(c_file_path: string, out_exe_path: string, opt_flags: string, linker_flags: string) -> string {
+    mut cmd_sb = create_sb(512)
+    if fs.exists("C:/msys64/ucrt64/bin/gcc.exe") {
+        sb_append_str(@cmd_sb, "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ")
+    }
+    sb_append_str(@cmd_sb, "gcc ")
+    if opt_flags != null and str.len(opt_flags) > 0 {
+        sb_append_str(@cmd_sb, opt_flags)
+        sb_append_str(@cmd_sb, " ")
+    } else {
+        sb_append_str(@cmd_sb, "-O2 ")
+    }
+    sb_append_str(@cmd_sb, "-std=c99 -I velo/runtime ")
+    sb_append_str(@cmd_sb, to_native_path(c_file_path))
+    if linker_flags != null and str.len(linker_flags) > 0 {
+        sb_append_str(@cmd_sb, " ")
+        sb_append_str(@cmd_sb, linker_flags)
+    }
+    sb_append_str(@cmd_sb, " -o ")
+    sb_append_str(@cmd_sb, to_native_path(out_exe_path))
+    return sb_to_string(@cmd_sb)
+}
+
+// Assembles the C compiler invocation command for either GCC or MSVC cl.
+act assemble_compiler_cmd(cc: string, c_file_path: string, out_exe_path: string, opt_flags: string, linker_flags: string) -> string {
+    if cc == "cl" {
+        return assemble_msvc_compile_cmd(c_file_path, out_exe_path, opt_flags, linker_flags)
+    }
+    return assemble_gcc_compile_cmd(c_file_path, out_exe_path, opt_flags, linker_flags)
+}
+
+// Assembles executable runner command.
+act assemble_runner_cmd(cc: string, exe_path: string, extra_args: string) -> string {
+    mut run_sb = create_sb(256)
+    if cc != "cl" and fs.exists("C:/msys64/ucrt64/bin/gcc.exe") {
+        sb_append_str(@run_sb, "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ")
+    }
+    sb_append_str(@run_sb, to_native_path(exe_path))
+    if extra_args != null and str.len(extra_args) > 0 {
+        sb_append_str(@run_sb, " ")
+        sb_append_str(@run_sb, extra_args)
+    }
+    return sb_to_string(@run_sb)
+}

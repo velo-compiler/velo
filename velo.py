@@ -36,6 +36,7 @@ def main():
     run_parser.add_argument("-O", "--optimize", choices=["0", "1", "2", "3", "s", "fast"], help="GCC optimization level")
     run_parser.add_argument("-l", dest="libs", action="append", default=[], help="Link with external library (e.g. -lraylib)")
     run_parser.add_argument("-L", dest="lib_dirs", action="append", default=[], help="Add library directory to search path (e.g. -L./lib)")
+    run_parser.add_argument("--cc", choices=["gcc", "cl"], default="gcc", help="C compiler backend to invoke (default: gcc)")
 
     # 'build' command
     build_parser = subparsers.add_parser("build", help="Compile a Velo program into a native executable")
@@ -47,6 +48,7 @@ def main():
     build_parser.add_argument("-O", "--optimize", choices=["0", "1", "2", "3", "s", "fast"], help="GCC optimization level")
     build_parser.add_argument("-l", dest="libs", action="append", default=[], help="Link with external library (e.g. -lraylib)")
     build_parser.add_argument("-L", dest="lib_dirs", action="append", default=[], help="Add library directory to search path (e.g. -L./lib)")
+    build_parser.add_argument("--cc", choices=["gcc", "cl"], default="gcc", help="C compiler backend to invoke (default: gcc)")
 
     # 'emit-c' command
     emit_parser = subparsers.add_parser("emit-c", help="Emit generated C99 code without compiling")
@@ -79,6 +81,7 @@ def main():
     test_parser.add_argument("-O", "--optimize", choices=["0", "1", "2", "3", "s", "fast"], help="GCC optimization level")
     test_parser.add_argument("-l", dest="libs", action="append", default=[], help="Link with external library (e.g. -lraylib)")
     test_parser.add_argument("-L", dest="lib_dirs", action="append", default=[], help="Add library directory to search path (e.g. -L./lib)")
+    test_parser.add_argument("--cc", choices=["gcc", "cl"], default="gcc", help="C compiler backend to invoke (default: gcc)")
 
     args = parser.parse_args()
 
@@ -97,6 +100,7 @@ def main():
             debug_mode = getattr(args, "debug", False)
             release_mode = getattr(args, "release", False)
             opt_level = getattr(args, "optimize", None)
+            cc_backend = getattr(args, "cc", "gcc")
             libs = list(getattr(args, "libs", []) or [])
             lib_dirs = list(getattr(args, "lib_dirs", []) or [])
 
@@ -113,6 +117,11 @@ def main():
                     release_mode = True
                 elif arg == "--unsafe-shelf-index":
                     driver.unsafe_index_flag = True
+                elif arg == "--cc" and i + 1 < len(raw_args):
+                    cc_backend = raw_args[i + 1]
+                    i += 1
+                elif arg.startswith("--cc="):
+                    cc_backend = arg[5:]
                 elif arg.startswith("-O"):
                     opt_level = arg[2:]
                 elif arg == "-l" and i + 1 < len(raw_args):
@@ -129,12 +138,16 @@ def main():
                     clean_args.append(arg)
                 i += 1
 
+            if cc_backend not in ("gcc", "cl"):
+                print(f"[Velo Error] Unknown C compiler backend '{cc_backend}'. Expected 'gcc' or 'cl'.", file=sys.stderr)
+                sys.exit(1)
+
             if debug_mode and release_mode:
                 print("[Velo Error] Cannot specify both --debug and --release", file=sys.stderr)
                 sys.exit(1)
 
             exit_code = driver.run(args.file, clean_args, debug=debug_mode, release=release_mode,
-                                   opt_level=opt_level, libs=libs, lib_dirs=lib_dirs)
+                                   opt_level=opt_level, libs=libs, lib_dirs=lib_dirs, cc=cc_backend)
             sys.exit(exit_code)
         elif args.command == "build":
             if getattr(args, "debug", False) and getattr(args, "release", False):
@@ -145,7 +158,8 @@ def main():
                                     release=getattr(args, "release", False),
                                     opt_level=getattr(args, "optimize", None),
                                     libs=getattr(args, "libs", None),
-                                    lib_dirs=getattr(args, "lib_dirs", None))
+                                    lib_dirs=getattr(args, "lib_dirs", None),
+                                    cc=getattr(args, "cc", "gcc"))
             print(f"[Velo] Successfully built: {exe_path}")
         elif args.command == "emit-c":
             c_code = driver.compile_to_c(args.file)
@@ -190,7 +204,8 @@ def main():
                 release=getattr(args, "release", False),
                 opt_level=getattr(args, "optimize", None),
                 libs=getattr(args, "libs", None),
-                lib_dirs=getattr(args, "lib_dirs", None)
+                lib_dirs=getattr(args, "lib_dirs", None),
+                cc=getattr(args, "cc", "gcc")
             )
             sys.exit(exit_code)
     except Exception as e:

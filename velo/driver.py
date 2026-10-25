@@ -3,7 +3,7 @@ import sys
 import subprocess
 import shutil
 from pathlib import Path
-from typing import Optional, Set, List
+from typing import Optional, Set, List, Tuple
 
 from velo.lexer import Lexer, LexerError
 from velo.parser import Parser, ParserError
@@ -32,6 +32,27 @@ class CompilerDriver:
                         return candidate
             raise RuntimeError("GCC not found in system PATH! Please install GCC (MinGW or MSYS2).")
         return gcc_path
+
+    def _find_cl(self) -> Tuple[Optional[str], Optional[str]]:
+        """Returns (cl_path, vcvars_bat_path). If cl is in PATH, vcvars_bat_path is None."""
+        cl_path = shutil.which("cl")
+        if cl_path:
+            return (cl_path, None)
+        if sys.platform == "win32":
+            candidates = [
+                r"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat",
+                r"C:\Program Files\Microsoft Visual Studio\2022\Professional\VC\Auxiliary\Build\vcvars64.bat",
+                r"C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat",
+                r"C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat",
+                r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat",
+                r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Professional\VC\Auxiliary\Build\vcvars64.bat",
+                r"C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat",
+                r"C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Auxiliary\Build\vcvars64.bat",
+            ]
+            for candidate in candidates:
+                if os.path.exists(candidate):
+                    return ("cl", candidate)
+        raise RuntimeError("MSVC compiler (cl.exe) not found in system PATH or Visual Studio installation!")
 
     def resolve_program(self, source_path: str) -> Program:
         root_path = Path(source_path).resolve()
@@ -142,7 +163,7 @@ class CompilerDriver:
     def build(self, source_path: str, output_path: Optional[str] = None,
               debug: bool = False, release: bool = False, opt_level: Optional[str] = None,
               libs: Optional[list] = None, lib_dirs: Optional[list] = None,
-              is_test: bool = False) -> str:
+              is_test: bool = False, cc: str = "gcc") -> str:
         path = Path(source_path).resolve()
         c_code = self.compile_to_c(source_path, is_test=is_test)
 
@@ -158,6 +179,68 @@ class CompilerDriver:
             exe_extension = ".exe" if sys.platform == "win32" else ""
             exe_file = self.cache_dir / f"{stem}{exe_extension}"
 
+        # 6.2 Optimization Flags & Build Modes
+        if debug and release:
+            raise ValueError("Cannot specify both --debug and --release")
+
+        if cc not in ("gcc", "cl"):
+            raise ValueError(f"Unknown C compiler backend '{cc}'. Expected 'gcc' or 'cl'.")
+
+        if cc == "cl":
+            cl_exe, vcvars_bat = self._find_cl()
+            cl_flags = ["/nologo", "/TC", "/W3", "/wd4090", "/wd4996", "/D_CRT_SECURE_NO_WARNINGS"]
+            if debug:
+                cl_flags.extend(["/Od", "/Zi"])
+            elif opt_level is not None:
+                if opt_level == "0":
+                    cl_flags.append("/Od")
+                elif opt_level == "1":
+                    cl_flags.append("/O1")
+                else:
+                    cl_flags.append("/O2")
+            elif release:
+                cl_flags.append("/O2")
+            else:
+                cl_flags.append("/O2")
+
+            link_flags = []
+            if lib_dirs:
+                for d in lib_dirs:
+                    raw_d = d[2:] if d.startswith("-L") else d
+                    link_flags.append(f"/LIBPATH:{raw_d}")
+            if libs:
+                for lib in libs:
+                    raw_lib = lib[2:] if lib.startswith("-l") else lib
+                    if not raw_lib.endswith(".lib"):
+                        raw_lib = f"{raw_lib}.lib"
+                    link_flags.append(raw_lib)
+            if debug:
+                link_flags.append("/DEBUG")
+
+            cmd_parts = [
+                cl_exe,
+                *cl_flags,
+                f"/I{self.runtime_dir}",
+                str(c_file),
+                f"/Fe:{exe_file}"
+            ]
+            if link_flags:
+                cmd_parts.extend(["/link", *link_flags])
+
+            self.last_gcc_cmd = cmd_parts
+            self.last_cc_cmd = cmd_parts
+            if vcvars_bat:
+                args_str = subprocess.list2cmdline(cmd_parts)
+                full_cmd = f'call "{vcvars_bat}" >nul && {args_str}'
+                result = subprocess.run(full_cmd, shell=True, capture_output=True, text=True)
+            else:
+                result = subprocess.run(cmd_parts, capture_output=True, text=True)
+
+            if result.returncode != 0:
+                raise RuntimeError(f"MSVC Compilation Failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}\n\nGenerated C Code:\n{c_code}")
+
+            return str(exe_file)
+
         gcc = self._find_gcc()
         gcc_bin_dir = str(Path(gcc).parent.resolve())
 
@@ -165,10 +248,6 @@ class CompilerDriver:
         env = os.environ.copy()
         current_path = env.get("PATH", "")
         env["PATH"] = f"{gcc_bin_dir}{os.pathsep}{current_path}"
-
-        # 6.2 Optimization Flags & Build Modes
-        if debug and release:
-            raise ValueError("Cannot specify both --debug and --release")
 
         flags = []
         if opt_level is not None:
@@ -205,6 +284,7 @@ class CompilerDriver:
             str(exe_file)
         ]
         self.last_gcc_cmd = cmd
+        self.last_cc_cmd = cmd
 
         result = subprocess.run(cmd, capture_output=True, text=True, env=env)
         if result.returncode != 0:
@@ -214,16 +294,18 @@ class CompilerDriver:
 
     def run(self, source_path: str, args: Optional[list] = None,
             debug: bool = False, release: bool = False, opt_level: Optional[str] = None,
-            libs: Optional[list] = None, lib_dirs: Optional[list] = None) -> int:
+            libs: Optional[list] = None, lib_dirs: Optional[list] = None,
+            cc: str = "gcc") -> int:
         exe_path = self.build(source_path, debug=debug, release=release, opt_level=opt_level,
-                              libs=libs, lib_dirs=lib_dirs)
+                              libs=libs, lib_dirs=lib_dirs, cc=cc)
         cmd = [exe_path] + (args or [])
         res = subprocess.run(cmd)
         return res.returncode
 
     def test(self, target_path: Optional[str] = None, filter_str: Optional[str] = None,
              debug: bool = False, release: bool = False, opt_level: Optional[str] = None,
-             libs: Optional[list] = None, lib_dirs: Optional[list] = None) -> int:
+             libs: Optional[list] = None, lib_dirs: Optional[list] = None,
+             cc: str = "gcc") -> int:
         target_str = target_path if target_path is not None else "."
         p = Path(target_str).resolve()
         test_files: List[Path] = []
@@ -248,7 +330,7 @@ class CompilerDriver:
         overall_exit = 0
         for tf in test_files:
             exe_path = self.build(str(tf), is_test=True, debug=debug, release=release,
-                                  opt_level=opt_level, libs=libs, lib_dirs=lib_dirs)
+                                  opt_level=opt_level, libs=libs, lib_dirs=lib_dirs, cc=cc)
             cmd = [exe_path]
             if filter_str:
                 cmd.extend(["--filter", filter_str])
