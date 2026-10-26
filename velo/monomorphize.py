@@ -784,7 +784,7 @@ class Monomorphizer:
             if isinstance(expr.callee, MemberAccess):
                 member = expr.callee.member
                 target = expr.callee.target
-                is_module = isinstance(target, Identifier) and target.name in {"io", "mem", "fs", "str", "sys", "math", "time", "os"}  # 5.3/5.4/5.5: sys.math + sys.time + sys.os ride the module-receiver path
+                is_module = isinstance(target, Identifier) and target.name in {"io", "mem", "fs", "str", "sys", "math", "time", "os", "simd"}
                 is_kind = isinstance(target, Identifier) and (target.name in self.kind_names or target.name in self.generic_kinds)
                 if not is_module and not is_kind:
                     # Check if target struct has this field
@@ -1066,6 +1066,15 @@ class Monomorphizer:
                         return map_kv[1]
                     if expr.callee.member == "has":
                         return "bool"
+                if isinstance(expr.callee.target, Identifier) and expr.callee.target.name == "simd":
+                    if expr.callee.member == "dot":
+                        return "f32"
+                    if expr.callee.member == "sqrt":
+                        return "f32x4"
+                    if expr.callee.member in ("min", "max"):
+                        if expr.args:
+                            return self._infer_expr_type(expr.args[0], scope)
+                        return "f32x4"
                 if expr.callee.member in self.func_return_types:
                     return self.func_return_types[expr.callee.member]
                 if expr.callee.member in self.generic_funcs:

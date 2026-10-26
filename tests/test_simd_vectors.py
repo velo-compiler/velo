@@ -306,6 +306,62 @@ act main() -> i32 {
 }
 """
 
+NEGATIVE_SIMD_UNKNOWN_MEMBER_FUNC = """use sys.simd
+act main() -> i32 {
+    let x = simd.foo(1)
+    return 0
+}
+"""
+
+NEGATIVE_SIMD_BARE_CONSTANT = """use sys.simd
+act main() -> i32 {
+    let x = simd.dot
+    return 0
+}
+"""
+
+NEGATIVE_SIMD_DOT_ARITY = """use sys.simd
+act main() -> i32 {
+    let x = simd.dot(f32x4_splat(1.0))
+    return 0
+}
+"""
+
+NEGATIVE_SIMD_DOT_ARG_TYPE = """use sys.simd
+act main() -> i32 {
+    let x = simd.dot(f32x4_splat(1.0), "bad")
+    return 0
+}
+"""
+
+NEGATIVE_SIMD_SQRT_ARITY = """use sys.simd
+act main() -> i32 {
+    let x = simd.sqrt(f32x4_splat(1.0), f32x4_splat(2.0))
+    return 0
+}
+"""
+
+NEGATIVE_SIMD_SQRT_ARG_TYPE = """use sys.simd
+act main() -> i32 {
+    let x = simd.sqrt("bad")
+    return 0
+}
+"""
+
+NEGATIVE_SIMD_MIN_ARG_TYPE = """use sys.simd
+act main() -> i32 {
+    let x = simd.min("bad", "bad")
+    return 0
+}
+"""
+
+NEGATIVE_SIMD_MIN_MISMATCH_TYPES = """use sys.simd
+act main() -> i32 {
+    let x = simd.min(f32x4_splat(1.0), i32x4_splat(1))
+    return 0
+}
+"""
+
 
 def test_stage1_simd_execution(tmp_path):
     src = _write(tmp_path, "test_simd.vl", POSITIVE_SIMD_EXECUTION)
@@ -331,6 +387,16 @@ def test_stage2_simd_ops_execution(tmp_path):
     assert res.returncode == 0, f"Stage 2 ops failed: {res.stdout}\n{res.stderr}"
     assert "SIMD vector arithmetic and lane ops passed successfully" in res.stdout
 
+def test_stage1_simd_math_execution():
+    res = _run_stage1(["run", "examples/36_simd_math.vl"])
+    assert res.returncode == 0, f"Stage 1 math failed: {res.stdout}\n{res.stderr}"
+    assert "Benchmark completed successfully." in res.stdout
+
+def test_stage2_simd_math_execution():
+    res = _run_stage2(["run", "examples/36_simd_math.vl"])
+    assert res.returncode == 0, f"Stage 2 math failed: {res.stdout}\n{res.stderr}"
+    assert "Benchmark completed successfully." in res.stdout
+
 @pytest.mark.parametrize("source,expected_snippet", [
     (NEGATIVE_F32X4_ARITY_FEW, "f32x4 constructor expects exactly 4 arguments: (x, y, z, w)"),
     (NEGATIVE_F32X4_ARITY_MANY, "f32x4 constructor expects exactly 4 arguments: (x, y, z, w)"),
@@ -346,6 +412,14 @@ def test_stage2_simd_ops_execution(tmp_path):
     (NEGATIVE_SIMD_MISMATCH_OP, "mismatched operand types for SIMD binary operator '+': f32x4 and i32x4"),
     (NEGATIVE_SIMD_I32_DIV, "integer vector division is not supported"),
     (NEGATIVE_SIMD_BAD_UNARY, "unary operator '!' not supported for SIMD vector type f32x4"),
+    (NEGATIVE_SIMD_UNKNOWN_MEMBER_FUNC, "unknown simd member 'foo' (functions: dot, min, max, sqrt are available)"),
+    (NEGATIVE_SIMD_BARE_CONSTANT, "unknown simd constant 'dot' (simd functions are: dot, min, max, sqrt) (functions need parens: simd.dot(...))"),
+    (NEGATIVE_SIMD_DOT_ARITY, "simd.dot expects exactly 2 arguments: (f32x4 a, f32x4 b)"),
+    (NEGATIVE_SIMD_DOT_ARG_TYPE, "simd.dot expects f32x4 arguments (got string)"),
+    (NEGATIVE_SIMD_SQRT_ARITY, "simd.sqrt expects exactly 1 argument: (f32x4 a)"),
+    (NEGATIVE_SIMD_SQRT_ARG_TYPE, "simd.sqrt expects f32x4 argument (got string)"),
+    (NEGATIVE_SIMD_MIN_ARG_TYPE, "simd.min expects f32x4 or i32x4 arguments (got string)"),
+    (NEGATIVE_SIMD_MIN_MISMATCH_TYPES, "simd.min expects matching operand types (got f32x4 and i32x4)"),
 ])
 def test_stage1_negative_simd_diagnostics(tmp_path, source, expected_snippet):
     src = _write(tmp_path, "neg_test.vl", source)
@@ -369,6 +443,14 @@ def test_stage1_negative_simd_diagnostics(tmp_path, source, expected_snippet):
     (NEGATIVE_SIMD_MISMATCH_OP, "mismatched operand types for SIMD binary operator '+': f32x4 and i32x4"),
     (NEGATIVE_SIMD_I32_DIV, "integer vector division is not supported"),
     (NEGATIVE_SIMD_BAD_UNARY, "unary operator '!' not supported for SIMD vector type f32x4"),
+    (NEGATIVE_SIMD_UNKNOWN_MEMBER_FUNC, "unknown simd member 'foo' (functions: dot, min, max, sqrt are available)"),
+    (NEGATIVE_SIMD_BARE_CONSTANT, "unknown simd constant 'dot' (simd functions are: dot, min, max, sqrt) (functions need parens: simd.dot(...))"),
+    (NEGATIVE_SIMD_DOT_ARITY, "simd.dot expects exactly 2 arguments: (f32x4 a, f32x4 b)"),
+    (NEGATIVE_SIMD_DOT_ARG_TYPE, "simd.dot expects f32x4 arguments (got string)"),
+    (NEGATIVE_SIMD_SQRT_ARITY, "simd.sqrt expects exactly 1 argument: (f32x4 a)"),
+    (NEGATIVE_SIMD_SQRT_ARG_TYPE, "simd.sqrt expects f32x4 argument (got string)"),
+    (NEGATIVE_SIMD_MIN_ARG_TYPE, "simd.min expects f32x4 or i32x4 arguments (got string)"),
+    (NEGATIVE_SIMD_MIN_MISMATCH_TYPES, "simd.min expects matching operand types (got f32x4 and i32x4)"),
 ])
 def test_stage2_negative_simd_diagnostics(tmp_path, source, expected_snippet):
     src = _write(tmp_path, "neg_test.vl", source)
@@ -431,4 +513,30 @@ def test_check_cli_json_simd_diagnostics(tmp_path):
     report2_mem = json.loads(res2_mem.stdout)
     assert report2_mem["ok"] is False
     assert "unknown SIMD vector member 'foo' (available: x, y, z, w)" in report2_mem["diagnostics"][0]["message"]
+
+    src_simd_math = "examples/36_simd_math.vl"
+    res1_math = _run_stage1(["check", src_simd_math, "--json"])
+    assert res1_math.returncode == 0
+    report1_math = json.loads(res1_math.stdout)
+    assert report1_math["ok"] is True
+    assert len(report1_math["diagnostics"]) == 0
+
+    res2_math = _run_stage2(["check", src_simd_math, "--json"])
+    assert res2_math.returncode == 0
+    report2_math = json.loads(res2_math.stdout)
+    assert report2_math["ok"] is True
+    assert len(report2_math["diagnostics"]) == 0
+
+    src_simd_dot_inv = _write(tmp_path, "invalid_dot.vl", NEGATIVE_SIMD_DOT_ARG_TYPE)
+    res1_dot = _run_stage1(["check", src_simd_dot_inv, "--json"])
+    assert res1_dot.returncode != 0
+    report1_dot = json.loads(res1_dot.stdout)
+    assert report1_dot["ok"] is False
+    assert "simd.dot expects f32x4 arguments (got string)" in report1_dot["diagnostics"][0]["message"]
+
+    res2_dot = _run_stage2(["check", src_simd_dot_inv, "--json"])
+    assert res2_dot.returncode != 0
+    report2_dot = json.loads(res2_dot.stdout)
+    assert report2_dot["ok"] is False
+    assert "simd.dot expects f32x4 arguments (got string)" in report2_dot["diagnostics"][0]["message"]
 

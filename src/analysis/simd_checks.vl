@@ -195,3 +195,125 @@ act check_simd_unary(st: @SymbolTable, expr: @ExprNode, sub_t: string) -> string
     st.error_count += 1
     return "unknown"
 }
+
+act check_simd_constant(st: @SymbolTable, expr: @ExprNode) -> string {
+    let m = expr.member_name
+    mut sb = create_sb(160)
+    sb_append_str(@sb, "unknown simd constant '")
+    sb_append_str(@sb, m)
+    sb_append_str(@sb, "' (simd functions are: dot, min, max, sqrt)")
+    if m == "dot" or m == "min" or m == "max" or m == "sqrt" {
+        sb_append_str(@sb, " (functions need parens: simd.")
+        sb_append_str(@sb, m)
+        sb_append_str(@sb, "(...))")
+    }
+    report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+    st.error_count += 1
+    return "unknown"
+}
+
+act check_simd_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
+    if member != "dot" and member != "min" and member != "max" and member != "sqrt" {
+        mut sb = create_sb(96)
+        sb_append_str(@sb, "unknown simd member '")
+        sb_append_str(@sb, member)
+        sb_append_str(@sb, "' (functions: dot, min, max, sqrt are available)")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+        st.error_count += 1
+        return "unknown"
+    }
+
+    mut argc: usize = 0
+    mut cur_a = expr.first_arg
+    loop cur_a != null { argc += 1; cur_a = cur_a.next }
+
+    if member == "dot" {
+        if argc != 2 {
+            report_error("semantic", expr.line, expr.col, "simd.dot expects exactly 2 arguments: (f32x4 a, f32x4 b)")
+            st.error_count += 1
+            return "unknown"
+        }
+        let t0 = infer_expr_type(st, expr.first_arg)
+        if t0 != "unknown" and t0 != "f32x4" {
+            mut sb = create_sb(64)
+            sb_append_str(@sb, "simd.dot expects f32x4 arguments (got ")
+            sb_append_str(@sb, t0)
+            sb_append_char(@sb, ')')
+            report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+            st.error_count += 1
+            return "unknown"
+        }
+        let t1 = infer_expr_type(st, expr.first_arg.next)
+        if t1 != "unknown" and t1 != "f32x4" {
+            mut sb = create_sb(64)
+            sb_append_str(@sb, "simd.dot expects f32x4 arguments (got ")
+            sb_append_str(@sb, t1)
+            sb_append_char(@sb, ')')
+            report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+            st.error_count += 1
+            return "unknown"
+        }
+        return "f32"
+    }
+
+    if member == "sqrt" {
+        if argc != 1 {
+            report_error("semantic", expr.line, expr.col, "simd.sqrt expects exactly 1 argument: (f32x4 a)")
+            st.error_count += 1
+            return "unknown"
+        }
+        let t0 = infer_expr_type(st, expr.first_arg)
+        if t0 != "unknown" and t0 != "f32x4" {
+            mut sb = create_sb(64)
+            sb_append_str(@sb, "simd.sqrt expects f32x4 argument (got ")
+            sb_append_str(@sb, t0)
+            sb_append_char(@sb, ')')
+            report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+            st.error_count += 1
+            return "unknown"
+        }
+        return "f32x4"
+    }
+
+    if member == "min" or member == "max" {
+        if argc != 2 {
+            mut sb = create_sb(64)
+            sb_append_str(@sb, "simd.")
+            sb_append_str(@sb, member)
+            sb_append_str(@sb, " expects exactly 2 arguments: (a, b)")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+            st.error_count += 1
+            return "unknown"
+        }
+        let t0 = infer_expr_type(st, expr.first_arg)
+        if t0 != "unknown" and t0 != "f32x4" and t0 != "i32x4" {
+            mut sb = create_sb(64)
+            sb_append_str(@sb, "simd.")
+            sb_append_str(@sb, member)
+            sb_append_str(@sb, " expects f32x4 or i32x4 arguments (got ")
+            sb_append_str(@sb, t0)
+            sb_append_char(@sb, ')')
+            report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+            st.error_count += 1
+            return "unknown"
+        }
+        let t1 = infer_expr_type(st, expr.first_arg.next)
+        if t0 != "unknown" and t1 != "unknown" and t1 != t0 {
+            mut sb = create_sb(80)
+            sb_append_str(@sb, "simd.")
+            sb_append_str(@sb, member)
+            sb_append_str(@sb, " expects matching operand types (got ")
+            sb_append_str(@sb, t0)
+            sb_append_str(@sb, " and ")
+            sb_append_str(@sb, t1)
+            sb_append_char(@sb, ')')
+            report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+            st.error_count += 1
+            return "unknown"
+        }
+        return t0
+    }
+
+    return "unknown"
+}
+

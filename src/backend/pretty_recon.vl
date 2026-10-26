@@ -62,7 +62,7 @@ act recon_rfind(s: string, needle: string) -> i32 {
 
 // Returns true if mod_name is a standard built-in sys.* module that does not load external files.
 act recon_is_builtin_mod(mod_name: string) -> bool {
-    return mod_name == "sys.io" or mod_name == "sys.mem" or mod_name == "sys.fs" or mod_name == "sys.thread" or mod_name == "sys.math" or mod_name == "sys.time" or mod_name == "sys.os"
+    return mod_name == "sys.io" or mod_name == "sys.mem" or mod_name == "sys.fs" or mod_name == "sys.thread" or mod_name == "sys.math" or mod_name == "sys.time" or mod_name == "sys.os" or mod_name == "sys.simd"
 }
 
 // Scans source text to check whether it contains any non-sys module imports.

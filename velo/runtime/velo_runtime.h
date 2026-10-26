@@ -132,6 +132,31 @@ static inline int32_t velo_i32x4_get(i32x4 v, int32_t lane) {
     u.vec = v;
     return u.arr[lane & 3];
 }
+
+// 3.3 High-Performance SIMD Operations (sys.simd)
+static inline float velo_simd_dot(f32x4 a, f32x4 b) {
+    __m128 m = _mm_mul_ps(a, b);
+    __m128 shuf = _mm_shuffle_ps(m, m, _MM_SHUFFLE(2, 3, 0, 1));
+    __m128 sums = _mm_add_ps(m, shuf);
+    shuf = _mm_movehl_ps(shuf, sums);
+    sums = _mm_add_ss(sums, shuf);
+    return _mm_cvtss_f32(sums);
+}
+static inline f32x4 velo_simd_sqrt_f32x4(f32x4 a) { return _mm_sqrt_ps(a); }
+static inline f32x4 velo_simd_min_f32x4(f32x4 a, f32x4 b) { return _mm_min_ps(a, b); }
+static inline f32x4 velo_simd_max_f32x4(f32x4 a, f32x4 b) { return _mm_max_ps(a, b); }
+static inline i32x4 velo_simd_min_i32x4(i32x4 a, i32x4 b) {
+    union { i32x4 vec; int32_t arr[4]; } ua, ub, ur;
+    ua.vec = a; ub.vec = b;
+    for (int i = 0; i < 4; ++i) ur.arr[i] = ua.arr[i] < ub.arr[i] ? ua.arr[i] : ub.arr[i];
+    return ur.vec;
+}
+static inline i32x4 velo_simd_max_i32x4(i32x4 a, i32x4 b) {
+    union { i32x4 vec; int32_t arr[4]; } ua, ub, ur;
+    ua.vec = a; ub.vec = b;
+    for (int i = 0; i < 4; ++i) ur.arr[i] = ua.arr[i] > ub.arr[i] ? ua.arr[i] : ub.arr[i];
+    return ur.vec;
+}
 #else
 typedef float   f32x4 __attribute__((vector_size(16), aligned(16)));
 typedef int32_t i32x4 __attribute__((vector_size(16), aligned(16)));
@@ -193,6 +218,47 @@ static inline int32_t velo_i32x4_get(i32x4 v, int32_t lane) {
     union { i32x4 vec; int32_t arr[4]; } u;
     u.vec = v;
     return u.arr[lane & 3];
+}
+
+// 3.3 High-Performance SIMD Operations (sys.simd)
+static inline float velo_simd_dot(f32x4 a, f32x4 b) {
+    f32x4 m = a * b;
+    return (m[0] + m[1]) + (m[2] + m[3]);
+}
+static inline f32x4 velo_simd_sqrt_f32x4(f32x4 a) {
+    return (f32x4){ sqrtf(a[0]), sqrtf(a[1]), sqrtf(a[2]), sqrtf(a[3]) };
+}
+static inline f32x4 velo_simd_min_f32x4(f32x4 a, f32x4 b) {
+    return (f32x4){
+        a[0] < b[0] ? a[0] : b[0],
+        a[1] < b[1] ? a[1] : b[1],
+        a[2] < b[2] ? a[2] : b[2],
+        a[3] < b[3] ? a[3] : b[3]
+    };
+}
+static inline f32x4 velo_simd_max_f32x4(f32x4 a, f32x4 b) {
+    return (f32x4){
+        a[0] > b[0] ? a[0] : b[0],
+        a[1] > b[1] ? a[1] : b[1],
+        a[2] > b[2] ? a[2] : b[2],
+        a[3] > b[3] ? a[3] : b[3]
+    };
+}
+static inline i32x4 velo_simd_min_i32x4(i32x4 a, i32x4 b) {
+    return (i32x4){
+        a[0] < b[0] ? a[0] : b[0],
+        a[1] < b[1] ? a[1] : b[1],
+        a[2] < b[2] ? a[2] : b[2],
+        a[3] < b[3] ? a[3] : b[3]
+    };
+}
+static inline i32x4 velo_simd_max_i32x4(i32x4 a, i32x4 b) {
+    return (i32x4){
+        a[0] > b[0] ? a[0] : b[0],
+        a[1] > b[1] ? a[1] : b[1],
+        a[2] > b[2] ? a[2] : b[2],
+        a[3] > b[3] ? a[3] : b[3]
+    };
 }
 #endif
 

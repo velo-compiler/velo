@@ -140,11 +140,11 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
         return mono_map_spelling(k0, "dyn")
     }
     if e.kind == EXPR_INDEX {
-        // 5.2: shelf element reads type as their element
         let tt = mono_infer_type(e.target, scope)
+        let ct = strip_pointer_prefix(tt)
+        if ct == "f32x4" { return "f32" }; if ct == "i32x4" { return "i32" }
         let ee = mono_shelf_elem(tt)
         if ee != null { return ee }
-        // 5.2 slice 6: map value reads type as the value slot
         let mv = mono_map_value(tt)
         if mv != null { return mv }
         return "i32"
@@ -155,11 +155,6 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
         if ct == "f32x4" { return "f32" }; if ct == "i32x4" { return "i32" }
         if mono_shelf_elem(tt) != null and e.member_name == "len" { return "usize" }
         if mono_map_value(tt) != null and e.member_name == "len" { return "usize" }
-    }
-    if e.kind == EXPR_INDEX {
-        let tt = mono_infer_type(e.target, scope)
-        let ct = strip_pointer_prefix(tt)
-        if ct == "f32x4" { return "f32" }; if ct == "i32x4" { return "i32" }
     }
     if e.kind == EXPR_BINARY {
         if e.op == TOK_EQ or e.op == TOK_NEQ { return "bool" }
@@ -193,6 +188,14 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
             if mv != null {
                 if e.callee.member_name == "put" { return "void" }; if e.callee.member_name == "has" { return "bool" }
                 if e.callee.member_name == "get" or e.callee.member_name == "get_or" or e.callee.member_name == "take" { return mv }
+            }
+            if e.callee.target != null and e.callee.target.kind == EXPR_IDENT and e.callee.target.str_val == "simd" {
+                if e.callee.member_name == "dot" { return "f32" }
+                if e.callee.member_name == "sqrt" { return "f32x4" }
+                if e.callee.member_name == "min" or e.callee.member_name == "max" {
+                    if e.first_arg != null { return mono_infer_type(e.first_arg, scope) }
+                    return "f32x4"
+                }
             }
         }
         if e.callee != null and e.callee.kind == EXPR_IDENT {

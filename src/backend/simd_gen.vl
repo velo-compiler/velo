@@ -191,3 +191,38 @@ act emit_simd_unary(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     emit_c_expr(sb, st, expr.operand)
     sb_append_char(sb, ')')
 }
+
+act emit_simd_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    let member = expr.callee.member_name
+    if member == "dot" {
+        sb_append_str(sb, "velo_simd_dot(")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, ", ")
+        emit_c_expr(sb, st, expr.first_arg.next)
+        sb_append_char(sb, ')')
+        return
+    }
+    if member == "sqrt" {
+        sb_append_str(sb, "velo_simd_sqrt_f32x4(")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_char(sb, ')')
+        return
+    }
+    if member == "min" or member == "max" {
+        let t0 = infer_expr_type(st, expr.first_arg)
+        sb_append_str(sb, "velo_simd_")
+        sb_append_str(sb, member)
+        sb_append_char(sb, '_')
+        if t0 == "i32x4" {
+            sb_append_str(sb, "i32x4(")
+        } else {
+            sb_append_str(sb, "f32x4(")
+        }
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, ", ")
+        emit_c_expr(sb, st, expr.first_arg.next)
+        sb_append_char(sb, ')')
+        return
+    }
+}
+

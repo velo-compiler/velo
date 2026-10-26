@@ -46,6 +46,7 @@ BUILTIN_MODULES = {
     "sys.time": ["delta", "now", "sleep_ms"],
     "sys.os": ["args", "exit", "get_env", "set_env"],
     "sys.thread": ["acquire", "free", "join", "mutex", "release", "spawn"],
+    "sys.simd": ["dot", "max", "min", "sqrt"],
 }
 
 _BUILTIN_ALIASES = {
@@ -57,6 +58,7 @@ _BUILTIN_ALIASES = {
     "time": BUILTIN_MODULES["sys.time"],
     "os": BUILTIN_MODULES["sys.os"],
     "thread": BUILTIN_MODULES["sys.thread"],
+    "simd": BUILTIN_MODULES["sys.simd"],
 }
 
 KEYWORDS = sorted(set(COMPILER_KEYWORDS) | {"aka", "it"})
@@ -669,7 +671,7 @@ class VeloAnalysis:
             m = re.search(r"([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*)$", head.rstrip())
             target_expr = m.group(1) if m else _last_word(head)
             if target_expr == "sys":
-                for mod in ("sys.io", "sys.mem", "sys.fs", "sys.math", "sys.time", "sys.os", "sys.thread"):
+                for mod in ("sys.io", "sys.mem", "sys.fs", "sys.math", "sys.time", "sys.os", "sys.thread", "sys.simd"):
                     tail = mod[len("sys."):]
                     if not after or tail.startswith(after):
                         items.append({"label": mod, "kind": 9, "detail": "module"})
@@ -745,7 +747,7 @@ class VeloAnalysis:
                 continue
             seen.add(t)
             items.append({"label": t, "kind": 7})
-        for mod in ("sys.io", "sys.mem", "sys.fs", "sys.str", "sys.math", "sys.time", "sys.os", "sys.thread"):
+        for mod in ("sys.io", "sys.mem", "sys.fs", "sys.str", "sys.math", "sys.time", "sys.os", "sys.thread", "sys.simd"):
             if token and not mod.startswith(token) or mod in seen:
                 continue
             items.append({"label": mod, "kind": 9, "detail": "module"})

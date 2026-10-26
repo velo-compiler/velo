@@ -288,7 +288,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                 if target.str_val == "fs" { emit_fs_call(sb, st, member, expr); return }  // 5.4 S2: the ladder lives in fs_gen.vl — legacy six moved in verbatim, joining the metadata family; checks ran at inference
                 if target.str_val == "str" and member == "len" { sb_append_str(sb, "((usize)strlen("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
                 if target.str_val == "math" { emit_math_call(sb, st, member, expr); return }  // 5.3 (S2): the ladder lives in math_gen.vl — compile-checks already ran at inference
-                if target.str_val == "time" { emit_time_call(sb, st, member, expr); return }; if target.str_val == "os" { emit_os_call(sb, st, member, expr); return }  // 5.4/5.5: the ladders live in time_gen.vl / os_gen.vl — compile-checks already ran at inference
+                if target.str_val == "time" { emit_time_call(sb, st, member, expr); return }; if target.str_val == "os" { emit_os_call(sb, st, member, expr); return }; if target.str_val == "simd" { emit_simd_call(sb, st, expr); return }
                 if target.str_val == "str" and str.len(str_member_sig(member)) > 0 {  // 5.1: library members map 1:1 onto velo_str_* runtime helpers
                     sb_append_str(sb, "velo_str_"); sb_append_str(sb, member); sb_append_char(sb, '(')
                     mut a = expr.first_arg; loop a != null { emit_c_expr(sb, st, a); if a.next != null { sb_append_str(sb, ", ") }; a = a.next }

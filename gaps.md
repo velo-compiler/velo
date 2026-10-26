@@ -260,20 +260,44 @@ flowchart TD
   - No UTF-8 BOM in any `.vl` file.
 
 
-#### Task 3.3: High-Performance SIMD Operations (`sys.simd`)
-* **Problem**: Game math requires specialized vectorized primitives: dot products, minimums, maximums, and fast square roots.
-* **Specification**:
-  - Create standard library module `use sys.simd`:
-    * `simd.dot(a: f32x4, b: f32x4) -> f32`
-    * `simd.min(a: f32x4, b: f32x4) -> f32x4`
-    * `simd.max(a: f32x4, b: f32x4) -> f32x4`
-    * `simd.sqrt(a: f32x4) -> f32x4`
-* **Target Files**:
-  - `velo/runtime/velo_runtime.h`
-  - `src/analysis/type_checker.vl`
-  - `src/backend/driver.vl`
+#### Task 3.3: High-Performance SIMD Operations (`sys.simd`) [COMPLETED] ✅
+* **Former Defect**:
+  - The language lacked hardware SIMD vector operations (`sys.simd`) for specialized vectorized primitives: dot products, minimums, maximums, and fast square roots (`simd.dot`, `simd.sqrt`, `simd.min`, `simd.max`).
+  - Standard library lacked the `sys.simd` module, requiring manual fallback or loop-based computation.
+* **Fix Applied**:
+  - **Memory & C Runtime (`velo/runtime/velo_runtime.h`)**:
+    * Defined portable inline functions lowering to hardware SIMD instructions:
+      - `velo_simd_dot(a, b) -> float`: Under MSVC uses `_mm_mul_ps` with shuffle and add; under GCC/Clang computes horizontal dot sum `(m[0] + m[1]) + (m[2] + m[3])` which GCC auto-vectorizes to dot/hadd.
+      - `velo_simd_sqrt_f32x4(a) -> f32x4`: Under MSVC uses `_mm_sqrt_ps(a)`; under GCC/Clang constructs `(f32x4){ sqrtf(a[0]), sqrtf(a[1]), sqrtf(a[2]), sqrtf(a[3]) }` which compiles to `sqrtps` under `-O2`/`-O3`.
+      - `velo_simd_min_f32x4(a, b)` & `velo_simd_max_f32x4(a, b)`: Under MSVC uses `_mm_min_ps` / `_mm_max_ps`; under GCC/Clang uses elementwise ternary lowering to `minps`/`maxps`.
+      - `velo_simd_min_i32x4(a, b)` & `velo_simd_max_i32x4(a, b)`: Portable elementwise integer min and max for `i32x4`.
+  - **Stage 1 (Python Compiler)**:
+    * In `velo/analysis.py`: registered `sys.simd` and `simd` alias in `BUILTIN_MODULES` and autocomplete lists.
+    * In `velo/monomorphize.py`: recognized `simd` as module in `is_module` and `_infer_expr_type` return types (`f32` for `dot`, matching vector type for `min`/`max`, `f32x4` for `sqrt`).
+    * In `velo/codegen_c.py`: registered `SIMD_CALLS` and `SIMD_FUNCS_TEXT`, bare constant check in `_resolve_expr_type`, arity and type checks in `_simd_expect` and `_emit_simd_call`, lowered with `velo_simd_` runtime prefixes.
+  - **Stage 2 (Self-Hosted Compiler)**:
+    * In `src/backend/driver.vl`: recognized `sys.simd` as standard built-in module in `load_file_and_deps`.
+    * In `src/backend/pretty_recon.vl`: registered `sys.simd` in `recon_is_builtin_mod`.
+    * In `src/analysis/simd_checks.vl`: implemented `check_simd_constant` and `check_simd_call` with character-identical semantic diagnostics for unknown member, bare constant, arity, and operand types.
+    * In `src/analysis/type_checker.vl`: dispatched `simd` module pseudo-type, `check_simd_constant`, and `check_simd_call`.
+    * In `src/analysis/monomorphize_expr.vl`: inferred return types for `simd` calls in `mono_infer_type`.
+    * In `src/backend/simd_gen.vl`: implemented `emit_simd_call` lowering calls to `velo_simd_dot`, `velo_simd_sqrt_f32x4`, `velo_simd_min_f32x4`, `velo_simd_min_i32x4`, `velo_simd_max_f32x4`, `velo_simd_max_i32x4`.
+    * In `src/backend/codegen_expr.vl`: dispatched `simd` call expressions to `emit_simd_call`.
+    * Strict code standards maintained: all source files in `src/` remain $\le 397$ lines (`python scripts/count_lines.py`).
+* **Residual Limitation**:
+  - `simd.dot` and `simd.sqrt` operate on `f32x4` vectors; 256-bit AVX vectors (`f32x8`) and integer dot products are reserved for future vector extension phases.
 * **Verification**:
-  - Write `examples/36_simd_math.vl` benchmarking vector transformations against scalar baseline.
+  - Created benchmark example `examples/36_simd_math.vl` benchmarking 1,000,000 vector transformations (sqrt, clamp via min/max, dot product accumulation) against a scalar baseline, running identically on Stage 1 and Stage 2.
+  - Extended test suite `tests/test_simd_vectors.py` (51 tests) covering:
+    1. Positive execution on Stage 1 and Stage 2 verifying `simd.dot`, `simd.sqrt`, `simd.min` (`f32x4` and `i32x4`), and `simd.max` (`f32x4` and `i32x4`).
+    2. Character-identical negative diagnostics on Stage 1 and Stage 2 for unknown function name, bare constant reference without parens, wrong arities, invalid argument types, and mismatched operand types.
+    3. `velo check --json` diagnostics parity on both stages.
+  - Rebuilt 3-stage bootstrap chain (`velo_gen1.exe` -> `velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe`).
+  - Bit-for-bit determinism verified between Gen2 and Gen3: identical SHA-256 (`94E6A858AF2D575D9FC5BCBC9C7C0FE561039196F24AFC3AA7A9D163A7D0E15C`).
+  - Native test runner passed all 105 tests (`bin/velo.exe test examples/15_native_tests.vl`).
+  - Pytest full test suite passed (359 tests passed in 205s).
+  - All source files $\le 397$ lines (`scripts/count_lines.py`).
+  - No UTF-8 BOM in any `.vl` file.
 
 ---
 

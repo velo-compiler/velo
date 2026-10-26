@@ -1,0 +1,101 @@
+/* 3.3 High-Performance SIMD Operations (sys.simd)
+ *
+ * Demonstrates hardware-accelerated 128-bit vector primitives (dot, sqrt, min, max)
+ * and benchmarks SIMD vector transformations against a scalar baseline.
+ */
+use sys.io
+use sys.time
+use sys.simd
+
+act main() -> i32 {
+    io.println("=== Velo SIMD Hardware Math Benchmark ===")
+
+    // 1. Primitive Verification
+    let a = f32x4(1.0, 2.0, 3.0, 4.0)
+    let b = f32x4(2.0, 3.0, 4.0, 5.0)
+
+    // Dot product: 1*2 + 2*3 + 3*4 + 4*5 = 40.0
+    let dot_res = simd.dot(a, b)
+    assert(dot_res == 40.0, "simd.dot check")
+
+    // Sqrt: sqrt([4, 9, 16, 25]) = [2, 3, 4, 5]
+    let sq_in = f32x4(4.0, 9.0, 16.0, 25.0)
+    let sq_res = simd.sqrt(sq_in)
+    assert(sq_res.x == 2.0 and sq_res.y == 3.0 and sq_res.z == 4.0 and sq_res.w == 5.0, "simd.sqrt check")
+
+    // Min and Max
+    let lo = f32x4(0.0, 0.0, 0.0, 0.0)
+    let hi = f32x4(3.0, 3.0, 3.0, 3.0)
+    let clamped = simd.min(simd.max(sq_res, lo), hi)
+    assert(clamped.x == 2.0 and clamped.y == 3.0 and clamped.z == 3.0 and clamped.w == 3.0, "simd.min/max check")
+
+    // Integer SIMD Min and Max
+    let ia = i32x4(10, -20, 30, -40)
+    let ib = i32x4(0, 0, 0, 0)
+    let imin = simd.min(ia, ib)
+    let imax = simd.max(ia, ib)
+    assert(imin.x == 0 and imin.y == -20 and imin.z == 0 and imin.w == -40, "simd.min i32x4 check")
+    assert(imax.x == 10 and imax.y == 0 and imax.z == 30 and imax.w == 0, "simd.max i32x4 check")
+
+    // 2. Performance Benchmark: 1,000,000 vector transformations
+    let iters = 1000000
+
+    // Benchmark SIMD path
+    let t0 = time.now()
+    mut v_acc = f32x4(1.0, 2.0, 3.0, 4.0)
+    let v_step = f32x4(0.0001, 0.0002, 0.0003, 0.0004)
+    mut dot_acc: f32 = 0.0
+
+    loop i in 0..iters {
+        let v_sqrt = simd.sqrt(v_acc)
+        let v_clamped = simd.min(simd.max(v_sqrt, lo), hi)
+        dot_acc += simd.dot(v_clamped, v_step)
+        v_acc += v_step
+    }
+    let t1 = time.now()
+    let simd_us = t1 - t0
+
+    // Benchmark Scalar path (processing 4 float lanes per iteration)
+    let t2 = time.now()
+    mut sx: f32 = 1.0
+    mut sy: f32 = 2.0
+    mut sz: f32 = 3.0
+    mut sw: f32 = 4.0
+    let step_x: f32 = 0.0001
+    let step_y: f32 = 0.0002
+    let step_z: f32 = 0.0003
+    let step_w: f32 = 0.0004
+    mut scalar_dot_acc: f32 = 0.0
+
+    loop i in 0..iters {
+        // Scalar sqrt approx/math
+        mut rx = sx
+        mut ry = sy
+        mut rz = sz
+        mut rw = sw
+        // Clamp lo/hi
+        if rx < 0.0 { rx = 0.0 }
+        if rx > 3.0 { rx = 3.0 }
+        if ry < 0.0 { ry = 0.0 }
+        if ry > 3.0 { ry = 3.0 }
+        if rz < 0.0 { rz = 0.0 }
+        if rz > 3.0 { rz = 3.0 }
+        if rw < 0.0 { rw = 0.0 }
+        if rw > 3.0 { rw = 3.0 }
+
+        scalar_dot_acc += (rx * step_x + ry * step_y + rz * step_z + rw * step_w)
+        sx += step_x
+        sy += step_y
+        sz += step_z
+        sw += step_w
+    }
+    let t3 = time.now()
+    let scalar_us = t3 - t2
+
+    io.println("SIMD iterations: {iters}")
+    io.println("SIMD time: {simd_us} us")
+    io.println("Scalar time: {scalar_us} us")
+    io.println("Benchmark completed successfully.")
+
+    return 0
+}

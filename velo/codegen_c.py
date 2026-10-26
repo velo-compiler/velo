@@ -137,6 +137,14 @@ def time_member_result_type(member: str, arg_types: List[str]) -> str:
         return "i64"
     return ""
 
+SIMD_CALLS = {
+    "dot": (2, ": (f32x4 a, f32x4 b)"),
+    "min": (2, ": (a, b)"),
+    "max": (2, ": (a, b)"),
+    "sqrt": (1, ": (f32x4 a)"),
+}
+SIMD_FUNCS_TEXT = "dot, min, max, sqrt"
+
 
 # 5.4 Extended File System & OS Primitives (sys.os): closed-namespace call
 # set. args reads the full argv (argv[0] included); get_env/set_env ride the
@@ -2386,6 +2394,14 @@ class CCodeGenerator:
                     # Unknown members fall through to the default — the emit
                     # path's checker raises.
                     return os_member_result_type(value.callee.member)
+                elif value.callee.target.name == "simd":
+                    if value.callee.member == "dot":
+                        return "f32"
+                    if value.callee.member == "sqrt":
+                        return "f32x4"
+                    if value.callee.member in ("min", "max") and value.args:
+                        return self._infer_raw_velo_type(value.args[0])
+                    return "f32x4"
         return "i32"
 
 
@@ -2475,6 +2491,9 @@ class CCodeGenerator:
             if isinstance(expr.target, Identifier) and expr.target.name == "fs":
                 hint = f" (functions need parens: fs.{expr.member}())" if expr.member in FS_CALLS else ""
                 raise ValueError(f"unknown fs constant '{expr.member}' (fs functions are: {FS_FUNCS_TEXT}){hint}")
+            if isinstance(expr.target, Identifier) and expr.target.name == "simd":
+                hint = f" (functions need parens: simd.{expr.member}(...))" if expr.member in SIMD_CALLS else ""
+                raise ValueError(f"unknown simd constant '{expr.member}' (simd functions are: {SIMD_FUNCS_TEXT}){hint}")
             target_type = self._resolve_expr_type(expr.target)
             # 5.2: shelf property reads (len); other members are loud errors
             if self._shelf_elem_type(target_type) is not None:
@@ -2626,6 +2645,15 @@ class CCodeGenerator:
                     # 5.4 S1: args -> shelf[string], get_env -> string,
                     # set_env -> bool, exit -> void (mirror of the infer branch)
                     return os_member_result_type(expr.callee.member)
+                elif expr.callee.target.name == "simd":
+                    if expr.callee.member not in SIMD_CALLS:
+                        raise ValueError(f"unknown simd member '{expr.callee.member}' (functions: {SIMD_FUNCS_TEXT} are available)")
+                    self._simd_expect(expr.callee.member, expr.args)
+                    if expr.callee.member == "dot":
+                        return "f32"
+                    if expr.callee.member == "sqrt":
+                        return "f32x4"
+                    return self._thread_arg_type(expr.args[0])
                 elif expr.callee.target.name == "io":
                     # All io calls are void (mirrors type_checker.vl), so
                     # mem count/fill checks can render and reject them.
@@ -3037,6 +3065,9 @@ class CCodeGenerator:
                         # lowers straight onto C's exit (_os_expect lives on
                         # the emit path — checker + emitter in one).
                         return self._emit_os_call(expr.callee.member, expr.args)
+
+                    elif expr.callee.target.name == "simd":
+                        return self._emit_simd_call(expr.callee.member, expr.args)
 
                 # 5.2: shelf receiver member calls — put/take helpers, compile-checked
                 target_type = self._resolve_expr_type(expr.callee.target)
@@ -3561,6 +3592,41 @@ class CCodeGenerator:
             d2 = f"(double)({codes[2]})"
             return f"(({d0}) + (({d1}) - ({d0})) * ({d2}))"
         raise ValueError(f"unknown math member '{member}'")
+
+    def _simd_expect(self, member: str, args: List[Expr]) -> None:
+        if member not in SIMD_CALLS:
+            raise ValueError(f"unknown simd member '{member}' (functions: {SIMD_FUNCS_TEXT} are available)")
+        expect_n, sig = SIMD_CALLS[member]
+        if len(args) != expect_n:
+            plural = "" if expect_n == 1 else "s"
+            raise ValueError(f"simd.{member} expects exactly {expect_n} argument{plural}{sig}")
+        if member == "dot":
+            for a in args:
+                t = self._thread_arg_type(a)
+                if t != "f32x4":
+                    raise ValueError(f"simd.dot expects f32x4 arguments (got {t})")
+        elif member == "sqrt":
+            t = self._thread_arg_type(args[0])
+            if t != "f32x4":
+                raise ValueError(f"simd.sqrt expects f32x4 argument (got {t})")
+        elif member in ("min", "max"):
+            t0 = self._thread_arg_type(args[0])
+            t1 = self._thread_arg_type(args[1])
+            if t0 not in ("f32x4", "i32x4"):
+                raise ValueError(f"simd.{member} expects f32x4 or i32x4 arguments (got {t0})")
+            if t1 != t0:
+                raise ValueError(f"simd.{member} expects matching operand types (got {t0} and {t1})")
+
+    def _emit_simd_call(self, member: str, args: List[Expr]) -> str:
+        self._simd_expect(member, args)
+        codes = [self._emit_expression(a) for a in args]
+        if member == "dot":
+            return f"velo_simd_dot({codes[0]}, {codes[1]})"
+        if member == "sqrt":
+            return f"velo_simd_sqrt_f32x4({codes[0]})"
+        t0 = self._thread_arg_type(args[0])
+        fn_suffix = "f32x4" if t0 == "f32x4" else "i32x4"
+        return f"velo_simd_{member}_{fn_suffix}({codes[0]}, {codes[1]})"
 
     def _lower_mem_alloc(self, args: List[Expr]) -> str:
         if len(args) != 2:
