@@ -384,7 +384,97 @@ class TestAllocatorArchitecture(unittest.TestCase):
         )
         assert_parity(program, "heapalloconearg", ["heap used >= 512: true"])
 
+    def test_dynamic_chunk_spilling_10000_exceeding_64mb(self):
+        """Task 6.2: Allocating 10,000 chunks of 8,192 bytes (81.92 MB total)
+        exceeds the 64 MB default arena capacity. The runtime must dynamically
+        spill into secondary heap chunks without crashing, then free all secondary
+        chunks and reset the primary watermark to 0 on zone exit."""
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act main() {\n"
+            "    let before: usize = mem.used()\n"
+            "    zone {\n"
+            "        mut i: usize = 0\n"
+            "        loop i < 10000 {\n"
+            "            let buf: @u8 = mem.alloc(8192)\n"
+            "            buf[0] = 42\n"
+            "            buf[8191] = 99\n"
+            "            i = i + 1\n"
+            "        }\n"
+            "        let inside: usize = mem.used()\n"
+            "        io.println(\"inside >= 81920000: {inside >= 81920000}\")\n"
+            "    }\n"
+            "    let after: usize = mem.used()\n"
+            "    io.println(\"before = {before}, after = {after}\")\n"
+            "}\n"
+        )
+        assert_parity(
+            program, "spill10000",
+            ["inside >= 81920000: true", "before = 0, after = 0"]
+        )
+
+    def test_dynamic_chunk_spilling_consecutive_zones(self):
+        """Task 6.2: Consecutive zone blocks that exceed capacity must each cleanly
+        reclaim all spilled secondary chunks upon exit."""
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act main() {\n"
+            "    zone {\n"
+            "        mut i: usize = 0\n"
+            "        loop i < 10000 {\n"
+            "            let buf: @u8 = mem.alloc(8192)\n"
+            "            i = i + 1\n"
+            "        }\n"
+            "    }\n"
+            "    let mid: usize = mem.used()\n"
+            "    zone {\n"
+            "        mut j: usize = 0\n"
+            "        loop j < 10000 {\n"
+            "            let buf: @u8 = mem.alloc(8192)\n"
+            "            j = j + 1\n"
+            "        }\n"
+            "    }\n"
+            "    let final_used: usize = mem.used()\n"
+            "    io.println(\"mid = {mid}, final = {final_used}\")\n"
+            "}\n"
+        )
+        assert_parity(
+            program, "spillconsecutive",
+            ["mid = 0, final = 0"]
+        )
+
+    def test_dynamic_chunk_spilling_custom_arena(self):
+        """Task 6.2: Custom arenas created via mem.create_arena also support
+        dynamic chunk spilling beyond their initial capacity."""
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act main() {\n"
+            "    let custom = mem.create_arena(1048576)\n"
+            "    defer mem.destroy_arena(custom)\n"
+            "    zone custom {\n"
+            "        mut i: usize = 0\n"
+            "        loop i < 1000 {\n"
+            "            let buf: @u8 = mem.alloc(4096)\n"
+            "            buf[0] = 7\n"
+            "            i = i + 1\n"
+            "        }\n"
+            "        let inside: usize = mem.used()\n"
+            "        io.println(\"inside >= 4096000: {inside >= 4096000}\")\n"
+            "    }\n"
+            "    let after: usize = mem.used()\n"
+            "    io.println(\"after = {after}\")\n"
+            "}\n"
+        )
+        assert_parity(
+            program, "spillcustom",
+            ["inside >= 4096000: true", "after = 0"]
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

@@ -281,11 +281,58 @@ static inline i32x4 velo_simd_max_i32x4(i32x4 a, i32x4 b) {
 // scope independently. Explicit `@Allocator` handles (§4.1) are raw arena
 // pointers and remain single-threaded until an atomic/locked variant lands.
 // ============================================================================
+typedef struct VeloZoneChunk {
+    struct VeloZoneChunk* next;
+    uint8_t* base;
+    size_t   cap;
+    size_t   offset;
+} VeloZoneChunk;
+
 typedef struct VeloZoneArena {
-    uint8_t* base;    // start of the bump region
-    size_t   cap;     // usable capacity in bytes
-    size_t   offset;  // bump watermark (== allocated bytes right now)
+    uint8_t*       base;     // start of the primary bump region
+    size_t         cap;      // usable primary capacity in bytes
+    size_t         offset;   // primary bump watermark (== allocated bytes in primary block)
+    int            can_grow; // 1 = dynamic secondary chunk spilling fallback; 0 = fixed budget
+    VeloZoneChunk* chunks;   // secondary linked chunks allocated when primary overflows
 } VeloZoneArena;
+
+static inline VeloZoneChunk* velo_zone_new_chunk(VeloZoneArena* z, size_t min_bytes) {
+    size_t chunk_cap = 8 * 1024 * 1024; // 8 MB standard secondary chunk
+    if (z->cap < chunk_cap && z->cap >= 65536) {
+        chunk_cap = z->cap;
+    }
+    if (min_bytes > chunk_cap) {
+        chunk_cap = min_bytes;
+    }
+    VeloZoneChunk* c = (VeloZoneChunk*)malloc(sizeof(VeloZoneChunk));
+    uint8_t* buf = (uint8_t*)malloc(chunk_cap);
+    if (!c || !buf) {
+        fprintf(stderr, "Velo Fatal Error: Zone Arena Chunk Spilling allocation failed (%llu bytes)!\n",
+                (unsigned long long)chunk_cap);
+        exit(1);
+    }
+    c->next = z->chunks;
+    c->base = buf;
+    c->cap = chunk_cap;
+    c->offset = 0;
+    z->chunks = c;
+    return c;
+}
+
+static inline void velo_zone_free_chunks(VeloZoneArena* z) {
+    if (!z) return;
+    VeloZoneChunk* cur = z->chunks;
+    while (cur) {
+        VeloZoneChunk* next = cur->next;
+        if (cur->base) {
+            free(cur->base);
+            cur->base = NULL;
+        }
+        free(cur);
+        cur = next;
+    }
+    z->chunks = NULL;
+}
 
 #define VELO_ZONE_BUFFER_SIZE (64 * 1024 * 1024)
 
@@ -314,6 +361,8 @@ static inline VeloZoneArena* velo_zone_create_default(void) {
     z->base = buf;
     z->cap = (size_t)VELO_ZONE_BUFFER_SIZE;
     z->offset = 0;
+    z->can_grow = 1;
+    z->chunks = NULL;
     return z;
 }
 
@@ -338,11 +387,26 @@ static inline size_t velo_zone_push(void) {
 }
 
 static inline void velo_zone_pop(size_t watermark) {
-    velo_zone_active()->offset = watermark;
+    VeloZoneArena* z = velo_zone_active();
+    if (z->chunks) {
+        velo_zone_free_chunks(z);
+    }
+    z->offset = watermark;
+}
+
+static inline size_t velo_arena_total_used(VeloZoneArena* a) {
+    if (!a) return 0;
+    size_t total = a->offset;
+    VeloZoneChunk* cur = a->chunks;
+    while (cur) {
+        total += cur->offset;
+        cur = cur->next;
+    }
+    return total;
 }
 
 static inline size_t velo_mem_used(void) {
-    return velo_zone_active()->offset;
+    return velo_arena_total_used(velo_zone_active());
 }
 
 // Enters a private arena of exactly `bytes` capacity: acquires a pooled or
@@ -380,6 +444,8 @@ static inline VeloZoneArena* velo_zone_enter(size_t bytes) {
         z->cap = bytes;
     }
     z->offset = 0;
+    z->can_grow = 0; // sized zone <bytes> acts as a fixed-budget scratch arena
+    z->chunks = NULL;
     g_velo_zone_tls_active = z;
     return prev;
 }
@@ -390,7 +456,10 @@ static inline VeloZoneArena* velo_zone_enter(size_t bytes) {
 static inline void velo_zone_leave(VeloZoneArena* prev) {
     VeloZoneArena* z = g_velo_zone_tls_active;
     if (z != g_velo_zone_tls_default) {
+        velo_zone_free_chunks(z);
         if (g_velo_zone_tls_pool_count < VELO_ZONE_POOL_MAX) {
+            z->offset = 0;
+            z->chunks = NULL;
             g_velo_zone_tls_pool[g_velo_zone_tls_pool_count++] = *z;
         } else {
             free(z->base);
@@ -404,13 +473,22 @@ static inline void* velo_mem_alloc(size_t size, size_t count) {
     VeloZoneArena* z = velo_zone_active();
     size_t total = size * count;
     size_t aligned = (total + 7) & ~((size_t)7);
-    if (z->offset + aligned > z->cap) {
+    if (z->offset + aligned <= z->cap) {
+        void* ptr = (void*)&z->base[z->offset];
+        z->offset += aligned;
+        return ptr;
+    }
+    if (!z->can_grow) {
         fprintf(stderr, "Velo Fatal Error: Zone Arena Out of Memory (active arena capacity %llu bytes, requested %llu more)!\n",
                 (unsigned long long)z->cap, (unsigned long long)aligned);
         exit(1);
     }
-    void* ptr = (void*)&z->base[z->offset];
-    z->offset += aligned;
+    VeloZoneChunk* cur = z->chunks;
+    if (!cur || cur->offset + aligned > cur->cap) {
+        cur = velo_zone_new_chunk(z, aligned);
+    }
+    void* ptr = (void*)&cur->base[cur->offset];
+    cur->offset += aligned;
     return ptr;
 }
 
@@ -433,19 +511,28 @@ typedef VeloZoneArena* VeloAllocator;
 static inline void* velo_alloc_with(VeloAllocator a, size_t size, size_t count) {
     size_t total = size * count;
     size_t aligned = (total + 7) & ~((size_t)7);
-    if (a->offset + aligned > a->cap) {
+    if (a->offset + aligned <= a->cap) {
+        void* ptr = (void*)&a->base[a->offset];
+        a->offset += aligned;
+        return ptr;
+    }
+    if (!a->can_grow) {
         fprintf(stderr, "Velo Fatal Error: Allocator Out of Memory (capacity %llu bytes, requested %llu more)!\n",
                 (unsigned long long)a->cap, (unsigned long long)aligned);
         exit(1);
     }
-    void* ptr = (void*)&a->base[a->offset];
-    a->offset += aligned;
+    VeloZoneChunk* cur = a->chunks;
+    if (!cur || cur->offset + aligned > cur->cap) {
+        cur = velo_zone_new_chunk(a, aligned);
+    }
+    void* ptr = (void*)&cur->base[cur->offset];
+    cur->offset += aligned;
     return ptr;
 }
 
 // Returns the number of bytes currently used in allocator `a`.
 static inline size_t velo_alloc_used(VeloAllocator a) {
-    return a->offset;
+    return velo_arena_total_used(a);
 }
 
 // ============================================================================
@@ -466,11 +553,14 @@ static inline VeloZoneArena* velo_mem_create_arena(size_t cap) {
     z->base = buf;
     z->cap = cap;
     z->offset = 0;
+    z->can_grow = 1; // custom arenas support dynamic chunk spilling
+    z->chunks = NULL;
     return z;
 }
 
 static inline void velo_mem_destroy_arena(VeloZoneArena* a) {
     if (a) {
+        velo_zone_free_chunks(a);
         if (a->base) {
             free(a->base);
             a->base = NULL;
@@ -580,11 +670,13 @@ static inline void velo_thread_tls_release(void) {
         g_velo_zone_tls_active = NULL;
     }
     if (g_velo_zone_tls_default) {
+        velo_zone_free_chunks(g_velo_zone_tls_default);
         free(g_velo_zone_tls_default->base);
         free(g_velo_zone_tls_default);
         g_velo_zone_tls_default = NULL;
     }
     for (size_t i = 0; i < g_velo_zone_tls_pool_count; ++i) {
+        velo_zone_free_chunks(&g_velo_zone_tls_pool[i]);
         free(g_velo_zone_tls_pool[i].base);
     }
     g_velo_zone_tls_pool_count = 0;
@@ -2629,6 +2721,7 @@ static inline void velo_mem_init(void) {
 
 static inline void velo_mem_reset(void) {
     if (g_velo_zone_tls_active) {
+        velo_zone_free_chunks(g_velo_zone_tls_active);
         g_velo_zone_tls_active->offset = 0;
     }
 }

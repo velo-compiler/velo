@@ -479,15 +479,28 @@ flowchart TD
   - Code standards: `python scripts/count_lines.py` verified all 65 compiler source files $\le 397$ lines (max file 397 lines).
   - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
 
-#### Task 6.2: Dynamic Arena Chunk Spilling
-* **Problem**: When a zone allocation exceeds capacity, the compiler terminates with a loud `Zone Arena Out of Memory` fatal error.
-* **Specification**:
-  - Add chunked growth fallback: when an arena's primary block fills up, allocate a linked secondary chunk from the system heap (`malloc`), linking chunks in a linked list.
-  - At zone exit, free all secondary linked chunks while resetting the primary block offset to 0.
-* **Target Files**:
-  - `velo/runtime/velo_runtime.h`
+#### Task 6.2: Dynamic Arena Chunk Spilling [COMPLETED] ✅
+* **Former Defect**: When allocations inside a zone arena exceeded primary capacity (such as the default 64 MB thread-local arena or custom standalone arenas), the runtime terminated with a fatal `Zone Arena Out of Memory` error, crashing the process even when ample system RAM was available.
+* **Fix Applied**:
+  - Implemented dynamic chunk spilling fallback in `velo/runtime/velo_runtime.h`:
+    * Added `VeloZoneChunk` descriptor linked list to `VeloZoneArena`.
+    * Added `can_grow` configuration (`1` for default 64 MB arena and `mem.create_arena` instances; `0` for explicitly sized fixed-budget `zone <bytes>` blocks).
+    * Updated `velo_mem_alloc` and `velo_alloc_with`: when an allocation exceeds the primary buffer, it dynamically allocates linked secondary heap chunks (sized dynamically from 8 MB up to requested allocation size) via `velo_zone_new_chunk`.
+    * Implemented `velo_zone_free_chunks` at zone exit points (`velo_zone_pop`, `velo_zone_leave`, `velo_mem_destroy_arena`, `velo_thread_tls_release`, `velo_mem_reset`), freeing all secondary chunks and restoring the primary watermark to 0 with zero memory leaks.
+    * Updated `velo_mem_used()` and `velo_alloc_used(a)` via `velo_arena_total_used` to accurately reflect memory usage across primary and spilled secondary chunks.
+  - Added comprehensive verification in `tests/test_allocators.py`:
+    * `test_dynamic_chunk_spilling_10000_exceeding_64mb`: Allocating 10,000 buffers of 8,192 bytes (81.92 MB total) exceeding the 64 MB default arena without crashing or leaking memory.
+    * `test_dynamic_chunk_spilling_consecutive_zones`: Consecutive zone blocks spilling beyond capacity and cleanly reclaiming all memory between runs.
+    * `test_dynamic_chunk_spilling_custom_arena`: Standalone arenas created via `mem.create_arena` dynamically spilling beyond initial capacity.
+* **Residual Limitation**: Very large allocations require sufficient contiguous system heap address space from the OS `malloc`.
 * **Verification**:
-  - Test allocating 10,000 chunks that exceed 64 MB without crashing or leaking memory.
+  - Rebuilt bootstrap chain: `bin/velo_gen1.exe build src/main.vl -o bin/velo_gen2.exe`, `bin/velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe`, `Copy-Item bin/velo_gen3.exe bin/velo.exe -Force`.
+  - Verified determinism: SHA-256 of `emit-c src/main.vl` output between Gen2 and Gen3 matches bit-for-bit (`F805475F1B06A7C2E2C91A553B994A6B8136CEB291D2DA9A56BC8E258B3BF980`).
+  - Native test runner: all 105 tests passed (`bin/velo.exe test examples/15_native_tests.vl`).
+  - Unit & parity tests: all 20 tests passed in `tests/test_allocators.py`.
+  - Full test suite: all 408 tests passed (`python -m pytest tests -q`).
+  - Code standards: all 65 compiler source files verified $\le 397$ lines (`python scripts/count_lines.py`).
+  - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
 
 ---
 
