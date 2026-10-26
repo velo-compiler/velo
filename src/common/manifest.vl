@@ -1,0 +1,313 @@
+// Package Manifest Parser and Data Model for Velo (velo.pkg)
+// Parses Velo-native declarative block manifest syntax.
+use sys.fs
+use sys.mem
+use "string_builder.vl"
+
+let MTOK_IDENT: i32 = 1
+let MTOK_STRING: i32 = 2
+let MTOK_LBRACE: i32 = 3
+let MTOK_RBRACE: i32 = 4
+let MTOK_LBRACKET: i32 = 5
+let MTOK_RBRACKET: i32 = 6
+let MTOK_COLON: i32 = 7
+let MTOK_COMMA: i32 = 8
+let MTOK_AT: i32 = 9
+let MTOK_EOF: i32 = 10
+
+data ManifestStringItem {
+    value: string
+    next: @ManifestStringItem
+}
+
+data PackageMeta {
+    name: string
+    version: string
+    entry: string
+    first_author: @ManifestStringItem
+    author_count: i32
+    description: string
+    license: string
+}
+
+data DependencySpec {
+    name: string
+    kind: string
+    source: string
+    tag: string
+    next: @DependencySpec
+}
+
+data LinkConfig {
+    first_lib: @ManifestStringItem
+    lib_count: i32
+    first_flag: @ManifestStringItem
+    flag_count: i32
+}
+
+data PackageManifest {
+    pkg: PackageMeta
+    first_dep: @DependencySpec
+    dep_count: i32
+    link: LinkConfig
+    has_error: bool
+    error_msg: string
+}
+
+data ManifestLexer {
+    source: string
+    pos: usize
+    len: usize
+    line: i32
+    col: i32
+    cur_kind: i32
+    cur_val: string
+    cur_line: i32
+    cur_col: i32
+    has_error: bool
+    error_msg: string
+    filename: string
+}
+
+act format_manifest_error(filename: string, line: i32, col: i32, msg: string) -> string {
+    mut sb = create_sb(128)
+    sb_append_str(@sb, "[Velo Error] ")
+    sb_append_str(@sb, filename)
+    sb_append_char(@sb, ':')
+    sb_append_int(@sb, line)
+    sb_append_char(@sb, ':')
+    sb_append_int(@sb, col)
+    sb_append_str(@sb, " - ")
+    sb_append_str(@sb, msg)
+    return sb_to_string(@sb)
+}
+
+act mlex_set_err(lex: @ManifestLexer, line: i32, col: i32, msg: string) {
+    if not lex.has_error {
+        lex.has_error = true
+        lex.error_msg = format_manifest_error(lex.filename, line, col, msg)
+    }
+}
+
+act mlex_advance(lex: @ManifestLexer) {
+    if lex.has_error { return }
+    let src = lex.source; let n = lex.len
+    loop lex.pos < n {
+        let ch = src[lex.pos]
+        if ch == ' ' or ch == '\t' or ch == '\r' { lex.pos += 1; lex.col += 1 }
+        else if ch == '\n' { lex.pos += 1; lex.line += 1; lex.col = 1 }
+        else if ch == '#' or (ch == '/' and lex.pos + 1 < n and src[lex.pos + 1] == '/') {
+            loop lex.pos < n and src[lex.pos] != '\n' { lex.pos += 1 }
+        } else { break }
+    }
+    if lex.pos >= n { lex.cur_kind = MTOK_EOF; lex.cur_val = ""; lex.cur_line = lex.line; lex.cur_col = lex.col; return }
+    let s_line = lex.line; let s_col = lex.col; let c = src[lex.pos]
+    lex.cur_line = s_line; lex.cur_col = s_col
+    if c == '{' { lex.pos += 1; lex.col += 1; lex.cur_kind = MTOK_LBRACE; lex.cur_val = "{"; return }
+    if c == '}' { lex.pos += 1; lex.col += 1; lex.cur_kind = MTOK_RBRACE; lex.cur_val = "}"; return }
+    if c == '[' { lex.pos += 1; lex.col += 1; lex.cur_kind = MTOK_LBRACKET; lex.cur_val = "["; return }
+    if c == ']' { lex.pos += 1; lex.col += 1; lex.cur_kind = MTOK_RBRACKET; lex.cur_val = "]"; return }
+    if c == ':' { lex.pos += 1; lex.col += 1; lex.cur_kind = MTOK_COLON; lex.cur_val = ":"; return }
+    if c == ',' { lex.pos += 1; lex.col += 1; lex.cur_kind = MTOK_COMMA; lex.cur_val = ","; return }
+    if c == '@' { lex.pos += 1; lex.col += 1; lex.cur_kind = MTOK_AT; lex.cur_val = "@"; return }
+    if c == '"' {
+        lex.pos += 1; lex.col += 1
+        mut sb = create_sb(64)
+        loop lex.pos < n and src[lex.pos] != '"' {
+            let sc = src[lex.pos]
+            if sc == '\n' { mlex_set_err(lex, s_line, s_col, "unterminated string literal"); return }
+            if sc == '\\' {
+                lex.pos += 1; lex.col += 1
+                if lex.pos < n {
+                    let esc = src[lex.pos]
+                    if esc == 'n' { sb_append_char(@sb, '\n') }
+                    else if esc == 't' { sb_append_char(@sb, '\t') }
+                    else if esc == 'r' { sb_append_char(@sb, '\r') }
+                    else if esc == '"' { sb_append_char(@sb, '"') }
+                    else if esc == '\\' { sb_append_char(@sb, '\\') }
+                    else { sb_append_char(@sb, esc) }
+                }
+            } else { sb_append_char(@sb, sc) }
+            lex.pos += 1; lex.col += 1
+        }
+        if lex.pos >= n { mlex_set_err(lex, s_line, s_col, "unterminated string literal"); return }
+        lex.pos += 1; lex.col += 1
+        lex.cur_kind = MTOK_STRING; lex.cur_val = sb_to_string(@sb); return
+    }
+    let is_id_start = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_'
+    if is_id_start {
+        mut sb = create_sb(32)
+        loop lex.pos < n {
+            let ic = src[lex.pos]
+            let is_id = (ic >= 'a' and ic <= 'z') or (ic >= 'A' and ic <= 'Z') or (ic >= '0' and ic <= '9') or ic == '_' or ic == '-'
+            if not is_id { break }
+            sb_append_char(@sb, ic)
+            lex.pos += 1; lex.col += 1
+        }
+        lex.cur_kind = MTOK_IDENT; lex.cur_val = sb_to_string(@sb); return
+    }
+    mlex_set_err(lex, s_line, s_col, "unexpected character in manifest")
+}
+
+act mlex_expect(lex: @ManifestLexer, kind: i32, msg: string) -> bool {
+    if lex.has_error { return false }
+    if lex.cur_kind != kind {
+        mut sb = create_sb(64); sb_append_str(@sb, msg); sb_append_str(@sb, " (got '"); sb_append_str(@sb, lex.cur_val); sb_append_str(@sb, "')")
+        mlex_set_err(lex, lex.cur_line, lex.cur_col, sb_to_string(@sb)); return false
+    }
+    mlex_advance(lex)
+    return true
+}
+
+act parse_str_list(lex: @ManifestLexer, first_out: @@ManifestStringItem, count_out: @i32) {
+    if not mlex_expect(lex, MTOK_LBRACKET, "expected '['") { return }
+    mut last: @ManifestStringItem = null
+    loop lex.cur_kind != MTOK_RBRACKET and lex.cur_kind != MTOK_EOF and not lex.has_error {
+        if lex.cur_kind != MTOK_STRING { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected string item in list"); return }
+        mut item: @ManifestStringItem = mem.alloc(@ManifestStringItem, 1)
+        item.value = lex.cur_val; item.next = null
+        if last == null { first_out[0] = item } else { last.next = item }
+        last = item; count_out[0] += 1
+        mlex_advance(lex)
+        if lex.cur_kind == MTOK_COMMA { mlex_advance(lex) } else { break }
+    }
+    mlex_expect(lex, MTOK_RBRACKET, "expected ']' closing list")
+}
+
+act parse_manifest_pkg(lex: @ManifestLexer, m: @PackageManifest) {
+    mlex_advance(lex)
+    if lex.cur_kind == MTOK_STRING { m.pkg.name = lex.cur_val; mlex_advance(lex) }
+    if not mlex_expect(lex, MTOK_LBRACE, "expected '{' after 'pkg'") { return }
+    loop lex.cur_kind != MTOK_RBRACE and lex.cur_kind != MTOK_EOF and not lex.has_error {
+        if lex.cur_kind != MTOK_IDENT { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected field name in 'pkg' block"); return }
+        let key = lex.cur_val; let k_line = lex.cur_line; let k_col = lex.cur_col
+        mlex_advance(lex)
+        if not mlex_expect(lex, MTOK_COLON, "expected ':' after field") { return }
+        if key == "name" { if mlex_expect(lex, MTOK_STRING, "expected string for 'name'") { m.pkg.name = lex.cur_val } }
+        else if key == "version" { if lex.cur_kind == MTOK_STRING { m.pkg.version = lex.cur_val; mlex_advance(lex) } else { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected string for 'version'"); return } }
+        else if key == "entry" { if lex.cur_kind == MTOK_STRING { m.pkg.entry = lex.cur_val; mlex_advance(lex) } else { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected string for 'entry'"); return } }
+        else if key == "description" { if lex.cur_kind == MTOK_STRING { m.pkg.description = lex.cur_val; mlex_advance(lex) } else { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected string for 'description'"); return } }
+        else if key == "license" { if lex.cur_kind == MTOK_STRING { m.pkg.license = lex.cur_val; mlex_advance(lex) } else { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected string for 'license'"); return } }
+        else if key == "authors" { parse_str_list(lex, @m.pkg.first_author, @m.pkg.author_count) }
+        else {
+            mut sb = create_sb(64); sb_append_str(@sb, "unknown field '"); sb_append_str(@sb, key); sb_append_str(@sb, "' in 'pkg' block")
+            mlex_set_err(lex, k_line, k_col, sb_to_string(@sb)); return
+        }
+    }
+    mlex_expect(lex, MTOK_RBRACE, "expected '}' closing 'pkg' block")
+}
+
+act parse_manifest_deps(lex: @ManifestLexer, m: @PackageManifest) {
+    mlex_advance(lex)
+    if not mlex_expect(lex, MTOK_LBRACE, "expected '{' after 'deps'") { return }
+    mut last: @DependencySpec = null
+    loop lex.cur_kind != MTOK_RBRACE and lex.cur_kind != MTOK_EOF and not lex.has_error {
+        if lex.cur_kind != MTOK_IDENT { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected dependency name"); return }
+        let dname = lex.cur_val; mlex_advance(lex)
+        if not mlex_expect(lex, MTOK_COLON, "expected ':' after dependency name") { return }
+        mut dep: @DependencySpec = mem.alloc(@DependencySpec, 1)
+        dep.name = dname; dep.kind = "registry"; dep.source = ""; dep.tag = ""; dep.next = null
+        if lex.cur_kind == MTOK_IDENT and lex.cur_val == "git" {
+            mlex_advance(lex)
+            if lex.cur_kind != MTOK_STRING { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected git URL string"); return }
+            dep.kind = "git"; dep.source = lex.cur_val; mlex_advance(lex)
+            if lex.cur_kind == MTOK_AT {
+                mlex_advance(lex)
+                if lex.cur_kind != MTOK_STRING { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected git tag string after '@'"); return }
+                dep.tag = lex.cur_val; mlex_advance(lex)
+            }
+        } else if lex.cur_kind == MTOK_IDENT and lex.cur_val == "local" {
+            mlex_advance(lex)
+            if lex.cur_kind != MTOK_STRING { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected local path string"); return }
+            dep.kind = "local"; dep.source = lex.cur_val; mlex_advance(lex)
+        } else if lex.cur_kind == MTOK_STRING {
+            dep.kind = "registry"; dep.source = lex.cur_val; mlex_advance(lex)
+        } else {
+            mut sb = create_sb(64); sb_append_str(@sb, "expected 'git', 'local', or version string for dependency '"); sb_append_str(@sb, dname); sb_append_str(@sb, "'")
+            mlex_set_err(lex, lex.cur_line, lex.cur_col, sb_to_string(@sb)); return
+        }
+        if last == null { m.first_dep = dep } else { last.next = dep }
+        last = dep; m.dep_count += 1
+    }
+    mlex_expect(lex, MTOK_RBRACE, "expected '}' closing 'deps' block")
+}
+
+act parse_manifest_link(lex: @ManifestLexer, m: @PackageManifest) {
+    mlex_advance(lex)
+    if not mlex_expect(lex, MTOK_LBRACE, "expected '{' after 'link'") { return }
+    loop lex.cur_kind != MTOK_RBRACE and lex.cur_kind != MTOK_EOF and not lex.has_error {
+        if lex.cur_kind != MTOK_IDENT { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected field name in 'link' block"); return }
+        let lkey = lex.cur_val; let l_line = lex.cur_line; let l_col = lex.cur_col
+        mlex_advance(lex)
+        if not mlex_expect(lex, MTOK_COLON, "expected ':' after field") { return }
+        if lkey == "libs" { parse_str_list(lex, @m.link.first_lib, @m.link.lib_count) }
+        else if lkey == "flags" { parse_str_list(lex, @m.link.first_flag, @m.link.flag_count) }
+        else {
+            mut sb = create_sb(64); sb_append_str(@sb, "unknown field '"); sb_append_str(@sb, lkey); sb_append_str(@sb, "' in 'link' block (expected 'libs' or 'flags')")
+            mlex_set_err(lex, l_line, l_col, sb_to_string(@sb)); return
+        }
+    }
+    mlex_expect(lex, MTOK_RBRACE, "expected '}' closing 'link' block")
+}
+
+act create_empty_manifest() -> PackageManifest {
+    return PackageManifest{
+        pkg: PackageMeta{ name: "", version: "", entry: "", first_author: null, author_count: 0, description: "", license: "" },
+        first_dep: null, dep_count: 0,
+        link: LinkConfig{ first_lib: null, lib_count: 0, first_flag: null, flag_count: 0 },
+        has_error: false, error_msg: ""
+    }
+}
+
+act manifest_parse(source: string, filename: string) -> PackageManifest {
+    mut m: PackageManifest = create_empty_manifest()
+    if source == null or str.len(source) == 0 {
+        m.has_error = true; m.error_msg = format_manifest_error(filename, 1, 1, "missing required 'pkg' block in manifest"); return m
+    }
+    mut lex: ManifestLexer = ManifestLexer{
+        source: source, pos: 0, len: str.len(source), line: 1, col: 1,
+        cur_kind: 0, cur_val: "", cur_line: 1, cur_col: 1, has_error: false, error_msg: "", filename: filename
+    }
+    mlex_advance(@lex)
+    mut has_pkg: bool = false
+    loop lex.cur_kind != MTOK_EOF and not lex.has_error {
+        if lex.cur_kind == MTOK_IDENT and lex.cur_val == "pkg" {
+            if has_pkg { mlex_set_err(@lex, lex.cur_line, lex.cur_col, "duplicate 'pkg' block"); break }
+            has_pkg = true; parse_manifest_pkg(@lex, @m)
+        } else if lex.cur_kind == MTOK_IDENT and lex.cur_val == "deps" {
+            parse_manifest_deps(@lex, @m)
+        } else if lex.cur_kind == MTOK_IDENT and lex.cur_val == "link" {
+            parse_manifest_link(@lex, @m)
+        } else {
+            mut sb = create_sb(64); sb_append_str(@sb, "unexpected top-level item '"); sb_append_str(@sb, lex.cur_val); sb_append_str(@sb, "' (expected 'pkg', 'deps', or 'link')")
+            mlex_set_err(@lex, lex.cur_line, lex.cur_col, sb_to_string(@sb)); break
+        }
+    }
+    if lex.has_error { m.has_error = true; m.error_msg = lex.error_msg; return m }
+    if not has_pkg { m.has_error = true; m.error_msg = format_manifest_error(filename, 1, 1, "missing required 'pkg' block in manifest"); return m }
+    if str.len(m.pkg.name) == 0 { m.has_error = true; m.error_msg = format_manifest_error(filename, 1, 1, "missing required field 'name' in pkg block"); return m }
+    if str.len(m.pkg.version) == 0 { m.has_error = true; m.error_msg = format_manifest_error(filename, 1, 1, "missing required field 'version' in pkg block"); return m }
+    if str.len(m.pkg.entry) == 0 { m.has_error = true; m.error_msg = format_manifest_error(filename, 1, 1, "missing required field 'entry' in pkg block"); return m }
+    return m
+}
+
+act manifest_load(filepath: string) -> PackageManifest {
+    mut m: PackageManifest = create_empty_manifest()
+    if not fs.exists(filepath) {
+        m.has_error = true; m.error_msg = format_manifest_error(filepath, 1, 1, "manifest file not found"); return m
+    }
+    let content = fs.read_file(filepath)
+    if content == null {
+        m.has_error = true; m.error_msg = format_manifest_error(filepath, 1, 1, "failed to read manifest file"); return m
+    }
+    return manifest_parse(content, filepath)
+}
+
+act manifest_find_dep(m: @PackageManifest, name: string) -> @DependencySpec {
+    mut cur = m.first_dep
+    loop cur != null {
+        if cur.name == name { return cur }
+        cur = cur.next
+    }
+    return null
+}

@@ -380,38 +380,58 @@ flowchart TD
 
 ### Phase 5: Package Manifest & Dependency Manager (`velo pkg`)
 
-#### Task 5.1: Package Manifest Specification (`velo.toml`)
-* **Problem**: Velo projects currently lack a standardized project configuration file; build flags, entrypoints, and library dependencies must be passed as CLI arguments.
-* **Specification**:
-  - Define `velo.toml` format:
-    ```toml
-    [package]
-    name = "my_game"
-    version = "0.1.0"
-    entry = "src/main.vl"
+#### Task 5.1: Package Manifest Specification (`velo.pkg`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo projects lacked a standardized, human-friendly project configuration file; build flags, entrypoints, and library dependencies had to be passed manually as CLI arguments. Generic formats (TOML, JSON, YAML) carried excessive syntax punctuation and lacked Velo's clean, unique aesthetic.
+* **Fix Applied**:
+  - **Manifest Specification (`velo.pkg`)**:
+    - Designed Velo-native declarative block syntax with colon key-value pairs, zero quotes on keys, bracketed lists, and line comments (`//` and `#`):
+      ```velo
+      pkg "my_game" {
+          version: "0.1.0"
+          entry: "src/main.vl"
+          authors: ["Devad"]
+      }
 
-    [dependencies]
-    raylib = { git = "https://github.com/velo-lang/raylib-velo", tag = "v1.0" }
+      deps {
+          raylib: git "https://github.com/velo-lang/raylib-velo" @ "v1.0"
+          physics: local "../physics_engine"
+          math: "1.2.0"
+      }
 
-    [link]
-    libraries = ["raylib", "gdi32", "winmm"]
-    ```
-  - Add native TOML parser into `velo/` and `src/common/`.
-* **Target Files**:
-  - `velo/manifest.py`
-  - `src/common/manifest.vl`
+      link {
+          libs: ["raylib", "gdi32", "winmm"]
+          flags: ["-O3"]
+      }
+      ```
+  - **Stage 1 (Python Compiler)**:
+    - Created `velo/manifest.py`: implemented `PackageMeta`, `DependencySpec`, `LinkConfig`, and `PackageManifest` data models; implemented `ManifestTokenizer` and `ManifestParser` with full line/col error diagnostics; added `parse_manifest` and `load_manifest` APIs.
+    - In `velo.py`: added `velo pkg check [manifest_path]` CLI command validating manifests and reporting status.
+  - **Stage 2 (Self-Hosted Compiler)**:
+    - Created `src/common/manifest.vl` (313 lines): implemented `PackageMeta`, `DependencySpec`, `LinkConfig`, and `PackageManifest` AST data structures; implemented zero-dependency tokenizer and recursive-descent parser with line/col error formatting; added `manifest_parse`, `manifest_load`, and `manifest_find_dep` APIs.
+    - In `src/main.vl`: integrated `use "common/manifest.vl"` and implemented `velo pkg check [manifest_path]` CLI command.
+* **Residual Limitation**:
+  - Task 5.1 delivers manifest specification, parsing, and structural validation. Project build automation (`velo pkg build` / `velo pkg run`) and dependency fetching are scheduled for Task 5.2 and subsequent slices.
 * **Verification**:
-  - Test manifest parsing and validation.
+  - Added dedicated test suite `tests/test_manifest.py` (13 tests) covering:
+    1. Python API parsing of full and minimal manifests.
+    2. CLI validation parity (`velo pkg check`) across Stage 1 and Stage 2 (`bin/velo.exe`).
+    3. Character-identical negative diagnostics across both compilers for missing `pkg` block, missing required fields (`name`, `version`, `entry`), unknown top-level items, unknown block fields, unterminated strings, and nonexistent manifest files.
+  - Rebuilt 3-stage bootstrap chain (`Gen1 -> Gen2 -> Gen3 -> bin/velo.exe`) with bit-for-bit SHA-256 determinism verified (`f19e237a8d0c5edb38ae6d4e4231b10a44e8be261e4585bcb77d52515dd2a898`).
+  - Native test runner passed all 105 tests (`bin/velo.exe test examples/15_native_tests.vl`).
+  - Full test suite passed (395 tests passed in 225s).
+  - All 64 `src/**/*.vl` source files verified $\le 397$ lines (`scripts/count_lines.py`).
+  - No UTF-8 BOM in any `.vl` file.
 
 #### Task 5.2: Project Build Command (`velo pkg build`)
-* **Problem**: Building a project with dependencies requires manually passing `-l` and `-L` flags.
+* **Problem**: Building a project with dependencies requires manually passing `-l` and `-L` flags and knowing the exact entrypoint path.
 * **Specification**:
-  - Implement `velo pkg build` and `velo pkg run` which automatically reads `velo.toml`, applies link flags, compiles `entry`, and produces the target binary.
+  - Implement `velo pkg build` and `velo pkg run` which automatically discover and parse `velo.pkg` in the current working directory, resolve dependencies, apply native linker flags from `link.libs` and `link.flags`, compile `entry`, and produce the target binary.
 * **Target Files**:
   - `velo.py`
   - `src/main.vl`
 * **Verification**:
-  - Build a sample project using `velo pkg build`.
+  - Build and run a sample project using `velo pkg build` and `velo pkg run`.
 
 ---
 

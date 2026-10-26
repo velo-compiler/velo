@@ -4,6 +4,7 @@ use sys.fs
 use "backend/driver.vl"
 use "backend/check.vl"
 use "common/diagnostics.vl"
+use "common/manifest.vl"
 
 // Prints the command-line usage manual.
 act print_usage() {
@@ -15,6 +16,7 @@ act print_usage() {
     io.println("  velo check <source.vl> [--json] [--color auto|always|never]")
     io.println("  velo doc <source.vl> [-o <out.md>] Extract API documentation to Markdown")
     io.println("  velo test [path] [--cc gcc|cl] [--filter <pattern>] Run native tests")
+    io.println("  velo pkg check [path]              Validate a velo.pkg package manifest")
     io.println("  velo lsp                           Start Velo Language Server (LSP stdio)")
     io.println("  velo version                       Display compiler version")
     io.println("  velo help                          Display this help manual")
@@ -358,9 +360,28 @@ act main(argc: i32, argv: @string) -> i32 {
         return rc
     }
 
-    if cmd == "lsp" {
-        let rc = system("python -m velo.lsp")
-        return rc
+    if cmd == "pkg" {
+        mut m_path = "velo.pkg"
+        mut sub_cmd = ""
+        if argc > 2 { sub_cmd = argv[2] }
+        if argc > 3 { m_path = argv[3] }
+        if sub_cmd == "check" or str.len(sub_cmd) == 0 {
+            let m = manifest_load(m_path)
+            if m.has_error {
+                io.println(m.error_msg)
+                return 1
+            }
+            io.print("[Velo] Valid package manifest: ")
+            io.print(m.pkg.name)
+            io.print(" v")
+            io.print(m.pkg.version)
+            io.print(" (")
+            io.print(m.pkg.entry)
+            io.println(")")
+            return 0
+        }
+        io.println("[Velo Error] Unknown 'pkg' subcommand (available: check)")
+        return 1
     }
 
     io.println("[Velo Error] Unknown command: '{cmd}'. Run 'velo help' for usage.")

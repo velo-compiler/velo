@@ -83,6 +83,12 @@ def main():
     test_parser.add_argument("-L", dest="lib_dirs", action="append", default=[], help="Add library directory to search path (e.g. -L./lib)")
     test_parser.add_argument("--cc", choices=["gcc", "cl"], default="gcc", help="C compiler backend to invoke (default: gcc)")
 
+    # 'pkg' command
+    pkg_parser = subparsers.add_parser("pkg", help="Package manager commands")
+    pkg_subparsers = pkg_parser.add_subparsers(dest="pkg_command", help="Package action")
+    pkg_check_parser = pkg_subparsers.add_parser("check", help="Validate a velo.pkg package manifest")
+    pkg_check_parser.add_argument("manifest_path", nargs="?", default="velo.pkg", help="Path to velo.pkg (default: velo.pkg)")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -208,6 +214,21 @@ def main():
                 cc=getattr(args, "cc", "gcc")
             )
             sys.exit(exit_code)
+        elif args.command == "pkg":
+            from velo.manifest import load_manifest, ManifestError
+            sub_cmd = getattr(args, "pkg_command", None) or "check"
+            m_path = getattr(args, "manifest_path", "velo.pkg") or "velo.pkg"
+            if sub_cmd == "check":
+                try:
+                    m = load_manifest(m_path)
+                    print(f"[Velo] Valid package manifest: {m.pkg.name} v{m.pkg.version} ({m.pkg.entry})")
+                    sys.exit(0)
+                except ManifestError as e:
+                    print(str(e), file=sys.stderr)
+                    sys.exit(1)
+            else:
+                print(f"[Velo Error] Unknown 'pkg' subcommand '{sub_cmd}'.", file=sys.stderr)
+                sys.exit(1)
     except Exception as e:
         print(f"\n[Velo Error] {e}", file=sys.stderr)
         # 6.3 S1/S4: run/build/emit-c doc failures carrying a position (Lexer /
