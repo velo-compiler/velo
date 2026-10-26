@@ -64,6 +64,7 @@ KEYWORDS = sorted(set(COMPILER_KEYWORDS) | {"aka", "it"})
 PRIMITIVE_TYPES = [
     "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
     "f32", "f64", "bool", "string", "void", "usize", "dyn",
+    "f32x4", "i32x4",
 ]
 
 

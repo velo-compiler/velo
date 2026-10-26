@@ -1029,6 +1029,10 @@ class Monomorphizer:
             return "i32"
         if isinstance(expr, CallExpr):
             if isinstance(expr.callee, Identifier):
+                if expr.callee.name in ("f32x4", "f32x4_splat"):
+                    return "f32x4"
+                if expr.callee.name in ("i32x4", "i32x4_splat"):
+                    return "i32x4"
                 if expr.callee.name in self.func_return_types:
                     return self.func_return_types[expr.callee.name]
                 if expr.callee.name in self.generic_funcs:

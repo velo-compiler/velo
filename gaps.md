@@ -181,21 +181,43 @@ flowchart TD
 
 ### Phase 3: Hardware SIMD Math Library (`sys.simd`)
 
-#### Task 3.1: 128-bit SIMD Vector Types (`f32x4`, `i32x4`)
-* **Problem**: Modern game engines, physics, and particle simulations require vectorized 128-bit SIMD data types with 16-byte alignment.
-* **Specification**:
-  - Introduce primitive 128-bit types `f32x4` and `i32x4` into Stage 1 and Stage 2 type systems.
-  - Define memory layouts in `velo_runtime.h` using portable alignment:
-    * Under GCC/Clang: `typedef float f32x4 __attribute__((vector_size(16), aligned(16)));`
-    * Under MSVC: `typedef __m128 f32x4;` (via `<immintrin.h>`).
-  - Support vector constructors: `let v = f32x4(1.0, 2.0, 3.0, 4.0)` and splat constructor `f32x4_splat(1.0)`.
-* **Target Files**:
-  - `velo/runtime/velo_runtime.h`
-  - `velo/codegen_c.py`
-  - `src/ast/types.vl`
-  - `src/backend/codegen_types.vl`
+#### Task 3.1: 128-bit SIMD Vector Types (`f32x4`, `i32x4`) [COMPLETED] ✅
+* **Former Defect**:
+  - The language lacked hardware SIMD vector types (`f32x4` and `i32x4`) and constructors for vectorized operations. Modern graphics, physics engines, and particle systems had to rely on scalar float/integer loops or hope for C compiler autovectorization.
+* **Fix Applied**:
+  - **Memory Layout & C Runtime**:
+    * In `velo/runtime/velo_runtime.h`, defined portable 128-bit aligned vector types:
+      - Under GCC/Clang: `typedef float f32x4 __attribute__((vector_size(16), aligned(16)));` and `typedef int32_t i32x4 __attribute__((vector_size(16), aligned(16)));`.
+      - Under MSVC: `typedef __m128 f32x4;` and `typedef __m128i i32x4;` (via `<immintrin.h>`).
+    * Added static inline constructor helpers `velo_f32x4(x, y, z, w)`, `velo_f32x4_splat(val)`, `velo_i32x4(x, y, z, w)`, and `velo_i32x4_splat(val)`.
+    * Upgraded `velo_mem_alloc` and `velo_alloc_with` bump allocators to 16-byte align allocations when type size $\ge 16$.
+  - **Stage 1 (Python Compiler)**:
+    * In `velo/parser.py`: added `f32x4` and `i32x4` to `ALIAS_TARGET_PRIMITIVES` (supporting `aka Vec4 = f32x4`).
+    * In `velo/analysis.py`: added `f32x4` and `i32x4` to `PRIMITIVE_TYPES`.
+    * In `velo/monomorphize.py`: inferred `f32x4` and `i32x4` for constructor calls in `_infer_expr_type`.
+    * In `velo/codegen_c.py`: registered `f32x4` and `i32x4` in `TYPE_MAP`, `_infer_raw_velo_type`, `_resolve_expr_type`, and implemented `_lower_simd_call` to validate arity (4 for vector, 1 for splat) and argument types (float/int for `f32x4`, int for `i32x4`), lowering calls with `velo_` prefix.
+  - **Stage 2 (Self-Hosted Compiler)**:
+    * In `src/ast/types.vl`: added `is_simd_type(name: string) -> bool` and integrated into `is_primitive_type`.
+    * In `src/backend/codegen_types.vl`: mapped `f32x4` to `"f32x4"` and `i32x4` to `"i32x4"` in `map_type_to_c`.
+    * In `src/frontend/parser_decl.vl`: registered `f32x4` and `i32x4` in `is_alias_target_primitive`.
+    * In `src/analysis/simd_checks.vl`: implemented `is_simd_constructor` and `check_simd_constructor` for semantic checking and character-identical error reporting.
+    * In `src/analysis/type_checker.vl`: dispatched SIMD constructor checking in `infer_expr_type`.
+    * In `src/analysis/monomorphize_expr.vl`: recognized SIMD constructors in `mono_infer_type`.
+    * In `src/backend/codegen_expr.vl`: lowered SIMD constructor calls with `velo_` prefix.
+* **Residual Limitation**:
+  - Binary arithmetic operators (`+`, `-`, `*`, `/`) between SIMD vectors and lane accessors (`v.x`, `v.y`, `v.z`, `v.w`, or `v[0]`) are scheduled for Task 3.2. Data access currently uses pointer indexing (`((@v) as @f32)[0]`).
 * **Verification**:
-  - Compile and verify 16-byte alignment and data preservation across both Stage 1 and Stage 2.
+  - Added test suite `tests/test_simd_vectors.py` (21 tests) covering:
+    1. Positive execution on Stage 1 verifying constructors `f32x4`, `f32x4_splat`, `i32x4`, `i32x4_splat`, 16-byte alignment (`((@v) as usize) % 16 == 0`), data lane preservation in memory, struct embedding, function argument passing/return, and arena/heap 16-byte alignment.
+    2. Positive execution on Stage 2 (`bin/velo.exe`) with identical behavior.
+    3. Negative tests on Stage 1 for arity errors and type mismatches.
+    4. Negative tests on Stage 2 (`bin/velo.exe`) with identical error messages.
+    5. `velo check --json` diagnostics parity on both stages.
+  - Rebuilt 3-stage bootstrap chain (`velo_gen1.exe` -> `velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe`).
+  - Verified determinism: Gen2 and Gen3 `emit-c src/main.vl` SHA-256 match exactly (`412055f5803cecb9e1571a6d93dd9c554ec1b7dea87c6a318d2af5d9e90f868b`).
+  - Native test runner passed all 105 tests (`bin/velo.exe test examples/15_native_tests.vl`).
+  - All source files $\le 397$ lines (`scripts/count_lines.py`).
+  - No UTF-8 BOM in any `.vl` file.
 
 #### Task 3.2: SIMD Vector Arithmetic & Lane Operations
 * **Problem**: Performing vectorized math currently requires scalar loops or compiler autovectorization.

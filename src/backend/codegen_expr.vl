@@ -368,6 +368,13 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             sb_append_char(sb, ')'); return
         }
 
+        if expr.callee != null and expr.callee.kind == EXPR_IDENT and (expr.callee.str_val == "f32x4" or expr.callee.str_val == "f32x4_splat" or expr.callee.str_val == "i32x4" or expr.callee.str_val == "i32x4_splat") {
+            sb_append_str(sb, "velo_"); sb_append_str(sb, expr.callee.str_val); sb_append_char(sb, '(')
+            mut cur_arg = expr.first_arg
+            loop cur_arg != null { emit_c_expr(sb, st, cur_arg); if cur_arg.next != null { sb_append_str(sb, ", ") }; cur_arg = cur_arg.next }
+            sb_append_char(sb, ')'); return
+        }
+
         // Standard function call
         emit_c_expr(sb, st, expr.callee)
         sb_append_char(sb, '(')

@@ -22,6 +22,7 @@ use "math_checks.vl"
 use "time_checks.vl"
 use "os_checks.vl"
 use "fs_checks.vl"
+use "simd_checks.vl"
 act is_known_type(st: @SymbolTable, name: string) -> bool {
     if name == null { return false }
     let clean = strip_pointer_prefix(name)
@@ -182,6 +183,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             }
             return "void"
         }
+        if expr.callee.kind == EXPR_IDENT and is_simd_constructor(expr.callee.str_val) { return check_simd_constructor(st, expr) }
         if expr.callee.kind == EXPR_IDENT {
             let fn_sym = find_function(st, expr.callee.str_val)
             if fn_sym != null {

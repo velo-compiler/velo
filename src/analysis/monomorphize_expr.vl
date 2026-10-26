@@ -177,10 +177,13 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
             // take value / has bool
             let mv = mono_map_value(rt)
             if mv != null {
-                if e.callee.member_name == "put" { return "void" }
+                if e.callee.member_name == "put" { return "void" }; if e.callee.member_name == "has" { return "bool" }
                 if e.callee.member_name == "get" or e.callee.member_name == "get_or" or e.callee.member_name == "take" { return mv }
-                if e.callee.member_name == "has" { return "bool" }
             }
+        }
+        if e.callee != null and e.callee.kind == EXPR_IDENT {
+            if e.callee.str_val == "f32x4" or e.callee.str_val == "f32x4_splat" { return "f32x4" }
+            if e.callee.str_val == "i32x4" or e.callee.str_val == "i32x4_splat" { return "i32x4" }
         }
     }
     return "i32"
@@ -209,16 +212,10 @@ act mono_extract_type_arg(t: string) -> string {
 act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params: string, args: string) -> @ExprNode {
     if e == null { return null }
     if e.kind == EXPR_INT {
-        mut node = make_int_expr(e.int_val, e.line, e.col)
-        node.str_val = e.str_val
-        node.type_name = e.type_name
-        return node
+        mut node = make_int_expr(e.int_val, e.line, e.col); node.str_val = e.str_val; node.type_name = e.type_name; return node
     }
     if e.kind == EXPR_FLOAT {
-        mut node = make_float_expr(e.float_val, e.line, e.col)
-        node.str_val = e.str_val
-        node.type_name = e.type_name
-        return node
+        mut node = make_float_expr(e.float_val, e.line, e.col); node.str_val = e.str_val; node.type_name = e.type_name; return node
     }
     if e.kind == EXPR_STRING { return make_string_expr(e.str_val, e.line, e.col) }
     if e.kind == EXPR_BOOL { return make_bool_expr(e.bool_val, e.line, e.col) }

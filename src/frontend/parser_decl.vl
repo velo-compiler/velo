@@ -96,7 +96,7 @@ act is_alias_target_primitive(base: string) -> bool {
     else if base == "i64" { return true } else if base == "u8" { return true } else if base == "u16" { return true }
     else if base == "u32" { return true } else if base == "u64" { return true } else if base == "f32" { return true }
     else if base == "f64" { return true } else if base == "bool" { return true } else if base == "usize" { return true }
-    else if base == "isize" { return true } else if base == "string" { return true }
+    else if base == "isize" { return true } else if base == "string" { return true } else if base == "f32x4" { return true } else if base == "i32x4" { return true }
     return false
 }
 

@@ -13,7 +13,8 @@ from velo.ast_nodes import (
 
 # Types permitted as `aka Alias = <target>` targets (primitive aliases only).
 ALIAS_TARGET_PRIMITIVES = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
-                           "f32", "f64", "bool", "usize", "isize", "string"}
+                           "f32", "f64", "bool", "usize", "isize", "string",
+                           "f32x4", "i32x4"}
 
 CONTEXTUAL_IDENT_TOKENS = (
     TokenType.IDENTIFIER,

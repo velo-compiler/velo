@@ -109,6 +109,12 @@ act is_float_type(name: string) -> bool {
     return name == "f32" or name == "f64"
 }
 
+// Checks if a type name is a SIMD vector type.
+act is_simd_type(name: string) -> bool {
+    if name == null { return false }
+    return name == "f32x4" or name == "i32x4"
+}
+
 // Strips a leading pointer symbol '@' from a type string (e.g. "@Point" -> "Point").
 act strip_pointer_prefix(type_name: string) -> string {
     if type_name == null { return "" }
@@ -146,7 +152,7 @@ act prepend_pointer_prefix(type_name: string) -> string {
 // Checks if a type name corresponds to a primitive built-in type.
 act is_primitive_type(name: string) -> bool {
     if name == null { return false }
-    if is_int_type(name) or is_float_type(name) or name == "bool" or name == "string" or name == "void" {
+    if is_int_type(name) or is_float_type(name) or is_simd_type(name) or name == "bool" or name == "string" or name == "void" {
         return true
     }
     return false

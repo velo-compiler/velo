@@ -26,6 +26,8 @@ TYPE_MAP = {
     "usize": "usize",
     "isize": "isize",
     "string": "const char*",
+    "f32x4": "f32x4",
+    "i32x4": "i32x4",
     "void": "void",
     # §4.1 passable allocator handle: @Allocator in Velo → VeloZoneArena* in C
     "Allocator": "VeloZoneArena",
@@ -2266,6 +2268,10 @@ class CCodeGenerator:
             if isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier) and value.callee.target.name in self.kind_defs:
                 return value.callee.target.name
             if isinstance(value.callee, Identifier):
+                if value.callee.name in ("f32x4", "f32x4_splat"):
+                    return "f32x4"
+                if value.callee.name in ("i32x4", "i32x4_splat"):
+                    return "i32x4"
                 if value.callee.name in self.func_return_types:
                     return self.func_return_types[value.callee.name]
             elif isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier):
@@ -2487,6 +2493,10 @@ class CCodeGenerator:
             if isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier) and expr.callee.target.name in self.kind_defs:
                 return expr.callee.target.name
             if isinstance(expr.callee, Identifier):
+                if expr.callee.name in ("f32x4", "f32x4_splat"):
+                    return "f32x4"
+                if expr.callee.name in ("i32x4", "i32x4_splat"):
+                    return "i32x4"
                 if expr.callee.name in self.func_return_types:
                     return self.func_return_types[expr.callee.name]
                 callee_type = self.current_scope_types.get(expr.callee.name)
@@ -3041,6 +3051,9 @@ class CCodeGenerator:
                 msg_code = self._emit_expression(expr.args[1]) if len(expr.args) > 1 else "NULL"
                 return f'velo_assert(({cond_code}), "{file_str}", {line_num}, {msg_code})'
 
+            if isinstance(expr.callee, Identifier) and expr.callee.name in ("f32x4", "f32x4_splat", "i32x4", "i32x4_splat"):
+                return self._lower_simd_call(expr.callee.name, expr.args)
+
             # 5.2: shelf element types must string-match across call boundaries —
             # a silent VeloShelf↔VeloShelf pass-through would corrupt reads (esz)
             decl = self.func_decls.get(expr.callee.name) if isinstance(expr.callee, Identifier) else None
@@ -3482,6 +3495,38 @@ class CCodeGenerator:
         c_type = self._map_type(type_name)
         count_code = self._emit_expression(args[2])
         return f"({c_type}*)velo_alloc_with((VeloAllocator)({alloc_code}), sizeof({c_type}), (size_t)({count_code}))"
+
+    def _lower_simd_call(self, name: str, args: List[Expr]) -> str:
+        FLOAT_TYPES = {"f32", "f64"}
+        INT_TYPES = {"i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize"}
+        if name == "f32x4":
+            if len(args) != 4:
+                raise ValueError("f32x4 constructor expects exactly 4 arguments: (x, y, z, w)")
+            for a in args:
+                t = self._resolve_expr_type(a)
+                if t not in FLOAT_TYPES and t not in INT_TYPES:
+                    raise ValueError(f"f32x4 constructor arguments must be float or integer (got {t})")
+        elif name == "f32x4_splat":
+            if len(args) != 1:
+                raise ValueError("f32x4_splat constructor expects exactly 1 argument: (val)")
+            t = self._resolve_expr_type(args[0])
+            if t not in FLOAT_TYPES and t not in INT_TYPES:
+                raise ValueError(f"f32x4_splat constructor argument must be float or integer (got {t})")
+        elif name == "i32x4":
+            if len(args) != 4:
+                raise ValueError("i32x4 constructor expects exactly 4 arguments: (x, y, z, w)")
+            for a in args:
+                t = self._resolve_expr_type(a)
+                if t not in INT_TYPES:
+                    raise ValueError(f"i32x4 constructor arguments must be integer (got {t})")
+        elif name == "i32x4_splat":
+            if len(args) != 1:
+                raise ValueError("i32x4_splat constructor expects exactly 1 argument: (val)")
+            t = self._resolve_expr_type(args[0])
+            if t not in INT_TYPES:
+                raise ValueError(f"i32x4_splat constructor argument must be integer (got {t})")
+        arg_codes = [self._emit_expression(a) for a in args]
+        return f"velo_{name}({', '.join(arg_codes)})"
 
     def _lower_fs_read_file(self, args: List[Expr]) -> str:
         path_code = self._emit_expression(args[0])

@@ -1,0 +1,108 @@
+// 128-bit SIMD Vector Types: compile-time argument checks for SIMD constructors
+// (f32x4, f32x4_splat, i32x4, i32x4_splat).
+// Mutual mirror of velo/codegen_c.py::_lower_simd_call — both stages must reject
+// the same programs with character-identical messages.
+use "type_checker.vl"
+use "symbol_table.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../ast/expr.vl"
+use "../ast/types.vl"
+
+act is_simd_constructor(name: string) -> bool {
+    if name == null { return false }
+    return name == "f32x4" or name == "f32x4_splat" or name == "i32x4" or name == "i32x4_splat"
+}
+
+act check_simd_constructor(st: @SymbolTable, expr: @ExprNode) -> string {
+    let name = expr.callee.str_val
+    mut argc: usize = 0
+    mut cur_a = expr.first_arg
+    loop cur_a != null { argc += 1; cur_a = cur_a.next }
+
+    if name == "f32x4" {
+        if argc != 4 {
+            report_error("semantic", expr.line, expr.col, "f32x4 constructor expects exactly 4 arguments: (x, y, z, w)")
+            st.error_count += 1
+            return "unknown"
+        }
+        mut cur = expr.first_arg
+        loop cur != null {
+            let t = infer_expr_type(st, cur)
+            if t != "unknown" and not is_float_type(t) and not is_int_type(t) {
+                mut sb = create_sb(96)
+                sb_append_str(@sb, "f32x4 constructor arguments must be float or integer (got ")
+                sb_append_str(@sb, t)
+                sb_append_char(@sb, ')')
+                report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+                st.error_count += 1
+                return "unknown"
+            }
+            cur = cur.next
+        }
+        return "f32x4"
+    }
+
+    if name == "f32x4_splat" {
+        if argc != 1 {
+            report_error("semantic", expr.line, expr.col, "f32x4_splat constructor expects exactly 1 argument: (val)")
+            st.error_count += 1
+            return "unknown"
+        }
+        let t = infer_expr_type(st, expr.first_arg)
+        if t != "unknown" and not is_float_type(t) and not is_int_type(t) {
+            mut sb = create_sb(96)
+            sb_append_str(@sb, "f32x4_splat constructor argument must be float or integer (got ")
+            sb_append_str(@sb, t)
+            sb_append_char(@sb, ')')
+            report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+            st.error_count += 1
+            return "unknown"
+        }
+        return "f32x4"
+    }
+
+    if name == "i32x4" {
+        if argc != 4 {
+            report_error("semantic", expr.line, expr.col, "i32x4 constructor expects exactly 4 arguments: (x, y, z, w)")
+            st.error_count += 1
+            return "unknown"
+        }
+        mut cur = expr.first_arg
+        loop cur != null {
+            let t = infer_expr_type(st, cur)
+            if t != "unknown" and not is_int_type(t) {
+                mut sb = create_sb(96)
+                sb_append_str(@sb, "i32x4 constructor arguments must be integer (got ")
+                sb_append_str(@sb, t)
+                sb_append_char(@sb, ')')
+                report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+                st.error_count += 1
+                return "unknown"
+            }
+            cur = cur.next
+        }
+        return "i32x4"
+    }
+
+    if name == "i32x4_splat" {
+        if argc != 1 {
+            report_error("semantic", expr.line, expr.col, "i32x4_splat constructor expects exactly 1 argument: (val)")
+            st.error_count += 1
+            return "unknown"
+        }
+        let t = infer_expr_type(st, expr.first_arg)
+        if t != "unknown" and not is_int_type(t) {
+            mut sb = create_sb(96)
+            sb_append_str(@sb, "i32x4_splat constructor argument must be integer (got ")
+            sb_append_str(@sb, t)
+            sb_append_char(@sb, ')')
+            report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+            st.error_count += 1
+            return "unknown"
+        }
+        return "i32x4"
+    }
+
+    return "unknown"
+}

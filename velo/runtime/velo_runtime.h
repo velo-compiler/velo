@@ -73,6 +73,50 @@ typedef size_t   usize;
 typedef ptrdiff_t isize;
 
 // ============================================================================
+// 128-bit SIMD Vector Types (Task 3.1: f32x4, i32x4)
+// ============================================================================
+#if defined(_MSC_VER)
+#include <immintrin.h>
+typedef __m128  f32x4;
+typedef __m128i i32x4;
+
+static inline f32x4 velo_f32x4(float x, float y, float z, float w) {
+    return _mm_setr_ps(x, y, z, w);
+}
+
+static inline f32x4 velo_f32x4_splat(float val) {
+    return _mm_set1_ps(val);
+}
+
+static inline i32x4 velo_i32x4(int32_t x, int32_t y, int32_t z, int32_t w) {
+    return _mm_setr_epi32(x, y, z, w);
+}
+
+static inline i32x4 velo_i32x4_splat(int32_t val) {
+    return _mm_set1_epi32(val);
+}
+#else
+typedef float   f32x4 __attribute__((vector_size(16), aligned(16)));
+typedef int32_t i32x4 __attribute__((vector_size(16), aligned(16)));
+
+static inline f32x4 velo_f32x4(float x, float y, float z, float w) {
+    return (f32x4){x, y, z, w};
+}
+
+static inline f32x4 velo_f32x4_splat(float val) {
+    return (f32x4){val, val, val, val};
+}
+
+static inline i32x4 velo_i32x4(int32_t x, int32_t y, int32_t z, int32_t w) {
+    return (i32x4){x, y, z, w};
+}
+
+static inline i32x4 velo_i32x4_splat(int32_t val) {
+    return (i32x4){val, val, val, val};
+}
+#endif
+
+// ============================================================================
 // §4.1 Extensible Allocator Architecture + §4.2 Multithreaded Memory Safety
 //
 // Allocation model (in allocation-cost order, all O(1)):
