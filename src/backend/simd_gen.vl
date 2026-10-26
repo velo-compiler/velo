@@ -1,0 +1,193 @@
+// C99 SIMD expression and assignment code generator.
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../common/string_builder.vl"
+use "codegen_types.vl"
+use "codegen_expr.vl"
+
+act get_simd_lane(name: string) -> i32 {
+    if name == "x" { return 0 }
+    if name == "y" { return 1 }
+    if name == "z" { return 2 }
+    return 3
+}
+
+act simd_bin_op_name(op: i32) -> string {
+    if op == TOK_PLUS { return "add" }
+    if op == TOK_MINUS { return "sub" }
+    if op == TOK_STAR { return "mul" }
+    if op == TOK_SLASH { return "div" }
+    return "add"
+}
+
+act simd_assign_op_name(op: i32) -> string {
+    if op == TOK_PLUS_ASSIGN { return "add" }
+    if op == TOK_MINUS_ASSIGN { return "sub" }
+    if op == TOK_STAR_ASSIGN { return "mul" }
+    if op == TOK_SLASH_ASSIGN { return "div" }
+    return "add"
+}
+
+act is_simd_assign(st: @SymbolTable, stmt: @StmtNode) -> bool {
+    if stmt == null or stmt.expr == null { return false }
+    if stmt.expr.kind == EXPR_MEMBER {
+        let tt = infer_expr_type(st, stmt.expr.target)
+        if is_simd_type(strip_pointer_prefix(tt)) { return true }
+    }
+    if stmt.expr.kind == EXPR_INDEX {
+        let tt = infer_expr_type(st, stmt.expr.target)
+        if is_simd_type(strip_pointer_prefix(tt)) { return true }
+    }
+    if stmt.op != TOK_ASSIGN {
+        let tt = infer_expr_type(st, stmt.expr)
+        if is_simd_type(strip_pointer_prefix(tt)) { return true }
+    }
+    return false
+}
+
+act emit_simd_assign(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32) {
+    if stmt.expr.kind == EXPR_MEMBER {
+        let base_t = infer_expr_type(st, stmt.expr.target)
+        let clean_t = strip_pointer_prefix(base_t)
+        let lane = get_simd_lane(stmt.expr.member_name)
+        mut elem_c = "float"
+        if clean_t == "i32x4" { elem_c = "int32_t" }
+        sb_append_indent(sb, indent)
+        if str.len(base_t) > 0 and base_t[0] == '@' {
+            sb_append_str(sb, "(((")
+            sb_append_str(sb, elem_c)
+            sb_append_str(sb, "*)(")
+            emit_c_expr(sb, st, stmt.expr.target)
+            sb_append_str(sb, "))[")
+            sb_append_int(sb, lane)
+            sb_append_str(sb, "]) ")
+        } else {
+            sb_append_str(sb, "(((")
+            sb_append_str(sb, elem_c)
+            sb_append_str(sb, "*)&(")
+            emit_c_expr(sb, st, stmt.expr.target)
+            sb_append_str(sb, "))[")
+            sb_append_int(sb, lane)
+            sb_append_str(sb, "]) ")
+        }
+        sb_append_str(sb, map_assign_op(stmt.op))
+        sb_append_str(sb, " (")
+        emit_c_expr(sb, st, stmt.val_expr)
+        sb_append_str(sb, ");\n")
+        return
+    }
+    if stmt.expr.kind == EXPR_INDEX {
+        let base_t = infer_expr_type(st, stmt.expr.target)
+        let clean_t = strip_pointer_prefix(base_t)
+        mut elem_c = "float"
+        if clean_t == "i32x4" { elem_c = "int32_t" }
+        sb_append_indent(sb, indent)
+        if str.len(base_t) > 0 and base_t[0] == '@' {
+            sb_append_str(sb, "(((")
+            sb_append_str(sb, elem_c)
+            sb_append_str(sb, "*)(")
+            emit_c_expr(sb, st, stmt.expr.target)
+            sb_append_str(sb, "))[((int32_t)(")
+            emit_c_expr(sb, st, stmt.expr.index)
+            sb_append_str(sb, ")) & 3]) ")
+        } else {
+            sb_append_str(sb, "(((")
+            sb_append_str(sb, elem_c)
+            sb_append_str(sb, "*)&(")
+            emit_c_expr(sb, st, stmt.expr.target)
+            sb_append_str(sb, "))[((int32_t)(")
+            emit_c_expr(sb, st, stmt.expr.index)
+            sb_append_str(sb, ")) & 3]) ")
+        }
+        sb_append_str(sb, map_assign_op(stmt.op))
+        sb_append_str(sb, " (")
+        emit_c_expr(sb, st, stmt.val_expr)
+        sb_append_str(sb, ");\n")
+        return
+    }
+    let tgt_t = infer_expr_type(st, stmt.expr)
+    sb_append_indent(sb, indent)
+    emit_c_expr(sb, st, stmt.expr)
+    sb_append_str(sb, " = velo_")
+    sb_append_str(sb, tgt_t)
+    sb_append_char(sb, '_')
+    sb_append_str(sb, simd_assign_op_name(stmt.op))
+    sb_append_char(sb, '(')
+    emit_c_expr(sb, st, stmt.expr)
+    sb_append_str(sb, ", (")
+    emit_c_expr(sb, st, stmt.val_expr)
+    sb_append_str(sb, "));\n")
+}
+
+act emit_simd_member(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode, target_type: string) {
+    let clean_t = strip_pointer_prefix(target_type)
+    let lane = get_simd_lane(expr.member_name)
+    sb_append_str(sb, "velo_")
+    sb_append_str(sb, clean_t)
+    sb_append_str(sb, "_get(")
+    if str.len(target_type) > 0 and target_type[0] == '@' {
+        sb_append_str(sb, "*(")
+        emit_c_expr(sb, st, expr.target)
+        sb_append_char(sb, ')')
+    } else {
+        emit_c_expr(sb, st, expr.target)
+    }
+    sb_append_str(sb, ", ")
+    sb_append_int(sb, lane)
+    sb_append_char(sb, ')')
+}
+
+act emit_simd_index(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode, target_type: string) {
+    let clean_t = strip_pointer_prefix(target_type)
+    sb_append_str(sb, "velo_")
+    sb_append_str(sb, clean_t)
+    sb_append_str(sb, "_get(")
+    if str.len(target_type) > 0 and target_type[0] == '@' {
+        sb_append_str(sb, "*(")
+        emit_c_expr(sb, st, expr.target)
+        sb_append_char(sb, ')')
+    } else {
+        emit_c_expr(sb, st, expr.target)
+    }
+    sb_append_str(sb, ", (int32_t)(")
+    emit_c_expr(sb, st, expr.index)
+    sb_append_str(sb, "))")
+}
+
+act emit_simd_binary(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode, l_t: string, r_t: string) {
+    if expr.op == TOK_EQ or expr.op == TOK_NEQ {
+        sb_append_str(sb, "velo_")
+        sb_append_str(sb, l_t)
+        if expr.op == TOK_EQ { sb_append_str(sb, "_eq(") } else { sb_append_str(sb, "_neq(") }
+        emit_c_expr(sb, st, expr.left)
+        sb_append_str(sb, ", ")
+        emit_c_expr(sb, st, expr.right)
+        sb_append_char(sb, ')')
+        return
+    }
+    sb_append_str(sb, "velo_")
+    sb_append_str(sb, l_t)
+    sb_append_char(sb, '_')
+    sb_append_str(sb, simd_bin_op_name(expr.op))
+    sb_append_char(sb, '(')
+    emit_c_expr(sb, st, expr.left)
+    sb_append_str(sb, ", ")
+    emit_c_expr(sb, st, expr.right)
+    sb_append_char(sb, ')')
+}
+
+act emit_simd_unary(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    let sub_t = infer_expr_type(st, expr.operand)
+    let clean_t = strip_pointer_prefix(sub_t)
+    sb_append_str(sb, "velo_")
+    sb_append_str(sb, clean_t)
+    sb_append_str(sb, "_neg(")
+    emit_c_expr(sb, st, expr.operand)
+    sb_append_char(sb, ')')
+}

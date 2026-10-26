@@ -160,6 +160,153 @@ act main() -> i32 {
 }
 """
 
+POSITIVE_SIMD_OPS_EXECUTION = """use sys.io
+
+act main() -> i32 {
+    // 1. f32x4 arithmetic
+    let a = f32x4(10.0, 20.0, 30.0, 40.0)
+    let b = f32x4(2.0, 4.0, 5.0, 8.0)
+    let sum_f = a + b
+    let diff_f = a - b
+    let mul_f = a * b
+    let div_f = a / b
+    let neg_f = -a
+
+    assert(sum_f.x == 12.0 and sum_f.y == 24.0 and sum_f.z == 35.0 and sum_f.w == 48.0, "f32x4 add")
+    assert(diff_f.x == 8.0 and diff_f.y == 16.0 and diff_f.z == 25.0 and diff_f.w == 32.0, "f32x4 sub")
+    assert(mul_f.x == 20.0 and mul_f.y == 80.0 and mul_f.z == 150.0 and mul_f.w == 320.0, "f32x4 mul")
+    assert(div_f.x == 5.0 and div_f.y == 5.0 and div_f.z == 6.0 and div_f.w == 5.0, "f32x4 div")
+    assert(neg_f.x == -10.0 and neg_f.y == -20.0 and neg_f.z == -30.0 and neg_f.w == -40.0, "f32x4 neg")
+
+    // 2. i32x4 arithmetic
+    let ia = i32x4(10, -20, 30, -40)
+    let ib = i32x4(5, 5, 2, -2)
+    let sum_i = ia + ib
+    let diff_i = ia - ib
+    let mul_i = ia * ib
+    let neg_i = -ia
+
+    assert(sum_i.x == 15 and sum_i.y == -15 and sum_i.z == 32 and sum_i.w == -42, "i32x4 add")
+    assert(diff_i.x == 5 and diff_i.y == -25 and diff_i.z == 28 and diff_i.w == -38, "i32x4 sub")
+    assert(mul_i.x == 50 and mul_i.y == -100 and mul_i.z == 60 and mul_i.w == 80, "i32x4 mul")
+    assert(neg_i.x == -10 and neg_i.y == 20 and neg_i.z == -30 and neg_i.w == 40, "i32x4 neg")
+
+    // 3. Equality
+    let eq1 = f32x4(1.0, 2.0, 3.0, 4.0)
+    let eq2 = f32x4(1.0, 2.0, 3.0, 4.0)
+    let eq3 = f32x4(1.0, 2.0, 3.0, 5.0)
+    assert(eq1 == eq2, "f32x4 eq true")
+    assert(!(eq1 == eq3), "f32x4 eq false")
+    assert(eq1 != eq3, "f32x4 neq true")
+    assert(!(eq1 != eq2), "f32x4 neq false")
+
+    let ieq1 = i32x4(1, 2, 3, 4)
+    let ieq2 = i32x4(1, 2, 3, 4)
+    let ieq3 = i32x4(1, 2, 3, 9)
+    assert(ieq1 == ieq2, "i32x4 eq true")
+    assert(!(ieq1 == ieq3), "i32x4 eq false")
+    assert(ieq1 != ieq3, "i32x4 neq true")
+    assert(!(ieq1 != ieq2), "i32x4 neq false")
+
+    // 4. Index expressions and dynamic lane access
+    assert(a[0] == 10.0 and a[1] == 20.0 and a[2] == 30.0 and a[3] == 40.0, "f32x4 literal indexing")
+    loop i in 0..4 {
+        assert(a[i] == (i as f32 + 1.0) * 10.0, "f32x4 dynamic loop indexing")
+    }
+
+    assert(ia[0] == 10 and ia[1] == -20 and ia[2] == 30 and ia[3] == -40, "i32x4 literal indexing")
+
+    // 5. Lane mutation
+    let mut_v = f32x4(1.0, 2.0, 3.0, 4.0)
+    mut_v.x = 100.0
+    mut_v.y = 200.0
+    mut_v.z = 300.0
+    mut_v.w = 400.0
+    assert(mut_v.x == 100.0 and mut_v.y == 200.0 and mut_v.z == 300.0 and mut_v.w == 400.0, "member assign")
+
+    mut_v[1] = 999.0
+    assert(mut_v[1] == 999.0, "index assign")
+    mut_v[1] += 1.0
+    assert(mut_v[1] == 1000.0, "index compound assign")
+    mut_v.x += 50.0
+    assert(mut_v.x == 150.0, "member compound assign")
+
+    // 6. Pointer lane access and mutation
+    let pv = @mut_v
+    assert(pv.x == 150.0, "ptr member read")
+    assert(pv[1] == 1000.0, "ptr index read")
+    pv.z = 777.0
+    assert(mut_v.z == 777.0, "ptr member write")
+    pv[3] = 888.0
+    assert(mut_v.w == 888.0, "ptr index write")
+
+    // 7. Vector compound assignments
+    mut vcomp = f32x4(1.0, 2.0, 3.0, 4.0)
+    vcomp += f32x4(10.0, 20.0, 30.0, 40.0)
+    assert(vcomp.x == 11.0 and vcomp.y == 22.0 and vcomp.z == 33.0 and vcomp.w == 44.0, "vector +=")
+    vcomp -= f32x4(1.0, 2.0, 3.0, 4.0)
+    assert(vcomp.x == 10.0 and vcomp.y == 20.0 and vcomp.z == 30.0 and vcomp.w == 40.0, "vector -=")
+    vcomp *= f32x4_splat(2.0)
+    assert(vcomp.x == 20.0 and vcomp.y == 40.0 and vcomp.z == 60.0 and vcomp.w == 80.0, "vector *=")
+    vcomp /= f32x4_splat(4.0)
+    assert(vcomp.x == 5.0 and vcomp.y == 10.0 and vcomp.z == 15.0 and vcomp.w == 20.0, "vector /=")
+
+    mut ivcomp = i32x4(1, 2, 3, 4)
+    ivcomp += i32x4(10, 20, 30, 40)
+    assert(ivcomp.x == 11 and ivcomp.y == 22 and ivcomp.z == 33 and ivcomp.w == 44, "i32x4 +=")
+    ivcomp -= i32x4(1, 2, 3, 4)
+    assert(ivcomp.x == 10 and ivcomp.y == 20 and ivcomp.z == 30 and ivcomp.w == 40, "i32x4 -=")
+    ivcomp *= i32x4_splat(3)
+    assert(ivcomp.x == 30 and ivcomp.y == 60 and ivcomp.z == 90 and ivcomp.w == 120, "i32x4 *=")
+
+    io.println("SIMD vector arithmetic and lane ops passed successfully")
+    return 0
+}
+"""
+
+NEGATIVE_SIMD_UNKNOWN_MEMBER = """use sys.io
+act main() -> i32 {
+    let v = f32x4(1.0, 2.0, 3.0, 4.0)
+    let x = v.foo
+    return 0
+}
+"""
+
+NEGATIVE_SIMD_BAD_INDEX = """use sys.io
+act main() -> i32 {
+    let v = f32x4(1.0, 2.0, 3.0, 4.0)
+    let x = v["hello"]
+    return 0
+}
+"""
+
+NEGATIVE_SIMD_MISMATCH_OP = """use sys.io
+act main() -> i32 {
+    let v = f32x4(1.0, 2.0, 3.0, 4.0)
+    let iv = i32x4(1, 2, 3, 4)
+    let sum = v + iv
+    return 0
+}
+"""
+
+NEGATIVE_SIMD_I32_DIV = """use sys.io
+act main() -> i32 {
+    let iv1 = i32x4(1, 2, 3, 4)
+    let iv2 = i32x4(1, 2, 3, 4)
+    let d = iv1 / iv2
+    return 0
+}
+"""
+
+NEGATIVE_SIMD_BAD_UNARY = """use sys.io
+act main() -> i32 {
+    let v = f32x4(1.0, 2.0, 3.0, 4.0)
+    let n = !v
+    return 0
+}
+"""
+
+
 def test_stage1_simd_execution(tmp_path):
     src = _write(tmp_path, "test_simd.vl", POSITIVE_SIMD_EXECUTION)
     res = _run_stage1(["run", src])
@@ -172,6 +319,18 @@ def test_stage2_simd_execution(tmp_path):
     assert res.returncode == 0, f"Stage 2 failed: {res.stdout}\n{res.stderr}"
     assert "SIMD vectors passed successfully" in res.stdout
 
+def test_stage1_simd_ops_execution(tmp_path):
+    src = _write(tmp_path, "test_simd_ops.vl", POSITIVE_SIMD_OPS_EXECUTION)
+    res = _run_stage1(["run", src])
+    assert res.returncode == 0, f"Stage 1 ops failed: {res.stdout}\n{res.stderr}"
+    assert "SIMD vector arithmetic and lane ops passed successfully" in res.stdout
+
+def test_stage2_simd_ops_execution(tmp_path):
+    src = _write(tmp_path, "test_simd_ops.vl", POSITIVE_SIMD_OPS_EXECUTION)
+    res = _run_stage2(["run", src])
+    assert res.returncode == 0, f"Stage 2 ops failed: {res.stdout}\n{res.stderr}"
+    assert "SIMD vector arithmetic and lane ops passed successfully" in res.stdout
+
 @pytest.mark.parametrize("source,expected_snippet", [
     (NEGATIVE_F32X4_ARITY_FEW, "f32x4 constructor expects exactly 4 arguments: (x, y, z, w)"),
     (NEGATIVE_F32X4_ARITY_MANY, "f32x4 constructor expects exactly 4 arguments: (x, y, z, w)"),
@@ -182,6 +341,11 @@ def test_stage2_simd_execution(tmp_path):
     (NEGATIVE_I32X4_ARG_FLOAT, "i32x4 constructor arguments must be integer (got f32)"),
     (NEGATIVE_I32X4_SPLAT_ARITY, "i32x4_splat constructor expects exactly 1 argument: (val)"),
     (NEGATIVE_I32X4_SPLAT_ARG_FLOAT, "i32x4_splat constructor argument must be integer (got f32)"),
+    (NEGATIVE_SIMD_UNKNOWN_MEMBER, "unknown SIMD vector member 'foo' (available: x, y, z, w)"),
+    (NEGATIVE_SIMD_BAD_INDEX, "SIMD vector index must be an integer (got string)"),
+    (NEGATIVE_SIMD_MISMATCH_OP, "mismatched operand types for SIMD binary operator '+': f32x4 and i32x4"),
+    (NEGATIVE_SIMD_I32_DIV, "integer vector division is not supported"),
+    (NEGATIVE_SIMD_BAD_UNARY, "unary operator '!' not supported for SIMD vector type f32x4"),
 ])
 def test_stage1_negative_simd_diagnostics(tmp_path, source, expected_snippet):
     src = _write(tmp_path, "neg_test.vl", source)
@@ -200,6 +364,11 @@ def test_stage1_negative_simd_diagnostics(tmp_path, source, expected_snippet):
     (NEGATIVE_I32X4_ARG_FLOAT, "i32x4 constructor arguments must be integer (got f32)"),
     (NEGATIVE_I32X4_SPLAT_ARITY, "i32x4_splat constructor expects exactly 1 argument: (val)"),
     (NEGATIVE_I32X4_SPLAT_ARG_FLOAT, "i32x4_splat constructor argument must be integer (got f32)"),
+    (NEGATIVE_SIMD_UNKNOWN_MEMBER, "unknown SIMD vector member 'foo' (available: x, y, z, w)"),
+    (NEGATIVE_SIMD_BAD_INDEX, "SIMD vector index must be an integer (got string)"),
+    (NEGATIVE_SIMD_MISMATCH_OP, "mismatched operand types for SIMD binary operator '+': f32x4 and i32x4"),
+    (NEGATIVE_SIMD_I32_DIV, "integer vector division is not supported"),
+    (NEGATIVE_SIMD_BAD_UNARY, "unary operator '!' not supported for SIMD vector type f32x4"),
 ])
 def test_stage2_negative_simd_diagnostics(tmp_path, source, expected_snippet):
     src = _write(tmp_path, "neg_test.vl", source)
@@ -222,6 +391,19 @@ def test_check_cli_json_simd_diagnostics(tmp_path):
     assert report2["ok"] is True
     assert len(report2["diagnostics"]) == 0
 
+    src_ops_valid = _write(tmp_path, "valid_ops.vl", POSITIVE_SIMD_OPS_EXECUTION)
+    res1_ops = _run_stage1(["check", src_ops_valid, "--json"])
+    assert res1_ops.returncode == 0
+    report1_ops = json.loads(res1_ops.stdout)
+    assert report1_ops["ok"] is True
+    assert len(report1_ops["diagnostics"]) == 0
+
+    res2_ops = _run_stage2(["check", src_ops_valid, "--json"])
+    assert res2_ops.returncode == 0
+    report2_ops = json.loads(res2_ops.stdout)
+    assert report2_ops["ok"] is True
+    assert len(report2_ops["diagnostics"]) == 0
+
     src_invalid = _write(tmp_path, "invalid.vl", NEGATIVE_F32X4_ARG_STRING)
     res1_inv = _run_stage1(["check", src_invalid, "--json"])
     assert res1_inv.returncode != 0
@@ -236,3 +418,17 @@ def test_check_cli_json_simd_diagnostics(tmp_path):
     assert report2_inv["ok"] is False
     assert len(report2_inv["diagnostics"]) > 0
     assert "f32x4 constructor arguments must be float or integer (got string)" in report2_inv["diagnostics"][0]["message"]
+
+    src_member_inv = _write(tmp_path, "invalid_member.vl", NEGATIVE_SIMD_UNKNOWN_MEMBER)
+    res1_mem = _run_stage1(["check", src_member_inv, "--json"])
+    assert res1_mem.returncode != 0
+    report1_mem = json.loads(res1_mem.stdout)
+    assert report1_mem["ok"] is False
+    assert "unknown SIMD vector member 'foo' (available: x, y, z, w)" in report1_mem["diagnostics"][0]["message"]
+
+    res2_mem = _run_stage2(["check", src_member_inv, "--json"])
+    assert res2_mem.returncode != 0
+    report2_mem = json.loads(res2_mem.stdout)
+    assert report2_mem["ok"] is False
+    assert "unknown SIMD vector member 'foo' (available: x, y, z, w)" in report2_mem["diagnostics"][0]["message"]
+

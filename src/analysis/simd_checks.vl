@@ -4,6 +4,7 @@
 // the same programs with character-identical messages.
 use "type_checker.vl"
 use "symbol_table.vl"
+use "../frontend/token.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../ast/expr.vl"
@@ -104,5 +105,93 @@ act check_simd_constructor(st: @SymbolTable, expr: @ExprNode) -> string {
         return "i32x4"
     }
 
+    return "unknown"
+}
+
+act simd_tok_str(op: i32) -> string {
+    if op == TOK_PLUS { return "+" }
+    if op == TOK_MINUS { return "-" }
+    if op == TOK_STAR { return "*" }
+    if op == TOK_SLASH { return "/" }
+    if op == TOK_EQ { return "==" }
+    if op == TOK_NEQ { return "!=" }
+    if op == TOK_NOT { return "!" }
+    if op == TOK_PERCENT { return "%" }
+    return "op"
+}
+
+act check_simd_member_access(st: @SymbolTable, expr: @ExprNode, clean_type: string) -> string {
+    let m = expr.member_name
+    if m != "x" and m != "y" and m != "z" and m != "w" {
+        mut sb = create_sb(96)
+        sb_append_str(@sb, "unknown SIMD vector member '")
+        sb_append_str(@sb, m)
+        sb_append_str(@sb, "' (available: x, y, z, w)")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+        st.error_count += 1
+        return "unknown"
+    }
+    if clean_type == "f32x4" { return "f32" }
+    return "i32"
+}
+
+act check_simd_index(st: @SymbolTable, expr: @ExprNode, clean_type: string) -> string {
+    let it = infer_expr_type(st, expr.index)
+    if it != "unknown" and not is_int_type(it) {
+        mut sb = create_sb(96)
+        sb_append_str(@sb, "SIMD vector index must be an integer (got ")
+        sb_append_str(@sb, it)
+        sb_append_char(@sb, ')')
+        report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+        st.error_count += 1
+        return "unknown"
+    }
+    if clean_type == "f32x4" { return "f32" }
+    return "i32"
+}
+
+act check_simd_binary(st: @SymbolTable, expr: @ExprNode, l_t: string, r_t: string) -> string {
+    if not is_simd_type(l_t) and not is_simd_type(r_t) { return null }
+    if l_t != r_t {
+        mut sb = create_sb(96)
+        sb_append_str(@sb, "mismatched operand types for SIMD binary operator '")
+        sb_append_str(@sb, simd_tok_str(expr.op))
+        sb_append_str(@sb, "': ")
+        sb_append_str(@sb, l_t)
+        sb_append_str(@sb, " and ")
+        sb_append_str(@sb, r_t)
+        report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+        st.error_count += 1
+        return "unknown"
+    }
+    if expr.op == TOK_EQ or expr.op == TOK_NEQ { return "bool" }
+    if expr.op == TOK_PLUS or expr.op == TOK_MINUS or expr.op == TOK_STAR or expr.op == TOK_SLASH {
+        if l_t == "i32x4" and expr.op == TOK_SLASH {
+            report_error("semantic", expr.line, expr.col, "integer vector division is not supported")
+            st.error_count += 1
+            return "unknown"
+        }
+        return l_t
+    }
+    mut sb = create_sb(96)
+    sb_append_str(@sb, "operator '")
+    sb_append_str(@sb, simd_tok_str(expr.op))
+    sb_append_str(@sb, "' not supported for SIMD vector type ")
+    sb_append_str(@sb, l_t)
+    report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+    st.error_count += 1
+    return "unknown"
+}
+
+act check_simd_unary(st: @SymbolTable, expr: @ExprNode, sub_t: string) -> string {
+    if not is_simd_type(sub_t) { return null }
+    if expr.op == TOK_MINUS { return sub_t }
+    mut sb = create_sb(96)
+    sb_append_str(@sb, "unary operator '")
+    sb_append_str(@sb, simd_tok_str(expr.op))
+    sb_append_str(@sb, "' not supported for SIMD vector type ")
+    sb_append_str(@sb, sub_t)
+    report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+    st.error_count += 1
     return "unknown"
 }

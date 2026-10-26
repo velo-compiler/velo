@@ -219,18 +219,46 @@ flowchart TD
   - All source files $\le 397$ lines (`scripts/count_lines.py`).
   - No UTF-8 BOM in any `.vl` file.
 
-#### Task 3.2: SIMD Vector Arithmetic & Lane Operations
-* **Problem**: Performing vectorized math currently requires scalar loops or compiler autovectorization.
-* **Specification**:
-  - Enable binary arithmetic operators `+`, `-`, `*`, `/` directly between `f32x4` operands, lowering to hardware SIMD instructions:
-    * GCC/Clang: native vector arithmetic operators.
-    * MSVC: `_mm_add_ps`, `_mm_sub_ps`, `_mm_mul_ps`, `_mm_div_ps`.
-  - Add lane accessor properties/methods: `v.x`, `v.y`, `v.z`, `v.w` (or lane indexing `v[0]`).
-* **Target Files**:
-  - `velo/codegen_c.py`
-  - `src/backend/codegen_expr.vl`
+#### Task 3.2: SIMD Vector Arithmetic & Lane Operations [COMPLETED] ✅
+* **Former Defect**:
+  - The language lacked hardware SIMD vector operations (`+`, `-`, `*`, `/`, unary `-`, `==`, `!=`) and lane accessor operations (`v.x`, `v.y`, `v.z`, `v.w`, `v[i]`, and lane mutations `v.x = val`, `v[i] = val`). Performing vector math required scalar loops, pointer casts, or reliance on C compiler autovectorization.
+* **Fix Applied**:
+  - **Memory & C Runtime (`velo/runtime/velo_runtime.h`)**:
+    * Defined portable inline arithmetic operations lowering to hardware SIMD instructions:
+      - Under GCC/Clang: native vector arithmetic operators (`a + b`, `a - b`, `a * b`, `a / b`, `-a`).
+      - Under MSVC: `_mm_add_ps`, `_mm_sub_ps`, `_mm_mul_ps`, `_mm_div_ps` for `f32x4`; `_mm_add_epi32`, `_mm_sub_epi32`, `_mm_mullo_epi32` for `i32x4`; and `_mm_xor_ps`/`_mm_sub_epi32` for negation.
+      - Portable equality `velo_f32x4_eq`, `velo_f32x4_neq`, `velo_i32x4_eq`, `velo_i32x4_neq` comparing all 4 lanes for a true C boolean (avoiding GCC vector comparison producing a vector mask).
+      - Portable lane extractors `velo_f32x4_get(v, lane)` and `velo_i32x4_get(v, lane)`.
+  - **Stage 1 (Python Compiler)**:
+    * In `velo/monomorphize.py`: updated `_infer_expr_type` to infer types for SIMD `MemberAccess` (`.x`, `.y`, `.z`, `.w`), `IndexExpr` (`v[i]`), `BinaryExpr` (`+`, `-`, `*`, `/`, `==`, `!=`), and `UnaryExpr` (`-`).
+    * In `velo/codegen_c.py`:
+      - Dispatched SIMD arithmetic, equality, lane access, and unary negation in `_emit_expression`, `_resolve_expr_type`, and `_infer_raw_velo_type`.
+      - In `AssignStmt`: handled SIMD lane mutations (`v.x = val`, `v[i] = val`, pointer writes `p.x = val`, `p[i] = val`) via lane pointer casting, and whole-vector compound assignments (`v += v2`, `v -= v2`, `v *= v2`, `v /= v2`) expanding to `v = velo_{type}_{op}(v, (v2));`.
+      - Character-identical error reporting for unknown members, non-integer index, type mismatches, integer vector division, and unsupported unary operators.
+  - **Stage 2 (Self-Hosted Compiler)**:
+    * Created `src/backend/simd_gen.vl` (193 lines) implementing SIMD assignment, member, index, binary, and unary code generation.
+    * In `src/analysis/simd_checks.vl`: added `check_simd_member_access`, `check_simd_index`, `check_simd_binary`, `check_simd_unary` with character-identical semantic diagnostics.
+    * In `src/analysis/type_checker.vl`: dispatched SIMD checks in `infer_expr_type`.
+    * In `src/analysis/monomorphize_expr.vl`: dispatched SIMD types in `mono_infer_type`.
+    * In `src/backend/codegen_expr.vl`: dispatched SIMD member, index, binary, and unary expressions to `simd_gen.vl`.
+    * In `src/backend/codegen_stmt.vl`: dispatched SIMD assignments to `simd_gen.vl`.
+    * File line limits strictly maintained ($\le 397$ lines across all files in `src/`).
+* **Residual Limitation**:
+  - Specialized vector math functions (`simd.dot`, `simd.min`, `simd.max`, `simd.sqrt`) belong to the standard library module `sys.simd` and are scheduled for Task 3.3.
 * **Verification**:
-  - Unit tests verifying vector addition, subtraction, multiplication, and division produce bit-exact float results.
+  - Extended test suite `tests/test_simd_vectors.py` (33 tests) covering:
+    1. Positive execution on Stage 1 verifying `+`, `-`, `*`, `/`, unary `-`, `==`, `!=`, lane reads (`v.x`, `v[i]`), lane writes (`v.x = ...`, `v[i] = ...`), pointer lane access/write, and whole-vector compound assignments (`+=`, `-=`, `*=`, `/=`).
+    2. Positive execution on Stage 2 (`bin/velo.exe`) with identical behavior.
+    3. Negative tests on Stage 1 for unknown member, bad index, type mismatch, integer vector division, and unsupported unary ops.
+    4. Negative tests on Stage 2 (`bin/velo.exe`) with character-identical error messages.
+    5. `velo check --json` diagnostics parity on both stages.
+  - Rebuilt 3-stage bootstrap chain (`velo_gen1.exe` -> `velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe`).
+  - Verified determinism: Gen2 and Gen3 `emit-c src/main.vl` SHA-256 match exactly (`4A2AE829039BACC3969B5D0753363C4A4653C550125D665EEFDA0D7F38800838`).
+  - Native test runner passed all 105 tests (`bin/velo.exe test examples/15_native_tests.vl`).
+  - Pytest full test suite passed (341 tests passed in 207s).
+  - All source files $\le 397$ lines (`scripts/count_lines.py`).
+  - No UTF-8 BOM in any `.vl` file.
+
 
 #### Task 3.3: High-Performance SIMD Operations (`sys.simd`)
 * **Problem**: Game math requires specialized vectorized primitives: dot products, minimums, maximums, and fast square roots.

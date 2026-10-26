@@ -150,11 +150,25 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
         return "i32"
     }
     if e.kind == EXPR_MEMBER {
-        // 5.2: shelf .len is usize; other reads fall through to "i32"
         let tt = mono_infer_type(e.target, scope)
+        let ct = strip_pointer_prefix(tt)
+        if ct == "f32x4" { return "f32" }; if ct == "i32x4" { return "i32" }
         if mono_shelf_elem(tt) != null and e.member_name == "len" { return "usize" }
-        // 5.2 slice 6: map .len is usize; others fall through
         if mono_map_value(tt) != null and e.member_name == "len" { return "usize" }
+    }
+    if e.kind == EXPR_INDEX {
+        let tt = mono_infer_type(e.target, scope)
+        let ct = strip_pointer_prefix(tt)
+        if ct == "f32x4" { return "f32" }; if ct == "i32x4" { return "i32" }
+    }
+    if e.kind == EXPR_BINARY {
+        if e.op == TOK_EQ or e.op == TOK_NEQ { return "bool" }
+        let lt = mono_infer_type(e.left, scope)
+        if lt == "f32x4" or lt == "i32x4" { return lt }
+    }
+    if e.kind == EXPR_UNARY {
+        let st = mono_infer_type(e.operand, scope)
+        if st == "f32x4" or st == "i32x4" { return st }
     }
     if e.kind == EXPR_CALL {
         // 5.2: shelf receiver calls — put/insert yield void, take/remove_at
@@ -222,32 +236,12 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
     if e.kind == EXPR_NULL { return make_null_expr(e.line, e.col) }
     if e.kind == EXPR_IDENT { return make_ident_expr(e.str_val, e.line, e.col) }
 
-    if e.kind == EXPR_BINARY {
-        let l = mono_clone_expr(m, e.left, scope, params, args)
-        let r = mono_clone_expr(m, e.right, scope, params, args)
-        return make_binary_expr(l, e.op, r, e.line, e.col)
-    }
-    if e.kind == EXPR_UNARY {
-        let sub = mono_clone_expr(m, e.operand, scope, params, args)
-        return make_unary_expr(e.op, sub, e.line, e.col)
-    }
-    if e.kind == EXPR_ADDRESS_OF {
-        let sub = mono_clone_expr(m, e.operand, scope, params, args)
-        return make_address_of_expr(sub, e.line, e.col)
-    }
-    if e.kind == EXPR_DEREF {
-        let sub = mono_clone_expr(m, e.operand, scope, params, args)
-        return make_deref_expr(sub, e.line, e.col)
-    }
-    if e.kind == EXPR_MEMBER {
-        let sub = mono_clone_expr(m, e.target, scope, params, args)
-        return make_member_expr(sub, e.member_name, e.line, e.col)
-    }
-    if e.kind == EXPR_INDEX {
-        let sub = mono_clone_expr(m, e.target, scope, params, args)
-        let idx = mono_clone_expr(m, e.index, scope, params, args)
-        return make_index_expr(sub, idx, e.line, e.col)
-    }
+    if e.kind == EXPR_BINARY { return make_binary_expr(mono_clone_expr(m, e.left, scope, params, args), e.op, mono_clone_expr(m, e.right, scope, params, args), e.line, e.col) }
+    if e.kind == EXPR_UNARY { return make_unary_expr(e.op, mono_clone_expr(m, e.operand, scope, params, args), e.line, e.col) }
+    if e.kind == EXPR_ADDRESS_OF { return make_address_of_expr(mono_clone_expr(m, e.operand, scope, params, args), e.line, e.col) }
+    if e.kind == EXPR_DEREF { return make_deref_expr(mono_clone_expr(m, e.operand, scope, params, args), e.line, e.col) }
+    if e.kind == EXPR_MEMBER { return make_member_expr(mono_clone_expr(m, e.target, scope, params, args), e.member_name, e.line, e.col) }
+    if e.kind == EXPR_INDEX { return make_index_expr(mono_clone_expr(m, e.target, scope, params, args), mono_clone_expr(m, e.index, scope, params, args), e.line, e.col) }
     if e.kind == EXPR_CAST {
         let sub = mono_clone_expr(m, e.operand, scope, params, args)
         mut tt = mono_subst(e.type_name, params, args)

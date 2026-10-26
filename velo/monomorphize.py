@@ -953,6 +953,10 @@ class Monomorphizer:
         if isinstance(expr, MemberAccess):
             target_type = self._infer_expr_type(expr.target, scope)
             clean_type = target_type.lstrip("@")
+            if clean_type in ("f32x4", "i32x4"):
+                if expr.member in ("x", "y", "z", "w"):
+                    return "f32" if clean_type == "f32x4" else "i32"
+                raise ValueError(f"unknown SIMD vector member '{expr.member}' (available: x, y, z, w)")
             prefix, base, _ = parse_type_signature(clean_type)
             f_types = self.struct_field_types.get(clean_type) or self.struct_field_types.get(base) or self.struct_field_types.get(clean_type.split('_')[0], {})
             if expr.member in f_types:
@@ -1020,6 +1024,9 @@ class Monomorphizer:
         if isinstance(expr, IndexExpr):
             # 5.2: shelf element reads; slice 6: map value reads
             target_type = self._infer_expr_type(expr.target, scope)
+            clean_type = target_type.lstrip("@")
+            if clean_type in ("f32x4", "i32x4"):
+                return "f32" if clean_type == "f32x4" else "i32"
             elem = _shelf_elem_of(target_type)
             if elem is not None:
                 return elem
@@ -1068,6 +1075,8 @@ class Monomorphizer:
                 return "bool"
             l_t = self._infer_expr_type(expr.left, scope)
             r_t = self._infer_expr_type(expr.right, scope)
+            if l_t in ("f32x4", "i32x4") or r_t in ("f32x4", "i32x4"):
+                return l_t
             match_fn, _, _ = self._find_binary_op_overload(expr.op, expr.left, l_t, expr.right, r_t)
             if match_fn and match_fn in self.func_return_types:
                 return self.func_return_types[match_fn]
@@ -1076,6 +1085,8 @@ class Monomorphizer:
             if expr.op in ("!", "not"):
                 return "bool"
             op_t = self._infer_expr_type(expr.operand, scope)
+            if op_t in ("f32x4", "i32x4"):
+                return op_t
             match_fn, _ = self._find_unary_op_overload(expr.op, expr.operand, op_t)
             if match_fn and match_fn in self.func_return_types:
                 return self.func_return_types[match_fn]

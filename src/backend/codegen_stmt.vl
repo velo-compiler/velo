@@ -15,6 +15,7 @@ use "shelf_gen.vl"
 use "map_gen.vl"
 use "shelf_calls_gen.vl"
 use "ring_gen.vl"
+use "simd_gen.vl"
 
 // Intrusive linked list node maintaining active LIFO deferred statements.
 data DeferNode {
@@ -55,19 +56,11 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
 
     // 2. Assignment statement
     if stmt.kind == STMT_ASSIGN {
+        if is_simd_assign(st, stmt) { emit_simd_assign(sb, st, stmt, indent); return }
         // 5.2 slice 6: map indexed writes (m[k] = v) lower onto velo_map_put
         if stmt.expr != null and stmt.expr.kind == EXPR_INDEX {
-            if is_map_form(infer_expr_type(st, stmt.expr.target)) {
-                emit_map_set(sb, st, stmt, indent)
-                return
-            }
-        }
-        // 5.2: shelf indexed writes (xs[i] = v) lower onto velo_shelf_set
-        if stmt.expr != null and stmt.expr.kind == EXPR_INDEX {
-            if is_shelf_form(infer_expr_type(st, stmt.expr.target)) {
-                emit_shelf_set(sb, st, stmt, indent)
-                return
-            }
+            if is_map_form(infer_expr_type(st, stmt.expr.target)) { emit_map_set(sb, st, stmt, indent); return }
+            if is_shelf_form(infer_expr_type(st, stmt.expr.target)) { emit_shelf_set(sb, st, stmt, indent); return }
         }
         let base_op = get_base_assign_op(stmt.op)
         if base_op != 0 and st.has_operator_overloads {

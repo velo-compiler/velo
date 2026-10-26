@@ -23,6 +23,7 @@ use "math_gen.vl"
 use "time_gen.vl"
 use "os_gen.vl"
 use "fs_gen.vl"
+use "simd_gen.vl"
 
 // Emits C99 code for an AST expression into a StringBuilder.
 act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
@@ -83,6 +84,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr.kind == EXPR_DEREF { sb_append_str(sb, "(*("); emit_c_expr(sb, st, expr.operand); sb_append_str(sb, "))"); return }
     if expr.kind == EXPR_UNARY {
         let sub_type = infer_expr_type(st, expr.operand)
+        if is_simd_type(strip_pointer_prefix(sub_type)) { emit_simd_unary(sb, st, expr); return }
         let op_fn = find_unary_op(st, expr.op, sub_type)
         if op_fn != null {
             sb_append_str(sb, op_fn.name); sb_append_char(sb, '(')
@@ -97,13 +99,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             return
         }
         sb_append_str(sb, "(")
-        if expr.op == TOK_NOT {
-            sb_append_str(sb, "!")
-        } else if expr.op == TOK_TILDE {
-            sb_append_str(sb, "~")
-        } else {
-            sb_append_str(sb, "-")
-        }
+        if expr.op == TOK_NOT { sb_append_str(sb, "!") } else if expr.op == TOK_TILDE { sb_append_str(sb, "~") } else { sb_append_str(sb, "-") }
         emit_c_expr(sb, st, expr.operand)
         sb_append_str(sb, ")")
         return
@@ -129,21 +125,19 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                 }
             }
         }
-        let target_type = infer_expr_type(st, expr.target); emit_c_expr(sb, st, expr.target)
+        let target_type = infer_expr_type(st, expr.target)
+        if is_simd_type(strip_pointer_prefix(target_type)) { emit_simd_member(sb, st, expr, target_type); return }
+        emit_c_expr(sb, st, expr.target)
         if str.len(target_type) > 0 and target_type[0] == '@' { sb_append_str(sb, "->") } else { sb_append_str(sb, ".") }
         sb_append_str(sb, expr.member_name); return
     }
 
     // 4. Array indexing
     if expr.kind == EXPR_INDEX {
-        // 5.2: shelf element reads lower onto velo_shelf_get (bounds-checked)
-        if is_shelf_form(infer_expr_type(st, expr.target)) {
-            emit_shelf_index(sb, st, expr)
-            return
-        }
-        // 5.2 slice 6: map value reads lower onto velo_map_copy_out (fatal miss)
-        if is_map_form(infer_expr_type(st, expr.target)) { emit_map_index(sb, st, expr); return }
-        // (index fallthrough compressed — 5.3 ceiling discipline)
+        let tt = infer_expr_type(st, expr.target)
+        if is_simd_type(strip_pointer_prefix(tt)) { emit_simd_index(sb, st, expr, tt); return }
+        if is_shelf_form(tt) { emit_shelf_index(sb, st, expr); return }
+        if is_map_form(tt) { emit_map_index(sb, st, expr); return }
         emit_c_expr(sb, st, expr.target); sb_append_char(sb, '[')
         emit_c_expr(sb, st, expr.index); sb_append_char(sb, ']'); return
     }
@@ -167,6 +161,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr.kind == EXPR_BINARY {
         let ltype = infer_expr_type(st, expr.left)
         let rtype = infer_expr_type(st, expr.right)
+        if is_simd_type(ltype) or is_simd_type(rtype) { emit_simd_binary(sb, st, expr, ltype, rtype); return }
         // 5.2 slice 8: raw dyn arithmetic/compares auto-unbox — identical C with Stage 1's _emit_dyn_binop
         if ltype == "dyn" or rtype == "dyn" {
             emit_dyn_binop(sb, st, expr, ltype, rtype)

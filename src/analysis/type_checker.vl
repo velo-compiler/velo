@@ -85,20 +85,18 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         if is_shelf_type(target_type) { return check_shelf_member_access(st, expr) }  // 5.2: shelf property reads (len = usize; others are loud errors)
         if is_map_type(target_type) { return check_map_member_access(st, expr) }  // 5.2 slice 6: len = usize; others name the map surface
         if is_ring_type(target_type) or is_bitset_type(target_type) { return check_coll9_member_access(st, expr) }  // 5.2 slice 9
+        if is_simd_type(clean_type) { return check_simd_member_access(st, expr, clean_type) }
         let st_sym = find_struct(st, clean_type)
-        if st_sym == null {
-            report_error("semantic", expr.line, expr.col, "Member access on non-struct type"); st.error_count += 1
-            return "unknown"
-        }
+        if st_sym == null { report_error("semantic", expr.line, expr.col, "Member access on non-struct type"); st.error_count += 1; return "unknown" }
         let f_sym = find_struct_field(st_sym, expr.member_name)
-        if f_sym == null {
-            report_error("semantic", expr.line, expr.col, "Struct does not have member field"); st.error_count += 1; return "unknown"
-        }
+        if f_sym == null { report_error("semantic", expr.line, expr.col, "Struct does not have member field"); st.error_count += 1; return "unknown" }
         return f_sym.type_name
     }
 
     if expr.kind == EXPR_INDEX {
         let target_type = infer_expr_type(st, expr.target)
+        let clean_type = strip_pointer_prefix(target_type)
+        if is_simd_type(clean_type) { return check_simd_index(st, expr, clean_type) }
         if is_shelf_type(target_type) { return check_shelf_index_read(st, expr) }  // 5.2: bounds are runtime-checked; index type here
         if is_map_type(target_type) { return check_map_index_read(st, expr) }  // 5.2 slice 6: strict key; the miss fatal is runtime
         if is_ring_type(target_type) or is_bitset_type(target_type) { return check_coll9_index(st, expr) }  // 5.2 slice 9: no subscript
@@ -251,6 +249,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         let left_type = infer_expr_type(st, expr.left); let right_type = infer_expr_type(st, expr.right)
         // 5.2 slice 8: raw dyn arithmetic/compares auto-unbox; the concrete mixed-compare and string-concat walls live in dyn_checks.vl too
         let bin_t = check_dyn_binary(st, expr, left_type, right_type); if bin_t != null { return bin_t }
+        let s_bin = check_simd_binary(st, expr, left_type, right_type); if s_bin != null { return s_bin }
         let op_fn = find_binary_op(st, expr.op, left_type, right_type); if op_fn != null { return op_fn.return_type }
         if expr.op == TOK_EQ or expr.op == TOK_NEQ or expr.op == TOK_LT or expr.op == TOK_LTE or expr.op == TOK_GT or expr.op == TOK_GTE or expr.op == TOK_AND or expr.op == TOK_OR {
             return "bool"
@@ -261,6 +260,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.kind == EXPR_UNARY {
         let sub_type = infer_expr_type(st, expr.operand)
         if sub_type == "dyn" { report_error("semantic", expr.line, expr.col, dyn_gate_error()); st.error_count += 1; return "unknown" }  // slice 2: unbox with `as` first
+        let s_un = check_simd_unary(st, expr, sub_type); if s_un != null { return s_un }
         let op_fn = find_unary_op(st, expr.op, sub_type)
         if op_fn != null { return op_fn.return_type }
         if expr.op == TOK_NOT { return "bool" }

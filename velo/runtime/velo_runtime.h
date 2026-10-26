@@ -95,6 +95,43 @@ static inline i32x4 velo_i32x4(int32_t x, int32_t y, int32_t z, int32_t w) {
 static inline i32x4 velo_i32x4_splat(int32_t val) {
     return _mm_set1_epi32(val);
 }
+
+static inline f32x4 velo_f32x4_add(f32x4 a, f32x4 b) { return _mm_add_ps(a, b); }
+static inline f32x4 velo_f32x4_sub(f32x4 a, f32x4 b) { return _mm_sub_ps(a, b); }
+static inline f32x4 velo_f32x4_mul(f32x4 a, f32x4 b) { return _mm_mul_ps(a, b); }
+static inline f32x4 velo_f32x4_div(f32x4 a, f32x4 b) { return _mm_div_ps(a, b); }
+static inline f32x4 velo_f32x4_neg(f32x4 a) { return _mm_sub_ps(_mm_setzero_ps(), a); }
+
+static inline i32x4 velo_i32x4_add(i32x4 a, i32x4 b) { return _mm_add_epi32(a, b); }
+static inline i32x4 velo_i32x4_sub(i32x4 a, i32x4 b) { return _mm_sub_epi32(a, b); }
+static inline i32x4 velo_i32x4_mul(i32x4 a, i32x4 b) { return _mm_mullo_epi32(a, b); }
+static inline i32x4 velo_i32x4_neg(i32x4 a) { return _mm_sub_epi32(_mm_setzero_si128(), a); }
+
+static inline bool velo_f32x4_eq(f32x4 a, f32x4 b) {
+    return _mm_movemask_ps(_mm_cmpeq_ps(a, b)) == 0x0F;
+}
+static inline bool velo_f32x4_neq(f32x4 a, f32x4 b) {
+    return !velo_f32x4_eq(a, b);
+}
+
+static inline bool velo_i32x4_eq(i32x4 a, i32x4 b) {
+    return _mm_movemask_epi8(_mm_cmpeq_epi32(a, b)) == 0xFFFF;
+}
+static inline bool velo_i32x4_neq(i32x4 a, i32x4 b) {
+    return !velo_i32x4_eq(a, b);
+}
+
+static inline float velo_f32x4_get(f32x4 v, int32_t lane) {
+    union { f32x4 vec; float arr[4]; } u;
+    u.vec = v;
+    return u.arr[lane & 3];
+}
+
+static inline int32_t velo_i32x4_get(i32x4 v, int32_t lane) {
+    union { i32x4 vec; int32_t arr[4]; } u;
+    u.vec = v;
+    return u.arr[lane & 3];
+}
 #else
 typedef float   f32x4 __attribute__((vector_size(16), aligned(16)));
 typedef int32_t i32x4 __attribute__((vector_size(16), aligned(16)));
@@ -113,6 +150,49 @@ static inline i32x4 velo_i32x4(int32_t x, int32_t y, int32_t z, int32_t w) {
 
 static inline i32x4 velo_i32x4_splat(int32_t val) {
     return (i32x4){val, val, val, val};
+}
+
+static inline f32x4 velo_f32x4_add(f32x4 a, f32x4 b) { return a + b; }
+static inline f32x4 velo_f32x4_sub(f32x4 a, f32x4 b) { return a - b; }
+static inline f32x4 velo_f32x4_mul(f32x4 a, f32x4 b) { return a * b; }
+static inline f32x4 velo_f32x4_div(f32x4 a, f32x4 b) { return a / b; }
+static inline f32x4 velo_f32x4_neg(f32x4 a) { return -a; }
+
+static inline i32x4 velo_i32x4_add(i32x4 a, i32x4 b) { return a + b; }
+static inline i32x4 velo_i32x4_sub(i32x4 a, i32x4 b) { return a - b; }
+static inline i32x4 velo_i32x4_mul(i32x4 a, i32x4 b) { return a * b; }
+static inline i32x4 velo_i32x4_neg(i32x4 a) { return -a; }
+
+static inline bool velo_f32x4_eq(f32x4 a, f32x4 b) {
+    union { f32x4 vec; float arr[4]; } ua, ub;
+    ua.vec = a; ub.vec = b;
+    return ua.arr[0] == ub.arr[0] && ua.arr[1] == ub.arr[1] &&
+           ua.arr[2] == ub.arr[2] && ua.arr[3] == ub.arr[3];
+}
+static inline bool velo_f32x4_neq(f32x4 a, f32x4 b) {
+    return !velo_f32x4_eq(a, b);
+}
+
+static inline bool velo_i32x4_eq(i32x4 a, i32x4 b) {
+    union { i32x4 vec; int32_t arr[4]; } ua, ub;
+    ua.vec = a; ub.vec = b;
+    return ua.arr[0] == ub.arr[0] && ua.arr[1] == ub.arr[1] &&
+           ua.arr[2] == ub.arr[2] && ua.arr[3] == ub.arr[3];
+}
+static inline bool velo_i32x4_neq(i32x4 a, i32x4 b) {
+    return !velo_i32x4_eq(a, b);
+}
+
+static inline float velo_f32x4_get(f32x4 v, int32_t lane) {
+    union { f32x4 vec; float arr[4]; } u;
+    u.vec = v;
+    return u.arr[lane & 3];
+}
+
+static inline int32_t velo_i32x4_get(i32x4 v, int32_t lane) {
+    union { i32x4 vec; int32_t arr[4]; } u;
+    u.vec = v;
+    return u.arr[lane & 3];
 }
 #endif
 

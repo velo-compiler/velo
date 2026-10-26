@@ -1688,6 +1688,38 @@ class CCodeGenerator:
                 self._emit_line(f"{type_str} {stmt.name};")
 
         elif isinstance(stmt, AssignStmt):
+            # SIMD lane writes (v.x = val, v[i] = val)
+            if isinstance(stmt.target, MemberAccess):
+                base_type = self._resolve_expr_type(stmt.target.target)
+                clean_type = base_type.lstrip("@")
+                if clean_type in ("f32x4", "i32x4"):
+                    if stmt.target.member not in ("x", "y", "z", "w"):
+                        raise ValueError(f"unknown SIMD vector member '{stmt.target.member}' (available: x, y, z, w)")
+                    lane = {"x": 0, "y": 1, "z": 2, "w": 3}[stmt.target.member]
+                    c_elem = "float" if clean_type == "f32x4" else "int32_t"
+                    target_code = self._emit_expression(stmt.target.target)
+                    val_code = self._emit_expression(stmt.value)
+                    if base_type.startswith("@"):
+                        self._emit_line(f"((({c_elem}*)({target_code}))[{lane}]) {stmt.op} ({val_code});")
+                    else:
+                        self._emit_line(f"((({c_elem}*)&({target_code}))[{lane}]) {stmt.op} ({val_code});")
+                    return
+            if isinstance(stmt.target, IndexExpr):
+                base_type = self._resolve_expr_type(stmt.target.target)
+                clean_type = base_type.lstrip("@")
+                if clean_type in ("f32x4", "i32x4"):
+                    itype = self._resolve_expr_type(stmt.target.index)
+                    if itype not in ("i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize"):
+                        raise ValueError(f"SIMD vector index must be an integer (got {itype})")
+                    c_elem = "float" if clean_type == "f32x4" else "int32_t"
+                    target_code = self._emit_expression(stmt.target.target)
+                    index_code = self._emit_expression(stmt.target.index)
+                    val_code = self._emit_expression(stmt.value)
+                    if base_type.startswith("@"):
+                        self._emit_line(f"((({c_elem}*)({target_code}))[((int32_t)({index_code})) & 3]) {stmt.op} ({val_code});")
+                    else:
+                        self._emit_line(f"((({c_elem}*)&({target_code}))[((int32_t)({index_code})) & 3]) {stmt.op} ({val_code});")
+                    return
             # 5.2: shelf indexed write (xs[i] = v) — bounds-checked via helper
             if isinstance(stmt.target, IndexExpr):
                 base_type = self._resolve_expr_type(stmt.target.target)
@@ -1754,6 +1786,16 @@ class CCodeGenerator:
                         f"velo_map_put({rec}, (const void*)(&{k_slot}), (const void*)(&{v_slot})); }}"
                     )
                     return
+            tgt_type = self._resolve_expr_type(stmt.target)
+            if tgt_type in ("f32x4", "i32x4") and stmt.op in ("+=", "-=", "*=", "/="):
+                base_op = stmt.op[0]
+                if tgt_type == "i32x4" and base_op == "/":
+                    raise ValueError("integer vector division is not supported")
+                op_map = {"+": "add", "-": "sub", "*": "mul", "/": "div"}
+                target_code = self._emit_expression(stmt.target)
+                val_code = self._emit_expression(stmt.value)
+                self._emit_line(f"{target_code} = velo_{tgt_type}_{op_map[base_op]}({target_code}, ({val_code}));")
+                return
             target_code = self._emit_expression(stmt.target)
             # 5.2 slice 11: the retire wall rides plain assignments too
             if isinstance(stmt.target, Identifier):
@@ -2179,14 +2221,20 @@ class CCodeGenerator:
             # 5.2 slice 2 parity fix: unannotated arith/comparison lets infer
             # like Stage 2's checker (comparisons are bool, otherwise the left
             # operand's type — widened dyn literals read f64 through clauses).
+            l_t = self._resolve_expr_type(value.left)
+            r_t = self._resolve_expr_type(value.right)
+            if l_t in ("f32x4", "i32x4") or r_t in ("f32x4", "i32x4"):
+                if value.op in ("==", "!="):
+                    return "bool"
+                return l_t
             if value.op in ("==", "!=", "<", "<=", ">", ">=", "and", "or"):
                 return "bool"
             # 5.2 slice 8: arithmetic with a raw dyn operand re-boxes — the
             # result type is dyn regardless of which side carries it
             if value.op in ("+", "-", "*", "/", "%"):
-                if self._resolve_expr_type(value.left) == "dyn" or self._resolve_expr_type(value.right) == "dyn":
+                if l_t == "dyn" or r_t == "dyn":
                     return "dyn"
-            return self._resolve_expr_type(value.left)
+            return l_t
         if isinstance(value, UnaryExpr):
             if value.op in ("!", "not"):
                 return "bool"
@@ -2197,6 +2245,12 @@ class CCodeGenerator:
             return self._resolve_expr_type(value)
         if isinstance(value, IndexExpr):
             target_type = self._resolve_expr_type(value.target)
+            clean_type = target_type.lstrip("@")
+            if clean_type in ("f32x4", "i32x4"):
+                itype = self._resolve_expr_type(value.index)
+                if itype not in ("i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize"):
+                    raise ValueError(f"SIMD vector index must be an integer (got {itype})")
+                return "f32" if clean_type == "f32x4" else "i32"
             if target_type == "string":
                 return "u8"
             shelf_elem = self._shelf_elem_type(target_type)
@@ -2369,6 +2423,12 @@ class CCodeGenerator:
             return sub_type
         elif isinstance(expr, IndexExpr):
             target_type = self._resolve_expr_type(expr.target)
+            clean_type = target_type.lstrip("@")
+            if clean_type in ("f32x4", "i32x4"):
+                itype = self._resolve_expr_type(expr.index)
+                if itype not in ("i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize"):
+                    raise ValueError(f"SIMD vector index must be an integer (got {itype})")
+                return "f32" if clean_type == "f32x4" else "i32"
             shelf_elem = self._shelf_elem_type(target_type)
             if shelf_elem is not None:
                 return shelf_elem
@@ -2437,6 +2497,10 @@ class CCodeGenerator:
             if target_type.lstrip("@") == "bitset":
                 raise ValueError(f"unknown bitset member '{expr.member}' (set, clear, toggle, has, count, first_unset, and, or_with, xor_with, flip are available)")
             clean_type = target_type.lstrip("@")
+            if clean_type in ("f32x4", "i32x4"):
+                if expr.member in ("x", "y", "z", "w"):
+                    return "f32" if clean_type == "f32x4" else "i32"
+                raise ValueError(f"unknown SIMD vector member '{expr.member}' (available: x, y, z, w)")
             fields = self.struct_defs.get(clean_type, {})
             return fields.get(expr.member, "i32")
         elif isinstance(expr, AnonFuncExpr):
@@ -2597,13 +2661,30 @@ class CCodeGenerator:
                 if parsed:
                     return parsed[2]
         elif isinstance(expr, BinaryExpr):
+            l_t = self._resolve_expr_type(expr.left)
+            r_t = self._resolve_expr_type(expr.right)
+            if l_t in ("f32x4", "i32x4") or r_t in ("f32x4", "i32x4"):
+                if l_t != r_t:
+                    raise ValueError(f"mismatched operand types for SIMD binary operator '{expr.op}': {l_t} and {r_t}")
+                if expr.op in ("==", "!="):
+                    return "bool"
+                if expr.op in ("+", "-", "*", "/"):
+                    if l_t == "i32x4" and expr.op == "/":
+                        raise ValueError("integer vector division is not supported")
+                    return l_t
+                raise ValueError(f"operator '{expr.op}' not supported for SIMD vector type {l_t}")
             if expr.op in ("==", "!=", "<", "<=", ">", ">="):
                 return "bool"
-            return self._resolve_expr_type(expr.left)
+            return l_t
         elif isinstance(expr, UnaryExpr):
+            sub_t = self._resolve_expr_type(expr.operand)
+            if sub_t in ("f32x4", "i32x4"):
+                if expr.op == "-":
+                    return sub_t
+                raise ValueError(f"unary operator '{expr.op}' not supported for SIMD vector type {sub_t}")
             if expr.op in ("!", "not"):
                 return "bool"
-            return self._resolve_expr_type(expr.operand)
+            return sub_t
         return "i32"
 
     def _emit_expression(self, expr: Expr) -> str:
@@ -2661,6 +2742,16 @@ class CCodeGenerator:
             return f"(*{sub})"
         elif isinstance(expr, IndexExpr):
             target_type = self._resolve_expr_type(expr.target)
+            clean_type = target_type.lstrip("@")
+            if clean_type in ("f32x4", "i32x4"):
+                itype = self._resolve_expr_type(expr.index)
+                if itype not in ("i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize"):
+                    raise ValueError(f"SIMD vector index must be an integer (got {itype})")
+                target_code = self._emit_expression(expr.target)
+                index_code = self._emit_expression(expr.index)
+                if target_type.startswith("@"):
+                    return f"velo_{clean_type}_get(*({target_code}), (int32_t)({index_code}))"
+                return f"velo_{clean_type}_get({target_code}, (int32_t)({index_code}))"
             shelf_elem = self._shelf_elem_type(target_type)
             if shelf_elem is not None:
                 # 5.2: bounds-checked shelf read through the runtime helper
@@ -2760,6 +2851,14 @@ class CCodeGenerator:
                 raise ValueError(f"unknown math constant '{expr.member}' (constants: PI, TAU, RAD2DEG, DEG2RAD){hint}")
             target_code = self._emit_expression(expr.target)
             target_type = self._resolve_expr_type(expr.target)
+            clean_type = target_type.lstrip("@")
+            if clean_type in ("f32x4", "i32x4"):
+                if expr.member not in ("x", "y", "z", "w"):
+                    raise ValueError(f"unknown SIMD vector member '{expr.member}' (available: x, y, z, w)")
+                lane = {"x": 0, "y": 1, "z": 2, "w": 3}[expr.member]
+                if target_type.startswith("@"):
+                    return f"velo_{clean_type}_get(*({target_code}), {lane})"
+                return f"velo_{clean_type}_get({target_code}, {lane})"
             if target_type == "dyn":
                 # 5.2 slice 2: raw dyn values expose no members — cast (as) first
                 raise ValueError(self.DYN_GATE_ERROR)
@@ -2769,6 +2868,21 @@ class CCodeGenerator:
             l_t = self._resolve_expr_type(expr.left)
             r_t = self._resolve_expr_type(expr.right)
             op = expr.op
+            if l_t in ("f32x4", "i32x4") or r_t in ("f32x4", "i32x4"):
+                if l_t != r_t:
+                    raise ValueError(f"mismatched operand types for SIMD binary operator '{op}': {l_t} and {r_t}")
+                left = self._emit_expression(expr.left)
+                right = self._emit_expression(expr.right)
+                if op == "==":
+                    return f"velo_{l_t}_eq({left}, {right})"
+                if op == "!=":
+                    return f"velo_{l_t}_neq({left}, {right})"
+                if op in ("+", "-", "*", "/"):
+                    if l_t == "i32x4" and op == "/":
+                        raise ValueError("integer vector division is not supported")
+                    op_map = {"+": "add", "-": "sub", "*": "mul", "/": "div"}
+                    return f"velo_{l_t}_{op_map[op]}({left}, {right})"
+                raise ValueError(f"operator '{op}' not supported for SIMD vector type {l_t}")
             if l_t == "dyn" or r_t == "dyn":
                 # 5.2 slice 8: raw dyn arithmetic/compares auto-unbox — both
                 # operands bound once into VeloDyn temps (left first), the
@@ -2810,7 +2924,13 @@ class CCodeGenerator:
             elif op == "or": op = "||"
             return f"({left} {op} {right})"
         elif isinstance(expr, UnaryExpr):
-            if self._resolve_expr_type(expr.operand) == "dyn":
+            sub_t = self._resolve_expr_type(expr.operand)
+            if sub_t in ("f32x4", "i32x4"):
+                if expr.op != "-":
+                    raise ValueError(f"unary operator '{expr.op}' not supported for SIMD vector type {sub_t}")
+                sub = self._emit_expression(expr.operand)
+                return f"velo_{sub_t}_neg({sub})"
+            if sub_t == "dyn":
                 raise ValueError(self.DYN_GATE_ERROR)
             sub = self._emit_expression(expr.operand)
             op = "!" if expr.op in ("!", "not") else expr.op
