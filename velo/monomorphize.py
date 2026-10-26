@@ -234,6 +234,7 @@ class Monomorphizer:
         self.func_param_types: Dict[str, List[str]] = {}
         self.struct_fields: Dict[str, Set[str]] = {}
         self.struct_field_types: Dict[str, Dict[str, str]] = {}
+        self.struct_field_lists: Dict[str, List[Field]] = {}
         self.kind_names: Set[str] = set()
         self.op_overloads: Dict[Tuple[str, int, Tuple[str, ...]], str] = {}
         self.generic_op_overloads: Dict[Tuple[str, int], FunctionDecl] = {}
@@ -266,6 +267,7 @@ class Monomorphizer:
                 f_map = {f.name: (normalize_type_name(f.type_name) or f.type_name) for f in decl.fields}
                 self.struct_fields[decl.name] = set(f_map.keys())
                 self.struct_field_types[decl.name] = f_map
+                self.struct_field_lists[decl.name] = decl.fields
             elif isinstance(decl, KindDecl):
                 if decl.type_params:
                     self.generic_kinds[decl.name] = decl
@@ -520,6 +522,7 @@ class Monomorphizer:
         f_map = {f.name: f.type_name for f in new_fields}
         self.struct_fields[mangled_name] = set(f_map.keys())
         self.struct_field_types[mangled_name] = f_map
+        self.struct_field_lists[mangled_name] = new_fields
 
     def _instantiate_kind(self, name: str, args: Tuple[str, ...]):
         template = self.generic_kinds[name]
@@ -592,6 +595,213 @@ class Monomorphizer:
             self.op_overloads[(decl.operator_symbol, len(param_types), param_types)] = mangled_name
         self.instantiated_funcs[mangled_name] = decl
 
+    def _extract_type_arg_name(self, expr: Expr) -> str:
+        if isinstance(expr, Identifier):
+            return expr.name
+        if isinstance(expr, AddressOf):
+            curr = expr.operand
+            prefix = "@"
+            while isinstance(curr, AddressOf):
+                prefix += "@"
+                curr = curr.operand
+            if isinstance(curr, Identifier):
+                return prefix + curr.name
+        return ""
+
+    def _eval_const_int(self, expr: Optional[Expr], scope: Optional[Dict[str, str]] = None) -> Optional[int]:
+        if expr is None:
+            return None
+        if isinstance(expr, IntLiteral):
+            return expr.value
+        if isinstance(expr, UnaryExpr) and expr.op == "-":
+            sub = self._eval_const_int(expr.operand, scope)
+            return -sub if sub is not None else None
+        if isinstance(expr, CallExpr) and isinstance(expr.callee, Identifier) and expr.callee.name == "field_count":
+            if expr.args:
+                tname = self._extract_type_arg_name(expr.args[0]).lstrip("@")
+                if tname in self.struct_field_lists:
+                    return len(self.struct_field_lists[tname])
+        return None
+
+    def _eval_const_expr(self, expr: Optional[Expr], scope: Optional[Dict[str, str]] = None) -> Optional[Any]:
+        if expr is None:
+            return None
+        if isinstance(expr, IntLiteral):
+            return expr.value
+        if isinstance(expr, FloatLiteral):
+            return expr.value
+        if isinstance(expr, StringLiteral):
+            return expr.value
+        if isinstance(expr, BoolLiteral):
+            return expr.value
+        if isinstance(expr, UnaryExpr):
+            val = self._eval_const_expr(expr.operand, scope)
+            if val is not None:
+                if expr.op == "not" and isinstance(val, bool):
+                    return not val
+                if expr.op == "-" and isinstance(val, (int, float)):
+                    return -val
+            return None
+        if isinstance(expr, BinaryExpr):
+            l_val = self._eval_const_expr(expr.left, scope)
+            r_val = self._eval_const_expr(expr.right, scope)
+            if l_val is not None and r_val is not None:
+                if type(l_val) is not type(r_val):
+                    return None
+                op = expr.op
+                if op == "==":
+                    return l_val == r_val
+                if op == "!=":
+                    return l_val != r_val
+                if op == "<":
+                    return l_val < r_val
+                if op == "<=":
+                    return l_val <= r_val
+                if op == ">":
+                    return l_val > r_val
+                if op == ">=":
+                    return l_val >= r_val
+                if op == "and" and isinstance(l_val, bool) and isinstance(r_val, bool):
+                    return l_val and r_val
+                if op == "or" and isinstance(l_val, bool) and isinstance(r_val, bool):
+                    return l_val or r_val
+            return None
+        if isinstance(expr, CallExpr) and isinstance(expr.callee, Identifier):
+            fn = expr.callee.name
+            if fn == "field_count" and len(expr.args) == 1:
+                tname = self._extract_type_arg_name(expr.args[0]).lstrip("@")
+                if tname in self.struct_field_lists:
+                    return len(self.struct_field_lists[tname])
+            elif fn in ("field_name", "field_type") and len(expr.args) == 2:
+                tname = self._extract_type_arg_name(expr.args[0]).lstrip("@")
+                idx = self._eval_const_int(expr.args[1], scope)
+                if tname in self.struct_field_lists and idx is not None:
+                    fields = self.struct_field_lists[tname]
+                    if 0 <= idx < len(fields):
+                        return fields[idx].name if fn == "field_name" else fields[idx].type_name
+        return None
+
+    def _subst_ident_in_expr(self, expr: Optional[Expr], ident_name: str, replacement: Expr) -> Optional[Expr]:
+        if expr is None:
+            return None
+        if isinstance(expr, Identifier):
+            if expr.name == ident_name:
+                return deepcopy(replacement)
+            return expr
+        if isinstance(expr, UnaryExpr):
+            return UnaryExpr(op=expr.op, operand=self._subst_ident_in_expr(expr.operand, ident_name, replacement), line=expr.line, col=expr.col)
+        if isinstance(expr, BinaryExpr):
+            return BinaryExpr(left=self._subst_ident_in_expr(expr.left, ident_name, replacement),
+                              op=expr.op,
+                              right=self._subst_ident_in_expr(expr.right, ident_name, replacement),
+                              line=expr.line, col=expr.col)
+        if isinstance(expr, CallExpr):
+            new_callee = self._subst_ident_in_expr(expr.callee, ident_name, replacement)
+            new_args = [self._subst_ident_in_expr(a, ident_name, replacement) for a in expr.args]
+            new_c = CallExpr(callee=new_callee, args=new_args, line=expr.line, col=expr.col)
+            new_c.type_args = getattr(expr, "type_args", None)
+            return new_c
+        if isinstance(expr, MemberAccess):
+            return MemberAccess(target=self._subst_ident_in_expr(expr.target, ident_name, replacement), member=expr.member, line=expr.line, col=expr.col)
+        if isinstance(expr, IndexExpr):
+            return IndexExpr(target=self._subst_ident_in_expr(expr.target, ident_name, replacement),
+                             index=self._subst_ident_in_expr(expr.index, ident_name, replacement),
+                             line=expr.line, col=expr.col)
+        if isinstance(expr, AddressOf):
+            return AddressOf(operand=self._subst_ident_in_expr(expr.operand, ident_name, replacement), line=expr.line, col=expr.col)
+        if isinstance(expr, DerefExpr):
+            return DerefExpr(operand=self._subst_ident_in_expr(expr.operand, ident_name, replacement), line=expr.line, col=expr.col)
+        if isinstance(expr, CastExpr):
+            return CastExpr(expr=self._subst_ident_in_expr(expr.expr, ident_name, replacement), target_type=expr.target_type, line=expr.line, col=expr.col)
+        if isinstance(expr, StructLiteral):
+            new_inits = [(fn, self._subst_ident_in_expr(val, ident_name, replacement)) for fn, val in expr.field_inits]
+            return StructLiteral(struct_name=expr.struct_name, field_inits=new_inits, line=expr.line, col=expr.col)
+        return expr
+
+    def _subst_ident_in_stmt(self, stmt: Optional[Stmt], ident_name: str, replacement: Expr) -> Optional[Stmt]:
+        if stmt is None:
+            return None
+        if isinstance(stmt, VarDeclStmt):
+            new_val = self._subst_ident_in_expr(stmt.value, ident_name, replacement) if stmt.value else None
+            return VarDeclStmt(name=stmt.name, type_name=stmt.type_name, value=new_val, is_mut=stmt.is_mut, line=stmt.line, col=stmt.col)
+        if isinstance(stmt, AssignStmt):
+            new_tgt = self._subst_ident_in_expr(stmt.target, ident_name, replacement)
+            new_val = self._subst_ident_in_expr(stmt.value, ident_name, replacement)
+            return AssignStmt(target=new_tgt, op=stmt.op, value=new_val, line=stmt.line, col=stmt.col)
+        if isinstance(stmt, ExprStmt):
+            return ExprStmt(expr=self._subst_ident_in_expr(stmt.expr, ident_name, replacement), line=stmt.line, col=stmt.col)
+        if isinstance(stmt, ReturnStmt):
+            new_val = self._subst_ident_in_expr(stmt.value, ident_name, replacement) if stmt.value else None
+            return ReturnStmt(value=new_val, line=stmt.line, col=stmt.col)
+        if isinstance(stmt, IfStmt):
+            new_cond = self._subst_ident_in_expr(stmt.condition, ident_name, replacement)
+            new_then = self._subst_ident_in_block(stmt.then_branch, ident_name, replacement)
+            new_else = None
+            if stmt.else_branch:
+                if isinstance(stmt.else_branch, BlockStmt):
+                    new_else = self._subst_ident_in_block(stmt.else_branch, ident_name, replacement)
+                else:
+                    new_else = self._subst_ident_in_stmt(stmt.else_branch, ident_name, replacement)
+            return IfStmt(condition=new_cond, then_branch=new_then, else_branch=new_else, line=stmt.line, col=stmt.col)
+        if isinstance(stmt, BlockStmt):
+            return self._subst_ident_in_block(stmt, ident_name, replacement)
+        if isinstance(stmt, LoopStmt):
+            if stmt.iterator == ident_name:
+                return stmt
+            new_start = self._subst_ident_in_expr(stmt.start_expr, ident_name, replacement) if stmt.start_expr else None
+            new_end = self._subst_ident_in_expr(stmt.end_expr, ident_name, replacement) if stmt.end_expr else None
+            new_step = self._subst_ident_in_expr(stmt.step_expr, ident_name, replacement) if stmt.step_expr else None
+            new_body = self._subst_ident_in_block(stmt.body, ident_name, replacement)
+            return LoopStmt(iterator=stmt.iterator, start_expr=new_start, end_expr=new_end, step_expr=new_step,
+                            body=new_body, is_inclusive=stmt.is_inclusive, is_count=stmt.is_count, line=stmt.line, col=stmt.col)
+        return stmt
+
+    def _subst_ident_in_block(self, block: BlockStmt, ident_name: str, replacement: Expr) -> BlockStmt:
+        new_stmts = []
+        for s in block.statements:
+            new_stmts.append(self._subst_ident_in_stmt(s, ident_name, replacement))
+        return BlockStmt(statements=new_stmts, line=block.line, col=block.col)
+
+    def _has_ident_in_reflect(self, block: BlockStmt, ident_name: str) -> bool:
+        found = False
+        def _check_e(e: Optional[Expr]):
+            nonlocal found
+            if e is None or found: return
+            if isinstance(e, CallExpr) and isinstance(e.callee, Identifier):
+                if e.callee.name in ("field_name", "field_type", "field_value"):
+                    for a in e.args:
+                        if isinstance(a, Identifier) and a.name == ident_name:
+                            found = True
+                            return
+            if isinstance(e, UnaryExpr): _check_e(e.operand)
+            elif isinstance(e, BinaryExpr): _check_e(e.left); _check_e(e.right)
+            elif isinstance(e, CallExpr):
+                _check_e(e.callee)
+                for a in e.args: _check_e(a)
+            elif isinstance(e, MemberAccess): _check_e(e.target)
+            elif isinstance(e, IndexExpr): _check_e(e.target); _check_e(e.index)
+            elif isinstance(e, CastExpr): _check_e(e.expr)
+
+        def _check_s(s: Optional[Stmt]):
+            nonlocal found
+            if s is None or found: return
+            if isinstance(s, VarDeclStmt): _check_e(s.value)
+            elif isinstance(s, AssignStmt): _check_e(s.target); _check_e(s.value)
+            elif isinstance(s, ExprStmt): _check_e(s.expr)
+            elif isinstance(s, ReturnStmt): _check_e(s.value)
+            elif isinstance(s, IfStmt):
+                _check_e(s.condition)
+                _check_s(s.then_branch)
+                _check_s(s.else_branch)
+            elif isinstance(s, BlockStmt):
+                for sub in s.statements: _check_s(sub)
+            elif isinstance(s, LoopStmt):
+                _check_e(s.start_expr); _check_e(s.end_expr)
+                _check_s(s.body)
+
+        _check_s(block)
+        return found
+
     def _transform_function(self, fn: FunctionDecl, subst: Dict[str, str]) -> FunctionDecl:
         new_params: List[Param] = []
         for p in fn.params:
@@ -622,7 +832,10 @@ class Monomorphizer:
         inner_scope = dict(scope)
         new_stmts: List[Stmt] = []
         for stmt in block.statements:
-            new_stmts.append(self._transform_stmt(stmt, inner_scope, subst, current_ret_type))
+            res = self._transform_stmt(stmt, inner_scope, subst, current_ret_type)
+            if isinstance(res, BlockStmt) and not res.statements:
+                continue
+            new_stmts.append(res)
         return BlockStmt(statements=new_stmts, line=block.line, col=block.col)
 
     def _transform_stmt(self, stmt: Stmt, scope: Dict[str, str], subst: Dict[str, str], current_ret_type: Optional[str]) -> Stmt:
@@ -661,6 +874,16 @@ class Monomorphizer:
             return ExprStmt(expr=self._transform_expr(stmt.expr, scope, subst, None), line=stmt.line, col=stmt.col)
         elif isinstance(stmt, IfStmt):
             new_cond = self._transform_expr(stmt.condition, scope, subst, "bool")
+            c_cond = self._eval_const_expr(new_cond, scope)
+            if c_cond is True:
+                return self._transform_block(stmt.then_branch, scope, subst, current_ret_type)
+            elif c_cond is False:
+                if stmt.else_branch:
+                    if isinstance(stmt.else_branch, BlockStmt):
+                        return self._transform_block(stmt.else_branch, scope, subst, current_ret_type)
+                    else:
+                        return self._transform_stmt(stmt.else_branch, scope, subst, current_ret_type)
+                return BlockStmt(statements=[], line=stmt.line, col=stmt.col)
             new_then = self._transform_block(stmt.then_branch, scope, subst, current_ret_type)
             new_else = None
             if stmt.else_branch:
@@ -696,6 +919,26 @@ class Monomorphizer:
             new_end = self._transform_expr(stmt.end_expr, scope, subst, "i32") if stmt.end_expr else None
             new_step = self._transform_expr(stmt.step_expr, scope, subst, "i32") if stmt.step_expr else None
             new_expr = self._transform_expr(stmt.expr, scope, subst, None) if stmt.expr else None
+
+            # Check for compile-time field iteration loop unrolling
+            if stmt.iterator and new_start is not None and new_end is not None:
+                s_val = self._eval_const_int(new_start, scope)
+                e_val = self._eval_const_int(new_end, scope)
+                is_fc = (isinstance(new_end, CallExpr) and
+                         isinstance(new_end.callee, Identifier) and
+                         new_end.callee.name == "field_count")
+                if not is_fc and isinstance(stmt.end_expr, CallExpr) and isinstance(stmt.end_expr.callee, Identifier):
+                    is_fc = (stmt.end_expr.callee.name == "field_count")
+                has_ref = self._has_ident_in_reflect(stmt.body, stmt.iterator)
+                if (is_fc or has_ref) and s_val is not None and e_val is not None:
+                    upper = e_val + 1 if stmt.is_inclusive else e_val
+                    unrolled_stmts: List[Stmt] = []
+                    for k in range(s_val, upper):
+                        substed_body = self._subst_ident_in_block(stmt.body, stmt.iterator, IntLiteral(value=k, line=stmt.line, col=stmt.col))
+                        t_block = self._transform_block(substed_body, scope, subst, current_ret_type)
+                        unrolled_stmts.append(t_block)
+                    return BlockStmt(statements=unrolled_stmts, line=stmt.line, col=stmt.col)
+
             loop_scope = dict(scope)
             if stmt.iterator:
                 loop_scope[stmt.iterator] = "i32"
@@ -847,6 +1090,20 @@ class Monomorphizer:
                         new_args[0] = Identifier(name=subst[arg0.name], line=arg0.line, col=arg0.col)
                     elif isinstance(arg0, AddressOf) and isinstance(arg0.operand, Identifier) and arg0.operand.name in subst:
                         new_args[0] = AddressOf(operand=Identifier(name=subst[arg0.operand.name], line=arg0.operand.line, col=arg0.operand.col), line=arg0.line, col=arg0.col)
+                if new_callee.name == "field_count" and len(new_args) == 1:
+                    tname = self._extract_type_arg_name(new_args[0]).lstrip("@")
+                    if tname in self.struct_field_lists:
+                        return IntLiteral(value=len(self.struct_field_lists[tname]), line=expr.line, col=expr.col)
+                elif new_callee.name == "field_name" and len(new_args) == 2:
+                    tname = self._extract_type_arg_name(new_args[0]).lstrip("@")
+                    c_idx = self._eval_const_int(new_args[1], scope)
+                    if tname in self.struct_field_lists and c_idx is not None and 0 <= c_idx < len(self.struct_field_lists[tname]):
+                        return StringLiteral(value=self.struct_field_lists[tname][c_idx].name, line=expr.line, col=expr.col)
+                elif new_callee.name == "field_type" and len(new_args) == 2:
+                    tname = self._extract_type_arg_name(new_args[0]).lstrip("@")
+                    c_idx = self._eval_const_int(new_args[1], scope)
+                    if tname in self.struct_field_lists and c_idx is not None and 0 <= c_idx < len(self.struct_field_lists[tname]):
+                        return StringLiteral(value=self.struct_field_lists[tname][c_idx].type_name, line=expr.line, col=expr.col)
 
             if isinstance(new_callee, Identifier) and new_callee.name in self.generic_funcs:
                 template_name = new_callee.name
@@ -908,6 +1165,11 @@ class Monomorphizer:
         elif isinstance(expr, BinaryExpr):
             new_left = self._transform_expr(expr.left, scope, subst, None)
             new_right = self._transform_expr(expr.right, scope, subst, None)
+            c_val = self._eval_const_expr(BinaryExpr(left=new_left, op=expr.op, right=new_right, line=expr.line, col=expr.col), scope)
+            if isinstance(c_val, bool):
+                return BoolLiteral(value=c_val, line=expr.line, col=expr.col)
+            elif isinstance(c_val, int) and not isinstance(c_val, bool):
+                return IntLiteral(value=c_val, line=expr.line, col=expr.col)
             l_type = self._infer_expr_type(new_left, scope)
             r_type = self._infer_expr_type(new_right, scope)
             match_fn, arg0, arg1 = self._find_binary_op_overload(expr.op, new_left, l_type, new_right, r_type)
@@ -1054,6 +1316,15 @@ class Monomorphizer:
                     return "i32"
                 if expr.callee.name in ("field_name", "field_type"):
                     return "string"
+                if expr.callee.name == "field_value":
+                    if len(expr.args) == 2:
+                        target_t = self._infer_expr_type(expr.args[0], scope)
+                        base_t = target_t.lstrip("@")
+                        if base_t in self.struct_field_lists:
+                            c_idx = self._eval_const_int(expr.args[1], scope)
+                            if c_idx is not None and 0 <= c_idx < len(self.struct_field_lists[base_t]):
+                                return self.struct_field_lists[base_t][c_idx].type_name
+                    return "i32"
                 if expr.callee.name in self.func_return_types:
                     return self.func_return_types[expr.callee.name]
                 if expr.callee.name in self.generic_funcs:

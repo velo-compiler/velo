@@ -161,6 +161,41 @@ NEGATIVE_CASES = [
         "use sys.io\nact main() { let x = field_type }",
         "reflection intrinsic 'field_type' must be called with parentheses: field_type(...)"
     ),
+    (
+        "field_value_arity",
+        "use sys.io\ndata Point { x: f32, y: f32 }\nact main() { let pt = Point { x: 1.0, y: 2.0 }; let v = field_value(pt) }",
+        "field_value expects exactly 2 arguments: (item, index)"
+    ),
+    (
+        "field_value_non_struct",
+        "use sys.io\nact main() { let num = 42; let v = field_value(num, 0) }",
+        "field_value target must be a struct or pointer to struct (got i32)"
+    ),
+    (
+        "field_value_non_int",
+        'use sys.io\ndata Point { x: f32, y: f32 }\nact main() { let pt = Point { x: 1.0, y: 2.0 }; let v = field_value(pt, "x") }',
+        "field index must be an integer (got string)"
+    ),
+    (
+        "field_value_non_const",
+        "use sys.io\ndata Point { x: f32, y: f32 }\nact main() { let pt = Point { x: 1.0, y: 2.0 }; mut idx = 0; let v = field_value(pt, idx) }",
+        "field_value requires a constant integer index"
+    ),
+    (
+        "field_value_oob_positive",
+        "use sys.io\ndata Point { x: f32, y: f32 }\nact main() { let pt = Point { x: 1.0, y: 2.0 }; let v = field_value(pt, 5) }",
+        "field index out of bounds: 5 (struct 'Point' has 2 fields)"
+    ),
+    (
+        "field_value_oob_negative",
+        "use sys.io\ndata Point { x: f32, y: f32 }\nact main() { let pt = Point { x: 1.0, y: 2.0 }; let v = field_value(pt, -1) }",
+        "field index out of bounds: -1 (struct 'Point' has 2 fields)"
+    ),
+    (
+        "bare_field_value",
+        "use sys.io\nact main() { let x = field_value }",
+        "reflection intrinsic 'field_value' must be called with parentheses: field_value(...)"
+    ),
 ]
 
 @pytest.mark.parametrize("name,code,expected_error", NEGATIVE_CASES)
@@ -195,12 +230,24 @@ def test_reflection_json_diagnostics(tmp_path):
     assert len(data2["diagnostics"]) >= 1
     assert "field index out of bounds: 10" in data2["diagnostics"][0]["message"]
 
+def test_reflection_iteration_and_serialization(tmp_path):
+    src = "examples/38_json_serializer.vl"
+    p1 = _run_stage1(["run", src])
+    assert p1.returncode == 0, f"Stage 1 failed:\n{p1.stderr}\n{p1.stdout}"
+    assert 'Serialized profile: {"name": "Ada Lovelace", "id": 101, "is_admin": true, "loc": {"x": 51.507401, "y": -0.127800}, "addr": {"city": "London", "zip": 1815}}' in p1.stdout
+    assert 'Updated profile (id modified via field_value): {"name": "Ada Lovelace", "id": 202' in p1.stdout
+
+    p2 = _run_stage2(["run", src])
+    assert p2.returncode == 0, f"Stage 2 failed:\n{p2.stderr}\n{p2.stdout}"
+    assert 'Serialized profile: {"name": "Ada Lovelace", "id": 101, "is_admin": true, "loc": {"x": 51.507401, "y": -0.127800}, "addr": {"city": "London", "zip": 1815}}' in p2.stdout
+    assert 'Updated profile (id modified via field_value): {"name": "Ada Lovelace", "id": 202' in p2.stdout
+
 def test_reflection_lsp_hover_and_completions(tmp_path):
     from pathlib import Path
     from velo.analysis import VeloAnalysis, _path_to_uri
 
     src_file = tmp_path / "reflect_lsp.vl"
-    code = "use sys.io\ndata Point { x: f32, y: f32 }\nact main() { let c = field_count(Point) }"
+    code = "use sys.io\ndata Point { x: f32, y: f32 }\nact main() { let c = field_count(Point); let pt = Point { x: 1.0, y: 2.0 }; let v = field_value(pt, 0) }"
     src_file.write_text(code, encoding="utf-8")
     uri = _path_to_uri(str(src_file))
 
@@ -213,8 +260,14 @@ def test_reflection_lsp_hover_and_completions(tmp_path):
     assert "field_count" in hover["contents"]["value"]
     assert "builtin" in hover["contents"]["value"]
 
+    hover_fv = analysis.hover(uri, 2, 95)
+    assert hover_fv is not None
+    assert "field_value" in hover_fv["contents"]["value"]
+    assert "builtin" in hover_fv["contents"]["value"]
+
     comps = analysis.completions(uri, 2, 10)
     labels = [c["label"] for c in comps]
     assert "field_count" in labels
     assert "field_name" in labels
     assert "field_type" in labels
+    assert "field_value" in labels

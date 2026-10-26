@@ -1,0 +1,85 @@
+// Example 38: Automated Compile-Time JSON Serializer
+// Demonstrates compile-time loop unrolling over struct fields,
+// dead-branch elimination on field_type checks, and field_value() access.
+use sys.io
+
+data Vec2 {
+    x: f32
+    y: f32
+}
+
+data Address {
+    city: string
+    zip: i32
+}
+
+data UserProfile {
+    name: string
+    id: i32
+    is_admin: bool
+    loc: Vec2
+    addr: Address
+}
+
+act serialize_json[T](item: @T) {
+    io.print("{")
+    loop i in 0..field_count(T) {
+        if i > 0 {
+            io.print(", ")
+        }
+        io.print("\"")
+        io.print(field_name(T, i))
+        io.print("\": ")
+
+        if field_type(T, i) == "string" {
+            io.print("\"")
+            io.print(field_value(item, i))
+            io.print("\"")
+        }
+        if field_type(T, i) == "i32" {
+            io.print(field_value(item, i))
+        }
+        if field_type(T, i) == "f32" {
+            io.print(field_value(item, i))
+        }
+        if field_type(T, i) == "bool" {
+            if field_value(item, i) {
+                io.print("true")
+            } else {
+                io.print("false")
+            }
+        }
+        if field_type(T, i) == "Vec2" {
+            let nested = field_value(item, i)
+            serialize_json[Vec2](@nested)
+        }
+        if field_type(T, i) == "Address" {
+            let nested = field_value(item, i)
+            serialize_json[Address](@nested)
+        }
+    }
+    io.print("}")
+}
+
+act main() {
+    io.println("=== Compile-Time Field Iteration & Serialization ===")
+
+    mut profile = UserProfile {
+        name: "Ada Lovelace",
+        id: 101,
+        is_admin: true,
+        loc: Vec2 { x: 51.5074, y: -0.1278 },
+        addr: Address { city: "London", zip: 1815 }
+    }
+
+    // 1. Serialize nested struct to JSON format
+    io.print("Serialized profile: ")
+    serialize_json[UserProfile](@profile)
+    io.println("")
+
+    // 2. Field mutation via compile-time field_value lvalue
+    field_value(@profile, 1) = 202
+    io.print("Updated profile (id modified via field_value): ")
+    serialize_json[UserProfile](@profile)
+    io.println("")
+}

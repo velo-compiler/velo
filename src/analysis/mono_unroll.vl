@@ -1,0 +1,330 @@
+// Compile-time loop unrolling and dead-branch elimination for struct reflection.
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../common/utils.vl"
+use "monomorphize_types.vl"
+use "reflect_checks.vl"
+
+act mono_eval_const_int(m: @Monomorphizer, e: @ExprNode, out_val: @i64) -> bool {
+    if e == null { return false }
+    if e.kind == EXPR_INT { out_val[0] = e.int_val; return true }
+    if e.kind == EXPR_UNARY and e.op == TOK_MINUS and e.operand != null {
+        mut sub: i64 = 0
+        if mono_eval_const_int(m, e.operand, @sub) { out_val[0] = 0 - sub; return true }
+    }
+    if e.kind == EXPR_CALL and e.callee != null and e.callee.kind == EXPR_IDENT and e.callee.str_val == "field_count" {
+        if e.first_arg != null {
+            let tname = extract_type_arg_name(e.first_arg)
+            let s_node = mono_find_struct(m, tname)
+            if s_node != null { out_val[0] = s_node.field_count as i64; return true }
+        }
+    }
+    return false
+}
+
+act mono_eval_const_str(m: @Monomorphizer, e: @ExprNode) -> string {
+    if e == null { return null }
+    if e.kind == EXPR_STRING { return e.str_val }
+    if e.kind == EXPR_CALL and e.callee != null and e.callee.kind == EXPR_IDENT {
+        let fn = e.callee.str_val
+        if (fn == "field_name" or fn == "field_type") and e.first_arg != null and e.first_arg.next != null {
+            let tname = extract_type_arg_name(e.first_arg)
+            mut idx: i64 = 0
+            if mono_eval_const_int(m, e.first_arg.next, @idx) {
+                let s_node = mono_find_struct(m, tname)
+                if s_node != null and idx >= 0 and idx < (s_node.field_count as i64) {
+                    mut cur_f = s_node.first_field
+                    mut fi: i64 = 0
+                    loop cur_f != null and fi < idx { cur_f = cur_f.next; fi += 1 }
+                    if cur_f != null {
+                        if fn == "field_name" { return cur_f.name }
+                        return cur_f.type_name
+                    }
+                }
+            }
+        }
+    }
+    return null
+}
+
+act mono_eval_const_bool(m: @Monomorphizer, e: @ExprNode, out_val: @bool) -> bool {
+    if e == null { return false }
+    if e.kind == EXPR_BOOL { out_val[0] = e.bool_val; return true }
+    if e.kind == EXPR_UNARY and e.op == TOK_NOT and e.operand != null {
+        mut sub: bool = false
+        if mono_eval_const_bool(m, e.operand, @sub) { out_val[0] = not sub; return true }
+    }
+    if e.kind == EXPR_BINARY {
+        let folded = mono_fold_binary(m, e.left, e.op, e.right, e.line, e.col)
+        if folded != null and folded.kind == EXPR_BOOL { out_val[0] = folded.bool_val; return true }
+    }
+    return false
+}
+
+act mono_fold_binary(m: @Monomorphizer, left: @ExprNode, op: i32, right: @ExprNode, line: i32, col: i32) -> @ExprNode {
+    if left == null or right == null { return null }
+    let s_l = mono_eval_const_str(m, left); let s_r = mono_eval_const_str(m, right)
+    if s_l != null and s_r != null {
+        if op == TOK_EQ { return make_bool_expr(s_l == s_r, line, col) }
+        if op == TOK_NEQ { return make_bool_expr(s_l != s_r, line, col) }
+    }
+    mut i_l: i64 = 0; mut i_r: i64 = 0
+    if mono_eval_const_int(m, left, @i_l) and mono_eval_const_int(m, right, @i_r) {
+        if op == TOK_EQ { return make_bool_expr(i_l == i_r, line, col) }
+        if op == TOK_NEQ { return make_bool_expr(i_l != i_r, line, col) }
+        if op == TOK_LT { return make_bool_expr(i_l < i_r, line, col) }
+        if op == TOK_LTE { return make_bool_expr(i_l <= i_r, line, col) }
+        if op == TOK_GT { return make_bool_expr(i_l > i_r, line, col) }
+        if op == TOK_GTE { return make_bool_expr(i_l >= i_r, line, col) }
+    }
+    mut b_l: bool = false; mut b_r: bool = false
+    if mono_eval_const_bool(m, left, @b_l) and mono_eval_const_bool(m, right, @b_r) {
+        if op == TOK_AND { return make_bool_expr(b_l and b_r, line, col) }
+        if op == TOK_OR { return make_bool_expr(b_l or b_r, line, col) }
+        if op == TOK_EQ { return make_bool_expr(b_l == b_r, line, col) }
+        if op == TOK_NEQ { return make_bool_expr(b_l != b_r, line, col) }
+    }
+    return null
+}
+
+act mono_infer_field_value_type(scope: @ScopeEntry, e: @ExprNode) -> string {
+    if e.first_arg == null or e.first_arg.next == null { return "i32" }
+    let target_type = mono_infer_type(e.first_arg, scope)
+    let clean_t = strip_pointer_prefix(target_type)
+    let s_decl = mono_find_struct(null, clean_t)
+    mut idx: i64 = 0
+    if s_decl != null and mono_eval_const_int(null, e.first_arg.next, @idx) {
+        if idx >= 0 and idx < (s_decl.field_count as i64) {
+            mut cur_f = s_decl.first_field; mut fi: i64 = 0
+            loop cur_f != null and fi < idx { cur_f = cur_f.next; fi += 1 }
+            if cur_f != null { return cur_f.type_name }
+        }
+    }
+    return "i32"
+}
+
+act mono_has_ident_in_reflect_expr(e: @ExprNode, name: string) -> bool {
+    if e == null { return false }
+    if e.kind == EXPR_CALL and e.callee != null and e.callee.kind == EXPR_IDENT {
+        let fn = e.callee.str_val
+        if fn == "field_name" or fn == "field_type" or fn == "field_value" {
+            mut a = e.first_arg
+            loop a != null {
+                if a.kind == EXPR_IDENT and a.str_val == name { return true }
+                a = a.next
+            }
+        }
+    }
+    if mono_has_ident_in_reflect_expr(e.operand, name) { return true }
+    if mono_has_ident_in_reflect_expr(e.left, name) or mono_has_ident_in_reflect_expr(e.right, name) { return true }
+    if mono_has_ident_in_reflect_expr(e.target, name) or mono_has_ident_in_reflect_expr(e.index, name) { return true }
+    if mono_has_ident_in_reflect_expr(e.callee, name) { return true }
+    mut cur_a = e.first_arg
+    loop cur_a != null {
+        if mono_has_ident_in_reflect_expr(cur_a, name) { return true }
+        cur_a = cur_a.next
+    }
+    return false
+}
+
+act mono_has_ident_in_reflect_stmt(s: @StmtNode, name: string) -> bool {
+    if s == null { return false }
+    if s.kind == STMT_VAR_DECL { return mono_has_ident_in_reflect_expr(s.val_expr, name) }
+    if s.kind == STMT_ASSIGN { return mono_has_ident_in_reflect_expr(s.expr, name) or mono_has_ident_in_reflect_expr(s.val_expr, name) }
+    if s.kind == STMT_EXPR { return mono_has_ident_in_reflect_expr(s.expr, name) }
+    if s.kind == STMT_RETURN { return mono_has_ident_in_reflect_expr(s.val_expr, name) }
+    if s.kind == STMT_IF {
+        if mono_has_ident_in_reflect_expr(s.expr, name) { return true }
+        return mono_has_ident_in_reflect_stmt(s.body, name) or mono_has_ident_in_reflect_stmt(s.else_branch, name)
+    }
+    if s.kind == STMT_BLOCK {
+        mut cur = s.first_stmt
+        loop cur != null {
+            if mono_has_ident_in_reflect_stmt(cur, name) { return true }
+            cur = cur.next
+        }
+    }
+    return false
+}
+
+act mono_subst_ident_in_expr(e: @ExprNode, name: string, val: i64, line: i32, col: i32) -> @ExprNode {
+    if e == null { return null }
+    if e.kind == EXPR_IDENT and e.str_val == name { return make_int_expr(val, line, col) }
+    if e.kind == EXPR_INT or e.kind == EXPR_FLOAT or e.kind == EXPR_STRING or e.kind == EXPR_BOOL or e.kind == EXPR_NULL or e.kind == EXPR_IDENT { return e }
+    if e.kind == EXPR_UNARY { return make_unary_expr(e.op, mono_subst_ident_in_expr(e.operand, name, val, line, col), e.line, e.col) }
+    if e.kind == EXPR_BINARY {
+        let l = mono_subst_ident_in_expr(e.left, name, val, line, col); let r = mono_subst_ident_in_expr(e.right, name, val, line, col)
+        return make_binary_expr(l, e.op, r, e.line, e.col)
+    }
+    if e.kind == EXPR_ADDRESS_OF { return make_address_of_expr(mono_subst_ident_in_expr(e.operand, name, val, line, col), e.line, e.col) }
+    if e.kind == EXPR_DEREF { return make_deref_expr(mono_subst_ident_in_expr(e.operand, name, val, line, col), e.line, e.col) }
+    if e.kind == EXPR_MEMBER { return make_member_expr(mono_subst_ident_in_expr(e.target, name, val, line, col), e.member_name, e.line, e.col) }
+    if e.kind == EXPR_INDEX {
+        return make_index_expr(mono_subst_ident_in_expr(e.target, name, val, line, col), mono_subst_ident_in_expr(e.index, name, val, line, col), e.line, e.col)
+    }
+    if e.kind == EXPR_CAST { return make_cast_expr(mono_subst_ident_in_expr(e.operand, name, val, line, col), e.type_name, e.line, e.col) }
+    if e.kind == EXPR_STRUCT_LIT {
+        mut first_fi: @FieldInit = null; mut last_fi: @FieldInit = null; mut cur = e.first_init
+        loop cur != null {
+            let fval = mono_subst_ident_in_expr(cur.value, name, val, line, col)
+            mut fi: @FieldInit = mem.alloc(@FieldInit, 1)
+            fi.name = cur.name; fi.value = fval; fi.line = cur.line; fi.col = cur.col; fi.next = null
+            if first_fi == null { first_fi = fi; last_fi = fi } else { last_fi.next = fi; last_fi = fi }
+            cur = cur.next
+        }
+        return make_struct_lit_expr(e.type_name, first_fi, e.line, e.col)
+    }
+    if e.kind == EXPR_SHELF_LIT or e.kind == EXPR_HEAP_SHELF_LIT {
+        mut first_a: @ExprNode = null; mut last_a: @ExprNode = null; mut cur = e.first_arg
+        loop cur != null {
+            let a = mono_subst_ident_in_expr(cur, name, val, line, col); mut ca: @ExprNode = mem.alloc(@ExprNode, 1)
+            ca[0] = a[0]; ca.next = null
+            if first_a == null { first_a = ca; last_a = ca } else { last_a.next = ca; last_a = ca }
+            cur = cur.next
+        }
+        let lit = make_shelf_lit_expr(first_a, e.arg_count, e.type_name, e.line, e.col)
+        if e.kind == EXPR_HEAP_SHELF_LIT { lit.kind = EXPR_HEAP_SHELF_LIT }
+        return lit
+    }
+    if e.kind == EXPR_VARIANT {
+        mut first_a: @ExprNode = null; mut last_a: @ExprNode = null; mut cur = e.first_arg
+        loop cur != null {
+            let a = mono_subst_ident_in_expr(cur, name, val, line, col); mut ca: @ExprNode = mem.alloc(@ExprNode, 1)
+            ca[0] = a[0]; ca.next = null
+            if first_a == null { first_a = ca; last_a = ca } else { last_a.next = ca; last_a = ca }
+            cur = cur.next
+        }
+        return make_variant_expr(e.type_name, e.member_name, first_a, e.arg_count, e.line, e.col)
+    }
+    if e.kind == EXPR_CALL {
+        let callee = mono_subst_ident_in_expr(e.callee, name, val, line, col)
+        mut first_a: @ExprNode = null; mut last_a: @ExprNode = null; mut cur = e.first_arg
+        loop cur != null {
+            let a = mono_subst_ident_in_expr(cur, name, val, line, col); mut cloned_a: @ExprNode = mem.alloc(@ExprNode, 1)
+            cloned_a[0] = a[0]; cloned_a.next = null
+            if first_a == null { first_a = cloned_a; last_a = cloned_a } else { last_a.next = cloned_a; last_a = cloned_a }
+            cur = cur.next
+        }
+        let res = make_call_expr(callee, first_a, e.arg_count, e.line, e.col)
+        res.type_name = e.type_name; return res
+    }
+    return e
+}
+
+act mono_subst_ident_in_stmt(s: @StmtNode, name: string, val: i64, line: i32, col: i32) -> @StmtNode {
+    if s == null { return null }
+    if s.kind == STMT_VAR_DECL {
+        if s.name == name { return s }
+        return make_var_decl_stmt(s.name, s.type_name, mono_subst_ident_in_expr(s.val_expr, name, val, line, col), s.is_mut, s.line, s.col)
+    }
+    if s.kind == STMT_ASSIGN {
+        return make_assign_stmt(mono_subst_ident_in_expr(s.expr, name, val, line, col), s.op, mono_subst_ident_in_expr(s.val_expr, name, val, line, col), s.line, s.col)
+    }
+    if s.kind == STMT_EXPR { return make_expr_stmt(mono_subst_ident_in_expr(s.expr, name, val, line, col), s.line, s.col) }
+    if s.kind == STMT_RETURN { return make_return_stmt(mono_subst_ident_in_expr(s.val_expr, name, val, line, col), s.line, s.col) }
+    if s.kind == STMT_IF {
+        let cond = mono_subst_ident_in_expr(s.expr, name, val, line, col)
+        let tb = mono_subst_ident_in_stmt(s.body, name, val, line, col)
+        let eb = mono_subst_ident_in_stmt(s.else_branch, name, val, line, col)
+        return make_if_stmt(cond, tb, eb, s.line, s.col)
+    }
+    if s.kind == STMT_BLOCK {
+        mut first_s: @StmtNode = null; mut last_s: @StmtNode = null; mut cur = s.first_stmt
+        loop cur != null {
+            let cs = mono_subst_ident_in_stmt(cur, name, val, line, col); mut cloned_s: @StmtNode = mem.alloc(@StmtNode, 1)
+            cloned_s[0] = cs[0]; cloned_s.next = null
+            if first_s == null { first_s = cloned_s; last_s = cloned_s } else { last_s.next = cloned_s; last_s = cloned_s }
+            cur = cur.next
+        }
+        return make_block_stmt(first_s, s.stmt_count, s.line, s.col)
+    }
+    if s.kind == STMT_LOOP {
+        if s.loop_var == name { return s }
+        let st = mono_subst_ident_in_expr(s.loop_start, name, val, line, col)
+        let en = mono_subst_ident_in_expr(s.loop_end, name, val, line, col)
+        let sp = mono_subst_ident_in_expr(s.loop_step, name, val, line, col)
+        let b = mono_subst_ident_in_stmt(s.body, name, val, line, col)
+        return make_loop_stmt(s.loop_var, st, en, sp, s.is_inclusive, b, s.line, s.col)
+    }
+    if s.kind == STMT_MATCH {
+        let subj = mono_subst_ident_in_expr(s.expr, name, val, line, col); mut cur_c = s.first_case
+        mut first_c: @CaseNode = null; mut last_c: @CaseNode = null
+        loop cur_c != null {
+            let c_body = mono_subst_ident_in_stmt(cur_c.body, name, val, line, col)
+            let cn = make_case_node(cur_c.first_val, cur_c.val_count, cur_c.is_default, c_body, cur_c.line, cur_c.col)
+            if first_c == null { first_c = cn; last_c = cn } else { last_c.next = cn; last_c = cn }
+            cur_c = cur_c.next
+        }
+        return make_match_stmt(subj, first_c, s.case_count, s.line, s.col)
+    }
+    if s.kind == STMT_ZONE {
+        let b = mono_subst_ident_in_stmt(s.body, name, val, line, col); mut zs: @ExprNode = null
+        if s.expr != null { zs = mono_subst_ident_in_expr(s.expr, name, val, line, col) }
+        return make_zone_stmt(b, zs, s.line, s.col)
+    }
+    if s.kind == STMT_DEFER { return make_defer_stmt(mono_subst_ident_in_stmt(s.deferred_stmt, name, val, line, col), s.line, s.col) }
+    return s
+}
+
+act mono_unroll_loop(m: @Monomorphizer, s: @StmtNode, scope: @ScopeEntry, params: string, args: string, ret_type: string) -> @StmtNode {
+    if s == null or s.kind != STMT_LOOP { return null }
+    if s.loop_start == null or s.loop_end == null or s.loop_var == null { return null }
+
+    let st_cloned = mono_clone_expr(m, s.loop_start, scope, params, args)
+    let en_cloned = mono_clone_expr(m, s.loop_end, scope, params, args)
+    mut s_val: i64 = 0; mut e_val: i64 = 0
+    if not mono_eval_const_int(m, st_cloned, @s_val) { return null }
+    if not mono_eval_const_int(m, en_cloned, @e_val) { return null }
+
+    let is_fc = (s.loop_end.kind == EXPR_CALL and s.loop_end.callee != null and s.loop_end.callee.kind == EXPR_IDENT and s.loop_end.callee.str_val == "field_count")
+    let has_ref = mono_has_ident_in_reflect_stmt(s.body, s.loop_var)
+    if not is_fc and not has_ref { return null }
+
+    mut upper = e_val
+    if s.is_inclusive { upper = e_val + 1 }
+
+    mut first_unrolled: @StmtNode = null; mut last_unrolled: @StmtNode = null; mut iter_count: usize = 0
+    mut k = s_val
+    loop k < upper {
+        let substed_body = mono_subst_ident_in_stmt(s.body, s.loop_var, k, s.line, s.col)
+        let cloned_body = mono_clone_stmt(m, substed_body, scope, params, args, ret_type)
+        if cloned_body != null {
+            mut iter_block = cloned_body
+            if cloned_body.kind != STMT_BLOCK { iter_block = make_block_stmt(cloned_body, 1, s.line, s.col) }
+            if first_unrolled == null { first_unrolled = iter_block; last_unrolled = iter_block }
+            else { last_unrolled.next = iter_block; last_unrolled = iter_block }
+            iter_count += 1
+        }
+        k += 1
+    }
+    return make_block_stmt(first_unrolled, iter_count, s.line, s.col)
+}
+
+act mono_has_reflect_loops_in_stmt(s: @StmtNode) -> bool {
+    if s == null { return false }
+    if s.kind == STMT_LOOP and (s.loop_start != null or s.loop_end != null) { return true }
+    if s.kind == STMT_IF { return mono_has_reflect_loops_in_stmt(s.body) or mono_has_reflect_loops_in_stmt(s.else_branch) }
+    if s.kind == STMT_BLOCK {
+        mut cur = s.first_stmt
+        loop cur != null {
+            if mono_has_reflect_loops_in_stmt(cur) { return true }
+            cur = cur.next
+        }
+    }
+    return false
+}
+
+act mono_has_reflect_loops(first_decl: @StmtNode) -> bool {
+    mut cur = first_decl
+    loop cur != null {
+        if cur.kind == DECL_FUNCTION or cur.kind == DECL_TEST {
+            if mono_has_reflect_loops_in_stmt(cur.body) { return true }
+        }
+        cur = cur.next
+    }
+    return false
+}

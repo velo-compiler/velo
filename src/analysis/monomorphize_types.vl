@@ -41,6 +41,13 @@ data ScopeEntry {
     next: @ScopeEntry
 }
 
+// Tracks a registered struct declaration (regular or instantiated).
+data MonoStructEntry {
+    name: string
+    node: @StmtNode
+    next: @MonoStructEntry
+}
+
 // Global monomorphizer state.
 data Monomorphizer {
     first_template: @GenericTemplate
@@ -48,6 +55,7 @@ data Monomorphizer {
     worklist_head: @WorklistNode
     worklist_tail: @WorklistNode
     first_alias: @TypeAliasEntry
+    first_struct: @MonoStructEntry
 }
 
 // Tracks a registered primitive type alias (`aka Foo = u64`).
@@ -57,12 +65,38 @@ data TypeAliasEntry {
     next: @TypeAliasEntry
 }
 
+mut g_current_mono: @Monomorphizer = null
+
 act mono_init(m: @Monomorphizer) {
     m.first_template = null
     m.first_inst = null
     m.worklist_head = null
     m.worklist_tail = null
     m.first_alias = null
+    m.first_struct = null
+    g_current_mono = m
+}
+
+act mono_register_struct(m: @Monomorphizer, name: string, node: @StmtNode) {
+    mut e: @MonoStructEntry = mem.alloc(@MonoStructEntry, 1)
+    e.name = name
+    e.node = node
+    e.next = m.first_struct
+    m.first_struct = e
+}
+
+act mono_find_struct(m: @Monomorphizer, name: string) -> @StmtNode {
+    if name == null { return null }
+    let clean = strip_pointer_prefix(name)
+    mut ctx = m
+    if ctx == null { ctx = g_current_mono }
+    if ctx == null { return null }
+    mut cur = ctx.first_struct
+    loop cur != null {
+        if cur.name == clean { return cur.node }
+        cur = cur.next
+    }
+    return null
 }
 
 act mono_find_template(m: @Monomorphizer, name: string) -> @GenericTemplate {

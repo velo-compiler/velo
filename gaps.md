@@ -338,23 +338,43 @@ flowchart TD
   - All source files $\le 397$ lines (`scripts/count_lines.py`).
   - No UTF-8 BOM in any `.vl` file.
 
-#### Task 4.2: Compile-Time Field Iteration & Serialization
-* **Problem**: Writing JSON/binary serializers currently requires manually writing every field for every struct.
-* **Specification**:
-  - Provide a mechanism to iterate fields of a struct at compile time:
-    ```velo
-    act serialize_struct[T](item: @T) {
-        loop i in 0..field_count(T) {
-            io.println(field_name(T, i))
-        }
-    }
-    ```
-  - Unroll the loop at compile time during monomorphization.
-* **Target Files**:
-  - `velo/monomorphize.py`
-  - `src/analysis/monomorphize_expr.vl`
+#### Task 4.2: Compile-Time Field Iteration & Serialization [COMPLETED] ✅
+* **Former Defect**:
+  - Writing JSON, binary, or debug serializers previously required manually writing repetitive serialization boilerplate for every field of every struct. The language lacked compile-time loop unrolling and dynamic field value accessor intrinsics (`field_value(item, index)`), preventing generic serializers from iterating over struct fields at compile time.
+* **Fix Applied**:
+  - **Compile-Time Field Iteration & Unrolling**:
+    * Loop unrolling during monomorphization: `loop i in 0..field_count(T)` (or any loop whose bounds evaluate to compile-time constant integers and whose body contains reflection queries on the iterator variable) is unrolled into sequential statements at compile time with the iterator substituted by literal integers.
+  - **Dead-Branch Elimination**:
+    * Constant folding for `if` conditions in monomorphization: conditional statements testing compile-time expressions (e.g. `if field_type(T, i) == "string"`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `and`, `or`, `not`) evaluate at monomorphization time, keeping only the taken branch and discarding dead branches.
+  - **Compile-Time Field Value Access**:
+    * `field_value(item, index)`: returns the field at constant integer `index` of struct instance `item` (or pointer `(item)->field`).
+    * Strongly typed: statically infers the declared type of the target struct's field at `index`.
+    * Supports both rvalue reads and lvalue assignment targets (`field_value(@item, index) = val`).
+    * Lowers to direct C member access `((item).field)` or `((item)->field)`.
+  - **Diagnostics Parity**:
+    * Strict compile-time checks in both stages for arity (exactly 2 arguments), non-struct target, non-integer index, non-constant index, out-of-bounds indices, and bare identifier usage.
+  - **Stage 1 (Python Compiler)**:
+    * In `velo/monomorphize.py`: implemented `_eval_const_expr`, `_eval_const_int`, `_subst_ident_in_block`, unrolling loops in `_transform_stmt`, dead-branch elimination in `IfStmt`, constant folding for `field_count`/`field_name`/`field_type` in `_transform_expr`, and field type inference for `field_value` in `_infer_expr_type`.
+    * In `velo/codegen_c.py`: implemented `_lower_field_value_call` for rvalue/lvalue member access and semantic validation.
+    * In `velo/analysis.py`: added hover documentation and autocomplete for `field_value`.
+  - **Stage 2 (Self-Hosted Compiler)**:
+    * Created `src/analysis/mono_unroll.vl` (330 lines): implemented `mono_eval_const_int`, `mono_eval_const_str`, `mono_eval_const_bool`, `mono_fold_binary`, `mono_infer_field_value_type`, `mono_subst_ident_in_expr`, `mono_subst_ident_in_stmt`, and `mono_unroll_loop`.
+    * In `src/analysis/monomorphize_types.vl`: tracked `g_current_mono` for global struct lookup.
+    * In `src/analysis/monomorphize_expr.vl`: dispatched `field_value` return type in `mono_infer_type`, folded constant binary expressions and reflection builtins, preserved substituted `type_name` on calls.
+    * In `src/analysis/monomorphize.vl`: hooked `mono_unroll_loop` in `STMT_LOOP`, dead-branch elimination in `STMT_IF`, empty block elimination, and gated monomorphization pass on `mono_has_reflect_loops`.
+    * In `src/analysis/reflect_checks.vl`: added `check_reflect_field_value` with character-identical negative diagnostics.
+    * In `src/backend/reflect_gen.vl`: implemented `field_value` code generation lowering to `((item)->field)` or `((item).field)`.
+    * In `src/backend/codegen_stmt.vl`: added `STMT_BLOCK` generation for unrolled scoped blocks.
+* **Residual Limitation**:
+  - Compile-time field iteration unrolls ranges `0..field_count(T)` with compile-time constant bounds; dynamic/runtime iteration over heterogeneous types requires runtime type tags (`dyn` / variant types).
 * **Verification**:
-  - Automated JSON serializer example serializing nested custom structs.
+  - Created `examples/38_json_serializer.vl` demonstrating generic compile-time JSON serialization (`serialize_json[T](item: @T)`) with nested structs (`UserProfile` containing `Vec2` and `Address`), dead-branch elimination, and `field_value` mutation (lvalue), running identically on Stage 1 and Stage 2.
+  - Extended `tests/test_reflection.py` to 23 tests covering unrolling, serialization, and all negative diagnostics on both stages.
+  - 3-stage bootstrap chain completed (`Gen1 -> Gen2 -> Gen3 -> bin/velo.exe`) with bit-for-bit SHA-256 determinism verified (`c26044d669558313c2c755cce8211a41f64037a94060e67282038e09954ebaac`).
+  - Native test runner passed all 105 tests (`bin/velo.exe test examples/15_native_tests.vl`).
+  - Full test suite passed (382 tests passed).
+  - All source files $\le 397$ lines (`scripts/count_lines.py`).
+  - No UTF-8 BOM in any `.vl` file.
 
 ---
 

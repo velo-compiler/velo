@@ -602,6 +602,9 @@ class VeloAnalysis:
         if name == "field_type":
             md = "**builtin** `field_type(Type, index: i32) -> string`  \nReturns the compile-time type name of the struct field at index."
             return {"contents": {"kind": "markdown", "value": md}, "range": self._span_range(span)}
+        if name == "field_value":
+            md = "**builtin** `field_value(item: @T, index: i32) -> field_type`  \nReturns or mutates the field at index of struct or pointer-to-struct item."
+            return {"contents": {"kind": "markdown", "value": md}, "range": self._span_range(span)}
         doc = self.documents[uri]
         try:
             index = self._index(doc["path"])
@@ -734,7 +737,7 @@ class VeloAnalysis:
             items.append({"label": kw, "kind": 14})
         if not token or "assert".startswith(token):
             items.append({"label": "assert", "kind": 3, "detail": "builtin"})
-        for rf in ("field_count", "field_name", "field_type"):
+        for rf in ("field_count", "field_name", "field_type", "field_value"):
             if not token or rf.startswith(token):
                 items.append({"label": rf, "kind": 3, "detail": "builtin"})
         try:

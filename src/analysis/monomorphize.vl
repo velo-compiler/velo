@@ -9,6 +9,7 @@ use "../common/utils.vl"
 use "../common/string_builder.vl"
 use "monomorphize_types.vl"
 use "monomorphize_expr.vl"
+use "mono_unroll.vl"
 use "alias_resolve.vl"
 
 act mono_clone_stmt(m: @Monomorphizer, s: @StmtNode, scope: @ScopeEntry, params: string, args: string, ret_type: string) -> @StmtNode {
@@ -49,6 +50,11 @@ act mono_clone_stmt(m: @Monomorphizer, s: @StmtNode, scope: @ScopeEntry, params:
     }
     if s.kind == STMT_IF {
         let cond = mono_clone_expr(m, s.expr, scope, params, args)
+        if cond != null and cond.kind == EXPR_BOOL {
+            if cond.bool_val { return mono_clone_stmt(m, s.body, scope, params, args, ret_type) }
+            if s.else_branch != null { return mono_clone_stmt(m, s.else_branch, scope, params, args, ret_type) }
+            return make_block_stmt(null, 0, s.line, s.col)
+        }
         let then_b = mono_clone_stmt(m, s.body, scope, params, args, ret_type)
         let else_b = mono_clone_stmt(m, s.else_branch, scope, params, args, ret_type)
         return make_if_stmt(cond, then_b, else_b, s.line, s.col)
@@ -60,17 +66,12 @@ act mono_clone_stmt(m: @Monomorphizer, s: @StmtNode, scope: @ScopeEntry, params:
         mut cur_scope = scope
         loop cur != null {
             let cs = mono_clone_stmt(m, cur, cur_scope, params, args, ret_type)
-            if cs != null {
+            if cs != null and not (cs.kind == STMT_BLOCK and cs.stmt_count == 0 and cs.first_stmt == null) {
                 if cs.kind == STMT_VAR_DECL {
                     mut sc: @ScopeEntry = mem.alloc(@ScopeEntry, 1)
-                    sc.name = cs.name
-                    mut sc_t = cs.type_name
-                    if sc_t == null or str.len(sc_t) == 0 {
-                        sc_t = mono_infer_type(cs.val_expr, cur_scope)
-                    }
-                    sc.type_name = sc_t
-                    sc.next = cur_scope
-                    cur_scope = sc
+                    sc.name = cs.name; mut sc_t = cs.type_name
+                    if sc_t == null or str.len(sc_t) == 0 { sc_t = mono_infer_type(cs.val_expr, cur_scope) }
+                    sc.type_name = sc_t; sc.next = cur_scope; cur_scope = sc
                 }
                 if first_s == null { first_s = cs; last_s = cs }
                 else { last_s.next = cs; last_s = cs }
@@ -107,6 +108,8 @@ act mono_clone_stmt(m: @Monomorphizer, s: @StmtNode, scope: @ScopeEntry, params:
         return make_match_stmt(subj, first_case, s.case_count, s.line, s.col)
     }
     if s.kind == STMT_LOOP {
+        let unrolled = mono_unroll_loop(m, s, scope, params, args, ret_type)
+        if unrolled != null { return unrolled }
         if s.loop_start != null or s.loop_end != null {
             let b = mono_clone_stmt(m, s.body, scope, params, args, ret_type)
             let st = mono_clone_expr(m, s.loop_start, scope, params, args)
@@ -239,20 +242,17 @@ act monomorphize_program(prog: @ProgramNode) -> @ProgramNode {
         cur.next = null
         if cur.type_params != null and str.len(cur.type_params) > 0 {
             mut tmpl: @GenericTemplate = mem.alloc(@GenericTemplate, 1)
-            tmpl.kind = cur.kind
-            tmpl.name = cur.name
-            tmpl.type_params = cur.type_params
-            tmpl.node = cur
-            tmpl.next = m.first_template
-            m.first_template = tmpl
+            tmpl.kind = cur.kind; tmpl.name = cur.name; tmpl.type_params = cur.type_params
+            tmpl.node = cur; tmpl.next = m.first_template; m.first_template = tmpl
         } else {
+            if cur.kind == DECL_DATA { mono_register_struct(@m, cur.name, cur) }
             if reg_first == null { reg_first = cur; reg_last = cur }
             else { reg_last.next = cur; reg_last = cur }
         }
         cur = nxt
     }
 
-    if m.first_template == null {
+    if m.first_template == null and not mono_has_reflect_loops(reg_first) {
         prog.first_decl = reg_first
         return prog
     }
@@ -331,6 +331,7 @@ act monomorphize_program(prog: @ProgramNode) -> @ProgramNode {
             mut inst_decl: @StmtNode = null
             if item.kind == DECL_DATA {
                 inst_decl = mono_instantiate_struct(@m, tmpl, item.type_args, item.mangled_name)
+                mono_register_struct(@m, item.mangled_name, inst_decl)
             } else if item.kind == DECL_KIND {
                 inst_decl = mono_instantiate_kind(@m, tmpl, item.type_args, item.mangled_name)
             } else if item.kind == DECL_FUNCTION {

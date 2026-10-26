@@ -265,6 +265,16 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         sb_append_indent(sb, indent); sb_append_str(sb, "continue;\n"); return
     }
 
+    // 11.5. Nested Block statement (unrolled loops, scoped blocks)
+    if stmt.kind == STMT_BLOCK {
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "{\n")
+        emit_c_block_stmts(sb, st, stmt, indent + 1, defers)
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "}\n")
+        return
+    }
+
     // 12. Match / Switch statement
     if stmt.kind == STMT_MATCH {
         let subj_type = infer_expr_type(st, stmt.expr)

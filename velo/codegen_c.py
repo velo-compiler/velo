@@ -2103,6 +2103,13 @@ class CCodeGenerator:
                     self.indent_level -= 1
                     self._emit_line("}")
                 self._emit_line("}")
+        elif isinstance(stmt, BlockStmt):
+            self._emit_line("{")
+            self.indent_level += 1
+            self.defer_stack.append([])
+            self._emit_block_body(stmt.statements)
+            self.indent_level -= 1
+            self._emit_line("}")
 
     def _emit_if(self, stmt: IfStmt):
         cond_code = self._emit_expression(stmt.condition)
@@ -2227,7 +2234,7 @@ class CCodeGenerator:
             if value.name in self.func_decls:
                 fdecl = self.func_decls[value.name]
                 return f"act({', '.join(p.type_name for p in fdecl.params)}) -> {fdecl.return_type}"
-            if value.name in ("field_count", "field_name", "field_type"):
+            if value.name in ("field_count", "field_name", "field_type", "field_value"):
                 raise ValueError(f"reflection intrinsic '{value.name}' must be called with parentheses: {value.name}(...)")
             return "i32"
         if isinstance(value, DerefExpr):
@@ -2345,6 +2352,14 @@ class CCodeGenerator:
                     return "i32"
                 if value.callee.name in ("field_name", "field_type"):
                     return "string"
+                if value.callee.name == "field_value":
+                    if len(value.args) == 2:
+                        item_t = self._resolve_expr_type(value.args[0]).lstrip("@")
+                        if item_t in self.struct_field_decls:
+                            const_idx = self._get_const_int(value.args[1])
+                            if const_idx is not None and 0 <= const_idx < len(self.struct_field_decls[item_t]):
+                                return self.struct_field_decls[item_t][const_idx].type_name
+                    return "i32"
                 if value.callee.name in self.func_return_types:
                     return self.func_return_types[value.callee.name]
             elif isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier):
@@ -2438,7 +2453,7 @@ class CCodeGenerator:
                 return self.current_scope_types[expr.name]
             if expr.name in self.global_types:
                 return self.global_types[expr.name]
-            if expr.name in ("field_count", "field_name", "field_type"):
+            if expr.name in ("field_count", "field_name", "field_type", "field_value"):
                 raise ValueError(f"reflection intrinsic '{expr.name}' must be called with parentheses: {expr.name}(...)")
             return "i32"
         elif isinstance(expr, VariantExpr):
@@ -2601,6 +2616,14 @@ class CCodeGenerator:
                     return "i32"
                 if expr.callee.name in ("field_name", "field_type"):
                     return "string"
+                if expr.callee.name == "field_value":
+                    if len(expr.args) == 2:
+                        item_t = self._resolve_expr_type(expr.args[0]).lstrip("@")
+                        if item_t in self.struct_field_decls:
+                            const_idx = self._get_const_int(expr.args[1])
+                            if const_idx is not None and 0 <= const_idx < len(self.struct_field_decls[item_t]):
+                                return self.struct_field_decls[item_t][const_idx].type_name
+                    return "i32"
                 if expr.callee.name in self.func_return_types:
                     return self.func_return_types[expr.callee.name]
                 callee_type = self.current_scope_types.get(expr.callee.name)
@@ -2784,7 +2807,7 @@ class CCodeGenerator:
         elif isinstance(expr, Identifier):
             if expr.name in self.current_scope_types or expr.name in self.global_types or expr.name in self.func_decls:
                 return expr.name
-            if expr.name in ("field_count", "field_name", "field_type"):
+            if expr.name in ("field_count", "field_name", "field_type", "field_value"):
                 raise ValueError(f"reflection intrinsic '{expr.name}' must be called with parentheses: {expr.name}(...)")
             return expr.name
         elif isinstance(expr, AddressOf):
@@ -3230,7 +3253,7 @@ class CCodeGenerator:
             if isinstance(expr.callee, Identifier) and expr.callee.name in ("f32x4", "f32x4_splat", "i32x4", "i32x4_splat"):
                 return self._lower_simd_call(expr.callee.name, expr.args)
 
-            if isinstance(expr.callee, Identifier) and expr.callee.name in ("field_count", "field_name", "field_type"):
+            if isinstance(expr.callee, Identifier) and expr.callee.name in ("field_count", "field_name", "field_type", "field_value"):
                 return self._lower_field_reflection_call(expr.callee.name, expr.args, getattr(expr, "type_args", None))
 
             # 5.2: shelf element types must string-match across call boundaries —
@@ -3777,13 +3800,56 @@ class CCodeGenerator:
             return expr.name
         return "void"
 
+    def _get_const_int(self, e: Expr) -> Optional[int]:
+        if isinstance(e, IntLiteral):
+            return e.value
+        if isinstance(e, UnaryExpr) and e.op == "-" and isinstance(e.operand, IntLiteral):
+            return -e.operand.value
+        return None
+
     def _lower_field_reflection_call(self, name: str, args: List[Expr], type_args: Optional[List[str]] = None) -> str:
         if name == "field_count":
             if len(args) != 1:
                 raise ValueError("field_count expects exactly 1 argument: (Type)")
+        elif name == "field_value":
+            if len(args) != 2:
+                raise ValueError("field_value expects exactly 2 arguments: (item, index)")
         else:
             if len(args) != 2:
                 raise ValueError(f"{name} expects exactly 2 arguments: (Type, index)")
+
+        PRIMITIVE_NAMES = {
+            "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+            "f32", "f64", "bool", "usize", "isize", "string", "void", "dyn",
+            "f32x4", "i32x4", "Allocator", "Thread", "Mutex", "File"
+        }
+
+        if name == "field_value":
+            item_expr = args[0]
+            item_type = self._resolve_expr_type(item_expr)
+            is_ptr = item_type.startswith("@")
+            base_t = item_type.lstrip("@")
+            if not base_t or base_t == "void" or base_t in PRIMITIVE_NAMES or base_t not in self.struct_field_decls:
+                raise ValueError(f"field_value target must be a struct or pointer to struct (got {item_type})")
+
+            fields = self.struct_field_decls[base_t]
+            count = len(fields)
+            idx_expr = args[1]
+            idx_type = self._resolve_expr_type(idx_expr)
+            if idx_type not in ("i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize") and not isinstance(idx_expr, IntLiteral):
+                raise ValueError(f"field index must be an integer (got {idx_type})")
+
+            const_idx = self._get_const_int(idx_expr)
+            if const_idx is None:
+                raise ValueError("field_value requires a constant integer index")
+
+            if const_idx < 0 or const_idx >= count:
+                raise ValueError(f"field index out of bounds: {const_idx} (struct '{base_t}' has {count} fields)")
+
+            item_code = self._emit_expression(item_expr)
+            f_name = fields[const_idx].name
+            arrow = "->" if is_ptr else "."
+            return f"(({item_code}){arrow}{f_name})"
 
         arg0 = args[0]
         tname = self._extract_type_name(arg0).lstrip("@")
@@ -3796,11 +3862,6 @@ class CCodeGenerator:
         if "[" in tname:
             tname = mangle_type_name(tname)
 
-        PRIMITIVE_NAMES = {
-            "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
-            "f32", "f64", "bool", "usize", "isize", "string", "void", "dyn",
-            "f32x4", "i32x4", "Allocator", "Thread", "Mutex", "File"
-        }
         if tname in PRIMITIVE_NAMES:
             raise ValueError(f"'{tname}' is not a struct")
 
@@ -3818,14 +3879,7 @@ class CCodeGenerator:
         if idx_type not in ("i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize") and not isinstance(idx_expr, IntLiteral):
             raise ValueError(f"field index must be an integer (got {idx_type})")
 
-        def _get_const_int(e: Expr) -> Optional[int]:
-            if isinstance(e, IntLiteral):
-                return e.value
-            if isinstance(e, UnaryExpr) and e.op == "-" and isinstance(e.operand, IntLiteral):
-                return -e.operand.value
-            return None
-
-        const_idx = _get_const_int(idx_expr)
+        const_idx = self._get_const_int(idx_expr)
         if const_idx is not None:
             if const_idx < 0 or const_idx >= count:
                 raise ValueError(f"field index out of bounds: {const_idx} (struct '{tname}' has {count} fields)")

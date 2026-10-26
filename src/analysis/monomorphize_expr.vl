@@ -8,6 +8,7 @@ use "../ast/stmt.vl"
 use "../common/utils.vl"
 use "../common/string_builder.vl"
 use "monomorphize_types.vl"
+use "mono_unroll.vl"
 
 // 5.2 slice 2 ladder families (mono helper — same sets as Stage 1's DYN_INT_TYPES/DYN_FLOAT_TYPES)
 act is_mono_dyn_int(name: string) -> bool {
@@ -203,6 +204,7 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
             if e.callee.str_val == "i32x4" or e.callee.str_val == "i32x4_splat" { return "i32x4" }
             if e.callee.str_val == "field_count" { return "i32" }
             if e.callee.str_val == "field_name" or e.callee.str_val == "field_type" { return "string" }
+            if e.callee.str_val == "field_value" { return mono_infer_field_value_type(scope, e) }
         }
     }
     return "i32"
@@ -235,7 +237,12 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
     if e.kind == EXPR_STRING { return make_string_expr(e.str_val, e.line, e.col) }; if e.kind == EXPR_BOOL { return make_bool_expr(e.bool_val, e.line, e.col) }
     if e.kind == EXPR_NULL { return make_null_expr(e.line, e.col) }; if e.kind == EXPR_IDENT { return make_ident_expr(e.str_val, e.line, e.col) }
 
-    if e.kind == EXPR_BINARY { return make_binary_expr(mono_clone_expr(m, e.left, scope, params, args), e.op, mono_clone_expr(m, e.right, scope, params, args), e.line, e.col) }
+    if e.kind == EXPR_BINARY {
+        let l = mono_clone_expr(m, e.left, scope, params, args); let r = mono_clone_expr(m, e.right, scope, params, args)
+        let folded = mono_fold_binary(m, l, e.op, r, e.line, e.col)
+        if folded != null { return folded }
+        return make_binary_expr(l, e.op, r, e.line, e.col)
+    }
     if e.kind == EXPR_UNARY { return make_unary_expr(e.op, mono_clone_expr(m, e.operand, scope, params, args), e.line, e.col) }
     if e.kind == EXPR_ADDRESS_OF { return make_address_of_expr(mono_clone_expr(m, e.operand, scope, params, args), e.line, e.col) }
     if e.kind == EXPR_DEREF { return make_deref_expr(mono_clone_expr(m, e.operand, scope, params, args), e.line, e.col) }
@@ -248,50 +255,32 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
     }
     if e.kind == EXPR_STRUCT_LIT {
         mut stype = mono_subst(e.type_name, params, args); mono_check_type(m, stype); stype = mono_normalize_type(stype)
-        mut cur = e.first_init
-        mut first_fi: @FieldInit = null
-        mut last_fi: @FieldInit = null
+        mut cur = e.first_init; mut first_fi: @FieldInit = null; mut last_fi: @FieldInit = null
         loop cur != null {
             let fval = mono_clone_expr(m, cur.value, scope, params, args)
             mut fi: @FieldInit = mem.alloc(@FieldInit, 1)
-            fi.name = cur.name
-            fi.value = fval
-            fi.line = cur.line
-            fi.col = cur.col
-            fi.next = null
-            if first_fi == null { first_fi = fi; last_fi = fi }
-            else { last_fi.next = fi; last_fi = fi }
+            fi.name = cur.name; fi.value = fval; fi.line = cur.line; fi.col = cur.col; fi.next = null
+            if first_fi == null { first_fi = fi; last_fi = fi } else { last_fi.next = fi; last_fi = fi }
             cur = cur.next
         }
         return make_struct_lit_expr(stype, first_fi, e.line, e.col)
     }
     if e.kind == EXPR_VARIANT {
         mut kname = mono_subst(e.type_name, params, args)
-        if kname != null {
-            mono_check_type(m, kname)
-            kname = mono_normalize_type(kname)
-        }
-        mut cur = e.first_arg
-        mut first_a: @ExprNode = null
-        mut last_a: @ExprNode = null
+        if kname != null { mono_check_type(m, kname); kname = mono_normalize_type(kname) }
+        mut cur = e.first_arg; mut first_a: @ExprNode = null; mut last_a: @ExprNode = null
         loop cur != null {
             let a = mono_clone_expr(m, cur, scope, params, args)
-            if first_a == null { first_a = a; last_a = a }
-            else { last_a.next = a; last_a = a }
+            if first_a == null { first_a = a; last_a = a } else { last_a.next = a; last_a = a }
             cur = cur.next
         }
         return make_variant_expr(kname, e.member_name, first_a, e.arg_count, e.line, e.col)
     }
     if e.kind == EXPR_SHELF_LIT or e.kind == EXPR_HEAP_SHELF_LIT {
-        // 5.2: clone the bracket-arg chain; pinned elems ride type_name.
-        // Slice 10: the heap kind distinguishes the storage modifier.
-        mut first_a: @ExprNode = null
-        mut last_a: @ExprNode = null
-        mut cur = e.first_arg
+        mut first_a: @ExprNode = null; mut last_a: @ExprNode = null; mut cur = e.first_arg
         loop cur != null {
             let a = mono_clone_expr(m, cur, scope, params, args)
-            if first_a == null { first_a = a; last_a = a }
-            else { last_a.next = a; last_a = a }
+            if first_a == null { first_a = a; last_a = a } else { last_a.next = a; last_a = a }
             cur = cur.next
         }
         let lit = make_shelf_lit_expr(first_a, e.arg_count, e.type_name, e.line, e.col)
@@ -299,15 +288,10 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
         return lit
     }
     if e.kind == EXPR_MAP_LIT {
-        // 5.2 slice 6: clone the K,V alternating chain; the pinned spelling
-        // rides type_name exactly like Stage 1's kv_type carry
-        mut first_a: @ExprNode = null
-        mut last_a: @ExprNode = null
-        mut cur = e.first_arg
+        mut first_a: @ExprNode = null; mut last_a: @ExprNode = null; mut cur = e.first_arg
         loop cur != null {
             let a = mono_clone_expr(m, cur, scope, params, args)
-            if first_a == null { first_a = a; last_a = a }
-            else { last_a.next = a; last_a = a }
+            if first_a == null { first_a = a; last_a = a } else { last_a.next = a; last_a = a }
             cur = cur.next
         }
         let lit = make_map_lit_expr(first_a, e.arg_count / 2, e.line, e.col)
@@ -315,20 +299,15 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
         return lit
     }
     if e.kind == EXPR_RING_LIT or e.kind == EXPR_BITSET_LIT {
-        // 5.2 slice 9: clone the bracket-arg chain; a pinned ring elem rides type_name
-        mut first_a: @ExprNode = null
-        mut last_a: @ExprNode = null
-        mut cur = e.first_arg
+        mut first_a: @ExprNode = null; mut last_a: @ExprNode = null; mut cur = e.first_arg
         loop cur != null {
             let a = mono_clone_expr(m, cur, scope, params, args)
-            if first_a == null { first_a = a; last_a = a }
-            else { last_a.next = a; last_a = a }
+            if first_a == null { first_a = a; last_a = a } else { last_a.next = a; last_a = a }
             cur = cur.next
         }
         if e.kind == EXPR_RING_LIT {
             let lit = make_ring_lit_expr(first_a, e.arg_count, e.line, e.col)
-            lit.type_name = e.type_name   // the pinned elem rides like Stage 1
-            return lit
+            lit.type_name = e.type_name; return lit
         }
         return make_bitset_lit_expr(first_a, e.arg_count, e.line, e.col)
     }
@@ -369,6 +348,14 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
                         first_a.operand.str_val = mono_subst(first_a.operand.str_val, params, args)
                     }
                 }
+                let tmp_call = make_call_expr(callee, first_a, arg_count, e.line, e.col)
+                if callee.str_val == "field_count" {
+                    mut fc: i64 = 0
+                    if mono_eval_const_int(m, tmp_call, @fc) { return make_int_expr(fc, e.line, e.col) }
+                } else {
+                    let fs = mono_eval_const_str(m, tmp_call)
+                    if fs != null { return make_string_expr(fs, e.line, e.col) }
+                }
             }
             let fn_tmpl = mono_find_template(m, callee.str_val)
             if fn_tmpl != null and fn_tmpl.kind == DECL_FUNCTION {
@@ -387,6 +374,7 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
             }
         }
         let call_res = make_call_expr(callee, first_a, arg_count, e.line, e.col)
+        if e.type_name != null { call_res.type_name = mono_subst(e.type_name, params, args) }
         return call_res
     }
     return e
