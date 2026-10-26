@@ -196,19 +196,20 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         return
     }
 
-    // 7. Zone arena scoping statement (`zone { }` default arena, or §4.1
-    //    `zone <bytes> { }` acquiring a private pooled arena for the block).
-    //    Zone frames its defers like the other blocks: zone-local defers run
-    //    before the watermark reset (Stage 1 frame discipline), then the
-    //    enclosing frame is restored.
+    // 7. Zone arena scoping (`zone { }`, `zone <bytes> { }`, or `zone <arena> { }`).
     if stmt.kind == STMT_ZONE {
         sb_append_indent(sb, indent)
         sb_append_str(sb, "{\n")
         sb_append_indent(sb, indent + 1)
+        mut is_arena: bool = false
         if stmt.expr != null {
-            sb_append_str(sb, "VeloZoneArena* __zone_prev = velo_zone_enter((size_t)(")
-            emit_c_expr(sb, st, stmt.expr)
-            sb_append_str(sb, "));\n")
+            let et = infer_expr_type(st, stmt.expr)
+            if et == "@Allocator" or et == "Allocator" {
+                is_arena = true; sb_append_str(sb, "VeloZoneArena* __zone_prev = velo_zone_enter_arena((VeloZoneArena*)(")
+            } else {
+                sb_append_str(sb, "VeloZoneArena* __zone_prev = velo_zone_enter((size_t)(")
+            }
+            emit_c_expr(sb, st, stmt.expr); sb_append_str(sb, "));\n")
         }
         sb_append_str(sb, "size_t __zone_wm = velo_zone_push();\n")
         mut zone_df_head: @DeferNode = defers.@
@@ -222,7 +223,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         sb_append_indent(sb, indent + 1)
         sb_append_str(sb, "velo_zone_pop(__zone_wm);\n")
         if stmt.expr != null {
-            sb_append_str(sb, "velo_zone_leave(__zone_prev);\n")
+            if is_arena { sb_append_str(sb, "velo_zone_leave_arena(__zone_prev);\n") } else { sb_append_str(sb, "velo_zone_leave(__zone_prev);\n") }
         }
         sb_append_indent(sb, indent)
         sb_append_str(sb, "}\n")

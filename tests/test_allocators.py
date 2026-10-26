@@ -309,6 +309,82 @@ class TestAllocatorArchitecture(unittest.TestCase):
             self.assertNotEqual(res.returncode, 0, f"{stage} survived alloc_with OOM!")
             self.assertIn("Out of Memory", res.stderr, f"{stage} stderr: {res.stderr}")
 
+    def test_parameterized_scoped_arena(self):
+        """Task 6.1: explicit arena instantiation outside global 64MB arena,
+        scoped entry with zone custom_arena, O(1) pop, and defer destruction."""
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act main() {\n"
+            "    let before: usize = mem.used()\n"
+            "    let custom_arena: @Allocator = mem.create_arena(268435456)\n"
+            "    defer mem.destroy_arena(custom_arena)\n"
+            "    zone custom_arena {\n"
+            "        let buf: @u8 = mem.alloc(1048576)\n"
+            "        let inside: usize = mem.used()\n"
+            "        io.println(\"inside = {inside}\")\n"
+            "    }\n"
+            "    let after: usize = mem.used()\n"
+            "    io.println(\"before = {before}, after = {after}\")\n"
+            "}\n"
+        )
+        assert_parity(program, "customarena", ["inside = 1048576", "before = 0, after = 0"])
+
+    def test_parameterized_arena_pop_watermark(self):
+        """Task 6.1: entering custom arena in multiple consecutive zones pops
+        watermark without destroying arena."""
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act main() {\n"
+            "    let custom = mem.create_arena(65536)\n"
+            "    defer mem.destroy_arena(custom)\n"
+            "    zone custom {\n"
+            "        let buf: @u8 = mem.alloc(1024)\n"
+            "        let u1: usize = mem.used()\n"
+            "        io.println(\"u1 = {u1}\")\n"
+            "    }\n"
+            "    zone custom {\n"
+            "        let buf2: @u8 = mem.alloc(2048)\n"
+            "        let u2: usize = mem.used()\n"
+            "        io.println(\"u2 = {u2}\")\n"
+            "    }\n"
+            "    let after: usize = mem.used()\n"
+            "    io.println(\"default after = {after}\")\n"
+            "}\n"
+        )
+        assert_parity(program, "custompop", ["u1 = 1024", "u2 = 2048", "default after = 0"])
+
+    def test_raw_byte_alloc_one_arg(self):
+        """Task 6.1: 1-arg mem.alloc(count) allocates raw @u8 buffer."""
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act main() {\n"
+            "    zone 4096 {\n"
+            "        let buf: @u8 = mem.alloc(1024)\n"
+            "        let used: usize = mem.used()\n"
+            "        io.println(\"used = {used}\")\n"
+            "    }\n"
+            "}\n"
+        )
+        assert_parity(program, "alloconearg", ["used = 1024"])
+
+    def test_raw_byte_heap_alloc_one_arg(self):
+        """Task 6.1: 1-arg mem.heap_alloc(count) allocates raw @u8 buffer."""
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act main() {\n"
+            "    let buf: @u8 = mem.heap_alloc(512)\n"
+            "    defer mem.free(buf)\n"
+            "    let used: usize = mem.heap_used()\n"
+            "    io.println(\"heap used >= 512: {used >= 512}\")\n"
+            "}\n"
+        )
+        assert_parity(program, "heapalloconearg", ["heap used >= 512: true"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -254,10 +254,12 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             if target.kind == EXPR_IDENT {
                 if target.str_val == "mem" {
                     if member == "alloc" {
+                        if expr.first_arg != null and expr.first_arg.next == null { sb_append_str(sb, "((uint8_t*)velo_mem_alloc(1, (size_t)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")))"); return }
                         let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg))); sb_append_str(sb, "(("); sb_append_str(sb, elem_type); sb_append_str(sb, "*)velo_mem_alloc(sizeof(")
                         sb_append_str(sb, elem_type); sb_append_str(sb, "), (size_t)("); emit_c_expr(sb, st, expr.first_arg.next); sb_append_str(sb, ")))"); return
                     }
                     if member == "heap_alloc" {
+                        if expr.first_arg != null and expr.first_arg.next == null { sb_append_str(sb, "((uint8_t*)velo_heap_alloc(1, (size_t)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")))"); return }
                         let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg))); sb_append_str(sb, "(("); sb_append_str(sb, elem_type); sb_append_str(sb, "*)velo_heap_alloc(sizeof(")
                         sb_append_str(sb, elem_type); sb_append_str(sb, "), (size_t)("); emit_c_expr(sb, st, expr.first_arg.next); sb_append_str(sb, ")))"); return
                     }
@@ -281,6 +283,8 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                         emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "), sizeof("); sb_append_str(sb, elem_type); sb_append_str(sb, "), (size_t)(")
                         emit_c_expr(sb, st, expr.first_arg.next.next); sb_append_str(sb, ")))"); return
                     }
+                    if member == "create_arena" { sb_append_str(sb, "velo_mem_create_arena((size_t)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+                    if member == "destroy_arena" { sb_append_str(sb, "velo_mem_destroy_arena((VeloZoneArena*)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
                 }
                 // §4.2: spawn/join zero-arg i32 acts (@Thread = VeloThreadCtx*); @Mutex ops are opaque void*
                 if target.str_val == "thread" and member == "spawn" { sb_append_str(sb, "velo_thread_spawn((VeloThreadFn)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }; if target.str_val == "thread" and member == "join" { sb_append_str(sb, "velo_thread_join("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, ")"); return }

@@ -449,6 +449,54 @@ static inline size_t velo_alloc_used(VeloAllocator a) {
 }
 
 // ============================================================================
+// Task 6.1: Parameterized Scoped Arenas (mem.create_arena / mem.destroy_arena)
+// ============================================================================
+static inline VeloZoneArena* velo_mem_create_arena(size_t cap) {
+    if (cap == 0) {
+        fprintf(stderr, "Velo Fatal Error: Arena capacity must be > 0!\n");
+        exit(1);
+    }
+    VeloZoneArena* z = (VeloZoneArena*)malloc(sizeof(VeloZoneArena));
+    uint8_t* buf = (uint8_t*)malloc(cap);
+    if (!z || !buf) {
+        fprintf(stderr, "Velo Fatal Error: Arena allocation failed (%llu bytes)!\n",
+                (unsigned long long)cap);
+        exit(1);
+    }
+    z->base = buf;
+    z->cap = cap;
+    z->offset = 0;
+    return z;
+}
+
+static inline void velo_mem_destroy_arena(VeloZoneArena* a) {
+    if (a) {
+        if (a->base) {
+            free(a->base);
+            a->base = NULL;
+        }
+        if (g_velo_zone_tls_active == a) {
+            g_velo_zone_tls_active = g_velo_zone_tls_default;
+        }
+        free(a);
+    }
+}
+
+static inline VeloZoneArena* velo_zone_enter_arena(VeloZoneArena* a) {
+    if (!a) {
+        fprintf(stderr, "Velo Fatal Error: Cannot enter null arena!\n");
+        exit(1);
+    }
+    VeloZoneArena* prev = velo_zone_active();
+    g_velo_zone_tls_active = a;
+    return prev;
+}
+
+static inline void velo_zone_leave_arena(VeloZoneArena* prev) {
+    g_velo_zone_tls_active = prev;
+}
+
+// ============================================================================
 // §4.2 Thread Surface: spawn / join / mutex
 //
 // Runs zero-parameter, i32-returning Velo acts on real OS threads. Every

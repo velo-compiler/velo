@@ -460,22 +460,24 @@ flowchart TD
 
 ### Phase 6: Multi-Arena Memory Management & Scaling
 
-#### Task 6.1: Parameterized Scoped Arenas
-* **Problem**: Velo currently uses a global thread-local 64 MB arena for zone allocations. Large allocations (such as 4K textures or large audio files) can exhaust this buffer.
-* **Specification**:
-  - Add explicit arena instantiation:
-    ```velo
-    let custom_arena = mem.create_arena(256 * 1024 * 1024)
-    defer mem.destroy_arena(custom_arena)
-    zone custom_arena {
-        let buf = mem.alloc(1024 * 1024)
-    }
-    ```
-* **Target Files**:
-  - `velo/runtime/velo_runtime.h`
-  - `src/backend/codegen_stmt.vl`
+#### Task 6.1: Parameterized Scoped Arenas [COMPLETED] ✅
+* **Former Defect**: Velo previously only supported the global thread-local 64 MB arena for zone allocations, or pooled scratch arenas via `zone <bytes> { }` which were recycled through the thread-local pool upon block exit. Systems applications (such as high-resolution textures, large game assets, audio buffers, or in-memory caches) could exhaust the 64 MB thread-local buffer or could not pass a long-lived standalone custom arena across multiple scoped code blocks.
+* **Fix Applied**:
+  - Added `mem.create_arena(cap: usize) -> @Allocator` and `mem.destroy_arena(a: @Allocator) -> void` to `velo/runtime/velo_runtime.h`, creating standalone heap-backed `VeloZoneArena` descriptors and buffers outside the thread-local pool.
+  - Implemented `zone <arena> { ... }` block syntax in both Stage 1 (`velo/codegen_c.py`) and Stage 2 (`src/backend/codegen_stmt.vl`):
+    * Dispatches `velo_zone_enter_arena` (saving and restoring previous active arena via `velo_zone_leave_arena`).
+    * Preserves O(1) watermark reset (`velo_zone_pop`) on block exit without returning `custom_arena` to the reuse pool or destroying its underlying buffer.
+  - Added support for 1-argument raw byte allocation: `mem.alloc(count: usize) -> @u8` and `mem.heap_alloc(count: usize) -> @u8` alongside typed 2-argument allocations (`mem.alloc(@Type, count)`).
+  - Maintained complete Stage 1 / Stage 2 semantic parity across `velo/codegen_c.py`, `src/analysis/type_checker.vl`, `src/backend/codegen_expr.vl`, and `src/backend/codegen_stmt.vl`.
+  - Added unit and parity tests in `tests/test_allocators.py` covering explicit 256 MB arena creation, single-argument raw byte allocation, consecutive zone entry with O(1) watermark reset, and defer destruction.
+* **Residual Limitation**: The created arena has a fixed capacity specified at creation time; if allocations within the arena exceed capacity, the runtime terminates with fatal Out of Memory. Dynamic chunk spilling fallback for automatic chunk growth is addressed in Task 6.2.
 * **Verification**:
-  - Allocate and reclaim 256 MB in a custom arena without altering the global zone pool.
+  - Rebuilt bootstrap chain: `python velo.py build src/main.vl -o bin/velo_gen1.exe`, `bin/velo_gen1.exe build src/main.vl -o bin/velo_gen2.exe`, `bin/velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe`, `cp bin/velo_gen3.exe bin/velo.exe`.
+  - Verified determinism: SHA-256 of `emit-c src/main.vl` output between Gen2 and Gen3 matches bit-for-bit (`F805475F1B06A7C2E2C91A553B994A6B8136CEB291D2DA9A56BC8E258B3BF980`).
+  - Native tests: `bin/velo.exe test examples/15_native_tests.vl` (all 105 passed).
+  - Test suite: `python -m pytest tests -q` (all 405 tests passed).
+  - Code standards: `python scripts/count_lines.py` verified all 65 compiler source files $\le 397$ lines (max file 397 lines).
+  - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
 
 #### Task 6.2: Dynamic Arena Chunk Spilling
 * **Problem**: When a zone allocation exceeds capacity, the compiler terminates with a loud `Zone Arena Out of Memory` fatal error.

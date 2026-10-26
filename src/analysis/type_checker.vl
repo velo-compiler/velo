@@ -121,10 +121,10 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             if target.kind == EXPR_IDENT {
                 if target.str_val == "mem" {
                     if !check_mem_call(st, expr, member) { return "unknown" }
-                    if member == "alloc" or member == "heap_alloc" { if expr.first_arg != null { return infer_expr_type(st, expr.first_arg) } }
+                    if member == "alloc" or member == "heap_alloc" { if expr.first_arg != null { if expr.first_arg.next == null { return "@u8" }; return infer_expr_type(st, expr.first_arg) } }
                     if member == "used" or member == "heap_used" { return "usize" }
                     // §4.1: mem.current() -> @Allocator; mem.alloc_with(a, @T, count) -> @T
-                    if member == "current" { return "@Allocator" }
+                    if member == "current" or member == "create_arena" { return "@Allocator" }; if member == "destroy_arena" { return "void" }
                     if member == "alloc_with" { if expr.first_arg != null and expr.first_arg.next != null { return infer_expr_type(st, expr.first_arg.next) } }
                     // cm43: mem.realloc(ptr, @T, count) -> @T (like alloc_with)
                     if member == "realloc" { if expr.first_arg != null and expr.first_arg.next != null { return infer_expr_type(st, expr.first_arg.next) }; return "unknown" }
@@ -328,7 +328,7 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
         if stmt.loop_index != null and str.len(stmt.loop_index) > 0 { define_variable(st, stmt.loop_index, "usize", false, stmt.line, stmt.col) }
         check_statement(st, expected_ret_type, stmt.body)
         exit_scope(st)
-    } else if stmt.kind == STMT_ZONE { check_statement(st, expected_ret_type, stmt.body)
+    } else if stmt.kind == STMT_ZONE { if stmt.expr != null { infer_expr_type(st, stmt.expr) }; check_statement(st, expected_ret_type, stmt.body)
     } else if stmt.kind == STMT_DEFER { check_statement(st, expected_ret_type, stmt.deferred_stmt)
     } else if stmt.kind == STMT_RETURN {
         if stmt.val_expr != null {

@@ -2001,16 +2001,26 @@ class CCodeGenerator:
             wm = f"_zone_wm_{self.zone_counter}"
             self._emit_line("{")
             self.indent_level += 1
-            if stmt.size is not None:  # §4.1: private pool-backed arena scoped to this block
+            is_custom_arena = False
+            if stmt.size is not None:  # §4.1: private pool-backed arena or explicit @Allocator
+                size_type = self._resolve_expr_type(stmt.size)
+                if size_type in ("@Allocator", "Allocator", "VeloZoneArena*", "VeloAllocator"):
+                    is_custom_arena = True
                 prev = f"_zone_prev_{self.zone_counter}"
                 size_code = self._emit_expression(stmt.size)
-                self._emit_line(f"VeloZoneArena* {prev} = velo_zone_enter((size_t)({size_code}));")
+                if is_custom_arena:
+                    self._emit_line(f"VeloZoneArena* {prev} = velo_zone_enter_arena((VeloZoneArena*)({size_code}));")
+                else:
+                    self._emit_line(f"VeloZoneArena* {prev} = velo_zone_enter((size_t)({size_code}));")
             self._emit_line(f"size_t {wm} = velo_zone_push();")
             self.defer_stack.append([])
             self._emit_block_body(stmt.body.statements)
             self._emit_line(f"velo_zone_pop({wm});")
             if stmt.size is not None:
-                self._emit_line(f"velo_zone_leave(_zone_prev_{self.zone_counter});")
+                if is_custom_arena:
+                    self._emit_line(f"velo_zone_leave_arena(_zone_prev_{self.zone_counter});")
+                else:
+                    self._emit_line(f"velo_zone_leave(_zone_prev_{self.zone_counter});")
             self.indent_level -= 1
             self._emit_line("}")
 
@@ -2364,11 +2374,15 @@ class CCodeGenerator:
                     return self.func_return_types[value.callee.name]
             elif isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier):
                 if value.callee.target.name == "mem" and value.callee.member in ("alloc", "heap_alloc"):
-                    if len(value.args) >= 1:
+                    if len(value.args) == 1:
+                        return "@u8"
+                    if len(value.args) >= 2:
                         type_name = self._extract_type_name(value.args[0])
                         return f"@{type_name}"
-                elif value.callee.target.name == "mem" and value.callee.member == "current":
-                    return "@Allocator"  # §4.1: active arena as a passable handle
+                elif value.callee.target.name == "mem" and value.callee.member in ("current", "create_arena"):
+                    return "@Allocator"  # §4.1: active arena as a passable handle / Task 6.1
+                elif value.callee.target.name == "mem" and value.callee.member == "destroy_arena":
+                    return "void"
                 elif value.callee.target.name == "mem" and value.callee.member == "alloc_with":
                     # §4.1: returns @T where T is the type arg (args[1])
                     if len(value.args) >= 2:
@@ -2633,11 +2647,15 @@ class CCodeGenerator:
                         return parsed[2]
             elif isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier):
                 if expr.callee.target.name == "mem" and expr.callee.member in ("alloc", "heap_alloc"):
-                    if len(expr.args) >= 1:
+                    if len(expr.args) == 1:
+                        return "@u8"
+                    if len(expr.args) >= 2:
                         type_name = self._extract_type_name(expr.args[0])
                         return f"@{type_name}"
-                elif expr.callee.target.name == "mem" and expr.callee.member == "current":
-                    return "@Allocator"  # §4.1
+                elif expr.callee.target.name == "mem" and expr.callee.member in ("current", "create_arena"):
+                    return "@Allocator"  # §4.1 / Task 6.1
+                elif expr.callee.target.name == "mem" and expr.callee.member == "destroy_arena":
+                    return "void"
                 elif expr.callee.target.name == "mem" and expr.callee.member == "alloc_with":
                     # §4.1: type is @T where T is the type arg (args[1])
                     if len(expr.args) >= 2:
@@ -3047,6 +3065,14 @@ class CCodeGenerator:
                             # §4.1: capture the active arena as a passable @Allocator handle
                             # §4.1/§4.2: per-thread active arena as a passable handle
                             return "velo_zone_active()"
+                        elif expr.callee.member == "create_arena":
+                            if len(expr.args) != 1:
+                                raise ValueError("mem.create_arena expects exactly 1 argument: (cap)")
+                            return f"velo_mem_create_arena((size_t)({self._emit_expression(expr.args[0])}))"
+                        elif expr.callee.member == "destroy_arena":
+                            if len(expr.args) != 1:
+                                raise ValueError("mem.destroy_arena expects exactly 1 argument: (arena)")
+                            return f"velo_mem_destroy_arena((VeloZoneArena*)({self._emit_expression(expr.args[0])}))"
                         elif expr.callee.member == "alloc_with":
                             # §4.1: allocate into an explicit @Allocator handle
                             return self._lower_mem_alloc_with(expr.args)
@@ -3680,16 +3706,22 @@ class CCodeGenerator:
         return f"velo_simd_{member}_{fn_suffix}({codes[0]}, {codes[1]})"
 
     def _lower_mem_alloc(self, args: List[Expr]) -> str:
+        if len(args) == 1:
+            count_code = self._emit_expression(args[0])
+            return f"(uint8_t*)velo_mem_alloc(1, (size_t)({count_code}))"
         if len(args) != 2:
-            raise ValueError("mem.alloc expects exactly 2 arguments: (@Type, count)")
+            raise ValueError("mem.alloc expects 1 or 2 arguments: (count) or (@Type, count)")
         type_name = self._extract_type_name(args[0])
         c_type = self._map_type(type_name)
         count_code = self._emit_expression(args[1])
         return f"({c_type}*)velo_mem_alloc(sizeof({c_type}), (size_t)({count_code}))"
 
     def _lower_heap_alloc(self, args: List[Expr]) -> str:
+        if len(args) == 1:
+            count_code = self._emit_expression(args[0])
+            return f"(uint8_t*)velo_heap_alloc(1, (size_t)({count_code}))"
         if len(args) != 2:
-            raise ValueError("mem.heap_alloc expects exactly 2 arguments: (@Type, count)")
+            raise ValueError("mem.heap_alloc expects 1 or 2 arguments: (count) or (@Type, count)")
         type_name = self._extract_type_name(args[0])
         c_type = self._map_type(type_name)
         count_code = self._emit_expression(args[1])
