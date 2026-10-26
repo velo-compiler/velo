@@ -23,14 +23,13 @@ use "time_checks.vl"
 use "os_checks.vl"
 use "fs_checks.vl"
 use "simd_checks.vl"
+use "reflect_checks.vl"
 act is_known_type(st: @SymbolTable, name: string) -> bool {
     if name == null { return false }
     let clean = strip_pointer_prefix(name)
-    if is_act_type(clean) { return true }
-    if is_primitive_type(clean) { return true }; if clean == "Allocator" { return true }; if clean == "Thread" { return true }; if clean == "Mutex" { return true }; if clean == "File" { return true }  // §4.1/§4.2 handles + 5.4 S4 streaming handle
-    if is_shelf_type(clean) { return true }  // 5.2: shelf[T] is a first-class type
-    if find_struct(st, clean) != null { return true }
-    if find_kind(st, clean) != null { return true }
+    if is_act_type(clean) or is_primitive_type(clean) { return true }
+    if clean == "Allocator" or clean == "Thread" or clean == "Mutex" or clean == "File" { return true }
+    if is_shelf_type(clean) or find_struct(st, clean) != null or find_kind(st, clean) != null { return true }
     return false
 }
 
@@ -39,9 +38,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr == null { return "void" }
     if expr.kind == EXPR_INT { if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name } return "i32" }
     if expr.kind == EXPR_FLOAT { if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name } return "f32" }
-    if expr.kind == EXPR_STRING { return "string" }
-    if expr.kind == EXPR_BOOL { return "bool" }
-    if expr.kind == EXPR_NULL { return "@void" }
+    if expr.kind == EXPR_STRING { return "string" }; if expr.kind == EXPR_BOOL { return "bool" }; if expr.kind == EXPR_NULL { return "@void" }
     if expr.kind == EXPR_VARIANT {
         if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name }
         let k_sym = find_kind_by_variant(st, expr.member_name); if k_sym != null { expr.type_name = k_sym.name; return k_sym.name }
@@ -55,6 +52,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.kind == EXPR_IDENT {
         let sym = resolve_variable(st, expr.str_val)
         if sym == null {
+            if is_reflect_builtin(expr.str_val) { return check_reflect_bare_constant(st, expr) }
             let fn_sym = find_function(st, expr.str_val)
             if fn_sym != null {
                 mut sb = create_sb(64); sb_append_str(@sb, "act("); mut cur_p = fn_sym.first_param; mut p_idx: usize = 0
@@ -181,6 +179,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             }
             return "void"
         }
+        if expr.callee.kind == EXPR_IDENT and is_reflect_builtin(expr.callee.str_val) { return check_reflect_builtin(st, expr) }
         if expr.callee.kind == EXPR_IDENT and is_simd_constructor(expr.callee.str_val) { return check_simd_constructor(st, expr) }
         if expr.callee.kind == EXPR_IDENT {
             let fn_sym = find_function(st, expr.callee.str_val)

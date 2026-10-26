@@ -24,6 +24,7 @@ use "time_gen.vl"
 use "os_gen.vl"
 use "fs_gen.vl"
 use "simd_gen.vl"
+use "reflect_gen.vl"
 
 // Emits C99 code for an AST expression into a StringBuilder.
 act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
@@ -361,6 +362,10 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             sb_append_str(sb, "\", "); sb_append_int(sb, expr.line); sb_append_str(sb, ", ")
             if expr.first_arg != null and expr.first_arg.next != null { emit_c_expr(sb, st, expr.first_arg.next) } else { sb_append_str(sb, "NULL") }
             sb_append_char(sb, ')'); return
+        }
+
+        if expr.callee != null and expr.callee.kind == EXPR_IDENT and is_reflect_builtin(expr.callee.str_val) {
+            emit_reflect_call(sb, st, expr); return
         }
 
         if expr.callee != null and expr.callee.kind == EXPR_IDENT and (expr.callee.str_val == "f32x4" or expr.callee.str_val == "f32x4_splat" or expr.callee.str_val == "i32x4" or expr.callee.str_val == "i32x4_splat") {

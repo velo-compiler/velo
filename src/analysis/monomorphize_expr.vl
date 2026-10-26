@@ -201,6 +201,8 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
         if e.callee != null and e.callee.kind == EXPR_IDENT {
             if e.callee.str_val == "f32x4" or e.callee.str_val == "f32x4_splat" { return "f32x4" }
             if e.callee.str_val == "i32x4" or e.callee.str_val == "i32x4_splat" { return "i32x4" }
+            if e.callee.str_val == "field_count" { return "i32" }
+            if e.callee.str_val == "field_name" or e.callee.str_val == "field_type" { return "string" }
         }
     }
     return "i32"
@@ -228,16 +230,10 @@ act mono_extract_type_arg(t: string) -> string {
 
 act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params: string, args: string) -> @ExprNode {
     if e == null { return null }
-    if e.kind == EXPR_INT {
-        mut node = make_int_expr(e.int_val, e.line, e.col); node.str_val = e.str_val; node.type_name = e.type_name; return node
-    }
-    if e.kind == EXPR_FLOAT {
-        mut node = make_float_expr(e.float_val, e.line, e.col); node.str_val = e.str_val; node.type_name = e.type_name; return node
-    }
-    if e.kind == EXPR_STRING { return make_string_expr(e.str_val, e.line, e.col) }
-    if e.kind == EXPR_BOOL { return make_bool_expr(e.bool_val, e.line, e.col) }
-    if e.kind == EXPR_NULL { return make_null_expr(e.line, e.col) }
-    if e.kind == EXPR_IDENT { return make_ident_expr(e.str_val, e.line, e.col) }
+    if e.kind == EXPR_INT { mut node = make_int_expr(e.int_val, e.line, e.col); node.str_val = e.str_val; node.type_name = e.type_name; return node }
+    if e.kind == EXPR_FLOAT { mut node = make_float_expr(e.float_val, e.line, e.col); node.str_val = e.str_val; node.type_name = e.type_name; return node }
+    if e.kind == EXPR_STRING { return make_string_expr(e.str_val, e.line, e.col) }; if e.kind == EXPR_BOOL { return make_bool_expr(e.bool_val, e.line, e.col) }
+    if e.kind == EXPR_NULL { return make_null_expr(e.line, e.col) }; if e.kind == EXPR_IDENT { return make_ident_expr(e.str_val, e.line, e.col) }
 
     if e.kind == EXPR_BINARY { return make_binary_expr(mono_clone_expr(m, e.left, scope, params, args), e.op, mono_clone_expr(m, e.right, scope, params, args), e.line, e.col) }
     if e.kind == EXPR_UNARY { return make_unary_expr(e.op, mono_clone_expr(m, e.operand, scope, params, args), e.line, e.col) }
@@ -247,15 +243,11 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
     if e.kind == EXPR_INDEX { return make_index_expr(mono_clone_expr(m, e.target, scope, params, args), mono_clone_expr(m, e.index, scope, params, args), e.line, e.col) }
     if e.kind == EXPR_CAST {
         let sub = mono_clone_expr(m, e.operand, scope, params, args)
-        mut tt = mono_subst(e.type_name, params, args)
-        mono_check_type(m, tt)
-        tt = mono_normalize_type(tt)
+        mut tt = mono_subst(e.type_name, params, args); mono_check_type(m, tt); tt = mono_normalize_type(tt)
         return make_cast_expr(sub, tt, e.line, e.col)
     }
     if e.kind == EXPR_STRUCT_LIT {
-        mut stype = mono_subst(e.type_name, params, args)
-        mono_check_type(m, stype)
-        stype = mono_normalize_type(stype)
+        mut stype = mono_subst(e.type_name, params, args); mono_check_type(m, stype); stype = mono_normalize_type(stype)
         mut cur = e.first_init
         mut first_fi: @FieldInit = null
         mut last_fi: @FieldInit = null
@@ -370,6 +362,14 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
             }
         }
         if callee != null and callee.kind == EXPR_IDENT {
+            if callee.str_val == "field_count" or callee.str_val == "field_name" or callee.str_val == "field_type" {
+                if first_a != null {
+                    if first_a.kind == EXPR_IDENT { first_a.str_val = mono_subst(first_a.str_val, params, args) }
+                    else if first_a.kind == EXPR_ADDRESS_OF and first_a.operand != null and first_a.operand.kind == EXPR_IDENT {
+                        first_a.operand.str_val = mono_subst(first_a.operand.str_val, params, args)
+                    }
+                }
+            }
             let fn_tmpl = mono_find_template(m, callee.str_val)
             if fn_tmpl != null and fn_tmpl.kind == DECL_FUNCTION {
                 mut call_targs = e.type_name

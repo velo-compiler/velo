@@ -1,0 +1,157 @@
+// Compile-time struct reflection argument checks (field_count, field_name, field_type).
+use sys.io
+use sys.mem
+use "type_checker.vl"
+use "symbol_table.vl"
+use "../frontend/token.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+
+act is_reflect_builtin(name: string) -> bool {
+    if name == null { return false }
+    return name == "field_count" or name == "field_name" or name == "field_type"
+}
+
+act check_reflect_bare_constant(st: @SymbolTable, expr: @ExprNode) -> string {
+    mut sb = create_sb(96)
+    sb_append_str(@sb, "reflection intrinsic '")
+    sb_append_str(@sb, expr.str_val)
+    sb_append_str(@sb, "' must be called with parentheses: ")
+    sb_append_str(@sb, expr.str_val)
+    sb_append_str(@sb, "(...)")
+    report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+    st.error_count += 1
+    return "unknown"
+}
+
+act extract_type_arg_name(expr: @ExprNode) -> string {
+    if expr == null { return null }
+    if expr.kind == EXPR_IDENT {
+        return strip_pointer_prefix(expr.str_val)
+    }
+    if expr.kind == EXPR_INDEX and expr.target != null and expr.target.kind == EXPR_IDENT {
+        let base = strip_pointer_prefix(expr.target.str_val)
+        let idx = extract_type_arg_name(expr.index)
+        if idx != null {
+            mut sb = create_sb(str.len(base) + str.len(idx) + 2)
+            sb_append_str(@sb, base); sb_append_char(@sb, '_'); sb_append_str(@sb, idx)
+            return sb_to_string(@sb)
+        }
+    }
+    if expr.kind == EXPR_ADDRESS_OF {
+        mut cur = expr
+        loop cur != null and cur.kind == EXPR_ADDRESS_OF { cur = cur.operand }
+        if cur != null and cur.kind == EXPR_IDENT {
+            return strip_pointer_prefix(cur.str_val)
+        }
+        if cur != null and cur.kind == EXPR_INDEX and cur.target != null and cur.target.kind == EXPR_IDENT {
+            let base = strip_pointer_prefix(cur.target.str_val)
+            let idx = extract_type_arg_name(cur.index)
+            if idx != null {
+                mut sb = create_sb(str.len(base) + str.len(idx) + 2)
+                sb_append_str(@sb, base); sb_append_char(@sb, '_'); sb_append_str(@sb, idx)
+                return sb_to_string(@sb)
+            }
+        }
+    }
+    return null
+}
+
+act get_reflect_const_int(expr: @ExprNode, out_val: @i64) -> bool {
+    if expr == null { return false }
+    if expr.kind == EXPR_INT {
+        out_val[0] = expr.int_val
+        return true
+    }
+    if expr.kind == EXPR_UNARY and expr.op == TOK_MINUS and expr.operand != null and expr.operand.kind == EXPR_INT {
+        out_val[0] = 0 - expr.operand.int_val
+        return true
+    }
+    return false
+}
+
+act check_reflect_builtin(st: @SymbolTable, expr: @ExprNode) -> string {
+    let fn_name = expr.callee.str_val
+    if fn_name == "field_count" {
+        if expr.arg_count != 1 {
+            report_error("semantic", expr.line, expr.col, "field_count expects exactly 1 argument: (Type)")
+            st.error_count += 1
+            return "i32"
+        }
+    } else {
+        if expr.arg_count != 2 {
+            mut sb = create_sb(64)
+            sb_append_str(@sb, fn_name)
+            sb_append_str(@sb, " expects exactly 2 arguments: (Type, index)")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+            st.error_count += 1
+            return "string"
+        }
+    }
+
+    let tname = extract_type_arg_name(expr.first_arg)
+    if tname == null {
+        report_error("semantic", expr.first_arg.line, expr.first_arg.col, "reflection intrinsic expects a struct type as first argument")
+        st.error_count += 1
+        if fn_name == "field_count" { return "i32" } else { return "string" }
+    }
+
+    if is_primitive_type(tname) {
+        mut sb = create_sb(64)
+        sb_append_str(@sb, "'")
+        sb_append_str(@sb, tname)
+        sb_append_str(@sb, "' is not a struct")
+        report_error("semantic", expr.first_arg.line, expr.first_arg.col, sb_to_string(@sb))
+        st.error_count += 1
+        if fn_name == "field_count" { return "i32" } else { return "string" }
+    }
+
+    let st_sym = find_struct(st, tname)
+    if st_sym == null {
+        mut sb = create_sb(64)
+        sb_append_str(@sb, "unknown struct '")
+        sb_append_str(@sb, tname)
+        sb_append_str(@sb, "'")
+        report_error("semantic", expr.first_arg.line, expr.first_arg.col, sb_to_string(@sb))
+        st.error_count += 1
+        if fn_name == "field_count" { return "i32" } else { return "string" }
+    }
+
+    if fn_name == "field_count" {
+        return "i32"
+    }
+
+    let idx_node = expr.first_arg.next
+    let idx_t = infer_expr_type(st, idx_node)
+    mut const_val: i64 = 0
+    let is_const = get_reflect_const_int(idx_node, @const_val)
+
+    if not is_const and idx_t != "i8" and idx_t != "i16" and idx_t != "i32" and idx_t != "i64" and idx_t != "u8" and idx_t != "u16" and idx_t != "u32" and idx_t != "u64" and idx_t != "usize" and idx_t != "isize" {
+        mut sb = create_sb(80)
+        sb_append_str(@sb, "field index must be an integer (got ")
+        sb_append_str(@sb, idx_t)
+        sb_append_str(@sb, ")")
+        report_error("semantic", idx_node.line, idx_node.col, sb_to_string(@sb))
+        st.error_count += 1
+        return "string"
+    }
+
+    if is_const {
+        if const_val < 0 or (const_val as usize) >= st_sym.field_count {
+            mut sb = create_sb(128)
+            sb_append_str(@sb, "field index out of bounds: ")
+            sb_append_int(@sb, const_val)
+            sb_append_str(@sb, " (struct '")
+            sb_append_str(@sb, tname)
+            sb_append_str(@sb, "' has ")
+            sb_append_int(@sb, st_sym.field_count as i64)
+            sb_append_str(@sb, " fields)")
+            report_error("semantic", idx_node.line, idx_node.col, sb_to_string(@sb))
+            st.error_count += 1
+        }
+    }
+
+    return "string"
+}

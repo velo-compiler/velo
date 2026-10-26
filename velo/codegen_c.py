@@ -9,7 +9,7 @@ from velo.ast_nodes import (
     ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral,
     TypeAliasDecl, TestDecl
 )
-from velo.monomorphize import Monomorphizer, parse_act_type, mangle_act_type, DYN_INT_TYPES, DYN_FLOAT_TYPES
+from velo.monomorphize import Monomorphizer, parse_act_type, mangle_act_type, mangle_type_name, DYN_INT_TYPES, DYN_FLOAT_TYPES
 
 TYPE_MAP = {
     "i8": "i8",
@@ -1073,6 +1073,7 @@ class CCodeGenerator:
 
         self.output = []
         self.struct_defs = {}
+        self.struct_field_decls: Dict[str, List[Field]] = {}
         self.current_scope_types = {}
         self.current_scope_mut = {}
         self.global_types: Dict[str, str] = {}
@@ -2219,10 +2220,16 @@ class CCodeGenerator:
         if isinstance(value, AnonFuncExpr):
             return f"act({', '.join(p.type_name for p in value.params)}) -> {value.return_type}"
         if isinstance(value, Identifier):
+            if value.name in self.current_scope_types:
+                return self.current_scope_types[value.name]
+            if value.name in self.global_types:
+                return self.global_types[value.name]
             if value.name in self.func_decls:
                 fdecl = self.func_decls[value.name]
                 return f"act({', '.join(p.type_name for p in fdecl.params)}) -> {fdecl.return_type}"
-            return self.current_scope_types.get(value.name, "i32")
+            if value.name in ("field_count", "field_name", "field_type"):
+                raise ValueError(f"reflection intrinsic '{value.name}' must be called with parentheses: {value.name}(...)")
+            return "i32"
         if isinstance(value, DerefExpr):
             return self._resolve_expr_type(value)
         if isinstance(value, BinaryExpr):
@@ -2334,6 +2341,10 @@ class CCodeGenerator:
                     return "f32x4"
                 if value.callee.name in ("i32x4", "i32x4_splat"):
                     return "i32x4"
+                if value.callee.name == "field_count":
+                    return "i32"
+                if value.callee.name in ("field_name", "field_type"):
+                    return "string"
                 if value.callee.name in self.func_return_types:
                     return self.func_return_types[value.callee.name]
             elif isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier):
@@ -2423,7 +2434,13 @@ class CCodeGenerator:
         if isinstance(expr, MapLiteral):
             return self._infer_raw_velo_type(expr)
         if isinstance(expr, Identifier):
-            return self.current_scope_types.get(expr.name, "i32")
+            if expr.name in self.current_scope_types:
+                return self.current_scope_types[expr.name]
+            if expr.name in self.global_types:
+                return self.global_types[expr.name]
+            if expr.name in ("field_count", "field_name", "field_type"):
+                raise ValueError(f"reflection intrinsic '{expr.name}' must be called with parentheses: {expr.name}(...)")
+            return "i32"
         elif isinstance(expr, VariantExpr):
             if expr.kind_name: return expr.kind_name
             return self.variant_to_kind.get(expr.variant_name, "i32")
@@ -2580,6 +2597,10 @@ class CCodeGenerator:
                     return "f32x4"
                 if expr.callee.name in ("i32x4", "i32x4_splat"):
                     return "i32x4"
+                if expr.callee.name == "field_count":
+                    return "i32"
+                if expr.callee.name in ("field_name", "field_type"):
+                    return "string"
                 if expr.callee.name in self.func_return_types:
                     return self.func_return_types[expr.callee.name]
                 callee_type = self.current_scope_types.get(expr.callee.name)
@@ -2761,6 +2782,10 @@ class CCodeGenerator:
         elif isinstance(expr, BoolLiteral):
             return "true" if expr.value else "false"
         elif isinstance(expr, Identifier):
+            if expr.name in self.current_scope_types or expr.name in self.global_types or expr.name in self.func_decls:
+                return expr.name
+            if expr.name in ("field_count", "field_name", "field_type"):
+                raise ValueError(f"reflection intrinsic '{expr.name}' must be called with parentheses: {expr.name}(...)")
             return expr.name
         elif isinstance(expr, AddressOf):
             sub = self._emit_expression(expr.operand)
@@ -3204,6 +3229,9 @@ class CCodeGenerator:
 
             if isinstance(expr.callee, Identifier) and expr.callee.name in ("f32x4", "f32x4_splat", "i32x4", "i32x4_splat"):
                 return self._lower_simd_call(expr.callee.name, expr.args)
+
+            if isinstance(expr.callee, Identifier) and expr.callee.name in ("field_count", "field_name", "field_type"):
+                return self._lower_field_reflection_call(expr.callee.name, expr.args, getattr(expr, "type_args", None))
 
             # 5.2: shelf element types must string-match across call boundaries —
             # a silent VeloShelf↔VeloShelf pass-through would corrupt reads (esz)
@@ -3748,6 +3776,75 @@ class CCodeGenerator:
         elif isinstance(expr, Identifier):
             return expr.name
         return "void"
+
+    def _lower_field_reflection_call(self, name: str, args: List[Expr], type_args: Optional[List[str]] = None) -> str:
+        if name == "field_count":
+            if len(args) != 1:
+                raise ValueError("field_count expects exactly 1 argument: (Type)")
+        else:
+            if len(args) != 2:
+                raise ValueError(f"{name} expects exactly 2 arguments: (Type, index)")
+
+        arg0 = args[0]
+        tname = self._extract_type_name(arg0).lstrip("@")
+        if not tname or tname == "void":
+            if isinstance(arg0, Identifier):
+                tname = arg0.name.lstrip("@")
+        if not tname or tname == "void":
+            raise ValueError("reflection intrinsic expects a struct type as first argument")
+
+        if "[" in tname:
+            tname = mangle_type_name(tname)
+
+        PRIMITIVE_NAMES = {
+            "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64",
+            "f32", "f64", "bool", "usize", "isize", "string", "void", "dyn",
+            "f32x4", "i32x4", "Allocator", "Thread", "Mutex", "File"
+        }
+        if tname in PRIMITIVE_NAMES:
+            raise ValueError(f"'{tname}' is not a struct")
+
+        if tname not in self.struct_field_decls:
+            raise ValueError(f"unknown struct '{tname}'")
+
+        fields = self.struct_field_decls[tname]
+        count = len(fields)
+
+        if name == "field_count":
+            return str(count)
+
+        idx_expr = args[1]
+        idx_type = self._resolve_expr_type(idx_expr)
+        if idx_type not in ("i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "usize", "isize") and not isinstance(idx_expr, IntLiteral):
+            raise ValueError(f"field index must be an integer (got {idx_type})")
+
+        def _get_const_int(e: Expr) -> Optional[int]:
+            if isinstance(e, IntLiteral):
+                return e.value
+            if isinstance(e, UnaryExpr) and e.op == "-" and isinstance(e.operand, IntLiteral):
+                return -e.operand.value
+            return None
+
+        const_idx = _get_const_int(idx_expr)
+        if const_idx is not None:
+            if const_idx < 0 or const_idx >= count:
+                raise ValueError(f"field index out of bounds: {const_idx} (struct '{tname}' has {count} fields)")
+            if name == "field_name":
+                return f'"{fields[const_idx].name}"'
+            else:
+                return f'"{fields[const_idx].type_name}"'
+
+        idx_code = self._emit_expression(idx_expr)
+        if name == "field_name":
+            names_arr = ", ".join(f'"{f.name}"' for f in fields)
+            if count == 0:
+                return '""'
+            return f'((const char*[]){{ {names_arr} }})[(int)({idx_code})]'
+        else:
+            types_arr = ", ".join(f'"{f.type_name}"' for f in fields)
+            if count == 0:
+                return '""'
+            return f'((const char*[]){{ {types_arr} }})[(int)({idx_code})]'
 
     def _lower_io_call(self, member: str, args: List[Expr]) -> str:
         nl_char = "\n" if member == "println" else ""

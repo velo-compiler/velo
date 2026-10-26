@@ -838,6 +838,16 @@ class Monomorphizer:
                     operand=Identifier(name=concrete_type, line=expr.args[0].operand.line, col=expr.args[0].operand.col),
                     line=expr.args[0].line, col=expr.args[0].col)
 
+            # Reflection intrinsics (field_count, field_name, field_type):
+            # First argument is a struct type symbol (T or @T) that must be substituted.
+            if isinstance(new_callee, Identifier) and new_callee.name in ("field_count", "field_name", "field_type"):
+                if new_args:
+                    arg0 = new_args[0]
+                    if isinstance(arg0, Identifier) and arg0.name in subst:
+                        new_args[0] = Identifier(name=subst[arg0.name], line=arg0.line, col=arg0.col)
+                    elif isinstance(arg0, AddressOf) and isinstance(arg0.operand, Identifier) and arg0.operand.name in subst:
+                        new_args[0] = AddressOf(operand=Identifier(name=subst[arg0.operand.name], line=arg0.operand.line, col=arg0.operand.col), line=arg0.line, col=arg0.col)
+
             if isinstance(new_callee, Identifier) and new_callee.name in self.generic_funcs:
                 template_name = new_callee.name
                 template = self.generic_funcs[template_name]
@@ -1040,6 +1050,10 @@ class Monomorphizer:
                     return "f32x4"
                 if expr.callee.name in ("i32x4", "i32x4_splat"):
                     return "i32x4"
+                if expr.callee.name == "field_count":
+                    return "i32"
+                if expr.callee.name in ("field_name", "field_type"):
+                    return "string"
                 if expr.callee.name in self.func_return_types:
                     return self.func_return_types[expr.callee.name]
                 if expr.callee.name in self.generic_funcs:

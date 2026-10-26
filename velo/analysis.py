@@ -593,6 +593,15 @@ class VeloAnalysis:
         if name == "assert":
             md = "**builtin** `assert(cond: bool, msg: string = null) -> void`  \nAsserts that a condition holds. In test runs, fails the test without aborting the suite."
             return {"contents": {"kind": "markdown", "value": md}, "range": self._span_range(span)}
+        if name == "field_count":
+            md = "**builtin** `field_count(Type) -> i32`  \nReturns the compile-time number of fields declared in the struct."
+            return {"contents": {"kind": "markdown", "value": md}, "range": self._span_range(span)}
+        if name == "field_name":
+            md = "**builtin** `field_name(Type, index: i32) -> string`  \nReturns the compile-time name of the struct field at index."
+            return {"contents": {"kind": "markdown", "value": md}, "range": self._span_range(span)}
+        if name == "field_type":
+            md = "**builtin** `field_type(Type, index: i32) -> string`  \nReturns the compile-time type name of the struct field at index."
+            return {"contents": {"kind": "markdown", "value": md}, "range": self._span_range(span)}
         doc = self.documents[uri]
         try:
             index = self._index(doc["path"])
@@ -725,6 +734,9 @@ class VeloAnalysis:
             items.append({"label": kw, "kind": 14})
         if not token or "assert".startswith(token):
             items.append({"label": "assert", "kind": 3, "detail": "builtin"})
+        for rf in ("field_count", "field_name", "field_type"):
+            if not token or rf.startswith(token):
+                items.append({"label": rf, "kind": 3, "detail": "builtin"})
         try:
             index = self._index(doc["path"])
         except Exception:

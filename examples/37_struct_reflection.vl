@@ -1,0 +1,72 @@
+// Compile-time struct field metadata reflection builtins:
+// - field_count(T): returns integer constant of the number of fields in struct T.
+// - field_name(T, index): returns string literal of the field name at index.
+// - field_type(T, index): returns string literal of the field type name at index.
+use sys.io
+
+data Point {
+    x: f32
+    y: f32
+}
+
+data Empty {
+}
+
+data Person {
+    name: string
+    age: i32
+    active: bool
+}
+
+act inspect_struct[T](target: @T) {
+    io.println("--- Inspecting Struct ---")
+    let total = field_count(T)
+    io.println("Field count: {total}")
+    mut i: i32 = 0
+    loop i < field_count(T) {
+        let fname = field_name(T, i)
+        let ftype = field_type(T, i)
+        io.println("  field {i}: {fname} -> {ftype}")
+        i += 1
+    }
+}
+
+act main() {
+    io.println("=== Compile-Time Struct Reflection ===")
+
+    // 1. Direct compile-time constants
+    let pt_count = field_count(Point)
+    let pt_f0_name = field_name(Point, 0)
+    let pt_f0_type = field_type(Point, 0)
+    let pt_f1_name = field_name(Point, 1)
+    let pt_f1_type = field_type(Point, 1)
+    io.println("Point fields: {pt_count}")
+    io.println("Point[0]: {pt_f0_name} ({pt_f0_type})")
+    io.println("Point[1]: {pt_f1_name} ({pt_f1_type})")
+
+    // 2. Pointer syntax reflection
+    let ptr_count = field_count(@Point)
+    io.println("@Point fields: {ptr_count}")
+
+    // 3. Empty struct
+    let empty_count = field_count(Empty)
+    io.println("Empty fields: {empty_count}")
+
+    // 4. Multi-field struct dynamic iteration
+    let person_count = field_count(Person)
+    io.println("Person fields: {person_count}")
+    mut i: i32 = 0
+    loop i < field_count(Person) {
+        let fname = field_name(Person, i)
+        let ftype = field_type(Person, i)
+        io.println("Person[{i}]: {fname} as {ftype}")
+        i += 1
+    }
+
+    // 5. Generic inspection
+    mut pt = Point{ x: 10.0, y: 20.0 }
+    inspect_struct[Point](@pt)
+
+    mut p = Person{ name: "Alice", age: 30, active: true }
+    inspect_struct[Person](@p)
+}
