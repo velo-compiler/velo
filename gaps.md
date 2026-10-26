@@ -423,15 +423,38 @@ flowchart TD
   - All 64 `src/**/*.vl` source files verified $\le 397$ lines (`scripts/count_lines.py`).
   - No UTF-8 BOM in any `.vl` file.
 
-#### Task 5.2: Project Build Command (`velo pkg build`)
-* **Problem**: Building a project with dependencies requires manually passing `-l` and `-L` flags and knowing the exact entrypoint path.
-* **Specification**:
-  - Implement `velo pkg build` and `velo pkg run` which automatically discover and parse `velo.pkg` in the current working directory, resolve dependencies, apply native linker flags from `link.libs` and `link.flags`, compile `entry`, and produce the target binary.
-* **Target Files**:
-  - `velo.py`
-  - `src/main.vl`
+#### Task 5.2: Project Build Command (`velo pkg build` / `velo pkg run`) [COMPLETED] ✅
+* **Former Defect**:
+  - Building a project with dependencies required manually passing `-l` and `-L` flags, knowing the exact entrypoint source path, and manually determining target executable destinations. Running a project with arguments required separate manual compilation and invocation steps.
+* **Fix Applied**:
+  - **Manifest Discovery & Resolution**:
+    - Automatic manifest location: accepts explicit path, directory path (auto-discovering `<dir>/velo.pkg`), or defaults to `./velo.pkg`.
+    - Relative entry point resolution: resolves `m.pkg.entry` relative to the manifest directory (`combine_paths(m_dir, m.pkg.entry)` in Stage 2; `os.path.normpath(os.path.join(m_dir, m.pkg.entry))` in Stage 1).
+    - Output binary path resolution: defaults to `bin/<pkg_name>.exe` if `bin/` directory exists, otherwise `<pkg_name>.exe` in project root; honors custom `-o <bin>` when provided.
+  - **Native Linker Flags & Library Forwarding**:
+    - Automatically injects native libraries (`link.libs`, prefixed with `-l` as necessary) and extra compiler/linker flags (`link.flags`) alongside CLI `-l` and `-L` options into GCC and MSVC backend invocations.
+  - **Stage 1 (Python Compiler)**:
+    - In `velo/driver.py`: updated `CompilerDriver.build` and `CompilerDriver.run` to accept `extra_flags: Optional[list] = None` and forward them to GCC/MSVC.
+    - In `velo.py`: implemented `pkg build` and `pkg run` CLI commands with full option flags (`-o`, `--debug`, `--release`, `-O`, `-l`, `-L`, `--cc`, `--unsafe-shelf-index`), entry validation, automated binary placement, and trailing argument forwarding for `pkg run`.
+  - **Stage 2 (Self-Hosted Compiler)**:
+    - Created `src/backend/driver_pkg.vl` (234 lines): implemented `handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32` dispatching `check`, `build`, and `run` subcommands, resolving manifest paths, parsing CLI options, merging linker libraries/flags, building binaries via `build_executable`, and running programs via `assemble_runner_cmd` and `system()`.
+    - In `src/backend/driver_cc.vl`: relocated `resolve_opt_flags` (175 lines <= 397) to enable shared optimization flag computation across compiler and package drivers.
+    - In `src/main.vl`: integrated `use "backend/driver_pkg.vl"`, added usage documentation for `pkg build` and `pkg run`, and delegated `cmd == "pkg"` to `handle_pkg_command` (350 lines <= 397).
+* **Residual Limitation**:
+  - Remote git repository fetching and local dependency cache resolution (`deps` block) are scheduled for subsequent Phase 5 tasks.
 * **Verification**:
-  - Build and run a sample project using `velo pkg build` and `velo pkg run`.
+  - Added 6 dedicated end-to-end and parity tests to `tests/test_manifest.py` (total 19 tests):
+    1. Minimal project build and execution (`mini_calc.exe` created and outputs `CALC_READY: 42`).
+    2. Nested project directory entry resolution and custom output path (`-o custom_nested.exe`).
+    3. Automatic `bin/` directory output detection (`bin/<name>.exe`).
+    4. Linker flag forwarding from `link.flags: ["-O2"]`.
+    5. Nonexistent entry source file reporting (`Entry source file not found: ...`).
+    6. CLI usage and help parity across Stage 1 and Stage 2 (`velo pkg help`).
+  - Rebuilt 3-stage bootstrap chain (`Gen1 -> Gen2 -> Gen3 -> bin/velo.exe`) with bit-for-bit SHA-256 determinism verified (`2901667ea8a763b3009deeea28f02ef431c070a073703f5b24a2efb72c13463d`).
+  - Native test runner passed all 105 tests (`bin/velo.exe test examples/15_native_tests.vl`).
+  - Full pytest test suite passed: 401 passed in 222s.
+  - All 65 `src/**/*.vl` source files strictly $\le 397$ lines (`scripts/count_lines.py`).
+  - No UTF-8 BOM in any `.vl` file.
 
 ---
 

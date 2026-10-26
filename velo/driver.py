@@ -163,6 +163,7 @@ class CompilerDriver:
     def build(self, source_path: str, output_path: Optional[str] = None,
               debug: bool = False, release: bool = False, opt_level: Optional[str] = None,
               libs: Optional[list] = None, lib_dirs: Optional[list] = None,
+              extra_flags: Optional[list] = None,
               is_test: bool = False, cc: str = "gcc") -> str:
         path = Path(source_path).resolve()
         c_code = self.compile_to_c(source_path, is_test=is_test)
@@ -216,6 +217,13 @@ class CompilerDriver:
                     link_flags.append(raw_lib)
             if debug:
                 link_flags.append("/DEBUG")
+
+            if extra_flags:
+                for ef in extra_flags:
+                    if ef.startswith("/link") or ef.startswith("-link") or ef.startswith("/LIBPATH") or ef.startswith("-L") or ef.startswith("-l"):
+                        link_flags.append(ef)
+                    else:
+                        cl_flags.append(ef)
 
             cmd_parts = [
                 cl_exe,
@@ -272,6 +280,8 @@ class CompilerDriver:
         if libs:
             for lib in libs:
                 linker_flags.append(lib if lib.startswith("-l") else f"-l{lib}")
+        if extra_flags:
+            linker_flags.extend(extra_flags)
 
         cmd = [
             gcc,
@@ -293,11 +303,14 @@ class CompilerDriver:
         return str(exe_file)
 
     def run(self, source_path: str, args: Optional[list] = None,
+            output_path: Optional[str] = None,
             debug: bool = False, release: bool = False, opt_level: Optional[str] = None,
             libs: Optional[list] = None, lib_dirs: Optional[list] = None,
+            extra_flags: Optional[list] = None,
             cc: str = "gcc") -> int:
-        exe_path = self.build(source_path, debug=debug, release=release, opt_level=opt_level,
-                              libs=libs, lib_dirs=lib_dirs, cc=cc)
+        exe_path = self.build(source_path, output_path=output_path,
+                              debug=debug, release=release, opt_level=opt_level,
+                              libs=libs, lib_dirs=lib_dirs, extra_flags=extra_flags, cc=cc)
         cmd = [exe_path] + (args or [])
         res = subprocess.run(cmd)
         return res.returncode

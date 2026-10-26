@@ -151,3 +151,25 @@ act assemble_runner_cmd(cc: string, exe_path: string, extra_args: string) -> str
     }
     return sb_to_string(@run_sb)
 }
+
+// 6.2 Optimization Flags & Build Modes
+act resolve_opt_flags(debug_mode: bool, release_mode: bool, opt_level: string) -> string {
+    mut sb = create_sb(64)
+    if opt_level != null and str.len(opt_level) > 0 {
+        sb_append_str(@sb, "-O")
+        sb_append_str(@sb, opt_level)
+    } else if debug_mode {
+        sb_append_str(@sb, "-O0")
+    } else if release_mode {
+        sb_append_str(@sb, "-O3")
+    } else {
+        sb_append_str(@sb, "-O2")
+    }
+    if debug_mode {
+        sb_append_str(@sb, " -g")
+    }
+    if release_mode {
+        sb_append_str(@sb, " -flto")
+    }
+    return sb_to_string(@sb)
+}

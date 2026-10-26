@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import os
 import sys
 import json
 import argparse
@@ -88,6 +89,28 @@ def main():
     pkg_subparsers = pkg_parser.add_subparsers(dest="pkg_command", help="Package action")
     pkg_check_parser = pkg_subparsers.add_parser("check", help="Validate a velo.pkg package manifest")
     pkg_check_parser.add_argument("manifest_path", nargs="?", default="velo.pkg", help="Path to velo.pkg (default: velo.pkg)")
+
+    pkg_build_parser = pkg_subparsers.add_parser("build", help="Build project defined by velo.pkg")
+    pkg_build_parser.add_argument("manifest_path", nargs="?", default="velo.pkg", help="Path to velo.pkg (default: velo.pkg)")
+    pkg_build_parser.add_argument("-o", "--output", help="Path for the output executable")
+    pkg_build_parser.add_argument("--unsafe-shelf-index", action="store_true", help="Lower shelf index reads unguarded")
+    pkg_build_parser.add_argument("--debug", action="store_true", help="Compile with debug symbols (-O0 -g)")
+    pkg_build_parser.add_argument("--release", action="store_true", help="Compile with release optimizations and LTO (-O3 -flto)")
+    pkg_build_parser.add_argument("-O", "--optimize", choices=["0", "1", "2", "3", "s", "fast"], help="GCC optimization level")
+    pkg_build_parser.add_argument("-l", dest="libs", action="append", default=[], help="Link with external library (e.g. -lraylib)")
+    pkg_build_parser.add_argument("-L", dest="lib_dirs", action="append", default=[], help="Add library directory to search path (e.g. -L./lib)")
+    pkg_build_parser.add_argument("--cc", choices=["gcc", "cl"], default="gcc", help="C compiler backend to invoke (default: gcc)")
+
+    pkg_run_parser = pkg_subparsers.add_parser("run", help="Build and run project defined by velo.pkg")
+    pkg_run_parser.add_argument("manifest_path", nargs="?", default="velo.pkg", help="Path to velo.pkg (default: velo.pkg)")
+    pkg_run_parser.add_argument("args", nargs=argparse.REMAINDER, help="Arguments passed to the program")
+    pkg_run_parser.add_argument("--unsafe-shelf-index", action="store_true", help="Lower shelf index reads unguarded")
+    pkg_run_parser.add_argument("--debug", action="store_true", help="Compile with debug symbols (-O0 -g)")
+    pkg_run_parser.add_argument("--release", action="store_true", help="Compile with release optimizations and LTO (-O3 -flto)")
+    pkg_run_parser.add_argument("-O", "--optimize", choices=["0", "1", "2", "3", "s", "fast"], help="GCC optimization level")
+    pkg_run_parser.add_argument("-l", dest="libs", action="append", default=[], help="Link with external library (e.g. -lraylib)")
+    pkg_run_parser.add_argument("-L", dest="lib_dirs", action="append", default=[], help="Add library directory to search path (e.g. -L./lib)")
+    pkg_run_parser.add_argument("--cc", choices=["gcc", "cl"], default="gcc", help="C compiler backend to invoke (default: gcc)")
 
     args = parser.parse_args()
 
@@ -219,6 +242,8 @@ def main():
             sub_cmd = getattr(args, "pkg_command", None) or "check"
             m_path = getattr(args, "manifest_path", "velo.pkg") or "velo.pkg"
             if sub_cmd == "check":
+                if os.path.isdir(m_path):
+                    m_path = os.path.join(m_path, "velo.pkg")
                 try:
                     m = load_manifest(m_path)
                     print(f"[Velo] Valid package manifest: {m.pkg.name} v{m.pkg.version} ({m.pkg.entry})")
@@ -226,6 +251,103 @@ def main():
                 except ManifestError as e:
                     print(str(e), file=sys.stderr)
                     sys.exit(1)
+            elif sub_cmd in ("build", "run"):
+                clean_args = []
+                debug_mode = getattr(args, "debug", False)
+                release_mode = getattr(args, "release", False)
+                opt_level = getattr(args, "optimize", None)
+                cc_backend = getattr(args, "cc", "gcc")
+                libs = list(getattr(args, "libs", []) or [])
+                lib_dirs = list(getattr(args, "lib_dirs", []) or [])
+
+                if sub_cmd == "run":
+                    raw_args = getattr(args, "args", []) or []
+                    if not (os.path.isfile(m_path) or os.path.isdir(m_path) or m_path.endswith(".pkg")) and os.path.isfile("velo.pkg"):
+                        clean_args.append(m_path)
+                        m_path = "velo.pkg"
+
+                    i = 0
+                    while i < len(raw_args):
+                        arg = raw_args[i]
+                        if arg == "--":
+                            clean_args.extend(raw_args[i + 1:])
+                            break
+                        elif arg == "--debug":
+                            debug_mode = True
+                        elif arg == "--release":
+                            release_mode = True
+                        elif arg == "--unsafe-shelf-index":
+                            driver.unsafe_index_flag = True
+                        elif arg == "--cc" and i + 1 < len(raw_args):
+                            cc_backend = raw_args[i + 1]
+                            i += 1
+                        elif arg.startswith("--cc="):
+                            cc_backend = arg[5:]
+                        elif arg.startswith("-O"):
+                            opt_level = arg[2:]
+                        elif arg == "-l" and i + 1 < len(raw_args):
+                            libs.append(raw_args[i + 1])
+                            i += 1
+                        elif arg.startswith("-l"):
+                            libs.append(arg[2:])
+                        elif arg == "-L" and i + 1 < len(raw_args):
+                            lib_dirs.append(raw_args[i + 1])
+                            i += 1
+                        elif arg.startswith("-L"):
+                            lib_dirs.append(arg[2:])
+                        else:
+                            clean_args.append(arg)
+                        i += 1
+
+                if os.path.isdir(m_path):
+                    m_path = os.path.join(m_path, "velo.pkg")
+
+                try:
+                    m = load_manifest(m_path)
+                except ManifestError as e:
+                    print(str(e), file=sys.stderr)
+                    sys.exit(1)
+
+                m_dir = os.path.dirname(m_path) or "."
+                entry_file = os.path.normpath(os.path.join(m_dir, m.pkg.entry))
+                if not os.path.exists(entry_file):
+                    print(f"[Velo Error] Entry source file not found: {entry_file}", file=sys.stderr)
+                    sys.exit(1)
+
+                if cc_backend not in ("gcc", "cl"):
+                    print(f"[Velo Error] Unknown C compiler backend '{cc_backend}'. Expected 'gcc' or 'cl'.", file=sys.stderr)
+                    sys.exit(1)
+
+                if debug_mode and release_mode:
+                    print("[Velo Error] Cannot specify both --debug and --release", file=sys.stderr)
+                    sys.exit(1)
+
+                merged_libs = list(libs) + list(m.link.libs)
+                extra_flags = list(m.link.flags)
+
+                if sub_cmd == "build":
+                    out_path = getattr(args, "output", None)
+                    if not out_path:
+                        bin_dir = os.path.join(m_dir, "bin")
+                        exe_ext = ".exe" if sys.platform == "win32" else ""
+                        if os.path.isdir(bin_dir):
+                            out_path = os.path.join(bin_dir, f"{m.pkg.name}{exe_ext}")
+                        else:
+                            out_path = os.path.join(m_dir, f"{m.pkg.name}{exe_ext}")
+                    exe_path = driver.build(entry_file, out_path,
+                                            debug=debug_mode, release=release_mode,
+                                            opt_level=opt_level, libs=merged_libs,
+                                            lib_dirs=lib_dirs, extra_flags=extra_flags,
+                                            cc=cc_backend)
+                    print("[Velo] Successfully built binary!")
+                    sys.exit(0)
+                else:
+                    exit_code = driver.run(entry_file, clean_args,
+                                           debug=debug_mode, release=release_mode,
+                                           opt_level=opt_level, libs=merged_libs,
+                                           lib_dirs=lib_dirs, extra_flags=extra_flags,
+                                           cc=cc_backend)
+                    sys.exit(exit_code)
             else:
                 print(f"[Velo Error] Unknown 'pkg' subcommand '{sub_cmd}'.", file=sys.stderr)
                 sys.exit(1)
