@@ -39,12 +39,20 @@ flowchart TD
     P3 --> P4["Phase 4: Compile-Time Struct Reflection\n(Field metadata builtins, compile-time unrolled iteration)"]
     P4 --> P5["Phase 5: Package Manifest & Dependency Manager (velo pkg)\n(velo.toml format, multi-module packaging, dependency cache)"]
     P5 --> P6["Phase 6: Multi-Arena Memory Management & Scaling\n(Custom arena creation, heap-spilling fallback)"]
+    P6 --> P7["Phase 7: Dynamic Collections Lifecycle & Memory Integrity\n(heap shelf buffer leak fix, shelf.destroy, heap map)"]
+    P7 --> P8["Phase 8: String Subsystem Modernization & Safety\n(zone-allocated strings, in-memory string interpolation str.format)"]
+    P8 --> P9["Phase 9: Source-Level Debugger Support\n(#line preprocessor directives for GDB / VS Debugger)"]
+    P9 --> P10["Phase 10: Compiler Architecture & Bootstrapping Modernization\n(400-line modular relief, portable bootstrap.c snapshot)"]
     style P1 fill:#e53935,stroke:#b71c1c,color:#ffffff
     style P2 fill:#fb8c00,stroke:#e65100,color:#ffffff
     style P3 fill:#1e88e5,stroke:#0d47a1,color:#ffffff
     style P4 fill:#43a047,stroke:#1b5e20,color:#ffffff
     style P5 fill:#8e24aa,stroke:#4a148c,color:#ffffff
     style P6 fill:#00acc1,stroke:#006064,color:#ffffff
+    style P7 fill:#d32f2f,stroke:#b71c1c,color:#ffffff
+    style P8 fill:#f57c00,stroke:#e65100,color:#ffffff
+    style P9 fill:#1976d2,stroke:#0d47a1,color:#ffffff
+    style P10 fill:#7b1fa2,stroke:#4a148c,color:#ffffff
 ```
 
 ---
@@ -537,3 +545,152 @@ flowchart TD
   - `python velo.py build apps/velostudio/main.vl -o bin/velostudio_py.exe -l raylib -l opengl32 -l gdi32 -l winmm -l sqlite3`: verified dual-compiler parity.
   - `py -3 -m pytest tests/test_velostudio.py -v`: 3/3 tests passed.
 
+---
+
+### Phase 7: Dynamic Collections Lifecycle & Memory Integrity
+
+#### Task 7.1: Reallocation Leak Fix for `heap shelf` & Explicit Teardown (`shelf.free` / `shelf.destroy`)
+* **Problem**:
+  - In `velo/runtime/velo_runtime.h:1536-1545`, `velo_shelf_reserve()` doubles shelf capacity by allocating a new buffer with `velo_shelf_alloc(s, s->esz, new_cap)`. When `s->src` is `VELO_SHELF_HEAP_SRC` (`heap shelf`), this allocates persistent heap memory via `velo_heap_alloc`. It copies live elements, but never calls `velo_heap_free()` on the old buffer `s->data`. Over repeated appends and insertions, every intermediate power-of-two buffer (4, 8, 16, ..., 1024) remains abandoned on `g_velo_heap_active`.
+  - Furthermore, the language lacks an explicit destructor builtin (`shelf.destroy(@s)` or `shelf.free(@s)`), meaning long-lived heap shelves have no mechanism to return their allocated memory to the system heap upon completion.
+* **Specification**:
+  - In `velo/runtime/velo_runtime.h`:
+    * In `velo_shelf_reserve(VeloShelf* s)`, preserve `void* old_data = s->data;`. After successful copy into `next`, if `s->src != NULL && old_data != NULL`, call `velo_heap_free(old_data)` before reassigning `s->data = next`.
+    * Implement `velo_shelf_free(VeloShelf* s)`: if `s->src != NULL && s->data != NULL`, call `velo_heap_free(s->data)`. Reset `s->data = NULL; s->len = 0; s->cap = 0;`.
+  - In Stage 1 (`velo/analysis.py`, `velo/monomorphize.py`, `velo/codegen_c.py`):
+    * Expose `shelf.destroy(s: @shelf[T])` and `shelf.free(s: @shelf[T])` builtins, lowering to `velo_shelf_free(&s)` or `velo_shelf_free(s)`.
+  - In Stage 2 (`src/analysis/shelf_checks.vl`, `src/backend/shelf_gen.vl`, `src/analysis/type_checker.vl`):
+    * Register and validate `shelf.destroy` and `shelf.free` calls with pointer parameter verification.
+* **Target Files**:
+  - `velo/runtime/velo_runtime.h`
+  - `velo/analysis.py`
+  - `velo/monomorphize.py`
+  - `velo/codegen_c.py`
+  - `src/analysis/shelf_checks.vl`
+  - `src/backend/shelf_gen.vl`
+  - `src/backend/shelf_calls_gen.vl`
+* **Verification**:
+  - Add unit test asserting `velo_heap_used()` is 0 after inserting 10,000 elements into a `heap shelf[i32]` and calling `shelf.destroy(@s)`.
+  - Verify dual-compiler parity and bootstrap determinism.
+
+#### Task 7.2: Parameterized and Heap-Backed Maps (`heap map[K, V]` & `map.destroy`)
+* **Problem**:
+  - In `velo/runtime/velo_runtime.h:2044`, `velo_map_regen()` strictly allocates new key arrays, value arrays, and 64-bit hash arrays via `velo_mem_alloc()` (the active `zone` bump arena).
+  - There is no `heap map[K, V]` syntax or `@Allocator` handle parameterization.
+  - Any long-lived hash map that undergoes rehashes and capacity growth (`velo_map_grow`) abandons all previous hash and key/value arrays as dead arena watermark bloat. Furthermore, maps cannot outlive the zone block in which they are created.
+* **Specification**:
+  - In `VeloMap`, add `VeloAllocator src` field (NULL for active zone arena, non-NULL for persistent heap or custom arena).
+  - In `velo_map_regen()`, route allocation through `velo_shelf_alloc`-style allocator selector: if `m->src != NULL`, allocate via `velo_heap_alloc()` (or custom allocator) and call `velo_heap_free()` on previous `m->keys`, `m->vals`, and `m->hashes` buffers.
+  - Support `heap map[K, V]` syntax in Stage 1 and Stage 2 parsers and type checkers, matching the `heap shelf[T]` design.
+  - Implement `map.destroy(@m)` / `map.free(@m)` builtins to reclaim table storage on demand.
+* **Target Files**:
+  - `velo/runtime/velo_runtime.h`
+  - `velo/parser.py`
+  - `velo/codegen_c.py`
+  - `src/frontend/parser_decl.vl`
+  - `src/analysis/map_checks.vl`
+  - `src/backend/map_gen.vl`
+* **Verification**:
+  - Test `heap map[string, i32]` inserting 5,000 keys, verifying map survival past zone exit and zero heap leaks after `map.destroy(@m)`.
+
+---
+
+### Phase 8: String Subsystem Modernization & Safety
+
+#### Task 8.1: Arena-Aware String Allocation Primitives (`zone` Strings vs. Heap Strings)
+* **Problem**:
+  - In `velo/runtime/velo_runtime.h:1427-1463`, all basic string manipulation functions (`str.concat`, `str.to_upper`, `str.to_lower`, `str.replace`, `str.trim`) unconditionally allocate via `velo_heap_alloc()` (persistent heap).
+  - When used inside a 60 FPS game loop or request handler running under a `zone { ... }` block, temporary string operations (e.g. `let label = str.concat("Player: ", name)`) silently leak heap memory every frame unless the developer writes manual `defer mem.free(label)` for every single string transformation.
+* **Specification**:
+  - Split or parameterize string functions:
+    * Standard `str.concat`, `str.to_upper`, `str.to_lower`, `str.replace`, and `str.trim` allocate in the active `zone` arena (`velo_mem_alloc`), guaranteeing zero leaks and automatic 1-cycle O(1) reclamation on zone exit.
+    * Provide explicit persistent heap counterparts (`str.heap_concat`, `str.heap_to_upper`, etc.) or allocator-parameterized variants (`str.concat_with(allocator, a, b)`) for strings that must outlive the immediate zone scope.
+* **Target Files**:
+  - `velo/runtime/velo_runtime.h`
+  - `velo/analysis.py`
+  - `velo/codegen_c.py`
+  - `src/analysis/str_checks.vl`
+  - `src/backend/codegen_expr.vl`
+* **Verification**:
+  - Add test executing 10,000 `str.concat` operations inside a `zone { }` block, asserting `velo_heap_used()` remains 0 before and after zone exit.
+
+#### Task 8.2: General In-Memory String Interpolation & Formatting (`str.format`)
+* **Problem**:
+  - String interpolation syntax `"{expr}"` is strictly lowerable within `sys.io` print calls (`io.println`, `io.print`) by emitting C `printf` calls.
+  - In all other expression positions (e.g. `let s = "Status: {code}"`), the string is emitted as a raw C string literal with literal `{code}` text.
+  - Building dynamic formatted strings in memory currently requires manual chained `str.concat` calls, ASCII serializers (`int_to_str`), or manual string builders.
+* **Specification**:
+  - Support string interpolation in general expression positions:
+    * When a string literal containing `{expr}` appears in variable assignments, function arguments, or return statements, parse balanced `{...}` expressions and lower to an arena-backed string formatting routine (`velo_str_format` or dynamic string builder).
+    * Provide `str.format(fmt: string, ...)` helper with compile-time or runtime format checking.
+* **Target Files**:
+  - `velo/codegen_c.py`
+  - `src/backend/codegen_expr.vl`
+  - `src/backend/codegen_io.vl`
+  - `src/frontend/parser_expr.vl`
+* **Verification**:
+  - Test `let msg = "Hello {name}, score={score + 10}!"` returning a valid formatted string in memory across Stage 1 and Stage 2 without invoking `io.println`.
+
+---
+
+### Phase 9: Source-Level Debugger Support (`#line` Directives)
+
+#### Task 9.1: C Preprocessor `#line` Directives for Native Debugging
+* **Problem**:
+  - The emitted C99 translation units in `.velo_cache/` do not emit `#line` preprocessor directives mapping C statements back to original `.vl` source file paths and line numbers.
+  - When stepping through code with GDB, LLDB, or Visual Studio Debugger, or when inspecting stack traces during a crash or assertion failure, the debugger points into generated C code rather than the developer's `.vl` source file.
+* **Specification**:
+  - In `velo/codegen_c.py` (Stage 1) and `src/backend/codegen_stmt.vl` / `src/backend/codegen_c.vl` (Stage 2):
+    * Emit `#line <stmt.line> "<source_file_path>"` before function declarations, control flow statements, and expression statements.
+    * Normalize Windows backslashes in paths to escaped forward slashes to ensure C preprocessor compatibility across GCC, Clang, and MSVC.
+    * Provide `--no-line-directives` flag to CLI drivers for inspecting clean raw C output without preprocessor noise.
+* **Target Files**:
+  - `velo/codegen_c.py`
+  - `src/backend/codegen_c.vl`
+  - `src/backend/codegen_stmt.vl`
+  - `src/backend/driver.vl`
+* **Verification**:
+  - Verify generated C code includes accurate `#line` directives.
+  - Run binary with intentional crash under GDB/MSVC and assert the reported stack frame points to `test.vl:<line>`.
+
+---
+
+### Phase 10: Compiler Architecture & Bootstrapping Modernization
+
+#### Task 10.1: Relieve Compiler 400-Line File Limit Saturation via Structural Re-modularization
+* **Problem**:
+  - The architectural rule that no compiler source file in `src/**/*.vl` may exceed 400 lines (`scripts/count_lines.py`) has produced severe saturation. Currently, 10 core compiler files are hovering between 394 and 397 lines (e.g. `misc_checks.vl`, `map_checks.vl`, `codegen_expr.vl`, `codegen_stmt.vl`, `parser_expr.vl`, `monomorphize.vl`, `shelf_checks.vl`, `type_checker.vl`, `lexer.vl`, `parser_decl.vl`).
+  - This 3-to-6 line margin creates artificial friction and requires awkward code compression or frequent micro-file fragmentation whenever any bug fix is applied.
+* **Specification**:
+  - Strategically re-modularize saturated compiler modules:
+    * Split `parser_expr.vl` (395 lines) into `parser_expr_pratt.vl` (precedence climbing) and `parser_expr_primary.vl` (atoms, calls, members).
+    * Split `type_checker.vl` (394 lines) into `type_checker_decl.vl` and `type_checker_expr.vl`.
+    * Split `codegen_expr.vl` (395 lines) by extracting binary/unary operators into `codegen_ops.vl`.
+    * Ensure all core compiler source files maintain a comfortable buffer ($\le 320$ lines per file).
+* **Target Files**:
+  - `src/frontend/parser_expr.vl`
+  - `src/analysis/type_checker.vl`
+  - `src/backend/codegen_expr.vl`
+  - `src/backend/codegen_stmt.vl`
+* **Verification**:
+  - Run `python scripts/count_lines.py` and verify all 65+ files are $\le 350$ lines, with no file exceeding 370 lines.
+  - Full test suite passing and bootstrap determinism verified.
+
+#### Task 10.2: Portable C Snapshot Bootstrapping (`bootstrap.c`) & Python Transpiler Retirement
+* **Problem**:
+  - The requirement in `AGENTS.md` that every single language change, new feature, and bug fix must land simultaneously in both the Python Stage 1 transpiler (`velo/`, 9,642 LOC with a 4,087-line `codegen_c.py` monolith) and the self-hosted Stage 2 compiler (`src/`, 16,152 LOC) creates a massive dual-compiler maintenance tax.
+  - Now that Stage 2 is 100% self-hosted, deterministic, and supports both GCC and MSVC natively, retaining the Python compiler as a mandatory co-implementation is obsolete technical debt.
+* **Specification**:
+  - Adopt the battle-tested bootstrapping model of Zig, Nim, and Lua:
+    * Emit a single-file, zero-dependency `bootstrap.c` snapshot from the self-hosted compiler (`bin/velo.exe emit-c src/main.vl -o bootstrap.c`).
+    * Check in `bootstrap.c` as the canonical root of the bootstrap chain.
+    * Provide a standalone shell/batch script (`scripts/bootstrap.bat` / `scripts/bootstrap.sh`) that compiles `bootstrap.c` with ambient GCC, Clang, or MSVC into `bin/velo.exe` in under 2 seconds.
+    * Move `velo/` to `legacy/velo_stage1/` or freeze it as a reference tool, releasing developers from the double-implementation requirement.
+* **Target Files**:
+  - `bootstrap.c`
+  - `scripts/bootstrap.bat`
+  - `scripts/bootstrap.sh`
+  - `AGENTS.md`
+* **Verification**:
+  - Delete `bin/velo.exe` and rebuild the entire compiler toolchain using only `bootstrap.c` and GCC/MSVC without Python.
+  - Run full test suite with the newly bootstrapped compiler and verify 100% test pass rate.
