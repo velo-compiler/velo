@@ -962,7 +962,32 @@ static inline bool velo_os_set_env(const char* key, const char* val) {
 #define VELO_ATOMIC_ADD64(p, v) ((size_t)((unsigned long long)__sync_fetch_and_add((long long volatile*)(p), (long long)(v))))
 #endif
 
+#define VELO_HEAP_MAGIC 0x56454C4F48454150ULL
+
 static size_t g_velo_heap_active = 0;
+
+static inline bool velo_is_in_zone(const void* ptr) {
+    if (!ptr) return false;
+    const uint8_t* p = (const uint8_t*)ptr;
+    VeloZoneArena* z = velo_zone_active();
+    if (z && z->base && p >= z->base && p < z->base + z->cap) return true;
+    if (z) {
+        const VeloZoneChunk* cur = z->chunks;
+        while (cur) {
+            if (p >= cur->base && p < cur->base + cur->cap) return true;
+            cur = cur->next;
+        }
+    }
+    if (g_velo_zone_tls_default && g_velo_zone_tls_default != z) {
+        if (g_velo_zone_tls_default->base && p >= g_velo_zone_tls_default->base && p < g_velo_zone_tls_default->base + g_velo_zone_tls_default->cap) return true;
+        const VeloZoneChunk* cur = g_velo_zone_tls_default->chunks;
+        while (cur) {
+            if (p >= cur->base && p < cur->base + cur->cap) return true;
+            cur = cur->next;
+        }
+    }
+    return false;
+}
 
 static inline void* velo_heap_alloc(size_t size, size_t count) {
     size_t total = size * count;
@@ -973,14 +998,20 @@ static inline void* velo_heap_alloc(size_t size, size_t count) {
         exit(1);
     }
     *((size_t*)raw) = total;
+    *((uint64_t*)(raw + sizeof(size_t))) = VELO_HEAP_MAGIC;
     VELO_ATOMIC_ADD64(&g_velo_heap_active, (long long)total);
     return (void*)(raw + header_size);
 }
 
 static inline void velo_heap_free(void* ptr) {
     if (!ptr) return;
+    if (velo_is_in_zone(ptr)) return;
     size_t header_size = (sizeof(size_t) + 15) & ~((size_t)15);
     uint8_t* raw = ((uint8_t*)ptr) - header_size;
+    if (*((uint64_t*)(raw + sizeof(size_t))) != VELO_HEAP_MAGIC) {
+        return;
+    }
+    *((uint64_t*)(raw + sizeof(size_t))) = 0;
     size_t total = *((size_t*)raw);
     size_t prev = VELO_ATOMIC_ADD64(&g_velo_heap_active, -(long long)total);
     if (prev < total) {
@@ -1039,6 +1070,9 @@ static inline void* velo_heap_realloc(void* ptr, size_t size, long long count) {
     if (!ptr) return velo_heap_alloc(size, (size_t)count);
     size_t header_size = (sizeof(size_t) + 15) & ~((size_t)15);
     uint8_t* raw = ((uint8_t*)ptr) - header_size;
+    if (*((uint64_t*)(raw + sizeof(size_t))) != VELO_HEAP_MAGIC) {
+        return NULL;
+    }
     size_t old_total = *((size_t*)raw);
     size_t new_total = size * (size_t)count;
     if (new_total == 0) {
@@ -1051,6 +1085,7 @@ static inline void* velo_heap_realloc(void* ptr, size_t size, long long count) {
         exit(1);
     }
     *((size_t*)nraw) = new_total;
+    *((uint64_t*)(nraw + sizeof(size_t))) = VELO_HEAP_MAGIC;
     if (new_total > old_total) {
         VELO_ATOMIC_ADD64(&g_velo_heap_active, (long long)(new_total - old_total));
     } else if (new_total < old_total) {
@@ -1374,32 +1409,50 @@ static inline i64 velo_str_index_of(const char* s, const char* needle) {
     return hit ? (i64)(hit - a) : (i64)(-1);
 }
 
-// ASCII whitespace only (space, \t, \n, \v, \f, \r) — locale-independent,
-// unlike C isspace. Always returns a fresh heap copy (even "": callers can
-// mem.free either way without ownership ambiguity).
-static inline char* velo_str_trim(const char* s) {
-    const char* a = velo_str_nonnull(s, "str.trim");
+// ============================================================================
+// Zone vs Heap String Allocations (Task 8.1):
+// Standard string operations (trim, replace, to_upper, to_lower, concat)
+// allocate out of the active zone arena (velo_mem_alloc) for automatic O(1)
+// reclamation on zone exit with zero persistent heap leaks.
+// Explicit heap counterparts (heap_trim, heap_replace, heap_to_upper,
+// heap_to_lower, heap_concat) allocate on the persistent heap (velo_heap_alloc)
+// and are tracked on g_velo_heap_active.
+// ============================================================================
+
+static inline char* velo_str_copy_zone(const char* src, size_t n) {
+    char* out = (char*)velo_mem_alloc(1, n + 1);
+    if (n > 0) memcpy(out, src, n);
+    out[n] = 0;
+    return out;
+}
+
+static inline char* velo_str_trim_impl(const char* s, const char* fn_name, bool on_heap) {
+    const char* a = velo_str_nonnull(s, fn_name);
     const char* p = a;
     while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\v' || *p == '\f' || *p == '\r') p++;
     const char* end = p + strlen(p);
     while (end > p && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\n' ||
                        end[-1] == '\v' || end[-1] == '\f' || end[-1] == '\r')) end--;
-    return velo_str_copy_heap(p, (size_t)(end - p));
+    size_t len = (size_t)(end - p);
+    return on_heap ? velo_str_copy_heap(p, len) : velo_str_copy_zone(p, len);
 }
 
-// Replaces ALL non-overlapping occurrences left-to-right (C-style scanning,
-// count pass then fill pass — allocation is exact with no over-reserve).
-// An empty `from` cannot be replaced (would loop forever in any naive
-// scheme): the result is a byte-identical heap copy of `s`. An empty `to`
-// deletes occurrences.
-static inline char* velo_str_replace(const char* s, const char* from, const char* to) {
-    const char* a = velo_str_nonnull(s, "str.replace");
-    const char* f = velo_str_nonnull(from, "str.replace");
-    const char* t = velo_str_nonnull(to, "str.replace");
+static inline char* velo_str_trim(const char* s) {
+    return velo_str_trim_impl(s, "str.trim", false);
+}
+
+static inline char* velo_str_heap_trim(const char* s) {
+    return velo_str_trim_impl(s, "str.heap_trim", true);
+}
+
+static inline char* velo_str_replace_impl(const char* s, const char* from, const char* to, const char* fn_name, bool on_heap) {
+    const char* a = velo_str_nonnull(s, fn_name);
+    const char* f = velo_str_nonnull(from, fn_name);
+    const char* t = velo_str_nonnull(to, fn_name);
     size_t alen = strlen(a);
     size_t flen = strlen(f);
     size_t tlen = strlen(t);
-    if (flen == 0) return velo_str_copy_heap(a, alen);
+    if (flen == 0) return on_heap ? velo_str_copy_heap(a, alen) : velo_str_copy_zone(a, alen);
     size_t hits = 0;
     const char* p = a;
     const char* hit;
@@ -1407,7 +1460,8 @@ static inline char* velo_str_replace(const char* s, const char* from, const char
         hits++;
         p = hit + flen;
     }
-    char* out = (char*)velo_heap_alloc(1, alen - (hits * flen) + (hits * tlen) + 1);
+    size_t out_len = alen - (hits * flen) + (hits * tlen) + 1;
+    char* out = (char*)(on_heap ? velo_heap_alloc(1, out_len) : velo_mem_alloc(1, out_len));
     char* w = out;
     p = a;
     while ((hit = strstr(p, f)) != NULL) {
@@ -1424,10 +1478,18 @@ static inline char* velo_str_replace(const char* s, const char* from, const char
     return out;
 }
 
-static inline char* velo_str_to_upper(const char* s) {
-    const char* a = velo_str_nonnull(s, "str.to_upper");
+static inline char* velo_str_replace(const char* s, const char* from, const char* to) {
+    return velo_str_replace_impl(s, from, to, "str.replace", false);
+}
+
+static inline char* velo_str_heap_replace(const char* s, const char* from, const char* to) {
+    return velo_str_replace_impl(s, from, to, "str.heap_replace", true);
+}
+
+static inline char* velo_str_to_upper_impl(const char* s, const char* fn_name, bool on_heap) {
+    const char* a = velo_str_nonnull(s, fn_name);
     size_t n = strlen(a);
-    char* out = (char*)velo_heap_alloc(1, n + 1);
+    char* out = (char*)(on_heap ? velo_heap_alloc(1, n + 1) : velo_mem_alloc(1, n + 1));
     for (size_t i = 0; i < n; i++) {
         char c = a[i];
         if (c >= 'a' && c <= 'z') c = (char)(c - 'a' + 'A');
@@ -1437,10 +1499,18 @@ static inline char* velo_str_to_upper(const char* s) {
     return out;
 }
 
-static inline char* velo_str_to_lower(const char* s) {
-    const char* a = velo_str_nonnull(s, "str.to_lower");
+static inline char* velo_str_to_upper(const char* s) {
+    return velo_str_to_upper_impl(s, "str.to_upper", false);
+}
+
+static inline char* velo_str_heap_to_upper(const char* s) {
+    return velo_str_to_upper_impl(s, "str.heap_to_upper", true);
+}
+
+static inline char* velo_str_to_lower_impl(const char* s, const char* fn_name, bool on_heap) {
+    const char* a = velo_str_nonnull(s, fn_name);
     size_t n = strlen(a);
-    char* out = (char*)velo_heap_alloc(1, n + 1);
+    char* out = (char*)(on_heap ? velo_heap_alloc(1, n + 1) : velo_mem_alloc(1, n + 1));
     for (size_t i = 0; i < n; i++) {
         char c = a[i];
         if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
@@ -1450,16 +1520,32 @@ static inline char* velo_str_to_lower(const char* s) {
     return out;
 }
 
-static inline char* velo_str_concat(const char* a, const char* b) {
-    const char* x = velo_str_nonnull(a, "str.concat");
-    const char* y = velo_str_nonnull(b, "str.concat");
+static inline char* velo_str_to_lower(const char* s) {
+    return velo_str_to_lower_impl(s, "str.to_lower", false);
+}
+
+static inline char* velo_str_heap_to_lower(const char* s) {
+    return velo_str_to_lower_impl(s, "str.heap_to_lower", true);
+}
+
+static inline char* velo_str_concat_impl(const char* a, const char* b, const char* fn_name, bool on_heap) {
+    const char* x = velo_str_nonnull(a, fn_name);
+    const char* y = velo_str_nonnull(b, fn_name);
     size_t flen = strlen(x);
     size_t tlen = strlen(y);
-    char* out = (char*)velo_heap_alloc(1, flen + tlen + 1);
+    char* out = (char*)(on_heap ? velo_heap_alloc(1, flen + tlen + 1) : velo_mem_alloc(1, flen + tlen + 1));
     memcpy(out, x, flen);
     if (tlen > 0) memcpy(out + flen, y, tlen);
     out[flen + tlen] = 0;
     return out;
+}
+
+static inline char* velo_str_concat(const char* a, const char* b) {
+    return velo_str_concat_impl(a, b, "str.concat", false);
+}
+
+static inline char* velo_str_heap_concat(const char* a, const char* b) {
+    return velo_str_concat_impl(a, b, "str.heap_concat", true);
 }
 
 // str.split lives BELOW the 5.2 shelf helpers (slice 11: it returns an owning

@@ -190,6 +190,12 @@ REJECTIONS = [
     ("let p: @string = str.split(\"a,b\", \",\")",
      "str.split returns shelf[string] — annotating @string is retired (slice 11)",
      "rej_split_retired_anno"),
+    ('io.println(str.heap_concat("a"))',
+     "str.heap_concat expects exactly 2 arguments: (string a, string b)",
+     "rej_heap_concat_arity"),
+    ('io.println(str.heap_trim(42))',
+     "str.heap_trim expects string arguments (got i32)",
+     "rej_heap_trim_int"),
 ]
 
 REJ_PROGRAM = """use sys.io
@@ -362,6 +368,98 @@ act main() -> i32 {
             res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, timeout=300)
             self.assertEqual(res.returncode, 0, f"{stage} unsafe knob crashed:\n{res.stderr[-1500:]}")
             self.assertNotIn("shelf index out of bounds", res.stderr)
+
+    def test_zone_string_allocation_and_zero_heap_leak(self):
+        """Task 8.1: 10,000 str.concat operations inside a zone { } block
+        allocate out of the active zone arena (velo_mem_alloc), leaving
+        mem.heap_used() at 0 before and after zone exit."""
+        prog = """use sys.io
+use sys.mem
+
+act main() -> i32 {
+    let base: usize = mem.heap_used()
+    zone {
+        mut i: i32 = 0
+        loop i < 10000 {
+            let s1 = str.concat("item_", "test")
+            let s2 = str.to_upper(s1)
+            let s3 = str.to_lower(s2)
+            let s4 = str.replace(s3, "item", "val")
+            let s5 = str.trim("  done  ")
+            i += 1
+        }
+        let inside: usize = mem.heap_used()
+        if inside == base {
+            io.println("inside zone: 0 heap leak")
+        }
+    }
+    let after: usize = mem.heap_used()
+    if after == base {
+        io.println("after zone: 0 heap leak")
+    }
+    return 0
+}
+"""
+        expected = [
+            "inside zone: 0 heap leak",
+            "after zone: 0 heap leak",
+        ]
+        for stage, name in (("stage1", "str81_zone_s1"), ("stage2", "str81_zone_s2")):
+            res = run_stage(stage, prog, name)
+            self.assertEqual(res.returncode, 0, f"{stage} failed: {res.stderr[-2000:]}")
+            self.assertEqual(res.stdout.strip().splitlines(), expected, f"{stage} output mismatch")
+
+    def test_heap_string_allocation_and_free(self):
+        """Task 8.1: str.heap_* allocates on persistent heap and survives zone exit."""
+        prog = """use sys.io
+use sys.mem
+
+act main() -> i32 {
+    let base: usize = mem.heap_used()
+    mut h_str: string = ""
+    zone {
+        h_str = str.heap_concat("hello, ", "world!")
+        let u: string = str.heap_to_upper(h_str)
+        let l: string = str.heap_to_lower(u)
+        let r: string = str.heap_replace(l, "world", "velo")
+        let t: string = str.heap_trim("  trimmed  ")
+        io.println("heap string: {h_str}")
+        io.println("heap upper: {u}")
+        io.println("heap lower: {l}")
+        io.println("heap replace: {r}")
+        io.println("heap trim: [{t}]")
+        mem.free(u)
+        mem.free(l)
+        mem.free(r)
+        mem.free(t)
+    }
+    io.println("survived zone: {h_str}")
+    let held: usize = mem.heap_used()
+    if held > base {
+        io.println("heap allocated active")
+    }
+    mem.free(h_str)
+    let end: usize = mem.heap_used()
+    if end == base {
+        io.println("clean teardown")
+    }
+    return 0
+}
+"""
+        expected = [
+            "heap string: hello, world!",
+            "heap upper: HELLO, WORLD!",
+            "heap lower: hello, world!",
+            "heap replace: hello, velo!",
+            "heap trim: [trimmed]",
+            "survived zone: hello, world!",
+            "heap allocated active",
+            "clean teardown",
+        ]
+        for stage, name in (("stage1", "str81_heap_s1"), ("stage2", "str81_heap_s2")):
+            res = run_stage(stage, prog, name)
+            self.assertEqual(res.returncode, 0, f"{stage} failed: {res.stderr[-2000:]}")
+            self.assertEqual(res.stdout.strip().splitlines(), expected, f"{stage} output mismatch")
 
 
 if __name__ == "__main__":

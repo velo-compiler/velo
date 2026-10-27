@@ -606,22 +606,31 @@ flowchart TD
 
 ### Phase 8: String Subsystem Modernization & Safety
 
-#### Task 8.1: Arena-Aware String Allocation Primitives (`zone` Strings vs. Heap Strings)
-* **Problem**:
-  - In `velo/runtime/velo_runtime.h:1427-1463`, all basic string manipulation functions (`str.concat`, `str.to_upper`, `str.to_lower`, `str.replace`, `str.trim`) unconditionally allocate via `velo_heap_alloc()` (persistent heap).
-  - When used inside a 60 FPS game loop or request handler running under a `zone { ... }` block, temporary string operations (e.g. `let label = str.concat("Player: ", name)`) silently leak heap memory every frame unless the developer writes manual `defer mem.free(label)` for every single string transformation.
-* **Specification**:
-  - Split or parameterize string functions:
-    * Standard `str.concat`, `str.to_upper`, `str.to_lower`, `str.replace`, and `str.trim` allocate in the active `zone` arena (`velo_mem_alloc`), guaranteeing zero leaks and automatic 1-cycle O(1) reclamation on zone exit.
-    * Provide explicit persistent heap counterparts (`str.heap_concat`, `str.heap_to_upper`, etc.) or allocator-parameterized variants (`str.concat_with(allocator, a, b)`) for strings that must outlive the immediate zone scope.
-* **Target Files**:
-  - `velo/runtime/velo_runtime.h`
-  - `velo/analysis.py`
-  - `velo/codegen_c.py`
-  - `src/analysis/str_checks.vl`
-  - `src/backend/codegen_expr.vl`
+#### Task 8.1: Arena-Aware String Allocation Primitives (`zone` Strings vs. Heap Strings) [COMPLETED] ✅
+* **Former Defect**:
+  - In `velo/runtime/velo_runtime.h:1427-1463`, all basic string manipulation functions (`str.concat`, `str.to_upper`, `str.to_lower`, `str.replace`, `str.trim`) unconditionally allocated via `velo_heap_alloc()` (persistent heap).
+  - When used inside a 60 FPS game loop or request handler running under a `zone { ... }` block, temporary string operations (e.g. `let label = str.concat("Player: ", name)`) silently leaked heap memory every frame unless the developer wrote manual `defer mem.free(label)` for every single string transformation.
+* **Fix Applied**:
+  - In `velo/runtime/velo_runtime.h`:
+    * Converted standard string operations (`str.concat`, `str.to_upper`, `str.to_lower`, `str.replace`, `str.trim`) to allocate in the active zone arena via `velo_mem_alloc(1, ...)` and helper `velo_str_copy_zone(...)`, guaranteeing zero persistent heap leaks and automatic O(1) reclamation on zone exit.
+    * Implemented explicit persistent heap counterparts (`str.heap_concat`, `str.heap_to_upper`, `str.heap_to_lower`, `str.heap_replace`, `str.heap_trim`) allocating via `velo_heap_alloc(1, ...)` and tracked on `g_velo_heap_active`.
+    * Hardened heap tracking with `VELO_HEAP_MAGIC` and `velo_is_in_zone(...)` checks in `velo_heap_alloc`, `velo_heap_free`, and `velo_heap_realloc`: `mem.free` on an arena-allocated string or wild pointer safely no-ops rather than faulting in CRT `free()`, and double-free is guarded.
+  - In Stage 1 Python compiler (`velo/codegen_c.py`):
+    * Added `heap_trim`, `heap_replace`, `heap_to_upper`, `heap_to_lower`, `heap_concat` to `STR_RUNTIME_MEMBERS` and `_STR_SIGS`.
+    * Added `str.heap_*` functions to type resolution (`_resolve_expr_type`, `_infer_raw_velo_type`) returning `"string"`.
+  - In Stage 2 self-hosted compiler (`src/analysis/str_checks.vl`, `src/analysis/type_checker.vl`):
+    * Extended `str_member_sig` and `str_member_arity` in `src/analysis/str_checks.vl` with arity and signature checking matching Stage 1.
+    * Extended `infer_expr_type` in `src/analysis/type_checker.vl` to resolve `str.heap_*` as `"string"`.
+    * Kept all 65 `.vl` compiler files $\le 397$ lines (`python scripts/count_lines.py`).
+* **Residual Limitation**:
+  - Zone-allocated strings cannot outlive their enclosing `zone { ... }` block; passing a zone string across zone boundaries requires copying via `str.heap_concat(s, "")` or `str.heap_*` variants.
 * **Verification**:
-  - Add test executing 10,000 `str.concat` operations inside a `zone { }` block, asserting `velo_heap_used()` remains 0 before and after zone exit.
+  - Added `test_zone_string_allocation_and_zero_heap_leak` in `tests/test_string_library.py` executing 10,000 chained string transformations (`str.concat`, `str.to_upper`, `str.to_lower`, `str.replace`, `str.trim`) inside a `zone { ... }` block, verifying `mem.heap_used()` is 0 inside and after zone exit.
+  - Added `test_heap_string_allocation_and_free` in `tests/test_string_library.py` verifying `str.heap_*` variants allocate on the persistent heap, survive zone exit, and return `mem.heap_used()` to baseline when reclaimed via `mem.free()`.
+  - Added compile-time rejection tests verifying argument arity and type checking on `str.heap_*` calls across both stages.
+  - Rebuilt full 3-stage bootstrap chain (`bin/velo_gen1.exe -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe`), verified bit-for-bit SHA-256 determinism (`B6A778EA...`).
+  - Passed all 105 native tests (`bin/velo.exe test examples/15_native_tests.vl`).
+  - Passed full test suite (`python -m pytest tests -q`): 417 passed in 278s.
 
 #### Task 8.2: General In-Memory String Interpolation & Formatting (`str.format`)
 * **Problem**:

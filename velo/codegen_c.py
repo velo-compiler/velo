@@ -56,6 +56,11 @@ STR_RUNTIME_MEMBERS = {
     "to_lower": 1,
     "concat": 2,
     "split": 2,
+    "heap_trim": 1,
+    "heap_replace": 3,
+    "heap_to_upper": 1,
+    "heap_to_lower": 1,
+    "heap_concat": 2,
 }
 
 _STR_SIGS = {
@@ -69,6 +74,11 @@ _STR_SIGS = {
     "to_lower": ": (string s)",
     "concat": ": (string a, string b)",
     "split": ": (string s, string delimiter)",
+    "heap_trim": ": (string s)",
+    "heap_replace": ": (string s, string old, string new)",
+    "heap_to_upper": ": (string s)",
+    "heap_to_lower": ": (string s)",
+    "heap_concat": ": (string a, string b)",
 }
 
 # 5.3 Math Library: sys.math is compiled directly onto C99 libm — no runtime
@@ -2452,7 +2462,8 @@ class CCodeGenerator:
                         return "usize"
                     if m in ("contains", "starts_with", "ends_with"):
                         return "bool"
-                    if m in ("trim", "replace", "to_upper", "to_lower", "concat"):
+                    if m in ("trim", "replace", "to_upper", "to_lower", "concat",
+                            "heap_trim", "heap_replace", "heap_to_upper", "heap_to_lower", "heap_concat"):
                         return "string"
                     if m == "index_of":
                         return "i64"  # -1 = not found; usize has no room for it
@@ -2728,7 +2739,8 @@ class CCodeGenerator:
                         return "usize"
                     if m in ("contains", "starts_with", "ends_with"):
                         return "bool"
-                    if m in ("trim", "replace", "to_upper", "to_lower", "concat"):
+                    if m in ("trim", "replace", "to_upper", "to_lower", "concat",
+                            "heap_trim", "heap_replace", "heap_to_upper", "heap_to_lower", "heap_concat"):
                         return "string"
                     if m == "index_of":
                         return "i64"  # -1 = not found; usize has no room for it

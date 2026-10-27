@@ -18,20 +18,20 @@ act str_member_sig(member: string) -> string {
     if member == "starts_with" { return ": (string s, string prefix)" }
     if member == "ends_with" { return ": (string s, string suffix)" }
     if member == "index_of" { return ": (string s, string needle)" }
-    if member == "trim" { return ": (string s)" }
-    if member == "to_upper" { return ": (string s)" }
-    if member == "to_lower" { return ": (string s)" }
-    if member == "replace" { return ": (string s, string old, string new)" }
-    if member == "concat" { return ": (string a, string b)" }
+    if member == "trim" or member == "heap_trim" { return ": (string s)" }
+    if member == "to_upper" or member == "heap_to_upper" { return ": (string s)" }
+    if member == "to_lower" or member == "heap_to_lower" { return ": (string s)" }
+    if member == "replace" or member == "heap_replace" { return ": (string s, string old, string new)" }
+    if member == "concat" or member == "heap_concat" { return ": (string a, string b)" }
     if member == "split" { return ": (string s, string delimiter)" }
     return ""
 }
 
 // Expected argument count per checked member (same curves as _STR_SIGS).
 act str_member_arity(member: string) -> i32 {
-    if member == "trim" or member == "to_upper" or member == "to_lower" { return 1 }
-    if member == "replace" { return 3 }
-    if member == "contains" or member == "starts_with" or member == "ends_with" or member == "index_of" or member == "concat" or member == "split" { return 2 }
+    if member == "trim" or member == "to_upper" or member == "to_lower" or member == "heap_trim" or member == "heap_to_upper" or member == "heap_to_lower" { return 1 }
+    if member == "replace" or member == "heap_replace" { return 3 }
+    if member == "contains" or member == "starts_with" or member == "ends_with" or member == "index_of" or member == "concat" or member == "split" or member == "heap_concat" { return 2 }
     return -1
 }
 
