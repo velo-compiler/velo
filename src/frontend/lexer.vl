@@ -152,8 +152,8 @@ act tokenize(lex: @Lexer) {
             }
             let tok_len = lex.pos - start_pos
             mut kind = check_keyword(src, start_pos, tok_len)
-            // contextual 'shelf': identifier unless followed by '[' or preceded by 'heap'
-            if kind == TOK_SHELF and lex.last_kind != TOK_HEAP and (lex.pos >= len or src[lex.pos] != '[') {
+            // contextual 'shelf' / 'map': identifier unless followed by '[' or preceded by 'heap'
+            if (kind == TOK_SHELF or kind == TOK_MAP) and lex.last_kind != TOK_HEAP and (lex.pos >= len or src[lex.pos] != '[') {
                 kind = TOK_IDENTIFIER
             }
             add_token(lex, kind, start_pos, tok_len, start_line, start_col)

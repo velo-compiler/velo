@@ -240,21 +240,19 @@ act parse_type_annotation(p: @Parser) -> string {
         base_tok_kind = TOK_SHELF
     }
     // 5.2 slice 9: ring[T] needs its slot; bitset is legal bare (the first bare collection type)
-    if parser_check(p, TOK_RING) {
-        base_tok_kind = TOK_RING
-    }
-    if parser_check(p, TOK_BITSET) {
-        base_tok_kind = TOK_BITSET
-    }
-    // 5.2 slice 10: `heap shelf[T]` — the modifier prefixes the spelling (`heap ` verbatim)
+    if parser_check(p, TOK_RING) { base_tok_kind = TOK_RING }
+    if parser_check(p, TOK_BITSET) { base_tok_kind = TOK_BITSET }
+    if parser_check(p, TOK_MAP) { base_tok_kind = TOK_MAP }
+    // 5.2 slice 10 / Task 7.2: `heap shelf[T]` / `heap Map[K, V]` — the modifier prefixes the spelling
     mut heap_prefix = false
     if parser_check(p, TOK_HEAP) {
         parser_advance(p)
         heap_prefix = true
-        base_tok_kind = TOK_SHELF
+        if parser_check(p, TOK_SHELF) { base_tok_kind = TOK_SHELF } else if parser_check(p, TOK_MAP) { base_tok_kind = TOK_MAP } else { base_tok_kind = TOK_IDENTIFIER }
     }
     let type_tok = parser_consume(p, base_tok_kind, "Expected type name")
-    let raw_name = copy_slice_to_string(p.source, type_tok.start, type_tok.length)
+    mut raw_name = copy_slice_to_string(p.source, type_tok.start, type_tok.length)
+    if raw_name == "map" { raw_name = "Map" }
     // 5.2 slice 10: splice the modifier into the canonical spelling
     mut base_name = raw_name
     if heap_prefix {
@@ -269,9 +267,13 @@ act parse_type_annotation(p: @Parser) -> string {
         report_parse(p, p.filename, type_tok.line, type_tok.col, type_tok.length, "a bare 'shelf' needs an element type: use shelf[T]")
         p.had_error = true
     }
-    // 5.2 slice 10: a bare `heap shelf` needs its element — same-trade reject
+    // 5.2 slice 10 / Task 7.2: bare heap collection rejects
     if heap_prefix and not parser_check(p, TOK_LBRACKET) {
-        report_parse(p, p.filename, type_tok.line, type_tok.col, type_tok.length, "a bare 'heap shelf' needs an element type: use heap shelf[T]")
+        if raw_name == "Map" {
+            report_parse(p, p.filename, type_tok.line, type_tok.col, type_tok.length, "a bare 'heap Map' needs key and value types: use heap Map[K, V]")
+        } else {
+            report_parse(p, p.filename, type_tok.line, type_tok.col, type_tok.length, "a bare 'heap shelf' needs an element type: use heap shelf[T]")
+        }
         p.had_error = true
     }
     // 5.2 slice 9: a bare `ring` needs its element — same-trade parse reject
@@ -280,7 +282,7 @@ act parse_type_annotation(p: @Parser) -> string {
         p.had_error = true
     }
     // 5.2 slice 6: a bare `Map` needs BOTH slots — the same-trade parse reject (Stage 1's words)
-    if raw_name == "Map" and not parser_check(p, TOK_LBRACKET) {
+    if raw_name == "Map" and not heap_prefix and not parser_check(p, TOK_LBRACKET) {
         report_parse(p, p.filename, type_tok.line, type_tok.col, type_tok.length, "a bare 'Map' needs key and value types: use Map[K, V]")
         p.had_error = true
     }

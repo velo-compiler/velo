@@ -160,6 +160,7 @@ class MapLiteral(Expr):
     line: int
     col: int
     kv_type: Optional[str] = None
+    is_heap: bool = False
 
 # 5.2 slice 9: `ring[v0, v1, ...]` — constructor literal of the FIFO ring.
 # The element ladder is the pre-slice-2 shelf spirit WITHOUT the dyn arm

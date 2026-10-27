@@ -424,14 +424,19 @@ class Parser:
             return prefix + f"act({', '.join(params)}) -> {ret_type}"
 
         if self._check(TokenType.HEAP):
-            # 5.2 slice 10: `heap shelf[T]` — the storage modifier prefixes the
-            # shelf spelling; the canonical type string carries `heap ` verbatim
+            # 5.2 slice 10: `heap shelf[T]` / Task 7.2: `heap Map[K, V]`
             self._advance()
-            self._consume(TokenType.SHELF, "Expected 'shelf' after 'heap'")
-            base_name = "heap shelf"
-        elif self._check(TokenType.SHELF) or self._check(TokenType.RING) or self._check(TokenType.BITSET):
+            if self._match(TokenType.SHELF):
+                base_name = "heap shelf"
+            elif self._match(TokenType.MAP) or (self._check(TokenType.IDENTIFIER) and self._peek().value == "Map"):
+                if not self._match(TokenType.MAP):
+                    self._advance()
+                base_name = "heap Map"
+            else:
+                self._error("Expected 'shelf' or 'map' after 'heap'")
+        elif self._check(TokenType.SHELF) or self._check(TokenType.RING) or self._check(TokenType.BITSET) or self._check(TokenType.MAP):
             type_tok = self._consume(self.tokens[self.pos].type, "Expected type name")
-            base_name = type_tok.value
+            base_name = "Map" if type_tok.type == TokenType.MAP else type_tok.value
         else:
             type_tok = self._consume(TokenType.IDENTIFIER, "Expected type name")
             base_name = type_tok.value
@@ -986,21 +991,39 @@ class Parser:
         if self._match(TokenType.FALSE):
             return BoolLiteral(value=False, line=tok.line, col=tok.col)
         if self._match(TokenType.HEAP):
-            # 5.2 slice 10: `heap shelf[...]` — the heap-storage shelf literal;
-            # the element ladder is the shelf's, the payload lands on the heap
-            self._consume(TokenType.SHELF, "Expected 'shelf' after 'heap' (heap shelf literal: heap shelf[1, 2])")
-            heap_tok = self.tokens[self.pos - 2]
-            self._consume(TokenType.LBRACKET, "Expected '[' after 'heap shelf' (heap shelf literal: heap shelf[1, 2])")
-            self._skip_newlines()
-            args: List[Expr] = []
-            while not self._check(TokenType.RBRACKET) and not self._is_at_end():
-                args.append(self._parse_expression())
+            # 5.2 slice 10: `heap shelf[...]` / Task 7.2: `heap map[...]`
+            heap_tok = self.tokens[self.pos - 1]
+            if self._match(TokenType.SHELF):
+                self._consume(TokenType.LBRACKET, "Expected '[' after 'heap shelf' (heap shelf literal: heap shelf[1, 2])")
                 self._skip_newlines()
-                if not self._match(TokenType.COMMA):
-                    break
+                args: List[Expr] = []
+                while not self._check(TokenType.RBRACKET) and not self._is_at_end():
+                    args.append(self._parse_expression())
+                    self._skip_newlines()
+                    if not self._match(TokenType.COMMA):
+                        break
+                    self._skip_newlines()
+                self._consume(TokenType.RBRACKET, "Expected ']' at end of heap shelf literal")
+                return ShelfLiteral(args=args, line=heap_tok.line, col=heap_tok.col, is_heap=True)
+            elif self._match(TokenType.MAP):
+                self._consume(TokenType.LBRACKET, "Expected '[' after 'heap map' (heap map literal: heap map[1: \"a\", 2: \"b\"])")
                 self._skip_newlines()
-            self._consume(TokenType.RBRACKET, "Expected ']' at end of heap shelf literal")
-            return ShelfLiteral(args=args, line=heap_tok.line, col=heap_tok.col, is_heap=True)
+                keys: List[Expr] = []
+                vals: List[Expr] = []
+                while not self._check(TokenType.RBRACKET) and not self._is_at_end():
+                    keys.append(self._parse_expression())
+                    self._skip_newlines()
+                    self._consume(TokenType.COLON, "Expected ':' between a map key and value (heap map[k: v])")
+                    self._skip_newlines()
+                    vals.append(self._parse_expression())
+                    self._skip_newlines()
+                    if not self._match(TokenType.COMMA):
+                        break
+                    self._skip_newlines()
+                self._consume(TokenType.RBRACKET, "Expected ']' at end of heap map literal")
+                return MapLiteral(keys=keys, vals=vals, line=heap_tok.line, col=heap_tok.col, is_heap=True)
+            else:
+                self._error("Expected 'shelf' or 'map' after 'heap'")
 
         if self._match(TokenType.SHELF):
             # 5.2: shelf constructor literal — bracket args are VALUES

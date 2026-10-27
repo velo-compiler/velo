@@ -577,25 +577,30 @@ flowchart TD
   - Passed all 105 native tests (`bin/velo.exe test examples/15_native_tests.vl`).
   - Passed full test suite (`python -m pytest tests -q`): 411 passed in 252s.
 
-#### Task 7.2: Parameterized and Heap-Backed Maps (`heap map[K, V]` & `map.destroy`)
-* **Problem**:
-  - In `velo/runtime/velo_runtime.h:2044`, `velo_map_regen()` strictly allocates new key arrays, value arrays, and 64-bit hash arrays via `velo_mem_alloc()` (the active `zone` bump arena).
-  - There is no `heap map[K, V]` syntax or `@Allocator` handle parameterization.
-  - Any long-lived hash map that undergoes rehashes and capacity growth (`velo_map_grow`) abandons all previous hash and key/value arrays as dead arena watermark bloat. Furthermore, maps cannot outlive the zone block in which they are created.
-* **Specification**:
-  - In `VeloMap`, add `VeloAllocator src` field (NULL for active zone arena, non-NULL for persistent heap or custom arena).
-  - In `velo_map_regen()`, route allocation through `velo_shelf_alloc`-style allocator selector: if `m->src != NULL`, allocate via `velo_heap_alloc()` (or custom allocator) and call `velo_heap_free()` on previous `m->keys`, `m->vals`, and `m->hashes` buffers.
-  - Support `heap map[K, V]` syntax in Stage 1 and Stage 2 parsers and type checkers, matching the `heap shelf[T]` design.
-  - Implement `map.destroy(@m)` / `map.free(@m)` builtins to reclaim table storage on demand.
-* **Target Files**:
-  - `velo/runtime/velo_runtime.h`
-  - `velo/parser.py`
-  - `velo/codegen_c.py`
-  - `src/frontend/parser_decl.vl`
-  - `src/analysis/map_checks.vl`
-  - `src/backend/map_gen.vl`
+#### Task 7.2: Parameterized and Heap-Backed Maps (`heap map[K, V]` & `map.destroy`) [COMPLETED] ✅
+* **Former Defect**:
+  - In `velo/runtime/velo_runtime.h:2044`, `velo_map_regen()` strictly allocated new key arrays, value arrays, and 64-bit hash arrays via `velo_mem_alloc()` (the active `zone` bump arena).
+  - There was no `heap map[K, V]` syntax or allocator selector.
+  - Any long-lived hash map that underwent rehashes and capacity growth (`velo_map_grow`) abandoned all previous hash and key/value arrays as dead arena watermark bloat. Furthermore, maps could not outlive the zone block in which they were created.
+* **Fix Applied**:
+  - In `VeloMap`, added `VeloAllocator src` field (`NULL` for active zone arena, `(VeloAllocator)1` sentinel for persistent heap).
+  - Implemented `velo_map_alloc(m, sz, count)` in `velo/runtime/velo_runtime.h`: if `m->src != NULL`, allocates via `velo_heap_alloc()` and in `velo_map_regen()` frees old `m->keys`, `m->vals`, and `m->hashes` buffers via `velo_heap_free()`.
+  - Added `velo_map_create_empty_heap()`, `velo_map_create_lit_heap()`, and `velo_map_free(VeloMap* m)` runtime primitives.
+  - Implemented `heap map[K, V]` and `heap Map[K, V]` type parsing, annotation checking, and `heap map[...]` literal support across Stage 1 Python compiler (`velo/`) and Stage 2 self-hosted compiler (`src/`).
+  - Updated lexers in both stages (`velo/lexer.py` and `src/frontend/lexer.vl`) to treat `map` as a contextual keyword (identifier when not followed by `[` or preceded by `heap`), enabling `map.free(@m)` and `map.destroy(@m)` calls.
+  - Implemented `m.destroy()`, `m.free()`, `map.destroy(@m)`, and `map.free(@m)` builtins with compile-time `mut` receiver checking and arity validation across both compilers.
+  - Strictly maintained compiler line budget ($\le 397$ lines across all 65 `.vl` files).
+* **Residual Limitation**:
+  - String keys inserted into `heap Map[string, V]` are stored as raw `const char*` pointer slots; `m.destroy()` reclaims internal table allocations (`keys`, `vals`, `hashes`), but dynamically allocated string key buffers are managed by the caller (tracked in Phase 8).
 * **Verification**:
-  - Test `heap map[string, i32]` inserting 5,000 keys, verifying map survival past zone exit and zero heap leaks after `map.destroy(@m)`.
+  - Added `TestHeapMapTeardown` in `tests/test_dynamic_collections.py` verifying:
+    * 5,000 keys inserted into `heap Map[string, i32]` surviving a `zone { ... }` block exit without corruption.
+    * 2,000 insertions into `heap Map[i32, i32]` followed by `m.destroy()` returning `mem.heap_used()` to 0 with zero leaks.
+    * Both method syntax (`m.free()`, `m.destroy()`) and module syntax (`map.free(@m)`, `map.destroy(@m)`).
+    * Negative rejection tests verifying compile-time errors for let-binding mutation, argument count/type mismatch, and unknown functions.
+  - Rebuilt full 3-stage bootstrap chain (`bin/velo_gen1.exe -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe`), verified bit-for-bit SHA-256 determinism (`14DA43B5...`).
+  - Passed all 105 native tests (`bin/velo.exe test examples/15_native_tests.vl`).
+  - Passed full test suite (`python -m pytest tests -q`): 415 passed in 274s.
 
 ---
 

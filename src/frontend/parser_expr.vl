@@ -250,8 +250,8 @@ act parse_primary(p: @Parser) -> @ExprNode {
 
     // 7.7. Ring/bitset constructor literals (5.2 slice 9) — parsed in parser_lit.vl
     if parser_check(p, TOK_RING) or parser_check(p, TOK_BITSET) { return parse_coll9_literal(p) }
-    // 5.2 slice 10: `heap shelf[...]`
-    if parser_check(p, TOK_HEAP) { return parse_heap_shelf_literal(p) }
+    // 5.2 slice 10 / Task 7.2: `heap shelf[...]` / `heap map[...]`
+    if parser_check(p, TOK_HEAP) { return parse_heap_literal(p) }
 
     // 8. Identifier variable reference
     if parser_check(p, TOK_IDENTIFIER) {

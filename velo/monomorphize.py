@@ -91,7 +91,9 @@ def _map_kv_of(t: Optional[str]) -> Optional[Tuple[str, str]]:
     if not t:
         return None
     raw = t.lstrip("@").strip()
-    if raw.startswith("Map[") and raw.endswith("]"):
+    if raw.startswith("heap "):
+        raw = raw[5:].strip()
+    if (raw.startswith("Map[") or raw.startswith("map[")) and raw.endswith("]"):
         inner = raw[4:-1].strip()
         depth = 0
         for i, ch in enumerate(inner):
@@ -123,10 +125,8 @@ def normalize_type_name(t: Optional[str]) -> Optional[str]:
     """
     if not t:
         return t
-    # 5.2 slice 10: `heap shelf[...]` passes through UNCHANGED like shelf — the
-    # heap prefix must reach the emit tier (the src sentinel) intact. Checked
-    # before parse_type_signature (the space splits oddly there).
-    if t.lstrip("@").startswith("heap shelf"):
+    # 5.2 slice 10 / Task 7.2: `heap shelf[...]` and `heap Map[...]` pass through UNCHANGED
+    if t.lstrip("@").startswith("heap shelf") or t.lstrip("@").startswith("heap Map") or t.lstrip("@").startswith("heap map"):
         return t
     prefix, base, args = parse_type_signature(t)
     if base == "shelf":
@@ -1147,6 +1147,7 @@ class Monomorphizer:
             new_vals = [self._transform_expr(a, scope, subst, None) for a in expr.vals]
             new_lit = MapLiteral(keys=new_keys, vals=new_vals, line=expr.line, col=expr.col)
             new_lit.kv_type = expr.kv_type
+            new_lit.is_heap = expr.is_heap
             return new_lit
         elif isinstance(expr, RingLiteral):
             new_args = [self._transform_expr(a, scope, subst, None) for a in expr.args]
@@ -1242,8 +1243,9 @@ class Monomorphizer:
                 return "usize"
             return "i32"
         if isinstance(expr, MapLiteral):
-            # 5.2 slice 6: best-effort only (the strict key/value ladders run
+            # 5.2 slice 6 / Task 7.2: best-effort only (the strict key/value ladders run
             # in the checker/codegen); generic T unification needs the type
+            heap_pfx = "heap " if expr.is_heap else ""
             if expr.kv_type:
                 return expr.kv_type
             if not expr.keys:
@@ -1253,11 +1255,11 @@ class Monomorphizer:
             k0 = key_types[0]
             if all(t == k0 for t in key_types):
                 if all(t == val_types[0] for t in val_types):
-                    return f"Map[{k0}, {val_types[0]}]"
+                    return f"{heap_pfx}Map[{k0}, {val_types[0]}]"
                 if all(t in DYN_INT_TYPES or t in DYN_FLOAT_TYPES for t in val_types) and any(t in DYN_FLOAT_TYPES for t in val_types):
-                    return f"Map[{k0}, f64]"
-                return f"Map[{k0}, dyn]"
-            return "Map[dyn, dyn]"  # best-effort for heterogeneous keys (checker rejects)
+                    return f"{heap_pfx}Map[{k0}, f64]"
+                return f"{heap_pfx}Map[{k0}, dyn]"
+            return f"{heap_pfx}Map[dyn, dyn]"
         if isinstance(expr, ShelfLiteral):
             # 5.2: homogeneous best-effort inference (generic T unification);
             # the strict check runs in the checker/codegen. Slice 10: a heap
@@ -1333,7 +1335,7 @@ class Monomorphizer:
                 # 5.2: shelf receiver calls — put/insert are void, take/
                 # remove_at yield the element, sorted() a new shelf[elem]
                 recv = self._infer_expr_type(expr.callee.target, scope)
-                if isinstance(expr.callee.target, Identifier) and expr.callee.target.name == "shelf":
+                if isinstance(expr.callee.target, Identifier) and expr.callee.target.name in ("shelf", "map"):
                     return "void"
                 elem = _shelf_elem_of(recv)
                 if elem is not None:
@@ -1343,11 +1345,11 @@ class Monomorphizer:
                         return elem
                     if expr.callee.member == "sorted":
                         return f"shelf[{elem}]"
-                # 5.2 slice 6/7: map receiver calls — put void / get, get_or,
+                # 5.2 slice 6/7 / Task 7.2: map receiver calls — put/free/destroy void / get, get_or,
                 # take value / has bool
                 map_kv = _map_kv_of(recv)
                 if map_kv is not None:
-                    if expr.callee.member == "put":
+                    if expr.callee.member in ("put", "free", "destroy"):
                         return "void"
                     if expr.callee.member in ("get", "get_or", "take"):
                         return map_kv[1]

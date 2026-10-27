@@ -1095,9 +1095,9 @@ MAP_REJECTIONS = [
     ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.has() return 0 }",
      "map.has expects exactly 1 argument: (map m, key)", "has_arity"),
     ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] m.nope() return 0 }",
-     "unknown map member 'nope' (put, get, has, len, get_or, take are available)", "unknown_member"),
+     "unknown map member 'nope' (put, get, has, len, get_or, take, free, destroy are available)", "unknown_member"),
     ("act main() -> i32 { mut m: Map[i32, string] = map[0: \"a\"] let w = m.nope return 0 }",
-     "unknown map member 'nope' (put, get, has, len, get_or, take are available)", "unknown_prop"),
+     "unknown map member 'nope' (put, get, has, len, get_or, take, free, destroy are available)", "unknown_prop"),
     ("act main() -> i32 { let n: Map[i32, string] = map[0: \"a\"] n.put(1, \"b\") return 0 }",
      "cannot put into a map held by a let (declare with mut)", "put_on_let"),
     ("act main() -> i32 { let n: Map[i32, string] = map[0: \"a\"] n[1] = \"b\" return 0 }",
@@ -1698,6 +1698,162 @@ class TestHeapShelfTeardown(unittest.TestCase):
              "shelf.destroy expects exactly 1 argument: (shelf s)", "rej_destroy_arity"),
             ("use sys.io\nact main() -> i32 {\n    mut s: heap shelf[i32] = heap shelf[1]\n    shelf.other(@s)\n    return 0\n}",
              "unknown shelf function 'other' (destroy, free are available)", "rej_unknown_shelf_fn"),
+        ]
+        for program, want, name in rejections:
+            src = tmp / f"{name}.vl"
+            src.write_text(program, encoding="utf-8")
+            for stage, res in (("stage1", check_result("stage1", src)),
+                               ("stage2", check_result("stage2", src))):
+                text = res.stdout + res.stderr
+                self.assertNotEqual(res.returncode, 0, f"{stage} accepted {name}:\n{text[-2000:]}")
+                self.assertIn(want, text, f"{stage} wording mismatch for {name}:\n{text[-2000:]}")
+
+
+class TestHeapMapTeardown(unittest.TestCase):
+    """Task 7.2: Parameterized and heap-backed maps (heap map[K, V] & map.destroy)."""
+
+    def test_heap_map_5000_keys_survives_zone(self):
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act make_key(i: i32) -> string {\n"
+            "    mut n = i as i64\n"
+            "    if n == 0 { return \"k_0\" }\n"
+            "    mut buf: @u8 = mem.heap_alloc(@u8, 32)\n"
+            "    mut count: usize = 0\n"
+            "    loop n > 0 {\n"
+            "        buf[count] = ('0' as u8) + ((n % 10) as u8)\n"
+            "        n = n / 10\n"
+            "        count += 1\n"
+            "    }\n"
+            "    mut res: @u8 = mem.heap_alloc(@u8, count + 3)\n"
+            "    res[0] = 'k' as u8\n"
+            "    res[1] = '_' as u8\n"
+            "    mut pos: usize = 0\n"
+            "    loop pos < count {\n"
+            "        res[2 + pos] = buf[count - 1 - pos]\n"
+            "        pos += 1\n"
+            "    }\n"
+            "    res[2 + count] = 0 as u8\n"
+            "    mem.free(buf)\n"
+            "    return res as string\n"
+            "}\n"
+            "act populate() -> heap Map[string, i32] {\n"
+            "    mut m: heap Map[string, i32] = heap map[]\n"
+            "    zone {\n"
+            "        mut i: i32 = 0\n"
+            "        loop i < 5000 {\n"
+            "            m.put(make_key(i), i)\n"
+            "            i += 1\n"
+            "        }\n"
+            "    }\n"
+            "    return m\n"
+            "}\n"
+            "act main() -> i32 {\n"
+            "    mut m = populate()\n"
+            "    let ln = m.len as i32\n"
+            "    let v0 = m.get(\"k_0\")\n"
+            "    let v2500 = m.get(\"k_2500\")\n"
+            "    let v4999 = m.get(\"k_4999\")\n"
+            "    let has_mid = m.has(\"k_2500\")\n"
+            "    let has_none = m.has(\"k_99999\")\n"
+            "    io.println(\"ln {ln} v0 {v0} v2500 {v2500} v4999 {v4999} has {has_mid} none {has_none}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        s1 = run_stage("stage1", program, "t72_5000_zone")
+        s2 = run_stage("stage2", program, "t72_5000_zone")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-2000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-2000:])
+        self.assertEqual(s1.stdout, s2.stdout)
+        self.assertEqual(s1.stdout.strip().splitlines(), ["ln 5000 v0 0 v2500 2500 v4999 4999 has true none false"])
+
+    def test_realloc_leak_free_and_teardown(self):
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act main() -> i32 {\n"
+            "    let h0: usize = mem.heap_used()\n"
+            "    mut m: heap Map[i32, i32] = heap map[]\n"
+            "    mut i: i32 = 0\n"
+            "    loop i < 2000 {\n"
+            "        m.put(i, i * 10)\n"
+            "        i += 1\n"
+            "    }\n"
+            "    let h1: usize = mem.heap_used()\n"
+            "    let ln = m.len as i32\n"
+            "    let v1999 = m.get(1999)\n"
+            "    m.destroy()\n"
+            "    let h2: usize = mem.heap_used()\n"
+            "    let ln_after = m.len as i32\n"
+            "    io.println(\"h0 {h0} ln {ln} v1999 {v1999} h2 {h2} ln_after {ln_after}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        s1 = run_stage("stage1", program, "t72_destroy")
+        s2 = run_stage("stage2", program, "t72_destroy")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-2000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-2000:])
+        self.assertEqual(s1.stdout, s2.stdout)
+        self.assertEqual(s1.stdout.strip().splitlines(), ["h0 0 ln 2000 v1999 19990 h2 0 ln_after 0"])
+
+    def test_teardown_methods_and_module_calls(self):
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act main() -> i32 {\n"
+            "    // 1. m.free()\n"
+            "    mut m1: heap Map[i32, i32] = heap map[1: 10, 2: 20]\n"
+            "    m1.free()\n"
+            "    let h1: usize = mem.heap_used()\n"
+            "    let len1 = m1.len as i32\n"
+            "\n"
+            "    // 2. map.free(@m)\n"
+            "    mut m2: heap Map[i32, i32] = heap map[3: 30, 4: 40]\n"
+            "    map.free(@m2)\n"
+            "    let h2: usize = mem.heap_used()\n"
+            "    let len2 = m2.len as i32\n"
+            "\n"
+            "    // 3. map.destroy(@m)\n"
+            "    mut m3: heap Map[i32, i32] = heap map[5: 50, 6: 60]\n"
+            "    map.destroy(@m3)\n"
+            "    let h3: usize = mem.heap_used()\n"
+            "    let len3 = m3.len as i32\n"
+            "\n"
+            "    // 4. zone map teardown is safe no-op on non-heap\n"
+            "    mut m4: Map[i32, i32] = map[7: 70]\n"
+            "    m4.destroy()\n"
+            "    let len4 = m4.len as i32\n"
+            "\n"
+            "    io.println(\"h1 {h1} len1 {len1} h2 {h2} len2 {len2} h3 {h3} len3 {len3} len4 {len4}\")\n"
+            "    return 0\n"
+            "}\n"
+        )
+        s1 = run_stage("stage1", program, "t72_variants")
+        s2 = run_stage("stage2", program, "t72_variants")
+        self.assertEqual(s1.returncode, 0, s1.stderr[-2000:])
+        self.assertEqual(s2.returncode, 0, s2.stderr[-2000:])
+        self.assertEqual(s1.stdout, s2.stdout)
+        self.assertEqual(s1.stdout.strip().splitlines(), ["h1 0 len1 0 h2 0 len2 0 h3 0 len3 0 len4 0"])
+
+    def test_teardown_rejections(self):
+        tmp = ROOT / ".velo_cache" / "t72_reject"
+        tmp.mkdir(parents=True, exist_ok=True)
+        rejections = [
+            ("use sys.io\nact main() -> i32 {\n    let m: heap Map[i32, i32] = heap map[1: 2]\n    m.destroy()\n    return 0\n}",
+             "cannot destroy from a map held by a let (declare with mut)", "rej_destroy_let"),
+            ("use sys.io\nact main() -> i32 {\n    let m: heap Map[i32, i32] = heap map[1: 2]\n    m.free()\n    return 0\n}",
+             "cannot free from a map held by a let (declare with mut)", "rej_free_let"),
+            ("use sys.io\nact main() -> i32 {\n    let m: heap Map[i32, i32] = heap map[1: 2]\n    map.destroy(@m)\n    return 0\n}",
+             "cannot destroy from a map held by a let (declare with mut)", "rej_module_destroy_let"),
+            ("use sys.io\nact main() -> i32 {\n    mut m: heap Map[i32, i32] = heap map[1: 2]\n    m.free(1)\n    return 0\n}",
+             "map.free takes no arguments", "rej_free_args"),
+            ("use sys.io\nact main() -> i32 {\n    map.free(123)\n    return 0\n}",
+             "map.free argument must be a map (got i32)", "rej_free_arg_type"),
+            ("use sys.io\nact main() -> i32 {\n    mut m: heap Map[i32, i32] = heap map[1: 2]\n    map.destroy(@m, 1)\n    return 0\n}",
+             "map.destroy expects exactly 1 argument: (map m)", "rej_destroy_arity"),
+            ("use sys.io\nact main() -> i32 {\n    mut m: heap Map[i32, i32] = heap map[1: 2]\n    map.other(@m)\n    return 0\n}",
+             "unknown map function 'other' (destroy, free are available)", "rej_unknown_map_fn"),
         ]
         for program, want, name in rejections:
             src = tmp / f"{name}.vl"

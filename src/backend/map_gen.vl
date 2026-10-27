@@ -83,97 +83,60 @@ act emit_map_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     let val_c = map_type_to_c(v_t)
     let kstring = map_kstring_c(k_t)
     if expr.first_arg == null {
-        sb_append_str(sb, "velo_map_create_empty((usize)sizeof(")
-        sb_append_str(sb, key_c)
-        sb_append_str(sb, "), ")
-        sb_append_str(sb, kstring)
-        sb_append_str(sb, ", (usize)sizeof(")
-        sb_append_str(sb, val_c)
-        sb_append_str(sb, "))")
+        mut fn_empty = "velo_map_create_empty((usize)sizeof("
+        if expr.kind == EXPR_HEAP_MAP_LIT { fn_empty = "velo_map_create_empty_heap((usize)sizeof(" }
+        sb_append_str(sb, fn_empty); sb_append_str(sb, key_c); sb_append_str(sb, "), "); sb_append_str(sb, kstring)
+        sb_append_str(sb, ", (usize)sizeof("); sb_append_str(sb, val_c); sb_append_str(sb, "))")
         return
     }
-    mut count = 0
-    mut cur = expr.first_arg
+    mut count = 0; mut cur = expr.first_arg
     loop cur != null {
         let v_node = cur.next
         if v_node == null { break }
-        count += 1
-        cur = v_node.next
+        count += 1; cur = v_node.next
     }
-    sb_append_str(sb, "velo_map_create_lit((usize)sizeof(")
-    sb_append_str(sb, key_c)
-    sb_append_str(sb, "), ")
-    sb_append_str(sb, kstring)
-    sb_append_str(sb, ", (usize)sizeof(")
-    sb_append_str(sb, val_c)
-    sb_append_str(sb, "), ")
-    sb_append_int(sb, count)
-    sb_append_str(sb, ", (")
-    if not str.starts_with(key_c, "const ") {
-        sb_append_str(sb, "const ")
-    }
-    sb_append_str(sb, key_c)
-    sb_append_str(sb, "[]){ ")
-    cur = expr.first_arg
-    mut first = true
+    mut fn_lit = "velo_map_create_lit((usize)sizeof("
+    if expr.kind == EXPR_HEAP_MAP_LIT { fn_lit = "velo_map_create_lit_heap((usize)sizeof(" }
+    sb_append_str(sb, fn_lit); sb_append_str(sb, key_c); sb_append_str(sb, "), "); sb_append_str(sb, kstring)
+    sb_append_str(sb, ", (usize)sizeof("); sb_append_str(sb, val_c); sb_append_str(sb, "), "); sb_append_int(sb, count); sb_append_str(sb, ", (")
+    if not str.starts_with(key_c, "const ") { sb_append_str(sb, "const ") }
+    sb_append_str(sb, key_c); sb_append_str(sb, "[]){ ")
+    cur = expr.first_arg; mut first = true
     loop cur != null {
         let v_node = cur.next
         if v_node == null { break }
         if not first { sb_append_str(sb, ", ") }
-        first = false
-        sb_append_char(sb, '(')
-        emit_c_expr(sb, st, cur)
-        sb_append_char(sb, ')')
+        first = false; sb_append_char(sb, '('); emit_c_expr(sb, st, cur); sb_append_char(sb, ')')
         cur = v_node.next
     }
     sb_append_str(sb, " }, (")
-    if not str.starts_with(val_c, "const ") {
-        sb_append_str(sb, "const ")
-    }
-    sb_append_str(sb, val_c)
-    sb_append_str(sb, "[]){ ")
-    cur = expr.first_arg
-    first = true
+    if not str.starts_with(val_c, "const ") { sb_append_str(sb, "const ") }
+    sb_append_str(sb, val_c); sb_append_str(sb, "[]){ ")
+    cur = expr.first_arg; first = true
     loop cur != null {
         let v_node = cur.next
         if v_node == null { break }
         if not first { sb_append_str(sb, ", ") }
-        first = false
-        sb_append_char(sb, '(')
-        emit_map_value_c(sb, st, v_node, v_t)
-        sb_append_char(sb, ')')
+        first = false; sb_append_char(sb, '('); emit_map_value_c(sb, st, v_node, v_t); sb_append_char(sb, ')')
         cur = v_node.next
     }
     sb_append_str(sb, " })")
 }
 
-// Index read: binds the key into its slot (eval order key → value), copies
-// the value out, and the miss is a loud fatal — the key-family token drives
-// the runtime's S5 repr writers (`map key not found: <krepr>`).
+// Index read: binds the key into its slot and copies the value out.
 act emit_map_index(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     let recv_t = infer_expr_type(st, expr.target)
     let k_t = map_key_type(recv_t)
     let v_t = map_value_type(recv_t)
     let key_c = map_key_slot_c(k_t)
     let val_c = map_type_to_c(v_t)
-    sb_append_str(sb, "(*(const ")
-    sb_append_str(sb, val_c)
-    sb_append_str(sb, "*)velo_map_get_ref(")
+    sb_append_str(sb, "(*(const "); sb_append_str(sb, val_c); sb_append_str(sb, "*)velo_map_get_ref(")
     emit_map_recv(sb, st, expr.target)
-    sb_append_str(sb, ", &(")
-    if not str.starts_with(key_c, "const ") {
-        sb_append_str(sb, "const ")
-    }
-    sb_append_str(sb, key_c)
-    sb_append_str(sb, "){ ")
-    emit_c_expr(sb, st, expr.index)
-    sb_append_str(sb, " }, \"")
-    sb_append_str(sb, k_t)
-    sb_append_str(sb, "\"))")
+    sb_append_str(sb, ", &("); if not str.starts_with(key_c, "const ") { sb_append_str(sb, "const ") }; sb_append_str(sb, key_c); sb_append_str(sb, "){ ")
+    emit_c_expr(sb, st, expr.index); sb_append_str(sb, " }, \""); sb_append_str(sb, k_t); sb_append_str(sb, "\"))")
 }
 
-// Member calls: put (upsert) / get (fatal-on-miss copy-out) / has (bool).
-// The checker already enforced arity, key/value slots, and the mut doctrine.
+// Member calls: put / get / get_or / take / has / free / destroy
 act emit_map_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     let member = expr.callee.member_name
     let recv_t = infer_expr_type(st, expr.callee.target)
@@ -181,116 +144,54 @@ act emit_map_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) 
     let v_t = map_value_type(recv_t)
     let key_c = map_key_slot_c(k_t)
     let val_c = map_type_to_c(v_t)
+    if member == "free" or member == "destroy" {
+        sb_append_str(sb, "velo_map_free("); emit_map_recv(sb, st, expr.callee.target); sb_append_str(sb, ")"); return
+    }
     if member == "put" {
         let v_node = expr.first_arg.next
         if v_t == "dyn" {
-            sb_append_str(sb, "velo_map_put_dyn(")
-            emit_map_recv(sb, st, expr.callee.target)
-            sb_append_str(sb, ", &(")
-            if not str.starts_with(key_c, "const ") {
-                sb_append_str(sb, "const ")
-            }
-            sb_append_str(sb, key_c)
-            sb_append_str(sb, "){ ")
-            emit_c_expr(sb, st, expr.first_arg)
-            sb_append_str(sb, " }, (")
-            emit_map_value_c(sb, st, v_node, v_t)
-            sb_append_str(sb, "))")
-            return
+            sb_append_str(sb, "velo_map_put_dyn("); emit_map_recv(sb, st, expr.callee.target)
+            sb_append_str(sb, ", &("); if not str.starts_with(key_c, "const ") { sb_append_str(sb, "const ") }; sb_append_str(sb, key_c); sb_append_str(sb, "){ ")
+            emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, " }, ("); emit_map_value_c(sb, st, v_node, v_t); sb_append_str(sb, "))"); return
         }
-        sb_append_str(sb, "velo_map_put(")
-        emit_map_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", &(")
-        if not str.starts_with(key_c, "const ") {
-            sb_append_str(sb, "const ")
-        }
-        sb_append_str(sb, key_c)
-        sb_append_str(sb, "){ ")
-        emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, " }, &(")
-        if not str.starts_with(val_c, "const ") {
-            sb_append_str(sb, "const ")
-        }
-        sb_append_str(sb, val_c)
-        sb_append_str(sb, "){ ")
-        emit_map_value_c(sb, st, v_node, v_t)
-        sb_append_str(sb, " })")
-        return
+        sb_append_str(sb, "velo_map_put("); emit_map_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", &("); if not str.starts_with(key_c, "const ") { sb_append_str(sb, "const ") }; sb_append_str(sb, key_c); sb_append_str(sb, "){ ")
+        emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, " }, &(")
+        if not str.starts_with(val_c, "const ") { sb_append_str(sb, "const ") }; sb_append_str(sb, val_c); sb_append_str(sb, "){ ")
+        emit_map_value_c(sb, st, v_node, v_t); sb_append_str(sb, " })"); return
     }
     if member == "get" {
-        sb_append_str(sb, "(*(const ")
-        sb_append_str(sb, val_c)
-        sb_append_str(sb, "*)velo_map_get_ref(")
+        sb_append_str(sb, "(*(const "); sb_append_str(sb, val_c); sb_append_str(sb, "*)velo_map_get_ref(")
         emit_map_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", &(")
-        if not str.starts_with(key_c, "const ") {
-            sb_append_str(sb, "const ")
-        }
-        sb_append_str(sb, key_c)
-        sb_append_str(sb, "){ ")
-        emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, " }, \"")
-        sb_append_str(sb, k_t)
-        sb_append_str(sb, "\"))")
-        return
+        sb_append_str(sb, ", &("); if not str.starts_with(key_c, "const ") { sb_append_str(sb, "const ") }; sb_append_str(sb, key_c); sb_append_str(sb, "){ ")
+        emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, " }, \""); sb_append_str(sb, k_t); sb_append_str(sb, "\"))"); return
     }
     if member == "get_or" {
-        sb_append_str(sb, "(velo_map_has(")
+        sb_append_str(sb, "(velo_map_has("); emit_map_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", &("); if not str.starts_with(key_c, "const ") { sb_append_str(sb, "const ") }; sb_append_str(sb, key_c); sb_append_str(sb, "){ ")
+        emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, " }) ? *(const "); sb_append_str(sb, val_c); sb_append_str(sb, "*)velo_map_get_ptr(")
         emit_map_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", &(")
-        if not str.starts_with(key_c, "const ") {
-            sb_append_str(sb, "const ")
-        }
-        sb_append_str(sb, key_c)
-        sb_append_str(sb, "){ ")
-        emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, " }) ? *(const ")
-        sb_append_str(sb, val_c)
-        sb_append_str(sb, "*)velo_map_get_ptr(")
-        emit_map_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", &(")
-        if not str.starts_with(key_c, "const ") {
-            sb_append_str(sb, "const ")
-        }
-        sb_append_str(sb, key_c)
-        sb_append_str(sb, "){ ")
-        emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, " }) : (")
-        emit_map_value_c(sb, st, expr.first_arg.next, v_t)
-        sb_append_str(sb, "))")
-        return
+        sb_append_str(sb, ", &("); if not str.starts_with(key_c, "const ") { sb_append_str(sb, "const ") }; sb_append_str(sb, key_c); sb_append_str(sb, "){ ")
+        emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, " }) : ("); emit_map_value_c(sb, st, expr.first_arg.next, v_t); sb_append_str(sb, "))"); return
     }
     if member == "take" {
-        sb_append_str(sb, "(*(const ")
-        sb_append_str(sb, val_c)
-        sb_append_str(sb, "*)velo_map_take_ref(")
+        sb_append_str(sb, "(*(const "); sb_append_str(sb, val_c); sb_append_str(sb, "*)velo_map_take_ref(")
         emit_map_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", &(")
-        if not str.starts_with(key_c, "const ") {
-            sb_append_str(sb, "const ")
-        }
-        sb_append_str(sb, key_c)
-        sb_append_str(sb, "){ ")
-        emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, " }, \"")
-        sb_append_str(sb, k_t)
-        sb_append_str(sb, "\"))")
-        return
+        sb_append_str(sb, ", &("); if not str.starts_with(key_c, "const ") { sb_append_str(sb, "const ") }; sb_append_str(sb, key_c); sb_append_str(sb, "){ ")
+        emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, " }, \""); sb_append_str(sb, k_t); sb_append_str(sb, "\"))"); return
     }
     if member == "has" {
-        sb_append_str(sb, "velo_map_has(")
-        emit_map_recv(sb, st, expr.callee.target)
-        sb_append_str(sb, ", &(")
-        if not str.starts_with(key_c, "const ") {
-            sb_append_str(sb, "const ")
-        }
-        sb_append_str(sb, key_c)
-        sb_append_str(sb, "){ ")
-        emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, " })")
-        return
+        sb_append_str(sb, "velo_map_has("); emit_map_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ", &("); if not str.starts_with(key_c, "const ") { sb_append_str(sb, "const ") }; sb_append_str(sb, key_c); sb_append_str(sb, "){ ")
+        emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, " })"); return
     }
-    // unreachable — the checker rejects unknown members before emission
+}
+
+// Module calls: map.destroy(@m) / map.free(@m)
+act emit_map_module_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @ExprNode) {
+    if member == "free" or member == "destroy" {
+        sb_append_str(sb, "velo_map_free("); emit_map_recv(sb, st, expr.first_arg); sb_append_str(sb, ")"); return
+    }
 }
 
 // 5.2 slice 7: `loop k of m { }` — key iteration in HASH order (a

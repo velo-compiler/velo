@@ -106,10 +106,8 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
         return "i32"  // unannotated empty: the checker rejects it upstream
     }
     if e.kind == EXPR_BITSET_LIT { return "bitset" }
-    if e.kind == EXPR_MAP_LIT {
-        // 5.2 slice 6: best-effort Map[K, V] inference (generic T unification needs the
-        // type; the strict key/value ladders ran in the checker). Pinned literals return
-        // their full spelling as-is, like Stage 1.
+    if e.kind == EXPR_MAP_LIT or e.kind == EXPR_HEAP_MAP_LIT {
+        // 5.2 slice 6 / 7.2: best-effort Map[K, V] inference
         if e.type_name != null and str.len(e.type_name) > 0 { return e.type_name }
         if e.first_arg == null or e.first_arg.next == null { return "i32" }
         let k0 = mono_infer_type(e.first_arg, scope)
@@ -135,10 +133,12 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
             expect_key = not expect_key
             cur = cur.next
         }
-        if not keys_uniform { return mono_map_spelling("dyn", "dyn") }  // checker rejects
-        if vals_uniform { return mono_map_spelling(k0, vk0) }
-        if all_numeric and has_float { return mono_map_spelling(k0, "f64") }
-        return mono_map_spelling(k0, "dyn")
+        mut hpfx = ""
+        if e.kind == EXPR_HEAP_MAP_LIT { hpfx = "heap " }
+        if not keys_uniform { return mono_map_spelling(hpfx, "dyn", "dyn") }  // checker rejects
+        if vals_uniform { return mono_map_spelling(hpfx, k0, vk0) }
+        if all_numeric and has_float { return mono_map_spelling(hpfx, k0, "f64") }
+        return mono_map_spelling(hpfx, k0, "dyn")
     }
     if e.kind == EXPR_INDEX {
         let tt = mono_infer_type(e.target, scope)
@@ -183,12 +183,12 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
                     return sb_to_string(@sb)
                 }
             }
-            if e.callee.target != null and e.callee.target.kind == EXPR_IDENT and e.callee.target.str_val == "shelf" { return "void" }
-            // 5.2 slice 6/7: map receiver calls — put void / get, get_or,
-            // take value / has bool
+            if e.callee.target != null and e.callee.target.kind == EXPR_IDENT and (e.callee.target.str_val == "shelf" or e.callee.target.str_val == "map") { return "void" }
+            // 5.2 slice 6/7 / 7.2: map receiver calls
             let mv = mono_map_value(rt)
             if mv != null {
-                if e.callee.member_name == "put" { return "void" }; if e.callee.member_name == "has" { return "bool" }
+                if e.callee.member_name == "put" or e.callee.member_name == "free" or e.callee.member_name == "destroy" { return "void" }
+                if e.callee.member_name == "has" { return "bool" }
                 if e.callee.member_name == "get" or e.callee.member_name == "get_or" or e.callee.member_name == "take" { return mv }
             }
             if e.callee.target != null and e.callee.target.kind == EXPR_IDENT and e.callee.target.str_val == "simd" {
@@ -288,7 +288,7 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
         if e.kind == EXPR_HEAP_SHELF_LIT { lit.kind = EXPR_HEAP_SHELF_LIT }
         return lit
     }
-    if e.kind == EXPR_MAP_LIT {
+    if e.kind == EXPR_MAP_LIT or e.kind == EXPR_HEAP_MAP_LIT {
         mut first_a: @ExprNode = null; mut last_a: @ExprNode = null; mut cur = e.first_arg
         loop cur != null {
             let a = mono_clone_expr(m, cur, scope, params, args)
@@ -296,6 +296,7 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
             cur = cur.next
         }
         let lit = make_map_lit_expr(first_a, e.arg_count / 2, e.line, e.col)
+        if e.kind == EXPR_HEAP_MAP_LIT { lit.kind = EXPR_HEAP_MAP_LIT }
         lit.type_name = e.type_name
         return lit
     }

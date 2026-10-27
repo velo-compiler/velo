@@ -22,18 +22,27 @@ use "../frontend/token.vl"
 // True for `Map[K, V]` (or `@Map[K, V]`). Bare `Map` reads false here — the
 // parser rejects that spelling itself with the identical wording on both
 // stages (`a bare 'Map' needs key and value types: use Map[K, V]`).
+// Task 7.2: true when the spelling carries the heap map modifier
+act starts_with_heap_map(t: string) -> bool {
+    if t == null { return false }
+    let len = str.len(t)
+    if len < 9 { return false }
+    return t[0] == 'h' and t[1] == 'e' and t[2] == 'a' and t[3] == 'p' and t[4] == ' ' and (t[5] == 'M' or t[5] == 'm') and t[6] == 'a' and t[7] == 'p' and t[8] == '['
+}
+
+// True for `Map[K, V]` (or `@Map[K, V]`, `heap Map[K, V]`). Bare `Map` reads false here.
 act is_map_type(type_name: string) -> bool {
     if type_name == null { return false }
-    let clean = strip_pointer_prefix(type_name)
+    mut clean = strip_pointer_prefix(type_name)
+    if starts_with_heap_map(clean) { clean = copy_slice_to_string(clean, 5, str.len(clean) - 5) }
     let len = str.len(clean)
     if len < 6 { return false }
-    if clean[0] == 'M' and clean[1] == 'a' and clean[2] == 'p' and clean[3] == '[' { return clean[len - 1] == ']' }
+    if (clean[0] == 'M' or clean[0] == 'm') and clean[1] == 'a' and clean[2] == 'p' and clean[3] == '[' { return clean[len - 1] == ']' }
     return false
 }
 
 // Finds the top-level comma inside `Map[K, V]` (scan starts past `Map[`);
-// returns len when none. The final ']' is never scanned, so empty brackets
-// cannot underflow the depth counter.
+// returns len when none.
 act map_comma_pos(clean: string, len: usize) -> usize {
     mut depth: usize = 0
     mut i: usize = 4
@@ -44,38 +53,27 @@ act map_comma_pos(clean: string, len: usize) -> usize {
     return len
 }
 
-// True when the spelling splits into two non-empty slots — the only form
-// Stage 1's `_map_kv` pair-returns; anything else stays silent there too.
+// True when the spelling splits into two non-empty slots.
 act map_has_slots(type_name: string) -> bool {
     if not is_map_type(type_name) { return false }
-    let clean = strip_pointer_prefix(type_name)
+    mut clean = strip_pointer_prefix(type_name)
+    if starts_with_heap_map(clean) { clean = copy_slice_to_string(clean, 5, str.len(clean) - 5) }
     let len = str.len(clean)
     let comma = map_comma_pos(clean, len)
-    if comma >= len - 1 { return false }
-    if comma - 4 == 0 { return false }
-    if (len - 1) - (comma + 1) == 0 { return false }
-    return true
+    return comma < len - 1 and comma - 4 != 0 and (len - 1) - (comma + 1) != 0
 }
 
-// Extracts the key type from `Map[K, V]` / `@Map[K, V]`; null when not a map
-// or when the slots do not split (empty literals need an annotation pin).
+// Extracts the key type from `Map[K, V]` / `@Map[K, V]` / `heap Map[K, V]`.
 act map_key_type(type_name: string) -> string {
     if type_name == null { return null }
-    let clean = strip_pointer_prefix(type_name)
+    mut clean = strip_pointer_prefix(type_name)
+    if starts_with_heap_map(clean) { clean = copy_slice_to_string(clean, 5, str.len(clean) - 5) }
     let len = str.len(clean)
-    if len < 9 { return null }  // shortest canonical spelling is `Map[a, b]`
-    if clean[0] != 'M' or clean[1] != 'a' or clean[2] != 'p' or clean[3] != '[' { return null }
-    if clean[len - 1] != ']' { return null }
+    if len < 9 or (clean[0] != 'M' and clean[0] != 'm') or clean[1] != 'a' or clean[2] != 'p' or clean[3] != '[' or clean[len - 1] != ']' { return null }
     let comma = map_comma_pos(clean, len)
-    if comma >= len - 1 { return null }
-    let key_len = comma - 4
-    if key_len == 0 { return null }
-    if (len - 1) - (comma + 1) == 0 { return null }
-    // Stage 1 strips both slots of their padding (`inner[:i].strip()`)
-    mut kstart: usize = 4
-    loop kstart < comma and clean[kstart] == ' ' { kstart += 1 }
-    mut kstop: usize = comma
-    loop kstop > kstart and clean[kstop - 1] == ' ' { kstop -= 1 }
+    if comma >= len - 1 or comma - 4 == 0 or (len - 1) - (comma + 1) == 0 { return null }
+    mut kstart: usize = 4; loop kstart < comma and clean[kstart] == ' ' { kstart += 1 }
+    mut kstop: usize = comma; loop kstop > kstart and clean[kstop - 1] == ' ' { kstop -= 1 }
     if kstop == kstart { return null }
     return copy_slice_to_string(clean, kstart, kstop - kstart)
 }
@@ -83,46 +81,32 @@ act map_key_type(type_name: string) -> string {
 // Extracts the value type (mirror of the key scan).
 act map_value_type(type_name: string) -> string {
     if type_name == null { return null }
-    let clean = strip_pointer_prefix(type_name)
+    mut clean = strip_pointer_prefix(type_name)
+    if starts_with_heap_map(clean) { clean = copy_slice_to_string(clean, 5, str.len(clean) - 5) }
     let len = str.len(clean)
-    if len < 9 { return null }
-    if clean[0] != 'M' or clean[1] != 'a' or clean[2] != 'p' or clean[3] != '[' { return null }
-    if clean[len - 1] != ']' { return null }
+    if len < 9 or (clean[0] != 'M' and clean[0] != 'm') or clean[1] != 'a' or clean[2] != 'p' or clean[3] != '[' or clean[len - 1] != ']' { return null }
     let comma = map_comma_pos(clean, len)
-    if comma >= len - 1 { return null }
-    if comma - 4 == 0 { return null }
-    let val_len = (len - 1) - (comma + 1)
-    if val_len == 0 { return null }
-    // Stage 1 strips both slots of their padding (`inner[i + 1:].strip()`)
-    mut vstart: usize = comma + 1
-    loop vstart < len - 1 and clean[vstart] == ' ' { vstart += 1 }
-    mut vstop: usize = len - 1
-    loop vstop > vstart and clean[vstop - 1] == ' ' { vstop -= 1 }
+    if comma >= len - 1 or comma - 4 == 0 or (len - 1) - (comma + 1) == 0 { return null }
+    mut vstart: usize = comma + 1; loop vstart < len - 1 and clean[vstart] == ' ' { vstart += 1 }
+    mut vstop: usize = len - 1; loop vstop > vstart and clean[vstop - 1] == ' ' { vstop -= 1 }
     if vstop == vstart { return null }
     return copy_slice_to_string(clean, vstart, vstop - vstart)
 }
 
 // Message joiners (string_builder grows as needed; exact sizing is a hint).
-act map_join3(a: string, b: string, c: string) -> string {
-    mut sb = create_sb(str.len(a) + str.len(b) + str.len(c) + 2)
-    sb_append_str(@sb, a); sb_append_str(@sb, b); sb_append_str(@sb, c)
-    return sb_to_string(@sb)
-}
-
+act map_join3(a: string, b: string, c: string) -> string { return map_join5(a, b, c, "", "") }
 act map_join5(a: string, b: string, c: string, d: string, e: string) -> string {
     mut sb = create_sb(str.len(a) + str.len(b) + str.len(c) + str.len(d) + str.len(e) + 2)
     sb_append_str(@sb, a); sb_append_str(@sb, b); sb_append_str(@sb, c); sb_append_str(@sb, d); sb_append_str(@sb, e)
     return sb_to_string(@sb)
 }
 
-// The pinned key families: 10 integer widths + bool + string. Floats stand
-// on NaN being unordered; struct/dyn/@T rows are unsized at the hash level.
+// The pinned key families: 10 integer widths + bool + string.
 act is_map_key_family(name: string) -> bool {
     if name == null { return false }
     if name == "i8" or name == "i16" or name == "i32" or name == "i64" { return true }
     if name == "u8" or name == "u16" or name == "u32" or name == "u64" { return true }
-    if name == "usize" or name == "isize" { return true }
-    if name == "bool" or name == "string" { return true }
+    if name == "usize" or name == "isize" or name == "bool" or name == "string" { return true }
     return false
 }
 
@@ -131,9 +115,7 @@ act map_key_family_error_text(key: string) -> string {
     return map_join3("map keys must be integer, bool, or string (got ", key, ")")
 }
 
-// The key-family catch-all gate (Stage 1 raises it inside its `_map_kv`
-// extraction): every map spelling with an illegal key rejects at first
-// touch — declares, uses, and annotation borrows alike.
+// Catch-all key family gate.
 act map_checked_key(st: @SymbolTable, key: string, line: i32, col: i32) -> string {
     if key == null { return null }
     if is_map_key_family(key) { return key }
@@ -141,24 +123,21 @@ act map_checked_key(st: @SymbolTable, key: string, line: i32, col: i32) -> strin
     return null
 }
 
-// Uniform report+memo fail (the shared triple at every reject site here):
-// reports when msg is non-null, marks the node unknown, returns "unknown".
+// Uniform report+memo fail.
 act map_fail(st: @SymbolTable, node: @ExprNode, line: i32, col: i32, msg: string) -> string {
     if msg != null and str.len(msg) > 0 { report_error("semantic", line, col, msg); st.error_count += 1 }
     if node != null { node.type_name = "unknown"; node.bool_val = true }
     return "unknown"
 }
 
-// Mut doctrine: put / index-write require a mut root binding (the shelf
-// two-part verb template with the noun swapped to "map").
+// Mut doctrine: put / index-write require a mut root binding.
 act check_map_mut_binding(st: @SymbolTable, receiver: @ExprNode, verb: string, word: string) {
     if receiver == null { return }
     let root = shelf_root_binding_name(receiver)
     if root != null {
         let sym = resolve_variable(st, root)
         if sym != null and not sym.is_mut {
-            let msg = map_join5("cannot ", verb, " ", word, " a map held by a let (declare with mut)")
-            report_error("semantic", receiver.line, receiver.col, msg); st.error_count += 1
+            report_error("semantic", receiver.line, receiver.col, map_join5("cannot ", verb, " ", word, " a map held by a let (declare with mut)")); st.error_count += 1
         }
     }
 }
@@ -170,8 +149,12 @@ act check_map_mut_binding(st: @SymbolTable, receiver: @ExprNode, verb: string, w
 act map_literal_kv(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.bool_val { return expr.type_name }
     if expr.arg_count == 0 {
-        if expr.type_name != null and str.len(expr.type_name) > 0 { expr.bool_val = true; return expr.type_name }  // pinned by the annotation
-        map_fail(st, expr, expr.line, expr.col, "cannot infer key and value types of empty map literal — annotate it (e.g. let m: Map[i32, string] = map[])")
+        if expr.type_name != null and str.len(expr.type_name) > 0 { expr.bool_val = true; return expr.type_name }
+        if expr.kind == EXPR_HEAP_MAP_LIT {
+            map_fail(st, expr, expr.line, expr.col, "cannot infer key and value types of empty map literal — annotate it (e.g. let m: heap Map[i32, string] = heap map[])")
+        } else {
+            map_fail(st, expr, expr.line, expr.col, "cannot infer key and value types of empty map literal — annotate it (e.g. let m: Map[i32, string] = map[])")
+        }
         return "unknown"
     }
     let k0 = infer_expr_type(st, expr.first_arg)
@@ -180,27 +163,17 @@ act map_literal_kv(st: @SymbolTable, expr: @ExprNode) -> string {
     let v0 = infer_expr_type(st, expr.first_arg.next)
     if v0 == "unknown" { return map_fail(st, expr, expr.line, expr.col, null) }
     if v0 == "@void" { return map_fail(st, expr, expr.first_arg.next.line, expr.first_arg.next.col, "map values cannot be null (use a @T pointer value)") }
-    // keys pass: every even chain node must match the first key's family form
-    mut cur = expr.first_arg.next.next
-    mut expect_key = true
+    mut cur = expr.first_arg.next.next; mut expect_key = true
     loop cur != null {
         if expect_key {
             let k_t = infer_expr_type(st, cur)
-            if k_t != "unknown" and k_t != k0 {
-                return map_fail(st, expr, cur.line, cur.col, map_join5("map literal key types differ: ", k0, " vs ", k_t, ""))
-            }
+            if k_t != "unknown" and k_t != k0 { return map_fail(st, expr, cur.line, cur.col, map_join5("map literal key types differ: ", k0, " vs ", k_t, "")) }
         }
-        expect_key = not expect_key
-        cur = cur.next
+        expect_key = not expect_key; cur = cur.next
     }
-    // value ladder state rides the shelf scan (null / widen / differ / dyn)
-    mut is_mixed = false
-    mut all_numeric = true
-    mut has_float = false
-    mut second = ""  // first value type that differs from the first one
+    mut is_mixed = false; mut all_numeric = true; mut has_float = false; mut second = ""
     if is_dyn_int_family(v0) or is_dyn_float_family(v0) { if is_dyn_float_family(v0) { has_float = true } } else { all_numeric = false }
-    cur = expr.first_arg.next.next
-    expect_key = true  // position 2 is a KEY — skip, then values land on odds
+    cur = expr.first_arg.next.next; expect_key = true
     loop cur != null {
         if not expect_key {
             let t = infer_expr_type(st, cur)
@@ -209,23 +182,18 @@ act map_literal_kv(st: @SymbolTable, expr: @ExprNode) -> string {
             if t != v0 { is_mixed = true; if str.len(second) == 0 { second = t } }
             if is_dyn_int_family(t) or is_dyn_float_family(t) { if is_dyn_float_family(t) { has_float = true } } else { all_numeric = false }
         }
-        expect_key = not expect_key
-        cur = cur.next
+        expect_key = not expect_key; cur = cur.next
     }
-    if not is_mixed { expr.type_name = map_join5("Map[", k0, ", ", v0, "]"); expr.bool_val = true; return expr.type_name }
+    mut hpfx = "Map["
+    if expr.kind == EXPR_HEAP_MAP_LIT { hpfx = "heap Map[" }
+    if not is_mixed { expr.type_name = map_join5(hpfx, k0, ", ", v0, "]"); expr.bool_val = true; return expr.type_name }
     if all_numeric {
-        if has_float {
-            expr.type_name = map_join5("Map[", k0, ", ", "f64", "]"); expr.bool_val = true
-            return expr.type_name
-        }
-        // mixed integer widths: strict differ (deliberate soundness wall)
+        if has_float { expr.type_name = map_join5(hpfx, k0, ", ", "f64", "]"); expr.bool_val = true; return expr.type_name }
         return map_fail(st, expr, expr.line, expr.col, map_join5("map literal value types differ: ", v0, " vs ", second, ""))
     }
-    // mixed with a non-numeric → Map[K, dyn]: EVERY value must box
     let err0 = dyn_boxable_error(v0)
     if err0 != null { return map_fail(st, expr, expr.first_arg.next.line, expr.first_arg.next.col, err0) }
-    cur = expr.first_arg.next.next
-    expect_key = true  // skip the even keys; the dyn pass scans odd values
+    cur = expr.first_arg.next.next; expect_key = true
     loop cur != null {
         if not expect_key {
             let t = infer_expr_type(st, cur)
@@ -233,10 +201,9 @@ act map_literal_kv(st: @SymbolTable, expr: @ExprNode) -> string {
             let err = dyn_boxable_error(t)
             if err != null { return map_fail(st, expr, cur.line, cur.col, err) }
         }
-        expect_key = not expect_key
-        cur = cur.next
+        expect_key = not expect_key; cur = cur.next
     }
-    expr.type_name = map_join5("Map[", k0, ", ", "dyn", "]"); expr.bool_val = true
+    expr.type_name = map_join5(hpfx, k0, ", ", "dyn", "]"); expr.bool_val = true
     return expr.type_name
 }
 
@@ -248,7 +215,7 @@ act map_inferred_type(st: @SymbolTable, expr: @ExprNode) -> string {
 // Property reads on a map: only `.len` (usize) exists as a property.
 act check_map_member_access(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.member_name == "len" { return "usize" }
-    return map_fail(st, expr, expr.line, expr.col, map_join5("unknown map member '", expr.member_name, "' (put, get, has, len, get_or, take are available)", "", ""))
+    return map_fail(st, expr, expr.line, expr.col, map_join5("unknown map member '", expr.member_name, "' (put, get, has, len, get_or, take, free, destroy are available)", "", ""))
 }
 
 // Index reads: strict key typing; a read yields V (the miss fatal is runtime).
@@ -261,9 +228,7 @@ act check_map_index_read(st: @SymbolTable, expr: @ExprNode) -> string {
     return map_value_type(recv_t)
 }
 
-// The value-slot contract: exact V; dyn values box any boxable element
-// (wordings mirror Stage 1's `_check_map_value`, incl. the verbatim shelf
-// boxability texts the machinery shares).
+// The value-slot contract: exact V; dyn values box any boxable element.
 act check_map_value_slot(st: @SymbolTable, val_node: @ExprNode, v_t: string) {
     if v_t == null { return }
     let got = infer_expr_type(st, val_node)
@@ -292,15 +257,17 @@ act check_map_assign(st: @SymbolTable, stmt: @StmtNode) {
     check_map_value_slot(st, stmt.val_expr, map_value_type(recv_t))
 }
 
-// Member calls: put (upsert, mut root) / get (V, fatal-on-miss) / has (bool)
-// and the slice-7 twins get_or (V, lazy default) / take (V, mut root, fatal).
-// Order mirrors Stage 1's `_map_expect`: unknown member, arity, strict key,
-// put/get_or value slot, and LAST the put/take mut doctrine.
+// Member calls: put, get, has, get_or, take, free, destroy
 act check_map_member_call(st: @SymbolTable, expr: @ExprNode) -> string {
     let member = expr.callee.member_name
     let recv_t = infer_expr_type(st, expr.callee.target)
-    if member != "put" and member != "get" and member != "has" and member != "get_or" and member != "take" {
-        return map_fail(st, expr, expr.line, expr.col, map_join5("unknown map member '", member, "' (put, get, has, len, get_or, take are available)", "", ""))
+    if member != "put" and member != "get" and member != "has" and member != "get_or" and member != "take" and member != "free" and member != "destroy" {
+        return map_fail(st, expr, expr.line, expr.col, map_join5("unknown map member '", member, "' (put, get, has, len, get_or, take, free, destroy are available)", "", ""))
+    }
+    if member == "free" or member == "destroy" {
+        if expr.arg_count != 0 { return map_fail(st, expr, expr.line, expr.col, map_join5("map.", member, " takes no arguments", "", "")) }
+        check_map_mut_binding(st, expr.callee.target, member, "from")
+        return "void"
     }
     if member == "put" { if expr.arg_count != 2 { return map_fail(st, expr, expr.line, expr.col, "map.put expects exactly 2 arguments: (map m, key, value)") } }
     else if member == "get_or" { if expr.arg_count != 2 { return map_fail(st, expr, expr.line, expr.col, "map.get_or expects exactly 2 arguments: (map m, key, default)") } }
@@ -311,33 +278,31 @@ act check_map_member_call(st: @SymbolTable, expr: @ExprNode) -> string {
     if got_key != k_t { return map_fail(st, expr, expr.first_arg.line, expr.first_arg.col, map_join5("map key mismatch: expected ", k_t, " (got ", got_key, ")")) }
     if member == "put" {
         check_map_value_slot(st, expr.first_arg.next, map_value_type(recv_t))
-        // the mut doctrine rides last, byte-for-byte Stage 1's `_map_expect`
         check_map_mut_binding(st, expr.callee.target, "put", "into")
         return "void"
     }
-    if member == "get_or" { check_map_value_slot(st, expr.first_arg.next, map_value_type(recv_t)); return map_value_type(recv_t) }  // slice 7: the default rides the put value-slot gates verbatim
-    if member == "take" { check_map_mut_binding(st, expr.callee.target, "take", "from"); return map_value_type(recv_t) }  // slice 7: removal is a mutation — the mut doctrine rides last
+    if member == "get_or" { check_map_value_slot(st, expr.first_arg.next, map_value_type(recv_t)); return map_value_type(recv_t) }
+    if member == "take" { check_map_mut_binding(st, expr.callee.target, "take", "from"); return map_value_type(recv_t) }
     if member == "get" { return map_value_type(recv_t) }
     return "bool"
 }
 
-// 5.2: annotated map declarations — an empty literal borrows BOTH slots from
-// the annotation's `Map[K, V]`; a non-empty literal must match exactly. The
-// gate is the RAW `Map[` prefix (Stage 1's exact gate — `@Map` spellings
-// neither pin nor mismatch-compare), and odd one-slot spellings silently fall
-// through like Stage 1's `_map_kv` returning None.
+// 5.2 / 7.2: annotated map declarations
 act check_map_annotation(st: @SymbolTable, decl_t: string, val: @ExprNode, line: i32, col: i32) {
-    if val == null or val.kind != EXPR_MAP_LIT { return }
-    if decl_t == null or str.len(decl_t) < 5 or decl_t[0] != 'M' or decl_t[1] != 'a' or decl_t[2] != 'p' or decl_t[3] != '[' { return }
-    if not map_has_slots(decl_t) { return }
-    if map_checked_key(st, map_key_type(decl_t), line, col) == null {
-        map_fail(st, val, line, col, null)  // memo silent — the family gate already reported
+    if val == null or (val.kind != EXPR_MAP_LIT and val.kind != EXPR_HEAP_MAP_LIT) { return }
+    let clean = strip_pointer_prefix(decl_t)
+    let ann_is_heap = starts_with_heap_map(clean)
+    if not ann_is_heap and (clean == null or str.len(clean) < 5 or clean[0] != 'M' or clean[1] != 'a' or clean[2] != 'p' or clean[3] != '[') { return }
+    if not map_has_slots(clean) { return }
+    if map_checked_key(st, map_key_type(clean), line, col) == null { map_fail(st, val, line, col, null); return }
+    let lit_is_heap = val.kind == EXPR_HEAP_MAP_LIT
+    if ann_is_heap != lit_is_heap {
+        mut lit_full = ""
+        if val.arg_count > 0 { lit_full = map_literal_kv(st, val) } else if lit_is_heap { lit_full = "heap map[]" } else { lit_full = "map[]" }
+        report_error("semantic", line, col, map_join5("map literal type ", lit_full, " does not match annotation ", decl_t, "")); st.error_count += 1
         return
     }
-    if val.arg_count == 0 {
-        val.type_name = decl_t  // both slots pinned from the annotation
-        return
-    }
+    if val.arg_count == 0 { val.type_name = decl_t; return }
     let lit_kv = map_literal_kv(st, val)
     if lit_kv == "unknown" or lit_kv == null { return }
     if lit_kv != decl_t {
@@ -345,24 +310,33 @@ act check_map_annotation(st: @SymbolTable, decl_t: string, val: @ExprNode, line:
     }
 }
 
-// 5.2: an empty map literal in a return borrows the declared return type —
-// `Map[`-shaped (raw or @-pointed, like Stage 1's return pin) and split into
-// two legal slots. Illegal-key returns report the family wording once.
+// 5.2 / 7.2: pin empty map in return
 act pin_empty_map_return(st: @SymbolTable, val: @ExprNode, ret_t: string) {
-    if val == null or val.kind != EXPR_MAP_LIT or val.arg_count != 0 { return }
+    if val == null or (val.kind != EXPR_MAP_LIT and val.kind != EXPR_HEAP_MAP_LIT) or val.arg_count != 0 { return }
     if ret_t == null or not map_has_slots(ret_t) { return }
-    if map_checked_key(st, map_key_type(ret_t), val.line, val.col) == null {
-        map_fail(st, val, val.line, val.col, null)  // memo silent — family already reported
-        return
-    }
+    if map_checked_key(st, map_key_type(ret_t), val.line, val.col) == null { map_fail(st, val, val.line, val.col, null); return }
     val.type_name = ret_t
 }
 
-// Cross-call boundary: a map argument must string-match BOTH slots (the
-// shared VeloMap layout would corrupt reads via mixed ksz/vsz/kstring).
+// Map module calls: map.destroy(@m) / map.free(@m)
+act check_map_module_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
+    if member != "destroy" and member != "free" {
+        report_error("semantic", expr.line, expr.col, map_join5("unknown map function '", member, "' (destroy, free are available)", "", "")); st.error_count += 1; return "unknown"
+    }
+    if expr.arg_count != 1 {
+        report_error("semantic", expr.line, expr.col, map_join5("map.", member, " expects exactly 1 argument: (map m)", "", "")); st.error_count += 1; return "unknown"
+    }
+    let arg_t = infer_expr_type(st, expr.first_arg)
+    if not is_map_type(arg_t) {
+        report_error("semantic", expr.first_arg.line, expr.first_arg.col, map_join5("map.", member, " argument must be a map (got ", arg_t, ")")); st.error_count += 1; return "unknown"
+    }
+    check_map_mut_binding(st, expr.first_arg, member, "from")
+    return "void"
+}
+
+// Cross-call boundary: a map argument must string-match BOTH slots
 act check_map_call_args(st: @SymbolTable, expr: @ExprNode, fn_sym: @FunctionSym) {
-    mut cur_p = fn_sym.first_param
-    mut cur_a = expr.first_arg
+    mut cur_p = fn_sym.first_param; mut cur_a = expr.first_arg
     loop cur_p != null and cur_a != null {
         let want = cur_p.type_name
         if is_map_type(want) {
@@ -371,14 +345,11 @@ act check_map_call_args(st: @SymbolTable, expr: @ExprNode, fn_sym: @FunctionSym)
                 report_error("semantic", expr.line, expr.col, map_join5("map argument types must match exactly: got ", got, ", expected ", want, "")); st.error_count += 1
             }
         }
-        cur_p = cur_p.next
-        cur_a = cur_a.next
+        cur_p = cur_p.next; cur_a = cur_a.next
     }
 }
 
-// 5.2 slice 7: `loop k of m { }` — the KEYS iterate in HASH order (a
-// deterministic FNV derivation, NOT insertion order), snapshotted at entry;
-// put/take in the body mutate the live map, never the view. Returns K.
+// 5.2 slice 7: loop k of m { }
 act check_map_loop_keys(st: @SymbolTable, stmt: @StmtNode) -> string {
     let coll_t = infer_expr_type(st, stmt.expr)
     let k_t = map_checked_key(st, map_key_type(coll_t), stmt.line, stmt.col)
@@ -386,9 +357,7 @@ act check_map_loop_keys(st: @SymbolTable, stmt: @StmtNode) -> string {
     return map_fail(st, stmt.expr, stmt.line, stmt.col, map_join3("the 'of' source of a loop must be a shelf, map, or ring (got ", coll_t, ")"))
 }
 
-// Loop-of dispatch: map sources iterate keys; ring sources iterate FIFO
-// (5.2 slice 9); the shelf walker keeps the rest (its own wording now
-// covers the same union).
+// Loop-of dispatch
 act check_map_loop_source(st: @SymbolTable, stmt: @StmtNode) -> string {
     if is_map_type(infer_expr_type(st, stmt.expr)) { return check_map_loop_keys(st, stmt) }
     if is_ring_type(infer_expr_type(st, stmt.expr)) { return check_ring_loop_elem(st, stmt) }

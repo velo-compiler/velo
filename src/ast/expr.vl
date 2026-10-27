@@ -24,6 +24,7 @@ let EXPR_MAP_LIT: i32 = 118   // 5.2 slice 6: first_arg chain holds K,V,K,V…; 
 let EXPR_RING_LIT: i32 = 150  // 5.2 slice 9: first_arg chain holds the elements; type_name = pinned elem
 let EXPR_BITSET_LIT: i32 = 151  // 5.2 slice 9: first_arg chain holds the index expressions
 let EXPR_HEAP_SHELF_LIT: i32 = 153  // 5.2 slice 10: a shelf literal whose payload is heap-backed
+let EXPR_HEAP_MAP_LIT: i32 = 154    // Task 7.2: a map literal whose payload is heap-backed
 
 // Represents a single field initializer in a struct instantiation (e.g. `x: 10.0`).
 // Linked via `next` to support arbitrary numbers of fields without dynamic heap buffers.
@@ -262,6 +263,19 @@ act make_heap_shelf_lit_expr(first_elem: @ExprNode, count: usize, line: i32, col
     node.kind = EXPR_HEAP_SHELF_LIT
     node.first_arg = first_elem
     node.arg_count = count
+    node.type_name = null
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Task 7.2: creates a HEAP map literal node (`heap map[...]`) — the
+// map literal shape with the heap-backed payload (VeloMap.src sentinel).
+act make_heap_map_lit_expr(first_elem: @ExprNode, pair_count: usize, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_HEAP_MAP_LIT
+    node.first_arg = first_elem
+    node.arg_count = pair_count * 2
     node.type_name = null
     node.line = line
     node.col = col

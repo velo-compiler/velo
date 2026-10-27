@@ -2004,21 +2004,29 @@ static inline VeloShelf velo_fs_read_dir(const char* path) {
 // HASH-ordered, not insertion-ordered — pinned.
 // ============================================================================
 #define VELO_MAP_TOMB ((uint64_t)2)
+#define VELO_MAP_HEAP_SRC ((VeloAllocator)1)
 typedef struct VeloMap {
-    void*     keys;    // cap * ksz key bytes (inline; strings store the pointer)
-    void*     vals;    // cap * vsz value bytes
-    uint64_t* hashes;  // cap hash slots (0 = empty; live hold h | 1; TOMB = 2)
-    size_t    len;     // live entries
-    size_t    tomb;    // tombstone slots (probes skip them; put recycles)
-    size_t    cap;     // capacity (power of two)
-    size_t    ksz;     // key size in bytes (sizeof(K))
-    size_t    vsz;     // value size in bytes (sizeof(V))
-    bool      kstring; // string keys: content hash + strcmp equality
+    void*         keys;    // cap * ksz key bytes (inline; strings store the pointer)
+    void*         vals;    // cap * vsz value bytes
+    uint64_t*     hashes;  // cap hash slots (0 = empty; live hold h | 1; TOMB = 2)
+    size_t        len;     // live entries
+    size_t        tomb;    // tombstone slots (probes skip them; put recycles)
+    size_t        cap;     // capacity (power of two)
+    size_t        ksz;     // key size in bytes (sizeof(K))
+    size_t        vsz;     // value size in bytes (sizeof(V))
+    bool          kstring; // string keys: content hash + strcmp equality
+    VeloAllocator src;     // NULL = active zone bump arena; non-NULL = persistent heap
 } VeloMap;
 
 static inline void velo_map_init(VeloMap* m, size_t ksz, bool kstring, size_t vsz) {
     m->keys = NULL; m->vals = NULL; m->hashes = NULL;
     m->len = 0; m->tomb = 0; m->cap = 0; m->ksz = ksz; m->vsz = vsz; m->kstring = kstring;
+    m->src = NULL;
+}
+
+static inline void* velo_map_alloc(const VeloMap* m, size_t sz, size_t count) {
+    if (m->src) return velo_heap_alloc(sz, count);
+    return velo_mem_alloc(sz, count);
 }
 
 static inline uint64_t velo_map_fnv1a(const uint8_t* p, size_t n) {
@@ -2051,14 +2059,15 @@ static inline bool velo_map_key_eq(const VeloMap* m, const void* a, const void* 
     return memcmp(a, b, m->ksz) == 0;
 }
 
-// Regenerate: rebuild every LIVE row into fresh arena tables (tombs and the
-// old generation become arena garbage, reclaimed wholesale at zone exit).
+// Regenerate: rebuild every LIVE row into fresh tables. When m->src != NULL (heap map),
+// allocates via persistent heap and frees the previous keys/vals/hashes buffers.
 // `new_cap` carries the ×2 grow AND the slice-7 half-cap compact (same cap,
 // tomb purge) through one code path.
 static inline void velo_map_regen(VeloMap* m, size_t new_cap) {
-    void* nkeys = velo_mem_alloc(m->ksz, new_cap);
-    void* nvals = velo_mem_alloc(m->vsz, new_cap);
-    uint64_t* nhash = (uint64_t*)velo_mem_alloc(sizeof(uint64_t), new_cap);
+    void* nkeys = velo_map_alloc(m, m->ksz, new_cap);
+    void* nvals = velo_map_alloc(m, m->vsz, new_cap);
+    uint64_t* nhash = (uint64_t*)velo_map_alloc(m, sizeof(uint64_t), new_cap);
+    memset(nhash, 0, sizeof(uint64_t) * new_cap);
     if (m->cap > 0) {
         for (size_t i = 0; i < m->cap; i++) {
             if (m->hashes[i] == 0 || m->hashes[i] == VELO_MAP_TOMB) continue;
@@ -2067,6 +2076,11 @@ static inline void velo_map_regen(VeloMap* m, size_t new_cap) {
             nhash[at] = m->hashes[i];
             memcpy((char*)nkeys + at * m->ksz, (const char*)m->keys + i * m->ksz, m->ksz);
             memcpy((char*)nvals + at * m->vsz, (const char*)m->vals + i * m->vsz, m->vsz);
+        }
+        if (m->src) {
+            if (m->keys) velo_heap_free(m->keys);
+            if (m->vals) velo_heap_free(m->vals);
+            if (m->hashes) velo_heap_free(m->hashes);
         }
     }
     m->keys = nkeys;
@@ -2195,6 +2209,38 @@ static inline VeloMap velo_map_create_lit(size_t ksz, bool kstring, size_t vsz, 
         velo_map_put(&m, (const char*)keys + i * ksz, (const char*)vals + i * vsz);
     }
     return m;
+}
+
+static inline VeloMap velo_map_create_empty_heap(size_t ksz, bool kstring, size_t vsz) {
+    VeloMap m = {0};
+    velo_map_init(&m, ksz, kstring, vsz);
+    m.src = VELO_MAP_HEAP_SRC;
+    return m;
+}
+
+static inline VeloMap velo_map_create_lit_heap(size_t ksz, bool kstring, size_t vsz, size_t count, const void* keys, const void* vals) {
+    VeloMap m = {0};
+    velo_map_init(&m, ksz, kstring, vsz);
+    m.src = VELO_MAP_HEAP_SRC;
+    for (size_t i = 0; i < count; i++) {
+        velo_map_put(&m, (const char*)keys + i * ksz, (const char*)vals + i * vsz);
+    }
+    return m;
+}
+
+static inline void velo_map_free(VeloMap* m) {
+    if (!m) return;
+    if (m->src) {
+        if (m->keys) velo_heap_free(m->keys);
+        if (m->vals) velo_heap_free(m->vals);
+        if (m->hashes) velo_heap_free(m->hashes);
+    }
+    m->keys = NULL;
+    m->vals = NULL;
+    m->hashes = NULL;
+    m->len = 0;
+    m->tomb = 0;
+    m->cap = 0;
 }
 
 static inline const void* velo_map_get_ptr(const VeloMap* m, const void* key) {
