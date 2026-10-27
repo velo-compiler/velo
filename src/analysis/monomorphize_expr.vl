@@ -173,7 +173,7 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
             let rt = mono_infer_type(e.callee.target, scope)
             let ee = mono_shelf_elem(rt)
             if ee != null {
-                if e.callee.member_name == "put" or e.callee.member_name == "insert" { return "void" }
+                if e.callee.member_name == "put" or e.callee.member_name == "insert" or e.callee.member_name == "free" or e.callee.member_name == "destroy" { return "void" }
                 if e.callee.member_name == "take" or e.callee.member_name == "remove_at" { return ee }
                 if e.callee.member_name == "sorted" {
                     mut sb = create_sb(str.len(ee) + 9)
@@ -183,6 +183,7 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
                     return sb_to_string(@sb)
                 }
             }
+            if e.callee.target != null and e.callee.target.kind == EXPR_IDENT and e.callee.target.str_val == "shelf" { return "void" }
             // 5.2 slice 6/7: map receiver calls — put void / get, get_or,
             // take value / has bool
             let mv = mono_map_value(rt)

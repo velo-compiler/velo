@@ -48,7 +48,7 @@ EXAMPLE32_LINES = [
     "bit 1 toggled off",
     "write-through: 70 len 3 row: 1,70,9",
     "stock len 6 second 200 zone-grown 3 last 2",
-    "heap ledger: 64",
+    "heap ledger: 48",
 ]
 
 

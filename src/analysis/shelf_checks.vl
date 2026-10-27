@@ -67,7 +67,7 @@ act shelf_root_binding_name(expr: @ExprNode) -> string {
         if cur.kind == EXPR_MEMBER { cur = cur.target; continue }
         if cur.kind == EXPR_INDEX { cur = cur.target; continue }
         if cur.kind == EXPR_CAST { cur = cur.operand; continue }
-        if cur.kind == EXPR_DEREF { cur = cur.operand; continue }
+        if cur.kind == EXPR_DEREF or cur.kind == EXPR_ADDRESS_OF { cur = cur.operand; continue }
         return null
     }
     return null
@@ -197,7 +197,7 @@ act check_shelf_member_access(st: @SymbolTable, expr: @ExprNode) -> string {
     mut msg = create_sb(str.len(expr.member_name) + 64)
     sb_append_str(@msg, "unknown shelf member '")
     sb_append_str(@msg, expr.member_name)
-    sb_append_str(@msg, "' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
+    sb_append_str(@msg, "' (put, take, len, sorted, insert, remove_at, reversed, join, free, destroy are available)")
     report_error("semantic", expr.line, expr.col, sb_to_string(@msg))
     st.error_count += 1
     return "unknown"

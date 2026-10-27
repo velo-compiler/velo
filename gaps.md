@@ -549,29 +549,33 @@ flowchart TD
 
 ### Phase 7: Dynamic Collections Lifecycle & Memory Integrity
 
-#### Task 7.1: Reallocation Leak Fix for `heap shelf` & Explicit Teardown (`shelf.free` / `shelf.destroy`)
-* **Problem**:
-  - In `velo/runtime/velo_runtime.h:1536-1545`, `velo_shelf_reserve()` doubles shelf capacity by allocating a new buffer with `velo_shelf_alloc(s, s->esz, new_cap)`. When `s->src` is `VELO_SHELF_HEAP_SRC` (`heap shelf`), this allocates persistent heap memory via `velo_heap_alloc`. It copies live elements, but never calls `velo_heap_free()` on the old buffer `s->data`. Over repeated appends and insertions, every intermediate power-of-two buffer (4, 8, 16, ..., 1024) remains abandoned on `g_velo_heap_active`.
-  - Furthermore, the language lacks an explicit destructor builtin (`shelf.destroy(@s)` or `shelf.free(@s)`), meaning long-lived heap shelves have no mechanism to return their allocated memory to the system heap upon completion.
-* **Specification**:
+#### Task 7.1: Reallocation Leak Fix for `heap shelf` & Explicit Teardown (`shelf.free` / `shelf.destroy`) [COMPLETED] ✅
+* **Former Defect**:
+  - In `velo/runtime/velo_runtime.h:1536-1545`, `velo_shelf_reserve()` allocated new buffers via `velo_shelf_alloc(s, s->esz, new_cap)`. When `s->src` was `VELO_SHELF_HEAP_SRC` (`heap shelf`), this allocated persistent heap memory via `velo_heap_alloc`. It copied live elements, but never called `velo_heap_free()` on the old buffer `s->data`. Over repeated appends and insertions, every intermediate power-of-two buffer remained abandoned on `g_velo_heap_active`.
+  - Furthermore, the language lacked an explicit destructor builtin (`shelf.destroy(@s)` / `shelf.free(@s)` or `s.destroy()` / `s.free()`), meaning long-lived heap shelves had no mechanism to return their backing memory to the system heap upon completion.
+* **Fix Applied**:
   - In `velo/runtime/velo_runtime.h`:
-    * In `velo_shelf_reserve(VeloShelf* s)`, preserve `void* old_data = s->data;`. After successful copy into `next`, if `s->src != NULL && old_data != NULL`, call `velo_heap_free(old_data)` before reassigning `s->data = next`.
-    * Implement `velo_shelf_free(VeloShelf* s)`: if `s->src != NULL && s->data != NULL`, call `velo_heap_free(s->data)`. Reset `s->data = NULL; s->len = 0; s->cap = 0;`.
-  - In Stage 1 (`velo/analysis.py`, `velo/monomorphize.py`, `velo/codegen_c.py`):
-    * Expose `shelf.destroy(s: @shelf[T])` and `shelf.free(s: @shelf[T])` builtins, lowering to `velo_shelf_free(&s)` or `velo_shelf_free(s)`.
-  - In Stage 2 (`src/analysis/shelf_checks.vl`, `src/backend/shelf_gen.vl`, `src/analysis/type_checker.vl`):
-    * Register and validate `shelf.destroy` and `shelf.free` calls with pointer parameter verification.
-* **Target Files**:
-  - `velo/runtime/velo_runtime.h`
-  - `velo/analysis.py`
-  - `velo/monomorphize.py`
-  - `velo/codegen_c.py`
-  - `src/analysis/shelf_checks.vl`
-  - `src/backend/shelf_gen.vl`
-  - `src/backend/shelf_calls_gen.vl`
+    * Captured `void* old_data = s->data;` in `velo_shelf_reserve`. After copying elements into `next`, called `if (s->src && old_data != NULL) velo_heap_free(old_data);` before updating `s->data = next`.
+    * Implemented `velo_shelf_free(VeloShelf* s)`: frees backing buffer via `velo_heap_free` if `s->src && s->data`, and resets `s->data = NULL; s->len = 0; s->cap = 0;`.
+  - In Stage 1 (`velo/codegen_c.py`, `velo/monomorphize.py`):
+    * Extended member call checks and codegen to support `s.free()` and `s.destroy()` returning `void`, requiring `mut` shelf receiver.
+    * Extended module call checks and codegen to support `shelf.destroy(@s)` / `shelf.free(@s)` returning `void`, enforcing arity 1, shelf type, and `mut` binding.
+    * Updated `_shelf_root_binding` to unwrap `AddressOf` AST nodes.
+  - In Stage 2 (`src/analysis/shelf_checks.vl`, `src/analysis/shelf_calls.vl`, `src/analysis/type_checker.vl`, `src/analysis/monomorphize_expr.vl`, `src/backend/shelf_calls_gen.vl`, `src/backend/codegen_expr.vl`):
+    * Updated `check_shelf_member_call` and `check_shelf_module_call` validating `destroy`/`free` calls and checking `mut` root bindings.
+    * Updated `shelf_root_binding_name` to unwrap `EXPR_ADDRESS_OF` nodes.
+    * Added `emit_shelf_module_call` and `emit_shelf_member_call` free/destroy branches emitting `velo_shelf_free(...)`.
+    * Strictly maintained line budget ($\le 397$ lines across all 65 `.vl` compiler files).
+* **Residual Limitation**:
+  - Direct pointer alias writes to a shelf struct (`mut p = @s; p.destroy()`) unbind through the pointer target; freeing a shelf whose interior is held by active `@shelf` references requires the programmer not to access the destroyed shelf afterward (tracked in lifetime audit).
 * **Verification**:
-  - Add unit test asserting `velo_heap_used()` is 0 after inserting 10,000 elements into a `heap shelf[i32]` and calling `shelf.destroy(@s)`.
-  - Verify dual-compiler parity and bootstrap determinism.
+  - Added `TestHeapShelfTeardown` in `tests/test_dynamic_collections.py` verifying 2,000 appends to `heap shelf[i32]` followed by teardown returns `mem.heap_used()` to 0.
+  - Verified method syntax (`s.destroy()`, `s.free()`) and module syntax (`shelf.destroy(@s)`, `shelf.free(@s)`).
+  - Verified rejection of teardown on non-mut shelves and invalid argument counts/types.
+  - Re-verified `tests/test_array_mastery.py` where intermediate buffer leak was eliminated, dropping peak heap ledger from 64 to 48 bytes.
+  - Rebuilt full 3-stage bootstrap chain (`bin/velo_gen1.exe -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe`), verified bit-for-bit SHA-256 determinism (`3B0CE936...`).
+  - Passed all 105 native tests (`bin/velo.exe test examples/15_native_tests.vl`).
+  - Passed full test suite (`python -m pytest tests -q`): 411 passed in 252s.
 
 #### Task 7.2: Parameterized and Heap-Backed Maps (`heap map[K, V]` & `map.destroy`)
 * **Problem**:

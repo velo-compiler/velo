@@ -1537,8 +1537,10 @@ static inline void velo_shelf_reserve(VeloShelf* s) {
     if (s->data == NULL || s->len == s->cap) {
         size_t new_cap = s->cap ? s->cap : 4;
         while (new_cap < s->len + 1) new_cap *= 2;
+        void* old_data = s->data;
         void* next = velo_shelf_alloc(s, s->esz, new_cap);   // slice 10: the src selector
-        if (s->len > 0) memcpy(next, s->data, s->len * s->esz);
+        if (s->len > 0 && old_data != NULL) memcpy(next, old_data, s->len * s->esz);
+        if (s->src && old_data != NULL) velo_heap_free(old_data);
         s->data = next;
         s->cap = new_cap;
     }
@@ -1629,6 +1631,19 @@ static inline VeloShelf velo_shelf_create_lit(size_t esz, size_t count, const vo
         memcpy(s.data, elems, count * esz);
     }
     return s;
+}
+
+// Task 7.1: Explicit teardown for shelves (shelf.destroy / shelf.free).
+// If the shelf is heap-backed (s->src != NULL), frees its data buffer from
+// the persistent heap ledger. Resets data pointer, length, and capacity to 0.
+static inline void velo_shelf_free(VeloShelf* s) {
+    if (!s) return;
+    if (s->src && s->data != NULL) {
+        velo_heap_free(s->data);
+    }
+    s->data = NULL;
+    s->len = 0;
+    s->cap = 0;
 }
 
 // ============================================================================

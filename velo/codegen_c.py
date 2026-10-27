@@ -887,7 +887,7 @@ class CCodeGenerator:
                 node = node.target
             elif isinstance(node, CastExpr):
                 node = node.expr
-            elif isinstance(node, DerefExpr):
+            elif isinstance(node, (DerefExpr, AddressOf)):
                 node = node.operand
             else:
                 return None
@@ -897,8 +897,15 @@ class CCodeGenerator:
         """5.2 compile-checks shelf surface calls (put/take/sorted/insert/
         remove_at/reversed/join). Mirrored by the Stage 2 checker — both
         stages reject the same programs with the same messages."""
-        if member not in ("put", "take", "sorted", "insert", "remove_at", "reversed", "join"):
-            raise ValueError(f"unknown shelf member '{member}' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
+        if member not in ("put", "take", "sorted", "insert", "remove_at", "reversed", "join", "free", "destroy"):
+            raise ValueError(f"unknown shelf member '{member}' (put, take, len, sorted, insert, remove_at, reversed, join, free, destroy are available)")
+        if member in ("free", "destroy"):
+            if len(args) != 0:
+                raise ValueError(f"shelf.{member} takes no arguments")
+            root = self._shelf_root_binding(target_expr)
+            if root is not None and not self.current_scope_mut.get(root, False):
+                raise ValueError(f"cannot {member} from a shelf held by a let (declare with mut)")
+            return
         if member == "join":
             # 5.2 slice 5: read-only stringify glue (legal on a let)
             if len(args) != 1:
@@ -2309,7 +2316,7 @@ class CCodeGenerator:
                 recv = self._resolve_expr_type(value.callee.target)
                 shelf_elem = self._shelf_elem_type(recv)
                 if shelf_elem is not None:
-                    if value.callee.member in ("put", "insert"):
+                    if value.callee.member in ("put", "insert", "free", "destroy"):
                         return "void"
                     if value.callee.member in ("take", "remove_at"):
                         return shelf_elem
@@ -2318,7 +2325,7 @@ class CCodeGenerator:
                         return "string"
                     if value.callee.member == "sorted" or value.callee.member == "reversed":
                         return f"shelf[{shelf_elem}]"
-                    raise ValueError(f"unknown shelf member '{value.callee.member}' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
+                    raise ValueError(f"unknown shelf member '{value.callee.member}' (put, take, len, sorted, insert, remove_at, reversed, join, free, destroy are available)")
             if isinstance(value.callee, MemberAccess):
                 # 5.2 slice 6/7: map receiver calls — put is void, get and
                 # the get_or/take twins return the value, has returns bool
@@ -2353,6 +2360,8 @@ class CCodeGenerator:
                     raise ValueError(f"unknown bitset member '{value.callee.member}' (set, clear, toggle, has, count, first_unset, and, or_with, xor_with, flip are available)")
             if isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier) and value.callee.target.name in self.kind_defs:
                 return value.callee.target.name
+            if isinstance(value.callee, MemberAccess) and isinstance(value.callee.target, Identifier) and value.callee.target.name == "shelf":
+                return "void"
             if isinstance(value.callee, Identifier):
                 if value.callee.name in ("f32x4", "f32x4_splat"):
                     return "f32x4"
@@ -2545,7 +2554,7 @@ class CCodeGenerator:
             if self._shelf_elem_type(target_type) is not None:
                 if expr.member == "len":
                     return "usize"
-                raise ValueError(f"unknown shelf member '{expr.member}' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
+                raise ValueError(f"unknown shelf member '{expr.member}' (put, take, len, sorted, insert, remove_at, reversed, join, free, destroy are available)")
             # 5.2 slice 6: map property reads (len); other members are loud
             # errors naming the map surface
             map_kv = self._map_kv(target_type)
@@ -2579,7 +2588,7 @@ class CCodeGenerator:
                 recv = self._resolve_expr_type(expr.callee.target)
                 shelf_elem = self._shelf_elem_type(recv)
                 if shelf_elem is not None:
-                    if expr.callee.member in ("put", "insert"):
+                    if expr.callee.member in ("put", "insert", "free", "destroy"):
                         return "void"
                     if expr.callee.member in ("take", "remove_at"):
                         return shelf_elem
@@ -2588,7 +2597,7 @@ class CCodeGenerator:
                         return "string"
                     if expr.callee.member == "sorted" or expr.callee.member == "reversed":
                         return f"shelf[{shelf_elem}]"
-                    raise ValueError(f"unknown shelf member '{expr.callee.member}' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
+                    raise ValueError(f"unknown shelf member '{expr.callee.member}' (put, take, len, sorted, insert, remove_at, reversed, join, free, destroy are available)")
                 # 5.2 slice 6/7: map receiver calls — put void / get,
                 # get_or, take value / has bool
                 recv_kv = self._map_kv(recv)
@@ -2716,6 +2725,18 @@ class CCodeGenerator:
                     if expr.callee.member == "sqrt":
                         return "f32x4"
                     return self._thread_arg_type(expr.args[0])
+                elif expr.callee.target.name == "shelf":
+                    if expr.callee.member not in ("destroy", "free"):
+                        raise ValueError(f"unknown shelf function '{expr.callee.member}' (destroy, free are available)")
+                    if len(expr.args) != 1:
+                        raise ValueError(f"shelf.{expr.callee.member} expects exactly 1 argument: (shelf s)")
+                    arg_t = self._resolve_expr_type(expr.args[0])
+                    if self._shelf_elem_type(arg_t) is None:
+                        raise ValueError(f"shelf.{expr.callee.member} argument must be a shelf (got {arg_t})")
+                    root = self._shelf_root_binding(expr.args[0])
+                    if root is not None and not self.current_scope_mut.get(root, False):
+                        raise ValueError(f"cannot {expr.callee.member} from a shelf held by a let (declare with mut)")
+                    return "void"
                 elif expr.callee.target.name == "io":
                     # All io calls are void (mirrors type_checker.vl), so
                     # mem count/fill checks can render and reject them.
@@ -3143,6 +3164,21 @@ class CCodeGenerator:
                     elif expr.callee.target.name == "simd":
                         return self._emit_simd_call(expr.callee.member, expr.args)
 
+                    elif expr.callee.target.name == "shelf":
+                        if expr.callee.member not in ("destroy", "free"):
+                            raise ValueError(f"unknown shelf function '{expr.callee.member}' (destroy, free are available)")
+                        if len(expr.args) != 1:
+                            raise ValueError(f"shelf.{expr.callee.member} expects exactly 1 argument: (shelf s)")
+                        arg_t = self._resolve_expr_type(expr.args[0])
+                        if self._shelf_elem_type(arg_t) is None:
+                            raise ValueError(f"shelf.{expr.callee.member} argument must be a shelf (got {arg_t})")
+                        root = self._shelf_root_binding(expr.args[0])
+                        if root is not None and not self.current_scope_mut.get(root, False):
+                            raise ValueError(f"cannot {expr.callee.member} from a shelf held by a let (declare with mut)")
+                        arg_code = self._emit_expression(expr.args[0])
+                        rec = f"({arg_code})" if arg_t.startswith("@") else f"&({arg_code})"
+                        return f"velo_shelf_free({rec})"
+
                 # 5.2: shelf receiver member calls — put/take helpers, compile-checked
                 target_type = self._resolve_expr_type(expr.callee.target)
                 if self._shelf_elem_type(target_type) is not None:
@@ -3173,6 +3209,8 @@ class CCodeGenerator:
                     if expr.callee.member == "remove_at":
                         idx_code = self._emit_expression(expr.args[0])
                         return f"(*(({elem_c}*)velo_shelf_remove_at({rec}, (usize)({idx_code}))))"
+                    if expr.callee.member in ("free", "destroy"):
+                        return f"velo_shelf_free({rec})"
                     if expr.callee.member == "sorted":
                         return f"velo_shelf_sorted_{elem}({rec})"
                     if expr.callee.member == "reversed":

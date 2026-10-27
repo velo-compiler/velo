@@ -1333,9 +1333,11 @@ class Monomorphizer:
                 # 5.2: shelf receiver calls — put/insert are void, take/
                 # remove_at yield the element, sorted() a new shelf[elem]
                 recv = self._infer_expr_type(expr.callee.target, scope)
+                if isinstance(expr.callee.target, Identifier) and expr.callee.target.name == "shelf":
+                    return "void"
                 elem = _shelf_elem_of(recv)
                 if elem is not None:
-                    if expr.callee.member in ("put", "insert"):
+                    if expr.callee.member in ("put", "insert", "free", "destroy"):
                         return "void"
                     if expr.callee.member in ("take", "remove_at"):
                         return elem

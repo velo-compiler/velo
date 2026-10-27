@@ -233,11 +233,57 @@ act check_shelf_member_call(st: @SymbolTable, expr: @ExprNode) -> string {
         }
         return "string"
     }
+    if member == "free" or member == "destroy" {
+        if expr.arg_count != 0 {
+            mut msg = create_sb(str.len(member) + 32)
+            sb_append_str(@msg, "shelf.")
+            sb_append_str(@msg, member)
+            sb_append_str(@msg, " takes no arguments")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+            return "unknown"
+        }
+        check_shelf_mut_binding(st, expr.callee.target, member, "from")
+        return "void"
+    }
     // `.len` must be a property read, not a call; anything else is unknown
     mut msg = create_sb(str.len(member) + 64)
     sb_append_str(@msg, "unknown shelf member '")
     sb_append_str(@msg, member)
-    sb_append_str(@msg, "' (put, take, len, sorted, insert, remove_at, reversed, join are available)")
+    sb_append_str(@msg, "' (put, take, len, sorted, insert, remove_at, reversed, join, free, destroy are available)")
     report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
     return "unknown"
+}
+
+// Shelf module call checks: shelf.destroy(@s) / shelf.free(@s).
+// Enforces arity == 1, shelf argument, and mut binding.
+act check_shelf_module_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
+    if member != "destroy" and member != "free" {
+        mut msg = create_sb(str.len(member) + 64)
+        sb_append_str(@msg, "unknown shelf function '")
+        sb_append_str(@msg, member)
+        sb_append_str(@msg, "' (destroy, free are available)")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+        return "unknown"
+    }
+    if expr.arg_count != 1 {
+        mut msg = create_sb(str.len(member) + 64)
+        sb_append_str(@msg, "shelf.")
+        sb_append_str(@msg, member)
+        sb_append_str(@msg, " expects exactly 1 argument: (shelf s)")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+        return "unknown"
+    }
+    let arg_t = infer_expr_type(st, expr.first_arg)
+    if not is_shelf_type(arg_t) {
+        mut msg = create_sb(str.len(member) + str.len(arg_t) + 64)
+        sb_append_str(@msg, "shelf.")
+        sb_append_str(@msg, member)
+        sb_append_str(@msg, " argument must be a shelf (got ")
+        sb_append_str(@msg, arg_t)
+        sb_append_str(@msg, ")")
+        report_error("semantic", expr.first_arg.line, expr.first_arg.col, sb_to_string(@msg)); st.error_count += 1
+        return "unknown"
+    }
+    check_shelf_mut_binding(st, expr.first_arg, member, "from")
+    return "void"
 }

@@ -192,8 +192,22 @@ act emit_shelf_member_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode
         sb_append_str(sb, "))")
         return
     }
+    if member == "free" or member == "destroy" {
+        sb_append_str(sb, "velo_shelf_free(")
+        emit_shelf_recv(sb, st, expr.callee.target)
+        sb_append_str(sb, ")")
+        return
+    }
     // checker handles unknown members; emit the property for totality
     emit_c_expr(sb, st, expr.callee.target)
     sb_append_char(sb, '.')
     sb_append_str(sb, member)
+}
+
+act emit_shelf_module_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @ExprNode) {
+    if member == "free" or member == "destroy" {
+        sb_append_str(sb, "velo_shelf_free(")
+        emit_shelf_recv(sb, st, expr.first_arg)
+        sb_append_str(sb, ")")
+    }
 }
