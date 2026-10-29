@@ -107,6 +107,7 @@ data SymbolTable {
     unsafe_shelf_index: bool  // 5.2 slice 11: --unsafe-shelf-index lowers index READS unguarded
     is_test: bool  // 6.5: native test runner mode
     source_file: string  // 6.5: source file path for assertion diagnostics
+    no_line_directives: bool  // 9.1: --no-line-directives suppresses #line directives
 }
 
 // Allocates and initializes an empty lexical scope.
@@ -120,7 +121,7 @@ act create_scope(parent: @Scope) -> @Scope {
 act init_symbol_table(st: @SymbolTable) {
     st.first_struct = null; st.struct_count = 0; st.first_kind = null; st.kind_count = 0; st.first_function = null; st.function_count = 0
     st.global_scope = create_scope(null); st.current_scope = st.global_scope; st.error_count = 0; st.has_operator_overloads = false
-    st.fresh_counter = 0; st.unsafe_shelf_index = false; st.is_test = false; st.source_file = ""
+    st.fresh_counter = 0; st.unsafe_shelf_index = false; st.is_test = false; st.source_file = ""; st.no_line_directives = false
 }
 
 // Pushes a new inner lexical scope onto the scope stack.

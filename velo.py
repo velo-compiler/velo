@@ -38,6 +38,7 @@ def main():
     run_parser.add_argument("-l", dest="libs", action="append", default=[], help="Link with external library (e.g. -lraylib)")
     run_parser.add_argument("-L", dest="lib_dirs", action="append", default=[], help="Add library directory to search path (e.g. -L./lib)")
     run_parser.add_argument("--cc", choices=["gcc", "cl"], default="gcc", help="C compiler backend to invoke (default: gcc)")
+    run_parser.add_argument("--no-line-directives", action="store_true", help="Suppress #line preprocessor directives in emitted C")
 
     # 'build' command
     build_parser = subparsers.add_parser("build", help="Compile a Velo program into a native executable")
@@ -50,11 +51,13 @@ def main():
     build_parser.add_argument("-l", dest="libs", action="append", default=[], help="Link with external library (e.g. -lraylib)")
     build_parser.add_argument("-L", dest="lib_dirs", action="append", default=[], help="Add library directory to search path (e.g. -L./lib)")
     build_parser.add_argument("--cc", choices=["gcc", "cl"], default="gcc", help="C compiler backend to invoke (default: gcc)")
+    build_parser.add_argument("--no-line-directives", action="store_true", help="Suppress #line preprocessor directives in emitted C")
 
     # 'emit-c' command
     emit_parser = subparsers.add_parser("emit-c", help="Emit generated C99 code without compiling")
     emit_parser.add_argument("file", help="Path to the .vl source file")
     emit_parser.add_argument("--unsafe-shelf-index", action="store_true", help="Lower shelf index reads unguarded (out-of-range becomes silent UB)")
+    emit_parser.add_argument("--no-line-directives", action="store_true", help="Suppress #line preprocessor directives in emitted C")
 
     # 'check' command
     check_parser = subparsers.add_parser("check", help="Validate a Velo program without generating code")
@@ -83,6 +86,7 @@ def main():
     test_parser.add_argument("-l", dest="libs", action="append", default=[], help="Link with external library (e.g. -lraylib)")
     test_parser.add_argument("-L", dest="lib_dirs", action="append", default=[], help="Add library directory to search path (e.g. -L./lib)")
     test_parser.add_argument("--cc", choices=["gcc", "cl"], default="gcc", help="C compiler backend to invoke (default: gcc)")
+    test_parser.add_argument("--no-line-directives", action="store_true", help="Suppress #line preprocessor directives in emitted C")
 
     # 'pkg' command
     pkg_parser = subparsers.add_parser("pkg", help="Package manager commands")
@@ -100,6 +104,7 @@ def main():
     pkg_build_parser.add_argument("-l", dest="libs", action="append", default=[], help="Link with external library (e.g. -lraylib)")
     pkg_build_parser.add_argument("-L", dest="lib_dirs", action="append", default=[], help="Add library directory to search path (e.g. -L./lib)")
     pkg_build_parser.add_argument("--cc", choices=["gcc", "cl"], default="gcc", help="C compiler backend to invoke (default: gcc)")
+    pkg_build_parser.add_argument("--no-line-directives", action="store_true", help="Suppress #line preprocessor directives in emitted C")
 
     pkg_run_parser = pkg_subparsers.add_parser("run", help="Build and run project defined by velo.pkg")
     pkg_run_parser.add_argument("manifest_path", nargs="?", default="velo.pkg", help="Path to velo.pkg (default: velo.pkg)")
@@ -111,6 +116,7 @@ def main():
     pkg_run_parser.add_argument("-l", dest="libs", action="append", default=[], help="Link with external library (e.g. -lraylib)")
     pkg_run_parser.add_argument("-L", dest="lib_dirs", action="append", default=[], help="Add library directory to search path (e.g. -L./lib)")
     pkg_run_parser.add_argument("--cc", choices=["gcc", "cl"], default="gcc", help="C compiler backend to invoke (default: gcc)")
+    pkg_run_parser.add_argument("--no-line-directives", action="store_true", help="Suppress #line preprocessor directives in emitted C")
 
     args = parser.parse_args()
 
@@ -122,6 +128,7 @@ def main():
     # 5.2 slice 11: --unsafe-shelf-index lowers shelf index READS unguarded
     # (writes stay guarded). Doc command doesn't emit, so it stays unset.
     driver.unsafe_index_flag = getattr(args, "unsafe_shelf_index", False)
+    driver.no_line_directives = getattr(args, "no_line_directives", False)
 
     try:
         if args.command == "run":
@@ -146,6 +153,8 @@ def main():
                     release_mode = True
                 elif arg == "--unsafe-shelf-index":
                     driver.unsafe_index_flag = True
+                elif arg == "--no-line-directives":
+                    driver.no_line_directives = True
                 elif arg == "--cc" and i + 1 < len(raw_args):
                     cc_backend = raw_args[i + 1]
                     i += 1
@@ -278,6 +287,8 @@ def main():
                             release_mode = True
                         elif arg == "--unsafe-shelf-index":
                             driver.unsafe_index_flag = True
+                        elif arg == "--no-line-directives":
+                            driver.no_line_directives = True
                         elif arg == "--cc" and i + 1 < len(raw_args):
                             cc_backend = raw_args[i + 1]
                             i += 1

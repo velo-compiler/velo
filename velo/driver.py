@@ -18,6 +18,7 @@ class CompilerDriver:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         # 5.2 slice 11: the --unsafe-shelf-index knob (set once by the CLI)
         self.unsafe_index_flag = False
+        self.no_line_directives = False
 
     def _find_gcc(self) -> str:
         gcc_path = shutil.which("gcc")
@@ -107,11 +108,12 @@ class CompilerDriver:
         load_file(root_path)
         return Program(declarations=all_declarations)
 
-    def compile_to_c(self, source_path: str, is_test: bool = False) -> str:
+    def compile_to_c(self, source_path: str, is_test: bool = False, no_line_directives: bool = False) -> str:
         ast = self.resolve_program(source_path)
         codegen = CCodeGenerator()
         codegen.unsafe_shelf_index = self.unsafe_index_flag   # 5.2 slice 11: the knob
         codegen.is_test = is_test
+        codegen.no_line_directives = no_line_directives or self.no_line_directives
         codegen.source_path = source_path
         c_code = codegen.generate(ast)
         return c_code
@@ -164,9 +166,9 @@ class CompilerDriver:
               debug: bool = False, release: bool = False, opt_level: Optional[str] = None,
               libs: Optional[list] = None, lib_dirs: Optional[list] = None,
               extra_flags: Optional[list] = None,
-              is_test: bool = False, cc: str = "gcc") -> str:
+              is_test: bool = False, cc: str = "gcc", no_line_directives: bool = False) -> str:
         path = Path(source_path).resolve()
-        c_code = self.compile_to_c(source_path, is_test=is_test)
+        c_code = self.compile_to_c(source_path, is_test=is_test, no_line_directives=no_line_directives)
 
         # Write generated C code
         stem = f"{path.stem}_test" if is_test else path.stem
@@ -307,10 +309,11 @@ class CompilerDriver:
             debug: bool = False, release: bool = False, opt_level: Optional[str] = None,
             libs: Optional[list] = None, lib_dirs: Optional[list] = None,
             extra_flags: Optional[list] = None,
-            cc: str = "gcc") -> int:
+            cc: str = "gcc", no_line_directives: bool = False) -> int:
         exe_path = self.build(source_path, output_path=output_path,
                               debug=debug, release=release, opt_level=opt_level,
-                              libs=libs, lib_dirs=lib_dirs, extra_flags=extra_flags, cc=cc)
+                              libs=libs, lib_dirs=lib_dirs, extra_flags=extra_flags, cc=cc,
+                              no_line_directives=no_line_directives)
         cmd = [exe_path] + (args or [])
         res = subprocess.run(cmd)
         return res.returncode
@@ -318,7 +321,7 @@ class CompilerDriver:
     def test(self, target_path: Optional[str] = None, filter_str: Optional[str] = None,
              debug: bool = False, release: bool = False, opt_level: Optional[str] = None,
              libs: Optional[list] = None, lib_dirs: Optional[list] = None,
-             cc: str = "gcc") -> int:
+             cc: str = "gcc", no_line_directives: bool = False) -> int:
         target_str = target_path if target_path is not None else "."
         p = Path(target_str).resolve()
         test_files: List[Path] = []
@@ -343,7 +346,8 @@ class CompilerDriver:
         overall_exit = 0
         for tf in test_files:
             exe_path = self.build(str(tf), is_test=True, debug=debug, release=release,
-                                  opt_level=opt_level, libs=libs, lib_dirs=lib_dirs, cc=cc)
+                                  opt_level=opt_level, libs=libs, lib_dirs=lib_dirs, cc=cc,
+                                  no_line_directives=no_line_directives)
             cmd = [exe_path]
             if filter_str:
                 cmd.extend(["--filter", filter_str])

@@ -174,7 +174,8 @@ act resolve_and_parse(d: @CompilerDriver, file_path: string) -> @ProgramNode {
 
 // Translates a Velo source program into a complete, standalone C99 source string.
 // Slice 11: unsafe_index carries the --unsafe-shelf-index knob to the emitter.
-act compile_source_to_c_test(source_path: string, unsafe_index: bool, is_test: bool) -> string {
+// 9.1: no_line_directives suppresses #line preprocessor directives.
+act compile_source_to_c_test_opts(source_path: string, unsafe_index: bool, is_test: bool, no_line_directives: bool) -> string {
     mut d: CompilerDriver
     init_driver(@d)
 
@@ -189,6 +190,7 @@ act compile_source_to_c_test(source_path: string, unsafe_index: bool, is_test: b
     init_symbol_table(@st)
     st.unsafe_shelf_index = unsafe_index
     st.is_test = is_test
+    st.no_line_directives = no_line_directives
     st.source_file = source_path
 
     let sem_ok = check_program(@st, prog)
@@ -200,13 +202,21 @@ act compile_source_to_c_test(source_path: string, unsafe_index: bool, is_test: b
     return emit_translation_unit(@st, prog)
 }
 
+act compile_source_to_c_test(source_path: string, unsafe_index: bool, is_test: bool) -> string {
+    return compile_source_to_c_test_opts(source_path, unsafe_index, is_test, false)
+}
+
 act compile_source_to_c(source_path: string, unsafe_index: bool) -> string {
-    return compile_source_to_c_test(source_path, unsafe_index, false)
+    return compile_source_to_c_test_opts(source_path, unsafe_index, false, false)
+}
+
+act compile_source_to_c_opts(source_path: string, unsafe_index: bool, no_line_directives: bool) -> string {
+    return compile_source_to_c_test_opts(source_path, unsafe_index, false, no_line_directives)
 }
 
 // Builds a native executable from a Velo source file by compiling to C and invoking the C compiler backend.
-act build_executable(source_path: string, output_exe: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string) -> bool {
-    let c_code = compile_source_to_c(source_path, unsafe_index)
+act build_executable_opts(source_path: string, output_exe: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string, no_line_directives: bool) -> bool {
+    let c_code = compile_source_to_c_opts(source_path, unsafe_index, no_line_directives)
     if c_code == null {
         return false
     }
@@ -239,8 +249,12 @@ act build_executable(source_path: string, output_exe: string, unsafe_index: bool
     return fs.exists(out_path)
 }
 
+act build_executable(source_path: string, output_exe: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string) -> bool {
+    return build_executable_opts(source_path, output_exe, unsafe_index, opt_flags, linker_flags, cc, false)
+}
+
 // Compiles and runs a Velo source file.
-act run_source_file(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string) -> i32 {
+act run_source_file_opts(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string, no_line_directives: bool) -> i32 {
     let stem = get_file_stem(source_path)
     mut exe_sb = create_sb(128)
     sb_append_str(@exe_sb, ".velo_cache/")
@@ -248,7 +262,7 @@ act run_source_file(source_path: string, unsafe_index: bool, opt_flags: string, 
     sb_append_str(@exe_sb, ".exe")
     let exe_path = sb_to_string(@exe_sb)
 
-    let ok = build_executable(source_path, exe_path, unsafe_index, opt_flags, linker_flags, cc)
+    let ok = build_executable_opts(source_path, exe_path, unsafe_index, opt_flags, linker_flags, cc, no_line_directives)
     if not ok {
         return 1
     }
@@ -257,9 +271,13 @@ act run_source_file(source_path: string, unsafe_index: bool, opt_flags: string, 
     return system(run_cmd)
 }
 
+act run_source_file(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string) -> i32 {
+    return run_source_file_opts(source_path, unsafe_index, opt_flags, linker_flags, cc, false)
+}
+
 // Compiles and runs tests in a single Velo source file.
-act test_source_file(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, filter_arg: string, cc: string) -> i32 {
-    let c_code = compile_source_to_c_test(source_path, unsafe_index, true)
+act test_source_file_opts(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, filter_arg: string, cc: string, no_line_directives: bool) -> i32 {
+    let c_code = compile_source_to_c_test_opts(source_path, unsafe_index, true, no_line_directives)
     if c_code == null { return 1 }
 
     let stem = get_file_stem(source_path)
@@ -288,10 +306,14 @@ act test_source_file(source_path: string, unsafe_index: bool, opt_flags: string,
     return system(run_cmd)
 }
 
+act test_source_file(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, filter_arg: string, cc: string) -> i32 {
+    return test_source_file_opts(source_path, unsafe_index, opt_flags, linker_flags, filter_arg, cc, false)
+}
+
 // Runs tests on a file or all .vl test files within a directory.
-act test_target(target_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, filter_arg: string, cc: string) -> i32 {
+act test_target_opts(target_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, filter_arg: string, cc: string, no_line_directives: bool) -> i32 {
     if fs.is_file(target_path) {
-        return test_source_file(target_path, unsafe_index, opt_flags, linker_flags, filter_arg, cc)
+        return test_source_file_opts(target_path, unsafe_index, opt_flags, linker_flags, filter_arg, cc, no_line_directives)
     }
     if fs.is_dir(target_path) {
         let entries = fs.read_dir(target_path)
@@ -309,7 +331,7 @@ act test_target(target_path: string, unsafe_index: bool, opt_flags: string, link
                 if content != null {
                     if str.contains(content, "test \"") or str.contains(content, "test '") {
                         found = true
-                        let rc = test_source_file(full_path, unsafe_index, opt_flags, linker_flags, filter_arg, cc)
+                        let rc = test_source_file_opts(full_path, unsafe_index, opt_flags, linker_flags, filter_arg, cc, no_line_directives)
                         if rc != 0 { overall = rc }
                     }
                     mem.free(content)
@@ -322,6 +344,10 @@ act test_target(target_path: string, unsafe_index: bool, opt_flags: string, link
     }
     io.println("[Velo Error] Target path not found: {target_path}")
     return 1
+}
+
+act test_target(target_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, filter_arg: string, cc: string) -> i32 {
+    return test_target_opts(target_path, unsafe_index, opt_flags, linker_flags, filter_arg, cc, false)
 }
 
 // Generates Markdown documentation for a Velo source file.

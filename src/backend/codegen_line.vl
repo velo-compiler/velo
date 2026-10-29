@@ -1,0 +1,28 @@
+// C preprocessor #line directive emitter for native debugging.
+use sys.io
+use sys.mem
+use "../common/string_builder.vl"
+use "../analysis/symbol_table.vl"
+
+// Emits a C preprocessor #line directive mapping emitted C statements to Velo source.
+act emit_line_directive(sb: @StringBuilder, st: @SymbolTable, line: i32) {
+    if st == null or st.no_line_directives or line <= 0 { return }
+    sb_append_str(sb, "#line ")
+    sb_append_int(sb, line)
+    sb_append_str(sb, " \"")
+    if st.source_file != null and str.len(st.source_file) > 0 {
+        mut i: usize = 0
+        loop i < str.len(st.source_file) {
+            if st.source_file[i] == '\\' {
+                sb_append_char(sb, '/')
+            } else {
+                sb_append_char(sb, st.source_file[i])
+            }
+            i += 1
+        }
+    } else {
+        sb_append_str(sb, "<source>")
+    }
+    sb_append_str(sb, "\"\n")
+}
+

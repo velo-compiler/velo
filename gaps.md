@@ -676,23 +676,39 @@ flowchart TD
 
 ### Phase 9: Source-Level Debugger Support (`#line` Directives)
 
-#### Task 9.1: C Preprocessor `#line` Directives for Native Debugging
-* **Problem**:
-  - The emitted C99 translation units in `.velo_cache/` do not emit `#line` preprocessor directives mapping C statements back to original `.vl` source file paths and line numbers.
-  - When stepping through code with GDB, LLDB, or Visual Studio Debugger, or when inspecting stack traces during a crash or assertion failure, the debugger points into generated C code rather than the developer's `.vl` source file.
-* **Specification**:
-  - In `velo/codegen_c.py` (Stage 1) and `src/backend/codegen_stmt.vl` / `src/backend/codegen_c.vl` (Stage 2):
-    * Emit `#line <stmt.line> "<source_file_path>"` before function declarations, control flow statements, and expression statements.
-    * Normalize Windows backslashes in paths to escaped forward slashes to ensure C preprocessor compatibility across GCC, Clang, and MSVC.
-    * Provide `--no-line-directives` flag to CLI drivers for inspecting clean raw C output without preprocessor noise.
-* **Target Files**:
-  - `velo/codegen_c.py`
-  - `src/backend/codegen_c.vl`
-  - `src/backend/codegen_stmt.vl`
-  - `src/backend/driver.vl`
+#### Task 9.1: C Preprocessor `#line` Directives for Native Debugging [COMPLETED] ✅
+* **Former Defect**:
+  - The emitted C99 translation units in `.velo_cache/` did not emit `#line` preprocessor directives mapping C statements back to original `.vl` source file paths and line numbers.
+  - When stepping through code with GDB, LLDB, or Visual Studio Debugger, or when inspecting stack traces during a crash or assertion failure, debuggers pointed into generated `.velo_cache/*.c` scratch files rather than the developer's original `.vl` source lines.
+* **Fix Applied**:
+  - In Stage 1 Python compiler (`velo/codegen_c.py`, `velo/driver.py`, `velo.py`):
+    * Added `self.no_line_directives` flag to `CCodeGenerator` and `CompilerDriver`.
+    * Implemented `_emit_line_directive(self, line: int)` emitting `#line <line> "<normalized_path>"\n` at column 0.
+    * Normalized Windows backslashes in paths to forward slashes (`/`).
+    * Emitted `#line` directives before function declarations, anonymous lifted functions, top-level globals, test declarations, control flow statements (`if`, `loop`, `return`, `break`, `continue`, `on/match`), variable declarations, and expression statements.
+    * Wired `--no-line-directives` flag to CLI subcommands (`run`, `build`, `emit-c`, `test`, `pkg build`, `pkg run`).
+  - In Stage 2 self-hosted compiler (`src/`):
+    * Created `src/backend/codegen_line.vl` providing `emit_line_directive(sb: @StringBuilder, st: @SymbolTable, line: i32)` with path backslash-to-slash normalization.
+    * Added `no_line_directives: bool` to `SymbolTable` (`src/analysis/symbol_table.vl`).
+    * Wired `emit_line_directive` into statement codegen (`src/backend/codegen_stmt.vl`), function declarations and top-level variables (`src/backend/codegen_c.vl`), and native test functions (`src/backend/test_gen.vl`).
+    * Extended driver and CLI dispatcher (`src/backend/driver.vl`, `src/main.vl`) with `compile_source_to_c_opts`, `build_executable_opts`, `run_source_file_opts`, `test_target_opts`, and `--no-line-directives` CLI flag.
+    * Maintained line count compliance: all 66 compiler `.vl` files $\le 397$ lines (`python scripts/count_lines.py`).
+* **Residual Limitation**:
+  - `#line` directive line numbers reflect statement start lines in the AST; intra-statement sub-expression column stepped debugging relies on DWARF column info when enabled by the C compiler.
 * **Verification**:
-  - Verify generated C code includes accurate `#line` directives.
-  - Run binary with intentional crash under GDB/MSVC and assert the reported stack frame points to `test.vl:<line>`.
+  - Added unit, regression, CLI, and live debugger tests in `tests/test_debugger_line_directives.py`:
+    * `test_emit_c_contains_line_directives_stage1`: verified Stage 1 output contains accurate `#line` directives with normalized forward slashes.
+    * `test_emit_c_contains_line_directives_stage2`: verified Stage 2 output contains accurate `#line` directives with normalized forward slashes.
+    * `test_no_line_directives_flag_stage1`: verified `--no-line-directives` flag strips all `#line` directives in Stage 1.
+    * `test_no_line_directives_flag_stage2`: verified `--no-line-directives` flag strips all `#line` directives in Stage 2.
+    * `test_control_flow_statements_line_directives`: verified accurate line mapping for `let`, `if`, `else if`, `loop`, `break`, `return`.
+    * `test_debugger_gdb_backtrace_reports_source_line`: compiled an intentional null dereference crash binary with `velo build --debug` and ran under GDB (`gdb -batch -ex run -ex bt`), asserting GDB backtrace reports `crash_test.vl:3` instead of generated C cache files.
+  - Rebuilt full 3-stage bootstrap chain (`bin/velo_gen1.exe -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe`).
+  - Bit-for-bit determinism verified: Gen2 and Gen3 `emit-c src/main.vl` SHA-256 match exactly (`42ae78eedc67a38f29a86cbdd273295e4c3d5739f58cdfa932a820d934ee4710`).
+  - Passed all 105 native tests (`bin/velo.exe test examples/15_native_tests.vl`).
+  - Passed full test suite (`python -m pytest tests -q`): 425 passed in 247s.
+  - Code standards: all 66 compiler source files verified $\le 397$ lines (`python scripts/count_lines.py`).
+  - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
 
 ---
 

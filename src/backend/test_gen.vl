@@ -8,6 +8,7 @@ use "../analysis/symbol_table.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "codegen_stmt.vl"
+use "codegen_line.vl"
 
 // Counts the number of DECL_TEST blocks in the program.
 act count_test_decls(prog: @ProgramNode) -> usize {
@@ -43,6 +44,7 @@ act emit_test_functions(sb: @StringBuilder, st: @SymbolTable, prog: @ProgramNode
     mut cur = prog.first_decl
     loop cur != null {
         if cur.kind == DECL_TEST {
+            emit_line_directive(sb, st, cur.line)
             sb_append_str(sb, "static void _velo_test_")
             sb_append_int(sb, idx as i32)
             sb_append_str(sb, "(void) {\n")

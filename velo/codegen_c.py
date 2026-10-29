@@ -346,6 +346,7 @@ class CCodeGenerator:
         self.unsafe_shelf_index = False
         self.is_test = False
         self.source_path = ""
+        self.no_line_directives = False
 
     def _indent(self) -> str:
         return "    " * self.indent_level
@@ -355,6 +356,12 @@ class CCodeGenerator:
             self.output.append(f"{self._indent()}{line}\n")
         else:
             self.output.append("\n")
+
+    def _emit_line_directive(self, line: int):
+        if self.no_line_directives or line <= 0:
+            return
+        norm_path = (self.source_path or "<source>").replace("\\", "/")
+        self.output.append(f'#line {line} "{norm_path}"\n')
 
     def _map_type(self, type_str: Optional[str]) -> str:
         if not type_str or type_str == "void":
@@ -1347,6 +1354,8 @@ class CCodeGenerator:
                     self.global_types[decl.name] = raw_velo_type
                     self.global_scope_mut[decl.name] = decl.is_mut
                     const_prefix = "" if decl.is_mut else "const "
+                    if hasattr(decl, 'line') and decl.line > 0:
+                        self._emit_line_directive(decl.line)
                     if decl.value:
                         val_code = self._emit_expression(decl.value)
                         self._emit_line(f"{const_prefix}{type_str} {decl.name} = {val_code};")
@@ -1414,6 +1423,8 @@ class CCodeGenerator:
             for decl in program.declarations:
                 if isinstance(decl, TestDecl):
                     test_list.append(decl)
+                    if hasattr(decl, 'line') and decl.line > 0:
+                        self._emit_line_directive(decl.line)
                     self._emit_line(f"static void _velo_test_{test_idx}(void) {{")
                     self.indent_level += 1
                     self.current_scope_types = dict(self.global_types)
@@ -1529,6 +1540,8 @@ class CCodeGenerator:
         self._emit_line()
 
     def _emit_anon_func_def(self, name: str, expr: AnonFuncExpr):
+        if hasattr(expr, 'line') and expr.line > 0:
+            self._emit_line_directive(expr.line)
         ret_type_c = self._map_type(expr.return_type)
         param_strs = []
         for p in expr.params:
@@ -1635,6 +1648,9 @@ class CCodeGenerator:
             self.current_scope_types[p.name] = p.type_name
             self.current_scope_mut[p.name] = True
         
+        if hasattr(func, 'line') and func.line > 0:
+            self._emit_line_directive(func.line)
+
         if is_main:
             if self.is_test:
                 self._emit_line("static int _velo_user_main(int argc, char** argv) {")
@@ -1678,6 +1694,9 @@ class CCodeGenerator:
             self.defer_stack.pop()
 
     def _emit_statement(self, stmt: Stmt):
+        if hasattr(stmt, 'line') and stmt.line > 0 and not isinstance(stmt, DeferStmt):
+            self._emit_line_directive(stmt.line)
+
         if isinstance(stmt, DeferStmt):
             if self.defer_stack:
                 self.defer_stack[-1].append(stmt.statement)
@@ -2187,9 +2206,14 @@ class CCodeGenerator:
 
         if stmt.else_branch:
             if isinstance(stmt.else_branch, IfStmt):
-                self._emit_line("} else ")
-                self.output[-1] = self.output[-1].rstrip() + " "
-                self._emit_if(stmt.else_branch)
+                if not self.no_line_directives and hasattr(stmt.else_branch, 'line') and stmt.else_branch.line > 0:
+                    self._emit_line("} else")
+                    self._emit_line_directive(stmt.else_branch.line)
+                    self._emit_if(stmt.else_branch)
+                else:
+                    self._emit_line("} else ")
+                    self.output[-1] = self.output[-1].rstrip() + " "
+                    self._emit_if(stmt.else_branch)
                 return
             elif isinstance(stmt.else_branch, BlockStmt):
                 self._emit_line("} else {")

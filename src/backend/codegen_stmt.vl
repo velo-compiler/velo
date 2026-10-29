@@ -16,6 +16,7 @@ use "map_gen.vl"
 use "shelf_calls_gen.vl"
 use "ring_gen.vl"
 use "simd_gen.vl"
+use "codegen_line.vl"
 
 // Intrusive linked list node maintaining active LIFO deferred statements.
 data DeferNode {
@@ -38,20 +39,14 @@ act emit_c_block_stmts(sb: @StringBuilder, st: @SymbolTable, block: @StmtNode, i
 // Emits an individual statement into the C output stream.
 act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32, defers: @@DeferNode) {
     if stmt == null { return }
+    if stmt.kind != STMT_DEFER { emit_line_directive(sb, st, stmt.line) }
 
     // 1. Variable declaration
     if stmt.kind == STMT_VAR_DECL {
         define_variable(st, stmt.name, stmt.type_name, stmt.is_mut, stmt.line, stmt.col)
-        sb_append_indent(sb, indent)
-        sb_append_str(sb, map_type_to_c(stmt.type_name))
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, stmt.name)
-        if stmt.val_expr != null {
-            sb_append_str(sb, " = ")
-            emit_c_expr(sb, st, stmt.val_expr)
-        }
-        sb_append_str(sb, ";\n")
-        return
+        sb_append_indent(sb, indent); sb_append_str(sb, map_type_to_c(stmt.type_name)); sb_append_char(sb, ' '); sb_append_str(sb, stmt.name)
+        if stmt.val_expr != null { sb_append_str(sb, " = "); emit_c_expr(sb, st, stmt.val_expr) }
+        sb_append_str(sb, ";\n"); return
     }
 
     // 2. Assignment statement
@@ -119,7 +114,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         sb_append_indent(sb, indent); sb_append_str(sb, "}")
         if stmt.else_branch != null {
             if stmt.else_branch.kind == STMT_IF {
-                sb_append_str(sb, " else ")
+                if not st.no_line_directives and stmt.else_branch.line > 0 { sb_append_str(sb, " else\n") } else { sb_append_str(sb, " else ") }
                 emit_c_stmt(sb, st, stmt.else_branch, indent, defers)
             } else {
                 sb_append_str(sb, " else {\n")
@@ -268,12 +263,9 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
 
     // 11.5. Nested Block statement (unrolled loops, scoped blocks)
     if stmt.kind == STMT_BLOCK {
-        sb_append_indent(sb, indent)
-        sb_append_str(sb, "{\n")
+        sb_append_indent(sb, indent); sb_append_str(sb, "{\n")
         emit_c_block_stmts(sb, st, stmt, indent + 1, defers)
-        sb_append_indent(sb, indent)
-        sb_append_str(sb, "}\n")
-        return
+        sb_append_indent(sb, indent); sb_append_str(sb, "}\n"); return
     }
 
     // 12. Match / Switch statement

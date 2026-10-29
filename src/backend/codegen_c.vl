@@ -13,6 +13,7 @@ use "../common/act_types.vl"
 use "codegen_expr.vl"
 use "codegen_stmt.vl"
 use "test_gen.vl"
+use "codegen_line.vl"
 
 // Checks if a function name corresponds to an anonymous lifted function.
 act is_anon_act_name(name: string) -> bool {
@@ -318,6 +319,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
     cur = prog.first_decl
     loop cur != null {
         if cur.kind == STMT_VAR_DECL {
+            emit_line_directive(@sb, st, cur.line)
             mut inferred_type = cur.type_name
             if inferred_type == null or str.len(inferred_type) == 0 {
                 if cur.val_expr != null { inferred_type = infer_expr_type(st, cur.val_expr) } else { inferred_type = "i32" }
@@ -347,6 +349,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
     cur = prog.first_decl
     loop cur != null {
         if cur.kind == DECL_FUNCTION {
+            emit_line_directive(@sb, st, cur.line)
             if cur.name == "main" {
                 if st.is_test { sb_append_str(@sb, "static int _velo_user_main(int argc, char** argv) {\n") } else { sb_append_str(@sb, "int main(int argc, char** argv) {\n") }
                 sb_append_str(@sb, "g_velo_os_argc = argc;\n"); sb_append_str(@sb, "g_velo_os_argv = argv;\n")
