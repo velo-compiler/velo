@@ -39,7 +39,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         if expr.str_val != null and str.len(expr.str_val) > 0 { sb_append_str(sb, expr.str_val) } else { sb_append_float(sb, expr.float_val) }
         return
     }
-    if expr.kind == EXPR_STRING { sb_append_char(sb, '"'); sb_append_str(sb, expr.str_val); sb_append_char(sb, '"'); return }
+    if expr.kind == EXPR_STRING { emit_string_expr(sb, st, expr); return }
     if expr.kind == EXPR_BOOL { if expr.bool_val { sb_append_str(sb, "true") } else { sb_append_str(sb, "false") }; return }
     if expr.kind == EXPR_NULL { sb_append_str(sb, "NULL"); return }
     if expr.kind == EXPR_IDENT { sb_append_str(sb, expr.str_val); return }
@@ -291,14 +291,9 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                 if target.str_val == "thread" and member == "mutex" { sb_append_str(sb, "velo_mutex_create()"); return }; if target.str_val == "thread" and member == "acquire" { sb_append_str(sb, "velo_mutex_acquire((void*)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }
                 if target.str_val == "thread" and member == "release" { sb_append_str(sb, "velo_mutex_release((void*)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }; if target.str_val == "thread" and member == "free" { sb_append_str(sb, "velo_mutex_destroy((void*)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }
                 if target.str_val == "fs" { emit_fs_call(sb, st, member, expr); return }  // 5.4 S2: the ladder lives in fs_gen.vl — legacy six moved in verbatim, joining the metadata family; checks ran at inference
-                if target.str_val == "str" and member == "len" { sb_append_str(sb, "((usize)strlen("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+                if target.str_val == "str" { emit_str_call(sb, st, member, expr); return }  // 5.1/8.2: delegate to codegen_io.vl
                 if target.str_val == "math" { emit_math_call(sb, st, member, expr); return }  // 5.3 (S2): the ladder lives in math_gen.vl — compile-checks already ran at inference
                 if target.str_val == "time" { emit_time_call(sb, st, member, expr); return }; if target.str_val == "os" { emit_os_call(sb, st, member, expr); return }; if target.str_val == "simd" { emit_simd_call(sb, st, expr); return }; if target.str_val == "shelf" { emit_shelf_module_call(sb, st, member, expr); return }; if target.str_val == "map" { emit_map_module_call(sb, st, member, expr); return }
-                if target.str_val == "str" and str.len(str_member_sig(member)) > 0 {  // 5.1: library members map 1:1 onto velo_str_* runtime helpers
-                    sb_append_str(sb, "velo_str_"); sb_append_str(sb, member); sb_append_char(sb, '(')
-                    mut a = expr.first_arg; loop a != null { emit_c_expr(sb, st, a); if a.next != null { sb_append_str(sb, ", ") }; a = a.next }
-                    sb_append_char(sb, ')'); return
-                }
                 if target.str_val == "io" { emit_io_call(sb, st, member, expr.first_arg); return }
             }
         }

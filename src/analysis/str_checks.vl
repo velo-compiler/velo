@@ -24,6 +24,7 @@ act str_member_sig(member: string) -> string {
     if member == "replace" or member == "heap_replace" { return ": (string s, string old, string new)" }
     if member == "concat" or member == "heap_concat" { return ": (string a, string b)" }
     if member == "split" { return ": (string s, string delimiter)" }
+    if member == "format" or member == "heap_format" { return ": (string fmt, ...)" }
     return ""
 }
 
@@ -42,9 +43,70 @@ act str_got_msg(member: string, got: string) -> string {
     return sb_to_string(@msb)
 }
 
-act check_str_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
+act check_str_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
+    if member == "len" {
+        mut argc: usize = 0; mut cur_a = expr.first_arg; loop cur_a != null { argc += 1; cur_a = cur_a.next }
+        if argc != 1 {
+            report_error("semantic", expr.line, expr.col, "str.len expects exactly 1 argument: (string s)"); st.error_count += 1
+            return "unknown"
+        }
+        let t = infer_expr_type(st, expr.first_arg)
+        if t != "string" {
+            report_error("semantic", expr.line, expr.col, str_got_msg(member, t)); st.error_count += 1
+            return "unknown"
+        }
+        return "usize"
+    }
+
+    if member == "format" or member == "heap_format" {
+        mut argc: usize = 0; mut cur_a = expr.first_arg; loop cur_a != null { argc += 1; cur_a = cur_a.next }
+        if argc < 1 {
+            let msb = create_sb(192)
+            sb_append_str(@msb, "str."); sb_append_str(@msb, member); sb_append_str(@msb, " expects at least 1 argument"); sb_append_str(@msb, str_member_sig(member))
+            report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+            return "unknown"
+        }
+        let t0 = infer_expr_type(st, expr.first_arg)
+        if t0 != "string" {
+            report_error("semantic", expr.line, expr.col, str_got_msg(member, t0)); st.error_count += 1
+            return "unknown"
+        }
+        if expr.first_arg.kind == EXPR_STRING {
+            let raw_fmt = expr.first_arg.str_val
+            if raw_fmt != null and str.index_of(raw_fmt, "{") == -1 {
+                let flen = str.len(raw_fmt)
+                mut spec_count: usize = 0
+                mut fi: usize = 0
+                loop fi < flen {
+                    if raw_fmt[fi] == '%' {
+                        if fi + 1 < flen and raw_fmt[fi + 1] == '%' {
+                            fi += 2
+                        } else {
+                            spec_count += 1
+                            fi += 1
+                        }
+                    } else {
+                        fi += 1
+                    }
+                }
+                let additional_args = argc - 1
+                if spec_count != additional_args {
+                    let msb = create_sb(192)
+                    sb_append_str(@msb, "str."); sb_append_str(@msb, member); sb_append_str(@msb, " format string expects ")
+                    sb_append_int(@msb, spec_count as i32)
+                    if spec_count == 1 { sb_append_str(@msb, " argument (got ") } else { sb_append_str(@msb, " arguments (got ") }
+                    sb_append_int(@msb, additional_args as i32)
+                    sb_append_str(@msb, ")")
+                    report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+                    return "unknown"
+                }
+            }
+        }
+        return "string"
+    }
+
     let arity = str_member_arity(member)
-    if arity < 0 { return true }  // unknown member: keep the legacy path
+    if arity < 0 { return "unknown" }  // unknown member: keep the legacy path
     mut argc: usize = 0
     mut cur_a = expr.first_arg
     loop cur_a != null { argc += 1; cur_a = cur_a.next }
@@ -55,16 +117,72 @@ act check_str_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
         if arity == 1 { sb_append_str(@msb, " argument") } else { sb_append_str(@msb, " arguments") }
         sb_append_str(@msb, str_member_sig(member))
         report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
-        return false
+        return "unknown"
     }
     mut cur = expr.first_arg
     loop cur != null {
         let t = infer_expr_type(st, cur)
         if t != "string" {
             report_error("semantic", expr.line, expr.col, str_got_msg(member, t)); st.error_count += 1
-            return false
+            return "unknown"
         }
         cur = cur.next
     }
-    return true
+    if member == "contains" or member == "starts_with" or member == "ends_with" { return "bool" }
+    if member == "index_of" { return "i64" }
+    if member == "split" { return "shelf[string]" }
+    return "string"
+}
+
+// Validates if an expression inside string interpolation `{...}` should be interpolated.
+// Standalone constant literals (e.g. `{ 0 }` in C struct initializers or `{ null }`) are kept as literal text.
+act is_valid_interp_expr(st: @SymbolTable, expr: @ExprNode) -> bool {
+    if expr == null { return false }
+    if expr.kind == EXPR_INT or expr.kind == EXPR_FLOAT or expr.kind == EXPR_STRING or expr.kind == EXPR_BOOL or expr.kind == EXPR_NULL { return false }
+    return is_interp_expr_resolvable(st, expr)
+}
+
+// Checks if an expression inside string interpolation `{...}` resolves to known symbols in scope.
+act is_interp_expr_resolvable(st: @SymbolTable, expr: @ExprNode) -> bool {
+    if expr == null { return false }
+    if expr.kind == EXPR_INT or expr.kind == EXPR_FLOAT or expr.kind == EXPR_STRING or expr.kind == EXPR_BOOL or expr.kind == EXPR_NULL { return true }
+    if expr.kind == EXPR_IDENT {
+        if resolve_variable(st, expr.str_val) != null { return true }
+        if find_function(st, expr.str_val) != null { return true }
+        if expr.str_val == "math" or expr.str_val == "time" or expr.str_val == "os" or expr.str_val == "str" { return true }
+        return false
+    }
+    if expr.kind == EXPR_MEMBER {
+        if expr.target.kind == EXPR_IDENT and expr.target.str_val == "math" { return true }
+        return is_interp_expr_resolvable(st, expr.target)
+    }
+    if expr.kind == EXPR_BINARY {
+        return is_interp_expr_resolvable(st, expr.left) and is_interp_expr_resolvable(st, expr.right)
+    }
+    if expr.kind == EXPR_UNARY {
+        return is_interp_expr_resolvable(st, expr.operand)
+    }
+    if expr.kind == EXPR_CALL {
+        if expr.callee.kind == EXPR_IDENT {
+            if find_function(st, expr.callee.str_val) == null and resolve_variable(st, expr.callee.str_val) == null { return false }
+        } else if expr.callee.kind == EXPR_MEMBER {
+            if not is_interp_expr_resolvable(st, expr.callee.target) { return false }
+        }
+        mut cur = expr.first_arg
+        loop cur != null {
+            if not is_interp_expr_resolvable(st, cur) { return false }
+            cur = cur.next
+        }
+        return true
+    }
+    if expr.kind == EXPR_INDEX {
+        return is_interp_expr_resolvable(st, expr.target) and is_interp_expr_resolvable(st, expr.index)
+    }
+    if expr.kind == EXPR_ADDRESS_OF or expr.kind == EXPR_DEREF {
+        return is_interp_expr_resolvable(st, expr.operand)
+    }
+    if expr.kind == EXPR_CAST {
+        return is_interp_expr_resolvable(st, expr.operand)
+    }
+    return false
 }

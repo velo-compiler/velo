@@ -23,6 +23,7 @@
 #include <stdbool.h>
 #include <string.h>
 #include <stddef.h>
+#include <stdarg.h>
 #include <time.h>
 #include <setjmp.h>
 // 5.3 Math Library: sys.math lowers directly onto C99 libm (sqrt/pow/cbrt
@@ -1546,6 +1547,42 @@ static inline char* velo_str_concat(const char* a, const char* b) {
 
 static inline char* velo_str_heap_concat(const char* a, const char* b) {
     return velo_str_concat_impl(a, b, "str.heap_concat", true);
+}
+
+// ============================================================================
+// General In-Memory String Formatting (Task 8.2):
+// velo_str_format formats into active zone arena (automatic O(1) reclamation).
+// velo_str_heap_format formats onto persistent heap (tracked on g_velo_heap_active).
+// ============================================================================
+
+static inline char* velo_str_format_impl(const char* fmt, va_list ap, const char* fn_name, bool on_heap) {
+    const char* f = velo_str_nonnull(fmt, fn_name);
+    va_list ap_len;
+    va_copy(ap_len, ap);
+    int len = vsnprintf(NULL, 0, f, ap_len);
+    va_end(ap_len);
+    if (len < 0) return (char*)"";
+    char* out = (char*)(on_heap ? velo_heap_alloc(1, (size_t)len + 1)
+                                : velo_mem_alloc(1, (size_t)len + 1));
+    vsnprintf(out, (size_t)len + 1, f, ap);
+    out[len] = '\0';
+    return out;
+}
+
+static inline char* velo_str_format(const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    char* res = velo_str_format_impl(fmt, ap, "str.format", false);
+    va_end(ap);
+    return res;
+}
+
+static inline char* velo_str_heap_format(const char* fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    char* res = velo_str_format_impl(fmt, ap, "str.heap_format", true);
+    va_end(ap);
+    return res;
 }
 
 // str.split lives BELOW the 5.2 shelf helpers (slice 11: it returns an owning

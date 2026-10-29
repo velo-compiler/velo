@@ -164,6 +164,8 @@ FATAL_CASES = [
     ('velo_str_concat("a", NULL);', "str.concat got a null string", "str51_null_concat"),
     ('velo_str_split(NULL, ",");', "str.split got a null string", "str51_null_split"),
     ('velo_str_split("a", "");', "str.split got an empty delimiter", "str51_empty_delim"),
+    ('velo_str_format(NULL);', "str.format got a null string", "str82_null_format"),
+    ('velo_str_heap_format(NULL);', "str.heap_format got a null string", "str82_null_heap_format"),
 ]
 
 # Compile-time arity / argument-type rejections — identical wording on both
@@ -196,6 +198,24 @@ REJECTIONS = [
     ('io.println(str.heap_trim(42))',
      "str.heap_trim expects string arguments (got i32)",
      "rej_heap_trim_int"),
+    ('io.println(str.format())',
+     "str.format expects at least 1 argument: (string fmt, ...)",
+     "rej_format_arity"),
+    ('io.println(str.format(42))',
+     "str.format expects string arguments (got i32)",
+     "rej_format_int"),
+    ('io.println(str.format("count: %d %d", 1))',
+     "str.format format string expects 2 arguments (got 1)",
+     "rej_format_spec_under"),
+    ('io.println(str.format("count: %d", 1, 2))',
+     "str.format format string expects 1 argument (got 2)",
+     "rej_format_spec_over"),
+    ('io.println(str.heap_format())',
+     "str.heap_format expects at least 1 argument: (string fmt, ...)",
+     "rej_heap_format_arity"),
+    ('io.println(str.heap_format(42))',
+     "str.heap_format expects string arguments (got i32)",
+     "rej_heap_format_int"),
 ]
 
 REJ_PROGRAM = """use sys.io
@@ -457,6 +477,105 @@ act main() -> i32 {
             "clean teardown",
         ]
         for stage, name in (("stage1", "str81_heap_s1"), ("stage2", "str81_heap_s2")):
+            res = run_stage(stage, prog, name)
+            self.assertEqual(res.returncode, 0, f"{stage} failed: {res.stderr[-2000:]}")
+            self.assertEqual(res.stdout.strip().splitlines(), expected, f"{stage} output mismatch")
+
+    def test_in_memory_string_interpolation_and_zero_heap_leak(self):
+        """Task 8.2: String interpolation in general expressions (returns, let-bindings,
+        args) lowers to arena-backed velo_str_format and leaves mem.heap_used() at 0."""
+        prog = """use sys.io
+use sys.mem
+
+act greet(name: string, score: i32) -> string {
+    let msg: string = "Hello {name}, score={score + 10}!"
+    return msg
+}
+
+act pass_through(s: string) -> string {
+    return s
+}
+
+act main() -> i32 {
+    let base: usize = mem.heap_used()
+    zone {
+        let name: string = "Alice"
+        let score: i32 = 42
+        let msg1: string = "Hello {name}, score={score + 10}!"
+        io.println(msg1)
+        let msg2: string = greet("Bob", 85)
+        io.println(msg2)
+        let msg3: string = pass_through("Count: {score * 2}")
+        io.println(msg3)
+        mut i: i32 = 0
+        loop i < 1000 {
+            let temp: string = "Loop {i}: {name}"
+            i += 1
+        }
+        let inside: usize = mem.heap_used()
+        if inside == base {
+            io.println("inside zone: 0 heap leak")
+        }
+    }
+    let after: usize = mem.heap_used()
+    if after == base {
+        io.println("after zone: 0 heap leak")
+    }
+    return 0
+}
+"""
+        expected = [
+            "Hello Alice, score=52!",
+            "Hello Bob, score=95!",
+            "Count: 84",
+            "inside zone: 0 heap leak",
+            "after zone: 0 heap leak",
+        ]
+        for stage, name in (("stage1", "str82_interp_s1"), ("stage2", "str82_interp_s2")):
+            res = run_stage(stage, prog, name)
+            self.assertEqual(res.returncode, 0, f"{stage} failed: {res.stderr[-2000:]}")
+            self.assertEqual(res.stdout.strip().splitlines(), expected, f"{stage} output mismatch")
+
+    def test_str_format_and_heap_format(self):
+        """Task 8.2: str.format and str.heap_format formatted string emission."""
+        prog = """use sys.io
+use sys.mem
+
+act main() -> i32 {
+    let base: usize = mem.heap_used()
+    mut h_msg: string = ""
+    zone {
+        let s_fmt: string = str.format("Value: %d, Float: %.2f, Name: %s", 123, 3.14159, "velo")
+        io.println(s_fmt)
+        h_msg = str.heap_format("Heap: %s = %d", "counter", 999)
+        io.println(h_msg)
+        let inside: usize = mem.heap_used()
+        if inside > base {
+            io.println("heap string allocated")
+        }
+    }
+    io.println("survived zone: {h_msg}")
+    let held: usize = mem.heap_used()
+    if held > base {
+        io.println("heap string still alive")
+    }
+    mem.free(h_msg)
+    let end: usize = mem.heap_used()
+    if end == base {
+        io.println("clean teardown")
+    }
+    return 0
+}
+"""
+        expected = [
+            "Value: 123, Float: 3.14, Name: velo",
+            "Heap: counter = 999",
+            "heap string allocated",
+            "survived zone: Heap: counter = 999",
+            "heap string still alive",
+            "clean teardown",
+        ]
+        for stage, name in (("stage1", "str82_fmt_s1"), ("stage2", "str82_fmt_s2")):
             res = run_stage(stage, prog, name)
             self.assertEqual(res.returncode, 0, f"{stage} failed: {res.stderr[-2000:]}")
             self.assertEqual(res.stdout.strip().splitlines(), expected, f"{stage} output mismatch")

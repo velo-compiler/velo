@@ -35,8 +35,9 @@ BUILTIN_MODULES = {
         "read_file", "remove", "remove_file", "rename", "size", "write_file"
     ],
     "sys.str": [
-        "concat", "contains", "ends_with", "index_of", "len", "replace",
-        "split", "starts_with", "to_lower", "to_upper", "trim"
+        "concat", "contains", "ends_with", "format", "heap_concat", "heap_format",
+        "heap_replace", "heap_to_lower", "heap_to_upper", "heap_trim", "index_of",
+        "len", "replace", "split", "starts_with", "to_lower", "to_upper", "trim"
     ],
     "sys.math": [
         "abs", "acos", "asin", "atan2", "cbrt", "ceil", "clamp", "cos",

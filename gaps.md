@@ -632,22 +632,45 @@ flowchart TD
   - Passed all 105 native tests (`bin/velo.exe test examples/15_native_tests.vl`).
   - Passed full test suite (`python -m pytest tests -q`): 417 passed in 278s.
 
-#### Task 8.2: General In-Memory String Interpolation & Formatting (`str.format`)
-* **Problem**:
-  - String interpolation syntax `"{expr}"` is strictly lowerable within `sys.io` print calls (`io.println`, `io.print`) by emitting C `printf` calls.
-  - In all other expression positions (e.g. `let s = "Status: {code}"`), the string is emitted as a raw C string literal with literal `{code}` text.
-  - Building dynamic formatted strings in memory currently requires manual chained `str.concat` calls, ASCII serializers (`int_to_str`), or manual string builders.
-* **Specification**:
-  - Support string interpolation in general expression positions:
-    * When a string literal containing `{expr}` appears in variable assignments, function arguments, or return statements, parse balanced `{...}` expressions and lower to an arena-backed string formatting routine (`velo_str_format` or dynamic string builder).
-    * Provide `str.format(fmt: string, ...)` helper with compile-time or runtime format checking.
-* **Target Files**:
-  - `velo/codegen_c.py`
-  - `src/backend/codegen_expr.vl`
-  - `src/backend/codegen_io.vl`
-  - `src/frontend/parser_expr.vl`
+#### Task 8.2: General In-Memory String Interpolation & Formatting (`str.format`) [COMPLETED] ✅
+* **Former Defect**:
+  - String interpolation syntax `"{expr}"` was strictly lowerable within `sys.io` print calls (`io.println`, `io.print`) by emitting C `printf` calls.
+  - In all other expression positions (e.g. `let s = "Status: {code}"`, function returns, function arguments), strings were emitted as raw C string literals containing literal `{code}` text.
+  - Building dynamic formatted strings in memory required manual chained `str.concat` calls, ASCII serializers (`int_to_str`), or manual string builders.
+* **Fix Applied**:
+  - In `velo/runtime/velo_runtime.h`:
+    * Added `#include <stdarg.h>` and helper `velo_str_format_impl(const char* fmt, va_list ap, const char* fn_name, bool on_heap)` using `vsnprintf`.
+    * Implemented `velo_str_format(const char* fmt, ...)` allocating within the active zone arena via `velo_mem_alloc`, guaranteeing zero persistent heap leak and automatic O(1) zone reclamation.
+    * Implemented `velo_str_heap_format(const char* fmt, ...)` allocating on the persistent heap via `velo_heap_alloc`, tracked on `g_velo_heap_active` for explicit `mem.free()`.
+    * Added NULL pointer checks via `velo_str_nonnull` with fatal error reporting for null format strings.
+  - In Stage 1 Python compiler (`velo/codegen_c.py`, `velo/analysis.py`):
+    * Registered `format` and `heap_format` in `sys.str` symbol table and type resolution with inferred return type `"string"`.
+    * Added `_is_valid_interp_expr(expr)` rejecting bare standalone literals (`IntLiteral`, `FloatLiteral`, `StringLiteral`, `BoolLiteral`, `NullLiteral`) to preserve literal C brace syntax (`(VeloBitset){ 0 }`), while allowing arithmetic/binary operations and identifier/member/call lookups.
+    * Unescaped quotes (`\"` -> `"`) in interpolation candidates prior to speculative parsing to preserve raw JSON literals.
+    * Lowered general `StringLiteral` nodes with `{...}` interpolation expressions to `velo_str_format(...)`.
+    * Implemented `str.format` and `str.heap_format` lowering with compile-time arity, format string validation, and specifier count verification.
+  - In Stage 2 self-hosted compiler (`src/`):
+    * Added `format` and `heap_format` signatures to `str_member_sig` in `src/analysis/str_checks.vl`.
+    * Implemented `is_valid_interp_expr(st, expr)` and `check_str_call(st, expr, member)` in `src/analysis/str_checks.vl` with compile-time specifier validation and type inference.
+    * Refactored `codegen_io.vl` factoring out `build_interp_fmt_and_args`, `parse_interp_expr` (with quote unescaping), `emit_string_expr_ex`, `emit_string_expr`, and `emit_str_call`.
+    * Silenced speculative interpolation parse diagnostics in `src/frontend/parser_binary.vl` when `p.filename == "<interpolated>"`.
+    * Updated `codegen_expr.vl` to route `EXPR_STRING` to `emit_string_expr` and `str.*` calls to `emit_str_call`.
+    * Maintained line count compliance: all 65 `.vl` files $\le 397$ lines (`python scripts/count_lines.py`).
+* **Residual Limitation**:
+  - Interpolated expressions within `{...}` must be valid non-literal expressions or resolvable identifiers/members; bare standalone constant literals (e.g. `"{ 0 }"`) remain literal strings to protect C initializers. Compile-time format specifier counting validates string literals without `{`; complex dynamic format specifiers rely on runtime `vsnprintf`.
 * **Verification**:
-  - Test `let msg = "Hello {name}, score={score + 10}!"` returning a valid formatted string in memory across Stage 1 and Stage 2 without invoking `io.println`.
+  - Added unit, integration, memory, and rejection tests in `tests/test_string_library.py`:
+    * `test_in_memory_string_interpolation_and_zero_heap_leak`: verifies let-bindings, function arguments, return expressions, and zero heap leak inside `zone { ... }`.
+    * `test_str_format_and_heap_format`: verifies formatted strings, heap persistence across zone boundaries, and clean `mem.free()` reclamation.
+    * Null pointer fatal tests for `velo_str_format(NULL)` and `velo_str_heap_format(NULL)`.
+    * Compile-time rejection tests for arity mismatches, non-string format arguments, and format specifier count mismatches on both `str.format` and `str.heap_format` across Stage 1 and Stage 2.
+  - Verified regression suites: `tests/test_string_interpolation.py`, `tests/test_dynamic_collections.py`, `tests/test_string_escapes.py`, `tests/test_array_mastery.py`.
+  - Rebuilt full 3-stage bootstrap chain (`bin/velo_gen1.exe -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe`).
+  - Bit-for-bit determinism verified: Gen2 and Gen3 `emit-c src/main.vl` SHA-256 match exactly (`F74695A8AE5214F3D4EAFF74AF7FB62C6C98F9BC8D45E391D1CA80C3EF088C55`).
+  - Passed all 105 native tests (`bin/velo.exe test examples/15_native_tests.vl`).
+  - Passed full test suite (`python -m pytest tests -q`): 419 passed in 247s.
+  - Code standards: all 65 compiler source files verified $\le 397$ lines (`python scripts/count_lines.py`).
+  - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
 
 ---
 

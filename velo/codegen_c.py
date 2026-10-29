@@ -56,11 +56,13 @@ STR_RUNTIME_MEMBERS = {
     "to_lower": 1,
     "concat": 2,
     "split": 2,
+    "format": 1,
     "heap_trim": 1,
     "heap_replace": 3,
     "heap_to_upper": 1,
     "heap_to_lower": 1,
     "heap_concat": 2,
+    "heap_format": 1,
 }
 
 _STR_SIGS = {
@@ -74,11 +76,13 @@ _STR_SIGS = {
     "to_lower": ": (string s)",
     "concat": ": (string a, string b)",
     "split": ": (string s, string delimiter)",
+    "format": ": (string fmt, ...)",
     "heap_trim": ": (string s)",
     "heap_replace": ": (string s, string old, string new)",
     "heap_to_upper": ": (string s)",
     "heap_to_lower": ": (string s)",
     "heap_concat": ": (string a, string b)",
+    "heap_format": ": (string fmt, ...)",
 }
 
 # 5.3 Math Library: sys.math is compiled directly onto C99 libm — no runtime
@@ -2463,7 +2467,8 @@ class CCodeGenerator:
                     if m in ("contains", "starts_with", "ends_with"):
                         return "bool"
                     if m in ("trim", "replace", "to_upper", "to_lower", "concat",
-                            "heap_trim", "heap_replace", "heap_to_upper", "heap_to_lower", "heap_concat"):
+                            "heap_trim", "heap_replace", "heap_to_upper", "heap_to_lower", "heap_concat",
+                            "format", "heap_format"):
                         return "string"
                     if m == "index_of":
                         return "i64"  # -1 = not found; usize has no room for it
@@ -2740,7 +2745,8 @@ class CCodeGenerator:
                     if m in ("contains", "starts_with", "ends_with"):
                         return "bool"
                     if m in ("trim", "replace", "to_upper", "to_lower", "concat",
-                            "heap_trim", "heap_replace", "heap_to_upper", "heap_to_lower", "heap_concat"):
+                            "heap_trim", "heap_replace", "heap_to_upper", "heap_to_lower", "heap_concat",
+                            "format", "heap_format"):
                         return "string"
                     if m == "index_of":
                         return "i64"  # -1 = not found; usize has no room for it
@@ -2892,6 +2898,11 @@ class CCodeGenerator:
                 return clean
             return f"{expr.value}f"
         elif isinstance(expr, StringLiteral):
+            interp = self._format_interpolated_string(expr.value)
+            if interp is not None:
+                fmt, c_args = interp
+                c_args_str = f", {', '.join(c_args)}" if c_args else ""
+                return f'velo_str_format("{fmt}"{c_args_str})'
             escaped = (expr.value
                        .replace('\\', '\\\\')
                        .replace('"', '\\"')
@@ -3196,6 +3207,30 @@ class CCodeGenerator:
                     elif expr.callee.target.name == "str":
                         if expr.callee.member == "len":
                             return f"((usize)strlen({self._emit_expression(expr.args[0])}))"
+                        if expr.callee.member in ("format", "heap_format"):
+                            self._str_expect(expr.callee.member, expr.args)
+                            fn_name = f"velo_str_{expr.callee.member}"
+                            if len(expr.args) == 1:
+                                arg0 = expr.args[0]
+                                if isinstance(arg0, StringLiteral):
+                                    interp = self._format_interpolated_string(arg0.value)
+                                    if interp is not None:
+                                        fmt, c_args = interp
+                                        c_args_str = f", {', '.join(c_args)}" if c_args else ""
+                                        return f'{fn_name}("{fmt}"{c_args_str})'
+                                    escaped = (arg0.value
+                                               .replace('\\', '\\\\')
+                                               .replace('"', '\\"')
+                                               .replace('\n', '\\n')
+                                               .replace('\r', '\\r')
+                                               .replace('\t', '\\t')
+                                               .replace('\0', '\\0'))
+                                    return f'{fn_name}("{escaped}")'
+                                arg_c = self._emit_expression(arg0)
+                                return f'{fn_name}("%s", (const char*)({arg_c}))'
+                            fmt_code = self._emit_expression(expr.args[0])
+                            other_codes = [self._emit_expression(a) for a in expr.args[1:]]
+                            return f"{fn_name}({fmt_code}, {', '.join(other_codes)})"
                         if expr.callee.member in STR_RUNTIME_MEMBERS:
                             # 5.1: compile-check, then one runtime helper call
                             # (single evaluation per argument, guaranteed).
@@ -3552,6 +3587,31 @@ class CCodeGenerator:
         """5.1: compile-checks the sys.str intrinsics beyond legacy .len.
         Mirrored by Stage 2's src/analysis/str_checks.vl — both stages must
         reject the same programs with the same messages."""
+        if member in ("format", "heap_format"):
+            if len(args) < 1:
+                sig = _STR_SIGS[member]
+                raise ValueError(f"str.{member} expects at least 1 argument{sig}")
+            got = self._thread_arg_type(args[0])
+            if got != "string":
+                raise ValueError(f"str.{member} expects string arguments (got {got})")
+            if isinstance(args[0], StringLiteral):
+                fmt_str = args[0].value
+                if "{" not in fmt_str:
+                    spec_count = 0
+                    i = 0
+                    flen = len(fmt_str)
+                    while i < flen:
+                        if fmt_str[i] == '%':
+                            if i + 1 < flen and fmt_str[i+1] == '%':
+                                i += 2
+                                continue
+                            spec_count += 1
+                        i += 1
+                    additional_args = len(args) - 1
+                    if spec_count != additional_args:
+                        plural = "" if spec_count == 1 else "s"
+                        raise ValueError(f"str.{member} format string expects {spec_count} argument{plural} (got {additional_args})")
+            return
         expect_n = STR_RUNTIME_MEMBERS[member]
         sig = _STR_SIGS[member]
         if len(args) != expect_n:
@@ -4046,80 +4106,160 @@ class CCodeGenerator:
                 return '""'
             return f'((const char*[]){{ {types_arr} }})[(int)({idx_code})]'
 
+    def _is_ident_resolvable(self, name: str) -> bool:
+        if name in self.current_scope_types:
+            return True
+        if name in self.global_types:
+            return True
+        if name in self.func_decls:
+            return True
+        if name in ("field_count", "field_name", "field_type", "field_value"):
+            return True
+        return False
+
+    def _is_valid_interp_expr(self, expr: Expr) -> bool:
+        if isinstance(expr, (IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral)):
+            return False
+        return self._is_expr_resolvable(expr)
+
+    def _is_expr_resolvable(self, expr: Expr) -> bool:
+        if isinstance(expr, (IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral)):
+            return True
+        if isinstance(expr, Identifier):
+            return self._is_ident_resolvable(expr.name)
+        if isinstance(expr, MemberAccess):
+            if isinstance(expr.target, Identifier) and expr.target.name == "math" and expr.member in MATH_CONSTANTS:
+                return True
+            return self._is_expr_resolvable(expr.target)
+        if isinstance(expr, BinaryExpr):
+            return self._is_expr_resolvable(expr.left) and self._is_expr_resolvable(expr.right)
+        if isinstance(expr, UnaryExpr):
+            return self._is_expr_resolvable(expr.operand)
+        if isinstance(expr, CallExpr):
+            if isinstance(expr.callee, Identifier):
+                if not self._is_ident_resolvable(expr.callee.name):
+                    return False
+            elif isinstance(expr.callee, MemberAccess):
+                if not self._is_expr_resolvable(expr.callee.target):
+                    return False
+            return all(self._is_expr_resolvable(a) for a in expr.args)
+        if isinstance(expr, AddressOf):
+            return self._is_expr_resolvable(expr.operand)
+        if isinstance(expr, DerefExpr):
+            return self._is_expr_resolvable(expr.operand)
+        if isinstance(expr, IndexExpr):
+            return self._is_expr_resolvable(expr.target) and self._is_expr_resolvable(expr.index)
+        if isinstance(expr, CastExpr):
+            return self._is_expr_resolvable(expr.expr)
+        return False
+
+    def _format_interpolated_string(self, text: str) -> Optional[Tuple[str, List[str]]]:
+        matches = []
+        idx = 0
+        while idx < len(text):
+            if text[idx] == '{':
+                depth = 1
+                close_idx = idx + 1
+                while close_idx < len(text) and depth > 0:
+                    if text[close_idx] == '{':
+                        depth += 1
+                    elif text[close_idx] == '}':
+                        depth -= 1
+                    if depth > 0:
+                        close_idx += 1
+                if depth == 0 and close_idx > idx + 1:
+                    matches.append((idx, close_idx, text[idx + 1:close_idx]))
+                    idx = close_idx + 1
+                    continue
+            idx += 1
+
+        if not matches:
+            return None
+
+        fmt_parts = []
+        c_args = []
+        last_idx = 0
+        valid_count = 0
+
+        for start, end, var_path in matches:
+            sub_expr = None
+            clean_var = var_path.replace('\\"', '"')
+            try:
+                from .lexer import Lexer, TokenType
+                from .parser import Parser
+                sub_tokens = Lexer(clean_var).tokenize()
+                parser = Parser(sub_tokens)
+                parsed = parser._parse_expression()
+                if parser.pos < len(sub_tokens) and sub_tokens[parser.pos].type != TokenType.EOF:
+                    parsed = None
+                if parsed is not None and self._is_valid_interp_expr(parsed):
+                    sub_expr = parsed
+            except Exception:
+                sub_expr = None
+
+            path_valid = False
+            if sub_expr is None:
+                clean_path = re.sub(r'\[[a-zA-Z0-9_]+\]', '', clean_var)
+                parts = clean_path.split(".")
+                if clean_var.startswith("math.") and clean_var[5:] in MATH_CONSTANTS:
+                    path_valid = True
+                elif parts and parts[0] in self.current_scope_types:
+                    path_valid = True
+
+            if sub_expr is None and not path_valid:
+                continue
+
+            valid_count += 1
+            fmt_parts.append(text[last_idx:start].replace('%', '%%'))
+
+            if sub_expr is not None:
+                resolved_type = self._resolve_expr_type(sub_expr)
+                c_expr = self._emit_expression(sub_expr)
+            else:
+                resolved_type = self._resolve_path_type(var_path)
+                c_expr = self._convert_path_to_c(var_path)
+
+            if resolved_type == "dyn":
+                # 5.2 slice 2: raw dyn prints nothing useful — cast (as) first
+                raise ValueError(self.DYN_GATE_ERROR)
+
+            if resolved_type in ("f32", "f64"):
+                fmt_parts.append("%.2f")
+                c_args.append(f"(double)({c_expr})")
+            elif resolved_type == "string":
+                fmt_parts.append("%s")
+                c_args.append(f"(const char*)({c_expr})")
+            elif resolved_type == "bool":
+                fmt_parts.append("%s")
+                c_args.append(f"(({c_expr}) ? \"true\" : \"false\")")
+            else:
+                fmt_parts.append("%lld")
+                c_args.append(f"(long long)({c_expr})")
+
+            last_idx = end + 1
+
+        if valid_count == 0:
+            return None
+
+        fmt_parts.append(text[last_idx:].replace('%', '%%'))
+        full_fmt = "".join(fmt_parts)
+        escaped_fmt = full_fmt.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\t', '\\t')
+
+        return escaped_fmt, c_args
+
     def _lower_io_call(self, member: str, args: List[Expr]) -> str:
-        nl_char = "\n" if member == "println" else ""
+        nl_char = "\\n" if member == "println" else ""
         if len(args) == 0:
             return 'printf("\\n")'
 
         first_arg = args[0]
         if isinstance(first_arg, StringLiteral):
             text = first_arg.value
-            matches = []
-            idx = 0
-            while idx < len(text):
-                if text[idx] == '{':
-                    depth = 1
-                    close_idx = idx + 1
-                    while close_idx < len(text) and depth > 0:
-                        if text[close_idx] == '{':
-                            depth += 1
-                        elif text[close_idx] == '}':
-                            depth -= 1
-                        if depth > 0:
-                            close_idx += 1
-                    if depth == 0 and close_idx > idx + 1:
-                        matches.append((idx, close_idx, text[idx + 1:close_idx]))
-                        idx = close_idx + 1
-                        continue
-                idx += 1
-
-            if matches:
-                fmt_parts = []
-                c_args = []
-                last_idx = 0
-
-                for start, end, var_path in matches:
-                    fmt_parts.append(text[last_idx:start].replace('%', '%%'))
-                    sub_expr = None
-                    try:
-                        from .lexer import Lexer
-                        from .parser import Parser
-                        sub_tokens = Lexer(var_path).tokenize()
-                        sub_expr = Parser(sub_tokens)._parse_expression()
-                    except Exception:
-                        sub_expr = None
-
-                    if sub_expr is not None:
-                        resolved_type = self._resolve_expr_type(sub_expr)
-                        c_expr = self._emit_expression(sub_expr)
-                    else:
-                        resolved_type = self._resolve_path_type(var_path)
-                        c_expr = self._convert_path_to_c(var_path)
-
-                    if resolved_type == "dyn":
-                        # 5.2 slice 2: raw dyn prints nothing useful — cast (as) first
-                        raise ValueError(self.DYN_GATE_ERROR)
-
-                    if resolved_type in ("f32", "f64"):
-                        fmt_parts.append("%.2f")
-                        c_args.append(f"(double)({c_expr})")
-                    elif resolved_type == "string":
-                        fmt_parts.append("%s")
-                        c_args.append(f"(const char*)({c_expr})")
-                    elif resolved_type == "bool":
-                        fmt_parts.append("%s")
-                        c_args.append(f"(({c_expr}) ? \"true\" : \"false\")")
-                    else:
-                        fmt_parts.append("%lld")
-                        c_args.append(f"(long long)({c_expr})")
-
-                    last_idx = end + 1
-
-                fmt_parts.append(text[last_idx:].replace('%', '%%'))
-                full_fmt = "".join(fmt_parts) + nl_char
-                escaped_fmt = full_fmt.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\t', '\\t')
-
-                return f'printf("{escaped_fmt}", {", ".join(c_args)})'
+            interp = self._format_interpolated_string(text)
+            if interp is not None:
+                fmt, c_args = interp
+                c_args_str = f", {', '.join(c_args)}" if c_args else ""
+                return f'printf("{fmt}{nl_char}"{c_args_str})'
             else:
                 escaped = text.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\t', '\\t')
                 if member == "println":
