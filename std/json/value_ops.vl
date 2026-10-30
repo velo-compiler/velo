@@ -1,0 +1,201 @@
+// Pure Velo JSON DOM Value operations (zero C runtime dependencies).
+// Provides array operations (push, len, get), object operations (put, get, has, len, typed getters),
+// structural deep equality comparison (json_value_eq), and deep cloning (json_value_clone).
+use "../str/slice.vl"
+use "../mem/arena.vl"
+use "value.vl"
+
+// Appends an item to the end of a JSON array in O(1) time.
+act json_array_push(arr: @JsonValue, item: @JsonValue) {
+    if arr == null or item == null or arr.kind != JSON_ARRAY { return }
+    item.next = null
+    if arr.first_child == null {
+        arr.first_child = item
+        arr.last_child = item
+    } else {
+        arr.last_child.next = item
+        arr.last_child = item
+    }
+    arr.count += 1
+}
+
+// Returns the element count of a JSON array.
+act json_array_len(arr: @JsonValue) -> usize {
+    if arr == null or arr.kind != JSON_ARRAY { return 0 }
+    return arr.count
+}
+
+// Returns the item at index idx in a JSON array, or null if out of bounds.
+act json_array_get(arr: @JsonValue, idx: usize) -> @JsonValue {
+    if arr == null or arr.kind != JSON_ARRAY or idx >= arr.count { return null }
+    mut cur = arr.first_child
+    mut i: usize = 0
+    loop cur != null and i < idx {
+        cur = cur.next
+        i += 1
+    }
+    return cur
+}
+
+// Inserts or updates a key-value entry in a JSON object.
+act json_obj_put(obj: @JsonValue, key: StrSlice, val: @JsonValue) {
+    if obj == null or val == null or obj.kind != JSON_OBJECT { return }
+    mut cur = obj.first_child
+    loop cur != null {
+        if slice_eq(cur.key, key) {
+            cur.kind = val.kind
+            cur.bool_val = val.bool_val
+            cur.int_val = val.int_val
+            cur.float_val = val.float_val
+            cur.str_val = val.str_val
+            cur.first_child = val.first_child
+            cur.last_child = val.last_child
+            cur.count = val.count
+            return
+        }
+        cur = cur.next
+    }
+
+    val.key = key
+    val.next = null
+    if obj.first_child == null {
+        obj.first_child = val
+        obj.last_child = val
+    } else {
+        obj.last_child.next = val
+        obj.last_child = val
+    }
+    obj.count += 1
+}
+
+// Convenience helper inserting or updating a key-value entry from a string literal.
+act json_obj_put_str(obj: @JsonValue, key: string, val: @JsonValue) {
+    json_obj_put(obj, slice_from_str(key), val)
+}
+
+// Looks up a property by key slice in a JSON object, returning the value node or null.
+act json_obj_get(obj: @JsonValue, key: StrSlice) -> @JsonValue {
+    if obj == null or obj.kind != JSON_OBJECT { return null }
+    mut cur = obj.first_child
+    loop cur != null {
+        if slice_eq(cur.key, key) { return cur }
+        cur = cur.next
+    }
+    return null
+}
+
+// Looks up a property by string literal in a JSON object, returning the value node or null.
+act json_obj_get_str(obj: @JsonValue, key: string) -> @JsonValue {
+    return json_obj_get(obj, slice_from_str(key))
+}
+
+// Returns true if the JSON object contains the given key.
+act json_obj_has(obj: @JsonValue, key: StrSlice) -> bool {
+    return json_obj_get(obj, key) != null
+}
+
+// Returns true if the JSON object contains the given string key.
+act json_obj_has_str(obj: @JsonValue, key: string) -> bool {
+    return json_obj_get_str(obj, key) != null
+}
+
+// Returns the property count of a JSON object.
+act json_obj_len(obj: @JsonValue) -> usize {
+    if obj == null or obj.kind != JSON_OBJECT { return 0 }
+    return obj.count
+}
+
+// Returns the integer value of a property in an object, or default_val if missing or non-integer.
+act json_obj_get_int(obj: @JsonValue, key: string, default_val: i64) -> i64 {
+    let node = json_obj_get_str(obj, key)
+    return json_as_int(node, default_val)
+}
+
+// Returns the float value of a property in an object, or default_val if missing or non-numeric.
+act json_obj_get_float(obj: @JsonValue, key: string, default_val: f64) -> f64 {
+    let node = json_obj_get_str(obj, key)
+    return json_as_float(node, default_val)
+}
+
+// Returns the boolean value of a property in an object, or default_val if missing or non-boolean.
+act json_obj_get_bool(obj: @JsonValue, key: string, default_val: bool) -> bool {
+    let node = json_obj_get_str(obj, key)
+    return json_as_bool(node, default_val)
+}
+
+// Returns the string slice value of a property in an object, or default_val if missing or non-string.
+act json_obj_get_str_val(obj: @JsonValue, key: string, default_val: string) -> StrSlice {
+    let node = json_obj_get_str(obj, key)
+    if node != null and node.kind == JSON_STRING {
+        return node.str_val
+    }
+    return slice_from_str(default_val)
+}
+
+// Recursively checks if two JSON value trees are structurally and semantically identical.
+act json_value_eq(a: @JsonValue, b: @JsonValue) -> bool {
+    if a == b { return true }
+    if a == null or b == null { return false }
+    if a.kind != b.kind { return false }
+    if a.kind == JSON_NULL { return true }
+    if a.kind == JSON_BOOL { return a.bool_val == b.bool_val }
+    if a.kind == JSON_INT { return a.int_val == b.int_val }
+    if a.kind == JSON_FLOAT {
+        let diff = a.float_val - b.float_val
+        mut abs_diff = diff
+        if abs_diff < 0.0 { abs_diff = -diff }
+        return abs_diff < 0.000001
+    }
+    if a.kind == JSON_STRING { return slice_eq(a.str_val, b.str_val) }
+    if a.kind == JSON_ARRAY {
+        if a.count != b.count { return false }
+        mut ca = a.first_child
+        mut cb = b.first_child
+        loop ca != null and cb != null {
+            if !json_value_eq(ca, cb) { return false }
+            ca = ca.next
+            cb = cb.next
+        }
+        return ca == null and cb == null
+    }
+    if a.kind == JSON_OBJECT {
+        if a.count != b.count { return false }
+        mut ca = a.first_child
+        loop ca != null {
+            let cb = json_obj_get(b, ca.key)
+            if cb == null or !json_value_eq(ca, cb) { return false }
+            ca = ca.next
+        }
+        return true
+    }
+    return false
+}
+
+// Deeply clones a JSON value tree into the specified memory Arena.
+act json_value_clone(a: @Arena, v: @JsonValue) -> @JsonValue {
+    if v == null { return null }
+    if v.kind == JSON_NULL { return json_new_null(a) }
+    if v.kind == JSON_BOOL { return json_new_bool(a, v.bool_val) }
+    if v.kind == JSON_INT { return json_new_int(a, v.int_val) }
+    if v.kind == JSON_FLOAT { return json_new_float(a, v.float_val) }
+    if v.kind == JSON_STRING { return json_new_str(a, v.str_val) }
+    if v.kind == JSON_ARRAY {
+        let arr = json_new_array(a)
+        mut cur = v.first_child
+        loop cur != null {
+            json_array_push(arr, json_value_clone(a, cur))
+            cur = cur.next
+        }
+        return arr
+    }
+    if v.kind == JSON_OBJECT {
+        let obj = json_new_object(a)
+        mut cur = v.first_child
+        loop cur != null {
+            json_obj_put(obj, cur.key, json_value_clone(a, cur))
+            cur = cur.next
+        }
+        return obj
+    }
+    return null
+}

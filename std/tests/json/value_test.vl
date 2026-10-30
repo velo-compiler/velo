@@ -1,0 +1,203 @@
+// Unit test suite for std.json.value (JSON DOM value tree, constructors, accessors, and operations).
+use "../../mem/page.vl"
+use "../../mem/arena.vl"
+use "../../str/slice.vl"
+use "../../io/print.vl"
+use "../../json/value.vl"
+
+act test_stack_constructors_and_types() -> bool {
+    let v_null = json_null()
+    if !json_is_null(@v_null) or !slice_eq_str(json_type_name(v_null.kind), "null") { return false }
+
+    let v_bool = json_bool(true)
+    if !json_is_bool(@v_bool) or !json_as_bool(@v_bool, false) { return false }
+
+    let v_int = json_int(42)
+    if !json_is_int(@v_int) or !json_is_number(@v_int) or json_as_int(@v_int, 0) != 42 { return false }
+
+    let v_float = json_float(3.14159)
+    if !json_is_float(@v_float) or !json_is_number(@v_float) { return false }
+    if json_as_float(@v_float, 0.0) < 3.14158 or json_as_float(@v_float, 0.0) > 3.14160 { return false }
+
+    let v_str = json_str_lit("hello velo")
+    if !json_is_string(@v_str) or !slice_eq_str(json_as_str(@v_str), "hello velo") { return false }
+
+    let v_arr = json_array()
+    if !json_is_array(@v_arr) or json_array_len(@v_arr) != 0 { return false }
+
+    let v_obj = json_object()
+    if !json_is_object(@v_obj) or json_obj_len(@v_obj) != 0 { return false }
+
+    return true
+}
+
+act test_arena_constructors_and_accessors() -> bool {
+    mut arena = arena_init(65536)
+    defer arena_reset(@arena)
+
+    let vn = json_new_null(@arena)
+    if !json_is_null(vn) { return false }
+
+    let vb = json_new_bool(@arena, false)
+    if !json_is_bool(vb) or json_as_bool(vb, true) { return false }
+
+    let vi = json_new_int(@arena, -100)
+    if !json_is_int(vi) or json_as_int(vi, 0) != -100 { return false }
+    // Widening accessor: int to float
+    if json_as_float(vi, 0.0) != -100.0 { return false }
+
+    let vf = json_new_float(@arena, 2.71828)
+    if !json_is_float(vf) { return false }
+    if json_as_float(vf, 0.0) < 2.71827 or json_as_float(vf, 0.0) > 2.71829 { return false }
+
+    let vs = json_new_str_lit(@arena, "JSON DOM")
+    if !json_is_string(vs) or !slice_eq_str(json_as_str(vs), "JSON DOM") { return false }
+
+    // Fallbacks
+    if json_as_int(vs, 999) != 999 { return false }
+    if json_as_bool(vi, true) != true { return false }
+    let fallback_str = slice_from_str("default")
+    if !slice_eq_str(json_as_str_or(vi, fallback_str), "default") { return false }
+
+    return true
+}
+
+act test_array_operations() -> bool {
+    mut arena = arena_init(65536)
+    defer arena_reset(@arena)
+
+    let arr = json_new_array(@arena)
+    if json_array_len(arr) != 0 { return false }
+    if json_array_get(arr, 0) != null { return false }
+
+    json_array_push(arr, json_new_int(@arena, 10))
+    json_array_push(arr, json_new_int(@arena, 20))
+    json_array_push(arr, json_new_str_lit(@arena, "thirty"))
+    json_array_push(arr, json_new_bool(@arena, true))
+
+    if json_array_len(arr) != 4 { return false }
+
+    let i0 = json_array_get(arr, 0)
+    if json_as_int(i0, 0) != 10 { return false }
+
+    let i1 = json_array_get(arr, 1)
+    if json_as_int(i1, 0) != 20 { return false }
+
+    let i2 = json_array_get(arr, 2)
+    if !slice_eq_str(json_as_str(i2), "thirty") { return false }
+
+    let i3 = json_array_get(arr, 3)
+    if !json_as_bool(i3, false) { return false }
+
+    // Out of bounds
+    if json_array_get(arr, 4) != null { return false }
+
+    return true
+}
+
+act test_object_operations() -> bool {
+    mut arena = arena_init(65536)
+    defer arena_reset(@arena)
+
+    let obj = json_new_object(@arena)
+    if json_obj_len(obj) != 0 { return false }
+    if json_obj_has_str(obj, "title") { return false }
+
+    json_obj_put_str(obj, "title", json_new_str_lit(@arena, "Compiler"))
+    json_obj_put_str(obj, "threads", json_new_int(@arena, 8))
+    json_obj_put_str(obj, "opt_level", json_new_float(@arena, 2.5))
+    json_obj_put_str(obj, "debug", json_new_bool(@arena, true))
+
+    if json_obj_len(obj) != 4 { return false }
+    if !json_obj_has_str(obj, "title") or !json_obj_has_str(obj, "threads") { return false }
+    if json_obj_has_str(obj, "missing") { return false }
+
+    // Typed convenience getters
+    if !slice_eq_str(json_obj_get_str_val(obj, "title", ""), "Compiler") { return false }
+    if json_obj_get_int(obj, "threads", 0) != 8 { return false }
+    if json_obj_get_float(obj, "opt_level", 0.0) != 2.5 { return false }
+    if !json_obj_get_bool(obj, "debug", false) { return false }
+
+    // Missing key defaults
+    if json_obj_get_int(obj, "nonexistent", -1) != -1 { return false }
+    if !slice_eq_str(json_obj_get_str_val(obj, "nonexistent", "fallback"), "fallback") { return false }
+
+    // Update existing key
+    json_obj_put_str(obj, "threads", json_new_int(@arena, 16))
+    if json_obj_len(obj) != 4 { return false } // count unchanged
+    if json_obj_get_int(obj, "threads", 0) != 16 { return false }
+
+    return true
+}
+
+act test_deep_equality_and_cloning() -> bool {
+    mut arena = arena_init(65536)
+    defer arena_reset(@arena)
+
+    let root = json_new_object(@arena)
+    json_obj_put_str(root, "name", json_new_str_lit(@arena, "Service"))
+    json_obj_put_str(root, "port", json_new_int(@arena, 8080))
+
+    let tags = json_new_array(@arena)
+    json_array_push(tags, json_new_str_lit(@arena, "web"))
+    json_array_push(tags, json_new_str_lit(@arena, "fast"))
+    json_obj_put_str(root, "tags", tags)
+
+    let cloned = json_value_clone(@arena, root)
+    if !json_value_eq(root, cloned) { return false }
+
+    // Modify clone and verify asymmetry
+    json_obj_put_str(cloned, "port", json_new_int(@arena, 9090))
+    if json_value_eq(root, cloned) { return false }
+
+    return true
+}
+
+act test_heap_allocation_and_free() -> bool {
+    let obj = json_heap_new_object()
+    if obj == null { return false }
+
+    json_obj_put_str(obj, "status", json_heap_new_str_lit("ok"))
+    json_obj_put_str(obj, "code", json_heap_new_int(200))
+
+    let items = json_heap_new_array()
+    json_array_push(items, json_heap_new_int(1))
+    json_array_push(items, json_heap_new_int(2))
+    json_obj_put_str(obj, "items", items)
+
+    if json_obj_len(obj) != 3 { json_heap_free(obj); return false }
+    if json_obj_get_int(obj, "code", 0) != 200 { json_heap_free(obj); return false }
+
+    json_heap_free(obj)
+    return true
+}
+
+act main() -> i32 {
+    if !test_stack_constructors_and_types() {
+        println_str("FAIL: test_stack_constructors_and_types")
+        return 1
+    }
+    if !test_arena_constructors_and_accessors() {
+        println_str("FAIL: test_arena_constructors_and_accessors")
+        return 2
+    }
+    if !test_array_operations() {
+        println_str("FAIL: test_array_operations")
+        return 3
+    }
+    if !test_object_operations() {
+        println_str("FAIL: test_object_operations")
+        return 4
+    }
+    if !test_deep_equality_and_cloning() {
+        println_str("FAIL: test_deep_equality_and_cloning")
+        return 5
+    }
+    if !test_heap_allocation_and_free() {
+        println_str("FAIL: test_heap_allocation_and_free")
+        return 6
+    }
+
+    println_str("PASS: std.json.value all tests passed")
+    return 0
+}

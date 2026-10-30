@@ -1260,8 +1260,23 @@ flowchart TD
   - Implemented inspection helpers: `json_lexer_init`, `json_lexer_init_str`, `json_lexer_next`, `json_lexer_peek` (non-destructive lookahead), `json_token_str_value` (stripping enclosing quotes), `json_token_is_float`, `json_token_as_i64` (backed by `std.fmt.atoi`), `json_token_as_f64` (backed by `std.fmt.ftoa`), and `json_token_kind_name`.
   - Added unit test suite `std/tests/json/lexer_test.vl` and pytest integration in `tests/test_std_json.py`.
 * **Residual Limitation**:
-  - JSON DOM value representation (`std/json/value.vl`) will be implemented in Task 7.2.
+  - JSON DOM value representation (`std/json/value.vl`) is complete in Task 7.2.
 * **Verification**:
   - `bin/velo.exe run std/tests/json/lexer_test.vl` passed delimiters, literals, integers, floating-point numbers with exponents, invalid syntax rejection, string escape decoding with UTF-16 emoji surrogates, non-destructive token peeking, and quote stripping.
   - `python -m pytest tests/test_std_json.py` passed (1/1 passed in 1.42s).
   - All 33 standard library test cases passed.
+
+#### Task 7.2: JSON DOM Value Representation (`std/json/value.vl` & `std/json/value_ops.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Following streaming tokenization in Task 7.1, Velo lacked an in-memory JSON Document Object Model (DOM) tree representation. Applications could not represent, construct, traverse, or query heterogeneously typed JSON trees (null, bool, int, float, string, array, object) with Arena regional allocation or dynamic heap management.
+* **Fix Applied**:
+  - Implemented `std/json/value.vl` defining `data JsonValue` representing all 7 JSON node kinds with contiguous `StrSlice` views and O(1) intrusive linked list children (`first_child`, `last_child`, `next`, `count`).
+  - Implemented stack-allocated initializers (`json_null`, `json_bool`, `json_int`, `json_float`, `json_str`, `json_array`, `json_object`), Arena-backed constructors (`json_new_*`), and dynamic heap constructors with recursive teardown (`json_heap_new_*`, `json_heap_free`).
+  - Implemented kind validation checks (`json_is_null`, `json_is_bool`, `json_is_int`, `json_is_float`, `json_is_number`, `json_is_string`, `json_is_array`, `json_is_object`, `json_type_name`) and value accessors with default fallbacks (`json_as_int`, `json_as_float`, `json_as_bool`, `json_as_str`, `json_as_str_or`).
+  - Implemented `std/json/value_ops.vl` providing array operations (`json_array_push`, `json_array_len`, `json_array_get`), object operations (`json_obj_put`, `json_obj_put_str`, `json_obj_get`, `json_obj_get_str`, `json_obj_has`, `json_obj_has_str`, `json_obj_len`), typed property extractors (`json_obj_get_int`, `json_obj_get_float`, `json_obj_get_bool`, `json_obj_get_str_val`), deep structural equality comparison (`json_value_eq`), and deep tree cloning (`json_value_clone`).
+  - Added unit test suite `std/tests/json/value_test.vl` and pytest integration in `tests/test_std_json.py`.
+* **Residual Limitation**:
+  - Recursive descent DOM parser (`std/json/parser.vl`) backed by `std.mem.Arena` will be implemented in Task 7.3.
+* **Verification**:
+  - `bin/velo.exe run std/tests/json/value_test.vl` passed stack value creation, Arena regional construction, array push/get indexing, object put/get with in-place updates, typed property defaults, deep tree equality, cloning, and recursive heap cleanup.
+  - `python -m pytest tests/test_std_json.py` passed (2/2 passed in 2.79s).
