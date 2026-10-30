@@ -1190,3 +1190,17 @@ flowchart TD
 * **Verification**:
   - `bin/velo.exe run std/tests/path/path_test.vl` passed separator checks, Windows drive detection, absolute/relative classification, basename/dirname slicing, extension/stem extraction, multi-segment joins, and dot/dot-dot canonicalization.
   - `python -m pytest tests/test_std_path.py` passed (1/1 passed in 0.77s).
+
+#### Task 6.2: OS File Metadata & Queries (`std/fs/stat.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - File existence, directory checks, and file size inspections previously required compiler intrinsics (`sys.fs`), C runtime wrappers, or raw handle opening in `std.io`, lacking a pure-Velo query interface returning comprehensive metadata (file size, directory/file classification, read-only status, symlink detection, and timestamps) via direct OS kernel services.
+* **Fix Applied**:
+  - Implemented `std/fs/stat.vl` providing `data FileStat` and core query functions: `fs_stat`, `fs_stat_slice`, `fs_stat_str`, and `fs_stat_not_found`.
+  - Backed directly by Win32 kernel services `GetFileAttributesExA` (with `GetFileAttributesA` fallback), extracting 64-bit file size, directory flag, read-only flag, reparse point / symlink flag, and converting Win32 FILETIME into Unix epoch milliseconds (`modified_time_ms`, `created_time_ms`).
+  - Implemented fast boolean and scalar query helpers: `fs_exists`, `fs_exists_slice`, `fs_is_file`, `fs_is_file_slice`, `fs_is_dir`, `fs_is_dir_slice`, `fs_file_size`, `fs_file_size_slice`, `fs_is_readonly`, `fs_is_readonly_slice`.
+  - Added unit test suite `std/tests/fs/stat_test.vl` and pytest test `tests/test_std_fs.py`.
+* **Residual Limitation**:
+  - Filesystem mutation operations (`std/fs/ops.vl`: `create_dir`, `remove_file`, `remove_dir`, `rename`, `copy_file`) will be implemented in Task 6.3.
+* **Verification**:
+  - `bin/velo.exe run std/tests/fs/stat_test.vl` passed file existence, directory detection, file size measurement, and full metadata queries.
+  - `python -m pytest tests/test_std_fs.py` passed (1/1 passed in 0.54s).

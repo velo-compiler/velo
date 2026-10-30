@@ -1,0 +1,215 @@
+// Pure Velo filesystem metadata and query engine (zero C runtime dependencies).
+// Queries file existence, size, timestamps, and attributes directly via OS kernel services.
+use "../mem/ops.vl"
+use "../mem/heap.vl"
+use "../str/slice.vl"
+
+// Win32 file attribute flag constants
+let FS_ATTR_READONLY: u32 = 1
+let FS_ATTR_HIDDEN: u32 = 2
+let FS_ATTR_SYSTEM: u32 = 4
+let FS_ATTR_DIRECTORY: u32 = 16
+let FS_ATTR_ARCHIVE: u32 = 32
+let FS_ATTR_NORMAL: u32 = 128
+let FS_ATTR_REPARSE_POINT: u32 = 1024
+let FS_INVALID_ATTRS: u32 = (0 - 1) as u32
+
+// OS File metadata descriptor
+data FileStat {
+    size: i64,
+    is_dir: bool,
+    is_file: bool,
+    is_readonly: bool,
+    is_symlink: bool,
+    exists: bool,
+    modified_time_ms: i64,
+    created_time_ms: i64,
+}
+
+// Foreign interface to Windows kernel services
+extern act GetFileAttributesExA(lpFileName: @u8, fInfoLevelId: u32, lpFileInformation: @u8) -> i32
+extern act GetFileAttributesA(lpFileName: @u8) -> u32
+
+// Returns an empty FileStat indicating a non-existent or inaccessible file.
+act fs_stat_not_found() -> FileStat {
+    return FileStat {
+        size: 0,
+        is_dir: false,
+        is_file: false,
+        is_readonly: false,
+        is_symlink: false,
+        exists: false,
+        modified_time_ms: 0,
+        created_time_ms: 0,
+    }
+}
+
+// Queries file metadata for a null-terminated path pointer.
+act fs_stat(path: @u8) -> FileStat {
+    if path == null {
+        return fs_stat_not_found()
+    }
+
+    let buf = heap_alloc(64)
+    if buf == null {
+        return fs_stat_not_found()
+    }
+
+    let ok = GetFileAttributesExA(path, 0, buf)
+    if ok == 0 {
+        // Fallback check if path exists via GetFileAttributesA
+        let attrs = GetFileAttributesA(path)
+        heap_free(buf)
+        if attrs == FS_INVALID_ATTRS {
+            return fs_stat_not_found()
+        }
+        let is_dir = (attrs & FS_ATTR_DIRECTORY) != 0 as u32
+        let is_ro = (attrs & FS_ATTR_READONLY) != 0 as u32
+        let is_sym = (attrs & FS_ATTR_REPARSE_POINT) != 0 as u32
+        return FileStat {
+            size: 0,
+            is_dir: is_dir,
+            is_file: !is_dir,
+            is_readonly: is_ro,
+            is_symlink: is_sym,
+            exists: true,
+            modified_time_ms: 0,
+            created_time_ms: 0,
+        }
+    }
+
+    let p_u32 = buf as @u32
+    let attrs = p_u32[0]
+    let is_dir = (attrs & FS_ATTR_DIRECTORY) != 0 as u32
+    let is_ro = (attrs & FS_ATTR_READONLY) != 0 as u32
+    let is_sym = (attrs & FS_ATTR_REPARSE_POINT) != 0 as u32
+    let is_file = !is_dir
+
+    let sz_high = p_u32[7] as i64
+    let sz_low = p_u32[8] as i64
+    let file_size: i64 = (sz_high << 32) | sz_low
+
+    // Windows FILETIME to Unix epoch milliseconds conversion:
+    // Difference between 1601 and 1970 is 116444736000000000 100-nanosecond intervals.
+    let EPOCH_DIFF: i64 = 116444736000000000
+
+    let ft_write_high = p_u32[6] as i64
+    let ft_write_low = p_u32[5] as i64
+    let ft_write: i64 = (ft_write_high << 32) | ft_write_low
+    mut mtime_ms: i64 = 0
+    if ft_write > EPOCH_DIFF {
+        mtime_ms = (ft_write - EPOCH_DIFF) / 10000
+    }
+
+    let ft_create_high = p_u32[2] as i64
+    let ft_create_low = p_u32[1] as i64
+    let ft_create: i64 = (ft_create_high << 32) | ft_create_low
+    mut ctime_ms: i64 = 0
+    if ft_create > EPOCH_DIFF {
+        ctime_ms = (ft_create - EPOCH_DIFF) / 10000
+    }
+
+    heap_free(buf)
+
+    return FileStat {
+        size: file_size,
+        is_dir: is_dir,
+        is_file: is_file,
+        is_readonly: is_ro,
+        is_symlink: is_sym,
+        exists: true,
+        modified_time_ms: mtime_ms,
+        created_time_ms: ctime_ms,
+    }
+}
+
+// Queries file metadata for a StrSlice view.
+act fs_stat_slice(path: StrSlice) -> FileStat {
+    if slice_is_empty(path) {
+        return fs_stat_not_found()
+    }
+    let cstr = heap_alloc(path.len + 1)
+    if cstr == null {
+        return fs_stat_not_found()
+    }
+    copy(cstr, path.ptr, path.len)
+    cstr[path.len] = 0 as u8
+
+    let st = fs_stat(cstr)
+    heap_free(cstr)
+    return st
+}
+
+// Queries file metadata for a Velo string.
+act fs_stat_str(path: string) -> FileStat {
+    if path == null {
+        return fs_stat_not_found()
+    }
+    return fs_stat(path as @u8)
+}
+
+// Returns true if the file or directory exists.
+act fs_exists(path: string) -> bool {
+    let st = fs_stat_str(path)
+    return st.exists
+}
+
+// Returns true if the slice path exists.
+act fs_exists_slice(path: StrSlice) -> bool {
+    let st = fs_stat_slice(path)
+    return st.exists
+}
+
+// Returns true if the path exists and is a regular file.
+act fs_is_file(path: string) -> bool {
+    let st = fs_stat_str(path)
+    return st.exists and st.is_file
+}
+
+// Returns true if the slice path exists and is a regular file.
+act fs_is_file_slice(path: StrSlice) -> bool {
+    let st = fs_stat_slice(path)
+    return st.exists and st.is_file
+}
+
+// Returns true if the path exists and is a directory.
+act fs_is_dir(path: string) -> bool {
+    let st = fs_stat_str(path)
+    return st.exists and st.is_dir
+}
+
+// Returns true if the slice path exists and is a directory.
+act fs_is_dir_slice(path: StrSlice) -> bool {
+    let st = fs_stat_slice(path)
+    return st.exists and st.is_dir
+}
+
+// Returns the file size in bytes, or -1 if the file does not exist.
+act fs_file_size(path: string) -> i64 {
+    let st = fs_stat_str(path)
+    if !st.exists {
+        return 0 - 1
+    }
+    return st.size
+}
+
+// Returns the file size in bytes from a slice, or -1 if the file does not exist.
+act fs_file_size_slice(path: StrSlice) -> i64 {
+    let st = fs_stat_slice(path)
+    if !st.exists {
+        return 0 - 1
+    }
+    return st.size
+}
+
+// Returns true if the file exists and is marked read-only.
+act fs_is_readonly(path: string) -> bool {
+    let st = fs_stat_str(path)
+    return st.exists and st.is_readonly
+}
+
+// Returns true if the slice path exists and is marked read-only.
+act fs_is_readonly_slice(path: StrSlice) -> bool {
+    let st = fs_stat_slice(path)
+    return st.exists and st.is_readonly
+}

@@ -1,0 +1,106 @@
+// Unit test suite for std.fs.stat (pure Velo filesystem metadata and queries).
+use sys.io
+use "../../str/slice.vl"
+use "../../fs/stat.vl"
+
+act test_file_exists() -> bool {
+    // Existing files & directories
+    if !fs_exists("README.md") { return false }
+    if !fs_exists("src") { return false }
+    if !fs_exists("std") { return false }
+
+    // Slice overload
+    if !fs_exists_slice(slice_from_str("README.md")) { return false }
+    if !fs_exists_slice(slice_from_str("src")) { return false }
+
+    // Non-existent paths
+    if fs_exists("scratch/definitely_not_existing_file_9999.tmp") { return false }
+    if fs_exists_slice(slice_from_str("random_dir_not_here_42/sub")) { return false }
+
+    return true
+}
+
+act test_is_file_and_is_dir() -> bool {
+    // Files
+    if !fs_is_file("README.md") { return false }
+    if fs_is_dir("README.md") { return false }
+    if !fs_is_file_slice(slice_from_str("README.md")) { return false }
+
+    // Directories
+    if !fs_is_dir("src") { return false }
+    if fs_is_file("src") { return false }
+    if !fs_is_dir_slice(slice_from_str("src")) { return false }
+
+    if !fs_is_dir("std") { return false }
+    if fs_is_file("std") { return false }
+
+    // Non-existent
+    if fs_is_file("not_existing_file_123.bin") { return false }
+    if fs_is_dir("not_existing_dir_123") { return false }
+
+    return true
+}
+
+act test_file_size() -> bool {
+    let sz = fs_file_size("README.md")
+    if sz <= 0 { return false }
+
+    let sz_slice = fs_file_size_slice(slice_from_str("README.md"))
+    if sz_slice != sz { return false }
+
+    // Non-existent returns -1
+    let missing_sz = fs_file_size("not_existing_file_123.bin")
+    if missing_sz != 0 - 1 { return false }
+
+    return true
+}
+
+act test_full_stat() -> bool {
+    let st = fs_stat_str("README.md")
+    if !st.exists { return false }
+    if !st.is_file { return false }
+    if st.is_dir { return false }
+    if st.size <= 0 { return false }
+    if st.modified_time_ms <= 0 { return false }
+
+    // Directory stat
+    let st_dir = fs_stat_str("src")
+    if !st_dir.exists { return false }
+    if !st_dir.is_dir { return false }
+    if st_dir.is_file { return false }
+
+    // Slice stat
+    let st_slice = fs_stat_slice(slice_from_str("README.md"))
+    if !st_slice.exists or !st_slice.is_file or st_slice.size != st.size {
+        return false
+    }
+
+    // Non-existent stat
+    let st_none = fs_stat_str("non_existent_xyz.tmp")
+    if st_none.exists { return false }
+    if st_none.size != 0 { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_file_exists() {
+        io.println("FAIL: test_file_exists")
+        return 1
+    }
+    if !test_is_file_and_is_dir() {
+        io.println("FAIL: test_is_file_and_is_dir")
+        return 2
+    }
+    if !test_file_size() {
+        io.println("FAIL: test_file_size")
+        return 3
+    }
+    if !test_full_stat() {
+        io.println("FAIL: test_full_stat")
+        return 4
+    }
+
+    io.println("PASS: std.fs.stat all assertions succeeded")
+    return 0
+}
