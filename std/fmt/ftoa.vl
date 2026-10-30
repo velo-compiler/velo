@@ -1,0 +1,299 @@
+// Pure Velo float-to-string (ftoa) and string-to-float (atof) library (zero C runtime dependencies).
+// Compliant with IEEE 754: handles special values (NaN, +Inf, -Inf, negative zero -0.0),
+// fixed-point and scientific notation, decimal exponent parsing, and round-trip conversions without libc.
+use "../str/slice.vl"
+use "../str/manip.vl"
+use "../str/search.vl"
+use "itoa.vl"
+
+// Reinterprets IEEE 754 64-bit float bits as u64.
+act f64_to_bits(f: f64) -> u64 {
+    let pf: @f64 = @f
+    let p_u8: @u8 = pf as @u8
+    let pu: @u64 = p_u8 as @u64
+    return pu[0]
+}
+
+// Reinterprets u64 bits as IEEE 754 64-bit float.
+act bits_to_f64(bits: u64) -> f64 {
+    let pb: @u64 = @bits
+    let p_u8: @u8 = pb as @u8
+    let pf: @f64 = p_u8 as @f64
+    return pf[0]
+}
+
+// Returns true if val is an IEEE 754 Not-a-Number (NaN).
+act f64_is_nan(val: f64) -> bool {
+    let bits = f64_to_bits(val)
+    let exp = (bits >> 52) & 0x7FF as u64
+    let mant = bits & 0xFFFFFFFFFFFFF as u64
+    return exp == 0x7FF as u64 and mant != 0 as u64
+}
+
+// Returns true if val is positive or negative infinity.
+act f64_is_inf(val: f64) -> bool {
+    let bits = f64_to_bits(val)
+    let exp = (bits >> 52) & 0x7FF as u64
+    let mant = bits & 0xFFFFFFFFFFFFF as u64
+    return exp == 0x7FF as u64 and mant == 0 as u64
+}
+
+// Returns true if val is IEEE 754 negative zero (-0.0).
+act f64_is_neg_zero(val: f64) -> bool {
+    let bits = f64_to_bits(val)
+    return bits == 0x8000000000000000 as u64
+}
+
+// Computes 10^n for f64 scaling.
+act pow10_f64(n: i32) -> f64 {
+    if n == 0 { return 1.0 }
+    mut pos_n = n
+    if pos_n < 0 { pos_n = -n }
+    mut res: f64 = 1.0
+    mut base: f64 = 10.0
+    mut p = pos_n
+    loop p > 0 {
+        if (p & 1) == 1 {
+            res = res * base
+        }
+        base = base * base
+        p = p >> 1
+    }
+    if n < 0 {
+        return 1.0 / res
+    }
+    return res
+}
+
+// Formats an IEEE 754 64-bit float into decimal characters in buf.
+// Precision specifies the number of digits after the decimal point (-1 for default 6).
+// Handles NaN, +Inf, -Inf, -0.0, and rounds the last fractional digit accurately.
+act format_f64(val: f64, precision: i32, buf: @u8, buf_len: usize) -> StrSlice {
+    if buf == null or buf_len == 0 {
+        return StrSlice { ptr: null, len: 0 }
+    }
+
+    // 1. Special value: NaN
+    if f64_is_nan(val) {
+        if buf_len < 3 { return StrSlice { ptr: null, len: 0 } }
+        buf[0] = 78 as u8; buf[1] = 97 as u8; buf[2] = 78 as u8 // "NaN"
+        if buf_len > 3 { buf[3] = 0 as u8 }
+        return StrSlice { ptr: buf, len: 3 }
+    }
+
+    // 2. Special value: Infinity
+    if f64_is_inf(val) {
+        let bits = f64_to_bits(val)
+        let is_neg = (bits >> 63) == 1 as u64
+        if is_neg {
+            if buf_len < 4 { return StrSlice { ptr: null, len: 0 } }
+            buf[0] = 45 as u8; buf[1] = 73 as u8; buf[2] = 110 as u8; buf[3] = 102 as u8 // "-Inf"
+            if buf_len > 4 { buf[4] = 0 as u8 }
+            return StrSlice { ptr: buf, len: 4 }
+        }
+        if buf_len < 3 { return StrSlice { ptr: null, len: 0 } }
+        buf[0] = 73 as u8; buf[1] = 110 as u8; buf[2] = 102 as u8 // "Inf"
+        if buf_len > 3 { buf[3] = 0 as u8 }
+        return StrSlice { ptr: buf, len: 3 }
+    }
+
+    mut prec = precision
+    if prec < 0 {
+        prec = 6
+    }
+    if prec > 17 {
+        prec = 17
+    }
+
+    // 3. Special value: negative zero
+    if f64_is_neg_zero(val) {
+        mut pos: usize = 0
+        if buf_len < 2 { return StrSlice { ptr: null, len: 0 } }
+        buf[pos] = 45 as u8; pos += 1 // '-'
+        buf[pos] = 48 as u8; pos += 1 // '0'
+        if prec > 0 {
+            if buf_len < pos + 1 + (prec as usize) { return StrSlice { ptr: null, len: 0 } }
+            buf[pos] = 46 as u8; pos += 1 // '.'
+            mut i: i32 = 0
+            loop i < prec {
+                buf[pos] = 48 as u8
+                pos += 1
+                i += 1
+            }
+        }
+        if pos < buf_len { buf[pos] = 0 as u8 }
+        return StrSlice { ptr: buf, len: pos }
+    }
+
+    // Regular numbers
+    let bits = f64_to_bits(val)
+    let is_neg = (bits >> 63) == 1 as u64
+    mut v: f64 = val
+    if is_neg {
+        v = -val
+    }
+
+    // Decimal rounding adjustment
+    let round_offset = 0.5 * pow10_f64(-prec)
+    let v_rounded = v + round_offset
+
+    let int_part: u64 = v_rounded as u64
+    mut frac: f64 = v_rounded - (int_part as f64)
+
+    mut pos: usize = 0
+    if is_neg {
+        if pos >= buf_len { return StrSlice { ptr: null, len: 0 } }
+        buf[pos] = 45 as u8 // '-'
+        pos += 1
+    }
+
+    let int_slice = format_u64(int_part, buf + pos, buf_len - pos)
+    if int_slice.len == 0 {
+        return StrSlice { ptr: null, len: 0 }
+    }
+    pos += int_slice.len
+
+    if prec > 0 {
+        if pos >= buf_len { return StrSlice { ptr: null, len: 0 } }
+        buf[pos] = 46 as u8 // '.'
+        pos += 1
+
+        mut p: i32 = 0
+        loop p < prec {
+            frac = frac * 10.0
+            mut digit: u64 = frac as u64
+            if digit > 9 as u64 {
+                digit = 9 as u64
+            }
+            if pos >= buf_len { return StrSlice { ptr: null, len: 0 } }
+            buf[pos] = (48 as u64 + digit) as u8
+            pos += 1
+            frac = frac - (digit as f64)
+            p += 1
+        }
+    }
+
+    if pos < buf_len {
+        buf[pos] = 0 as u8
+    }
+    return StrSlice { ptr: buf, len: pos }
+}
+
+// Parses an IEEE 754 64-bit float from a string slice.
+// Accepts optional leading and trailing whitespace, sign ('+' or '-'),
+// decimal point, scientific notation exponent ('e' or 'E'), and special strings
+// ("NaN", "Inf", "-Inf").
+act parse_f64(s: StrSlice, out_val: @f64) -> bool {
+    let trimmed = str_trim(s)
+    if trimmed.ptr == null or trimmed.len == 0 {
+        return false
+    }
+
+    // Special values: NaN
+    if str_eq_ignore_case_ascii_str(trimmed, "nan") {
+        if out_val != null {
+            out_val[0] = bits_to_f64(0x7FF8000000000000 as u64)
+        }
+        return true
+    }
+
+    // Special values: Infinity
+    if str_eq_ignore_case_ascii_str(trimmed, "inf") or str_eq_ignore_case_ascii_str(trimmed, "+inf") or str_eq_ignore_case_ascii_str(trimmed, "infinity") {
+        if out_val != null {
+            out_val[0] = bits_to_f64(0x7FF0000000000000 as u64)
+        }
+        return true
+    }
+    if str_eq_ignore_case_ascii_str(trimmed, "-inf") or str_eq_ignore_case_ascii_str(trimmed, "-infinity") {
+        if out_val != null {
+            out_val[0] = bits_to_f64(0xFFF0000000000000 as u64)
+        }
+        return true
+    }
+
+    let is_neg = trimmed.ptr[0] == 45 as u8 // '-'
+    mut idx: usize = 0
+    if is_neg or trimmed.ptr[0] == 43 as u8 { // '+'
+        idx = 1
+    }
+    if idx >= trimmed.len {
+        return false
+    }
+
+    mut mantissa: f64 = 0.0
+    mut has_digits = false
+    mut exp_adjust: i32 = 0
+
+    loop idx < trimmed.len and trimmed.ptr[idx] >= 48 as u8 and trimmed.ptr[idx] <= 57 as u8 {
+        has_digits = true
+        let d = (trimmed.ptr[idx] - 48 as u8) as f64
+        mantissa = mantissa * 10.0 + d
+        idx += 1
+    }
+
+    if idx < trimmed.len and trimmed.ptr[idx] == 46 as u8 { // '.'
+        idx += 1
+        loop idx < trimmed.len and trimmed.ptr[idx] >= 48 as u8 and trimmed.ptr[idx] <= 57 as u8 {
+            has_digits = true
+            let d = (trimmed.ptr[idx] - 48 as u8) as f64
+            mantissa = mantissa * 10.0 + d
+            exp_adjust -= 1
+            idx += 1
+        }
+    }
+
+    if !has_digits {
+        return false
+    }
+
+    // Scientific exponent ('e' or 'E')
+    if idx < trimmed.len and (trimmed.ptr[idx] == 101 as u8 or trimmed.ptr[idx] == 69 as u8) {
+        idx += 1
+        if idx >= trimmed.len { return false }
+        let exp_neg = trimmed.ptr[idx] == 45 as u8 // '-'
+        if exp_neg or trimmed.ptr[idx] == 43 as u8 { // '+'
+            idx += 1
+        }
+        if idx >= trimmed.len { return false }
+        mut exp_val: i32 = 0
+        loop idx < trimmed.len and trimmed.ptr[idx] >= 48 as u8 and trimmed.ptr[idx] <= 57 as u8 {
+            let ed = (trimmed.ptr[idx] - 48 as u8) as i32
+            exp_val = exp_val * 10 + ed
+            idx += 1
+        }
+        if exp_neg {
+            exp_adjust -= exp_val
+        } else {
+            exp_adjust += exp_val
+        }
+    }
+
+    if idx != trimmed.len {
+        return false // trailing unrecognized garbage
+    }
+
+    mut total: f64 = mantissa
+    if exp_adjust > 0 {
+        total = mantissa * pow10_f64(exp_adjust)
+    } else if exp_adjust < 0 {
+        total = mantissa / pow10_f64(-exp_adjust)
+    }
+
+    if is_neg {
+        if total == 0.0 {
+            total = bits_to_f64(0x8000000000000000 as u64)
+        } else {
+            total = -total
+        }
+    }
+
+    if out_val != null {
+        out_val[0] = total
+    }
+    return true
+}
+
+// String literal convenience helpers
+act parse_f64_str(s: string, out_val: @f64) -> bool {
+    return parse_f64(slice_from_str(s), out_val)
+}

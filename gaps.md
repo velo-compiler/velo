@@ -987,16 +987,18 @@ flowchart TD
   - `bin/velo.exe run std/tests/fmt/buffer_test.vl` passed composite message interpolation, left/right string padding, padded integer formatting (`%04d` equivalent), and prefixed hex/bin/oct writers.
   - `python -m pytest tests/test_std_fmt.py` passed (3/3 passed).
 
-
-
-
-
-
-
-
-
-
-
-
-
+#### Task 3.4: Pure Velo Float Formatting & Parsing `ftoa`/`atof` (`std/fmt/ftoa.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Float to string formatting (`ftoa`) and string to float parsing (`atof`) in Velo required libc functions (`sprintf`, `snprintf`, `strtod`, `atof`), binding floating-point operations to C runtime headers and locale-dependent formatting.
+* **Fix Applied**:
+  - Implemented `std/fmt/ftoa.vl` providing pure Velo bit-level IEEE 754 float inspection (`f64_to_bits`, `bits_to_f64`), special value handling (`f64_is_nan`, `f64_is_inf`, `f64_is_neg_zero`), power-of-ten exponentiation (`pow10_f64`), formatting (`format_f64`), and parsing (`parse_f64`, `parse_f64_str`).
+  - Formatting supports configurable precision, decimal round-to-nearest rounding, and compliant IEEE 754 representations for `"NaN"`, `"Inf"`, `"-Inf"`, and `"-0.0"`.
+  - Parsing supports whitespace trimming, optional signs, decimal mantissa accumulation with exponent tracking, scientific exponent notation (`e`/`E`), and IEEE 754 special values (`NaN`, `Inf`, `-Inf`, `-0.0`).
+  - Added unit test suite `std/tests/fmt/ftoa_test.vl` and pytest integration in `tests/test_std_fmt.py`.
+* **Residual Limitation**:
+  - Float literals in Velo are emitted as 32-bit `float` (`.f`), so comparisons with high-precision literals have single-precision float representation thresholds (~1e-5 to 1e-6).
+  - High-performance shortest-representation algorithms (e.g., Ryu or Grisu) can be layered in future optimizations; the current implementation provides exact IEEE 754 compliant fixed-point and scientific precision without libc.
+* **Verification**:
+  - `bin/velo.exe run std/tests/fmt/ftoa_test.vl` passed positive/negative zero, pi formatting & parsing, negative float parsing, scientific notation parsing (`1e-4`, `2.5e3`, `-1.25E+2`), IEEE 754 special values (`NaN`, `Inf`, `-Inf`), and invalid string rejection.
+  - `python -m pytest tests/test_std_fmt.py` passed (4/4 passed).
 

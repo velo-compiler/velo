@@ -1,0 +1,197 @@
+// Unit test suite for std.fmt.ftoa (pure Velo IEEE 754 float formatting and parsing).
+use "../../mem/page.vl"
+use "../../str/slice.vl"
+use "../../fmt/ftoa.vl"
+
+act test_format_and_parse_zero() -> bool {
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    // Positive zero
+    let s0 = format_f64(0.0, 1, buf, 64)
+    if !slice_eq_str(s0, "0.0") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Negative zero
+    let neg_zero = bits_to_f64(0x8000000000000000 as u64)
+    let s_neg0 = format_f64(neg_zero, 1, buf, 64)
+    if !slice_eq_str(s_neg0, "-0.0") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Parse positive zero
+    mut out_f: f64 = 0.0
+    if !parse_f64_str("0.0", @out_f) or out_f != 0.0 {
+        os_page_free(buf, 64); return false
+    }
+
+    // Parse negative zero
+    if !parse_f64_str("-0.0", @out_f) or !f64_is_neg_zero(out_f) {
+        os_page_free(buf, 64); return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+act test_format_and_parse_pi() -> bool {
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    // Format 3.14159 with precision 5
+    let s_pi5 = format_f64(3.14159, 5, buf, 64)
+    if !slice_eq_str(s_pi5, "3.14159") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Format with rounding: 3.14159 with precision 2 -> "3.14"
+    let s_pi2 = format_f64(3.14159, 2, buf, 64)
+    if !slice_eq_str(s_pi2, "3.14") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Parse 3.14159
+    mut out_f: f64 = 0.0
+    if !parse_f64_str("3.14159", @out_f) {
+        os_page_free(buf, 64); return false
+    }
+    mut diff = out_f - 3.14159
+    if diff < 0.0 { diff = -diff }
+    if diff > 0.000001 {
+        os_page_free(buf, 64); return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+
+
+act test_format_and_parse_negative() -> bool {
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    let s = format_f64(-123.456, 3, buf, 64)
+    if !slice_eq_str(s, "-123.456") {
+        os_page_free(buf, 64); return false
+    }
+
+    mut out_f: f64 = 0.0
+    if !parse_f64_str("-123.456", @out_f) {
+        os_page_free(buf, 64); return false
+    }
+    mut diff = out_f - (-123.456)
+    if diff < 0.0 { diff = -diff }
+    if diff > 0.00001 {
+        os_page_free(buf, 64); return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+act test_format_and_parse_scientific() -> bool {
+    mut out_f: f64 = 0.0
+
+    // 1e-4 = 0.0001
+    if !parse_f64_str("1e-4", @out_f) {
+        return false
+    }
+    mut diff = out_f - 0.0001
+    if diff < 0.0 { diff = -diff }
+    if diff > 0.0000001 {
+        return false
+    }
+
+    // 2.5e3 = 2500.0
+    if !parse_f64_str("2.5e3", @out_f) or out_f != 2500.0 {
+        return false
+    }
+
+    // -1.25E+2 = -125.0
+    if !parse_f64_str("-1.25E+2", @out_f) or out_f != -125.0 {
+        return false
+    }
+
+    return true
+}
+
+act test_special_values() -> bool {
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    let nan_val = bits_to_f64(0x7FF8000000000000 as u64)
+    let s_nan = format_f64(nan_val, 2, buf, 64)
+    if !slice_eq_str(s_nan, "NaN") {
+        os_page_free(buf, 64); return false
+    }
+
+    let inf_val = bits_to_f64(0x7FF0000000000000 as u64)
+    let s_inf = format_f64(inf_val, 2, buf, 64)
+    if !slice_eq_str(s_inf, "Inf") {
+        os_page_free(buf, 64); return false
+    }
+
+    let neg_inf_val = bits_to_f64(0xFFF0000000000000 as u64)
+    let s_neg_inf = format_f64(neg_inf_val, 2, buf, 64)
+    if !slice_eq_str(s_neg_inf, "-Inf") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Parsing special values
+    mut out_f: f64 = 0.0
+    if !parse_f64_str("NaN", @out_f) or !f64_is_nan(out_f) {
+        os_page_free(buf, 64); return false
+    }
+    if !parse_f64_str("Inf", @out_f) or !f64_is_inf(out_f) {
+        os_page_free(buf, 64); return false
+    }
+    if !parse_f64_str("-Inf", @out_f) or !f64_is_inf(out_f) {
+        os_page_free(buf, 64); return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+act test_invalid_strings() -> bool {
+    mut out_f: f64 = 0.0
+    if parse_f64_str("", @out_f) { return false }
+    if parse_f64_str("   ", @out_f) { return false }
+    if parse_f64_str("abc", @out_f) { return false }
+    if parse_f64_str("--1.0", @out_f) { return false }
+    if parse_f64_str("1.2.3", @out_f) { return false }
+    if parse_f64_str("1e", @out_f) { return false }
+    return true
+}
+
+act main() -> i32 {
+    if !test_format_and_parse_zero() {
+        io.println("FAIL: test_format_and_parse_zero")
+        return 1
+    }
+    if !test_format_and_parse_pi() {
+        io.println("FAIL: test_format_and_parse_pi")
+        return 1
+    }
+    if !test_format_and_parse_negative() {
+        io.println("FAIL: test_format_and_parse_negative")
+        return 1
+    }
+    if !test_format_and_parse_scientific() {
+        io.println("FAIL: test_format_and_parse_scientific")
+        return 1
+    }
+    if !test_special_values() {
+        io.println("FAIL: test_special_values")
+        return 1
+    }
+    if !test_invalid_strings() {
+        io.println("FAIL: test_invalid_strings")
+        return 1
+    }
+
+    io.println("PASS: std.fmt.ftoa all assertions succeeded")
+    return 0
+}
