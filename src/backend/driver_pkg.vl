@@ -1,6 +1,6 @@
 // Package command dispatcher for 'velo pkg' (check, build, run)
 use sys.io
-use sys.fs
+use std.fs
 use sys.mem
 use "../common/string_builder.vl"
 use "../common/utils.vl"
@@ -35,7 +35,7 @@ act resolve_manifest_path(input_path: string) -> string {
     if input_path == null or str.len(input_path) == 0 {
         return "velo.pkg"
     }
-    if fs.is_dir(input_path) {
+    if fs_is_dir(input_path) {
         return combine_paths(input_path, "velo.pkg")
     }
     return input_path
@@ -48,7 +48,7 @@ act resolve_default_output_exe(m_dir: string, pkg_name: string) -> string {
     sb_append_str(@name_sb, pkg_name)
     sb_append_str(@name_sb, ".exe")
     let exe_name = sb_to_string(@name_sb)
-    if fs.is_dir(bin_dir) {
+    if fs_is_dir(bin_dir) {
         return combine_paths(bin_dir, exe_name)
     }
     return combine_paths(m_dir, exe_name)
@@ -144,9 +144,9 @@ act handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32 {
                 sb_append_str(@linker_sb, arg)
             } else if arg != "--unsafe-shelf-index" {
                 if str.len(manifest_path) == 0 {
-                    let is_pkg_file = fs.is_file(arg) or str.ends_with(arg, ".pkg")
-                    let is_dir = fs.is_dir(arg)
-                    if is_pkg_file or is_dir or not fs.exists("velo.pkg") {
+                    let is_pkg_file = fs_is_file(arg) or str.ends_with(arg, ".pkg")
+                    let is_dir = fs_is_dir(arg)
+                    if is_pkg_file or is_dir or not fs_exists("velo.pkg") {
                         manifest_path = arg
                     } else {
                         manifest_path = "velo.pkg"
@@ -183,7 +183,7 @@ act handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32 {
 
         let m_dir = get_dir_name(manifest_path)
         let entry_path = combine_paths(m_dir, m.pkg.entry)
-        if not fs.exists(entry_path) {
+        if not fs_exists(entry_path) {
             io.println("[Velo Error] Entry source file not found: {entry_path}")
             return 1
         }

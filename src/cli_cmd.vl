@@ -1,6 +1,5 @@
 // CLI command handlers for `velo run` and `velo build`.
 use sys.io
-use sys.fs
 use "backend/driver.vl"
 use "common/string_builder.vl"
 use "common/utils.vl"

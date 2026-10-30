@@ -1,6 +1,6 @@
 // Package Manifest Parser and Data Model for Velo (velo.pkg)
 // Parses Velo-native declarative block manifest syntax.
-use sys.fs
+use std.fs
 use sys.mem
 use "string_builder.vl"
 
@@ -293,10 +293,10 @@ act manifest_parse(source: string, filename: string) -> PackageManifest {
 
 act manifest_load(filepath: string) -> PackageManifest {
     mut m: PackageManifest = create_empty_manifest()
-    if not fs.exists(filepath) {
+    if not fs_exists(filepath) {
         m.has_error = true; m.error_msg = format_manifest_error(filepath, 1, 1, "manifest file not found"); return m
     }
-    let content = fs.read_file(filepath)
+    let content = fs_read_to_str(filepath)
     if content == null {
         m.has_error = true; m.error_msg = format_manifest_error(filepath, 1, 1, "failed to read manifest file"); return m
     }

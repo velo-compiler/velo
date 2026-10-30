@@ -1,5 +1,5 @@
 // Backend compiler driver helper for GCC and MSVC (cl.exe).
-use sys.fs
+use std.fs
 use sys.mem
 use "../common/string_builder.vl"
 use "../common/utils.vl"
@@ -7,28 +7,28 @@ use "../common/path.vl"
 
 // Probes known Visual Studio installations for vcvars64.bat.
 act find_vcvars() -> string {
-    if fs.exists("C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat") {
+    if fs_exists("C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat") {
         return "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"
     }
-    if fs.exists("C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Auxiliary/Build/vcvars64.bat") {
+    if fs_exists("C:/Program Files/Microsoft Visual Studio/2022/Professional/VC/Auxiliary/Build/vcvars64.bat") {
         return "C:\\Program Files\\Microsoft Visual Studio\\2022\\Professional\\VC\\Auxiliary\\Build\\vcvars64.bat"
     }
-    if fs.exists("C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat") {
+    if fs_exists("C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Auxiliary/Build/vcvars64.bat") {
         return "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Auxiliary\\Build\\vcvars64.bat"
     }
-    if fs.exists("C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Auxiliary/Build/vcvars64.bat") {
+    if fs_exists("C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Auxiliary/Build/vcvars64.bat") {
         return "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat"
     }
-    if fs.exists("C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Auxiliary/Build/vcvars64.bat") {
+    if fs_exists("C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Auxiliary/Build/vcvars64.bat") {
         return "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat"
     }
-    if fs.exists("C:/Program Files (x86)/Microsoft Visual Studio/2019/Professional/VC/Auxiliary/Build/vcvars64.bat") {
+    if fs_exists("C:/Program Files (x86)/Microsoft Visual Studio/2019/Professional/VC/Auxiliary/Build/vcvars64.bat") {
         return "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Professional\\VC\\Auxiliary\\Build\\vcvars64.bat"
     }
-    if fs.exists("C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Auxiliary/Build/vcvars64.bat") {
+    if fs_exists("C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Auxiliary/Build/vcvars64.bat") {
         return "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\VC\\Auxiliary\\Build\\vcvars64.bat"
     }
-    if fs.exists("C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Auxiliary/Build/vcvars64.bat") {
+    if fs_exists("C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Auxiliary/Build/vcvars64.bat") {
         return "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat"
     }
     return null
@@ -109,7 +109,7 @@ act assemble_msvc_compile_cmd(c_file_path: string, out_exe_path: string, opt_fla
 // Assembles GCC compilation command.
 act assemble_gcc_compile_cmd(c_file_path: string, out_exe_path: string, opt_flags: string, linker_flags: string) -> string {
     mut cmd_sb = create_sb(512)
-    if fs.exists("C:/msys64/ucrt64/bin/gcc.exe") {
+    if fs_exists("C:/msys64/ucrt64/bin/gcc.exe") {
         sb_append_str(@cmd_sb, "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ")
     }
     sb_append_str(@cmd_sb, "gcc ")
@@ -141,7 +141,7 @@ act assemble_compiler_cmd(cc: string, c_file_path: string, out_exe_path: string,
 // Assembles executable runner command.
 act assemble_runner_cmd(cc: string, exe_path: string, extra_args: string) -> string {
     mut run_sb = create_sb(256)
-    if cc != "cl" and fs.exists("C:/msys64/ucrt64/bin/gcc.exe") {
+    if cc != "cl" and fs_exists("C:/msys64/ucrt64/bin/gcc.exe") {
         sb_append_str(@run_sb, "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ")
     }
     sb_append_str(@run_sb, to_native_path(exe_path))

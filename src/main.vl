@@ -1,6 +1,6 @@
 // Main CLI driver and command dispatcher for the self-hosted Velo compiler.
 use sys.io
-use sys.fs
+use std.fs
 use "backend/driver.vl"
 use "backend/check.vl"
 use "common/diagnostics.vl"
@@ -68,7 +68,7 @@ act main(argc: i32, argv: @string) -> i32 {
             let c_code = compile_source_to_c_opts(source_file, unsafe_index, no_line_directives)
             if c_code != null {
                 if str.len(out_file) > 0 {
-                    let ok = fs.write_file(out_file, c_code)
+                    let ok = fs_write_str(out_file, c_code)
                     if not ok {
                         io.println("[Velo Error] Failed to write output file: {out_file}")
                         return 1
@@ -154,7 +154,7 @@ act main(argc: i32, argv: @string) -> i32 {
                 return 1
             }
             if str.len(output_file) > 0 {
-                fs.write_file(output_file, docs)
+                fs_write_str(output_file, docs)
                 io.println("[Velo] Successfully generated documentation: {output_file}")
             } else {
                 io.print(docs)

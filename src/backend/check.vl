@@ -18,7 +18,7 @@
 
 use sys.io
 use sys.mem
-use sys.fs
+use std.fs
 use "../common/utils.vl"
 use "../common/string_builder.vl"
 use "driver.vl"
@@ -301,22 +301,22 @@ act run_check_json(src_path: string, unsafe_index: bool) -> i32 {
     let ok: bool = c_code != null
     velo_capture_end()
 
-    let captured = fs.read_file(tmp)
+    let captured = fs_read_to_str(tmp)
     if captured == null {
         check_print_minimal_json(src_path, "internal error: capture file unreadable")
-        fs.remove_file(tmp)
+        fs_remove_file_str(tmp)
         return 1
     }
     defer mem.free(captured)
 
     if check_count_errors(captured) > 0 {
         io.println(check_build_json(captured, src_path, false))
-        fs.remove_file(tmp)
+        fs_remove_file_str(tmp)
         return 1
     }
     let out = check_build_json(captured, src_path, ok)
     io.println(out)
-    fs.remove_file(tmp)
+    fs_remove_file_str(tmp)
     if ok {
         return 0
     }
@@ -337,8 +337,8 @@ act run_check_pretty(src_path: string, unsafe_index: bool) -> bool {
     let ok: bool = c_code != null
     velo_capture_end()
 
-    let captured = fs.read_file(tmp)
-    fs.remove_file(tmp)
+    let captured = fs_read_to_str(tmp)
+    fs_remove_file_str(tmp)
     if captured == null {
         return ok
     }

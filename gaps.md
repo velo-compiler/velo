@@ -1646,3 +1646,27 @@ flowchart TD
   - `python -m pytest tests/test_std_os.py -q` passed (6/6 passed).
   - `python -m pytest tests -k "test_std"` passed (53/53 passed).
   - `python -m pytest tests -q` passed full suite (483/483 passed in 295.21s).
+
+#### Task 11.2: Migrate `sys.fs` to `std.fs` [COMPLETED] ✅
+* **Former Defect**:
+  - The self-hosted compiler files (`src/backend/driver.vl`, `src/backend/driver_run.vl`, `src/backend/driver_cc.vl`, `src/backend/driver_pkg.vl`, `src/backend/check.vl`, `src/backend/pretty_recon.vl`, `src/common/manifest.vl`, `src/cli_cmd.vl`, `src/main.vl`) relied on the legacy `sys.fs` built-in (`fs.exists`, `fs.read_file`, `fs.write_file`, `fs.remove_file`, `fs.is_file`, `fs.is_dir`, `fs.read_dir`).
+  - Directory iteration in `driver_run.vl` (`test_target_opts`) relied on `fs.read_dir()` returning a legacy dynamic array (`shelf[string]`) instead of streaming directory iteration via `fs_dir_open` / `fs_dir_next` / `fs_dir_close`.
+* **Fix Applied**:
+  - Migrated all compiler source files from `use sys.fs` to pure-Velo `use std.fs` (`cli_cmd.vl` had an unused import removed).
+  - Migrated `fs.exists(p)` to `fs_exists(p)` across `driver.vl`, `driver_cc.vl`, `driver_pkg.vl`, `driver_run.vl`, and `manifest.vl`.
+  - Migrated `fs.read_file(p)` to `fs_read_to_str(p)` across `driver.vl`, `driver_run.vl`, `check.vl`, `pretty_recon.vl`, and `manifest.vl`.
+  - Migrated `fs.write_file(p, c)` to `fs_write_str(p, c)` across `driver_run.vl` and `main.vl`.
+  - Migrated `fs.remove_file(p)` to `fs_remove_file_str(p)` in `check.vl`.
+  - Migrated `fs.is_file(p)` and `fs.is_dir(p)` to `fs_is_file(p)` and `fs_is_dir(p)` across `driver_run.vl` and `driver_pkg.vl`.
+  - Re-implemented directory test traversal in `driver_run.vl` using pure-Velo streaming directory iteration (`fs_dir_open`, `fs_dir_next`, `fs_dir_entry`, `entry_name_cstr`, `fs_dir_close`).
+  - Verified code standards: all compiler files strictly remain under 400 lines (`python scripts/count_lines.py`).
+  - Rebuilt the entire 3-generation bootstrap chain (`scripts/bootstrap.bat` -> Gen2 -> Gen3 -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 determinism (`EDDE11C9790DEEFFC3FD5701765034219184E439836A17552638350E69D72052`).
+* **Residual Limitation**:
+  - `sys.io` and `sys.mem` in the self-hosted compiler remain to be systematically migrated to `std.io` and `std.mem` in subsequent tasks.
+* **Verification**:
+  - `python scripts/count_lines.py` verified all compiler source files < 400 lines.
+  - Rebuilt 3-generation self-hosting chain: Gen2, Gen3, and `bootstrap.c` identical SHA-256.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -q` passed (5/5 passed).
+  - `python -m pytest tests/test_std_fs.py -q` passed (4/4 passed).
+  - `python -m pytest tests -k "test_std"` passed (53/53 passed).
+  - `python -m pytest tests -q` passed full suite (483/483 passed in 308.14s).

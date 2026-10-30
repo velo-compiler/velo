@@ -11,7 +11,7 @@
 
 use sys.io
 use sys.mem
-use sys.fs
+use std.fs
 use "../common/utils.vl"
 use "../common/diagnostics.vl"
 
@@ -176,7 +176,7 @@ act recon_is_single_file(source: string) -> bool {
 // Reconstructs and emits the captured compiler output stream.
 // Positioned semantic error rows gain snippet blocks from re-read src_path.
 act recon_emit_pretty(captured: string, src_path: string) {
-    let source = fs.read_file(src_path)
+    let source = fs_read_to_str(src_path)
     mut single_file: bool = false
     if source != null {
         single_file = recon_is_single_file(source)

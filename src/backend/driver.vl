@@ -1,6 +1,6 @@
 // Standalone native compiler driver orchestrating compilation, code generation, and GCC linking.
 use sys.io
-use sys.fs
+use std.fs
 use sys.mem
 use std.os
 
@@ -109,12 +109,12 @@ act resolve_platform_source_path(path: string) -> string {
     let stem = copy_slice_to_string(path, 0, plen - 3)
     if is_win {
         let win_path = str.concat(stem, "_windows.vl")
-        if fs.exists(win_path) {
+        if fs_exists(win_path) {
             return win_path
         }
     } else {
         let linux_path = str.concat(stem, "_linux.vl")
-        if fs.exists(linux_path) {
+        if fs_exists(linux_path) {
             return linux_path
         }
     }
@@ -155,15 +155,15 @@ act std_module_to_rel_path(mod_path: string) -> string {
 act resolve_std_module_path(dir: string, mod_path: string) -> string {
     let rel_file = std_module_to_rel_path(mod_path)
     let p1 = combine_paths(dir, rel_file)
-    if fs.exists(p1) { return p1 }
+    if fs_exists(p1) { return p1 }
 
     let p2 = combine_paths(dir, combine_paths("..", rel_file))
-    if fs.exists(p2) { return p2 }
+    if fs_exists(p2) { return p2 }
 
     let p3 = combine_paths(dir, combine_paths("../..", rel_file))
-    if fs.exists(p3) { return p3 }
+    if fs_exists(p3) { return p3 }
 
-    if fs.exists(rel_file) { return canonicalize_path(rel_file) }
+    if fs_exists(rel_file) { return canonicalize_path(rel_file) }
 
     return p1
 }
@@ -181,13 +181,13 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
     mark_file_visited(d, file_path)
 
 
-    if not fs.exists(file_path) {
+    if not fs_exists(file_path) {
         io.println("[Velo Error] Source file does not exist: {file_path}")
         d.error_count += 1
         return
     }
 
-    let source = fs.read_file(file_path)
+    let source = fs_read_to_str(file_path)
     if source == null {
         io.println("[Velo Error] Failed to read source file: {file_path}")
         d.error_count += 1
@@ -316,7 +316,7 @@ act compile_source_to_c_opts(source_path: string, unsafe_index: bool, no_line_di
 
 // Generates Markdown documentation for a Velo source file.
 act generate_docs_for_source(source_path: string) -> string {
-    let source = fs.read_file(source_path)
+    let source = fs_read_to_str(source_path)
     if source == null {
         io.println("[Velo Error] Failed to read source file: {source_path}")
         return null
