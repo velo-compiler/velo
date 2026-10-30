@@ -1,0 +1,184 @@
+// Unit test suite for std.str.manip (trimming, splitting, and ASCII casing).
+use "../../mem/page.vl"
+use "../../str/slice.vl"
+use "../../str/search.vl"
+use "../../str/manip.vl"
+
+act test_trim_whitespace() -> bool {
+    // Both ends
+    let s1 = slice_from_str("  \t\r\n Velo Systems \r\n\t ")
+    let t1 = str_trim(s1)
+    if !slice_eq_str(t1, "Velo Systems") {
+        return false
+    }
+
+    // Leading only
+    let s2 = slice_from_str(" \t Start Only")
+    let t2 = str_trim_start(s2)
+    if !slice_eq_str(t2, "Start Only") {
+        return false
+    }
+
+    // Trailing only
+    let s3 = slice_from_str("End Only \r\n ")
+    let t3 = str_trim_end(s3)
+    if !slice_eq_str(t3, "End Only") {
+        return false
+    }
+
+    // All whitespace
+    let s_all_ws = slice_from_str("   \t\r\n   ")
+    let t_all_ws = str_trim(s_all_ws)
+    if !slice_is_empty(t_all_ws) or t_all_ws.len != 0 {
+        return false
+    }
+
+    // No whitespace
+    let s_clean = slice_from_str("Unchanged")
+    let t_clean = str_trim(s_clean)
+    if !slice_eq_str(t_clean, "Unchanged") {
+        return false
+    }
+
+    // Empty string
+    let s_empty = slice_from_str("")
+    let t_empty = str_trim(s_empty)
+    if !slice_is_empty(t_empty) {
+        return false
+    }
+
+    return true
+}
+
+act test_trim_byte() -> bool {
+    // Trim slashes
+    let path = slice_from_str("///home/user/code///")
+    let trimmed_path = str_trim_byte(path, 47 as u8) // '/' = 47
+    if !slice_eq_str(trimmed_path, "home/user/code") {
+        return false
+    }
+
+    // Trim quotes
+    let quoted = slice_from_str("\"hello world\"")
+    let unquoted = str_trim_byte(quoted, 34 as u8) // '"' = 34
+    if !slice_eq_str(unquoted, "hello world") {
+        return false
+    }
+
+    return true
+}
+
+act test_split_single_byte() -> bool {
+    // Standard CSV split
+    let csv = slice_from_str("alpha,beta,gamma")
+    mut iter = str_split_init(csv, 44 as u8) // ','
+    mut part = slice_from_raw(null, 0)
+
+    if !str_split_next(@iter, @part) or !slice_eq_str(part, "alpha") { return false }
+    if !str_split_next(@iter, @part) or !slice_eq_str(part, "beta") { return false }
+    if !str_split_next(@iter, @part) or !slice_eq_str(part, "gamma") { return false }
+    if str_split_next(@iter, @part) { return false }
+
+    // Trailing delimiter creates empty trailing segment
+    let trailing = slice_from_str("one;two;")
+    mut it_trail = str_split_init(trailing, 59 as u8) // ';'
+    if !str_split_next(@it_trail, @part) or !slice_eq_str(part, "one") { return false }
+    if !str_split_next(@it_trail, @part) or !slice_eq_str(part, "two") { return false }
+    if !str_split_next(@it_trail, @part) or !slice_eq_str(part, "") { return false }
+    if str_split_next(@it_trail, @part) { return false }
+
+    // Leading delimiter creates empty leading segment
+    let leading = slice_from_str("/bin/sh")
+    mut it_lead = str_split_init(leading, 47 as u8) // '/'
+    if !str_split_next(@it_lead, @part) or !slice_eq_str(part, "") { return false }
+    if !str_split_next(@it_lead, @part) or !slice_eq_str(part, "bin") { return false }
+    if !str_split_next(@it_lead, @part) or !slice_eq_str(part, "sh") { return false }
+    if str_split_next(@it_lead, @part) { return false }
+
+    // No delimiter
+    let single = slice_from_str("token")
+    mut it_single = str_split_init(single, 44 as u8)
+    if !str_split_next(@it_single, @part) or !slice_eq_str(part, "token") { return false }
+    if str_split_next(@it_single, @part) { return false }
+
+    return true
+}
+
+act test_split_substring() -> bool {
+    let text = slice_from_str("header\r\nbody\r\nfooter")
+    mut iter = str_split_sub_init(text, slice_from_str("\r\n"))
+    mut part = slice_from_raw(null, 0)
+
+    if !str_split_sub_next(@iter, @part) or !slice_eq_str(part, "header") { return false }
+    if !str_split_sub_next(@iter, @part) or !slice_eq_str(part, "body") { return false }
+    if !str_split_sub_next(@iter, @part) or !slice_eq_str(part, "footer") { return false }
+    if str_split_sub_next(@iter, @part) { return false }
+
+    return true
+}
+
+act test_ascii_casing() -> bool {
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    let original = slice_from_str("Velo_Systems_Lang_2026!")
+
+    // Lowercase conversion
+    str_to_lower_ascii(original, buf)
+    let lower_slice = slice_from_raw(buf, original.len)
+    if !slice_eq_str(lower_slice, "velo_systems_lang_2026!") {
+        os_page_free(buf, 64)
+        return false
+    }
+
+    // Uppercase conversion
+    str_to_upper_ascii(original, buf)
+    let upper_slice = slice_from_raw(buf, original.len)
+    if !slice_eq_str(upper_slice, "VELO_SYSTEMS_LANG_2026!") {
+        os_page_free(buf, 64)
+        return false
+    }
+
+    // Case-insensitive comparison
+    let mixed_1 = slice_from_str("application/json; charset=utf-8")
+    let mixed_2 = slice_from_str("APPLICATION/JSON; CHARSET=UTF-8")
+    let different = slice_from_str("application/xml; charset=utf-8")
+
+    if !str_eq_ignore_case_ascii(mixed_1, mixed_2) {
+        os_page_free(buf, 64)
+        return false
+    }
+    if str_eq_ignore_case_ascii(mixed_1, different) {
+        os_page_free(buf, 64)
+        return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+act main() -> i32 {
+    if !test_trim_whitespace() {
+        io.println("FAIL: test_trim_whitespace")
+        return 1
+    }
+    if !test_trim_byte() {
+        io.println("FAIL: test_trim_byte")
+        return 1
+    }
+    if !test_split_single_byte() {
+        io.println("FAIL: test_split_single_byte")
+        return 1
+    }
+    if !test_split_substring() {
+        io.println("FAIL: test_split_substring")
+        return 1
+    }
+    if !test_ascii_casing() {
+        io.println("FAIL: test_ascii_casing")
+        return 1
+    }
+
+    io.println("PASS: std.str.manip all assertions succeeded")
+    return 0
+}

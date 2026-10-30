@@ -1,0 +1,255 @@
+// Pure Velo string manipulation, trimming, splitting, and ASCII casing (zero C runtime dependencies).
+// Provides zero-allocation whitespace and custom byte trimming, stateful single-byte and substring
+// split iterators, and in-place or destination-buffered ASCII case transformations.
+use "slice.vl"
+use "search.vl"
+
+// Single-byte delimiter split iterator state descriptor.
+data StrSplitIter {
+    src: StrSlice,
+    delim: u8,
+    pos: usize,
+    finished: bool,
+}
+
+// Multi-byte substring delimiter split iterator state descriptor.
+data StrSubSplitIter {
+    src: StrSlice,
+    delim: StrSlice,
+    pos: usize,
+    finished: bool,
+}
+
+// Returns true if byte b is an ASCII whitespace character (space, tab, newline, CR, VT, FF).
+act is_ascii_whitespace(b: u8) -> bool {
+    return b == 32 as u8 or (b >= 9 as u8 and b <= 13 as u8)
+}
+
+// Returns true if byte b is an ASCII uppercase letter ('A'..'Z').
+act is_ascii_upper(b: u8) -> bool {
+    return b >= 65 as u8 and b <= 90 as u8
+}
+
+// Returns true if byte b is an ASCII lowercase letter ('a'..'z').
+act is_ascii_lower(b: u8) -> bool {
+    return b >= 97 as u8 and b <= 122 as u8
+}
+
+// Converts an ASCII byte to lowercase if it is an uppercase letter.
+act to_ascii_lower(b: u8) -> u8 {
+    if is_ascii_upper(b) {
+        return (b + 32 as u8) as u8
+    }
+    return b
+}
+
+// Converts an ASCII byte to uppercase if it is a lowercase letter.
+act to_ascii_upper(b: u8) -> u8 {
+    if is_ascii_lower(b) {
+        return (b - 32 as u8) as u8
+    }
+    return b
+}
+
+// Trims leading ASCII whitespace from the slice without allocating memory.
+act str_trim_start(s: StrSlice) -> StrSlice {
+    if s.ptr == null or s.len == 0 {
+        return s
+    }
+    mut i: usize = 0
+    loop i < s.len and is_ascii_whitespace(s.ptr[i]) {
+        i += 1
+    }
+    return slice_sub(s, i, s.len)
+}
+
+// Trims trailing ASCII whitespace from the slice without allocating memory.
+act str_trim_end(s: StrSlice) -> StrSlice {
+    if s.ptr == null or s.len == 0 {
+        return s
+    }
+    mut i: usize = s.len
+    loop i > 0 and is_ascii_whitespace(s.ptr[i - 1]) {
+        i -= 1
+    }
+    return slice_sub(s, 0, i)
+}
+
+// Trims both leading and trailing ASCII whitespace from the slice without allocating memory.
+act str_trim(s: StrSlice) -> StrSlice {
+    return str_trim_end(str_trim_start(s))
+}
+
+// Trims leading occurrences of a specific byte from the slice.
+act str_trim_byte_start(s: StrSlice, b: u8) -> StrSlice {
+    if s.ptr == null or s.len == 0 {
+        return s
+    }
+    mut i: usize = 0
+    loop i < s.len and s.ptr[i] == b {
+        i += 1
+    }
+    return slice_sub(s, i, s.len)
+}
+
+// Trims trailing occurrences of a specific byte from the slice.
+act str_trim_byte_end(s: StrSlice, b: u8) -> StrSlice {
+    if s.ptr == null or s.len == 0 {
+        return s
+    }
+    mut i: usize = s.len
+    loop i > 0 and s.ptr[i - 1] == b {
+        i -= 1
+    }
+    return slice_sub(s, 0, i)
+}
+
+// Trims both leading and trailing occurrences of a specific byte from the slice.
+act str_trim_byte(s: StrSlice, b: u8) -> StrSlice {
+    return str_trim_byte_end(str_trim_byte_start(s, b), b)
+}
+
+// Initializes a stateful split iterator that splits s by a single byte delimiter.
+act str_split_init(s: StrSlice, delim: u8) -> StrSplitIter {
+    return StrSplitIter {
+        src: s,
+        delim: delim,
+        pos: 0,
+        finished: false,
+    }
+}
+
+// Advances the split iterator to the next token.
+// Writes the token view to out_part and returns true. Returns false when iteration is complete.
+act str_split_next(iter: @StrSplitIter, out_part: @StrSlice) -> bool {
+    if iter == null or iter.finished {
+        return false
+    }
+    if iter.pos > iter.src.len {
+        iter.finished = true
+        return false
+    }
+    let start = iter.pos
+    mut i = start
+    loop i < iter.src.len {
+        if iter.src.ptr[i] == iter.delim {
+            if out_part != null {
+                out_part[0] = slice_sub(iter.src, start, i)
+            }
+            iter.pos = i + 1
+            return true
+        }
+        i += 1
+    }
+    // Remainder token after last delimiter
+    if out_part != null {
+        out_part[0] = slice_sub(iter.src, start, iter.src.len)
+    }
+    iter.pos = iter.src.len + 1
+    iter.finished = true
+    return true
+}
+
+// Initializes a stateful split iterator that splits s by a substring delimiter.
+act str_split_sub_init(s: StrSlice, delim: StrSlice) -> StrSubSplitIter {
+    return StrSubSplitIter {
+        src: s,
+        delim: delim,
+        pos: 0,
+        finished: false,
+    }
+}
+
+// Advances the substring split iterator to the next token.
+act str_split_sub_next(iter: @StrSubSplitIter, out_part: @StrSlice) -> bool {
+    if iter == null or iter.finished {
+        return false
+    }
+    if iter.pos > iter.src.len {
+        iter.finished = true
+        return false
+    }
+    if iter.delim.len == 0 {
+        if out_part != null {
+            out_part[0] = slice_sub_from(iter.src, iter.pos)
+        }
+        iter.finished = true
+        return true
+    }
+
+    let start = iter.pos
+    let remainder = slice_sub_from(iter.src, start)
+    let idx = str_index_of(remainder, iter.delim)
+    if idx < 0 as isize {
+        if out_part != null {
+            out_part[0] = remainder
+        }
+        iter.pos = iter.src.len + 1
+        iter.finished = true
+        return true
+    }
+
+    let match_idx: usize = start + (idx as usize)
+    if out_part != null {
+        out_part[0] = slice_sub(iter.src, start, match_idx)
+    }
+    iter.pos = match_idx + iter.delim.len
+    return true
+}
+
+// Converts slice characters to lowercase ASCII, writing into dest buffer.
+act str_to_lower_ascii(s: StrSlice, dest: @u8) {
+    if s.ptr == null or dest == null { return }
+    mut i: usize = 0
+    loop i < s.len {
+        dest[i] = to_ascii_lower(s.ptr[i])
+        i += 1
+    }
+}
+
+// Converts slice characters to uppercase ASCII, writing into dest buffer.
+act str_to_upper_ascii(s: StrSlice, dest: @u8) {
+    if s.ptr == null or dest == null { return }
+    mut i: usize = 0
+    loop i < s.len {
+        dest[i] = to_ascii_upper(s.ptr[i])
+        i += 1
+    }
+}
+
+// Compares two slices for equality ignoring ASCII case.
+act str_eq_ignore_case_ascii(a: StrSlice, b: StrSlice) -> bool {
+    if a.len != b.len {
+        return false
+    }
+    if a.len == 0 {
+        return true
+    }
+    if a.ptr == b.ptr {
+        return true
+    }
+    if a.ptr == null or b.ptr == null {
+        return false
+    }
+    mut i: usize = 0
+    loop i < a.len {
+        if to_ascii_lower(a.ptr[i]) != to_ascii_lower(b.ptr[i]) {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// Convenience helpers with string literals
+act str_trim_str(s: string) -> StrSlice {
+    return str_trim(slice_from_str(s))
+}
+
+act str_split_str_init(s: string, delim: u8) -> StrSplitIter {
+    return str_split_init(slice_from_str(s), delim)
+}
+
+act str_eq_ignore_case_ascii_str(a: StrSlice, b: string) -> bool {
+    return str_eq_ignore_case_ascii(a, slice_from_str(b))
+}

@@ -924,6 +924,23 @@ flowchart TD
   - `bin/velo.exe run std/tests/str/builder_test.vl` passed basic appends, multi-byte UTF-8 runes, integer formatting, reset/reuse, C-string export, and 1,000 fragments stress reallocation test.
   - `python -m pytest tests/test_std_str.py` passed (4/4 passed).
 
+#### Task 2.5: String Manipulation & Splitting (`std/str/manip.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Trimming, token splitting, and ASCII casing in Velo relied on C string functions (`strtok`, `tolower`, `toupper`) or heap-allocating `sys.str` routines (`str.trim`, `str.split`), creating memory bloat and tying tokenization to libc.
+* **Fix Applied**:
+  - Implemented `std/str/manip.vl` providing zero-allocation trimming (`str_trim`, `str_trim_start`, `str_trim_end`, `str_trim_byte`, `str_trim_byte_start`, `str_trim_byte_end`).
+  - Implemented stateful single-byte split iterator `data StrSplitIter`, `str_split_init`, and `str_split_next` correctly yielding segments, trailing empty tokens, and leading empty tokens.
+  - Implemented substring split iterator `data StrSubSplitIter`, `str_split_sub_init`, and `str_split_sub_next` for arbitrary multi-byte delimiters (`"::"`, `"\r\n"`).
+  - Implemented ASCII casing and case-insensitive comparison: `str_to_lower_ascii`, `str_to_upper_ascii`, and `str_eq_ignore_case_ascii`.
+  - Added unit test suite `std/tests/str/manip_test.vl` and pytest integration in `tests/test_std_str.py`.
+* **Residual Limitation**:
+  - Full Unicode case folding (e.g. German sharp S `ß` to `SS`) can be added in an extended Unicode module.
+* **Verification**:
+  - `bin/velo.exe run std/tests/str/manip_test.vl` passed all whitespace trimming, byte trimming, single-byte splitting (leading/trailing/middle), substring splitting, ASCII lower/upper conversion, and case-insensitive equality checks.
+  - `python -m pytest tests/test_std_str.py` passed (5/5 passed in 2.68s).
+  - Combined `python -m pytest tests/test_std_mem.py tests/test_std_str.py` passed (11/11 passed in 4.55s).
+
+
 
 
 
