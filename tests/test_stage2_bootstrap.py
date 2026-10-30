@@ -24,15 +24,28 @@ def setup_bootstrap():
     BIN_DIR.mkdir(parents=True, exist_ok=True)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 1. Gen 1 built from Python compiler
+    # 1. Gen 1 built from bootstrap.c using GCC (or Python compiler as fallback)
     if not GEN1_EXE.exists():
-        res = subprocess.run(
-            ["python", "velo.py", "build", str(MAIN_VL), "-o", str(GEN1_EXE)],
-            cwd=str(REPO_ROOT),
-            capture_output=True,
-            text=True
-        )
-        assert res.returncode == 0, f"Gen1 build failed:\n{res.stderr}"
+        bootstrap_c = REPO_ROOT / "bootstrap.c"
+        if bootstrap_c.exists():
+            env = get_env()
+            gcc_cmd = [
+                "gcc", "-O2", "-std=c99",
+                "-I", str(REPO_ROOT / "runtime"),
+                "-I", str(REPO_ROOT / "velo" / "runtime"),
+                str(bootstrap_c),
+                "-o", str(GEN1_EXE)
+            ]
+            res = subprocess.run(gcc_cmd, cwd=str(REPO_ROOT), capture_output=True, text=True, env=env)
+            assert res.returncode == 0, f"Gen1 build from bootstrap.c failed:\n{res.stderr}"
+        else:
+            res = subprocess.run(
+                ["python", "velo.py", "build", str(MAIN_VL), "-o", str(GEN1_EXE)],
+                cwd=str(REPO_ROOT),
+                capture_output=True,
+                text=True
+            )
+            assert res.returncode == 0, f"Gen1 build failed:\n{res.stderr}"
 
     # 2. Gen 2 built from Gen 1
     if not GEN2_EXE.exists():

@@ -56,6 +56,7 @@ def main():
     # 'emit-c' command
     emit_parser = subparsers.add_parser("emit-c", help="Emit generated C99 code without compiling")
     emit_parser.add_argument("file", help="Path to the .vl source file")
+    emit_parser.add_argument("-o", "--output", help="Path for the output C source file")
     emit_parser.add_argument("--unsafe-shelf-index", action="store_true", help="Lower shelf index reads unguarded (out-of-range becomes silent UB)")
     emit_parser.add_argument("--no-line-directives", action="store_true", help="Suppress #line preprocessor directives in emitted C")
 
@@ -201,7 +202,10 @@ def main():
             print(f"[Velo] Successfully built: {exe_path}")
         elif args.command == "emit-c":
             c_code = driver.compile_to_c(args.file)
-            print(c_code)
+            if getattr(args, "output", None):
+                Path(args.output).write_text(c_code, encoding="utf-8")
+            else:
+                print(c_code)
         elif args.command == "check":
             report = driver.check(args.file)
             if args.json_mode:

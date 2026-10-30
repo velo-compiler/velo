@@ -8,12 +8,16 @@ After **fully completing** a feature or bug fix — code done and tests passing 
 - Run the test suite: `python -m pytest tests -q`
 - If compiler source (`src/**/*.vl`) changed, rebuild the bootstrap chain (path `C:\msys64\ucrt64\bin` in PATH for GCC):
   ```bash
-  python velo.py  build src/main.vl -o bin/velo_gen1.exe
-  bin/velo_gen1.exe build src/main.vl -o bin/velo_gen2.exe
-  bin/velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe
+  # Step 1: Bootstrap from C snapshot or standalone script
+  scripts\bootstrap.bat        # compiles bootstrap.c into bin/velo.exe
+  # Step 2: Re-generate and verify self-hosted compiler chain
+  bin\velo.exe build src/main.vl -o bin/velo_gen2.exe
+  bin\velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe
   cp bin/velo_gen3.exe bin/velo.exe   # canonical standalone compiler
+  # Step 3: Refresh bootstrap.c snapshot
+  bin\velo.exe emit-c src/main.vl -o bootstrap.c
   ```
-- If compiler source changed, re-verify determinism: SHA-256 of `emit-c src/main.vl` output must be identical between Gen2 and Gen3.
+- If compiler source changed, re-verify determinism: SHA-256 of `emit-c src/main.vl` output must be identical between Gen2 and Gen3, and `bootstrap.c` must match `emit-c src/main.vl`.
 - Keep code standards: no compiler source file over 400 lines (`python scripts/count_lines.py`).
 
 ### 2. Update `gaps.md`
@@ -29,5 +33,5 @@ After **fully completing** a feature or bug fix — code done and tests passing 
 - Git history rules everything: no work is "done" until it is committed and documented.
 - `*.exe` and `.velo_cache/` are gitignored — only source is committed; toolchain binaries (`bin/velo_gen*.exe`, `bin/velo.exe`) are rebuilt locally by whoever needs them.
 - Never write `.vl` files with a UTF-8 BOM — the lexer rejects the `\ufeff` character (`[Velo Error] Unexpected character '\ufeff'`).
-- The Python compiler (`velo/`) and the self-hosted compiler (`src/`) must stay **behaviorally identical**; any language change lands in both, with tests, in the same commit.
+- The Python compiler (`velo/` and `velo.py`) is a **frozen reference tool** (Stage 1). The self-hosted compiler (`src/`) and `bootstrap.c` are the canonical compiler source and bootstrap entry point. New language features and compiler modifications are implemented strictly in `src/**/*.vl` without dual-implementation tax in Python.
 - Do not stage unrelated in-progress files (`VELO.md`, `editors/`, `real-world-prob-test/me/` are deliberately untracked owner material).

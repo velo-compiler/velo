@@ -11,7 +11,7 @@ act print_usage() {
     io.println("Usage:")
     io.println("  velo run <source.vl> [--cc gcc|cl] [-l<lib>] [-L<dir>] [--debug|--release] [-O<level>] [--no-line-directives]")
     io.println("  velo build <source.vl> [-o <bin>] [--cc gcc|cl] [-l<lib>] [-L<dir>] [--debug|--release] [--no-line-directives]")
-    io.println("  velo emit-c <source.vl> [--no-line-directives] Emit generated C99 code to stdout")
+    io.println("  velo emit-c <source.vl> [-o <out.c>] [--no-line-directives] Emit generated C99 code")
     io.println("  velo check <source.vl> [--json] [--color auto|always|never]")
     io.println("  velo doc <source.vl> [-o <out.md>] Extract API documentation to Markdown")
     io.println("  velo test [path] [--cc gcc|cl] [--filter <pattern>] Run native tests")

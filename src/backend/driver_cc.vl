@@ -87,7 +87,7 @@ act assemble_msvc_compile_cmd(c_file_path: string, out_exe_path: string, opt_fla
         sb_append_str(@cmd_sb, vcvars)
         sb_append_str(@cmd_sb, "\" >nul && ")
     }
-    sb_append_str(@cmd_sb, "cl /nologo /TC /W3 /wd4090 /wd4996 /D_CRT_SECURE_NO_WARNINGS /I velo/runtime ")
+    sb_append_str(@cmd_sb, "cl /nologo /TC /W3 /wd4090 /wd4996 /D_CRT_SECURE_NO_WARNINGS /I runtime /I velo/runtime ")
     mut is_debug = false
     if opt_flags == null or str.len(opt_flags) == 0 {
         sb_append_str(@cmd_sb, "/O2 ")
@@ -119,7 +119,7 @@ act assemble_gcc_compile_cmd(c_file_path: string, out_exe_path: string, opt_flag
     } else {
         sb_append_str(@cmd_sb, "-O2 ")
     }
-    sb_append_str(@cmd_sb, "-std=c99 -I velo/runtime ")
+    sb_append_str(@cmd_sb, "-std=c99 -I runtime -I velo/runtime ")
     sb_append_str(@cmd_sb, to_native_path(c_file_path))
     if linker_flags != null and str.len(linker_flags) > 0 {
         sb_append_str(@cmd_sb, " ")

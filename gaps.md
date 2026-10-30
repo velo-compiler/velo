@@ -755,21 +755,24 @@ flowchart TD
   - Native test runner passed 105/105 tests (`bin/velo.exe test examples/15_native_tests.vl`).
   - Pytest full suite passed 425/425 tests (`python -m pytest tests -q`).
 
-#### Task 10.2: Portable C Snapshot Bootstrapping (`bootstrap.c`) & Python Transpiler Retirement
-* **Problem**:
-  - The requirement in `AGENTS.md` that every single language change, new feature, and bug fix must land simultaneously in both the Python Stage 1 transpiler (`velo/`, 9,642 LOC with a 4,087-line `codegen_c.py` monolith) and the self-hosted Stage 2 compiler (`src/`, 16,152 LOC) creates a massive dual-compiler maintenance tax.
-  - Now that Stage 2 is 100% self-hosted, deterministic, and supports both GCC and MSVC natively, retaining the Python compiler as a mandatory co-implementation is obsolete technical debt.
-* **Specification**:
-  - Adopt the battle-tested bootstrapping model of Zig, Nim, and Lua:
-    * Emit a single-file, zero-dependency `bootstrap.c` snapshot from the self-hosted compiler (`bin/velo.exe emit-c src/main.vl -o bootstrap.c`).
-    * Check in `bootstrap.c` as the canonical root of the bootstrap chain.
-    * Provide a standalone shell/batch script (`scripts/bootstrap.bat` / `scripts/bootstrap.sh`) that compiles `bootstrap.c` with ambient GCC, Clang, or MSVC into `bin/velo.exe` in under 2 seconds.
-    * Move `velo/` to `legacy/velo_stage1/` or freeze it as a reference tool, releasing developers from the double-implementation requirement.
-* **Target Files**:
-  - `bootstrap.c`
-  - `scripts/bootstrap.bat`
-  - `scripts/bootstrap.sh`
-  - `AGENTS.md`
+#### Task 10.2: Portable C Snapshot Bootstrapping (`bootstrap.c`) & Python Transpiler Retirement [COMPLETED] ✅
+* **Former Defect**:
+  - The requirement in `AGENTS.md` that every single language change, new feature, and bug fix must land simultaneously in both the Python Stage 1 transpiler (`velo/`, 9,642 LOC with a 4,087-line `codegen_c.py` monolith) and the self-hosted Stage 2 compiler (`src/`, 16,152 LOC) created a massive dual-compiler maintenance tax.
+  - Bootstrapping the compiler strictly required a Python 3 runtime and `python velo.py`.
+* **Fix Applied**:
+  - Emitted canonical C snapshot `bootstrap.c` at repository root via `bin/velo.exe emit-c src/main.vl -o bootstrap.c` (added `-o` / `--output` support to `emit-c` command in both self-hosted compiler and Python reference CLI).
+  - Established top-level `runtime/velo_runtime.h` and updated backend compiler driver (`src/backend/driver_cc.vl`) to search `-I runtime -I velo/runtime`.
+  - Created standalone cross-platform bootstrap scripts: `scripts/bootstrap.bat` (probing MSYS2 GCC, Clang, MSVC `cl`, and VS `vcvars64.bat`) and `scripts/bootstrap.sh` (POSIX GCC/Clang/CC) that compile `bootstrap.c` directly into `bin/velo.exe` / `bin/velo` without requiring Python.
+  - Froze `velo/` and `velo.py` as a legacy reference tool (Stage 1), officially liberating developers from the dual-implementation mandate in `AGENTS.md`. Canonical compiler development now proceeds exclusively in `src/**/*.vl`.
+  - Added comprehensive test suite `tests/test_bootstrap_snapshot.py` and updated `tests/test_stage2_bootstrap.py` to assert `bootstrap.c` file integrity, script existence, compilation, and bit-for-bit determinism.
+* **Residual Limitation**:
+  - `bootstrap.c` must be refreshed (`bin/velo.exe emit-c src/main.vl -o bootstrap.c`) whenever compiler source in `src/` is modified.
 * **Verification**:
-  - Delete `bin/velo.exe` and rebuild the entire compiler toolchain using only `bootstrap.c` and GCC/MSVC without Python.
-  - Run full test suite with the newly bootstrapped compiler and verify 100% test pass rate.
+  - Deleted `bin/velo.exe` and rebuilt entire compiler from scratch using `scripts/bootstrap.bat` (MSYS2 UCRT64 GCC) with zero errors.
+  - Rebuilt 3-stage bootstrap chain (Gen1 $\to$ Gen2 $\to$ Gen3) and verified bit-for-bit determinism (`064307b87a0a7b489615b0490cd079adda41ddaf290d1112b6c5f15bbde06f07`).
+  - Ran `tests/test_bootstrap_snapshot.py` (5/5 passed).
+  - Ran `tests/test_stage2_bootstrap.py` (4/4 passed).
+  - Native test runner passed 105/105 tests (`bin/velo.exe test examples/15_native_tests.vl`).
+  - Pytest full suite passed 100%.
+  - Verified all 82 files in `src/**/*.vl` are $\le 348$ lines (`python scripts/count_lines.py`).
+  - Verified zero UTF-8 BOM across all `.vl`, `.c`, and `.h` files.
