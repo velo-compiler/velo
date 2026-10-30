@@ -1,0 +1,213 @@
+// Unit test suite for std.str.slice (pure Velo string slice view).
+use "../../mem/page.vl"
+use "../../str/slice.vl"
+
+act test_empty_and_null() -> bool {
+    let s_null = slice_from_raw(null, 0)
+    if !slice_is_empty(s_null) or slice_len(s_null) != 0 {
+        return false
+    }
+
+    let s_null_len = slice_from_raw(null, 50)
+    if !slice_is_empty(s_null_len) or slice_len(s_null_len) != 0 {
+        return false
+    }
+
+    let s_empty = slice_from_str("")
+    if !slice_is_empty(s_empty) or slice_len(s_empty) != 0 {
+        return false
+    }
+
+    if slice_get(s_empty, 0) != 0 as u8 {
+        return false
+    }
+    return true
+}
+
+act test_from_str_and_indexing() -> bool {
+    let s = slice_from_str("VeloLang")
+    if slice_is_empty(s) or slice_len(s) != 8 {
+        return false
+    }
+
+    // ASCII values: 'V'=86, 'e'=101, 'l'=108, 'o'=111, 'L'=76, 'a'=97, 'n'=110, 'g'=103
+    if slice_get(s, 0) != 86 as u8 { return false }
+    if slice_get(s, 1) != 101 as u8 { return false }
+    if slice_get(s, 4) != 76 as u8 { return false }
+    if slice_get(s, 7) != 103 as u8 { return false }
+    if slice_get(s, 8) != 0 as u8 { return false } // Out of bounds
+    if slice_get(s, 100) != 0 as u8 { return false }
+
+    return true
+}
+
+act test_sub_slicing() -> bool {
+    let s = slice_from_str("systems_programming")
+    
+    // Sub-slice "systems" (0..7)
+    let sub1 = slice_sub(s, 0, 7)
+    if slice_len(sub1) != 7 or !slice_eq_str(sub1, "systems") {
+        return false
+    }
+
+    // Sub-slice "programming" (8..19)
+    let sub2 = slice_sub(s, 8, 19)
+    if slice_len(sub2) != 11 or !slice_eq_str(sub2, "programming") {
+        return false
+    }
+
+    // slice_sub_from (8..)
+    let sub3 = slice_sub_from(s, 8)
+    if !slice_eq(sub3, sub2) {
+        return false
+    }
+
+    // slice_sub_to (..7)
+    let sub4 = slice_sub_to(s, 7)
+    if !slice_eq(sub4, sub1) {
+        return false
+    }
+
+    // Boundary clamp: end > len
+    let sub5 = slice_sub(s, 8, 999)
+    if !slice_eq(sub5, sub2) {
+        return false
+    }
+
+    // Inverted range: start >= end yields empty slice
+    let sub6 = slice_sub(s, 10, 5)
+    if !slice_is_empty(sub6) or slice_len(sub6) != 0 {
+        return false
+    }
+
+    // Start > len yields empty slice
+    let sub7 = slice_sub(s, 100, 200)
+    if !slice_is_empty(sub7) or slice_len(sub7) != 0 {
+        return false
+    }
+
+    return true
+}
+
+act test_equality_and_comparison() -> bool {
+    let s_alpha1 = slice_from_str("alpha")
+    let s_alpha2 = slice_from_str("alpha")
+    let s_alphb = slice_from_str("alphb")
+    let s_alp = slice_from_str("alp")
+    let s_empty1 = slice_from_str("")
+    let s_empty2 = slice_from_raw(null, 0)
+
+    if !slice_eq(s_alpha1, s_alpha2) { return false }
+    if slice_eq(s_alpha1, s_alphb) { return false }
+    if slice_eq(s_alpha1, s_alp) { return false }
+    if !slice_eq(s_empty1, s_empty2) { return false }
+
+    // Three-way comparison
+    if slice_cmp(s_alpha1, s_alpha2) != 0 { return false }
+    if slice_cmp(s_alpha1, s_alphb) >= 0 { return false } // 'a' < 'b' => -1
+    if slice_cmp(s_alphb, s_alpha1) <= 0 { return false } // 'b' > 'a' => 1
+    if slice_cmp(s_alp, s_alpha1) >= 0 { return false }   // shorter prefix => -1
+    if slice_cmp(s_alpha1, s_alp) <= 0 { return false }   // longer prefix => 1
+
+    return true
+}
+
+act test_prefix_and_suffix() -> bool {
+    let s = slice_from_str("libvelo_parser.vl")
+    let p_lib = slice_from_str("libvelo")
+    let p_wrong = slice_from_str("libc")
+    let p_empty = slice_from_str("")
+    let s_vl = slice_from_str(".vl")
+    let s_c = slice_from_str(".c")
+    let too_long = slice_from_str("libvelo_parser_extra_long.vl")
+
+    // Starts with
+    if !slice_starts_with(s, p_lib) { return false }
+    if slice_starts_with(s, p_wrong) { return false }
+    if !slice_starts_with(s, p_empty) { return false }
+    if slice_starts_with(s, too_long) { return false }
+
+    // Ends with
+    if !slice_ends_with(s, s_vl) { return false }
+    if slice_ends_with(s, s_c) { return false }
+    if !slice_ends_with(s, p_empty) { return false }
+    if slice_ends_with(s, too_long) { return false }
+
+    return true
+}
+
+act test_copy_and_cstr() -> bool {
+    let src = slice_from_str("FastVelo")
+    
+    // Test slice_copy_to into a buffer of 16 bytes
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    let copied = slice_copy_to(src, buf, 64)
+    if copied != 8 {
+        os_page_free(buf, 64)
+        return false
+    }
+    if buf[0] != 70 as u8 or buf[7] != 111 as u8 { // 'F' and 'o'
+        os_page_free(buf, 64)
+        return false
+    }
+
+    // Test slice_to_cstr with small buffer truncation
+    let small_buf = os_page_alloc(64)
+    if small_buf == null {
+        os_page_free(buf, 64)
+        return false
+    }
+    let written = slice_to_cstr(src, small_buf, 5) // max 4 chars + null
+    if written != 4 {
+        os_page_free(buf, 64)
+        os_page_free(small_buf, 64)
+        return false
+    }
+    if small_buf[4] != 0 as u8 {
+        os_page_free(buf, 64)
+        os_page_free(small_buf, 64)
+        return false
+    }
+    // Verify first 4 chars: "Fast"
+    if small_buf[0] != 70 as u8 or small_buf[3] != 116 as u8 {
+        os_page_free(buf, 64)
+        os_page_free(small_buf, 64)
+        return false
+    }
+
+    os_page_free(buf, 64)
+    os_page_free(small_buf, 64)
+    return true
+}
+
+act main() -> i32 {
+    if !test_empty_and_null() {
+        io.println("FAIL: test_empty_and_null")
+        return 1
+    }
+    if !test_from_str_and_indexing() {
+        io.println("FAIL: test_from_str_and_indexing")
+        return 1
+    }
+    if !test_sub_slicing() {
+        io.println("FAIL: test_sub_slicing")
+        return 1
+    }
+    if !test_equality_and_comparison() {
+        io.println("FAIL: test_equality_and_comparison")
+        return 1
+    }
+    if !test_prefix_and_suffix() {
+        io.println("FAIL: test_prefix_and_suffix")
+        return 1
+    }
+    if !test_copy_and_cstr() {
+        io.println("FAIL: test_copy_and_cstr")
+        return 1
+    }
+
+    io.println("PASS: std.str.slice all assertions succeeded")
+    return 0
+}

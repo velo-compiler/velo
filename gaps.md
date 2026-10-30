@@ -858,6 +858,28 @@ flowchart TD
   - `bin/velo.exe run std/tests/mem/heap_test.vl` passed arbitrary size allocations (16B, 120B, 2048B), realloc data preservation, adjacent block coalescing, block reuse, and dynamic chunk growth.
   - `python -m pytest tests/test_std_mem.py` passed (6/6 passed in 1.83s).
 
+---
+
+### Phase 2: `std.str` (Byte Slices, UTF-8 & Manipulation)
+
+#### Task 2.1: String Slice View (`std/str/slice.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - String manipulation in Velo relied on C string conventions (null-terminated `char*`, `strlen`, `strcmp`, `strncmp`), which require allocation or mutation to inspect substrings, preventing zero-allocation parsing and non-null-terminated buffer slicing.
+* **Fix Applied**:
+  - Implemented `std/str/slice.vl` providing `data StrSlice { ptr: @u8, len: usize }`.
+  - Added constructors `slice_from_raw(ptr: @u8, len: usize)` and `slice_from_str(s: string)`.
+  - Pure Velo length calculation (`raw_str_len`) with zero C runtime dependencies.
+  - Non-allocating sub-slicing with boundary clamping: `slice_sub(s, start, end)`, `slice_sub_from(s, start)`, `slice_sub_to(s, end)`.
+  - Content comparison and inspection: `slice_eq(a, b)`, `slice_eq_str(s, lit)`, `slice_cmp(a, b)` (lexicographical -1/0/1), `slice_starts_with`, `slice_ends_with`, `slice_is_empty`, `slice_get`.
+  - Buffer export utilities: `slice_copy_to(s, dest, dest_cap)` and `slice_to_cstr(s, dest, dest_cap)`.
+  - Added comprehensive test suite `std/tests/str/slice_test.vl` and pytest integration in `tests/test_std_str.py`.
+* **Residual Limitation**:
+  - UTF-8 multi-byte rune decoding and validation over slices will be layered in Task 2.2.
+* **Verification**:
+  - `bin/velo.exe run std/tests/str/slice_test.vl` passed all null/empty checks, indexing, sub-slicing, clamping, equality, 3-way ordering, prefix/suffix matching, and copy/cstr exports.
+  - `python -m pytest tests/test_std_str.py` passed (1/1 passed).
+
+
 
 
 
