@@ -1387,7 +1387,23 @@ flowchart TD
   - Implemented RFC 3339 / ISO-8601 string formatting without libc: `time_format_iso8601` ("YYYY-MM-DDTHH:MM:SSZ"), `time_format_iso8601_ms` ("YYYY-MM-DDTHH:MM:SS.mmmZ"), and Arena allocators `time_format_iso8601_str`, `time_format_iso8601_ms_str`.
   - Added unit test suite `std/tests/time/calendar_test.vl` and pytest integration in `tests/test_std_time.py`.
 * **Residual Limitation**:
-  - Standard library umbrella module (`std/time.vl`) and driver resolution (`use std.time`) are scheduled for Task 8.5.
+  - Standard library umbrella module (`std/time.vl`) and driver resolution (`use std.time`) completed in Task 8.5.
 * **Verification**:
   - `bin/velo.exe run std/tests/time/calendar_test.vl` passed (`PASS: std.time.calendar all tests passed`).
   - `python -m pytest tests/test_std_time.py` passed (4/4 passed in 4.52s).
+
+#### Task 8.5: Standard Library Umbrella Module & Standard Resolution (`std/time.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Time components were distributed across internal submodules (`clock.vl`, `duration.vl`, `sleep.vl`, `calendar.vl`). User applications and packages had to import specific subcomponents via relative paths rather than idiomatic `use std.time`.
+* **Fix Applied**:
+  - Implemented `std/time.vl` umbrella module re-exporting the entire time library ecosystem (monotonic clocks, wall-clock epoch timestamps, duration arithmetic, stopwatch profiling, sleep and delays, Gregorian calendar, and ISO-8601 formatting) with zero C runtime dependencies.
+  - Verified standard compiler resolution via `is_std_module("std.time")` and `std_module_to_rel_path("std.time")` mapping directly to `std/time.vl`.
+  - Added verification test `std/tests/time_module_import_test.vl` exercising complete timing workflows through pure `use std.time` imports.
+  - Integrated `use std.time` into standard library umbrella test suite `std/tests/std_module_import_test.vl`.
+  - Added pytest test case `test_std_time_module_import` in `tests/test_std_time.py`.
+* **Residual Limitation**:
+  - None. Phase 8 `std.time` is complete, fully tested, and zero-dependency across clocks, timers, duration, sleep, calendar, and umbrella module.
+* **Verification**:
+  - `bin/velo.exe run std/tests/time_module_import_test.vl` passed (`PASS: use std.time umbrella module verified`).
+  - `bin/velo.exe run std/tests/std_module_import_test.vl` passed (`PASS: native use std.* imports succeeded`).
+  - `python -m pytest tests/test_std_time.py` passed (5/5 passed in 5.91s).

@@ -5,6 +5,7 @@ use std.mem
 use std.str
 use std.fmt
 use std.json
+use std.time
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -41,6 +42,12 @@ act main() -> i32 {
     if !slice_eq_str(v_str, "v") { return 6 }
     let jstr = json_stringify(@arena, jroot)
     if !slice_eq_str(jstr, "{\"k\":\"v\"}") { return 7 }
+
+    // std.time: duration and stopwatch
+    mut sw = stopwatch_start()
+    let d = stopwatch_elapsed(@sw)
+    let d_zero = duration_zero()
+    if duration_cmp(d, d_zero) < 0 { return 8 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0

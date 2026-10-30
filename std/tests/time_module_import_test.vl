@@ -1,0 +1,48 @@
+// Verification test for native 'use std.time' umbrella module import and standard resolution.
+use std.io;
+use std.time;
+
+act main() -> i32 {
+    // 1. Monotonic timing via use std.time
+    let t1 = time_monotonic_ns()
+    if t1 == 0 as u64 {
+        return 1
+    }
+
+    // 2. Stopwatch and Duration via use std.time
+    mut sw = stopwatch_start()
+    time_sleep_ms(15 as u32)
+    let el = stopwatch_elapsed(@sw)
+    if duration_as_ms(el) < 10 as u64 {
+        return 2
+    }
+
+    // 3. Duration arithmetic
+    let d1 = duration_from_ms(100 as u64)
+    let d2 = duration_from_ms(250 as u64)
+    let d_sum = duration_add(d1, d2)
+    if duration_as_ms(d_sum) != 350 as u64 {
+        return 3
+    }
+
+    // 4. Gregorian calendar and epoch conversion
+    let dt = time_epoch_to_datetime(1793368859)
+    if dt.year != 2026 or dt.month != 10 or dt.day != 30 {
+        return 4
+    }
+    if dt.hour != 14 or dt.minute != 0 or dt.second != 59 {
+        return 5
+    }
+
+    // 5. ISO-8601 formatting
+    mut arena = arena_init(4096)
+    defer arena_reset(@arena)
+
+    let iso_str = time_format_iso8601_str(@arena, @dt)
+    if !slice_eq_str(slice_from_str(iso_str), "2026-10-30T14:00:59Z") {
+        return 6
+    }
+
+    println_str("PASS: use std.time umbrella module verified")
+    return 0
+}
