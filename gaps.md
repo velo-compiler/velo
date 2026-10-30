@@ -1139,8 +1139,23 @@ flowchart TD
   - Implemented typed convenience helpers for string and integer keys: `map_create_str`, `map_put_str_i64`, `map_get_str_i64`, `map_has_str`, `map_put_str_slice`, `map_get_str_slice`, `map_create_i64`, `map_put_i64_i64`, `map_get_i64_i64`, `map_has_i64`, `map_put_u64_u64`, `map_get_u64_u64`.
   - Added unit test suite `std/tests/coll/map_test.vl` and pytest integration in `tests/test_std_coll.py`.
 * **Residual Limitation**:
-  - Map tombstone deletion, compaction, and key/value shelf extraction (`std/coll/map_ops.vl`) will be implemented in Task 5.6.
+  - Map tombstone deletion, compaction, and key/value shelf extraction (`std/coll/map_ops.vl`) have been implemented in Task 5.6.
 * **Verification**:
   - `bin/velo.exe run std/tests/coll/map_test.vl` passed basic map lifecycle; string key hashing and content equality; 500-entry stress growth across multiple rehash doubling cycles with value updates; linear probing collisions; and 64-bit integer keys.
   - `python -m pytest tests/test_std_coll.py` passed (5/5 passed).
+
+#### Task 5.6: Map Tombstone Deletion & Rehashing (`std/coll/map_ops.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Key-value deletion, tombstone purging, capacity compaction, and dynamic array extraction for open-addressing hash maps previously required compiler-internal runtime mechanisms or C-runtime helpers.
+* **Fix Applied**:
+  - Implemented `std/coll/map_ops.vl` providing full lifecycle operations for `RawMap`: `map_take` (with value extraction), `map_delete`, `map_compact` (in-place tombstone purge), and `map_shrink_to_fit` (downsizing table capacity).
+  - Implemented automatic in-place compaction when accumulated tombstone count exceeds 50% capacity (`tomb > (cap >> 1)`), preventing probe-chain degradation under heavy delete traffic.
+  - Implemented shelf extraction: `map_keys_to_shelf` and `map_values_to_shelf` unrolling active map entries into dynamic `RawShelf` vectors.
+  - Implemented bulk copying `map_copy_entries` and typed delete/take helpers for string, signed `i64`, and unsigned `u64` keys.
+  - Added unit test suite `std/tests/coll/map_ops_test.vl` and pytest integration in `tests/test_std_coll.py`.
+* **Residual Limitation**:
+  - Phase 5 (`std.coll`) is 100% complete across all 6 tasks (shelf, shelf_ops, ring, hash, map, map_ops). All 5 foundational pure-Velo low-level standard libraries (`std.mem`, `std.str`, `std.fmt`, `std.io`, `std.coll`) are fully implemented and tested with zero C runtime dependencies.
+* **Verification**:
+  - `bin/velo.exe run std/tests/coll/map_ops_test.vl` passed integer take and delete with tombstone slot recycling; string key take and delete; automatic in-place compaction upon reaching 50% tombstone churn; capacity shrinking with `map_shrink_to_fit`; key and value extraction into `RawShelf`; and bulk entry copying.
+  - `python -m pytest tests/test_std_coll.py` passed (6/6 passed).
 

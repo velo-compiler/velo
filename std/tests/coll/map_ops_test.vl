@@ -1,0 +1,251 @@
+// Unit test suite for std.coll.map_ops (advanced map operations & lifecycle).
+use sys.io
+use "../../mem/page.vl"
+use "../../mem/heap.vl"
+use "../../mem/ops.vl"
+use "../../str/slice.vl"
+use "../../coll/shelf.vl"
+use "../../coll/shelf_ops.vl"
+use "../../coll/hash.vl"
+use "../../coll/map.vl"
+use "../../coll/map_ops.vl"
+
+act test_take_and_delete_integer() -> bool {
+    mut m = map_create_i64(8, 8)
+    map_put_i64_i64(@m, 10, 100)
+    map_put_i64_i64(@m, 20, 200)
+    map_put_i64_i64(@m, 30, 300)
+    map_put_i64_i64(@m, 40, 400)
+    map_put_i64_i64(@m, 50, 500)
+
+    if map_len(@m) != 5 or map_tomb_count(@m) != 0 {
+        map_free(@m); return false
+    }
+
+    // Take key 30: out value must be 300
+    mut taken: i64 = 0
+    if !map_take_i64_i64(@m, 30, @taken) or taken != 300 {
+        map_free(@m); return false
+    }
+    if map_len(@m) != 4 or map_tomb_count(@m) != 1 {
+        map_free(@m); return false
+    }
+    if map_has_i64(@m, 30) {
+        map_free(@m); return false
+    }
+
+    // Delete key 50 without value copy out
+    if !map_delete_i64(@m, 50) {
+        map_free(@m); return false
+    }
+    if map_len(@m) != 3 or map_tomb_count(@m) != 2 {
+        map_free(@m); return false
+    }
+    if map_has_i64(@m, 50) {
+        map_free(@m); return false
+    }
+
+    // Reinsert key 30: should recycle tombstone
+    if !map_put_i64_i64(@m, 30, 333) {
+        map_free(@m); return false
+    }
+    if map_len(@m) != 4 or map_tomb_count(@m) != 1 {
+        map_free(@m); return false
+    }
+
+    mut v: i64 = 0
+    if !map_get_i64_i64(@m, 30, @v) or v != 333 {
+        map_free(@m); return false
+    }
+    if !map_get_i64_i64(@m, 10, @v) or v != 100 {
+        map_free(@m); return false
+    }
+    if !map_get_i64_i64(@m, 20, @v) or v != 200 {
+        map_free(@m); return false
+    }
+    if !map_get_i64_i64(@m, 40, @v) or v != 400 {
+        map_free(@m); return false
+    }
+
+    map_free(@m)
+    return true
+}
+
+act test_take_and_delete_string() -> bool {
+    mut m = map_create_str(8, 8)
+    map_put_str_i64(@m, "red", 1)
+    map_put_str_i64(@m, "green", 2)
+    map_put_str_i64(@m, "blue", 3)
+    map_put_str_i64(@m, "yellow", 4)
+
+    if map_len(@m) != 4 { map_free(@m); return false }
+
+    mut taken: i64 = 0
+    if !map_take_str_i64(@m, "green", @taken) or taken != 2 {
+        map_free(@m); return false
+    }
+    if map_has_str(@m, "green") { map_free(@m); return false }
+    if map_len(@m) != 3 { map_free(@m); return false }
+
+    if !map_delete_str(@m, "blue") { map_free(@m); return false }
+    if map_has_str(@m, "blue") { map_free(@m); return false }
+    if map_len(@m) != 2 { map_free(@m); return false }
+
+    // Remaining: "red" (1) and "yellow" (4)
+    mut v: i64 = 0
+    if !map_get_str_i64(@m, "red", @v) or v != 1 { map_free(@m); return false }
+    if !map_get_str_i64(@m, "yellow", @v) or v != 4 { map_free(@m); return false }
+
+    map_free(@m)
+    return true
+}
+
+act test_auto_compaction_on_churn() -> bool {
+    mut m = map_create_i64(8, 16)
+
+    // Insert 10 keys: 1..10
+    mut i: i64 = 1
+    loop i <= 10 {
+        map_put_i64_i64(@m, i, i * 10)
+        i += 1
+    }
+
+    // Delete keys 1..9 (9 deletions > 16/2 = 8, triggers compaction!)
+    i = 1
+    loop i <= 9 {
+        map_delete_i64(@m, i)
+        i += 1
+    }
+
+    // After compaction, tomb count must be 0, len must be 1
+    if map_len(@m) != 1 or map_tomb_count(@m) != 0 {
+        map_free(@m); return false
+    }
+
+    // Key 10 must still be present and intact
+    mut v: i64 = 0
+    if !map_get_i64_i64(@m, 10, @v) or v != 100 {
+        map_free(@m); return false
+    }
+
+    map_free(@m)
+    return true
+}
+
+act test_shrink_to_fit() -> bool {
+    mut m = map_create_i64(8, 32)
+    map_put_i64_i64(@m, 100, 1)
+    map_put_i64_i64(@m, 200, 2)
+    map_put_i64_i64(@m, 300, 3)
+
+    if map_cap(@m) != 32 { map_free(@m); return false }
+
+    if !map_shrink_to_fit(@m) {
+        map_free(@m); return false
+    }
+
+    // Cap should have shrunk to 8
+    if map_cap(@m) != 8 or map_len(@m) != 3 {
+        map_free(@m); return false
+    }
+
+    mut v: i64 = 0
+    if !map_get_i64_i64(@m, 100, @v) or v != 1 { map_free(@m); return false }
+    if !map_get_i64_i64(@m, 200, @v) or v != 2 { map_free(@m); return false }
+    if !map_get_i64_i64(@m, 300, @v) or v != 3 { map_free(@m); return false }
+
+    map_free(@m)
+    return true
+}
+
+act test_keys_and_values_to_shelf() -> bool {
+    mut m = map_create_i64(8, 8)
+    map_put_i64_i64(@m, 1, 10)
+    map_put_i64_i64(@m, 2, 20)
+    map_put_i64_i64(@m, 3, 30)
+    map_put_i64_i64(@m, 4, 40)
+
+    mut ks = map_keys_to_shelf(@m)
+    mut vs = map_values_to_shelf(@m)
+
+    if shelf_len(@ks) != 4 or shelf_len(@vs) != 4 {
+        shelf_free(@ks); shelf_free(@vs); map_free(@m); return false
+    }
+
+    // Verify all keys exist in map
+    mut i: usize = 0
+    loop i < 4 {
+        let pk = shelf_get_i64(@ks, i)
+        if !map_has_i64(@m, pk) {
+            shelf_free(@ks); shelf_free(@vs); map_free(@m); return false
+        }
+        i += 1
+    }
+
+    shelf_free(@ks)
+    shelf_free(@vs)
+    map_free(@m)
+    return true
+}
+
+act test_copy_entries() -> bool {
+    mut m = map_create_i64(8, 8)
+    map_put_i64_i64(@m, 10, 100)
+    map_put_i64_i64(@m, 20, 200)
+    map_put_i64_i64(@m, 30, 300)
+
+    let buf_k = heap_alloc(8 * 3)
+    let buf_v = heap_alloc(8 * 3)
+
+    let copied = map_copy_entries(@m, buf_k, buf_v)
+    if copied != 3 {
+        heap_free(buf_k); heap_free(buf_v); map_free(@m); return false
+    }
+
+    let pk = buf_k as @i64
+    let pv = buf_v as @i64
+    mut i: usize = 0
+    loop i < 3 {
+        mut v: i64 = 0
+        if !map_get_i64_i64(@m, pk[i], @v) or v != pv[i] {
+            heap_free(buf_k); heap_free(buf_v); map_free(@m); return false
+        }
+        i += 1
+    }
+
+    heap_free(buf_k)
+    heap_free(buf_v)
+    map_free(@m)
+    return true
+}
+
+act main() -> i32 {
+    if !test_take_and_delete_integer() {
+        io.println("FAIL: test_take_and_delete_integer")
+        return 1
+    }
+    if !test_take_and_delete_string() {
+        io.println("FAIL: test_take_and_delete_string")
+        return 2
+    }
+    if !test_auto_compaction_on_churn() {
+        io.println("FAIL: test_auto_compaction_on_churn")
+        return 3
+    }
+    if !test_shrink_to_fit() {
+        io.println("FAIL: test_shrink_to_fit")
+        return 4
+    }
+    if !test_keys_and_values_to_shelf() {
+        io.println("FAIL: test_keys_and_values_to_shelf")
+        return 5
+    }
+    if !test_copy_entries() {
+        io.println("FAIL: test_copy_entries")
+        return 6
+    }
+
+    io.println("PASS: std.coll.map_ops all assertions succeeded")
+    return 0
+}
+

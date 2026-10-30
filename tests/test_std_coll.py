@@ -72,6 +72,19 @@ def test_std_coll_map():
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.coll.map all assertions succeeded" in res.stdout
 
+def test_std_coll_map_ops():
+    test_vl = REPO_ROOT / "std" / "tests" / "coll" / "map_ops_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.coll.map_ops all assertions succeeded" in res.stdout
+
+
 
 
 
