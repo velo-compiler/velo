@@ -1,0 +1,127 @@
+// Unit test suite for std.fs.dir (pure Velo directory scanning & streaming).
+use sys.io
+use "../../str/slice.vl"
+use "../../mem/heap.vl"
+use "../../coll/shelf.vl"
+use "../../fs/stat.vl"
+use "../../fs/ops.vl"
+use "../../fs/dir.vl"
+
+act test_dir_iterator() -> bool {
+    mut dir_it = fs_dir_open("std")
+    if dir_it.h_find == DIR_INVALID_HANDLE or !dir_it.has_current {
+        return false
+    }
+
+    mut seen_io_vl = false
+    mut seen_mem_vl = false
+    mut seen_dot = false
+    mut total_entries: i32 = 0
+
+    mut active = true
+    loop active {
+        let name_sl = entry_name(@dir_it.current)
+        if slice_eq_str(name_sl, ".") or slice_eq_str(name_sl, "..") {
+            seen_dot = true
+        }
+        if slice_eq_str(name_sl, "io.vl") {
+            seen_io_vl = true
+            if !entry_is_file(@dir_it.current) { return false }
+        }
+        if slice_eq_str(name_sl, "mem.vl") {
+            seen_mem_vl = true
+            if !entry_is_file(@dir_it.current) { return false }
+        }
+        if slice_eq_str(name_sl, "fs") {
+            if !entry_is_dir(@dir_it.current) { return false }
+        }
+
+        total_entries += 1
+        let ok = fs_dir_next(@dir_it)
+        if !ok {
+            active = false
+        }
+    }
+
+    fs_dir_close(@dir_it)
+
+    if seen_dot { return false } // should have filtered . and ..
+    if !seen_io_vl or !seen_mem_vl { return false }
+    if total_entries < 5 { return false }
+
+    return true
+}
+
+act test_read_dir_names() -> bool {
+    let test_dir = "scratch/test_dir_scan"
+    fs_create_dir_all(test_dir)
+
+    let f1 = "scratch/test_dir_scan/item_one.txt"
+    let f2 = "scratch/test_dir_scan/item_two.txt"
+    let f3 = "scratch/test_dir_scan/item_three.txt"
+    fs_write_str(f1, "1")
+    fs_write_str(f2, "2")
+    fs_write_str(f3, "3")
+
+    // Collect names into a RawShelf
+    let shelf = shelf_create(16, 8) // sizeof(StrSlice) = 16 bytes
+    let ok = fs_read_dir_names(test_dir, @shelf)
+    if !ok or shelf.len != 3 {
+        fs_free_dir_names(@shelf)
+        fs_remove_file_str(f1)
+        fs_remove_file_str(f2)
+        fs_remove_file_str(f3)
+        fs_remove_dir_str(test_dir)
+        return false
+    }
+
+    mut seen1 = false
+    mut seen2 = false
+    mut seen3 = false
+    mut i: usize = 0
+    loop i < shelf.len {
+        let name = shelf_get_slice(@shelf, i)
+        if slice_eq_str(name, "item_one.txt") { seen1 = true }
+        if slice_eq_str(name, "item_two.txt") { seen2 = true }
+        if slice_eq_str(name, "item_three.txt") { seen3 = true }
+        i += 1
+    }
+
+    fs_free_dir_names(@shelf)
+
+    // Cleanup
+    fs_remove_file_str(f1)
+    fs_remove_file_str(f2)
+    fs_remove_file_str(f3)
+    fs_remove_dir_str(test_dir)
+
+    return seen1 and seen2 and seen3
+}
+
+act test_count_dir() -> bool {
+    let count = fs_count_dir("std")
+    if count < 5 { return false }
+
+    let missing = fs_count_dir("scratch/missing_dir_xyz_123")
+    if missing != 0 - 1 { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_dir_iterator() {
+        io.println("FAIL: test_dir_iterator")
+        return 1
+    }
+    if !test_read_dir_names() {
+        io.println("FAIL: test_read_dir_names")
+        return 2
+    }
+    if !test_count_dir() {
+        io.println("FAIL: test_count_dir")
+        return 3
+    }
+
+    io.println("PASS: std.fs.dir all assertions succeeded")
+    return 0
+}

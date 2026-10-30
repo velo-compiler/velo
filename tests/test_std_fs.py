@@ -36,3 +36,15 @@ def test_std_fs_ops():
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.fs.ops all assertions succeeded" in res.stdout
+
+def test_std_fs_dir():
+    test_vl = REPO_ROOT / "std" / "tests" / "fs" / "dir_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.fs.dir all assertions succeeded" in res.stdout

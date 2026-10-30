@@ -1217,3 +1217,19 @@ flowchart TD
 * **Verification**:
   - `bin/velo.exe run std/tests/fs/ops_test.vl` passed single directory creation and removal, recursive directory hierarchy creation (`fs_create_dir_all`), file writing/reading/removal, and file copying with rename/move.
   - `python -m pytest tests/test_std_fs.py` passed (2/2 passed in 1.17s).
+
+#### Task 6.4: Directory Scanning & Iteration (`std/fs/dir.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Scanning directory contents and listing child files/folders previously required C runtime wrappers (`opendir`, `readdir`, `closedir` from `dirent.h`) or platform compiler intrinsics, lacking a streaming pure-Velo iterator and shelf-collection collector.
+* **Fix Applied**:
+  - Implemented `std/fs/dir.vl` providing `data DirEntry` and `data DirIterator` backed directly by Win32 `FindFirstFileA`, `FindNextFileA`, and `FindClose` without `dirent.h`.
+  - Implemented automatic omission of `.` and `..` directory sentinels in iteration streams.
+  - Implemented stream iteration functions: `fs_dir_open`, `fs_dir_open_slice`, `fs_dir_next`, `fs_dir_entry`, and `fs_dir_close`.
+  - Implemented record inspection helpers: `entry_name`, `entry_name_cstr`, `entry_is_dir`, `entry_is_file`, and `entry_size`.
+  - Implemented high-level collectors: `fs_read_dir_names` (collecting entries into a `RawShelf`), `fs_free_dir_names`, and `fs_count_dir`.
+  - Added unit test suite `std/tests/fs/dir_test.vl` and pytest integration in `tests/test_std_fs.py`.
+* **Residual Limitation**:
+  - Standard library umbrella modules (`std/path.vl`, `std/fs.vl`) and driver resolution (`use std.path`, `use std.fs`) will be implemented in Task 6.5.
+* **Verification**:
+  - `bin/velo.exe run std/tests/fs/dir_test.vl` passed streaming directory iteration with automatic dotfile suppression, entry classification, collection into `RawShelf`, and item counting.
+  - `python -m pytest tests/test_std_fs.py` passed (3/3 passed in 1.85s).

@@ -1,0 +1,304 @@
+// Pure Velo directory scanning and iterator engine (zero C runtime dependencies).
+// Scans directories and streams directory entries directly via OS kernel services without dirent.h.
+use "../str/slice.vl"
+use "../mem/ops.vl"
+use "../mem/heap.vl"
+use "../coll/shelf.vl"
+
+// Win32 directory and file attribute constants
+let DIR_ATTR_DIRECTORY: u32 = 16
+let DIR_INVALID_HANDLE: usize = (0 - 1) as usize
+
+// Foreign interface to Windows kernel directory services
+extern act FindFirstFileA(lpFileName: @u8, lpFindFileData: @u8) -> usize
+extern act FindNextFileA(hFindFile: usize, lpFindFileData: @u8) -> i32
+extern act FindClose(hFindFile: usize) -> i32
+
+// Self-contained directory entry record
+data DirEntry {
+    name: @u8,
+    name_len: usize,
+    is_dir: bool,
+    is_file: bool,
+    size: i64,
+}
+
+// Directory stream iterator
+data DirIterator {
+    h_find: usize,
+    find_data: @u8,
+    has_current: bool,
+    current: DirEntry,
+}
+
+// Returns true if name is "." or ".."
+act dir_is_dot_or_dotdot(name: @u8) -> bool {
+    if name == null { return false }
+    if name[0] == 46 as u8 { // '.'
+        if name[1] == 0 as u8 { return true } // "."
+        if name[1] == 46 as u8 and name[2] == 0 as u8 { return true } // ".."
+    }
+    return false
+}
+
+// Extracts a DirEntry from raw WIN32_FIND_DATAA buffer
+act dir_populate_entry(find_data: @u8, out_entry: @DirEntry) {
+    if find_data == null or out_entry == null { return }
+
+    let p_u32 = find_data as @u32
+    let attrs = p_u32[0]
+    let is_dir = (attrs & DIR_ATTR_DIRECTORY) != 0 as u32
+    let is_file = !is_dir
+
+    let sz_high = p_u32[7] as i64
+    let sz_low = p_u32[8] as i64
+    let file_size: i64 = (sz_high << 32) | sz_low
+
+    let name_src = find_data + 44
+    let nlen = raw_str_len(name_src)
+
+    out_entry.name = name_src
+    out_entry.name_len = nlen
+    out_entry.is_dir = is_dir
+    out_entry.is_file = is_file
+    out_entry.size = file_size
+}
+
+// Opens a directory stream for iteration. Automatically skips "." and "..".
+act fs_dir_open(path: string) -> DirIterator {
+    if path == null {
+        return DirIterator {
+            h_find: DIR_INVALID_HANDLE,
+            find_data: null,
+            has_current: false,
+            current: DirEntry { name: null, name_len: 0, is_dir: false, is_file: false, size: 0 },
+        }
+    }
+    return fs_dir_open_slice(slice_from_str(path))
+}
+
+// Opens a directory stream from a StrSlice view.
+act fs_dir_open_slice(path: StrSlice) -> DirIterator {
+    if slice_is_empty(path) {
+        return DirIterator {
+            h_find: DIR_INVALID_HANDLE,
+            find_data: null,
+            has_current: false,
+            current: DirEntry { name: null, name_len: 0, is_dir: false, is_file: false, size: 0 },
+        }
+    }
+
+    // Allocate pattern buffer: path + "/*\0"
+    let plen = path.len
+    let pat = heap_alloc(plen + 4) as @u8
+    if pat == null {
+        return DirIterator {
+            h_find: DIR_INVALID_HANDLE,
+            find_data: null,
+            has_current: false,
+            current: DirEntry { name: null, name_len: 0, is_dir: false, is_file: false, size: 0 },
+        }
+    }
+
+    copy(pat, path.ptr, plen)
+    mut pos = plen
+    let last_c = path.ptr[plen - 1]
+    if last_c != 47 as u8 and last_c != 92 as u8 { // not '/' or '\\'
+        pat[pos] = 47 as u8 // '/'
+        pos += 1
+    }
+    pat[pos] = 42 as u8 // '*'
+    pos += 1
+    pat[pos] = 0 as u8
+
+    let find_data = heap_alloc(512)
+    if find_data == null {
+        heap_free(pat)
+        return DirIterator {
+            h_find: DIR_INVALID_HANDLE,
+            find_data: null,
+            has_current: false,
+            current: DirEntry { name: null, name_len: 0, is_dir: false, is_file: false, size: 0 },
+        }
+    }
+
+    let h = FindFirstFileA(pat, find_data)
+    heap_free(pat)
+
+    if h == DIR_INVALID_HANDLE {
+        heap_free(find_data)
+        return DirIterator {
+            h_find: DIR_INVALID_HANDLE,
+            find_data: null,
+            has_current: false,
+            current: DirEntry { name: null, name_len: 0, is_dir: false, is_file: false, size: 0 },
+        }
+    }
+
+    mut res_it = DirIterator {
+        h_find: h,
+        find_data: find_data,
+        has_current: false,
+        current: DirEntry { name: null, name_len: 0, is_dir: false, is_file: false, size: 0 },
+    }
+
+    // Advance past "." and ".."
+    mut found_valid = false
+    mut active = true
+    loop active {
+        let name_src = find_data + 44
+        if !dir_is_dot_or_dotdot(name_src) {
+            dir_populate_entry(find_data, @res_it.current)
+            found_valid = true
+            active = false
+        } else {
+            let ok = FindNextFileA(h, find_data)
+            if ok == 0 {
+                active = false
+            }
+        }
+    }
+
+    res_it.has_current = found_valid
+    return res_it
+}
+
+// Advances the directory iterator to the next entry. Returns true if an entry is available.
+act fs_dir_next(iter: @DirIterator) -> bool {
+    if iter == null or iter.h_find == DIR_INVALID_HANDLE or iter.find_data == null {
+        return false
+    }
+
+    mut active = true
+    mut found_valid = false
+    loop active {
+        let ok = FindNextFileA(iter.h_find, iter.find_data)
+        if ok == 0 {
+            active = false
+        } else {
+            let fd = iter.find_data
+            let name_src = fd + 44
+            if !dir_is_dot_or_dotdot(name_src) {
+                dir_populate_entry(iter.find_data, @iter.current)
+                found_valid = true
+                active = false
+            }
+        }
+    }
+
+    iter.has_current = found_valid
+    return found_valid
+}
+
+// Returns a pointer to the current entry of the iterator.
+act fs_dir_entry(iter: @DirIterator) -> @DirEntry {
+    if iter == null or !iter.has_current { return null }
+    return @iter.current
+}
+
+// Closes a directory iterator and releases OS resources.
+act fs_dir_close(iter: @DirIterator) {
+    if iter == null { return }
+    if iter.h_find != DIR_INVALID_HANDLE {
+        FindClose(iter.h_find)
+        iter.h_find = DIR_INVALID_HANDLE
+    }
+    if iter.find_data != null {
+        heap_free(iter.find_data)
+        iter.find_data = null
+    }
+    iter.has_current = false
+}
+
+// Returns a StrSlice view over the entry name.
+act entry_name(e: @DirEntry) -> StrSlice {
+    if e == null or e.name == null { return StrSlice { ptr: null, len: 0 } }
+    return slice_from_raw(e.name, e.name_len)
+}
+
+// Returns entry name as a null-terminated pointer.
+act entry_name_cstr(e: @DirEntry) -> @u8 {
+    if e == null { return null }
+    return e.name
+}
+
+// Returns true if the entry is a directory.
+act entry_is_dir(e: @DirEntry) -> bool {
+    if e == null { return false }
+    return e.is_dir
+}
+
+// Returns true if the entry is a regular file.
+act entry_is_file(e: @DirEntry) -> bool {
+    if e == null { return false }
+    return e.is_file
+}
+
+// Returns the file size of the entry in bytes.
+act entry_size(e: @DirEntry) -> i64 {
+    if e == null { return 0 }
+    return e.size
+}
+
+// High-level: Reads all entry names in a directory into a RawShelf of persistent StrSlice elements.
+act fs_read_dir_names(path: string, out_shelf: @RawShelf) -> bool {
+    if path == null or out_shelf == null { return false }
+    mut dir_it = fs_dir_open(path)
+    if dir_it.h_find == DIR_INVALID_HANDLE { return false }
+
+    if dir_it.has_current {
+        let sl = entry_name(@dir_it.current)
+        let copy_buf = heap_alloc(sl.len + 1)
+        if copy_buf != null {
+            copy(copy_buf, sl.ptr, sl.len)
+            copy_buf[sl.len] = 0 as u8
+            let saved_sl = slice_from_raw(copy_buf, sl.len)
+            shelf_push_slice(out_shelf, saved_sl)
+        }
+        loop fs_dir_next(@dir_it) {
+            let next_sl = entry_name(@dir_it.current)
+            let next_buf = heap_alloc(next_sl.len + 1)
+            if next_buf != null {
+                copy(next_buf, next_sl.ptr, next_sl.len)
+                next_buf[next_sl.len] = 0 as u8
+                let next_saved = slice_from_raw(next_buf, next_sl.len)
+                shelf_push_slice(out_shelf, next_saved)
+            }
+        }
+    }
+
+    fs_dir_close(@dir_it)
+    return true
+}
+
+// Frees all persistent name slices stored in out_shelf by fs_read_dir_names, then frees the shelf.
+act fs_free_dir_names(shelf: @RawShelf) {
+    if shelf == null { return }
+    mut i: usize = 0
+    loop i < shelf.len {
+        let sl = shelf_get_slice(shelf, i)
+        if sl.ptr != null {
+            heap_free(sl.ptr)
+        }
+        i += 1
+    }
+    shelf_free(shelf)
+}
+
+// High-level: Counts the number of entries in a directory (excluding . and ..).
+act fs_count_dir(path: string) -> i64 {
+    if path == null { return 0 - 1 }
+    mut dir_it = fs_dir_open(path)
+    if dir_it.h_find == DIR_INVALID_HANDLE { return 0 - 1 }
+
+    mut count: i64 = 0
+    if dir_it.has_current {
+        count += 1
+        loop fs_dir_next(@dir_it) {
+            count += 1
+        }
+    }
+
+    fs_dir_close(@dir_it)
+    return count
+}
