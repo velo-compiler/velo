@@ -1,0 +1,29 @@
+// Raw OS virtual memory page allocator for Velo.
+// Backed directly by OS kernel services (VirtualAlloc/VirtualFree on Windows).
+
+// Windows virtual memory constants
+let MEM_COMMIT: u32 = 4096
+let MEM_RESERVE: u32 = 8192
+let MEM_RELEASE: u32 = 32768
+let PAGE_READWRITE: u32 = 4
+
+// Foreign interface to OS virtual memory services
+extern act VirtualAlloc(lpAddress: @u8, dwSize: usize, flAllocationType: u32, flProtect: u32) -> @u8
+extern act VirtualFree(lpAddress: @u8, dwSize: usize, dwFreeType: u32) -> i32
+
+// Allocates raw zero-initialized virtual memory pages directly from the OS kernel.
+act os_page_alloc(size_bytes: usize) -> @u8 {
+    if size_bytes == 0 {
+        return null
+    }
+    return VirtualAlloc(null, size_bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
+}
+
+// Releases virtual memory pages previously allocated with os_page_alloc.
+act os_page_free(ptr: @u8, size_bytes: usize) -> bool {
+    if ptr == null {
+        return false
+    }
+    let res = VirtualFree(ptr, 0, MEM_RELEASE)
+    return res != 0
+}

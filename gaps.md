@@ -776,3 +776,25 @@ flowchart TD
   - Pytest full suite passed 100%.
   - Verified all 82 files in `src/**/*.vl` are $\le 348$ lines (`python scripts/count_lines.py`).
   - Verified zero UTF-8 BOM across all `.vl`, `.c`, and `.h` files.
+
+---
+
+## Phase 11: Foundational Pure-Velo Standard Library (`std.*`)
+
+### §11.1 Memory Subsystem Independence (`std.mem`)
+
+#### Task 1.1: Raw OS Virtual Page Allocator (`std/mem/page.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Memory allocation in Velo relied strictly on C standard library runtime facilities (`velo_mem_alloc` calling `malloc`/`free` or C-backed zone chunks in `runtime/velo_runtime.h`), preventing true systems independence from `libc`.
+  - There was no pure-Velo primitive for acquiring zero-initialized virtual memory pages directly from the underlying operating system kernel.
+* **Fix Applied**:
+  - Implemented `std/mem/page.vl` providing `os_page_alloc(size_bytes: usize) -> @u8` and `os_page_free(ptr: @u8, size_bytes: usize) -> bool`.
+  - Directly interfaces with OS kernel virtual memory services (`VirtualAlloc` with `MEM_COMMIT | MEM_RESERVE` and `VirtualFree` with `MEM_RELEASE` on Windows).
+  - Handles edge cases: `os_page_alloc(0)` safely returns `null`; `os_page_free(null, ...)` safely returns `false`.
+  - Added test program `tests/std_mem_page_test.vl` and pytest integration in `tests/test_std_mem.py`.
+* **Residual Limitation**:
+  - Direct Linux kernel `mmap`/`munmap` syscall abstraction will be unified alongside Windows `VirtualAlloc` when cross-platform conditional compilation lands.
+* **Verification**:
+  - `bin/velo.exe run tests/std_mem_page_test.vl` passed with all edge cases and read/write boundary assertions.
+  - `python -m pytest tests/test_std_mem.py` passed (1/1 passed).
+

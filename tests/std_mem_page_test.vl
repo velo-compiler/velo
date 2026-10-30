@@ -1,0 +1,51 @@
+use sys.io
+use "../std/mem/page.vl"
+
+act main() -> i32 {
+    // Edge case 1: zero-byte allocation returns null
+    let zero_page = os_page_alloc(0)
+    if zero_page != null {
+        io.println("FAIL: zero alloc did not return null")
+        return 1
+    }
+
+    // Edge case 2: null free returns false
+    let free_null = os_page_free(null, 0)
+    if free_null {
+        io.println("FAIL: free null returned true")
+        return 1
+    }
+
+    // Edge case 3: 64KB page allocation, read/write verification, and free
+    let size: usize = 65536
+    let page: @u8 = os_page_alloc(size)
+    if page == null {
+        io.println("FAIL: alloc null")
+        return 1
+    }
+
+    // Virtual memory pages returned by OS are guaranteed zero-initialized
+    if page[0] != 0 as u8 or page[size - 1] != 0 as u8 {
+        io.println("FAIL: memory not zero initialized")
+        return 1
+    }
+
+    // Write bytes at start, middle, and end
+    page[0] = 42 as u8
+    page[1000] = 99 as u8
+    page[size - 1] = 123 as u8
+
+    if page[0] != 42 as u8 or page[1000] != 99 as u8 or page[size - 1] != 123 as u8 {
+        io.println("FAIL: values mismatch")
+        return 1
+    }
+
+    let ok = os_page_free(page, size)
+    if not ok {
+        io.println("FAIL: free failed")
+        return 1
+    }
+
+    io.println("PASS: std.mem.page all assertions succeeded")
+    return 0
+}
