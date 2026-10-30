@@ -1,0 +1,56 @@
+// High-precision thread sleep and delays for Windows.
+// Backed directly by Win32 kernel services (Sleep) and high-resolution monotonic polling.
+use "clock.vl"
+use "duration.vl"
+
+extern act Sleep(dwMilliseconds: u32)
+
+// Suspends the calling thread for at least the specified milliseconds.
+act time_sleep_ms(ms: u32) {
+    Sleep(ms)
+}
+
+// Suspends the calling thread for at least the specified nanoseconds.
+// Uses a hybrid strategy: coarse Sleep for the bulk if duration >= 2ms,
+// followed by high-resolution monotonic polling for sub-millisecond precision.
+act time_sleep_ns(ns: u64) {
+    if ns == 0 as u64 {
+        return
+    }
+    let start = time_monotonic_ns()
+    let target = start + ns
+
+    // If sleeping for 2ms or longer, yield thread execution for the coarse portion
+    if ns >= 2000000 as u64 {
+        let coarse_ms = ((ns / 1000000) - 1) as u32
+        Sleep(coarse_ms)
+    }
+
+    // High-resolution spin wait for the remaining sub-millisecond portion
+    loop time_monotonic_ns() < target {
+    }
+}
+
+// Suspends the calling thread for at least the specified microseconds.
+act time_sleep_us(us: u64) {
+    time_sleep_ns(us * 1000)
+}
+
+// Suspends the calling thread for at least the specified floating-point seconds.
+act time_sleep_s(s: f64) {
+    if s <= 0.0 {
+        return
+    }
+    let ns = (s * 1000000000.0) as u64
+    time_sleep_ns(ns)
+}
+
+// Suspends the calling thread for the given Duration.
+act time_sleep_duration(d: Duration) {
+    time_sleep_ns(d.nanos)
+}
+
+// Yields the current thread's remaining timeslice to another ready thread.
+act time_yield() {
+    Sleep(0 as u32)
+}

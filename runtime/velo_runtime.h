@@ -846,7 +846,7 @@ static inline void velo_mutex_destroy(void* m) {
 #if defined(_WIN32)
 int __stdcall QueryPerformanceCounter(int64_t* counter);
 int __stdcall QueryPerformanceFrequency(int64_t* frequency);
-void __stdcall Sleep(unsigned long ms);
+void __stdcall Sleep(uint32_t ms);
 
 static inline i64 velo_time_now_us(void) {
     int64_t counter;

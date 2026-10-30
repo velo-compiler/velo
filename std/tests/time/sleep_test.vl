@@ -1,0 +1,72 @@
+// Unit test suite for std.time.sleep (thread sleep and delays).
+use "../../io/print.vl"
+use "../../time/clock.vl"
+use "../../time/duration.vl"
+use "../../time/sleep.vl"
+
+act test_sleep_ms() -> bool {
+    let start_ms = time_monotonic_ms()
+    time_sleep_ms(20 as u32)
+    let elapsed_ms = time_monotonic_ms() - start_ms
+
+    // OS sleep should have waited at least 15ms
+    if elapsed_ms < 15 as u64 {
+        return false
+    }
+    return true
+}
+
+act test_sleep_us() -> bool {
+    let start_us = time_monotonic_us()
+    time_sleep_us(1000 as u64)
+    let elapsed_us = time_monotonic_us() - start_us
+
+    // High-resolution delay should have waited at least 900us
+    if elapsed_us < 900 as u64 {
+        return false
+    }
+    return true
+}
+
+act test_sleep_duration() -> bool {
+    let d = duration_from_ms(15 as u64)
+    let start_ns = time_monotonic_ns()
+    time_sleep_duration(d)
+    let elapsed_ns = time_monotonic_ns() - start_ns
+
+    // At least 12ms (12,000,000 ns)
+    if elapsed_ns < 12000000 as u64 {
+        return false
+    }
+    return true
+}
+
+act test_yield() -> bool {
+    time_yield()
+    return true
+}
+
+act main() -> i32 {
+    if !test_sleep_ms() {
+        println_str("FAIL: test_sleep_ms")
+        return 1
+    }
+
+    if !test_sleep_us() {
+        println_str("FAIL: test_sleep_us")
+        return 2
+    }
+
+    if !test_sleep_duration() {
+        println_str("FAIL: test_sleep_duration")
+        return 3
+    }
+
+    if !test_yield() {
+        println_str("FAIL: test_yield")
+        return 4
+    }
+
+    println_str("PASS: std.time.sleep all tests passed")
+    return 0
+}

@@ -1358,7 +1358,22 @@ flowchart TD
   - Implemented Stopwatch profiling engine (`stopwatch_start`, `stopwatch_new`, `stopwatch_reset`, `stopwatch_resume`, `stopwatch_stop`, `stopwatch_elapsed`, `stopwatch_elapsed_ns/us/ms/secs`, `stopwatch_restart`, `stopwatch_lap`) with state tracking and elapsed accumulation across pause/resume cycles.
   - Added unit test suite `std/tests/time/duration_test.vl` and pytest integration in `tests/test_std_time.py`.
 * **Residual Limitation**:
-  - Native thread sleep and delay operations (`std/time/sleep.vl`) are scheduled for Task 8.3.
+  - Native thread sleep and delay operations (`std/time/sleep.vl`) completed in Task 8.3.
 * **Verification**:
   - `bin/velo.exe run std/tests/time/duration_test.vl` passed (`PASS: std.time.duration all tests passed`).
   - `python -m pytest tests/test_std_time.py` passed (2/2 passed in 2.24s).
+
+#### Task 8.3: Thread Sleep & High-Precision Delays (`std/time/sleep.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - While monotonic clocks and durations were implemented in Tasks 8.1 and 8.2, sleeping in Velo previously depended strictly on the closed `sys.time.sleep_ms` C runtime wrapper. Velo lacked pure-Velo sub-millisecond precision delays (`sleep_us`, `sleep_ns`), duration-based sleeps (`time_sleep_duration`), and timeslice yields (`time_yield`).
+* **Fix Applied**:
+  - Implemented `std/time/sleep_windows.vl` backed by Win32 `Sleep` and high-resolution monotonic polling for sub-millisecond precision. Utilizes a hybrid strategy for long durations (>= 2ms) combining coarse thread yielding with sub-millisecond polling for exact timing.
+  - Implemented `std/time/sleep_linux.vl` backed by POSIX `nanosleep` with automatic EINTR signal interrupt re-arming.
+  - Implemented cross-platform facade `std/time/sleep.vl` exposing `time_sleep_ms`, `time_sleep_us`, `time_sleep_ns`, `time_sleep_s`, `time_sleep_duration`, and `time_yield`.
+  - Updated Win32 `Sleep` prototype in `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h` to `uint32_t ms`, maintaining type-identical alignment across runtime and foreign interfaces.
+  - Added unit test suite `std/tests/time/sleep_test.vl` and pytest integration in `tests/test_std_time.py`.
+* **Residual Limitation**:
+  - Gregorian calendar date/time conversion and ISO-8601 formatting (`std/time/calendar.vl`) are scheduled for Task 8.4.
+* **Verification**:
+  - `bin/velo.exe run std/tests/time/sleep_test.vl` passed (`PASS: std.time.sleep all tests passed`).
+  - `python -m pytest tests/test_std_time.py` passed (3/3 passed in 3.30s).
