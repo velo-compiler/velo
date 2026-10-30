@@ -841,6 +841,24 @@ flowchart TD
   - `bin/velo.exe run std/tests/mem/slab_test.vl` passed block alignment clamping, LIFO recycling verification, and teardown assertions.
   - `python -m pytest tests/test_std_mem.py` passed (5/5 passed).
 
+#### Task 1.5: General Dynamic Heap Allocator (`std/mem/heap.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - General-purpose dynamic allocations of variable lifetime and sizes required the C runtime heap (`malloc`, `realloc`, `free`), preventing Velo from operating as an independent, standalone systems language free of `libc`.
+* **Fix Applied**:
+  - Implemented `std/mem/heap.vl` providing `data HeapHeader`, `heap_init(initial_bytes: usize)`, `heap_alloc(size: usize) -> @u8`, `heap_free(ptr: @u8)`, `heap_realloc(ptr: @u8, new_size: usize) -> @u8`, `heap_allocated_bytes() -> usize`, and `heap_total_capacity() -> usize`.
+  - Intrusive block management: 32-byte header with size, free flag, and next pointer, aligned to 8 bytes.
+  - First-fit allocation with block splitting when excess capacity is >= minimum block size (`HEAP_HEADER_SIZE + 8`).
+  - Adjacent free block coalescing on `heap_free` to combat external fragmentation.
+  - In-place expansion in `heap_realloc` when the adjacent next block is free and sufficiently large; otherwise allocates a new block, copies existing payload via `ops.copy`, and frees the old block.
+  - Dynamic heap growth: requests additional OS memory via `os_page_alloc` and links new chunks when active heap blocks cannot satisfy an allocation request.
+  - Added unit test suite `std/tests/mem/heap_test.vl` and pytest integration in `tests/test_std_mem.py`.
+* **Residual Limitation**:
+  - Segregated free-lists or buddy allocator binning can be added in future iterations for O(1) bin matching on large heaps.
+* **Verification**:
+  - `bin/velo.exe run std/tests/mem/heap_test.vl` passed arbitrary size allocations (16B, 120B, 2048B), realloc data preservation, adjacent block coalescing, block reuse, and dynamic chunk growth.
+  - `python -m pytest tests/test_std_mem.py` passed (6/6 passed in 1.83s).
+
+
 
 
 

@@ -1,0 +1,194 @@
+// Pure Velo general-purpose dynamic heap allocator (zero C library runtime dependencies).
+// Provides arbitrary-size heap_alloc, heap_realloc, and heap_free backed directly by OS virtual memory pages.
+// Features intrusive first-fit free-list, block splitting, adjacent block coalescing, and dynamic chunk expansion.
+use "page.vl"
+use "ops.vl"
+
+// Header preceding every allocated or free heap payload.
+data HeapHeader {
+    size: usize
+    is_free: bool
+    next: @HeapHeader
+}
+
+let HEAP_HEADER_SIZE: usize = 32
+
+mut g_heap_first: @HeapHeader = null
+mut g_heap_total_capacity: usize = 0
+mut g_heap_allocated_bytes: usize = 0
+
+// Initializes the global dynamic heap with an initial capacity in bytes (minimum 64KB).
+act heap_init(initial_bytes: usize) {
+    if g_heap_first != null {
+        return
+    }
+    mut cap = initial_bytes
+    if cap < 65536 {
+        cap = 65536
+    }
+    let raw = os_page_alloc(cap)
+    if raw == null {
+        return
+    }
+    let h: @HeapHeader = raw as @HeapHeader
+    h.size = cap - HEAP_HEADER_SIZE
+    h.is_free = true
+    h.next = null
+
+    g_heap_first = h
+    g_heap_total_capacity = cap
+    g_heap_allocated_bytes = 0
+}
+
+// Allocates an arbitrary-sized block of memory from the heap, aligned to 8 bytes.
+act heap_alloc(size: usize) -> @u8 {
+    if size == 0 {
+        return null
+    }
+    if g_heap_first == null {
+        heap_init(1048576) // default 1MB initial heap
+    }
+    if g_heap_first == null {
+        return null
+    }
+
+    let mask: usize = 7
+    let needed: usize = (size + mask) & ~mask
+
+    // 1. First-fit search across existing free blocks
+    mut cur = g_heap_first
+    loop cur != null {
+        if cur.is_free and cur.size >= needed {
+            // Split block if remaining space can hold another header + payload
+            if cur.size >= needed + HEAP_HEADER_SIZE + 16 {
+                let split_addr: usize = (cur as usize) + HEAP_HEADER_SIZE + needed
+                let new_block: @HeapHeader = split_addr as @HeapHeader
+                new_block.size = cur.size - needed - HEAP_HEADER_SIZE
+                new_block.is_free = true
+                new_block.next = cur.next
+
+                cur.next = new_block
+                cur.size = needed
+            }
+            cur.is_free = false
+            g_heap_allocated_bytes += cur.size
+            return ((cur as usize) + HEAP_HEADER_SIZE) as @u8
+        }
+        cur = cur.next
+    }
+
+    // 2. Free list exhausted: dynamically expand heap with a new OS page chunk
+    mut chunk_size: usize = needed + HEAP_HEADER_SIZE + 65536
+    let page_mask: usize = 65535
+    chunk_size = (chunk_size + page_mask) & ~page_mask
+    let new_chunk = os_page_alloc(chunk_size)
+    if new_chunk == null {
+        return null
+    }
+
+    let new_h: @HeapHeader = new_chunk as @HeapHeader
+    new_h.size = chunk_size - HEAP_HEADER_SIZE
+    new_h.is_free = true
+    new_h.next = g_heap_first
+    g_heap_first = new_h
+    g_heap_total_capacity += chunk_size
+
+    // Allocate from newly attached chunk
+    if new_h.size >= needed + HEAP_HEADER_SIZE + 16 {
+        let split_addr: usize = (new_h as usize) + HEAP_HEADER_SIZE + needed
+        let new_block: @HeapHeader = split_addr as @HeapHeader
+        new_block.size = new_h.size - needed - HEAP_HEADER_SIZE
+        new_block.is_free = true
+        new_block.next = new_h.next
+
+        new_h.next = new_block
+        new_h.size = needed
+    }
+    new_h.is_free = false
+    g_heap_allocated_bytes += new_h.size
+    return ((new_h as usize) + HEAP_HEADER_SIZE) as @u8
+}
+
+// Releases a previously allocated heap block and coalesces adjacent free blocks.
+act heap_free(ptr: @u8) {
+    if ptr == null or g_heap_first == null {
+        return
+    }
+    let h: @HeapHeader = ((ptr as usize) - HEAP_HEADER_SIZE) as @HeapHeader
+    if h.is_free {
+        return // double free guard
+    }
+    h.is_free = true
+    if g_heap_allocated_bytes >= h.size {
+        g_heap_allocated_bytes -= h.size
+    } else {
+        g_heap_allocated_bytes = 0
+    }
+
+    // Coalesce contiguous adjacent free blocks
+    mut cur = g_heap_first
+    loop cur != null and cur.next != null {
+        if cur.is_free and cur.next.is_free {
+            let next_addr = cur.next as usize
+            let expected_next = (cur as usize) + HEAP_HEADER_SIZE + cur.size
+            if next_addr == expected_next {
+                cur.size += HEAP_HEADER_SIZE + cur.next.size
+                cur.next = cur.next.next
+                continue
+            }
+        }
+        cur = cur.next
+    }
+}
+
+// Resizes a heap block to new_size, expanding in place if contiguous space permits
+// or reallocating and copying existing data.
+act heap_realloc(ptr: @u8, new_size: usize) -> @u8 {
+    if ptr == null {
+        return heap_alloc(new_size)
+    }
+    if new_size == 0 {
+        heap_free(ptr)
+        return null
+    }
+
+    let h: @HeapHeader = ((ptr as usize) - HEAP_HEADER_SIZE) as @HeapHeader
+    let mask: usize = 7
+    let needed: usize = (new_size + mask) & ~mask
+
+    if h.size >= needed {
+        return ptr
+    }
+
+    // Attempt in-place contiguous merge with next adjacent block if free
+    if h.next != null and h.next.is_free {
+        let next_addr = h.next as usize
+        let expected_next = (h as usize) + HEAP_HEADER_SIZE + h.size
+        if next_addr == expected_next and (h.size + HEAP_HEADER_SIZE + h.next.size >= needed) {
+            let added_capacity = HEAP_HEADER_SIZE + h.next.size
+            h.size += added_capacity
+            h.next = h.next.next
+            g_heap_allocated_bytes += added_capacity
+            return ptr
+        }
+    }
+
+    // Allocate new block, copy existing payload, and free old block
+    let new_ptr = heap_alloc(new_size)
+    if new_ptr == null {
+        return null
+    }
+    copy(new_ptr, ptr, h.size)
+    heap_free(ptr)
+    return new_ptr
+}
+
+// Returns the total number of currently allocated heap payload bytes.
+act heap_allocated_bytes() -> usize {
+    return g_heap_allocated_bytes
+}
+
+// Returns the total capacity in bytes of all OS chunks allocated for the heap.
+act heap_total_capacity() -> usize {
+    return g_heap_total_capacity
+}

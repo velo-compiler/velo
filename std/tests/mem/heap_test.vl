@@ -1,0 +1,94 @@
+use sys.io
+use "../../mem/heap.vl"
+
+act main() -> i32 {
+    heap_init(65536)
+
+    // 1. Edge case tests
+    let p_zero = heap_alloc(0)
+    if p_zero != null {
+        io.println("FAIL: heap_alloc(0) expected null")
+        return 1
+    }
+    heap_free(null) // must not crash
+
+    // 2. Arbitrary-sized allocations
+    let p1 = heap_alloc(16)
+    let p2 = heap_alloc(120)
+    let p3 = heap_alloc(2048)
+
+    if p1 == null or p2 == null or p3 == null {
+        io.println("FAIL: heap_alloc returned null")
+        return 1
+    }
+    if p1 == p2 or p2 == p3 or p1 == p3 {
+        io.println("FAIL: allocated blocks not distinct")
+        return 1
+    }
+
+    // Write patterns
+    p1[0] = 0xAA as u8
+    p2[0] = 0xBB as u8
+    p2[119] = 0xCC as u8
+    p3[0] = 0xDD as u8
+    p3[2047] = 0xEE as u8
+
+    // 3. Test heap_realloc
+    let p2_grown = heap_realloc(p2, 500)
+    if p2_grown == null {
+        io.println("FAIL: heap_realloc returned null")
+        return 1
+    }
+    // Verify data preservation
+    if p2_grown[0] != 0xBB as u8 or p2_grown[119] != 0xCC as u8 {
+        io.println("FAIL: heap_realloc data corrupted")
+        return 1
+    }
+
+    // 4. Test realloc with null acts like alloc
+    let p_null_realloc = heap_realloc(null, 64)
+    if p_null_realloc == null {
+        io.println("FAIL: heap_realloc(null, 64) failed")
+        return 1
+    }
+
+    // 5. Test realloc with 0 acts like free
+    let p_free_realloc = heap_realloc(p_null_realloc, 0)
+    if p_free_realloc != null {
+        io.println("FAIL: heap_realloc(ptr, 0) expected null")
+        return 1
+    }
+
+    // 6. Test free and coalescing
+    heap_free(p1)
+    heap_free(p2_grown)
+    heap_free(p3)
+
+    // Reallocate large block to verify coalesced space
+    let p_large = heap_alloc(60000)
+    if p_large == null {
+        io.println("FAIL: coalesced allocation failed")
+        return 1
+    }
+    p_large[0] = 0x12 as u8
+    p_large[59999] = 0x34 as u8
+    heap_free(p_large)
+
+    // 7. Test dynamic heap expansion across OS chunks
+    let b1 = heap_alloc(50000)
+    let b2 = heap_alloc(50000)
+    if b1 == null or b2 == null {
+        io.println("FAIL: dynamic expansion across OS chunks failed")
+        return 1
+    }
+    if heap_total_capacity() <= 65536 {
+        io.println("FAIL: total capacity was not expanded")
+        return 1
+    }
+
+    heap_free(b1)
+    heap_free(b2)
+
+    io.println("PASS: std.mem.heap all assertions succeeded")
+    return 0
+}
