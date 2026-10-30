@@ -1109,8 +1109,22 @@ flowchart TD
   - Implemented logical random access (`ring_get`, `ring_set`), peek helpers (`ring_peek`, `ring_peek_into`, `ring_peek_back`), bulk operations (`ring_copy_to`, `ring_drain`), and typed convenience helpers (`ring_put_i64`, `ring_pop_i64`, `ring_peek_i64`, `ring_put_u64`, `ring_pop_u64`, `ring_put_f64`, `ring_pop_f64`, `ring_put_slice`, `ring_pop_slice`).
   - Added comprehensive test suite `std/tests/coll/ring_test.vl` and pytest integration in `tests/test_std_coll.py`.
 * **Residual Limitation**:
-  - Pure Velo hash algorithms (`std/coll/hash.vl`) will be implemented in Task 5.4.
+  - Pure Velo hash algorithms (`std/coll/hash.vl`) have been implemented in Task 5.4.
 * **Verification**:
   - `bin/velo.exe run std/tests/coll/ring_test.vl` passed basic FIFO ordering; wrap-around boundary indexing and logical offsets; 1,000-element stress growth across wrapped head offsets; 4-way double-ended deque operations; bounded push and circular overwrite; bulk copy and drain; and typed float and slice handling.
   - `python -m pytest tests/test_std_coll.py` passed (3/3 passed).
+
+#### Task 5.4: Pure Velo Hash Algorithms (`std/coll/hash.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Hashing in Velo collections previously required C runtime implementations (`velo_map_fnv1a`) or compiler-internal routines, lacking a modular, pure-Velo hashing library with standard algorithms (FNV-1a, Murmur3, DJB2, SDBM, SplitMix64) and sentinel marking contracts for open-addressing hash tables.
+* **Fix Applied**:
+  - Implemented `std/coll/hash.vl` providing full suite of high-performance hashing algorithms: 64-bit and 32-bit FNV-1a (`hash_fnv1a`, `hash_fnv1a_with_seed`, `hash_fnv1a_32`, `hash_fnv1a_32_with_seed`), MurmurHash3 32-bit x86 (`hash_murmur3_32`), DJB2 (`hash_djb2`), SDBM (`hash_sdbm`), and SplitMix64 integer mixer (`hash_splitmix64`, `hash_u64`, `hash_i64`, `hash_u32`, `hash_i32`, `hash_ptr`).
+  - Implemented string, slice, and byte hashes: `hash_bytes`, `hash_str`, `hash_slice`, and Boost-style golden-ratio hash combination `hash_combine`.
+  - Implemented the Velo open-addressing hash table sentinel contract: `HASH_EMPTY` (0), `HASH_TOMBSTONE` (2), `hash_to_live_mark` (`h | 1`), `hash_is_live`, `hash_is_empty`, `hash_is_tombstone`, `hash_map_key`, and `hash_map_key_eq`.
+  - Added unit test suite `std/tests/coll/hash_test.vl` and pytest integration in `tests/test_std_coll.py`.
+* **Residual Limitation**:
+  - Open-addressing hash map (`std/coll/map.vl`) will be implemented in Task 5.5.
+* **Verification**:
+  - `bin/velo.exe run std/tests/coll/hash_test.vl` passed 64-bit and 32-bit FNV-1a known test vectors; MurmurHash3 32-bit test vectors; DJB2 and SDBM test vectors; SplitMix64 avalanche and integer hashing; string and slice consistency; non-commutative hash combination; map sentinel invariants; and integer/string map key hashing and equality.
+  - `python -m pytest tests/test_std_coll.py` passed (4/4 passed).
 

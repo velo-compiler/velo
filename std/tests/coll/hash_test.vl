@@ -1,0 +1,286 @@
+// Unit test suite for std.coll.hash (pure Velo high-performance hashing algorithms).
+use sys.io
+use "../../mem/ops.vl"
+use "../../str/slice.vl"
+use "../../coll/hash.vl"
+
+act test_fnv1a() -> bool {
+    // 64-bit empty vector test
+    let h_empty64 = hash_fnv1a(null, 0)
+    if h_empty64 != 0xcbf29ce484222325 as u64 {
+        return false
+    }
+
+    // 64-bit known test vector: "foobar" -> 0x85944171f73967e8
+    let s_foobar = "foobar"
+    let h_foobar64 = hash_fnv1a(s_foobar as @u8, 6)
+    if h_foobar64 != 0x85944171f73967e8 as u64 {
+        return false
+    }
+
+    // 32-bit empty vector test
+    let h_empty32 = hash_fnv1a_32(null, 0)
+    if h_empty32 != 0x811c9dc5 as u32 {
+        return false
+    }
+
+    // 32-bit known test vector: "foobar" -> 0xbf9cf968
+    let h_foobar32 = hash_fnv1a_32(s_foobar as @u8, 6)
+    if h_foobar32 != 0xbf9cf968 as u32 {
+        return false
+    }
+
+    // Custom seed test
+    let h_seed = hash_fnv1a_with_seed(s_foobar as @u8, 6, 12345 as u64)
+    if h_seed == h_foobar64 or h_seed == 0 as u64 {
+        return false
+    }
+
+    return true
+}
+
+act test_murmur3() -> bool {
+    // Seed return on empty
+    let h_empty = hash_murmur3_32(null, 0, 42 as u32)
+    if h_empty != 42 as u32 {
+        return false
+    }
+
+    // Known test vector 1: "hello" seed 0 -> 0x248bfa47
+    let s_hello = "hello"
+    let h_hello = hash_murmur3_32(s_hello as @u8, 5, 0 as u32)
+    if h_hello != 0x248bfa47 as u32 {
+        return false
+    }
+
+    // Known test vector 2: "abc" seed 0 -> 0xb3dd93fa
+    let s_abc = "abc"
+    let h_abc = hash_murmur3_32(s_abc as @u8, 3, 0 as u32)
+    if h_abc != 0xb3dd93fa as u32 {
+        return false
+    }
+
+    // Different seed produces different hash
+    let h_hello_seeded = hash_murmur3_32(s_hello as @u8, 5, 999 as u32)
+    if h_hello_seeded == h_hello {
+        return false
+    }
+
+    return true
+}
+
+act test_djb2_and_sdbm() -> bool {
+    // DJB2 empty
+    if hash_djb2(null, 0) != 5381 as u64 {
+        return false
+    }
+
+    // DJB2 "hello" -> 0x310f923099
+    let s = "hello"
+    let h_djb2 = hash_djb2(s as @u8, 5)
+    if h_djb2 != 0x310f923099 as u64 {
+        return false
+    }
+
+    // SDBM empty
+    if hash_sdbm(null, 0) != 0 as u64 {
+        return false
+    }
+
+    // SDBM "hello" -> 0x66eb1bb328d19932
+    let h_sdbm = hash_sdbm(s as @u8, 5)
+    if h_sdbm != 0x66eb1bb328d19932 as u64 {
+        return false
+    }
+
+    return true
+}
+
+act test_integer_hashes() -> bool {
+    // SplitMix64 avalanche
+    let h0 = hash_u64(0 as u64)
+    let h1 = hash_u64(1 as u64)
+    let h2 = hash_u64(2 as u64)
+    if h0 == h1 or h1 == h2 or h0 == 0 as u64 {
+        return false
+    }
+
+    // Signed i64
+    let hi_pos = hash_i64(42)
+    let hi_neg = hash_i64(-42)
+    if hi_pos == hi_neg {
+        return false
+    }
+
+    // 32-bit integers
+    let hu32_0 = hash_u32(0 as u32)
+    let hu32_1 = hash_u32(1 as u32)
+    if hu32_0 == hu32_1 or hu32_0 == 0 as u32 {
+        return false
+    }
+
+    let hi32_pos = hash_i32(100)
+    let hi32_neg = hash_i32(-100)
+    if hi32_pos == hi32_neg {
+        return false
+    }
+
+    // Pointer hashing
+    let ptr_null = hash_ptr(null)
+    if ptr_null == 0 as u64 {
+        return false
+    }
+
+    return true
+}
+
+act test_string_and_slice() -> bool {
+    let s = "velo_standard_library"
+    let h_str = hash_str(s)
+    let h_slice = hash_slice(slice_from_str(s))
+    let h_bytes = hash_bytes(s as @u8, slice_from_str(s).len)
+
+    if h_str != h_slice or h_str != h_bytes {
+        return false
+    }
+
+    let h_other = hash_str("other_library")
+    if h_str == h_other {
+        return false
+    }
+
+    if hash_str(null) != 0 as u64 {
+        return false
+    }
+
+    return true
+}
+
+act test_hash_combine() -> bool {
+    let h1 = hash_str("firstname")
+    let h2 = hash_str("lastname")
+
+    let combo1 = hash_combine(h1, h2)
+    let combo2 = hash_combine(h2, h1)
+
+    // Order dependence: hash_combine(a, b) != hash_combine(b, a)
+    if combo1 == combo2 {
+        return false
+    }
+
+    // Deterministic
+    if hash_combine(h1, h2) != combo1 {
+        return false
+    }
+
+    return true
+}
+
+act test_map_sentinels() -> bool {
+    if HASH_EMPTY != 0 as u64 { return false }
+    if HASH_TOMBSTONE != 2 as u64 { return false }
+
+    if !hash_is_empty(HASH_EMPTY) { return false }
+    if hash_is_empty(HASH_TOMBSTONE) { return false }
+    if hash_is_empty(1 as u64) { return false }
+
+    if !hash_is_tombstone(HASH_TOMBSTONE) { return false }
+    if hash_is_tombstone(HASH_EMPTY) { return false }
+    if hash_is_tombstone(3 as u64) { return false }
+
+    // Live marks must be odd (>= 1), never 0 (empty), never 2 (tombstone)
+    mut x: u64 = 0 as u64
+    loop x < 10 {
+        let lm = hash_to_live_mark(x)
+        if !hash_is_live(lm) { return false }
+        if hash_is_empty(lm) { return false }
+        if hash_is_tombstone(lm) { return false }
+        if (lm & (1 as u64)) == (0 as u64) { return false }
+        x += 1
+    }
+
+    return true
+}
+
+act test_map_key_helpers() -> bool {
+    // Integer key hashing and equality
+    mut k1: i64 = 12345
+    mut k2: i64 = 12345
+    mut k3: i64 = 67890
+
+    let pk1: @i64 = @k1
+    let pk2: @i64 = @k2
+    let pk3: @i64 = @k3
+
+    let hk1 = hash_map_key(pk1 as @u8, 8, false)
+    let hk2 = hash_map_key(pk2 as @u8, 8, false)
+    let hk3 = hash_map_key(pk3 as @u8, 8, false)
+
+    if hk1 != hk2 { return false }
+    if hk1 == hk3 { return false }
+    if !hash_is_live(hk1) { return false }
+
+    if !hash_map_key_eq(pk1 as @u8, pk2 as @u8, 8, false) { return false }
+    if hash_map_key_eq(pk1 as @u8, pk3 as @u8, 8, false) { return false }
+
+    // String key hashing and equality
+    mut s1: string = "key_apple"
+    mut s2: string = "key_apple"
+    mut s3: string = "key_orange"
+
+    let ps1: @string = @s1
+    let ps2: @string = @s2
+    let ps3: @string = @s3
+
+    let h_s1 = hash_map_key(ps1 as @u8, 8, true)
+    let h_s2 = hash_map_key(ps2 as @u8, 8, true)
+    let h_s3 = hash_map_key(ps3 as @u8, 8, true)
+
+    if h_s1 != h_s2 { return false }
+    if h_s1 == h_s3 { return false }
+    if !hash_is_live(h_s1) { return false }
+
+    if !hash_map_key_eq(ps1 as @u8, ps2 as @u8, 8, true) { return false }
+    if hash_map_key_eq(ps1 as @u8, ps3 as @u8, 8, true) { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_fnv1a() {
+        io.println("FAIL: test_fnv1a")
+        return 1
+    }
+    if !test_murmur3() {
+        io.println("FAIL: test_murmur3")
+        return 2
+    }
+    if !test_djb2_and_sdbm() {
+        io.println("FAIL: test_djb2_and_sdbm")
+        return 3
+    }
+    if !test_integer_hashes() {
+        io.println("FAIL: test_integer_hashes")
+        return 4
+    }
+    if !test_string_and_slice() {
+        io.println("FAIL: test_string_and_slice")
+        return 5
+    }
+    if !test_hash_combine() {
+        io.println("FAIL: test_hash_combine")
+        return 6
+    }
+    if !test_map_sentinels() {
+        io.println("FAIL: test_map_sentinels")
+        return 7
+    }
+    if !test_map_key_helpers() {
+        io.println("FAIL: test_map_key_helpers")
+        return 8
+    }
+
+    io.println("PASS: std.coll.hash all assertions succeeded")
+    return 0
+}
+
