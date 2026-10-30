@@ -1,0 +1,347 @@
+// Pure Velo circular FIFO ring buffer and double-ended queue (zero C runtime dependencies).
+// Backed by std.mem.heap_alloc and std.mem.heap_free with power-of-two wrap masking.
+// Supports O(1) front/back enqueue/dequeue, dynamic geometric capacity expansion,
+// bounded enqueuing, circular overwrite mode, and bulk unrolled copy/drain.
+
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+use "../str/slice.vl"
+
+// Raw ring buffer descriptor storing elements of uniform size in a circular buffer.
+data RawRing {
+    data: @u8
+    elem_size: usize
+    cap: usize
+    head: usize
+    len: usize
+}
+
+// Rounds n up to the next power of 2, minimum 8.
+act ring_round_pow2(n: usize) -> usize {
+    mut cap: usize = 8
+    loop cap < n {
+        cap = cap * 2
+    }
+    return cap
+}
+
+// Creates a new RawRing for elements of elem_size bytes with initial capacity.
+act ring_create(elem_size: usize, initial_cap: usize) -> RawRing {
+    mut sz = elem_size
+    if sz == 0 { sz = 1 }
+    mut cap = initial_cap
+    if cap < 8 {
+        cap = 8
+    } else {
+        cap = ring_round_pow2(cap)
+    }
+    let mem = heap_alloc(sz * cap)
+    return RawRing {
+        data: mem,
+        elem_size: sz,
+        cap: cap,
+        head: 0,
+        len: 0,
+    }
+}
+
+// Frees the underlying memory buffer and resets the ring to empty.
+act ring_free(r: @RawRing) {
+    if r == null { return }
+    if r.data != null {
+        heap_free(r.data)
+        r.data = null
+    }
+    r.len = 0
+    r.cap = 0
+    r.head = 0
+}
+
+// Clears all elements from the ring without releasing allocated buffer.
+act ring_clear(r: @RawRing) {
+    if r == null { return }
+    r.len = 0
+    r.head = 0
+}
+
+act ring_len(r: @RawRing) -> usize {
+    if r == null { return 0 }
+    return r.len
+}
+
+act ring_cap(r: @RawRing) -> usize {
+    if r == null { return 0 }
+    return r.cap
+}
+
+act ring_is_empty(r: @RawRing) -> bool {
+    if r == null { return true }
+    return r.len == 0
+}
+
+act ring_is_full(r: @RawRing) -> bool {
+    if r == null { return false }
+    return r.len >= r.cap and r.cap > 0
+}
+
+// Ensures capacity for at least needed_extra additional elements.
+// Unrolls circular data into linear order starting at slot 0 in the new buffer.
+act ring_ensure_capacity(r: @RawRing, needed_extra: usize) -> bool {
+    if r == null { return false }
+    if r.elem_size == 0 { r.elem_size = 8 }
+    let required = r.len + needed_extra
+    if required <= r.cap and r.data != null {
+        return true
+    }
+
+    mut new_cap = r.cap * 2
+    if new_cap < required {
+        new_cap = ring_round_pow2(required)
+    }
+    if new_cap < 8 { new_cap = 8 }
+
+    let new_data = heap_alloc(new_cap * r.elem_size)
+    if new_data == null { return false }
+
+    if r.data != null and r.len > 0 {
+        let first_chunk = r.cap - r.head
+        if first_chunk >= r.len {
+            let src = (r.data as usize + r.head * r.elem_size) as @u8
+            copy(new_data, src, r.len * r.elem_size)
+        } else {
+            let src1 = (r.data as usize + r.head * r.elem_size) as @u8
+            copy(new_data, src1, first_chunk * r.elem_size)
+            let rem = r.len - first_chunk
+            let dst2 = (new_data as usize + first_chunk * r.elem_size) as @u8
+            copy(dst2, r.data, rem * r.elem_size)
+        }
+        heap_free(r.data)
+    }
+
+    r.data = new_data
+    r.cap = new_cap
+    r.head = 0
+    return true
+}
+
+// Enqueues an element pointed to by elem_ptr at the back of the ring, auto-growing if full.
+act ring_put(r: @RawRing, elem_ptr: @u8) -> bool {
+    if r == null or elem_ptr == null { return false }
+    if r.data == null or r.len >= r.cap {
+        if not ring_ensure_capacity(r, 1) { return false }
+    }
+    let slot = (r.head + r.len) & (r.cap - 1)
+    let offset = slot * r.elem_size
+    let dest = (r.data as usize + offset) as @u8
+    copy(dest, elem_ptr, r.elem_size)
+    r.len += 1
+    return true
+}
+
+act ring_push(r: @RawRing, elem_ptr: @u8) -> bool {
+    return ring_put(r, elem_ptr)
+}
+
+// Prepends an element to the front of the ring, auto-growing if full.
+act ring_push_front(r: @RawRing, elem_ptr: @u8) -> bool {
+    if r == null or elem_ptr == null { return false }
+    if r.data == null or r.len >= r.cap {
+        if not ring_ensure_capacity(r, 1) { return false }
+    }
+    r.head = (r.head + r.cap - 1) & (r.cap - 1)
+    let offset = r.head * r.elem_size
+    let dest = (r.data as usize + offset) as @u8
+    copy(dest, elem_ptr, r.elem_size)
+    r.len += 1
+    return true
+}
+
+// Enqueues an element only if the ring has unused capacity (does not allocate/grow).
+act ring_push_bounded(r: @RawRing, elem_ptr: @u8) -> bool {
+    if r == null or elem_ptr == null or r.data == null { return false }
+    if r.len >= r.cap { return false }
+    let slot = (r.head + r.len) & (r.cap - 1)
+    let offset = slot * r.elem_size
+    let dest = (r.data as usize + offset) as @u8
+    copy(dest, elem_ptr, r.elem_size)
+    r.len += 1
+    return true
+}
+
+// Overwrite mode: enqueues at back, overwriting and discarding the oldest element if full.
+act ring_put_overwrite(r: @RawRing, elem_ptr: @u8) -> bool {
+    if r == null or elem_ptr == null { return false }
+    if r.data == null or r.cap == 0 {
+        if not ring_ensure_capacity(r, 1) { return false }
+    }
+    let slot = (r.head + r.len) & (r.cap - 1)
+    let offset = slot * r.elem_size
+    let dest = (r.data as usize + offset) as @u8
+    copy(dest, elem_ptr, r.elem_size)
+    if r.len < r.cap {
+        r.len += 1
+    } else {
+        r.head = (r.head + 1) & (r.cap - 1)
+    }
+    return true
+}
+
+// Dequeues the front element from the ring into out_elem (drops if out_elem is null).
+act ring_pop(r: @RawRing, out_elem: @u8) -> bool {
+    if r == null or r.len == 0 or r.data == null { return false }
+    if out_elem != null {
+        let offset = r.head * r.elem_size
+        let src = (r.data as usize + offset) as @u8
+        copy(out_elem, src, r.elem_size)
+    }
+    r.head = (r.head + 1) & (r.cap - 1)
+    r.len -= 1
+    return true
+}
+
+act ring_pop_front(r: @RawRing, out_elem: @u8) -> bool {
+    return ring_pop(r, out_elem)
+}
+
+// Dequeues the back element from the ring into out_elem.
+act ring_pop_back(r: @RawRing, out_elem: @u8) -> bool {
+    if r == null or r.len == 0 or r.data == null { return false }
+    let tail_slot = (r.head + r.len - 1) & (r.cap - 1)
+    if out_elem != null {
+        let offset = tail_slot * r.elem_size
+        let src = (r.data as usize + offset) as @u8
+        copy(out_elem, src, r.elem_size)
+    }
+    r.len -= 1
+    return true
+}
+
+// Returns a direct pointer to the front element without dequeuing it, or null if empty.
+act ring_peek(r: @RawRing) -> @u8 {
+    if r == null or r.len == 0 or r.data == null { return null }
+    let offset = r.head * r.elem_size
+    return (r.data as usize + offset) as @u8
+}
+
+// Copies the front element into out_elem without dequeuing it.
+act ring_peek_into(r: @RawRing, out_elem: @u8) -> bool {
+    if r == null or r.len == 0 or r.data == null or out_elem == null { return false }
+    let offset = r.head * r.elem_size
+    let src = (r.data as usize + offset) as @u8
+    copy(out_elem, src, r.elem_size)
+    return true
+}
+
+// Returns a direct pointer to the back element without dequeuing it, or null if empty.
+act ring_peek_back(r: @RawRing) -> @u8 {
+    if r == null or r.len == 0 or r.data == null { return null }
+    let tail_slot = (r.head + r.len - 1) & (r.cap - 1)
+    let offset = tail_slot * r.elem_size
+    return (r.data as usize + offset) as @u8
+}
+
+// Returns a direct pointer to the element at logical offset index (0 <= index < len).
+act ring_get(r: @RawRing, index: usize) -> @u8 {
+    if r == null or r.data == null or index >= r.len { return null }
+    let slot = (r.head + index) & (r.cap - 1)
+    let offset = slot * r.elem_size
+    return (r.data as usize + offset) as @u8
+}
+
+// Overwrites the element at logical offset index (0 <= index < len).
+act ring_set(r: @RawRing, index: usize, elem_ptr: @u8) -> bool {
+    if r == null or r.data == null or elem_ptr == null or index >= r.len { return false }
+    let slot = (r.head + index) & (r.cap - 1)
+    let offset = slot * r.elem_size
+    let dest = (r.data as usize + offset) as @u8
+    copy(dest, elem_ptr, r.elem_size)
+    return true
+}
+
+// Copies all elements in logical FIFO order into a contiguous destination buffer.
+act ring_copy_to(r: @RawRing, dest: @u8) -> usize {
+    if r == null or dest == null or r.len == 0 or r.data == null { return 0 }
+    let first_chunk = r.cap - r.head
+    if first_chunk >= r.len {
+        let src = (r.data as usize + r.head * r.elem_size) as @u8
+        copy(dest, src, r.len * r.elem_size)
+    } else {
+        let src1 = (r.data as usize + r.head * r.elem_size) as @u8
+        copy(dest, src1, first_chunk * r.elem_size)
+        let rem = r.len - first_chunk
+        let dst2 = (dest as usize + first_chunk * r.elem_size) as @u8
+        copy(dst2, r.data, rem * r.elem_size)
+    }
+    return r.len
+}
+
+// Dequeues up to max_elems elements directly into a contiguous destination buffer.
+act ring_drain(r: @RawRing, dest: @u8, max_elems: usize) -> usize {
+    if r == null or dest == null or r.len == 0 or max_elems == 0 or r.data == null {
+        return 0
+    }
+    mut count = max_elems
+    if count > r.len { count = r.len }
+    mut i: usize = 0
+    loop i < count {
+        let slot = (r.head + i) & (r.cap - 1)
+        let src = (r.data as usize + slot * r.elem_size) as @u8
+        let dst = (dest as usize + i * r.elem_size) as @u8
+        copy(dst, src, r.elem_size)
+        i += 1
+    }
+    r.head = (r.head + count) & (r.cap - 1)
+    r.len -= count
+    return count
+}
+
+// --- Typed convenience helpers ---
+
+act ring_put_i64(r: @RawRing, val: i64) -> bool {
+    mut v = val
+    let pv: @i64 = @v
+    return ring_put(r, pv as @u8)
+}
+
+act ring_pop_i64(r: @RawRing, out_val: @i64) -> bool {
+    if out_val == null { return ring_pop(r, null) }
+    return ring_pop(r, out_val as @u8)
+}
+
+act ring_peek_i64(r: @RawRing, out_val: @i64) -> bool {
+    if out_val == null { return false }
+    return ring_peek_into(r, out_val as @u8)
+}
+
+act ring_put_u64(r: @RawRing, val: u64) -> bool {
+    mut v = val
+    let pv: @u64 = @v
+    return ring_put(r, pv as @u8)
+}
+
+act ring_pop_u64(r: @RawRing, out_val: @u64) -> bool {
+    if out_val == null { return ring_pop(r, null) }
+    return ring_pop(r, out_val as @u8)
+}
+
+act ring_put_f64(r: @RawRing, val: f64) -> bool {
+    mut v = val
+    let pv: @f64 = @v
+    return ring_put(r, pv as @u8)
+}
+
+act ring_pop_f64(r: @RawRing, out_val: @f64) -> bool {
+    if out_val == null { return ring_pop(r, null) }
+    return ring_pop(r, out_val as @u8)
+}
+
+act ring_put_slice(r: @RawRing, s: StrSlice) -> bool {
+    mut temp = s
+    let pt: @StrSlice = @temp
+    return ring_put(r, pt as @u8)
+}
+
+act ring_pop_slice(r: @RawRing, out_slice: @StrSlice) -> bool {
+    if out_slice == null { return ring_pop(r, null) }
+    return ring_pop(r, out_slice as @u8)
+}

@@ -1,0 +1,354 @@
+// Unit test suite for std.coll.ring (pure Velo circular FIFO ring buffer & deque).
+use sys.io
+use "../../mem/page.vl"
+use "../../mem/heap.vl"
+use "../../str/slice.vl"
+use "../../coll/ring.vl"
+
+act test_basic_fifo() -> bool {
+    mut r = ring_create(8, 4)
+    if ring_cap(@r) != 8 or ring_len(@r) != 0 or !ring_is_empty(@r) {
+        ring_free(@r); return false
+    }
+
+    if !ring_put_i64(@r, 11) { ring_free(@r); return false }
+    if !ring_put_i64(@r, 22) { ring_free(@r); return false }
+    if !ring_put_i64(@r, 33) { ring_free(@r); return false }
+    if !ring_put_i64(@r, 44) { ring_free(@r); return false }
+    if !ring_put_i64(@r, 55) { ring_free(@r); return false }
+
+    if ring_len(@r) != 5 or ring_is_empty(@r) {
+        ring_free(@r); return false
+    }
+
+    mut peeked: i64 = 0
+    if !ring_peek_i64(@r, @peeked) or peeked != 11 {
+        ring_free(@r); return false
+    }
+
+    mut val: i64 = 0
+    if !ring_pop_i64(@r, @val) or val != 11 { ring_free(@r); return false }
+    if !ring_pop_i64(@r, @val) or val != 22 { ring_free(@r); return false }
+    if !ring_pop_i64(@r, @val) or val != 33 { ring_free(@r); return false }
+    if !ring_pop_i64(@r, @val) or val != 44 { ring_free(@r); return false }
+    if !ring_pop_i64(@r, @val) or val != 55 { ring_free(@r); return false }
+
+    if ring_len(@r) != 0 or !ring_is_empty(@r) {
+        ring_free(@r); return false
+    }
+
+    if ring_pop_i64(@r, @val) {
+        ring_free(@r); return false
+    }
+
+    ring_free(@r)
+    return r.data == null and r.len == 0 and r.cap == 0
+}
+
+act test_wrap_around_and_indexing() -> bool {
+    mut r = ring_create(8, 8)
+
+    // Enqueue 6 elements: 10, 20, 30, 40, 50, 60
+    mut i: i64 = 1
+    loop i <= 6 {
+        ring_put_i64(@r, i * 10)
+        i += 1
+    }
+
+    // Dequeue 4 elements: 10, 20, 30, 40 -> head moves to index 4
+    mut val: i64 = 0
+    i = 1
+    loop i <= 4 {
+        if !ring_pop_i64(@r, @val) or val != i * 10 {
+            ring_free(@r); return false
+        }
+        i += 1
+    }
+    if ring_len(@r) != 2 { ring_free(@r); return false }
+
+    // Enqueue 5 more elements: 70, 80, 90, 100, 110 -> slots wrap around 7 -> 0, 1, 2
+    i = 7
+    loop i <= 11 {
+        ring_put_i64(@r, i * 10)
+        i += 1
+    }
+    if ring_len(@r) != 7 { ring_free(@r); return false }
+
+    // Check logical indexing across wrap boundary
+    let p0 = ring_get(@r, 0)
+    let p1 = ring_get(@r, 1)
+    let p2 = ring_get(@r, 2)
+    let p6 = ring_get(@r, 6)
+    if p0 == null or p1 == null or p2 == null or p6 == null {
+        ring_free(@r); return false
+    }
+    let pi0 = p0 as @i64
+    let pi1 = p1 as @i64
+    let pi2 = p2 as @i64
+    let pi6 = p6 as @i64
+    if pi0[0] != 50 or pi1[0] != 60 or pi2[0] != 70 or pi6[0] != 110 {
+        ring_free(@r); return false
+    }
+
+    // Test ring_set: modify logical index 2 (70 -> 77)
+    mut new_val: i64 = 77
+    let p_nv: @i64 = @new_val
+    if !ring_set(@r, 2, p_nv as @u8) { ring_free(@r); return false }
+    if pi2[0] != 77 { ring_free(@r); return false }
+
+    // Test ring_peek_back: should be 110
+    let pb = ring_peek_back(@r)
+    if pb == null { ring_free(@r); return false }
+    let pib = pb as @i64
+    if pib[0] != 110 { ring_free(@r); return false }
+
+    // Pop all remaining 7 elements and verify order: 50, 60, 77, 80, 90, 100, 110
+    if !ring_pop_i64(@r, @val) or val != 50 { ring_free(@r); return false }
+    if !ring_pop_i64(@r, @val) or val != 60 { ring_free(@r); return false }
+    if !ring_pop_i64(@r, @val) or val != 77 { ring_free(@r); return false }
+    if !ring_pop_i64(@r, @val) or val != 80 { ring_free(@r); return false }
+    if !ring_pop_i64(@r, @val) or val != 90 { ring_free(@r); return false }
+    if !ring_pop_i64(@r, @val) or val != 100 { ring_free(@r); return false }
+    if !ring_pop_i64(@r, @val) or val != 110 { ring_free(@r); return false }
+
+    ring_free(@r)
+    return true
+}
+
+act test_stress_growth_across_wrap() -> bool {
+    mut r = ring_create(8, 8)
+
+    // Offset head by 5
+    mut i: i64 = 1
+    loop i <= 5 { ring_put_i64(@r, i); i += 1 }
+    mut v: i64 = 0
+    loop ring_len(@r) > 0 { ring_pop_i64(@r, @v) }
+
+    // Now head is at 5. Enqueue 1,000 items (1001..2000), forcing multiple reallocations with head != 0
+    i = 1001
+    loop i <= 2000 {
+        if !ring_put_i64(@r, i) { ring_free(@r); return false }
+        i += 1
+    }
+    if ring_len(@r) != 1000 { ring_free(@r); return false }
+
+    // Pop 500 items and verify values 1001..1500
+    i = 1001
+    loop i <= 1500 {
+        if !ring_pop_i64(@r, @v) or v != i { ring_free(@r); return false }
+        i += 1
+    }
+    if ring_len(@r) != 500 { ring_free(@r); return false }
+
+    // Push 500 more items (2001..2500)
+    i = 2001
+    loop i <= 2500 {
+        if !ring_put_i64(@r, i) { ring_free(@r); return false }
+        i += 1
+    }
+    if ring_len(@r) != 1000 { ring_free(@r); return false }
+
+    // Pop all remaining 1,000 items and verify values 1501..2500
+    i = 1501
+    loop i <= 2500 {
+        if !ring_pop_i64(@r, @v) or v != i { ring_free(@r); return false }
+        i += 1
+    }
+    if ring_len(@r) != 0 or !ring_is_empty(@r) {
+        ring_free(@r); return false
+    }
+
+    ring_free(@r)
+    return true
+}
+
+act test_deque_operations() -> bool {
+    mut r = ring_create(8, 8)
+
+    // Interleave front and back pushes
+    mut v20: i64 = 20
+    let pv20: @i64 = @v20
+    ring_push_front(@r, pv20 as @u8) // [20]
+    ring_put_i64(@r, 30)             // [20, 30]
+
+    mut v10: i64 = 10
+    let pv10: @i64 = @v10
+    ring_push_front(@r, pv10 as @u8) // [10, 20, 30]
+    ring_put_i64(@r, 40)             // [10, 20, 30, 40]
+
+    if ring_len(@r) != 4 { ring_free(@r); return false }
+
+    mut popped: i64 = 0
+    let p_pop: @i64 = @popped
+
+    // Pop back: 40
+    if !ring_pop_back(@r, p_pop as @u8) or popped != 40 { ring_free(@r); return false }
+
+    // Pop front: 10
+    if !ring_pop_front(@r, p_pop as @u8) or popped != 10 { ring_free(@r); return false }
+
+    // Pop front: 20
+    if !ring_pop_front(@r, p_pop as @u8) or popped != 20 { ring_free(@r); return false }
+
+    // Pop back: 30
+    if !ring_pop_back(@r, p_pop as @u8) or popped != 30 { ring_free(@r); return false }
+
+    if ring_len(@r) != 0 { ring_free(@r); return false }
+
+    ring_free(@r)
+    return true
+}
+
+act test_bounded_and_overwrite() -> bool {
+    mut r = ring_create(8, 8)
+
+    mut i: i64 = 1
+    loop i <= 8 {
+        mut val = i
+        let pval: @i64 = @val
+        if !ring_push_bounded(@r, pval as @u8) { ring_free(@r); return false }
+        i += 1
+    }
+    if !ring_is_full(@r) or ring_len(@r) != 8 { ring_free(@r); return false }
+
+    // 9th bounded push must fail
+    mut val9: i64 = 99
+    let pval9: @i64 = @val9
+    if ring_push_bounded(@r, pval9 as @u8) { ring_free(@r); return false }
+    if ring_len(@r) != 8 { ring_free(@r); return false }
+
+    // Now test overwrite mode: overwrite with 9 and 10
+    mut v9: i64 = 9
+    let pv9: @i64 = @v9
+    ring_put_overwrite(@r, pv9 as @u8)
+
+    mut v10: i64 = 10
+    let pv10: @i64 = @v10
+    ring_put_overwrite(@r, pv10 as @u8)
+
+    if ring_len(@r) != 8 { ring_free(@r); return false }
+
+    // Items 1 and 2 were overwritten; remaining should be 3, 4, 5, 6, 7, 8, 9, 10
+    mut out_val: i64 = 0
+    mut exp: i64 = 3
+    loop exp <= 10 {
+        if !ring_pop_i64(@r, @out_val) or out_val != exp {
+            ring_free(@r); return false
+        }
+        exp += 1
+    }
+
+    ring_free(@r)
+    return true
+}
+
+act test_drain_and_copy_to() -> bool {
+    mut r = ring_create(8, 8)
+    ring_put_i64(@r, 100)
+    ring_put_i64(@r, 200)
+    ring_put_i64(@r, 300)
+    ring_put_i64(@r, 400)
+    ring_put_i64(@r, 500)
+
+    // Snapshot copy_to
+    let buf = heap_alloc(8 * 5)
+    let copied = ring_copy_to(@r, buf)
+    if copied != 5 or ring_len(@r) != 5 {
+        heap_free(buf); ring_free(@r); return false
+    }
+    let p_buf = buf as @i64
+    if p_buf[0] != 100 or p_buf[1] != 200 or p_buf[2] != 300 or p_buf[3] != 400 or p_buf[4] != 500 {
+        heap_free(buf); ring_free(@r); return false
+    }
+
+    // Drain first 3 items
+    let drain_buf = heap_alloc(8 * 3)
+    let drained = ring_drain(@r, drain_buf, 3)
+    if drained != 3 or ring_len(@r) != 2 {
+        heap_free(buf); heap_free(drain_buf); ring_free(@r); return false
+    }
+    let p_drain = drain_buf as @i64
+    if p_drain[0] != 100 or p_drain[1] != 200 or p_drain[2] != 300 {
+        heap_free(buf); heap_free(drain_buf); ring_free(@r); return false
+    }
+
+    // Remaining items should be 400 and 500
+    mut v: i64 = 0
+    if !ring_pop_i64(@r, @v) or v != 400 { heap_free(buf); heap_free(drain_buf); ring_free(@r); return false }
+    if !ring_pop_i64(@r, @v) or v != 500 { heap_free(buf); heap_free(drain_buf); ring_free(@r); return false }
+    if ring_len(@r) != 0 { heap_free(buf); heap_free(drain_buf); ring_free(@r); return false }
+
+    heap_free(buf)
+    heap_free(drain_buf)
+    ring_free(@r)
+    return true
+}
+
+act test_typed_float_and_slice() -> bool {
+    mut r = ring_create(8, 8)
+    ring_put_f64(@r, 3.14159)
+    ring_put_f64(@r, 2.71828)
+
+    mut out_f: f64 = 0.0
+    if !ring_pop_f64(@r, @out_f) or out_f < 3.14 or out_f > 3.15 { ring_free(@r); return false }
+    if !ring_pop_f64(@r, @out_f) or out_f < 2.71 or out_f > 2.72 { ring_free(@r); return false }
+    ring_free(@r)
+
+    // Slice ring (size of StrSlice = 16 bytes: ptr @u8, len usize)
+    mut r_str = ring_create(16, 8)
+    let s1 = slice_from_str("apple")
+    let s2 = slice_from_str("banana")
+    ring_put_slice(@r_str, s1)
+    ring_put_slice(@r_str, s2)
+
+    mut out_s: StrSlice = StrSlice { ptr: null, len: 0 }
+    if !ring_pop_slice(@r_str, @out_s) or out_s.len != 5 or !slice_eq(out_s, s1) {
+        ring_free(@r_str); return false
+    }
+    if !ring_pop_slice(@r_str, @out_s) or out_s.len != 6 or !slice_eq(out_s, s2) {
+        ring_free(@r_str); return false
+    }
+
+    // Clear and reuse
+    ring_put_slice(@r_str, s1)
+    ring_clear(@r_str)
+    if ring_len(@r_str) != 0 or !ring_is_empty(@r_str) {
+        ring_free(@r_str); return false
+    }
+    ring_free(@r_str)
+    return true
+}
+
+act main() -> i32 {
+    if !test_basic_fifo() {
+        io.println("FAIL: test_basic_fifo")
+        return 1
+    }
+    if !test_wrap_around_and_indexing() {
+        io.println("FAIL: test_wrap_around_and_indexing")
+        return 2
+    }
+    if !test_stress_growth_across_wrap() {
+        io.println("FAIL: test_stress_growth_across_wrap")
+        return 3
+    }
+    if !test_deque_operations() {
+        io.println("FAIL: test_deque_operations")
+        return 4
+    }
+    if !test_bounded_and_overwrite() {
+        io.println("FAIL: test_bounded_and_overwrite")
+        return 5
+    }
+    if !test_drain_and_copy_to() {
+        io.println("FAIL: test_drain_and_copy_to")
+        return 6
+    }
+    if !test_typed_float_and_slice() {
+        io.println("FAIL: test_typed_float_and_slice")
+        return 7
+    }
+
+    io.println("PASS: std.coll.ring all assertions succeeded")
+    return 0
+}

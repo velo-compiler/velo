@@ -36,3 +36,16 @@ def test_std_coll_shelf_ops():
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.coll.shelf_ops all assertions succeeded" in res.stdout
 
+def test_std_coll_ring():
+    test_vl = REPO_ROOT / "std" / "tests" / "coll" / "ring_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.coll.ring all assertions succeeded" in res.stdout
+
+

@@ -1094,8 +1094,23 @@ flowchart TD
   - Backed by safe backward-overlap memory copy in `std.mem.copy` and in-place `std.mem.heap_realloc`.
   - Added unit test suite `std/tests/coll/shelf_ops_test.vl` and pytest integration in `tests/test_std_coll.py`.
 * **Residual Limitation**:
-  - Circular FIFO ring buffer collections (`std/coll/ring.vl`) will be implemented in Task 5.3.
+  - Circular FIFO ring buffer collections (`std/coll/ring.vl`) have been implemented in Task 5.3.
 * **Verification**:
   - `bin/velo.exe run std/tests/coll/shelf_ops_test.vl` passed pushing 10 elements, popping 3, deleting index 2 with contiguous left shift verification, and explicit `shelf_free`; arbitrary-position insertions with right shifting; element swap and in-place reversal; fast O(1) `shelf_swap_remove`; and capacity shrinking with `shelf_shrink_to_fit`.
   - `python -m pytest tests/test_std_coll.py` passed (2/2 passed).
+
+#### Task 5.3: Ring Buffer (FIFO & Deque) (`std/coll/ring.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Pure Velo lacked a standalone, heap-backed, zero-C-runtime circular FIFO ring buffer and double-ended queue abstraction with power-of-two wrap masking, forcing queues to rely on compiler-internal runtime vectors or dynamic array shifting with O(N) front removal.
+* **Fix Applied**:
+  - Implemented `std/coll/ring.vl` providing `data RawRing` for storing homogeneous elements of uniform size in a circular power-of-two buffer.
+  - Implemented O(1) front and back enqueue/dequeue: `ring_put` / `ring_push`, `ring_push_front`, `ring_pop` / `ring_pop_front`, `ring_pop_back`, `ring_push_bounded`, and `ring_put_overwrite`.
+  - Implemented auto-growth via `ring_ensure_capacity` unrolling wrapped circular elements into linear order in fresh heap allocation with zero leaks.
+  - Implemented logical random access (`ring_get`, `ring_set`), peek helpers (`ring_peek`, `ring_peek_into`, `ring_peek_back`), bulk operations (`ring_copy_to`, `ring_drain`), and typed convenience helpers (`ring_put_i64`, `ring_pop_i64`, `ring_peek_i64`, `ring_put_u64`, `ring_pop_u64`, `ring_put_f64`, `ring_pop_f64`, `ring_put_slice`, `ring_pop_slice`).
+  - Added comprehensive test suite `std/tests/coll/ring_test.vl` and pytest integration in `tests/test_std_coll.py`.
+* **Residual Limitation**:
+  - Pure Velo hash algorithms (`std/coll/hash.vl`) will be implemented in Task 5.4.
+* **Verification**:
+  - `bin/velo.exe run std/tests/coll/ring_test.vl` passed basic FIFO ordering; wrap-around boundary indexing and logical offsets; 1,000-element stress growth across wrapped head offsets; 4-way double-ended deque operations; bounded push and circular overwrite; bulk copy and drain; and typed float and slice handling.
+  - `python -m pytest tests/test_std_coll.py` passed (3/3 passed).
 
