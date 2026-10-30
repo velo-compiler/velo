@@ -1,5 +1,4 @@
 // Parser state definition and core token navigation / lookahead primitives for Velo.
-use sys.io
 use sys.mem
 use "token.vl"
 use "../common/utils.vl"

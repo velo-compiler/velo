@@ -9,7 +9,6 @@
 // "))". Args were compile-checked (arity + widening ladder) at inference by
 // src/analysis/math_checks.vl; unknown members never reach the emitter.
 // ============================================================================
-use sys.io
 use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"

@@ -1,5 +1,5 @@
 // Standalone native compiler driver orchestrating compilation, code generation, and GCC linking.
-use sys.io
+use std.io
 use std.fs
 use sys.mem
 use std.os
@@ -181,14 +181,14 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
 
 
     if not fs_exists(file_path) {
-        io.println("[Velo Error] Source file does not exist: {file_path}")
+        println_str("[Velo Error] Source file does not exist: {file_path}")
         d.error_count += 1
         return
     }
 
     let source = fs_read_to_str(file_path)
     if source == null {
-        io.println("[Velo Error] Failed to read source file: {file_path}")
+        println_str("[Velo Error] Failed to read source file: {file_path}")
         d.error_count += 1
         return
     }
@@ -203,7 +203,7 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
 
     if lex.dropped_count > 0 {
         let dropped = lex.dropped_count
-        io.println("[Velo Error] {file_path}: lexer token buffer too small; {dropped} tokens were truncated. Split this file into smaller modules.")
+        println_str("[Velo Error] {file_path}: lexer token buffer too small; {dropped} tokens were truncated. Split this file into smaller modules.")
         d.error_count += 1
         return
     }
@@ -294,7 +294,7 @@ act compile_source_to_c_test_opts(source_path: string, unsafe_index: bool, is_te
 
     let sem_ok = check_program(@st, prog)
     if not sem_ok or st.error_count > 0 {
-        io.println("[Velo Error] Semantic analysis failed with {st.error_count} errors.")
+        println_str("[Velo Error] Semantic analysis failed with {st.error_count} errors.")
         return null
     }
 
@@ -317,7 +317,7 @@ act compile_source_to_c_opts(source_path: string, unsafe_index: bool, no_line_di
 act generate_docs_for_source(source_path: string) -> string {
     let source = fs_read_to_str(source_path)
     if source == null {
-        io.println("[Velo Error] Failed to read source file: {source_path}")
+        println_str("[Velo Error] Failed to read source file: {source_path}")
         return null
     }
     defer mem.free(source)
@@ -330,7 +330,7 @@ act generate_docs_for_source(source_path: string) -> string {
 
     if lex.dropped_count > 0 {
         let dropped = lex.dropped_count
-        io.println("[Velo Error] {source_path}: lexer token buffer too small; {dropped} tokens were truncated; documentation output would be incomplete.")
+        println_str("[Velo Error] {source_path}: lexer token buffer too small; {dropped} tokens were truncated; documentation output would be incomplete.")
         return null
     }
 

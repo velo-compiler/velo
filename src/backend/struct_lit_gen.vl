@@ -1,6 +1,5 @@
 // Struct literal emission: (T){ .field = value, ... } with declared defaults
 // filling every omitted field (extracted from codegen_expr.vl to keep it lean).
-use sys.io
 use sys.mem
 use "../ast/expr.vl"
 use "../analysis/symbol_table.vl"

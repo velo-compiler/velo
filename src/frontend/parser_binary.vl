@@ -1,5 +1,4 @@
 // Pratt binary expression parser and operator precedence hierarchy for Velo.
-use sys.io
 use sys.mem
 use "token.vl"
 use "../common/diagnostics.vl"

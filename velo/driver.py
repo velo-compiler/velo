@@ -83,9 +83,12 @@ class CompilerDriver:
                 if isinstance(decl, UseStmt):
                     mod = decl.module_path
                     if not mod.startswith("sys."):
-                        target = (resolved_file.parent / mod).resolve()
-                        if not target.exists() and not mod.endswith(".vl"):
-                            target = (resolved_file.parent / f"{mod}.vl").resolve()
+                        if mod.startswith("std."):
+                            target = (self.root_dir / "std" / f"{mod[4:].replace('.', '/')}.vl").resolve()
+                        else:
+                            target = (resolved_file.parent / mod).resolve()
+                            if not target.exists() and not mod.endswith(".vl"):
+                                target = (resolved_file.parent / f"{mod}.vl").resolve()
                         if not target.exists():
                             # Fallback: check relative to root source directory
                             alt_target = (root_path.parent / mod).resolve()

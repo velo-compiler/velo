@@ -1,5 +1,4 @@
 // C99 compile-time struct reflection code generator (field_count, field_name, field_type).
-use sys.io
 use sys.mem
 use "../ast/types.vl"
 use "../ast/expr.vl"

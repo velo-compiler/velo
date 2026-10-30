@@ -1,5 +1,4 @@
 // Semantic analysis, type inference, and validation algorithms for Velo.
-use sys.io
 use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"

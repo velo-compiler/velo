@@ -1,5 +1,4 @@
 // Shared helper routines for ring and bitset semantic validation.
-use sys.io
 use sys.mem
 use "symbol_table.vl"
 use "type_checker.vl"

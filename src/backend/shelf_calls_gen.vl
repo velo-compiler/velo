@@ -4,7 +4,6 @@
 // to stay under the 400-line budget. The C text matches velo/codegen_c.py's
 // emit branches byte for byte.
 // ============================================================================
-use sys.io
 use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"

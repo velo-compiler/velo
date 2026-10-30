@@ -1,31 +1,31 @@
 // CLI command handlers for `velo run` and `velo build`.
-use sys.io
+use std.io
 use "backend/driver.vl"
 use "common/string_builder.vl"
 use "common/utils.vl"
 
 // Prints the command-line usage manual.
 act print_usage() {
-    io.println("Velo Programming Language Compiler (Self-Hosted v2.0)")
-    io.println("Usage:")
-    io.println("  velo run <source.vl> [--cc gcc|cl] [-l<lib>] [-L<dir>] [--debug|--release] [-O<level>] [--no-line-directives]")
-    io.println("  velo build <source.vl> [-o <bin>] [--cc gcc|cl] [-l<lib>] [-L<dir>] [--debug|--release] [--no-line-directives]")
-    io.println("  velo emit-c <source.vl> [-o <out.c>] [--no-line-directives] Emit generated C99 code")
-    io.println("  velo check <source.vl> [--json] [--color auto|always|never]")
-    io.println("  velo doc <source.vl> [-o <out.md>] Extract API documentation to Markdown")
-    io.println("  velo test [path] [--cc gcc|cl] [--filter <pattern>] Run native tests")
-    io.println("  velo pkg check [path]              Validate a velo.pkg package manifest")
-    io.println("  velo pkg build [path] [-o <bin>]   Build project defined by velo.pkg")
-    io.println("  velo pkg run [path] [-- args...]   Build and run project defined by velo.pkg")
-    io.println("  velo lsp                           Start Velo Language Server (LSP stdio)")
-    io.println("  velo version                       Display compiler version")
-    io.println("  velo help                          Display this help manual")
+    println_str("Velo Programming Language Compiler (Self-Hosted v2.0)")
+    println_str("Usage:")
+    println_str("  velo run <source.vl> [--cc gcc|cl] [-l<lib>] [-L<dir>] [--debug|--release] [-O<level>] [--no-line-directives]")
+    println_str("  velo build <source.vl> [-o <bin>] [--cc gcc|cl] [-l<lib>] [-L<dir>] [--debug|--release] [--no-line-directives]")
+    println_str("  velo emit-c <source.vl> [-o <out.c>] [--no-line-directives] Emit generated C99 code")
+    println_str("  velo check <source.vl> [--json] [--color auto|always|never]")
+    println_str("  velo doc <source.vl> [-o <out.md>] Extract API documentation to Markdown")
+    println_str("  velo test [path] [--cc gcc|cl] [--filter <pattern>] Run native tests")
+    println_str("  velo pkg check [path]              Validate a velo.pkg package manifest")
+    println_str("  velo pkg build [path] [-o <bin>]   Build project defined by velo.pkg")
+    println_str("  velo pkg run [path] [-- args...]   Build and run project defined by velo.pkg")
+    println_str("  velo lsp                           Start Velo Language Server (LSP stdio)")
+    println_str("  velo version                       Display compiler version")
+    println_str("  velo help                          Display this help manual")
 }
 
 // Handles `velo run <source.vl> [opts...]`.
 act handle_run_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_directives: bool) -> i32 {
     if argc < 3 {
-        io.println("[Velo Error] 'run' requires a source file path")
+        println_str("[Velo Error] 'run' requires a source file path")
         return 1
     }
     mut source_file = ""
@@ -73,15 +73,15 @@ act handle_run_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_directi
         i += 1
     }
     if str.len(source_file) == 0 {
-        io.println("[Velo Error] 'run' requires a source file path")
+        println_str("[Velo Error] 'run' requires a source file path")
         return 1
     }
     if cc != "gcc" and cc != "cl" {
-        io.println("[Velo Error] Unknown C compiler backend '{cc}'. Expected 'gcc' or 'cl'.")
+        println_str("[Velo Error] Unknown C compiler backend '{cc}'. Expected 'gcc' or 'cl'.")
         return 1
     }
     if debug_mode and release_mode {
-        io.println("[Velo Error] Cannot specify both --debug and --release")
+        println_str("[Velo Error] Cannot specify both --debug and --release")
         return 1
     }
     let opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level)
@@ -96,7 +96,7 @@ act handle_run_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_directi
 // Handles `velo build <source.vl> [opts...]`.
 act handle_build_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_directives: bool) -> i32 {
     if argc < 3 {
-        io.println("[Velo Error] 'build' requires a source file path")
+        println_str("[Velo Error] 'build' requires a source file path")
         return 1
     }
     mut source_file = ""
@@ -148,15 +148,15 @@ act handle_build_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_direc
         i += 1
     }
     if str.len(source_file) == 0 {
-        io.println("[Velo Error] 'build' requires a source file path")
+        println_str("[Velo Error] 'build' requires a source file path")
         return 1
     }
     if cc != "gcc" and cc != "cl" {
-        io.println("[Velo Error] Unknown C compiler backend '{cc}'. Expected 'gcc' or 'cl'.")
+        println_str("[Velo Error] Unknown C compiler backend '{cc}'. Expected 'gcc' or 'cl'.")
         return 1
     }
     if debug_mode and release_mode {
-        io.println("[Velo Error] Cannot specify both --debug and --release")
+        println_str("[Velo Error] Cannot specify both --debug and --release")
         return 1
     }
     let opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level)
@@ -165,9 +165,9 @@ act handle_build_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_direc
     zone {
         ok = build_executable_opts(source_file, output_exe, unsafe_index, opt_flags, linker_flags, cc, no_line_directives)
         if ok {
-            io.println("[Velo] Successfully built binary!")
+            println_str("[Velo] Successfully built binary!")
         } else {
-            io.println("[Velo Error] Build failed.")
+            println_str("[Velo Error] Build failed.")
         }
     }
     if ok {

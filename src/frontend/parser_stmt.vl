@@ -1,5 +1,4 @@
 // Statement parsing and control flow AST generation for Velo.
-use sys.io
 use sys.mem
 use "token.vl"
 use "../common/utils.vl"

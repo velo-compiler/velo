@@ -1,5 +1,4 @@
 // Compile-time loop unrolling and dead-branch elimination for struct reflection.
-use sys.io
 use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"

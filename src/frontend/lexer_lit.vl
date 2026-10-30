@@ -1,5 +1,4 @@
 // Literal tokenizing for Velo: numeric bases, scientific floats, strings, chars.
-use sys.io
 use sys.mem
 use "token.vl"
 use "../common/utils.vl"

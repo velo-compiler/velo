@@ -1,5 +1,4 @@
 // C99 SIMD expression and assignment code generator.
-use sys.io
 use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"

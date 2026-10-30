@@ -1,5 +1,4 @@
 // Expression cloning and type argument extraction for AST monomorphization.
-use sys.io
 use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"

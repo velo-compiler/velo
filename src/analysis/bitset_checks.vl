@@ -1,5 +1,4 @@
 // Semantic validation and member checks for bitset collections.
-use sys.io
 use sys.mem
 use "symbol_table.vl"
 use "type_checker.vl"

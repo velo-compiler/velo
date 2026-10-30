@@ -1,5 +1,4 @@
 // C99 IO intrinsics and string interpolation code generator for Velo.
-use sys.io
 use sys.mem
 use "../frontend/token.vl"
 use "../frontend/lexer.vl"

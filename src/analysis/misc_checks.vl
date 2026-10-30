@@ -1,5 +1,4 @@
 // Collection slice-9 semantic analysis: ring and bitset type inference and gates.
-use sys.io
 use sys.mem
 use "symbol_table.vl"
 use "type_checker.vl"

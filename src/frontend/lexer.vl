@@ -1,5 +1,4 @@
 // High-performance native Lexer for the Velo programming language.
-use sys.io
 use sys.mem
 use "token.vl"
 use "../common/utils.vl"

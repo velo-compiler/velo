@@ -1,5 +1,4 @@
 // Monomorphization pass orchestrating whole-program generic AST specialization.
-use sys.io
 use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"

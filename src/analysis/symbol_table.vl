@@ -1,5 +1,4 @@
 // Lexical scope stack, symbol registration, and struct/function registry for Velo.
-use sys.io
 use sys.mem
 use "../common/diagnostics.vl"
 use "../ast/expr.vl"

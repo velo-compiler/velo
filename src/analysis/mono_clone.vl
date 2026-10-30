@@ -1,5 +1,4 @@
 // Statement cloning and substitution during monomorphization.
-use sys.io
 use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"

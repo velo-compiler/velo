@@ -1,5 +1,4 @@
 // C preprocessor #line directive emitter for native debugging.
-use sys.io
 use sys.mem
 use "../common/string_builder.vl"
 use "../analysis/symbol_table.vl"

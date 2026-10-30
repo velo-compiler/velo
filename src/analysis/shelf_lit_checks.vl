@@ -1,5 +1,4 @@
 // Shelf literal element inference ladder and dynamic typing checks for Velo.
-use sys.io
 use sys.mem
 use "symbol_table.vl"
 use "type_checker.vl"

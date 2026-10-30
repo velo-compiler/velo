@@ -1,5 +1,5 @@
 // Execution, build, and test running orchestration for the compiler driver.
-use sys.io
+use std.io
 use std.fs
 use sys.mem
 use "../common/string_builder.vl"
@@ -35,7 +35,7 @@ act build_executable_opts(source_path: string, output_exe: string, unsafe_index:
     let cmd = assemble_compiler_cmd(cc, c_file_path, out_path, opt_flags, linker_flags)
     let res = os_system(cmd)
     if res != 0 {
-        io.println("[Velo Error] {cc} compilation failed with exit code {res}")
+        println_str("[Velo Error] {cc} compilation failed with exit code {res}")
         return false
     }
 
@@ -86,7 +86,7 @@ act test_source_file_opts(source_path: string, unsafe_index: bool, opt_flags: st
     let cmd = assemble_compiler_cmd(cc, c_file_path, exe_path, opt_flags, linker_flags)
     let res = os_system(cmd)
     if res != 0 {
-        io.println("[Velo Error] {cc} compilation failed with exit code {res}")
+        println_str("[Velo Error] {cc} compilation failed with exit code {res}")
         return 1
     }
 
@@ -139,10 +139,10 @@ act test_target_opts(target_path: string, unsafe_index: bool, opt_flags: string,
             }
         }
         fs_dir_close(@iter)
-        if not found { io.println("No test files found in directory."); return 0 }
+        if not found { println_str("No test files found in directory."); return 0 }
         return overall
     }
-    io.println("[Velo Error] Target path not found: {target_path}")
+    println_str("[Velo Error] Target path not found: {target_path}")
     return 1
 }
 

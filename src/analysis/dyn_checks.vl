@@ -8,7 +8,6 @@
 // Kept free of shelf_checks.vl to avoid a use cycle; the shelf-shape sniff
 // here is a local prefix scan, not the canonical is_shelf_type.
 // ============================================================================
-use sys.io
 use "symbol_table.vl"
 use "op_resolver.vl"
 use "../common/diagnostics.vl"

@@ -1,5 +1,4 @@
 // Primary expression parsing algorithms for Velo: literals, struct instantiations, anonymous functions.
-use sys.io
 use sys.mem
 use "token.vl"
 use "../common/utils.vl"

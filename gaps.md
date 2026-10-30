@@ -1696,3 +1696,34 @@ flowchart TD
   - `python -m pytest tests/test_bootstrap_snapshot.py -q` passed (5/5 passed).
   - `python -m pytest tests -k "test_std or bootstrap"` passed (62/62 passed).
   - `python -m pytest tests -q` passed full suite (483/483 passed in 304.61s).
+
+#### Task 11.4: Migrate `sys.io` to `std.io` & Purge Unused `use sys.io` [COMPLETED] ✅
+* **Former Defect**:
+  - The self-hosted compiler files relied on the legacy `sys.io` built-in (`io.println`, `io.print`) across 9 active files (`src/cli_cmd.vl`, `src/backend/driver_pkg.vl`, `src/main.vl`, `src/common/diagnostics.vl`, `src/backend/driver.vl`, `src/backend/driver_run.vl`, `src/backend/check.vl`, `src/backend/pretty_recon.vl`, `src/analysis/scope.vl`).
+  - An additional 55 compiler source files unconditionally imported `use sys.io` without invoking any I/O primitives, creating unnecessary compilation bloat.
+  - The legacy Stage 1 Python driver (`velo/driver.py`) lacked resolution fallback for standard library dot syntax (`std.*`), causing Stage 1 compilation of stage 2 examples (`examples/10_stage2_lexer_test.vl`, `11_stage2_parser_test.vl`, `12_stage2_semantics_test.vl`, `13_stage2_codegen_test.vl`) to fail with module not found errors when encountering `std.io`.
+* **Fix Applied**:
+  - Added standard library module resolution to `velo/driver.py` mapping `std.*` import paths to `self.root_dir / "std" / ...`.
+  - Migrated active I/O files from `use sys.io` to pure-Velo `use std.io`:
+    - `src/cli_cmd.vl`: Replaced `io.println` with `println_str`.
+    - `src/backend/driver_pkg.vl`: Replaced `io.println` with `println_str` and `io.print` with `print_str`.
+    - `src/main.vl`: Replaced `io.println` with `println_str`; flushed stdout after printing docs (`print_str(docs); io_flush_stdout()`).
+    - `src/common/diagnostics.vl`: Replaced `io.println` with `println_str` across `report_error`, `report_warning`, `report_simple_error`, and `pretty_render_block`.
+    - `src/backend/driver.vl`: Replaced `io.println` with `println_str`.
+    - `src/backend/driver_run.vl`: Replaced `io.println` with `println_str`.
+    - `src/backend/check.vl`: Replaced `io.println` with `println_str`; added `io_print_cleanup()` after `velo_capture_end()` to restore stream state.
+    - `src/backend/pretty_recon.vl`: Replaced `io.println` with `println_str`.
+    - `src/analysis/scope.vl`: Replaced `io.println` with `println_str`.
+  - Completely purged 55 unused `use sys.io` declarations across the AST, parser, lexer, analysis, and backend compiler source files.
+  - Zero `use sys.io` declarations remain anywhere in the compiler codebase.
+  - Verified code standards: all 89 compiler source files strictly remain under 400 lines (`python scripts/count_lines.py`, max 350 lines in `src/backend/check.vl`).
+  - Rebuilt the entire 3-generation bootstrap chain (`scripts/bootstrap.bat` -> Gen2 -> Gen3 -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 determinism (`EF5973738FBC88F3F6D5B869131AB3DB582712EF9165F9BB70ACEFD34A123C15`).
+* **Residual Limitation**:
+  - `sys.mem` in the self-hosted compiler remains to be migrated to `std.mem` in Task 11.5.
+* **Verification**:
+  - `python scripts/count_lines.py` verified all 89 compiler source files < 400 lines (max 350 lines in `src/backend/check.vl`).
+  - Rebuilt 3-generation self-hosting chain: Gen2, Gen3, and `bootstrap.c` identical SHA-256.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -q` passed (5/5 passed).
+  - `python -m pytest tests -k "test_std"` passed (53/53 passed).
+  - `python -m pytest tests/test_stage2_codegen.py tests/test_stage2_lexer.py tests/test_stage2_parser.py tests/test_stage2_semantics.py -q` passed (8/8 passed).
+  - `python -m pytest tests -q` passed full suite (483/483 passed in 310.37s).

@@ -1,5 +1,4 @@
 // Type mangling, string substitution, and queue state for AST monomorphization.
-use sys.io
 use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"

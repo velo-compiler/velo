@@ -1,5 +1,4 @@
 // Full C99 translation unit emitter and top-level declaration orchestrator in Velo.
-use sys.io
 use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"

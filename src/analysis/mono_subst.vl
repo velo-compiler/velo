@@ -1,5 +1,4 @@
 // String manipulation and generic type substitution algorithms for monomorphization.
-use sys.io
 use sys.mem
 use "../common/utils.vl"
 use "../common/string_builder.vl"

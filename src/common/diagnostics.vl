@@ -1,4 +1,4 @@
-use sys.io
+use std.io
 use sys.mem
 use "string_builder.vl"
 
@@ -10,17 +10,17 @@ use "string_builder.vl"
 //   col: 1-indexed source column number.
 //   message: Explanatory error message.
 act report_error(filename: string, line: i32, col: i32, message: string) {
-    io.println("[Velo Error] {filename}:{line}:{col} - {message}")
+    println_str("[Velo Error] {filename}:{line}:{col} - {message}")
 }
 
 // Formats and reports a compiler warning at a specific source location.
 act report_warning(filename: string, line: i32, col: i32, message: string) {
-    io.println("[Velo Warning] {filename}:{line}:{col} - {message}")
+    println_str("[Velo Warning] {filename}:{line}:{col} - {message}")
 }
 
 // Reports a general compiler error not bound to a specific source line.
 act report_simple_error(message: string) {
-    io.println("[Velo Error] {message}")
+    println_str("[Velo Error] {message}")
 }
 
 // ---------------------------------------------------------------------------
@@ -118,17 +118,17 @@ act pretty_get_color() -> bool {
 act pretty_render_block(file: string, line: i32, col: i32, length: usize, message: string, sev: string, source: string) {
     if g_pretty_color {
         if sev == "error" {
-            io.println("{file}:{line}:{col}: \x1b[31merror\x1b[0m: {message}")
+            println_str("{file}:{line}:{col}: \x1b[31merror\x1b[0m: {message}")
         } else if sev == "warning" {
-            io.println("{file}:{line}:{col}: \x1b[33mwarning\x1b[0m: {message}")
+            println_str("{file}:{line}:{col}: \x1b[33mwarning\x1b[0m: {message}")
         } else {
-            io.println("{file}:{line}:{col}: {sev}: {message}")
+            println_str("{file}:{line}:{col}: {sev}: {message}")
         }
     } else {
-        io.println("{file}:{line}:{col}: {sev}: {message}")
+        println_str("{file}:{line}:{col}: {sev}: {message}")
     }
     let src_line = pretty_line_text(source, line)
-    io.println("{line} | {src_line}")
+    println_str("{line} | {src_line}")
     let w = pretty_digit_count(line)
     mut span_len: usize = 1
     if length > 1 {
@@ -153,5 +153,5 @@ act pretty_render_block(file: string, line: i32, col: i32, length: usize, messag
     if g_pretty_color {
         sb_append_str(@pad, "\x1b[0m")
     }
-    io.println(sb_to_string(@pad))
+    println_str(sb_to_string(@pad))
 }

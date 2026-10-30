@@ -1,5 +1,4 @@
 // Pattern matching ('on' match/switch) statement parsing for Velo.
-use sys.io
 use sys.mem
 use "token.vl"
 use "../common/utils.vl"
