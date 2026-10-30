@@ -1,0 +1,142 @@
+// Unit test suite for std.math.float (pure Velo IEEE-754 floating-point operations & rounding).
+use "../../io/print.vl"
+use "../../math/float.vl"
+
+act test_constants_and_bits() -> bool {
+    let pi = math_pi()
+    if pi <= 3.14159 or pi >= 3.14160 { return false }
+
+    let tau = math_tau()
+    if tau <= 6.28318 or tau >= 6.28319 { return false }
+
+    let e = math_e()
+    if e <= 2.71828 or e >= 2.71829 { return false }
+
+    let sqrt2 = math_sqrt2()
+    if sqrt2 <= 1.41421 or sqrt2 >= 1.41422 { return false }
+
+    let b64 = f64_bits(3.14159)
+    let back64 = f64_from_bits(b64)
+    if back64 != 3.14159 { return false }
+
+    let b32 = f32_bits(1.25 as f32)
+    let back32 = f32_from_bits(b32)
+    if back32 != (1.25 as f32) { return false }
+
+    return true
+}
+
+act test_classification() -> bool {
+    let nan_val = math_nan()
+    if not is_nan_f64(nan_val) { return false }
+    if is_nan_f64(0.0) { return false }
+    if is_nan_f64(100.5) { return false }
+
+    let inf_val = math_infinity()
+    let neg_inf_val = math_neg_infinity()
+    if not is_inf_f64(inf_val) { return false }
+    if not is_inf_f64(neg_inf_val) { return false }
+    if is_inf_f64(1.0) { return false }
+    if is_inf_f64(nan_val) { return false }
+
+    if not is_finite_f64(100.5) { return false }
+    if is_finite_f64(inf_val) { return false }
+    if is_finite_f64(neg_inf_val) { return false }
+    if is_finite_f64(nan_val) { return false }
+
+    if not signbit_f64(-5.0) { return false }
+    if signbit_f64(5.0) { return false }
+    if not is_neg_zero_f64(-0.0) { return false }
+    if is_neg_zero_f64(0.0) { return false }
+
+    if copysign_f64(10.0, -1.0) != -10.0 { return false }
+    if copysign_f64(-10.0, 1.0) != 10.0 { return false }
+
+    return true
+}
+
+act test_operations() -> bool {
+    if abs_f64(-42.5) != 42.5 { return false }
+    if abs_f64(42.5) != 42.5 { return false }
+
+    if min_f64(1.5, 2.5) != 1.5 { return false }
+    if max_f64(1.5, 2.5) != 2.5 { return false }
+
+    if clamp_f64(0.5, 1.0, 2.0) != 1.0 { return false }
+    if clamp_f64(1.5, 1.0, 2.0) != 1.5 { return false }
+    if clamp_f64(2.5, 1.0, 2.0) != 2.0 { return false }
+
+    if lerp_f64(10.0, 20.0, 0.5) != 15.0 { return false }
+    if lerp_f64(10.0, 20.0, 0.0) != 10.0 { return false }
+    if lerp_f64(10.0, 20.0, 1.0) != 20.0 { return false }
+
+    return true
+}
+
+act test_rounding() -> bool {
+    if trunc_f64(3.75) != 3.0 { return false }
+    if trunc_f64(-3.75) != -3.0 { return false }
+    if trunc_f64(0.75) != 0.0 { return false }
+
+    if floor_f64(3.75) != 3.0 { return false }
+    if floor_f64(3.0) != 3.0 { return false }
+    if floor_f64(-3.25) != -4.0 { return false }
+    if floor_f64(-3.0) != -3.0 { return false }
+
+    if ceil_f64(3.25) != 4.0 { return false }
+    if ceil_f64(3.0) != 3.0 { return false }
+    if ceil_f64(-3.75) != -3.0 { return false }
+    if ceil_f64(-3.0) != -3.0 { return false }
+
+    if round_f64(3.5) != 4.0 { return false }
+    if round_f64(3.4) != 3.0 { return false }
+    if round_f64(-3.5) != -4.0 { return false }
+    if round_f64(-3.4) != -3.0 { return false }
+
+    let fr = fract_f64(3.75)
+    if fr <= 0.7499 or fr >= 0.7501 { return false }
+
+    return true
+}
+
+act test_fmod_and_angles() -> bool {
+    let rem1 = fmod_f64(5.3, 2.0)
+    if rem1 <= 1.299 or rem1 >= 1.301 { return false }
+
+    let rem2 = fmod_f64(-5.3, 2.0)
+    if rem2 >= -1.299 or rem2 <= -1.301 { return false }
+
+    let rad = deg_to_rad(180.0)
+    if rad <= 3.1415 or rad >= 3.1416 { return false }
+
+    let deg = rad_to_deg(math_pi())
+    if deg <= 179.99 or deg >= 180.01 { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if not test_constants_and_bits() {
+        println_str("FAIL: test_constants_and_bits")
+        return 1
+    }
+    if not test_classification() {
+        println_str("FAIL: test_classification")
+        return 2
+    }
+    if not test_operations() {
+        println_str("FAIL: test_operations")
+        return 3
+    }
+    if not test_rounding() {
+        println_str("FAIL: test_rounding")
+        return 4
+    }
+    if not test_fmod_and_angles() {
+        println_str("FAIL: test_fmod_and_angles")
+        return 5
+    }
+
+    println_str("PASS: std.math.float tests succeeded")
+    return 0
+}

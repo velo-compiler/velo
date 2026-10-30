@@ -1449,3 +1449,21 @@ flowchart TD
 * **Verification**:
   - `bin/velo.exe run std/tests/math/int_test.vl` passed (`PASS: std.math.int tests succeeded`).
   - `python -m pytest tests/test_std_math.py` passed (2/2 passed in 2.54s).
+
+#### Task 9.3: IEEE-754 Floats, Rounding & Constants (`std/math/float.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Floating-point calculations, rounding, and special classification in Velo previously depended on the compiler's intrinsic lowering or C `<math.h>` (`floor`, `ceil`, `round`, `trunc`, `fmod`, `isnan`, `isinf`). Velo lacked an idiomatic, zero-dependency pure-Velo IEEE-754 floating-point library with bitwise precision truncation, safe float classification, constant tables, linear interpolation (`lerp`), and angle conversions.
+* **Fix Applied**:
+  - Implemented `std/math/float.vl` in pure Velo with zero libc dependencies:
+    - Bitwise reinterpreters: `f64_bits`, `f64_from_bits`, `f32_bits`, `f32_from_bits` without name collisions.
+    - Mathematical constants: `math_pi`, `math_tau`, `math_e`, `math_ln2`, `math_ln10`, `math_log2e`, `math_log10e`, `math_sqrt2`, `math_sqrt1_2`, `math_epsilon`, `math_infinity`, `math_neg_infinity`, and `math_nan`.
+    - IEEE-754 classification: `is_nan_f64`, `is_inf_f64`, `is_finite_f64`, `signbit_f64`, `is_neg_zero_f64`, and `copysign_f64`.
+    - Operations & rounding: `abs_f64` (bitwise sign clear), `min_f64`/`max_f64` (propagating non-NaN), `clamp_f64`, `lerp_f64` (linear interpolation), `trunc_f64` (exact bitwise mantissa masking across the full double precision range), `floor_f64`, `ceil_f64`, `round_f64` (round half away from zero), `fract_f64`, and `fmod_f64` (IEEE-754 floating-point remainder).
+    - Angle conversions: `deg_to_rad` and `rad_to_deg`.
+  - Added comprehensive unit test suite `std/tests/math/float_test.vl` exercising float constants, bitwise casts, classification, rounding, fmod, and angle conversions.
+  - Added pytest test case `test_std_math_float` in `tests/test_std_math.py`.
+* **Residual Limitation**:
+  - Transcendental and trigonometry approximations (`std/math/trig.vl`) will be implemented in Task 9.4.
+* **Verification**:
+  - `bin/velo.exe run std/tests/math/float_test.vl` passed (`PASS: std.math.float tests succeeded`).
+  - `python -m pytest tests/test_std_math.py` passed (3/3 passed in 3.41s).

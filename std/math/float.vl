@@ -1,0 +1,218 @@
+// std.math.float — Pure Velo IEEE-754 floating-point operations, rounding, and constants.
+// Zero-dependency, portable implementations without libc (math.h / libm) runtime calls.
+
+// --- Bitwise Representations ---
+
+// Reinterprets IEEE 754 64-bit float bits as u64.
+act f64_bits(x: f64) -> u64 {
+    let pf: @f64 = @x
+    let p_u8: @u8 = pf as @u8
+    let pu: @u64 = p_u8 as @u64
+    return pu[0]
+}
+
+// Reinterprets u64 bits as an IEEE 754 64-bit float.
+act f64_from_bits(b: u64) -> f64 {
+    let pb: @u64 = @b
+    let p_u8: @u8 = pb as @u8
+    let pf: @f64 = p_u8 as @f64
+    return pf[0]
+}
+
+// Reinterprets IEEE 754 32-bit float bits as u32.
+act f32_bits(x: f32) -> u32 {
+    let pf: @f32 = @x
+    let p_u8: @u8 = pf as @u8
+    let pu: @u32 = p_u8 as @u32
+    return pu[0]
+}
+
+// Reinterprets u32 bits as an IEEE 754 32-bit float.
+act f32_from_bits(b: u32) -> f32 {
+    let pb: @u32 = @b
+    let p_u8: @u8 = pb as @u8
+    let pf: @f32 = p_u8 as @f32
+    return pf[0]
+}
+
+// --- Mathematical Constants ---
+
+act math_pi() -> f64 { return 3.14159265358979323846 }
+act math_tau() -> f64 { return 6.28318530717958647692 }
+act math_e() -> f64 { return 2.71828182845904523536 }
+act math_ln2() -> f64 { return 0.69314718055994530942 }
+act math_ln10() -> f64 { return 2.30258509299404568402 }
+act math_log2e() -> f64 { return 1.44269504088896340736 }
+act math_log10e() -> f64 { return 0.43429448190325182765 }
+act math_sqrt2() -> f64 { return 1.41421356237309504880 }
+act math_sqrt1_2() -> f64 { return 0.70710678118654752440 }
+act math_epsilon() -> f64 { return 0.000000000000000222044604925031308085 }
+
+// Returns positive infinity (+Inf).
+act math_infinity() -> f64 {
+    return f64_from_bits(0x7FF0000000000000 as u64)
+}
+
+// Returns negative infinity (-Inf).
+act math_neg_infinity() -> f64 {
+    return f64_from_bits(0xFFF0000000000000 as u64)
+}
+
+// Returns a quiet Not-a-Number (NaN).
+act math_nan() -> f64 {
+    return f64_from_bits(0x7FF8000000000000 as u64)
+}
+
+// --- IEEE-754 Classification ---
+
+// Returns true if x is a Not-a-Number (NaN).
+act is_nan_f64(x: f64) -> bool {
+    let b = f64_bits(x)
+    let exp = (b >> (52 as u64)) & (0x7FF as u64)
+    let mant = b & (0xFFFFFFFFFFFFF as u64)
+    return exp == (0x7FF as u64) and mant != (0 as u64)
+}
+
+// Returns true if x is positive or negative infinity.
+act is_inf_f64(x: f64) -> bool {
+    let b = f64_bits(x)
+    let exp = (b >> (52 as u64)) & (0x7FF as u64)
+    let mant = b & (0xFFFFFFFFFFFFF as u64)
+    return exp == (0x7FF as u64) and mant == (0 as u64)
+}
+
+// Returns true if x is neither NaN nor infinite.
+act is_finite_f64(x: f64) -> bool {
+    let b = f64_bits(x)
+    let exp = (b >> (52 as u64)) & (0x7FF as u64)
+    return exp != (0x7FF as u64)
+}
+
+// Returns true if x has its sign bit set (negative or negative zero).
+act signbit_f64(x: f64) -> bool {
+    let b = f64_bits(x)
+    return (b >> (63 as u64)) != (0 as u64)
+}
+
+// Returns true if x is negative zero (-0.0).
+act is_neg_zero_f64(x: f64) -> bool {
+    let b = f64_bits(x)
+    return b == (0x8000000000000000 as u64)
+}
+
+// Composes a float with the magnitude of x and the sign of sign_val.
+act copysign_f64(x: f64, sign_val: f64) -> f64 {
+    let bx = f64_bits(x) & (0x7FFFFFFFFFFFFFFF as u64)
+    let bs = f64_bits(sign_val) & (0x8000000000000000 as u64)
+    return f64_from_bits(bx | bs)
+}
+
+// --- Floating-Point Operations & Rounding ---
+
+// Returns the absolute value of x.
+act abs_f64(x: f64) -> f64 {
+    let b = f64_bits(x) & (0x7FFFFFFFFFFFFFFF as u64)
+    return f64_from_bits(b)
+}
+
+// Returns the minimum of two 64-bit floats, propagating non-NaN operands.
+act min_f64(a: f64, b: f64) -> f64 {
+    if is_nan_f64(a) { return b }
+    if is_nan_f64(b) { return a }
+    if a < b { return a }
+    return b
+}
+
+// Returns the maximum of two 64-bit floats, propagating non-NaN operands.
+act max_f64(a: f64, b: f64) -> f64 {
+    if is_nan_f64(a) { return b }
+    if is_nan_f64(b) { return a }
+    if a > b { return a }
+    return b
+}
+
+// Clamps x to the closed interval [lo, hi].
+act clamp_f64(v: f64, lo: f64, hi: f64) -> f64 {
+    if v < lo { return lo }
+    if v > hi { return hi }
+    return v
+}
+
+// Computes the linear interpolation between a and b at ratio t: a + (b - a) * t.
+act lerp_f64(a: f64, b: f64, t: f64) -> f64 {
+    return a + (b - a) * t
+}
+
+// Truncates x towards zero, discarding the fractional part.
+act trunc_f64(x: f64) -> f64 {
+    let b = f64_bits(x)
+    let exp = ((b >> (52 as u64)) & (0x7FF as u64)) as i32
+    if exp < 1023 {
+        return copysign_f64(0.0, x)
+    }
+    if exp >= 1075 {
+        return x
+    }
+    let frac_bits = (1075 - exp) as u64
+    let mask = ((1 as u64) << frac_bits) - (1 as u64)
+    return f64_from_bits(b & (~mask))
+}
+
+// Rounds x down towards negative infinity (floor).
+act floor_f64(x: f64) -> f64 {
+    if is_nan_f64(x) or is_inf_f64(x) { return x }
+    let tr = trunc_f64(x)
+    if x < 0.0 and x != tr {
+        return tr - 1.0
+    }
+    return tr
+}
+
+// Rounds x up towards positive infinity (ceil).
+act ceil_f64(x: f64) -> f64 {
+    if is_nan_f64(x) or is_inf_f64(x) { return x }
+    let tr = trunc_f64(x)
+    if x > 0.0 and x != tr {
+        return tr + 1.0
+    }
+    return tr
+}
+
+// Rounds x to the nearest integer, half away from zero.
+act round_f64(x: f64) -> f64 {
+    if is_nan_f64(x) or is_inf_f64(x) { return x }
+    mut res: f64 = 0.0
+    if x >= 0.0 {
+        res = floor_f64(x + 0.5)
+    } else {
+        res = ceil_f64(x - 0.5)
+    }
+    return copysign_f64(res, x)
+}
+
+// Computes the floating-point remainder of x / y (fmod), matching IEEE-754.
+act fmod_f64(x: f64, y: f64) -> f64 {
+    if is_nan_f64(x) or is_nan_f64(y) or is_inf_f64(x) or y == 0.0 {
+        return math_nan()
+    }
+    if is_inf_f64(y) { return x }
+    if x == 0.0 { return x }
+    let q = trunc_f64(x / y)
+    let rem = x - (q * y)
+    return copysign_f64(rem, x)
+}
+
+// Returns the fractional part of x: x - floor(x).
+act fract_f64(x: f64) -> f64 {
+    return x - floor_f64(x)
+}
+
+// Converts angle from degrees to radians.
+act deg_to_rad(deg: f64) -> f64 {
+    return deg * 0.01745329251994329577
+}
+
+// Converts angle from radians to degrees.
+act rad_to_deg(rad: f64) -> f64 {
+    return rad * 57.2957795130823208768
+}
