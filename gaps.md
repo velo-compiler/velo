@@ -1247,3 +1247,21 @@ flowchart TD
   - `bin/velo.exe run std/tests/path_fs_module_import_test.vl` passed native `use std.path` and `use std.fs` imports.
   - `python -m pytest tests/test_std_path.py tests/test_std_fs.py` passed (5/5 passed).
   - All 32 standard library test cases passed.
+
+### Phase 7: `std.json` (Zero-Dependency JSON Parser & Serializer)
+
+#### Task 7.1: Zero-Allocation JSON Tokenizer & Escape Decoder (`std/json/lexer.vl` & `std/json/unescape.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Structured data exchange in Velo previously lacked native JSON parsing capabilities, requiring external tooling, C libraries (`cJSON`, `jansson`), or custom ad-hoc string slicing. Velo had no zero-allocation streaming lexer adhering to RFC 8259 with exact line/column tracking, float/integer detection, and escape sequence decoding (including UTF-16 surrogate pairs `\uXXXX\uXXXX`).
+* **Fix Applied**:
+  - Implemented `std/json/unescape.vl` providing RFC 8259 string escape decoding: standard escapes (`\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`), BMP 4-hex-digit unicode escapes (`\uXXXX`), and UTF-16 surrogate pairs (`\uD83D\uDE00` -> `0x1F600` emoji) into valid UTF-8 byte streams via `std.str.utf8` (`utf8_encode_rune`).
+  - Implemented `std/json/lexer.vl` providing zero-allocation streaming JSON tokenizer: `JsonToken` (kind, `StrSlice`, line, col) and `JsonLexer` (source pointer, length, position, line, col).
+  - Implemented full RFC 8259 tokenization: objects (`{`, `}`), arrays (`[`, `]`), colons (`:`), commas (`,`), strings with escapes, numbers (integers, negative numbers, floats, scientific exponents `e`/`E`), booleans (`true`, `false`), and `null` with strict syntax error validation (rejecting leading zeroes `012`, lone `-`, incomplete exponents `1e`, plus signs `+1`, and unclosed strings).
+  - Implemented inspection helpers: `json_lexer_init`, `json_lexer_init_str`, `json_lexer_next`, `json_lexer_peek` (non-destructive lookahead), `json_token_str_value` (stripping enclosing quotes), `json_token_is_float`, `json_token_as_i64` (backed by `std.fmt.atoi`), `json_token_as_f64` (backed by `std.fmt.ftoa`), and `json_token_kind_name`.
+  - Added unit test suite `std/tests/json/lexer_test.vl` and pytest integration in `tests/test_std_json.py`.
+* **Residual Limitation**:
+  - JSON DOM value representation (`std/json/value.vl`) will be implemented in Task 7.2.
+* **Verification**:
+  - `bin/velo.exe run std/tests/json/lexer_test.vl` passed delimiters, literals, integers, floating-point numbers with exponents, invalid syntax rejection, string escape decoding with UTF-16 emoji surrogates, non-destructive token peeking, and quote stripping.
+  - `python -m pytest tests/test_std_json.py` passed (1/1 passed in 1.42s).
+  - All 33 standard library test cases passed.

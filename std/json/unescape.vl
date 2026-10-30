@@ -1,0 +1,132 @@
+// Pure Velo JSON string escape sequence decoder (zero C runtime dependencies).
+// Compliant with RFC 8259: decodes standard escapes (\", \\, \/, \b, \f, \n, \r, \t),
+// 4-hex-digit BMP code points (\uXXXX), and UTF-16 surrogate pairs (\uD83D\uDE00)
+// into valid UTF-8 byte sequences without libc.
+use "../str/slice.vl"
+use "../str/utf8.vl"
+
+// Converts ASCII hex digit ('0'..'9', 'A'..'F', 'a'..'f') to integer 0..15, or -1 if invalid.
+act hex_digit_val(b: u8) -> i32 {
+    if b >= 48 as u8 and b <= 57 as u8 {
+        return (b - 48 as u8) as i32
+    }
+    if b >= 65 as u8 and b <= 70 as u8 {
+        return (b - 65 as u8 + 10 as u8) as i32
+    }
+    if b >= 97 as u8 and b <= 102 as u8 {
+        return (b - 97 as u8 + 10 as u8) as i32
+    }
+    return -1
+}
+
+// Decodes JSON string escape sequences from raw slice into dest buffer (up to dest_cap).
+// Returns true on success and writes number of decoded bytes to out_len; returns false on error.
+act json_unescape(raw: StrSlice, dest: @u8, dest_cap: usize, out_len: @usize) -> bool {
+    if dest == null or dest_cap == 0 {
+        if out_len != null { out_len[0] = 0 }
+        return raw.len == 0
+    }
+    if raw.ptr == null or raw.len == 0 {
+        dest[0] = 0 as u8
+        if out_len != null { out_len[0] = 0 }
+        return true
+    }
+
+    mut r_idx: usize = 0
+    mut w_idx: usize = 0
+
+    loop r_idx < raw.len {
+        let b = raw.ptr[r_idx]
+        if b != 92 as u8 {
+            if w_idx >= dest_cap { return false }
+            dest[w_idx] = b
+            w_idx += 1
+            r_idx += 1
+        } else {
+            r_idx += 1
+            if r_idx >= raw.len { return false }
+            let esc = raw.ptr[r_idx]
+            if esc == 34 as u8 {
+                if w_idx >= dest_cap { return false }
+                dest[w_idx] = 34 as u8; w_idx += 1; r_idx += 1
+            } else if esc == 92 as u8 {
+                if w_idx >= dest_cap { return false }
+                dest[w_idx] = 92 as u8; w_idx += 1; r_idx += 1
+            } else if esc == 47 as u8 {
+                if w_idx >= dest_cap { return false }
+                dest[w_idx] = 47 as u8; w_idx += 1; r_idx += 1
+            } else if esc == 98 as u8 {
+                if w_idx >= dest_cap { return false }
+                dest[w_idx] = 8 as u8; w_idx += 1; r_idx += 1
+            } else if esc == 102 as u8 {
+                if w_idx >= dest_cap { return false }
+                dest[w_idx] = 12 as u8; w_idx += 1; r_idx += 1
+            } else if esc == 110 as u8 {
+                if w_idx >= dest_cap { return false }
+                dest[w_idx] = 10 as u8; w_idx += 1; r_idx += 1
+            } else if esc == 114 as u8 {
+                if w_idx >= dest_cap { return false }
+                dest[w_idx] = 13 as u8; w_idx += 1; r_idx += 1
+            } else if esc == 116 as u8 {
+                if w_idx >= dest_cap { return false }
+                dest[w_idx] = 9 as u8; w_idx += 1; r_idx += 1
+            } else if esc == 117 as u8 {
+                r_idx += 1
+                if r_idx + 4 > raw.len { return false }
+                mut code: u32 = 0
+                mut k: usize = 0
+                loop k < 4 {
+                    let hv = hex_digit_val(raw.ptr[r_idx + k])
+                    if hv < 0 { return false }
+                    code = (code << 4) | (hv as u32)
+                    k += 1
+                }
+                r_idx += 4
+
+                mut final_rune = code
+                if code >= 0xD800 as u32 and code <= 0xDBFF as u32 {
+                    if r_idx + 6 <= raw.len and raw.ptr[r_idx] == 92 as u8 and raw.ptr[r_idx + 1] == 117 as u8 {
+                        mut low_code: u32 = 0
+                        mut lk: usize = 0
+                        mut valid_low = true
+                        loop lk < 4 {
+                            let lhv = hex_digit_val(raw.ptr[r_idx + 2 + lk])
+                            if lhv < 0 { valid_low = false; break }
+                            low_code = (low_code << 4) | (lhv as u32)
+                            lk += 1
+                        }
+                        if valid_low and low_code >= 0xDC00 as u32 and low_code <= 0xDFFF as u32 {
+                            r_idx += 6
+                            final_rune = 0x10000 as u32 + (((code - 0xD800 as u32) << 10) | (low_code - 0xDC00 as u32))
+                        }
+                    }
+                }
+
+                let written = utf8_encode_rune(final_rune, dest + w_idx, dest_cap - w_idx)
+                if written == 0 { return false }
+                w_idx += written
+            } else {
+                return false
+            }
+        }
+    }
+
+    if w_idx < dest_cap {
+        dest[w_idx] = 0 as u8
+    }
+    if out_len != null {
+        out_len[0] = w_idx
+    }
+    return true
+}
+
+// Convenience wrapper decoding JSON string escape sequences into dest buffer.
+// Returns number of bytes written, or 0 on decoding error or overflow.
+act json_unescape_string(raw: StrSlice, dest: @u8, dest_cap: usize) -> usize {
+    mut l: usize = 0
+    let ok = json_unescape(raw, dest, dest_cap, @l)
+    if !ok {
+        return 0
+    }
+    return l
+}

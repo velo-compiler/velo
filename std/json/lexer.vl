@@ -1,0 +1,387 @@
+// Pure Velo zero-allocation JSON tokenizer (zero C runtime dependencies).
+// Conforms to RFC 8259: tokenizes objects, arrays, strings with escapes, numbers
+// (integers, floats, exponents), booleans (true, false), and null literals with
+// line and column tracking and non-destructive lookahead.
+use "../str/slice.vl"
+use "../fmt/atoi.vl"
+use "../fmt/ftoa.vl"
+use "unescape.vl"
+
+// JSON token kinds
+let JSON_TOK_EOF: i32 = 0
+let JSON_TOK_OBJ_START: i32 = 1     // {
+let JSON_TOK_OBJ_END: i32 = 2       // }
+let JSON_TOK_ARR_START: i32 = 3     // [
+let JSON_TOK_ARR_END: i32 = 4       // ]
+let JSON_TOK_COLON: i32 = 5         // :
+let JSON_TOK_COMMA: i32 = 6         // ,
+let JSON_TOK_STRING: i32 = 7        // "..."
+let JSON_TOK_NUMBER: i32 = 8        // 123, -45.67, 1e-4
+let JSON_TOK_TRUE: i32 = 9          // true
+let JSON_TOK_FALSE: i32 = 10        // false
+let JSON_TOK_NULL: i32 = 11         // null
+let JSON_TOK_ERROR: i32 = 12        // Lexical / syntax error
+
+// Token produced by JsonLexer.
+data JsonToken {
+    kind: i32,
+    slice: StrSlice,
+    line: usize,
+    col: usize,
+}
+
+// Zero-allocation streaming JSON tokenizer state.
+data JsonLexer {
+    src: @u8,
+    len: usize,
+    pos: usize,
+    line: usize,
+    col: usize,
+}
+
+// Checks if byte is an ASCII decimal digit '0'..'9'.
+act is_ascii_digit(b: u8) -> bool {
+    return b >= 48 as u8 and b <= 57 as u8
+}
+
+// Checks if byte terminates a literal or number token (whitespace, comma, bracket, brace, colon).
+act json_is_term_char(b: u8) -> bool {
+    return b == 32 as u8 or b == 9 as u8 or b == 10 as u8 or b == 13 as u8 or
+           b == 44 as u8 or b == 93 as u8 or b == 125 as u8 or b == 58 as u8
+}
+
+// Initializes a JSON lexer from a StrSlice view.
+act json_lexer_init(src: StrSlice) -> JsonLexer {
+    return JsonLexer {
+        src: src.ptr,
+        len: src.len,
+        pos: 0,
+        line: 1,
+        col: 1,
+    }
+}
+
+// Initializes a JSON lexer from a null-terminated string.
+act json_lexer_init_str(src: string) -> JsonLexer {
+    return json_lexer_init(slice_from_str(src))
+}
+
+// Skips JSON whitespace (space, tab, LF, CR) and updates line and column numbers.
+act json_skip_whitespace(lex: @JsonLexer) {
+    loop lex.pos < lex.len {
+        let b = lex.src[lex.pos]
+        if b == 32 as u8 or b == 9 as u8 {
+            lex.pos += 1
+            lex.col += 1
+        } else if b == 13 as u8 {
+            lex.pos += 1
+        } else if b == 10 as u8 {
+            lex.pos += 1
+            lex.line += 1
+            lex.col = 1
+        } else {
+            break
+        }
+    }
+}
+
+// Constructs a JSON_TOK_ERROR token and advances lexer position by at least 1 byte if stuck.
+act json_make_error(lex: @JsonLexer, start_pos: usize, start_line: usize, start_col: usize) -> JsonToken {
+    if lex.pos == start_pos and lex.pos < lex.len {
+        lex.pos += 1
+        lex.col += 1
+    }
+    let full = slice_from_raw(lex.src, lex.len)
+    let s = slice_sub(full, start_pos, lex.pos)
+    return JsonToken {
+        kind: JSON_TOK_ERROR,
+        slice: s,
+        line: start_line,
+        col: start_col,
+    }
+}
+
+// Scans and returns the next JSON token from the input stream.
+act json_lexer_next(lex: @JsonLexer) -> JsonToken {
+    json_skip_whitespace(lex)
+
+    if lex.pos >= lex.len {
+        let empty = slice_from_raw(null, 0)
+        return JsonToken {
+            kind: JSON_TOK_EOF,
+            slice: empty,
+            line: lex.line,
+            col: lex.col,
+        }
+    }
+
+    let start_pos = lex.pos
+    let start_line = lex.line
+    let start_col = lex.col
+    let b = lex.src[lex.pos]
+
+    // Single character delimiters
+    if b == 123 as u8 { // '{'
+        lex.pos += 1; lex.col += 1
+        return JsonToken { kind: JSON_TOK_OBJ_START, slice: slice_sub(slice_from_raw(lex.src, lex.len), start_pos, lex.pos), line: start_line, col: start_col }
+    }
+    if b == 125 as u8 { // '}'
+        lex.pos += 1; lex.col += 1
+        return JsonToken { kind: JSON_TOK_OBJ_END, slice: slice_sub(slice_from_raw(lex.src, lex.len), start_pos, lex.pos), line: start_line, col: start_col }
+    }
+    if b == 91 as u8 { // '['
+        lex.pos += 1; lex.col += 1
+        return JsonToken { kind: JSON_TOK_ARR_START, slice: slice_sub(slice_from_raw(lex.src, lex.len), start_pos, lex.pos), line: start_line, col: start_col }
+    }
+    if b == 93 as u8 { // ']'
+        lex.pos += 1; lex.col += 1
+        return JsonToken { kind: JSON_TOK_ARR_END, slice: slice_sub(slice_from_raw(lex.src, lex.len), start_pos, lex.pos), line: start_line, col: start_col }
+    }
+    if b == 58 as u8 { // ':'
+        lex.pos += 1; lex.col += 1
+        return JsonToken { kind: JSON_TOK_COLON, slice: slice_sub(slice_from_raw(lex.src, lex.len), start_pos, lex.pos), line: start_line, col: start_col }
+    }
+    if b == 44 as u8 { // ','
+        lex.pos += 1; lex.col += 1
+        return JsonToken { kind: JSON_TOK_COMMA, slice: slice_sub(slice_from_raw(lex.src, lex.len), start_pos, lex.pos), line: start_line, col: start_col }
+    }
+
+    // String literal ("...")
+    if b == 34 as u8 { // '"'
+        lex.pos += 1; lex.col += 1
+        mut closed = false
+        loop lex.pos < lex.len {
+            let sb = lex.src[lex.pos]
+            if sb == 34 as u8 { // closing '"'
+                lex.pos += 1; lex.col += 1
+                closed = true
+                break
+            }
+            if sb == 92 as u8 { // '\'
+                lex.pos += 1; lex.col += 1
+                if lex.pos >= lex.len { return json_make_error(lex, start_pos, start_line, start_col) }
+                let esc = lex.src[lex.pos]
+                if esc == 34 as u8 or esc == 92 as u8 or esc == 47 as u8 or
+                   esc == 98 as u8 or esc == 102 as u8 or esc == 110 as u8 or
+                   esc == 114 as u8 or esc == 116 as u8 {
+                    lex.pos += 1; lex.col += 1
+                } else if esc == 117 as u8 { // 'u'
+                    lex.pos += 1; lex.col += 1
+                    mut k: usize = 0
+                    loop k < 4 {
+                        if lex.pos >= lex.len { return json_make_error(lex, start_pos, start_line, start_col) }
+                        if hex_digit_val(lex.src[lex.pos]) < 0 { return json_make_error(lex, start_pos, start_line, start_col) }
+                        lex.pos += 1; lex.col += 1
+                        k += 1
+                    }
+                } else {
+                    return json_make_error(lex, start_pos, start_line, start_col)
+                }
+            } else if sb < 32 as u8 {
+                // Control characters unescaped are forbidden in JSON strings
+                return json_make_error(lex, start_pos, start_line, start_col)
+            } else {
+                lex.pos += 1; lex.col += 1
+            }
+        }
+        if !closed {
+            return json_make_error(lex, start_pos, start_line, start_col)
+        }
+        return JsonToken {
+            kind: JSON_TOK_STRING,
+            slice: slice_sub(slice_from_raw(lex.src, lex.len), start_pos, lex.pos),
+            line: start_line,
+            col: start_col,
+        }
+    }
+
+    // Literals: true, false, null
+    if b == 116 as u8 { // 't'
+        if lex.pos + 4 <= lex.len and
+           lex.src[lex.pos + 1] == 114 as u8 and
+           lex.src[lex.pos + 2] == 117 as u8 and
+           lex.src[lex.pos + 3] == 101 as u8 {
+            if lex.pos + 4 == lex.len or json_is_term_char(lex.src[lex.pos + 4]) {
+                lex.pos += 4; lex.col += 4
+                return JsonToken {
+                    kind: JSON_TOK_TRUE,
+                    slice: slice_sub(slice_from_raw(lex.src, lex.len), start_pos, lex.pos),
+                    line: start_line,
+                    col: start_col,
+                }
+            }
+        }
+        return json_make_error(lex, start_pos, start_line, start_col)
+    }
+
+    if b == 102 as u8 { // 'f'
+        if lex.pos + 5 <= lex.len and
+           lex.src[lex.pos + 1] == 97 as u8 and
+           lex.src[lex.pos + 2] == 108 as u8 and
+           lex.src[lex.pos + 3] == 115 as u8 and
+           lex.src[lex.pos + 4] == 101 as u8 {
+            if lex.pos + 5 == lex.len or json_is_term_char(lex.src[lex.pos + 5]) {
+                lex.pos += 5; lex.col += 5
+                return JsonToken {
+                    kind: JSON_TOK_FALSE,
+                    slice: slice_sub(slice_from_raw(lex.src, lex.len), start_pos, lex.pos),
+                    line: start_line,
+                    col: start_col,
+                }
+            }
+        }
+        return json_make_error(lex, start_pos, start_line, start_col)
+    }
+
+    if b == 110 as u8 { // 'n'
+        if lex.pos + 4 <= lex.len and
+           lex.src[lex.pos + 1] == 117 as u8 and
+           lex.src[lex.pos + 2] == 108 as u8 and
+           lex.src[lex.pos + 3] == 108 as u8 {
+            if lex.pos + 4 == lex.len or json_is_term_char(lex.src[lex.pos + 4]) {
+                lex.pos += 4; lex.col += 4
+                return JsonToken {
+                    kind: JSON_TOK_NULL,
+                    slice: slice_sub(slice_from_raw(lex.src, lex.len), start_pos, lex.pos),
+                    line: start_line,
+                    col: start_col,
+                }
+            }
+        }
+        return json_make_error(lex, start_pos, start_line, start_col)
+    }
+
+    // Number literal (RFC 8259)
+    if b == 45 as u8 or is_ascii_digit(b) { // '-' or '0'..'9'
+        if b == 45 as u8 {
+            lex.pos += 1; lex.col += 1
+            if lex.pos >= lex.len { return json_make_error(lex, start_pos, start_line, start_col) }
+        }
+        let first_d = lex.src[lex.pos]
+        if first_d == 48 as u8 { // '0'
+            lex.pos += 1; lex.col += 1
+            if lex.pos < lex.len and is_ascii_digit(lex.src[lex.pos]) {
+                return json_make_error(lex, start_pos, start_line, start_col)
+            }
+        } else if first_d >= 49 as u8 and first_d <= 57 as u8 { // '1'..'9'
+            lex.pos += 1; lex.col += 1
+            loop lex.pos < lex.len and is_ascii_digit(lex.src[lex.pos]) {
+                lex.pos += 1; lex.col += 1
+            }
+        } else {
+            return json_make_error(lex, start_pos, start_line, start_col)
+        }
+
+        // Fraction: .[0-9]+
+        if lex.pos < lex.len and lex.src[lex.pos] == 46 as u8 { // '.'
+            lex.pos += 1; lex.col += 1
+            if lex.pos >= lex.len or !is_ascii_digit(lex.src[lex.pos]) {
+                return json_make_error(lex, start_pos, start_line, start_col)
+            }
+            loop lex.pos < lex.len and is_ascii_digit(lex.src[lex.pos]) {
+                lex.pos += 1; lex.col += 1
+            }
+        }
+
+        // Exponent: [eE][+-]?[0-9]+
+        if lex.pos < lex.len and (lex.src[lex.pos] == 101 as u8 or lex.src[lex.pos] == 69 as u8) {
+            lex.pos += 1; lex.col += 1
+            if lex.pos < lex.len and (lex.src[lex.pos] == 43 as u8 or lex.src[lex.pos] == 45 as u8) {
+                lex.pos += 1; lex.col += 1
+            }
+            if lex.pos >= lex.len or !is_ascii_digit(lex.src[lex.pos]) {
+                return json_make_error(lex, start_pos, start_line, start_col)
+            }
+            loop lex.pos < lex.len and is_ascii_digit(lex.src[lex.pos]) {
+                lex.pos += 1; lex.col += 1
+            }
+        }
+
+        // Check terminator
+        if lex.pos < lex.len and !json_is_term_char(lex.src[lex.pos]) {
+            return json_make_error(lex, start_pos, start_line, start_col)
+        }
+
+        return JsonToken {
+            kind: JSON_TOK_NUMBER,
+            slice: slice_sub(slice_from_raw(lex.src, lex.len), start_pos, lex.pos),
+            line: start_line,
+            col: start_col,
+        }
+    }
+
+    return json_make_error(lex, start_pos, start_line, start_col)
+}
+
+// Peeks at the next token without advancing lexer state.
+act json_lexer_peek(lex: @JsonLexer) -> JsonToken {
+    let saved_pos = lex.pos
+    let saved_line = lex.line
+    let saved_col = lex.col
+    let tok = json_lexer_next(lex)
+    lex.pos = saved_pos
+    lex.line = saved_line
+    lex.col = saved_col
+    return tok
+}
+
+// Returns the interior string slice of a JSON_TOK_STRING token, stripping enclosing quotes.
+act json_token_str_value(tok: @JsonToken) -> StrSlice {
+    if tok == null or tok.kind != JSON_TOK_STRING {
+        if tok != null { return tok.slice }
+        return slice_from_raw(null, 0)
+    }
+    if tok.slice.len < 2 {
+        return slice_from_raw(null, 0)
+    }
+    return slice_sub(tok.slice, 1, tok.slice.len - 1)
+}
+
+// Returns true if a number token contains a decimal point '.' or scientific exponent 'e'/'E'.
+act json_token_is_float(tok: @JsonToken) -> bool {
+    if tok == null or tok.kind != JSON_TOK_NUMBER {
+        return false
+    }
+    mut idx: usize = 0
+    loop idx < tok.slice.len {
+        let b = tok.slice.ptr[idx]
+        if b == 46 as u8 or b == 101 as u8 or b == 69 as u8 {
+            return true
+        }
+        idx += 1
+    }
+    return false
+}
+
+// Parses a JSON_TOK_NUMBER token as a signed 64-bit integer.
+act json_token_as_i64(tok: @JsonToken, out_val: @i64) -> bool {
+    if tok == null or tok.kind != JSON_TOK_NUMBER {
+        return false
+    }
+    return parse_i64(tok.slice, out_val)
+}
+
+// Parses a JSON_TOK_NUMBER token as an IEEE 754 64-bit float.
+act json_token_as_f64(tok: @JsonToken, out_val: @f64) -> bool {
+    if tok == null or tok.kind != JSON_TOK_NUMBER {
+        return false
+    }
+    return parse_f64(tok.slice, out_val)
+}
+
+// Returns a human-readable display string for a JSON token kind.
+act json_token_kind_name(kind: i32) -> StrSlice {
+    if kind == 0 { return slice_from_str("EOF") }
+    if kind == 1 { return slice_from_str("{") }
+    if kind == 2 { return slice_from_str("}") }
+    if kind == 3 { return slice_from_str("[") }
+    if kind == 4 { return slice_from_str("]") }
+    if kind == 5 { return slice_from_str(":") }
+    if kind == 6 { return slice_from_str(",") }
+    if kind == 7 { return slice_from_str("STRING") }
+    if kind == 8 { return slice_from_str("NUMBER") }
+    if kind == 9 { return slice_from_str("true") }
+    if kind == 10 { return slice_from_str("false") }
+    if kind == 11 { return slice_from_str("null") }
+    return slice_from_str("ERROR")
+}

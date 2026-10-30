@@ -1,0 +1,239 @@
+// Unit test suite for std.json.lexer (zero-allocation JSON tokenizer & escape decoder).
+use "../../mem/page.vl"
+use "../../str/slice.vl"
+use "../../io/print.vl"
+use "../../json/lexer.vl"
+
+act test_delimiters_and_literals() -> bool {
+    let src = "{} [] :, true false null"
+    mut lex = json_lexer_init_str(src)
+
+    let t1 = json_lexer_next(@lex)
+    if t1.kind != JSON_TOK_OBJ_START or t1.line != 1 or t1.col != 1 { return false }
+
+    let t2 = json_lexer_next(@lex)
+    if t2.kind != JSON_TOK_OBJ_END or t2.line != 1 or t2.col != 2 { return false }
+
+    let t3 = json_lexer_next(@lex)
+    if t3.kind != JSON_TOK_ARR_START or t3.line != 1 or t3.col != 4 { return false }
+
+    let t4 = json_lexer_next(@lex)
+    if t4.kind != JSON_TOK_ARR_END or t4.line != 1 or t4.col != 5 { return false }
+
+    let t5 = json_lexer_next(@lex)
+    if t5.kind != JSON_TOK_COLON or t5.line != 1 or t5.col != 7 { return false }
+
+    let t6 = json_lexer_next(@lex)
+    if t6.kind != JSON_TOK_COMMA or t6.line != 1 or t6.col != 8 { return false }
+
+    let t7 = json_lexer_next(@lex)
+    if t7.kind != JSON_TOK_TRUE or t7.line != 1 or t7.col != 10 { return false }
+
+    let t8 = json_lexer_next(@lex)
+    if t8.kind != JSON_TOK_FALSE or t8.line != 1 or t8.col != 15 { return false }
+
+    let t9 = json_lexer_next(@lex)
+    if t9.kind != JSON_TOK_NULL or t9.line != 1 or t9.col != 21 { return false }
+
+    let t10 = json_lexer_next(@lex)
+    if t10.kind != JSON_TOK_EOF { return false }
+
+    return true
+}
+
+act test_numbers() -> bool {
+    let src = "0 -0 42 -999 12345678 3.14159 -0.5 1e4 2.5e-3 -1.25E+2"
+    mut lex = json_lexer_init_str(src)
+
+    // 0
+    let t1 = json_lexer_next(@lex)
+    mut iv: i64 = 0
+    if t1.kind != JSON_TOK_NUMBER or !json_token_as_i64(@t1, @iv) or iv != 0 or json_token_is_float(@t1) { return false }
+
+    // -0
+    let t2 = json_lexer_next(@lex)
+    if t2.kind != JSON_TOK_NUMBER or !json_token_as_i64(@t2, @iv) or iv != 0 or json_token_is_float(@t2) { return false }
+
+    // 42
+    let t3 = json_lexer_next(@lex)
+    if t3.kind != JSON_TOK_NUMBER or !json_token_as_i64(@t3, @iv) or iv != 42 or json_token_is_float(@t3) { return false }
+
+    // -999
+    let t4 = json_lexer_next(@lex)
+    if t4.kind != JSON_TOK_NUMBER or !json_token_as_i64(@t4, @iv) or iv != -999 or json_token_is_float(@t4) { return false }
+
+    // 12345678
+    let t5 = json_lexer_next(@lex)
+    if t5.kind != JSON_TOK_NUMBER or !json_token_as_i64(@t5, @iv) or iv != 12345678 or json_token_is_float(@t5) { return false }
+
+    // 3.14159
+    let t6 = json_lexer_next(@lex)
+    mut fv: f64 = 0.0
+    if t6.kind != JSON_TOK_NUMBER or !json_token_is_float(@t6) or !json_token_as_f64(@t6, @fv) { return false }
+    if fv < 3.14158 or fv > 3.14160 { return false }
+
+    // -0.5
+    let t7 = json_lexer_next(@lex)
+    if t7.kind != JSON_TOK_NUMBER or !json_token_is_float(@t7) or !json_token_as_f64(@t7, @fv) or fv != -0.5 { return false }
+
+    // 1e4
+    let t8 = json_lexer_next(@lex)
+    if t8.kind != JSON_TOK_NUMBER or !json_token_is_float(@t8) or !json_token_as_f64(@t8, @fv) or fv != 10000.0 { return false }
+
+    // 2.5e-3 (0.0025)
+    let t9 = json_lexer_next(@lex)
+    if t9.kind != JSON_TOK_NUMBER or !json_token_is_float(@t9) or !json_token_as_f64(@t9, @fv) { return false }
+    if fv < 0.00249 or fv > 0.00251 { return false }
+
+    // -1.25E+2 (-125.0)
+    let t10 = json_lexer_next(@lex)
+    if t10.kind != JSON_TOK_NUMBER or !json_token_is_float(@t10) or !json_token_as_f64(@t10, @fv) or fv != -125.0 { return false }
+
+    let t_end = json_lexer_next(@lex)
+    if t_end.kind != JSON_TOK_EOF { return false }
+
+    return true
+}
+
+act test_invalid_syntax() -> bool {
+    // Leading zero followed by digit: 012
+    mut l1 = json_lexer_init_str("012")
+    let e1 = json_lexer_next(@l1)
+    if e1.kind != JSON_TOK_ERROR { return false }
+
+    // Lone minus: -
+    mut l2 = json_lexer_init_str("-")
+    let e2 = json_lexer_next(@l2)
+    if e2.kind != JSON_TOK_ERROR { return false }
+
+    // Trailing dot without fractional digits: 1.
+    mut l3 = json_lexer_init_str("1.")
+    let e3 = json_lexer_next(@l3)
+    if e3.kind != JSON_TOK_ERROR { return false }
+
+    // Missing exponent digits: 1e
+    mut l4 = json_lexer_init_str("1e")
+    let e4 = json_lexer_next(@l4)
+    if e4.kind != JSON_TOK_ERROR { return false }
+
+    // Plus sign in number: +42 (forbidden in JSON)
+    mut l5 = json_lexer_init_str("+42")
+    let e5 = json_lexer_next(@l5)
+    if e5.kind != JSON_TOK_ERROR { return false }
+
+    // Invalid literal identifier: trueX
+    mut l6 = json_lexer_init_str("trueX")
+    let e6 = json_lexer_next(@l6)
+    if e6.kind != JSON_TOK_ERROR { return false }
+
+    // Unterminated string
+    mut l7 = json_lexer_init_str("\"unclosed string")
+    let e7 = json_lexer_next(@l7)
+    if e7.kind != JSON_TOK_ERROR { return false }
+
+    // Invalid escape sequence in string: \q
+    mut l8 = json_lexer_init_str("\"bad \\q escape\"")
+    let e8 = json_lexer_next(@l8)
+    if e8.kind != JSON_TOK_ERROR { return false }
+
+    return true
+}
+
+act test_string_escapes_and_surrogates() -> bool {
+    let buf = os_page_alloc(4096)
+    if buf == null { return false }
+    defer os_page_free(buf, 4096)
+
+    // 1. Basic unescape: \" \\ \/ \b \f \n \r \t
+    let raw1 = slice_from_str("hello\\nworld\\t\\\"quote\\\"")
+    mut len1: usize = 0
+    if !json_unescape(raw1, buf, 4096, @len1) { return false }
+    let s1 = slice_from_raw(buf, len1)
+    if !slice_eq_str(s1, "hello\nworld\t\"quote\"") { return false }
+
+    // 2. Unicode BMP: \u0041 ('A') and \u00A9 ('©', 2 bytes in UTF-8: 0xC2 0xA9)
+    let raw2 = slice_from_str("\\u0041 and \\u00A9")
+    mut len2: usize = 0
+    if !json_unescape(raw2, buf, 4096, @len2) { return false }
+    if buf[0] != 65 as u8 { return false } // 'A'
+    if buf[6] != 0xC2 as u8 or buf[7] != 0xA9 as u8 { return false } // '©'
+
+    // 3. UTF-16 surrogate pair: \uD83D\uDE00 -> 😀 (U+1F600, 4 bytes: 0xF0 0x9F 0x98 0x80)
+    let raw3 = slice_from_str("\\uD83D\\uDE00")
+    mut len3: usize = 0
+    if !json_unescape(raw3, buf, 4096, @len3) or len3 != 4 { return false }
+    if buf[0] != 0xF0 as u8 or buf[1] != 0x9F as u8 or buf[2] != 0x98 as u8 or buf[3] != 0x80 as u8 { return false }
+
+    // 4. Empty string unescape
+    let raw4 = slice_from_str("")
+    mut len4: usize = 0
+    if !json_unescape(raw4, buf, 4096, @len4) or len4 != 0 { return false }
+
+    return true
+}
+
+act test_peek_and_str_value() -> bool {
+    let src = "[\"first\", \"second\", 99]"
+    mut lex = json_lexer_init_str(src)
+
+    let t1 = json_lexer_next(@lex) // '['
+    if t1.kind != JSON_TOK_ARR_START { return false }
+
+    // Peek t2 without advancing
+    let p2 = json_lexer_peek(@lex)
+    if p2.kind != JSON_TOK_STRING or !slice_eq_str(p2.slice, "\"first\"") { return false }
+
+    let t2 = json_lexer_next(@lex)
+    if t2.kind != JSON_TOK_STRING or !slice_eq_str(t2.slice, "\"first\"") { return false }
+
+    // Test stripping quotes
+    let val2 = json_token_str_value(@t2)
+    if !slice_eq_str(val2, "first") { return false }
+
+    let t3 = json_lexer_next(@lex) // ','
+    if t3.kind != JSON_TOK_COMMA { return false }
+
+    let t4 = json_lexer_next(@lex) // '"second"'
+    let val4 = json_token_str_value(@t4)
+    if !slice_eq_str(val4, "second") { return false }
+
+    let t5 = json_lexer_next(@lex) // ','
+    if t5.kind != JSON_TOK_COMMA { return false }
+
+    let t6 = json_lexer_next(@lex) // 99
+    if t6.kind != JSON_TOK_NUMBER { return false }
+
+    let t7 = json_lexer_next(@lex) // ']'
+    if t7.kind != JSON_TOK_ARR_END { return false }
+
+    let t8 = json_lexer_next(@lex) // EOF
+    if t8.kind != JSON_TOK_EOF { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_delimiters_and_literals() {
+        println_str("FAIL: test_delimiters_and_literals")
+        return 1
+    }
+    if !test_numbers() {
+        println_str("FAIL: test_numbers")
+        return 2
+    }
+    if !test_invalid_syntax() {
+        println_str("FAIL: test_invalid_syntax")
+        return 3
+    }
+    if !test_string_escapes_and_surrogates() {
+        println_str("FAIL: test_string_escapes_and_surrogates")
+        return 4
+    }
+    if !test_peek_and_str_value() {
+        println_str("FAIL: test_peek_and_str_value")
+        return 5
+    }
+
+    println_str("PASS: std.json.lexer all tests passed")
+    return 0
+}
