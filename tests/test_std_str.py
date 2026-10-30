@@ -23,3 +23,17 @@ def test_std_str_slice():
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.str.slice all assertions succeeded" in res.stdout
+
+def test_std_str_utf8():
+    test_vl = REPO_ROOT / "std" / "tests" / "str" / "utf8_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.str.utf8 all assertions succeeded" in res.stdout
+
+

@@ -1,0 +1,246 @@
+// Unit test suite for std.str.utf8 (RFC 3629 UTF-8 decoder, validator, and encoder).
+use "../../mem/page.vl"
+use "../../str/slice.vl"
+use "../../str/utf8.vl"
+
+act test_valid_ascii() -> bool {
+    let s = slice_from_str("Velo Systems 2026! @#$")
+    if !utf8_slice_is_valid(s) {
+        return false
+    }
+    if utf8_slice_rune_count(s) != s.len {
+        return false
+    }
+
+    mut rune: u32 = 0
+    let consumed = utf8_decode_next(s.ptr, s.len, @rune)
+    if consumed != 1 or rune != 86 as u32 { // 'V' = 86
+        return false
+    }
+    return true
+}
+
+act test_valid_multibyte() -> bool {
+    // "Привет, мир!" (Russian / Cyrillic 2-byte UTF-8)
+    let s_cyr = slice_from_str("Привет, мир!")
+    if !utf8_slice_is_valid(s_cyr) {
+        return false
+    }
+    // "Привет, мир!" has 12 Unicode runes: П, р, и, в, е, т, ,,  , м, и, р, !
+    if utf8_slice_rune_count(s_cyr) != 12 {
+        return false
+    }
+
+    // "世界" (Chinese 3-byte UTF-8, U+4E16 U+754C)
+    let s_cjk = slice_from_str("世界")
+    if !utf8_slice_is_valid(s_cjk) {
+        return false
+    }
+    if utf8_slice_rune_count(s_cjk) != 2 or s_cjk.len != 6 {
+        return false
+    }
+
+    // "🚀🦀" (4-byte Emojis: U+1F680, U+1F980)
+    let s_emoji = slice_from_str("🚀🦀")
+    if !utf8_slice_is_valid(s_emoji) {
+        return false
+    }
+    if utf8_slice_rune_count(s_emoji) != 2 or s_emoji.len != 8 {
+        return false
+    }
+
+    return true
+}
+
+act test_roundtrip_encoding() -> bool {
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    mut dec: u32 = 0
+
+    // 1-byte: ASCII 'Z' (0x5A)
+    mut enc = utf8_encode_rune(0x5A as u32, buf, 64)
+    mut con = utf8_decode_next(buf, enc, @dec)
+    if enc != 1 or con != 1 or dec != 0x5A as u32 {
+        os_page_free(buf, 64)
+        return false
+    }
+
+    // 2-byte: Greek Capital Omega Ω (U+03A9)
+    enc = utf8_encode_rune(0x03A9 as u32, buf, 64)
+    con = utf8_decode_next(buf, enc, @dec)
+    if enc != 2 or con != 2 or dec != 0x03A9 as u32 {
+        os_page_free(buf, 64)
+        return false
+    }
+
+    // 3-byte: Euro sign € (U+20AC)
+    enc = utf8_encode_rune(0x20AC as u32, buf, 64)
+    con = utf8_decode_next(buf, enc, @dec)
+    if enc != 3 or con != 3 or dec != 0x20AC as u32 {
+        os_page_free(buf, 64)
+        return false
+    }
+
+    // 4-byte: Grinning face 😀 (U+1F600)
+    enc = utf8_encode_rune(0x1F600 as u32, buf, 64)
+    con = utf8_decode_next(buf, enc, @dec)
+    if enc != 4 or con != 4 or dec != 0x1F600 as u32 {
+        os_page_free(buf, 64)
+        return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+act test_invalid_and_overlong_sequences() -> bool {
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    // 1. Lone continuation byte (0x80)
+    buf[0] = 0x80 as u8
+    if utf8_is_valid(buf, 1) {
+        os_page_free(buf, 64); return false
+    }
+
+    // 2. 2-byte overlong sequence for NUL (0xC0 0x80)
+    buf[0] = 0xC0 as u8; buf[1] = 0x80 as u8
+    if utf8_is_valid(buf, 2) {
+        os_page_free(buf, 64); return false
+    }
+
+    // 3. 2-byte overlong sequence (0xC1 0xBF)
+    buf[0] = 0xC1 as u8; buf[1] = 0xBF as u8
+    if utf8_is_valid(buf, 2) {
+        os_page_free(buf, 64); return false
+    }
+
+    // 4. 3-byte overlong sequence (0xE0 0x80 0x80)
+    buf[0] = 0xE0 as u8; buf[1] = 0x80 as u8; buf[2] = 0x80 as u8
+    if utf8_is_valid(buf, 3) {
+        os_page_free(buf, 64); return false
+    }
+
+    // 5. 3-byte overlong sequence (0xE0 0x9F 0xBF)
+    buf[0] = 0xE0 as u8; buf[1] = 0x9F as u8; buf[2] = 0xBF as u8
+    if utf8_is_valid(buf, 3) {
+        os_page_free(buf, 64); return false
+    }
+
+    // 6. 4-byte overlong sequence (0xF0 0x80 0x80 0x80)
+    buf[0] = 0xF0 as u8; buf[1] = 0x80 as u8; buf[2] = 0x80 as u8; buf[3] = 0x80 as u8
+    if utf8_is_valid(buf, 4) {
+        os_page_free(buf, 64); return false
+    }
+
+    // 7. Non-continuation byte in 2-byte sequence (0xC2 0x41)
+    buf[0] = 0xC2 as u8; buf[1] = 0x41 as u8
+    if utf8_is_valid(buf, 2) {
+        os_page_free(buf, 64); return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+act test_surrogate_rejection() -> bool {
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    // U+D800 (0xED 0xA0 0x80)
+    buf[0] = 0xED as u8; buf[1] = 0xA0 as u8; buf[2] = 0x80 as u8
+    if utf8_is_valid(buf, 3) {
+        os_page_free(buf, 64); return false
+    }
+
+    // U+DFFF (0xED 0xBF 0xBF)
+    buf[0] = 0xED as u8; buf[1] = 0xBF as u8; buf[2] = 0xBF as u8
+    if utf8_is_valid(buf, 3) {
+        os_page_free(buf, 64); return false
+    }
+
+    // Encoder rejection of surrogates
+    if utf8_encode_rune(0xD800 as u32, buf, 64) != 0 {
+        os_page_free(buf, 64); return false
+    }
+    if utf8_encode_rune(0xDFFF as u32, buf, 64) != 0 {
+        os_page_free(buf, 64); return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+act test_out_of_range_and_truncated() -> bool {
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    // U+110000 (0xF4 0x90 0x80 0x80)
+    buf[0] = 0xF4 as u8; buf[1] = 0x90 as u8; buf[2] = 0x80 as u8; buf[3] = 0x80 as u8
+    if utf8_is_valid(buf, 4) {
+        os_page_free(buf, 64); return false
+    }
+
+    // 0xF5 leading byte
+    buf[0] = 0xF5 as u8; buf[1] = 0x80 as u8; buf[2] = 0x80 as u8; buf[3] = 0x80 as u8
+    if utf8_is_valid(buf, 4) {
+        os_page_free(buf, 64); return false
+    }
+
+    // Truncated 2-byte (0xC3 with length 1)
+    buf[0] = 0xC3 as u8
+    if utf8_is_valid(buf, 1) {
+        os_page_free(buf, 64); return false
+    }
+
+    // Truncated 3-byte (0xE4 0xB8 with length 2)
+    buf[0] = 0xE4 as u8; buf[1] = 0xB8 as u8
+    if utf8_is_valid(buf, 2) {
+        os_page_free(buf, 64); return false
+    }
+
+    // Truncated 4-byte (0xF0 0x9F 0x98 with length 3)
+    buf[0] = 0xF0 as u8; buf[1] = 0x9F as u8; buf[2] = 0x98 as u8
+    if utf8_is_valid(buf, 3) {
+        os_page_free(buf, 64); return false
+    }
+
+    // Encoder out of range rejection
+    if utf8_encode_rune(0x110000 as u32, buf, 64) != 0 {
+        os_page_free(buf, 64); return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+act main() -> i32 {
+    if !test_valid_ascii() {
+        io.println("FAIL: test_valid_ascii")
+        return 1
+    }
+    if !test_valid_multibyte() {
+        io.println("FAIL: test_valid_multibyte")
+        return 1
+    }
+    if !test_roundtrip_encoding() {
+        io.println("FAIL: test_roundtrip_encoding")
+        return 1
+    }
+    if !test_invalid_and_overlong_sequences() {
+        io.println("FAIL: test_invalid_and_overlong_sequences")
+        return 1
+    }
+    if !test_surrogate_rejection() {
+        io.println("FAIL: test_surrogate_rejection")
+        return 1
+    }
+    if !test_out_of_range_and_truncated() {
+        io.println("FAIL: test_out_of_range_and_truncated")
+        return 1
+    }
+
+    io.println("PASS: std.str.utf8 all assertions succeeded")
+    return 0
+}

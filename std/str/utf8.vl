@@ -1,0 +1,256 @@
+// Pure Velo UTF-8 decoder, validator, and encoder (zero C runtime dependencies).
+// Compliant with RFC 3629: validates ASCII, 2-byte, 3-byte, and 4-byte sequences,
+// strictly rejecting overlong encodings, UTF-16 surrogates, and code points > 0x10FFFF.
+use "slice.vl"
+
+// Unicode replacement character constant (U+FFFD).
+let UTF8_REPLACEMENT_CHAR: u32 = 0xFFFD as u32
+
+// Returns the number of bytes required to encode a Unicode code point in UTF-8.
+// Returns 0 if the rune is invalid (surrogate or > 0x10FFFF).
+act utf8_rune_byte_len(rune: u32) -> usize {
+    if rune <= 0x7F as u32 {
+        return 1
+    }
+    if rune <= 0x7FF as u32 {
+        return 2
+    }
+    if rune >= 0xD800 as u32 and rune <= 0xDFFF as u32 {
+        return 0
+    }
+    if rune <= 0xFFFF as u32 {
+        return 3
+    }
+    if rune <= 0x10FFFF as u32 {
+        return 4
+    }
+    return 0
+}
+
+// Decodes the next Unicode code point from a UTF-8 byte stream.
+// Returns the number of bytes consumed (1..4) on success and writes the decoded code point to out_rune.
+// On malformed or truncated input, returns 0 and writes UTF8_REPLACEMENT_CHAR to out_rune.
+act utf8_decode_next(bytes: @u8, len: usize, out_rune: @u32) -> usize {
+    if bytes == null or len == 0 {
+        if out_rune != null {
+            out_rune[0] = 0 as u32
+        }
+        return 0
+    }
+
+    let b0: u32 = bytes[0] as u32
+
+    // 1-byte ASCII (0x00 .. 0x7F)
+    if b0 <= 0x7F as u32 {
+        if out_rune != null {
+            out_rune[0] = b0
+        }
+        return 1
+    }
+
+    // 2-byte sequence (0xC2 .. 0xDF)
+    // 0xC0 and 0xC1 are invalid overlong sequences for ASCII.
+    if b0 >= 0xC2 as u32 and b0 <= 0xDF as u32 {
+        if len < 2 {
+            if out_rune != null { out_rune[0] = UTF8_REPLACEMENT_CHAR }
+            return 0
+        }
+        let b1: u32 = bytes[1] as u32
+        if b1 < 0x80 as u32 or b1 > 0xBF as u32 {
+            if out_rune != null { out_rune[0] = UTF8_REPLACEMENT_CHAR }
+            return 0
+        }
+        let rune: u32 = ((b0 & 0x1F as u32) << 6) | (b1 & 0x3F as u32)
+        if out_rune != null {
+            out_rune[0] = rune
+        }
+        return 2
+    }
+
+    // 3-byte sequence (0xE0 .. 0xEF)
+    if b0 >= 0xE0 as u32 and b0 <= 0xEF as u32 {
+        if len < 3 {
+            if out_rune != null { out_rune[0] = UTF8_REPLACEMENT_CHAR }
+            return 0
+        }
+        let b1: u32 = bytes[1] as u32
+        let b2: u32 = bytes[2] as u32
+
+        if b0 == 0xE0 as u32 {
+            // Rejects overlong encodings (0x80..0x9F)
+            if b1 < 0xA0 as u32 or b1 > 0xBF as u32 {
+                if out_rune != null { out_rune[0] = UTF8_REPLACEMENT_CHAR }
+                return 0
+            }
+        } else if b0 == 0xED as u32 {
+            // Rejects UTF-16 surrogates (0xD800..0xDFFF => b1 in 0xA0..0xBF)
+            if b1 < 0x80 as u32 or b1 > 0x9F as u32 {
+                if out_rune != null { out_rune[0] = UTF8_REPLACEMENT_CHAR }
+                return 0
+            }
+        } else {
+            if b1 < 0x80 as u32 or b1 > 0xBF as u32 {
+                if out_rune != null { out_rune[0] = UTF8_REPLACEMENT_CHAR }
+                return 0
+            }
+        }
+
+        if b2 < 0x80 as u32 or b2 > 0xBF as u32 {
+            if out_rune != null { out_rune[0] = UTF8_REPLACEMENT_CHAR }
+            return 0
+        }
+
+        let rune: u32 = ((b0 & 0x0F as u32) << 12) | ((b1 & 0x3F as u32) << 6) | (b2 & 0x3F as u32)
+        if out_rune != null {
+            out_rune[0] = rune
+        }
+        return 3
+    }
+
+    // 4-byte sequence (0xF0 .. 0xF4)
+    if b0 >= 0xF0 as u32 and b0 <= 0xF4 as u32 {
+        if len < 4 {
+            if out_rune != null { out_rune[0] = UTF8_REPLACEMENT_CHAR }
+            return 0
+        }
+        let b1: u32 = bytes[1] as u32
+        let b2: u32 = bytes[2] as u32
+        let b3: u32 = bytes[3] as u32
+
+        if b0 == 0xF0 as u32 {
+            // Rejects overlong encodings (0x80..0x8F)
+            if b1 < 0x90 as u32 or b1 > 0xBF as u32 {
+                if out_rune != null { out_rune[0] = UTF8_REPLACEMENT_CHAR }
+                return 0
+            }
+        } else if b0 == 0xF4 as u32 {
+            // Rejects code points > 0x10FFFF (0x90..0xBF)
+            if b1 < 0x80 as u32 or b1 > 0x8F as u32 {
+                if out_rune != null { out_rune[0] = UTF8_REPLACEMENT_CHAR }
+                return 0
+            }
+        } else {
+            if b1 < 0x80 as u32 or b1 > 0xBF as u32 {
+                if out_rune != null { out_rune[0] = UTF8_REPLACEMENT_CHAR }
+                return 0
+            }
+        }
+
+        if b2 < 0x80 as u32 or b2 > 0xBF as u32 {
+            if out_rune != null { out_rune[0] = UTF8_REPLACEMENT_CHAR }
+            return 0
+        }
+        if b3 < 0x80 as u32 or b3 > 0xBF as u32 {
+            if out_rune != null { out_rune[0] = UTF8_REPLACEMENT_CHAR }
+            return 0
+        }
+
+        let rune: u32 = ((b0 & 0x07 as u32) << 18) | ((b1 & 0x3F as u32) << 12) | ((b2 & 0x3F as u32) << 6) | (b3 & 0x3F as u32)
+        if out_rune != null {
+            out_rune[0] = rune
+        }
+        return 4
+    }
+
+    // Invalid leading byte (0x80..0xC1, 0xF5..0xFF)
+    if out_rune != null {
+        out_rune[0] = UTF8_REPLACEMENT_CHAR
+    }
+    return 0
+}
+
+// Encodes a Unicode code point into UTF-8 bytes in out_bytes (up to out_cap).
+// Returns the number of bytes written (1..4), or 0 if rune is invalid or buffer is too small.
+act utf8_encode_rune(rune: u32, out_bytes: @u8, out_cap: usize) -> usize {
+    if out_bytes == null or out_cap == 0 {
+        return 0
+    }
+
+    // 1-byte ASCII (0x00 .. 0x7F)
+    if rune <= 0x7F as u32 {
+        out_bytes[0] = rune as u8
+        return 1
+    }
+
+    // 2-byte sequence (0x80 .. 0x7FF)
+    if rune <= 0x7FF as u32 {
+        if out_cap < 2 { return 0 }
+        out_bytes[0] = (0xC0 as u32 | (rune >> 6)) as u8
+        out_bytes[1] = (0x80 as u32 | (rune & 0x3F as u32)) as u8
+        return 2
+    }
+
+    // Reject surrogate halves (0xD800 .. 0xDFFF)
+    if rune >= 0xD800 as u32 and rune <= 0xDFFF as u32 {
+        return 0
+    }
+
+    // 3-byte sequence (0x800 .. 0xFFFF)
+    if rune <= 0xFFFF as u32 {
+        if out_cap < 3 { return 0 }
+        out_bytes[0] = (0xE0 as u32 | (rune >> 12)) as u8
+        out_bytes[1] = (0x80 as u32 | ((rune >> 6) & 0x3F as u32)) as u8
+        out_bytes[2] = (0x80 as u32 | (rune & 0x3F as u32)) as u8
+        return 3
+    }
+
+    // 4-byte sequence (0x10000 .. 0x10FFFF)
+    if rune <= 0x10FFFF as u32 {
+        if out_cap < 4 { return 0 }
+        out_bytes[0] = (0xF0 as u32 | (rune >> 18)) as u8
+        out_bytes[1] = (0x80 as u32 | ((rune >> 12) & 0x3F as u32)) as u8
+        out_bytes[2] = (0x80 as u32 | ((rune >> 6) & 0x3F as u32)) as u8
+        out_bytes[3] = (0x80 as u32 | (rune & 0x3F as u32)) as u8
+        return 4
+    }
+
+    // Invalid code point (> 0x10FFFF)
+    return 0
+}
+
+// Validates whether the entire byte sequence conforms to valid UTF-8.
+act utf8_is_valid(bytes: @u8, len: usize) -> bool {
+    if bytes == null {
+        return len == 0
+    }
+    mut offset: usize = 0
+    mut rune: u32 = 0
+    loop offset < len {
+        let consumed = utf8_decode_next(bytes + offset, len - offset, @rune)
+        if consumed == 0 {
+            return false
+        }
+        offset += consumed
+    }
+    return offset == len
+}
+
+// Returns the number of Unicode code points in the UTF-8 sequence.
+// If an invalid sequence is encountered, returns the count decoded up to the error.
+act utf8_rune_count(bytes: @u8, len: usize) -> usize {
+    if bytes == null or len == 0 {
+        return 0
+    }
+    mut count: usize = 0
+    mut offset: usize = 0
+    mut rune: u32 = 0
+    loop offset < len {
+        let consumed = utf8_decode_next(bytes + offset, len - offset, @rune)
+        if consumed == 0 {
+            return count
+        }
+        count += 1
+        offset += consumed
+    }
+    return count
+}
+
+// Validates whether a StrSlice contains valid UTF-8.
+act utf8_slice_is_valid(s: StrSlice) -> bool {
+    return utf8_is_valid(s.ptr, s.len)
+}
+
+// Counts Unicode code points in a StrSlice.
+act utf8_slice_rune_count(s: StrSlice) -> usize {
+    return utf8_rune_count(s.ptr, s.len)
+}

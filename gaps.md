@@ -879,6 +879,21 @@ flowchart TD
   - `bin/velo.exe run std/tests/str/slice_test.vl` passed all null/empty checks, indexing, sub-slicing, clamping, equality, 3-way ordering, prefix/suffix matching, and copy/cstr exports.
   - `python -m pytest tests/test_std_str.py` passed (1/1 passed).
 
+#### Task 2.2: UTF-8 Decoder & Validator (`std/str/utf8.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo lacked pure-Velo RFC 3629-compliant UTF-8 validation and Unicode scalar decoding, relying on raw byte indexing or C runtime assumptions that treat UTF-8 bytes as ASCII chars.
+* **Fix Applied**:
+  - Implemented `std/str/utf8.vl` providing `utf8_decode_next(bytes: @u8, len: usize, out_rune: @u32) -> usize`, `utf8_encode_rune(rune: u32, out_bytes: @u8, out_cap: usize) -> usize`, `utf8_is_valid(bytes: @u8, len: usize) -> bool`, `utf8_rune_count(bytes: @u8, len: usize) -> usize`, `utf8_slice_is_valid(s: StrSlice) -> bool`, and `utf8_slice_rune_count(s: StrSlice) -> usize`.
+  - Compliant with RFC 3629: supports 1-byte (`0x00..0x7F`), 2-byte (`0xC2..0xDF`), 3-byte (`0xE0..0xEF`), and 4-byte (`0xF0..0xF4`) sequences.
+  - Enforces strict rejection of 2/3/4-byte overlong encodings (e.g. `0xC0`, `0xC1`, `0xE0 0x80..0x9F`, `0xF0 0x80..0x8F`), UTF-16 surrogates (`0xD800..0xDFFF` via `0xED 0xA0..0xBF`), code points > 0x10FFFF, and truncated sequences.
+  - Added unit test suite `std/tests/str/utf8_test.vl` and pytest integration in `tests/test_std_str.py`.
+* **Residual Limitation**:
+  - Full Unicode normalization forms (NFC/NFD) and grapheme cluster break iteration can be added in an extended Unicode module.
+* **Verification**:
+  - `bin/velo.exe run std/tests/str/utf8_test.vl` passed ASCII, Cyrillic (2-byte), CJK (3-byte), Emoji (4-byte), round-trip encode/decode, overlong rejection, surrogate rejection, truncated sequences, and out-of-range rejection.
+  - `python -m pytest tests/test_std_str.py` passed (2/2 passed).
+
+
 
 
 
