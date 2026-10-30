@@ -1,0 +1,280 @@
+// Pure Velo filesystem mutation operations (zero C runtime dependencies).
+// Provides directory creation/removal, file deletion, renaming, file copying,
+// and atomic file reading and writing directly via OS kernel services.
+use "../str/slice.vl"
+use "../mem/ops.vl"
+use "../mem/heap.vl"
+use "../io/handle.vl"
+use "stat.vl"
+
+// Win32 MoveFileEx flags
+let MOVEFILE_REPLACE_EXISTING: u32 = 1
+let MOVEFILE_COPY_ALLOWED: u32 = 2
+
+// Foreign interface to Windows kernel services
+extern act CreateDirectoryA(lpPathName: @u8, lpSecurityAttributes: @u8) -> i32
+extern act RemoveDirectoryA(lpPathName: @u8) -> i32
+extern act DeleteFileA(lpFileName: @u8) -> i32
+extern act MoveFileExA(lpExistingFileName: @u8, lpNewFileName: @u8, dwFlags: u32) -> i32
+extern act CopyFileA(lpExistingFileName: @u8, lpNewFileName: @u8, bFailIfExists: i32) -> i32
+
+// Creates a single directory. Returns true on success.
+act fs_create_dir(path: @u8) -> bool {
+    if path == null { return false }
+    return CreateDirectoryA(path, null) != 0
+}
+
+// Creates a single directory from a Velo string.
+act fs_create_dir_str(path: string) -> bool {
+    if path == null { return false }
+    return fs_create_dir(path as @u8)
+}
+
+// Creates a single directory from a StrSlice view.
+act fs_create_dir_slice(path: StrSlice) -> bool {
+    if slice_is_empty(path) { return false }
+    let buf = heap_alloc(path.len + 1)
+    if buf == null { return false }
+    copy(buf, path.ptr, path.len)
+    buf[path.len] = 0 as u8
+    let ok = fs_create_dir(buf)
+    heap_free(buf)
+    return ok
+}
+
+// Creates a directory and all non-existent parent directories (like mkdir -p).
+// Returns true if the directory exists or was created successfully.
+act fs_create_dir_all(path: string) -> bool {
+    if path == null { return false }
+    let plen = raw_str_len(path as @u8)
+    if plen == 0 { return false }
+
+    if fs_is_dir(path) { return true }
+
+    let tmp = heap_alloc(plen + 1)
+    if tmp == null { return false }
+    copy(tmp, path as @u8, plen)
+    tmp[plen] = 0 as u8
+
+    mut i: usize = 0
+    loop i < plen {
+        let c = tmp[i]
+        if c == 47 as u8 or c == 92 as u8 { // '/' or '\\'
+            mut skip = false
+            if i == 0 { skip = true }
+            if i == 2 and tmp[1] == 58 as u8 { skip = true } // "C:/"
+            if !skip {
+                tmp[i] = 0 as u8
+                if !fs_exists(tmp as string) {
+                    CreateDirectoryA(tmp, null)
+                }
+                tmp[i] = c
+            }
+        }
+        i += 1
+    }
+
+    if !fs_exists(tmp as string) {
+        CreateDirectoryA(tmp, null)
+    }
+
+    let ok = fs_is_dir(tmp as string)
+    heap_free(tmp)
+    return ok
+}
+
+// Removes an empty directory. Returns true on success.
+act fs_remove_dir(path: @u8) -> bool {
+    if path == null { return false }
+    return RemoveDirectoryA(path) != 0
+}
+
+// Removes an empty directory from a Velo string.
+act fs_remove_dir_str(path: string) -> bool {
+    if path == null { return false }
+    return fs_remove_dir(path as @u8)
+}
+
+// Removes an empty directory from a StrSlice view.
+act fs_remove_dir_slice(path: StrSlice) -> bool {
+    if slice_is_empty(path) { return false }
+    let buf = heap_alloc(path.len + 1)
+    if buf == null { return false }
+    copy(buf, path.ptr, path.len)
+    buf[path.len] = 0 as u8
+    let ok = fs_remove_dir(buf)
+    heap_free(buf)
+    return ok
+}
+
+// Deletes a file. Returns true on success.
+act fs_remove_file(path: @u8) -> bool {
+    if path == null { return false }
+    return DeleteFileA(path) != 0
+}
+
+// Deletes a file from a Velo string.
+act fs_remove_file_str(path: string) -> bool {
+    if path == null { return false }
+    return fs_remove_file(path as @u8)
+}
+
+// Deletes a file from a StrSlice view.
+act fs_remove_file_slice(path: StrSlice) -> bool {
+    if slice_is_empty(path) { return false }
+    let buf = heap_alloc(path.len + 1)
+    if buf == null { return false }
+    copy(buf, path.ptr, path.len)
+    buf[path.len] = 0 as u8
+    let ok = fs_remove_file(buf)
+    heap_free(buf)
+    return ok
+}
+
+// Renames or moves a file/directory. Overwrites destination if it exists.
+act fs_rename(old_path: @u8, new_path: @u8) -> bool {
+    if old_path == null or new_path == null { return false }
+    let flags = MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED
+    return MoveFileExA(old_path, new_path, flags) != 0
+}
+
+// Renames or moves a file/directory from Velo strings.
+act fs_rename_str(old_path: string, new_path: string) -> bool {
+    if old_path == null or new_path == null { return false }
+    return fs_rename(old_path as @u8, new_path as @u8)
+}
+
+// Renames or moves a file/directory from StrSlice views.
+act fs_rename_slice(old_path: StrSlice, new_path: StrSlice) -> bool {
+    if slice_is_empty(old_path) or slice_is_empty(new_path) { return false }
+    let b_old = heap_alloc(old_path.len + 1)
+    let b_new = heap_alloc(new_path.len + 1)
+    if b_old == null or b_new == null {
+        if b_old != null { heap_free(b_old) }
+        if b_new != null { heap_free(b_new) }
+        return false
+    }
+    copy(b_old, old_path.ptr, old_path.len)
+    b_old[old_path.len] = 0 as u8
+    copy(b_new, new_path.ptr, new_path.len)
+    b_new[new_path.len] = 0 as u8
+
+    let ok = fs_rename(b_old, b_new)
+    heap_free(b_old)
+    heap_free(b_new)
+    return ok
+}
+
+// Copies a file. If overwrite is true, replaces existing destination.
+act fs_copy_file(src: @u8, dst: @u8, overwrite: bool) -> bool {
+    if src == null or dst == null { return false }
+    mut fail_if_exists: i32 = 1
+    if overwrite {
+        fail_if_exists = 0
+    }
+    return CopyFileA(src, dst, fail_if_exists) != 0
+}
+
+// Copies a file from Velo strings.
+act fs_copy_file_str(src: string, dst: string, overwrite: bool) -> bool {
+    if src == null or dst == null { return false }
+    return fs_copy_file(src as @u8, dst as @u8, overwrite)
+}
+
+// Copies a file from StrSlice views.
+act fs_copy_file_slice(src: StrSlice, dst: StrSlice, overwrite: bool) -> bool {
+    if slice_is_empty(src) or slice_is_empty(dst) { return false }
+    let b_src = heap_alloc(src.len + 1)
+    let b_dst = heap_alloc(dst.len + 1)
+    if b_src == null or b_dst == null {
+        if b_src != null { heap_free(b_src) }
+        if b_dst != null { heap_free(b_dst) }
+        return false
+    }
+    copy(b_src, src.ptr, src.len)
+    b_src[src.len] = 0 as u8
+    copy(b_dst, dst.ptr, dst.len)
+    b_dst[dst.len] = 0 as u8
+
+    let ok = fs_copy_file(b_src, b_dst, overwrite)
+    heap_free(b_src)
+    heap_free(b_dst)
+    return ok
+}
+
+// Writes raw bytes to a file, replacing it if it exists.
+act fs_write_bytes(path: string, data: @u8, len: usize) -> bool {
+    if path == null { return false }
+    let flags = IO_CREATE | IO_TRUNCATE | IO_WRITE
+    let fh = io_file_open_str(path, flags)
+    if !io_is_valid_handle(fh) { return false }
+
+    mut ok = true
+    if len > 0 and data != null {
+        let written = io_raw_write(fh, data, len)
+        if written != len {
+            ok = false
+        }
+    }
+    io_file_close(fh)
+    return ok
+}
+
+// Writes a string to a file, replacing it if it exists.
+act fs_write_str(path: string, content: string) -> bool {
+    if content == null {
+        return fs_write_bytes(path, null, 0)
+    }
+    let len = raw_str_len(content as @u8)
+    return fs_write_bytes(path, content as @u8, len)
+}
+
+// Writes a StrSlice view to a file, replacing it if it exists.
+act fs_write_slice(path: string, content: StrSlice) -> bool {
+    return fs_write_bytes(path, content.ptr, content.len)
+}
+
+// Reads entire file into a newly allocated null-terminated heap buffer.
+// Sets out_len to the number of bytes read (excluding null terminator).
+act fs_read_bytes(path: string, out_len: @usize) -> @u8 {
+    if path == null { return null }
+    let fh = io_file_open_str(path, IO_READ)
+    if !io_is_valid_handle(fh) { return null }
+
+    let sz_i64 = io_file_size(fh)
+    if sz_i64 < 0 {
+        io_file_close(fh)
+        return null
+    }
+    let sz = sz_i64 as usize
+    let buf = heap_alloc(sz + 1)
+    if buf == null {
+        io_file_close(fh)
+        return null
+    }
+
+    mut bytes_read: isize = 0
+    if sz > 0 {
+        bytes_read = io_raw_read(fh, buf, sz)
+    }
+    io_file_close(fh)
+
+    if bytes_read < 0 {
+        heap_free(buf)
+        return null
+    }
+
+    let actual_len = bytes_read as usize
+    buf[actual_len] = 0 as u8
+    if out_len != null {
+        out_len[0] = actual_len
+    }
+    return buf
+}
+
+// Reads an entire file into a heap-allocated Velo string.
+act fs_read_to_str(path: string) -> string {
+    mut l: usize = 0
+    let buf = fs_read_bytes(path, @l)
+    return buf as string
+}

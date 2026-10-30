@@ -1204,3 +1204,16 @@ flowchart TD
 * **Verification**:
   - `bin/velo.exe run std/tests/fs/stat_test.vl` passed file existence, directory detection, file size measurement, and full metadata queries.
   - `python -m pytest tests/test_std_fs.py` passed (1/1 passed in 0.54s).
+
+#### Task 6.3: Filesystem Mutation Operations (`std/fs/ops.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Filesystem mutations (directory creation, recursive directory creation, directory removal, file deletion, renaming, file copying, and whole-file read/write) previously lacked a pure-Velo implementation, requiring compiler intrinsics or C runtime wrappers.
+* **Fix Applied**:
+  - Implemented `std/fs/ops.vl` providing full suite of filesystem mutations: `fs_create_dir`, `fs_create_dir_str`, `fs_create_dir_slice`, `fs_create_dir_all` (recursive `mkdir -p`), `fs_remove_dir`, `fs_remove_dir_str`, `fs_remove_dir_slice`, `fs_remove_file`, `fs_remove_file_str`, `fs_remove_file_slice`, `fs_rename`, `fs_rename_str`, `fs_rename_slice`, `fs_copy_file`, `fs_copy_file_str`, `fs_copy_file_slice`.
+  - Implemented high-level atomic file I/O using pure `std.io`: `fs_write_bytes`, `fs_write_str`, `fs_write_slice`, `fs_read_bytes`, and `fs_read_to_str`.
+  - Added unit test suite `std/tests/fs/ops_test.vl` and pytest integration in `tests/test_std_fs.py`.
+* **Residual Limitation**:
+  - Directory iteration and entry scanning (`std/fs/dir.vl`) will be implemented in Task 6.4.
+* **Verification**:
+  - `bin/velo.exe run std/tests/fs/ops_test.vl` passed single directory creation and removal, recursive directory hierarchy creation (`fs_create_dir_all`), file writing/reading/removal, and file copying with rename/move.
+  - `python -m pytest tests/test_std_fs.py` passed (2/2 passed in 1.17s).

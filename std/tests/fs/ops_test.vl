@@ -1,0 +1,138 @@
+// Unit test suite for std.fs.ops (pure Velo filesystem mutations & atomic I/O).
+use sys.io
+use "../../str/slice.vl"
+use "../../mem/heap.vl"
+use "../../fs/stat.vl"
+use "../../fs/ops.vl"
+
+act test_dir_create_and_remove() -> bool {
+    let d1 = "scratch/test_dir_single"
+    if fs_exists(d1) {
+        fs_remove_dir_str(d1)
+    }
+
+    // 1. Create single directory
+    if !fs_create_dir_str(d1) { return false }
+    if !fs_is_dir(d1) { return false }
+
+    // 2. Remove directory
+    if !fs_remove_dir_str(d1) { return false }
+    if fs_exists(d1) { return false }
+
+    // 3. Slice overloads
+    let d2 = "scratch/test_dir_slice"
+    if fs_exists(d2) { fs_remove_dir_str(d2) }
+    if !fs_create_dir_slice(slice_from_str(d2)) { return false }
+    if !fs_is_dir(d2) { return false }
+    if !fs_remove_dir_slice(slice_from_str(d2)) { return false }
+    if fs_exists(d2) { return false }
+
+    return true
+}
+
+act test_create_dir_all() -> bool {
+    let deep_dir = "scratch/nest1/nest2/nest3"
+    if fs_exists("scratch/nest1/nest2/nest3") { fs_remove_dir_str("scratch/nest1/nest2/nest3") }
+    if fs_exists("scratch/nest1/nest2") { fs_remove_dir_str("scratch/nest1/nest2") }
+    if fs_exists("scratch/nest1") { fs_remove_dir_str("scratch/nest1") }
+
+    // Recursively create directory chain
+    if !fs_create_dir_all(deep_dir) { return false }
+    if !fs_is_dir("scratch/nest1") { return false }
+    if !fs_is_dir("scratch/nest1/nest2") { return false }
+    if !fs_is_dir("scratch/nest1/nest2/nest3") { return false }
+
+    // Cleanup inside out
+    fs_remove_dir_str("scratch/nest1/nest2/nest3")
+    fs_remove_dir_str("scratch/nest1/nest2")
+    fs_remove_dir_str("scratch/nest1")
+
+    return true
+}
+
+act test_file_write_read_and_remove() -> bool {
+    let f1 = "scratch/test_io_ops.txt"
+    if fs_exists(f1) { fs_remove_file_str(f1) }
+
+    let msg = "Hello pure Velo filesystem!"
+    if !fs_write_str(f1, msg) { return false }
+    if !fs_is_file(f1) { return false }
+
+    let sz = fs_file_size(f1)
+    if sz != 27 { return false }
+
+    // Read back content
+    let content = fs_read_to_str(f1)
+    if content == null { return false }
+    if !slice_eq_str(slice_from_str(content), msg) {
+        heap_free(content as @u8)
+        return false
+    }
+    heap_free(content as @u8)
+
+    // Remove file
+    if !fs_remove_file_str(f1) { return false }
+    if fs_exists(f1) { return false }
+
+    return true
+}
+
+act test_file_copy_and_rename() -> bool {
+    let src = "scratch/test_orig.txt"
+    let dst = "scratch/test_copy.txt"
+    let ren = "scratch/test_moved.txt"
+
+    if fs_exists(src) { fs_remove_file_str(src) }
+    if fs_exists(dst) { fs_remove_file_str(dst) }
+    if fs_exists(ren) { fs_remove_file_str(ren) }
+
+    // 1. Write source file
+    if !fs_write_str(src, "Velo copy test content 12345") { return false }
+
+    // 2. Copy file
+    if !fs_copy_file_str(src, dst, true) { return false }
+    if !fs_is_file(dst) { return false }
+    if fs_file_size(dst) != fs_file_size(src) { return false }
+
+    // 3. Move/Rename file
+    if !fs_rename_str(dst, ren) { return false }
+    if fs_exists(dst) { return false } // old should be gone
+    if !fs_is_file(ren) { return false } // new should exist
+
+    // 4. Verify content in renamed file
+    let ren_content = fs_read_to_str(ren)
+    if ren_content == null { return false }
+    if !slice_eq_str(slice_from_str(ren_content), "Velo copy test content 12345") {
+        heap_free(ren_content as @u8)
+        return false
+    }
+    heap_free(ren_content as @u8)
+
+    // Cleanup
+    fs_remove_file_str(src)
+    fs_remove_file_str(ren)
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_dir_create_and_remove() {
+        io.println("FAIL: test_dir_create_and_remove")
+        return 1
+    }
+    if !test_create_dir_all() {
+        io.println("FAIL: test_create_dir_all")
+        return 2
+    }
+    if !test_file_write_read_and_remove() {
+        io.println("FAIL: test_file_write_read_and_remove")
+        return 3
+    }
+    if !test_file_copy_and_rename() {
+        io.println("FAIL: test_file_copy_and_rename")
+        return 4
+    }
+
+    io.println("PASS: std.fs.ops all assertions succeeded")
+    return 0
+}
