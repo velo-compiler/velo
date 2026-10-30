@@ -48,3 +48,15 @@ def test_std_time_sleep():
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.time.sleep all tests passed" in res.stdout
 
+def test_std_time_calendar():
+    test_vl = REPO_ROOT / "std" / "tests" / "time" / "calendar_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.time.calendar all tests passed" in res.stdout
+

@@ -1,0 +1,274 @@
+// Pure Velo Gregorian calendar and ISO-8601 date-time manipulation.
+// Zero C runtime dependencies (no <time.h>, gmtime, or strftime).
+use "../str/slice.vl"
+use "../mem/arena.vl"
+use "clock.vl"
+
+// Represents a decomposed UTC calendar date and clock time.
+data DateTime {
+    year: i32        // Gregorian calendar year (e.g. 2026)
+    month: i32       // Month of year (1 - 12)
+    day: i32         // Day of month (1 - 31)
+    hour: i32        // Hour of day (0 - 23)
+    minute: i32      // Minute of hour (0 - 59)
+    second: i32      // Second of minute (0 - 59)
+    millisecond: i32 // Millisecond of second (0 - 999)
+    nanosecond: i32  // Nanosecond of second (0 - 999,999,999)
+    weekday: i32     // Day of week: 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+    yearday: i32     // Day of year: 1 - 366
+}
+
+// Returns true if the specified year is a leap year in the Gregorian calendar.
+act time_is_leap_year(year: i32) -> bool {
+    if (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0) {
+        return true
+    }
+    return false
+}
+
+// Returns the number of days in the specified month of the given year.
+act time_days_in_month(year: i32, month: i32) -> i32 {
+    if month == 2 {
+        if time_is_leap_year(year) {
+            return 29
+        }
+        return 28
+    }
+    if month == 4 or month == 6 or month == 9 or month == 11 {
+        return 30
+    }
+    return 31
+}
+
+// Converts a Gregorian calendar date to days since Unix epoch (1970-01-01).
+// Implements the O(1) Euclidean affine calendar conversion algorithm.
+act time_days_from_civil(year: i32, month: i32, day: i32) -> i64 {
+    mut y: i64 = year as i64
+    let m: i64 = month as i64
+    let d: i64 = day as i64
+
+    if m <= 2 {
+        y -= 1
+    }
+
+    mut era: i64 = (y - 399) / 400
+    if y >= 0 {
+        era = y / 400
+    }
+    let yoe: i64 = y - era * 400
+
+    mut mp: i64 = m - 3
+    if m <= 2 {
+        mp = m + 9
+    }
+    let doy: i64 = (153 * mp + 2) / 5 + d - 1
+    let doe: i64 = yoe * 365 + (yoe / 4) - (yoe / 100) + doy
+
+    return era * 146097 + doe - 719468
+}
+
+// Converts days since Unix epoch to Gregorian calendar date (year, month, day).
+act time_civil_from_days(epoch_days: i64, out_year: @i32, out_month: @i32, out_day: @i32) {
+    let z: i64 = epoch_days + 719468
+    mut era: i64 = (z - 146096) / 146097
+    if z >= 0 {
+        era = z / 146097
+    }
+    let doe: i64 = z - era * 146097
+    let yoe: i64 = (doe - (doe / 1460) + (doe / 36524) - (doe / 146096)) / 365
+    mut y: i64 = yoe + era * 400
+    let doy: i64 = doe - (365 * yoe + (yoe / 4) - (yoe / 100))
+    let mp: i64 = (5 * doy + 2) / 153
+    let d: i64 = doy - (153 * mp + 2) / 5 + 1
+    mut m: i64 = mp - 9
+    if mp < 10 {
+        m = mp + 3
+    }
+
+    if m <= 2 {
+        y += 1
+    }
+
+    if out_year != null { out_year[0] = y as i32 }
+    if out_month != null { out_month[0] = m as i32 }
+    if out_day != null { out_day[0] = d as i32 }
+}
+
+// Decomposes Unix epoch seconds into a DateTime structure (UTC).
+act time_epoch_to_datetime(epoch_s: i64) -> DateTime {
+    mut days: i64 = (epoch_s - 86399) / 86400
+    if epoch_s >= 0 {
+        days = epoch_s / 86400
+    }
+    let rem_s: i64 = epoch_s - days * 86400
+
+    mut year: i32 = 0
+    mut month: i32 = 0
+    mut day: i32 = 0
+    time_civil_from_days(days, @year, @month, @day)
+
+    let hour: i32 = (rem_s / 3600) as i32
+    let minute: i32 = ((rem_s % 3600) / 60) as i32
+    let second: i32 = (rem_s % 60) as i32
+
+    // 1970-01-01 was Thursday (weekday index 4; 0 = Sunday)
+    mut w: i64 = (days + 4) % 7
+    if w < 0 {
+        w += 7
+    }
+    let weekday: i32 = w as i32
+
+    let start_of_year_days: i64 = time_days_from_civil(year, 1, 1)
+    let yearday: i32 = ((days - start_of_year_days) + 1) as i32
+
+    return DateTime {
+        year: year,
+        month: month,
+        day: day,
+        hour: hour,
+        minute: minute,
+        second: second,
+        millisecond: 0,
+        nanosecond: 0,
+        weekday: weekday,
+        yearday: yearday
+    }
+}
+
+// Decomposes Unix epoch milliseconds into a DateTime structure (UTC).
+act time_epoch_ms_to_datetime(epoch_ms: i64) -> DateTime {
+    mut epoch_s: i64 = (epoch_ms - 999) / 1000
+    if epoch_ms >= 0 {
+        epoch_s = epoch_ms / 1000
+    }
+    mut dt = time_epoch_to_datetime(epoch_s)
+
+    mut ms: i64 = epoch_ms % 1000
+    if ms < 0 {
+        ms += 1000
+    }
+    dt.millisecond = ms as i32
+    dt.nanosecond = (ms * 1000000) as i32
+    return dt
+}
+
+// Decomposes Unix epoch nanoseconds into a DateTime structure (UTC).
+act time_epoch_ns_to_datetime(epoch_ns: u64) -> DateTime {
+    let epoch_s: i64 = (epoch_ns / 1000000000) as i64
+    mut dt = time_epoch_to_datetime(epoch_s)
+    let rem_ns = (epoch_ns % 1000000000) as i32
+    dt.millisecond = rem_ns / 1000000
+    dt.nanosecond = rem_ns
+    return dt
+}
+
+// Returns the current date and time in UTC based on the system clock.
+act time_now_datetime() -> DateTime {
+    let epoch_ms = time_now_epoch_ms()
+    return time_epoch_ms_to_datetime(epoch_ms)
+}
+
+// Converts a DateTime structure to Unix epoch seconds (UTC).
+act time_datetime_to_epoch(dt: @DateTime) -> i64 {
+    if dt == null {
+        return 0
+    }
+    let days = time_days_from_civil(dt.year, dt.month, dt.day)
+    return days * 86400 + (dt.hour as i64) * 3600 + (dt.minute as i64) * 60 + (dt.second as i64)
+}
+
+// Converts a DateTime structure to Unix epoch milliseconds (UTC).
+act time_datetime_to_epoch_ms(dt: @DateTime) -> i64 {
+    if dt == null {
+        return 0
+    }
+    let s = time_datetime_to_epoch(dt)
+    return s * 1000 + (dt.millisecond as i64)
+}
+
+// Formats a DateTime as ISO-8601 string: "YYYY-MM-DDTHH:MM:SSZ" (20 bytes).
+act time_format_iso8601(dt: @DateTime, dest: @u8, dest_cap: usize) -> StrSlice {
+    if dest == null or dest_cap < 21 or dt == null {
+        return slice_from_raw(null, 0)
+    }
+
+    let y = dt.year
+    dest[0] = ('0' as u8) + (((y / 1000) % 10) as u8)
+    dest[1] = ('0' as u8) + (((y / 100) % 10) as u8)
+    dest[2] = ('0' as u8) + (((y / 10) % 10) as u8)
+    dest[3] = ('0' as u8) + ((y % 10) as u8)
+    dest[4] = '-' as u8
+
+    let m = dt.month
+    dest[5] = ('0' as u8) + ((m / 10) as u8)
+    dest[6] = ('0' as u8) + ((m % 10) as u8)
+    dest[7] = '-' as u8
+
+    let d = dt.day
+    dest[8] = ('0' as u8) + ((d / 10) as u8)
+    dest[9] = ('0' as u8) + ((d % 10) as u8)
+    dest[10] = 'T' as u8
+
+    let h = dt.hour
+    dest[11] = ('0' as u8) + ((h / 10) as u8)
+    dest[12] = ('0' as u8) + ((h % 10) as u8)
+    dest[13] = ':' as u8
+
+    let min = dt.minute
+    dest[14] = ('0' as u8) + ((min / 10) as u8)
+    dest[15] = ('0' as u8) + ((min % 10) as u8)
+    dest[16] = ':' as u8
+
+    let sec = dt.second
+    dest[17] = ('0' as u8) + ((sec / 10) as u8)
+    dest[18] = ('0' as u8) + ((sec % 10) as u8)
+    dest[19] = 'Z' as u8
+    dest[20] = 0 as u8
+
+    return slice_from_raw(dest, 20)
+}
+
+// Formats a DateTime as ISO-8601 with milliseconds: "YYYY-MM-DDTHH:MM:SS.mmmZ" (24 bytes).
+act time_format_iso8601_ms(dt: @DateTime, dest: @u8, dest_cap: usize) -> StrSlice {
+    if dest == null or dest_cap < 25 or dt == null {
+        return slice_from_raw(null, 0)
+    }
+
+    time_format_iso8601(dt, dest, dest_cap)
+
+    let ms = dt.millisecond
+    dest[19] = '.' as u8
+    dest[20] = ('0' as u8) + (((ms / 100) % 10) as u8)
+    dest[21] = ('0' as u8) + (((ms / 10) % 10) as u8)
+    dest[22] = ('0' as u8) + ((ms % 10) as u8)
+    dest[23] = 'Z' as u8
+    dest[24] = 0 as u8
+
+    return slice_from_raw(dest, 24)
+}
+
+// Allocates and formats an ISO-8601 string from Arena regional memory.
+act time_format_iso8601_str(a: @Arena, dt: @DateTime) -> string {
+    if a == null or dt == null {
+        return ""
+    }
+    let buf = arena_alloc(a, 24, 1)
+    if buf == null {
+        return ""
+    }
+    let sl = time_format_iso8601(dt, buf, 24)
+    return buf as string
+}
+
+// Allocates and formats an ISO-8601 millisecond string from Arena regional memory.
+act time_format_iso8601_ms_str(a: @Arena, dt: @DateTime) -> string {
+    if a == null or dt == null {
+        return ""
+    }
+    let buf = arena_alloc(a, 28, 1)
+    if buf == null {
+        return ""
+    }
+    let sl = time_format_iso8601_ms(dt, buf, 28)
+    return buf as string
+}

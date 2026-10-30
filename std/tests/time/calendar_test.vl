@@ -1,0 +1,124 @@
+// Unit test suite for std.time.calendar (pure Velo Gregorian calendar & ISO-8601).
+use "../../mem/page.vl"
+use "../../mem/arena.vl"
+use "../../str/slice.vl"
+use "../../io/print.vl"
+use "../../time/calendar.vl"
+
+act test_leap_years() -> bool {
+    if !time_is_leap_year(2000) { return false }
+    if !time_is_leap_year(2024) { return false }
+    if time_is_leap_year(1900) { return false }
+    if time_is_leap_year(2023) { return false }
+    if time_is_leap_year(2026) { return false }
+
+    if time_days_in_month(2024, 2) != 29 { return false }
+    if time_days_in_month(2026, 2) != 28 { return false }
+    if time_days_in_month(2026, 1) != 31 { return false }
+    if time_days_in_month(2026, 4) != 30 { return false }
+    if time_days_in_month(2026, 12) != 31 { return false }
+
+    return true
+}
+
+act test_epoch_conversions() -> bool {
+    // 1970-01-01 00:00:00 UTC (Thursday)
+    let dt0 = time_epoch_to_datetime(0)
+    if dt0.year != 1970 or dt0.month != 1 or dt0.day != 1 { return false }
+    if dt0.hour != 0 or dt0.minute != 0 or dt0.second != 0 { return false }
+    if dt0.weekday != 4 or dt0.yearday != 1 { return false }
+    if time_datetime_to_epoch(@dt0) != 0 { return false }
+
+    // 2000-02-29 00:00:00 UTC (leap year)
+    let dt_leap = time_epoch_to_datetime(951782400)
+    if dt_leap.year != 2000 or dt_leap.month != 2 or dt_leap.day != 29 { return false }
+    if dt_leap.yearday != 60 { return false }
+    if time_datetime_to_epoch(@dt_leap) != 951782400 { return false }
+
+    // 2026-10-30 14:00:59 UTC (Friday)
+    let dt_curr = time_epoch_to_datetime(1793368859)
+    if dt_curr.year != 2026 or dt_curr.month != 10 or dt_curr.day != 30 { return false }
+    if dt_curr.hour != 14 or dt_curr.minute != 0 or dt_curr.second != 59 { return false }
+    if dt_curr.weekday != 5 { return false }
+    if time_datetime_to_epoch(@dt_curr) != 1793368859 { return false }
+
+    // Milliseconds conversion
+    let dt_ms = time_epoch_ms_to_datetime(1793368859456)
+    if dt_ms.millisecond != 456 { return false }
+    if time_datetime_to_epoch_ms(@dt_ms) != 1793368859456 { return false }
+
+    return true
+}
+
+act test_iso8601_formatting() -> bool {
+    mut arena = arena_init(4096)
+    defer arena_reset(@arena)
+
+    mut dt = time_epoch_to_datetime(1793368859)
+    dt.millisecond = 123
+
+    // Buffer formatting
+    mut buf = arena_alloc(@arena, 64, 1)
+    let sl = time_format_iso8601(@dt, buf, 64)
+    if !slice_eq_str(sl, "2026-10-30T14:00:59Z") {
+        return false
+    }
+
+    mut buf_ms = arena_alloc(@arena, 64, 1)
+    let sl_ms = time_format_iso8601_ms(@dt, buf_ms, 64)
+    if !slice_eq_str(sl_ms, "2026-10-30T14:00:59.123Z") {
+        return false
+    }
+
+    // Arena string formatting
+    let s1 = time_format_iso8601_str(@arena, @dt)
+    if !slice_eq_str(slice_from_str(s1), "2026-10-30T14:00:59Z") {
+        return false
+    }
+
+    let s2 = time_format_iso8601_ms_str(@arena, @dt)
+    if !slice_eq_str(slice_from_str(s2), "2026-10-30T14:00:59.123Z") {
+        return false
+    }
+
+    return true
+}
+
+act test_now_datetime() -> bool {
+    let now = time_now_datetime()
+    if now.year != 2026 { return false }
+    if now.month < 1 or now.month > 12 { return false }
+    if now.day < 1 or now.day > 31 { return false }
+    if now.hour < 0 or now.hour > 23 { return false }
+    if now.minute < 0 or now.minute > 59 { return false }
+    if now.second < 0 or now.second > 59 { return false }
+    if now.weekday < 0 or now.weekday > 6 { return false }
+    if now.yearday < 1 or now.yearday > 366 { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_leap_years() {
+        println_str("FAIL: test_leap_years")
+        return 1
+    }
+
+    if !test_epoch_conversions() {
+        println_str("FAIL: test_epoch_conversions")
+        return 2
+    }
+
+    if !test_iso8601_formatting() {
+        println_str("FAIL: test_iso8601_formatting")
+        return 3
+    }
+
+    if !test_now_datetime() {
+        println_str("FAIL: test_now_datetime")
+        return 4
+    }
+
+    println_str("PASS: std.time.calendar all tests passed")
+    return 0
+}

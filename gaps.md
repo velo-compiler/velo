@@ -1373,7 +1373,21 @@ flowchart TD
   - Updated Win32 `Sleep` prototype in `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h` to `uint32_t ms`, maintaining type-identical alignment across runtime and foreign interfaces.
   - Added unit test suite `std/tests/time/sleep_test.vl` and pytest integration in `tests/test_std_time.py`.
 * **Residual Limitation**:
-  - Gregorian calendar date/time conversion and ISO-8601 formatting (`std/time/calendar.vl`) are scheduled for Task 8.4.
+  - Gregorian calendar date/time conversion and ISO-8601 formatting (`std/time/calendar.vl`) completed in Task 8.4.
 * **Verification**:
   - `bin/velo.exe run std/tests/time/sleep_test.vl` passed (`PASS: std.time.sleep all tests passed`).
   - `python -m pytest tests/test_std_time.py` passed (3/3 passed in 3.30s).
+
+#### Task 8.4: Pure Velo Gregorian Calendar & ISO-8601 Formatting (`std/time/calendar.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - While monotonic clocks, durations, and sleeping were implemented in Tasks 8.1-8.3, Velo lacked a pure-Velo Gregorian calendar date-time model and ISO-8601/RFC 3339 string formatter. Converting Unix epoch timestamps into human-readable year, month, day, hour, minute, second, millisecond, and day-of-week previously required C `<time.h>` runtime functions (`gmtime`, `strftime`).
+* **Fix Applied**:
+  - Implemented `std/time/calendar.vl` providing `data DateTime` and exact O(1) Euclidean affine calendar conversion algorithms (`time_civil_from_days`, `time_days_from_civil`) validated across 110 years (40,000 consecutive days) of leap/non-leap cycles.
+  - Implemented calendar queries: `time_is_leap_year`, `time_days_in_month`, `time_epoch_to_datetime`, `time_epoch_ms_to_datetime`, `time_epoch_ns_to_datetime`, `time_now_datetime`, and reverse epoch converters `time_datetime_to_epoch`, `time_datetime_to_epoch_ms`.
+  - Implemented RFC 3339 / ISO-8601 string formatting without libc: `time_format_iso8601` ("YYYY-MM-DDTHH:MM:SSZ"), `time_format_iso8601_ms` ("YYYY-MM-DDTHH:MM:SS.mmmZ"), and Arena allocators `time_format_iso8601_str`, `time_format_iso8601_ms_str`.
+  - Added unit test suite `std/tests/time/calendar_test.vl` and pytest integration in `tests/test_std_time.py`.
+* **Residual Limitation**:
+  - Standard library umbrella module (`std/time.vl`) and driver resolution (`use std.time`) are scheduled for Task 8.5.
+* **Verification**:
+  - `bin/velo.exe run std/tests/time/calendar_test.vl` passed (`PASS: std.time.calendar all tests passed`).
+  - `python -m pytest tests/test_std_time.py` passed (4/4 passed in 4.52s).
