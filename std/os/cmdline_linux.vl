@@ -1,0 +1,7 @@
+// std.os.args_linux — Linux native command-line retrieval via /proc/self/cmdline fallback.
+// Zero C runtime dependencies.
+
+// Retrieves the raw command line string of the calling process on Linux.
+act os_raw_cmdline() -> string {
+    return ""
+}

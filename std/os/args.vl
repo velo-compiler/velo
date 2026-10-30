@@ -1,0 +1,314 @@
+// std.os.args — Command-line argument retrieval, tokenization, quoting, and joining.
+// Implements Win32 / POSIX escaping rules without libc runtime dependencies.
+use "../mem/arena.vl"
+use "../str/slice.vl"
+use "../str/builder.vl"
+use "cmdline_windows.vl"
+
+// Parsed command-line arguments container.
+data Args {
+    count: usize,
+    items: @string,
+    raw: string,
+}
+
+// Checks if a byte is a command-line space or horizontal tab delimiter.
+act is_cmd_space(b: u8) -> bool {
+    return b == 32 as u8 or b == 9 as u8
+}
+
+// Counts the number of arguments present in a raw command line string.
+act os_count_cmdline_args(cmdline: string) -> usize {
+    if cmdline == null { return 0 }
+    let ptr = cmdline as @u8
+    let len = raw_str_len(ptr)
+    mut count: usize = 0
+    mut i: usize = 0
+
+    loop i < len {
+        loop i < len and is_cmd_space(ptr[i]) {
+            i += 1
+        }
+        if i >= len { break }
+
+        count += 1
+        mut in_quote: bool = false
+
+        loop i < len {
+            if !in_quote and is_cmd_space(ptr[i]) {
+                break
+            }
+
+            mut slash_count: usize = 0
+            loop i < len and ptr[i] == 92 as u8 {
+                slash_count += 1
+                i += 1
+            }
+
+            if i < len and ptr[i] == 34 as u8 {
+                if slash_count % 2 == 0 {
+                    in_quote = !in_quote
+                }
+                i += 1
+            } else {
+                if slash_count == 0 {
+                    i += 1
+                }
+            }
+        }
+    }
+    return count
+}
+
+// Tokenizes a raw command line string according to standard Win32 quoting rules.
+// Allocates the argument array and all argument strings into arena.
+act os_tokenize_cmdline(arena: @Arena, cmdline: string) -> Args {
+    if arena == null or cmdline == null {
+        return Args { count: 0, items: null, raw: "" }
+    }
+    let total = os_count_cmdline_args(cmdline)
+    if total == 0 {
+        return Args { count: 0, items: null, raw: cmdline }
+    }
+
+    let items = arena_alloc(arena, total * 8, 8) as @string
+    if items == null {
+        return Args { count: 0, items: null, raw: cmdline }
+    }
+
+    let ptr = cmdline as @u8
+    let len = raw_str_len(ptr)
+    mut i: usize = 0
+    mut arg_idx: usize = 0
+
+    loop i < len and arg_idx < total {
+        loop i < len and is_cmd_space(ptr[i]) {
+            i += 1
+        }
+        if i >= len { break }
+
+        mut in_quote: bool = false
+        mut sb = sb_init(arena, 16)
+
+        loop i < len {
+            if !in_quote and is_cmd_space(ptr[i]) {
+                break
+            }
+
+            mut slash_count: usize = 0
+            loop i < len and ptr[i] == 92 as u8 {
+                slash_count += 1
+                i += 1
+            }
+
+            if i < len and ptr[i] == 34 as u8 {
+                mut k: usize = 0
+                let emit_slashes = slash_count / 2
+                loop k < emit_slashes {
+                    sb_append_byte(@sb, 92 as u8)
+                    k += 1
+                }
+                if slash_count % 2 == 0 {
+                    in_quote = !in_quote
+                } else {
+                    sb_append_byte(@sb, 34 as u8)
+                }
+                i += 1
+            } else {
+                mut k: usize = 0
+                loop k < slash_count {
+                    sb_append_byte(@sb, 92 as u8)
+                    k += 1
+                }
+                if slash_count == 0 {
+                    sb_append_byte(@sb, ptr[i])
+                    i += 1
+                }
+            }
+        }
+
+        items[arg_idx] = sb_to_cstr(@sb) as string
+        arg_idx += 1
+    }
+
+    return Args {
+        count: total,
+        items: items,
+        raw: cmdline,
+    }
+}
+
+// Retrieves and tokenizes the calling process's command-line arguments.
+act os_args(arena: @Arena) -> Args {
+    let raw = os_raw_cmdline()
+    return os_tokenize_cmdline(arena, raw)
+}
+
+// Returns the number of arguments in args.
+act args_count(args: @Args) -> usize {
+    if args == null { return 0 }
+    return args.count
+}
+
+// Returns the argument at index, or null if index is out of bounds.
+act args_get(args: @Args, index: usize) -> string {
+    if args == null or args.items == null or index >= args.count {
+        return null
+    }
+    return args.items[index]
+}
+
+// Returns a StrSlice view over the argument at index, or empty slice if invalid.
+act args_get_slice(args: @Args, index: usize) -> StrSlice {
+    let s = args_get(args, index)
+    if s == null {
+        return StrSlice { ptr: null, len: 0 }
+    }
+    return slice_from_str(s)
+}
+
+// Returns true if args contains an argument matching flag exactly.
+act args_has_flag(args: @Args, flag: string) -> bool {
+    if args == null or flag == null { return false }
+    mut i: usize = 0
+    loop i < args.count {
+        let item = args.items[i]
+        if item != null and slice_eq_str(slice_from_str(item), flag) {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// Finds an option (e.g. "-o" or "--output") and returns its following value, or null.
+act args_find_option(args: @Args, opt: string) -> string {
+    if args == null or opt == null { return null }
+    mut i: usize = 0
+    loop i < args.count {
+        let item = args.items[i]
+        if item != null and slice_eq_str(slice_from_str(item), opt) {
+            if i + 1 < args.count {
+                return args.items[i + 1]
+            }
+            return null
+        }
+        i += 1
+    }
+    return null
+}
+
+// Determines whether an argument requires quotation marks for command-line embedding.
+act arg_needs_quotes(arg: string) -> bool {
+    if arg == null { return true }
+    let p = arg as @u8
+    let len = raw_str_len(p)
+    if len == 0 { return true }
+    mut i: usize = 0
+    loop i < len {
+        let b = p[i]
+        if b == 32 as u8 or b == 9 as u8 or b == 34 as u8 or b == 10 as u8 or b == 13 as u8 {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// Safely quotes an argument string for command-line invocation.
+// Follows Microsoft Win32 / POSIX backslash doubling and quote escaping rules.
+act os_quote_arg(arena: @Arena, arg: string) -> string {
+    if arena == null { return null }
+    if arg == null {
+        mut sb = sb_init(arena, 4)
+        sb_append_byte(@sb, 34 as u8)
+        sb_append_byte(@sb, 34 as u8)
+        return sb_to_cstr(@sb) as string
+    }
+    if !arg_needs_quotes(arg) {
+        return arg
+    }
+
+    let p = arg as @u8
+    let len = raw_str_len(p)
+    mut sb = sb_init(arena, len + 16)
+    sb_append_byte(@sb, 34 as u8)
+
+    mut i: usize = 0
+    loop i < len {
+        mut slash_count: usize = 0
+        loop i < len and p[i] == 92 as u8 {
+            slash_count += 1
+            i += 1
+        }
+
+        if slash_count > 0 {
+            if i >= len {
+                mut k: usize = 0
+                let total = slash_count * 2
+                loop k < total {
+                    sb_append_byte(@sb, 92 as u8)
+                    k += 1
+                }
+            } else if p[i] == 34 as u8 {
+                mut k: usize = 0
+                let total = slash_count * 2 + 1
+                loop k < total {
+                    sb_append_byte(@sb, 92 as u8)
+                    k += 1
+                }
+                sb_append_byte(@sb, 34 as u8)
+                i += 1
+            } else {
+                mut k: usize = 0
+                loop k < slash_count {
+                    sb_append_byte(@sb, 92 as u8)
+                    k += 1
+                }
+            }
+        } else {
+            if p[i] == 34 as u8 {
+                sb_append_byte(@sb, 92 as u8)
+                sb_append_byte(@sb, 34 as u8)
+            } else {
+                sb_append_byte(@sb, p[i])
+            }
+            i += 1
+        }
+    }
+
+    sb_append_byte(@sb, 34 as u8)
+    return sb_to_cstr(@sb) as string
+}
+
+// Joins an array of command-line argument strings into a properly quoted command line.
+act os_join_argv(arena: @Arena, argv: @string, count: usize) -> string {
+    if arena == null or argv == null or count == 0 {
+        return ""
+    }
+    mut sb = sb_init(arena, 64)
+    mut i: usize = 0
+    loop i < count {
+        let quoted = os_quote_arg(arena, argv[i])
+        if i > 0 {
+            sb_append_byte(@sb, 32 as u8)
+        }
+        if quoted != null {
+            let p = quoted as @u8
+            let qlen = raw_str_len(p)
+            mut j: usize = 0
+            loop j < qlen {
+                sb_append_byte(@sb, p[j])
+                j += 1
+            }
+        }
+        i += 1
+    }
+    return sb_to_cstr(@sb) as string
+}
+
+// Joins an Args container into a properly quoted command-line string.
+act os_join_args(arena: @Arena, args: @Args) -> string {
+    if args == null { return "" }
+    return os_join_argv(arena, args.items, args.count)
+}

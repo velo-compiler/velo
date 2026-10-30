@@ -1,0 +1,145 @@
+// Unit test suite for std.os.args (Command-Line Arguments & Tokenization).
+use "../../mem/arena.vl"
+use "../../str/slice.vl"
+use "../../io/print.vl"
+use "../../os/args.vl"
+
+act assert(cond: bool, msg: string) {
+    if !cond {
+        println_str("FAIL: ")
+        println_str(msg)
+        let fail_code: u8 = 1 as u8
+        loop fail_code > (0 as u8) {
+            // infinite trap or assert failure
+        }
+    }
+}
+
+act main() -> i32 {
+    mut arena = arena_init(65536)
+
+    // 1. Raw OS command line retrieval
+    let raw = os_raw_cmdline()
+    assert(raw != null, "os_raw_cmdline must not be null")
+    let raw_sl = slice_from_str(raw)
+    assert(slice_len(raw_sl) > 0, "os_raw_cmdline must not be empty")
+
+    // 2. Calling process os_args
+    let cur_args = os_args(@arena)
+    assert(args_count(@cur_args) >= 1, "cur_args count must be >= 1")
+    let argv0 = args_get(@cur_args, 0)
+    assert(argv0 != null, "argv[0] must not be null")
+    let argv0_sl = args_get_slice(@cur_args, 0)
+    assert(slice_len(argv0_sl) > 0, "argv[0] slice must not be empty")
+
+    // Bounds checking
+    assert(args_get(@cur_args, 9999) == null, "out-of-bounds args_get must return null")
+    let oob_sl = args_get_slice(@cur_args, 9999)
+    assert(slice_len(oob_sl) == 0, "out-of-bounds args_get_slice must be empty")
+
+    // 3. Tokenizing plain arguments
+    let t1 = os_tokenize_cmdline(@arena, "alpha beta gamma")
+    assert(args_count(@t1) == 3, "t1 count must be 3")
+    assert(slice_eq_str(args_get_slice(@t1, 0), "alpha"), "t1[0] must be alpha")
+    assert(slice_eq_str(args_get_slice(@t1, 1), "beta"), "t1[1] must be beta")
+    assert(slice_eq_str(args_get_slice(@t1, 2), "gamma"), "t1[2] must be gamma")
+
+    // 4. Tokenizing irregular whitespace (spaces, tabs, leading/trailing)
+    let t2 = os_tokenize_cmdline(@arena, "  \t  first \t\t second   third \t ")
+    assert(args_count(@t2) == 3, "t2 count must be 3")
+    assert(slice_eq_str(args_get_slice(@t2, 0), "first"), "t2[0] must be first")
+    assert(slice_eq_str(args_get_slice(@t2, 1), "second"), "t2[1] must be second")
+    assert(slice_eq_str(args_get_slice(@t2, 2), "third"), "t2[2] must be third")
+
+    // 5. Quoted arguments containing whitespace
+    let t3 = os_tokenize_cmdline(@arena, "prog.exe \"hello world\" third")
+    assert(args_count(@t3) == 3, "t3 count must be 3")
+    assert(slice_eq_str(args_get_slice(@t3, 0), "prog.exe"), "t3[0] must be prog.exe")
+    assert(slice_eq_str(args_get_slice(@t3, 1), "hello world"), "t3[1] must be 'hello world'")
+    assert(slice_eq_str(args_get_slice(@t3, 2), "third"), "t3[2] must be third")
+
+    // 6. Quoted argument containing escaped quotes
+    let t4 = os_tokenize_cmdline(@arena, "tool.exe \"with \\\"quotes\\\" inside\" flag")
+    assert(args_count(@t4) == 3, "t4 count must be 3")
+    assert(slice_eq_str(args_get_slice(@t4, 0), "tool.exe"), "t4[0] must be tool.exe")
+    assert(slice_eq_str(args_get_slice(@t4, 1), "with \"quotes\" inside"), "t4[1] quote escape")
+    assert(slice_eq_str(args_get_slice(@t4, 2), "flag"), "t4[2] must be flag")
+
+    // 7. Empty argument string quotes
+    let t5 = os_tokenize_cmdline(@arena, "runner.exe \"\" next")
+    assert(args_count(@t5) == 3, "t5 count must be 3")
+    assert(slice_eq_str(args_get_slice(@t5, 0), "runner.exe"), "t5[0] must be runner.exe")
+    assert(slice_eq_str(args_get_slice(@t5, 1), ""), "t5[1] must be empty string")
+    assert(slice_eq_str(args_get_slice(@t5, 2), "next"), "t5[2] must be next")
+
+    // 8. Trailing backslashes before closing quote
+    let t6 = os_tokenize_cmdline(@arena, "app.exe \"C:\\Program Files\\\\\" ok")
+    assert(args_count(@t6) == 3, "t6 count must be 3")
+    assert(slice_eq_str(args_get_slice(@t6, 0), "app.exe"), "t6[0] must be app.exe")
+    assert(slice_eq_str(args_get_slice(@t6, 1), "C:\\Program Files\\"), "t6[1] path backslash")
+    assert(slice_eq_str(args_get_slice(@t6, 2), "ok"), "t6[2] must be ok")
+
+    // 9. Quoting argument
+    let q1 = os_quote_arg(@arena, "simple")
+    assert(slice_eq_str(slice_from_str(q1), "simple"), "q1 should not need quotes")
+
+    let q2 = os_quote_arg(@arena, "with spaces")
+    assert(slice_eq_str(slice_from_str(q2), "\"with spaces\""), "q2 quoted")
+
+    let q3 = os_quote_arg(@arena, "with\"quote")
+    assert(slice_eq_str(slice_from_str(q3), "\"with\\\"quote\""), "q3 escaped quote")
+
+    let q4 = os_quote_arg(@arena, "")
+    assert(slice_eq_str(slice_from_str(q4), "\"\""), "q4 empty quote")
+
+    let q5 = os_quote_arg(@arena, "dir with\\")
+    assert(slice_eq_str(slice_from_str(q5), "\"dir with\\\\\""), "q5 trailing slash doubled")
+
+    // 10. Multi-arg join and roundtrip
+    let items = arena_alloc(@arena, 5 * 8, 8) as @string
+    items[0] = "compiler.exe"
+    items[1] = "src/main.vl"
+    items[2] = "-o"
+    items[3] = "C:\\Program Files\\Out\\"
+    items[4] = "with spaces and \"quotes\""
+
+    let joined = os_join_argv(@arena, items, 5)
+    let parsed_joined = os_tokenize_cmdline(@arena, joined)
+    assert(args_count(@parsed_joined) == 5, "joined count must be 5")
+    mut k: usize = 0
+    loop k < 5 {
+        assert(slice_eq_str(args_get_slice(@parsed_joined, k), items[k]), "joined roundtrip item match")
+        k += 1
+    }
+
+    // 11. Flag and option query helpers
+    let flags_args = os_tokenize_cmdline(@arena, "app.exe --verbose -O 2 --out bin/result.exe -f")
+    assert(args_has_flag(@flags_args, "--verbose"), "must find --verbose flag")
+    assert(args_has_flag(@flags_args, "-f"), "must find -f flag")
+    assert(!args_has_flag(@flags_args, "--quiet"), "must not find --quiet flag")
+
+    let opt_o = args_find_option(@flags_args, "-O")
+    assert(opt_o != null and slice_eq_str(slice_from_str(opt_o), "2"), "find -O value")
+
+    let opt_out = args_find_option(@flags_args, "--out")
+    assert(opt_out != null and slice_eq_str(slice_from_str(opt_out), "bin/result.exe"), "find --out value")
+
+    let opt_missing = args_find_option(@flags_args, "--none")
+    assert(opt_missing == null, "missing option must return null")
+
+    let opt_trailing = args_find_option(@flags_args, "-f")
+    assert(opt_trailing == null, "trailing option with no value must return null")
+
+    // 12. Edge cases (null/empty handling)
+    let t_null = os_tokenize_cmdline(@arena, null)
+    assert(args_count(@t_null) == 0, "null cmdline count 0")
+
+    let t_empty = os_tokenize_cmdline(@arena, "    \t  ")
+    assert(args_count(@t_empty) == 0, "spaces-only count 0")
+
+    let empty_join = os_join_argv(@arena, null, 0)
+    assert(slice_len(slice_from_str(empty_join)) == 0, "empty join should be empty")
+
+    println_str("PASS: std.os.args tests succeeded")
+    return 0
+}

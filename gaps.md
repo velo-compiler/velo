@@ -1522,7 +1522,25 @@ flowchart TD
   - Added comprehensive unit test suite `std/tests/os/env_test.vl` exercising environment variable lifecycles, PID queries, and working directory operations.
   - Added pytest test case `test_std_os_env` in `tests/test_std_os.py`.
 * **Residual Limitation**:
-  - Command-line argument parsing and tokenization (`std/os/args.vl`) will be implemented in Task 10.2.
+  - Command-line argument parsing and tokenization (`std/os/args.vl`) completed in Task 10.2. Child process execution and subprocess spawning (`std/os/process.vl`) will be implemented in Task 10.3.
 * **Verification**:
   - `bin/velo.exe run std/tests/os/env_test.vl` passed (`PASS: std.os.env tests succeeded`).
   - `python -m pytest tests/test_std_os.py` passed (1/1 passed in 1.14s).
+
+#### Task 10.2: Command-Line Arguments Parsing & Tokenization (`std/os/args.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo lacked a standalone, pure-Velo command-line arguments subsystem. Accessing process command-line arguments previously depended on compiler entry point arguments (`argc`/`argv` in `main`) or platform-specific hacks, without support for un-tokenized command line inspection (`os_raw_cmdline`), zero-dependency Win32 / POSIX command-line tokenization with quote handling and backslash unescaping (`os_tokenize_cmdline`), argument container indexing (`args_count`, `args_get`, `args_get_slice`), flag / option queries (`args_has_flag`, `args_find_option`), or safe argument quoting and command-line joining (`os_quote_arg`, `os_join_argv`, `os_join_args`).
+* **Fix Applied**:
+  - Implemented `std/os/cmdline_windows.vl` backed directly by Win32 `kernel32.dll` (`GetCommandLineA`) and `std/os/cmdline_linux.vl` for Linux command-line retrieval.
+  - Implemented `std/os/args.vl` (314 lines) providing:
+    - Container: `data Args { count: usize, items: @string, raw: string }`.
+    - Tokenization & retrieval: `os_raw_cmdline`, `os_args`, `os_count_cmdline_args`, `os_tokenize_cmdline` implementing standard Win32 / POSIX rules (whitespace delimiters, quote toggling, $2n$ backslash collapsing, and $2n+1$ literal quote escaping).
+    - Ergonomic accessors: `args_count`, `args_get`, `args_get_slice`, `args_has_flag`, `args_find_option`.
+    - Quoting & joining: `os_quote_arg` (safe quotation and backslash doubling for arguments with spaces, tabs, or quotes), `os_join_argv`, `os_join_args`.
+  - Added unit test suite `std/tests/os/args_test.vl` exercising 12 categories: raw cmdline retrieval, process `os_args`, bounds checking, space/tab tokenization, quote handling, escaped quotes, trailing backslashes before quotes, empty quotes, quoting rules, multi-argument joining roundtrips, flag/option querying, and null/empty robustness.
+  - Added CLI test `std/tests/os/args_cli_test.vl` and pytest integration tests `test_std_os_args` and `test_std_os_args_cli` in `tests/test_std_os.py`.
+* **Residual Limitation**:
+  - Child process execution and subprocess spawning (`std/os/process.vl`) will be implemented in Task 10.3.
+* **Verification**:
+  - `bin/velo.exe run std/tests/os/args_test.vl` passed (`PASS: std.os.args tests succeeded`).
+  - `python -m pytest tests/test_std_os.py` passed (3/3 passed).

@@ -1,0 +1,16 @@
+// CLI test for os_args with actual command-line arguments.
+use "../../mem/arena.vl"
+use "../../io/print.vl"
+use "../../os/args.vl"
+
+act main() -> i32 {
+    mut arena = arena_init(4096)
+    let args = os_args(@arena)
+    mut i: usize = 0
+    loop i < args.count {
+        println_str(args.items[i])
+        i += 1
+    }
+    return 0
+}
+
