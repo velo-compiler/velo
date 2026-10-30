@@ -1123,8 +1123,24 @@ flowchart TD
   - Implemented the Velo open-addressing hash table sentinel contract: `HASH_EMPTY` (0), `HASH_TOMBSTONE` (2), `hash_to_live_mark` (`h | 1`), `hash_is_live`, `hash_is_empty`, `hash_is_tombstone`, `hash_map_key`, and `hash_map_key_eq`.
   - Added unit test suite `std/tests/coll/hash_test.vl` and pytest integration in `tests/test_std_coll.py`.
 * **Residual Limitation**:
-  - Open-addressing hash map (`std/coll/map.vl`) will be implemented in Task 5.5.
+  - Open-addressing hash map (`std/coll/map.vl`) has been implemented in Task 5.5.
 * **Verification**:
   - `bin/velo.exe run std/tests/coll/hash_test.vl` passed 64-bit and 32-bit FNV-1a known test vectors; MurmurHash3 32-bit test vectors; DJB2 and SDBM test vectors; SplitMix64 avalanche and integer hashing; string and slice consistency; non-commutative hash combination; map sentinel invariants; and integer/string map key hashing and equality.
   - `python -m pytest tests/test_std_coll.py` passed (4/4 passed).
+
+#### Task 5.5: Open-Addressing Hash Map (`std/coll/map.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Key-value associations in Velo previously depended on C-runtime hash tables (`VeloMap`) or libc-bound allocation routines, lacking a pure-Velo generic open-addressing hash table backed by `std.mem` heap allocation and `std.coll.hash`.
+* **Fix Applied**:
+  - Implemented `std/coll/map.vl` providing `data RawMap` for storing key-value pairs using open addressing with linear probing and power-of-two slot capacity.
+  - Implemented automatic geometric table expansion via `map_grow` at 75% load factor (`(len + tomb + 1) * 4 > cap * 3`), rehashing live entries into a fresh double-capacity table and reclaiming old buffers without memory leaks.
+  - Implemented upsert (`map_put`) with in-place value overwrites for existing keys and tombstone slot recycling.
+  - Implemented lookup (`map_get`, `map_get_into`, `map_has`), table clearing (`map_clear`), and safe teardown (`map_free`).
+  - Implemented typed convenience helpers for string and integer keys: `map_create_str`, `map_put_str_i64`, `map_get_str_i64`, `map_has_str`, `map_put_str_slice`, `map_get_str_slice`, `map_create_i64`, `map_put_i64_i64`, `map_get_i64_i64`, `map_has_i64`, `map_put_u64_u64`, `map_get_u64_u64`.
+  - Added unit test suite `std/tests/coll/map_test.vl` and pytest integration in `tests/test_std_coll.py`.
+* **Residual Limitation**:
+  - Map tombstone deletion, compaction, and key/value shelf extraction (`std/coll/map_ops.vl`) will be implemented in Task 5.6.
+* **Verification**:
+  - `bin/velo.exe run std/tests/coll/map_test.vl` passed basic map lifecycle; string key hashing and content equality; 500-entry stress growth across multiple rehash doubling cycles with value updates; linear probing collisions; and 64-bit integer keys.
+  - `python -m pytest tests/test_std_coll.py` passed (5/5 passed).
 

@@ -1,0 +1,218 @@
+// Unit test suite for std.coll.map (pure Velo open-addressing hash map).
+use sys.io
+use "../../mem/page.vl"
+use "../../mem/heap.vl"
+use "../../mem/ops.vl"
+use "../../str/slice.vl"
+use "../../coll/hash.vl"
+use "../../coll/map.vl"
+
+act test_basic_map_lifecycle() -> bool {
+    mut m = map_create(8, 8, false, 4)
+    if map_cap(@m) != 8 or map_len(@m) != 0 or !map_is_empty(@m) {
+        map_free(@m); return false
+    }
+
+    if !map_put_i64_i64(@m, 10, 100) { map_free(@m); return false }
+    if !map_put_i64_i64(@m, 20, 200) { map_free(@m); return false }
+    if !map_put_i64_i64(@m, 30, 300) { map_free(@m); return false }
+
+    if map_len(@m) != 3 or map_is_empty(@m) {
+        map_free(@m); return false
+    }
+
+    if !map_has_i64(@m, 10) or !map_has_i64(@m, 20) or !map_has_i64(@m, 30) {
+        map_free(@m); return false
+    }
+    if map_has_i64(@m, 40) or map_has_i64(@m, 999) {
+        map_free(@m); return false
+    }
+
+    mut v: i64 = 0
+    if !map_get_i64_i64(@m, 10, @v) or v != 100 { map_free(@m); return false }
+    if !map_get_i64_i64(@m, 20, @v) or v != 200 { map_free(@m); return false }
+    if !map_get_i64_i64(@m, 30, @v) or v != 300 { map_free(@m); return false }
+
+    // Overwrite key 20 with 222
+    if !map_put_i64_i64(@m, 20, 222) { map_free(@m); return false }
+    if map_len(@m) != 3 { map_free(@m); return false }
+    if !map_get_i64_i64(@m, 20, @v) or v != 222 { map_free(@m); return false }
+
+    // Clear and reuse
+    map_clear(@m)
+    if map_len(@m) != 0 or !map_is_empty(@m) { map_free(@m); return false }
+    if map_has_i64(@m, 10) or map_has_i64(@m, 20) { map_free(@m); return false }
+
+    if !map_put_i64_i64(@m, 10, 999) { map_free(@m); return false }
+    if map_len(@m) != 1 { map_free(@m); return false }
+    if !map_get_i64_i64(@m, 10, @v) or v != 999 { map_free(@m); return false }
+
+    map_free(@m)
+    return m.keys == null and m.vals == null and m.hashes == null and m.len == 0 and m.cap == 0
+}
+
+act test_string_keys() -> bool {
+    mut m = map_create_str(8, 8)
+    if !map_put_str_i64(@m, "apple", 10) { map_free(@m); return false }
+    if !map_put_str_i64(@m, "banana", 20) { map_free(@m); return false }
+    if !map_put_str_i64(@m, "cherry", 30) { map_free(@m); return false }
+    if !map_put_str_i64(@m, "durian", 40) { map_free(@m); return false }
+
+    if map_len(@m) != 4 { map_free(@m); return false }
+
+    if !map_has_str(@m, "apple") or !map_has_str(@m, "banana") or !map_has_str(@m, "cherry") or !map_has_str(@m, "durian") {
+        map_free(@m); return false
+    }
+    if map_has_str(@m, "elderberry") or map_has_str(@m, "fig") {
+        map_free(@m); return false
+    }
+
+    mut v: i64 = 0
+    if !map_get_str_i64(@m, "apple", @v) or v != 10 { map_free(@m); return false }
+    if !map_get_str_i64(@m, "banana", @v) or v != 20 { map_free(@m); return false }
+    if !map_get_str_i64(@m, "cherry", @v) or v != 30 { map_free(@m); return false }
+    if !map_get_str_i64(@m, "durian", @v) or v != 40 { map_free(@m); return false }
+
+    // Overwrite "banana" with 25
+    if !map_put_str_i64(@m, "banana", 25) { map_free(@m); return false }
+    if map_len(@m) != 4 { map_free(@m); return false }
+    if !map_get_str_i64(@m, "banana", @v) or v != 25 { map_free(@m); return false }
+
+    map_free(@m)
+
+    // String keys with StrSlice values
+    mut m_slice = map_create_str(16, 8)
+    let s1 = slice_from_str("hello_world")
+    let s2 = slice_from_str("velo_language")
+    if !map_put_str_slice(@m_slice, "first", s1) { map_free(@m_slice); return false }
+    if !map_put_str_slice(@m_slice, "second", s2) { map_free(@m_slice); return false }
+
+    mut out_s = StrSlice { ptr: null, len: 0 }
+    if !map_get_str_slice(@m_slice, "first", @out_s) or !slice_eq(out_s, s1) {
+        map_free(@m_slice); return false
+    }
+    if !map_get_str_slice(@m_slice, "second", @out_s) or !slice_eq(out_s, s2) {
+        map_free(@m_slice); return false
+    }
+
+    map_free(@m_slice)
+    return true
+}
+
+act test_stress_growth_rehash() -> bool {
+    mut m = map_create_i64(8, 8)
+    if map_cap(@m) != 8 { map_free(@m); return false }
+
+    // Insert 500 keys: i -> i * 7
+    mut i: i64 = 1
+    loop i <= 500 {
+        if !map_put_i64_i64(@m, i, i * 7) {
+            map_free(@m); return false
+        }
+        i += 1
+    }
+
+    if map_len(@m) != 500 { map_free(@m); return false }
+    if map_cap(@m) < 500 { map_free(@m); return false }
+
+    // Verify all 500 entries
+    mut v: i64 = 0
+    i = 1
+    loop i <= 500 {
+        if !map_get_i64_i64(@m, i, @v) or v != i * 7 {
+            map_free(@m); return false
+        }
+        i += 1
+    }
+
+    // Update all 500 entries: i -> i * 13
+    i = 1
+    loop i <= 500 {
+        if !map_put_i64_i64(@m, i, i * 13) {
+            map_free(@m); return false
+        }
+        i += 1
+    }
+
+    // Len should remain exactly 500
+    if map_len(@m) != 500 { map_free(@m); return false }
+
+    // Verify all updated entries
+    i = 1
+    loop i <= 500 {
+        if !map_get_i64_i64(@m, i, @v) or v != i * 13 {
+            map_free(@m); return false
+        }
+        i += 1
+    }
+
+    map_free(@m)
+    return true
+}
+
+act test_linear_probing() -> bool {
+    mut m = map_create(8, 8, false, 8)
+
+    // Put several elements in small cap 8
+    map_put_i64_i64(@m, 1, 10)
+    map_put_i64_i64(@m, 9, 90)
+    map_put_i64_i64(@m, 17, 170)
+
+    mut v: i64 = 0
+    if !map_get_i64_i64(@m, 1, @v) or v != 10 { map_free(@m); return false }
+    if !map_get_i64_i64(@m, 9, @v) or v != 90 { map_free(@m); return false }
+    if !map_get_i64_i64(@m, 17, @v) or v != 170 { map_free(@m); return false }
+
+    // Search for non-existent key
+    if map_has_i64(@m, 25) { map_free(@m); return false }
+
+    map_free(@m)
+    return true
+}
+
+act test_u64_keys() -> bool {
+    mut m = map_create(8, 8, false, 8)
+    let k1: u64 = 0xdeadbeefcafebabe as u64
+    let k2: u64 = 0x0123456789abcdef as u64
+
+    map_put_u64_u64(@m, k1, 111 as u64)
+    map_put_u64_u64(@m, k2, 222 as u64)
+
+    mut out_u: u64 = 0 as u64
+    if !map_get_u64_u64(@m, k1, @out_u) or out_u != 111 as u64 {
+        map_free(@m); return false
+    }
+    if !map_get_u64_u64(@m, k2, @out_u) or out_u != 222 as u64 {
+        map_free(@m); return false
+    }
+
+    map_free(@m)
+    return true
+}
+
+act main() -> i32 {
+    if !test_basic_map_lifecycle() {
+        io.println("FAIL: test_basic_map_lifecycle")
+        return 1
+    }
+    if !test_string_keys() {
+        io.println("FAIL: test_string_keys")
+        return 2
+    }
+    if !test_stress_growth_rehash() {
+        io.println("FAIL: test_stress_growth_rehash")
+        return 3
+    }
+    if !test_linear_probing() {
+        io.println("FAIL: test_linear_probing")
+        return 4
+    }
+    if !test_u64_keys() {
+        io.println("FAIL: test_u64_keys")
+        return 5
+    }
+
+    io.println("PASS: std.coll.map all assertions succeeded")
+    return 0
+}
+

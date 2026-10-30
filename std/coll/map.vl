@@ -1,0 +1,350 @@
+// Pure Velo open-addressing hash table with linear probing (zero C runtime dependencies).
+// Backed by std.mem.heap_alloc, power-of-two capacity, FNV-1a hashing, and tombstone recycling.
+// Supports homogeneous key/value pairs of arbitrary byte size and string content hashing.
+
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+use "../str/slice.vl"
+use "hash.vl"
+
+// Raw open-addressing hash table descriptor.
+data RawMap {
+    keys: @u8
+    vals: @u8
+    hashes: @u64
+    len: usize
+    tomb: usize
+    cap: usize
+    ksz: usize
+    vsz: usize
+    kstring: bool
+}
+
+// Rounds n up to the next power of 2, minimum 8.
+act map_round_pow2(n: usize) -> usize {
+    mut cap: usize = 8
+    loop cap < n {
+        cap = cap * 2
+    }
+    return cap
+}
+
+// Creates a new RawMap with given key size, value size, string-key flag, and initial capacity.
+act map_create(ksz: usize, vsz: usize, is_kstring: bool, initial_cap: usize) -> RawMap {
+    mut k_sz = ksz
+    if is_kstring {
+        k_sz = 8
+    } else if k_sz == 0 {
+        k_sz = 8
+    }
+    mut v_sz = vsz
+    if v_sz == 0 {
+        v_sz = 8
+    }
+    mut cap = initial_cap
+    if cap < 8 {
+        cap = 8
+    } else {
+        cap = map_round_pow2(cap)
+    }
+
+    let keys = heap_alloc(k_sz * cap)
+    let vals = heap_alloc(v_sz * cap)
+    let hashes = heap_alloc(8 * cap) as @u64
+    if hashes != null {
+        set(hashes as @u8, 0 as u8, 8 * cap)
+    }
+
+    return RawMap {
+        keys: keys,
+        vals: vals,
+        hashes: hashes,
+        len: 0,
+        tomb: 0,
+        cap: cap,
+        ksz: k_sz,
+        vsz: v_sz,
+        kstring: is_kstring,
+    }
+}
+
+// Releases all allocated backing storage (keys, vals, hashes) and resets map fields.
+act map_free(m: @RawMap) {
+    if m == null { return }
+    if m.keys != null {
+        heap_free(m.keys)
+        m.keys = null
+    }
+    if m.vals != null {
+        heap_free(m.vals)
+        m.vals = null
+    }
+    if m.hashes != null {
+        heap_free(m.hashes as @u8)
+        m.hashes = null
+    }
+    m.len = 0
+    m.tomb = 0
+    m.cap = 0
+}
+
+// Clears all entries from the map without deallocating backing storage.
+act map_clear(m: @RawMap) {
+    if m == null or m.cap == 0 or m.hashes == null { return }
+    set(m.hashes as @u8, 0 as u8, 8 * m.cap)
+    m.len = 0
+    m.tomb = 0
+}
+
+act map_len(m: @RawMap) -> usize {
+    if m == null { return 0 }
+    return m.len
+}
+
+act map_cap(m: @RawMap) -> usize {
+    if m == null { return 0 }
+    return m.cap
+}
+
+act map_tomb_count(m: @RawMap) -> usize {
+    if m == null { return 0 }
+    return m.tomb
+}
+
+act map_is_empty(m: @RawMap) -> bool {
+    if m == null { return true }
+    return m.len == 0
+}
+
+// Rebuilds live rows into fresh double-capacity tables.
+act map_grow(m: @RawMap) -> bool {
+    if m == null { return false }
+    mut new_cap: usize = 8
+    if m.cap > 0 {
+        new_cap = m.cap * 2
+    }
+
+    let nkeys = heap_alloc(m.ksz * new_cap)
+    let nvals = heap_alloc(m.vsz * new_cap)
+    let nhash = heap_alloc(8 * new_cap) as @u64
+    if nkeys == null or nvals == null or nhash == null {
+        if nkeys != null { heap_free(nkeys) }
+        if nvals != null { heap_free(nvals) }
+        if nhash != null { heap_free(nhash as @u8) }
+        return false
+    }
+
+    set(nhash as @u8, 0 as u8, 8 * new_cap)
+
+    if m.cap > 0 and m.hashes != null {
+        mut i: usize = 0
+        loop i < m.cap {
+            let h = m.hashes[i]
+            if h != HASH_EMPTY and h != HASH_TOMBSTONE {
+                mut at: usize = (h as usize) & (new_cap - 1)
+                loop nhash[at] != HASH_EMPTY {
+                    at = (at + 1) & (new_cap - 1)
+                }
+                nhash[at] = h
+
+                let src_k = (m.keys as usize + i * m.ksz) as @u8
+                let dst_k = (nkeys as usize + at * m.ksz) as @u8
+                copy(dst_k, src_k, m.ksz)
+
+                let src_v = (m.vals as usize + i * m.vsz) as @u8
+                let dst_v = (nvals as usize + at * m.vsz) as @u8
+                copy(dst_v, src_v, m.vsz)
+            }
+            i += 1
+        }
+
+        if m.keys != null { heap_free(m.keys) }
+        if m.vals != null { heap_free(m.vals) }
+        if m.hashes != null { heap_free(m.hashes as @u8) }
+    }
+
+    m.keys = nkeys
+    m.vals = nvals
+    m.hashes = nhash
+    m.cap = new_cap
+    m.tomb = 0
+    return true
+}
+
+// Upserts a key/value pair into the map (inserts new key or overwrites existing).
+// Recycles tombstones if encountered and auto-grows at 75% load factor.
+act map_put(m: @RawMap, key: @u8, val: @u8) -> bool {
+    if m == null or key == null or val == null { return false }
+    if m.ksz == 0 or m.vsz == 0 { return false }
+
+    if m.cap == 0 or (m.len + m.tomb + 1) * 4 > m.cap * 3 {
+        if !map_grow(m) { return false }
+    }
+
+    let h = hash_map_key(key, m.ksz, m.kstring)
+    mut at: usize = (h as usize) & (m.cap - 1)
+    mut reuse: usize = m.cap
+
+    loop m.hashes[at] != HASH_EMPTY {
+        if m.hashes[at] == h {
+            let key_slot = (m.keys as usize + at * m.ksz) as @u8
+            if hash_map_key_eq(key, key_slot, m.ksz, m.kstring) {
+                let val_slot = (m.vals as usize + at * m.vsz) as @u8
+                copy(val_slot, val, m.vsz)
+                return true
+            }
+        }
+        if m.hashes[at] == HASH_TOMBSTONE and reuse == m.cap {
+            reuse = at
+        }
+        at = (at + 1) & (m.cap - 1)
+    }
+
+    if reuse != m.cap {
+        at = reuse
+        m.tomb -= 1
+    }
+
+    m.hashes[at] = h
+    let dst_k = (m.keys as usize + at * m.ksz) as @u8
+    copy(dst_k, key, m.ksz)
+    let dst_v = (m.vals as usize + at * m.vsz) as @u8
+    copy(dst_v, val, m.vsz)
+    m.len += 1
+    return true
+}
+
+// Returns a pointer to the value slot for the given key, or null if not found.
+act map_get(m: @RawMap, key: @u8) -> @u8 {
+    if m == null or key == null or m.cap == 0 or m.hashes == null { return null }
+    let h = hash_map_key(key, m.ksz, m.kstring)
+    mut at: usize = (h as usize) & (m.cap - 1)
+    loop m.hashes[at] != HASH_EMPTY {
+        if m.hashes[at] == h {
+            let key_slot = (m.keys as usize + at * m.ksz) as @u8
+            if hash_map_key_eq(key, key_slot, m.ksz, m.kstring) {
+                return (m.vals as usize + at * m.vsz) as @u8
+            }
+        }
+        at = (at + 1) & (m.cap - 1)
+    }
+    return null
+}
+
+// Copies value out into caller buffer if key exists; returns true on success.
+act map_get_into(m: @RawMap, key: @u8, out_val: @u8) -> bool {
+    let p = map_get(m, key)
+    if p == null { return false }
+    if out_val != null {
+        copy(out_val, p, m.vsz)
+    }
+    return true
+}
+
+// Returns true if the key exists in the map.
+act map_has(m: @RawMap, key: @u8) -> bool {
+    return map_get(m, key) != null
+}
+
+// --- Typed convenience helpers ---
+
+act map_create_str(vsz: usize, initial_cap: usize) -> RawMap {
+    return map_create(8, vsz, true, initial_cap)
+}
+
+act map_put_str_i64(m: @RawMap, key: string, val: i64) -> bool {
+    mut k = key
+    let pk: @string = @k
+    mut v = val
+    let pv: @i64 = @v
+    return map_put(m, pk as @u8, pv as @u8)
+}
+
+act map_get_str_i64(m: @RawMap, key: string, out_val: @i64) -> bool {
+    mut k = key
+    let pk: @string = @k
+    let pval = map_get(m, pk as @u8)
+    if pval == null { return false }
+    if out_val != null {
+        let pi = pval as @i64
+        out_val[0] = pi[0]
+    }
+    return true
+}
+
+act map_has_str(m: @RawMap, key: string) -> bool {
+    mut k = key
+    let pk: @string = @k
+    return map_has(m, pk as @u8)
+}
+
+act map_put_str_slice(m: @RawMap, key: string, val: StrSlice) -> bool {
+    mut k = key
+    let pk: @string = @k
+    mut v = val
+    let pv: @StrSlice = @v
+    return map_put(m, pk as @u8, pv as @u8)
+}
+
+act map_get_str_slice(m: @RawMap, key: string, out_val: @StrSlice) -> bool {
+    mut k = key
+    let pk: @string = @k
+    let pval = map_get(m, pk as @u8)
+    if pval == null { return false }
+    if out_val != null {
+        let ps = pval as @StrSlice
+        out_val[0] = ps[0]
+    }
+    return true
+}
+
+act map_create_i64(vsz: usize, initial_cap: usize) -> RawMap {
+    return map_create(8, vsz, false, initial_cap)
+}
+
+act map_put_i64_i64(m: @RawMap, key: i64, val: i64) -> bool {
+    mut k = key
+    let pk: @i64 = @k
+    mut v = val
+    let pv: @i64 = @v
+    return map_put(m, pk as @u8, pv as @u8)
+}
+
+act map_get_i64_i64(m: @RawMap, key: i64, out_val: @i64) -> bool {
+    mut k = key
+    let pk: @i64 = @k
+    let pval = map_get(m, pk as @u8)
+    if pval == null { return false }
+    if out_val != null {
+        let pi = pval as @i64
+        out_val[0] = pi[0]
+    }
+    return true
+}
+
+act map_has_i64(m: @RawMap, key: i64) -> bool {
+    mut k = key
+    let pk: @i64 = @k
+    return map_has(m, pk as @u8)
+}
+
+act map_put_u64_u64(m: @RawMap, key: u64, val: u64) -> bool {
+    mut k = key
+    let pk: @u64 = @k
+    mut v = val
+    let pv: @u64 = @v
+    return map_put(m, pk as @u8, pv as @u8)
+}
+
+act map_get_u64_u64(m: @RawMap, key: u64, out_val: @u64) -> bool {
+    mut k = key
+    let pk: @u64 = @k
+    let pval = map_get(m, pk as @u8)
+    if pval == null { return false }
+    if out_val != null {
+        let pu = pval as @u64
+        out_val[0] = pu[0]
+    }
+    return true
+}
+
