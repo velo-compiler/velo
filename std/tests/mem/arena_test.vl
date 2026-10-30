@@ -1,0 +1,94 @@
+use sys.io
+use "../../mem/arena.vl"
+
+act main() -> i32 {
+    mut arena = arena_init(65536)
+    if arena.buffer == null or arena.capacity != 65536 or arena.offset != 0 {
+        io.println("FAIL: arena_init invalid state")
+        return 1
+    }
+
+    // 1. Test 1-byte alignment allocation
+    let p1 = arena_alloc(@arena, 7, 1)
+    if p1 == null {
+        io.println("FAIL: p1 alloc null")
+        return 1
+    }
+    p1[0] = 10 as u8
+    p1[6] = 16 as u8
+
+    // 2. Test 4-byte alignment
+    let p2 = arena_alloc(@arena, 12, 4)
+    if p2 == null or (p2 as usize) % 4 != 0 {
+        io.println("FAIL: p2 alignment")
+        return 1
+    }
+
+    // 3. Test 8-byte alignment
+    let p3 = arena_alloc(@arena, 24, 8)
+    if p3 == null or (p3 as usize) % 8 != 0 {
+        io.println("FAIL: p3 alignment")
+        return 1
+    }
+
+    // 4. Test 16-byte alignment
+    let p4 = arena_alloc(@arena, 32, 16)
+    if p4 == null or (p4 as usize) % 16 != 0 {
+        io.println("FAIL: p4 alignment")
+        return 1
+    }
+
+    // 5. Test arena_alloc_zeroed
+    let p5 = arena_alloc_zeroed(@arena, 64, 8)
+    if p5 == null or (p5 as usize) % 8 != 0 {
+        io.println("FAIL: p5 alloc zeroed")
+        return 1
+    }
+    mut i: usize = 0
+    loop i < 64 {
+        if p5[i] != 0 as u8 {
+            io.println("FAIL: p5 not zeroed")
+            return 1
+        }
+        i += 1
+    }
+
+    // 6. Test OOM handling
+    let rem = arena_remaining(@arena)
+    let p_oom = arena_alloc(@arena, rem + 100, 1)
+    if p_oom != null {
+        io.println("FAIL: expected null on OOM")
+        return 1
+    }
+
+    // 7. Test reset and reuse
+    let base_addr = arena.buffer as usize
+    arena_reset(@arena)
+    if arena.offset != 0 {
+        io.println("FAIL: reset offset != 0")
+        return 1
+    }
+
+    let p_reuse = arena_alloc(@arena, 16, 8)
+    if (p_reuse as usize) != base_addr {
+        io.println("FAIL: reuse after reset did not start at base")
+        return 1
+    }
+
+    // 8. Test free
+    arena_free(@arena)
+    if arena.buffer != null or arena.capacity != 0 or arena.offset != 0 {
+        io.println("FAIL: arena_free state")
+        return 1
+    }
+
+    // 9. Alloc on freed arena returns null
+    let p_freed = arena_alloc(@arena, 16, 8)
+    if p_freed != null {
+        io.println("FAIL: alloc on freed arena")
+        return 1
+    }
+
+    io.println("PASS: std.mem.arena all assertions succeeded")
+    return 0
+}

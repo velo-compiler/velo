@@ -1,0 +1,85 @@
+// Pure Velo linear arena bump allocator (zero C library runtime dependencies).
+// Provides ultra-fast regional allocation with custom alignment and instant O(1) reset.
+use "page.vl"
+use "ops.vl"
+
+// Regional memory arena state descriptor.
+data Arena {
+    buffer: @u8
+    capacity: usize
+    offset: usize
+}
+
+// Initializes a memory arena backed by raw OS virtual memory pages.
+act arena_init(capacity: usize) -> Arena {
+    if capacity == 0 {
+        return Arena{
+            buffer: null,
+            capacity: 0,
+            offset: 0,
+        }
+    }
+    let buf = os_page_alloc(capacity)
+    return Arena{
+        buffer: buf,
+        capacity: capacity,
+        offset: 0,
+    }
+}
+
+// Allocates an aligned contiguous block of memory from the arena.
+// align must be a power of two (1, 2, 4, 8, 16, etc.). Defaults to 1 if <= 1.
+act arena_alloc(a: @Arena, size: usize, align: usize) -> @u8 {
+    if a == null or a.buffer == null or size == 0 {
+        return null
+    }
+
+    let cur_addr: usize = (a.buffer as usize) + a.offset
+    mut aligned_addr = cur_addr
+    if align > 1 {
+        let mask = align - 1
+        aligned_addr = (cur_addr + mask) & ~mask
+    }
+
+    let new_offset = (aligned_addr - (a.buffer as usize)) + size
+    if new_offset > a.capacity {
+        return null
+    }
+
+    a.offset = new_offset
+    return aligned_addr as @u8
+}
+
+// Allocates an aligned block and zeroes all its memory.
+act arena_alloc_zeroed(a: @Arena, size: usize, align: usize) -> @u8 {
+    let ptr = arena_alloc(a, size, align)
+    if ptr != null and size > 0 {
+        set(ptr, 0 as u8, size)
+    }
+    return ptr
+}
+
+// Returns the number of bytes remaining in the arena buffer.
+act arena_remaining(a: @Arena) -> usize {
+    if a == null or a.buffer == null or a.offset >= a.capacity {
+        return 0
+    }
+    return a.capacity - a.offset
+}
+
+// Resets the allocation offset to 0 in O(1) time without releasing the buffer.
+act arena_reset(a: @Arena) {
+    if a != null {
+        a.offset = 0
+    }
+}
+
+// Releases the arena buffer back to the operating system kernel.
+act arena_free(a: @Arena) {
+    if a != null and a.buffer != null and a.capacity > 0 {
+        os_page_free(a.buffer, a.capacity)
+        a.buffer = null
+        a.capacity = 0
+        a.offset = 0
+    }
+}

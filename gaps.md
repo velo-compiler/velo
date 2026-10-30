@@ -814,5 +814,19 @@ flowchart TD
   - `bin/velo.exe run std/tests/mem/ops_test.vl` passed all set, copy, eq, overlap, and boundary assertions.
   - `python -m pytest tests/test_std_mem.py` passed (3/3 passed).
 
+#### Task 1.3: Linear Arena Allocator (`std/mem/arena.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Regional allocations in Velo relied on compiler-internal C zone routines (`velo_mem_alloc` / `velo_zone_push`), with no first-class pure-Velo Arena structure supporting arbitrary power-of-two alignments, O(1) resets, and zero-dependency OS page backing.
+* **Fix Applied**:
+  - Implemented `std/mem/arena.vl` providing `data Arena`, `arena_init(capacity: usize) -> Arena`, `arena_alloc(a: @Arena, size: usize, align: usize) -> @u8`, `arena_alloc_zeroed`, `arena_remaining`, `arena_reset`, and `arena_free`.
+  - Supports configurable power-of-two alignment masks: `(cur_addr + mask) & ~mask`.
+  - Added unit test suite `std/tests/mem/arena_test.vl` and pytest integration in `tests/test_std_mem.py`.
+* **Residual Limitation**:
+  - Dynamic chunk spilling across multiple OS virtual memory pages will be added to support unbounded growth.
+* **Verification**:
+  - `bin/velo.exe run std/tests/mem/arena_test.vl` passed all 1/4/8/16-byte alignment, zeroed allocation, OOM, reset, and free assertions.
+  - `python -m pytest tests/test_std_mem.py` passed (4/4 passed).
+
+
 
 

@@ -48,8 +48,20 @@ def test_platform_suffix_resolution():
     )
     assert res.returncode == 0, f"emit-c failed:\n{res.stderr}"
     assert "VirtualAlloc" in res.stdout, "Expected VirtualAlloc from page_windows.vl to be included"
-
     assert "mmap" not in res.stdout, "mmap from page_linux.vl must not be included on Windows"
+
+def test_std_mem_arena():
+    test_vl = REPO_ROOT / "std" / "tests" / "mem" / "arena_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.mem.arena all assertions succeeded" in res.stdout
+
 
 
 
