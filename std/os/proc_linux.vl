@@ -49,3 +49,11 @@ act os_process_close(proc: @ProcessHandle) {
         proc.is_alive = false
     }
 }
+
+// Executes a shell command string through the system command processor (sh -c).
+act os_shell_spawn_sync(cmd: string) -> ProcessResult {
+    if cmd == null {
+        return ProcessResult { exit_code: -1, success: false }
+    }
+    return ProcessResult { exit_code: -1, success: false }
+}

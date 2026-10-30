@@ -97,7 +97,7 @@ act sb_append_slice(sb: @StrBuilder, slice: StrSlice) {
 }
 
 // Appends a null-terminated string to the builder.
-act sb_append_str(sb: @StrBuilder, s: string) {
+act sb_append_string(sb: @StrBuilder, s: string) {
     sb_append_slice(sb, slice_from_str(s))
 }
 

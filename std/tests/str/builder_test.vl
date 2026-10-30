@@ -13,7 +13,7 @@ act test_basic_append_and_slice() -> bool {
         arena_free(@arena); return false
     }
 
-    sb_append_str(@sb, "Hello")
+    sb_append_string(@sb, "Hello")
     sb_append_byte(@sb, 44 as u8) // ','
     sb_append_byte(@sb, 32 as u8) // ' '
     sb_append_slice(@sb, slice_from_str("World!"))
@@ -34,7 +34,7 @@ act test_multibyte_and_rune() -> bool {
     mut arena = arena_init(4096)
     mut sb = sb_init(@arena, 16)
 
-    sb_append_str(@sb, "Velo ")
+    sb_append_string(@sb, "Velo ")
     sb_append_rune(@sb, 0x03A9 as u32) // Ω
     sb_append_byte(@sb, 32 as u8)
     sb_append_rune(@sb, 0x4E16 as u32) // 世
@@ -58,15 +58,15 @@ act test_integer_formatting() -> bool {
     mut arena = arena_init(4096)
     mut sb = sb_init(@arena, 32)
 
-    sb_append_str(@sb, "zero=")
+    sb_append_string(@sb, "zero=")
     sb_append_i64(@sb, 0 as i64)
-    sb_append_str(@sb, "; pos=")
+    sb_append_string(@sb, "; pos=")
     sb_append_i64(@sb, 123456789 as i64)
-    sb_append_str(@sb, "; neg=")
+    sb_append_string(@sb, "; neg=")
     sb_append_i64(@sb, -987654 as i64)
-    sb_append_str(@sb, "; min=")
+    sb_append_string(@sb, "; min=")
     sb_append_i64(@sb, (-9223372036854775807 as i64) - (1 as i64))
-    sb_append_str(@sb, "; u64=")
+    sb_append_string(@sb, "; u64=")
     sb_append_u64(@sb, 0xFFFFFFFFFFFFFFFF as u64)
 
     let expected = "zero=0; pos=123456789; neg=-987654; min=-9223372036854775808; u64=18446744073709551615"
@@ -83,7 +83,7 @@ act test_reset_and_reuse() -> bool {
     mut arena = arena_init(4096)
     mut sb = sb_init(@arena, 16)
 
-    sb_append_str(@sb, "first pass data string")
+    sb_append_string(@sb, "first pass data string")
     if sb_len(@sb) != 22 {
         arena_free(@arena); return false
     }
@@ -93,7 +93,7 @@ act test_reset_and_reuse() -> bool {
         arena_free(@arena); return false
     }
 
-    sb_append_str(@sb, "second pass")
+    sb_append_string(@sb, "second pass")
     let res = sb_to_slice(@sb)
     if !slice_eq_str(res, "second pass") {
         arena_free(@arena); return false
@@ -107,7 +107,7 @@ act test_to_cstr() -> bool {
     mut arena = arena_init(4096)
     mut sb = sb_init(@arena, 16)
 
-    sb_append_str(@sb, "null_terminated_c_str")
+    sb_append_string(@sb, "null_terminated_c_str")
     let cstr = sb_to_cstr(@sb)
     if cstr == null {
         arena_free(@arena); return false
@@ -127,7 +127,7 @@ act test_stress_1000_fragments() -> bool {
 
     mut i: usize = 0
     loop i < 1000 {
-        sb_append_str(@sb, "tok_")
+        sb_append_string(@sb, "tok_")
         sb_append_u64(@sb, i as u64)
         sb_append_byte(@sb, 44 as u8) // ','
         i += 1

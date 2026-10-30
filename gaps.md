@@ -1615,3 +1615,34 @@ flowchart TD
   - `bin/velo.exe run std/tests/std_module_import_test.vl` passed (`PASS: native use std.* imports succeeded`).
   - `python -m pytest tests/test_std_os.py` passed (6/6 passed in 8.64s).
   - `python -m pytest tests -k "test_std_"` passed (53/53 passed in 50.23s).
+
+
+---
+
+### Phase 11: Compiler Self-Hosted Migration to Standard Library (`sys.*` -> `std.*`)
+
+#### Task 11.1: Migrate `sys.os` and Foreign `system()` to `std.os` [COMPLETED] ✅
+* **Former Defect**:
+  - The self-hosted compiler backend (`src/backend/driver.vl`, `src/backend/driver_run.vl`, `src/backend/driver_pkg.vl`) depended on the legacy `sys.os` built-in and raw foreign C `extern act system(command: string) -> i32` declarations.
+  - Platform detection in `driver.vl` used manual checks against `os.get_env("OS")` and `os.get_env("WINDIR")`, and compilation/test execution used C runtime `system()`.
+  - Importing `std.os` into the compiler initially surfaced a top-level symbol name conflict between `std/str/builder.vl` (`sb_append_str`) and compiler-internal `src/common/string_builder.vl` (`sb_append_str`).
+  - Furthermore, `os_system(cmd)` in `std/os/process.vl` previously routed directly to `os_spawn_sync(cmd)` (`CreateProcessA`) without shell delegation, causing compound shell commands (`set PATH=... && gcc ...`, `call ... && cl ...`) to fail with exit code -1.
+* **Fix Applied**:
+  - Replaced `use sys.os` with `use std.os` in `src/backend/driver.vl`.
+  - Removed foreign `extern act system(command: string) -> i32` declaration from `src/backend/driver.vl`.
+  - Simplified `is_windows_platform()` in `src/backend/driver.vl` to cleanly delegate to `os_is_windows()` from `std.os`.
+  - Migrated all `system(cmd)` calls in `src/backend/driver_run.vl` (lines 37, 65, 88, 100) and `src/backend/driver_pkg.vl` (line 229) to `os_system(cmd)`.
+  - Resolved `sb_append_str` symbol collision by renaming the string helper in `std/str/builder.vl` and `std/tests/str/builder_test.vl` to `sb_append_string`.
+  - Enhanced `std/os/proc_windows.vl` and `std/os/process.vl` with `os_shell_spawn_sync` so that `os_system` behaves as a genuine shell execution primitive (invoking `cmd.exe /c` on Windows when required) matching standard C `system()` semantics without `libc`.
+  - Updated `tests/test_lexer_capacity.py` to prefer the canonical `bin/velo.exe` executable when available.
+  - Verified code standards: all compiler files strictly remain under 400 lines (`python scripts/count_lines.py`).
+  - Rebuilt the entire 3-generation bootstrap chain (`scripts/bootstrap.bat` -> Gen2 -> Gen3 -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 determinism (`2A8C2464D7C14B10CCFDC72DC297585EB37C1528373F9377BAF4DB8DD473CB62`).
+* **Residual Limitation**:
+  - Other subsystems (`sys.fs`, `sys.io`, `sys.mem`) in the self-hosted compiler remain to be systematically migrated to `std.fs`, `std.io`, `std.mem` in subsequent tasks.
+* **Verification**:
+  - `python scripts/count_lines.py` verified all compiler source files < 400 lines.
+  - Rebuilt 3-generation self-hosting chain: Gen2, Gen3, and `bootstrap.c` identical SHA-256.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -q` passed (5/5 passed).
+  - `python -m pytest tests/test_std_os.py -q` passed (6/6 passed).
+  - `python -m pytest tests -k "test_std"` passed (53/53 passed).
+  - `python -m pytest tests -q` passed full suite (483/483 passed in 295.21s).

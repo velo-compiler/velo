@@ -56,7 +56,7 @@ act os_spawn_sync_argv(arena: @Arena, argv: @string, argc: usize) -> ProcessResu
 // Executes a shell command synchronously and returns its exit code.
 // Zero-dependency pure-Velo replacement for C system().
 act os_system(cmd: string) -> i32 {
-    let res = os_spawn_sync(cmd)
+    let res = os_shell_spawn_sync(cmd)
     return res.exit_code
 }
 

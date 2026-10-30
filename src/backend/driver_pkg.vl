@@ -226,7 +226,7 @@ act handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32 {
         }
         let run_args = sb_to_string(@run_args_sb)
         let run_cmd = assemble_runner_cmd(cc, run_exe_path, run_args)
-        return system(run_cmd)
+        return os_system(run_cmd)
     }
 
     io.println("[Velo Error] Unknown 'pkg' subcommand '{sub_cmd}'.")

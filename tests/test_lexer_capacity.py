@@ -87,8 +87,11 @@ def test_lexer_overflow_reports_diagnostic(monkeypatch, tmp_path_factory):
     driver_vl.write_text(text, encoding="utf-8")
 
     tiny_exe = out_dir / "velo_tinycap.exe"
+    builder = [str(VELO_EXE), "build", str(src_dir / "main.vl"), "-o", str(tiny_exe)] if VELO_EXE.exists() else [
+        "python", "velo.py", "build", str(src_dir / "main.vl"), "-o", str(tiny_exe)
+    ]
     res = subprocess.run(
-        ["python", "velo.py", "build", str(src_dir / "main.vl"), "-o", str(tiny_exe)],
+        builder,
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,

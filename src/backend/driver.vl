@@ -2,7 +2,7 @@
 use sys.io
 use sys.fs
 use sys.mem
-use sys.os
+use std.os
 
 use "../frontend/token.vl"
 use "../frontend/lexer.vl"
@@ -31,9 +31,6 @@ use "codegen_c.vl"
 use "docgen.vl"
 use "driver_cc.vl"
 use "driver_run.vl"
-
-// Foreign C system() execution interface
-extern act system(command: string) -> i32
 
 // Linked list tracking visited files to prevent circular or duplicate module parsing.
 data VisitedFile {
@@ -81,14 +78,7 @@ act mark_file_visited(d: @CompilerDriver, path: string) {
 
 // Returns true if the current host or target operating system is Windows.
 act is_windows_platform() -> bool {
-    let os_env = os.get_env("OS")
-    if os_env != null and (os_env[0] == 'W' or os_env[0] == 'w') {
-        return true
-    }
-    if os.get_env("WINDIR") != null or os.get_env("windir") != null or os.get_env("SYSTEMROOT") != null {
-        return true
-    }
-    return false
+    return os_is_windows()
 }
 
 // Returns true if the file target is specific to another OS and must be skipped.

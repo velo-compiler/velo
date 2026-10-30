@@ -195,3 +195,55 @@ act os_process_close(proc: @ProcessHandle) {
     }
     proc.is_alive = false
 }
+
+// Returns true if cmd already begins with "cmd.exe /c " or "cmd /c ".
+act str_starts_with_cmd_shell(cmd: string) -> bool {
+    if cmd == null { return false }
+    let len = raw_str_len(cmd as @u8)
+    if len >= 11 and cmd[0] == 'c' and cmd[1] == 'm' and cmd[2] == 'd' and cmd[3] == '.' and cmd[4] == 'e' and cmd[5] == 'x' and cmd[6] == 'e' and cmd[7] == ' ' and cmd[8] == '/' and (cmd[9] == 'c' or cmd[9] == 'C') and cmd[10] == ' ' {
+        return true
+    }
+    if len >= 7 and cmd[0] == 'c' and cmd[1] == 'm' and cmd[2] == 'd' and cmd[3] == ' ' and cmd[4] == '/' and (cmd[5] == 'c' or cmd[5] == 'C') and cmd[6] == ' ' {
+        return true
+    }
+    return false
+}
+
+// Executes a shell command string through the system command processor (cmd.exe /c).
+act os_shell_spawn_sync(cmd: string) -> ProcessResult {
+    if cmd == null {
+        return ProcessResult { exit_code: -1, success: false }
+    }
+    if str_starts_with_cmd_shell(cmd) {
+        mut proc = os_spawn_ex(cmd, null, null, null)
+        if !proc.is_alive {
+            return ProcessResult { exit_code: -1, success: false }
+        }
+        let code = os_process_wait_timeout(@proc, 0xFFFFFFFF as u32)
+        return ProcessResult {
+            exit_code: code,
+            success: code == 0,
+        }
+    }
+
+    let cmd_len = raw_str_len(cmd as @u8)
+    let buf = heap_alloc(cmd_len + 16)
+    if buf == null {
+        return ProcessResult { exit_code: -1, success: false }
+    }
+    let prefix = "cmd.exe /c "
+    copy(buf, prefix as @u8, 11)
+    copy(buf + 11, cmd as @u8, cmd_len)
+    buf[11 + cmd_len] = 0 as u8
+
+    mut proc = os_spawn_ex(buf as string, null, null, null)
+    heap_free(buf)
+    if !proc.is_alive {
+        return ProcessResult { exit_code: -1, success: false }
+    }
+    let code = os_process_wait_timeout(@proc, 0xFFFFFFFF as u32)
+    return ProcessResult {
+        exit_code: code,
+        success: code == 0,
+    }
+}
