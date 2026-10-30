@@ -1,11 +1,16 @@
-"""Tests for Native Self-Hosted Velo Language Server (Phase 2, Task 2.1).
+"""Tests for Native Self-Hosted Velo Language Server (Phase 2, Task 2.1 & 2.2).
 
 Verifies `velo lsp` stdio JSON-RPC 2.0 native binary:
 1. Protocol framing: Content-Length header parsing and emission.
 2. Lifecycle: initialize -> initialized -> shutdown -> exit.
 3. Document Synchronization: textDocument/didOpen, didChange, didClose, didSave.
-4. Unknown method error handling (JSON-RPC error -32601).
-5. Clean shutdown and EOF exit handling.
+4. Live In-Memory Diagnostics (Zero Disk I/O):
+   - Syntax error reporting on unsaved buffers
+   - Semantic type-check error reporting
+   - Diagnostic clearance upon fixing errors
+   - Empty diagnostics publication on didClose
+5. Unknown method error handling (JSON-RPC error -32601).
+6. Clean shutdown and EOF exit handling.
 """
 
 import json
@@ -106,7 +111,7 @@ def test_native_lsp_lifecycle():
 
 
 def test_native_lsp_document_sync():
-    """Verify textDocument/didOpen, didChange, and didClose sync without errors."""
+    """Verify textDocument/didOpen, didChange, didSave, and didClose sync without errors."""
     proc = spawn_native_lsp()
 
     # Initialize
@@ -117,7 +122,7 @@ def test_native_lsp_document_sync():
     uri = "file:///sample.vl"
     code_v1 = "act main() -> i32 { return 42 }\n"
 
-    # didOpen
+    # didOpen -> server publishes diagnostics (empty for clean code)
     send_lsp_msg(proc, {
         "jsonrpc": "2.0",
         "method": "textDocument/didOpen",
@@ -130,8 +135,12 @@ def test_native_lsp_document_sync():
             }
         }
     })
+    diag_open = recv_lsp_msg(proc)
+    assert diag_open["method"] == "textDocument/publishDiagnostics"
+    assert diag_open["params"]["uri"] == uri
+    assert diag_open["params"]["diagnostics"] == []
 
-    # didChange (Full text sync)
+    # didChange (Full text sync) -> server publishes diagnostics
     code_v2 = "act main() -> i32 { return 100 }\n"
     send_lsp_msg(proc, {
         "jsonrpc": "2.0",
@@ -146,8 +155,12 @@ def test_native_lsp_document_sync():
             ]
         }
     })
+    diag_change = recv_lsp_msg(proc)
+    assert diag_change["method"] == "textDocument/publishDiagnostics"
+    assert diag_change["params"]["uri"] == uri
+    assert diag_change["params"]["diagnostics"] == []
 
-    # didSave
+    # didSave -> server publishes diagnostics
     send_lsp_msg(proc, {
         "jsonrpc": "2.0",
         "method": "textDocument/didSave",
@@ -155,8 +168,11 @@ def test_native_lsp_document_sync():
             "textDocument": {"uri": uri}
         }
     })
+    diag_save = recv_lsp_msg(proc)
+    assert diag_save["method"] == "textDocument/publishDiagnostics"
+    assert diag_save["params"]["uri"] == uri
 
-    # didClose
+    # didClose -> server publishes empty diagnostics
     send_lsp_msg(proc, {
         "jsonrpc": "2.0",
         "method": "textDocument/didClose",
@@ -164,6 +180,9 @@ def test_native_lsp_document_sync():
             "textDocument": {"uri": uri}
         }
     })
+    diag_close = recv_lsp_msg(proc)
+    assert diag_close["method"] == "textDocument/publishDiagnostics"
+    assert diag_close["params"]["diagnostics"] == []
 
     # Unknown request
     send_lsp_msg(proc, {
@@ -189,6 +208,104 @@ def test_native_lsp_document_sync():
     assert proc.returncode == 0
 
 
+def test_native_lsp_live_diagnostics():
+    """Verify live in-memory diagnostics for syntax errors, type errors, and error clearing."""
+    proc = spawn_native_lsp()
+
+    # Initialize
+    send_lsp_msg(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    init_res = recv_lsp_msg(proc)
+    assert init_res["id"] == 1
+
+    uri = "file:///in_memory_test.vl"
+
+    # 1. didOpen with syntax error (trailing + without operand)
+    broken_syntax = "act main() -> i32 {\n    let x = 10 +\n    return 0\n}\n"
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {
+            "textDocument": {
+                "uri": uri,
+                "languageId": "velo",
+                "version": 1,
+                "text": broken_syntax
+            }
+        }
+    })
+    diag_res1 = recv_lsp_msg(proc)
+    assert diag_res1["method"] == "textDocument/publishDiagnostics"
+    assert diag_res1["params"]["uri"] == uri
+    diags1 = diag_res1["params"]["diagnostics"]
+    assert len(diags1) > 0, "Expected syntax error diagnostic on broken code"
+    d1 = diags1[0]
+    assert d1["severity"] == 1
+    assert d1["source"] == "velo"
+    assert d1["range"]["start"]["line"] >= 0
+
+    # 2. didChange with semantic type error (string assigned to i32)
+    broken_type = "act main() -> i32 {\n    let x: i32 = \"not an int\"\n    return x\n}\n"
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "method": "textDocument/didChange",
+        "params": {
+            "textDocument": {
+                "uri": uri,
+                "version": 2
+            },
+            "contentChanges": [
+                {"text": broken_type}
+            ]
+        }
+    })
+    diag_res2 = recv_lsp_msg(proc)
+    assert diag_res2["method"] == "textDocument/publishDiagnostics"
+    diags2 = diag_res2["params"]["diagnostics"]
+    assert len(diags2) > 0, "Expected semantic type error diagnostic"
+    d2 = diags2[0]
+    assert d2["severity"] == 1
+    assert "Type mismatch" in d2["message"]
+
+    # 3. didChange fixing the error
+    clean_code = "act main() -> i32 {\n    let x: i32 = 42\n    return x\n}\n"
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "method": "textDocument/didChange",
+        "params": {
+            "textDocument": {
+                "uri": uri,
+                "version": 3
+            },
+            "contentChanges": [
+                {"text": clean_code}
+            ]
+        }
+    })
+    diag_res3 = recv_lsp_msg(proc)
+    assert diag_res3["method"] == "textDocument/publishDiagnostics"
+    assert diag_res3["params"]["diagnostics"] == [], "Expected zero diagnostics on clean code"
+
+    # 4. didClose clears diagnostics
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "method": "textDocument/didClose",
+        "params": {
+            "textDocument": {"uri": uri}
+        }
+    })
+    diag_res4 = recv_lsp_msg(proc)
+    assert diag_res4["method"] == "textDocument/publishDiagnostics"
+    assert diag_res4["params"]["diagnostics"] == []
+
+    # Shutdown and exit
+    send_lsp_msg(proc, {"jsonrpc": "2.0", "id": 2, "method": "shutdown"})
+    recv_lsp_msg(proc)
+    send_lsp_msg(proc, {"jsonrpc": "2.0", "method": "exit"})
+    proc.stdin.close()
+    proc.wait(timeout=5)
+    assert proc.returncode == 0
+
+
 def test_native_lsp_eof_disconnect():
     """Verify server exits gracefully when client closes stdin pipe abruptly."""
     proc = spawn_native_lsp()
@@ -201,4 +318,3 @@ def test_native_lsp_eof_disconnect():
     proc.stdin.close()
     proc.wait(timeout=5)
     assert proc.returncode == 0
-

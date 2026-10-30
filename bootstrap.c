@@ -22,6 +22,7 @@ typedef struct Pipe Pipe;
 typedef struct ProcessOutput ProcessOutput;
 typedef struct Token Token;
 typedef struct StringBuilder StringBuilder;
+typedef struct InMemDiag InMemDiag;
 typedef struct Lexer Lexer;
 typedef struct TypeNode TypeNode;
 typedef struct FieldInit FieldInit;
@@ -211,6 +212,15 @@ struct StringBuilder {
     uint8_t* buffer;
     size_t len;
     size_t cap;
+};
+
+struct InMemDiag {
+    const char* filename;
+    int32_t line;
+    int32_t col;
+    int32_t severity;
+    const char* message;
+    InMemDiag* next;
 };
 
 struct Lexer {
@@ -923,7 +933,15 @@ int32_t TOK_SHR_ASSIGN = 90;
 int32_t TOK_FAT_ARROW = 91;
 #line 92 "src/main.vl"
 int32_t TOK_HASH = 92;
-#line 104 "src/main.vl"
+#line 16 "src/main.vl"
+bool g_diag_collector_active = false;
+#line 17 "src/main.vl"
+InMemDiag* g_diag_head = NULL;
+#line 18 "src/main.vl"
+InMemDiag* g_diag_tail = NULL;
+#line 19 "src/main.vl"
+int32_t g_diag_count = 0;
+#line 193 "src/main.vl"
 bool g_pretty_color = false;
 #line 4 "src/main.vl"
 int32_t TYPE_KIND_PRIMITIVE = 1;
@@ -1453,6 +1471,11 @@ void sb_append_float(StringBuilder* sb, float val);
 void sb_append_indent(StringBuilder* sb, int32_t indent);
 void sb_append_line(StringBuilder* sb, const char* s, int32_t indent);
 const char* sb_to_string(StringBuilder* sb);
+void diag_collector_start(void);
+void diag_collector_stop(void);
+void diag_collector_clear(void);
+const char* diag_heap_copy(const char* s);
+void diag_collector_add(const char* filename, int32_t line, int32_t col, int32_t severity, const char* message);
 void report_error(const char* filename, int32_t line, int32_t col, const char* message);
 void report_warning(const char* filename, int32_t line, int32_t col, const char* message);
 void report_simple_error(const char* message);
@@ -2090,13 +2113,19 @@ void lsp_append_id(StringBuilder* sb, JsonValue* id_node);
 void lsp_send_initialize_result(JsonValue* id_node);
 void lsp_send_shutdown_result(JsonValue* id_node);
 void lsp_send_method_not_found(JsonValue* id_node);
+const char* lsp_uri_to_path(const char* uri);
+void lsp_json_escape(StringBuilder* sb, const char* s);
+void lsp_publish_empty_diagnostics(const char* uri);
+void lsp_publish_collected_diagnostics(const char* uri, int32_t version);
+void lsp_analyze_document(const char* uri, const char* text, int32_t version);
 const char* lsp_slice_to_heap_str(StrSlice s);
-LspDoc* lsp_find_doc(LspServerState* state, const char* uri);
+LspDoc* lsp_find_doc(LspServerState* state, StrSlice uri_slice);
 void lsp_store_doc(LspServerState* state, const char* uri, const char* text, int32_t version);
 void lsp_close_doc(LspServerState* state, StrSlice uri_slice);
 void lsp_handle_did_open(LspServerState* state, JsonValue* params);
 void lsp_handle_did_change(LspServerState* state, JsonValue* params);
 void lsp_handle_did_close(LspServerState* state, JsonValue* params);
+void lsp_handle_did_save(LspServerState* state, JsonValue* params);
 bool lsp_dispatch_message(LspServerState* state, const char* msg);
 int32_t handle_lsp_command(void);
 
@@ -11270,204 +11299,333 @@ const char* sb_to_string(StringBuilder* sb) {
     return ((const char*)(sb->buffer));
 }
 
-#line 11 "src/main.vl"
-void report_error(const char* filename, int32_t line, int32_t col, const char* message) {
-#line 12 "src/main.vl"
-    println_str(velo_str_format("[Velo Error] %s:%lld:%lld - %s", (const char*)(filename), (long long)(line), (long long)(col), (const char*)(message)));
-}
-
-#line 16 "src/main.vl"
-void report_warning(const char* filename, int32_t line, int32_t col, const char* message) {
-#line 17 "src/main.vl"
-    println_str(velo_str_format("[Velo Warning] %s:%lld:%lld - %s", (const char*)(filename), (long long)(line), (long long)(col), (const char*)(message)));
-}
-
-#line 21 "src/main.vl"
-void report_simple_error(const char* message) {
 #line 22 "src/main.vl"
-    println_str(velo_str_format("[Velo Error] %s", (const char*)(message)));
+void diag_collector_start(void) {
+#line 23 "src/main.vl"
+    diag_collector_clear();
+#line 24 "src/main.vl"
+    g_diag_collector_active = true;
 }
 
+#line 28 "src/main.vl"
+void diag_collector_stop(void) {
+#line 29 "src/main.vl"
+    g_diag_collector_active = false;
+}
+
+#line 33 "src/main.vl"
+void diag_collector_clear(void) {
+#line 34 "src/main.vl"
+    InMemDiag* cur = g_diag_head;
+#line 35 "src/main.vl"
+    for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 36 "src/main.vl"
+        InMemDiag* nxt = cur->next;
+#line 37 "src/main.vl"
+        if ((cur->filename != NULL)) {
+#line 37 "src/main.vl"
+            velo_heap_free((void*)(((uint8_t*)(cur->filename))));
+        }
+#line 38 "src/main.vl"
+        if ((cur->message != NULL)) {
+#line 38 "src/main.vl"
+            velo_heap_free((void*)(((uint8_t*)(cur->message))));
+        }
+#line 39 "src/main.vl"
+        velo_heap_free((void*)(((uint8_t*)(cur))));
 #line 40 "src/main.vl"
-const char* pretty_line_text(const char* source, int32_t want_line) {
-#line 41 "src/main.vl"
-    size_t n = ((usize)strlen(source));
+        cur = nxt;
+    }
+#line 42 "src/main.vl"
+    g_diag_head = NULL;
 #line 43 "src/main.vl"
-    size_t start = 0;
+    g_diag_tail = NULL;
 #line 44 "src/main.vl"
-    int32_t line_no = 1;
-#line 45 "src/main.vl"
-    for (int32_t it = 0; (((line_no < want_line) && (start < n))); it++) {
-#line 46 "src/main.vl"
-        if ((source[start] == '\n')) {
-#line 47 "src/main.vl"
-            line_no += 1;
-        }
+    g_diag_count = 0;
+}
+
+#line 48 "src/main.vl"
+const char* diag_heap_copy(const char* s) {
 #line 49 "src/main.vl"
-        start += 1;
+    if ((s == NULL)) {
+#line 49 "src/main.vl"
+        return NULL;
     }
+#line 50 "src/main.vl"
+    size_t n = ((usize)strlen(s));
+#line 51 "src/main.vl"
+    uint8_t* buf = ((uint8_t*)velo_heap_alloc(sizeof(uint8_t), (size_t)((n + 1))));
 #line 52 "src/main.vl"
-    size_t end = start;
+    size_t i = 0;
 #line 53 "src/main.vl"
-    for (int32_t it = 0; ((end < n)); it++) {
+    for (int32_t it = 0; ((i < n)); it++) {
 #line 54 "src/main.vl"
-        if ((source[end] == '\n')) {
+        buf[i] = s[i];
 #line 55 "src/main.vl"
-            break;
-        }
+        i += 1;
+    }
 #line 57 "src/main.vl"
-        end += 1;
-    }
-#line 59 "src/main.vl"
-    if (((end > start) && (source[(end - 1)] == '\r'))) {
-#line 60 "src/main.vl"
-        end -= 1;
-    }
-#line 63 "src/main.vl"
-    size_t raw_len = (end - start);
-#line 64 "src/main.vl"
-    uint8_t* buf = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)((raw_len + 1))));
-#line 65 "src/main.vl"
-    size_t w = 0;
-#line 66 "src/main.vl"
-    size_t k = start;
-#line 67 "src/main.vl"
-    for (int32_t it = 0; ((k < end)); it++) {
-#line 68 "src/main.vl"
-        if ((source[k] == '\t')) {
-#line 69 "src/main.vl"
-            buf[w] = ' ';
-        } else {
-#line 71 "src/main.vl"
-            buf[w] = source[k];
-        }
-#line 73 "src/main.vl"
-        w += 1;
-#line 74 "src/main.vl"
-        k += 1;
-    }
-#line 76 "src/main.vl"
-    buf[w] = ((uint8_t)(0));
-#line 77 "src/main.vl"
+    buf[n] = ((uint8_t)(0));
+#line 58 "src/main.vl"
     return ((const char*)(buf));
 }
 
-#line 81 "src/main.vl"
+#line 62 "src/main.vl"
+void diag_collector_add(const char* filename, int32_t line, int32_t col, int32_t severity, const char* message) {
+#line 63 "src/main.vl"
+    InMemDiag* node = ((InMemDiag*)velo_heap_alloc(sizeof(InMemDiag), (size_t)(1)));
+#line 64 "src/main.vl"
+    node->filename = diag_heap_copy(filename);
+#line 65 "src/main.vl"
+    node->line = line;
+#line 66 "src/main.vl"
+    node->col = col;
+#line 67 "src/main.vl"
+    node->severity = severity;
+#line 68 "src/main.vl"
+    node->message = diag_heap_copy(message);
+#line 69 "src/main.vl"
+    node->next = NULL;
+#line 71 "src/main.vl"
+    if ((g_diag_head == NULL)) {
+#line 72 "src/main.vl"
+        g_diag_head = node;
+#line 73 "src/main.vl"
+        g_diag_tail = node;
+    } else {
+#line 75 "src/main.vl"
+        g_diag_tail->next = node;
+#line 76 "src/main.vl"
+        g_diag_tail = node;
+    }
+#line 78 "src/main.vl"
+    g_diag_count += 1;
+}
+
+#line 88 "src/main.vl"
+void report_error(const char* filename, int32_t line, int32_t col, const char* message) {
+#line 89 "src/main.vl"
+    if (g_diag_collector_active) {
+#line 90 "src/main.vl"
+        diag_collector_add(filename, line, col, 1, message);
+#line 91 "src/main.vl"
+        return;
+    }
+#line 93 "src/main.vl"
+    println_str(velo_str_format("[Velo Error] %s:%lld:%lld - %s", (const char*)(filename), (long long)(line), (long long)(col), (const char*)(message)));
+}
+
+#line 97 "src/main.vl"
+void report_warning(const char* filename, int32_t line, int32_t col, const char* message) {
+#line 98 "src/main.vl"
+    if (g_diag_collector_active) {
+#line 99 "src/main.vl"
+        diag_collector_add(filename, line, col, 2, message);
+#line 100 "src/main.vl"
+        return;
+    }
+#line 102 "src/main.vl"
+    println_str(velo_str_format("[Velo Warning] %s:%lld:%lld - %s", (const char*)(filename), (long long)(line), (long long)(col), (const char*)(message)));
+}
+
+#line 106 "src/main.vl"
+void report_simple_error(const char* message) {
+#line 107 "src/main.vl"
+    if (g_diag_collector_active) {
+#line 108 "src/main.vl"
+        diag_collector_add("", 0, 0, 1, message);
+#line 109 "src/main.vl"
+        return;
+    }
+#line 111 "src/main.vl"
+    println_str(velo_str_format("[Velo Error] %s", (const char*)(message)));
+}
+
+#line 129 "src/main.vl"
+const char* pretty_line_text(const char* source, int32_t want_line) {
+#line 130 "src/main.vl"
+    size_t n = ((usize)strlen(source));
+#line 132 "src/main.vl"
+    size_t start = 0;
+#line 133 "src/main.vl"
+    int32_t line_no = 1;
+#line 134 "src/main.vl"
+    for (int32_t it = 0; (((line_no < want_line) && (start < n))); it++) {
+#line 135 "src/main.vl"
+        if ((source[start] == '\n')) {
+#line 136 "src/main.vl"
+            line_no += 1;
+        }
+#line 138 "src/main.vl"
+        start += 1;
+    }
+#line 141 "src/main.vl"
+    size_t end = start;
+#line 142 "src/main.vl"
+    for (int32_t it = 0; ((end < n)); it++) {
+#line 143 "src/main.vl"
+        if ((source[end] == '\n')) {
+#line 144 "src/main.vl"
+            break;
+        }
+#line 146 "src/main.vl"
+        end += 1;
+    }
+#line 148 "src/main.vl"
+    if (((end > start) && (source[(end - 1)] == '\r'))) {
+#line 149 "src/main.vl"
+        end -= 1;
+    }
+#line 152 "src/main.vl"
+    size_t raw_len = (end - start);
+#line 153 "src/main.vl"
+    uint8_t* buf = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)((raw_len + 1))));
+#line 154 "src/main.vl"
+    size_t w = 0;
+#line 155 "src/main.vl"
+    size_t k = start;
+#line 156 "src/main.vl"
+    for (int32_t it = 0; ((k < end)); it++) {
+#line 157 "src/main.vl"
+        if ((source[k] == '\t')) {
+#line 158 "src/main.vl"
+            buf[w] = ' ';
+        } else {
+#line 160 "src/main.vl"
+            buf[w] = source[k];
+        }
+#line 162 "src/main.vl"
+        w += 1;
+#line 163 "src/main.vl"
+        k += 1;
+    }
+#line 165 "src/main.vl"
+    buf[w] = ((uint8_t)(0));
+#line 166 "src/main.vl"
+    return ((const char*)(buf));
+}
+
+#line 170 "src/main.vl"
 size_t pretty_digit_count(int32_t n) {
-#line 82 "src/main.vl"
+#line 171 "src/main.vl"
     if ((n <= 0)) {
-#line 83 "src/main.vl"
+#line 172 "src/main.vl"
         return 1;
     }
-#line 85 "src/main.vl"
+#line 174 "src/main.vl"
     int32_t v = n;
-#line 86 "src/main.vl"
+#line 175 "src/main.vl"
     size_t c = 1;
-#line 87 "src/main.vl"
+#line 176 "src/main.vl"
     for (int32_t it = 0; ((v > 9)); it++) {
-#line 88 "src/main.vl"
+#line 177 "src/main.vl"
         v /= 10;
-#line 89 "src/main.vl"
+#line 178 "src/main.vl"
         c += 1;
     }
-#line 91 "src/main.vl"
+#line 180 "src/main.vl"
     return c;
 }
 
-#line 95 "src/main.vl"
+#line 184 "src/main.vl"
 void pretty_pad_spaces(StringBuilder* sb, size_t count) {
-#line 96 "src/main.vl"
+#line 185 "src/main.vl"
     size_t i = 0;
-#line 97 "src/main.vl"
+#line 186 "src/main.vl"
     for (int32_t it = 0; ((i < count)); it++) {
-#line 98 "src/main.vl"
+#line 187 "src/main.vl"
         sb_append_char(sb, ' ');
-#line 99 "src/main.vl"
+#line 188 "src/main.vl"
         i += 1;
     }
 }
 
-#line 106 "src/main.vl"
+#line 195 "src/main.vl"
 void pretty_set_color(bool enabled) {
-#line 107 "src/main.vl"
+#line 196 "src/main.vl"
     g_pretty_color = enabled;
 }
 
-#line 110 "src/main.vl"
+#line 199 "src/main.vl"
 bool pretty_get_color(void) {
-#line 111 "src/main.vl"
+#line 200 "src/main.vl"
     return g_pretty_color;
 }
 
-#line 117 "src/main.vl"
+#line 206 "src/main.vl"
 void pretty_render_block(const char* file, int32_t line, int32_t col, size_t length, const char* message, const char* sev, const char* source) {
-#line 118 "src/main.vl"
+#line 207 "src/main.vl"
+    if (g_diag_collector_active) {
+#line 208 "src/main.vl"
+        return;
+    }
+#line 210 "src/main.vl"
     if (g_pretty_color) {
-#line 119 "src/main.vl"
+#line 211 "src/main.vl"
         if (((sev != NULL && "error" != NULL) ? (strcmp(sev, "error") == 0) : (sev == "error"))) {
-#line 120 "src/main.vl"
+#line 212 "src/main.vl"
             println_str(velo_str_format("%s:%lld:%lld: [31merror[0m: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(message)));
         } else
-#line 121 "src/main.vl"
+#line 213 "src/main.vl"
         if (((sev != NULL && "warning" != NULL) ? (strcmp(sev, "warning") == 0) : (sev == "warning"))) {
-#line 122 "src/main.vl"
+#line 214 "src/main.vl"
             println_str(velo_str_format("%s:%lld:%lld: [33mwarning[0m: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(message)));
         } else {
-#line 124 "src/main.vl"
+#line 216 "src/main.vl"
             println_str(velo_str_format("%s:%lld:%lld: %s: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(sev), (const char*)(message)));
         }
     } else {
-#line 127 "src/main.vl"
+#line 219 "src/main.vl"
         println_str(velo_str_format("%s:%lld:%lld: %s: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(sev), (const char*)(message)));
     }
-#line 129 "src/main.vl"
+#line 221 "src/main.vl"
     const char* src_line = pretty_line_text(source, line);
-#line 130 "src/main.vl"
+#line 222 "src/main.vl"
     println_str(velo_str_format("%lld | %s", (long long)(line), (const char*)(src_line)));
-#line 131 "src/main.vl"
+#line 223 "src/main.vl"
     size_t w = pretty_digit_count(line);
-#line 132 "src/main.vl"
+#line 224 "src/main.vl"
     size_t span_len = 1;
-#line 133 "src/main.vl"
+#line 225 "src/main.vl"
     if ((length > 1)) {
-#line 134 "src/main.vl"
+#line 226 "src/main.vl"
         span_len = length;
     }
-#line 136 "src/main.vl"
+#line 228 "src/main.vl"
     StringBuilder pad = create_sb((((w + ((size_t)(col))) + span_len) + 16));
-#line 137 "src/main.vl"
+#line 229 "src/main.vl"
     pretty_pad_spaces((&(pad)), (w + 1));
-#line 138 "src/main.vl"
+#line 230 "src/main.vl"
     sb_append_str((&(pad)), "| ");
-#line 139 "src/main.vl"
+#line 231 "src/main.vl"
     size_t caret_pad = 0;
-#line 140 "src/main.vl"
+#line 232 "src/main.vl"
     if ((col > 1)) {
-#line 141 "src/main.vl"
+#line 233 "src/main.vl"
         caret_pad = ((size_t)((col - 1)));
     }
-#line 143 "src/main.vl"
+#line 235 "src/main.vl"
     pretty_pad_spaces((&(pad)), caret_pad);
-#line 144 "src/main.vl"
+#line 236 "src/main.vl"
     if (g_pretty_color) {
-#line 145 "src/main.vl"
+#line 237 "src/main.vl"
         sb_append_str((&(pad)), "[1m");
     }
-#line 147 "src/main.vl"
+#line 239 "src/main.vl"
     size_t s = 0;
-#line 148 "src/main.vl"
+#line 240 "src/main.vl"
     for (int32_t it = 0; ((s < span_len)); it++) {
-#line 149 "src/main.vl"
+#line 241 "src/main.vl"
         sb_append_char((&(pad)), '^');
-#line 150 "src/main.vl"
+#line 242 "src/main.vl"
         s += 1;
     }
-#line 152 "src/main.vl"
+#line 244 "src/main.vl"
     if (g_pretty_color) {
-#line 153 "src/main.vl"
+#line 245 "src/main.vl"
         sb_append_str((&(pad)), "[0m");
     }
-#line 155 "src/main.vl"
+#line 247 "src/main.vl"
     println_str(sb_to_string((&(pad))));
 }
 
@@ -17621,144 +17779,144 @@ void mono_check_type(Monomorphizer* m, const char* t) {
     }
 }
 
-#line 5 "src/main.vl"
-Scope* create_scope(Scope* parent) {
 #line 6 "src/main.vl"
+Scope* create_scope(Scope* parent) {
+#line 7 "src/main.vl"
     Scope* sc = ((Scope*)velo_mem_alloc(sizeof(Scope), (size_t)(1)));
-#line 7 "src/main.vl"
-    sc->parent = parent;
-#line 7 "src/main.vl"
-    sc->first_sym = NULL;
-#line 7 "src/main.vl"
-    sc->sym_count = 0;
 #line 8 "src/main.vl"
+    sc->parent = parent;
+#line 8 "src/main.vl"
+    sc->first_sym = NULL;
+#line 8 "src/main.vl"
+    sc->sym_count = 0;
+#line 9 "src/main.vl"
     return sc;
 }
 
-#line 12 "src/main.vl"
-void enter_scope(SymbolTable* st) {
 #line 13 "src/main.vl"
+void enter_scope(SymbolTable* st) {
+#line 14 "src/main.vl"
     st->current_scope = create_scope(st->current_scope);
 }
 
-#line 17 "src/main.vl"
-void exit_scope(SymbolTable* st) {
 #line 18 "src/main.vl"
-    if (((st->current_scope != NULL) && (st->current_scope->parent != NULL))) {
+void exit_scope(SymbolTable* st) {
 #line 19 "src/main.vl"
+    if (((st->current_scope != NULL) && (st->current_scope->parent != NULL))) {
+#line 20 "src/main.vl"
         st->current_scope = st->current_scope->parent;
     }
 }
 
-#line 24 "src/main.vl"
+#line 25 "src/main.vl"
 Symbol* scope_lookup_immediate(Scope* sc, const char* name) {
-#line 25 "src/main.vl"
+#line 26 "src/main.vl"
     if ((sc == NULL)) {
-#line 25 "src/main.vl"
+#line 26 "src/main.vl"
         return NULL;
     }
-#line 26 "src/main.vl"
-    Symbol* cur = sc->first_sym;
 #line 27 "src/main.vl"
+    Symbol* cur = sc->first_sym;
+#line 28 "src/main.vl"
     for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 28 "src/main.vl"
+#line 29 "src/main.vl"
         if (((cur->name != NULL && name != NULL) ? (strcmp(cur->name, name) == 0) : (cur->name == name))) {
-#line 28 "src/main.vl"
+#line 29 "src/main.vl"
             return cur;
         }
-#line 29 "src/main.vl"
+#line 30 "src/main.vl"
         cur = cur->next;
     }
-#line 31 "src/main.vl"
+#line 32 "src/main.vl"
     return NULL;
 }
 
-#line 35 "src/main.vl"
-Symbol* scope_lookup(Scope* sc, const char* name) {
 #line 36 "src/main.vl"
-    Scope* cur_sc = sc;
+Symbol* scope_lookup(Scope* sc, const char* name) {
 #line 37 "src/main.vl"
-    for (int32_t it = 0; ((cur_sc != NULL)); it++) {
+    Scope* cur_sc = sc;
 #line 38 "src/main.vl"
+    for (int32_t it = 0; ((cur_sc != NULL)); it++) {
+#line 39 "src/main.vl"
         Symbol* sym = scope_lookup_immediate(cur_sc, name);
-#line 39 "src/main.vl"
+#line 40 "src/main.vl"
         if ((sym != NULL)) {
-#line 39 "src/main.vl"
+#line 40 "src/main.vl"
             return sym;
         }
-#line 40 "src/main.vl"
+#line 41 "src/main.vl"
         cur_sc = cur_sc->parent;
     }
-#line 42 "src/main.vl"
+#line 43 "src/main.vl"
     return NULL;
 }
 
-#line 46 "src/main.vl"
-bool define_variable(SymbolTable* st, const char* name, const char* type_name, bool is_mut, int32_t line, int32_t col) {
 #line 47 "src/main.vl"
-    Symbol* existing = scope_lookup_immediate(st->current_scope, name);
+bool define_variable(SymbolTable* st, const char* name, const char* type_name, bool is_mut, int32_t line, int32_t col) {
 #line 48 "src/main.vl"
-    if ((existing != NULL)) {
+    Symbol* existing = scope_lookup_immediate(st->current_scope, name);
 #line 49 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] semantic:%lld:%lld - Redeclaration of variable '%s' in current scope", (long long)(line), (long long)(col), (const char*)(name)));
+    if ((existing != NULL)) {
 #line 50 "src/main.vl"
-        st->error_count += 1;
+        report_error("semantic", line, col, velo_str_format("Redeclaration of variable '%s' in current scope", (const char*)(name)));
 #line 51 "src/main.vl"
+        st->error_count += 1;
+#line 52 "src/main.vl"
         return false;
     }
-#line 54 "src/main.vl"
-    Symbol* sym = ((Symbol*)velo_mem_alloc(sizeof(Symbol), (size_t)(1)));
 #line 55 "src/main.vl"
-    sym->name = name;
-#line 56 "src/main.vl"
-    sym->type_name = type_name;
-#line 57 "src/main.vl"
-    sym->kind = SYM_VAR;
-#line 58 "src/main.vl"
-    sym->is_mut = is_mut;
-#line 59 "src/main.vl"
-    sym->line = line;
-#line 60 "src/main.vl"
-    sym->col = col;
-#line 61 "src/main.vl"
-    sym->next = st->current_scope->first_sym;
-#line 63 "src/main.vl"
-    st->current_scope->first_sym = sym;
-#line 64 "src/main.vl"
-    st->current_scope->sym_count += 1;
-#line 65 "src/main.vl"
-    return true;
-}
-
-#line 69 "src/main.vl"
-bool define_parameter(SymbolTable* st, const char* name, const char* type_name, int32_t line, int32_t col) {
-#line 70 "src/main.vl"
     Symbol* sym = ((Symbol*)velo_mem_alloc(sizeof(Symbol), (size_t)(1)));
-#line 71 "src/main.vl"
+#line 56 "src/main.vl"
     sym->name = name;
-#line 72 "src/main.vl"
+#line 57 "src/main.vl"
     sym->type_name = type_name;
-#line 73 "src/main.vl"
-    sym->kind = SYM_PARAM;
-#line 74 "src/main.vl"
-    sym->is_mut = true;
-#line 75 "src/main.vl"
+#line 58 "src/main.vl"
+    sym->kind = SYM_VAR;
+#line 59 "src/main.vl"
+    sym->is_mut = is_mut;
+#line 60 "src/main.vl"
     sym->line = line;
-#line 76 "src/main.vl"
+#line 61 "src/main.vl"
     sym->col = col;
-#line 77 "src/main.vl"
+#line 62 "src/main.vl"
     sym->next = st->current_scope->first_sym;
-#line 79 "src/main.vl"
+#line 64 "src/main.vl"
     st->current_scope->first_sym = sym;
-#line 80 "src/main.vl"
+#line 65 "src/main.vl"
     st->current_scope->sym_count += 1;
-#line 81 "src/main.vl"
+#line 66 "src/main.vl"
     return true;
 }
 
-#line 85 "src/main.vl"
-Symbol* resolve_variable(SymbolTable* st, const char* name) {
+#line 70 "src/main.vl"
+bool define_parameter(SymbolTable* st, const char* name, const char* type_name, int32_t line, int32_t col) {
+#line 71 "src/main.vl"
+    Symbol* sym = ((Symbol*)velo_mem_alloc(sizeof(Symbol), (size_t)(1)));
+#line 72 "src/main.vl"
+    sym->name = name;
+#line 73 "src/main.vl"
+    sym->type_name = type_name;
+#line 74 "src/main.vl"
+    sym->kind = SYM_PARAM;
+#line 75 "src/main.vl"
+    sym->is_mut = true;
+#line 76 "src/main.vl"
+    sym->line = line;
+#line 77 "src/main.vl"
+    sym->col = col;
+#line 78 "src/main.vl"
+    sym->next = st->current_scope->first_sym;
+#line 80 "src/main.vl"
+    st->current_scope->first_sym = sym;
+#line 81 "src/main.vl"
+    st->current_scope->sym_count += 1;
+#line 82 "src/main.vl"
+    return true;
+}
+
 #line 86 "src/main.vl"
+Symbol* resolve_variable(SymbolTable* st, const char* name) {
+#line 87 "src/main.vl"
     return scope_lookup(st->current_scope, name);
 }
 
@@ -45083,439 +45241,819 @@ void lsp_send_method_not_found(JsonValue* id_node) {
     lsp_send_payload(payload);
 }
 
-#line 27 "src/main.vl"
-const char* lsp_slice_to_heap_str(StrSlice s) {
-#line 28 "src/main.vl"
-    if (((s.ptr == NULL) || (s.len == 0))) {
 #line 29 "src/main.vl"
-        uint8_t* empty_buf = ((uint8_t*)velo_heap_alloc(sizeof(uint8_t), (size_t)(1)));
+const char* lsp_uri_to_path(const char* uri) {
 #line 30 "src/main.vl"
-        empty_buf[0] = ((uint8_t)(0));
-#line 31 "src/main.vl"
-        return ((const char*)(empty_buf));
+    if ((uri == NULL)) {
+#line 30 "src/main.vl"
+        return "";
     }
+#line 31 "src/main.vl"
+    size_t ulen = ((usize)strlen(uri));
+#line 32 "src/main.vl"
+    if ((((((((((ulen > 8) && (uri[0] == 'f')) && (uri[1] == 'i')) && (uri[2] == 'l')) && (uri[3] == 'e')) && (uri[4] == ':')) && (uri[5] == '/')) && (uri[6] == '/')) && (uri[7] == '/'))) {
 #line 33 "src/main.vl"
-    uint8_t* buf = ((uint8_t*)velo_heap_alloc(sizeof(uint8_t), (size_t)((s.len + 1))));
+        if (((ulen > 9) && (uri[9] == ':'))) {
 #line 34 "src/main.vl"
-    size_t i = 0;
-#line 35 "src/main.vl"
-    for (int32_t it = 0; ((i < s.len)); it++) {
+            return copy_slice_to_string(uri, 8, (ulen - 8));
+        }
 #line 36 "src/main.vl"
-        buf[i] = s.ptr[i];
-#line 37 "src/main.vl"
+        return copy_slice_to_string(uri, 7, (ulen - 7));
+    }
+#line 38 "src/main.vl"
+    return uri;
+}
+
+#line 42 "src/main.vl"
+void lsp_json_escape(StringBuilder* sb, const char* s) {
+#line 43 "src/main.vl"
+    if ((s == NULL)) {
+#line 43 "src/main.vl"
+        return;
+    }
+#line 44 "src/main.vl"
+    size_t n = ((usize)strlen(s));
+#line 45 "src/main.vl"
+    size_t i = 0;
+#line 46 "src/main.vl"
+    for (int32_t it = 0; ((i < n)); it++) {
+#line 47 "src/main.vl"
+        uint8_t c = s[i];
+#line 48 "src/main.vl"
+        if ((c == '"')) {
+#line 49 "src/main.vl"
+            sb_append_str(sb, "\\\"");
+        } else
+#line 50 "src/main.vl"
+        if ((c == '\\')) {
+#line 51 "src/main.vl"
+            sb_append_str(sb, "\\\\");
+        } else
+#line 52 "src/main.vl"
+        if ((c == '\n')) {
+#line 53 "src/main.vl"
+            sb_append_str(sb, "\\n");
+        } else
+#line 54 "src/main.vl"
+        if ((c == '\r')) {
+#line 55 "src/main.vl"
+            sb_append_str(sb, "\\r");
+        } else
+#line 56 "src/main.vl"
+        if ((c == '\t')) {
+#line 57 "src/main.vl"
+            sb_append_str(sb, "\\t");
+        } else {
+#line 59 "src/main.vl"
+            sb_append_char(sb, c);
+        }
+#line 61 "src/main.vl"
         i += 1;
     }
-#line 39 "src/main.vl"
-    buf[s.len] = ((uint8_t)(0));
+}
+
+#line 66 "src/main.vl"
+void lsp_publish_empty_diagnostics(const char* uri) {
+#line 67 "src/main.vl"
+    StringBuilder sb = create_sb(256);
+#line 68 "src/main.vl"
+    sb_append_str((&(sb)), "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"");
+#line 69 "src/main.vl"
+    lsp_json_escape((&(sb)), uri);
+#line 70 "src/main.vl"
+    sb_append_str((&(sb)), "\",\"diagnostics\":[]}}");
+#line 71 "src/main.vl"
+    const char* payload = sb_to_string((&(sb)));
+#line 72 "src/main.vl"
+    lsp_send_payload(payload);
+}
+
+#line 76 "src/main.vl"
+void lsp_publish_collected_diagnostics(const char* uri, int32_t version) {
+#line 77 "src/main.vl"
+    const char* doc_path = lsp_uri_to_path(uri);
+#line 78 "src/main.vl"
+    StringBuilder sb = create_sb(512);
+#line 79 "src/main.vl"
+    sb_append_str((&(sb)), "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"");
+#line 80 "src/main.vl"
+    lsp_json_escape((&(sb)), uri);
+#line 81 "src/main.vl"
+    sb_append_str((&(sb)), "\",\"version\":");
+#line 82 "src/main.vl"
+    sb_append_int((&(sb)), version);
+#line 83 "src/main.vl"
+    sb_append_str((&(sb)), ",\"diagnostics\":[");
+#line 85 "src/main.vl"
+    InMemDiag* cur = g_diag_head;
+#line 86 "src/main.vl"
+    int32_t count = 0;
+#line 87 "src/main.vl"
+    for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 88 "src/main.vl"
+        bool match_doc = false;
+#line 89 "src/main.vl"
+        if (((cur->filename == NULL) || (((usize)strlen(cur->filename)) == 0))) {
+#line 90 "src/main.vl"
+            match_doc = true;
+        } else
+#line 91 "src/main.vl"
+        if (((((((cur->filename != NULL && doc_path != NULL) ? (strcmp(cur->filename, doc_path) == 0) : (cur->filename == doc_path)) || ((cur->filename != NULL && "semantic" != NULL) ? (strcmp(cur->filename, "semantic") == 0) : (cur->filename == "semantic"))) || ((cur->filename != NULL && "parser" != NULL) ? (strcmp(cur->filename, "parser") == 0) : (cur->filename == "parser"))) || ((cur->filename != NULL && "parse" != NULL) ? (strcmp(cur->filename, "parse") == 0) : (cur->filename == "parse"))) || ((cur->filename != NULL && "lexer" != NULL) ? (strcmp(cur->filename, "lexer") == 0) : (cur->filename == "lexer")))) {
+#line 92 "src/main.vl"
+            match_doc = true;
+        } else
+#line 93 "src/main.vl"
+        if (((((usize)strlen(doc_path)) > 0) && str_contains(slice_from_str(doc_path), slice_from_str(cur->filename)))) {
+#line 94 "src/main.vl"
+            match_doc = true;
+        }
+#line 97 "src/main.vl"
+        if (match_doc) {
+#line 98 "src/main.vl"
+            if ((count > 0)) {
+#line 99 "src/main.vl"
+                sb_append_char((&(sb)), ',');
+            }
+#line 101 "src/main.vl"
+            count += 1;
+#line 103 "src/main.vl"
+            int32_t s_line = 0;
+#line 104 "src/main.vl"
+            if ((cur->line > 0)) {
+#line 104 "src/main.vl"
+                s_line = (cur->line - 1);
+            }
+#line 105 "src/main.vl"
+            int32_t s_col = 0;
+#line 106 "src/main.vl"
+            if ((cur->col > 0)) {
+#line 106 "src/main.vl"
+                s_col = (cur->col - 1);
+            }
+#line 107 "src/main.vl"
+            int32_t e_line = s_line;
+#line 108 "src/main.vl"
+            int32_t e_col = (s_col + 1);
+#line 110 "src/main.vl"
+            sb_append_str((&(sb)), "{\"range\":{\"start\":{\"line\":");
+#line 111 "src/main.vl"
+            sb_append_int((&(sb)), s_line);
+#line 112 "src/main.vl"
+            sb_append_str((&(sb)), ",\"character\":");
+#line 113 "src/main.vl"
+            sb_append_int((&(sb)), s_col);
+#line 114 "src/main.vl"
+            sb_append_str((&(sb)), "},\"end\":{\"line\":");
+#line 115 "src/main.vl"
+            sb_append_int((&(sb)), e_line);
+#line 116 "src/main.vl"
+            sb_append_str((&(sb)), ",\"character\":");
+#line 117 "src/main.vl"
+            sb_append_int((&(sb)), e_col);
+#line 118 "src/main.vl"
+            sb_append_str((&(sb)), "}},\"severity\":");
+#line 119 "src/main.vl"
+            sb_append_int((&(sb)), cur->severity);
+#line 120 "src/main.vl"
+            sb_append_str((&(sb)), ",\"source\":\"velo\",\"message\":\"");
+#line 121 "src/main.vl"
+            lsp_json_escape((&(sb)), cur->message);
+#line 122 "src/main.vl"
+            sb_append_str((&(sb)), "\"}");
+        }
+#line 124 "src/main.vl"
+        cur = cur->next;
+    }
+#line 127 "src/main.vl"
+    sb_append_str((&(sb)), "]}}");
+#line 128 "src/main.vl"
+    const char* payload = sb_to_string((&(sb)));
+#line 129 "src/main.vl"
+    lsp_send_payload(payload);
+#line 131 "src/main.vl"
+    diag_collector_clear();
+}
+
+#line 136 "src/main.vl"
+void lsp_analyze_document(const char* uri, const char* text, int32_t version) {
+#line 137 "src/main.vl"
+    diag_collector_start();
+#line 139 "src/main.vl"
+    {
+        size_t __zone_wm = velo_zone_push();
+#line 140 "src/main.vl"
+        const char* file_path = lsp_uri_to_path(uri);
+#line 141 "src/main.vl"
+        size_t slen = ((usize)strlen(text));
+#line 142 "src/main.vl"
+        if ((slen > 0)) {
+#line 143 "src/main.vl"
+            CompilerDriver d;
+#line 144 "src/main.vl"
+            init_driver((&(d)));
+#line 145 "src/main.vl"
+            mark_file_visited((&(d)), file_path);
+#line 147 "src/main.vl"
+            Lexer lex = create_lexer(text, slen, (slen + 2));
+#line 148 "src/main.vl"
+            lex.file_path = file_path;
+#line 149 "src/main.vl"
+            tokenize((&(lex)));
+#line 151 "src/main.vl"
+            if ((lex.dropped_count > 0)) {
+#line 152 "src/main.vl"
+                report_error(file_path, 1, 1, "lexer token buffer too small; split this file into smaller modules");
+            } else {
+#line 154 "src/main.vl"
+                Parser p;
+#line 155 "src/main.vl"
+                init_parser((&(p)), file_path, text, lex.tokens, lex.token_count);
+#line 156 "src/main.vl"
+                ProgramNode* prog = parse_program((&(p)));
+#line 158 "src/main.vl"
+                if ((prog != NULL)) {
+#line 159 "src/main.vl"
+                    const char* dir = path_dirname_to_str(file_path);
+#line 162 "src/main.vl"
+                    StmtNode* cur = prog->first_decl;
+#line 163 "src/main.vl"
+                    for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 164 "src/main.vl"
+                        if ((cur->kind == DECL_USE)) {
+#line 165 "src/main.vl"
+                            const char* mod_path = cur->module_path;
+#line 166 "src/main.vl"
+                            if ((((((((((mod_path != NULL && "sys.io" != NULL) ? (strcmp(mod_path, "sys.io") != 0) : (mod_path != "sys.io")) && ((mod_path != NULL && "sys.mem" != NULL) ? (strcmp(mod_path, "sys.mem") != 0) : (mod_path != "sys.mem"))) && ((mod_path != NULL && "sys.fs" != NULL) ? (strcmp(mod_path, "sys.fs") != 0) : (mod_path != "sys.fs"))) && ((mod_path != NULL && "sys.thread" != NULL) ? (strcmp(mod_path, "sys.thread") != 0) : (mod_path != "sys.thread"))) && ((mod_path != NULL && "sys.math" != NULL) ? (strcmp(mod_path, "sys.math") != 0) : (mod_path != "sys.math"))) && ((mod_path != NULL && "sys.time" != NULL) ? (strcmp(mod_path, "sys.time") != 0) : (mod_path != "sys.time"))) && ((mod_path != NULL && "sys.os" != NULL) ? (strcmp(mod_path, "sys.os") != 0) : (mod_path != "sys.os"))) && ((mod_path != NULL && "sys.simd" != NULL) ? (strcmp(mod_path, "sys.simd") != 0) : (mod_path != "sys.simd")))) {
+#line 167 "src/main.vl"
+                                const char* resolved = path_join_str(dir, mod_path);
+#line 168 "src/main.vl"
+                                if (is_std_module(mod_path)) {
+#line 169 "src/main.vl"
+                                    resolved = resolve_std_module_path(dir, mod_path);
+                                }
+#line 171 "src/main.vl"
+                                load_file_and_deps((&(d)), resolved);
+                            }
+                        }
+#line 174 "src/main.vl"
+                        cur = cur->next;
+                    }
+#line 178 "src/main.vl"
+                    StmtNode* decl = prog->first_decl;
+#line 179 "src/main.vl"
+                    for (int32_t it = 0; ((decl != NULL)); it++) {
+#line 180 "src/main.vl"
+                        StmtNode* nxt = decl->next;
+#line 181 "src/main.vl"
+                        decl->next = NULL;
+#line 182 "src/main.vl"
+                        bool skip = false;
+#line 183 "src/main.vl"
+                        if ((decl->kind == DECL_USE)) {
+#line 184 "src/main.vl"
+                            const char* mod_path = decl->module_path;
+#line 185 "src/main.vl"
+                            if ((((((((((mod_path != NULL && "sys.io" != NULL) ? (strcmp(mod_path, "sys.io") != 0) : (mod_path != "sys.io")) && ((mod_path != NULL && "sys.mem" != NULL) ? (strcmp(mod_path, "sys.mem") != 0) : (mod_path != "sys.mem"))) && ((mod_path != NULL && "sys.fs" != NULL) ? (strcmp(mod_path, "sys.fs") != 0) : (mod_path != "sys.fs"))) && ((mod_path != NULL && "sys.thread" != NULL) ? (strcmp(mod_path, "sys.thread") != 0) : (mod_path != "sys.thread"))) && ((mod_path != NULL && "sys.math" != NULL) ? (strcmp(mod_path, "sys.math") != 0) : (mod_path != "sys.math"))) && ((mod_path != NULL && "sys.time" != NULL) ? (strcmp(mod_path, "sys.time") != 0) : (mod_path != "sys.time"))) && ((mod_path != NULL && "sys.os" != NULL) ? (strcmp(mod_path, "sys.os") != 0) : (mod_path != "sys.os"))) && ((mod_path != NULL && "sys.simd" != NULL) ? (strcmp(mod_path, "sys.simd") != 0) : (mod_path != "sys.simd")))) {
+#line 186 "src/main.vl"
+                                skip = true;
+                            }
+                        }
+#line 189 "src/main.vl"
+                        if ((!skip)) {
+#line 190 "src/main.vl"
+                            if ((d.first_decl == NULL)) {
+#line 191 "src/main.vl"
+                                d.first_decl = decl;
+#line 192 "src/main.vl"
+                                d.last_decl = decl;
+                            } else {
+#line 194 "src/main.vl"
+                                d.last_decl->next = decl;
+#line 195 "src/main.vl"
+                                d.last_decl = decl;
+                            }
+#line 197 "src/main.vl"
+                            d.total_decls += 1;
+                        }
+#line 199 "src/main.vl"
+                        decl = nxt;
+                    }
+#line 202 "src/main.vl"
+                    if (((!p.had_error) && (d.first_decl != NULL))) {
+#line 203 "src/main.vl"
+                        ProgramNode* final_prog = ((ProgramNode*)velo_mem_alloc(sizeof(ProgramNode), (size_t)(1)));
+#line 204 "src/main.vl"
+                        final_prog->first_decl = d.first_decl;
+#line 205 "src/main.vl"
+                        final_prog->decl_count = d.total_decls;
+#line 207 "src/main.vl"
+                        ProgramNode* mono_prog = monomorphize_program(final_prog);
+#line 208 "src/main.vl"
+                        if ((mono_prog != NULL)) {
+#line 209 "src/main.vl"
+                            SymbolTable st;
+#line 210 "src/main.vl"
+                            init_symbol_table((&(st)));
+#line 211 "src/main.vl"
+                            st.source_file = file_path;
+#line 212 "src/main.vl"
+                            check_program((&(st)), mono_prog);
+                        }
+                    }
+                }
+            }
+        }
+        velo_zone_pop(__zone_wm);
+    }
+#line 220 "src/main.vl"
+    diag_collector_stop();
+#line 222 "src/main.vl"
+    lsp_publish_collected_diagnostics(uri, version);
+}
+
+#line 28 "src/main.vl"
+const char* lsp_slice_to_heap_str(StrSlice s) {
+#line 29 "src/main.vl"
+    if (((s.ptr == NULL) || (s.len == 0))) {
+#line 30 "src/main.vl"
+        uint8_t* empty_buf = ((uint8_t*)velo_heap_alloc(sizeof(uint8_t), (size_t)(1)));
+#line 31 "src/main.vl"
+        empty_buf[0] = ((uint8_t)(0));
+#line 32 "src/main.vl"
+        return ((const char*)(empty_buf));
+    }
+#line 34 "src/main.vl"
+    uint8_t* buf = ((uint8_t*)velo_heap_alloc(sizeof(uint8_t), (size_t)((s.len + 1))));
+#line 35 "src/main.vl"
+    size_t i = 0;
+#line 36 "src/main.vl"
+    for (int32_t it = 0; ((i < s.len)); it++) {
+#line 37 "src/main.vl"
+        buf[i] = s.ptr[i];
+#line 38 "src/main.vl"
+        i += 1;
+    }
 #line 40 "src/main.vl"
+    buf[s.len] = ((uint8_t)(0));
+#line 41 "src/main.vl"
     return ((const char*)(buf));
 }
 
-#line 44 "src/main.vl"
-LspDoc* lsp_find_doc(LspServerState* state, const char* uri) {
 #line 45 "src/main.vl"
-    LspDoc* cur = state->first_doc;
+LspDoc* lsp_find_doc(LspServerState* state, StrSlice uri_slice) {
 #line 46 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
+    LspDoc* cur = state->first_doc;
 #line 47 "src/main.vl"
-        if (((cur->uri != NULL && uri != NULL) ? (strcmp(cur->uri, uri) == 0) : (cur->uri == uri))) {
+    for (int32_t it = 0; ((cur != NULL)); it++) {
 #line 48 "src/main.vl"
+        if (slice_eq_str(uri_slice, cur->uri)) {
+#line 49 "src/main.vl"
             return cur;
         }
-#line 50 "src/main.vl"
+#line 51 "src/main.vl"
         cur = cur->next;
     }
-#line 52 "src/main.vl"
+#line 53 "src/main.vl"
     return NULL;
 }
 
-#line 56 "src/main.vl"
-void lsp_store_doc(LspServerState* state, const char* uri, const char* text, int32_t version) {
 #line 57 "src/main.vl"
-    LspDoc* cur = state->first_doc;
+void lsp_store_doc(LspServerState* state, const char* uri, const char* text, int32_t version) {
 #line 58 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
+    LspDoc* cur = state->first_doc;
 #line 59 "src/main.vl"
-        if (((cur->uri != NULL && uri != NULL) ? (strcmp(cur->uri, uri) == 0) : (cur->uri == uri))) {
+    for (int32_t it = 0; ((cur != NULL)); it++) {
 #line 60 "src/main.vl"
-            if ((cur->text != NULL)) {
+        if (slice_eq_str(slice_from_str(uri), cur->uri)) {
 #line 61 "src/main.vl"
+            if ((cur->text != NULL)) {
+#line 62 "src/main.vl"
                 velo_heap_free((void*)(((uint8_t*)(cur->text))));
             }
-#line 63 "src/main.vl"
-            cur->text = text;
 #line 64 "src/main.vl"
-            cur->version = version;
+            cur->text = text;
 #line 65 "src/main.vl"
-            if ((uri != NULL)) {
+            cur->version = version;
 #line 66 "src/main.vl"
+            if ((uri != NULL)) {
+#line 67 "src/main.vl"
                 velo_heap_free((void*)(((uint8_t*)(uri))));
             }
-#line 68 "src/main.vl"
+#line 69 "src/main.vl"
             return;
         }
-#line 70 "src/main.vl"
+#line 71 "src/main.vl"
         cur = cur->next;
     }
-#line 72 "src/main.vl"
-    LspDoc* node = ((LspDoc*)velo_heap_alloc(sizeof(LspDoc), (size_t)(1)));
 #line 73 "src/main.vl"
-    node->uri = uri;
+    LspDoc* node = ((LspDoc*)velo_heap_alloc(sizeof(LspDoc), (size_t)(1)));
 #line 74 "src/main.vl"
-    node->text = text;
+    node->uri = uri;
 #line 75 "src/main.vl"
-    node->version = version;
+    node->text = text;
 #line 76 "src/main.vl"
-    node->next = state->first_doc;
+    node->version = version;
 #line 77 "src/main.vl"
+    node->next = state->first_doc;
+#line 78 "src/main.vl"
     state->first_doc = node;
 }
 
-#line 81 "src/main.vl"
-void lsp_close_doc(LspServerState* state, StrSlice uri_slice) {
 #line 82 "src/main.vl"
-    LspDoc* prev = NULL;
+void lsp_close_doc(LspServerState* state, StrSlice uri_slice) {
 #line 83 "src/main.vl"
-    LspDoc* cur = state->first_doc;
+    LspDoc* prev = NULL;
 #line 84 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
+    LspDoc* cur = state->first_doc;
 #line 85 "src/main.vl"
-        if (slice_eq_str(uri_slice, cur->uri)) {
+    for (int32_t it = 0; ((cur != NULL)); it++) {
 #line 86 "src/main.vl"
-            if ((prev == NULL)) {
+        if (slice_eq_str(uri_slice, cur->uri)) {
 #line 87 "src/main.vl"
+            if ((prev == NULL)) {
+#line 88 "src/main.vl"
                 state->first_doc = cur->next;
             } else {
-#line 89 "src/main.vl"
+#line 90 "src/main.vl"
                 prev->next = cur->next;
             }
-#line 91 "src/main.vl"
-            if ((cur->uri != NULL)) {
 #line 92 "src/main.vl"
+            if ((cur->uri != NULL)) {
+#line 93 "src/main.vl"
                 velo_heap_free((void*)(((uint8_t*)(cur->uri))));
             }
-#line 94 "src/main.vl"
-            if ((cur->text != NULL)) {
 #line 95 "src/main.vl"
+            if ((cur->text != NULL)) {
+#line 96 "src/main.vl"
                 velo_heap_free((void*)(((uint8_t*)(cur->text))));
             }
-#line 97 "src/main.vl"
-            velo_heap_free((void*)(((uint8_t*)(cur))));
 #line 98 "src/main.vl"
+            velo_heap_free((void*)(((uint8_t*)(cur))));
+#line 99 "src/main.vl"
             return;
         }
-#line 100 "src/main.vl"
-        prev = cur;
 #line 101 "src/main.vl"
+        prev = cur;
+#line 102 "src/main.vl"
         cur = cur->next;
     }
 }
 
-#line 106 "src/main.vl"
-void lsp_handle_did_open(LspServerState* state, JsonValue* params) {
 #line 107 "src/main.vl"
+void lsp_handle_did_open(LspServerState* state, JsonValue* params) {
+#line 108 "src/main.vl"
     JsonValue* td = json_obj_get_str(params, "textDocument");
-#line 108 "src/main.vl"
-    if (((td == NULL) || (td->kind != JSON_OBJECT))) {
-#line 108 "src/main.vl"
-        return;
-    }
 #line 109 "src/main.vl"
-    JsonValue* uri_val = json_obj_get_str(td, "uri");
+    if (((td == NULL) || (td->kind != JSON_OBJECT))) {
+#line 109 "src/main.vl"
+        return;
+    }
 #line 110 "src/main.vl"
-    JsonValue* txt_val = json_obj_get_str(td, "text");
+    JsonValue* uri_val = json_obj_get_str(td, "uri");
 #line 111 "src/main.vl"
+    JsonValue* txt_val = json_obj_get_str(td, "text");
+#line 112 "src/main.vl"
     JsonValue* ver_val = json_obj_get_str(td, "version");
-#line 112 "src/main.vl"
+#line 113 "src/main.vl"
     if (((uri_val == NULL) || (txt_val == NULL))) {
-#line 112 "src/main.vl"
+#line 113 "src/main.vl"
         return;
     }
-#line 113 "src/main.vl"
+#line 114 "src/main.vl"
     if (((uri_val->kind != JSON_STRING) || (txt_val->kind != JSON_STRING))) {
-#line 113 "src/main.vl"
+#line 114 "src/main.vl"
         return;
     }
-#line 115 "src/main.vl"
-    const char* uri = lsp_slice_to_heap_str(uri_val->str_val);
 #line 116 "src/main.vl"
-    const char* text = lsp_slice_to_heap_str(txt_val->str_val);
+    const char* uri = lsp_slice_to_heap_str(uri_val->str_val);
 #line 117 "src/main.vl"
-    int32_t ver = 0;
+    const char* text = lsp_slice_to_heap_str(txt_val->str_val);
 #line 118 "src/main.vl"
-    if (((ver_val != NULL) && (ver_val->kind == JSON_INT))) {
+    int32_t ver = 0;
 #line 119 "src/main.vl"
+    if (((ver_val != NULL) && (ver_val->kind == JSON_INT))) {
+#line 120 "src/main.vl"
         ver = ((int32_t)(ver_val->int_val));
     }
-#line 121 "src/main.vl"
+#line 122 "src/main.vl"
     lsp_store_doc(state, uri, text, ver);
+#line 124 "src/main.vl"
+    LspDoc* doc = lsp_find_doc(state, uri_val->str_val);
+#line 125 "src/main.vl"
+    if ((doc != NULL)) {
+#line 126 "src/main.vl"
+        lsp_analyze_document(doc->uri, doc->text, doc->version);
+    }
 }
 
-#line 125 "src/main.vl"
-void lsp_handle_did_change(LspServerState* state, JsonValue* params) {
-#line 126 "src/main.vl"
-    JsonValue* td = json_obj_get_str(params, "textDocument");
-#line 127 "src/main.vl"
-    JsonValue* changes = json_obj_get_str(params, "contentChanges");
-#line 128 "src/main.vl"
-    if (((td == NULL) || (td->kind != JSON_OBJECT))) {
-#line 128 "src/main.vl"
-        return;
-    }
-#line 129 "src/main.vl"
-    if (((changes == NULL) || (changes->kind != JSON_ARRAY))) {
-#line 129 "src/main.vl"
-        return;
-    }
 #line 131 "src/main.vl"
-    JsonValue* uri_val = json_obj_get_str(td, "uri");
+void lsp_handle_did_change(LspServerState* state, JsonValue* params) {
 #line 132 "src/main.vl"
-    if (((uri_val == NULL) || (uri_val->kind != JSON_STRING))) {
-#line 132 "src/main.vl"
+    JsonValue* td = json_obj_get_str(params, "textDocument");
+#line 133 "src/main.vl"
+    JsonValue* changes = json_obj_get_str(params, "contentChanges");
+#line 134 "src/main.vl"
+    if (((td == NULL) || (td->kind != JSON_OBJECT))) {
+#line 134 "src/main.vl"
         return;
     }
-#line 134 "src/main.vl"
-    JsonValue* ver_val = json_obj_get_str(td, "version");
 #line 135 "src/main.vl"
-    int32_t ver = 0;
-#line 136 "src/main.vl"
-    if (((ver_val != NULL) && (ver_val->kind == JSON_INT))) {
+    if (((changes == NULL) || (changes->kind != JSON_ARRAY))) {
+#line 135 "src/main.vl"
+        return;
+    }
 #line 137 "src/main.vl"
-        ver = ((int32_t)(ver_val->int_val));
+    JsonValue* uri_val = json_obj_get_str(td, "uri");
+#line 138 "src/main.vl"
+    if (((uri_val == NULL) || (uri_val->kind != JSON_STRING))) {
+#line 138 "src/main.vl"
+        return;
     }
 #line 140 "src/main.vl"
-    JsonValue* change_first = changes->first_child;
+    JsonValue* ver_val = json_obj_get_str(td, "version");
 #line 141 "src/main.vl"
-    if (((change_first != NULL) && (change_first->kind == JSON_OBJECT))) {
+    int32_t ver = 0;
 #line 142 "src/main.vl"
-        JsonValue* txt_val = json_obj_get_str(change_first, "text");
+    if (((ver_val != NULL) && (ver_val->kind == JSON_INT))) {
 #line 143 "src/main.vl"
-        if (((txt_val != NULL) && (txt_val->kind == JSON_STRING))) {
-#line 144 "src/main.vl"
-            const char* uri = lsp_slice_to_heap_str(uri_val->str_val);
-#line 145 "src/main.vl"
-            const char* text = lsp_slice_to_heap_str(txt_val->str_val);
+        ver = ((int32_t)(ver_val->int_val));
+    }
 #line 146 "src/main.vl"
-            lsp_store_doc(state, uri, text, ver);
-        }
-    }
-}
-
+    JsonValue* change_first = changes->first_child;
+#line 147 "src/main.vl"
+    if (((change_first != NULL) && (change_first->kind == JSON_OBJECT))) {
+#line 148 "src/main.vl"
+        JsonValue* txt_val = json_obj_get_str(change_first, "text");
+#line 149 "src/main.vl"
+        if (((txt_val != NULL) && (txt_val->kind == JSON_STRING))) {
+#line 150 "src/main.vl"
+            const char* uri = lsp_slice_to_heap_str(uri_val->str_val);
+#line 151 "src/main.vl"
+            const char* text = lsp_slice_to_heap_str(txt_val->str_val);
 #line 152 "src/main.vl"
-void lsp_handle_did_close(LspServerState* state, JsonValue* params) {
-#line 153 "src/main.vl"
-    JsonValue* td = json_obj_get_str(params, "textDocument");
+            lsp_store_doc(state, uri, text, ver);
 #line 154 "src/main.vl"
-    if (((td == NULL) || (td->kind != JSON_OBJECT))) {
-#line 154 "src/main.vl"
-        return;
-    }
+            LspDoc* doc = lsp_find_doc(state, uri_val->str_val);
 #line 155 "src/main.vl"
-    JsonValue* uri_val = json_obj_get_str(td, "uri");
+            if ((doc != NULL)) {
 #line 156 "src/main.vl"
-    if (((uri_val == NULL) || (uri_val->kind != JSON_STRING))) {
-#line 156 "src/main.vl"
-        return;
+                lsp_analyze_document(doc->uri, doc->text, doc->version);
+            }
+        }
     }
-#line 157 "src/main.vl"
-    lsp_close_doc(state, uri_val->str_val);
 }
 
-#line 161 "src/main.vl"
-bool lsp_dispatch_message(LspServerState* state, const char* msg) {
-#line 162 "src/main.vl"
-    JsonDoc doc = json_parse_doc_str(msg, 65536);
 #line 163 "src/main.vl"
-    if (((!doc.ok) || (doc.root == NULL))) {
+void lsp_handle_did_close(LspServerState* state, JsonValue* params) {
 #line 164 "src/main.vl"
-        return false;
+    JsonValue* td = json_obj_get_str(params, "textDocument");
+#line 165 "src/main.vl"
+    if (((td == NULL) || (td->kind != JSON_OBJECT))) {
+#line 165 "src/main.vl"
+        return;
     }
-#line 168 "src/main.vl"
-    JsonValue* root = doc.root;
+#line 166 "src/main.vl"
+    JsonValue* uri_val = json_obj_get_str(td, "uri");
+#line 167 "src/main.vl"
+    if (((uri_val == NULL) || (uri_val->kind != JSON_STRING))) {
+#line 167 "src/main.vl"
+        return;
+    }
 #line 169 "src/main.vl"
-    JsonValue* id_node = json_obj_get_str(root, "id");
+    const char* uri_str = lsp_slice_to_heap_str(uri_val->str_val);
 #line 170 "src/main.vl"
-    JsonValue* method_node = json_obj_get_str(root, "method");
+    lsp_close_doc(state, uri_val->str_val);
 #line 171 "src/main.vl"
-    JsonValue* params_node = json_obj_get_str(root, "params");
-#line 173 "src/main.vl"
-    if (((method_node == NULL) || (method_node->kind != JSON_STRING))) {
-#line 174 "src/main.vl"
-#line 166 "src/main.vl"
-        json_doc_free((&(doc)));
-        return false;
-    }
+    lsp_publish_empty_diagnostics(uri_str);
+#line 172 "src/main.vl"
+    velo_heap_free((void*)(((uint8_t*)(uri_str))));
+}
+
+#line 176 "src/main.vl"
+void lsp_handle_did_save(LspServerState* state, JsonValue* params) {
 #line 177 "src/main.vl"
-    StrSlice m = method_node->str_val;
+    JsonValue* td = json_obj_get_str(params, "textDocument");
+#line 178 "src/main.vl"
+    if (((td == NULL) || (td->kind != JSON_OBJECT))) {
+#line 178 "src/main.vl"
+        return;
+    }
 #line 179 "src/main.vl"
-    if (slice_eq_str(m, "initialize")) {
+    JsonValue* uri_val = json_obj_get_str(td, "uri");
 #line 180 "src/main.vl"
-        lsp_send_initialize_result(id_node);
-#line 181 "src/main.vl"
-#line 166 "src/main.vl"
-        json_doc_free((&(doc)));
-        return false;
+    if (((uri_val == NULL) || (uri_val->kind != JSON_STRING))) {
+#line 180 "src/main.vl"
+        return;
     }
+#line 182 "src/main.vl"
+    LspDoc* doc = lsp_find_doc(state, uri_val->str_val);
+#line 183 "src/main.vl"
+    if ((doc != NULL)) {
 #line 184 "src/main.vl"
-    if (slice_eq_str(m, "initialized")) {
-#line 185 "src/main.vl"
-#line 166 "src/main.vl"
-        json_doc_free((&(doc)));
-        return false;
+        lsp_analyze_document(doc->uri, doc->text, doc->version);
     }
-#line 188 "src/main.vl"
-    if (slice_eq_str(m, "shutdown")) {
+}
+
 #line 189 "src/main.vl"
-        state->is_shutdown = true;
+bool lsp_dispatch_message(LspServerState* state, const char* msg) {
 #line 190 "src/main.vl"
-        lsp_send_shutdown_result(id_node);
+    JsonDoc doc = json_parse_doc_str(msg, 65536);
 #line 191 "src/main.vl"
-#line 166 "src/main.vl"
-        json_doc_free((&(doc)));
+    if (((!doc.ok) || (doc.root == NULL))) {
+#line 192 "src/main.vl"
         return false;
     }
-#line 194 "src/main.vl"
-    if (slice_eq_str(m, "exit")) {
-#line 195 "src/main.vl"
-#line 166 "src/main.vl"
-        json_doc_free((&(doc)));
-        return true;
-    }
+#line 196 "src/main.vl"
+    JsonValue* root = doc.root;
+#line 197 "src/main.vl"
+    JsonValue* id_node = json_obj_get_str(root, "id");
 #line 198 "src/main.vl"
-    if (slice_eq_str(m, "textDocument/didOpen")) {
+    JsonValue* method_node = json_obj_get_str(root, "method");
 #line 199 "src/main.vl"
-        if (((params_node != NULL) && (params_node->kind == JSON_OBJECT))) {
-#line 200 "src/main.vl"
-            lsp_handle_did_open(state, params_node);
-        }
+    JsonValue* params_node = json_obj_get_str(root, "params");
+#line 201 "src/main.vl"
+    if (((method_node == NULL) || (method_node->kind != JSON_STRING))) {
 #line 202 "src/main.vl"
-#line 166 "src/main.vl"
+#line 194 "src/main.vl"
         json_doc_free((&(doc)));
         return false;
     }
 #line 205 "src/main.vl"
-    if (slice_eq_str(m, "textDocument/didChange")) {
-#line 206 "src/main.vl"
-        if (((params_node != NULL) && (params_node->kind == JSON_OBJECT))) {
+    StrSlice m = method_node->str_val;
 #line 207 "src/main.vl"
-            lsp_handle_did_change(state, params_node);
-        }
+    if (slice_eq_str(m, "initialize")) {
+#line 208 "src/main.vl"
+        lsp_send_initialize_result(id_node);
 #line 209 "src/main.vl"
-#line 166 "src/main.vl"
+#line 194 "src/main.vl"
         json_doc_free((&(doc)));
         return false;
     }
 #line 212 "src/main.vl"
-    if (slice_eq_str(m, "textDocument/didClose")) {
+    if (slice_eq_str(m, "initialized")) {
 #line 213 "src/main.vl"
+#line 194 "src/main.vl"
+        json_doc_free((&(doc)));
+        return false;
+    }
+#line 216 "src/main.vl"
+    if (slice_eq_str(m, "shutdown")) {
+#line 217 "src/main.vl"
+        state->is_shutdown = true;
+#line 218 "src/main.vl"
+        lsp_send_shutdown_result(id_node);
+#line 219 "src/main.vl"
+#line 194 "src/main.vl"
+        json_doc_free((&(doc)));
+        return false;
+    }
+#line 222 "src/main.vl"
+    if (slice_eq_str(m, "exit")) {
+#line 223 "src/main.vl"
+#line 194 "src/main.vl"
+        json_doc_free((&(doc)));
+        return true;
+    }
+#line 226 "src/main.vl"
+    if (slice_eq_str(m, "textDocument/didOpen")) {
+#line 227 "src/main.vl"
         if (((params_node != NULL) && (params_node->kind == JSON_OBJECT))) {
-#line 214 "src/main.vl"
+#line 228 "src/main.vl"
+            lsp_handle_did_open(state, params_node);
+        }
+#line 230 "src/main.vl"
+#line 194 "src/main.vl"
+        json_doc_free((&(doc)));
+        return false;
+    }
+#line 233 "src/main.vl"
+    if (slice_eq_str(m, "textDocument/didChange")) {
+#line 234 "src/main.vl"
+        if (((params_node != NULL) && (params_node->kind == JSON_OBJECT))) {
+#line 235 "src/main.vl"
+            lsp_handle_did_change(state, params_node);
+        }
+#line 237 "src/main.vl"
+#line 194 "src/main.vl"
+        json_doc_free((&(doc)));
+        return false;
+    }
+#line 240 "src/main.vl"
+    if (slice_eq_str(m, "textDocument/didClose")) {
+#line 241 "src/main.vl"
+        if (((params_node != NULL) && (params_node->kind == JSON_OBJECT))) {
+#line 242 "src/main.vl"
             lsp_handle_did_close(state, params_node);
         }
-#line 216 "src/main.vl"
-#line 166 "src/main.vl"
+#line 244 "src/main.vl"
+#line 194 "src/main.vl"
         json_doc_free((&(doc)));
         return false;
     }
-#line 219 "src/main.vl"
+#line 247 "src/main.vl"
     if (slice_eq_str(m, "textDocument/didSave")) {
-#line 220 "src/main.vl"
-#line 166 "src/main.vl"
+#line 248 "src/main.vl"
+        if (((params_node != NULL) && (params_node->kind == JSON_OBJECT))) {
+#line 249 "src/main.vl"
+            lsp_handle_did_save(state, params_node);
+        }
+#line 251 "src/main.vl"
+#line 194 "src/main.vl"
         json_doc_free((&(doc)));
         return false;
     }
-#line 224 "src/main.vl"
+#line 255 "src/main.vl"
     if ((id_node != NULL)) {
-#line 225 "src/main.vl"
+#line 256 "src/main.vl"
         lsp_send_method_not_found(id_node);
     }
-#line 228 "src/main.vl"
-#line 166 "src/main.vl"
+#line 259 "src/main.vl"
+#line 194 "src/main.vl"
     json_doc_free((&(doc)));
     return false;
-#line 166 "src/main.vl"
+#line 194 "src/main.vl"
     json_doc_free((&(doc)));
 }
 
-#line 232 "src/main.vl"
+#line 263 "src/main.vl"
 int32_t handle_lsp_command(void) {
-#line 233 "src/main.vl"
+#line 264 "src/main.vl"
     FileHandle stdin_h = io_stdin_handle();
-#line 234 "src/main.vl"
+#line 265 "src/main.vl"
     if ((!io_is_valid_handle(stdin_h))) {
-#line 235 "src/main.vl"
+#line 266 "src/main.vl"
         println_str("[Velo Error] Failed to acquire stdin handle for LSP");
-#line 236 "src/main.vl"
+#line 267 "src/main.vl"
         return 1;
     }
-#line 238 "src/main.vl"
+#line 269 "src/main.vl"
     BufferedReader r = reader_init(stdin_h);
-#line 241 "src/main.vl"
+#line 272 "src/main.vl"
     uint8_t* line_buf = ((uint8_t*)velo_heap_alloc(sizeof(uint8_t), (size_t)(512)));
-#line 243 "src/main.vl"
+#line 274 "src/main.vl"
     LspServerState state = (LspServerState){ .first_doc = NULL, .is_shutdown = false };
-#line 248 "src/main.vl"
+#line 279 "src/main.vl"
     for (int32_t it = 0; ; it++) {
-#line 249 "src/main.vl"
+#line 280 "src/main.vl"
         const char* msg = read_lsp_message((&(r)), line_buf);
-#line 250 "src/main.vl"
+#line 281 "src/main.vl"
         if ((msg == NULL)) {
-#line 251 "src/main.vl"
+#line 282 "src/main.vl"
             break;
         }
-#line 253 "src/main.vl"
+#line 284 "src/main.vl"
         bool should_exit = lsp_dispatch_message((&(state)), msg);
-#line 254 "src/main.vl"
+#line 285 "src/main.vl"
         if ((((usize)strlen(msg)) > 0)) {
-#line 255 "src/main.vl"
+#line 286 "src/main.vl"
             velo_heap_free((void*)(((uint8_t*)(msg))));
         }
-#line 257 "src/main.vl"
+#line 288 "src/main.vl"
         if (should_exit) {
-#line 258 "src/main.vl"
+#line 289 "src/main.vl"
             break;
         }
     }
-#line 262 "src/main.vl"
+#line 293 "src/main.vl"
     if ((line_buf != NULL)) {
-#line 263 "src/main.vl"
+#line 294 "src/main.vl"
         velo_heap_free((void*)(line_buf));
     }
-#line 267 "src/main.vl"
+#line 298 "src/main.vl"
     LspDoc* cur = state.first_doc;
-#line 268 "src/main.vl"
+#line 299 "src/main.vl"
     for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 269 "src/main.vl"
+#line 300 "src/main.vl"
         LspDoc* nxt = cur->next;
-#line 270 "src/main.vl"
+#line 301 "src/main.vl"
         if ((cur->uri != NULL)) {
-#line 271 "src/main.vl"
+#line 302 "src/main.vl"
             velo_heap_free((void*)(((uint8_t*)(cur->uri))));
         }
-#line 273 "src/main.vl"
+#line 304 "src/main.vl"
         if ((cur->text != NULL)) {
-#line 274 "src/main.vl"
+#line 305 "src/main.vl"
             velo_heap_free((void*)(((uint8_t*)(cur->text))));
         }
-#line 276 "src/main.vl"
+#line 307 "src/main.vl"
         velo_heap_free((void*)(((uint8_t*)(cur))));
-#line 277 "src/main.vl"
+#line 308 "src/main.vl"
         cur = nxt;
     }
-#line 279 "src/main.vl"
+#line 310 "src/main.vl"
     state.first_doc = NULL;
-#line 281 "src/main.vl"
+#line 312 "src/main.vl"
     if (state.is_shutdown) {
-#line 282 "src/main.vl"
-#line 239 "src/main.vl"
+#line 313 "src/main.vl"
+#line 270 "src/main.vl"
         reader_free((&(r)));
         return 0;
     }
-#line 284 "src/main.vl"
-#line 239 "src/main.vl"
+#line 315 "src/main.vl"
+#line 270 "src/main.vl"
     reader_free((&(r)));
     return 0;
-#line 239 "src/main.vl"
+#line 270 "src/main.vl"
     reader_free((&(r)));
 }
 

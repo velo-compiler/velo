@@ -477,6 +477,7 @@ static inline void* velo_mem_alloc(size_t size, size_t count) {
     if (z->offset + aligned <= z->cap) {
         void* ptr = (void*)&z->base[z->offset];
         z->offset += aligned;
+        memset(ptr, 0, aligned);
         return ptr;
     }
     if (!z->can_grow) {
@@ -490,6 +491,7 @@ static inline void* velo_mem_alloc(size_t size, size_t count) {
     }
     void* ptr = (void*)&cur->base[cur->offset];
     cur->offset += aligned;
+    memset(ptr, 0, aligned);
     return ptr;
 }
 
@@ -515,6 +517,7 @@ static inline void* velo_alloc_with(VeloAllocator a, size_t size, size_t count) 
     if (a->offset + aligned <= a->cap) {
         void* ptr = (void*)&a->base[a->offset];
         a->offset += aligned;
+        memset(ptr, 0, aligned);
         return ptr;
     }
     if (!a->can_grow) {
@@ -528,6 +531,7 @@ static inline void* velo_alloc_with(VeloAllocator a, size_t size, size_t count) 
     }
     void* ptr = (void*)&cur->base[cur->offset];
     cur->offset += aligned;
+    memset(ptr, 0, aligned);
     return ptr;
 }
 

@@ -1,0 +1,224 @@
+// In-memory document parser and semantic diagnostic analyzer for Velo LSP.
+// Provides live as-you-type diagnostics with zero disk I/O.
+
+use std.io
+use std.mem
+use std.str
+use std.fs
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "../common/diagnostics.vl"
+use "../frontend/token.vl"
+use "../frontend/lexer.vl"
+use "../frontend/parser.vl"
+use "../frontend/parser_expr.vl"
+use "../frontend/parser_binary.vl"
+use "../frontend/parser_stmt.vl"
+use "../frontend/parser_decl.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../analysis/type_check_program.vl"
+use "../analysis/monomorphize.vl"
+use "../backend/driver.vl"
+use "transport.vl"
+
+// Converts a file:// URI to an OS filesystem path.
+act lsp_uri_to_path(uri: string) -> string {
+    if uri == null { return "" }
+    let ulen = str.len(uri)
+    if ulen > 8 and uri[0] == 'f' and uri[1] == 'i' and uri[2] == 'l' and uri[3] == 'e' and uri[4] == ':' and uri[5] == '/' and uri[6] == '/' and uri[7] == '/' {
+        if ulen > 9 and uri[9] == ':' {
+            return copy_slice_to_string(uri, 8, ulen - 8)
+        }
+        return copy_slice_to_string(uri, 7, ulen - 7)
+    }
+    return uri
+}
+
+// Escapes special characters into a JSON string literal.
+act lsp_json_escape(sb: @StringBuilder, s: string) {
+    if s == null { return }
+    let n = str.len(s)
+    mut i: usize = 0
+    loop i < n {
+        let c = s[i]
+        if c == '"' {
+            sb_append_str(sb, "\\\"")
+        } else if c == '\\' {
+            sb_append_str(sb, "\\\\")
+        } else if c == '\n' {
+            sb_append_str(sb, "\\n")
+        } else if c == '\r' {
+            sb_append_str(sb, "\\r")
+        } else if c == '\t' {
+            sb_append_str(sb, "\\t")
+        } else {
+            sb_append_char(sb, c)
+        }
+        i += 1
+    }
+}
+
+// Publishes empty diagnostics array for a URI (e.g. on document close).
+act lsp_publish_empty_diagnostics(uri: string) {
+    mut sb = create_sb(256)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"")
+    lsp_json_escape(@sb, uri)
+    sb_append_str(@sb, "\",\"diagnostics\":[]}}")
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+}
+
+// Publishes all collected in-memory diagnostics for the given document URI.
+act lsp_publish_collected_diagnostics(uri: string, version: i32) {
+    let doc_path = lsp_uri_to_path(uri)
+    mut sb = create_sb(512)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"")
+    lsp_json_escape(@sb, uri)
+    sb_append_str(@sb, "\",\"version\":")
+    sb_append_int(@sb, version)
+    sb_append_str(@sb, ",\"diagnostics\":[")
+
+    mut cur = g_diag_head
+    mut count: i32 = 0
+    loop cur != null {
+        mut match_doc = false
+        if cur.filename == null or str.len(cur.filename) == 0 {
+            match_doc = true
+        } else if cur.filename == doc_path or cur.filename == "semantic" or cur.filename == "parser" or cur.filename == "parse" or cur.filename == "lexer" {
+            match_doc = true
+        } else if str.len(doc_path) > 0 and str_contains(slice_from_str(doc_path), slice_from_str(cur.filename)) {
+            match_doc = true
+        }
+
+        if match_doc {
+            if count > 0 {
+                sb_append_char(@sb, ',')
+            }
+            count += 1
+
+            mut s_line: i32 = 0
+            if cur.line > 0 { s_line = cur.line - 1 }
+            mut s_col: i32 = 0
+            if cur.col > 0 { s_col = cur.col - 1 }
+            let e_line = s_line
+            let e_col = s_col + 1
+
+            sb_append_str(@sb, "{\"range\":{\"start\":{\"line\":")
+            sb_append_int(@sb, s_line)
+            sb_append_str(@sb, ",\"character\":")
+            sb_append_int(@sb, s_col)
+            sb_append_str(@sb, "},\"end\":{\"line\":")
+            sb_append_int(@sb, e_line)
+            sb_append_str(@sb, ",\"character\":")
+            sb_append_int(@sb, e_col)
+            sb_append_str(@sb, "}},\"severity\":")
+            sb_append_int(@sb, cur.severity)
+            sb_append_str(@sb, ",\"source\":\"velo\",\"message\":\"")
+            lsp_json_escape(@sb, cur.message)
+            sb_append_str(@sb, "\"}")
+        }
+        cur = cur.next
+    }
+
+    sb_append_str(@sb, "]}}")
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+
+    diag_collector_clear()
+}
+
+// Parses and type-checks the in-memory document buffer with zero disk I/O,
+// publishing diagnostics immediately to the LSP client.
+act lsp_analyze_document(uri: string, text: string, version: i32) {
+    diag_collector_start()
+
+    zone {
+        let file_path = lsp_uri_to_path(uri)
+        let slen = str.len(text)
+        if slen > 0 {
+            mut d: CompilerDriver
+            init_driver(@d)
+            mark_file_visited(@d, file_path)
+
+            mut lex = create_lexer(text, slen, slen + 2)
+            lex.file_path = file_path
+            tokenize(@lex)
+
+            if lex.dropped_count > 0 {
+                report_error(file_path, 1, 1, "lexer token buffer too small; split this file into smaller modules")
+            } else {
+                mut p: Parser
+                init_parser(@p, file_path, text, lex.tokens, lex.token_count)
+                let prog = parse_program(@p)
+
+                if prog != null {
+                    let dir = path_dirname_to_str(file_path)
+
+                    // First pass: recursively load dependencies
+                    mut cur = prog.first_decl
+                    loop cur != null {
+                        if cur.kind == DECL_USE {
+                            let mod_path = cur.module_path
+                            if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" and mod_path != "sys.thread" and mod_path != "sys.math" and mod_path != "sys.time" and mod_path != "sys.os" and mod_path != "sys.simd" {
+                                mut resolved = path_join_str(dir, mod_path)
+                                if is_std_module(mod_path) {
+                                    resolved = resolve_std_module_path(dir, mod_path)
+                                }
+                                load_file_and_deps(@d, resolved)
+                            }
+                        }
+                        cur = cur.next
+                    }
+
+                    // Second pass: append current file's declarations
+                    mut decl = prog.first_decl
+                    loop decl != null {
+                        let nxt = decl.next
+                        decl.next = null
+                        mut skip = false
+                        if decl.kind == DECL_USE {
+                            let mod_path = decl.module_path
+                            if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" and mod_path != "sys.thread" and mod_path != "sys.math" and mod_path != "sys.time" and mod_path != "sys.os" and mod_path != "sys.simd" {
+                                skip = true
+                            }
+                        }
+                        if !skip {
+                            if d.first_decl == null {
+                                d.first_decl = decl
+                                d.last_decl = decl
+                            } else {
+                                d.last_decl.next = decl
+                                d.last_decl = decl
+                            }
+                            d.total_decls += 1
+                        }
+                        decl = nxt
+                    }
+
+                    if !p.had_error and d.first_decl != null {
+                        mut final_prog: @ProgramNode = mem.alloc(@ProgramNode, 1)
+                        final_prog.first_decl = d.first_decl
+                        final_prog.decl_count = d.total_decls
+
+                        let mono_prog = monomorphize_program(final_prog)
+                        if mono_prog != null {
+                            mut st: SymbolTable
+                            init_symbol_table(@st)
+                            st.source_file = file_path
+                            check_program(@st, mono_prog)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    diag_collector_stop()
+
+    lsp_publish_collected_diagnostics(uri, version)
+}
+

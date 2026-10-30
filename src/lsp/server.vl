@@ -8,6 +8,7 @@ use std.json
 use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "transport.vl"
+use "analysis.vl"
 
 // In-memory document tracking node (singly linked list).
 data LspDoc {
@@ -40,11 +41,11 @@ act lsp_slice_to_heap_str(s: StrSlice) -> string {
     return buf as string
 }
 
-// Searches the active document store for a document matching the given URI.
-act lsp_find_doc(state: @LspServerState, uri: string) -> @LspDoc {
+// Searches the active document store for a document matching the given URI slice.
+act lsp_find_doc(state: @LspServerState, uri_slice: StrSlice) -> @LspDoc {
     mut cur = state.first_doc
     loop cur != null {
-        if cur.uri == uri {
+        if slice_eq_str(uri_slice, cur.uri) {
             return cur
         }
         cur = cur.next
@@ -56,7 +57,7 @@ act lsp_find_doc(state: @LspServerState, uri: string) -> @LspDoc {
 act lsp_store_doc(state: @LspServerState, uri: string, text: string, version: i32) {
     mut cur = state.first_doc
     loop cur != null {
-        if cur.uri == uri {
+        if slice_eq_str(slice_from_str(uri), cur.uri) {
             if cur.text != null {
                 mem.free(cur.text as @u8)
             }
@@ -119,6 +120,11 @@ act lsp_handle_did_open(state: @LspServerState, params: @JsonValue) {
         ver = ver_val.int_val as i32
     }
     lsp_store_doc(state, uri, text, ver)
+
+    let doc = lsp_find_doc(state, uri_val.str_val)
+    if doc != null {
+        lsp_analyze_document(doc.uri, doc.text, doc.version)
+    }
 }
 
 // Processes 'textDocument/didChange' notification (Full sync).
@@ -144,6 +150,11 @@ act lsp_handle_did_change(state: @LspServerState, params: @JsonValue) {
             let uri = lsp_slice_to_heap_str(uri_val.str_val)
             let text = lsp_slice_to_heap_str(txt_val.str_val)
             lsp_store_doc(state, uri, text, ver)
+
+            let doc = lsp_find_doc(state, uri_val.str_val)
+            if doc != null {
+                lsp_analyze_document(doc.uri, doc.text, doc.version)
+            }
         }
     }
 }
@@ -154,7 +165,24 @@ act lsp_handle_did_close(state: @LspServerState, params: @JsonValue) {
     if td == null or td.kind != JSON_OBJECT { return }
     let uri_val = json_obj_get_str(td, "uri")
     if uri_val == null or uri_val.kind != JSON_STRING { return }
+
+    let uri_str = lsp_slice_to_heap_str(uri_val.str_val)
     lsp_close_doc(state, uri_val.str_val)
+    lsp_publish_empty_diagnostics(uri_str)
+    mem.free(uri_str as @u8)
+}
+
+// Processes 'textDocument/didSave' notification.
+act lsp_handle_did_save(state: @LspServerState, params: @JsonValue) {
+    let td = json_obj_get_str(params, "textDocument")
+    if td == null or td.kind != JSON_OBJECT { return }
+    let uri_val = json_obj_get_str(td, "uri")
+    if uri_val == null or uri_val.kind != JSON_STRING { return }
+
+    let doc = lsp_find_doc(state, uri_val.str_val)
+    if doc != null {
+        lsp_analyze_document(doc.uri, doc.text, doc.version)
+    }
 }
 
 // Dispatches a parsed JSON-RPC message. Returns true if server should terminate.
@@ -217,6 +245,9 @@ act lsp_dispatch_message(state: @LspServerState, msg: string) -> bool {
     }
 
     if slice_eq_str(m, "textDocument/didSave") {
+        if params_node != null and params_node.kind == JSON_OBJECT {
+            lsp_handle_did_save(state, params_node)
+        }
         return false
     }
 

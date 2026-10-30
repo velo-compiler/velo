@@ -1797,3 +1797,35 @@ flowchart TD
   - Verified 3-generation self-hosting chain determinism: SHA-256 of `emit-c src/main.vl` between Gen2, Gen3, and `bootstrap.c` is identical (`A8DB0FE8D363D788E4D8719BDA29E074EEE6160E5507D05B102D7D1057D342A0`).
   - All 486 pytest tests passed (`python -m pytest tests -q`).
   - All 5 extension test suites passed (24/24 parity, 28/28 grammar spotchecks, 8/8 simulations, 11/11 server probes, 10/10 client tests).
+
+#### Task 12.2: Live In-Memory Diagnostics (Zero Disk I/O) [COMPLETED] ✅
+* **Former Defect**:
+  - `velo lsp` received document mutations (`didOpen`, `didChange`, `didSave`, `didClose`) but did not analyze document contents or publish diagnostics, requiring developers to manually build or run external lint passes to see syntax and type errors.
+  - The Python LSP prototype relied on disk file writes, risking I/O contention, flash wear, and latency during rapid keystrokes.
+  - The compiler's error reporting routines (`report_error`, `report_warning`, `report_simple_error`) directly printed ANSI-colored text to stdout, which corrupted JSON-RPC stdio transport framing when invoked inside an LSP process.
+  - Zone arena memory was not zero-initialized upon allocation, so repeated ephemeral document analyses within a single long-lived process encountered leftover AST pointers/integers in uninitialized fields across iterations, triggering segmentation faults (`0xC0000005`) in `mono_has_reflect_loops_in_stmt`.
+* **Fix Applied**:
+  - Implemented an in-memory Diagnostic Collector in `src/common/diagnostics.vl` (248 lines):
+    - `InMemDiag`: Singly linked heap structure recording error message, filename, 1-based line/column, and LSP severity (1 = Error, 2 = Warning, 3 = Information, 4 = Hint).
+    - `diag_collector_start()` and `diag_collector_stop()`: Toggles quiet diagnostic collection without writing to stdout.
+    - Updated `report_error`, `report_warning`, `report_simple_error`, and `pretty_render_block` to divert diagnostic messages into `InMemDiag` heap records when `g_diag_collector_active` is true.
+  - Normalized semantic error reporting in `src/analysis/scope.vl` (89 lines): variable redeclaration errors route through `report_error("semantic", ...)` instead of raw `println_str`.
+  - Implemented pure in-memory LSP document analyzer in `src/lsp/analysis.vl` (223 lines):
+    - `lsp_uri_to_path`: Parses `file:///` URIs to native OS filesystem paths (supporting Windows `C:/...` drives).
+    - `lsp_json_escape`: Escapes characters (`"`, `\`, `\n`, `\r`, `\t`) into compliant JSON strings.
+    - `lsp_publish_collected_diagnostics`: Maps 1-based compiler error locations to 0-based LSP range spans (`{"start":{"line":L,"character":C},"end":{"line":L,"character":C+1}}`), serializing and emitting `textDocument/publishDiagnostics` payloads.
+    - `lsp_publish_empty_diagnostics`: Emits `"diagnostics": []` to clear squiggles when a document is closed or has zero errors.
+    - `lsp_analyze_document`: Tokenizes, parses, loads module dependencies, and runs monomorphization and semantic type-checking inside an ephemeral `zone { ... }`, achieving zero disk I/O and instant AST reclamation.
+  - Fixed pointer equality bug in `src/lsp/server.vl`: document lookup in `lsp_store_doc` uses `slice_eq_str(slice_from_str(uri), cur.uri)` instead of comparing pointer addresses.
+  - Hardened memory safety in `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h`: `velo_mem_alloc` and `velo_alloc_with` zero newly allocated memory chunks (`memset(ptr, 0, aligned)`), guaranteeing zero-initialization of AST structures across repeated zone resets.
+  - Maintained code standards: all compiler source files strictly remain under 400 lines (`src/lsp/server.vl` 316 lines, `src/lsp/analysis.vl` 223 lines, `src/common/diagnostics.vl` 248 lines, max 350 lines in `src/backend/check.vl`).
+  - Rebuilt the entire 3-generation bootstrap chain (`scripts/bootstrap.bat` -> Gen2 -> Gen3 -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 determinism (`957243295B2F28DA7E5F413ECA1A77FB0A1BEBA35DD8CE2EAD49AD173AA94281`).
+* **Residual Limitation**:
+  - Semantic symbols (`textDocument/documentSymbol`), hover signatures (`textDocument/hover`), and completion items (`textDocument/completion`) will be wired into this native engine in Tasks 12.3 through 12.5.
+* **Verification**:
+  - `python scripts/count_lines.py` verified all 92 compiler source files < 400 lines.
+  - `python -m pytest tests/test_native_lsp.py -v` passed (4/4 passed: lifecycle, document sync, live diagnostics with syntax/type errors and clearing, abrupt disconnect).
+  - Verified 3-generation self-hosting chain determinism: SHA-256 of `emit-c src/main.vl` between Gen2, Gen3, and `bootstrap.c` is identical (`957243295B2F28DA7E5F413ECA1A77FB0A1BEBA35DD8CE2EAD49AD173AA94281`).
+  - All 5 VS Code extension test suites passed 100% (`python editors/vscode/tests/run_tests.py`: 24 parity, 28 grammar spotchecks, 8 simulations, 11 server probes, 10 extension LSP simulations).
+  - All 487 pytest tests passed (`python -m pytest tests -q`).
+

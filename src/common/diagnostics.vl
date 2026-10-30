@@ -1,5 +1,82 @@
 use std.io
+use std.mem
+use std.str
 use "string_builder.vl"
+
+// In-memory diagnostic record for LSP and language tooling.
+data InMemDiag {
+    filename: string,
+    line: i32,
+    col: i32,
+    severity: i32,
+    message: string,
+    next: @InMemDiag,
+}
+
+mut g_diag_collector_active: bool = false
+mut g_diag_head: @InMemDiag = null
+mut g_diag_tail: @InMemDiag = null
+mut g_diag_count: i32 = 0
+
+// Activates the in-memory diagnostic collector.
+act diag_collector_start() {
+    diag_collector_clear()
+    g_diag_collector_active = true
+}
+
+// Deactivates the in-memory diagnostic collector.
+act diag_collector_stop() {
+    g_diag_collector_active = false
+}
+
+// Clears and frees all accumulated in-memory diagnostics.
+act diag_collector_clear() {
+    mut cur = g_diag_head
+    loop cur != null {
+        let nxt = cur.next
+        if cur.filename != null { mem.free(cur.filename as @u8) }
+        if cur.message != null { mem.free(cur.message as @u8) }
+        mem.free(cur as @u8)
+        cur = nxt
+    }
+    g_diag_head = null
+    g_diag_tail = null
+    g_diag_count = 0
+}
+
+// Duplicates a null-terminated string to persistent heap memory.
+act diag_heap_copy(s: string) -> string {
+    if s == null { return null }
+    let n = str.len(s)
+    let buf: @u8 = mem.heap_alloc(@u8, n + 1)
+    mut i: usize = 0
+    loop i < n {
+        buf[i] = s[i]
+        i += 1
+    }
+    buf[n] = 0 as u8
+    return buf as string
+}
+
+// Appends an in-memory diagnostic record to the active collector.
+act diag_collector_add(filename: string, line: i32, col: i32, severity: i32, message: string) {
+    let node: @InMemDiag = mem.heap_alloc(@InMemDiag, 1)
+    node.filename = diag_heap_copy(filename)
+    node.line = line
+    node.col = col
+    node.severity = severity
+    node.message = diag_heap_copy(message)
+    node.next = null
+
+    if g_diag_head == null {
+        g_diag_head = node
+        g_diag_tail = node
+    } else {
+        g_diag_tail.next = node
+        g_diag_tail = node
+    }
+    g_diag_count += 1
+}
 
 // Formats and reports a compiler error at a specific source location.
 //
@@ -9,16 +86,28 @@ use "string_builder.vl"
 //   col: 1-indexed source column number.
 //   message: Explanatory error message.
 act report_error(filename: string, line: i32, col: i32, message: string) {
+    if g_diag_collector_active {
+        diag_collector_add(filename, line, col, 1, message)
+        return
+    }
     println_str("[Velo Error] {filename}:{line}:{col} - {message}")
 }
 
 // Formats and reports a compiler warning at a specific source location.
 act report_warning(filename: string, line: i32, col: i32, message: string) {
+    if g_diag_collector_active {
+        diag_collector_add(filename, line, col, 2, message)
+        return
+    }
     println_str("[Velo Warning] {filename}:{line}:{col} - {message}")
 }
 
 // Reports a general compiler error not bound to a specific source line.
 act report_simple_error(message: string) {
+    if g_diag_collector_active {
+        diag_collector_add("", 0, 0, 1, message)
+        return
+    }
     println_str("[Velo Error] {message}")
 }
 
@@ -115,6 +204,9 @@ act pretty_get_color() -> bool {
 // it via report_parse for parse rows; Stage 1 mirrors the exact bytes in
 // velo/pretty_diag.py.
 act pretty_render_block(file: string, line: i32, col: i32, length: usize, message: string, sev: string, source: string) {
+    if g_diag_collector_active {
+        return
+    }
     if g_pretty_color {
         if sev == "error" {
             println_str("{file}:{line}:{col}: \x1b[31merror\x1b[0m: {message}")
