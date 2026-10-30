@@ -1306,7 +1306,23 @@ flowchart TD
   - Implemented public serialization API: `json_write`, `json_write_compact`, `json_write_pretty`, `json_stringify`, `json_stringify_pretty`, `json_stringify_str`, and `json_stringify_pretty_str`.
   - Added unit test suite `std/tests/json/writer_test.vl` and pytest integration in `tests/test_std_json.py`.
 * **Residual Limitation**:
-  - Standard library umbrella module (`std/json.vl`) and driver resolution (`use std.json`) will be implemented in Task 7.5.
+  - Standard library umbrella module (`std/json.vl`) and driver resolution (`use std.json`) completed in Task 7.5.
 * **Verification**:
   - `bin/velo.exe run std/tests/json/writer_test.vl` passed compact primitive serialization, string escaping with control characters, empty and populated arrays/objects, indented pretty-printing, and lossless round-trip parse-serialize-parse structural equality.
   - `python -m pytest tests/test_std_json.py` passed (4/4 passed in 6.31s).
+
+#### Task 7.5: Standard Library Umbrella Module & Standard Resolution (`std/json.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - The JSON standard library components were distributed across individual internal modules (`unescape.vl`, `lexer.vl`, `value.vl`, `value_ops.vl`, `parser.vl`, `writer.vl`). Programs wanting to parse or serialize JSON had to explicitly import internal implementation files via fragile relative paths rather than idiomatic `use std.json`.
+* **Fix Applied**:
+  - Implemented `std/json.vl` umbrella module re-exporting the entire JSON standard library: escape decoding, streaming lexer, DOM node definitions, tree manipulation operations, recursive descent DOM parser, and compact/pretty serializer.
+  - Verified standard compiler resolution via `is_std_module("std.json")` and `std_module_to_rel_path("std.json")` mapping directly to `std/json.vl`.
+  - Added verification test `std/tests/json_module_import_test.vl` exercising complete JSON workflow through pure `use std.json` imports: parsing, DOM access, array/object mutation, pretty printing, `JsonDoc` document lifecycle, and structural equality.
+  - Integrated `use std.json` into standard library umbrella test suite `std/tests/std_module_import_test.vl`.
+  - Added pytest test case `test_std_json_module_import` in `tests/test_std_json.py`.
+* **Residual Limitation**:
+  - None. Phase 7 `std.json` is complete, fully tested, and zero-dependency across tokenizer, DOM, parser, serializer, and umbrella module.
+* **Verification**:
+  - `bin/velo.exe run std/tests/json_module_import_test.vl` passed (`PASS: use std.json umbrella module verified`).
+  - `bin/velo.exe run std/tests/std_module_import_test.vl` passed (`PASS: native use std.* imports succeeded`).
+  - `python -m pytest tests/test_std_json.py` passed (5/5 passed in 7.82s).

@@ -1,0 +1,85 @@
+// Verification test for native 'use std.json' umbrella module import and standard resolution.
+use std.io;
+use std.json;
+
+act main() -> i32 {
+    mut arena = arena_init(65536)
+    defer arena_reset(@arena)
+
+    // 1. Parsing using std.json types & functions
+    mut err = JsonParseError { message: slice_from_raw(null, 0), line: 0, col: 0 }
+    let input = "{\"project\":\"velo\",\"stages\":3,\"active\":true,\"features\":[\"lexer\",\"parser\",\"writer\"]}"
+    let root = json_parse_str(@arena, input, @err)
+    if root == null or !json_is_object(root) {
+        return 1
+    }
+
+    // 2. Querying DOM via std.json accessors
+    let proj = json_obj_get_str_val(root, "project", "")
+    if !slice_eq_str(proj, "velo") {
+        return 2
+    }
+    if json_obj_get_int(root, "stages", 0) != 3 {
+        return 3
+    }
+    if !json_obj_get_bool(root, "active", false) {
+        return 4
+    }
+
+    let feats = json_obj_get_str(root, "features")
+    if feats == null or !json_is_array(feats) or json_array_len(feats) != 3 {
+        return 5
+    }
+    let f0 = json_array_get(feats, 0)
+    let f2 = json_array_get(feats, 2)
+    if f0 == null or !slice_eq_str(json_as_str(f0), "lexer") {
+        return 6
+    }
+    if f2 == null or !slice_eq_str(json_as_str(f2), "writer") {
+        return 7
+    }
+
+    // 3. DOM mutation
+    json_array_push(feats, json_new_str_lit(@arena, "codegen"))
+    if json_array_len(feats) != 4 {
+        return 8
+    }
+
+    json_obj_put_str(root, "stable", json_new_bool(@arena, true))
+    if !json_obj_get_bool(root, "stable", false) {
+        return 9
+    }
+
+    // 4. Stringify compact and pretty
+    let compact_out = json_stringify(@arena, root)
+    if compact_out.len == 0 {
+        return 10
+    }
+
+    let pretty_out = json_stringify_pretty(@arena, root, 2)
+    if pretty_out.len <= compact_out.len {
+        return 11
+    }
+
+    // 5. Test JsonDoc lifecycle via std.json
+    let doc = json_parse_doc_str(input, 65536)
+    if doc.root == null or !json_is_object(doc.root) {
+        return 12
+    }
+    let doc_proj = json_obj_get_str_val(doc.root, "project", "")
+    if !slice_eq_str(doc_proj, "velo") {
+        json_doc_free(@doc)
+        return 13
+    }
+    json_doc_free(@doc)
+
+    // 6. Test JSON deep equality
+    let v1 = json_parse_str(@arena, "{\"a\": 1, \"b\": [2, 3]}", @err)
+    let v2 = json_parse_str(@arena, "{\"b\": [2, 3], \"a\": 1}", @err)
+    if v1 == null or v2 == null or !json_value_eq(v1, v2) {
+        return 14
+    }
+
+    println_str("PASS: use std.json umbrella module verified")
+    return 0
+}

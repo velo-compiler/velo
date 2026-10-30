@@ -1,0 +1,9 @@
+// Pure Velo standard JSON library (zero C runtime dependencies).
+// Provides RFC 8259 compliant tokenization, DOM parsing, AST manipulation,
+// compact serialization, and formatted pretty-printing.
+use "json/unescape.vl"
+use "json/lexer.vl"
+use "json/value.vl"
+use "json/value_ops.vl"
+use "json/parser.vl"
+use "json/writer.vl"

@@ -4,6 +4,7 @@ use std.coll
 use std.mem
 use std.str
 use std.fmt
+use std.json
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -29,6 +30,17 @@ act main() -> i32 {
     // std.str & std.fmt: string slice and format
     let sl = slice_from_str("velo_std")
     if sl.len != 8 { return 4 }
+
+    // std.json: parse and stringify
+    mut arena = arena_init(4096)
+    defer arena_reset(@arena)
+    mut err = JsonParseError { message: slice_from_raw(null, 0), line: 0, col: 0 }
+    let jroot = json_parse_str(@arena, "{\"k\":\"v\"}", @err)
+    if jroot == null or !json_is_object(jroot) { return 5 }
+    let v_str = json_obj_get_str_val(jroot, "k", "")
+    if !slice_eq_str(v_str, "v") { return 6 }
+    let jstr = json_stringify(@arena, jroot)
+    if !slice_eq_str(jstr, "{\"k\":\"v\"}") { return 7 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0
