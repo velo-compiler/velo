@@ -1276,7 +1276,22 @@ flowchart TD
   - Implemented `std/json/value_ops.vl` providing array operations (`json_array_push`, `json_array_len`, `json_array_get`), object operations (`json_obj_put`, `json_obj_put_str`, `json_obj_get`, `json_obj_get_str`, `json_obj_has`, `json_obj_has_str`, `json_obj_len`), typed property extractors (`json_obj_get_int`, `json_obj_get_float`, `json_obj_get_bool`, `json_obj_get_str_val`), deep structural equality comparison (`json_value_eq`), and deep tree cloning (`json_value_clone`).
   - Added unit test suite `std/tests/json/value_test.vl` and pytest integration in `tests/test_std_json.py`.
 * **Residual Limitation**:
-  - Recursive descent DOM parser (`std/json/parser.vl`) backed by `std.mem.Arena` will be implemented in Task 7.3.
+  - Recursive descent DOM parser (`std/json/parser.vl`) is complete in Task 7.3.
 * **Verification**:
   - `bin/velo.exe run std/tests/json/value_test.vl` passed stack value creation, Arena regional construction, array push/get indexing, object put/get with in-place updates, typed property defaults, deep tree equality, cloning, and recursive heap cleanup.
   - `python -m pytest tests/test_std_json.py` passed (2/2 passed in 2.79s).
+
+#### Task 7.3: Recursive Descent JSON DOM Parser (`std/json/parser.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - While Velo possessed a tokenizer (`std/json/lexer.vl`) and a DOM representation (`std/json/value.vl`), it lacked a recursive descent parser assembling JSON text into a validated DOM tree. Parsing JSON documents previously required custom loops or C libraries, with no RFC 8259-compliant parser enforcing strict trailing-comma and syntax rules, unescaping strings into regional arena memory, and returning exact line/column error locations.
+* **Fix Applied**:
+  - Implemented `std/json/parser.vl` providing `data JsonParseError`, `data JsonParser`, and self-contained document descriptor `data JsonDoc`.
+  - Implemented full recursive descent parsing: `json_parse` (parsing `StrSlice` into `Arena`), `json_parse_str`, `json_parse_doc` (self-contained document allocating its own `Arena` with `json_doc_free`), `json_parse_doc_str`, `json_validate` (fast syntax verification using temporary arena), and `json_validate_str`.
+  - Enforced strict RFC 8259 syntax validation: rejecting trailing commas in objects (`{"a": 1,}`) and arrays (`[1, 2,]`), incomplete structures, missing colons, missing keys, and trailing garbage tokens after the root JSON document.
+  - Implemented zero-allocation fast-path for unescaped string slices, automatically switching to `Arena` buffer decoding via `std/json/unescape.vl` only when escape sequences (`\`, `\"`, `\n`, `\t`, `\uXXXX`) are present.
+  - Added unit test suite `std/tests/json/parser_test.vl` and pytest integration in `tests/test_std_json.py`.
+* **Residual Limitation**:
+  - JSON serialization and pretty-printing (`std/json/writer.vl`) will be implemented in Task 7.4.
+* **Verification**:
+  - `bin/velo.exe run std/tests/json/parser_test.vl` passed primitive parsing, empty and heterogeneous arrays, nested objects, unescaped string slices, syntax error diagnostics with line/col tracking, `JsonDoc` lifecycle, and fast syntax validation.
+  - `python -m pytest tests/test_std_json.py` passed (3/3 passed in 4.50s).

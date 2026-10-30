@@ -1,0 +1,180 @@
+// Unit test suite for std.json.parser (recursive descent JSON DOM parser).
+use "../../mem/page.vl"
+use "../../mem/arena.vl"
+use "../../str/slice.vl"
+use "../../io/print.vl"
+use "../../json/value.vl"
+use "../../json/value_ops.vl"
+use "../../json/parser.vl"
+
+act test_primitives() -> bool {
+    mut arena = arena_init(65536)
+    defer arena_reset(@arena)
+
+    mut err = JsonParseError { message: slice_from_raw(null, 0), line: 0, col: 0 }
+
+    // Null
+    let v_null = json_parse_str(@arena, "null", @err)
+    if v_null == null or !json_is_null(v_null) { return false }
+
+    // Bool true
+    let v_true = json_parse_str(@arena, "true", @err)
+    if v_true == null or !json_is_bool(v_true) or !json_as_bool(v_true, false) { return false }
+
+    // Bool false
+    let v_false = json_parse_str(@arena, "false", @err)
+    if v_false == null or !json_is_bool(v_false) or json_as_bool(v_false, true) { return false }
+
+    // Integer
+    let v_int = json_parse_str(@arena, "12345678", @err)
+    if v_int == null or !json_is_int(v_int) or json_as_int(v_int, 0) != 12345678 { return false }
+
+    // Float with exponent
+    let v_flt = json_parse_str(@arena, "-3.5e2", @err)
+    if v_flt == null or !json_is_float(v_flt) or json_as_float(v_flt, 0.0) != -350.0 { return false }
+
+    // String with escapes
+    let v_str = json_parse_str(@arena, "\"line1\\nline2\\t\\\"quote\\\"\"", @err)
+    if v_str == null or !json_is_string(v_str) { return false }
+    if !slice_eq_str(json_as_str(v_str), "line1\nline2\t\"quote\"") { return false }
+
+    return true
+}
+
+act test_arrays() -> bool {
+    mut arena = arena_init(65536)
+    defer arena_reset(@arena)
+
+    mut err = JsonParseError { message: slice_from_raw(null, 0), line: 0, col: 0 }
+
+    // Empty array
+    let empty_arr = json_parse_str(@arena, "[]", @err)
+    if empty_arr == null or !json_is_array(empty_arr) or json_array_len(empty_arr) != 0 { return false }
+
+    // Heterogeneous array
+    let arr = json_parse_str(@arena, "[1, \"two\", true, null, 5.5]", @err)
+    if arr == null or !json_is_array(arr) or json_array_len(arr) != 5 { return false }
+
+    let e0 = json_array_get(arr, 0)
+    let e1 = json_array_get(arr, 1)
+    let e2 = json_array_get(arr, 2)
+    let e3 = json_array_get(arr, 3)
+    let e4 = json_array_get(arr, 4)
+
+    if json_as_int(e0, 0) != 1 { return false }
+    if !slice_eq_str(json_as_str(e1), "two") { return false }
+    if !json_as_bool(e2, false) { return false }
+    if !json_is_null(e3) { return false }
+    if json_as_float(e4, 0.0) != 5.5 { return false }
+
+    // Nested arrays: [[10, 20], [30, 40]]
+    let nested = json_parse_str(@arena, "[[10, 20], [30, 40]]", @err)
+    if nested == null or json_array_len(nested) != 2 { return false }
+    let sub0 = json_array_get(nested, 0)
+    let sub1 = json_array_get(nested, 1)
+    if json_array_len(sub0) != 2 or json_array_len(sub1) != 2 { return false }
+    if json_as_int(json_array_get(sub0, 1), 0) != 20 { return false }
+    if json_as_int(json_array_get(sub1, 0), 0) != 30 { return false }
+
+    return true
+}
+
+act test_objects() -> bool {
+    mut arena = arena_init(65536)
+    defer arena_reset(@arena)
+
+    mut err = JsonParseError { message: slice_from_raw(null, 0), line: 0, col: 0 }
+
+    // Empty object
+    let empty_obj = json_parse_str(@arena, "{}", @err)
+    if empty_obj == null or !json_is_object(empty_obj) or json_obj_len(empty_obj) != 0 { return false }
+
+    // Nested object
+    let json_text = "{\"name\": \"Velo\", \"version\": 2, \"active\": true, \"meta\": {\"arch\": \"x64\", \"fast\": true}}"
+    let root = json_parse_str(@arena, json_text, @err)
+    if root == null or !json_is_object(root) { return false }
+
+    if !slice_eq_str(json_obj_get_str_val(root, "name", ""), "Velo") { return false }
+    if json_obj_get_int(root, "version", 0) != 2 { return false }
+    if !json_obj_get_bool(root, "active", false) { return false }
+
+    let meta = json_obj_get_str(root, "meta")
+    if meta == null or !json_is_object(meta) { return false }
+    if !slice_eq_str(json_obj_get_str_val(meta, "arch", ""), "x64") { return false }
+    if !json_obj_get_bool(meta, "fast", false) { return false }
+
+    return true
+}
+
+act test_syntax_errors() -> bool {
+    mut arena = arena_init(65536)
+    defer arena_reset(@arena)
+
+    mut err = JsonParseError { message: slice_from_raw(null, 0), line: 0, col: 0 }
+
+    // Empty string
+    if json_parse_str(@arena, "", @err) != null { return false }
+
+    // Incomplete object
+    if json_parse_str(@arena, "{\"key\": 1", @err) != null { return false }
+
+    // Missing colon
+    if json_parse_str(@arena, "{\"key\" 1}", @err) != null { return false }
+
+    // Trailing comma in object
+    if json_parse_str(@arena, "{\"key\": 1,}", @err) != null { return false }
+    if !slice_eq_str(err.message, "Trailing comma in JSON object") { return false }
+
+    // Trailing comma in array
+    if json_parse_str(@arena, "[1, 2,]", @err) != null { return false }
+    if !slice_eq_str(err.message, "Trailing comma in JSON array") { return false }
+
+    // Unexpected trailing characters
+    if json_parse_str(@arena, "{\"ok\": true} extra", @err) != null { return false }
+    if !slice_eq_str(err.message, "Unexpected trailing characters after JSON value") { return false }
+
+    return true
+}
+
+act test_doc_and_validation() -> bool {
+    // 1. json_parse_doc
+    mut doc = json_parse_doc_str("{\"id\": 404, \"msg\": \"Not Found\"}", 32768)
+    defer json_doc_free(@doc)
+
+    if !doc.ok or doc.root == null { return false }
+    if json_obj_get_int(doc.root, "id", 0) != 404 { return false }
+    if !slice_eq_str(json_obj_get_str_val(doc.root, "msg", ""), "Not Found") { return false }
+
+    // 2. json_validate
+    mut err = JsonParseError { message: slice_from_raw(null, 0), line: 0, col: 0 }
+    if !json_validate_str("{\"valid\": [1, 2, 3]}", @err) { return false }
+    if json_validate_str("{\"invalid\": [1, 2, 3,]}", @err) { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_primitives() {
+        println_str("FAIL: test_primitives")
+        return 1
+    }
+    if !test_arrays() {
+        println_str("FAIL: test_arrays")
+        return 2
+    }
+    if !test_objects() {
+        println_str("FAIL: test_objects")
+        return 3
+    }
+    if !test_syntax_errors() {
+        println_str("FAIL: test_syntax_errors")
+        return 4
+    }
+    if !test_doc_and_validation() {
+        println_str("FAIL: test_doc_and_validation")
+        return 5
+    }
+
+    println_str("PASS: std.json.parser all tests passed")
+    return 0
+}

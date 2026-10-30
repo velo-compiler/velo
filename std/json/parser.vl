@@ -1,0 +1,282 @@
+// Pure Velo recursive descent JSON DOM parser (zero C runtime dependencies).
+// Conforms to RFC 8259: parses JSON documents into a JsonValue DOM tree backed by
+// regional memory arenas (std.mem.arena). Provides precise syntax error diagnostics
+// with source line and column numbers, automatic string escape decoding, and zero-leak lifecycle.
+use "../str/slice.vl"
+use "../mem/arena.vl"
+use "unescape.vl"
+use "lexer.vl"
+use "value.vl"
+use "value_ops.vl"
+
+// Diagnostic error record containing error message and source location.
+data JsonParseError {
+    message: StrSlice,
+    line: usize,
+    col: usize,
+}
+
+// Internal parser state tracking lexer, arena allocator, and first recorded syntax error.
+data JsonParser {
+    lex: JsonLexer,
+    arena: @Arena,
+    error: JsonParseError,
+    had_error: bool,
+}
+
+// Self-contained parsed JSON document with its own regional Arena memory lifecycle.
+data JsonDoc {
+    arena: Arena,
+    root: @JsonValue,
+    error: JsonParseError,
+    ok: bool,
+}
+
+// Checks if slice contains a backslash '\' character indicating escape sequences.
+act slice_has_escape(s: StrSlice) -> bool {
+    if s.ptr == null or s.len == 0 { return false }
+    mut i: usize = 0
+    loop i < s.len {
+        if s.ptr[i] == 92 as u8 { return true }
+        i += 1
+    }
+    return false
+}
+
+// Records the first syntax error encountered during parsing.
+act parser_set_error(p: @JsonParser, msg: string, line: usize, col: usize) {
+    if !p.had_error {
+        p.had_error = true
+        p.error = JsonParseError {
+            message: slice_from_str(msg),
+            line: line,
+            col: col,
+        }
+    }
+}
+
+// Decodes string escapes into arena memory if needed, or returns unescaped slice directly.
+act parser_unescape_str(p: @JsonParser, raw: StrSlice) -> StrSlice {
+    if !slice_has_escape(raw) {
+        return raw
+    }
+    let cap = raw.len + 4
+    let buf = arena_alloc(p.arena, cap, 1)
+    if buf == null {
+        return raw
+    }
+    mut out_len: usize = 0
+    let ok = json_unescape(raw, buf, cap, @out_len)
+    if !ok {
+        return raw
+    }
+    return slice_from_raw(buf, out_len)
+}
+
+// Recursively parses the next JSON value from the input stream.
+act json_parse_value(p: @JsonParser) -> @JsonValue {
+    if p.had_error { return null }
+
+    let tok = json_lexer_next(@p.lex)
+    if tok.kind == JSON_TOK_EOF {
+        parser_set_error(p, "Unexpected end of JSON input", tok.line, tok.col)
+        return null
+    }
+
+    if tok.kind == JSON_TOK_NULL {
+        return json_new_null(p.arena)
+    }
+    if tok.kind == JSON_TOK_TRUE {
+        return json_new_bool(p.arena, true)
+    }
+    if tok.kind == JSON_TOK_FALSE {
+        return json_new_bool(p.arena, false)
+    }
+    if tok.kind == JSON_TOK_STRING {
+        let raw = json_token_str_value(@tok)
+        let unesc = parser_unescape_str(p, raw)
+        return json_new_str(p.arena, unesc)
+    }
+    if tok.kind == JSON_TOK_NUMBER {
+        if json_token_is_float(@tok) {
+            mut fv: f64 = 0.0
+            if !json_token_as_f64(@tok, @fv) {
+                parser_set_error(p, "Invalid floating-point number", tok.line, tok.col)
+                return null
+            }
+            return json_new_float(p.arena, fv)
+        } else {
+            mut iv: i64 = 0
+            if !json_token_as_i64(@tok, @iv) {
+                parser_set_error(p, "Invalid integer number", tok.line, tok.col)
+                return null
+            }
+            return json_new_int(p.arena, iv)
+        }
+    }
+    if tok.kind == JSON_TOK_ARR_START {
+        let arr = json_new_array(p.arena)
+        let peek_first = json_lexer_peek(@p.lex)
+        if peek_first.kind == JSON_TOK_ARR_END {
+            let _close = json_lexer_next(@p.lex)
+            return arr
+        }
+
+        loop {
+            let elem = json_parse_value(p)
+            if elem == null { return null }
+            json_array_push(arr, elem)
+
+            let sep = json_lexer_next(@p.lex)
+            if sep.kind == JSON_TOK_ARR_END {
+                break
+            }
+            if sep.kind == JSON_TOK_COMMA {
+                let peek_next = json_lexer_peek(@p.lex)
+                if peek_next.kind == JSON_TOK_ARR_END {
+                    parser_set_error(p, "Trailing comma in JSON array", peek_next.line, peek_next.col)
+                    return null
+                }
+            } else {
+                parser_set_error(p, "Expected ',' or ']' in array", sep.line, sep.col)
+                return null
+            }
+        }
+        return arr
+    }
+    if tok.kind == JSON_TOK_OBJ_START {
+        let obj = json_new_object(p.arena)
+        let peek_first = json_lexer_peek(@p.lex)
+        if peek_first.kind == JSON_TOK_OBJ_END {
+            let _close = json_lexer_next(@p.lex)
+            return obj
+        }
+
+        loop {
+            let key_tok = json_lexer_next(@p.lex)
+            if key_tok.kind != JSON_TOK_STRING {
+                parser_set_error(p, "Expected string key in object", key_tok.line, key_tok.col)
+                return null
+            }
+            let raw_key = json_token_str_value(@key_tok)
+            let key_str = parser_unescape_str(p, raw_key)
+
+            let colon_tok = json_lexer_next(@p.lex)
+            if colon_tok.kind != JSON_TOK_COLON {
+                parser_set_error(p, "Expected ':' after object key", colon_tok.line, colon_tok.col)
+                return null
+            }
+
+            let val = json_parse_value(p)
+            if val == null { return null }
+            json_obj_put(obj, key_str, val)
+
+            let sep = json_lexer_next(@p.lex)
+            if sep.kind == JSON_TOK_OBJ_END {
+                break
+            }
+            if sep.kind == JSON_TOK_COMMA {
+                let peek_next = json_lexer_peek(@p.lex)
+                if peek_next.kind == JSON_TOK_OBJ_END {
+                    parser_set_error(p, "Trailing comma in JSON object", peek_next.line, peek_next.col)
+                    return null
+                }
+            } else {
+                parser_set_error(p, "Expected ',' or '}' in object", sep.line, sep.col)
+                return null
+            }
+        }
+        return obj
+    }
+
+    parser_set_error(p, "Unexpected token in JSON value", tok.line, tok.col)
+    return null
+}
+
+// Parses a JSON document from a StrSlice view into the provided memory Arena.
+// Returns the root JsonValue DOM node on success, or null on syntax error (populating out_err).
+act json_parse(a: @Arena, src: StrSlice, out_err: @JsonParseError) -> @JsonValue {
+    if a == null or src.ptr == null or src.len == 0 {
+        if out_err != null {
+            out_err.message = slice_from_str("Empty JSON input")
+            out_err.line = 1
+            out_err.col = 1
+        }
+        return null
+    }
+
+    mut p = JsonParser {
+        lex: json_lexer_init(src),
+        arena: a,
+        error: JsonParseError { message: slice_from_raw(null, 0), line: 0, col: 0 },
+        had_error: false,
+    }
+
+    let root = json_parse_value(@p)
+    if root == null or p.had_error {
+        if out_err != null {
+            out_err.message = p.error.message
+            out_err.line = p.error.line
+            out_err.col = p.error.col
+        }
+        return null
+    }
+
+    let trailing = json_lexer_next(@p.lex)
+    if trailing.kind != JSON_TOK_EOF {
+        parser_set_error(@p, "Unexpected trailing characters after JSON value", trailing.line, trailing.col)
+        if out_err != null {
+            out_err.message = p.error.message
+            out_err.line = p.error.line
+            out_err.col = p.error.col
+        }
+        return null
+    }
+
+    return root
+}
+
+// Convenience wrapper parsing a JSON document from a null-terminated string literal.
+act json_parse_str(a: @Arena, src: string, out_err: @JsonParseError) -> @JsonValue {
+    return json_parse(a, slice_from_str(src), out_err)
+}
+
+// Parses a JSON document into a self-contained JsonDoc managing its own Arena lifecycle.
+act json_parse_doc(src: StrSlice, arena_cap: usize) -> JsonDoc {
+    mut cap = arena_cap
+    if cap < 4096 { cap = 65536 }
+    mut a = arena_init(cap)
+    mut err = JsonParseError { message: slice_from_raw(null, 0), line: 0, col: 0 }
+    let root = json_parse(@a, src, @err)
+    if root == null {
+        let e = err
+        arena_reset(@a)
+        return JsonDoc { arena: a, root: null, error: e, ok: false }
+    }
+    return JsonDoc { arena: a, root: root, error: err, ok: true }
+}
+
+// Convenience wrapper parsing a JSON document from a null-terminated string into a JsonDoc.
+act json_parse_doc_str(src: string, arena_cap: usize) -> JsonDoc {
+    return json_parse_doc(slice_from_str(src), arena_cap)
+}
+
+// Frees all memory associated with a parsed JsonDoc.
+act json_doc_free(doc: @JsonDoc) {
+    if doc != null {
+        arena_reset(@doc.arena)
+    }
+}
+
+// Validates whether the given string conforms to valid RFC 8259 JSON syntax without retaining the AST.
+act json_validate(src: StrSlice, out_err: @JsonParseError) -> bool {
+    mut temp_arena = arena_init(16384)
+    defer arena_reset(@temp_arena)
+    let root = json_parse(@temp_arena, src, out_err)
+    return root != null
+}
+
+// Convenience wrapper validating JSON syntax from a null-terminated string.
+act json_validate_str(src: string, out_err: @JsonParseError) -> bool {
+    return json_validate(slice_from_str(src), out_err)
+}
