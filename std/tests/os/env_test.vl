@@ -1,0 +1,128 @@
+// Unit test suite for std.os.env (native environment variables and process metadata).
+use "../../io/print.vl"
+use "../../mem/arena.vl"
+use "../../str/slice.vl"
+use "../../os/env.vl"
+
+act test_os_metadata() -> bool {
+    let fam = os_family()
+    if !slice_eq_str(slice_from_str(fam), "windows") {
+        return false
+    }
+
+    if not os_is_windows() {
+        return false
+    }
+    if os_is_linux() {
+        return false
+    }
+
+    let pid = os_get_pid()
+    if pid == (0 as u32) {
+        return false
+    }
+
+    return true
+}
+
+act test_env_lifecycle() -> bool {
+    mut arena = arena_init(4096)
+    defer arena_free(@arena)
+
+    let key = "VELO_OS_TEST_KEY"
+    let val = "Velo_OS_Test_Value_42"
+
+    // Clean initial state
+    os_unset_env(key)
+    if os_has_env(key) {
+        return false
+    }
+
+    // Set variable
+    if not os_set_env(key, val) {
+        return false
+    }
+    if not os_has_env(key) {
+        return false
+    }
+
+    // Retrieve via arena
+    let got = os_get_env(@arena, key)
+    if got == null {
+        return false
+    }
+    if !slice_eq_str(slice_from_str(got), val) {
+        return false
+    }
+
+    // Retrieve via preallocated buffer
+    mut buf: @u8 = arena_alloc(@arena, 128, 1)
+    let written = os_get_env_buf(key, buf, 128)
+    if written != slice_len(slice_from_str(val)) {
+        return false
+    }
+    if !slice_eq_str(slice_from_raw(buf, written), val) {
+        return false
+    }
+
+    // Unset variable
+    if not os_unset_env(key) {
+        return false
+    }
+    if os_has_env(key) {
+        return false
+    }
+    if os_get_env(@arena, key) != null {
+        return false
+    }
+
+    return true
+}
+
+act test_cwd() -> bool {
+    mut arena = arena_init(4096)
+    defer arena_free(@arena)
+
+    let cwd = os_get_cwd(@arena)
+    if cwd == null {
+        return false
+    }
+    let cwd_sl = slice_from_str(cwd)
+    if slice_len(cwd_sl) == 0 {
+        return false
+    }
+
+    mut buf: @u8 = arena_alloc(@arena, 512, 1)
+    let written = os_get_cwd_buf(buf, 512)
+    if written == 0 {
+        return false
+    }
+    if !slice_eq(slice_from_raw(buf, written), cwd_sl) {
+        return false
+    }
+
+    // Setting CWD to itself should succeed
+    if not os_set_cwd(cwd) {
+        return false
+    }
+
+    return true
+}
+
+act main() -> i32 {
+    if not test_os_metadata() {
+        println_str("FAIL: test_os_metadata")
+        return 1
+    }
+    if not test_env_lifecycle() {
+        println_str("FAIL: test_env_lifecycle")
+        return 2
+    }
+    if not test_cwd() {
+        println_str("FAIL: test_cwd")
+        return 3
+    }
+
+    println_str("PASS: std.os.env tests succeeded")
+    return 0
+}

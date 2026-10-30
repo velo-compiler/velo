@@ -1503,3 +1503,26 @@ flowchart TD
   - `bin/velo.exe run std/tests/std_module_import_test.vl` passed (`PASS: native use std.* imports succeeded`).
   - `python -m pytest tests/test_std_math.py` passed (5/5 passed in 6.18s).
   - `python -m pytest tests/test_std_coll.py` passed (7/7 passed in 7.22s).
+
+
+---
+
+### Phase 10: `std.os` (Zero-Dependency Pure-Velo Operating System & Process Subsystem)
+
+#### Task 10.1: Environment Variables & Process Metadata (`std/os/env.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Operating system environment variables and process metadata in Velo previously depended on the compiler's closed `sys.os` built-in (`os.get_env`), which lowered into C runtime calls (`getenv`, `system`). Velo lacked a standalone, pure-Velo OS library supporting dynamic buffer sizing, environment variable modification (`set_env`, `unset_env`), process ID queries (`get_pid`), working directory management (`get_cwd`, `set_cwd`), and immediate termination (`exit`) directly via the host OS kernel interface without `<stdlib.h>`.
+* **Fix Applied**:
+  - Implemented `std/os/env_windows.vl` backed directly by Win32 `kernel32.dll` system calls (`GetEnvironmentVariableA`, `SetEnvironmentVariableA`, `GetCurrentProcessId`, `ExitProcess`, `GetCurrentDirectoryA`, `SetCurrentDirectoryA`).
+  - Implemented `std/os/env_linux.vl` backed directly by POSIX system interfaces (`getenv`, `setenv`, `unsetenv`, `getpid`, `_exit`, `getcwd`, `chdir`).
+  - Implemented cross-platform facade `std/os/env.vl` providing:
+    - Environment variables: `os_has_env`, `os_get_env` (arena-allocated), `os_get_env_buf` (zero-allocation into caller buffer), `os_set_env`, `os_unset_env`.
+    - Process metadata: `os_get_pid`, `os_exit`, `os_family`, `os_is_windows`, `os_is_linux`.
+    - Working directory: `os_get_cwd` (arena-allocated), `os_get_cwd_buf` (zero-allocation), `os_set_cwd`.
+  - Added comprehensive unit test suite `std/tests/os/env_test.vl` exercising environment variable lifecycles, PID queries, and working directory operations.
+  - Added pytest test case `test_std_os_env` in `tests/test_std_os.py`.
+* **Residual Limitation**:
+  - Command-line argument parsing and tokenization (`std/os/args.vl`) will be implemented in Task 10.2.
+* **Verification**:
+  - `bin/velo.exe run std/tests/os/env_test.vl` passed (`PASS: std.os.env tests succeeded`).
+  - `python -m pytest tests/test_std_os.py` passed (1/1 passed in 1.14s).
