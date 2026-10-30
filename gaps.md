@@ -958,6 +958,22 @@ flowchart TD
   - `bin/velo.exe run std/tests/fmt/itoa_test.vl` passed u64/i64 zero, small, large, INT64_MIN, UINT64_MAX, hex upper/lower, binary, octal Unix permissions, and zero-padded formatters.
   - `python -m pytest tests/test_std_fmt.py` passed (1/1 passed).
 
+#### Task 3.2: String to Integer Parser `atoi` (`std/fmt/atoi.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - String-to-integer conversion relied on libc functions (`atoi`, `strtol`, `strtoull`), which lack zero-allocation slice support, do not cleanly differentiate errors from 0, and bind parsing to libc errno.
+* **Fix Applied**:
+  - Implemented `std/fmt/atoi.vl` providing `parse_u64`, `parse_i64`, `parse_u64_radix`, `parse_hex`, `parse_bin`, `parse_oct`, `parse_i32`, `parse_u32`, and string literal convenience wrappers.
+  - Robust mathematical overflow detection during parsing without intermediate 128-bit types (`acc > max_div or (acc == max_div and digit > max_mod)`).
+  - Handles leading/trailing whitespace, optional `+` and `-` signs, and prefix auto-detection for hex (`0x`/`0X`), binary (`0b`/`0B`), and octal (`0o`/`0O`).
+  - Precisely parses the complete 64-bit integer range: `0`, `INT64_MAX`, `INT64_MIN` (`-9223372036854775808`), and `UINT64_MAX` while rejecting all over/underflow values.
+  - Added unit test suite `std/tests/fmt/atoi_test.vl` and pytest integration in `tests/test_std_fmt.py`.
+* **Residual Limitation**:
+  - Structured primitive formatting and padding into `StrBuilder` will be layered in Task 3.3.
+* **Verification**:
+  - `bin/velo.exe run std/tests/fmt/atoi_test.vl` passed u64/i64 parsing, whitespace trimming, INT64_MIN/MAX boundaries, exact overflow rejections, radix 2..36 decoding, hex/bin/oct prefixes, and 32-bit range clamp checks.
+  - `python -m pytest tests/test_std_fmt.py` passed (2/2 passed).
+
+
 
 
 

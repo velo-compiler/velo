@@ -1,0 +1,249 @@
+// Pure Velo string-to-integer parsing library (zero C runtime dependencies).
+// Parses signed and unsigned integers in base 10, hexadecimal, binary, and octal with strict
+// overflow checking and whitespace tolerance.
+use "../str/slice.vl"
+use "../str/manip.vl"
+
+// Parses an unsigned 64-bit decimal integer from a string slice.
+// Accepts optional leading and trailing whitespace and an optional leading '+'.
+// Returns false on invalid characters, empty input, or integer overflow.
+act parse_u64(s: StrSlice, out_val: @u64) -> bool {
+    let trimmed = str_trim(s)
+    if trimmed.ptr == null or trimmed.len == 0 {
+        return false
+    }
+
+    mut start: usize = 0
+    if trimmed.ptr[0] == 43 as u8 { // '+'
+        start = 1
+    }
+    if start >= trimmed.len {
+        return false
+    }
+
+    // UINT64_MAX / 10 = 1844674407370955161, UINT64_MAX % 10 = 5
+    let max_div_10: u64 = 1844674407370955161 as u64
+    let max_mod_10: u64 = 5 as u64
+    mut acc: u64 = 0
+    mut i = start
+    loop i < trimmed.len {
+        let b = trimmed.ptr[i]
+        if b < 48 as u8 or b > 57 as u8 {
+            return false
+        }
+        let digit: u64 = (b - 48 as u8) as u64
+        if acc > max_div_10 {
+            return false
+        }
+        if acc == max_div_10 and digit > max_mod_10 {
+            return false
+        }
+        acc = acc * (10 as u64) + digit
+        i += 1
+    }
+
+    if out_val != null {
+        out_val[0] = acc
+    }
+    return true
+}
+
+// Parses a signed 64-bit decimal integer from a string slice.
+// Accepts optional leading and trailing whitespace and an optional leading '+' or '-'.
+// Handles the full range from INT64_MIN (-9223372036854775808) to INT64_MAX (9223372036854775807).
+// Returns false on invalid characters, empty input, or integer overflow.
+act parse_i64(s: StrSlice, out_val: @i64) -> bool {
+    let trimmed = str_trim(s)
+    if trimmed.ptr == null or trimmed.len == 0 {
+        return false
+    }
+
+    let is_neg = trimmed.ptr[0] == 45 as u8 // '-'
+    mut start: usize = 0
+    if is_neg or trimmed.ptr[0] == 43 as u8 { // '+'
+        start = 1
+    }
+    if start >= trimmed.len {
+        return false
+    }
+
+    // INT64_MAX / 10 = 922337203685477580
+    // Positive limit mod 10 = 7; Negative limit mod 10 = 8
+    let max_div_10: u64 = 922337203685477580 as u64
+    mut max_mod_10: u64 = 7 as u64
+    if is_neg {
+        max_mod_10 = 8 as u64
+    }
+
+    mut acc: u64 = 0
+    mut i = start
+    loop i < trimmed.len {
+        let b = trimmed.ptr[i]
+        if b < 48 as u8 or b > 57 as u8 {
+            return false
+        }
+        let digit: u64 = (b - 48 as u8) as u64
+        if acc > max_div_10 {
+            return false
+        }
+        if acc == max_div_10 and digit > max_mod_10 {
+            return false
+        }
+        acc = acc * (10 as u64) + digit
+        i += 1
+    }
+
+    if out_val != null {
+        if is_neg {
+            if acc == 0x8000000000000000 as u64 {
+                out_val[0] = (-9223372036854775807 as i64) - (1 as i64)
+            } else {
+                out_val[0] = -(acc as i64)
+            }
+        } else {
+            out_val[0] = acc as i64
+        }
+    }
+    return true
+}
+
+// Parses an unsigned 64-bit integer with a specified base (2 to 36).
+// Handles optional prefix for base 16 ("0x"/"0X"), base 2 ("0b"/"0B"), and base 8 ("0o"/"0O").
+act parse_u64_radix(s: StrSlice, radix: u32, out_val: @u64) -> bool {
+    if radix < 2 as u32 or radix > 36 as u32 {
+        return false
+    }
+    let trimmed = str_trim(s)
+    if trimmed.ptr == null or trimmed.len == 0 {
+        return false
+    }
+
+    mut start: usize = 0
+    if trimmed.ptr[0] == 43 as u8 {
+        start = 1
+    }
+
+    let rad_u64: u64 = radix as u64
+    if radix == 16 as u32 and start + 2 <= trimmed.len {
+        if trimmed.ptr[start] == 48 as u8 and (trimmed.ptr[start + 1] == 120 as u8 or trimmed.ptr[start + 1] == 88 as u8) {
+            start += 2
+        }
+    } else if radix == 2 as u32 and start + 2 <= trimmed.len {
+        if trimmed.ptr[start] == 48 as u8 and (trimmed.ptr[start + 1] == 98 as u8 or trimmed.ptr[start + 1] == 66 as u8) {
+            start += 2
+        }
+    } else if radix == 8 as u32 and start + 2 <= trimmed.len {
+        if trimmed.ptr[start] == 48 as u8 and (trimmed.ptr[start + 1] == 111 as u8 or trimmed.ptr[start + 1] == 79 as u8) {
+            start += 2
+        }
+    }
+
+    if start >= trimmed.len {
+        return false
+    }
+
+    let u64_max: u64 = 0xFFFFFFFFFFFFFFFF as u64
+    let max_div = u64_max / rad_u64
+    let max_mod = u64_max % rad_u64
+
+    mut acc: u64 = 0
+    mut i = start
+    loop i < trimmed.len {
+        let b = trimmed.ptr[i]
+        mut digit: u64 = 0
+        if b >= 48 as u8 and b <= 57 as u8 { // '0'..'9'
+            digit = (b - 48 as u8) as u64
+        } else if b >= 65 as u8 and b <= 90 as u8 { // 'A'..'Z'
+            digit = ((b - 65 as u8) + 10 as u8) as u64
+        } else if b >= 97 as u8 and b <= 122 as u8 { // 'a'..'z'
+            digit = ((b - 97 as u8) + 10 as u8) as u64
+        } else {
+            return false
+        }
+
+        if digit >= rad_u64 {
+            return false
+        }
+
+        if acc > max_div {
+            return false
+        }
+        if acc == max_div and digit > max_mod {
+            return false
+        }
+
+        acc = acc * rad_u64 + digit
+        i += 1
+    }
+
+    if out_val != null {
+        out_val[0] = acc
+    }
+    return true
+}
+
+// Parses hexadecimal text into u64 (with or without "0x"/"0X" prefix).
+act parse_hex(s: StrSlice, out_val: @u64) -> bool {
+    return parse_u64_radix(s, 16 as u32, out_val)
+}
+
+// Parses binary text into u64 (with or without "0b"/"0B" prefix).
+act parse_bin(s: StrSlice, out_val: @u64) -> bool {
+    return parse_u64_radix(s, 2 as u32, out_val)
+}
+
+// Parses octal text into u64 (with or without "0o"/"0O" prefix).
+act parse_oct(s: StrSlice, out_val: @u64) -> bool {
+    return parse_u64_radix(s, 8 as u32, out_val)
+}
+
+// Parses signed 32-bit integer with range checking [-2147483648, 2147483647].
+act parse_i32(s: StrSlice, out_val: @i32) -> bool {
+    mut val: i64 = 0
+    if !parse_i64(s, @val) {
+        return false
+    }
+    if val < -2147483648 as i64 or val > 2147483647 as i64 {
+        return false
+    }
+    if out_val != null {
+        out_val[0] = val as i32
+    }
+    return true
+}
+
+// Parses unsigned 32-bit integer with range checking [0, 4294967295].
+act parse_u32(s: StrSlice, out_val: @u32) -> bool {
+    mut val: u64 = 0
+    if !parse_u64(s, @val) {
+        return false
+    }
+    if val > 4294967295 as u64 {
+        return false
+    }
+    if out_val != null {
+        out_val[0] = val as u32
+    }
+    return true
+}
+
+// String literal convenience helpers
+act parse_i64_str(s: string, out_val: @i64) -> bool {
+    return parse_i64(slice_from_str(s), out_val)
+}
+
+act parse_u64_str(s: string, out_val: @u64) -> bool {
+    return parse_u64(slice_from_str(s), out_val)
+}
+
+act parse_hex_str(s: string, out_val: @u64) -> bool {
+    return parse_hex(slice_from_str(s), out_val)
+}
+
+act parse_i32_str(s: string, out_val: @i32) -> bool {
+    return parse_i32(slice_from_str(s), out_val)
+}
+
+act parse_u32_str(s: string, out_val: @u32) -> bool {
+    return parse_u32(slice_from_str(s), out_val)
+}

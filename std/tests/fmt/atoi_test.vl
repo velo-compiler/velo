@@ -1,0 +1,131 @@
+// Unit test suite for std.fmt.atoi (string to integer parser with overflow detection).
+use "../../str/slice.vl"
+use "../../fmt/atoi.vl"
+
+act test_parse_u64() -> bool {
+    mut u: u64 = 0
+
+    // Zero
+    if !parse_u64_str("0", @u) or u != 0 as u64 { return false }
+
+    // Whitespace trimming and explicit plus
+    if !parse_u64_str("  \t\r\n +123456 \t ", @u) or u != 123456 as u64 { return false }
+
+    // UINT64_MAX
+    if !parse_u64_str("18446744073709551615", @u) or u != 0xFFFFFFFFFFFFFFFF as u64 { return false }
+
+    // Overflow by 1
+    if parse_u64_str("18446744073709551616", @u) { return false }
+
+    // Huge overflow
+    if parse_u64_str("99999999999999999999999", @u) { return false }
+
+    // Invalid formats
+    if parse_u64_str("", @u) { return false }
+    if parse_u64_str("+", @u) { return false }
+    if parse_u64_str("-5", @u) { return false }
+    if parse_u64_str("123x45", @u) { return false }
+
+    return true
+}
+
+act test_parse_i64() -> bool {
+    mut n: i64 = 0
+
+    // Zero
+    if !parse_i64_str("0", @n) or n != 0 as i64 { return false }
+    if !parse_i64_str("-0", @n) or n != 0 as i64 { return false }
+
+    // Positives and negatives with whitespace
+    if !parse_i64_str("  +98765  ", @n) or n != 98765 as i64 { return false }
+    if !parse_i64_str("  -54321  ", @n) or n != -54321 as i64 { return false }
+
+    // INT64_MAX
+    if !parse_i64_str("9223372036854775807", @n) or n != 9223372036854775807 as i64 { return false }
+
+    // Positive overflow
+    if parse_i64_str("9223372036854775808", @n) { return false }
+
+    // INT64_MIN
+    let min_expected = (-9223372036854775807 as i64) - (1 as i64)
+    if !parse_i64_str("-9223372036854775808", @n) or n != min_expected { return false }
+
+    // Negative overflow
+    if parse_i64_str("-9223372036854775809", @n) { return false }
+
+    // Invalid strings
+    if parse_i64_str("-", @n) { return false }
+    if parse_i64_str("--5", @n) { return false }
+    if parse_i64_str(" - 5 ", @n) { return false }
+
+    return true
+}
+
+act test_parse_radix_and_hex() -> bool {
+    mut u: u64 = 0
+
+    // Hex without prefix
+    if !parse_hex_str("deadbeef", @u) or u != 0xDEADBEEF as u64 { return false }
+
+    // Hex with 0x and 0X
+    if !parse_hex_str("0xDEADBEEF", @u) or u != 0xDEADBEEF as u64 { return false }
+    if !parse_hex_str("0Xcafe", @u) or u != 0xCAFE as u64 { return false }
+
+    // Binary with 0b
+    if !parse_bin(slice_from_str("0b101010"), @u) or u != 42 as u64 { return false }
+    if !parse_bin(slice_from_str("0B11111111"), @u) or u != 255 as u64 { return false }
+
+    // Octal with 0o
+    if !parse_oct(slice_from_str("0o755"), @u) or u != 493 as u64 { return false }
+    if !parse_oct(slice_from_str("0O644"), @u) or u != 420 as u64 { return false }
+
+    // Radix rejection on invalid digit
+    if parse_bin(slice_from_str("0b10201"), @u) { return false } // '2' invalid in binary
+    if parse_oct(slice_from_str("0o789"), @u) { return false }   // '8','9' invalid in octal
+    if parse_hex_str("0x12G45", @u) { return false }             // 'G' invalid in hex
+
+    return true
+}
+
+act test_parse_i32_u32() -> bool {
+    mut val32: i32 = 0
+    mut uval32: u32 = 0
+
+    // i32 limits
+    if !parse_i32_str("2147483647", @val32) or val32 != 2147483647 { return false }
+    if !parse_i32_str("-2147483648", @val32) or val32 != -2147483648 { return false }
+
+    // i32 overflow
+    if parse_i32_str("2147483648", @val32) { return false }
+    if parse_i32_str("-2147483649", @val32) { return false }
+
+    // u32 limits
+    if !parse_u32_str("4294967295", @uval32) or uval32 != 0xFFFFFFFF as u32 { return false }
+
+    // u32 overflow
+    if parse_u32_str("4294967296", @uval32) { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_parse_u64() {
+        io.println("FAIL: test_parse_u64")
+        return 1
+    }
+    if !test_parse_i64() {
+        io.println("FAIL: test_parse_i64")
+        return 1
+    }
+    if !test_parse_radix_and_hex() {
+        io.println("FAIL: test_parse_radix_and_hex")
+        return 1
+    }
+    if !test_parse_i32_u32() {
+        io.println("FAIL: test_parse_i32_u32")
+        return 1
+    }
+
+    io.println("PASS: std.fmt.atoi all assertions succeeded")
+    return 0
+}
