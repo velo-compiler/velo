@@ -48,5 +48,18 @@ def test_std_json_parser():
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.json.parser all tests passed" in res.stdout
 
+def test_std_json_writer():
+    test_vl = REPO_ROOT / "std" / "tests" / "json" / "writer_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.json.writer all tests passed" in res.stdout
+
+
 
 

@@ -1,0 +1,221 @@
+// Pure Velo JSON DOM serializer and pretty-printer (zero C runtime dependencies).
+// Conforms to RFC 8259: serializes JsonValue DOM trees to compact or pretty-printed
+// JSON text with proper string escaping (\", \\, \n, \r, \t, \u00XX) and floating-point trimming.
+use "../str/slice.vl"
+use "../str/builder.vl"
+use "../mem/arena.vl"
+use "../fmt/ftoa.vl"
+use "value.vl"
+use "value_ops.vl"
+
+// Converts a 4-bit nibble 0..15 to lowercase hex ASCII character.
+act hex_to_ascii(h: u8) -> u8 {
+    if h < 10 as u8 { return 48 as u8 + h }
+    return 87 as u8 + h
+}
+
+// Writes an RFC 8259 escaped string literal ("...") into the builder.
+act json_write_escaped_str(sb: @StrBuilder, s: StrSlice) {
+    sb_append_byte(sb, 34 as u8) // '"'
+    if s.ptr != null and s.len > 0 {
+        mut i: usize = 0
+        loop i < s.len {
+            let b = s.ptr[i]
+            if b == 34 as u8 {
+                sb_append_byte(sb, 92 as u8); sb_append_byte(sb, 34 as u8)
+            } else if b == 92 as u8 {
+                sb_append_byte(sb, 92 as u8); sb_append_byte(sb, 92 as u8)
+            } else if b == 8 as u8 {
+                sb_append_byte(sb, 92 as u8); sb_append_byte(sb, 98 as u8)
+            } else if b == 12 as u8 {
+                sb_append_byte(sb, 92 as u8); sb_append_byte(sb, 102 as u8)
+            } else if b == 10 as u8 {
+                sb_append_byte(sb, 92 as u8); sb_append_byte(sb, 110 as u8)
+            } else if b == 13 as u8 {
+                sb_append_byte(sb, 92 as u8); sb_append_byte(sb, 114 as u8)
+            } else if b == 9 as u8 {
+                sb_append_byte(sb, 92 as u8); sb_append_byte(sb, 116 as u8)
+            } else if b < 32 as u8 {
+                sb_append_slice(sb, slice_from_str("\\u00"))
+                let hi = (b >> 4) & 0x0F as u8
+                let lo = b & 0x0F as u8
+                sb_append_byte(sb, hex_to_ascii(hi))
+                sb_append_byte(sb, hex_to_ascii(lo))
+            } else {
+                sb_append_byte(sb, b)
+            }
+            i += 1
+        }
+    }
+    sb_append_byte(sb, 34 as u8) // '"'
+}
+
+// Trims redundant trailing zeroes after decimal point in formatted float string.
+act trim_json_float(s: StrSlice) -> StrSlice {
+    mut dot_idx: usize = 0
+    mut has_dot = false
+    mut i: usize = 0
+    loop i < s.len {
+        if s.ptr[i] == 46 as u8 {
+            has_dot = true
+            dot_idx = i
+            break
+        }
+        i += 1
+    }
+    if !has_dot { return s }
+
+    mut end = s.len
+    loop end > dot_idx + 2 and s.ptr[end - 1] == 48 as u8 {
+        end -= 1
+    }
+    return slice_sub(s, 0, end)
+}
+
+// Emits newline and indentation spaces for pretty-printed formatting.
+act json_write_indent(sb: @StrBuilder, depth: i32, indent_size: i32) {
+    if indent_size <= 0 { return }
+    sb_append_byte(sb, 10 as u8) // '\n'
+    let total = depth * indent_size
+    mut i = 0
+    loop i < total {
+        sb_append_byte(sb, 32 as u8) // ' '
+        i += 1
+    }
+}
+
+// Recursive AST node serializer handling compact and pretty-printed formatting.
+act json_write_internal(sb: @StrBuilder, v: @JsonValue, depth: i32, indent_size: i32) {
+    if v == null or v.kind == JSON_NULL {
+        sb_append_slice(sb, slice_from_str("null"))
+        return
+    }
+
+    if v.kind == JSON_BOOL {
+        if v.bool_val {
+            sb_append_slice(sb, slice_from_str("true"))
+        } else {
+            sb_append_slice(sb, slice_from_str("false"))
+        }
+        return
+    }
+
+    if v.kind == JSON_INT {
+        sb_append_i64(sb, v.int_val)
+        return
+    }
+
+    if v.kind == JSON_FLOAT {
+        if f64_is_nan(v.float_val) or f64_is_inf(v.float_val) {
+            sb_append_slice(sb, slice_from_str("null"))
+            return
+        }
+        let fbuf = arena_alloc(sb.arena, 64, 1)
+        if fbuf != null {
+            let s = format_f64(v.float_val, -1, fbuf, 64)
+            let trimmed = trim_json_float(s)
+            sb_append_slice(sb, trimmed)
+        }
+        return
+    }
+
+    if v.kind == JSON_STRING {
+        json_write_escaped_str(sb, v.str_val)
+        return
+    }
+
+    if v.kind == JSON_ARRAY {
+        if v.count == 0 {
+            sb_append_slice(sb, slice_from_str("[]"))
+            return
+        }
+        sb_append_byte(sb, 91 as u8) // '['
+        mut cur = v.first_child
+        loop cur != null {
+            json_write_indent(sb, depth + 1, indent_size)
+            json_write_internal(sb, cur, depth + 1, indent_size)
+            if cur.next != null {
+                sb_append_byte(sb, 44 as u8) // ','
+            }
+            cur = cur.next
+        }
+        json_write_indent(sb, depth, indent_size)
+        sb_append_byte(sb, 93 as u8) // ']'
+        return
+    }
+
+    if v.kind == JSON_OBJECT {
+        if v.count == 0 {
+            sb_append_slice(sb, slice_from_str("{}"))
+            return
+        }
+        sb_append_byte(sb, 123 as u8) // '{'
+        mut cur = v.first_child
+        loop cur != null {
+            json_write_indent(sb, depth + 1, indent_size)
+            json_write_escaped_str(sb, cur.key)
+            if indent_size > 0 {
+                sb_append_slice(sb, slice_from_str(": "))
+            } else {
+                sb_append_byte(sb, 58 as u8) // ':'
+            }
+            json_write_internal(sb, cur, depth + 1, indent_size)
+            if cur.next != null {
+                sb_append_byte(sb, 44 as u8) // ','
+            }
+            cur = cur.next
+        }
+        json_write_indent(sb, depth, indent_size)
+        sb_append_byte(sb, 125 as u8) // '}'
+        return
+    }
+}
+
+// Serializes a JsonValue tree into the provided StrBuilder with configurable indentation (0 for compact).
+act json_write(sb: @StrBuilder, v: @JsonValue, indent_size: i32) {
+    json_write_internal(sb, v, 0, indent_size)
+}
+
+// Serializes a JsonValue tree into compact JSON without whitespace.
+act json_write_compact(sb: @StrBuilder, v: @JsonValue) {
+    json_write(sb, v, 0)
+}
+
+// Serializes a JsonValue tree into pretty-printed JSON with custom indentation.
+act json_write_pretty(sb: @StrBuilder, v: @JsonValue, indent_spaces: i32) {
+    mut ind = indent_spaces
+    if ind <= 0 { ind = 2 }
+    json_write(sb, v, ind)
+}
+
+// Serializes a JsonValue tree into a compact JSON StrSlice allocated inside arena.
+act json_stringify(a: @Arena, v: @JsonValue) -> StrSlice {
+    mut sb = sb_init(a, 256)
+    json_write(@sb, v, 0)
+    return sb_to_slice(@sb)
+}
+
+// Serializes a JsonValue tree into a pretty-printed JSON StrSlice allocated inside arena.
+act json_stringify_pretty(a: @Arena, v: @JsonValue, indent_spaces: i32) -> StrSlice {
+    mut sb = sb_init(a, 256)
+    mut ind = indent_spaces
+    if ind <= 0 { ind = 2 }
+    json_write(@sb, v, ind)
+    return sb_to_slice(@sb)
+}
+
+// Serializes a JsonValue tree into a compact null-terminated C string allocated inside arena.
+act json_stringify_str(a: @Arena, v: @JsonValue) -> string {
+    mut sb = sb_init(a, 256)
+    json_write(@sb, v, 0)
+    return sb_to_cstr(@sb) as string
+}
+
+// Serializes a JsonValue tree into a pretty-printed null-terminated C string allocated inside arena.
+act json_stringify_pretty_str(a: @Arena, v: @JsonValue, indent_spaces: i32) -> string {
+    mut sb = sb_init(a, 256)
+    mut ind = indent_spaces
+    if ind <= 0 { ind = 2 }
+    json_write(@sb, v, ind)
+    return sb_to_cstr(@sb) as string
+}

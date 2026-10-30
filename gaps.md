@@ -1291,7 +1291,22 @@ flowchart TD
   - Implemented zero-allocation fast-path for unescaped string slices, automatically switching to `Arena` buffer decoding via `std/json/unescape.vl` only when escape sequences (`\`, `\"`, `\n`, `\t`, `\uXXXX`) are present.
   - Added unit test suite `std/tests/json/parser_test.vl` and pytest integration in `tests/test_std_json.py`.
 * **Residual Limitation**:
-  - JSON serialization and pretty-printing (`std/json/writer.vl`) will be implemented in Task 7.4.
+  - JSON serialization and pretty-printing (`std/json/writer.vl`) is complete in Task 7.4.
 * **Verification**:
   - `bin/velo.exe run std/tests/json/parser_test.vl` passed primitive parsing, empty and heterogeneous arrays, nested objects, unescaped string slices, syntax error diagnostics with line/col tracking, `JsonDoc` lifecycle, and fast syntax validation.
   - `python -m pytest tests/test_std_json.py` passed (3/3 passed in 4.50s).
+
+#### Task 7.4: JSON Serializer & Pretty-Printer (`std/json/writer.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - While Velo could parse and represent JSON structures in memory, it lacked a dedicated serializer and pretty-printer converting `JsonValue` trees back into JSON text. Emitting JSON required manual string concatenation without RFC 8259-compliant escape encoding (`\"`, `\\`, control codes `\u00XX`), floating-point digit trimming, or configurable indentation.
+* **Fix Applied**:
+  - Implemented `std/json/writer.vl` providing streaming serialization into `StrBuilder` with unified support for compact (whitespace-free) and indented pretty-printed output.
+  - Implemented RFC 8259 string escaping in `json_write_escaped_str`: handling quotes, backslashes, standard control escapes (`\b`, `\f`, `\n`, `\r`, `\t`), and encoding control characters `< 0x20` as 4-hex-digit `\u00XX` escapes without libc.
+  - Implemented floating-point formatting and zero-trimming via `trim_json_float` and `format_f64`, serializing non-finite values (`NaN`, `Inf`) as compliant `null`.
+  - Implemented public serialization API: `json_write`, `json_write_compact`, `json_write_pretty`, `json_stringify`, `json_stringify_pretty`, `json_stringify_str`, and `json_stringify_pretty_str`.
+  - Added unit test suite `std/tests/json/writer_test.vl` and pytest integration in `tests/test_std_json.py`.
+* **Residual Limitation**:
+  - Standard library umbrella module (`std/json.vl`) and driver resolution (`use std.json`) will be implemented in Task 7.5.
+* **Verification**:
+  - `bin/velo.exe run std/tests/json/writer_test.vl` passed compact primitive serialization, string escaping with control characters, empty and populated arrays/objects, indented pretty-printing, and lossless round-trip parse-serialize-parse structural equality.
+  - `python -m pytest tests/test_std_json.py` passed (4/4 passed in 6.31s).

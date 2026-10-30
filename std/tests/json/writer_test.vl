@@ -1,0 +1,161 @@
+// Unit test suite for std.json.writer (JSON serializer and pretty-printer).
+use "../../mem/page.vl"
+use "../../mem/arena.vl"
+use "../../str/slice.vl"
+use "../../io/print.vl"
+use "../../json/value.vl"
+use "../../json/value_ops.vl"
+use "../../json/parser.vl"
+use "../../json/writer.vl"
+
+act test_compact_primitives() -> bool {
+    mut arena = arena_init(65536)
+    defer arena_reset(@arena)
+
+    // Null
+    let vn = json_new_null(@arena)
+    let sn = json_stringify(@arena, vn)
+    if !slice_eq_str(sn, "null") { return false }
+
+    // Bool
+    let vt = json_new_bool(@arena, true)
+    let st = json_stringify(@arena, vt)
+    if !slice_eq_str(st, "true") { return false }
+
+    let vf = json_new_bool(@arena, false)
+    let sf = json_stringify(@arena, vf)
+    if !slice_eq_str(sf, "false") { return false }
+
+    // Integer
+    let vi = json_new_int(@arena, -42)
+    let si = json_stringify(@arena, vi)
+    if !slice_eq_str(si, "-42") { return false }
+
+    // Float
+    let vflt = json_new_float(@arena, 98.5)
+    let sflt = json_stringify(@arena, vflt)
+    if !slice_eq_str(sflt, "98.5") { return false }
+
+    // String
+    let vs = json_new_str_lit(@arena, "hello world")
+    let ss = json_stringify(@arena, vs)
+    if !slice_eq_str(ss, "\"hello world\"") { return false }
+
+    return true
+}
+
+act test_string_escapes() -> bool {
+    mut arena = arena_init(65536)
+    defer arena_reset(@arena)
+
+    // Escapes: quote, backslash, newline, tab
+    let vs = json_new_str_lit(@arena, "a\"b\\c\nd\te")
+    let ss = json_stringify(@arena, vs)
+    if !slice_eq_str(ss, "\"a\\\"b\\\\c\\nd\\te\"") { return false }
+
+    return true
+}
+
+act test_compact_collections() -> bool {
+    mut arena = arena_init(65536)
+    defer arena_reset(@arena)
+
+    // Empty array
+    let empty_arr = json_new_array(@arena)
+    let s_ea = json_stringify(@arena, empty_arr)
+    if !slice_eq_str(s_ea, "[]") { return false }
+
+    // Array with items
+    let arr = json_new_array(@arena)
+    json_array_push(arr, json_new_int(@arena, 1))
+    json_array_push(arr, json_new_int(@arena, 2))
+    json_array_push(arr, json_new_str_lit(@arena, "three"))
+    let s_arr = json_stringify(@arena, arr)
+    if !slice_eq_str(s_arr, "[1,2,\"three\"]") { return false }
+
+    // Empty object
+    let empty_obj = json_new_object(@arena)
+    let s_eo = json_stringify(@arena, empty_obj)
+    if !slice_eq_str(s_eo, "{}") { return false }
+
+    // Object with entries
+    let obj = json_new_object(@arena)
+    json_obj_put_str(obj, "id", json_new_int(@arena, 7))
+    json_obj_put_str(obj, "ok", json_new_bool(@arena, true))
+    let s_obj = json_stringify(@arena, obj)
+    if !slice_eq_str(s_obj, "{\"id\":7,\"ok\":true}") { return false }
+
+    return true
+}
+
+act test_pretty_printing() -> bool {
+    mut arena = arena_init(65536)
+    defer arena_reset(@arena)
+
+    let obj = json_new_object(@arena)
+    json_obj_put_str(obj, "name", json_new_str_lit(@arena, "Alice"))
+    json_obj_put_str(obj, "age", json_new_int(@arena, 30))
+
+    let arr = json_new_array(@arena)
+    json_array_push(arr, json_new_int(@arena, 10))
+    json_array_push(arr, json_new_int(@arena, 20))
+    json_obj_put_str(obj, "items", arr)
+
+    let s_pretty = json_stringify_pretty(@arena, obj, 2)
+    // Parse it back to verify validity
+    mut err = JsonParseError { message: slice_from_raw(null, 0), line: 0, col: 0 }
+    let parsed = json_parse(@arena, s_pretty, @err)
+    if parsed == null { return false }
+    if !json_value_eq(obj, parsed) { return false }
+
+    return true
+}
+
+act test_round_trip() -> bool {
+    mut arena = arena_init(65536)
+    defer arena_reset(@arena)
+
+    let original_json = "{\"app\":\"Velo\",\"ver\":2,\"debug\":false,\"ratio\":0.75,\"null_val\":null,\"tags\":[\"fast\",\"compiled\"]}"
+    mut err = JsonParseError { message: slice_from_raw(null, 0), line: 0, col: 0 }
+    let dom1 = json_parse_str(@arena, original_json, @err)
+    if dom1 == null { return false }
+
+    // Serialize to compact JSON
+    let serialized = json_stringify(@arena, dom1)
+    if !slice_eq_str(serialized, original_json) { return false }
+
+    // Parse serialized string back into dom2
+    let dom2 = json_parse(@arena, serialized, @err)
+    if dom2 == null { return false }
+
+    // Assert structural and semantic equality
+    if !json_value_eq(dom1, dom2) { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_compact_primitives() {
+        println_str("FAIL: test_compact_primitives")
+        return 1
+    }
+    if !test_string_escapes() {
+        println_str("FAIL: test_string_escapes")
+        return 2
+    }
+    if !test_compact_collections() {
+        println_str("FAIL: test_compact_collections")
+        return 3
+    }
+    if !test_pretty_printing() {
+        println_str("FAIL: test_pretty_printing")
+        return 4
+    }
+    if !test_round_trip() {
+        println_str("FAIL: test_round_trip")
+        return 5
+    }
+
+    println_str("PASS: std.json.writer all tests passed")
+    return 0
+}
