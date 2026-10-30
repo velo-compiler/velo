@@ -1,0 +1,185 @@
+// Unit test suite for std.math.bits (pure Velo bit manipulation intrinsics).
+use "../../io/print.vl"
+use "../../math/bits.vl"
+
+act test_popcount() -> bool {
+    if popcount32(0 as u32) != (0 as u32) { return false }
+    if popcount32(1 as u32) != (1 as u32) { return false }
+    if popcount32(0xFFFFFFFF as u32) != (32 as u32) { return false }
+    if popcount32(0x55555555 as u32) != (16 as u32) { return false }
+    if popcount32(0xAAAAAAAA as u32) != (16 as u32) { return false }
+    if popcount32(0x12345678 as u32) != (13 as u32) { return false }
+
+    if popcount64(0 as u64) != (0 as u32) { return false }
+    if popcount64(1 as u64) != (1 as u32) { return false }
+    if popcount64(0xFFFFFFFFFFFFFFFF as u64) != (64 as u32) { return false }
+    if popcount64(0xAAAAAAAAAAAAAAAA as u64) != (32 as u32) { return false }
+    if popcount64(0x1234567812345678 as u64) != (26 as u32) { return false }
+
+    return true
+}
+
+act test_clz() -> bool {
+    if clz32(0 as u32) != (32 as u32) { return false }
+    if clz32(1 as u32) != (31 as u32) { return false }
+    if clz32(2 as u32) != (30 as u32) { return false }
+    if clz32(0x80000000 as u32) != (0 as u32) { return false }
+    if clz32(0x7FFFFFFF as u32) != (1 as u32) { return false }
+    if clz32(0x00010000 as u32) != (15 as u32) { return false }
+
+    if clz64(0 as u64) != (64 as u32) { return false }
+    if clz64(1 as u64) != (63 as u32) { return false }
+    if clz64(0x8000000000000000 as u64) != (0 as u32) { return false }
+    if clz64(0x7FFFFFFFFFFFFFFF as u64) != (1 as u32) { return false }
+    if clz64(0x0000000100000000 as u64) != (31 as u32) { return false }
+
+    return true
+}
+
+act test_ctz() -> bool {
+    if ctz32(0 as u32) != (32 as u32) { return false }
+    if ctz32(1 as u32) != (0 as u32) { return false }
+    if ctz32(2 as u32) != (1 as u32) { return false }
+    if ctz32(4 as u32) != (2 as u32) { return false }
+    if ctz32(0x80000000 as u32) != (31 as u32) { return false }
+    if ctz32(0x00010000 as u32) != (16 as u32) { return false }
+
+    if ctz64(0 as u64) != (64 as u32) { return false }
+    if ctz64(1 as u64) != (0 as u32) { return false }
+    if ctz64(2 as u64) != (1 as u32) { return false }
+    if ctz64(0x8000000000000000 as u64) != (63 as u32) { return false }
+    if ctz64(0x0000000100000000 as u64) != (32 as u32) { return false }
+
+    return true
+}
+
+act test_bswap() -> bool {
+    if bswap16(0x1234 as u16) != (0x3412 as u16) { return false }
+    if bswap16(0xABCD as u16) != (0xCDAB as u16) { return false }
+
+    if bswap32(0x12345678 as u32) != (0x78563412 as u32) { return false }
+    if bswap32(0xAABBCCDD as u32) != (0xDDCCBBAA as u32) { return false }
+
+    if bswap64(0x0123456789ABCDEF as u64) != (0xEFCDAB8967452301 as u64) { return false }
+
+    return true
+}
+
+act test_rotate() -> bool {
+    if rotl32(0x12345678 as u32, 0 as u32) != (0x12345678 as u32) { return false }
+    if rotl32(0x12345678 as u32, 4 as u32) != (0x23456781 as u32) { return false }
+    if rotr32(0x12345678 as u32, 0 as u32) != (0x12345678 as u32) { return false }
+    if rotr32(0x12345678 as u32, 4 as u32) != (0x81234567 as u32) { return false }
+    if rotr32(rotl32(0xDEADBEEF as u32, 13 as u32), 13 as u32) != (0xDEADBEEF as u32) { return false }
+
+    if rotl64(0x0123456789ABCDEF as u64, 8 as u32) != (0x23456789ABCDEF01 as u64) { return false }
+    if rotr64(0x0123456789ABCDEF as u64, 8 as u32) != (0xEF0123456789ABCD as u64) { return false }
+    if rotr64(rotl64(0x0123456789ABCDEF as u64, 27 as u32), 27 as u32) != (0x0123456789ABCDEF as u64) { return false }
+
+    return true
+}
+
+act test_pow2() -> bool {
+    if is_pow2_u32(0 as u32) { return false }
+    if not is_pow2_u32(1 as u32) { return false }
+    if not is_pow2_u32(2 as u32) { return false }
+    if is_pow2_u32(3 as u32) { return false }
+    if not is_pow2_u32(1024 as u32) { return false }
+    if is_pow2_u32(1025 as u32) { return false }
+    if not is_pow2_u32(0x80000000 as u32) { return false }
+
+    if is_pow2_u64(0 as u64) { return false }
+    if not is_pow2_u64(1 as u64) { return false }
+    if not is_pow2_u64(0x8000000000000000 as u64) { return false }
+    if is_pow2_u64(0xFFFFFFFFFFFFFFFF as u64) { return false }
+
+    if next_pow2_u32(0 as u32) != (1 as u32) { return false }
+    if next_pow2_u32(1 as u32) != (1 as u32) { return false }
+    if next_pow2_u32(2 as u32) != (2 as u32) { return false }
+    if next_pow2_u32(3 as u32) != (4 as u32) { return false }
+    if next_pow2_u32(1000 as u32) != (1024 as u32) { return false }
+    if next_pow2_u32(1024 as u32) != (1024 as u32) { return false }
+
+    if next_pow2_u64(0 as u64) != (1 as u64) { return false }
+    if next_pow2_u64(5 as u64) != (8 as u64) { return false }
+    if next_pow2_u64(10000000000 as u64) != (17179869184 as u64) { return false }
+
+    return true
+}
+
+act test_align() -> bool {
+    if align_up_u64(13 as u64, 8 as u64) != (16 as u64) { return false }
+    if align_down_u64(13 as u64, 8 as u64) != (8 as u64) { return false }
+    if align_up_u64(16 as u64, 8 as u64) != (16 as u64) { return false }
+    if align_down_u64(16 as u64, 8 as u64) != (16 as u64) { return false }
+
+    if align_up_u64(13 as u64, 5 as u64) != (15 as u64) { return false }
+    if align_down_u64(13 as u64, 5 as u64) != (10 as u64) { return false }
+
+    if align_up_u32(13 as u32, 8 as u32) != (16 as u32) { return false }
+    if align_down_u32(13 as u32, 8 as u32) != (8 as u32) { return false }
+
+    if align_up_u64(10 as u64, 0 as u64) != (10 as u64) { return false }
+    if align_up_u64(10 as u64, 1 as u64) != (10 as u64) { return false }
+    if align_down_u64(10 as u64, 0 as u64) != (10 as u64) { return false }
+
+    return true
+}
+
+act test_reverse_and_bitops() -> bool {
+    if reverse_bits32(0x80000000 as u32) != (1 as u32) { return false }
+    if reverse_bits32(1 as u32) != (0x80000000 as u32) { return false }
+    if reverse_bits64(1 as u64) != (0x8000000000000000 as u64) { return false }
+
+    if not bit_get_u32(10 as u32, 1 as u32) { return false }
+    if bit_get_u32(10 as u32, 0 as u32) { return false }
+    if bit_set_u32(0 as u32, 3 as u32) != (8 as u32) { return false }
+    if bit_clear_u32(15 as u32, 1 as u32) != (13 as u32) { return false }
+    if bit_toggle_u32(13 as u32, 1 as u32) != (15 as u32) { return false }
+
+    if not bit_get_u64(0x8000000000000000 as u64, 63 as u32) { return false }
+    if bit_set_u64(0 as u64, 40 as u32) != (1099511627776 as u64) { return false }
+    if bit_clear_u64(1099511627776 as u64, 40 as u32) != (0 as u64) { return false }
+    if bit_toggle_u64(0 as u64, 40 as u32) != (1099511627776 as u64) { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if not test_popcount() {
+        println_str("FAIL: test_popcount")
+        return 1
+    }
+    if not test_clz() {
+        println_str("FAIL: test_clz")
+        return 2
+    }
+    if not test_ctz() {
+        println_str("FAIL: test_ctz")
+        return 3
+    }
+    if not test_bswap() {
+        println_str("FAIL: test_bswap")
+        return 4
+    }
+    if not test_rotate() {
+        println_str("FAIL: test_rotate")
+        return 5
+    }
+    if not test_pow2() {
+        println_str("FAIL: test_pow2")
+        return 6
+    }
+    if not test_align() {
+        println_str("FAIL: test_align")
+        return 7
+    }
+    if not test_reverse_and_bitops() {
+        println_str("FAIL: test_reverse_and_bitops")
+        return 8
+    }
+
+    println_str("PASS: std.math.bits tests succeeded")
+    return 0
+}
+

@@ -1407,3 +1407,29 @@ flowchart TD
   - `bin/velo.exe run std/tests/time_module_import_test.vl` passed (`PASS: use std.time umbrella module verified`).
   - `bin/velo.exe run std/tests/std_module_import_test.vl` passed (`PASS: native use std.* imports succeeded`).
   - `python -m pytest tests/test_std_time.py` passed (5/5 passed in 5.91s).
+
+
+---
+
+### Phase 9: `std.math` (Zero-Dependency Pure-Velo Mathematics & Numerics)
+
+#### Task 9.1: Bit Manipulation & Intrinsics (`std/math/bits.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Low-level bitwise manipulation in Velo was limited to direct language operators (`&`, `|`, `^`, `~`, `<<`, `>>`). Velo lacked standard numerical intrinsics for population count (Hamming weight), leading/trailing zero counting, byte-order reversal (endian swapping), bitwise rotations, power-of-two detection/rounding, memory alignment calculations, and bit query/set/clear/toggle utilities in user-space standard library without depending on C `<immintrin.h>` or compiler intrinsics.
+* **Fix Applied**:
+  - Implemented `std/math/bits.vl` providing zero-dependency, constant-time, branch-free bitwise algorithms in pure Velo:
+    - Population counts: `popcount32` and `popcount64` using 32-bit and 64-bit SWAR (SIMD within a register) parallel addition masks.
+    - Zero counting: `clz32` and `clz64` (count leading zeros via bit smearing and popcount; handles 0 returning 32/64), `ctz32` and `ctz64` (count trailing zeros via two's complement lowest-set-bit isolation `x & (~x + 1)` and popcount).
+    - Byte swapping: `bswap16`, `bswap32`, and `bswap64` for big-endian/little-endian binary network and serialization encoding.
+    - Bit rotations: `rotl32`, `rotr32`, `rotl64`, `rotr64` with modulo bit-shift masking preventing undefined shift behavior on zero/full-width rotations.
+    - Power of 2: `is_pow2_u32` and `is_pow2_u64` via single-cycle `x & (x - 1) == 0` validation, and `next_pow2_u32` and `next_pow2_u64` via binary smearing.
+    - Alignment: `align_up_u32`, `align_down_u32`, `align_up_u64`, `align_down_u64` featuring fast bitwise masking for power-of-two alignments with Euclidean arithmetic fallback.
+    - Bit manipulation & reversal: `reverse_bits32`, `reverse_bits64`, `bit_get_u32/u64`, `bit_set_u32/u64`, `bit_clear_u32/u64`, and `bit_toggle_u32/u64`.
+  - Added comprehensive test suite `std/tests/math/bits_test.vl` exercising exhaustive edge cases across all bitwise functions.
+  - Added pytest test case `test_std_math_bits` in `tests/test_std_math.py`.
+* **Residual Limitation**:
+  - Pure-Velo integer arithmetic, saturating math, GCD/LCM, and integer square roots (`std/math/int.vl`) will be implemented in Task 9.2.
+* **Verification**:
+  - `bin/velo.exe run std/tests/math/bits_test.vl` passed (`PASS: std.math.bits tests succeeded`).
+  - `python -m pytest tests/test_std_math.py` passed (1/1 passed in 1.55s).
+  - Full pytest regression suite passed (473/473 passed in 329s).
