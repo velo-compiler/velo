@@ -1,0 +1,244 @@
+// Pure Velo structured interpolation buffer formatter (zero C runtime dependencies).
+// Writes formatted primitives, booleans, integers in multiple bases, and padded fields
+// directly into a StrBuilder with zero intermediate heap allocations.
+use "../str/slice.vl"
+use "../str/builder.vl"
+use "itoa.vl"
+
+// Writes a string slice into the builder.
+act fmt_write_str(sb: @StrBuilder, s: StrSlice) {
+    sb_append_slice(sb, s)
+}
+
+// Writes a string literal into the builder.
+act fmt_write_str_lit(sb: @StrBuilder, s: string) {
+    sb_append_slice(sb, slice_from_str(s))
+}
+
+// Writes a single byte into the builder.
+act fmt_write_byte(sb: @StrBuilder, b: u8) {
+    sb_append_byte(sb, b)
+}
+
+// Writes a Unicode code point encoded as UTF-8 (1..4 bytes) into the builder.
+act fmt_write_rune(sb: @StrBuilder, rune: u32) {
+    sb_append_rune(sb, rune)
+}
+
+// Writes a signed 64-bit integer formatted as decimal digits into the builder.
+act fmt_write_i64(sb: @StrBuilder, val: i64) {
+    sb_append_i64(sb, val)
+}
+
+// Writes an unsigned 64-bit integer formatted as decimal digits into the builder.
+act fmt_write_u64(sb: @StrBuilder, val: u64) {
+    sb_append_u64(sb, val)
+}
+
+// Writes boolean text ("true" or "false") into the builder.
+act fmt_write_bool(sb: @StrBuilder, val: bool) {
+    if val {
+        sb_append_slice(sb, slice_from_str("true"))
+    } else {
+        sb_append_slice(sb, slice_from_str("false"))
+    }
+}
+
+// Appends count repetitions of pad_char into the builder.
+act fmt_write_repeat(sb: @StrBuilder, pad_char: u8, count: usize) {
+    if sb == null or count == 0 { return }
+    sb_ensure_capacity(sb, count)
+    mut i: usize = 0
+    loop i < count {
+        sb.buffer[sb.len] = pad_char
+        sb.len += 1
+        i += 1
+    }
+}
+
+// Writes a string slice with padding to reach a minimum field width.
+// If right_align is true, pad characters precede the text; if false, they follow.
+act fmt_write_padded(sb: @StrBuilder, s: StrSlice, width: usize, pad_char: u8, right_align: bool) {
+    if sb == null { return }
+    if s.len >= width {
+        sb_append_slice(sb, s)
+        return
+    }
+    let diff = width - s.len
+    if right_align {
+        fmt_write_repeat(sb, pad_char, diff)
+        sb_append_slice(sb, s)
+    } else {
+        sb_append_slice(sb, s)
+        fmt_write_repeat(sb, pad_char, diff)
+    }
+}
+
+// Writes a 64-bit unsigned integer in hexadecimal with optional "0x"/"0X" prefix.
+act fmt_write_hex(sb: @StrBuilder, val: u64, upper: bool, prefix: bool) {
+    if sb == null { return }
+    if prefix {
+        if upper {
+            sb_append_slice(sb, slice_from_str("0X"))
+        } else {
+            sb_append_slice(sb, slice_from_str("0x"))
+        }
+    }
+    if val == 0 as u64 {
+        sb_append_byte(sb, 48 as u8)
+        return
+    }
+    mut n = val
+    sb_ensure_capacity(sb, 16)
+    let start_idx = sb.len
+    mut alpha_base: u64 = 87 as u64
+    if upper {
+        alpha_base = 55 as u64
+    }
+    loop n > 0 as u64 {
+        let rem = n & 15 as u64
+        if rem < 10 as u64 {
+            sb.buffer[sb.len] = (48 as u64 + rem) as u8
+        } else {
+            sb.buffer[sb.len] = (alpha_base + rem) as u8
+        }
+        sb.len += 1
+        n = n >> 4
+    }
+    mut left = start_idx
+    mut right = sb.len - 1
+    loop left < right {
+        let tmp = sb.buffer[left]
+        sb.buffer[left] = sb.buffer[right]
+        sb.buffer[right] = tmp
+        left += 1
+        right -= 1
+    }
+}
+
+// Writes a 64-bit unsigned integer in binary with optional "0b" prefix.
+act fmt_write_bin(sb: @StrBuilder, val: u64, prefix: bool) {
+    if sb == null { return }
+    if prefix {
+        sb_append_slice(sb, slice_from_str("0b"))
+    }
+    if val == 0 as u64 {
+        sb_append_byte(sb, 48 as u8)
+        return
+    }
+    mut n = val
+    sb_ensure_capacity(sb, 64)
+    let start_idx = sb.len
+    loop n > 0 as u64 {
+        sb.buffer[sb.len] = (48 as u64 + (n & 1 as u64)) as u8
+        sb.len += 1
+        n = n >> 1
+    }
+    mut left = start_idx
+    mut right = sb.len - 1
+    loop left < right {
+        let tmp = sb.buffer[left]
+        sb.buffer[left] = sb.buffer[right]
+        sb.buffer[right] = tmp
+        left += 1
+        right -= 1
+    }
+}
+
+// Writes a 64-bit unsigned integer in octal with optional "0o" prefix.
+act fmt_write_oct(sb: @StrBuilder, val: u64, prefix: bool) {
+    if sb == null { return }
+    if prefix {
+        sb_append_slice(sb, slice_from_str("0o"))
+    }
+    if val == 0 as u64 {
+        sb_append_byte(sb, 48 as u8)
+        return
+    }
+    mut n = val
+    sb_ensure_capacity(sb, 24)
+    let start_idx = sb.len
+    loop n > 0 as u64 {
+        sb.buffer[sb.len] = (48 as u64 + (n & 7 as u64)) as u8
+        sb.len += 1
+        n = n >> 3
+    }
+    mut left = start_idx
+    mut right = sb.len - 1
+    loop left < right {
+        let tmp = sb.buffer[left]
+        sb.buffer[left] = sb.buffer[right]
+        sb.buffer[right] = tmp
+        left += 1
+        right -= 1
+    }
+}
+
+// Writes a signed 64-bit integer padded to minimum width.
+// If pad_char is '0' and val is negative, the '-' sign precedes the zero padding.
+act fmt_write_i64_padded(sb: @StrBuilder, val: i64, width: usize, pad_char: u8) {
+    if sb == null { return }
+    let before_len = sb.len
+    sb_append_i64(sb, val)
+    let added_len = sb.len - before_len
+    if added_len >= width {
+        return
+    }
+    let diff = width - added_len
+    sb_ensure_capacity(sb, diff)
+    if val < 0 as i64 and pad_char == 48 as u8 {
+        mut src_pos = sb.len
+        mut dst_pos = sb.len + diff
+        loop src_pos > before_len + 1 {
+            src_pos -= 1
+            dst_pos -= 1
+            sb.buffer[dst_pos] = sb.buffer[src_pos]
+        }
+        mut p = before_len + 1
+        loop p < before_len + 1 + diff {
+            sb.buffer[p] = 48 as u8
+            p += 1
+        }
+        sb.len += diff
+    } else {
+        mut src_pos = sb.len
+        mut dst_pos = sb.len + diff
+        loop src_pos > before_len {
+            src_pos -= 1
+            dst_pos -= 1
+            sb.buffer[dst_pos] = sb.buffer[src_pos]
+        }
+        mut p = before_len
+        loop p < before_len + diff {
+            sb.buffer[p] = pad_char
+            p += 1
+        }
+        sb.len += diff
+    }
+}
+
+// Writes an unsigned 64-bit integer padded to minimum width.
+act fmt_write_u64_padded(sb: @StrBuilder, val: u64, width: usize, pad_char: u8) {
+    if sb == null { return }
+    let before_len = sb.len
+    sb_append_u64(sb, val)
+    let added_len = sb.len - before_len
+    if added_len >= width {
+        return
+    }
+    let diff = width - added_len
+    sb_ensure_capacity(sb, diff)
+    mut src_pos = sb.len
+    mut dst_pos = sb.len + diff
+    loop src_pos > before_len {
+        src_pos -= 1
+        dst_pos -= 1
+        sb.buffer[dst_pos] = sb.buffer[src_pos]
+    }
+    mut p = before_len
+    loop p < before_len + diff {
+        sb.buffer[p] = pad_char
+        p += 1
+    }
+    sb.len += diff
+}

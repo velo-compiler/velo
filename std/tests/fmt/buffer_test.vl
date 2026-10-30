@@ -1,0 +1,148 @@
+// Unit test suite for std.fmt.buffer (composite interpolation and padded formatting).
+use "../../mem/arena.vl"
+use "../../str/slice.vl"
+use "../../str/builder.vl"
+use "../../fmt/buffer.vl"
+
+act test_composite_formatting() -> bool {
+    mut arena = arena_init(4096)
+    mut sb = sb_init(@arena, 32)
+
+    fmt_write_str_lit(@sb, "status: ")
+    fmt_write_i64(@sb, 200 as i64)
+    fmt_write_str_lit(@sb, " OK, active: ")
+    fmt_write_bool(@sb, true)
+    fmt_write_str_lit(@sb, ", code: ")
+    fmt_write_i64(@sb, -404 as i64)
+    fmt_write_str_lit(@sb, ", icon: ")
+    fmt_write_rune(@sb, 0x1F680 as u32) // 🚀
+
+    let res = sb_to_slice(@sb)
+    let expected = "status: 200 OK, active: true, code: -404, icon: 🚀"
+    if !slice_eq_str(res, expected) {
+        arena_free(@arena); return false
+    }
+
+    arena_free(@arena)
+    return true
+}
+
+act test_padded_strings() -> bool {
+    mut arena = arena_init(4096)
+    mut sb = sb_init(@arena, 32)
+
+    // Right-aligned padded with spaces
+    fmt_write_padded(@sb, slice_from_str("data"), 8, 32 as u8, true)
+    if !slice_eq_str(sb_to_slice(@sb), "    data") {
+        arena_free(@arena); return false
+    }
+
+    sb_reset(@sb)
+    // Left-aligned padded with dots
+    fmt_write_padded(@sb, slice_from_str("item"), 8, 46 as u8, false) // '.' = 46
+    if !slice_eq_str(sb_to_slice(@sb), "item....") {
+        arena_free(@arena); return false
+    }
+
+    sb_reset(@sb)
+    // Width already exceeded
+    fmt_write_padded(@sb, slice_from_str("very_long_identifier"), 5, 32 as u8, true)
+    if !slice_eq_str(sb_to_slice(@sb), "very_long_identifier") {
+        arena_free(@arena); return false
+    }
+
+    arena_free(@arena)
+    return true
+}
+
+act test_padded_integers() -> bool {
+    mut arena = arena_init(4096)
+    mut sb = sb_init(@arena, 32)
+
+    // Positive zero-padded (%04d)
+    fmt_write_i64_padded(@sb, 7 as i64, 4, 48 as u8)
+    if !slice_eq_str(sb_to_slice(@sb), "0007") {
+        arena_free(@arena); return false
+    }
+
+    sb_reset(@sb)
+    // Negative zero-padded (%06d of -404 -> "-00404")
+    fmt_write_i64_padded(@sb, -404 as i64, 6, 48 as u8)
+    if !slice_eq_str(sb_to_slice(@sb), "-00404") {
+        arena_free(@arena); return false
+    }
+
+    sb_reset(@sb)
+    // Negative space-padded (%6d of -12 -> "   -12")
+    fmt_write_i64_padded(@sb, -12 as i64, 6, 32 as u8)
+    if !slice_eq_str(sb_to_slice(@sb), "   -12") {
+        arena_free(@arena); return false
+    }
+
+    sb_reset(@sb)
+    // Unsigned zero-padded
+    fmt_write_u64_padded(@sb, 42 as u64, 5, 48 as u8)
+    if !slice_eq_str(sb_to_slice(@sb), "00042") {
+        arena_free(@arena); return false
+    }
+
+    arena_free(@arena)
+    return true
+}
+
+act test_hex_bin_oct() -> bool {
+    mut arena = arena_init(4096)
+    mut sb = sb_init(@arena, 32)
+
+    // Hex with prefix upper
+    fmt_write_hex(@sb, 0xDEADBEEF as u64, true, true)
+    if !slice_eq_str(sb_to_slice(@sb), "0XDEADBEEF") {
+        arena_free(@arena); return false
+    }
+
+    sb_reset(@sb)
+    // Hex with prefix lower
+    fmt_write_hex(@sb, 0xCAFE as u64, false, true)
+    if !slice_eq_str(sb_to_slice(@sb), "0xcafe") {
+        arena_free(@arena); return false
+    }
+
+    sb_reset(@sb)
+    // Binary with prefix
+    fmt_write_bin(@sb, 42 as u64, true)
+    if !slice_eq_str(sb_to_slice(@sb), "0b101010") {
+        arena_free(@arena); return false
+    }
+
+    sb_reset(@sb)
+    // Octal with prefix
+    fmt_write_oct(@sb, 493 as u64, true)
+    if !slice_eq_str(sb_to_slice(@sb), "0o755") {
+        arena_free(@arena); return false
+    }
+
+    arena_free(@arena)
+    return true
+}
+
+act main() -> i32 {
+    if !test_composite_formatting() {
+        io.println("FAIL: test_composite_formatting")
+        return 1
+    }
+    if !test_padded_strings() {
+        io.println("FAIL: test_padded_strings")
+        return 1
+    }
+    if !test_padded_integers() {
+        io.println("FAIL: test_padded_integers")
+        return 1
+    }
+    if !test_hex_bin_oct() {
+        io.println("FAIL: test_hex_bin_oct")
+        return 1
+    }
+
+    io.println("PASS: std.fmt.buffer all assertions succeeded")
+    return 0
+}

@@ -973,6 +973,21 @@ flowchart TD
   - `bin/velo.exe run std/tests/fmt/atoi_test.vl` passed u64/i64 parsing, whitespace trimming, INT64_MIN/MAX boundaries, exact overflow rejections, radix 2..36 decoding, hex/bin/oct prefixes, and 32-bit range clamp checks.
   - `python -m pytest tests/test_std_fmt.py` passed (2/2 passed).
 
+#### Task 3.3: Interpolation Buffer Formatter (`std/fmt/buffer.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Complex string formatting, padded columns, and composite messages in Velo required libc `snprintf` or intermediate allocations, with no unified writer formatting directly into regional `StrBuilder` buffers.
+* **Fix Applied**:
+  - Implemented `std/fmt/buffer.vl` providing `fmt_write_str`, `fmt_write_str_lit`, `fmt_write_byte`, `fmt_write_rune`, `fmt_write_i64`, `fmt_write_u64`, `fmt_write_bool`, `fmt_write_repeat`, `fmt_write_padded`, `fmt_write_hex`, `fmt_write_bin`, `fmt_write_oct`, `fmt_write_i64_padded`, and `fmt_write_u64_padded`.
+  - Zero-allocation direct writing into `StrBuilder` buffers with in-place reverse and shift optimizations.
+  - Padded integer formatting supporting `printf %04d` semantics where negative numbers retain leading `-` before zeroes (e.g. `fmt_write_i64_padded(-404, 6, '0')` yields `"-00404"`).
+  - Added unit test suite `std/tests/fmt/buffer_test.vl` and pytest integration in `tests/test_std_fmt.py`.
+* **Residual Limitation**:
+  - Floating-point `f64` decimal formatting and parsing will be implemented in Task 3.4.
+* **Verification**:
+  - `bin/velo.exe run std/tests/fmt/buffer_test.vl` passed composite message interpolation, left/right string padding, padded integer formatting (`%04d` equivalent), and prefixed hex/bin/oct writers.
+  - `python -m pytest tests/test_std_fmt.py` passed (3/3 passed).
+
+
 
 
 
