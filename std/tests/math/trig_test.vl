@@ -1,0 +1,133 @@
+// Unit test suite for std.math.trig (transcendental & trigonometry functions).
+use "../../io/print.vl"
+use "../../math/float.vl"
+use "../../math/trig.vl"
+
+act test_roots() -> bool {
+    if sqrt_f64(0.0) != 0.0 { return false }
+    if sqrt_f64(4.0) != 2.0 { return false }
+    if sqrt_f64(9.0) != 3.0 { return false }
+
+    let s2 = sqrt_f64(2.0)
+    if abs_f64(s2 * s2 - 2.0) > 0.00001 { return false }
+
+    if not is_nan_f64(sqrt_f64(-1.0)) { return false }
+
+    let cb27 = cbrt_f64(27.0)
+    if abs_f64(cb27 - 3.0) > 0.00001 { return false }
+
+    let cb_neg27 = cbrt_f64(-27.0)
+    if abs_f64(cb_neg27 - (-3.0)) > 0.00001 { return false }
+
+    if cbrt_f64(0.0) != 0.0 { return false }
+
+    if abs_f64(hypot_f64(3.0, 4.0) - 5.0) > 0.00001 { return false }
+    if abs_f64(hypot_f64(5.0, 12.0) - 13.0) > 0.00001 { return false }
+
+    return true
+}
+
+act test_trig() -> bool {
+    if sin_f64(0.0) != 0.0 { return false }
+
+    let s_half_pi = sin_f64(math_pi() / 2.0)
+    if abs_f64(s_half_pi - 1.0) > 0.00001 { return false }
+
+    let s_pi = sin_f64(math_pi())
+    if abs_f64(s_pi) > 0.00001 { return false }
+
+    let c0 = cos_f64(0.0)
+    if abs_f64(c0 - 1.0) > 0.00001 { return false }
+
+    let c_pi = cos_f64(math_pi())
+    if abs_f64(c_pi - (-1.0)) > 0.00001 { return false }
+
+    if tan_f64(0.0) != 0.0 { return false }
+
+    let t45 = tan_f64(math_pi() / 4.0)
+    if abs_f64(t45 - 1.0) > 0.0001 { return false }
+
+    return true
+}
+
+act test_inv_trig() -> bool {
+    if atan_f64(0.0) != 0.0 { return false }
+
+    let target_45 = math_pi() / 4.0
+    let at1 = atan_f64(1.0)
+    if abs_f64(at1 - target_45) > 0.0001 { return false }
+
+    let at2 = atan2_f64(1.0, 1.0)
+    if abs_f64(at2 - target_45) > 0.0001 { return false }
+
+    if asin_f64(0.0) != 0.0 { return false }
+
+    let target_90 = math_pi() / 2.0
+    let as1 = asin_f64(1.0)
+    if abs_f64(as1 - target_90) > 0.0001 { return false }
+
+    if acos_f64(1.0) != 0.0 { return false }
+
+    let ac0 = acos_f64(0.0)
+    if abs_f64(ac0 - target_90) > 0.0001 { return false }
+
+    return true
+}
+
+act test_exp_log() -> bool {
+    if exp_f64(0.0) != 1.0 { return false }
+
+    let e = exp_f64(1.0)
+    if abs_f64(e - math_e()) > 0.00001 { return false }
+
+    if ln_f64(1.0) != 0.0 { return false }
+
+    let lne = ln_f64(math_e())
+    if abs_f64(lne - 1.0) > 0.00001 { return false }
+
+    let l2 = log2_f64(8.0)
+    if abs_f64(l2 - 3.0) > 0.00001 { return false }
+
+    let l10 = log10_f64(100.0)
+    if abs_f64(l10 - 2.0) > 0.00001 { return false }
+
+    return true
+}
+
+act test_pow() -> bool {
+    if pow_f64(2.0, 0.0) != 1.0 { return false }
+    if pow_f64(2.0, 10.0) != 1024.0 { return false }
+    if pow_f64(10.0, 3.0) != 1000.0 { return false }
+    if pow_f64(2.0, -2.0) != 0.25 { return false }
+
+    let p_half = pow_f64(4.0, 0.5)
+    if abs_f64(p_half - 2.0) > 0.00001 { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if not test_roots() {
+        println_str("FAIL: test_roots")
+        return 1
+    }
+    if not test_trig() {
+        println_str("FAIL: test_trig")
+        return 2
+    }
+    if not test_inv_trig() {
+        println_str("FAIL: test_inv_trig")
+        return 3
+    }
+    if not test_exp_log() {
+        println_str("FAIL: test_exp_log")
+        return 4
+    }
+    if not test_pow() {
+        println_str("FAIL: test_pow")
+        return 5
+    }
+
+    println_str("PASS: std.math.trig tests succeeded")
+    return 0
+}

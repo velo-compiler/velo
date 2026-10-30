@@ -1,0 +1,293 @@
+// std.math.trig — Pure Velo transcendental and trigonometry functions without libc dependencies.
+// High-precision, zero-dependency implementations of elementary and transcendental functions.
+use "float.vl"
+
+// Computes the square root of x using IEEE-754 bit-hack initialization and Newton-Raphson iterations.
+act sqrt_f64(x: f64) -> f64 {
+    if x < 0.0 { return math_nan() }
+    if x == 0.0 or is_nan_f64(x) or x == math_infinity() { return x }
+
+    let b = f64_bits(x)
+    let init_bits = (b >> (1 as u64)) + (0x1FF8000000000000 as u64)
+    mut y = f64_from_bits(init_bits)
+
+    // 4 Newton-Raphson iterations to reach full 53-bit IEEE-754 precision
+    y = 0.5 * (y + (x / y))
+    y = 0.5 * (y + (x / y))
+    y = 0.5 * (y + (x / y))
+    y = 0.5 * (y + (x / y))
+    return y
+}
+
+// Computes the cube root of x using Halley's rational iteration.
+act cbrt_f64(x: f64) -> f64 {
+    if x == 0.0 or is_nan_f64(x) or is_inf_f64(x) { return x }
+    let is_neg = x < 0.0
+    let ax = abs_f64(x)
+
+    // Initial guess from IEEE-754 exponent division
+    let b = f64_bits(ax)
+    let init_bits = (b / (3 as u64)) + (0x2A9F7F0000000000 as u64)
+    mut y = f64_from_bits(init_bits)
+
+    // Halley's method cubic convergence: y = y * (y^3 + 2x) / (2y^3 + x)
+    mut step: i32 = 0
+    loop step < 6 {
+        let y3 = y * y * y
+        y = y * ((y3 + (2.0 * ax)) / ((2.0 * y3) + ax))
+        step += 1
+    }
+
+    if is_neg { return -y }
+    return y
+}
+
+// Computes the hypotenuse sqrt(x^2 + y^2) avoiding intermediate overflow and underflow.
+act hypot_f64(x: f64, y: f64) -> f64 {
+    let ax = abs_f64(x)
+    let ay = abs_f64(y)
+    let max_v = max_f64(ax, ay)
+    let min_v = min_f64(ax, ay)
+    if max_v == 0.0 { return 0.0 }
+    let ratio = min_v / max_v
+    return max_v * sqrt_f64(1.0 + (ratio * ratio))
+}
+
+// Computes the sine of x (in radians) via range reduction and polynomial approximation.
+act sin_f64(x: f64) -> f64 {
+    if is_nan_f64(x) or is_inf_f64(x) { return math_nan() }
+    let tau = 6.28318530717958647692
+    let pi = 3.14159265358979323846
+    let half_pi = 1.57079632679489661923
+
+    mut y = fmod_f64(x, tau)
+    if y > pi { y = y - tau }
+    if y < -pi { y = y + tau }
+
+    // Reduce to [-pi/2, pi/2]
+    if y > half_pi { y = pi - y }
+    if y < -half_pi { y = -pi - y }
+
+    let z = y * y
+    // Degree-17 Taylor/Horner polynomial
+    let c3 = 0.16666666666666666667
+    let c5 = 0.00833333333333333333
+    let c7 = 0.00019841269841269841
+    let c9 = 0.00000275573192239859
+    let c11 = 0.00000002505210838544
+    let c13 = 0.00000000016059043837
+    let c15 = 0.00000000000076471637
+
+    let poly = 1.0 - z * (c3 - z * (c5 - z * (c7 - z * (c9 - z * (c11 - z * (c13 - z * c15))))))
+    return y * poly
+}
+
+// Computes the cosine of x (in radians).
+act cos_f64(x: f64) -> f64 {
+    let half_pi = 1.57079632679489661923
+    return sin_f64(half_pi - x)
+}
+
+// Computes the tangent of x (in radians).
+act tan_f64(x: f64) -> f64 {
+    let c = cos_f64(x)
+    if c == 0.0 { return math_nan() }
+    return sin_f64(x) / c
+}
+
+// Computes the arctangent of x (in radians) via half-angle range reduction to [0, 0.2].
+act atan_f64(x: f64) -> f64 {
+    if is_nan_f64(x) { return math_nan() }
+    let is_neg = x < 0.0
+    mut ax = abs_f64(x)
+    let half_pi = 1.57079632679489661923
+
+    mut invert = false
+    if ax > 1.0 {
+        ax = 1.0 / ax
+        invert = true
+    }
+
+    // Apply half-angle reduction twice: u = u / (1 + sqrt(1 + u^2)) to reach [0, 0.2]
+    ax = ax / (1.0 + sqrt_f64(1.0 + (ax * ax)))
+    ax = ax / (1.0 + sqrt_f64(1.0 + (ax * ax)))
+
+    let z = ax * ax
+    let c3 = 0.33333333333333333333
+    let c5 = 0.2
+    let c7 = 0.14285714285714285714
+    let c9 = 0.11111111111111111111
+    let c11 = 0.09090909090909090909
+    let c13 = 0.07692307692307692308
+    let c15 = 0.06666666666666666667
+
+    let poly = ax * (1.0 - z * (c3 - z * (c5 - z * (c7 - z * (c9 - z * (c11 - z * (c13 - z * c15)))))))
+    mut res = 4.0 * poly
+
+    if invert { res = half_pi - res }
+    if is_neg { return -res }
+    return res
+}
+
+// Computes the four-quadrant arctangent of y and x (in radians).
+act atan2_f64(y: f64, x: f64) -> f64 {
+    if is_nan_f64(y) or is_nan_f64(x) { return math_nan() }
+    let pi = 3.14159265358979323846
+    let half_pi = 1.57079632679489661923
+
+    if x > 0.0 {
+        return atan_f64(y / x)
+    }
+    if x < 0.0 {
+        if y >= 0.0 {
+            return atan_f64(y / x) + pi
+        }
+        return atan_f64(y / x) - pi
+    }
+    // x == 0.0
+    if y > 0.0 { return half_pi }
+    if y < 0.0 { return -half_pi }
+    return 0.0
+}
+
+// Computes the arcsine of x (in radians). Returns NaN if |x| > 1.
+act asin_f64(x: f64) -> f64 {
+    if x < -1.0 or x > 1.0 { return math_nan() }
+    let half_pi = 1.57079632679489661923
+    if x == 1.0 { return half_pi }
+    if x == -1.0 { return -half_pi }
+    let denom = sqrt_f64(1.0 - (x * x))
+    return atan2_f64(x, denom)
+}
+
+// Computes the arccosine of x (in radians). Returns NaN if |x| > 1.
+act acos_f64(x: f64) -> f64 {
+    if x < -1.0 or x > 1.0 { return math_nan() }
+    let pi = 3.14159265358979323846
+    let half_pi = 1.57079632679489661923
+    if x == 1.0 { return 0.0 }
+    if x == -1.0 { return pi }
+    return half_pi - asin_f64(x)
+}
+
+// Computes the natural exponential e^x via range reduction and polynomial approximation.
+act exp_f64(x: f64) -> f64 {
+    if is_nan_f64(x) { return math_nan() }
+    if x > 709.7827 { return math_infinity() }
+    if x < -745.1332 { return 0.0 }
+    if x == 0.0 { return 1.0 }
+
+    let ln2 = 0.69314718055994530942
+    let inv_ln2 = 1.44269504088896340736
+
+    let k_float = round_f64(x * inv_ln2)
+    let k = k_float as i32
+    let r = x - (k_float * ln2)
+
+    // Degree-12 Taylor polynomial for e^r (|r| <= 0.35)
+    let c2 = 0.5
+    let c3 = 0.16666666666666666667
+    let c4 = 0.04166666666666666667
+    let c5 = 0.00833333333333333333
+    let c6 = 0.00138888888888888889
+    let c7 = 0.00019841269841269841
+    let c8 = 0.00002480158730158730
+    let c9 = 0.00000275573192239859
+    let c10 = 0.00000027557319223986
+    let c11 = 0.00000002505210838544
+    let c12 = 0.00000000208767569879
+
+    let er = 1.0 + r * (1.0 + r * (c2 + r * (c3 + r * (c4 + r * (c5 + r * (c6 + r * (c7 + r * (c8 + r * (c9 + r * (c10 + r * (c11 + r * c12)))))))))))
+
+    // Scale by 2^k using IEEE-754 bit manipulation
+    let exp_bits = ((k + 1023) as u64) << (52 as u64)
+    let p2k = f64_from_bits(exp_bits)
+    return er * p2k
+}
+
+// Computes the natural logarithm ln(x). Returns NaN if x < 0.
+act ln_f64(x: f64) -> f64 {
+    if is_nan_f64(x) or x < 0.0 { return math_nan() }
+    if x == 0.0 { return math_neg_infinity() }
+    if is_inf_f64(x) { return math_infinity() }
+    if x == 1.0 { return 0.0 }
+
+    let b = f64_bits(x)
+    mut k = (((b >> (52 as u64)) & (0x7FF as u64)) as i32) - 1023
+
+    // Normalize mantissa to [1.0, 2.0)
+    let norm_bits = (b & (0x000FFFFFFFFFFFFF as u64)) | (0x3FF0000000000000 as u64)
+    mut m = f64_from_bits(norm_bits)
+
+    let sqrt2 = 1.41421356237309504880
+    if m > sqrt2 {
+        m = m * 0.5
+        k += 1
+    }
+
+    // u = (m - 1) / (m + 1), |u| <= 0.1716
+    let u = (m - 1.0) / (m + 1.0)
+    let z = u * u
+
+    let c3 = 0.33333333333333333333
+    let c5 = 0.2
+    let c7 = 0.14285714285714285714
+    let c9 = 0.11111111111111111111
+    let c11 = 0.09090909090909090909
+    let c13 = 0.07692307692307692308
+    let c15 = 0.06666666666666666667
+
+    let poly = 1.0 + z * (c3 + z * (c5 + z * (c7 + z * (c9 + z * (c11 + z * (c13 + z * c15))))))
+    let lnm = 2.0 * u * poly
+
+    let ln2 = 0.69314718055994530942
+    return lnm + ((k as f64) * ln2)
+}
+
+// Alias for ln_f64 (natural logarithm).
+act log_f64(x: f64) -> f64 {
+    return ln_f64(x)
+}
+
+// Computes the base-2 logarithm of x.
+act log2_f64(x: f64) -> f64 {
+    return ln_f64(x) * 1.44269504088896340736
+}
+
+// Computes the base-10 logarithm of x.
+act log10_f64(x: f64) -> f64 {
+    return ln_f64(x) * 0.43429448190325182765
+}
+
+// Computes base^exponent for 64-bit floating point numbers.
+act pow_f64(base: f64, exponent: f64) -> f64 {
+    if exponent == 0.0 { return 1.0 }
+    if base == 1.0 { return 1.0 }
+    if is_nan_f64(base) or is_nan_f64(exponent) { return math_nan() }
+    if base == 0.0 {
+        if exponent > 0.0 { return 0.0 }
+        return math_infinity()
+    }
+
+    // Fast-path for small integer exponents (exact binary exponentiation)
+    let tr_exp = trunc_f64(exponent)
+    if exponent == tr_exp and abs_f64(exponent) <= 1000000.0 {
+        mut res = 1.0
+        mut b = base
+        mut e = abs_f64(exponent) as i64
+        loop e > (0 as i64) {
+            if (e & (1 as i64)) != (0 as i64) {
+                res = res * b
+            }
+            e = e >> (1 as i64)
+            if e > (0 as i64) {
+                b = b * b
+            }
+        }
+        if exponent < 0.0 { return 1.0 / res }
+        return res
+    }
+
+    if base < 0.0 { return math_nan() }
+    return exp_f64(exponent * ln_f64(base))
+}

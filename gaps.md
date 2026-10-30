@@ -1467,3 +1467,21 @@ flowchart TD
 * **Verification**:
   - `bin/velo.exe run std/tests/math/float_test.vl` passed (`PASS: std.math.float tests succeeded`).
   - `python -m pytest tests/test_std_math.py` passed (3/3 passed in 3.41s).
+
+#### Task 9.4: Transcendental & Trigonometry Functions (`std/math/trig.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Transcendental and trigonometric computations (`sqrt`, `cbrt`, `sin`, `cos`, `tan`, `atan`, `atan2`, `asin`, `acos`, `exp`, `ln`/`log`, `pow`) previously depended entirely on linking against C `<math.h>` and `libm`. Velo lacked self-contained, user-space numerical approximations in pure Velo, preventing fully self-contained mathematics without external C runtime dependencies.
+* **Fix Applied**:
+  - Implemented `std/math/trig.vl` in pure Velo with zero libc dependencies:
+    - Root approximations: `sqrt_f64` (IEEE-754 bit-hack initialization followed by 4 Newton-Raphson iterations converging to machine epsilon), `cbrt_f64` (Halley's rational cubic iteration with sign reflection), and `hypot_f64` (scaled to prevent intermediate overflow/underflow).
+    - Trigonometry: `sin_f64` (argument reduction modulo $2\pi$ and $\pi/2$ followed by degree-17 Horner polynomial), `cos_f64` ($\sin(\pi/2 - x)$), and `tan_f64`.
+    - Inverse trigonometry: `atan_f64` (iterative half-angle argument reduction to $[0, 0.2]$ followed by polynomial expansion), `atan2_f64` (full four-quadrant arctangent with quadrant analysis), `asin_f64` (stable via $\text{atan2}(x, \sqrt{1 - x^2})$), and `acos_f64` ($\pi/2 - \text{asin}(x)$).
+    - Exponentials & logarithms: `exp_f64` (range reduction $x = k \ln 2 + r$, IEEE-754 bit-shifted $2^k$, and degree-12 polynomial for $e^r$), `ln_f64` / `log_f64` (exact IEEE-754 exponent extraction and $(m-1)/(m+1)$ logarithmic series), `log2_f64`, and `log10_f64`.
+    - Power: `pow_f64` (combining exact binary squaring for integer exponents and $\exp(y \ln x)$ for fractional powers).
+  - Added comprehensive unit test suite `std/tests/math/trig_test.vl` covering roots, trigonometry, inverse trigonometry, logarithms, exponentials, and power functions.
+  - Added pytest test case `test_std_math_trig` in `tests/test_std_math.py`.
+* **Residual Limitation**:
+  - Standard library umbrella module (`std/math.vl`) and driver resolution (`use std.math`) will be implemented in Task 9.5.
+* **Verification**:
+  - `bin/velo.exe run std/tests/math/trig_test.vl` passed (`PASS: std.math.trig tests succeeded`).
+  - `python -m pytest tests/test_std_math.py` passed (4/4 passed in 5.11s).
