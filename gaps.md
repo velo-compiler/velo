@@ -1560,7 +1560,37 @@ flowchart TD
   - Added comprehensive test suite `std/tests/os/process_test.vl` exercising synchronous exit codes (0, non-zero), `os_system`, asynchronous spawn and wait, non-blocking polling (`try_wait`), process termination (`kill`), `argv`-based execution, and invalid/null error handling.
   - Added pytest test case `test_std_os_process` in `tests/test_std_os.py`.
 * **Residual Limitation**:
-  - Anonymous pipes and process output capture (`std/os/pipe.vl`) will be implemented in Task 10.4.
+  - Anonymous pipes and process output capture (`std/os/pipe.vl`) completed in Task 10.4. Umbrella module integration, standard resolution (`use std.os`), and compiler driver migration will be finalized in Task 10.5.
 * **Verification**:
   - `bin/velo.exe run std/tests/os/process_test.vl` passed (`PASS: std.os.process tests succeeded`).
   - `python -m pytest tests/test_std_os.py` passed (4/4 passed in 5.41s).
+
+#### Task 10.4: Anonymous Pipes & Process Output Capture (`std/os/pipe.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Capturing standard output (`stdout`) and standard error (`stderr`) of spawned child processes in Velo previously required external temporary files or C runtime hacks (`popen`). Velo lacked an in-memory, zero-dependency anonymous pipe subsystem supporting bidirectional pipe creation (`os_pipe_create`), raw streaming pipe reads and writes (`os_pipe_read`, `os_pipe_write`), handle lifecycle management (`os_pipe_close`, `os_pipe_close_read`, `os_pipe_close_write`), and high-level deadlock-free output capture (`os_spawn_capture`, `os_spawn_capture_argv`, `os_capture_stdout`, `os_capture_stdout_argv`).
+* **Fix Applied**:
+  - Extended `std/os/proc_types.vl` (30 lines) with `data Pipe { read_handle: @void, write_handle: @void }` and `data ProcessOutput { stdout_str: string, stderr_str: string, exit_code: i32, success: bool }`.
+  - Implemented `std/os/pipe_win32.vl` (252 lines) backed directly by Win32 `kernel32.dll` (`CreatePipe`, `SetHandleInformation`, `PeekNamedPipe`, `ReadFile`, `WriteFile`, `Sleep`):
+    - Created pipes with 64KB buffers and explicit `SECURITY_ATTRIBUTES` inheritance control.
+    - Stripped child inheritance from the read handle via `SetHandleInformation(hRead, HANDLE_FLAG_INHERIT, 0)`.
+    - Asynchronously drained stdout and stderr concurrently via `PeekNamedPipe` polling to eliminate pipe buffer saturation deadlocks.
+  - Implemented `std/os/pipe_posix.vl` (78 lines) providing Linux `pipe()`, `read()`, and `write()` bindings.
+  - Implemented cross-platform facade `std/os/pipe.vl` (65 lines) delivering:
+    - High-level capture: `os_spawn_capture(arena, cmd)`, `os_spawn_capture_argv(arena, argv, argc)`.
+    - Standard output helpers: `os_capture_stdout(arena, cmd)`, `os_capture_stdout_argv(arena, argv, argc)`.
+    - Low-level pipe streaming: `os_pipe_create`, `os_pipe_read`, `os_pipe_write`, `os_pipe_close`.
+  - Added unit test suite `std/tests/os/pipe_test.vl` (100 lines) testing:
+    - Low-level pipe write, read, and close roundtrips.
+    - Capturing stdout from child processes.
+    - Capturing stderr from child processes.
+    - Simultaneous interleaved capture of both stdout and stderr.
+    - Non-zero exit codes with captured output.
+    - `os_capture_stdout` direct string retrieval.
+    - `argv`-based command capture (`os_spawn_capture_argv`, `os_capture_stdout_argv`).
+    - Error handling with null commands and non-existent binaries.
+  - Added pytest test case `test_std_os_pipe` in `tests/test_std_os.py`.
+* **Residual Limitation**:
+  - Standard library umbrella module (`std/os.vl`), standard resolution (`use std.os`), compiler driver migration (`extern act system` replacement in `src/backend/driver.vl`), and full test verification will be implemented in Task 10.5.
+* **Verification**:
+  - `bin/velo.exe run std/tests/os/pipe_test.vl` passed (`PASS: std.os.pipe tests succeeded`).
+  - `python -m pytest tests/test_std_os.py` passed (5/5 passed in 6.93s).

@@ -1,0 +1,65 @@
+// std.os.pipe — Anonymous OS pipes and process output capture.
+// Zero C runtime dependencies (pure Velo).
+use "../mem/arena.vl"
+use "../str/slice.vl"
+use "proc_types.vl"
+use "process.vl"
+use "pipe_win32.vl"
+use "args.vl"
+
+// Spawns a command line and captures both its stdout and stderr streams.
+act os_spawn_capture(arena: @Arena, cmd: string) -> ProcessOutput {
+    if arena == null or cmd == null {
+        return ProcessOutput { stdout_str: "", stderr_str: "", exit_code: -1, success: false }
+    }
+
+    mut pipe_out = os_pipe_create()
+    if pipe_out.read_handle == null or pipe_out.write_handle == null {
+        return ProcessOutput { stdout_str: "", stderr_str: "", exit_code: -1, success: false }
+    }
+
+    mut pipe_err = os_pipe_create()
+    if pipe_err.read_handle == null or pipe_err.write_handle == null {
+        os_pipe_close(@pipe_out)
+        return ProcessOutput { stdout_str: "", stderr_str: "", exit_code: -1, success: false }
+    }
+
+    mut proc = os_spawn_ex(cmd, null, pipe_out.write_handle, pipe_err.write_handle)
+    // Parent closes write endpoints so that child has the only open write handles
+    os_pipe_close_write(@pipe_out)
+    os_pipe_close_write(@pipe_err)
+
+    if !proc.is_alive {
+        os_pipe_close_read(@pipe_out)
+        os_pipe_close_read(@pipe_err)
+        return ProcessOutput { stdout_str: "", stderr_str: "", exit_code: -1, success: false }
+    }
+
+    let out = os_pipe_drain_streams(arena, pipe_out.read_handle, pipe_err.read_handle, @proc)
+
+    os_pipe_close_read(@pipe_out)
+    os_pipe_close_read(@pipe_err)
+
+    return out
+}
+
+// Spawns an argument array and captures both its stdout and stderr streams.
+act os_spawn_capture_argv(arena: @Arena, argv: @string, argc: usize) -> ProcessOutput {
+    if arena == null or argv == null or argc == 0 {
+        return ProcessOutput { stdout_str: "", stderr_str: "", exit_code: -1, success: false }
+    }
+    let cmd = os_join_argv(arena, argv, argc)
+    return os_spawn_capture(arena, cmd)
+}
+
+// Spawns a command line and returns only its captured standard output string.
+act os_capture_stdout(arena: @Arena, cmd: string) -> string {
+    let out = os_spawn_capture(arena, cmd)
+    return out.stdout_str
+}
+
+// Spawns an argument array and returns only its captured standard output string.
+act os_capture_stdout_argv(arena: @Arena, argv: @string, argc: usize) -> string {
+    let out = os_spawn_capture_argv(arena, argv, argc)
+    return out.stdout_str
+}

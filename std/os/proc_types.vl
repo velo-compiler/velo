@@ -1,4 +1,4 @@
-// std.os.proc_types — Process execution descriptors and return types.
+// std.os.proc_types — Process execution descriptors, pipe handles, and return types.
 // Zero C runtime dependencies.
 
 // Represents the completion status and exit code of a spawned process.
@@ -13,4 +13,18 @@ data ProcessHandle {
     handle: @void,
     thread_handle: @void,
     is_alive: bool,
+}
+
+// Represents an anonymous OS pipe with read and write endpoints.
+data Pipe {
+    read_handle: @void,
+    write_handle: @void,
+}
+
+// Captured standard output, standard error, and exit status of a child process.
+data ProcessOutput {
+    stdout_str: string,
+    stderr_str: string,
+    exit_code: i32,
+    success: bool,
 }

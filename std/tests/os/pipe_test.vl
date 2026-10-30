@@ -1,0 +1,100 @@
+// Unit test suite for std.os.pipe (Anonymous Pipes & Process Output Capture).
+use "../../mem/arena.vl"
+use "../../str/slice.vl"
+use "../../str/search.vl"
+use "../../io/print.vl"
+use "../../os/pipe.vl"
+
+act assert(cond: bool, msg: string) {
+    if !cond {
+        println_str("FAIL: ")
+        println_str(msg)
+        let fail_code: u8 = 1 as u8
+        loop fail_code > (0 as u8) {
+            // trap
+        }
+    }
+}
+
+act main() -> i32 {
+    mut arena = arena_init(65536)
+
+    // 1. Low-level pipe creation, write, read, and close
+    mut p = os_pipe_create()
+    assert(p.read_handle != null, "pipe read_handle must not be null")
+    assert(p.write_handle != null, "pipe write_handle must not be null")
+
+    let msg = "pure velo anonymous pipe test"
+    let msg_len = raw_str_len(msg as @u8)
+    let written = os_pipe_write(p.write_handle, msg as @u8, msg_len)
+    assert(written == msg_len, "os_pipe_write wrote full message")
+
+    let read_buf = arena_alloc(@arena, msg_len + 1, 1)
+    let nread = os_pipe_read(p.read_handle, read_buf, msg_len)
+    assert(nread == msg_len, "os_pipe_read read full message")
+    read_buf[nread] = 0 as u8
+
+    let read_slice = slice_from_str(read_buf as string)
+    assert(slice_eq_str(read_slice, msg), "pipe roundtrip text match")
+
+    os_pipe_close(@p)
+    assert(p.read_handle == null and p.write_handle == null, "pipe handles closed")
+
+    // 2. High-level stdout capture
+    let out1 = os_spawn_capture(@arena, "cmd.exe /c echo Hello Velo Stdout Capture!")
+    assert(out1.success, "out1 success must be true")
+    assert(out1.exit_code == 0, "out1 exit_code must be 0")
+    let s1 = slice_from_str(out1.stdout_str)
+    assert(str_contains_str(s1, "Hello Velo Stdout Capture!"), "stdout contains expected string")
+
+    // 3. Stderr capture
+    let out2 = os_spawn_capture(@arena, "cmd.exe /c echo Error Message To Stderr 1>&2")
+    assert(out2.success, "out2 success must be true")
+    let s2 = slice_from_str(out2.stderr_str)
+    assert(str_contains_str(s2, "Error Message To Stderr"), "stderr contains expected string")
+
+    // 4. Simultaneous stdout and stderr capture
+    let out3 = os_spawn_capture(@arena, "cmd.exe /c echo stdout_part & echo stderr_part 1>&2")
+    assert(out3.success, "out3 success must be true")
+    let s3_out = slice_from_str(out3.stdout_str)
+    let s3_err = slice_from_str(out3.stderr_str)
+    assert(str_contains_str(s3_out, "stdout_part"), "out3 stdout contains stdout_part")
+    assert(str_contains_str(s3_err, "stderr_part"), "out3 stderr contains stderr_part")
+
+    // 5. Non-zero exit code with captured output
+    let out4 = os_spawn_capture(@arena, "cmd.exe /c echo fail_output & exit 42")
+    assert(!out4.success, "out4 success must be false")
+    assert(out4.exit_code == 42, "out4 exit_code must be 42")
+    let s4_out = slice_from_str(out4.stdout_str)
+    assert(str_contains_str(s4_out, "fail_output"), "out4 stdout contains fail_output")
+
+    // 6. os_capture_stdout helper
+    let simple_out = os_capture_stdout(@arena, "cmd.exe /c echo direct stdout")
+    let s_simple = slice_from_str(simple_out)
+    assert(str_contains_str(s_simple, "direct stdout"), "os_capture_stdout captured text")
+
+    // 7. Argv-based capture
+    let cmd_args = arena_alloc(@arena, 3 * 8, 8) as @string
+    cmd_args[0] = "cmd.exe"
+    cmd_args[1] = "/c"
+    cmd_args[2] = "echo argv captured line"
+
+    let out_argv = os_spawn_capture_argv(@arena, cmd_args, 3)
+    assert(out_argv.success, "out_argv success")
+    let s_argv = slice_from_str(out_argv.stdout_str)
+    assert(str_contains_str(s_argv, "argv captured line"), "argv captured stdout")
+
+    let str_argv = os_capture_stdout_argv(@arena, cmd_args, 3)
+    let s_str_argv = slice_from_str(str_argv)
+    assert(str_contains_str(s_str_argv, "argv captured line"), "argv capture_stdout")
+
+    // 8. Robustness & error handling
+    let out_null = os_spawn_capture(@arena, null)
+    assert(!out_null.success and out_null.exit_code == -1, "null cmd capture must fail")
+
+    let out_bad = os_spawn_capture(@arena, "missing_prog_404.exe")
+    assert(!out_bad.success, "bad binary capture must fail")
+
+    println_str("PASS: std.os.pipe tests succeeded")
+    return 0
+}

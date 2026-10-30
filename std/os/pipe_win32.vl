@@ -1,0 +1,252 @@
+// std.os.pipe_win32 — Windows anonymous pipe creation and I/O redirection.
+// Backed directly by Win32 kernel services (CreatePipe, PeekNamedPipe, ReadFile, WriteFile).
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+use "../str/slice.vl"
+use "../str/builder.vl"
+use "proc_types.vl"
+use "proc_windows.vl"
+
+// Foreign interface to Windows kernel32.dll
+extern act CreatePipe(
+    hReadPipe: @void,
+    hWritePipe: @void,
+    lpPipeAttributes: @u8,
+    nSize: u32) -> i32
+
+extern act SetHandleInformation(
+    hObject: @void,
+    dwMask: u32,
+    dwFlags: u32) -> i32
+
+extern act ReadFile(
+    hFile: @u8,
+    lpBuffer: @u8,
+    nBytesToRead: u32,
+    lpBytesRead: @u32,
+    lpOverlapped: @u8) -> i32
+
+extern act WriteFile(
+    hFile: @u8,
+    lpBuffer: @u8,
+    nBytesToWrite: u32,
+    lpBytesWritten: @u32,
+    lpOverlapped: @u8) -> i32
+
+extern act PeekNamedPipe(
+    hNamedPipe: @void,
+    lpBuffer: @u8,
+    nBufferSize: u32,
+    lpBytesRead: @u32,
+    lpTotalBytesAvail: @u32,
+    lpBytesLeftThisMessage: @u32) -> i32
+
+extern act Sleep(dwMilliseconds: u32)
+
+// Creates an anonymous OS pipe.
+// The write handle is inheritable by child processes; the read handle is not.
+act os_pipe_create() -> Pipe {
+    // SECURITY_ATTRIBUTES (24 bytes on x64)
+    let sa = heap_alloc(32)
+    if sa == null {
+        return Pipe { read_handle: null, write_handle: null }
+    }
+    set(sa, 0 as u8, 32)
+    proc_write_u32_le(sa, 0, 24 as u32)  // nLength = 24
+    proc_write_ptr_le(sa, 8, null)      // lpSecurityDescriptor = NULL
+    proc_write_u32_le(sa, 16, 1 as u32)  // bInheritHandle = TRUE
+
+    mut h_read: @void = null
+    mut h_write: @void = null
+
+    let ok = CreatePipe(@h_read, @h_write, sa, 65536 as u32)
+    heap_free(sa)
+
+    if ok == 0 {
+        return Pipe { read_handle: null, write_handle: null }
+    }
+
+    // Ensure read handle is NOT inherited by child to prevent hang on EOF
+    SetHandleInformation(h_read, 1 as u32, 0 as u32)
+
+    return Pipe { read_handle: h_read, write_handle: h_write }
+}
+
+// Reads up to count bytes from pipe into buf. Returns bytes read.
+act os_pipe_read(h_pipe: @void, buf: @u8, count: usize) -> usize {
+    if h_pipe == null or buf == null or count == 0 {
+        return 0
+    }
+    mut chunk = count
+    if chunk > 65536 {
+        chunk = 65536
+    }
+    mut bytes_read: u32 = 0 as u32
+    let ok = ReadFile(h_pipe as @u8, buf, chunk as u32, @bytes_read, null)
+    if ok == 0 {
+        return 0
+    }
+    return bytes_read as usize
+}
+
+// Writes count bytes from buf to pipe. Returns bytes written.
+act os_pipe_write(h_pipe: @void, buf: @u8, count: usize) -> usize {
+    if h_pipe == null or buf == null or count == 0 {
+        return 0
+    }
+    mut chunk = count
+    if chunk > 65536 {
+        chunk = 65536
+    }
+    mut bytes_written: u32 = 0 as u32
+    let ok = WriteFile(h_pipe as @u8, buf, chunk as u32, @bytes_written, null)
+    if ok == 0 {
+        return 0
+    }
+    return bytes_written as usize
+}
+
+// Closes read handle of pipe.
+act os_pipe_close_read(pipe: @Pipe) {
+    if pipe != null and pipe.read_handle != null {
+        CloseHandle(pipe.read_handle)
+        pipe.read_handle = null
+    }
+}
+
+// Closes write handle of pipe.
+act os_pipe_close_write(pipe: @Pipe) {
+    if pipe != null and pipe.write_handle != null {
+        CloseHandle(pipe.write_handle)
+        pipe.write_handle = null
+    }
+}
+
+// Closes both handles of pipe.
+act os_pipe_close(pipe: @Pipe) {
+    if pipe == null { return }
+    os_pipe_close_read(pipe)
+    os_pipe_close_write(pipe)
+}
+
+// Asynchronously drains stdout and stderr pipes until child process terminates.
+act os_pipe_drain_streams(arena: @Arena, h_out: @void, h_err: @void, proc: @ProcessHandle) -> ProcessOutput {
+    mut out_sb = sb_init(arena, 256)
+    mut err_sb = sb_init(arena, 256)
+    let buf = heap_alloc(4096)
+    if buf == null {
+        return ProcessOutput { stdout_str: "", stderr_str: "", exit_code: -1, success: false }
+    }
+
+    mut out_open = h_out != null
+    mut err_open = h_err != null
+    mut exit_code: i32 = -1
+
+    loop out_open or err_open {
+        mut did_read = false
+
+        if out_open {
+            mut avail: u32 = 0 as u32
+            let peek_ok = PeekNamedPipe(h_out, null, 0 as u32, null, @avail, null)
+            if peek_ok == 0 {
+                out_open = false
+            } else if avail > (0 as u32) {
+                mut to_read = avail
+                if to_read > (4096 as u32) { to_read = 4096 as u32 }
+                mut read_bytes: u32 = 0 as u32
+                let ok = ReadFile(h_out as @u8, buf, to_read, @read_bytes, null)
+                if ok != 0 and read_bytes > (0 as u32) {
+                    mut i: usize = 0
+                    let n = read_bytes as usize
+                    loop i < n {
+                        sb_append_byte(@out_sb, buf[i])
+                        i += 1
+                    }
+                    did_read = true
+                } else {
+                    out_open = false
+                }
+            }
+        }
+
+        if err_open {
+            mut avail: u32 = 0 as u32
+            let peek_ok = PeekNamedPipe(h_err, null, 0 as u32, null, @avail, null)
+            if peek_ok == 0 {
+                err_open = false
+            } else if avail > (0 as u32) {
+                mut to_read = avail
+                if to_read > (4096 as u32) { to_read = 4096 as u32 }
+                mut read_bytes: u32 = 0 as u32
+                let ok = ReadFile(h_err as @u8, buf, to_read, @read_bytes, null)
+                if ok != 0 and read_bytes > (0 as u32) {
+                    mut i: usize = 0
+                    let n = read_bytes as usize
+                    loop i < n {
+                        sb_append_byte(@err_sb, buf[i])
+                        i += 1
+                    }
+                    did_read = true
+                } else {
+                    err_open = false
+                }
+            }
+        }
+
+        if !did_read {
+            let code = os_process_try_wait(proc)
+            if code >= 0 {
+                exit_code = code
+                // Drain any residual bytes
+                if out_open {
+                    mut avail: u32 = 0 as u32
+                    PeekNamedPipe(h_out, null, 0 as u32, null, @avail, null)
+                    if avail > (0 as u32) {
+                        mut read_bytes: u32 = 0 as u32
+                        ReadFile(h_out as @u8, buf, avail, @read_bytes, null)
+                        mut i: usize = 0
+                        let n = read_bytes as usize
+                        loop i < n {
+                            sb_append_byte(@out_sb, buf[i])
+                            i += 1
+                        }
+                    }
+                    out_open = false
+                }
+                if err_open {
+                    mut avail: u32 = 0 as u32
+                    PeekNamedPipe(h_err, null, 0 as u32, null, @avail, null)
+                    if avail > (0 as u32) {
+                        mut read_bytes: u32 = 0 as u32
+                        ReadFile(h_err as @u8, buf, avail, @read_bytes, null)
+                        mut i: usize = 0
+                        let n = read_bytes as usize
+                        loop i < n {
+                            sb_append_byte(@err_sb, buf[i])
+                            i += 1
+                        }
+                    }
+                    err_open = false
+                }
+                break
+            }
+            Sleep(1 as u32)
+        }
+    }
+
+    heap_free(buf)
+
+    if exit_code == -1 and proc.is_alive {
+        exit_code = os_process_wait(proc)
+    }
+
+    let s_out = sb_to_cstr(@out_sb) as string
+    let s_err = sb_to_cstr(@err_sb) as string
+
+    return ProcessOutput {
+        stdout_str: s_out,
+        stderr_str: s_err,
+        exit_code: exit_code,
+        success: exit_code == 0,
+    }
+}
