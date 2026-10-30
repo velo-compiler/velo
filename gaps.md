@@ -1343,9 +1343,22 @@ flowchart TD
   - Updated `velo_runtime.h` to declare `QueryPerformanceCounter`/`QueryPerformanceFrequency` with standard `int64_t*`, eliminating prototype conflicts between runtime and foreign Velo interfaces.
   - Added unit test suite `std/tests/time/clock_test.vl` and pytest integration in `tests/test_std_time.py`.
 * **Residual Limitation**:
-  - Duration representation and Stopwatch benchmarking (`std/time/duration.vl`) are scheduled for Task 8.2.
+  - Duration representation and Stopwatch benchmarking (`std/time/duration.vl`) completed in Task 8.2.
 * **Verification**:
   - `bin/velo.exe run std/tests/time/clock_test.vl` passed (`PASS: std.time.clock all tests passed`).
   - `python -m pytest tests/test_std_time.py` passed (1/1 passed in 1.06s).
   - Existing `tests/test_time_library.py` passed with zero regressions.
 
+#### Task 8.2: Duration & Stopwatch Benchmarking (`std/time/duration.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - While monotonic clocks and epoch timestamps were implemented in Task 8.1, Velo lacked a structured `Duration` type with multi-unit conversions (nanoseconds, microseconds, milliseconds, seconds, fractional float seconds) and arithmetic (addition, saturating subtraction, scaling, division, comparisons). Furthermore, benchmarking and profiling required manual timestamp difference tracking rather than an idiomatic `Stopwatch` abstraction supporting start, pause, resume, reset, restart, and lap timing.
+* **Fix Applied**:
+  - Implemented `std/time/duration.vl` providing `data Duration` and `data Stopwatch`.
+  - Implemented Duration constructors (`duration_zero`, `duration_from_ns`, `duration_from_us`, `duration_from_ms`, `duration_from_secs`, `duration_from_secs_f64`), unit accessors (`duration_as_ns`, `duration_as_us`, `duration_as_ms`, `duration_as_secs`, `duration_as_secs_f64`), and arithmetic helpers (`duration_add`, `duration_sub` with zero saturation, `duration_scale`, `duration_div`, `duration_cmp`, `duration_eq`, `duration_is_zero`).
+  - Implemented Stopwatch profiling engine (`stopwatch_start`, `stopwatch_new`, `stopwatch_reset`, `stopwatch_resume`, `stopwatch_stop`, `stopwatch_elapsed`, `stopwatch_elapsed_ns/us/ms/secs`, `stopwatch_restart`, `stopwatch_lap`) with state tracking and elapsed accumulation across pause/resume cycles.
+  - Added unit test suite `std/tests/time/duration_test.vl` and pytest integration in `tests/test_std_time.py`.
+* **Residual Limitation**:
+  - Native thread sleep and delay operations (`std/time/sleep.vl`) are scheduled for Task 8.3.
+* **Verification**:
+  - `bin/velo.exe run std/tests/time/duration_test.vl` passed (`PASS: std.time.duration all tests passed`).
+  - `python -m pytest tests/test_std_time.py` passed (2/2 passed in 2.24s).

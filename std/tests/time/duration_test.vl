@@ -1,0 +1,203 @@
+// Unit test suite for std.time.duration (Duration and Stopwatch).
+use "../../io/print.vl"
+use "../../time/duration.vl"
+
+act test_duration_constructors_and_conversions() -> bool {
+    let d0 = duration_zero()
+    if d0.nanos != 0 as u64 or !duration_is_zero(d0) {
+        return false
+    }
+
+    let d_ns = duration_from_ns(500 as u64)
+    if duration_as_ns(d_ns) != 500 as u64 {
+        return false
+    }
+
+    let d_us = duration_from_us(2 as u64)
+    if duration_as_ns(d_us) != 2000 as u64 or duration_as_us(d_us) != 2 as u64 {
+        return false
+    }
+
+    let d_ms = duration_from_ms(3 as u64)
+    if duration_as_ns(d_ms) != 3000000 as u64 or duration_as_ms(d_ms) != 3 as u64 {
+        return false
+    }
+
+    let d_s = duration_from_secs(4 as u64)
+    if duration_as_ns(d_s) != 4000000000 as u64 or duration_as_secs(d_s) != 4 as u64 {
+        return false
+    }
+
+    let d_f = duration_from_secs_f64(1.5)
+    if duration_as_ns(d_f) != 1500000000 as u64 or duration_as_secs_f64(d_f) != 1.5 {
+        return false
+    }
+
+    return true
+}
+
+act test_duration_arithmetic() -> bool {
+    let d2 = duration_from_secs(2 as u64)
+    let d3 = duration_from_secs(3 as u64)
+    let d5 = duration_from_secs(5 as u64)
+
+    // Add
+    let sum = duration_add(d2, d3)
+    if !duration_eq(sum, d5) {
+        return false
+    }
+
+    // Sub
+    let diff = duration_sub(d5, d2)
+    if !duration_eq(diff, d3) {
+        return false
+    }
+
+    // Saturating Sub at 0
+    let under = duration_sub(d2, d5)
+    if !duration_is_zero(under) {
+        return false
+    }
+
+    // Scale
+    let scaled = duration_scale(d3, 4 as u64)
+    if duration_as_secs(scaled) != 12 as u64 {
+        return false
+    }
+
+    // Div
+    let div = duration_div(scaled, 4 as u64)
+    if !duration_eq(div, d3) {
+        return false
+    }
+
+    // Comparisons
+    if duration_cmp(d2, d5) != -1 {
+        return false
+    }
+    if duration_cmp(d5, d2) != 1 {
+        return false
+    }
+    if duration_cmp(d5, d5) != 0 {
+        return false
+    }
+
+    return true
+}
+
+act test_stopwatch_lifecycle() -> bool {
+    mut sw = stopwatch_new()
+    if sw.is_running or stopwatch_elapsed_ns(@sw) != 0 as u64 {
+        return false
+    }
+
+    stopwatch_resume(@sw)
+    if !sw.is_running {
+        return false
+    }
+
+    // Spin until elapsed is non-zero
+    mut spins: i32 = 0
+    loop stopwatch_elapsed_ns(@sw) == 0 as u64 and spins < 10000000 {
+        spins += 1
+    }
+
+    let elapsed1 = stopwatch_elapsed_ns(@sw)
+    if elapsed1 == 0 as u64 {
+        return false
+    }
+
+    // Stop and pause
+    stopwatch_stop(@sw)
+    if sw.is_running {
+        return false
+    }
+
+    let paused_val = stopwatch_elapsed_ns(@sw)
+    if paused_val < elapsed1 {
+        return false
+    }
+
+    // Verify clock doesn't advance while stopped
+    mut j: i32 = 0
+    loop j < 1000000 {
+        j += 1
+    }
+    if stopwatch_elapsed_ns(@sw) != paused_val {
+        return false
+    }
+
+    // Resume
+    stopwatch_resume(@sw)
+    spins = 0
+    loop stopwatch_elapsed_ns(@sw) == paused_val and spins < 10000000 {
+        spins += 1
+    }
+
+    let elapsed2 = stopwatch_elapsed_ns(@sw)
+    if elapsed2 <= paused_val {
+        return false
+    }
+
+    // Reset
+    stopwatch_reset(@sw)
+    if sw.is_running or stopwatch_elapsed_ns(@sw) != 0 as u64 {
+        return false
+    }
+
+    return true
+}
+
+act test_stopwatch_lap_and_restart() -> bool {
+    mut sw = stopwatch_start()
+    if !sw.is_running {
+        return false
+    }
+
+    mut spins: i32 = 0
+    loop stopwatch_elapsed_ns(@sw) == 0 as u64 and spins < 10000000 {
+        spins += 1
+    }
+
+    let lap1 = stopwatch_lap(@sw)
+    if lap1.nanos == 0 as u64 {
+        return false
+    }
+
+    spins = 0
+    loop stopwatch_elapsed_ns(@sw) == 0 as u64 and spins < 10000000 {
+        spins += 1
+    }
+
+    let prev = stopwatch_restart(@sw)
+    if prev.nanos == 0 as u64 or !sw.is_running {
+        return false
+    }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_duration_constructors_and_conversions() {
+        println_str("FAIL: test_duration_constructors_and_conversions")
+        return 1
+    }
+
+    if !test_duration_arithmetic() {
+        println_str("FAIL: test_duration_arithmetic")
+        return 2
+    }
+
+    if !test_stopwatch_lifecycle() {
+        println_str("FAIL: test_stopwatch_lifecycle")
+        return 3
+    }
+
+    if !test_stopwatch_lap_and_restart() {
+        println_str("FAIL: test_stopwatch_lap_and_restart")
+        return 4
+    }
+
+    println_str("PASS: std.time.duration all tests passed")
+    return 0
+}
