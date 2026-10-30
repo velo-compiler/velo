@@ -1,0 +1,197 @@
+// std.os.proc_windows — Windows native process management via Win32 kernel services.
+// Backed directly by kernel32.dll without libc dependencies.
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+use "../str/slice.vl"
+use "proc_types.vl"
+
+// Foreign interface to Windows kernel32.dll
+extern act CreateProcessA(
+    lpApplicationName: @u8,
+    lpCommandLine: @u8,
+    lpProcessAttributes: @u8,
+    lpThreadAttributes: @u8,
+    bInheritHandles: i32,
+    dwCreationFlags: u32,
+    lpEnvironment: @u8,
+    lpCurrentDirectory: @u8,
+    lpStartupInfo: @u8,
+    lpProcessInformation: @u8) -> i32
+
+extern act WaitForSingleObject(hHandle: @void, dwMilliseconds: u32) -> u32
+extern act GetExitCodeProcess(hProcess: @void, lpExitCode: @u32) -> i32
+extern act CloseHandle(hObject: @void) -> i32
+extern act TerminateProcess(hProcess: @void, uExitCode: u32) -> i32
+
+// Little-endian serialization helpers for raw Win32 struct buffers
+act proc_write_u32_le(buf: @u8, offset: usize, val: u32) {
+    buf[offset] = (val & (255 as u32)) as u8
+    buf[offset + 1] = ((val >> 8) & (255 as u32)) as u8
+    buf[offset + 2] = ((val >> 16) & (255 as u32)) as u8
+    buf[offset + 3] = ((val >> 24) & (255 as u32)) as u8
+}
+
+act proc_write_ptr_le(buf: @u8, offset: usize, ptr: @void) {
+    let val = ptr as usize
+    mut i: usize = 0
+    loop i < 8 {
+        let shift = (i * 8) as u32
+        buf[offset + i] = ((val >> shift) & (255 as usize)) as u8
+        i += 1
+    }
+}
+
+act proc_read_u32_le(buf: @u8, offset: usize) -> u32 {
+    let b0 = buf[offset] as u32
+    let b1 = (buf[offset + 1] as u32) << 8
+    let b2 = (buf[offset + 2] as u32) << 16
+    let b3 = (buf[offset + 3] as u32) << 24
+    return b0 | b1 | b2 | b3
+}
+
+act proc_read_ptr_le(buf: @u8, offset: usize) -> @void {
+    let b0 = buf[offset] as usize
+    let b1 = (buf[offset + 1] as usize) << 8
+    let b2 = (buf[offset + 2] as usize) << 16
+    let b3 = (buf[offset + 3] as usize) << 24
+    let b4 = (buf[offset + 4] as usize) << 32
+    let b5 = (buf[offset + 5] as usize) << 40
+    let b6 = (buf[offset + 6] as usize) << 48
+    let b7 = (buf[offset + 7] as usize) << 56
+    let addr = b0 | b1 | b2 | b3 | b4 | b5 | b6 | b7
+    return addr as @void
+}
+
+// Spawns a new child process with optional redirected standard stream handles.
+act os_spawn_ex(cmd: string, h_in: @void, h_out: @void, h_err: @void) -> ProcessHandle {
+    if cmd == null {
+        return ProcessHandle { pid: 0 as u32, handle: null, thread_handle: null, is_alive: false }
+    }
+
+    // Allocate STARTUPINFOA (104 bytes on x64)
+    let si = heap_alloc(128)
+    if si == null {
+        return ProcessHandle { pid: 0 as u32, handle: null, thread_handle: null, is_alive: false }
+    }
+    set(si, 0 as u8, 128)
+    proc_write_u32_le(si, 0, 104 as u32) // si.cb = 104
+
+    mut inherit: i32 = 0
+    if h_in != null or h_out != null or h_err != null {
+        proc_write_u32_le(si, 60, 0x00000100 as u32) // STARTF_USESTDHANDLES
+        proc_write_ptr_le(si, 80, h_in)
+        proc_write_ptr_le(si, 88, h_out)
+        proc_write_ptr_le(si, 96, h_err)
+        inherit = 1
+    }
+
+    // Allocate PROCESS_INFORMATION (24 bytes on x64)
+    let pi = heap_alloc(32)
+    if pi == null {
+        heap_free(si)
+        return ProcessHandle { pid: 0 as u32, handle: null, thread_handle: null, is_alive: false }
+    }
+    set(pi, 0 as u8, 32)
+
+    // Copy command line to a writable buffer as required by CreateProcessA
+    let cmd_len = raw_str_len(cmd as @u8)
+    let cmd_buf = heap_alloc(cmd_len + 1)
+    if cmd_buf == null {
+        heap_free(si)
+        heap_free(pi)
+        return ProcessHandle { pid: 0 as u32, handle: null, thread_handle: null, is_alive: false }
+    }
+    copy(cmd_buf, cmd as @u8, cmd_len)
+    cmd_buf[cmd_len] = 0 as u8
+
+    let ok = CreateProcessA(
+        null,
+        cmd_buf,
+        null,
+        null,
+        inherit,
+        0 as u32,
+        null,
+        null,
+        si,
+        pi)
+
+    heap_free(cmd_buf)
+    heap_free(si)
+
+    if ok == 0 {
+        heap_free(pi)
+        return ProcessHandle { pid: 0 as u32, handle: null, thread_handle: null, is_alive: false }
+    }
+
+    let hProcess = proc_read_ptr_le(pi, 0)
+    let hThread = proc_read_ptr_le(pi, 8)
+    let pid = proc_read_u32_le(pi, 16)
+    heap_free(pi)
+
+    return ProcessHandle {
+        pid: pid,
+        handle: hProcess,
+        thread_handle: hThread,
+        is_alive: true,
+    }
+}
+
+// Waits up to timeout_ms milliseconds for the process to exit.
+// Returns exit code if terminated within timeout, or -1 if timed out or invalid.
+act os_process_wait_timeout(proc: @ProcessHandle, timeout_ms: u32) -> i32 {
+    if proc == null or proc.handle == null or !proc.is_alive {
+        return -1
+    }
+
+    let wait_res = WaitForSingleObject(proc.handle, timeout_ms)
+    if wait_res == 0 as u32 {
+        // WAIT_OBJECT_0: Process finished
+        mut exit_code: u32 = 0 as u32
+        GetExitCodeProcess(proc.handle, @exit_code)
+        if proc.thread_handle != null {
+            CloseHandle(proc.thread_handle)
+            proc.thread_handle = null
+        }
+        CloseHandle(proc.handle)
+        proc.handle = null
+        proc.is_alive = false
+        return exit_code as i32
+    }
+
+    // WAIT_TIMEOUT or failed
+    return -1
+}
+
+// Immediately terminates the running process with exit code 1.
+act os_process_kill(proc: @ProcessHandle) -> bool {
+    if proc == null or proc.handle == null or !proc.is_alive {
+        return false
+    }
+    let ok = TerminateProcess(proc.handle, 1 as u32)
+    if ok != 0 {
+        if proc.thread_handle != null {
+            CloseHandle(proc.thread_handle)
+            proc.thread_handle = null
+        }
+        CloseHandle(proc.handle)
+        proc.handle = null
+        proc.is_alive = false
+        return true
+    }
+    return false
+}
+
+// Closes any remaining native handles without waiting.
+act os_process_close(proc: @ProcessHandle) {
+    if proc == null { return }
+    if proc.thread_handle != null {
+        CloseHandle(proc.thread_handle)
+        proc.thread_handle = null
+    }
+    if proc.handle != null {
+        CloseHandle(proc.handle)
+        proc.handle = null
+    }
+    proc.is_alive = false
+}

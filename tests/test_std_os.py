@@ -65,3 +65,16 @@ def test_std_os_args_cli(tmp_path):
     assert lines[3] == "--output"
     assert lines[4] == "bin/foo.exe"
     assert lines[5] == "-v"
+
+
+def test_std_os_process():
+    test_vl = REPO_ROOT / "std" / "tests" / "os" / "process_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.os.process tests succeeded" in res.stdout

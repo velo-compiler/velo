@@ -1,0 +1,96 @@
+// Unit test suite for std.os.process (Child Process Execution & Spawning).
+use "../../mem/arena.vl"
+use "../../str/slice.vl"
+use "../../io/print.vl"
+use "../../os/process.vl"
+
+act assert(cond: bool, msg: string) {
+    if !cond {
+        println_str("FAIL: ")
+        println_str(msg)
+        let fail_code: u8 = 1 as u8
+        loop fail_code > (0 as u8) {
+            // trap
+        }
+    }
+}
+
+act main() -> i32 {
+    mut arena = arena_init(16384)
+
+    // 1. Synchronous process execution: exit 0
+    let r1 = os_spawn_sync("cmd.exe /c exit 0")
+    assert(r1.success, "exit 0 must report success == true")
+    assert(r1.exit_code == 0, "exit 0 must have exit_code == 0")
+
+    // 2. Synchronous process execution: exit non-zero
+    let r2 = os_spawn_sync("cmd.exe /c exit 5")
+    assert(!r2.success, "exit 5 must report success == false")
+    assert(r2.exit_code == 5, "exit 5 must have exit_code == 5")
+
+    let r3 = os_spawn_sync("cmd.exe /c exit 123")
+    assert(!r3.success, "exit 123 must report success == false")
+    assert(r3.exit_code == 123, "exit 123 must have exit_code == 123")
+
+    // 3. os_system wrapper
+    let sys0 = os_system("cmd.exe /c exit 0")
+    assert(sys0 == 0, "os_system exit 0")
+
+    let sys42 = os_system("cmd.exe /c exit 42")
+    assert(sys42 == 42, "os_system exit 42")
+
+    // 4. Asynchronous spawn and wait
+    mut proc = os_spawn("cmd.exe /c exit 88")
+    assert(proc.is_alive, "spawned proc must be alive")
+    assert(proc.pid > (0 as u32), "proc pid must be > 0")
+
+    let wait_code = os_process_wait(@proc)
+    assert(wait_code == 88, "os_process_wait must return 88")
+    assert(!proc.is_alive, "proc must not be alive after wait")
+
+    // 5. Asynchronous polling with try_wait and process termination with kill
+    mut long_proc = os_spawn("cmd.exe /c ping -n 4 127.0.0.1 >nul")
+    assert(long_proc.is_alive, "long proc must be alive")
+
+    let poll1 = os_process_try_wait(@long_proc)
+    assert(poll1 == -1, "try_wait while running must return -1")
+    assert(long_proc.is_alive, "long proc must remain alive after try_wait")
+
+    let killed = os_process_kill(@long_proc)
+    assert(killed, "os_process_kill must succeed")
+    assert(!long_proc.is_alive, "proc must not be alive after kill")
+
+    let killed_again = os_process_kill(@long_proc)
+    assert(!killed_again, "killing dead proc must return false")
+
+    // 6. Argv-based spawning
+    let cmd_args = arena_alloc(@arena, 3 * 8, 8) as @string
+    cmd_args[0] = "cmd.exe"
+    cmd_args[1] = "/c"
+    cmd_args[2] = "exit 0"
+
+    let r_argv0 = os_spawn_sync_argv(@arena, cmd_args, 3)
+    assert(r_argv0.success and r_argv0.exit_code == 0, "argv exit 0")
+
+    cmd_args[2] = "exit 19"
+    let r_argv19 = os_spawn_sync_argv(@arena, cmd_args, 3)
+    assert(!r_argv19.success and r_argv19.exit_code == 19, "argv exit 19")
+
+    mut async_argv = os_spawn_argv(@arena, cmd_args, 3)
+    assert(async_argv.is_alive, "async argv must be alive")
+    let async_argv_code = os_process_wait(@async_argv)
+    assert(async_argv_code == 19, "async argv wait code must be 19")
+
+    // 7. Error handling & invalid inputs
+    let r_null = os_spawn_sync(null)
+    assert(!r_null.success and r_null.exit_code == -1, "null cmd must fail")
+
+    let r_bad = os_spawn_sync("this_executable_does_not_exist_xyz_404.exe")
+    assert(!r_bad.success, "non-existent binary must fail to spawn")
+
+    let wait_null = os_process_wait(null)
+    assert(wait_null == -1, "waiting on null must return -1")
+
+    println_str("PASS: std.os.process tests succeeded")
+    return 0
+}

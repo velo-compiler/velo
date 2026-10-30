@@ -1540,7 +1540,27 @@ flowchart TD
   - Added unit test suite `std/tests/os/args_test.vl` exercising 12 categories: raw cmdline retrieval, process `os_args`, bounds checking, space/tab tokenization, quote handling, escaped quotes, trailing backslashes before quotes, empty quotes, quoting rules, multi-argument joining roundtrips, flag/option querying, and null/empty robustness.
   - Added CLI test `std/tests/os/args_cli_test.vl` and pytest integration tests `test_std_os_args` and `test_std_os_args_cli` in `tests/test_std_os.py`.
 * **Residual Limitation**:
-  - Child process execution and subprocess spawning (`std/os/process.vl`) will be implemented in Task 10.3.
+  - Child process execution and subprocess spawning (`std/os/process.vl`) completed in Task 10.3. Anonymous pipes and process I/O capture (`std/os/pipe.vl`) will be implemented in Task 10.4.
 * **Verification**:
   - `bin/velo.exe run std/tests/os/args_test.vl` passed (`PASS: std.os.args tests succeeded`).
   - `python -m pytest tests/test_std_os.py` passed (3/3 passed).
+
+#### Task 10.3: Child Process Execution & Subprocess Spawning (`std/os/process.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Spawning child processes and executing system commands in Velo previously depended on the C runtime's `system()` built-in (`extern act system`). Velo lacked a standalone, pure-Velo process management subsystem capable of asynchronous subprocess spawning (`os_spawn`), process handle tracking (`data ProcessHandle`), synchronous blocking execution (`os_spawn_sync`, `os_system`), non-blocking exit polling (`os_process_try_wait`), timed waits (`os_process_wait_timeout`), process termination (`os_process_kill`), and argument array execution (`os_spawn_sync_argv`, `os_spawn_argv`) directly via host OS kernel facilities (`kernel32.dll` on Windows, POSIX `fork`/`waitpid` on Linux) without libc dependencies.
+* **Fix Applied**:
+  - Aligned `WaitForSingleObject` in `runtime/velo_runtime.h` to use `uint32_t` return and parameter types for seamless Velo `extern act` typing.
+  - Implemented `std/os/proc_types.vl` (16 lines) defining `data ProcessResult { exit_code: i32, success: bool }` and `data ProcessHandle { pid: u32, handle: @void, thread_handle: @void, is_alive: bool }`.
+  - Implemented `std/os/proc_windows.vl` (197 lines) backed directly by Win32 `kernel32.dll` (`CreateProcessA`, `WaitForSingleObject`, `GetExitCodeProcess`, `CloseHandle`, `TerminateProcess`), handling writable command-line buffers, `STARTUPINFOA` (with optional std stream handle redirection for Task 10.4), and little-endian struct serialization.
+  - Implemented `std/os/proc_linux.vl` (51 lines) for POSIX platform process control.
+  - Implemented cross-platform facade `std/os/process.vl` (61 lines) delivering:
+    - Asynchronous execution: `os_spawn(cmd)`, `os_spawn_argv(arena, argv, argc)`.
+    - Handle lifecycle: `os_process_wait`, `os_process_wait_timeout`, `os_process_try_wait`, `os_process_kill`, `os_process_close`.
+    - Synchronous execution: `os_spawn_sync(cmd)`, `os_spawn_sync_argv(arena, argv, argc)`, `os_system(cmd)`.
+  - Added comprehensive test suite `std/tests/os/process_test.vl` exercising synchronous exit codes (0, non-zero), `os_system`, asynchronous spawn and wait, non-blocking polling (`try_wait`), process termination (`kill`), `argv`-based execution, and invalid/null error handling.
+  - Added pytest test case `test_std_os_process` in `tests/test_std_os.py`.
+* **Residual Limitation**:
+  - Anonymous pipes and process output capture (`std/os/pipe.vl`) will be implemented in Task 10.4.
+* **Verification**:
+  - `bin/velo.exe run std/tests/os/process_test.vl` passed (`PASS: std.os.process tests succeeded`).
+  - `python -m pytest tests/test_std_os.py` passed (4/4 passed in 5.41s).
