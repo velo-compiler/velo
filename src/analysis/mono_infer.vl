@@ -1,0 +1,213 @@
+// Monomorphization type inference and literal element scanning for Velo.
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../common/utils.vl"
+use "../common/string_builder.vl"
+use "monomorphize_types.vl"
+use "mono_unroll.vl"
+
+// 5.2 slice 2 ladder families (mono helper — same sets as Stage 1's DYN_INT_TYPES/DYN_FLOAT_TYPES)
+act is_mono_dyn_int(name: string) -> bool {
+    if name == null { return false }
+    if name == "i8" or name == "i16" or name == "i32" or name == "i64" { return true }
+    if name == "u8" or name == "u16" or name == "u32" or name == "u64" { return true }
+    if name == "usize" or name == "isize" { return true }
+    return false
+}
+
+act is_mono_dyn_float(name: string) -> bool {
+    return name != null and (name == "f32" or name == "f64")
+}
+
+// 5.2 slice 9: builds the canonical `ring[T]` spelling.
+act mono_ring_spelling(elem: string) -> string {
+    return mono_concat("ring[", mono_concat(elem, "]"))
+}
+
+// 5.2: builds the canonical `shelf[T]` spelling. Slice 10: the optional heap
+// prefix rides in front (`heap shelf[T]`).
+act mono_shelf_spelling(heap_pfx: string, elem: string) -> string {
+    return mono_concat(heap_pfx, mono_concat("shelf[", mono_concat(elem, "]")))
+}
+
+// 5.2: the shared literal-ladder scan (the mono twin of the shelf/ring
+// element ladders): homogeneous -> t0; the numeric float mix -> f64; any
+// other mix -> the caller's fallback (shelf: "dyn"; ring: t0 — the checker
+// rejects the mix upstream).
+act mono_lit_elem_scan(e: @ExprNode, scope: @ScopeEntry, fallback: string) -> string {
+    let t0 = mono_infer_type(e.first_arg, scope)
+    mut is_mixed = false
+    mut all_numeric = true
+    mut has_float = false
+    mut cur = e.first_arg.next
+    loop cur != null {
+        let t = mono_infer_type(cur, scope)
+        if t != t0 { is_mixed = true }
+        if is_mono_dyn_int(t) or is_mono_dyn_float(t) {
+            if is_mono_dyn_float(t) { has_float = true }
+        } else {
+            all_numeric = false
+        }
+        cur = cur.next
+    }
+    if not is_mixed { return t0 }
+    if all_numeric and has_float { return "f64" }
+    return fallback
+}
+
+act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
+    if e == null { return "i32" }
+    if e.kind == EXPR_INT { return "i32" }
+    if e.kind == EXPR_FLOAT { return "f32" }
+    if e.kind == EXPR_STRING { return "string" }
+    if e.kind == EXPR_BOOL { return "bool" }
+    if e.kind == EXPR_STRUCT_LIT { return e.type_name }
+    if e.kind == EXPR_VARIANT { return e.type_name }
+    if e.kind == EXPR_ADDRESS_OF {
+        let sub = mono_infer_type(e.operand, scope)
+        return mono_concat("@", sub)
+    }
+    if e.kind == EXPR_DEREF {
+        let sub = mono_infer_type(e.operand, scope)
+        if str.len(sub) > 1 and sub[0] == '@' {
+            return copy_slice_to_string(sub, 1, str.len(sub) - 1)
+        }
+        return sub
+    }
+    if e.kind == EXPR_IDENT {
+        mut cur = scope
+        loop cur != null {
+            if cur.name == e.str_val { return cur.type_name }
+            cur = cur.next
+        }
+    }
+    if e.kind == EXPR_SHELF_LIT or e.kind == EXPR_HEAP_SHELF_LIT {
+        // 5.2: shelf[T] inference — pinned elem, else the shared ladder scan
+        // (the ladder scans ALL args — a heterogeneous literal inside a
+        // generic must not infer from the first element). Slice 10: a heap
+        // literal's spelling carries the `heap ` prefix.
+        mut heap_pfx = ""
+        if e.kind == EXPR_HEAP_SHELF_LIT { heap_pfx = "heap " }
+        if e.type_name != null and str.len(e.type_name) > 0 { return mono_shelf_spelling(heap_pfx, e.type_name) }
+        if e.first_arg != null { return mono_shelf_spelling(heap_pfx, mono_lit_elem_scan(e, scope, "dyn")) }
+        return "i32"  // unannotated empty: the checker rejects it upstream
+    }
+    if e.kind == EXPR_RING_LIT {
+        // 5.2 slice 9: best-effort ring ladder (no dyn arm — non-widenable mixes are checker-rejected corners)
+        if e.type_name != null and str.len(e.type_name) > 0 { return mono_ring_spelling(e.type_name) }
+        if e.first_arg != null {
+            let t0 = mono_infer_type(e.first_arg, scope)
+            return mono_ring_spelling(mono_lit_elem_scan(e, scope, t0))
+        }
+        return "i32"  // unannotated empty: the checker rejects it upstream
+    }
+    if e.kind == EXPR_BITSET_LIT { return "bitset" }
+    if e.kind == EXPR_MAP_LIT or e.kind == EXPR_HEAP_MAP_LIT {
+        // 5.2 slice 6 / 7.2: best-effort Map[K, V] inference
+        if e.type_name != null and str.len(e.type_name) > 0 { return e.type_name }
+        if e.first_arg == null or e.first_arg.next == null { return "i32" }
+        let k0 = mono_infer_type(e.first_arg, scope)
+        let vk0 = mono_infer_type(e.first_arg.next, scope)
+        mut keys_uniform = true
+        mut vals_uniform = true
+        mut all_numeric = true
+        mut has_float = false
+        mut cur = e.first_arg.next.next
+        mut expect_key = true
+        loop cur != null {
+            let t = mono_infer_type(cur, scope)
+            if expect_key {
+                if t != k0 { keys_uniform = false }
+            } else {
+                if t != vk0 { vals_uniform = false }
+                if is_mono_dyn_int(t) or is_mono_dyn_float(t) {
+                    if is_mono_dyn_float(t) { has_float = true }
+                } else {
+                    all_numeric = false
+                }
+            }
+            expect_key = not expect_key
+            cur = cur.next
+        }
+        mut hpfx = ""
+        if e.kind == EXPR_HEAP_MAP_LIT { hpfx = "heap " }
+        if not keys_uniform { return mono_map_spelling(hpfx, "dyn", "dyn") }  // checker rejects
+        if vals_uniform { return mono_map_spelling(hpfx, k0, vk0) }
+        if all_numeric and has_float { return mono_map_spelling(hpfx, k0, "f64") }
+        return mono_map_spelling(hpfx, k0, "dyn")
+    }
+    if e.kind == EXPR_INDEX {
+        let tt = mono_infer_type(e.target, scope)
+        let ct = strip_pointer_prefix(tt)
+        if ct == "f32x4" { return "f32" }; if ct == "i32x4" { return "i32" }
+        let ee = mono_shelf_elem(tt)
+        if ee != null { return ee }
+        let mv = mono_map_value(tt)
+        if mv != null { return mv }
+        return "i32"
+    }
+    if e.kind == EXPR_MEMBER {
+        let tt = mono_infer_type(e.target, scope)
+        let ct = strip_pointer_prefix(tt)
+        if ct == "f32x4" { return "f32" }; if ct == "i32x4" { return "i32" }
+        if mono_shelf_elem(tt) != null and e.member_name == "len" { return "usize" }
+        if mono_map_value(tt) != null and e.member_name == "len" { return "usize" }
+    }
+    if e.kind == EXPR_BINARY {
+        if e.op == TOK_EQ or e.op == TOK_NEQ { return "bool" }
+        let lt = mono_infer_type(e.left, scope)
+        if lt == "f32x4" or lt == "i32x4" { return lt }
+    }
+    if e.kind == EXPR_UNARY {
+        let st = mono_infer_type(e.operand, scope)
+        if st == "f32x4" or st == "i32x4" { return st }
+    }
+    if e.kind == EXPR_CALL {
+        // 5.2: shelf receiver calls — put/insert yield void, take/remove_at
+        // the element, sorted() a new shelf[elem]
+        if e.callee != null and e.callee.kind == EXPR_MEMBER {
+            let rt = mono_infer_type(e.callee.target, scope)
+            let ee = mono_shelf_elem(rt)
+            if ee != null {
+                if e.callee.member_name == "put" or e.callee.member_name == "insert" or e.callee.member_name == "free" or e.callee.member_name == "destroy" { return "void" }
+                if e.callee.member_name == "take" or e.callee.member_name == "remove_at" { return ee }
+                if e.callee.member_name == "sorted" {
+                    mut sb = create_sb(str.len(ee) + 9)
+                    sb_append_str(@sb, "shelf[")
+                    sb_append_str(@sb, ee)
+                    sb_append_str(@sb, "]")
+                    return sb_to_string(@sb)
+                }
+            }
+            if e.callee.target != null and e.callee.target.kind == EXPR_IDENT and (e.callee.target.str_val == "shelf" or e.callee.target.str_val == "map") { return "void" }
+            // 5.2 slice 6/7 / 7.2: map receiver calls
+            let mv = mono_map_value(rt)
+            if mv != null {
+                if e.callee.member_name == "put" or e.callee.member_name == "free" or e.callee.member_name == "destroy" { return "void" }
+                if e.callee.member_name == "has" { return "bool" }
+                if e.callee.member_name == "get" or e.callee.member_name == "get_or" or e.callee.member_name == "take" { return mv }
+            }
+            if e.callee.target != null and e.callee.target.kind == EXPR_IDENT and e.callee.target.str_val == "simd" {
+                if e.callee.member_name == "dot" { return "f32" }
+                if e.callee.member_name == "sqrt" { return "f32x4" }
+                if e.callee.member_name == "min" or e.callee.member_name == "max" {
+                    if e.first_arg != null { return mono_infer_type(e.first_arg, scope) }
+                    return "f32x4"
+                }
+            }
+        }
+        if e.callee != null and e.callee.kind == EXPR_IDENT {
+            if e.callee.str_val == "f32x4" or e.callee.str_val == "f32x4_splat" { return "f32x4" }
+            if e.callee.str_val == "i32x4" or e.callee.str_val == "i32x4_splat" { return "i32x4" }
+            if e.callee.str_val == "field_count" { return "i32" }
+            if e.callee.str_val == "field_name" or e.callee.str_val == "field_type" { return "string" }
+            if e.callee.str_val == "field_value" { return mono_infer_field_value_type(scope, e) }
+        }
+    }
+    return "i32"
+}
+

@@ -17,6 +17,7 @@ use "shelf_calls_gen.vl"
 use "ring_gen.vl"
 use "simd_gen.vl"
 use "codegen_line.vl"
+use "codegen_match.vl"
 
 // Intrusive linked list node maintaining active LIFO deferred statements.
 data DeferNode {
@@ -270,118 +271,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
 
     // 12. Match / Switch statement
     if stmt.kind == STMT_MATCH {
-        let subj_type = infer_expr_type(st, stmt.expr)
-        let k_sym = find_kind(st, subj_type)
-        if k_sym != null and k_sym.is_tagged_union {
-            sb_append_indent(sb, indent)
-            sb_append_str(sb, "switch ((")
-            emit_c_expr(sb, st, stmt.expr)
-            sb_append_str(sb, ").kind) {\n")
-            mut cur_case = stmt.first_case
-            loop cur_case != null {
-                if cur_case.is_default {
-                    sb_append_indent(sb, indent)
-                    sb_append_str(sb, "default: {\n")
-                } else {
-                    mut val = cur_case.first_val
-                    loop val != null {
-                        sb_append_indent(sb, indent)
-                        sb_append_str(sb, "case ")
-                        sb_append_str(sb, k_sym.name)
-                        sb_append_char(sb, '_')
-                        sb_append_str(sb, val.member_name)
-                        sb_append_str(sb, ":\n")
-                        val = val.next
-                    }
-                    sb_append_indent(sb, indent)
-                    sb_append_str(sb, "{\n")
-                }
-                enter_scope(st)
-                if not cur_case.is_default and cur_case.first_val != null and cur_case.first_val.kind == EXPR_VARIANT {
-                    let v_node = cur_case.first_val
-                    let v_sym = find_variant(k_sym, v_node.member_name)
-                    if v_sym != null and v_node.first_arg != null {
-                        if v_sym.field_count > 0 {
-                            mut cur_b = v_node.first_arg; mut cur_f = v_sym.first_field
-                            loop cur_b != null and cur_f != null {
-                                if cur_b.kind == EXPR_IDENT {
-                                    define_variable(st, cur_b.str_val, cur_f.type_name, false, cur_b.line, cur_b.col)
-                                    sb_append_indent(sb, indent + 1)
-                                    sb_append_str(sb, map_type_to_c(cur_f.type_name))
-                                    sb_append_char(sb, ' ')
-                                    sb_append_str(sb, cur_b.str_val)
-                                    sb_append_str(sb, " = (")
-                                    emit_c_expr(sb, st, stmt.expr)
-                                    sb_append_str(sb, ").as.")
-                                    sb_append_str(sb, v_node.member_name)
-                                    sb_append_char(sb, '.')
-                                    sb_append_str(sb, cur_f.name)
-                                    sb_append_str(sb, ";\n")
-                                }
-                                cur_b = cur_b.next; cur_f = cur_f.next
-                            }
-                        } else if v_sym.payload_type != null {
-                            if v_node.first_arg.kind == EXPR_IDENT {
-                                define_variable(st, v_node.first_arg.str_val, v_sym.payload_type, false, v_node.first_arg.line, v_node.first_arg.col)
-                                sb_append_indent(sb, indent + 1)
-                                sb_append_str(sb, map_type_to_c(v_sym.payload_type))
-                                sb_append_char(sb, ' ')
-                                sb_append_str(sb, v_node.first_arg.str_val)
-                                sb_append_str(sb, " = (")
-                                emit_c_expr(sb, st, stmt.expr)
-                                sb_append_str(sb, ").as.")
-                                sb_append_str(sb, v_node.member_name)
-                                sb_append_str(sb, ";\n")
-                            }
-                        }
-                    }
-                }
-                mut cur_stmt = cur_case.body.first_stmt
-                loop cur_stmt != null { emit_c_stmt(sb, st, cur_stmt, indent + 1, defers); cur_stmt = cur_stmt.next }
-                exit_scope(st)
-                sb_append_indent(sb, indent + 1)
-                sb_append_str(sb, "break;\n")
-                sb_append_indent(sb, indent)
-                sb_append_str(sb, "}\n")
-                cur_case = cur_case.next
-            }
-            sb_append_indent(sb, indent)
-            sb_append_str(sb, "}\n")
-            return
-        }
-        sb_append_indent(sb, indent)
-        sb_append_str(sb, "switch (")
-        emit_c_expr(sb, st, stmt.expr)
-        sb_append_str(sb, ") {\n")
-        mut cur_case = stmt.first_case
-        loop cur_case != null {
-            if cur_case.is_default {
-                sb_append_indent(sb, indent)
-                sb_append_str(sb, "default: {\n")
-            } else {
-                mut val = cur_case.first_val
-                loop val != null {
-                    sb_append_indent(sb, indent)
-                    sb_append_str(sb, "case ")
-                    if val.kind == EXPR_VARIANT and (val.type_name == null or str.len(val.type_name) == 0) and k_sym != null {
-                        val.type_name = k_sym.name
-                    }
-                    emit_c_expr(sb, st, val)
-                    sb_append_str(sb, ":\n")
-                    val = val.next
-                }
-                sb_append_indent(sb, indent)
-                sb_append_str(sb, "{\n")
-            }
-            emit_c_block_stmts(sb, st, cur_case.body, indent + 1, defers)
-            sb_append_indent(sb, indent + 1)
-            sb_append_str(sb, "break;\n")
-            sb_append_indent(sb, indent)
-            sb_append_str(sb, "}\n")
-            cur_case = cur_case.next
-        }
-        sb_append_indent(sb, indent)
-        sb_append_str(sb, "}\n")
+        emit_match_stmt(sb, st, stmt, indent, defers)
         return
     }
 }

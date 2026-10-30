@@ -1,0 +1,199 @@
+// C99 call expression code generator for Velo AST expressions.
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../analysis/str_checks.vl"
+use "../analysis/math_checks.vl"
+use "../common/string_builder.vl"
+use "../common/act_types.vl"
+use "codegen_io.vl"
+use "../analysis/op_resolver.vl"
+use "codegen_types.vl"
+use "shelf_gen.vl"
+use "shelf_calls_gen.vl"
+use "ring_gen.vl"
+use "struct_lit_gen.vl"
+use "map_gen.vl"
+use "math_gen.vl"
+use "time_gen.vl"
+use "os_gen.vl"
+use "fs_gen.vl"
+use "simd_gen.vl"
+use "reflect_gen.vl"
+use "codegen_expr.vl"
+
+act emit_call_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    if expr.callee.kind == EXPR_MEMBER and expr.callee.target.kind == EXPR_IDENT {
+        let k_sym = find_kind(st, expr.callee.target.str_val)
+        if k_sym != null {
+            let v_sym = find_variant(k_sym, expr.callee.member_name)
+            if v_sym != null {
+                sb_append_char(sb, '('); sb_append_str(sb, k_sym.name); sb_append_str(sb, "){ .kind = ")
+                sb_append_str(sb, k_sym.name); sb_append_char(sb, '_'); sb_append_str(sb, v_sym.name)
+                if expr.first_arg != null {
+                    sb_append_str(sb, ", .as = { ."); sb_append_str(sb, v_sym.name); sb_append_str(sb, " = ")
+                    if v_sym.field_count > 0 {
+                        sb_append_str(sb, "{ ")
+                        mut cur_f = v_sym.first_field; mut cur_a = expr.first_arg
+                        loop cur_f != null and cur_a != null {
+                            sb_append_char(sb, '.'); sb_append_str(sb, cur_f.name); sb_append_str(sb, " = ")
+                            emit_c_expr(sb, st, cur_a)
+                            if cur_f.next != null { sb_append_str(sb, ", ") }
+                            cur_f = cur_f.next; cur_a = cur_a.next
+                        }
+                        sb_append_str(sb, " }")
+                    } else {
+                        emit_c_expr(sb, st, expr.first_arg)
+                    }
+                    sb_append_str(sb, " }")
+                }
+                sb_append_str(sb, " }")
+                return
+            }
+        }
+    }
+    if expr.callee.kind == EXPR_MEMBER {
+        let target = expr.callee.target
+        let member = expr.callee.member_name
+        if target.kind == EXPR_IDENT {
+            if target.str_val == "mem" {
+                if member == "alloc" {
+                    if expr.first_arg != null and expr.first_arg.next == null { sb_append_str(sb, "((uint8_t*)velo_mem_alloc(1, (size_t)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")))"); return }
+                    let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg))); sb_append_str(sb, "(("); sb_append_str(sb, elem_type); sb_append_str(sb, "*)velo_mem_alloc(sizeof(")
+                    sb_append_str(sb, elem_type); sb_append_str(sb, "), (size_t)("); emit_c_expr(sb, st, expr.first_arg.next); sb_append_str(sb, ")))"); return
+                }
+                if member == "heap_alloc" {
+                    if expr.first_arg != null and expr.first_arg.next == null { sb_append_str(sb, "((uint8_t*)velo_heap_alloc(1, (size_t)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, ")))"); return }
+                    let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg))); sb_append_str(sb, "(("); sb_append_str(sb, elem_type); sb_append_str(sb, "*)velo_heap_alloc(sizeof(")
+                    sb_append_str(sb, elem_type); sb_append_str(sb, "), (size_t)("); emit_c_expr(sb, st, expr.first_arg.next); sb_append_str(sb, ")))"); return
+                }
+                if member == "free" { sb_append_str(sb, "velo_heap_free((void*)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+                // cm43: realloc keeps heap size-header + ledger; copy/move/set map onto the C memcpy trio
+                if member == "realloc" {
+                    let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg.next))); sb_append_str(sb, "(("); sb_append_str(sb, elem_type); sb_append_str(sb, "*)velo_heap_realloc((void*)(")
+                    if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "), sizeof("); sb_append_str(sb, elem_type); sb_append_str(sb, "), (long long)("); if expr.first_arg.next.next != null { emit_c_expr(sb, st, expr.first_arg.next.next) } else { sb_append_str(sb, "0") }; sb_append_str(sb, ")))"); return
+                }
+                if member == "copy" or member == "move" or member == "set" { let cfn = "velo_byte_copy"
+                    if member == "move" { cfn = "velo_byte_move" }; if member == "set" { cfn = "velo_byte_set" }; sb_append_str(sb, cfn); sb_append_str(sb, "("); sb_append_str(sb, "(void*)(")
+                    if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) }; sb_append_str(sb, ")")
+                    if member == "set" { sb_append_str(sb, ", (int)(") } else { sb_append_str(sb, ", (void*)(") }; if expr.first_arg.next != null { emit_c_expr(sb, st, expr.first_arg.next) }; sb_append_str(sb, ")"); sb_append_str(sb, ", (long long)(")
+                    if expr.first_arg.next.next != null { emit_c_expr(sb, st, expr.first_arg.next.next) } else { sb_append_str(sb, "0") }; sb_append_str(sb, "))"); return
+                }
+                if member == "used" { sb_append_str(sb, "velo_mem_used()"); return } if member == "heap_used" { sb_append_str(sb, "velo_heap_used()"); return }  // compressed pair — 5.3 ceiling discipline
+                // §4.1: mem.current() -> active arena; mem.alloc_with(a, @T, count) -> @T
+                if member == "current" { sb_append_str(sb, "velo_zone_active()"); return }  // §4.1/§4.2
+                if member == "alloc_with" {
+                    let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg.next))); sb_append_str(sb, "(("); sb_append_str(sb, elem_type); sb_append_str(sb, "*)velo_alloc_with((VeloAllocator)(")
+                    emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "), sizeof("); sb_append_str(sb, elem_type); sb_append_str(sb, "), (size_t)(")
+                    emit_c_expr(sb, st, expr.first_arg.next.next); sb_append_str(sb, ")))"); return
+                }
+                if member == "create_arena" { sb_append_str(sb, "velo_mem_create_arena((size_t)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+                if member == "destroy_arena" { sb_append_str(sb, "velo_mem_destroy_arena((VeloZoneArena*)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+            }
+            // §4.2: spawn/join zero-arg i32 acts (@Thread = VeloThreadCtx*); @Mutex ops are opaque void*
+            if target.str_val == "thread" and member == "spawn" { sb_append_str(sb, "velo_thread_spawn((VeloThreadFn)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }; if target.str_val == "thread" and member == "join" { sb_append_str(sb, "velo_thread_join("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, ")"); return }
+            if target.str_val == "thread" and member == "mutex" { sb_append_str(sb, "velo_mutex_create()"); return }; if target.str_val == "thread" and member == "acquire" { sb_append_str(sb, "velo_mutex_acquire((void*)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }
+            if target.str_val == "thread" and member == "release" { sb_append_str(sb, "velo_mutex_release((void*)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }; if target.str_val == "thread" and member == "free" { sb_append_str(sb, "velo_mutex_destroy((void*)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }
+            if target.str_val == "fs" { emit_fs_call(sb, st, member, expr); return }  // 5.4 S2: the ladder lives in fs_gen.vl — legacy six moved in verbatim, joining the metadata family; checks ran at inference
+            if target.str_val == "str" { emit_str_call(sb, st, member, expr); return }  // 5.1/8.2: delegate to codegen_io.vl
+            if target.str_val == "math" { emit_math_call(sb, st, member, expr); return }  // 5.3 (S2): the ladder lives in math_gen.vl — compile-checks already ran at inference
+            if target.str_val == "time" { emit_time_call(sb, st, member, expr); return }; if target.str_val == "os" { emit_os_call(sb, st, member, expr); return }; if target.str_val == "simd" { emit_simd_call(sb, st, expr); return }; if target.str_val == "shelf" { emit_shelf_module_call(sb, st, member, expr); return }; if target.str_val == "map" { emit_map_module_call(sb, st, member, expr); return }
+            if target.str_val == "io" { emit_io_call(sb, st, member, expr.first_arg); return }
+        }
+    }
+    // 5.2: shelf receivers — put / take lower onto VeloShelf helpers
+    if expr.callee.kind == EXPR_MEMBER {
+        if is_shelf_form(infer_expr_type(st, expr.callee.target)) {
+            emit_shelf_member_call(sb, st, expr)
+            return
+        }
+        if is_map_form(infer_expr_type(st, expr.callee.target)) {  // 5.2 slice 6: put / get / has
+            emit_map_member_call(sb, st, expr)
+            return
+        }
+        if is_ring_type(infer_expr_type(st, expr.callee.target)) or is_bitset_type(infer_expr_type(st, expr.callee.target)) { emit_coll9_call(sb, st, expr); return }  // 5.2 slice 9
+    }
+    if expr.callee.kind == EXPR_MEMBER {
+        let target_type = infer_expr_type(st, expr.callee.target)
+        let clean_type = strip_pointer_prefix(target_type)
+        let st_sym = find_struct(st, clean_type)
+        if st_sym == null or find_struct_field(st_sym, expr.callee.member_name) == null {
+            let fn_sym = find_function(st, expr.callee.member_name)
+            if fn_sym != null {
+                sb_append_str(sb, fn_sym.name)
+                sb_append_char(sb, '(')
+                let p0_type = fn_sym.first_param.type_name
+                let is_tgt_ptr = target_type != null and str.len(target_type) > 0 and target_type[0] == '@'
+                let is_p0_ptr = p0_type != null and str.len(p0_type) > 0 and p0_type[0] == '@'
+                if is_p0_ptr and not is_tgt_ptr {
+                    sb_append_str(sb, "(&(")
+                    emit_c_expr(sb, st, expr.callee.target)
+                    sb_append_str(sb, "))")
+                } else if is_tgt_ptr and not is_p0_ptr {
+                    sb_append_str(sb, "(*(")
+                    emit_c_expr(sb, st, expr.callee.target)
+                    sb_append_str(sb, "))")
+                } else {
+                    emit_c_expr(sb, st, expr.callee.target)
+                }
+                if expr.first_arg != null {
+                    sb_append_str(sb, ", ")
+                }
+                mut cur_a = expr.first_arg
+                loop cur_a != null {
+                    emit_c_expr(sb, st, cur_a)
+                    if cur_a.next != null {
+                        sb_append_str(sb, ", ")
+                    }
+                    cur_a = cur_a.next
+                }
+                sb_append_char(sb, ')')
+                return
+            }
+        }
+    }
+
+    if expr.callee != null and expr.callee.kind == EXPR_IDENT and expr.callee.str_val == "assert" {
+        sb_append_str(sb, "velo_assert(("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "), \"")
+        if st.source_file != null and str.len(st.source_file) > 0 {
+            mut i: usize = 0
+            loop i < str.len(st.source_file) {
+                if st.source_file[i] == '\\' { sb_append_char(sb, '/') } else { sb_append_char(sb, st.source_file[i]) }
+                i += 1
+            }
+        } else { sb_append_str(sb, "<source>") }
+        sb_append_str(sb, "\", "); sb_append_int(sb, expr.line); sb_append_str(sb, ", ")
+        if expr.first_arg != null and expr.first_arg.next != null { emit_c_expr(sb, st, expr.first_arg.next) } else { sb_append_str(sb, "NULL") }
+        sb_append_char(sb, ')'); return
+    }
+
+    if expr.callee != null and expr.callee.kind == EXPR_IDENT and is_reflect_builtin(expr.callee.str_val) {
+        emit_reflect_call(sb, st, expr); return
+    }
+
+    if expr.callee != null and expr.callee.kind == EXPR_IDENT and (expr.callee.str_val == "f32x4" or expr.callee.str_val == "f32x4_splat" or expr.callee.str_val == "i32x4" or expr.callee.str_val == "i32x4_splat") {
+        sb_append_str(sb, "velo_"); sb_append_str(sb, expr.callee.str_val); sb_append_char(sb, '(')
+        mut cur_arg = expr.first_arg
+        loop cur_arg != null { emit_c_expr(sb, st, cur_arg); if cur_arg.next != null { sb_append_str(sb, ", ") }; cur_arg = cur_arg.next }
+        sb_append_char(sb, ')'); return
+    }
+
+    // Standard function call
+    emit_c_expr(sb, st, expr.callee)
+    sb_append_char(sb, '(')
+    mut cur_arg = expr.first_arg
+    loop cur_arg != null {
+        emit_c_expr(sb, st, cur_arg)
+        if cur_arg.next != null {
+            sb_append_str(sb, ", ")
+        }
+        cur_arg = cur_arg.next
+    }
+    sb_append_char(sb, ')')
+}
+

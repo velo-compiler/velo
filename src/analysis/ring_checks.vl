@@ -1,0 +1,116 @@
+// Semantic validation and member checks for ring buffer collections.
+use sys.io
+use sys.mem
+use "symbol_table.vl"
+use "type_checker.vl"
+use "coll9_common.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+
+act starts_with_ring(t: string) -> bool {
+    if t == null { return false }
+    let len = str.len(t)
+    if len < 6 { return false }
+    return t[0] == 'r' and t[1] == 'i' and t[2] == 'n' and t[3] == 'g' and t[4] == '['
+}
+
+act starts_with_map(t: string) -> bool {
+    if t == null { return false }
+    let len = str.len(t)
+    if len < 5 { return false }
+    return t[0] == 'M' and t[1] == 'a' and t[2] == 'p' and t[3] == '['
+}
+
+// True when the type string is a ring (optionally an @-pointer to one).
+act is_ring_type(type_name: string) -> bool {
+    if type_name == null { return false }
+    return starts_with_ring(strip_pointer_prefix(type_name))
+}
+
+// Extracts the element type from ring[T] / @ring[T]; null otherwise.
+act ring_elem_type(type_name: string) -> string {
+    if type_name == null { return null }
+    let clean = strip_pointer_prefix(type_name)
+    if not starts_with_ring(clean) { return null }
+    let len = str.len(clean)
+    if len < 7 { return null }
+    if clean[len - 1] != ']' { return null }
+    let inner_len = (len - 1) - 5
+    if inner_len == 0 { return null }
+    return copy_slice_to_string(clean, 5, inner_len)
+}
+
+// The family gate: the shelf element families MINUS dyn (ring[dyn] is a later
+// slice). Returns null when the element is usable, else the staged error text.
+act ring_elem_error(st: @SymbolTable, raw: string) -> string {
+    if raw == null { return null }
+    if is_dyn_int_family(raw) or is_dyn_float_family(raw) { return null }
+    if raw == "bool" or raw == "string" { return null }
+    if str.len(raw) > 0 and raw[0] == '@' { return null }
+    if is_shelf_type(raw) or starts_with_map(raw) { return null }
+    if find_kind(st, raw) != null { return null }
+    mut sb = create_sb(str.len(raw) + 72)
+    sb_append_str(@sb, "ring element type ")
+    sb_append_str(@sb, raw)
+    sb_append_str(@sb, " is not supported — use a @")
+    sb_append_str(@sb, raw)
+    sb_append_str(@sb, " pointer element")
+    return sb_to_string(@sb)
+}
+
+act check_ring_call(st: @SymbolTable, expr: @ExprNode, elem: string) -> string {
+    let member = expr.callee.member_name
+    if member == "put" {
+        if expr.arg_count != 1 {
+            report_error("semantic", expr.line, expr.col, "ring.put expects exactly 1 argument: (ring r, element value)"); st.error_count += 1
+            return "unknown"
+        }
+        check_coll9_mut_root(st, expr.callee.target, "put", "into a ring", " held by a let (declare with mut)")
+        let got = infer_expr_type(st, expr.first_arg)
+        if got != "unknown" and got != elem {
+            mut msg = create_sb(str.len(elem) + str.len(got) + 56)
+            sb_append_str(@msg, "ring.put element mismatch: expected ")
+            sb_append_str(@msg, elem)
+            sb_append_str(@msg, " (got ")
+            sb_append_str(@msg, got)
+            sb_append_str(@msg, ")")
+            report_error("semantic", expr.first_arg.line, expr.first_arg.col, sb_to_string(@msg)); st.error_count += 1
+            return "unknown"
+        }
+        return "void"
+    }
+    if member == "pop" {
+        if expr.arg_count != 0 {
+            report_error("semantic", expr.line, expr.col, "ring.pop takes no arguments"); st.error_count += 1
+            return "unknown"
+        }
+        check_coll9_mut_root(st, expr.callee.target, "pop", "from a ring", " held by a let (declare with mut)")
+        return elem
+    }
+    if member == "peek" {
+        if expr.arg_count != 0 {
+            report_error("semantic", expr.line, expr.col, "ring.peek takes no arguments"); st.error_count += 1
+            return "unknown"
+        }
+        return elem  // read tier — legal on a let
+    }
+    mut msg = create_sb(str.len(member) + 64)
+    sb_append_str(@msg, "unknown ring member '")
+    sb_append_str(@msg, member)
+    sb_append_str(@msg, "' (put, pop, peek, len are available)")
+    report_error("semantic", expr.line, expr.col, sb_to_string(@msg))
+    st.error_count += 1
+    return "unknown"
+}
+
+// 5.2 slice 9: `loop v of r { }` — FIFO snapshot iteration; returns T.
+act check_ring_loop_elem(st: @SymbolTable, stmt: @StmtNode) -> string {
+    let coll_t = infer_expr_type(st, stmt.expr)
+    let elem = ring_elem_type(coll_t)
+    if elem == null { return "unknown" }
+    return elem
+}
+

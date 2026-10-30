@@ -1,0 +1,46 @@
+// Lexer state structure, token appending, and statement boundary detection for Velo.
+use sys.io
+use sys.mem
+use "token.vl"
+use "../common/utils.vl"
+use "../common/diagnostics.vl"
+
+data Lexer {
+    file_path: string
+    source: string
+    source_len: usize
+    pos: usize
+    line: i32
+    col: i32
+    tokens: @Token
+    token_count: usize
+    token_cap: usize
+    dropped_count: usize
+    last_kind: i32
+}
+
+// Determines if a token kind can terminate a statement (Go-style newline rule).
+act can_terminate_stmt(kind: i32) -> bool {
+    if kind == TOK_IDENTIFIER or kind == TOK_INT_LIT or kind == TOK_FLOAT_LIT or kind == TOK_STRING_LIT { return true }
+    if kind == TOK_TRUE or kind == TOK_FALSE or kind == TOK_NULL or kind == TOK_RETURN { return true }
+    if kind == TOK_BREAK or kind == TOK_CONTINUE or kind == TOK_RPAREN or kind == TOK_RBRACKET or kind == TOK_RBRACE { return true }
+    return false
+}
+
+// Adds a token into the lexer buffer or increments dropped count on overflow.
+act add_token(lex: @Lexer, kind: i32, start: usize, len: usize, line: i32, col: i32) {
+    if lex.token_count < lex.token_cap {
+        lex.tokens[lex.token_count] = Token{ kind: kind, start: start, length: len, line: line, col: col }
+        lex.token_count += 1
+        lex.last_kind = kind
+    } else {
+        lex.dropped_count += 1
+    }
+}
+
+// Allocates and initializes a new Lexer instance.
+act create_lexer(source: string, source_len: usize, capacity: usize) -> Lexer {
+    let buf: @Token = mem.alloc(@Token, capacity)
+    return Lexer{ file_path: "", source: source, source_len: source_len, pos: 0, line: 1, col: 1, tokens: buf, token_count: 0, token_cap: capacity, dropped_count: 0, last_kind: 0 }
+}
+

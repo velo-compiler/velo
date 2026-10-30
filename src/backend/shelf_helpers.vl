@@ -1,0 +1,121 @@
+// Shelf detection and dyn box/unbox emission helpers.
+use sys.io
+use sys.mem
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../analysis/shelf_checks.vl"
+use "../analysis/dyn_checks.vl"
+use "../common/string_builder.vl"
+use "../common/act_types.vl"
+use "codegen_types.vl"
+use "codegen_expr.vl"
+
+// Detects the shelf shape (raw `shelf[...]`, @-pointer `@shelf[...]`, or the
+// slice-10 heap `heap shelf[...]`).
+act is_shelf_form(type_name: string) -> bool {
+    if type_name == null { return false }
+    let len = str.len(type_name)
+    mut at: usize = 0
+    loop at < len and type_name[at] == '@' { at += 1 }
+    if len >= at + 11 and type_name[at] == 'h' and type_name[at + 1] == 'e' and type_name[at + 2] == 'a' and type_name[at + 3] == 'p' and type_name[at + 4] == ' ' {
+        at += 5   // strip the heap modifier; the shelf spell follows
+    }
+    if len < at + 5 { return false }
+    if type_name[at] == 's' and type_name[at + 1] == 'h' and type_name[at + 2] == 'e' and type_name[at + 3] == 'l' and type_name[at + 4] == 'f' { return true }
+    return false
+}
+
+// Extracts the element type string from shelf[T] / @shelf[T] / (slice 10)
+// heap shelf[T]; null otherwise.
+act shelf_raw_elem(type_name: string) -> string {
+    if type_name == null { return null }
+    let len = str.len(type_name)
+    mut at: usize = 0
+    loop at < len and type_name[at] == '@' { at += 1 }
+    if len >= at + 11 and type_name[at] == 'h' and type_name[at + 1] == 'e' and type_name[at + 2] == 'a' and type_name[at + 3] == 'p' and type_name[at + 4] == ' ' {
+        at += 5   // strip the heap modifier
+    }
+    if len < at + 7 { return null }
+    if type_name[at] != 's' or type_name[at + 1] != 'h' or type_name[at + 2] != 'e' or type_name[at + 3] != 'l' or type_name[at + 4] != 'f' or type_name[at + 5] != '[' { return null }
+    if type_name[len - 1] != ']' { return null }
+    let inner_len = (len - 1) - (at + 6)
+    if inner_len == 0 { return null }
+    return copy_slice_to_string(type_name, at + 6, inner_len)
+}
+
+// 5.2 slice 2 — boxes an element value into the VeloDyn tag by its source
+// Velo type (Stage 1: _emit_dyn_box — identical C shape and tag labels).
+// Slice 8: u64-typed sources (and integer literals above the i64 range,
+// detected through the literal TEXT — the parser's i32 int_val wraps) box
+// the VELO_DYN_U64 tag with the full uint64 payload.
+act emit_dyn_box(sb: @StringBuilder, st: @SymbolTable, raw: string, arg: @ExprNode) {
+    sb_append_str(sb, "(VeloDyn){ .tag = ")
+    if raw == "u64" {
+        sb_append_str(sb, "VELO_DYN_U64, .as = { .u64 = (uint64_t)(")
+    } else if is_dyn_int_family(raw) {
+        if arg != null and arg.kind == EXPR_INT and int_literal_exceeds_i64(arg.str_val) {
+            sb_append_str(sb, "VELO_DYN_U64, .as = { .u64 = (uint64_t)(")
+        } else {
+            sb_append_str(sb, "VELO_DYN_I64, .as = { .i64 = (int64_t)(")
+        }
+    } else if is_dyn_float_family(raw) {
+        sb_append_str(sb, "VELO_DYN_F64, .as = { .f64 = (double)(")
+    } else {
+        let len = str.len(raw)
+        if raw == "bool" {
+            sb_append_str(sb, "VELO_DYN_BOOL, .as = { .b = (")
+        } else if raw == "string" {
+            sb_append_str(sb, "VELO_DYN_STR, .as = { .s = (const char*)(")
+        } else if len > 0 and raw[0] == '@' {
+            sb_append_str(sb, "VELO_DYN_PTR, .as = { .p = (void*)(")
+        } else if is_shelf_form(raw) {
+            sb_append_str(sb, "VELO_DYN_CHILD, .as = { .child = (")
+        } else {
+            sb_append_str(sb, "VELO_DYN_I64, .as = { .i64 = (int64_t)(")
+        }
+    }
+    emit_c_expr(sb, st, arg)
+    if raw == "bool" {
+        sb_append_str(sb, ") ? 1 : 0 } }")
+    } else {
+        sb_append_str(sb, ") } }")
+    }
+}
+
+// 5.2 slice 2 — unboxes a raw dyn value under an explicit `as` cast to a
+// concrete target (Stage 1: _emit_dyn_unbox — identical C shape; the expect
+// fatal and its wording live in velo_runtime.h so the stages cannot diverge).
+// Target VALIDITY already ran in the checker (check_dyn_unbox_target) — the
+// emission below covers every accepted spelling, with @-targets (incl. the
+// checker-rejected @shelf) taking the pointer branch for totality.
+act emit_dyn_unbox(sb: @StringBuilder, st: @SymbolTable, operand: @ExprNode, target: string) {
+    if target == null or target == "dyn" {
+        emit_c_expr(sb, st, operand)
+        return
+    }
+    if str.len(target) > 0 and target[0] == '@' {
+        let cast_c = map_type_to_c(target)
+        sb_append_char(sb, '(')
+        sb_append_str(sb, cast_c)
+        sb_append_str(sb, ")velo_dyn_unbox_ptr(")
+        emit_c_expr(sb, st, operand)
+        sb_append_char(sb, ')')
+        return
+    }
+    if is_shelf_form(target) {
+        sb_append_str(sb, "velo_dyn_unbox_shelf(")
+        emit_c_expr(sb, st, operand)
+        sb_append_char(sb, ')')
+        return
+    }
+    sb_append_str(sb, "velo_dyn_unbox_")
+    sb_append_str(sb, target)
+    sb_append_char(sb, '(')
+    emit_c_expr(sb, st, operand)
+    sb_append_char(sb, ')')
+}
+

@@ -15,6 +15,7 @@ use "../common/utils.vl"
 use "../ast/expr.vl"
 use "../ast/types.vl"
 use "../frontend/token.vl"
+use "shelf_lit_checks.vl"
 
 // Index-capable element types. Keep in exact sync with Stage 1's SHELF_INT_TYPES.
 act is_shelf_index_type(name: string) -> bool {
@@ -91,104 +92,6 @@ act check_shelf_mut_binding(st: @SymbolTable, receiver: @ExprNode, verb: string,
             st.error_count += 1
         }
     }
-}
-
-// Runs the shelf literal checks and MEMOIZES the element type on the node
-// (bare elem string on success, "unknown" on failure) via bool_val, so later
-// infer passes return the cached verdict instead of re-reporting.
-act shelf_literal_elem(st: @SymbolTable, expr: @ExprNode) -> string {
-    if expr.bool_val { return expr.type_name }
-    if expr.arg_count == 0 {
-        if expr.type_name != null and str.len(expr.type_name) > 0 {
-            expr.bool_val = true
-            return expr.type_name  // element type pinned by the annotation
-        }
-        report_error("semantic", expr.line, expr.col, "cannot infer element type of empty shelf literal — annotate it (e.g. let e: shelf[i32] = shelf[])"); st.error_count += 1
-        expr.type_name = "unknown"; expr.bool_val = true
-        return "unknown"
-    }
-    let elem = infer_expr_type(st, expr.first_arg)
-    if elem == "unknown" {
-        expr.type_name = "unknown"; expr.bool_val = true
-        return "unknown"  // the element inference already reported
-    }
-    if elem == "@void" {
-        report_error("semantic", expr.first_arg.line, expr.first_arg.col, "shelf elements cannot be null (use a @T pointer element)"); st.error_count += 1
-        expr.type_name = "unknown"; expr.bool_val = true
-        return "unknown"
-    }
-    // 5.2 slice 2 — sequence scan + element inference ladder over ALL args:
-    // homogeneous unchanged; all-numeric mix with a float → f64 (widen);
-    // mixed integer widths stay a strict differ error; any other mix lowers
-    // to shelf[dyn] (every element must box into the tag).
-    mut is_mixed = false
-    mut all_numeric = true
-    mut has_float = false
-    mut second = ""   // first element type that differs from the first one
-    if is_dyn_int_family(elem) or is_dyn_float_family(elem) {
-        if is_dyn_float_family(elem) { has_float = true }
-    } else {
-        all_numeric = false
-    }
-    mut cur = expr.first_arg.next
-    loop cur != null {
-        let t = infer_expr_type(st, cur)
-        if t == "@void" {
-            report_error("semantic", cur.line, cur.col, "shelf elements cannot be null (use a @T pointer element)"); st.error_count += 1
-            expr.type_name = "unknown"; expr.bool_val = true
-            return "unknown"
-        }
-        if t != elem { is_mixed = true; if str.len(second) == 0 { second = t } }
-        if is_dyn_int_family(t) or is_dyn_float_family(t) {
-            if is_dyn_float_family(t) { has_float = true }
-        } else {
-            all_numeric = false
-        }
-        cur = cur.next
-    }
-    if not is_mixed {
-        expr.type_name = elem; expr.bool_val = true
-        return elem
-    }
-    if all_numeric {
-        if has_float {
-            expr.type_name = "f64"; expr.bool_val = true
-            return "f64"
-        }
-        // mixed integer widths: strict differ error (deliberate soundness wall)
-        mut msg = create_sb(str.len(elem) + str.len(second) + 48)
-        sb_append_str(@msg, "shelf literal element types differ: ")
-        sb_append_str(@msg, elem)
-        sb_append_str(@msg, " vs ")
-        sb_append_str(@msg, second)
-        report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
-        expr.type_name = "unknown"; expr.bool_val = true
-        return "unknown"
-    }
-    // non-numeric mix → shelf[dyn]: validate every element boxability
-    let err0 = dyn_boxable_error(elem)
-    if err0 != null {
-        report_error("semantic", expr.first_arg.line, expr.first_arg.col, err0); st.error_count += 1
-        expr.type_name = "unknown"; expr.bool_val = true
-        return "unknown"
-    }
-    cur = expr.first_arg.next
-    loop cur != null {
-        let t = infer_expr_type(st, cur)
-        if t == "unknown" {
-            expr.type_name = "unknown"; expr.bool_val = true
-            return "unknown"  // already reported upstream
-        }
-        let err = dyn_boxable_error(t)
-        if err != null {
-            report_error("semantic", cur.line, cur.col, err); st.error_count += 1
-            expr.type_name = "unknown"; expr.bool_val = true
-            return "unknown"
-        }
-        cur = cur.next
-    }
-    expr.type_name = "dyn"; expr.bool_val = true
-    return "dyn"
 }
 
 // Property reads on a shelf: only `.len` (usize) exists as a property.
@@ -342,19 +245,6 @@ act pin_empty_shelf_return(st: @SymbolTable, val: @ExprNode, ret_t: string) {
     let clean = strip_pointer_prefix(ret_t)
     if not is_shelf_type(ret_t) and not starts_with_heap_shelf(clean) { return }
     val.type_name = shelf_elem_type(ret_t)
-}
-
-// 5.2: builds the shelf[T] type string from the (memoized) literal element.
-// Slice 10: a heap literal's spelling carries the `heap ` prefix.
-act shelf_inferred_type(st: @SymbolTable, expr: @ExprNode) -> string {
-    let elem = shelf_literal_elem(st, expr)
-    if elem == null or elem == "unknown" { return "unknown" }
-    mut sb = create_sb(str.len(elem) + 16)
-    if expr.kind == EXPR_HEAP_SHELF_LIT { sb_append_str(@sb, "heap ") }
-    sb_append_str(@sb, "shelf[")
-    sb_append_str(@sb, elem)
-    sb_append_str(@sb, "]")
-    return sb_to_string(@sb)
 }
 
 // Cross-call boundary: a shelf argument's element type must string-match the

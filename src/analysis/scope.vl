@@ -1,0 +1,89 @@
+// Lexical scope stack management, symbol definition, and hierarchical lookup for Velo.
+use sys.io
+use sys.mem
+use "symbol_table.vl"
+
+act create_scope(parent: @Scope) -> @Scope {
+    mut sc: @Scope = mem.alloc(@Scope, 1)
+    sc.parent = parent; sc.first_sym = null; sc.sym_count = 0
+    return sc
+}
+
+// Pushes a new inner lexical scope onto the scope stack.
+act enter_scope(st: @SymbolTable) {
+    st.current_scope = create_scope(st.current_scope)
+}
+
+// Pops the current lexical scope, returning to its parent.
+act exit_scope(st: @SymbolTable) {
+    if st.current_scope != null and st.current_scope.parent != null {
+        st.current_scope = st.current_scope.parent
+    }
+}
+
+// Looks up a symbol only in the immediate current scope.
+act scope_lookup_immediate(sc: @Scope, name: string) -> @Symbol {
+    if sc == null { return null }
+    mut cur = sc.first_sym
+    loop cur != null {
+        if cur.name == name { return cur }
+        cur = cur.next
+    }
+    return null
+}
+
+// Looks up a symbol in the current scope, traversing up to enclosing parent scopes.
+act scope_lookup(sc: @Scope, name: string) -> @Symbol {
+    mut cur_sc = sc
+    loop cur_sc != null {
+        let sym = scope_lookup_immediate(cur_sc, name)
+        if sym != null { return sym }
+        cur_sc = cur_sc.parent
+    }
+    return null
+}
+
+// Defines a new variable symbol in the current scope.
+act define_variable(st: @SymbolTable, name: string, type_name: string, is_mut: bool, line: i32, col: i32) -> bool {
+    let existing = scope_lookup_immediate(st.current_scope, name)
+    if existing != null {
+        io.println("[Velo Error] semantic:{line}:{col} - Redeclaration of variable '{name}' in current scope")
+        st.error_count += 1
+        return false
+    }
+
+    mut sym: @Symbol = mem.alloc(@Symbol, 1)
+    sym.name = name
+    sym.type_name = type_name
+    sym.kind = SYM_VAR
+    sym.is_mut = is_mut
+    sym.line = line
+    sym.col = col
+    sym.next = st.current_scope.first_sym
+
+    st.current_scope.first_sym = sym
+    st.current_scope.sym_count += 1
+    return true
+}
+
+// Defines a function parameter symbol in the current function scope.
+act define_parameter(st: @SymbolTable, name: string, type_name: string, line: i32, col: i32) -> bool {
+    mut sym: @Symbol = mem.alloc(@Symbol, 1)
+    sym.name = name
+    sym.type_name = type_name
+    sym.kind = SYM_PARAM
+    sym.is_mut = true
+    sym.line = line
+    sym.col = col
+    sym.next = st.current_scope.first_sym
+
+    st.current_scope.first_sym = sym
+    st.current_scope.sym_count += 1
+    return true
+}
+
+// Resolves a variable symbol from the active scope hierarchy.
+act resolve_variable(st: @SymbolTable, name: string) -> @Symbol {
+    return scope_lookup(st.current_scope, name)
+}
+

@@ -1,0 +1,277 @@
+// Primary expression parsing algorithms for Velo: literals, struct instantiations, anonymous functions.
+use sys.io
+use sys.mem
+use "token.vl"
+use "../common/utils.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "parser.vl"
+use "parser_binary.vl"
+use "parser_stmt.vl"
+use "parser_lit.vl"
+
+// Parses an anonymous function expression: `act(params) [-> Ret] { body }`.
+act parse_anon_act(p: @Parser) -> @ExprNode {
+    let act_tok = parser_consume(p, TOK_ACT, "Expected 'act'")
+    parser_consume(p, TOK_LPAREN, "Expected '(' after 'act'")
+    mut first_param: @ParamNode = null
+    mut last_param: @ParamNode = null
+    mut count: usize = 0
+    if not parser_check(p, TOK_RPAREN) {
+        mut more_params = true
+        loop more_params {
+            let pname_tok = parser_consume_ident(p, "Expected parameter name")
+            let pname = copy_slice_to_string(p.source, pname_tok.start, pname_tok.length)
+            parser_consume(p, TOK_COLON, "Expected ':' after parameter name")
+            let ptype = parse_type_annotation(p)
+            let pnode = make_param_node(pname, ptype, pname_tok.line, pname_tok.col)
+            if first_param == null {
+                first_param = pnode
+                last_param = pnode
+            } else {
+                last_param.next = pnode
+                last_param = pnode
+            }
+            count += 1
+            if not parser_match(p, TOK_COMMA) {
+                more_params = false
+            }
+        }
+    }
+    parser_consume(p, TOK_RPAREN, "Expected ')' after parameters")
+    mut ret_type = "void"
+    if parser_match(p, TOK_ARROW) {
+        ret_type = parse_type_annotation(p)
+    }
+
+    let body = parse_block(p)
+    let anon_name = parser_next_anon_name(p)
+    let func_node = make_function_decl(anon_name, first_param, count, ret_type, body, act_tok.line, act_tok.col)
+    parser_add_anon_decl(p, func_node)
+    return make_ident_expr(anon_name, act_tok.line, act_tok.col)
+}
+
+// Parses primary expressions: literals, identifiers, grouped expressions, struct literals.
+act parse_primary(p: @Parser) -> @ExprNode {
+    // 0. Anonymous function expression
+    if parser_check(p, TOK_ACT) {
+        return parse_anon_act(p)
+    }
+
+    // 1. Struct instantiation literal (e.g. `Point{ x: 10, y: 20 }` or `Box[i32]{ value: 42 }`)
+    if is_struct_literal(p) {
+        let id_tok = parser_advance(p)
+        mut sname = copy_slice_to_string(p.source, id_tok.start, id_tok.length)
+        if parser_match(p, TOK_LBRACKET) {
+            mut sb = create_sb(64)
+            sb_append_str(@sb, sname)
+            sb_append_char(@sb, '[')
+            mut arg_count: usize = 0
+            loop not parser_check(p, TOK_RBRACKET) and not parser_check(p, TOK_EOF) {
+                let atype = parse_type_annotation(p)
+                if arg_count > 0 {
+                    sb_append_str(@sb, ", ")
+                }
+                sb_append_str(@sb, atype)
+                arg_count += 1
+                if not parser_match(p, TOK_COMMA) {
+                    break
+                }
+            }
+            parser_consume(p, TOK_RBRACKET, "Expected ']' after type arguments in struct literal")
+            sb_append_char(@sb, ']')
+            sname = sb_to_string(@sb)
+        }
+        parser_advance(p) // consume '{'
+        parser_skip_newlines(p)
+        mut first_init: @FieldInit = null
+        mut last_init: @FieldInit = null
+        loop not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
+            let fname_tok = parser_consume_ident(p, "Expected field name in struct literal")
+            let fname = copy_slice_to_string(p.source, fname_tok.start, fname_tok.length)
+            parser_consume(p, TOK_COLON, "Expected ':' after field name")
+            let fval = parse_expression(p)
+            let init_node = make_field_init(fname, fval, fname_tok.line, fname_tok.col)
+            if first_init == null {
+                first_init = init_node
+                last_init = init_node
+            } else {
+                last_init.next = init_node
+                last_init = init_node
+            }
+
+            parser_skip_newlines(p)
+            if not parser_match(p, TOK_COMMA) {
+                parser_skip_newlines(p)
+                if parser_check(p, TOK_RBRACE) {
+                    // end of struct
+                }
+            }
+            parser_skip_newlines(p)
+        }
+        parser_consume(p, TOK_RBRACE, "Expected '}' at end of struct literal")
+        return make_struct_lit_expr(sname, first_init, id_tok.line, id_tok.col)
+    }
+
+    // 2. Null literal
+    if parser_match(p, TOK_NULL) {
+        let tok = parser_peek(p, 0)
+        return make_null_expr(tok.line, tok.col)
+    }
+
+    // 3. Integer literal
+    if parser_check(p, TOK_INT_LIT) {
+        let tok = parser_advance(p)
+        let val = parse_int_from_slice(p.source, tok.start, tok.length)
+        mut node = make_int_expr(val, tok.line, tok.col)
+        if tok.length >= 1 and p.source[tok.start] == '\'' {
+            if tok.length >= 3 and p.source[tok.start + 1] == '\\' and (p.source[tok.start + 2] == 'u' or p.source[tok.start + 2] == 'x') {
+                node.str_val = ""
+            } else {
+                node.str_val = copy_slice_to_string(p.source, tok.start, tok.length)
+            }
+        } else {
+            let c_str = format_c_number_literal(p.source, tok.start, tok.length, false)
+            let sfx = extract_literal_suffix(p.source, tok.start, tok.length)
+            node.str_val = c_str
+            if str.len(sfx) > 0 {
+                node.type_name = sfx
+            }
+        }
+        return node
+    }
+
+    // 4. Float literal
+    if parser_check(p, TOK_FLOAT_LIT) {
+        let tok = parser_advance(p)
+        let val = parse_float_from_slice(p.source, tok.start, tok.length)
+        let c_str = format_c_number_literal(p.source, tok.start, tok.length, true)
+        let sfx = extract_literal_suffix(p.source, tok.start, tok.length)
+        mut node = make_float_expr(val, tok.line, tok.col)
+        node.str_val = c_str
+        if str.len(sfx) > 0 {
+            node.type_name = sfx
+        }
+        return node
+    }
+
+    // 5. String literal
+    if parser_check(p, TOK_STRING_LIT) {
+        let tok = parser_advance(p)
+        let val = get_string_literal_text(p.source, tok)
+        return make_string_expr(val, tok.line, tok.col)
+    }
+
+    // 6. Boolean literals: `true`, `false`
+    if parser_match(p, TOK_TRUE) {
+        let tok = parser_peek(p, 0)
+        return make_bool_expr(true, tok.line, tok.col)
+    }
+    if parser_match(p, TOK_FALSE) {
+        let tok = parser_peek(p, 0)
+        return make_bool_expr(false, tok.line, tok.col)
+    }
+
+    // 7. Dot-prefixed variant literal e.g. `.Quit`, `.Some(42)`
+    if parser_match(p, TOK_DOT) {
+        let dot_tok = parser_peek(p, 0)
+        let var_tok = parser_consume(p, TOK_IDENTIFIER, "Expected variant name after '.'")
+        let vname = copy_slice_to_string(p.source, var_tok.start, var_tok.length)
+        mut first_arg: @ExprNode = null
+        mut last_arg: @ExprNode = null
+        mut count: usize = 0
+        if parser_match(p, TOK_LPAREN) {
+            if not parser_check(p, TOK_RPAREN) {
+                mut more_args = true
+                loop more_args {
+                    let arg = parse_expression(p)
+                    if arg != null {
+                        if first_arg == null {
+                            first_arg = arg
+                            last_arg = arg
+                        } else {
+                            last_arg.next = arg
+                            last_arg = arg
+                        }
+                        count += 1
+                    }
+                    if not parser_match(p, TOK_COMMA) {
+                        more_args = false
+                    }
+                }
+            }
+            parser_consume(p, TOK_RPAREN, "Expected ')' after variant arguments")
+        }
+
+        return make_variant_expr(null, vname, first_arg, count, dot_tok.line, dot_tok.col)
+    }
+
+    // 7.5. Shelf constructor literal `shelf[v0, v1, ...]` - bracket args are VALUES; empty `shelf[]` needs a type annotation.
+    if parser_check(p, TOK_SHELF) {
+        let shelf_tok = parser_advance(p)
+        parser_consume(p, TOK_LBRACKET, "Expected '[' after 'shelf' (shelf literal: shelf[1, 2, 3])")
+        mut first_elem: @ExprNode = null; mut last_elem: @ExprNode = null; mut elem_count: usize = 0
+        if not parser_check(p, TOK_RBRACKET) {
+            mut more_elems = true
+            loop more_elems {
+                let e = parse_expression(p)
+                if e != null { if first_elem == null { first_elem = e; last_elem = e } else { last_elem.next = e; last_elem = e }; elem_count += 1 }
+                if not parser_match(p, TOK_COMMA) {
+                    more_elems = false
+                }
+            }
+        }
+        parser_consume(p, TOK_RBRACKET, "Expected ']' at end of shelf literal")
+        return make_shelf_lit_expr(first_elem, elem_count, null, shelf_tok.line, shelf_tok.col)
+    }
+
+    // 7.6. Map constructor literal (5.2 slice 6): `map[k0: v0, k1: v1, ...]`; the first_arg/next
+    // chain holds K,V alternating; empty `map[]` needs an annotation (the checker rejects it).
+    if parser_check(p, TOK_MAP) {
+        let map_tok = parser_advance(p)
+        parser_consume(p, TOK_LBRACKET, "Expected '[' after 'map' (map literal: map[1: \"a\", 2: \"b\"])")
+        mut first_elem: @ExprNode = null; mut last_elem: @ExprNode = null; mut elem_count: usize = 0
+        if not parser_check(p, TOK_RBRACKET) {
+            mut more_pairs = true
+            loop more_pairs {
+                let ka = parse_expression(p)
+                if ka != null { if first_elem == null { first_elem = ka; last_elem = ka } else { last_elem.next = ka; last_elem = ka }; elem_count += 1 }
+                parser_consume(p, TOK_COLON, "Expected ':' between a map key and value (map[k: v])")
+                let va = parse_expression(p)
+                if va != null { if first_elem == null { first_elem = va; last_elem = va } else { last_elem.next = va; last_elem = va }; elem_count += 1 }
+                if not parser_match(p, TOK_COMMA) { more_pairs = false }
+            }
+        }
+        parser_consume(p, TOK_RBRACKET, "Expected ']' at end of map literal")
+        return make_map_lit_expr(first_elem, elem_count / 2, map_tok.line, map_tok.col)
+    }
+
+    // 7.7. Ring/bitset constructor literals (5.2 slice 9) - parsed in parser_lit.vl
+    if parser_check(p, TOK_RING) or parser_check(p, TOK_BITSET) { return parse_coll9_literal(p) }
+    // 5.2 slice 10 / Task 7.2: `heap shelf[...]` / `heap map[...]`
+    if parser_check(p, TOK_HEAP) { return parse_heap_literal(p) }
+
+    // 8. Identifier variable reference
+    if parser_check(p, TOK_IDENTIFIER) {
+        let tok = parser_advance(p)
+        let name = copy_slice_to_string(p.source, tok.start, tok.length)
+        return make_ident_expr(name, tok.line, tok.col)
+    }
+
+    // 9. Parenthesized grouping expression: `(expr)`
+    if parser_match(p, TOK_LPAREN) {
+        let expr = parse_expression(p)
+        parser_consume(p, TOK_RPAREN, "Expected ')' after grouped expression")
+        return expr
+    }
+
+    let tok = parser_peek(p, 0)
+    report_parse(p, p.filename, tok.line, tok.col, tok.length, "Unexpected token in expression")
+    p.had_error = true
+    parser_advance(p)
+    return null
+}
+

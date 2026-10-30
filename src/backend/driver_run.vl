@@ -1,0 +1,146 @@
+// Execution, build, and test running orchestration for the compiler driver.
+use sys.io
+use sys.fs
+use sys.mem
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "../common/path.vl"
+use "driver_cc.vl"
+use "driver.vl"
+
+// Builds a native executable from a Velo source file by compiling to C and invoking the C compiler backend.
+act build_executable_opts(source_path: string, output_exe: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string, no_line_directives: bool) -> bool {
+    let c_code = compile_source_to_c_opts(source_path, unsafe_index, no_line_directives)
+    if c_code == null {
+        return false
+    }
+
+    let stem = get_file_stem(source_path)
+    mut c_path_sb = create_sb(128)
+    sb_append_str(@c_path_sb, ".velo_cache/")
+    sb_append_str(@c_path_sb, stem)
+    sb_append_str(@c_path_sb, ".c")
+    let c_file_path = sb_to_string(@c_path_sb)
+
+    fs.write_file(c_file_path, c_code)
+
+    mut out_path = output_exe
+    if out_path == null or str.len(out_path) == 0 {
+        mut out_sb = create_sb(128)
+        sb_append_str(@out_sb, ".velo_cache/")
+        sb_append_str(@out_sb, stem)
+        sb_append_str(@out_sb, ".exe")
+        out_path = sb_to_string(@out_sb)
+    }
+
+    let cmd = assemble_compiler_cmd(cc, c_file_path, out_path, opt_flags, linker_flags)
+    let res = system(cmd)
+    if res != 0 {
+        io.println("[Velo Error] {cc} compilation failed with exit code {res}")
+        return false
+    }
+
+    return fs.exists(out_path)
+}
+
+act build_executable(source_path: string, output_exe: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string) -> bool {
+    return build_executable_opts(source_path, output_exe, unsafe_index, opt_flags, linker_flags, cc, false)
+}
+
+// Compiles and runs a Velo source file.
+act run_source_file_opts(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string, no_line_directives: bool) -> i32 {
+    let stem = get_file_stem(source_path)
+    mut exe_sb = create_sb(128)
+    sb_append_str(@exe_sb, ".velo_cache/")
+    sb_append_str(@exe_sb, stem)
+    sb_append_str(@exe_sb, ".exe")
+    let exe_path = sb_to_string(@exe_sb)
+
+    let ok = build_executable_opts(source_path, exe_path, unsafe_index, opt_flags, linker_flags, cc, no_line_directives)
+    if not ok {
+        return 1
+    }
+
+    let run_cmd = assemble_runner_cmd(cc, exe_path, null)
+    return system(run_cmd)
+}
+
+act run_source_file(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string) -> i32 {
+    return run_source_file_opts(source_path, unsafe_index, opt_flags, linker_flags, cc, false)
+}
+
+// Compiles and runs tests in a single Velo source file.
+act test_source_file_opts(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, filter_arg: string, cc: string, no_line_directives: bool) -> i32 {
+    let c_code = compile_source_to_c_test_opts(source_path, unsafe_index, true, no_line_directives)
+    if c_code == null { return 1 }
+
+    let stem = get_file_stem(source_path)
+    mut c_path_sb = create_sb(128)
+    sb_append_str(@c_path_sb, ".velo_cache/"); sb_append_str(@c_path_sb, stem); sb_append_str(@c_path_sb, "_test.c")
+    let c_file_path = sb_to_string(@c_path_sb)
+    fs.write_file(c_file_path, c_code)
+
+    mut out_sb = create_sb(128)
+    sb_append_str(@out_sb, ".velo_cache/"); sb_append_str(@out_sb, stem); sb_append_str(@out_sb, "_test.exe")
+    let exe_path = sb_to_string(@out_sb)
+
+    let cmd = assemble_compiler_cmd(cc, c_file_path, exe_path, opt_flags, linker_flags)
+    let res = system(cmd)
+    if res != 0 {
+        io.println("[Velo Error] {cc} compilation failed with exit code {res}")
+        return 1
+    }
+
+    mut extra_sb = create_sb(64)
+    if filter_arg != null and str.len(filter_arg) > 0 {
+        sb_append_str(@extra_sb, "--filter ")
+        sb_append_str(@extra_sb, filter_arg)
+    }
+    let run_cmd = assemble_runner_cmd(cc, exe_path, sb_to_string(@extra_sb))
+    return system(run_cmd)
+}
+
+act test_source_file(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, filter_arg: string, cc: string) -> i32 {
+    return test_source_file_opts(source_path, unsafe_index, opt_flags, linker_flags, filter_arg, cc, false)
+}
+
+// Runs tests on a file or all .vl test files within a directory.
+act test_target_opts(target_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, filter_arg: string, cc: string, no_line_directives: bool) -> i32 {
+    if fs.is_file(target_path) {
+        return test_source_file_opts(target_path, unsafe_index, opt_flags, linker_flags, filter_arg, cc, no_line_directives)
+    }
+    if fs.is_dir(target_path) {
+        let entries = fs.read_dir(target_path)
+        mut overall: i32 = 0
+        mut found = false
+        mut i: usize = 0
+        loop i < entries.len {
+            let entry = entries[i]
+            let elen = str.len(entry)
+            if elen > 3 and entry[elen - 3] == '.' and entry[elen - 2] == 'v' and entry[elen - 1] == 'l' {
+                mut path_sb = create_sb(256)
+                sb_append_str(@path_sb, target_path); sb_append_char(@path_sb, '/'); sb_append_str(@path_sb, entry)
+                let full_path = sb_to_string(@path_sb)
+                let content = fs.read_file(full_path)
+                if content != null {
+                    if str.contains(content, "test \"") or str.contains(content, "test '") {
+                        found = true
+                        let rc = test_source_file_opts(full_path, unsafe_index, opt_flags, linker_flags, filter_arg, cc, no_line_directives)
+                        if rc != 0 { overall = rc }
+                    }
+                    mem.free(content)
+                }
+            }
+            i += 1
+        }
+        if not found { io.println("No test files found in directory."); return 0 }
+        return overall
+    }
+    io.println("[Velo Error] Target path not found: {target_path}")
+    return 1
+}
+
+act test_target(target_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, filter_arg: string, cc: string) -> i32 {
+    return test_target_opts(target_path, unsafe_index, opt_flags, linker_flags, filter_arg, cc, false)
+}
+

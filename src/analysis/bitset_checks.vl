@@ -1,0 +1,87 @@
+// Semantic validation and member checks for bitset collections.
+use sys.io
+use sys.mem
+use "symbol_table.vl"
+use "type_checker.vl"
+use "coll9_common.vl"
+use "../ast/expr.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+
+// True when the type string is the bare bitset (optionally @-pointered).
+act is_bitset_type(type_name: string) -> bool {
+    if type_name == null { return false }
+    return strip_pointer_prefix(type_name) == "bitset"
+}
+
+act check_bitset_call(st: @SymbolTable, expr: @ExprNode) -> string {
+    let member = expr.callee.member_name
+    if member != "set" and member != "clear" and member != "toggle" and member != "has" and member != "count" and member != "first_unset" and member != "and" and member != "or_with" and member != "xor_with" and member != "flip" {
+        mut msg = create_sb(str.len(member) + 128)
+        sb_append_str(@msg, "unknown bitset member '")
+        sb_append_str(@msg, member)
+        sb_append_str(@msg, "' (set, clear, toggle, has, count, first_unset, and, or_with, xor_with, flip are available)")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msg))
+        st.error_count += 1
+        return "unknown"
+    }
+    if member == "set" or member == "clear" or member == "toggle" {
+        if expr.arg_count != 1 {
+            mut msg = create_sb(str.len(member) + 64)
+            sb_append_str(@msg, "bitset.")
+            sb_append_str(@msg, member)
+            sb_append_str(@msg, " expects exactly 1 argument: (bitset b, index)")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+            return "unknown"
+        }
+        if not coll9_index_int(st, expr.first_arg) { return "unknown" }
+        check_coll9_mut_root(st, expr.callee.target, "mutate", "a bitset", " held by a let (declare with mut)")
+        return "void"
+    }
+    if member == "has" {
+        if expr.arg_count != 1 {
+            report_error("semantic", expr.line, expr.col, "bitset.has expects exactly 1 argument: (bitset b, index)"); st.error_count += 1
+            return "unknown"
+        }
+        if not coll9_index_int(st, expr.first_arg) { return "unknown" }
+        return "bool"
+    }
+    if member == "count" or member == "first_unset" or member == "flip" {
+        if expr.arg_count != 0 {
+            mut msg = create_sb(str.len(member) + 48)
+            sb_append_str(@msg, "bitset.")
+            sb_append_str(@msg, member)
+            sb_append_str(@msg, " takes no arguments")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+            return "unknown"
+        }
+        if member == "count" { return "usize" }
+        if member == "first_unset" { return "i32" }
+        check_coll9_mut_root(st, expr.callee.target, "mutate", "a bitset", " held by a let (declare with mut)")
+        return "void"
+    }
+    // and / or_with / xor_with
+    if expr.arg_count != 1 {
+        mut msg = create_sb(str.len(member) + 64)
+        sb_append_str(@msg, "bitset.")
+        sb_append_str(@msg, member)
+        sb_append_str(@msg, " expects exactly 1 argument: (bitset b, other)")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msg)); st.error_count += 1
+        return "unknown"
+    }
+    let got = infer_expr_type(st, expr.first_arg)
+    if got != "unknown" and strip_pointer_prefix(got) != "bitset" {
+        mut msg = create_sb(str.len(member) + str.len(got) + 56)
+        sb_append_str(@msg, "bitset.")
+        sb_append_str(@msg, member)
+        sb_append_str(@msg, " expects a bitset argument (got ")
+        sb_append_str(@msg, got)
+        sb_append_str(@msg, ")")
+        report_error("semantic", expr.first_arg.line, expr.first_arg.col, sb_to_string(@msg)); st.error_count += 1
+        return "unknown"
+    }
+    check_coll9_mut_root(st, expr.callee.target, "mutate", "a bitset", " held by a let (declare with mut)")
+    return "void"
+}
+

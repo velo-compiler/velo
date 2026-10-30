@@ -4,31 +4,10 @@ use sys.mem
 use "token.vl"
 use "../common/utils.vl"
 use "../common/diagnostics.vl"
+use "lexer_core.vl"
+use "lexer_lit.vl"
 
-data Lexer {
-    file_path: string
-    source: string
-    source_len: usize
-    pos: usize
-    line: i32
-    col: i32
-    tokens: @Token
-    token_count: usize
-    token_cap: usize
-    dropped_count: usize
-    last_kind: i32
-}
-
-// Determines if a token kind can terminate a statement (Go-style newline rule).
-act can_terminate_stmt(kind: i32) -> bool {
-    if kind == TOK_IDENTIFIER or kind == TOK_INT_LIT or kind == TOK_FLOAT_LIT or kind == TOK_STRING_LIT { return true }
-    if kind == TOK_TRUE or kind == TOK_FALSE or kind == TOK_NULL or kind == TOK_RETURN { return true }
-    if kind == TOK_BREAK or kind == TOK_CONTINUE { return true }
-    if kind == TOK_RPAREN or kind == TOK_RBRACE or kind == TOK_RBRACKET { return true }
-    return false
-}
-
-// Checks if an identifier matches a Velo keyword via high-speed byte matching.
+// Determines keyword token kind from an identifier slice.
 act check_keyword(source: string, start: usize, len: usize) -> i32 {
     if len == 2 {
         if source[start] == 'i' and source[start + 1] == 'f' { return TOK_IF }
@@ -51,45 +30,28 @@ act check_keyword(source: string, start: usize, len: usize) -> i32 {
         if source[start] == 'e' and source[start + 1] == 'l' and source[start + 2] == 's' and source[start + 3] == 'e' { return TOK_ELSE }
         if source[start] == 'l' and source[start + 1] == 'o' and source[start + 2] == 'o' and source[start + 3] == 'p' { return TOK_LOOP }
         if source[start] == 'z' and source[start + 1] == 'o' and source[start + 2] == 'n' and source[start + 3] == 'e' { return TOK_ZONE }
-        if source[start] == 'k' and source[start + 1] == 'i' and source[start + 2] == 'n' and source[start + 3] == 'd' { return TOK_KIND }
         if source[start] == 't' and source[start + 1] == 'r' and source[start + 2] == 'u' and source[start + 3] == 'e' { return TOK_TRUE }
         if source[start] == 'n' and source[start + 1] == 'u' and source[start + 2] == 'l' and source[start + 3] == 'l' { return TOK_NULL }
-        if source[start] == 'r' and source[start + 1] == 'i' and source[start + 2] == 'n' and source[start + 3] == 'g' { return TOK_RING }   // 5.2 slice 9
-        if source[start] == 'h' and source[start + 1] == 'e' and source[start + 2] == 'a' and source[start + 3] == 'p' { return TOK_HEAP }   // 5.2 slice 10
-        if source[start] == 't' and source[start + 1] == 'e' and source[start + 2] == 's' and source[start + 3] == 't' { return TOK_TEST }   // 6.5 test
+        if source[start] == 'k' and source[start + 1] == 'i' and source[start + 2] == 'n' and source[start + 3] == 'd' { return TOK_KIND }
+        if source[start] == 'r' and source[start + 1] == 'i' and source[start + 2] == 'n' and source[start + 3] == 'g' { return TOK_RING }
+        if source[start] == 'h' and source[start + 1] == 'e' and source[start + 2] == 'a' and source[start + 3] == 'p' { return TOK_HEAP }
+        if source[start] == 't' and source[start + 1] == 'e' and source[start + 2] == 's' and source[start + 3] == 't' { return TOK_TEST }
     } else if len == 5 {
-        if source[start] == 's' and source[start + 1] == 'h' and source[start + 2] == 'e' and source[start + 3] == 'l' and source[start + 4] == 'f' { return TOK_SHELF }
-        if source[start] == 'b' and source[start + 1] == 'r' and source[start + 2] == 'e' and source[start + 3] == 'a' and source[start + 4] == 'k' { return TOK_BREAK }
         if source[start] == 'd' and source[start + 1] == 'e' and source[start + 2] == 'f' and source[start + 3] == 'e' and source[start + 4] == 'r' { return TOK_DEFER }
         if source[start] == 'f' and source[start + 1] == 'a' and source[start + 2] == 'l' and source[start + 3] == 's' and source[start + 4] == 'e' { return TOK_FALSE }
+        if source[start] == 'b' and source[start + 1] == 'r' and source[start + 2] == 'e' and source[start + 3] == 'a' and source[start + 4] == 'k' { return TOK_BREAK }
+        if source[start] == 's' and source[start + 1] == 'h' and source[start + 2] == 'e' and source[start + 3] == 'l' and source[start + 4] == 'f' { return TOK_SHELF }
     } else if len == 6 {
         if source[start] == 'r' and source[start + 1] == 'e' and source[start + 2] == 't' and source[start + 3] == 'u' and source[start + 4] == 'r' and source[start + 5] == 'n' { return TOK_RETURN }
         if source[start] == 'e' and source[start + 1] == 'x' and source[start + 2] == 't' and source[start + 3] == 'e' and source[start + 4] == 'r' and source[start + 5] == 'n' { return TOK_EXTERN }
-        if source[start] == 'b' and source[start + 1] == 'i' and source[start + 2] == 't' and source[start + 3] == 's' and source[start + 4] == 'e' and source[start + 5] == 't' { return TOK_BITSET }  // 5.2 slice 9
+        if source[start] == 'b' and source[start + 1] == 'i' and source[start + 2] == 't' and source[start + 3] == 's' and source[start + 4] == 'e' and source[start + 5] == 't' { return TOK_BITSET }
     } else if len == 8 {
         if source[start] == 'c' and source[start + 1] == 'o' and source[start + 2] == 'n' and source[start + 3] == 't' and source[start + 4] == 'i' and source[start + 5] == 'n' and source[start + 6] == 'u' and source[start + 7] == 'e' { return TOK_CONTINUE }
     }
     return TOK_IDENTIFIER
 }
 
-// Appends a token; overflow is counted so the driver can report a real diagnostic instead of silently corrupting the stream.
-act add_token(lex: @Lexer, kind: i32, start: usize, len: usize, line: i32, col: i32) {
-    if lex.token_count < lex.token_cap {
-        lex.tokens[lex.token_count] = Token{ kind: kind, start: start, length: len, line: line, col: col }
-        lex.token_count += 1
-        lex.last_kind = kind
-    } else {
-        lex.dropped_count += 1
-    }
-}
-
-// Initializes a new Lexer for the provided source string buffer.
-act create_lexer(source: string, source_len: usize, capacity: usize) -> Lexer {
-    let buf: @Token = mem.alloc(@Token, capacity)
-    return Lexer{ file_path: "<input>", source: source, source_len: source_len, pos: 0, line: 1, col: 1, tokens: buf, token_count: 0, token_cap: capacity, dropped_count: 0, last_kind: TOK_EOF }
-}
-
-// Tokenizes the entire source code into the pre-allocated token buffer.
+// Scans entire source into an array of lexical tokens.
 act tokenize(lex: @Lexer) {
     let src = lex.source
     let len = lex.source_len
@@ -158,163 +120,17 @@ act tokenize(lex: @Lexer) {
             }
             add_token(lex, kind, start_pos, tok_len, start_line, start_col)
         } else if is_digit(c) {
-            mut is_float = false
-            // Check base prefixes: 0x (hex), 0b (bin), 0o (oct)
-            if c == '0' and lex.pos + 1 < len and (src[lex.pos + 1] == 'x' or src[lex.pos + 1] == 'X' or src[lex.pos + 1] == 'b' or src[lex.pos + 1] == 'B' or src[lex.pos + 1] == 'o' or src[lex.pos + 1] == 'O') {
-                let base_char = src[lex.pos + 1]
-                lex.pos += 2
-                lex.col += 2
-                if base_char == 'x' or base_char == 'X' {
-                    loop lex.pos < len and (is_digit(src[lex.pos]) or (src[lex.pos] >= 'a' and src[lex.pos] <= 'f') or (src[lex.pos] >= 'A' and src[lex.pos] <= 'F') or src[lex.pos] == '_') {
-                        lex.pos += 1
-                        lex.col += 1
-                    }
-                } else if base_char == 'b' or base_char == 'B' {
-                    loop lex.pos < len and (src[lex.pos] == '0' or src[lex.pos] == '1' or src[lex.pos] == '_') {
-                        lex.pos += 1
-                        lex.col += 1
-                    }
-                } else {
-                    loop lex.pos < len and ((src[lex.pos] >= '0' and src[lex.pos] <= '7') or src[lex.pos] == '_') {
-                        lex.pos += 1
-                        lex.col += 1
-                    }
-                }
-                // Optional integer suffix (e.g. 0xFFu8, 0x1000i64)
-                if lex.pos < len and is_alpha(src[lex.pos]) {
-                    loop lex.pos < len and is_ident_part(src[lex.pos]) {
-                        lex.pos += 1
-                        lex.col += 1
-                    }
-                }
-                let num_len = lex.pos - start_pos
-                add_token(lex, TOK_INT_LIT, start_pos, num_len, start_line, start_col)
-            } else {
-                // Decimal number with optional underscores
-                loop lex.pos < len and (is_digit(src[lex.pos]) or src[lex.pos] == '_') {
-                    lex.pos += 1
-                    lex.col += 1
-                }
-                // Check decimal point for float (ensuring not '..' range)
-                if lex.pos + 1 < len and src[lex.pos] == '.' and is_digit(src[lex.pos + 1]) {
-                    is_float = true
-                    lex.pos += 2
-                    lex.col += 2
-                    loop lex.pos < len and (is_digit(src[lex.pos]) or src[lex.pos] == '_') {
-                        lex.pos += 1
-                        lex.col += 1
-                    }
-                }
-                // Check scientific notation exponent (e / E)
-                if lex.pos < len and (src[lex.pos] == 'e' or src[lex.pos] == 'E') {
-                    mut has_exp_digit = false
-                    if lex.pos + 1 < len and is_digit(src[lex.pos + 1]) {
-                        has_exp_digit = true
-                    } else if lex.pos + 2 < len and (src[lex.pos + 1] == '+' or src[lex.pos + 1] == '-') and is_digit(src[lex.pos + 2]) {
-                        has_exp_digit = true
-                    }
-                    if has_exp_digit {
-                        is_float = true
-                        lex.pos += 1
-                        lex.col += 1
-                        if lex.pos < len and (src[lex.pos] == '+' or src[lex.pos] == '-') {
-                            lex.pos += 1
-                            lex.col += 1
-                        }
-                        loop lex.pos < len and (is_digit(src[lex.pos]) or src[lex.pos] == '_') {
-                            lex.pos += 1
-                            lex.col += 1
-                        }
-                    }
-                }
-                // Check suffix: float (f32, f64) or integer (u8, i64, usize, etc.)
-                if lex.pos < len and is_alpha(src[lex.pos]) {
-                    let s_start = lex.pos
-                    loop lex.pos < len and is_ident_part(src[lex.pos]) {
-                        lex.pos += 1
-                        lex.col += 1
-                    }
-                    let s_len = lex.pos - s_start
-                    if s_len >= 1 and (src[s_start] == 'f' or src[s_start] == 'F') {
-                        is_float = true
-                    }
-                }
-                let num_len = lex.pos - start_pos
-                mut kind = TOK_INT_LIT
-                if is_float {
-                    kind = TOK_FLOAT_LIT
-                }
-                add_token(lex, kind, start_pos, num_len, start_line, start_col)
-            }
+            lex_number(lex, start_pos, start_line, start_col)
 
         } else if c == '`' {
-            // Raw multi-line string literal
-            lex.pos += 1
-            lex.col += 1
-            loop lex.pos < len and src[lex.pos] != '`' {
-                if src[lex.pos] == '\n' {
-                    lex.line += 1
-                    lex.col = 1
-                    lex.pos += 1
-                } else {
-                    lex.pos += 1
-                    lex.col += 1
-                }
-            }
-            if lex.pos < len and src[lex.pos] == '`' {
-                lex.pos += 1
-                lex.col += 1
-            }
-            let str_len = lex.pos - start_pos
-            add_token(lex, TOK_STRING_LIT, start_pos, str_len, start_line, start_col)
+            lex_raw_string(lex, start_pos, start_line, start_col)
+
         } else if c == '"' {
-            // String literal
-            lex.pos += 1
-            lex.col += 1
-            loop lex.pos < len and src[lex.pos] != '"' {
-                if src[lex.pos] == '\\' and lex.pos + 1 < len {
-                    lex.pos += 2
-                    lex.col += 2
-                } else if src[lex.pos] == '\n' {
-                    lex.line += 1
-                    lex.col = 1
-                    lex.pos += 1
-                } else {
-                    lex.pos += 1
-                    lex.col += 1
-                }
-            }
-            if lex.pos < len and src[lex.pos] == '"' {
-                lex.pos += 1
-                lex.col += 1
-            }
-            let str_len = lex.pos - start_pos
-            add_token(lex, TOK_STRING_LIT, start_pos, str_len, start_line, start_col)
+            lex_string(lex, start_pos, start_line, start_col)
+
         } else if c == '\'' {
-            // Character literal
-            lex.pos += 1
-            lex.col += 1
-            if lex.pos < len and src[lex.pos] == '\\' {
-                if lex.pos + 1 < len and src[lex.pos + 1] == 'u' {
-                    lex.pos += 6
-                    lex.col += 6
-                } else if lex.pos + 1 < len and src[lex.pos + 1] == 'x' {
-                    lex.pos += 4
-                    lex.col += 4
-                } else {
-                    lex.pos += 2
-                    lex.col += 2
-                }
-            } else if lex.pos < len {
-                lex.pos += 1
-                lex.col += 1
-            }
-            if lex.pos < len and src[lex.pos] == '\'' {
-                lex.pos += 1
-                lex.col += 1
-            }
-            let char_len = lex.pos - start_pos
-            add_token(lex, TOK_INT_LIT, start_pos, char_len, start_line, start_col)
+            lex_char(lex, start_pos, start_line, start_col)
+
         } else {
             // Operators and punctuation
             mut op_len: usize = 1

@@ -1,0 +1,188 @@
+// Parser state definition and core token navigation / lookahead primitives for Velo.
+use sys.io
+use sys.mem
+use "token.vl"
+use "../common/utils.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+
+// Maintains the state of the recursive descent parser.
+data Parser {
+    filename: string
+    source: string
+    tokens: @Token
+    token_count: usize
+    pos: usize
+    had_error: bool
+    anon_counter: i32
+    first_anon: @StmtNode
+    last_anon: @StmtNode
+    anon_count: usize
+}
+
+// Initializes a Parser instance.
+act init_parser(p: @Parser, filename: string, source: string, tokens: @Token, count: usize) {
+    p.filename = filename
+    p.source = source
+    p.tokens = tokens
+    p.token_count = count
+    p.pos = 0
+    p.had_error = false
+    p.anon_counter = 0
+    p.first_anon = null
+    p.last_anon = null
+    p.anon_count = 0
+}
+
+// Appends a lifted anonymous function declaration to the parser's collection.
+act parser_add_anon_decl(p: @Parser, decl: @StmtNode) {
+    if decl == null { return }
+    if p.first_anon == null {
+        p.first_anon = decl
+        p.last_anon = decl
+    } else {
+        p.last_anon.next = decl
+        p.last_anon = decl
+    }
+    p.anon_count += 1
+}
+
+// Generates the next unique lifted anonymous function identifier.
+act parser_next_anon_name(p: @Parser) -> string {
+    let id = p.anon_counter
+    p.anon_counter += 1
+    mut sb = create_sb(32)
+    sb_append_str(@sb, "_velo_anon_act_")
+    sb_append_int(@sb, id)
+    return sb_to_string(@sb)
+}
+
+act parser_peek(p: @Parser, offset: usize) -> Token {
+    let idx = p.pos + offset
+    if idx < p.token_count { return p.tokens[idx] }
+    if p.token_count > 0 { return p.tokens[p.token_count - 1] }
+    return Token{ kind: TOK_EOF, start: 0, length: 0, line: 1, col: 1 }
+}
+
+act parser_is_at_end(p: @Parser) -> bool {
+    let tok = parser_peek(p, 0)
+    return tok.kind == TOK_EOF
+}
+
+act parser_advance(p: @Parser) -> Token {
+    let tok = parser_peek(p, 0)
+    if tok.kind != TOK_EOF { p.pos += 1 }
+    return tok
+}
+
+// Contextual identifier re-acceptance: keywords valid in identifier positions.
+act is_contextual_ident_tok(k: i32) -> bool {
+    if k == TOK_IDENTIFIER or k == TOK_KIND or k == TOK_OP or k == TOK_DATA or k == TOK_TEST { return true }
+    if k == TOK_USE or k == TOK_ACT or k == TOK_LOOP or k == TOK_ZONE or k == TOK_DEFER { return true }
+    if k == TOK_RETURN or k == TOK_BREAK or k == TOK_CONTINUE or k == TOK_ON or k == TOK_EXTERN { return true }
+    return false
+}
+
+// Checks if current token matches the expected kind.
+act parser_check(p: @Parser, kind: i32) -> bool {
+    let tok = parser_peek(p, 0)
+    if kind == TOK_IDENTIFIER and (tok.kind == TOK_KIND or tok.kind == TOK_OP or tok.kind == TOK_DATA or tok.kind == TOK_TEST) { return true }
+    return tok.kind == kind
+}
+
+// Consumes an identifier or contextual keyword.
+act parser_consume_ident(p: @Parser, err_msg: string) -> Token {
+    let tok = parser_peek(p, 0)
+    if is_contextual_ident_tok(tok.kind) { return parser_advance(p) }
+    report_parse(p, p.filename, tok.line, tok.col, tok.length, err_msg)
+    p.had_error = true
+    return tok
+}
+
+act parser_match(p: @Parser, kind: i32) -> bool {
+    if parser_check(p, kind) {
+        parser_advance(p)
+        return true
+    }
+    return false
+}
+
+act parser_consume(p: @Parser, kind: i32, err_msg: string) -> Token {
+    let tok = parser_peek(p, 0)
+    if parser_check(p, kind) { return parser_advance(p) }
+    report_parse(p, p.filename, tok.line, tok.col, tok.length, err_msg)
+    p.had_error = true
+    return tok
+}
+
+// Skips consecutive statement delimiters (newlines and semicolons).
+act parser_skip_newlines(p: @Parser) {
+    loop parser_check(p, TOK_NEWLINE) or parser_check(p, TOK_SEMICOLON) {
+        parser_advance(p)
+    }
+}
+
+// Extracts unquoted and formatted string literal text.
+act get_string_literal_text(source: string, tok: Token) -> string {
+    return process_string_literal(source, tok.start, tok.length)
+}
+
+// Determines whether the lookahead matches a struct literal pattern.
+act is_struct_literal(p: @Parser) -> bool {
+    let tok0 = parser_peek(p, 0)
+    let tok1 = parser_peek(p, 1)
+    if tok0.kind != TOK_IDENTIFIER { return false }
+    let first_char = p.source[tok0.start]
+    if first_char < 'A' or first_char > 'Z' { return false }
+
+    mut idx: usize = 1
+    if tok1.kind == TOK_LBRACKET {
+        mut depth: usize = 1
+        idx = 2
+        loop p.pos + idx < p.token_count and depth > 0 {
+            let t = parser_peek(p, idx)
+            if t.kind == TOK_LBRACKET { depth += 1 }
+            else if t.kind == TOK_RBRACKET { depth -= 1 }
+            idx += 1
+        }
+        if depth > 0 { return false }
+    }
+
+    let brace_tok = parser_peek(p, idx)
+    if brace_tok.kind != TOK_LBRACE { return false }
+    idx += 1
+
+    loop p.pos + idx < p.token_count {
+        let t = parser_peek(p, idx)
+        if t.kind != TOK_NEWLINE and t.kind != TOK_SEMICOLON {
+            if t.kind == TOK_RBRACE { return true }
+            if is_contextual_ident_tok(t.kind) {
+                let next_t = parser_peek(p, idx + 1)
+                if next_t.kind == TOK_COLON { return true }
+            }
+            return false
+        }
+        idx += 1
+    }
+    return false
+}
+
+// Checks if lookahead matches a generic function call `[TypeArgs](...)`.
+act is_generic_call(p: @Parser) -> bool {
+    if not parser_check(p, TOK_LBRACKET) { return false }
+    mut depth: usize = 1
+    mut idx: usize = 1
+    loop p.pos + idx < p.token_count and depth > 0 {
+        let t = parser_peek(p, idx)
+        if t.kind == TOK_LBRACKET { depth += 1 }
+        else if t.kind == TOK_RBRACKET { depth -= 1 }
+        idx += 1
+    }
+    if depth > 0 { return false }
+    let next_tok = parser_peek(p, idx)
+    return next_tok.kind == TOK_LPAREN
+}
+

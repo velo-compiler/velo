@@ -9,6 +9,7 @@ use "../ast/expr.vl"
 use "../ast/stmt.vl"
 use "parser.vl"
 use "parser_expr.vl"
+use "parser_stmt_match.vl"
 
 // Parses a code block enclosed in curly braces `{ ... }`.
 act parse_block(p: @Parser) -> @StmtNode {
@@ -38,7 +39,7 @@ act parse_block(p: @Parser) -> @StmtNode {
     return make_block_stmt(first_stmt, count, lbrace.line, lbrace.col)
 }
 
-// Parses an `if` conditional statement with optional `else` or `else if` branches.
+// Parses an `if` statement with optional `else` or `else if` chains.
 act parse_if_stmt(p: @Parser) -> @StmtNode {
     let if_tok = parser_consume(p, TOK_IF, "Expected 'if'")
     let condition = parse_expression(p)
@@ -70,7 +71,7 @@ act parse_loop_stmt(p: @Parser) -> @StmtNode {
     }
 
     // 1.5. Shelf value loop: loop <var> [of <collection> | , <index> of
-    //      <collection>] { ... } — 5.2 slice 4 adds the optional second
+    //      <collection>] { ... } - 5.2 slice 4 adds the optional second
     //      binding (the usize index); more than two bindings rejects.
     if parser_check(p, TOK_IDENTIFIER) {
         let next_tok = parser_peek(p, 1)
@@ -152,81 +153,6 @@ act parse_loop_stmt(p: @Parser) -> @StmtNode {
     let body = parse_block(p)
     let is_count = (first_expr.kind == EXPR_INT)
     return make_loop_expr_stmt(first_expr, is_count, body, loop_tok.line, loop_tok.col)
-}
-
-// Parses an `on <expr> { ... }` branching statement.
-act parse_on_stmt(p: @Parser) -> @StmtNode {
-    let on_tok = parser_consume(p, TOK_ON, "Expected 'on'")
-    let expr = parse_expression(p)
-    parser_skip_newlines(p)
-    parser_consume(p, TOK_LBRACE, "Expected '{' after on expression")
-    parser_skip_newlines(p)
-
-    mut first_case: @CaseNode = null
-    mut last_case: @CaseNode = null
-    mut case_count: usize = 0
-
-    loop not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
-        let cur = parser_peek(p, 0)
-        mut is_default = false
-        mut first_val: @ExprNode = null
-        mut val_count: usize = 0
-
-        if cur.kind == TOK_ELSE {
-            parser_advance(p)
-            is_default = true
-            if parser_check(p, TOK_FAT_ARROW) or parser_check(p, TOK_COLON) {
-                parser_advance(p)
-            }
-        } else if cur.kind == TOK_IDENTIFIER and cur.length == 1 and p.source[cur.start] == '_' {
-            parser_advance(p)
-            is_default = true
-            if parser_check(p, TOK_FAT_ARROW) or parser_check(p, TOK_COLON) {
-                parser_advance(p)
-            }
-        } else {
-            first_val = parse_expression(p)
-            mut cur_val = first_val
-            val_count = 1
-            loop parser_match(p, TOK_COMMA) {
-                let next_val = parse_expression(p)
-                cur_val.next = next_val
-                cur_val = next_val
-                val_count += 1
-            }
-            if parser_check(p, TOK_FAT_ARROW) or parser_check(p, TOK_COLON) {
-                parser_advance(p)
-            } else {
-                report_parse(p, "parser", cur.line, cur.col, cur.length, "Expected '=>' or ':' after pattern")
-                p.had_error = true
-            }
-        }
-
-        parser_skip_newlines(p)
-        mut body: @StmtNode = null
-        if parser_check(p, TOK_LBRACE) {
-            body = parse_block(p)
-        } else {
-            let stmt = parse_statement(p)
-            if stmt != null {
-                body = make_block_stmt(stmt, 1, stmt.line, stmt.col)
-            }
-        }
-
-        let case_node = make_case_node(first_val, val_count, is_default, body, cur.line, cur.col)
-        if first_case == null {
-            first_case = case_node
-            last_case = case_node
-        } else {
-            last_case.next = case_node
-            last_case = case_node
-        }
-        case_count += 1
-        parser_skip_newlines(p)
-    }
-
-    parser_consume(p, TOK_RBRACE, "Expected '}' at end of on block")
-    return make_match_stmt(expr, first_case, case_count, on_tok.line, on_tok.col)
 }
 
 // Parses any Velo statement (variable declarations, control flow, assignments, calls).

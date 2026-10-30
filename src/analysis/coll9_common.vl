@@ -1,0 +1,41 @@
+// Shared helper routines for ring and bitset semantic validation.
+use sys.io
+use sys.mem
+use "symbol_table.vl"
+use "type_checker.vl"
+use "../ast/expr.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+
+// The mut-root gate for every ring/bitset mutator (the shelf mut-binding API).
+act check_coll9_mut_root(st: @SymbolTable, target: @ExprNode, verb: string, word: string, tail: string) {
+    if target == null { return }
+    let root = shelf_root_binding_name(target)
+    if root != null {
+        let sym = resolve_variable(st, root)
+        if sym != null and not sym.is_mut {
+            mut sb = create_sb(str.len(verb) + str.len(tail) + 64)
+            sb_append_str(@sb, "cannot ")
+            sb_append_str(@sb, verb)
+            sb_append_str(@sb, " ")
+            sb_append_str(@sb, word)
+            sb_append_str(@sb, tail)
+            report_error("semantic", target.line, target.col, sb_to_string(@sb))
+            st.error_count += 1
+        }
+    }
+}
+
+// The bitset index must be an integer (the shelf index-type gate's wording).
+act coll9_index_int(st: @SymbolTable, arg: @ExprNode) -> bool {
+    let it = infer_expr_type(st, arg)
+    if is_dyn_int_family(it) { return true }
+    mut msg = create_sb(str.len(it) + 48)
+    sb_append_str(@msg, "bitset index must be an integer (got ")
+    sb_append_str(@msg, it)
+    sb_append_str(@msg, ")")
+    report_error("semantic", arg.line, arg.col, sb_to_string(@msg)); st.error_count += 1
+    return false
+}
+

@@ -1,0 +1,183 @@
+// Literal tokenizing for Velo: numeric bases, scientific floats, strings, chars.
+use sys.io
+use sys.mem
+use "token.vl"
+use "../common/utils.vl"
+use "lexer_core.vl"
+
+// Tokenizes numeric literals: hex (0x), binary (0b), octal (0o), decimal floats/ints, and suffixes.
+act lex_number(lex: @Lexer, start_pos: usize, start_line: i32, start_col: i32) {
+    let src = lex.source
+    let len = lex.source_len
+    let c = src[start_pos]
+    mut is_float = false
+
+    // Check base prefixes: 0x (hex), 0b (bin), 0o (oct)
+    if c == '0' and lex.pos + 1 < len and (src[lex.pos + 1] == 'x' or src[lex.pos + 1] == 'X' or src[lex.pos + 1] == 'b' or src[lex.pos + 1] == 'B' or src[lex.pos + 1] == 'o' or src[lex.pos + 1] == 'O') {
+        let base_char = src[lex.pos + 1]
+        lex.pos += 2
+        lex.col += 2
+        if base_char == 'x' or base_char == 'X' {
+            loop lex.pos < len and (is_digit(src[lex.pos]) or (src[lex.pos] >= 'a' and src[lex.pos] <= 'f') or (src[lex.pos] >= 'A' and src[lex.pos] <= 'F') or src[lex.pos] == '_') {
+                lex.pos += 1
+                lex.col += 1
+            }
+        } else if base_char == 'b' or base_char == 'B' {
+            loop lex.pos < len and (src[lex.pos] == '0' or src[lex.pos] == '1' or src[lex.pos] == '_') {
+                lex.pos += 1
+                lex.col += 1
+            }
+        } else {
+            loop lex.pos < len and ((src[lex.pos] >= '0' and src[lex.pos] <= '7') or src[lex.pos] == '_') {
+                lex.pos += 1
+                lex.col += 1
+            }
+        }
+        // Optional integer suffix (e.g. 0xFFu8, 0x1000i64)
+        if lex.pos < len and is_alpha(src[lex.pos]) {
+            loop lex.pos < len and is_ident_part(src[lex.pos]) {
+                lex.pos += 1
+                lex.col += 1
+            }
+        }
+        let num_len = lex.pos - start_pos
+        add_token(lex, TOK_INT_LIT, start_pos, num_len, start_line, start_col)
+    } else {
+        // Decimal number with optional underscores
+        loop lex.pos < len and (is_digit(src[lex.pos]) or src[lex.pos] == '_') {
+            lex.pos += 1
+            lex.col += 1
+        }
+        // Check decimal point for float (ensuring not '..' range)
+        if lex.pos + 1 < len and src[lex.pos] == '.' and is_digit(src[lex.pos + 1]) {
+            is_float = true
+            lex.pos += 2
+            lex.col += 2
+            loop lex.pos < len and (is_digit(src[lex.pos]) or src[lex.pos] == '_') {
+                lex.pos += 1
+                lex.col += 1
+            }
+        }
+        // Check scientific notation exponent (e / E)
+        if lex.pos < len and (src[lex.pos] == 'e' or src[lex.pos] == 'E') {
+            mut has_exp_digit = false
+            if lex.pos + 1 < len and is_digit(src[lex.pos + 1]) {
+                has_exp_digit = true
+            } else if lex.pos + 2 < len and (src[lex.pos + 1] == '+' or src[lex.pos + 1] == '-') and is_digit(src[lex.pos + 2]) {
+                has_exp_digit = true
+            }
+            if has_exp_digit {
+                is_float = true
+                lex.pos += 1
+                lex.col += 1
+                if lex.pos < len and (src[lex.pos] == '+' or src[lex.pos] == '-') {
+                    lex.pos += 1
+                    lex.col += 1
+                }
+                loop lex.pos < len and (is_digit(src[lex.pos]) or src[lex.pos] == '_') {
+                    lex.pos += 1
+                    lex.col += 1
+                }
+            }
+        }
+        // Check suffix: float (f32, f64) or integer (u8, i64, usize, etc.)
+        if lex.pos < len and is_alpha(src[lex.pos]) {
+            let s_start = lex.pos
+            loop lex.pos < len and is_ident_part(src[lex.pos]) {
+                lex.pos += 1
+                lex.col += 1
+            }
+            let s_len = lex.pos - s_start
+            if s_len >= 1 and (src[s_start] == 'f' or src[s_start] == 'F') {
+                is_float = true
+            }
+        }
+        let num_len = lex.pos - start_pos
+        mut kind = TOK_INT_LIT
+        if is_float {
+            kind = TOK_FLOAT_LIT
+        }
+        add_token(lex, kind, start_pos, num_len, start_line, start_col)
+    }
+}
+
+// Tokenizes a raw multi-line string literal (`...`).
+act lex_raw_string(lex: @Lexer, start_pos: usize, start_line: i32, start_col: i32) {
+    let src = lex.source
+    let len = lex.source_len
+    lex.pos += 1
+    lex.col += 1
+    loop lex.pos < len and src[lex.pos] != '`' {
+        if src[lex.pos] == '\n' {
+            lex.line += 1
+            lex.col = 1
+            lex.pos += 1
+        } else {
+            lex.pos += 1
+            lex.col += 1
+        }
+    }
+    if lex.pos < len and src[lex.pos] == '`' {
+        lex.pos += 1
+        lex.col += 1
+    }
+    let str_len = lex.pos - start_pos
+    add_token(lex, TOK_STRING_LIT, start_pos, str_len, start_line, start_col)
+}
+
+// Tokenizes a standard double-quoted string literal ("...").
+act lex_string(lex: @Lexer, start_pos: usize, start_line: i32, start_col: i32) {
+    let src = lex.source
+    let len = lex.source_len
+    lex.pos += 1
+    lex.col += 1
+    loop lex.pos < len and src[lex.pos] != '"' {
+        if src[lex.pos] == '\\' and lex.pos + 1 < len {
+            lex.pos += 2
+            lex.col += 2
+        } else if src[lex.pos] == '\n' {
+            lex.line += 1
+            lex.col = 1
+            lex.pos += 1
+        } else {
+            lex.pos += 1
+            lex.col += 1
+        }
+    }
+    if lex.pos < len and src[lex.pos] == '"' {
+        lex.pos += 1
+        lex.col += 1
+    }
+    let str_len = lex.pos - start_pos
+    add_token(lex, TOK_STRING_LIT, start_pos, str_len, start_line, start_col)
+}
+
+// Tokenizes a single-quoted character literal ('c' or '\xNN' or '\uNNNN').
+act lex_char(lex: @Lexer, start_pos: usize, start_line: i32, start_col: i32) {
+    let src = lex.source
+    let len = lex.source_len
+    lex.pos += 1
+    lex.col += 1
+    if lex.pos < len and src[lex.pos] == '\\' {
+        if lex.pos + 1 < len and src[lex.pos + 1] == 'u' {
+            lex.pos += 6
+            lex.col += 6
+        } else if lex.pos + 1 < len and src[lex.pos + 1] == 'x' {
+            lex.pos += 4
+            lex.col += 4
+        } else {
+            lex.pos += 2
+            lex.col += 2
+        }
+    } else if lex.pos < len {
+        lex.pos += 1
+        lex.col += 1
+    }
+    if lex.pos < len and src[lex.pos] == '\'' {
+        lex.pos += 1
+        lex.col += 1
+    }
+    let char_len = lex.pos - start_pos
+    add_token(lex, TOK_INT_LIT, start_pos, char_len, start_line, start_col)
+}
+
