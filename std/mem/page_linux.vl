@@ -1,0 +1,33 @@
+// Raw OS virtual memory page allocator for Linux / POSIX.
+// Backed directly by Linux kernel syscalls (mmap/munmap).
+
+// Linux mmap constants
+let PROT_READ: i32 = 1
+let PROT_WRITE: i32 = 2
+let MAP_PRIVATE: i32 = 2
+let MAP_ANONYMOUS: i32 = 32
+
+// Foreign interface to Linux virtual memory services
+extern act mmap(addr: @u8, length: usize, prot: i32, flags: i32, fd: i32, offset: usize) -> @u8
+extern act munmap(addr: @u8, length: usize) -> i32
+
+// Allocates raw zero-initialized virtual memory pages directly from the Linux kernel.
+act os_page_alloc(size_bytes: usize) -> @u8 {
+    if size_bytes == 0 {
+        return null
+    }
+    let ptr = mmap(null, size_bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0)
+    if (ptr as usize) == (0 - 1) as usize {
+        return null
+    }
+    return ptr
+}
+
+// Releases virtual memory pages previously allocated with os_page_alloc.
+act os_page_free(ptr: @u8, size_bytes: usize) -> bool {
+    if ptr == null {
+        return false
+    }
+    let res = munmap(ptr, size_bytes)
+    return res == 0
+}

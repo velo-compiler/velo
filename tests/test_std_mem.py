@@ -36,4 +36,19 @@ def test_std_mem_ops():
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.mem.ops all assertions succeeded" in res.stdout
 
+def test_platform_suffix_resolution():
+    # Verify that emit-c on std_mem_page_test.vl resolves page.vl to page_windows.vl on Windows
+    test_vl = REPO_ROOT / "tests" / "std_mem_page_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "emit-c", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"emit-c failed:\n{res.stderr}"
+    assert "VirtualAlloc" in res.stdout, "Expected VirtualAlloc from page_windows.vl to be included"
+    assert "mmap" not in res.stdout, "mmap from page_linux.vl must not be included on Windows"
+
+
 

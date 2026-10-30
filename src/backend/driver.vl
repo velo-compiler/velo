@@ -2,6 +2,8 @@
 use sys.io
 use sys.fs
 use sys.mem
+use sys.os
+
 use "../frontend/token.vl"
 use "../frontend/lexer.vl"
 use "../ast/types.vl"
@@ -77,13 +79,70 @@ act mark_file_visited(d: @CompilerDriver, path: string) {
     d.first_visited = vf
 }
 
+// Returns true if the current host or target operating system is Windows.
+act is_windows_platform() -> bool {
+    let os_env = os.get_env("OS")
+    if os_env != null and (os_env[0] == 'W' or os_env[0] == 'w') {
+        return true
+    }
+    if os.get_env("WINDIR") != null or os.get_env("windir") != null or os.get_env("SYSTEMROOT") != null {
+        return true
+    }
+    return false
+}
+
+// Returns true if the file target is specific to another OS and must be skipped.
+act should_skip_platform_file(path: string) -> bool {
+    if path == null { return false }
+    let is_win = is_windows_platform()
+    if is_win and str.ends_with(path, "_linux.vl") {
+        return true
+    }
+    if not is_win and str.ends_with(path, "_windows.vl") {
+        return true
+    }
+    return false
+}
+
+// Resolves a source path to its platform-specific variant (_windows.vl or _linux.vl) if available on disk.
+act resolve_platform_source_path(path: string) -> string {
+    if path == null { return null }
+    let plen = str.len(path)
+    if plen < 3 or not str.ends_with(path, ".vl") {
+        return path
+    }
+    if str.ends_with(path, "_windows.vl") or str.ends_with(path, "_linux.vl") {
+        return path
+    }
+
+    let is_win = is_windows_platform()
+    let stem = copy_slice_to_string(path, 0, plen - 3)
+    if is_win {
+        let win_path = str.concat(stem, "_windows.vl")
+        if fs.exists(win_path) {
+            return win_path
+        }
+    } else {
+        let linux_path = str.concat(stem, "_linux.vl")
+        if fs.exists(linux_path) {
+            return linux_path
+        }
+    }
+    return path
+}
+
 // Recursively loads a file and its imported dependencies in topological order.
 act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
-    let file_path = canonicalize_path(raw_path)
+    if should_skip_platform_file(raw_path) {
+        return
+    }
+    let target_path = resolve_platform_source_path(raw_path)
+    let file_path = canonicalize_path(target_path)
     if is_file_visited(d, file_path) {
         return
     }
     mark_file_visited(d, file_path)
+
 
     if not fs.exists(file_path) {
         io.println("[Velo Error] Source file does not exist: {file_path}")

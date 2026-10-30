@@ -793,10 +793,12 @@ flowchart TD
   - Handles edge cases: `os_page_alloc(0)` safely returns `null`; `os_page_free(null, ...)` safely returns `false`.
   - Added test program `tests/std_mem_page_test.vl` and pytest integration in `tests/test_std_mem.py`.
 * **Residual Limitation**:
-  - Direct Linux kernel `mmap`/`munmap` syscall abstraction will be unified alongside Windows `VirtualAlloc` when cross-platform conditional compilation lands.
+  - None for virtual page allocation. Cross-platform resolution is fully automated via Go-style platform file suffix dispatching (`_windows.vl` / `_linux.vl`) in `src/backend/driver.vl`.
 * **Verification**:
   - `bin/velo.exe run tests/std_mem_page_test.vl` passed with all edge cases and read/write boundary assertions.
-  - `python -m pytest tests/test_std_mem.py` passed (1/1 passed).
+  - `python -m pytest tests/test_std_mem.py` passed (3/3 passed including automated platform file resolution verification).
+  - Triple-bootstrap chain re-verified and determinism validated (5/5 passed in `test_bootstrap_snapshot.py`).
+
 
 #### Task 1.2: Pure Velo Byte Operations (`std/mem/ops.vl`) [COMPLETED] ✅
 * **Former Defect**:
