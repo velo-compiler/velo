@@ -1,0 +1,9 @@
+// Pure Velo standard operating system and process subsystem (zero libc runtime dependencies).
+// Provides environment variable access and mutation, process metadata,
+// command-line argument parsing and tokenization, child process execution and spawning,
+// and anonymous pipe creation with deadlock-free output capture.
+use "os/env.vl"
+use "os/args.vl"
+use "os/process.vl"
+use "os/pipe.vl"
+

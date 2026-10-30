@@ -7,6 +7,7 @@ use std.fmt
 use std.json
 use std.time
 use std.math
+use std.os
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -55,6 +56,13 @@ act main() -> i32 {
     if isqrt_u64(144 as u64) != 12 as u64 { return 10 }
     let s2 = sqrt_f64(2.0)
     if abs_f64(s2 * s2 - 2.0) > 0.00001 { return 11 }
+
+    // std.os: metadata, command-line arguments, and process spawning
+    if os_get_pid() == (0 as u32) { return 12 }
+    let os_args = os_tokenize_cmdline(@arena, "velo build app.vl")
+    if args_count(@os_args) != 3 { return 13 }
+    let r_proc = os_spawn_sync("cmd.exe /c exit 0")
+    if !r_proc.success { return 14 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0

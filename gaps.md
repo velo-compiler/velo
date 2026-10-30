@@ -1507,7 +1507,7 @@ flowchart TD
 
 ---
 
-### Phase 10: `std.os` (Zero-Dependency Pure-Velo Operating System & Process Subsystem)
+### Phase 10: `std.os` (Zero-Dependency Pure-Velo Operating System & Process Subsystem) [COMPLETED] ✅
 
 #### Task 10.1: Environment Variables & Process Metadata (`std/os/env.vl`) [COMPLETED] ✅
 * **Former Defect**:
@@ -1590,7 +1590,28 @@ flowchart TD
     - Error handling with null commands and non-existent binaries.
   - Added pytest test case `test_std_os_pipe` in `tests/test_std_os.py`.
 * **Residual Limitation**:
-  - Standard library umbrella module (`std/os.vl`), standard resolution (`use std.os`), compiler driver migration (`extern act system` replacement in `src/backend/driver.vl`), and full test verification will be implemented in Task 10.5.
+  - Standard library umbrella module (`std/os.vl`), standard resolution (`use std.os`), and full test verification completed in Task 10.5.
 * **Verification**:
   - `bin/velo.exe run std/tests/os/pipe_test.vl` passed (`PASS: std.os.pipe tests succeeded`).
   - `python -m pytest tests/test_std_os.py` passed (5/5 passed in 6.93s).
+
+#### Task 10.5: Standard Library Umbrella Module & Standard Resolution (`std/os.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - `std.os` lacked a unified top-level standard library umbrella module (`std/os.vl`). Callers could not import all operating system services using standard dot syntax `use std.os`, nor was `std.os` integrated into the whole-standard-library umbrella `std_module_import_test.vl`.
+* **Fix Applied**:
+  - Implemented `std/os.vl` umbrella module (9 lines) cleanly re-exporting all four core OS subsystems:
+    - `use "os/env.vl"`: Native environment variables, PID queries, working directory management, and process exit.
+    - `use "os/args.vl"`: Raw command-line retrieval, Win32 / POSIX tokenization, argument container accessors, and quoting/joining.
+    - `use "os/process.vl"`: Asynchronous and synchronous process execution, exit polling, timed waits, and termination.
+    - `use "os/pipe.vl"`: Anonymous pipes and concurrent, deadlock-free process output capture.
+  - Verified automatic compiler resolution for `use std.os` mapping directly to `std/os.vl` via `std_module_to_rel_path`.
+  - Added dedicated umbrella integration test suite `std/tests/os_module_import_test.vl` (36 lines) verifying metadata, args tokenization, synchronous process spawning, shell execution, and stdout output capture.
+  - Integrated `use std.os` and runtime assertions into the comprehensive standard library umbrella test `std/tests/std_module_import_test.vl` (70 lines), demonstrating zero symbol collisions across `std.io`, `std.coll`, `std.mem`, `std.str`, `std.fmt`, `std.json`, `std.time`, `std.math`, and `std.os`.
+  - Added pytest integration test `test_std_os_module_import` in `tests/test_std_os.py`.
+* **Residual Limitation**:
+  - None. Phase 10 (`std.os`) is 100% complete, fully tested, and self-hosted with zero libc runtime dependencies.
+* **Verification**:
+  - `bin/velo.exe run std/tests/os_module_import_test.vl` passed (`PASS: native use std.os import succeeded`).
+  - `bin/velo.exe run std/tests/std_module_import_test.vl` passed (`PASS: native use std.* imports succeeded`).
+  - `python -m pytest tests/test_std_os.py` passed (6/6 passed in 8.64s).
+  - `python -m pytest tests -k "test_std_"` passed (53/53 passed in 50.23s).

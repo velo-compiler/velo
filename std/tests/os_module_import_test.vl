@@ -1,0 +1,36 @@
+// Tests native 'use std.os' umbrella module import.
+use std.os
+use "../io/print.vl"
+use "../str/slice.vl"
+
+act main() -> i32 {
+    // 1. std.os: metadata & env
+    let fam = os_family()
+    if fam == null { return 1 }
+    let pid = os_get_pid()
+    if pid == (0 as u32) { return 2 }
+
+    // 2. std.os: args
+    mut arena = arena_init(4096)
+    let parsed = os_tokenize_cmdline(@arena, "velo.exe build -o bin/out.exe")
+    if args_count(@parsed) != 4 { return 3 }
+    if !args_has_flag(@parsed, "-o") { return 4 }
+
+    // 3. std.os: process execution
+    let r = os_spawn_sync("cmd.exe /c exit 0")
+    if !r.success or r.exit_code != 0 { return 5 }
+
+    let sys_code = os_system("cmd.exe /c exit 0")
+    if sys_code != 0 { return 6 }
+
+    // 4. std.os: pipe output capture
+    let cap = os_capture_stdout(@arena, "cmd.exe /c echo std_os_works")
+    if cap == null or raw_str_len(cap as @u8) == 0 { return 7 }
+
+    let capture_res = os_spawn_capture(@arena, "cmd.exe /c echo ok_capture")
+    if !capture_res.success or capture_res.exit_code != 0 { return 8 }
+
+    println_str("PASS: native use std.os import succeeded")
+    return 0
+}
+
