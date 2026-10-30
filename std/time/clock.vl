@@ -1,0 +1,5 @@
+// High-resolution monotonic clock and wall-clock Unix epoch timing facade for Velo.
+// Automatically resolved at compile-time to clock_windows.vl on Windows
+// and clock_linux.vl on Linux based on host/target platform.
+
+use "clock_windows.vl"

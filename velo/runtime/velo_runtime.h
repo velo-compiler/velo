@@ -844,29 +844,23 @@ static inline void velo_mutex_destroy(void* m) {
 // deliberately NOT wall-epoch time.
 // ============================================================================
 #if defined(_WIN32)
-// Win64 layout of kernel32's LARGE_INTEGER (LLP64: unsigned long is 32-bit;
-// the struct is exactly 8 bytes, paddable away inside the union).
-typedef union velo_time_li {
-    struct { unsigned long low; long high; } u;
-    long long quad;
-} velo_time_li;
-int __stdcall QueryPerformanceCounter(velo_time_li* counter);
-int __stdcall QueryPerformanceFrequency(velo_time_li* frequency);
+int __stdcall QueryPerformanceCounter(int64_t* counter);
+int __stdcall QueryPerformanceFrequency(int64_t* frequency);
 void __stdcall Sleep(unsigned long ms);
 
 static inline i64 velo_time_now_us(void) {
-    velo_time_li counter;
-    velo_time_li frequency;
-    if (!QueryPerformanceCounter(&counter) || !QueryPerformanceFrequency(&frequency) || frequency.quad <= 0) {
+    int64_t counter;
+    int64_t frequency;
+    if (!QueryPerformanceCounter(&counter) || !QueryPerformanceFrequency(&frequency) || frequency <= 0) {
         velo_fatal_msg("qpc clock failure");
     }
     // Overflow-safe microseconds split: seconds * 1e6 + remainder * 1e6 / freq.
     // The naive (counter * 1e6) / freq overflows i64 after ~2 weeks of uptime
     // at a 10 MHz counter; this split never does (rem * 1e6 < 1e13 for any
     // sane frequency).
-    long long whole = counter.quad / frequency.quad;
-    long long rem = counter.quad % frequency.quad;
-    return (i64)(whole * 1000000LL + rem * 1000000LL / frequency.quad);
+    long long whole = counter / frequency;
+    long long rem = counter % frequency;
+    return (i64)(whole * 1000000LL + rem * 1000000LL / frequency);
 }
 
 static inline void velo_time_sleep(long long ms) {

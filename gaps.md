@@ -1326,3 +1326,26 @@ flowchart TD
   - `bin/velo.exe run std/tests/json_module_import_test.vl` passed (`PASS: use std.json umbrella module verified`).
   - `bin/velo.exe run std/tests/std_module_import_test.vl` passed (`PASS: native use std.* imports succeeded`).
   - `python -m pytest tests/test_std_json.py` passed (5/5 passed in 7.82s).
+
+---
+
+### Phase 8: `std.time` (Zero-Dependency Monotonic Clocks, Timers, Sleeping & Calendar)
+
+#### Task 8.1: High-Precision Monotonic Clocks & Wall-Clock Epoch (`std/time/clock.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Timing in Velo previously relied solely on the closed `sys.time` built-in, which directly lowers into C runtime functions and internal runtime helpers (`velo_time_now_us`). Velo had no modular pure-Velo clock module supporting sub-microsecond nanosecond monotonic timing, raw tick queries, frequency queries, wall-clock UTC Unix epoch timestamps (seconds, milliseconds, microseconds, nanoseconds), or delta calculation without C `<time.h>`.
+* **Fix Applied**:
+  - Implemented `std/time/clock_windows.vl` backed by direct Win32 kernel32 services (`QueryPerformanceCounter`, `QueryPerformanceFrequency`, `GetSystemTimeAsFileTime`).
+  - Implemented overflow-safe nanosecond split calculation (`whole_sec * 1e9 + (rem * 1e9) / freq`) guaranteeing zero integer overflow over years of uptime.
+  - Implemented exact UTC Unix epoch conversions from Windows `FILETIME` 100-nanosecond intervals (offset `116444736000000000`).
+  - Implemented `std/time/clock_linux.vl` backed by direct POSIX `clock_gettime` with `CLOCK_MONOTONIC` and `CLOCK_REALTIME`.
+  - Implemented cross-platform facade `std/time/clock.vl` providing `time_frequency`, `time_monotonic_ticks`, `time_monotonic_ns`, `time_monotonic_us`, `time_monotonic_ms`, `time_monotonic_s`, `time_now_epoch_ns`, `time_now_epoch_us`, `time_now_epoch_ms`, `time_now_epoch_s`, and safe delta calculators `time_diff_ns` and `time_diff_ms`.
+  - Updated `velo_runtime.h` to declare `QueryPerformanceCounter`/`QueryPerformanceFrequency` with standard `int64_t*`, eliminating prototype conflicts between runtime and foreign Velo interfaces.
+  - Added unit test suite `std/tests/time/clock_test.vl` and pytest integration in `tests/test_std_time.py`.
+* **Residual Limitation**:
+  - Duration representation and Stopwatch benchmarking (`std/time/duration.vl`) are scheduled for Task 8.2.
+* **Verification**:
+  - `bin/velo.exe run std/tests/time/clock_test.vl` passed (`PASS: std.time.clock all tests passed`).
+  - `python -m pytest tests/test_std_time.py` passed (1/1 passed in 1.06s).
+  - Existing `tests/test_time_library.py` passed with zero regressions.
+

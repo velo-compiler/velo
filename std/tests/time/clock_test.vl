@@ -1,0 +1,127 @@
+// Unit test suite for std.time.clock (high-resolution monotonic clock and epoch timestamps).
+use "../../io/print.vl"
+use "../../time/clock.vl"
+
+act test_monotonic_clock() -> bool {
+    let freq = time_frequency()
+    if freq <= 0 {
+        return false
+    }
+
+    let ticks1 = time_monotonic_ticks()
+    if ticks1 <= 0 {
+        return false
+    }
+
+    let t1_ns = time_monotonic_ns()
+    if t1_ns == 0 as u64 {
+        return false
+    }
+
+    // Spin until the clock advances
+    mut t2_ns = time_monotonic_ns()
+    mut spins: i32 = 0
+    loop t2_ns == t1_ns and spins < 10000000 {
+        t2_ns = time_monotonic_ns()
+        spins += 1
+    }
+
+    if t2_ns <= t1_ns {
+        return false
+    }
+
+    let elapsed_ns = time_diff_ns(t1_ns, t2_ns)
+    if elapsed_ns == 0 as u64 {
+        return false
+    }
+
+    let t_us = time_monotonic_us()
+    let t_ms = time_monotonic_ms()
+    let t_s = time_monotonic_s()
+
+    if t_us == 0 as u64 or t_ms == 0 as u64 or t_s <= 0.0 {
+        return false
+    }
+
+    return true
+}
+
+act test_epoch_timestamps() -> bool {
+    let epoch_s = time_now_epoch_s()
+    // Current year is 2026; epoch seconds should be between 1.70e9 and 2.50e9
+    if epoch_s < 1700000000 or epoch_s > 2500000000 {
+        return false
+    }
+
+    let epoch_ms = time_now_epoch_ms()
+    if epoch_ms < 1700000000000 {
+        return false
+    }
+
+    // Verify ms and s are consistent within 1 second
+    let s_from_ms = epoch_ms / 1000
+    let diff_s = epoch_s - s_from_ms
+    if diff_s < -1 or diff_s > 1 {
+        return false
+    }
+
+    let epoch_us = time_now_epoch_us()
+    let epoch_ns = time_now_epoch_ns()
+
+    if epoch_us == 0 as u64 or epoch_ns == 0 as u64 {
+        return false
+    }
+
+    let s_from_ns = (epoch_ns / 1000000000) as i64
+    let diff_ns_s = epoch_s - s_from_ns
+    if diff_ns_s < -1 or diff_ns_s > 1 {
+        return false
+    }
+
+    return true
+}
+
+act test_diff_helpers() -> bool {
+    let d1 = time_diff_ns(100 as u64, 250 as u64)
+    if d1 != 150 as u64 {
+        return false
+    }
+
+    // Underflow protection: if start > end, return 0
+    let d2 = time_diff_ns(250 as u64, 100 as u64)
+    if d2 != 0 as u64 {
+        return false
+    }
+
+    let dm1 = time_diff_ms(50 as u64, 120 as u64)
+    if dm1 != 70 as u64 {
+        return false
+    }
+
+    let dm2 = time_diff_ms(120 as u64, 50 as u64)
+    if dm2 != 0 as u64 {
+        return false
+    }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_monotonic_clock() {
+        println_str("FAIL: test_monotonic_clock")
+        return 1
+    }
+
+    if !test_epoch_timestamps() {
+        println_str("FAIL: test_epoch_timestamps")
+        return 2
+    }
+
+    if !test_diff_helpers() {
+        println_str("FAIL: test_diff_helpers")
+        return 3
+    }
+
+    println_str("PASS: std.time.clock all tests passed")
+    return 0
+}
