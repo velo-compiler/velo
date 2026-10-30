@@ -48,3 +48,15 @@ def test_std_fs_dir():
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.fs.dir all assertions succeeded" in res.stdout
+
+def test_std_path_fs_module_imports():
+    test_vl = REPO_ROOT / "std" / "tests" / "path_fs_module_import_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: use std.path and use std.fs native imports verified" in res.stdout

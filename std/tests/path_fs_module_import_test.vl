@@ -1,0 +1,56 @@
+// Verification test for native use std.path and use std.fs umbrella module imports.
+use std.path;
+use std.fs;
+use std.io;
+
+act main() -> i32 {
+    // 1. Path manipulation via use std.path
+    let base = path_basename_str("foo/bar/test.vl")
+    if !slice_eq_str(base, "test.vl") {
+        return 1
+    }
+
+    let norm = path_normalize_str("a/b/../c")
+    if !slice_eq_str(slice_from_str(norm), "a/c") {
+        heap_free(norm as @u8)
+        return 2
+    }
+    heap_free(norm as @u8)
+
+    // 2. File stat via use std.fs
+    if !fs_exists("README.md") {
+        return 3
+    }
+    if !fs_is_file("README.md") {
+        return 4
+    }
+    if !fs_is_dir("src") {
+        return 5
+    }
+
+    // 3. File ops via use std.fs
+    let test_file = "scratch/test_std_fs_umbrella.tmp"
+    if !fs_write_str(test_file, "Umbrella module verification") {
+        return 6
+    }
+    if !fs_exists(test_file) {
+        return 7
+    }
+    let read_back = fs_read_to_str(test_file)
+    if !slice_eq_str(slice_from_str(read_back), "Umbrella module verification") {
+        heap_free(read_back as @u8)
+        fs_remove_file_str(test_file)
+        return 8
+    }
+    heap_free(read_back as @u8)
+    fs_remove_file_str(test_file)
+
+    // 4. Directory iteration via use std.fs
+    let count = fs_count_dir("std")
+    if count < 5 {
+        return 9
+    }
+
+    println_str("PASS: use std.path and use std.fs native imports verified")
+    return 0
+}

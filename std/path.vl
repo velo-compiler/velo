@@ -1,0 +1,4 @@
+// Standard library umbrella module for std.path (pure Velo filesystem paths).
+// Provides zero-allocation path slicing (dirname, basename, extname, stem),
+// path joining, canonical normalization (resolving . and ..), and native OS separator conversions.
+use "path/path.vl"

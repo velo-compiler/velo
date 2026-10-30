@@ -1233,3 +1233,17 @@ flowchart TD
 * **Verification**:
   - `bin/velo.exe run std/tests/fs/dir_test.vl` passed streaming directory iteration with automatic dotfile suppression, entry classification, collection into `RawShelf`, and item counting.
   - `python -m pytest tests/test_std_fs.py` passed (3/3 passed in 1.85s).
+
+#### Task 6.5: Umbrella Modules & Standard Resolution (`std/path.vl` & `std/fs.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Importing filesystem and path tools previously required internal relative file paths (`use "path/path.vl"`, `use "fs/stat.vl"`, `use "fs/ops.vl"`, `use "fs/dir.vl"`), lacking standard library umbrella modules enabling native `use std.path` and `use std.fs`.
+* **Fix Applied**:
+  - Added umbrella module `std/path.vl` exposing the pure-Velo path slicing, joining, and normalization API.
+  - Added umbrella module `std/fs.vl` re-exporting `std/path/path.vl`, `std/fs/stat.vl`, `std/fs/ops.vl`, and `std/fs/dir.vl`.
+  - Added verification test `std/tests/path_fs_module_import_test.vl` and pytest integration in `tests/test_std_fs.py`.
+* **Residual Limitation**:
+  - Phase 6 (`std.path` & `std.fs`) is 100% complete across all 5 tasks (path manipulation, stat queries, mutation operations, directory iteration, umbrella modules). Both `use std.path` and `use std.fs` are fully operational with zero C runtime dependencies.
+* **Verification**:
+  - `bin/velo.exe run std/tests/path_fs_module_import_test.vl` passed native `use std.path` and `use std.fs` imports.
+  - `python -m pytest tests/test_std_path.py tests/test_std_fs.py` passed (5/5 passed).
+  - All 32 standard library test cases passed.

@@ -1,0 +1,7 @@
+// Standard library umbrella module for std.fs (pure Velo filesystem engine).
+// Provides file metadata queries, filesystem mutations, directory scanning,
+// and atomic file I/O with zero C runtime dependencies.
+use "path/path.vl"
+use "fs/stat.vl"
+use "fs/ops.vl"
+use "fs/dir.vl"
