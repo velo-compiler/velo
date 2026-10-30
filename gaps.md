@@ -1002,3 +1002,23 @@ flowchart TD
   - `bin/velo.exe run std/tests/fmt/ftoa_test.vl` passed positive/negative zero, pi formatting & parsing, negative float parsing, scientific notation parsing (`1e-4`, `2.5e3`, `-1.25E+2`), IEEE 754 special values (`NaN`, `Inf`, `-Inf`), and invalid string rejection.
   - `python -m pytest tests/test_std_fmt.py` passed (4/4 passed).
 
+---
+
+### Phase 4: `std.io` (Pure Velo Streams, Handles & Buffered I/O)
+
+#### Task 4.1: OS Standard Handle & File Descriptor Provider (`std/io/handle.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - File operations and standard stream access (stdin, stdout, stderr) in Velo relied strictly on C standard library runtime facilities (`stdio.h`, `FILE*`, `fprintf`, `fread`, `fwrite`), binding stream I/O directly to libc.
+  - There were no pure-Velo abstractions for interacting directly with operating system kernel file handles and descriptors.
+* **Fix Applied**:
+  - Implemented `std/io/handle_windows.vl` backed directly by Win32 kernel services (`GetStdHandle`, `WriteFile`, `ReadFile`, `SetFilePointerEx`, `GetFileSizeEx`, `CreateFileA`, `CloseHandle`, `DeleteFileA`).
+  - Implemented `std/io/handle_linux.vl` backed directly by POSIX kernel syscalls (`read`, `write`, `lseek`, `open`, `close`, `unlink`).
+  - Implemented facade `std/io/handle.vl` and alias `std/io/fd.vl` wrapping strongly typed `data FileHandle { os_handle: usize }`.
+  - Implemented handle creators (`io_stdin_handle`, `io_stdout_handle`, `io_stderr_handle`), validity checking (`io_is_valid_handle`), chunked 64-bit unbuffered writing (`io_raw_write`), unbuffered reading (`io_raw_read`), 64-bit seeking (`io_raw_seek`), size query (`io_file_size`), file creation/opening with mode flags (`io_file_open`, `io_file_open_str`), standard handle closure protection (`io_file_close`), and file deletion (`io_file_delete`, `io_file_delete_str`).
+  - Added unit test suite `std/tests/io/handle_test.vl` and pytest integration in `tests/test_std_io.py`.
+* **Residual Limitation**:
+  - Buffered writing with 4KB ring buffers and chunk flushing will be layered in Task 4.2.
+* **Verification**:
+  - `bin/velo.exe run std/tests/io/handle_test.vl` passed standard handles query & closure protection, invalid handle rejections, file creation, writing, exact file sizing, seeking (`SEEK_SET`, `SEEK_CUR`, `SEEK_END`), reading back payload, appending, closing, file deletion, and deleted file reopen rejection.
+  - `python -m pytest tests/test_std_io.py` passed (1/1 passed).
+

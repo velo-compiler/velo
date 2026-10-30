@@ -1,0 +1,211 @@
+// Unit test suite for std.io.handle (pure Velo OS standard streams and file operations).
+use "../../mem/page.vl"
+use "../../str/slice.vl"
+use "../../io/handle.vl"
+
+act test_standard_handles() -> bool {
+    let stdin_h = io_stdin_handle()
+    let stdout_h = io_stdout_handle()
+    let stderr_h = io_stderr_handle()
+
+    if !io_is_valid_handle(stdin_h) { return false }
+    if !io_is_valid_handle(stdout_h) { return false }
+    if !io_is_valid_handle(stderr_h) { return false }
+
+    // Standard handles must be protected against closure
+    if io_file_close(stdin_h) { return false }
+    if io_file_close(stdout_h) { return false }
+    if io_file_close(stderr_h) { return false }
+
+    return true
+}
+
+act test_invalid_handles() -> bool {
+    let bad_zero = FileHandle { os_handle: 0 }
+    let bad_inv = FileHandle { os_handle: INVALID_HANDLE }
+
+    if io_is_valid_handle(bad_zero) { return false }
+    if io_is_valid_handle(bad_inv) { return false }
+
+    let dummy = "test"
+    if io_raw_write(bad_inv, dummy as @u8, 4) != 0 { return false }
+
+    let buf = os_page_alloc(64)
+    if io_raw_read(bad_inv, buf, 64) != (-1 as isize) {
+        os_page_free(buf, 64)
+        return false
+    }
+
+    if io_raw_seek(bad_inv, 0 as i64, IO_SEEK_SET) != (-1 as i64) {
+        os_page_free(buf, 64)
+        return false
+    }
+
+    if io_file_size(bad_inv) != (-1 as i64) {
+        os_page_free(buf, 64)
+        return false
+    }
+
+    if io_file_close(bad_inv) {
+        os_page_free(buf, 64)
+        return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+act test_file_create_write_read_seek() -> bool {
+    let test_path = "scratch/test_io_temp.txt"
+
+    // 1. Create and write
+    let fh = io_file_open_str(test_path, IO_CREATE | IO_TRUNCATE | IO_READ | IO_WRITE)
+    if !io_is_valid_handle(fh) {
+        return false
+    }
+
+    let payload = "Velo Pure Systems I/O\nLine 2: 1234567890\n"
+    let payload_slice = slice_from_str(payload)
+    let payload_len: usize = payload_slice.len
+    let written = io_raw_write(fh, payload as @u8, payload_len)
+    if written != payload_len {
+        io_file_close(fh)
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    // 2. Check file size
+    let sz = io_file_size(fh)
+    if sz != (payload_len as i64) {
+        io_file_close(fh)
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    // 3. Seek to beginning and read back
+    let pos0 = io_raw_seek(fh, 0 as i64, IO_SEEK_SET)
+    if pos0 != (0 as i64) {
+        io_file_close(fh)
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    let buf = os_page_alloc(128)
+    let read_count = io_raw_read(fh, buf, 128)
+    if read_count != (payload_len as isize) {
+        os_page_free(buf, 128)
+        io_file_close(fh)
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    let s = slice_from_raw(buf, read_count as usize)
+    if !slice_eq_str(s, payload) {
+        os_page_free(buf, 128)
+        io_file_close(fh)
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    // 4. Seek with SEEK_CUR and SEEK_END
+    let pos_end = io_raw_seek(fh, 0 as i64, IO_SEEK_END)
+    if pos_end != (payload_len as i64) {
+        os_page_free(buf, 128)
+        io_file_close(fh)
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    let pos_cur = io_raw_seek(fh, -10 as i64, IO_SEEK_CUR)
+    if pos_cur != (payload_len as i64 - 10 as i64) {
+        os_page_free(buf, 128)
+        io_file_close(fh)
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    // 5. Close handle
+    if !io_file_close(fh) {
+        os_page_free(buf, 128)
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    // 6. Reopen in append mode
+    let fh_app = io_file_open_str(test_path, IO_WRITE | IO_APPEND)
+    if !io_is_valid_handle(fh_app) {
+        os_page_free(buf, 128)
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    let extra = "EXTRA\n"
+    let extra_len: usize = 6
+    let w_extra = io_raw_write(fh_app, extra as @u8, extra_len)
+    if w_extra != extra_len {
+        os_page_free(buf, 128)
+        io_file_close(fh_app)
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    let sz_app = io_file_size(fh_app)
+    if sz_app != ((payload_len + extra_len) as i64) {
+        os_page_free(buf, 128)
+        io_file_close(fh_app)
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    io_file_close(fh_app)
+
+    // 7. Delete file
+    if !io_file_delete_str(test_path) {
+        os_page_free(buf, 128)
+        return false
+    }
+
+    // 8. Reopening non-existent file without IO_CREATE must fail
+    let fh_fail = io_file_open_str(test_path, IO_READ)
+    if io_is_valid_handle(fh_fail) {
+        io_file_close(fh_fail)
+        os_page_free(buf, 128)
+        return false
+    }
+
+    os_page_free(buf, 128)
+    return true
+}
+
+
+
+act test_stdout_raw_write() -> bool {
+    let stdout_h = io_stdout_handle()
+    let msg = "" // Don't pollute console output during automated test run, or write 0 bytes
+    let written = io_raw_write(stdout_h, msg as @u8, 0)
+    if written != 0 { return false }
+    return true
+}
+
+act main() -> i32 {
+    if !test_standard_handles() {
+        io.println("FAIL: test_standard_handles")
+        return 1
+    }
+    if !test_stdout_raw_write() {
+        io.println("FAIL: test_stdout_raw_write")
+        return 1
+    }
+    if !test_invalid_handles() {
+        io.println("FAIL: test_invalid_handles")
+        return 1
+    }
+    if !test_file_create_write_read_seek() {
+        io.println("FAIL: test_file_create_write_read_seek")
+        return 1
+    }
+
+    io.println("PASS: std.io.handle all assertions succeeded")
+    return 0
+}
+
