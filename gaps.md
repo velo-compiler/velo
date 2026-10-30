@@ -795,7 +795,7 @@ flowchart TD
 * **Residual Limitation**:
   - None for virtual page allocation. Cross-platform resolution is fully automated via Go-style platform file suffix dispatching (`_windows.vl` / `_linux.vl`) in `src/backend/driver.vl`.
 * **Verification**:
-  - `bin/velo.exe run tests/std_mem_page_test.vl` passed with all edge cases and read/write boundary assertions.
+  - `bin/velo.exe run std/tests/mem/page_test.vl` passed with all edge cases and read/write boundary assertions.
   - `python -m pytest tests/test_std_mem.py` passed (3/3 passed including automated platform file resolution verification).
   - Triple-bootstrap chain re-verified and determinism validated (5/5 passed in `test_bootstrap_snapshot.py`).
 
@@ -807,11 +807,12 @@ flowchart TD
   - Implemented `std/mem/ops.vl` providing pure-Velo `copy(dest: @u8, src: @u8, n: usize)`, `set(dest: @u8, val: u8, n: usize)`, and `eq(a: @u8, b: @u8, n: usize) -> bool`.
   - Optimized with fast 64-bit (`u64`) word-level batch processing for chunks with trailing byte handling.
   - Implemented safe overlap handling in `copy` (backward copy when `dest` overlaps `src` forward, providing full `memmove` safety).
-  - Added test suite `tests/std_mem_ops_test.vl` and pytest verification in `tests/test_std_mem.py`.
+  - Added test suite `std/tests/mem/ops_test.vl` and pytest verification in `tests/test_std_mem.py`.
 * **Residual Limitation**:
   - SIMD 128-bit vectorized copying (`sys.simd`) can be added as an optional fast-path for buffers > 1KB.
 * **Verification**:
-  - `bin/velo.exe run tests/std_mem_ops_test.vl` passed all set, copy, eq, overlap, and boundary assertions.
-  - `python -m pytest tests/test_std_mem.py` passed (2/2 passed).
+  - `bin/velo.exe run std/tests/mem/ops_test.vl` passed all set, copy, eq, overlap, and boundary assertions.
+  - `python -m pytest tests/test_std_mem.py` passed (3/3 passed).
+
 
 

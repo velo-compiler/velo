@@ -432,27 +432,27 @@ Goal: Resizable arrays, circular rings, and dynamic hash maps with zero C runtim
 
 | Task ID | Component | Status | Target File | Verification |
 |:---|:---|:---:|:---|:---|
-| **1.1** | `std.mem.page` | [x] | `std/mem/page.vl` | `tests/std_mem_page_test.vl` |
-| **1.2** | `std.mem.ops` | [x] | `std/mem/ops.vl` | `tests/std_mem_ops_test.vl` |
-| **1.3** | `std.mem.arena` | [ ] | `std/mem/arena.vl` | `tests/std_mem_arena_test.vl` |
-| **1.4** | `std.mem.slab` | [ ] | `std/mem/slab.vl` | `tests/std_mem_slab_test.vl` |
-| **1.5** | `std.mem.heap` | [ ] | `std/mem/heap.vl` | `tests/std_mem_heap_test.vl` |
-| **2.1** | `std.str.slice` | [ ] | `std/str/slice.vl` | `tests/std_str_slice_test.vl` |
-| **2.2** | `std.str.utf8` | [ ] | `std/str/utf8.vl` | `tests/std_str_utf8_test.vl` |
-| **2.3** | `std.str.search` | [ ] | `std/str/search.vl` | `tests/std_str_search_test.vl` |
-| **2.4** | `std.str.builder` | [ ] | `std/str/builder.vl` | `tests/std_str_builder_test.vl` |
-| **2.5** | `std.str.manip` | [ ] | `std/str/manip.vl` | `tests/std_str_manip_test.vl` |
-| **3.1** | `std.fmt.itoa` | [ ] | `std/fmt/itoa.vl` | `tests/std_fmt_itoa_test.vl` |
-| **3.2** | `std.fmt.atoi` | [ ] | `std/fmt/atoi.vl` | `tests/std_fmt_atoi_test.vl` |
-| **3.3** | `std.fmt.buffer` | [ ] | `std/fmt/buffer.vl` | `tests/std_fmt_buffer_test.vl` |
-| **3.4** | `std.fmt.ftoa` | [ ] | `std/fmt/ftoa.vl` | `tests/std_fmt_ftoa_test.vl` |
-| **4.1** | `std.io.handle` | [ ] | `std/io/handle.vl` | `tests/std_io_handle_test.vl` |
-| **4.2** | `std.io.buffered_writer` | [ ] | `std/io/buffered_writer.vl` | `tests/std_io_buffered_writer_test.vl` |
-| **4.3** | `std.io.print` | [ ] | `std/io/print.vl` | `tests/std_io_print_test.vl` |
-| **4.4** | `std.io.buffered_reader` | [ ] | `std/io/buffered_reader.vl` | `tests/std_io_buffered_reader_test.vl` |
-| **5.1** | `std.coll.shelf` | [ ] | `std/coll/shelf.vl` | `tests/std_coll_shelf_test.vl` |
-| **5.2** | `std.coll.shelf_ops` | [ ] | `std/coll/shelf_ops.vl` | `tests/std_coll_shelf_ops_test.vl` |
-| **5.3** | `std.coll.ring` | [ ] | `std/coll/ring.vl` | `tests/std_coll_ring_test.vl` |
-| **5.4** | `std.coll.hash` | [ ] | `std/coll/hash.vl` | `tests/std_coll_hash_test.vl` |
-| **5.5** | `std.coll.map` | [ ] | `std/coll/map.vl` | `tests/std_coll_map_test.vl` |
-| **5.6** | `std.coll.map_ops` | [ ] | `std/coll/map_ops.vl` | `tests/std_coll_map_ops_test.vl` |
+| **1.1** | `std.mem.page` | [x] | `std/mem/page.vl` | `std/tests/mem/page_test.vl` |
+| **1.2** | `std.mem.ops` | [x] | `std/mem/ops.vl` | `std/tests/mem/ops_test.vl` |
+| **1.3** | `std.mem.arena` | [ ] | `std/mem/arena.vl` | `std/tests/mem/arena_test.vl` |
+| **1.4** | `std.mem.slab` | [ ] | `std/mem/slab.vl` | `std/tests/mem/slab_test.vl` |
+| **1.5** | `std.mem.heap` | [ ] | `std/mem/heap.vl` | `std/tests/mem/heap_test.vl` |
+| **2.1** | `std.str.slice` | [ ] | `std/str/slice.vl` | `std/tests/str/slice_test.vl` |
+| **2.2** | `std.str.utf8` | [ ] | `std/str/utf8.vl` | `std/tests/str/utf8_test.vl` |
+| **2.3** | `std.str.search` | [ ] | `std/str/search.vl` | `std/tests/str/search_test.vl` |
+| **2.4** | `std.str.builder` | [ ] | `std/str/builder.vl` | `std/tests/str/builder_test.vl` |
+| **2.5** | `std.str.manip` | [ ] | `std/str/manip.vl` | `std/tests/str/manip_test.vl` |
+| **3.1** | `std.fmt.itoa` | [ ] | `std/fmt/itoa.vl` | `std/tests/fmt/itoa_test.vl` |
+| **3.2** | `std.fmt.atoi` | [ ] | `std/fmt/atoi.vl` | `std/tests/fmt/atoi_test.vl` |
+| **3.3** | `std.fmt.buffer` | [ ] | `std/fmt/buffer.vl` | `std/tests/fmt/buffer_test.vl` |
+| **3.4** | `std.fmt.ftoa` | [ ] | `std/fmt/ftoa.vl` | `std/tests/fmt/ftoa_test.vl` |
+| **4.1** | `std.io.handle` | [ ] | `std/io/handle.vl` | `std/tests/io/handle_test.vl` |
+| **4.2** | `std.io.buffered_writer` | [ ] | `std/io/buffered_writer.vl` | `std/tests/io/buffered_writer_test.vl` |
+| **4.3** | `std.io.print` | [ ] | `std/io/print.vl` | `std/tests/io/print_test.vl` |
+| **4.4** | `std.io.buffered_reader` | [ ] | `std/io/buffered_reader.vl` | `std/tests/io/buffered_reader_test.vl` |
+| **5.1** | `std.coll.shelf` | [ ] | `std/coll/shelf.vl` | `std/tests/coll/shelf_test.vl` |
+| **5.2** | `std.coll.shelf_ops` | [ ] | `std/coll/shelf_ops.vl` | `std/tests/coll/shelf_ops_test.vl` |
+| **5.3** | `std.coll.ring` | [ ] | `std/coll/ring.vl` | `std/tests/coll/ring_test.vl` |
+| **5.4** | `std.coll.hash` | [ ] | `std/coll/hash.vl` | `std/tests/coll/hash_test.vl` |
+| **5.5** | `std.coll.map` | [ ] | `std/coll/map.vl` | `std/tests/coll/map_test.vl` |
+| **5.6** | `std.coll.map_ops` | [ ] | `std/coll/map_ops.vl` | `std/tests/coll/map_ops_test.vl` |

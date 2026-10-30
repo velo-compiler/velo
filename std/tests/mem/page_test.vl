@@ -1,5 +1,5 @@
 use sys.io
-use "../std/mem/page.vl"
+use "../../mem/page.vl"
 
 act main() -> i32 {
     // Edge case 1: zero-byte allocation returns null

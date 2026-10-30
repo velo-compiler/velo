@@ -13,7 +13,7 @@ def get_env():
     return env
 
 def test_std_mem_page_alloc():
-    test_vl = REPO_ROOT / "tests" / "std_mem_page_test.vl"
+    test_vl = REPO_ROOT / "std" / "tests" / "mem" / "page_test.vl"
     res = subprocess.run(
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
@@ -25,7 +25,7 @@ def test_std_mem_page_alloc():
     assert "PASS: std.mem.page all assertions succeeded" in res.stdout
 
 def test_std_mem_ops():
-    test_vl = REPO_ROOT / "tests" / "std_mem_ops_test.vl"
+    test_vl = REPO_ROOT / "std" / "tests" / "mem" / "ops_test.vl"
     res = subprocess.run(
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
@@ -37,8 +37,8 @@ def test_std_mem_ops():
     assert "PASS: std.mem.ops all assertions succeeded" in res.stdout
 
 def test_platform_suffix_resolution():
-    # Verify that emit-c on std_mem_page_test.vl resolves page.vl to page_windows.vl on Windows
-    test_vl = REPO_ROOT / "tests" / "std_mem_page_test.vl"
+    # Verify that emit-c on page_test.vl resolves page.vl to page_windows.vl on Windows
+    test_vl = REPO_ROOT / "std" / "tests" / "mem" / "page_test.vl"
     res = subprocess.run(
         [str(VELO_EXE), "emit-c", str(test_vl)],
         cwd=str(REPO_ROOT),
@@ -48,6 +48,7 @@ def test_platform_suffix_resolution():
     )
     assert res.returncode == 0, f"emit-c failed:\n{res.stderr}"
     assert "VirtualAlloc" in res.stdout, "Expected VirtualAlloc from page_windows.vl to be included"
+
     assert "mmap" not in res.stdout, "mmap from page_linux.vl must not be included on Windows"
 
 

@@ -1,6 +1,6 @@
 use sys.io
-use "../std/mem/page.vl"
-use "../std/mem/ops.vl"
+use "../../mem/page.vl"
+use "../../mem/ops.vl"
 
 act main() -> i32 {
     let buf_a: @u8 = os_page_alloc(4096)
