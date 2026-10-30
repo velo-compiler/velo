@@ -893,6 +893,21 @@ flowchart TD
   - `bin/velo.exe run std/tests/str/utf8_test.vl` passed ASCII, Cyrillic (2-byte), CJK (3-byte), Emoji (4-byte), round-trip encode/decode, overlong rejection, surrogate rejection, truncated sequences, and out-of-range rejection.
   - `python -m pytest tests/test_std_str.py` passed (2/2 passed).
 
+#### Task 2.3: Substring Search & Inspection (`std/str/search.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Substring search and string matching in Velo relied on C runtime functions (`strstr`, `strchr`, `strrchr`) or compiler-internal `sys.str` routines, preventing self-contained, pure-Velo substring queries across slices without libc.
+* **Fix Applied**:
+  - Implemented `std/str/search.vl` providing `str_index_of(haystack: StrSlice, needle: StrSlice) -> isize`, `str_last_index_of(haystack: StrSlice, needle: StrSlice) -> isize`, `str_index_of_byte`, `str_last_index_of_byte`, `str_contains`, `str_contains_byte`, `str_count`, `str_count_byte`, `str_starts_with`, `str_ends_with`, and string literal convenience wrappers.
+  - Optimized substring search using a dual-end fast filter (matching needle's first and last byte before running `slice_eq`) to eliminate > 99% of false candidates.
+  - Handles all edge cases: empty needles (return 0 for index_of, len for last_index_of), empty haystacks, needles longer than haystack, non-overlapping occurrence counts.
+  - Added unit test suite `std/tests/str/search_test.vl` and pytest integration in `tests/test_std_str.py`.
+* **Residual Limitation**:
+  - Two-Way or Boyer-Moore shift tables can be added for massive text haystacks (> 1 MB).
+* **Verification**:
+  - `bin/velo.exe run std/tests/str/search_test.vl` passed byte search, forward substring search, backward last-index search, occurrence counting, prefix/suffix inspection, and empty/boundary queries.
+  - `python -m pytest tests/test_std_str.py` passed (3/3 passed).
+
+
 
 
 

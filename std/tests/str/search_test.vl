@@ -1,0 +1,217 @@
+// Unit test suite for std.str.search (pure Velo substring search and string queries).
+use "../../str/slice.vl"
+use "../../str/search.vl"
+
+act test_byte_search() -> bool {
+    let path = slice_from_str("src/backend/codegen_c.vl")
+
+    // str_index_of_byte
+    if str_index_of_byte(path, 47 as u8) != 3 as isize { // '/' = 47
+        return false
+    }
+    if str_index_of_byte(path, 46 as u8) != 21 as isize { // '.' = 46
+        return false
+    }
+    if str_index_of_byte(path, 122 as u8) != -1 as isize { // 'z' not present
+        return false
+    }
+
+    // str_last_index_of_byte
+    if str_last_index_of_byte(path, 47 as u8) != 11 as isize { // second '/'
+        return false
+    }
+    if str_last_index_of_byte(path, 46 as u8) != 21 as isize {
+        return false
+    }
+    if str_last_index_of_byte(path, 122 as u8) != -1 as isize {
+        return false
+    }
+
+    // byte occurrence count
+    if str_count_byte(path, 47 as u8) != 2 {
+        return false
+    }
+    if str_count_byte(path, 122 as u8) != 0 {
+        return false
+    }
+
+    // str_contains_byte
+    if !str_contains_byte(path, 46 as u8) {
+        return false
+    }
+    if str_contains_byte(path, 120 as u8) { // 'x' not present
+        return false
+    }
+
+    return true
+}
+
+act test_substring_index_of() -> bool {
+    let s = slice_from_str("quick brown fox jumps over the lazy dog")
+
+    // Prefix match
+    if str_index_of_str(s, "quick") != 0 as isize {
+        return false
+    }
+
+    // Middle match
+    if str_index_of_str(s, "fox") != 12 as isize {
+        return false
+    }
+
+    // Suffix match
+    if str_index_of_str(s, "dog") != 36 as isize {
+        return false
+    }
+
+    // Entire match
+    if str_index_of_str(s, "quick brown fox jumps over the lazy dog") != 0 as isize {
+        return false
+    }
+
+    // Not found
+    if str_index_of_str(s, "cat") != -1 as isize {
+        return false
+    }
+
+    // Needle longer than haystack
+    if str_index_of_str(s, "quick brown fox jumps over the lazy dog and runs away") != -1 as isize {
+        return false
+    }
+
+    // Empty needle in string
+    if str_index_of_str(s, "") != 0 as isize {
+        return false
+    }
+
+    // Empty haystack
+    let empty = slice_from_str("")
+    if str_index_of_str(empty, "") != 0 as isize {
+        return false
+    }
+    if str_index_of_str(empty, "hello") != -1 as isize {
+        return false
+    }
+
+    return true
+}
+
+act test_substring_last_index_of() -> bool {
+    let text = slice_from_str("alpha beta alpha gamma alpha")
+
+    // Multiple occurrences
+    if str_index_of_str(text, "alpha") != 0 as isize {
+        return false
+    }
+    if str_last_index_of_str(text, "alpha") != 23 as isize {
+        return false
+    }
+
+    // Single occurrence
+    if str_last_index_of_str(text, "beta") != 6 as isize {
+        return false
+    }
+
+    // Suffix occurrence
+    if str_last_index_of_str(text, "gamma alpha") != 17 as isize {
+        return false
+    }
+
+    // Not found
+    if str_last_index_of_str(text, "delta") != -1 as isize {
+        return false
+    }
+
+    // Empty needle
+    if str_last_index_of_str(text, "") != text.len as isize {
+        return false
+    }
+
+    return true
+}
+
+act test_occurrence_counting() -> bool {
+    let repeated = slice_from_str("aaaa")
+    // Non-overlapping count of "aa" in "aaaa" is 2
+    if str_count_str(repeated, "aa") != 2 {
+        return false
+    }
+
+    let sentences = slice_from_str("echo one; echo two; echo three;")
+    if str_count_str(sentences, "echo") != 3 {
+        return false
+    }
+    if str_count_str(sentences, ";") != 3 {
+        return false
+    }
+    if str_count_str(sentences, "printf") != 0 {
+        return false
+    }
+    if str_count_str(sentences, "") != 0 {
+        return false
+    }
+
+    return true
+}
+
+act test_prefix_and_suffix() -> bool {
+    let file = slice_from_str("test_suite_runner.vl")
+
+    // Starts with
+    if !str_starts_with_str(file, "test_") {
+        return false
+    }
+    if str_starts_with_str(file, "runner") {
+        return false
+    }
+    if !str_starts_with_str(file, "") {
+        return false
+    }
+
+    // Ends with
+    if !str_ends_with_str(file, ".vl") {
+        return false
+    }
+    if str_ends_with_str(file, ".c") {
+        return false
+    }
+    if !str_ends_with_str(file, "") {
+        return false
+    }
+
+    // Contains
+    if !str_contains_str(file, "suite") {
+        return false
+    }
+    if str_contains_str(file, "missing") {
+        return false
+    }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_byte_search() {
+        io.println("FAIL: test_byte_search")
+        return 1
+    }
+    if !test_substring_index_of() {
+        io.println("FAIL: test_substring_index_of")
+        return 1
+    }
+    if !test_substring_last_index_of() {
+        io.println("FAIL: test_substring_last_index_of")
+        return 1
+    }
+    if !test_occurrence_counting() {
+        io.println("FAIL: test_occurrence_counting")
+        return 1
+    }
+    if !test_prefix_and_suffix() {
+        io.println("FAIL: test_prefix_and_suffix")
+        return 1
+    }
+
+    io.println("PASS: std.str.search all assertions succeeded")
+    return 0
+}
