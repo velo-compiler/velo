@@ -1433,3 +1433,19 @@ flowchart TD
   - `bin/velo.exe run std/tests/math/bits_test.vl` passed (`PASS: std.math.bits tests succeeded`).
   - `python -m pytest tests/test_std_math.py` passed (1/1 passed in 1.55s).
   - Full pytest regression suite passed (473/473 passed in 329s).
+
+#### Task 9.2: Integer Math & Saturating Arithmetic (`std/math/int.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo standard library lacked dedicated user-space integer mathematical routines, requiring programs to implement manual overflow detection, saturating arithmetic, discrete math algorithms, or fall back to floating-point functions. Specifically, clamped arithmetic, saturating addition/subtraction/multiplication (for audio processing, game physics, and bounded buffers), greatest common divisor (GCD), least common multiple (LCM), integer square roots, exponentiation by squaring, and ceiling division were absent.
+* **Fix Applied**:
+  - Implemented `std/math/int.vl` in pure Velo with zero libc dependencies:
+    - Basic integer utilities: `abs_i32`, `abs_i64` (saturating safely on `INT_MIN`), `min_i32/i64/u32/u64`, `max_i32/i64/u32/u64`, `clamp_i32/i64/u32/u64`, and `signum_i32/i64`.
+    - Saturating arithmetic: `add_sat_u32/u64`, `sub_sat_u32/u64` (saturating at 0 on underflow and `UINT_MAX` on overflow), `add_sat_i32/i64`, `sub_sat_i32/i64`, and `mul_sat_i32/i64` with exhaustive bounds checking and zero undefined behavior.
+    - Number theory & discrete math: `gcd_u64` (Euclidean algorithm), `gcd_i64` (signed GCD), `lcm_u64` (overflow-reduced division before multiplication), `isqrt_u64/u32` (exact integer square root via Newton-Raphson accelerated by `clz64`), `pow_u64/i64` (fast binary exponentiation by squaring in O(log n)), and `div_ceil_u64/u32/i64` (ceiling integer division with zero overflow risk).
+  - Added comprehensive unit test suite `std/tests/math/int_test.vl` covering edge cases, saturation boundaries, and discrete math properties.
+  - Added pytest test case `test_std_math_int` in `tests/test_std_math.py`.
+* **Residual Limitation**:
+  - IEEE-754 floating-point classification, rounding, fmod, and mathematical constants (`std/math/float.vl`) will be implemented in Task 9.3.
+* **Verification**:
+  - `bin/velo.exe run std/tests/math/int_test.vl` passed (`PASS: std.math.int tests succeeded`).
+  - `python -m pytest tests/test_std_math.py` passed (2/2 passed in 2.54s).

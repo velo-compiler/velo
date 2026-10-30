@@ -24,3 +24,15 @@ def test_std_math_bits():
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.math.bits tests succeeded" in res.stdout
 
+
+def test_std_math_int():
+    test_vl = REPO_ROOT / "std" / "tests" / "math" / "int_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.math.int tests succeeded" in res.stdout

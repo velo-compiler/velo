@@ -1,0 +1,191 @@
+// Unit test suite for std.math.int (pure Velo integer mathematics & saturating arithmetic).
+use "../../io/print.vl"
+use "../../math/int.vl"
+
+act test_basic_int() -> bool {
+    let min_i32_val: i32 = (-2147483647 as i32) - (1 as i32)
+    let max_i32_val: i32 = 2147483647 as i32
+    if abs_i32(0 as i32) != (0 as i32) { return false }
+    if abs_i32(42 as i32) != (42 as i32) { return false }
+    if abs_i32(-42 as i32) != (42 as i32) { return false }
+    if abs_i32(min_i32_val) != max_i32_val { return false }
+
+    let min_i64_val: i64 = (-9223372036854775807 as i64) - (1 as i64)
+    let max_i64_val: i64 = 9223372036854775807 as i64
+    if abs_i64(0 as i64) != (0 as i64) { return false }
+    if abs_i64(1000 as i64) != (1000 as i64) { return false }
+    if abs_i64(-1000 as i64) != (1000 as i64) { return false }
+    if abs_i64(min_i64_val) != max_i64_val { return false }
+
+    if min_i32(10 as i32, 20 as i32) != (10 as i32) { return false }
+    if max_i32(10 as i32, 20 as i32) != (20 as i32) { return false }
+    if min_i64(-50 as i64, 50 as i64) != (-50 as i64) { return false }
+    if max_i64(-50 as i64, 50 as i64) != (50 as i64) { return false }
+
+    if min_u32(10 as u32, 20 as u32) != (10 as u32) { return false }
+    if max_u32(10 as u32, 20 as u32) != (20 as u32) { return false }
+    if min_u64(100 as u64, 200 as u64) != (100 as u64) { return false }
+    if max_u64(100 as u64, 200 as u64) != (200 as u64) { return false }
+
+    if clamp_i32(5 as i32, 10 as i32, 20 as i32) != (10 as i32) { return false }
+    if clamp_i32(15 as i32, 10 as i32, 20 as i32) != (15 as i32) { return false }
+    if clamp_i32(25 as i32, 10 as i32, 20 as i32) != (20 as i32) { return false }
+
+    if clamp_i64(-5 as i64, 0 as i64, 100 as i64) != (0 as i64) { return false }
+    if clamp_i64(50 as i64, 0 as i64, 100 as i64) != (50 as i64) { return false }
+    if clamp_i64(150 as i64, 0 as i64, 100 as i64) != (100 as i64) { return false }
+
+    if clamp_u32(5 as u32, 10 as u32, 20 as u32) != (10 as u32) { return false }
+    if clamp_u32(15 as u32, 10 as u32, 20 as u32) != (15 as u32) { return false }
+    if clamp_u32(25 as u32, 10 as u32, 20 as u32) != (20 as u32) { return false }
+
+    if clamp_u64(5 as u64, 10 as u64, 20 as u64) != (10 as u64) { return false }
+    if clamp_u64(15 as u64, 10 as u64, 20 as u64) != (15 as u64) { return false }
+    if clamp_u64(25 as u64, 10 as u64, 20 as u64) != (20 as u64) { return false }
+
+    if signum_i32(-42 as i32) != (-1 as i32) { return false }
+    if signum_i32(0 as i32) != (0 as i32) { return false }
+    if signum_i32(42 as i32) != (1 as i32) { return false }
+
+    if signum_i64(-999 as i64) != (-1 as i64) { return false }
+    if signum_i64(0 as i64) != (0 as i64) { return false }
+    if signum_i64(999 as i64) != (1 as i64) { return false }
+
+    return true
+}
+
+act test_sat_arith() -> bool {
+    let max_u32_val: u32 = 0xFFFFFFFF as u32
+    if add_sat_u32(max_u32_val - (10 as u32), 20 as u32) != max_u32_val { return false }
+    if add_sat_u32(100 as u32, 200 as u32) != (300 as u32) { return false }
+    if sub_sat_u32(10 as u32, 20 as u32) != (0 as u32) { return false }
+    if sub_sat_u32(20 as u32, 10 as u32) != (10 as u32) { return false }
+
+    let max_u64_val: u64 = 0xFFFFFFFFFFFFFFFF as u64
+    if add_sat_u64(max_u64_val - (10 as u64), 20 as u64) != max_u64_val { return false }
+    if sub_sat_u64(10 as u64, 20 as u64) != (0 as u64) { return false }
+
+    let min_i32_val: i32 = (-2147483647 as i32) - (1 as i32)
+    let max_i32_val: i32 = 2147483647 as i32
+    if add_sat_i32(2000000000 as i32, 1000000000 as i32) != max_i32_val { return false }
+    if add_sat_i32(-2000000000 as i32, -1000000000 as i32) != min_i32_val { return false }
+    if add_sat_i32(100 as i32, -50 as i32) != (50 as i32) { return false }
+
+    if sub_sat_i32(2000000000 as i32, -1000000000 as i32) != max_i32_val { return false }
+    if sub_sat_i32(-2000000000 as i32, 1000000000 as i32) != min_i32_val { return false }
+    if sub_sat_i32(100 as i32, 50 as i32) != (50 as i32) { return false }
+
+    let min_i64_val: i64 = (-9223372036854775807 as i64) - (1 as i64)
+    let max_i64_val: i64 = 9223372036854775807 as i64
+    if add_sat_i64(9000000000000000000 as i64, 1000000000000000000 as i64) != max_i64_val { return false }
+    if add_sat_i64(-9000000000000000000 as i64, -1000000000000000000 as i64) != min_i64_val { return false }
+    if sub_sat_i64(9000000000000000000 as i64, -1000000000000000000 as i64) != max_i64_val { return false }
+    if sub_sat_i64(-9000000000000000000 as i64, 1000000000000000000 as i64) != min_i64_val { return false }
+
+    if mul_sat_i32(2000000 as i32, 2000 as i32) != max_i32_val { return false }
+    if mul_sat_i32(-2000000 as i32, 2000 as i32) != min_i32_val { return false }
+    if mul_sat_i32(12 as i32, 10 as i32) != (120 as i32) { return false }
+
+    if mul_sat_i64(9000000000000000000 as i64, 2 as i64) != max_i64_val { return false }
+    if mul_sat_i64(-9000000000000000000 as i64, 2 as i64) != min_i64_val { return false }
+    if mul_sat_i64(-9000000000000000000 as i64, -2 as i64) != max_i64_val { return false }
+    if mul_sat_i64(100 as i64, -20 as i64) != (-2000 as i64) { return false }
+
+    return true
+}
+
+act test_gcd_lcm() -> bool {
+    if gcd_u64(48 as u64, 18 as u64) != (6 as u64) { return false }
+    if gcd_u64(101 as u64, 10 as u64) != (1 as u64) { return false }
+    if gcd_u64(0 as u64, 15 as u64) != (15 as u64) { return false }
+    if gcd_u64(15 as u64, 0 as u64) != (15 as u64) { return false }
+
+    if gcd_i64(-48 as i64, 18 as i64) != (6 as i64) { return false }
+    if gcd_i64(48 as i64, -18 as i64) != (6 as i64) { return false }
+
+    if lcm_u64(12 as u64, 18 as u64) != (36 as u64) { return false }
+    if lcm_u64(7 as u64, 5 as u64) != (35 as u64) { return false }
+    if lcm_u64(0 as u64, 5 as u64) != (0 as u64) { return false }
+
+    return true
+}
+
+act test_isqrt() -> bool {
+    if isqrt_u64(0 as u64) != (0 as u64) { return false }
+    if isqrt_u64(1 as u64) != (1 as u64) { return false }
+    if isqrt_u64(2 as u64) != (1 as u64) { return false }
+    if isqrt_u64(3 as u64) != (1 as u64) { return false }
+    if isqrt_u64(4 as u64) != (2 as u64) { return false }
+    if isqrt_u64(8 as u64) != (2 as u64) { return false }
+    if isqrt_u64(9 as u64) != (3 as u64) { return false }
+    if isqrt_u64(15 as u64) != (3 as u64) { return false }
+    if isqrt_u64(16 as u64) != (4 as u64) { return false }
+    if isqrt_u64(100 as u64) != (10 as u64) { return false }
+    if isqrt_u64(1000000 as u64) != (1000 as u64) { return false }
+    if isqrt_u64(0xFFFFFFFFFFFFFFFF as u64) != (0xFFFFFFFF as u64) { return false }
+
+    if isqrt_u32(144 as u32) != (12 as u32) { return false }
+    if isqrt_u32(145 as u32) != (12 as u32) { return false }
+
+    return true
+}
+
+act test_pow() -> bool {
+    if pow_u64(2 as u64, 0 as u32) != (1 as u64) { return false }
+    if pow_u64(2 as u64, 10 as u32) != (1024 as u64) { return false }
+    if pow_u64(3 as u64, 4 as u32) != (81 as u64) { return false }
+    if pow_u64(0 as u64, 5 as u32) != (0 as u64) { return false }
+
+    if pow_i64(-2 as i64, 3 as u32) != (-8 as i64) { return false }
+    if pow_i64(-2 as i64, 4 as u32) != (16 as i64) { return false }
+    if pow_i64(5 as i64, 0 as u32) != (1 as i64) { return false }
+
+    return true
+}
+
+act test_div_ceil() -> bool {
+    if div_ceil_u64(10 as u64, 3 as u64) != (4 as u64) { return false }
+    if div_ceil_u64(9 as u64, 3 as u64) != (3 as u64) { return false }
+    if div_ceil_u64(1 as u64, 3 as u64) != (1 as u64) { return false }
+    if div_ceil_u64(0 as u64, 3 as u64) != (0 as u64) { return false }
+
+    if div_ceil_u32(10 as u32, 3 as u32) != (4 as u32) { return false }
+
+    if div_ceil_i64(7 as i64, 3 as i64) != (3 as i64) { return false }
+    if div_ceil_i64(6 as i64, 3 as i64) != (2 as i64) { return false }
+    if div_ceil_i64(-7 as i64, 3 as i64) != (-2 as i64) { return false }
+    if div_ceil_i64(7 as i64, -3 as i64) != (-2 as i64) { return false }
+    if div_ceil_i64(-7 as i64, -3 as i64) != (3 as i64) { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if not test_basic_int() {
+        println_str("FAIL: test_basic_int")
+        return 1
+    }
+    if not test_sat_arith() {
+        println_str("FAIL: test_sat_arith")
+        return 2
+    }
+    if not test_gcd_lcm() {
+        println_str("FAIL: test_gcd_lcm")
+        return 3
+    }
+    if not test_isqrt() {
+        println_str("FAIL: test_isqrt")
+        return 4
+    }
+    if not test_pow() {
+        println_str("FAIL: test_pow")
+        return 5
+    }
+    if not test_div_ceil() {
+        println_str("FAIL: test_div_ceil")
+        return 6
+    }
+
+    println_str("PASS: std.math.int tests succeeded")
+    return 0
+}
