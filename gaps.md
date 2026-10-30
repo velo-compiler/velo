@@ -1174,3 +1174,19 @@ flowchart TD
   - Determinism verification passed with identical SHA-256 between Gen2, Gen3, and `bootstrap.c`.
   - `python -m pytest tests/test_std_coll.py` passed (7/7 passed).
 
+
+### Phase 6: `std.path` & `std.fs` (Filesystem & Path Utilities)
+
+#### Task 6.1: Path Manipulation & Canonicalization (`std/path/path.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Path manipulation in Velo previously relied on ad-hoc string operations in `src/common/path.vl` bound to `sys.mem` and libc, lacking a dedicated pure-Velo path manipulation library operating on zero-allocation `StrSlice` views and pure allocators (`std.mem.arena` / `std.mem.heap`).
+* **Fix Applied**:
+  - Implemented `std/path/path.vl` providing zero-allocation path queries and slicing: `path_is_sep`, `path_is_alpha`, `path_has_drive`, `path_drive_len`, `path_is_abs`, `path_basename`, `path_dirname`, `path_extname`, and `path_stem`.
+  - Implemented path joining and normalization: `path_join_into`, `path_join3_into`, `path_normalize_into`, `path_normalize`, `path_join`, `path_join3`, and OS native path conversion `path_to_native`.
+  - Implemented convenient string wrappers: `path_is_abs_str`, `path_basename_str`, `path_dirname_str`, `path_extname_str`, `path_stem_str`, `path_join_str`, `path_normalize_str`, and `path_to_native_str`.
+  - Added unit test suite `std/tests/path/path_test.vl` and pytest test `tests/test_std_path.py`.
+* **Residual Limitation**:
+  - OS filesystem metadata queries (`std/fs/stat.vl`) will be implemented in Task 6.2.
+* **Verification**:
+  - `bin/velo.exe run std/tests/path/path_test.vl` passed separator checks, Windows drive detection, absolute/relative classification, basename/dirname slicing, extension/stem extraction, multi-segment joins, and dot/dot-dot canonicalization.
+  - `python -m pytest tests/test_std_path.py` passed (1/1 passed in 0.77s).

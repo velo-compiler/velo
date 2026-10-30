@@ -1,0 +1,239 @@
+// Unit test suite for std.path.path (pure Velo filesystem path manipulation).
+use "../../mem/page.vl"
+use "../../mem/arena.vl"
+use "../../mem/heap.vl"
+use "../../str/slice.vl"
+use "../../str/builder.vl"
+use "../../path/path.vl"
+
+use sys.io
+
+act test_path_queries() -> bool {
+    // path_is_sep
+    if !path_is_sep(47 as u8) or !path_is_sep(92 as u8) or path_is_sep(65 as u8) {
+        return false
+    }
+
+    // path_has_drive
+    if !path_has_drive(slice_from_str("C:/foo")) { return false }
+    if !path_has_drive(slice_from_str("d:\\bar")) { return false }
+    if path_has_drive(slice_from_str("/foo/bar")) { return false }
+    if path_has_drive(slice_from_str("1:/foo")) { return false }
+
+    // path_is_abs
+    if !path_is_abs_str("/usr/local/bin") { return false }
+    if !path_is_abs_str("\\Windows\\System32") { return false }
+    if !path_is_abs_str("C:/Users/Bob") { return false }
+    if !path_is_abs_str("D:\\Games\\Velo") { return false }
+    if path_is_abs_str("src/main.vl") { return false }
+    if path_is_abs_str("C:relative") { return false }
+    if path_is_abs_str("") { return false }
+
+    return true
+}
+
+act test_basename_and_dirname() -> bool {
+    // path_basename
+    let b1 = path_basename_str("foo/bar/baz.vl")
+    if !slice_eq_str(b1, "baz.vl") { return false }
+
+    let b2 = path_basename_str("foo/bar/")
+    if !slice_eq_str(b2, "bar") { return false }
+
+    let b3 = path_basename_str("single_file.txt")
+    if !slice_eq_str(b3, "single_file.txt") { return false }
+
+    let b4 = path_basename_str("/root")
+    if !slice_eq_str(b4, "root") { return false }
+
+    let b5 = path_basename_str("C:\\foo\\bar\\test.bin")
+    if !slice_eq_str(b5, "test.bin") { return false }
+
+    // path_dirname
+    let d1 = path_dirname_str("foo/bar/baz.vl")
+    if !slice_eq_str(d1, "foo/bar") { return false }
+
+    let d2 = path_dirname_str("/usr/bin")
+    if !slice_eq_str(d2, "/usr") { return false }
+
+    let d3 = path_dirname_str("/usr")
+    if !slice_eq_str(d3, "/") { return false }
+
+    let d4 = path_dirname_str("single_file.txt")
+    if !slice_is_empty(d4) { return false }
+
+    let d5 = path_dirname_str("C:/Users/Bob/app.exe")
+    if !slice_eq_str(d5, "C:/Users/Bob") { return false }
+
+    let d6 = path_dirname_str("C:/app.exe")
+    if !slice_eq_str(d6, "C:/") { return false }
+
+    return true
+}
+
+act test_extname_and_stem() -> bool {
+    // path_extname
+    let e1 = path_extname_str("main.vl")
+    if !slice_eq_str(e1, ".vl") { return false }
+
+    let e2 = path_extname_str("archive.tar.gz")
+    if !slice_eq_str(e2, ".gz") { return false }
+
+    let e3 = path_extname_str(".gitignore")
+    if !slice_is_empty(e3) { return false }
+
+    let e4 = path_extname_str("no_extension")
+    if !slice_is_empty(e4) { return false }
+
+    let e5 = path_extname_str("dir.with.dot/file")
+    if !slice_is_empty(e5) { return false }
+
+    // path_stem
+    let s1 = path_stem_str("src/main.vl")
+    if !slice_eq_str(s1, "main") { return false }
+
+    let s2 = path_stem_str("archive.tar.gz")
+    if !slice_eq_str(s2, "archive.tar") { return false }
+
+    let s3 = path_stem_str(".gitignore")
+    if !slice_eq_str(s3, ".gitignore") { return false }
+
+    let s4 = path_stem_str("no_extension")
+    if !slice_eq_str(s4, "no_extension") { return false }
+
+    return true
+}
+
+act test_path_join() -> bool {
+    mut a = arena_init(4096)
+    mut sb = sb_init(@a, 64)
+
+    // Relative + Relative
+    path_join_into(slice_from_str("src"), slice_from_str("main.vl"), @sb)
+    if !slice_eq_str(sb_to_slice(@sb), "src/main.vl") {
+        arena_free(@a); return false
+    }
+
+    // Trailing slash on left
+    sb_reset(@sb)
+    path_join_into(slice_from_str("src/"), slice_from_str("main.vl"), @sb)
+    if !slice_eq_str(sb_to_slice(@sb), "src/main.vl") {
+        arena_free(@a); return false
+    }
+
+    // Absolute on right overrides left
+    sb_reset(@sb)
+    path_join_into(slice_from_str("src"), slice_from_str("/etc/passwd"), @sb)
+    if !slice_eq_str(sb_to_slice(@sb), "/etc/passwd") {
+        arena_free(@a); return false
+    }
+
+    // Empty components
+    sb_reset(@sb)
+    path_join_into(slice_from_str(""), slice_from_str("main.vl"), @sb)
+    if !slice_eq_str(sb_to_slice(@sb), "main.vl") {
+        arena_free(@a); return false
+    }
+
+    arena_free(@a)
+
+    // Heap string joins
+    let j1 = path_join_str("projects", "easylang")
+    if !slice_eq_str(slice_from_str(j1), "projects/easylang") {
+        heap_free(j1 as @u8); return false
+    }
+    heap_free(j1 as @u8)
+
+    let j2 = path_join_str("foo/bar", "../baz")
+    if !slice_eq_str(slice_from_str(j2), "foo/baz") {
+        heap_free(j2 as @u8); return false
+    }
+    heap_free(j2 as @u8)
+
+    return true
+}
+
+act test_path_normalize() -> bool {
+    // Simple resolution of . and ..
+    let n1 = path_normalize_str("a/b/../c/./d.txt")
+    if !slice_eq_str(slice_from_str(n1), "a/c/d.txt") {
+        heap_free(n1 as @u8); return false
+    }
+    heap_free(n1 as @u8)
+
+    // Absolute root normalization
+    let n2 = path_normalize_str("/a/b/../../c")
+    if !slice_eq_str(slice_from_str(n2), "/c") {
+        heap_free(n2 as @u8); return false
+    }
+    heap_free(n2 as @u8)
+
+    // Cannot go above root
+    let n3 = path_normalize_str("/../../..")
+    if !slice_eq_str(slice_from_str(n3), "/") {
+        heap_free(n3 as @u8); return false
+    }
+    heap_free(n3 as @u8)
+
+    // Relative path with leading ..
+    let n4 = path_normalize_str("../../foo/bar")
+    if !slice_eq_str(slice_from_str(n4), "../../foo/bar") {
+        heap_free(n4 as @u8); return false
+    }
+    heap_free(n4 as @u8)
+
+    // Empty and single dot
+    let n5 = path_normalize_str("")
+    if !slice_eq_str(slice_from_str(n5), ".") {
+        heap_free(n5 as @u8); return false
+    }
+    heap_free(n5 as @u8)
+
+    let n6 = path_normalize_str(".")
+    if !slice_eq_str(slice_from_str(n6), ".") {
+        heap_free(n6 as @u8); return false
+    }
+    heap_free(n6 as @u8)
+
+    // Windows backslashes and drive
+    let n7 = path_normalize_str("C:\\Users\\Bob\\..\\Alice")
+    if !slice_eq_str(slice_from_str(n7), "C:/Users/Alice") {
+        heap_free(n7 as @u8); return false
+    }
+    heap_free(n7 as @u8)
+
+    // Native conversion
+    let nat = path_to_native_str("a/b/c")
+    if !slice_eq_str(slice_from_str(nat), "a\\b\\c") {
+        heap_free(nat as @u8); return false
+    }
+    heap_free(nat as @u8)
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_path_queries() {
+        io.println("FAIL: test_path_queries")
+        return 1
+    }
+    if !test_basename_and_dirname() {
+        io.println("FAIL: test_basename_and_dirname")
+        return 2
+    }
+    if !test_extname_and_stem() {
+        io.println("FAIL: test_extname_and_stem")
+        return 3
+    }
+    if !test_path_join() {
+        io.println("FAIL: test_path_join")
+        return 4
+    }
+    if !test_path_normalize() {
+        io.println("FAIL: test_path_normalize")
+        return 5
+    }
+
+    io.println("PASS: std.path.path all assertions succeeded")
+    return 0
+}

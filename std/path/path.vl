@@ -1,0 +1,385 @@
+// Pure Velo filesystem path manipulation utilities (zero C runtime dependencies).
+// Provides zero-allocation path slicing (dirname, basename, extname, stem),
+// path joining, canonical normalization (resolving . and ..), and native OS separator conversions.
+use "../mem/ops.vl"
+use "../mem/heap.vl"
+use "../mem/arena.vl"
+use "../str/slice.vl"
+use "../str/builder.vl"
+
+// Path separator constants
+let PATH_SEP_POSIX: u8 = 47 as u8   // '/'
+let PATH_SEP_WIN: u8 = 92 as u8     // '\\'
+
+// Returns true if byte c is a path separator ('/' or '\\').
+act path_is_sep(c: u8) -> bool {
+    return c == PATH_SEP_POSIX or c == PATH_SEP_WIN
+}
+
+// Returns true if character is ASCII alpha ('a'..'z' or 'A'..'Z').
+act path_is_alpha(c: u8) -> bool {
+    return (c >= 65 as u8 and c <= 90 as u8) or (c >= 97 as u8 and c <= 122 as u8)
+}
+
+// Returns true if slice begins with a Windows drive specifier (e.g. "C:" or "d:").
+act path_has_drive(p: StrSlice) -> bool {
+    if p.len < 2 or p.ptr == null {
+        return false
+    }
+    return path_is_alpha(p.ptr[0]) and p.ptr[1] == 58 as u8 // ':'
+}
+
+// Returns the length of the Windows drive prefix (2 for "C:", 0 if none).
+act path_drive_len(p: StrSlice) -> usize {
+    if path_has_drive(p) {
+        return 2
+    }
+    return 0
+}
+
+// Returns true if the path is absolute (begins with '/' or '\\', or "C:/" / "C:\\").
+act path_is_abs(p: StrSlice) -> bool {
+    if p.len == 0 or p.ptr == null {
+        return false
+    }
+    if path_is_sep(p.ptr[0]) {
+        return true
+    }
+    let dlen = path_drive_len(p)
+    if dlen > 0 {
+        if p.len > dlen and path_is_sep(p.ptr[dlen]) {
+            return true
+        }
+    }
+    return false
+}
+
+// Extracts the basename component of a path (e.g. "foo/bar/baz.vl" -> "baz.vl").
+// Trims any trailing separators. Never allocates memory.
+act path_basename(p: StrSlice) -> StrSlice {
+    if slice_is_empty(p) {
+        return p
+    }
+    // Trim trailing separators
+    mut end = p.len
+    loop end > 0 and path_is_sep(p.ptr[end - 1]) {
+        end -= 1
+    }
+    if end == 0 {
+        // Was "/" or "///"
+        return slice_sub(p, 0, 1)
+    }
+    let dlen = path_drive_len(p)
+    mut start = end
+    loop start > dlen and !path_is_sep(p.ptr[start - 1]) {
+        start -= 1
+    }
+    return slice_sub(p, start, end)
+}
+
+// Extracts the directory component of a path (e.g. "foo/bar/baz.vl" -> "foo/bar").
+// Returns empty slice if no parent directory exists. Never allocates memory.
+act path_dirname(p: StrSlice) -> StrSlice {
+    if slice_is_empty(p) {
+        return p
+    }
+    // Trim trailing separators
+    mut end = p.len
+    loop end > 0 and path_is_sep(p.ptr[end - 1]) {
+        end -= 1
+    }
+    if end == 0 {
+        return slice_sub(p, 0, 1) // root "/"
+    }
+    let dlen = path_drive_len(p)
+    mut i = end
+    loop i > dlen and !path_is_sep(p.ptr[i - 1]) {
+        i -= 1
+    }
+    if i == dlen {
+        if dlen > 0 {
+            return slice_sub(p, 0, dlen)
+        }
+        return slice_from_raw(null, 0)
+    }
+    mut dir_end = i - 1
+    loop dir_end > dlen and path_is_sep(p.ptr[dir_end - 1]) {
+        dir_end -= 1
+    }
+    if dir_end == 0 {
+        return slice_sub(p, 0, 1) // root "/"
+    }
+    if dir_end == dlen and path_is_sep(p.ptr[dlen]) {
+        return slice_sub(p, 0, dlen + 1) // e.g. "C:/"
+    }
+    return slice_sub(p, 0, dir_end)
+}
+
+// Extracts the file extension including leading dot (e.g. "baz.vl" -> ".vl").
+// Returns empty slice if no extension or if file is a dotfile (e.g. ".gitignore").
+act path_extname(p: StrSlice) -> StrSlice {
+    let base = path_basename(p)
+    if slice_is_empty(base) {
+        return base
+    }
+    mut i = base.len
+    loop i > 0 and base.ptr[i - 1] != 46 as u8 { // '.'
+        i -= 1
+    }
+    if i <= 1 {
+        // No dot, or leading dot like ".gitignore"
+        return slice_from_raw(null, 0)
+    }
+    return slice_sub(base, i - 1, base.len)
+}
+
+// Extracts filename stem without directory and without extension (e.g. "foo/bar/baz.vl" -> "baz").
+act path_stem(p: StrSlice) -> StrSlice {
+    let base = path_basename(p)
+    let ext = path_extname(p)
+    if ext.len == 0 {
+        return base
+    }
+    return slice_sub(base, 0, base.len - ext.len)
+}
+
+// Joins two path slices into a StrBuilder.
+act path_join_into(a: StrSlice, b: StrSlice, sb: @StrBuilder) {
+    if sb == null { return }
+    if slice_is_empty(a) {
+        if !slice_is_empty(b) { sb_append_slice(sb, b) }
+        return
+    }
+    if slice_is_empty(b) {
+        sb_append_slice(sb, a)
+        return
+    }
+    if path_is_abs(b) {
+        sb_reset(sb)
+        sb_append_slice(sb, b)
+        return
+    }
+    sb_append_slice(sb, a)
+    let last_c = slice_get(a, a.len - 1)
+    if !path_is_sep(last_c) {
+        sb_append_byte(sb, PATH_SEP_POSIX)
+    }
+    sb_append_slice(sb, b)
+}
+
+// Joins three path slices into a StrBuilder.
+act path_join3_into(a: StrSlice, b: StrSlice, c: StrSlice, sb: @StrBuilder) {
+    path_join_into(a, b, sb)
+    let cur = sb_to_slice(sb)
+    mut a_tmp = arena_init(4096)
+    mut sb_tmp = sb_init(@a_tmp, cur.len + c.len + 2)
+    path_join_into(cur, c, @sb_tmp)
+    let res = sb_to_slice(@sb_tmp)
+    sb_reset(sb)
+    sb_append_slice(sb, res)
+    arena_free(@a_tmp)
+}
+
+// Normalizes a path into a StrBuilder: unifies separators to '/', resolves '.' and '..'.
+act path_normalize_into(p: StrSlice, sb: @StrBuilder) {
+    if sb == null { return }
+    if slice_is_empty(p) {
+        sb_append_byte(sb, 46 as u8) // '.'
+        return
+    }
+
+    let dlen = path_drive_len(p)
+    mut scan_start = dlen
+    mut is_abs = false
+    if p.len > dlen and path_is_sep(p.ptr[dlen]) {
+        is_abs = true
+        scan_start = dlen + 1
+    }
+
+    let max_segs: usize = 64
+    let stack_starts = heap_alloc(max_segs * 8) as @usize
+    let stack_lens = heap_alloc(max_segs * 8) as @usize
+    mut stack_count: usize = 0
+
+    mut i = scan_start
+    mut seg_start = scan_start
+    loop i <= p.len {
+        mut is_end = (i == p.len)
+        if !is_end {
+            if path_is_sep(p.ptr[i]) {
+                is_end = true
+            }
+        }
+        if is_end {
+            let seg_len = i - seg_start
+            if seg_len > 0 {
+                let is_dot = (seg_len == 1 and p.ptr[seg_start] == 46 as u8)
+                let is_dotdot = (seg_len == 2 and p.ptr[seg_start] == 46 as u8 and p.ptr[seg_start + 1] == 46 as u8)
+
+                if is_dot {
+                    // Skip '.'
+                } else if is_dotdot {
+                    if stack_count > 0 {
+                        let top_len = stack_lens[stack_count - 1]
+                        let top_start = stack_starts[stack_count - 1]
+                        let top_is_dotdot = (top_len == 2 and p.ptr[top_start] == 46 as u8 and p.ptr[top_start + 1] == 46 as u8)
+                        if top_is_dotdot {
+                            if stack_count < max_segs {
+                                stack_starts[stack_count] = seg_start
+                                stack_lens[stack_count] = seg_len
+                                stack_count += 1
+                            }
+                        } else {
+                            stack_count -= 1 // Pop previous folder
+                        }
+                    } else if !is_abs {
+                        if stack_count < max_segs {
+                            stack_starts[stack_count] = seg_start
+                            stack_lens[stack_count] = seg_len
+                            stack_count += 1
+                        }
+                    }
+                } else {
+                    if stack_count < max_segs {
+                        stack_starts[stack_count] = seg_start
+                        stack_lens[stack_count] = seg_len
+                        stack_count += 1
+                    }
+                }
+            }
+            seg_start = i + 1
+        }
+        i += 1
+    }
+
+    // Assemble normalized path
+    if dlen > 0 {
+        sb_append_slice(sb, slice_sub(p, 0, dlen))
+    }
+    if is_abs {
+        sb_append_byte(sb, PATH_SEP_POSIX)
+    }
+
+    mut s: usize = 0
+    loop s < stack_count {
+        if s > 0 {
+            sb_append_byte(sb, PATH_SEP_POSIX)
+        }
+        let seg_sl = slice_from_raw(p.ptr + stack_starts[s], stack_lens[s])
+        sb_append_slice(sb, seg_sl)
+        s += 1
+    }
+
+    if stack_count == 0 {
+        if !is_abs and dlen == 0 {
+            sb_append_byte(sb, 46 as u8) // '.'
+        }
+    }
+
+    heap_free(stack_starts as @u8)
+    heap_free(stack_lens as @u8)
+}
+
+// Normalizes a path slice and returns a newly allocated null-terminated heap string.
+act path_normalize(p: StrSlice) -> string {
+    mut a = arena_init(4096)
+    mut sb = sb_init(@a, 128)
+    path_normalize_into(p, @sb)
+    let sl = sb_to_slice(@sb)
+    let out = heap_alloc(sl.len + 1) as @u8
+    if out != null {
+        if sl.len > 0 { copy(out, sl.ptr, sl.len) }
+        out[sl.len] = 0 as u8
+    }
+    arena_free(@a)
+    return out as string
+}
+
+// Joins two path slices and returns a newly allocated normalized null-terminated heap string.
+act path_join(a: StrSlice, b: StrSlice) -> string {
+    if slice_is_empty(a) { return path_normalize(b) }
+    if slice_is_empty(b) { return path_normalize(a) }
+    if path_is_abs(b) { return path_normalize(b) }
+    let needed = a.len + 1 + b.len
+    let raw = heap_alloc(needed + 1) as @u8
+    if raw == null { return null }
+    copy(raw, a.ptr, a.len)
+    mut pos = a.len
+    let last_c = slice_get(a, a.len - 1)
+    if !path_is_sep(last_c) {
+        raw[pos] = PATH_SEP_POSIX
+        pos += 1
+    }
+    copy(raw + pos, b.ptr, b.len)
+    pos += b.len
+    raw[pos] = 0 as u8
+    let joined_slice = slice_from_raw(raw, pos)
+    let res = path_normalize(joined_slice)
+    heap_free(raw)
+    return res
+}
+
+// Joins three path slices and returns a newly allocated normalized null-terminated heap string.
+act path_join3(a: StrSlice, b: StrSlice, c: StrSlice) -> string {
+    let ab = path_join(a, b)
+    let sl_ab = slice_from_str(ab)
+    let res = path_join(sl_ab, c)
+    heap_free(ab as @u8)
+    return res
+}
+
+// Converts all '/' separators in a path slice into '\\' and returns a heap-allocated string.
+act path_to_native(p: StrSlice) -> string {
+    if slice_is_empty(p) {
+        let empty_buf = heap_alloc(1) as @u8
+        empty_buf[0] = 0 as u8
+        return empty_buf as string
+    }
+    let out = heap_alloc(p.len + 1) as @u8
+    if out == null { return null }
+    mut i: usize = 0
+    loop i < p.len {
+        let c = p.ptr[i]
+        if c == PATH_SEP_POSIX {
+            out[i] = PATH_SEP_WIN
+        } else {
+            out[i] = c
+        }
+        i += 1
+    }
+    out[p.len] = 0 as u8
+    return out as string
+}
+
+// Convenient string wrappers
+act path_is_abs_str(s: string) -> bool {
+    return path_is_abs(slice_from_str(s))
+}
+
+act path_basename_str(s: string) -> StrSlice {
+    return path_basename(slice_from_str(s))
+}
+
+act path_dirname_str(s: string) -> StrSlice {
+    return path_dirname(slice_from_str(s))
+}
+
+act path_extname_str(s: string) -> StrSlice {
+    return path_extname(slice_from_str(s))
+}
+
+act path_stem_str(s: string) -> StrSlice {
+    return path_stem(slice_from_str(s))
+}
+
+act path_join_str(a: string, b: string) -> string {
+    return path_join(slice_from_str(a), slice_from_str(b))
+}
+
+act path_normalize_str(s: string) -> string {
+    return path_normalize(slice_from_str(s))
+}
+
+act path_to_native_str(s: string) -> string {
+    return path_to_native(slice_from_str(s))
+}
