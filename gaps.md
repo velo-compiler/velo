@@ -1067,3 +1067,21 @@ flowchart TD
   - `bin/velo.exe run std/tests/io/buffered_reader_test.vl` passed single-byte reads, repeated byte peeks, mixed Unix `\n` and Windows `\r\n` line parsing with stripping, non-newline EOF line accumulation, multi-cycle buffer refills with a 16-byte tiny buffer over an 80-byte line, and full stream consumption via `reader_read_all`.
   - `python -m pytest tests/test_std_io.py` passed (5/5 passed).
 
+---
+
+### Phase 5: `std.coll` (Pure Velo Core Collections)
+
+#### Task 5.1: Dynamic Shelf Vector (`std/coll/shelf.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Resizable contiguous collections in Velo previously depended on compiler-internal runtime vectors (`sys.shelf`) or C-allocated buffers with libc realloc, lacking a pure-Velo low-level generic vector abstraction backed by OS memory.
+* **Fix Applied**:
+  - Implemented `std/coll/shelf.vl` providing `data RawShelf` for storing homogeneous elements of uniform size contiguously in memory.
+  - Implemented `shelf_create` with default minimum capacity, geometric growth policy in `shelf_ensure_capacity` backed by `std.mem.heap_realloc`, `shelf_push`, `shelf_get`, `shelf_set`, `shelf_len`, `shelf_cap`, `shelf_is_empty`, `shelf_clear`, and `shelf_free`.
+  - Implemented typed convenience push/get helpers for `i64`, `u64`, `f64`, and `StrSlice`.
+  - Added unit test suite `std/tests/coll/shelf_test.vl` and pytest integration in `tests/test_std_coll.py`.
+* **Residual Limitation**:
+  - Full collection lifecycle operations including `shelf_pop`, `shelf_delete_at`, `shelf_insert_at`, and `shelf_shrink_to_fit` will be layered in Task 5.2 (`std/coll/shelf_ops.vl`).
+* **Verification**:
+  - `bin/velo.exe run std/tests/coll/shelf_test.vl` passed basic push/get/set, out-of-bounds guards, typed float/slice helpers, clear/reuse, and a 10,000 64-bit integer stress reallocation test validating geometric growth and value preservation across multiple reallocations.
+  - `python -m pytest tests/test_std_coll.py` passed (1/1 passed).
+

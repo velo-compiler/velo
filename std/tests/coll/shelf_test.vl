@@ -1,0 +1,146 @@
+// Unit test suite for std.coll.shelf (pure Velo dynamic array / vector).
+use "../../mem/page.vl"
+use "../../mem/heap.vl"
+use "../../str/slice.vl"
+use "../../coll/shelf.vl"
+
+act test_shelf_basic() -> bool {
+    mut s = shelf_create(8, 4)
+    if shelf_len(@s) != 0 { return false }
+    if !shelf_is_empty(@s) { return false }
+    if shelf_cap(@s) < 4 { return false }
+
+    shelf_push_i64(@s, 100)
+    shelf_push_i64(@s, 200)
+    shelf_push_i64(@s, 300)
+
+    if shelf_len(@s) != 3 { return false }
+    if shelf_is_empty(@s) { return false }
+
+    if shelf_get_i64(@s, 0) != 100 { return false }
+    if shelf_get_i64(@s, 1) != 200 { return false }
+    if shelf_get_i64(@s, 2) != 300 { return false }
+
+    // Out of bounds get
+    if shelf_get(@s, 3) != null { return false }
+
+    // Overwrite index 1
+    mut replacement: i64 = 999
+    let p_rep: @i64 = @replacement
+    if !shelf_set(@s, 1, p_rep as @u8) { return false }
+    if shelf_get_i64(@s, 1) != 999 { return false }
+
+    // Out of bounds set
+    if shelf_set(@s, 3, p_rep as @u8) { return false }
+
+    shelf_free(@s)
+    if s.data != null or s.len != 0 or s.cap != 0 { return false }
+    return true
+}
+
+act test_shelf_10k_stress() -> bool {
+    // Required by roadmap: Push 10,000 64-bit integers and verify geometric expansion and preservation
+    mut s = shelf_create(8, 8)
+    mut i: usize = 0
+    loop i < 10000 {
+        shelf_push_i64(@s, i as i64)
+        i += 1
+    }
+
+    if shelf_len(@s) != 10000 { return false }
+    if shelf_cap(@s) < 10000 { return false }
+
+    mut j: usize = 0
+    loop j < 10000 {
+        let val = shelf_get_i64(@s, j)
+        if val != (j as i64) {
+            shelf_free(@s)
+            return false
+        }
+        j += 1
+    }
+
+    // Clear and reuse
+    shelf_clear(@s)
+    if shelf_len(@s) != 0 or !shelf_is_empty(@s) {
+        shelf_free(@s)
+        return false
+    }
+
+    shelf_push_i64(@s, 42)
+    shelf_push_i64(@s, 84)
+    if shelf_len(@s) != 2 {
+        shelf_free(@s)
+        return false
+    }
+    if shelf_get_i64(@s, 0) != 42 or shelf_get_i64(@s, 1) != 84 {
+        shelf_free(@s)
+        return false
+    }
+
+    shelf_free(@s)
+    return true
+}
+
+act test_shelf_typed_helpers() -> bool {
+    // 1. Float shelf
+    mut sf = shelf_create(8, 4)
+    shelf_push_f64(@sf, 1.25)
+    shelf_push_f64(@sf, 2.5)
+    shelf_push_f64(@sf, 5.0)
+
+    if shelf_len(@sf) != 3 {
+        shelf_free(@sf); return false
+    }
+    if shelf_get_f64(@sf, 0) != 1.25 {
+        shelf_free(@sf); return false
+    }
+    if shelf_get_f64(@sf, 1) != 2.5 {
+        shelf_free(@sf); return false
+    }
+    if shelf_get_f64(@sf, 2) != 5.0 {
+        shelf_free(@sf); return false
+    }
+    shelf_free(@sf)
+
+    // 2. StrSlice shelf (StrSlice has 2 usize fields = 16 bytes on 64-bit)
+    let slice_size = 16
+    mut ss = shelf_create(slice_size, 4)
+    shelf_push_slice(@ss, slice_from_str("apple"))
+    shelf_push_slice(@ss, slice_from_str("banana"))
+    shelf_push_slice(@ss, slice_from_str("cherry"))
+
+    if shelf_len(@ss) != 3 {
+        shelf_free(@ss); return false
+    }
+    if !slice_eq_str(shelf_get_slice(@ss, 0), "apple") {
+        shelf_free(@ss); return false
+    }
+    if !slice_eq_str(shelf_get_slice(@ss, 1), "banana") {
+        shelf_free(@ss); return false
+    }
+    if !slice_eq_str(shelf_get_slice(@ss, 2), "cherry") {
+        shelf_free(@ss); return false
+    }
+    shelf_free(@ss)
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_shelf_basic() {
+        io.println("FAIL: test_shelf_basic")
+        return 1
+    }
+    if !test_shelf_10k_stress() {
+        io.println("FAIL: test_shelf_10k_stress")
+        return 1
+    }
+    if !test_shelf_typed_helpers() {
+        io.println("FAIL: test_shelf_typed_helpers")
+        return 1
+    }
+
+    io.println("PASS: std.coll.shelf all assertions succeeded")
+    return 0
+}
