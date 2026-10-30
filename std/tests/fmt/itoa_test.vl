@@ -1,0 +1,229 @@
+// Unit test suite for std.fmt.itoa (pure Velo integer formatting).
+use "../../mem/page.vl"
+use "../../str/slice.vl"
+use "../../fmt/itoa.vl"
+
+act test_format_u64() -> bool {
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    // Zero
+    let s0 = format_u64(0 as u64, buf, 64)
+    if !slice_eq_str(s0, "0") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Small positive
+    let s7 = format_u64(7 as u64, buf, 64)
+    if !slice_eq_str(s7, "7") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Large number
+    let s_large = format_u64(1234567890 as u64, buf, 64)
+    if !slice_eq_str(s_large, "1234567890") {
+        os_page_free(buf, 64); return false
+    }
+
+    // UINT64_MAX
+    let s_max = format_u64(0xFFFFFFFFFFFFFFFF as u64, buf, 64)
+    if !slice_eq_str(s_max, "18446744073709551615") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Buffer too small (needs 20 bytes for max u64, given 5)
+    let s_overflow = format_u64(0xFFFFFFFFFFFFFFFF as u64, buf, 5)
+    if !slice_is_empty(s_overflow) {
+        os_page_free(buf, 64); return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+act test_format_i64() -> bool {
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    // Zero
+    let s0 = format_i64(0 as i64, buf, 64)
+    if !slice_eq_str(s0, "0") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Positive
+    let s_pos = format_i64(4242 as i64, buf, 64)
+    if !slice_eq_str(s_pos, "4242") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Negative
+    let s_neg = format_i64(-9999 as i64, buf, 64)
+    if !slice_eq_str(s_neg, "-9999") {
+        os_page_free(buf, 64); return false
+    }
+
+    // INT64_MAX
+    let s_max = format_i64(9223372036854775807 as i64, buf, 64)
+    if !slice_eq_str(s_max, "9223372036854775807") {
+        os_page_free(buf, 64); return false
+    }
+
+    // INT64_MIN
+    let s_min = format_i64((-9223372036854775807 as i64) - (1 as i64), buf, 64)
+    if !slice_eq_str(s_min, "-9223372036854775808") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Buffer too small for sign and digits
+    let s_small = format_i64(-12345 as i64, buf, 3)
+    if !slice_is_empty(s_small) {
+        os_page_free(buf, 64); return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+act test_format_hex() -> bool {
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    // Zero
+    let s0 = format_hex(0 as u64, true, buf, 64)
+    if !slice_eq_str(s0, "0") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Upper
+    let s_upper = format_hex(0xDEADBEEF as u64, true, buf, 64)
+    if !slice_eq_str(s_upper, "DEADBEEF") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Lower
+    let s_lower = format_hex(0xDEADBEEF as u64, false, buf, 64)
+    if !slice_eq_str(s_lower, "deadbeef") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Max 64-bit hex
+    let s_max = format_hex(0xFFFFFFFFFFFFFFFF as u64, true, buf, 64)
+    if !slice_eq_str(s_max, "FFFFFFFFFFFFFFFF") {
+        os_page_free(buf, 64); return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+act test_format_bin() -> bool {
+    let buf = os_page_alloc(128)
+    if buf == null { return false }
+
+    // Zero
+    let s0 = format_bin(0 as u64, buf, 128)
+    if !slice_eq_str(s0, "0") {
+        os_page_free(buf, 128); return false
+    }
+
+    // 42 = 101010
+    let s42 = format_bin(42 as u64, buf, 128)
+    if !slice_eq_str(s42, "101010") {
+        os_page_free(buf, 128); return false
+    }
+
+    // 255 = 11111111
+    let s255 = format_bin(255 as u64, buf, 128)
+    if !slice_eq_str(s255, "11111111") {
+        os_page_free(buf, 128); return false
+    }
+
+    os_page_free(buf, 128)
+    return true
+}
+
+act test_format_oct() -> bool {
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    let s0 = format_oct(0 as u64, buf, 64)
+    if !slice_eq_str(s0, "0") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Unix permissions 0755 = 493 decimal
+    let s755 = format_oct(493 as u64, buf, 64)
+    if !slice_eq_str(s755, "755") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Unix permissions 0644 = 420 decimal
+    let s644 = format_oct(420 as u64, buf, 64)
+    if !slice_eq_str(s644, "644") {
+        os_page_free(buf, 64); return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+act test_padded_formatting() -> bool {
+    let buf = os_page_alloc(64)
+    if buf == null { return false }
+
+    // Padded decimal
+    let p1 = format_u64_padded(7 as u64, 4, buf, 64)
+    if !slice_eq_str(p1, "0007") {
+        os_page_free(buf, 64); return false
+    }
+
+    let p2 = format_u64_padded(12345 as u64, 3, buf, 64)
+    if !slice_eq_str(p2, "12345") {
+        os_page_free(buf, 64); return false
+    }
+
+    // Padded hex
+    let p3 = format_hex_padded(0x2A as u64, 4, true, buf, 64)
+    if !slice_eq_str(p3, "002A") {
+        os_page_free(buf, 64); return false
+    }
+
+    let p4 = format_hex_padded(0xBEEF as u64, 6, false, buf, 64)
+    if !slice_eq_str(p4, "00beef") {
+        os_page_free(buf, 64); return false
+    }
+
+    os_page_free(buf, 64)
+    return true
+}
+
+act main() -> i32 {
+    if !test_format_u64() {
+        io.println("FAIL: test_format_u64")
+        return 1
+    }
+    if !test_format_i64() {
+        io.println("FAIL: test_format_i64")
+        return 1
+    }
+    if !test_format_hex() {
+        io.println("FAIL: test_format_hex")
+        return 1
+    }
+    if !test_format_bin() {
+        io.println("FAIL: test_format_bin")
+        return 1
+    }
+    if !test_format_oct() {
+        io.println("FAIL: test_format_oct")
+        return 1
+    }
+    if !test_padded_formatting() {
+        io.println("FAIL: test_padded_formatting")
+        return 1
+    }
+
+    io.println("PASS: std.fmt.itoa all assertions succeeded")
+    return 0
+}

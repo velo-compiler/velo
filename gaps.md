@@ -940,6 +940,25 @@ flowchart TD
   - `python -m pytest tests/test_std_str.py` passed (5/5 passed in 2.68s).
   - Combined `python -m pytest tests/test_std_mem.py tests/test_std_str.py` passed (11/11 passed in 4.55s).
 
+---
+
+### Phase 3: `std.fmt` (Complete Formatting & Parsing)
+
+#### Task 3.1: Pure Velo Integer to String `itoa` (`std/fmt/itoa.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Integer formatting in Velo required libc runtime functions (`sprintf`, `snprintf`) or internal runtime string allocators (`velo_str_from_int`), preventing pure, stack-allocated, zero-libc integer conversion.
+* **Fix Applied**:
+  - Implemented `std/fmt/itoa.vl` providing `format_u64`, `format_i64`, `format_hex`, `format_bin`, `format_oct`, and padded variants `format_u64_padded` and `format_hex_padded`.
+  - Pure Velo modulo/shift extraction written back-to-front into caller-provided stack/regional buffers, automatically aligned to `buf[0]` and null-terminated when space permits.
+  - Fully handles extreme values and boundaries without overflow: `0`, `INT64_MAX`, `INT64_MIN` (`-9223372036854775808`), and `UINT64_MAX` (`18446744073709551615`).
+  - Added unit test suite `std/tests/fmt/itoa_test.vl` and pytest integration in `tests/test_std_fmt.py`.
+* **Residual Limitation**:
+  - Text-to-integer parsing (`atoi`) will be implemented in Task 3.2.
+* **Verification**:
+  - `bin/velo.exe run std/tests/fmt/itoa_test.vl` passed u64/i64 zero, small, large, INT64_MIN, UINT64_MAX, hex upper/lower, binary, octal Unix permissions, and zero-padded formatters.
+  - `python -m pytest tests/test_std_fmt.py` passed (1/1 passed).
+
+
 
 
 
