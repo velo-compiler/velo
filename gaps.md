@@ -907,6 +907,24 @@ flowchart TD
   - `bin/velo.exe run std/tests/str/search_test.vl` passed byte search, forward substring search, backward last-index search, occurrence counting, prefix/suffix inspection, and empty/boundary queries.
   - `python -m pytest tests/test_std_str.py` passed (3/3 passed).
 
+#### Task 2.4: Arena-Backed Dynamic StringBuilder (`std/str/builder.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Dynamic string accumulation in Velo required heap allocations or relied on compiler-internal `string_builder.vl` (`mem.alloc`), with no reusable pure-Velo StringBuilder backed by regional arenas or supporting zero-allocation formatting.
+* **Fix Applied**:
+  - Implemented `std/str/builder.vl` providing `data StrBuilder { buffer: @u8, len: usize, capacity: usize, arena: @Arena }`.
+  - Added constructors `sb_init(arena: @Arena, initial_cap: usize)` and `sb_ensure_capacity`.
+  - Implemented zero-copy in-place watermark extension optimization when the builder sits at the active top of the arena bump offset.
+  - Provided append functions: `sb_append_byte`, `sb_append_slice`, `sb_append_str`, and `sb_append_rune` (UTF-8 encoded 1..4 bytes via `utf8_encode_rune`).
+  - Implemented in-place decimal integer formatting: `sb_append_i64` (with INT64_MIN safety) and `sb_append_u64` with zero temporary heap allocations.
+  - Added buffer export and lifecycle management: `sb_to_slice`, `sb_to_cstr` (ensuring null-termination byte for C API / OS syscall interoperability), `sb_reset`, `sb_len`, and `sb_capacity`.
+  - Added unit test suite `std/tests/str/builder_test.vl` and pytest integration in `tests/test_std_str.py`.
+* **Residual Limitation**:
+  - Floating-point formatting (`f64`) will be layered in Phase 3 (`std.fmt`).
+* **Verification**:
+  - `bin/velo.exe run std/tests/str/builder_test.vl` passed basic appends, multi-byte UTF-8 runes, integer formatting, reset/reuse, C-string export, and 1,000 fragments stress reallocation test.
+  - `python -m pytest tests/test_std_str.py` passed (4/4 passed).
+
+
 
 
 

@@ -1,0 +1,211 @@
+// Pure Velo arena-backed dynamic string builder (zero C runtime dependencies).
+// Provides ultra-fast string and rune concatenation, in-place zero-allocation integer formatting,
+// and zero-copy contiguous buffer export.
+use "../mem/arena.vl"
+use "../mem/ops.vl"
+use "slice.vl"
+use "utf8.vl"
+
+// Regional string builder buffer descriptor.
+data StrBuilder {
+    buffer: @u8,
+    len: usize,
+    capacity: usize,
+    arena: @Arena,
+}
+
+// Initializes a dynamic StrBuilder backed by an Arena bump allocator.
+act sb_init(arena: @Arena, initial_cap: usize) -> StrBuilder {
+    mut cap = initial_cap
+    if cap < 16 {
+        cap = 16
+    }
+    mut buf: @u8 = null
+    if arena != null {
+        buf = arena_alloc(arena, cap, 8)
+    }
+    return StrBuilder {
+        buffer: buf,
+        len: 0,
+        capacity: cap,
+        arena: arena,
+    }
+}
+
+// Ensures the builder has space for at least needed_extra additional bytes.
+act sb_ensure_capacity(sb: @StrBuilder, needed_extra: usize) {
+    if sb == null or sb.arena == null {
+        return
+    }
+    let required = sb.len + needed_extra
+    if required <= sb.capacity {
+        return
+    }
+
+    mut new_cap = sb.capacity * 2
+    if new_cap < required {
+        new_cap = required
+    }
+    if new_cap < 32 {
+        new_cap = 32
+    }
+
+    // Zero-copy in-place extension optimization if builder is at the arena's current watermark
+    let buf_addr = sb.buffer as usize
+    let top_addr = (sb.arena.buffer as usize) + sb.arena.offset
+    if buf_addr + sb.capacity == top_addr {
+        let diff = new_cap - sb.capacity
+        if sb.arena.offset + diff <= sb.arena.capacity {
+            sb.arena.offset += diff
+            sb.capacity = new_cap
+            return
+        }
+    }
+
+    // Fallback arena reallocation
+    let new_buf = arena_alloc(sb.arena, new_cap, 8)
+    if new_buf == null {
+        return
+    }
+    if sb.buffer != null and sb.len > 0 {
+        copy(new_buf, sb.buffer, sb.len)
+    }
+    sb.buffer = new_buf
+    sb.capacity = new_cap
+}
+
+// Appends a single byte character to the builder.
+act sb_append_byte(sb: @StrBuilder, b: u8) {
+    if sb == null { return }
+    sb_ensure_capacity(sb, 1)
+    if sb.len < sb.capacity {
+        sb.buffer[sb.len] = b
+        sb.len += 1
+    }
+}
+
+// Appends a StrSlice to the builder.
+act sb_append_slice(sb: @StrBuilder, slice: StrSlice) {
+    if sb == null or slice.ptr == null or slice.len == 0 {
+        return
+    }
+    sb_ensure_capacity(sb, slice.len)
+    if sb.len + slice.len <= sb.capacity {
+        copy(sb.buffer + sb.len, slice.ptr, slice.len)
+        sb.len += slice.len
+    }
+}
+
+// Appends a null-terminated string to the builder.
+act sb_append_str(sb: @StrBuilder, s: string) {
+    sb_append_slice(sb, slice_from_str(s))
+}
+
+// Appends a Unicode code point encoded as UTF-8 (1..4 bytes).
+act sb_append_rune(sb: @StrBuilder, rune: u32) {
+    if sb == null { return }
+    sb_ensure_capacity(sb, 4)
+    let written = utf8_encode_rune(rune, sb.buffer + sb.len, sb.capacity - sb.len)
+    sb.len += written
+}
+
+// Appends a signed 64-bit integer formatted as decimal digits.
+act sb_append_i64(sb: @StrBuilder, val: i64) {
+    if sb == null { return }
+    if val == 0 as i64 {
+        sb_append_byte(sb, 48 as u8) // '0'
+        return
+    }
+    mut n = val
+    if n < 0 as i64 {
+        sb_append_byte(sb, 45 as u8) // '-'
+        if n == (-9223372036854775807 as i64) - (1 as i64) {
+            sb_append_slice(sb, slice_from_str("9223372036854775808"))
+            return
+        }
+        n = -n
+    }
+
+    sb_ensure_capacity(sb, 24)
+    let start_idx = sb.len
+    loop n > 0 as i64 {
+        let digit: u8 = (48 as i64 + (n % 10 as i64)) as u8
+        sb.buffer[sb.len] = digit
+        sb.len += 1
+        n = n / 10 as i64
+    }
+    // Reverse digits in-place
+    mut left = start_idx
+    mut right = sb.len - 1
+    loop left < right {
+        let tmp = sb.buffer[left]
+        sb.buffer[left] = sb.buffer[right]
+        sb.buffer[right] = tmp
+        left += 1
+        right -= 1
+    }
+}
+
+// Appends an unsigned 64-bit integer formatted as decimal digits.
+act sb_append_u64(sb: @StrBuilder, val: u64) {
+    if sb == null { return }
+    if val == 0 as u64 {
+        sb_append_byte(sb, 48 as u8)
+        return
+    }
+    mut n = val
+    sb_ensure_capacity(sb, 24)
+    let start_idx = sb.len
+    loop n > 0 as u64 {
+        let digit: u8 = (48 as u64 + (n % 10 as u64)) as u8
+        sb.buffer[sb.len] = digit
+        sb.len += 1
+        n = n / 10 as u64
+    }
+    mut left = start_idx
+    mut right = sb.len - 1
+    loop left < right {
+        let tmp = sb.buffer[left]
+        sb.buffer[left] = sb.buffer[right]
+        sb.buffer[right] = tmp
+        left += 1
+        right -= 1
+    }
+}
+
+// Returns the current byte length of the accumulated string.
+act sb_len(sb: @StrBuilder) -> usize {
+    if sb == null { return 0 }
+    return sb.len
+}
+
+// Returns the current allocated buffer capacity.
+act sb_capacity(sb: @StrBuilder) -> usize {
+    if sb == null { return 0 }
+    return sb.capacity
+}
+
+// Resets builder length to 0, retaining allocated capacity.
+act sb_reset(sb: @StrBuilder) {
+    if sb != null {
+        sb.len = 0
+    }
+}
+
+// Returns a StrSlice view over the accumulated bytes.
+act sb_to_slice(sb: @StrBuilder) -> StrSlice {
+    if sb == null or sb.buffer == null or sb.len == 0 {
+        return StrSlice { ptr: null, len: 0 }
+    }
+    return StrSlice { ptr: sb.buffer, len: sb.len }
+}
+
+// Ensures null termination and returns raw pointer for C API / OS syscall compatibility.
+act sb_to_cstr(sb: @StrBuilder) -> @u8 {
+    if sb == null { return null }
+    sb_ensure_capacity(sb, 1)
+    if sb.buffer != null {
+        sb.buffer[sb.len] = 0 as u8
+    }
+    return sb.buffer
+}

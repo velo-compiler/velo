@@ -1,0 +1,176 @@
+// Unit test suite for std.str.builder (arena-backed dynamic string builder).
+use "../../mem/arena.vl"
+use "../../mem/ops.vl"
+use "../../str/slice.vl"
+use "../../str/utf8.vl"
+use "../../str/builder.vl"
+
+act test_basic_append_and_slice() -> bool {
+    mut arena = arena_init(4096)
+    mut sb = sb_init(@arena, 16)
+
+    if sb_len(@sb) != 0 or sb_capacity(@sb) < 16 {
+        arena_free(@arena); return false
+    }
+
+    sb_append_str(@sb, "Hello")
+    sb_append_byte(@sb, 44 as u8) // ','
+    sb_append_byte(@sb, 32 as u8) // ' '
+    sb_append_slice(@sb, slice_from_str("World!"))
+
+    let res = sb_to_slice(@sb)
+    if !slice_eq_str(res, "Hello, World!") {
+        arena_free(@arena); return false
+    }
+    if sb_len(@sb) != 13 {
+        arena_free(@arena); return false
+    }
+
+    arena_free(@arena)
+    return true
+}
+
+act test_multibyte_and_rune() -> bool {
+    mut arena = arena_init(4096)
+    mut sb = sb_init(@arena, 16)
+
+    sb_append_str(@sb, "Velo ")
+    sb_append_rune(@sb, 0x03A9 as u32) // Ω
+    sb_append_byte(@sb, 32 as u8)
+    sb_append_rune(@sb, 0x4E16 as u32) // 世
+    sb_append_rune(@sb, 0x754C as u32) // 界
+    sb_append_byte(@sb, 32 as u8)
+    sb_append_rune(@sb, 0x1F680 as u32) // 🚀
+
+    let res = sb_to_slice(@sb)
+    if !utf8_slice_is_valid(res) {
+        arena_free(@arena); return false
+    }
+    if utf8_slice_rune_count(res) != 11 { // "Velo Ω 世界 🚀" = 5 + 1 + 1 + 1 + 1 + 1 + 1 = 11
+        arena_free(@arena); return false
+    }
+
+    arena_free(@arena)
+    return true
+}
+
+act test_integer_formatting() -> bool {
+    mut arena = arena_init(4096)
+    mut sb = sb_init(@arena, 32)
+
+    sb_append_str(@sb, "zero=")
+    sb_append_i64(@sb, 0 as i64)
+    sb_append_str(@sb, "; pos=")
+    sb_append_i64(@sb, 123456789 as i64)
+    sb_append_str(@sb, "; neg=")
+    sb_append_i64(@sb, -987654 as i64)
+    sb_append_str(@sb, "; min=")
+    sb_append_i64(@sb, (-9223372036854775807 as i64) - (1 as i64))
+    sb_append_str(@sb, "; u64=")
+    sb_append_u64(@sb, 0xFFFFFFFFFFFFFFFF as u64)
+
+    let expected = "zero=0; pos=123456789; neg=-987654; min=-9223372036854775808; u64=18446744073709551615"
+    let res = sb_to_slice(@sb)
+    if !slice_eq_str(res, expected) {
+        arena_free(@arena); return false
+    }
+
+    arena_free(@arena)
+    return true
+}
+
+act test_reset_and_reuse() -> bool {
+    mut arena = arena_init(4096)
+    mut sb = sb_init(@arena, 16)
+
+    sb_append_str(@sb, "first pass data string")
+    if sb_len(@sb) != 22 {
+        arena_free(@arena); return false
+    }
+
+    sb_reset(@sb)
+    if sb_len(@sb) != 0 {
+        arena_free(@arena); return false
+    }
+
+    sb_append_str(@sb, "second pass")
+    let res = sb_to_slice(@sb)
+    if !slice_eq_str(res, "second pass") {
+        arena_free(@arena); return false
+    }
+
+    arena_free(@arena)
+    return true
+}
+
+act test_to_cstr() -> bool {
+    mut arena = arena_init(4096)
+    mut sb = sb_init(@arena, 16)
+
+    sb_append_str(@sb, "null_terminated_c_str")
+    let cstr = sb_to_cstr(@sb)
+    if cstr == null {
+        arena_free(@arena); return false
+    }
+    // Check that cstr has trailing 0 byte at position 21
+    if cstr[21] != 0 as u8 {
+        arena_free(@arena); return false
+    }
+
+    arena_free(@arena)
+    return true
+}
+
+act test_stress_1000_fragments() -> bool {
+    mut arena = arena_init(2 * 1024 * 1024)
+    mut sb = sb_init(@arena, 16)
+
+    mut i: usize = 0
+    loop i < 1000 {
+        sb_append_str(@sb, "tok_")
+        sb_append_u64(@sb, i as u64)
+        sb_append_byte(@sb, 44 as u8) // ','
+        i += 1
+    }
+
+    let res = sb_to_slice(@sb)
+    if res.len < 7000 {
+        arena_free(@arena); return false
+    }
+    if !utf8_slice_is_valid(res) {
+        arena_free(@arena); return false
+    }
+
+    arena_free(@arena)
+    return true
+}
+
+act main() -> i32 {
+    if !test_basic_append_and_slice() {
+        io.println("FAIL: test_basic_append_and_slice")
+        return 1
+    }
+    if !test_multibyte_and_rune() {
+        io.println("FAIL: test_multibyte_and_rune")
+        return 1
+    }
+    if !test_integer_formatting() {
+        io.println("FAIL: test_integer_formatting")
+        return 1
+    }
+    if !test_reset_and_reuse() {
+        io.println("FAIL: test_reset_and_reuse")
+        return 1
+    }
+    if !test_to_cstr() {
+        io.println("FAIL: test_to_cstr")
+        return 1
+    }
+    if !test_stress_1000_fragments() {
+        io.println("FAIL: test_stress_1000_fragments")
+        return 1
+    }
+
+    io.println("PASS: std.str.builder all assertions succeeded")
+    return 0
+}
