@@ -1022,3 +1022,17 @@ flowchart TD
   - `bin/velo.exe run std/tests/io/handle_test.vl` passed standard handles query & closure protection, invalid handle rejections, file creation, writing, exact file sizing, seeking (`SEEK_SET`, `SEEK_CUR`, `SEEK_END`), reading back payload, appending, closing, file deletion, and deleted file reopen rejection.
   - `python -m pytest tests/test_std_io.py` passed (1/1 passed).
 
+#### Task 4.2: Ring-Buffered Stream Writer (`std/io/buffered_writer.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Writing data to file handles or standard streams previously incurred a kernel system call on every write operation, causing significant I/O performance degradation on high-frequency small writes.
+* **Fix Applied**:
+  - Implemented `std/io/buffered_writer.vl` providing `data BufferedWriter` with automatic 4KB virtual-page backing (`writer_init`) or custom caller-provided buffers (`writer_init_with_buffer`).
+  - Implemented `writer_write`, `writer_write_byte`, `writer_write_slice`, `writer_write_str`, `writer_pending`, `writer_capacity`, `writer_flush`, and `writer_free`.
+  - Implemented automatic buffer flushing upon saturation, partial-write forward shifting via `std.mem.copy`, and direct-write bypass for large buffers (≥ 4096 bytes) to eliminate unnecessary intermediate memory copies.
+  - Added unit test suite `std/tests/io/buffered_writer_test.vl` and pytest integration in `tests/test_std_io.py`.
+* **Residual Limitation**:
+  - High-level console formatting and line printing (`print`, `println`) will be layered on top of `BufferedWriter` in Task 4.3.
+* **Verification**:
+  - `bin/velo.exe run std/tests/io/buffered_writer_test.vl` passed 100 small 8-byte writes holding in memory until explicit flush, physical disk file sizing verification, custom 64-byte buffer overflow auto-flushes, single-byte writes, slice writes, string literal writes, and 5000-byte direct bypass writes.
+  - `python -m pytest tests/test_std_io.py` passed (2/2 passed).
+

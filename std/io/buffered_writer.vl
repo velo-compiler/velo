@@ -1,0 +1,174 @@
+// Pure Velo buffered stream writer (zero C runtime dependencies).
+// Accumulates small writes in an internal buffer (default 4KB) and flushes in chunks
+// directly to the underlying OS FileHandle, eliminating excessive kernel syscall overhead.
+
+use "../mem/page.vl"
+use "../mem/ops.vl"
+use "../str/slice.vl"
+use "handle.vl"
+
+let DEFAULT_BUFFER_SIZE: usize = 4096
+
+// Ring/linear buffered writer structure
+data BufferedWriter {
+    handle: FileHandle
+    buf: @u8
+    cap: usize
+    count: usize
+    owns_buf: bool
+}
+
+// Initializes a buffered writer backed by an automatically allocated 4KB OS virtual page.
+act writer_init(h: FileHandle) -> BufferedWriter {
+    let buf = os_page_alloc(DEFAULT_BUFFER_SIZE)
+    return BufferedWriter {
+        handle: h,
+        buf: buf,
+        cap: DEFAULT_BUFFER_SIZE,
+        count: 0,
+        owns_buf: true,
+    }
+}
+
+// Initializes a buffered writer using a caller-provided buffer of specified capacity.
+act writer_init_with_buffer(h: FileHandle, buf: @u8, cap: usize) -> BufferedWriter {
+    return BufferedWriter {
+        handle: h,
+        buf: buf,
+        cap: cap,
+        count: 0,
+        owns_buf: false,
+    }
+}
+
+// Returns the number of unwritten bytes currently buffered.
+act writer_pending(w: @BufferedWriter) -> usize {
+    if w == null { return 0 }
+    return w.count
+}
+
+// Returns the total buffer capacity in bytes.
+act writer_capacity(w: @BufferedWriter) -> usize {
+    if w == null { return 0 }
+    return w.cap
+}
+
+// Flushes all buffered bytes to the underlying OS handle.
+// Returns true on full flush success, or false on partial write/error.
+act writer_flush(w: @BufferedWriter) -> bool {
+    if w == null or !io_is_valid_handle(w.handle) {
+        return false
+    }
+    if w.count == 0 {
+        return true
+    }
+    let written = io_raw_write(w.handle, w.buf, w.count)
+    if written == w.count {
+        w.count = 0
+        return true
+    }
+    // Partial write: shift remaining unwritten bytes to start of buffer
+    if written > 0 and written < w.count {
+        let unwritten = w.count - written
+        let src_ptr = (w.buf as usize + written) as @u8
+        copy(w.buf, src_ptr, unwritten)
+        w.count = unwritten
+        return false
+    }
+    return false
+}
+
+// Writes len bytes from data into the buffered stream.
+// Automatically flushes when full, and bypasses the buffer for large writes.
+act writer_write(w: @BufferedWriter, data: @u8, len: usize) -> usize {
+    if w == null or data == null or len == 0 or w.buf == null or w.cap == 0 {
+        return 0
+    }
+    let data_addr: usize = data as usize
+    mut total_written: usize = 0
+    mut remaining = len
+
+    loop remaining > 0 {
+        // If buffer is full, flush it
+        if w.count >= w.cap {
+            if !writer_flush(w) {
+                break
+            }
+        }
+
+        // Direct write optimization for large payloads when buffer is empty
+        if w.count == 0 and remaining >= w.cap {
+            let cur_ptr = (data_addr + total_written) as @u8
+            let n = io_raw_write(w.handle, cur_ptr, remaining)
+            if n == 0 {
+                break
+            }
+            total_written += n
+            remaining -= n
+        } else {
+            mut to_copy = w.cap - w.count
+            if remaining < to_copy {
+                to_copy = remaining
+            }
+            let dest_ptr = (w.buf as usize + w.count) as @u8
+            let src_ptr = (data_addr + total_written) as @u8
+            copy(dest_ptr, src_ptr, to_copy)
+            w.count += to_copy
+            total_written += to_copy
+            remaining -= to_copy
+
+            if w.count >= w.cap {
+                if !writer_flush(w) {
+                    break
+                }
+            }
+        }
+    }
+
+    return total_written
+}
+
+// Writes a single byte into the buffered stream.
+act writer_write_byte(w: @BufferedWriter, b: u8) -> bool {
+    if w == null or w.buf == null or w.cap == 0 {
+        return false
+    }
+    if w.count >= w.cap {
+        if !writer_flush(w) {
+            return false
+        }
+    }
+    w.buf[w.count] = b
+    w.count += 1
+    return true
+}
+
+// Writes a StrSlice into the buffered stream.
+act writer_write_slice(w: @BufferedWriter, s: StrSlice) -> usize {
+    if s.ptr == null or s.len == 0 {
+        return 0
+    }
+    return writer_write(w, s.ptr, s.len)
+}
+
+// Writes a string literal into the buffered stream.
+act writer_write_str(w: @BufferedWriter, s: string) -> usize {
+    let slice = slice_from_str(s)
+    return writer_write(w, slice.ptr, slice.len)
+}
+
+// Flushes any remaining bytes and releases internal buffer memory if owned.
+act writer_free(w: @BufferedWriter) -> bool {
+    if w == null {
+        return false
+    }
+    let flush_ok = writer_flush(w)
+    if w.owns_buf and w.buf != null and w.cap > 0 {
+        os_page_free(w.buf, w.cap)
+        w.buf = null
+    }
+    w.count = 0
+    w.cap = 0
+    return flush_ok
+}
+

@@ -1,0 +1,290 @@
+// Unit test suite for std.io.buffered_writer (4KB ring/linear buffered stream writer).
+use "../../mem/page.vl"
+use "../../str/slice.vl"
+use "../../io/handle.vl"
+use "../../io/buffered_writer.vl"
+
+act test_buffered_small_writes() -> bool {
+    let test_path = "scratch/test_bw_small.txt"
+    let fh = io_file_open_str(test_path, IO_CREATE | IO_TRUNCATE | IO_WRITE | IO_READ)
+    if !io_is_valid_handle(fh) { return false }
+
+    mut w = writer_init(fh)
+    if writer_capacity(@w) != 4096 {
+        writer_free(@w); io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+    if writer_pending(@w) != 0 {
+        writer_free(@w); io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    // Write 100 small 8-byte chunks ("ABCDEFGH")
+    let chunk = "ABCDEFGH"
+    mut i: usize = 0
+    loop i < 100 {
+        let written = writer_write_str(@w, chunk)
+        if written != 8 {
+            writer_free(@w); io_file_close(fh); io_file_delete_str(test_path)
+            return false
+        }
+        i += 1
+    }
+
+    // Verify 800 bytes are held in user-space buffer without kernel syscall
+    if writer_pending(@w) != 800 {
+        writer_free(@w); io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    // Physical file size on disk must still be 0 before flush
+    let sz_before = io_file_size(fh)
+    if sz_before != 0 as i64 {
+        writer_free(@w); io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    // Explicit flush
+    if !writer_flush(@w) {
+        writer_free(@w); io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    if writer_pending(@w) != 0 {
+        writer_free(@w); io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    // Physical file size on disk must now be 800
+    let sz_after = io_file_size(fh)
+    if sz_after != 800 as i64 {
+        writer_free(@w); io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    writer_free(@w)
+
+    // Seek to beginning and verify read contents
+    io_raw_seek(fh, 0 as i64, IO_SEEK_SET)
+    let read_buf = os_page_alloc(1024)
+    let n_read = io_raw_read(fh, read_buf, 1024)
+    if n_read != 800 as isize {
+        os_page_free(read_buf, 1024)
+        io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    // Verify each chunk is "ABCDEFGH"
+    mut j: usize = 0
+    loop j < 100 {
+        let sub = slice_from_raw((read_buf as usize + j * 8) as @u8, 8)
+        if !slice_eq_str(sub, "ABCDEFGH") {
+            os_page_free(read_buf, 1024)
+            io_file_close(fh); io_file_delete_str(test_path)
+            return false
+        }
+        j += 1
+    }
+
+    os_page_free(read_buf, 1024)
+    io_file_close(fh)
+    io_file_delete_str(test_path)
+    return true
+}
+
+act test_buffered_overflow_flush() -> bool {
+    let test_path = "scratch/test_bw_overflow.txt"
+    let fh = io_file_open_str(test_path, IO_CREATE | IO_TRUNCATE | IO_WRITE | IO_READ)
+    if !io_is_valid_handle(fh) { return false }
+
+    // Use a custom 64-byte buffer
+    let small_buf = os_page_alloc(64)
+    mut w = writer_init_with_buffer(fh, small_buf, 64)
+
+    // Write 10 records of 16 bytes = 160 bytes (> 64 bytes buffer)
+    let rec = "0123456789ABCDEF" // 16 bytes
+    mut i: usize = 0
+    loop i < 10 {
+        let n = writer_write_str(@w, rec)
+        if n != 16 {
+            writer_free(@w); os_page_free(small_buf, 64)
+            io_file_close(fh); io_file_delete_str(test_path)
+            return false
+        }
+        i += 1
+    }
+
+    // Pending should be 160 % 64 = 32 bytes
+    if writer_pending(@w) != 32 {
+        writer_free(@w); os_page_free(small_buf, 64)
+        io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    // Flush remaining 32 bytes
+    writer_flush(@w)
+    let final_sz = io_file_size(fh)
+    if final_sz != 160 as i64 {
+        writer_free(@w); os_page_free(small_buf, 64)
+        io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    writer_free(@w)
+    os_page_free(small_buf, 64)
+
+    // Verify all 160 bytes
+    io_raw_seek(fh, 0 as i64, IO_SEEK_SET)
+    let verify_buf = os_page_alloc(256)
+    let read_cnt = io_raw_read(fh, verify_buf, 256)
+    if read_cnt != 160 as isize {
+        os_page_free(verify_buf, 256)
+        io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    mut k: usize = 0
+    loop k < 10 {
+        let s = slice_from_raw((verify_buf as usize + k * 16) as @u8, 16)
+        if !slice_eq_str(s, "0123456789ABCDEF") {
+            os_page_free(verify_buf, 256)
+            io_file_close(fh); io_file_delete_str(test_path)
+            return false
+        }
+        k += 1
+    }
+
+    os_page_free(verify_buf, 256)
+    io_file_close(fh)
+    io_file_delete_str(test_path)
+    return true
+}
+
+act test_byte_and_slice_writes() -> bool {
+    let test_path = "scratch/test_bw_types.txt"
+    let fh = io_file_open_str(test_path, IO_CREATE | IO_TRUNCATE | IO_WRITE | IO_READ)
+    if !io_is_valid_handle(fh) { return false }
+
+    mut w = writer_init(fh)
+
+    // Write individual bytes 'H', 'e', 'l', 'l', 'o'
+    writer_write_byte(@w, 72 as u8)  // 'H'
+    writer_write_byte(@w, 101 as u8) // 'e'
+    writer_write_byte(@w, 108 as u8) // 'l'
+    writer_write_byte(@w, 108 as u8) // 'l'
+    writer_write_byte(@w, 111 as u8) // 'o'
+    writer_write_byte(@w, 32 as u8)  // ' '
+
+    // Write StrSlice
+    let slice_msg = "World!"
+    writer_write_slice(@w, slice_from_str(slice_msg))
+
+    // Write string literal
+    writer_write_str(@w, "\n")
+
+    writer_free(@w)
+
+    // Read back and assert "Hello World!\n"
+    io_raw_seek(fh, 0 as i64, IO_SEEK_SET)
+    let buf = os_page_alloc(64)
+    let n = io_raw_read(fh, buf, 64)
+    if n != 13 as isize {
+        os_page_free(buf, 64)
+        io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    let s = slice_from_raw(buf, n as usize)
+    if !slice_eq_str(s, "Hello World!\n") {
+        os_page_free(buf, 64)
+        io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    os_page_free(buf, 64)
+    io_file_close(fh)
+    io_file_delete_str(test_path)
+    return true
+}
+
+act test_large_bypass_write() -> bool {
+    let test_path = "scratch/test_bw_large.txt"
+    let fh = io_file_open_str(test_path, IO_CREATE | IO_TRUNCATE | IO_WRITE | IO_READ)
+    if !io_is_valid_handle(fh) { return false }
+
+    mut w = writer_init(fh)
+
+    // 1. Write small 10-byte prefix
+    writer_write_str(@w, "PREFIX123\n") // 10 bytes
+
+    // 2. Write 5,000 bytes large block (> 4096 cap)
+    let large_buf = os_page_alloc(8192)
+    set(large_buf, 65 as u8, 5000) // 5000 'A's
+    writer_write(@w, large_buf, 5000)
+
+    // 3. Write small 10-byte suffix
+    writer_write_str(@w, "SUFFIX123\n") // 10 bytes
+
+    writer_free(@w)
+
+    // Check size = 10 + 5000 + 10 = 5020
+    let sz = io_file_size(fh)
+    if sz != 5020 as i64 {
+        os_page_free(large_buf, 8192)
+        io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    // Read back and check prefix, suffix, and large block
+    io_raw_seek(fh, 0 as i64, IO_SEEK_SET)
+    let read_buf = os_page_alloc(8192)
+    let n_read = io_raw_read(fh, read_buf, 8192)
+    if n_read != 5020 as isize {
+        os_page_free(large_buf, 8192); os_page_free(read_buf, 8192)
+        io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    let prefix_slice = slice_from_raw(read_buf, 10)
+    if !slice_eq_str(prefix_slice, "PREFIX123\n") {
+        os_page_free(large_buf, 8192); os_page_free(read_buf, 8192)
+        io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    let suffix_slice = slice_from_raw((read_buf as usize + 5010) as @u8, 10)
+    if !slice_eq_str(suffix_slice, "SUFFIX123\n") {
+        os_page_free(large_buf, 8192); os_page_free(read_buf, 8192)
+        io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    os_page_free(large_buf, 8192)
+    os_page_free(read_buf, 8192)
+    io_file_close(fh)
+    io_file_delete_str(test_path)
+    return true
+}
+
+act main() -> i32 {
+    if !test_buffered_small_writes() {
+        io.println("FAIL: test_buffered_small_writes")
+        return 1
+    }
+    if !test_buffered_overflow_flush() {
+        io.println("FAIL: test_buffered_overflow_flush")
+        return 1
+    }
+    if !test_byte_and_slice_writes() {
+        io.println("FAIL: test_byte_and_slice_writes")
+        return 1
+    }
+    if !test_large_bypass_write() {
+        io.println("FAIL: test_large_bypass_write")
+        return 1
+    }
+
+    io.println("PASS: std.io.buffered_writer all assertions succeeded")
+    return 0
+}
+

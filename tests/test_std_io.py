@@ -24,3 +24,15 @@ def test_std_io_handle():
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.io.handle all assertions succeeded" in res.stdout
 
+def test_std_io_buffered_writer():
+    test_vl = REPO_ROOT / "std" / "tests" / "io" / "buffered_writer_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.io.buffered_writer all assertions succeeded" in res.stdout
+
