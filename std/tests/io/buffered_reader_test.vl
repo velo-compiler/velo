@@ -1,0 +1,236 @@
+// Unit test suite for std.io.buffered_reader (pure Velo buffered stream reader and line-by-line parser).
+use "../../mem/page.vl"
+use "../../mem/arena.vl"
+use "../../str/slice.vl"
+use "../../str/builder.vl"
+use "../../io/handle.vl"
+use "../../io/buffered_writer.vl"
+use "../../io/buffered_reader.vl"
+
+act test_read_byte_and_peek() -> bool {
+    let test_path = "scratch/test_br_bytes.txt"
+    let fh_w = io_file_open_str(test_path, IO_CREATE | IO_TRUNCATE | IO_WRITE)
+    if !io_is_valid_handle(fh_w) { return false }
+    io_raw_write(fh_w, "ABCDEF" as @u8, 6)
+    io_file_close(fh_w)
+
+    let fh_r = io_file_open_str(test_path, IO_READ)
+    if !io_is_valid_handle(fh_r) {
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    mut r = reader_init(fh_r)
+
+    // Peek twice at 'A'
+    mut b: u8 = 0 as u8
+    if !reader_peek_byte(@r, @b) or b != 65 as u8 {
+        reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path)
+        return false
+    }
+    if !reader_peek_byte(@r, @b) or b != 65 as u8 {
+        reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path)
+        return false
+    }
+
+    // Read 'A' through 'F'
+    mut expected_byte: u8 = 65 as u8
+    loop expected_byte <= 70 as u8 {
+        if !reader_read_byte(@r, @b) or b != expected_byte {
+            reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path)
+            return false
+        }
+        expected_byte += 1
+    }
+
+    // EOF reached
+    if reader_read_byte(@r, @b) {
+        reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path)
+        return false
+    }
+    if !reader_is_eof(@r) {
+        reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path)
+        return false
+    }
+
+    reader_free(@r)
+    io_file_close(fh_r)
+    io_file_delete_str(test_path)
+    return true
+}
+
+act test_read_line_unix_and_windows() -> bool {
+    let test_path = "scratch/test_br_lines.txt"
+    let fh_w = io_file_open_str(test_path, IO_CREATE | IO_TRUNCATE | IO_WRITE)
+    if !io_is_valid_handle(fh_w) { return false }
+
+    let content = "Line 1: Unix\nLine 2: Windows\r\nLine 3: No newline"
+    let content_slice = slice_from_str(content)
+    io_raw_write(fh_w, content as @u8, content_slice.len)
+    io_file_close(fh_w)
+
+    let fh_r = io_file_open_str(test_path, IO_READ)
+    if !io_is_valid_handle(fh_r) {
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    let a = arena_init(4096)
+    mut r = reader_init(fh_r)
+    mut sb = sb_init(@a, 64)
+
+    // Line 1: Unix
+    sb_reset(@sb)
+    if !reader_read_line(@r, @sb) {
+        reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path); arena_free(@a)
+        return false
+    }
+    if !slice_eq_str(sb_to_slice(@sb), "Line 1: Unix") {
+        reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path); arena_free(@a)
+        return false
+    }
+
+    // Line 2: Windows (\r\n stripped)
+    sb_reset(@sb)
+    if !reader_read_line(@r, @sb) {
+        reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path); arena_free(@a)
+        return false
+    }
+    if !slice_eq_str(sb_to_slice(@sb), "Line 2: Windows") {
+        reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path); arena_free(@a)
+        return false
+    }
+
+    // Line 3: No newline
+    sb_reset(@sb)
+    if !reader_read_line(@r, @sb) {
+        reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path); arena_free(@a)
+        return false
+    }
+    if !slice_eq_str(sb_to_slice(@sb), "Line 3: No newline") {
+        reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path); arena_free(@a)
+        return false
+    }
+
+    // Line 4: EOF
+    sb_reset(@sb)
+    if reader_read_line(@r, @sb) {
+        reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path); arena_free(@a)
+        return false
+    }
+    if !reader_is_eof(@r) {
+        reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path); arena_free(@a)
+        return false
+    }
+
+    reader_free(@r)
+    io_file_close(fh_r)
+    io_file_delete_str(test_path)
+    arena_free(@a)
+    return true
+}
+
+act test_read_line_with_tiny_buffer() -> bool {
+    let test_path = "scratch/test_br_tiny.txt"
+    let fh_w = io_file_open_str(test_path, IO_CREATE | IO_TRUNCATE | IO_WRITE)
+    if !io_is_valid_handle(fh_w) { return false }
+
+    // 80 characters of letters followed by \n
+    let long_line = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"
+    let slice_line = slice_from_str(long_line)
+    io_raw_write(fh_w, long_line as @u8, slice_line.len)
+    io_file_close(fh_w)
+
+    let fh_r = io_file_open_str(test_path, IO_READ)
+    if !io_is_valid_handle(fh_r) {
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    // 16-byte custom buffer forces 5 buffer refills to read an 80-byte line
+    let tiny_buf = os_page_alloc(64)
+    mut r = reader_init_with_buffer(fh_r, tiny_buf, 16)
+
+    let a = arena_init(4096)
+    mut sb = sb_init(@a, 64)
+
+    if !reader_read_line(@r, @sb) {
+        reader_free(@r); os_page_free(tiny_buf, 64); io_file_close(fh_r); io_file_delete_str(test_path); arena_free(@a)
+        return false
+    }
+
+    // Stripped of '\n', len must be 80 'A's
+    let s = sb_to_slice(@sb)
+    if s.len != 80 {
+        reader_free(@r); os_page_free(tiny_buf, 64); io_file_close(fh_r); io_file_delete_str(test_path); arena_free(@a)
+        return false
+    }
+
+    reader_free(@r)
+    os_page_free(tiny_buf, 64)
+    io_file_close(fh_r)
+    io_file_delete_str(test_path)
+    arena_free(@a)
+    return true
+}
+
+act test_read_all() -> bool {
+    let test_path = "scratch/test_br_all.txt"
+    let fh_w = io_file_open_str(test_path, IO_CREATE | IO_TRUNCATE | IO_WRITE)
+    if !io_is_valid_handle(fh_w) { return false }
+
+    let content = "The quick brown fox jumps over the lazy dog."
+    let s_content = slice_from_str(content)
+    io_raw_write(fh_w, content as @u8, s_content.len)
+    io_file_close(fh_w)
+
+    let fh_r = io_file_open_str(test_path, IO_READ)
+    if !io_is_valid_handle(fh_r) {
+        io_file_delete_str(test_path)
+        return false
+    }
+
+    let a = arena_init(4096)
+    mut r = reader_init(fh_r)
+    mut sb = sb_init(@a, 64)
+
+    let total = reader_read_all(@r, @sb)
+    if total != s_content.len {
+        reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path); arena_free(@a)
+        return false
+    }
+
+    if !slice_eq(sb_to_slice(@sb), s_content) {
+        reader_free(@r); io_file_close(fh_r); io_file_delete_str(test_path); arena_free(@a)
+        return false
+    }
+
+    reader_free(@r)
+    io_file_close(fh_r)
+    io_file_delete_str(test_path)
+    arena_free(@a)
+    return true
+}
+
+act main() -> i32 {
+    if !test_read_byte_and_peek() {
+        io.println("FAIL: test_read_byte_and_peek")
+        return 1
+    }
+    if !test_read_line_unix_and_windows() {
+        io.println("FAIL: test_read_line_unix_and_windows")
+        return 1
+    }
+    if !test_read_line_with_tiny_buffer() {
+        io.println("FAIL: test_read_line_with_tiny_buffer")
+        return 1
+    }
+    if !test_read_all() {
+        io.println("FAIL: test_read_all")
+        return 1
+    }
+
+    io.println("PASS: std.io.buffered_reader all assertions succeeded")
+    return 0
+}
+

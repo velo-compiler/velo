@@ -64,3 +64,15 @@ def test_std_io_print_integration():
     assert "true" in res.stdout
     assert "STD_IO_EPRINT_OK" in res.stderr
 
+def test_std_io_buffered_reader():
+    test_vl = REPO_ROOT / "std" / "tests" / "io" / "buffered_reader_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.io.buffered_reader all assertions succeeded" in res.stdout
+

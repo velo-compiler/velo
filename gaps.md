@@ -1054,3 +1054,16 @@ flowchart TD
   - Subprocess integration test in `tests/test_std_io.py` verified exact stdout output (`STD_IO_PRINT_OK`, `123456`, `3.14`, `true`) and stderr output (`STD_IO_EPRINT_OK`).
   - `python -m pytest tests/test_std_io.py` passed (4/4 passed).
 
+#### Task 4.4: Ring-Buffered Stream Reader & Line Input (`std/io/buffered_reader.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Reading streams and lines in Velo previously depended on libc functions (`fgets`, `fgetc`, `fread`, `scanf`), forcing per-byte kernel syscalls and coupling string tokenization to libc buffering.
+* **Fix Applied**:
+  - Implemented `std/io/buffered_reader.vl` providing `data BufferedReader` with automatic 4KB virtual-page buffer (`reader_init`) or custom caller-provided buffers (`reader_init_with_buffer`).
+  - Implemented single-byte reading (`reader_read_byte`), non-consuming lookahead (`reader_peek_byte`), block reading with direct read bypass for large requests (`reader_read`), line-by-line reading with `\r\n` and `\n` normalization into `StrBuilder` (`reader_read_line`), entire stream consumption (`reader_read_all`), stream status inspection (`reader_is_eof`, `reader_buffered_count`), and buffer cleanup (`reader_free`).
+  - Added unit test suite `std/tests/io/buffered_reader_test.vl` and pytest integration in `tests/test_std_io.py`.
+* **Residual Limitation**:
+  - Core dynamic data collections (`std.coll`) will be implemented in Phase 5 (`std/coll/shelf.vl`, `std/coll/map.vl`, etc.).
+* **Verification**:
+  - `bin/velo.exe run std/tests/io/buffered_reader_test.vl` passed single-byte reads, repeated byte peeks, mixed Unix `\n` and Windows `\r\n` line parsing with stripping, non-newline EOF line accumulation, multi-cycle buffer refills with a 16-byte tiny buffer over an 80-byte line, and full stream consumption via `reader_read_all`.
+  - `python -m pytest tests/test_std_io.py` passed (5/5 passed).
+
