@@ -827,6 +827,21 @@ flowchart TD
   - `bin/velo.exe run std/tests/mem/arena_test.vl` passed all 1/4/8/16-byte alignment, zeroed allocation, OOM, reset, and free assertions.
   - `python -m pytest tests/test_std_mem.py` passed (4/4 passed).
 
+#### Task 1.4: Fixed-Size Freelist Allocator (`std/mem/slab.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Repeated allocation and deallocation of identical small objects (AST nodes, list nodes, map entries) produced memory fragmentation or forced reliance on C `malloc`/`free`, with no reusable pure-Velo slab recycling primitive.
+* **Fix Applied**:
+  - Implemented `std/mem/slab.vl` providing `data SlabPool`, `slab_init(block_size, initial_capacity)`, `slab_alloc(p)`, `slab_free(p, ptr)`, and `slab_destroy(p)`.
+  - Uses an intrusive singly-linked freelist chaining pointer slots (`@@u8`) in freed blocks for O(1) allocation recycling and O(1) returns.
+  - Automatically aligns block sizes to 8-byte boundaries and clamps to a minimum of 8 bytes.
+  - Added unit test suite `std/tests/mem/slab_test.vl` and pytest integration in `tests/test_std_mem.py`.
+* **Residual Limitation**:
+  - Multi-size segregated slab cache buckets (e.g. 16/32/64/128/256 bytes) will build on this primitive in Task 1.5.
+* **Verification**:
+  - `bin/velo.exe run std/tests/mem/slab_test.vl` passed block alignment clamping, LIFO recycling verification, and teardown assertions.
+  - `python -m pytest tests/test_std_mem.py` passed (5/5 passed).
+
+
 
 
 

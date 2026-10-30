@@ -435,7 +435,7 @@ Goal: Resizable arrays, circular rings, and dynamic hash maps with zero C runtim
 | **1.1** | `std.mem.page` | [x] | `std/mem/page.vl` | `std/tests/mem/page_test.vl` |
 | **1.2** | `std.mem.ops` | [x] | `std/mem/ops.vl` | `std/tests/mem/ops_test.vl` |
 | **1.3** | `std.mem.arena` | [x] | `std/mem/arena.vl` | `std/tests/mem/arena_test.vl` |
-| **1.4** | `std.mem.slab` | [ ] | `std/mem/slab.vl` | `std/tests/mem/slab_test.vl` |
+| **1.4** | `std.mem.slab` | [x] | `std/mem/slab.vl` | `std/tests/mem/slab_test.vl` |
 | **1.5** | `std.mem.heap` | [ ] | `std/mem/heap.vl` | `std/tests/mem/heap_test.vl` |
 | **2.1** | `std.str.slice` | [ ] | `std/str/slice.vl` | `std/tests/str/slice_test.vl` |
 | **2.2** | `std.str.utf8` | [ ] | `std/str/utf8.vl` | `std/tests/str/utf8_test.vl` |

@@ -1,0 +1,90 @@
+use sys.io
+use "../../mem/slab.vl"
+
+act main() -> i32 {
+    // 1. Test clamping to minimum 8 bytes
+    mut small_pool = slab_init(5, 1024)
+    if small_pool.block_size < 8 {
+        io.println("FAIL: block size not clamped to 8")
+        return 1
+    }
+    slab_destroy(@small_pool)
+
+    // 2. Test 32-byte block pool
+    mut pool = slab_init(32, 65536)
+    if pool.arena.buffer == null or pool.block_size != 32 {
+        io.println("FAIL: pool init failed")
+        return 1
+    }
+
+    // Allocate 3 blocks
+    let b1 = slab_alloc(@pool)
+    let b2 = slab_alloc(@pool)
+    let b3 = slab_alloc(@pool)
+
+    if b1 == null or b2 == null or b3 == null {
+        io.println("FAIL: alloc returned null")
+        return 1
+    }
+
+    if b1 == b2 or b2 == b3 or b1 == b3 {
+        io.println("FAIL: addresses must be distinct")
+        return 1
+    }
+
+    if pool.allocated_count != 3 or pool.free_count != 0 {
+        io.println("FAIL: counts mismatch after 3 allocs")
+        return 1
+    }
+
+    // Free b2, then allocate -> b2 must be recycled
+    slab_free(@pool, b2)
+    if pool.allocated_count != 2 or pool.free_count != 1 {
+        io.println("FAIL: counts mismatch after free b2")
+        return 1
+    }
+
+    let b2_reused = slab_alloc(@pool)
+    if b2_reused != b2 {
+        io.println("FAIL: b2 was not recycled")
+        return 1
+    }
+    if pool.allocated_count != 3 or pool.free_count != 0 {
+        io.println("FAIL: counts mismatch after recycling b2")
+        return 1
+    }
+
+    // Free b1 and b3, then allocate two blocks -> LIFO reuse
+    slab_free(@pool, b1)
+    slab_free(@pool, b3)
+    if pool.allocated_count != 1 or pool.free_count != 2 {
+        io.println("FAIL: counts mismatch after freeing b1 and b3")
+        return 1
+    }
+
+    let r1 = slab_alloc(@pool)
+    let r2 = slab_alloc(@pool)
+    if r1 != b3 or r2 != b1 {
+        io.println("FAIL: expected LIFO recycling (r1=b3, r2=b1)")
+        return 1
+    }
+
+    // Edge cases
+    slab_free(null, r1)
+    slab_free(@pool, null)
+    let null_alloc = slab_alloc(null)
+    if null_alloc != null {
+        io.println("FAIL: alloc on null pool")
+        return 1
+    }
+
+    // Destroy
+    slab_destroy(@pool)
+    if pool.arena.buffer != null or pool.free_head != null or pool.allocated_count != 0 {
+        io.println("FAIL: pool state not cleared on destroy")
+        return 1
+    }
+
+    io.println("PASS: std.mem.slab all assertions succeeded")
+    return 0
+}

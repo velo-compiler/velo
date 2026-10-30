@@ -62,6 +62,19 @@ def test_std_mem_arena():
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.mem.arena all assertions succeeded" in res.stdout
 
+def test_std_mem_slab():
+    test_vl = REPO_ROOT / "std" / "tests" / "mem" / "slab_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.mem.slab all assertions succeeded" in res.stdout
+
+
 
 
 
