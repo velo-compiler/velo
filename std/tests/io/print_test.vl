@@ -1,0 +1,75 @@
+// Unit test suite for std.io.print (pure Velo console and stream printing API).
+use "../../mem/page.vl"
+use "../../str/slice.vl"
+use "../../io/handle.vl"
+use "../../io/buffered_writer.vl"
+use "../../io/print.vl"
+
+act test_file_stream_printing() -> bool {
+    let test_path = "scratch/test_print_file.txt"
+    let fh = io_file_open_str(test_path, IO_CREATE | IO_TRUNCATE | IO_WRITE | IO_READ)
+    if !io_is_valid_handle(fh) { return false }
+
+    mut w = writer_init(fh)
+
+    // Formatted writes
+    fprint_str(@w, "Hello ")
+    fprintln_str(@w, "World")
+    fprintln_i64(@w, -12345)
+    fprintln_u64(@w, 67890)
+    fprintln_f64(@w, 3.14159, 2)
+    fprintln_bool(@w, true)
+    fprintln_bool(@w, false)
+    fprintln_byte(@w, 65 as u8) // 'A'
+
+    writer_free(@w)
+
+    // Read back and verify exact output
+    io_raw_seek(fh, 0 as i64, IO_SEEK_SET)
+    let buf = os_page_alloc(256)
+    let n = io_raw_read(fh, buf, 256)
+    if n <= 0 {
+        os_page_free(buf, 256)
+        io_file_close(fh); io_file_delete_str(test_path)
+        return false
+    }
+
+    let expected = "Hello World\n-12345\n67890\n3.14\ntrue\nfalse\nA\n"
+    let s = slice_from_raw(buf, n as usize)
+    let match_ok = slice_eq_str(s, expected)
+
+    os_page_free(buf, 256)
+    io_file_close(fh)
+    io_file_delete_str(test_path)
+    return match_ok
+}
+
+act test_console_and_lifecycle() -> bool {
+    // Basic calls ensuring no segfaults or uninitialized buffer issues
+    print_str("")
+    println_empty()
+    eprint_str("")
+    eprintln_empty()
+
+    io_flush_stdout()
+    io_flush_stderr()
+    io_flush_all()
+
+    io_print_cleanup()
+    return true
+}
+
+act main() -> i32 {
+    if !test_file_stream_printing() {
+        io.println("FAIL: test_file_stream_printing")
+        return 1
+    }
+    if !test_console_and_lifecycle() {
+        io.println("FAIL: test_console_and_lifecycle")
+        return 1
+    }
+
+    io.println("PASS: std.io.print all assertions succeeded")
+    return 0
+}
+

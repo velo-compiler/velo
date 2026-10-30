@@ -1036,3 +1036,21 @@ flowchart TD
   - `bin/velo.exe run std/tests/io/buffered_writer_test.vl` passed 100 small 8-byte writes holding in memory until explicit flush, physical disk file sizing verification, custom 64-byte buffer overflow auto-flushes, single-byte writes, slice writes, string literal writes, and 5000-byte direct bypass writes.
   - `python -m pytest tests/test_std_io.py` passed (2/2 passed).
 
+#### Task 4.3: Console & Stream Print API (`std/io/print.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Console output in Velo relied strictly on compiler-emitted C runtime calls (`printf`, `puts`, `io.println`) and `sys.io`, preventing pure-Velo low-level formatted printing to stdout and stderr without libc.
+* **Fix Applied**:
+  - Implemented `std/io/print.vl` providing pure-Velo console printing APIs lowering directly onto `std.io.buffered_writer`, `std.fmt.itoa`, and `std.fmt.ftoa`.
+  - Implemented standard stream singletons `io_get_stdout_writer` and `io_get_stderr_writer` with lazy virtual-page allocation and automatic buffer flushing upon newline.
+  - Implemented generic stream formatting: `fprint`, `fprintln`, `fprint_str`, `fprintln_str`, `fprint_i64`, `fprintln_i64`, `fprint_u64`, `fprintln_u64`, `fprint_f64`, `fprintln_f64`, `fprint_bool`, `fprintln_bool`, `fprint_byte`, and `fprintln_byte`.
+  - Implemented stdout helpers (`print`, `println`, `print_str`, `println_str`, `print_i64`, `println_i64`, `print_u64`, `println_u64`, `print_f64`, `println_f64`, `print_bool`, `println_bool`, `print_byte`, `println_byte`, `println_empty`, `io_flush_stdout`).
+  - Implemented stderr equivalents (`eprint`, `eprintln`, `eprint_str`, `eprintln_str`, `eprint_i64`, `eprintln_i64`, `eprint_u64`, `eprintln_u64`, `eprint_f64`, `eprintln_f64`, `eprint_bool`, `eprintln_bool`, `eprint_byte`, `eprintln_byte`, `eprintln_empty`, `io_flush_stderr`).
+  - Implemented stream lifecycle functions `io_flush_all` and `io_print_cleanup`.
+  - Added unit test suite `std/tests/io/print_test.vl`, integration test `std/tests/io/print_integration_test.vl`, and pytest integration in `tests/test_std_io.py`.
+* **Residual Limitation**:
+  - Buffered input stream reading and line parsing (`std/io/buffered_reader.vl`) will be implemented in Task 4.4.
+* **Verification**:
+  - `bin/velo.exe run std/tests/io/print_test.vl` passed file stream printing formatting (`fprint*`), lifecycle flushing, and cleanup.
+  - Subprocess integration test in `tests/test_std_io.py` verified exact stdout output (`STD_IO_PRINT_OK`, `123456`, `3.14`, `true`) and stderr output (`STD_IO_EPRINT_OK`).
+  - `python -m pytest tests/test_std_io.py` passed (4/4 passed).
+

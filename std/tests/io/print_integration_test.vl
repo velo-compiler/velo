@@ -1,0 +1,16 @@
+// Integration test for std.io.print verifying subprocess stdout and stderr capture.
+use "../../mem/page.vl"
+use "../../str/slice.vl"
+use "../../io/handle.vl"
+use "../../io/buffered_writer.vl"
+use "../../io/print.vl"
+
+act main() -> i32 {
+    println_str("STD_IO_PRINT_OK")
+    println_i64(123456)
+    println_f64(3.14, 2)
+    println_bool(true)
+    eprintln_str("STD_IO_EPRINT_OK")
+    return 0
+}
+

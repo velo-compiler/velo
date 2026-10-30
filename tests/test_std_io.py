@@ -36,3 +36,31 @@ def test_std_io_buffered_writer():
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.io.buffered_writer all assertions succeeded" in res.stdout
 
+def test_std_io_print():
+    test_vl = REPO_ROOT / "std" / "tests" / "io" / "print_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.io.print all assertions succeeded" in res.stdout
+
+def test_std_io_print_integration():
+    test_vl = REPO_ROOT / "std" / "tests" / "io" / "print_integration_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "STD_IO_PRINT_OK" in res.stdout
+    assert "123456" in res.stdout
+    assert "3.14" in res.stdout
+    assert "true" in res.stdout
+    assert "STD_IO_EPRINT_OK" in res.stderr
+
