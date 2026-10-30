@@ -1,5 +1,4 @@
 // Operator name mangling and resolution utilities for Velo.
-use sys.mem
 use "../frontend/token.vl"
 use "../ast/stmt.vl"
 use "../common/string_builder.vl"

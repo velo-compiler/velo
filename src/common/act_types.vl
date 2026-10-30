@@ -1,5 +1,4 @@
 // Function pointer and first-class callback type utilities for Velo.
-use sys.mem
 use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "../ast/types.vl"

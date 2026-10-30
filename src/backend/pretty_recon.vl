@@ -10,7 +10,7 @@
 // provenance.
 
 use std.io
-use sys.mem
+use std.mem
 use std.fs
 use "../common/utils.vl"
 use "../common/diagnostics.vl"
@@ -271,6 +271,6 @@ act recon_emit_pretty(captured: string, src_path: string) {
     }
 
     if source != null {
-        mem.free(source)
+        heap_free_str(source)
     }
 }

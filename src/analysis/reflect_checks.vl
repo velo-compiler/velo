@@ -1,5 +1,4 @@
 // Compile-time struct reflection argument checks (field_count, field_name, field_type).
-use sys.mem
 use "type_checker.vl"
 use "symbol_table.vl"
 use "../frontend/token.vl"

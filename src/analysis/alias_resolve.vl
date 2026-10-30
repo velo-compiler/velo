@@ -2,7 +2,6 @@
 // A dedicated stage that runs before every monomorphization pass so alias names
 // (`aka EntityId = u64`) resolve to their primitive targets everywhere, even in
 // programs that contain no generics.
-use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"

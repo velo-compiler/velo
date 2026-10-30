@@ -1,5 +1,4 @@
 // Markdown API documentation generator for Velo source modules.
-use sys.mem
 use "../ast/types.vl"
 use "../ast/expr.vl"
 use "../ast/stmt.vl"

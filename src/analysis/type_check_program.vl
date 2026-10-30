@@ -1,5 +1,4 @@
 // Whole-program multi-pass semantic analysis and type verification for Velo.
-use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"

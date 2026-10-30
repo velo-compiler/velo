@@ -1,5 +1,4 @@
 // Shared type and operator mapping utilities for C99 code generation.
-use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"
 use "../common/utils.vl"

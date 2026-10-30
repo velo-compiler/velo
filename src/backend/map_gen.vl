@@ -8,7 +8,6 @@
 // velo/codegen_c.py's _emit_map_literal / map subscript / map member-call
 // branches.
 // ============================================================================
-use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"

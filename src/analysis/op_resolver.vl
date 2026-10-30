@@ -1,5 +1,4 @@
 // Operator overloading resolver for semantic analysis and code generation.
-use sys.mem
 use "../frontend/token.vl"
 use "../common/utils.vl"
 use "../common/op_types.vl"

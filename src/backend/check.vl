@@ -17,7 +17,7 @@
 // constituent diagnostics are already captured individually).
 
 use std.io
-use sys.mem
+use std.mem
 use std.fs
 use "../common/utils.vl"
 use "../common/string_builder.vl"
@@ -308,7 +308,7 @@ act run_check_json(src_path: string, unsafe_index: bool) -> i32 {
         fs_remove_file_str(tmp)
         return 1
     }
-    defer mem.free(captured)
+    defer heap_free_str(captured)
 
     if check_count_errors(captured) > 0 {
         println_str(check_build_json(captured, src_path, false))
@@ -344,7 +344,7 @@ act run_check_pretty(src_path: string, unsafe_index: bool) -> bool {
     if captured == null {
         return ok
     }
-    defer mem.free(captured)
+    defer heap_free_str(captured)
     recon_emit_pretty(captured, src_path)
     return ok and check_count_errors(captured) == 0
 }

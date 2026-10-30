@@ -1,5 +1,4 @@
 // Type representation and descriptors for the Velo programming language AST.
-use sys.mem
 
 // Type kind constants
 let TYPE_KIND_PRIMITIVE: i32 = 1

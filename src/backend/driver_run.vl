@@ -1,7 +1,7 @@
 // Execution, build, and test running orchestration for the compiler driver.
 use std.io
 use std.fs
-use sys.mem
+use std.mem
 use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "driver_cc.vl"
@@ -131,7 +131,7 @@ act test_target_opts(target_path: string, unsafe_index: bool, opt_flags: string,
                                 let rc = test_source_file_opts(full_path, unsafe_index, opt_flags, linker_flags, filter_arg, cc, no_line_directives)
                                 if rc != 0 { overall = rc }
                             }
-                            mem.free(content)
+                            heap_free_str(content)
                         }
                     }
                 }

@@ -1,5 +1,4 @@
 use std.io
-use sys.mem
 use "string_builder.vl"
 
 // Formats and reports a compiler error at a specific source location.

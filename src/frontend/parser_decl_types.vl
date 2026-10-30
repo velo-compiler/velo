@@ -1,5 +1,4 @@
 // Struct, enum/kind, and type alias declaration parsing for Velo.
-use sys.mem
 use "token.vl"
 use "../common/utils.vl"
 use "../common/diagnostics.vl"

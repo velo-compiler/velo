@@ -1727,3 +1727,37 @@ flowchart TD
   - `python -m pytest tests -k "test_std"` passed (53/53 passed).
   - `python -m pytest tests/test_stage2_codegen.py tests/test_stage2_lexer.py tests/test_stage2_parser.py tests/test_stage2_semantics.py -q` passed (8/8 passed).
   - `python -m pytest tests -q` passed full suite (483/483 passed in 310.37s).
+
+#### Task 11.5: Migrate `sys.mem` to `std.mem` & Complete Self-Hosted Standard Library Migration [COMPLETED] ✅
+* **Former Defect**:
+  - The self-hosted compiler files relied on `mem.free` from the legacy `sys.mem` built-in across 4 files (`src/backend/check.vl`, `src/backend/driver.vl`, `src/backend/driver_run.vl`, `src/backend/pretty_recon.vl`) to free null-terminated heap strings allocated by `fs_read_to_str` and `path_*_to_str`.
+  - An additional 71 compiler source files unconditionally included `use sys.mem` despite never calling `mem.free` (`mem.alloc` being a built-in arena/zone keyword lowering to `velo_zone_alloc`, which never required `use sys.mem`).
+  - Standard library module `std.mem` provided general buffer allocation (`heap_alloc`, `heap_realloc`, `heap_free`) but lacked a direct convenience function `heap_free_str(s: string)` to deallocate null-terminated heap strings safely with NULL guards.
+* **Fix Applied**:
+  - Extended `std/mem/heap.vl` with `heap_free_str(s: string) -> void`:
+    ```velo
+    pub act heap_free_str(s: string) -> void {
+        let ptr: @u8 = @s
+        if ptr != nil {
+            heap_free(ptr)
+        }
+    }
+    ```
+  - Migrated the 4 active `mem.free` compiler files from `use sys.mem` to pure-Velo `use std.mem`, replacing all `mem.free(...)` calls with `heap_free_str(...)`:
+    - `src/backend/check.vl`: Replaced `mem.free(captured)` with `heap_free_str(captured)`.
+    - `src/backend/driver.vl`: Replaced `mem.free(source)` with `heap_free_str(source)`.
+    - `src/backend/driver_run.vl`: Replaced `mem.free(content)` with `heap_free_str(content)`.
+    - `src/backend/pretty_recon.vl`: Replaced `mem.free(source)` with `heap_free_str(source)`.
+  - Completely purged 71 unused `use sys.mem` declarations across the AST, parser, lexer, analysis, and backend compiler source files.
+  - Zero `use sys.*` declarations remain anywhere in the self-hosted compiler codebase (`src/` is 100% migrated to pure-Velo `std.*`).
+  - Verified code standards: all 89 compiler source files strictly remain under 400 lines (`python scripts/count_lines.py`, max 350 lines in `src/backend/check.vl`; `std/mem/heap.vl` is 201 lines).
+  - Rebuilt the entire 3-generation bootstrap chain (`scripts/bootstrap.bat` -> Gen2 -> Gen3 -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 determinism (`71FE56C6EC133EC0ABA54D75CD8FC4FECD1AB8E55E4CD04F7EB8DEDD1338212B`).
+* **Residual Limitation**:
+  - Phase 11 Standard Library Migration is fully complete. The compiler self-hosts cleanly with zero legacy `sys.*` dependencies.
+* **Verification**:
+  - `python scripts/count_lines.py` verified all 89 compiler source files < 400 lines.
+  - Rebuilt 3-generation self-hosting chain: Gen2, Gen3, and `bootstrap.c` identical SHA-256 (`71FE56C6EC133EC0ABA54D75CD8FC4FECD1AB8E55E4CD04F7EB8DEDD1338212B`).
+  - `python -m pytest tests/test_bootstrap_snapshot.py -q` passed (5/5 passed).
+  - `python -m pytest tests -k "test_std"` passed (53/53 passed).
+  - `python -m pytest tests/test_stage2_codegen.py tests/test_stage2_lexer.py tests/test_stage2_parser.py tests/test_stage2_semantics.py -q` passed (8/8 passed).
+  - `python -m pytest tests -q` passed full suite (483/483 passed in 305.44s).

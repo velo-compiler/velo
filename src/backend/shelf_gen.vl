@@ -5,7 +5,6 @@
 // homogeneous literals, row-copy writes, index types) already ran in the
 // checker; this file only shapes the C.
 // ============================================================================
-use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"

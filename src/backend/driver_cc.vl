@@ -1,6 +1,5 @@
 // Backend compiler driver helper for GCC and MSVC (cl.exe).
 use std.fs
-use sys.mem
 use "../common/string_builder.vl"
 use "../common/utils.vl"
 

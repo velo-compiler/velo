@@ -1,5 +1,4 @@
 // String interpolation and format specifiers code generator.
-use sys.mem
 use "../frontend/token.vl"
 use "../frontend/lexer.vl"
 use "../frontend/parser.vl"

@@ -1,5 +1,4 @@
 // Abstract Syntax Tree statement and declaration nodes for the Velo programming language.
-use sys.mem
 use "expr.vl"
 use "stmt_factory.vl"
 

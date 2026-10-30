@@ -1,7 +1,6 @@
 // Package command dispatcher for 'velo pkg' (check, build, run)
 use std.io
 use std.fs
-use sys.mem
 use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "../common/manifest.vl"

@@ -1,5 +1,4 @@
 // Code generator for native Velo test blocks and the test runner harness.
-use sys.mem
 use "../ast/types.vl"
 use "../ast/expr.vl"
 use "../ast/stmt.vl"

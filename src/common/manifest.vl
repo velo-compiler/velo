@@ -1,7 +1,6 @@
 // Package Manifest Parser and Data Model for Velo (velo.pkg)
 // Parses Velo-native declarative block manifest syntax.
 use std.fs
-use sys.mem
 use "string_builder.vl"
 
 let MTOK_IDENT: i32 = 1

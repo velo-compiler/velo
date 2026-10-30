@@ -1,5 +1,4 @@
 // C99 expression code generator for Velo AST expressions.
-use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"

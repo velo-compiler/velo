@@ -1,6 +1,5 @@
 // Lexical scope stack management, symbol definition, and hierarchical lookup for Velo.
 use std.io
-use sys.mem
 use "symbol_table.vl"
 
 act create_scope(parent: @Scope) -> @Scope {

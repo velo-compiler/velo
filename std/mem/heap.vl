@@ -141,6 +141,13 @@ act heap_free(ptr: @u8) {
     }
 }
 
+// Frees a null-terminated heap string.
+act heap_free_str(s: string) {
+    if s != null {
+        heap_free(s as @u8)
+    }
+}
+
 // Resizes a heap block to new_size, expanding in place if contiguous space permits
 // or reallocating and copying existing data.
 act heap_realloc(ptr: @u8, new_size: usize) -> @u8 {

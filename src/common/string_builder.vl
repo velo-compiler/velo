@@ -1,5 +1,4 @@
 // High-performance dynamic string builder for compiler code generation.
-use sys.mem
 
 // Maintains dynamic string buffer state.
 data StringBuilder {

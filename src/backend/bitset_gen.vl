@@ -3,7 +3,6 @@
 // text matches velo/codegen_c.py's S9 branches byte for byte). Semantic
 // checks (arity, integer indices, mut doctrine) already ran in the checker.
 // ============================================================================
-use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"

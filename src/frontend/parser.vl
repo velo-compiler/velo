@@ -1,5 +1,4 @@
 // Main recursive descent parser driver and top-level declaration analyzer for Velo.
-use sys.mem
 use "token.vl"
 use "../common/utils.vl"
 use "../common/diagnostics.vl"

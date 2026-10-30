@@ -1,4 +1,3 @@
-use sys.mem
 use "num_utils.vl"
 
 // Character classification and scanning helper functions.

@@ -17,7 +17,6 @@
 // inference by src/analysis/fs_checks.vl; unknown members never reach the
 // emitter.
 // ============================================================================
-use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"

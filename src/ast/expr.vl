@@ -1,5 +1,4 @@
 // Abstract Syntax Tree expression nodes for the Velo programming language.
-use sys.mem
 
 // Expression kind constants
 let EXPR_INT: i32 = 101

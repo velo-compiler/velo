@@ -1,5 +1,4 @@
 // Shelf detection and dyn box/unbox emission helpers.
-use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"

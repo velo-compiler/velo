@@ -1,5 +1,4 @@
 // Monomorphization type inference and literal element scanning for Velo.
-use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"

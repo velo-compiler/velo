@@ -1,5 +1,4 @@
 // Numeric literal parsing and C99 literal formatting helpers.
-use sys.mem
 use "utils.vl"
 
 // Returns the numeric value (0-15) of an ASCII hexadecimal character.

@@ -1,5 +1,4 @@
 // Expression parsing algorithms and Pratt precedence parser for Velo.
-use sys.mem
 use "token.vl"
 use "../common/utils.vl"
 use "../common/diagnostics.vl"

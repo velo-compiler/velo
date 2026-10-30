@@ -11,7 +11,6 @@
 // (arity + ints-only wall) at inference by src/analysis/time_checks.vl;
 // unknown members never reach the emitter.
 // ============================================================================
-use sys.mem
 use "../frontend/token.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"

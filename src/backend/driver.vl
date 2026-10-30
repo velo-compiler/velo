@@ -1,7 +1,7 @@
 // Standalone native compiler driver orchestrating compilation, code generation, and GCC linking.
 use std.io
 use std.fs
-use sys.mem
+use std.mem
 use std.os
 
 use "../frontend/token.vl"
@@ -192,7 +192,7 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
         d.error_count += 1
         return
     }
-    defer mem.free(source)
+    defer heap_free_str(source)
 
     let slen = str.len(source)
     // Capacity must cover the absolute worst case: one token per source
@@ -320,7 +320,7 @@ act generate_docs_for_source(source_path: string) -> string {
         println_str("[Velo Error] Failed to read source file: {source_path}")
         return null
     }
-    defer mem.free(source)
+    defer heap_free_str(source)
 
     let slen = str.len(source)
     // Same capacity rule and overflow guard as load_file_and_deps.
