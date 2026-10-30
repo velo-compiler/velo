@@ -1,0 +1,189 @@
+// Pure Velo dynamic array advanced operations & lifecycle management (zero C runtime dependencies).
+// Provides element removal (pop, delete_at, swap_remove), element insertion (insert_at),
+// in-place ordering (swap, reverse), capacity shrinking (shrink_to_fit), and typed pop helpers.
+
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+use "../str/slice.vl"
+use "shelf.vl"
+
+// Removes and returns the last element from the shelf into out_elem.
+// Returns true on success, or false if the shelf is empty.
+act shelf_pop(s: @RawShelf, out_elem: @u8) -> bool {
+    if s == null or s.len == 0 {
+        return false
+    }
+    s.len -= 1
+    if out_elem != null {
+        let offset = s.len * s.elem_size
+        let src = (s.data as usize + offset) as @u8
+        copy(out_elem, src, s.elem_size)
+    }
+    return true
+}
+
+// Deletes the element at the specified index, shifting subsequent elements left.
+// Preserves element order (O(N) operation). Returns true on success, or false if index is out of bounds.
+act shelf_delete_at(s: @RawShelf, index: usize) -> bool {
+    if s == null or index >= s.len {
+        return false
+    }
+    if index < s.len - 1 {
+        let dest = (s.data as usize + index * s.elem_size) as @u8
+        let src = (s.data as usize + (index + 1) * s.elem_size) as @u8
+        let count_bytes = (s.len - 1 - index) * s.elem_size
+        copy(dest, src, count_bytes)
+    }
+    s.len -= 1
+    return true
+}
+
+// Fast unordered removal (O(1) operation).
+// Replaces the element at index with the last element and decrements length.
+act shelf_swap_remove(s: @RawShelf, index: usize, out_elem: @u8) -> bool {
+    if s == null or index >= s.len {
+        return false
+    }
+    if out_elem != null {
+        let p_elem = (s.data as usize + index * s.elem_size) as @u8
+        copy(out_elem, p_elem, s.elem_size)
+    }
+    let last_idx = s.len - 1
+    if index < last_idx {
+        let dest = (s.data as usize + index * s.elem_size) as @u8
+        let src = (s.data as usize + last_idx * s.elem_size) as @u8
+        copy(dest, src, s.elem_size)
+    }
+    s.len -= 1
+    return true
+}
+
+// Inserts an element at the specified index, shifting existing elements right.
+// Returns true on success, or false if index > len.
+act shelf_insert_at(s: @RawShelf, index: usize, elem_ptr: @u8) -> bool {
+    if s == null or elem_ptr == null or index > s.len {
+        return false
+    }
+    if index == s.len {
+        shelf_push(s, elem_ptr)
+        return true
+    }
+    shelf_ensure_capacity(s, 1)
+    if s.data == null or s.len >= s.cap {
+        return false
+    }
+
+    let src = (s.data as usize + index * s.elem_size) as @u8
+    let dest = (s.data as usize + (index + 1) * s.elem_size) as @u8
+    let count_bytes = (s.len - index) * s.elem_size
+    // copy in std.mem.ops safely handles backward overlap
+    copy(dest, src, count_bytes)
+
+    copy(src, elem_ptr, s.elem_size)
+    s.len += 1
+    return true
+}
+
+// Swaps the contents of two elements in place.
+act shelf_swap(s: @RawShelf, i: usize, j: usize) -> bool {
+    if s == null or s.data == null or i >= s.len or j >= s.len {
+        return false
+    }
+    if i == j {
+        return true
+    }
+    let p_i = (s.data as usize + i * s.elem_size) as @u8
+    let p_j = (s.data as usize + j * s.elem_size) as @u8
+    mut b: usize = 0
+    loop b < s.elem_size {
+        let tmp = p_i[b]
+        p_i[b] = p_j[b]
+        p_j[b] = tmp
+        b += 1
+    }
+    return true
+}
+
+// Reverses the elements of the shelf in place.
+act shelf_reverse(s: @RawShelf) {
+    if s == null or s.len <= 1 {
+        return
+    }
+    mut left: usize = 0
+    mut right = s.len - 1
+    loop left < right {
+        shelf_swap(s, left, right)
+        left += 1
+        right -= 1
+    }
+}
+
+// Shrinks the allocated capacity to match current length (clamped to minimum 8).
+act shelf_shrink_to_fit(s: @RawShelf) -> bool {
+    if s == null or s.data == null {
+        return false
+    }
+    mut new_cap = s.len
+    if new_cap < 8 {
+        new_cap = 8
+    }
+    if new_cap >= s.cap {
+        return true
+    }
+    let new_data = heap_realloc(s.data, new_cap * s.elem_size)
+    if new_data != null {
+        s.data = new_data
+        s.cap = new_cap
+        return true
+    }
+    return false
+}
+
+// Returns the total number of bytes occupied by active elements.
+act shelf_byte_len(s: @RawShelf) -> usize {
+    if s == null { return 0 }
+    return s.len * s.elem_size
+}
+
+// ============================================================================
+// Typed Pop & Insert Helpers
+// ============================================================================
+
+act shelf_pop_i64(s: @RawShelf, out_val: @i64) -> bool {
+    if out_val == null {
+        return shelf_pop(s, null)
+    }
+    let p_u8: @u8 = out_val as @u8
+    return shelf_pop(s, p_u8)
+}
+
+act shelf_pop_u64(s: @RawShelf, out_val: @u64) -> bool {
+    if out_val == null {
+        return shelf_pop(s, null)
+    }
+    let p_u8: @u8 = out_val as @u8
+    return shelf_pop(s, p_u8)
+}
+
+act shelf_pop_f64(s: @RawShelf, out_val: @f64) -> bool {
+    if out_val == null {
+        return shelf_pop(s, null)
+    }
+    let p_u8: @u8 = out_val as @u8
+    return shelf_pop(s, p_u8)
+}
+
+act shelf_pop_slice(s: @RawShelf, out_val: @StrSlice) -> bool {
+    if out_val == null {
+        return shelf_pop(s, null)
+    }
+    let p_u8: @u8 = out_val as @u8
+    return shelf_pop(s, p_u8)
+}
+
+act shelf_insert_i64(s: @RawShelf, index: usize, val: i64) -> bool {
+    mut v = val
+    let pv: @i64 = @v
+    return shelf_insert_at(s, index, pv as @u8)
+}
+

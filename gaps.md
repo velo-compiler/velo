@@ -1080,8 +1080,22 @@ flowchart TD
   - Implemented typed convenience push/get helpers for `i64`, `u64`, `f64`, and `StrSlice`.
   - Added unit test suite `std/tests/coll/shelf_test.vl` and pytest integration in `tests/test_std_coll.py`.
 * **Residual Limitation**:
-  - Full collection lifecycle operations including `shelf_pop`, `shelf_delete_at`, `shelf_insert_at`, and `shelf_shrink_to_fit` will be layered in Task 5.2 (`std/coll/shelf_ops.vl`).
+  - Full collection lifecycle operations including `shelf_pop`, `shelf_delete_at`, `shelf_insert_at`, and `shelf_shrink_to_fit` have been layered in Task 5.2 (`std/coll/shelf_ops.vl`).
 * **Verification**:
   - `bin/velo.exe run std/tests/coll/shelf_test.vl` passed basic push/get/set, out-of-bounds guards, typed float/slice helpers, clear/reuse, and a 10,000 64-bit integer stress reallocation test validating geometric growth and value preservation across multiple reallocations.
   - `python -m pytest tests/test_std_coll.py` passed (1/1 passed).
+
+#### Task 5.2: Shelf Lifecycle & Advanced Operations (`std/coll/shelf_ops.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - In-place element removal, shifting, index deletion, and dynamic capacity shrinking for dynamic shelves previously required manual buffer manipulations or libc-bound compiler internals.
+* **Fix Applied**:
+  - Implemented `std/coll/shelf_ops.vl` providing full dynamic array lifecycle operations: `shelf_pop`, `shelf_delete_at`, `shelf_swap_remove`, `shelf_insert_at`, `shelf_swap`, `shelf_reverse`, `shelf_shrink_to_fit`, and `shelf_byte_len`.
+  - Implemented typed pop and insert helpers: `shelf_pop_i64`, `shelf_pop_u64`, `shelf_pop_f64`, `shelf_pop_slice`, and `shelf_insert_i64`.
+  - Backed by safe backward-overlap memory copy in `std.mem.copy` and in-place `std.mem.heap_realloc`.
+  - Added unit test suite `std/tests/coll/shelf_ops_test.vl` and pytest integration in `tests/test_std_coll.py`.
+* **Residual Limitation**:
+  - Circular FIFO ring buffer collections (`std/coll/ring.vl`) will be implemented in Task 5.3.
+* **Verification**:
+  - `bin/velo.exe run std/tests/coll/shelf_ops_test.vl` passed pushing 10 elements, popping 3, deleting index 2 with contiguous left shift verification, and explicit `shelf_free`; arbitrary-position insertions with right shifting; element swap and in-place reversal; fast O(1) `shelf_swap_remove`; and capacity shrinking with `shelf_shrink_to_fit`.
+  - `python -m pytest tests/test_std_coll.py` passed (2/2 passed).
 
