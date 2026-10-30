@@ -1,0 +1,285 @@
+// Native Language Server Protocol (LSP) Server for Velo.
+// Implements document synchronization and message dispatching.
+
+use std.io
+use std.mem
+use std.str
+use std.json
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "transport.vl"
+
+// In-memory document tracking node (singly linked list).
+data LspDoc {
+    uri: string,
+    text: string,
+    version: i32,
+    next: @LspDoc,
+}
+
+// Persistent LSP server state.
+data LspServerState {
+    first_doc: @LspDoc,
+    is_shutdown: bool,
+}
+
+// Duplicates a StrSlice into a persistent null-terminated heap string.
+act lsp_slice_to_heap_str(s: StrSlice) -> string {
+    if s.ptr == null or s.len == 0 {
+        let empty_buf: @u8 = mem.heap_alloc(@u8, 1)
+        empty_buf[0] = 0 as u8
+        return empty_buf as string
+    }
+    let buf: @u8 = mem.heap_alloc(@u8, s.len + 1)
+    mut i: usize = 0
+    loop i < s.len {
+        buf[i] = s.ptr[i]
+        i += 1
+    }
+    buf[s.len] = 0 as u8
+    return buf as string
+}
+
+// Searches the active document store for a document matching the given URI.
+act lsp_find_doc(state: @LspServerState, uri: string) -> @LspDoc {
+    mut cur = state.first_doc
+    loop cur != null {
+        if cur.uri == uri {
+            return cur
+        }
+        cur = cur.next
+    }
+    return null
+}
+
+// Stores or updates an in-memory document with full text content and version.
+act lsp_store_doc(state: @LspServerState, uri: string, text: string, version: i32) {
+    mut cur = state.first_doc
+    loop cur != null {
+        if cur.uri == uri {
+            if cur.text != null {
+                mem.free(cur.text as @u8)
+            }
+            cur.text = text
+            cur.version = version
+            if uri != null {
+                mem.free(uri as @u8)
+            }
+            return
+        }
+        cur = cur.next
+    }
+    let node: @LspDoc = mem.heap_alloc(@LspDoc, 1)
+    node.uri = uri
+    node.text = text
+    node.version = version
+    node.next = state.first_doc
+    state.first_doc = node
+}
+
+// Closes and frees an in-memory document matching the given URI slice.
+act lsp_close_doc(state: @LspServerState, uri_slice: StrSlice) {
+    mut prev: @LspDoc = null
+    mut cur = state.first_doc
+    loop cur != null {
+        if slice_eq_str(uri_slice, cur.uri) {
+            if prev == null {
+                state.first_doc = cur.next
+            } else {
+                prev.next = cur.next
+            }
+            if cur.uri != null {
+                mem.free(cur.uri as @u8)
+            }
+            if cur.text != null {
+                mem.free(cur.text as @u8)
+            }
+            mem.free(cur as @u8)
+            return
+        }
+        prev = cur
+        cur = cur.next
+    }
+}
+
+// Processes 'textDocument/didOpen' notification.
+act lsp_handle_did_open(state: @LspServerState, params: @JsonValue) {
+    let td = json_obj_get_str(params, "textDocument")
+    if td == null or td.kind != JSON_OBJECT { return }
+    let uri_val = json_obj_get_str(td, "uri")
+    let txt_val = json_obj_get_str(td, "text")
+    let ver_val = json_obj_get_str(td, "version")
+    if uri_val == null or txt_val == null { return }
+    if uri_val.kind != JSON_STRING or txt_val.kind != JSON_STRING { return }
+
+    let uri = lsp_slice_to_heap_str(uri_val.str_val)
+    let text = lsp_slice_to_heap_str(txt_val.str_val)
+    mut ver: i32 = 0
+    if ver_val != null and ver_val.kind == JSON_INT {
+        ver = ver_val.int_val as i32
+    }
+    lsp_store_doc(state, uri, text, ver)
+}
+
+// Processes 'textDocument/didChange' notification (Full sync).
+act lsp_handle_did_change(state: @LspServerState, params: @JsonValue) {
+    let td = json_obj_get_str(params, "textDocument")
+    let changes = json_obj_get_str(params, "contentChanges")
+    if td == null or td.kind != JSON_OBJECT { return }
+    if changes == null or changes.kind != JSON_ARRAY { return }
+
+    let uri_val = json_obj_get_str(td, "uri")
+    if uri_val == null or uri_val.kind != JSON_STRING { return }
+
+    let ver_val = json_obj_get_str(td, "version")
+    mut ver: i32 = 0
+    if ver_val != null and ver_val.kind == JSON_INT {
+        ver = ver_val.int_val as i32
+    }
+
+    let change_first = changes.first_child
+    if change_first != null and change_first.kind == JSON_OBJECT {
+        let txt_val = json_obj_get_str(change_first, "text")
+        if txt_val != null and txt_val.kind == JSON_STRING {
+            let uri = lsp_slice_to_heap_str(uri_val.str_val)
+            let text = lsp_slice_to_heap_str(txt_val.str_val)
+            lsp_store_doc(state, uri, text, ver)
+        }
+    }
+}
+
+// Processes 'textDocument/didClose' notification.
+act lsp_handle_did_close(state: @LspServerState, params: @JsonValue) {
+    let td = json_obj_get_str(params, "textDocument")
+    if td == null or td.kind != JSON_OBJECT { return }
+    let uri_val = json_obj_get_str(td, "uri")
+    if uri_val == null or uri_val.kind != JSON_STRING { return }
+    lsp_close_doc(state, uri_val.str_val)
+}
+
+// Dispatches a parsed JSON-RPC message. Returns true if server should terminate.
+act lsp_dispatch_message(state: @LspServerState, msg: string) -> bool {
+    let doc = json_parse_doc_str(msg, 65536)
+    if !doc.ok or doc.root == null {
+        return false
+    }
+    defer json_doc_free(@doc)
+
+    let root = doc.root
+    let id_node = json_obj_get_str(root, "id")
+    let method_node = json_obj_get_str(root, "method")
+    let params_node = json_obj_get_str(root, "params")
+
+    if method_node == null or method_node.kind != JSON_STRING {
+        return false
+    }
+
+    let m = method_node.str_val
+
+    if slice_eq_str(m, "initialize") {
+        lsp_send_initialize_result(id_node)
+        return false
+    }
+
+    if slice_eq_str(m, "initialized") {
+        return false
+    }
+
+    if slice_eq_str(m, "shutdown") {
+        state.is_shutdown = true
+        lsp_send_shutdown_result(id_node)
+        return false
+    }
+
+    if slice_eq_str(m, "exit") {
+        return true
+    }
+
+    if slice_eq_str(m, "textDocument/didOpen") {
+        if params_node != null and params_node.kind == JSON_OBJECT {
+            lsp_handle_did_open(state, params_node)
+        }
+        return false
+    }
+
+    if slice_eq_str(m, "textDocument/didChange") {
+        if params_node != null and params_node.kind == JSON_OBJECT {
+            lsp_handle_did_change(state, params_node)
+        }
+        return false
+    }
+
+    if slice_eq_str(m, "textDocument/didClose") {
+        if params_node != null and params_node.kind == JSON_OBJECT {
+            lsp_handle_did_close(state, params_node)
+        }
+        return false
+    }
+
+    if slice_eq_str(m, "textDocument/didSave") {
+        return false
+    }
+
+    // Unhandled request method
+    if id_node != null {
+        lsp_send_method_not_found(id_node)
+    }
+
+    return false
+}
+
+// Main CLI entry point for 'velo lsp' (runs language server over stdio).
+act handle_lsp_command() -> i32 {
+    let stdin_h = io_stdin_handle()
+    if !io_is_valid_handle(stdin_h) {
+        println_str("[Velo Error] Failed to acquire stdin handle for LSP")
+        return 1
+    }
+    mut r = reader_init(stdin_h)
+    defer reader_free(@r)
+
+    mut line_buf: @u8 = mem.heap_alloc(@u8, 512)
+
+    mut state = LspServerState {
+        first_doc: null,
+        is_shutdown: false,
+    }
+
+    loop {
+        let msg = read_lsp_message(@r, line_buf)
+        if msg == null {
+            break
+        }
+        let should_exit = lsp_dispatch_message(@state, msg)
+        if str.len(msg) > 0 {
+            mem.free(msg as @u8)
+        }
+        if should_exit {
+            break
+        }
+    }
+
+    if line_buf != null {
+        mem.free(line_buf)
+    }
+
+    // Free all remaining open documents
+    mut cur = state.first_doc
+    loop cur != null {
+        let nxt = cur.next
+        if cur.uri != null {
+            mem.free(cur.uri as @u8)
+        }
+        if cur.text != null {
+            mem.free(cur.text as @u8)
+        }
+        mem.free(cur as @u8)
+        cur = nxt
+    }
+    state.first_doc = null
+
+    if state.is_shutdown {
+        return 0
+    }
+    return 0
+}

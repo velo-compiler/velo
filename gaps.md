@@ -1761,3 +1761,39 @@ flowchart TD
   - `python -m pytest tests -k "test_std"` passed (53/53 passed).
   - `python -m pytest tests/test_stage2_codegen.py tests/test_stage2_lexer.py tests/test_stage2_parser.py tests/test_stage2_semantics.py -q` passed (8/8 passed).
   - `python -m pytest tests -q` passed full suite (483/483 passed in 305.44s).
+
+
+---
+
+### Phase 12: High-Performance Native LSP Server (`velo lsp`)
+
+#### Task 12.1: Native LSP Command (`velo lsp`) & JSON-RPC 2.0 Stdio Transport [COMPLETED] ✅
+* **Former Defect**:
+  - The Velo compiler CLI lacked a native Language Server Protocol server command (`velo lsp`).
+  - IDE integration in VS Code and external editors was previously limited to a Python prototype runner (`velo.py lsp`), adding Python runtime overhead, process start latency, and non-native execution requirements.
+  - The self-hosted compiler needed built-in JSON-RPC 2.0 stdio framing, protocol negotiation, and in-memory document state tracking to power sub-millisecond editor responsiveness directly from `bin/velo.exe`.
+* **Fix Applied**:
+  - Implemented the native LSP stdio transport module in `src/lsp/transport.vl` (174 lines):
+    - `read_lsp_line`: Robust line-by-line header reader parsing `\n` line delimiters while ignoring `\r` (CRLF handling).
+    - `line_starts_with_ci`: Case-insensitive header key matching (`Content-Length:`).
+    - `parse_header_length`: Decimal byte count scanner for payload sizing.
+    - `read_lsp_message`: Full framing reader consuming the exact content length from stdin.
+    - `lsp_send_payload`: Writes `Content-Length: <len>\r\n\r\n<payload>` to stdout via `std.io` buffered writers, followed by `io_flush_stdout()`.
+    - `lsp_append_id`: Serializes integer, string, or null request IDs.
+    - Standard response emitters for `initialize`, `shutdown`, and error code `-32601` (`Method not found`).
+  - Implemented the native LSP document synchronization and dispatch engine in `src/lsp/server.vl` (285 lines):
+    - Document store data models `LspDoc` and `LspServerState` tracking URI, content buffer, and version.
+    - `lsp_store_doc`, `lsp_find_doc`, `lsp_close_doc`: Dynamic memory allocation and linked-list document tracking.
+    - Full text document synchronization handlers for `textDocument/didOpen`, `textDocument/didChange` (Full sync `textDocumentSync: 1`), `textDocument/didClose`, and `textDocument/didSave`.
+    - Lifecycle dispatch loop for `initialize`, `initialized`, `shutdown`, and `exit` (returning exit code 0 on clean shutdown).
+  - Integrated `velo lsp` into `src/main.vl` argument dispatcher (`cmd == "lsp" or cmd == "--lsp"`).
+  - Maintained code standards: both new files strictly under 400 lines (`src/lsp/server.vl` 285 lines, `src/lsp/transport.vl` 174 lines).
+  - Rebuilt the entire 3-generation bootstrap chain (`scripts/bootstrap.bat` -> Gen2 -> Gen3 -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 determinism (`A8DB0FE8D363D788E4D8719BDA29E074EEE6160E5507D05B102D7D1057D342A0`).
+* **Residual Limitation**:
+  - In-memory diagnostics parsing, symbol outlines (`documentSymbol`), and hover tooltips (`hover`) will be wired into this native engine in Tasks 12.2 through 12.5.
+* **Verification**:
+  - `python scripts/count_lines.py` verified all 91 compiler source files < 400 lines (max 350 lines in `src/backend/check.vl`).
+  - Added dedicated end-to-end test suite `tests/test_native_lsp.py` testing subprocess communication, lifecycle (`initialize`, `shutdown`, `exit`), document sync (`didOpen`, `didChange`, `didClose`), error responses, and abrupt disconnect handling (all 3 tests passed).
+  - Verified 3-generation self-hosting chain determinism: SHA-256 of `emit-c src/main.vl` between Gen2, Gen3, and `bootstrap.c` is identical (`A8DB0FE8D363D788E4D8719BDA29E074EEE6160E5507D05B102D7D1057D342A0`).
+  - All 486 pytest tests passed (`python -m pytest tests -q`).
+  - All 5 extension test suites passed (24/24 parity, 28/28 grammar spotchecks, 8/8 simulations, 11/11 server probes, 10/10 client tests).

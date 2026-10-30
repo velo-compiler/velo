@@ -1,0 +1,175 @@
+// Stdio JSON-RPC 2.0 transport and message framing for Velo LSP.
+use std.io
+use std.mem
+use std.str
+use std.json
+use "../common/string_builder.vl"
+
+// Reads a single header line terminated by '\n' (ignoring '\r').
+// Returns number of characters read, or -1 on EOF.
+act read_lsp_line(r: @BufferedReader, out_buf: @u8, max_len: usize) -> i32 {
+    mut count: usize = 0
+    mut b: u8 = 0 as u8
+    loop count + 1 < max_len {
+        let ok = reader_read_byte(r, @b)
+        if !ok {
+            if count == 0 { return -1 }
+            break
+        }
+        if b == 10 as u8 {
+            break
+        }
+        if b != 13 as u8 {
+            out_buf[count] = b
+            count += 1
+        }
+    }
+    out_buf[count] = 0 as u8
+    return count as i32
+}
+
+// Case-insensitive ASCII prefix comparison for headers.
+act line_starts_with_ci(buf: @u8, len: usize, prefix: string) -> bool {
+    let plen = str.len(prefix)
+    if len < plen { return false }
+    mut i: usize = 0
+    loop i < plen {
+        mut c1 = buf[i]
+        mut c2 = prefix[i] as u8
+        if c1 >= 'A' as u8 and c1 <= 'Z' as u8 { c1 += 32 as u8 }
+        if c2 >= 'A' as u8 and c2 <= 'Z' as u8 { c2 += 32 as u8 }
+        if c1 != c2 { return false }
+        i += 1
+    }
+    return true
+}
+
+// Parses decimal byte length from a 'Content-Length: <n>' header line.
+act parse_header_length(buf: @u8, len: usize) -> usize {
+    mut i: usize = 0
+    loop i < len and buf[i] != ':' as u8 {
+        i += 1
+    }
+    if i < len and buf[i] == ':' as u8 {
+        i += 1
+    }
+    loop i < len and (buf[i] == ' ' as u8 or buf[i] == '\t' as u8) {
+        i += 1
+    }
+    mut result: usize = 0
+    loop i < len and (buf[i] >= '0' as u8 and buf[i] <= '9' as u8) {
+        result = result * 10 + (buf[i] - '0' as u8) as usize
+        i += 1
+    }
+    return result
+}
+
+// Reads a full JSON-RPC message from stdin framed by 'Content-Length: <n>\r\n\r\n'.
+act read_lsp_message(r: @BufferedReader, line_buf: @u8) -> string {
+    mut content_len: usize = 0
+    mut has_len: bool = false
+
+    loop {
+        let line_len = read_lsp_line(r, line_buf, 512)
+        if line_len < 0 {
+            return null
+        }
+        if line_len == 0 {
+            if has_len {
+                break
+            }
+        } else {
+            if line_starts_with_ci(line_buf, line_len as usize, "Content-Length:") {
+                content_len = parse_header_length(line_buf, line_len as usize)
+                has_len = true
+            }
+        }
+    }
+
+    if !has_len or content_len == 0 {
+        return ""
+    }
+
+    let body_buf: @u8 = mem.heap_alloc(@u8, content_len + 1)
+    if body_buf == null {
+        return null
+    }
+
+    mut read_total: usize = 0
+    loop read_total < content_len {
+        let chunk_dst = (body_buf as usize + read_total) as @u8
+        let n = reader_read(r, chunk_dst, content_len - read_total)
+        if n == 0 {
+            mem.free(body_buf)
+            return null
+        }
+        read_total += n
+    }
+    body_buf[content_len] = 0 as u8
+    return body_buf as string
+}
+
+// Transmits an LSP JSON-RPC message payload with Content-Length header framing.
+act lsp_send_payload(payload: string) {
+    let plen = str.len(payload)
+    print_str("Content-Length: ")
+    print_i64(plen as i64)
+    print_str("\r\n\r\n")
+    print_str(payload)
+    io_flush_stdout()
+}
+
+// Formats an arbitrary JSON-RPC request ID (number, string, or null) into a StringBuilder.
+act lsp_append_id(sb: @StringBuilder, id_node: @JsonValue) {
+    if id_node == null {
+        sb_append_str(sb, "null")
+    } else if id_node.kind == JSON_INT {
+        sb_append_int(sb, id_node.int_val as i32)
+    } else if id_node.kind == JSON_STRING {
+        sb_append_char(sb, '"')
+        let s = id_node.str_val
+        mut i: usize = 0
+        loop i < s.len {
+            let b = s.ptr[i]
+            if b == '"' as u8 or b == '\\' as u8 {
+                sb_append_char(sb, '\\')
+            }
+            sb_append_char(sb, b)
+            i += 1
+        }
+        sb_append_char(sb, '"')
+    } else {
+        sb_append_str(sb, "null")
+    }
+}
+
+// Responds to the 'initialize' request with server capabilities.
+act lsp_send_initialize_result(id_node: @JsonValue) {
+    mut sb = create_sb(256)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
+    lsp_append_id(@sb, id_node)
+    sb_append_str(@sb, ",\"result\":{\"capabilities\":{\"textDocumentSync\":1}}}")
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+}
+
+// Responds to the 'shutdown' request.
+act lsp_send_shutdown_result(id_node: @JsonValue) {
+    mut sb = create_sb(128)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
+    lsp_append_id(@sb, id_node)
+    sb_append_str(@sb, ",\"result\":null}")
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+}
+
+// Responds to an unsupported request method with error code -32601.
+act lsp_send_method_not_found(id_node: @JsonValue) {
+    mut sb = create_sb(256)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
+    lsp_append_id(@sb, id_node)
+    sb_append_str(@sb, ",\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}")
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+}
+
