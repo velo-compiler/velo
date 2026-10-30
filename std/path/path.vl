@@ -23,43 +23,29 @@ act path_is_alpha(c: u8) -> bool {
 
 // Returns true if slice begins with a Windows drive specifier (e.g. "C:" or "d:").
 act path_has_drive(p: StrSlice) -> bool {
-    if p.len < 2 or p.ptr == null {
-        return false
-    }
+    if p.len < 2 or p.ptr == null { return false }
     return path_is_alpha(p.ptr[0]) and p.ptr[1] == 58 as u8 // ':'
 }
 
 // Returns the length of the Windows drive prefix (2 for "C:", 0 if none).
 act path_drive_len(p: StrSlice) -> usize {
-    if path_has_drive(p) {
-        return 2
-    }
+    if path_has_drive(p) { return 2 }
     return 0
 }
 
 // Returns true if the path is absolute (begins with '/' or '\\', or "C:/" / "C:\\").
 act path_is_abs(p: StrSlice) -> bool {
-    if p.len == 0 or p.ptr == null {
-        return false
-    }
-    if path_is_sep(p.ptr[0]) {
-        return true
-    }
+    if p.len == 0 or p.ptr == null { return false }
+    if path_is_sep(p.ptr[0]) { return true }
     let dlen = path_drive_len(p)
-    if dlen > 0 {
-        if p.len > dlen and path_is_sep(p.ptr[dlen]) {
-            return true
-        }
-    }
+    if dlen > 0 and p.len > dlen and path_is_sep(p.ptr[dlen]) { return true }
     return false
 }
 
 // Extracts the basename component of a path (e.g. "foo/bar/baz.vl" -> "baz.vl").
 // Trims any trailing separators. Never allocates memory.
 act path_basename(p: StrSlice) -> StrSlice {
-    if slice_is_empty(p) {
-        return p
-    }
+    if slice_is_empty(p) { return p }
     // Trim trailing separators
     mut end = p.len
     loop end > 0 and path_is_sep(p.ptr[end - 1]) {
@@ -382,4 +368,23 @@ act path_normalize_str(s: string) -> string {
 
 act path_to_native_str(s: string) -> string {
     return path_to_native(slice_from_str(s))
+}
+
+act path_stem_to_str(s: string) -> string {
+    let sl = path_stem(slice_from_str(s))
+    let buf = heap_alloc(sl.len + 1)
+    if buf == null { return null }
+    copy(buf, sl.ptr, sl.len)
+    buf[sl.len] = 0 as u8
+    return buf as string
+}
+
+act path_dirname_to_str(s: string) -> string {
+    let sl = path_dirname(slice_from_str(s))
+    if sl.len == 0 { return "." }
+    let buf = heap_alloc(sl.len + 1)
+    if buf == null { return null }
+    copy(buf, sl.ptr, sl.len)
+    buf[sl.len] = 0 as u8
+    return buf as string
 }

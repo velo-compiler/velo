@@ -1,5 +1,4 @@
 use sys.mem
-use "path.vl"
 use "num_utils.vl"
 
 // Character classification and scanning helper functions.

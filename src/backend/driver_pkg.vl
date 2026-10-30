@@ -4,7 +4,6 @@ use std.fs
 use sys.mem
 use "../common/string_builder.vl"
 use "../common/utils.vl"
-use "../common/path.vl"
 use "../common/manifest.vl"
 use "driver_cc.vl"
 use "driver.vl"
@@ -36,22 +35,22 @@ act resolve_manifest_path(input_path: string) -> string {
         return "velo.pkg"
     }
     if fs_is_dir(input_path) {
-        return combine_paths(input_path, "velo.pkg")
+        return path_join_str(input_path, "velo.pkg")
     }
     return input_path
 }
 
 // Resolves default output binary path (bin/<pkg_name>.exe if bin/ exists, else <pkg_name>.exe).
 act resolve_default_output_exe(m_dir: string, pkg_name: string) -> string {
-    let bin_dir = combine_paths(m_dir, "bin")
+    let bin_dir = path_join_str(m_dir, "bin")
     mut name_sb = create_sb(64)
     sb_append_str(@name_sb, pkg_name)
     sb_append_str(@name_sb, ".exe")
     let exe_name = sb_to_string(@name_sb)
     if fs_is_dir(bin_dir) {
-        return combine_paths(bin_dir, exe_name)
+        return path_join_str(bin_dir, exe_name)
     }
-    return combine_paths(m_dir, exe_name)
+    return path_join_str(m_dir, exe_name)
 }
 
 // Handles execution of 'velo pkg <subcmd>' (check, build, run).
@@ -181,8 +180,8 @@ act handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32 {
             return 1
         }
 
-        let m_dir = get_dir_name(manifest_path)
-        let entry_path = combine_paths(m_dir, m.pkg.entry)
+        let m_dir = path_dirname_to_str(manifest_path)
+        let entry_path = path_join_str(m_dir, m.pkg.entry)
         if not fs_exists(entry_path) {
             io.println("[Velo Error] Entry source file not found: {entry_path}")
             return 1

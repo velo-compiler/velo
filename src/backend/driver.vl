@@ -24,7 +24,6 @@ use "../analysis/type_checker.vl"
 use "../analysis/type_check_program.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
-use "../common/path.vl"
 use "codegen_expr.vl"
 use "codegen_stmt.vl"
 use "codegen_c.vl"
@@ -154,16 +153,16 @@ act std_module_to_rel_path(mod_path: string) -> string {
 // Resolves a std module path against current directory, parent directories, or project root.
 act resolve_std_module_path(dir: string, mod_path: string) -> string {
     let rel_file = std_module_to_rel_path(mod_path)
-    let p1 = combine_paths(dir, rel_file)
+    let p1 = path_join_str(dir, rel_file)
     if fs_exists(p1) { return p1 }
 
-    let p2 = combine_paths(dir, combine_paths("..", rel_file))
+    let p2 = path_join_str(dir, path_join_str("..", rel_file))
     if fs_exists(p2) { return p2 }
 
-    let p3 = combine_paths(dir, combine_paths("../..", rel_file))
+    let p3 = path_join_str(dir, path_join_str("../..", rel_file))
     if fs_exists(p3) { return p3 }
 
-    if fs_exists(rel_file) { return canonicalize_path(rel_file) }
+    if fs_exists(rel_file) { return path_normalize_str(rel_file) }
 
     return p1
 }
@@ -174,7 +173,7 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
         return
     }
     let target_path = resolve_platform_source_path(raw_path)
-    let file_path = canonicalize_path(target_path)
+    let file_path = path_normalize_str(target_path)
     if is_file_visited(d, file_path) {
         return
     }
@@ -213,7 +212,7 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
     init_parser(@p, file_path, source, lex.tokens, lex.token_count)
     let prog = parse_program(@p)
 
-    let dir = get_dir_name(file_path)
+    let dir = path_dirname_to_str(file_path)
 
     // First pass: recursively load all imported dependencies
     mut cur = prog.first_decl
@@ -221,7 +220,7 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
         if cur.kind == DECL_USE {
             let mod_path = cur.module_path
             if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" and mod_path != "sys.thread" and mod_path != "sys.math" and mod_path != "sys.time" and mod_path != "sys.os" and mod_path != "sys.simd" {
-                mut resolved_path = combine_paths(dir, mod_path)
+                mut resolved_path = path_join_str(dir, mod_path)
                 if is_std_module(mod_path) {
                     resolved_path = resolve_std_module_path(dir, mod_path)
                 }

@@ -3,7 +3,6 @@ use std.fs
 use sys.mem
 use "../common/string_builder.vl"
 use "../common/utils.vl"
-use "../common/path.vl"
 
 // Probes known Visual Studio installations for vcvars64.bat.
 act find_vcvars() -> string {
@@ -99,9 +98,9 @@ act assemble_msvc_compile_cmd(c_file_path: string, out_exe_path: string, opt_fla
     } else {
         sb_append_str(@cmd_sb, "/O2 ")
     }
-    sb_append_str(@cmd_sb, to_native_path(c_file_path))
+    sb_append_str(@cmd_sb, path_to_native_str(c_file_path))
     sb_append_str(@cmd_sb, " /Fe:")
-    sb_append_str(@cmd_sb, to_native_path(out_exe_path))
+    sb_append_str(@cmd_sb, path_to_native_str(out_exe_path))
     append_msvc_linker_flags(@cmd_sb, linker_flags, is_debug)
     return sb_to_string(@cmd_sb)
 }
@@ -120,13 +119,13 @@ act assemble_gcc_compile_cmd(c_file_path: string, out_exe_path: string, opt_flag
         sb_append_str(@cmd_sb, "-O2 ")
     }
     sb_append_str(@cmd_sb, "-std=c99 -I runtime -I velo/runtime ")
-    sb_append_str(@cmd_sb, to_native_path(c_file_path))
+    sb_append_str(@cmd_sb, path_to_native_str(c_file_path))
     if linker_flags != null and str.len(linker_flags) > 0 {
         sb_append_str(@cmd_sb, " ")
         sb_append_str(@cmd_sb, linker_flags)
     }
     sb_append_str(@cmd_sb, " -o ")
-    sb_append_str(@cmd_sb, to_native_path(out_exe_path))
+    sb_append_str(@cmd_sb, path_to_native_str(out_exe_path))
     return sb_to_string(@cmd_sb)
 }
 
@@ -144,7 +143,7 @@ act assemble_runner_cmd(cc: string, exe_path: string, extra_args: string) -> str
     if cc != "cl" and fs_exists("C:/msys64/ucrt64/bin/gcc.exe") {
         sb_append_str(@run_sb, "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ")
     }
-    sb_append_str(@run_sb, to_native_path(exe_path))
+    sb_append_str(@run_sb, path_to_native_str(exe_path))
     if extra_args != null and str.len(extra_args) > 0 {
         sb_append_str(@run_sb, " ")
         sb_append_str(@run_sb, extra_args)

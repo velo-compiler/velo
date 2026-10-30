@@ -1670,3 +1670,29 @@ flowchart TD
   - `python -m pytest tests/test_std_fs.py -q` passed (4/4 passed).
   - `python -m pytest tests -k "test_std"` passed (53/53 passed).
   - `python -m pytest tests -q` passed full suite (483/483 passed in 308.14s).
+
+#### Task 11.3: Migrate Path Utilities (`src/common/path.vl`) to `std.path` [COMPLETED] ✅
+* **Former Defect**:
+  - The self-hosted compiler maintained redundant, bespoke path manipulation routines in `src/common/path.vl` (`get_file_stem`, `get_dir_name`, `combine_paths`, `canonicalize_path`, `to_native_path`, `to_unix_path`, etc.) spanning 190 lines of duplicate logic.
+  - Compiler drivers (`src/backend/driver.vl`, `src/backend/driver_run.vl`, `src/backend/driver_cc.vl`, `src/backend/driver_pkg.vl`) and `src/common/utils.vl` imported `src/common/path.vl` rather than standard library module `std.path`.
+  - While `std.path` provided slice-based operations (`path_stem_str`, `path_dirname_str`), compiler callers frequently expected null-terminated heap strings (`string`).
+* **Fix Applied**:
+  - Extended `std/path/path.vl` with `path_stem_to_str(s: string) -> string` and `path_dirname_to_str(s: string) -> string`, allocating null-terminated heap strings via `mem.heap_alloc` with bounds protection and zero libc dependency.
+  - Compacted guard clauses in `std/path/path.vl` (`path_has_drive`, `path_drive_len`, `path_is_abs`) maintaining a tight budget of 390 lines (≤ 400).
+  - Migrated compiler drivers to pure-Velo `std.path`:
+    - `src/backend/driver.vl`: Removed `use "../common/path.vl"`; migrated `combine_paths` to `path_join_str`, `canonicalize_path` to `path_normalize_str`, `get_dir_name` to `path_dirname_to_str`.
+    - `src/backend/driver_run.vl`: Removed `use "../common/path.vl"`; migrated `get_file_stem` to `path_stem_to_str`.
+    - `src/backend/driver_cc.vl`: Removed `use "../common/path.vl"`; migrated `to_native_path` to `path_to_native_str`.
+    - `src/backend/driver_pkg.vl`: Removed `use "../common/path.vl"`; migrated `combine_paths` to `path_join_str` and `get_dir_name` to `path_dirname_to_str`.
+    - `src/common/utils.vl`: Removed unused `use "path.vl"` import.
+  - Completely deleted `src/common/path.vl` (190 lines removed from compiler source tree).
+  - Verified code standards: all 89 compiler source files strictly remain under 400 lines (`python scripts/count_lines.py`).
+  - Rebuilt the entire 3-generation bootstrap chain (`scripts/bootstrap.bat` -> Gen2 -> Gen3 -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 determinism (`3D917182FEC3C380CB8C14F1E3E9740AA2C684C43E2897EF3A0E2135D02B169C`).
+* **Residual Limitation**:
+  - `sys.io` and `sys.mem` in the self-hosted compiler remain to be systematically migrated to `std.io` and `std.mem` in subsequent tasks.
+* **Verification**:
+  - `python scripts/count_lines.py` verified all 89 compiler source files < 400 lines (max 348 lines in `src/backend/check.vl`).
+  - Rebuilt 3-generation self-hosting chain: Gen2, Gen3, and `bootstrap.c` identical SHA-256.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -q` passed (5/5 passed).
+  - `python -m pytest tests -k "test_std or bootstrap"` passed (62/62 passed).
+  - `python -m pytest tests -q` passed full suite (483/483 passed in 304.61s).

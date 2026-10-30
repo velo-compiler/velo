@@ -4,7 +4,6 @@ use std.fs
 use sys.mem
 use "../common/string_builder.vl"
 use "../common/utils.vl"
-use "../common/path.vl"
 use "driver_cc.vl"
 use "driver.vl"
 
@@ -15,7 +14,7 @@ act build_executable_opts(source_path: string, output_exe: string, unsafe_index:
         return false
     }
 
-    let stem = get_file_stem(source_path)
+    let stem = path_stem_to_str(source_path)
     mut c_path_sb = create_sb(128)
     sb_append_str(@c_path_sb, ".velo_cache/")
     sb_append_str(@c_path_sb, stem)
@@ -49,7 +48,7 @@ act build_executable(source_path: string, output_exe: string, unsafe_index: bool
 
 // Compiles and runs a Velo source file.
 act run_source_file_opts(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string, no_line_directives: bool) -> i32 {
-    let stem = get_file_stem(source_path)
+    let stem = path_stem_to_str(source_path)
     mut exe_sb = create_sb(128)
     sb_append_str(@exe_sb, ".velo_cache/")
     sb_append_str(@exe_sb, stem)
@@ -74,7 +73,7 @@ act test_source_file_opts(source_path: string, unsafe_index: bool, opt_flags: st
     let c_code = compile_source_to_c_test_opts(source_path, unsafe_index, true, no_line_directives)
     if c_code == null { return 1 }
 
-    let stem = get_file_stem(source_path)
+    let stem = path_stem_to_str(source_path)
     mut c_path_sb = create_sb(128)
     sb_append_str(@c_path_sb, ".velo_cache/"); sb_append_str(@c_path_sb, stem); sb_append_str(@c_path_sb, "_test.c")
     let c_file_path = sb_to_string(@c_path_sb)
