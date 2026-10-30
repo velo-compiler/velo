@@ -1,0 +1,6 @@
+// Pure Velo standard formatting library (zero C runtime dependencies).
+use "fmt/itoa.vl"
+use "fmt/atoi.vl"
+use "fmt/buffer.vl"
+use "fmt/ftoa.vl"
+

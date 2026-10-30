@@ -1159,3 +1159,18 @@ flowchart TD
   - `bin/velo.exe run std/tests/coll/map_ops_test.vl` passed integer take and delete with tombstone slot recycling; string key take and delete; automatic in-place compaction upon reaching 50% tombstone churn; capacity shrinking with `map_shrink_to_fit`; key and value extraction into `RawShelf`; and bulk entry copying.
   - `python -m pytest tests/test_std_coll.py` passed (6/6 passed).
 
+#### Standard Library Module Resolution (`use std.*`) [COMPLETED] ✅
+* **Former Defect**:
+  - Importing standard library components required relative file paths with quotes (`use "std/io/print.vl"` or `use "../../coll/map.vl"`). Writing `use std.io` or `use std.coll` caused compiler file-not-found errors (`Source file does not exist: <dir>/std.io`) because dot syntax was treated as a literal filename without stdlib directory discovery.
+* **Fix Applied**:
+  - Implemented std module path resolution in `src/backend/driver.vl`: `is_std_module`, `std_module_to_rel_path`, and `resolve_std_module_path`, mapping dot-delimited paths (`std.io`, `std.coll.map`) to relative `.vl` paths and searching current directory, parent directories (`..`, `../..`), and working directory root.
+  - Added 5 standard library umbrella modules: `std/io.vl`, `std/coll.vl`, `std/mem.vl`, `std/str.vl`, and `std/fmt.vl`.
+  - Rebuilt and verified bit-for-bit self-hosted bootstrap chain (`bootstrap.c` and `bin/velo.exe`).
+  - Added unit test `std/tests/std_module_import_test.vl` and pytest integration in `tests/test_std_coll.py`.
+* **Residual Limitation**:
+  - None for standard library resolution. All 5 modules and their submodules are accessible via `use std.<module>` and `use std.<submodule>.<component>`.
+* **Verification**:
+  - `bin/velo.exe run std/tests/std_module_import_test.vl` passed native `use std.io`, `use std.coll`, `use std.mem`, `use std.str`, `use std.fmt` imports.
+  - Determinism verification passed with identical SHA-256 between Gen2, Gen3, and `bootstrap.c`.
+  - `python -m pytest tests/test_std_coll.py` passed (7/7 passed).
+

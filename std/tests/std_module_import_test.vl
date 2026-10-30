@@ -1,0 +1,36 @@
+// Tests native 'use std.<module>' and 'use std.<submodule>.<component>' imports.
+use std.io
+use std.coll
+use std.mem
+use std.str
+use std.fmt
+
+act main() -> i32 {
+    // std.coll: dynamic shelf
+    mut s = shelf_create(8, 4)
+    shelf_push_i64(@s, 111)
+    if shelf_get_i64(@s, 0) != 111 { shelf_free(@s); return 1 }
+    shelf_free(@s)
+
+    // std.coll: FIFO ring
+    mut r = ring_create(8, 8)
+    ring_put_i64(@r, 222)
+    mut vr: i64 = 0
+    if !ring_pop_i64(@r, @vr) or vr != 222 { ring_free(@r); return 2 }
+    ring_free(@r)
+
+    // std.coll: hash map
+    mut m = map_create_str(8, 8)
+    map_put_str_i64(@m, "test_k", 333)
+    mut vm: i64 = 0
+    if !map_get_str_i64(@m, "test_k", @vm) or vm != 333 { map_free(@m); return 3 }
+    map_free(@m)
+
+    // std.str & std.fmt: string slice and format
+    let sl = slice_from_str("velo_std")
+    if sl.len != 8 { return 4 }
+
+    println_str("PASS: native use std.* imports succeeded")
+    return 0
+}
+

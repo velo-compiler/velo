@@ -1,0 +1,7 @@
+// Pure Velo standard string library (zero C runtime dependencies).
+use "str/slice.vl"
+use "str/utf8.vl"
+use "str/search.vl"
+use "str/builder.vl"
+use "str/manip.vl"
+

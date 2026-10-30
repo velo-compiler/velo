@@ -131,6 +131,53 @@ act resolve_platform_source_path(path: string) -> string {
     return path
 }
 
+// Returns true if module path represents a standard library import (e.g. "std.io", "std.coll").
+act is_std_module(mod_path: string) -> bool {
+    if mod_path == null { return false }
+    let len = str.len(mod_path)
+    if len < 5 { return false }
+    return mod_path[0] == 's' and mod_path[1] == 't' and mod_path[2] == 'd' and mod_path[3] == '.'
+}
+
+// Converts a dot-delimited std module path to relative file path ("std.io" -> "std/io.vl").
+act std_module_to_rel_path(mod_path: string) -> string {
+    if mod_path == null { return null }
+    let plen = str.len(mod_path)
+    mut buf: @u8 = mem.alloc(@u8, plen + 4)
+    mut i: usize = 0
+    loop i < plen {
+        let c = mod_path[i]
+        if c == '.' {
+            buf[i] = '/'
+        } else {
+            buf[i] = c
+        }
+        i += 1
+    }
+    buf[plen] = '.'
+    buf[plen + 1] = 'v'
+    buf[plen + 2] = 'l'
+    buf[plen + 3] = 0 as u8
+    return buf as string
+}
+
+// Resolves a std module path against current directory, parent directories, or project root.
+act resolve_std_module_path(dir: string, mod_path: string) -> string {
+    let rel_file = std_module_to_rel_path(mod_path)
+    let p1 = combine_paths(dir, rel_file)
+    if fs.exists(p1) { return p1 }
+
+    let p2 = combine_paths(dir, combine_paths("..", rel_file))
+    if fs.exists(p2) { return p2 }
+
+    let p3 = combine_paths(dir, combine_paths("../..", rel_file))
+    if fs.exists(p3) { return p3 }
+
+    if fs.exists(rel_file) { return canonicalize_path(rel_file) }
+
+    return p1
+}
+
 // Recursively loads a file and its imported dependencies in topological order.
 act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
     if should_skip_platform_file(raw_path) {
@@ -184,7 +231,10 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
         if cur.kind == DECL_USE {
             let mod_path = cur.module_path
             if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" and mod_path != "sys.thread" and mod_path != "sys.math" and mod_path != "sys.time" and mod_path != "sys.os" and mod_path != "sys.simd" {
-                let resolved_path = combine_paths(dir, mod_path)
+                mut resolved_path = combine_paths(dir, mod_path)
+                if is_std_module(mod_path) {
+                    resolved_path = resolve_std_module_path(dir, mod_path)
+                }
                 load_file_and_deps(d, resolved_path)
             }
         }

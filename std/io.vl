@@ -1,0 +1,6 @@
+// Pure Velo standard I/O library (zero C runtime dependencies).
+use "io/handle.vl"
+use "io/buffered_writer.vl"
+use "io/print.vl"
+use "io/buffered_reader.vl"
+

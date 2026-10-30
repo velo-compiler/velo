@@ -1212,6 +1212,9 @@ void mark_file_visited(CompilerDriver* d, const char* path);
 bool is_windows_platform(void);
 bool should_skip_platform_file(const char* path);
 const char* resolve_platform_source_path(const char* path);
+bool is_std_module(const char* mod_path);
+const char* std_module_to_rel_path(const char* mod_path);
+const char* resolve_std_module_path(const char* dir, const char* mod_path);
 void load_file_and_deps(CompilerDriver* d, const char* raw_path);
 ProgramNode* resolve_and_parse(CompilerDriver* d, const char* file_path);
 const char* compile_source_to_c_test_opts(const char* source_path, bool unsafe_index, bool is_test, bool no_line_directives);
@@ -30553,260 +30556,357 @@ const char* resolve_platform_source_path(const char* path) {
 }
 
 #line 135 "src/main.vl"
-void load_file_and_deps(CompilerDriver* d, const char* raw_path) {
+bool is_std_module(const char* mod_path) {
 #line 136 "src/main.vl"
-    if (should_skip_platform_file(raw_path)) {
+    if ((mod_path == NULL)) {
+#line 136 "src/main.vl"
+        return false;
+    }
 #line 137 "src/main.vl"
-        return;
+    size_t len = ((usize)strlen(mod_path));
+#line 138 "src/main.vl"
+    if ((len < 5)) {
+#line 138 "src/main.vl"
+        return false;
     }
 #line 139 "src/main.vl"
-    const char* target_path = resolve_platform_source_path(raw_path);
-#line 140 "src/main.vl"
-    const char* file_path = canonicalize_path(target_path);
-#line 141 "src/main.vl"
-    if (is_file_visited(d, file_path)) {
-#line 142 "src/main.vl"
-        return;
-    }
+    return ((((mod_path[0] == 's') && (mod_path[1] == 't')) && (mod_path[2] == 'd')) && (mod_path[3] == '.'));
+}
+
+#line 143 "src/main.vl"
+const char* std_module_to_rel_path(const char* mod_path) {
 #line 144 "src/main.vl"
-    mark_file_visited(d, file_path);
+    if ((mod_path == NULL)) {
+#line 144 "src/main.vl"
+        return NULL;
+    }
+#line 145 "src/main.vl"
+    size_t plen = ((usize)strlen(mod_path));
+#line 146 "src/main.vl"
+    uint8_t* buf = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)((plen + 4))));
 #line 147 "src/main.vl"
-    if ((!velo_fs_exists(file_path))) {
+    size_t i = 0;
 #line 148 "src/main.vl"
-        printf("[Velo Error] Source file does not exist: %s\n", (const char*)(file_path));
+    for (int32_t it = 0; ((i < plen)); it++) {
 #line 149 "src/main.vl"
-        d->error_count += 1;
+        uint8_t c = mod_path[i];
 #line 150 "src/main.vl"
-        return;
-    }
+        if ((c == '.')) {
+#line 151 "src/main.vl"
+            buf[i] = '/';
+        } else {
 #line 153 "src/main.vl"
-    const char* source = velo_fs_read_file(file_path);
-#line 154 "src/main.vl"
-    if ((source == NULL)) {
+            buf[i] = c;
+        }
 #line 155 "src/main.vl"
-        printf("[Velo Error] Failed to read source file: %s\n", (const char*)(file_path));
-#line 156 "src/main.vl"
-        d->error_count += 1;
+        i += 1;
+    }
 #line 157 "src/main.vl"
+    buf[plen] = '.';
+#line 158 "src/main.vl"
+    buf[(plen + 1)] = 'v';
+#line 159 "src/main.vl"
+    buf[(plen + 2)] = 'l';
+#line 160 "src/main.vl"
+    buf[(plen + 3)] = ((uint8_t)(0));
+#line 161 "src/main.vl"
+    return ((const char*)(buf));
+}
+
+#line 165 "src/main.vl"
+const char* resolve_std_module_path(const char* dir, const char* mod_path) {
+#line 166 "src/main.vl"
+    const char* rel_file = std_module_to_rel_path(mod_path);
+#line 167 "src/main.vl"
+    const char* p1 = combine_paths(dir, rel_file);
+#line 168 "src/main.vl"
+    if (velo_fs_exists(p1)) {
+#line 168 "src/main.vl"
+        return p1;
+    }
+#line 170 "src/main.vl"
+    const char* p2 = combine_paths(dir, combine_paths("..", rel_file));
+#line 171 "src/main.vl"
+    if (velo_fs_exists(p2)) {
+#line 171 "src/main.vl"
+        return p2;
+    }
+#line 173 "src/main.vl"
+    const char* p3 = combine_paths(dir, combine_paths("../..", rel_file));
+#line 174 "src/main.vl"
+    if (velo_fs_exists(p3)) {
+#line 174 "src/main.vl"
+        return p3;
+    }
+#line 176 "src/main.vl"
+    if (velo_fs_exists(rel_file)) {
+#line 176 "src/main.vl"
+        return canonicalize_path(rel_file);
+    }
+#line 178 "src/main.vl"
+    return p1;
+}
+
+#line 182 "src/main.vl"
+void load_file_and_deps(CompilerDriver* d, const char* raw_path) {
+#line 183 "src/main.vl"
+    if (should_skip_platform_file(raw_path)) {
+#line 184 "src/main.vl"
         return;
     }
-#line 161 "src/main.vl"
-    size_t slen = ((usize)strlen(source));
-#line 164 "src/main.vl"
-    Lexer lex = create_lexer(source, slen, (slen + 2));
-#line 165 "src/main.vl"
-    lex.file_path = file_path;
-#line 166 "src/main.vl"
-    tokenize((&(lex)));
-#line 168 "src/main.vl"
-    if ((lex.dropped_count > 0)) {
-#line 169 "src/main.vl"
-        size_t dropped = lex.dropped_count;
-#line 170 "src/main.vl"
-        printf("[Velo Error] %s: lexer token buffer too small; %lld tokens were truncated. Split this file into smaller modules.\n", (const char*)(file_path), (long long)(dropped));
-#line 171 "src/main.vl"
+#line 186 "src/main.vl"
+    const char* target_path = resolve_platform_source_path(raw_path);
+#line 187 "src/main.vl"
+    const char* file_path = canonicalize_path(target_path);
+#line 188 "src/main.vl"
+    if (is_file_visited(d, file_path)) {
+#line 189 "src/main.vl"
+        return;
+    }
+#line 191 "src/main.vl"
+    mark_file_visited(d, file_path);
+#line 194 "src/main.vl"
+    if ((!velo_fs_exists(file_path))) {
+#line 195 "src/main.vl"
+        printf("[Velo Error] Source file does not exist: %s\n", (const char*)(file_path));
+#line 196 "src/main.vl"
         d->error_count += 1;
-#line 172 "src/main.vl"
-#line 159 "src/main.vl"
+#line 197 "src/main.vl"
+        return;
+    }
+#line 200 "src/main.vl"
+    const char* source = velo_fs_read_file(file_path);
+#line 201 "src/main.vl"
+    if ((source == NULL)) {
+#line 202 "src/main.vl"
+        printf("[Velo Error] Failed to read source file: %s\n", (const char*)(file_path));
+#line 203 "src/main.vl"
+        d->error_count += 1;
+#line 204 "src/main.vl"
+        return;
+    }
+#line 208 "src/main.vl"
+    size_t slen = ((usize)strlen(source));
+#line 211 "src/main.vl"
+    Lexer lex = create_lexer(source, slen, (slen + 2));
+#line 212 "src/main.vl"
+    lex.file_path = file_path;
+#line 213 "src/main.vl"
+    tokenize((&(lex)));
+#line 215 "src/main.vl"
+    if ((lex.dropped_count > 0)) {
+#line 216 "src/main.vl"
+        size_t dropped = lex.dropped_count;
+#line 217 "src/main.vl"
+        printf("[Velo Error] %s: lexer token buffer too small; %lld tokens were truncated. Split this file into smaller modules.\n", (const char*)(file_path), (long long)(dropped));
+#line 218 "src/main.vl"
+        d->error_count += 1;
+#line 219 "src/main.vl"
+#line 206 "src/main.vl"
         velo_heap_free((void*)(source));
         return;
     }
-#line 175 "src/main.vl"
+#line 222 "src/main.vl"
     Parser p;
-#line 176 "src/main.vl"
+#line 223 "src/main.vl"
     init_parser((&(p)), file_path, source, lex.tokens, lex.token_count);
-#line 177 "src/main.vl"
+#line 224 "src/main.vl"
     ProgramNode* prog = parse_program((&(p)));
-#line 179 "src/main.vl"
+#line 226 "src/main.vl"
     const char* dir = get_dir_name(file_path);
-#line 182 "src/main.vl"
+#line 229 "src/main.vl"
     StmtNode* cur = prog->first_decl;
-#line 183 "src/main.vl"
+#line 230 "src/main.vl"
     for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 184 "src/main.vl"
+#line 231 "src/main.vl"
         if ((cur->kind == DECL_USE)) {
-#line 185 "src/main.vl"
+#line 232 "src/main.vl"
             const char* mod_path = cur->module_path;
-#line 186 "src/main.vl"
+#line 233 "src/main.vl"
             if ((((((((((mod_path != NULL && "sys.io" != NULL) ? (strcmp(mod_path, "sys.io") != 0) : (mod_path != "sys.io")) && ((mod_path != NULL && "sys.mem" != NULL) ? (strcmp(mod_path, "sys.mem") != 0) : (mod_path != "sys.mem"))) && ((mod_path != NULL && "sys.fs" != NULL) ? (strcmp(mod_path, "sys.fs") != 0) : (mod_path != "sys.fs"))) && ((mod_path != NULL && "sys.thread" != NULL) ? (strcmp(mod_path, "sys.thread") != 0) : (mod_path != "sys.thread"))) && ((mod_path != NULL && "sys.math" != NULL) ? (strcmp(mod_path, "sys.math") != 0) : (mod_path != "sys.math"))) && ((mod_path != NULL && "sys.time" != NULL) ? (strcmp(mod_path, "sys.time") != 0) : (mod_path != "sys.time"))) && ((mod_path != NULL && "sys.os" != NULL) ? (strcmp(mod_path, "sys.os") != 0) : (mod_path != "sys.os"))) && ((mod_path != NULL && "sys.simd" != NULL) ? (strcmp(mod_path, "sys.simd") != 0) : (mod_path != "sys.simd")))) {
-#line 187 "src/main.vl"
+#line 234 "src/main.vl"
                 const char* resolved_path = combine_paths(dir, mod_path);
-#line 188 "src/main.vl"
+#line 235 "src/main.vl"
+                if (is_std_module(mod_path)) {
+#line 236 "src/main.vl"
+                    resolved_path = resolve_std_module_path(dir, mod_path);
+                }
+#line 238 "src/main.vl"
                 load_file_and_deps(d, resolved_path);
             }
         }
-#line 191 "src/main.vl"
+#line 241 "src/main.vl"
         cur = cur->next;
     }
-#line 195 "src/main.vl"
+#line 245 "src/main.vl"
     StmtNode* decl = prog->first_decl;
-#line 196 "src/main.vl"
+#line 246 "src/main.vl"
     for (int32_t it = 0; ((decl != NULL)); it++) {
-#line 197 "src/main.vl"
+#line 247 "src/main.vl"
         StmtNode* nxt = decl->next;
-#line 198 "src/main.vl"
+#line 248 "src/main.vl"
         decl->next = NULL;
-#line 200 "src/main.vl"
+#line 250 "src/main.vl"
         bool skip = false;
-#line 201 "src/main.vl"
+#line 251 "src/main.vl"
         if ((decl->kind == DECL_USE)) {
-#line 202 "src/main.vl"
+#line 252 "src/main.vl"
             const char* mod_path = decl->module_path;
-#line 203 "src/main.vl"
+#line 253 "src/main.vl"
             if ((((((((((mod_path != NULL && "sys.io" != NULL) ? (strcmp(mod_path, "sys.io") != 0) : (mod_path != "sys.io")) && ((mod_path != NULL && "sys.mem" != NULL) ? (strcmp(mod_path, "sys.mem") != 0) : (mod_path != "sys.mem"))) && ((mod_path != NULL && "sys.fs" != NULL) ? (strcmp(mod_path, "sys.fs") != 0) : (mod_path != "sys.fs"))) && ((mod_path != NULL && "sys.thread" != NULL) ? (strcmp(mod_path, "sys.thread") != 0) : (mod_path != "sys.thread"))) && ((mod_path != NULL && "sys.math" != NULL) ? (strcmp(mod_path, "sys.math") != 0) : (mod_path != "sys.math"))) && ((mod_path != NULL && "sys.time" != NULL) ? (strcmp(mod_path, "sys.time") != 0) : (mod_path != "sys.time"))) && ((mod_path != NULL && "sys.os" != NULL) ? (strcmp(mod_path, "sys.os") != 0) : (mod_path != "sys.os"))) && ((mod_path != NULL && "sys.simd" != NULL) ? (strcmp(mod_path, "sys.simd") != 0) : (mod_path != "sys.simd")))) {
-#line 204 "src/main.vl"
+#line 254 "src/main.vl"
                 skip = true;
             }
         }
-#line 208 "src/main.vl"
+#line 258 "src/main.vl"
         if ((!skip)) {
-#line 209 "src/main.vl"
+#line 259 "src/main.vl"
             if ((d->first_decl == NULL)) {
-#line 210 "src/main.vl"
+#line 260 "src/main.vl"
                 d->first_decl = decl;
-#line 211 "src/main.vl"
+#line 261 "src/main.vl"
                 d->last_decl = decl;
             } else {
-#line 213 "src/main.vl"
+#line 263 "src/main.vl"
                 d->last_decl->next = decl;
-#line 214 "src/main.vl"
+#line 264 "src/main.vl"
                 d->last_decl = decl;
             }
-#line 216 "src/main.vl"
+#line 266 "src/main.vl"
             d->total_decls += 1;
         }
-#line 219 "src/main.vl"
+#line 269 "src/main.vl"
         decl = nxt;
     }
-#line 159 "src/main.vl"
+#line 206 "src/main.vl"
     velo_heap_free((void*)(source));
 }
 
-#line 224 "src/main.vl"
+#line 274 "src/main.vl"
 ProgramNode* resolve_and_parse(CompilerDriver* d, const char* file_path) {
-#line 225 "src/main.vl"
+#line 275 "src/main.vl"
     load_file_and_deps(d, file_path);
-#line 226 "src/main.vl"
+#line 276 "src/main.vl"
     if (((d->error_count > 0) || (d->first_decl == NULL))) {
-#line 227 "src/main.vl"
+#line 277 "src/main.vl"
         return NULL;
     }
-#line 229 "src/main.vl"
+#line 279 "src/main.vl"
     ProgramNode* prog = ((ProgramNode*)velo_mem_alloc(sizeof(ProgramNode), (size_t)(1)));
-#line 230 "src/main.vl"
+#line 280 "src/main.vl"
     prog->first_decl = d->first_decl;
-#line 231 "src/main.vl"
+#line 281 "src/main.vl"
     prog->decl_count = d->total_decls;
-#line 232 "src/main.vl"
+#line 282 "src/main.vl"
     return prog;
 }
 
-#line 238 "src/main.vl"
+#line 288 "src/main.vl"
 const char* compile_source_to_c_test_opts(const char* source_path, bool unsafe_index, bool is_test, bool no_line_directives) {
-#line 239 "src/main.vl"
+#line 289 "src/main.vl"
     CompilerDriver d;
-#line 240 "src/main.vl"
+#line 290 "src/main.vl"
     init_driver((&(d)));
-#line 242 "src/main.vl"
+#line 292 "src/main.vl"
     ProgramNode* raw_prog = resolve_and_parse((&(d)), source_path);
-#line 243 "src/main.vl"
+#line 293 "src/main.vl"
     if (((raw_prog == NULL) || (d.error_count > 0))) {
-#line 244 "src/main.vl"
+#line 294 "src/main.vl"
         return NULL;
     }
-#line 247 "src/main.vl"
+#line 297 "src/main.vl"
     ProgramNode* prog = monomorphize_program(raw_prog);
-#line 249 "src/main.vl"
+#line 299 "src/main.vl"
     SymbolTable st;
-#line 250 "src/main.vl"
+#line 300 "src/main.vl"
     init_symbol_table((&(st)));
-#line 251 "src/main.vl"
+#line 301 "src/main.vl"
     st.unsafe_shelf_index = unsafe_index;
-#line 252 "src/main.vl"
+#line 302 "src/main.vl"
     st.is_test = is_test;
-#line 253 "src/main.vl"
+#line 303 "src/main.vl"
     st.no_line_directives = no_line_directives;
-#line 254 "src/main.vl"
+#line 304 "src/main.vl"
     st.source_file = source_path;
-#line 256 "src/main.vl"
+#line 306 "src/main.vl"
     bool sem_ok = check_program((&(st)), prog);
-#line 257 "src/main.vl"
+#line 307 "src/main.vl"
     if (((!sem_ok) || (st.error_count > 0))) {
-#line 258 "src/main.vl"
+#line 308 "src/main.vl"
         printf("[Velo Error] Semantic analysis failed with %lld errors.\n", (long long)(st.error_count));
-#line 259 "src/main.vl"
+#line 309 "src/main.vl"
         return NULL;
     }
-#line 262 "src/main.vl"
+#line 312 "src/main.vl"
     return emit_translation_unit((&(st)), prog);
 }
 
-#line 265 "src/main.vl"
+#line 315 "src/main.vl"
 const char* compile_source_to_c_test(const char* source_path, bool unsafe_index, bool is_test) {
-#line 266 "src/main.vl"
+#line 316 "src/main.vl"
     return compile_source_to_c_test_opts(source_path, unsafe_index, is_test, false);
 }
 
-#line 269 "src/main.vl"
+#line 319 "src/main.vl"
 const char* compile_source_to_c(const char* source_path, bool unsafe_index) {
-#line 270 "src/main.vl"
+#line 320 "src/main.vl"
     return compile_source_to_c_test_opts(source_path, unsafe_index, false, false);
 }
 
-#line 273 "src/main.vl"
+#line 323 "src/main.vl"
 const char* compile_source_to_c_opts(const char* source_path, bool unsafe_index, bool no_line_directives) {
-#line 274 "src/main.vl"
+#line 324 "src/main.vl"
     return compile_source_to_c_test_opts(source_path, unsafe_index, false, no_line_directives);
 }
 
-#line 278 "src/main.vl"
+#line 328 "src/main.vl"
 const char* generate_docs_for_source(const char* source_path) {
-#line 279 "src/main.vl"
+#line 329 "src/main.vl"
     const char* source = velo_fs_read_file(source_path);
-#line 280 "src/main.vl"
+#line 330 "src/main.vl"
     if ((source == NULL)) {
-#line 281 "src/main.vl"
+#line 331 "src/main.vl"
         printf("[Velo Error] Failed to read source file: %s\n", (const char*)(source_path));
-#line 282 "src/main.vl"
+#line 332 "src/main.vl"
         return NULL;
     }
-#line 286 "src/main.vl"
+#line 336 "src/main.vl"
     size_t slen = ((usize)strlen(source));
-#line 288 "src/main.vl"
+#line 338 "src/main.vl"
     Lexer lex = create_lexer(source, slen, (slen + 2));
-#line 289 "src/main.vl"
+#line 339 "src/main.vl"
     lex.file_path = source_path;
-#line 290 "src/main.vl"
+#line 340 "src/main.vl"
     tokenize((&(lex)));
-#line 292 "src/main.vl"
+#line 342 "src/main.vl"
     if ((lex.dropped_count > 0)) {
-#line 293 "src/main.vl"
+#line 343 "src/main.vl"
         size_t dropped = lex.dropped_count;
-#line 294 "src/main.vl"
+#line 344 "src/main.vl"
         printf("[Velo Error] %s: lexer token buffer too small; %lld tokens were truncated; documentation output would be incomplete.\n", (const char*)(source_path), (long long)(dropped));
-#line 295 "src/main.vl"
-#line 284 "src/main.vl"
+#line 345 "src/main.vl"
+#line 334 "src/main.vl"
         velo_heap_free((void*)(source));
         return NULL;
     }
-#line 298 "src/main.vl"
+#line 348 "src/main.vl"
     Parser p;
-#line 299 "src/main.vl"
+#line 349 "src/main.vl"
     init_parser((&(p)), source_path, source, lex.tokens, lex.token_count);
-#line 300 "src/main.vl"
+#line 350 "src/main.vl"
     ProgramNode* prog = parse_program((&(p)));
-#line 301 "src/main.vl"
+#line 351 "src/main.vl"
     if ((prog == NULL)) {
-#line 302 "src/main.vl"
-#line 284 "src/main.vl"
+#line 352 "src/main.vl"
+#line 334 "src/main.vl"
         velo_heap_free((void*)(source));
         return NULL;
     }
-#line 305 "src/main.vl"
-#line 284 "src/main.vl"
+#line 355 "src/main.vl"
+#line 334 "src/main.vl"
     velo_heap_free((void*)(source));
     return generate_markdown_docs(source_path, source, prog);
-#line 284 "src/main.vl"
+#line 334 "src/main.vl"
     velo_heap_free((void*)(source));
 }
 
