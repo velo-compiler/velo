@@ -1,0 +1,103 @@
+// Pure Velo byte operations (zero C runtime dependencies).
+// Replaces libc memcpy, memset, and memcmp with fast 64-bit word operations
+// and safe overlap handling (memmove semantics).
+
+// Copies n bytes from src to dest. Safely handles overlapping ranges.
+act copy(dest: @u8, src: @u8, n: usize) {
+    if dest == null or src == null or n == 0 or dest == src {
+        return
+    }
+
+    let d_addr: usize = dest as usize
+    let s_addr: usize = src as usize
+
+    // If destination overlaps source forward, copy backwards to preserve data
+    if d_addr > s_addr and d_addr < s_addr + n {
+        mut k: usize = n
+        loop k > 0 {
+            k -= 1
+            dest[k] = src[k]
+        }
+        return
+    }
+
+    // Forward fast path: copy in 8-byte (64-bit) words
+    let chunks: usize = n / 8
+    let dest64: @u64 = dest as @u64
+    let src64: @u64 = src as @u64
+    mut i: usize = 0
+    loop i < chunks {
+        dest64[i] = src64[i]
+        i += 1
+    }
+
+    // Copy remaining tail bytes
+    mut j: usize = chunks * 8
+    loop j < n {
+        dest[j] = src[j]
+        j += 1
+    }
+}
+
+// Sets n bytes of memory starting at dest to val.
+act set(dest: @u8, val: u8, n: usize) {
+    if dest == null or n == 0 {
+        return
+    }
+
+    // Broadcast 8-bit value across a 64-bit word
+    let byte_val: u64 = val as u64
+    let val64: u64 = byte_val | (byte_val << 8) | (byte_val << 16) | (byte_val << 24) | (byte_val << 32) | (byte_val << 40) | (byte_val << 48) | (byte_val << 56)
+
+    // Fast path: fill in 8-byte chunks
+    let chunks: usize = n / 8
+    let dest64: @u64 = dest as @u64
+    mut i: usize = 0
+    loop i < chunks {
+        dest64[i] = val64
+        i += 1
+    }
+
+    // Fill remaining tail bytes
+    mut j: usize = chunks * 8
+    loop j < n {
+        dest[j] = val
+        j += 1
+    }
+}
+
+// Compares n bytes between a and b. Returns true if bit-for-bit identical.
+act eq(a: @u8, b: @u8, n: usize) -> bool {
+    if a == b {
+        return true
+    }
+    if n == 0 {
+        return true
+    }
+    if a == null or b == null {
+        return false
+    }
+
+    // Fast path: compare 8-byte chunks
+    let chunks: usize = n / 8
+    let a64: @u64 = a as @u64
+    let b64: @u64 = b as @u64
+    mut i: usize = 0
+    loop i < chunks {
+        if a64[i] != b64[i] {
+            return false
+        }
+        i += 1
+    }
+
+    // Compare remaining tail bytes
+    mut j: usize = chunks * 8
+    loop j < n {
+        if a[j] != b[j] {
+            return false
+        }
+        j += 1
+    }
+
+    return true
+}

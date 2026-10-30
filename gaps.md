@@ -798,3 +798,18 @@ flowchart TD
   - `bin/velo.exe run tests/std_mem_page_test.vl` passed with all edge cases and read/write boundary assertions.
   - `python -m pytest tests/test_std_mem.py` passed (1/1 passed).
 
+#### Task 1.2: Pure Velo Byte Operations (`std/mem/ops.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Memory copy, fill, and comparison relied on C runtime functions (`memcpy`, `memset`, `memcmp`), binding Velo's standard operations to `libc`.
+* **Fix Applied**:
+  - Implemented `std/mem/ops.vl` providing pure-Velo `copy(dest: @u8, src: @u8, n: usize)`, `set(dest: @u8, val: u8, n: usize)`, and `eq(a: @u8, b: @u8, n: usize) -> bool`.
+  - Optimized with fast 64-bit (`u64`) word-level batch processing for chunks with trailing byte handling.
+  - Implemented safe overlap handling in `copy` (backward copy when `dest` overlaps `src` forward, providing full `memmove` safety).
+  - Added test suite `tests/std_mem_ops_test.vl` and pytest verification in `tests/test_std_mem.py`.
+* **Residual Limitation**:
+  - SIMD 128-bit vectorized copying (`sys.simd`) can be added as an optional fast-path for buffers > 1KB.
+* **Verification**:
+  - `bin/velo.exe run tests/std_mem_ops_test.vl` passed all set, copy, eq, overlap, and boundary assertions.
+  - `python -m pytest tests/test_std_mem.py` passed (2/2 passed).
+
+

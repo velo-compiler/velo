@@ -23,3 +23,17 @@ def test_std_mem_page_alloc():
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.mem.page all assertions succeeded" in res.stdout
+
+def test_std_mem_ops():
+    test_vl = REPO_ROOT / "tests" / "std_mem_ops_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.mem.ops all assertions succeeded" in res.stdout
+
+
