@@ -5,10 +5,12 @@ use std.io
 use std.mem
 use std.str
 use std.json
+use std.fs
 use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "transport.vl"
 use "analysis.vl"
+use "symbols.vl"
 
 // In-memory document tracking node (singly linked list).
 data LspDoc {
@@ -185,6 +187,46 @@ act lsp_handle_did_save(state: @LspServerState, params: @JsonValue) {
     }
 }
 
+// Processes 'textDocument/documentSymbol' request.
+act lsp_handle_document_symbol(state: @LspServerState, id_node: @JsonValue, params: @JsonValue) {
+    if params == null or params.kind != JSON_OBJECT {
+        lsp_send_empty_document_symbols(id_node)
+        return
+    }
+    let td = json_obj_get_str(params, "textDocument")
+    if td == null or td.kind != JSON_OBJECT {
+        lsp_send_empty_document_symbols(id_node)
+        return
+    }
+    let uri_val = json_obj_get_str(td, "uri")
+    if uri_val == null or uri_val.kind != JSON_STRING {
+        lsp_send_empty_document_symbols(id_node)
+        return
+    }
+
+    let doc = lsp_find_doc(state, uri_val.str_val)
+    if doc != null and doc.text != null {
+        lsp_send_document_symbols(id_node, doc.text)
+        return
+    }
+
+    // Fallback to disk read if document was not previously opened
+    let uri_str = lsp_slice_to_heap_str(uri_val.str_val)
+    let path = lsp_uri_to_path(uri_str)
+    if str.len(path) > 0 and fs_exists(path) {
+        let text = fs_read_to_str(path)
+        if text != null {
+            lsp_send_document_symbols(id_node, text)
+            mem.free(text as @u8)
+            mem.free(uri_str as @u8)
+            return
+        }
+    }
+    mem.free(uri_str as @u8)
+
+    lsp_send_empty_document_symbols(id_node)
+}
+
 // Dispatches a parsed JSON-RPC message. Returns true if server should terminate.
 act lsp_dispatch_message(state: @LspServerState, msg: string) -> bool {
     let doc = json_parse_doc_str(msg, 65536)
@@ -247,6 +289,13 @@ act lsp_dispatch_message(state: @LspServerState, msg: string) -> bool {
     if slice_eq_str(m, "textDocument/didSave") {
         if params_node != null and params_node.kind == JSON_OBJECT {
             lsp_handle_did_save(state, params_node)
+        }
+        return false
+    }
+
+    if slice_eq_str(m, "textDocument/documentSymbol") {
+        if id_node != null {
+            lsp_handle_document_symbol(state, id_node, params_node)
         }
         return false
     }

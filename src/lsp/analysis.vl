@@ -38,30 +38,6 @@ act lsp_uri_to_path(uri: string) -> string {
     return uri
 }
 
-// Escapes special characters into a JSON string literal.
-act lsp_json_escape(sb: @StringBuilder, s: string) {
-    if s == null { return }
-    let n = str.len(s)
-    mut i: usize = 0
-    loop i < n {
-        let c = s[i]
-        if c == '"' {
-            sb_append_str(sb, "\\\"")
-        } else if c == '\\' {
-            sb_append_str(sb, "\\\\")
-        } else if c == '\n' {
-            sb_append_str(sb, "\\n")
-        } else if c == '\r' {
-            sb_append_str(sb, "\\r")
-        } else if c == '\t' {
-            sb_append_str(sb, "\\t")
-        } else {
-            sb_append_char(sb, c)
-        }
-        i += 1
-    }
-}
-
 // Publishes empty diagnostics array for a URI (e.g. on document close).
 act lsp_publish_empty_diagnostics(uri: string) {
     mut sb = create_sb(256)

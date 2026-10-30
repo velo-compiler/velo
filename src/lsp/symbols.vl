@@ -1,0 +1,271 @@
+// Real-time hierarchical document symbol extraction for Velo LSP.
+// Powers VS Code Outline View, Breadcrumbs, and Quick Open Symbol navigation.
+
+use std.io
+use std.mem
+use std.str
+use std.json
+use "../common/string_builder.vl"
+use "../common/diagnostics.vl"
+use "../frontend/token.vl"
+use "../frontend/lexer.vl"
+use "../frontend/parser.vl"
+use "../frontend/parser_expr.vl"
+use "../frontend/parser_binary.vl"
+use "../frontend/parser_stmt.vl"
+use "../frontend/parser_decl.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "transport.vl"
+
+// Emits 0-based LSP Position {"line":L,"character":C} into StringBuilder.
+act lsp_sym_append_pos(sb: @StringBuilder, line: i32, col: i32) {
+    mut l: i32 = 0
+    if line > 0 { l = line - 1 }
+    mut c: i32 = 0
+    if col > 0 { c = col - 1 }
+    sb_append_str(sb, "{\"line\":")
+    sb_append_int(sb, l)
+    sb_append_str(sb, ",\"character\":")
+    sb_append_int(sb, c)
+    sb_append_char(sb, '}')
+}
+
+// Emits 0-based LSP Range {"start":P1,"end":P2} into StringBuilder.
+act lsp_sym_append_range(sb: @StringBuilder, s_line: i32, s_col: i32, e_line: i32, e_col: i32) {
+    sb_append_str(sb, "{\"start\":")
+    lsp_sym_append_pos(sb, s_line, s_col)
+    sb_append_str(sb, ",\"end\":")
+    lsp_sym_append_pos(sb, e_line, e_col)
+    sb_append_char(sb, '}')
+}
+
+// Emits a Function (act) document symbol.
+act lsp_sym_append_func(sb: @StringBuilder, decl: @StmtNode, e_line: i32) {
+    sb_append_str(sb, "{\"name\":\"")
+    lsp_json_escape(sb, decl.name)
+    sb_append_char(sb, '(')
+    mut pcur = decl.first_param
+    mut pcount: i32 = 0
+    loop pcur != null {
+        if pcount > 0 {
+            sb_append_str(sb, ", ")
+        }
+        lsp_json_escape(sb, pcur.name)
+        sb_append_str(sb, ": ")
+        if pcur.type_name != null {
+            lsp_json_escape(sb, pcur.type_name)
+        }
+        pcount += 1
+        pcur = pcur.next
+    }
+    sb_append_str(sb, ") -> ")
+    if decl.return_type != null and str.len(decl.return_type) > 0 {
+        lsp_json_escape(sb, decl.return_type)
+    } else {
+        sb_append_str(sb, "void")
+    }
+    sb_append_str(sb, "\",\"kind\":12,\"detail\":\"act\",")
+    sb_append_str(sb, "\"range\":")
+    lsp_sym_append_range(sb, decl.line, 1, e_line, 1)
+    sb_append_str(sb, ",\"selectionRange\":")
+    let name_len = str.len(decl.name) as i32
+    lsp_sym_append_range(sb, decl.line, decl.col, decl.line, decl.col + name_len)
+    sb_append_char(sb, '}')
+}
+
+// Emits a Struct (data) document symbol with child field symbols.
+act lsp_sym_append_data(sb: @StringBuilder, decl: @StmtNode, e_line: i32) {
+    sb_append_str(sb, "{\"name\":\"")
+    lsp_json_escape(sb, decl.name)
+    sb_append_str(sb, "\",\"kind\":23,\"detail\":\"data\",")
+    sb_append_str(sb, "\"range\":")
+    lsp_sym_append_range(sb, decl.line, 1, e_line, 1)
+    sb_append_str(sb, ",\"selectionRange\":")
+    let name_len = str.len(decl.name) as i32
+    lsp_sym_append_range(sb, decl.line, decl.col, decl.line, decl.col + name_len)
+
+    sb_append_str(sb, ",\"children\":[")
+    mut fcur = decl.first_field
+    mut fcount: i32 = 0
+    loop fcur != null {
+        if fcount > 0 {
+            sb_append_char(sb, ',')
+        }
+        sb_append_str(sb, "{\"name\":\"")
+        lsp_json_escape(sb, fcur.name)
+        sb_append_str(sb, ": ")
+        if fcur.type_name != null {
+            lsp_json_escape(sb, fcur.type_name)
+        }
+        sb_append_str(sb, "\",\"kind\":8,\"detail\":\"field\",")
+        let flen = str.len(fcur.name) as i32
+        sb_append_str(sb, "\"range\":")
+        lsp_sym_append_range(sb, fcur.line, fcur.col, fcur.line, fcur.col + flen + 10)
+        sb_append_str(sb, ",\"selectionRange\":")
+        lsp_sym_append_range(sb, fcur.line, fcur.col, fcur.line, fcur.col + flen)
+        sb_append_char(sb, '}')
+        fcount += 1
+        fcur = fcur.next
+    }
+    sb_append_str(sb, "]}")
+}
+
+// Emits an Enum (kind) document symbol with child enum member (variant) symbols.
+act lsp_sym_append_kind(sb: @StringBuilder, decl: @StmtNode, e_line: i32) {
+    sb_append_str(sb, "{\"name\":\"")
+    lsp_json_escape(sb, decl.name)
+    sb_append_str(sb, "\",\"kind\":10,\"detail\":\"kind\",")
+    sb_append_str(sb, "\"range\":")
+    lsp_sym_append_range(sb, decl.line, 1, e_line, 1)
+    sb_append_str(sb, ",\"selectionRange\":")
+    let name_len = str.len(decl.name) as i32
+    lsp_sym_append_range(sb, decl.line, decl.col, decl.line, decl.col + name_len)
+
+    sb_append_str(sb, ",\"children\":[")
+    mut vcur = decl.first_variant
+    mut vcount: i32 = 0
+    loop vcur != null {
+        if vcount > 0 {
+            sb_append_char(sb, ',')
+        }
+        sb_append_str(sb, "{\"name\":\"")
+        lsp_json_escape(sb, vcur.name)
+        sb_append_str(sb, "\",\"kind\":22,\"detail\":\"variant\",")
+        let vlen = str.len(vcur.name) as i32
+        sb_append_str(sb, "\"range\":")
+        lsp_sym_append_range(sb, vcur.line, vcur.col, vcur.line, vcur.col + vlen + 5)
+        sb_append_str(sb, ",\"selectionRange\":")
+        lsp_sym_append_range(sb, vcur.line, vcur.col, vcur.line, vcur.col + vlen)
+        sb_append_char(sb, '}')
+        vcount += 1
+        vcur = vcur.next
+    }
+    sb_append_str(sb, "]}")
+}
+
+// Emits a TypeParameter (aka / type alias) document symbol.
+act lsp_sym_append_type_alias(sb: @StringBuilder, decl: @StmtNode, e_line: i32) {
+    sb_append_str(sb, "{\"name\":\"aka ")
+    lsp_json_escape(sb, decl.name)
+    sb_append_str(sb, " = ")
+    if decl.type_name != null {
+        lsp_json_escape(sb, decl.type_name)
+    }
+    sb_append_str(sb, "\",\"kind\":26,\"detail\":\"aka\",")
+    sb_append_str(sb, "\"range\":")
+    lsp_sym_append_range(sb, decl.line, 1, e_line, 1)
+    sb_append_str(sb, ",\"selectionRange\":")
+    let name_len = str.len(decl.name) as i32
+    lsp_sym_append_range(sb, decl.line, decl.col, decl.line, decl.col + name_len)
+    sb_append_char(sb, '}')
+}
+
+// Emits an Extern function declaration symbol.
+act lsp_sym_append_extern(sb: @StringBuilder, decl: @StmtNode, e_line: i32) {
+    sb_append_str(sb, "{\"name\":\"")
+    lsp_json_escape(sb, decl.name)
+    sb_append_str(sb, "\",\"kind\":12,\"detail\":\"extern\",")
+    sb_append_str(sb, "\"range\":")
+    lsp_sym_append_range(sb, decl.line, 1, e_line, 1)
+    sb_append_str(sb, ",\"selectionRange\":")
+    let name_len = str.len(decl.name) as i32
+    lsp_sym_append_range(sb, decl.line, decl.col, decl.line, decl.col + name_len)
+    sb_append_char(sb, '}')
+}
+
+// Emits a Test declaration symbol.
+act lsp_sym_append_test(sb: @StringBuilder, decl: @StmtNode, e_line: i32) {
+    sb_append_str(sb, "{\"name\":\"test ")
+    lsp_json_escape(sb, decl.name)
+    sb_append_str(sb, "\",\"kind\":12,\"detail\":\"test\",")
+    sb_append_str(sb, "\"range\":")
+    lsp_sym_append_range(sb, decl.line, 1, e_line, 1)
+    sb_append_str(sb, ",\"selectionRange\":")
+    let name_len = str.len(decl.name) as i32
+    lsp_sym_append_range(sb, decl.line, decl.col, decl.line, decl.col + name_len)
+    sb_append_char(sb, '}')
+}
+
+// Appends a single declaration symbol into StringBuilder.
+act lsp_append_decl_symbol(sb: @StringBuilder, decl: @StmtNode) {
+    mut e_line = decl.line + 20
+    if decl.next != null and decl.next.line > decl.line {
+        e_line = decl.next.line - 1
+    }
+
+    if decl.kind == DECL_DATA {
+        lsp_sym_append_data(sb, decl, e_line)
+    } else if decl.kind == DECL_KIND {
+        lsp_sym_append_kind(sb, decl, e_line)
+    } else if decl.kind == DECL_FUNCTION {
+        lsp_sym_append_func(sb, decl, e_line)
+    } else if decl.kind == DECL_TYPE_ALIAS {
+        lsp_sym_append_type_alias(sb, decl, e_line)
+    } else if decl.kind == DECL_EXTERN {
+        lsp_sym_append_extern(sb, decl, e_line)
+    } else if decl.kind == DECL_TEST {
+        lsp_sym_append_test(sb, decl, e_line)
+    }
+}
+
+// Emits an empty document symbols response (result: []).
+act lsp_send_empty_document_symbols(id_node: @JsonValue) {
+    mut sb = create_sb(128)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
+    lsp_append_id(@sb, id_node)
+    sb_append_str(@sb, ",\"result\":[]}")
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+}
+
+// Parses document text in a clean zone and emits hierarchical DocumentSymbol[] array.
+act lsp_send_document_symbols(id_node: @JsonValue, text: string) {
+    if text == null or str.len(text) == 0 {
+        lsp_send_empty_document_symbols(id_node)
+        return
+    }
+
+    mut sb = create_sb(1024)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
+    lsp_append_id(@sb, id_node)
+    sb_append_str(@sb, ",\"result\":[")
+
+    diag_collector_start()
+
+    zone {
+        let slen = str.len(text)
+        mut lex = create_lexer(text, slen, slen + 2)
+        tokenize(@lex)
+
+        if lex.dropped_count == 0 {
+            mut p: Parser
+            init_parser(@p, "memory.vl", text, lex.tokens, lex.token_count)
+            let prog = parse_program(@p)
+
+            if prog != null {
+                mut sym_count: i32 = 0
+                mut cur = prog.first_decl
+                loop cur != null {
+                    if cur.kind != DECL_USE and cur.name != null and str.len(cur.name) > 0 {
+                        if sym_count > 0 {
+                            sb_append_char(@sb, ',')
+                        }
+                        lsp_append_decl_symbol(@sb, cur)
+                        sym_count += 1
+                    }
+                    cur = cur.next
+                }
+            }
+        }
+    }
+
+    diag_collector_stop()
+    diag_collector_clear()
+
+    sb_append_str(@sb, "]}")
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+}
+

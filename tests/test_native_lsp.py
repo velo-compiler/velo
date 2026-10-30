@@ -306,6 +306,127 @@ def test_native_lsp_live_diagnostics():
     assert proc.returncode == 0
 
 
+def test_native_lsp_document_symbols():
+    """Verify hierarchical document symbols for structs, enums, type aliases, and functions."""
+    proc = spawn_native_lsp()
+
+    # 1. Initialize
+    send_lsp_msg(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    init_res = recv_lsp_msg(proc)
+    assert init_res["id"] == 1
+    caps = init_res["result"].get("capabilities", {})
+    assert caps.get("documentSymbolProvider") is True
+
+    code = """data Vector3 {
+    x: f64
+    y: f64
+    z: f64 = 0.0
+}
+
+kind Color {
+    Red
+    Green
+    Blue
+}
+
+aka VecAlias = Vector3
+
+act add_vectors(a: Vector3, b: Vector3) -> Vector3 {
+    return Vector3 { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z }
+}
+
+extern act c_puts(s: string) -> i32
+"""
+    uri = "file:///symbols_test.vl"
+
+    # 2. didOpen -> consume diagnostics
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {
+            "textDocument": {
+                "uri": uri,
+                "languageId": "velo",
+                "version": 1,
+                "text": code
+            }
+        }
+    })
+    diag = recv_lsp_msg(proc)
+    assert diag["method"] == "textDocument/publishDiagnostics"
+
+    # 3. documentSymbol request
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "textDocument/documentSymbol",
+        "params": {
+            "textDocument": {"uri": uri}
+        }
+    })
+    sym_res = recv_lsp_msg(proc)
+    assert sym_res["id"] == 2
+    symbols = sym_res["result"]
+    assert len(symbols) == 5, f"Expected 5 symbols, got {len(symbols)}"
+
+    # Struct: Vector3
+    s_vec = next((s for s in symbols if s["name"] == "Vector3"), None)
+    assert s_vec is not None
+    assert s_vec["kind"] == 23
+    assert s_vec["detail"] == "data"
+    assert len(s_vec["children"]) == 3
+    assert s_vec["children"][0]["name"] == "x: f64"
+    assert s_vec["children"][0]["kind"] == 8
+
+    # Enum: Color
+    s_color = next((s for s in symbols if s["name"] == "Color"), None)
+    assert s_color is not None
+    assert s_color["kind"] == 10
+    assert s_color["detail"] == "kind"
+    assert len(s_color["children"]) == 3
+    assert s_color["children"][0]["name"] == "Red"
+    assert s_color["children"][0]["kind"] == 22
+
+    # Type alias: VecAlias
+    s_alias = next((s for s in symbols if "VecAlias" in s["name"]), None)
+    assert s_alias is not None
+    assert s_alias["kind"] == 26
+    assert s_alias["name"] == "aka VecAlias = Vector3"
+
+    # Act: add_vectors
+    s_act = next((s for s in symbols if s["name"].startswith("add_vectors(")), None)
+    assert s_act is not None
+    assert s_act["kind"] == 12
+    assert s_act["name"] == "add_vectors(a: Vector3, b: Vector3) -> Vector3"
+
+    # Extern: c_puts
+    s_ext = next((s for s in symbols if s["name"] == "c_puts"), None)
+    assert s_ext is not None
+    assert s_ext["kind"] == 12
+    assert s_ext["detail"] == "extern"
+
+    # 4. Unknown document returns empty array
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "textDocument/documentSymbol",
+        "params": {
+            "textDocument": {"uri": "file:///non_existent_file.vl"}
+        }
+    })
+    empty_res = recv_lsp_msg(proc)
+    assert empty_res["id"] == 3
+    assert empty_res["result"] == []
+
+    # 5. Shutdown and exit
+    send_lsp_msg(proc, {"jsonrpc": "2.0", "id": 4, "method": "shutdown"})
+    recv_lsp_msg(proc)
+    send_lsp_msg(proc, {"jsonrpc": "2.0", "method": "exit"})
+    proc.stdin.close()
+    proc.wait(timeout=5)
+    assert proc.returncode == 0
+
+
 def test_native_lsp_eof_disconnect():
     """Verify server exits gracefully when client closes stdin pipe abruptly."""
     proc = spawn_native_lsp()

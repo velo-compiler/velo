@@ -1829,3 +1829,29 @@ flowchart TD
   - All 5 VS Code extension test suites passed 100% (`python editors/vscode/tests/run_tests.py`: 24 parity, 28 grammar spotchecks, 8 simulations, 11 server probes, 10 extension LSP simulations).
   - All 487 pytest tests passed (`python -m pytest tests -q`).
 
+#### Task 12.3: Document Outline & Breadcrumbs (`textDocument/documentSymbol`) [COMPLETED] ✅
+* **Former Defect**:
+  - `velo lsp` did not implement `textDocument/documentSymbol`, leaving the VS Code Outline view, Breadcrumbs navigation, and Quick Open Symbol (`Ctrl+Shift+O`) non-functional when running against the native compiler binary.
+  - The Python LSP prototype (`velo_lsp.py` / `velo_analysis.py`) handled document symbols via python ast wrappers, adding runtime tax and preventing complete migration to the native compiler.
+* **Fix Applied**:
+  - Implemented the hierarchical document symbol extraction engine in `src/lsp/symbols.vl` (270 lines):
+    - `lsp_sym_append_pos` and `lsp_sym_append_range`: Serializes 0-based LSP position and range JSON objects (`{"line":L,"character":C}`).
+    - `lsp_sym_append_data`: Emits `SymbolKind.Struct` (23) for `DECL_DATA` (`data Entity { ... }`) along with recursive child `SymbolKind.Field` (8) members formatted as `name: type_name`.
+    - `lsp_sym_append_kind`: Emits `SymbolKind.Enum` (10) for `DECL_KIND` (`kind Color { ... }`) along with recursive child `SymbolKind.EnumMember` (22) variants.
+    - `lsp_sym_append_type_alias`: Emits `SymbolKind.TypeParameter` (26) for `DECL_TYPE_ALIAS` (`aka Id = u32`) formatted as `aka <name> = <target_type>`.
+    - `lsp_sym_append_func`: Emits `SymbolKind.Function` (12) for `DECL_FUNCTION` (`act spawn(x: i32) -> Entity`) formatted with comma-separated parameters and return type.
+    - `lsp_sym_append_extern` & `lsp_sym_append_test`: Emits `SymbolKind.Function` (12) for `DECL_EXTERN` and `DECL_TEST`.
+    - `lsp_send_document_symbols`: Parses the document buffer in an ephemeral `zone { ... }` with quiet diagnostic suppression, traverses `prog.first_decl`, and transmits the complete `DocumentSymbol[]` hierarchy.
+    - `lsp_send_empty_document_symbols`: Returns `result: []` for empty or non-existent files.
+  - Shared JSON escaping: Moved `lsp_json_escape` into `src/lsp/transport.vl` (199 lines) to share across diagnostic, symbol, and server serialization.
+  - Updated `src/lsp/transport.vl` to advertise `"documentSymbolProvider": true` in `initialize` response capabilities.
+  - Wired `textDocument/documentSymbol` handling into `src/lsp/server.vl` (365 lines) with document overlay lookup and fallback to disk reading (`fs_exists`, `fs_read_to_str`).
+  - Rebuilt the entire 3-generation bootstrap chain (`scripts/bootstrap.bat` -> Gen2 -> Gen3 -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 determinism (`8E6A611C4D73342D8E04A07585E2EADDBD8865514EDBDC09D7BFE3D568BED3AB`).
+* **Residual Limitation**:
+  - Hover tooltips (`textDocument/hover`, Task 12.4) and Go-to-Definition (`textDocument/definition`, Task 12.5) will be wired into this native engine in the remaining Phase 2 tasks.
+* **Verification**:
+  - `python scripts/count_lines.py` verified all 93 compiler source files < 400 lines (max 365 lines in `src/lsp/server.vl`).
+  - Added dedicated test `test_native_lsp_document_symbols` in `tests/test_native_lsp.py` verifying struct fields, enum variants, type alias representations, function signatures, and empty fallbacks (all 5 tests passed in 0.13s).
+  - Verified 3-generation self-hosting chain determinism: SHA-256 of `emit-c src/main.vl` between Gen2, Gen3, and `bootstrap.c` is identical (`8E6A611C4D73342D8E04A07585E2EADDBD8865514EDBDC09D7BFE3D568BED3AB`).
+  - All 5 VS Code extension test suites passed 100% (`python editors/vscode/tests/run_tests.py`: 24 parity, 28 grammar spotchecks, 8 simulations, 11 server probes, 10 extension LSP simulations).
+  - All 488 pytest tests passed (`python -m pytest tests -q`).

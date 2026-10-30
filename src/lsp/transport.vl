@@ -119,6 +119,30 @@ act lsp_send_payload(payload: string) {
     io_flush_stdout()
 }
 
+// Escapes special characters into a JSON string literal.
+act lsp_json_escape(sb: @StringBuilder, s: string) {
+    if s == null { return }
+    let n = str.len(s)
+    mut i: usize = 0
+    loop i < n {
+        let c = s[i]
+        if c == '"' {
+            sb_append_str(sb, "\\\"")
+        } else if c == '\\' {
+            sb_append_str(sb, "\\\\")
+        } else if c == '\n' {
+            sb_append_str(sb, "\\n")
+        } else if c == '\r' {
+            sb_append_str(sb, "\\r")
+        } else if c == '\t' {
+            sb_append_str(sb, "\\t")
+        } else {
+            sb_append_char(sb, c)
+        }
+        i += 1
+    }
+}
+
 // Formats an arbitrary JSON-RPC request ID (number, string, or null) into a StringBuilder.
 act lsp_append_id(sb: @StringBuilder, id_node: @JsonValue) {
     if id_node == null {
@@ -148,7 +172,7 @@ act lsp_send_initialize_result(id_node: @JsonValue) {
     mut sb = create_sb(256)
     sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
     lsp_append_id(@sb, id_node)
-    sb_append_str(@sb, ",\"result\":{\"capabilities\":{\"textDocumentSync\":1}}}")
+    sb_append_str(@sb, ",\"result\":{\"capabilities\":{\"textDocumentSync\":1,\"documentSymbolProvider\":true}}}")
     let payload = sb_to_string(@sb)
     lsp_send_payload(payload)
 }
