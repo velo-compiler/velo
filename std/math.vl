@@ -1,0 +1,9 @@
+// Pure Velo standard mathematics and numerics library (zero libc runtime dependencies).
+// Provides bit manipulation intrinsics, integer mathematics, saturating arithmetic,
+// number theory, IEEE-754 floating-point operations, rounding, constants,
+// and pure-Velo transcendental and trigonometry functions.
+use "math/bits.vl"
+use "math/int.vl"
+use "math/float.vl"
+use "math/trig.vl"
+

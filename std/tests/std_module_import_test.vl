@@ -6,6 +6,7 @@ use std.str
 use std.fmt
 use std.json
 use std.time
+use std.math
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -48,6 +49,12 @@ act main() -> i32 {
     let d = stopwatch_elapsed(@sw)
     let d_zero = duration_zero()
     if duration_cmp(d, d_zero) < 0 { return 8 }
+
+    // std.math: bitwise popcount, isqrt, and trigonometry
+    if popcount32(0xFF as u32) != 8 as u32 { return 9 }
+    if isqrt_u64(144 as u64) != 12 as u64 { return 10 }
+    let s2 = sqrt_f64(2.0)
+    if abs_f64(s2 * s2 - 2.0) > 0.00001 { return 11 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0

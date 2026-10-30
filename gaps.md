@@ -1485,3 +1485,21 @@ flowchart TD
 * **Verification**:
   - `bin/velo.exe run std/tests/math/trig_test.vl` passed (`PASS: std.math.trig tests succeeded`).
   - `python -m pytest tests/test_std_math.py` passed (4/4 passed in 5.11s).
+
+#### Task 9.5: Standard Library Umbrella Module & Standard Resolution (`std/math.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - Math components were partitioned into submodules (`bits.vl`, `int.vl`, `float.vl`, `trig.vl`). User applications and packages had to import specific subcomponents via relative paths rather than idiomatic `use std.math`. Furthermore, `std/coll/hash.vl` had internal un-namespaced rotation helpers (`rotl32`, `rotr64`) that collided when both collections and math were included.
+* **Fix Applied**:
+  - Namespaced internal rotation helpers in `std/coll/hash.vl` to `hash_rotl32` and `hash_rotr64`, eliminating symbol collisions across translation units.
+  - Implemented `std/math.vl` umbrella module re-exporting the entire mathematics and numerics ecosystem (bit manipulation intrinsics, integer mathematics, saturating arithmetic, number theory, IEEE-754 floating-point operations, rounding, constants, and transcendental and trigonometry functions) with zero C runtime dependencies.
+  - Verified standard compiler resolution via `is_std_module("std.math")` and `std_module_to_rel_path("std.math")` mapping directly to `std/math.vl`.
+  - Added verification test `std/tests/math_module_import_test.vl` exercising comprehensive math workflows through pure `use std.math` imports.
+  - Integrated `use std.math` into standard library umbrella test suite `std/tests/std_module_import_test.vl`.
+  - Added pytest test case `test_std_math_module_import` in `tests/test_std_math.py`.
+* **Residual Limitation**:
+  - None. Phase 9 `std.math` is complete, fully tested, and zero-dependency across bit manipulation, integer math, IEEE-754 floats, transcendentals, and the umbrella module.
+* **Verification**:
+  - `bin/velo.exe run std/tests/math_module_import_test.vl` passed (`PASS: use std.math umbrella module verified`).
+  - `bin/velo.exe run std/tests/std_module_import_test.vl` passed (`PASS: native use std.* imports succeeded`).
+  - `python -m pytest tests/test_std_math.py` passed (5/5 passed in 6.18s).
+  - `python -m pytest tests/test_std_coll.py` passed (7/7 passed in 7.22s).

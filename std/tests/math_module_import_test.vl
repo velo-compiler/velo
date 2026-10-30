@@ -1,0 +1,80 @@
+// Verification test for native 'use std.math' umbrella module import and standard resolution.
+use std.io;
+use std.math;
+
+act main() -> i32 {
+    // 1. Bit manipulation intrinsics via use std.math
+    if popcount32(0xFFFFFFFF as u32) != (32 as u32) {
+        return 1
+    }
+    if clz32(0x00010000 as u32) != (15 as u32) {
+        return 2
+    }
+    if bswap32(0x12345678 as u32) != (0x78563412 as u32) {
+        return 3
+    }
+    if not is_pow2_u32(1024 as u32) {
+        return 4
+    }
+
+    // 2. Integer mathematics & saturating arithmetic via use std.math
+    let min_i32_val: i32 = (-2147483647 as i32) - (1 as i32)
+    let max_i32_val: i32 = 2147483647 as i32
+    if abs_i32(min_i32_val) != max_i32_val {
+        return 5
+    }
+    if add_sat_i32(2000000000 as i32, 1000000000 as i32) != max_i32_val {
+        return 6
+    }
+    if gcd_u64(48 as u64, 18 as u64) != (6 as u64) {
+        return 7
+    }
+    if isqrt_u64(144 as u64) != (12 as u64) {
+        return 8
+    }
+
+    // 3. IEEE-754 floating-point operations and rounding via use std.math
+    let pi = math_pi()
+    if pi <= 3.14159 or pi >= 3.14160 {
+        return 9
+    }
+    if abs_f64(-42.5) != 42.5 {
+        return 10
+    }
+    if round_f64(3.5) != 4.0 {
+        return 11
+    }
+    let rem = fmod_f64(5.3, 2.0)
+    if rem <= 1.299 or rem >= 1.301 {
+        return 12
+    }
+
+    // 4. Transcendental & trigonometry functions via use std.math
+    let s2 = sqrt_f64(2.0)
+    if abs_f64(s2 * s2 - 2.0) > 0.00001 {
+        return 13
+    }
+    let s_half_pi = sin_f64(pi / 2.0)
+    if abs_f64(s_half_pi - 1.0) > 0.00001 {
+        return 14
+    }
+    let c0 = cos_f64(0.0)
+    if abs_f64(c0 - 1.0) > 0.00001 {
+        return 15
+    }
+    let e = exp_f64(1.0)
+    if abs_f64(e - math_e()) > 0.00001 {
+        return 16
+    }
+    let lne = ln_f64(math_e())
+    if abs_f64(lne - 1.0) > 0.00001 {
+        return 17
+    }
+    if pow_f64(2.0, 10.0) != 1024.0 {
+        return 18
+    }
+
+    println_str("PASS: use std.math umbrella module verified")
+    return 0
+}
+
