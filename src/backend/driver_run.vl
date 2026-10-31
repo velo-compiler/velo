@@ -15,6 +15,9 @@ act build_executable_opts(source_path: string, output_exe: string, unsafe_index:
     }
 
     let stem = path_stem_to_str(source_path)
+    if not fs_exists(".velo_cache") {
+        fs_create_dir_all(".velo_cache")
+    }
     mut c_path_sb = create_sb(128)
     sb_append_str(@c_path_sb, ".velo_cache/")
     sb_append_str(@c_path_sb, stem)
@@ -74,6 +77,9 @@ act test_source_file_opts(source_path: string, unsafe_index: bool, opt_flags: st
     if c_code == null { return 1 }
 
     let stem = path_stem_to_str(source_path)
+    if not fs_exists(".velo_cache") {
+        fs_create_dir_all(".velo_cache")
+    }
     mut c_path_sb = create_sb(128)
     sb_append_str(@c_path_sb, ".velo_cache/"); sb_append_str(@c_path_sb, stem); sb_append_str(@c_path_sb, "_test.c")
     let c_file_path = sb_to_string(@c_path_sb)

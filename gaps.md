@@ -1993,3 +1993,28 @@ flowchart TD
   - `website/scripts/verify_docs.ts` verified 49 pages, 14 categories, 16 stdlib modules, 9 playground presets, and 8 search queries with 0 errors.
   - `npm run build` in `website/` built cleanly in 652ms without warnings (`dist/index.html` 2.01 kB, `assets/index-*.js` 452 kB, `assets/index-*.css` 54 kB).
   - All unit and integration test suites passing.
+
+#### Task 15.2: Global Toolchain Standard Library Resolution & One-Liner Installers [COMPLETED] ✅
+* **Former Defect**:
+  - When Velo was installed on a user's machine via the one-liner web installer (`irm http://localhost:5173/install.ps1 | iex`), navigating to an external project directory (e.g. `C:\projects\test`) and running `velo run app.vl` with `use std.io` failed immediately with `[Velo Error] Source file does not exist: std/io.vl`.
+  - The installer script had only downloaded and copied `velo.exe` into `~/.velo/bin/`, omitting the `std/` standard library module tree and the `velo_runtime.h` C runtime header.
+  - Furthermore, `src/backend/driver.vl`'s `resolve_std_module_path` only checked relative directories (`dir/std`, `dir/../std`, `dir/../../std`, and `./std`), without falling back to query `VELO_STD`, `VELO_HOME`, or user home directories (`~/.velo/std/`).
+  - When compiling C output, backend commands in `src/backend/driver_cc.vl` hardcoded relative flags (`-I runtime -I velo/runtime`), which failed when running outside the repository with `fatal error: velo_runtime.h: No such file or directory`.
+  - In addition, running in a clean directory caused GCC to fail with `cc1.exe: fatal error: .velo_cache\app.c: No such file or directory` because `src/backend/driver_run.vl` did not ensure `.velo_cache/` existed before writing intermediate files.
+* **Fix Applied**:
+  - Standard Library Resolution (`src/backend/driver.vl`):
+    - Enhanced `resolve_std_module_path` to query `VELO_STD` and `VELO_HOME` environment variables, Windows `$USERPROFILE/.velo/`, POSIX `$HOME/.velo/`, and system fallback paths (`/usr/local/share/velo`, `/usr/share/velo`).
+  - Cache Directory Auto-Creation (`src/backend/driver_run.vl`):
+    - Added automated `fs_create_dir_all(".velo_cache")` in `build_executable_opts` and `test_source_file_opts` prior to writing intermediate `.c` source files and binaries.
+  - Global C Runtime Include Resolution (`src/backend/driver_cc.vl`):
+    - Added `append_runtime_includes` to inject `-I` flags for `$VELO_INCLUDE`, `$VELO_HOME/include`, `$USERPROFILE/.velo/include`, `$HOME/.velo/include`, and `/usr/local/include/velo` into both GCC and MSVC commands.
+  - Automated Installer & Package Bundling (`website/public/install.ps1`, `website/public/install.sh`):
+    - Created `velo-std.zip` and `velo-std.tar.gz` packaging the full `std/` library and `runtime/velo_runtime.h`.
+    - Installers now automatically unpack `std/` to `~/.velo/std` and runtime headers to `~/.velo/include`.
+    - Installers configure persistent environment variables (`PATH` with `~/.velo/bin`, `VELO_HOME`, and `VELO_STD`).
+* **Residual Limitation**:
+  - None. Velo projects can be compiled and executed anywhere on the system without requiring repository context.
+* **Verification**:
+  - Successfully executed `velo run app.vl` containing `use std.io; act main() { io.println_str("Hello, Velo!") }` inside external project directory `C:\projects\test`, verifying stdout `Hello, Velo!`.
+  - Rebuilt 3-generation self-hosted bootstrap chain (`scripts/bootstrap.bat` -> Gen 2 -> Gen 3 -> canonical `bin/velo.exe` -> `bootstrap.c`), confirming fixed-point SHA-256 determinism.
+  - All source files remain strictly below 400 lines (`python scripts/count_lines.py`).

@@ -1,5 +1,6 @@
 // Backend compiler driver helper for GCC and MSVC (cl.exe).
 use std.fs
+use sys.os
 use "../common/string_builder.vl"
 use "../common/utils.vl"
 
@@ -76,6 +77,54 @@ act append_msvc_linker_flags(sb: @StringBuilder, linker_flags: string, debug_mod
     }
 }
 
+// Appends a single include directory flag if the directory exists on disk.
+act append_include_flag(sb: @StringBuilder, is_msvc: bool, dir_path: string) {
+    if fs_exists(dir_path) {
+        if is_msvc {
+            sb_append_str(sb, " /I \"")
+        } else {
+            sb_append_str(sb, " -I \"")
+        }
+        sb_append_str(sb, path_to_native_str(dir_path))
+        sb_append_str(sb, "\"")
+    }
+}
+
+// Appends runtime include directories (in-tree runtime, VELO_INCLUDE, ~/.velo/include, ~/.velo/runtime).
+act append_runtime_includes(sb: @StringBuilder, is_msvc: bool) {
+    if is_msvc {
+        sb_append_str(sb, "/I runtime /I velo/runtime")
+    } else {
+        sb_append_str(sb, "-I runtime -I velo/runtime")
+    }
+
+    let env_inc = os.get_env("VELO_INCLUDE")
+    if str.len(env_inc) > 0 {
+        append_include_flag(sb, is_msvc, env_inc)
+    }
+
+    let env_home = os.get_env("VELO_HOME")
+    if str.len(env_home) > 0 {
+        append_include_flag(sb, is_msvc, path_join_str(env_home, "include"))
+        append_include_flag(sb, is_msvc, path_join_str(env_home, "runtime"))
+    }
+
+    let u_prof = os.get_env("USERPROFILE")
+    if str.len(u_prof) > 0 {
+        append_include_flag(sb, is_msvc, path_join_str(u_prof, ".velo/include"))
+        append_include_flag(sb, is_msvc, path_join_str(u_prof, ".velo/runtime"))
+    }
+
+    let h_prof = os.get_env("HOME")
+    if str.len(h_prof) > 0 {
+        append_include_flag(sb, is_msvc, path_join_str(h_prof, ".velo/include"))
+        append_include_flag(sb, is_msvc, path_join_str(h_prof, ".velo/runtime"))
+    }
+
+    append_include_flag(sb, is_msvc, "/usr/local/include/velo")
+    append_include_flag(sb, is_msvc, "/usr/include/velo")
+}
+
 // Assembles MSVC cl.exe compilation command.
 act assemble_msvc_compile_cmd(c_file_path: string, out_exe_path: string, opt_flags: string, linker_flags: string) -> string {
     mut cmd_sb = create_sb(512)
@@ -85,7 +134,9 @@ act assemble_msvc_compile_cmd(c_file_path: string, out_exe_path: string, opt_fla
         sb_append_str(@cmd_sb, vcvars)
         sb_append_str(@cmd_sb, "\" >nul && ")
     }
-    sb_append_str(@cmd_sb, "cl /nologo /TC /W3 /wd4090 /wd4996 /D_CRT_SECURE_NO_WARNINGS /I runtime /I velo/runtime ")
+    sb_append_str(@cmd_sb, "cl /nologo /TC /W3 /wd4090 /wd4996 /D_CRT_SECURE_NO_WARNINGS ")
+    append_runtime_includes(@cmd_sb, true)
+    sb_append_str(@cmd_sb, " ")
     mut is_debug = false
     if opt_flags == null or str.len(opt_flags) == 0 {
         sb_append_str(@cmd_sb, "/O2 ")
@@ -117,7 +168,9 @@ act assemble_gcc_compile_cmd(c_file_path: string, out_exe_path: string, opt_flag
     } else {
         sb_append_str(@cmd_sb, "-O2 ")
     }
-    sb_append_str(@cmd_sb, "-std=c99 -I runtime -I velo/runtime ")
+    sb_append_str(@cmd_sb, "-std=c99 ")
+    append_runtime_includes(@cmd_sb, false)
+    sb_append_str(@cmd_sb, " ")
     sb_append_str(@cmd_sb, path_to_native_str(c_file_path))
     if linker_flags != null and str.len(linker_flags) > 0 {
         sb_append_str(@cmd_sb, " ")

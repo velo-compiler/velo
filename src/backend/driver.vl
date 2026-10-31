@@ -3,6 +3,7 @@ use std.io
 use std.fs
 use std.mem
 use std.os
+use sys.os
 
 use "../frontend/token.vl"
 use "../frontend/lexer.vl"
@@ -163,6 +164,45 @@ act resolve_std_module_path(dir: string, mod_path: string) -> string {
     if fs_exists(p3) { return p3 }
 
     if fs_exists(rel_file) { return path_normalize_str(rel_file) }
+
+    // Check VELO_STD environment variable (direct path or ~/.velo/std)
+    let env_std = os.get_env("VELO_STD")
+    if str.len(env_std) > 0 {
+        let p_env1 = path_join_str(env_std, rel_file)
+        if fs_exists(p_env1) { return p_env1 }
+        if str.len(rel_file) > 4 {
+            let sub = copy_slice_to_string(rel_file, 4, str.len(rel_file) - 4)
+            let p_env2 = path_join_str(env_std, sub)
+            if fs_exists(p_env2) { return p_env2 }
+        }
+    }
+
+    // Check VELO_HOME environment variable (e.g. ~/.velo)
+    let env_home = os.get_env("VELO_HOME")
+    if str.len(env_home) > 0 {
+        let p_home = path_join_str(env_home, rel_file)
+        if fs_exists(p_home) { return p_home }
+    }
+
+    // Check Windows user profile (~/.velo/std/...)
+    let u_prof = os.get_env("USERPROFILE")
+    if str.len(u_prof) > 0 {
+        let pu = path_join_str(u_prof, path_join_str(".velo", rel_file))
+        if fs_exists(pu) { return pu }
+    }
+
+    // Check POSIX home (~/.velo/std/...)
+    let h_prof = os.get_env("HOME")
+    if str.len(h_prof) > 0 {
+        let ph = path_join_str(h_prof, path_join_str(".velo", rel_file))
+        if fs_exists(ph) { return ph }
+    }
+
+    // System-wide fallbacks
+    let p_sys1 = path_join_str("/usr/local/share/velo", rel_file)
+    if fs_exists(p_sys1) { return p_sys1 }
+    let p_sys2 = path_join_str("/usr/share/velo", rel_file)
+    if fs_exists(p_sys2) { return p_sys2 }
 
     return p1
 }
