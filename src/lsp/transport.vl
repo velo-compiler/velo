@@ -172,7 +172,7 @@ act lsp_send_initialize_result(id_node: @JsonValue) {
     mut sb = create_sb(256)
     sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
     lsp_append_id(@sb, id_node)
-    sb_append_str(@sb, ",\"result\":{\"capabilities\":{\"textDocumentSync\":1,\"documentSymbolProvider\":true,\"hoverProvider\":true}}}")
+    sb_append_str(@sb, ",\"result\":{\"capabilities\":{\"textDocumentSync\":1,\"documentSymbolProvider\":true,\"hoverProvider\":true,\"definitionProvider\":true}}}")
     let payload = sb_to_string(@sb)
     lsp_send_payload(payload)
 }
@@ -195,5 +195,75 @@ act lsp_send_method_not_found(id_node: @JsonValue) {
     sb_append_str(@sb, ",\"error\":{\"code\":-32601,\"message\":\"Method not found\"}}")
     let payload = sb_to_string(@sb)
     lsp_send_payload(payload)
+}
+
+// Converts an OS filesystem path to a compliant file:/// URI.
+act lsp_path_to_uri(path: string) -> string {
+    if path == null or str.len(path) == 0 { return "" }
+    mut sb = create_sb(str.len(path) + 16)
+    sb_append_str(@sb, "file:///")
+    let plen = str.len(path)
+    mut start_idx: usize = 0
+    if plen > 2 and path[0] == '/' and path[2] == ':' {
+        start_idx = 1
+    }
+    mut i: usize = start_idx
+    loop i < plen {
+        let b = path[i]
+        if b == '\\' as u8 {
+            sb_append_char(@sb, '/')
+        } else {
+            sb_append_char(@sb, b)
+        }
+        i += 1
+    }
+    return sb_to_string(@sb)
+}
+
+// Emits an empty definition response (result: null).
+act lsp_send_null_definition(id_node: @JsonValue) {
+    mut sb = create_sb(128)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
+    lsp_append_id(@sb, id_node)
+    sb_append_str(@sb, ",\"result\":null}")
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+    mem.free(payload as @u8)
+}
+
+// Emits a single definition Location response.
+act lsp_send_definition_location(id_node: @JsonValue, target_uri: string, line0: i32, start_col: i32, end_col: i32) {
+    mut final_uri = target_uri
+    mut free_uri = false
+    let ulen = str.len(target_uri)
+    if ulen > 5 and target_uri[0] == 'f' and target_uri[1] == 'i' and target_uri[2] == 'l' and target_uri[3] == 'e' and target_uri[4] == ':' {
+        final_uri = target_uri
+    } else {
+        final_uri = lsp_path_to_uri(target_uri)
+        free_uri = true
+    }
+
+    mut sb = create_sb(256)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
+    lsp_append_id(@sb, id_node)
+    sb_append_str(@sb, ",\"result\":{\"uri\":\"")
+    lsp_json_escape(@sb, final_uri)
+    sb_append_str(@sb, "\",\"range\":{\"start\":{\"line\":")
+    sb_append_int(@sb, line0)
+    sb_append_str(@sb, ",\"character\":")
+    sb_append_int(@sb, start_col)
+    sb_append_str(@sb, "},\"end\":{\"line\":")
+    sb_append_int(@sb, line0)
+    sb_append_str(@sb, ",\"character\":")
+    sb_append_int(@sb, end_col)
+    sb_append_str(@sb, "}}}}")
+
+    if free_uri {
+        mem.free(final_uri as @u8)
+    }
+
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+    mem.free(payload as @u8)
 }
 

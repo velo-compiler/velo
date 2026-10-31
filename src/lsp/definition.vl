@@ -1,0 +1,394 @@
+// Go to Definition and Peek Definition provider for Velo LSP.
+// Resolves declaration locations for variables, parameters, structs, functions, and imports.
+
+use std.io
+use std.mem
+use std.str
+use std.json
+use std.fs
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "../common/diagnostics.vl"
+use "../frontend/token.vl"
+use "../frontend/lexer.vl"
+use "../frontend/parser.vl"
+use "../frontend/parser_expr.vl"
+use "../frontend/parser_binary.vl"
+use "../frontend/parser_stmt.vl"
+use "../frontend/parser_decl.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../backend/driver.vl"
+use "transport.vl"
+use "analysis.vl"
+use "doc_store.vl"
+
+// Checks if a module path starts with "sys.".
+act lsp_is_sys_module(mod_path: string) -> bool {
+    let mlen = str.len(mod_path)
+    if mlen >= 4 and mod_path[0] == 's' as u8 and mod_path[1] == 'y' as u8 and mod_path[2] == 's' as u8 and mod_path[3] == '.' as u8 {
+        return true
+    }
+    return false
+}
+
+// Scans line `line0` in `text` to find the 0-based start column of identifier `name`.
+act lsp_find_token_col_in_line(text: string, line0: i32, name: string) -> i32 {
+    if text == null or name == null { return 0 }
+    let tlen = str.len(text)
+    let nlen = str.len(name)
+    if nlen == 0 { return 0 }
+
+    mut cur_line: i32 = 0
+    mut line_start: usize = 0
+    mut i: usize = 0
+    loop i < tlen {
+        if cur_line == line0 { break }
+        if text[i] == '\n' as u8 {
+            cur_line += 1
+            line_start = i + 1
+        }
+        i += 1
+    }
+    if cur_line != line0 or line_start >= tlen { return 0 }
+
+    mut line_end: usize = line_start
+    loop line_end < tlen and text[line_end] != '\n' as u8 and text[line_end] != '\r' as u8 {
+        line_end += 1
+    }
+    let line_len = line_end - line_start
+    if line_len < nlen { return 0 }
+
+    mut c: usize = 0
+    loop c + nlen <= line_len {
+        mut match_name = true
+        mut k: usize = 0
+        loop k < nlen {
+            if text[line_start + c + k] != name[k] {
+                match_name = false
+                break
+            }
+            k += 1
+        }
+        if match_name {
+            mut left_ok = (c == 0)
+            if !left_ok {
+                let prev_c = text[line_start + c - 1]
+                if !is_ident_part(prev_c) { left_ok = true }
+            }
+            mut right_ok = (c + nlen == line_len)
+            if !right_ok {
+                let next_c = text[line_start + c + nlen]
+                if !is_ident_part(next_c) { right_ok = true }
+            }
+            if left_ok and right_ok {
+                return c as i32
+            }
+        }
+        c += 1
+    }
+    return 0
+}
+
+// Searches statement tree for a local variable declaration matching target preceding max_line.
+act lsp_find_local_decl_in_stmt(stmt: @StmtNode, target: string, max_line: i32, out_decl: @@StmtNode) -> bool {
+    if stmt == null { return false }
+    if stmt.kind == STMT_VAR_DECL {
+        if stmt.line <= max_line and slice_eq_str(slice_from_str(target), stmt.name) {
+            out_decl.@ = stmt
+            return true
+        }
+    }
+    if stmt.kind == STMT_BLOCK {
+        mut cur = stmt.first_stmt
+        loop cur != null {
+            if lsp_find_local_decl_in_stmt(cur, target, max_line, out_decl) {
+                return true
+            }
+            cur = cur.next
+        }
+    } else if stmt.kind == STMT_IF {
+        if lsp_find_local_decl_in_stmt(stmt.body, target, max_line, out_decl) { return true }
+        if lsp_find_local_decl_in_stmt(stmt.else_branch, target, max_line, out_decl) { return true }
+    } else if stmt.kind == STMT_LOOP {
+        if lsp_find_local_decl_in_stmt(stmt.body, target, max_line, out_decl) { return true }
+    }
+    return false
+}
+
+// Searches top-level program declarations for an identifier match (function, struct, kind, field, variant).
+act lsp_search_decls_for_name(prog: @ProgramNode, text: string, target_name: string, out_line0: @i32, out_col: @i32, out_len: @i32) -> bool {
+    if prog == null { return false }
+    mut cur = prog.first_decl
+    loop cur != null {
+        if cur.name != null and slice_eq_str(slice_from_str(target_name), cur.name) {
+            let def_line0 = cur.line - 1
+            out_line0.@ = def_line0
+            out_col.@ = lsp_find_token_col_in_line(text, def_line0, target_name)
+            out_len.@ = str.len(target_name) as i32
+            return true
+        }
+        if cur.kind == DECL_DATA {
+            mut f = cur.first_field
+            loop f != null {
+                if slice_eq_str(slice_from_str(target_name), f.name) {
+                    mut def_line0 = cur.line - 1
+                    if f.line > 0 { def_line0 = f.line - 1 }
+                    out_line0.@ = def_line0
+                    out_col.@ = lsp_find_token_col_in_line(text, def_line0, target_name)
+                    out_len.@ = str.len(target_name) as i32
+                    return true
+                }
+                f = f.next
+            }
+        } else if cur.kind == DECL_KIND {
+            mut v = cur.first_variant
+            loop v != null {
+                if slice_eq_str(slice_from_str(target_name), v.name) {
+                    mut def_line0 = cur.line - 1
+                    if v.line > 0 { def_line0 = v.line - 1 }
+                    out_line0.@ = def_line0
+                    out_col.@ = lsp_find_token_col_in_line(text, def_line0, target_name)
+                    out_len.@ = str.len(target_name) as i32
+                    return true
+                }
+                v = v.next
+            }
+        }
+        cur = cur.next
+    }
+    return false
+}
+
+// Maps well-known standard library functions to their canonical module path.
+act lsp_resolve_stdlib_symbol_file(dir: string, target: string) -> string {
+    if slice_eq_str(slice_from_str(target), "println_str") or slice_eq_str(slice_from_str(target), "print_str") or slice_eq_str(slice_from_str(target), "fprintln_str") {
+        return resolve_std_module_path(dir, "std.io")
+    }
+    if slice_eq_str(slice_from_str(target), "fs_read_to_str") or slice_eq_str(slice_from_str(target), "fs_write_str") or slice_eq_str(slice_from_str(target), "fs_exists") {
+        return resolve_std_module_path(dir, "std.fs")
+    }
+    if slice_eq_str(slice_from_str(target), "path_join_str") or slice_eq_str(slice_from_str(target), "path_dirname_to_str") or slice_eq_str(slice_from_str(target), "path_basename_str") {
+        return resolve_std_module_path(dir, "std.path")
+    }
+    if slice_eq_str(slice_from_str(target), "os_system") or slice_eq_str(slice_from_str(target), "os_spawn") or slice_eq_str(slice_from_str(target), "os_get_env") {
+        return resolve_std_module_path(dir, "std.os")
+    }
+    if slice_eq_str(slice_from_str(target), "heap_alloc") or slice_eq_str(slice_from_str(target), "heap_free") or slice_eq_str(slice_from_str(target), "heap_alloc_str") {
+        return resolve_std_module_path(dir, "std.mem")
+    }
+    return null
+}
+
+// Recursively searches an imported file (and its sub-modules) for a declaration.
+act lsp_search_symbol_in_file(state: @LspServerState, file_path: string, target_name: string, depth: i32, out_line: @i32, out_col: @i32, out_len: @i32, out_found_path: @string) -> bool {
+    if depth > 3 { return false }
+    mut ftext: string = null
+    mut needs_free = false
+    let doc = lsp_find_doc(state, slice_from_str(file_path))
+    if doc != null and doc.text != null {
+        ftext = doc.text
+    } else {
+        if !fs_exists(file_path) { return false }
+        ftext = fs_read_to_str(file_path)
+        needs_free = true
+    }
+    if ftext == null { return false }
+
+    mut found = false
+    zone {
+        let flen = str.len(ftext)
+        mut flex = create_lexer(ftext, flen, flen + 2)
+        tokenize(@flex)
+        if flex.dropped_count == 0 {
+            mut fp: Parser
+            init_parser(@fp, file_path, ftext, flex.tokens, flex.token_count)
+            let fprog = parse_program(@fp)
+            if fprog != null {
+                if lsp_search_decls_for_name(fprog, ftext, target_name, out_line, out_col, out_len) {
+                    out_found_path.@ = file_path
+                    found = true
+                } else {
+                    let file_dir = path_dirname_to_str(file_path)
+                    mut u = fprog.first_decl
+                    loop u != null {
+                        if u.kind == DECL_USE and u.module_path != null {
+                            let sub_rel = u.module_path
+                            mut sub_path: string = null
+                            if is_std_module(sub_rel) {
+                                sub_path = resolve_std_module_path(file_dir, sub_rel)
+                            } else {
+                                sub_path = path_join_str(file_dir, sub_rel)
+                            }
+                            if sub_path != null and fs_exists(sub_path) {
+                                if lsp_search_symbol_in_file(state, sub_path, target_name, depth + 1, out_line, out_col, out_len, out_found_path) {
+                                    found = true
+                                    break
+                                }
+                            }
+                        }
+                        u = u.next
+                    }
+                }
+            }
+        }
+    }
+    if needs_free {
+        mem.free(ftext as @u8)
+    }
+    return found
+}
+
+// Processes textDocument/definition request and transmits Location response.
+act lsp_send_definition_result(id_node: @JsonValue, state: @LspServerState, uri: string, text: string, line0: i32, char0: i32) {
+    if text == null or str.len(text) == 0 {
+        lsp_send_null_definition(id_node)
+        return
+    }
+
+    mut word_buf: @u8 = mem.heap_alloc(@u8, 128)
+    defer mem.free(word_buf)
+    mut start_col: i32 = 0
+    mut end_col: i32 = 0
+
+    let ok = lsp_extract_word_at_pos(text, line0, char0, word_buf, @start_col, @end_col)
+    if !ok {
+        lsp_send_null_definition(id_node)
+        return
+    }
+
+    let target_name = word_buf as string
+    mut found = false
+    mut found_line: i32 = 0
+    mut found_col: i32 = 0
+    mut found_len: i32 = 0
+    mut found_uri: string = null
+
+    diag_collector_start()
+
+    zone {
+        let slen = str.len(text)
+        mut lex = create_lexer(text, slen, slen + 2)
+        tokenize(@lex)
+
+        if lex.dropped_count == 0 {
+            mut p: Parser
+            init_parser(@p, "memory.vl", text, lex.tokens, lex.token_count)
+            let prog = parse_program(@p)
+
+            if prog != null {
+                // 1. Look for enclosing act and check parameters and locals
+                mut enclosing_act: @StmtNode = null
+                mut cur = prog.first_decl
+                loop cur != null {
+                    if cur.kind == DECL_FUNCTION and cur.line <= line0 + 1 {
+                        enclosing_act = cur
+                    }
+                    cur = cur.next
+                }
+
+                if enclosing_act != null {
+                    // Check act parameters
+                    mut pcur = enclosing_act.first_param
+                    loop pcur != null {
+                        if slice_eq_str(slice_from_str(target_name), pcur.name) {
+                            mut def_line0 = enclosing_act.line - 1
+                            if pcur.line > 0 { def_line0 = pcur.line - 1 }
+                            found_line = def_line0
+                            found_col = lsp_find_token_col_in_line(text, def_line0, target_name)
+                            found_len = str.len(target_name) as i32
+                            found_uri = uri
+                            found = true
+                            break
+                        }
+                        pcur = pcur.next
+                    }
+
+                    // Check local variables in act body
+                    if !found and enclosing_act.body != null {
+                        mut ldecl: @StmtNode = null
+                        if lsp_find_local_decl_in_stmt(enclosing_act.body, target_name, line0 + 1, @ldecl) {
+                            let def_line0 = ldecl.line - 1
+                            found_line = def_line0
+                            found_col = lsp_find_token_col_in_line(text, def_line0, target_name)
+                            found_len = str.len(target_name) as i32
+                            found_uri = uri
+                            found = true
+                        }
+                    }
+                }
+
+                // 2. Check top-level declarations in current document
+                if !found {
+                    if lsp_search_decls_for_name(prog, text, target_name, @found_line, @found_col, @found_len) {
+                        found_uri = uri
+                        found = true
+                    }
+                }
+
+                // 3. Check imported modules in current document
+                if !found {
+                    let doc_path = lsp_uri_to_path(uri)
+                    let dir = path_dirname_to_str(doc_path)
+                    mut ucur = prog.first_decl
+                    loop ucur != null {
+                        if ucur.kind == DECL_USE and ucur.module_path != null {
+                            let mod_path = ucur.module_path
+                            mut resolved_file = ""
+                            if is_std_module(mod_path) {
+                                resolved_file = resolve_std_module_path(dir, mod_path)
+                            } else if !lsp_is_sys_module(mod_path) {
+                                resolved_file = path_join_str(dir, mod_path)
+                            }
+                            if str.len(resolved_file) > 0 and fs_exists(resolved_file) {
+                                mut imp_line: i32 = 0
+                                mut imp_col: i32 = 0
+                                mut imp_len: i32 = 0
+                                mut imp_found_path: string = null
+                                if lsp_search_symbol_in_file(state, resolved_file, target_name, 0, @imp_line, @imp_col, @imp_len, @imp_found_path) {
+                                    found_line = imp_line
+                                    found_col = imp_col
+                                    found_len = imp_len
+                                    found_uri = lsp_path_to_uri(imp_found_path)
+                                    found = true
+                                    break
+                                }
+                            }
+                        }
+                        ucur = ucur.next
+                    }
+                }
+
+                // 4. Standard library fallback
+                if !found {
+                    let doc_path = lsp_uri_to_path(uri)
+                    let dir = path_dirname_to_str(doc_path)
+                    let std_file = lsp_resolve_stdlib_symbol_file(dir, target_name)
+                    if std_file != null and str.len(std_file) > 0 and fs_exists(std_file) {
+                        mut imp_line: i32 = 0
+                        mut imp_col: i32 = 0
+                        mut imp_len: i32 = 0
+                        mut imp_found_path: string = null
+                        if lsp_search_symbol_in_file(state, std_file, target_name, 0, @imp_line, @imp_col, @imp_len, @imp_found_path) {
+                            found_line = imp_line
+                            found_col = imp_col
+                            found_len = imp_len
+                            found_uri = lsp_path_to_uri(imp_found_path)
+                            found = true
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    diag_collector_stop()
+    diag_collector_clear()
+
+    if found {
+        lsp_send_definition_location(id_node, found_uri, found_line, found_col, found_col + found_len)
+    } else {
+        lsp_send_null_definition(id_node)
+    }
+}

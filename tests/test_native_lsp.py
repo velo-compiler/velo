@@ -562,6 +562,140 @@ act main() -> i32 {
     assert proc.returncode == 0
 
 
+def test_native_lsp_definition():
+    """Verify textDocument/definition for structs, acts, parameters, locals, fields, and imports."""
+    proc = spawn_native_lsp()
+
+    # 1. Initialize
+    send_lsp_msg(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    init_res = recv_lsp_msg(proc)
+    assert init_res["result"]["capabilities"]["definitionProvider"] is True
+
+    code = """data Point {
+    x: i32
+    y: i32
+}
+
+aka PointAlias = Point
+
+act create_point(px: i32, py: i32) -> Point {
+    return Point { x: px, y: py }
+}
+
+act main() -> i32 {
+    let p: Point = create_point(10, 20)
+    return p.x
+}
+"""
+    uri = "file:///def_test.vl"
+
+    # 2. didOpen
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {
+            "textDocument": {
+                "uri": uri,
+                "languageId": "velo",
+                "version": 1,
+                "text": code
+            }
+        }
+    })
+    diag = recv_lsp_msg(proc)
+    assert diag["method"] == "textDocument/publishDiagnostics"
+
+    # 3. Definition on struct type `Point` on line 12 (character 13 in `let p: Point`)
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "textDocument/definition",
+        "params": {
+            "textDocument": {"uri": uri},
+            "position": {"line": 12, "character": 13}
+        }
+    })
+    def_struct = recv_lsp_msg(proc)
+    assert def_struct["id"] == 2
+    assert def_struct["result"] is not None
+    assert def_struct["result"]["uri"] == uri
+    assert def_struct["result"]["range"]["start"]["line"] == 0
+    assert def_struct["result"]["range"]["start"]["character"] == 5
+
+    # 4. Definition on act call `create_point` on line 12 (character 22)
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "textDocument/definition",
+        "params": {
+            "textDocument": {"uri": uri},
+            "position": {"line": 12, "character": 22}
+        }
+    })
+    def_act = recv_lsp_msg(proc)
+    assert def_act["id"] == 3
+    assert def_act["result"] is not None
+    assert def_act["result"]["uri"] == uri
+    assert def_act["result"]["range"]["start"]["line"] == 7
+    assert def_act["result"]["range"]["start"]["character"] == 4
+
+    # 5. Definition on local variable `p` on line 13 (character 11 in `return p.x`)
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "method": "textDocument/definition",
+        "params": {
+            "textDocument": {"uri": uri},
+            "position": {"line": 13, "character": 11}
+        }
+    })
+    def_local = recv_lsp_msg(proc)
+    assert def_local["id"] == 4
+    assert def_local["result"] is not None
+    assert def_local["result"]["uri"] == uri
+    assert def_local["result"]["range"]["start"]["line"] == 12
+    assert def_local["result"]["range"]["start"]["character"] == 8
+
+    # 6. Definition on parameter `px` on line 8 (character 22 in `x: px`)
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "textDocument/definition",
+        "params": {
+            "textDocument": {"uri": uri},
+            "position": {"line": 8, "character": 22}
+        }
+    })
+    def_param = recv_lsp_msg(proc)
+    assert def_param["id"] == 5
+    assert def_param["result"] is not None
+    assert def_param["result"]["uri"] == uri
+    assert def_param["result"]["range"]["start"]["line"] == 7
+    assert def_param["result"]["range"]["start"]["character"] == 17
+
+    # 7. Definition on whitespace -> returns null
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "textDocument/definition",
+        "params": {
+            "textDocument": {"uri": uri},
+            "position": {"line": 1, "character": 0}
+        }
+    })
+    def_null = recv_lsp_msg(proc)
+    assert def_null["id"] == 6
+    assert def_null["result"] is None
+
+    # 8. Shutdown and exit
+    send_lsp_msg(proc, {"jsonrpc": "2.0", "id": 7, "method": "shutdown"})
+    recv_lsp_msg(proc)
+    send_lsp_msg(proc, {"jsonrpc": "2.0", "method": "exit"})
+    proc.stdin.close()
+    proc.wait(timeout=5)
+    assert proc.returncode == 0
+
+
 def test_native_lsp_eof_disconnect():
     """Verify server exits gracefully when client closes stdin pipe abruptly."""
     proc = spawn_native_lsp()

@@ -1882,10 +1882,36 @@ flowchart TD
   - Maintained code standards: all compiler source files strictly remain under 400 lines (`src/lsp/hover.vl` 388 lines, `src/lsp/server.vl` 298 lines, `src/lsp/doc_store.vl` 125 lines).
   - Rebuilt the entire 3-generation bootstrap chain (`scripts/bootstrap.bat` -> Gen2 -> Gen3 -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 determinism (`F25AF75FCC1E61ECB39E6CB73E00AEA3645BC697CFDBA6EFC17C2CD0F4F234A1`).
 * **Residual Limitation**:
-  - Go to Definition & Peek Definition (`textDocument/definition`, Task 12.5) will be implemented next to allow jumping across files and declarations directly from the editor.
+  - None. Go to Definition & Peek Definition (`textDocument/definition`) is completed in Task 12.5.
 * **Verification**:
   - `python scripts/count_lines.py` verified all 94 compiler source files < 400 lines (max 388 lines in `src/lsp/hover.vl`).
   - Added dedicated test `test_native_lsp_hover` in `tests/test_native_lsp.py` verifying functions, structs, local variables, parameters, origin links, null responses for whitespace, and token highlight ranges (all 6 native LSP tests passed in 0.14s).
   - Verified 3-generation self-hosting chain determinism: SHA-256 of `emit-c src/main.vl` between Gen2, Gen3, and `bootstrap.c` is identical (`F25AF75FCC1E61ECB39E6CB73E00AEA3645BC697CFDBA6EFC17C2CD0F4F234A1`).
+  - All 5 VS Code extension test suites passed 100% (`python editors/vscode/tests/run_tests.py`: 24 parity, 28 grammar spotchecks, 8 simulations, 11 server probes, 10 extension LSP simulations).
+  - All pytest tests passed (`python -m pytest tests -q`).
+
+#### Task 12.5: Go to Definition & Peek Definition (`textDocument/definition`) [COMPLETED] ✅
+* **Former Defect**:
+  - `velo lsp` did not implement `textDocument/definition`, leaving code navigation features (`F12`, `Alt+F12` Peek Definition, `Ctrl+Click`) unsupported in editors when backed by the native compiler binary.
+  - Definition lookup previously depended on the Python LSP prototype (`velo_analysis.py`), lacking native AST integration, sub-millisecond multi-file symbol resolution, and stdlib jump support.
+* **Fix Applied**:
+  - Modularized `src/lsp/doc_store.vl` (208 lines) with shared `lsp_extract_word_at_pos`, reducing `src/lsp/hover.vl` to 309 lines.
+  - Extended stdio transport in `src/lsp/transport.vl` (269 lines) with `lsp_path_to_uri`, `lsp_send_null_definition`, and `lsp_send_definition_location`, and advertised `"definitionProvider": true` in `initialize` capabilities.
+  - Implemented the native Go-to-Definition engine in `src/lsp/definition.vl` (394 lines):
+    - `lsp_find_token_col_in_line`: Word boundary matching finding precise 0-based token column spans on target lines.
+    - `lsp_find_local_decl_in_stmt`: Recursive statement tree search resolving local variable declaration lines (`STMT_VAR_DECL`).
+    - Local & parameter resolution: Resolves enclosing act parameters (`ParamNode`) and scoped variables directly to their declaration spans in the current buffer.
+    - Top-level declaration resolution: Resolves `DECL_FUNCTION`, `DECL_DATA` (and struct fields), `DECL_KIND` (and enum variants), `DECL_TYPE_ALIAS`, `DECL_EXTERN`, and `DECL_TEST`.
+    - Cross-file import resolution: Traverses `DECL_USE` (`use "..."` and `use std.*`) with recursive module traversal (`lsp_search_symbol_in_file`), resolving symbols across project files and umbrella modules.
+    - Standard library fallback: Resolves standard library symbols (`println_str`, `fs_read_to_str`, `path_join_str`, `os_system`, `heap_alloc`) directly to their canonical `std/*` source files.
+  - Wired `textDocument/definition` request handling and dispatch into `src/lsp/server.vl` (338 lines).
+  - Maintained code standards: all 95 compiler source files strictly remain under 400 lines (`scripts/count_lines.py`).
+  - Rebuilt the entire 3-generation bootstrap chain (`scripts/bootstrap.bat` -> Gen2 -> Gen3 -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 determinism (`1EF1E5DA5EE8262BB21103C9A86023152220E07079EA1070642AE855BFCE89D7`).
+* **Residual Limitation**:
+  - Phase 2 Native LSP Server is 100% complete! Phase 3 ("JavaScript-Like" IntelliSense & Smart Navigation: completion, auto-import, rename) will build on this native foundation.
+* **Verification**:
+  - `python scripts/count_lines.py` verified all 95 compiler source files < 400 lines (max 394 lines in `src/lsp/definition.vl`).
+  - Added dedicated test `test_native_lsp_definition` in `tests/test_native_lsp.py` verifying structs, acts, parameters, locals, fields, null responses, and range spans (all 7 native LSP tests passed in 0.14s).
+  - Verified 3-generation self-hosting chain determinism: SHA-256 of `emit-c src/main.vl` between Gen2, Gen3, and `bootstrap.c` is identical (`1EF1E5DA5EE8262BB21103C9A86023152220E07079EA1070642AE855BFCE89D7`).
   - All 5 VS Code extension test suites passed 100% (`python editors/vscode/tests/run_tests.py`: 24 parity, 28 grammar spotchecks, 8 simulations, 11 server probes, 10 extension LSP simulations).
   - All pytest tests passed (`python -m pytest tests -q`).

@@ -13,6 +13,7 @@ use "analysis.vl"
 use "doc_store.vl"
 use "symbols.vl"
 use "hover.vl"
+use "definition.vl"
 
 // Processes 'textDocument/didOpen' notification.
 act lsp_handle_did_open(state: @LspServerState, params: @JsonValue) {
@@ -153,6 +154,38 @@ act lsp_handle_hover(state: @LspServerState, id_node: @JsonValue, params: @JsonV
     }
 }
 
+// Processes 'textDocument/definition' request.
+act lsp_handle_definition(state: @LspServerState, id_node: @JsonValue, params: @JsonValue) {
+    if params == null or params.kind != JSON_OBJECT {
+        lsp_send_null_definition(id_node)
+        return
+    }
+    let td = json_obj_get_str(params, "textDocument")
+    let pos = json_obj_get_str(params, "position")
+    if td == null or td.kind != JSON_OBJECT or pos == null or pos.kind != JSON_OBJECT {
+        lsp_send_null_definition(id_node)
+        return
+    }
+    let line_node = json_obj_get_str(pos, "line")
+    let char_node = json_obj_get_str(pos, "character")
+    if line_node == null or char_node == null {
+        lsp_send_null_definition(id_node)
+        return
+    }
+    mut uri_str: string = null
+    mut needs_free: bool = false
+    let text = lsp_get_doc_text(state, json_obj_get_str(td, "uri"), @uri_str, @needs_free)
+    if text != null {
+        lsp_send_definition_result(id_node, state, uri_str, text, line_node.int_val as i32, char_node.int_val as i32)
+        if needs_free {
+            mem.free(text as @u8)
+            mem.free(uri_str as @u8)
+        }
+    } else {
+        lsp_send_null_definition(id_node)
+    }
+}
+
 // Dispatches a parsed JSON-RPC message. Returns true if server should terminate.
 act lsp_dispatch_message(state: @LspServerState, msg: string) -> bool {
     let doc = json_parse_doc_str(msg, 65536)
@@ -229,6 +262,13 @@ act lsp_dispatch_message(state: @LspServerState, msg: string) -> bool {
     if slice_eq_str(m, "textDocument/hover") {
         if id_node != null {
             lsp_handle_hover(state, id_node, params_node)
+        }
+        return false
+    }
+
+    if slice_eq_str(m, "textDocument/definition") {
+        if id_node != null {
+            lsp_handle_definition(state, id_node, params_node)
         }
         return false
     }
