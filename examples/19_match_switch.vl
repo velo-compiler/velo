@@ -1,6 +1,6 @@
 // Example 19: Branching - on Statement (Milestone 2.2)
 // Demonstrates Velo's signature 'on' multi-way branching and jump tables.
-use sys.io
+use std.io
 
 act classify_http_status(code: i32) -> string {
     on code {

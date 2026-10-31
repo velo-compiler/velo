@@ -692,7 +692,7 @@ static inline void velo_thread_tls_release(void) {
 // globals/structs, ordered by spawn/join. Destroy parks the cell for good,
 // so every later operation on the same (or stale) address exits loudly.
 #if defined(_WIN32)
-unsigned long __stdcall WaitForSingleObject(void* h, unsigned long ms);
+uint32_t __stdcall WaitForSingleObject(void* h, uint32_t ms);
 int __stdcall CloseHandle(void* h);
 void* __stdcall CreateMutexW(void* attrs, int initial, void* name);
 int __stdcall ReleaseMutex(void* h);

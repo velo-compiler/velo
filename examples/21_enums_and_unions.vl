@@ -1,5 +1,5 @@
 // Example 21: First-Class Enums & Tagged Unions (kind)
-use sys.io
+use std.io
 
 kind Direction {
     North

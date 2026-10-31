@@ -1,5 +1,5 @@
-use sys.io
-use sys.mem
+use std.io
+use std.mem
 
 data Point {
     x: f32

@@ -1,6 +1,6 @@
-use sys.io
-use sys.mem
-use sys.thread
+use std.io
+use std.mem
+use std.thread
 
 // §4.2 Thread Surface Demo
 // Spawns real OS threads from Velo: zero-arg i32-returning acts run on

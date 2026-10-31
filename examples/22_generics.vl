@@ -1,5 +1,5 @@
 // Milestone 3.2: Generics / Parametric Polymorphism
-use sys.io
+use std.io
 
 // 1. Generic Structs
 data Box[T] {

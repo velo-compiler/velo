@@ -1,6 +1,6 @@
-use sys.io
-use sys.fs
-use sys.mem
+use std.io
+use std.fs
+use std.mem
 use "token_types.vl"
 use "tokenizer.vl"
 

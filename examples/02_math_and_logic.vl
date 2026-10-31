@@ -1,4 +1,4 @@
-use sys.io
+use std.io
 
 act fibonacci(n: i32) -> i32 {
     if n <= 1 {

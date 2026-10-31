@@ -1,6 +1,6 @@
 // Example 18: Loop Controls - break and continue (Milestone 2.1)
 // Demonstrates early loop exit (break) and iteration skip (continue) in while and loop ranges.
-use sys.io
+use std.io
 
 act main() -> i32 {
     io.println("=== 1. While Loop with break ===")

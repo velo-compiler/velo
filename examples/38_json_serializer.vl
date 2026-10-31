@@ -1,7 +1,7 @@
 // Example 38: Automated Compile-Time JSON Serializer
 // Demonstrates compile-time loop unrolling over struct fields,
 // dead-branch elimination on field_type checks, and field_value() access.
-use sys.io
+use std.io
 
 data Vec2 {
     x: f32

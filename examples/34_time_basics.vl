@@ -19,8 +19,8 @@
  * Output is byte-identical on the Stage 1 Python compiler and the
  * self-hosted Stage 2 compiler.
  */
-use sys.io
-use sys.time
+use std.io
+use std.time
 
 act main() -> i32 {
     // 1) The zero anchor: first delta() pins exactly 0.

@@ -1,5 +1,5 @@
 // Milestone 2.2 Live Verification: Native Recursive Descent Parser in Velo
-use sys.io
+use std.io
 use "../src/frontend/token.vl"
 use "../src/frontend/lexer.vl"
 use "../src/ast/types.vl"

@@ -10,8 +10,8 @@
  * — gaps 6.7); values are bound to locals first. Output is byte-identical
  * on the Stage 1 Python compiler and the self-hosted Stage 2 compiler.
  */
-use sys.io
-use sys.mem
+use std.io
+use std.mem
 
 // Shelves pass through calls by value with their exact element type.
 act sum_shelf(src: shelf[i32]) -> i32 {

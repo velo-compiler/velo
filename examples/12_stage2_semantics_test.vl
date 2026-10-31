@@ -1,5 +1,5 @@
 // Milestone 2.3 Live Verification: Symbol Table & Semantic Analysis in Velo
-use sys.io
+use std.io
 use "../src/frontend/token.vl"
 use "../src/frontend/lexer.vl"
 use "../src/ast/types.vl"

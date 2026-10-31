@@ -1,5 +1,5 @@
 // Example 23: First-Class Function Pointers and Callbacks
-use sys.io
+use std.io
 
 act add(a: i32, b: i32) -> i32 {
     return a + b

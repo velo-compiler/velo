@@ -3,9 +3,9 @@
  * Demonstrates hardware-accelerated 128-bit vector primitives (dot, sqrt, min, max)
  * and benchmarks SIMD vector transformations against a scalar baseline.
  */
-use sys.io
-use sys.time
-use sys.simd
+use std.io
+use std.time
+use std.simd
 
 act main() -> i32 {
     io.println("=== Velo SIMD Hardware Math Benchmark ===")

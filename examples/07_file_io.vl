@@ -1,6 +1,6 @@
-use sys.io
-use sys.fs
-use sys.mem
+use std.io
+use std.fs
+use std.mem
 
 act main() {
     io.println("--- Velo Milestone 2.2: Standard File I/O ---")

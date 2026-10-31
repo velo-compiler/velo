@@ -1,5 +1,5 @@
 // Milestone 3.6: Advanced Struct Features — type aliases, field defaults, #align/#packed
-use sys.io
+use std.io
 
 // 1. Type aliases: primitive types with domain meaning (emitted as C typedef)
 aka EntityId = u64

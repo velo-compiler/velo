@@ -1,0 +1,2 @@
+// Standard library umbrella module for std.simd (hardware SIMD operations).
+use sys.simd

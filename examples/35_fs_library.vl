@@ -23,9 +23,9 @@
  * Output is byte-identical on the Stage 1 Python compiler and the
  * self-hosted Stage 2 compiler.
  */
-use sys.io
-use sys.fs
-use sys.os
+use std.io
+use std.fs
+use std.os
 
 act main() -> i32 {
     // 1) Self-sufficient fixtures: create_dir_all is the idempotent

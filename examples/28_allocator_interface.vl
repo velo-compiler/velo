@@ -1,5 +1,5 @@
-use sys.io
-use sys.mem
+use std.io
+use std.mem
 
 // §4.1 Allocator Interface Demo
 // Demonstrates passing a @Allocator handle to functions so they can

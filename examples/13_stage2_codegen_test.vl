@@ -1,6 +1,6 @@
 // Milestone 2.4 Live Verification: Native C99 Code Generator in Velo
-use sys.io
-use sys.fs
+use std.io
+use std.fs
 use "../src/frontend/token.vl"
 use "../src/frontend/lexer.vl"
 use "../src/ast/types.vl"

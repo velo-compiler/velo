@@ -1,5 +1,5 @@
 // Comprehensive test of Uniform Function Call Syntax (UFCS) and Auto-Referencing in Velo.
-use sys.io
+use std.io
 
 data Vector2 {
     x: f32

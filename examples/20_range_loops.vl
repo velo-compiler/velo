@@ -5,7 +5,7 @@
 // 3. Condition loops (loop while condition holds)
 // 4. Anonymous and named range loops with custom step (:step)
 // 5. Automatic countdown (start > end) and inclusive ranges (..=)
-use sys.io
+use std.io
 
 act main() -> i32 {
     io.println("=== 1. Repeat Count Loop (loop 5) ===")

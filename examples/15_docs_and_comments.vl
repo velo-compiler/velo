@@ -1,5 +1,5 @@
 // Example 15: Nested Block Comments & Structured Documentation Comments
-use sys.io
+use std.io
 
 /*
   Outer multi-line block comment

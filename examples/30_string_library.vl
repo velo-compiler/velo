@@ -9,8 +9,8 @@
  * compilers print those untranslated — gaps 6.7); values are bound to
  * locals first.
  */
-use sys.io
-use sys.mem
+use std.io
+use std.mem
 
 act main() -> i32 {
     // Predicates allocate nothing. Empty affixes/substrings match.

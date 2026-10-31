@@ -1,0 +1,2 @@
+// Standard library umbrella module for std.thread (threading primitives).
+use sys.thread

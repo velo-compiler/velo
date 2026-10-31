@@ -13,8 +13,8 @@
  * Output is byte-identical on the Stage 1 Python compiler and the
  * self-hosted Stage 2 compiler.
  */
-use sys.io
-use sys.mem
+use std.io
+use std.mem
 
 // Aggregators ride exact element spellings: shelf[i32] in, i32 out.
 act sum(xs: shelf[i32]) -> i32 {

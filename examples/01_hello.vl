@@ -1,4 +1,4 @@
-use sys.io
+use std.io
 
 act main() {
     io.println("Hello, world!!")

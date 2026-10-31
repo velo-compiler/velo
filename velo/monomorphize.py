@@ -109,6 +109,17 @@ def _map_kv_of(t: Optional[str]) -> Optional[Tuple[str, str]]:
     return None
 
 
+def _ring_elem_of(t: Optional[str]) -> Optional[str]:
+    """5.2 slice 9: extracts the element type from 'ring[T]' / '@ring[T]', or None."""
+    if not t:
+        return None
+    raw = t.lstrip("@").strip()
+    if raw.startswith("ring[") and raw.endswith("]"):
+        inner = raw[5:-1].strip()
+        return inner or None
+    return None
+
+
 # 5.2 slice 2 (shelf[dyn]): the numeric families of the inference ladder. The
 # widen rule is int+float → f64; any other mix lowers to shelf[dyn] (tagged
 # boxes). Shared with codegen_c — one spelling of the ladder policy per stage.
@@ -1035,7 +1046,13 @@ class Monomorphizer:
                     clean_t = t_type_raw.lstrip("@")
                     prefix, base, _ = parse_type_signature(clean_t)
                     fields = self.struct_fields.get(clean_t) or self.struct_fields.get(base) or self.struct_fields.get(clean_t.split('_')[0], set())
-                    if member not in fields:
+                    is_coll_method = (
+                        (clean_t == "bitset" and member in {"set", "clear", "toggle", "has", "count", "first_unset", "flip", "and", "or_with", "xor_with"}) or
+                        (_ring_elem_of(clean_t) is not None and member in {"put", "pop", "peek", "len"}) or
+                        (_shelf_elem_of(clean_t) is not None and member in {"put", "take", "len", "sorted", "insert", "remove_at", "reversed", "join", "free", "destroy"}) or
+                        (_map_kv_of(clean_t) is not None and member in {"put", "get", "get_or", "take", "has", "free", "destroy", "len"})
+                    )
+                    if member not in fields and not is_coll_method:
                         # Check if member is a known function
                         if member in self.func_param_types or member in self.generic_funcs:
                             is_ufcs = True
@@ -1355,6 +1372,21 @@ class Monomorphizer:
                         return map_kv[1]
                     if expr.callee.member == "has":
                         return "bool"
+                if recv.lstrip("@") == "bitset":
+                    if expr.callee.member in ("set", "clear", "toggle", "and", "or_with", "xor_with", "flip"):
+                        return "void"
+                    if expr.callee.member == "has":
+                        return "bool"
+                    if expr.callee.member == "count":
+                        return "usize"
+                    if expr.callee.member == "first_unset":
+                        return "i32"
+                ring_elem = _ring_elem_of(recv)
+                if ring_elem is not None:
+                    if expr.callee.member == "put":
+                        return "void"
+                    if expr.callee.member in ("pop", "peek"):
+                        return ring_elem
                 if isinstance(expr.callee.target, Identifier) and expr.callee.target.name == "simd":
                     if expr.callee.member == "dot":
                         return "f32"

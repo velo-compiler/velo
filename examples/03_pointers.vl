@@ -1,4 +1,4 @@
-use sys.io
+use std.io
 
 data Point {
     x: f32

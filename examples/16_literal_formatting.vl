@@ -1,5 +1,5 @@
 // Example 16: Literal Formatting (Hex, Binary, Octal, Underscores, Scientific, Suffixes)
-use sys.io
+use std.io
 
 act main() {
     io.println("=== Milestone 1.3: Literal Formatting Test ===")

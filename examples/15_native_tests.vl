@@ -8,8 +8,8 @@
 // Production build mode (tests stripped):
 //   velo run examples/15_native_tests.vl
 
-use sys.io
-use sys.mem
+use std.io
+use std.mem
 
 // ============================================================================
 // Core Structs & Data Models

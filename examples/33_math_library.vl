@@ -15,8 +15,8 @@
  * Output is byte-identical on the Stage 1 Python compiler and the
  * self-hosted Stage 2 compiler.
  */
-use sys.io
-use sys.math
+use std.io
+use std.math
 
 act main() -> i32 {
     // 1) Constants: full-precision digits behind every derived value.

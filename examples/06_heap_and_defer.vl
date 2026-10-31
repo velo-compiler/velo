@@ -1,5 +1,5 @@
-use sys.io
-use sys.mem
+use std.io
+use std.mem
 
 act test_early_exit(trigger_early: bool) {
     io.println("Inside test_early_exit function:")

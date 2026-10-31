@@ -2,7 +2,7 @@
 // - field_count(T): returns integer constant of the number of fields in struct T.
 // - field_name(T, index): returns string literal of the field name at index.
 // - field_type(T, index): returns string literal of the field type name at index.
-use sys.io
+use std.io
 
 data Point {
     x: f32

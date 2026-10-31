@@ -1,7 +1,7 @@
 // Example 17: String & Character Escapes (Milestone 1.4)
 // Demonstrates raw multi-line strings (`...`), unicode escapes (\uXXXX),
 // hex byte escapes (\xNN), and standard escape sequences.
-use sys.io
+use std.io
 
 act main() -> i32 {
     io.println("=== 1. Standard Escape Sequences ===")

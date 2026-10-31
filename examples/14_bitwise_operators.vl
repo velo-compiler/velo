@@ -1,5 +1,5 @@
 // Velo Milestone: Bitwise Operators & Bitmask Flags
-use sys.io
+use std.io
 
 act main() {
     io.println("--- Velo Milestone: Bitwise Operators ---")

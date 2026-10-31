@@ -1,5 +1,5 @@
-use sys.io
-use sys.mem
+use std.io
+use std.mem
 
 // gaps.md 4.1 Extensible Allocator Architecture — demonstration:
 // `zone <bytes> { ... }` runs the block in a private, pool-backed arena with

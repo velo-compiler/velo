@@ -1947,3 +1947,24 @@ flowchart TD
   - Verified 3-generation self-hosting chain determinism: SHA-256 of `emit-c src/main.vl` is identical between Gen2, Gen3, and `bootstrap.c` (`604EFFAED535913D05762D3F6BACF5693536225DCC3103A12EF0D2395CABA387`).
   - All 494 pytest tests passed 100% (`python -m pytest tests -q`).
   - All 5 VS Code extension test suites passed 100% (`python editors/vscode/tests/run_tests.py`).
+
+### Phase 14: Standard Library and Example Suite Migration (`sys.*` to `std.*`)
+#### Task 14.1: Migrate Examples from Legacy `sys.*` to Canonical `std.*` Imports [COMPLETED] ✅
+* **Former Defect**:
+  - The `examples/` directory retained deprecated `use sys.*` module imports (`sys.io`, `sys.mem`, `sys.fs`, `sys.math`, `sys.time`, `sys.os`, `sys.thread`, `sys.simd`) across all 39 example programs, despite the standard library specification endorsing canonical `std.*` module paths.
+  - Standard library umbrella wrapper modules `std/thread.vl` and `std/simd.vl` were missing, preventing complete migration of multithreaded and vector examples to `std.*`.
+  - In `velo/runtime/velo_runtime.h`, the C Win32 declaration of `WaitForSingleObject` used `unsigned long` parameters instead of `uint32_t`, conflicting with `std/os/proc_windows.vl` Win32 declarations when both were included.
+  - In `velo/monomorphize.py` (Stage 1), member method calls on built-in collection types (`bitset`, `ring`, `shelf`, `map`) were prematurely intercepted and rewritten into UFCS function calls if an imported module (such as `std.mem` introducing `set(dest: @u8, val: u8, n: usize)`) contained a function with the same name (e.g. `mask.set(0)` converted to `set(&mask, 0)`).
+* **Fix Applied**:
+  - Migrated all 39 `.vl` programs in `examples/` from `use sys.*` to canonical `use std.*` (`std.io`, `std.mem`, `std.fs`, `std.math`, `std.time`, `std.os`, `std.thread`, `std.simd`).
+  - Created standard library wrapper modules `std/thread.vl` and `std/simd.vl`.
+  - Harmonized `WaitForSingleObject(void* h, uint32_t ms)` in `velo/runtime/velo_runtime.h` to prevent GCC redeclaration conflicts.
+  - Updated `velo/monomorphize.py` to prevent UFCS interception when calling native receiver methods on built-in collection types (`bitset`, `ring`, `shelf`, `map`), and added type inference handling for `bitset` and `ring` receiver methods.
+* **Residual Limitation**:
+  - `use sys.io`, `use sys.mem`, and `use sys.fs` remain supported by the Stage 2 module loader and grammar for backwards compatibility.
+* **Verification**:
+  - Verified `git grep "use sys\." examples/` returns zero matches.
+  - All 44 example files in `examples/**/*.vl` checked and verified with `bin/velo.exe check`.
+  - Full test suite passed 100% (`494/494 passed in 383s` via `python -m pytest tests -q`).
+  - VS Code extension test suites passed 100% (5/5 suites: 24 parity, 28 grammar spotchecks, 8 simulations, 11 server probes, 10 extension LSP sims).
+  - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
