@@ -217,7 +217,7 @@ act main() -> i32 {
     assert(ia[0] == 10 and ia[1] == -20 and ia[2] == 30 and ia[3] == -40, "i32x4 literal indexing")
 
     // 5. Lane mutation
-    let mut_v = f32x4(1.0, 2.0, 3.0, 4.0)
+    mut mut_v = f32x4(1.0, 2.0, 3.0, 4.0)
     mut_v.x = 100.0
     mut_v.y = 200.0
     mut_v.z = 300.0

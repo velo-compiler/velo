@@ -1915,3 +1915,35 @@ flowchart TD
   - Verified 3-generation self-hosting chain determinism: SHA-256 of `emit-c src/main.vl` between Gen2, Gen3, and `bootstrap.c` is identical (`1EF1E5DA5EE8262BB21103C9A86023152220E07079EA1070642AE855BFCE89D7`).
   - All 5 VS Code extension test suites passed 100% (`python editors/vscode/tests/run_tests.py`: 24 parity, 28 grammar spotchecks, 8 simulations, 11 server probes, 10 extension LSP simulations).
   - All pytest tests passed (`python -m pytest tests -q`).
+
+### Phase 13: Compiler Semantic Immutability Verification (`let` vs `mut`)
+#### Task 13.1: Enforce Variable and Field Immutability Verification (`STMT_ASSIGN`) [COMPLETED] ✅
+* **Former Defect**:
+  - The Stage 2 self-hosted semantic analyzer (`src/analysis/type_checker_stmt.vl`) verified type compatibility on assignments (`STMT_ASSIGN`), but omitted checking `sym.is_mut` for primitive scalar variables and value structs.
+  - Furthermore, `src/backend/codegen_stmt.vl` emitted C local variable declarations without C's `const` qualifier.
+  - As a result, reassignment to immutable `let` bindings (`let num: i64 = 100; num = 50`) compiled and executed without compile-time error, violating the Velo Language Specification (§3.1 Immutable by Default).
+  - Additionally, five locations within the compiler codebase itself accidentally declared mutable accumulators and temporaries with `let` instead of `mut` (`shelf_checks.vl`, `mem_checks.vl`, `type_checker.vl`, `codegen_call.vl`).
+* **Fix Applied**:
+  - Implemented `check_assign_mutability` in `src/analysis/type_checker_stmt.vl`:
+    - Direct variable assignments (`EXPR_IDENT`): looks up symbol via `resolve_variable`; rejects assignments to immutable variables with `cannot assign to immutable variable '{name}'. Declare with 'mut {name}' to allow mutation.`
+    - Value struct field assignments (`EXPR_MEMBER`): rejects field assignments when base object is an immutable variable (and not a pointer dereference) with `cannot assign to field of immutable variable '{name}'. Declare with 'mut {name}' to allow mutation.`
+    - Fixed array element assignments (`EXPR_INDEX`): rejects indexed assignments when target is an immutable variable with `cannot assign to element of immutable variable '{name}'. Declare with 'mut {name}' to allow mutation.`
+  - Cleaned up 5 compiler locations where mutable state had been declared using `let` instead of `mut`:
+    - `src/analysis/shelf_checks.vl`: `let cur = expr` -> `mut cur = expr`.
+    - `src/analysis/mem_checks.vl`: `let sig = ""` -> `mut sig = ""`, `let word = "byte count"` -> `mut word = "byte count"`.
+    - `src/analysis/type_checker.vl`: `let want = ""` -> `mut want = ""`.
+    - `src/backend/codegen_call.vl`: `let cfn = "velo_byte_copy"` -> `mut cfn = "velo_byte_copy"`.
+  - Corrected test authoring in `tests/test_simd_vectors.py` where lane mutation test declared `let mut_v = ...` instead of `mut mut_v = ...`.
+  - Rebuilt the complete 3-generation self-hosting bootstrap chain (`scripts\bootstrap.bat` -> Gen2 -> Gen3 -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 determinism (`604EFFAED535913D05762D3F6BACF5693536225DCC3103A12EF0D2395CABA387`).
+* **Residual Limitation**:
+  - Pointer dereference writes through immutable pointer variables (`let p: @Point = ...; p.x = 10`) remain valid, as the write mutates the pointee heap memory rather than the pointer variable itself.
+* **Verification**:
+  - Added dedicated unit tests in `tests/test_stage2_semantics.py`:
+    - `test_immutable_variable_reassignment_rejected`: Verifies rejection of `let num: i64 = 100; num = 50`.
+    - `test_immutable_variable_compound_assign_rejected`: Verifies rejection of `let counter: i32 = 0; counter += 1`.
+    - `test_immutable_struct_field_mutation_rejected`: Verifies rejection of `let pt = Point{...}; pt.x = 5.0`.
+    - `test_mutable_variable_assignment_allowed`: Verifies acceptance of `mut` variable assignments.
+  - Verified `python scripts/count_lines.py` across all 95 compiler source files (< 400 lines each).
+  - Verified 3-generation self-hosting chain determinism: SHA-256 of `emit-c src/main.vl` is identical between Gen2, Gen3, and `bootstrap.c` (`604EFFAED535913D05762D3F6BACF5693536225DCC3103A12EF0D2395CABA387`).
+  - All 494 pytest tests passed 100% (`python -m pytest tests -q`).
+  - All 5 VS Code extension test suites passed 100% (`python editors/vscode/tests/run_tests.py`).

@@ -62,7 +62,7 @@ act shelf_elem_type(type_name: string) -> string {
 // Walks member / index / cast / deref chains to the root binding name;
 // null when the chain leaves tree space (the receiver is not a plain path).
 act shelf_root_binding_name(expr: @ExprNode) -> string {
-    let cur = expr
+    mut cur = expr
     loop cur != null {
         if cur.kind == EXPR_IDENT { return cur.str_val }
         if cur.kind == EXPR_MEMBER { cur = cur.target; continue }

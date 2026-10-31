@@ -42,7 +42,7 @@ act mem_got_msg(member: string, wantpart: string, gotpart: string) -> string {
 act check_mem_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
     if member != "copy" and member != "move" and member != "set" and member != "realloc" { return true }
     if expr.first_arg == null or expr.first_arg.next == null or expr.first_arg.next.next == null or expr.first_arg.next.next.next != null {
-        let sig = ""
+        mut sig = ""
         if member == "copy" or member == "move" { sig = ": (pointer dest, pointer src, byte count)" }
         if member == "set" { sig = ": (pointer dest, byte value, byte count)" }
         if member == "realloc" { sig = ": (pointer, @Type, count)" }
@@ -76,7 +76,7 @@ act check_mem_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
             return false
         }
     }
-    let word = "byte count"
+    mut word = "byte count"
     if member == "set" { word = "fill value" }
     let c = infer_expr_type(st, expr.first_arg.next.next)
     if not mem_is_countable(c) {

@@ -271,7 +271,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
 // cm42: compile-checks thread.* intrinsic arguments — the mirror of velo/codegen_c.py::_thread_expect (both stages reject with the same words). Returns false after reporting.
 act check_thread_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
     if member == "mutex" { if expr.first_arg != null { report_error("semantic", expr.line, expr.col, "thread.mutex takes no arguments"); st.error_count += 1; return false }; return true }
-    let want = ""
+    mut want = ""
     if member == "spawn" { want = "act() -> i32" }; if member == "join" { want = "@Thread" }; if member == "acquire" or member == "release" or member == "free" { want = "@Mutex" }
     if want == "" { return true }
     if expr.first_arg == null or expr.first_arg.next != null { mut msb = create_sb(96); sb_append_str(@msb, "thread."); sb_append_str(@msb, member); sb_append_str(@msb, " takes exactly 1 argument"); report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1; return false }
