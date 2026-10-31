@@ -1968,3 +1968,28 @@ flowchart TD
   - Full test suite passed 100% (`494/494 passed in 383s` via `python -m pytest tests -q`).
   - VS Code extension test suites passed 100% (5/5 suites: 24 parity, 28 grammar spotchecks, 8 simulations, 11 server probes, 10 extension LSP sims).
   - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
+
+### Phase 15: World-Class Official Documentation Website & Learning Platform
+#### Task 15.1: Build Official Velo Documentation Platform (`website/`) [COMPLETED] ✅
+* **Former Defect**:
+  - The language lacked an official documentation and education platform. New developers discovering Velo had only raw markdown files in `docs/` and scattered test cases in `examples/`.
+  - There was no structured learning journey, no searchable API catalog for the 127 pure-Velo stdlib modules, no interactive playground for testing code and inspecting emitted C99, and no persistent learning progress tracker.
+* **Fix Applied**:
+  - Built a world-class documentation website and learning platform in `website/` using React 19, TypeScript, Vite, Tailwind CSS v4, and Lucide icons.
+  - Information Architecture & Content:
+    - 49 in-depth documentation pages organized into 14 logical categories covering all language specifications, memory models, hardware SIMD, and tooling.
+    - Preserved 100% of authentic Velo syntax (`act`, `data`, `kind`, `aka`, `zone`, `loop`, `mut`, `shelf`, `map`, `ring`, `bitset`, `f32x4`, `@T`, `.@`, etc.) with zero invented features.
+    - Verified terminal output from native compiler execution (`bin/velo.exe run`) attached to code blocks.
+  - Interactive Learning & Tooling:
+    - Client-side full-text search (`Ctrl+K`) with instant keyboard navigation across pages, sections, keywords, and APIs.
+    - Custom Velo syntax highlighter and tokenizer matching lexical grammar.
+    - Interactive Playground with 9 authentic presets, live editable editor, virtual execution engine, and C99 emission previews.
+    - Searchable Standard Library Catalog indexing all 127 pure-Velo modules with function signatures, descriptions, and examples.
+    - Learning progress tracking with localStorage persistence, completion toggles, and reset capabilities.
+    - Dark-first aesthetic with theme switching, responsive drawers, and scroll-spy table of contents.
+* **Residual Limitation**:
+  - In-browser code playground executes via the client-side virtual interpreter and verified native output; full web-assembly compilation would require an Emscripten backend in a future phase.
+* **Verification**:
+  - `website/scripts/verify_docs.ts` verified 49 pages, 14 categories, 16 stdlib modules, 9 playground presets, and 8 search queries with 0 errors.
+  - `npm run build` in `website/` built cleanly in 652ms without warnings (`dist/index.html` 2.01 kB, `assets/index-*.js` 452 kB, `assets/index-*.css` 54 kB).
+  - All unit and integration test suites passing.

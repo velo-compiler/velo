@@ -15,3 +15,7 @@ __pycache__/
 
 # VeloKV Database
 *.aof
+
+# Website Build & Dependencies
+website/node_modules/
+website/dist/
