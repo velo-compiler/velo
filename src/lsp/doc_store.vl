@@ -1,0 +1,126 @@
+// Document buffer store and lifecycle management for Velo LSP.
+// Manages in-memory document buffers with fallback to disk reading.
+
+use std.io
+use std.mem
+use std.str
+use std.json
+use std.fs
+use "analysis.vl"
+
+// In-memory document tracking node (singly linked list).
+data LspDoc {
+    uri: string,
+    text: string,
+    version: i32,
+    next: @LspDoc,
+}
+
+// Persistent LSP server state.
+data LspServerState {
+    first_doc: @LspDoc,
+    is_shutdown: bool,
+}
+
+// Duplicates a StrSlice into a persistent null-terminated heap string.
+act lsp_slice_to_heap_str(s: StrSlice) -> string {
+    if s.ptr == null or s.len == 0 {
+        let empty_buf: @u8 = mem.heap_alloc(@u8, 1)
+        empty_buf[0] = 0 as u8
+        return empty_buf as string
+    }
+    let buf: @u8 = mem.heap_alloc(@u8, s.len + 1)
+    mut i: usize = 0
+    loop i < s.len {
+        buf[i] = s.ptr[i]
+        i += 1
+    }
+    buf[s.len] = 0 as u8
+    return buf as string
+}
+
+// Searches the active document store for a document matching the given URI slice.
+act lsp_find_doc(state: @LspServerState, uri_slice: StrSlice) -> @LspDoc {
+    mut cur = state.first_doc
+    loop cur != null {
+        if slice_eq_str(uri_slice, cur.uri) {
+            return cur
+        }
+        cur = cur.next
+    }
+    return null
+}
+
+// Stores or updates an in-memory document with full text content and version.
+act lsp_store_doc(state: @LspServerState, uri: string, text: string, version: i32) {
+    mut cur = state.first_doc
+    loop cur != null {
+        if slice_eq_str(slice_from_str(uri), cur.uri) {
+            if cur.text != null {
+                mem.free(cur.text as @u8)
+            }
+            cur.text = text
+            cur.version = version
+            if uri != null {
+                mem.free(uri as @u8)
+            }
+            return
+        }
+        cur = cur.next
+    }
+    let node: @LspDoc = mem.heap_alloc(@LspDoc, 1)
+    node.uri = uri
+    node.text = text
+    node.version = version
+    node.next = state.first_doc
+    state.first_doc = node
+}
+
+// Closes and frees an in-memory document matching the given URI slice.
+act lsp_close_doc(state: @LspServerState, uri_slice: StrSlice) {
+    mut prev: @LspDoc = null
+    mut cur = state.first_doc
+    loop cur != null {
+        if slice_eq_str(uri_slice, cur.uri) {
+            if prev == null {
+                state.first_doc = cur.next
+            } else {
+                prev.next = cur.next
+            }
+            if cur.uri != null {
+                mem.free(cur.uri as @u8)
+            }
+            if cur.text != null {
+                mem.free(cur.text as @u8)
+            }
+            mem.free(cur as @u8)
+            return
+        }
+        prev = cur
+        cur = cur.next
+    }
+}
+
+// Obtains document text either from active in-memory store or by reading disk fallback.
+act lsp_get_doc_text(state: @LspServerState, uri_val: @JsonValue, out_uri: @string, out_needs_free: @bool) -> string {
+    if uri_val == null or uri_val.kind != JSON_STRING { return null }
+    let doc = lsp_find_doc(state, uri_val.str_val)
+    if doc != null and doc.text != null {
+        if out_uri != null { out_uri.@ = doc.uri }
+        if out_needs_free != null { out_needs_free.@ = false }
+        return doc.text
+    }
+    let uri_str = lsp_slice_to_heap_str(uri_val.str_val)
+    let path = lsp_uri_to_path(uri_str)
+    if str.len(path) > 0 and fs_exists(path) {
+        let text = fs_read_to_str(path)
+        if text != null {
+            if out_uri != null { out_uri.@ = uri_str }
+            if out_needs_free != null { out_needs_free.@ = true }
+            return text
+        }
+    }
+    mem.free(uri_str as @u8)
+    return null
+}
+

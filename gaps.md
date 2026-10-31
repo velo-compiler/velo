@@ -1854,4 +1854,38 @@ flowchart TD
   - Added dedicated test `test_native_lsp_document_symbols` in `tests/test_native_lsp.py` verifying struct fields, enum variants, type alias representations, function signatures, and empty fallbacks (all 5 tests passed in 0.13s).
   - Verified 3-generation self-hosting chain determinism: SHA-256 of `emit-c src/main.vl` between Gen2, Gen3, and `bootstrap.c` is identical (`8E6A611C4D73342D8E04A07585E2EADDBD8865514EDBDC09D7BFE3D568BED3AB`).
   - All 5 VS Code extension test suites passed 100% (`python editors/vscode/tests/run_tests.py`: 24 parity, 28 grammar spotchecks, 8 simulations, 11 server probes, 10 extension LSP simulations).
+* **Residual Limitation**:
+  - Go to Definition & Peek Definition (`textDocument/definition`, Task 12.5) will be implemented next in Phase 2.
+* **Verification**:
+  - `python scripts/count_lines.py` verified all 93 compiler source files < 400 lines (max 365 lines in `src/lsp/server.vl`).
+  - Added dedicated test `test_native_lsp_document_symbols` in `tests/test_native_lsp.py` verifying struct fields, enum variants, type alias representations, function signatures, and empty fallbacks (all 5 tests passed in 0.13s).
+  - Verified 3-generation self-hosting chain determinism: SHA-256 of `emit-c src/main.vl` between Gen2, Gen3, and `bootstrap.c` is identical (`8E6A611C4D73342D8E04A07585E2EADDBD8865514EDBDC09D7BFE3D568BED3AB`).
+  - All 5 VS Code extension test suites passed 100% (`python editors/vscode/tests/run_tests.py`: 24 parity, 28 grammar spotchecks, 8 simulations, 11 server probes, 10 extension LSP simulations).
   - All 488 pytest tests passed (`python -m pytest tests -q`).
+
+#### Task 12.4: Rich Markdown Hover Tooltips (`textDocument/hover`) [COMPLETED] ✅
+* **Former Defect**:
+  - `velo lsp` did not implement `textDocument/hover`, leaving developers without contextual type signatures, symbol definitions, or documentation tooltips when hovering over code tokens in editors.
+  - IDE hover tooltips previously depended on the Python LSP prototype (`velo_analysis.py`), which added runtime interpreter overhead and lacked native AST integration with the self-hosted compiler.
+  - Hovering over local variables, function parameters, struct fields, enum variants, or standard library symbols returned nothing when backed by the native compiler binary.
+* **Fix Applied**:
+  - Refactored LSP document store into `src/lsp/doc_store.vl` (125 lines) housing `LspDoc`, `LspServerState`, and document accessors (`lsp_store_doc`, `lsp_find_doc`, `lsp_close_doc`, `lsp_get_doc_text`), modularizing `src/lsp/server.vl` down to 298 lines.
+  - Implemented the native hover resolution engine in `src/lsp/hover.vl` (388 lines):
+    - `lsp_hover_extract_word`: Identifies identifier tokens at 0-based `(line0, char0)`, expanding character boundaries and automatically advancing past `let` and `mut` keyword prefixes when hovering over declaration keywords.
+    - `lsp_find_local` & `lsp_find_local_in_stmt`: Recursively inspects statements (`STMT_VAR_DECL`, `STMT_BLOCK`, `STMT_IF`, `STMT_LOOP`) and act parameters to resolve variable types, mutability (`mut`), and declaration lines.
+    - `lsp_format_decl_markdown`: Generates rich Markdown signatures with parameter types, return signatures, struct field definitions, enum variant listings, and declaration origin links (`*declared in <basename>:<line>*`).
+    - Standard library lookup: Provides builtin tooltips and signatures for `println_str`, `fs_read_to_str`, `path_join_str`, `os_system`, and standard types.
+    - `lsp_send_null_hover`: Returns `{"jsonrpc": "2.0", "id": id, "result": null}` for whitespace, punctuation, or unresolved tokens.
+    - `lsp_send_hover_result`: Parses the in-memory document within an ephemeral `zone { ... }` with quiet diagnostic suppression, resolves the hovered symbol, formats the Markdown payload, and emits the JSON-RPC response with precise 0-based token ranges.
+  - Updated `src/lsp/transport.vl` (199 lines) to advertise `"hoverProvider": true` in `initialize` server capabilities.
+  - Integrated `textDocument/hover` dispatch in `src/lsp/server.vl` (298 lines).
+  - Maintained code standards: all compiler source files strictly remain under 400 lines (`src/lsp/hover.vl` 388 lines, `src/lsp/server.vl` 298 lines, `src/lsp/doc_store.vl` 125 lines).
+  - Rebuilt the entire 3-generation bootstrap chain (`scripts/bootstrap.bat` -> Gen2 -> Gen3 -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 determinism (`F25AF75FCC1E61ECB39E6CB73E00AEA3645BC697CFDBA6EFC17C2CD0F4F234A1`).
+* **Residual Limitation**:
+  - Go to Definition & Peek Definition (`textDocument/definition`, Task 12.5) will be implemented next to allow jumping across files and declarations directly from the editor.
+* **Verification**:
+  - `python scripts/count_lines.py` verified all 94 compiler source files < 400 lines (max 388 lines in `src/lsp/hover.vl`).
+  - Added dedicated test `test_native_lsp_hover` in `tests/test_native_lsp.py` verifying functions, structs, local variables, parameters, origin links, null responses for whitespace, and token highlight ranges (all 6 native LSP tests passed in 0.14s).
+  - Verified 3-generation self-hosting chain determinism: SHA-256 of `emit-c src/main.vl` between Gen2, Gen3, and `bootstrap.c` is identical (`F25AF75FCC1E61ECB39E6CB73E00AEA3645BC697CFDBA6EFC17C2CD0F4F234A1`).
+  - All 5 VS Code extension test suites passed 100% (`python editors/vscode/tests/run_tests.py`: 24 parity, 28 grammar spotchecks, 8 simulations, 11 server probes, 10 extension LSP simulations).
+  - All pytest tests passed (`python -m pytest tests -q`).

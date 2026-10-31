@@ -2118,6 +2118,11 @@ const char* lsp_uri_to_path(const char* uri);
 void lsp_publish_empty_diagnostics(const char* uri);
 void lsp_publish_collected_diagnostics(const char* uri, int32_t version);
 void lsp_analyze_document(const char* uri, const char* text, int32_t version);
+const char* lsp_slice_to_heap_str(StrSlice s);
+LspDoc* lsp_find_doc(LspServerState* state, StrSlice uri_slice);
+void lsp_store_doc(LspServerState* state, const char* uri, const char* text, int32_t version);
+void lsp_close_doc(LspServerState* state, StrSlice uri_slice);
+const char* lsp_get_doc_text(LspServerState* state, JsonValue* uri_val, const char** out_uri, bool* out_needs_free);
 void lsp_sym_append_pos(StringBuilder* sb, int32_t line, int32_t col);
 void lsp_sym_append_range(StringBuilder* sb, int32_t s_line, int32_t s_col, int32_t e_line, int32_t e_col);
 void lsp_sym_append_func(StringBuilder* sb, StmtNode* decl, int32_t e_line);
@@ -2129,15 +2134,18 @@ void lsp_sym_append_test(StringBuilder* sb, StmtNode* decl, int32_t e_line);
 void lsp_append_decl_symbol(StringBuilder* sb, StmtNode* decl);
 void lsp_send_empty_document_symbols(JsonValue* id_node);
 void lsp_send_document_symbols(JsonValue* id_node, const char* text);
-const char* lsp_slice_to_heap_str(StrSlice s);
-LspDoc* lsp_find_doc(LspServerState* state, StrSlice uri_slice);
-void lsp_store_doc(LspServerState* state, const char* uri, const char* text, int32_t version);
-void lsp_close_doc(LspServerState* state, StrSlice uri_slice);
+void lsp_hover_append_slice(StringBuilder* sb, StrSlice sl);
+void lsp_send_null_hover(JsonValue* id_node);
+bool lsp_hover_extract_word(const char* text, int32_t line0, int32_t char0, uint8_t* out_name, int32_t* out_start, int32_t* out_end);
+bool lsp_find_local_in_stmt(StmtNode* stmt, const char* target, int32_t max_line, const char** out_type);
+void lsp_format_decl_markdown(StringBuilder* sb, StmtNode* decl, StrSlice filename);
+void lsp_send_hover_result(JsonValue* id_node, const char* uri, const char* text, int32_t line0, int32_t char0);
 void lsp_handle_did_open(LspServerState* state, JsonValue* params);
 void lsp_handle_did_change(LspServerState* state, JsonValue* params);
 void lsp_handle_did_close(LspServerState* state, JsonValue* params);
 void lsp_handle_did_save(LspServerState* state, JsonValue* params);
 void lsp_handle_document_symbol(LspServerState* state, JsonValue* id_node, JsonValue* params);
+void lsp_handle_hover(LspServerState* state, JsonValue* id_node, JsonValue* params);
 bool lsp_dispatch_message(LspServerState* state, const char* msg);
 int32_t handle_lsp_command(void);
 
@@ -45262,7 +45270,7 @@ void lsp_send_initialize_result(JsonValue* id_node) {
 #line 174 "src/main.vl"
     lsp_append_id((&(sb)), id_node);
 #line 175 "src/main.vl"
-    sb_append_str((&(sb)), ",\"result\":{\"capabilities\":{\"textDocumentSync\":1,\"documentSymbolProvider\":true}}}");
+    sb_append_str((&(sb)), ",\"result\":{\"capabilities\":{\"textDocumentSync\":1,\"documentSymbolProvider\":true,\"hoverProvider\":true}}}");
 #line 176 "src/main.vl"
     const char* payload = sb_to_string((&(sb)));
 #line 177 "src/main.vl"
@@ -45581,6 +45589,188 @@ void lsp_analyze_document(const char* uri, const char* text, int32_t version) {
     diag_collector_stop();
 #line 198 "src/main.vl"
     lsp_publish_collected_diagnostics(uri, version);
+}
+
+#line 26 "src/main.vl"
+const char* lsp_slice_to_heap_str(StrSlice s) {
+#line 27 "src/main.vl"
+    if (((s.ptr == NULL) || (s.len == 0))) {
+#line 28 "src/main.vl"
+        uint8_t* empty_buf = ((uint8_t*)velo_heap_alloc(sizeof(uint8_t), (size_t)(1)));
+#line 29 "src/main.vl"
+        empty_buf[0] = ((uint8_t)(0));
+#line 30 "src/main.vl"
+        return ((const char*)(empty_buf));
+    }
+#line 32 "src/main.vl"
+    uint8_t* buf = ((uint8_t*)velo_heap_alloc(sizeof(uint8_t), (size_t)((s.len + 1))));
+#line 33 "src/main.vl"
+    size_t i = 0;
+#line 34 "src/main.vl"
+    for (int32_t it = 0; ((i < s.len)); it++) {
+#line 35 "src/main.vl"
+        buf[i] = s.ptr[i];
+#line 36 "src/main.vl"
+        i += 1;
+    }
+#line 38 "src/main.vl"
+    buf[s.len] = ((uint8_t)(0));
+#line 39 "src/main.vl"
+    return ((const char*)(buf));
+}
+
+#line 43 "src/main.vl"
+LspDoc* lsp_find_doc(LspServerState* state, StrSlice uri_slice) {
+#line 44 "src/main.vl"
+    LspDoc* cur = state->first_doc;
+#line 45 "src/main.vl"
+    for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 46 "src/main.vl"
+        if (slice_eq_str(uri_slice, cur->uri)) {
+#line 47 "src/main.vl"
+            return cur;
+        }
+#line 49 "src/main.vl"
+        cur = cur->next;
+    }
+#line 51 "src/main.vl"
+    return NULL;
+}
+
+#line 55 "src/main.vl"
+void lsp_store_doc(LspServerState* state, const char* uri, const char* text, int32_t version) {
+#line 56 "src/main.vl"
+    LspDoc* cur = state->first_doc;
+#line 57 "src/main.vl"
+    for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 58 "src/main.vl"
+        if (slice_eq_str(slice_from_str(uri), cur->uri)) {
+#line 59 "src/main.vl"
+            if ((cur->text != NULL)) {
+#line 60 "src/main.vl"
+                velo_heap_free((void*)(((uint8_t*)(cur->text))));
+            }
+#line 62 "src/main.vl"
+            cur->text = text;
+#line 63 "src/main.vl"
+            cur->version = version;
+#line 64 "src/main.vl"
+            if ((uri != NULL)) {
+#line 65 "src/main.vl"
+                velo_heap_free((void*)(((uint8_t*)(uri))));
+            }
+#line 67 "src/main.vl"
+            return;
+        }
+#line 69 "src/main.vl"
+        cur = cur->next;
+    }
+#line 71 "src/main.vl"
+    LspDoc* node = ((LspDoc*)velo_heap_alloc(sizeof(LspDoc), (size_t)(1)));
+#line 72 "src/main.vl"
+    node->uri = uri;
+#line 73 "src/main.vl"
+    node->text = text;
+#line 74 "src/main.vl"
+    node->version = version;
+#line 75 "src/main.vl"
+    node->next = state->first_doc;
+#line 76 "src/main.vl"
+    state->first_doc = node;
+}
+
+#line 80 "src/main.vl"
+void lsp_close_doc(LspServerState* state, StrSlice uri_slice) {
+#line 81 "src/main.vl"
+    LspDoc* prev = NULL;
+#line 82 "src/main.vl"
+    LspDoc* cur = state->first_doc;
+#line 83 "src/main.vl"
+    for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 84 "src/main.vl"
+        if (slice_eq_str(uri_slice, cur->uri)) {
+#line 85 "src/main.vl"
+            if ((prev == NULL)) {
+#line 86 "src/main.vl"
+                state->first_doc = cur->next;
+            } else {
+#line 88 "src/main.vl"
+                prev->next = cur->next;
+            }
+#line 90 "src/main.vl"
+            if ((cur->uri != NULL)) {
+#line 91 "src/main.vl"
+                velo_heap_free((void*)(((uint8_t*)(cur->uri))));
+            }
+#line 93 "src/main.vl"
+            if ((cur->text != NULL)) {
+#line 94 "src/main.vl"
+                velo_heap_free((void*)(((uint8_t*)(cur->text))));
+            }
+#line 96 "src/main.vl"
+            velo_heap_free((void*)(((uint8_t*)(cur))));
+#line 97 "src/main.vl"
+            return;
+        }
+#line 99 "src/main.vl"
+        prev = cur;
+#line 100 "src/main.vl"
+        cur = cur->next;
+    }
+}
+
+#line 105 "src/main.vl"
+const char* lsp_get_doc_text(LspServerState* state, JsonValue* uri_val, const char** out_uri, bool* out_needs_free) {
+#line 106 "src/main.vl"
+    if (((uri_val == NULL) || (uri_val->kind != JSON_STRING))) {
+#line 106 "src/main.vl"
+        return NULL;
+    }
+#line 107 "src/main.vl"
+    LspDoc* doc = lsp_find_doc(state, uri_val->str_val);
+#line 108 "src/main.vl"
+    if (((doc != NULL) && (doc->text != NULL))) {
+#line 109 "src/main.vl"
+        if ((out_uri != NULL)) {
+#line 109 "src/main.vl"
+            (*(out_uri)) = doc->uri;
+        }
+#line 110 "src/main.vl"
+        if ((out_needs_free != NULL)) {
+#line 110 "src/main.vl"
+            (*(out_needs_free)) = false;
+        }
+#line 111 "src/main.vl"
+        return doc->text;
+    }
+#line 113 "src/main.vl"
+    const char* uri_str = lsp_slice_to_heap_str(uri_val->str_val);
+#line 114 "src/main.vl"
+    const char* path = lsp_uri_to_path(uri_str);
+#line 115 "src/main.vl"
+    if (((((usize)strlen(path)) > 0) && fs_exists(path))) {
+#line 116 "src/main.vl"
+        const char* text = fs_read_to_str(path);
+#line 117 "src/main.vl"
+        if ((text != NULL)) {
+#line 118 "src/main.vl"
+            if ((out_uri != NULL)) {
+#line 118 "src/main.vl"
+                (*(out_uri)) = uri_str;
+            }
+#line 119 "src/main.vl"
+            if ((out_needs_free != NULL)) {
+#line 119 "src/main.vl"
+                (*(out_needs_free)) = true;
+            }
+#line 120 "src/main.vl"
+            return text;
+        }
+    }
+#line 123 "src/main.vl"
+    velo_heap_free((void*)(((uint8_t*)(uri_str))));
+#line 124 "src/main.vl"
+    return NULL;
 }
 
 #line 23 "src/main.vl"
@@ -46012,563 +46202,1155 @@ void lsp_send_document_symbols(JsonValue* id_node, const char* text) {
     lsp_send_payload(payload);
 }
 
-#line 30 "src/main.vl"
-const char* lsp_slice_to_heap_str(StrSlice s) {
-#line 31 "src/main.vl"
-    if (((s.ptr == NULL) || (s.len == 0))) {
-#line 32 "src/main.vl"
-        uint8_t* empty_buf = ((uint8_t*)velo_heap_alloc(sizeof(uint8_t), (size_t)(1)));
-#line 33 "src/main.vl"
-        empty_buf[0] = ((uint8_t)(0));
-#line 34 "src/main.vl"
-        return ((const char*)(empty_buf));
-    }
-#line 36 "src/main.vl"
-    uint8_t* buf = ((uint8_t*)velo_heap_alloc(sizeof(uint8_t), (size_t)((s.len + 1))));
-#line 37 "src/main.vl"
+#line 26 "src/main.vl"
+void lsp_hover_append_slice(StringBuilder* sb, StrSlice sl) {
+#line 27 "src/main.vl"
     size_t i = 0;
-#line 38 "src/main.vl"
-    for (int32_t it = 0; ((i < s.len)); it++) {
-#line 39 "src/main.vl"
-        buf[i] = s.ptr[i];
-#line 40 "src/main.vl"
+#line 28 "src/main.vl"
+    for (int32_t it = 0; ((i < sl.len)); it++) {
+#line 29 "src/main.vl"
+        sb_append_char(sb, sl.ptr[i]);
+#line 30 "src/main.vl"
         i += 1;
     }
-#line 42 "src/main.vl"
-    buf[s.len] = ((uint8_t)(0));
-#line 43 "src/main.vl"
-    return ((const char*)(buf));
 }
 
+#line 35 "src/main.vl"
+void lsp_send_null_hover(JsonValue* id_node) {
+#line 36 "src/main.vl"
+    StringBuilder sb = create_sb(128);
+#line 37 "src/main.vl"
+    sb_append_str((&(sb)), "{\"jsonrpc\":\"2.0\",\"id\":");
+#line 38 "src/main.vl"
+    lsp_append_id((&(sb)), id_node);
+#line 39 "src/main.vl"
+    sb_append_str((&(sb)), ",\"result\":null}");
+#line 40 "src/main.vl"
+    const char* payload = sb_to_string((&(sb)));
+#line 41 "src/main.vl"
+    lsp_send_payload(payload);
+}
+
+#line 45 "src/main.vl"
+bool lsp_hover_extract_word(const char* text, int32_t line0, int32_t char0, uint8_t* out_name, int32_t* out_start, int32_t* out_end) {
+#line 46 "src/main.vl"
+    size_t tlen = ((usize)strlen(text));
 #line 47 "src/main.vl"
-LspDoc* lsp_find_doc(LspServerState* state, StrSlice uri_slice) {
+    int32_t cur_line = 0;
 #line 48 "src/main.vl"
-    LspDoc* cur = state->first_doc;
+    size_t line_start = 0;
 #line 49 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
+    size_t i = 0;
 #line 50 "src/main.vl"
-        if (slice_eq_str(uri_slice, cur->uri)) {
+    for (int32_t it = 0; ((i < tlen)); it++) {
 #line 51 "src/main.vl"
-            return cur;
+        if ((cur_line == line0)) {
+#line 51 "src/main.vl"
+            break;
         }
+#line 52 "src/main.vl"
+        if ((text[i] == ((uint8_t)('\n')))) {
 #line 53 "src/main.vl"
-        cur = cur->next;
+            cur_line += 1;
+#line 54 "src/main.vl"
+            line_start = (i + 1);
+        }
+#line 56 "src/main.vl"
+        i += 1;
     }
-#line 55 "src/main.vl"
-    return NULL;
-}
-
-#line 59 "src/main.vl"
-void lsp_store_doc(LspServerState* state, const char* uri, const char* text, int32_t version) {
+#line 58 "src/main.vl"
+    if (((cur_line != line0) || (line_start >= tlen))) {
+#line 58 "src/main.vl"
+        return false;
+    }
 #line 60 "src/main.vl"
-    LspDoc* cur = state->first_doc;
+    size_t line_end = line_start;
 #line 61 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
+    for (int32_t it = 0; ((((line_end < tlen) && (text[line_end] != ((uint8_t)('\n')))) && (text[line_end] != ((uint8_t)('\r'))))); it++) {
 #line 62 "src/main.vl"
-        if (slice_eq_str(slice_from_str(uri), cur->uri)) {
-#line 63 "src/main.vl"
-            if ((cur->text != NULL)) {
+        line_end += 1;
+    }
 #line 64 "src/main.vl"
-                velo_heap_free((void*)(((uint8_t*)(cur->text))));
-            }
-#line 66 "src/main.vl"
-            cur->text = text;
+    size_t line_len = (line_end - line_start);
+#line 65 "src/main.vl"
+    if ((line_len == 0)) {
+#line 65 "src/main.vl"
+        return false;
+    }
 #line 67 "src/main.vl"
-            cur->version = version;
+    size_t pos = ((size_t)(char0));
 #line 68 "src/main.vl"
-            if ((uri != NULL)) {
+    if ((pos >= line_len)) {
 #line 69 "src/main.vl"
-                velo_heap_free((void*)(((uint8_t*)(uri))));
-            }
-#line 71 "src/main.vl"
-            return;
+        if ((line_len > 0)) {
+#line 69 "src/main.vl"
+            pos = (line_len - 1);
+        } else {
+#line 69 "src/main.vl"
+            return false;
         }
+    }
+#line 72 "src/main.vl"
+    if ((!is_ident_part(text[(line_start + pos)]))) {
 #line 73 "src/main.vl"
-        cur = cur->next;
-    }
-#line 75 "src/main.vl"
-    LspDoc* node = ((LspDoc*)velo_heap_alloc(sizeof(LspDoc), (size_t)(1)));
+        if (((pos > 0) && is_ident_part(text[((line_start + pos) - 1)]))) {
+#line 74 "src/main.vl"
+            pos = (pos - 1);
+        } else {
 #line 76 "src/main.vl"
-    node->uri = uri;
-#line 77 "src/main.vl"
-    node->text = text;
-#line 78 "src/main.vl"
-    node->version = version;
-#line 79 "src/main.vl"
-    node->next = state->first_doc;
-#line 80 "src/main.vl"
-    state->first_doc = node;
-}
-
-#line 84 "src/main.vl"
-void lsp_close_doc(LspServerState* state, StrSlice uri_slice) {
-#line 85 "src/main.vl"
-    LspDoc* prev = NULL;
-#line 86 "src/main.vl"
-    LspDoc* cur = state->first_doc;
-#line 87 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 88 "src/main.vl"
-        if (slice_eq_str(uri_slice, cur->uri)) {
-#line 89 "src/main.vl"
-            if ((prev == NULL)) {
-#line 90 "src/main.vl"
-                state->first_doc = cur->next;
-            } else {
-#line 92 "src/main.vl"
-                prev->next = cur->next;
-            }
-#line 94 "src/main.vl"
-            if ((cur->uri != NULL)) {
-#line 95 "src/main.vl"
-                velo_heap_free((void*)(((uint8_t*)(cur->uri))));
-            }
-#line 97 "src/main.vl"
-            if ((cur->text != NULL)) {
-#line 98 "src/main.vl"
-                velo_heap_free((void*)(((uint8_t*)(cur->text))));
-            }
-#line 100 "src/main.vl"
-            velo_heap_free((void*)(((uint8_t*)(cur))));
-#line 101 "src/main.vl"
-            return;
+            return false;
         }
+    }
+#line 80 "src/main.vl"
+    size_t s_pos = pos;
+#line 81 "src/main.vl"
+    for (int32_t it = 0; (((s_pos > 0) && is_ident_part(text[((line_start + s_pos) - 1)]))); it++) {
+#line 82 "src/main.vl"
+        s_pos -= 1;
+    }
+#line 84 "src/main.vl"
+    size_t e_pos = pos;
+#line 85 "src/main.vl"
+    for (int32_t it = 0; (((e_pos < line_len) && is_ident_part(text[(line_start + e_pos)]))); it++) {
+#line 86 "src/main.vl"
+        e_pos += 1;
+    }
+#line 89 "src/main.vl"
+    size_t word_len = (e_pos - s_pos);
+#line 90 "src/main.vl"
+    bool is_let_mut = false;
+#line 91 "src/main.vl"
+    if (((((word_len == 3) && (text[(line_start + s_pos)] == ((uint8_t)('l')))) && (text[((line_start + s_pos) + 1)] == ((uint8_t)('e')))) && (text[((line_start + s_pos) + 2)] == ((uint8_t)('t'))))) {
+#line 92 "src/main.vl"
+        is_let_mut = true;
+    } else
+#line 93 "src/main.vl"
+    if (((((word_len == 3) && (text[(line_start + s_pos)] == ((uint8_t)('m')))) && (text[((line_start + s_pos) + 1)] == ((uint8_t)('u')))) && (text[((line_start + s_pos) + 2)] == ((uint8_t)('t'))))) {
+#line 94 "src/main.vl"
+        is_let_mut = true;
+    }
+#line 97 "src/main.vl"
+    if (is_let_mut) {
+#line 98 "src/main.vl"
+        size_t next_pos = e_pos;
+#line 99 "src/main.vl"
+        for (int32_t it = 0; (((next_pos < line_len) && ((text[(line_start + next_pos)] == ((uint8_t)(' '))) || (text[(line_start + next_pos)] == ((uint8_t)('\t')))))); it++) {
+#line 100 "src/main.vl"
+            next_pos += 1;
+        }
+#line 102 "src/main.vl"
+        if (((next_pos < line_len) && is_ident_part(text[(line_start + next_pos)]))) {
 #line 103 "src/main.vl"
-        prev = cur;
+            s_pos = next_pos;
 #line 104 "src/main.vl"
-        cur = cur->next;
+            e_pos = next_pos;
+#line 105 "src/main.vl"
+            for (int32_t it = 0; (((e_pos < line_len) && is_ident_part(text[(line_start + e_pos)]))); it++) {
+#line 106 "src/main.vl"
+                e_pos += 1;
+            }
+        }
     }
-}
-
-#line 109 "src/main.vl"
-void lsp_handle_did_open(LspServerState* state, JsonValue* params) {
-#line 110 "src/main.vl"
-    JsonValue* td = json_obj_get_str(params, "textDocument");
 #line 111 "src/main.vl"
-    if (((td == NULL) || (td->kind != JSON_OBJECT))) {
-#line 111 "src/main.vl"
-        return;
-    }
+    size_t final_len = (e_pos - s_pos);
 #line 112 "src/main.vl"
-    JsonValue* uri_val = json_obj_get_str(td, "uri");
-#line 113 "src/main.vl"
-    JsonValue* txt_val = json_obj_get_str(td, "text");
-#line 114 "src/main.vl"
-    JsonValue* ver_val = json_obj_get_str(td, "version");
-#line 115 "src/main.vl"
-    if (((uri_val == NULL) || (txt_val == NULL))) {
-#line 115 "src/main.vl"
-        return;
+    if (((final_len == 0) || (final_len >= 128))) {
+#line 112 "src/main.vl"
+        return false;
     }
+#line 113 "src/main.vl"
+    size_t k = 0;
+#line 114 "src/main.vl"
+    for (int32_t it = 0; ((k < final_len)); it++) {
+#line 115 "src/main.vl"
+        out_name[k] = text[((line_start + s_pos) + k)];
 #line 116 "src/main.vl"
-    if (((uri_val->kind != JSON_STRING) || (txt_val->kind != JSON_STRING))) {
-#line 116 "src/main.vl"
-        return;
+        k += 1;
     }
 #line 118 "src/main.vl"
-    const char* uri = lsp_slice_to_heap_str(uri_val->str_val);
+    out_name[final_len] = ((uint8_t)(0));
 #line 119 "src/main.vl"
-    const char* text = lsp_slice_to_heap_str(txt_val->str_val);
+    (*(out_start)) = ((int32_t)(s_pos));
 #line 120 "src/main.vl"
-    int32_t ver = 0;
+    (*(out_end)) = ((int32_t)(e_pos));
 #line 121 "src/main.vl"
+    return true;
+}
+
+#line 125 "src/main.vl"
+bool lsp_find_local_in_stmt(StmtNode* stmt, const char* target, int32_t max_line, const char** out_type) {
+#line 126 "src/main.vl"
+    if ((stmt == NULL)) {
+#line 126 "src/main.vl"
+        return false;
+    }
+#line 127 "src/main.vl"
+    if ((stmt->kind == STMT_VAR_DECL)) {
+#line 128 "src/main.vl"
+        if (((stmt->line <= max_line) && slice_eq_str(slice_from_str(target), stmt->name))) {
+#line 129 "src/main.vl"
+            if (((stmt->type_name != NULL) && (((usize)strlen(stmt->type_name)) > 0))) {
+#line 130 "src/main.vl"
+                (*(out_type)) = stmt->type_name;
+            } else
+#line 131 "src/main.vl"
+            if ((stmt->val_expr != NULL)) {
+#line 132 "src/main.vl"
+                if (((stmt->val_expr->kind == EXPR_STRUCT_LIT) && (stmt->val_expr->type_name != NULL))) {
+#line 133 "src/main.vl"
+                    (*(out_type)) = stmt->val_expr->type_name;
+                } else
+#line 134 "src/main.vl"
+                if ((stmt->val_expr->kind == EXPR_INT)) {
+#line 135 "src/main.vl"
+                    (*(out_type)) = "i32";
+                } else
+#line 136 "src/main.vl"
+                if ((stmt->val_expr->kind == EXPR_FLOAT)) {
+#line 137 "src/main.vl"
+                    (*(out_type)) = "f64";
+                } else
+#line 138 "src/main.vl"
+                if ((stmt->val_expr->kind == EXPR_STRING)) {
+#line 139 "src/main.vl"
+                    (*(out_type)) = "string";
+                } else
+#line 140 "src/main.vl"
+                if ((stmt->val_expr->kind == EXPR_BOOL)) {
+#line 141 "src/main.vl"
+                    (*(out_type)) = "bool";
+                } else {
+#line 143 "src/main.vl"
+                    (*(out_type)) = "inferred";
+                }
+            } else {
+#line 146 "src/main.vl"
+                (*(out_type)) = "inferred";
+            }
+#line 148 "src/main.vl"
+            return true;
+        }
+    }
+#line 151 "src/main.vl"
+    if ((stmt->kind == STMT_BLOCK)) {
+#line 152 "src/main.vl"
+        StmtNode* cur = stmt->first_stmt;
+#line 153 "src/main.vl"
+        for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 154 "src/main.vl"
+            if (lsp_find_local_in_stmt(cur, target, max_line, out_type)) {
+#line 155 "src/main.vl"
+                return true;
+            }
+#line 157 "src/main.vl"
+            cur = cur->next;
+        }
+    } else
+#line 159 "src/main.vl"
+    if ((stmt->kind == STMT_IF)) {
+#line 160 "src/main.vl"
+        if (lsp_find_local_in_stmt(stmt->body, target, max_line, out_type)) {
+#line 160 "src/main.vl"
+            return true;
+        }
+#line 161 "src/main.vl"
+        if (lsp_find_local_in_stmt(stmt->else_branch, target, max_line, out_type)) {
+#line 161 "src/main.vl"
+            return true;
+        }
+    } else
+#line 162 "src/main.vl"
+    if ((stmt->kind == STMT_LOOP)) {
+#line 163 "src/main.vl"
+        if (lsp_find_local_in_stmt(stmt->body, target, max_line, out_type)) {
+#line 163 "src/main.vl"
+            return true;
+        }
+    }
+#line 165 "src/main.vl"
+    return false;
+}
+
+#line 169 "src/main.vl"
+void lsp_format_decl_markdown(StringBuilder* sb, StmtNode* decl, StrSlice filename) {
+#line 170 "src/main.vl"
+    if ((decl->kind == DECL_FUNCTION)) {
+#line 171 "src/main.vl"
+        sb_append_str(sb, "**act** `");
+#line 172 "src/main.vl"
+        sb_append_str(sb, decl->name);
+#line 173 "src/main.vl"
+        sb_append_char(sb, '(');
+#line 174 "src/main.vl"
+        ParamNode* p = decl->first_param;
+#line 175 "src/main.vl"
+        int32_t pi = 0;
+#line 176 "src/main.vl"
+        for (int32_t it = 0; ((p != NULL)); it++) {
+#line 177 "src/main.vl"
+            if ((pi > 0)) {
+#line 177 "src/main.vl"
+                sb_append_str(sb, ", ");
+            }
+#line 178 "src/main.vl"
+            sb_append_str(sb, p->name);
+#line 179 "src/main.vl"
+            sb_append_str(sb, ": ");
+#line 180 "src/main.vl"
+            if ((p->type_name != NULL)) {
+#line 180 "src/main.vl"
+                sb_append_str(sb, p->type_name);
+            }
+#line 181 "src/main.vl"
+            pi += 1;
+#line 182 "src/main.vl"
+            p = p->next;
+        }
+#line 184 "src/main.vl"
+        sb_append_str(sb, ") -> ");
+#line 185 "src/main.vl"
+        if (((decl->return_type != NULL) && (((usize)strlen(decl->return_type)) > 0))) {
+#line 186 "src/main.vl"
+            sb_append_str(sb, decl->return_type);
+        } else {
+#line 188 "src/main.vl"
+            sb_append_str(sb, "void");
+        }
+#line 190 "src/main.vl"
+        sb_append_str(sb, "`\n\n*declared in ");
+#line 191 "src/main.vl"
+        lsp_hover_append_slice(sb, filename);
+#line 192 "src/main.vl"
+        sb_append_char(sb, ':');
+#line 193 "src/main.vl"
+        sb_append_int(sb, decl->line);
+#line 194 "src/main.vl"
+        sb_append_char(sb, '*');
+    } else
+#line 195 "src/main.vl"
+    if ((decl->kind == DECL_DATA)) {
+#line 196 "src/main.vl"
+        sb_append_str(sb, "**data** `");
+#line 197 "src/main.vl"
+        sb_append_str(sb, decl->name);
+#line 198 "src/main.vl"
+        sb_append_char(sb, '`');
+#line 199 "src/main.vl"
+        FieldNode* f = decl->first_field;
+#line 200 "src/main.vl"
+        for (int32_t it = 0; ((f != NULL)); it++) {
+#line 201 "src/main.vl"
+            sb_append_str(sb, "  \n- `");
+#line 202 "src/main.vl"
+            sb_append_str(sb, f->name);
+#line 203 "src/main.vl"
+            sb_append_str(sb, ": ");
+#line 204 "src/main.vl"
+            if ((f->type_name != NULL)) {
+#line 204 "src/main.vl"
+                sb_append_str(sb, f->type_name);
+            }
+#line 205 "src/main.vl"
+            sb_append_char(sb, '`');
+#line 206 "src/main.vl"
+            f = f->next;
+        }
+#line 208 "src/main.vl"
+        sb_append_str(sb, "\n\n*declared in ");
+#line 209 "src/main.vl"
+        lsp_hover_append_slice(sb, filename);
+#line 210 "src/main.vl"
+        sb_append_char(sb, ':');
+#line 211 "src/main.vl"
+        sb_append_int(sb, decl->line);
+#line 212 "src/main.vl"
+        sb_append_char(sb, '*');
+    } else
+#line 213 "src/main.vl"
+    if ((decl->kind == DECL_KIND)) {
+#line 214 "src/main.vl"
+        sb_append_str(sb, "**kind** `");
+#line 215 "src/main.vl"
+        sb_append_str(sb, decl->name);
+#line 216 "src/main.vl"
+        sb_append_str(sb, "`  \nvariants: ");
+#line 217 "src/main.vl"
+        VariantNode* v = decl->first_variant;
+#line 218 "src/main.vl"
+        int32_t vi = 0;
+#line 219 "src/main.vl"
+        for (int32_t it = 0; ((v != NULL)); it++) {
+#line 220 "src/main.vl"
+            if ((vi > 0)) {
+#line 220 "src/main.vl"
+                sb_append_str(sb, ", ");
+            }
+#line 221 "src/main.vl"
+            sb_append_str(sb, v->name);
+#line 222 "src/main.vl"
+            vi += 1;
+#line 223 "src/main.vl"
+            v = v->next;
+        }
+#line 225 "src/main.vl"
+        sb_append_str(sb, "\n\n*declared in ");
+#line 226 "src/main.vl"
+        lsp_hover_append_slice(sb, filename);
+#line 227 "src/main.vl"
+        sb_append_char(sb, ':');
+#line 228 "src/main.vl"
+        sb_append_int(sb, decl->line);
+#line 229 "src/main.vl"
+        sb_append_char(sb, '*');
+    } else
+#line 230 "src/main.vl"
+    if ((decl->kind == DECL_TYPE_ALIAS)) {
+#line 231 "src/main.vl"
+        sb_append_str(sb, "**aka** `");
+#line 232 "src/main.vl"
+        sb_append_str(sb, decl->name);
+#line 233 "src/main.vl"
+        sb_append_str(sb, " = ");
+#line 234 "src/main.vl"
+        if ((decl->type_name != NULL)) {
+#line 234 "src/main.vl"
+            sb_append_str(sb, decl->type_name);
+        }
+#line 235 "src/main.vl"
+        sb_append_str(sb, "`\n\n*declared in ");
+#line 236 "src/main.vl"
+        lsp_hover_append_slice(sb, filename);
+#line 237 "src/main.vl"
+        sb_append_char(sb, ':');
+#line 238 "src/main.vl"
+        sb_append_int(sb, decl->line);
+#line 239 "src/main.vl"
+        sb_append_char(sb, '*');
+    } else
+#line 240 "src/main.vl"
+    if ((decl->kind == DECL_EXTERN)) {
+#line 241 "src/main.vl"
+        sb_append_str(sb, "**extern** `");
+#line 242 "src/main.vl"
+        sb_append_str(sb, decl->name);
+#line 243 "src/main.vl"
+        sb_append_str(sb, "`\n\n*declared in ");
+#line 244 "src/main.vl"
+        lsp_hover_append_slice(sb, filename);
+#line 245 "src/main.vl"
+        sb_append_char(sb, ':');
+#line 246 "src/main.vl"
+        sb_append_int(sb, decl->line);
+#line 247 "src/main.vl"
+        sb_append_char(sb, '*');
+    }
+}
+
+#line 252 "src/main.vl"
+void lsp_send_hover_result(JsonValue* id_node, const char* uri, const char* text, int32_t line0, int32_t char0) {
+#line 253 "src/main.vl"
+    if (((text == NULL) || (((usize)strlen(text)) == 0))) {
+#line 254 "src/main.vl"
+        lsp_send_null_hover(id_node);
+#line 255 "src/main.vl"
+        return;
+    }
+#line 258 "src/main.vl"
+    uint8_t* word_buf = ((uint8_t*)velo_heap_alloc(sizeof(uint8_t), (size_t)(128)));
+#line 260 "src/main.vl"
+    int32_t start_col = 0;
+#line 261 "src/main.vl"
+    int32_t end_col = 0;
+#line 263 "src/main.vl"
+    bool ok = lsp_hover_extract_word(text, line0, char0, word_buf, (&(start_col)), (&(end_col)));
+#line 264 "src/main.vl"
+    if ((!ok)) {
+#line 265 "src/main.vl"
+        lsp_send_null_hover(id_node);
+#line 266 "src/main.vl"
+#line 259 "src/main.vl"
+        velo_heap_free((void*)(word_buf));
+        return;
+    }
+#line 269 "src/main.vl"
+    const char* target_name = ((const char*)(word_buf));
+#line 270 "src/main.vl"
+    StringBuilder md_sb = create_sb(512);
+#line 271 "src/main.vl"
+    bool found = false;
+#line 273 "src/main.vl"
+    diag_collector_start();
+#line 275 "src/main.vl"
+    {
+        size_t __zone_wm = velo_zone_push();
+#line 276 "src/main.vl"
+        size_t slen = ((usize)strlen(text));
+#line 277 "src/main.vl"
+        Lexer lex = create_lexer(text, slen, (slen + 2));
+#line 278 "src/main.vl"
+        tokenize((&(lex)));
+#line 280 "src/main.vl"
+        if ((lex.dropped_count == 0)) {
+#line 281 "src/main.vl"
+            Parser p;
+#line 282 "src/main.vl"
+            init_parser((&(p)), "memory.vl", text, lex.tokens, lex.token_count);
+#line 283 "src/main.vl"
+            ProgramNode* prog = parse_program((&(p)));
+#line 285 "src/main.vl"
+            if ((prog != NULL)) {
+#line 287 "src/main.vl"
+                StmtNode* enclosing_act = NULL;
+#line 288 "src/main.vl"
+                StmtNode* cur = prog->first_decl;
+#line 289 "src/main.vl"
+                for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 290 "src/main.vl"
+                    if (((cur->kind == DECL_FUNCTION) && (cur->line <= (line0 + 1)))) {
+#line 291 "src/main.vl"
+                        enclosing_act = cur;
+                    }
+#line 293 "src/main.vl"
+                    cur = cur->next;
+                }
+#line 296 "src/main.vl"
+                if ((enclosing_act != NULL)) {
+#line 298 "src/main.vl"
+                    ParamNode* pcur = enclosing_act->first_param;
+#line 299 "src/main.vl"
+                    for (int32_t it = 0; ((pcur != NULL)); it++) {
+#line 300 "src/main.vl"
+                        if (slice_eq_str(slice_from_str(target_name), pcur->name)) {
+#line 301 "src/main.vl"
+                            sb_append_str((&(md_sb)), "`param **");
+#line 302 "src/main.vl"
+                            sb_append_str((&(md_sb)), target_name);
+#line 303 "src/main.vl"
+                            sb_append_str((&(md_sb)), "**: ");
+#line 304 "src/main.vl"
+                            if ((pcur->type_name != NULL)) {
+#line 304 "src/main.vl"
+                                sb_append_str((&(md_sb)), pcur->type_name);
+                            }
+#line 305 "src/main.vl"
+                            sb_append_char((&(md_sb)), '`');
+#line 306 "src/main.vl"
+                            found = true;
+#line 307 "src/main.vl"
+                            break;
+                        }
+#line 309 "src/main.vl"
+                        pcur = pcur->next;
+                    }
+#line 313 "src/main.vl"
+                    if (((!found) && (enclosing_act->body != NULL))) {
+#line 314 "src/main.vl"
+                        const char* ltype = NULL;
+#line 315 "src/main.vl"
+                        if (lsp_find_local_in_stmt(enclosing_act->body, target_name, (line0 + 1), (&(ltype)))) {
+#line 316 "src/main.vl"
+                            sb_append_str((&(md_sb)), "`local **");
+#line 317 "src/main.vl"
+                            sb_append_str((&(md_sb)), target_name);
+#line 318 "src/main.vl"
+                            sb_append_str((&(md_sb)), "**: ");
+#line 319 "src/main.vl"
+                            if ((ltype != NULL)) {
+#line 319 "src/main.vl"
+                                sb_append_str((&(md_sb)), ltype);
+                            }
+#line 320 "src/main.vl"
+                            sb_append_char((&(md_sb)), '`');
+#line 321 "src/main.vl"
+                            found = true;
+                        }
+                    }
+                }
+#line 327 "src/main.vl"
+                if ((!found)) {
+#line 328 "src/main.vl"
+                    StmtNode* dcur = prog->first_decl;
+#line 329 "src/main.vl"
+                    for (int32_t it = 0; ((dcur != NULL)); it++) {
+#line 330 "src/main.vl"
+                        if (((dcur->name != NULL) && slice_eq_str(slice_from_str(target_name), dcur->name))) {
+#line 331 "src/main.vl"
+                            const char* doc_path = lsp_uri_to_path(uri);
+#line 332 "src/main.vl"
+                            StrSlice bname = path_basename_str(doc_path);
+#line 333 "src/main.vl"
+                            lsp_format_decl_markdown((&(md_sb)), dcur, bname);
+#line 334 "src/main.vl"
+                            found = true;
+#line 335 "src/main.vl"
+                            break;
+                        }
+#line 337 "src/main.vl"
+                        dcur = dcur->next;
+                    }
+                }
+            }
+        }
+        velo_zone_pop(__zone_wm);
+    }
+#line 344 "src/main.vl"
+    diag_collector_stop();
+#line 345 "src/main.vl"
+    diag_collector_clear();
+#line 348 "src/main.vl"
+    if ((!found)) {
+#line 349 "src/main.vl"
+        if ((slice_eq_str(slice_from_str(target_name), "println_str") || slice_eq_str(slice_from_str(target_name), "println"))) {
+#line 350 "src/main.vl"
+            sb_append_str((&(md_sb)), "**act** `println_str(s: string) -> void`\n\n*standard library std.io*");
+#line 351 "src/main.vl"
+            found = true;
+        } else
+#line 352 "src/main.vl"
+        if ((slice_eq_str(slice_from_str(target_name), "print_str") || slice_eq_str(slice_from_str(target_name), "print"))) {
+#line 353 "src/main.vl"
+            sb_append_str((&(md_sb)), "**act** `print_str(s: string) -> void`\n\n*standard library std.io*");
+#line 354 "src/main.vl"
+            found = true;
+        } else
+#line 355 "src/main.vl"
+        if (slice_eq_str(slice_from_str(target_name), "fs_read_to_str")) {
+#line 356 "src/main.vl"
+            sb_append_str((&(md_sb)), "**act** `fs_read_to_str(path: string) -> string`\n\n*standard library std.fs*");
+#line 357 "src/main.vl"
+            found = true;
+        } else
+#line 358 "src/main.vl"
+        if (slice_eq_str(slice_from_str(target_name), "path_join_str")) {
+#line 359 "src/main.vl"
+            sb_append_str((&(md_sb)), "**act** `path_join_str(base: string, sub: string) -> string`\n\n*standard library std.path*");
+#line 360 "src/main.vl"
+            found = true;
+        }
+    }
+#line 364 "src/main.vl"
+    if ((!found)) {
+#line 365 "src/main.vl"
+        lsp_send_null_hover(id_node);
+#line 366 "src/main.vl"
+#line 259 "src/main.vl"
+        velo_heap_free((void*)(word_buf));
+        return;
+    }
+#line 369 "src/main.vl"
+    StringBuilder res_sb = create_sb(512);
+#line 370 "src/main.vl"
+    sb_append_str((&(res_sb)), "{\"jsonrpc\":\"2.0\",\"id\":");
+#line 371 "src/main.vl"
+    lsp_append_id((&(res_sb)), id_node);
+#line 372 "src/main.vl"
+    sb_append_str((&(res_sb)), ",\"result\":{\"contents\":{\"kind\":\"markdown\",\"value\":\"");
+#line 373 "src/main.vl"
+    const char* md_str = sb_to_string((&(md_sb)));
+#line 374 "src/main.vl"
+    lsp_json_escape((&(res_sb)), md_str);
+#line 375 "src/main.vl"
+    velo_heap_free((void*)(((uint8_t*)(md_str))));
+#line 376 "src/main.vl"
+    sb_append_str((&(res_sb)), "\"},\"range\":{\"start\":{\"line\":");
+#line 377 "src/main.vl"
+    sb_append_int((&(res_sb)), line0);
+#line 378 "src/main.vl"
+    sb_append_str((&(res_sb)), ",\"character\":");
+#line 379 "src/main.vl"
+    sb_append_int((&(res_sb)), start_col);
+#line 380 "src/main.vl"
+    sb_append_str((&(res_sb)), "},\"end\":{\"line\":");
+#line 381 "src/main.vl"
+    sb_append_int((&(res_sb)), line0);
+#line 382 "src/main.vl"
+    sb_append_str((&(res_sb)), ",\"character\":");
+#line 383 "src/main.vl"
+    sb_append_int((&(res_sb)), end_col);
+#line 384 "src/main.vl"
+    sb_append_str((&(res_sb)), "}}}}");
+#line 386 "src/main.vl"
+    const char* payload = sb_to_string((&(res_sb)));
+#line 387 "src/main.vl"
+    lsp_send_payload(payload);
+#line 259 "src/main.vl"
+    velo_heap_free((void*)(word_buf));
+}
+
+#line 18 "src/main.vl"
+void lsp_handle_did_open(LspServerState* state, JsonValue* params) {
+#line 19 "src/main.vl"
+    JsonValue* td = json_obj_get_str(params, "textDocument");
+#line 20 "src/main.vl"
+    if (((td == NULL) || (td->kind != JSON_OBJECT))) {
+#line 20 "src/main.vl"
+        return;
+    }
+#line 21 "src/main.vl"
+    JsonValue* uri_val = json_obj_get_str(td, "uri");
+#line 22 "src/main.vl"
+    JsonValue* txt_val = json_obj_get_str(td, "text");
+#line 23 "src/main.vl"
+    JsonValue* ver_val = json_obj_get_str(td, "version");
+#line 24 "src/main.vl"
+    if (((uri_val == NULL) || (txt_val == NULL))) {
+#line 24 "src/main.vl"
+        return;
+    }
+#line 25 "src/main.vl"
+    if (((uri_val->kind != JSON_STRING) || (txt_val->kind != JSON_STRING))) {
+#line 25 "src/main.vl"
+        return;
+    }
+#line 27 "src/main.vl"
+    const char* uri = lsp_slice_to_heap_str(uri_val->str_val);
+#line 28 "src/main.vl"
+    const char* text = lsp_slice_to_heap_str(txt_val->str_val);
+#line 29 "src/main.vl"
+    int32_t ver = 0;
+#line 30 "src/main.vl"
     if (((ver_val != NULL) && (ver_val->kind == JSON_INT))) {
-#line 122 "src/main.vl"
+#line 31 "src/main.vl"
         ver = ((int32_t)(ver_val->int_val));
     }
-#line 124 "src/main.vl"
+#line 33 "src/main.vl"
     lsp_store_doc(state, uri, text, ver);
-#line 126 "src/main.vl"
+#line 35 "src/main.vl"
     LspDoc* doc = lsp_find_doc(state, uri_val->str_val);
-#line 127 "src/main.vl"
+#line 36 "src/main.vl"
     if ((doc != NULL)) {
-#line 128 "src/main.vl"
+#line 37 "src/main.vl"
         lsp_analyze_document(doc->uri, doc->text, doc->version);
     }
 }
 
-#line 133 "src/main.vl"
+#line 42 "src/main.vl"
 void lsp_handle_did_change(LspServerState* state, JsonValue* params) {
-#line 134 "src/main.vl"
+#line 43 "src/main.vl"
     JsonValue* td = json_obj_get_str(params, "textDocument");
-#line 135 "src/main.vl"
+#line 44 "src/main.vl"
     JsonValue* changes = json_obj_get_str(params, "contentChanges");
-#line 136 "src/main.vl"
+#line 45 "src/main.vl"
     if (((td == NULL) || (td->kind != JSON_OBJECT))) {
-#line 136 "src/main.vl"
+#line 45 "src/main.vl"
         return;
     }
-#line 137 "src/main.vl"
+#line 46 "src/main.vl"
     if (((changes == NULL) || (changes->kind != JSON_ARRAY))) {
-#line 137 "src/main.vl"
+#line 46 "src/main.vl"
         return;
     }
-#line 139 "src/main.vl"
+#line 48 "src/main.vl"
     JsonValue* uri_val = json_obj_get_str(td, "uri");
-#line 140 "src/main.vl"
+#line 49 "src/main.vl"
     if (((uri_val == NULL) || (uri_val->kind != JSON_STRING))) {
-#line 140 "src/main.vl"
+#line 49 "src/main.vl"
         return;
     }
-#line 142 "src/main.vl"
+#line 51 "src/main.vl"
     JsonValue* ver_val = json_obj_get_str(td, "version");
-#line 143 "src/main.vl"
+#line 52 "src/main.vl"
     int32_t ver = 0;
-#line 144 "src/main.vl"
+#line 53 "src/main.vl"
     if (((ver_val != NULL) && (ver_val->kind == JSON_INT))) {
-#line 145 "src/main.vl"
+#line 54 "src/main.vl"
         ver = ((int32_t)(ver_val->int_val));
     }
-#line 148 "src/main.vl"
+#line 57 "src/main.vl"
     JsonValue* change_first = changes->first_child;
-#line 149 "src/main.vl"
+#line 58 "src/main.vl"
     if (((change_first != NULL) && (change_first->kind == JSON_OBJECT))) {
-#line 150 "src/main.vl"
+#line 59 "src/main.vl"
         JsonValue* txt_val = json_obj_get_str(change_first, "text");
-#line 151 "src/main.vl"
+#line 60 "src/main.vl"
         if (((txt_val != NULL) && (txt_val->kind == JSON_STRING))) {
-#line 152 "src/main.vl"
+#line 61 "src/main.vl"
             const char* uri = lsp_slice_to_heap_str(uri_val->str_val);
-#line 153 "src/main.vl"
+#line 62 "src/main.vl"
             const char* text = lsp_slice_to_heap_str(txt_val->str_val);
-#line 154 "src/main.vl"
+#line 63 "src/main.vl"
             lsp_store_doc(state, uri, text, ver);
-#line 156 "src/main.vl"
+#line 65 "src/main.vl"
             LspDoc* doc = lsp_find_doc(state, uri_val->str_val);
-#line 157 "src/main.vl"
+#line 66 "src/main.vl"
             if ((doc != NULL)) {
-#line 158 "src/main.vl"
+#line 67 "src/main.vl"
                 lsp_analyze_document(doc->uri, doc->text, doc->version);
             }
         }
     }
 }
 
-#line 165 "src/main.vl"
+#line 74 "src/main.vl"
 void lsp_handle_did_close(LspServerState* state, JsonValue* params) {
-#line 166 "src/main.vl"
+#line 75 "src/main.vl"
     JsonValue* td = json_obj_get_str(params, "textDocument");
-#line 167 "src/main.vl"
+#line 76 "src/main.vl"
     if (((td == NULL) || (td->kind != JSON_OBJECT))) {
-#line 167 "src/main.vl"
+#line 76 "src/main.vl"
         return;
     }
-#line 168 "src/main.vl"
+#line 77 "src/main.vl"
     JsonValue* uri_val = json_obj_get_str(td, "uri");
-#line 169 "src/main.vl"
+#line 78 "src/main.vl"
     if (((uri_val == NULL) || (uri_val->kind != JSON_STRING))) {
-#line 169 "src/main.vl"
+#line 78 "src/main.vl"
         return;
     }
-#line 171 "src/main.vl"
+#line 80 "src/main.vl"
     const char* uri_str = lsp_slice_to_heap_str(uri_val->str_val);
-#line 172 "src/main.vl"
+#line 81 "src/main.vl"
     lsp_close_doc(state, uri_val->str_val);
-#line 173 "src/main.vl"
+#line 82 "src/main.vl"
     lsp_publish_empty_diagnostics(uri_str);
-#line 174 "src/main.vl"
+#line 83 "src/main.vl"
     velo_heap_free((void*)(((uint8_t*)(uri_str))));
 }
 
-#line 178 "src/main.vl"
+#line 87 "src/main.vl"
 void lsp_handle_did_save(LspServerState* state, JsonValue* params) {
-#line 179 "src/main.vl"
+#line 88 "src/main.vl"
     JsonValue* td = json_obj_get_str(params, "textDocument");
-#line 180 "src/main.vl"
+#line 89 "src/main.vl"
     if (((td == NULL) || (td->kind != JSON_OBJECT))) {
-#line 180 "src/main.vl"
+#line 89 "src/main.vl"
         return;
     }
-#line 181 "src/main.vl"
+#line 90 "src/main.vl"
     JsonValue* uri_val = json_obj_get_str(td, "uri");
-#line 182 "src/main.vl"
+#line 91 "src/main.vl"
     if (((uri_val == NULL) || (uri_val->kind != JSON_STRING))) {
-#line 182 "src/main.vl"
+#line 91 "src/main.vl"
         return;
     }
-#line 184 "src/main.vl"
+#line 93 "src/main.vl"
     LspDoc* doc = lsp_find_doc(state, uri_val->str_val);
-#line 185 "src/main.vl"
+#line 94 "src/main.vl"
     if ((doc != NULL)) {
-#line 186 "src/main.vl"
+#line 95 "src/main.vl"
         lsp_analyze_document(doc->uri, doc->text, doc->version);
     }
 }
 
-#line 191 "src/main.vl"
+#line 100 "src/main.vl"
 void lsp_handle_document_symbol(LspServerState* state, JsonValue* id_node, JsonValue* params) {
-#line 192 "src/main.vl"
+#line 101 "src/main.vl"
     if (((params == NULL) || (params->kind != JSON_OBJECT))) {
-#line 193 "src/main.vl"
+#line 102 "src/main.vl"
         lsp_send_empty_document_symbols(id_node);
-#line 194 "src/main.vl"
+#line 103 "src/main.vl"
         return;
     }
-#line 196 "src/main.vl"
+#line 105 "src/main.vl"
     JsonValue* td = json_obj_get_str(params, "textDocument");
-#line 197 "src/main.vl"
+#line 106 "src/main.vl"
     if (((td == NULL) || (td->kind != JSON_OBJECT))) {
-#line 198 "src/main.vl"
+#line 107 "src/main.vl"
         lsp_send_empty_document_symbols(id_node);
-#line 199 "src/main.vl"
+#line 108 "src/main.vl"
         return;
     }
-#line 201 "src/main.vl"
-    JsonValue* uri_val = json_obj_get_str(td, "uri");
-#line 202 "src/main.vl"
-    if (((uri_val == NULL) || (uri_val->kind != JSON_STRING))) {
-#line 203 "src/main.vl"
-        lsp_send_empty_document_symbols(id_node);
-#line 204 "src/main.vl"
-        return;
-    }
-#line 207 "src/main.vl"
-    LspDoc* doc = lsp_find_doc(state, uri_val->str_val);
-#line 208 "src/main.vl"
-    if (((doc != NULL) && (doc->text != NULL))) {
-#line 209 "src/main.vl"
-        lsp_send_document_symbols(id_node, doc->text);
-#line 210 "src/main.vl"
-        return;
-    }
-#line 214 "src/main.vl"
-    const char* uri_str = lsp_slice_to_heap_str(uri_val->str_val);
-#line 215 "src/main.vl"
-    const char* path = lsp_uri_to_path(uri_str);
-#line 216 "src/main.vl"
-    if (((((usize)strlen(path)) > 0) && fs_exists(path))) {
-#line 217 "src/main.vl"
-        const char* text = fs_read_to_str(path);
-#line 218 "src/main.vl"
-        if ((text != NULL)) {
-#line 219 "src/main.vl"
-            lsp_send_document_symbols(id_node, text);
-#line 220 "src/main.vl"
+#line 110 "src/main.vl"
+    const char* uri_str = NULL;
+#line 111 "src/main.vl"
+    bool needs_free = false;
+#line 112 "src/main.vl"
+    const char* text = lsp_get_doc_text(state, json_obj_get_str(td, "uri"), (&(uri_str)), (&(needs_free)));
+#line 113 "src/main.vl"
+    if ((text != NULL)) {
+#line 114 "src/main.vl"
+        lsp_send_document_symbols(id_node, text);
+#line 115 "src/main.vl"
+        if (needs_free) {
+#line 116 "src/main.vl"
             velo_heap_free((void*)(((uint8_t*)(text))));
-#line 221 "src/main.vl"
+#line 117 "src/main.vl"
             velo_heap_free((void*)(((uint8_t*)(uri_str))));
-#line 222 "src/main.vl"
-            return;
         }
+    } else {
+#line 120 "src/main.vl"
+        lsp_send_empty_document_symbols(id_node);
     }
-#line 225 "src/main.vl"
-    velo_heap_free((void*)(((uint8_t*)(uri_str))));
-#line 227 "src/main.vl"
-    lsp_send_empty_document_symbols(id_node);
 }
 
-#line 231 "src/main.vl"
+#line 125 "src/main.vl"
+void lsp_handle_hover(LspServerState* state, JsonValue* id_node, JsonValue* params) {
+#line 126 "src/main.vl"
+    if (((params == NULL) || (params->kind != JSON_OBJECT))) {
+#line 127 "src/main.vl"
+        lsp_send_null_hover(id_node);
+#line 128 "src/main.vl"
+        return;
+    }
+#line 130 "src/main.vl"
+    JsonValue* td = json_obj_get_str(params, "textDocument");
+#line 131 "src/main.vl"
+    JsonValue* pos = json_obj_get_str(params, "position");
+#line 132 "src/main.vl"
+    if (((((td == NULL) || (td->kind != JSON_OBJECT)) || (pos == NULL)) || (pos->kind != JSON_OBJECT))) {
+#line 133 "src/main.vl"
+        lsp_send_null_hover(id_node);
+#line 134 "src/main.vl"
+        return;
+    }
+#line 136 "src/main.vl"
+    JsonValue* line_node = json_obj_get_str(pos, "line");
+#line 137 "src/main.vl"
+    JsonValue* char_node = json_obj_get_str(pos, "character");
+#line 138 "src/main.vl"
+    if (((line_node == NULL) || (char_node == NULL))) {
+#line 139 "src/main.vl"
+        lsp_send_null_hover(id_node);
+#line 140 "src/main.vl"
+        return;
+    }
+#line 142 "src/main.vl"
+    const char* uri_str = NULL;
+#line 143 "src/main.vl"
+    bool needs_free = false;
+#line 144 "src/main.vl"
+    const char* text = lsp_get_doc_text(state, json_obj_get_str(td, "uri"), (&(uri_str)), (&(needs_free)));
+#line 145 "src/main.vl"
+    if ((text != NULL)) {
+#line 146 "src/main.vl"
+        lsp_send_hover_result(id_node, uri_str, text, ((int32_t)(line_node->int_val)), ((int32_t)(char_node->int_val)));
+#line 147 "src/main.vl"
+        if (needs_free) {
+#line 148 "src/main.vl"
+            velo_heap_free((void*)(((uint8_t*)(text))));
+#line 149 "src/main.vl"
+            velo_heap_free((void*)(((uint8_t*)(uri_str))));
+        }
+    } else {
+#line 152 "src/main.vl"
+        lsp_send_null_hover(id_node);
+    }
+}
+
+#line 157 "src/main.vl"
 bool lsp_dispatch_message(LspServerState* state, const char* msg) {
-#line 232 "src/main.vl"
+#line 158 "src/main.vl"
     JsonDoc doc = json_parse_doc_str(msg, 65536);
-#line 233 "src/main.vl"
+#line 159 "src/main.vl"
     if (((!doc.ok) || (doc.root == NULL))) {
-#line 234 "src/main.vl"
+#line 160 "src/main.vl"
         return false;
     }
-#line 238 "src/main.vl"
+#line 164 "src/main.vl"
     JsonValue* root = doc.root;
-#line 239 "src/main.vl"
+#line 165 "src/main.vl"
     JsonValue* id_node = json_obj_get_str(root, "id");
-#line 240 "src/main.vl"
+#line 166 "src/main.vl"
     JsonValue* method_node = json_obj_get_str(root, "method");
-#line 241 "src/main.vl"
+#line 167 "src/main.vl"
     JsonValue* params_node = json_obj_get_str(root, "params");
-#line 243 "src/main.vl"
+#line 169 "src/main.vl"
     if (((method_node == NULL) || (method_node->kind != JSON_STRING))) {
-#line 244 "src/main.vl"
-#line 236 "src/main.vl"
+#line 170 "src/main.vl"
+#line 162 "src/main.vl"
         json_doc_free((&(doc)));
         return false;
     }
-#line 247 "src/main.vl"
+#line 173 "src/main.vl"
     StrSlice m = method_node->str_val;
-#line 249 "src/main.vl"
+#line 175 "src/main.vl"
     if (slice_eq_str(m, "initialize")) {
-#line 250 "src/main.vl"
+#line 176 "src/main.vl"
         lsp_send_initialize_result(id_node);
-#line 251 "src/main.vl"
-#line 236 "src/main.vl"
+#line 177 "src/main.vl"
+#line 162 "src/main.vl"
         json_doc_free((&(doc)));
         return false;
     }
-#line 254 "src/main.vl"
+#line 180 "src/main.vl"
     if (slice_eq_str(m, "initialized")) {
-#line 255 "src/main.vl"
-#line 236 "src/main.vl"
+#line 181 "src/main.vl"
+#line 162 "src/main.vl"
         json_doc_free((&(doc)));
         return false;
     }
-#line 258 "src/main.vl"
+#line 184 "src/main.vl"
     if (slice_eq_str(m, "shutdown")) {
-#line 259 "src/main.vl"
+#line 185 "src/main.vl"
         state->is_shutdown = true;
-#line 260 "src/main.vl"
+#line 186 "src/main.vl"
         lsp_send_shutdown_result(id_node);
-#line 261 "src/main.vl"
-#line 236 "src/main.vl"
+#line 187 "src/main.vl"
+#line 162 "src/main.vl"
         json_doc_free((&(doc)));
         return false;
     }
-#line 264 "src/main.vl"
+#line 190 "src/main.vl"
     if (slice_eq_str(m, "exit")) {
-#line 265 "src/main.vl"
-#line 236 "src/main.vl"
+#line 191 "src/main.vl"
+#line 162 "src/main.vl"
         json_doc_free((&(doc)));
         return true;
     }
-#line 268 "src/main.vl"
+#line 194 "src/main.vl"
     if (slice_eq_str(m, "textDocument/didOpen")) {
-#line 269 "src/main.vl"
+#line 195 "src/main.vl"
         if (((params_node != NULL) && (params_node->kind == JSON_OBJECT))) {
-#line 270 "src/main.vl"
+#line 196 "src/main.vl"
             lsp_handle_did_open(state, params_node);
         }
-#line 272 "src/main.vl"
-#line 236 "src/main.vl"
+#line 198 "src/main.vl"
+#line 162 "src/main.vl"
         json_doc_free((&(doc)));
         return false;
     }
-#line 275 "src/main.vl"
+#line 201 "src/main.vl"
     if (slice_eq_str(m, "textDocument/didChange")) {
-#line 276 "src/main.vl"
+#line 202 "src/main.vl"
         if (((params_node != NULL) && (params_node->kind == JSON_OBJECT))) {
-#line 277 "src/main.vl"
+#line 203 "src/main.vl"
             lsp_handle_did_change(state, params_node);
         }
-#line 279 "src/main.vl"
-#line 236 "src/main.vl"
+#line 205 "src/main.vl"
+#line 162 "src/main.vl"
         json_doc_free((&(doc)));
         return false;
     }
-#line 282 "src/main.vl"
+#line 208 "src/main.vl"
     if (slice_eq_str(m, "textDocument/didClose")) {
-#line 283 "src/main.vl"
+#line 209 "src/main.vl"
         if (((params_node != NULL) && (params_node->kind == JSON_OBJECT))) {
-#line 284 "src/main.vl"
+#line 210 "src/main.vl"
             lsp_handle_did_close(state, params_node);
         }
-#line 286 "src/main.vl"
-#line 236 "src/main.vl"
+#line 212 "src/main.vl"
+#line 162 "src/main.vl"
         json_doc_free((&(doc)));
         return false;
     }
-#line 289 "src/main.vl"
+#line 215 "src/main.vl"
     if (slice_eq_str(m, "textDocument/didSave")) {
-#line 290 "src/main.vl"
+#line 216 "src/main.vl"
         if (((params_node != NULL) && (params_node->kind == JSON_OBJECT))) {
-#line 291 "src/main.vl"
+#line 217 "src/main.vl"
             lsp_handle_did_save(state, params_node);
         }
-#line 293 "src/main.vl"
-#line 236 "src/main.vl"
+#line 219 "src/main.vl"
+#line 162 "src/main.vl"
         json_doc_free((&(doc)));
         return false;
     }
-#line 296 "src/main.vl"
+#line 222 "src/main.vl"
     if (slice_eq_str(m, "textDocument/documentSymbol")) {
-#line 297 "src/main.vl"
+#line 223 "src/main.vl"
         if ((id_node != NULL)) {
-#line 298 "src/main.vl"
+#line 224 "src/main.vl"
             lsp_handle_document_symbol(state, id_node, params_node);
         }
-#line 300 "src/main.vl"
-#line 236 "src/main.vl"
+#line 226 "src/main.vl"
+#line 162 "src/main.vl"
         json_doc_free((&(doc)));
         return false;
     }
-#line 304 "src/main.vl"
+#line 229 "src/main.vl"
+    if (slice_eq_str(m, "textDocument/hover")) {
+#line 230 "src/main.vl"
+        if ((id_node != NULL)) {
+#line 231 "src/main.vl"
+            lsp_handle_hover(state, id_node, params_node);
+        }
+#line 233 "src/main.vl"
+#line 162 "src/main.vl"
+        json_doc_free((&(doc)));
+        return false;
+    }
+#line 237 "src/main.vl"
     if ((id_node != NULL)) {
-#line 305 "src/main.vl"
+#line 238 "src/main.vl"
         lsp_send_method_not_found(id_node);
     }
-#line 308 "src/main.vl"
-#line 236 "src/main.vl"
+#line 241 "src/main.vl"
+#line 162 "src/main.vl"
     json_doc_free((&(doc)));
     return false;
-#line 236 "src/main.vl"
+#line 162 "src/main.vl"
     json_doc_free((&(doc)));
 }
 
-#line 312 "src/main.vl"
+#line 245 "src/main.vl"
 int32_t handle_lsp_command(void) {
-#line 313 "src/main.vl"
+#line 246 "src/main.vl"
     FileHandle stdin_h = io_stdin_handle();
-#line 314 "src/main.vl"
+#line 247 "src/main.vl"
     if ((!io_is_valid_handle(stdin_h))) {
-#line 315 "src/main.vl"
+#line 248 "src/main.vl"
         println_str("[Velo Error] Failed to acquire stdin handle for LSP");
-#line 316 "src/main.vl"
+#line 249 "src/main.vl"
         return 1;
     }
-#line 318 "src/main.vl"
+#line 251 "src/main.vl"
     BufferedReader r = reader_init(stdin_h);
-#line 321 "src/main.vl"
+#line 254 "src/main.vl"
     uint8_t* line_buf = ((uint8_t*)velo_heap_alloc(sizeof(uint8_t), (size_t)(512)));
-#line 323 "src/main.vl"
+#line 256 "src/main.vl"
     LspServerState state = (LspServerState){ .first_doc = NULL, .is_shutdown = false };
-#line 328 "src/main.vl"
+#line 261 "src/main.vl"
     for (int32_t it = 0; ; it++) {
-#line 329 "src/main.vl"
+#line 262 "src/main.vl"
         const char* msg = read_lsp_message((&(r)), line_buf);
-#line 330 "src/main.vl"
+#line 263 "src/main.vl"
         if ((msg == NULL)) {
-#line 331 "src/main.vl"
+#line 264 "src/main.vl"
             break;
         }
-#line 333 "src/main.vl"
+#line 266 "src/main.vl"
         bool should_exit = lsp_dispatch_message((&(state)), msg);
-#line 334 "src/main.vl"
+#line 267 "src/main.vl"
         if ((((usize)strlen(msg)) > 0)) {
-#line 335 "src/main.vl"
+#line 268 "src/main.vl"
             velo_heap_free((void*)(((uint8_t*)(msg))));
         }
-#line 337 "src/main.vl"
+#line 270 "src/main.vl"
         if (should_exit) {
-#line 338 "src/main.vl"
+#line 271 "src/main.vl"
             break;
         }
     }
-#line 342 "src/main.vl"
+#line 275 "src/main.vl"
     if ((line_buf != NULL)) {
-#line 343 "src/main.vl"
+#line 276 "src/main.vl"
         velo_heap_free((void*)(line_buf));
     }
-#line 347 "src/main.vl"
+#line 280 "src/main.vl"
     LspDoc* cur = state.first_doc;
-#line 348 "src/main.vl"
+#line 281 "src/main.vl"
     for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 349 "src/main.vl"
+#line 282 "src/main.vl"
         LspDoc* nxt = cur->next;
-#line 350 "src/main.vl"
+#line 283 "src/main.vl"
         if ((cur->uri != NULL)) {
-#line 351 "src/main.vl"
+#line 284 "src/main.vl"
             velo_heap_free((void*)(((uint8_t*)(cur->uri))));
         }
-#line 353 "src/main.vl"
+#line 286 "src/main.vl"
         if ((cur->text != NULL)) {
-#line 354 "src/main.vl"
+#line 287 "src/main.vl"
             velo_heap_free((void*)(((uint8_t*)(cur->text))));
         }
-#line 356 "src/main.vl"
+#line 289 "src/main.vl"
         velo_heap_free((void*)(((uint8_t*)(cur))));
-#line 357 "src/main.vl"
+#line 290 "src/main.vl"
         cur = nxt;
     }
-#line 359 "src/main.vl"
+#line 292 "src/main.vl"
     state.first_doc = NULL;
-#line 361 "src/main.vl"
+#line 294 "src/main.vl"
     if (state.is_shutdown) {
-#line 362 "src/main.vl"
-#line 319 "src/main.vl"
+#line 295 "src/main.vl"
+#line 252 "src/main.vl"
         reader_free((&(r)));
         return 0;
     }
-#line 364 "src/main.vl"
-#line 319 "src/main.vl"
+#line 297 "src/main.vl"
+#line 252 "src/main.vl"
     reader_free((&(r)));
     return 0;
-#line 319 "src/main.vl"
+#line 252 "src/main.vl"
     reader_free((&(r)));
 }
 

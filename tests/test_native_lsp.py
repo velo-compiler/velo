@@ -427,6 +427,141 @@ extern act c_puts(s: string) -> i32
     assert proc.returncode == 0
 
 
+def test_native_lsp_hover():
+    """Verify rich Markdown hover for functions, locals, parameters, and structs."""
+    proc = spawn_native_lsp()
+
+    # 1. Initialize
+    send_lsp_msg(proc, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    init_res = recv_lsp_msg(proc)
+    assert init_res["id"] == 1
+    caps = init_res["result"].get("capabilities", {})
+    assert caps.get("hoverProvider") is True
+
+    code = """data Point {
+    x: i32
+    y: i32
+}
+
+aka PointRef = Point
+
+act create_point(px: i32, py: i32) -> Point {
+    return Point { x: px, y: py }
+}
+
+act main() -> i32 {
+    let p: Point = create_point(10, 20)
+    return 0
+}
+"""
+    uri = "file:///hover_test.vl"
+
+    # 2. didOpen
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "method": "textDocument/didOpen",
+        "params": {
+            "textDocument": {
+                "uri": uri,
+                "languageId": "velo",
+                "version": 1,
+                "text": code
+            }
+        }
+    })
+    diag = recv_lsp_msg(proc)
+    assert diag["method"] == "textDocument/publishDiagnostics"
+
+    # 3. Hover on act call: create_point on line 12 (0-based)
+    # "    let p: Point = create_point(10, 20)" -> create_point starts at char 19
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "textDocument/hover",
+        "params": {
+            "textDocument": {"uri": uri},
+            "position": {"line": 12, "character": 22}
+        }
+    })
+    h_act = recv_lsp_msg(proc)
+    assert h_act["id"] == 2
+    assert h_act["result"] is not None
+    val_act = h_act["result"]["contents"]["value"]
+    assert "create_point(px: i32, py: i32) -> Point" in val_act
+    assert "hover_test.vl:8" in val_act
+
+    # 4. Hover on local variable: p on line 12 (character 8)
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "textDocument/hover",
+        "params": {
+            "textDocument": {"uri": uri},
+            "position": {"line": 12, "character": 8}
+        }
+    })
+    h_local = recv_lsp_msg(proc)
+    assert h_local["id"] == 3
+    assert h_local["result"] is not None
+    val_local = h_local["result"]["contents"]["value"]
+    assert "local **p**: Point" in val_local
+
+    # 5. Hover on act parameter: px on line 9 (character 21 in "return Point { x: px, y: py }")
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "method": "textDocument/hover",
+        "params": {
+            "textDocument": {"uri": uri},
+            "position": {"line": 8, "character": 22}
+        }
+    })
+    h_param = recv_lsp_msg(proc)
+    assert h_param["id"] == 4
+    assert h_param["result"] is not None
+    val_param = h_param["result"]["contents"]["value"]
+    assert "param **px**: i32" in val_param
+
+    # 6. Hover on struct name: Point on line 0 (character 6 in "data Point {")
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "textDocument/hover",
+        "params": {
+            "textDocument": {"uri": uri},
+            "position": {"line": 0, "character": 6}
+        }
+    })
+    h_struct = recv_lsp_msg(proc)
+    assert h_struct["id"] == 5
+    assert h_struct["result"] is not None
+    val_struct = h_struct["result"]["contents"]["value"]
+    assert "**data** `Point`" in val_struct
+    assert "x: i32" in val_struct
+
+    # 7. Hover on whitespace -> returns null
+    send_lsp_msg(proc, {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "textDocument/hover",
+        "params": {
+            "textDocument": {"uri": uri},
+            "position": {"line": 1, "character": 0}
+        }
+    })
+    h_null = recv_lsp_msg(proc)
+    assert h_null["id"] == 6
+    assert h_null["result"] is None
+
+    # 8. Shutdown and exit
+    send_lsp_msg(proc, {"jsonrpc": "2.0", "id": 7, "method": "shutdown"})
+    recv_lsp_msg(proc)
+    send_lsp_msg(proc, {"jsonrpc": "2.0", "method": "exit"})
+    proc.stdin.close()
+    proc.wait(timeout=5)
+    assert proc.returncode == 0
+
+
 def test_native_lsp_eof_disconnect():
     """Verify server exits gracefully when client closes stdin pipe abruptly."""
     proc = spawn_native_lsp()

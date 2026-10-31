@@ -10,100 +10,9 @@ use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "transport.vl"
 use "analysis.vl"
+use "doc_store.vl"
 use "symbols.vl"
-
-// In-memory document tracking node (singly linked list).
-data LspDoc {
-    uri: string,
-    text: string,
-    version: i32,
-    next: @LspDoc,
-}
-
-// Persistent LSP server state.
-data LspServerState {
-    first_doc: @LspDoc,
-    is_shutdown: bool,
-}
-
-// Duplicates a StrSlice into a persistent null-terminated heap string.
-act lsp_slice_to_heap_str(s: StrSlice) -> string {
-    if s.ptr == null or s.len == 0 {
-        let empty_buf: @u8 = mem.heap_alloc(@u8, 1)
-        empty_buf[0] = 0 as u8
-        return empty_buf as string
-    }
-    let buf: @u8 = mem.heap_alloc(@u8, s.len + 1)
-    mut i: usize = 0
-    loop i < s.len {
-        buf[i] = s.ptr[i]
-        i += 1
-    }
-    buf[s.len] = 0 as u8
-    return buf as string
-}
-
-// Searches the active document store for a document matching the given URI slice.
-act lsp_find_doc(state: @LspServerState, uri_slice: StrSlice) -> @LspDoc {
-    mut cur = state.first_doc
-    loop cur != null {
-        if slice_eq_str(uri_slice, cur.uri) {
-            return cur
-        }
-        cur = cur.next
-    }
-    return null
-}
-
-// Stores or updates an in-memory document with full text content and version.
-act lsp_store_doc(state: @LspServerState, uri: string, text: string, version: i32) {
-    mut cur = state.first_doc
-    loop cur != null {
-        if slice_eq_str(slice_from_str(uri), cur.uri) {
-            if cur.text != null {
-                mem.free(cur.text as @u8)
-            }
-            cur.text = text
-            cur.version = version
-            if uri != null {
-                mem.free(uri as @u8)
-            }
-            return
-        }
-        cur = cur.next
-    }
-    let node: @LspDoc = mem.heap_alloc(@LspDoc, 1)
-    node.uri = uri
-    node.text = text
-    node.version = version
-    node.next = state.first_doc
-    state.first_doc = node
-}
-
-// Closes and frees an in-memory document matching the given URI slice.
-act lsp_close_doc(state: @LspServerState, uri_slice: StrSlice) {
-    mut prev: @LspDoc = null
-    mut cur = state.first_doc
-    loop cur != null {
-        if slice_eq_str(uri_slice, cur.uri) {
-            if prev == null {
-                state.first_doc = cur.next
-            } else {
-                prev.next = cur.next
-            }
-            if cur.uri != null {
-                mem.free(cur.uri as @u8)
-            }
-            if cur.text != null {
-                mem.free(cur.text as @u8)
-            }
-            mem.free(cur as @u8)
-            return
-        }
-        prev = cur
-        cur = cur.next
-    }
-}
+use "hover.vl"
 
 // Processes 'textDocument/didOpen' notification.
 act lsp_handle_did_open(state: @LspServerState, params: @JsonValue) {
@@ -198,33 +107,50 @@ act lsp_handle_document_symbol(state: @LspServerState, id_node: @JsonValue, para
         lsp_send_empty_document_symbols(id_node)
         return
     }
-    let uri_val = json_obj_get_str(td, "uri")
-    if uri_val == null or uri_val.kind != JSON_STRING {
-        lsp_send_empty_document_symbols(id_node)
-        return
-    }
-
-    let doc = lsp_find_doc(state, uri_val.str_val)
-    if doc != null and doc.text != null {
-        lsp_send_document_symbols(id_node, doc.text)
-        return
-    }
-
-    // Fallback to disk read if document was not previously opened
-    let uri_str = lsp_slice_to_heap_str(uri_val.str_val)
-    let path = lsp_uri_to_path(uri_str)
-    if str.len(path) > 0 and fs_exists(path) {
-        let text = fs_read_to_str(path)
-        if text != null {
-            lsp_send_document_symbols(id_node, text)
+    mut uri_str: string = null
+    mut needs_free: bool = false
+    let text = lsp_get_doc_text(state, json_obj_get_str(td, "uri"), @uri_str, @needs_free)
+    if text != null {
+        lsp_send_document_symbols(id_node, text)
+        if needs_free {
             mem.free(text as @u8)
             mem.free(uri_str as @u8)
-            return
         }
+    } else {
+        lsp_send_empty_document_symbols(id_node)
     }
-    mem.free(uri_str as @u8)
+}
 
-    lsp_send_empty_document_symbols(id_node)
+// Processes 'textDocument/hover' request.
+act lsp_handle_hover(state: @LspServerState, id_node: @JsonValue, params: @JsonValue) {
+    if params == null or params.kind != JSON_OBJECT {
+        lsp_send_null_hover(id_node)
+        return
+    }
+    let td = json_obj_get_str(params, "textDocument")
+    let pos = json_obj_get_str(params, "position")
+    if td == null or td.kind != JSON_OBJECT or pos == null or pos.kind != JSON_OBJECT {
+        lsp_send_null_hover(id_node)
+        return
+    }
+    let line_node = json_obj_get_str(pos, "line")
+    let char_node = json_obj_get_str(pos, "character")
+    if line_node == null or char_node == null {
+        lsp_send_null_hover(id_node)
+        return
+    }
+    mut uri_str: string = null
+    mut needs_free: bool = false
+    let text = lsp_get_doc_text(state, json_obj_get_str(td, "uri"), @uri_str, @needs_free)
+    if text != null {
+        lsp_send_hover_result(id_node, uri_str, text, line_node.int_val as i32, char_node.int_val as i32)
+        if needs_free {
+            mem.free(text as @u8)
+            mem.free(uri_str as @u8)
+        }
+    } else {
+        lsp_send_null_hover(id_node)
+    }
 }
 
 // Dispatches a parsed JSON-RPC message. Returns true if server should terminate.
@@ -296,6 +222,13 @@ act lsp_dispatch_message(state: @LspServerState, msg: string) -> bool {
     if slice_eq_str(m, "textDocument/documentSymbol") {
         if id_node != null {
             lsp_handle_document_symbol(state, id_node, params_node)
+        }
+        return false
+    }
+
+    if slice_eq_str(m, "textDocument/hover") {
+        if id_node != null {
+            lsp_handle_hover(state, id_node, params_node)
         }
         return false
     }
