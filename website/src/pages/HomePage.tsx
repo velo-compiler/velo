@@ -24,10 +24,17 @@ interface HomePageProps {
 
 export const HomePage: React.FC<HomePageProps> = ({ onNavigate, onSelectDocPage }) => {
   const [copiedInstall, setCopiedInstall] = useState(false);
+  const [installTab, setInstallTab] = useState<'powershell' | 'bash' | 'source'>('powershell');
   const [activeCodeTab, setActiveCodeTab] = useState<'zone' | 'particle' | 'simd' | 'ufcs'>('zone');
 
+  const installCommands = {
+    powershell: 'irm http://localhost:5173/install.ps1 | iex',
+    bash: 'curl -fsSL http://localhost:5173/install.sh | bash',
+    source: 'git clone https://github.com/velo-lang/velo.git && cd velo && scripts\\bootstrap.bat'
+  };
+
   const copyInstallCommand = () => {
-    navigator.clipboard.writeText('git clone https://github.com/velo-lang/velo.git && cd velo && scripts\\bootstrap.bat');
+    navigator.clipboard.writeText(installCommands[installTab]);
     setCopiedInstall(true);
     setTimeout(() => setCopiedInstall(false), 2000);
   };
@@ -189,12 +196,46 @@ Scaled pos: (20.000000, 40.000000)`
           </button>
         </div>
 
-        {/* Quick Install Banner */}
-        <div className="max-w-xl mx-auto pt-4">
+        {/* Quick Install Banner with Tabs */}
+        <div className="max-w-xl mx-auto pt-4 space-y-2">
+          {/* OS Switcher */}
+          <div className="flex items-center justify-center gap-1.5 text-xs">
+            <button
+              onClick={() => setInstallTab('powershell')}
+              className={`px-3 py-1 rounded-lg transition-all ${
+                installTab === 'powershell'
+                  ? 'bg-slate-800 text-cyan-300 font-semibold border border-cyan-500/30'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Windows (PowerShell)
+            </button>
+            <button
+              onClick={() => setInstallTab('bash')}
+              className={`px-3 py-1 rounded-lg transition-all ${
+                installTab === 'bash'
+                  ? 'bg-slate-800 text-cyan-300 font-semibold border border-cyan-500/30'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              macOS / Linux
+            </button>
+            <button
+              onClick={() => setInstallTab('source')}
+              className={`px-3 py-1 rounded-lg transition-all ${
+                installTab === 'source'
+                  ? 'bg-slate-800 text-cyan-300 font-semibold border border-cyan-500/30'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Build from Source
+            </button>
+          </div>
+
           <div className="flex items-center justify-between px-4 py-3 bg-[#111620] border border-slate-800 rounded-xl font-mono text-xs text-slate-300 shadow-inner">
             <span className="flex items-center gap-2 truncate">
               <span className="text-cyan-400 select-none">$</span>
-              <span className="truncate">git clone https://github.com/velo-lang/velo && scripts\bootstrap.bat</span>
+              <span className="truncate">{installCommands[installTab]}</span>
             </span>
             <button
               onClick={copyInstallCommand}

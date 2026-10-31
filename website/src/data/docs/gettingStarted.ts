@@ -16,29 +16,51 @@ export const GETTING_STARTED_CATEGORY: DocCategory = {
       description: 'Set up your development environment on Windows, Linux, or macOS with GCC or MSVC.',
       readTimeMinutes: 5,
       whatYoullLearn: [
-        'Prerequisites for compiling Velo',
-        'Configuring GCC (MSYS2 UCRT64) or MSVC (cl.exe)',
-        'Bootstrapping the compiler from the C snapshot',
+        'Installing Velo with the official 1-line installer',
+        'Configuring GCC (MSYS2 UCRT64) or MSVC (cl.exe) for building native executables',
+        'Building from source via the bootstrap snapshot (bootstrap.c)',
         'Verifying your installation'
       ],
       sections: [
         {
+          id: 'one-liner-install',
+          title: '1. Quick Install (Recommended)',
+          content: `The fastest way to install Velo is using the standalone binary installer. It downloads the pre-compiled native \`velo\` compiler, places it in \`~/.velo/bin\`, and adds it to your user \`PATH\` automatically:
+
+### Windows (PowerShell)
+\`\`\`powershell
+irm http://localhost:5173/install.ps1 | iex
+\`\`\`
+
+### macOS & Linux (Bash)
+\`\`\`bash
+curl -fsSL http://localhost:5173/install.sh | bash
+\`\`\`
+
+Once installed, restart your terminal or refresh your environment to start using the \`velo\` command immediately.`,
+          callout: {
+            type: 'tip',
+            title: 'Standalone Binary',
+            text: 'The downloaded velo.exe executable is completely self-contained with no background runtime or registry dependencies.'
+          }
+        },
+        {
           id: 'prerequisites',
-          title: 'Prerequisites',
-          content: `Because Velo compiles directly to standard C99, all you need is a C compiler:
+          title: '2. Prerequisites for Compiling Code',
+          content: `Because Velo compiles your programs to standard ISO C99 for maximum execution speed, you will need a standard C compiler installed on your system to produce native binaries:
 
 - **Windows**:
   - **GCC (Recommended)**: MSYS2 with UCRT64 toolchain (\`C:\\msys64\\ucrt64\\bin\` in \`PATH\`).
-  - **MSVC**: Visual Studio 2019/2022 or Build Tools with \`cl.exe\`.
+  - **MSVC**: Visual Studio 2019/2022 or Build Tools with \`cl.exe\` (compile with \`velo build --cc cl\`).
 - **Linux**: GCC or Clang (\`sudo apt install build-essential\` or \`pacman -S gcc\`).
 - **macOS**: Apple Clang via Xcode Command Line Tools (\`xcode-select --install\`).`
         },
         {
           id: 'bootstrap-chain',
-          title: 'Bootstrapping Velo',
-          content: `Velo ships with a canonical single-file C snapshot: \`bootstrap.c\`. You do not need Python or any external compiler to build Velo from scratch.
+          title: '3. Advanced: Building from Source (bootstrap.c)',
+          content: `For compiler contributors, Linux distribution maintainers, or embedded architectures without pre-built binaries, Velo ships with a canonical single-file C snapshot: \`bootstrap.c\`. You do not need Python or an existing Velo installation to build Velo from scratch.
 
-To build the native standalone compiler binary (\`bin/velo.exe\`):
+To build the native compiler binary (\`bin/velo.exe\`) directly from C source:
 
 \`\`\`bash
 # On Windows (PowerShell or CMD):
@@ -53,9 +75,9 @@ cl /nologo /O2 /TC bootstrap.c /Fe:bin/velo.exe
 
 The bootstrap batch script verifies compiler self-hosting by compiling \`src/main.vl\` through Gen 2 and Gen 3 and validating bit-for-bit SHA-256 determinism.`,
           callout: {
-            type: 'tip',
-            title: 'Single-Binary Portability',
-            text: 'Once built, bin/velo.exe is completely standalone. It requires no runtime libraries, no Python interpreter, and no registry keys.'
+            type: 'note',
+            title: 'Self-Hosting Determinism',
+            text: 'Because bootstrap.c generates Gen1, which compiles Gen2, which compiles Gen3 with matching SHA-256 hashes, the compiler is verified to be 100% self-hosted.'
           }
         },
         {
