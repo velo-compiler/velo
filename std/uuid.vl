@@ -1,0 +1,8 @@
+// std.uuid - Pure Velo RFC 4122 and RFC 9562 UUID library.
+// Provides UUID v4 (random) and UUID v7 (time-ordered monotonic) generation,
+// parsing, validation, comparison, and formatting.
+use "uuid/defs.vl"
+use "uuid/v4.vl"
+use "uuid/v7.vl"
+use "uuid/parse.vl"
+use "uuid/format.vl"

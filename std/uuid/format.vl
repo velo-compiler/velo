@@ -1,0 +1,124 @@
+// std.uuid.format - UUID serialization and text formatting.
+use "defs.vl"
+use "../mem/heap.vl"
+use "../str.vl"
+
+let UUID_HEX_CHARS_LOWER: string = "0123456789abcdef"
+let UUID_HEX_CHARS_UPPER: string = "0123456789ABCDEF"
+
+// Writes 2 hex characters for a byte b into buf at pos.
+act uuid_write_hex_byte(buf: @u8, pos: usize, b: u8, hex_table: string) {
+    buf[pos] = hex_table[((b >> 4) & (0x0F as u8)) as usize]
+    buf[pos + 1] = hex_table[(b & (0x0F as u8)) as usize]
+}
+
+// Writes the 36-character hyphenated UUID representation (8-4-4-4-12) into buf.
+act uuid_format_into(u: @Uuid, buf: @u8, hex_table: string) {
+    let ptr = u as @u8
+
+    // Group 1: bytes 0..3 (indices 0..7)
+    uuid_write_hex_byte(buf, 0, ptr[0], hex_table)
+    uuid_write_hex_byte(buf, 2, ptr[1], hex_table)
+    uuid_write_hex_byte(buf, 4, ptr[2], hex_table)
+    uuid_write_hex_byte(buf, 6, ptr[3], hex_table)
+
+    buf[8] = '-' as u8
+
+    // Group 2: bytes 4..5 (indices 9..12)
+    uuid_write_hex_byte(buf, 9, ptr[4], hex_table)
+    uuid_write_hex_byte(buf, 11, ptr[5], hex_table)
+
+    buf[13] = '-' as u8
+
+    // Group 3: bytes 6..7 (indices 14..17)
+    uuid_write_hex_byte(buf, 14, ptr[6], hex_table)
+    uuid_write_hex_byte(buf, 16, ptr[7], hex_table)
+
+    buf[18] = '-' as u8
+
+    // Group 4: bytes 8..9 (indices 19..22)
+    uuid_write_hex_byte(buf, 19, ptr[8], hex_table)
+    uuid_write_hex_byte(buf, 21, ptr[9], hex_table)
+
+    buf[23] = '-' as u8
+
+    // Group 5: bytes 10..15 (indices 24..35)
+    uuid_write_hex_byte(buf, 24, ptr[10], hex_table)
+    uuid_write_hex_byte(buf, 26, ptr[11], hex_table)
+    uuid_write_hex_byte(buf, 28, ptr[12], hex_table)
+    uuid_write_hex_byte(buf, 30, ptr[13], hex_table)
+    uuid_write_hex_byte(buf, 32, ptr[14], hex_table)
+    uuid_write_hex_byte(buf, 34, ptr[15], hex_table)
+}
+
+// Formats a UUID as standard lowercase hyphenated string: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+act uuid_to_string(u: @Uuid) -> string {
+    if u == null { return "" }
+    mut buf: @u8 = heap_alloc(UUID_STR_LEN + 1)
+    if buf == null { return "" }
+
+    uuid_format_into(u, buf, UUID_HEX_CHARS_LOWER)
+    buf[UUID_STR_LEN] = 0 as u8
+    return buf as string
+}
+
+// Formats a UUID as uppercase hyphenated string: "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+act uuid_to_string_upper(u: @Uuid) -> string {
+    if u == null { return "" }
+    mut buf: @u8 = heap_alloc(UUID_STR_LEN + 1)
+    if buf == null { return "" }
+
+    uuid_format_into(u, buf, UUID_HEX_CHARS_UPPER)
+    buf[UUID_STR_LEN] = 0 as u8
+    return buf as string
+}
+
+// Formats a UUID as a 32-character hex string without hyphens: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+act uuid_to_simple_string(u: @Uuid) -> string {
+    if u == null { return "" }
+    mut buf: @u8 = heap_alloc(UUID_SIMPLE_LEN + 1)
+    if buf == null { return "" }
+
+    let ptr = u as @u8
+    mut i: usize = 0
+    loop i < 16 {
+        uuid_write_hex_byte(buf, i * 2, ptr[i], UUID_HEX_CHARS_LOWER)
+        i += 1
+    }
+    buf[UUID_SIMPLE_LEN] = 0 as u8
+    return buf as string
+}
+
+// Formats a UUID as a standard URN string: "urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+act uuid_to_urn(u: @Uuid) -> string {
+    if u == null { return "" }
+    mut buf: @u8 = heap_alloc(UUID_URN_LEN + 1)
+    if buf == null { return "" }
+
+    // Write "urn:uuid:" prefix (9 chars)
+    buf[0] = 'u' as u8
+    buf[1] = 'r' as u8
+    buf[2] = 'n' as u8
+    buf[3] = ':' as u8
+    buf[4] = 'u' as u8
+    buf[5] = 'u' as u8
+    buf[6] = 'i' as u8
+    buf[7] = 'd' as u8
+    buf[8] = ':' as u8
+
+    let sub_buf = ((buf as usize) + 9) as @u8
+    uuid_format_into(u, sub_buf, UUID_HEX_CHARS_LOWER)
+    buf[UUID_URN_LEN] = 0 as u8
+    return buf as string
+}
+
+// Writes the 36-character hyphenated UUID into a caller-provided buffer.
+// Requires buffer capacity >= 36 bytes. Returns true on success.
+act uuid_to_buffer(u: @Uuid, buf: @u8, len: usize) -> bool {
+    if u == null or buf == null or len < UUID_STR_LEN { return false }
+    uuid_format_into(u, buf, UUID_HEX_CHARS_LOWER)
+    if len > UUID_STR_LEN {
+        buf[UUID_STR_LEN] = 0 as u8
+    }
+    return true
+}

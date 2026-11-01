@@ -2334,3 +2334,33 @@ flowchart TD
   - External project test passed: `velo run rand_demo.vl` in `C:\projects\test`.
   - Pytest suite `tests/test_std_rand.py` passed (2/2 tests).
   - All source files strictly < 400 lines (`python scripts/count_lines.py`).
+
+
+---
+
+### Phase 26: `std.uuid` (RFC 4122 & RFC 9562 Universally Unique Identifier Engine)
+#### Task 26.1: UUID v4 (Random), v7 (Time-Ordered Monotonic), Nil/Max, Parsing, and Formatting (`std.uuid`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo had no standard UUID library. Applications generating or parsing identifiers for database primary keys, distributed tracing, session tokens, or API resources had to roll custom string randomizers without standard byte layouts, version markers, variant bits, or monotonic indexing.
+* **Fix Applied**:
+  - Implemented the `std.uuid` standard library module and subcomponents in `std/uuid/`:
+    - `std/uuid/defs.vl`: `Uuid` 16-byte stack structure, Nil and Max constants/predicates (`uuid_nil`, `uuid_max`, `uuid_is_nil`, `uuid_is_max`), version/variant inspection (`uuid_version`, `uuid_variant`), byte comparison (`uuid_cmp`), and equality (`uuid_eq`).
+    - `std/uuid/v4.vl`: RFC 4122 Version 4 random UUID generation using OS CSPRNG (`uuid_v4`) and fast PRNG variant (`uuid_v4_from_rng`).
+    - `std/uuid/v7.vl`: Modern RFC 9562 Version 7 time-ordered monotonic UUID generation (`uuid_v7`, `uuid_v7_at`), sub-millisecond sequence counter protection against clock skew, and timestamp extraction (`uuid_timestamp_ms`).
+    - `std/uuid/parse.vl`: Multi-format UUID text parser (`uuid_parse`, `uuid_parse_str`, `uuid_is_valid`) handling standard 36-char hyphenated, 32-char simple hex, 38-char braced, and 45-char URN formats with case-insensitivity and strict error validation.
+    - `std/uuid/format.vl`: Serialization functions (`uuid_to_string`, `uuid_to_string_upper`, `uuid_to_simple_string`, `uuid_to_urn`, `uuid_to_buffer`).
+    - `std/uuid.vl`: Standard library umbrella module exporting the complete UUID interface.
+  - Packaging, Docs & Integration:
+    - Updated `std/tests/std_module_import_test.vl` to verify all 21 standard library modules together.
+    - Synced global installation directory `~/.velo/std/uuid/`.
+    - Refreshed standalone archive bundles `website/public/velo-std.zip` and `website/public/velo-std.tar.gz`.
+    - Documented `std.uuid` with 20 functions, types, and real examples in `website/src/data/stdlib.ts`.
+* **Residual Limitation**:
+  - Name-based UUID v3 (MD5) and v5 (SHA-1) namespaces can be added in an optional hashing namespace module if legacy interoperability is required.
+* **Verification**:
+  - Native tests passed: `bin/velo.exe run std/tests/uuid/uuid_test.vl` (Nil/Max, v4 randomness, v7 time-ordering and monotonicity, multi-format parsing, uppercase/URN/simple formatting, lexicographical comparison).
+  - Native umbrella import test passed: `bin/velo.exe run std/tests/uuid_module_import_test.vl`.
+  - Integrated 21-module import test passed: `bin/velo.exe run std/tests/std_module_import_test.vl`.
+  - External project test passed: `velo run uuid_demo.vl` in `C:\projects\test`.
+  - Pytest suite `tests/test_std_uuid.py` passed (2/2 tests).
+  - All source files strictly < 400 lines (`python scripts/count_lines.py`).

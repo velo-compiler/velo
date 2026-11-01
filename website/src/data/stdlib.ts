@@ -1586,6 +1586,139 @@ export const STDLIB_MODULES: StdlibModule[] = [
         description: 'Xoshiro256** state: 256-bit state PRNG with 2^128 jump support for parallel streams.'
       }
     ]
+  },
+  {
+    name: 'std.uuid',
+    description: 'RFC 4122 and RFC 9562 UUID generation (v4 random, v7 time-ordered monotonic), parsing, validation, comparison, and formatting.',
+    functions: [
+      {
+        name: 'uuid_v4',
+        signature: 'act uuid_v4() -> Uuid',
+        description: 'Generates a cryptographically secure random UUID Version 4 using the OS CSPRNG.',
+        example: 'let u = uuid_v4()'
+      },
+      {
+        name: 'uuid_v7',
+        signature: 'act uuid_v7() -> Uuid',
+        description: 'Generates a modern RFC 9562 UUID Version 7 with millisecond timestamp and sub-millisecond monotonic counter.',
+        example: 'let id = uuid_v7()'
+      },
+      {
+        name: 'uuid_v7_at',
+        signature: 'act uuid_v7_at(timestamp_ms: u64) -> Uuid',
+        description: 'Generates a UUID Version 7 with an explicit Unix epoch millisecond timestamp.',
+        example: 'let id = uuid_v7_at(1714567890123 as u64)'
+      },
+      {
+        name: 'uuid_v4_from_rng',
+        signature: 'act uuid_v4_from_rng(r: @Rng) -> Uuid',
+        description: 'Generates a fast pseudo-random UUID Version 4 using a std.rand Rng instance.',
+        example: 'let u = uuid_v4_from_rng(@rng)'
+      },
+      {
+        name: 'uuid_nil',
+        signature: 'act uuid_nil() -> Uuid',
+        description: 'Returns the special all-zero Nil UUID (00000000-0000-0000-0000-000000000000).',
+        example: 'let nil_id = uuid_nil()'
+      },
+      {
+        name: 'uuid_max',
+        signature: 'act uuid_max() -> Uuid',
+        description: 'Returns the special all-ones Max UUID (ffffffff-ffff-ffff-ffff-ffffffffffff).',
+        example: 'let max_id = uuid_max()'
+      },
+      {
+        name: 'uuid_is_nil',
+        signature: 'act uuid_is_nil(u: @Uuid) -> bool',
+        description: 'Returns true if all 16 bytes of the UUID are zero.',
+        example: 'if uuid_is_nil(@u) { ... }'
+      },
+      {
+        name: 'uuid_is_max',
+        signature: 'act uuid_is_max(u: @Uuid) -> bool',
+        description: 'Returns true if all 16 bytes of the UUID are 0xFF.',
+        example: 'if uuid_is_max(@u) { ... }'
+      },
+      {
+        name: 'uuid_version',
+        signature: 'act uuid_version(u: @Uuid) -> i32',
+        description: 'Returns the 4-bit UUID version (e.g. 4 for v4, 7 for v7).',
+        example: 'let ver = uuid_version(@u)'
+      },
+      {
+        name: 'uuid_variant',
+        signature: 'act uuid_variant(u: @Uuid) -> i32',
+        description: 'Returns the UUID variant per RFC 4122 (1 for standard RFC 4122 / RFC 9562).',
+        example: 'let var = uuid_variant(@u)'
+      },
+      {
+        name: 'uuid_timestamp_ms',
+        signature: 'act uuid_timestamp_ms(u: @Uuid) -> u64',
+        description: 'Extracts the 48-bit Unix millisecond epoch timestamp from a UUID Version 7.',
+        example: 'let epoch_ms = uuid_timestamp_ms(@u7)'
+      },
+      {
+        name: 'uuid_parse',
+        signature: 'act uuid_parse(s: string, out: @Uuid) -> bool',
+        description: 'Parses a UUID from standard hyphenated (36 chars), simple hex (32 chars), braced (38 chars), or URN (45 chars) format.',
+        example: 'mut u = uuid_nil()\nif uuid_parse("6ba7b810-9dad-11d1-80b4-00c04fd430c8", @u) { ... }'
+      },
+      {
+        name: 'uuid_parse_str',
+        signature: 'act uuid_parse_str(s: string) -> Uuid',
+        description: 'Convenience parser returning a Uuid struct or uuid_nil() on failure.',
+        example: 'let u = uuid_parse_str(raw_str)'
+      },
+      {
+        name: 'uuid_is_valid',
+        signature: 'act uuid_is_valid(s: string) -> bool',
+        description: 'Returns true if the string is a valid UUID in any supported text format.',
+        example: 'if uuid_is_valid(user_input) { ... }'
+      },
+      {
+        name: 'uuid_to_string',
+        signature: 'act uuid_to_string(u: @Uuid) -> string',
+        description: 'Formats a UUID as standard lowercase hyphenated string (8-4-4-4-12).',
+        example: 'let s = uuid_to_string(@u)'
+      },
+      {
+        name: 'uuid_to_string_upper',
+        signature: 'act uuid_to_string_upper(u: @Uuid) -> string',
+        description: 'Formats a UUID as uppercase hyphenated string (8-4-4-4-12).',
+        example: 'let s = uuid_to_string_upper(@u)'
+      },
+      {
+        name: 'uuid_to_simple_string',
+        signature: 'act uuid_to_simple_string(u: @Uuid) -> string',
+        description: 'Formats a UUID as a 32-character hexadecimal string without hyphens.',
+        example: 'let hex = uuid_to_simple_string(@u)'
+      },
+      {
+        name: 'uuid_to_urn',
+        signature: 'act uuid_to_urn(u: @Uuid) -> string',
+        description: 'Formats a UUID as a URN string: "urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx".',
+        example: 'let urn = uuid_to_urn(@u)'
+      },
+      {
+        name: 'uuid_eq',
+        signature: 'act uuid_eq(a: @Uuid, b: @Uuid) -> bool',
+        description: 'Returns true if two UUIDs have identical 16-byte values.',
+        example: 'if uuid_eq(@u1, @u2) { ... }'
+      },
+      {
+        name: 'uuid_cmp',
+        signature: 'act uuid_cmp(a: @Uuid, b: @Uuid) -> i32',
+        description: 'Lexicographical comparison of two UUIDs. Returns -1 if a < b, 0 if a == b, 1 if a > b.',
+        example: 'if uuid_cmp(@u1, @u2) < 0 { ... }'
+      }
+    ],
+    types: [
+      {
+        name: 'Uuid',
+        definition: 'data Uuid { b0: u8, b1: u8, ... b15: u8 }',
+        description: '128-bit RFC 4122 / RFC 9562 universally unique identifier.'
+      }
+    ]
   }
 ];
 

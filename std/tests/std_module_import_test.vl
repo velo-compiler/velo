@@ -18,6 +18,7 @@ use std.csv
 use std.cli
 use std.url
 use std.rand
+use std.uuid
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -162,6 +163,15 @@ act main() -> i32 {
     if rf < 0.0 or rf >= 1.0 { return 45 }
     let rs = rand_string(@prng, 8)
     if rs == null { return 46 }
+
+    // std.uuid: v4/v7 generation, parsing, formatting
+    let test_u4 = uuid_v4()
+    if uuid_version(@test_u4) != 4 { return 47 }
+    let test_u7 = uuid_v7()
+    if uuid_version(@test_u7) != 7 { return 48 }
+    let u_str = uuid_to_string(@test_u7)
+    mut u_parsed = uuid_nil()
+    if !uuid_parse(u_str, @u_parsed) or !uuid_eq(@test_u7, @u_parsed) { return 49 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0

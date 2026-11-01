@@ -1,0 +1,34 @@
+// std.uuid.v4 - RFC 4122 UUID Version 4 (Random) generator.
+use "defs.vl"
+use "../crypto/rand.vl"
+use "../rand.vl"
+
+// Generates a cryptographically secure random UUID Version 4 using the OS CSPRNG.
+act uuid_v4() -> Uuid {
+    mut u = uuid_nil()
+    let ptr = (@u) as @u8
+    crypto_random_bytes(ptr, 16)
+
+    // Set version 4: bits 12-15 of time_hi_and_version to 0100 (4)
+    ptr[6] = ((ptr[6] & (0x0F as u8)) | (0x40 as u8)) as u8
+
+    // Set variant 1 (RFC 4122): bits 6-7 of clock_seq_hi_and_reserved to 10
+    ptr[8] = ((ptr[8] & (0x3F as u8)) | (0x80 as u8)) as u8
+
+    return u
+}
+
+// Generates a fast pseudo-random UUID Version 4 using an explicit std.rand Rng instance.
+act uuid_v4_from_rng(r: @Rng) -> Uuid {
+    mut u = uuid_nil()
+    let ptr = (@u) as @u8
+    rand_fill(r, ptr, 16)
+
+    // Set version 4
+    ptr[6] = ((ptr[6] & (0x0F as u8)) | (0x40 as u8)) as u8
+
+    // Set variant 1
+    ptr[8] = ((ptr[8] & (0x3F as u8)) | (0x80 as u8)) as u8
+
+    return u
+}

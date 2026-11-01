@@ -1,0 +1,28 @@
+// Tests native 'use std.uuid' umbrella import.
+use std.uuid
+use std.io
+
+act main() -> i32 {
+    // Generate v4 and v7
+    let u4 = uuid_v4()
+    if uuid_version(@u4) != 4 { return 1 }
+
+    let u7 = uuid_v7()
+    if uuid_version(@u7) != 7 { return 2 }
+
+    // Parse and roundtrip format
+    let s4 = uuid_to_string(@u4)
+    mut p4 = uuid_nil()
+    if not uuid_parse(s4, @p4) { return 3 }
+    if not uuid_eq(@u4, @p4) { return 4 }
+
+    // Nil and Max
+    let u_nil = uuid_nil()
+    if not uuid_is_nil(@u_nil) { return 5 }
+
+    let u_max = uuid_max()
+    if not uuid_is_max(@u_max) { return 6 }
+
+    io.println_str("PASS: std.uuid umbrella import all tests passed")
+    return 0
+}

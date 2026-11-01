@@ -1,0 +1,141 @@
+// std.uuid.parse - Robust RFC 4122 and RFC 9562 UUID text parser.
+use "defs.vl"
+use "../str.vl"
+
+// Converts an ASCII hex digit (0-9, a-f, A-F) to its integer value (0..15), or -1 if invalid.
+act uuid_hex_digit(c: u8) -> i32 {
+    if c >= '0' as u8 and c <= '9' as u8 { return (c - ('0' as u8)) as i32 }
+    if c >= 'a' as u8 and c <= 'f' as u8 { return ((c - ('a' as u8)) + 10) as i32 }
+    if c >= 'A' as u8 and c <= 'F' as u8 { return ((c - ('A' as u8)) + 10) as i32 }
+    return -1
+}
+
+// Parses 32 contiguous hex digits (without hyphens) from s starting at start_idx into ptr.
+act uuid_parse_32_hex(s: string, start_idx: usize, ptr: @u8) -> bool {
+    mut i: usize = 0
+    loop i < 16 {
+        let hi = uuid_hex_digit(s[start_idx + i * 2])
+        let lo = uuid_hex_digit(s[start_idx + i * 2 + 1])
+        if hi < 0 or lo < 0 { return false }
+        ptr[i] = ((hi << 4) | lo) as u8
+        i += 1
+    }
+    return true
+}
+
+// Parses standard 36-char hyphenated UUID (8-4-4-4-12) from s starting at start_idx into ptr.
+act uuid_parse_hyphenated(s: string, start_idx: usize, ptr: @u8) -> bool {
+    // Validate hyphens at expected positions
+    if s[start_idx + 8] != '-' as u8 or s[start_idx + 13] != '-' as u8 or s[start_idx + 18] != '-' as u8 or s[start_idx + 23] != '-' as u8 {
+        return false
+    }
+
+    // Group 1: 8 hex chars -> bytes 0..3
+    mut g1_i: usize = 0
+    loop g1_i < 4 {
+        let hi = uuid_hex_digit(s[start_idx + g1_i * 2])
+        let lo = uuid_hex_digit(s[start_idx + g1_i * 2 + 1])
+        if hi < 0 or lo < 0 { return false }
+        ptr[g1_i] = ((hi << 4) | lo) as u8
+        g1_i += 1
+    }
+
+    // Group 2: 4 hex chars -> bytes 4..5
+    mut g2_i: usize = 0
+    loop g2_i < 2 {
+        let hi = uuid_hex_digit(s[start_idx + 9 + g2_i * 2])
+        let lo = uuid_hex_digit(s[start_idx + 9 + g2_i * 2 + 1])
+        if hi < 0 or lo < 0 { return false }
+        ptr[4 + g2_i] = ((hi << 4) | lo) as u8
+        g2_i += 1
+    }
+
+    // Group 3: 4 hex chars -> bytes 6..7
+    mut g3_i: usize = 0
+    loop g3_i < 2 {
+        let hi = uuid_hex_digit(s[start_idx + 14 + g3_i * 2])
+        let lo = uuid_hex_digit(s[start_idx + 14 + g3_i * 2 + 1])
+        if hi < 0 or lo < 0 { return false }
+        ptr[6 + g3_i] = ((hi << 4) | lo) as u8
+        g3_i += 1
+    }
+
+    // Group 4: 4 hex chars -> bytes 8..9
+    mut g4_i: usize = 0
+    loop g4_i < 2 {
+        let hi = uuid_hex_digit(s[start_idx + 19 + g4_i * 2])
+        let lo = uuid_hex_digit(s[start_idx + 19 + g4_i * 2 + 1])
+        if hi < 0 or lo < 0 { return false }
+        ptr[8 + g4_i] = ((hi << 4) | lo) as u8
+        g4_i += 1
+    }
+
+    // Group 5: 12 hex chars -> bytes 10..15
+    mut g5_i: usize = 0
+    loop g5_i < 6 {
+        let hi = uuid_hex_digit(s[start_idx + 24 + g5_i * 2])
+        let lo = uuid_hex_digit(s[start_idx + 24 + g5_i * 2 + 1])
+        if hi < 0 or lo < 0 { return false }
+        ptr[10 + g5_i] = ((hi << 4) | lo) as u8
+        g5_i += 1
+    }
+
+    return true
+}
+
+// Parses a UUID from text in any of the standard representations:
+// 1. Hyphenated: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" (36 chars)
+// 2. Simple:     "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" (32 chars)
+// 3. Braced:     "{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}" (38 chars)
+// 4. URN:        "urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" (45 chars)
+act uuid_parse(s: string, out: @Uuid) -> bool {
+    if s == null or out == null { return false }
+    let len = str.len(s)
+    let ptr = out as @u8
+
+    // 1. Standard hyphenated (36 chars)
+    if len == UUID_STR_LEN {
+        return uuid_parse_hyphenated(s, 0, ptr)
+    }
+
+    // 2. Simple 32 hex chars without hyphens
+    if len == UUID_SIMPLE_LEN {
+        return uuid_parse_32_hex(s, 0, ptr)
+    }
+
+    // 3. Braced format {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx} (38 chars)
+    if len == UUID_BRACED_LEN {
+        if s[0] != '{' as u8 or s[37] != '}' as u8 { return false }
+        return uuid_parse_hyphenated(s, 1, ptr)
+    }
+
+    // 4. URN format urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (45 chars)
+    if len == UUID_URN_LEN {
+        let prefix_match = (s[0] == 'u' as u8 or s[0] == 'U' as u8) and
+                           (s[1] == 'r' as u8 or s[1] == 'R' as u8) and
+                           (s[2] == 'n' as u8 or s[2] == 'N' as u8) and
+                           s[3] == ':' as u8 and
+                           (s[4] == 'u' as u8 or s[4] == 'U' as u8) and
+                           (s[5] == 'u' as u8 or s[5] == 'U' as u8) and
+                           (s[6] == 'i' as u8 or s[6] == 'I' as u8) and
+                           (s[7] == 'd' as u8 or s[7] == 'D' as u8) and
+                           s[8] == ':' as u8
+        if not prefix_match { return false }
+        return uuid_parse_hyphenated(s, 9, ptr)
+    }
+
+    return false
+}
+
+// Parses a UUID from string and returns the resulting Uuid struct (or uuid_nil() on error).
+act uuid_parse_str(s: string) -> Uuid {
+    mut u = uuid_nil()
+    uuid_parse(s, @u)
+    return u
+}
+
+// Returns true if the string is a valid representation of a UUID in any supported format.
+act uuid_is_valid(s: string) -> bool {
+    mut u = uuid_nil()
+    return uuid_parse(s, @u)
+}

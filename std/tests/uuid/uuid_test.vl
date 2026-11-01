@@ -1,0 +1,124 @@
+// Tests for std.uuid: v4, v7, Nil, Max, parsing, formatting, and comparison.
+use "../../uuid.vl"
+use "../../io.vl"
+use "../../rand.vl"
+
+act main() -> i32 {
+    // 1. Nil and Max UUIDs
+    let u_nil = uuid_nil()
+    if not uuid_is_nil(@u_nil) { return 1 }
+    if uuid_is_max(@u_nil) { return 2 }
+    if uuid_to_string(@u_nil) != "00000000-0000-0000-0000-000000000000" { return 3 }
+
+    let u_max = uuid_max()
+    if not uuid_is_max(@u_max) { return 4 }
+    if uuid_is_nil(@u_max) { return 5 }
+    if uuid_to_string(@u_max) != "ffffffff-ffff-ffff-ffff-ffffffffffff" { return 6 }
+
+    // 2. UUID Version 4 generation
+    let u4 = uuid_v4()
+    if uuid_is_nil(@u4) { return 7 }
+    if uuid_version(@u4) != 4 { return 8 }
+    if uuid_variant(@u4) != UUID_VARIANT_RFC4122 { return 9 }
+
+    // Consecutive v4 UUIDs must be different
+    let u4_b = uuid_v4()
+    if uuid_eq(@u4, @u4_b) { return 10 }
+
+    // 3. UUID Version 4 from PRNG
+    mut prng = rng_seed(42 as u64)
+    let u4_prng = uuid_v4_from_rng(@prng)
+    if uuid_version(@u4_prng) != 4 or uuid_variant(@u4_prng) != UUID_VARIANT_RFC4122 { return 11 }
+
+    // 4. UUID Version 7 generation
+    let u7_a = uuid_v7()
+    if uuid_is_nil(@u7_a) { return 12 }
+    if uuid_version(@u7_a) != 7 { return 13 }
+    if uuid_variant(@u7_a) != UUID_VARIANT_RFC4122 { return 14 }
+
+    // Timestamp extracted from v7 should be reasonable (> 1700000000000 ms, ~year 2023+)
+    let ts = uuid_timestamp_ms(@u7_a)
+    if ts < (1700000000000 as u64) { return 15 }
+
+    // 5. UUID Version 7 monotonicity (strictly increasing)
+    let u7_b = uuid_v7()
+    let u7_c = uuid_v7()
+    if uuid_cmp(@u7_a, @u7_b) >= 0 { return 16 }
+    if uuid_cmp(@u7_b, @u7_c) >= 0 { return 17 }
+
+    // 6. uuid_v7_at with explicit timestamp
+    let custom_ms: u64 = 1714567890123 as u64
+    let u7_fixed = uuid_v7_at(custom_ms)
+    if uuid_timestamp_ms(@u7_fixed) != custom_ms { return 18 }
+    if uuid_version(@u7_fixed) != 7 { return 19 }
+
+    // 7. Parsing standard hyphenated format (lowercase and uppercase)
+    let test_str = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+    mut p1 = uuid_nil()
+    if not uuid_parse(test_str, @p1) { return 20 }
+    if uuid_version(@p1) != 1 { return 21 }
+    if uuid_to_string(@p1) != test_str { return 22 }
+
+    let test_upper = "6BA7B810-9DAD-11D1-80B4-00C04FD430C8"
+    mut p2 = uuid_nil()
+    if not uuid_parse(test_upper, @p2) { return 23 }
+    if not uuid_eq(@p1, @p2) { return 24 }
+
+    // 8. Parsing simple 32-char hex (no hyphens)
+    let test_simple = "6ba7b8109dad11d180b400c04fd430c8"
+    mut p3 = uuid_nil()
+    if not uuid_parse(test_simple, @p3) { return 25 }
+    if not uuid_eq(@p1, @p3) { return 26 }
+
+    // 9. Parsing braced format {xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}
+    mut bbuf: @u8 = heap_alloc(40)
+    bbuf[0] = '{' as u8
+    mut bi: usize = 0
+    loop bi < 36 {
+        bbuf[1 + bi] = test_str[bi]
+        bi += 1
+    }
+    bbuf[37] = '}' as u8
+    bbuf[38] = 0 as u8
+    let test_braced = bbuf as string
+    mut p4 = uuid_nil()
+    if not uuid_parse(test_braced, @p4) { return 27 }
+    if not uuid_eq(@p1, @p4) { return 28 }
+
+    // 10. Parsing URN format urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+    let test_urn = "urn:uuid:6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+    mut p5 = uuid_nil()
+    if not uuid_parse(test_urn, @p5) { return 29 }
+    if not uuid_eq(@p1, @p5) { return 30 }
+
+    // 11. uuid_is_valid helper
+    if not uuid_is_valid(test_str) { return 31 }
+    if not uuid_is_valid(test_simple) { return 32 }
+    if not uuid_is_valid(test_braced) { return 33 }
+    if not uuid_is_valid(test_urn) { return 34 }
+
+    // Invalid UUID inputs
+    if uuid_is_valid("not-a-uuid") { return 35 }
+    if uuid_is_valid("6ba7b810-9dad-11d1-80b4-00c04fd430c") { return 36 } // too short
+    if uuid_is_valid("6ba7b810-9dad-11d1-80b4-00c04fd430c89") { return 37 } // too long
+    if uuid_is_valid("6ba7b810-9dad-11d1-80b4-00c04fd430zz") { return 38 } // non-hex
+    if uuid_is_valid("6ba7b810_9dad_11d1_80b4_00c04fd430c8") { return 39 } // bad delimiters
+
+    // 12. Formatting variants
+    let s_upper = uuid_to_string_upper(@p1)
+    if s_upper != test_upper { return 40 }
+
+    let s_simple = uuid_to_simple_string(@p1)
+    if s_simple != test_simple { return 41 }
+
+    let s_urn = uuid_to_urn(@p1)
+    if s_urn != test_urn { return 42 }
+
+    // 13. Comparison & Equality
+    if uuid_cmp(@u_nil, @u_max) >= 0 { return 43 }
+    if uuid_cmp(@u_max, @u_nil) <= 0 { return 44 }
+    if uuid_cmp(@p1, @p1) != 0 { return 45 }
+
+    io.println_str("OK: std.uuid all tests passed")
+    return 0
+}
