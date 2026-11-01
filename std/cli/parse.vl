@@ -1,0 +1,392 @@
+// std.cli.parse — GNU-style command line token state machine (zero C runtime dependencies).
+// Dispatches long options (--flag, --flag=value), short clusters (-abc, -fvalue),
+// separated values (--flag value, -f value), the "--" positional terminator,
+// subcommand routing at the first operand slot, required-flag validation, and
+// "did you mean" suggestions for unknown flags and subcommands.
+use "../mem/arena.vl"
+use "../str/slice.vl"
+use "../str/builder.vl"
+use "../str/search.vl"
+use "defs.vl"
+
+// Records the first parse error. Later errors are ignored.
+act cli_error_tainted(p: @CliContext, msg: string, token: string) -> bool {
+    if p == null or p.had_error {
+        return false
+    }
+    p.had_error = true
+    if msg != null {
+        p.err_msg = msg
+    } else {
+        p.err_msg = "invalid command line"
+    }
+    if token != null {
+        p.err_token = token
+    } else {
+        p.err_token = ""
+    }
+    return false
+}
+
+// Builds a small message into arena memory: prefix + body + suffix.
+act cli_build_msg(p: @CliContext, prefix: string, body: string, suffix: string) -> string {
+    if p == null or p.arena == null {
+        return "" as string
+    }
+    mut sb = sb_init(p.arena, 64)
+    sb_append_string(@sb, prefix)
+    sb_append_string(@sb, body)
+    sb_append_string(@sb, suffix)
+    return sb_to_cstr(@sb) as string
+}
+
+// Finds the flag definition index whose long name equals name. Returns -1 when absent.
+act cli_find_long(p: @CliContext, name: StrSlice) -> i64 {
+    if p == null {
+        return (-1 as i64)
+    }
+    mut i: usize = 0
+    loop i < p.def_count {
+        let def_long = p.longs[i]
+        if def_long != null and slice_eq(slice_from_str(def_long), name) {
+            return i as i64
+        }
+        i += 1
+    }
+    return (-1 as i64)
+}
+
+// Finds the flag definition index whose single-character short alias equals c.
+// Returns -1 when absent.
+act cli_find_short(p: @CliContext, c: u8) -> i64 {
+    if p == null {
+        return (-1 as i64)
+    }
+    mut i: usize = 0
+    loop i < p.def_count {
+        let def_short = p.shorts[i]
+        if def_short != null and def_short != "" {
+            let sv = slice_from_str(def_short)
+            if sv.len == 1 and sv.ptr[0] == c {
+                return i as i64
+            }
+        }
+        i += 1
+    }
+    return (-1 as i64)
+}
+
+// Materializes a token slice (--flag=value remainder or -fvalue cluster tail)
+// as a null-terminated arena string for storage in the values table.
+act cli_materialize_value(p: @CliContext, v: StrSlice) -> string {
+    if p == null or p.arena == null {
+        return "" as string
+    }
+    let cap = v.len + 1
+    let buf = arena_alloc(p.arena, cap, 1)
+    if buf == null {
+        return "" as string
+    }
+    if v.len > 0 and v.ptr != null {
+        copy(buf, v.ptr, v.len)
+    }
+    buf[v.len] = 0 as u8
+    return buf as string
+}
+
+// Marks a boolean flag as seen.
+act cli_mark_seen(p: @CliContext, idx: usize) {
+    if p == null or p.seen == null {
+        return
+    }
+    p.seen[idx] = CLI_TRUE
+}
+
+// Stores the value and marks a value flag as seen.
+act cli_store_value(p: @CliContext, idx: usize, value: string) {
+    if p == null {
+        return
+    }
+    if value == null {
+        p.values[idx] = ""
+    } else {
+        p.values[idx] = value
+    }
+    p.seen[idx] = CLI_TRUE
+}
+
+// Resolves the value for flag index idx: an attached token tail when non-empty
+// (-fVALUE or --flag=VALUE remainder), otherwise the next argv token
+// (--flag value / -f value). Returns false after a missing-value error.
+act cli_resolve_value(p: @CliContext, idx: usize, token: string, attached: StrSlice, cursor: @usize) -> bool {
+    if attached.ptr != null and attached.len > 0 {
+        cli_store_value(p, idx, cli_materialize_value(p, attached))
+        return true
+    }
+    if cursor[0] + 1 >= p.args.count {
+        let missing = cli_build_msg(p, "flag --", p.longs[idx], " requires a value")
+        return cli_error_tainted(p, missing, token)
+    }
+    cursor[0] += 1
+    cli_store_value(p, idx, args_get(p.args, cursor[0]))
+    return true
+}
+
+// Returns true when two same-length names differ in at most two bytes,
+// catching single-character typos and transpose mistakes ("biuld"/"build").
+act cli_name_close(a: StrSlice, b: StrSlice) -> bool {
+    if a.len != b.len or a.len == 0 {
+        return false
+    }
+    mut diffs: usize = 0
+    mut i: usize = 0
+    loop i < a.len {
+        if a.ptr[i] != b.ptr[i] {
+            diffs += 1
+            if diffs > 2 {
+                return false
+            }
+        }
+        i += 1
+    }
+    return true
+}
+
+// Produces an unknown-flag error message with a "did you mean" suggestion.
+// Suggests a registered long name that is an abbreviation of the unknown name,
+// an extension of it (pluralization, adjective suffix), or differs by at most
+// two bytes at equal length (single-character typos, transposes).
+act cli_unknown_long_error(p: @CliContext, token: string) -> string {
+    if p == null or p.arena == null {
+        return "unknown flag" as string
+    }
+    let tok = slice_from_str(token)
+    let body = slice_sub(tok, 2, tok.len)
+    mut eq = body.len
+    mut i: usize = 0
+    loop i < body.len {
+        if body.ptr[i] == 61 as u8 { // '='
+            eq = i
+            break
+        }
+        i += 1
+    }
+    let name = slice_sub(body, 0, eq)
+
+    mut sug: string = ""
+    mut j: usize = 0
+    loop j < p.def_count {
+        let def_long = p.longs[j]
+        if def_long != null and name.len > 0 {
+            let dv = slice_from_str(def_long)
+            if str_starts_with(dv, name) or str_starts_with(name, dv) or cli_name_close(dv, name) {
+                sug = def_long
+                break
+            }
+        }
+        j += 1
+    }
+
+    let head = cli_build_msg(p, "unknown flag '", token, "'")
+    if sug != "" as string {
+        let tail = cli_build_msg(p, " (did you mean '--", sug, "'?)")
+        return cli_build_msg(p, head, " ", tail)
+    }
+    return head
+}
+
+// Parses a --long-form token: --flag, --flag=value, or --flag value.
+// Returns false after recording an error.
+act cli_parse_long(p: @CliContext, token: string, cursor: @usize) -> bool {
+    let tok = slice_from_str(token)
+    let body = slice_sub(tok, 2, tok.len)
+
+    mut eq = body.len
+    mut has_eq = false
+    mut i: usize = 0
+    loop i < body.len {
+        if body.ptr[i] == 61 as u8 { // '='
+            eq = i
+            has_eq = true
+            break
+        }
+        i += 1
+    }
+
+    let name = slice_sub(body, 0, eq)
+    let inline_value = slice_sub(body, eq + 1, body.len)
+
+    let idx = cli_find_long(p, name)
+    if idx < 0 as i64 {
+        let unknown = cli_unknown_long_error(p, token)
+        return cli_error_tainted(p, unknown, token)
+    }
+
+    let di = idx as usize
+    if p.takes_value[di] != CLI_TRUE {
+        if has_eq {
+            let msg = cli_build_msg(p, "flag --", p.longs[di], " does not take a value")
+            return cli_error_tainted(p, msg, token)
+        }
+        cli_mark_seen(p, di)
+        return true
+    }
+
+    if has_eq {
+        cli_store_value(p, di, cli_materialize_value(p, inline_value))
+        return true
+    }
+    let empty_tail = slice_sub(tok, tok.len, tok.len)
+    return cli_resolve_value(p, di, token, empty_tail, cursor)
+}
+
+// Materializes a single flag character as an arena string for messages.
+act cli_decode_char(p: @CliContext, c: u8) -> string {
+    if p == null or p.arena == null {
+        return "" as string
+    }
+    let buf = arena_alloc(p.arena, 2, 1)
+    if buf == null {
+        return "" as string
+    }
+    buf[0] = c
+    buf[1] = 0 as u8
+    return buf as string
+}
+
+// Parses a short-form token: -f, -abc clusters, -fVALUE attached values,
+// and -f value separated values. Returns false after recording an error.
+act cli_parse_short(p: @CliContext, token: string, cursor: @usize) -> bool {
+    let tok = slice_from_str(token)
+    let cluster = slice_sub(tok, 1, tok.len)
+    if cluster.len == 0 {
+        return cli_error_tainted(p, "empty short flag '-'", token)
+    }
+
+    mut j: usize = 0
+    loop j < cluster.len {
+        let c = cluster.ptr[j]
+        let idx = cli_find_short(p, c)
+        if idx < 0 as i64 {
+            let msg = cli_build_msg(p, "unknown flag '-", cli_decode_char(p, c), "'")
+            return cli_error_tainted(p, msg, token)
+        }
+        let di = idx as usize
+        if p.takes_value[di] == CLI_TRUE {
+            let tail = slice_sub(cluster, j + 1, cluster.len)
+            return cli_resolve_value(p, di, token, tail, cursor)
+        }
+        cli_mark_seen(p, di)
+        j += 1
+    }
+    return true
+}
+
+// Routes the first non-flag operand to a registered subcommand, or records an
+// unknown-subcommand error with prefix suggestions.
+act cli_route_subcommand(p: @CliContext, token: string) -> bool {
+    mut i: usize = 0
+    loop i < p.sub_count {
+        let name = p.sub_names[i]
+        if name != null and slice_eq(slice_from_str(name), slice_from_str(token)) {
+            p.subcommand = name
+            return true
+        }
+        i += 1
+    }
+
+    let tok = slice_from_str(token)
+    mut sug: string = ""
+    i = 0
+    loop i < p.sub_count {
+        let name = p.sub_names[i]
+        if name != null and tok.len > 0 {
+            let nv = slice_from_str(name)
+            if str_starts_with(nv, tok) or str_starts_with(tok, nv) or cli_name_close(nv, tok) {
+                sug = name
+                break
+            }
+        }
+        i += 1
+    }
+
+    let base = cli_build_msg(p, "unknown subcommand '", token, "'")
+    if sug != "" as string {
+        let tail = cli_build_msg(p, " (did you mean '", sug, "'?)")
+        let joined = cli_build_msg(p, base, " ", tail)
+        return cli_error_tainted(p, joined, token)
+    }
+    return cli_error_tainted(p, base, token)
+}
+
+// Parses the token stream of the parser's Args (starting at index 1, skipping
+// the program name). Returns true on success; false after any recorded error
+// (query via cli_error_msg / cli_error_token in query module).
+act cli_parse(p: @CliContext) -> bool {
+    if p == null or p.args == null {
+        return cli_error_tainted(p, "parser not initialized", "")
+    }
+    if p.positionals == null {
+        return cli_error_tainted(p, "parser not initialized", "")
+    }
+
+    mut cursor: usize = 1 // skip program name
+    mut ddash: bool = false
+
+    loop !p.had_error and cursor < p.args.count {
+        let token = args_get(p.args, cursor)
+        let tok = slice_from_str(token)
+        let dash_minus = tok.len > 0 and (tok.ptr[0] == 45 as u8) // '-'
+
+        // "--" terminator: everything after is positional.
+        if !ddash and dash_minus and tok.len == 2 and tok.ptr[1] == 45 as u8 {
+            ddash = true
+            cursor += 1
+            continue
+        }
+
+        if !ddash and dash_minus and tok.len > 1 {
+            if tok.ptr[1] == 45 as u8 { // "--x" long form
+                if !cli_parse_long(p, token, @cursor) {
+                    return false
+                }
+                cursor += 1
+                continue
+            }
+            if !cli_parse_short(p, token, @cursor) {
+                return false
+            }
+            cursor += 1
+            continue
+        }
+
+        // Bare "-" operand and plain operands are positional candidates.
+        if !ddash and p.sub_count > 0 and p.positional_count == 0 and p.subcommand == "" as string {
+            if !cli_route_subcommand(p, token) {
+                return false
+            }
+            cursor += 1
+            continue
+        }
+
+        p.positionals[p.positional_count] = token
+        p.positional_count += 1
+        cursor += 1
+    }
+
+    if p.had_error {
+        return false
+    }
+
+    // Required-flag post-validation.
+    mut k: usize = 0
+    loop k < p.def_count {
+        if p.required[k] == CLI_TRUE and p.seen[k] != CLI_TRUE {
+            let msg = cli_build_msg(p, "missing required flag --", p.longs[k], "")
+            return cli_error_tainted(p, msg, "")
+        }
+        k += 1
+    }
+
+    return true
+}

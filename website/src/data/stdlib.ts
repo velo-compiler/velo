@@ -1175,6 +1175,118 @@ export const STDLIB_MODULES: StdlibModule[] = [
         description: 'Record generator state tracking separator insertion and terminator mode.'
       }
     ]
+  },
+  {
+    name: 'std.cli',
+    category: 'System & Tooling',
+    tier: 1,
+    description: 'GNU-style command-line argument and flag parsing library with typed queries, subcommands, defaults, and automated --help formatting.',
+    pureVelo: true,
+    functions: [
+      {
+        name: 'cli_parser_init',
+        signature: 'act cli_parser_init(arena: @Arena, args: @Args) -> CliContext',
+        description: 'Initializes a CLI parser context with automatic --help/-h flag registered.',
+        example: 'mut p = cli_parser_init(@arena, args_ptr)'
+      },
+      {
+        name: 'cli_parser_program',
+        signature: 'act cli_parser_program(p: @CliContext, program: string, description: string) -> void',
+        description: 'Sets program name and description banner for usage rendering.',
+        example: 'cli_parser_program(@p, "app", "demo utility")'
+      },
+      {
+        name: 'cli_parser_version',
+        signature: 'act cli_parser_version(p: @CliContext, version: string) -> void',
+        description: 'Sets the application version string.',
+        example: 'cli_parser_version(@p, "1.0.0")'
+      },
+      {
+        name: 'cli_parser_flag',
+        signature: 'act cli_parser_flag(p: @CliContext, long_name: string, short_name: string, takes_value: bool, required: bool, default_value: string, helps: string) -> bool',
+        description: 'Registers a boolean or value-bearing flag with short alias and documentation.',
+        example: 'cli_parser_flag(@p, "jobs", "j", true, false, "2", "worker count")'
+      },
+      {
+        name: 'cli_parser_subcommand',
+        signature: 'act cli_parser_subcommand(p: @CliContext, name: string, helps: string) -> bool',
+        description: 'Registers a subcommand name and description for command routing.',
+        example: 'cli_parser_subcommand(@p, "build", "compile targets")'
+      },
+      {
+        name: 'cli_parse',
+        signature: 'act cli_parse(p: @CliContext) -> bool',
+        description: 'Executes parser against supplied argument tokens. Returns true on success, false on syntax or validation error.',
+        example: 'if !cli_parse(@p) { cli_print_error(@p) }'
+      },
+      {
+        name: 'cli_flag_bool',
+        signature: 'act cli_flag_bool(p: @CliContext, name: string) -> bool',
+        description: 'Checks whether a boolean flag was supplied on the command line.',
+        example: 'let verbose = cli_flag_bool(@p, "verbose")'
+      },
+      {
+        name: 'cli_flag_str',
+        signature: 'act cli_flag_str(p: @CliContext, name: string) -> string',
+        description: 'Retrieves the parsed value or default string for a value-bearing flag.',
+        example: 'let path = cli_flag_str(@p, "output")'
+      },
+      {
+        name: 'cli_flag_i64',
+        signature: 'act cli_flag_i64(p: @CliContext, name: string, out: @i64) -> bool',
+        description: 'Parses a flag value as a signed 64-bit integer.',
+        example: 'cli_flag_i64(@p, "jobs", @jobs)'
+      },
+      {
+        name: 'cli_subcommand',
+        signature: 'act cli_subcommand(p: @CliContext) -> string',
+        description: 'Returns the invoked subcommand name, or empty string if none.',
+        example: 'let cmd = cli_subcommand(@p)'
+      },
+      {
+        name: 'cli_positional_count',
+        signature: 'act cli_positional_count(p: @CliContext) -> usize',
+        description: 'Returns the count of non-flag positional arguments.',
+        example: 'let argc = cli_positional_count(@p)'
+      },
+      {
+        name: 'cli_positional',
+        signature: 'act cli_positional(p: @CliContext, idx: usize) -> string',
+        description: 'Retrieves the positional argument at the specified zero-based index.',
+        example: 'let file = cli_positional(@p, 0)'
+      },
+      {
+        name: 'cli_help_string',
+        signature: 'act cli_help_string(p: @CliContext) -> string',
+        description: 'Renders the complete aligned help table as a string.',
+        example: 'let help_txt = cli_help_string(@p)'
+      },
+      {
+        name: 'cli_print_help',
+        signature: 'act cli_print_help(p: @CliContext) -> void',
+        description: 'Prints the formatted help table to standard output.',
+        example: 'cli_print_help(@p)'
+      },
+      {
+        name: 'cli_print_version',
+        signature: 'act cli_print_version(p: @CliContext) -> void',
+        description: 'Prints program version to standard output.',
+        example: 'cli_print_version(@p)'
+      },
+      {
+        name: 'cli_print_error',
+        signature: 'act cli_print_error(p: @CliContext) -> void',
+        description: 'Prints syntax error diagnostics and helpful suggestions to standard error.',
+        example: 'cli_print_error(@p)'
+      }
+    ],
+    types: [
+      {
+        name: 'CliContext',
+        definition: 'data CliContext { arena: @Arena, program: string, version: string, description: string, args: @Args, longs: @string, shorts: @string, ... }',
+        description: 'Parser and execution result context storing registered definitions and parsed options.'
+      }
+    ]
   }
 ];
 

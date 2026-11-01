@@ -1,0 +1,242 @@
+// Tests for std.cli flag parsing, subcommand routing, and typed queries
+use "../../cli.vl"
+use "../../os/args.vl"
+use "../../mem/arena.vl"
+use "../../test.vl"
+use "../../io.vl"
+
+// Returns the byte size of an Args struct.
+act args_sizeof() -> usize {
+    let dummy: @Args = null
+    return (dummy + 1) as usize
+}
+
+// Tokenizes a fake command line into an arena-allocated Args value.
+// Arena ownership avoids dangling references from by-value copies.
+act tokenlines_to(arena: @Arena, cmdline: string) -> @Args {
+    let args_val = os_tokenize_cmdline(arena, cmdline)
+    let ptr = arena_alloc_zeroed(arena, args_sizeof(), 8) as @Args
+    if ptr == null {
+        return null
+    }
+    ptr.count = args_val.count
+    ptr.items = args_val.items
+    ptr.raw = args_val.raw
+    return ptr
+}
+
+// Builds a ready-to-configure parser against one fake command line ("app ...").
+act make_parser(arena: @Arena, cmdline: string) -> CliContext {
+    let args_ptr = tokenlines_to(arena, cmdline)
+    mut p = cli_parser_init(arena, args_ptr)
+    cli_parser_program(@p, "app", "demo application")
+    return p
+}
+
+act main() -> i32 {
+    test_reset()
+    test_set_quiet(false)
+    mut arena = arena_init(262144)
+    defer arena_reset(@arena)
+
+    // 1. Long boolean flag: seen and queryable
+    mut p = make_parser(@arena, "app --verbose")
+    cli_parser_flag(@p, "verbose", "v", false, false, "", "chatty output")
+    cli_parser_flag(@p, "force", "f", false, false, "", "overwrite")
+    assert_true(cli_parse(@p), "parse boolean flags")
+    assert_true(cli_flag_bool(@p, "verbose"), "verbose seen")
+    assert_true(cli_flag_bool(@p, "v"), "verbose via short alias name")
+    assert_false(cli_flag_bool(@p, "force"), "force unseen")
+    assert_true(cli_ok(@p), "no error")
+    assert_eq_str(cli_error_msg(@p), "", "no error message")
+
+    // 2. Short cluster form
+    mut p2 = make_parser(@arena, "app -vf extra")
+    cli_parser_flag(@p2, "verbose", "v", false, false, "", "chatty")
+    cli_parser_flag(@p2, "force", "f", false, false, "", "overwrite")
+    assert_true(cli_parse(@p2), "parse short cluster")
+    assert_true(cli_flag_bool(@p2, "verbose"), "cluster v seen")
+    assert_true(cli_flag_bool(@p2, "force"), "cluster f seen")
+    assert_eq_i64(cli_positional_count(@p2) as i64, 1 as i64, "cluster positional")
+    assert_eq_str(cli_positional(@p2, 0), "extra", "cluster operand")
+
+    // 3. Value forms: separated --flag value, --flag=value, -fVALUE, -f VALUE
+    mut p3 = make_parser(@arena, "app --output out1 --mode=fast -oout3")
+    cli_parser_flag(@p3, "output", "o", true, false, "a.out", "output path")
+    cli_parser_flag(@p3, "mode", "m", true, false, "debug", "mode")
+    assert_true(cli_parse(@p3), "parse value flags")
+    assert_eq_str(cli_flag_str(@p3, "output"), "out3", "attached overrides separated")
+    assert_eq_str(cli_flag_str(@p3, "mode"), "fast", "inline equals value")
+    mut p3b = make_parser(@arena, "app -o out4")
+    cli_parser_flag(@p3b, "output", "o", true, false, "a.out", "output path")
+    assert_true(cli_parse(@p3b), "parse short separated value")
+    assert_eq_str(cli_flag_str(@p3b, "output"), "out4", "short separated value")
+
+    // 4. Default value returned when flag absent
+    mut p4 = make_parser(@arena, "app run")
+    cli_parser_flag(@p4, "jobs", "j", true, false, "2", "parallel jobs")
+    assert_true(cli_parse(@p4), "parse defaults")
+    assert_eq_str(cli_flag_str(@p4, "jobs"), "2", "default value")
+    assert_false(cli_flag_seen(@p4, "jobs"), "jobs not seen")
+
+    // 5. Integer flag conversion through std.fmt.atoi
+    mut p5 = make_parser(@arena, "app --jobs 7")
+    cli_parser_flag(@p5, "jobs", "j", true, false, "2", "parallel jobs")
+    assert_true(cli_parse(@p5), "parse int flag")
+    mut jobs: i64 = 0
+    assert_true(cli_flag_i64(@p5, "jobs", @jobs), "int parse ok")
+    assert_eq_i64(jobs, 7 as i64, "int value")
+    mut p5b = make_parser(@arena, "app")
+    cli_parser_flag(@p5b, "jobs", "j", true, false, "42", "parallel jobs")
+    assert_true(cli_parse(@p5b), "default int parse")
+    let djobs = cli_flag_i64(@p5b, "jobs", @jobs)
+    assert_true(djobs, "default int ok")
+    assert_eq_i64(jobs, 42 as i64, "default int value")
+
+    // 6. Required flag enforcement
+    mut p6 = make_parser(@arena, "app")
+    cli_parser_flag(@p6, "target", "t", true, true, "", "required target")
+    assert_false(cli_parse(@p6), "required flag missing fails")
+    let rmsg = cli_error_msg(@p6)
+    assert_str_contains(rmsg, "missing required flag", "required error text")
+    assert_str_contains(rmsg, "--target", "required error names flag")
+
+    // 7. Unknown long flag with prefix and typo suggestions
+    mut p7 = make_parser(@arena, "app --forces")
+    cli_parser_flag(@p7, "force", "f", true, false, "", "force overwrite")
+    assert_false(cli_parse(@p7), "unknown long flag fails")
+    let umsg = cli_error_msg(@p7)
+    assert_str_contains(umsg, "unknown flag", "unknown text")
+    assert_str_contains(umsg, "--forces", "unknown echoes token")
+    assert_str_contains(umsg, "did you mean '--force'", "prefix suggestion")
+
+    mut p7b = make_parser(@arena, "app --qwick")
+    cli_parser_flag(@p7b, "quick", "q", false, false, "", "quick mode")
+    assert_false(cli_parse(@p7b), "typo flag fails")
+    assert_str_contains(cli_error_msg(@p7b), "did you mean '--quick'", "close typo suggestion")
+
+    // 8. Unknown short flag
+    mut p8 = make_parser(@arena, "app -q")
+    cli_parser_flag(@p8, "verbose", "v", false, false, "", "chatty")
+    assert_false(cli_parse(@p8), "unknown short flag fails")
+    assert_str_contains(cli_error_msg(@p8), "unknown flag '-q'", "unknown short text")
+    assert_eq_str(cli_error_token(@p8), "-q", "offending token tracked")
+
+    // 9. Missing value for value flag
+    mut p9 = make_parser(@arena, "app --jobs")
+    cli_parser_flag(@p9, "jobs", "j", true, false, "2", "parallel jobs")
+    assert_false(cli_parse(@p9), "missing value fails")
+    assert_str_contains(cli_error_msg(@p9), "requires a value", "missing value text")
+
+    // 10. Boolean flag does not accept --flag=value
+    mut p10 = make_parser(@arena, "app --verbose=1")
+    cli_parser_flag(@p10, "verbose", "v", false, false, "", "chatty")
+    assert_false(cli_parse(@p10), "bool with inline value fails")
+    assert_str_contains(cli_error_msg(@p10), "does not take a value", "bool inline text")
+
+    // 11. Empty inline value allowed: --out=
+    mut p11 = make_parser(@arena, "app --out=")
+    cli_parser_flag(@p11, "out", "o", true, false, "d.out", "out path")
+    assert_true(cli_parse(@p11), "empty inline value ok")
+    assert_eq_str(cli_flag_str(@p11, "out"), "", "empty inline stored")
+
+    // 12. "--" terminator makes everything positional
+    mut p12 = make_parser(@arena, "app -- --verbose-file -q")
+    cli_parser_flag(@p12, "verbose", "v", false, false, "", "chatty")
+    assert_true(cli_parse(@p12), "dashdash parse")
+    assert_false(cli_flag_bool(@p12, "verbose"), "no flag after terminator")
+    assert_eq_i64(cli_positional_count(@p12) as i64, 2 as i64, "dashdash positionals")
+    assert_eq_str(cli_positional(@p12, 0), "--verbose-file", "flag-like positional")
+    assert_eq_str(cli_positional(@p12, 1), "-q", "short-like positional")
+
+    // 13. Bare "-" is an operand (stdin convention), plain words are operands
+    mut p13 = make_parser(@arena, "app - extra")
+    cli_parser_flag(@p13, "filter", "f", false, false, "", "filter")
+    assert_true(cli_parse(@p13), "bare dash positional")
+    assert_eq_i64(cli_positional_count(@p13) as i64, 2 as i64, "two operands")
+    assert_eq_str(cli_positional(@p13, 0), "-", "bare dash operand")
+    assert_eq_str(cli_positional(@p13, 1), "extra", "plain operand")
+
+    // 14. Subcommand routing with operands after it
+    mut p14 = make_parser(@arena, "app build src --force")
+    cli_parser_flag(@p14, "force", "f", false, false, "", "overwrite")
+    cli_parser_flag(@p14, "jobs", "j", true, false, "1", "parallel jobs")
+    cli_parser_subcommand(@p14, "build", "compile the project")
+    cli_parser_subcommand(@p14, "test", "run the test suite")
+    assert_true(cli_parse(@p14), "subcommand parse")
+    assert_eq_str(cli_subcommand(@p14), "build", "subcommand routed")
+    assert_true(cli_flag_bool(@p14, "force"), "post-subcommand flag")
+    assert_eq_i64(cli_positional_count(@p14) as i64, 1 as i64, "subcommand operand count")
+    assert_eq_str(cli_positional(@p14, 0), "src", "subcommand operand")
+
+    // 15. Unknown subcommand with suggestion
+    mut p15 = make_parser(@arena, "app biuld")
+    cli_parser_subcommand(@p15, "build", "compile")
+    assert_false(cli_parse(@p15), "unknown subcommand fails")
+    let smsg = cli_error_msg(@p15)
+    assert_str_contains(smsg, "unknown subcommand 'biuld'", "unknown sub text")
+    assert_str_contains(smsg, "did you mean 'build'", "subcommand suggestion")
+    assert_eq_str(cli_subcommand_help(@p15, "build"), "compile", "subcommand help lookup")
+    assert_eq_str(cli_subcommand_help(@p15, "nope"), "", "missing subcommand help")
+
+    // 16. Empty command line parses with zero positionals
+    mut p16 = make_parser(@arena, "app")
+    cli_parser_flag(@p16, "verbose", "v", false, false, "", "chatty")
+    assert_true(cli_parse(@p16), "empty command line")
+    assert_eq_i64(cli_positional_count(@p16) as i64, 0 as i64, "no operands")
+    assert_eq_str(cli_subcommand(@p16), "", "no subcommand")
+
+    // 17. Registration validation: duplicate long names rejected
+    mut p17 = make_parser(@arena, "app")
+    assert_true(cli_parser_flag(@p17, "one", "a", false, false, "", "first"), "first ok")
+    assert_true(cli_parser_flag(@p17, "two", "b", false, false, "", "second"), "second ok")
+    assert_false(cli_parser_flag(@p17, "one", "c", false, false, "", "dup"), "dup rejected")
+    assert_false(cli_parser_flag(@p17, "", "d", false, false, "", "empty"), "empty name rejected")
+
+    // 18. Unregistered flag queries degrade safely
+    mut p18 = make_parser(@arena, "app --known")
+    cli_parser_flag(@p18, "known", "k", false, false, "", "known flag")
+    assert_true(cli_parse(@p18), "parse known")
+    assert_eq_str(cli_flag_str(@p18, "unknown-flag"), "", "unregistered str query")
+    assert_false(cli_flag_bool(@p18, "unregistered-flag"), "unregistered bool query")
+    mut bad: i64 = -1
+    assert_false(cli_flag_i64(@p18, "unknown-flag", @bad), "unregistered int query")
+    assert_eq_i64(bad, (-1 as i64), "out untouched on failure")
+
+    // 19. Non-numeric int flag value fails cleanly
+    mut p19 = make_parser(@arena, "app --jobs many")
+    cli_parser_flag(@p19, "jobs", "j", true, false, "2", "parallel jobs")
+    assert_true(cli_parse(@p19), "parse non-numeric")
+    mut njobs: i64 = 0
+    assert_false(cli_flag_i64(@p19, "jobs", @njobs), "atoi rejects many")
+
+    // 20. Mixed everything: subcommand, flags of all forms, operands
+    mut p20 = make_parser(@arena, "app release --force -j9 --tag=v1.2 out.bin")
+    cli_parser_flag(@p20, "force", "f", false, false, "", "overwrite")
+    cli_parser_flag(@p20, "jobs", "j", true, false, "2", "parallel jobs")
+    cli_parser_flag(@p20, "tag", "t", true, false, "main", "release tag")
+    cli_parser_subcommand(@p20, "release", "cut a release")
+    cli_parser_subcommand(@p20, "build", "compile the project")
+    assert_true(cli_parse(@p20), "mixed auto parse")
+    assert_eq_str(cli_subcommand(@p20), "release", "mixed subcommand")
+    let jok = cli_flag_i64(@p20, "jobs", @jobs)
+    assert_true(jok, "mixed jobs parse")
+    assert_eq_i64(jobs, 9 as i64, "mixed jobs value")
+    assert_eq_str(cli_flag_str(@p20, "tag"), "v1.2", "mixed inline value")
+    assert_true(cli_flag_bool(@p20, "force"), "mixed force")
+    assert_eq_i64(cli_positional_count(@p20) as i64, 1 as i64, "mixed operand count")
+    assert_eq_str(cli_positional(@p20, 0), "out.bin", "mixed operand")
+
+    // 21. Automatic help flag registered and seen when requested
+    mut p21 = make_parser(@arena, "app --help")
+    assert_true(cli_parse(@p21), "help parse")
+    assert_true(cli_flag_bool(@p21, "help"), "auto help flag")
+    assert_true(cli_flag_seen(@p21, "h"), "auto help short seen")
+
+    if test_get_failed_asserts() != 0 {
+        return 1
+    }
+
+    io.println_str("OK: std.cli parse tests passed")
+    return 0
+}

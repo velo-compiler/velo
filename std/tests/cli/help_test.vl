@@ -1,0 +1,80 @@
+// Tests for std.cli help, version, and error rendering
+use "../../cli.vl"
+use "../../os/args.vl"
+use "../../mem/arena.vl"
+use "../../test.vl"
+use "../../io.vl"
+
+act make_parser(arena: @Arena, cmdline: string) -> CliContext {
+    let args_val = os_tokenize_cmdline(arena, cmdline)
+    let d: @Args = null
+    let args_ptr = arena_alloc_zeroed(arena, (d + 1) as usize, 8) as @Args
+    args_ptr.count = args_val.count
+    args_ptr.items = args_val.items
+    args_ptr.raw = args_val.raw
+    mut p = cli_parser_init(arena, args_ptr)
+    cli_parser_program(@p, "app", "demo application")
+    cli_parser_version(@p, "2.1.0")
+    return p
+}
+
+act main() -> i32 {
+    test_reset()
+    test_set_quiet(true)
+    mut arena = arena_init(32768)
+    defer arena_reset(@arena)
+
+    // 1. Usage line, description, and automatic help flag in the table
+    mut p = make_parser(@arena, "app")
+    cli_parser_flag(@p, "output", "o", true, false, "a.out", "output path")
+    assert_true(cli_parse(@p), "help parse 1")
+    let h1 = cli_help_string(@p)
+    assert_str_contains(h1, "Usage: app [OPTIONS]", "usage line")
+    assert_str_contains(h1, "demo application", "description line")
+    assert_str_contains(h1, "-o, --output <value>", "value flag label")
+    assert_str_contains(h1, "(default: a.out)", "default annotation")
+    assert_str_contains(h1, "--help", "auto help listed")
+    assert_str_contains(h1, "Flags:", "flags header")
+
+    // 2. Long-name-only flag gets four-space alignment spacer
+    mut p2 = make_parser(@arena, "app")
+    cli_parser_flag(@p2, "verbose", "", false, false, "", "chatty output")
+    assert_true(cli_parse(@p2), "help parse 2")
+    let h2 = cli_help_string(@p2)
+    assert_str_contains(h2, "    --verbose", "long-only label")
+
+    // 3. Subcommands render into an aligned table
+    mut p3 = make_parser(@arena, "app")
+    cli_parser_flag(@p3, "jobs", "j", true, false, "2", "parallel jobs")
+    cli_parser_subcommand(@p3, "build", "compile the project")
+    cli_parser_subcommand(@p3, "test", "run the test suite")
+    assert_true(cli_parse(@p3), "help parse 3")
+    let h3 = cli_help_string(@p3)
+    assert_str_contains(h3, "Usage: app [OPTIONS] <SUBCOMMAND> [ARGS]", "subcommand usage")
+    assert_str_contains(h3, "Subcommands:", "subcommands header")
+    assert_str_contains(h3, "build", "build listed")
+    assert_str_contains(h3, "compile the project", "build help shown")
+    assert_str_contains(h3, "test", "test listed")
+
+    // 4. Version rendering (stdout smoke)
+    mut p4 = make_parser(@arena, "app")
+    cli_parse(@p4)
+    cli_print_version(@p4)
+
+    // 5. Error rendering is safe to invoke on a failed parse (smoke)
+    mut p5 = make_parser(@arena, "app --bogus")
+    cli_parser_flag(@p5, "output", "o", true, false, "a.out", "output path")
+    assert_false(cli_parse(@p5), "bogus flag fails parse")
+    assert_str_contains(cli_error_msg(@p5), "unknown flag", "error message present")
+    cli_print_error(@p5)
+
+    // 6. Help printing smoke (stdout)
+    cli_print_help(@p)
+
+    if test_get_failed_asserts() != 0 {
+        return 1
+    }
+
+    io.println_str("OK: std.cli help tests passed")
+    return 0
+}

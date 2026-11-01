@@ -15,6 +15,7 @@ use std.log
 use std.test
 use std.encoding
 use std.csv
+use std.cli
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -130,6 +131,18 @@ act main() -> i32 {
     csv_fields[0] = "k"
     csv_fields[1] = "v,1"
     if csv_make_row_str(csv_fields, 2, false) != "k,\"v,1\"\n" { return 37 }
+
+    // std.cli: context initialization and query
+    let cli_args = os_tokenize_cmdline(@arena, "tool --verbose")
+    let d_cli: @Args = null
+    let c_ptr = arena_alloc_zeroed(@arena, (d_cli + 1) as usize, 8) as @Args
+    c_ptr.count = cli_args.count
+    c_ptr.items = cli_args.items
+    c_ptr.raw = cli_args.raw
+    mut cli_p = cli_parser_init(@arena, c_ptr)
+    cli_parser_flag(@cli_p, "verbose", "v", false, false, "", "verbose")
+    if !cli_parse(@cli_p) { return 38 }
+    if !cli_flag_bool(@cli_p, "verbose") { return 39 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0

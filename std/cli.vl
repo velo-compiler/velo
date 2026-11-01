@@ -1,0 +1,9 @@
+// Pure Velo standard command-line interface library (zero C runtime dependencies).
+// Provides GNU-style flag parsing (--long, --long=value, -f value, -fvalue,
+// short clusters, "--" terminator), subcommand routing with suggestions,
+// required flags and defaults, typed value queries, and aligned help and
+// error rendering.
+use "cli/defs.vl"
+use "cli/parse.vl"
+use "cli/query.vl"
+use "cli/help.vl"

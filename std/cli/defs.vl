@@ -1,0 +1,218 @@
+// std.cli.defs — CLI parser data model, parser setup, and registration (zero C runtime dependencies).
+// Command definition registry backing GNU-style command line parsing:
+// long flags (--verbose), short clusters (-abc), attached values (--out=x, -ox),
+// separated values (--out x), the -- positional terminator, required flags with
+// defaults, subcommand registration, and automatic --help flag provision.
+// Flag metadata uses parallel arena arrays (proven compiler pattern) instead of
+// struct arrays.
+use "../mem/arena.vl"
+use "../os/args.vl"
+
+// Parser capacity limits (fixed arena tables sized at init).
+let CLI_MAX_FLAGS: usize = 40
+let CLI_MAX_SUBCOMMANDS: usize = 16
+let CLI_TRUE: u8 = 1
+let CLI_FALSE: u8 = 0
+
+// CLI parser and result context. Built via cli_parser_init, populated via
+// cli_parser_* registration acts, consumed by cli_parse, and queried via
+// cli_flag_* and cli_positional_* accessors.
+// Flag metadata stored as parallel arrays; strings reference argv memory
+// (zero-copy) and help/default/error strings remain until arena reset.
+data CliContext {
+    arena: @Arena,
+    program: string,
+    version: string,
+    description: string,
+    args: @Args,
+    longs: @string,         // long names without "--"
+    shorts: @string,        // short aliases without "-" ("o") or ""
+    takes_value: @u8,       // 1: value flag; 0: boolean flag
+    required: @u8,          // 1: parse fails when never seen
+    defaults: @string,      // value returned when flag is absent
+    helps: @string,         // one-line help descriptions
+    def_count: usize,
+    values: @string,        // per-flag value (valid only when seen[idx] != 0)
+    seen: @u8,              // per-flag presence marker (0/1)
+    positionals: @string,   // non-flag operands after any subcommand name
+    positional_count: usize,
+    sub_names: @string,     // registered subcommand names
+    sub_helps: @string,     // registered subcommand help lines
+    sub_count: usize,
+    subcommand: string,     // "" when no subcommand was routed
+    had_error: bool,
+    err_msg: string,        // arena-cstr message or static literal
+    err_token: string,      // offending token for error printing, "" when none
+}
+
+// Initializes a CLI parser over previously tokenized command line arguments
+// (os_args / os_tokenize_cmdline). Automatically registers the conventional
+// boolean --help/-h flag at index 0. Program name defaults to argv[0];
+// override with cli_parser_program.
+act cli_parser_init(arena: @Arena, args: @Args) -> CliContext {
+    mut p = CliContext {
+        arena: arena,
+        program: "",
+        version: "",
+        description: "",
+        args: args,
+        longs: null,
+        shorts: null,
+        takes_value: null,
+        required: null,
+        defaults: null,
+        helps: null,
+        def_count: 0,
+        values: null,
+        seen: null,
+        positionals: null,
+        positional_count: 0,
+        sub_names: null,
+        sub_helps: null,
+        sub_count: 0,
+        subcommand: "",
+        had_error: false,
+        err_msg: "",
+        err_token: "",
+    }
+
+    if arena != null {
+        p.longs = arena_alloc_zeroed(arena, CLI_MAX_FLAGS * 8, 8) as @string
+        p.shorts = arena_alloc_zeroed(arena, CLI_MAX_FLAGS * 8, 8) as @string
+        p.takes_value = arena_alloc_zeroed(arena, CLI_MAX_FLAGS, 1)
+        p.required = arena_alloc_zeroed(arena, CLI_MAX_FLAGS, 1)
+        p.defaults = arena_alloc_zeroed(arena, CLI_MAX_FLAGS * 8, 8) as @string
+        p.helps = arena_alloc_zeroed(arena, CLI_MAX_FLAGS * 8, 8) as @string
+        p.values = arena_alloc_zeroed(arena, CLI_MAX_FLAGS * 8, 8) as @string
+        p.seen = arena_alloc_zeroed(arena, CLI_MAX_FLAGS, 1)
+
+        p.sub_names = arena_alloc_zeroed(arena, CLI_MAX_SUBCOMMANDS * 8, 8) as @string
+        p.sub_helps = arena_alloc_zeroed(arena, CLI_MAX_SUBCOMMANDS * 8, 8) as @string
+
+        mut positional_cap: usize = 0
+        if args != null {
+            positional_cap = args.count + 1
+        }
+        p.positionals = arena_alloc_zeroed(arena, positional_cap * 8, 8) as @string
+    }
+
+    if p.longs == null or p.shorts == null or p.takes_value == null or p.required == null or p.defaults == null or p.helps == null or p.values == null or p.seen == null {
+        p.had_error = true
+        p.err_msg = "out of memory"
+        return p
+    }
+
+    // Default program name from argv[0] until overridden.
+    if args != null and args.count > 0 {
+        p.program = args_get(args, 0)
+    }
+
+    // Conventional automatic help flag registers first (index 0).
+    cli_parser_flag(@p, "help", "h", false, false, "", "Show this help message and exit")
+
+    return p
+}
+
+// Overrides the program name and description used in help and error output.
+act cli_parser_program(p: @CliContext, program: string, description: string) {
+    if p == null {
+        return
+    }
+    if program != null {
+        p.program = program
+    }
+    if description != null {
+        p.description = description
+    }
+}
+
+// Overrides the version string emitted by cli_print_version.
+act cli_parser_version(p: @CliContext, version: string) {
+    if p == null {
+        return
+    }
+    if version != null {
+        p.version = version
+    }
+}
+
+// Registers one option definition. Returns false when the parser tables are
+// full, the tables are missing, or the long name is a duplicate.
+act cli_parser_flag(p: @CliContext, long_name: string, short_name: string, takes_value: bool, required: bool, default_value: string, helps: string) -> bool {
+    if p == null or p.longs == null or p.shorts == null or p.defaults == null or p.helps == null or p.values == null or p.seen == null or long_name == null or long_name == "" {
+        return false
+    }
+    if p.def_count >= CLI_MAX_FLAGS {
+        return false
+    }
+
+    mut i: usize = 0
+    loop i < p.def_count {
+        let existing = p.longs[i]
+        if existing != null and slice_eq(slice_from_str(existing), slice_from_str(long_name)) {
+            return false
+        }
+        i += 1
+    }
+
+    let idx = p.def_count
+    p.longs[idx] = long_name
+    if short_name != null {
+        p.shorts[idx] = short_name
+    } else {
+        p.shorts[idx] = ""
+    }
+    if takes_value {
+        p.takes_value[idx] = CLI_TRUE
+    } else {
+        p.takes_value[idx] = CLI_FALSE
+    }
+    if required {
+        p.required[idx] = CLI_TRUE
+    } else {
+        p.required[idx] = CLI_FALSE
+    }
+    if default_value == null {
+        p.defaults[idx] = ""
+    } else {
+        p.defaults[idx] = default_value
+    }
+    if helps == null {
+        p.helps[idx] = ""
+    } else {
+        p.helps[idx] = helps
+    }
+    p.values[idx] = ""
+    p.def_count += 1
+    return true
+}
+
+// Registers one subcommand route. Returns false when the tables are full or
+// the name duplicates an existing subcommand.
+act cli_parser_subcommand(p: @CliContext, name: string, help: string) -> bool {
+    if p == null or name == null or name == "" {
+        return false
+    }
+    if p.sub_names == null or p.sub_count >= CLI_MAX_SUBCOMMANDS {
+        return false
+    }
+
+    mut i: usize = 0
+    loop i < p.sub_count {
+        let existing = p.sub_names[i]
+        if existing != null and slice_eq(slice_from_str(existing), slice_from_str(name)) {
+            return false
+        }
+        i += 1
+    }
+
+    let idx = p.sub_count
+    p.sub_names[idx] = name
+    if help == null {
+        p.sub_helps[idx] = ""
+    } else {
+        p.sub_helps[idx] = help
+    }
+    p.sub_count += 1
+    return true
+}

@@ -1,0 +1,36 @@
+// Verifies top-level umbrella import: use std.cli
+use std.cli
+use std.mem
+use std.test
+use std.io
+
+act main() -> i32 {
+    mut arena = arena_init(8192)
+    defer arena_reset(@arena)
+
+    let args_val = os_tokenize_cmdline(@arena, "app deploy prod --jobs 4")
+    let d: @Args = null
+    let args_ptr = arena_alloc_zeroed(@arena, (d + 1) as usize, 8) as @Args
+    args_ptr.count = args_val.count
+    args_ptr.items = args_val.items
+    args_ptr.raw = args_val.raw
+
+    mut p = cli_parser_init(@arena, args_ptr)
+    cli_parser_program(@p, "app", "demo")
+    cli_parser_flag(@p, "jobs", "j", true, false, "1", "parallel jobs")
+    cli_parser_subcommand(@p, "deploy", "ship to production")
+
+    if !cli_parse(@p) { return 1 }
+    if cli_subcommand(@p) != "deploy" { return 2 }
+    if !cli_flag_bool(@p, "j") { return 3 }
+    mut jobs: i64 = 0
+    if !cli_flag_i64(@p, "jobs", @jobs) { return 4 }
+    if jobs != 4 { return 5 }
+    if cli_positional_count(@p) != 1 { return 6 }
+    if cli_positional(@p, 0) != "prod" { return 7 }
+
+    if !str.contains(cli_help_string(@p), "deploy") { return 8 }
+
+    io.println_str("PASS: std.cli umbrella import all tests passed")
+    return 0
+}

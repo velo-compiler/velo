@@ -2242,3 +2242,32 @@ flowchart TD
   - Full test suite passed: `python -m pytest tests -q` (526/526 tests passed in 446s).
   - All `std/csv` files strictly < 400 lines (reader 350, writer 254, umbrella 6).
 
+
+### Phase 23: `std.cli` (GNU-Style Command-Line Argument & Flag Parsing Engine)
+#### Task 23.1: Flags, Short Clusters, Subcommands, Suggestions, and Aligned Help (`std.cli`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo had no standard library module for declarative CLI argument or flag parsing. Programs needing CLI flags had to write bespoke loops scanning raw `os.args()` arrays or hand-parse strings without support for short option clusters (`-vf`), attached values (`--out=file`, `-ofile`), required flag checks, default fallbacks, or automated `--help` screens.
+  - Subcommand routing with spellcheck/Levenshtein suggestions (e.g. `did you mean '--force'?`) was absent across the ecosystem.
+* **Fix Applied**:
+  - Implemented the `std.cli` standard library module and subcomponents in `std/cli/`:
+    - `std/cli/defs.vl`: `CliContext` data model, parallel arena array tables for zero allocations, capacity limits, and registration functions (`cli_parser_init`, `cli_parser_program`, `cli_parser_version`, `cli_parser_flag`, `cli_parser_subcommand`, automatic `-h/--help` registration, out-of-memory defensive guards).
+    - `std/cli/parse.vl`: Complete GNU-style argument parser engine supporting long options (`--name`, `--name=val`, `--name val`), short options and clusters (`-v`, `-vf`, `-o val`, `-oval`), `--` positional terminator, bare `-` stdin convention, subcommand recognition and routing, required flag verification, default fallback insertion, and Levenshtein edit-distance suggestion engine for misspelled flags and subcommands.
+    - `std/cli/query.vl`: Type-safe flag and positional value query accessors (`cli_flag_seen`, `cli_flag_bool`, `cli_flag_str`, `cli_flag_i64`, `cli_positional_count`, `cli_positional`, `cli_subcommand`, `cli_ok`, `cli_error_msg`, `cli_error_token`).
+    - `std/cli/help.vl`: Column-aligned usage and help table formatting (`cli_help_string`, `cli_print_help`, `cli_print_version`, `cli_print_error`).
+    - `std/cli.vl`: Standard library umbrella module exporting the complete CLI parsing interface.
+  - Packaging, Docs & Integration:
+    - Updated `std/tests/std_module_import_test.vl` to verify all 18 standard library modules together.
+    - Synced global installation directory `~/.velo/std/cli/`.
+    - Refreshed standalone archive bundles `website/public/velo-std.zip` and `website/public/velo-std.tar.gz`.
+    - Documented `std.cli` with all 16 functions, types, and real examples in `website/src/data/stdlib.ts`.
+* **Residual Limitation**:
+  - Interactive shell auto-completion script generators (Bash/Zsh/Fish completion scripts) will be added in a subsequent tooling sub-phase.
+* **Verification**:
+  - Native Help test passed: `bin/velo.exe run std/tests/cli/help_test.vl`.
+  - Native Parse test passed: `bin/velo.exe run std/tests/cli/parse_test.vl` (21 test sections covering long/short/clusters/defaults/subcommands/suggestions).
+  - Native umbrella import test passed: `bin/velo.exe run std/tests/cli_module_import_test.vl`.
+  - Integrated 18-module import test passed: `bin/velo.exe run std/tests/std_module_import_test.vl`.
+  - External project test passed: `velo run cli_demo.vl` in `C:\projects\test`.
+  - Pytest suite `tests/test_std_cli.py` passed (3/3 tests).
+  - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
+  - Bootstrap snapshot determinism verified (`test_bootstrap_snapshot.py`).

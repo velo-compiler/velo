@@ -1,0 +1,171 @@
+// std.cli.help — usage, version, and error rendering for std.cli (zero C runtime dependencies).
+// Builds aligned two-column help text (flag labels, value placeholders, defaults,
+// subcommand tables) into arena memory, prints help and version on stdout, and
+// error diagnostics with help hints on stderr.
+use "../str/builder.vl"
+use "../str/slice.vl"
+use "../io/print.vl"
+use "defs.vl"
+
+// Builds the padded flag label for definition index.
+// Layout: "  -o, --output <value>" for short aliased value flags.
+act cli_flag_label(p: @CliContext, idx: usize) -> string {
+    if p == null or p.arena == null {
+        return "" as string
+    }
+    mut sb = sb_init(p.arena, 48)
+    sb_append_string(@sb, "  ")
+    let def_short = p.shorts[idx]
+    if def_short != null and def_short != "" {
+        sb_append_string(@sb, "-")
+        sb_append_string(@sb, def_short)
+        sb_append_string(@sb, ", ")
+    } else {
+        sb_append_string(@sb, "    ")
+    }
+    sb_append_string(@sb, "--")
+    sb_append_string(@sb, p.longs[idx])
+    if p.takes_value[idx] == CLI_TRUE {
+        sb_append_string(@sb, " <value>")
+    }
+    return sb_to_cstr(@sb) as string
+}
+
+// Appends pad spaces so the current writer byte position reaches column.
+act cli_pad_to(sb: @StrBuilder, current: usize, column: usize) {
+    if sb == null {
+        return
+    }
+    if current >= column {
+        sb_append_byte(sb, 32 as u8)
+        return
+    }
+    mut fill = column - current
+    loop fill > 0 {
+        sb_append_byte(sb, 32 as u8)
+        fill -= 1
+    }
+}
+
+// Measures the byte length of a (possibly null) Velo string.
+act cli_byte_len(s: string) -> usize {
+    if s == null {
+        return 0
+    }
+    return slice_from_str(s).len
+}
+
+// Builds the complete help text (usage, description, aligned flag table with
+// defaults, subcommand table) into arena memory. Valid until the arena is
+// reset. The automatic --help flag is listed like any other flag.
+act cli_help_string(p: @CliContext) -> string {
+    if p == null or p.arena == null {
+        return "" as string
+    }
+
+    // First pass: widest flag label defines the description column.
+    mut column: usize = 24
+    mut i: usize = 0
+    loop i < p.def_count {
+        let label = cli_flag_label(p, i)
+        let width = cli_byte_len(label)
+        if width > column {
+            column = width
+        }
+        i += 1
+    }
+
+    mut sb = sb_init(p.arena, 512)
+    sb_append_string(@sb, "Usage: ")
+    sb_append_string(@sb, p.program)
+    sb_append_string(@sb, " [OPTIONS]")
+    if p.sub_count > 0 {
+        sb_append_string(@sb, " <SUBCOMMAND> [ARGS]")
+    }
+    if p.description != "" as string {
+        sb_append_string(@sb, "\n\n")
+        sb_append_string(@sb, p.description)
+    }
+    sb_append_string(@sb, "\n\nFlags:")
+
+    i = 0
+    loop i < p.def_count {
+        let label = cli_flag_label(p, i)
+        let width = cli_byte_len(label)
+        sb_append_string(@sb, "\n")
+        sb_append_string(@sb, label)
+        cli_pad_to(@sb, width, column + 2)
+        sb_append_string(@sb, p.helps[i])
+        if p.takes_value[i] == CLI_TRUE and p.defaults[i] != "" as string {
+            sb_append_string(@sb, " (default: ")
+            sb_append_string(@sb, p.defaults[i])
+            sb_append_string(@sb, ")")
+        }
+        i += 1
+    }
+
+    if p.sub_count > 0 {
+        mut sub_column: usize = 12
+        i = 0
+        loop i < p.sub_count {
+            let width = cli_byte_len(p.sub_names[i])
+            if width > sub_column {
+                sub_column = width
+            }
+            i += 1
+        }
+        sb_append_string(@sb, "\n\nSubcommands:")
+        i = 0
+        loop i < p.sub_count {
+            sb_append_string(@sb, "\n  ")
+            sb_append_string(@sb, p.sub_names[i])
+            let width = cli_byte_len(p.sub_names[i]) + 2
+            cli_pad_to(@sb, width, sub_column + 2)
+            sb_append_string(@sb, p.sub_helps[i])
+            i += 1
+        }
+    }
+
+    sb_append_string(@sb, "\n")
+    return sb_to_cstr(@sb) as string
+}
+
+// Prints the help text to stdout.
+act cli_print_help(p: @CliContext) {
+    io.println_str(cli_help_string(p))
+}
+
+// Prints the configured program and version to stdout ("app 1.2.3").
+act cli_print_version(p: @CliContext) {
+    if p == null or p.arena == null {
+        return
+    }
+    mut sb = sb_init(p.arena, 64)
+    sb_append_string(@sb, p.program)
+    if p.version != "" as string {
+        sb_append_string(@sb, " ")
+        sb_append_string(@sb, p.version)
+    }
+    io.println_str(sb_to_cstr(@sb) as string)
+}
+
+// Prints recorded parse error diagnostics to stderr: the message plus a
+// help hint. Silently emits nothing when the parse succeeded.
+act cli_print_error(p: @CliContext) {
+    if p == null or !p.had_error {
+        return
+    }
+    io.eprintln_str(p.err_msg)
+    if p.err_token != "" as string {
+        let hint = sb_init(p.arena, 64)
+        sb_append_string(@hint, "  while processing token '")
+        sb_append_string(@hint, p.err_token)
+        sb_append_string(@hint, "'")
+        io.eprintln_str(sb_to_cstr(@hint) as string)
+    }
+    let try_line = sb_init(p.arena, 64)
+    sb_append_string(@try_line, "Run '")
+    sb_append_string(@try_line, p.program)
+    sb_append_string(@try_line, " --help' for usage.")
+    io.eprintln_str(sb_to_cstr(@try_line) as string)
+}

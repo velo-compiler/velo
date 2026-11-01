@@ -1,0 +1,153 @@
+// std.cli.query — typed accessors over parsed CLI results (zero C runtime dependencies).
+// Value lookups honoring seen-or-default semantics, boolean and integer flag
+// queries (std.fmt.atoi parsing), positional operand access, subcommand and
+// error introspection.
+use "../fmt/atoi.vl"
+use "../str/slice.vl"
+use "defs.vl"
+
+// Returns true when cli_parse finished without recording an error.
+act cli_ok(p: @CliContext) -> bool {
+    if p == null {
+        return false
+    }
+    return !p.had_error
+}
+
+// Returns the error message recorded by cli_parse ("" on success).
+act cli_error_msg(p: @CliContext) -> string {
+    if p == null {
+        return "" as string
+    }
+    return p.err_msg
+}
+
+// Returns the offending token recorded at the error site ("" when none).
+act cli_error_token(p: @CliContext) -> string {
+    if p == null {
+        return "" as string
+    }
+    return p.err_token
+}
+
+// Returns the definition index for a flag referenced by its long or short
+// name. Returns -1 when not registered.
+act cli_flag_index(p: @CliContext, name: string) -> i64 {
+    if p == null or name == null {
+        return (-1 as i64)
+    }
+    let nv = slice_from_str(name)
+
+    mut i: usize = 0
+    loop i < p.def_count {
+        let def_long = p.longs[i]
+        if def_long != null and slice_eq(slice_from_str(def_long), nv) {
+            return i as i64
+        }
+        i += 1
+    }
+
+    i = 0
+    loop i < p.def_count {
+        let def_short = p.shorts[i]
+        if def_short != null and def_short != "" {
+            if slice_eq(slice_from_str(def_short), nv) {
+                return i as i64
+            }
+        }
+        i += 1
+    }
+    return (-1 as i64)
+}
+
+// Returns the flag's value when seen, its registered default when absent,
+// or "" when the flag is not registered at all.
+act cli_flag_str(p: @CliContext, name: string) -> string {
+    if p == null {
+        return "" as string
+    }
+    let idx = cli_flag_index(p, name)
+    if idx < 0 as i64 {
+        return "" as string
+    }
+    let di = idx as usize
+    if p.seen[di] != CLI_TRUE {
+        return p.defaults[di]
+    }
+    return p.values[di]
+}
+
+// Returns true when a boolean flag (or any flag) appeared in the command line.
+act cli_flag_bool(p: @CliContext, name: string) -> bool {
+    return cli_flag_seen(p, name)
+}
+
+// Returns true when the flag appeared. Unregistered names yield false.
+act cli_flag_seen(p: @CliContext, name: string) -> bool {
+    if p == null {
+        return false
+    }
+    let idx = cli_flag_index(p, name)
+    if idx < 0 as i64 {
+        return false
+    }
+    return p.seen[idx as usize] == CLI_TRUE
+}
+
+// Parses the flag's value (seen or default) as a 64-bit signed integer
+// through std.fmt.atoi (supports +/-, whitespace, parse overflow checks).
+// Returns false for unregistered flags or unparsable values and writes
+// nothing to out_val on failure.
+act cli_flag_i64(p: @CliContext, name: string, out_val: @i64) -> bool {
+    if p == null or out_val == null {
+        return false
+    }
+    let raw = cli_flag_str(p, name)
+    if raw == "" as string {
+        return false
+    }
+    return parse_i64(slice_from_str(raw), out_val)
+}
+
+// Returns the number of positional operands captured after flag parsing.
+act cli_positional_count(p: @CliContext) -> usize {
+    if p == null {
+        return 0
+    }
+    return p.positional_count
+}
+
+// Returns the positional operand at index, or "" when out of bounds.
+act cli_positional(p: @CliContext, index: usize) -> string {
+    if p == null or p.positionals == null or index >= p.positional_count {
+        return "" as string
+    }
+    return p.positionals[index]
+}
+
+// Returns the routed subcommand name, or "" when none was routed or no
+// subcommands are registered.
+act cli_subcommand(p: @CliContext) -> string {
+    if p == null {
+        return "" as string
+    }
+    return p.subcommand
+}
+
+// Returns the help line registered with the routed (or named) subcommand,
+// or "" when there is no such subcommand.
+act cli_subcommand_help(p: @CliContext, name: string) -> string {
+    if p == null or name == null {
+        return "" as string
+    }
+    let nv = slice_from_str(name)
+    mut i: usize = 0
+    loop i < p.sub_count {
+        let sub_name = p.sub_names[i]
+        if sub_name != null and slice_eq(slice_from_str(sub_name), nv) {
+            return p.sub_helps[i]
+        }
+        i += 1
+    }
+    return "" as string
+}
