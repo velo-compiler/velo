@@ -1,0 +1,139 @@
+// std.encoding.binary — Big-endian and little-endian binary integer serialization codecs.
+
+// Writes an unsigned 16-bit integer in big-endian order.
+act binary_put_u16_be(buf: @u8, val: u16) -> void {
+    if buf == null { return }
+    buf[0] = ((val >> 8) & 0xFF) as u8
+    buf[1] = (val & 0xFF) as u8
+}
+
+// Reads an unsigned 16-bit integer in big-endian order.
+act binary_get_u16_be(buf: @u8) -> u16 {
+    if buf == null { return 0 as u16 }
+    let b0 = buf[0] as u16
+    let b1 = buf[1] as u16
+    return (b0 << 8) | b1
+}
+
+// Writes an unsigned 16-bit integer in little-endian order.
+act binary_put_u16_le(buf: @u8, val: u16) -> void {
+    if buf == null { return }
+    buf[0] = (val & 0xFF) as u8
+    buf[1] = ((val >> 8) & 0xFF) as u8
+}
+
+// Reads an unsigned 16-bit integer in little-endian order.
+act binary_get_u16_le(buf: @u8) -> u16 {
+    if buf == null { return 0 as u16 }
+    let b0 = buf[0] as u16
+    let b1 = buf[1] as u16
+    return (b1 << 8) | b0
+}
+
+// Writes an unsigned 32-bit integer in big-endian order.
+act binary_put_u32_be(buf: @u8, val: u32) -> void {
+    if buf == null { return }
+    buf[0] = ((val >> 24) & 0xFF) as u8
+    buf[1] = ((val >> 16) & 0xFF) as u8
+    buf[2] = ((val >> 8)  & 0xFF) as u8
+    buf[3] = (val         & 0xFF) as u8
+}
+
+// Reads an unsigned 32-bit integer in big-endian order.
+act binary_get_u32_be(buf: @u8) -> u32 {
+    if buf == null { return 0 as u32 }
+    let b0 = buf[0] as u32
+    let b1 = buf[1] as u32
+    let b2 = buf[2] as u32
+    let b3 = buf[3] as u32
+    return (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
+}
+
+// Writes an unsigned 32-bit integer in little-endian order.
+act binary_put_u32_le(buf: @u8, val: u32) -> void {
+    if buf == null { return }
+    buf[0] = (val         & 0xFF) as u8
+    buf[1] = ((val >> 8)  & 0xFF) as u8
+    buf[2] = ((val >> 16) & 0xFF) as u8
+    buf[3] = ((val >> 24) & 0xFF) as u8
+}
+
+// Reads an unsigned 32-bit integer in little-endian order.
+act binary_get_u32_le(buf: @u8) -> u32 {
+    if buf == null { return 0 as u32 }
+    let b0 = buf[0] as u32
+    let b1 = buf[1] as u32
+    let b2 = buf[2] as u32
+    let b3 = buf[3] as u32
+    return (b3 << 24) | (b2 << 16) | (b1 << 8) | b0
+}
+
+// Writes an unsigned 64-bit integer in big-endian order.
+act binary_put_u64_be(buf: @u8, val: u64) -> void {
+    if buf == null { return }
+    buf[0] = ((val >> 56) & 0xFF) as u8
+    buf[1] = ((val >> 48) & 0xFF) as u8
+    buf[2] = ((val >> 40) & 0xFF) as u8
+    buf[3] = ((val >> 32) & 0xFF) as u8
+    buf[4] = ((val >> 24) & 0xFF) as u8
+    buf[5] = ((val >> 16) & 0xFF) as u8
+    buf[6] = ((val >> 8)  & 0xFF) as u8
+    buf[7] = (val         & 0xFF) as u8
+}
+
+// Reads an unsigned 64-bit integer in big-endian order.
+act binary_get_u64_be(buf: @u8) -> u64 {
+    if buf == null { return 0 as u64 }
+    let b0 = buf[0] as u64
+    let b1 = buf[1] as u64
+    let b2 = buf[2] as u64
+    let b3 = buf[3] as u64
+    let b4 = buf[4] as u64
+    let b5 = buf[5] as u64
+    let b6 = buf[6] as u64
+    let b7 = buf[7] as u64
+    return (b0 << 56) | (b1 << 48) | (b2 << 40) | (b3 << 32) | (b4 << 24) | (b5 << 16) | (b6 << 8) | b7
+}
+
+// Writes an unsigned 64-bit integer in little-endian order.
+act binary_put_u64_le(buf: @u8, val: u64) -> void {
+    if buf == null { return }
+    buf[0] = (val         & 0xFF) as u8
+    buf[1] = ((val >> 8)  & 0xFF) as u8
+    buf[2] = ((val >> 16) & 0xFF) as u8
+    buf[3] = ((val >> 24) & 0xFF) as u8
+    buf[4] = ((val >> 32) & 0xFF) as u8
+    buf[5] = ((val >> 40) & 0xFF) as u8
+    buf[6] = ((val >> 48) & 0xFF) as u8
+    buf[7] = ((val >> 56) & 0xFF) as u8
+}
+
+// Reads an unsigned 64-bit integer in little-endian order.
+act binary_get_u64_le(buf: @u8) -> u64 {
+    if buf == null { return 0 as u64 }
+    let b0 = buf[0] as u64
+    let b1 = buf[1] as u64
+    let b2 = buf[2] as u64
+    let b3 = buf[3] as u64
+    let b4 = buf[4] as u64
+    let b5 = buf[5] as u64
+    let b6 = buf[6] as u64
+    let b7 = buf[7] as u64
+    return (b7 << 56) | (b6 << 48) | (b5 << 40) | (b4 << 32) | (b3 << 24) | (b2 << 16) | (b1 << 8) | b0
+}
+
+// Signed integer convenience wrappers.
+act binary_put_i16_be(buf: @u8, val: i16) -> void { binary_put_u16_be(buf, val as u16) }
+act binary_get_i16_be(buf: @u8) -> i16 { return binary_get_u16_be(buf) as i16 }
+act binary_put_i16_le(buf: @u8, val: i16) -> void { binary_put_u16_le(buf, val as u16) }
+act binary_get_i16_le(buf: @u8) -> i16 { return binary_get_u16_le(buf) as i16 }
+
+act binary_put_i32_be(buf: @u8, val: i32) -> void { binary_put_u32_be(buf, val as u32) }
+act binary_get_i32_be(buf: @u8) -> i32 { return binary_get_u32_be(buf) as i32 }
+act binary_put_i32_le(buf: @u8, val: i32) -> void { binary_put_u32_le(buf, val as u32) }
+act binary_get_i32_le(buf: @u8) -> i32 { return binary_get_u32_le(buf) as i32 }
+
+act binary_put_i64_be(buf: @u8, val: i64) -> void { binary_put_u64_be(buf, val as u64) }
+act binary_get_i64_be(buf: @u8) -> i64 { return binary_get_u64_be(buf) as i64 }
+act binary_put_i64_le(buf: @u8, val: i64) -> void { binary_put_u64_le(buf, val as u64) }
+act binary_get_i64_le(buf: @u8) -> i64 { return binary_get_u64_le(buf) as i64 }

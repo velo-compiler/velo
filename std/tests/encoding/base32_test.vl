@@ -1,0 +1,38 @@
+// Tests for std.encoding.base32
+use "../../encoding/base32.vl"
+use "../../test.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    test_reset()
+    test_set_quiet(true)
+
+    // 1. RFC 4648 standard Base32 test vectors
+    assert_eq_str(base32_encode_str(""), "", "empty string")
+    assert_eq_str(base32_encode_str("f"), "MY======", "encode 'f'")
+    assert_eq_str(base32_encode_str("fo"), "MZXQ====", "encode 'fo'")
+    assert_eq_str(base32_encode_str("foo"), "MZXW6===", "encode 'foo'")
+    assert_eq_str(base32_encode_str("foob"), "MZXW6YQ=", "encode 'foob'")
+    assert_eq_str(base32_encode_str("fooba"), "MZXW6YTB", "encode 'fooba'")
+    assert_eq_str(base32_encode_str("foobar"), "MZXW6YTBOI======", "encode 'foobar'")
+
+    // 2. Base32 decoding roundtrip
+    assert_eq_str(base32_decode_str(""), "", "decode empty")
+    assert_eq_str(base32_decode_str("MY======"), "f", "decode 'f'")
+    assert_eq_str(base32_decode_str("MZXQ===="), "fo", "decode 'fo'")
+    assert_eq_str(base32_decode_str("MZXW6==="), "foo", "decode 'foo'")
+    assert_eq_str(base32_decode_str("MZXW6YQ="), "foob", "decode 'foob'")
+    assert_eq_str(base32_decode_str("MZXW6YTB"), "fooba", "decode 'fooba'")
+    assert_eq_str(base32_decode_str("MZXW6YTBOI======"), "foobar", "decode 'foobar'")
+
+    // 3. Validation
+    assert_true(base32_is_valid("MZXW6YTBOI======"), "valid b32")
+    assert_false(base32_is_valid("MZXW6189"), "invalid chars (1, 8, 9 not in standard base32)")
+
+    if test_get_failed_asserts() != 0 {
+        return 1
+    }
+
+    io.println_str("OK: std.encoding base32 tests passed")
+    return 0
+}

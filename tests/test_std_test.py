@@ -59,3 +59,4 @@ def test_std_test_umbrella_import():
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "OK: std.test umbrella module import passed" in res.stdout
+

@@ -1,0 +1,5 @@
+// Pure Velo standard encoding library (zero C runtime dependencies).
+use "encoding/base64.vl"
+use "encoding/base32.vl"
+use "encoding/hex.vl"
+use "encoding/binary.vl"

@@ -1,0 +1,215 @@
+// std.encoding.base32 — RFC 4648 Base32 encoder and decoder (standard alphabet A-Z, 2-7).
+use "../mem/heap.vl"
+
+let B32_ALPHABET: string = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+
+// Encodes raw binary data into an RFC 4648 Base32 string with padding.
+act base32_encode(data: @u8, len: usize) -> string {
+    if data == null or len == 0 { return "" }
+
+    let full_blocks = len / 5
+    let remainder = len % 5
+
+    mut out_len = full_blocks * 8
+    if remainder == 1 { out_len += 8 }
+    else if remainder == 2 { out_len += 8 }
+    else if remainder == 3 { out_len += 8 }
+    else if remainder == 4 { out_len += 8 }
+
+    let out: @u8 = heap_alloc(out_len + 1)
+    if out == null { return "" }
+
+    mut in_idx: usize = 0
+    mut out_idx: usize = 0
+
+    // Process full 5-byte chunks
+    loop in_idx + 4 < len {
+        let b0 = data[in_idx] as u64
+        let b1 = data[in_idx + 1] as u64
+        let b2 = data[in_idx + 2] as u64
+        let b3 = data[in_idx + 3] as u64
+        let b4 = data[in_idx + 4] as u64
+        let block = (b0 << 32) | (b1 << 24) | (b2 << 16) | (b3 << 8) | b4
+
+        out[out_idx]     = B32_ALPHABET[((block >> 35) & 0x1F) as usize]
+        out[out_idx + 1] = B32_ALPHABET[((block >> 30) & 0x1F) as usize]
+        out[out_idx + 2] = B32_ALPHABET[((block >> 25) & 0x1F) as usize]
+        out[out_idx + 3] = B32_ALPHABET[((block >> 20) & 0x1F) as usize]
+        out[out_idx + 4] = B32_ALPHABET[((block >> 15) & 0x1F) as usize]
+        out[out_idx + 5] = B32_ALPHABET[((block >> 10) & 0x1F) as usize]
+        out[out_idx + 6] = B32_ALPHABET[((block >> 5)  & 0x1F) as usize]
+        out[out_idx + 7] = B32_ALPHABET[(block         & 0x1F) as usize]
+
+        in_idx += 5
+        out_idx += 8
+    }
+
+    // Remainder handling
+    if remainder == 1 {
+        let b0 = data[in_idx] as u64
+        let block = b0 << 32
+        out[out_idx]     = B32_ALPHABET[((block >> 35) & 0x1F) as usize]
+        out[out_idx + 1] = B32_ALPHABET[((block >> 30) & 0x1F) as usize]
+        out[out_idx + 2] = '=' as u8
+        out[out_idx + 3] = '=' as u8
+        out[out_idx + 4] = '=' as u8
+        out[out_idx + 5] = '=' as u8
+        out[out_idx + 6] = '=' as u8
+        out[out_idx + 7] = '=' as u8
+        out_idx += 8
+    } else if remainder == 2 {
+        let b0 = data[in_idx] as u64
+        let b1 = data[in_idx + 1] as u64
+        let block = (b0 << 32) | (b1 << 24)
+        out[out_idx]     = B32_ALPHABET[((block >> 35) & 0x1F) as usize]
+        out[out_idx + 1] = B32_ALPHABET[((block >> 30) & 0x1F) as usize]
+        out[out_idx + 2] = B32_ALPHABET[((block >> 25) & 0x1F) as usize]
+        out[out_idx + 3] = B32_ALPHABET[((block >> 20) & 0x1F) as usize]
+        out[out_idx + 4] = '=' as u8
+        out[out_idx + 5] = '=' as u8
+        out[out_idx + 6] = '=' as u8
+        out[out_idx + 7] = '=' as u8
+        out_idx += 8
+    } else if remainder == 3 {
+        let b0 = data[in_idx] as u64
+        let b1 = data[in_idx + 1] as u64
+        let b2 = data[in_idx + 2] as u64
+        let block = (b0 << 32) | (b1 << 24) | (b2 << 16)
+        out[out_idx]     = B32_ALPHABET[((block >> 35) & 0x1F) as usize]
+        out[out_idx + 1] = B32_ALPHABET[((block >> 30) & 0x1F) as usize]
+        out[out_idx + 2] = B32_ALPHABET[((block >> 25) & 0x1F) as usize]
+        out[out_idx + 3] = B32_ALPHABET[((block >> 20) & 0x1F) as usize]
+        out[out_idx + 4] = B32_ALPHABET[((block >> 15) & 0x1F) as usize]
+        out[out_idx + 5] = '=' as u8
+        out[out_idx + 6] = '=' as u8
+        out[out_idx + 7] = '=' as u8
+        out_idx += 8
+    } else if remainder == 4 {
+        let b0 = data[in_idx] as u64
+        let b1 = data[in_idx + 1] as u64
+        let b2 = data[in_idx + 2] as u64
+        let b3 = data[in_idx + 3] as u64
+        let block = (b0 << 32) | (b1 << 24) | (b2 << 16) | (b3 << 8)
+        out[out_idx]     = B32_ALPHABET[((block >> 35) & 0x1F) as usize]
+        out[out_idx + 1] = B32_ALPHABET[((block >> 30) & 0x1F) as usize]
+        out[out_idx + 2] = B32_ALPHABET[((block >> 25) & 0x1F) as usize]
+        out[out_idx + 3] = B32_ALPHABET[((block >> 20) & 0x1F) as usize]
+        out[out_idx + 4] = B32_ALPHABET[((block >> 15) & 0x1F) as usize]
+        out[out_idx + 5] = B32_ALPHABET[((block >> 10) & 0x1F) as usize]
+        out[out_idx + 6] = B32_ALPHABET[((block >> 5)  & 0x1F) as usize]
+        out[out_idx + 7] = '=' as u8
+        out_idx += 8
+    }
+
+    out[out_idx] = 0 as u8
+    return out as string
+}
+
+// Encodes a string into an RFC 4648 Base32 string.
+act base32_encode_str(s: string) -> string {
+    if s == null { return "" }
+    return base32_encode(s as @u8, str.len(s))
+}
+
+// Decodes a single Base32 character into its 5-bit integer index (0..31).
+act base32_char_to_val(c: u8) -> u32 {
+    if c >= ('A' as u8) and c <= ('Z' as u8) {
+        return (c - ('A' as u8)) as u32
+    }
+    if c >= ('a' as u8) and c <= ('z' as u8) {
+        return (c - ('a' as u8)) as u32
+    }
+    if c >= ('2' as u8) and c <= ('7' as u8) {
+        return (c - ('2' as u8) + 26) as u32
+    }
+    return 255 as u32
+}
+
+// Checks if a string is a valid Base32 representation.
+act base32_is_valid(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len == 0 { return true }
+
+    mut i: usize = 0
+    mut pad_count: usize = 0
+    loop i < len {
+        let c = s[i]
+        if c == ('=' as u8) {
+            pad_count += 1
+            if pad_count > 6 { return false }
+        } else {
+            if pad_count > 0 { return false }
+            if base32_char_to_val(c) == 255 as u32 {
+                return false
+            }
+        }
+        i += 1
+    }
+    return true
+}
+
+// Decodes a Base32 string into a raw heap byte buffer.
+act base32_decode(s: string, out_len: @usize) -> @u8 {
+    if s == null {
+        if out_len != null { out_len[0] = 0 }
+        return null
+    }
+
+    let in_len = str.len(s)
+    if in_len == 0 {
+        if out_len != null { out_len[0] = 0 }
+        let empty_buf: @u8 = heap_alloc(1)
+        empty_buf[0] = 0 as u8
+        return empty_buf
+    }
+
+    let max_bytes = ((in_len * 5) / 8) + 8
+    let dest: @u8 = heap_alloc(max_bytes + 1)
+    if dest == null {
+        if out_len != null { out_len[0] = 0 }
+        return null
+    }
+
+    mut in_idx: usize = 0
+    mut dest_idx: usize = 0
+
+    mut chunk_count: usize = 0
+    mut buffer: u64 = 0 as u64
+    mut bits_left: usize = 0
+
+    loop in_idx < in_len {
+        let c = s[in_idx]
+        in_idx += 1
+
+        if c == ('=' as u8) {
+            break
+        }
+
+        let val = base32_char_to_val(c)
+        if val < 32 as u32 {
+            buffer = (buffer << 5) | (val as u64)
+            bits_left += 5
+
+            if bits_left >= 8 {
+                bits_left -= 8
+                dest[dest_idx] = ((buffer >> bits_left) & 0xFF) as u8
+                dest_idx += 1
+            }
+        }
+    }
+
+    dest[dest_idx] = 0 as u8
+    if out_len != null {
+        out_len[0] = dest_idx
+    }
+    return dest
+}
+
+// Decodes a Base32 string directly into a heap string.
+act base32_decode_str(s: string) -> string {
+    mut decoded_len: usize = 0
+    let bytes = base32_decode(s, @decoded_len)
+    if bytes == null { return "" }
+    return bytes as string
+}

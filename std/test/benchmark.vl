@@ -60,3 +60,4 @@ act test_print_benchmark(res: @BenchmarkResult) -> void {
         println_str(test_concat2(prefix, metrics))
     }
 }
+

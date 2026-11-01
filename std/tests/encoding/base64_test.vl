@@ -1,0 +1,53 @@
+// Tests for std.encoding.base64
+use "../../encoding/base64.vl"
+use "../../test.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    test_reset()
+    test_set_quiet(true)
+
+    // 1. RFC 4648 standard Base64 test vectors
+    assert_eq_str(base64_encode_str(""), "", "empty string")
+    assert_eq_str(base64_encode_str("f"), "Zg==", "encode 'f'")
+    assert_eq_str(base64_encode_str("fo"), "Zm8=", "encode 'fo'")
+    assert_eq_str(base64_encode_str("foo"), "Zm9v", "encode 'foo'")
+    assert_eq_str(base64_encode_str("foob"), "Zm9vYg==", "encode 'foob'")
+    assert_eq_str(base64_encode_str("fooba"), "Zm9vYmE=", "encode 'fooba'")
+    assert_eq_str(base64_encode_str("foobar"), "Zm9vYmFy", "encode 'foobar'")
+
+    // 2. Base64 decoding roundtrip
+    assert_eq_str(base64_decode_str(""), "", "decode empty")
+    assert_eq_str(base64_decode_str("Zg=="), "f", "decode 'f'")
+    assert_eq_str(base64_decode_str("Zm8="), "fo", "decode 'fo'")
+    assert_eq_str(base64_decode_str("Zm9v"), "foo", "decode 'foo'")
+    assert_eq_str(base64_decode_str("Zm9vYg=="), "foob", "decode 'foob'")
+    assert_eq_str(base64_decode_str("Zm9vYmE="), "fooba", "decode 'fooba'")
+    assert_eq_str(base64_decode_str("Zm9vYmFy"), "foobar", "decode 'foobar'")
+
+    // 3. Complex sentence roundtrip
+    let orig = "Hello, Velo world! Structured base64 encoding works 100%."
+    let enc = base64_encode_str(orig)
+    let dec = base64_decode_str(enc)
+    assert_eq_str(dec, orig, "full roundtrip")
+
+    // 4. URL-safe Base64 encoding without padding
+    let url_enc = base64_url_encode_str("subjects?_d=1", false)
+    assert_false(str.contains(url_enc, "+"), "no + in url-safe")
+    assert_false(str.contains(url_enc, "/"), "no / in url-safe")
+    let url_dec = base64_url_decode_str(url_enc)
+    assert_eq_str(url_dec, "subjects?_d=1", "url-safe decode")
+
+    // 5. Validation check
+    assert_true(base64_is_valid("Zm9vYmFy"), "valid b64")
+    assert_true(base64_is_valid("Zg=="), "valid padded b64")
+    assert_false(base64_is_valid("Zg==extra"), "invalid trailing data")
+    assert_false(base64_is_valid("not_valid!@#"), "invalid chars")
+
+    if test_get_failed_asserts() != 0 {
+        return 1
+    }
+
+    io.println_str("OK: std.encoding base64 tests passed")
+    return 0
+}

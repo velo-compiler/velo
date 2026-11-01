@@ -16,3 +16,4 @@ act main() -> i32 {
     io.println_str("OK: std.test umbrella module import passed")
     return 0
 }
+

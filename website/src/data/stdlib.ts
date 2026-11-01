@@ -918,6 +918,153 @@ export const STDLIB_MODULES: StdlibModule[] = [
         description: 'High-resolution benchmark performance measurement metrics.'
       }
     ]
+  },
+  {
+    name: 'std.encoding',
+    category: 'Serialization & Codecs',
+    tier: 1,
+    description: 'RFC 4648 Base64 (standard and URL-safe), RFC 4648 Base32, Hexadecimal (Base16), and binary integer serialization codecs.',
+    pureVelo: true,
+    functions: [
+      {
+        name: 'base64_encode',
+        signature: 'act base64_encode(data: @u8, len: usize) -> string',
+        description: 'Encodes raw binary buffer into an RFC 4648 standard Base64 string with padding.',
+        example: 'let b64 = base64_encode(buf, len)'
+      },
+      {
+        name: 'base64_encode_str',
+        signature: 'act base64_encode_str(s: string) -> string',
+        description: 'Encodes a string into an RFC 4648 standard Base64 string.',
+        example: 'let b64 = base64_encode_str("username:password")'
+      },
+      {
+        name: 'base64_decode',
+        signature: 'act base64_decode(s: string, out_len: @usize) -> @u8',
+        description: 'Decodes a Base64 string into a raw heap byte buffer.',
+        example: 'let bytes = base64_decode(payload, @len)'
+      },
+      {
+        name: 'base64_decode_str',
+        signature: 'act base64_decode_str(s: string) -> string',
+        description: 'Decodes a Base64 string directly into a heap-allocated UTF-8 string.',
+        example: 'let text = base64_decode_str("aGVsbG8=")'
+      },
+      {
+        name: 'base64_url_encode',
+        signature: 'act base64_url_encode(data: @u8, len: usize, pad: bool) -> string',
+        description: 'Encodes raw binary into an RFC 4648 URL-safe Base64 string (- and _) with optional padding.',
+        example: 'let token = base64_url_encode(nonce, 32, false)'
+      },
+      {
+        name: 'base64_url_encode_str',
+        signature: 'act base64_url_encode_str(s: string, pad: bool) -> string',
+        description: 'Encodes a string into an RFC 4648 URL-safe Base64 string.',
+        example: 'let url_safe = base64_url_encode_str("query?k=v", false)'
+      },
+      {
+        name: 'base64_url_decode',
+        signature: 'act base64_url_decode(s: string, out_len: @usize) -> @u8',
+        description: 'Decodes a URL-safe Base64 payload into a heap byte buffer.',
+        example: 'let raw = base64_url_decode(jwt_part, @len)'
+      },
+      {
+        name: 'base64_url_decode_str',
+        signature: 'act base64_url_decode_str(s: string) -> string',
+        description: 'Decodes a URL-safe Base64 string directly into a UTF-8 string.',
+        example: 'let json_str = base64_url_decode_str(jwt_payload)'
+      },
+      {
+        name: 'base64_is_valid',
+        signature: 'act base64_is_valid(s: string) -> bool',
+        description: 'Validates that a string is a properly formatted and padded Base64 representation.',
+        example: 'if base64_is_valid(input) { ... }'
+      },
+      {
+        name: 'base32_encode',
+        signature: 'act base32_encode(data: @u8, len: usize) -> string',
+        description: 'Encodes raw binary into an RFC 4648 Base32 string (A-Z, 2-7) with padding.',
+        example: 'let secret = base32_encode(key_bytes, 10)'
+      },
+      {
+        name: 'base32_encode_str',
+        signature: 'act base32_encode_str(s: string) -> string',
+        description: 'Encodes a string into an RFC 4648 Base32 string.',
+        example: 'let b32 = base32_encode_str("velo")'
+      },
+      {
+        name: 'base32_decode',
+        signature: 'act base32_decode(s: string, out_len: @usize) -> @u8',
+        description: 'Decodes a Base32 string into a raw heap byte buffer.',
+        example: 'let key = base32_decode(totp_secret, @len)'
+      },
+      {
+        name: 'base32_decode_str',
+        signature: 'act base32_decode_str(s: string) -> string',
+        description: 'Decodes a Base32 string directly into a UTF-8 string.',
+        example: 'let orig = base32_decode_str("OZSWY3Y=")'
+      },
+      {
+        name: 'base32_is_valid',
+        signature: 'act base32_is_valid(s: string) -> bool',
+        description: 'Validates that a string conforms to the RFC 4648 Base32 alphabet and padding.',
+        example: 'if base32_is_valid(code) { ... }'
+      },
+      {
+        name: 'hex_encode',
+        signature: 'act hex_encode(data: @u8, len: usize, upper: bool) -> string',
+        description: 'Encodes raw bytes into a lowercase or uppercase hexadecimal string.',
+        example: 'let hex = hex_encode(digest, 32, false)'
+      },
+      {
+        name: 'hex_encode_str',
+        signature: 'act hex_encode_str(s: string, upper: bool) -> string',
+        description: 'Encodes a string into a hexadecimal string.',
+        example: 'let hex = hex_encode_str("hello", true)'
+      },
+      {
+        name: 'hex_decode',
+        signature: 'act hex_decode(s: string, out_len: @usize) -> @u8',
+        description: 'Decodes a hexadecimal string into a heap byte buffer.',
+        example: 'let bytes = hex_decode("deadbeef", @len)'
+      },
+      {
+        name: 'hex_decode_str',
+        signature: 'act hex_decode_str(s: string) -> string',
+        description: 'Decodes a hexadecimal string directly into a UTF-8 string.',
+        example: 'let str = hex_decode_str("48656c6c6f")'
+      },
+      {
+        name: 'hex_is_valid',
+        signature: 'act hex_is_valid(s: string) -> bool',
+        description: 'Checks whether a string consists of an even number of valid hex characters.',
+        example: 'if hex_is_valid(hash) { ... }'
+      },
+      {
+        name: 'binary_put_u32_be',
+        signature: 'act binary_put_u32_be(buf: @u8, val: u32) -> void',
+        description: 'Serializes a 32-bit unsigned integer into a buffer in big-endian network byte order.',
+        example: 'binary_put_u32_be(header, 0x12345678)'
+      },
+      {
+        name: 'binary_get_u32_be',
+        signature: 'act binary_get_u32_be(buf: @u8) -> u32',
+        description: 'Deserializes a 32-bit unsigned integer from big-endian bytes.',
+        example: 'let val = binary_get_u32_be(header)'
+      },
+      {
+        name: 'binary_put_u64_le',
+        signature: 'act binary_put_u64_le(buf: @u8, val: u64) -> void',
+        description: 'Serializes a 64-bit unsigned integer into a buffer in little-endian order.',
+        example: 'binary_put_u64_le(buf, 1000000)'
+      },
+      {
+        name: 'binary_get_u64_le',
+        signature: 'act binary_get_u64_le(buf: @u8) -> u64',
+        description: 'Deserializes a 64-bit unsigned integer from little-endian bytes.',
+        example: 'let val = binary_get_u64_le(buf)'
+      }
+    ]
   }
 ];
 

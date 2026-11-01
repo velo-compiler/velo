@@ -48,3 +48,4 @@ act main() -> i32 {
     io.println_str("OK: std.test assert tests passed")
     return 0
 }
+

@@ -26,3 +26,4 @@ act main() -> i32 {
     io.println_str("OK: std.test benchmark tests passed")
     return 0
 }
+

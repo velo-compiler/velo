@@ -1,0 +1,64 @@
+// Tests for std.encoding.hex and std.encoding.binary
+use "../../encoding/hex.vl"
+use "../../encoding/binary.vl"
+use "../../test.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    test_reset()
+    test_set_quiet(true)
+
+    // 1. Hex encoding and decoding
+    assert_eq_str(hex_encode_str("Hello", false), "48656c6c6f", "hex lower")
+    assert_eq_str(hex_encode_str("Hello", true), "48656C6C6F", "hex upper")
+    assert_eq_str(hex_decode_str("48656c6c6f"), "Hello", "hex decode lower")
+    assert_eq_str(hex_decode_str("48656C6C6F"), "Hello", "hex decode upper")
+    assert_true(hex_is_valid("deadbeef"), "valid hex")
+    assert_false(hex_is_valid("deadbee"), "odd length hex")
+    assert_false(hex_is_valid("zz"), "invalid hex chars")
+
+    // 2. Binary integer packing & unpacking
+    let buf: @u8 = heap_alloc(16)
+
+    // u16 BE & LE
+    binary_put_u16_be(buf, 0x1234 as u16)
+    assert_eq_u64(binary_get_u16_be(buf) as u64, 0x1234 as u64, "u16 be")
+    assert_eq_u64(buf[0] as u64, 0x12 as u64, "u16 be byte 0")
+    assert_eq_u64(buf[1] as u64, 0x34 as u64, "u16 be byte 1")
+
+    binary_put_u16_le(buf, 0x1234 as u16)
+    assert_eq_u64(binary_get_u16_le(buf) as u64, 0x1234 as u64, "u16 le")
+    assert_eq_u64(buf[0] as u64, 0x34 as u64, "u16 le byte 0")
+    assert_eq_u64(buf[1] as u64, 0x12 as u64, "u16 le byte 1")
+
+    // u32 BE & LE
+    binary_put_u32_be(buf, 0xDEADBEEF as u32)
+    assert_eq_u64(binary_get_u32_be(buf) as u64, 0xDEADBEEF as u64, "u32 be")
+
+    binary_put_u32_le(buf, 0xDEADBEEF as u32)
+    assert_eq_u64(binary_get_u32_le(buf) as u64, 0xDEADBEEF as u64, "u32 le")
+
+    // u64 BE & LE
+    let big_num = 0x0123456789ABCDEF as u64
+    binary_put_u64_be(buf, big_num)
+    assert_eq_u64(binary_get_u64_be(buf), big_num, "u64 be")
+
+    binary_put_u64_le(buf, big_num)
+    assert_eq_u64(binary_get_u64_le(buf), big_num, "u64 le")
+
+    // Signed i32 & i64
+    binary_put_i32_be(buf, -12345 as i32)
+    assert_eq_i64(binary_get_i32_be(buf) as i64, -12345 as i64, "i32 be")
+
+    binary_put_i64_le(buf, -987654321 as i64)
+    assert_eq_i64(binary_get_i64_le(buf), -987654321 as i64, "i64 le")
+
+    heap_free(buf)
+
+    if test_get_failed_asserts() != 0 {
+        return 1
+    }
+
+    io.println_str("OK: std.encoding hex & binary tests passed")
+    return 0
+}

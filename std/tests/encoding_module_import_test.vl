@@ -1,0 +1,31 @@
+// Verifies top-level umbrella import: use std.encoding
+use std.encoding
+use std.test
+use std.io
+
+act main() -> i32 {
+    test_reset()
+    test_set_quiet(true)
+
+    // Base64
+    let b64 = base64_encode_str("test")
+    assert_eq_str(b64, "dGVzdA==", "base64 encode")
+    assert_eq_str(base64_decode_str(b64), "test", "base64 decode")
+
+    // Base32
+    let b32 = base32_encode_str("test")
+    assert_eq_str(b32, "ORSXG5A=", "base32 encode")
+    assert_eq_str(base32_decode_str(b32), "test", "base32 decode")
+
+    // Hex
+    let hx = hex_encode_str("test", false)
+    assert_eq_str(hx, "74657374", "hex encode")
+    assert_eq_str(hex_decode_str(hx), "test", "hex decode")
+
+    if test_get_failed_asserts() != 0 {
+        return 1
+    }
+
+    io.println_str("PASS: std.encoding umbrella import all tests passed")
+    return 0
+}

@@ -2151,7 +2151,6 @@ flowchart TD
   - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
   - Bootstrap snapshot test verified (`test_bootstrap_snapshot.py`).
 
-
 ### Phase 20: `std.test` (Pure Velo Integrated Unit Testing & Benchmark Framework)
 #### Task 20.1: Assertions, Suite Lifecycle, Runner, and Micro-Benchmarks (`std.test`) [COMPLETED] ✅
 * **Former Defect**:
@@ -2181,3 +2180,35 @@ flowchart TD
   - External project test passed: `velo run test_demo.vl` in `C:\projects\test`.
   - Pytest suite `tests/test_std_test.py` passed (4/4 tests).
   - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
+
+
+
+### Phase 21: `std.encoding` (Pure Velo RFC 4648 Base64, Base32, Hex, and Binary Endian Codecs)
+#### Task 21.1: Base64, URL-Safe Base64, Base32, Hex, and Binary Codecs (`std.encoding`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo had no standard data encoding library for Base64 (RFC 4648), URL-safe Base64 without padding, or Base32.
+  - Web service and security applications (`std.http`, `std.crypto`) had no standard mechanism to encode credentials (HTTP Basic Auth), format JWT tokens or signatures, decode TOTP/2FA tokens, or pack and unpack integers in big-endian and little-endian wire formats.
+* **Fix Applied**:
+  - Implemented the `std.encoding` standard library module and subcomponents in `std/encoding/`:
+    - `std/encoding/base64.vl`: RFC 4648 Base64 standard (`A-Z, a-z, 0-9, +, /`) and URL-safe (`-, _`) encoder/decoder with padding control, validation predicate (`base64_is_valid`), raw buffer codecs (`base64_encode`, `base64_decode`, `base64_url_encode`, `base64_url_decode`), and string shortcuts (`base64_encode_str`, `base64_decode_str`, `base64_url_encode_str`, `base64_url_decode_str`).
+    - `std/encoding/base32.vl`: RFC 4648 Base32 encoder/decoder (`A-Z, 2-7`) with padding, case-insensitivity, validation (`base32_is_valid`), and string/buffer APIs (`base32_encode`, `base32_encode_str`, `base32_decode`, `base32_decode_str`).
+    - `std/encoding/hex.vl`: Hexadecimal (Base16) uppercase/lowercase encoder and decoder (`hex_encode`, `hex_encode_str`, `hex_decode`, `hex_decode_str`) and validation predicate (`hex_is_valid`).
+    - `std/encoding/binary.vl`: Fast integer binary serialization and deserialization codecs supporting big-endian and little-endian orders for `u16`, `u32`, `u64`, `i16`, `i32`, and `i64`.
+    - `std/encoding.vl`: Standard library umbrella module exporting the complete encoding and serialization interface.
+  - Packaging & Docs:
+    - Updated `std/tests/std_module_import_test.vl` to verify all 16 standard library modules together.
+    - Synced global installation directory `~/.velo/std/encoding/`.
+    - Refreshed standalone archive bundles `website/public/velo-std.zip` and `website/public/velo-std.tar.gz`.
+    - Documented `std.encoding` with all 23 functions, types, and real examples in `website/src/data/stdlib.ts`.
+* **Residual Limitation**:
+  - Variable-length integer encoding (e.g. Protocol Buffers / SQLite LEB128 varints) will be introduced in a future sub-phase.
+* **Verification**:
+  - Native Base64 test passed: `bin/velo.exe run std/tests/encoding/base64_test.vl`.
+  - Native Base32 test passed: `bin/velo.exe run std/tests/encoding/base32_test.vl`.
+  - Native Hex & Binary test passed: `bin/velo.exe run std/tests/encoding/hex_binary_test.vl`.
+  - Native umbrella import test passed: `bin/velo.exe run std/tests/encoding_module_import_test.vl`.
+  - Integrated 16-module import test passed: `bin/velo.exe run std/tests/std_module_import_test.vl`.
+  - External project test passed: `velo run encoding_demo.vl` in `C:\projects\test`.
+  - Pytest suite `tests/test_std_encoding.py` passed (4/4 tests in 6.39s).
+  - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
+  - Bootstrap snapshot determinism verified (`test_bootstrap_snapshot.py`).

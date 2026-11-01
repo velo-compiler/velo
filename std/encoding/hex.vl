@@ -1,0 +1,118 @@
+// std.encoding.hex — Hexadecimal (Base16) encoder and decoder.
+use "../mem/heap.vl"
+
+let HEX_LOWER: string = "0123456789abcdef"
+let HEX_UPPER: string = "0123456789ABCDEF"
+
+// Encodes raw binary data into a hexadecimal string.
+act hex_encode(data: @u8, len: usize, upper: bool) -> string {
+    if data == null or len == 0 { return "" }
+
+    let out_len = len * 2
+    let out: @u8 = heap_alloc(out_len + 1)
+    if out == null { return "" }
+
+    mut table = HEX_LOWER
+    if upper { table = HEX_UPPER }
+
+    mut i: usize = 0
+    mut o: usize = 0
+    loop i < len {
+        let b = data[i]
+        out[o] = table[((b >> 4) & 0x0F) as usize]
+        out[o + 1] = table[(b & 0x0F) as usize]
+        i += 1
+        o += 2
+    }
+
+    out[out_len] = 0 as u8
+    return out as string
+}
+
+// Encodes a string into a hexadecimal string.
+act hex_encode_str(s: string, upper: bool) -> string {
+    if s == null { return "" }
+    return hex_encode(s as @u8, str.len(s), upper)
+}
+
+// Converts a single hex character to its nibble value (0..15) or 255 if invalid.
+act hex_char_to_nibble(c: u8) -> u8 {
+    if c >= ('0' as u8) and c <= ('9' as u8) {
+        return c - ('0' as u8)
+    }
+    if c >= ('a' as u8) and c <= ('f' as u8) {
+        return c - ('a' as u8) + (10 as u8)
+    }
+    if c >= ('A' as u8) and c <= ('F' as u8) {
+        return c - ('A' as u8) + (10 as u8)
+    }
+    return 255 as u8
+}
+
+// Checks if a string contains valid even-length hexadecimal characters.
+act hex_is_valid(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if (len % 2) != 0 { return false }
+
+    mut i: usize = 0
+    loop i < len {
+        if hex_char_to_nibble(s[i]) == (255 as u8) {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// Decodes a hexadecimal string into a heap byte buffer.
+act hex_decode(s: string, out_len: @usize) -> @u8 {
+    if s == null {
+        if out_len != null { out_len[0] = 0 }
+        return null
+    }
+
+    let in_len = str.len(s)
+    if in_len == 0 or (in_len % 2) != 0 {
+        if out_len != null { out_len[0] = 0 }
+        let empty_buf: @u8 = heap_alloc(1)
+        empty_buf[0] = 0 as u8
+        return empty_buf
+    }
+
+    let dest_len = in_len / 2
+    let dest: @u8 = heap_alloc(dest_len + 1)
+    if dest == null {
+        if out_len != null { out_len[0] = 0 }
+        return null
+    }
+
+    mut i: usize = 0
+    mut o: usize = 0
+    loop i < in_len {
+        let hi = hex_char_to_nibble(s[i])
+        let lo = hex_char_to_nibble(s[i + 1])
+        if hi == (255 as u8) or lo == (255 as u8) {
+            heap_free(dest)
+            if out_len != null { out_len[0] = 0 }
+            return null
+        }
+        dest[o] = (hi << 4) | lo
+        i += 2
+        o += 1
+    }
+
+    dest[dest_len] = 0 as u8
+    if out_len != null {
+        out_len[0] = dest_len
+    }
+    return dest
+}
+
+// Decodes a hexadecimal string directly into a heap string.
+act hex_decode_str(s: string) -> string {
+    mut out_len: usize = 0
+    let bytes = hex_decode(s, @out_len)
+    if bytes == null { return "" }
+    return bytes as string
+}
