@@ -431,16 +431,71 @@ export const STDLIB_MODULES: StdlibModule[] = [
   },
   {
     name: 'std.net',
-    category: 'Networking',
+    category: 'Networking & Sockets',
     tier: 2,
-    description: 'Low-latency TCP/UDP network sockets, connection listeners, and DNS resolution.',
+    description: 'Cross-platform TCP and UDP socket networking, client/server connection streams, and IP address manipulation.',
     pureVelo: true,
+    loc: 520,
     functions: [
       {
-        name: 'net.tcp_listen',
-        signature: 'act net.tcp_listen(host: string, port: u16) -> TcpListener',
-        description: 'Binds and starts listening for incoming TCP client connections.',
-        example: 'let server = net.tcp_listen("0.0.0.0", 6379)'
+        name: 'tcp_listen',
+        signature: 'act tcp_listen(ip: string, port: u16) -> @TcpListener',
+        description: 'Binds a TCP socket and starts listening for incoming client connections with automatic address reuse.',
+        example: 'let listener = tcp_listen("127.0.0.1", 8080)'
+      },
+      {
+        name: 'tcp_accept',
+        signature: 'act tcp_accept(listener: @TcpListener) -> @TcpStream',
+        description: 'Accepts an incoming TCP connection from the listener and returns a connected TcpStream.',
+        example: 'let stream = tcp_accept(listener)'
+      },
+      {
+        name: 'tcp_connect',
+        signature: 'act tcp_connect(ip: string, port: u16) -> @TcpStream',
+        description: 'Establishes an active TCP connection to a remote IP address and port.',
+        example: 'let client = tcp_connect("127.0.0.1", 8080)'
+      },
+      {
+        name: 'tcp_write_str',
+        signature: 'act tcp_write_str(stream: @TcpStream, text: string) -> i32',
+        description: 'Sends a string message across the connected TCP stream. Returns number of bytes sent or -1 on error.',
+        example: 'tcp_write_str(stream, "HTTP/1.1 200 OK\\r\\n\\r\\nHello!")'
+      },
+      {
+        name: 'tcp_read_str',
+        signature: 'act tcp_read_str(stream: @TcpStream, max_len: usize) -> string',
+        description: 'Reads up to max_len bytes from the stream into a newly allocated null-terminated string.',
+        example: 'let request = tcp_read_str(stream, 4096)'
+      },
+      {
+        name: 'udp_bind',
+        signature: 'act udp_bind(ip: string, port: u16) -> @UdpSocket',
+        description: 'Binds a UDP socket to a local address and port for connectionless datagram transmission.',
+        example: 'let sock = udp_bind("0.0.0.0", 9999)'
+      },
+      {
+        name: 'udp_send_str_to',
+        signature: 'act udp_send_str_to(sock: @UdpSocket, text: string, dest_ip: string, dest_port: u16) -> i32',
+        description: 'Transmits a string datagram to a remote destination IP and port.',
+        example: 'udp_send_str_to(sock, "PING", "127.0.0.1", 9999)'
+      },
+      {
+        name: 'udp_recv_str_from',
+        signature: 'act udp_recv_str_from(sock: @UdpSocket, max_len: usize, out_addr: @SocketAddr) -> string',
+        description: 'Receives an incoming datagram as a string and captures sender endpoint information.',
+        example: 'let packet = udp_recv_str_from(sock, 1024, @sender)'
+      },
+      {
+        name: 'net_parse_ipv4',
+        signature: 'act net_parse_ipv4(ip: string) -> u32',
+        description: 'Parses an IPv4 string ("127.0.0.1", "localhost") into 32-bit network byte order.',
+        example: 'let raw_ip = net_parse_ipv4("127.0.0.1")'
+      },
+      {
+        name: 'net_format_ipv4',
+        signature: 'act net_format_ipv4(addr: u32) -> string',
+        description: 'Formats a 32-bit network-byte-order IPv4 address into a dotted decimal string.',
+        example: 'let ip_str = net_format_ipv4(raw_ip)'
       }
     ]
   },

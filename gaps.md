@@ -2018,3 +2018,36 @@ flowchart TD
   - Successfully executed `velo run app.vl` containing `use std.io; act main() { io.println_str("Hello, Velo!") }` inside external project directory `C:\projects\test`, verifying stdout `Hello, Velo!`.
   - Rebuilt 3-generation self-hosted bootstrap chain (`scripts/bootstrap.bat` -> Gen 2 -> Gen 3 -> canonical `bin/velo.exe` -> `bootstrap.c`), confirming fixed-point SHA-256 determinism.
   - All source files remain strictly below 400 lines (`python scripts/count_lines.py`).
+
+### Phase 16: `std.net` (Pure Velo TCP & UDP Socket Networking Subsystem)
+#### Task 16.1: Cross-Platform TCP & UDP Sockets and Addressing (`std.net`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo lacked a standard networking library. Applications requiring network communication (such as `apps/velokv/`) had to resort to hand-rolled foreign C-FFI bindings directly against Winsock2 APIs with manual `WSAStartup`/`WSACleanup` lifecycle management.
+  - There was no high-level abstraction for TCP listeners, TCP connection streams, UDP datagram sockets, IPv4 parsing/formatting, or portable byte-order conversions (`htons`/`htonl`).
+  - Compiling socket applications required manually passing `-l ws2_32` on Windows, creating ergonomics friction.
+* **Fix Applied**:
+  - Implemented the `std.net` standard library module and subcomponents in `std/net/`:
+    - `std/net/types.vl`: Defines protocol families (`AF_INET`, `AF_INET6`), socket types (`SOCK_STREAM`, `SOCK_DGRAM`), socket options (`SO_REUSEADDR`, `SO_RCVTIMEO`, `SO_SNDTIMEO`, `TCP_NODELAY`), `SockAddrIn`, `Socket`, and `SocketAddr`.
+    - `std/net/addr.vl`: Network and host byte-order conversions (`net_htons`, `net_ntohs`, `net_htonl`, `net_ntohl`), dotted-decimal IPv4 address parsing (`net_parse_ipv4`), and zero-allocation IP formatting (`net_format_ipv4`).
+    - `std/net/socket.vl`: Low-level socket lifecycle (`socket_create`, `socket_bind`, `socket_listen`, `socket_connect`, `socket_accept`, `socket_send`, `socket_recv`, `socket_send_to`, `socket_recv_from`, `socket_close`, `socket_set_nonblocking`, `socket_set_timeout`) with automatic underlying network initialization (`net_ensure_init`).
+    - `std/net/tcp.vl`: High-level TCP abstractions (`TcpListener`, `TcpStream`, `tcp_listen`, `tcp_accept`, `tcp_connect`, `tcp_read_str`, `tcp_write_str`, `tcp_close`).
+    - `std/net/udp.vl`: High-level UDP datagram socket abstractions (`UdpSocket`, `udp_bind`, `udp_send_str_to`, `udp_recv_str_from`, `udp_set_broadcast`, `udp_close`).
+    - `std/net.vl`: Standard library umbrella module exporting the full networking surface.
+  - Automatic Windows Socket Linking:
+    - Added `#pragma comment(lib, "ws2_32.lib")` to `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h` for MSVC.
+    - Updated `src/backend/driver_cc.vl` to automatically link `-lws2_32` under MinGW GCC on Windows, eliminating the need for manual `-l ws2_32` flags.
+  - Toolchain & Installer Packaging:
+    - Updated `website/public/velo-std.zip` and `website/public/velo-std.tar.gz` to include `std/net/`.
+    - Updated `website/src/data/stdlib.ts` documentation catalog with complete `std.net` signatures and examples.
+* **Residual Limitation**:
+  - IPv6 socket addresses and DNS hostname resolution (`getaddrinfo`) are scheduled for a future sub-phase; current implementation covers full IPv4 TCP/UDP networking.
+* **Verification**:
+  - Native TCP loopback test passed: `bin/velo.exe run std/tests/net/tcp_test.vl`.
+  - Native UDP datagram test passed: `bin/velo.exe run std/tests/net/udp_test.vl`.
+  - Native address & endian test passed: `bin/velo.exe run std/tests/net/addr_test.vl`.
+  - Standalone umbrella import test passed: `bin/velo.exe run std/tests/net_module_import_test.vl`.
+  - Integrated `std_module_import_test.vl` passed with `use std.net`.
+  - External project test passed: `velo run net_demo.vl` in `C:\projects\test`.
+  - Pytest suite `tests/test_std_net.py` passed (4/4 tests in 5.91s).
+  - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
+  - Self-hosted bootstrap chain re-verified with fixed-point SHA-256 determinism.

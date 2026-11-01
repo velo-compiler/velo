@@ -1,0 +1,78 @@
+use std.io
+use std.net
+
+act main() -> i32 {
+    let port: u16 = 28910
+
+    // 1. Start TCP listener
+    let listener = tcp_listen("127.0.0.1", port)
+    if listener == null {
+        io.println_str("tcp_listen failed")
+        return 1
+    }
+
+    // 2. Establish client connection
+    let client = tcp_connect("127.0.0.1", port)
+    if client == null {
+        io.println_str("tcp_connect failed")
+        tcp_listener_close(listener)
+        return 2
+    }
+
+    // 3. Accept connection on server side
+    let server_stream = tcp_accept(listener)
+    if server_stream == null {
+        io.println_str("tcp_accept failed")
+        tcp_close(client)
+        tcp_listener_close(listener)
+        return 3
+    }
+
+    // 4. Send message from client to server
+    let sent = tcp_write_str(client, "HELLO_VELO_NET")
+    if sent != 14 {
+        io.println_str("tcp_write_str sent unexpected byte count")
+        tcp_close(server_stream)
+        tcp_close(client)
+        tcp_listener_close(listener)
+        return 4
+    }
+
+    // 5. Read message on server
+    let msg = tcp_read_str(server_stream, 64)
+    if msg != "HELLO_VELO_NET" {
+        io.println_str("tcp_read_str got mismatch")
+        tcp_close(server_stream)
+        tcp_close(client)
+        tcp_listener_close(listener)
+        return 5
+    }
+
+    // 6. Reply from server to client
+    let reply_sent = tcp_write_str(server_stream, "ECHO_OK")
+    if reply_sent != 7 {
+        io.println_str("tcp_write_str reply failed")
+        tcp_close(server_stream)
+        tcp_close(client)
+        tcp_listener_close(listener)
+        return 6
+    }
+
+    // 7. Read reply on client
+    let reply = tcp_read_str(client, 64)
+    if reply != "ECHO_OK" {
+        io.println_str("tcp_read_str reply mismatch")
+        tcp_close(server_stream)
+        tcp_close(client)
+        tcp_listener_close(listener)
+        return 7
+    }
+
+    // 8. Clean up
+    tcp_close(server_stream)
+    tcp_close(client)
+    tcp_listener_close(listener)
+
+    io.println_str("OK: std.net.tcp loopback test passed")
+    return 0
+}

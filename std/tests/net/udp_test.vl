@@ -1,0 +1,80 @@
+use std.io
+use std.net
+
+act main() -> i32 {
+    let port1: u16 = 28911
+    let port2: u16 = 28912
+
+    // 1. Bind two UDP sockets
+    let sock1 = udp_bind("127.0.0.1", port1)
+    if sock1 == null {
+        io.println_str("udp_bind sock1 failed")
+        return 1
+    }
+
+    let sock2 = udp_bind("127.0.0.1", port2)
+    if sock2 == null {
+        io.println_str("udp_bind sock2 failed")
+        udp_close(sock1)
+        return 2
+    }
+
+    // 2. Send datagram from sock1 to sock2
+    let sent = udp_send_str_to(sock1, "UDP_PING_PACKET", "127.0.0.1", port2)
+    if sent != 15 {
+        io.println_str("udp_send_str_to unexpected sent count")
+        udp_close(sock1)
+        udp_close(sock2)
+        return 3
+    }
+
+    // 3. Receive datagram on sock2
+    mut sender_addr: SocketAddr
+    let msg = udp_recv_str_from(sock2, 64, @sender_addr)
+    if msg != "UDP_PING_PACKET" {
+        io.println_str("udp_recv_str_from mismatch")
+        udp_close(sock1)
+        udp_close(sock2)
+        return 4
+    }
+
+    if sender_addr.port != port1 or sender_addr.ip != "127.0.0.1" {
+        io.println_str("udp sender address mismatch")
+        udp_close(sock1)
+        udp_close(sock2)
+        return 5
+    }
+
+    // 4. Send response from sock2 back to sock1
+    let reply_sent = udp_send_str_to(sock2, "UDP_PONG_PACKET", "127.0.0.1", port1)
+    if reply_sent != 15 {
+        io.println_str("udp_send_str_to reply failed")
+        udp_close(sock1)
+        udp_close(sock2)
+        return 6
+    }
+
+    // 5. Receive response on sock1
+    mut reply_sender: SocketAddr
+    let reply = udp_recv_str_from(sock1, 64, @reply_sender)
+    if reply != "UDP_PONG_PACKET" {
+        io.println_str("udp reply mismatch")
+        udp_close(sock1)
+        udp_close(sock2)
+        return 7
+    }
+
+    if reply_sender.port != port2 {
+        io.println_str("udp reply port mismatch")
+        udp_close(sock1)
+        udp_close(sock2)
+        return 8
+    }
+
+    // 6. Clean up
+    udp_close(sock1)
+    udp_close(sock2)
+
+    io.println_str("OK: std.net.udp datagram test passed")
+    return 0
+}

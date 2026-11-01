@@ -1,0 +1,8 @@
+// Standard library umbrella module for std.net (pure Velo TCP & UDP networking).
+// Provides cross-platform socket creation, IP address parsing and formatting,
+// TCP client/server connection streams, and UDP datagram sockets.
+use "net/types.vl"
+use "net/addr.vl"
+use "net/socket.vl"
+use "net/tcp.vl"
+use "net/udp.vl"

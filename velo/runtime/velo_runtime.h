@@ -44,6 +44,7 @@
 // 5.4 (S3): _findfirst/_findnext/_findclose + struct _finddata_t for the
 // directory listing helper.
 #include <io.h>
+#pragma comment(lib, "ws2_32.lib")
 #else
 // 5.4 (S3): POSIX directory iteration (declared under the 200112L flags).
 #include <dirent.h>
@@ -2843,6 +2844,7 @@ static inline VeloBitset velo_bitset_create_lit(size_t count, const int64_t* ite
 // stdout. The saved descriptor is not explicitly closed (process-exit reclaims).
 #ifdef _WIN32
 #include <io.h>
+#pragma comment(lib, "ws2_32.lib")
 #define VELO_FILENO_(f) _fileno(f)
 #define VELO_DUP_(fd) _dup(fd)
 #define VELO_DUP2_(a, b) _dup2(a, b)

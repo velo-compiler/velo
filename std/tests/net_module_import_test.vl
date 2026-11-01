@@ -1,0 +1,25 @@
+use std.net
+use std.io
+
+act main() -> i32 {
+    let s = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+    if !socket_is_valid(@s) {
+        io.println_str("socket_create failed")
+        return 1
+    }
+    socket_close(@s)
+
+    let p = net_htons(8080 as u16)
+    if net_ntohs(p) != 8080 as u16 {
+        return 2
+    }
+
+    let ip = net_parse_ipv4("127.0.0.1")
+    let s_ip = net_format_ipv4(ip)
+    if s_ip != "127.0.0.1" {
+        return 3
+    }
+
+    io.println_str("PASS: std.net umbrella import all tests passed")
+    return 0
+}

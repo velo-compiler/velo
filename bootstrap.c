@@ -38917,81 +38917,86 @@ const char* assemble_gcc_compile_cmd(const char* c_file_path, const char* out_ex
         sb_append_str((&(cmd_sb)), linker_flags);
     }
 #line 179 "src/main.vl"
-    sb_append_str((&(cmd_sb)), " -o ");
+    if ((fs_exists("C:/Windows") || fs_exists("C:/msys64/ucrt64/bin/gcc.exe"))) {
 #line 180 "src/main.vl"
+        sb_append_str((&(cmd_sb)), " -lws2_32");
+    }
+#line 182 "src/main.vl"
+    sb_append_str((&(cmd_sb)), " -o ");
+#line 183 "src/main.vl"
     sb_append_str((&(cmd_sb)), path_to_native_str(out_exe_path));
-#line 181 "src/main.vl"
+#line 184 "src/main.vl"
     return sb_to_string((&(cmd_sb)));
 }
 
-#line 185 "src/main.vl"
+#line 188 "src/main.vl"
 const char* assemble_compiler_cmd(const char* cc, const char* c_file_path, const char* out_exe_path, const char* opt_flags, const char* linker_flags) {
-#line 186 "src/main.vl"
+#line 189 "src/main.vl"
     if (((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") == 0) : (cc == "cl"))) {
-#line 187 "src/main.vl"
+#line 190 "src/main.vl"
         return assemble_msvc_compile_cmd(c_file_path, out_exe_path, opt_flags, linker_flags);
     }
-#line 189 "src/main.vl"
+#line 192 "src/main.vl"
     return assemble_gcc_compile_cmd(c_file_path, out_exe_path, opt_flags, linker_flags);
 }
 
-#line 193 "src/main.vl"
-const char* assemble_runner_cmd(const char* cc, const char* exe_path, const char* extra_args) {
-#line 194 "src/main.vl"
-    StringBuilder run_sb = create_sb(256);
-#line 195 "src/main.vl"
-    if ((((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl")) && fs_exists("C:/msys64/ucrt64/bin/gcc.exe"))) {
 #line 196 "src/main.vl"
+const char* assemble_runner_cmd(const char* cc, const char* exe_path, const char* extra_args) {
+#line 197 "src/main.vl"
+    StringBuilder run_sb = create_sb(256);
+#line 198 "src/main.vl"
+    if ((((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl")) && fs_exists("C:/msys64/ucrt64/bin/gcc.exe"))) {
+#line 199 "src/main.vl"
         sb_append_str((&(run_sb)), "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ");
     }
-#line 198 "src/main.vl"
-    sb_append_str((&(run_sb)), path_to_native_str(exe_path));
-#line 199 "src/main.vl"
-    if (((extra_args != NULL) && (((usize)strlen(extra_args)) > 0))) {
-#line 200 "src/main.vl"
-        sb_append_str((&(run_sb)), " ");
 #line 201 "src/main.vl"
+    sb_append_str((&(run_sb)), path_to_native_str(exe_path));
+#line 202 "src/main.vl"
+    if (((extra_args != NULL) && (((usize)strlen(extra_args)) > 0))) {
+#line 203 "src/main.vl"
+        sb_append_str((&(run_sb)), " ");
+#line 204 "src/main.vl"
         sb_append_str((&(run_sb)), extra_args);
     }
-#line 203 "src/main.vl"
+#line 206 "src/main.vl"
     return sb_to_string((&(run_sb)));
 }
 
-#line 207 "src/main.vl"
-const char* resolve_opt_flags(bool debug_mode, bool release_mode, const char* opt_level) {
-#line 208 "src/main.vl"
-    StringBuilder sb = create_sb(64);
-#line 209 "src/main.vl"
-    if (((opt_level != NULL) && (((usize)strlen(opt_level)) > 0))) {
 #line 210 "src/main.vl"
-        sb_append_str((&(sb)), "-O");
+const char* resolve_opt_flags(bool debug_mode, bool release_mode, const char* opt_level) {
 #line 211 "src/main.vl"
+    StringBuilder sb = create_sb(64);
+#line 212 "src/main.vl"
+    if (((opt_level != NULL) && (((usize)strlen(opt_level)) > 0))) {
+#line 213 "src/main.vl"
+        sb_append_str((&(sb)), "-O");
+#line 214 "src/main.vl"
         sb_append_str((&(sb)), opt_level);
     } else
-#line 212 "src/main.vl"
+#line 215 "src/main.vl"
     if (debug_mode) {
-#line 213 "src/main.vl"
+#line 216 "src/main.vl"
         sb_append_str((&(sb)), "-O0");
     } else
-#line 214 "src/main.vl"
+#line 217 "src/main.vl"
     if (release_mode) {
-#line 215 "src/main.vl"
+#line 218 "src/main.vl"
         sb_append_str((&(sb)), "-O3");
     } else {
-#line 217 "src/main.vl"
+#line 220 "src/main.vl"
         sb_append_str((&(sb)), "-O2");
     }
-#line 219 "src/main.vl"
+#line 222 "src/main.vl"
     if (debug_mode) {
-#line 220 "src/main.vl"
+#line 223 "src/main.vl"
         sb_append_str((&(sb)), " -g");
     }
-#line 222 "src/main.vl"
+#line 225 "src/main.vl"
     if (release_mode) {
-#line 223 "src/main.vl"
+#line 226 "src/main.vl"
         sb_append_str((&(sb)), " -flto");
     }
-#line 225 "src/main.vl"
+#line 228 "src/main.vl"
     return sb_to_string((&(sb)));
 }
 

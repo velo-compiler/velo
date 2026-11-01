@@ -176,6 +176,9 @@ act assemble_gcc_compile_cmd(c_file_path: string, out_exe_path: string, opt_flag
         sb_append_str(@cmd_sb, " ")
         sb_append_str(@cmd_sb, linker_flags)
     }
+    if fs_exists("C:/Windows") or fs_exists("C:/msys64/ucrt64/bin/gcc.exe") {
+        sb_append_str(@cmd_sb, " -lws2_32")
+    }
     sb_append_str(@cmd_sb, " -o ")
     sb_append_str(@cmd_sb, path_to_native_str(out_exe_path))
     return sb_to_string(@cmd_sb)

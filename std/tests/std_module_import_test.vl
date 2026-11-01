@@ -8,6 +8,7 @@ use std.json
 use std.time
 use std.math
 use std.os
+use std.net
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -63,6 +64,12 @@ act main() -> i32 {
     if args_count(@os_args) != 3 { return 13 }
     let r_proc = os_spawn_sync("cmd.exe /c exit 0")
     if !r_proc.success { return 14 }
+
+    // std.net: IP address parsing, endian conversions, and socket address
+    if net_htons(80) != 20480 { return 15 }
+    if net_parse_ipv4("127.0.0.1") != 0x0100007F as u32 { return 16 }
+    let saddr = socket_addr_make("127.0.0.1", 8080)
+    if saddr.port != 8080 { return 17 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0

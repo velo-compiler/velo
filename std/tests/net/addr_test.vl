@@ -1,0 +1,65 @@
+use std.io
+use std.net
+
+act main() -> i32 {
+    // 1. Endian conversions
+    let p_host: u16 = 8080
+    let p_net = net_htons(p_host)
+    let p_back = net_ntohs(p_net)
+    if p_back != 8080 {
+        io.println_str("htons/ntohs failed")
+        return 1
+    }
+
+    let ip32_host: u32 = 0x12345678
+    let ip32_net = net_htonl(ip32_host)
+    let ip32_back = net_ntohl(ip32_net)
+    if ip32_back != 0x12345678 as u32 {
+        io.println_str("htonl/ntohl failed")
+        return 2
+    }
+
+    // 2. IP Parsing
+    let ip_loopback = net_parse_ipv4("127.0.0.1")
+    if ip_loopback != 0x0100007F as u32 {
+        io.println_str("parse 127.0.0.1 failed")
+        return 3
+    }
+
+    let ip_any = net_parse_ipv4("0.0.0.0")
+    if ip_any != 0 as u32 {
+        io.println_str("parse 0.0.0.0 failed")
+        return 4
+    }
+
+    // 3. IP Formatting
+    let fmt_loopback = net_format_ipv4(0x0100007F as u32)
+    if fmt_loopback != "127.0.0.1" {
+        io.println_str("format 127.0.0.1 failed")
+        return 5
+    }
+
+    let fmt_custom = net_format_ipv4(net_parse_ipv4("192.168.1.100"))
+    if fmt_custom != "192.168.1.100" {
+        io.println_str("format 192.168.1.100 failed")
+        return 6
+    }
+
+    // 4. SocketAddr creation
+    let saddr = socket_addr_make("127.0.0.1", 8080)
+    if saddr.port != 8080 or saddr.ip != "127.0.0.1" {
+        io.println_str("socket_addr_make failed")
+        return 7
+    }
+
+    // 5. SockAddrIn initialization
+    mut sa: SockAddrIn
+    sockaddr_in_init(@sa, "127.0.0.1", 8080)
+    if sa.family != 2 or sa.port != net_htons(8080) or sa.addr != 0x0100007F as u32 {
+        io.println_str("sockaddr_in_init failed")
+        return 8
+    }
+
+    io.println_str("OK: std.net.addr tests passed")
+    return 0
+}

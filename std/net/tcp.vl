@@ -1,0 +1,138 @@
+// std.net.tcp — High-level TCP client, server, listener, and stream abstractions.
+use "types.vl"
+use "addr.vl"
+use "socket.vl"
+use "../mem/heap.vl"
+
+// High-level TCP server listener.
+data TcpListener {
+    sock: Socket
+    local_addr: SocketAddr
+}
+
+// High-level TCP connection stream.
+data TcpStream {
+    sock: Socket
+    peer_addr: SocketAddr
+}
+
+// Binds and starts listening for incoming TCP connections on the specified IP and port.
+act tcp_listen(ip: string, port: u16) -> @TcpListener {
+    mut s = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+    if not socket_is_valid(@s) {
+        return null
+    }
+
+    socket_set_reuse_addr(@s, true)
+
+    if not socket_bind(@s, ip, port) {
+        socket_close(@s)
+        return null
+    }
+
+    if not socket_listen(@s, 128) {
+        socket_close(@s)
+        return null
+    }
+
+    mut listener: @TcpListener = heap_alloc(sizeof(TcpListener)) as @TcpListener
+    listener.sock = s
+    listener.local_addr = socket_addr_make(ip, port)
+    return listener
+}
+
+// Accepts an incoming connection from a TcpListener. Returns a connected TcpStream or null.
+act tcp_accept(listener: @TcpListener) -> @TcpStream {
+    if listener == null or not socket_is_valid(@listener.sock) {
+        return null
+    }
+
+    mut client_addr: SocketAddr
+    let client_sock = socket_accept(@listener.sock, @client_addr)
+    if not socket_is_valid(@client_sock) {
+        return null
+    }
+
+    mut stream: @TcpStream = heap_alloc(sizeof(TcpStream)) as @TcpStream
+    stream.sock = client_sock
+    stream.peer_addr = client_addr
+    return stream
+}
+
+// Establishes a TCP connection to a remote IP address and port. Returns a connected TcpStream or null.
+act tcp_connect(ip: string, port: u16) -> @TcpStream {
+    mut s = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+    if not socket_is_valid(@s) {
+        return null
+    }
+
+    if not socket_connect(@s, ip, port) {
+        socket_close(@s)
+        return null
+    }
+
+    mut stream: @TcpStream = heap_alloc(sizeof(TcpStream)) as @TcpStream
+    stream.sock = s
+    stream.peer_addr = socket_addr_make(ip, port)
+    return stream
+}
+
+// Reads up to max_len bytes from the TCP stream into buf. Returns bytes read, 0 on EOF, or -1 on error.
+act tcp_read(stream: @TcpStream, buf: @u8, max_len: usize) -> i32 {
+    if stream == null { return -1 }
+    return socket_recv(@stream.sock, buf, max_len)
+}
+
+// Writes up to len bytes from buf to the TCP stream. Returns bytes sent or -1 on error.
+act tcp_write(stream: @TcpStream, buf: @u8, len: usize) -> i32 {
+    if stream == null { return -1 }
+    return socket_send(@stream.sock, buf, len)
+}
+
+// Sends a string message across the TCP stream. Returns bytes sent or -1 on error.
+act tcp_write_str(stream: @TcpStream, text: string) -> i32 {
+    if stream == null or text == null { return -1 }
+    let len = str.len(text)
+    if len == 0 { return 0 }
+    return tcp_write(stream, text as @u8, len)
+}
+
+// Reads up to max_len bytes from the stream into a newly allocated null-terminated string.
+act tcp_read_str(stream: @TcpStream, max_len: usize) -> string {
+    if stream == null or max_len == 0 { return "" }
+    mut buf: @u8 = heap_alloc(max_len + 1)
+    if buf == null { return "" }
+    let n = tcp_read(stream, buf, max_len)
+    if n <= 0 {
+        heap_free(buf)
+        return ""
+    }
+    buf[n as usize] = 0 as u8
+    return buf as string
+}
+
+// Configures non-blocking I/O mode on the TCP stream.
+act tcp_set_nonblocking(stream: @TcpStream, nonblocking: bool) -> bool {
+    if stream == null { return false }
+    return socket_set_nonblocking(@stream.sock, nonblocking)
+}
+
+// Sets the send and receive timeout on the stream in milliseconds.
+act tcp_set_timeout(stream: @TcpStream, ms: u32) -> bool {
+    if stream == null { return false }
+    return socket_set_timeout(@stream.sock, ms)
+}
+
+// Closes the TCP connection and releases resources.
+act tcp_close(stream: @TcpStream) {
+    if stream == null { return }
+    socket_close(@stream.sock)
+    heap_free(stream as @u8)
+}
+
+// Closes the TCP listener socket and releases resources.
+act tcp_listener_close(listener: @TcpListener) {
+    if listener == null { return }
+    socket_close(@listener.sock)
+    heap_free(listener as @u8)
+}

@@ -1,0 +1,133 @@
+// std.net.addr — IP address parsing, byte-order conversions, and socket address formatting.
+use "types.vl"
+use "../mem/heap.vl"
+
+// Foreign C / Winsock bindings for system endian and string conversions
+extern act htons(hostshort: u16) -> u16
+extern act ntohs(netshort: u16) -> u16
+extern act htonl(hostlong: u32) -> u32
+extern act ntohl(netlong: u32) -> u32
+extern act inet_addr(cp: string) -> u32
+
+// Converts a 16-bit integer from host byte order to network byte order.
+act net_htons(val: u16) -> u16 {
+    return ((val & 0x00FF as u16) << 8) | ((val >> 8) & 0x00FF as u16)
+}
+
+// Converts a 16-bit integer from network byte order to host byte order.
+act net_ntohs(val: u16) -> u16 {
+    return net_htons(val)
+}
+
+// Converts a 32-bit integer from host byte order to network byte order.
+act net_htonl(val: u32) -> u32 {
+    let b0 = (val & 0x000000FF as u32) << 24
+    let b1 = ((val >> 8) & 0x000000FF as u32) << 16
+    let b2 = ((val >> 16) & 0x000000FF as u32) << 8
+    let b3 = (val >> 24) & 0x000000FF as u32
+    return b0 | b1 | b2 | b3
+}
+
+// Converts a 32-bit integer from network byte order to host byte order.
+act net_ntohl(val: u32) -> u32 {
+    return net_htonl(val)
+}
+
+// Parses an IPv4 string ("127.0.0.1", "0.0.0.0", "localhost") into network-order u32.
+act net_parse_ipv4(ip: string) -> u32 {
+    if ip == null { return 0 as u32 }
+    if ip == "0.0.0.0" { return 0 as u32 }
+    if ip == "127.0.0.1" or ip == "localhost" {
+        return 0x0100007F as u32 // 127.0.0.1 in network byte order
+    }
+
+    let len = str.len(ip)
+    mut octet: u32 = 0
+    mut part: u32 = 0
+    mut dots: usize = 0
+    mut i: usize = 0
+    mut has_digit = false
+
+    loop i < len {
+        let c = ip[i]
+        if c >= '0' and c <= '9' {
+            part = part * (10 as u32) + ((c - '0') as u32)
+            if part > (255 as u32) {
+                return inet_addr(ip)
+            }
+            has_digit = true
+        } else if c == '.' {
+            if !has_digit { return inet_addr(ip) }
+            octet = octet | (part << (dots * 8))
+            dots += 1
+            part = 0
+            has_digit = false
+        } else {
+            return inet_addr(ip)
+        }
+        i += 1
+    }
+
+    if dots != 3 or !has_digit {
+        return inet_addr(ip)
+    }
+    octet = octet | (part << 24)
+    return octet
+}
+
+// Helper formatting an 8-bit octet into decimal characters inside buf.
+act write_octet(buf: @u8, pos: usize, val: u8) -> usize {
+    if val >= 100 as u8 {
+        buf[pos] = (48 + (val / 100 as u8)) as u8
+        buf[pos + 1] = (48 + ((val / 10 as u8) % 10 as u8)) as u8
+        buf[pos + 2] = (48 + (val % 10 as u8)) as u8
+        return pos + 3
+    }
+    if val >= 10 as u8 {
+        buf[pos] = (48 + (val / 10 as u8)) as u8
+        buf[pos + 1] = (48 + (val % 10 as u8)) as u8
+        return pos + 2
+    }
+    buf[pos] = (48 + val) as u8
+    return pos + 1
+}
+
+// Formats a 32-bit network-byte-order IPv4 address into a dotted decimal string ("127.0.0.1").
+act net_format_ipv4(addr: u32) -> string {
+    let b0 = (addr & (0xFF as u32)) as u8
+    let b1 = ((addr >> 8) & (0xFF as u32)) as u8
+    let b2 = ((addr >> 16) & (0xFF as u32)) as u8
+    let b3 = ((addr >> 24) & (0xFF as u32)) as u8
+
+    mut buf: @u8 = heap_alloc(16)
+    mut pos: usize = 0
+    pos = write_octet(buf, pos, b0)
+    buf[pos] = '.' as u8; pos += 1
+    pos = write_octet(buf, pos, b1)
+    buf[pos] = '.' as u8; pos += 1
+    pos = write_octet(buf, pos, b2)
+    buf[pos] = '.' as u8; pos += 1
+    pos = write_octet(buf, pos, b3)
+    buf[pos] = 0 as u8
+
+    return buf as string
+}
+
+// Initializes a native SockAddrIn structure with family AF_INET, network-order port, and IP.
+act sockaddr_in_init(out: @SockAddrIn, ip: string, port: u16) {
+    if out == null { return }
+    out.family = AF_INET as i16
+    out.port = net_htons(port)
+    out.addr = net_parse_ipv4(ip)
+    out.zero1 = 0
+    out.zero2 = 0
+}
+
+// Creates a SocketAddr record for high-level endpoint management.
+act socket_addr_make(ip: string, port: u16) -> SocketAddr {
+    return SocketAddr {
+        ip: ip,
+        port: port,
+        raw_ip: net_parse_ipv4(ip),
+    }
+}
