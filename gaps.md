@@ -2120,4 +2120,34 @@ flowchart TD
   - External project test passed: `velo run http_demo.vl` in `C:\projects\test`.
   - Pytest suite `tests/test_std_http.py` passed (6/6 tests in 8.93s).
   - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
-  - Self-hosted bootstrap determinism re-verified (`test_bootstrap_snapshot.py`).
+  - Bootstrap snapshot test verified (`test_bootstrap_snapshot.py`).
+
+### Phase 19: `std.log` (Pure Velo Structured Logging Framework)
+#### Task 19.1: Severity Levels, ANSI Colors, Formatting, and Sinks (`std.log`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo had no standard logging facility. Application and library developers were forced to rely on raw `io.println_str` calls or implement ad-hoc debug printers with no ability to filter output levels, format structured timestamps, colorize messages, or direct logs to persistent files or test verification buffers.
+  - There was no unified level hierarchy (`TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `FATAL`, `OFF`) or RFC/ISO-8601 timestamp generator tailored for logging records.
+* **Fix Applied**:
+  - Implemented the `std.log` standard library module and subcomponents in `std/log/`:
+    - `std/log/level.vl`: Severity level constants (`LOG_TRACE` through `LOG_OFF`), textual names (`log_level_name`), case-insensitive string parsing (`log_level_from_str`), and ANSI 256/16-color sequences (`log_level_color`).
+    - `std/log/record.vl`: `LogRecord` structure storing severity level, target/module tag, message string, and timestamp string; `log_current_timestamp()` integrating `std.time.calendar` formatted as `"YYYY-MM-DD HH:MM:SS"`.
+    - `std/log/sink.vl`: Formatting engine (`log_format_record`) aligning level badges, console sink (`log_sink_console`), file sink (`log_sink_file` with append mode via `std.fs`), and an in-memory inspection ring sink (`log_sink_memory`, `log_get_last_message`, `log_get_last_target`, `log_get_last_level`, `log_get_record_count`, `log_clear_memory`).
+    - `std/log/logger.vl`: Global runtime logger configuration (`log_set_level`, `log_get_level`, `log_set_file`, `log_enable_colors`, `log_enable_console`, `log_enable_memory_sink`), central dispatcher (`log_dispatch`), target-scoped logging (`log_trace`..`log_fatal`), and top-level convenience shortcuts (`trace`, `debug`, `info`, `warn`, `error`, `fatal`).
+    - `std/log.vl`: Umbrella module exporting the complete logging interface.
+  - Packaging & Docs:
+    - Synced global installation directory `~/.velo/std/log/`.
+    - Refreshed standalone archive bundles `website/public/velo-std.zip` and `website/public/velo-std.tar.gz`.
+    - Documented `std.log` in `website/src/data/stdlib.ts`.
+* **Residual Limitation**:
+  - Asynchronous non-blocking background queue sinks and JSON-structured log layout formatters will be added in a subsequent performance optimization pass.
+* **Verification**:
+  - Native Level & Color test passed: `bin/velo.exe run std/tests/log/level_test.vl`.
+  - Native Formatter test passed: `bin/velo.exe run std/tests/log/format_test.vl`.
+  - Native Logger & Sink test passed: `bin/velo.exe run std/tests/log/logger_test.vl`.
+  - Native umbrella import test passed: `bin/velo.exe run std/tests/log_module_import_test.vl`.
+  - Integrated `std_module_import_test.vl` passed with all 14 standard library modules.
+  - External project test passed: `velo run log_demo.vl` in `C:\projects\test`.
+  - Pytest suite `tests/test_std_log.py` passed (4/4 tests).
+  - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
+  - Bootstrap snapshot test verified (`test_bootstrap_snapshot.py`).
+

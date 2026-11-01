@@ -1,0 +1,41 @@
+// std.log.record — Structured log record model and creation.
+use "../time/calendar.vl"
+use "../mem/heap.vl"
+
+data LogRecord {
+    level: u8
+    target: string
+    message: string
+    timestamp: string
+}
+
+// Generates an ISO formatted date-time string "YYYY-MM-DD HH:MM:SS" on the heap.
+act log_current_timestamp() -> string {
+    let dt = time_now_datetime()
+    mut buf: @u8 = heap_alloc(24)
+    if buf == null { return "0000-00-00 00:00:00" }
+
+    time_format_iso8601(@dt, buf, 24)
+    buf[10] = ' ' as u8
+    buf[19] = 0 as u8
+    return buf as string
+}
+
+// Constructs a new LogRecord with the current local/UTC timestamp.
+act log_record_make(level: u8, target: string, message: string) -> LogRecord {
+    mut tgt = "app"
+    if target != null and str.len(target) > 0 {
+        tgt = target
+    }
+    mut msg = ""
+    if message != null {
+        msg = message
+    }
+    return LogRecord {
+        level: level,
+        target: tgt,
+        message: msg,
+        timestamp: log_current_timestamp(),
+    }
+}
+

@@ -26,3 +26,4 @@ act main() -> i32 {
     io.println_str("OK: std.http.status tests passed")
     return 0
 }
+

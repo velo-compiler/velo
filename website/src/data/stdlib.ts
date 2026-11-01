@@ -685,6 +685,76 @@ export const STDLIB_MODULES: StdlibModule[] = [
     ]
   },
   {
+    name: 'std.log',
+    category: 'Diagnostics & Telemetry',
+    tier: 1,
+    description: 'Structured logging framework with configurable severity levels (TRACE, DEBUG, INFO, WARN, ERROR, FATAL), ANSI terminal colorization, file appenders, and memory sinks.',
+    pureVelo: true,
+    functions: [
+      {
+        name: 'info',
+        signature: 'act info(msg: string)',
+        description: 'Logs an informational message to the active log sinks.',
+        example: 'info("HTTP server listening on 127.0.0.1:8080")'
+      },
+      {
+        name: 'warn',
+        signature: 'act warn(msg: string)',
+        description: 'Logs a warning message with yellow ANSI highlight.',
+        example: 'warn("Disk space is below 15%")'
+      },
+      {
+        name: 'error',
+        signature: 'act error(msg: string)',
+        description: 'Logs an error message with red ANSI highlight.',
+        example: 'error("Failed to parse incoming payload")'
+      },
+      {
+        name: 'debug',
+        signature: 'act debug(msg: string)',
+        description: 'Logs a diagnostic debug message (visible when log level <= LOG_DEBUG).',
+        example: 'debug("Connection pool size: 8")'
+      },
+      {
+        name: 'fatal',
+        signature: 'act fatal(msg: string)',
+        description: 'Logs a critical fatal failure with bold red highlight.',
+        example: 'fatal("Unrecoverable database corruption")'
+      },
+      {
+        name: 'log_info',
+        signature: 'act log_info(target: string, msg: string)',
+        description: 'Logs an INFO message with an explicit module/subsystem target label.',
+        example: 'log_info("auth", "User admin logged in successfully")'
+      },
+      {
+        name: 'log_set_level',
+        signature: 'act log_set_level(level: u8)',
+        description: 'Filters out log records below the specified severity threshold (LOG_TRACE..LOG_OFF).',
+        example: 'log_set_level(LOG_WARN)'
+      },
+      {
+        name: 'log_set_file',
+        signature: 'act log_set_file(path: string)',
+        description: 'Enables automatic file output appending uncolorized logs to the given path.',
+        example: 'log_set_file("app.log")'
+      },
+      {
+        name: 'log_enable_colors',
+        signature: 'act log_enable_colors(enable: bool)',
+        description: 'Toggles ANSI terminal color codes on console log output.',
+        example: 'log_enable_colors(false)'
+      }
+    ],
+    types: [
+      {
+        name: 'LogRecord',
+        definition: 'data LogRecord { level: u8, target: string, message: string, timestamp: string }',
+        description: 'Structured log record representation.'
+      }
+    ]
+  },
+  {
     name: 'std.test',
     category: 'Quality Assurance',
     tier: 2,

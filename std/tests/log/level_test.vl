@@ -1,0 +1,29 @@
+// Tests for std.log.level
+use "../../log/level.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    if LOG_TRACE != (0 as u8) { return 1 }
+    if LOG_DEBUG != (1 as u8) { return 2 }
+    if LOG_INFO != (2 as u8) { return 3 }
+    if LOG_WARN != (3 as u8) { return 4 }
+    if LOG_ERROR != (4 as u8) { return 5 }
+    if LOG_FATAL != (5 as u8) { return 6 }
+    if LOG_OFF != (6 as u8) { return 7 }
+
+    if log_level_name(LOG_INFO) != "INFO" { return 8 }
+    if log_level_name(LOG_ERROR) != "ERROR" { return 9 }
+
+    if log_level_from_str("debug") != LOG_DEBUG { return 10 }
+    if log_level_from_str("WARN") != LOG_WARN { return 11 }
+    if log_level_from_str("error") != LOG_ERROR { return 12 }
+    if log_level_from_str("fatal") != LOG_FATAL { return 13 }
+    if log_level_from_str("off") != LOG_OFF { return 14 }
+
+    let c_err = log_level_color(LOG_ERROR)
+    if c_err != ANSI_RED { return 15 }
+
+    io.println_str("OK: std.log.level tests passed")
+    return 0
+}
+

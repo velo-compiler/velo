@@ -1,0 +1,55 @@
+// Tests for std.log global logger, sinks, and filtering
+use "../../log/logger.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    // Disable console output during unit test and enable in-memory sink
+    log_enable_console(false)
+    log_enable_memory_sink(true)
+    log_clear_memory()
+
+    // 1. Test severity filtering
+    log_set_level(3 as u8) // LOG_WARN
+
+    info("this should be filtered out")
+    if log_get_record_count() != 0 { return 1 }
+
+    debug("this should also be filtered")
+    if log_get_record_count() != 0 { return 2 }
+
+    warn("disk space low")
+    if log_get_record_count() != 1 { return 3 }
+    if log_get_last_message() != "disk space low" { return 4 }
+    if log_get_last_level() != (3 as u8) { return 5 }
+    if log_get_last_target() != "app" { return 6 }
+
+    // 2. Custom target module logging
+    log_error("net", "connection timeout")
+    if log_get_record_count() != 2 { return 7 }
+    if log_get_last_target() != "net" { return 8 }
+    if log_get_last_message() != "connection timeout" { return 9 }
+
+    // 3. File sink logging
+    let log_file = "test_output.log"
+    if fs.exists(log_file) {
+        fs.remove_file(log_file)
+    }
+
+    log_set_file(log_file)
+    fatal("database corrupted")
+    log_set_file(null)
+
+    if !fs.exists(log_file) { return 10 }
+    let file_content = fs.read_file(log_file)
+    if !str.contains(file_content, "[FATAL] [app] database corrupted") { return 11 }
+    fs.remove_file(log_file)
+    fs.remove_file(log_file)
+
+    // 4. Memory sink reset
+    log_clear_memory()
+    if log_get_record_count() != 0 { return 12 }
+    if log_get_last_message() != "" { return 13 }
+
+    io.println_str("OK: std.log logger tests passed")
+    return 0
+}

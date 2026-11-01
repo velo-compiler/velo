@@ -90,3 +90,4 @@ act http_is_client_error(code: u16) -> bool {
 act http_is_server_error(code: u16) -> bool {
     return code >= (500 as u16) and code < (600 as u16)
 }
+

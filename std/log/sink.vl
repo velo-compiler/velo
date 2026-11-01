@@ -1,0 +1,148 @@
+// std.log.sink — Console, file, and in-memory log sinks with formatting.
+use "level.vl"
+use "record.vl"
+use "../mem/heap.vl"
+use "../io.vl"
+
+data LogMemorySink {
+    last_message: string
+    last_target: string
+    last_level: u8
+    count: usize
+}
+
+mut g_mem_sink: LogMemorySink = LogMemorySink {
+    last_message: "",
+    last_target: "",
+    last_level: 0 as u8,
+    count: 0,
+}
+
+// Pads a log level name to exactly 5 characters for aligned column layout.
+act log_level_padded(level: u8) -> string {
+    if level == 0 as u8 { return "TRACE" }
+    if level == 1 as u8 { return "DEBUG" }
+    if level == 2 as u8 { return "INFO " }
+    if level == 3 as u8 { return "WARN " }
+    if level == 4 as u8 { return "ERROR" }
+    if level == 5 as u8 { return "FATAL" }
+    return "UNKNOWN"
+}
+
+// Formats a LogRecord into a single log line with optional ANSI terminal color codes.
+act log_format_record(rec: @LogRecord, use_colors: bool) -> string {
+    if rec == null { return "" }
+
+    let ts_len = str.len(rec.timestamp)
+    let tgt_len = str.len(rec.target)
+    let msg_len = str.len(rec.message)
+    let lvl_str = log_level_padded(rec.level)
+    let lvl_len = str.len(lvl_str)
+
+    mut cap = ts_len + tgt_len + msg_len + 64
+    if use_colors { cap += 32 }
+
+    mut buf: @u8 = heap_alloc(cap)
+    if buf == null { return "" }
+    mut pos: usize = 0
+
+    // [TIMESTAMP]
+    buf[pos] = '[' as u8; pos += 1
+    mut ti: usize = 0
+    loop ti < ts_len { buf[pos] = rec.timestamp[ti]; pos += 1; ti += 1 }
+    buf[pos] = ']' as u8; pos += 1
+    buf[pos] = ' ' as u8; pos += 1
+
+    // [LEVEL]
+    buf[pos] = '[' as u8; pos += 1
+    if use_colors {
+        let col = log_level_color(rec.level)
+        let col_len = str.len(col)
+        mut ci: usize = 0
+        loop ci < col_len { buf[pos] = col[ci]; pos += 1; ci += 1 }
+    }
+
+    mut li: usize = 0
+    loop li < lvl_len { buf[pos] = lvl_str[li]; pos += 1; li += 1 }
+
+    if use_colors {
+        let rst_len = str.len(ANSI_RESET)
+        mut ri: usize = 0
+        loop ri < rst_len { buf[pos] = ANSI_RESET[ri]; pos += 1; ri += 1 }
+    }
+    buf[pos] = ']' as u8; pos += 1
+    buf[pos] = ' ' as u8; pos += 1
+
+    // [TARGET]
+    buf[pos] = '[' as u8; pos += 1
+    mut tgi: usize = 0
+    loop tgi < tgt_len { buf[pos] = rec.target[tgi]; pos += 1; tgi += 1 }
+    buf[pos] = ']' as u8; pos += 1
+    buf[pos] = ' ' as u8; pos += 1
+
+    // MESSAGE
+    mut mi: usize = 0
+    loop mi < msg_len { buf[pos] = rec.message[mi]; pos += 1; mi += 1 }
+
+    buf[pos] = 0 as u8
+    return buf as string
+}
+
+// Dispatches log record to stdout with optional ANSI color codes.
+act log_sink_console(rec: @LogRecord, use_colors: bool) {
+    if rec == null { return }
+    let line = log_format_record(rec, use_colors)
+    println_str(line)
+    heap_free(line as @u8)
+}
+
+// Appends log record without color codes to a specified file.
+act log_sink_file(rec: @LogRecord, file_path: string) -> bool {
+    if rec == null or file_path == null { return false }
+    let f = fs.fopen(file_path, "a")
+    if f == null { return false }
+
+    let line = log_format_record(rec, false)
+    fs.fwrite(f, line)
+    fs.fwrite(f, "\n")
+    fs.fclose(f)
+    heap_free(line as @u8)
+    return true
+}
+
+// Records log entry in global memory buffer for inspection/testing.
+act log_sink_memory(rec: @LogRecord) {
+    if rec == null { return }
+    g_mem_sink.last_message = rec.message
+    g_mem_sink.last_target = rec.target
+    g_mem_sink.last_level = rec.level
+    g_mem_sink.count += 1
+}
+
+// Returns the last logged message in the memory sink.
+act log_get_last_message() -> string {
+    return g_mem_sink.last_message
+}
+
+// Returns the last logged target module in the memory sink.
+act log_get_last_target() -> string {
+    return g_mem_sink.last_target
+}
+
+// Returns the last logged severity level in the memory sink.
+act log_get_last_level() -> u8 {
+    return g_mem_sink.last_level
+}
+
+// Returns the total count of messages logged to the memory sink.
+act log_get_record_count() -> usize {
+    return g_mem_sink.count
+}
+
+// Clears the memory sink.
+act log_clear_memory() {
+    g_mem_sink.last_message = ""
+    g_mem_sink.last_target = ""
+    g_mem_sink.last_level = 0 as u8
+    g_mem_sink.count = 0
+}

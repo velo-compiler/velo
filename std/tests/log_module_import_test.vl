@@ -1,0 +1,23 @@
+use std.log
+use std.io
+
+act main() -> i32 {
+    if LOG_INFO != (2 as u8) { return 1 }
+    if log_level_name(LOG_INFO) != "INFO" { return 2 }
+
+    log_enable_console(false)
+    log_enable_memory_sink(true)
+    log_clear_memory()
+
+    info("hello from std.log")
+    if log_get_last_message() != "hello from std.log" { return 3 }
+    if log_get_last_level() != (2 as u8) { return 4 }
+
+    log_warn("auth", "invalid token")
+    if log_get_last_target() != "auth" { return 5 }
+    if log_get_last_message() != "invalid token" { return 6 }
+
+    io.println_str("PASS: std.log umbrella import all tests passed")
+    return 0
+}
+

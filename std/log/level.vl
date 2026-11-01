@@ -1,0 +1,70 @@
+// std.log.level — Logging severity levels, string mappings, and ANSI colors.
+
+let LOG_TRACE: u8 = 0
+let LOG_DEBUG: u8 = 1
+let LOG_INFO: u8 = 2
+let LOG_WARN: u8 = 3
+let LOG_ERROR: u8 = 4
+let LOG_FATAL: u8 = 5
+let LOG_OFF: u8 = 6
+
+let ANSI_RESET: string = "\x1b[0m"
+let ANSI_GRAY: string = "\x1b[90m"
+let ANSI_CYAN: string = "\x1b[36m"
+let ANSI_GREEN: string = "\x1b[32m"
+let ANSI_YELLOW: string = "\x1b[33m"
+let ANSI_RED: string = "\x1b[31m"
+let ANSI_BOLD_RED: string = "\x1b[1;31m"
+
+// Returns the uppercase string name for a given severity level.
+act log_level_name(level: u8) -> string {
+    if level == 0 as u8 { return "TRACE" }
+    if level == 1 as u8 { return "DEBUG" }
+    if level == 2 as u8 { return "INFO" }
+    if level == 3 as u8 { return "WARN" }
+    if level == 4 as u8 { return "ERROR" }
+    if level == 5 as u8 { return "FATAL" }
+    if level == 6 as u8 { return "OFF" }
+    return "UNKNOWN"
+}
+
+// Parses a string into a severity level (case-insensitive).
+act log_level_from_str(s: string) -> u8 {
+    if s == null { return 2 as u8 }
+    let len = str.len(s)
+    if len == 0 { return 2 as u8 }
+
+    mut lower: @u8 = mem.alloc(@u8, len + 1)
+    mut i: usize = 0
+    loop i < len {
+        mut c = s[i]
+        if c >= 'A' as u8 and c <= 'Z' as u8 {
+            c = c + (32 as u8)
+        }
+        lower[i] = c
+        i += 1
+    }
+    lower[len] = 0 as u8
+    let s_lower = lower as string
+
+    if s_lower == "trace" { return 0 as u8 }
+    if s_lower == "debug" { return 1 as u8 }
+    if s_lower == "info" { return 2 as u8 }
+    if s_lower == "warn" or s_lower == "warning" { return 3 as u8 }
+    if s_lower == "error" or s_lower == "err" { return 4 as u8 }
+    if s_lower == "fatal" { return 5 as u8 }
+    if s_lower == "off" or s_lower == "none" { return 6 as u8 }
+    return 2 as u8
+}
+
+// Returns the ANSI color escape sequence associated with the severity level.
+act log_level_color(level: u8) -> string {
+    if level == 0 as u8 { return ANSI_GRAY }
+    if level == 1 as u8 { return ANSI_CYAN }
+    if level == 2 as u8 { return ANSI_GREEN }
+    if level == 3 as u8 { return ANSI_YELLOW }
+    if level == 4 as u8 { return ANSI_RED }
+    if level == 5 as u8 { return ANSI_BOLD_RED }
+    return ANSI_RESET
+}
+

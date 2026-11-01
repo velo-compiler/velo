@@ -1,0 +1,23 @@
+// Tests for std.log formatting and records
+use "../../log/record.vl"
+use "../../log/sink.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    let rec = log_record_make(2 as u8, "server", "Started on 8080")
+    if rec.level != (2 as u8) { return 1 }
+    if rec.target != "server" { return 2 }
+    if rec.message != "Started on 8080" { return 3 }
+    if str.len(rec.timestamp) != 19 { return 4 }
+
+    let plain = log_format_record(@rec, false)
+    if !str.ends_with(plain, "[INFO ] [server] Started on 8080") { return 5 }
+
+    let colored = log_format_record(@rec, true)
+    if !str.ends_with(colored, "[server] Started on 8080") { return 6 }
+    if !str.contains(colored, "\x1b[32mINFO \x1b[0m") { return 7 }
+
+    io.println_str("OK: std.log formatting tests passed")
+    return 0
+}
+

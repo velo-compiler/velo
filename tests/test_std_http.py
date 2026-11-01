@@ -83,3 +83,4 @@ def test_std_http_module_import():
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.http umbrella import all tests passed" in res.stdout
+

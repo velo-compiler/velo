@@ -11,6 +11,7 @@ use std.os
 use std.net
 use std.crypto
 use std.http
+use std.log
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -91,6 +92,13 @@ act main() -> i32 {
     if hurl.port != (8080 as u16) or hurl.path != "/api" { return 24 }
     let henc = url_encode("hello world")
     if henc != "hello%20world" { return 25 }
+
+    // std.log: severity levels and in-memory logging
+    log_enable_console(false)
+    log_enable_memory_sink(true)
+    log_clear_memory()
+    info("std.log integrated test")
+    if log_get_last_message() != "std.log integrated test" { return 26 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0
