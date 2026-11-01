@@ -1,0 +1,114 @@
+// Comprehensive unit tests for std.timer module.
+use "../../timer.vl"
+use "../../io.vl"
+
+mut g_callback_count: u64 = 0 as u64
+mut g_last_timer_id: u64 = 0 as u64
+
+act on_timer_fired(id: u64, user_data: @u8) -> void {
+    g_callback_count += 1 as u64
+    g_last_timer_id = id
+}
+
+act main() -> i32 {
+    // 1. Defs & Monotonic Clock tests
+    let t1 = timer_now_ns()
+    timer_spin_wait_us(100 as u64)
+    let t2 = timer_now_ns()
+    if t2 <= t1 { return 1 }
+    let diff = t2 - t1
+    if diff < (50000 as u64) { return 2 }
+
+    // 2. Interval Timer tests
+    mut tm = timer_new()
+    if timer_is_running(@tm) { return 10 }
+    if timer_elapsed_ns(@tm) != (0 as u64) { return 11 }
+
+    timer_start_running(@tm)
+    if not timer_is_running(@tm) { return 12 }
+    timer_spin_wait_us(500 as u64)
+    let el1 = timer_elapsed_us(@tm)
+    if el1 == (0 as u64) { return 13 }
+
+    timer_stop(@tm)
+    if timer_is_running(@tm) { return 14 }
+    let stopped_el = timer_elapsed_ns(@tm)
+    timer_spin_wait_us(200 as u64)
+    if timer_elapsed_ns(@tm) != stopped_el { return 15 }
+
+    timer_resume(@tm)
+    if not timer_is_running(@tm) { return 16 }
+    timer_spin_wait_us(200 as u64)
+    if timer_elapsed_ns(@tm) <= stopped_el { return 17 }
+
+    let lap = timer_lap_ns(@tm)
+    if lap == (0 as u64) { return 18 }
+    if not timer_is_running(@tm) { return 19 }
+
+    timer_reset(@tm)
+    if timer_is_running(@tm) or timer_elapsed_ns(@tm) != (0 as u64) { return 20 }
+
+    // 3. Countdown tests
+    mut cd = countdown_start_ms(50 as u64)
+    if countdown_is_expired(@cd) { return 30 }
+    let rem = countdown_remaining_ms(@cd)
+    if rem == (0 as u64) or rem > (55 as u64) { return 31 }
+
+    countdown_extend_ms(@cd, 20 as u64)
+    let rem_ext = countdown_remaining_ms(@cd)
+    if rem_ext < rem { return 32 }
+
+    countdown_cancel(@cd)
+    if not countdown_is_expired(@cd) { return 33 }
+    if countdown_remaining_ns(@cd) != (0 as u64) { return 34 }
+
+    mut cd2 = countdown_start_ns(500000 as u64) // 500 us
+    countdown_wait(@cd2)
+    if not countdown_is_expired(@cd2) { return 35 }
+
+    // 4. Ticker tests
+    mut tk = ticker_start_ms(5 as u64)
+    if ticker_ticks(@tk) != (0 as u64) { return 40 }
+    if ticker_poll(@tk) { return 41 } // Not due yet
+
+    timer_sleep_ms(7 as u64)
+    if not ticker_poll(@tk) { return 42 }
+    if ticker_ticks(@tk) < (1 as u64) { return 43 }
+
+    ticker_stop(@tk)
+    if ticker_poll(@tk) { return 44 }
+
+    // 5. TimerQueue scheduled callbacks
+    mut tq = timer_queue_new(8)
+    defer timer_queue_free(@tq)
+
+    let tid1 = timer_queue_schedule_ms(@tq, 5 as u64, on_timer_fired, null)
+    if tid1 == (0 as u64) { return 50 }
+    let tid2 = timer_queue_schedule_periodic_ms(@tq, 4 as u64, on_timer_fired, null)
+    if tid2 == (0 as u64) { return 51 }
+
+    if timer_queue_active_count(@tq) != 2 { return 52 }
+
+    let nxt = timer_queue_next_fire_ns(@tq)
+    if nxt == (0 as u64) { return 53 }
+
+    // Before delay, poll should fire 0
+    let f0 = timer_queue_poll(@tq)
+    if f0 != 0 { return 54 }
+
+    // Wait for timers to mature
+    timer_sleep_ms(8 as u64)
+    let f1 = timer_queue_poll(@tq)
+    if f1 < 2 { return 55 }
+    if g_callback_count < (2 as u64) { return 56 }
+
+    // One-shot timer tid1 should have expired, periodic tid2 should remain active
+    if timer_queue_active_count(@tq) != 1 { return 57 }
+
+    // Cancel periodic timer
+    if not timer_queue_cancel(@tq, tid2) { return 58 }
+    if timer_queue_active_count(@tq) != 0 { return 59 }
+
+    io.println_str("std.timer tests: ALL PASSED")
+    return 0
+}

@@ -1,0 +1,95 @@
+// std.timer.ticker - Periodic interval timers with drift-free phase tracking.
+use "defs.vl"
+
+data Ticker {
+    interval_ns: u64
+    next_tick_ns: u64
+    ticks: u64
+    is_active: bool
+}
+
+// Starts a repeating ticker firing every `interval_ns` nanoseconds.
+act ticker_start_ns(interval_ns: u64) -> Ticker {
+    let now = timer_now_ns()
+    return Ticker {
+        interval_ns: interval_ns,
+        next_tick_ns: now + interval_ns,
+        ticks: 0 as u64,
+        is_active: true,
+    }
+}
+
+// Starts a repeating ticker firing every `interval_ms` milliseconds.
+act ticker_start_ms(interval_ms: u64) -> Ticker {
+    return ticker_start_ns(interval_ms * TIMER_NS_PER_MS)
+}
+
+// Non-blocking poll: returns true if the next interval has arrived, advancing target without drift.
+act ticker_poll(t: @Ticker) -> bool {
+    if t == null or not t.is_active or t.interval_ns == (0 as u64) {
+        return false
+    }
+    let now = timer_now_ns()
+    if now >= t.next_tick_ns {
+        t.next_tick_ns += t.interval_ns
+        t.ticks += 1 as u64
+        // Catch up if execution stalled across multiple tick periods
+        if now >= t.next_tick_ns {
+            let missed = (now - t.next_tick_ns) / t.interval_ns + (1 as u64)
+            t.next_tick_ns += missed * t.interval_ns
+            t.ticks += missed
+        }
+        return true
+    }
+    return false
+}
+
+// Non-blocking poll returning the number of tick intervals elapsed since last poll.
+act ticker_poll_ticks(t: @Ticker) -> u64 {
+    if t == null or not t.is_active or t.interval_ns == (0 as u64) {
+        return 0 as u64
+    }
+    let now = timer_now_ns()
+    if now < t.next_tick_ns {
+        return 0 as u64
+    }
+    let elapsed_diff = now - t.next_tick_ns
+    let count = (elapsed_diff / t.interval_ns) + (1 as u64)
+    t.next_tick_ns += count * t.interval_ns
+    t.ticks += count
+    return count
+}
+
+// Returns the total number of ticks that have fired since creation or reset.
+act ticker_ticks(t: @Ticker) -> u64 {
+    if t == null { return 0 as u64 }
+    return t.ticks
+}
+
+// Resets the ticker interval alignment starting from the current timestamp.
+act ticker_reset(t: @Ticker) {
+    if t == null { return }
+    let now = timer_now_ns()
+    t.next_tick_ns = now + t.interval_ns
+    t.ticks = 0 as u64
+    t.is_active = true
+}
+
+// Stops the ticker from firing further ticks.
+act ticker_stop(t: @Ticker) {
+    if t == null { return }
+    t.is_active = false
+}
+
+// Blocks execution until the next tick arrives, preserving monotonic phase.
+act ticker_wait_next(t: @Ticker) {
+    if t == null or not t.is_active or t.interval_ns == (0 as u64) {
+        return
+    }
+    let now = timer_now_ns()
+    if t.next_tick_ns > now {
+        timer_sleep_ns(t.next_tick_ns - now)
+    }
+    t.next_tick_ns += t.interval_ns
+    t.ticks += 1 as u64
+}

@@ -1,0 +1,222 @@
+// std.timer.queue - Scheduled callback queue and event dispatch engine.
+use "defs.vl"
+use "../mem/heap.vl"
+
+data ScheduledTimer {
+    id: u64
+    fire_at_ns: u64
+    interval_ns: u64
+    is_periodic: bool
+    is_active: bool
+    callback: act(u64, @u8) -> void
+    user_data: @u8
+}
+
+data TimerQueue {
+    timers: @ScheduledTimer
+    count: usize
+    cap: usize
+    next_id: u64
+}
+
+act scheduled_timer_sizeof() -> usize {
+    let dummy: @ScheduledTimer = null
+    return (dummy + 1) as usize
+}
+
+// Creates a new empty TimerQueue with pre-allocated capacity.
+act timer_queue_new(initial_cap: usize) -> TimerQueue {
+    mut c = initial_cap
+    if c < 4 { c = 4 }
+    mut buf = heap_alloc(c * scheduled_timer_sizeof()) as @ScheduledTimer
+    return TimerQueue {
+        timers: buf,
+        count: 0,
+        cap: c,
+        next_id: 1 as u64,
+    }
+}
+
+// Releases memory held by the timer queue.
+act timer_queue_free(tq: @TimerQueue) {
+    if tq == null { return }
+    if tq.timers != null {
+        heap_free(tq.timers as @u8)
+        tq.timers = null
+    }
+    tq.count = 0
+    tq.cap = 0
+}
+
+act timer_queue_ensure_cap(tq: @TimerQueue) {
+    if tq.count < tq.cap { return }
+    let new_cap = tq.cap * 2
+    mut new_buf = heap_alloc(new_cap * scheduled_timer_sizeof()) as @ScheduledTimer
+    if new_buf == null { return }
+    mut i: usize = 0
+    loop i < tq.count {
+        new_buf[i] = tq.timers[i]
+        i += 1
+    }
+    heap_free(tq.timers as @u8)
+    tq.timers = new_buf
+    tq.cap = new_cap
+}
+
+// Schedules a one-shot callback to fire after delay_ns nanoseconds. Returns timer id.
+act timer_queue_schedule(tq: @TimerQueue, delay_ns: u64, cb: act(u64, @u8) -> void, user_data: @u8) -> u64 {
+    if tq == null or cb == null { return 0 as u64 }
+    timer_queue_ensure_cap(tq)
+    let tid = tq.next_id
+    tq.next_id += 1 as u64
+    let now = timer_now_ns()
+
+    tq.timers[tq.count] = ScheduledTimer {
+        id: tid,
+        fire_at_ns: now + delay_ns,
+        interval_ns: 0 as u64,
+        is_periodic: false,
+        is_active: true,
+        callback: cb,
+        user_data: user_data,
+    }
+    tq.count += 1
+    return tid
+}
+
+// Schedules a one-shot callback to fire after delay_ms milliseconds. Returns timer id.
+act timer_queue_schedule_ms(tq: @TimerQueue, delay_ms: u64, cb: act(u64, @u8) -> void, user_data: @u8) -> u64 {
+    return timer_queue_schedule(tq, delay_ms * TIMER_NS_PER_MS, cb, user_data)
+}
+
+// Schedules a recurring callback to fire periodically every interval_ns nanoseconds. Returns timer id.
+act timer_queue_schedule_periodic(tq: @TimerQueue, interval_ns: u64, cb: act(u64, @u8) -> void, user_data: @u8) -> u64 {
+    if tq == null or cb == null or interval_ns == (0 as u64) { return 0 as u64 }
+    timer_queue_ensure_cap(tq)
+    let tid = tq.next_id
+    tq.next_id += 1 as u64
+    let now = timer_now_ns()
+
+    tq.timers[tq.count] = ScheduledTimer {
+        id: tid,
+        fire_at_ns: now + interval_ns,
+        interval_ns: interval_ns,
+        is_periodic: true,
+        is_active: true,
+        callback: cb,
+        user_data: user_data,
+    }
+    tq.count += 1
+    return tid
+}
+
+// Schedules a recurring callback to fire periodically every interval_ms milliseconds. Returns timer id.
+act timer_queue_schedule_periodic_ms(tq: @TimerQueue, interval_ms: u64, cb: act(u64, @u8) -> void, user_data: @u8) -> u64 {
+    return timer_queue_schedule_periodic(tq, interval_ms * TIMER_NS_PER_MS, cb, user_data)
+}
+
+// Cancels an active timer by ID. Returns true if found and cancelled.
+act timer_queue_cancel(tq: @TimerQueue, timer_id: u64) -> bool {
+    if tq == null or timer_id == (0 as u64) { return false }
+    mut i: usize = 0
+    loop i < tq.count {
+        if tq.timers[i].id == timer_id and tq.timers[i].is_active {
+            tq.timers[i].is_active = false
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// Dispatches callbacks for all timers whose fire time has arrived. Returns number of timers fired.
+act timer_queue_poll(tq: @TimerQueue) -> usize {
+    if tq == null or tq.count == 0 { return 0 }
+    let now = timer_now_ns()
+    mut fired: usize = 0
+    mut i: usize = 0
+
+    loop i < tq.count {
+        if tq.timers[i].is_active and now >= tq.timers[i].fire_at_ns {
+            let cb = tq.timers[i].callback
+            let tid = tq.timers[i].id
+            let ud = tq.timers[i].user_data
+            cb(tid, ud)
+            fired += 1
+
+            if tq.timers[i].is_periodic {
+                tq.timers[i].fire_at_ns += tq.timers[i].interval_ns
+                if now >= tq.timers[i].fire_at_ns {
+                    let missed = (now - tq.timers[i].fire_at_ns) / tq.timers[i].interval_ns + (1 as u64)
+                    tq.timers[i].fire_at_ns += missed * tq.timers[i].interval_ns
+                }
+            } else {
+                tq.timers[i].is_active = false
+            }
+        }
+        i += 1
+    }
+
+    // Clean up inactive timers if queue is more than half dead
+    mut active_count: usize = 0
+    i = 0
+    loop i < tq.count {
+        if tq.timers[i].is_active {
+            active_count += 1
+        }
+        i += 1
+    }
+
+    if active_count < tq.count / 2 and tq.count > 8 {
+        mut write_pos: usize = 0
+        i = 0
+        loop i < tq.count {
+            if tq.timers[i].is_active {
+                if write_pos != i {
+                    tq.timers[write_pos] = tq.timers[i]
+                }
+                write_pos += 1
+            }
+            i += 1
+        }
+        tq.count = write_pos
+    }
+
+    return fired
+}
+
+// Returns the duration in nanoseconds until the earliest timer will fire (0 if due now, MAX if none).
+act timer_queue_next_fire_ns(tq: @TimerQueue) -> u64 {
+    let max_u64: u64 = (0 as u64) - (1 as u64)
+    if tq == null or tq.count == 0 { return max_u64 }
+    let now = timer_now_ns()
+    mut earliest: u64 = max_u64
+
+    mut i: usize = 0
+    loop i < tq.count {
+        if tq.timers[i].is_active {
+            if tq.timers[i].fire_at_ns < earliest {
+                earliest = tq.timers[i].fire_at_ns
+            }
+        }
+        i += 1
+    }
+
+    if earliest == max_u64 { return max_u64 }
+    if now >= earliest { return 0 as u64 }
+    return earliest - now
+}
+
+// Returns the number of currently active scheduled timers in the queue.
+act timer_queue_active_count(tq: @TimerQueue) -> usize {
+    if tq == null { return 0 }
+    mut active: usize = 0
+    mut i: usize = 0
+    loop i < tq.count {
+        if tq.timers[i].is_active {
+            active += 1
+        }
+        i += 1
+    }
+    return active
+}

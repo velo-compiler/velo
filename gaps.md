@@ -2396,3 +2396,32 @@ flowchart TD
   - Pytest suite `tests/test_std_text.py` passed (2/2 tests).
   - All source files strictly < 400 lines (`python scripts/count_lines.py`).
 
+
+---
+
+### Phase 28: std.timer (High-Resolution Timers, Countdowns, Drift-Free Tickers & Scheduled Callbacks)
+#### Task 28.1: Pure Velo Interval Timing, Deadlines, and Callback Dispatch Engine (std.timer) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo had basic calendar and sleep routines in std.time, but lacked dedicated interval timers, deadline/timeout countdowns, drift-free periodic tickers, microsecond spin-waits, and event-loop scheduled callback queues (TimerQueue). Applications needing recurring event dispatching or deadline management had to hand-roll custom polling loops.
+* **Fix Applied**:
+  - Implemented the std.timer standard library module and subcomponents in std/timer/:
+    - std/timer/defs.vl: Monotonic clock queries (	imer_now_ns, 	imer_now_us, 	imer_now_ms), thread delays (	imer_sleep_ms, 	imer_sleep_ns), and high-precision CPU busy-waits (	imer_spin_wait_ns, 	imer_spin_wait_us).
+    - std/timer/elapsed.vl: High-resolution monotonic interval timer (Timer) with start, stop, pause, resume, reset, restart, lap tracking (	imer_lap_ns, 	imer_lap_ms), and multi-unit elapsed queries (	imer_elapsed_ns, 	imer_elapsed_us, 	imer_elapsed_ms, 	imer_elapsed_secs).
+    - std/timer/countdown.vl: Deadline and timeout tracker (Countdown) with expiration predicates (countdown_is_expired), remaining time calculations (countdown_remaining_ns, countdown_remaining_ms), deadline extensions (countdown_extend_ms), cancellation (countdown_cancel), and blocking waits (countdown_wait).
+    - std/timer/ticker.vl: Periodic interval timer (Ticker) maintaining cumulative phase alignment without temporal drift (	icker_poll, 	icker_poll_ticks, 	icker_ticks, 	icker_wait_next, 	icker_reset, 	icker_stop).
+    - std/timer/queue.vl: Scheduled callback priority queue and dispatcher (TimerQueue) supporting one-shot (	imer_queue_schedule_ms) and recurring (	imer_queue_schedule_periodic_ms) callbacks with user context pointers, cancellation (	imer_queue_cancel), earliest deadline queries (	imer_queue_next_fire_ns), and batch dispatching (	imer_queue_poll).
+    - std/timer.vl: Standard library umbrella module exporting the full timer subsystem.
+  - Packaging, Docs & Integration:
+    - Updated std/tests/std_module_import_test.vl to verify all 23 standard library modules together.
+    - Synced global installation directory ~/.velo/std/timer/.
+    - Refreshed standalone archive bundles website/public/velo-std.zip and website/public/velo-std.tar.gz.
+    - Documented std.timer with 24 functions, types, and real examples in website/src/data/stdlib.ts.
+* **Residual Limitation**:
+  - OS-level signal-driven asynchronous timer interrupts (e.g. 	imer_create / SetWaitableTimer) can be layered into an asynchronous event loop subsystem (std.async).
+* **Verification**:
+  - Native tests passed: in/velo.exe run std/tests/timer/timer_test.vl (Defs, spin wait, Timer elapsed/stop/resume/lap, Countdown deadlines/extensions/waits, Ticker drift-free polls/waits, TimerQueue scheduled one-shot and periodic callback dispatches).
+  - Native umbrella import test passed: in/velo.exe run std/tests/timer_module_import_test.vl.
+  - Integrated 23-module import test passed: in/velo.exe run std/tests/std_module_import_test.vl.
+  - External project test passed: elo run timer_demo.vl in C:\projects	est.
+  - Pytest suite 	ests/test_std_timer.py passed (2/2 tests).
+  - All source files strictly < 400 lines (python scripts/count_lines.py).

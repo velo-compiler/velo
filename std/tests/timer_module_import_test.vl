@@ -1,0 +1,25 @@
+// Tests native 'use std.timer' umbrella import.
+use std.timer
+use std.io
+
+act main() -> i32 {
+    let now = timer_now_ns()
+    if now == (0 as u64) { return 1 }
+
+    mut tm = timer_start()
+    timer_spin_wait_us(100 as u64)
+    if timer_elapsed_us(@tm) == (0 as u64) { return 2 }
+
+    mut cd = countdown_start_ms(50 as u64)
+    if countdown_is_expired(@cd) { return 3 }
+
+    mut tk = ticker_start_ms(10 as u64)
+    if ticker_ticks(@tk) != (0 as u64) { return 4 }
+
+    mut tq = timer_queue_new(4)
+    defer timer_queue_free(@tq)
+    if timer_queue_active_count(@tq) != 0 { return 5 }
+
+    io.println_str("PASS: std.timer umbrella import all tests passed")
+    return 0
+}

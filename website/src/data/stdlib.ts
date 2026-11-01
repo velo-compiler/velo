@@ -1822,6 +1822,178 @@ export const STDLIB_MODULES: StdlibModule[] = [
       }
     ],
     types: []
+  },
+  {
+    name: 'std.timer',
+    description: 'High-resolution interval timers, countdown deadlines, periodic tickers, and scheduled callbacks.',
+    functions: [
+      {
+        name: 'timer_start',
+        signature: 'act timer_start() -> Timer',
+        description: 'Creates and immediately starts a high-resolution monotonic elapsed timer.',
+        example: 'mut tm = timer_start()'
+      },
+      {
+        name: 'timer_new',
+        signature: 'act timer_new() -> Timer',
+        description: 'Creates a stopped Timer with zero elapsed time.',
+        example: 'mut tm = timer_new()'
+      },
+      {
+        name: 'timer_elapsed_ms',
+        signature: 'act timer_elapsed_ms(t: @Timer) -> u64',
+        description: 'Returns the total elapsed duration of the timer in milliseconds.',
+        example: 'let ms = timer_elapsed_ms(@tm)'
+      },
+      {
+        name: 'timer_elapsed_us',
+        signature: 'act timer_elapsed_us(t: @Timer) -> u64',
+        description: 'Returns the total elapsed duration of the timer in microseconds.',
+        example: 'let us = timer_elapsed_us(@tm)'
+      },
+      {
+        name: 'timer_elapsed_ns',
+        signature: 'act timer_elapsed_ns(t: @Timer) -> u64',
+        description: 'Returns the total elapsed duration of the timer in nanoseconds.',
+        example: 'let ns = timer_elapsed_ns(@tm)'
+      },
+      {
+        name: 'timer_elapsed_secs',
+        signature: 'act timer_elapsed_secs(t: @Timer) -> f64',
+        description: 'Returns the total elapsed duration as fractional floating-point seconds.',
+        example: 'let s = timer_elapsed_secs(@tm)'
+      },
+      {
+        name: 'timer_stop',
+        signature: 'act timer_stop(t: @Timer)',
+        description: 'Pauses the timer and records accumulated elapsed duration.',
+        example: 'timer_stop(@tm)'
+      },
+      {
+        name: 'timer_resume',
+        signature: 'act timer_resume(t: @Timer)',
+        description: 'Resumes measuring elapsed time after being paused.',
+        example: 'timer_resume(@tm)'
+      },
+      {
+        name: 'timer_reset',
+        signature: 'act timer_reset(t: @Timer)',
+        description: 'Resets the elapsed duration to zero and stops the timer.',
+        example: 'timer_reset(@tm)'
+      },
+      {
+        name: 'timer_restart',
+        signature: 'act timer_restart(t: @Timer)',
+        description: 'Resets elapsed time to zero and starts measuring immediately.',
+        example: 'timer_restart(@tm)'
+      },
+      {
+        name: 'timer_lap_ms',
+        signature: 'act timer_lap_ms(t: @Timer) -> u64',
+        description: 'Returns elapsed milliseconds since the last start or lap and restarts lap measurement.',
+        example: 'let lap_time = timer_lap_ms(@tm)'
+      },
+      {
+        name: 'countdown_start_ms',
+        signature: 'act countdown_start_ms(duration_ms: u64) -> Countdown',
+        description: 'Starts a countdown timer expiring in the specified milliseconds.',
+        example: 'mut cd = countdown_start_ms(500)'
+      },
+      {
+        name: 'countdown_is_expired',
+        signature: 'act countdown_is_expired(c: @Countdown) -> bool',
+        description: 'Returns true if the countdown deadline has elapsed or been cancelled.',
+        example: 'if countdown_is_expired(@cd) { ... }'
+      },
+      {
+        name: 'countdown_remaining_ms',
+        signature: 'act countdown_remaining_ms(c: @Countdown) -> u64',
+        description: 'Returns remaining duration in milliseconds until expiration (0 if expired).',
+        example: 'let rem = countdown_remaining_ms(@cd)'
+      },
+      {
+        name: 'countdown_wait',
+        signature: 'act countdown_wait(c: @Countdown)',
+        description: 'Blocks execution until the countdown deadline expires.',
+        example: 'countdown_wait(@cd)'
+      },
+      {
+        name: 'ticker_start_ms',
+        signature: 'act ticker_start_ms(interval_ms: u64) -> Ticker',
+        description: 'Starts a periodic interval ticker firing every interval_ms milliseconds without drift.',
+        example: 'mut tk = ticker_start_ms(16)'
+      },
+      {
+        name: 'ticker_poll',
+        signature: 'act ticker_poll(t: @Ticker) -> bool',
+        description: 'Non-blocking poll returning true if at least one interval has elapsed since last tick.',
+        example: 'if ticker_poll(@tk) { handle_tick() }'
+      },
+      {
+        name: 'ticker_wait_next',
+        signature: 'act ticker_wait_next(t: @Ticker)',
+        description: 'Blocks execution until the next tick arrives, preserving monotonic phase.',
+        example: 'ticker_wait_next(@tk)'
+      },
+      {
+        name: 'timer_queue_new',
+        signature: 'act timer_queue_new(initial_cap: usize) -> TimerQueue',
+        description: 'Creates a scheduled timer callback queue for one-shot and periodic event dispatching.',
+        example: 'mut tq = timer_queue_new(16)'
+      },
+      {
+        name: 'timer_queue_schedule_ms',
+        signature: 'act timer_queue_schedule_ms(tq: @TimerQueue, delay_ms: u64, cb: act(u64, @u8) -> void, user_data: @u8) -> u64',
+        description: 'Schedules a one-shot callback to fire after delay_ms milliseconds. Returns timer ID.',
+        example: 'let tid = timer_queue_schedule_ms(@tq, 100, on_timeout, null)'
+      },
+      {
+        name: 'timer_queue_schedule_periodic_ms',
+        signature: 'act timer_queue_schedule_periodic_ms(tq: @TimerQueue, interval_ms: u64, cb: act(u64, @u8) -> void, user_data: @u8) -> u64',
+        description: 'Schedules a recurring callback to fire every interval_ms milliseconds. Returns timer ID.',
+        example: 'let tid = timer_queue_schedule_periodic_ms(@tq, 50, on_pulse, null)'
+      },
+      {
+        name: 'timer_queue_poll',
+        signature: 'act timer_queue_poll(tq: @TimerQueue) -> usize',
+        description: 'Dispatches callbacks for all timers whose fire time has arrived. Returns number fired.',
+        example: 'let fired = timer_queue_poll(@tq)'
+      },
+      {
+        name: 'timer_queue_cancel',
+        signature: 'act timer_queue_cancel(tq: @TimerQueue, timer_id: u64) -> bool',
+        description: 'Cancels an active timer by ID. Returns true if found and cancelled.',
+        example: 'timer_queue_cancel(@tq, tid)'
+      },
+      {
+        name: 'timer_spin_wait_us',
+        signature: 'act timer_spin_wait_us(us: u64)',
+        description: 'High-precision CPU busy-wait for microseconds without yielding thread quantum.',
+        example: 'timer_spin_wait_us(50)'
+      }
+    ],
+    types: [
+      {
+        name: 'Timer',
+        definition: 'data Timer { start_ns: u64, stop_ns: u64, elapsed_accum_ns: u64, is_running: bool }',
+        description: 'High-resolution monotonic interval timer.'
+      },
+      {
+        name: 'Countdown',
+        definition: 'data Countdown { start_ns: u64, deadline_ns: u64, duration_ns: u64, is_active: bool }',
+        description: 'Deadline and timeout tracker.'
+      },
+      {
+        name: 'Ticker',
+        definition: 'data Ticker { interval_ns: u64, next_tick_ns: u64, ticks: u64, is_active: bool }',
+        description: 'Periodic drift-free interval ticker.'
+      },
+      {
+        name: 'TimerQueue',
+        definition: 'data TimerQueue { timers: @ScheduledTimer, count: usize, cap: usize, next_id: u64 }',
+        description: 'Scheduled callback priority queue and dispatcher.'
+      }
+    ]
   }
 ];
 
