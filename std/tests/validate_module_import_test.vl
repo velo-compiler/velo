@@ -1,0 +1,16 @@
+// Tests native 'use std.validate' umbrella import.
+use std.validate
+use std.io
+
+act main() -> i32 {
+    if not validate_email("test@velo.dev") { return 1 }
+    if not validate_ipv4("192.168.0.1") { return 2 }
+    if not validate_url("https://velo-lang.org") { return 3 }
+    if not validate_hex("CAFEBABE") { return 4 }
+    if not validate_credit_card("4532015012345671") { return 5 }
+    if not validate_range_i64(10, 1, 20) { return 6 }
+    if not validate_slug("cool-feature-flag") { return 7 }
+
+    io.println_str("PASS: std.validate umbrella import all tests passed")
+    return 0
+}

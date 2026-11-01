@@ -1,0 +1,160 @@
+// std.validate.numeric - Numeric bounds, Luhn algorithm, credit card, and ISBN validators.
+use "../str.vl"
+
+// Returns true if val is within the closed interval [min_val, max_val].
+act validate_range_i64(val: i64, min_val: i64, max_val: i64) -> bool {
+    return val >= min_val and val <= max_val
+}
+
+// Returns true if val is within the closed interval [min_val, max_val] and not NaN.
+act validate_range_f64(val: f64, min_val: f64, max_val: f64) -> bool {
+    // In IEEE 754, NaN != NaN
+    if val != val { return false }
+    return val >= min_val and val <= max_val
+}
+
+// Returns true if val is strictly positive (> 0).
+act validate_positive_i64(val: i64) -> bool {
+    return val > 0
+}
+
+// Returns true if val is non-negative (>= 0).
+act validate_non_negative_i64(val: i64) -> bool {
+    return val >= 0
+}
+
+// Returns true if val is strictly negative (< 0).
+act validate_negative_i64(val: i64) -> bool {
+    return val < 0
+}
+
+// Validates a numeric string against the Luhn checksum formula (ISO/IEC 7812).
+// Spaces and hyphens are ignored; returns false if empty or invalid characters are present.
+act validate_luhn(number_str: string) -> bool {
+    if number_str == null { return false }
+    let len = str.len(number_str)
+    if len == 0 { return false }
+
+    mut digits_buf: @u8 = "../mem/heap.vl" // wait! We can count digits or use a stack buffer
+    // Let's count digits and verify only digits/spaces/hyphens exist
+    mut digit_count: usize = 0
+    mut i: usize = 0
+    loop i < len {
+        let c = number_str[i]
+        if c >= '0' as u8 and c <= '9' as u8 {
+            digit_count += 1
+        } else if c != ' ' as u8 and c != '-' as u8 {
+            return false
+        }
+        i += 1
+    }
+    if digit_count < 2 { return false }
+
+    // Luhn calculation from right to left
+    mut sum: u32 = 0
+    mut is_second = false
+    mut idx = len
+
+    loop idx > 0 {
+        idx -= 1
+        let c = number_str[idx]
+        if c >= '0' as u8 and c <= '9' as u8 {
+            mut d = (c - ('0' as u8)) as u32
+            if is_second {
+                d = d * 2
+                if d > 9 {
+                    d -= 9
+                }
+            }
+            sum += d
+            is_second = not is_second
+        }
+    }
+
+    return (sum % 10) == 0
+}
+
+// Validates whether number_str is a plausible credit card number (13-19 digits, passes Luhn check).
+act validate_credit_card(number_str: string) -> bool {
+    if number_str == null { return false }
+    let len = str.len(number_str)
+    if len == 0 { return false }
+
+    mut digits: usize = 0
+    mut i: usize = 0
+    loop i < len {
+        let c = number_str[i]
+        if c >= '0' as u8 and c <= '9' as u8 {
+            digits += 1
+        } else if c != ' ' as u8 and c != '-' as u8 {
+            return false
+        }
+        i += 1
+    }
+    // Standard payment card lengths: Visa (13, 16, 19), Mastercard (16), Amex (15), Discover (16)
+    if digits < 13 or digits > 19 {
+        return false
+    }
+
+    return validate_luhn(number_str)
+}
+
+// Validates an ISBN-10 identifier (with optional hyphens, check digit can be 'X' or '0'-'9').
+act validate_isbn10(isbn: string) -> bool {
+    if isbn == null { return false }
+    let len = str.len(isbn)
+    if len == 0 { return false }
+
+    mut digits: usize = 0
+    mut sum: u32 = 0
+    mut i: usize = 0
+
+    loop i < len {
+        let c = isbn[i]
+        if c >= '0' as u8 and c <= '9' as u8 {
+            if digits >= 10 { return false }
+            let d = (c - ('0' as u8)) as u32
+            let weight = (10 - digits) as u32
+            sum += d * weight
+            digits += 1
+        } else if (c == 'X' as u8 or c == 'x' as u8) and digits == 9 {
+            sum += 10 * 1
+            digits += 1
+        } else if c != '-' as u8 and c != ' ' as u8 {
+            return false
+        }
+        i += 1
+    }
+
+    return digits == 10 and (sum % 11) == 0
+}
+
+// Validates an ISBN-13 identifier (13 digits, optional hyphens, modulo 10 checksum).
+act validate_isbn13(isbn: string) -> bool {
+    if isbn == null { return false }
+    let len = str.len(isbn)
+    if len == 0 { return false }
+
+    mut digits: usize = 0
+    mut sum: u32 = 0
+    mut i: usize = 0
+
+    loop i < len {
+        let c = isbn[i]
+        if c >= '0' as u8 and c <= '9' as u8 {
+            if digits >= 13 { return false }
+            let d = (c - ('0' as u8)) as u32
+            mut weight: u32 = 1
+            if (digits % 2) == 1 {
+                weight = 3
+            }
+            sum += d * weight
+            digits += 1
+        } else if c != '-' as u8 and c != ' ' as u8 {
+            return false
+        }
+        i += 1
+    }
+
+    return digits == 13 and (sum % 10) == 0
+}

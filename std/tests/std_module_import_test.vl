@@ -21,6 +21,7 @@ use std.rand
 use std.uuid
 use std.text
 use std.timer
+use std.validate
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -196,6 +197,13 @@ act main() -> i32 {
     mut test_tq = timer_queue_new(4)
     defer timer_queue_free(@test_tq)
     if timer_queue_active_count(@test_tq) != 0 { return 57 }
+
+    // std.validate: email, ip, url, slug, credit card, range
+    if !validate_email("team@velo-lang.org") { return 58 }
+    if !validate_ipv4("10.0.0.1") or !validate_ipv6("::1") { return 59 }
+    if !validate_url("https://velo-lang.org/docs") { return 60 }
+    if !validate_slug("release-v2") { return 61 }
+    if !validate_credit_card("4532015012345671") { return 62 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0

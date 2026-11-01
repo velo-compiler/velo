@@ -1,0 +1,147 @@
+// std.validate.string - Text, character set, encoding, and string length validators.
+use "../str.vl"
+
+// Returns true if s is non-null and contains at least one non-whitespace character.
+act validate_not_blank(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len == 0 { return false }
+    mut i: usize = 0
+    loop i < len {
+        let c = s[i]
+        if c != ' ' as u8 and c != '\t' as u8 and c != '\n' as u8 and c != '\r' as u8 {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// Returns true if the byte length of s is between min_len and max_len (inclusive).
+act validate_length(s: string, min_len: usize, max_len: usize) -> bool {
+    if s == null {
+        return min_len == 0
+    }
+    let len = str.len(s)
+    return len >= min_len and len <= max_len
+}
+
+// Returns true if all bytes in s are valid 7-bit ASCII characters (0 <= c <= 127).
+act validate_ascii(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    mut i: usize = 0
+    loop i < len {
+        let b = (s[i] as u32) & 0xFF
+        if b >= 128 {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// Returns true if s is non-empty and contains exclusively ASCII alphabetic letters (a-z, A-Z).
+act validate_alpha(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len == 0 { return false }
+    mut i: usize = 0
+    loop i < len {
+        let c = s[i]
+        let is_lower = (c >= 'a' as u8 and c <= 'z' as u8)
+        let is_upper = (c >= 'A' as u8 and c <= 'Z' as u8)
+        if not is_lower and not is_upper {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// Returns true if s is non-empty and contains exclusively ASCII letters and digits (a-z, A-Z, 0-9).
+act validate_alphanumeric(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len == 0 { return false }
+    mut i: usize = 0
+    loop i < len {
+        let c = s[i]
+        let is_lower = (c >= 'a' as u8 and c <= 'z' as u8)
+        let is_upper = (c >= 'A' as u8 and c <= 'Z' as u8)
+        let is_digit = (c >= '0' as u8 and c <= '9' as u8)
+        if not is_lower and not is_upper and not is_digit {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// Returns true if s is non-empty and contains exclusively ASCII digits (0-9).
+act validate_numeric(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len == 0 { return false }
+    mut i: usize = 0
+    loop i < len {
+        let c = s[i]
+        if c < '0' as u8 or c > '9' as u8 {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// Returns true if s is non-empty and contains exclusively valid hexadecimal digits.
+act validate_hex(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len == 0 { return false }
+    mut i: usize = 0
+    loop i < len {
+        let c = s[i]
+        let is_digit = (c >= '0' as u8 and c <= '9' as u8)
+        let is_lower = (c >= 'a' as u8 and c <= 'f' as u8)
+        let is_upper = (c >= 'A' as u8 and c <= 'F' as u8)
+        if not is_digit and not is_lower and not is_upper {
+            return false
+        }
+        i += 1
+    }
+    return true
+}
+
+// Returns true if s is a valid RFC 4648 Base64 encoded string (length multiple of 4, valid charset and padding).
+act validate_base64(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len == 0 { return true }
+    if len % 4 != 0 { return false }
+
+    mut i: usize = 0
+    mut padding: usize = 0
+
+    loop i < len {
+        let c = s[i]
+        if c == '=' as u8 {
+            padding += 1
+            if i < len - 2 {
+                return false // '=' can only appear as the last 1 or 2 characters
+            }
+        } else if padding > 0 {
+            return false // No valid characters allowed after padding '='
+        } else {
+            let is_upper = (c >= 'A' as u8 and c <= 'Z' as u8)
+            let is_lower = (c >= 'a' as u8 and c <= 'z' as u8)
+            let is_digit = (c >= '0' as u8 and c <= '9' as u8)
+            let is_sym = (c == '+' as u8 or c == '/' as u8)
+            if not is_upper and not is_lower and not is_digit and not is_sym {
+                return false
+            }
+        }
+        i += 1
+    }
+    return padding <= 2
+}

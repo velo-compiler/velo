@@ -1994,6 +1994,169 @@ export const STDLIB_MODULES: StdlibModule[] = [
         description: 'Scheduled callback priority queue and dispatcher.'
       }
     ]
+  },
+  {
+    name: 'std.validate',
+    description: 'Input data validation engine for emails, URLs, IP addresses, domains, UUIDs, numeric bounds, and Luhn checksums.',
+    functions: [
+      {
+        name: 'validate_email',
+        signature: 'act validate_email(s: string) -> bool',
+        description: 'Returns true if s is a valid RFC 5322 compliant email address with valid local and domain parts.',
+        example: 'if validate_email(user_email) { ... }'
+      },
+      {
+        name: 'validate_url',
+        signature: 'act validate_url(s: string) -> bool',
+        description: 'Returns true if s is a valid absolute HTTP, HTTPS, or FTP URL with host and optional port/path.',
+        example: 'if validate_url(website) { ... }'
+      },
+      {
+        name: 'validate_ipv4',
+        signature: 'act validate_ipv4(s: string) -> bool',
+        description: 'Returns true if s is a valid decimal 4-octet IPv4 address (0-255 per octet, no leading zeros).',
+        example: 'if validate_ipv4(remote_ip) { ... }'
+      },
+      {
+        name: 'validate_ipv6',
+        signature: 'act validate_ipv6(s: string) -> bool',
+        description: 'Returns true if s is a valid RFC 4291 hexadecimal IPv6 address with optional double-colon shorthand.',
+        example: 'if validate_ipv6(addr) { ... }'
+      },
+      {
+        name: 'validate_ip',
+        signature: 'act validate_ip(s: string) -> bool',
+        description: 'Returns true if s is a valid IPv4 or IPv6 network address.',
+        example: 'if validate_ip(host) { ... }'
+      },
+      {
+        name: 'validate_port',
+        signature: 'act validate_port(port: i64) -> bool',
+        description: 'Returns true if port is a valid TCP/UDP port number in range [1, 65535].',
+        example: 'if validate_port(port_num) { ... }'
+      },
+      {
+        name: 'validate_domain',
+        signature: 'act validate_domain(s: string) -> bool',
+        description: 'Returns true if s is a valid Internet domain name with at least two labels and alpha TLD >= 2.',
+        example: 'if validate_domain(domain_name) { ... }'
+      },
+      {
+        name: 'validate_hostname',
+        signature: 'act validate_hostname(s: string) -> bool',
+        description: 'Returns true if s is a valid RFC 1123 hostname (labels separated by dots, <= 253 total chars).',
+        example: 'if validate_hostname(host) { ... }'
+      },
+      {
+        name: 'validate_mac_address',
+        signature: 'act validate_mac_address(s: string) -> bool',
+        description: 'Returns true if s is a valid 6-octet colon or hyphen-separated MAC hardware address.',
+        example: 'if validate_mac_address(hw_addr) { ... }'
+      },
+      {
+        name: 'validate_uuid',
+        signature: 'act validate_uuid(s: string) -> bool',
+        description: 'Returns true if s is a valid 36-character hyphenated UUID or 32-character hexadecimal UUID.',
+        example: 'if validate_uuid(id_str) { ... }'
+      },
+      {
+        name: 'validate_slug',
+        signature: 'act validate_slug(s: string) -> bool',
+        description: 'Returns true if s is a valid URL slug (lowercase alphanumeric words separated by hyphens).',
+        example: 'if validate_slug(post_slug) { ... }'
+      },
+      {
+        name: 'validate_semver',
+        signature: 'act validate_semver(s: string) -> bool',
+        description: 'Returns true if s is a valid semantic version string according to SemVer 2.0 (e.g. "1.2.3").',
+        example: 'if validate_semver(pkg_ver) { ... }'
+      },
+      {
+        name: 'validate_luhn',
+        signature: 'act validate_luhn(number_str: string) -> bool',
+        description: 'Validates a numeric string against the Luhn checksum formula (ISO/IEC 7812).',
+        example: 'if validate_luhn(card_number) { ... }'
+      },
+      {
+        name: 'validate_credit_card',
+        signature: 'act validate_credit_card(number_str: string) -> bool',
+        description: 'Validates whether number_str is a plausible credit card number (13-19 digits, passes Luhn check).',
+        example: 'if validate_credit_card(input) { ... }'
+      },
+      {
+        name: 'validate_isbn10',
+        signature: 'act validate_isbn10(isbn: string) -> bool',
+        description: 'Validates a 10-digit International Standard Book Number (ISBN-10) with modulo 11 checksum.',
+        example: 'if validate_isbn10(book_id) { ... }'
+      },
+      {
+        name: 'validate_isbn13',
+        signature: 'act validate_isbn13(isbn: string) -> bool',
+        description: 'Validates a 13-digit International Standard Book Number (ISBN-13) with modulo 10 checksum.',
+        example: 'if validate_isbn13(book_id) { ... }'
+      },
+      {
+        name: 'validate_not_blank',
+        signature: 'act validate_not_blank(s: string) -> bool',
+        description: 'Returns true if s is non-null and contains at least one non-whitespace character.',
+        example: 'if validate_not_blank(username) { ... }'
+      },
+      {
+        name: 'validate_length',
+        signature: 'act validate_length(s: string, min_len: usize, max_len: usize) -> bool',
+        description: 'Returns true if the byte length of s is between min_len and max_len (inclusive).',
+        example: 'if validate_length(password, 8, 64) { ... }'
+      },
+      {
+        name: 'validate_ascii',
+        signature: 'act validate_ascii(s: string) -> bool',
+        description: 'Returns true if all bytes in s are valid 7-bit ASCII characters (0 <= c <= 127).',
+        example: 'if validate_ascii(text) { ... }'
+      },
+      {
+        name: 'validate_alpha',
+        signature: 'act validate_alpha(s: string) -> bool',
+        description: 'Returns true if s is non-empty and contains exclusively ASCII alphabetic letters (a-z, A-Z).',
+        example: 'if validate_alpha(first_name) { ... }'
+      },
+      {
+        name: 'validate_alphanumeric',
+        signature: 'act validate_alphanumeric(s: string) -> bool',
+        description: 'Returns true if s is non-empty and contains exclusively ASCII letters and digits (a-z, A-Z, 0-9).',
+        example: 'if validate_alphanumeric(code) { ... }'
+      },
+      {
+        name: 'validate_numeric',
+        signature: 'act validate_numeric(s: string) -> bool',
+        description: 'Returns true if s is non-empty and contains exclusively ASCII digits (0-9).',
+        example: 'if validate_numeric(zip_code) { ... }'
+      },
+      {
+        name: 'validate_hex',
+        signature: 'act validate_hex(s: string) -> bool',
+        description: 'Returns true if s is non-empty and contains exclusively valid hexadecimal digits.',
+        example: 'if validate_hex(hash_str) { ... }'
+      },
+      {
+        name: 'validate_base64',
+        signature: 'act validate_base64(s: string) -> bool',
+        description: 'Returns true if s is a valid RFC 4648 Base64 encoded string.',
+        example: 'if validate_base64(payload) { ... }'
+      },
+      {
+        name: 'validate_range_i64',
+        signature: 'act validate_range_i64(val: i64, min_val: i64, max_val: i64) -> bool',
+        description: 'Returns true if val is within the closed interval [min_val, max_val].',
+        example: 'if validate_range_i64(age, 0, 150) { ... }'
+      },
+      {
+        name: 'validate_range_f64',
+        signature: 'act validate_range_f64(val: f64, min_val: f64, max_val: f64) -> bool',
+        description: 'Returns true if val is within [min_val, max_val] and not NaN.',
+        example: 'if validate_range_f64(score, 0.0, 100.0) { ... }'
+      }
+    ],
+    types: []
   }
 ];
 

@@ -2425,3 +2425,31 @@ flowchart TD
   - External project test passed: elo run timer_demo.vl in C:\projects	est.
   - Pytest suite 	ests/test_std_timer.py passed (2/2 tests).
   - All source files strictly < 400 lines (python scripts/count_lines.py).
+
+---
+
+### Phase 29: std.validate (Input Data Validation Engine for Network, Web, Identifiers, Numbers & Luhn Checksums)
+#### Task 29.1: Pure Velo Data Validator Standard Library (std.validate) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo had no standard input validation library. Applications parsing user form inputs, configuration files, network requests, or database records had to roll custom regexes or manual character loops to validate email addresses, IP addresses (IPv4/IPv6), domain names, URLs, UUIDs, numeric bounds, or credit card checksums.
+* **Fix Applied**:
+  - Implemented the std.validate standard library module and subcomponents in std/validate/:
+    - std/validate/string.vl: Character set and string structure validators (alidate_not_blank, alidate_length, alidate_ascii, alidate_alpha, alidate_alphanumeric, alidate_numeric, alidate_hex, alidate_base64).
+    - std/validate/numeric.vl: Numeric range and mathematical checksum validators (alidate_range_i64, alidate_range_f64, alidate_positive_i64, alidate_non_negative_i64, alidate_negative_i64, alidate_luhn, alidate_credit_card, alidate_isbn10, alidate_isbn13).
+    - std/validate/net.vl: Network addressing and DNS validators (alidate_ipv4, alidate_ipv6, alidate_ip, alidate_port, alidate_mac_address, alidate_hostname, alidate_domain).
+    - std/validate/web.vl: Web protocol, identity, and versioning validators (alidate_email, alidate_url, alidate_uuid, alidate_slug, alidate_semver).
+    - std/validate.vl: Standard library umbrella module exporting the full validation engine.
+  - Packaging, Docs & Integration:
+    - Updated std/tests/std_module_import_test.vl to verify all 24 standard library modules together.
+    - Synced global installation directory ~/.velo/std/validate/.
+    - Refreshed standalone archive bundles website/public/velo-std.zip and website/public/velo-std.tar.gz.
+    - Documented std.validate with 26 functions, signatures, descriptions, and code examples in website/src/data/stdlib.ts.
+* **Residual Limitation**:
+  - Complex schema validation rules (e.g. nested JSON schema objects) can be layered in an upcoming std.json_schema module.
+* **Verification**:
+  - Native tests passed: in/velo.exe run std/tests/validate/validate_test.vl (String predicates, base64, numeric ranges, Luhn checksums, credit card validation, ISBN-10/13, IPv4/IPv6, ports, MAC addresses, hostnames, domains, emails, URLs, UUIDs, slugs, SemVer).
+  - Native umbrella import test passed: in/velo.exe run std/tests/validate_module_import_test.vl.
+  - Integrated 24-module import test passed: in/velo.exe run std/tests/std_module_import_test.vl.
+  - External project test passed: elo run validate_demo.vl in C:\projects	est.
+  - Pytest suite 	ests/test_std_validate.py passed (2/2 tests).
+  - All source files strictly < 400 lines (python scripts/count_lines.py).

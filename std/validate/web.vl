@@ -1,0 +1,275 @@
+// std.validate.web - Email, URL, UUID, slug, and semantic versioning validators.
+use "net.vl"
+use "string.vl"
+use "../str.vl"
+use "../mem/heap.vl"
+
+// Returns true if s is a valid RFC 5322 compliant email address.
+act validate_email(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len < 5 or len > 254 { return false }
+
+    // Find the single '@' separator
+    mut at_idx: usize = 0
+    mut at_count: usize = 0
+    mut i: usize = 0
+
+    loop i < len {
+        if s[i] == '@' as u8 {
+            at_idx = i
+            at_count += 1
+        }
+        i += 1
+    }
+
+    if at_count != 1 { return false }
+    if at_idx == 0 or at_idx > 64 { return false } // Local part must be 1..64 chars
+
+    let local_len = at_idx
+    let domain_start = at_idx + 1
+    let domain_len = len - domain_start
+    if domain_len < 3 { return false }
+
+    // Validate local part: cannot start or end with dot, no consecutive dots
+    if s[0] == '.' as u8 or s[at_idx - 1] == '.' as u8 {
+        return false
+    }
+
+    mut prev_dot = false
+    i = 0
+    loop i < local_len {
+        let c = s[i]
+        let is_alnum = (c >= 'a' as u8 and c <= 'z' as u8) or (c >= 'A' as u8 and c <= 'Z' as u8) or (c >= '0' as u8 and c <= '9' as u8)
+        let is_spec = (c == '.' as u8 or c == '_' as u8 or c == '%' as u8 or c == '+' as u8 or c == '-' as u8)
+
+        if not is_alnum and not is_spec {
+            return false
+        }
+        if c == '.' as u8 {
+            if prev_dot { return false } // No consecutive dots
+            prev_dot = true
+        } else {
+            prev_dot = false
+        }
+        i += 1
+    }
+
+    // Extract domain substring and validate with validate_domain
+    mut dom_buf: @u8 = heap_alloc(domain_len + 1)
+    if dom_buf == null { return false }
+    mut j: usize = 0
+    loop j < domain_len {
+        dom_buf[j] = s[domain_start + j]
+        j += 1
+    }
+    dom_buf[domain_len] = 0 as u8
+
+    let is_valid_dom = validate_domain(dom_buf as string)
+    heap_free(dom_buf)
+    return is_valid_dom
+}
+
+// Returns true if s is a valid absolute HTTP, HTTPS, or FTP URL.
+act validate_url(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len < 10 { return false }
+
+    mut host_start: usize = 0
+    if str.starts_with(s, "http://") {
+        host_start = 7
+    } else if str.starts_with(s, "https://") {
+        host_start = 8
+    } else if str.starts_with(s, "ftp://") {
+        host_start = 6
+    } else {
+        return false
+    }
+
+    if host_start >= len { return false }
+
+    // Find end of host/authority (marked by '/', '?', '#', or end of string)
+    mut host_end = len
+    mut k = host_start
+    loop k < len {
+        let c = s[k]
+        if c == '/' as u8 or c == '?' as u8 or c == '#' as u8 {
+            host_end = k
+            break
+        }
+        k += 1
+    }
+
+    let auth_len = host_end - host_start
+    if auth_len == 0 { return false }
+
+    // Check optional port in authority
+    mut port_sep: usize = 0
+    mut has_port = false
+    mut m = host_start
+    loop m < host_end {
+        if s[m] == ':' as u8 {
+            port_sep = m
+            has_port = true
+        }
+        m += 1
+    }
+
+    mut host_part_len = auth_len
+    if has_port {
+        host_part_len = port_sep - host_start
+        let port_len = host_end - (port_sep + 1)
+        if port_len == 0 or port_len > 5 { return false }
+
+        mut port_val: i64 = 0
+        mut pi: usize = 0
+        loop pi < port_len {
+            let pc = s[port_sep + 1 + pi]
+            if pc < '0' as u8 or pc > '9' as u8 { return false }
+            port_val = port_val * 10 + ((pc - ('0' as u8)) as i64)
+            pi += 1
+        }
+        if not validate_port(port_val) { return false }
+    }
+
+    if host_part_len == 0 { return false }
+
+    mut host_buf: @u8 = heap_alloc(host_part_len + 1)
+    if host_buf == null { return false }
+    mut hi: usize = 0
+    loop hi < host_part_len {
+        host_buf[hi] = s[host_start + hi]
+        hi += 1
+    }
+    host_buf[host_part_len] = 0 as u8
+
+    let host_str = host_buf as string
+    let is_valid_host = (validate_ip(host_str) or validate_hostname(host_str) or host_str == "localhost")
+    heap_free(host_buf)
+
+    return is_valid_host
+}
+
+// Returns true if s is a valid 36-character hyphenated UUID or 32-character hexadecimal UUID.
+act validate_uuid(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+
+    // Standard hyphenated format: 8-4-4-4-12 (36 chars)
+    if len == 36 {
+        if s[8] != '-' as u8 or s[13] != '-' as u8 or s[18] != '-' as u8 or s[23] != '-' as u8 {
+            return false
+        }
+        mut i: usize = 0
+        loop i < 36 {
+            if i != 8 and i != 13 and i != 18 and i != 23 {
+                let c = s[i]
+                let is_hex = (c >= '0' as u8 and c <= '9' as u8) or (c >= 'a' as u8 and c <= 'f' as u8) or (c >= 'A' as u8 and c <= 'F' as u8)
+                if not is_hex { return false }
+            }
+            i += 1
+        }
+        return true
+    }
+
+    // Simple 32-character hex format
+    if len == 32 {
+        return validate_hex(s)
+    }
+
+    return false
+}
+
+// Returns true if s is a valid URL slug (lowercase alphanumeric words separated by hyphens).
+act validate_slug(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len == 0 { return false }
+
+    if s[0] == '-' as u8 or s[len - 1] == '-' as u8 {
+        return false
+    }
+
+    mut prev_hyphen = false
+    mut i: usize = 0
+
+    loop i < len {
+        let c = s[i]
+        let is_lower = (c >= 'a' as u8 and c <= 'z' as u8)
+        let is_digit = (c >= '0' as u8 and c <= '9' as u8)
+        if c == '-' as u8 {
+            if prev_hyphen { return false } // No consecutive hyphens
+            prev_hyphen = true
+        } else if is_lower or is_digit {
+            prev_hyphen = false
+        } else {
+            return false
+        }
+        i += 1
+    }
+
+    return true
+}
+
+// Returns true if s is a valid semantic version string according to SemVer 2.0 (e.g. "1.2.3", "2.0.0-beta.1").
+act validate_semver(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len < 5 { return false }
+
+    mut i: usize = 0
+    mut part: usize = 0
+
+    // Validate MAJOR, MINOR, PATCH
+    loop part < 3 {
+        let start = i
+        mut digits: usize = 0
+        loop i < len and s[i] >= '0' as u8 and s[i] <= '9' as u8 {
+            digits += 1
+            i += 1
+        }
+
+        if digits == 0 { return false }
+        if digits > 1 and s[start] == '0' as u8 { return false } // No leading zero
+
+        part += 1
+        if part < 3 {
+            if i >= len or s[i] != '.' as u8 { return false }
+            i += 1
+        }
+    }
+
+    // End of basic version
+    if i == len { return true }
+
+    // Optional pre-release tag: -prerelease
+    if s[i] == '-' as u8 {
+        i += 1
+        if i == len { return false }
+        loop i < len and s[i] != '+' as u8 {
+            let c = s[i]
+            let is_alnum = (c >= 'a' as u8 and c <= 'z' as u8) or (c >= 'A' as u8 and c <= 'Z' as u8) or (c >= '0' as u8 and c <= '9' as u8)
+            if not is_alnum and c != '.' as u8 and c != '-' as u8 {
+                return false
+            }
+            i += 1
+        }
+    }
+
+    // Optional build metadata: +build
+    if i < len and s[i] == '+' as u8 {
+        i += 1
+        if i == len { return false }
+        loop i < len {
+            let c = s[i]
+            let is_alnum = (c >= 'a' as u8 and c <= 'z' as u8) or (c >= 'A' as u8 and c <= 'Z' as u8) or (c >= '0' as u8 and c <= '9' as u8)
+            if not is_alnum and c != '.' as u8 and c != '-' as u8 {
+                return false
+            }
+            i += 1
+        }
+    }
+
+    return i == len
+}

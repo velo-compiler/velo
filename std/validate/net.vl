@@ -1,0 +1,226 @@
+// std.validate.net - Network address, IP, port, MAC, and domain name validators.
+use "../str.vl"
+
+// Returns true if s is a valid decimal IPv4 address (e.g. "192.168.1.1").
+// Strictly rejects leading zeros (e.g. "01"), out-of-range octets (>255), and malformed structures.
+act validate_ipv4(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len < 7 or len > 15 { return false }
+
+    mut octets: usize = 0
+    mut i: usize = 0
+
+    loop i < len and octets < 4 {
+        let start = i
+        mut val: u32 = 0
+        mut digits: usize = 0
+
+        loop i < len and s[i] != '.' as u8 {
+            let c = s[i]
+            if c < '0' as u8 or c > '9' as u8 {
+                return false
+            }
+            val = val * 10 + ((c - ('0' as u8)) as u32)
+            digits += 1
+            i += 1
+        }
+
+        // Empty octet or more than 3 digits
+        if digits == 0 or digits > 3 { return false }
+        // Octet must be 0..255
+        if val > 255 { return false }
+        // No leading zero if more than 1 digit (e.g. "01")
+        if digits > 1 and s[start] == '0' as u8 { return false }
+
+        octets += 1
+
+        if i < len and s[i] == '.' as u8 {
+            if octets == 4 { return false } // Cannot have a dot after the 4th octet
+            i += 1
+        }
+    }
+
+    return octets == 4 and i == len
+}
+
+// Returns true if s is a valid RFC 4291 IPv6 address (e.g. "2001:db8::1", "::1").
+act validate_ipv6(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len < 2 or len > 39 { return false }
+
+    mut double_colon = false
+    mut groups: usize = 0
+    mut i: usize = 0
+
+    // Leading double colon check (e.g. "::" or "::1")
+    if s[0] == ':' as u8 {
+        if s[1] != ':' as u8 { return false }
+        double_colon = true
+        groups += 1
+        i += 2
+        if i == len { return true } // "::" alone is valid unspecified address
+    }
+
+    loop i < len {
+        let start = i
+        mut hex_count: usize = 0
+
+        loop i < len and s[i] != ':' as u8 {
+            let c = s[i]
+            let is_digit = (c >= '0' as u8 and c <= '9' as u8)
+            let is_lower = (c >= 'a' as u8 and c <= 'f' as u8)
+            let is_upper = (c >= 'A' as u8 and c <= 'F' as u8)
+            if not is_digit and not is_lower and not is_upper {
+                return false
+            }
+            hex_count += 1
+            i += 1
+        }
+
+        if hex_count == 0 {
+            // Consecutive colon ("::")
+            if double_colon {
+                return false // Only one double-colon is allowed
+            }
+            double_colon = true
+        } else if hex_count > 4 {
+            return false // Each hex group is at most 16 bits (4 hex digits)
+        } else {
+            groups += 1
+        }
+
+        if i < len and s[i] == ':' as u8 {
+            i += 1
+            if i == len {
+                // Trailing single colon is invalid unless it was part of "::"
+                if not (s[len - 2] == ':' as u8 and double_colon) {
+                    return false
+                }
+            }
+        }
+    }
+
+    if double_colon {
+        return groups <= 7
+    }
+    return groups == 8
+}
+
+// Returns true if s is a valid IPv4 or IPv6 address.
+act validate_ip(s: string) -> bool {
+    return validate_ipv4(s) or validate_ipv6(s)
+}
+
+// Returns true if port is a valid TCP/UDP port number in range [1, 65535].
+act validate_port(port: i64) -> bool {
+    return port >= 1 and port <= 65535
+}
+
+// Returns true if s is a valid 6-octet MAC address (e.g. "00:1A:2B:3C:4D:5E" or "00-1A-2B-3C-4D-5E").
+act validate_mac_address(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len != 17 { return false }
+
+    let sep = s[2]
+    if sep != ':' as u8 and sep != '-' as u8 {
+        return false
+    }
+
+    mut i: usize = 0
+    loop i < 17 {
+        if i % 3 == 2 {
+            if s[i] != sep { return false }
+        } else {
+            let c = s[i]
+            let is_digit = (c >= '0' as u8 and c <= '9' as u8)
+            let is_lower = (c >= 'a' as u8 and c <= 'f' as u8)
+            let is_upper = (c >= 'A' as u8 and c <= 'F' as u8)
+            if not is_digit and not is_lower and not is_upper {
+                return false
+            }
+        }
+        i += 1
+    }
+    return true
+}
+
+// Returns true if s is a valid RFC 1123 hostname (labels separated by dots, <= 253 total chars).
+act validate_hostname(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len == 0 or len > 253 { return false }
+
+    mut i: usize = 0
+    loop i < len {
+        let label_start = i
+        mut label_len: usize = 0
+
+        loop i < len and s[i] != '.' as u8 {
+            let c = s[i]
+            let is_alnum = (c >= 'a' as u8 and c <= 'z' as u8) or (c >= 'A' as u8 and c <= 'Z' as u8) or (c >= '0' as u8 and c <= '9' as u8)
+            let is_hyphen = (c == '-' as u8)
+            if not is_alnum and not is_hyphen {
+                return false
+            }
+            label_len += 1
+            i += 1
+        }
+
+        if label_len == 0 or label_len > 63 { return false }
+        // Cannot start or end with hyphen
+        if s[label_start] == '-' as u8 or s[label_start + label_len - 1] == '-' as u8 {
+            return false
+        }
+
+        if i < len and s[i] == '.' as u8 {
+            i += 1
+            // Trailing dot allowed in FQDN, but only as the final character
+            if i == len {
+                return true
+            }
+        }
+    }
+    return true
+}
+
+// Returns true if s is a valid Internet domain name (valid hostname with at least two labels and alpha TLD >= 2).
+act validate_domain(s: string) -> bool {
+    if not validate_hostname(s) { return false }
+    let len = str.len(s)
+    if len < 4 { return false }
+
+    // Find last dot
+    mut last_dot: usize = 0
+    mut dot_count: usize = 0
+    mut i: usize = 0
+
+    loop i < len {
+        if s[i] == '.' as u8 {
+            last_dot = i
+            dot_count += 1
+        }
+        i += 1
+    }
+
+    if dot_count == 0 { return false }
+
+    // TLD is after last dot
+    let tld_start = last_dot + 1
+    let tld_len = len - tld_start
+    if tld_len < 2 { return false }
+
+    // TLD must be alphabetic
+    mut ti = tld_start
+    loop ti < len {
+        let c = s[ti]
+        let is_alpha = (c >= 'a' as u8 and c <= 'z' as u8) or (c >= 'A' as u8 and c <= 'Z' as u8)
+        if not is_alpha {
+            return false
+        }
+        ti += 1
+    }
+    return true
+}
