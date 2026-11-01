@@ -1,0 +1,301 @@
+// Tests for std.rand: PCG64 and Xoshiro256** algorithms, typed samplers,
+// byte generation, string generation, shuffling, and seeding.
+use "../../rand.vl"
+use "../../io.vl"
+use "../../mem/heap.vl"
+use "../../math.vl"
+
+act main() -> i32 {
+    // -----------------------------------------------------------------------
+    // 1. Deterministic seeding - same seed produces same sequence
+    // -----------------------------------------------------------------------
+    mut r1 = rng_seed(12345 as u64)
+    mut r2 = rng_seed(12345 as u64)
+    let v1a = rand_u64(@r1)
+    let v2a = rand_u64(@r2)
+    if v1a != v2a { return 1 }
+    let v1b = rand_u64(@r1)
+    let v2b = rand_u64(@r2)
+    if v1b != v2b { return 2 }
+
+    // -----------------------------------------------------------------------
+    // 2. Different seeds produce different sequences
+    // -----------------------------------------------------------------------
+    mut ra = rng_seed(111 as u64)
+    mut rb = rng_seed(222 as u64)
+    if rand_u64(@ra) == rand_u64(@rb) and rand_u64(@ra) == rand_u64(@rb) { return 3 }
+
+    // -----------------------------------------------------------------------
+    // 3. rng_new() produces a valid non-zero generator
+    // -----------------------------------------------------------------------
+    mut rn = rng_new()
+    mut any_nonzero = false
+    mut k: usize = 0
+    loop k < 8 {
+        if rand_u64(@rn) != (0 as u64) { any_nonzero = true }
+        k += 1
+    }
+    if not any_nonzero { return 4 }
+
+    // -----------------------------------------------------------------------
+    // 4. rand_u32 stays in u32 range
+    // -----------------------------------------------------------------------
+    mut rc = rng_seed(999 as u64)
+    mut m: usize = 0
+    loop m < 100 {
+        let u = rand_u32(@rc)
+        if u > (0xFFFFFFFF as u32) { return 5 }
+        m += 1
+    }
+
+    // -----------------------------------------------------------------------
+    // 5. rand_range_u64 stays in [min, max]
+    // -----------------------------------------------------------------------
+    mut rd = rng_seed(42 as u64)
+    let lo: u64 = 100 as u64
+    let hi: u64 = 200 as u64
+    mut n: usize = 0
+    loop n < 500 {
+        let v = rand_range_u64(@rd, lo, hi)
+        if v < lo or v > hi { return 6 }
+        n += 1
+    }
+
+    // -----------------------------------------------------------------------
+    // 6. rand_range_i64 stays in [min, max] and covers both signs
+    // -----------------------------------------------------------------------
+    mut re = rng_seed(77 as u64)
+    let i_lo: i64 = -50 as i64
+    let i_hi: i64 = 50 as i64
+    mut saw_neg = false
+    mut saw_pos = false
+    mut p: usize = 0
+    loop p < 500 {
+        let v = rand_range_i64(@re, i_lo, i_hi)
+        if v < i_lo or v > i_hi { return 7 }
+        if v < (0 as i64) { saw_neg = true }
+        if v > (0 as i64) { saw_pos = true }
+        p += 1
+    }
+    if not saw_neg or not saw_pos { return 8 }
+
+    // -----------------------------------------------------------------------
+    // 7. rand_range_i32 stays in [min, max]
+    // -----------------------------------------------------------------------
+    mut rf = rng_seed(55 as u64)
+    let i32_lo: i32 = -1000 as i32
+    let i32_hi: i32 = 1000 as i32
+    mut q: usize = 0
+    loop q < 200 {
+        let v = rand_range_i32(@rf, i32_lo, i32_hi)
+        if v < i32_lo or v > i32_hi { return 9 }
+        q += 1
+    }
+
+    // -----------------------------------------------------------------------
+    // 8. rand_f64 stays in [0.0, 1.0)
+    // -----------------------------------------------------------------------
+    mut rg = rng_seed(13 as u64)
+    mut fq: usize = 0
+    loop fq < 500 {
+        let f = rand_f64(@rg)
+        if f < 0.0 or f >= 1.0 { return 10 }
+        fq += 1
+    }
+
+    // -----------------------------------------------------------------------
+    // 9. rand_range_f64 stays in [lo, hi) and covers range
+    // -----------------------------------------------------------------------
+    mut rh = rng_seed(31 as u64)
+    let f_lo = 10.0
+    let f_hi_val = 20.0
+    mut f_min = 20.0
+    mut f_max = 10.0
+    mut fj: usize = 0
+    loop fj < 500 {
+        let f = rand_range_f64(@rh, f_lo, f_hi_val)
+        if f < f_lo or f >= f_hi_val { return 11 }
+        if f < f_min { f_min = f }
+        if f > f_max { f_max = f }
+        fj += 1
+    }
+    // Should have covered at least 5 units of the 10-wide range
+    if f_max - f_min < 5.0 { return 12 }
+
+    // -----------------------------------------------------------------------
+    // 10. rand_bool produces both true and false
+    // -----------------------------------------------------------------------
+    mut ri = rng_seed(7 as u64)
+    mut saw_true = false
+    mut saw_false = false
+    mut bi: usize = 0
+    loop bi < 100 {
+        if rand_bool(@ri) { saw_true = true } else { saw_false = true }
+        bi += 1
+    }
+    if not saw_true or not saw_false { return 13 }
+
+    // -----------------------------------------------------------------------
+    // 11. rand_bool_weighted (1/6 chance)
+    // -----------------------------------------------------------------------
+    mut rj = rng_seed(888 as u64)
+    mut trues: usize = 0
+    mut wi: usize = 0
+    loop wi < 6000 {
+        if rand_bool_weighted(@rj, 1 as u64, 6 as u64) { trues += 1 }
+        wi += 1
+    }
+    // Expect ~1000 trues (±500 tolerance)
+    if trues < 500 or trues > 1500 { return 14 }
+
+    // -----------------------------------------------------------------------
+    // 12. rand_fill produces variable bytes
+    // -----------------------------------------------------------------------
+    mut rk = rng_seed(321 as u64)
+    mut fill_buf: @u8 = heap_alloc(32)
+    if fill_buf == null { return 15 }
+    rand_fill(@rk, fill_buf, 32)
+    mut all_same = true
+    mut fi: usize = 1
+    loop fi < 32 {
+        if fill_buf[fi] != fill_buf[0] { all_same = false }
+        fi += 1
+    }
+    heap_free(fill_buf)
+    if all_same { return 16 }
+
+    // -----------------------------------------------------------------------
+    // 13. rand_string produces correct length and valid alphabet
+    // -----------------------------------------------------------------------
+    mut rl = rng_seed(500 as u64)
+    let s = rand_string(@rl, 16)
+    if s == null { return 17 }
+    if str.len(s) != 16 { return 18 }
+    // All chars must be alphanumeric
+    mut si: usize = 0
+    loop si < 16 {
+        let c = s[si]
+        let is_lower = c >= 'a' as u8 and c <= 'z' as u8
+        let is_upper = c >= 'A' as u8 and c <= 'Z' as u8
+        let is_digit = c >= '0' as u8 and c <= '9' as u8
+        if not is_lower and not is_upper and not is_digit { return 19 }
+        si += 1
+    }
+
+    // -----------------------------------------------------------------------
+    // 14. rand_hex_string produces valid hex chars
+    // -----------------------------------------------------------------------
+    mut rm = rng_seed(600 as u64)
+    let hs = rand_hex_string(@rm, 20)
+    if hs == null { return 20 }
+    if str.len(hs) != 20 { return 21 }
+    mut hxi: usize = 0
+    loop hxi < 20 {
+        let c = hs[hxi]
+        let ok = (c >= '0' as u8 and c <= '9' as u8) or (c >= 'a' as u8 and c <= 'f' as u8)
+        if not ok { return 22 }
+        hxi += 1
+    }
+
+    // -----------------------------------------------------------------------
+    // 15. rand_string_from with custom alphabet
+    // -----------------------------------------------------------------------
+    mut rr = rng_seed(777 as u64)
+    let coin = rand_string_from(@rr, "HT", 100)
+    if coin == null { return 23 }
+    if str.len(coin) != 100 { return 24 }
+    mut saw_h = false
+    mut saw_t = false
+    mut ci: usize = 0
+    loop ci < 100 {
+        if coin[ci] == 'H' as u8 { saw_h = true }
+        if coin[ci] == 'T' as u8 { saw_t = true }
+        ci += 1
+    }
+    if not saw_h or not saw_t { return 25 }
+
+    // -----------------------------------------------------------------------
+    // 16. rand_shuffle_u64 - values permuted, same elements
+    // -----------------------------------------------------------------------
+    mut rsh = rng_seed(11 as u64)
+    mut arr: @u64 = heap_alloc(5 * 8) as @u64
+    if arr == null { return 26 }
+    arr[0] = 10 as u64
+    arr[1] = 20 as u64
+    arr[2] = 30 as u64
+    arr[3] = 40 as u64
+    arr[4] = 50 as u64
+    rand_shuffle_u64(@rsh, arr, 5)
+    // Sum must be preserved: 10+20+30+40+50 = 150
+    let total = arr[0] + arr[1] + arr[2] + arr[3] + arr[4]
+    heap_free(arr as @u8)
+    if total != (150 as u64) { return 27 }
+
+    // -----------------------------------------------------------------------
+    // 17. rand_shuffle_i64 preserves sum
+    // -----------------------------------------------------------------------
+    mut rsi = rng_seed(22 as u64)
+    mut iarr: @i64 = heap_alloc(4 * 8) as @i64
+    if iarr == null { return 28 }
+    iarr[0] = -10 as i64
+    iarr[1] = 0 as i64
+    iarr[2] = 10 as i64
+    iarr[3] = 20 as i64
+    rand_shuffle_i64(@rsi, iarr, 4)
+    let isum = iarr[0] + iarr[1] + iarr[2] + iarr[3]
+    heap_free(iarr as @u8)
+    if isum != (20 as i64) { return 29 }
+
+    // -----------------------------------------------------------------------
+    // 18. rand_index stays in [0, count)
+    // -----------------------------------------------------------------------
+    mut rxi = rng_seed(99 as u64)
+    mut ii: usize = 0
+    loop ii < 200 {
+        let idx = rand_index(@rxi, 10)
+        if idx >= 10 { return 30 }
+        ii += 1
+    }
+
+    // -----------------------------------------------------------------------
+    // 19. PCG64 advance: state jump works without crashing
+    // -----------------------------------------------------------------------
+    mut rp = rng_seed(42 as u64)
+    let before = rand_u64(@rp)
+    pcg64_advance(@rp.pcg, 1000 as u64)
+    let after = rand_u64(@rp)
+    if before == after { return 31 }
+
+    // -----------------------------------------------------------------------
+    // 20. Xoshiro256** seeding and basic range
+    // -----------------------------------------------------------------------
+    mut rx = xoshiro256_seed(12345 as u64)
+    mut ry = xoshiro256_seed(12345 as u64)
+    if xoshiro256_next(@rx) != xoshiro256_next(@ry) { return 32 }
+    mut rxr = xoshiro256_new()
+    let xv = rand_range_u64_x(@rxr, 10 as u64, 20 as u64)
+    if xv < (10 as u64) or xv > (20 as u64) { return 33 }
+
+    // -----------------------------------------------------------------------
+    // 21. rand_f64_x stays in [0.0, 1.0)
+    // -----------------------------------------------------------------------
+    mut rxx = xoshiro256_seed(55 as u64)
+    mut xi: usize = 0
+    loop xi < 200 {
+        let f = rand_f64_x(@rxx)
+        if f < 0.0 or f >= 1.0 { return 34 }
+        xi += 1
+    }
+
+    // -----------------------------------------------------------------------
+    // 22. Xoshiro256** jump does not crash
+    // -----------------------------------------------------------------------
+    mut rj2 = xoshiro256_seed(1 as u64)
+    let j_before = xoshiro256_next(@rj2)
+    xoshiro256_jump(@rj2)
+    let j_after = xoshiro256_next(@rj2)
+    if j_before == j_after { return 35 }
+
+    io.println_str("OK: std.rand all tests passed")
+    return 0
+}

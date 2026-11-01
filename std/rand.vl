@@ -1,0 +1,8 @@
+// std.rand - Pure Velo pseudo-random number generation.
+// Provides PCG64 and Xoshiro256** algorithms with typed samplers,
+// byte/string generation, and Fisher-Yates shuffling.
+use "rand/defs.vl"
+use "rand/pcg.vl"
+use "rand/xoshiro.vl"
+use "rand/sample.vl"
+

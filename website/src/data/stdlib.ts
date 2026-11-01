@@ -1395,6 +1395,197 @@ export const STDLIB_MODULES: StdlibModule[] = [
         description: 'Key-value pair extracted from a query string.'
       }
     ]
+  },
+  {
+    name: 'std.rand',
+    description: 'High-performance pseudo-random number generation: PCG64 and Xoshiro256** algorithms, typed samplers, byte/string generation, and Fisher-Yates shuffling.',
+    functions: [
+      {
+        name: 'rng_new',
+        signature: 'act rng_new() -> Rng',
+        description: 'Creates a PCG64-backed Rng seeded from the current monotonic clock and process ID.',
+        example: 'mut r = rng_new()'
+      },
+      {
+        name: 'rng_seed',
+        signature: 'act rng_seed(seed: u64) -> Rng',
+        description: 'Creates a deterministic PCG64-backed Rng from a fixed seed value.',
+        example: 'mut r = rng_seed(42 as u64)'
+      },
+      {
+        name: 'rand_u64',
+        signature: 'act rand_u64(r: @Rng) -> u64',
+        description: 'Returns a uniformly random u64 in [0, 2^64).',
+        example: 'let v = rand_u64(@r)'
+      },
+      {
+        name: 'rand_u32',
+        signature: 'act rand_u32(r: @Rng) -> u32',
+        description: 'Returns a uniformly random u32 in [0, 2^32).',
+        example: 'let v = rand_u32(@r)'
+      },
+      {
+        name: 'rand_range_u64',
+        signature: 'act rand_range_u64(r: @Rng, min: u64, max: u64) -> u64',
+        description: 'Returns a uniformly random u64 in [min, max] with no modulo bias.',
+        example: 'let dice = rand_range_u64(@r, 1 as u64, 6 as u64)'
+      },
+      {
+        name: 'rand_range_i64',
+        signature: 'act rand_range_i64(r: @Rng, min: i64, max: i64) -> i64',
+        description: 'Returns a uniformly random i64 in [min, max].',
+        example: 'let temp = rand_range_i64(@r, -50 as i64, 50 as i64)'
+      },
+      {
+        name: 'rand_range_i32',
+        signature: 'act rand_range_i32(r: @Rng, min: i32, max: i32) -> i32',
+        description: 'Returns a uniformly random i32 in [min, max].',
+        example: 'let v = rand_range_i32(@r, 0 as i32, 255 as i32)'
+      },
+      {
+        name: 'rand_f64',
+        signature: 'act rand_f64(r: @Rng) -> f64',
+        description: 'Returns a uniformly random f64 in [0.0, 1.0) with 53 bits of precision.',
+        example: 'let p = rand_f64(@r)'
+      },
+      {
+        name: 'rand_range_f64',
+        signature: 'act rand_range_f64(r: @Rng, lo: f64, hi: f64) -> f64',
+        description: 'Returns a uniformly random f64 in [lo, hi).',
+        example: 'let angle = rand_range_f64(@r, 0.0, 360.0)'
+      },
+      {
+        name: 'rand_bool',
+        signature: 'act rand_bool(r: @Rng) -> bool',
+        description: 'Returns true or false with equal probability.',
+        example: 'if rand_bool(@r) { ... }'
+      },
+      {
+        name: 'rand_bool_weighted',
+        signature: 'act rand_bool_weighted(r: @Rng, numerator: u64, denominator: u64) -> bool',
+        description: 'Returns true with probability numerator/denominator.',
+        example: 'let crit = rand_bool_weighted(@r, 1 as u64, 20 as u64) // 5% chance'
+      },
+      {
+        name: 'rand_fill',
+        signature: 'act rand_fill(r: @Rng, buf: @u8, len: usize)',
+        description: 'Fills a byte buffer with random bytes using 8-byte word writes.',
+        example: 'rand_fill(@r, buf, 32)'
+      },
+      {
+        name: 'rand_bytes',
+        signature: 'act rand_bytes(r: @Rng, byte_count: usize) -> @u8',
+        description: 'Allocates and returns a new heap buffer of byte_count random bytes.',
+        example: 'let raw = rand_bytes(@r, 16)'
+      },
+      {
+        name: 'rand_string',
+        signature: 'act rand_string(r: @Rng, len: usize) -> string',
+        description: 'Returns a random alphanumeric string (A-Z, a-z, 0-9) of the given length.',
+        example: 'let token = rand_string(@r, 16)'
+      },
+      {
+        name: 'rand_hex_string',
+        signature: 'act rand_hex_string(r: @Rng, len: usize) -> string',
+        description: 'Returns a random lowercase hexadecimal string of the given length.',
+        example: 'let id = rand_hex_string(@r, 32)'
+      },
+      {
+        name: 'rand_string_from',
+        signature: 'act rand_string_from(r: @Rng, alphabet: string, len: usize) -> string',
+        description: 'Returns a random string drawing characters from a custom alphabet.',
+        example: 'let pin = rand_string_from(@r, "0123456789", 6)'
+      },
+      {
+        name: 'rand_shuffle_u64',
+        signature: 'act rand_shuffle_u64(r: @Rng, arr: @u64, count: usize)',
+        description: 'Fisher-Yates in-place shuffle of a u64 array.',
+        example: 'rand_shuffle_u64(@r, arr, count)'
+      },
+      {
+        name: 'rand_shuffle_i64',
+        signature: 'act rand_shuffle_i64(r: @Rng, arr: @i64, count: usize)',
+        description: 'Fisher-Yates in-place shuffle of an i64 array.',
+        example: 'rand_shuffle_i64(@r, arr, count)'
+      },
+      {
+        name: 'rand_shuffle_bytes',
+        signature: 'act rand_shuffle_bytes(r: @Rng, buf: @u8, count: usize)',
+        description: 'Fisher-Yates in-place shuffle of a byte buffer.',
+        example: 'rand_shuffle_bytes(@r, buf, len)'
+      },
+      {
+        name: 'rand_index',
+        signature: 'act rand_index(r: @Rng, count: usize) -> usize',
+        description: 'Returns a uniformly random index in [0, count).',
+        example: 'let pick = rand_index(@r, arr_len)'
+      },
+      {
+        name: 'pcg64_new',
+        signature: 'act pcg64_new() -> Pcg64',
+        description: 'Creates a raw PCG64 state seeded from time and PID.',
+        example: 'mut pcg = pcg64_new()'
+      },
+      {
+        name: 'pcg64_seed',
+        signature: 'act pcg64_seed(seed: u64) -> Pcg64',
+        description: 'Creates a deterministic PCG64 state from a fixed seed.',
+        example: 'mut pcg = pcg64_seed(12345 as u64)'
+      },
+      {
+        name: 'pcg64_next',
+        signature: 'act pcg64_next(rng: @Pcg64) -> u64',
+        description: 'Advances the PCG64 state and returns the next u64 output.',
+        example: 'let v = pcg64_next(@pcg)'
+      },
+      {
+        name: 'pcg64_advance',
+        signature: 'act pcg64_advance(rng: @Pcg64, delta: u64)',
+        description: 'Advances the PCG64 state by delta steps in O(log delta) time for stream splitting.',
+        example: 'pcg64_advance(@pcg, 1000000 as u64)'
+      },
+      {
+        name: 'xoshiro256_new',
+        signature: 'act xoshiro256_new() -> Xoshiro256',
+        description: 'Creates an Xoshiro256** state seeded from time and PID.',
+        example: 'mut rx = xoshiro256_new()'
+      },
+      {
+        name: 'xoshiro256_seed',
+        signature: 'act xoshiro256_seed(seed: u64) -> Xoshiro256',
+        description: 'Creates a deterministic Xoshiro256** state from a fixed seed.',
+        example: 'mut rx = xoshiro256_seed(42 as u64)'
+      },
+      {
+        name: 'xoshiro256_next',
+        signature: 'act xoshiro256_next(rng: @Xoshiro256) -> u64',
+        description: 'Advances Xoshiro256** state and returns the next u64 output.',
+        example: 'let v = xoshiro256_next(@rx)'
+      },
+      {
+        name: 'xoshiro256_jump',
+        signature: 'act xoshiro256_jump(rng: @Xoshiro256)',
+        description: 'Advances Xoshiro256** state by 2^128 steps for creating non-overlapping parallel streams.',
+        example: 'xoshiro256_jump(@rx) // create independent stream'
+      }
+    ],
+    types: [
+      {
+        name: 'Rng',
+        definition: 'data Rng { pcg: Pcg64 }',
+        description: 'Unified PRNG handle (PCG64-backed). Use rng_new() or rng_seed() to create.'
+      },
+      {
+        name: 'Pcg64',
+        definition: 'data Pcg64 { state: u64, inc: u64 }',
+        description: 'PCG64 state: 128-bit linear congruential generator with permuted output. Period 2^64.'
+      },
+      {
+        name: 'Xoshiro256',
+        definition: 'data Xoshiro256 { s0: u64, s1: u64, s2: u64, s3: u64 }',
+        description: 'Xoshiro256** state: 256-bit state PRNG with 2^128 jump support for parallel streams.'
+      }
+    ]
   }
 ];
 

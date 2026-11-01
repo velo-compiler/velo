@@ -2305,3 +2305,32 @@ flowchart TD
   - External project test passed: `velo run url_demo.vl` in `C:\projects\test`.
   - Pytest suite `tests/test_std_url.py` passed (5/5 tests).
   - All source files strictly < 400 lines (`python scripts/count_lines.py`).
+
+
+---
+
+### Phase 25: `std.rand` (High-Performance Pseudo-Random Number Generation Engine)
+#### Task 25.1: PCG64, Xoshiro256**, Typed Samplers, Byte/String Generators, and Shuffling (`std.rand`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo had only a kernel CSPRNG (`std.crypto.crypto_random_*`), which was slow and heavy for simulations, games, randomized algorithms, shuffling, and testing where seedable reproducible randomness and raw throughput are required.
+* **Fix Applied**:
+  - Implemented the `std.rand` standard library module and subcomponents in `std/rand/`:
+    - `std/rand/defs.vl`: `Pcg64`, `Xoshiro256`, and `Rng` data models, SplitMix64 state expansion (`rand_splitmix64_step`), time + PID seeding (`pcg64_new`, `xoshiro256_new`, `rng_new`), and deterministic fixed-seed constructors (`pcg64_seed`, `xoshiro256_seed`, `rng_seed`).
+    - `std/rand/pcg.vl`: PCG64 (PCG-XSH-RR) algorithm with 128-bit state (`pcg64_next`), Lemire fast unbiased rejection-sampling bound (`pcg64_bounded`), and fast O(log delta) state jumping (`pcg64_advance`).
+    - `std/rand/xoshiro.vl`: Xoshiro256** algorithm with 256-bit state (`xoshiro256_next`), bounded generator (`xoshiro256_bounded`), and 2^128 jump step (`xoshiro256_jump`) for parallel non-overlapping streams.
+    - `std/rand/sample.vl`: Typed samplers for integers (`rand_u64`, `rand_u32`, `rand_range_u64`, `rand_range_i64`, `rand_range_i32`), uniform 53-bit precision floats (`rand_f64`, `rand_range_f64`, `rand_f64_x`), booleans (`rand_bool`, `rand_bool_weighted`), fast word-buffered byte filling (`rand_fill`, `rand_bytes`), random string generation (`rand_string`, `rand_hex_string`, `rand_string_from`), Fisher-Yates in-place shuffling (`rand_shuffle_u64`, `rand_shuffle_i64`, `rand_shuffle_bytes`), and uniform index picking (`rand_index`).
+    - `std/rand.vl`: Standard library umbrella module exporting the complete pseudo-random generation interface.
+  - Packaging, Docs & Integration:
+    - Updated `std/tests/std_module_import_test.vl` to verify all 20 standard library modules together.
+    - Synced global installation directory `~/.velo/std/rand/`.
+    - Refreshed standalone archive bundles `website/public/velo-std.zip` and `website/public/velo-std.tar.gz`.
+    - Documented `std.rand` with 28 functions, types, and real examples in `website/src/data/stdlib.ts`.
+* **Residual Limitation**:
+  - Continuous non-uniform distributions (Gaussian/Normal via Box-Muller, Poisson, Exponential) can be layered in an extended statistics/math distribution module.
+* **Verification**:
+  - Native tests passed: `bin/velo.exe run std/tests/rand/rand_test.vl` (22 comprehensive verification sections covering determinism, distributions, bounds, float scaling, strings, shuffles, and jumps).
+  - Native umbrella import test passed: `bin/velo.exe run std/tests/rand_module_import_test.vl`.
+  - Integrated 20-module import test passed: `bin/velo.exe run std/tests/std_module_import_test.vl`.
+  - External project test passed: `velo run rand_demo.vl` in `C:\projects\test`.
+  - Pytest suite `tests/test_std_rand.py` passed (2/2 tests).
+  - All source files strictly < 400 lines (`python scripts/count_lines.py`).

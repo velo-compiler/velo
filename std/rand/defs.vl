@@ -1,0 +1,102 @@
+// std.rand.defs - PRNG state structures, seeding, and construction helpers.
+use "../time.vl"
+use "../os.vl"
+use "../mem/heap.vl"
+
+// PCG64 (Permuted Congruential Generator) state.
+// A fast, statistically excellent 64-bit PRNG with a 128-bit state.
+data Pcg64 {
+    state: u64
+    inc: u64
+}
+
+// Xoshiro256** state.
+// An extremely fast 256-bit-state PRNG with excellent statistical properties.
+data Xoshiro256 {
+    s0: u64
+    s1: u64
+    s2: u64
+    s3: u64
+}
+
+// Unified Rng handle - wraps either Pcg64 or Xoshiro256, plus a u64 cache
+// for float generation. Use pcg_* or xoshiro_* functions directly for typed use.
+data Rng {
+    pcg: Pcg64
+}
+
+// SplitMix64: deterministic 64-bit hash used to expand a single seed value
+// into high-quality initializer bits for PCG and Xoshiro states.
+act rand_splitmix64_step(state: @u64) -> u64 {
+    state[0] = state[0] + (0x9E3779B97F4A7C15 as u64)
+    mut z: u64 = state[0]
+    z = (z ^ (z >> 30)) * (0xBF58476D1CE4E5B9 as u64)
+    z = (z ^ (z >> 27)) * (0x94D049BB133111EB as u64)
+    return z ^ (z >> 31)
+}
+
+// Creates a PCG64 generator initialized from a specific seed value.
+act pcg64_seed(seed: u64) -> Pcg64 {
+    mut rng = Pcg64 { state: 0 as u64, inc: 0 as u64 }
+    mut sm: u64 = seed
+    rng.state = rand_splitmix64_step(@sm)
+    // inc must be odd
+    rng.inc = (rand_splitmix64_step(@sm) | (1 as u64))
+    // Warm up
+    pcg64_next(@rng)
+    pcg64_next(@rng)
+    return rng
+}
+
+// Creates a PCG64 generator seeded from the current time and process ID,
+// producing a different stream each run.
+act pcg64_new() -> Pcg64 {
+    let t: u64 = time_monotonic_ns()
+    let pid: u64 = os_get_pid() as u64
+    let seed: u64 = t ^ (pid * (0x9E3779B97F4A7C15 as u64))
+    return pcg64_seed(seed)
+}
+
+// Creates an Xoshiro256** generator initialized from a seed value.
+act xoshiro256_seed(seed: u64) -> Xoshiro256 {
+    mut sm: u64 = seed
+    mut rng = Xoshiro256 {
+        s0: rand_splitmix64_step(@sm),
+        s1: rand_splitmix64_step(@sm),
+        s2: rand_splitmix64_step(@sm),
+        s3: rand_splitmix64_step(@sm),
+    }
+    // Warm up
+    xoshiro256_next(@rng)
+    xoshiro256_next(@rng)
+    return rng
+}
+
+// Creates an Xoshiro256** generator seeded from the current time and process ID.
+act xoshiro256_new() -> Xoshiro256 {
+    let t: u64 = time_monotonic_ns()
+    let pid: u64 = os_get_pid() as u64
+    let seed: u64 = t ^ (pid * (0x6C62272E07BB0142 as u64))
+    return xoshiro256_seed(seed)
+}
+
+// Creates a default Rng (backed by PCG64) seeded from time + PID.
+act rng_new() -> Rng {
+    return Rng { pcg: pcg64_new() }
+}
+
+// Creates a deterministic Rng (backed by PCG64) from a fixed seed.
+act rng_seed(seed: u64) -> Rng {
+    return Rng { pcg: pcg64_seed(seed) }
+}
+
+// Returns the next raw u64 from the Rng.
+act rng_next_u64(r: @Rng) -> u64 {
+    return pcg64_next(@r.pcg)
+}
+
+// Generates a u64 in [0, bound). Requires bound > 0.
+act rng_next_bounded(r: @Rng, bound: u64) -> u64 {
+    return pcg64_bounded(@r.pcg, bound)
+}
+

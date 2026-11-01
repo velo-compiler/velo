@@ -17,6 +17,7 @@ use std.encoding
 use std.csv
 use std.cli
 use std.url
+use std.rand
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -152,6 +153,15 @@ act main() -> i32 {
     let qv = url_query_get(test_url.raw_query, "key")
     if qv != "value" { return 42 }
     if url_join_path("/base/", "/sub") != "/base/sub" { return 43 }
+
+    // std.rand: PCG64 seeded PRNG, range sampling, and shuffling
+    mut prng = rng_seed(12345 as u64)
+    let ru = rand_range_u64(@prng, 1 as u64, 100 as u64)
+    if ru < (1 as u64) or ru > (100 as u64) { return 44 }
+    let rf = rand_f64(@prng)
+    if rf < 0.0 or rf >= 1.0 { return 45 }
+    let rs = rand_string(@prng, 8)
+    if rs == null { return 46 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0

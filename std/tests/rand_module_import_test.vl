@@ -1,0 +1,60 @@
+// Tests native 'use std.rand' umbrella import.
+use std.rand
+use std.io
+use std.mem
+
+act main() -> i32 {
+    // PCG64 seeded rng
+    mut r = rng_seed(999 as u64)
+
+    // Uniform integer range
+    let u = rand_range_u64(@r, 10 as u64, 20 as u64)
+    if u < (10 as u64) or u > (20 as u64) { return 1 }
+
+    // Signed range
+    let i = rand_range_i64(@r, -10 as i64, 10 as i64)
+    if i < (-10 as i64) or i > (10 as i64) { return 2 }
+
+    // Float in [0.0, 1.0)
+    let f = rand_f64(@r)
+    if f < 0.0 or f >= 1.0 { return 3 }
+
+    // Bool
+    let b = rand_bool(@r)
+    let _ = b   // just ensure it compiles and runs
+
+    // String generation
+    let s = rand_string(@r, 8)
+    if s == null { return 4 }
+
+    // Byte fill
+    mut arena = arena_init(256)
+    defer arena_reset(@arena)
+    mut buf: @u8 = arena_alloc(@arena, 16, 1) as @u8
+    if buf == null { return 5 }
+    rand_fill(@r, buf, 16)
+
+    // Shuffle
+    mut arr: @u64 = arena_alloc(@arena, 4 * 8, 8) as @u64
+    if arr == null { return 6 }
+    arr[0] = 1 as u64
+    arr[1] = 2 as u64
+    arr[2] = 3 as u64
+    arr[3] = 4 as u64
+    rand_shuffle_u64(@r, arr, 4)
+    let sum = arr[0] + arr[1] + arr[2] + arr[3]
+    if sum != (10 as u64) { return 7 }
+
+    // PCG advance
+    pcg64_advance(@r.pcg, 100 as u64)
+
+    // Xoshiro256**
+    mut rx = xoshiro256_seed(42 as u64)
+    let xv = rand_range_u64_x(@rx, 0 as u64, 100 as u64)
+    if xv > (100 as u64) { return 8 }
+    xoshiro256_jump(@rx)
+
+    io.println_str("PASS: std.rand umbrella import all tests passed")
+    return 0
+}
+
