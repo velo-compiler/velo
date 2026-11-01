@@ -14,18 +14,28 @@ data HttpRequest {
 
 act http_u64_to_str(val: u64) -> string {
     if val == 0 as u64 { return "0" }
-    mut buf: @u8 = heap_alloc(32)
-    mut pos: usize = 31
-    buf[pos] = 0 as u8
+    mut temp: @u8 = heap_alloc(32)
+    if temp == null { return "0" }
+    mut len: usize = 0
     mut n = val
-    loop n > (0 as u64) and pos > 0 {
-        pos -= 1
-        buf[pos] = ('0' as u8) + ((n % (10 as u64)) as u8)
+    loop n > (0 as u64) {
+        temp[len] = ('0' as u8) + ((n % (10 as u64)) as u8)
+        len += 1
         n = n / (10 as u64)
     }
-    let res = url_substr(buf as string, pos, 31 - pos)
-    heap_free(buf)
-    return res
+    mut buf: @u8 = heap_alloc(len + 1)
+    if buf == null {
+        heap_free(temp)
+        return "0"
+    }
+    mut i: usize = 0
+    loop i < len {
+        buf[i] = temp[len - 1 - i]
+        i += 1
+    }
+    buf[len] = 0 as u8
+    heap_free(temp)
+    return buf as string
 }
 
 act http_parse_u64(s: string) -> u64 {

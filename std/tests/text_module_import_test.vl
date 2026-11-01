@@ -1,0 +1,25 @@
+// Tests native 'use std.text' umbrella import.
+use std.text
+use std.io
+
+act main() -> i32 {
+    let aligned = text_align_center("test", 10, '-' as u8)
+    if aligned != "---test---" { return 1 }
+
+    let multi = "a\nb"
+    let ind = text_indent(multi, "> ")
+    if ind != "> a\n> b" { return 2 }
+
+    let wrapped = text_wrap("hello world velo text wrap", 12)
+    if text_line_count(wrapped) != 3 { return 3 }
+
+    let stripped = text_strip_ansi("\x1b[34mvelo\x1b[0m")
+    if stripped != "velo" { return 4 }
+
+    let trunc = text_truncate("long text", 7, "...")
+    if trunc != "long..." { return 5 }
+
+    io.println_str("PASS: std.text umbrella import all tests passed")
+    return 0
+}
+

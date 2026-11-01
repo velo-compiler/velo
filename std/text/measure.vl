@@ -1,0 +1,117 @@
+// std.text.measure - Line counting, width calculation, and ANSI-aware display measurement.
+use "defs.vl"
+use "../mem/heap.vl"
+use "../str.vl"
+
+// Returns the number of lines in a multi-line string.
+act text_line_count(s: string) -> usize {
+    if s == null { return 0 }
+    let slen = str.len(s)
+    if slen == 0 { return 0 }
+
+    mut lines: usize = 1
+    mut i: usize = 0
+    loop i < slen {
+        if s[i] == '\n' as u8 {
+            lines += 1
+        }
+        i += 1
+    }
+    return lines
+}
+
+// Returns the maximum column width among all lines in a multi-line string.
+act text_max_line_width(s: string) -> usize {
+    if s == null { return 0 }
+    let slen = str.len(s)
+    if slen == 0 { return 0 }
+
+    mut max_w: usize = 0
+    mut cur_w: usize = 0
+    mut i: usize = 0
+
+    loop i < slen {
+        let c = s[i]
+        if c == '\n' as u8 {
+            if cur_w > max_w {
+                max_w = cur_w
+            }
+            cur_w = 0
+        } else if c != '\r' as u8 {
+            cur_w += 1
+        }
+        i += 1
+    }
+    if cur_w > max_w {
+        max_w = cur_w
+    }
+    return max_w
+}
+
+// Calculates the visible display width of a string, ignoring ANSI escape sequences.
+act text_visible_width(s: string) -> usize {
+    if s == null { return 0 }
+    let slen = str.len(s)
+    if slen == 0 { return 0 }
+
+    mut width: usize = 0
+    mut i: usize = 0
+
+    loop i < slen {
+        // Detect ANSI escape sequence: \x1b[ ... [letter]
+        if s[i] == 27 as u8 and i + 1 < slen and s[i + 1] == '[' as u8 {
+            i += 2
+            loop i < slen {
+                let c = s[i]
+                if (c >= 'A' as u8 and c <= 'Z' as u8) or (c >= 'a' as u8 and c <= 'z' as u8) or c == 'm' as u8 {
+                    i += 1
+                    break
+                }
+                i += 1
+            }
+        } else {
+            let c = s[i]
+            if c != '\r' as u8 and c != '\n' as u8 {
+                width += 1
+            }
+            i += 1
+        }
+    }
+
+    return width
+}
+
+// Returns a new string with all ANSI escape sequences stripped out.
+act text_strip_ansi(s: string) -> string {
+    if s == null { return "" }
+    let slen = str.len(s)
+    if slen == 0 { return "" }
+
+    mut buf: @u8 = heap_alloc(slen + 1)
+    if buf == null { return s }
+
+    mut pos: usize = 0
+    mut i: usize = 0
+
+    loop i < slen {
+        if s[i] == 27 as u8 and i + 1 < slen and s[i + 1] == '[' as u8 {
+            i += 2
+            loop i < slen {
+                let c = s[i]
+                if (c >= 'A' as u8 and c <= 'Z' as u8) or (c >= 'a' as u8 and c <= 'z' as u8) or c == 'm' as u8 {
+                    i += 1
+                    break
+                }
+                i += 1
+            }
+        } else {
+            buf[pos] = s[i]
+            pos += 1
+            i += 1
+        }
+    }
+
+    buf[pos] = 0 as u8
+    return buf as string
+}
+

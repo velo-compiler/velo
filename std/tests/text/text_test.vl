@@ -1,0 +1,94 @@
+// Comprehensive unit tests for std.text module.
+use "../../text.vl"
+use "../../io.vl"
+use "../../str.vl"
+
+act main() -> i32 {
+    // 1. Defs tests
+    if not text_is_space(' ' as u8) or not text_is_space('\t' as u8) { return 1 }
+    if text_is_space('a' as u8) { return 2 }
+    if not text_is_newline('\n' as u8) or not text_is_newline('\r' as u8) { return 3 }
+    if text_is_newline(' ' as u8) { return 4 }
+
+    let rep = text_repeat_char('=' as u8, 5)
+    if rep != "=====" { return 5 }
+
+    let sub = text_substr("Hello World", 6, 5)
+    if sub != "World" { return 6 }
+    let sub_oob = text_substr("Hi", 10, 2)
+    if sub_oob != "" { return 7 }
+
+    // 2. Alignment tests
+    let al = text_align_left("velo", 8, '.' as u8)
+    if al != "velo...." { return 10 }
+    let ar = text_align_right("velo", 8, '.' as u8)
+    if ar != "....velo" { return 11 }
+    let ac = text_align_center("velo", 8, '.' as u8)
+    if ac != "..velo.." { return 12 }
+    let ac_odd = text_align_center("velo", 9, '.' as u8)
+    if ac_odd != "..velo..." { return 13 }
+
+    // Over-width string is not truncated by align
+    let no_trunc = text_align_left("longstring", 4, ' ' as u8)
+    if no_trunc != "longstring" { return 14 }
+
+    // Justification test
+    let just = text_justify("one two three", 16)
+    // 13 characters of words + 3 spaces = 16
+    // Gaps: 2. total spaces: 16 - 11 = 5. base = 2, extra = 1 -> "one   two  three"
+    if just != "one   two  three" { return 15 }
+
+    // 3. Indent and Dedent tests
+    let multi = "first\nsecond\n\nthird"
+    let indented = text_indent(multi, ">> ")
+    let expected_ind = ">> first\n>> second\n\n>> third"
+    if indented != expected_ind { return 20 }
+
+    let dedent_input = "    alpha\n    beta\n      gamma\n"
+    let dedented = text_dedent(dedent_input)
+    let expected_ded = "alpha\nbeta\n  gamma\n"
+    if dedented != expected_ded { return 21 }
+
+    // Tab expansion
+    let tabbed = "a\tb\tc"
+    let expanded = text_expand_tabs(tabbed, 4)
+    if expanded != "a   b   c" { return 22 }
+
+    // 4. Measure and ANSI tests
+    let count = text_line_count("line1\nline2\nline3")
+    if count != 3 { return 30 }
+    let max_w = text_max_line_width("short\nvery very long line\nmedium")
+    if max_w != 19 { return 31 }
+
+    let raw_ansi = "\x1b[32mSUCCESS\x1b[0m"
+    let vis_w = text_visible_width(raw_ansi)
+    if vis_w != 7 { return 32 }
+    let stripped = text_strip_ansi(raw_ansi)
+    if stripped != "SUCCESS" { return 33 }
+
+    // 5. Wrap and Truncate tests
+    let wrap_text = "The quick brown fox jumps over the lazy dog."
+    let wrapped15 = text_wrap(wrap_text, 15)
+    let expected_w15 = "The quick brown\nfox jumps over\nthe lazy dog."
+    if wrapped15 != expected_w15 { return 40 }
+
+    // Prefix wrap (bullet style)
+    let pfx_wrapped = text_wrap_prefix(wrap_text, 15, "- ", "  ")
+    let expected_pfx = "- The quick\n  brown fox\n  jumps over\n  the lazy dog."
+    if pfx_wrapped != expected_pfx { return 41 }
+
+    // Truncate tests
+    let trunc = text_truncate("Hello, World!", 8, "...")
+    if trunc != "Hello..." { return 42 }
+    let trunc_exact = text_truncate("Hello", 5, "...")
+    if trunc_exact != "Hello" { return 43 }
+    let trunc_tiny = text_truncate("Hello, World!", 2, "...")
+    if trunc_tiny != ".." { return 44 }
+
+    // Shorten tests (word-boundary truncate)
+    let shortened = text_shorten("The quick brown fox jumps", 17, " [...]")
+    if shortened != "The quick [...]" { return 45 }
+
+    println_str("std.text tests: ALL PASSED")
+    return 0
+}

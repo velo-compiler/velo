@@ -1,0 +1,185 @@
+// std.text.align - Text alignment, centering, padding, and justification.
+use "defs.vl"
+use "../mem/heap.vl"
+use "../str.vl"
+
+// Left-aligns a string within a field of the given width, padding the right side with pad_char.
+act text_align_left(s: string, width: usize, pad_char: u8) -> string {
+    if s == null { return text_repeat_char(pad_char, width) }
+    let slen = str.len(s)
+    if slen >= width { return s }
+
+    mut buf: @u8 = heap_alloc(width + 1)
+    if buf == null { return s }
+
+    mut i: usize = 0
+    loop i < slen {
+        buf[i] = s[i]
+        i += 1
+    }
+    loop i < width {
+        buf[i] = pad_char
+        i += 1
+    }
+    buf[width] = 0 as u8
+    return buf as string
+}
+
+// Right-aligns a string within a field of the given width, padding the left side with pad_char.
+act text_align_right(s: string, width: usize, pad_char: u8) -> string {
+    if s == null { return text_repeat_char(pad_char, width) }
+    let slen = str.len(s)
+    if slen >= width { return s }
+
+    mut buf: @u8 = heap_alloc(width + 1)
+    if buf == null { return s }
+
+    let pad_len = width - slen
+    mut i: usize = 0
+    loop i < pad_len {
+        buf[i] = pad_char
+        i += 1
+    }
+    mut j: usize = 0
+    loop j < slen {
+        buf[pad_len + j] = s[j]
+        j += 1
+    }
+    buf[width] = 0 as u8
+    return buf as string
+}
+
+// Centers a string within a field of the given width, padding left and right with pad_char.
+act text_align_center(s: string, width: usize, pad_char: u8) -> string {
+    if s == null { return text_repeat_char(pad_char, width) }
+    let slen = str.len(s)
+    if slen >= width { return s }
+
+    mut buf: @u8 = heap_alloc(width + 1)
+    if buf == null { return s }
+
+    let total_pad = width - slen
+    let left_pad = total_pad / 2
+    let right_pad = total_pad - left_pad
+
+    mut i: usize = 0
+    loop i < left_pad {
+        buf[i] = pad_char
+        i += 1
+    }
+    mut j: usize = 0
+    loop j < slen {
+        buf[left_pad + j] = s[j]
+        j += 1
+    }
+    mut k: usize = 0
+    loop k < right_pad {
+        buf[left_pad + slen + k] = pad_char
+        k += 1
+    }
+    buf[width] = 0 as u8
+    return buf as string
+}
+
+// Fully justifies a single line of words to exactly `width` columns by evenly distributing spaces.
+act text_justify(line: string, width: usize) -> string {
+    if line == null or width == 0 { return "" }
+    let len = str.len(line)
+    if len == 0 { return text_repeat_char(' ' as u8, width) }
+
+    // Count words and word lengths
+    mut words_starts: @usize = heap_alloc(512 * 8) as @usize
+    mut words_lens: @usize = heap_alloc(512 * 8) as @usize
+    if words_starts == null or words_lens == null {
+        if words_starts != null { heap_free(words_starts as @u8) }
+        if words_lens != null { heap_free(words_lens as @u8) }
+        return line
+    }
+
+    mut word_count: usize = 0
+    mut in_word = false
+    mut w_start: usize = 0
+    mut total_word_chars: usize = 0
+
+    mut idx: usize = 0
+    loop idx < len and word_count < 512 {
+        let c = line[idx]
+        if not text_is_space(c) {
+            if not in_word {
+                w_start = idx
+                in_word = true
+            }
+        } else {
+            if in_word {
+                let w_len = idx - w_start
+                words_starts[word_count] = w_start
+                words_lens[word_count] = w_len
+                total_word_chars += w_len
+                word_count += 1
+                in_word = false
+            }
+        }
+        idx += 1
+    }
+    if in_word and word_count < 512 {
+        let w_len = len - w_start
+        words_starts[word_count] = w_start
+        words_lens[word_count] = w_len
+        total_word_chars += w_len
+        word_count += 1
+    }
+
+    // Single word or words already fill/exceed target width: left-align
+    if word_count <= 1 or total_word_chars >= width {
+        heap_free(words_starts as @u8)
+        heap_free(words_lens as @u8)
+        return text_align_left(line, width, ' ' as u8)
+    }
+
+    let gaps = word_count - 1
+    let total_spaces = width - total_word_chars
+    let base_spaces = total_spaces / gaps
+    let extra_spaces = total_spaces % gaps
+
+    mut buf: @u8 = heap_alloc(width + 1)
+    if buf == null {
+        heap_free(words_starts as @u8)
+        heap_free(words_lens as @u8)
+        return line
+    }
+
+    mut pos: usize = 0
+    mut wi: usize = 0
+    loop wi < word_count {
+        // Copy word characters
+        let w_s = words_starts[wi]
+        let w_l = words_lens[wi]
+        mut ci: usize = 0
+        loop ci < w_l {
+            buf[pos] = line[w_s + ci]
+            pos += 1
+            ci += 1
+        }
+
+        // Add gap spaces (except after the final word)
+        if wi < gaps {
+            mut gap_spaces = base_spaces
+            if wi < extra_spaces {
+                gap_spaces += 1
+            }
+            mut si: usize = 0
+            loop si < gap_spaces {
+                buf[pos] = ' ' as u8
+                pos += 1
+                si += 1
+            }
+        }
+        wi += 1
+    }
+
+    buf[pos] = 0 as u8
+    heap_free(words_starts as @u8)
+    heap_free(words_lens as @u8)
+    return buf as string
+}
+

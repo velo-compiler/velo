@@ -1,0 +1,349 @@
+// std.text.wrap - Word wrapping, line filling, prefixes, and truncation.
+use "defs.vl"
+use "../mem/heap.vl"
+use "../str.vl"
+
+// Wraps text to fit within `width` columns, with optional initial and subsequent prefixes.
+act text_wrap_prefix(input: string, width: usize, initial_prefix: string, subsequent_prefix: string) -> string {
+    if input == null or width == 0 { return "" }
+    let slen = str.len(input)
+    if slen == 0 { return "" }
+
+    mut ip = ""
+    if initial_prefix != null { ip = initial_prefix }
+    mut sp = ""
+    if subsequent_prefix != null { sp = subsequent_prefix }
+
+    let ip_len = str.len(ip)
+    let sp_len = str.len(sp)
+
+    mut cap = slen * 3 + (ip_len + sp_len + 16) * 16 + 256
+    mut buf: @u8 = heap_alloc(cap)
+    if buf == null { return input }
+
+    mut pos: usize = 0
+    mut cur_col: usize = 0
+    mut cur_line_words: usize = 0
+    mut is_first_line = true
+    mut i: usize = 0
+
+    loop i < slen {
+        let c = input[i]
+
+        // Handle carriage return
+        if c == '\r' as u8 {
+            i += 1
+            if i < slen and input[i] == '\n' as u8 {
+                // \r\n will be handled on next iteration by c == '\n'
+            }
+        } else if c == '\n' as u8 {
+            // Explicit newline: start a new logical line
+            if pos + 2 >= cap {
+                let new_cap = cap * 2 + 128
+                mut new_buf: @u8 = heap_alloc(new_cap)
+                if new_buf != null {
+                    mut cp: usize = 0
+                    loop cp < pos { new_buf[cp] = buf[cp]; cp += 1 }
+                    heap_free(buf)
+                    buf = new_buf
+                    cap = new_cap
+                }
+            }
+            buf[pos] = '\n' as u8
+            pos += 1
+            cur_col = 0
+            cur_line_words = 0
+            is_first_line = false
+            i += 1
+        } else if text_is_space(c) {
+            // Skip spaces between words
+            i += 1
+        } else {
+            // Word token: non-whitespace characters
+            let word_start = i
+            loop i < slen and not text_is_space(input[i]) and not text_is_newline(input[i]) {
+                i += 1
+            }
+            let word_len = i - word_start
+
+            // Ensure buffer capacity for prefix + space + word
+            if pos + word_len + sp_len + ip_len + 32 >= cap {
+                let new_cap = cap * 2 + word_len + sp_len + 128
+                mut new_buf: @u8 = heap_alloc(new_cap)
+                if new_buf != null {
+                    mut cp: usize = 0
+                    loop cp < pos { new_buf[cp] = buf[cp]; cp += 1 }
+                    heap_free(buf)
+                    buf = new_buf
+                    cap = new_cap
+                }
+            }
+
+            if cur_line_words == 0 {
+                // First word on this line: emit prefix
+                mut pfx = sp
+                mut pfx_len = sp_len
+                if is_first_line {
+                    pfx = ip
+                    pfx_len = ip_len
+                }
+
+                mut pi: usize = 0
+                loop pi < pfx_len {
+                    buf[pos] = pfx[pi]
+                    pos += 1
+                    pi += 1
+                }
+
+                mut wi: usize = 0
+                loop wi < word_len {
+                    buf[pos] = input[word_start + wi]
+                    pos += 1
+                    wi += 1
+                }
+
+                cur_col = pfx_len + word_len
+                cur_line_words = 1
+                is_first_line = false
+            } else {
+                // Word on existing line: check if it fits within width
+                if cur_col + 1 + word_len <= width {
+                    buf[pos] = ' ' as u8
+                    pos += 1
+
+                    mut wi: usize = 0
+                    loop wi < word_len {
+                        buf[pos] = input[word_start + wi]
+                        pos += 1
+                        wi += 1
+                    }
+
+                    cur_col += 1 + word_len
+                    cur_line_words += 1
+                } else {
+                    // Start new line with subsequent prefix
+                    buf[pos] = '\n' as u8
+                    pos += 1
+
+                    mut pi: usize = 0
+                    loop pi < sp_len {
+                        buf[pos] = sp[pi]
+                        pos += 1
+                        pi += 1
+                    }
+
+                    mut wi: usize = 0
+                    loop wi < word_len {
+                        buf[pos] = input[word_start + wi]
+                        pos += 1
+                        wi += 1
+                    }
+
+                    cur_col = sp_len + word_len
+                    cur_line_words = 1
+                }
+            }
+        }
+    }
+
+    buf[pos] = 0 as u8
+    return buf as string
+}
+
+// Wraps text so that every line has at most `width` columns.
+act text_wrap(input: string, width: usize) -> string {
+    return text_wrap_prefix(input, width, "", "")
+}
+
+// Joins lines of text wrapped at column width `width` (alias for text_wrap).
+act text_fill(input: string, width: usize) -> string {
+    return text_wrap(input, width)
+}
+
+// Truncates s to max_width characters, appending ellipsis if truncated.
+act text_truncate(s: string, max_width: usize, ellipsis: string) -> string {
+    if s == null or max_width == 0 { return "" }
+    let slen = str.len(s)
+    if slen <= max_width { return s }
+
+    mut el = ""
+    if ellipsis != null { el = ellipsis }
+    let elen = str.len(el)
+
+    if elen >= max_width {
+        return text_substr(el, 0, max_width)
+    }
+
+    let prefix_len = max_width - elen
+    mut buf: @u8 = heap_alloc(max_width + 1)
+    if buf == null { return s }
+
+    mut i: usize = 0
+    loop i < prefix_len {
+        buf[i] = s[i]
+        i += 1
+    }
+    mut j: usize = 0
+    loop j < elen {
+        buf[prefix_len + j] = el[j]
+        j += 1
+    }
+    buf[max_width] = 0 as u8
+    return buf as string
+}
+
+// Truncates multi-word text to max_width at word boundaries, appending placeholder if truncated.
+act text_shorten(s: string, max_width: usize, placeholder: string) -> string {
+    if s == null or max_width == 0 { return "" }
+    let slen = str.len(s)
+    if slen == 0 { return "" }
+
+    mut ph = " [...]"
+    if placeholder != null { ph = placeholder }
+    let ph_len = str.len(ph)
+
+    if ph_len >= max_width {
+        return text_substr(ph, 0, max_width)
+    }
+
+    // Allocate word tokens buffer
+    mut words_starts: @usize = heap_alloc(256 * 8) as @usize
+    mut words_lens: @usize = heap_alloc(256 * 8) as @usize
+    if words_starts == null or words_lens == null {
+        if words_starts != null { heap_free(words_starts as @u8) }
+        if words_lens != null { heap_free(words_lens as @u8) }
+        return text_truncate(s, max_width, ph)
+    }
+
+    mut word_count: usize = 0
+    mut in_word = false
+    mut w_start: usize = 0
+    mut total_raw_chars: usize = 0
+
+    mut idx: usize = 0
+    loop idx < slen and word_count < 256 {
+        let c = s[idx]
+        if not text_is_space(c) and not text_is_newline(c) {
+            if not in_word {
+                w_start = idx
+                in_word = true
+            }
+        } else {
+            if in_word {
+                let w_len = idx - w_start
+                words_starts[word_count] = w_start
+                words_lens[word_count] = w_len
+                total_raw_chars += w_len
+                word_count += 1
+                in_word = false
+            }
+        }
+        idx += 1
+    }
+    if in_word and word_count < 256 {
+        let w_len = slen - w_start
+        words_starts[word_count] = w_start
+        words_lens[word_count] = w_len
+        total_raw_chars += w_len
+        word_count += 1
+    }
+
+    if word_count == 0 {
+        heap_free(words_starts as @u8)
+        heap_free(words_lens as @u8)
+        return ""
+    }
+
+    // Check if full collapsed string fits in max_width
+    let full_collapsed_len = total_raw_chars + (word_count - 1)
+    if full_collapsed_len <= max_width {
+        mut buf: @u8 = heap_alloc(full_collapsed_len + 1)
+        if buf == null {
+            heap_free(words_starts as @u8)
+            heap_free(words_lens as @u8)
+            return s
+        }
+        mut pos: usize = 0
+        mut wi: usize = 0
+        loop wi < word_count {
+            if wi > 0 {
+                buf[pos] = ' ' as u8
+                pos += 1
+            }
+            let ws = words_starts[wi]
+            let wl = words_lens[wi]
+            mut ci: usize = 0
+            loop ci < wl {
+                buf[pos] = s[ws + ci]
+                pos += 1
+                ci += 1
+            }
+            wi += 1
+        }
+        buf[pos] = 0 as u8
+        heap_free(words_starts as @u8)
+        heap_free(words_lens as @u8)
+        return buf as string
+    }
+
+    // Find how many words fit with ph appended
+    let target_words_width = max_width - ph_len
+    mut fit_words: usize = 0
+    mut acc_len: usize = 0
+    mut wi: usize = 0
+    loop wi < word_count {
+        let wl = words_lens[wi]
+        mut next_len = wl
+        if wi > 0 { next_len = acc_len + 1 + wl }
+        if next_len <= target_words_width {
+            acc_len = next_len
+            fit_words += 1
+        } else {
+            break
+        }
+        wi += 1
+    }
+
+    if fit_words == 0 {
+        heap_free(words_starts as @u8)
+        heap_free(words_lens as @u8)
+        return ph
+    }
+
+    mut buf: @u8 = heap_alloc(acc_len + ph_len + 1)
+    if buf == null {
+        heap_free(words_starts as @u8)
+        heap_free(words_lens as @u8)
+        return ph
+    }
+
+    mut pos: usize = 0
+    wi = 0
+    loop wi < fit_words {
+        if wi > 0 {
+            buf[pos] = ' ' as u8
+            pos += 1
+        }
+        let ws = words_starts[wi]
+        let wl = words_lens[wi]
+        mut ci: usize = 0
+        loop ci < wl {
+            buf[pos] = s[ws + ci]
+            pos += 1
+            ci += 1
+        }
+        wi += 1
+    }
+    mut pi: usize = 0
+    loop pi < ph_len {
+        buf[pos] = ph[pi]
+        pos += 1
+        pi += 1
+    }
+    buf[pos] = 0 as u8
+
+    heap_free(words_starts as @u8)
+    heap_free(words_lens as @u8)
+    return buf as string
+}
+

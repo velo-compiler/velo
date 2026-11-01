@@ -1,0 +1,7 @@
+// std.text - Pure Velo text layout, word wrapping, indentation, alignment, and measurement.
+use "text/defs.vl"
+use "text/align.vl"
+use "text/indent.vl"
+use "text/measure.vl"
+use "text/wrap.vl"
+

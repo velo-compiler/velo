@@ -1,0 +1,172 @@
+// std.text.indent - Line indentation, dedentation, and tab expansion.
+use "defs.vl"
+use "../mem/heap.vl"
+use "../str.vl"
+
+// Prepends prefix to every non-empty line of text.
+act text_indent(s: string, prefix: string) -> string {
+    if s == null or prefix == null { return s }
+    let slen = str.len(s)
+    let plen = str.len(prefix)
+    if slen == 0 or plen == 0 { return s }
+
+    // Upper bound capacity: slen + (line_count + 1) * plen + 1
+    mut cap = slen + plen * 4 + 16
+    mut buf: @u8 = heap_alloc(cap * 2)
+    if buf == null { return s }
+
+    mut pos: usize = 0
+    mut i: usize = 0
+    mut at_line_start = true
+
+    loop i < slen {
+        let c = s[i]
+
+        if at_line_start {
+            // Check if this line is non-empty (not immediate newline)
+            if c != '\n' as u8 and c != '\r' as u8 {
+                mut pi: usize = 0
+                loop pi < plen {
+                    buf[pos] = prefix[pi]
+                    pos += 1
+                    pi += 1
+                }
+            }
+            at_line_start = false
+        }
+
+        buf[pos] = c
+        pos += 1
+
+        if c == '\n' as u8 {
+            at_line_start = true
+        }
+
+        i += 1
+    }
+
+    buf[pos] = 0 as u8
+    return buf as string
+}
+
+// Strips common leading whitespace from every line of multi-line text (like Python's textwrap.dedent).
+act text_dedent(s: string) -> string {
+    if s == null { return "" }
+    let slen = str.len(s)
+    if slen == 0 { return "" }
+
+    // Step 1: Scan lines and compute minimum leading whitespace across all non-blank lines
+    mut min_indent: usize = 999999
+    mut found_non_blank = false
+    mut i: usize = 0
+
+    loop i < slen {
+        let line_start = i
+        mut spaces: usize = 0
+        mut is_blank = true
+
+        loop i < slen and s[i] != '\n' as u8 {
+            let c = s[i]
+            if text_is_space(c) and is_blank {
+                spaces += 1
+            } else if c != '\r' as u8 {
+                is_blank = false
+            }
+            i += 1
+        }
+
+        if not is_blank {
+            found_non_blank = true
+            if spaces < min_indent {
+                min_indent = spaces
+            }
+        }
+
+        if i < slen and s[i] == '\n' as u8 {
+            i += 1
+        }
+    }
+
+    if not found_non_blank or min_indent == 0 or min_indent == 999999 {
+        return s
+    }
+
+    // Step 2: Strip min_indent spaces from the start of every line
+    mut buf: @u8 = heap_alloc(slen + 1)
+    if buf == null { return s }
+
+    mut pos: usize = 0
+    mut j: usize = 0
+
+    loop j < slen {
+        let line_start = j
+        mut skipped: usize = 0
+
+        // Skip up to min_indent leading spaces
+        loop j < slen and s[j] != '\n' as u8 and text_is_space(s[j]) and skipped < min_indent {
+            skipped += 1
+            j += 1
+        }
+
+        // Copy remaining characters of the line
+        loop j < slen and s[j] != '\n' as u8 {
+            buf[pos] = s[j]
+            pos += 1
+            j += 1
+        }
+
+        if j < slen and s[j] == '\n' as u8 {
+            buf[pos] = '\n' as u8
+            pos += 1
+            j += 1
+        }
+    }
+
+    buf[pos] = 0 as u8
+    return buf as string
+}
+
+// Expands tab characters into spaces based on tab stop intervals (default tab_size = 4 or 8).
+act text_expand_tabs(s: string, tab_size: usize) -> string {
+    if s == null { return "" }
+    let slen = str.len(s)
+    if slen == 0 { return "" }
+    mut tsize = TEXT_DEFAULT_TAB_SIZE
+    if tab_size > 0 {
+        tsize = tab_size
+    }
+
+    // Upper bound on capacity: every tab could expand up to tsize spaces
+    mut buf: @u8 = heap_alloc(slen * tsize + 1)
+    if buf == null { return s }
+
+    mut pos: usize = 0
+    mut col: usize = 0
+    mut i: usize = 0
+
+    loop i < slen {
+        let c = s[i]
+        if c == '\t' as u8 {
+            let spaces = tsize - (col % tsize)
+            mut si: usize = 0
+            loop si < spaces {
+                buf[pos] = ' ' as u8
+                pos += 1
+                col += 1
+                si += 1
+            }
+        } else {
+            buf[pos] = c
+            pos += 1
+            if c == '\n' as u8 {
+                col = 0
+            } else {
+                col += 1
+            }
+        }
+        i += 1
+    }
+
+    buf[pos] = 0 as u8
+    return buf as string
+}

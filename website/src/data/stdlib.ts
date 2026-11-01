@@ -1719,6 +1719,109 @@ export const STDLIB_MODULES: StdlibModule[] = [
         description: '128-bit RFC 4122 / RFC 9562 universally unique identifier.'
       }
     ]
+  },
+  {
+    name: 'std.text',
+    description: 'Text layout, greedy word wrapping, prefix indentation, alignment, and ANSI-aware measurement.',
+    functions: [
+      {
+        name: 'text_wrap',
+        signature: 'act text_wrap(input: string, width: usize) -> string',
+        description: 'Wraps input text to fit within column bounds of the given width, breaking at spaces.',
+        example: 'let wrapped = text_wrap("Long description to wrap", 40)'
+      },
+      {
+        name: 'text_wrap_prefix',
+        signature: 'act text_wrap_prefix(input: string, width: usize, initial_prefix: string, subsequent_prefix: string) -> string',
+        description: 'Wraps text with distinct indentation or bullet prefixes for the first and subsequent lines.',
+        example: 'let list_item = text_wrap_prefix(desc, 60, "* ", "  ")'
+      },
+      {
+        name: 'text_fill',
+        signature: 'act text_fill(input: string, width: usize) -> string',
+        description: 'Wraps text to column width (convenience alias for text_wrap).',
+        example: 'let filled = text_fill(text, 80)'
+      },
+      {
+        name: 'text_truncate',
+        signature: 'act text_truncate(s: string, max_width: usize, ellipsis: string) -> string',
+        description: 'Truncates a string to max_width characters, appending an ellipsis if truncated.',
+        example: 'let short_title = text_truncate(title, 30, "...")'
+      },
+      {
+        name: 'text_shorten',
+        signature: 'act text_shorten(s: string, max_width: usize, placeholder: string) -> string',
+        description: 'Truncates multi-word text to max_width at word boundaries, appending a placeholder.',
+        example: 'let preview = text_shorten(body, 50, " [...]")'
+      },
+      {
+        name: 'text_align_left',
+        signature: 'act text_align_left(s: string, width: usize, pad_char: u8) -> string',
+        description: 'Left-aligns a string within a field of the given width, padding the right side with pad_char.',
+        example: 'let padded = text_align_left("Name", 15, \' \' as u8)'
+      },
+      {
+        name: 'text_align_right',
+        signature: 'act text_align_right(s: string, width: usize, pad_char: u8) -> string',
+        description: 'Right-aligns a string within a field of the given width, padding the left side with pad_char.',
+        example: 'let num = text_align_right("42", 10, \' \' as u8)'
+      },
+      {
+        name: 'text_align_center',
+        signature: 'act text_align_center(s: string, width: usize, pad_char: u8) -> string',
+        description: 'Centers a string within a field of the given width, padding left and right sides with pad_char.',
+        example: 'let heading = text_align_center("TITLE", 40, \'=\' as u8)'
+      },
+      {
+        name: 'text_justify',
+        signature: 'act text_justify(line: string, width: usize) -> string',
+        description: 'Fully justifies a line of words to exactly width columns by distributing spaces evenly.',
+        example: 'let justified = text_justify("Pure Velo Text Layout", 30)'
+      },
+      {
+        name: 'text_indent',
+        signature: 'act text_indent(s: string, prefix: string) -> string',
+        description: 'Prepends prefix to every non-empty line of a multi-line string.',
+        example: 'let indented = text_indent(code_block, "    ")'
+      },
+      {
+        name: 'text_dedent',
+        signature: 'act text_dedent(s: string) -> string',
+        description: 'Strips common leading whitespace from every line of a multi-line string (like Python textwrap.dedent).',
+        example: 'let cleaned = text_dedent(raw_docstring)'
+      },
+      {
+        name: 'text_expand_tabs',
+        signature: 'act text_expand_tabs(s: string, tab_size: usize) -> string',
+        description: 'Expands tab characters into spaces based on tab stop intervals.',
+        example: 'let spaces = text_expand_tabs(raw_tsv, 4)'
+      },
+      {
+        name: 'text_line_count',
+        signature: 'act text_line_count(s: string) -> usize',
+        description: 'Returns the number of lines in a multi-line string.',
+        example: 'let count = text_line_count(output)'
+      },
+      {
+        name: 'text_max_line_width',
+        signature: 'act text_max_line_width(s: string) -> usize',
+        description: 'Returns the maximum column width among all lines in a multi-line string.',
+        example: 'let max_w = text_max_line_width(screen_buffer)'
+      },
+      {
+        name: 'text_visible_width',
+        signature: 'act text_visible_width(s: string) -> usize',
+        description: 'Calculates the visible display width of a string, ignoring ANSI terminal escape sequences.',
+        example: 'let col_w = text_visible_width(color_str)'
+      },
+      {
+        name: 'text_strip_ansi',
+        signature: 'act text_strip_ansi(s: string) -> string',
+        description: 'Returns a copy of the string with all ANSI escape sequences removed.',
+        example: 'let plain = text_strip_ansi(colored_log)'
+      }
+    ],
+    types: []
   }
 ];
 

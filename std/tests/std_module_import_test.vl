@@ -19,6 +19,7 @@ use std.cli
 use std.url
 use std.rand
 use std.uuid
+use std.text
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -172,6 +173,16 @@ act main() -> i32 {
     let u_str = uuid_to_string(@test_u7)
     mut u_parsed = uuid_nil()
     if !uuid_parse(u_str, @u_parsed) or !uuid_eq(@test_u7, @u_parsed) { return 49 }
+
+    // std.text: layout, alignment, wrapping, measurement, indentation
+    let t_al = text_align_center("ok", 6, '=' as u8)
+    if t_al != "==ok==" { return 50 }
+    let t_wr = text_wrap("wrap multiple words cleanly", 14)
+    if text_line_count(t_wr) < 2 { return 51 }
+    let t_st = text_strip_ansi("\x1b[32mhello\x1b[0m")
+    if t_st != "hello" { return 52 }
+    let t_tr = text_truncate("antigravity", 7, "...")
+    if t_tr != "anti..." { return 53 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0

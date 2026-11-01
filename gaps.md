@@ -2364,3 +2364,35 @@ flowchart TD
   - External project test passed: `velo run uuid_demo.vl` in `C:\projects\test`.
   - Pytest suite `tests/test_std_uuid.py` passed (2/2 tests).
   - All source files strictly < 400 lines (`python scripts/count_lines.py`).
+
+---
+
+### Phase 27: `std.text` (Text Layout, Word Wrapping, Column Indentation, Alignment & Measurement)
+#### Task 27.1: Pure Velo Text Formatting and Wrapping Engine (`std.text`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo had no standard text layout, formatting, or wrapping library. CLI commands, formatters, doc generators, and terminal applications had to either print unbounded run-on text lines or manually write ad-hoc string slicing logic to wrap terminal lines, expand tabs, center headings, strip ANSI color codes, or truncate long table columns.
+* **Fix Applied**:
+  - Implemented the `std.text` standard library module and subcomponents in `std/text/`:
+    - `std/text/defs.vl`: `TEXT_MAX_WIDTH`, `TEXT_DEFAULT_TAB_SIZE` constants, character category predicates (`text_is_space`, `text_is_newline`), safe substrings (`text_substr`), and character repeat buffers (`text_repeat_char`).
+    - `std/text/align.vl`: Text alignment with arbitrary fill padding characters (`text_align_left`, `text_align_right`, `text_align_center`), and full justification distributing spaces evenly across word boundaries (`text_justify`).
+    - `std/text/indent.vl`: Multi-line indentation (`text_indent`), common whitespace prefix stripping equivalent to Python's `textwrap.dedent` (`text_dedent`), and column-aligned tab expansion (`text_expand_tabs`).
+    - `std/text/measure.vl`: Multi-line text height calculation (`text_line_count`), maximum column width finder (`text_max_line_width`), ANSI escape-aware visible display width (`text_visible_width`), and ANSI sequence stripping (`text_strip_ansi`).
+    - `std/text/wrap.vl`: Greedy word wrapping respecting word boundaries and explicit newlines (`text_wrap`, `text_fill`), hanging and bullet-prefix wrapping (`text_wrap_prefix`), truncation with ellipsis (`text_truncate`), and word-boundary shortening (`text_shorten`).
+    - `std/text.vl`: Standard library umbrella module exporting the full text formatting interface.
+  - Hardening:
+    - Fixed http_u64_to_str in std/http/request.vl with forward buffer allocations, eliminating subtle zero-length truncation in std.http.
+  - Packaging, Docs & Integration:
+    - Updated `std/tests/std_module_import_test.vl` to verify all 22 standard library modules together.
+    - Synced global installation directory `~/.velo/std/text/`.
+    - Refreshed standalone archive bundles `website/public/velo-std.zip` and `website/public/velo-std.tar.gz`.
+    - Documented `std.text` with 16 functions, signatures, descriptions, and examples in `website/src/data/stdlib.ts`.
+* **Residual Limitation**:
+  - Advanced East Asian wide characters (CJK) and Unicode grapheme cluster widths will be integrated in conjunction with `std.unicode`.
+* **Verification**:
+  - Native tests passed: `bin/velo.exe run std/tests/text/text_test.vl` (Defs, left/right/center/justify alignment, indent/dedent, tab expansion, line count, max line width, ANSI stripping/measurement, wrap, prefix wrap, truncate, shorten).
+  - Native umbrella import test passed: `bin/velo.exe run std/tests/text_module_import_test.vl`.
+  - Integrated 22-module import test passed: `bin/velo.exe run std/tests/std_module_import_test.vl`.
+  - External project test passed: `velo run text_demo.vl` in `C:\projects\test`.
+  - Pytest suite `tests/test_std_text.py` passed (2/2 tests).
+  - All source files strictly < 400 lines (`python scripts/count_lines.py`).
+
