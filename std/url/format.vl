@@ -1,0 +1,287 @@
+// std.url.format - URL serializer, builder, and path joiner.
+use "../mem/heap.vl"
+use "../str.vl"
+use "defs.vl"
+use "encode.vl"
+
+// Returns default well-known port for standard schemes, or explicit port if > 0.
+act url_port_or_default(u: @Url) -> i32 {
+    if u == null { return 0 }
+    if u.port > 0 { return u.port }
+    if u.scheme == "http" or u.scheme == "ws" { return 80 }
+    if u.scheme == "https" or u.scheme == "wss" { return 443 }
+    if u.scheme == "ftp" { return 21 }
+    if u.scheme == "ssh" { return 22 }
+    return 0
+}
+
+// Converts a positive port number (1..65535) to a heap-allocated decimal string.
+act url_port_to_str(port: i32) -> string {
+    if port <= 0 { return "" }
+    mut buf: @u8 = heap_alloc(12)
+    if buf == null { return "" }
+    mut tmp = port
+    mut digits: @u8 = heap_alloc(12)
+    if digits == null { heap_free(buf); return "" }
+    mut d_count: usize = 0
+    loop tmp > 0 {
+        digits[d_count] = (('0' as u8) + ((tmp % 10) as u8))
+        d_count += 1
+        tmp /= 10
+    }
+    mut i: usize = 0
+    loop i < d_count {
+        buf[i] = digits[d_count - 1 - i]
+        i += 1
+    }
+    buf[d_count] = 0 as u8
+    heap_free(digits)
+    return buf as string
+}
+
+// Appends string s into destination buffer at pos[0], advancing pos[0].
+act url_buf_append(buf: @u8, pos: @usize, s: string) {
+    if buf == null or pos == null or s == null { return }
+    let slen = str.len(s)
+    if slen == 0 { return }
+    mut i: usize = 0
+    loop i < slen {
+        buf[pos[0]] = s[i]
+        pos[0] += 1
+        i += 1
+    }
+}
+
+// Reconstructs the canonical RFC 3986 URL string from a Url structure.
+act url_to_string(u: @Url) -> string {
+    if u == null { return "" }
+
+    // Calculate upper bound for capacity
+    mut cap: usize = 32
+    if u.scheme != null { cap += str.len(u.scheme) }
+    if u.username != null { cap += str.len(u.username) * 3 }
+    if u.password != null { cap += str.len(u.password) * 3 }
+    if u.hostname != null { cap += str.len(u.hostname) }
+    if u.host != null { cap += str.len(u.host) }
+    if u.path != null { cap += str.len(u.path) }
+    if u.raw_query != null { cap += str.len(u.raw_query) }
+    if u.fragment != null { cap += str.len(u.fragment) }
+
+    mut buf: @u8 = heap_alloc(cap)
+    if buf == null { return "" }
+    mut pos: usize = 0
+
+    // 1. Scheme
+    let has_scheme = u.scheme != null and str.len(u.scheme) > 0
+    if has_scheme {
+        url_buf_append(buf, @pos, u.scheme)
+        buf[pos] = ':' as u8
+        pos += 1
+    }
+
+    // 2. Authority
+    let has_host = (u.host != null and str.len(u.host) > 0) or (u.hostname != null and str.len(u.hostname) > 0)
+    let has_user = u.username != null and str.len(u.username) > 0
+    let has_authority = has_host or has_user
+
+    if has_authority {
+        buf[pos] = '/' as u8
+        buf[pos + 1] = '/' as u8
+        pos += 2
+
+        // Userinfo
+        if has_user {
+            let u_enc = url_encode(u.username)
+            url_buf_append(buf, @pos, u_enc)
+            if u.password != null and str.len(u.password) > 0 {
+                buf[pos] = ':' as u8
+                pos += 1
+                let p_enc = url_encode(u.password)
+                url_buf_append(buf, @pos, p_enc)
+            }
+            buf[pos] = '@' as u8
+            pos += 1
+        }
+
+        // Host / Hostname + Port
+        if u.hostname != null and str.len(u.hostname) > 0 {
+            // Check if IPv6 (contains ':' and no brackets)
+            mut is_ipv6 = false
+            mut hi: usize = 0
+            let hlen = str.len(u.hostname)
+            loop hi < hlen {
+                if u.hostname[hi] == ':' as u8 {
+                    is_ipv6 = true
+                    break
+                }
+                hi += 1
+            }
+            if is_ipv6 and u.hostname[0] != '[' as u8 {
+                buf[pos] = '[' as u8
+                pos += 1
+                url_buf_append(buf, @pos, u.hostname)
+                buf[pos] = ']' as u8
+                pos += 1
+            } else {
+                url_buf_append(buf, @pos, u.hostname)
+            }
+
+            if u.port > 0 {
+                buf[pos] = ':' as u8
+                pos += 1
+                let p_str = url_port_to_str(u.port)
+                url_buf_append(buf, @pos, p_str)
+            }
+        } else if u.host != null and str.len(u.host) > 0 {
+            url_buf_append(buf, @pos, u.host)
+        }
+    }
+
+    // 3. Path
+    if u.path != null and str.len(u.path) > 0 {
+        if has_authority and u.path[0] != '/' as u8 {
+            buf[pos] = '/' as u8
+            pos += 1
+        }
+        url_buf_append(buf, @pos, u.path)
+    } else if has_authority {
+        buf[pos] = '/' as u8
+        pos += 1
+    }
+
+    // 4. Query
+    if u.raw_query != null and str.len(u.raw_query) > 0 {
+        buf[pos] = '?' as u8
+        pos += 1
+        url_buf_append(buf, @pos, u.raw_query)
+    }
+
+    // 5. Fragment
+    if u.fragment != null and str.len(u.fragment) > 0 {
+        buf[pos] = '#' as u8
+        pos += 1
+        url_buf_append(buf, @pos, u.fragment)
+    }
+
+    buf[pos] = 0 as u8
+    return buf as string
+}
+
+// Joins two path segments, ensuring exactly one slash separates them.
+act url_join_path(base_path: string, rel_path: string) -> string {
+    mut blen: usize = 0
+    if base_path != null { blen = str.len(base_path) }
+    mut rlen: usize = 0
+    if rel_path != null { rlen = str.len(rel_path) }
+
+    if blen == 0 {
+        if rel_path != null { return rel_path }
+        return ""
+    }
+    if rlen == 0 { return base_path }
+
+    let base_has_slash = base_path[blen - 1] == '/' as u8
+    let rel_has_slash = rel_path[0] == '/' as u8
+
+    if base_has_slash and rel_has_slash {
+        // Drop duplicate slash
+        mut buf: @u8 = heap_alloc(blen + rlen)
+        if buf == null { return base_path }
+        mut i: usize = 0
+        loop i < blen {
+            buf[i] = base_path[i]
+            i += 1
+        }
+        mut j: usize = 1
+        loop j < rlen {
+            buf[blen - 1 + j] = rel_path[j]
+            j += 1
+        }
+        buf[blen + rlen - 1] = 0 as u8
+        return buf as string
+    }
+
+    if (not base_has_slash) and (not rel_has_slash) {
+        // Add separating slash
+        mut buf: @u8 = heap_alloc(blen + rlen + 2)
+        if buf == null { return base_path }
+        mut i: usize = 0
+        loop i < blen {
+            buf[i] = base_path[i]
+            i += 1
+        }
+        buf[blen] = '/' as u8
+        mut j: usize = 0
+        loop j < rlen {
+            buf[blen + 1 + j] = rel_path[j]
+            j += 1
+        }
+        buf[blen + 1 + rlen] = 0 as u8
+        return buf as string
+    }
+
+    // Exactly one slash already present
+    mut buf: @u8 = heap_alloc(blen + rlen + 1)
+    if buf == null { return base_path }
+    mut i: usize = 0
+    loop i < blen {
+        buf[i] = base_path[i]
+        i += 1
+    }
+    mut j: usize = 0
+    loop j < rlen {
+        buf[blen + j] = rel_path[j]
+        j += 1
+    }
+    buf[blen + rlen] = 0 as u8
+    return buf as string
+}
+
+// Sets the path of a Url.
+act url_set_path(u: @Url, path: string) {
+    if u != null {
+        if path != null {
+            u.path = path
+        } else {
+            u.path = ""
+        }
+    }
+}
+
+// Sets the raw query of a Url.
+act url_set_query(u: @Url, raw_query: string) {
+    if u != null {
+        if raw_query != null {
+            u.raw_query = raw_query
+        } else {
+            u.raw_query = ""
+        }
+    }
+}
+
+// Sets the explicit port number of a Url.
+act url_set_port(u: @Url, port: i32) {
+    if u != null {
+        if port > 0 and port <= 65535 {
+            u.port = port
+        } else {
+            u.port = 0
+        }
+    }
+}
+
+// Sets username and password credentials on a Url.
+act url_set_userinfo(u: @Url, user: string, pass: string) {
+    if u != null {
+        if user != null {
+            u.username = user
+        } else {
+            u.username = ""
+        }
+        if pass != null {
+            u.password = pass
+        } else {
+            u.password = ""
+        }
+    }
+}

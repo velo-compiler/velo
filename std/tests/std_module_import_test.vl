@@ -16,6 +16,7 @@ use std.test
 use std.encoding
 use std.csv
 use std.cli
+use std.url
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -144,7 +145,14 @@ act main() -> i32 {
     if !cli_parse(@cli_p) { return 38 }
     if !cli_flag_bool(@cli_p, "verbose") { return 39 }
 
+    // std.url: full URL parsing, query parameter retrieval, and URL formatting
+    mut test_url = url_new()
+    if !url_parse("https://user:pass@host.org:8080/path?key=value#frag", @test_url) { return 40 }
+    if test_url.port != 8080 or test_url.hostname != "host.org" { return 41 }
+    let qv = url_query_get(test_url.raw_query, "key")
+    if qv != "value" { return 42 }
+    if url_join_path("/base/", "/sub") != "/base/sub" { return 43 }
+
     println_str("PASS: native use std.* imports succeeded")
     return 0
 }
-

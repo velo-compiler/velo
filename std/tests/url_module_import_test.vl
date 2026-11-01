@@ -1,0 +1,29 @@
+// Tests native 'use std.url' umbrella import.
+use std.url
+use std.io
+
+act main() -> i32 {
+    let raw = "https://developer:secret@velo-lang.org:8443/docs/api?section=stdlib&lang=vl#overview"
+    mut u = url_new()
+    if not url_parse(raw, @u) { return 1 }
+
+    if u.scheme != "https" { return 2 }
+    if u.username != "developer" { return 3 }
+    if u.password != "secret" { return 4 }
+    if u.hostname != "velo-lang.org" { return 5 }
+    if u.port != 8443 { return 6 }
+    if u.path != "/docs/api" { return 7 }
+    if u.fragment != "overview" { return 8 }
+
+    let v_lang = url_query_get(u.raw_query, "lang")
+    if v_lang != "vl" { return 9 }
+
+    let rebuild = url_to_string(@u)
+    if rebuild != raw { return 10 }
+
+    let enc = url_query_escape("hello world")
+    if enc != "hello+world" { return 11 }
+
+    io.println_str("PASS: std.url umbrella import all tests passed")
+    return 0
+}

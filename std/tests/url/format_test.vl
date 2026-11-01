@@ -1,0 +1,60 @@
+// Tests for std.url.format
+use "../../url.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    // 1. url_to_string round-trip
+    let raw_url = "https://alice:secret123@api.example.com:8443/v1/users?page=2&sort=desc#profile"
+    mut u = url_new()
+    if not url_parse(raw_url, @u) { return 1 }
+    let formatted = url_to_string(@u)
+    if formatted != raw_url { return 2 }
+
+    // 2. url_to_string with IPv6 bracketed host
+    mut u_ipv6 = url_new()
+    if not url_parse("http://[::1]:8080/metrics", @u_ipv6) { return 3 }
+    if url_to_string(@u_ipv6) != "http://[::1]:8080/metrics" { return 4 }
+
+    // 3. url_port_or_default
+    mut u_http = url_new()
+    url_parse("http://example.com/test", @u_http)
+    if url_port_or_default(@u_http) != 80 { return 5 }
+
+    mut u_https = url_new()
+    url_parse("https://example.com/test", @u_https)
+    if url_port_or_default(@u_https) != 443 { return 6 }
+
+    mut u_ssh = url_new()
+    url_parse("ssh://git@github.com/repo", @u_ssh)
+    if url_port_or_default(@u_ssh) != 22 { return 7 }
+
+    mut u_custom = url_new()
+    url_parse("http://example.com:3000/api", @u_custom)
+    if url_port_or_default(@u_custom) != 3000 { return 8 }
+
+    // 4. url_join_path
+    let j1 = url_join_path("/api/v1/", "/users")
+    if j1 != "/api/v1/users" { return 9 }
+
+    let j2 = url_join_path("/api/v1", "users")
+    if j2 != "/api/v1/users" { return 10 }
+
+    let j3 = url_join_path("", "users")
+    if j3 != "users" { return 11 }
+
+    let j4 = url_join_path("/api", "")
+    if j4 != "/api" { return 12 }
+
+    // 5. Component mutation with setters
+    mut u_mut = url_new()
+    url_parse("https://example.com/old", @u_mut)
+    url_set_path(@u_mut, "/new/path")
+    url_set_query(@u_mut, "filter=active")
+    url_set_port(@u_mut, 9090)
+    url_set_userinfo(@u_mut, "bob", "pwd")
+    let mut_str = url_to_string(@u_mut)
+    if mut_str != "https://bob:pwd@example.com:9090/new/path?filter=active" { return 13 }
+
+    io.println_str("OK: std.url format tests passed")
+    return 0
+}

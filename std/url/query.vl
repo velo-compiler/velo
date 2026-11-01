@@ -1,0 +1,322 @@
+// std.url.query - Query parameter parsing, retrieval, modification, and encoding.
+use "../mem/heap.vl"
+use "../str.vl"
+use "defs.vl"
+use "encode.vl"
+
+// Returns true if query contains the specified parameter key.
+act url_query_has(query: string, key: string) -> bool {
+    if query == null or key == null { return false }
+    let qlen = str.len(query)
+    let klen = str.len(key)
+    if qlen == 0 or klen == 0 { return false }
+
+    mut pos: usize = 0
+    if query[0] == '?' as u8 {
+        pos = 1
+    }
+
+    loop pos < qlen {
+        let p_start = pos
+        mut p_end = qlen
+        mut eq_idx = qlen
+        mut has_eq = false
+        mut i = pos
+        loop i < qlen {
+            let c = query[i]
+            if c == '&' as u8 {
+                p_end = i
+                break
+            }
+            if c == '=' as u8 and not has_eq {
+                eq_idx = i
+                has_eq = true
+            }
+            i += 1
+        }
+
+        mut k_end = p_end
+        if has_eq {
+            k_end = eq_idx
+        }
+        let raw_k = url_substr(query, p_start, k_end - p_start)
+        let dec_k = url_query_unescape(raw_k)
+        if dec_k == key {
+            return true
+        }
+
+        pos = p_end + 1
+    }
+    return false
+}
+
+// Retrieves the decoded value of a query parameter by key, or null if not found.
+act url_query_get(query: string, key: string) -> string {
+    if query == null or key == null { return null }
+    let qlen = str.len(query)
+    let klen = str.len(key)
+    if qlen == 0 or klen == 0 { return null }
+
+    mut pos: usize = 0
+    if query[0] == '?' as u8 {
+        pos = 1
+    }
+
+    loop pos < qlen {
+        let p_start = pos
+        mut p_end = qlen
+        mut eq_idx = qlen
+        mut has_eq = false
+        mut i = pos
+        loop i < qlen {
+            let c = query[i]
+            if c == '&' as u8 {
+                p_end = i
+                break
+            }
+            if c == '=' as u8 and not has_eq {
+                eq_idx = i
+                has_eq = true
+            }
+            i += 1
+        }
+
+        mut k_end = p_end
+        if has_eq {
+            k_end = eq_idx
+        }
+        let raw_k = url_substr(query, p_start, k_end - p_start)
+        let dec_k = url_query_unescape(raw_k)
+        if dec_k == key {
+            if has_eq {
+                let raw_v = url_substr(query, eq_idx + 1, p_end - (eq_idx + 1))
+                return url_query_unescape(raw_v)
+            } else {
+                return ""
+            }
+        }
+
+        pos = p_end + 1
+    }
+    return null
+}
+
+// Parses a query string into caller-provided parallel arrays of keys and values.
+// Returns the number of parameters extracted (up to max_count).
+act url_query_parse(query: string, out_keys: @string, out_vals: @string, max_count: usize) -> usize {
+    if query == null or out_keys == null or out_vals == null or max_count == 0 { return 0 }
+    let qlen = str.len(query)
+    if qlen == 0 { return 0 }
+
+    mut count: usize = 0
+    mut pos: usize = 0
+    if query[0] == '?' as u8 {
+        pos = 1
+    }
+
+    loop pos < qlen and count < max_count {
+        let p_start = pos
+        mut p_end = qlen
+        mut eq_idx = qlen
+        mut has_eq = false
+        mut i = pos
+        loop i < qlen {
+            let c = query[i]
+            if c == '&' as u8 {
+                p_end = i
+                break
+            }
+            if c == '=' as u8 and not has_eq {
+                eq_idx = i
+                has_eq = true
+            }
+            i += 1
+        }
+
+        mut k_end = p_end
+        if has_eq {
+            k_end = eq_idx
+        }
+        let raw_k = url_substr(query, p_start, k_end - p_start)
+        out_keys[count] = url_query_unescape(raw_k)
+
+        if has_eq {
+            let raw_v = url_substr(query, eq_idx + 1, p_end - (eq_idx + 1))
+            out_vals[count] = url_query_unescape(raw_v)
+        } else {
+            out_vals[count] = ""
+        }
+
+        count += 1
+        pos = p_end + 1
+    }
+
+    return count
+}
+
+// Encodes a single key-value parameter into "key=val" using application/x-www-form-urlencoded.
+act url_query_encode_pair(key: string, val: string) -> string {
+    if key == null { return "" }
+    let ek = url_query_escape(key)
+    mut ev = ""
+    if val != null {
+        ev = url_query_escape(val)
+    }
+    let ek_len = str.len(ek)
+    let ev_len = str.len(ev)
+
+    mut buf: @u8 = heap_alloc(ek_len + 1 + ev_len + 1)
+    if buf == null { return "" }
+
+    mut pos: usize = 0
+    mut i: usize = 0
+    loop i < ek_len {
+        buf[pos] = ek[i]
+        pos += 1
+        i += 1
+    }
+    buf[pos] = '=' as u8
+    pos += 1
+
+    mut j: usize = 0
+    loop j < ev_len {
+        buf[pos] = ev[j]
+        pos += 1
+        j += 1
+    }
+    buf[pos] = 0 as u8
+    return buf as string
+}
+
+// Sets or replaces a query parameter in query string, returning the updated query.
+act url_query_set(query: string, key: string, val: string) -> string {
+    if key == null or str.len(key) == 0 { return query }
+    let new_pair = url_query_encode_pair(key, val)
+
+    mut qlen: usize = 0
+    if query != null {
+        qlen = str.len(query)
+    }
+    if qlen == 0 {
+        return new_pair
+    }
+
+    // Parse existing keys and vals into temporary arrays
+    mut keys: @string = heap_alloc(URL_MAX_PARAMS * 8) as @string
+    mut vals: @string = heap_alloc(URL_MAX_PARAMS * 8) as @string
+    if keys == null or vals == null { return query }
+
+    let count = url_query_parse(query, keys, vals, URL_MAX_PARAMS)
+    mut found = false
+    mut i: usize = 0
+    loop i < count {
+        if keys[i] == key {
+            if val != null {
+                vals[i] = val
+            } else {
+                vals[i] = ""
+            }
+            found = true
+            break
+        }
+        i += 1
+    }
+
+    // Calculate buffer size
+    mut total_len: usize = str.len(new_pair) + 16
+    mut k: usize = 0
+    loop k < count {
+        total_len += str.len(keys[k]) * 3 + str.len(vals[k]) * 3 + 2
+        k += 1
+    }
+
+    mut buf: @u8 = heap_alloc(total_len)
+    if buf == null {
+        heap_free(keys as @u8)
+        heap_free(vals as @u8)
+        return query
+    }
+
+    mut pos: usize = 0
+    mut m: usize = 0
+    loop m < count {
+        let pair = url_query_encode_pair(keys[m], vals[m])
+        let plen = str.len(pair)
+        if m > 0 {
+            buf[pos] = '&' as u8
+            pos += 1
+        }
+        mut pi: usize = 0
+        loop pi < plen {
+            buf[pos] = pair[pi]
+            pos += 1
+            pi += 1
+        }
+        m += 1
+    }
+
+    if not found {
+        if count > 0 {
+            buf[pos] = '&' as u8
+            pos += 1
+        }
+        let nlen = str.len(new_pair)
+        mut ni: usize = 0
+        loop ni < nlen {
+            buf[pos] = new_pair[ni]
+            pos += 1
+            ni += 1
+        }
+    }
+
+    buf[pos] = 0 as u8
+    heap_free(keys as @u8)
+    heap_free(vals as @u8)
+    return buf as string
+}
+
+// Deletes all occurrences of a parameter key from query string, returning updated query.
+act url_query_del(query: string, key: string) -> string {
+    if query == null or key == null { return query }
+    let qlen = str.len(query)
+    if qlen == 0 { return "" }
+
+    mut keys: @string = heap_alloc(URL_MAX_PARAMS * 8) as @string
+    mut vals: @string = heap_alloc(URL_MAX_PARAMS * 8) as @string
+    if keys == null or vals == null { return query }
+
+    let count = url_query_parse(query, keys, vals, URL_MAX_PARAMS)
+    mut buf: @u8 = heap_alloc(qlen + 1)
+    if buf == null {
+        heap_free(keys as @u8)
+        heap_free(vals as @u8)
+        return query
+    }
+
+    mut pos: usize = 0
+    mut emitted: usize = 0
+    mut i: usize = 0
+    loop i < count {
+        if keys[i] != key {
+            let pair = url_query_encode_pair(keys[i], vals[i])
+            let plen = str.len(pair)
+            if emitted > 0 {
+                buf[pos] = '&' as u8
+                pos += 1
+            }
+            mut pi: usize = 0
+            loop pi < plen {
+                buf[pos] = pair[pi]
+                pos += 1
+                pi += 1
+            }
+            emitted += 1
+        }
+        i += 1
+    }
+
+    buf[pos] = 0 as u8
+    heap_free(keys as @u8)
+    heap_free(vals as @u8)
+    return buf as string
+}

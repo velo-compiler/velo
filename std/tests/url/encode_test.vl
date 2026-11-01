@@ -1,0 +1,46 @@
+// Tests for std.url.encode
+use "../../url.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    // 1. Basic RFC 3986 url_encode and url_decode
+    let s1 = "hello world & velo"
+    let e1 = url_encode(s1)
+    if e1 != "hello%20world%20%26%20velo" { return 1 }
+    let d1 = url_decode(e1)
+    if d1 != s1 { return 2 }
+
+    // 2. Unreserved characters should never be encoded
+    let unres = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~"
+    let e_unres = url_encode(unres)
+    if e_unres != unres { return 3 }
+
+    // 3. url_query_escape encodes spaces as '+'
+    let qs = "hello world & velo"
+    let q_enc = url_query_escape(qs)
+    if q_enc != "hello+world+%26+velo" { return 4 }
+    let q_dec = url_query_unescape(q_enc)
+    if q_dec != qs { return 5 }
+
+    // 4. url_path_escape preserves '/' and encodes space as %20
+    let p_raw = "/api/v1/user profiles/all"
+    let p_enc = url_path_escape(p_raw)
+    if p_enc != "/api/v1/user%20profiles/all" { return 6 }
+    let p_dec = url_path_unescape(p_enc)
+    if p_dec != p_raw { return 7 }
+
+    // 5. In path unescape, '+' remains literal '+'
+    let p_plus = "/tags/c++"
+    if url_path_unescape(p_plus) != "/tags/c++" { return 8 }
+
+    // 6. Substring extraction helper
+    let sub = url_substr("antigravity", 4, 7)
+    if sub != "gravity" { return 9 }
+
+    // 7. Malformed percent handling doesn't crash and preserves literal
+    let mal = url_decode("test%zz%2")
+    if mal != "test%zz%2" { return 10 }
+
+    io.println_str("OK: std.url encode tests passed")
+    return 0
+}

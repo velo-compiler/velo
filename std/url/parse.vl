@@ -1,0 +1,290 @@
+// std.url.parse - RFC 3986 URI and URL parser.
+use "../mem/heap.vl"
+use "../str.vl"
+use "defs.vl"
+use "encode.vl"
+
+// Converts ASCII uppercase characters to lowercase in a new string.
+act url_to_lower(s: string) -> string {
+    if s == null { return "" }
+    let len = str.len(s)
+    if len == 0 { return "" }
+    mut buf: @u8 = heap_alloc(len + 1)
+    if buf == null { return "" }
+    mut i: usize = 0
+    loop i < len {
+        let b = s[i]
+        if b >= 'A' as u8 and b <= 'Z' as u8 {
+            buf[i] = b + 32 as u8
+        } else {
+            buf[i] = b
+        }
+        i += 1
+    }
+    buf[len] = 0 as u8
+    return buf as string
+}
+
+// Parses an ASCII port number from a substring. Returns port (1..65535) or -1 on error.
+act url_parse_port(s: string, start: usize, len: usize) -> i32 {
+    if s == null or len == 0 { return -1 }
+    mut val: i64 = 0
+    mut i: usize = 0
+    loop i < len {
+        let b = s[start + i]
+        if b < '0' as u8 or b > '9' as u8 {
+            return -1
+        }
+        val = val * 10 + ((b - ('0' as u8)) as i64)
+        if val > 65535 {
+            return -1
+        }
+        i += 1
+    }
+    if val <= 0 { return -1 }
+    return val as i32
+}
+
+// Returns true if character is valid in an RFC 3986 scheme: ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
+act url_is_scheme_char(c: u8, is_first: bool) -> bool {
+    let is_alpha = (c >= 'a' as u8 and c <= 'z' as u8) or (c >= 'A' as u8 and c <= 'Z' as u8)
+    if is_first { return is_alpha }
+    if is_alpha or (c >= '0' as u8 and c <= '9' as u8) or c == '+' as u8 or c == '-' as u8 or c == '.' as u8 {
+        return true
+    }
+    return false
+}
+
+// Parses an RFC 3986 URL or relative reference into a Url structure.
+// Returns true on success, false if input is malformed.
+act url_parse(raw: string, out: @Url) -> bool {
+    if raw == null or out == null { return false }
+    let len = str.len(raw)
+    if len == 0 or len > URL_MAX_LEN {
+        out.is_valid = false
+        return false
+    }
+
+    out.scheme = ""
+    out.username = ""
+    out.password = ""
+    out.host = ""
+    out.hostname = ""
+    out.port = 0
+    out.path = ""
+    out.raw_query = ""
+    out.fragment = ""
+    out.is_absolute = false
+    out.is_valid = false
+
+    mut pos: usize = 0
+
+    // 1. Detect and parse scheme (e.g. "https:", "http:", "ftp:", "mailto:")
+    mut colon_idx: usize = 0
+    mut has_scheme = false
+    mut i: usize = 0
+    loop i < len {
+        let c = raw[i]
+        if c == ':' as u8 {
+            if i > 0 and url_is_scheme_char(raw[0], true) {
+                colon_idx = i
+                has_scheme = true
+            }
+            break
+        }
+        if c == '/' as u8 or c == '?' as u8 or c == '#' as u8 {
+            // Path separator or query/fragment before colon means no scheme
+            break
+        }
+        if not url_is_scheme_char(c, i == 0) {
+            break
+        }
+        i += 1
+    }
+
+    if has_scheme {
+        let raw_scheme = url_substr(raw, 0, colon_idx)
+        out.scheme = url_to_lower(raw_scheme)
+        out.is_absolute = true
+        pos = colon_idx + 1
+    }
+
+    // 2. Check for authority "//"
+    if pos + 1 < len and raw[pos] == '/' as u8 and raw[pos + 1] == '/' as u8 {
+        pos += 2
+        let auth_start = pos
+        mut auth_end = len
+        mut j = pos
+        loop j < len {
+            let c = raw[j]
+            if c == '/' as u8 or c == '?' as u8 or c == '#' as u8 {
+                auth_end = j
+                break
+            }
+            j += 1
+        }
+        let auth_len = auth_end - auth_start
+        pos = auth_end
+
+        // Parse userinfo: look for '@' within authority
+        mut at_idx: usize = 0
+        mut has_at = false
+        mut k: usize = auth_start
+        loop k < auth_end {
+            if raw[k] == '@' as u8 {
+                at_idx = k
+                has_at = true
+                break
+            }
+            k += 1
+        }
+
+        mut host_start = auth_start
+        mut host_len = auth_len
+        if has_at {
+            let userinfo_len = at_idx - auth_start
+            // Search for ':' in userinfo (user:pass)
+            mut user_colon: usize = 0
+            mut has_user_colon = false
+            mut u_idx: usize = auth_start
+            loop u_idx < at_idx {
+                if raw[u_idx] == ':' as u8 {
+                    user_colon = u_idx
+                    has_user_colon = true
+                    break
+                }
+                u_idx += 1
+            }
+
+            if has_user_colon {
+                out.username = url_decode(url_substr(raw, auth_start, user_colon - auth_start))
+                out.password = url_decode(url_substr(raw, user_colon + 1, at_idx - (user_colon + 1)))
+            } else {
+                out.username = url_decode(url_substr(raw, auth_start, userinfo_len))
+                out.password = ""
+            }
+
+            host_start = at_idx + 1
+            host_len = auth_end - host_start
+        }
+
+        out.host = url_substr(raw, host_start, host_len)
+
+        // Parse host, hostname, and port
+        if host_len > 0 and raw[host_start] == '[' as u8 {
+            // IPv6 bracketed host: [::1]:8080 or [2001:db8::1]
+            mut bracket_end: usize = 0
+            mut has_bracket = false
+            mut b_idx = host_start + 1
+            loop b_idx < host_start + host_len {
+                if raw[b_idx] == ']' as u8 {
+                    bracket_end = b_idx
+                    has_bracket = true
+                    break
+                }
+                b_idx += 1
+            }
+            if not has_bracket { return false }
+
+            out.hostname = url_substr(raw, host_start + 1, bracket_end - (host_start + 1))
+            if bracket_end + 1 < host_start + host_len and raw[bracket_end + 1] == ':' as u8 {
+                let p_start = bracket_end + 2
+                let p_len = (host_start + host_len) - p_start
+                let p_val = url_parse_port(raw, p_start, p_len)
+                if p_val < 0 { return false }
+                out.port = p_val
+            } else {
+                out.port = 0
+            }
+        } else {
+            // Standard hostname:port or hostname
+            mut port_colon: usize = 0
+            mut has_port_colon = false
+            mut p_idx = host_start
+            loop p_idx < host_start + host_len {
+                if raw[p_idx] == ':' as u8 {
+                    port_colon = p_idx
+                    has_port_colon = true
+                    break
+                }
+                p_idx += 1
+            }
+
+            if has_port_colon {
+                let raw_hname = url_substr(raw, host_start, port_colon - host_start)
+                out.hostname = url_to_lower(raw_hname)
+                let p_start = port_colon + 1
+                let p_len = (host_start + host_len) - p_start
+                let p_val = url_parse_port(raw, p_start, p_len)
+                if p_val < 0 { return false }
+                out.port = p_val
+            } else {
+                let raw_hname = url_substr(raw, host_start, host_len)
+                out.hostname = url_to_lower(raw_hname)
+                out.port = 0
+            }
+        }
+    }
+
+    // 3. Parse path (until '?' or '#' or end of string)
+    let path_start = pos
+    mut path_end = len
+    mut m = pos
+    loop m < len {
+        let c = raw[m]
+        if c == '?' as u8 or c == '#' as u8 {
+            path_end = m
+            break
+        }
+        m += 1
+    }
+
+    let path_len = path_end - path_start
+    if path_len > 0 {
+        out.path = url_substr(raw, path_start, path_len)
+    } else {
+        if out.scheme != "" and out.host != "" {
+            out.path = "/"
+        } else {
+            out.path = ""
+        }
+    }
+    pos = path_end
+
+    // 4. Parse query (until '#' or end of string)
+    if pos < len and raw[pos] == '?' as u8 {
+        pos += 1
+        let q_start = pos
+        mut q_end = len
+        mut q_idx = pos
+        loop q_idx < len {
+            if raw[q_idx] == '#' as u8 {
+                q_end = q_idx
+                break
+            }
+            q_idx += 1
+        }
+        out.raw_query = url_substr(raw, q_start, q_end - q_start)
+        pos = q_end
+    } else {
+        out.raw_query = ""
+    }
+
+    // 5. Parse fragment (until end of string)
+    if pos < len and raw[pos] == '#' as u8 {
+        pos += 1
+        out.fragment = url_substr(raw, pos, len - pos)
+    } else {
+        out.fragment = ""
+    }
+
+    out.is_valid = true
+    return true
+}
+
+// Parses an RFC 3986 URL string and returns the resulting Url struct.
+act url_parse_str(raw: string) -> Url {
+    mut u = url_new()
+    url_parse(raw, @u)
+    return u
+}

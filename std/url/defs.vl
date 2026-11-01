@@ -1,0 +1,42 @@
+// std.url.defs - RFC 3986 URL data structures, limits, and defaults.
+use "../mem/heap.vl"
+use "../str.vl"
+
+let URL_MAX_LEN: usize = 4096
+let URL_MAX_PARAMS: usize = 128
+
+data Url {
+    scheme: string       // e.g. "https", "http", "ftp", "mailto" (lowercased)
+    username: string     // e.g. "alice" (unencoded)
+    password: string     // e.g. "secret" (unencoded)
+    host: string         // e.g. "api.example.com:8080" or "[::1]:8080" or "example.com"
+    hostname: string     // e.g. "api.example.com" or "::1" (without port or brackets)
+    port: i32            // explicit port number (1..65535), or 0 if omitted
+    path: string         // e.g. "/v1/users" or "/"
+    raw_query: string    // e.g. "page=1&sort=desc" (without '?')
+    fragment: string     // e.g. "section-2" (without '#')
+    is_absolute: bool    // true if scheme is non-empty
+    is_valid: bool       // true if successfully parsed
+}
+
+data UrlQueryParam {
+    key: string
+    val: string
+}
+
+// Initializes a blank, valid Url with default empty strings.
+act url_new() -> Url {
+    return Url {
+        scheme: "",
+        username: "",
+        password: "",
+        host: "",
+        hostname: "",
+        port: 0,
+        path: "",
+        raw_query: "",
+        fragment: "",
+        is_absolute: false,
+        is_valid: false,
+    }
+}

@@ -1,0 +1,222 @@
+// std.url.encode - Percent-encoding and decoding per RFC 3986 and form-urlencoded.
+use "../mem/heap.vl"
+use "../str.vl"
+
+let URL_HEX_DIGITS: string = "0123456789ABCDEF"
+
+// Returns true if byte is an RFC 3986 unreserved character (ALPHA / DIGIT / "-" / "." / "_" / "~").
+act url_is_unreserved(c: u8) -> bool {
+    if (c >= 'a' as u8 and c <= 'z' as u8) or (c >= 'A' as u8 and c <= 'Z' as u8) or (c >= '0' as u8 and c <= '9' as u8) {
+        return true
+    }
+    if c == '-' as u8 or c == '_' as u8 or c == '.' as u8 or c == '~' as u8 {
+        return true
+    }
+    return false
+}
+
+// Returns hexadecimal value of an ASCII hex character (0..15), or -1 if invalid.
+act url_hex_val(c: u8) -> i32 {
+    if c >= '0' as u8 and c <= '9' as u8 { return (c - ('0' as u8)) as i32 }
+    if c >= 'a' as u8 and c <= 'f' as u8 { return ((c - ('a' as u8)) + 10) as i32 }
+    if c >= 'A' as u8 and c <= 'F' as u8 { return ((c - ('A' as u8)) + 10) as i32 }
+    return -1
+}
+
+// Extracts a substring [start, start + length) into a newly heap-allocated string.
+act url_substr(s: string, start: usize, len: usize) -> string {
+    if s == null or len == 0 { return "" }
+    let slen = str.len(s)
+    if start >= slen { return "" }
+    mut real_len = len
+    if start + real_len > slen {
+        real_len = slen - start
+    }
+    mut buf: @u8 = heap_alloc(real_len + 1)
+    if buf == null { return "" }
+    mut i: usize = 0
+    loop i < real_len {
+        buf[i] = s[start + i]
+        i += 1
+    }
+    buf[real_len] = 0 as u8
+    return buf as string
+}
+
+// Percent-encodes a string according to RFC 3986 §2.1.
+// Encodes all bytes except unreserved characters (A-Z, a-z, 0-9, '-', '_', '.', '~').
+act url_encode(text: string) -> string {
+    if text == null { return "" }
+    let len = str.len(text)
+    if len == 0 { return "" }
+
+    mut buf: @u8 = heap_alloc(len * 3 + 1)
+    if buf == null { return "" }
+
+    mut out_pos: usize = 0
+    mut i: usize = 0
+    loop i < len {
+        let b = text[i]
+        if url_is_unreserved(b) {
+            buf[out_pos] = b
+            out_pos += 1
+        } else {
+            buf[out_pos] = '%' as u8
+            buf[out_pos + 1] = URL_HEX_DIGITS[(b >> 4) as usize]
+            buf[out_pos + 2] = URL_HEX_DIGITS[(b & (0x0F as u8)) as usize]
+            out_pos += 3
+        }
+        i += 1
+    }
+    buf[out_pos] = 0 as u8
+    return buf as string
+}
+
+// Decodes a percent-encoded string. Converts '+' to space and %XX to raw bytes.
+act url_decode(encoded: string) -> string {
+    if encoded == null { return "" }
+    let len = str.len(encoded)
+    if len == 0 { return "" }
+
+    mut buf: @u8 = heap_alloc(len + 1)
+    if buf == null { return "" }
+
+    mut out_pos: usize = 0
+    mut i: usize = 0
+    loop i < len {
+        let b = encoded[i]
+        if b == '+' as u8 {
+            buf[out_pos] = ' ' as u8
+            out_pos += 1
+            i += 1
+        } else if b == '%' as u8 and i + 2 < len {
+            let h1 = url_hex_val(encoded[i + 1])
+            let h2 = url_hex_val(encoded[i + 2])
+            if h1 >= 0 and h2 >= 0 {
+                buf[out_pos] = ((h1 << 4) | h2) as u8
+                out_pos += 1
+                i += 3
+            } else {
+                buf[out_pos] = b
+                out_pos += 1
+                i += 1
+            }
+        } else {
+            buf[out_pos] = b
+            out_pos += 1
+            i += 1
+        }
+    }
+    buf[out_pos] = 0 as u8
+    return buf as string
+}
+
+// Encodes a string for application/x-www-form-urlencoded query parameters.
+// Spaces are encoded as '+'; unreserved chars and '*' are preserved; others as %XX.
+act url_query_escape(text: string) -> string {
+    if text == null { return "" }
+    let len = str.len(text)
+    if len == 0 { return "" }
+
+    mut buf: @u8 = heap_alloc(len * 3 + 1)
+    if buf == null { return "" }
+
+    mut out_pos: usize = 0
+    mut i: usize = 0
+    loop i < len {
+        let b = text[i]
+        if b == ' ' as u8 {
+            buf[out_pos] = '+' as u8
+            out_pos += 1
+        } else if url_is_unreserved(b) or b == '*' as u8 {
+            buf[out_pos] = b
+            out_pos += 1
+        } else {
+            buf[out_pos] = '%' as u8
+            buf[out_pos + 1] = URL_HEX_DIGITS[(b >> 4) as usize]
+            buf[out_pos + 2] = URL_HEX_DIGITS[(b & (0x0F as u8)) as usize]
+            out_pos += 3
+        }
+        i += 1
+    }
+    buf[out_pos] = 0 as u8
+    return buf as string
+}
+
+// Decodes application/x-www-form-urlencoded query parameters.
+act url_query_unescape(encoded: string) -> string {
+    return url_decode(encoded)
+}
+
+// Returns true if byte is allowed unescaped in an RFC 3986 path segment.
+act url_is_path_char(c: u8) -> bool {
+    if url_is_unreserved(c) { return true }
+    // Sub-delims and path separators allowed unescaped
+    if c == '/' as u8 or c == ':' as u8 or c == '@' as u8 or c == '!' as u8 or c == '$' as u8 or c == '&' as u8 or c == '\'' as u8 or c == '(' as u8 or c == ')' as u8 or c == '*' as u8 or c == '+' as u8 or c == ',' as u8 or c == ';' as u8 or c == '=' as u8 {
+        return true
+    }
+    return false
+}
+
+// Escapes URL path segments while preserving slashes and sub-delimiters. Spaces become %20.
+act url_path_escape(path: string) -> string {
+    if path == null { return "" }
+    let len = str.len(path)
+    if len == 0 { return "" }
+
+    mut buf: @u8 = heap_alloc(len * 3 + 1)
+    if buf == null { return "" }
+
+    mut out_pos: usize = 0
+    mut i: usize = 0
+    loop i < len {
+        let b = path[i]
+        if url_is_path_char(b) {
+            buf[out_pos] = b
+            out_pos += 1
+        } else {
+            buf[out_pos] = '%' as u8
+            buf[out_pos + 1] = URL_HEX_DIGITS[(b >> 4) as usize]
+            buf[out_pos + 2] = URL_HEX_DIGITS[(b & (0x0F as u8)) as usize]
+            out_pos += 3
+        }
+        i += 1
+    }
+    buf[out_pos] = 0 as u8
+    return buf as string
+}
+
+// Decodes percent-encoded characters in a URL path without converting '+' to space.
+act url_path_unescape(path: string) -> string {
+    if path == null { return "" }
+    let len = str.len(path)
+    if len == 0 { return "" }
+
+    mut buf: @u8 = heap_alloc(len + 1)
+    if buf == null { return "" }
+
+    mut out_pos: usize = 0
+    mut i: usize = 0
+    loop i < len {
+        let b = path[i]
+        if b == '%' as u8 and i + 2 < len {
+            let h1 = url_hex_val(path[i + 1])
+            let h2 = url_hex_val(path[i + 2])
+            if h1 >= 0 and h2 >= 0 {
+                buf[out_pos] = ((h1 << 4) | h2) as u8
+                out_pos += 1
+                i += 3
+            } else {
+                buf[out_pos] = b
+                out_pos += 1
+                i += 1
+            }
+        } else {
+            buf[out_pos] = b
+            out_pos += 1
+            i += 1
+        }
+    }
+    buf[out_pos] = 0 as u8
+    return buf as string
+}

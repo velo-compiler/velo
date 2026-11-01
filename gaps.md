@@ -2271,3 +2271,37 @@ flowchart TD
   - Pytest suite `tests/test_std_cli.py` passed (3/3 tests).
   - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
   - Bootstrap snapshot determinism verified (`test_bootstrap_snapshot.py`).
+
+
+---
+
+### Phase 24: `std.url` (RFC 3986 URL Parser, Builder, Percent-Encoding, and Query Codecs)
+#### Task 24.1: URL Parsing, Serializer, Percent-Encoding, and Query Param Handlers (`std.url`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo had no standard RFC 3986 URL parsing, building, percent-encoding, or query string manipulation library. Networking applications had to rely on incomplete internal HTTP URL helpers or hand-craft query strings and path encodings.
+* **Fix Applied**:
+  - Implemented the `std.url` standard library module and subcomponents in `std/url/`:
+    - `std/url/defs.vl`: `Url` and `UrlQueryParam` structures, memory bounds, and default initialization (`url_new`).
+    - `std/url/encode.vl`: Complete RFC 3986 percent-encoding and decoding (`url_encode`, `url_decode`), form-urlencoded query codecs (`url_query_escape`, `url_query_unescape`), and path escaping/unescaping preserving sub-delimiters (`url_path_escape`, `url_path_unescape`).
+    - `std/url/parse.vl`: Full RFC 3986 parser (`url_parse`, `url_parse_str`) extracting schemes, authority with credentials (`user:pass@`), host/hostname, bracketed IPv6 addresses (`[::1]`, `[2001:db8::1]`), explicit ports (1..65535) with validation, path normalization, raw queries, and fragments.
+    - `std/url/format.vl`: Canonical URL serializer (`url_to_string`), well-known port mapper (`url_port_or_default`), path joining with slash normalization (`url_join_path`), and component setters (`url_set_path`, `url_set_query`, `url_set_port`, `url_set_userinfo`).
+    - `std/url/query.vl`: Query parameter inspection and mutation (`url_query_has`, `url_query_get`, `url_query_parse`, `url_query_encode_pair`, `url_query_set`, `url_query_del`).
+    - `std/url.vl`: Top-level umbrella module exposing the complete `std.url` interface.
+  - Packaging, Docs & Integration:
+    - Updated `std/http/url.vl` to cleanly reuse `std.url` with zero duplicate symbols.
+    - Updated `std/tests/std_module_import_test.vl` to verify all 19 standard library modules together.
+    - Synced global installation directory `~/.velo/std/url/`.
+    - Refreshed standalone archive bundles `website/public/velo-std.zip` and `website/public/velo-std.tar.gz`.
+    - Documented `std.url` with 15 functions, types, and real examples in `website/src/data/stdlib.ts`.
+* **Residual Limitation**:
+  - Punycode IDN (Internationalized Domain Names, RFC 3492) decoding/encoding can be layered in an internationalization extension module.
+* **Verification**:
+  - Native Encode test passed: `bin/velo.exe run std/tests/url/encode_test.vl`.
+  - Native Parse test passed: `bin/velo.exe run std/tests/url/parse_test.vl`.
+  - Native Query test passed: `bin/velo.exe run std/tests/url/query_test.vl`.
+  - Native Format test passed: `bin/velo.exe run std/tests/url/format_test.vl`.
+  - Native umbrella import test passed: `bin/velo.exe run std/tests/url_module_import_test.vl`.
+  - Integrated 19-module import test passed: `bin/velo.exe run std/tests/std_module_import_test.vl`.
+  - External project test passed: `velo run url_demo.vl` in `C:\projects\test`.
+  - Pytest suite `tests/test_std_url.py` passed (5/5 tests).
+  - All source files strictly < 400 lines (`python scripts/count_lines.py`).

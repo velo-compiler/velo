@@ -1,0 +1,65 @@
+// Tests for std.url.query
+use "../../url.vl"
+use "../../io.vl"
+use "../../mem/heap.vl"
+
+act main() -> i32 {
+    let q1 = "name=velo+lang&version=2&mode=fast&active"
+
+    // 1. url_query_has
+    if not url_query_has(q1, "name") { return 1 }
+    if not url_query_has(q1, "version") { return 2 }
+    if not url_query_has(q1, "active") { return 3 }
+    if url_query_has(q1, "nonexistent") { return 4 }
+
+    // Query starting with '?'
+    if not url_query_has("?k=v", "k") { return 5 }
+
+    // 2. url_query_get
+    let v_name = url_query_get(q1, "name")
+    if v_name != "velo lang" { return 6 }
+    let v_ver = url_query_get(q1, "version")
+    if v_ver != "2" { return 7 }
+    let v_act = url_query_get(q1, "active")
+    if v_act != "" { return 8 }
+    let v_none = url_query_get(q1, "missing")
+    if v_none != null { return 9 }
+
+    // 3. url_query_parse
+    mut keys: @string = heap_alloc(16 * 8) as @string
+    mut vals: @string = heap_alloc(16 * 8) as @string
+    let count = url_query_parse(q1, keys, vals, 16)
+    if count != 4 { return 10 }
+    if keys[0] != "name" or vals[0] != "velo lang" { return 11 }
+    if keys[1] != "version" or vals[1] != "2" { return 12 }
+    if keys[2] != "mode" or vals[2] != "fast" { return 13 }
+    if keys[3] != "active" or vals[3] != "" { return 14 }
+    heap_free(keys as @u8)
+    heap_free(vals as @u8)
+
+    // 4. url_query_set (replace existing)
+    let q_mod = url_query_set("sort=asc&page=1", "sort", "desc")
+    if url_query_get(q_mod, "sort") != "desc" { return 15 }
+    if url_query_get(q_mod, "page") != "1" { return 16 }
+
+    // 5. url_query_set (append new)
+    let q_app = url_query_set("sort=asc", "limit", "50")
+    if url_query_get(q_app, "sort") != "asc" { return 17 }
+    if url_query_get(q_app, "limit") != "50" { return 18 }
+
+    // url_query_set on empty string
+    let q_fresh = url_query_set("", "user", "alice")
+    if q_fresh != "user=alice" { return 19 }
+
+    // 6. url_query_del
+    let q_del = url_query_del("a=1&b=2&c=3", "b")
+    if url_query_has(q_del, "b") { return 20 }
+    if url_query_get(q_del, "a") != "1" or url_query_get(q_del, "c") != "3" { return 21 }
+
+    // 7. url_query_encode_pair
+    let pair = url_query_encode_pair("search query", "velo & fast")
+    if pair != "search+query=velo+%26+fast" { return 22 }
+
+    io.println_str("OK: std.url query tests passed")
+    return 0
+}

@@ -1287,6 +1287,114 @@ export const STDLIB_MODULES: StdlibModule[] = [
         description: 'Parser and execution result context storing registered definitions and parsed options.'
       }
     ]
+  },
+  {
+    name: 'std.url',
+    description: 'RFC 3986 URL parsing, building, percent-encoding, query parameters, and path joining.',
+    functions: [
+      {
+        name: 'url_parse',
+        signature: 'act url_parse(raw: string, out: @Url) -> bool',
+        description: 'Parses an RFC 3986 URL or relative reference into a Url structure. Returns true on success.',
+        example: 'mut u = url_new()\nif url_parse("https://user:pass@example.com:8080/path?q=1#frag", @u) {\n  io.println(u.host)\n}'
+      },
+      {
+        name: 'url_parse_str',
+        signature: 'act url_parse_str(raw: string) -> Url',
+        description: 'Convenience helper that parses an RFC 3986 URL and returns the resulting Url struct.',
+        example: 'let u = url_parse_str("https://example.com/api")'
+      },
+      {
+        name: 'url_to_string',
+        signature: 'act url_to_string(u: @Url) -> string',
+        description: 'Serializes a Url structure back into its canonical RFC 3986 representation.',
+        example: 'let href = url_to_string(@u)'
+      },
+      {
+        name: 'url_encode',
+        signature: 'act url_encode(text: string) -> string',
+        description: 'Percent-encodes all characters except RFC 3986 unreserved characters (A-Z, a-z, 0-9, -, ., _, ~).',
+        example: 'let enc = url_encode("hello world & velo") // "hello%20world%20%26%20velo"'
+      },
+      {
+        name: 'url_decode',
+        signature: 'act url_decode(encoded: string) -> string',
+        description: 'Decodes a percent-encoded string, converting + to space and %XX to raw bytes.',
+        example: 'let raw = url_decode("hello%20world")'
+      },
+      {
+        name: 'url_query_escape',
+        signature: 'act url_query_escape(text: string) -> string',
+        description: 'Escapes a string for application/x-www-form-urlencoded format, encoding spaces as +.',
+        example: 'let qe = url_query_escape("hello world") // "hello+world"'
+      },
+      {
+        name: 'url_query_unescape',
+        signature: 'act url_query_unescape(encoded: string) -> string',
+        description: 'Decodes an application/x-www-form-urlencoded string.',
+        example: 'let raw = url_query_unescape("hello+world")'
+      },
+      {
+        name: 'url_path_escape',
+        signature: 'act url_path_escape(path: string) -> string',
+        description: 'Escapes a path segment, preserving slashes and sub-delimiters while encoding spaces as %20.',
+        example: 'let pe = url_path_escape("/user profiles/all")'
+      },
+      {
+        name: 'url_path_unescape',
+        signature: 'act url_path_unescape(path: string) -> string',
+        description: 'Decodes percent-encoded characters in a URL path without converting + to space.',
+        example: 'let raw = url_path_unescape("/tags/c%2B%2B")'
+      },
+      {
+        name: 'url_query_has',
+        signature: 'act url_query_has(query: string, key: string) -> bool',
+        description: 'Returns true if query contains the specified parameter key.',
+        example: 'if url_query_has(u.raw_query, "sort") { ... }'
+      },
+      {
+        name: 'url_query_get',
+        signature: 'act url_query_get(query: string, key: string) -> string',
+        description: 'Retrieves the decoded value of a query parameter by key, or null if not found.',
+        example: 'let page = url_query_get(u.raw_query, "page")'
+      },
+      {
+        name: 'url_query_set',
+        signature: 'act url_query_set(query: string, key: string, val: string) -> string',
+        description: 'Replaces or appends a key-value parameter in a query string.',
+        example: 'let new_q = url_query_set(u.raw_query, "page", "2")'
+      },
+      {
+        name: 'url_query_del',
+        signature: 'act url_query_del(query: string, key: string) -> string',
+        description: 'Removes all occurrences of a parameter key from a query string.',
+        example: 'let clean_q = url_query_del(u.raw_query, "debug")'
+      },
+      {
+        name: 'url_join_path',
+        signature: 'act url_join_path(base_path: string, rel_path: string) -> string',
+        description: 'Joins two path segments, ensuring exactly one slash separates them.',
+        example: 'let full = url_join_path("/api/v1/", "/users") // "/api/v1/users"'
+      },
+      {
+        name: 'url_port_or_default',
+        signature: 'act url_port_or_default(u: @Url) -> i32',
+        description: 'Returns explicit port if set, or the standard default port for http (80), https (443), ws (80), wss (443), ssh (22), or ftp (21).',
+        example: 'let port = url_port_or_default(@u)'
+      }
+    ],
+    types: [
+      {
+        name: 'Url',
+        definition: 'data Url { scheme: string, username: string, password: string, host: string, hostname: string, port: i32, path: string, raw_query: string, fragment: string, is_absolute: bool, is_valid: bool }',
+        description: 'RFC 3986 URI/URL decomposition structure holding scheme, credentials, host, port, path, query, and fragment.'
+      },
+      {
+        name: 'UrlQueryParam',
+        definition: 'data UrlQueryParam { key: string, val: string }',
+        description: 'Key-value pair extracted from a query string.'
+      }
+    ]
   }
 ];
 

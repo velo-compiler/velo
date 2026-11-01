@@ -1,0 +1,6 @@
+// std.url - Pure Velo RFC 3986 URL parser, builder, percent-encoding, and query codecs.
+use "url/defs.vl"
+use "url/encode.vl"
+use "url/parse.vl"
+use "url/format.vl"
+use "url/query.vl"

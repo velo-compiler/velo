@@ -1,0 +1,76 @@
+// Tests for std.url.parse
+use "../../url.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    // 1. Full URL parsing
+    mut u1 = url_new()
+    let ok1 = url_parse("https://alice:secret123@api.example.com:8443/v1/users?page=2&sort=desc#profile", @u1)
+    if not ok1 or not u1.is_valid { return 1 }
+    if u1.scheme != "https" { return 2 }
+    if not u1.is_absolute { return 3 }
+    if u1.username != "alice" { return 4 }
+    if u1.password != "secret123" { return 5 }
+    if u1.hostname != "api.example.com" { return 6 }
+    if u1.port != 8443 { return 7 }
+    if u1.host != "api.example.com:8443" { return 8 }
+    if u1.path != "/v1/users" { return 9 }
+    if u1.raw_query != "page=2&sort=desc" { return 10 }
+    if u1.fragment != "profile" { return 11 }
+
+    // 2. Scheme and hostname lowercasing
+    mut u2 = url_new()
+    if not url_parse("HTTP://MY-SERVER.ORG/App/Index", @u2) { return 12 }
+    if u2.scheme != "http" { return 13 }
+    if u2.hostname != "my-server.org" { return 14 }
+    if u2.port != 0 { return 15 }
+    if u2.path != "/App/Index" { return 16 }
+
+    // 3. IPv6 bracketed host with port
+    mut u3 = url_new()
+    if not url_parse("http://[::1]:8080/metrics", @u3) { return 17 }
+    if u3.hostname != "::1" { return 18 }
+    if u3.port != 8080 { return 19 }
+    if u3.path != "/metrics" { return 20 }
+
+    // 4. IPv6 without port
+    mut u4 = url_new()
+    if not url_parse("https://[2001:db8::1]/status", @u4) { return 21 }
+    if u4.hostname != "2001:db8::1" { return 22 }
+    if u4.port != 0 { return 23 }
+    if u4.path != "/status" { return 24 }
+
+    // 5. Relative URL (no scheme/host)
+    mut u5 = url_new()
+    if not url_parse("/static/css/main.css?v=4#dark", @u5) { return 25 }
+    if u5.is_absolute { return 26 }
+    if u5.scheme != "" { return 27 }
+    if u5.host != "" { return 28 }
+    if u5.path != "/static/css/main.css" { return 29 }
+    if u5.raw_query != "v=4" { return 30 }
+    if u5.fragment != "dark" { return 31 }
+
+    // 6. Root path normalization
+    mut u6 = url_new()
+    if not url_parse("https://example.com", @u6) { return 32 }
+    if u6.path != "/" { return 33 }
+
+    // 7. Invalid port (> 65535 or non-digit)
+    mut u_bad = url_new()
+    if url_parse("http://example.com:70000", @u_bad) { return 34 }
+    if url_parse("http://example.com:abc", @u_bad) { return 35 }
+
+    // 8. Username without password
+    mut u8 = url_new()
+    if not url_parse("ssh://git@github.com:22/org/repo.git", @u8) { return 36 }
+    if u8.username != "git" { return 37 }
+    if u8.password != "" { return 38 }
+    if u8.port != 22 { return 39 }
+
+    // 9. url_parse_str value helper
+    let u9 = url_parse_str("ftp://ftp.is.co.za/rfc/rfc1808.txt")
+    if not u9.is_valid or u9.scheme != "ftp" or u9.hostname != "ftp.is.co.za" { return 40 }
+
+    io.println_str("OK: std.url parse tests passed")
+    return 0
+}
