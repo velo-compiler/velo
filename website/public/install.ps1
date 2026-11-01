@@ -79,9 +79,9 @@ try {
     $localRuntime = Join-Path $PSScriptRoot "..\..\runtime"
     if (Test-Path $localStd) {
         Write-Host "--> Copying standard library from local repo: $localStd" -ForegroundColor Yellow
-        Copy-Item -Recurse -Force $localStd (Join-Path $veloHome "std")
+        Copy-Item -Recurse -Force (Join-Path $localStd "*") $targetStd
         if (Test-Path $localRuntime) {
-            Copy-Item -Recurse -Force $localRuntime (Join-Path $veloHome "runtime")
+            Copy-Item -Recurse -Force (Join-Path $localRuntime "*") $targetRuntime
         }
         $installedStd = $true
     }
