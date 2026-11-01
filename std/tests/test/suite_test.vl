@@ -1,0 +1,70 @@
+// Tests for std.test TestSuite and runner
+use "../../test/suite.vl"
+use "../../test/runner.vl"
+use "../../test/common.vl"
+use "../../io.vl"
+
+mut g_case1_ran: bool = false
+mut g_case2_ran: bool = false
+
+act case_math() -> void {
+    g_case1_ran = true
+    assert_eq_i64((10 + 20) as i64, 30 as i64, "addition")
+    assert_true(100 > 50, "comparison")
+}
+
+act case_strings() -> void {
+    g_case2_ran = true
+    assert_eq_str("velo", "velo", "str equality")
+    assert_str_contains("developer experience", "experience", "contains substring")
+}
+
+act case_fail() -> void {
+    assert_true(false, "intentional sub-case failure")
+}
+
+act main() -> i32 {
+    test_reset()
+    test_set_quiet(true)
+
+    // 1. Test passing suite
+    mut suite = test_suite_new("Core Operations")
+    test_case(@suite, "Math Checks", case_math)
+    test_case(@suite, "String Checks", case_strings)
+
+    if !g_case1_ran { return 1 }
+    if !g_case2_ran { return 2 }
+    if suite.total_cases != 2 { return 3 }
+    if suite.passed_cases != 2 { return 4 }
+    if suite.failed_cases != 0 { return 5 }
+    if suite.total_asserts != 4 { return 6 }
+    if suite.passed_asserts != 4 { return 7 }
+    if suite.failed_asserts != 0 { return 8 }
+
+    let rc_pass = test_suite_finish(@suite)
+    if rc_pass != 0 { return 9 }
+
+    // 2. Test failing suite return code detection
+    let was_colors = g_test_colors
+    g_test_colors = false // suppress colors for sub-test
+    mut fail_suite = test_suite_new("Failing Operations")
+    test_case(@fail_suite, "Must Fail", case_fail)
+    if fail_suite.total_cases != 1 { return 10 }
+    if fail_suite.failed_cases != 1 { return 11 }
+    let rc_fail = test_suite_finish(@fail_suite)
+    if rc_fail != 1 { return 12 }
+    g_test_colors = was_colors
+
+    // 3. Test standalone runner test_run
+    test_reset()
+    let run_ok = test_run("Standalone Math", case_math)
+    if !run_ok { return 13 }
+    if test_get_total_cases() != 1 { return 14 }
+    if test_get_passed_cases() != 1 { return 15 }
+
+    let sum_rc = test_summary()
+    if sum_rc != 0 { return 16 }
+
+    io.println_str("OK: std.test suite & runner tests passed")
+    return 0
+}

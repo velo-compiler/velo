@@ -1,0 +1,79 @@
+// std.test.runner — Global standalone test execution and summary reporting.
+use "common.vl"
+use "assert.vl"
+
+// Executes a named test function under the global runner context.
+act test_run(name: string, test_fn: act() -> void) -> bool {
+    let initial_failed = g_test_failed_asserts
+    g_current_case_failed = false
+
+    test_fn()
+
+    let failed = g_current_case_failed or (g_test_failed_asserts > initial_failed)
+    g_test_total_cases += 1
+
+    if failed {
+        g_test_failed_cases += 1
+        if g_test_colors {
+            let line = test_concat5(TEST_COLOR_RED, TEST_COLOR_BOLD, "[FAIL] ", name, TEST_COLOR_RESET)
+            println_str(line)
+        } else {
+            let line = test_concat2("[FAIL] ", name)
+            println_str(line)
+        }
+        return false
+    }
+
+    g_test_passed_cases += 1
+    if !g_test_quiet {
+        if g_test_colors {
+            let line = test_concat5(TEST_COLOR_GREEN, TEST_COLOR_BOLD, "[PASS] ", name, TEST_COLOR_RESET)
+            println_str(line)
+        } else {
+            let line = test_concat2("[PASS] ", name)
+            println_str(line)
+        }
+    }
+    return true
+}
+
+// Prints a comprehensive test summary across all executed cases and assertions.
+// Returns 0 if all assertions and cases passed, 1 on any failure.
+act test_summary() -> i32 {
+    println_str("==================================================")
+    println_str("Test Execution Summary:")
+
+    if g_test_total_cases > 0 {
+        let p_cases = test_u64_to_str(g_test_passed_cases as u64)
+        let t_cases = test_u64_to_str(g_test_total_cases as u64)
+        let f_cases = test_u64_to_str(g_test_failed_cases as u64)
+        let line = test_concat5("Cases:   ", p_cases, " / ", t_cases, test_concat3(" passed (", f_cases, " failed)"))
+        println_str(line)
+    }
+
+    let p_asserts = test_u64_to_str(g_test_passed_asserts as u64)
+    let t_asserts = test_u64_to_str(g_test_total_asserts as u64)
+    let f_asserts = test_u64_to_str(g_test_failed_asserts as u64)
+    let line_a = test_concat5("Asserts: ", p_asserts, " / ", t_asserts, test_concat3(" passed (", f_asserts, " failed)"))
+    println_str(line_a)
+
+    if g_test_failed_cases == 0 and g_test_failed_asserts == 0 {
+        if g_test_colors {
+            let status = test_concat4(TEST_COLOR_GREEN, TEST_COLOR_BOLD, "Status:  SUCCESS (All tests passed)", TEST_COLOR_RESET)
+            println_str(status)
+        } else {
+            println_str("Status:  SUCCESS (All tests passed)")
+        }
+        println_str("==================================================")
+        return 0
+    }
+
+    if g_test_colors {
+        let status = test_concat4(TEST_COLOR_RED, TEST_COLOR_BOLD, "Status:  FAILURE (Errors detected)", TEST_COLOR_RESET)
+        println_str(status)
+    } else {
+        println_str("Status:  FAILURE (Errors detected)")
+    }
+    println_str("==================================================")
+    return 1
+}

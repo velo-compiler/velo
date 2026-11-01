@@ -1,0 +1,28 @@
+// Tests for std.test micro-benchmark runner
+use "../../test/benchmark.vl"
+use "../../io.vl"
+
+mut g_bench_counter: usize = 0
+
+act bench_work() -> void {
+    g_bench_counter += 1
+    let buf: @u8 = heap_alloc(32)
+    buf[0] = 'x' as u8
+    heap_free(buf)
+}
+
+act main() -> i32 {
+    g_bench_counter = 0
+
+    // Run 1000 iterations
+    let res = test_benchmark("heap_alloc_32", 1000, bench_work)
+
+    if res.iterations != 1000 { return 1 }
+    if g_bench_counter < 1000 { return 2 } // includes warmup
+
+    // Print benchmark metrics
+    test_print_benchmark(@res)
+
+    io.println_str("OK: std.test benchmark tests passed")
+    return 0
+}

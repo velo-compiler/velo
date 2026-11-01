@@ -1,0 +1,217 @@
+// std.test.assert — Rich assertion library with detailed failure reporting.
+use "common.vl"
+
+// Base assertion: verifies condition is true.
+act assert(cond: bool, msg: string) -> bool {
+    if cond {
+        test_record_pass()
+        return true
+    }
+    test_record_fail(msg)
+    return false
+}
+
+// Fatal precondition check: terminates the process immediately if condition is false.
+act assert_abort(cond: bool, msg: string) -> void {
+    if !cond {
+        let err = test_concat3("ASSERTION FAILED: ", msg, "\n")
+        println_str(err)
+        os.exit(1)
+    }
+}
+
+// Asserts that a condition evaluates to true.
+act assert_true(cond: bool, msg: string) -> bool {
+    if cond {
+        test_record_pass()
+        return true
+    }
+    let diag = test_concat2(msg, ": expected true, got false")
+    test_record_fail(diag)
+    return false
+}
+
+// Asserts that a condition evaluates to false.
+act assert_false(cond: bool, msg: string) -> bool {
+    if !cond {
+        test_record_pass()
+        return true
+    }
+    let diag = test_concat2(msg, ": expected false, got true")
+    test_record_fail(diag)
+    return false
+}
+
+// Asserts equality between two signed 64-bit integers.
+act assert_eq_i64(actual: i64, expected: i64, msg: string) -> bool {
+    if actual == expected {
+        test_record_pass()
+        return true
+    }
+    let a_str = test_i64_to_str(actual)
+    let e_str = test_i64_to_str(expected)
+    let diag = test_concat5(msg, ": expected ", e_str, ", got ", a_str)
+    test_record_fail(diag)
+    return false
+}
+
+// Asserts inequality between two signed 64-bit integers.
+act assert_ne_i64(actual: i64, expected: i64, msg: string) -> bool {
+    if actual != expected {
+        test_record_pass()
+        return true
+    }
+    let v_str = test_i64_to_str(actual)
+    let diag = test_concat4(msg, ": expected value != ", v_str, ", but values are equal")
+    test_record_fail(diag)
+    return false
+}
+
+// Asserts equality between two unsigned 64-bit integers.
+act assert_eq_u64(actual: u64, expected: u64, msg: string) -> bool {
+    if actual == expected {
+        test_record_pass()
+        return true
+    }
+    let a_str = test_u64_to_str(actual)
+    let e_str = test_u64_to_str(expected)
+    let diag = test_concat5(msg, ": expected ", e_str, ", got ", a_str)
+    test_record_fail(diag)
+    return false
+}
+
+// Asserts inequality between two unsigned 64-bit integers.
+act assert_ne_u64(actual: u64, expected: u64, msg: string) -> bool {
+    if actual != expected {
+        test_record_pass()
+        return true
+    }
+    let v_str = test_u64_to_str(actual)
+    let diag = test_concat4(msg, ": expected value != ", v_str, ", but values are equal")
+    test_record_fail(diag)
+    return false
+}
+
+// Asserts equality between two 64-bit floats within an epsilon tolerance.
+act assert_eq_f64(actual: f64, expected: f64, epsilon: f64, msg: string) -> bool {
+    mut diff = actual - expected
+    if diff < 0.0 { diff = -diff }
+    if diff <= epsilon {
+        test_record_pass()
+        return true
+    }
+    let a_str = test_f64_to_str(actual)
+    let e_str = test_f64_to_str(expected)
+    let diag = test_concat5(msg, ": expected approx ", e_str, ", got ", a_str)
+    test_record_fail(diag)
+    return false
+}
+
+// Asserts equality between two strings.
+act assert_eq_str(actual: string, expected: string, msg: string) -> bool {
+    if actual == null and expected == null {
+        test_record_pass()
+        return true
+    }
+    if actual != null and expected != null and actual == expected {
+        test_record_pass()
+        return true
+    }
+    mut a_disp = actual
+    if a_disp == null { a_disp = "<null>" }
+    mut e_disp = expected
+    if e_disp == null { e_disp = "<null>" }
+
+    let diag = test_concat5(msg, ": expected \"", e_disp, "\", got \"", test_concat2(a_disp, "\""))
+    test_record_fail(diag)
+    return false
+}
+
+// Asserts inequality between two strings.
+act assert_ne_str(actual: string, expected: string, msg: string) -> bool {
+    if actual == null and expected == null {
+        let diag = test_concat2(msg, ": expected strings to differ, but both are null")
+        test_record_fail(diag)
+        return false
+    }
+    if actual != null and expected != null and actual == expected {
+        let diag = test_concat4(msg, ": expected string != \"", actual, "\", but strings are equal")
+        test_record_fail(diag)
+        return false
+    }
+    test_record_pass()
+    return true
+}
+
+// Asserts that a haystack string contains the given needle substring.
+act assert_str_contains(haystack: string, needle: string, msg: string) -> bool {
+    if haystack != null and needle != null {
+        if str.contains(haystack, needle) {
+            test_record_pass()
+            return true
+        }
+    }
+    mut h_disp = haystack
+    if h_disp == null { h_disp = "<null>" }
+    mut n_disp = needle
+    if n_disp == null { n_disp = "<null>" }
+    let diag = test_concat5(msg, ": expected \"", h_disp, "\" to contain \"", test_concat2(n_disp, "\""))
+    test_record_fail(diag)
+    return false
+}
+
+// Asserts that a string starts with the given prefix.
+act assert_str_starts_with(s: string, prefix: string, msg: string) -> bool {
+    if s != null and prefix != null {
+        if str.starts_with(s, prefix) {
+            test_record_pass()
+            return true
+        }
+    }
+    mut s_disp = s
+    if s_disp == null { s_disp = "<null>" }
+    mut p_disp = prefix
+    if p_disp == null { p_disp = "<null>" }
+    let diag = test_concat5(msg, ": expected \"", s_disp, "\" to start with \"", test_concat2(p_disp, "\""))
+    test_record_fail(diag)
+    return false
+}
+
+// Asserts that a string ends with the given suffix.
+act assert_str_ends_with(s: string, suffix: string, msg: string) -> bool {
+    if s != null and suffix != null {
+        if str.ends_with(s, suffix) {
+            test_record_pass()
+            return true
+        }
+    }
+    mut s_disp = s
+    if s_disp == null { s_disp = "<null>" }
+    mut sfx_disp = suffix
+    if sfx_disp == null { sfx_disp = "<null>" }
+    let diag = test_concat5(msg, ": expected \"", s_disp, "\" to end with \"", test_concat2(sfx_disp, "\""))
+    test_record_fail(diag)
+    return false
+}
+
+// Asserts that a pointer is null.
+act assert_null(ptr: @u8, msg: string) -> bool {
+    if ptr == null {
+        test_record_pass()
+        return true
+    }
+    let diag = test_concat2(msg, ": expected null pointer, got non-null")
+    test_record_fail(diag)
+    return false
+}
+
+// Asserts that a pointer is not null.
+act assert_not_null(ptr: @u8, msg: string) -> bool {
+    if ptr != null {
+        test_record_pass()
+        return true
+    }
+    let diag = test_concat2(msg, ": expected non-null pointer, got null")
+    test_record_fail(diag)
+    return false
+}

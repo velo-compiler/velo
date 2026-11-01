@@ -1,0 +1,62 @@
+// std.test.benchmark — Micro-benchmarking runner and performance metrics.
+use "common.vl"
+use "../time/clock.vl"
+
+data BenchmarkResult {
+    name: string
+    iterations: usize
+    total_ms: u64
+    ns_per_op: u64
+}
+
+// Executes a benchmark loop with warmup and computes nanoseconds per operation.
+act test_benchmark(name: string, iterations: usize, bench_fn: act() -> void) -> BenchmarkResult {
+    mut iters = iterations
+    if iters == 0 { iters = 1 }
+
+    // Warmup phase (up to 5 iterations)
+    mut w: usize = 0
+    mut warmup_count = 5
+    if iters < 5 { warmup_count = iters }
+    loop w < warmup_count {
+        bench_fn()
+        w += 1
+    }
+
+    // Measurement phase
+    let t0 = time_monotonic_ns()
+    mut i: usize = 0
+    loop i < iters {
+        bench_fn()
+        i += 1
+    }
+    let t1 = time_monotonic_ns()
+    let elapsed_ns = time_diff_ns(t0, t1)
+    let total_ms = elapsed_ns / (1000000 as u64)
+    let ns_per_op = elapsed_ns / (iters as u64)
+
+    return BenchmarkResult {
+        name: name,
+        iterations: iters,
+        total_ms: total_ms,
+        ns_per_op: ns_per_op,
+    }
+}
+
+// Prints formatted benchmark metrics.
+act test_print_benchmark(res: @BenchmarkResult) -> void {
+    if res == null { return }
+    let iters_str = test_u64_to_str(res.iterations as u64)
+    let ns_str = test_u64_to_str(res.ns_per_op)
+    let ms_str = test_u64_to_str(res.total_ms)
+
+    if g_test_colors {
+        let prefix = test_concat5(TEST_COLOR_CYAN, TEST_COLOR_BOLD, "Benchmark: ", res.name, TEST_COLOR_RESET)
+        let metrics = test_concat5("  ", iters_str, " ops\t", ns_str, test_concat3(" ns/op\t(", ms_str, " ms)"))
+        println_str(test_concat2(prefix, metrics))
+    } else {
+        let prefix = test_concat2("Benchmark: ", res.name)
+        let metrics = test_concat5("  ", iters_str, " ops\t", ns_str, test_concat3(" ns/op\t(", ms_str, " ms)"))
+        println_str(test_concat2(prefix, metrics))
+    }
+}

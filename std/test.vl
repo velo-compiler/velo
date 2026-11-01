@@ -1,0 +1,6 @@
+// Pure Velo standard test, assertion, and benchmark library (zero C runtime dependencies).
+use "test/common.vl"
+use "test/assert.vl"
+use "test/suite.vl"
+use "test/runner.vl"
+use "test/benchmark.vl"

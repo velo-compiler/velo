@@ -1,0 +1,50 @@
+// Tests for std.test assertions
+use "../../test/assert.vl"
+use "../../test/common.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    test_reset()
+    test_set_quiet(true) // suppress noisy pass logs during unit test
+
+    // 1. Truthiness assertions
+    if !assert_true(true, "truth") { return 1 }
+    if !assert_false(false, "falsity") { return 2 }
+
+    // 2. Integer assertions
+    if !assert_eq_i64(42 as i64, 42 as i64, "equal i64") { return 3 }
+    if !assert_ne_i64(42 as i64, -42 as i64, "different i64") { return 4 }
+    if !assert_eq_u64(100 as u64, 100 as u64, "equal u64") { return 5 }
+    if !assert_ne_u64(100 as u64, 200 as u64, "different u64") { return 6 }
+
+    // 3. Float assertions
+    if !assert_eq_f64(3.14159, 3.14150, 0.001, "float epsilon") { return 7 }
+
+    // 4. String assertions
+    if !assert_eq_str("hello", "hello", "equal strings") { return 8 }
+    if !assert_ne_str("hello", "world", "different strings") { return 9 }
+    if !assert_str_contains("the quick brown fox", "quick", "contains quick") { return 10 }
+    if !assert_str_starts_with("velo language", "velo", "starts with velo") { return 11 }
+    if !assert_str_ends_with("velo language", "language", "ends with language") { return 12 }
+
+    // 5. Pointer assertions
+    let null_ptr: @u8 = null
+    if !assert_null(null_ptr, "null ptr") { return 13 }
+
+    let buf: @u8 = heap_alloc(8)
+    if !assert_not_null(buf, "non-null ptr") { return 14 }
+    heap_free(buf)
+
+    // 6. Verify negative assertion recording
+    let old_fails = test_get_failed_asserts()
+    // Suppress console output for intentional test failure verification
+    let was_colors = g_test_colors
+    g_test_colors = false
+    let res = assert_eq_i64(1 as i64, 2 as i64, "intentional mismatch")
+    if res != false { return 15 }
+    if test_get_failed_asserts() != old_fails + 1 { return 16 }
+    g_test_colors = was_colors
+
+    io.println_str("OK: std.test assert tests passed")
+    return 0
+}

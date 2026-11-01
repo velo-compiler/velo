@@ -1,0 +1,266 @@
+// std.test.common — ANSI styling, string formatting, and global test state.
+use "../mem/heap.vl"
+use "../io.vl"
+
+// ANSI color sequences for terminal reporting.
+let TEST_COLOR_RESET: string = "\x1b[0m"
+let TEST_COLOR_RED: string = "\x1b[31m"
+let TEST_COLOR_GREEN: string = "\x1b[32m"
+let TEST_COLOR_YELLOW: string = "\x1b[33m"
+let TEST_COLOR_CYAN: string = "\x1b[36m"
+let TEST_COLOR_BOLD: string = "\x1b[1m"
+let TEST_COLOR_DIM: string = "\x1b[2m"
+
+// Global test execution state.
+mut g_test_colors: bool = true
+mut g_test_quiet: bool = false
+mut g_test_total_asserts: usize = 0
+mut g_test_passed_asserts: usize = 0
+mut g_test_failed_asserts: usize = 0
+mut g_test_total_cases: usize = 0
+mut g_test_passed_cases: usize = 0
+mut g_test_failed_cases: usize = 0
+mut g_current_case_failed: bool = false
+
+// Enables or disables ANSI terminal color escape codes.
+act test_set_colors(enable: bool) -> void {
+    g_test_colors = enable
+}
+
+// Enables or disables quiet mode (suppresses individual pass messages).
+act test_set_quiet(quiet: bool) -> void {
+    g_test_quiet = quiet
+}
+
+// Resets all global assertion and test counters.
+act test_reset() -> void {
+    g_test_total_asserts = 0
+    g_test_passed_asserts = 0
+    g_test_failed_asserts = 0
+    g_test_total_cases = 0
+    g_test_passed_cases = 0
+    g_test_failed_cases = 0
+    g_current_case_failed = false
+}
+
+// Retrieves the total number of assertions executed.
+act test_get_total_asserts() -> usize {
+    return g_test_total_asserts
+}
+
+// Retrieves the number of passed assertions.
+act test_get_passed_asserts() -> usize {
+    return g_test_passed_asserts
+}
+
+// Retrieves the number of failed assertions.
+act test_get_failed_asserts() -> usize {
+    return g_test_failed_asserts
+}
+
+// Retrieves the total number of test cases executed.
+act test_get_total_cases() -> usize {
+    return g_test_total_cases
+}
+
+// Retrieves the number of passed test cases.
+act test_get_passed_cases() -> usize {
+    return g_test_passed_cases
+}
+
+// Retrieves the number of failed test cases.
+act test_get_failed_cases() -> usize {
+    return g_test_failed_cases
+}
+
+// Concatenates two strings on the heap.
+act test_concat2(a: string, b: string) -> string {
+    let la = str.len(a)
+    let lb = str.len(b)
+    let buf: @u8 = heap_alloc(la + lb + 1)
+    if buf == null { return "" }
+    mut pos: usize = 0
+    mut i: usize = 0
+    loop i < la { buf[pos] = a[i]; pos += 1; i += 1 }
+    i = 0
+    loop i < lb { buf[pos] = b[i]; pos += 1; i += 1 }
+    buf[pos] = 0 as u8
+    return buf as string
+}
+
+// Concatenates three strings on the heap.
+act test_concat3(a: string, b: string, c: string) -> string {
+    let la = str.len(a)
+    let lb = str.len(b)
+    let lc = str.len(c)
+    let buf: @u8 = heap_alloc(la + lb + lc + 1)
+    if buf == null { return "" }
+    mut pos: usize = 0
+    mut i: usize = 0
+    loop i < la { buf[pos] = a[i]; pos += 1; i += 1 }
+    i = 0
+    loop i < lb { buf[pos] = b[i]; pos += 1; i += 1 }
+    i = 0
+    loop i < lc { buf[pos] = c[i]; pos += 1; i += 1 }
+    buf[pos] = 0 as u8
+    return buf as string
+}
+
+// Concatenates four strings on the heap.
+act test_concat4(a: string, b: string, c: string, d: string) -> string {
+    let la = str.len(a)
+    let lb = str.len(b)
+    let lc = str.len(c)
+    let ld = str.len(d)
+    let buf: @u8 = heap_alloc(la + lb + lc + ld + 1)
+    if buf == null { return "" }
+    mut pos: usize = 0
+    mut i: usize = 0
+    loop i < la { buf[pos] = a[i]; pos += 1; i += 1 }
+    i = 0
+    loop i < lb { buf[pos] = b[i]; pos += 1; i += 1 }
+    i = 0
+    loop i < lc { buf[pos] = c[i]; pos += 1; i += 1 }
+    i = 0
+    loop i < ld { buf[pos] = d[i]; pos += 1; i += 1 }
+    buf[pos] = 0 as u8
+    return buf as string
+}
+
+// Concatenates five strings on the heap.
+act test_concat5(a: string, b: string, c: string, d: string, e: string) -> string {
+    let la = str.len(a)
+    let lb = str.len(b)
+    let lc = str.len(c)
+    let ld = str.len(d)
+    let le = str.len(e)
+    let buf: @u8 = heap_alloc(la + lb + lc + ld + le + 1)
+    if buf == null { return "" }
+    mut pos: usize = 0
+    mut i: usize = 0
+    loop i < la { buf[pos] = a[i]; pos += 1; i += 1 }
+    i = 0
+    loop i < lb { buf[pos] = b[i]; pos += 1; i += 1 }
+    i = 0
+    loop i < lc { buf[pos] = c[i]; pos += 1; i += 1 }
+    i = 0
+    loop i < ld { buf[pos] = d[i]; pos += 1; i += 1 }
+    i = 0
+    loop i < le { buf[pos] = e[i]; pos += 1; i += 1 }
+    buf[pos] = 0 as u8
+    return buf as string
+}
+
+// Converts an unsigned 64-bit integer to a heap string.
+act test_u64_to_str(val: u64) -> string {
+    if val == 0 as u64 {
+        let b: @u8 = heap_alloc(2)
+        b[0] = '0' as u8
+        b[1] = 0 as u8
+        return b as string
+    }
+    mut tmp: @u8 = heap_alloc(32)
+    mut n = val
+    mut pos: usize = 0
+    loop n > 0 as u64 {
+        let digit = (n % 10 as u64) as u8
+        tmp[pos] = '0' as u8 + digit
+        pos += 1
+        n = n / 10 as u64
+    }
+    let res: @u8 = heap_alloc(pos + 1)
+    mut i: usize = 0
+    loop i < pos {
+        res[i] = tmp[pos - 1 - i]
+        i += 1
+    }
+    res[pos] = 0 as u8
+    heap_free(tmp)
+    return res as string
+}
+
+// Converts a signed 64-bit integer to a heap string.
+act test_i64_to_str(val: i64) -> string {
+    if val == 0 as i64 {
+        let b: @u8 = heap_alloc(2)
+        b[0] = '0' as u8
+        b[1] = 0 as u8
+        return b as string
+    }
+    if val < 0 as i64 {
+        if val == -9223372036854775807 as i64 - 1 as i64 {
+            let s = "-9223372036854775808"
+            return s
+        }
+        let u_str = test_u64_to_str((-val) as u64)
+        let u_len = str.len(u_str)
+        let res: @u8 = heap_alloc(u_len + 2)
+        res[0] = '-' as u8
+        mut i: usize = 0
+        loop i < u_len {
+            res[1 + i] = u_str[i]
+            i += 1
+        }
+        res[1 + u_len] = 0 as u8
+        return res as string
+    }
+    return test_u64_to_str(val as u64)
+}
+
+// Converts a boolean to a string ("true" or "false").
+act test_bool_to_str(val: bool) -> string {
+    if val { return "true" }
+    return "false"
+}
+
+// Converts a 64-bit float to a heap string with 4 decimal digits precision.
+act test_f64_to_str(val: f64) -> string {
+    mut v = val
+    mut sign_prefix = ""
+    if v < 0.0 {
+        sign_prefix = "-"
+        v = -v
+    }
+    let whole = v as u64
+    let whole_str = test_u64_to_str(whole)
+    let frac = ((v - (whole as f64)) * 10000.0 + 0.5) as u64
+    mut frac_tmp: @u8 = heap_alloc(8)
+    mut f = frac
+    mut fi: usize = 4
+    loop fi > 0 {
+        fi -= 1
+        frac_tmp[fi] = '0' as u8 + ((f % 10 as u64) as u8)
+        f = f / 10 as u64
+    }
+    let frac_str: @u8 = heap_alloc(5)
+    mut j: usize = 0
+    loop j < 4 {
+        frac_str[j] = frac_tmp[j]
+        j += 1
+    }
+    frac_str[4] = 0 as u8
+    heap_free(frac_tmp)
+
+    return test_concat4(sign_prefix, whole_str, ".", frac_str as string)
+}
+
+// Records an assertion pass.
+act test_record_pass() -> void {
+    g_test_total_asserts += 1
+    g_test_passed_asserts += 1
+}
+
+// Records an assertion failure and prints a diagnostic line.
+act test_record_fail(diag: string) -> void {
+    g_test_total_asserts += 1
+    g_test_failed_asserts += 1
+    g_current_case_failed = true
+
+    if g_test_colors {
+        let line = test_concat4(TEST_COLOR_RED, "  [FAIL] ", diag, TEST_COLOR_RESET)
+        println_str(line)
+    } else {
+        let line = test_concat2("  [FAIL] ", diag)
+        println_str(line)
+    }
+}

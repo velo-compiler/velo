@@ -1,0 +1,18 @@
+// Verifies top-level umbrella import: use std.test
+use std.test
+use std.io
+
+act sample_test() -> void {
+    assert_eq_i64(5 as i64, 5 as i64, "five equals five")
+    assert_true(true, "truth")
+}
+
+act main() -> i32 {
+    test_reset()
+    let ok = test_run("sample_test", sample_test)
+    if !ok { return 1 }
+    let rc = test_summary()
+    if rc != 0 { return 2 }
+    io.println_str("OK: std.test umbrella module import passed")
+    return 0
+}

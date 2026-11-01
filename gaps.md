@@ -2151,3 +2151,33 @@ flowchart TD
   - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
   - Bootstrap snapshot test verified (`test_bootstrap_snapshot.py`).
 
+
+### Phase 20: `std.test` (Pure Velo Integrated Unit Testing & Benchmark Framework)
+#### Task 20.1: Assertions, Suite Lifecycle, Runner, and Micro-Benchmarks (`std.test`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo had no standard unit testing or assertion framework. Developers writing unit tests had to write manual integer return codes or custom loops (`if actual != expected { return 1 }`) without actionable failure diagnostics, difference formatting, or test suite management.
+  - The `std.test` catalog entry in the official website was a stub with only a single generic `assert()` signature, and there was no micro-benchmarking runner for measuring execution times or nanoseconds per operation.
+* **Fix Applied**:
+  - Implemented the `std.test` standard library module and subcomponents in `std/test/`:
+    - `std/test/common.vl`: ANSI color constants, global test execution metrics (`g_test_total_asserts`, `g_test_passed_asserts`, `g_test_failed_asserts`, `g_test_total_cases`, `g_test_passed_cases`, `g_test_failed_cases`), integer/float/boolean string conversion utilities (`test_i64_to_str`, `test_u64_to_str`, `test_f64_to_str`, `test_bool_to_str`), heap string concatenation helpers, and assertion recording hooks.
+    - `std/test/assert.vl`: Comprehensive assertions including `assert`, fatal `assert_abort` (terminating via `os.exit(1)`), truthiness (`assert_true`, `assert_false`), integer equality and inequality (`assert_eq_i64`, `assert_ne_i64`, `assert_eq_u64`, `assert_ne_u64`), float equality with epsilon tolerance (`assert_eq_f64`), string equality and substring matchers (`assert_eq_str`, `assert_ne_str`, `assert_str_contains`, `assert_str_starts_with`, `assert_str_ends_with`), and pointer nullity checks (`assert_null`, `assert_not_null`).
+    - `std/test/suite.vl`: Structured `TestSuite` container, lifecycle runner (`test_case` accepting `act() -> void` function pointers), and `test_suite_finish` returning status code 0 on all-passed and 1 on failure.
+    - `std/test/runner.vl`: Global standalone runner (`test_run`, `test_summary`, `test_reset`, `test_set_colors`, `test_set_quiet`).
+    - `std/test/benchmark.vl`: Micro-benchmark profiler (`BenchmarkResult`, `test_benchmark`, `test_print_benchmark`) computing iterations, elapsed milliseconds, and nanoseconds per operation using high-resolution monotonic clocks.
+    - `std/test.vl`: Umbrella module exporting the complete testing and benchmarking interface.
+  - Packaging & Docs:
+    - Updated `std/tests/std_module_import_test.vl` to verify all 15 standard library modules together.
+    - Synced global installation directory `~/.velo/std/test/`.
+    - Refreshed standalone archive bundles `website/public/velo-std.zip` and `website/public/velo-std.tar.gz`.
+    - Documented `std.test` with all 24 functions, types, and real examples in `website/src/data/stdlib.ts`.
+* **Residual Limitation**:
+  - Parallel asynchronous test execution and TAP/JUnit XML test output reporters will be added in a subsequent tooling sub-phase.
+* **Verification**:
+  - Native Assertions test passed: `bin/velo.exe run std/tests/test/assert_test.vl`.
+  - Native Suite & Runner test passed: `bin/velo.exe run std/tests/test/suite_test.vl`.
+  - Native Benchmark test passed: `bin/velo.exe run std/tests/test/benchmark_test.vl`.
+  - Native umbrella import test passed: `bin/velo.exe run std/tests/test_module_import_test.vl`.
+  - Integrated 15-module import test passed: `bin/velo.exe run std/tests/std_module_import_test.vl`.
+  - External project test passed: `velo run test_demo.vl` in `C:\projects\test`.
+  - Pytest suite `tests/test_std_test.py` passed (4/4 tests).
+  - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).

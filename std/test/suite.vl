@@ -1,0 +1,126 @@
+// std.test.suite — Test suite lifecycle, runner callbacks, and structured reporting.
+use "common.vl"
+use "assert.vl"
+
+data TestSuite {
+    name: string
+    total_cases: usize
+    passed_cases: usize
+    failed_cases: usize
+    total_asserts: usize
+    passed_asserts: usize
+    failed_asserts: usize
+    verbose: bool
+}
+
+// Instantiates a new TestSuite with the given title.
+act test_suite_new(name: string) -> TestSuite {
+    return TestSuite {
+        name: name,
+        total_cases: 0,
+        passed_cases: 0,
+        failed_cases: 0,
+        total_asserts: 0,
+        passed_asserts: 0,
+        failed_asserts: 0,
+        verbose: true,
+    }
+}
+
+// Configures suite verbosity.
+act test_suite_set_verbose(suite: @TestSuite, verbose: bool) -> void {
+    if suite != null {
+        suite.verbose = verbose
+    }
+}
+
+// Executes an isolated test case callback and records its execution result into the suite.
+act test_case(suite: @TestSuite, name: string, test_fn: act() -> void) -> void {
+    if suite == null { return }
+
+    let initial_failed_asserts = g_test_failed_asserts
+    let initial_total_asserts = g_test_total_asserts
+    let initial_passed_asserts = g_test_passed_asserts
+
+    g_current_case_failed = false
+
+    test_fn()
+
+    let case_failed = g_current_case_failed or (g_test_failed_asserts > initial_failed_asserts)
+    let asserts_run = g_test_total_asserts - initial_total_asserts
+    let asserts_passed = g_test_passed_asserts - initial_passed_asserts
+    let asserts_failed = g_test_failed_asserts - initial_failed_asserts
+
+    suite.total_cases += 1
+    suite.total_asserts += asserts_run
+    suite.passed_asserts += asserts_passed
+    suite.failed_asserts += asserts_failed
+
+    if case_failed {
+        suite.failed_cases += 1
+        g_test_total_cases += 1
+        g_test_failed_cases += 1
+
+        if g_test_colors {
+            let line = test_concat5(TEST_COLOR_RED, TEST_COLOR_BOLD, "  [FAIL] ", name, TEST_COLOR_RESET)
+            println_str(line)
+        } else {
+            let line = test_concat2("  [FAIL] ", name)
+            println_str(line)
+        }
+    } else {
+        suite.passed_cases += 1
+        g_test_total_cases += 1
+        g_test_passed_cases += 1
+
+        if suite.verbose and !g_test_quiet {
+            if g_test_colors {
+                let line = test_concat5(TEST_COLOR_GREEN, TEST_COLOR_BOLD, "  [PASS] ", name, TEST_COLOR_RESET)
+                println_str(line)
+            } else {
+                let line = test_concat2("  [PASS] ", name)
+                println_str(line)
+            }
+        }
+    }
+}
+
+// Prints formatted suite summary and returns 0 on success, 1 on any failure.
+act test_suite_finish(suite: @TestSuite) -> i32 {
+    if suite == null { return 1 }
+
+    println_str("--------------------------------------------------")
+    let title = test_concat2("Suite: ", suite.name)
+    println_str(title)
+
+    let c_passed_str = test_u64_to_str(suite.passed_cases as u64)
+    let c_total_str = test_u64_to_str(suite.total_cases as u64)
+    let c_failed_str = test_u64_to_str(suite.failed_cases as u64)
+    let cases_line = test_concat5("Cases:   ", c_passed_str, " / ", c_total_str, test_concat3(" passed (", c_failed_str, " failed)"))
+    println_str(cases_line)
+
+    let a_passed_str = test_u64_to_str(suite.passed_asserts as u64)
+    let a_total_str = test_u64_to_str(suite.total_asserts as u64)
+    let asserts_line = test_concat5("Asserts: ", a_passed_str, " / ", a_total_str, " passed")
+    println_str(asserts_line)
+
+    if suite.failed_cases == 0 {
+        if g_test_colors {
+            let res_line = test_concat4(TEST_COLOR_GREEN, TEST_COLOR_BOLD, "Result:  ALL TESTS PASSED", TEST_COLOR_RESET)
+            println_str(res_line)
+        } else {
+            println_str("Result:  ALL TESTS PASSED")
+        }
+        println_str("--------------------------------------------------")
+        return 0
+    }
+
+    if g_test_colors {
+        let res_line = test_concat4(TEST_COLOR_RED, TEST_COLOR_BOLD, "Result:  TEST SUITE FAILED", TEST_COLOR_RESET)
+        println_str(res_line)
+    } else {
+        println_str("Result:  TEST SUITE FAILED")
+    }
+    println_str("--------------------------------------------------")
+    return 1
+}

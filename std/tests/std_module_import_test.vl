@@ -12,6 +12,7 @@ use std.net
 use std.crypto
 use std.http
 use std.log
+use std.test
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -99,6 +100,14 @@ act main() -> i32 {
     log_clear_memory()
     info("std.log integrated test")
     if log_get_last_message() != "std.log integrated test" { return 26 }
+
+    // std.test: assertions and runner
+    test_reset()
+    test_set_quiet(true)
+    if !assert_true(true, "truth") { return 27 }
+    if !assert_eq_i64(100 as i64, 100 as i64, "numbers equal") { return 28 }
+    if !assert_eq_str("test", "test", "strings equal") { return 29 }
+    if test_get_failed_asserts() != 0 { return 30 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0

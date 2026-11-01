@@ -758,14 +758,164 @@ export const STDLIB_MODULES: StdlibModule[] = [
     name: 'std.test',
     category: 'Quality Assurance',
     tier: 2,
-    description: 'Native integrated test assertion framework and benchmark test runner.',
+    description: 'Native integrated unit testing, assertion framework, suite lifecycle runner, and micro-benchmark profiler.',
     pureVelo: true,
     functions: [
       {
         name: 'assert',
-        signature: 'act assert(cond: bool, msg: string)',
-        description: 'Evaluates condition. Aborts process with location and diagnostic message if false.',
+        signature: 'act assert(cond: bool, msg: string) -> bool',
+        description: 'Evaluates condition. Records pass if true, or records diagnostic failure if false.',
         example: 'assert(res == 40.0, "vector dot product mismatch")'
+      },
+      {
+        name: 'assert_abort',
+        signature: 'act assert_abort(cond: bool, msg: string) -> void',
+        description: 'Hard assertion check. Terminates process immediately via os.exit(1) on failure.',
+        example: 'assert_abort(ptr != null, "buffer allocation cannot be null")'
+      },
+      {
+        name: 'assert_true',
+        signature: 'act assert_true(cond: bool, msg: string) -> bool',
+        description: 'Asserts that condition evaluates to true.',
+        example: 'assert_true(items.len > 0, "collection must not be empty")'
+      },
+      {
+        name: 'assert_false',
+        signature: 'act assert_false(cond: bool, msg: string) -> bool',
+        description: 'Asserts that condition evaluates to false.',
+        example: 'assert_false(socket.is_closed(), "socket must remain open")'
+      },
+      {
+        name: 'assert_eq_i64',
+        signature: 'act assert_eq_i64(actual: i64, expected: i64, msg: string) -> bool',
+        description: 'Asserts equality between two signed 64-bit integers with mismatch reporting.',
+        example: 'assert_eq_i64(calc_balance(), 1000, "balance must match")'
+      },
+      {
+        name: 'assert_ne_i64',
+        signature: 'act assert_ne_i64(actual: i64, expected: i64, msg: string) -> bool',
+        description: 'Asserts inequality between two signed 64-bit integers.',
+        example: 'assert_ne_i64(status, -1, "status code cannot be error")'
+      },
+      {
+        name: 'assert_eq_u64',
+        signature: 'act assert_eq_u64(actual: u64, expected: u64, msg: string) -> bool',
+        description: 'Asserts equality between two unsigned 64-bit integers.',
+        example: 'assert_eq_u64(header.magic, 0x564C4F, "magic header check")'
+      },
+      {
+        name: 'assert_eq_f64',
+        signature: 'act assert_eq_f64(actual: f64, expected: f64, epsilon: f64, msg: string) -> bool',
+        description: 'Asserts equality between two 64-bit floats within an epsilon tolerance threshold.',
+        example: 'assert_eq_f64(pi_approx, 3.14159, 0.0001, "pi convergence")'
+      },
+      {
+        name: 'assert_eq_str',
+        signature: 'act assert_eq_str(actual: string, expected: string, msg: string) -> bool',
+        description: 'Asserts string equality with detailed diagnostic diff formatting.',
+        example: 'assert_eq_str(req.method, "GET", "HTTP method mismatch")'
+      },
+      {
+        name: 'assert_ne_str',
+        signature: 'act assert_ne_str(actual: string, expected: string, msg: string) -> bool',
+        description: 'Asserts that two strings are not equal.',
+        example: 'assert_ne_str(token, "", "auth token must not be empty")'
+      },
+      {
+        name: 'assert_str_contains',
+        signature: 'act assert_str_contains(haystack: string, needle: string, msg: string) -> bool',
+        description: 'Asserts that haystack contains needle substring.',
+        example: 'assert_str_contains(html, "<title>Velo</title>", "title tag present")'
+      },
+      {
+        name: 'assert_str_starts_with',
+        signature: 'act assert_str_starts_with(s: string, prefix: string, msg: string) -> bool',
+        description: 'Asserts that string begins with specified prefix.',
+        example: 'assert_str_starts_with(url, "https://", "must use secure scheme")'
+      },
+      {
+        name: 'assert_str_ends_with',
+        signature: 'act assert_str_ends_with(s: string, suffix: string, msg: string) -> bool',
+        description: 'Asserts that string terminates with specified suffix.',
+        example: 'assert_str_ends_with(filename, ".vl", "file extension check")'
+      },
+      {
+        name: 'assert_null',
+        signature: 'act assert_null(ptr: @u8, msg: string) -> bool',
+        description: 'Asserts that a pointer is null.',
+        example: 'assert_null(node.next, "tail node must have null next pointer")'
+      },
+      {
+        name: 'assert_not_null',
+        signature: 'act assert_not_null(ptr: @u8, msg: string) -> bool',
+        description: 'Asserts that a pointer is not null.',
+        example: 'assert_not_null(handle, "allocated handle must be valid")'
+      },
+      {
+        name: 'test_suite_new',
+        signature: 'act test_suite_new(name: string) -> TestSuite',
+        description: 'Creates a new TestSuite runner instance with zeroed metrics.',
+        example: 'mut s = test_suite_new("HTTP Parser Suite")'
+      },
+      {
+        name: 'test_case',
+        signature: 'act test_case(suite: @TestSuite, name: string, test_fn: act() -> void) -> void',
+        description: 'Executes an isolated test function within the suite context and records results.',
+        example: 'test_case(@s, "Status Parsing", test_status)'
+      },
+      {
+        name: 'test_suite_finish',
+        signature: 'act test_suite_finish(suite: @TestSuite) -> i32',
+        description: 'Prints structured summary banner. Returns 0 if all cases passed, or 1 on failure.',
+        example: 'return test_suite_finish(@s)'
+      },
+      {
+        name: 'test_run',
+        signature: 'act test_run(name: string, test_fn: act() -> void) -> bool',
+        description: 'Runs a standalone test function under the global test runner.',
+        example: 'test_run("Test Math", run_math_checks)'
+      },
+      {
+        name: 'test_summary',
+        signature: 'act test_summary() -> i32',
+        description: 'Prints global test execution summary. Returns 0 on success, 1 on failure.',
+        example: 'return test_summary()'
+      },
+      {
+        name: 'test_reset',
+        signature: 'act test_reset() -> void',
+        description: 'Resets all global test case and assertion execution counters.',
+        example: 'test_reset()'
+      },
+      {
+        name: 'test_set_colors',
+        signature: 'act test_set_colors(enable: bool) -> void',
+        description: 'Toggles ANSI terminal color escape codes for test reporting.',
+        example: 'test_set_colors(false)'
+      },
+      {
+        name: 'test_benchmark',
+        signature: 'act test_benchmark(name: string, iterations: usize, bench_fn: act() -> void) -> BenchmarkResult',
+        description: 'Runs a micro-benchmark with warmup phase and computes nanoseconds per operation.',
+        example: 'let res = test_benchmark("sha256_1kb", 10000, bench_sha256)'
+      },
+      {
+        name: 'test_print_benchmark',
+        signature: 'act test_print_benchmark(res: @BenchmarkResult) -> void',
+        description: 'Prints formatted benchmark metrics (ops, ns/op, elapsed ms).',
+        example: 'test_print_benchmark(@res)'
+      }
+    ],
+    types: [
+      {
+        name: 'TestSuite',
+        definition: 'data TestSuite { name: string, total_cases: usize, passed_cases: usize, failed_cases: usize, total_asserts: usize, passed_asserts: usize, failed_asserts: usize, verbose: bool }',
+        description: 'Test suite lifecycle and metric tracking container.'
+      },
+      {
+        name: 'BenchmarkResult',
+        definition: 'data BenchmarkResult { name: string, iterations: usize, total_ms: u64, ns_per_op: u64 }',
+        description: 'High-resolution benchmark performance measurement metrics.'
       }
     ]
   }
