@@ -10,6 +10,7 @@ use std.math
 use std.os
 use std.net
 use std.crypto
+use std.http
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -83,6 +84,13 @@ act main() -> i32 {
     if hm != "02afb56304902c656fcb737cdd03de6205bb6d401da2812efd9b2d36a08af159" { return 21 }
     let rn = crypto_random_range(10 as u64, 20 as u64)
     if rn < (10 as u64) or rn > (20 as u64) { return 22 }
+
+    // std.http: status codes, URL parsing, percent-encoding, request/response
+    if STATUS_OK != (200 as u16) or http_status_text(STATUS_OK) != "OK" { return 23 }
+    let hurl = http_parse_url("http://127.0.0.1:8080/api?v=1")
+    if hurl.port != (8080 as u16) or hurl.path != "/api" { return 24 }
+    let henc = url_encode("hello world")
+    if henc != "hello%20world" { return 25 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0

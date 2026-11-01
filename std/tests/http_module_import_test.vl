@@ -1,0 +1,47 @@
+use std.http
+use std.io
+
+act main() -> i32 {
+    // 1. Status
+    if STATUS_OK != (200 as u16) or http_status_text(STATUS_OK) != "OK" {
+        io.println_str("FAIL: status")
+        return 1
+    }
+
+    // 2. URL parsing
+    let u = http_parse_url("http://127.0.0.1:8080/index?k=v")
+    if u.port != (8080 as u16) or u.path != "/index" or u.query != "k=v" {
+        io.println_str("FAIL: url parse")
+        return 2
+    }
+
+    // 3. URL encoding / decoding
+    let enc = url_encode("hello world")
+    if enc != "hello%20world" or url_decode(enc) != "hello world" {
+        io.println_str("FAIL: url codec")
+        return 3
+    }
+
+    // 4. Headers
+    mut m = HttpHeaderMap { headers: null, count: 0, cap: 0 }
+    headers_init(@m, 2)
+    headers_set(@m, "Content-Type", "application/json")
+    if headers_get(@m, "content-type") != "application/json" {
+        io.println_str("FAIL: headers")
+        return 4
+    }
+    headers_free(@m)
+
+    // 5. Response formatting
+    mut resp = http_response_make(200 as u16, "{\"msg\":\"pong\"}")
+    headers_set(@resp.headers, "Content-Type", "application/json")
+    let raw = http_format_response(@resp)
+    if !str.starts_with(raw, "HTTP/1.1 200 OK") {
+        io.println_str("FAIL: response format")
+        return 5
+    }
+    http_response_free(@resp)
+
+    io.println_str("PASS: std.http umbrella import all tests passed")
+    return 0
+}

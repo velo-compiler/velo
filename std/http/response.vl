@@ -1,0 +1,250 @@
+// std.http.response — HTTP/1.1 response representation, parsing, and serialization.
+use "status.vl"
+use "headers.vl"
+use "url.vl"
+use "request.vl"
+use "../mem/heap.vl"
+
+data HttpResponse {
+    status_code: u16
+    status_text: string
+    version: string
+    headers: HttpHeaderMap
+    body: string
+    content_length: usize
+}
+
+// Constructs a new default HTTP response with status and body.
+act http_response_make(status: u16, body: string) -> HttpResponse {
+    mut b = ""
+    mut b_len: usize = 0
+    if body != null {
+        b = body
+        b_len = str.len(body)
+    }
+    mut res = HttpResponse {
+        status_code: status,
+        status_text: http_status_text(status),
+        version: "HTTP/1.1",
+        headers: HttpHeaderMap { headers: null, count: 0, cap: 0 },
+        body: b,
+        content_length: b_len,
+    }
+    headers_init(@res.headers, 8)
+    return res
+}
+
+// Parses a raw HTTP/1.1 response wire string into an HttpResponse structure.
+act http_parse_response(raw: string) -> HttpResponse {
+    mut res = HttpResponse {
+        status_code: 200 as u16,
+        status_text: "OK",
+        version: "HTTP/1.1",
+        headers: HttpHeaderMap { headers: null, count: 0, cap: 0 },
+        body: "",
+        content_length: 0,
+    }
+    headers_init(@res.headers, 8)
+    if raw == null { return res }
+    let total_len = str.len(raw)
+    if total_len == 0 { return res }
+
+    mut cursor: usize = 0
+
+    // 1. Parse Status-Line: HTTP-Version SP Status-Code SP Reason-Phrase CRLF
+    mut line1_end = total_len
+    mut i = cursor
+    loop i < total_len {
+        if raw[i] == '\n' as u8 {
+            line1_end = i
+            break
+        }
+        i += 1
+    }
+
+    mut r_end = line1_end
+    if r_end > 0 and raw[r_end - 1] == '\r' as u8 { r_end -= 1 }
+
+    // Split line1 by spaces
+    mut sp1: usize = 0
+    mut sp2: usize = 0
+    mut found_sp1 = false
+    mut found_sp2 = false
+    mut k = cursor
+    loop k < r_end {
+        if raw[k] == ' ' as u8 {
+            if not found_sp1 {
+                sp1 = k
+                found_sp1 = true
+            } else if not found_sp2 {
+                sp2 = k
+                found_sp2 = true
+                break
+            }
+        }
+        k += 1
+    }
+
+    if found_sp1 {
+        res.version = url_substr(raw, cursor, sp1 - cursor)
+        if found_sp2 {
+            let sc_str = url_substr(raw, sp1 + 1, sp2 - (sp1 + 1))
+            res.status_code = http_parse_u64(sc_str) as u16
+            res.status_text = url_substr(raw, sp2 + 1, r_end - (sp2 + 1))
+        } else {
+            let sc_str = url_substr(raw, sp1 + 1, r_end - (sp1 + 1))
+            res.status_code = http_parse_u64(sc_str) as u16
+            res.status_text = http_status_text(res.status_code)
+        }
+    }
+
+    cursor = line1_end + 1
+
+    // 2. Parse Headers until blank line
+    loop cursor < total_len {
+        mut line_end = total_len
+        mut li = cursor
+        loop li < total_len {
+            if raw[li] == '\n' as u8 {
+                line_end = li
+                break
+            }
+            li += 1
+        }
+
+        mut le = line_end
+        if le > cursor and raw[le - 1] == '\r' as u8 { le -= 1 }
+
+        if le == cursor {
+            cursor = line_end + 1
+            break
+        }
+
+        mut colon_idx: usize = 0
+        mut has_colon = false
+        mut ci = cursor
+        loop ci < le {
+            if raw[ci] == ':' as u8 {
+                colon_idx = ci
+                has_colon = true
+                break
+            }
+            ci += 1
+        }
+
+        if has_colon {
+            let h_name = url_substr(raw, cursor, colon_idx - cursor)
+            mut val_pos: usize = 0
+            mut val_len: usize = 0
+            http_trim_bounds(raw, colon_idx + 1, le, @val_pos, @val_len)
+            let h_val = url_substr(raw, val_pos, val_len)
+            headers_set(@res.headers, h_name, h_val)
+        }
+
+        cursor = line_end + 1
+    }
+
+    // 3. Extract Body
+    if cursor < total_len {
+        res.body = url_substr(raw, cursor, total_len - cursor)
+    }
+
+    let cl_header = headers_get(@res.headers, "Content-Length")
+    if str.len(cl_header) > 0 {
+        res.content_length = http_parse_u64(cl_header) as usize
+    } else {
+        res.content_length = str.len(res.body)
+    }
+
+    return res
+}
+
+// Formats an HttpResponse into standard HTTP/1.1 wire protocol format.
+act http_format_response(res: @HttpResponse) -> string {
+    if res == null { return "" }
+    mut cap: usize = 256 + str.len(res.body)
+    if res.headers.headers != null {
+        mut hi: usize = 0
+        loop hi < res.headers.count {
+            cap += str.len(res.headers.headers[hi].name) + str.len(res.headers.headers[hi].value) + 4
+            hi += 1
+        }
+    }
+
+    mut buf: @u8 = heap_alloc(cap)
+    if buf == null { return "" }
+    mut pos: usize = 0
+
+    // Version + SP + StatusCode + SP + StatusText + CRLF
+    let v_str = res.version
+    let v_len = str.len(v_str)
+    mut vi: usize = 0
+    loop vi < v_len { buf[pos] = v_str[vi]; pos += 1; vi += 1 }
+    buf[pos] = ' ' as u8; pos += 1
+
+    let code_str = http_u64_to_str(res.status_code as u64)
+    let code_len = str.len(code_str)
+    mut ci: usize = 0
+    loop ci < code_len { buf[pos] = code_str[ci]; pos += 1; ci += 1 }
+    buf[pos] = ' ' as u8; pos += 1
+
+    let t_str = res.status_text
+    let t_len = str.len(t_str)
+    mut ti: usize = 0
+    loop ti < t_len { buf[pos] = t_str[ti]; pos += 1; ti += 1 }
+    buf[pos] = '\r' as u8; pos += 1
+    buf[pos] = '\n' as u8; pos += 1
+
+    // User headers
+    if res.headers.headers != null {
+        mut hj: usize = 0
+        loop hj < res.headers.count {
+            let hn = res.headers.headers[hj].name
+            let hv = res.headers.headers[hj].value
+            let hn_len = str.len(hn)
+            let hv_len = str.len(hv)
+            mut hni: usize = 0
+            loop hni < hn_len { buf[pos] = hn[hni]; pos += 1; hni += 1 }
+            buf[pos] = ':' as u8; pos += 1
+            buf[pos] = ' ' as u8; pos += 1
+            mut hvi: usize = 0
+            loop hvi < hv_len { buf[pos] = hv[hvi]; pos += 1; hvi += 1 }
+            buf[pos] = '\r' as u8; pos += 1
+            buf[pos] = '\n' as u8; pos += 1
+            hj += 1
+        }
+    }
+
+    // Content-Length header if not already set
+    let body_len = str.len(res.body)
+    if not headers_has(@res.headers, "Content-Length") {
+        let cl_prefix = "Content-Length: "
+        mut cli: usize = 0
+        loop cli < 16 { buf[pos] = cl_prefix[cli]; pos += 1; cli += 1 }
+        let len_str = http_u64_to_str(body_len as u64)
+        let len_s_len = str.len(len_str)
+        mut lsi: usize = 0
+        loop lsi < len_s_len { buf[pos] = len_str[lsi]; pos += 1; lsi += 1 }
+        buf[pos] = '\r' as u8; pos += 1
+        buf[pos] = '\n' as u8; pos += 1
+    }
+
+    // Blank line separating headers and body
+    buf[pos] = '\r' as u8; pos += 1
+    buf[pos] = '\n' as u8; pos += 1
+
+    // Body
+    if body_len > 0 {
+        mut bi: usize = 0
+        loop bi < body_len { buf[pos] = res.body[bi]; pos += 1; bi += 1 }
+    }
+
+    buf[pos] = 0 as u8
+    return buf as string
+}
+
+// Releases memory held by response headers.
+act http_response_free(res: @HttpResponse) {
+    if res == null { return }
+    headers_free(@res.headers)
+}

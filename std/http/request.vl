@@ -1,0 +1,301 @@
+// std.http.request — HTTP/1.1 request representation, parsing, and serialization.
+use "headers.vl"
+use "url.vl"
+use "../mem/heap.vl"
+
+data HttpRequest {
+    method: string
+    path: string
+    version: string
+    headers: HttpHeaderMap
+    body: string
+    content_length: usize
+}
+
+act http_u64_to_str(val: u64) -> string {
+    if val == 0 as u64 { return "0" }
+    mut buf: @u8 = heap_alloc(32)
+    mut pos: usize = 31
+    buf[pos] = 0 as u8
+    mut n = val
+    loop n > (0 as u64) and pos > 0 {
+        pos -= 1
+        buf[pos] = ('0' as u8) + ((n % (10 as u64)) as u8)
+        n = n / (10 as u64)
+    }
+    let res = url_substr(buf as string, pos, 31 - pos)
+    heap_free(buf)
+    return res
+}
+
+act http_parse_u64(s: string) -> u64 {
+    if s == null { return 0 as u64 }
+    let len = str.len(s)
+    mut res: u64 = 0
+    mut i: usize = 0
+    loop i < len {
+        let c = s[i]
+        if c >= '0' as u8 and c <= '9' as u8 {
+            res = res * (10 as u64) + ((c - ('0' as u8)) as u64)
+        }
+        i += 1
+    }
+    return res
+}
+
+// Trims whitespace and CRLF from boundaries [start, end)
+act http_trim_bounds(s: string, start: usize, end: usize, out_pos: @usize, out_len: @usize) {
+    mut l = start
+    loop l < end and (s[l] == ' ' as u8 or s[l] == '\t' as u8) {
+        l += 1
+    }
+    mut r = end
+    loop r > l and (s[r - 1] == ' ' as u8 or s[r - 1] == '\t' as u8 or s[r - 1] == '\r' as u8 or s[r - 1] == '\n' as u8) {
+        r -= 1
+    }
+    out_pos[0] = l
+    out_len[0] = r - l
+}
+
+// Constructs a new default HTTP request.
+act http_request_make(method: string, path: string) -> HttpRequest {
+    mut req = HttpRequest {
+        method: method,
+        path: path,
+        version: "HTTP/1.1",
+        headers: HttpHeaderMap { headers: null, count: 0, cap: 0 },
+        body: "",
+        content_length: 0,
+    }
+    headers_init(@req.headers, 8)
+    return req
+}
+
+// Parses a raw HTTP/1.1 wire request string into an HttpRequest structure.
+act http_parse_request(raw: string) -> HttpRequest {
+    mut req = HttpRequest {
+        method: "GET",
+        path: "/",
+        version: "HTTP/1.1",
+        headers: HttpHeaderMap { headers: null, count: 0, cap: 0 },
+        body: "",
+        content_length: 0,
+    }
+    headers_init(@req.headers, 8)
+    if raw == null { return req }
+    let total_len = str.len(raw)
+    if total_len == 0 { return req }
+
+    mut cursor: usize = 0
+
+    // 1. Parse Request-Line: METHOD SP PATH SP VERSION CRLF
+    mut line1_end = total_len
+    mut i = cursor
+    loop i < total_len {
+        if raw[i] == '\n' as u8 {
+            line1_end = i
+            break
+        }
+        i += 1
+    }
+
+    mut r_end = line1_end
+    if r_end > 0 and raw[r_end - 1] == '\r' as u8 { r_end -= 1 }
+
+    // Split line1 by spaces
+    mut sp1: usize = 0
+    mut sp2: usize = 0
+    mut found_sp1 = false
+    mut found_sp2 = false
+    mut k = cursor
+    loop k < r_end {
+        if raw[k] == ' ' as u8 {
+            if not found_sp1 {
+                sp1 = k
+                found_sp1 = true
+            } else if not found_sp2 {
+                sp2 = k
+                found_sp2 = true
+                break
+            }
+        }
+        k += 1
+    }
+
+    if found_sp1 {
+        req.method = url_substr(raw, cursor, sp1 - cursor)
+        if found_sp2 {
+            req.path = url_substr(raw, sp1 + 1, sp2 - (sp1 + 1))
+            req.version = url_substr(raw, sp2 + 1, r_end - (sp2 + 1))
+        } else {
+            req.path = url_substr(raw, sp1 + 1, r_end - (sp1 + 1))
+        }
+    }
+
+    cursor = line1_end + 1
+
+    // 2. Parse Headers until blank line (\r\n\r\n or \n\n)
+    loop cursor < total_len {
+        mut line_end = total_len
+        mut li = cursor
+        loop li < total_len {
+            if raw[li] == '\n' as u8 {
+                line_end = li
+                break
+            }
+            li += 1
+        }
+
+        mut le = line_end
+        if le > cursor and raw[le - 1] == '\r' as u8 { le -= 1 }
+
+        // Blank line marks end of headers
+        if le == cursor {
+            cursor = line_end + 1
+            break
+        }
+
+        // Find ':' separator
+        mut colon_idx: usize = 0
+        mut has_colon = false
+        mut ci = cursor
+        loop ci < le {
+            if raw[ci] == ':' as u8 {
+                colon_idx = ci
+                has_colon = true
+                break
+            }
+            ci += 1
+        }
+
+        if has_colon {
+            let h_name = url_substr(raw, cursor, colon_idx - cursor)
+            mut val_pos: usize = 0
+            mut val_len: usize = 0
+            http_trim_bounds(raw, colon_idx + 1, le, @val_pos, @val_len)
+            let h_val = url_substr(raw, val_pos, val_len)
+            headers_set(@req.headers, h_name, h_val)
+        }
+
+        cursor = line_end + 1
+    }
+
+    // 3. Extract Body
+    if cursor < total_len {
+        req.body = url_substr(raw, cursor, total_len - cursor)
+    }
+
+    let cl_header = headers_get(@req.headers, "Content-Length")
+    if str.len(cl_header) > 0 {
+        req.content_length = http_parse_u64(cl_header) as usize
+    } else {
+        req.content_length = str.len(req.body)
+    }
+
+    return req
+}
+
+// Formats an HttpRequest into standard HTTP/1.1 wire protocol format.
+act http_format_request(req: @HttpRequest, host: string) -> string {
+    if req == null { return "" }
+    mut cap: usize = 256 + str.len(req.body)
+    if req.headers.headers != null {
+        mut hi: usize = 0
+        loop hi < req.headers.count {
+            cap += str.len(req.headers.headers[hi].name) + str.len(req.headers.headers[hi].value) + 4
+            hi += 1
+        }
+    }
+
+    mut buf: @u8 = heap_alloc(cap)
+    if buf == null { return "" }
+    mut pos: usize = 0
+
+    // Method + SP + Path + SP + Version + CRLF
+    let m_str = req.method
+    let m_len = str.len(m_str)
+    mut mi: usize = 0
+    loop mi < m_len { buf[pos] = m_str[mi]; pos += 1; mi += 1 }
+    buf[pos] = ' ' as u8; pos += 1
+
+    mut p_str = "/"
+    if str.len(req.path) > 0 {
+        p_str = req.path
+    }
+    let p_len = str.len(p_str)
+    mut pi: usize = 0
+    loop pi < p_len { buf[pos] = p_str[pi]; pos += 1; pi += 1 }
+    buf[pos] = ' ' as u8; pos += 1
+
+    let v_str = req.version
+    let v_len = str.len(v_str)
+    mut vi: usize = 0
+    loop vi < v_len { buf[pos] = v_str[vi]; pos += 1; vi += 1 }
+    buf[pos] = '\r' as u8; pos += 1
+    buf[pos] = '\n' as u8; pos += 1
+
+    // Host header
+    if str.len(host) > 0 and not headers_has(@req.headers, "Host") {
+        let h_prefix = "Host: "
+        mut hpi: usize = 0
+        loop hpi < 6 { buf[pos] = h_prefix[hpi]; pos += 1; hpi += 1 }
+        let h_len = str.len(host)
+        mut hki: usize = 0
+        loop hki < h_len { buf[pos] = host[hki]; pos += 1; hki += 1 }
+        buf[pos] = '\r' as u8; pos += 1
+        buf[pos] = '\n' as u8; pos += 1
+    }
+
+    // User headers
+    if req.headers.headers != null {
+        mut hj: usize = 0
+        loop hj < req.headers.count {
+            let hn = req.headers.headers[hj].name
+            let hv = req.headers.headers[hj].value
+            let hn_len = str.len(hn)
+            let hv_len = str.len(hv)
+            mut hni: usize = 0
+            loop hni < hn_len { buf[pos] = hn[hni]; pos += 1; hni += 1 }
+            buf[pos] = ':' as u8; pos += 1
+            buf[pos] = ' ' as u8; pos += 1
+            mut hvi: usize = 0
+            loop hvi < hv_len { buf[pos] = hv[hvi]; pos += 1; hvi += 1 }
+            buf[pos] = '\r' as u8; pos += 1
+            buf[pos] = '\n' as u8; pos += 1
+            hj += 1
+        }
+    }
+
+    // Content-Length header if body is present and not explicitly set
+    let body_len = str.len(req.body)
+    if body_len > 0 and not headers_has(@req.headers, "Content-Length") {
+        let cl_prefix = "Content-Length: "
+        mut cli: usize = 0
+        loop cli < 16 { buf[pos] = cl_prefix[cli]; pos += 1; cli += 1 }
+        let len_str = http_u64_to_str(body_len as u64)
+        let len_s_len = str.len(len_str)
+        mut lsi: usize = 0
+        loop lsi < len_s_len { buf[pos] = len_str[lsi]; pos += 1; lsi += 1 }
+        buf[pos] = '\r' as u8; pos += 1
+        buf[pos] = '\n' as u8; pos += 1
+    }
+
+    // Blank line separating headers and body
+    buf[pos] = '\r' as u8; pos += 1
+    buf[pos] = '\n' as u8; pos += 1
+
+    // Body
+    if body_len > 0 {
+        mut bi: usize = 0
+        loop bi < body_len { buf[pos] = req.body[bi]; pos += 1; bi += 1 }
+    }
+
+    buf[pos] = 0 as u8
+    return buf as string
+}
+
+// Releases memory held by request headers.
+act http_request_free(req: @HttpRequest) {
+    if req == null { return }
+    headers_free(@req.headers)
+}

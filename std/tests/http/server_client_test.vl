@@ -1,0 +1,95 @@
+// Tests for std.http server and client roundtrip
+use "../../http/server.vl"
+use "../../http/client.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    let port: u16 = 29810
+
+    // 1. Bind HTTP server listener
+    let server = http_server_listen("127.0.0.1", port)
+    if server == null {
+        io.println_str("http_server_listen failed")
+        return 1
+    }
+
+    // 2. Client connects to server
+    let client = tcp_connect("127.0.0.1", port)
+    if client == null {
+        io.println_str("tcp_connect failed")
+        http_server_close(server)
+        return 2
+    }
+
+    // 3. Client writes HTTP request
+    let wire_req = "GET /api/v1/ping HTTP/1.1\r\nHost: 127.0.0.1\r\nUser-Agent: Velo-Test\r\n\r\n"
+    let sent = tcp_write_str(client, wire_req)
+    if sent <= 0 {
+        io.println_str("tcp_write_str failed")
+        tcp_close(client)
+        http_server_close(server)
+        return 3
+    }
+
+    // 4. Server accepts connection and parses request
+    mut srv_client: @TcpStream = null
+    mut req: HttpRequest
+    let ok = http_server_accept(server, @srv_client, @req)
+    if !ok or srv_client == null {
+        io.println_str("http_server_accept failed")
+        tcp_close(client)
+        http_server_close(server)
+        return 4
+    }
+
+    if req.method != "GET" or req.path != "/api/v1/ping" {
+        io.println_str("request mismatch")
+        http_respond(srv_client, 400 as u16, "text/plain", "Bad Request")
+        tcp_close(client)
+        http_server_close(server)
+        return 5
+    }
+
+    // 5. Server responds with JSON
+    let resp_ok = http_respond_json(srv_client, 200 as u16, "{\"status\":\"ok\"}")
+    if !resp_ok {
+        io.println_str("http_respond_json failed")
+        tcp_close(client)
+        http_server_close(server)
+        return 6
+    }
+
+    // 6. Client reads and parses response
+    let raw_resp = tcp_read_str(client, 4096)
+    mut resp = http_parse_response(raw_resp)
+    if resp.status_code != (200 as u16) {
+        io.println_str("status_code mismatch")
+        tcp_close(client)
+        http_server_close(server)
+        return 7
+    }
+
+    if resp.body != "{\"status\":\"ok\"}" {
+        io.println_str("body mismatch")
+        tcp_close(client)
+        http_server_close(server)
+        return 8
+    }
+
+    let ct = headers_get(@resp.headers, "content-type")
+    if ct != "application/json; charset=utf-8" {
+        io.println_str("content-type mismatch")
+        tcp_close(client)
+        http_server_close(server)
+        return 9
+    }
+
+    // 7. Clean up
+    http_response_free(@resp)
+    http_request_free(@req)
+    tcp_close(client)
+    http_server_close(server)
+
+    io.println_str("OK: std.http server/client test passed")
+    return 0
+}

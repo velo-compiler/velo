@@ -2087,3 +2087,37 @@ flowchart TD
   - Pytest suite `tests/test_std_crypto.py` passed (7/7 tests in 9.23s).
   - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
   - Rebuilt 3-generation self-hosted bootstrap chain (`scripts/bootstrap.bat` -> Gen 2 -> Gen 3 -> canonical `bin/velo.exe` -> `bootstrap.c`), confirming fixed-point SHA-256 determinism (`1784c30a1a05335fa1bda189b1a4f58fc9c1fce0ded2819832f08ad4e7e8ac5d`).
+
+### Phase 18: `std.http` (Pure Velo HTTP/1.1 Client & Lightweight Server Subsystem)
+#### Task 18.1: HTTP Client, Server, URL Codec, and Protocol Parsers (`std.http`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo had no standard HTTP networking stack. Developers wanting to make API requests, consume web services, or build lightweight HTTP microservices had to rely on raw low-level TCP socket manipulation or external C libraries.
+  - There were no built-in abstractions for RFC 3986 URL parsing, percent-encoding/decoding, case-insensitive HTTP header management, or HTTP/1.1 wire protocol request/response serialization.
+* **Fix Applied**:
+  - Implemented the `std.http` standard library module and subcomponents in `std/http/`:
+    - `std/http/status.vl`: Standard HTTP status code constants (`STATUS_OK`, `STATUS_CREATED`, `STATUS_NOT_FOUND`, `STATUS_INTERNAL_SERVER_ERROR`, etc.), canonical reason phrase lookup (`http_status_text`), and classification predicates (`http_is_success`, `http_is_redirect`, `http_is_client_error`, `http_is_server_error`).
+    - `std/http/url.vl`: RFC 3986 URL parser (`HttpUrl`, `http_parse_url`) extracting scheme, host, port, path, and query parameters, plus RFC percent-encoding (`url_encode`) and decoding (`url_decode`).
+    - `std/http/headers.vl`: Case-insensitive HTTP header container (`HttpHeaderMap`) with dynamic resizing and fast ASCII lookup (`headers_init`, `headers_set`, `headers_get`, `headers_has`, `headers_free`).
+    - `std/http/request.vl`: HTTP request representation (`HttpRequest`), wire protocol parser (`http_parse_request`), and serializer (`http_format_request`).
+    - `std/http/response.vl`: HTTP response representation (`HttpResponse`), wire protocol parser (`http_parse_response`), serializer (`http_format_response`), and constructors (`http_response_make`).
+    - `std/http/client.vl`: Synchronous HTTP/1.1 client (`http_request`, `http_get`, `http_post`, `http_put`, `http_delete`) built over `std.net.tcp` with socket timeouts and connection close semantics.
+    - `std/http/server.vl`: Lightweight HTTP server (`HttpServer`, `http_server_listen`, `http_server_accept`, `http_server_close`) and high-level typed responders (`http_respond_json`, `http_respond_text`, `http_respond_html`, `http_respond`).
+    - `std/http.vl`: Standard library umbrella module exporting the complete HTTP surface.
+  - Packaging & Docs:
+    - Synced global installation directory `~/.velo/std/http/`.
+    - Refreshed standalone archive bundles `website/public/velo-std.zip` and `website/public/velo-std.tar.gz`.
+    - Documented `std.http` in `website/src/data/stdlib.ts`.
+* **Residual Limitation**:
+  - TLS/HTTPS client and server transport encryption will be introduced in a future sub-phase (`std.net.tls` or OpenSSL/mbedTLS FFI); current implementation covers complete plaintext HTTP/1.1.
+* **Verification**:
+  - Native Status test passed: `bin/velo.exe run std/tests/http/status_test.vl`.
+  - Native URL & percent-encoding test passed: `bin/velo.exe run std/tests/http/url_test.vl`.
+  - Native Headers test passed: `bin/velo.exe run std/tests/http/headers_test.vl`.
+  - Native Codec test passed: `bin/velo.exe run std/tests/http/codec_test.vl`.
+  - Native Server/Client loopback roundtrip test passed: `bin/velo.exe run std/tests/http/server_client_test.vl`.
+  - Native umbrella import test passed: `bin/velo.exe run std/tests/http_module_import_test.vl`.
+  - Integrated `std_module_import_test.vl` passed with all 13 standard library modules.
+  - External project test passed: `velo run http_demo.vl` in `C:\projects\test`.
+  - Pytest suite `tests/test_std_http.py` passed (6/6 tests in 8.93s).
+  - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
+  - Self-hosted bootstrap determinism re-verified (`test_bootstrap_snapshot.py`).

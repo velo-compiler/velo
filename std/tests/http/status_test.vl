@@ -1,0 +1,28 @@
+// Tests for std.http.status
+use "../../http/status.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    if STATUS_OK != (200 as u16) { return 1 }
+    if STATUS_NOT_FOUND != (404 as u16) { return 2 }
+    if STATUS_INTERNAL_SERVER_ERROR != (500 as u16) { return 3 }
+
+    let t200 = http_status_text(200 as u16)
+    if t200 != "OK" { return 4 }
+
+    let t404 = http_status_text(404 as u16)
+    if t404 != "Not Found" { return 5 }
+
+    let t500 = http_status_text(500 as u16)
+    if t500 != "Internal Server Error" { return 6 }
+
+    if !http_is_success(200 as u16) or !http_is_success(204 as u16) { return 7 }
+    if http_is_success(404 as u16) { return 8 }
+
+    if !http_is_client_error(400 as u16) or !http_is_client_error(404 as u16) { return 9 }
+    if !http_is_server_error(500 as u16) or !http_is_server_error(503 as u16) { return 10 }
+    if !http_is_redirect(301 as u16) or !http_is_redirect(302 as u16) { return 11 }
+
+    io.println_str("OK: std.http.status tests passed")
+    return 0
+}

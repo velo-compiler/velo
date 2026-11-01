@@ -1,0 +1,36 @@
+// Tests for std.http.headers
+use "../../http/headers.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    mut m = HttpHeaderMap { headers: null, count: 0, cap: 0 }
+    headers_init(@m, 4)
+
+    headers_set(@m, "Content-Type", "application/json")
+    headers_set(@m, "Authorization", "Bearer token123")
+
+    if m.count != 2 { return 1 }
+
+    // Case-insensitive retrieval
+    let ct1 = headers_get(@m, "content-type")
+    if ct1 != "application/json" { return 2 }
+
+    let ct2 = headers_get(@m, "CONTENT-TYPE")
+    if ct2 != "application/json" { return 3 }
+
+    if !headers_has(@m, "authorization") { return 4 }
+    if !headers_has(@m, "AUTHORIZATION") { return 5 }
+    if headers_has(@m, "Accept") { return 6 }
+
+    // Overwriting existing header with different case
+    headers_set(@m, "content-type", "text/html")
+    if m.count != 2 { return 7 }
+    let ct3 = headers_get(@m, "Content-Type")
+    if ct3 != "text/html" { return 8 }
+
+    headers_free(@m)
+    if m.count != 0 { return 9 }
+
+    io.println_str("OK: std.http.headers tests passed")
+    return 0
+}

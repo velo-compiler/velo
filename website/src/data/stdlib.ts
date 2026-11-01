@@ -593,6 +593,98 @@ export const STDLIB_MODULES: StdlibModule[] = [
     ]
   },
   {
+    name: 'std.http',
+    category: 'Networking & Web',
+    tier: 1,
+    description: 'Pure Velo HTTP/1.1 client and lightweight server subsystem built on std.net, featuring URL parsing, percent-encoding, header containers, and request/response dispatch.',
+    pureVelo: true,
+    functions: [
+      {
+        name: 'http_get',
+        signature: 'act http_get(url_str: string) -> HttpResponse',
+        description: 'Executes a synchronous HTTP GET request and returns parsed HttpResponse.',
+        example: 'let res = http_get("http://127.0.0.1:8080/api/users")'
+      },
+      {
+        name: 'http_post',
+        signature: 'act http_post(url_str: string, content_type: string, body: string) -> HttpResponse',
+        description: 'Executes a synchronous HTTP POST request with a request body payload.',
+        example: 'let res = http_post("http://127.0.0.1:8080/api/items", "application/json", "{\\"id\\":1}")'
+      },
+      {
+        name: 'http_parse_url',
+        signature: 'act http_parse_url(url_str: string) -> HttpUrl',
+        description: 'Parses full URL into scheme, host, port, path, and query components.',
+        example: 'let u = http_parse_url("http://localhost:8080/search?q=velo")'
+      },
+      {
+        name: 'url_encode',
+        signature: 'act url_encode(text: string) -> string',
+        description: 'Encodes a string using RFC 3986 percent-encoding.',
+        example: 'let enc = url_encode("hello world & co")'
+      },
+      {
+        name: 'url_decode',
+        signature: 'act url_decode(encoded: string) -> string',
+        description: 'Decodes percent-encoded string (%XX and +).',
+        example: 'let dec = url_decode(enc)'
+      },
+      {
+        name: 'http_status_text',
+        signature: 'act http_status_text(code: u16) -> string',
+        description: 'Returns canonical RFC reason phrase for an HTTP status code.',
+        example: 'let phrase = http_status_text(200)'
+      },
+      {
+        name: 'http_server_listen',
+        signature: 'act http_server_listen(ip: string, port: u16) -> @HttpServer',
+        description: 'Binds and starts an HTTP server listener on an IP and port.',
+        example: 'let server = http_server_listen("127.0.0.1", 8080)'
+      },
+      {
+        name: 'http_server_accept',
+        signature: 'act http_server_accept(server: @HttpServer, out_client: @@TcpStream, out_req: @HttpRequest) -> bool',
+        description: 'Accepts an incoming client connection and parses HTTP request.',
+        example: 'let ok = http_server_accept(server, @client, @req)'
+      },
+      {
+        name: 'http_respond_json',
+        signature: 'act http_respond_json(stream: @TcpStream, status: u16, json: string) -> bool',
+        description: 'Sends JSON response with Content-Type application/json; charset=utf-8.',
+        example: 'http_respond_json(client, 200, "{\\"status\\":\\"ok\\"}")'
+      },
+      {
+        name: 'http_respond_text',
+        signature: 'act http_respond_text(stream: @TcpStream, status: u16, text: string) -> bool',
+        description: 'Sends plain text response with Content-Type text/plain; charset=utf-8.',
+        example: 'http_respond_text(client, 200, "OK")'
+      },
+      {
+        name: 'http_respond_html',
+        signature: 'act http_respond_html(stream: @TcpStream, status: u16, html: string) -> bool',
+        description: 'Sends HTML response with Content-Type text/html; charset=utf-8.',
+        example: 'http_respond_html(client, 200, "<h1>Hello Velo</h1>")'
+      }
+    ],
+    types: [
+      {
+        name: 'HttpUrl',
+        definition: 'data HttpUrl { scheme: string, host: string, port: u16, path: string, query: string }',
+        description: 'Parsed URL components.'
+      },
+      {
+        name: 'HttpRequest',
+        definition: 'data HttpRequest { method: string, path: string, version: string, headers: HttpHeaderMap, body: string, content_length: usize }',
+        description: 'HTTP request representation.'
+      },
+      {
+        name: 'HttpResponse',
+        definition: 'data HttpResponse { status_code: u16, status_text: string, version: string, headers: HttpHeaderMap, body: string, content_length: usize }',
+        description: 'HTTP response representation.'
+      }
+    ]
+  },
+  {
     name: 'std.test',
     category: 'Quality Assurance',
     tier: 2,

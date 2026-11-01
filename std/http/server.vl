@@ -1,0 +1,106 @@
+// std.http.server — Lightweight HTTP/1.1 server and response dispatching primitives.
+use "../net/tcp.vl"
+use "request.vl"
+use "response.vl"
+use "headers.vl"
+use "status.vl"
+use "../mem/heap.vl"
+
+data HttpServer {
+    listener: @TcpListener
+    port: u16
+    is_running: bool
+}
+
+act http_server_sizeof() -> usize {
+    return 24
+}
+
+// Binds an HTTP server to the specified IP address and port.
+act http_server_listen(ip: string, port: u16) -> @HttpServer {
+    let l = tcp_listen(ip, port)
+    if l == null { return null }
+
+    mut s: @HttpServer = heap_alloc(http_server_sizeof()) as @HttpServer
+    if s == null {
+        tcp_listener_close(l)
+        return null
+    }
+    s.listener = l
+    s.port = port
+    s.is_running = true
+    return s
+}
+
+// Accepts an incoming HTTP connection, parses the request, and yields client stream and request.
+act http_server_accept(server: @HttpServer, out_client_stream: @@TcpStream, out_req: @HttpRequest) -> bool {
+    if server == null or server.listener == null or not server.is_running {
+        return false
+    }
+
+    let client = tcp_accept(server.listener)
+    if client == null {
+        return false
+    }
+
+    // Read initial request packet (up to 64KB)
+    let raw = tcp_read_str(client, 65536)
+    if str.len(raw) == 0 {
+        tcp_close(client)
+        return false
+    }
+
+    if out_client_stream != null {
+        out_client_stream[0] = client
+    }
+    if out_req != null {
+        out_req[0] = http_parse_request(raw)
+    }
+
+    return true
+}
+
+// Sends an HTTP response with headers and body to the connected client, then closes the stream.
+act http_respond(stream: @TcpStream, status: u16, content_type: string, body: string) -> bool {
+    if stream == null { return false }
+    mut res = http_response_make(status, body)
+
+    if content_type != null and str.len(content_type) > 0 {
+        headers_set(@res.headers, "Content-Type", content_type)
+    }
+    headers_set(@res.headers, "Connection", "close")
+
+    let wire_res = http_format_response(@res)
+    let sent = tcp_write_str(stream, wire_res)
+    heap_free(wire_res as @u8)
+    http_response_free(@res)
+    tcp_close(stream)
+
+    return sent > 0
+}
+
+// Sends a plain text response (text/plain; charset=utf-8).
+act http_respond_text(stream: @TcpStream, status: u16, text: string) -> bool {
+    return http_respond(stream, status, "text/plain; charset=utf-8", text)
+}
+
+// Sends a JSON response (application/json; charset=utf-8).
+act http_respond_json(stream: @TcpStream, status: u16, json_body: string) -> bool {
+    return http_respond(stream, status, "application/json; charset=utf-8", json_body)
+}
+
+// Sends an HTML response (text/html; charset=utf-8).
+act http_respond_html(stream: @TcpStream, status: u16, html_body: string) -> bool {
+    return http_respond(stream, status, "text/html; charset=utf-8", html_body)
+}
+
+// Shuts down the HTTP server listener and frees resources.
+act http_server_close(server: @HttpServer) {
+    if server == null { return }
+    server.is_running = false
+    if server.listener != null {
+        tcp_listener_close(server.listener)
+        server.listener = null
+    }
+    heap_free(server as @u8)
+}

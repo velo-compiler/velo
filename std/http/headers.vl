@@ -1,0 +1,121 @@
+// std.http.headers — Case-insensitive HTTP header container and lookup primitives.
+use "../mem/heap.vl"
+
+data HttpHeader {
+    name: string
+    value: string
+}
+
+data HttpHeaderMap {
+    headers: @HttpHeader
+    count: usize
+    cap: usize
+}
+
+act http_header_sizeof() -> usize {
+    return 16
+}
+
+// Case-insensitive ASCII string comparison.
+act http_header_name_eq(a: string, b: string) -> bool {
+    if a == null or b == null { return false }
+    let len_a = str.len(a)
+    let len_b = str.len(b)
+    if len_a != len_b { return false }
+
+    mut i: usize = 0
+    loop i < len_a {
+        mut ca = a[i]
+        mut cb = b[i]
+        if ca >= 'A' as u8 and ca <= 'Z' as u8 { ca = ca + (32 as u8) }
+        if cb >= 'A' as u8 and cb <= 'Z' as u8 { cb = cb + (32 as u8) }
+        if ca != cb { return false }
+        i += 1
+    }
+    return true
+}
+
+// Initializes a header map with an initial capacity.
+act headers_init(m: @HttpHeaderMap, initial_cap: usize) {
+    if m == null { return }
+    mut c = initial_cap
+    if c == 0 { c = 8 }
+    m.headers = heap_alloc(c * http_header_sizeof()) as @HttpHeader
+    m.count = 0
+    m.cap = c
+}
+
+// Sets or replaces a header value (case-insensitive lookup).
+act headers_set(m: @HttpHeaderMap, name: string, value: string) {
+    if m == null or name == null { return }
+    if m.headers == null { headers_init(m, 8) }
+
+    // 1. Check if header already exists
+    mut i: usize = 0
+    loop i < m.count {
+        if http_header_name_eq(m.headers[i].name, name) {
+            m.headers[i].value = value
+            return
+        }
+        i += 1
+    }
+
+    // 2. Expand capacity if needed
+    if m.count >= m.cap {
+        let new_cap = m.cap * 2
+        mut new_buf = heap_alloc(new_cap * http_header_sizeof()) as @HttpHeader
+        mut j: usize = 0
+        loop j < m.count {
+            new_buf[j] = m.headers[j]
+            j += 1
+        }
+        heap_free(m.headers as @u8)
+        m.headers = new_buf
+        m.cap = new_cap
+    }
+
+    mut val_str = ""
+    if value != null { val_str = value }
+    m.headers[m.count] = HttpHeader {
+        name: name,
+        value: val_str
+    }
+    m.count += 1
+}
+
+// Retrieves a header's value by case-insensitive name, or returns "" if not found.
+act headers_get(m: @HttpHeaderMap, name: string) -> string {
+    if m == null or m.headers == null or name == null { return "" }
+    mut i: usize = 0
+    loop i < m.count {
+        if http_header_name_eq(m.headers[i].name, name) {
+            return m.headers[i].value
+        }
+        i += 1
+    }
+    return ""
+}
+
+// Returns true if the header map contains the specified key.
+act headers_has(m: @HttpHeaderMap, name: string) -> bool {
+    if m == null or m.headers == null or name == null { return false }
+    mut i: usize = 0
+    loop i < m.count {
+        if http_header_name_eq(m.headers[i].name, name) {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// Releases memory held by the header map buffer.
+act headers_free(m: @HttpHeaderMap) {
+    if m == null { return }
+    if m.headers != null {
+        heap_free(m.headers as @u8)
+        m.headers = null
+    }
+    m.count = 0
+    m.cap = 0
+}

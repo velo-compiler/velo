@@ -1,0 +1,244 @@
+// std.http.url — URL parsing, percent-encoding, and decoding.
+use "../mem/heap.vl"
+
+data HttpUrl {
+    scheme: string
+    host: string
+    port: u16
+    path: string
+    query: string
+}
+
+let URL_HEX_DIGITS: string = "0123456789ABCDEF"
+
+act url_is_unreserved(c: u8) -> bool {
+    if (c >= 'a' as u8 and c <= 'z' as u8) or (c >= 'A' as u8 and c <= 'Z' as u8) or (c >= '0' as u8 and c <= '9' as u8) {
+        return true
+    }
+    if c == '-' as u8 or c == '_' as u8 or c == '.' as u8 or c == '~' as u8 {
+        return true
+    }
+    return false
+}
+
+act url_hex_val(c: u8) -> i32 {
+    if c >= '0' as u8 and c <= '9' as u8 { return (c - ('0' as u8)) as i32 }
+    if c >= 'a' as u8 and c <= 'f' as u8 { return ((c - ('a' as u8)) + 10) as i32 }
+    if c >= 'A' as u8 and c <= 'F' as u8 { return ((c - ('A' as u8)) + 10) as i32 }
+    return -1
+}
+
+// Percent-encodes a string according to RFC 3986.
+act url_encode(text: string) -> string {
+    if text == null { return "" }
+    let len = str.len(text)
+    if len == 0 { return "" }
+
+    mut buf: @u8 = heap_alloc(len * 3 + 1)
+    if buf == null { return "" }
+
+    mut out_pos: usize = 0
+    mut i: usize = 0
+    loop i < len {
+        let b = text[i]
+        if url_is_unreserved(b) {
+            buf[out_pos] = b
+            out_pos += 1
+        } else {
+            buf[out_pos] = '%' as u8
+            buf[out_pos + 1] = URL_HEX_DIGITS[(b >> 4) as usize]
+            buf[out_pos + 2] = URL_HEX_DIGITS[(b & (0x0F as u8)) as usize]
+            out_pos += 3
+        }
+        i += 1
+    }
+    buf[out_pos] = 0 as u8
+    return buf as string
+}
+
+// Decodes a percent-encoded string. Converts '+' to spaces and %XX to raw bytes.
+act url_decode(encoded: string) -> string {
+    if encoded == null { return "" }
+    let len = str.len(encoded)
+    if len == 0 { return "" }
+
+    mut buf: @u8 = heap_alloc(len + 1)
+    if buf == null { return "" }
+
+    mut out_pos: usize = 0
+    mut i: usize = 0
+    loop i < len {
+        let b = encoded[i]
+        if b == '+' as u8 {
+            buf[out_pos] = ' ' as u8
+            out_pos += 1
+            i += 1
+        } else if b == '%' as u8 and i + 2 < len {
+            let h1 = url_hex_val(encoded[i + 1])
+            let h2 = url_hex_val(encoded[i + 2])
+            if h1 >= 0 and h2 >= 0 {
+                buf[out_pos] = ((h1 << 4) | h2) as u8
+                out_pos += 1
+                i += 3
+            } else {
+                buf[out_pos] = b
+                out_pos += 1
+                i += 1
+            }
+        } else {
+            buf[out_pos] = b
+            out_pos += 1
+            i += 1
+        }
+    }
+    buf[out_pos] = 0 as u8
+    return buf as string
+}
+
+// Helper to extract a substring [start, start + length) into a newly allocated string.
+act url_substr(s: string, start: usize, len: usize) -> string {
+    if s == null or len == 0 { return "" }
+    mut buf: @u8 = heap_alloc(len + 1)
+    if buf == null { return "" }
+    mut i: usize = 0
+    loop i < len {
+        buf[i] = s[start + i]
+        i += 1
+    }
+    buf[len] = 0 as u8
+    return buf as string
+}
+
+// Parses an HTTP or HTTPS URL into its constituent components.
+act http_parse_url(url_str: string) -> HttpUrl {
+    mut res = HttpUrl {
+        scheme: "http",
+        host: "127.0.0.1",
+        port: 80 as u16,
+        path: "/",
+        query: "",
+    }
+    if url_str == null { return res }
+    let len = str.len(url_str)
+    if len == 0 { return res }
+
+    mut pos: usize = 0
+
+    // Check scheme: "http://" or "https://"
+    if str.starts_with(url_str, "http://") {
+        res.scheme = "http"
+        res.port = 80 as u16
+        pos = 7
+    } else if str.starts_with(url_str, "https://") {
+        res.scheme = "https"
+        res.port = 443 as u16
+        pos = 8
+    }
+
+    // If string starts with '/', it's a relative path with no scheme/host
+    if pos == 0 and url_str[0] == '/' as u8 {
+        // Path and query only
+        mut q_idx: usize = 0
+        mut has_q = false
+        mut k: usize = 0
+        loop k < len {
+            if url_str[k] == '?' as u8 and not has_q {
+                q_idx = k
+                has_q = true
+            }
+            k += 1
+        }
+        if has_q {
+            res.path = url_substr(url_str, 0, q_idx)
+            res.query = url_substr(url_str, q_idx + 1, len - (q_idx + 1))
+        } else {
+            res.path = url_substr(url_str, 0, len)
+            res.query = ""
+        }
+        return res
+    }
+
+    // Parse host and optional port
+    let host_start = pos
+    mut host_end = len
+    mut port_start: usize = 0
+    mut has_port = false
+
+    mut j = pos
+    loop j < len {
+        let c = url_str[j]
+        if c == '/' as u8 or c == '?' as u8 {
+            if not has_port {
+                host_end = j
+            }
+            break
+        }
+        if c == ':' as u8 and not has_port {
+            host_end = j
+            port_start = j + 1
+            has_port = true
+        }
+        j += 1
+    }
+
+    res.host = url_substr(url_str, host_start, host_end - host_start)
+    if res.host == "localhost" {
+        res.host = "127.0.0.1"
+    }
+
+    if has_port {
+        mut p_end = len
+        if j < len {
+            p_end = j
+        }
+        let p_len = p_end - port_start
+        if p_len > 0 {
+            mut p_val: u32 = 0
+            mut pi: usize = 0
+            loop pi < p_len {
+                let pc = url_str[port_start + pi]
+                if pc >= '0' as u8 and pc <= '9' as u8 {
+                    p_val = p_val * 10 + ((pc - ('0' as u8)) as u32)
+                }
+                pi += 1
+            }
+            res.port = p_val as u16
+        }
+    }
+
+    // Parse path and query
+    if j < len {
+        if url_str[j] == '/' as u8 {
+            let path_start = j
+            mut q_pos = len
+            mut has_query = false
+            mut m = j
+            loop m < len {
+                if url_str[m] == '?' as u8 {
+                    q_pos = m
+                    has_query = true
+                    break
+                }
+                m += 1
+            }
+            res.path = url_substr(url_str, path_start, q_pos - path_start)
+            if has_query and q_pos + 1 < len {
+                res.query = url_substr(url_str, q_pos + 1, len - (q_pos + 1))
+            } else {
+                res.query = ""
+            }
+        } else if url_str[j] == '?' as u8 {
+            res.path = "/"
+            if j + 1 < len {
+                res.query = url_substr(url_str, j + 1, len - (j + 1))
+            } else {
+                res.query = ""
+            }
+        }
+    } else {
+        res.path = "/"
+        res.query = ""
+    }
+
+    return res
+}

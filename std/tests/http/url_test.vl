@@ -1,0 +1,37 @@
+// Tests for std.http.url
+use "../../http/url.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    let u1 = http_parse_url("http://localhost:8080/api/users?sort=asc")
+    if u1.scheme != "http" { return 1 }
+    if u1.host != "127.0.0.1" { return 2 }
+    if u1.port != (8080 as u16) { return 3 }
+    if u1.path != "/api/users" { return 4 }
+    if u1.query != "sort=asc" { return 5 }
+
+    let u2 = http_parse_url("https://127.0.0.1/dashboard")
+    if u2.scheme != "https" { return 6 }
+    if u2.host != "127.0.0.1" { return 7 }
+    if u2.port != (443 as u16) { return 8 }
+    if u2.path != "/dashboard" { return 9 }
+    if u2.query != "" { return 10 }
+
+    let u3 = http_parse_url("/test?val=123")
+    if u3.path != "/test" { return 11 }
+    if u3.query != "val=123" { return 12 }
+
+    // Test encoding and decoding
+    let raw = "hello world & velo"
+    let enc = url_encode(raw)
+    if enc != "hello%20world%20%26%20velo" { return 13 }
+
+    let dec = url_decode(enc)
+    if dec != raw { return 14 }
+
+    let dec_plus = url_decode("hello+velo")
+    if dec_plus != "hello velo" { return 15 }
+
+    io.println_str("OK: std.http.url tests passed")
+    return 0
+}

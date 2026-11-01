@@ -1,0 +1,148 @@
+// std.http.client — Synchronous HTTP/1.1 client built on std.net.tcp.
+use "../net/tcp.vl"
+use "url.vl"
+use "headers.vl"
+use "request.vl"
+use "response.vl"
+use "../mem/heap.vl"
+
+// Sends an HTTP request and waits for the server's response.
+act http_request(method: string, url_str: string, headers: @HttpHeaderMap, body: string) -> HttpResponse {
+    let parsed_url = http_parse_url(url_str)
+    mut stream = tcp_connect(parsed_url.host, parsed_url.port)
+    if stream == null {
+        return http_response_make(503 as u16, "Failed to connect to host")
+    }
+
+    // Set connection timeout to 5 seconds
+    tcp_set_timeout(stream, 5000 as u32)
+
+    // Assemble full request path including query string
+    mut full_path = parsed_url.path
+    if str.len(parsed_url.query) > 0 {
+        let p_len = str.len(parsed_url.path)
+        let q_len = str.len(parsed_url.query)
+        mut q_buf: @u8 = heap_alloc(p_len + 1 + q_len + 1)
+        if q_buf != null {
+            mut pos: usize = 0
+            mut i: usize = 0
+            loop i < p_len { q_buf[pos] = parsed_url.path[i]; pos += 1; i += 1 }
+            q_buf[pos] = '?' as u8; pos += 1
+            mut j: usize = 0
+            loop j < q_len { q_buf[pos] = parsed_url.query[j]; pos += 1; j += 1 }
+            q_buf[pos] = 0 as u8
+            full_path = q_buf as string
+        }
+    }
+
+    mut req = http_request_make(method, full_path)
+    if body != null and str.len(body) > 0 {
+        req.body = body
+        req.content_length = str.len(body)
+    }
+
+    // Copy user headers if provided
+    if headers != null and headers.headers != null {
+        mut hi: usize = 0
+        loop hi < headers.count {
+            headers_set(@req.headers, headers.headers[hi].name, headers.headers[hi].value)
+            hi += 1
+        }
+    }
+
+    // Default User-Agent and Connection headers
+    if not headers_has(@req.headers, "User-Agent") {
+        headers_set(@req.headers, "User-Agent", "Velo-Http/2.0")
+    }
+    if not headers_has(@req.headers, "Connection") {
+        headers_set(@req.headers, "Connection", "close")
+    }
+
+    let wire_req = http_format_request(@req, parsed_url.host)
+    let sent = tcp_write_str(stream, wire_req)
+    heap_free(wire_req as @u8)
+    http_request_free(@req)
+
+    if sent <= 0 {
+        tcp_close(stream)
+        return http_response_make(500 as u16, "Failed to transmit request bytes")
+    }
+
+    // Read full HTTP response until connection is closed by server
+    mut resp_cap: usize = 16384
+    mut resp_buf: @u8 = heap_alloc(resp_cap)
+    if resp_buf == null {
+        tcp_close(stream)
+        return http_response_make(500 as u16, "Out of memory allocating response buffer")
+    }
+
+    mut total_read: usize = 0
+    mut chunk_buf: @u8 = heap_alloc(4096)
+
+    loop {
+        let n = tcp_read(stream, chunk_buf, 4096)
+        if n <= 0 {
+            break
+        }
+        let n_bytes = n as usize
+        if total_read + n_bytes >= resp_cap {
+            let new_cap = resp_cap * 2 + n_bytes
+            mut new_buf = heap_alloc(new_cap) as @u8
+            if new_buf != null {
+                mut cpi: usize = 0
+                loop cpi < total_read { new_buf[cpi] = resp_buf[cpi]; cpi += 1 }
+                heap_free(resp_buf)
+                resp_buf = new_buf
+                resp_cap = new_cap
+            }
+        }
+        mut ci: usize = 0
+        loop ci < n_bytes {
+            resp_buf[total_read + ci] = chunk_buf[ci]
+            ci += 1
+        }
+        total_read += n_bytes
+    }
+
+    heap_free(chunk_buf)
+    tcp_close(stream)
+
+    resp_buf[total_read] = 0 as u8
+    let resp = http_parse_response(resp_buf as string)
+    heap_free(resp_buf)
+    return resp
+}
+
+// Executes an HTTP GET request to the specified URL.
+act http_get(url_str: string) -> HttpResponse {
+    return http_request("GET", url_str, null, "")
+}
+
+// Executes an HTTP POST request with a payload and Content-Type header.
+act http_post(url_str: string, content_type: string, body: string) -> HttpResponse {
+    mut h = HttpHeaderMap { headers: null, count: 0, cap: 0 }
+    headers_init(@h, 2)
+    if content_type != null and str.len(content_type) > 0 {
+        headers_set(@h, "Content-Type", content_type)
+    }
+    let res = http_request("POST", url_str, @h, body)
+    headers_free(@h)
+    return res
+}
+
+// Executes an HTTP PUT request with a payload and Content-Type header.
+act http_put(url_str: string, content_type: string, body: string) -> HttpResponse {
+    mut h = HttpHeaderMap { headers: null, count: 0, cap: 0 }
+    headers_init(@h, 2)
+    if content_type != null and str.len(content_type) > 0 {
+        headers_set(@h, "Content-Type", content_type)
+    }
+    let res = http_request("PUT", url_str, @h, body)
+    headers_free(@h)
+    return res
+}
+
+// Executes an HTTP DELETE request to the specified URL.
+act http_delete(url_str: string) -> HttpResponse {
+    return http_request("DELETE", url_str, null, "")
+}

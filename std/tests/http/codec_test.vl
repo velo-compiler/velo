@@ -1,0 +1,52 @@
+// Tests for std.http request/response encoding and parsing
+use "../../http/request.vl"
+use "../../http/response.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    // 1. Test parsing HTTP GET request
+    let raw_get = "GET /api/v1/users?page=2 HTTP/1.1\r\nHost: localhost:8080\r\nUser-Agent: VeloTest\r\n\r\n"
+    mut req1 = http_parse_request(raw_get)
+    if req1.method != "GET" { return 1 }
+    if req1.path != "/api/v1/users?page=2" { return 2 }
+    if req1.version != "HTTP/1.1" { return 3 }
+    if headers_get(@req1.headers, "host") != "localhost:8080" { return 4 }
+    if headers_get(@req1.headers, "user-agent") != "VeloTest" { return 5 }
+    if req1.content_length != 0 { return 6 }
+    if req1.body != "" { return 7 }
+    http_request_free(@req1)
+
+    // 2. Test parsing HTTP POST request with body
+    let raw_post = "POST /api/echo HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: text/plain\r\nContent-Length: 11\r\n\r\nHello, Velo"
+    mut req2 = http_parse_request(raw_post)
+    if req2.method != "POST" { return 8 }
+    if req2.path != "/api/echo" { return 9 }
+    if headers_get(@req2.headers, "content-type") != "text/plain" { return 10 }
+    if req2.content_length != 11 { return 11 }
+    if req2.body != "Hello, Velo" { return 12 }
+
+    // 3. Test formatting HTTP request
+    let formatted_req = http_format_request(@req2, "127.0.0.1")
+    if !str.starts_with(formatted_req, "POST /api/echo HTTP/1.1") { return 13 }
+    http_request_free(@req2)
+
+    // 4. Test parsing HTTP response
+    let raw_resp = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 12\r\n\r\n{\"ok\":true}"
+    mut resp1 = http_parse_response(raw_resp)
+    if resp1.status_code != (200 as u16) { return 14 }
+    if resp1.status_text != "OK" { return 15 }
+    if headers_get(@resp1.headers, "content-type") != "application/json" { return 16 }
+    if resp1.content_length != 12 { return 17 }
+    if resp1.body != "{\"ok\":true}" { return 18 }
+
+    // 5. Test formatting HTTP response
+    mut resp2 = http_response_make(404 as u16, "Not Found Error")
+    headers_set(@resp2.headers, "Content-Type", "text/plain")
+    let formatted_resp = http_format_response(@resp2)
+    if !str.starts_with(formatted_resp, "HTTP/1.1 404 Not Found") { return 19 }
+    http_response_free(@resp1)
+    http_response_free(@resp2)
+
+    io.println_str("OK: std.http codec tests passed")
+    return 0
+}
