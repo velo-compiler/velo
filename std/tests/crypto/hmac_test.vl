@@ -1,0 +1,27 @@
+// Tests for std.crypto.hmac (HMAC-SHA256)
+use "../../crypto/hmac.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    let mac1 = hmac_sha256_str("key", "The quick brown fox jumps over the lazy dog")
+    if mac1 != "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8" {
+        io.println_str("FAIL: hmac test vector 1 mismatch")
+        return 1
+    }
+
+    let mac2 = hmac_sha256_str("", "")
+    if mac2 != "b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad" {
+        io.println_str("FAIL: hmac empty key & data mismatch")
+        return 2
+    }
+
+    let k80 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    let mac3 = hmac_sha256_str(k80, "Sample message for keylen > blocklen")
+    if mac3 != "6e34861faf50fd45a1a21bdc8c6c93b039efb5914aed7445e3b41180f4678c77" {
+        io.println_str("FAIL: hmac long key mismatch")
+        return 3
+    }
+
+    io.println_str("OK: std.crypto.hmac tests passed")
+    return 0
+}

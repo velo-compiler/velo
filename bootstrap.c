@@ -38919,7 +38919,7 @@ const char* assemble_gcc_compile_cmd(const char* c_file_path, const char* out_ex
 #line 179 "src/main.vl"
     if ((fs_exists("C:/Windows") || fs_exists("C:/msys64/ucrt64/bin/gcc.exe"))) {
 #line 180 "src/main.vl"
-        sb_append_str((&(cmd_sb)), " -lws2_32");
+        sb_append_str((&(cmd_sb)), " -lws2_32 -ladvapi32");
     }
 #line 182 "src/main.vl"
     sb_append_str((&(cmd_sb)), " -o ");

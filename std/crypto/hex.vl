@@ -1,0 +1,66 @@
+// std.crypto.hex — Hexadecimal encoding and decoding utilities.
+use "../mem/heap.vl"
+
+let HEX_CHARS: string = "0123456789abcdef"
+
+// Converts a nibble (0-15) to its lowercase ASCII hex character.
+act nibble_to_hex(val: u8) -> u8 {
+    let idx = val & (0x0F as u8)
+    return HEX_CHARS[idx as usize]
+}
+
+// Converts an ASCII hex character to its 4-bit integer value (0-15), or -1 if invalid.
+act hex_char_to_val(c: u8) -> i32 {
+    if c >= '0' and c <= '9' {
+        return (c - '0') as i32
+    }
+    if c >= 'a' and c <= 'f' {
+        return ((c - 'a') + 10) as i32
+    }
+    if c >= 'A' and c <= 'F' {
+        return ((c - 'A') + 10) as i32
+    }
+    return -1
+}
+
+// Encodes a byte buffer into a newly allocated lowercase hexadecimal string.
+act bytes_to_hex(bytes: @u8, len: usize) -> string {
+    if bytes == null or len == 0 {
+        return ""
+    }
+    mut out: @u8 = heap_alloc(len * 2 + 1)
+    if out == null { return "" }
+
+    mut i: usize = 0
+    loop i < len {
+        let b = bytes[i]
+        out[i * 2] = nibble_to_hex(b >> 4)
+        out[i * 2 + 1] = nibble_to_hex(b & (0x0F as u8))
+        i += 1
+    }
+    out[len * 2] = 0 as u8
+    return out as string
+}
+
+// Decodes a hexadecimal string into an output byte buffer. Returns number of bytes decoded.
+act hex_to_bytes(hex_str: string, out_bytes: @u8, max_len: usize) -> usize {
+    if hex_str == null or out_bytes == null or max_len == 0 {
+        return 0
+    }
+    let slen = str.len(hex_str)
+    let byte_count = slen / 2
+    mut limit = byte_count
+    if limit > max_len { limit = max_len }
+
+    mut i: usize = 0
+    loop i < limit {
+        let hi = hex_char_to_val(hex_str[i * 2])
+        let lo = hex_char_to_val(hex_str[i * 2 + 1])
+        if hi < 0 or lo < 0 {
+            return i
+        }
+        out_bytes[i] = ((hi << 4) | lo) as u8
+        i += 1
+    }
+    return limit
+}

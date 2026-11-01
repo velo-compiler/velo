@@ -1,0 +1,42 @@
+// Tests for std.crypto.crc32
+use "../../crypto/crc32.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    let c0 = crc32_hash_str("")
+    if c0 != (0 as u32) {
+        io.println_str("FAIL: crc32 empty mismatch")
+        return 1
+    }
+
+    let c1 = crc32_hash_str("123456789")
+    if c1 != (0xcbf43926 as u32) {
+        io.println_str("FAIL: crc32 123456789 mismatch")
+        return 2
+    }
+
+    let c2 = crc32_hash_str("Hello, Velo!")
+    if c2 != (0x4fa527b4 as u32) {
+        io.println_str("FAIL: crc32 Hello, Velo! mismatch")
+        return 3
+    }
+
+    // Test streaming
+    let acc1 = crc32_init()
+    let acc2 = crc32_update_str(acc1, "1234")
+    let acc3 = crc32_update_str(acc2, "56789")
+    let c_stream = crc32_final(acc3)
+    if c_stream != c1 {
+        io.println_str("FAIL: crc32 streaming mismatch")
+        return 4
+    }
+
+    let hex_c1 = crc32_hex(c1)
+    if hex_c1 != "cbf43926" {
+        io.println_str("FAIL: crc32 hex mismatch")
+        return 5
+    }
+
+    io.println_str("OK: std.crypto.crc32 tests passed")
+    return 0
+}

@@ -1,0 +1,252 @@
+// std.crypto.sha256 — NIST FIPS 180-4 compliant SHA-256 cryptographic hash function.
+use "../mem/heap.vl"
+use "hex.vl"
+
+// SHA-256 streaming state context.
+data Sha256State {
+    h0: u32
+    h1: u32
+    h2: u32
+    h3: u32
+    h4: u32
+    h5: u32
+    h6: u32
+    h7: u32
+    buf: @u8
+    buf_len: usize
+    total_bytes: u64
+}
+
+// 32-bit right-rotation helper.
+act sha_rotr32(x: u32, n: u32) -> u32 {
+    return (x >> n) | (x << ((32 as u32) - n))
+}
+
+act sha_ch(x: u32, y: u32, z: u32) -> u32 {
+    return (x & y) ^ ((~x) & z)
+}
+
+act sha_maj(x: u32, y: u32, z: u32) -> u32 {
+    return (x & y) ^ (x & z) ^ (y & z)
+}
+
+act sha_sigma0(x: u32) -> u32 {
+    return sha_rotr32(x, 2 as u32) ^ sha_rotr32(x, 13 as u32) ^ sha_rotr32(x, 22 as u32)
+}
+
+act sha_sigma1(x: u32) -> u32 {
+    return sha_rotr32(x, 6 as u32) ^ sha_rotr32(x, 11 as u32) ^ sha_rotr32(x, 25 as u32)
+}
+
+act sha_sig0(x: u32) -> u32 {
+    return sha_rotr32(x, 7 as u32) ^ sha_rotr32(x, 18 as u32) ^ (x >> (3 as u32))
+}
+
+act sha_sig1(x: u32) -> u32 {
+    return sha_rotr32(x, 17 as u32) ^ sha_rotr32(x, 19 as u32) ^ (x >> (10 as u32))
+}
+
+mut g_sha_k: @u32 = null
+
+act sha256_ensure_k() {
+    if g_sha_k != null { return }
+    g_sha_k = heap_alloc(64 * 4) as @u32
+    g_sha_k[0] = 0x428a2f98 as u32; g_sha_k[1] = 0x71374491 as u32; g_sha_k[2] = 0xb5c0fbcf as u32; g_sha_k[3] = 0xe9b5dba5 as u32
+    g_sha_k[4] = 0x3956c25b as u32; g_sha_k[5] = 0x59f111f1 as u32; g_sha_k[6] = 0x923f82a4 as u32; g_sha_k[7] = 0xab1c5ed5 as u32
+    g_sha_k[8] = 0xd807aa98 as u32; g_sha_k[9] = 0x12835b01 as u32; g_sha_k[10] = 0x243185be as u32; g_sha_k[11] = 0x550c7dc3 as u32
+    g_sha_k[12] = 0x72be5d74 as u32; g_sha_k[13] = 0x80deb1fe as u32; g_sha_k[14] = 0x9bdc06a7 as u32; g_sha_k[15] = 0xc19bf174 as u32
+    g_sha_k[16] = 0xe49b69c1 as u32; g_sha_k[17] = 0xefbe4786 as u32; g_sha_k[18] = 0x0fc19dc6 as u32; g_sha_k[19] = 0x240ca1cc as u32
+    g_sha_k[20] = 0x2de92c6f as u32; g_sha_k[21] = 0x4a7484aa as u32; g_sha_k[22] = 0x5cb0a9dc as u32; g_sha_k[23] = 0x76f988da as u32
+    g_sha_k[24] = 0x983e5152 as u32; g_sha_k[25] = 0xa831c66d as u32; g_sha_k[26] = 0xb00327c8 as u32; g_sha_k[27] = 0xbf597fc7 as u32
+    g_sha_k[28] = 0xc6e00bf3 as u32; g_sha_k[29] = 0xd5a79147 as u32; g_sha_k[30] = 0x06ca6351 as u32; g_sha_k[31] = 0x14292967 as u32
+    g_sha_k[32] = 0x27b70a85 as u32; g_sha_k[33] = 0x2e1b2138 as u32; g_sha_k[34] = 0x4d2c6dfc as u32; g_sha_k[35] = 0x53380d13 as u32
+    g_sha_k[36] = 0x650a7354 as u32; g_sha_k[37] = 0x766a0abb as u32; g_sha_k[38] = 0x81c2c92e as u32; g_sha_k[39] = 0x92722c85 as u32
+    g_sha_k[40] = 0xa2bfe8a1 as u32; g_sha_k[41] = 0xa81a664b as u32; g_sha_k[42] = 0xc24b8b70 as u32; g_sha_k[43] = 0xc76c51a3 as u32
+    g_sha_k[44] = 0xd192e819 as u32; g_sha_k[45] = 0xd6990624 as u32; g_sha_k[46] = 0xf40e3585 as u32; g_sha_k[47] = 0x106aa070 as u32
+    g_sha_k[48] = 0x19a4c116 as u32; g_sha_k[49] = 0x1e376c08 as u32; g_sha_k[50] = 0x2748774c as u32; g_sha_k[51] = 0x34b0bcb5 as u32
+    g_sha_k[52] = 0x391c0cb3 as u32; g_sha_k[53] = 0x4ed8aa4a as u32; g_sha_k[54] = 0x5b9cca4f as u32; g_sha_k[55] = 0x682e6ff3 as u32
+    g_sha_k[56] = 0x748f82ee as u32; g_sha_k[57] = 0x78a5636f as u32; g_sha_k[58] = 0x84c87814 as u32; g_sha_k[59] = 0x8cc70208 as u32
+    g_sha_k[60] = 0x90befffa as u32; g_sha_k[61] = 0xa4506ceb as u32; g_sha_k[62] = 0xbef9a3f7 as u32; g_sha_k[63] = 0xc67178f2 as u32
+}
+
+// Transforms a single 64-byte block updating the 8 hash words.
+act sha256_transform(s: @Sha256State, block: @u8) {
+    sha256_ensure_k()
+    mut w: @u32 = heap_alloc(64 * 4) as @u32
+
+    mut t: usize = 0
+    loop t < 16 {
+        let b0 = block[t * 4] as u32
+        let b1 = block[t * 4 + 1] as u32
+        let b2 = block[t * 4 + 2] as u32
+        let b3 = block[t * 4 + 3] as u32
+        w[t] = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3
+        t += 1
+    }
+
+    loop t < 64 {
+        w[t] = sha_sig1(w[t - 2]) + w[t - 7] + sha_sig0(w[t - 15]) + w[t - 16]
+        t += 1
+    }
+
+    mut a = s.h0; mut b = s.h1; mut c = s.h2; mut d = s.h3
+    mut e = s.h4; mut f = s.h5; mut g = s.h6; mut h = s.h7
+
+    mut i: usize = 0
+    loop i < 64 {
+        let t1 = h + sha_sigma1(e) + sha_ch(e, f, g) + g_sha_k[i] + w[i]
+        let t2 = sha_sigma0(a) + sha_maj(a, b, c)
+        h = g
+        g = f
+        f = e
+        e = d + t1
+        d = c
+        c = b
+        b = a
+        a = t1 + t2
+        i += 1
+    }
+
+    s.h0 = s.h0 + a; s.h1 = s.h1 + b; s.h2 = s.h2 + c; s.h3 = s.h3 + d
+    s.h4 = s.h4 + e; s.h5 = s.h5 + f; s.h6 = s.h6 + g; s.h7 = s.h7 + h
+
+    heap_free(w as @u8)
+}
+
+// Initializes a SHA-256 context with standard NIST FIPS initial hash values.
+act sha256_init(s: @Sha256State) {
+    if s == null { return }
+    s.h0 = 0x6a09e667 as u32
+    s.h1 = 0xbb67ae85 as u32
+    s.h2 = 0x3c6ef372 as u32
+    s.h3 = 0xa54ff53a as u32
+    s.h4 = 0x510e527f as u32
+    s.h5 = 0x9b05688c as u32
+    s.h6 = 0x1f83d9ab as u32
+    s.h7 = 0x5be0cd19 as u32
+    if s.buf == null {
+        s.buf = heap_alloc(64)
+    }
+    s.buf_len = 0
+    s.total_bytes = 0 as u64
+}
+
+// Feeds binary data into the SHA-256 context.
+act sha256_update(s: @Sha256State, data: @u8, len: usize) {
+    if s == null or data == null or len == 0 { return }
+    s.total_bytes = s.total_bytes + (len as u64)
+
+    mut i: usize = 0
+    loop i < len {
+        s.buf[s.buf_len] = data[i]
+        s.buf_len += 1
+        if s.buf_len == 64 {
+            sha256_transform(s, s.buf)
+            s.buf_len = 0
+        }
+        i += 1
+    }
+}
+
+// Feeds a string into the SHA-256 context.
+act sha256_update_str(s: @Sha256State, text: string) {
+    if s == null or text == null { return }
+    let len = str.len(text)
+    if len == 0 { return }
+    sha256_update(s, text as @u8, len)
+}
+
+// Finalizes the hash, writes 32 digest bytes to out_digest, and cleans up context buffer.
+act sha256_final(s: @Sha256State, out_digest: @u8) {
+    if s == null or out_digest == null { return }
+
+    // 1. Append 0x80 bit marker
+    s.buf[s.buf_len] = 0x80 as u8
+    s.buf_len += 1
+
+    // 2. Pad with zeroes
+    if s.buf_len > 56 {
+        loop s.buf_len < 64 {
+            s.buf[s.buf_len] = 0 as u8
+            s.buf_len += 1
+        }
+        sha256_transform(s, s.buf)
+        s.buf_len = 0
+    }
+
+    loop s.buf_len < 56 {
+        s.buf[s.buf_len] = 0 as u8
+        s.buf_len += 1
+    }
+
+    // 3. Append 64-bit big-endian bit length
+    let total_bits = s.total_bytes * (8 as u64)
+    s.buf[56] = ((total_bits >> 56) & (0xFF as u64)) as u8
+    s.buf[57] = ((total_bits >> 48) & (0xFF as u64)) as u8
+    s.buf[58] = ((total_bits >> 40) & (0xFF as u64)) as u8
+    s.buf[59] = ((total_bits >> 32) & (0xFF as u64)) as u8
+    s.buf[60] = ((total_bits >> 24) & (0xFF as u64)) as u8
+    s.buf[61] = ((total_bits >> 16) & (0xFF as u64)) as u8
+    s.buf[62] = ((total_bits >> 8) & (0xFF as u64)) as u8
+    s.buf[63] = (total_bits & (0xFF as u64)) as u8
+
+    sha256_transform(s, s.buf)
+
+    // 4. Output big-endian 32-byte hash
+    mut k: usize = 0
+    mut h_val: u32 = 0
+    loop k < 8 {
+        if k == 0 { h_val = s.h0 }
+        else if k == 1 { h_val = s.h1 }
+        else if k == 2 { h_val = s.h2 }
+        else if k == 3 { h_val = s.h3 }
+        else if k == 4 { h_val = s.h4 }
+        else if k == 5 { h_val = s.h5 }
+        else if k == 6 { h_val = s.h6 }
+        else { h_val = s.h7 }
+
+        out_digest[k * 4] = ((h_val >> 24) & (0xFF as u32)) as u8
+        out_digest[k * 4 + 1] = ((h_val >> 16) & (0xFF as u32)) as u8
+        out_digest[k * 4 + 2] = ((h_val >> 8) & (0xFF as u32)) as u8
+        out_digest[k * 4 + 3] = (h_val & (0xFF as u32)) as u8
+        k += 1
+    }
+
+    if s.buf != null {
+        heap_free(s.buf)
+        s.buf = null
+    }
+}
+
+// Computes 32 raw bytes of SHA-256 for a byte slice.
+act sha256_bytes(data: @u8, len: usize, out_digest: @u8) {
+    mut s: Sha256State
+    s.buf = null
+    sha256_init(@s)
+    sha256_update(@s, data, len)
+    sha256_final(@s, out_digest)
+}
+
+// Finalizes the SHA-256 context and returns a 64-character lowercase hexadecimal string.
+act sha256_final_hex(s: @Sha256State) -> string {
+    mut digest: @u8 = heap_alloc(32)
+    sha256_final(s, digest)
+    let hex_res = bytes_to_hex(digest, 32)
+    heap_free(digest)
+    return hex_res
+}
+
+// Computes a 64-character lowercase hex string SHA-256 digest of binary data.
+act sha256_hash(data: @u8, len: usize) -> string {
+    mut digest: @u8 = heap_alloc(32)
+    sha256_bytes(data, len, digest)
+    let hex_res = bytes_to_hex(digest, 32)
+    heap_free(digest)
+    return hex_res
+}
+
+// Computes a 64-character lowercase hex string SHA-256 digest of a string.
+act sha256_hash_str(text: string) -> string {
+    if text == null { return sha256_hash(null, 0) }
+    return sha256_hash(text as @u8, str.len(text))
+}

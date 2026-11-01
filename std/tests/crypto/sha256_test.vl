@@ -1,0 +1,38 @@
+// Tests for std.crypto.sha256
+use "../../crypto/sha256.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    let h1 = sha256_hash_str("")
+    if h1 != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" {
+        io.println_str("FAIL: sha256 empty mismatch")
+        return 1
+    }
+
+    let h2 = sha256_hash_str("abc")
+    if h2 != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad" {
+        io.println_str("FAIL: sha256 abc mismatch")
+        return 2
+    }
+
+    let h3 = sha256_hash_str("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq")
+    if h3 != "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1" {
+        io.println_str("FAIL: sha256 long mismatch")
+        return 3
+    }
+
+    // Test streaming API
+    mut state: Sha256State
+    state.buf = null
+    sha256_init(@state)
+    sha256_update_str(@state, "ab")
+    sha256_update_str(@state, "c")
+    let h4 = sha256_final_hex(@state)
+    if h4 != h2 {
+        io.println_str("FAIL: sha256 streaming mismatch")
+        return 4
+    }
+
+    io.println_str("OK: std.crypto.sha256 tests passed")
+    return 0
+}

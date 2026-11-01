@@ -1,0 +1,38 @@
+// Tests for std.crypto.md5
+use "../../crypto/md5.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    let m1 = md5_hash_str("")
+    if m1 != "d41d8cd98f00b204e9800998ecf8427e" {
+        io.println_str("FAIL: md5 empty mismatch")
+        return 1
+    }
+
+    let m2 = md5_hash_str("abc")
+    if m2 != "900150983cd24fb0d6963f7d28e17f72" {
+        io.println_str("FAIL: md5 abc mismatch")
+        return 2
+    }
+
+    let m3 = md5_hash_str("message digest")
+    if m3 != "f96b697d7cb7938d525a2f31aaf161d0" {
+        io.println_str("FAIL: md5 message digest mismatch")
+        return 3
+    }
+
+    // Test streaming API
+    mut state: Md5State
+    state.buf = null
+    md5_init(@state)
+    md5_update_str(@state, "ab")
+    md5_update_str(@state, "c")
+    let m4 = md5_final_hex(@state)
+    if m4 != m2 {
+        io.println_str("FAIL: md5 streaming mismatch")
+        return 4
+    }
+
+    io.println_str("OK: std.crypto.md5 tests passed")
+    return 0
+}

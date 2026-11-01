@@ -2051,3 +2051,39 @@ flowchart TD
   - Pytest suite `tests/test_std_net.py` passed (4/4 tests in 5.91s).
   - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
   - Self-hosted bootstrap chain re-verified with fixed-point SHA-256 determinism.
+
+### Phase 17: `std.crypto` (Pure Velo Cryptographic Primitives & Kernel CSPRNG)
+#### Task 17.1: Cryptographic Hashes, MACs, Hex Encoding, and CSPRNG (`std.crypto`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo had no standard cryptographic hashing, integrity verification, or secure random generation primitives.
+  - Applications needing checksums, password hashing, HMAC message signing, or nonces had to write custom C wrappers or use insecure pseudorandom generators with high modulo bias.
+  - Windows linking did not include `-ladvapi32` by default, preventing seamless invocation of kernel CSPRNG APIs like `SystemFunction036` (`RtlGenRandom`).
+* **Fix Applied**:
+  - Implemented the `std.crypto` standard library module and subcomponents in `std/crypto/`:
+    - `std/crypto/hex.vl`: Lowercase and uppercase ASCII hexadecimal encoding (`bytes_to_hex`) and decoding (`hex_to_bytes`), plus nibble translation helpers.
+    - `std/crypto/sha256.vl`: FIPS 180-4 compliant 256-bit Secure Hash Algorithm engine featuring 64 round constants, streaming context (`Sha256State`), `sha256_init`, `sha256_update`, `sha256_update_str`, `sha256_final`, `sha256_final_hex`, and one-shot string/buffer hash functions (`sha256_hash`, `sha256_hash_str`).
+    - `std/crypto/md5.vl`: RFC 1321 compliant 128-bit MD5 message digest engine with 64 constants, streaming context (`Md5State`), `md5_init`, `md5_update`, `md5_update_str`, `md5_final`, `md5_final_hex`, and one-shot functions (`md5_hash`, `md5_hash_str`).
+    - `std/crypto/crc32.vl`: IEEE 802.3 32-bit Cyclic Redundancy Check engine with fast 256-word table auto-generation, streaming (`crc32_init`, `crc32_update`, `crc32_update_str`, `crc32_final`), and formatting (`crc32_hash`, `crc32_hash_str`, `crc32_hex`).
+    - `std/crypto/hmac.vl`: RFC 2104 Keyed-Hashing for Message Authentication (HMAC-SHA256) with key normalization, inner/outer pad hashing, and one-shot helpers (`hmac_sha256`, `hmac_sha256_hash`, `hmac_sha256_str`).
+    - `std/crypto/rand.vl`: Cryptographically secure pseudorandom number generator (CSPRNG) backed by Windows kernel entropy (`advapi32.dll`'s `SystemFunction036` / `RtlGenRandom`) and SplitMix64 fallback (`crypto_random_bytes`, `crypto_random_u32`, `crypto_random_u64`, `crypto_random_range` with rejection sampling to eliminate modulo bias, `crypto_random_hex`).
+    - `std/crypto.vl`: Standard library umbrella module exporting the complete cryptographic interface.
+  - Automatic Advapi32 Linking:
+    - Updated `src/backend/driver_cc.vl` to include `-ladvapi32` under MinGW GCC on Windows.
+  - Toolchain & Installer Packaging:
+    - Updated `website/public/velo-std.zip` and `website/public/velo-std.tar.gz` to include `std/crypto/`.
+    - Synced global installation in `~/.velo/std/crypto/`.
+    - Updated `website/src/data/stdlib.ts` documentation catalog with complete `std.crypto` signatures and examples.
+* **Residual Limitation**:
+  - Asymmetric public-key cryptography (e.g. Ed25519, RSA) and authenticated encryption with associated data (AEAD, e.g. AES-256-GCM, ChaCha20-Poly1305) are planned for a subsequent sub-phase.
+* **Verification**:
+  - Native SHA-256 test passed: `bin/velo.exe run std/tests/crypto/sha256_test.vl` (tested empty string, "abc", multi-block 56-byte string, and streaming API against NIST vectors).
+  - Native MD5 test passed: `bin/velo.exe run std/tests/crypto/md5_test.vl` (tested empty string, "abc", "message digest", and streaming API against RFC 1321 vectors).
+  - Native CRC-32 test passed: `bin/velo.exe run std/tests/crypto/crc32_test.vl` (tested empty string, "123456789", "Hello, Velo!", and streaming API).
+  - Native HMAC-SHA256 test passed: `bin/velo.exe run std/tests/crypto/hmac_test.vl` (tested short, empty, and 80-byte long keys against RFC 2104 vectors).
+  - Native CSPRNG test passed: `bin/velo.exe run std/tests/crypto/rand_test.vl` (tested 16 random bytes, u32, u64, 100 bounded range samples, and hex nonce).
+  - Native Hex test passed: `bin/velo.exe run std/tests/crypto/hex_test.vl`.
+  - Native umbrella import test passed: `bin/velo.exe run std/tests/crypto_module_import_test.vl`.
+  - Integrated `std_module_import_test.vl` passed with `use std.crypto`.
+  - Pytest suite `tests/test_std_crypto.py` passed (7/7 tests in 9.23s).
+  - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
+  - Rebuilt 3-generation self-hosted bootstrap chain (`scripts/bootstrap.bat` -> Gen 2 -> Gen 3 -> canonical `bin/velo.exe` -> `bootstrap.c`), confirming fixed-point SHA-256 determinism (`1784c30a1a05335fa1bda189b1a4f58fc9c1fce0ded2819832f08ad4e7e8ac5d`).

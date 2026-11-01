@@ -1,0 +1,110 @@
+// std.crypto.rand — Cryptographically Secure Pseudorandom Number Generation (CSPRNG).
+use "hex.vl"
+use "../mem/heap.vl"
+
+// Windows CryptoAPI / Kernel CSPRNG binding (advapi32.dll)
+extern act SystemFunction036(pbBuffer: @u8, dwLen: u32) -> u8
+
+// SplitMix64 fallback PRNG state
+mut g_rand_fallback_seed: u64 = 0x853C49E65D6F2B8E as u64
+
+act rand_splitmix64() -> u64 {
+    g_rand_fallback_seed = g_rand_fallback_seed + (0x9E3779B97F4A7C15 as u64)
+    mut z: u64 = g_rand_fallback_seed
+    z = (z ^ (z >> 30)) * (0xBF58476D1CE4E5B9 as u64)
+    z = (z ^ (z >> 27)) * (0x94D049BB133111EB as u64)
+    return z ^ (z >> 31)
+}
+
+// Fills the destination buffer with cryptographically secure random bytes from the OS CSPRNG.
+// Returns true on success, false if OS entropy source was unavailable.
+act crypto_random_bytes(buf: @u8, len: usize) -> bool {
+    if buf == null { return false }
+    if len == 0 { return true }
+
+    mut remaining: usize = len
+    mut offset: usize = 0
+    loop remaining > 0 {
+        mut chunk: u32 = 0x40000000 as u32
+        if (remaining as u64) < (chunk as u64) {
+            chunk = remaining as u32
+        }
+        let ptr = ((buf as usize) + offset) as @u8
+        let ok = SystemFunction036(ptr, chunk)
+        if ok == (0 as u8) {
+            // OS CSPRNG failed: fallback fill
+            mut i: usize = 0
+            loop i < remaining {
+                let r = rand_splitmix64()
+                buf[offset + i] = (r & (0xFF as u64)) as u8
+                i += 1
+            }
+            return false
+        }
+        offset += chunk as usize
+        remaining -= chunk as usize
+    }
+    return true
+}
+
+// Generates a cryptographically secure random unsigned 32-bit integer.
+act crypto_random_u32() -> u32 {
+    mut b: @u8 = heap_alloc(4)
+    if b == null { return 0 as u32 }
+    crypto_random_bytes(b, 4)
+    let b0 = b[0] as u32
+    let b1 = b[1] as u32
+    let b2 = b[2] as u32
+    let b3 = b[3] as u32
+    heap_free(b)
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+}
+
+// Generates a cryptographically secure random unsigned 64-bit integer.
+act crypto_random_u64() -> u64 {
+    mut b: @u8 = heap_alloc(8)
+    if b == null { return 0 as u64 }
+    crypto_random_bytes(b, 8)
+    let b0 = b[0] as u64
+    let b1 = b[1] as u64
+    let b2 = b[2] as u64
+    let b3 = b[3] as u64
+    let b4 = b[4] as u64
+    let b5 = b[5] as u64
+    let b6 = b[6] as u64
+    let b7 = b[7] as u64
+    heap_free(b)
+    let lo: u64 = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
+    let hi: u64 = b4 | (b5 << 8) | (b6 << 16) | (b7 << 24)
+    return lo | (hi << 32)
+}
+
+// Generates a cryptographically secure random integer uniformly distributed in [min, max].
+act crypto_random_range(min: u64, max: u64) -> u64 {
+    if min >= max {
+        return min
+    }
+    let range: u64 = (max - min) + 1
+    // Rejection sampling threshold to eliminate modulo bias
+    let limit: u64 = (0xFFFFFFFFFFFFFFFF as u64) - ((0xFFFFFFFFFFFFFFFF as u64) % range)
+    mut r: u64 = crypto_random_u64()
+    loop r >= limit {
+        r = crypto_random_u64()
+    }
+    return min + (r % range)
+}
+
+// Generates a random hexadecimal string representing byte_count secure random bytes.
+act crypto_random_hex(byte_count: usize) -> string {
+    if byte_count == 0 {
+        return ""
+    }
+    mut buf: @u8 = heap_alloc(byte_count)
+    if buf == null {
+        return ""
+    }
+    crypto_random_bytes(buf, byte_count)
+    let hex_res = bytes_to_hex(buf, byte_count)
+    heap_free(buf)
+    return hex_res
+}

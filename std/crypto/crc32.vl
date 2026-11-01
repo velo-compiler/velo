@@ -1,0 +1,82 @@
+// std.crypto.crc32 — IEEE 802.3 compliant 32-bit Cyclic Redundancy Check (CRC-32).
+use "../mem/heap.vl"
+use "hex.vl"
+
+mut g_crc32_table: @u32 = null
+
+// Computes the 256-element CRC-32 table using polynomial 0xEDB88320.
+act crc32_ensure_table() {
+    if g_crc32_table != null { return }
+    g_crc32_table = heap_alloc(256 * 4) as @u32
+    mut i: usize = 0
+    loop i < 256 {
+        mut c: u32 = i as u32
+        mut j: usize = 0
+        loop j < 8 {
+            if (c & (1 as u32)) != (0 as u32) {
+                c = (0xEDB88320 as u32) ^ (c >> (1 as u32))
+            } else {
+                c = c >> (1 as u32)
+            }
+            j += 1
+        }
+        g_crc32_table[i] = c
+        i += 1
+    }
+}
+
+// Returns the initial CRC accumulator value.
+act crc32_init() -> u32 {
+    return 0xFFFFFFFF as u32
+}
+
+// Progressively feeds data into an active CRC-32 accumulator.
+act crc32_update(crc: u32, data: @u8, len: usize) -> u32 {
+    if data == null or len == 0 { return crc }
+    crc32_ensure_table()
+    mut c = crc
+    mut i: usize = 0
+    loop i < len {
+        let idx = ((c ^ (data[i] as u32)) & (0xFF as u32)) as usize
+        c = g_crc32_table[idx] ^ (c >> (8 as u32))
+        i += 1
+    }
+    return c
+}
+
+// Feeds string characters into an active CRC-32 accumulator.
+act crc32_update_str(crc: u32, text: string) -> u32 {
+    if text == null { return crc }
+    let len = str.len(text)
+    if len == 0 { return crc }
+    return crc32_update(crc, text as @u8, len)
+}
+
+// Inverts the accumulator to produce the final IEEE 802.3 CRC-32 checksum.
+act crc32_final(crc: u32) -> u32 {
+    return crc ^ (0xFFFFFFFF as u32)
+}
+
+// Computes the full CRC-32 checksum for a slice of bytes.
+act crc32_hash(data: @u8, len: usize) -> u32 {
+    let acc = crc32_update(crc32_init(), data, len)
+    return crc32_final(acc)
+}
+
+// Computes the full CRC-32 checksum for a string.
+act crc32_hash_str(text: string) -> u32 {
+    if text == null { return 0 as u32 }
+    return crc32_hash(text as @u8, str.len(text))
+}
+
+// Formats a 32-bit CRC checksum into an 8-character uppercase/lowercase hexadecimal string.
+act crc32_hex(val: u32) -> string {
+    mut bytes: @u8 = heap_alloc(4)
+    bytes[0] = ((val >> 24) & (0xFF as u32)) as u8
+    bytes[1] = ((val >> 16) & (0xFF as u32)) as u8
+    bytes[2] = ((val >> 8) & (0xFF as u32)) as u8
+    bytes[3] = (val & (0xFF as u32)) as u8
+    let s = bytes_to_hex(bytes, 4)
+    heap_free(bytes)
+    return s
+}

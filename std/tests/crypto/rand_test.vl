@@ -1,0 +1,59 @@
+// Tests for std.crypto.rand (CSPRNG)
+use "../../crypto/rand.vl"
+use "../../io.vl"
+use "../../mem/heap.vl"
+
+act main() -> i32 {
+    // 1. Test random bytes
+    mut buf: @u8 = heap_alloc(16)
+    let ok = crypto_random_bytes(buf, 16)
+    if !ok {
+        io.println_str("FAIL: crypto_random_bytes returned false")
+        heap_free(buf)
+        return 1
+    }
+
+    mut sum: u32 = 0
+    mut i: usize = 0
+    loop i < 16 {
+        sum += buf[i] as u32
+        i += 1
+    }
+    heap_free(buf)
+    if sum == 0 {
+        io.println_str("FAIL: crypto_random_bytes returned all zeroes")
+        return 2
+    }
+
+    // 2. Test random integers
+    let u1 = crypto_random_u32()
+    let u2 = crypto_random_u32()
+    // It's technically possible but astronomically unlikely that both are 0
+    if u1 == 0 and u2 == 0 {
+        io.println_str("FAIL: crypto_random_u32 returned two zero values")
+        return 3
+    }
+
+    let u64_val = crypto_random_u64()
+
+    // 3. Test random range: 100 samples between 50 and 150
+    mut sample: usize = 0
+    loop sample < 100 {
+        let r = crypto_random_range(50 as u64, 150 as u64)
+        if r < (50 as u64) or r > (150 as u64) {
+            io.println_str("FAIL: crypto_random_range out of bounds")
+            return 4
+        }
+        sample += 1
+    }
+
+    // 4. Test random hex
+    let hex_val = crypto_random_hex(16)
+    if str.len(hex_val) != 32 {
+        io.println_str("FAIL: crypto_random_hex length != 32")
+        return 5
+    }
+
+    io.println_str("OK: std.crypto.rand tests passed")
+    return 0
+}

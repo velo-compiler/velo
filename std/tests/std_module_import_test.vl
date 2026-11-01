@@ -9,6 +9,7 @@ use std.time
 use std.math
 use std.os
 use std.net
+use std.crypto
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -70,6 +71,18 @@ act main() -> i32 {
     if net_parse_ipv4("127.0.0.1") != 0x0100007F as u32 { return 16 }
     let saddr = socket_addr_make("127.0.0.1", 8080)
     if saddr.port != 8080 { return 17 }
+
+    // std.crypto: SHA-256, MD5, CRC-32, HMAC-SHA256, CSPRNG
+    let sh = sha256_hash_str("test")
+    if sh != "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" { return 18 }
+    let md = md5_hash_str("test")
+    if md != "098f6bcd4621d373cade4e832627b4f6" { return 19 }
+    let cr = crc32_hash_str("test")
+    if cr != (0xd87f7e0c as u32) { return 20 }
+    let hm = hmac_sha256_str("key", "test")
+    if hm != "02afb56304902c656fcb737cdd03de6205bb6d401da2812efd9b2d36a08af159" { return 21 }
+    let rn = crypto_random_range(10 as u64, 20 as u64)
+    if rn < (10 as u64) or rn > (20 as u64) { return 22 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0

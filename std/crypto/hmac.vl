@@ -1,0 +1,89 @@
+// std.crypto.hmac — RFC 2104 compliant Keyed-Hashing for Message Authentication (HMAC-SHA256).
+use "sha256.vl"
+use "hex.vl"
+use "../mem/heap.vl"
+
+// Computes a 32-byte HMAC-SHA256 authentication code into out_digest.
+act hmac_sha256(key: @u8, key_len: usize, data: @u8, data_len: usize, out_digest: @u8) {
+    if out_digest == null { return }
+
+    mut k: @u8 = heap_alloc(64)
+    mut i: usize = 0
+    loop i < 64 {
+        k[i] = 0 as u8
+        i += 1
+    }
+
+    // Step 1: Normalize key to 64 bytes
+    if key != null and key_len > 0 {
+        if key_len > 64 {
+            sha256_bytes(key, key_len, k)
+        } else {
+            mut ki: usize = 0
+            loop ki < key_len {
+                k[ki] = key[ki]
+                ki += 1
+            }
+        }
+    }
+
+    // Step 2: Inner hash = SHA256((k ^ 0x36) || data)
+    mut ipad: @u8 = heap_alloc(64)
+    mut opad: @u8 = heap_alloc(64)
+    mut j: usize = 0
+    loop j < 64 {
+        ipad[j] = k[j] ^ (0x36 as u8)
+        opad[j] = k[j] ^ (0x5C as u8)
+        j += 1
+    }
+
+    mut inner_state: Sha256State
+    inner_state.buf = null
+    sha256_init(@inner_state)
+    sha256_update(@inner_state, ipad, 64)
+    if data != null and data_len > 0 {
+        sha256_update(@inner_state, data, data_len)
+    }
+    mut inner_digest: @u8 = heap_alloc(32)
+    sha256_final(@inner_state, inner_digest)
+
+    // Step 3: Outer hash = SHA256((k ^ 0x5C) || inner_digest)
+    mut outer_state: Sha256State
+    outer_state.buf = null
+    sha256_init(@outer_state)
+    sha256_update(@outer_state, opad, 64)
+    sha256_update(@outer_state, inner_digest, 32)
+    sha256_final(@outer_state, out_digest)
+
+    // Clean up temporary buffers
+    heap_free(k)
+    heap_free(ipad)
+    heap_free(opad)
+    heap_free(inner_digest)
+}
+
+// Computes a 64-character lowercase hex HMAC-SHA256 string for binary data.
+act hmac_sha256_hash(key: @u8, key_len: usize, data: @u8, data_len: usize) -> string {
+    mut digest: @u8 = heap_alloc(32)
+    hmac_sha256(key, key_len, data, data_len, digest)
+    let hex_res = bytes_to_hex(digest, 32)
+    heap_free(digest)
+    return hex_res
+}
+
+// Computes a 64-character lowercase hex HMAC-SHA256 string for string inputs.
+act hmac_sha256_str(key: string, data: string) -> string {
+    mut k_ptr: @u8 = null
+    mut k_len: usize = 0
+    if key != null {
+        k_ptr = key as @u8
+        k_len = str.len(key)
+    }
+    mut d_ptr: @u8 = null
+    mut d_len: usize = 0
+    if data != null {
+        d_ptr = data as @u8
+        d_len = str.len(data)
+    }
+    return hmac_sha256_hash(k_ptr, k_len, d_ptr, d_len)
+}

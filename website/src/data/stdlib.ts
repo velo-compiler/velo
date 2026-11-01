@@ -500,6 +500,99 @@ export const STDLIB_MODULES: StdlibModule[] = [
     ]
   },
   {
+    name: 'std.crypto',
+    category: 'Security & Cryptography',
+    tier: 1,
+    description: 'Pure Velo cryptographic primitives: FIPS 180-4 SHA-256, RFC 1321 MD5, IEEE 802.3 CRC-32, RFC 2104 HMAC-SHA256, Hex encoding/decoding, and OS kernel CSPRNG.',
+    pureVelo: true,
+    functions: [
+      {
+        name: 'sha256_hash_str',
+        signature: 'act sha256_hash_str(text: string) -> string',
+        description: 'Computes a 64-character lowercase hexadecimal SHA-256 digest of a string.',
+        example: 'let hash = sha256_hash_str("Hello, Velo!")'
+      },
+      {
+        name: 'md5_hash_str',
+        signature: 'act md5_hash_str(text: string) -> string',
+        description: 'Computes a 32-character lowercase hexadecimal MD5 checksum of a string.',
+        example: 'let md5sum = md5_hash_str("payload")'
+      },
+      {
+        name: 'crc32_hash_str',
+        signature: 'act crc32_hash_str(text: string) -> u32',
+        description: 'Computes an IEEE 802.3 32-bit Cyclic Redundancy Check (CRC-32) checksum of a string.',
+        example: 'let crc = crc32_hash_str("123456789")'
+      },
+      {
+        name: 'crc32_hex',
+        signature: 'act crc32_hex(val: u32) -> string',
+        description: 'Formats a 32-bit CRC checksum into an 8-character lowercase hexadecimal string.',
+        example: 'let hex_crc = crc32_hex(crc)'
+      },
+      {
+        name: 'hmac_sha256_str',
+        signature: 'act hmac_sha256_str(key: string, data: string) -> string',
+        description: 'Computes an RFC 2104 HMAC-SHA256 message authentication code as a 64-character hex string.',
+        example: 'let sig = hmac_sha256_str("secret-key", "request-payload")'
+      },
+      {
+        name: 'crypto_random_bytes',
+        signature: 'act crypto_random_bytes(buf: @u8, len: usize) -> bool',
+        description: 'Fills a byte buffer with cryptographically secure random bytes from the OS kernel entropy source.',
+        example: 'crypto_random_bytes(key_buf, 32)'
+      },
+      {
+        name: 'crypto_random_u32',
+        signature: 'act crypto_random_u32() -> u32',
+        description: 'Generates a cryptographically secure random unsigned 32-bit integer.',
+        example: 'let id = crypto_random_u32()'
+      },
+      {
+        name: 'crypto_random_u64',
+        signature: 'act crypto_random_u64() -> u64',
+        description: 'Generates a cryptographically secure random unsigned 64-bit integer.',
+        example: 'let token = crypto_random_u64()'
+      },
+      {
+        name: 'crypto_random_range',
+        signature: 'act crypto_random_range(min: u64, max: u64) -> u64',
+        description: 'Generates a cryptographically secure uniform random integer in [min, max] without modulo bias.',
+        example: 'let roll = crypto_random_range(1, 6)'
+      },
+      {
+        name: 'crypto_random_hex',
+        signature: 'act crypto_random_hex(byte_count: usize) -> string',
+        description: 'Generates a secure random hexadecimal string (e.g. for session tokens or UUIDs).',
+        example: 'let nonce = crypto_random_hex(16)'
+      },
+      {
+        name: 'bytes_to_hex',
+        signature: 'act bytes_to_hex(bytes: @u8, len: usize) -> string',
+        description: 'Encodes raw bytes into a lowercase hexadecimal string.',
+        example: 'let hex = bytes_to_hex(raw_buf, 32)'
+      },
+      {
+        name: 'hex_to_bytes',
+        signature: 'act hex_to_bytes(hex_str: string, out_bytes: @u8, max_len: usize) -> usize',
+        description: 'Decodes a hexadecimal string into an output byte buffer.',
+        example: 'let decoded = hex_to_bytes("a1b2c3d4", buf, 4)'
+      }
+    ],
+    types: [
+      {
+        name: 'Sha256State',
+        definition: 'data Sha256State { h0: u32, h1: u32, ... total_bytes: u64 }',
+        description: 'Streaming SHA-256 state context for multi-chunk incremental hashing.'
+      },
+      {
+        name: 'Md5State',
+        definition: 'data Md5State { a: u32, b: u32, c: u32, d: u32, ... total_bytes: u64 }',
+        description: 'Streaming MD5 state context for multi-chunk incremental hashing.'
+      }
+    ]
+  },
+  {
     name: 'std.test',
     category: 'Quality Assurance',
     tier: 2,
