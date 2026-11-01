@@ -1,0 +1,136 @@
+// Tests for std.csv.writer record generation
+use "../../csv/writer.vl"
+use "../../csv/reader.vl"
+use "../../str/builder.vl"
+use "../../mem/arena.vl"
+use "../../test.vl"
+use "../../io.vl"
+
+// Serializes an array of strings into one CSV record and returns it.
+act join_row(fields: @string, count: usize, use_crlf: bool) -> string {
+    return csv_make_row_str(fields, count, use_crlf)
+}
+
+act main() -> i32 {
+    test_reset()
+    test_set_quiet(true)
+    mut arena = arena_init(8192)
+    defer arena_reset(@arena)
+
+    // 1. Streaming writer: plain fields produce no quoting, LF terminator
+    mut sb = sb_init(@arena, 64)
+    mut w = csv_writer_init(@sb, false)
+    csv_writer_field_str(@w, "name")
+    csv_writer_field_str(@w, "qty")
+    csv_writer_end_row(@w)
+    let out1 = sb_to_cstr(@sb) as string
+    assert_eq_str(out1, "name,qty\n", "plain row LF")
+
+    // 2. Field requiring quoting (comma) gets quoted automatically
+    mut sb2 = sb_init(@arena, 64)
+    mut w2 = csv_writer_init(@sb2, false)
+    csv_writer_field_str(@w2, "v1")
+    csv_writer_field_str(@w2, "has,comma")
+    csv_writer_end_row(@w2)
+    assert_eq_str(sb_to_cstr(@sb2) as string, "v1,\"has,comma\"\n", "comma field quoted")
+
+    // 3. Quote-doubling inside quoted fields
+    mut sb3 = sb_init(@arena, 64)
+    mut w3 = csv_writer_init(@sb3, false)
+    csv_writer_field_str(@w3, "say \"hi\"")
+    csv_writer_end_row(@w3)
+    assert_eq_str(sb_to_cstr(@sb3) as string, "\"say \"\"hi\"\"\"\n", "quote doubled")
+
+    // 4. CRLF terminator mode
+    mut sb4 = sb_init(@arena, 64)
+    mut w4 = csv_writer_init(@sb4, true)
+    csv_writer_field_str(@w4, "a")
+    csv_writer_field_str(@w4, "b")
+    csv_writer_end_row(@w4)
+    assert_eq_str(sb_to_cstr(@sb4) as string, "a,b\r\n", "CRLF row")
+
+    // 5. Newline inside field triggers quoting
+    mut sb5 = sb_init(@arena, 64)
+    mut w5 = csv_writer_init(@sb5, false)
+    csv_writer_field_str(@w5, "line1\nline2")
+    csv_writer_end_row(@w5)
+    assert_eq_str(sb_to_cstr(@sb5) as string, "\"line1\nline2\"\n", "newline field quoted")
+
+    // 6. Empty and multi-row sequences track separators correctly
+    mut sb6 = sb_init(@arena, 64)
+    mut w6 = csv_writer_init(@sb6, false)
+    csv_writer_field_str(@w6, "h1")
+    csv_writer_field_str(@w6, "h2")
+    csv_writer_end_row(@w6)
+    csv_writer_field_str(@w6, "d1")
+    csv_writer_field_str(@w6, "d2")
+    csv_writer_end_row(@w6)
+    assert_eq_str(sb_to_cstr(@sb6) as string, "h1,h2\nd1,d2\n", "two rows")
+
+    // 7. Quoting predicate
+    mut v_needs = slice_from_str("a,b")
+    mut v_plain = slice_from_str("plain")
+    assert_true(csv_field_needs_quotes(v_needs), "comma needs quotes")
+    assert_false(csv_field_needs_quotes(v_plain), "plain does not")
+
+    // 8. One-shot escape helper
+    assert_eq_str(csv_escape_str("plain"), "plain", "escape plain passthrough")
+    assert_eq_str(csv_escape_str("a,b"), "\"a,b\"", "escape comma")
+    assert_eq_str(csv_escape_str("say \"x\""), "\"say \"\"x\"\"\"", "escape quotes")
+    assert_eq_str(csv_escape_str(""), "", "escape empty")
+
+    // 9. One-shot record join with @string array
+    let fields3 = arena_alloc(@arena, 3 * 8, 8) as @string
+    if fields3 == null { return 1 }
+    fields3[0] = "alpha"
+    fields3[1] = "be,ta"
+    fields3[2] = "gamma"
+    let joined = csv_make_row_str(fields3, 3, false)
+    assert_eq_str(joined, "alpha,\"be,ta\",gamma\n", "record join")
+
+    let joined_crlf = csv_make_row_str(fields3, 3, true)
+    assert_str_ends_with(joined_crlf, "\r\n", "record join CRLF")
+
+    // 10. CSV roundtrip preserve: writer -> reader -> identical fields
+    mut sb7 = sb_init(@arena, 128)
+    mut w7 = csv_writer_init(@sb7, false)
+    csv_writer_field_str(@w7, "v1,more")
+    csv_writer_field_str(@w7, "say \"x\"")
+    csv_writer_field_str(@w7, "line1\nline2")
+    csv_writer_field_str(@w7, "")
+    csv_writer_end_row(@w7)
+
+    mut r7 = csv_reader_init(sb_to_slice(@sb7))
+    mut rec = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    assert_true(csv_read_record(@r7, @arena, @rec), "roundtrip parse")
+    assert_eq_i64(rec.count as i64, 4 as i64, "roundtrip field count")
+    assert_eq_str(csv_record_field_str(@rec, 0, @arena), "v1,more", "roundtrip comma")
+    assert_eq_str(csv_record_field_str(@rec, 1, @arena), "say \"x\"", "roundtrip quotes")
+    assert_str_contains(csv_record_field_str(@rec, 2, @arena), "line1", "roundtrip newline")
+    assert_eq_str(csv_record_field_str(@rec, 3, @arena), "", "roundtrip empty")
+
+    // 11. Multi-record roundtrip through one writer stream
+    mut sb8 = sb_init(@arena, 128)
+    mut w8 = csv_writer_init(@sb8, false)
+    csv_writer_field_str(@w8, "h1")
+    csv_writer_field_str(@w8, "h2")
+    csv_writer_end_row(@w8)
+    csv_writer_field_str(@w8, "a,1")
+    csv_writer_field_str(@w8, "b")
+    csv_writer_end_row(@w8)
+
+    mut r8 = csv_reader_init(sb_to_slice(@sb8))
+    mut rec8 = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    assert_true(csv_read_record(@r8, @arena, @rec8), "stream row 1")
+    assert_eq_str(csv_record_field_str(@rec8, 0, @arena), "h1", "stream row 1 field")
+    assert_true(csv_read_record(@r8, @arena, @rec8), "stream row 2")
+    assert_eq_str(csv_record_field_str(@rec8, 0, @arena), "a,1", "stream row 2 field")
+    assert_false(csv_read_record(@r8, @arena, @rec8), "stream EOF")
+
+    if test_get_failed_asserts() != 0 {
+        return 1
+    }
+
+    io.println_str("OK: std.csv writer tests passed")
+    return 0
+}

@@ -14,6 +14,7 @@ use std.http
 use std.log
 use std.test
 use std.encoding
+use std.csv
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -115,6 +116,20 @@ act main() -> i32 {
     if b64_t != "dmVsbw==" { return 31 }
     let b32_t = base32_encode_str("velo")
     if b32_t != "OZSWY3Y=" { return 32 }
+
+    // std.csv: streaming record parsing and record generation
+    mut csv_arena = arena_init(4096)
+    defer arena_reset(@csv_arena)
+    mut csv_r = csv_reader_init_str("name,qty\nwrench,4")
+    mut crec = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    if !csv_read_record(@csv_r, @csv_arena, @crec) or crec.count != 2 { return 33 }
+    if !csv_read_record(@csv_r, @csv_arena, @crec) { return 34 }
+    if csv_record_field_str(@crec, 0, @csv_arena) != "wrench" { return 35 }
+    let csv_fields = arena_alloc(@csv_arena, 2 * 8, 8) as @string
+    if csv_fields == null { return 36 }
+    csv_fields[0] = "k"
+    csv_fields[1] = "v,1"
+    if csv_make_row_str(csv_fields, 2, false) != "k,\"v,1\"\n" { return 37 }
 
     println_str("PASS: native use std.* imports succeeded")
     return 0

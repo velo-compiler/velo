@@ -1065,6 +1065,116 @@ export const STDLIB_MODULES: StdlibModule[] = [
         example: 'let val = binary_get_u64_le(buf)'
       }
     ]
+  },
+  {
+    name: 'std.csv',
+    category: 'Serialization & Codecs',
+    tier: 1,
+    description: 'RFC 4180 compliant streaming CSV record parser with zero-copy field views and arena-backed quote unescaping, plus a minimal-quoting record generator with LF / CRLF terminators.',
+    pureVelo: true,
+    functions: [
+      {
+        name: 'csv_reader_init',
+        signature: 'act csv_reader_init(s: StrSlice) -> CsvReader',
+        description: 'Initializes a streaming CSV reader over an in-memory byte range.',
+        example: 'mut r = csv_reader_init(sb_to_slice(@sb))'
+      },
+      {
+        name: 'csv_reader_init_str',
+        signature: 'act csv_reader_init_str(s: string) -> CsvReader',
+        description: 'Initializes a streaming CSV reader over a string.',
+        example: 'mut r = csv_reader_init_str("id,name")'
+      },
+      {
+        name: 'csv_read_record',
+        signature: 'act csv_read_record(r: @CsvReader, arena: @Arena, out: @CsvRecord) -> bool',
+        description: 'Parses the next RFC 4180 record into zero-copy field views. Returns false at end of input or after a recorded parse error.',
+        example: 'loop csv_read_record(@r, @arena, @rec) { process(@rec) }'
+      },
+      {
+        name: 'csv_record_field',
+        signature: 'act csv_record_field(rec: @CsvRecord, index: usize) -> StrSlice',
+        description: 'Returns the zero-copy byte view of the field at index, or an empty slice when out of bounds.',
+        example: 'let name = csv_record_field(@rec, 1)'
+      },
+      {
+        name: 'csv_record_field_str',
+        signature: 'act csv_record_field_str(rec: @CsvRecord, index: usize, arena: @Arena) -> string',
+        description: 'Materializes the field at index as a null-terminated string in arena memory.',
+        example: "let name_str = csv_record_field_str(@rec, 1, @arena)"
+      },
+      {
+        name: 'csv_record_field_quoted',
+        signature: 'act csv_record_field_quoted(rec: @CsvRecord, index: usize) -> bool',
+        description: 'Returns true when the field was quoted in the source document.',
+        example: 'if csv_record_field_quoted(@rec, 0) { ... }'
+      },
+      {
+        name: 'csv_reader_error_msg',
+        signature: 'act csv_reader_error_msg(r: @CsvReader) -> StrSlice',
+        description: 'Returns the recorded parse error message (empty when no error occurred).',
+        example: 'let msg = csv_reader_error_msg(@r)'
+      },
+      {
+        name: 'csv_writer_init',
+        signature: 'act csv_writer_init(sb: @StrBuilder, use_crlf: bool) -> CsvWriter',
+        description: 'Initializes a record writer over an arena-backed StrBuilder, emitting CRLF or LF record terminators.',
+        example: 'mut w = csv_writer_init(@sb, true)'
+      },
+      {
+        name: 'csv_writer_field',
+        signature: 'act csv_writer_field(w: @CsvWriter, s: StrSlice)',
+        description: 'Appends one field with automatic minimal RFC 4180 quoting and separator insertion.',
+        example: 'csv_writer_field(@w, slice_from_str("v,1"))'
+      },
+      {
+        name: 'csv_writer_field_str',
+        signature: 'act csv_writer_field_str(w: @CsvWriter, s: string)',
+        description: 'Appends one string field to the current record.',
+        example: 'csv_writer_field_str(@w, "qty")'
+      },
+      {
+        name: 'csv_writer_end_row',
+        signature: 'act csv_writer_end_row(w: @CsvWriter)',
+        description: 'Ends the current record with the configured terminator and resets the field counter.',
+        example: 'csv_writer_end_row(@w)'
+      },
+      {
+        name: 'csv_field_needs_quotes',
+        signature: 'act csv_field_needs_quotes(s: StrSlice) -> bool',
+        description: 'Checks whether field content (comma, quote, CR, LF) forces RFC 4180 quoting.',
+        example: 'if csv_field_needs_quotes(field) { ... }'
+      },
+      {
+        name: 'csv_escape_str',
+        signature: 'act csv_escape_str(s: string) -> string',
+        description: 'One-shot field serializer into a heap-allocated CSV-safe string.',
+        example: 'let safe = csv_escape_str("say \"hi\"")'
+      },
+      {
+        name: 'csv_make_row_str',
+        signature: 'act csv_make_row_str(fields: @string, count: usize, use_crlf: bool) -> string',
+        description: 'Serializes an array of fields into a single heap-allocated terminated CSV record string.',
+        example: 'let row = csv_make_row_str(@fields, 3, false)'
+      }
+    ],
+    types: [
+      {
+        name: 'CsvReader',
+        definition: 'data CsvReader { src: StrSlice, pos: usize, row: usize, had_error: bool, err_row: usize, err_msg: StrSlice }',
+        description: 'Streaming cursor over an in-memory CSV document with row numbering and error diagnostics.'
+      },
+      {
+        name: 'CsvRecord',
+        definition: 'data CsvRecord { row: usize, first: @CsvField, count: usize, ok: bool }',
+        description: 'One parsed record: intrusive linked list of zero-copy field views with its 1-based row number.'
+      },
+      {
+        name: 'CsvWriter',
+        definition: 'data CsvWriter { sb: @StrBuilder, fields_in_row: usize, use_crlf: bool }',
+        description: 'Record generator state tracking separator insertion and terminator mode.'
+      }
+    ]
   }
 ];
 

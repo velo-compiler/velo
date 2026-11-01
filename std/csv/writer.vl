@@ -1,0 +1,254 @@
+// std.csv.writer — RFC 4180 compliant CSV field and record generator (zero C runtime dependencies).
+// Provides minimal-quoting field emission into arena-backed StrBuilder streams,
+// configurable LF vs CRLF record terminators, and heap-allocated one-shot
+// field escape and record join convenience functions.
+use "../mem/heap.vl"
+use "../str/builder.vl"
+use "../str/slice.vl"
+
+// CSV structural byte constants used by the generator.
+// (Named distinctly from reader.vl constants to avoid umbrella-symbol collisions.)
+let CSVW_COMMA: u8 = 44                  // ','
+let CSVW_DQUOTE: u8 = 34                 // '"'
+let CSVW_CRLF: u8 = 13                   // '\r'
+
+// Arena-backed CSV record writer state.
+// Tracks how many fields the current row already received so the generator
+// can insert field separators automatically.
+data CsvWriter {
+    sb: @StrBuilder,
+    fields_in_row: usize,
+    use_crlf: bool,
+}
+
+// Initializes a CSV writer over an existing arena-backed StrBuilder.
+// When use_crlf is true, record terminators are emitted as "\r\n", otherwise "\n".
+act csv_writer_init(sb: @StrBuilder, use_crlf: bool) -> CsvWriter {
+    return CsvWriter {
+        sb: sb,
+        fields_in_row: 0,
+        use_crlf: use_crlf,
+    }
+}
+
+// Returns true when the field contains bytes that force RFC 4180 quoting:
+// comma, double quote, carriage return, or line feed.
+act csv_field_needs_quotes(s: StrSlice) -> bool {
+    if s.ptr == null or s.len == 0 {
+        return false
+    }
+    mut i: usize = 0
+    loop i < s.len {
+        let c = s.ptr[i]
+        if c == CSVW_COMMA or c == CSVW_DQUOTE or c == 10 as u8 or c == 13 as u8 {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// Appends field content as an RFC 4180 CSV field into sb.
+// Unquoted-able content is emitted verbatim (zero transformation);
+// content containing separators, quotes, or newlines is wrapped in double
+// quotes with inner quotes doubled.
+act csv_append_field(sb: @StrBuilder, s: StrSlice) {
+    if sb == null {
+        return
+    }
+    if !csv_field_needs_quotes(s) {
+        sb_append_slice(sb, s)
+        return
+    }
+    sb_append_byte(sb, CSVW_DQUOTE)
+    if s.ptr != null {
+        mut i: usize = 0
+        loop i < s.len {
+            let c = s.ptr[i]
+            if c == CSVW_DQUOTE {
+                sb_append_byte(sb, CSVW_DQUOTE)
+                sb_append_byte(sb, CSVW_DQUOTE)
+            } else {
+                sb_append_byte(sb, c)
+            }
+            i += 1
+        }
+    }
+    sb_append_byte(sb, CSVW_DQUOTE)
+}
+
+// Appends one field to the current record, automatically inserting the
+// field separator for all fields after the first.
+act csv_writer_field(w: @CsvWriter, s: StrSlice) {
+    if w == null or w.sb == null {
+        return
+    }
+    if w.fields_in_row > 0 {
+        sb_append_byte(w.sb, CSVW_COMMA)
+    }
+    csv_append_field(w.sb, s)
+    w.fields_in_row += 1
+}
+
+// Appends one string field to the current record.
+act csv_writer_field_str(w: @CsvWriter, s: string) {
+    csv_writer_field(w, slice_from_str(s))
+}
+
+// Ends the current record by emitting the record terminator
+// ("\r\n" or "\n") and resetting the field counter.
+act csv_writer_end_row(w: @CsvWriter) {
+    if w == null or w.sb == null {
+        return
+    }
+    if w.use_crlf {
+        sb_append_byte(w.sb, CSVW_CRLF)
+        sb_append_byte(w.sb, 10 as u8)
+    } else {
+        sb_append_byte(w.sb, 10 as u8)
+    }
+    w.fields_in_row = 0
+}
+
+// Serializes a field into dst starting at byte offset at.
+// Returns the new offset after the (possibly quoted) field.
+act csv_write_field_into(dst: @u8, at: usize, s: StrSlice) -> usize {
+    if dst == null {
+        return at
+    }
+    mut idx = at
+    if !csv_field_needs_quotes(s) {
+        if s.ptr != null {
+            copy(dst + idx, s.ptr, s.len)
+            idx += s.len
+        }
+        return idx
+    }
+    dst[idx] = CSVW_DQUOTE
+    idx += 1
+    if s.ptr != null {
+        mut i: usize = 0
+        loop i < s.len {
+            let c = s.ptr[i]
+            if c == CSVW_DQUOTE {
+                dst[idx] = CSVW_DQUOTE
+                dst[idx + 1] = CSVW_DQUOTE
+                idx += 2
+            } else {
+                dst[idx] = c
+                idx += 1
+            }
+            i += 1
+        }
+    }
+    dst[idx] = CSVW_DQUOTE
+    idx += 1
+    return idx
+}
+
+// Computes the byte length of a field once serialized.
+act csv_field_serialized_len(s: StrSlice) -> usize {
+    if !csv_field_needs_quotes(s) {
+        return s.len
+    }
+    mut quotes = 2
+    if s.ptr != null {
+        mut i: usize = 0
+        loop i < s.len {
+            if s.ptr[i] == CSVW_DQUOTE {
+                quotes += 1
+            }
+            i += 1
+        }
+    }
+    return s.len + quotes
+}
+
+// Serializes count fields (a @string array indexable as fields[i]) into a
+// single heap-allocated CSV record string with the requested terminator.
+// Returns an empty string for null arrays or count == 0.
+act csv_make_row_str(fields: @string, count: usize, use_crlf: bool) -> string {
+    if fields == null or count == 0 {
+        return "" as string
+    }
+
+    mut cap: usize = 0
+    if count > 1 {
+        cap += count - 1
+    }
+    mut i: usize = 0
+    loop i < count {
+        let f = fields[i]
+        mut flen: usize = 0
+        if f != null {
+            flen = raw_str_len(f as @u8)
+        }
+        let sv = StrSlice { ptr: f as @u8, len: flen }
+        cap += csv_field_serialized_len(sv)
+        i += 1
+    }
+    if use_crlf {
+        cap += 2
+    } else {
+        cap += 1
+    }
+
+    let buf = heap_alloc(cap + 1)
+    if buf == null {
+        return "" as string
+    }
+
+    mut out_idx: usize = 0
+    i = 0
+    loop i < count {
+        if i > 0 {
+            buf[out_idx] = CSVW_COMMA
+            out_idx += 1
+        }
+        let f = fields[i]
+        mut flen: usize = 0
+        if f != null {
+            flen = raw_str_len(f as @u8)
+        }
+        out_idx = csv_write_field_into(buf, out_idx, slice_from_raw(f as @u8, flen))
+        i += 1
+    }
+    if use_crlf {
+        buf[out_idx] = CSVW_CRLF
+        buf[out_idx + 1] = 10 as u8
+        out_idx += 2
+    } else {
+        buf[out_idx] = 10 as u8
+        out_idx += 1
+    }
+    buf[out_idx] = 0 as u8
+    return buf as string
+}
+
+// Serializes a single field into a heap-allocated CSV-safe string
+// (quoting and quote-doubling applied when required). No terminator.
+act csv_escape_str(s: string) -> string {
+    if s == null {
+        return "" as string
+    }
+    let v = slice_from_str(s)
+
+    // Worst-case serialized size: every quote doubled plus wrapping quotes.
+    mut extra: usize = 0
+    mut i: usize = 0
+    loop i < v.len {
+        if v.ptr[i] == CSVW_DQUOTE {
+            extra += 1
+        }
+        i += 1
+    }
+    let cap = v.len + extra + 2
+
+    let buf = heap_alloc(cap + 1)
+    if buf == null {
+        return "" as string
+    }
+    let end = csv_write_field_into(buf, 0, v)
+    buf[end] = 0 as u8
+    return buf as string
+}

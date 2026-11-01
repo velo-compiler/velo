@@ -2212,3 +2212,33 @@ flowchart TD
   - Pytest suite `tests/test_std_encoding.py` passed (4/4 tests in 6.39s).
   - All 95 compiler source files strictly < 400 lines (`python scripts/count_lines.py`).
   - Bootstrap snapshot determinism verified (`test_bootstrap_snapshot.py`).
+
+### Phase 22: `std.csv` (RFC 4180 Compliant Streaming CSV Parser & Generator)
+#### Task 22.1: Streaming Record Reader, Zero-Copy Field Views, Quote Unescaping, and Minimal-Quoting Writer (`std.csv`) [COMPLETED] ✅
+* **Former Defect**:
+  - Velo had no standard CSV parsing or generation library. `stdlib_velo.md` specified `use std.csv — Zero-allocation streaming CSV parser and generator` as a planned module, but no `std/csv` source existed in the standard library tree.
+  - Applications requiring CSV serialization had to hand-roll format-specific emitters (e.g. `apps/velostudio/helpers.vl` implemented its own `export_query_csv`) and retry-based hand-written stream parsers (e.g. `real-world-prob-test/05_csv_numeric_telemetry.vl` implemented a bespoke `parse_csv_stream`).
+  - There was no standard RFC 4180 treatment of quoted fields, doubled-quote escaping, field separators inside quotes, embedded record terminators, or CRLF/LF/CR record endings with precise per-row parse error diagnostics.
+* **Fix Applied**:
+  - Implemented the `std.csv` standard library module and subcomponents in `std/csv/`:
+    - `std/csv/reader.vl` (350 lines): RFC 4180 streaming record parser featuring `CsvReader` streaming cursor with 1-based row numbering; `csv_read_record` producing intrusive-linked `CsvRecord` structures of zero-copy `StrSlice` field views (unquoted and escape-free quoted fields never allocate); escape-carrying fields unescaped into regional `std.mem.arena` memory with exact two-pass sizing; CRLF, LF, CR, and EOF record termination; blank-line skipping between records; interior, trailing, and quoted-empty field support; spaces preserved verbatim in bare fields; and precise parse errors (`unterminated quoted field`, `stray data after closing quote`, `out of arena memory`) with row-level diagnostics (`csv_reader_error_row`, `csv_reader_error_msg`); accessors `csv_record_field`, `csv_record_field_str`, `csv_record_field_quoted`, `csv_record_field` bounds safety, and `csv_reader_done`.
+    - `std/csv/writer.vl` (254 lines): minimal-quoting record generator featuring `CsvWriter` streaming over arena-backed `StrBuilder` with automatic separator insertion (`csv_writer_field`, `csv_writer_field_str`, `csv_writer_end_row`), configurable LF vs CRLF terminators, quoting predicate (`csv_field_needs_quotes`), quote-doubling serialization (`csv_append_field`, `csv_write_field_into`), and heap one-shot helpers (`csv_escape_str`, `csv_make_row_str` over `@string` arrays).
+    - `std/csv.vl`: Standard library umbrella module exporting the complete CSV interface.
+  - Packaging, Docs & Integration:
+    - Updated `std/tests/std_module_import_test.vl` to verify all 17 standard library modules together (return codes 33-37).
+    - Synced global installation directory `~/.velo/std/csv/`, `~/.velo/std/csv.vl`, and test files.
+    - Refreshed standalone archive bundles `website/public/velo-std.zip` and `website/public/velo-std.tar.gz`.
+    - Documented `std.csv` with all 14 functions, 3 types, and real examples in `website/src/data/stdlib.ts` (17 documented modules). Website production build verified.
+* **Residual Limitation**:
+  - The reader consumes an entire in-memory buffer (matching the zero-copy design of `std.json`); true incremental parsing from unbuffered streams (chunked `std.io` push adapter) is scheduled for a future sub-phase.
+  - Foreign dialect controls (e.g. tab or semicolon delimiters, custom quote characters for RFC 4180 non-conformant sources) are planned as an options extension on `csv_reader_init`.
+* **Verification**:
+  - Native Reader test passed: `bin/velo.exe run std/tests/csv/reader_test.vl` (13 sections: bare/quoted/escaped fields, CRLF/LF/CR endings, embedded newlines, empty fields, blank-line skipping, spaces preserved, unterminated-quote and stray-data errors, empty input, bounds safety).
+  - Native Writer test passed: `bin/velo.exe run std/tests/csv/writer_test.vl` (11 sections: minimal quoting, CRLF mode, newlines-in-field, two-row sequences, quoting predicate, one-shot escapes, record join, and writer-to-reader roundtrips).
+  - Native umbrella import test passed: `bin/velo.exe run std/tests/csv_module_import_test.vl`.
+  - Integrated 17-module import test passed: `bin/velo.exe run std/tests/std_module_import_test.vl`.
+  - External project test passed: `velo run csv_demo.vl` from `%TEMP%\opencode\csv_demo` via global `~/.velo` resolution.
+  - Pytest suite `tests/test_std_csv.py` passed (3/3 tests).
+  - Full test suite passed: `python -m pytest tests -q` (526/526 tests passed in 446s).
+  - All `std/csv` files strictly < 400 lines (reader 350, writer 254, umbrella 6).
+

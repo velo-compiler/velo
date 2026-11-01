@@ -1,0 +1,6 @@
+// Pure Velo standard CSV library (zero C runtime dependencies).
+// Provides RFC 4180 compliant streaming record parsing with zero-copy
+// field views, arena-backed quote unescaping, and minimal-quoting
+// record generation with configurable LF / CRLF terminators.
+use "csv/reader.vl"
+use "csv/writer.vl"

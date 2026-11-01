@@ -1,0 +1,29 @@
+// Verifies top-level umbrella import: use std.csv
+use std.csv
+use std.mem
+use std.io
+
+act main() -> i32 {
+    mut arena = arena_init(4096)
+    defer arena_reset(@arena)
+
+    // Reader surface reachable through the umbrella
+    mut r = csv_reader_init_str("p,q\n1,2")
+    mut rec = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    if !csv_read_record(@r, @arena, @rec) { return 1 }
+    if rec.count != 2 { return 2 }
+
+    if !csv_read_record(@r, @arena, @rec) { return 3 }
+    if rec.row != 2 { return 4 }
+
+    // Writer surface reachable through the umbrella
+    let fields = arena_alloc(@arena, 2 * 8, 8) as @string
+    if fields == null { return 5 }
+    fields[0] = "k1"
+    fields[1] = "v,1"
+    let row = csv_make_row_str(fields, 2, false)
+    if row != "k1,\"v,1\"\n" { return 6 }
+
+    io.println_str("PASS: std.csv umbrella import all tests passed")
+    return 0
+}

@@ -1,0 +1,350 @@
+// std.csv.reader — RFC 4180 compliant streaming CSV record parser (zero C runtime dependencies).
+// Provides zero-allocation field views for unquoted and escape-free quoted fields,
+// arena-backed unescaping for doubled-quote fields, CRLF/LF/CR record termination,
+// blank-line skipping, and precise per-row parse error diagnostics.
+use "../mem/arena.vl"
+use "../mem/ops.vl"
+use "../str/slice.vl"
+
+// CSV structural byte constants (RFC 4180).
+let CSV_COMMA: u8 = 44   // ','
+let CSV_DQUOTE: u8 = 34  // '"'
+let CSV_LF: u8 = 10      // '\n'
+let CSV_CR: u8 = 13      // '\r'
+
+// Single parsed CSV field: zero-copy view into the source buffer, or
+// into arena memory when the field contained doubled-quote escapes.
+data CsvField {
+    view: StrSlice,
+    quoted: bool,
+    next: @CsvField,
+}
+
+// A fully parsed CSV record: intrusive linked list of field views.
+data CsvRecord {
+    row: usize,
+    first: @CsvField,
+    count: usize,
+    ok: bool,
+}
+
+// Streaming CSV reader state over an in-memory buffer.
+data CsvReader {
+    src: StrSlice,
+    pos: usize,
+    row: usize,
+    had_error: bool,
+    err_row: usize,
+    err_msg: StrSlice,
+}
+
+// Initializes a streaming CSV reader over a StrSlice view.
+act csv_reader_init(s: StrSlice) -> CsvReader {
+    return CsvReader {
+        src: s,
+        pos: 0,
+        row: 0,
+        had_error: false,
+        err_row: 0,
+        err_msg: slice_from_raw(null, 0),
+    }
+}
+
+// Initializes a streaming CSV reader over a null-terminated Velo string.
+act csv_reader_init_str(s: string) -> CsvReader {
+    return csv_reader_init(slice_from_str(s))
+}
+
+// Returns true when the reader has consumed the whole input or recorded an error.
+act csv_reader_done(r: @CsvReader) -> bool {
+    if r == null {
+        return true
+    }
+    return r.had_error or r.pos >= r.src.len
+}
+
+// Returns the 1-based row number of the recorded parse error, or 0 when no error.
+act csv_reader_error_row(r: @CsvReader) -> usize {
+    if r == null or !r.had_error {
+        return 0
+    }
+    return r.err_row
+}
+
+// Returns a StrSlice view over the reader's recorded error message.
+act csv_reader_error_msg(r: @CsvReader) -> StrSlice {
+    if r == null {
+        return slice_from_raw(null, 0)
+    }
+    return r.err_msg
+}
+
+// Records the first parse error encountered during record extraction.
+act csv_set_error(r: @CsvReader, msg: string, row: usize) {
+    if !r.had_error {
+        r.had_error = true
+        r.err_row = row
+        r.err_msg = slice_from_str(msg)
+    }
+}
+
+// Returns the field view at index, or an empty slice when out of bounds.
+act csv_record_field(rec: @CsvRecord, index: usize) -> StrSlice {
+    if rec == null or rec.first == null {
+        return slice_from_raw(null, 0)
+    }
+    mut cur: @CsvField = rec.first
+    mut idx = index
+    loop cur != null {
+        if idx == 0 {
+            return cur.view
+        }
+        idx -= 1
+        cur = cur.next
+    }
+    return slice_from_raw(null, 0)
+}
+
+// Returns true if the field at index was quoted in the source.
+act csv_record_field_quoted(rec: @CsvRecord, index: usize) -> bool {
+    if rec == null or rec.first == null {
+        return false
+    }
+    mut cur: @CsvField = rec.first
+    mut idx = index
+    loop cur != null {
+        if idx == 0 {
+            return cur.quoted
+        }
+        idx -= 1
+        cur = cur.next
+    }
+    return false
+}
+
+// Materializes the field at index as a null-terminated string in arena memory.
+act csv_record_field_str(rec: @CsvRecord, index: usize, arena: @Arena) -> string {
+    if rec == null or arena == null {
+        return "" as string
+    }
+    let v = csv_record_field(rec, index)
+    if v.len == 0 or v.ptr == null {
+        return "" as string
+    }
+    let buf = arena_alloc(arena, v.len + 1, 1)
+    if buf == null {
+        return "" as string
+    }
+    copy(buf, v.ptr, v.len)
+    buf[v.len] = 0 as u8
+    return buf as string
+}
+
+// Consumes record terminator bytes (CRLF, LF, CR) from the current position.
+act csv_consume_newlines(r: @CsvReader) {
+    loop r.pos < r.src.len {
+        let b = r.src.ptr[r.pos]
+        if b == CSV_LF or b == CSV_CR {
+            r.pos += 1
+        } else {
+            break
+        }
+    }
+}
+
+// Parses a quoted field starting at the opening double quote.
+// Returns the unescaped field content view (zero-copy when no escapes),
+// or an empty slice on unterminated-quote error. Always positions r.pos
+// just after the closing quote.
+act csv_scan_quoted(r: @CsvReader, arena: @Arena, out_view: @StrSlice) -> bool {
+    let start = r.pos + 1 // content begins after the opening quote
+
+    // First pass: locate the real closing quote ("" inside content is an escape).
+    mut k = start
+    mut pairs = 0
+    loop k < r.src.len {
+        let c = r.src.ptr[k]
+        if c == CSV_DQUOTE {
+            if k + 1 < r.src.len and r.src.ptr[k + 1] == CSV_DQUOTE {
+                k += 2
+                pairs += 1
+                continue
+            }
+            break
+        }
+        k += 1
+    }
+
+    if k >= r.src.len {
+        csv_set_error(r, "unterminated quoted field", r.row + 1)
+        r.pos = r.src.len
+        return false
+    }
+
+    // Each doubled-quote pair (2 source bytes) unescapes to a single byte.
+    let content_len = k - start - pairs
+    mut view = slice_from_raw(null, 0)
+    if pairs == 0 {
+        view = slice_from_raw(r.src.ptr + start, content_len)
+    } else {
+        let buf = arena_alloc(arena, content_len, 1)
+        if buf != null {
+            mut src_i = start
+            mut dst_i: usize = 0
+            loop src_i < k {
+                let c = r.src.ptr[src_i]
+                if c == CSV_DQUOTE and src_i + 1 < k and r.src.ptr[src_i + 1] == CSV_DQUOTE {
+                    buf[dst_i] = CSV_DQUOTE
+                    src_i += 2
+                } else {
+                    buf[dst_i] = c
+                    src_i += 1
+                }
+                dst_i += 1
+            }
+            view = slice_from_raw(buf, content_len)
+        }
+    }
+
+    out_view[0] = view
+    r.pos = k + 1 // just after the closing quote
+    return true
+}
+
+// Reads the next RFC 4180 record into out (a linked list of zero-copy field
+// views in arena memory). Returns true when a record was parsed; false at
+// clean end-of-input or after recording a parse error (check csv_reader_done).
+act csv_read_record(r: @CsvReader, arena: @Arena, out: @CsvRecord) -> bool {
+    if r == null or r.had_error {
+        return false
+    }
+    if out != null {
+        out.ok = false
+        out.row = 0
+        out.count = 0
+        out.first = null
+    }
+
+    csv_consume_newlines(r)
+    if r.pos >= r.src.len {
+        return false
+    }
+
+    let record_row = r.row + 1
+    mut head: @CsvField = null
+    mut tail: @CsvField = null
+    mut count: usize = 0
+    loop {
+        let field_node = csv_parse_field(r, arena, record_row)
+        if field_node == null {
+            return false
+        }
+        if head == null {
+            head = field_node
+        } else {
+            tail.next = field_node
+        }
+        tail = field_node
+        count += 1
+
+        if r.pos < r.src.len {
+            let c = r.src.ptr[r.pos]
+            if c == CSV_COMMA {
+                // Separator consumed: one more (possibly empty) field follows.
+                r.pos += 1
+                continue
+            }
+            if c == CSV_LF {
+                r.pos += 1
+                break
+            }
+            if c == CSV_CR {
+                r.pos += 1
+                if r.pos < r.src.len and r.src.ptr[r.pos] == CSV_LF {
+                    r.pos += 1
+                }
+                break
+            }
+            // Unreachable: field parsers stop only on separators / EOL.
+            csv_set_error(r, "unexpected character in record", record_row)
+            r.pos = r.src.len
+            return false
+        }
+        break
+    }
+
+    if out != null {
+        out.ok = true
+        out.row = record_row
+        out.count = count
+        out.first = head
+    }
+    r.row = record_row
+    return true
+}
+
+// Returns the byte size of a CsvField node.
+act csv_field_sizeof() -> usize {
+    let dummy: @CsvField = null
+    return (dummy + 1) as usize
+}
+
+// Allocates a zero-initialized CsvField node inside a regional arena.
+act csv_field_alloc(arena: @Arena) -> @CsvField {
+    if arena == null {
+        return null
+    }
+    let sz = csv_field_sizeof()
+    let raw = arena_alloc(arena, sz, 8)
+    if raw == null {
+        return null
+    }
+    set(raw, 0 as u8, sz)
+    return raw as @CsvField
+}
+
+// Parses a single field at r.pos: quoted (with unescaping) or bare/unquoted.
+// Consumes any trailing field separator. Returns a linked field node, or
+// null after recording a parse error.
+act csv_parse_field(r: @CsvReader, arena: @Arena, record_row: usize) -> @CsvField {
+    let node = csv_field_alloc(arena)
+    if node == null {
+        csv_set_error(r, "out of arena memory", record_row)
+        return null
+    }
+    mut view = slice_from_raw(null, 0)
+    mut quoted = false
+
+    if r.src.ptr[r.pos] == CSV_DQUOTE {
+        quoted = true
+        if !csv_scan_quoted(r, arena, @view) {
+            return null
+        }
+        // Only a field separator, record terminator, or EOF may follow.
+        if r.pos < r.src.len {
+            let c = r.src.ptr[r.pos]
+            if c != CSV_COMMA and c != CSV_LF and c != CSV_CR {
+                csv_set_error(r, "stray data after closing quote", record_row)
+                r.pos = r.src.len
+                return null
+            }
+        }
+    } else {
+        let start = r.pos
+        mut k = r.pos
+        loop k < r.src.len {
+            let c = r.src.ptr[k]
+            if c == CSV_COMMA or c == CSV_LF or c == CSV_CR {
+                break
+            }
+            k += 1
+        }
+        view = slice_sub(r.src, start, k)
+        r.pos = k
+    }
+
+    node.view = view
+    node.quoted = quoted
+    node.next = null
+    return node
+}

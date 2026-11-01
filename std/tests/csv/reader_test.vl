@@ -1,0 +1,152 @@
+// Tests for std.csv.reader streaming record parsing
+use "../../csv/reader.vl"
+use "../../mem/arena.vl"
+use "../../test.vl"
+use "../../io.vl"
+
+// Reads the next record and returns its field count, or -1 on failure.
+act record_count(src: string, arena: @Arena) -> i64 {
+    mut r = csv_reader_init_str(src)
+    mut rec = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    if !csv_read_record(@r, arena, @rec) {
+        return -1
+    }
+    return rec.count as i64
+}
+
+act main() -> i32 {
+    test_reset()
+    test_set_quiet(true)
+    mut arena = arena_init(8192)
+    defer arena_reset(@arena)
+
+    // 1. Simple single record with three bare fields
+    mut rec = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    mut r = csv_reader_init_str("a,b,c")
+    assert_true(csv_read_record(@r, @arena, @rec), "parse row 1")
+    assert_eq_i64(rec.count as i64, 3 as i64, "field count")
+    assert_eq_i64(rec.row as i64, 1 as i64, "row number 1")
+    assert_eq_str(csv_record_field_str(@rec, 0, @arena), "a", "field 0")
+    assert_eq_str(csv_record_field_str(@rec, 1, @arena), "b", "field 1")
+    assert_eq_str(csv_record_field_str(@rec, 2, @arena), "c", "field 2")
+    assert_false(csv_record_field_quoted(@rec, 0), "bare field unquoted")
+
+    // 2. Quoted fields (zero-copy inside quotes)
+    mut rec2 = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    mut r2 = csv_reader_init_str("\"hello world\",x,\"y z\"")
+    assert_true(csv_read_record(@r2, @arena, @rec2), "parse quoted")
+    assert_eq_i64(rec2.count as i64, 3 as i64, "quoted field count")
+    assert_eq_str(csv_record_field_str(@rec2, 0, @arena), "hello world", "quoted view")
+    assert_true(csv_record_field_quoted(@rec2, 0), "quoted flag set")
+    assert_false(csv_record_field_quoted(@rec2, 1), "middle bare")
+    assert_true(csv_record_field_quoted(@rec2, 2), "third quoted")
+
+    // 3. Doubled-quote escapes unescaped into arena memory
+    mut rec3 = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    mut r3 = csv_reader_init_str("\"say \"\"hi\"\" now\",end")
+    assert_true(csv_read_record(@r3, @arena, @rec3), "parse escapes")
+    assert_eq_str(csv_record_field_str(@rec3, 0, @arena), "say \"hi\" now", "unescape doubled quotes")
+    assert_eq_str(csv_record_field_str(@rec3, 1, @arena), "end", "trailing field ok")
+
+    // 4. CRLF, LF, and EOF terminated records
+    assert_eq_i64(record_count("a,b\r\n", @arena), 2 as i64, "CRLF terminated")
+    assert_eq_i64(record_count("a,b\n", @arena), 2 as i64, "LF terminated")
+    assert_eq_i64(record_count("a,b", @arena), 2 as i64, "EOF terminated")
+    assert_eq_i64(record_count("a\r\n\r\nb", @arena), 1 as i64, "CRLF blank line skipped")
+
+    // 5. Comma and newline embedded inside quoted fields
+    let multi = "\"v1,more\",\"say \"\"x\"\"\",plain2"
+    mut r4 = csv_reader_init_str(multi)
+    mut rec4 = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    assert_true(csv_read_record(@r4, @arena, @rec4), "parse tricky separators")
+    assert_eq_i64(rec4.count as i64, 3 as i64, "tricky field count")
+    assert_eq_str(csv_record_field_str(@rec4, 0, @arena), "v1,more", "inner comma kept")
+    assert_eq_str(csv_record_field_str(@rec4, 1, @arena), "say \"x\"", "inner quote kept")
+    assert_eq_str(csv_record_field_str(@rec4, 2, @arena), "plain2", "plain trailing")
+
+    let embedded = "\"row1\nrow2\",after"
+    mut r5 = csv_reader_init_str(embedded)
+    mut rec5 = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    assert_true(csv_read_record(@r5, @arena, @rec5), "embedded newline")
+    let f5 = csv_record_field_str(@rec5, 0, @arena)
+    assert_str_contains(f5, "row1\nrow2", "newline preserved")
+    assert_eq_str(csv_record_field_str(@rec5, 1, @arena), "after", "field after newline")
+
+    // 6. Empty fields: interior, trailing comma, and quoted empty
+    mut rec6 = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    mut r6 = csv_reader_init_str("a,,c,")
+    assert_true(csv_read_record(@r6, @arena, @rec6), "empty fields row")
+    assert_eq_i64(rec6.count as i64, 4 as i64, "trailing comma yields empty field")
+    assert_eq_str(csv_record_field_str(@rec6, 1, @arena), "", "interior empty field")
+    assert_eq_str(csv_record_field_str(@rec6, 3, @arena), "", "trailing empty field")
+
+    mut r7 = csv_reader_init_str("\"\",x")
+    mut rec7 = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    assert_true(csv_read_record(@r7, @arena, @rec7), "quoted empty row")
+    assert_eq_i64(rec7.count as i64, 2 as i64, "quoted empty count")
+    assert_eq_str(csv_record_field_str(@rec7, 0, @arena), "", "quoted empty value")
+    assert_true(csv_record_field_quoted(@rec7, 0), "quoted empty flagged")
+
+    // 7. Multiple record iteration + blank-line skipping
+    let table = "h1,h2\n\na,1\nb,2\n"
+    mut r8 = csv_reader_init_str(table)
+    mut rec8 = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    assert_true(csv_read_record(@r8, @arena, @rec8), "header record")
+    assert_eq_i64(rec8.row as i64, 1 as i64, "header row index")
+    assert_eq_str(csv_record_field_str(@rec8, 0, @arena), "h1", "header field 0")
+    assert_true(csv_read_record(@r8, @arena, @rec8), "first data record (blank line skipped)")
+    assert_eq_i64(rec8.row as i64, 2 as i64, "row increment")
+    assert_eq_str(csv_record_field_str(@rec8, 1, @arena), "1", "data field")
+    assert_true(csv_read_record(@r8, @arena, @rec8), "second data record")
+    assert_eq_i64(rec8.row as i64, 3 as i64, "row increment 2")
+    assert_false(csv_read_record(@r8, @arena, @rec8), "EOF after last record")
+    assert_true(csv_reader_done(@r8), "reader done")
+
+    // 8. CR-only (Mac classic) record terminator
+    mut r9 = csv_reader_init_str("a,b\rc,d")
+    mut rec9 = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    assert_true(csv_read_record(@r9, @arena, @rec9), "CR record 1")
+    assert_eq_i64(rec9.count as i64, 2 as i64, "CR record 1 count")
+    assert_true(csv_read_record(@r9, @arena, @rec9), "CR record 2")
+    assert_eq_i64(rec9.row as i64, 2 as i64, "CR record 2 row")
+
+    // 9. Spaces preserved verbatim in bare fields (RFC 4180 strictness)
+    mut r10 = csv_reader_init_str("  spaced ,y")
+    mut rec10 = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    assert_true(csv_read_record(@r10, @arena, @rec10), "spaces in bare field")
+    assert_eq_str(csv_record_field_str(@rec10, 0, @arena), "  spaced ", "spaces preserved")
+
+    // 10. Unterminated quoted field is a recorded error
+    mut r11 = csv_reader_init_str("\"oops")
+    mut rec11 = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    assert_false(csv_read_record(@r11, @arena, @rec11), "unterminated quote fails")
+    assert_true(r11.had_error, "error flag recorded")
+    assert_eq_i64(csv_reader_error_row(@r11) as i64, 1 as i64, "error row 1")
+    let errmsg = csv_reader_error_msg(@r11)
+    assert_str_contains(errmsg.ptr as string, "unterminated", "error message")
+
+    // 11. Stray data after a closing quote is a recorded error
+    mut r12 = csv_reader_init_str("\"valid\"junk,a")
+    mut rec12 = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    assert_false(csv_read_record(@r12, @arena, @rec12), "stray data fails")
+    assert_true(r12.had_error, "stray error flag")
+    let straymsg = csv_reader_error_msg(@r12)
+    assert_str_contains(straymsg.ptr as string, "stray", "stray error message")
+
+    // 12. Empty input yields no records
+    mut r13 = csv_reader_init_str("")
+    mut rec13 = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    assert_false(csv_read_record(@r13, @arena, @rec13), "empty input no record")
+    assert_true(csv_reader_done(@r13), "empty input done")
+
+    // 13. Field accessor bounds safety (out of range returns empty)
+    let oob = csv_record_field(@rec, 99)
+    assert_eq_i64(oob.len as i64, 0 as i64, "out of bounds field empty")
+
+    if test_get_failed_asserts() != 0 {
+        return 1
+    }
+
+    io.println_str("OK: std.csv reader tests passed")
+    return 0
+}
