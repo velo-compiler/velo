@@ -2400,6 +2400,24 @@ flowchart TD
   - Pytest suite `tests/test_std_url.py` passed (5/5 tests).
   - All source files strictly < 400 lines (`python scripts/count_lines.py`).
 
+#### Task 24.2: Heap Buffer Expansion Safety in URL Query Deletion (`url_query_del`) [COMPLETED] ✅
+* **Former Defect**:
+  - In `std/url/query.vl` (`url_query_del`), the destination string buffer was allocated with `heap_alloc(qlen + 1)`, assuming the filtered query string would never exceed the original length. However, `url_query_encode_pair` re-encodes surviving parameters using `url_query_escape`.
+  - If surviving keys or values contained characters that expand upon percent-encoding (such as colons `%3A`, slashes `%2F`, spaces `+`, or multi-byte UTF-8 sequences), re-encoding expanded their length up to 3x, causing the copy loop to write past the allocated buffer and corrupting heap memory.
+  - Additionally, if `vals` allocation failed after `keys` had been allocated, `keys` leaked without being freed.
+* **Fix Applied**:
+  - In `url_query_del` (`std/url/query.vl`), pre-calculated the required buffer size by measuring surviving keys and values: `total_len += str.len(keys[k]) * 3 + str.len(vals[k]) * 3 + 2`, initializing with `qlen + 16` to guarantee ample headroom for separators and null termination.
+  - Handled the edge case where all keys are deleted (`not has_remaining`) by immediately releasing temporary buffers and returning `""` without performing redundant heap allocations.
+  - Added null-safe deallocation in both `url_query_set` and `url_query_del` if memory allocation for temporary parameter arrays partially fails.
+  - Synced update to global installation directory `~/.velo/std/url/query.vl`.
+  - Added regression test `test_std_url_query_del_expansion_safety` in `tests/test_std_url.py` and comprehensive test cases in `std/tests/url/query_test.vl`.
+* **Residual Limitation**:
+  - None. Query parameter deletions with arbitrarily expanding characters are fully bounds-checked and safe against buffer overflows.
+* **Verification**:
+  - Native Query test passed: `bin/velo.exe run std/tests/url/query_test.vl`.
+  - Pytest suite `tests/test_std_url.py` passed (6/6 tests).
+  - Full test suite passed (`python -m pytest tests -q`).
+  - No UTF-8 BOM characters across all `.vl` files.
 
 ---
 

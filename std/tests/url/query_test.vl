@@ -56,6 +56,29 @@ act main() -> i32 {
     if url_query_has(q_del, "b") { return 20 }
     if url_query_get(q_del, "a") != "1" or url_query_get(q_del, "c") != "3" { return 21 }
 
+    // url_query_del with expanding percent-encoded characters (Bug 3.1 regression)
+    let q_exp = url_query_del("msg=hello:world:foo:bar&drop=1", "drop")
+    if url_query_has(q_exp, "drop") { return 23 }
+    if url_query_get(q_exp, "msg") != "hello:world:foo:bar" { return 24 }
+
+    // url_query_del with slashes and colons in surviving param
+    let q_exp2 = url_query_del("data=/path/to:file+name&rm=yes", "rm")
+    if url_query_has(q_exp2, "rm") { return 25 }
+    if url_query_get(q_exp2, "data") != "/path/to:file name" { return 26 }
+
+    // url_query_del deleting the only key
+    let q_only = url_query_del("only=val", "only")
+    if q_only != "" { return 27 }
+
+    // url_query_del deleting all matching duplicate keys
+    let q_dups = url_query_del("x=1&y=2&x=3&z=4", "x")
+    if url_query_has(q_dups, "x") { return 28 }
+    if url_query_get(q_dups, "y") != "2" or url_query_get(q_dups, "z") != "4" { return 29 }
+
+    // url_query_del when key does not exist
+    let q_nox = url_query_del("k1=v1&k2=v2", "missing")
+    if url_query_get(q_nox, "k1") != "v1" or url_query_get(q_nox, "k2") != "v2" { return 30 }
+
     // 7. url_query_encode_pair
     let pair = url_query_encode_pair("search query", "velo & fast")
     if pair != "search+query=velo+%26+fast" { return 22 }

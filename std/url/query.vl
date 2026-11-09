@@ -204,7 +204,11 @@ act url_query_set(query: string, key: string, val: string) -> string {
     // Parse existing keys and vals into temporary arrays
     mut keys: @string = heap_alloc(URL_MAX_PARAMS * 8) as @string
     mut vals: @string = heap_alloc(URL_MAX_PARAMS * 8) as @string
-    if keys == null or vals == null { return query }
+    if keys == null or vals == null {
+        if keys != null { heap_free(keys as @u8) }
+        if vals != null { heap_free(vals as @u8) }
+        return query
+    }
 
     let count = url_query_parse(query, keys, vals, URL_MAX_PARAMS)
     mut found = false
@@ -283,10 +287,33 @@ act url_query_del(query: string, key: string) -> string {
 
     mut keys: @string = heap_alloc(URL_MAX_PARAMS * 8) as @string
     mut vals: @string = heap_alloc(URL_MAX_PARAMS * 8) as @string
-    if keys == null or vals == null { return query }
+    if keys == null or vals == null {
+        if keys != null { heap_free(keys as @u8) }
+        if vals != null { heap_free(vals as @u8) }
+        return query
+    }
 
     let count = url_query_parse(query, keys, vals, URL_MAX_PARAMS)
-    mut buf: @u8 = heap_alloc(qlen + 1)
+
+    // Calculate buffer size: account for 3x expansion of surviving keys and values on percent-encoding
+    mut has_remaining = false
+    mut total_len: usize = qlen + 16
+    mut k: usize = 0
+    loop k < count {
+        if keys[k] != key {
+            has_remaining = true
+            total_len += str.len(keys[k]) * 3 + str.len(vals[k]) * 3 + 2
+        }
+        k += 1
+    }
+
+    if not has_remaining {
+        heap_free(keys as @u8)
+        heap_free(vals as @u8)
+        return ""
+    }
+
+    mut buf: @u8 = heap_alloc(total_len)
     if buf == null {
         heap_free(keys as @u8)
         heap_free(vals as @u8)
