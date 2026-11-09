@@ -47,10 +47,16 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
             if cur.name == "main" {
                 if st.is_test { sb_append_str(@sb, "static int _velo_user_main(int argc, char** argv) {\n") } else { sb_append_str(@sb, "int main(int argc, char** argv) {\n") }
                 sb_append_str(@sb, "g_velo_os_argc = argc;\n"); sb_append_str(@sb, "g_velo_os_argv = argv;\n")
+                st.current_func_ret_type = "i32"
+                st.current_func_name = cur.name
+                st.zone_counter = 0
             } else {
                 if is_anon_act_name(cur.name) { sb_append_str(@sb, "static ") }
                 sb_append_str(@sb, map_type_to_c(cur.return_type)); sb_append_char(@sb, ' '); sb_append_str(@sb, cur.name)
                 emit_param_list(@sb, cur.first_param, cur.param_count); sb_append_str(@sb, " {\n")
+                st.current_func_ret_type = cur.return_type
+                st.current_func_name = cur.name
+                st.zone_counter = 0
             }
 
             enter_scope(st)
@@ -65,7 +71,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
 
             mut cur_d = defers
             loop cur_d != null {
-                emit_c_stmt(@sb, st, cur_d.stmt, 1, @defers)
+                emit_c_cleanup(@sb, st, cur_d, 1, @defers)
                 cur_d = cur_d.next
             }
 

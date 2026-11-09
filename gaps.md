@@ -549,6 +549,24 @@ flowchart TD
   - Code standards: all compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
   - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
 
+#### Task 6.5: Zone Watermarks and Active Arenas Restored on Early Return [COMPLETED] ✅
+* **Former Defect**: In `src/backend/codegen_stmt.vl`, `STMT_ZONE` emitted `velo_zone_push()` (and `velo_zone_enter` / `velo_zone_enter_arena` if sized/custom arena) at the start of a zone block, but emitted `velo_zone_pop()` and `velo_zone_leave` only at the physical end of the block. When an early `return` statement executed inside a `zone` or nested `zone` block, `STMT_RETURN` unrolled deferred statements but never popped active zone watermarks or restored entered arenas. As a result, early returns permanently leaked memory in the thread-local arena and left active arena pointers pointing to transient arenas, causing cumulative memory exhaustion in long-running services.
+* **Fix Applied**:
+  - Unified deferred statements and zone scope exits under an integrated LIFO cleanup stack (`DeferNode`) in `src/backend/codegen_stmt.vl`.
+  - Added unique zone variable numbering (`__zone_wm_<id>`, `__zone_prev_<id>`) via `st.zone_counter` on `SymbolTable` to eliminate C lexical shadowing in nested zone scopes.
+  - Implemented `emit_c_cleanup` to dispatch both user-deferred statements (`STMT_DEFER`) and zone cleanups (`velo_zone_pop`, `velo_zone_leave`, `velo_zone_leave_arena`).
+  - Updated `STMT_RETURN` to evaluate the return expression into a temporary variable (`__ret_val`) before running cleanups (ensuring expressions accessing zone memory are safely evaluated before arena watermarks are popped), then unrolling all active cleanups (inner defers, zone pops/leaves, outer defers) in strict LIFO order before returning.
+  - Added `current_func_ret_type` and `current_func_name` tracking to `SymbolTable`, `src/backend/codegen_c.vl`, and `src/backend/test_gen.vl`.
+  - Added regression tests `test_zone_watermark_popped_on_early_return` and `test_zone_early_return_with_interleaved_defers` in `tests/test_allocators.py` verifying watermark restoration back to baseline on early returns across simple zones, nested zones, custom arenas, sized arenas, and interleaved defers.
+* **Residual Limitation**: Early `break` and `continue` out of loops enclosing `zone` blocks bypass zone cleanups until Bug 2.2 is addressed.
+* **Verification**:
+  - Rebuilt 3-stage bootstrap chain: `scripts/bootstrap.bat`, `bin/velo.exe build src/main.vl -o bin/velo_gen2.exe`, `bin/velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe`, `copy bin/velo_gen3.exe bin/velo.exe`, `bin/velo.exe emit-c src/main.vl -o bootstrap.c`.
+  - Verified determinism: SHA-256 of `emit-c src/main.vl` matches bit-for-bit across Gen2, Gen3, and `bootstrap.c` (`D18366598901B75D2F4B8A66AF83978FEF6CCC9CF5F5FA3B270F536DE47561C9`).
+  - Unit tests: 24/24 passed in `tests/test_allocators.py`.
+  - Full test suite: 556 passed (`python -m pytest tests -q`).
+  - Code standards: all compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
+  - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
+
 ---
 
 ### Systems Application Case Study: VeloKV In-Memory Database (`apps/velokv/`) [COMPLETED] ✅

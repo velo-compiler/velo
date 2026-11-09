@@ -46,6 +46,9 @@ act emit_test_functions(sb: @StringBuilder, st: @SymbolTable, prog: @ProgramNode
             sb_append_str(sb, "static void _velo_test_")
             sb_append_int(sb, idx as i32)
             sb_append_str(sb, "(void) {\n")
+            st.current_func_ret_type = "void"
+            st.current_func_name = ""
+            st.zone_counter = 0
 
             enter_scope(st)
             mut defers: @DeferNode = null
@@ -53,7 +56,7 @@ act emit_test_functions(sb: @StringBuilder, st: @SymbolTable, prog: @ProgramNode
 
             mut cur_d = defers
             loop cur_d != null {
-                emit_c_stmt(sb, st, cur_d.stmt, 1, @defers)
+                emit_c_cleanup(sb, st, cur_d, 1, @defers)
                 cur_d = cur_d.next
             }
             exit_scope(st)

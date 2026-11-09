@@ -521,6 +521,110 @@ class TestAllocatorArchitecture(unittest.TestCase):
             ["p0 = 42, p127 = 99, after_r = 42"]
         )
 
+    def test_zone_watermark_popped_on_early_return(self):
+        """Bug 2.1: Zone watermarks and active arenas must be popped/left on
+        early return statements inside zone blocks to prevent permanent memory leaks."""
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act query_simple() -> i32 {\n"
+            "    zone {\n"
+            "        let p: @i32 = mem.alloc(@i32, 1000)\n"
+            "        p[0] = 42\n"
+            "        if p[0] == 42 {\n"
+            "            return p[0]\n"
+            "        }\n"
+            "    }\n"
+            "    return 0\n"
+            "}\n"
+            "act query_nested() -> i32 {\n"
+            "    zone {\n"
+            "        let p: @i32 = mem.alloc(@i32, 500)\n"
+            "        p[0] = 10\n"
+            "        zone {\n"
+            "            let q: @i32 = mem.alloc(@i32, 500)\n"
+            "            q[0] = 99\n"
+            "            return p[0] + q[0]\n"
+            "        }\n"
+            "    }\n"
+            "    return 0\n"
+            "}\n"
+            "act query_custom(custom: @Allocator) -> i32 {\n"
+            "    zone custom {\n"
+            "        let p: @i32 = mem.alloc(@i32, 500)\n"
+            "        p[0] = 77\n"
+            "        return p[0]\n"
+            "    }\n"
+            "    return 0\n"
+            "}\n"
+            "act query_sized() -> i32 {\n"
+            "    zone 65536 {\n"
+            "        let p: @i32 = mem.alloc(@i32, 500)\n"
+            "        p[0] = 55\n"
+            "        return p[0]\n"
+            "    }\n"
+            "    return 0\n"
+            "}\n"
+            "act main() {\n"
+            "    let base: usize = mem.used()\n"
+            "    let r1 = query_simple()\n"
+            "    let d1: usize = mem.used() - base\n"
+            "    let r2 = query_nested()\n"
+            "    let d2: usize = mem.used() - base\n"
+            "    let custom = mem.create_arena(1048576)\n"
+            "    defer mem.destroy_arena(custom)\n"
+            "    let r3 = query_custom(custom)\n"
+            "    let d3: usize = mem.used() - base\n"
+            "    let r4 = query_sized()\n"
+            "    let d4: usize = mem.used() - base\n"
+            "    io.println(\"r1={r1}, d1={d1}\")\n"
+            "    io.println(\"r2={r2}, d2={d2}\")\n"
+            "    io.println(\"r3={r3}, d3={d3}\")\n"
+            "    io.println(\"r4={r4}, d4={d4}\")\n"
+            "}\n"
+        )
+        res = run_stage("stage2", program, "earlyretzone")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        lines = res.stdout.strip().splitlines()
+        self.assertEqual(lines, [
+            "r1=42, d1=0",
+            "r2=109, d2=0",
+            "r3=77, d3=0",
+            "r4=55, d4=0",
+        ])
+
+    def test_zone_early_return_with_interleaved_defers(self):
+        """Bug 2.1: Defer statements and zone scope exits must unroll in strict
+        LIFO order on early return (inner defers -> zone pop -> outer defers)."""
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act query_defer() -> i32 {\n"
+            "    defer io.println(\"outer_defer\")\n"
+            "    zone {\n"
+            "        defer io.println(\"inner_defer\")\n"
+            "        let p: @i32 = mem.alloc(@i32, 100)\n"
+            "        p[0] = 123\n"
+            "        return p[0]\n"
+            "    }\n"
+            "    return 0\n"
+            "}\n"
+            "act main() {\n"
+            "    let base: usize = mem.used()\n"
+            "    let r = query_defer()\n"
+            "    let d: usize = mem.used() - base\n"
+            "    io.println(\"r={r}, d={d}\")\n"
+            "}\n"
+        )
+        res = run_stage("stage2", program, "earlyretdefer")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        lines = res.stdout.strip().splitlines()
+        self.assertEqual(lines, [
+            "inner_defer",
+            "outer_defer",
+            "r=123, d=0",
+        ])
+
 
 
 if __name__ == "__main__":
