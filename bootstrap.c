@@ -10805,82 +10805,131 @@ const char* format_c_number_literal(const char* source, size_t start, size_t len
     bool has_dot = false;
 #line 223 "src/main.vl"
     bool has_exp = false;
-#line 224 "src/main.vl"
-    size_t i = start;
 #line 225 "src/main.vl"
-    for (int32_t it = 0; ((i < (start + digits_len))); it++) {
+    bool is_hex = (((digits_len >= 2) && (source[start] == '0')) && ((source[(start + 1)] == 'x') || (source[(start + 1)] == 'X')));
 #line 226 "src/main.vl"
-        uint8_t c = source[i];
-#line 227 "src/main.vl"
-        if ((c == '.')) {
-#line 227 "src/main.vl"
-            has_dot = true;
-        }
+    if (((!is_float) && (!is_hex))) {
 #line 228 "src/main.vl"
-        if (((c == 'e') || (c == 'E'))) {
-#line 228 "src/main.vl"
-            has_exp = true;
-        }
+        size_t first_non_zero = (start + digits_len);
 #line 229 "src/main.vl"
-        if ((c != '_')) {
+        size_t j = start;
 #line 230 "src/main.vl"
-            buf[count] = c;
+        for (int32_t it = 0; ((j < (start + digits_len))); it++) {
 #line 231 "src/main.vl"
-            count += 1;
-        }
+            uint8_t c = source[j];
+#line 232 "src/main.vl"
+            if (((c >= '1') && (c <= '9'))) {
 #line 233 "src/main.vl"
-        i += 1;
-    }
+                first_non_zero = j;
+#line 234 "src/main.vl"
+                j = (start + digits_len);
+            } else {
 #line 236 "src/main.vl"
+                j += 1;
+            }
+        }
+#line 239 "src/main.vl"
+        if ((first_non_zero == (start + digits_len))) {
+#line 240 "src/main.vl"
+            buf[count] = '0';
+#line 241 "src/main.vl"
+            count += 1;
+        } else {
+#line 243 "src/main.vl"
+            size_t i = first_non_zero;
+#line 244 "src/main.vl"
+            for (int32_t it = 0; ((i < (start + digits_len))); it++) {
+#line 245 "src/main.vl"
+                uint8_t c = source[i];
+#line 246 "src/main.vl"
+                if ((c != '_')) {
+#line 247 "src/main.vl"
+                    buf[count] = c;
+#line 248 "src/main.vl"
+                    count += 1;
+                }
+#line 250 "src/main.vl"
+                i += 1;
+            }
+        }
+    } else {
+#line 254 "src/main.vl"
+        size_t i = start;
+#line 255 "src/main.vl"
+        for (int32_t it = 0; ((i < (start + digits_len))); it++) {
+#line 256 "src/main.vl"
+            uint8_t c = source[i];
+#line 257 "src/main.vl"
+            if ((c == '.')) {
+#line 257 "src/main.vl"
+                has_dot = true;
+            }
+#line 258 "src/main.vl"
+            if (((c == 'e') || (c == 'E'))) {
+#line 258 "src/main.vl"
+                has_exp = true;
+            }
+#line 259 "src/main.vl"
+            if ((c != '_')) {
+#line 260 "src/main.vl"
+                buf[count] = c;
+#line 261 "src/main.vl"
+                count += 1;
+            }
+#line 263 "src/main.vl"
+            i += 1;
+        }
+    }
+#line 267 "src/main.vl"
     if (is_float) {
-#line 237 "src/main.vl"
+#line 268 "src/main.vl"
         if (((!has_dot) && (!has_exp))) {
-#line 238 "src/main.vl"
+#line 269 "src/main.vl"
             buf[count] = '.';
-#line 238 "src/main.vl"
+#line 269 "src/main.vl"
             buf[(count + 1)] = '0';
-#line 238 "src/main.vl"
+#line 269 "src/main.vl"
             count += 2;
         }
-#line 240 "src/main.vl"
+#line 271 "src/main.vl"
         if (((suffix != NULL && "f64" != NULL) ? (strcmp(suffix, "f64") != 0) : (suffix != "f64"))) {
-#line 241 "src/main.vl"
+#line 272 "src/main.vl"
             buf[count] = 'f';
-#line 241 "src/main.vl"
+#line 272 "src/main.vl"
             count += 1;
         }
     } else {
-#line 244 "src/main.vl"
+#line 275 "src/main.vl"
         if ((((suffix != NULL && "u64" != NULL) ? (strcmp(suffix, "u64") == 0) : (suffix == "u64")) || ((suffix != NULL && "usize" != NULL) ? (strcmp(suffix, "usize") == 0) : (suffix == "usize")))) {
-#line 245 "src/main.vl"
+#line 276 "src/main.vl"
             buf[count] = 'U';
-#line 245 "src/main.vl"
+#line 276 "src/main.vl"
             buf[(count + 1)] = 'L';
-#line 245 "src/main.vl"
+#line 276 "src/main.vl"
             buf[(count + 2)] = 'L';
-#line 245 "src/main.vl"
+#line 276 "src/main.vl"
             count += 3;
         } else
-#line 246 "src/main.vl"
+#line 277 "src/main.vl"
         if ((((suffix != NULL && "i64" != NULL) ? (strcmp(suffix, "i64") == 0) : (suffix == "i64")) || ((suffix != NULL && "isize" != NULL) ? (strcmp(suffix, "isize") == 0) : (suffix == "isize")))) {
-#line 247 "src/main.vl"
+#line 278 "src/main.vl"
             buf[count] = 'L';
-#line 247 "src/main.vl"
+#line 278 "src/main.vl"
             buf[(count + 1)] = 'L';
-#line 247 "src/main.vl"
+#line 278 "src/main.vl"
             count += 2;
         } else
-#line 248 "src/main.vl"
+#line 279 "src/main.vl"
         if (((((suffix != NULL && "u32" != NULL) ? (strcmp(suffix, "u32") == 0) : (suffix == "u32")) || ((suffix != NULL && "u16" != NULL) ? (strcmp(suffix, "u16") == 0) : (suffix == "u16"))) || ((suffix != NULL && "u8" != NULL) ? (strcmp(suffix, "u8") == 0) : (suffix == "u8")))) {
-#line 249 "src/main.vl"
+#line 280 "src/main.vl"
             buf[count] = 'U';
-#line 249 "src/main.vl"
+#line 280 "src/main.vl"
             count += 1;
         }
     }
-#line 253 "src/main.vl"
+#line 284 "src/main.vl"
     buf[count] = ((uint8_t)(0));
-#line 254 "src/main.vl"
+#line 285 "src/main.vl"
     return ((const char*)(buf));
 }
 

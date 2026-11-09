@@ -74,5 +74,60 @@ class TestLiteralFormatting(unittest.TestCase):
         self.assertIn("Sum: 10", res.stdout)
         src_path.unlink()
 
+    def test_decimal_leading_zeros_execution(self):
+        code = """use sys.io
+act main() {
+    let a = 099
+    let b = 017
+    let c = 007
+    let d = 00
+    let e = 0_0
+    let f = 0_17
+    let g = 017_u64
+    let h = 0x00FF
+    let i = 0.5
+    io.println("a: {a}")
+    io.println("b: {b}")
+    io.println("c: {c}")
+    io.println("d: {d}")
+    io.println("e: {e}")
+    io.println("f: {f}")
+    io.println("g: {g}")
+    io.println("h: {h}")
+    io.println("i: {i}")
+}
+"""
+        src_path = self.root_dir / ".velo_cache" / "test_leading_zeros.vl"
+        src_path.write_text(code, encoding="utf-8")
+        try:
+            cmd = [str(self.velo_exe), "run", str(src_path)]
+            res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+            self.assertEqual(res.returncode, 0, f"Run failed: {res.stderr}")
+            self.assertIn("a: 99", res.stdout)
+            self.assertIn("b: 17", res.stdout)
+            self.assertIn("c: 7", res.stdout)
+            self.assertIn("d: 0", res.stdout)
+            self.assertIn("e: 0", res.stdout)
+            self.assertIn("f: 17", res.stdout)
+            self.assertIn("g: 17", res.stdout)
+            self.assertIn("h: 255", res.stdout)
+
+            # Also verify emit-c output format
+            cmd_emit = [str(self.velo_exe), "emit-c", str(src_path)]
+            res_emit = subprocess.run(cmd_emit, capture_output=True, text=True, env=self.env)
+            self.assertEqual(res_emit.returncode, 0, f"emit-c failed: {res_emit.stderr}")
+            # Ensure C source does not have leading zero decimal literals (e.g. 017 or 099)
+            self.assertIn("int32_t a = 99;", res_emit.stdout)
+            self.assertIn("int32_t b = 17;", res_emit.stdout)
+            self.assertIn("int32_t c = 7;", res_emit.stdout)
+            self.assertIn("int32_t d = 0;", res_emit.stdout)
+            self.assertIn("int32_t e = 0;", res_emit.stdout)
+            self.assertIn("int32_t f = 17;", res_emit.stdout)
+            self.assertIn("uint64_t g = 17ULL;", res_emit.stdout)
+            self.assertIn("0x00FF", res_emit.stdout)
+        finally:
+            if src_path.exists():
+                src_path.unlink()
+
 if __name__ == "__main__":
     unittest.main()

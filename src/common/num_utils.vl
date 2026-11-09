@@ -221,16 +221,47 @@ act format_c_number_literal(source: string, start: usize, len: usize, is_float: 
     mut count: usize = 0
     mut has_dot = false
     mut has_exp = false
-    mut i = start
-    loop i < start + digits_len {
-        let c = source[i]
-        if c == '.' { has_dot = true }
-        if c == 'e' or c == 'E' { has_exp = true }
-        if c != '_' {
-            buf[count] = c
-            count += 1
+
+    let is_hex = digits_len >= 2 and source[start] == '0' and (source[start + 1] == 'x' or source[start + 1] == 'X')
+    if not is_float and not is_hex {
+        // Strip leading zeros for decimal integer literals to avoid C treating them as octal
+        mut first_non_zero: usize = start + digits_len
+        mut j = start
+        loop j < start + digits_len {
+            let c = source[j]
+            if c >= '1' and c <= '9' {
+                first_non_zero = j
+                j = start + digits_len
+            } else {
+                j += 1
+            }
         }
-        i += 1
+        if first_non_zero == start + digits_len {
+            buf[count] = '0'
+            count += 1
+        } else {
+            mut i = first_non_zero
+            loop i < start + digits_len {
+                let c = source[i]
+                if c != '_' {
+                    buf[count] = c
+                    count += 1
+                }
+                i += 1
+            }
+        }
+    } else {
+        mut i = start
+        loop i < start + digits_len {
+            let c = source[i]
+            if c == '.' { has_dot = true }
+            if c == 'e' or c == 'E' { has_exp = true }
+            if c != '_' {
+                buf[count] = c
+                count += 1
+            }
+            i += 1
+        }
     }
 
     if is_float {

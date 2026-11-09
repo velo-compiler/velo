@@ -121,6 +121,25 @@ flowchart TD
   - No UTF-8 BOM in any `.vl` file.
   - Full test suite passing (282 tests passed).
 
+#### Task 1.4: Decimal Integer Literal Formatting & Octal Collision Prevention [COMPLETED] ✅
+* **Former Defect**:
+  - In `src/common/num_utils.vl` (`format_c_number_literal`), numeric literals in base 10 (such as `017` or `099`) were copied verbatim into the emitted C string `str_val` along with their leading zeros. In Velo, numbers with leading zeros are valid decimal integer literals (since octal literals explicitly require the `0o` prefix, e.g. `0o17`). When emitted verbatim to C99:
+    1. Literals with non-octal digits like `let a = 099` caused GCC/Clang/MSVC compilation errors: `error: invalid digit '9' in octal constant`.
+    2. Literals with octal digits like `let b = 017` were silently interpreted by the C compiler as octal constants ($1 \times 8 + 7 = 15$), causing runtime evaluation to yield 15 instead of the expected decimal 17.
+* **Fix Applied**:
+  - In `format_c_number_literal` (`src/common/num_utils.vl`), added a dedicated base-10 decimal integer formatting path that activates when `not is_float and not is_hex`.
+  - The scanner locates the first non-zero digit in `start .. start + digits_len`. If all digits are zero (`0`, `00`, `0_0`), it emits a single `'0'`.
+  - If non-zero digits are present (e.g. `017`, `099`, `007`, `0_17`), it skips redundant leading zeros and underscores, emitting clean canonical decimal strings (`17`, `99`, `7`) while preserving type suffixes (`ULL`, `LL`, `U`).
+  - Floats (`0.5`, `01.5`) and hexadecimal literals (`0x00FF`) are retained without alteration.
+* **Residual Limitation**:
+  - None. Decimal integer literals with arbitrary leading zeros and underscores format to clean decimal constants in C99, eliminating both C octal misinterpretation and invalid octal digit compile errors.
+* **Verification**:
+  - Rebuilt 3-stage bootstrap chain: `scripts/bootstrap.bat`, `bin/velo.exe build src/main.vl -o bin/velo_gen2.exe`, `bin/velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe`, `copy bin/velo_gen3.exe bin/velo.exe`, `bin/velo.exe emit-c src/main.vl -o bootstrap.c`.
+  - Verified bit-for-bit SHA-256 fixed-point determinism: Gen2 == Gen3 == `bootstrap.c` (`3613765CB120A38298649E6B42B13E85B41761A54802259CC52ADE511E03D957`).
+  - Added regression test `test_decimal_leading_zeros_execution` in `tests/test_literal_formatting.py` verifying correct runtime evaluation (`099 == 99`, `017 == 17`, `007 == 7`, `00 == 0`, `0_0 == 0`, `0_17 == 17`, `017_u64 == 17ULL`) and emission of clean C literals (`int32_t a = 99;`, `int32_t b = 17;`, etc.).
+  - Code standards: all compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
+  - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
+
 ---
 
 ### Phase 2: Language Ergonomics & Tooling Polish
