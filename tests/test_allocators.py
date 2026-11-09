@@ -224,6 +224,22 @@ class TestAllocatorArchitecture(unittest.TestCase):
             self.assertNotEqual(res.returncode, 0, f"{stage} survived zero capacity!")
             self.assertIn("capacity must be > 0", res.stderr, f"{stage} stderr: {res.stderr}")
 
+    def test_alloc_size_overflow_is_fatal(self):
+        """Bug 1.2: size_t integer overflow in allocation size (e.g. 8 * 2^61)
+        must trigger a loud fatal error instead of wrapping around 0 and returning
+        an overlapping pointer."""
+        program = (
+            "use sys.mem\n"
+            "act main() {\n"
+            "    let huge_count: usize = 2305843009213693952\n"
+            "    let a: @u64 = mem.alloc(@u64, huge_count)\n"
+            "}\n"
+        )
+        for stage in ("stage1", "stage2"):
+            res = run_stage(stage, program, "allocoverflow")
+            self.assertNotEqual(res.returncode, 0, f"{stage} survived size overflow!")
+            self.assertIn("Allocation size overflow", res.stderr, f"{stage} stderr: {res.stderr}")
+
     def test_pool_reuse_across_repeated_entries(self):
         # Allocate far more than one huge arena worth of memory across
         # repeated re-entries; only pool reuse makes this cheap AND safe.

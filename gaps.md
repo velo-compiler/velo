@@ -531,6 +531,24 @@ flowchart TD
   - Code standards: all compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
   - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
 
+#### Task 6.4: Unchecked Integer Overflow Protection in Memory Allocators [COMPLETED] ✅
+* **Former Defect**: In `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h`, memory allocation routines (`velo_mem_alloc`, `velo_alloc_with`, `velo_heap_alloc`, `velo_heap_realloc`, `velo_zone_enter`, `velo_mem_create_arena`) computed `total = size * count` without overflow checks. When `size * count` exceeded `SIZE_MAX` (e.g. `size = 16`, `count = 2^60`), `total` wrapped around to 0. Furthermore, expressions like `z->offset + aligned <= z->cap` wrapped around 0 upon addition overflow, passing capacity bounds checks. The runtime silently treated massive multi-exabyte allocation requests as 0-byte allocations, returning overlapping pointers into active memory and causing silent data corruption and security vulnerabilities.
+* **Fix Applied**:
+  - Implemented `velo_check_alloc_size(size_t size, size_t count)` validating that `count <= (SIZE_MAX - 31) / size`, fatally aborting via `exit(1)` with an explicit diagnostic (`[Velo Fatal Error] Allocation size overflow (%llu * %llu bytes)!`) on any arithmetic overflow or excessive request.
+  - Hardened `velo_mem_alloc`, `velo_alloc_with`, `velo_heap_alloc`, and `velo_heap_realloc` with `velo_check_alloc_size`.
+  - Replaced wrap-prone addition checks (`offset + aligned <= cap`) with subtraction bounds checks (`aligned <= cap - offset`) across primary arenas and secondary chunk spilling logic.
+  - Added overflow guards to `velo_zone_enter` and `velo_mem_create_arena` ensuring arena capacities cannot overflow `SIZE_MAX - 31`.
+  - Added regression test `test_alloc_size_overflow_is_fatal` in `tests/test_allocators.py` asserting that size overflow requests ($2^{61} \times 8$ bytes) terminate with non-zero exit code and explicit error message across Stage 1 and Stage 2.
+* **Residual Limitation**: Very large allocations within valid `size_t` limits that exceed available physical RAM/swap terminate cleanly via OS allocation failure rather than integer overflow.
+* **Verification**:
+  - Rebuilt bootstrap chain: `scripts/bootstrap.bat`, `bin/velo.exe build src/main.vl -o bin/velo_gen2.exe`, `bin/velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe`, `copy bin/velo_gen3.exe bin/velo.exe`, `bin/velo.exe emit-c src/main.vl -o bootstrap.c`.
+  - Verified determinism: SHA-256 of `emit-c src/main.vl` matches bit-for-bit across Gen2, Gen3, and `bootstrap.c` (`35E614478DC2975C96C95D56BFDAB862E7E1F14BF10C49D4B102802B8B546B83`).
+  - Empirical verification: `scratch/audit_runtime/rt_overflow_probe.c` and comprehensive 6-mode probe (`test_overflow_comprehensive.c`) verified all overflow vectors fatally caught.
+  - Unit tests: 22/22 passed in `tests/test_allocators.py`.
+  - Thread local runtime tests: 3/3 passed in `tests/test_thread_local_runtime.py`.
+  - Code standards: all compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
+  - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
+
 ---
 
 ### Systems Application Case Study: VeloKV In-Memory Database (`apps/velokv/`) [COMPLETED] ✅

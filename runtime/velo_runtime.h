@@ -489,6 +489,11 @@ static inline VeloZoneArena* velo_zone_enter(size_t bytes) {
         fprintf(stderr, "Velo Fatal Error: Zone Arena capacity must be > 0!\n");
         exit(1);
     }
+    if (bytes > SIZE_MAX - 31) {
+        fprintf(stderr, "Velo Fatal Error: Allocation size overflow (%llu bytes)!\n",
+                (unsigned long long)bytes);
+        exit(1);
+    }
     VeloZoneArena* prev = velo_zone_active();  // §4.2: per-thread active state
     VeloZoneArena* z = (VeloZoneArena*)malloc(sizeof(VeloZoneArena));
     size_t pick = g_velo_zone_tls_pool_count;
@@ -546,11 +551,25 @@ static inline void velo_zone_leave(VeloZoneArena* prev) {
     g_velo_zone_tls_active = prev;
 }
 
+#ifndef SIZE_MAX
+#define SIZE_MAX ((size_t)-1)
+#endif
+
+static inline size_t velo_check_alloc_size(size_t size, size_t count) {
+    if (size == 0 || count == 0) return 0;
+    if (count > (SIZE_MAX - 31) / size) {
+        fprintf(stderr, "Velo Fatal Error: Allocation size overflow (%llu * %llu bytes)!\n",
+                (unsigned long long)size, (unsigned long long)count);
+        exit(1);
+    }
+    return size * count;
+}
+
 static inline void* velo_mem_alloc(size_t size, size_t count) {
+    size_t total = velo_check_alloc_size(size, count);
     VeloZoneArena* z = velo_zone_active();
-    size_t total = size * count;
     size_t aligned = (total + 7) & ~((size_t)7);
-    if (z->offset + aligned <= z->cap) {
+    if (aligned <= z->cap - z->offset) {
         void* ptr = (void*)&z->base[z->offset];
         z->offset += aligned;
         memset(ptr, 0, aligned);
@@ -562,7 +581,7 @@ static inline void* velo_mem_alloc(size_t size, size_t count) {
         exit(1);
     }
     VeloZoneChunk* cur = z->chunks;
-    if (!cur || cur->offset + aligned > cur->cap) {
+    if (!cur || aligned > cur->cap - cur->offset) {
         cur = velo_zone_new_chunk(z, aligned);
     }
     void* ptr = (void*)&cur->base[cur->offset];
@@ -588,9 +607,9 @@ static inline void* velo_mem_alloc(size_t size, size_t count) {
 typedef VeloZoneArena* VeloAllocator;
 
 static inline void* velo_alloc_with(VeloAllocator a, size_t size, size_t count) {
-    size_t total = size * count;
+    size_t total = velo_check_alloc_size(size, count);
     size_t aligned = (total + 7) & ~((size_t)7);
-    if (a->offset + aligned <= a->cap) {
+    if (aligned <= a->cap - a->offset) {
         void* ptr = (void*)&a->base[a->offset];
         a->offset += aligned;
         memset(ptr, 0, aligned);
@@ -602,7 +621,7 @@ static inline void* velo_alloc_with(VeloAllocator a, size_t size, size_t count) 
         exit(1);
     }
     VeloZoneChunk* cur = a->chunks;
-    if (!cur || cur->offset + aligned > cur->cap) {
+    if (!cur || aligned > cur->cap - cur->offset) {
         cur = velo_zone_new_chunk(a, aligned);
     }
     void* ptr = (void*)&cur->base[cur->offset];
@@ -622,6 +641,11 @@ static inline size_t velo_alloc_used(VeloAllocator a) {
 static inline VeloZoneArena* velo_mem_create_arena(size_t cap) {
     if (cap == 0) {
         fprintf(stderr, "Velo Fatal Error: Arena capacity must be > 0!\n");
+        exit(1);
+    }
+    if (cap > SIZE_MAX - 31) {
+        fprintf(stderr, "Velo Fatal Error: Allocation size overflow (%llu bytes)!\n",
+                (unsigned long long)cap);
         exit(1);
     }
     VeloZoneArena* z = (VeloZoneArena*)malloc(sizeof(VeloZoneArena));
@@ -1086,7 +1110,7 @@ static inline bool velo_is_in_zone(const void* ptr) {
 }
 
 static inline void* velo_heap_alloc(size_t size, size_t count) {
-    size_t total = size * count;
+    size_t total = velo_check_alloc_size(size, count);
     size_t header_size = (sizeof(size_t) + 15) & ~((size_t)15);
     uint8_t* raw = (uint8_t*)malloc(total + header_size);
     if (!raw) {
@@ -1170,7 +1194,7 @@ static inline void* velo_heap_realloc(void* ptr, size_t size, long long count) {
         return NULL;
     }
     size_t old_total = *((size_t*)raw);
-    size_t new_total = size * (size_t)count;
+    size_t new_total = velo_check_alloc_size(size, (size_t)count);
     if (new_total == 0) {
         velo_heap_free(ptr);
         return NULL;
