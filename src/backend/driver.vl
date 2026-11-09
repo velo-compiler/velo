@@ -338,7 +338,16 @@ act compile_source_to_c_test_opts(source_path: string, unsafe_index: bool, is_te
         return null
     }
 
-    return emit_translation_unit(@st, prog)
+    // The semantic gate above only covers the analysis pass. Interpolation and
+    // intrinsic lowering re-enter the type checker during emission, so errors
+    // raised there land in st.error_count AFTER it; without this second gate the
+    // failing C is still written and the CLI reports success.
+    let c_out = emit_translation_unit(@st, prog)
+    if st.error_count > 0 {
+        println_str("[Velo Error] Code generation failed with {st.error_count} errors.")
+        return null
+    }
+    return c_out
 }
 
 act compile_source_to_c_test(source_path: string, unsafe_index: bool, is_test: bool) -> string {

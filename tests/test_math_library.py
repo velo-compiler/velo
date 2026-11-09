@@ -35,9 +35,13 @@ def _strip_stageWrappers(text: str) -> str:
         re.sub(r"^\[Velo Error\] (?:semantic:[0-9]+:[0-9]+ - )?", "", ln.strip())
         for ln in lines
     ]
-    # stage 2's end-of-check summary line is house noise (wordings compare
-    # without it)
-    cleaned = [ln for ln in cleaned if not ln.startswith("Semantic analysis failed")]
+    # stage 2's end-of-pipeline summary lines are house noise (wordings compare
+    # without them): the semantic pass and the emit lane each print one.
+    cleaned = [
+        ln for ln in cleaned
+        if not ln.startswith("Semantic analysis failed")
+        and not ln.startswith("Code generation failed")
+    ]
     return "\n".join(cleaned)
 
 

@@ -39733,76 +39733,85 @@ const char* compile_source_to_c_test_opts(const char* source_path, bool unsafe_i
 #line 338 "src/main.vl"
         return NULL;
     }
-#line 341 "src/main.vl"
-    return emit_translation_unit((&(st)), prog);
+#line 345 "src/main.vl"
+    const char* c_out = emit_translation_unit((&(st)), prog);
+#line 346 "src/main.vl"
+    if ((st.error_count > 0)) {
+#line 347 "src/main.vl"
+        println_str(velo_str_format("[Velo Error] Code generation failed with %lld errors.", (long long)(st.error_count)));
+#line 348 "src/main.vl"
+        return NULL;
+    }
+#line 350 "src/main.vl"
+    return c_out;
 }
 
-#line 344 "src/main.vl"
+#line 353 "src/main.vl"
 const char* compile_source_to_c_test(const char* source_path, bool unsafe_index, bool is_test) {
-#line 345 "src/main.vl"
+#line 354 "src/main.vl"
     return compile_source_to_c_test_opts(source_path, unsafe_index, is_test, false);
 }
 
-#line 348 "src/main.vl"
+#line 357 "src/main.vl"
 const char* compile_source_to_c(const char* source_path, bool unsafe_index) {
-#line 349 "src/main.vl"
+#line 358 "src/main.vl"
     return compile_source_to_c_test_opts(source_path, unsafe_index, false, false);
 }
 
-#line 352 "src/main.vl"
+#line 361 "src/main.vl"
 const char* compile_source_to_c_opts(const char* source_path, bool unsafe_index, bool no_line_directives) {
-#line 353 "src/main.vl"
+#line 362 "src/main.vl"
     return compile_source_to_c_test_opts(source_path, unsafe_index, false, no_line_directives);
 }
 
-#line 357 "src/main.vl"
+#line 366 "src/main.vl"
 const char* generate_docs_for_source(const char* source_path) {
-#line 358 "src/main.vl"
-    const char* source = fs_read_to_str(source_path);
-#line 359 "src/main.vl"
-    if ((source == NULL)) {
-#line 360 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] Failed to read source file: %s", (const char*)(source_path)));
-#line 361 "src/main.vl"
-        return NULL;
-    }
-#line 365 "src/main.vl"
-    size_t slen = ((usize)strlen(source));
 #line 367 "src/main.vl"
-    Lexer lex = create_lexer(source, slen, (slen + 2));
+    const char* source = fs_read_to_str(source_path);
 #line 368 "src/main.vl"
-    lex.file_path = source_path;
+    if ((source == NULL)) {
 #line 369 "src/main.vl"
-    tokenize((&(lex)));
-#line 371 "src/main.vl"
-    if ((lex.dropped_count > 0)) {
-#line 372 "src/main.vl"
-        size_t dropped = lex.dropped_count;
-#line 373 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] %s: lexer token buffer too small; %lld tokens were truncated; documentation output would be incomplete.", (const char*)(source_path), (long long)(dropped)));
+        println_str(velo_str_format("[Velo Error] Failed to read source file: %s", (const char*)(source_path)));
+#line 370 "src/main.vl"
+        return NULL;
+    }
 #line 374 "src/main.vl"
-#line 363 "src/main.vl"
-        heap_free_str(source);
-        return NULL;
-    }
+    size_t slen = ((usize)strlen(source));
+#line 376 "src/main.vl"
+    Lexer lex = create_lexer(source, slen, (slen + 2));
 #line 377 "src/main.vl"
-    Parser p;
+    lex.file_path = source_path;
 #line 378 "src/main.vl"
-    init_parser((&(p)), source_path, source, lex.tokens, lex.token_count);
-#line 379 "src/main.vl"
-    ProgramNode* prog = parse_program((&(p)));
+    tokenize((&(lex)));
 #line 380 "src/main.vl"
-    if ((prog == NULL)) {
+    if ((lex.dropped_count > 0)) {
 #line 381 "src/main.vl"
-#line 363 "src/main.vl"
+        size_t dropped = lex.dropped_count;
+#line 382 "src/main.vl"
+        println_str(velo_str_format("[Velo Error] %s: lexer token buffer too small; %lld tokens were truncated; documentation output would be incomplete.", (const char*)(source_path), (long long)(dropped)));
+#line 383 "src/main.vl"
+#line 372 "src/main.vl"
         heap_free_str(source);
         return NULL;
     }
-#line 384 "src/main.vl"
-#line 363 "src/main.vl"
+#line 386 "src/main.vl"
+    Parser p;
+#line 387 "src/main.vl"
+    init_parser((&(p)), source_path, source, lex.tokens, lex.token_count);
+#line 388 "src/main.vl"
+    ProgramNode* prog = parse_program((&(p)));
+#line 389 "src/main.vl"
+    if ((prog == NULL)) {
+#line 390 "src/main.vl"
+#line 372 "src/main.vl"
+        heap_free_str(source);
+        return NULL;
+    }
+#line 393 "src/main.vl"
+#line 372 "src/main.vl"
     heap_free_str(source);
     return generate_markdown_docs(source_path, source, prog);
-#line 363 "src/main.vl"
+#line 372 "src/main.vl"
     heap_free_str(source);
 }
 

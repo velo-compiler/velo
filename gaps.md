@@ -2453,3 +2453,22 @@ flowchart TD
   - External project test passed: elo run validate_demo.vl in C:\projects	est.
   - Pytest suite 	ests/test_std_validate.py passed (2/2 tests).
   - All source files strictly < 400 lines (python scripts/count_lines.py).
+
+---
+
+### Phase 30: Compiler Codegen-Lane Error Gating
+#### Task 30.1: Fail Compilation on Codegen-Lane Semantic Diagnostics [COMPLETED] ✅
+* **Former Defect**:
+  - The semantic analysis gate in compile_source_to_c_test_opts only checked st.error_count before emission. Intrinsic lowering and string interpolation re-enter the type checker during emit_translation_unit, accumulating errors in st.error_count after the initial check. As a result, the compiler printed [Velo Error] diagnostics but proceeded to write C code, reported 'Successfully built binary!', and exited with code 0.
+* **Fix Applied**:
+  - Added a second error gate in src/backend/driver.vl after emit_translation_unit: if st.error_count > 0, it prints a fatal error message and returns null, causing the build to fail cleanly with non-zero exit code.
+  - Added unit test suite in tests/test_codegen_error_gate.py verifying interpolation member errors, concat errors, and clean builds.
+  - Updated tests/test_math_library.py to strip the emission lane error summary.
+* **Residual Limitation**:
+  - Stage 1 Python compiler is a frozen reference tool; full error parity is maintained for Stage 2 native compiler.
+* **Verification**:
+  - Rebuilt bootstrap chain: scripts/bootstrap.bat, bin/velo.exe build src/main.vl -o bin/velo_gen2.exe, bin/velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe, copy bin/velo_gen3.exe bin/velo.exe, bin/velo.exe emit-c src/main.vl -o bootstrap.c.
+  - Bit-for-bit determinism verified between Gen2, Gen3, and bootstrap.c.
+  - Unit tests: 8/8 passed in tests/test_codegen_error_gate.py.
+  - Test suite: all tests passing.
+  - All source files <= 394 lines (python scripts/count_lines.py).
