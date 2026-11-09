@@ -2610,6 +2610,25 @@ flowchart TD
   - Pytest suite 	ests/test_std_validate.py passed (2/2 tests).
   - All source files strictly < 400 lines (python scripts/count_lines.py).
 
+#### Task 29.2: FQDN Trailing Root Dot Support in Domain Validation (`validate_domain`) [COMPLETED] ✅
+* **Former Defect**:
+  - In `std/validate/net.vl` (`validate_domain`), the function verified `validate_hostname(s)` (which allows a trailing dot for FQDNs per RFC 1123 / DNS standards, e.g. `"example.com."`).
+  - However, `validate_domain` then scanned for `last_dot` across the entire string length and calculated `tld_start = last_dot + 1` and `tld_len = len - tld_start`.
+  - For FQDNs with a trailing root dot (such as `"example.com."`), `last_dot` was the final character (`len - 1`), causing `tld_len` to evaluate to `0 < 2`, which falsely rejected all valid FQDN domain names.
+* **Fix Applied**:
+  - In `validate_domain` (`std/validate/net.vl`), introduced `effective_len` which strips the optional trailing root dot (`if effective_len > 0 and s[effective_len - 1] == '.' { effective_len -= 1 }`).
+  - Scanned for `last_dot` and calculated `tld_len` within `0 .. effective_len`, correctly identifying the TLD label (e.g. `"com"`) before the trailing dot.
+  - Ensured single-label strings with trailing dots (`"example."`) and sub-length domains (`"a.b."`) are rejected as having insufficient labels or length.
+  - Synced update to global installation directory `~/.velo/std/validate/net.vl`.
+  - Added regression test assertions in `std/tests/validate/validate_test.vl` and `test_std_validate_fqdn_domain` in `tests/test_std_validate.py`.
+* **Residual Limitation**:
+  - None. Both standard domains and FQDNs ending with a trailing dot validate correctly with strict label and TLD verification.
+* **Verification**:
+  - Native validate tests passed: `bin/velo.exe run std/tests/validate/validate_test.vl`.
+  - Pytest suite `tests/test_std_validate.py` passed (3/3 tests).
+  - Full test suite passed (`python -m pytest tests -q`).
+  - No UTF-8 BOM characters across all `.vl` files.
+
 ---
 
 ### Phase 30: Compiler Codegen-Lane Error Gating

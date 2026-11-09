@@ -50,7 +50,8 @@ act main() -> i32 {
     if validate_hostname("-invalid.com") or validate_hostname("invalid-.com") { return 29 }
 
     if not validate_domain("velo-lang.org") or not validate_domain("sub.example.co.uk") { return 30 }
-    if validate_domain("localhost") or validate_domain("domain.c") { return 31 }
+    if not validate_domain("example.com.") or not validate_domain("sub.example.co.uk.") { return 32 }
+    if validate_domain("localhost") or validate_domain("domain.c") or validate_domain("example.") or validate_domain("example.c.") or validate_domain("localhost.") { return 31 }
 
     // 4. Web & Identifier validators
     if not validate_email("user@example.com") or not validate_email("first.last+tag@sub.domain.org") { return 40 }

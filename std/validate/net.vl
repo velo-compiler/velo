@@ -192,12 +192,18 @@ act validate_domain(s: string) -> bool {
     let len = str.len(s)
     if len < 4 { return false }
 
+    mut effective_len = len
+    if effective_len > 0 and s[effective_len - 1] == '.' as u8 {
+        effective_len -= 1
+    }
+    if effective_len < 4 { return false }
+
     // Find last dot
     mut last_dot: usize = 0
     mut dot_count: usize = 0
     mut i: usize = 0
 
-    loop i < len {
+    loop i < effective_len {
         if s[i] == '.' as u8 {
             last_dot = i
             dot_count += 1
@@ -209,12 +215,12 @@ act validate_domain(s: string) -> bool {
 
     // TLD is after last dot
     let tld_start = last_dot + 1
-    let tld_len = len - tld_start
+    let tld_len = effective_len - tld_start
     if tld_len < 2 { return false }
 
     // TLD must be alphabetic
     mut ti = tld_start
-    loop ti < len {
+    loop ti < effective_len {
         let c = s[ti]
         let is_alpha = (c >= 'a' as u8 and c <= 'z' as u8) or (c >= 'A' as u8 and c <= 'Z' as u8)
         if not is_alpha {
