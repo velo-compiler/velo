@@ -11,15 +11,13 @@ act pcg64_rotl(x: u64, k: u32) -> u64 {
 }
 
 // Advances the PCG64 state and returns the next output u64 value.
-// Uses the PCG-XSH-RR (xorshift high, random rotation) output function.
+// Uses the PCG-RXS-M-XS (random xorshift, multiply, fixed xorshift) 64-bit output function.
 act pcg64_next(rng: @Pcg64) -> u64 {
     let oldstate: u64 = rng.state
     rng.state = oldstate * (0x5851F42D4C957F2D as u64) + rng.inc
-    // XSH-RR output: 64-bit variant using upper bits of 128-bit state
-    // Simplified to: xorshift the state then rotate
-    let xorshifted: u64 = ((oldstate >> 18) ^ oldstate) >> 27
-    let rot: u32 = (oldstate >> 59) as u32
-    return pcg64_rotl(xorshifted, (64 as u32) - rot)
+    let shift: u32 = ((oldstate >> 59) as u32) + (5 as u32)
+    let word: u64 = ((oldstate >> shift) ^ oldstate) * (0xAEF17502108EF2D9 as u64)
+    return (word >> 43) ^ word
 }
 
 // Returns a uniformly distributed u64 in [0, bound) with no modulo bias.

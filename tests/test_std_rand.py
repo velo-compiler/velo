@@ -74,4 +74,48 @@ act main() -> i32 {
         if src_file.exists():
             src_file.unlink()
 
+def test_std_rand_pcg64_statistical_quality():
+    test_code = """use std.rand
+use sys.io
+
+act main() -> i32 {
+    mut r = rng_seed(42 as u64)
+    mut sum_f: f64 = 0.0
+    mut low_count: usize = 0
+    let n: usize = 10000
+    mut i: usize = 0
+    loop i < n {
+        let f = rand_f64(@r)
+        sum_f = sum_f + f
+        if f < 0.001 {
+            low_count += 1
+        }
+        i += 1
+    }
+    let mean: f64 = sum_f / (n as f64)
+    if mean < 0.485 or mean > 0.515 { return 1 }
+    if low_count > 50 { return 2 }
+    io.println_str("OK: statistical quality passed")
+    return 0
+}
+"""
+    cache_dir = REPO_ROOT / ".velo_cache"
+    cache_dir.mkdir(exist_ok=True)
+    src_file = cache_dir / "test_rand_stats.vl"
+    src_file.write_text(test_code, encoding="utf-8")
+    try:
+        res = subprocess.run(
+            [str(VELO_EXE), "run", str(src_file)],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            env=get_env()
+        )
+        assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+        assert "OK: statistical quality passed" in res.stdout
+    finally:
+        if src_file.exists():
+            src_file.unlink()
+
+
 
