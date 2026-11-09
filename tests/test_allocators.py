@@ -625,6 +625,115 @@ class TestAllocatorArchitecture(unittest.TestCase):
             "r=123, d=0",
         ])
 
+    def test_zone_watermark_popped_on_loop_break_and_continue(self):
+        """Bug 2.2: Zone watermarks and active arenas must be popped/left on
+        break and continue statements inside zone-scoped loops to prevent memory leaks."""
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act test_break_simple() -> usize {\n"
+            "    let base = mem.used()\n"
+            "    loop i in 0..10 {\n"
+            "        zone {\n"
+            "            let p: @i32 = mem.alloc(@i32, 500)\n"
+            "            p[0] = i\n"
+            "            if i == 5 {\n"
+            "                break\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "    return mem.used() - base\n"
+            "}\n"
+            "act test_continue_simple() -> usize {\n"
+            "    let base = mem.used()\n"
+            "    loop i in 0..10 {\n"
+            "        zone {\n"
+            "            let p: @i32 = mem.alloc(@i32, 500)\n"
+            "            p[0] = i\n"
+            "            if i % 2 == 0 {\n"
+            "                continue\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "    return mem.used() - base\n"
+            "}\n"
+            "act test_break_custom(custom: @Allocator) -> usize {\n"
+            "    let base = mem.used()\n"
+            "    loop i in 0..10 {\n"
+            "        zone custom {\n"
+            "            let p: @i32 = mem.alloc(@i32, 500)\n"
+            "            if i == 3 {\n"
+            "                break\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "    return mem.used() - base\n"
+            "}\n"
+            "act test_nested_loops() -> usize {\n"
+            "    let base = mem.used()\n"
+            "    zone {\n"
+            "        let outer_p: @i32 = mem.alloc(@i32, 100)\n"
+            "        loop i in 0..5 {\n"
+            "            zone {\n"
+            "                let inner_p: @i32 = mem.alloc(@i32, 200)\n"
+            "                loop j in 0..5 {\n"
+            "                    zone {\n"
+            "                        let deep_p: @i32 = mem.alloc(@i32, 300)\n"
+            "                        if j == 2 {\n"
+            "                            break\n"
+            "                        }\n"
+            "                    }\n"
+            "                }\n"
+            "                if i == 2 {\n"
+            "                    break\n"
+            "                }\n"
+            "            }\n"
+            "        }\n"
+            "        let outer_used = mem.used() - base\n"
+            "        io.println(\"outer_used={outer_used}\")\n"
+            "    }\n"
+            "    return mem.used() - base\n"
+            "}\n"
+            "act test_shelf_loop_break() -> usize {\n"
+            "    mut s: shelf[i32] = shelf[10, 20, 30, 40, 50]\n"
+            "    let base = mem.used()\n"
+            "    loop x of s {\n"
+            "        zone {\n"
+            "            let p: @i32 = mem.alloc(@i32, 200)\n"
+            "            if x == 30 {\n"
+            "                break\n"
+            "            }\n"
+            "        }\n"
+            "    }\n"
+            "    return mem.used() - base\n"
+            "}\n"
+            "act main() {\n"
+            "    let d_break = test_break_simple()\n"
+            "    let d_cont = test_continue_simple()\n"
+            "    let custom = mem.create_arena(1048576)\n"
+            "    defer mem.destroy_arena(custom)\n"
+            "    let d_custom = test_break_custom(custom)\n"
+            "    let d_nested = test_nested_loops()\n"
+            "    let d_shelf = test_shelf_loop_break()\n"
+            "    io.println(\"d_break={d_break}\")\n"
+            "    io.println(\"d_cont={d_cont}\")\n"
+            "    io.println(\"d_custom={d_custom}\")\n"
+            "    io.println(\"d_nested={d_nested}\")\n"
+            "    io.println(\"d_shelf={d_shelf}\")\n"
+            "}\n"
+        )
+        res = run_stage("stage2", program, "breakcontzone")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        lines = res.stdout.strip().splitlines()
+        self.assertEqual(lines, [
+            "outer_used=400",
+            "d_break=0",
+            "d_cont=0",
+            "d_custom=0",
+            "d_nested=0",
+            "d_shelf=0",
+        ])
+
 
 
 if __name__ == "__main__":

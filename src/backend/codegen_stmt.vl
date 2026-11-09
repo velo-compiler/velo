@@ -20,6 +20,7 @@ use "codegen_match.vl"
 // Intrusive linked list node maintaining active LIFO deferred statements and zone cleanups.
 data DeferNode {
     is_zone: bool
+    is_loop: bool
     stmt: @StmtNode
     zone_id: usize
     zone_has_expr: bool
@@ -27,9 +28,24 @@ data DeferNode {
     next: @DeferNode
 }
 
+// Pushes a loop boundary marker onto the LIFO cleanup stack.
+act push_loop_scope(defers: @@DeferNode) -> @DeferNode {
+    let prev = defers.@
+    mut ld: @DeferNode = mem.alloc(@DeferNode, 1)
+    ld.is_loop = true; ld.is_zone = false; ld.stmt = null; ld.zone_id = 0
+    ld.zone_has_expr = false; ld.zone_is_arena = false; ld.next = defers.@
+    defers.@ = ld
+    return prev
+}
+
+// Pops the loop boundary marker from the LIFO cleanup stack.
+act pop_loop_scope(defers: @@DeferNode, prev: @DeferNode) {
+    defers.@ = prev
+}
+
 // Emits an individual deferred statement or zone scope cleanup.
 act emit_c_cleanup(sb: @StringBuilder, st: @SymbolTable, cur_d: @DeferNode, indent: i32, defers: @@DeferNode) {
-    if cur_d == null { return }
+    if cur_d == null or cur_d.is_loop { return }
     if not cur_d.is_zone {
         emit_c_stmt(sb, st, cur_d.stmt, indent, defers)
     } else {
@@ -210,7 +226,9 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         }
         enter_scope(st)
         define_variable(st, vname, "i32", false, stmt.line, stmt.col)
+        let loop_prev = push_loop_scope(defers)
         emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
+        pop_loop_scope(defers, loop_prev)
         exit_scope(st)
         sb_append_indent(sb, indent)
         sb_append_str(sb, "}\n")
@@ -247,6 +265,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         let zone_df_target: @DeferNode = defers.@
         mut zd: @DeferNode = mem.alloc(@DeferNode, 1)
         zd.is_zone = true
+        zd.is_loop = false
         zd.zone_id = zid
         zd.zone_has_expr = stmt.expr != null
         zd.zone_is_arena = is_arena
@@ -270,6 +289,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
     if stmt.kind == STMT_DEFER {
         mut d: @DeferNode = mem.alloc(@DeferNode, 1)
         d.is_zone = false
+        d.is_loop = false
         d.stmt = stmt.deferred_stmt
         d.zone_id = 0
         d.zone_has_expr = false
@@ -332,13 +352,23 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         return
     }
 
-    // 10. Break statement
+    // 10. Break statement (unrolls loop-local zone cleanups before breaking)
     if stmt.kind == STMT_BREAK {
+        mut cur_d = defers.@
+        loop cur_d != null and not cur_d.is_loop {
+            emit_c_cleanup(sb, st, cur_d, indent, defers)
+            cur_d = cur_d.next
+        }
         sb_append_indent(sb, indent); sb_append_str(sb, "break;\n"); return
     }
 
-    // 11. Continue statement
+    // 11. Continue statement (unrolls loop-local zone cleanups before continuing)
     if stmt.kind == STMT_CONTINUE {
+        mut cur_d = defers.@
+        loop cur_d != null and not cur_d.is_loop {
+            emit_c_cleanup(sb, st, cur_d, indent, defers)
+            cur_d = cur_d.next
+        }
         sb_append_indent(sb, indent); sb_append_str(sb, "continue;\n"); return
     }
 

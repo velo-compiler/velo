@@ -558,12 +558,30 @@ flowchart TD
   - Updated `STMT_RETURN` to evaluate the return expression into a temporary variable (`__ret_val`) before running cleanups (ensuring expressions accessing zone memory are safely evaluated before arena watermarks are popped), then unrolling all active cleanups (inner defers, zone pops/leaves, outer defers) in strict LIFO order before returning.
   - Added `current_func_ret_type` and `current_func_name` tracking to `SymbolTable`, `src/backend/codegen_c.vl`, and `src/backend/test_gen.vl`.
   - Added regression tests `test_zone_watermark_popped_on_early_return` and `test_zone_early_return_with_interleaved_defers` in `tests/test_allocators.py` verifying watermark restoration back to baseline on early returns across simple zones, nested zones, custom arenas, sized arenas, and interleaved defers.
-* **Residual Limitation**: Early `break` and `continue` out of loops enclosing `zone` blocks bypass zone cleanups until Bug 2.2 is addressed.
+* **Residual Limitation**: Resolved in Task 6.6.
 * **Verification**:
   - Rebuilt 3-stage bootstrap chain: `scripts/bootstrap.bat`, `bin/velo.exe build src/main.vl -o bin/velo_gen2.exe`, `bin/velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe`, `copy bin/velo_gen3.exe bin/velo.exe`, `bin/velo.exe emit-c src/main.vl -o bootstrap.c`.
   - Verified determinism: SHA-256 of `emit-c src/main.vl` matches bit-for-bit across Gen2, Gen3, and `bootstrap.c` (`D18366598901B75D2F4B8A66AF83978FEF6CCC9CF5F5FA3B270F536DE47561C9`).
   - Unit tests: 24/24 passed in `tests/test_allocators.py`.
   - Full test suite: 556 passed (`python -m pytest tests -q`).
+  - Code standards: all compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
+  - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
+
+#### Task 6.6: Zone Watermarks and Active Arenas Restored on Loop Break and Continue [COMPLETED] ✅
+* **Former Defect**: In `src/backend/codegen_stmt.vl`, `STMT_BREAK` and `STMT_CONTINUE` emitted raw C `break;` and `continue;` statements without popping active zone watermarks or restoring entered arenas when jumping out of scoped `zone` blocks inside loops. As a result, every `break` or `continue` executed inside a zone-scoped loop permanently leaked all allocations made in that iteration into the outer arena, corrupting active arena state and causing memory exhaustion in long-running processing loops.
+* **Fix Applied**:
+  - Added loop boundary tracking to the integrated cleanup stack (`DeferNode`) via `is_loop: bool`.
+  - Implemented `push_loop_scope(defers)` and `pop_loop_scope(defers, prev)` in `src/backend/codegen_stmt.vl`.
+  - Wrapped loop body statement emission with loop boundary scopes across all loop forms: standard loops in `codegen_stmt.vl`, snapshot collection loops in `shelf_gen.vl`, hash map iteration in `map_gen.vl`, and ring iteration in `ring_gen.vl`.
+  - Updated `STMT_BREAK` and `STMT_CONTINUE` to unroll all loop-local cleanups (calling `emit_c_cleanup` to pop zone watermarks, leave custom/sized arenas, and run zone-local defers) from the top of the stack down to the enclosing `is_loop` boundary before emitting C `break;` or `continue;`.
+  - Ensured outer zones enclosing loops remain untouched when inner loops break or continue.
+  - Added regression test `test_zone_watermark_popped_on_loop_break_and_continue` in `tests/test_allocators.py` verifying zero-leak watermark restoration across simple loop breaks, loop continues, custom arena loop breaks, deeply nested loops with multiple breaks, and collection shelf loops.
+* **Residual Limitation**: None. All exit paths from `zone` blocks (normal block exit, early `return`, `break`, and `continue`) now guarantee 100% watermark restoration and arena preservation.
+* **Verification**:
+  - Rebuilt 3-stage bootstrap chain: `scripts/bootstrap.bat`, `bin/velo.exe build src/main.vl -o bin/velo_gen2.exe`, `bin/velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe`, `copy bin/velo_gen3.exe bin/velo.exe`, `bin/velo.exe emit-c src/main.vl -o bootstrap.c`.
+  - Verified determinism: SHA-256 of `emit-c src/main.vl` matches bit-for-bit across Gen2, Gen3, and `bootstrap.c` (`1928340CF3BE6E7E01D9A2885063C3DE408876AB5D207E39CB55B773AE1A79EF`).
+  - Unit tests: 25/25 passed in `tests/test_allocators.py`.
+  - Full test suite: 557 passed (`python -m pytest tests -q`).
   - Code standards: all compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
   - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
 
