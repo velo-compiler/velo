@@ -126,7 +126,7 @@ act parse_primary(p: @Parser) -> @ExprNode {
         let val = parse_int_from_slice(p.source, tok.start, tok.length)
         mut node = make_int_expr(val, tok.line, tok.col)
         if tok.length >= 1 and p.source[tok.start] == '\'' {
-            if tok.length >= 3 and p.source[tok.start + 1] == '\\' and (p.source[tok.start + 2] == 'u' or p.source[tok.start + 2] == 'x') {
+            if (tok.length >= 3 and p.source[tok.start + 1] == '\\' and (p.source[tok.start + 2] == 'u' or p.source[tok.start + 2] == 'x')) or val > 127 {
                 node.str_val = ""
             } else {
                 node.str_val = copy_slice_to_string(p.source, tok.start, tok.length)

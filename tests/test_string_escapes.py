@@ -82,3 +82,33 @@ def test_example_17_e2e():
     res_sh = subprocess.run(["bin/velo.exe", "run", example_path], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "[SUCCESS] Milestone 1.4: String & Character Escapes Verified!" in res_sh.stdout
+
+def test_multibyte_utf8_char_literals(tmp_path):
+    source = tmp_path / "utf8_chars.vl"
+    source.write_text("""
+use sys.io
+act main() -> i32 {
+    let c_ascii = 'A'
+    let c_e = 'é'
+    let c_copy = '©'
+    let c_euro = '€'
+    let c_heart = '❤'
+    let c_fire = '🔥'
+
+    if c_ascii == 65 and c_e == 233 and c_e == '\\u00e9' and c_copy == 169 and c_copy == '\\u00A9' and c_euro == 8364 and c_heart == 10084 and c_fire == 128293 {
+        io.println("All multibyte UTF-8 char literals match!")
+    }
+    return 0
+}
+""", encoding="utf-8")
+
+    # Run with Python compiler (Stage 1)
+    res_py = subprocess.run([sys.executable, "velo.py", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    assert res_py.returncode == 0
+    assert "All multibyte UTF-8 char literals match!" in res_py.stdout
+
+    # Run with self-hosted compiler (Stage 2)
+    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    assert res_sh.returncode == 0
+    assert "All multibyte UTF-8 char literals match!" in res_sh.stdout
+

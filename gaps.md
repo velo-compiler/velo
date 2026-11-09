@@ -140,6 +140,27 @@ flowchart TD
   - Code standards: all compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
   - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
 
+#### Task 1.5: Multi-Byte UTF-8 Character Literals in Single Quotes (`'é'`, `'€'`, `'🔥'`) [COMPLETED] ✅
+* **Former Defect**:
+  - In `src/frontend/lexer_lit.vl` (`lex_char`), non-escaped characters in single-quoted literals incremented `lex.pos += 1` assuming single-byte ASCII.
+  - Multi-byte UTF-8 characters (e.g. `'é'` with bytes `0xC3 0xA9`) only advanced past the first byte `0xC3`, leaving `0xA9` as an unconsumed stray character and missing the closing single quote `'`. This caused C compilation failure with `error: missing terminating ' character`.
+  - In `src/common/num_utils.vl` (`parse_int_from_slice`), character literals evaluated to `source[start + 1] as i32`, which only extracted the first byte of a multi-byte sequence rather than decoding the Unicode code point.
+  - In `src/frontend/parser_primary.vl`, character literals without `\u` or `\x` copied the raw token slice verbatim into `node.str_val`, which caused GCC to emit `-Wmultichar` warnings and evaluate multi-character constants in an implementation-defined manner.
+* **Fix Applied**:
+  - In `src/frontend/lexer_lit.vl` (`lex_char`), added UTF-8 multi-byte sequence length detection (`0xC0` 2-byte, `0xE0` 3-byte, `0xF0` 4-byte) ensuring `lex.pos` advances past all UTF-8 continuation bytes to the closing quote `'`.
+  - In `src/common/num_utils.vl` (`parse_int_from_slice`), added full RFC 3629 UTF-8 code point decoding for 2-byte (`((b0 & 0x1F) << 6) | (b1 & 0x3F)`), 3-byte, and 4-byte character literals, returning the exact Unicode scalar value (e.g. `'é'` -> `233`, `'©'` -> `169`, `'€'` -> `8364`, `'❤'` -> `10084`, `'🔥'` -> `128293`).
+  - In `src/frontend/parser_primary.vl`, set `node.str_val = ""` when `val > 127`, ensuring non-ASCII and multi-byte character literals are emitted as standard decimal constants in C (`sb_append_int`), eliminating `-Wmultichar` warnings and ensuring seamless portability across GCC, Clang, and MSVC.
+  - Rebuilt the self-hosted bootstrap chain (`bin/velo.exe`) and refreshed `bootstrap.c` snapshot with verified bit-for-bit SHA-256 determinism across Gen2, Gen3, and bootstrap (`58f56ed7c30a43ebaeeb0dc112bd46cc4f4ac5c1343e69969c772b6827211da2`).
+  - Added regression test `test_multibyte_utf8_char_literals` to `tests/test_string_escapes.py` validating 1-byte, 2-byte, 3-byte, and 4-byte character literals, parity with `\uXXXX` escapes, and pattern matching against both Stage 1 and Stage 2 compilers.
+* **Residual Limitation**:
+  - Character literals represent individual Unicode code points (scalar values); grapheme clusters composed of multiple code points (such as flag sequences or skin-tone modifier sequences) remain strings (`"..."`).
+* **Verification**:
+  - Regression test `tests/test_string_escapes.py::test_multibyte_utf8_char_literals` passed across Stage 1 and Stage 2.
+  - Full test suite passed: `python -m pytest tests/test_string_escapes.py -v` (5/5 passed).
+  - Bootstrap determinism test passed: `python -m pytest tests/test_bootstrap_snapshot.py -v` (5/5 passed).
+  - Bit-for-bit SHA-256 compiler determinism verified (`58f56ed7c30a43ebaeeb0dc112bd46cc4f4ac5c1343e69969c772b6827211da2`).
+  - Line count verified $\le 400$ across all compiler sources (`python scripts/count_lines.py`) and zero UTF-8 BOM characters across all `.vl` files.
+
 ---
 
 ### Phase 2: Language Ergonomics & Tooling Polish

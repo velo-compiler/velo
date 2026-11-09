@@ -150,7 +150,7 @@ act lex_string(lex: @Lexer, start_pos: usize, start_line: i32, start_col: i32) {
     add_token(lex, TOK_STRING_LIT, start_pos, str_len, start_line, start_col)
 }
 
-// Tokenizes a single-quoted character literal ('c' or '\xNN' or '\uNNNN').
+// Tokenizes a single-quoted character literal ('c', multi-byte UTF-8, '\xNN', '\uNNNN').
 act lex_char(lex: @Lexer, start_pos: usize, start_line: i32, start_col: i32) {
     let src = lex.source
     let len = lex.source_len
@@ -167,8 +167,17 @@ act lex_char(lex: @Lexer, start_pos: usize, start_line: i32, start_col: i32) {
             lex.pos += 2
             lex.col += 2
         }
-    } else if lex.pos < len {
-        lex.pos += 1
+    } else if lex.pos < len and src[lex.pos] != '\'' {
+        let b = src[lex.pos] as u32
+        mut step: usize = 1
+        if (b & 0xE0 as u32) == 0xC0 as u32 and lex.pos + 2 <= len {
+            step = 2
+        } else if (b & 0xF0 as u32) == 0xE0 as u32 and lex.pos + 3 <= len {
+            step = 3
+        } else if (b & 0xF8 as u32) == 0xF0 as u32 and lex.pos + 4 <= len {
+            step = 4
+        }
+        lex.pos += step
         lex.col += 1
     }
     if lex.pos < len and src[lex.pos] == '\'' {

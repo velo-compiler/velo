@@ -33,7 +33,29 @@ act parse_int_from_slice(source: string, start: usize, len: usize) -> i32 {
                 return esc as i32
             }
         }
-        return source[start + 1] as i32
+        let b0: u32 = source[start + 1] as u32
+        if b0 <= 0x7F as u32 {
+            return b0 as i32
+        }
+        if (b0 & 0xE0 as u32) == 0xC0 as u32 and len >= 4 {
+            let b1: u32 = source[start + 2] as u32
+            let cp: u32 = ((b0 & 0x1F as u32) << 6) | (b1 & 0x3F as u32)
+            return cp as i32
+        }
+        if (b0 & 0xF0 as u32) == 0xE0 as u32 and len >= 5 {
+            let b1: u32 = source[start + 2] as u32
+            let b2: u32 = source[start + 3] as u32
+            let cp: u32 = ((b0 & 0x0F as u32) << 12) | ((b1 & 0x3F as u32) << 6) | (b2 & 0x3F as u32)
+            return cp as i32
+        }
+        if (b0 & 0xF8 as u32) == 0xF0 as u32 and len >= 6 {
+            let b1: u32 = source[start + 2] as u32
+            let b2: u32 = source[start + 3] as u32
+            let b3: u32 = source[start + 4] as u32
+            let cp: u32 = ((b0 & 0x07 as u32) << 18) | ((b1 & 0x3F as u32) << 12) | ((b2 & 0x3F as u32) << 6) | (b3 & 0x3F as u32)
+            return cp as i32
+        }
+        return b0 as i32
     }
 
     mut i = start
