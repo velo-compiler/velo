@@ -235,7 +235,7 @@ act int_literal_exceeds_i64(text: string) -> bool {
         mut ok = false
         if hex { ok = d >= 0 } else { ok = c >= '0' and c <= '9' }
         if not ok { break }
-        if d != 0 or c != '0' {
+        if digits > 0 or (hex and d != 0) or (not hex and c != '0') {
             if digits == 0 { first_at = at }
             digits += 1
         }

@@ -161,6 +161,34 @@ flowchart TD
   - Bit-for-bit SHA-256 compiler determinism verified (`58f56ed7c30a43ebaeeb0dc112bd46cc4f4ac5c1343e69969c772b6827211da2`).
   - Line count verified $\le 400$ across all compiler sources (`python scripts/count_lines.py`) and zero UTF-8 BOM characters across all `.vl` files.
 
+#### Task 1.6: Safe Mixed Signed vs. Unsigned Integer Comparisons [COMPLETED] ✅
+* **Former Defect**:
+  - In Velo, relational (`<`, `<=`, `>`, `>=`) and equality (`==`, `!=`) comparisons between signed and unsigned integer types of matching bitwidths (e.g. `i32 < u32`, `i64 > u64`, `isize == usize`) were emitted directly into C as raw infix binary expressions `(left op right)`.
+  - Under standard C integer promotion rules (C99 §6.3.1.8), when comparing signed and unsigned operands of matching rank or when the unsigned type is wider, the signed operand is implicitly converted to unsigned. Negative signed values wrapped into large positive integers (e.g. `(int32_t)-1` converted to `4294967295U`), causing `let a: i32 = -1; let b: u32 = 1; if a < b` to silently evaluate to `false`, `-1 == 4294967295u` to evaluate to `true`, and `-1 != 4294967295u` to evaluate to `false`.
+  - In `src/analysis/dyn_checks.vl` (`int_literal_exceeds_i64`), the character scanner failed to increment `digits` for intermediate zero characters (`c != '0'`), miscalculating significant digit counts for 64-bit literals containing inner zeros (such as `18446744073709551615`).
+* **Fix Applied**:
+  - Implemented 12 static inline safe comparison wrappers in `runtime/velo_runtime.h` (and synced to `velo/runtime/velo_runtime.h`):
+    - `velo_cmp_eq_s_u`, `velo_cmp_ne_s_u`, `velo_cmp_lt_s_u`, `velo_cmp_le_s_u`, `velo_cmp_gt_s_u`, `velo_cmp_ge_s_u` for signed left vs. unsigned right.
+    - `velo_cmp_eq_u_s`, `velo_cmp_ne_u_s`, `velo_cmp_lt_u_s`, `velo_cmp_le_u_s`, `velo_cmp_gt_u_s`, `velo_cmp_ge_u_s` for unsigned left vs. signed right.
+  - In `src/ast/types.vl`, defined `is_signed_int_type` and `is_unsigned_int_type` predicates.
+  - In `src/backend/codegen_expr.vl`, lowered binary comparisons (`TOK_EQ`, `TOK_NEQ`, `TOK_LT`, `TOK_LTE`, `TOK_GT`, `TOK_GTE`) with mixed signed and unsigned integer operands to calls to the corresponding `velo_cmp_*` wrappers, preserving C pass-by-value evaluation semantics and preventing side-effect duplication.
+  - In `velo/codegen_c.py`, implemented the identical lowering logic for Stage 1 compiler parity.
+  - In `src/analysis/dyn_checks.vl` (`int_literal_exceeds_i64`), updated the scanner loop to count all digits once `digits > 0`, properly identifying large 64-bit literals exceeding `i64`.
+  - Rebuilt the self-hosted bootstrap chain (`bin/velo.exe`) and refreshed `bootstrap.c` with verified bit-for-bit SHA-256 determinism across Gen2, Gen3, and `bootstrap.c` (`FA6C78A613CB298F8B26CB465490681E1DF8C72E18C7B45010EFFBC2FC3F4B89`).
+* **Residual Limitation**:
+  - None. Mixed signed vs. unsigned comparisons evaluate mathematically accurately across the full domain of both operand types without double-evaluation or UB.
+* **Verification**:
+  - Added dedicated test suite `tests/test_mixed_comparisons.py` covering:
+    - Inversion and boundary tests (`-1 < 1u`, `-1 <= 1u`, `-1 > 1u`, `-1 >= 1u`, `-1 == 1u`, `-1 != 1u`).
+    - Unsigned left comparisons (`1u > -1`, `1u >= -1`, `1u < -1`, `1u <= -1`).
+    - Maximum boundary non-aliasing (`-1 == 4294967295u` -> false, `-1 != 4294967295u` -> true, `-1 < 4294967295u` -> true).
+    - 64-bit mixed comparisons (`i64` vs `u64`).
+    - Side-effect evaluation verified to run exactly once per operand.
+    - Verified C code generation emits `velo_cmp_*` wrappers.
+  - Verified full dynamic collection test suite `tests/test_dynamic_collections.py` passes all 40 tests.
+  - Line count verified $\le 400$ lines across all compiler sources (`python scripts/count_lines.py`).
+  - Full pytest test suite passing.
+
 ---
 
 ### Phase 2: Language Ergonomics & Tooling Polish

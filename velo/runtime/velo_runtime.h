@@ -265,6 +265,26 @@ static inline i32x4 velo_simd_max_i32x4(i32x4 a, i32x4 b) {
 #endif
 
 // ============================================================================
+// Safe mixed signed vs unsigned integer comparisons (Bug 4.2)
+// Prevents C integer promotion bugs where signed operands are converted to
+// unsigned, causing e.g. (-1 < 1u) to evaluate to false or (-1 == UINT32_MAX)
+// to evaluate to true.
+// ============================================================================
+static inline bool velo_cmp_eq_s_u(int64_t a, uint64_t b) { return (a >= 0) && ((uint64_t)a == b); }
+static inline bool velo_cmp_ne_s_u(int64_t a, uint64_t b) { return (a < 0) || ((uint64_t)a != b); }
+static inline bool velo_cmp_lt_s_u(int64_t a, uint64_t b) { return (a < 0) || ((uint64_t)a < b); }
+static inline bool velo_cmp_le_s_u(int64_t a, uint64_t b) { return (a < 0) || ((uint64_t)a <= b); }
+static inline bool velo_cmp_gt_s_u(int64_t a, uint64_t b) { return (a > 0) && ((uint64_t)a > b); }
+static inline bool velo_cmp_ge_s_u(int64_t a, uint64_t b) { return (a >= 0) && ((uint64_t)a >= b); }
+
+static inline bool velo_cmp_eq_u_s(uint64_t a, int64_t b) { return (b >= 0) && (a == (uint64_t)b); }
+static inline bool velo_cmp_ne_u_s(uint64_t a, int64_t b) { return (b < 0) || (a != (uint64_t)b); }
+static inline bool velo_cmp_lt_u_s(uint64_t a, int64_t b) { return (b > 0) && (a < (uint64_t)b); }
+static inline bool velo_cmp_le_u_s(uint64_t a, int64_t b) { return (b >= 0) && (a <= (uint64_t)b); }
+static inline bool velo_cmp_gt_u_s(uint64_t a, int64_t b) { return (b < 0) || (a > (uint64_t)b); }
+static inline bool velo_cmp_ge_u_s(uint64_t a, int64_t b) { return (b <= 0) || (a >= (uint64_t)b); }
+
+// ============================================================================
 // §4.1 Extensible Allocator Architecture + §4.2 Multithreaded Memory Safety
 //
 // Allocation model (in allocation-cost order, all O(1)):

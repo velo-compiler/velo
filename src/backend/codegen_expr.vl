@@ -7,6 +7,7 @@ use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
 use "../analysis/str_checks.vl"
 use "../analysis/math_checks.vl"
+use "../analysis/dyn_checks.vl"
 use "../common/string_builder.vl"
 use "../common/act_types.vl"
 use "codegen_io.vl"
@@ -202,6 +203,39 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                 emit_c_expr(sb, st, expr.left); sb_append_str(sb, ", "); emit_c_expr(sb, st, expr.right)
                 if expr.op == TOK_EQ { sb_append_str(sb, ") == 0) : (") } else { sb_append_str(sb, ") != 0) : (") }
                 emit_c_expr(sb, st, expr.left); sb_append_char(sb, ' '); sb_append_str(sb, op_to_c_str(expr.op)); sb_append_char(sb, ' '); emit_c_expr(sb, st, expr.right); sb_append_str(sb, "))")
+                return
+            }
+        }
+
+        // Safe mixed signed vs unsigned integer comparisons (Bug 4.2)
+        if expr.op == TOK_EQ or expr.op == TOK_NEQ or expr.op == TOK_LT or expr.op == TOK_LTE or expr.op == TOK_GT or expr.op == TOK_GTE {
+            let ltype = infer_expr_type(st, expr.left)
+            let rtype = infer_expr_type(st, expr.right)
+            mut l_signed = is_signed_int_type(ltype)
+            mut l_unsigned = is_unsigned_int_type(ltype)
+            mut r_signed = is_signed_int_type(rtype)
+            mut r_unsigned = is_unsigned_int_type(rtype)
+            if expr.left.kind == EXPR_INT and (expr.left.type_name == null or str.len(expr.left.type_name) == 0) and int_literal_exceeds_i64(expr.left.str_val) {
+                l_signed = false
+                l_unsigned = true
+            }
+            if expr.right.kind == EXPR_INT and (expr.right.type_name == null or str.len(expr.right.type_name) == 0) and int_literal_exceeds_i64(expr.right.str_val) {
+                r_signed = false
+                r_unsigned = true
+            }
+            if (l_signed and r_unsigned) or (l_unsigned and r_signed) {
+                mut fn_name = "velo_cmp_eq"
+                if expr.op == TOK_NEQ { fn_name = "velo_cmp_ne" }
+                else if expr.op == TOK_LT { fn_name = "velo_cmp_lt" }
+                else if expr.op == TOK_LTE { fn_name = "velo_cmp_le" }
+                else if expr.op == TOK_GT { fn_name = "velo_cmp_gt" }
+                else if expr.op == TOK_GTE { fn_name = "velo_cmp_ge" }
+                sb_append_str(sb, fn_name)
+                if l_signed { sb_append_str(sb, "_s_u(") } else { sb_append_str(sb, "_u_s(") }
+                emit_c_expr(sb, st, expr.left)
+                sb_append_str(sb, ", ")
+                emit_c_expr(sb, st, expr.right)
+                sb_append_char(sb, ')')
                 return
             }
         }

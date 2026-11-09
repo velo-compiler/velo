@@ -3129,6 +3129,30 @@ class CCodeGenerator:
                     cmp_op = "==" if op == "==" else "!="
                     return f"(({left} != NULL && {right} != NULL) ? (strcmp({left}, {right}) {cmp_op} 0) : ({left} {op} {right}))"
 
+            # Safe mixed signed vs unsigned integer comparisons (Bug 4.2)
+            if op in ("==", "!=", "<", "<=", ">", ">="):
+                l_signed = l_t in ("i8", "i16", "i32", "i64", "isize")
+                l_unsigned = l_t in ("u8", "u16", "u32", "u64", "usize")
+                r_signed = r_t in ("i8", "i16", "i32", "i64", "isize")
+                r_unsigned = r_t in ("u8", "u16", "u32", "u64", "usize")
+                if isinstance(expr.left, IntLiteral) and not expr.left.type_name and expr.left.value > 9223372036854775807:
+                    l_signed = False
+                    l_unsigned = True
+                if isinstance(expr.right, IntLiteral) and not expr.right.type_name and expr.right.value > 9223372036854775807:
+                    r_signed = False
+                    r_unsigned = True
+                if (l_signed and r_unsigned) or (l_unsigned and r_signed):
+                    op_map = {
+                        "==": "eq",
+                        "!=": "ne",
+                        "<": "lt",
+                        "<=": "le",
+                        ">": "gt",
+                        ">=": "ge",
+                    }
+                    side = "s_u" if l_signed else "u_s"
+                    return f"velo_cmp_{op_map[op]}_{side}({left}, {right})"
+
             if op == "and": op = "&&"
             elif op == "or": op = "||"
             return f"({left} {op} {right})"

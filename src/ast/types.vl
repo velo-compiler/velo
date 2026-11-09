@@ -102,6 +102,18 @@ act is_int_type(name: string) -> bool {
     return false
 }
 
+// Checks if a type name is a signed integer type.
+act is_signed_int_type(name: string) -> bool {
+    if name == null { return false }
+    return name == "i8" or name == "i16" or name == "i32" or name == "i64" or name == "isize"
+}
+
+// Checks if a type name is an unsigned integer type.
+act is_unsigned_int_type(name: string) -> bool {
+    if name == null { return false }
+    return name == "u8" or name == "u16" or name == "u32" or name == "u64" or name == "usize"
+}
+
 // Checks if a type name is a floating point type.
 act is_float_type(name: string) -> bool {
     if name == null { return false }
