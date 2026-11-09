@@ -290,12 +290,24 @@ typedef struct VeloZoneChunk {
     size_t   offset;
 } VeloZoneChunk;
 
+#define VELO_ZONE_WM_INLINE 32
+
+typedef struct VeloZoneWatermark {
+    size_t         primary_offset;
+    VeloZoneChunk* chunk;
+    size_t         chunk_offset;
+} VeloZoneWatermark;
+
 typedef struct VeloZoneArena {
-    uint8_t*       base;     // start of the primary bump region
-    size_t         cap;      // usable primary capacity in bytes
-    size_t         offset;   // primary bump watermark (== allocated bytes in primary block)
-    int            can_grow; // 1 = dynamic secondary chunk spilling fallback; 0 = fixed budget
-    VeloZoneChunk* chunks;   // secondary linked chunks allocated when primary overflows
+    uint8_t*           base;      // start of the primary bump region
+    size_t             cap;       // usable primary capacity in bytes
+    size_t             offset;    // primary bump watermark (== allocated bytes in primary block)
+    int                can_grow;  // 1 = dynamic secondary chunk spilling fallback; 0 = fixed budget
+    VeloZoneChunk*     chunks;    // secondary linked chunks allocated when primary overflows
+    VeloZoneWatermark* wm_heap;   // extra heap capacity when wm_count > VELO_ZONE_WM_INLINE
+    size_t             wm_count;  // active nested watermarks count
+    size_t             wm_cap;    // heap capacity in entries
+    VeloZoneWatermark  wm_inline[VELO_ZONE_WM_INLINE]; // inline stack for fast zero-alloc push/pop
 } VeloZoneArena;
 
 static inline VeloZoneChunk* velo_zone_new_chunk(VeloZoneArena* z, size_t min_bytes) {
@@ -365,6 +377,9 @@ static inline VeloZoneArena* velo_zone_create_default(void) {
     z->offset = 0;
     z->can_grow = 1;
     z->chunks = NULL;
+    z->wm_heap = NULL;
+    z->wm_count = 0;
+    z->wm_cap = 0;
     return z;
 }
 
@@ -385,15 +400,66 @@ static inline VeloZoneArena* velo_zone_active(void) {
 }
 
 static inline size_t velo_zone_push(void) {
-    return velo_zone_active()->offset;
+    VeloZoneArena* z = velo_zone_active();
+    VeloZoneWatermark wm;
+    wm.primary_offset = z->offset;
+    wm.chunk = z->chunks;
+    wm.chunk_offset = z->chunks ? z->chunks->offset : 0;
+
+    if (z->wm_count < VELO_ZONE_WM_INLINE) {
+        z->wm_inline[z->wm_count] = wm;
+    } else {
+        size_t heap_idx = z->wm_count - VELO_ZONE_WM_INLINE;
+        if (heap_idx >= z->wm_cap) {
+            size_t new_cap = z->wm_cap == 0 ? 32 : z->wm_cap * 2;
+            VeloZoneWatermark* new_heap = (VeloZoneWatermark*)realloc(z->wm_heap, new_cap * sizeof(VeloZoneWatermark));
+            if (!new_heap) {
+                fprintf(stderr, "Velo Fatal Error: Zone Arena Watermark Stack OOM!\n");
+                exit(1);
+            }
+            z->wm_heap = new_heap;
+            z->wm_cap = new_cap;
+        }
+        z->wm_heap[heap_idx] = wm;
+    }
+    z->wm_count++;
+    return z->wm_count;
 }
 
 static inline void velo_zone_pop(size_t watermark) {
     VeloZoneArena* z = velo_zone_active();
-    if (z->chunks) {
+    if (watermark > 0 && watermark <= z->wm_count) {
+        size_t target_idx = watermark - 1;
+        VeloZoneWatermark wm = (target_idx < VELO_ZONE_WM_INLINE)
+            ? z->wm_inline[target_idx]
+            : z->wm_heap[target_idx - VELO_ZONE_WM_INLINE];
+        z->wm_count = target_idx;
+
+        VeloZoneChunk* cur = z->chunks;
+        while (cur && cur != wm.chunk) {
+            VeloZoneChunk* next = cur->next;
+            if (cur->base) {
+                free(cur->base);
+                cur->base = NULL;
+            }
+            free(cur);
+            cur = next;
+        }
+        z->chunks = wm.chunk;
+        if (z->chunks) {
+            z->chunks->offset = wm.chunk_offset;
+        }
+        z->offset = wm.primary_offset;
+    } else {
         velo_zone_free_chunks(z);
+        z->offset = watermark;
+        if (z->wm_heap) {
+            free(z->wm_heap);
+            z->wm_heap = NULL;
+        }
+        z->wm_count = 0;
+        z->wm_cap = 0;
     }
-    z->offset = watermark;
 }
 
 static inline size_t velo_arena_total_used(VeloZoneArena* a) {
@@ -448,6 +514,9 @@ static inline VeloZoneArena* velo_zone_enter(size_t bytes) {
     z->offset = 0;
     z->can_grow = 0; // sized zone <bytes> acts as a fixed-budget scratch arena
     z->chunks = NULL;
+    z->wm_heap = NULL;
+    z->wm_count = 0;
+    z->wm_cap = 0;
     g_velo_zone_tls_active = z;
     return prev;
 }
@@ -459,6 +528,12 @@ static inline void velo_zone_leave(VeloZoneArena* prev) {
     VeloZoneArena* z = g_velo_zone_tls_active;
     if (z != g_velo_zone_tls_default) {
         velo_zone_free_chunks(z);
+        if (z->wm_heap) {
+            free(z->wm_heap);
+            z->wm_heap = NULL;
+        }
+        z->wm_count = 0;
+        z->wm_cap = 0;
         if (g_velo_zone_tls_pool_count < VELO_ZONE_POOL_MAX) {
             z->offset = 0;
             z->chunks = NULL;
@@ -561,12 +636,21 @@ static inline VeloZoneArena* velo_mem_create_arena(size_t cap) {
     z->offset = 0;
     z->can_grow = 1; // custom arenas support dynamic chunk spilling
     z->chunks = NULL;
+    z->wm_heap = NULL;
+    z->wm_count = 0;
+    z->wm_cap = 0;
     return z;
 }
 
 static inline void velo_mem_destroy_arena(VeloZoneArena* a) {
     if (a) {
         velo_zone_free_chunks(a);
+        if (a->wm_heap) {
+            free(a->wm_heap);
+            a->wm_heap = NULL;
+        }
+        a->wm_count = 0;
+        a->wm_cap = 0;
         if (a->base) {
             free(a->base);
             a->base = NULL;
@@ -677,12 +761,24 @@ static inline void velo_thread_tls_release(void) {
     }
     if (g_velo_zone_tls_default) {
         velo_zone_free_chunks(g_velo_zone_tls_default);
+        if (g_velo_zone_tls_default->wm_heap) {
+            free(g_velo_zone_tls_default->wm_heap);
+            g_velo_zone_tls_default->wm_heap = NULL;
+        }
+        g_velo_zone_tls_default->wm_count = 0;
+        g_velo_zone_tls_default->wm_cap = 0;
         free(g_velo_zone_tls_default->base);
         free(g_velo_zone_tls_default);
         g_velo_zone_tls_default = NULL;
     }
     for (size_t i = 0; i < g_velo_zone_tls_pool_count; ++i) {
         velo_zone_free_chunks(&g_velo_zone_tls_pool[i]);
+        if (g_velo_zone_tls_pool[i].wm_heap) {
+            free(g_velo_zone_tls_pool[i].wm_heap);
+            g_velo_zone_tls_pool[i].wm_heap = NULL;
+        }
+        g_velo_zone_tls_pool[i].wm_count = 0;
+        g_velo_zone_tls_pool[i].wm_cap = 0;
         free(g_velo_zone_tls_pool[i].base);
     }
     g_velo_zone_tls_pool_count = 0;
@@ -2906,6 +3002,12 @@ static inline void velo_mem_init(void) {
 static inline void velo_mem_reset(void) {
     if (g_velo_zone_tls_active) {
         velo_zone_free_chunks(g_velo_zone_tls_active);
+        if (g_velo_zone_tls_active->wm_heap) {
+            free(g_velo_zone_tls_active->wm_heap);
+            g_velo_zone_tls_active->wm_heap = NULL;
+        }
+        g_velo_zone_tls_active->wm_count = 0;
+        g_velo_zone_tls_active->wm_cap = 0;
         g_velo_zone_tls_active->offset = 0;
     }
 }

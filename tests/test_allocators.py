@@ -473,6 +473,39 @@ class TestAllocatorArchitecture(unittest.TestCase):
             ["inside >= 4096000: true", "after = 0"]
         )
 
+    def test_nested_zone_spilled_chunk_preservation(self):
+        """Task 6.3 / Bug 1: When an outer zone spills into secondary chunks,
+        nested zone { ... } blocks popping their watermarks must preserve
+        all outer secondary chunks rather than prematurely freeing them (which
+        caused use-after-free and aliasing corruption)."""
+        program = (
+            "use sys.io\n"
+            "use sys.mem\n"
+            "act main() {\n"
+            "    zone {\n"
+            "        let filler: @u8 = mem.alloc(67108864)\n"
+            "        let p: @u8 = mem.alloc(128)\n"
+            "        p[0] = 42\n"
+            "        p[127] = 99\n"
+            "        zone {\n"
+            "            let q: @u8 = mem.alloc(64)\n"
+            "            q[0] = 7\n"
+            "        }\n"
+            "        let p0: u8 = p[0]\n"
+            "        let p127: u8 = p[127]\n"
+            "        let r: @u8 = mem.alloc(128)\n"
+            "        r[0] = 88\n"
+            "        let p0_after_r: u8 = p[0]\n"
+            "        io.println(\"p0 = {p0}, p127 = {p127}, after_r = {p0_after_r}\")\n"
+            "    }\n"
+            "}\n"
+        )
+        assert_parity(
+            program, "nestedspillpreserve",
+            ["p0 = 42, p127 = 99, after_r = 42"]
+        )
+
+
 
 if __name__ == "__main__":
     unittest.main()

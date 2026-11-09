@@ -510,6 +510,27 @@ flowchart TD
   - Code standards: all 65 compiler source files verified $\le 397$ lines (`python scripts/count_lines.py`).
   - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
 
+#### Task 6.3: Selective Secondary Chunk Reclamation on Nested Zone Pop (Eliminating Use-After-Free) [COMPLETED] ✅
+* **Former Defect**: In `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h`, `velo_zone_pop(watermark)` unconditionally invoked `velo_zone_free_chunks(z)` whenever `z->chunks` was non-null. When an outer scope (or default arena) spilled allocations into secondary linked chunks, any inner nested `zone { ... }` block popping its watermark wiped out ALL secondary chunks — including chunks allocated before the inner block was entered. Pointers allocated in the outer scope became dangling pointers into freed memory (use-after-free), and subsequent allocations reused the freed chunks, causing silent data aliasing and memory corruption.
+* **Fix Applied**:
+  - Introduced `VeloZoneWatermark` struct tracking `{ primary_offset, chunk, chunk_offset }` in both runtime headers (`runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h`).
+  - Added an inline watermark stack (`wm_inline[32]`) and dynamic heap extension (`wm_heap`, `wm_count`, `wm_cap`) to `VeloZoneArena` to allow zero-allocation nested zone watermarking without self-referential pointers across thread-local arena pool copies.
+  - Refactored `velo_zone_push()` to record the current primary offset, head chunk pointer (`z->chunks`), and active chunk offset onto the arena's watermark stack, returning a 1-based watermark ticket (`z->wm_count`).
+  - Refactored `velo_zone_pop(watermark)`: when given an active watermark ticket, it pops the watermark descriptor, traverses the chunk chain from `z->chunks` down to `wm.chunk`, frees ONLY chunks allocated after the watermark was pushed, restores `z->chunks = wm.chunk`, resets `z->chunks->offset = wm.chunk_offset`, and restores `z->offset = wm.primary_offset`. If an invalid or zero watermark is passed, it retains safe fallback behavior (freeing all chunks and resetting primary offset).
+  - Updated arena cleanup points (`velo_zone_leave`, `velo_mem_destroy_arena`, `velo_thread_tls_release`, `velo_mem_reset`) to free `wm_heap` and zero watermark counters.
+  - Added regression test `test_nested_zone_spilled_chunk_preservation` in `tests/test_allocators.py` verifying outer secondary chunks survive nested zone pushes/pops across both Stage 1 and Stage 2 with identical output.
+* **Residual Limitation**: Arena handles are per-thread bump allocators; passing pointers allocated within a zone arena outside its lexical scope remains the developer's responsibility until compile-time lifetime bounds (Phase 8) are introduced.
+* **Verification**:
+  - Rebuilt bootstrap chain: `scripts/bootstrap.bat`, `bin/velo.exe build src/main.vl -o bin/velo_gen2.exe`, `bin/velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe`, `copy bin/velo_gen3.exe bin/velo.exe`, `bin/velo.exe emit-c src/main.vl -o bootstrap.c`.
+  - Verified determinism: SHA-256 of `emit-c src/main.vl` between Gen2 and Gen3 matches bit-for-bit (`35E614478DC2975C96C95D56BFDAB862E7E1F14BF10C49D4B102802B8B546B83`), and `bootstrap.c` matches bit-for-bit.
+  - C reproduction probe (`scratch/audit_runtime/rt_popchunk_probe.c`): verified clean exit code 0 with no UAF or memory aliasing.
+  - Pure Velo reproduction probe (`scratch/fix1/test_spill_bug.vl` and `test_nested_spill_stress.vl`): verified clean exit code 0.
+  - Pytest unit and parity tests: 21/21 passed in `tests/test_allocators.py`.
+  - Thread local runtime tests: 3/3 passed in `tests/test_thread_local_runtime.py`.
+  - Full test suite: 553 passed.
+  - Code standards: all compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
+  - Encoding standards: zero UTF-8 BOM characters across all `.vl` files.
+
 ---
 
 ### Systems Application Case Study: VeloKV In-Memory Database (`apps/velokv/`) [COMPLETED] ✅
