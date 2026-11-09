@@ -16,11 +16,23 @@ mut g_stdout_init: bool = false
 mut g_stderr_writer: BufferedWriter
 mut g_stderr_init: bool = false
 
+mut g_atexit_registered: bool = false
 mut g_fmt_buf: @u8 = null
+
+extern act atexit(func: act() -> void) -> i32
+
+// Ensures standard stream cleanup hook is registered on program exit.
+act io_ensure_atexit() {
+    if !g_atexit_registered {
+        atexit(io_print_cleanup)
+        g_atexit_registered = true
+    }
+}
 
 // Lazily acquires or returns the singleton stdout BufferedWriter.
 act io_get_stdout_writer() -> @BufferedWriter {
     if !g_stdout_init {
+        io_ensure_atexit()
         g_stdout_writer = writer_init(io_stdout_handle())
         g_stdout_init = true
     }
@@ -30,6 +42,7 @@ act io_get_stdout_writer() -> @BufferedWriter {
 // Lazily acquires or returns the singleton stderr BufferedWriter.
 act io_get_stderr_writer() -> @BufferedWriter {
     if !g_stderr_init {
+        io_ensure_atexit()
         g_stderr_writer = writer_init(io_stderr_handle())
         g_stderr_init = true
     }

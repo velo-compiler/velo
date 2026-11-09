@@ -69,6 +69,9 @@ typedef struct JsonDoc JsonDoc;
 typedef struct LspDoc LspDoc;
 typedef struct LspServerState LspServerState;
 
+/* Function pointer typedefs */
+typedef void (*velo_act_to_void)(void);
+
 struct FileHandle {
     size_t os_handle;
 };
@@ -670,6 +673,7 @@ extern uint8_t* CreateFileA(uint8_t* lpFileName, uint32_t dwDesiredAccess, uint3
 extern int32_t DeleteFileA(uint8_t* lpFileName);
 extern uint8_t* VirtualAlloc(uint8_t* lpAddress, size_t dwSize, uint32_t flAllocationType, uint32_t flProtect);
 extern int32_t VirtualFree(uint8_t* lpAddress, size_t dwSize, uint32_t dwFreeType);
+extern int32_t atexit(velo_act_to_void func);
 extern int32_t GetFileAttributesExA(uint8_t* lpFileName, uint32_t fInfoLevelId, uint8_t* lpFileInformation);
 extern uint32_t GetFileAttributesA(uint8_t* lpFileName);
 extern int32_t CreateDirectoryA(uint8_t* lpPathName, uint8_t* lpSecurityAttributes);
@@ -738,6 +742,8 @@ BufferedWriter g_stderr_writer;
 #line 17 "src/main.vl"
 bool g_stderr_init = false;
 #line 19 "src/main.vl"
+bool g_atexit_registered = false;
+#line 20 "src/main.vl"
 uint8_t* g_fmt_buf = NULL;
 #line 7 "src/main.vl"
 uint32_t UTF8_REPLACEMENT_CHAR = ((uint32_t)(0xFFFD));
@@ -1207,6 +1213,7 @@ double pow10_f64(int32_t n);
 StrSlice format_f64(double val, int32_t precision, uint8_t* buf, size_t buf_len);
 bool parse_f64(StrSlice s, double* out_val);
 bool parse_f64_str(const char* s, double* out_val);
+void io_ensure_atexit(void);
 BufferedWriter* io_get_stdout_writer(void);
 BufferedWriter* io_get_stderr_writer(void);
 uint8_t* io_get_fmt_buf(void);
@@ -4684,438 +4691,453 @@ bool parse_f64_str(const char* s, double* out_val) {
     return parse_f64(slice_from_str(s), out_val);
 }
 
-#line 22 "src/main.vl"
-BufferedWriter* io_get_stdout_writer(void) {
-#line 23 "src/main.vl"
-    if ((!g_stdout_init)) {
-#line 24 "src/main.vl"
-        g_stdout_writer = writer_init(io_stdout_handle());
 #line 25 "src/main.vl"
+void io_ensure_atexit(void) {
+#line 26 "src/main.vl"
+    if ((!g_atexit_registered)) {
+#line 27 "src/main.vl"
+        atexit(io_print_cleanup);
+#line 28 "src/main.vl"
+        g_atexit_registered = true;
+    }
+}
+
+#line 33 "src/main.vl"
+BufferedWriter* io_get_stdout_writer(void) {
+#line 34 "src/main.vl"
+    if ((!g_stdout_init)) {
+#line 35 "src/main.vl"
+        io_ensure_atexit();
+#line 36 "src/main.vl"
+        g_stdout_writer = writer_init(io_stdout_handle());
+#line 37 "src/main.vl"
         g_stdout_init = true;
     }
-#line 27 "src/main.vl"
+#line 39 "src/main.vl"
     return (&(g_stdout_writer));
 }
 
-#line 31 "src/main.vl"
+#line 43 "src/main.vl"
 BufferedWriter* io_get_stderr_writer(void) {
-#line 32 "src/main.vl"
+#line 44 "src/main.vl"
     if ((!g_stderr_init)) {
-#line 33 "src/main.vl"
+#line 45 "src/main.vl"
+        io_ensure_atexit();
+#line 46 "src/main.vl"
         g_stderr_writer = writer_init(io_stderr_handle());
-#line 34 "src/main.vl"
+#line 47 "src/main.vl"
         g_stderr_init = true;
     }
-#line 36 "src/main.vl"
+#line 49 "src/main.vl"
     return (&(g_stderr_writer));
 }
 
-#line 40 "src/main.vl"
+#line 53 "src/main.vl"
 uint8_t* io_get_fmt_buf(void) {
-#line 41 "src/main.vl"
+#line 54 "src/main.vl"
     if ((g_fmt_buf == NULL)) {
-#line 42 "src/main.vl"
+#line 55 "src/main.vl"
         g_fmt_buf = os_page_alloc(64);
     }
-#line 44 "src/main.vl"
+#line 57 "src/main.vl"
     return g_fmt_buf;
 }
 
-#line 48 "src/main.vl"
+#line 61 "src/main.vl"
 bool io_flush_stdout(void) {
-#line 49 "src/main.vl"
+#line 62 "src/main.vl"
     if (g_stdout_init) {
-#line 50 "src/main.vl"
+#line 63 "src/main.vl"
         return writer_flush((&(g_stdout_writer)));
     }
-#line 52 "src/main.vl"
+#line 65 "src/main.vl"
     return true;
 }
 
-#line 56 "src/main.vl"
+#line 69 "src/main.vl"
 bool io_flush_stderr(void) {
-#line 57 "src/main.vl"
+#line 70 "src/main.vl"
     if (g_stderr_init) {
-#line 58 "src/main.vl"
+#line 71 "src/main.vl"
         return writer_flush((&(g_stderr_writer)));
     }
-#line 60 "src/main.vl"
+#line 73 "src/main.vl"
     return true;
 }
 
-#line 64 "src/main.vl"
+#line 77 "src/main.vl"
 bool io_flush_all(void) {
-#line 65 "src/main.vl"
+#line 78 "src/main.vl"
     bool ok_out = io_flush_stdout();
-#line 66 "src/main.vl"
+#line 79 "src/main.vl"
     bool ok_err = io_flush_stderr();
-#line 67 "src/main.vl"
+#line 80 "src/main.vl"
     return (ok_out && ok_err);
 }
 
-#line 71 "src/main.vl"
+#line 84 "src/main.vl"
 void io_print_cleanup(void) {
-#line 72 "src/main.vl"
+#line 85 "src/main.vl"
     if (g_stdout_init) {
-#line 73 "src/main.vl"
+#line 86 "src/main.vl"
         writer_free((&(g_stdout_writer)));
-#line 74 "src/main.vl"
+#line 87 "src/main.vl"
         g_stdout_init = false;
     }
-#line 76 "src/main.vl"
+#line 89 "src/main.vl"
     if (g_stderr_init) {
-#line 77 "src/main.vl"
+#line 90 "src/main.vl"
         writer_free((&(g_stderr_writer)));
-#line 78 "src/main.vl"
+#line 91 "src/main.vl"
         g_stderr_init = false;
     }
-#line 80 "src/main.vl"
+#line 93 "src/main.vl"
     if ((g_fmt_buf != NULL)) {
-#line 81 "src/main.vl"
+#line 94 "src/main.vl"
         os_page_free(g_fmt_buf, 64);
-#line 82 "src/main.vl"
+#line 95 "src/main.vl"
         g_fmt_buf = NULL;
     }
 }
 
-#line 90 "src/main.vl"
+#line 103 "src/main.vl"
 void fprint(BufferedWriter* w, StrSlice s) {
-#line 91 "src/main.vl"
+#line 104 "src/main.vl"
     if ((w == NULL)) {
-#line 91 "src/main.vl"
+#line 104 "src/main.vl"
         return;
     }
-#line 92 "src/main.vl"
+#line 105 "src/main.vl"
     writer_write_slice(w, s);
 }
 
-#line 95 "src/main.vl"
+#line 108 "src/main.vl"
 void fprintln(BufferedWriter* w, StrSlice s) {
-#line 96 "src/main.vl"
+#line 109 "src/main.vl"
     if ((w == NULL)) {
-#line 96 "src/main.vl"
+#line 109 "src/main.vl"
         return;
     }
-#line 97 "src/main.vl"
+#line 110 "src/main.vl"
     writer_write_slice(w, s);
-#line 98 "src/main.vl"
+#line 111 "src/main.vl"
     writer_write_byte(w, ((uint8_t)(10)));
-#line 99 "src/main.vl"
+#line 112 "src/main.vl"
     writer_flush(w);
 }
 
-#line 102 "src/main.vl"
+#line 115 "src/main.vl"
 void fprint_str(BufferedWriter* w, const char* s) {
-#line 103 "src/main.vl"
+#line 116 "src/main.vl"
     fprint(w, slice_from_str(s));
 }
 
-#line 106 "src/main.vl"
+#line 119 "src/main.vl"
 void fprintln_str(BufferedWriter* w, const char* s) {
-#line 107 "src/main.vl"
+#line 120 "src/main.vl"
     fprintln(w, slice_from_str(s));
 }
 
-#line 110 "src/main.vl"
-void fprintln_empty(BufferedWriter* w) {
-#line 111 "src/main.vl"
-    if ((w == NULL)) {
-#line 111 "src/main.vl"
-        return;
-    }
-#line 112 "src/main.vl"
-    writer_write_byte(w, ((uint8_t)(10)));
-#line 113 "src/main.vl"
-    writer_flush(w);
-}
-
-#line 116 "src/main.vl"
-void fprint_byte(BufferedWriter* w, uint8_t b) {
-#line 117 "src/main.vl"
-    if ((w == NULL)) {
-#line 117 "src/main.vl"
-        return;
-    }
-#line 118 "src/main.vl"
-    writer_write_byte(w, b);
-}
-
-#line 121 "src/main.vl"
-void fprintln_byte(BufferedWriter* w, uint8_t b) {
-#line 122 "src/main.vl"
-    if ((w == NULL)) {
-#line 122 "src/main.vl"
-        return;
-    }
 #line 123 "src/main.vl"
-    writer_write_byte(w, b);
+void fprintln_empty(BufferedWriter* w) {
 #line 124 "src/main.vl"
-    writer_write_byte(w, ((uint8_t)(10)));
+    if ((w == NULL)) {
+#line 124 "src/main.vl"
+        return;
+    }
 #line 125 "src/main.vl"
+    writer_write_byte(w, ((uint8_t)(10)));
+#line 126 "src/main.vl"
     writer_flush(w);
 }
 
-#line 128 "src/main.vl"
-void fprint_i64(BufferedWriter* w, int64_t val) {
 #line 129 "src/main.vl"
-    uint8_t* buf = io_get_fmt_buf();
+void fprint_byte(BufferedWriter* w, uint8_t b) {
 #line 130 "src/main.vl"
-    StrSlice s = format_i64(val, buf, 64);
+    if ((w == NULL)) {
+#line 130 "src/main.vl"
+        return;
+    }
 #line 131 "src/main.vl"
-    fprint(w, s);
+    writer_write_byte(w, b);
 }
 
 #line 134 "src/main.vl"
-void fprintln_i64(BufferedWriter* w, int64_t val) {
+void fprintln_byte(BufferedWriter* w, uint8_t b) {
 #line 135 "src/main.vl"
-    uint8_t* buf = io_get_fmt_buf();
+    if ((w == NULL)) {
+#line 135 "src/main.vl"
+        return;
+    }
 #line 136 "src/main.vl"
-    StrSlice s = format_i64(val, buf, 64);
+    writer_write_byte(w, b);
 #line 137 "src/main.vl"
-    fprintln(w, s);
+    writer_write_byte(w, ((uint8_t)(10)));
+#line 138 "src/main.vl"
+    writer_flush(w);
 }
 
-#line 140 "src/main.vl"
-void fprint_u64(BufferedWriter* w, uint64_t val) {
 #line 141 "src/main.vl"
-    uint8_t* buf = io_get_fmt_buf();
+void fprint_i64(BufferedWriter* w, int64_t val) {
 #line 142 "src/main.vl"
-    StrSlice s = format_u64(val, buf, 64);
+    uint8_t* buf = io_get_fmt_buf();
 #line 143 "src/main.vl"
+    StrSlice s = format_i64(val, buf, 64);
+#line 144 "src/main.vl"
     fprint(w, s);
 }
 
-#line 146 "src/main.vl"
-void fprintln_u64(BufferedWriter* w, uint64_t val) {
 #line 147 "src/main.vl"
-    uint8_t* buf = io_get_fmt_buf();
+void fprintln_i64(BufferedWriter* w, int64_t val) {
 #line 148 "src/main.vl"
-    StrSlice s = format_u64(val, buf, 64);
+    uint8_t* buf = io_get_fmt_buf();
 #line 149 "src/main.vl"
+    StrSlice s = format_i64(val, buf, 64);
+#line 150 "src/main.vl"
     fprintln(w, s);
 }
 
-#line 152 "src/main.vl"
-void fprint_f64(BufferedWriter* w, double val, int32_t precision) {
 #line 153 "src/main.vl"
-    uint8_t* buf = io_get_fmt_buf();
+void fprint_u64(BufferedWriter* w, uint64_t val) {
 #line 154 "src/main.vl"
-    StrSlice s = format_f64(val, precision, buf, 64);
+    uint8_t* buf = io_get_fmt_buf();
 #line 155 "src/main.vl"
+    StrSlice s = format_u64(val, buf, 64);
+#line 156 "src/main.vl"
     fprint(w, s);
 }
 
-#line 158 "src/main.vl"
-void fprintln_f64(BufferedWriter* w, double val, int32_t precision) {
 #line 159 "src/main.vl"
-    uint8_t* buf = io_get_fmt_buf();
+void fprintln_u64(BufferedWriter* w, uint64_t val) {
 #line 160 "src/main.vl"
-    StrSlice s = format_f64(val, precision, buf, 64);
+    uint8_t* buf = io_get_fmt_buf();
 #line 161 "src/main.vl"
+    StrSlice s = format_u64(val, buf, 64);
+#line 162 "src/main.vl"
     fprintln(w, s);
 }
 
-#line 164 "src/main.vl"
-void fprint_bool(BufferedWriter* w, bool val) {
 #line 165 "src/main.vl"
-    if (val) {
+void fprint_f64(BufferedWriter* w, double val, int32_t precision) {
 #line 166 "src/main.vl"
+    uint8_t* buf = io_get_fmt_buf();
+#line 167 "src/main.vl"
+    StrSlice s = format_f64(val, precision, buf, 64);
+#line 168 "src/main.vl"
+    fprint(w, s);
+}
+
+#line 171 "src/main.vl"
+void fprintln_f64(BufferedWriter* w, double val, int32_t precision) {
+#line 172 "src/main.vl"
+    uint8_t* buf = io_get_fmt_buf();
+#line 173 "src/main.vl"
+    StrSlice s = format_f64(val, precision, buf, 64);
+#line 174 "src/main.vl"
+    fprintln(w, s);
+}
+
+#line 177 "src/main.vl"
+void fprint_bool(BufferedWriter* w, bool val) {
+#line 178 "src/main.vl"
+    if (val) {
+#line 179 "src/main.vl"
         fprint(w, slice_from_str("true"));
     } else {
-#line 168 "src/main.vl"
+#line 181 "src/main.vl"
         fprint(w, slice_from_str("false"));
     }
 }
 
-#line 172 "src/main.vl"
+#line 185 "src/main.vl"
 void fprintln_bool(BufferedWriter* w, bool val) {
-#line 173 "src/main.vl"
+#line 186 "src/main.vl"
     if (val) {
-#line 174 "src/main.vl"
+#line 187 "src/main.vl"
         fprintln(w, slice_from_str("true"));
     } else {
-#line 176 "src/main.vl"
+#line 189 "src/main.vl"
         fprintln(w, slice_from_str("false"));
     }
 }
 
-#line 184 "src/main.vl"
+#line 197 "src/main.vl"
 void print(StrSlice s) {
-#line 185 "src/main.vl"
+#line 198 "src/main.vl"
     fprint(io_get_stdout_writer(), s);
 }
 
-#line 188 "src/main.vl"
+#line 201 "src/main.vl"
 void println(StrSlice s) {
-#line 189 "src/main.vl"
+#line 202 "src/main.vl"
     fprintln(io_get_stdout_writer(), s);
 }
 
-#line 192 "src/main.vl"
+#line 205 "src/main.vl"
 void print_str(const char* s) {
-#line 193 "src/main.vl"
+#line 206 "src/main.vl"
     fprint_str(io_get_stdout_writer(), s);
 }
 
-#line 196 "src/main.vl"
+#line 209 "src/main.vl"
 void println_str(const char* s) {
-#line 197 "src/main.vl"
+#line 210 "src/main.vl"
     fprintln_str(io_get_stdout_writer(), s);
 }
 
-#line 200 "src/main.vl"
+#line 213 "src/main.vl"
 void println_empty(void) {
-#line 201 "src/main.vl"
+#line 214 "src/main.vl"
     fprintln_empty(io_get_stdout_writer());
 }
 
-#line 204 "src/main.vl"
+#line 217 "src/main.vl"
 void print_byte(uint8_t b) {
-#line 205 "src/main.vl"
+#line 218 "src/main.vl"
     fprint_byte(io_get_stdout_writer(), b);
 }
 
-#line 208 "src/main.vl"
+#line 221 "src/main.vl"
 void println_byte(uint8_t b) {
-#line 209 "src/main.vl"
+#line 222 "src/main.vl"
     fprintln_byte(io_get_stdout_writer(), b);
 }
 
-#line 212 "src/main.vl"
+#line 225 "src/main.vl"
 void print_i64(int64_t val) {
-#line 213 "src/main.vl"
+#line 226 "src/main.vl"
     fprint_i64(io_get_stdout_writer(), val);
 }
 
-#line 216 "src/main.vl"
+#line 229 "src/main.vl"
 void println_i64(int64_t val) {
-#line 217 "src/main.vl"
+#line 230 "src/main.vl"
     fprintln_i64(io_get_stdout_writer(), val);
 }
 
-#line 220 "src/main.vl"
+#line 233 "src/main.vl"
 void print_u64(uint64_t val) {
-#line 221 "src/main.vl"
+#line 234 "src/main.vl"
     fprint_u64(io_get_stdout_writer(), val);
 }
 
-#line 224 "src/main.vl"
+#line 237 "src/main.vl"
 void println_u64(uint64_t val) {
-#line 225 "src/main.vl"
+#line 238 "src/main.vl"
     fprintln_u64(io_get_stdout_writer(), val);
 }
 
-#line 228 "src/main.vl"
+#line 241 "src/main.vl"
 void print_f64(double val, int32_t precision) {
-#line 229 "src/main.vl"
+#line 242 "src/main.vl"
     fprint_f64(io_get_stdout_writer(), val, precision);
 }
 
-#line 232 "src/main.vl"
+#line 245 "src/main.vl"
 void println_f64(double val, int32_t precision) {
-#line 233 "src/main.vl"
+#line 246 "src/main.vl"
     fprintln_f64(io_get_stdout_writer(), val, precision);
 }
 
-#line 236 "src/main.vl"
+#line 249 "src/main.vl"
 void print_bool(bool val) {
-#line 237 "src/main.vl"
+#line 250 "src/main.vl"
     fprint_bool(io_get_stdout_writer(), val);
 }
 
-#line 240 "src/main.vl"
+#line 253 "src/main.vl"
 void println_bool(bool val) {
-#line 241 "src/main.vl"
+#line 254 "src/main.vl"
     fprintln_bool(io_get_stdout_writer(), val);
 }
 
-#line 248 "src/main.vl"
+#line 261 "src/main.vl"
 void eprint(StrSlice s) {
-#line 249 "src/main.vl"
+#line 262 "src/main.vl"
     fprint(io_get_stderr_writer(), s);
 }
 
-#line 252 "src/main.vl"
+#line 265 "src/main.vl"
 void eprintln(StrSlice s) {
-#line 253 "src/main.vl"
+#line 266 "src/main.vl"
     fprintln(io_get_stderr_writer(), s);
 }
 
-#line 256 "src/main.vl"
+#line 269 "src/main.vl"
 void eprint_str(const char* s) {
-#line 257 "src/main.vl"
+#line 270 "src/main.vl"
     fprint_str(io_get_stderr_writer(), s);
 }
 
-#line 260 "src/main.vl"
+#line 273 "src/main.vl"
 void eprintln_str(const char* s) {
-#line 261 "src/main.vl"
+#line 274 "src/main.vl"
     fprintln_str(io_get_stderr_writer(), s);
 }
 
-#line 264 "src/main.vl"
+#line 277 "src/main.vl"
 void eprintln_empty(void) {
-#line 265 "src/main.vl"
+#line 278 "src/main.vl"
     fprintln_empty(io_get_stderr_writer());
 }
 
-#line 268 "src/main.vl"
+#line 281 "src/main.vl"
 void eprint_byte(uint8_t b) {
-#line 269 "src/main.vl"
+#line 282 "src/main.vl"
     fprint_byte(io_get_stderr_writer(), b);
 }
 
-#line 272 "src/main.vl"
+#line 285 "src/main.vl"
 void eprintln_byte(uint8_t b) {
-#line 273 "src/main.vl"
+#line 286 "src/main.vl"
     fprintln_byte(io_get_stderr_writer(), b);
 }
 
-#line 276 "src/main.vl"
+#line 289 "src/main.vl"
 void eprint_i64(int64_t val) {
-#line 277 "src/main.vl"
+#line 290 "src/main.vl"
     fprint_i64(io_get_stderr_writer(), val);
 }
 
-#line 280 "src/main.vl"
+#line 293 "src/main.vl"
 void eprintln_i64(int64_t val) {
-#line 281 "src/main.vl"
+#line 294 "src/main.vl"
     fprintln_i64(io_get_stderr_writer(), val);
 }
 
-#line 284 "src/main.vl"
+#line 297 "src/main.vl"
 void eprint_u64(uint64_t val) {
-#line 285 "src/main.vl"
+#line 298 "src/main.vl"
     fprint_u64(io_get_stderr_writer(), val);
 }
 
-#line 288 "src/main.vl"
+#line 301 "src/main.vl"
 void eprintln_u64(uint64_t val) {
-#line 289 "src/main.vl"
+#line 302 "src/main.vl"
     fprintln_u64(io_get_stderr_writer(), val);
 }
 
-#line 292 "src/main.vl"
+#line 305 "src/main.vl"
 void eprint_f64(double val, int32_t precision) {
-#line 293 "src/main.vl"
+#line 306 "src/main.vl"
     fprint_f64(io_get_stderr_writer(), val, precision);
 }
 
-#line 296 "src/main.vl"
+#line 309 "src/main.vl"
 void eprintln_f64(double val, int32_t precision) {
-#line 297 "src/main.vl"
+#line 310 "src/main.vl"
     fprintln_f64(io_get_stderr_writer(), val, precision);
 }
 
-#line 300 "src/main.vl"
+#line 313 "src/main.vl"
 void eprint_bool(bool val) {
-#line 301 "src/main.vl"
+#line 314 "src/main.vl"
     fprint_bool(io_get_stderr_writer(), val);
 }
 
-#line 304 "src/main.vl"
+#line 317 "src/main.vl"
 void eprintln_bool(bool val) {
-#line 305 "src/main.vl"
+#line 318 "src/main.vl"
     fprintln_bool(io_get_stderr_writer(), val);
 }
 

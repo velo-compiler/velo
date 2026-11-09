@@ -1,0 +1,12 @@
+// Test verifying that standard streams are automatically flushed on program exit.
+use "../../mem/page.vl"
+use "../../str/slice.vl"
+use "../../io/handle.vl"
+use "../../io/buffered_writer.vl"
+use "../../io/print.vl"
+
+act main() -> i32 {
+    print_str("UNFLUSHED_STDOUT_DATA")
+    eprint_str("UNFLUSHED_STDERR_DATA")
+    return 0
+}

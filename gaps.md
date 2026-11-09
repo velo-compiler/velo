@@ -1161,6 +1161,28 @@ flowchart TD
   - `bin/velo.exe run std/tests/io/buffered_reader_test.vl` passed single-byte reads, repeated byte peeks, mixed Unix `\n` and Windows `\r\n` line parsing with stripping, non-newline EOF line accumulation, multi-cycle buffer refills with a 16-byte tiny buffer over an 80-byte line, and full stream consumption via `reader_read_all`.
   - `python -m pytest tests/test_std_io.py` passed (5/5 passed).
 
+#### Task 4.5: Automatic Standard Stream Flush on Program Exit (`std/io/print.vl`) [COMPLETED] ✅
+* **Former Defect**:
+  - `std.io` buffered writers (`g_stdout_writer` and `g_stderr_writer`) maintain 4KB buffers backed by direct operating system write syscalls (`WriteFile` / POSIX `write`).
+  - Stream flushing was only triggered when a newline was output via `println(...)` or through explicit manual invocations of `io_flush_stdout()` / `io_flush_stderr()`.
+  - Calling `print(...)`, `print_str(...)`, `print_byte(...)`, `print_i64(...)`, or other formatting functions without a trailing newline resulted in unwritten buffered bytes remaining in memory when the program exited or returned from `main()`, silently dropping all pending console output.
+* **Fix Applied**:
+  - Bound the C runtime exit hook via `extern act atexit(func: act() -> void) -> i32` in `std/io/print.vl`.
+  - Added `io_ensure_atexit()`, safely registering `atexit(io_print_cleanup)` exactly once upon initialization of either `g_stdout_writer` (in `io_get_stdout_writer`) or `g_stderr_writer` (in `io_get_stderr_writer`).
+  - Because `io_print_cleanup()` invokes `writer_free` for each initialized stream (which calls `writer_flush` before releasing virtual memory pages), all unwritten buffered bytes are automatically and completely flushed to OS standard handles on normal process termination.
+  - Manual calls to `io_print_cleanup()` reset stream initialization flags to `false`, guaranteeing idempotency and preventing duplicate flushes or double-frees.
+  - Rebuilt the self-hosted bootstrap chain (`bin/velo.exe`) and refreshed `bootstrap.c` snapshot with verified bit-for-bit SHA-256 determinism across Gen2, Gen3, and bootstrap.
+  - Added native regression test `std/tests/io/print_exit_flush_test.vl` and pytest integration test `test_std_io_print_exit_flush` in `tests/test_std_io.py`.
+* **Residual Limitation**:
+  - Abnormal termination via unhandled OS signals (`SIGKILL`, immediate hard kill) bypasses `atexit`, as standard for user-space buffered I/O.
+* **Verification**:
+  - `bin/velo.exe run std/tests/io/print_exit_flush_test.vl` passed with automatic standard output and standard error flush upon exit without trailing newlines.
+  - `python -m pytest tests/test_std_io.py` passed (6/6 passed).
+  - Full regression test suite passed: `python -m pytest tests -q` (563/563 passed).
+  - Bit-for-bit compiler determinism verified (`acdd7ca1f4e828507a88519ae343aaf3e87fa2f61dbdf3fab9e9b5825448dfb2`).
+  - Line count verified $\le 400$ across all compiler sources (`python scripts/count_lines.py`) and zero UTF-8 BOM in `.vl` files.
+
+
 ---
 
 ### Phase 5: `std.coll` (Pure Velo Core Collections)

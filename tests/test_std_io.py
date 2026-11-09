@@ -76,3 +76,17 @@ def test_std_io_buffered_reader():
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.io.buffered_reader all assertions succeeded" in res.stdout
 
+def test_std_io_print_exit_flush():
+    test_vl = REPO_ROOT / "std" / "tests" / "io" / "print_exit_flush_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "UNFLUSHED_STDOUT_DATA" in res.stdout
+    assert "UNFLUSHED_STDERR_DATA" in res.stderr
+
+
