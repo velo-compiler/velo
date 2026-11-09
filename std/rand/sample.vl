@@ -39,24 +39,33 @@ act rand_u32(r: @Rng) -> u32 {
 // Returns a uniformly random u64 in [min, max] (inclusive). Panics if min > max.
 act rand_range_u64(r: @Rng, min: u64, max: u64) -> u64 {
     if min >= max { return min }
-    let range: u64 = (max - min) + (1 as u64)
+    let diff: u64 = max - min
+    if diff == 0xFFFFFFFFFFFFFFFF as u64 {
+        return rand_u64(r)
+    }
+    let range: u64 = diff + (1 as u64)
     return min + pcg64_bounded(@r.pcg, range)
 }
 
 // Returns a uniformly random i64 in [min, max] (inclusive).
 act rand_range_i64(r: @Rng, min: i64, max: i64) -> i64 {
     if min >= max { return min }
-    let range: u64 = (max - min) as u64 + (1 as u64)
+    let diff: u64 = (max as u64) - (min as u64)
+    if diff == 0xFFFFFFFFFFFFFFFF as u64 {
+        return rand_u64(r) as i64
+    }
+    let range: u64 = diff + (1 as u64)
     let r_u: u64 = pcg64_bounded(@r.pcg, range)
-    return min + r_u as i64
+    return ((min as u64) + r_u) as i64
 }
 
 // Returns a uniformly random i32 in [min, max] (inclusive).
 act rand_range_i32(r: @Rng, min: i32, max: i32) -> i32 {
     if min >= max { return min }
-    let range: u64 = ((max - min) as i64 + 1) as u64
+    let range: u64 = ((max as i64) - (min as i64) + 1) as u64
     let r_u: u64 = pcg64_bounded(@r.pcg, range)
-    return min + r_u as i32
+    let res: i64 = (min as i64) + (r_u as i64)
+    return res as i32
 }
 
 // ---------------------------------------------------------------------------
@@ -226,7 +235,11 @@ act rand_u64_x(r: @Xoshiro256) -> u64 {
 // Returns a uniformly random u64 in [min, max] from Xoshiro256**.
 act rand_range_u64_x(r: @Xoshiro256, min: u64, max: u64) -> u64 {
     if min >= max { return min }
-    let range: u64 = (max - min) + (1 as u64)
+    let diff: u64 = max - min
+    if diff == 0xFFFFFFFFFFFFFFFF as u64 {
+        return rand_u64_x(r)
+    }
+    let range: u64 = diff + (1 as u64)
     return min + xoshiro256_bounded(r, range)
 }
 

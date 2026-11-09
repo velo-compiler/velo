@@ -296,6 +296,53 @@ act main() -> i32 {
     let j_after = xoshiro256_next(@rj2)
     if j_before == j_after { return 35 }
 
+    // -----------------------------------------------------------------------
+    // 23. Full-range boundaries (Bug 3.2 regression)
+    // -----------------------------------------------------------------------
+    mut r_full = rng_seed(12345 as u64)
+    mut full_u64_nonzero = false
+    mut t_u64: usize = 0
+    loop t_u64 < 100 {
+        let v = rand_range_u64(@r_full, 0 as u64, 0xFFFFFFFFFFFFFFFF as u64)
+        if v != (0 as u64) { full_u64_nonzero = true }
+        t_u64 += 1
+    }
+    if not full_u64_nonzero { return 36 }
+
+    mut r_i32_full = rng_seed(54321 as u64)
+    mut full_i32_saw_pos = false
+    mut full_i32_saw_neg = false
+    mut ti: usize = 0
+    loop ti < 100 {
+        let v = rand_range_i32(@r_i32_full, -2147483648, 2147483647)
+        if v > 0 { full_i32_saw_pos = true }
+        if v < 0 { full_i32_saw_neg = true }
+        ti += 1
+    }
+    if not full_i32_saw_pos or not full_i32_saw_neg { return 37 }
+
+    mut r_i64_full = rng_seed(98765 as u64)
+    mut full_i64_saw_pos = false
+    mut full_i64_saw_neg = false
+    mut t64: usize = 0
+    loop t64 < 100 {
+        let v = rand_range_i64(@r_i64_full, -9223372036854775807 - 1, 9223372036854775807)
+        if v > (0 as i64) { full_i64_saw_pos = true }
+        if v < (0 as i64) { full_i64_saw_neg = true }
+        t64 += 1
+    }
+    if not full_i64_saw_pos or not full_i64_saw_neg { return 38 }
+
+    mut rx_full = xoshiro256_seed(111 as u64)
+    mut full_x_nonzero = false
+    mut tx: usize = 0
+    loop tx < 100 {
+        let v = rand_range_u64_x(@rx_full, 0 as u64, 0xFFFFFFFFFFFFFFFF as u64)
+        if v != (0 as u64) { full_x_nonzero = true }
+        tx += 1
+    }
+    if not full_x_nonzero { return 39 }
+
     io.println_str("OK: std.rand all tests passed")
     return 0
 }

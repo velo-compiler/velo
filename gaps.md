@@ -2447,6 +2447,25 @@ flowchart TD
   - Pytest suite `tests/test_std_rand.py` passed (2/2 tests).
   - All source files strictly < 400 lines (`python scripts/count_lines.py`).
 
+#### Task 25.2: Full-Range Boundary Overflow Fix in Integer Samplers (`rand_range_*`) [COMPLETED] ✅
+* **Former Defect**:
+  - In `std/rand/sample.vl`:
+    - `rand_range_u64` and `rand_range_u64_x` computed `let range: u64 = (max - min) + (1 as u64)`. When called with the full `u64` range (`min = 0, max = 0xFFFFFFFFFFFFFFFF`), `(max - min) + 1` overflowed $2^{64}$ and wrapped to `0`. `pcg64_bounded(rng, 0)` immediately returned `0`, causing `rand_range_u64(r, 0, UINT64_MAX)` to deterministically collapse to `0` on every call.
+    - `rand_range_i32` computed `let range: u64 = ((max - min) as i64 + 1) as u64`. When called with full bounds (`min = INT32_MIN, max = INT32_MAX`), `(max - min)` performed 32-bit signed subtraction before casting, overflowing `i32` to `-1`, which added to `1` yielded `0`, causing `rand_range_i32` to collapse to `INT32_MIN` on every call.
+    - `rand_range_i64` computed `(max - min) as u64 + 1`, which overflowed signed `i64` on full bounds (`INT64_MAX - INT64_MIN`), collapsing output to `INT64_MIN`.
+* **Fix Applied**:
+  - In `rand_range_u64` and `rand_range_u64_x`: checked for full range `diff == 0xFFFFFFFFFFFFFFFF as u64` and returned `rand_u64(r)` / `rand_u64_x(r)` directly, completely avoiding range addition overflow.
+  - In `rand_range_i64`: converted operands to unsigned subtraction `diff = (max as u64) - (min as u64)`. When `diff == 0xFFFFFFFFFFFFFFFF as u64`, returns `rand_u64(r) as i64`; otherwise computes bounded addition via `((min as u64) + r_u) as i64`, ensuring zero signed integer overflow.
+  - In `rand_range_i32`: widened signed operands to `i64` before subtraction `range = ((max as i64) - (min as i64) + 1) as u64`, and computed result via `res: i64 = (min as i64) + (r_u as i64)` before casting back to `i32`.
+  - Synced update to global installation directory `~/.velo/std/rand/sample.vl`.
+  - Added regression test section 23 in `std/tests/rand/rand_test.vl` and `test_std_rand_full_range_boundaries` in `tests/test_std_rand.py`.
+* **Residual Limitation**:
+  - None. Integer samplers across all signed and unsigned bit widths (`u64`, `i64`, `i32`) correctly sample the entire domain without boundary overflow.
+* **Verification**:
+  - Native rand tests passed: `bin/velo.exe run std/tests/rand/rand_test.vl` (23 verification sections).
+  - Pytest suite `tests/test_std_rand.py` passed (3/3 tests).
+  - Full test suite passed (`python -m pytest tests -q`).
+  - No UTF-8 BOM characters across all `.vl` files.
 
 ---
 
