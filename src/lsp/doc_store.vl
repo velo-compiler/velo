@@ -102,6 +102,88 @@ act lsp_close_doc(state: @LspServerState, uri_slice: StrSlice) {
     }
 }
 
+// Processes 'textDocument/didOpen' notification.
+act lsp_handle_did_open(state: @LspServerState, params: @JsonValue) {
+    let td = json_obj_get_str(params, "textDocument")
+    if td == null or td.kind != JSON_OBJECT { return }
+    let uri_val = json_obj_get_str(td, "uri")
+    let txt_val = json_obj_get_str(td, "text")
+    let ver_val = json_obj_get_str(td, "version")
+    if uri_val == null or txt_val == null { return }
+    if uri_val.kind != JSON_STRING or txt_val.kind != JSON_STRING { return }
+
+    let uri = lsp_slice_to_heap_str(uri_val.str_val)
+    let text = lsp_slice_to_heap_str(txt_val.str_val)
+    mut ver: i32 = 0
+    if ver_val != null and ver_val.kind == JSON_INT {
+        ver = ver_val.int_val as i32
+    }
+    lsp_store_doc(state, uri, text, ver)
+
+    let doc = lsp_find_doc(state, uri_val.str_val)
+    if doc != null {
+        lsp_analyze_document(doc.uri, doc.text, doc.version)
+    }
+}
+
+// Processes 'textDocument/didChange' notification (Full sync).
+act lsp_handle_did_change(state: @LspServerState, params: @JsonValue) {
+    let td = json_obj_get_str(params, "textDocument")
+    let changes = json_obj_get_str(params, "contentChanges")
+    if td == null or td.kind != JSON_OBJECT { return }
+    if changes == null or changes.kind != JSON_ARRAY { return }
+
+    let uri_val = json_obj_get_str(td, "uri")
+    if uri_val == null or uri_val.kind != JSON_STRING { return }
+
+    let ver_val = json_obj_get_str(td, "version")
+    mut ver: i32 = 0
+    if ver_val != null and ver_val.kind == JSON_INT {
+        ver = ver_val.int_val as i32
+    }
+
+    let change_first = changes.first_child
+    if change_first != null and change_first.kind == JSON_OBJECT {
+        let txt_val = json_obj_get_str(change_first, "text")
+        if txt_val != null and txt_val.kind == JSON_STRING {
+            let uri = lsp_slice_to_heap_str(uri_val.str_val)
+            let text = lsp_slice_to_heap_str(txt_val.str_val)
+            lsp_store_doc(state, uri, text, ver)
+
+            let doc = lsp_find_doc(state, uri_val.str_val)
+            if doc != null {
+                lsp_analyze_document(doc.uri, doc.text, doc.version)
+            }
+        }
+    }
+}
+
+// Processes 'textDocument/didClose' notification.
+act lsp_handle_did_close(state: @LspServerState, params: @JsonValue) {
+    let td = json_obj_get_str(params, "textDocument")
+    if td == null or td.kind != JSON_OBJECT { return }
+    let uri_val = json_obj_get_str(td, "uri")
+    if uri_val == null or uri_val.kind != JSON_STRING { return }
+
+    let uri_str = lsp_slice_to_heap_str(uri_val.str_val)
+    lsp_close_doc(state, uri_val.str_val)
+    lsp_publish_empty_diagnostics(uri_str)
+    mem.free(uri_str as @u8)
+}
+
+// Processes 'textDocument/didSave' notification.
+act lsp_handle_did_save(state: @LspServerState, params: @JsonValue) {
+    let td = json_obj_get_str(params, "textDocument")
+    if td == null or td.kind != JSON_OBJECT { return }
+    let uri_val = json_obj_get_str(td, "uri")
+    if uri_val == null or uri_val.kind != JSON_STRING { return }
+
+    let doc = lsp_find_doc(state, uri_val.str_val)
+    if doc != null {
+        lsp_analyze_document(doc.uri, doc.text, doc.version)
+    }
+}
+
 // Obtains document text either from active in-memory store or by reading disk fallback.
 act lsp_get_doc_text(state: @LspServerState, uri_val: @JsonValue, out_uri: @string, out_needs_free: @bool) -> string {
     if uri_val == null or uri_val.kind != JSON_STRING { return null }
@@ -126,7 +208,7 @@ act lsp_get_doc_text(state: @LspServerState, uri_val: @JsonValue, out_uri: @stri
 }
 
 // Extracts the identifier word and character span at the given 0-based cursor line/column.
-act lsp_extract_word_at_pos(text: string, line0: i32, char0: i32, out_name: @u8, out_start: @i32, out_end: @i32) -> bool {
+act lsp_extract_word_at_pos(text: string, line0: i32, char0: i32, out_name: @u8, out_start: @i32, out_end: @i32, skip_let_mut: bool) -> bool {
     let tlen = str.len(text)
     mut cur_line: i32 = 0
     mut line_start: usize = 0
@@ -178,7 +260,7 @@ act lsp_extract_word_at_pos(text: string, line0: i32, char0: i32, out_name: @u8,
         is_let_mut = true
     }
 
-    if is_let_mut {
+    if skip_let_mut and is_let_mut {
         mut next_pos = e_pos
         loop next_pos < line_len and (text[line_start + next_pos] == ' ' as u8 or text[line_start + next_pos] == '\t' as u8) {
             next_pos += 1

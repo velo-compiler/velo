@@ -252,7 +252,7 @@ act lsp_send_definition_result(id_node: @JsonValue, state: @LspServerState, uri:
     mut start_col: i32 = 0
     mut end_col: i32 = 0
 
-    let ok = lsp_extract_word_at_pos(text, line0, char0, word_buf, @start_col, @end_col)
+    let ok = lsp_extract_word_at_pos(text, line0, char0, word_buf, @start_col, @end_col, true)
     if !ok {
         lsp_send_null_definition(id_node)
         return

@@ -1,0 +1,302 @@
+// Symbol rename and prepareRename provider for Velo LSP.
+// Accurately computes workspace edits for local variables and top-level declarations.
+
+use std.io
+use std.mem
+use std.str
+use std.json
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "../common/diagnostics.vl"
+use "../frontend/token.vl"
+use "../frontend/lexer.vl"
+use "../frontend/parser.vl"
+use "../frontend/parser_expr.vl"
+use "../frontend/parser_binary.vl"
+use "../frontend/parser_stmt.vl"
+use "../frontend/parser_decl.vl"
+use "../ast/types.vl"
+use "../ast/stmt.vl"
+use "transport.vl"
+use "doc_store.vl"
+
+// Checks if a word is a reserved language keyword that cannot be renamed.
+act lsp_is_reserved_keyword(word: string) -> bool {
+    if word == null { return false }
+    let s = slice_from_str(word)
+    if slice_eq_str(s, "act") or slice_eq_str(s, "let") or slice_eq_str(s, "mut") { return true }
+    if slice_eq_str(s, "if") or slice_eq_str(s, "else") or slice_eq_str(s, "loop") { return true }
+    if slice_eq_str(s, "return") or slice_eq_str(s, "break") or slice_eq_str(s, "continue") { return true }
+    if slice_eq_str(s, "fail") or slice_eq_str(s, "or") or slice_eq_str(s, "and") or slice_eq_str(s, "not") { return true }
+    if slice_eq_str(s, "data") or slice_eq_str(s, "kind") or slice_eq_str(s, "aka") or slice_eq_str(s, "use") { return true }
+    if slice_eq_str(s, "zone") or slice_eq_str(s, "defer") or slice_eq_str(s, "test") or slice_eq_str(s, "assert") { return true }
+    if slice_eq_str(s, "true") or slice_eq_str(s, "false") or slice_eq_str(s, "null") { return true }
+    if slice_eq_str(s, "i32") or slice_eq_str(s, "i64") or slice_eq_str(s, "f32") or slice_eq_str(s, "f64") { return true }
+    if slice_eq_str(s, "bool") or slice_eq_str(s, "string") or slice_eq_str(s, "void") { return true }
+    return false
+}
+
+// Handles 'textDocument/prepareRename' to validate if symbol at cursor can be renamed.
+act lsp_handle_prepare_rename(state: @LspServerState, id_node: @JsonValue, params: @JsonValue) {
+    if params == null or params.kind != JSON_OBJECT {
+        lsp_send_null_rename(id_node); return
+    }
+    let td = json_obj_get_str(params, "textDocument")
+    let pos = json_obj_get_str(params, "position")
+    if td == null or td.kind != JSON_OBJECT or pos == null or pos.kind != JSON_OBJECT {
+        lsp_send_null_rename(id_node); return
+    }
+    let line_node = json_obj_get_str(pos, "line")
+    let char_node = json_obj_get_str(pos, "character")
+    if line_node == null or char_node == null {
+        lsp_send_null_rename(id_node); return
+    }
+
+    mut uri_str: string = null
+    mut needs_free = false
+    let text = lsp_get_doc_text(state, json_obj_get_str(td, "uri"), @uri_str, @needs_free)
+    if text == null {
+        lsp_send_null_rename(id_node); return
+    }
+
+    let line0 = line_node.int_val as i32
+    let char0 = char_node.int_val as i32
+    mut word_buf: @u8 = mem.heap_alloc(@u8, 128)
+    defer mem.free(word_buf)
+    mut start_col: i32 = 0
+    mut end_col: i32 = 0
+    let ok = lsp_extract_word_at_pos(text, line0, char0, word_buf, @start_col, @end_col, false)
+    if !ok {
+        lsp_send_null_rename(id_node)
+        if needs_free { mem.free(text as @u8); mem.free(uri_str as @u8) }
+        return
+    }
+
+    let word = word_buf as string
+    if lsp_is_reserved_keyword(word) {
+        lsp_send_null_rename(id_node)
+        if needs_free { mem.free(text as @u8); mem.free(uri_str as @u8) }
+        return
+    }
+
+    mut sb = create_sb(160)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
+    lsp_append_id(@sb, id_node)
+    sb_append_str(@sb, ",\"result\":{\"start\":{\"line\":")
+    sb_append_int(@sb, line0)
+    sb_append_str(@sb, ",\"character\":")
+    sb_append_int(@sb, start_col)
+    sb_append_str(@sb, "},\"end\":{\"line\":")
+    sb_append_int(@sb, line0)
+    sb_append_str(@sb, ",\"character\":")
+    sb_append_int(@sb, end_col)
+    sb_append_str(@sb, "}}}")
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+    mem.free(payload as @u8)
+
+    if needs_free {
+        mem.free(text as @u8)
+        mem.free(uri_str as @u8)
+    }
+}
+
+// Searches statement tree to verify if `name` is a local variable in the function.
+act lsp_decl_has_local(stmt: @StmtNode, name: string) -> bool {
+    if stmt == null { return false }
+    if stmt.kind == STMT_VAR_DECL {
+        if stmt.name != null and slice_eq_str(slice_from_str(name), stmt.name) {
+            return true
+        }
+    }
+    if stmt.kind == STMT_BLOCK {
+        mut cur = stmt.first_stmt
+        loop cur != null {
+            if lsp_decl_has_local(cur, name) { return true }
+            cur = cur.next
+        }
+    } else if stmt.kind == STMT_IF {
+        if lsp_decl_has_local(stmt.body, name) { return true }
+        if lsp_decl_has_local(stmt.else_branch, name) { return true }
+    } else if stmt.kind == STMT_LOOP {
+        return lsp_decl_has_local(stmt.body, name)
+    }
+    return false
+}
+
+// Dispatches 'textDocument/rename' and generates WorkspaceEdit across occurrences.
+act lsp_handle_rename(state: @LspServerState, id_node: @JsonValue, params: @JsonValue) {
+    if params == null or params.kind != JSON_OBJECT {
+        lsp_send_null_rename(id_node); return
+    }
+    let td = json_obj_get_str(params, "textDocument")
+    let pos = json_obj_get_str(params, "position")
+    let new_name_node = json_obj_get_str(params, "newName")
+    if td == null or td.kind != JSON_OBJECT or pos == null or pos.kind != JSON_OBJECT or new_name_node == null or new_name_node.kind != JSON_STRING {
+        lsp_send_null_rename(id_node); return
+    }
+    let line_node = json_obj_get_str(pos, "line")
+    let char_node = json_obj_get_str(pos, "character")
+    if line_node == null or char_node == null {
+        lsp_send_null_rename(id_node); return
+    }
+
+    mut uri_str: string = null
+    mut needs_free = false
+    let text = lsp_get_doc_text(state, json_obj_get_str(td, "uri"), @uri_str, @needs_free)
+    if text == null {
+        lsp_send_null_rename(id_node); return
+    }
+
+    let line0 = line_node.int_val as i32
+    let char0 = char_node.int_val as i32
+    mut word_buf: @u8 = mem.heap_alloc(@u8, 128)
+    defer mem.free(word_buf)
+    mut start_col: i32 = 0
+    mut end_col: i32 = 0
+    let ok = lsp_extract_word_at_pos(text, line0, char0, word_buf, @start_col, @end_col, false)
+    if !ok {
+        lsp_send_null_rename(id_node)
+        if needs_free { mem.free(text as @u8); mem.free(uri_str as @u8) }
+        return
+    }
+
+    let old_name = word_buf as string
+    if lsp_is_reserved_keyword(old_name) {
+        lsp_send_null_rename(id_node)
+        if needs_free { mem.free(text as @u8); mem.free(uri_str as @u8) }
+        return
+    }
+
+    let new_name_slice = new_name_node.str_val
+    let old_len = str.len(old_name)
+    let tlen = str.len(text)
+
+    mut scope_start_line: i32 = 0
+    mut scope_end_line: i32 = 1000000
+
+    diag_collector_start()
+
+    zone {
+        let slen = str.len(text)
+        mut lex = create_lexer(text, slen, slen + 2)
+        tokenize(@lex)
+
+        if lex.dropped_count == 0 {
+            mut p: Parser
+            init_parser(@p, "memory.vl", text, lex.tokens, lex.token_count)
+            let prog = parse_program(@p)
+            if prog != null {
+                let line1 = line0 + 1
+                mut cur = prog.first_decl
+                loop cur != null {
+                    if cur.kind == DECL_FUNCTION and cur.line <= line1 {
+                        mut is_param = false
+                        mut pparam = cur.first_param
+                        loop pparam != null {
+                            if pparam.name != null and slice_eq_str(slice_from_str(old_name), pparam.name) {
+                                is_param = true
+                                break
+                            }
+                            pparam = pparam.next
+                        }
+                        if is_param or lsp_decl_has_local(cur.body, old_name) {
+                            scope_start_line = cur.line - 1
+                            if cur.next != null {
+                                scope_end_line = cur.next.line - 1
+                            }
+                            break
+                        }
+                    }
+                    cur = cur.next
+                }
+            }
+        }
+    }
+
+    diag_collector_stop()
+    diag_collector_clear()
+
+    mut sb = create_sb(1024)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
+    lsp_append_id(@sb, id_node)
+    sb_append_str(@sb, ",\"result\":{\"changes\":{\"")
+    lsp_json_escape(@sb, uri_str)
+    sb_append_str(@sb, "\":[")
+
+    mut is_first_edit = true
+    mut cur_l: i32 = 0
+    mut l_start: usize = 0
+    mut i: usize = 0
+    loop i <= tlen {
+        if i == tlen or text[i] == '\n' as u8 {
+            if cur_l >= scope_start_line and cur_l <= scope_end_line {
+                let l_len = i - l_start
+                mut c: usize = 0
+                loop c + old_len <= l_len {
+                    mut match = true
+                    mut k: usize = 0
+                    loop k < old_len {
+                        if text[l_start + c + k] != old_name[k] {
+                            match = false
+                            break
+                        }
+                        k += 1
+                    }
+                    if match {
+                        mut left_ok = (c == 0)
+                        if !left_ok and !is_ident_part(text[l_start + c - 1]) { left_ok = true }
+                        mut right_ok = (c + old_len == l_len)
+                        if !right_ok and !is_ident_part(text[l_start + c + old_len]) { right_ok = true }
+                        if left_ok and right_ok {
+                            if !is_first_edit { sb_append_char(@sb, ',') }
+                            is_first_edit = false
+                            sb_append_str(@sb, "{\"range\":{\"start\":{\"line\":")
+                            sb_append_int(@sb, cur_l)
+                            sb_append_str(@sb, ",\"character\":")
+                            sb_append_int(@sb, c as i32)
+                            sb_append_str(@sb, "},\"end\":{\"line\":")
+                            sb_append_int(@sb, cur_l)
+                            sb_append_str(@sb, ",\"character\":")
+                            sb_append_int(@sb, (c + old_len) as i32)
+                            sb_append_str(@sb, "}},\"newText\":\"")
+                            mut ni: usize = 0
+                            loop ni < new_name_slice.len {
+                                sb_append_char(@sb, new_name_slice.ptr[ni])
+                                ni += 1
+                            }
+                            sb_append_str(@sb, "\"}")
+                            c += old_len
+                            continue
+                        }
+                    }
+                    c += 1
+                }
+            }
+            cur_l += 1
+            l_start = i + 1
+        }
+        i += 1
+    }
+
+    sb_append_str(@sb, "]}}}")
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+    mem.free(payload as @u8)
+
+    if needs_free {
+        mem.free(text as @u8)
+        mem.free(uri_str as @u8)
+    }
+}
+
+// Emits an empty rename response (result: null).
+act lsp_send_null_rename(id_node: @JsonValue) {
+    mut sb = create_sb(128)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
+    lsp_append_id(@sb, id_node)
+    sb_append_str(@sb, ",\"result\":null}")
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+    mem.free(payload as @u8)
+}

@@ -14,88 +14,9 @@ use "doc_store.vl"
 use "symbols.vl"
 use "hover.vl"
 use "definition.vl"
-
-// Processes 'textDocument/didOpen' notification.
-act lsp_handle_did_open(state: @LspServerState, params: @JsonValue) {
-    let td = json_obj_get_str(params, "textDocument")
-    if td == null or td.kind != JSON_OBJECT { return }
-    let uri_val = json_obj_get_str(td, "uri")
-    let txt_val = json_obj_get_str(td, "text")
-    let ver_val = json_obj_get_str(td, "version")
-    if uri_val == null or txt_val == null { return }
-    if uri_val.kind != JSON_STRING or txt_val.kind != JSON_STRING { return }
-
-    let uri = lsp_slice_to_heap_str(uri_val.str_val)
-    let text = lsp_slice_to_heap_str(txt_val.str_val)
-    mut ver: i32 = 0
-    if ver_val != null and ver_val.kind == JSON_INT {
-        ver = ver_val.int_val as i32
-    }
-    lsp_store_doc(state, uri, text, ver)
-
-    let doc = lsp_find_doc(state, uri_val.str_val)
-    if doc != null {
-        lsp_analyze_document(doc.uri, doc.text, doc.version)
-    }
-}
-
-// Processes 'textDocument/didChange' notification (Full sync).
-act lsp_handle_did_change(state: @LspServerState, params: @JsonValue) {
-    let td = json_obj_get_str(params, "textDocument")
-    let changes = json_obj_get_str(params, "contentChanges")
-    if td == null or td.kind != JSON_OBJECT { return }
-    if changes == null or changes.kind != JSON_ARRAY { return }
-
-    let uri_val = json_obj_get_str(td, "uri")
-    if uri_val == null or uri_val.kind != JSON_STRING { return }
-
-    let ver_val = json_obj_get_str(td, "version")
-    mut ver: i32 = 0
-    if ver_val != null and ver_val.kind == JSON_INT {
-        ver = ver_val.int_val as i32
-    }
-
-    let change_first = changes.first_child
-    if change_first != null and change_first.kind == JSON_OBJECT {
-        let txt_val = json_obj_get_str(change_first, "text")
-        if txt_val != null and txt_val.kind == JSON_STRING {
-            let uri = lsp_slice_to_heap_str(uri_val.str_val)
-            let text = lsp_slice_to_heap_str(txt_val.str_val)
-            lsp_store_doc(state, uri, text, ver)
-
-            let doc = lsp_find_doc(state, uri_val.str_val)
-            if doc != null {
-                lsp_analyze_document(doc.uri, doc.text, doc.version)
-            }
-        }
-    }
-}
-
-// Processes 'textDocument/didClose' notification.
-act lsp_handle_did_close(state: @LspServerState, params: @JsonValue) {
-    let td = json_obj_get_str(params, "textDocument")
-    if td == null or td.kind != JSON_OBJECT { return }
-    let uri_val = json_obj_get_str(td, "uri")
-    if uri_val == null or uri_val.kind != JSON_STRING { return }
-
-    let uri_str = lsp_slice_to_heap_str(uri_val.str_val)
-    lsp_close_doc(state, uri_val.str_val)
-    lsp_publish_empty_diagnostics(uri_str)
-    mem.free(uri_str as @u8)
-}
-
-// Processes 'textDocument/didSave' notification.
-act lsp_handle_did_save(state: @LspServerState, params: @JsonValue) {
-    let td = json_obj_get_str(params, "textDocument")
-    if td == null or td.kind != JSON_OBJECT { return }
-    let uri_val = json_obj_get_str(td, "uri")
-    if uri_val == null or uri_val.kind != JSON_STRING { return }
-
-    let doc = lsp_find_doc(state, uri_val.str_val)
-    if doc != null {
-        lsp_analyze_document(doc.uri, doc.text, doc.version)
-    }
-}
+use "completion.vl"
+use "rename.vl"
+use "code_action.vl"
 
 // Processes 'textDocument/documentSymbol' request.
 act lsp_handle_document_symbol(state: @LspServerState, id_node: @JsonValue, params: @JsonValue) {
@@ -269,6 +190,34 @@ act lsp_dispatch_message(state: @LspServerState, msg: string) -> bool {
     if slice_eq_str(m, "textDocument/definition") {
         if id_node != null {
             lsp_handle_definition(state, id_node, params_node)
+        }
+        return false
+    }
+
+    if slice_eq_str(m, "textDocument/completion") {
+        if id_node != null {
+            lsp_handle_completion(state, id_node, params_node)
+        }
+        return false
+    }
+
+    if slice_eq_str(m, "textDocument/prepareRename") {
+        if id_node != null {
+            lsp_handle_prepare_rename(state, id_node, params_node)
+        }
+        return false
+    }
+
+    if slice_eq_str(m, "textDocument/rename") {
+        if id_node != null {
+            lsp_handle_rename(state, id_node, params_node)
+        }
+        return false
+    }
+
+    if slice_eq_str(m, "textDocument/codeAction") {
+        if id_node != null {
+            lsp_handle_code_action(state, id_node, params_node)
         }
         return false
     }

@@ -169,10 +169,10 @@ act lsp_append_id(sb: @StringBuilder, id_node: @JsonValue) {
 
 // Responds to the 'initialize' request with server capabilities.
 act lsp_send_initialize_result(id_node: @JsonValue) {
-    mut sb = create_sb(256)
+    mut sb = create_sb(512)
     sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
     lsp_append_id(@sb, id_node)
-    sb_append_str(@sb, ",\"result\":{\"capabilities\":{\"textDocumentSync\":1,\"documentSymbolProvider\":true,\"hoverProvider\":true,\"definitionProvider\":true}}}")
+    sb_append_str(@sb, ",\"result\":{\"capabilities\":{\"textDocumentSync\":1,\"documentSymbolProvider\":true,\"hoverProvider\":true,\"definitionProvider\":true,\"completionProvider\":{\"triggerCharacters\":[\".\"],\"resolveProvider\":false},\"renameProvider\":{\"prepareProvider\":true},\"codeActionProvider\":true}}}")
     let payload = sb_to_string(@sb)
     lsp_send_payload(payload)
 }

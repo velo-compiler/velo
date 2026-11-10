@@ -1,0 +1,340 @@
+// Intelligent code completion engine for Velo LSP.
+// Provides module member completions, struct dot-completions, and global symbols.
+
+use std.io
+use std.mem
+use std.str
+use std.json
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "../common/diagnostics.vl"
+use "../frontend/token.vl"
+use "../frontend/lexer.vl"
+use "../frontend/parser.vl"
+use "../frontend/parser_expr.vl"
+use "../frontend/parser_binary.vl"
+use "../frontend/parser_stmt.vl"
+use "../frontend/parser_decl.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "transport.vl"
+use "doc_store.vl"
+use "completion_builtins.vl"
+
+// Searches the program AST for a top-level struct declaration matching `name`.
+act lsp_find_struct_decl(prog: @ProgramNode, name: string) -> @StmtNode {
+    if prog == null or name == null { return null }
+    mut cur = prog.first_decl
+    loop cur != null {
+        if cur.kind == DECL_DATA and cur.name != null {
+            if slice_eq_str(slice_from_str(name), cur.name) {
+                return cur
+            }
+        }
+        cur = cur.next
+    }
+    return null
+}
+
+// Recursively searches statement tree for a variable declaration matching `var_name`.
+act lsp_find_local_type(stmt: @StmtNode, var_name: string, max_line: i32) -> string {
+    if stmt == null { return null }
+    if stmt.kind == STMT_VAR_DECL {
+        if stmt.line <= max_line and slice_eq_str(slice_from_str(var_name), stmt.name) {
+            if stmt.type_name != null and str.len(stmt.type_name) > 0 {
+                return stmt.type_name
+            }
+            if stmt.val_expr != null and stmt.val_expr.kind == EXPR_STRUCT_LIT {
+                return stmt.val_expr.type_name
+            }
+            return null
+        }
+    }
+    if stmt.kind == STMT_BLOCK {
+        mut cur = stmt.first_stmt
+        loop cur != null {
+            let res = lsp_find_local_type(cur, var_name, max_line)
+            if res != null { return res }
+            cur = cur.next
+        }
+    } else if stmt.kind == STMT_IF {
+        let r1 = lsp_find_local_type(stmt.body, var_name, max_line)
+        if r1 != null { return r1 }
+        let r2 = lsp_find_local_type(stmt.else_branch, var_name, max_line)
+        if r2 != null { return r2 }
+    } else if stmt.kind == STMT_LOOP {
+        return lsp_find_local_type(stmt.body, var_name, max_line)
+    }
+    return null
+}
+
+// Resolves variable or parameter type in enclosing function at given line.
+act lsp_resolve_var_type(prog: @ProgramNode, var_name: string, line0: i32) -> string {
+    if prog == null or var_name == null { return null }
+    let line1 = line0 + 1
+    mut cur_decl = prog.first_decl
+    loop cur_decl != null {
+        if cur_decl.kind == DECL_FUNCTION and cur_decl.line <= line1 {
+            mut p = cur_decl.first_param
+            loop p != null {
+                if p.name != null and slice_eq_str(slice_from_str(var_name), p.name) {
+                    return p.type_name
+                }
+                p = p.next
+            }
+            let ltype = lsp_find_local_type(cur_decl.body, var_name, line1)
+            if ltype != null { return ltype }
+        }
+        cur_decl = cur_decl.next
+    }
+    return null
+}
+
+// Strips pointer '@' and generic bounds to obtain bare struct type name.
+act lsp_clean_type_name(t: string, out_buf: @u8) -> string {
+    if t == null { return null }
+    let tlen = str.len(t)
+    mut start: usize = 0
+    loop start < tlen and (t[start] == '@' as u8 or t[start] == ' ' as u8) {
+        start += 1
+    }
+    mut end: usize = start
+    loop end < tlen and is_ident_part(t[end]) {
+        end += 1
+    }
+    let len = end - start
+    if len == 0 or len >= 128 { return null }
+    mut i: usize = 0
+    loop i < len {
+        out_buf[i] = t[start + i]
+        i += 1
+    }
+    out_buf[len] = 0 as u8
+    return out_buf as string
+}
+
+// Emits completion items for struct fields matching `after` prefix.
+act lsp_complete_struct_fields(sb: @StringBuilder, prog: @ProgramNode, struct_name: string, after: string, is_first: @bool) -> bool {
+    let sdecl = lsp_find_struct_decl(prog, struct_name)
+    if sdecl == null { return false }
+    mut f = sdecl.first_field
+    mut count: i32 = 0
+    loop f != null {
+        if f.name != null and lsp_str_starts_with(f.name, after) {
+            lsp_append_item(sb, f.name, 5, f.type_name, is_first)
+            count += 1
+        }
+        f = f.next
+    }
+    return count > 0
+}
+
+// Dispatches and formats the 'textDocument/completion' JSON-RPC response.
+act lsp_handle_completion(state: @LspServerState, id_node: @JsonValue, params: @JsonValue) {
+    if params == null or params.kind != JSON_OBJECT {
+        lsp_send_empty_completion(id_node); return
+    }
+    let td = json_obj_get_str(params, "textDocument")
+    let pos = json_obj_get_str(params, "position")
+    if td == null or td.kind != JSON_OBJECT or pos == null or pos.kind != JSON_OBJECT {
+        lsp_send_empty_completion(id_node); return
+    }
+    let line_node = json_obj_get_str(pos, "line")
+    let char_node = json_obj_get_str(pos, "character")
+    if line_node == null or char_node == null {
+        lsp_send_empty_completion(id_node); return
+    }
+    mut uri_str: string = null
+    mut needs_free = false
+    let text = lsp_get_doc_text(state, json_obj_get_str(td, "uri"), @uri_str, @needs_free)
+    if text == null {
+        lsp_send_empty_completion(id_node); return
+    }
+
+    let line0 = line_node.int_val as i32
+    let char0 = char_node.int_val as i32
+    let tlen = str.len(text)
+
+    mut cur_line: i32 = 0
+    mut line_start: usize = 0
+    mut i: usize = 0
+    loop i < tlen {
+        if cur_line == line0 { break }
+        if text[i] == '\n' as u8 {
+            cur_line += 1
+            line_start = i + 1
+        }
+        i += 1
+    }
+    mut line_end: usize = line_start
+    loop line_end < tlen and text[line_end] != '\n' as u8 and text[line_end] != '\r' as u8 {
+        line_end += 1
+    }
+    let line_len = line_end - line_start
+    mut pos_idx: usize = char0 as usize
+    if pos_idx > line_len { pos_idx = line_len }
+
+    mut has_dot = false
+    mut dot_idx: usize = 0
+    mut k: usize = pos_idx
+    loop k > 0 {
+        k -= 1
+        let c = text[line_start + k]
+        if c == '.' as u8 {
+            has_dot = true
+            dot_idx = k
+            break
+        }
+        if !is_ident_part(c) { break }
+    }
+
+    diag_collector_start()
+
+    zone {
+        let slen = str.len(text)
+        mut lex = create_lexer(text, slen, slen + 2)
+        tokenize(@lex)
+
+        mut prog: @ProgramNode = null
+        if lex.dropped_count == 0 {
+            mut p: Parser
+            init_parser(@p, "memory.vl", text, lex.tokens, lex.token_count)
+            prog = parse_program(@p)
+        }
+
+        mut sb = create_sb(1024)
+        sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
+        lsp_append_id(@sb, id_node)
+        sb_append_str(@sb, ",\"result\":[")
+        mut is_first = true
+
+        if has_dot {
+            mut after_buf: @u8 = mem.alloc(@u8, 128)
+            mut after_len: usize = 0
+            mut m = dot_idx + 1
+            loop m < pos_idx and after_len < 127 {
+                after_buf[after_len] = text[line_start + m]
+                after_len += 1
+                m += 1
+            }
+            after_buf[after_len] = 0 as u8
+            let after_str = after_buf as string
+
+            mut head_end = dot_idx
+            loop head_end > 0 and (text[line_start + head_end - 1] == ' ' as u8 or text[line_start + head_end - 1] == '\t' as u8) {
+                head_end -= 1
+            }
+            mut head_start = head_end
+            loop head_start > 0 and is_ident_part(text[line_start + head_start - 1]) {
+                head_start -= 1
+            }
+            let head_len = head_end - head_start
+            mut head_buf: @u8 = mem.alloc(@u8, 128)
+            if head_len > 0 and head_len < 127 {
+                mut hi: usize = 0
+                loop hi < head_len {
+                    head_buf[hi] = text[line_start + head_start + hi]
+                    hi += 1
+                }
+                head_buf[head_len] = 0 as u8
+                let head_str = head_buf as string
+
+                let handled_mod = lsp_complete_builtin_module(@sb, head_str, after_str, @is_first)
+                if !handled_mod and prog != null {
+                    mut resolved_type: string = null
+                    mut prev_dot: usize = head_start
+                    loop prev_dot > 0 and (text[line_start + prev_dot - 1] == ' ' as u8 or text[line_start + prev_dot - 1] == '\t' as u8) {
+                        prev_dot -= 1
+                    }
+                    if prev_dot > 0 and text[line_start + prev_dot - 1] == '.' as u8 {
+                        mut parent_end = prev_dot - 1
+                        loop parent_end > 0 and (text[line_start + parent_end - 1] == ' ' as u8 or text[line_start + parent_end - 1] == '\t' as u8) {
+                            parent_end -= 1
+                        }
+                        mut parent_start = parent_end
+                        loop parent_start > 0 and is_ident_part(text[line_start + parent_start - 1]) {
+                            parent_start -= 1
+                        }
+                        let parent_len = parent_end - parent_start
+                        mut parent_buf: @u8 = mem.alloc(@u8, 128)
+                        if parent_len > 0 and parent_len < 127 {
+                            mut pi: usize = 0
+                            loop pi < parent_len {
+                                parent_buf[pi] = text[line_start + parent_start + pi]
+                                pi += 1
+                            }
+                            parent_buf[parent_len] = 0 as u8
+                            let ptype = lsp_resolve_var_type(prog, parent_buf as string, line0)
+                            if ptype != null {
+                                mut clean_pbuf: @u8 = mem.alloc(@u8, 128)
+                                let clean_p = lsp_clean_type_name(ptype, clean_pbuf)
+                                if clean_p != null {
+                                    let psdecl = lsp_find_struct_decl(prog, clean_p)
+                                    if psdecl != null {
+                                        mut pf = psdecl.first_field
+                                        loop pf != null {
+                                            if pf.name != null and slice_eq_str(slice_from_str(head_str), pf.name) {
+                                                resolved_type = pf.type_name
+                                                break
+                                            }
+                                            pf = pf.next
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        resolved_type = lsp_resolve_var_type(prog, head_str, line0)
+                    }
+
+                    if resolved_type != null {
+                        mut clean_buf: @u8 = mem.alloc(@u8, 128)
+                        let clean_sname = lsp_clean_type_name(resolved_type, clean_buf)
+                        if clean_sname != null {
+                            lsp_complete_struct_fields(@sb, prog, clean_sname, after_str, @is_first)
+                        }
+                    }
+                }
+            }
+        } else {
+            mut tok_start = pos_idx
+            loop tok_start > 0 and is_ident_part(text[line_start + tok_start - 1]) {
+                tok_start -= 1
+            }
+            let tok_len = pos_idx - tok_start
+            mut tok_buf: @u8 = mem.alloc(@u8, 128)
+            mut ti: usize = 0
+            loop ti < tok_len and ti < 127 {
+                tok_buf[ti] = text[line_start + tok_start + ti]
+                ti += 1
+            }
+            tok_buf[ti] = 0 as u8
+            lsp_complete_globals(@sb, prog, tok_buf as string, @is_first)
+        }
+
+        sb_append_str(@sb, "]}")
+        let payload = sb_to_string(@sb)
+        lsp_send_payload(payload)
+        mem.free(payload as @u8)
+    }
+
+    diag_collector_stop()
+    diag_collector_clear()
+
+    if needs_free {
+        mem.free(text as @u8)
+        mem.free(uri_str as @u8)
+    }
+}
+
+// Sends an empty completion list response.
+act lsp_send_empty_completion(id_node: @JsonValue) {
+    mut sb = create_sb(128)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
+    lsp_append_id(@sb, id_node)
+    sb_append_str(@sb, ",\"result\":[]}")
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+    mem.free(payload as @u8)
+}

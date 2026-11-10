@@ -1,0 +1,161 @@
+// Auto-import and quick-fix CodeAction provider for Velo LSP.
+// Suggests missing 'use std.<module>' imports for unimported namespace references.
+
+use std.io
+use std.mem
+use std.str
+use std.json
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "transport.vl"
+use "doc_store.vl"
+
+// Checks if document `text` contains the exact import pattern `use std.<mod>` or `use sys.<mod>`.
+act lsp_doc_has_import(text: string, mod_name: string) -> bool {
+    let tlen = str.len(text)
+    let mlen = str.len(mod_name)
+    if tlen == 0 or mlen == 0 { return false }
+
+    mut i: usize = 0
+    loop i + 8 + mlen <= tlen {
+        if text[i] == 'u' as u8 and text[i + 1] == 's' as u8 and text[i + 2] == 'e' as u8 and text[i + 3] == ' ' as u8 {
+            let offset = i + 4
+            mut is_std = false
+            if text[offset] == 's' as u8 and text[offset + 1] == 't' as u8 and text[offset + 2] == 'd' as u8 and text[offset + 3] == '.' as u8 {
+                is_std = true
+            } else if text[offset] == 's' as u8 and text[offset + 1] == 'y' as u8 and text[offset + 2] == 's' as u8 and text[offset + 3] == '.' as u8 {
+                is_std = true
+            }
+            if is_std {
+                let mod_start = offset + 4
+                mut match = true
+                mut k: usize = 0
+                loop k < mlen {
+                    if text[mod_start + k] != mod_name[k] {
+                        match = false
+                        break
+                    }
+                    k += 1
+                }
+                if match {
+                    let end_pos = mod_start + mlen
+                    if end_pos == tlen or !is_ident_part(text[end_pos]) {
+                        return true
+                    }
+                }
+            }
+        }
+        i += 1
+    }
+    return false
+}
+
+// Checks if document `text` uses the given module prefix (e.g. 'io.', 'mem.').
+act lsp_doc_uses_module(text: string, mod_name: string) -> bool {
+    let tlen = str.len(text)
+    let mlen = str.len(mod_name)
+    if tlen <= mlen + 1 { return false }
+
+    mut i: usize = 0
+    loop i + mlen + 1 <= tlen {
+        mut match = true
+        mut k: usize = 0
+        loop k < mlen {
+            if text[i + k] != mod_name[k] {
+                match = false
+                break
+            }
+            k += 1
+        }
+        if match and text[i + mlen] == '.' as u8 {
+            mut left_ok = (i == 0)
+            if !left_ok and !is_ident_part(text[i - 1]) {
+                left_ok = true
+            }
+            if left_ok {
+                return true
+            }
+        }
+        i += 1
+    }
+    return false
+}
+
+// Checks module usage and appends quick-fix code action if missing.
+act lsp_check_std_module(sb: @StringBuilder, text: string, uri_str: string, mod: string, is_first: @bool) {
+    if lsp_doc_uses_module(text, mod) and !lsp_doc_has_import(text, mod) {
+        if !is_first.@ { sb_append_char(sb, ',') }
+        is_first.@ = false
+
+        sb_append_str(sb, "{\"title\":\"Add 'use std.")
+        sb_append_str(sb, mod)
+        sb_append_str(sb, "'\",\"kind\":\"quickfix\",\"isPreferred\":true,\"edit\":{\"changes\":{\"")
+        lsp_json_escape(sb, uri_str)
+        sb_append_str(sb, "\":[{\"range\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":0}},\"newText\":\"use std.")
+        sb_append_str(sb, mod)
+        sb_append_str(sb, "\\n\"}]}}}")
+    }
+}
+
+// Dispatches 'textDocument/codeAction' to propose missing module import quick-fixes.
+act lsp_handle_code_action(state: @LspServerState, id_node: @JsonValue, params: @JsonValue) {
+    if params == null or params.kind != JSON_OBJECT {
+        lsp_send_empty_code_action(id_node); return
+    }
+    let td = json_obj_get_str(params, "textDocument")
+    if td == null or td.kind != JSON_OBJECT {
+        lsp_send_empty_code_action(id_node); return
+    }
+
+    mut uri_str: string = null
+    mut needs_free = false
+    let text = lsp_get_doc_text(state, json_obj_get_str(td, "uri"), @uri_str, @needs_free)
+    if text == null {
+        lsp_send_empty_code_action(id_node); return
+    }
+
+    mut sb = create_sb(1024)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
+    lsp_append_id(@sb, id_node)
+    sb_append_str(@sb, ",\"result\":[")
+
+    mut is_first = true
+    lsp_check_std_module(@sb, text, uri_str, "io", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "mem", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "fs", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "math", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "str", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "time", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "os", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "simd", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "json", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "net", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "http", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "uuid", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "url", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "path", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "rand", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "validate", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "timer", @is_first)
+
+    sb_append_str(@sb, "]}")
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+    mem.free(payload as @u8)
+
+    if needs_free {
+        mem.free(text as @u8)
+        mem.free(uri_str as @u8)
+    }
+}
+
+// Sends an empty codeAction response.
+act lsp_send_empty_code_action(id_node: @JsonValue) {
+    mut sb = create_sb(128)
+    sb_append_str(@sb, "{\"jsonrpc\":\"2.0\",\"id\":")
+    lsp_append_id(@sb, id_node)
+    sb_append_str(@sb, ",\"result\":[]}")
+    let payload = sb_to_string(@sb)
+    lsp_send_payload(payload)
+    mem.free(payload as @u8)
+}

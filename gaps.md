@@ -2846,3 +2846,42 @@ flowchart TD
   - Verified 100% parity across Stage 1 and Stage 2 native compiler.
   - Full pytest test suite passing.
   - Line count verified $\le 400$ lines across all compiler sources (`python scripts/count_lines.py`) and zero UTF-8 BOM characters across all `.vl` files.
+
+---
+
+### Phase 33: Native LSP Phase 3: Developer Experience & Tooling
+#### Task 33.1: Intelligent Auto-Completion, Rename Refactoring, and Auto-Import QuickFixes [COMPLETED] ✅
+* **Former Defect**:
+  - `velo lsp` previously supported server lifecycle, document synchronization, live diagnostics, document outline symbols, hover tooltips, and go-to-definition (Phases 1 & 2), but lacked modern developer experience and code authoring tools:
+    1. No code completion (`textDocument/completion`): typing `.` on standard modules (`io.`, `mem.`, `fs.`, `math.`, etc.) or on struct variables (`pt.`, `@pt.`, nested `player.pos.`) yielded no autocomplete suggestions, requiring developers to manually memorize all struct field names and std module methods.
+    2. No safe symbol renaming (`textDocument/prepareRename` and `textDocument/rename`): developers could not safely refactor local variables or parameters across a function scope with automated workspace edit calculation; invoking F2 rename in editors was unsupported.
+    3. No quick-fix code actions (`textDocument/codeAction`): using standard modules without importing them (e.g. `io.println`) required manually scrolling to line 0 and adding `use std.io` rather than offering one-click auto-import quick-fixes.
+* **Fix Applied**:
+  - Implemented Phase 3 LSP developer experience and authoring features natively in the self-hosted Velo compiler:
+    1. **Intelligent Auto-Completion Engine (`src/lsp/completion.vl` & `src/lsp/completion_builtins.vl`)**:
+       - Advertised `completionProvider: { "triggerCharacters": ["."], "resolveProvider": false }` in `lsp_send_initialize_result` (`src/lsp/transport.vl`).
+       - Built modular builtin module completion catalogs for `io`, `mem`, `fs`, `math`, `str`, `time`, `os`, `simd` with exact member kind classification (`CompletionItemKind.Method = 3`, `Constant = 21`).
+       - Implemented prefix-filtered struct field dot-completion on local variables, pointer parameters (`@Point`), and nested field accesses (`player.pos.`), with field type details and `CompletionItemKind.Field = 5`.
+       - Implemented global keywords, primitive types, and document top-level symbols completion when not after a dot.
+       - Silently parses doc in lexical `zone { ... }` with isolated diagnostic collector so invalid syntax during typing never corrupts compiler state.
+    2. **Symbol Rename & PrepareRename Provider (`src/lsp/rename.vl`)**:
+       - Advertised `renameProvider: { "prepareProvider": true }` in `lsp_send_initialize_result`.
+       - `textDocument/prepareRename`: extracts exact identifier at cursor without skipping `let`/`mut`, validates against reserved keywords (`act`, `let`, `mut`, `fail`, etc.), returning accurate `{ start, end }` range or `null`.
+       - `textDocument/rename`: determines function-level scope for local variables and parameters (or document scope for top-level symbols), computes character-exact `WorkspaceEdit` (`changes: { "<uri>": [...] }`), correctly replacing all occurrences across definitions, assignments, and expressions.
+    3. **Auto-Import QuickFix Code Action Provider (`src/lsp/code_action.vl`)**:
+       - Advertised `codeActionProvider: true` in `lsp_send_initialize_result`.
+       - Analyzes buffer for references to standard modules (`io.`, `mem.`, `fs.`, `math.`, `str.`, `time.`, `os.`, `simd.`, `json.`, `net.`, `http.`, `uuid.`, `url.`, `path.`, `rand.`, `validate.`, `timer.`) and checks if `use std.<mod>` (or `use sys.<mod>`) is absent.
+       - Proposes `quickfix` code actions inserting `use std.<mod>\n` at line 0, character 0 with `isPreferred: true`.
+    4. **Architecture & Modularization**:
+       - Modularized `src/lsp/doc_store.vl` (290 lines), `src/lsp/transport.vl` (269 lines), `src/lsp/server.vl` (287 lines), `src/lsp/completion.vl` (340 lines), `src/lsp/completion_builtins.vl` (207 lines), `src/lsp/rename.vl` (302 lines), and `src/lsp/code_action.vl` (161 lines).
+       - Kept all 98 compiler source files $\le 394$ lines (strictly under 400 lines).
+* **Residual Limitation**:
+  - Cross-file symbol renaming currently targets the opened document and its imported local AST tree; multi-file project-wide rename across unopened files in large packages will leverage the package graph indexer in future phases.
+* **Verification**:
+  - Created test suite `tests/test_native_lsp_phase3.py` (5 tests) verifying capabilities advertisement, global and module completion, struct dot-completion, prepareRename rejecting keywords and accepting variables, rename producing complete multi-occurrence workspace edits, and auto-import codeAction quick-fixes.
+  - Rebuilt self-hosted 3-generation bootstrap chain (`Gen2 -> Gen3 -> bin/velo.exe -> bootstrap.c`) with bit-for-bit SHA-256 determinism (`EC9D21488CD92D1368884BBC0078B20FEE019A6F4185CA77336EBD90055AD51A`).
+  - All 15 LSP tests in `tests/test_native_lsp.py` and `tests/test_lsp.py` passed.
+  - All 5/5 test suites in `editors/vscode/tests/run_tests.py` passed.
+  - Full pytest test suite passed (596 tests passed).
+  - All source files $\le 394$ lines (`python scripts/count_lines.py`).
+  - Zero UTF-8 BOM in any `.vl` file.

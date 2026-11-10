@@ -1,0 +1,207 @@
+// Builtin modules, keywords, and primitive type completion catalogs for Velo LSP.
+
+use std.io
+use std.mem
+use std.str
+use "../common/string_builder.vl"
+use "../ast/types.vl"
+use "../ast/stmt.vl"
+use "transport.vl"
+
+// Checks if string `s` starts with prefix `prefix`.
+act lsp_str_starts_with(s: string, prefix: string) -> bool {
+    let slen = str.len(s)
+    let plen = str.len(prefix)
+    if plen == 0 { return true }
+    if slen < plen { return false }
+    mut i: usize = 0
+    loop i < plen {
+        if s[i] != prefix[i] { return false }
+        i += 1
+    }
+    return true
+}
+
+// Appends a single completion item JSON object to the payload builder.
+act lsp_append_item(sb: @StringBuilder, label: string, kind: i32, detail: string, is_first: @bool) {
+    if !is_first.@ {
+        sb_append_char(sb, ',')
+    }
+    is_first.@ = false
+    sb_append_str(sb, "{\"label\":\"")
+    lsp_json_escape(sb, label)
+    sb_append_str(sb, "\",\"kind\":")
+    sb_append_int(sb, kind)
+    if detail != null and str.len(detail) > 0 {
+        sb_append_str(sb, ",\"detail\":\"")
+        lsp_json_escape(sb, detail)
+        sb_append_char(sb, '"')
+    }
+    sb_append_char(sb, '}')
+}
+
+// Emits completion items for builtin standard modules.
+act lsp_complete_builtin_module(sb: @StringBuilder, mod_name: string, after: string, is_first: @bool) -> bool {
+    if slice_eq_str(slice_from_str(mod_name), "io") {
+        if lsp_str_starts_with("print", after) { lsp_append_item(sb, "print", 3, "io", is_first) }
+        if lsp_str_starts_with("println", after) { lsp_append_item(sb, "println", 3, "io", is_first) }
+        return true
+    }
+    if slice_eq_str(slice_from_str(mod_name), "mem") {
+        if lsp_str_starts_with("alloc", after) { lsp_append_item(sb, "alloc", 3, "mem", is_first) }
+        if lsp_str_starts_with("heap_alloc", after) { lsp_append_item(sb, "heap_alloc", 3, "mem", is_first) }
+        if lsp_str_starts_with("free", after) { lsp_append_item(sb, "free", 3, "mem", is_first) }
+        if lsp_str_starts_with("realloc", after) { lsp_append_item(sb, "realloc", 3, "mem", is_first) }
+        if lsp_str_starts_with("alloc_with", after) { lsp_append_item(sb, "alloc_with", 3, "mem", is_first) }
+        if lsp_str_starts_with("current", after) { lsp_append_item(sb, "current", 3, "mem", is_first) }
+        if lsp_str_starts_with("create_arena", after) { lsp_append_item(sb, "create_arena", 3, "mem", is_first) }
+        if lsp_str_starts_with("destroy_arena", after) { lsp_append_item(sb, "destroy_arena", 3, "mem", is_first) }
+        if lsp_str_starts_with("copy", after) { lsp_append_item(sb, "copy", 3, "mem", is_first) }
+        if lsp_str_starts_with("set", after) { lsp_append_item(sb, "set", 3, "mem", is_first) }
+        return true
+    }
+    if slice_eq_str(slice_from_str(mod_name), "fs") {
+        if lsp_str_starts_with("read_file", after) { lsp_append_item(sb, "read_file", 3, "fs", is_first) }
+        if lsp_str_starts_with("write_file", after) { lsp_append_item(sb, "write_file", 3, "fs", is_first) }
+        if lsp_str_starts_with("append_file", after) { lsp_append_item(sb, "append_file", 3, "fs", is_first) }
+        if lsp_str_starts_with("exists", after) { lsp_append_item(sb, "exists", 3, "fs", is_first) }
+        if lsp_str_starts_with("remove", after) { lsp_append_item(sb, "remove", 3, "fs", is_first) }
+        if lsp_str_starts_with("copy", after) { lsp_append_item(sb, "copy", 3, "fs", is_first) }
+        if lsp_str_starts_with("rename", after) { lsp_append_item(sb, "rename", 3, "fs", is_first) }
+        return true
+    }
+    if slice_eq_str(slice_from_str(mod_name), "math") {
+        if lsp_str_starts_with("sqrt", after) { lsp_append_item(sb, "sqrt", 3, "math", is_first) }
+        if lsp_str_starts_with("sin", after) { lsp_append_item(sb, "sin", 3, "math", is_first) }
+        if lsp_str_starts_with("cos", after) { lsp_append_item(sb, "cos", 3, "math", is_first) }
+        if lsp_str_starts_with("tan", after) { lsp_append_item(sb, "tan", 3, "math", is_first) }
+        if lsp_str_starts_with("floor", after) { lsp_append_item(sb, "floor", 3, "math", is_first) }
+        if lsp_str_starts_with("ceil", after) { lsp_append_item(sb, "ceil", 3, "math", is_first) }
+        if lsp_str_starts_with("round", after) { lsp_append_item(sb, "round", 3, "math", is_first) }
+        if lsp_str_starts_with("abs", after) { lsp_append_item(sb, "abs", 3, "math", is_first) }
+        if lsp_str_starts_with("min", after) { lsp_append_item(sb, "min", 3, "math", is_first) }
+        if lsp_str_starts_with("max", after) { lsp_append_item(sb, "max", 3, "math", is_first) }
+        if lsp_str_starts_with("clamp", after) { lsp_append_item(sb, "clamp", 3, "math", is_first) }
+        if lsp_str_starts_with("pow", after) { lsp_append_item(sb, "pow", 3, "math", is_first) }
+        if lsp_str_starts_with("PI", after) { lsp_append_item(sb, "PI", 21, "f64", is_first) }
+        if lsp_str_starts_with("TAU", after) { lsp_append_item(sb, "TAU", 21, "f64", is_first) }
+        return true
+    }
+    if slice_eq_str(slice_from_str(mod_name), "str") {
+        if lsp_str_starts_with("len", after) { lsp_append_item(sb, "len", 3, "str", is_first) }
+        if lsp_str_starts_with("starts_with", after) { lsp_append_item(sb, "starts_with", 3, "str", is_first) }
+        if lsp_str_starts_with("ends_with", after) { lsp_append_item(sb, "ends_with", 3, "str", is_first) }
+        if lsp_str_starts_with("contains", after) { lsp_append_item(sb, "contains", 3, "str", is_first) }
+        if lsp_str_starts_with("index_of", after) { lsp_append_item(sb, "index_of", 3, "str", is_first) }
+        if lsp_str_starts_with("concat", after) { lsp_append_item(sb, "concat", 3, "str", is_first) }
+        if lsp_str_starts_with("trim", after) { lsp_append_item(sb, "trim", 3, "str", is_first) }
+        if lsp_str_starts_with("replace", after) { lsp_append_item(sb, "replace", 3, "str", is_first) }
+        if lsp_str_starts_with("split", after) { lsp_append_item(sb, "split", 3, "str", is_first) }
+        if lsp_str_starts_with("format", after) { lsp_append_item(sb, "format", 3, "str", is_first) }
+        return true
+    }
+    if slice_eq_str(slice_from_str(mod_name), "time") {
+        if lsp_str_starts_with("now", after) { lsp_append_item(sb, "now", 3, "time", is_first) }
+        if lsp_str_starts_with("delta", after) { lsp_append_item(sb, "delta", 3, "time", is_first) }
+        if lsp_str_starts_with("sleep_ms", after) { lsp_append_item(sb, "sleep_ms", 3, "time", is_first) }
+        return true
+    }
+    if slice_eq_str(slice_from_str(mod_name), "os") {
+        if lsp_str_starts_with("args", after) { lsp_append_item(sb, "args", 3, "os", is_first) }
+        if lsp_str_starts_with("get_env", after) { lsp_append_item(sb, "get_env", 3, "os", is_first) }
+        if lsp_str_starts_with("set_env", after) { lsp_append_item(sb, "set_env", 3, "os", is_first) }
+        if lsp_str_starts_with("exit", after) { lsp_append_item(sb, "exit", 3, "os", is_first) }
+        return true
+    }
+    if slice_eq_str(slice_from_str(mod_name), "simd") {
+        if lsp_str_starts_with("dot", after) { lsp_append_item(sb, "dot", 3, "simd", is_first) }
+        if lsp_str_starts_with("sqrt", after) { lsp_append_item(sb, "sqrt", 3, "simd", is_first) }
+        if lsp_str_starts_with("min", after) { lsp_append_item(sb, "min", 3, "simd", is_first) }
+        if lsp_str_starts_with("max", after) { lsp_append_item(sb, "max", 3, "simd", is_first) }
+        return true
+    }
+    return false
+}
+
+act lsp_complete_kw(sb: @StringBuilder, kw: string, token: string, is_first: @bool) {
+    if lsp_str_starts_with(kw, token) {
+        lsp_append_item(sb, kw, 14, "keyword", is_first)
+    }
+}
+
+act lsp_complete_tp(sb: @StringBuilder, tp: string, token: string, is_first: @bool) {
+    if lsp_str_starts_with(tp, token) {
+        lsp_append_item(sb, tp, 7, "type", is_first)
+    }
+}
+
+// Emits global keywords, types, and document symbols matching prefix `token`.
+act lsp_complete_globals(sb: @StringBuilder, prog: @ProgramNode, token: string, is_first: @bool) {
+    lsp_complete_kw(sb, "act", token, is_first)
+    lsp_complete_kw(sb, "aka", token, is_first)
+    lsp_complete_kw(sb, "and", token, is_first)
+    lsp_complete_kw(sb, "as", token, is_first)
+    lsp_complete_kw(sb, "assert", token, is_first)
+    lsp_complete_kw(sb, "bitset", token, is_first)
+    lsp_complete_kw(sb, "break", token, is_first)
+    lsp_complete_kw(sb, "continue", token, is_first)
+    lsp_complete_kw(sb, "data", token, is_first)
+    lsp_complete_kw(sb, "defer", token, is_first)
+    lsp_complete_kw(sb, "dyn", token, is_first)
+    lsp_complete_kw(sb, "else", token, is_first)
+    lsp_complete_kw(sb, "extern", token, is_first)
+    lsp_complete_kw(sb, "fail", token, is_first)
+    lsp_complete_kw(sb, "false", token, is_first)
+    lsp_complete_kw(sb, "heap", token, is_first)
+    lsp_complete_kw(sb, "if", token, is_first)
+    lsp_complete_kw(sb, "in", token, is_first)
+    lsp_complete_kw(sb, "it", token, is_first)
+    lsp_complete_kw(sb, "kind", token, is_first)
+    lsp_complete_kw(sb, "let", token, is_first)
+    lsp_complete_kw(sb, "loop", token, is_first)
+    lsp_complete_kw(sb, "map", token, is_first)
+    lsp_complete_kw(sb, "mut", token, is_first)
+    lsp_complete_kw(sb, "not", token, is_first)
+    lsp_complete_kw(sb, "null", token, is_first)
+    lsp_complete_kw(sb, "of", token, is_first)
+    lsp_complete_kw(sb, "on", token, is_first)
+    lsp_complete_kw(sb, "op", token, is_first)
+    lsp_complete_kw(sb, "or", token, is_first)
+    lsp_complete_kw(sb, "return", token, is_first)
+    lsp_complete_kw(sb, "ring", token, is_first)
+    lsp_complete_kw(sb, "shelf", token, is_first)
+    lsp_complete_kw(sb, "sizeof", token, is_first)
+    lsp_complete_kw(sb, "test", token, is_first)
+    lsp_complete_kw(sb, "true", token, is_first)
+    lsp_complete_kw(sb, "use", token, is_first)
+    lsp_complete_kw(sb, "zone", token, is_first)
+
+    lsp_complete_tp(sb, "i8", token, is_first)
+    lsp_complete_tp(sb, "i16", token, is_first)
+    lsp_complete_tp(sb, "i32", token, is_first)
+    lsp_complete_tp(sb, "i64", token, is_first)
+    lsp_complete_tp(sb, "u8", token, is_first)
+    lsp_complete_tp(sb, "u16", token, is_first)
+    lsp_complete_tp(sb, "u32", token, is_first)
+    lsp_complete_tp(sb, "u64", token, is_first)
+    lsp_complete_tp(sb, "f32", token, is_first)
+    lsp_complete_tp(sb, "f64", token, is_first)
+    lsp_complete_tp(sb, "bool", token, is_first)
+    lsp_complete_tp(sb, "string", token, is_first)
+    lsp_complete_tp(sb, "void", token, is_first)
+    lsp_complete_tp(sb, "f32x4", token, is_first)
+    lsp_complete_tp(sb, "i32x4", token, is_first)
+
+    if prog != null {
+        mut cur = prog.first_decl
+        loop cur != null {
+            if cur.name != null and lsp_str_starts_with(cur.name, token) {
+                mut kind = 3
+                if cur.kind == DECL_DATA { kind = 22 }
+                else if cur.kind == DECL_KIND { kind = 13 }
+                lsp_append_item(sb, cur.name, kind, "", is_first)
+            }
+            cur = cur.next
+        }
+    }
+}

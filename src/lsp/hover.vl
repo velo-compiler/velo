@@ -181,7 +181,7 @@ act lsp_send_hover_result(id_node: @JsonValue, uri: string, text: string, line0:
     mut start_col: i32 = 0
     mut end_col: i32 = 0
 
-    let ok = lsp_extract_word_at_pos(text, line0, char0, word_buf, @start_col, @end_col)
+    let ok = lsp_extract_word_at_pos(text, line0, char0, word_buf, @start_col, @end_col, true)
     if !ok {
         lsp_send_null_hover(id_node)
         return
