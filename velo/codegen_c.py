@@ -1637,6 +1637,56 @@ class CCodeGenerator:
             self._emit_line("};")
             self._emit_line()
 
+    def _is_exit_call(self, expr: Expr) -> bool:
+        if isinstance(expr, CallExpr):
+            if isinstance(expr.callee, MemberAccess):
+                if isinstance(expr.callee.target, Identifier) and expr.callee.target.name == "os" and expr.callee.member == "exit":
+                    return True
+            elif isinstance(expr.callee, Identifier):
+                if expr.callee.name in ("exit", "os_exit", "abort"):
+                    return True
+        return False
+
+    def _stmt_always_returns(self, stmt: Stmt) -> bool:
+        if isinstance(stmt, ReturnStmt):
+            return True
+        if isinstance(stmt, ExprStmt):
+            return self._is_exit_call(stmt.expr)
+        if isinstance(stmt, BlockStmt):
+            for s in stmt.statements:
+                if self._stmt_always_returns(s):
+                    return True
+            return False
+        if isinstance(stmt, IfStmt):
+            if stmt.else_branch is None:
+                return False
+            return self._stmt_always_returns(stmt.then_branch) and self._stmt_always_returns(stmt.else_branch)
+        if isinstance(stmt, MatchStmt):
+            if not stmt.cases:
+                return False
+            has_default = False
+            matched_variants = 0
+            for case in stmt.cases:
+                if not self._stmt_always_returns(case.body):
+                    return False
+                if case.is_default:
+                    has_default = True
+                matched_variants += len(case.values)
+            if has_default:
+                return True
+            subj_type = self._resolve_expr_type(stmt.expr)
+            kdecl = self.kind_defs.get(subj_type)
+            if kdecl and len(kdecl.variants) > 0 and matched_variants >= len(kdecl.variants):
+                return True
+            return False
+        if isinstance(stmt, ZoneStmt):
+            return self._stmt_always_returns(stmt.body)
+        if isinstance(stmt, LoopStmt):
+            if stmt.expr is None and stmt.start_expr is None and stmt.of_expr is None:
+                return self._stmt_always_returns(stmt.body)
+            return False
+        return False
+
     def _emit_function(self, func: FunctionDecl):
         self.current_function = func
         is_main = (func.name == "main")
@@ -1672,6 +1722,9 @@ class CCodeGenerator:
 
         if is_main:
             self._emit_line("return 0;")
+        elif func.return_type and func.return_type != "void":
+            if not self._stmt_always_returns(func.body):
+                raise ValueError(f"missing return statement on control path in function '{func.name}'")
 
         self.indent_level -= 1
         self._emit_line("}")
@@ -1706,6 +1759,8 @@ class CCodeGenerator:
             self._emit_line(f"{expr_code};")
 
         elif isinstance(stmt, ReturnStmt):
+            if not stmt.value and self.current_function and self.current_function.name != "main" and self.current_function.return_type and self.current_function.return_type != "void":
+                raise ValueError("A function returning a value must return an expression")
             ret_val_code = None
             # 5.2: an empty shelf literal in a return borrows its element type
             # from the act's declared return type; slice 6: an empty map

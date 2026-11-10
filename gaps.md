@@ -189,6 +189,39 @@ flowchart TD
   - Line count verified $\le 400$ lines across all compiler sources (`python scripts/count_lines.py`).
   - Full pytest test suite passing.
 
+#### Task 1.7: Control-Flow Return Reachability Verification for Non-Void Functions [COMPLETED] ✅
+* **Former Defect**:
+  - In Velo, non-void functions without explicit return statements on all control flow paths passed semantic analysis and compilation without warnings or errors.
+  - At runtime, falling off the end of a non-void function returned uninitialized CPU registers or invoked undefined behavior (C99 §6.9.1.12).
+  - Empty `return;` statements in functions declaring a return type were accepted without error in both Stage 1 and Stage 2, omitting the required return value.
+* **Fix Applied**:
+  - In `src/analysis/type_checker_stmt.vl`:
+    - Added semantic validation rejecting empty `return;` statements in functions expecting non-void return values (`report_error("semantic", stmt.line, stmt.col, "A function returning a value must return an expression")`).
+    - Stored inferred subject type on match statements (`stmt.type_name = m_type`) to support exhaustiveness checks during pass 3.
+  - In `src/analysis/type_check_program.vl`:
+    - Implemented `stmt_always_returns(st, stmt)` recursive control-flow reachability analysis covering `STMT_RETURN`, `STMT_EXPR` (unconditional process exits like `os.exit(code)`), `STMT_BLOCK` (any terminating statement in sequence), `STMT_IF` (exhaustive `then` and `else` branches), `STMT_MATCH` (all cases returning, plus default case or exhaustive Kind variant coverage), `STMT_ZONE`, and `STMT_LOOP` (infinite loops).
+    - In Pass 3 of `check_program`, checked all non-void function declarations (excluding `main`, which implicitly returns 0): emitting semantic diagnostic `missing return statement on control path in function '<name>'`.
+  - In `velo/codegen_c.py` (Stage 1 parity):
+    - Added `_is_exit_call` and `_stmt_always_returns` enforcing matching reachability rules on function emission.
+    - Raised matching `ValueError("A function returning a value must return an expression")` on empty returns in non-void functions.
+    - Raised matching `ValueError(f"missing return statement on control path in function '{func.name}'")` on control paths falling off the end of non-void functions.
+  - Rebuilt the self-hosted bootstrap chain (`bin/velo.exe`) and refreshed `bootstrap.c` with verified bit-for-bit SHA-256 determinism across Gen2, Gen3, and `bootstrap.c` (`C0E2A4A7C58EBB7583FAA89ED78CE2B978F40DBAF5F36984791FFD39EA583C5E`).
+* **Residual Limitation**:
+  - Advanced constant condition evaluation (e.g. `if true { return 1 }` without `else`) is not evaluated as unconditional branch by the reachability checker, requiring an explicit `else` or trailing return.
+* **Verification**:
+  - Added dedicated test suite `tests/test_missing_returns.py` verifying:
+    - Missing return in `if` without `else` fails semantic check on both Stage 1 and Stage 2.
+    - Missing return in `if / else if` without final `else` fails semantic check on both Stage 1 and Stage 2.
+    - Complete `if / else` return paths pass check.
+    - Missing variants in `on` match without default fails semantic check.
+    - Exhaustive variant matching passes check.
+    - Default matching (`_ => ...`) passes check.
+    - Empty return in non-void function fails check with `"A function returning a value must return an expression"`.
+    - Void functions and `main` succeed without explicit returns.
+    - Unconditional process exits (`os.exit(1)`) are recognized as valid terminal returns.
+  - Verified full test suite passing.
+  - Line count verified $\le 400$ lines across all compiler sources (`python scripts/count_lines.py`) and zero UTF-8 BOM characters across all `.vl` files.
+
 ---
 
 ### Phase 2: Language Ergonomics & Tooling Polish

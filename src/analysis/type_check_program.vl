@@ -27,6 +27,76 @@ act check_struct_default_field(st: @SymbolTable, cur_f: @FieldNode) {
     }
 }
 
+// 4.3: Returns true if the expression is an unconditional process exit call (os.exit, exit, etc.).
+act is_exit_call_expr(e: @ExprNode) -> bool {
+    if e == null { return false }
+    if e.kind == EXPR_CALL and e.callee != null {
+        if e.callee.kind == EXPR_MEMBER and e.callee.target != null {
+            if e.callee.target.kind == EXPR_IDENT and e.callee.target.str_val == "os" and e.callee.member_name == "exit" {
+                return true
+            }
+        }
+        if e.callee.kind == EXPR_IDENT {
+            let name = e.callee.str_val
+            if name == "exit" or name == "os_exit" or name == "abort" {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+// 4.3: Returns true if the statement guarantees all control flow paths terminate in a return or process exit.
+act stmt_always_returns(st: @SymbolTable, stmt: @StmtNode) -> bool {
+    if stmt == null { return false }
+    if stmt.kind == STMT_RETURN {
+        return true
+    }
+    if stmt.kind == STMT_EXPR {
+        return is_exit_call_expr(stmt.expr)
+    }
+    if stmt.kind == STMT_BLOCK {
+        mut cur = stmt.first_stmt
+        loop cur != null {
+            if stmt_always_returns(st, cur) { return true }
+            cur = cur.next
+        }
+        return false
+    }
+    if stmt.kind == STMT_IF {
+        if stmt.else_branch == null { return false }
+        return stmt_always_returns(st, stmt.body) and stmt_always_returns(st, stmt.else_branch)
+    }
+    if stmt.kind == STMT_MATCH {
+        if stmt.case_count == 0 { return false }
+        let k_sym = find_kind(st, stmt.type_name)
+        mut has_default = false
+        mut matched_variants: usize = 0
+        mut cur_c = stmt.first_case
+        loop cur_c != null {
+            if not stmt_always_returns(st, cur_c.body) { return false }
+            if cur_c.is_default { has_default = true }
+            matched_variants += cur_c.val_count
+            cur_c = cur_c.next
+        }
+        if has_default { return true }
+        if k_sym != null and k_sym.variant_count > 0 and matched_variants >= k_sym.variant_count {
+            return true
+        }
+        return false
+    }
+    if stmt.kind == STMT_ZONE {
+        return stmt_always_returns(st, stmt.body)
+    }
+    if stmt.kind == STMT_LOOP {
+        if stmt.expr == null and stmt.loop_start == null and not stmt.is_of {
+            return stmt_always_returns(st, stmt.body)
+        }
+        return false
+    }
+    return false
+}
+
 // Executes multi-pass semantic analysis and type verification over an AST program.
 act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
     // Pass 1: Register all struct and kind declarations
@@ -96,6 +166,17 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
             loop cur_p != null { define_parameter(st, cur_p.name, cur_p.type_name, cur_p.line, cur_p.col); cur_p = cur_p.next }
             check_statement(st, cur.return_type, cur.body)
             exit_scope(st)
+
+            if cur.name != "main" and cur.return_type != null and cur.return_type != "void" and str.len(cur.return_type) > 0 {
+                if not stmt_always_returns(st, cur.body) {
+                    mut msb = create_sb(96)
+                    sb_append_str(@msb, "missing return statement on control path in function '")
+                    sb_append_str(@msb, cur.name)
+                    sb_append_char(@msb, '\'')
+                    report_error("semantic", cur.line, cur.col, sb_to_string(@msb))
+                    st.error_count += 1
+                }
+            }
         }
         if cur.kind == DECL_TEST and cur.body != null {
             enter_scope(st)

@@ -1764,6 +1764,8 @@ const char* check_map_loop_source(SymbolTable* st, StmtNode* stmt);
 void check_assign_mutability(SymbolTable* st, ExprNode* target, int32_t line, int32_t col);
 void check_statement(SymbolTable* st, const char* expected_ret_type, StmtNode* stmt);
 void check_struct_default_field(SymbolTable* st, FieldNode* cur_f);
+bool is_exit_call_expr(ExprNode* e);
+bool stmt_always_returns(SymbolTable* st, StmtNode* stmt);
 bool check_program(SymbolTable* st, ProgramNode* prog);
 bool mem_is_ptrty(const char* t);
 bool mem_is_countable(const char* t);
@@ -22504,104 +22506,113 @@ void check_statement(SymbolTable* st, const char* expected_ret_type, StmtNode* s
 #line 139 "src/main.vl"
                 st->error_count += 1;
             }
+        } else
+#line 141 "src/main.vl"
+        if ((((expected_ret_type != NULL) && ((expected_ret_type != NULL && "void" != NULL) ? (strcmp(expected_ret_type, "void") != 0) : (expected_ret_type != "void"))) && velo_cmp_gt_u_s(((usize)strlen(expected_ret_type)), 0))) {
+#line 142 "src/main.vl"
+            report_error("semantic", stmt->line, stmt->col, "A function returning a value must return an expression");
+#line 143 "src/main.vl"
+            st->error_count += 1;
         }
     } else
-#line 142 "src/main.vl"
+#line 145 "src/main.vl"
     if (((stmt->kind == STMT_BREAK) || (stmt->kind == STMT_CONTINUE))) {
-#line 143 "src/main.vl"
+#line 146 "src/main.vl"
         return;
     } else
-#line 144 "src/main.vl"
+#line 147 "src/main.vl"
     if ((stmt->kind == STMT_MATCH)) {
-#line 145 "src/main.vl"
-        const char* m_type = infer_expr_type(st, stmt->expr);
-#line 145 "src/main.vl"
-        KindSym* k_sym = find_kind(st, m_type);
-#line 145 "src/main.vl"
-        CaseNode* cur_case = stmt->first_case;
-#line 146 "src/main.vl"
-        for (int32_t it = 0; ((cur_case != NULL)); it++) {
-#line 147 "src/main.vl"
-            enter_scope(st);
-#line 147 "src/main.vl"
-            ExprNode* val = cur_case->first_val;
 #line 148 "src/main.vl"
+        const char* m_type = infer_expr_type(st, stmt->expr);
+#line 148 "src/main.vl"
+        stmt->type_name = m_type;
+#line 148 "src/main.vl"
+        KindSym* k_sym = find_kind(st, m_type);
+#line 148 "src/main.vl"
+        CaseNode* cur_case = stmt->first_case;
+#line 149 "src/main.vl"
+        for (int32_t it = 0; ((cur_case != NULL)); it++) {
+#line 150 "src/main.vl"
+            enter_scope(st);
+#line 150 "src/main.vl"
+            ExprNode* val = cur_case->first_val;
+#line 151 "src/main.vl"
             for (int32_t it = 0; ((val != NULL)); it++) {
-#line 149 "src/main.vl"
+#line 152 "src/main.vl"
                 if (((val->kind == EXPR_VARIANT) && ((val->type_name == NULL) || velo_cmp_eq_u_s(((usize)strlen(val->type_name)), 0)))) {
-#line 149 "src/main.vl"
+#line 152 "src/main.vl"
                     val->type_name = m_type;
                 }
-#line 150 "src/main.vl"
-                infer_expr_type(st, val);
-#line 151 "src/main.vl"
-                if (((k_sym != NULL) && (val->kind == EXPR_VARIANT))) {
-#line 152 "src/main.vl"
-                    VariantSym* v_sym = find_variant(k_sym, val->member_name);
 #line 153 "src/main.vl"
-                    if ((v_sym != NULL)) {
+                infer_expr_type(st, val);
 #line 154 "src/main.vl"
-                        if (velo_cmp_gt_u_s(v_sym->field_count, 0)) {
+                if (((k_sym != NULL) && (val->kind == EXPR_VARIANT))) {
 #line 155 "src/main.vl"
-                            ExprNode* cur_b = val->first_arg;
-#line 155 "src/main.vl"
-                            StructFieldSym* cur_f = v_sym->first_field;
+                    VariantSym* v_sym = find_variant(k_sym, val->member_name);
 #line 156 "src/main.vl"
+                    if ((v_sym != NULL)) {
+#line 157 "src/main.vl"
+                        if (velo_cmp_gt_u_s(v_sym->field_count, 0)) {
+#line 158 "src/main.vl"
+                            ExprNode* cur_b = val->first_arg;
+#line 158 "src/main.vl"
+                            StructFieldSym* cur_f = v_sym->first_field;
+#line 159 "src/main.vl"
                             for (int32_t it = 0; (((cur_b != NULL) && (cur_f != NULL))); it++) {
-#line 157 "src/main.vl"
+#line 160 "src/main.vl"
                                 if ((cur_b->kind == EXPR_IDENT)) {
-#line 157 "src/main.vl"
+#line 160 "src/main.vl"
                                     define_variable(st, cur_b->str_val, cur_f->type_name, false, cur_b->line, cur_b->col);
                                 }
-#line 158 "src/main.vl"
+#line 161 "src/main.vl"
                                 cur_b = cur_b->next;
-#line 158 "src/main.vl"
+#line 161 "src/main.vl"
                                 cur_f = cur_f->next;
                             }
                         } else
-#line 160 "src/main.vl"
+#line 163 "src/main.vl"
                         if (((v_sym->payload_type != NULL) && (val->first_arg != NULL))) {
-#line 161 "src/main.vl"
+#line 164 "src/main.vl"
                             if ((val->first_arg->kind == EXPR_IDENT)) {
-#line 161 "src/main.vl"
+#line 164 "src/main.vl"
                                 define_variable(st, val->first_arg->str_val, v_sym->payload_type, false, val->first_arg->line, val->first_arg->col);
                             }
                         }
                     }
                 }
-#line 165 "src/main.vl"
+#line 168 "src/main.vl"
                 val = val->next;
             }
-#line 167 "src/main.vl"
+#line 170 "src/main.vl"
             if ((cur_case->body != NULL)) {
-#line 167 "src/main.vl"
+#line 170 "src/main.vl"
                 check_statement(st, expected_ret_type, cur_case->body);
             }
-#line 168 "src/main.vl"
+#line 171 "src/main.vl"
             exit_scope(st);
-#line 168 "src/main.vl"
+#line 171 "src/main.vl"
             cur_case = cur_case->next;
         }
     } else
-#line 170 "src/main.vl"
+#line 173 "src/main.vl"
     if ((stmt->kind == STMT_BLOCK)) {
-#line 171 "src/main.vl"
+#line 174 "src/main.vl"
         enter_scope(st);
-#line 171 "src/main.vl"
+#line 174 "src/main.vl"
         StmtNode* cur = stmt->first_stmt;
-#line 172 "src/main.vl"
+#line 175 "src/main.vl"
         for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 172 "src/main.vl"
+#line 175 "src/main.vl"
             check_statement(st, expected_ret_type, cur);
-#line 172 "src/main.vl"
+#line 175 "src/main.vl"
             cur = cur->next;
         }
-#line 173 "src/main.vl"
+#line 176 "src/main.vl"
         exit_scope(st);
     } else
-#line 174 "src/main.vl"
+#line 177 "src/main.vl"
     if ((stmt->kind == STMT_EXPR)) {
-#line 174 "src/main.vl"
+#line 177 "src/main.vl"
         infer_expr_type(st, stmt->expr);
     }
 }
@@ -22639,182 +22650,346 @@ void check_struct_default_field(SymbolTable* st, FieldNode* cur_f) {
 }
 
 #line 31 "src/main.vl"
-bool check_program(SymbolTable* st, ProgramNode* prog) {
+bool is_exit_call_expr(ExprNode* e) {
+#line 32 "src/main.vl"
+    if ((e == NULL)) {
+#line 32 "src/main.vl"
+        return false;
+    }
 #line 33 "src/main.vl"
-    StmtNode* cur = prog->first_decl;
+    if (((e->kind == EXPR_CALL) && (e->callee != NULL))) {
 #line 34 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
+        if (((e->callee->kind == EXPR_MEMBER) && (e->callee->target != NULL))) {
 #line 35 "src/main.vl"
-        if ((cur->kind == DECL_DATA)) {
+            if ((((e->callee->target->kind == EXPR_IDENT) && ((e->callee->target->str_val != NULL && "os" != NULL) ? (strcmp(e->callee->target->str_val, "os") == 0) : (e->callee->target->str_val == "os"))) && ((e->callee->member_name != NULL && "exit" != NULL) ? (strcmp(e->callee->member_name, "exit") == 0) : (e->callee->member_name == "exit")))) {
 #line 36 "src/main.vl"
-            StructSym* st_sym = register_struct(st, cur->name, cur->line, cur->col);
-#line 37 "src/main.vl"
-            FieldNode* cur_f = cur->first_field;
-#line 38 "src/main.vl"
-            for (int32_t it = 0; ((cur_f != NULL)); it++) {
+                return true;
+            }
+        }
 #line 39 "src/main.vl"
-                struct_add_field(st_sym, cur_f->name, cur_f->type_name, cur_f->has_default, cur_f->default_value, cur_f->line, cur_f->col);
+        if ((e->callee->kind == EXPR_IDENT)) {
 #line 40 "src/main.vl"
-                check_struct_default_field(st, cur_f);
+            const char* name = e->callee->str_val;
 #line 41 "src/main.vl"
+            if (((((name != NULL && "exit" != NULL) ? (strcmp(name, "exit") == 0) : (name == "exit")) || ((name != NULL && "os_exit" != NULL) ? (strcmp(name, "os_exit") == 0) : (name == "os_exit"))) || ((name != NULL && "abort" != NULL) ? (strcmp(name, "abort") == 0) : (name == "abort")))) {
+#line 42 "src/main.vl"
+                return true;
+            }
+        }
+    }
+#line 46 "src/main.vl"
+    return false;
+}
+
+#line 50 "src/main.vl"
+bool stmt_always_returns(SymbolTable* st, StmtNode* stmt) {
+#line 51 "src/main.vl"
+    if ((stmt == NULL)) {
+#line 51 "src/main.vl"
+        return false;
+    }
+#line 52 "src/main.vl"
+    if ((stmt->kind == STMT_RETURN)) {
+#line 53 "src/main.vl"
+        return true;
+    }
+#line 55 "src/main.vl"
+    if ((stmt->kind == STMT_EXPR)) {
+#line 56 "src/main.vl"
+        return is_exit_call_expr(stmt->expr);
+    }
+#line 58 "src/main.vl"
+    if ((stmt->kind == STMT_BLOCK)) {
+#line 59 "src/main.vl"
+        StmtNode* cur = stmt->first_stmt;
+#line 60 "src/main.vl"
+        for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 61 "src/main.vl"
+            if (stmt_always_returns(st, cur)) {
+#line 61 "src/main.vl"
+                {
+                    bool __ret_val = true;
+                    return __ret_val;
+                }
+            }
+#line 62 "src/main.vl"
+            cur = cur->next;
+        }
+#line 64 "src/main.vl"
+        return false;
+    }
+#line 66 "src/main.vl"
+    if ((stmt->kind == STMT_IF)) {
+#line 67 "src/main.vl"
+        if ((stmt->else_branch == NULL)) {
+#line 67 "src/main.vl"
+            return false;
+        }
+#line 68 "src/main.vl"
+        return (stmt_always_returns(st, stmt->body) && stmt_always_returns(st, stmt->else_branch));
+    }
+#line 70 "src/main.vl"
+    if ((stmt->kind == STMT_MATCH)) {
+#line 71 "src/main.vl"
+        if (velo_cmp_eq_u_s(stmt->case_count, 0)) {
+#line 71 "src/main.vl"
+            return false;
+        }
+#line 72 "src/main.vl"
+        KindSym* k_sym = find_kind(st, stmt->type_name);
+#line 73 "src/main.vl"
+        bool has_default = false;
+#line 74 "src/main.vl"
+        size_t matched_variants = 0;
+#line 75 "src/main.vl"
+        CaseNode* cur_c = stmt->first_case;
+#line 76 "src/main.vl"
+        for (int32_t it = 0; ((cur_c != NULL)); it++) {
+#line 77 "src/main.vl"
+            if ((!stmt_always_returns(st, cur_c->body))) {
+#line 77 "src/main.vl"
+                {
+                    bool __ret_val = false;
+                    return __ret_val;
+                }
+            }
+#line 78 "src/main.vl"
+            if (cur_c->is_default) {
+#line 78 "src/main.vl"
+                has_default = true;
+            }
+#line 79 "src/main.vl"
+            matched_variants += cur_c->val_count;
+#line 80 "src/main.vl"
+            cur_c = cur_c->next;
+        }
+#line 82 "src/main.vl"
+        if (has_default) {
+#line 82 "src/main.vl"
+            return true;
+        }
+#line 83 "src/main.vl"
+        if ((((k_sym != NULL) && velo_cmp_gt_u_s(k_sym->variant_count, 0)) && (matched_variants >= k_sym->variant_count))) {
+#line 84 "src/main.vl"
+            return true;
+        }
+#line 86 "src/main.vl"
+        return false;
+    }
+#line 88 "src/main.vl"
+    if ((stmt->kind == STMT_ZONE)) {
+#line 89 "src/main.vl"
+        return stmt_always_returns(st, stmt->body);
+    }
+#line 91 "src/main.vl"
+    if ((stmt->kind == STMT_LOOP)) {
+#line 92 "src/main.vl"
+        if ((((stmt->expr == NULL) && (stmt->loop_start == NULL)) && (!stmt->is_of))) {
+#line 93 "src/main.vl"
+            return stmt_always_returns(st, stmt->body);
+        }
+#line 95 "src/main.vl"
+        return false;
+    }
+#line 97 "src/main.vl"
+    return false;
+}
+
+#line 101 "src/main.vl"
+bool check_program(SymbolTable* st, ProgramNode* prog) {
+#line 103 "src/main.vl"
+    StmtNode* cur = prog->first_decl;
+#line 104 "src/main.vl"
+    for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 105 "src/main.vl"
+        if ((cur->kind == DECL_DATA)) {
+#line 106 "src/main.vl"
+            StructSym* st_sym = register_struct(st, cur->name, cur->line, cur->col);
+#line 107 "src/main.vl"
+            FieldNode* cur_f = cur->first_field;
+#line 108 "src/main.vl"
+            for (int32_t it = 0; ((cur_f != NULL)); it++) {
+#line 109 "src/main.vl"
+                struct_add_field(st_sym, cur_f->name, cur_f->type_name, cur_f->has_default, cur_f->default_value, cur_f->line, cur_f->col);
+#line 110 "src/main.vl"
+                check_struct_default_field(st, cur_f);
+#line 111 "src/main.vl"
                 cur_f = cur_f->next;
             }
         } else
-#line 43 "src/main.vl"
+#line 113 "src/main.vl"
         if ((cur->kind == DECL_KIND)) {
-#line 44 "src/main.vl"
+#line 114 "src/main.vl"
             bool is_tu = false;
-#line 44 "src/main.vl"
+#line 114 "src/main.vl"
             VariantNode* v = cur->first_variant;
-#line 45 "src/main.vl"
+#line 115 "src/main.vl"
             for (int32_t it = 0; ((v != NULL)); it++) {
-#line 45 "src/main.vl"
+#line 115 "src/main.vl"
                 if (((v->payload_type != NULL) || velo_cmp_gt_u_s(v->field_count, 0))) {
-#line 45 "src/main.vl"
+#line 115 "src/main.vl"
                     is_tu = true;
                 }
-#line 45 "src/main.vl"
+#line 115 "src/main.vl"
                 v = v->next;
             }
-#line 46 "src/main.vl"
+#line 116 "src/main.vl"
             KindSym* k_sym = register_kind(st, cur->name, is_tu, cur->line, cur->col);
-#line 47 "src/main.vl"
+#line 117 "src/main.vl"
             VariantNode* cv = cur->first_variant;
-#line 48 "src/main.vl"
+#line 118 "src/main.vl"
             for (int32_t it = 0; ((cv != NULL)); it++) {
-#line 49 "src/main.vl"
+#line 119 "src/main.vl"
                 StructFieldSym* f_sym = NULL;
-#line 49 "src/main.vl"
+#line 119 "src/main.vl"
                 StructFieldSym* last_f = NULL;
-#line 49 "src/main.vl"
+#line 119 "src/main.vl"
                 FieldNode* cf = cv->first_field;
-#line 50 "src/main.vl"
+#line 120 "src/main.vl"
                 for (int32_t it = 0; ((cf != NULL)); it++) {
-#line 51 "src/main.vl"
+#line 121 "src/main.vl"
                     StructFieldSym* fn = ((StructFieldSym*)velo_mem_alloc(sizeof(StructFieldSym), (size_t)(1)));
-#line 52 "src/main.vl"
+#line 122 "src/main.vl"
                     fn->name = cf->name;
-#line 52 "src/main.vl"
+#line 122 "src/main.vl"
                     fn->type_name = cf->type_name;
-#line 52 "src/main.vl"
+#line 122 "src/main.vl"
                     fn->has_default = false;
-#line 52 "src/main.vl"
+#line 122 "src/main.vl"
                     fn->default_value = NULL;
-#line 53 "src/main.vl"
+#line 123 "src/main.vl"
                     fn->line = cf->line;
-#line 53 "src/main.vl"
+#line 123 "src/main.vl"
                     fn->col = cf->col;
-#line 53 "src/main.vl"
+#line 123 "src/main.vl"
                     fn->next = NULL;
-#line 54 "src/main.vl"
+#line 124 "src/main.vl"
                     if ((f_sym == NULL)) {
-#line 54 "src/main.vl"
+#line 124 "src/main.vl"
                         f_sym = fn;
-#line 54 "src/main.vl"
+#line 124 "src/main.vl"
                         last_f = fn;
                     } else {
-#line 54 "src/main.vl"
+#line 124 "src/main.vl"
                         last_f->next = fn;
-#line 54 "src/main.vl"
+#line 124 "src/main.vl"
                         last_f = fn;
                     }
-#line 55 "src/main.vl"
+#line 125 "src/main.vl"
                     cf = cf->next;
                 }
-#line 57 "src/main.vl"
+#line 127 "src/main.vl"
                 kind_add_variant(k_sym, cv->name, cv->discriminant, cv->has_discriminant, cv->payload_type, f_sym, cv->field_count, cv->line, cv->col);
-#line 58 "src/main.vl"
+#line 128 "src/main.vl"
                 cv = cv->next;
             }
         }
-#line 61 "src/main.vl"
+#line 131 "src/main.vl"
         cur = cur->next;
     }
-#line 65 "src/main.vl"
+#line 135 "src/main.vl"
     cur = prog->first_decl;
-#line 66 "src/main.vl"
+#line 136 "src/main.vl"
     for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 67 "src/main.vl"
+#line 137 "src/main.vl"
         if ((cur->kind == STMT_VAR_DECL)) {
-#line 68 "src/main.vl"
+#line 138 "src/main.vl"
             check_shelf_annotation(st, cur->type_name, cur->val_expr, cur->line, cur->col);
-#line 69 "src/main.vl"
+#line 139 "src/main.vl"
             check_map_annotation(st, cur->type_name, cur->val_expr, cur->line, cur->col);
-#line 70 "src/main.vl"
+#line 140 "src/main.vl"
             const char* inf_type = cur->type_name;
-#line 71 "src/main.vl"
+#line 141 "src/main.vl"
             if (((inf_type == NULL) || velo_cmp_eq_u_s(((usize)strlen(inf_type)), 0))) {
-#line 72 "src/main.vl"
+#line 142 "src/main.vl"
                 if ((cur->val_expr != NULL)) {
-#line 72 "src/main.vl"
+#line 142 "src/main.vl"
                     inf_type = infer_expr_type(st, cur->val_expr);
                 } else {
-#line 72 "src/main.vl"
+#line 142 "src/main.vl"
                     inf_type = "i32";
                 }
             }
-#line 74 "src/main.vl"
+#line 144 "src/main.vl"
             define_variable(st, cur->name, inf_type, cur->is_mut, cur->line, cur->col);
         }
-#line 76 "src/main.vl"
+#line 146 "src/main.vl"
         cur = cur->next;
     }
-#line 80 "src/main.vl"
+#line 150 "src/main.vl"
     cur = prog->first_decl;
-#line 81 "src/main.vl"
+#line 151 "src/main.vl"
     for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 82 "src/main.vl"
+#line 152 "src/main.vl"
         if (((cur->kind == DECL_FUNCTION) || (cur->kind == DECL_EXTERN))) {
-#line 83 "src/main.vl"
+#line 153 "src/main.vl"
             FunctionSym* fn_sym = register_function(st, cur->name, cur->return_type, (cur->kind == DECL_EXTERN), cur->line, cur->col);
-#line 84 "src/main.vl"
+#line 154 "src/main.vl"
             ParamNode* cur_p = cur->first_param;
-#line 85 "src/main.vl"
+#line 155 "src/main.vl"
             for (int32_t it = 0; ((cur_p != NULL)); it++) {
-#line 85 "src/main.vl"
+#line 155 "src/main.vl"
                 function_add_param(fn_sym, cur_p->name, cur_p->type_name);
-#line 85 "src/main.vl"
+#line 155 "src/main.vl"
                 cur_p = cur_p->next;
             }
         }
-#line 87 "src/main.vl"
+#line 157 "src/main.vl"
         cur = cur->next;
     }
-#line 91 "src/main.vl"
+#line 161 "src/main.vl"
     cur = prog->first_decl;
-#line 92 "src/main.vl"
+#line 162 "src/main.vl"
     for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 93 "src/main.vl"
+#line 163 "src/main.vl"
         if (((cur->kind == DECL_FUNCTION) && (cur->body != NULL))) {
-#line 94 "src/main.vl"
+#line 164 "src/main.vl"
             enter_scope(st);
-#line 95 "src/main.vl"
+#line 165 "src/main.vl"
             ParamNode* cur_p = cur->first_param;
-#line 96 "src/main.vl"
+#line 166 "src/main.vl"
             for (int32_t it = 0; ((cur_p != NULL)); it++) {
-#line 96 "src/main.vl"
+#line 166 "src/main.vl"
                 define_parameter(st, cur_p->name, cur_p->type_name, cur_p->line, cur_p->col);
-#line 96 "src/main.vl"
+#line 166 "src/main.vl"
                 cur_p = cur_p->next;
             }
-#line 97 "src/main.vl"
+#line 167 "src/main.vl"
             check_statement(st, cur->return_type, cur->body);
-#line 98 "src/main.vl"
+#line 168 "src/main.vl"
             exit_scope(st);
+#line 170 "src/main.vl"
+            if ((((((cur->name != NULL && "main" != NULL) ? (strcmp(cur->name, "main") != 0) : (cur->name != "main")) && (cur->return_type != NULL)) && ((cur->return_type != NULL && "void" != NULL) ? (strcmp(cur->return_type, "void") != 0) : (cur->return_type != "void"))) && velo_cmp_gt_u_s(((usize)strlen(cur->return_type)), 0))) {
+#line 171 "src/main.vl"
+                if ((!stmt_always_returns(st, cur->body))) {
+#line 172 "src/main.vl"
+                    StringBuilder msb = create_sb(96);
+#line 173 "src/main.vl"
+                    sb_append_str((&(msb)), "missing return statement on control path in function '");
+#line 174 "src/main.vl"
+                    sb_append_str((&(msb)), cur->name);
+#line 175 "src/main.vl"
+                    sb_append_char((&(msb)), '\'');
+#line 176 "src/main.vl"
+                    report_error("semantic", cur->line, cur->col, sb_to_string((&(msb))));
+#line 177 "src/main.vl"
+                    st->error_count += 1;
+                }
+            }
         }
-#line 100 "src/main.vl"
+#line 181 "src/main.vl"
         if (((cur->kind == DECL_TEST) && (cur->body != NULL))) {
-#line 101 "src/main.vl"
+#line 182 "src/main.vl"
             enter_scope(st);
-#line 102 "src/main.vl"
+#line 183 "src/main.vl"
             check_statement(st, "void", cur->body);
-#line 103 "src/main.vl"
+#line 184 "src/main.vl"
             exit_scope(st);
         }
-#line 105 "src/main.vl"
+#line 186 "src/main.vl"
         cur = cur->next;
     }
-#line 108 "src/main.vl"
+#line 189 "src/main.vl"
     return velo_cmp_eq_u_s(st->error_count, 0);
 }
 
