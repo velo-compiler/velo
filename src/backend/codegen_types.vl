@@ -25,6 +25,14 @@ act map_type_to_c(type_name: string) -> string {
         return mangle_act_type(type_name)
     }
 
+    if is_optional_type(type_name) {
+        let inner = optional_inner_type(type_name)
+        if inner[0] == '@' or inner == "string" {
+            return map_type_to_c(inner)
+        }
+        return opt_type_c_name(type_name)
+    }
+
     if is_or_type(type_name) {
         return or_type_c_name(type_name)
     }

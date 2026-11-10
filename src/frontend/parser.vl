@@ -14,6 +14,10 @@ use "parser_decl.vl"
 
 // Parses type annotations with pointer prefixes, function pointer types, and generic arguments.
 act parse_type_annotation_ex(p: @Parser, allow_or: bool) -> string {
+    mut is_opt = false
+    if parser_match(p, TOK_QUESTION) {
+        is_opt = true
+    }
     mut at_count: usize = 0
     loop parser_match(p, TOK_AT) {
         at_count += 1
@@ -43,17 +47,24 @@ act parse_type_annotation_ex(p: @Parser, allow_or: bool) -> string {
         }
         sb_append_str(@sb, ret_type)
         let act_str = sb_to_string(@sb)
-        if at_count == 0 {
-            return act_str
+        mut act_res = act_str
+        if at_count > 0 {
+            let total_len = at_count + str.len(act_str)
+            mut buf: @u8 = mem.alloc(@u8, total_len + 1)
+            mut i: usize = 0
+            loop i < at_count { buf[i] = '@'; i += 1 }
+            mut j: usize = 0
+            loop j < str.len(act_str) { buf[at_count + j] = act_str[j]; j += 1 }
+            buf[total_len] = 0 as u8
+            act_res = buf as string
         }
-        let total_len = at_count + str.len(act_str)
-        mut buf: @u8 = mem.alloc(@u8, total_len + 1)
-        mut i: usize = 0
-        loop i < at_count { buf[i] = '@'; i += 1 }
-        mut j: usize = 0
-        loop j < str.len(act_str) { buf[at_count + j] = act_str[j]; j += 1 }
-        buf[total_len] = 0 as u8
-        return buf as string
+        if is_opt or parser_match(p, TOK_QUESTION) {
+            mut qsb = create_sb(str.len(act_res) + 2)
+            sb_append_char(@qsb, '?')
+            sb_append_str(@qsb, act_res)
+            act_res = sb_to_string(@qsb)
+        }
+        return act_res
     }
 
     // 5.2: `shelf` is a reserved type keyword - annotations spell shelf[T]
@@ -139,6 +150,13 @@ act parse_type_annotation_ex(p: @Parser, allow_or: bool) -> string {
         loop j < str.len(base_name) { buf[at_count + j] = base_name[j]; j += 1 }
         buf[total_len] = 0 as u8
         full_type = buf as string
+    }
+
+    if is_opt or parser_match(p, TOK_QUESTION) {
+        mut qsb = create_sb(str.len(full_type) + 2)
+        sb_append_char(@qsb, '?')
+        sb_append_str(@qsb, full_type)
+        full_type = sb_to_string(@qsb)
     }
 
     if allow_or and parser_match(p, TOK_OR) {

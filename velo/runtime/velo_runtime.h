@@ -3080,4 +3080,71 @@ static inline void velo_assert_fail(const char* expr_str, const char* file, int 
     } \
 } while (0)
 
+/* Velo Compile-Time Null Safety & Optional Types (?T) */
+typedef struct { bool has; int8_t val; } _Velo_Opt_i8;
+typedef struct { bool has; int16_t val; } _Velo_Opt_i16;
+typedef struct { bool has; int32_t val; } _Velo_Opt_i32;
+typedef struct { bool has; int64_t val; } _Velo_Opt_i64;
+typedef struct { bool has; uint8_t val; } _Velo_Opt_u8;
+typedef struct { bool has; uint16_t val; } _Velo_Opt_u16;
+typedef struct { bool has; uint32_t val; } _Velo_Opt_u32;
+typedef struct { bool has; uint64_t val; } _Velo_Opt_u64;
+typedef struct { bool has; float val; } _Velo_Opt_f32;
+typedef struct { bool has; double val; } _Velo_Opt_f64;
+typedef struct { bool has; bool val; } _Velo_Opt_bool;
+typedef struct { bool has; size_t val; } _Velo_Opt_usize;
+typedef struct { bool has; ptrdiff_t val; } _Velo_Opt_isize;
+
+static inline void* velo_opt_unwrap_ptr(const void* ptr, const char* file, int line, int col) {
+    if (!ptr) {
+        fprintf(stderr, "[Velo Panic] Unexpected null unwrap at %s:%d:%d\n", file, line, col);
+        exit(1);
+    }
+    return (void*)ptr;
+}
+
+static inline void* velo_opt_coalesce_ptr(const void* ptr, const void* fallback) {
+    return ptr ? (void*)ptr : (void*)fallback;
+}
+
+static inline int32_t velo_opt_unwrap_i32(_Velo_Opt_i32 opt, const char* file, int line, int col) {
+    if (!opt.has) {
+        fprintf(stderr, "[Velo Panic] Unexpected null unwrap at %s:%d:%d\n", file, line, col);
+        exit(1);
+    }
+    return opt.val;
+}
+
+static inline int64_t velo_opt_unwrap_i64(_Velo_Opt_i64 opt, const char* file, int line, int col) {
+    if (!opt.has) {
+        fprintf(stderr, "[Velo Panic] Unexpected null unwrap at %s:%d:%d\n", file, line, col);
+        exit(1);
+    }
+    return opt.val;
+}
+
+static inline uint64_t velo_opt_unwrap_u64(_Velo_Opt_u64 opt, const char* file, int line, int col) {
+    if (!opt.has) {
+        fprintf(stderr, "[Velo Panic] Unexpected null unwrap at %s:%d:%d\n", file, line, col);
+        exit(1);
+    }
+    return opt.val;
+}
+
+static inline double velo_opt_unwrap_f64(_Velo_Opt_f64 opt, const char* file, int line, int col) {
+    if (!opt.has) {
+        fprintf(stderr, "[Velo Panic] Unexpected null unwrap at %s:%d:%d\n", file, line, col);
+        exit(1);
+    }
+    return opt.val;
+}
+
+static inline bool velo_opt_unwrap_bool(_Velo_Opt_bool opt, const char* file, int line, int col) {
+    if (!opt.has) {
+        fprintf(stderr, "[Velo Panic] Unexpected null unwrap at %s:%d:%d\n", file, line, col);
+        exit(1);
+    }
+    return opt.val;
+}
+
 #endif // VELO_RUNTIME_H

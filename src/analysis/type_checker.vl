@@ -77,6 +77,19 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         }
         let target_type = infer_expr_type(st, expr.target)
         let clean_type = strip_pointer_prefix(target_type)
+        if is_optional_type(target_type) {
+            if expr.member_name == "has" { return "bool" }
+            if expr.member_name == "val" { return optional_inner_type(target_type) }
+            mut emsb = create_sb(str.len(expr.member_name) + str.len(target_type) + 80)
+            sb_append_str(@emsb, "Cannot access member '")
+            sb_append_str(@emsb, expr.member_name)
+            sb_append_str(@emsb, "' on optional type '")
+            sb_append_str(@emsb, target_type)
+            sb_append_str(@emsb, "' without unwrapping (use '?\\?', '!', or '.val')")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@emsb))
+            st.error_count += 1
+            return "unknown"
+        }
         if is_or_type(target_type) {
             if expr.member_name == "ok" { return "bool" }
             if expr.member_name == "val" { return or_type_success(target_type) }
@@ -263,6 +276,19 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             }
             return succ_t
         }
+        if expr.op == TOK_DOUBLE_QUESTION {
+            if not is_optional_type(left_type) {
+                report_error("semantic", expr.line, expr.col, "Left operand of '??' must be an optional type")
+                st.error_count += 1
+                return left_type
+            }
+            let inner_t = optional_inner_type(left_type)
+            if not types_are_compatible(inner_t, right_type) {
+                report_error("semantic", expr.line, expr.col, "Right operand of '??' is incompatible with optional unwrapped type")
+                st.error_count += 1
+            }
+            return inner_t
+        }
         let op_fn = find_binary_op(st, expr.op, left_type, right_type); if op_fn != null { return op_fn.return_type }
         if expr.op == TOK_EQ or expr.op == TOK_NEQ or expr.op == TOK_LT or expr.op == TOK_LTE or expr.op == TOK_GT or expr.op == TOK_GTE or expr.op == TOK_AND or expr.op == TOK_OR {
             return "bool"
@@ -300,6 +326,16 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             return "unknown"
         }
         return or_type_success(op_type)
+    }
+
+    if expr.kind == EXPR_UNWRAP {
+        let op_type = infer_expr_type(st, expr.operand)
+        if not is_optional_type(op_type) {
+            report_error("semantic", expr.line, expr.col, "Cannot unwrap non-optional type with '!'")
+            st.error_count += 1
+            return op_type
+        }
+        return optional_inner_type(op_type)
     }
 
     return "unknown"

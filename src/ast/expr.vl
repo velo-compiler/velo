@@ -25,6 +25,7 @@ let EXPR_BITSET_LIT: i32 = 151  // 5.2 slice 9: first_arg chain holds the index 
 let EXPR_HEAP_SHELF_LIT: i32 = 153  // 5.2 slice 10: a shelf literal whose payload is heap-backed
 let EXPR_HEAP_MAP_LIT: i32 = 154    // Task 7.2: a map literal whose payload is heap-backed
 let EXPR_OR_RETURN: i32 = 119       // Algebraic error handling: `expr or return`
+let EXPR_UNWRAP: i32 = 120          // Optional unwrap: `expr!`
 
 // Represents a single field initializer in a struct instantiation (e.g. `x: 10.0`).
 // Linked via `next` to support arbitrary numbers of fields without dynamic heap buffers.
@@ -162,6 +163,16 @@ act make_address_of_expr(operand: @ExprNode, line: i32, col: i32) -> @ExprNode {
 act make_or_return_expr(operand: @ExprNode, line: i32, col: i32) -> @ExprNode {
     mut node: @ExprNode = mem.alloc(@ExprNode, 1)
     node.kind = EXPR_OR_RETURN
+    node.operand = operand
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates an optional unwrap expression node (`expr!`).
+act make_unwrap_expr(operand: @ExprNode, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_UNWRAP
     node.operand = operand
     node.line = line
     node.col = col

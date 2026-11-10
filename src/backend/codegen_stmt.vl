@@ -50,19 +50,12 @@ act emit_c_cleanup(sb: @StringBuilder, st: @SymbolTable, cur_d: @DeferNode, inde
     if not cur_d.is_zone {
         emit_c_stmt(sb, st, cur_d.stmt, indent, defers)
     } else {
-        sb_append_indent(sb, indent)
-        sb_append_str(sb, "velo_zone_pop(__zone_wm_")
-        sb_append_int(sb, cur_d.zone_id as i32)
-        sb_append_str(sb, ");\n")
+        sb_append_indent(sb, indent); sb_append_str(sb, "velo_zone_pop(__zone_wm_"); sb_append_int(sb, cur_d.zone_id as i32); sb_append_str(sb, ");\n")
         if cur_d.zone_has_expr {
             sb_append_indent(sb, indent)
-            if cur_d.zone_is_arena {
-                sb_append_str(sb, "velo_zone_leave_arena(__zone_prev_")
-            } else {
-                sb_append_str(sb, "velo_zone_leave(__zone_prev_")
-            }
-            sb_append_int(sb, cur_d.zone_id as i32)
-            sb_append_str(sb, ");\n")
+            if cur_d.zone_is_arena { sb_append_str(sb, "velo_zone_leave_arena(__zone_prev_") }
+            else { sb_append_str(sb, "velo_zone_leave(__zone_prev_") }
+            sb_append_int(sb, cur_d.zone_id as i32); sb_append_str(sb, ");\n")
         }
     }
 }
@@ -92,7 +85,21 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         }
         define_variable(st, stmt.name, stmt.type_name, stmt.is_mut, stmt.line, stmt.col)
         sb_append_indent(sb, indent); sb_append_str(sb, map_type_to_c(stmt.type_name)); sb_append_char(sb, ' '); sb_append_str(sb, stmt.name)
-        if stmt.val_expr != null { sb_append_str(sb, " = "); emit_c_expr(sb, st, stmt.val_expr) }
+        if stmt.val_expr != null {
+            sb_append_str(sb, " = ")
+            if is_optional_type(stmt.type_name) {
+                let inner = optional_inner_type(stmt.type_name)
+                if inner[0] != '@' and inner != "string" {
+                    let val_t = infer_expr_type(st, stmt.val_expr)
+                    let opt_c = opt_type_c_name(stmt.type_name)
+                    if stmt.val_expr.kind == EXPR_NULL {
+                        sb_append_char(sb, '('); sb_append_str(sb, opt_c); sb_append_str(sb, "){ .has = false }")
+                    } else if not is_optional_type(val_t) {
+                        sb_append_char(sb, '('); sb_append_str(sb, opt_c); sb_append_str(sb, "){ .has = true, .val = "); emit_c_expr(sb, st, stmt.val_expr); sb_append_str(sb, " }")
+                    } else { emit_c_expr(sb, st, stmt.val_expr) }
+                } else { emit_c_expr(sb, st, stmt.val_expr) }
+            } else { emit_c_expr(sb, st, stmt.val_expr) }
+        }
         sb_append_str(sb, ";\n"); return
     }
 
@@ -136,6 +143,25 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
                 emit_c_expr(sb, st, stmt.val_expr)
                 if (p1_ptr and not v_ptr) or (v_ptr and not p1_ptr) { sb_append_char(sb, ')') }
                 sb_append_str(sb, ");\n")
+                return
+            }
+        }
+        let target_t = infer_expr_type(st, stmt.expr)
+        if stmt.op == TOK_EQ and is_optional_type(target_t) {
+            let inner = optional_inner_type(target_t)
+            if inner[0] != '@' and inner != "string" {
+                let val_t = infer_expr_type(st, stmt.val_expr)
+                let opt_c = opt_type_c_name(target_t)
+                sb_append_indent(sb, indent)
+                emit_c_expr(sb, st, stmt.expr)
+                sb_append_str(sb, " = ")
+                if stmt.val_expr.kind == EXPR_NULL {
+                    sb_append_char(sb, '('); sb_append_str(sb, opt_c); sb_append_str(sb, "){ .has = false };\n")
+                } else if not is_optional_type(val_t) {
+                    sb_append_char(sb, '('); sb_append_str(sb, opt_c); sb_append_str(sb, "){ .has = true, .val = "); emit_c_expr(sb, st, stmt.val_expr); sb_append_str(sb, " };\n")
+                } else {
+                    emit_c_expr(sb, st, stmt.val_expr); sb_append_str(sb, ";\n")
+                }
                 return
             }
         }

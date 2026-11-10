@@ -2940,3 +2940,45 @@ flowchart TD
   - All 5/5 VS Code extension suites passed (24 parity, 28 grammar, 8 simulations, 11 LSP probes, 10 extension LSP sims).
   - All 98 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
   - Zero UTF-8 BOM in any `.vl` file.
+
+### Phase 35: Compile-Time Null Safety & Optional Types (`?T`)
+
+* **Defect**:
+  - Previously, all pointer types (`@T`) in Velo were implicitly nullable at runtime without type-level distinction between guaranteed non-null and potentially null values.
+  - Dereferencing or accessing fields on an unchecked pointer could lead to runtime segmentation faults without compiler warning.
+  - Primitive value types (`i32`, `bool`, etc.) had no standardized lightweight representation for absent/optional values, requiring ad-hoc sentinel integers or custom structs.
+  - Safe navigation and coalescing patterns lacked ergonomic language operators, requiring verbose manual `if p == null` branching.
+* **Fix Applied**:
+  1. **Grammar & Lexer Extensions**:
+     - Added `?` (`TOK_QUESTION`), `??` (`TOK_DOUBLE_QUESTION`), and postfix `!` (`TOK_BANG`) to `src/frontend/token.vl`, `src/frontend/lexer.vl`, `velo/tokens.py`, and `velo/lexer.py`.
+     - Supported optional type annotations in both prefix `?T` (`?@Node`, `?i32`, `?string`) and postfix `T?` (`@Node?`, `i32?`) normalized canonically to `?T` across parser routines (`parse_type_annotation_ex` in `src/frontend/parser.vl` and `_parse_type_annotation` in `velo/parser.py`).
+  2. **AST & Operator Precedence**:
+     - Added `EXPR_UNWRAP` (`make_unwrap_expr` in `src/ast/expr.vl` and `UnwrapExpr` in `velo/ast_nodes.py`).
+     - Added postfix unwrap assertion parsing in `parse_postfix` (`val!`).
+     - Wired null coalescing operator `??` (`TOK_DOUBLE_QUESTION`) into Pratt precedence hierarchy (`parse_coalesce` in `src/frontend/parser_binary.vl` and `_parse_coalesce` in `velo/parser.py`).
+  3. **Type System & Static Analysis**:
+     - Added `is_optional_type`, `optional_inner_type`, and `opt_type_c_name` in `src/ast/types.vl` and `velo/codegen_c.py`.
+     - Enforced compile-time guards:
+       - Direct member access (`opt.field`) on optional types without unwrapping is rejected with diagnostic pointing to unwrapping operators (`??`, `!`, or `.val`).
+       - Assignment of optional `?T` to non-optional `T` is rejected at compile time.
+       - Assignment of `null` (`@void`) to non-optional value types (`i32`, `bool`, structs) is rejected at compile time.
+       - Built-in property accessors `.has` (boolean presence check) and `.val` (unwrapped value access) are natively supported on all optional instances.
+  4. **Backend Codegen & C ABI Representation**:
+     - Zero-cost representation for optional pointers (`?@T` -> `T*`) and strings (`?string` -> `const char*`) with standard `NULL` representation in C ABI.
+     - Stack-allocated primitive optional value types (`_Velo_Opt_i32`, `_Velo_Opt_bool`, etc.) defined in `runtime/velo_runtime.h` with `{ bool has; <type> val; }` layout.
+     - Codegen emission for `??` lowering to `velo_opt_coalesce_ptr` for pointers/strings or ternary `.has ? .val : right` for value optionals.
+     - Codegen emission for `!` lowering to panic-checked `velo_opt_unwrap_ptr` with file/line/col assertion for pointers/strings or `velo_opt_unwrap_<type>` for value optionals.
+     - Transparent struct wrapping for variable declarations, assignments, and returns of value optionals when initialized with values or `null`.
+  5. **Self-Hosting Bootstrap & Determinism**:
+     - Rebuilt 3-generation compiler chain (`bin/velo.exe build src/main.vl -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe -> bootstrap.c`).
+     - Verified bit-for-bit SHA-256 determinism across Gen2, Gen3, and `bootstrap.c` (`02d944d4d4e7ed2a7d5904a3d94f28f64ca61a577dc1bc2f45f4427aae710379`).
+* **Residual Limitation**:
+  - Full flow-sensitive type narrowing (automatically unwrapping `opt` inside `if opt != null { ... }` blocks without requiring `.val` or `!`) will be introduced in a future dataflow-analysis pass.
+* **Verification**:
+  - Created test suite `tests/test_null_safety_optional.py` (8 comprehensive tests) covering optional pointer `.has` and `.val`, `??` coalescing, `!` postfix unwrapping, postfix `T?` syntax, value optionals (`?i32`), and compile-time rejection of member access without unwrap, optional-to-non-optional assignment, and null-to-value assignment.
+  - All 8 tests passed on both Stage 1 (Python) and Stage 2 (`bin/velo.exe`).
+  - Bit-for-bit SHA-256 determinism confirmed across Gen2, Gen3, and `bootstrap.c` (`02d944d4d4e7ed2a7d5904a3d94f28f64ca61a577dc1bc2f45f4427aae710379`).
+  - Full pytest test suite passing (609 tests).
+  - All 98 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
+  - Zero UTF-8 BOM across all `.vl` files.
+  - All 5/5 VS Code extension test suites passed.

@@ -6,7 +6,7 @@ from velo.ast_nodes import (
     MatchCase, MatchStmt, FailStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, VariantExpr, AnonFuncExpr,
-    ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral, OrReturnExpr,
+    ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral, OrReturnExpr, UnwrapExpr,
     TypeAliasDecl, TestDecl,
     mangle_op_name
 )
@@ -402,6 +402,9 @@ class Parser:
         )
 
     def _parse_type_annotation(self, allow_or: bool = True) -> str:
+        is_opt = False
+        if self._match(TokenType.QUESTION):
+            is_opt = True
         prefix = ""
         while self._match(TokenType.AT):
             prefix += "@"
@@ -422,7 +425,14 @@ class Parser:
             ret_type = "void"
             if self._match(TokenType.ARROW):
                 ret_type = self._parse_type_annotation()
-            return prefix + f"act({', '.join(params)}) -> {ret_type}"
+            act_str = f"act({', '.join(params)}) -> {ret_type}"
+            full_type = prefix + act_str
+            if is_opt or self._match(TokenType.QUESTION):
+                full_type = "?" + full_type
+            if allow_or and self._match(TokenType.OR):
+                err_type = self._parse_type_annotation(allow_or=True)
+                full_type = f"{full_type} or {err_type}"
+            return full_type
 
         if self._check(TokenType.HEAP):
             # 5.2 slice 10: `heap shelf[T]` / Task 7.2: `heap Map[K, V]`
@@ -453,6 +463,8 @@ class Parser:
         # bare-shelf pattern); `bitset` is legal bare by design.
 
         full_type = prefix + base_name
+        if is_opt or self._match(TokenType.QUESTION):
+            full_type = "?" + full_type
         if allow_or and self._match(TokenType.OR):
             err_type = self._parse_type_annotation(allow_or=True)
             full_type = f"{full_type} or {err_type}"
@@ -756,7 +768,15 @@ class Parser:
 
     # Expression Precedence Hierarchy
     def _parse_expression(self) -> Expr:
-        return self._parse_logical_or()
+        return self._parse_coalesce()
+
+    def _parse_coalesce(self) -> Expr:
+        expr = self._parse_logical_or()
+        while self._match(TokenType.DOUBLE_QUESTION):
+            op_tok = self.tokens[self.pos - 1]
+            right = self._parse_logical_or()
+            expr = BinaryExpr(left=expr, op="??", right=right, line=expr.line, col=expr.col)
+        return expr
 
     def _parse_logical_or(self) -> Expr:
         expr = self._parse_logical_and()
@@ -911,6 +931,9 @@ class Parser:
                 as_tok = self.tokens[self.pos - 1]
                 target_type = self._parse_type_annotation(allow_or=False)
                 expr = CastExpr(expr=expr, target_type=target_type, line=as_tok.line, col=as_tok.col)
+            elif self._match(TokenType.BANG):
+                bang_tok = self.tokens[self.pos - 1]
+                expr = UnwrapExpr(operand=expr, line=bang_tok.line, col=bang_tok.col)
             elif self._match(TokenType.LPAREN):
                 lparen = self.tokens[self.pos - 1]
                 args: List[Expr] = []

@@ -109,6 +109,12 @@ class OrReturnExpr(Expr):
     col: int
 
 @dataclass
+class UnwrapExpr(Expr):
+    operand: Expr
+    line: int
+    col: int
+
+@dataclass
 class BinaryExpr(Expr):
     left: Expr
     op: str

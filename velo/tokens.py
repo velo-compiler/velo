@@ -61,6 +61,8 @@ class TokenType(Enum):
     ARROW = auto()        # ->
     FAT_ARROW = auto()    # =>
     BANG = auto()         # !
+    QUESTION = auto()     # ?
+    DOUBLE_QUESTION = auto() # ??
 
     # Comparisons & Assignments
     ASSIGN = auto()       # =

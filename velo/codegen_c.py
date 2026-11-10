@@ -6,7 +6,7 @@ from velo.ast_nodes import (
     MatchCase, MatchStmt, FailStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr,
-    ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral, OrReturnExpr,
+    ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral, OrReturnExpr, UnwrapExpr,
     TypeAliasDecl, TestDecl
 )
 from velo.monomorphize import Monomorphizer, parse_act_type, mangle_act_type, mangle_type_name, DYN_INT_TYPES, DYN_FLOAT_TYPES
@@ -369,7 +369,14 @@ class CCodeGenerator:
     def _map_type(self, type_str: Optional[str]) -> str:
         if not type_str or type_str == "void":
             return "void"
-        
+
+        if type_str.startswith("?"):
+            inner = type_str[1:]
+            if inner.startswith("@") or inner == "string":
+                return self._map_type(inner)
+            c_inner = inner.replace('@', 'ptr_').replace('[', '_').replace(']', '_').replace(',', '_').replace(' ', '_')
+            return f"_Velo_Opt_{c_inner}"
+
         parsed = parse_act_type(type_str)
         if parsed:
             prefix, params, ret = parsed
@@ -427,6 +434,16 @@ class CCodeGenerator:
         if not type_str:
             return False
         return " or " in type_str
+
+    def _is_optional_type(self, type_str: Optional[str]) -> bool:
+        if not type_str:
+            return False
+        return type_str.startswith("?")
+
+    def _optional_inner_type(self, type_str: Optional[str]) -> str:
+        if not type_str or not type_str.startswith("?"):
+            return type_str or ""
+        return type_str[1:]
 
     def _or_type_success(self, type_str: str) -> str:
         parts = type_str.split(" or ", 1)
@@ -2038,9 +2055,25 @@ class CCodeGenerator:
                     if not self._is_or_type(val_t):
                         c_ret = self._map_type(ret_t)
                         ret_val_code = f"({c_ret}){{ .ok = true, .as = {{ .val = {ret_val_code} }} }}"
+                elif ret_t and self._is_optional_type(ret_t):
+                    inner = self._optional_inner_type(ret_t)
+                    if not (inner.startswith("@") or inner == "string"):
+                        c_ret = self._map_type(ret_t)
+                        val_t = self._resolve_expr_type(stmt.value)
+                        if isinstance(stmt.value, NullLiteral):
+                            ret_val_code = f"({c_ret}){{ .has = false }}"
+                        elif not self._is_optional_type(val_t):
+                            ret_val_code = f"({c_ret}){{ .has = true, .val = {ret_val_code} }}"
             elif is_ret_or:
                 c_ret = self._map_type(ret_t)
                 ret_val_code = f"({c_ret}){{ .ok = true }}"
+            elif ret_t and self._is_optional_type(ret_t):
+                inner = self._optional_inner_type(ret_t)
+                if not (inner.startswith("@") or inner == "string"):
+                    c_ret = self._map_type(ret_t)
+                    ret_val_code = f"({c_ret}){{ .has = false }}"
+                else:
+                    ret_val_code = "NULL"
 
             for frame in reversed(self.defer_stack):
                 for d in reversed(frame):
@@ -2087,6 +2120,13 @@ class CCodeGenerator:
             self._check_bitset_annotation(stmt.type_name, stmt.value)
             self._check_split_retire(stmt.type_name, stmt.value)  # slice 11
             type_str = self._infer_or_map_type(stmt.type_name, stmt.value)
+            if stmt.type_name and stmt.value and not isinstance(stmt.value, (ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral)):
+                if isinstance(stmt.value, NullLiteral) and not (self._is_optional_type(stmt.type_name) or stmt.type_name.startswith("@") or stmt.type_name == "string" or stmt.type_name.startswith("act(")):
+                    raise ValueError(f"type mismatch: cannot assign null to non-optional value type '{stmt.type_name}'")
+                if not self._is_optional_type(stmt.type_name):
+                    val_t = self._resolve_expr_type(stmt.value)
+                    if self._is_optional_type(val_t):
+                        raise ValueError(f"type mismatch: cannot assign optional '{val_t}' to non-optional variable '{stmt.name}' of type '{stmt.type_name}'")
             raw_velo_type = stmt.type_name or self._infer_raw_velo_type(stmt.value)
             self.current_scope_types[stmt.name] = raw_velo_type
             self.current_scope_mut[stmt.name] = stmt.is_mut
@@ -2119,6 +2159,14 @@ class CCodeGenerator:
                 self._emit_line(f"{const_prefix}{type_str} {stmt.name} = {tmp}.as.val;")
             elif stmt.value:
                 val_code = self._emit_expression(stmt.value)
+                if stmt.type_name and self._is_optional_type(stmt.type_name):
+                    inner = self._optional_inner_type(stmt.type_name)
+                    if not (inner.startswith("@") or inner == "string"):
+                        val_t = self._resolve_expr_type(stmt.value)
+                        if isinstance(stmt.value, NullLiteral):
+                            val_code = f"({type_str}){{ .has = false }}"
+                        elif not self._is_optional_type(val_t):
+                            val_code = f"({type_str}){{ .has = true, .val = {val_code} }}"
                 self._emit_line(f"{const_prefix}{type_str} {stmt.name} = {val_code};")
             else:
                 self._emit_line(f"{type_str} {stmt.name};")
@@ -2261,6 +2309,16 @@ class CCodeGenerator:
                 self._emit_line(f"{target_code} {stmt.op} {tmp}.as.val;")
             else:
                 val_code = self._emit_expression(stmt.value)
+                target_type = self._resolve_expr_type(stmt.target)
+                if stmt.op == "=" and self._is_optional_type(target_type):
+                    inner = self._optional_inner_type(target_type)
+                    if not (inner.startswith("@") or inner == "string"):
+                        c_tgt = self._map_type(target_type)
+                        val_t = self._resolve_expr_type(stmt.value)
+                        if isinstance(stmt.value, NullLiteral):
+                            val_code = f"({c_tgt}){{ .has = false }}"
+                        elif not self._is_optional_type(val_t):
+                            val_code = f"({c_tgt}){{ .has = true, .val = {val_code} }}"
                 self._emit_line(f"{target_code} {stmt.op} {val_code};")
 
         elif isinstance(stmt, IfStmt):
@@ -2608,6 +2666,15 @@ class CCodeGenerator:
             return False
         if expected == actual:
             return True
+        if self._is_optional_type(expected):
+            if actual == "@void" or actual == "null":
+                return True
+            exp_inner = self._optional_inner_type(expected)
+            if self._is_optional_type(actual):
+                return self._types_are_compatible(exp_inner, self._optional_inner_type(actual))
+            return self._types_are_compatible(exp_inner, actual)
+        if self._is_optional_type(actual):
+            return False
         if expected.startswith("act(") and actual.startswith("act("):
             e_clean = expected.lstrip("@")
             a_clean = actual.lstrip("@")
@@ -2709,6 +2776,8 @@ class CCodeGenerator:
             if value.name in ("field_count", "field_name", "field_type", "field_value"):
                 raise ValueError(f"reflection intrinsic '{value.name}' must be called with parentheses: {value.name}(...)")
             return "i32"
+        if isinstance(value, UnwrapExpr):
+            return self._resolve_expr_type(value)
         if isinstance(value, DerefExpr):
             return self._resolve_expr_type(value)
         if isinstance(value, BinaryExpr):
@@ -2719,6 +2788,8 @@ class CCodeGenerator:
             r_t = self._resolve_expr_type(value.right)
             if value.op in ("||", "or") and self._is_or_type(l_t):
                 return self._or_type_success(l_t)
+            if value.op == "??":
+                return self._resolve_expr_type(value)
             if l_t in ("f32x4", "i32x4") or r_t in ("f32x4", "i32x4"):
                 if value.op in ("==", "!="):
                     return "bool"
@@ -2920,6 +2991,11 @@ class CCodeGenerator:
         return self._map_type(raw)
 
     def _resolve_expr_type(self, expr: Expr) -> str:
+        if isinstance(expr, UnwrapExpr):
+            sub_t = self._resolve_expr_type(expr.operand)
+            if not self._is_optional_type(sub_t):
+                raise ValueError("Cannot unwrap non-optional type with '!'")
+            return self._optional_inner_type(sub_t)
         if isinstance(expr, OrReturnExpr):
             op_t = self._resolve_expr_type(expr.operand)
             self._validate_or_return(op_t)
@@ -3013,6 +3089,12 @@ class CCodeGenerator:
                 hint = f" (functions need parens: simd.{expr.member}(...))" if expr.member in SIMD_CALLS else ""
                 raise ValueError(f"unknown simd constant '{expr.member}' (simd functions are: {SIMD_FUNCS_TEXT}){hint}")
             target_type = self._resolve_expr_type(expr.target)
+            if self._is_optional_type(target_type):
+                if expr.member == "has":
+                    return "bool"
+                if expr.member == "val":
+                    return self._optional_inner_type(target_type)
+                raise ValueError(f"Cannot access member '{expr.member}' on optional type '{target_type}' without unwrapping (use '??', '!', or '.val')")
             if self._is_or_type(target_type):
                 if expr.member == "ok":
                     return "bool"
@@ -3260,6 +3342,13 @@ class CCodeGenerator:
             r_t = self._resolve_expr_type(expr.right)
             if expr.op in ("||", "or") and self._is_or_type(l_t):
                 return self._or_type_success(l_t)
+            if expr.op == "??":
+                if not self._is_optional_type(l_t):
+                    raise ValueError("Left operand of '??' must be an optional type")
+                inner_t = self._optional_inner_type(l_t)
+                if not self._types_are_compatible(inner_t, r_t):
+                    raise ValueError("Right operand of '??' is incompatible with optional unwrapped type")
+                return inner_t
             if l_t in ("f32x4", "i32x4") or r_t in ("f32x4", "i32x4"):
                 if l_t != r_t:
                     raise ValueError(f"mismatched operand types for SIMD binary operator '{expr.op}': {l_t} and {r_t}")
@@ -3465,6 +3554,18 @@ class CCodeGenerator:
                 raise ValueError(f"unknown math constant '{expr.member}' (constants: PI, TAU, RAD2DEG, DEG2RAD){hint}")
             target_code = self._emit_expression(expr.target)
             target_type = self._resolve_expr_type(expr.target)
+            if self._is_optional_type(target_type):
+                inner = self._optional_inner_type(target_type)
+                if inner.startswith("@") or inner == "string":
+                    if expr.member == "has":
+                        return f"(({target_code}) != NULL)"
+                    elif expr.member == "val":
+                        return f"({target_code})"
+                else:
+                    arrow = "->" if target_type.startswith("@") else "."
+                    if expr.member in ("has", "val"):
+                        return f"({target_code}){arrow}{expr.member}"
+                raise ValueError(f"Cannot access member '{expr.member}' on optional type '{target_type}' without unwrapping (use '??', '!', or '.val')")
             if self._is_or_type(target_type):
                 arrow = "->" if target_type.startswith("@") else "."
                 if expr.member == "ok":
@@ -3494,6 +3595,15 @@ class CCodeGenerator:
                 right = self._emit_expression(expr.right)
                 c_name = self._or_type_c_name(l_t)
                 return f"{c_name}_fallback({left}, {right})"
+            if op == "??":
+                left = self._emit_expression(expr.left)
+                right = self._emit_expression(expr.right)
+                inner = self._optional_inner_type(l_t)
+                if inner.startswith("@") or inner == "string":
+                    c_type = self._map_type(inner)
+                    return f"(({c_type})velo_opt_coalesce_ptr({left}, {right}))"
+                else:
+                    return f"(({left}).has ? ({left}).val : ({right}))"
             if l_t in ("f32x4", "i32x4") or r_t in ("f32x4", "i32x4"):
                 if l_t != r_t:
                     raise ValueError(f"mismatched operand types for SIMD binary operator '{op}': {l_t} and {r_t}")
@@ -3585,6 +3695,16 @@ class CCodeGenerator:
             sub = self._emit_expression(expr.operand)
             op = "!" if expr.op in ("!", "not") else expr.op
             return f"({op}{sub})"
+        elif isinstance(expr, UnwrapExpr):
+            op_t = self._resolve_expr_type(expr.operand)
+            inner = self._optional_inner_type(op_t)
+            target_code = self._emit_expression(expr.operand)
+            norm_path = (self.source_path or "<source>").replace("\\", "/")
+            if inner.startswith("@") or inner == "string":
+                c_type = self._map_type(inner)
+                return f"(({c_type})velo_opt_unwrap_ptr({target_code}, \"{norm_path}\", {expr.line}, {expr.col}))"
+            else:
+                return f"velo_opt_unwrap_{inner}({target_code}, \"{norm_path}\", {expr.line}, {expr.col})"
         elif isinstance(expr, CallExpr):
             if isinstance(expr.callee, MemberAccess) and isinstance(expr.callee.target, Identifier) and expr.callee.target.name in self.kind_defs:
                 kname = expr.callee.target.name

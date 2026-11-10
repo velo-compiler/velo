@@ -182,10 +182,53 @@ act is_act_type_name(name: string) -> bool {
     return false
 }
 
+// Returns true if the type name represents an optional '?T' type.
+act is_optional_type(name: string) -> bool {
+    if name == null { return false }
+    return str.len(name) > 1 and name[0] == '?'
+}
+
+// Extracts inner type T from '?T'.
+act optional_inner_type(name: string) -> string {
+    if name == null or str.len(name) <= 1 or name[0] != '?' { return name }
+    return copy_slice_to_string(name, 1, str.len(name) - 1)
+}
+
+// Returns a valid C identifier for an optional value type (e.g. "_Velo_Opt_i32").
+act opt_type_c_name(name: string) -> string {
+    if name == null { return "" }
+    let inner = optional_inner_type(name)
+    mut sb = create_sb(str.len(inner) + 16)
+    sb_append_str(@sb, "_Velo_Opt_")
+    mut i: usize = 0
+    loop i < str.len(inner) {
+        let c = inner[i]
+        if c == '@' { sb_append_str(@sb, "ptr_"); i += 1 }
+        else if c == '[' or c == ']' or c == ',' or c == ' ' { sb_append_char(@sb, '_'); i += 1 }
+        else { sb_append_char(@sb, c); i += 1 }
+    }
+    return sb_to_string(@sb)
+}
+
 // Checks if two type names are structurally or nominally compatible.
 act types_are_compatible(expected: string, actual: string) -> bool {
     if expected == null or actual == null { return false }
     if expected == actual { return true }
+
+    // Optional type handling:
+    if is_optional_type(expected) {
+        if actual == "@void" or actual == "null" { return true }
+        let exp_inner = optional_inner_type(expected)
+        if is_optional_type(actual) {
+            return types_are_compatible(exp_inner, optional_inner_type(actual))
+        }
+        return types_are_compatible(exp_inner, actual)
+    }
+    if is_optional_type(actual) {
+        // Cannot assign optional to non-optional
+        return false
+    }
+
     if is_act_type_name(expected) and is_act_type_name(actual) {
         let e_clean = strip_pointer_prefix(expected)
         let a_clean = strip_pointer_prefix(actual)

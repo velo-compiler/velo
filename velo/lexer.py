@@ -384,6 +384,9 @@ class Lexer:
         if ch == '!':
             if self._match('='): return Token(TokenType.NE, "!=", line, col)
             return Token(TokenType.BANG, "!", line, col)
+        if ch == '?':
+            if self._match('?'): return Token(TokenType.DOUBLE_QUESTION, "??", line, col)
+            return Token(TokenType.QUESTION, "?", line, col)
         if ch == '<':
             if self._match('<'):
                 if self._match('='): return Token(TokenType.SHL_ASSIGN, "<<=", line, col)

@@ -120,9 +120,20 @@ act parse_logical_or(p: @Parser) -> @ExprNode {
     return expr
 }
 
+// Parses null coalescing expressions: `??`.
+act parse_coalesce(p: @Parser) -> @ExprNode {
+    mut expr = parse_logical_or(p)
+    loop parser_check(p, TOK_DOUBLE_QUESTION) {
+        let op_tok = parser_advance(p)
+        let right = parse_logical_or(p)
+        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+    }
+    return expr
+}
+
 // Parses a complete expression matching the full Pratt operator precedence hierarchy.
 act parse_expression(p: @Parser) -> @ExprNode {
-    return parse_logical_or(p)
+    return parse_coalesce(p)
 }
 
 // 6.3 S1: the parse-row report wrapper. Prints the pinned one-liner wire row

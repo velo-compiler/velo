@@ -23,6 +23,7 @@ use "time_gen.vl"
 use "os_gen.vl"
 use "fs_gen.vl"
 use "simd_gen.vl"
+use "codegen_line.vl"
 use "reflect_gen.vl"
 use "codegen_call.vl"
 
@@ -127,6 +128,27 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             }
         }
         let target_type = infer_expr_type(st, expr.target)
+        if is_optional_type(target_type) {
+            let inner = optional_inner_type(target_type)
+            if inner[0] == '@' or inner == "string" {
+                if expr.member_name == "has" {
+                    sb_append_str(sb, "((")
+                    emit_c_expr(sb, st, expr.target)
+                    sb_append_str(sb, ") != NULL)")
+                } else if expr.member_name == "val" {
+                    sb_append_char(sb, '(')
+                    emit_c_expr(sb, st, expr.target)
+                    sb_append_char(sb, ')')
+                }
+            } else {
+                sb_append_char(sb, '(')
+                emit_c_expr(sb, st, expr.target)
+                sb_append_char(sb, ')')
+                sb_append_char(sb, '.')
+                sb_append_str(sb, expr.member_name)
+            }
+            return
+        }
         if is_or_type(target_type) {
             sb_append_char(sb, '(')
             emit_c_expr(sb, st, expr.target)
@@ -175,6 +197,28 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr.kind == EXPR_BINARY {
         let ltype = infer_expr_type(st, expr.left)
         let rtype = infer_expr_type(st, expr.right)
+        if expr.op == TOK_DOUBLE_QUESTION {
+            let inner = optional_inner_type(ltype)
+            if inner[0] == '@' or inner == "string" {
+                let c_type = map_type_to_c(inner)
+                sb_append_str(sb, "((")
+                sb_append_str(sb, c_type)
+                sb_append_str(sb, ")velo_opt_coalesce_ptr(")
+                emit_c_expr(sb, st, expr.left)
+                sb_append_str(sb, ", ")
+                emit_c_expr(sb, st, expr.right)
+                sb_append_str(sb, "))")
+            } else {
+                sb_append_str(sb, "((")
+                emit_c_expr(sb, st, expr.left)
+                sb_append_str(sb, ").has ? (")
+                emit_c_expr(sb, st, expr.left)
+                sb_append_str(sb, ").val : (")
+                emit_c_expr(sb, st, expr.right)
+                sb_append_str(sb, "))")
+            }
+            return
+        }
         if expr.op == TOK_OR and is_or_type(ltype) {
             let c_name = or_type_c_name(ltype)
             sb_append_str(sb, c_name)
@@ -291,6 +335,39 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         emit_c_expr(sb, st, expr.operand)
         sb_append_str(sb, "; if (!__or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".ok) return ("); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = false, .as = { .err = __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.err } }; ")
         sb_append_str(sb, "__or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.val; })")
+        return
+    }
+
+    // 10. Optional unwrap expression (`expr!`)
+    if expr.kind == EXPR_UNWRAP {
+        let op_t = infer_expr_type(st, expr.operand)
+        let inner = optional_inner_type(op_t)
+        if inner[0] == '@' or inner == "string" {
+            let c_type = map_type_to_c(inner)
+            sb_append_str(sb, "((")
+            sb_append_str(sb, c_type)
+            sb_append_str(sb, ")velo_opt_unwrap_ptr(")
+            emit_c_expr(sb, st, expr.operand)
+            sb_append_str(sb, ", \"")
+            emit_source_path(sb, st)
+            sb_append_str(sb, "\", ")
+            sb_append_int(sb, expr.line)
+            sb_append_str(sb, ", ")
+            sb_append_int(sb, expr.col)
+            sb_append_str(sb, "))")
+        } else {
+            sb_append_str(sb, "velo_opt_unwrap_")
+            sb_append_str(sb, inner)
+            sb_append_char(sb, '(')
+            emit_c_expr(sb, st, expr.operand)
+            sb_append_str(sb, ", \"")
+            emit_source_path(sb, st)
+            sb_append_str(sb, "\", ")
+            sb_append_int(sb, expr.line)
+            sb_append_str(sb, ", ")
+            sb_append_int(sb, expr.col)
+            sb_append_char(sb, ')')
+        }
         return
     }
 }

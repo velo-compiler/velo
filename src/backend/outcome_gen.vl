@@ -249,6 +249,9 @@ act emit_or_return_expr(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, i
 
 act emit_return_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32, defers: @@DeferNode) {
     let is_ret_or = is_or_type(st.current_func_ret_type)
+    let is_ret_opt = is_optional_type(st.current_func_ret_type)
+    let opt_inner = optional_inner_type(st.current_func_ret_type)
+    let is_val_opt = is_ret_opt and opt_inner[0] != '@' and opt_inner != "string"
     let ret_c = map_type_to_c(st.current_func_ret_type)
     mut is_val_or = false
     if stmt.val_expr != null {
@@ -258,7 +261,21 @@ act emit_return_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, inde
     if defers.@ == null {
         sb_append_indent(sb, indent)
         sb_append_str(sb, "return")
-        if stmt.val_expr != null {
+        if is_val_opt {
+            let opt_c = opt_type_c_name(st.current_func_ret_type)
+            if stmt.val_expr == null or stmt.val_expr.kind == EXPR_NULL {
+                sb_append_str(sb, " ("); sb_append_str(sb, opt_c); sb_append_str(sb, "){ .has = false }")
+            } else {
+                let vt = infer_expr_type(st, stmt.val_expr)
+                if not is_optional_type(vt) {
+                    sb_append_str(sb, " ("); sb_append_str(sb, opt_c); sb_append_str(sb, "){ .has = true, .val = ")
+                    emit_c_expr(sb, st, stmt.val_expr)
+                    sb_append_str(sb, " }")
+                } else {
+                    sb_append_char(sb, ' '); emit_c_expr(sb, st, stmt.val_expr)
+                }
+            }
+        } else if stmt.val_expr != null {
             sb_append_char(sb, ' ')
             if is_ret_or and not is_val_or {
                 sb_append_char(sb, '('); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = true, .as = { .val = ")
@@ -274,13 +291,26 @@ act emit_return_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, inde
         return
     }
 
-    if (stmt.val_expr != null or is_ret_or) and ret_c != "void" {
+    if (stmt.val_expr != null or is_ret_or or is_val_opt) and ret_c != "void" {
         sb_append_indent(sb, indent)
         sb_append_str(sb, "{\n")
         sb_append_indent(sb, indent + 1)
         sb_append_str(sb, ret_c)
         sb_append_str(sb, " __ret_val = ")
-        if is_ret_or and not is_val_or {
+        if is_val_opt {
+            let opt_c = opt_type_c_name(st.current_func_ret_type)
+            if stmt.val_expr == null or stmt.val_expr.kind == EXPR_NULL {
+                sb_append_char(sb, '('); sb_append_str(sb, opt_c); sb_append_str(sb, "){ .has = false };\n")
+            } else {
+                let vt = infer_expr_type(st, stmt.val_expr)
+                if not is_optional_type(vt) {
+                    sb_append_char(sb, '('); sb_append_str(sb, opt_c); sb_append_str(sb, "){ .has = true, .val = ")
+                    emit_c_expr(sb, st, stmt.val_expr); sb_append_str(sb, " };\n")
+                } else {
+                    emit_c_expr(sb, st, stmt.val_expr); sb_append_str(sb, ";\n")
+                }
+            }
+        } else if is_ret_or and not is_val_or {
             if stmt.val_expr != null {
                 sb_append_char(sb, '('); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = true, .as = { .val = ")
                 emit_c_expr(sb, st, stmt.val_expr)

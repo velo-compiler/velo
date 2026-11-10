@@ -86,6 +86,9 @@ act parse_postfix(p: @Parser) -> @ExprNode {
             let as_tok = parser_peek(p, 0)
             let target_type = parse_type_annotation_no_or(p)
             expr = make_cast_expr(expr, target_type, as_tok.line, as_tok.col)
+        } else if parser_match(p, TOK_BANG) {
+            let b_tok = parser_peek(p, 0)
+            expr = make_unwrap_expr(expr, b_tok.line, b_tok.col)
         } else if parser_match(p, TOK_LPAREN) {
             let lp = parser_peek(p, 0)
             mut first_arg: @ExprNode = null
@@ -121,13 +124,15 @@ act parse_postfix(p: @Parser) -> @ExprNode {
 
 // Parses prefix unary operations: `@x` (address-of), `-x`, `!x`, `not x`, `~x`.
 act parse_unary(p: @Parser) -> @ExprNode {
-    if parser_check(p, TOK_AT) or parser_check(p, TOK_MINUS) or parser_check(p, TOK_NOT) or parser_check(p, TOK_TILDE) {
+    if parser_check(p, TOK_AT) or parser_check(p, TOK_MINUS) or parser_check(p, TOK_NOT) or parser_check(p, TOK_BANG) or parser_check(p, TOK_TILDE) {
         let op_tok = parser_advance(p)
         let operand = parse_unary(p)
         if op_tok.kind == TOK_AT {
             return make_address_of_expr(operand, op_tok.line, op_tok.col)
         }
-        return make_unary_expr(op_tok.kind, operand, op_tok.line, op_tok.col)
+        mut kind = op_tok.kind
+        if kind == TOK_BANG { kind = TOK_NOT }
+        return make_unary_expr(kind, operand, op_tok.line, op_tok.col)
     }
     return parse_postfix(p)
 }
