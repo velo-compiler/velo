@@ -1,0 +1,68 @@
+use std.io
+use std.async
+use std.net
+
+act main() -> i32 {
+    net_ensure_init()
+    mut p = poller_init(8)
+
+    let s1 = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+    let s2 = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+
+    if !socket_is_valid(@s1) or !socket_is_valid(@s2) {
+        io.println_str("socket creation failed")
+        return 1
+    }
+
+    if !poller_add(@p, s1.fd, ASYNC_EVENT_READ) {
+        io.println_str("poller_add s1 failed")
+        return 2
+    }
+    if !poller_add(@p, s2.fd, ASYNC_EVENT_WRITE) {
+        io.println_str("poller_add s2 failed")
+        return 3
+    }
+    if p.count != 2 {
+        io.println_str("poller count mismatch")
+        return 4
+    }
+
+    // Modify s1
+    if !poller_modify(@p, s1.fd, ASYNC_EVENT_READ | ASYNC_EVENT_WRITE) {
+        io.println_str("poller_modify s1 failed")
+        return 5
+    }
+
+    // Poll with 10ms timeout (s1 and s2 unconnected, expect 0 ready)
+    mut ev_buf: @AsyncEvent = heap_alloc(4 * async_event_sizeof()) as @AsyncEvent
+    let rc = poller_poll(@p, 10, ev_buf, 4)
+    heap_free(ev_buf as @u8)
+
+    // Remove s1
+    if !poller_remove(@p, s1.fd) {
+        io.println_str("poller_remove s1 failed")
+        return 6
+    }
+    if p.count != 1 {
+        io.println_str("poller count after remove mismatch")
+        return 7
+    }
+
+    // Remove s2
+    if !poller_remove(@p, s2.fd) {
+        io.println_str("poller_remove s2 failed")
+        return 8
+    }
+    if p.count != 0 {
+        io.println_str("poller count after remove s2 mismatch")
+        return 9
+    }
+
+    socket_close(@s1)
+    socket_close(@s2)
+    poller_free(@p)
+
+    io.println_str("OK: std.async.poller tests passed")
+    return 0
+}
+

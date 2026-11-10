@@ -53726,38 +53726,40 @@ void lsp_handle_code_action(LspServerState* state, JsonValue* id_node, JsonValue
     lsp_check_std_module((&(sb)), text, uri_str, "validate", (&(is_first)));
 #line 139 "src/main.vl"
     lsp_check_std_module((&(sb)), text, uri_str, "timer", (&(is_first)));
-#line 141 "src/main.vl"
-    sb_append_str((&(sb)), "]}");
+#line 140 "src/main.vl"
+    lsp_check_std_module((&(sb)), text, uri_str, "async", (&(is_first)));
 #line 142 "src/main.vl"
-    const char* payload = sb_to_string((&(sb)));
+    sb_append_str((&(sb)), "]}");
 #line 143 "src/main.vl"
-    lsp_send_payload(payload);
+    const char* payload = sb_to_string((&(sb)));
 #line 144 "src/main.vl"
+    lsp_send_payload(payload);
+#line 145 "src/main.vl"
     velo_heap_free((void*)(((uint8_t*)(payload))));
-#line 146 "src/main.vl"
-    if (needs_free) {
 #line 147 "src/main.vl"
-        velo_heap_free((void*)(((uint8_t*)(text))));
+    if (needs_free) {
 #line 148 "src/main.vl"
+        velo_heap_free((void*)(((uint8_t*)(text))));
+#line 149 "src/main.vl"
         velo_heap_free((void*)(((uint8_t*)(uri_str))));
     }
 }
 
-#line 153 "src/main.vl"
-void lsp_send_empty_code_action(JsonValue* id_node) {
 #line 154 "src/main.vl"
-    StringBuilder sb = create_sb(128);
+void lsp_send_empty_code_action(JsonValue* id_node) {
 #line 155 "src/main.vl"
-    sb_append_str((&(sb)), "{\"jsonrpc\":\"2.0\",\"id\":");
+    StringBuilder sb = create_sb(128);
 #line 156 "src/main.vl"
-    lsp_append_id((&(sb)), id_node);
+    sb_append_str((&(sb)), "{\"jsonrpc\":\"2.0\",\"id\":");
 #line 157 "src/main.vl"
-    sb_append_str((&(sb)), ",\"result\":[]}");
+    lsp_append_id((&(sb)), id_node);
 #line 158 "src/main.vl"
-    const char* payload = sb_to_string((&(sb)));
+    sb_append_str((&(sb)), ",\"result\":[]}");
 #line 159 "src/main.vl"
-    lsp_send_payload(payload);
+    const char* payload = sb_to_string((&(sb)));
 #line 160 "src/main.vl"
+    lsp_send_payload(payload);
+#line 161 "src/main.vl"
     velo_heap_free((void*)(((uint8_t*)(payload))));
 }
 

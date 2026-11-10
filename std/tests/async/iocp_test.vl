@@ -1,0 +1,62 @@
+use std.io
+use std.async
+
+act main() -> i32 {
+    mut iocp = iocp_create(1 as u32)
+    if !iocp_is_valid(@iocp) {
+        io.println_str("iocp_create failed")
+        return 1
+    }
+
+    // Post packet 1
+    if !iocp_post(@iocp, 100 as u32, 555 as usize, null) {
+        io.println_str("iocp_post 1 failed")
+        iocp_close(@iocp)
+        return 2
+    }
+
+    // Post packet 2
+    if !iocp_post(@iocp, 200 as u32, 777 as usize, null) {
+        io.println_str("iocp_post 2 failed")
+        iocp_close(@iocp)
+        return 3
+    }
+
+    mut pkt = IocpPacket { bytes: 0, key: 0, overlapped: null }
+
+    // Dequeue packet 1
+    if !iocp_poll(@iocp, @pkt, 100 as u32) {
+        io.println_str("iocp_poll 1 failed")
+        iocp_close(@iocp)
+        return 4
+    }
+    if pkt.bytes != (100 as u32) or pkt.key != (555 as usize) {
+        io.println_str("iocp_poll 1 content mismatch")
+        iocp_close(@iocp)
+        return 5
+    }
+
+    // Dequeue packet 2
+    if !iocp_poll(@iocp, @pkt, 100 as u32) {
+        io.println_str("iocp_poll 2 failed")
+        iocp_close(@iocp)
+        return 6
+    }
+    if pkt.bytes != (200 as u32) or pkt.key != (777 as usize) {
+        io.println_str("iocp_poll 2 content mismatch")
+        iocp_close(@iocp)
+        return 7
+    }
+
+    // Poll empty queue with 10ms timeout -> should return false
+    if iocp_poll(@iocp, @pkt, 10 as u32) {
+        io.println_str("iocp_poll should have timed out on empty queue")
+        iocp_close(@iocp)
+        return 8
+    }
+
+    iocp_close(@iocp)
+    io.println_str("OK: std.async.iocp tests passed")
+    return 0
+}
+

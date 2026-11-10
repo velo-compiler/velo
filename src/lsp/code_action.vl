@@ -137,6 +137,7 @@ act lsp_handle_code_action(state: @LspServerState, id_node: @JsonValue, params: 
     lsp_check_std_module(@sb, text, uri_str, "rand", @is_first)
     lsp_check_std_module(@sb, text, uri_str, "validate", @is_first)
     lsp_check_std_module(@sb, text, uri_str, "timer", @is_first)
+    lsp_check_std_module(@sb, text, uri_str, "async", @is_first)
 
     sb_append_str(@sb, "]}")
     let payload = sb_to_string(@sb)

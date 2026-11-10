@@ -1,0 +1,25 @@
+use std.io
+use std.async
+
+act main() -> i32 {
+    mut el = loop_create()
+    let now = time_monotonic_ms()
+    if now == (0 as u64) {
+        io.println_str("time_monotonic_ms returned 0")
+        loop_free(@el)
+        return 1
+    }
+
+    mut iocp = iocp_create(1 as u32)
+    if !iocp_is_valid(@iocp) {
+        io.println_str("iocp_create failed")
+        loop_free(@el)
+        return 2
+    }
+    iocp_close(@iocp)
+
+    loop_free(@el)
+    io.println_str("OK: std.async module import test passed")
+    return 0
+}
+

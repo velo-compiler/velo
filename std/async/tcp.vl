@@ -1,0 +1,224 @@
+// std.async.tcp — Non-blocking asynchronous TCP listener and stream on the EventLoop.
+use "types.vl"
+use "loop.vl"
+use "../net/types.vl"
+use "../net/socket.vl"
+use "../net/addr.vl"
+use "../mem/heap.vl"
+
+data AsyncTcpListener {
+    socket: Socket
+    loop_ptr: @EventLoop
+    on_connection: act(@AsyncTcpStream, @void) -> void
+    user_data: @void
+    is_closed: bool
+}
+
+data AsyncTcpStream {
+    socket: Socket
+    loop_ptr: @EventLoop
+    on_data: act(@AsyncTcpStream, @u8, usize, @void) -> void
+    data_user_data: @void
+    on_close: act(@AsyncTcpStream, @void) -> void
+    close_user_data: @void
+    on_connect: act(@AsyncTcpStream, bool, @void) -> void
+    connect_user_data: @void
+    is_connected: bool
+    is_closed: bool
+}
+
+act tcp_listener_sizeof() -> usize {
+    let dummy: @AsyncTcpListener = null
+    return (dummy + 1) as usize
+}
+
+act tcp_stream_sizeof() -> usize {
+    let dummy: @AsyncTcpStream = null
+    return (dummy + 1) as usize
+}
+
+// Low-level event dispatcher for streams
+act _async_stream_cb(fd: i64, events: u32, udata: @void) {
+    if udata == null { return }
+    let stream = udata as @AsyncTcpStream
+    if stream.is_closed { return }
+
+    // Check connection completion
+    if !stream.is_connected and (events & ASYNC_EVENT_WRITE) != (0 as u32) {
+        stream.is_connected = true
+        loop_modify_io(stream.loop_ptr, fd, ASYNC_EVENT_READ)
+        if stream.on_connect != null {
+            let on_cn = stream.on_connect
+            on_cn(stream, true, stream.connect_user_data)
+        }
+    }
+
+    // Check incoming data
+    if stream.is_connected and (events & ASYNC_EVENT_READ) != (0 as u32) {
+        let buf_size: usize = 4096
+        let buf = heap_alloc(buf_size) as @u8
+        let bytes_read = socket_recv(@stream.socket, buf, buf_size)
+        if bytes_read > 0 {
+            if stream.on_data != null {
+                let on_dt = stream.on_data
+                on_dt(stream, buf, bytes_read as usize, stream.data_user_data)
+            }
+        } else if bytes_read == 0 or bytes_read < 0 {
+            if stream.on_close != null {
+                let on_cl = stream.on_close
+                on_cl(stream, stream.close_user_data)
+            }
+            async_tcp_stream_close(stream)
+        }
+        heap_free(buf)
+    }
+
+    // Check error or hangup
+    if (events & (ASYNC_EVENT_ERROR | ASYNC_EVENT_HANGUP)) != (0 as u32) {
+        if not stream.is_closed {
+            if stream.on_close != null {
+                let on_cl = stream.on_close
+                on_cl(stream, stream.close_user_data)
+            }
+            async_tcp_stream_close(stream)
+        }
+    }
+}
+
+// Low-level event dispatcher for listening sockets
+act _async_listener_cb(fd: i64, events: u32, udata: @void) {
+    if udata == null { return }
+    let listener = udata as @AsyncTcpListener
+    if listener.is_closed { return }
+
+    if (events & ASYNC_EVENT_READ) != (0 as u32) {
+        loop {
+            mut client_addr: SocketAddr
+            let client_sock = socket_accept(@listener.socket, @client_addr)
+            if !socket_is_valid(@client_sock) {
+                break
+            }
+            socket_set_nonblocking(@client_sock, true)
+
+            let stream = heap_alloc(tcp_stream_sizeof()) as @AsyncTcpStream
+            stream.socket = client_sock
+            stream.loop_ptr = listener.loop_ptr
+            stream.on_data = null
+            stream.data_user_data = null
+            stream.on_close = null
+            stream.close_user_data = null
+            stream.on_connect = null
+            stream.connect_user_data = null
+            stream.is_connected = true
+            stream.is_closed = false
+
+            loop_add_io(listener.loop_ptr, client_sock.fd, ASYNC_EVENT_READ, _async_stream_cb, stream as @void)
+
+            if listener.on_connection != null {
+                let on_conn = listener.on_connection
+                on_conn(stream, listener.user_data)
+            }
+        }
+    }
+}
+
+// Creates an asynchronous non-blocking TCP listener registered on the EventLoop
+act async_tcp_listen(el: @EventLoop, host: string, port: u16, on_connection: act(@AsyncTcpStream, @void) -> void, user_data: @void) -> @AsyncTcpListener {
+    if el == null { return null }
+    mut sock = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+    if !socket_is_valid(@sock) { return null }
+
+    socket_set_reuse_addr(@sock, true)
+    socket_set_nonblocking(@sock, true)
+    if !socket_bind(@sock, host, port) {
+        socket_close(@sock)
+        return null
+    }
+    if !socket_listen(@sock, 128) {
+        socket_close(@sock)
+        return null
+    }
+
+    let listener = heap_alloc(tcp_listener_sizeof()) as @AsyncTcpListener
+    listener.socket = sock
+    listener.loop_ptr = el
+    listener.on_connection = on_connection
+    listener.user_data = user_data
+    listener.is_closed = false
+
+    loop_add_io(el, sock.fd, ASYNC_EVENT_READ, _async_listener_cb, listener as @void)
+    return listener
+}
+
+// Closes and unregisters an asynchronous TCP listener
+act async_tcp_listener_close(l: @AsyncTcpListener) {
+    if l == null or l.is_closed { return }
+    l.is_closed = true
+    loop_remove_io(l.loop_ptr, l.socket.fd)
+    socket_close(@l.socket)
+    heap_free(l as @u8)
+}
+
+// Sets the incoming data callback for an asynchronous stream
+act async_tcp_stream_on_data(s: @AsyncTcpStream, cb: act(@AsyncTcpStream, @u8, usize, @void) -> void, user_data: @void) {
+    if s != null {
+        s.on_data = cb
+        s.data_user_data = user_data
+    }
+}
+
+// Sets the disconnect/close callback for an asynchronous stream
+act async_tcp_stream_on_close(s: @AsyncTcpStream, cb: act(@AsyncTcpStream, @void) -> void, user_data: @void) {
+    if s != null {
+        s.on_close = cb
+        s.close_user_data = user_data
+    }
+}
+
+// Transmits binary payload over the asynchronous stream
+act async_tcp_stream_write(s: @AsyncTcpStream, data: @u8, len: usize) -> i32 {
+    if s == null or s.is_closed or data == null { return -1 }
+    return socket_send(@s.socket, data, len)
+}
+
+// Transmits null-terminated string over the asynchronous stream
+act async_tcp_stream_write_str(s: @AsyncTcpStream, msg: string) -> i32 {
+    if s == null or s.is_closed or msg == null { return -1 }
+    let len = str.len(msg)
+    return socket_send(@s.socket, msg as @u8, len)
+}
+
+// Closes and unregisters an asynchronous stream
+act async_tcp_stream_close(s: @AsyncTcpStream) {
+    if s == null or s.is_closed { return }
+    s.is_closed = true
+    loop_remove_io(s.loop_ptr, s.socket.fd)
+    socket_close(@s.socket)
+    heap_free(s as @u8)
+}
+
+// Initiates an asynchronous non-blocking connection to a remote host:port
+act async_tcp_connect(el: @EventLoop, host: string, port: u16, on_connect: act(@AsyncTcpStream, bool, @void) -> void, user_data: @void) -> @AsyncTcpStream {
+    if el == null { return null }
+    mut sock = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
+    if !socket_is_valid(@sock) { return null }
+
+    socket_set_nonblocking(@sock, true)
+    socket_connect(@sock, host, port)
+
+    let stream = heap_alloc(tcp_stream_sizeof()) as @AsyncTcpStream
+    stream.socket = sock
+    stream.loop_ptr = el
+    stream.on_data = null
+    stream.data_user_data = null
+    stream.on_close = null
+    stream.close_user_data = null
+    stream.on_connect = on_connect
+    stream.connect_user_data = user_data
+    stream.is_connected = false
+    stream.is_closed = false
+
+    loop_add_io(el, sock.fd, ASYNC_EVENT_WRITE | ASYNC_EVENT_ERROR, _async_stream_cb, stream as @void)
+    return stream
+}
+

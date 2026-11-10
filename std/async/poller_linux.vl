@@ -1,0 +1,182 @@
+// std.async.poller_linux — POSIX socket I/O multiplexer powered by poll(2).
+use "types.vl"
+use "../mem/heap.vl"
+use "../time/sleep.vl"
+
+// Linux/POSIX struct pollfd layout
+data PollFd {
+    fd: i32
+    events: i16
+    revents: i16
+}
+
+extern act poll(fds: @PollFd, nfds: u32, timeout: i32) -> i32
+
+let POLLIN_POSIX: i16 = 1
+let POLLOUT_POSIX: i16 = 4
+let POLLERR_POSIX: i16 = 8
+let POLLHUP_POSIX: i16 = 16
+let POLLNVAL_POSIX: i16 = 32
+
+act pollfd_sizeof() -> usize {
+    let dummy: @PollFd = null
+    return (dummy + 1) as usize
+}
+
+data Poller {
+    fds: @PollFd
+    count: usize
+    cap: usize
+}
+
+act async_to_poll_events(events: u32) -> i16 {
+    mut pe: i16 = 0 as i16
+    if (events & ASYNC_EVENT_READ) != (0 as u32) {
+        pe = (pe | POLLIN_POSIX) as i16
+    }
+    if (events & ASYNC_EVENT_WRITE) != (0 as u32) {
+        pe = (pe | POLLOUT_POSIX) as i16
+    }
+    return pe
+}
+
+act poll_to_async_events(revents: i16) -> u32 {
+    mut ev: u32 = 0 as u32
+    let r_i32 = revents as i32
+    if (r_i32 & (POLLIN_POSIX as i32)) != 0 {
+        ev = ev | ASYNC_EVENT_READ
+    }
+    if (r_i32 & (POLLOUT_POSIX as i32)) != 0 {
+        ev = ev | ASYNC_EVENT_WRITE
+    }
+    if (r_i32 & ((POLLERR_POSIX | POLLNVAL_POSIX) as i32)) != 0 {
+        ev = ev | ASYNC_EVENT_ERROR
+    }
+    if (r_i32 & (POLLHUP_POSIX as i32)) != 0 {
+        ev = ev | ASYNC_EVENT_HANGUP
+    }
+    return ev
+}
+
+act poller_init(initial_cap: usize) -> Poller {
+    mut c = initial_cap
+    if c < 4 { c = 4 }
+    let buf = heap_alloc(c * pollfd_sizeof()) as @PollFd
+    return Poller {
+        fds: buf,
+        count: 0,
+        cap: c,
+    }
+}
+
+act poller_free(p: @Poller) {
+    if p == null { return }
+    if p.fds != null {
+        heap_free(p.fds as @u8)
+        p.fds = null
+    }
+    p.count = 0
+    p.cap = 0
+}
+
+act poller_ensure_cap(p: @Poller) {
+    if p.count < p.cap { return }
+    let new_cap = p.cap * 2
+    let new_buf = heap_alloc(new_cap * pollfd_sizeof()) as @PollFd
+    if new_buf == null { return }
+    mut i: usize = 0
+    loop i < p.count {
+        new_buf[i] = p.fds[i]
+        i += 1
+    }
+    heap_free(p.fds as @u8)
+    p.fds = new_buf
+    p.cap = new_cap
+}
+
+act poller_add(p: @Poller, fd: i64, events: u32) -> bool {
+    if p == null or fd < 0 { return false }
+    let fd32 = fd as i32
+    mut i: usize = 0
+    loop i < p.count {
+        if p.fds[i].fd == fd32 {
+            p.fds[i].events = async_to_poll_events(events)
+            p.fds[i].revents = 0 as i16
+            return true
+        }
+        i += 1
+    }
+    poller_ensure_cap(p)
+    p.fds[p.count] = PollFd {
+        fd: fd32,
+        events: async_to_poll_events(events),
+        revents: 0 as i16,
+    }
+    p.count += 1
+    return true
+}
+
+act poller_modify(p: @Poller, fd: i64, events: u32) -> bool {
+    if p == null { return false }
+    let fd32 = fd as i32
+    mut i: usize = 0
+    loop i < p.count {
+        if p.fds[i].fd == fd32 {
+            p.fds[i].events = async_to_poll_events(events)
+            p.fds[i].revents = 0 as i16
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+act poller_remove(p: @Poller, fd: i64) -> bool {
+    if p == null { return false }
+    let fd32 = fd as i32
+    mut i: usize = 0
+    loop i < p.count {
+        if p.fds[i].fd == fd32 {
+            p.count -= 1
+            if i < p.count {
+                p.fds[i] = p.fds[p.count]
+            }
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+act poller_poll(p: @Poller, timeout_ms: i32, out_events: @AsyncEvent, max_events: usize) -> i32 {
+    if p == null or out_events == null or max_events == 0 { return 0 }
+    if p.count == 0 {
+        if timeout_ms > 0 {
+            time_sleep_ms(timeout_ms as u32)
+        }
+        return 0
+    }
+
+    let rc = poll(p.fds, p.count as u32, timeout_ms)
+    if rc <= 0 { return 0 }
+
+    mut out_count: usize = 0
+    mut i: usize = 0
+    loop i < p.count and out_count < max_events {
+        let rev = p.fds[i].revents
+        if rev != (0 as i16) {
+            let ev_mask = poll_to_async_events(rev)
+            if ev_mask != (0 as u32) {
+                out_events[out_count] = AsyncEvent {
+                    fd: p.fds[i].fd as i64,
+                    events: ev_mask,
+                    user_data: null,
+                }
+                out_count += 1
+            }
+        }
+        i += 1
+    }
+    return out_count as i32
+}
+

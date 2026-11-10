@@ -2982,3 +2982,46 @@ flowchart TD
   - All 98 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
   - Zero UTF-8 BOM across all `.vl` files.
   - All 5/5 VS Code extension test suites passed.
+
+### Phase 36: Asynchronous Event Loop & Non-Blocking I/O (`std.async`) [COMPLETED] ✅
+
+* **Defect**:
+  - Concurrency in Velo previously relied solely on raw, blocking operating system threads (`sys.thread`) and mutex locks.
+  - High-throughput network services, microservices, and real-time game engines lacked a single-threaded cooperative event loop and non-blocking socket multiplexer.
+  - Velo had no standard library primitives for timer callbacks, deferred task scheduling (`loop_post`), or asynchronous TCP socket communication.
+  - Developers on Windows lacked native access to I/O Completion Ports (IOCP) for asynchronous kernel completion queueing.
+* **Fix Applied**:
+  1. **Core Types & Status Codes (`std/async/types.vl`)**:
+     - Introduced event bitmask constants: `ASYNC_EVENT_READ` (1), `ASYNC_EVENT_WRITE` (2), `ASYNC_EVENT_ERROR` (4), `ASYNC_EVENT_HANGUP` (8).
+     - Defined `AsyncEvent`, `AsyncWatcher`, `AsyncTimer`, and `AsyncTask` data structures.
+  2. **Cross-Platform Socket Multiplexing (`std/async/poller.vl`, `poller_windows.vl`, `poller_linux.vl`)**:
+     - Windows: High-performance `WSAPoll` reactor multiplexing with `PollFd` layout, translating `POLLRDNORM`/`POLLRDBAND`/`POLLIN` to `ASYNC_EVENT_READ` and `POLLWRNORM`/`POLLOUT` to `ASYNC_EVENT_WRITE`.
+     - Linux/POSIX: Pure-Velo `poll(2)` backend support with identical `poller_*` interface.
+     - Dynamic reallocation, O(1) removal, and millisecond-precision polling timeouts.
+  3. **Windows I/O Completion Ports (`std/async/iocp_windows.vl`)**:
+     - Added native Win32 IOCP abstractions: `iocp_create`, `iocp_associate`, `iocp_post`, `iocp_poll`, `iocp_close`.
+     - Enables low-level kernel completion packet queueing and dequeuing without external libraries.
+  4. **Cooperative Reactor Event Loop (`std/async/loop.vl`)**:
+     - `EventLoop` coordinating I/O watchers, cooperative timers, and deferred tasks.
+     - Dynamic poll timeout calculation: automatically scales wait time based on earliest pending timer, dropping to 0 ms when tasks are queued.
+     - Microtask queue: `loop_post(el, callback, user_data)` for cooperative next-tick execution.
+     - One-shot and periodic timers: `loop_set_timeout`, `loop_set_interval`, `loop_clear_timer`.
+     - Frame loop integration: `loop_run_once(el, max_timeout_ms)` for game engines and custom execution loops, plus `loop_run(el)` and `loop_stop(el)`.
+  5. **Asynchronous Non-Blocking TCP (`std/async/tcp.vl`)**:
+     - `AsyncTcpListener`: non-blocking `async_tcp_listen(el, host, port, on_connection, user_data)`.
+     - `AsyncTcpStream`: event-driven non-blocking stream with `async_tcp_stream_on_data`, `async_tcp_stream_on_close`, `async_tcp_stream_write`, and `async_tcp_stream_write_str`.
+     - `async_tcp_connect`: non-blocking connection establishment with write-readiness completion notifications.
+  6. **Umbrella Facade & Tooling Integration (`std/async.vl`, `src/lsp/code_action.vl`)**:
+     - `std.async` exposed across the compiler and build system.
+     - Quick-fix code action in LSP suggests `use std.async` when `async.` is referenced.
+  7. **Self-Hosting Bootstrap & Determinism**:
+     - Rebuilt 3-generation self-hosted bootstrap chain (`bin/velo.exe build src/main.vl -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe -> bootstrap.c`).
+     - Bit-for-bit SHA-256 match confirmed across Gen2, Gen3, and `bootstrap.c` (`fd324ef277f5a37ef28e04519847baeba2e532da07002a5a1a9e9a34bd9caea1`).
+* **Residual Limitation**:
+  - Higher-level asynchronous protocols (`async_http_get`, `async_ws_client`) will be layered on top of `std.async.tcp` in future standard library expansions.
+* **Verification**:
+  - Dedicated test suite `tests/test_std_async.py` (5 tests) exercising `poller_test.vl`, `loop_test.vl`, `iocp_test.vl`, `tcp_test.vl`, and `async_module_import_test.vl`.
+  - Rebuilt self-hosted 3-generation compiler chain with verified bit-for-bit SHA-256 determinism (`fd324ef277f5a37ef28e04519847baeba2e532da07002a5a1a9e9a34bd9caea1`).
+  - All 98 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
+  - Zero UTF-8 BOM in any `.vl` file.
+  - Full test suite (614 passed) and all 5/5 VS Code extension suites passing.

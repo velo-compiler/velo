@@ -1,0 +1,50 @@
+// std.async.types — Core event constants, status codes, and loop data structures.
+
+// Event bitmasks
+let ASYNC_EVENT_NONE: u32 = 0
+let ASYNC_EVENT_READ: u32 = 1       // Readable: incoming data, ready to accept
+let ASYNC_EVENT_WRITE: u32 = 2      // Writable: buffer ready for transmission, connection completed
+let ASYNC_EVENT_ERROR: u32 = 4      // Error condition on socket or handle
+let ASYNC_EVENT_HANGUP: u32 = 8     // Peer disconnected / EOF
+
+// Status and Return Codes
+let ASYNC_OK: i32 = 0
+let ASYNC_ERR: i32 = -1
+let ASYNC_TIMEOUT: i32 = -2
+let ASYNC_WOULDBLOCK: i32 = -3
+let ASYNC_CLOSED: i32 = -4
+
+// Event notification result from poller
+data AsyncEvent {
+    fd: i64
+    events: u32
+    user_data: @void
+}
+
+// I/O Watcher registered in EventLoop
+data AsyncWatcher {
+    fd: i64
+    events: u32
+    on_event: act(i64, u32, @void) -> void
+    user_data: @void
+    is_active: bool
+}
+
+// Cooperative Timer
+data AsyncTimer {
+    id: u64
+    fire_at_ms: u64
+    interval_ms: u64
+    on_timeout: act(u64, @void) -> void
+    user_data: @void
+    is_active: bool
+}
+
+// Deferred Task (posted to event loop)
+data AsyncTask {
+    id: u64
+    on_task: act(@void) -> void
+    user_data: @void
+    is_active: bool
+}
+

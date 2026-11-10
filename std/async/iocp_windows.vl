@@ -1,0 +1,70 @@
+// std.async.iocp_windows — Windows I/O Completion Port (IOCP) subsystem.
+use "../mem/heap.vl"
+
+extern act CreateIoCompletionPort(file_handle: @void, existing_port: @void, completion_key: usize, num_threads: u32) -> @void
+extern act PostQueuedCompletionStatus(port: @void, bytes: u32, key: usize, overlapped: @void) -> i32
+extern act GetQueuedCompletionStatus(port: @void, bytes: @u32, key: @usize, overlapped: @@void, ms: u32) -> i32
+extern act CloseHandle(hObject: @void) -> i32
+
+let IOCP_INVALID_HANDLE: @void = (0 - 1) as usize as @void
+let IOCP_INFINITE: u32 = 4294967295 as u32
+
+data Iocp {
+    handle: @void
+}
+
+data IocpPacket {
+    bytes: u32
+    key: usize
+    overlapped: @void
+}
+
+// Creates an I/O completion port with the specified concurrency limit
+act iocp_create(num_concurrent_threads: u32) -> Iocp {
+    let port = CreateIoCompletionPort(IOCP_INVALID_HANDLE, null, 0 as usize, num_concurrent_threads)
+    return Iocp { handle: port }
+}
+
+// Checks if the IOCP handle is open and valid
+act iocp_is_valid(iocp: @Iocp) -> bool {
+    return iocp != null and iocp.handle != null and iocp.handle != IOCP_INVALID_HANDLE
+}
+
+// Associates an OS file or socket handle with this completion port
+act iocp_associate(iocp: @Iocp, file_or_socket: @void, completion_key: usize) -> bool {
+    if not iocp_is_valid(iocp) or file_or_socket == null { return false }
+    let res = CreateIoCompletionPort(file_or_socket, iocp.handle, completion_key, 0 as u32)
+    return res != null
+}
+
+// Posts an asynchronous I/O completion packet directly into the port queue
+act iocp_post(iocp: @Iocp, bytes_transferred: u32, completion_key: usize, overlapped: @void) -> bool {
+    if not iocp_is_valid(iocp) { return false }
+    let res = PostQueuedCompletionStatus(iocp.handle, bytes_transferred, completion_key, overlapped)
+    return res != 0
+}
+
+// Dequeues an I/O completion packet from the port, waiting up to timeout_ms
+act iocp_poll(iocp: @Iocp, out_packet: @IocpPacket, timeout_ms: u32) -> bool {
+    if not iocp_is_valid(iocp) or out_packet == null { return false }
+    mut bytes: u32 = 0
+    mut key: usize = 0
+    mut ov: @void = null
+    let res = GetQueuedCompletionStatus(iocp.handle, @bytes, @key, @ov, timeout_ms)
+    if res != 0 {
+        out_packet.bytes = bytes
+        out_packet.key = key
+        out_packet.overlapped = ov
+        return true
+    }
+    return false
+}
+
+// Closes the completion port handle and releases OS kernel resources
+act iocp_close(iocp: @Iocp) {
+    if iocp_is_valid(iocp) {
+        CloseHandle(iocp.handle)
+        iocp.handle = null
+    }
+}
+

@@ -1,0 +1,10 @@
+// Standard library umbrella module for std.async (asynchronous event loop & non-blocking I/O).
+// Provides cross-platform socket readiness polling, cooperative timers, deferred tasks,
+// Win32 IOCP completion ports, and non-blocking TCP server/client streams.
+
+use "async/types.vl"
+use "async/poller.vl"
+use "async/iocp_windows.vl"
+use "async/loop.vl"
+use "async/tcp.vl"
+

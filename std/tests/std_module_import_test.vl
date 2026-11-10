@@ -22,6 +22,7 @@ use std.uuid
 use std.text
 use std.timer
 use std.validate
+use std.async
 
 act main() -> i32 {
     // std.coll: dynamic shelf
@@ -204,6 +205,13 @@ act main() -> i32 {
     if !validate_url("https://velo-lang.org/docs") { return 60 }
     if !validate_slug("release-v2") { return 61 }
     if !validate_credit_card("4532015012345671") { return 62 }
+
+    // std.async: event loop and IOCP
+    mut el = loop_create()
+    defer loop_free(@el)
+    mut iocp = iocp_create(1 as u32)
+    if !iocp_is_valid(@iocp) { return 63 }
+    iocp_close(@iocp)
 
     println_str("PASS: native use std.* imports succeeded")
     return 0

@@ -1,0 +1,395 @@
+// std.async.loop — Reactor event loop managing I/O watchers, timers, and posted tasks.
+use "types.vl"
+use "poller.vl"
+use "../mem/heap.vl"
+use "../time/clock.vl"
+
+data EventLoop {
+    poller: Poller
+    watchers: @AsyncWatcher
+    watcher_count: usize
+    watcher_cap: usize
+
+    timers: @AsyncTimer
+    timer_count: usize
+    timer_cap: usize
+    next_timer_id: u64
+
+    tasks: @AsyncTask
+    task_count: usize
+    task_cap: usize
+    next_task_id: u64
+
+    is_running: bool
+    stop_requested: bool
+}
+
+act async_event_sizeof() -> usize {
+    let dummy: @AsyncEvent = null
+    return (dummy + 1) as usize
+}
+
+act async_watcher_sizeof() -> usize {
+    let dummy: @AsyncWatcher = null
+    return (dummy + 1) as usize
+}
+
+act async_timer_sizeof() -> usize {
+    let dummy: @AsyncTimer = null
+    return (dummy + 1) as usize
+}
+
+act async_task_sizeof() -> usize {
+    let dummy: @AsyncTask = null
+    return (dummy + 1) as usize
+}
+
+// Creates and initializes a new EventLoop
+act loop_create() -> EventLoop {
+    let w_cap: usize = 16
+    let t_cap: usize = 16
+    let k_cap: usize = 16
+    return EventLoop {
+        poller: poller_init(16),
+        watchers: heap_alloc(w_cap * async_watcher_sizeof()) as @AsyncWatcher,
+        watcher_count: 0,
+        watcher_cap: w_cap,
+        timers: heap_alloc(t_cap * async_timer_sizeof()) as @AsyncTimer,
+        timer_count: 0,
+        timer_cap: t_cap,
+        next_timer_id: 1 as u64,
+        tasks: heap_alloc(k_cap * async_task_sizeof()) as @AsyncTask,
+        task_count: 0,
+        task_cap: k_cap,
+        next_task_id: 1 as u64,
+        is_running: false,
+        stop_requested: false,
+    }
+}
+
+// Releases all resources allocated by the EventLoop
+act loop_free(el: @EventLoop) {
+    if el == null { return }
+    poller_free(@el.poller)
+    if el.watchers != null { heap_free(el.watchers as @u8); el.watchers = null }
+    if el.timers != null { heap_free(el.timers as @u8); el.timers = null }
+    if el.tasks != null { heap_free(el.tasks as @u8); el.tasks = null }
+    el.watcher_count = 0
+    el.timer_count = 0
+    el.task_count = 0
+}
+
+act loop_ensure_watcher_cap(el: @EventLoop) {
+    if el.watcher_count < el.watcher_cap { return }
+    let new_cap = el.watcher_cap * 2
+    let new_buf = heap_alloc(new_cap * async_watcher_sizeof()) as @AsyncWatcher
+    if new_buf == null { return }
+    mut i: usize = 0
+    loop i < el.watcher_count {
+        new_buf[i] = el.watchers[i]
+        i += 1
+    }
+    heap_free(el.watchers as @u8)
+    el.watchers = new_buf
+    el.watcher_cap = new_cap
+}
+
+act loop_ensure_timer_cap(el: @EventLoop) {
+    if el.timer_count < el.timer_cap { return }
+    let new_cap = el.timer_cap * 2
+    let new_buf = heap_alloc(new_cap * async_timer_sizeof()) as @AsyncTimer
+    if new_buf == null { return }
+    mut i: usize = 0
+    loop i < el.timer_count {
+        new_buf[i] = el.timers[i]
+        i += 1
+    }
+    heap_free(el.timers as @u8)
+    el.timers = new_buf
+    el.timer_cap = new_cap
+}
+
+act loop_ensure_task_cap(el: @EventLoop) {
+    if el.task_count < el.task_cap { return }
+    let new_cap = el.task_cap * 2
+    let new_buf = heap_alloc(new_cap * async_task_sizeof()) as @AsyncTask
+    if new_buf == null { return }
+    mut i: usize = 0
+    loop i < el.task_count {
+        new_buf[i] = el.tasks[i]
+        i += 1
+    }
+    heap_free(el.tasks as @u8)
+    el.tasks = new_buf
+    el.task_cap = new_cap
+}
+
+// Registers an I/O watcher on a socket descriptor with event callback
+act loop_add_io(el: @EventLoop, fd: i64, events: u32, on_event: act(i64, u32, @void) -> void, user_data: @void) -> bool {
+    if el == null or fd < 0 { return false }
+    mut i: usize = 0
+    loop i < el.watcher_count {
+        if el.watchers[i].fd == fd {
+            el.watchers[i].events = events
+            el.watchers[i].on_event = on_event
+            el.watchers[i].user_data = user_data
+            el.watchers[i].is_active = true
+            return poller_modify(@el.poller, fd, events)
+        }
+        i += 1
+    }
+    loop_ensure_watcher_cap(el)
+    el.watchers[el.watcher_count] = AsyncWatcher {
+        fd: fd,
+        events: events,
+        on_event: on_event,
+        user_data: user_data,
+        is_active: true,
+    }
+    el.watcher_count += 1
+    return poller_add(@el.poller, fd, events)
+}
+
+// Updates interest events for an existing registered socket descriptor
+act loop_modify_io(el: @EventLoop, fd: i64, events: u32) -> bool {
+    if el == null { return false }
+    mut i: usize = 0
+    loop i < el.watcher_count {
+        if el.watchers[i].fd == fd {
+            el.watchers[i].events = events
+            return poller_modify(@el.poller, fd, events)
+        }
+        i += 1
+    }
+    return false
+}
+
+// Removes a socket descriptor watcher from the loop
+act loop_remove_io(el: @EventLoop, fd: i64) -> bool {
+    if el == null { return false }
+    mut i: usize = 0
+    loop i < el.watcher_count {
+        if el.watchers[i].fd == fd {
+            el.watchers[i].is_active = false
+            el.watcher_count -= 1
+            if i < el.watcher_count {
+                el.watchers[i] = el.watchers[el.watcher_count]
+            }
+            return poller_remove(@el.poller, fd)
+        }
+        i += 1
+    }
+    return false
+}
+
+// Schedules a one-shot callback to fire after delay_ms milliseconds
+act loop_set_timeout(el: @EventLoop, delay_ms: u64, on_timeout: act(u64, @void) -> void, user_data: @void) -> u64 {
+    if el == null or on_timeout == null { return 0 as u64 }
+    loop_ensure_timer_cap(el)
+    let tid = el.next_timer_id
+    el.next_timer_id += 1 as u64
+    let now = time_monotonic_ms()
+
+    el.timers[el.timer_count] = AsyncTimer {
+        id: tid,
+        fire_at_ms: now + delay_ms,
+        interval_ms: 0 as u64,
+        on_timeout: on_timeout,
+        user_data: user_data,
+        is_active: true,
+    }
+    el.timer_count += 1
+    return tid
+}
+
+// Schedules a recurring callback to fire periodically every interval_ms milliseconds
+act loop_set_interval(el: @EventLoop, interval_ms: u64, on_timeout: act(u64, @void) -> void, user_data: @void) -> u64 {
+    if el == null or on_timeout == null or interval_ms == (0 as u64) { return 0 as u64 }
+    loop_ensure_timer_cap(el)
+    let tid = el.next_timer_id
+    el.next_timer_id += 1 as u64
+    let now = time_monotonic_ms()
+
+    el.timers[el.timer_count] = AsyncTimer {
+        id: tid,
+        fire_at_ms: now + interval_ms,
+        interval_ms: interval_ms,
+        on_timeout: on_timeout,
+        user_data: user_data,
+        is_active: true,
+    }
+    el.timer_count += 1
+    return tid
+}
+
+// Cancels a scheduled timer by id
+act loop_clear_timer(el: @EventLoop, timer_id: u64) -> bool {
+    if el == null or timer_id == (0 as u64) { return false }
+    mut i: usize = 0
+    loop i < el.timer_count {
+        if el.timers[i].id == timer_id and el.timers[i].is_active {
+            el.timers[i].is_active = false
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// Posts a deferred callback to execute cooperatively on the next event loop tick
+act loop_post(el: @EventLoop, on_task: act(@void) -> void, user_data: @void) -> u64 {
+    if el == null or on_task == null { return 0 as u64 }
+    loop_ensure_task_cap(el)
+    let kid = el.next_task_id
+    el.next_task_id += 1 as u64
+
+    el.tasks[el.task_count] = AsyncTask {
+        id: kid,
+        on_task: on_task,
+        user_data: user_data,
+        is_active: true,
+    }
+    el.task_count += 1
+    return kid
+}
+
+// Checks if the event loop has active watchers, pending timers, or tasks
+act loop_has_work(el: @EventLoop) -> bool {
+    if el == null { return false }
+    if el.task_count > 0 { return true }
+    mut i: usize = 0
+    loop i < el.watcher_count {
+        if el.watchers[i].is_active { return true }
+        i += 1
+    }
+    mut j: usize = 0
+    loop j < el.timer_count {
+        if el.timers[j].is_active { return true }
+        j += 1
+    }
+    return false
+}
+
+// Requests termination of the active loop_run() cycle
+act loop_stop(el: @EventLoop) {
+    if el != null {
+        el.stop_requested = true
+    }
+}
+
+// Runs a single event loop iteration, processing posted tasks, I/O readiness, and timers
+act loop_run_once(el: @EventLoop, max_timeout_ms: i32) -> i32 {
+    if el == null { return 0 }
+    mut total_dispatched: i32 = 0
+
+    // 1. Process deferred tasks
+    if el.task_count > 0 {
+        let count = el.task_count
+        el.task_count = 0
+        mut k: usize = 0
+        loop k < count {
+            if el.tasks[k].is_active {
+                let cb = el.tasks[k].on_task
+                cb(el.tasks[k].user_data)
+                total_dispatched += 1
+            }
+            k += 1
+        }
+    }
+
+    // 2. Compute dynamic poll timeout
+    mut poll_timeout: i32 = max_timeout_ms
+    if el.task_count > 0 {
+        poll_timeout = 0
+    } else {
+        let now = time_monotonic_ms()
+        mut has_timer = false
+        mut min_wait_ms: i64 = 2147483647 as i64
+        mut t: usize = 0
+        loop t < el.timer_count {
+            if el.timers[t].is_active {
+                has_timer = true
+                if el.timers[t].fire_at_ms <= now {
+                    min_wait_ms = 0 as i64
+                    break
+                }
+                let diff = (el.timers[t].fire_at_ms - now) as i64
+                if diff < min_wait_ms {
+                    min_wait_ms = diff
+                }
+            }
+            t += 1
+        }
+        if has_timer {
+            if min_wait_ms > (2147483647 as i64) { min_wait_ms = 2147483647 as i64 }
+            let timer_wait = min_wait_ms as i32
+            if poll_timeout < 0 or timer_wait < poll_timeout {
+                poll_timeout = timer_wait
+            }
+        }
+    }
+
+    // 3. Poll I/O readiness
+    let max_ev: usize = 32
+    let ev_buf = heap_alloc(max_ev * async_event_sizeof()) as @AsyncEvent
+    let ready_count = poller_poll(@el.poller, poll_timeout, ev_buf, max_ev)
+
+    // 4. Dispatch I/O callbacks
+    if ready_count > 0 {
+        mut e: usize = 0
+        loop e < (ready_count as usize) {
+            let ev_fd = ev_buf[e].fd
+            let ev_mask = ev_buf[e].events
+            mut w: usize = 0
+            loop w < el.watcher_count {
+                if el.watchers[w].fd == ev_fd and el.watchers[w].is_active {
+                    let on_ev = el.watchers[w].on_event
+                    on_ev(ev_fd, ev_mask, el.watchers[w].user_data)
+                    total_dispatched += 1
+                    break
+                }
+                w += 1
+            }
+            e += 1
+        }
+    }
+    heap_free(ev_buf as @u8)
+
+    // 5. Dispatch expired timers
+    let now2 = time_monotonic_ms()
+    mut idx: usize = 0
+    loop idx < el.timer_count {
+        if el.timers[idx].is_active and now2 >= el.timers[idx].fire_at_ms {
+            let on_tm = el.timers[idx].on_timeout
+            let tm_id = el.timers[idx].id
+            let tm_ud = el.timers[idx].user_data
+            if el.timers[idx].interval_ms > (0 as u64) {
+                el.timers[idx].fire_at_ms = now2 + el.timers[idx].interval_ms
+            } else {
+                el.timers[idx].is_active = false
+            }
+            on_tm(tm_id, tm_ud)
+            total_dispatched += 1
+        }
+        idx += 1
+    }
+
+    return total_dispatched
+}
+
+// Runs the event loop continuously until stopped or all tasks/watchers complete
+act loop_run(el: @EventLoop) {
+    if el == null { return }
+    el.is_running = true
+    el.stop_requested = false
+
+    loop el.is_running and not el.stop_requested {
+        if not loop_has_work(el) {
+            break
+        }
+        loop_run_once(el, 50)
+    }
+
+    el.is_running = false
+}
+

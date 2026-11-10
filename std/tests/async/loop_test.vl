@@ -1,0 +1,78 @@
+use std.io
+use std.async
+
+mut g_task_executed: bool = false
+mut g_timeout_fired: bool = false
+mut g_interval_count: i32 = 0
+
+act on_sample_task(ud: @void) {
+    g_task_executed = true
+}
+
+act on_sample_timeout(id: u64, ud: @void) {
+    g_timeout_fired = true
+}
+
+act on_sample_interval(id: u64, ud: @void) {
+    g_interval_count += 1
+}
+
+act main() -> i32 {
+    mut el = loop_create()
+
+    // 1. Test loop_post
+    loop_post(@el, on_sample_task, null)
+    let dispatched = loop_run_once(@el, 0)
+    if !g_task_executed or dispatched == 0 {
+        io.println_str("loop_post did not execute")
+        loop_free(@el)
+        return 1
+    }
+
+    // 2. Test loop_set_timeout (one-shot)
+    loop_set_timeout(@el, 20 as u64, on_sample_timeout, null)
+    // Run once with small timeout until fired
+    mut attempts: i32 = 0
+    loop !g_timeout_fired and attempts < 10 {
+        loop_run_once(@el, 10)
+        attempts += 1
+    }
+    if !g_timeout_fired {
+        io.println_str("loop_set_timeout did not fire")
+        loop_free(@el)
+        return 2
+    }
+
+    // 3. Test loop_set_interval and loop_clear_timer
+    let i_id = loop_set_interval(@el, 10 as u64, on_sample_interval, null)
+    attempts = 0
+    loop g_interval_count < 2 and attempts < 15 {
+        loop_run_once(@el, 10)
+        attempts += 1
+    }
+    if g_interval_count < 2 {
+        io.println_str("loop_set_interval did not fire twice")
+        loop_free(@el)
+        return 3
+    }
+
+    let cleared = loop_clear_timer(@el, i_id)
+    if !cleared {
+        io.println_str("loop_clear_timer failed")
+        loop_free(@el)
+        return 4
+    }
+
+    let before_count = g_interval_count
+    loop_run_once(@el, 20)
+    if g_interval_count != before_count {
+        io.println_str("timer fired after being cleared")
+        loop_free(@el)
+        return 5
+    }
+
+    loop_free(@el)
+    io.println_str("OK: std.async.loop tests passed")
+    return 0
+}
+

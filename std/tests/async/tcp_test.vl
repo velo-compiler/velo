@@ -1,0 +1,91 @@
+use std.io
+use std.async
+use std.net
+
+mut g_connected: bool = false
+mut g_server_received: bool = false
+mut g_client_received: bool = false
+
+act on_server_data(stream: @AsyncTcpStream, data: @u8, len: usize, udata: @void) {
+    if len >= 10 and data[0] == 'P' as u8 and data[1] == 'I' as u8 and data[2] == 'N' as u8 and data[3] == 'G' as u8 {
+        g_server_received = true
+        async_tcp_stream_write_str(stream, "PONG_ASYNC")
+    }
+}
+
+act on_server_connection(stream: @AsyncTcpStream, udata: @void) {
+    async_tcp_stream_on_data(stream, on_server_data, null)
+}
+
+act on_client_data(stream: @AsyncTcpStream, data: @u8, len: usize, udata: @void) {
+    if len >= 10 and data[0] == 'P' as u8 and data[1] == 'O' as u8 and data[2] == 'N' as u8 and data[3] == 'G' as u8 {
+        g_client_received = true
+        if stream.loop_ptr != null {
+            loop_stop(stream.loop_ptr)
+        }
+    }
+}
+
+act on_client_connect(stream: @AsyncTcpStream, success: bool, udata: @void) {
+    if success {
+        g_connected = true
+        async_tcp_stream_on_data(stream, on_client_data, null)
+        async_tcp_stream_write_str(stream, "PING_ASYNC")
+    }
+}
+
+act main() -> i32 {
+    net_ensure_init()
+    mut el = loop_create()
+
+    let port: u16 = 29995
+
+    let listener = async_tcp_listen(@el, "127.0.0.1", port, on_server_connection, null)
+    if listener == null {
+        io.println_str("async_tcp_listen failed")
+        loop_free(@el)
+        return 1
+    }
+
+    let client = async_tcp_connect(@el, "127.0.0.1", port, on_client_connect, null)
+    if client == null {
+        io.println_str("async_tcp_connect failed")
+        async_tcp_listener_close(listener)
+        loop_free(@el)
+        return 2
+    }
+
+    // Run event loop until ping-pong exchange finishes or timeout
+    mut attempts: i32 = 0
+    loop !g_client_received and attempts < 50 {
+        loop_run_once(@el, 20)
+        attempts += 1
+    }
+
+    if !g_connected {
+        io.println_str("client connection failed")
+        async_tcp_listener_close(listener)
+        loop_free(@el)
+        return 3
+    }
+
+    if !g_server_received {
+        io.println_str("server did not receive ping")
+        async_tcp_listener_close(listener)
+        loop_free(@el)
+        return 4
+    }
+
+    if !g_client_received {
+        io.println_str("client did not receive pong echo")
+        async_tcp_listener_close(listener)
+        loop_free(@el)
+        return 5
+    }
+
+    async_tcp_listener_close(listener)
+    loop_free(@el)
+
+    io.println_str("OK: std.async.tcp echo test passed")
+    return 0
+}
