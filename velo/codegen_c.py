@@ -339,6 +339,9 @@ class CCodeGenerator:
         self.current_function: Optional[FunctionDecl] = None
         self.defer_stack: List[List[Stmt]] = []
         self.zone_counter = 0
+        self.current_zone_depth = 0
+        self.scope_zone_depth: Dict[str, int] = {}
+        self.scope_pointer_origin: Dict[str, int] = {}
         self.match_counter = 0
         self.fresh_counter = 0
         # 5.2 slice 11: the --unsafe-shelf-index knob — lowers shelf index
@@ -463,6 +466,147 @@ class CCodeGenerator:
         op_err = self._or_type_error(op_t)
         if fn_err != op_err:
             raise ValueError(f"Mismatched error types in 'or return': expected '{fn_err}', got '{op_err}'")
+
+    def _is_pointer_or_zone_type(self, type_name: Optional[str]) -> bool:
+        if not type_name: return False
+        clean = type_name.strip()
+        if clean.startswith("@"): return True
+        if self._shelf_elem_type(clean) is not None and not clean.startswith("heap shelf"): return True
+        if self.is_map_type(clean) and not clean.startswith("heap map") and not clean.startswith("heap Map"): return True
+        return False
+
+    def _get_root_variable_name(self, expr: Expr) -> str:
+        if isinstance(expr, Identifier): return expr.name
+        if isinstance(expr, MemberAccess): return self._get_root_variable_name(expr.target)
+        if isinstance(expr, IndexExpr): return self._get_root_variable_name(expr.target)
+        return ""
+
+    def _expr_is_local_address(self, expr: Optional[Expr]) -> Tuple[bool, str]:
+        if not expr: return (False, "")
+        if isinstance(expr, AddressOf) and isinstance(expr.operand, Identifier):
+            name = expr.operand.name
+            if name in self.current_scope_types and name not in self.global_types:
+                is_param = False
+                if self.current_function:
+                    for p in self.current_function.params:
+                        if p.name == name:
+                            is_param = True
+                            break
+                if not is_param:
+                    return (True, name)
+        return (False, "")
+
+    def _expr_lifetime_depth(self, expr: Optional[Expr]) -> int:
+        if not expr: return 0
+        if isinstance(expr, NullLiteral): return 0
+        if isinstance(expr, StringLiteral): return 0
+
+        if isinstance(expr, AddressOf):
+            is_loc, name = self._expr_is_local_address(expr)
+            if is_loc:
+                loc_depth = self.scope_zone_depth.get(name, 0)
+                if loc_depth > 0: return loc_depth
+                return 0
+            return self.current_zone_depth
+
+        if isinstance(expr, CallExpr):
+            if isinstance(expr.callee, MemberAccess):
+                tgt = expr.callee.target
+                mem = expr.callee.member
+                if isinstance(tgt, Identifier):
+                    if tgt.name == "mem":
+                        if mem in ("heap_alloc", "realloc", "free"): return 0
+                        if mem in ("alloc", "current", "alloc_with"): return self.current_zone_depth
+                    if tgt.name == "str":
+                        if mem.startswith("heap_"): return 0
+                        if mem in ("concat", "to_upper", "to_lower", "replace", "trim", "format"):
+                            return self.current_zone_depth
+            callee_ret = self._resolve_expr_type(expr)
+            if self._is_pointer_or_zone_type(callee_ret) and self.current_zone_depth > 0:
+                return self.current_zone_depth
+            return 0
+
+        if isinstance(expr, ShelfLiteral):
+            return 0 if expr.is_heap else self.current_zone_depth
+        if isinstance(expr, MapLiteral):
+            return 0 if expr.is_heap else self.current_zone_depth
+
+        if isinstance(expr, Identifier):
+            name = expr.name
+            if name in self.global_types: return 0
+            if self.current_function:
+                for p in self.current_function.params:
+                    if p.name == name: return 0
+            t = self.current_scope_types.get(name)
+            if self._is_pointer_or_zone_type(t):
+                if name in self.scope_pointer_origin:
+                    return self.scope_pointer_origin[name]
+                return self.scope_zone_depth.get(name, 0)
+            return 0
+
+        if isinstance(expr, MemberAccess): return self._expr_lifetime_depth(expr.target)
+        if isinstance(expr, IndexExpr): return self._expr_lifetime_depth(expr.target)
+        if isinstance(expr, CastExpr): return self._expr_lifetime_depth(expr.expr)
+        if isinstance(expr, OrReturnExpr): return self._expr_lifetime_depth(expr.operand)
+        if isinstance(expr, BinaryExpr):
+            l = self._expr_lifetime_depth(expr.left)
+            r = self._expr_lifetime_depth(expr.right)
+            return max(l, r)
+        return 0
+
+    def _check_escape_assign(self, target: Any, value: Optional[Expr]):
+        if not value: return
+        tgt_name = target if isinstance(target, str) else self._get_root_variable_name(target)
+        tgt_type = self.current_scope_types.get(tgt_name) if tgt_name in self.current_scope_types else self.global_types.get(tgt_name)
+        if not self._is_pointer_or_zone_type(tgt_type): return
+
+        target_depth = 0
+        if tgt_name in self.global_types:
+            target_depth = 0
+        elif tgt_name in self.scope_zone_depth:
+            target_depth = self.scope_zone_depth[tgt_name]
+
+        is_loc, loc_name = self._expr_is_local_address(value)
+        if is_loc:
+            loc_depth = self.scope_zone_depth.get(loc_name, 0)
+            if tgt_name in self.global_types or target_depth < self.current_zone_depth or target_depth < loc_depth:
+                raise ValueError(f"cannot assign address of local variable '{loc_name}' to outer variable '{tgt_name}'")
+
+        val_depth = self._expr_lifetime_depth(value)
+        if val_depth > target_depth:
+            raise ValueError(f"zone-allocated pointer escapes into outer variable '{tgt_name}'")
+
+    def _check_escape_return(self, value: Optional[Expr]):
+        if not value: return
+        ret_t = self.current_function.return_type if self.current_function else ""
+        if self._is_or_type(ret_t):
+            ret_t = self._or_type_success(ret_t)
+        if not self._is_pointer_or_zone_type(ret_t): return
+
+        is_loc, loc_name = self._expr_is_local_address(value)
+        if is_loc:
+            raise ValueError(f"cannot return address of local variable '{loc_name}'")
+
+        if self.current_zone_depth > 0:
+            val_depth = self._expr_lifetime_depth(value)
+            if val_depth > 0:
+                raise ValueError("cannot return pointer allocated inside lexical zone")
+
+    def _check_escape_fail(self, value: Optional[Expr]):
+        if not value: return
+        ret_t = self.current_function.return_type if self.current_function else ""
+        if not self._is_or_type(ret_t): return
+        err_t = self._or_type_error(ret_t)
+        if not self._is_pointer_or_zone_type(err_t): return
+
+        is_loc, loc_name = self._expr_is_local_address(value)
+        if is_loc:
+            raise ValueError(f"cannot fail with address of local variable '{loc_name}'")
+
+        if self.current_zone_depth > 0:
+            val_depth = self._expr_lifetime_depth(value)
+            if val_depth > 0:
+                raise ValueError("cannot fail with pointer allocated inside lexical zone")
 
     def _fresh_name(self, prefix: str) -> str:
         self.fresh_counter += 1
@@ -1782,11 +1926,16 @@ class CCodeGenerator:
         is_main = (func.name == "main")
         self.current_scope_types = dict(self.global_types)
         self.current_scope_mut = dict(self.global_scope_mut)
+        self.current_zone_depth = 0
+        self.scope_zone_depth = {}
+        self.scope_pointer_origin = {}
         self.defer_stack = [[]]
 
         for p in func.params:
             self.current_scope_types[p.name] = p.type_name
             self.current_scope_mut[p.name] = True
+            self.scope_zone_depth[p.name] = 0
+            self.scope_pointer_origin[p.name] = 0
         
         if hasattr(func, 'line') and func.line > 0:
             self._emit_line_directive(func.line)
@@ -1866,6 +2015,7 @@ class CCodeGenerator:
                 self._emit_line(f"{expr_code};")
 
         elif isinstance(stmt, ReturnStmt):
+            self._check_escape_return(stmt.value)
             ret_t = self.current_function.return_type if self.current_function else None
             is_ret_or = ret_t and self._is_or_type(ret_t)
             if not stmt.value and not is_ret_or and self.current_function and self.current_function.name != "main" and self.current_function.return_type and self.current_function.return_type != "void":
@@ -1911,6 +2061,7 @@ class CCodeGenerator:
                 self._emit_line("return;")
 
         elif isinstance(stmt, FailStmt):
+            self._check_escape_fail(stmt.value)
             ret_t = self.current_function.return_type if self.current_function else None
             if not ret_t or not self._is_or_type(ret_t):
                 raise ValueError("'fail' can only be used in a function returning an 'or' type")
@@ -1943,6 +2094,10 @@ class CCodeGenerator:
             raw_velo_type = stmt.type_name or self._infer_raw_velo_type(stmt.value)
             self.current_scope_types[stmt.name] = raw_velo_type
             self.current_scope_mut[stmt.name] = stmt.is_mut
+            self.scope_zone_depth[stmt.name] = self.current_zone_depth
+            if stmt.value and self._is_pointer_or_zone_type(raw_velo_type):
+                self.scope_pointer_origin[stmt.name] = self._expr_lifetime_depth(stmt.value)
+                self._check_escape_assign(stmt.name, stmt.value)
 
             if type_str.endswith("*"):
                 const_prefix = ""
@@ -2085,6 +2240,12 @@ class CCodeGenerator:
             # 5.2 slice 11: the retire wall rides plain assignments too
             if isinstance(stmt.target, Identifier):
                 self._check_split_retire(self.current_scope_types.get(stmt.target.name), stmt.value)
+            if stmt.value:
+                target_type = self._resolve_expr_type(stmt.target)
+                if self._is_pointer_or_zone_type(target_type):
+                    self._check_escape_assign(stmt.target, stmt.value)
+                    if isinstance(stmt.target, Identifier):
+                        self.scope_pointer_origin[stmt.target.name] = self._expr_lifetime_depth(stmt.value)
             if isinstance(stmt.value, OrReturnExpr):
                 op_t = self._resolve_expr_type(stmt.value.operand)
                 self._validate_or_return(op_t)
@@ -2292,6 +2453,7 @@ class CCodeGenerator:
 
         elif isinstance(stmt, ZoneStmt):
             self.zone_counter += 1
+            self.current_zone_depth += 1
             wm = f"_zone_wm_{self.zone_counter}"
             self._emit_line("{")
             self.indent_level += 1
@@ -2315,6 +2477,7 @@ class CCodeGenerator:
                     self._emit_line(f"velo_zone_leave_arena(_zone_prev_{self.zone_counter});")
                 else:
                     self._emit_line(f"velo_zone_leave(_zone_prev_{self.zone_counter});")
+            self.current_zone_depth -= 1
             self.indent_level -= 1
             self._emit_line("}")
 
@@ -3018,10 +3181,9 @@ class CCodeGenerator:
                             expr.callee.member,
                             [self._thread_arg_type(a) for a in expr.args])
                 elif expr.callee.target.name == "time":
-                    # 5.5: now/delta -> i64, sleep_ms -> void (mirror of the
-                    # _infer_raw_velo_type branch above)
-                    if expr.callee.member in TIME_CALLS:
-                        return time_member_result_type(expr.callee.member, [])
+                    if expr.callee.member not in TIME_CALLS:
+                        raise ValueError(f"unknown time member '{expr.callee.member}' (functions: {TIME_FUNCS_TEXT})")
+                    return time_member_result_type(expr.callee.member, [])
                 elif expr.callee.target.name == "os":
                     # 5.4 S1: args -> shelf[string], get_env -> string,
                     # set_env -> bool, exit -> void (mirror of the infer branch)

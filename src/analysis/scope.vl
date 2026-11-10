@@ -55,10 +55,16 @@ act define_variable(st: @SymbolTable, name: string, type_name: string, is_mut: b
     mut sym: @Symbol = mem.alloc(@Symbol, 1)
     sym.name = name
     sym.type_name = type_name
-    sym.kind = SYM_VAR
+    if st.current_scope == st.global_scope {
+        sym.kind = SYM_GLOBAL
+    } else {
+        sym.kind = SYM_VAR
+    }
     sym.is_mut = is_mut
     sym.line = line
     sym.col = col
+    sym.zone_depth = st.current_zone_depth
+    sym.pointer_origin_depth = -1
     sym.next = st.current_scope.first_sym
 
     st.current_scope.first_sym = sym
@@ -75,6 +81,8 @@ act define_parameter(st: @SymbolTable, name: string, type_name: string, line: i3
     sym.is_mut = true
     sym.line = line
     sym.col = col
+    sym.zone_depth = 0
+    sym.pointer_origin_depth = 0
     sym.next = st.current_scope.first_sym
 
     st.current_scope.first_sym = sym

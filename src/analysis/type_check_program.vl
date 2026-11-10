@@ -163,6 +163,7 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
         if cur.kind == DECL_FUNCTION and cur.body != null {
             st.current_func_ret_type = cur.return_type
             st.current_func_name = cur.name
+            st.current_zone_depth = 0
             enter_scope(st)
             mut cur_p = cur.first_param
             loop cur_p != null { define_parameter(st, cur_p.name, cur_p.type_name, cur_p.line, cur_p.col); cur_p = cur_p.next }
@@ -181,6 +182,9 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
             }
         }
         if cur.kind == DECL_TEST and cur.body != null {
+            st.current_func_ret_type = "void"
+            st.current_func_name = cur.name
+            st.current_zone_depth = 0
             enter_scope(st)
             check_statement(st, "void", cur.body)
             exit_scope(st)

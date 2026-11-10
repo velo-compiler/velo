@@ -2798,3 +2798,51 @@ flowchart TD
   - Verified 100% parity across Stage 1 and Stage 2 native compiler.
   - Full pytest test suite passing (583 tests passed).
   - Line count verified $\le 400$ lines across all compiler sources (`python scripts/count_lines.py`) and zero UTF-8 BOM characters across all `.vl` files.
+
+
+---
+
+### Phase 32: Memory Safety: Lexical Zone Lifetime Escape Analysis
+#### Task 32.1: Static Zone & Local Variable Escape Analysis [COMPLETED] ✅
+* **Former Defect**:
+  - Pointers allocated inside lexical `zone { ... }` blocks (e.g. via `mem.alloc`, non-heap `shelf`/`map` literals, or zone-allocating standard library functions) are allocated on thread-local zone arenas whose high watermarks are restored when exiting the zone block.
+  - Previously, neither the Stage 1 reference compiler (`velo/codegen_c.py`) nor the Stage 2 self-hosted native compiler (`src/analysis/`) statically tracked zone nesting depth or pointer origin lifetimes.
+  - As a result, pointers allocated inside a zone could escape the zone via:
+    1. Being returned from the enclosing function (`return p`), causing catastrophic use-after-free (UAF) when callers accessed the returned pointer after the zone memory had been recycled.
+    2. Being assigned or initialized into outer-scoped or global variables (`outer = inner`), persisting dangling pointers beyond the zone boundary.
+    3. Returning or escaping the address of local stack variables (`@x`), leading to stack use-after-free bugs.
+* **Fix Applied**:
+  - Implemented static AST lifetime and lexical zone escape analysis across both Stage 1 and Stage 2 compilers:
+    1. **Lexical Zone Depth Tracking**:
+       - Added `zone_depth: i32` and `pointer_origin_depth: i32` to variable symbols (`src/analysis/symbol_table.vl`, `src/analysis/scope.vl`, and `velo/codegen_c.py`).
+       - Added `current_zone_depth: i32` to `SymbolTable` (and compiler state in Stage 1), incremented upon entering a `zone { ... }` block and decremented upon exit (`src/analysis/type_checker_stmt.vl`).
+    2. **Pointer Origin & Lifetime Depth Resolution**:
+       - Created modular `src/analysis/escape_checks.vl` (241 lines, under the 400-line ceiling) implementing `expr_lifetime_depth`, `is_pointer_or_zone_type`, `expr_is_local_address`, `expr_local_name`, and `get_root_variable_name`.
+       - Explicitly classified expressions:
+         - Heap allocations (`mem.heap_alloc`, `heap shelf[...]`, `heap map[...]`, `str.heap_*`) have static depth 0 (allowed to escape zones).
+         - Function parameters and global variables have lifetime depth 0 (valid to return or store).
+         - Zone allocations (`mem.alloc`, `shelf[...]`, `map[...]`, etc.) carry the active `current_zone_depth`.
+         - Variable identifiers resolve their lifetime depth using their tracked `pointer_origin_depth` (or `zone_depth` fallback if not explicitly initialized).
+         - Local stack variable address-of expressions (`@local`) are tagged and forbidden from returning or escaping to outer scopes, while global addresses (`@g_stdout_writer`) are permitted as static lifetimes.
+    3. **Escape Prevention Gates**:
+       - `check_escape_assign`: Validates variable declarations (`STMT_VAR_DECL`) and assignments (`STMT_ASSIGN`). Rejects assigning any zone pointer with depth greater than the target's scope depth (`zone-allocated pointer escapes into outer variable '<name>'`) and rejects assigning local stack addresses to outer variables.
+       - `check_escape_return`: Validates return statements (`STMT_RETURN`). Rejects returning any pointer whose origin depth > 0 inside or from a zone (`cannot return pointer allocated inside lexical zone`) and rejects returning the address of local stack variables (`cannot return address of local variable '<name>'`).
+       - `check_escape_fail`: Validates `fail` statements (`STMT_FAIL`) to prevent zone pointers or local addresses from escaping via `or` error variants.
+    4. **Bootstrap & Toolchain**:
+       - Maintained strict parity across Stage 1 (`velo/codegen_c.py`) and Stage 2 (`src/analysis/escape_checks.vl`, `src/analysis/type_checker_stmt.vl`, `src/analysis/scope.vl`, `src/analysis/symbol_table.vl`).
+       - Rebuilt the self-hosted 3-stage bootstrap chain (`bin/velo.exe`) and refreshed `bootstrap.c` snapshot with verified bit-for-bit SHA-256 determinism across Gen2, Gen3, and `bootstrap.c` (`510BAD0087A64EE1F4D8A6A98858D76F126094C7B945211FE6C180928BC63551`).
+* **Residual Limitation**:
+  - Escape analysis performs lexical scope and origin tracking on direct assignments, returns, and address expressions. Complex multi-level pointer alias indirection across unannotated heap-allocated struct fields relies on explicit ownership/zone scoping.
+* **Verification**:
+  - Added dedicated test suite `tests/test_zone_escape_analysis.py` (8 tests) verifying:
+    1. Zone pointer returned via variable -> rejected.
+    2. Zone pointer returned via direct `mem.alloc` -> rejected.
+    3. Zone pointer assigned to outer variable -> rejected.
+    4. Zone pointer directly allocated into outer variable -> rejected.
+    5. Nested zone pointer assigned to outer zone variable -> rejected.
+    6. Local stack variable address returned -> rejected.
+    7. Local stack variable address assigned to outer variable -> rejected.
+    8. Valid zone operations accepted: primitive value copy returns, `null` returns, caller parameter pass-through, intra-zone pointer assignments, and heap allocations (`mem.heap_alloc`).
+  - Verified 100% parity across Stage 1 and Stage 2 native compiler.
+  - Full pytest test suite passing.
+  - Line count verified $\le 400$ lines across all compiler sources (`python scripts/count_lines.py`) and zero UTF-8 BOM characters across all `.vl` files.

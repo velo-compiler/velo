@@ -1,0 +1,241 @@
+// Lexical zone lifetime escape analysis for Velo memory safety.
+// Statically verifies that pointers allocated within an inner lexical zone arena
+// or local stack frame cannot escape into outer variables or be returned.
+use "symbol_table.vl"
+use "type_checker.vl"
+use "shelf_checks.vl"
+use "map_checks.vl"
+use "../ast/expr.vl"
+use "../ast/types.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+
+// Determines whether type_name represents a pointer or zone-allocated collection.
+act is_pointer_or_zone_type(type_name: string) -> bool {
+    if type_name == null or str.len(type_name) == 0 { return false }
+    if type_name[0] == '@' { return true }
+    let clean = strip_pointer_prefix(type_name)
+    if is_shelf_type(clean) and not starts_with_heap_shelf(clean) { return true }
+    if is_map_type(clean) and not starts_with_heap_map(clean) { return true }
+    return false
+}
+
+// Extracts the root identifier name from an expression (e.g. `obj.f`, `arr[0]`).
+act get_root_variable_name(expr: @ExprNode) -> string {
+    if expr == null { return "" }
+    if expr.kind == EXPR_IDENT { return expr.str_val }
+    if expr.kind == EXPR_MEMBER { return get_root_variable_name(expr.target) }
+    if expr.kind == EXPR_INDEX { return get_root_variable_name(expr.target) }
+    return ""
+}
+
+// Checks if expr is an address-of operation taking the address of a local variable.
+act expr_is_local_address(st: @SymbolTable, expr: @ExprNode) -> bool {
+    if expr == null { return false }
+    if expr.kind == EXPR_ADDRESS_OF {
+        if expr.operand != null and expr.operand.kind == EXPR_IDENT {
+            if scope_lookup_immediate(st.global_scope, expr.operand.str_val) != null {
+                return false
+            }
+            let sym = resolve_variable(st, expr.operand.str_val)
+            if sym != null and sym.kind == SYM_VAR {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+// Returns the name of the local variable whose address is taken, or empty string.
+act expr_local_name(expr: @ExprNode) -> string {
+    if expr != null and expr.kind == EXPR_ADDRESS_OF and expr.operand != null and expr.operand.kind == EXPR_IDENT {
+        return expr.operand.str_val
+    }
+    return ""
+}
+
+// Returns the zone depth associated with the pointer/reference produced by expr.
+// 0 means unbounded/global/heap/parameter (safe to escape to any outer scope).
+// > 0 means tied to a zone arena at depth N.
+act expr_lifetime_depth(st: @SymbolTable, expr: @ExprNode) -> i32 {
+    if expr == null { return 0 }
+    if expr.kind == EXPR_NULL { return 0 }
+    if expr.kind == EXPR_STRING { return 0 }
+
+    if expr.kind == EXPR_ADDRESS_OF {
+        if expr.operand != null and expr.operand.kind == EXPR_IDENT {
+            let sym = resolve_variable(st, expr.operand.str_val)
+            if sym != null {
+                if sym.kind == SYM_PARAM or sym.kind == SYM_GLOBAL { return 0 }
+                if sym.zone_depth > 0 { return sym.zone_depth }
+                return 0
+            }
+        }
+        return st.current_zone_depth
+    }
+
+    if expr.kind == EXPR_CALL {
+        if expr.callee != null and expr.callee.kind == EXPR_MEMBER {
+            let tgt = expr.callee.target
+            let member = expr.callee.member_name
+            if tgt != null and tgt.kind == EXPR_IDENT {
+                if tgt.str_val == "mem" {
+                    if member == "heap_alloc" or member == "realloc" or member == "free" { return 0 }
+                    if member == "alloc" or member == "current" or member == "alloc_with" {
+                        return st.current_zone_depth
+                    }
+                }
+                if tgt.str_val == "str" {
+                    let mlen = str.len(member)
+                    if mlen > 5 and member[0] == 'h' and member[1] == 'e' and member[2] == 'a' and member[3] == 'p' and member[4] == '_' {
+                        return 0
+                    }
+                    if member == "concat" or member == "to_upper" or member == "to_lower" or member == "replace" or member == "trim" or member == "format" {
+                        return st.current_zone_depth
+                    }
+                }
+            }
+        }
+        let callee_ret = infer_expr_type(st, expr)
+        if is_pointer_or_zone_type(callee_ret) and st.current_zone_depth > 0 {
+            return st.current_zone_depth
+        }
+        return 0
+    }
+
+    if expr.kind == EXPR_HEAP_SHELF_LIT or expr.kind == EXPR_HEAP_MAP_LIT { return 0 }
+    if expr.kind == EXPR_SHELF_LIT or expr.kind == EXPR_MAP_LIT { return st.current_zone_depth }
+
+    if expr.kind == EXPR_IDENT {
+        let sym = resolve_variable(st, expr.str_val)
+        if sym == null { return 0 }
+        if sym.kind == SYM_PARAM or sym.kind == SYM_GLOBAL { return 0 }
+        if is_pointer_or_zone_type(sym.type_name) {
+            if sym.pointer_origin_depth >= 0 { return sym.pointer_origin_depth }
+            return sym.zone_depth
+        }
+        return 0
+    }
+
+    if expr.kind == EXPR_MEMBER { return expr_lifetime_depth(st, expr.target) }
+    if expr.kind == EXPR_INDEX { return expr_lifetime_depth(st, expr.target) }
+    if expr.kind == EXPR_CAST { return expr_lifetime_depth(st, expr.operand) }
+    if expr.kind == EXPR_OR_RETURN { return expr_lifetime_depth(st, expr.operand) }
+    if expr.kind == EXPR_BINARY {
+        let l = expr_lifetime_depth(st, expr.left)
+        let r = expr_lifetime_depth(st, expr.right)
+        if l > r { return l } else { return r }
+    }
+
+    return 0
+}
+
+// Validates that an assignment target does not receive a pointer outliving target's scope.
+act check_escape_assign(st: @SymbolTable, target: @ExprNode, val_expr: @ExprNode, line: i32, col: i32) {
+    if target == null or val_expr == null { return }
+    let tgt_type = infer_expr_type(st, target)
+    if not is_pointer_or_zone_type(tgt_type) { return }
+
+    let root_name = get_root_variable_name(target)
+    mut target_depth = 0
+    mut root_sym: @Symbol = null
+    if str.len(root_name) > 0 {
+        root_sym = resolve_variable(st, root_name)
+        if root_sym != null {
+            if root_sym.kind == SYM_GLOBAL { target_depth = 0 }
+            else { target_depth = root_sym.zone_depth }
+        }
+    }
+
+    if expr_is_local_address(st, val_expr) {
+        let loc_name = expr_local_name(val_expr)
+        let loc_sym = resolve_variable(st, loc_name)
+        if loc_sym != null {
+            if root_sym == null or root_sym.kind == SYM_GLOBAL or root_sym.zone_depth < st.current_zone_depth or root_sym.zone_depth < loc_sym.zone_depth {
+                mut msb = create_sb(128)
+                sb_append_str(@msb, "cannot assign address of local variable '")
+                sb_append_str(@msb, loc_name)
+                sb_append_str(@msb, "' to outer variable '")
+                sb_append_str(@msb, root_name)
+                sb_append_str(@msb, "'")
+                report_error("semantic", line, col, sb_to_string(@msb))
+                st.error_count += 1
+                return
+            }
+        }
+    }
+
+    let val_depth = expr_lifetime_depth(st, val_expr)
+    if val_depth > target_depth {
+        mut msb = create_sb(128)
+        sb_append_str(@msb, "zone-allocated pointer escapes into outer variable '")
+        sb_append_str(@msb, root_name)
+        sb_append_str(@msb, "'")
+        report_error("semantic", line, col, sb_to_string(@msb))
+        st.error_count += 1
+        return
+    }
+
+    if root_sym != null and target.kind == EXPR_IDENT {
+        root_sym.pointer_origin_depth = val_depth
+    }
+}
+
+// Validates that returning a pointer from inside a zone does not return zone memory.
+act check_escape_return(st: @SymbolTable, val_expr: @ExprNode, expected_ret_type: string, line: i32, col: i32) {
+    if val_expr == null { return }
+    mut check_type = expected_ret_type
+    if is_or_type(expected_ret_type) {
+        check_type = or_type_success(expected_ret_type)
+    }
+    if not is_pointer_or_zone_type(check_type) { return }
+
+    if expr_is_local_address(st, val_expr) {
+        let loc_name = expr_local_name(val_expr)
+        mut msb = create_sb(96)
+        sb_append_str(@msb, "cannot return address of local variable '")
+        sb_append_str(@msb, loc_name)
+        sb_append_str(@msb, "'")
+        report_error("semantic", line, col, sb_to_string(@msb))
+        st.error_count += 1
+        return
+    }
+
+    if st.current_zone_depth > 0 {
+        let val_depth = expr_lifetime_depth(st, val_expr)
+        if val_depth > 0 {
+            report_error("semantic", line, col, "cannot return pointer allocated inside lexical zone")
+            st.error_count += 1
+            return
+        }
+    }
+}
+
+// Validates that fail statement inside a zone does not return zone-allocated error payload.
+act check_escape_fail(st: @SymbolTable, val_expr: @ExprNode, expected_ret_type: string, line: i32, col: i32) {
+    if val_expr == null { return }
+    if not is_or_type(expected_ret_type) { return }
+    let err_type = or_type_error(expected_ret_type)
+    if not is_pointer_or_zone_type(err_type) { return }
+
+    if expr_is_local_address(st, val_expr) {
+        let loc_name = expr_local_name(val_expr)
+        mut msb = create_sb(96)
+        sb_append_str(@msb, "cannot fail with address of local variable '")
+        sb_append_str(@msb, loc_name)
+        sb_append_str(@msb, "'")
+        report_error("semantic", line, col, sb_to_string(@msb))
+        st.error_count += 1
+        return
+    }
+
+    if st.current_zone_depth > 0 {
+        let val_depth = expr_lifetime_depth(st, val_expr)
+        if val_depth > 0 {
+            report_error("semantic", line, col, "cannot fail with pointer allocated inside lexical zone")
+            st.error_count += 1
+            return
+        }
+    }
+}
