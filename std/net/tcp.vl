@@ -136,3 +136,17 @@ act tcp_listener_close(listener: @TcpListener) {
     socket_close(@listener.sock)
     heap_free(listener as @u8)
 }
+
+// Binds and listens for incoming TCP connections, returning @TcpListener or error message.
+act tcp_open_listener(ip: string, port: u16) -> @TcpListener or string {
+    let listener = tcp_listen(ip, port)
+    if listener == null { fail "failed to bind tcp listener" }
+    return listener
+}
+
+// Connects to a remote TCP endpoint, returning @TcpStream or error message.
+act tcp_open_stream(ip: string, port: u16) -> @TcpStream or string {
+    let stream = tcp_connect(ip, port)
+    if stream == null { fail "failed to connect tcp stream" }
+    return stream
+}

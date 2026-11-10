@@ -29,11 +29,10 @@ act or_types_contains(list: @OrTypeNode, type_name: string) -> bool {
 
 act or_types_add(list: @@OrTypeNode, type_name: string) {
     if type_name == null or not is_or_type(type_name) { return }
-    let clean = strip_pointer_prefix(type_name)
-    if or_types_contains(list.@, clean) { return }
+    if or_types_contains(list.@, type_name) { return }
     mut node: @OrTypeNode = mem.alloc(@OrTypeNode, 1)
-    node.type_name = clean
-    node.c_name = or_type_c_name(clean)
+    node.type_name = type_name
+    node.c_name = or_type_c_name(type_name)
     node.next = list.@
     list.@ = node
 }

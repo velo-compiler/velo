@@ -247,3 +247,53 @@ act parse_i32_str(s: string, out_val: @i32) -> bool {
 act parse_u32_str(s: string, out_val: @u32) -> bool {
     return parse_u32(slice_from_str(s), out_val)
 }
+
+// Parses a string into a signed 64-bit integer, returning i64 or error description.
+act parse_int(s: string) -> i64 or string {
+    if s == null { fail "null string" }
+    mut val: i64 = 0
+    if !parse_i64(slice_from_str(s), @val) {
+        fail "invalid integer syntax"
+    }
+    return val
+}
+
+// Parses a string into an unsigned 64-bit integer, returning u64 or error description.
+act parse_uint(s: string) -> u64 or string {
+    if s == null { fail "null string" }
+    mut val: u64 = 0
+    if !parse_u64(slice_from_str(s), @val) {
+        fail "invalid unsigned integer syntax"
+    }
+    return val
+}
+
+// Parses a string into a signed 32-bit integer, returning i32 or error description.
+act parse_int32(s: string) -> i32 or string {
+    if s == null { fail "null string" }
+    mut val: i32 = 0
+    if !parse_i32(slice_from_str(s), @val) {
+        fail "invalid 32-bit integer syntax"
+    }
+    return val
+}
+
+// Parses a string into an unsigned 32-bit integer, returning u32 or error description.
+act parse_uint32(s: string) -> u32 or string {
+    if s == null { fail "null string" }
+    mut val: u32 = 0
+    if !parse_u32(slice_from_str(s), @val) {
+        fail "invalid 32-bit unsigned integer syntax"
+    }
+    return val
+}
+
+// Parses a hexadecimal string into an unsigned 64-bit integer, returning u64 or error description.
+act parse_hex_uint(s: string) -> u64 or string {
+    if s == null { fail "null string" }
+    mut val: u64 = 0
+    if !parse_hex(slice_from_str(s), @val) {
+        fail "invalid hexadecimal syntax"
+    }
+    return val
+}

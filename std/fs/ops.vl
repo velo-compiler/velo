@@ -278,3 +278,36 @@ act fs_read_to_str(path: string) -> string {
     let buf = fs_read_bytes(path, @l)
     return buf as string
 }
+
+// Reads an entire file into a string, returning file content or error description.
+act fs_read_file(path: string) -> string or string {
+    if path == null { fail "null file path" }
+    let s = fs_read_to_str(path)
+    if s == null { fail "failed to read file" }
+    return s
+}
+
+// Writes content to a file, returning true or error description.
+act fs_write_file(path: string, content: string) -> bool or string {
+    if path == null { fail "null file path" }
+    if !fs_write_str(path, content) { fail "failed to write file" }
+    return true
+}
+
+// Appends content to a file, returning true or error description.
+act fs_append_file(path: string, content: string) -> bool or string {
+    if path == null { fail "null file path" }
+    let fh = io_file_open_str(path, IO_CREATE | IO_APPEND | IO_WRITE)
+    if !io_is_valid_handle(fh) { fail "failed to open file for append" }
+    mut ok = true
+    if content != null {
+        let len = raw_str_len(content as @u8)
+        if len > 0 {
+            let written = io_raw_write(fh, content as @u8, len)
+            if written != len { ok = false }
+        }
+    }
+    io_file_close(fh)
+    if !ok { fail "failed to append to file" }
+    return true
+}

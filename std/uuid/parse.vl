@@ -139,3 +139,13 @@ act uuid_is_valid(s: string) -> bool {
     mut u = uuid_nil()
     return uuid_parse(s, @u)
 }
+
+// Parses a UUID string into a Uuid struct, returning Uuid or error message.
+act uuid_from_str(s: string) -> Uuid or string {
+    if s == null { fail "null uuid string" }
+    mut u = uuid_nil()
+    if !uuid_parse(s, @u) {
+        fail "invalid uuid format"
+    }
+    return u
+}

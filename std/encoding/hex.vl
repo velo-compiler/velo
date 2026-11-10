@@ -116,3 +116,14 @@ act hex_decode_str(s: string) -> string {
     if bytes == null { return "" }
     return bytes as string
 }
+
+// Decodes a hexadecimal string into a heap string, returning decoded text or error message.
+act hex_to_str(s: string) -> string or string {
+    if s == null { fail "null hex string" }
+    let len = str.len(s)
+    if (len % 2) != 0 { fail "hex string length must be even" }
+    mut out_len: usize = 0
+    let bytes = hex_decode(s, @out_len)
+    if bytes == null { fail "invalid hex digit in string" }
+    return bytes as string
+}

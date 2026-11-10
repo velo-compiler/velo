@@ -226,6 +226,16 @@ act base64_decode_str(s: string) -> string {
     return bytes as string
 }
 
+// Decodes a Base64 string into a heap string, returning decoded text or error message.
+act base64_to_str(s: string) -> string or string {
+    if s == null { fail "null base64 string" }
+    if !base64_is_valid(s) { fail "invalid base64 format or padding" }
+    mut decoded_len: usize = 0
+    let bytes = base64_decode(s, @decoded_len)
+    if bytes == null { fail "failed to decode base64 string" }
+    return bytes as string
+}
+
 // Decodes a URL-safe Base64 string directly into a heap string.
 act base64_url_decode_str(s: string) -> string {
     return base64_decode_str(s)

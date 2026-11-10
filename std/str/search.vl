@@ -189,3 +189,11 @@ act str_ends_with_str(s: StrSlice, suffix: string) -> bool {
 act str_count_str(haystack: StrSlice, needle: string) -> usize {
     return str_count(haystack, slice_from_str(needle))
 }
+
+// Finds the first occurrence of needle in haystack, returning 0-based index or error description.
+act str_find(haystack: string, needle: string) -> usize or string {
+    if haystack == null or needle == null { fail "null string" }
+    let idx = str_index_of(slice_from_str(haystack), slice_from_str(needle))
+    if idx < 0 { fail "substring not found" }
+    return idx as usize
+}

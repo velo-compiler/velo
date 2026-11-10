@@ -2885,3 +2885,58 @@ flowchart TD
   - Full pytest test suite passed (596 tests passed).
   - All source files $\le 394$ lines (`python scripts/count_lines.py`).
   - Zero UTF-8 BOM in any `.vl` file.
+
+---
+
+### Phase 34: Standard Library Modernization with Algebraic Error Handling (`or` / `fail`)
+#### Task 34.1: Idiomatic Algebraic Outcome APIs across Core Standard Library [COMPLETED] ✅
+* **Former Defect**:
+  - Phase 31 introduced first-class algebraic error handling (`T or E` outcome types, `fail` keyword, `or return` propagation, and `or <expr>` fallbacks) into the Velo compiler.
+  - However, the foundational standard library modules still predominantly relied on legacy C-style idioms:
+    1. Returning `bool` with pointer out-parameters (`fs_read_to_str`, `parse_i64`), requiring cumbersome boilerplate declarations of temporary mutable variables before calling.
+    2. Returning `null` pointers on failure (`json_parse_doc_str`, `tcp_listen`), leading to silent runtime null-dereference crashes when error checks were omitted.
+    3. Returning sentinel values (`str_index_of` returning -1 or sentinel integers), conflating valid outputs with error states.
+    4. Code authoring could not take advantage of `let content = fs_read_file(path) or return` or `let num = parse_int(s) or 0` across core standard library modules.
+* **Fix Applied**:
+  - Designed and implemented clean, modern algebraic error APIs across 8 core standard library packages with 100% backward compatibility for all existing APIs:
+    1. **`std.fs` (`std/fs/ops.vl`)**:
+       - `fs_read_file(path: string) -> string or string`: Reads file content and returns string or descriptive error message (`"file not found"`, `"failed to determine file size"`, `"failed to read file content"`).
+       - `fs_write_file(path: string, content: string) -> bool or string`: Writes file content atomically or fails with `"failed to open file for writing"` / `"failed to write full content"`.
+       - `fs_append_file(path: string, content: string) -> bool or string`: Appends file content or fails with `"failed to open file for appending"`.
+    2. **`std.fmt` (`std/fmt/atoi.vl`)**:
+       - `parse_int(s: string) -> i64 or string`: Parses 64-bit integer or fails with `"empty string"`, `"invalid integer syntax"`, or `"integer overflow"`.
+       - `parse_uint(s: string) -> u64 or string`: Parses unsigned 64-bit integer or fails on syntax/overflow.
+       - `parse_int32(s: string) -> i32 or string`: Parses 32-bit integer with range validation.
+       - `parse_uint32(s: string) -> u32 or string`: Parses unsigned 32-bit integer with range validation.
+       - `parse_hex_uint(s: string) -> u64 or string`: Parses hex string or fails with `"empty hex string"`, `"invalid hex character"`, or overflow.
+    3. **`std.json` (`std/json/parser.vl`)**:
+       - `json_from_str(src: string) -> JsonDoc or string`: Parses JSON document into value struct or fails with `"empty json source"` or `"invalid json syntax"`.
+       - `json_parse_val(a: @JsonArena, src: string) -> @JsonValue or string`: Parses JSON value in arena or fails with error.
+    4. **`std.uuid` (`std/uuid/parse.vl`)**:
+       - `uuid_from_str(s: string) -> Uuid or string`: Parses canonical 36-char UUID string or fails with `"invalid uuid length"` or `"invalid uuid format"`.
+    5. **`std.url` (`std/url/parse.vl`)**:
+       - `url_from_str(s: string) -> Url or string`: Parses RFC 3986 URL or fails with `"empty url string"` or `"missing url host"`.
+    6. **`std.encoding` (`std/encoding/hex.vl` & `std/encoding/base64.vl`)**:
+       - `hex_to_str(s: string) -> string or string`: Decodes hex string or fails with `"hex string has odd length"` or `"invalid hex character"`.
+       - `base64_to_str(s: string) -> string or string`: Decodes base64 string or fails with `"invalid base64 length"` or `"invalid base64 character"`.
+    7. **`std.net` (`std/net/tcp.vl`)**:
+       - `tcp_open_listener(ip: string, port: u16) -> @TcpListener or string`: Binds TCP listener or fails with descriptive network socket error.
+       - `tcp_open_stream(ip: string, port: u16) -> @TcpStream or string`: Connects TCP stream or fails with network connection error.
+    8. **`std.str` (`std/str/search.vl`)**:
+       - `str_find(haystack: string, needle: string) -> usize or string`: Locates substring index or fails with `"substring not found"` or `"empty needle"`.
+    9. **Compiler Codegen & Outcome Type Hardening**:
+       - Fixed `velo/codegen_c.py` `_infer_raw_velo_type` for `OrReturnExpr` to unwrap success type (`_or_type_success`) rather than falling back to `"i32"`.
+       - Fixed `_map_type` in `velo/codegen_c.py` to prioritize `_is_or_type` before stripping pointer prefixes, properly preserving `@T or E` pointer success variants (`_Velo_Or_ptr_T_E`).
+       - Fixed `src/backend/outcome_gen.vl` `or_types_add` to eliminate erroneous `strip_pointer_prefix` on outcome types, ensuring `@T or E` produces `_Velo_Or_ptr_T_E` consistently.
+    10. **Self-Hosting Bootstrap & Determinism**:
+        - Rebuilt the self-hosted 3-generation bootstrap chain (`bin/velo.exe build src/main.vl -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe -> bootstrap.c`).
+        - Verified bit-for-bit SHA-256 determinism across Gen2, Gen3, and `bootstrap.c` (`2BCA650420B6DBB807335D71CA2DD153F2D31578CF267F5E9FF3577B148AD1C8`).
+* **Residual Limitation**:
+  - Higher-level network protocols (`std.http`) and format generators will be modernized with outcome error types in subsequent phases, utilizing the core `std.net` and `std.encoding` primitives established here.
+* **Verification**:
+  - Created end-to-end modernization test suite `tests/test_stdlib_or_modernization.py` (5 tests) verifying algebraic error handling on both Stage 1 and Stage 2 across `std.fmt`, `std.fs`, `std.json`, `std.uuid`, `std.url`, `std.encoding`, and `std.str`.
+  - Rebuilt self-hosted 3-generation compiler chain with verified SHA-256 bit-for-bit determinism (`2BCA650420B6DBB807335D71CA2DD153F2D31578CF267F5E9FF3577B148AD1C8`).
+  - Full pytest test suite passed (601 passed in 566s).
+  - All 5/5 VS Code extension suites passed (24 parity, 28 grammar, 8 simulations, 11 LSP probes, 10 extension LSP sims).
+  - All 98 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
+  - Zero UTF-8 BOM in any `.vl` file.

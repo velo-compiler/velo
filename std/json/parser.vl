@@ -280,3 +280,25 @@ act json_validate(src: StrSlice, out_err: @JsonParseError) -> bool {
 act json_validate_str(src: string, out_err: @JsonParseError) -> bool {
     return json_validate(slice_from_str(src), out_err)
 }
+
+// Parses a JSON string into a managed JsonDoc, returning the document or error message.
+act json_from_str(src: string) -> JsonDoc or string {
+    if src == null { fail "null json string" }
+    let doc = json_parse_doc_str(src, 65536)
+    if !doc.ok {
+        fail "invalid json syntax"
+    }
+    return doc
+}
+
+// Parses a JSON string using an explicit Arena, returning the root JsonValue or error message.
+act json_parse_val(a: @Arena, src: string) -> @JsonValue or string {
+    if a == null { fail "null arena" }
+    if src == null { fail "null json string" }
+    mut err = JsonParseError { message: slice_from_raw(null, 0), line: 0, col: 0 }
+    let root = json_parse_str(a, src, @err)
+    if root == null {
+        fail "invalid json syntax"
+    }
+    return root
+}

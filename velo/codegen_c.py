@@ -378,6 +378,11 @@ class CCodeGenerator:
             mangled = mangle_act_type(params, ret)
             return mangled + ("*" * len(prefix))
 
+        if self._is_or_type(type_str):
+            if hasattr(self, 'used_or_types'):
+                self.used_or_types.add(type_str)
+            return self._or_type_c_name(type_str)
+
         pointer_count = 0
         while type_str.startswith("@"):
             pointer_count += 1
@@ -415,33 +420,24 @@ class CCodeGenerator:
         if type_str == "bitset":
             return "VeloBitset" + ("*" * pointer_count)
 
-        if self._is_or_type(type_str):
-            if hasattr(self, 'used_or_types'):
-                self.used_or_types.add(type_str)
-            return self._or_type_c_name(type_str) + ("*" * pointer_count)
-
         base_c_type = TYPE_MAP.get(type_str, type_str)
         return base_c_type + ("*" * pointer_count)
 
     def _is_or_type(self, type_str: Optional[str]) -> bool:
         if not type_str:
             return False
-        clean = type_str.lstrip("@").strip()
-        return " or " in clean
+        return " or " in type_str
 
     def _or_type_success(self, type_str: str) -> str:
-        clean = type_str.lstrip("@").strip()
-        parts = clean.split(" or ", 1)
+        parts = type_str.split(" or ", 1)
         return parts[0].strip()
 
     def _or_type_error(self, type_str: str) -> str:
-        clean = type_str.lstrip("@").strip()
-        parts = clean.split(" or ", 1)
+        parts = type_str.split(" or ", 1)
         return parts[1].strip() if len(parts) > 1 else ""
 
     def _or_type_c_name(self, type_str: str) -> str:
-        clean = type_str.lstrip("@").strip()
-        parts = clean.split(" or ", 1)
+        parts = type_str.split(" or ", 1)
         succ = parts[0].strip()
         err = parts[1].strip() if len(parts) > 1 else ""
         def clean_ident(s: str) -> str:
@@ -2632,6 +2628,10 @@ class CCodeGenerator:
         return False
 
     def _infer_raw_velo_type(self, value: Optional[Expr]) -> str:
+        if isinstance(value, OrReturnExpr):
+            op_t = self._resolve_expr_type(value.operand)
+            self._validate_or_return(op_t)
+            return self._or_type_success(op_t)
         if isinstance(value, IntLiteral): return value.type_name if value.type_name else "i32"
         if isinstance(value, FloatLiteral): return value.type_name if value.type_name else "f32"
         if isinstance(value, StringLiteral): return "string"

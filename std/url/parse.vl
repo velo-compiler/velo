@@ -288,3 +288,13 @@ act url_parse_str(raw: string) -> Url {
     url_parse(raw, @u)
     return u
 }
+
+// Parses an RFC 3986 URL string, returning Url or error message.
+act url_from_str(raw: string) -> Url or string {
+    if raw == null { fail "null url string" }
+    mut u = url_new()
+    if !url_parse(raw, @u) {
+        fail "invalid url syntax"
+    }
+    return u
+}
