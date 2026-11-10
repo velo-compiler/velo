@@ -110,8 +110,12 @@ act parse_logical_or(p: @Parser) -> @ExprNode {
     mut expr = parse_logical_and(p)
     loop parser_check(p, TOK_OR) {
         let op_tok = parser_advance(p)
-        let right = parse_logical_and(p)
-        expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+        if parser_match(p, TOK_RETURN) {
+            expr = make_or_return_expr(expr, op_tok.line, op_tok.col)
+        } else {
+            let right = parse_logical_and(p)
+            expr = make_binary_expr(expr, op_tok.kind, right, op_tok.line, op_tok.col)
+        }
     }
     return expr
 }

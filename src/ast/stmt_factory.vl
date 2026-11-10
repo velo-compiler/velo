@@ -47,6 +47,16 @@ act make_return_stmt(val: @ExprNode, line: i32, col: i32) -> @StmtNode {
     return node
 }
 
+// Creates a fail statement (`fail expr`).
+act make_fail_stmt(val: @ExprNode, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_FAIL
+    node.val_expr = val
+    node.line = line
+    node.col = col
+    return node
+}
+
 // Creates an if statement with optional else/elif branch.
 act make_if_stmt(cond: @ExprNode, then_body: @StmtNode, else_branch: @StmtNode, line: i32, col: i32) -> @StmtNode {
     mut node: @StmtNode = mem.alloc(@StmtNode, 1)

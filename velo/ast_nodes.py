@@ -103,6 +103,12 @@ class AddressOf(Expr):
     col: int
 
 @dataclass
+class OrReturnExpr(Expr):
+    operand: Expr
+    line: int
+    col: int
+
+@dataclass
 class BinaryExpr(Expr):
     left: Expr
     op: str
@@ -194,6 +200,12 @@ class ExprStmt(Stmt):
 @dataclass
 class ReturnStmt(Stmt):
     value: Optional[Expr]
+    line: int
+    col: int
+
+@dataclass
+class FailStmt(Stmt):
+    value: Expr
     line: int
     col: int
 

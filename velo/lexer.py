@@ -97,6 +97,7 @@ class Lexer:
                     TokenType.FALSE,
                     TokenType.NULL,
                     TokenType.RETURN,
+                    TokenType.FAIL,
                     TokenType.BREAK,
                     TokenType.CONTINUE,
                     TokenType.RPAREN,

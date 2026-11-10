@@ -249,6 +249,14 @@ act parse_statement(p: @Parser) -> @StmtNode {
         return make_return_stmt(val, ret_tok.line, ret_tok.col)
     }
 
+    // 7.1. Fail statement (error return)
+    if parser_check(p, TOK_FAIL) {
+        let fail_tok = parser_advance(p)
+        let val = parse_expression(p)
+        parser_skip_newlines(p)
+        return make_fail_stmt(val, fail_tok.line, fail_tok.col)
+    }
+
     // 7.5. Break statement
     if parser_check(p, TOK_BREAK) {
         let tok = parser_advance(p)

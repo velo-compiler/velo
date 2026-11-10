@@ -77,6 +77,14 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         }
         let target_type = infer_expr_type(st, expr.target)
         let clean_type = strip_pointer_prefix(target_type)
+        if is_or_type(target_type) {
+            if expr.member_name == "ok" { return "bool" }
+            if expr.member_name == "val" { return or_type_success(target_type) }
+            if expr.member_name == "err" { return or_type_error(target_type) }
+            report_error("semantic", expr.line, expr.col, "Outcome type only provides .ok, .val, and .err")
+            st.error_count += 1
+            return "unknown"
+        }
         if target_type == "dyn" { report_error("semantic", expr.line, expr.col, dyn_gate_error()); st.error_count += 1; return "unknown" }  // 5.2 slice 2: raw dyn exposes no members — cast (as) first; Stage 1 raises the same words
         if is_shelf_type(target_type) { return check_shelf_member_access(st, expr) }  // 5.2: shelf property reads (len = usize; others are loud errors)
         if is_map_type(target_type) { return check_map_member_access(st, expr) }  // 5.2 slice 6: len = usize; others name the map surface
@@ -247,6 +255,14 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         // 5.2 slice 8: raw dyn arithmetic/compares auto-unbox; the concrete mixed-compare and string-concat walls live in dyn_checks.vl too
         let bin_t = check_dyn_binary(st, expr, left_type, right_type); if bin_t != null { return bin_t }
         let s_bin = check_simd_binary(st, expr, left_type, right_type); if s_bin != null { return s_bin }
+        if expr.op == TOK_OR and is_or_type(left_type) {
+            let succ_t = or_type_success(left_type)
+            if not types_are_compatible(succ_t, right_type) {
+                report_error("semantic", expr.line, expr.col, "Fallback type mismatch for 'or' expression")
+                st.error_count += 1
+            }
+            return succ_t
+        }
         let op_fn = find_binary_op(st, expr.op, left_type, right_type); if op_fn != null { return op_fn.return_type }
         if expr.op == TOK_EQ or expr.op == TOK_NEQ or expr.op == TOK_LT or expr.op == TOK_LTE or expr.op == TOK_GT or expr.op == TOK_GTE or expr.op == TOK_AND or expr.op == TOK_OR {
             return "bool"
@@ -262,6 +278,28 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         if op_fn != null { return op_fn.return_type }
         if expr.op == TOK_NOT { return "bool" }
         return sub_type
+    }
+
+    if expr.kind == EXPR_OR_RETURN {
+        let op_type = infer_expr_type(st, expr.operand)
+        if not is_or_type(op_type) {
+            report_error("semantic", expr.line, expr.col, "'or return' requires an outcome type expression")
+            st.error_count += 1
+            return "unknown"
+        }
+        if not is_or_type(st.current_func_ret_type) {
+            report_error("semantic", expr.line, expr.col, "'or return' can only be used in a function returning an 'or' type")
+            st.error_count += 1
+            return "unknown"
+        }
+        let cur_err = or_type_error(st.current_func_ret_type)
+        let op_err = or_type_error(op_type)
+        if not types_are_compatible(cur_err, op_err) {
+            report_error("semantic", expr.line, expr.col, "Incompatible error type in 'or return' propagation")
+            st.error_count += 1
+            return "unknown"
+        }
+        return or_type_success(op_type)
     }
 
     return "unknown"

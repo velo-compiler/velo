@@ -49,7 +49,7 @@ act is_exit_call_expr(e: @ExprNode) -> bool {
 // 4.3: Returns true if the statement guarantees all control flow paths terminate in a return or process exit.
 act stmt_always_returns(st: @SymbolTable, stmt: @StmtNode) -> bool {
     if stmt == null { return false }
-    if stmt.kind == STMT_RETURN {
+    if stmt.kind == STMT_RETURN or stmt.kind == STMT_FAIL {
         return true
     }
     if stmt.kind == STMT_EXPR {
@@ -161,6 +161,8 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
     cur = prog.first_decl
     loop cur != null {
         if cur.kind == DECL_FUNCTION and cur.body != null {
+            st.current_func_ret_type = cur.return_type
+            st.current_func_name = cur.name
             enter_scope(st)
             mut cur_p = cur.first_param
             loop cur_p != null { define_parameter(st, cur_p.name, cur_p.type_name, cur_p.line, cur_p.col); cur_p = cur_p.next }

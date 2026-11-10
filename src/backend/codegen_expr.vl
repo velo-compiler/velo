@@ -127,6 +127,19 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             }
         }
         let target_type = infer_expr_type(st, expr.target)
+        if is_or_type(target_type) {
+            sb_append_char(sb, '(')
+            emit_c_expr(sb, st, expr.target)
+            sb_append_char(sb, ')')
+            if str.len(target_type) > 0 and target_type[0] == '@' { sb_append_str(sb, "->") } else { sb_append_str(sb, ".") }
+            if expr.member_name == "ok" {
+                sb_append_str(sb, "ok")
+            } else {
+                sb_append_str(sb, "as.")
+                sb_append_str(sb, expr.member_name)
+            }
+            return
+        }
         if is_simd_type(strip_pointer_prefix(target_type)) { emit_simd_member(sb, st, expr, target_type); return }
         emit_c_expr(sb, st, expr.target)
         if str.len(target_type) > 0 and target_type[0] == '@' { sb_append_str(sb, "->") } else { sb_append_str(sb, ".") }
@@ -162,6 +175,16 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr.kind == EXPR_BINARY {
         let ltype = infer_expr_type(st, expr.left)
         let rtype = infer_expr_type(st, expr.right)
+        if expr.op == TOK_OR and is_or_type(ltype) {
+            let c_name = or_type_c_name(ltype)
+            sb_append_str(sb, c_name)
+            sb_append_str(sb, "_fallback(")
+            emit_c_expr(sb, st, expr.left)
+            sb_append_str(sb, ", ")
+            emit_c_expr(sb, st, expr.right)
+            sb_append_char(sb, ')')
+            return
+        }
         if is_simd_type(ltype) or is_simd_type(rtype) { emit_simd_binary(sb, st, expr, ltype, rtype); return }
         // 5.2 slice 8: raw dyn arithmetic/compares auto-unbox — identical C with Stage 1's _emit_dyn_binop
         if ltype == "dyn" or rtype == "dyn" {
@@ -253,6 +276,21 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     // 8. Function call / Intrinsics
     if expr.kind == EXPR_CALL {
         emit_call_expr(sb, st, expr)
+        return
+    }
+
+    // 9. Outcome propagation expression (`expr or return`)
+    if expr.kind == EXPR_OR_RETURN {
+        let op_t = infer_expr_type(st, expr.operand)
+        let c_op_t = map_type_to_c(op_t)
+        let ret_c = map_type_to_c(st.current_func_ret_type)
+        st.fresh_counter += 1
+        let tmp_id = st.fresh_counter as i32
+        sb_append_str(sb, "({ ")
+        sb_append_str(sb, c_op_t); sb_append_str(sb, " __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, " = ")
+        emit_c_expr(sb, st, expr.operand)
+        sb_append_str(sb, "; if (!__or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".ok) return ("); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = false, .as = { .err = __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.err } }; ")
+        sb_append_str(sb, "__or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.val; })")
         return
     }
 }

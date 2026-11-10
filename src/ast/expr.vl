@@ -24,6 +24,7 @@ let EXPR_RING_LIT: i32 = 150  // 5.2 slice 9: first_arg chain holds the elements
 let EXPR_BITSET_LIT: i32 = 151  // 5.2 slice 9: first_arg chain holds the index expressions
 let EXPR_HEAP_SHELF_LIT: i32 = 153  // 5.2 slice 10: a shelf literal whose payload is heap-backed
 let EXPR_HEAP_MAP_LIT: i32 = 154    // Task 7.2: a map literal whose payload is heap-backed
+let EXPR_OR_RETURN: i32 = 119       // Algebraic error handling: `expr or return`
 
 // Represents a single field initializer in a struct instantiation (e.g. `x: 10.0`).
 // Linked via `next` to support arbitrary numbers of fields without dynamic heap buffers.
@@ -151,6 +152,16 @@ act make_unary_expr(op: i32, operand: @ExprNode, line: i32, col: i32) -> @ExprNo
 act make_address_of_expr(operand: @ExprNode, line: i32, col: i32) -> @ExprNode {
     mut node: @ExprNode = mem.alloc(@ExprNode, 1)
     node.kind = EXPR_ADDRESS_OF
+    node.operand = operand
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates an or-return error propagation node (`expr or return`).
+act make_or_return_expr(operand: @ExprNode, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_OR_RETURN
     node.operand = operand
     node.line = line
     node.col = col

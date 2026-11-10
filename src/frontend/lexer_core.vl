@@ -20,7 +20,7 @@ data Lexer {
 // Determines if a token kind can terminate a statement (Go-style newline rule).
 act can_terminate_stmt(kind: i32) -> bool {
     if kind == TOK_IDENTIFIER or kind == TOK_INT_LIT or kind == TOK_FLOAT_LIT or kind == TOK_STRING_LIT { return true }
-    if kind == TOK_TRUE or kind == TOK_FALSE or kind == TOK_NULL or kind == TOK_RETURN { return true }
+    if kind == TOK_TRUE or kind == TOK_FALSE or kind == TOK_NULL or kind == TOK_RETURN or kind == TOK_FAIL { return true }
     if kind == TOK_BREAK or kind == TOK_CONTINUE or kind == TOK_RPAREN or kind == TOK_RBRACKET or kind == TOK_RBRACE { return true }
     return false
 }

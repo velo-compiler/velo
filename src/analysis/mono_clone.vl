@@ -21,6 +21,10 @@ act mono_clone_stmt(m: @Monomorphizer, s: @StmtNode, scope: @ScopeEntry, params:
         if ex != null and ex.kind == EXPR_VARIANT and ex.type_name == null { ex.type_name = ret_type }
         return make_return_stmt(ex, s.line, s.col)
     }
+    if s.kind == STMT_FAIL {
+        let ex = mono_clone_expr(m, s.val_expr, scope, params, args)
+        return make_fail_stmt(ex, s.line, s.col)
+    }
     if s.kind == STMT_BREAK { return make_break_stmt(s.line, s.col) }
     if s.kind == STMT_CONTINUE { return make_continue_stmt(s.line, s.col) }
 

@@ -10,6 +10,7 @@ use "../common/utils.vl"
 use "../common/act_types.vl"
 use "codegen_expr.vl"
 use "codegen_line.vl"
+use "outcome_gen.vl"
 
 // Checks if a function name corresponds to an anonymous lifted function.
 act is_anon_act_name(name: string) -> bool {
@@ -290,6 +291,13 @@ act emit_type_declarations(sb: @StringBuilder, st: @SymbolTable, prog: @ProgramN
             sb_append_str(sb, "};\n\n")
         }
         cur = cur.next
+    }
+
+    // 3.5. Algebraic Outcome (T or E) typedefs and fallback helpers
+    mut or_list: @OrTypeNode = null
+    scan_program_or_types(prog, @or_list)
+    if or_list != null {
+        emit_or_type_declarations(sb, or_list)
     }
 
     // 4. Extern function declarations

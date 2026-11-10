@@ -84,7 +84,7 @@ act parse_postfix(p: @Parser) -> @ExprNode {
             expr = make_index_expr(expr, idx_expr, lb.line, lb.col)
         } else if parser_match(p, TOK_AS) {
             let as_tok = parser_peek(p, 0)
-            let target_type = parse_type_annotation(p)
+            let target_type = parse_type_annotation_no_or(p)
             expr = make_cast_expr(expr, target_type, as_tok.line, as_tok.col)
         } else if parser_match(p, TOK_LPAREN) {
             let lp = parser_peek(p, 0)

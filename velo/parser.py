@@ -3,10 +3,10 @@ from velo.tokens import Token, TokenType
 from velo.ast_nodes import (
     Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field, KindDecl, VariantDecl,
     Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, LoopStmt, ZoneStmt, DeferStmt,
-    MatchCase, MatchStmt,
+    MatchCase, MatchStmt, FailStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, VariantExpr, AnonFuncExpr,
-    ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral,
+    ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral, OrReturnExpr,
     TypeAliasDecl, TestDecl,
     mangle_op_name
 )
@@ -32,6 +32,7 @@ CONTEXTUAL_IDENT_TOKENS = (
     TokenType.CONTINUE,
     TokenType.ON,
     TokenType.EXTERN,
+    TokenType.FAIL,
 )
 
 class ParserError(Exception):
@@ -400,7 +401,7 @@ class Parser:
             operator_symbol=op_symbol
         )
 
-    def _parse_type_annotation(self) -> str:
+    def _parse_type_annotation(self, allow_or: bool = True) -> str:
         prefix = ""
         while self._match(TokenType.AT):
             prefix += "@"
@@ -451,7 +452,11 @@ class Parser:
         # 5.2 slice 9: a bare `ring` lowers to the loud codegen reject (the
         # bare-shelf pattern); `bitset` is legal bare by design.
 
-        return prefix + base_name
+        full_type = prefix + base_name
+        if allow_or and self._match(TokenType.OR):
+            err_type = self._parse_type_annotation(allow_or=True)
+            full_type = f"{full_type} or {err_type}"
+        return full_type
 
     def _parse_block(self) -> BlockStmt:
         lbrace = self._consume(TokenType.LBRACE, "Expected '{'")
@@ -544,6 +549,13 @@ class Parser:
                 val = self._parse_expression()
             self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
             return ReturnStmt(value=val, line=ret_tok.line, col=ret_tok.col)
+
+        # 9.1. Fail statement (error return)
+        if self._check(TokenType.FAIL):
+            fail_tok = self._advance()
+            val = self._parse_expression()
+            self._match(TokenType.NEWLINE, TokenType.SEMICOLON)
+            return FailStmt(value=val, line=fail_tok.line, col=fail_tok.col)
 
         # 9.5. Break statement
         if self._check(TokenType.BREAK):
@@ -749,9 +761,12 @@ class Parser:
     def _parse_logical_or(self) -> Expr:
         expr = self._parse_logical_and()
         while self._match(TokenType.OR):
-            op = self.tokens[self.pos - 1].value
-            right = self._parse_logical_and()
-            expr = BinaryExpr(left=expr, op=op, right=right, line=expr.line, col=expr.col)
+            op_tok = self.tokens[self.pos - 1]
+            if self._match(TokenType.RETURN):
+                expr = OrReturnExpr(operand=expr, line=op_tok.line, col=op_tok.col)
+            else:
+                right = self._parse_logical_and()
+                expr = BinaryExpr(left=expr, op=op_tok.value, right=right, line=expr.line, col=expr.col)
         return expr
 
     def _parse_logical_and(self) -> Expr:
@@ -894,7 +909,7 @@ class Parser:
                 expr = IndexExpr(target=expr, index=idx_expr, line=lbracket.line, col=lbracket.col)
             elif self._match(TokenType.AS):
                 as_tok = self.tokens[self.pos - 1]
-                target_type = self._parse_type_annotation()
+                target_type = self._parse_type_annotation(allow_or=False)
                 expr = CastExpr(expr=expr, target_type=target_type, line=as_tok.line, col=as_tok.col)
             elif self._match(TokenType.LPAREN):
                 lparen = self.tokens[self.pos - 1]

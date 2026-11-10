@@ -80,7 +80,7 @@ act parser_advance(p: @Parser) -> Token {
 act is_contextual_ident_tok(k: i32) -> bool {
     if k == TOK_IDENTIFIER or k == TOK_KIND or k == TOK_OP or k == TOK_DATA or k == TOK_TEST { return true }
     if k == TOK_USE or k == TOK_ACT or k == TOK_LOOP or k == TOK_ZONE or k == TOK_DEFER { return true }
-    if k == TOK_RETURN or k == TOK_BREAK or k == TOK_CONTINUE or k == TOK_ON or k == TOK_EXTERN { return true }
+    if k == TOK_RETURN or k == TOK_BREAK or k == TOK_CONTINUE or k == TOK_ON or k == TOK_EXTERN or k == TOK_FAIL { return true }
     return false
 }
 

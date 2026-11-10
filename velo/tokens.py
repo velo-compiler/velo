@@ -40,6 +40,7 @@ class TokenType(Enum):
     OF = auto()
     # 6.5: `test` keyword for native test declarations
     TEST = auto()
+    FAIL = auto()
 
     # Literals
     IDENTIFIER = auto()
@@ -145,6 +146,7 @@ KEYWORDS = {
     "heap": TokenType.HEAP,
     "of": TokenType.OF,
     "test": TokenType.TEST,
+    "fail": TokenType.FAIL,
 }
 
 @dataclass

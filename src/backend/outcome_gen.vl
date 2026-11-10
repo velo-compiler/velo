@@ -1,0 +1,324 @@
+// Outcome types (T or E) C99 emission and scanning utilities.
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "codegen_types.vl"
+use "codegen_line.vl"
+use "codegen_expr.vl"
+use "codegen_stmt.vl"
+
+data OrTypeNode {
+    type_name: string
+    c_name: string
+    next: @OrTypeNode
+}
+
+act or_types_contains(list: @OrTypeNode, type_name: string) -> bool {
+    mut cur = list
+    loop cur != null {
+        if cur.type_name == type_name { return true }
+        cur = cur.next
+    }
+    return false
+}
+
+act or_types_add(list: @@OrTypeNode, type_name: string) {
+    if type_name == null or not is_or_type(type_name) { return }
+    let clean = strip_pointer_prefix(type_name)
+    if or_types_contains(list.@, clean) { return }
+    mut node: @OrTypeNode = mem.alloc(@OrTypeNode, 1)
+    node.type_name = clean
+    node.c_name = or_type_c_name(clean)
+    node.next = list.@
+    list.@ = node
+}
+
+act scan_stmt_or_types(s: @StmtNode, list: @@OrTypeNode) {
+    if s == null { return }
+    if s.kind == STMT_VAR_DECL {
+        if s.type_name != null and is_or_type(s.type_name) {
+            or_types_add(list, s.type_name)
+        }
+    } else if s.kind == STMT_BLOCK {
+        mut cur = s.first_stmt
+        loop cur != null {
+            scan_stmt_or_types(cur, list)
+            cur = cur.next
+        }
+    } else if s.kind == STMT_IF {
+        scan_stmt_or_types(s.body, list)
+        if s.else_branch != null { scan_stmt_or_types(s.else_branch, list) }
+    } else if s.kind == STMT_LOOP {
+        scan_stmt_or_types(s.body, list)
+    } else if s.kind == STMT_ZONE {
+        scan_stmt_or_types(s.body, list)
+    } else if s.kind == STMT_MATCH {
+        mut c = s.first_case
+        loop c != null {
+            if c.body != null { scan_stmt_or_types(c.body, list) }
+            c = c.next
+        }
+    }
+}
+
+act scan_program_or_types(prog: @ProgramNode, list: @@OrTypeNode) {
+    mut cur = prog.first_decl
+    loop cur != null {
+        if cur.kind == DECL_DATA {
+            mut cur_f = cur.first_field
+            loop cur_f != null {
+                if cur_f.type_name != null and is_or_type(cur_f.type_name) {
+                    or_types_add(list, cur_f.type_name)
+                }
+                cur_f = cur_f.next
+            }
+        } else if cur.kind == DECL_KIND {
+            mut cv = cur.first_variant
+            loop cv != null {
+                if cv.payload_type != null and is_or_type(cv.payload_type) {
+                    or_types_add(list, cv.payload_type)
+                }
+                mut cf = cv.first_field
+                loop cf != null {
+                    if cf.type_name != null and is_or_type(cf.type_name) {
+                        or_types_add(list, cf.type_name)
+                    }
+                    cf = cf.next
+                }
+                cv = cv.next
+            }
+        } else if cur.kind == DECL_FUNCTION or cur.kind == DECL_EXTERN {
+            if cur.return_type != null and is_or_type(cur.return_type) {
+                or_types_add(list, cur.return_type)
+            }
+            mut cur_p = cur.first_param
+            loop cur_p != null {
+                if cur_p.type_name != null and is_or_type(cur_p.type_name) {
+                    or_types_add(list, cur_p.type_name)
+                }
+                cur_p = cur_p.next
+            }
+            if cur.body != null {
+                scan_stmt_or_types(cur.body, list)
+            }
+        } else if cur.kind == STMT_VAR_DECL {
+            if cur.type_name != null and is_or_type(cur.type_name) {
+                or_types_add(list, cur.type_name)
+            }
+        }
+        cur = cur.next
+    }
+}
+
+act emit_or_type_declarations(sb: @StringBuilder, list: @OrTypeNode) {
+    if list == null { return }
+    sb_append_str(sb, "/* Outcome types (T or E) */\n")
+    mut cur = list
+    loop cur != null {
+        let succ_t = or_type_success(cur.type_name)
+        let err_t = or_type_error(cur.type_name)
+        let succ_c = map_type_to_c(succ_t)
+        let err_c = map_type_to_c(err_t)
+
+        sb_append_str(sb, "typedef struct {\n")
+        sb_append_indent(sb, 1)
+        sb_append_str(sb, "bool ok;\n")
+        sb_append_indent(sb, 1)
+        sb_append_str(sb, "union {\n")
+        sb_append_indent(sb, 2)
+        if succ_t != "void" and succ_c != "void" {
+            sb_append_str(sb, succ_c)
+            sb_append_str(sb, " val;\n")
+        } else {
+            sb_append_str(sb, "uint8_t _val_unused;\n")
+        }
+        sb_append_indent(sb, 2)
+        sb_append_str(sb, err_c)
+        sb_append_str(sb, " err;\n")
+        sb_append_indent(sb, 1)
+        sb_append_str(sb, "} as;\n")
+        sb_append_str(sb, "} ")
+        sb_append_str(sb, cur.c_name)
+        sb_append_str(sb, ";\n\n")
+
+        if succ_t != "void" and succ_c != "void" {
+            sb_append_str(sb, "static inline ")
+            sb_append_str(sb, succ_c)
+            sb_append_char(sb, ' ')
+            sb_append_str(sb, cur.c_name)
+            sb_append_str(sb, "_fallback(")
+            sb_append_str(sb, cur.c_name)
+            sb_append_str(sb, " _r, ")
+            sb_append_str(sb, succ_c)
+            sb_append_str(sb, " _fb) {\n")
+            sb_append_indent(sb, 1)
+            sb_append_str(sb, "return _r.ok ? _r.as.val : _fb;\n")
+            sb_append_str(sb, "}\n\n")
+        }
+        cur = cur.next
+    }
+}
+
+act emit_fail_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32, defers: @@DeferNode) {
+    let ret_c = map_type_to_c(st.current_func_ret_type)
+    if defers.@ == null {
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "return ("); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = false, .as = { .err = ")
+        emit_c_expr(sb, st, stmt.val_expr)
+        sb_append_str(sb, " } };\n")
+        return
+    }
+    sb_append_indent(sb, indent)
+    sb_append_str(sb, "{\n")
+    sb_append_indent(sb, indent + 1)
+    sb_append_str(sb, ret_c)
+    sb_append_str(sb, " __fail_val = ("); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = false, .as = { .err = ")
+    emit_c_expr(sb, st, stmt.val_expr)
+    sb_append_str(sb, " } };\n")
+    mut cur_d = defers.@
+    loop cur_d != null {
+        emit_c_cleanup(sb, st, cur_d, indent + 1, defers)
+        cur_d = cur_d.next
+    }
+    sb_append_indent(sb, indent + 1)
+    sb_append_str(sb, "return __fail_val;\n")
+    sb_append_indent(sb, indent)
+    sb_append_str(sb, "}\n")
+}
+
+act emit_or_return_var_decl(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32, defers: @@DeferNode) {
+    define_variable(st, stmt.name, stmt.type_name, stmt.is_mut, stmt.line, stmt.col)
+    let op_t = infer_expr_type(st, stmt.val_expr.operand)
+    let c_op_t = map_type_to_c(op_t)
+    let ret_c = map_type_to_c(st.current_func_ret_type)
+    st.fresh_counter += 1
+    let tmp_id = st.fresh_counter as i32
+
+    sb_append_indent(sb, indent); sb_append_str(sb, c_op_t); sb_append_str(sb, " __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, " = "); emit_c_expr(sb, st, stmt.val_expr.operand); sb_append_str(sb, ";\n")
+    sb_append_indent(sb, indent); sb_append_str(sb, "if (!__or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".ok) {\n")
+    mut cur_d = defers.@
+    loop cur_d != null {
+        emit_c_cleanup(sb, st, cur_d, indent + 1, defers)
+        cur_d = cur_d.next
+    }
+    sb_append_indent(sb, indent + 1); sb_append_str(sb, "return ("); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = false, .as = { .err = __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.err } };\n")
+    sb_append_indent(sb, indent); sb_append_str(sb, "}\n")
+    sb_append_indent(sb, indent); sb_append_str(sb, map_type_to_c(stmt.type_name)); sb_append_char(sb, ' '); sb_append_str(sb, stmt.name); sb_append_str(sb, " = __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.val;\n")
+}
+
+act emit_or_return_assign(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32, defers: @@DeferNode) {
+    let op_t = infer_expr_type(st, stmt.val_expr.operand)
+    let c_op_t = map_type_to_c(op_t)
+    let ret_c = map_type_to_c(st.current_func_ret_type)
+    st.fresh_counter += 1
+    let tmp_id = st.fresh_counter as i32
+
+    sb_append_indent(sb, indent); sb_append_str(sb, c_op_t); sb_append_str(sb, " __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, " = "); emit_c_expr(sb, st, stmt.val_expr.operand); sb_append_str(sb, ";\n")
+    sb_append_indent(sb, indent); sb_append_str(sb, "if (!__or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".ok) {\n")
+    mut cur_d = defers.@
+    loop cur_d != null {
+        emit_c_cleanup(sb, st, cur_d, indent + 1, defers)
+        cur_d = cur_d.next
+    }
+    sb_append_indent(sb, indent + 1); sb_append_str(sb, "return ("); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = false, .as = { .err = __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.err } };\n")
+    sb_append_indent(sb, indent); sb_append_str(sb, "}\n")
+    sb_append_indent(sb, indent); emit_c_expr(sb, st, stmt.expr); sb_append_char(sb, ' '); sb_append_str(sb, map_assign_op(stmt.op)); sb_append_str(sb, " __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.val;\n")
+}
+
+act emit_or_return_expr(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32, defers: @@DeferNode) {
+    let op_t = infer_expr_type(st, stmt.expr.operand)
+    let c_op_t = map_type_to_c(op_t)
+    let ret_c = map_type_to_c(st.current_func_ret_type)
+    st.fresh_counter += 1
+    let tmp_id = st.fresh_counter as i32
+
+    sb_append_indent(sb, indent); sb_append_str(sb, c_op_t); sb_append_str(sb, " __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, " = "); emit_c_expr(sb, st, stmt.expr.operand); sb_append_str(sb, ";\n")
+    sb_append_indent(sb, indent); sb_append_str(sb, "if (!__or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".ok) {\n")
+    mut cur_d = defers.@
+    loop cur_d != null {
+        emit_c_cleanup(sb, st, cur_d, indent + 1, defers)
+        cur_d = cur_d.next
+    }
+    sb_append_indent(sb, indent + 1); sb_append_str(sb, "return ("); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = false, .as = { .err = __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.err } };\n")
+    sb_append_indent(sb, indent); sb_append_str(sb, "}\n")
+}
+
+act emit_return_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32, defers: @@DeferNode) {
+    let is_ret_or = is_or_type(st.current_func_ret_type)
+    let ret_c = map_type_to_c(st.current_func_ret_type)
+    mut is_val_or = false
+    if stmt.val_expr != null {
+        let vt = infer_expr_type(st, stmt.val_expr)
+        if is_or_type(vt) { is_val_or = true }
+    }
+    if defers.@ == null {
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "return")
+        if stmt.val_expr != null {
+            sb_append_char(sb, ' ')
+            if is_ret_or and not is_val_or {
+                sb_append_char(sb, '('); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = true, .as = { .val = ")
+                emit_c_expr(sb, st, stmt.val_expr)
+                sb_append_str(sb, " } }")
+            } else {
+                emit_c_expr(sb, st, stmt.val_expr)
+            }
+        } else if is_ret_or {
+            sb_append_str(sb, " ("); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = true }")
+        }
+        sb_append_str(sb, ";\n")
+        return
+    }
+
+    if (stmt.val_expr != null or is_ret_or) and ret_c != "void" {
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "{\n")
+        sb_append_indent(sb, indent + 1)
+        sb_append_str(sb, ret_c)
+        sb_append_str(sb, " __ret_val = ")
+        if is_ret_or and not is_val_or {
+            if stmt.val_expr != null {
+                sb_append_char(sb, '('); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = true, .as = { .val = ")
+                emit_c_expr(sb, st, stmt.val_expr)
+                sb_append_str(sb, " } };\n")
+            } else {
+                sb_append_char(sb, '('); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = true };\n")
+            }
+        } else {
+            emit_c_expr(sb, st, stmt.val_expr)
+            sb_append_str(sb, ";\n")
+        }
+        mut cur_d = defers.@
+        loop cur_d != null {
+            emit_c_cleanup(sb, st, cur_d, indent + 1, defers)
+            cur_d = cur_d.next
+        }
+        sb_append_indent(sb, indent + 1)
+        sb_append_str(sb, "return __ret_val;\n")
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "}\n")
+        return
+    }
+
+    if stmt.val_expr != null and ret_c == "void" {
+        sb_append_indent(sb, indent)
+        emit_c_expr(sb, st, stmt.val_expr)
+        sb_append_str(sb, ";\n")
+    }
+    mut cur_d = defers.@
+    loop cur_d != null {
+        emit_c_cleanup(sb, st, cur_d, indent, defers)
+        cur_d = cur_d.next
+    }
+    sb_append_indent(sb, indent)
+    if st.current_func_name == "main" and stmt.val_expr == null {
+        sb_append_str(sb, "return 0;\n")
+    } else {
+        sb_append_str(sb, "return;\n")
+    }
+}

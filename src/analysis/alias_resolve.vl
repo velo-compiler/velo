@@ -68,7 +68,7 @@ act mono_alias_resolve_expr(m: @Monomorphizer, e: @ExprNode) {
     if e.kind == EXPR_CAST {
         e.type_name = mono_canon_type(m, e.type_name)
         mono_alias_resolve_expr(m, e.operand)
-    } else if e.kind == EXPR_UNARY or e.kind == EXPR_ADDRESS_OF or e.kind == EXPR_DEREF {
+    } else if e.kind == EXPR_UNARY or e.kind == EXPR_ADDRESS_OF or e.kind == EXPR_DEREF or e.kind == EXPR_OR_RETURN {
         mono_alias_resolve_expr(m, e.operand)
     } else if e.kind == EXPR_BINARY {
         mono_alias_resolve_expr(m, e.left)
@@ -123,7 +123,7 @@ act mono_alias_resolve_stmt(m: @Monomorphizer, s: @StmtNode) {
         mono_alias_resolve_stmt(m, s.body)
     } else if s.kind == STMT_DEFER {
         mono_alias_resolve_stmt(m, s.deferred_stmt)
-    } else if s.kind == STMT_RETURN {
+    } else if s.kind == STMT_RETURN or s.kind == STMT_FAIL {
         mono_alias_resolve_expr(m, s.val_expr)
     } else if s.kind == STMT_MATCH {
         mono_alias_resolve_expr(m, s.expr)

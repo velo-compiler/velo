@@ -2751,3 +2751,50 @@ flowchart TD
   - Unit tests: 8/8 passed in tests/test_codegen_error_gate.py.
   - Test suite: all tests passing.
   - All source files <= 394 lines (python scripts/count_lines.py).
+
+---
+
+### Phase 31: Language Ergonomics: Algebraic Error Handling (The 'or' System)
+#### Task 31.1: Algebraic Error Handling with `or` and `fail` [COMPLETED] ✅
+* **Former Defect**:
+  - Velo had no first-class algebraic error handling syntax (equivalent to Rust's `Result<T, E>` or Swift's throwing returns), forcing developers to either rely on sentinel values (e.g. returning `-1` or `null`) or manually declare tagged union kinds with boilerplate wrapping.
+  - Wrapping successful values and checking error variants was verbose and ran contrary to Velo's "easy and unique" design ethos.
+* **Fix Applied**:
+  - Designed and implemented Velo's unique and ergonomic **`or` System with `fail`**:
+    1. **Function Signature**: Functions declare return types as `act parse_port(s: string) -> i32 or string`.
+    2. **Success Return**: `return 8080` transparently packs the value into the success variant (`.ok = true, .val = 8080`) without requiring wrapper constructors.
+    3. **Error Statement**: Dedicated keyword `fail <expr>` produces the failure variant (`.ok = false, .err = <expr>`) with type checking against the declared error type.
+    4. **Propagation (`or return`)**: Expression `let x = parse_port(s) or return` transparently unwraps the value if `.ok`, or executes enclosing `defer` statements and bubbles the error up to the caller if failed.
+    5. **Fallback Default (`or <expr>`)**: Binary operator `parse_port(s) or 8080` unwraps the success value or cleanly falls back to the default expression.
+    6. **Direct Inspection**: Result instances expose `.ok: bool`, `.val: T`, and `.err: E` with compiler verification.
+  - **Stage 1 (Reference Compiler)**:
+    - Added `TokenType.FAIL` in `velo/tokens.py`, `velo/lexer.py`.
+    - Added `FailStmt` and `OrReturnExpr` in `velo/ast_nodes.py`, `velo/parser.py`.
+    - Disambiguated `as` cast parsing (`allow_or=False`) so type casting never greedily absorbs `or` expressions.
+    - Added type inference, validation of `or return` and `fail` against enclosing function return types, and lowered C99 union types (`_Velo_Or_<T>_<E>`), fallback functions, and statement expressions in `velo/codegen_c.py`.
+  - **Stage 2 (Self-Hosted Compiler)**:
+    - Added `TOK_FAIL` in `src/frontend/token.vl`, `src/frontend/lexer.vl`, `src/frontend/lexer_core.vl`.
+    - Added `STMT_FAIL` and `EXPR_OR_RETURN` in `src/ast/stmt.vl`, `src/ast/expr.vl`, `src/ast/stmt_factory.vl`.
+    - Added outcome type inspection utilities (`is_or_type`, `or_type_success`, `or_type_error`, `or_type_c_name`, and compatibility checking) in `src/ast/types.vl`.
+    - Updated type annotation parsing in `src/frontend/parser.vl` and `src/frontend/parser_expr.vl` with `allow_or: bool` flag to prevent greedily absorbing `or` in `as` expressions.
+    - Implemented `parse_logical_or` recognition of `or return` in `src/frontend/parser_binary.vl`.
+    - Implemented statement parsing of `fail <expr>` in `src/frontend/parser_stmt.vl`.
+    - Added AST transformation, monomorphization, and alias resolution support in `src/analysis/monomorphize_expr.vl`, `src/analysis/mono_clone.vl`, and `src/analysis/alias_resolve.vl`.
+    - Updated `stmt_always_returns` in `src/analysis/type_check_program.vl` to recognize `STMT_FAIL` as a valid terminating control-flow path.
+    - Implemented semantic analysis in `src/analysis/type_checker_stmt.vl` and `src/analysis/type_checker.vl`: validating `fail` statement error types, checking that `or return` is only used inside functions returning an `or` type with matching error type, and typing `.ok`, `.val`, `.err` properties.
+    - Extracted modular outcome code generation into `src/backend/outcome_gen.vl` (324 lines), integrating with `src/backend/codegen_decl.vl`, `src/backend/codegen_expr.vl`, and `src/backend/codegen_stmt.vl`.
+    - Lowered `T or E` to C99 tagged union structs with inline fallback helper functions and safe statement unwrapping with defer stack execution.
+  - Rebuilt the self-hosted bootstrap chain (`bin/velo.exe`) and refreshed `bootstrap.c` with verified bit-for-bit SHA-256 determinism across Gen2, Gen3, and `bootstrap.c` (`42799C629375474DB92AA57437787E241D7FFE0813A54E0FCE88BC1C5A93ACED`).
+* **Residual Limitation**:
+  - Outcome types are currently binary unions `T or E`. Multi-variant error hierarchies are represented by using custom `kind` tagged union types as `E`.
+* **Verification**:
+  - Added dedicated test suite `tests/test_or_error_handling.py` (6 tests) covering:
+    1. Basic success and fail returns, checking `.ok`, `.val`, and `.err`.
+    2. Fallback default evaluation with binary `or`.
+    3. Error propagation with `or return` unwrapping.
+    4. Defer stack cleanup upon `or return` and `fail`.
+    5. Rejection of `fail` statement outside functions returning `T or E`.
+    6. Rejection of `or return` outside functions returning `T or E` or with mismatched error types.
+  - Verified 100% parity across Stage 1 and Stage 2 native compiler.
+  - Full pytest test suite passing (583 tests passed).
+  - Line count verified $\le 400$ lines across all compiler sources (`python scripts/count_lines.py`) and zero UTF-8 BOM characters across all `.vl` files.

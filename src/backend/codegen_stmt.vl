@@ -16,6 +16,7 @@ use "ring_gen.vl"
 use "simd_gen.vl"
 use "codegen_line.vl"
 use "codegen_match.vl"
+use "outcome_gen.vl"
 
 // Intrusive linked list node maintaining active LIFO deferred statements and zone cleanups.
 data DeferNode {
@@ -85,6 +86,10 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
 
     // 1. Variable declaration
     if stmt.kind == STMT_VAR_DECL {
+        if stmt.val_expr != null and stmt.val_expr.kind == EXPR_OR_RETURN {
+            emit_or_return_var_decl(sb, st, stmt, indent, defers)
+            return
+        }
         define_variable(st, stmt.name, stmt.type_name, stmt.is_mut, stmt.line, stmt.col)
         sb_append_indent(sb, indent); sb_append_str(sb, map_type_to_c(stmt.type_name)); sb_append_char(sb, ' '); sb_append_str(sb, stmt.name)
         if stmt.val_expr != null { sb_append_str(sb, " = "); emit_c_expr(sb, st, stmt.val_expr) }
@@ -93,6 +98,10 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
 
     // 2. Assignment statement
     if stmt.kind == STMT_ASSIGN {
+        if stmt.val_expr != null and stmt.val_expr.kind == EXPR_OR_RETURN {
+            emit_or_return_assign(sb, st, stmt, indent, defers)
+            return
+        }
         if is_simd_assign(st, stmt) { emit_simd_assign(sb, st, stmt, indent); return }
         // 5.2 slice 6: map indexed writes (m[k] = v) lower onto velo_map_put
         if stmt.expr != null and stmt.expr.kind == EXPR_INDEX {
@@ -142,6 +151,10 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
 
     // 3. Expression statement
     if stmt.kind == STMT_EXPR {
+        if stmt.expr != null and stmt.expr.kind == EXPR_OR_RETURN {
+            emit_or_return_expr(sb, st, stmt, indent, defers)
+            return
+        }
         sb_append_indent(sb, indent)
         emit_c_expr(sb, st, stmt.expr)
         sb_append_str(sb, ";\n")
@@ -301,54 +314,13 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
 
     // 9. Return statement (unrolls active defers and zone cleanups in LIFO order)
     if stmt.kind == STMT_RETURN {
-        if defers.@ == null {
-            sb_append_indent(sb, indent)
-            sb_append_str(sb, "return")
-            if stmt.val_expr != null {
-                sb_append_char(sb, ' ')
-                emit_c_expr(sb, st, stmt.val_expr)
-            }
-            sb_append_str(sb, ";\n")
-            return
-        }
+        emit_return_stmt(sb, st, stmt, indent, defers)
+        return
+    }
 
-        let ret_c = map_type_to_c(st.current_func_ret_type)
-        if stmt.val_expr != null and ret_c != "void" {
-            sb_append_indent(sb, indent)
-            sb_append_str(sb, "{\n")
-            sb_append_indent(sb, indent + 1)
-            sb_append_str(sb, ret_c)
-            sb_append_str(sb, " __ret_val = ")
-            emit_c_expr(sb, st, stmt.val_expr)
-            sb_append_str(sb, ";\n")
-            mut cur_d = defers.@
-            loop cur_d != null {
-                emit_c_cleanup(sb, st, cur_d, indent + 1, defers)
-                cur_d = cur_d.next
-            }
-            sb_append_indent(sb, indent + 1)
-            sb_append_str(sb, "return __ret_val;\n")
-            sb_append_indent(sb, indent)
-            sb_append_str(sb, "}\n")
-            return
-        }
-
-        if stmt.val_expr != null and ret_c == "void" {
-            sb_append_indent(sb, indent)
-            emit_c_expr(sb, st, stmt.val_expr)
-            sb_append_str(sb, ";\n")
-        }
-        mut cur_d = defers.@
-        loop cur_d != null {
-            emit_c_cleanup(sb, st, cur_d, indent, defers)
-            cur_d = cur_d.next
-        }
-        sb_append_indent(sb, indent)
-        if st.current_func_name == "main" and stmt.val_expr == null {
-            sb_append_str(sb, "return 0;\n")
-        } else {
-            sb_append_str(sb, "return;\n")
-        }
+    // 9.5. Fail statement
+    if stmt.kind == STMT_FAIL {
+        emit_fail_stmt(sb, st, stmt, indent, defers)
         return
     }
 

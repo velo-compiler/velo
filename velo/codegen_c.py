@@ -3,10 +3,10 @@ from typing import List, Optional, Tuple, Dict, Any
 from velo.ast_nodes import (
     Program, Decl, UseStmt, FunctionDecl, ExternDecl, Param, BlockStmt, DataDecl, Field, KindDecl, VariantDecl,
     Stmt, ExprStmt, ReturnStmt, BreakStmt, ContinueStmt, VarDeclStmt, AssignStmt, IfStmt, LoopStmt, ZoneStmt, DeferStmt,
-    MatchCase, MatchStmt,
+    MatchCase, MatchStmt, FailStmt,
     Expr, IntLiteral, FloatLiteral, StringLiteral, BoolLiteral, NullLiteral, VariantExpr,
     Identifier, MemberAccess, IndexExpr, DerefExpr, StructLiteral, CastExpr, CallExpr, AddressOf, BinaryExpr, UnaryExpr, AnonFuncExpr,
-    ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral,
+    ShelfLiteral, MapLiteral, RingLiteral, BitsetLiteral, OrReturnExpr,
     TypeAliasDecl, TestDecl
 )
 from velo.monomorphize import Monomorphizer, parse_act_type, mangle_act_type, mangle_type_name, DYN_INT_TYPES, DYN_FLOAT_TYPES
@@ -412,8 +412,57 @@ class CCodeGenerator:
         if type_str == "bitset":
             return "VeloBitset" + ("*" * pointer_count)
 
+        if self._is_or_type(type_str):
+            if hasattr(self, 'used_or_types'):
+                self.used_or_types.add(type_str)
+            return self._or_type_c_name(type_str) + ("*" * pointer_count)
+
         base_c_type = TYPE_MAP.get(type_str, type_str)
         return base_c_type + ("*" * pointer_count)
+
+    def _is_or_type(self, type_str: Optional[str]) -> bool:
+        if not type_str:
+            return False
+        clean = type_str.lstrip("@").strip()
+        return " or " in clean
+
+    def _or_type_success(self, type_str: str) -> str:
+        clean = type_str.lstrip("@").strip()
+        parts = clean.split(" or ", 1)
+        return parts[0].strip()
+
+    def _or_type_error(self, type_str: str) -> str:
+        clean = type_str.lstrip("@").strip()
+        parts = clean.split(" or ", 1)
+        return parts[1].strip() if len(parts) > 1 else ""
+
+    def _or_type_c_name(self, type_str: str) -> str:
+        clean = type_str.lstrip("@").strip()
+        parts = clean.split(" or ", 1)
+        succ = parts[0].strip()
+        err = parts[1].strip() if len(parts) > 1 else ""
+        def clean_ident(s: str) -> str:
+            res = []
+            for c in s:
+                if c == '@':
+                    res.append("ptr_")
+                elif c in (' ', '[', ']', ',', '-'):
+                    res.append('_')
+                else:
+                    res.append(c)
+            return "".join(res)
+        return f"_Velo_Or_{clean_ident(succ)}_{clean_ident(err)}"
+
+    def _validate_or_return(self, op_t: str):
+        if not self._is_or_type(op_t):
+            raise ValueError("'or return' requires an outcome type expression")
+        cur_ret = self.current_function.return_type if self.current_function else ""
+        if not cur_ret or not self._is_or_type(cur_ret):
+            raise ValueError("'or return' can only be used in a function returning an 'or' type")
+        fn_err = self._or_type_error(cur_ret)
+        op_err = self._or_type_error(op_t)
+        if fn_err != op_err:
+            raise ValueError(f"Mismatched error types in 'or return': expected '{fn_err}', got '{op_err}'")
 
     def _fresh_name(self, prefix: str) -> str:
         self.fresh_counter += 1
@@ -1148,6 +1197,7 @@ class CCodeGenerator:
 
         self.func_decls: Dict[str, FunctionDecl] = {}
         self.used_act_types: Set[Tuple[Tuple[str, ...], str]] = set()
+        self.used_or_types: Set[str] = set()
         self.anon_funcs: List[Tuple[str, AnonFuncExpr]] = []
         self.anon_func_set: Set[int] = set()
         self.anon_expr_to_name: Dict[int, str] = {}
@@ -1160,9 +1210,13 @@ class CCodeGenerator:
             elif isinstance(decl, ExternDecl):
                 self.func_return_types[decl.name] = decl.return_type or "void"
 
-        # Pre-scan for all act types and anonymous functions
+        # Pre-scan for all act types, outcome types, and anonymous functions
         def collect_types(t: Optional[str]):
             if not t: return
+            if self._is_or_type(t):
+                self.used_or_types.add(t)
+                collect_types(self._or_type_success(t))
+                collect_types(self._or_type_error(t))
             parsed = parse_act_type(t)
             if parsed:
                 _, p_params, p_ret = parsed
@@ -1172,7 +1226,9 @@ class CCodeGenerator:
 
         def scan_expr(e: Optional[Expr]):
             if not e: return
-            if isinstance(e, AnonFuncExpr):
+            if isinstance(e, OrReturnExpr):
+                scan_expr(e.operand)
+            elif isinstance(e, AnonFuncExpr):
                 eid = id(e)
                 if eid not in self.anon_func_set:
                     self.anon_func_set.add(eid)
@@ -1220,6 +1276,8 @@ class CCodeGenerator:
             elif isinstance(s, ExprStmt):
                 scan_expr(s.expr)
             elif isinstance(s, ReturnStmt):
+                scan_expr(s.value)
+            elif isinstance(s, FailStmt):
                 scan_expr(s.value)
             elif isinstance(s, AssignStmt):
                 scan_expr(s.target); scan_expr(s.value)
@@ -1337,6 +1395,38 @@ class CCodeGenerator:
                 if decl.name not in emitted_structs:
                     self._emit_struct_definition(decl)
                     emitted_structs.add(decl.name)
+
+        # 2.5 Emit algebraic outcome types (T or E)
+        if self.used_or_types:
+            self._emit_line("/* Outcome types (T or E) */")
+            for or_t in sorted(self.used_or_types):
+                c_name = self._or_type_c_name(or_t)
+                succ_t = self._or_type_success(or_t)
+                err_t = self._or_type_error(or_t)
+                succ_c = self._map_type(succ_t)
+                err_c = self._map_type(err_t)
+                self._emit_line("typedef struct {")
+                self.indent_level += 1
+                self._emit_line("bool ok;")
+                self._emit_line("union {")
+                self.indent_level += 1
+                if succ_c != "void":
+                    self._emit_line(f"{succ_c} val;")
+                else:
+                    self._emit_line("uint8_t _val_unused;")
+                self._emit_line(f"{err_c} err;")
+                self.indent_level -= 1
+                self._emit_line("} as;")
+                self.indent_level -= 1
+                self._emit_line(f"}} {c_name};")
+                self._emit_line()
+                if succ_c != "void":
+                    self._emit_line(f"static inline {succ_c} {c_name}_fallback({c_name} _r, {succ_c} _fb) {{")
+                    self.indent_level += 1
+                    self._emit_line("return _r.ok ? _r.as.val : _fb;")
+                    self.indent_level -= 1
+                    self._emit_line("}")
+                    self._emit_line()
 
         # 3. Emit global constants and variables
         seen_globals = set()
@@ -1648,7 +1738,7 @@ class CCodeGenerator:
         return False
 
     def _stmt_always_returns(self, stmt: Stmt) -> bool:
-        if isinstance(stmt, ReturnStmt):
+        if isinstance(stmt, (ReturnStmt, FailStmt)):
             return True
         if isinstance(stmt, ExprStmt):
             return self._is_exit_call(stmt.expr)
@@ -1755,32 +1845,56 @@ class CCodeGenerator:
                 self.defer_stack[-1].append(stmt.statement)
 
         elif isinstance(stmt, ExprStmt):
-            expr_code = self._emit_expression(stmt.expr)
-            self._emit_line(f"{expr_code};")
+            if isinstance(stmt.expr, OrReturnExpr):
+                op_t = self._resolve_expr_type(stmt.expr.operand)
+                self._validate_or_return(op_t)
+                tmp = self._fresh_name("or")
+                op_val = self._emit_expression(stmt.expr.operand)
+                c_op = self._map_type(op_t)
+                c_cur_ret = self._map_type(self.current_function.return_type if self.current_function else "")
+                self._emit_line(f"{c_op} {tmp} = {op_val};")
+                self._emit_line(f"if (!{tmp}.ok) {{")
+                self.indent_level += 1
+                for frame in reversed(self.defer_stack):
+                    for d in reversed(frame):
+                        temp_stack = self.defer_stack; self.defer_stack = []; self._emit_statement(d); self.defer_stack = temp_stack
+                self._emit_line(f"return ({c_cur_ret}){{ .ok = false, .as = {{ .err = {tmp}.as.err }} }};")
+                self.indent_level -= 1
+                self._emit_line("}")
+            else:
+                expr_code = self._emit_expression(stmt.expr)
+                self._emit_line(f"{expr_code};")
 
         elif isinstance(stmt, ReturnStmt):
-            if not stmt.value and self.current_function and self.current_function.name != "main" and self.current_function.return_type and self.current_function.return_type != "void":
+            ret_t = self.current_function.return_type if self.current_function else None
+            is_ret_or = ret_t and self._is_or_type(ret_t)
+            if not stmt.value and not is_ret_or and self.current_function and self.current_function.name != "main" and self.current_function.return_type and self.current_function.return_type != "void":
                 raise ValueError("A function returning a value must return an expression")
             ret_val_code = None
             # 5.2: an empty shelf literal in a return borrows its element type
             # from the act's declared return type; slice 6: an empty map
             # literal borrows BOTH slots the same way
             if stmt.value and isinstance(stmt.value, ShelfLiteral) and not stmt.value.args:
-                ret_t = self.current_function.return_type if self.current_function else None
                 if ret_t and (ret_t.lstrip("@").startswith("shelf[") or ret_t.lstrip("@").startswith("heap shelf[")):
                     stmt.value.elem_type = self._shelf_elem_type(ret_t)
             if stmt.value and isinstance(stmt.value, MapLiteral) and not stmt.value.keys:
-                ret_t = self.current_function.return_type if self.current_function else None
                 if ret_t and (ret_t.lstrip("@").startswith("Map[") or ret_t.lstrip("@").startswith("heap Map[") or ret_t.lstrip("@").startswith("heap map[") or ret_t.lstrip("@").startswith("map[")):
                     stmt.value.kv_type = ret_t
             # 5.2 slice 9: an empty ring literal in a return borrows its
             # element type the same way; a bitset literal needs no pinning
             if stmt.value and isinstance(stmt.value, RingLiteral) and not stmt.value.args:
-                ret_t = self.current_function.return_type if self.current_function else None
                 if ret_t and ret_t.lstrip("@").startswith("ring["):
                     stmt.value.elem_type = self._ring_elem_type(ret_t)
             if stmt.value:
                 ret_val_code = self._emit_expression(stmt.value)
+                if is_ret_or:
+                    val_t = self._resolve_expr_type(stmt.value)
+                    if not self._is_or_type(val_t):
+                        c_ret = self._map_type(ret_t)
+                        ret_val_code = f"({c_ret}){{ .ok = true, .as = {{ .val = {ret_val_code} }} }}"
+            elif is_ret_or:
+                c_ret = self._map_type(ret_t)
+                ret_val_code = f"({c_ret}){{ .ok = true }}"
 
             for frame in reversed(self.defer_stack):
                 for d in reversed(frame):
@@ -1795,6 +1909,21 @@ class CCodeGenerator:
                 self._emit_line("return 0;")
             else:
                 self._emit_line("return;")
+
+        elif isinstance(stmt, FailStmt):
+            ret_t = self.current_function.return_type if self.current_function else None
+            if not ret_t or not self._is_or_type(ret_t):
+                raise ValueError("'fail' can only be used in a function returning an 'or' type")
+            val_code = self._emit_expression(stmt.value)
+            c_ret = self._map_type(ret_t)
+            fail_val_code = f"({c_ret}){{ .ok = false, .as = {{ .err = {val_code} }} }}"
+            for frame in reversed(self.defer_stack):
+                for d in reversed(frame):
+                    temp_stack = self.defer_stack
+                    self.defer_stack = []
+                    self._emit_statement(d)
+                    self.defer_stack = temp_stack
+            self._emit_line(f"return {fail_val_code};")
 
         elif isinstance(stmt, BreakStmt):
             self._emit_line("break;")
@@ -1820,7 +1949,24 @@ class CCodeGenerator:
             else:
                 const_prefix = "" if stmt.is_mut else "const "
 
-            if stmt.value:
+            if stmt.value and isinstance(stmt.value, OrReturnExpr):
+                op_t = self._resolve_expr_type(stmt.value.operand)
+                self._validate_or_return(op_t)
+                tmp = self._fresh_name("or")
+                op_val = self._emit_expression(stmt.value.operand)
+                c_op = self._map_type(op_t)
+                c_cur_ret = self._map_type(self.current_function.return_type if self.current_function else "")
+                self._emit_line(f"{c_op} {tmp} = {op_val};")
+                self._emit_line(f"if (!{tmp}.ok) {{")
+                self.indent_level += 1
+                for frame in reversed(self.defer_stack):
+                    for d in reversed(frame):
+                        temp_stack = self.defer_stack; self.defer_stack = []; self._emit_statement(d); self.defer_stack = temp_stack
+                self._emit_line(f"return ({c_cur_ret}){{ .ok = false, .as = {{ .err = {tmp}.as.err }} }};")
+                self.indent_level -= 1
+                self._emit_line("}")
+                self._emit_line(f"{const_prefix}{type_str} {stmt.name} = {tmp}.as.val;")
+            elif stmt.value:
                 val_code = self._emit_expression(stmt.value)
                 self._emit_line(f"{const_prefix}{type_str} {stmt.name} = {val_code};")
             else:
@@ -1939,8 +2085,26 @@ class CCodeGenerator:
             # 5.2 slice 11: the retire wall rides plain assignments too
             if isinstance(stmt.target, Identifier):
                 self._check_split_retire(self.current_scope_types.get(stmt.target.name), stmt.value)
-            val_code = self._emit_expression(stmt.value)
-            self._emit_line(f"{target_code} {stmt.op} {val_code};")
+            if isinstance(stmt.value, OrReturnExpr):
+                op_t = self._resolve_expr_type(stmt.value.operand)
+                self._validate_or_return(op_t)
+                tmp = self._fresh_name("or")
+                op_val = self._emit_expression(stmt.value.operand)
+                c_op = self._map_type(op_t)
+                c_cur_ret = self._map_type(self.current_function.return_type if self.current_function else "")
+                self._emit_line(f"{c_op} {tmp} = {op_val};")
+                self._emit_line(f"if (!{tmp}.ok) {{")
+                self.indent_level += 1
+                for frame in reversed(self.defer_stack):
+                    for d in reversed(frame):
+                        temp_stack = self.defer_stack; self.defer_stack = []; self._emit_statement(d); self.defer_stack = temp_stack
+                self._emit_line(f"return ({c_cur_ret}){{ .ok = false, .as = {{ .err = {tmp}.as.err }} }};")
+                self.indent_level -= 1
+                self._emit_line("}")
+                self._emit_line(f"{target_code} {stmt.op} {tmp}.as.val;")
+            else:
+                val_code = self._emit_expression(stmt.value)
+                self._emit_line(f"{target_code} {stmt.op} {val_code};")
 
         elif isinstance(stmt, IfStmt):
             self._emit_if(stmt)
@@ -2390,6 +2554,8 @@ class CCodeGenerator:
             # operand's type — widened dyn literals read f64 through clauses).
             l_t = self._resolve_expr_type(value.left)
             r_t = self._resolve_expr_type(value.right)
+            if value.op in ("||", "or") and self._is_or_type(l_t):
+                return self._or_type_success(l_t)
             if l_t in ("f32x4", "i32x4") or r_t in ("f32x4", "i32x4"):
                 if value.op in ("==", "!="):
                     return "bool"
@@ -2591,6 +2757,10 @@ class CCodeGenerator:
         return self._map_type(raw)
 
     def _resolve_expr_type(self, expr: Expr) -> str:
+        if isinstance(expr, OrReturnExpr):
+            op_t = self._resolve_expr_type(expr.operand)
+            self._validate_or_return(op_t)
+            return self._or_type_success(op_t)
         if isinstance(expr, IntLiteral): return expr.type_name if expr.type_name else "i32"
         if isinstance(expr, FloatLiteral): return expr.type_name if expr.type_name else "f32"
         if isinstance(expr, StringLiteral): return "string"
@@ -2680,6 +2850,14 @@ class CCodeGenerator:
                 hint = f" (functions need parens: simd.{expr.member}(...))" if expr.member in SIMD_CALLS else ""
                 raise ValueError(f"unknown simd constant '{expr.member}' (simd functions are: {SIMD_FUNCS_TEXT}){hint}")
             target_type = self._resolve_expr_type(expr.target)
+            if self._is_or_type(target_type):
+                if expr.member == "ok":
+                    return "bool"
+                if expr.member == "val":
+                    return self._or_type_success(target_type)
+                if expr.member == "err":
+                    return self._or_type_error(target_type)
+                raise ValueError(f"Outcome type only provides .ok, .val, and .err (got '{expr.member}')")
             # 5.2: shelf property reads (len); other members are loud errors
             if self._shelf_elem_type(target_type) is not None:
                 if expr.member == "len":
@@ -2918,6 +3096,8 @@ class CCodeGenerator:
         elif isinstance(expr, BinaryExpr):
             l_t = self._resolve_expr_type(expr.left)
             r_t = self._resolve_expr_type(expr.right)
+            if expr.op in ("||", "or") and self._is_or_type(l_t):
+                return self._or_type_success(l_t)
             if l_t in ("f32x4", "i32x4") or r_t in ("f32x4", "i32x4"):
                 if l_t != r_t:
                     raise ValueError(f"mismatched operand types for SIMD binary operator '{expr.op}': {l_t} and {r_t}")
@@ -3063,6 +3243,14 @@ class CCodeGenerator:
             return self._emit_ring_literal(expr)
         elif isinstance(expr, BitsetLiteral):
             return self._emit_bitset_literal(expr)
+        elif isinstance(expr, OrReturnExpr):
+            op_t = self._resolve_expr_type(expr.operand)
+            self._validate_or_return(op_t)
+            tmp = self._fresh_name("or")
+            op_val = self._emit_expression(expr.operand)
+            c_op = self._map_type(op_t)
+            c_cur_ret = self._map_type(self.current_function.return_type if self.current_function else "")
+            return f"({{ {c_op} {tmp} = {op_val}; if (!{tmp}.ok) return ({c_cur_ret}){{ .ok = false, .as = {{ .err = {tmp}.as.err }} }}; {tmp}.as.val; }})"
         elif isinstance(expr, CastExpr):
             sub_t = self._resolve_expr_type(expr.expr)
             sub = self._emit_expression(expr.expr)
@@ -3115,6 +3303,13 @@ class CCodeGenerator:
                 raise ValueError(f"unknown math constant '{expr.member}' (constants: PI, TAU, RAD2DEG, DEG2RAD){hint}")
             target_code = self._emit_expression(expr.target)
             target_type = self._resolve_expr_type(expr.target)
+            if self._is_or_type(target_type):
+                arrow = "->" if target_type.startswith("@") else "."
+                if expr.member == "ok":
+                    return f"({target_code}){arrow}ok"
+                elif expr.member in ("val", "err"):
+                    return f"({target_code}){arrow}as.{expr.member}"
+                raise ValueError(f"Outcome type only provides .ok, .val, and .err (got '{expr.member}')")
             clean_type = target_type.lstrip("@")
             if clean_type in ("f32x4", "i32x4"):
                 if expr.member not in ("x", "y", "z", "w"):
@@ -3132,6 +3327,11 @@ class CCodeGenerator:
             l_t = self._resolve_expr_type(expr.left)
             r_t = self._resolve_expr_type(expr.right)
             op = expr.op
+            if op in ("||", "or") and self._is_or_type(l_t):
+                left = self._emit_expression(expr.left)
+                right = self._emit_expression(expr.right)
+                c_name = self._or_type_c_name(l_t)
+                return f"{c_name}_fallback({left}, {right})"
             if l_t in ("f32x4", "i32x4") or r_t in ("f32x4", "i32x4"):
                 if l_t != r_t:
                     raise ValueError(f"mismatched operand types for SIMD binary operator '{op}': {l_t} and {r_t}")

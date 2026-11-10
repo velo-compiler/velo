@@ -13,7 +13,7 @@ use "parser_stmt.vl"
 use "parser_decl.vl"
 
 // Parses type annotations with pointer prefixes, function pointer types, and generic arguments.
-act parse_type_annotation(p: @Parser) -> string {
+act parse_type_annotation_ex(p: @Parser, allow_or: bool) -> string {
     mut at_count: usize = 0
     loop parser_match(p, TOK_AT) {
         at_count += 1
@@ -25,7 +25,7 @@ act parse_type_annotation(p: @Parser) -> string {
         sb_append_str(@sb, "act(")
         mut count: usize = 0
         loop not parser_check(p, TOK_RPAREN) and not parser_check(p, TOK_EOF) {
-            let atype = parse_type_annotation(p)
+            let atype = parse_type_annotation_ex(p, false)
             if count > 0 {
                 sb_append_str(@sb, ", ")
             }
@@ -39,7 +39,7 @@ act parse_type_annotation(p: @Parser) -> string {
         sb_append_str(@sb, ") -> ")
         mut ret_type = "void"
         if parser_match(p, TOK_ARROW) {
-            ret_type = parse_type_annotation(p)
+            ret_type = parse_type_annotation_ex(p, true)
         }
         sb_append_str(@sb, ret_type)
         let act_str = sb_to_string(@sb)
@@ -129,17 +129,36 @@ act parse_type_annotation(p: @Parser) -> string {
         base_name = sb_to_string(@sb)
     }
 
-    if at_count == 0 {
-        return base_name
+    mut full_type = base_name
+    if at_count > 0 {
+        let total_len = at_count + str.len(base_name)
+        mut buf: @u8 = mem.alloc(@u8, total_len + 1)
+        mut i: usize = 0
+        loop i < at_count { buf[i] = '@'; i += 1 }
+        mut j: usize = 0
+        loop j < str.len(base_name) { buf[at_count + j] = base_name[j]; j += 1 }
+        buf[total_len] = 0 as u8
+        full_type = buf as string
     }
-    let total_len = at_count + str.len(base_name)
-    mut buf: @u8 = mem.alloc(@u8, total_len + 1)
-    mut i: usize = 0
-    loop i < at_count { buf[i] = '@'; i += 1 }
-    mut j: usize = 0
-    loop j < str.len(base_name) { buf[at_count + j] = base_name[j]; j += 1 }
-    buf[total_len] = 0 as u8
-    return buf as string
+
+    if allow_or and parser_match(p, TOK_OR) {
+        let err_type = parse_type_annotation_ex(p, true)
+        mut osb = create_sb(str.len(full_type) + str.len(err_type) + 4)
+        sb_append_str(@osb, full_type)
+        sb_append_str(@osb, " or ")
+        sb_append_str(@osb, err_type)
+        full_type = sb_to_string(@osb)
+    }
+
+    return full_type
+}
+
+act parse_type_annotation(p: @Parser) -> string {
+    return parse_type_annotation_ex(p, true)
+}
+
+act parse_type_annotation_no_or(p: @Parser) -> string {
+    return parse_type_annotation_ex(p, false)
 }
 
 // Parses a top-level declaration (data, act, extern, use, global let/mut).

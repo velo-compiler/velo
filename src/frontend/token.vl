@@ -45,6 +45,7 @@ let TOK_RING: i32 = 148        // 5.2 slice 9: `ring` (literal keyword; type spe
 let TOK_BITSET: i32 = 149      // 5.2 slice 9: `bitset` (literal keyword; bare type spelling)
 let TOK_HEAP: i32 = 152        // 5.2 slice 10: `heap` (the heap-shelf storage modifier)
 let TOK_TEST: i32 = 153        // 6.5: `test` keyword for native test declarations
+let TOK_FAIL: i32 = 155        // Algebraic error handling: `fail` keyword
 
 // Operators & Punctuation
 let TOK_AT: i32 = 50           // @
