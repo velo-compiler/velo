@@ -209,7 +209,8 @@ act check_dyn_binary(st: @SymbolTable, expr: @ExprNode, left_type: string, right
         }
         return null
     }
-    if is_arith and left_type == "string" and right_type == "string" {
+    if is_arith and (left_type == "string" or right_type == "string") {
+        if expr.op == TOK_PLUS and left_type == "string" and right_type == "string" { return "string" }
         report_error("semantic", expr.line, expr.col, dyn_concat_error(expr.op)); st.error_count += 1
         return "unknown"
     }

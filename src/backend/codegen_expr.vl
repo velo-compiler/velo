@@ -278,6 +278,13 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             sb_append_char(sb, ')')
             return
         }
+        if expr.op == TOK_PLUS {
+            let ltype = infer_expr_type(st, expr.left); let rtype = infer_expr_type(st, expr.right)
+            if ltype == "string" and rtype == "string" {
+                sb_append_str(sb, "velo_str_concat("); emit_c_expr(sb, st, expr.left); sb_append_str(sb, ", "); emit_c_expr(sb, st, expr.right); sb_append_char(sb, ')')
+                return
+            }
+        }
         if expr.op == TOK_EQ or expr.op == TOK_NEQ {
             let ltype = infer_expr_type(st, expr.left)
             let rtype = infer_expr_type(st, expr.right)

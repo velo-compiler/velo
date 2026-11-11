@@ -1,0 +1,63 @@
+// std/tests/string_concat_test.vl — Tests for string concatenation with `+` and `+=`
+use std.io
+
+act greet(title: string, name: string) -> string {
+    return title + " " + name + "!"
+}
+
+act main() {
+    // 1. Basic literal concatenation
+    let s1 = "hello" + " " + "world"
+    assert(s1 == "hello world")
+
+    // 2. Variable concatenation
+    let part_a = "foo"
+    let part_b = "bar"
+    let combined = part_a + "_" + part_b
+    assert(combined == "foo_bar")
+
+    // 3. Chained concatenation (left-associative)
+    let chained = "a" + "b" + "c" + "d" + "e"
+    assert(chained == "abcde")
+
+    // 4. Empty strings
+    assert("" + "hello" == "hello")
+    assert("world" + "" == "world")
+    assert("" + "" == "")
+
+    // 5. Function call arguments and return values
+    let greeting = greet("Dr.", "Watson")
+    assert(greeting == "Dr. Watson!")
+    assert(greet("Agent", "007") == "Agent 007!")
+
+    // 6. Compound assignment +=
+    mut acc = "start"
+    acc += " middle"
+    acc += " end"
+    assert(acc == "start middle end")
+
+    // 7. Compound assignment in a loop
+    mut loop_res = ""
+    mut i = 0
+    loop i < 3 {
+        loop_res += "x"
+        i += 1
+    }
+    assert(loop_res == "xxx")
+
+    // 8. In if-else expressions
+    let flag = true
+    let cond_str = (if flag { "alpha" + "1" } else { "beta" + "2" }) + "_end"
+    assert(cond_str == "alpha1_end")
+
+    // 9. Inside zone allocation
+    zone {
+        let z1 = "zone_"
+        let z2 = "allocated"
+        let z3 = z1 + z2
+        assert(z3 == "zone_allocated")
+    }
+
+    io.println("All string concatenation tests passed successfully!")
+}
+

@@ -151,6 +151,11 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
             }
         }
         let target_t = infer_expr_type(st, stmt.expr)
+        if stmt.op == TOK_PLUS_ASSIGN and target_t == "string" {
+            sb_append_indent(sb, indent); emit_c_expr(sb, st, stmt.expr); sb_append_str(sb, " = velo_str_concat(")
+            emit_c_expr(sb, st, stmt.expr); sb_append_str(sb, ", "); emit_c_expr(sb, st, stmt.val_expr); sb_append_str(sb, ");\n")
+            return
+        }
         if stmt.op == TOK_EQ and is_optional_type(target_t) {
             let inner = optional_inner_type(target_t)
             if inner[0] != '@' and inner != "string" {
@@ -169,13 +174,8 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
                 return
             }
         }
-        sb_append_indent(sb, indent)
-        emit_c_expr(sb, st, stmt.expr)
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, map_assign_op(stmt.op))
-        sb_append_char(sb, ' ')
-        emit_c_expr(sb, st, stmt.val_expr)
-        sb_append_str(sb, ";\n")
+        sb_append_indent(sb, indent); emit_c_expr(sb, st, stmt.expr); sb_append_char(sb, ' '); sb_append_str(sb, map_assign_op(stmt.op))
+        sb_append_char(sb, ' '); emit_c_expr(sb, st, stmt.val_expr); sb_append_str(sb, ";\n")
         return
     }
 

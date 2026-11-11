@@ -3179,3 +3179,36 @@ flowchart TD
   - Verified full test suite passes with zero regressions: 620 passed (`python -m pytest tests -q`).
   - All 99 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
   - Zero UTF-8 BOM across all `.vl` files.
+
+### Phase 42: Native String Concatenation with `+` and `+=` (`"a" + "b"`) [COMPLETED] ✅
+#### Task 42.1: Native Binary and Compound Assignment String Concatenation Lowering to `velo_str_concat` [COMPLETED] ✅
+* **Former Defect**:
+  - In Velo, applying the binary addition operator `+` or compound assignment operator `+=` to string operands was disallowed by semantic analysis (`cannot apply '+' to string operands (concatenation is str.concat)`), forcing developers to call `str.concat(a, b)` or use string interpolation (`f"{a}{b}"`).
+  - Lack of native `+` string concatenation was counter-intuitive for developers accustomed to modern languages (JavaScript, Python, C#, Java, Go, Rust with format or strings).
+  - Furthermore, building dynamic strings incrementally with `+=` was rejected, requiring verbose re-assignment loops or standard library method calls.
+* **Fix Applied**:
+  1. **Semantic Type Checking (`src/analysis/dyn_checks.vl`)**:
+     - Updated `check_dyn_binary` to allow `expr.op == TOK_PLUS` when both operands are `string`, returning `"string"`.
+     - Preserved strict type safety: mixed operands (e.g. `string + int`, `bool + string`) and non-plus arithmetic (`-`, `*`, `/`, `%`) on strings continue to be rejected with clean, descriptive compiler errors (`cannot apply '+' to string operands...`).
+  2. **C99 Backend Codegen for Binary `+` (`src/backend/codegen_expr.vl`)**:
+     - In `emit_c_expr`, added detection for `expr.op == TOK_PLUS` with `string` left and right operand types.
+     - Lowered binary string concatenation to runtime helper `velo_str_concat(left, right)`.
+     - Left-associative chained expressions (e.g. `"a" + "b" + "c" + "d"`) cleanly nest into sequential `velo_str_concat` calls.
+  3. **C99 Backend Codegen for Compound Assignment `+=` (`src/backend/codegen_stmt.vl`)**:
+     - In `emit_c_stmt` for `STMT_ASSIGN`, added detection for `stmt.op == TOK_PLUS_ASSIGN` when the target is of type `string`.
+     - Lowered compound assignment directly to `target = velo_str_concat(target, val);`.
+  4. **Memory Model & Zone Integration**:
+     - `velo_str_concat` in `runtime/velo_runtime.h` leverages `velo_mem_alloc` (allocating into the current zone arena or default heap).
+     - Under Velo's zone model (`zone { ... }`), temporary concatenation buffers are reclaimed in $O(1)$ on zone exit with zero memory leaks or heap fragmentation.
+  5. **Self-Hosting Bootstrap & Determinism**:
+     - Rebuilt 3-generation compiler chain (`bin/velo.exe build src/main.vl -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe -> bootstrap.c`).
+     - Verified bit-for-bit SHA-256 fixed-point determinism across Gen2, Gen3, and `bootstrap.c` (`553BA189EB718E42BA34EC5FA91C214DFD04B6EA6FDACA00CC837225A26D38CB`).
+* **Residual Limitation**:
+  - Mixed-type concatenation (e.g. `string + int`) is intentionally rejected by design to prevent silent type coercions; explicit conversion (`int_to_str` or string interpolation `f"{s}{i}"`) is required.
+* **Verification**:
+  - Created standalone Velo test suite `std/tests/string_concat_test.vl` exercising literal concat, variable concat, chained left-associative concat, empty strings, function calls/returns, compound `+=` in linear code and loops, `if-else` expressions, and zone arena allocations.
+  - Created regression test suite `tests/test_string_concat.py` verifying test battery execution and error diagnostics on mixed-type concatenation and invalid operators (`-`).
+  - Updated `tests/test_dynamic_collections.py` to retire `rej_s8_str_concat` while preserving `rej_s8_str_sub`.
+  - Verified full test suite passes with zero regressions.
+  - All 99 compiler source files $\le 395$ lines (`python scripts/count_lines.py`).
+  - Zero UTF-8 BOM across all `.vl` files.

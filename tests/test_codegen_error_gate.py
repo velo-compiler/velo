@@ -26,12 +26,12 @@ act main() -> i32 {
 }
 """
 
-# `{"a" + "b"}` inside interpolation takes the same re-entry path. The inner
+# `{"a" - "b"}` inside interpolation takes the same re-entry path. The inner
 # quotes must reach the .vl file escaped, so each backslash is written twice.
-INTERP_CONCAT_ERROR = """use std.io
+INTERP_ARITH_ERROR = """use std.io
 
 act main() -> i32 {
-    io.println("joined {\\"a\\" + \\"b\\"}")
+    io.println("joined {\\"a\\" - \\"b\\"}")
     return 0
 }
 """
@@ -63,8 +63,8 @@ def _native(args):
     return subprocess.run(["bin/velo.exe"] + args, capture_output=True, text=True)
 
 
-@pytest.mark.parametrize("source", [INTERP_MEMBER_ERROR, INTERP_CONCAT_ERROR],
-                         ids=["member-access", "string-concat"])
+@pytest.mark.parametrize("source", [INTERP_MEMBER_ERROR, INTERP_ARITH_ERROR],
+                         ids=["member-access", "string-arith"])
 def test_build_fails_and_does_not_claim_success(tmp_path, source):
     path = _write(tmp_path, "bad.vl", source)
     out = str(tmp_path / "bad.exe")
@@ -76,8 +76,8 @@ def test_build_fails_and_does_not_claim_success(tmp_path, source):
     assert not os.path.exists(out), "binary must not be produced"
 
 
-@pytest.mark.parametrize("source", [INTERP_MEMBER_ERROR, INTERP_CONCAT_ERROR],
-                         ids=["member-access", "string-concat"])
+@pytest.mark.parametrize("source", [INTERP_MEMBER_ERROR, INTERP_ARITH_ERROR],
+                         ids=["member-access", "string-arith"])
 def test_run_fails_and_never_executes_the_program(tmp_path, source):
     path = _write(tmp_path, "bad_run.vl", source)
     result = _native(["run", path])

@@ -689,9 +689,7 @@ REJECTIONS = [
     ("use sys.io\nact main() -> i32 {\n    let bad = shelf[5, true]\n    let z = bad[0] % true\n    return 0\n}",
      "shelf[dyn] op: cannot apply '%' between dyn and bool — unbox with as first",
      "rej_s8_dyn_mod_bool"),
-    ("use sys.io\nact main() -> i32 {\n    let a = \"x\"\n    let b = a + \"y\"\n    io.println(b)\n    return 0\n}",
-     "cannot apply '+' to string operands (concatenation is str.concat)",
-     "rej_s8_str_concat"),
+    # String concatenation with '+' is supported. Non-plus string arithmetic ('-', etc.) remains rejected:
     ("use sys.io\nact main() -> i32 {\n    let a = \"x\"\n    let b = a - \"y\"\n    io.println(b)\n    return 0\n}",
      "cannot apply '-' to string operands (concatenation is str.concat)",
      "rej_s8_str_sub"),
