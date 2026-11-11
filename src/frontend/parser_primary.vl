@@ -287,6 +287,26 @@ act parse_primary(p: @Parser) -> @ExprNode {
     // 5.2 slice 10 / Task 7.2: `heap shelf[...]` / `heap map[...]`
     if parser_check(p, TOK_HEAP) { return parse_heap_literal(p) }
 
+    // 7.8. Fixed-size stack array literal: `[e0, e1, ...]`
+    if parser_check(p, TOK_LBRACKET) {
+        let lb = parser_advance(p)
+        mut first_elem: @ExprNode = null; mut last_elem: @ExprNode = null; mut elem_count: usize = 0
+        if not parser_check(p, TOK_RBRACKET) {
+            mut more_elems = true
+            loop more_elems {
+                let e = parse_expression(p)
+                if e != null {
+                    if first_elem == null { first_elem = e; last_elem = e }
+                    else { last_elem.next = e; last_elem = e }
+                    elem_count += 1
+                }
+                if not parser_match(p, TOK_COMMA) { more_elems = false }
+            }
+        }
+        parser_consume(p, TOK_RBRACKET, "Expected ']' at end of array literal")
+        return make_array_lit_expr(first_elem, elem_count, lb.line, lb.col)
+    }
+
     // 8. Identifier variable reference
     if parser_check(p, TOK_IDENTIFIER) {
         let tok = parser_advance(p)

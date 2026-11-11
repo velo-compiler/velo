@@ -61,9 +61,24 @@ act map_type_to_c(type_name: string) -> string {
         return "VeloBitset"
     }
 
+    if is_fixed_array_type(type_name) {
+        let elem_c = map_type_to_c(fixed_array_elem_type(type_name))
+        mut sb = create_sb(str.len(elem_c) + 2)
+        sb_append_str(@sb, elem_c)
+        sb_append_char(@sb, '*')
+        return sb_to_string(@sb)
+    }
+
     // Pointer types (@T, @@T)
     if type_name[0] == '@' {
         let base = strip_pointer_prefix(type_name)
+        if is_fixed_array_type(base) {
+            let elem_c = map_type_to_c(fixed_array_elem_type(base))
+            mut sb = create_sb(str.len(elem_c) + 2)
+            sb_append_str(@sb, elem_c)
+            sb_append_char(@sb, '*')
+            return sb_to_string(@sb)
+        }
         let base_c = map_type_to_c(base)
         let plen = str.len(base_c) + 1
         mut buf: @u8 = mem.alloc(@u8, plen + 1)

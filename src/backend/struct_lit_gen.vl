@@ -16,7 +16,18 @@ act emit_struct_lit_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) 
         sb_append_char(sb, '.')
         sb_append_str(sb, cur_init.name)
         sb_append_str(sb, " = ")
-        emit_c_expr(sb, st, cur_init.value)
+        if cur_init.value.kind == EXPR_ARRAY_LIT {
+            sb_append_str(sb, "{ ")
+            mut ae = cur_init.value.first_arg
+            loop ae != null {
+                emit_c_expr(sb, st, ae)
+                if ae.next != null { sb_append_str(sb, ", ") }
+                ae = ae.next
+            }
+            sb_append_str(sb, " }")
+        } else {
+            emit_c_expr(sb, st, cur_init.value)
+        }
         need_sep = true
         cur_init = cur_init.next
     }

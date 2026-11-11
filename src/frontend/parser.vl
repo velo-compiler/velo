@@ -67,6 +67,50 @@ act parse_type_annotation_ex(p: @Parser, allow_or: bool) -> string {
         return act_res
     }
 
+    // Fixed-size stack array type: `[N]T`
+    if parser_match(p, TOK_LBRACKET) {
+        let size_tok = parser_consume(p, TOK_INT_LIT, "Expected array size inside '['")
+        let size_str = copy_slice_to_string(p.source, size_tok.start, size_tok.length)
+        let size_val = parse_int_from_slice(p.source, size_tok.start, size_tok.length)
+        if size_val <= 0 {
+            report_parse(p, p.filename, size_tok.line, size_tok.col, size_tok.length, "Fixed-size array length must be greater than zero")
+            p.had_error = true
+        }
+        parser_consume(p, TOK_RBRACKET, "Expected ']' after array size")
+        let elem_type = parse_type_annotation_ex(p, false)
+        mut sb = create_sb(str.len(size_str) + str.len(elem_type) + 4)
+        sb_append_char(@sb, '[')
+        sb_append_str(@sb, size_str)
+        sb_append_char(@sb, ']')
+        sb_append_str(@sb, elem_type)
+        mut arr_res = sb_to_string(@sb)
+        if at_count > 0 {
+            let total_len = at_count + str.len(arr_res)
+            mut buf: @u8 = mem.alloc(@u8, total_len + 1)
+            mut i: usize = 0
+            loop i < at_count { buf[i] = '@'; i += 1 }
+            mut j: usize = 0
+            loop j < str.len(arr_res) { buf[at_count + j] = arr_res[j]; j += 1 }
+            buf[total_len] = 0 as u8
+            arr_res = buf as string
+        }
+        if is_opt or parser_match(p, TOK_QUESTION) {
+            mut qsb = create_sb(str.len(arr_res) + 2)
+            sb_append_char(@qsb, '?')
+            sb_append_str(@qsb, arr_res)
+            arr_res = sb_to_string(@qsb)
+        }
+        if allow_or and parser_match(p, TOK_OR) {
+            let err_type = parse_type_annotation_ex(p, true)
+            mut osb = create_sb(str.len(arr_res) + str.len(err_type) + 4)
+            sb_append_str(@osb, arr_res)
+            sb_append_str(@osb, " or ")
+            sb_append_str(@osb, err_type)
+            arr_res = sb_to_string(@osb)
+        }
+        return arr_res
+    }
+
     // 5.2: `shelf` is a reserved type keyword - annotations spell shelf[T]
     mut base_tok_kind = TOK_IDENTIFIER
     if parser_check(p, TOK_SHELF) {

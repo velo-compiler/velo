@@ -23,6 +23,7 @@ use "time_gen.vl"
 use "os_gen.vl"
 use "fs_gen.vl"
 use "simd_gen.vl"
+use "array_gen.vl"
 use "codegen_line.vl"
 use "reflect_gen.vl"
 use "codegen_call.vl"
@@ -45,13 +46,9 @@ act emit_if_branch(sb: @StringBuilder, st: @SymbolTable, branch: @ExprNode, targ
 }
 
 act emit_if_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
-    sb_append_str(sb, "((")
-    emit_c_expr(sb, st, expr.left)
-    sb_append_str(sb, ") ? (")
+    sb_append_str(sb, "(("); emit_c_expr(sb, st, expr.left); sb_append_str(sb, ") ? (")
     enter_scope(st); apply_flow_narrowing(st, expr.left, true); emit_if_branch(sb, st, expr.right, expr.type_name); exit_scope(st)
-    sb_append_str(sb, ") : (")
-    enter_scope(st); apply_flow_narrowing(st, expr.left, false); emit_if_branch(sb, st, expr.operand, expr.type_name); exit_scope(st)
-    sb_append_str(sb, "))")
+    sb_append_str(sb, ") : ("); enter_scope(st); apply_flow_narrowing(st, expr.left, false); emit_if_branch(sb, st, expr.operand, expr.type_name); exit_scope(st); sb_append_str(sb, "))")
 }
 
 // Emits C99 code for an AST expression into a StringBuilder.
@@ -199,9 +196,10 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             return
         }
         if is_simd_type(strip_pointer_prefix(target_type)) { emit_simd_member(sb, st, expr, target_type); return }
+        let clean_tt = strip_pointer_prefix(target_type)
+        if is_fixed_array_type(clean_tt) { emit_array_member(sb, st, expr, clean_tt); return }
         emit_c_expr(sb, st, expr.target)
-        if str.len(target_type) > 0 and target_type[0] == '@' { sb_append_str(sb, "->") } else { sb_append_str(sb, ".") }
-        sb_append_str(sb, expr.member_name); return
+        if str.len(target_type) > 0 and target_type[0] == '@' { sb_append_str(sb, "->") } else { sb_append_str(sb, ".") }; sb_append_str(sb, expr.member_name); return
     }
 
     // 4. Array indexing
@@ -228,6 +226,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
 
     // 6. Struct instantiation literal (omitted fields fall back to their declared defaults)
     if expr.kind == EXPR_STRUCT_LIT { emit_struct_lit_expr(sb, st, expr); return }
+    if expr.kind == EXPR_ARRAY_LIT { emit_array_lit(sb, st, expr); return }
 
     // 7. Binary expression
     if expr.kind == EXPR_BINARY {

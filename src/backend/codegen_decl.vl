@@ -11,6 +11,7 @@ use "../common/act_types.vl"
 use "codegen_expr.vl"
 use "codegen_line.vl"
 use "outcome_gen.vl"
+use "array_gen.vl"
 
 // Checks if a function name corresponds to an anonymous lifted function.
 act is_anon_act_name(name: string) -> bool {
@@ -149,9 +150,13 @@ act emit_param_list(sb: @StringBuilder, first_param: @ParamNode, param_count: us
     } else {
         mut cur_p = first_param
         loop cur_p != null {
-            sb_append_str(sb, map_type_to_c(cur_p.type_name))
-            sb_append_char(sb, ' ')
-            sb_append_str(sb, cur_p.name)
+            if is_fixed_array_type(cur_p.type_name) {
+                emit_c_typed_var(sb, cur_p.type_name, cur_p.name)
+            } else {
+                sb_append_str(sb, map_type_to_c(cur_p.type_name))
+                sb_append_char(sb, ' ')
+                sb_append_str(sb, cur_p.name)
+            }
             if cur_p.next != null { sb_append_str(sb, ", ") }
             cur_p = cur_p.next
         }
@@ -285,7 +290,13 @@ act emit_type_declarations(sb: @StringBuilder, st: @SymbolTable, prog: @ProgramN
             sb_append_str(sb, cur.name); sb_append_str(sb, " {\n")
             mut cur_f = cur.first_field
             loop cur_f != null {
-                sb_append_indent(sb, 1); sb_append_str(sb, map_type_to_c(cur_f.type_name)); sb_append_char(sb, ' '); sb_append_str(sb, cur_f.name); sb_append_str(sb, ";\n")
+                sb_append_indent(sb, 1)
+                if is_fixed_array_type(cur_f.type_name) {
+                    emit_c_typed_var(sb, cur_f.type_name, cur_f.name)
+                } else {
+                    sb_append_str(sb, map_type_to_c(cur_f.type_name)); sb_append_char(sb, ' '); sb_append_str(sb, cur_f.name)
+                }
+                sb_append_str(sb, ";\n")
                 cur_f = cur_f.next
             }
             sb_append_str(sb, "};\n\n")
@@ -321,9 +332,13 @@ act emit_type_declarations(sb: @StringBuilder, st: @SymbolTable, prog: @ProgramN
             if inferred_type == null or str.len(inferred_type) == 0 {
                 if cur.val_expr != null { inferred_type = infer_expr_type(st, cur.val_expr) } else { inferred_type = "i32" }
             }
-            sb_append_str(sb, map_type_to_c(inferred_type)); sb_append_char(sb, ' '); sb_append_str(sb, cur.name)
-            if cur.val_expr != null { sb_append_str(sb, " = "); emit_c_expr(sb, st, cur.val_expr) }
-            sb_append_str(sb, ";\n")
+            if is_fixed_array_type(inferred_type) {
+                emit_array_var_decl(sb, st, cur, 0)
+            } else {
+                sb_append_str(sb, map_type_to_c(inferred_type)); sb_append_char(sb, ' '); sb_append_str(sb, cur.name)
+                if cur.val_expr != null { sb_append_str(sb, " = "); emit_c_expr(sb, st, cur.val_expr) }
+                sb_append_str(sb, ";\n")
+            }
         }
         cur = cur.next
     }

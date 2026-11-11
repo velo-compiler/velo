@@ -255,6 +255,18 @@ act types_are_compatible(expected: string, actual: string) -> bool {
     if is_int_type(expected) and is_int_type(actual) { return true }
     if is_float_type(expected) and is_float_type(actual) { return true }
     if (expected == "@u8" and actual == "string") or (expected == "string" and actual == "@u8") { return true }
+    if is_fixed_array_type(expected) and is_fixed_array_type(actual) {
+        if fixed_array_len(expected) == fixed_array_len(actual) {
+            return types_are_compatible(fixed_array_elem_type(expected), fixed_array_elem_type(actual))
+        }
+        return false
+    }
+    if is_fixed_array_type(actual) {
+        let elem_t = fixed_array_elem_type(actual)
+        if expected == "@void" or expected == prepend_pointer_prefix(elem_t) or (expected == "string" and elem_t == "u8") or (expected == "@u8" and elem_t == "u8") {
+            return true
+        }
+    }
     if is_or_type(expected) and is_or_type(actual) {
         return types_are_compatible(or_type_success(expected), or_type_success(actual)) and types_are_compatible(or_type_error(expected), or_type_error(actual))
     }
@@ -329,3 +341,48 @@ act or_type_c_name(name: string) -> string {
     return sb_to_string(@sb)
 }
 
+
+// Checks if a type name represents a fixed-size stack array (e.g. "[16]u8" or "@[16]u8").
+act is_fixed_array_type(name: string) -> bool {
+    if name == null { return false }
+    let clean = strip_pointer_prefix(name)
+    let len = str.len(clean)
+    if len < 4 or clean[0] != '[' { return false }
+    mut i: usize = 1
+    loop i < len and clean[i] >= '0' and clean[i] <= '9' {
+        i += 1
+    }
+    if i == 1 or i >= len or clean[i] != ']' { return false }
+    return i + 1 < len
+}
+
+// Extracts the element count N from a fixed-size array type "[N]T".
+act fixed_array_len(name: string) -> i64 {
+    if name == null { return 0 }
+    let clean = strip_pointer_prefix(name)
+    let len = str.len(clean)
+    if len < 4 or clean[0] != '[' { return 0 }
+    mut i: usize = 1
+    mut res: i64 = 0
+    loop i < len and clean[i] >= '0' and clean[i] <= '9' {
+        res = res * 10 + (clean[i] - '0') as i64
+        i += 1
+    }
+    return res
+}
+
+// Extracts the element type T from a fixed-size array type "[N]T".
+act fixed_array_elem_type(name: string) -> string {
+    if name == null { return "" }
+    let clean = strip_pointer_prefix(name)
+    let len = str.len(clean)
+    if len < 4 or clean[0] != '[' { return "" }
+    mut i: usize = 1
+    loop i < len and clean[i] != ']' {
+        i += 1
+    }
+    if i + 1 < len and clean[i] == ']' {
+        return copy_slice_to_string(clean, i + 1, len - (i + 1))
+    }
+    return ""
+}

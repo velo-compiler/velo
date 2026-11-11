@@ -27,6 +27,7 @@ let EXPR_HEAP_MAP_LIT: i32 = 154    // Task 7.2: a map literal whose payload is 
 let EXPR_OR_RETURN: i32 = 119       // Algebraic error handling: `expr or return`
 let EXPR_UNWRAP: i32 = 120          // Optional unwrap: `expr!`
 let EXPR_IF: i32 = 121              // Conditional expression: `if c { a } else { b }`
+let EXPR_ARRAY_LIT: i32 = 122        // Fixed-size stack array literal: `[e0, e1, ...]`
 
 // Represents a single field initializer in a struct instantiation (e.g. `x: 10.0`).
 // Linked via `next` to support arbitrary numbers of fields without dynamic heap buffers.
@@ -244,6 +245,18 @@ act make_shelf_lit_expr(first_elem: @ExprNode, count: usize, elem_type: string, 
     node.first_arg = first_elem
     node.arg_count = count
     node.type_name = elem_type
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a fixed-size stack array literal node (`[e0, e1, ...]`).
+act make_array_lit_expr(first_elem: @ExprNode, count: usize, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_ARRAY_LIT
+    node.first_arg = first_elem
+    node.arg_count = count
+    node.type_name = null
     node.line = line
     node.col = col
     return node

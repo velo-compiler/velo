@@ -3212,3 +3212,44 @@ flowchart TD
   - Verified full test suite passes with zero regressions.
   - All 99 compiler source files $\le 395$ lines (`python scripts/count_lines.py`).
   - Zero UTF-8 BOM across all `.vl` files.
+
+### Phase 43: Fixed-Size Stack Arrays (`mut buf: [N]u8`) [COMPLETED] ✅
+#### Task 43.1: Zero-Allocation Stack Array Types, Literals, Decay, Bounds Checking, and C99 Lowering [COMPLETED] ✅
+* **Former Defect**:
+  - Velo only supported dynamic heap/zone collections (`shelf[T]`, `Map[K, V]`, `ring[T]`, `bitset`) and raw untyped pointers (`@u8`).
+  - Velo lacked first-class fixed-size stack arrays (`[N]T`), forcing developers writing systems, network, and cryptographic routines to allocate small scratch buffers (such as a 1024-byte packet buffer, 64-byte SHA hash, or 16-byte UUID) on a dynamic `zone` arena or system heap (`mem.alloc`), causing allocation overhead and cache pressure.
+* **Fix Applied**:
+  1. **AST & Type Grammar (`src/ast/types.vl`, `src/frontend/parser.vl`)**:
+     - Added first-class `[N]T` type parsing in `parse_type_annotation_ex`: parses integer size `N > 0` and element type `T`, supporting pointers (`@[N]T`), optionals (`?[N]T`), and outcome types (`[N]T or E`).
+     - Added helper utilities `is_fixed_array_type`, `fixed_array_len`, and `fixed_array_elem_type` in `types.vl`.
+     - In `types_are_compatible`, enabled structural equality between `[N]T` of matching lengths, and automatic pointer decay from `[N]T` to `@T` and `@void`.
+  2. **Array Literals (`src/ast/expr.vl`, `src/frontend/parser_primary.vl`)**:
+     - Added `EXPR_ARRAY_LIT = 122` and `make_array_lit_expr` to AST.
+     - Added `[e0, e1, ...]` syntax in `parser_primary.vl`, inferring `[N]T` based on element count and uniform element type.
+  3. **Semantic Checking & Bounds Validation (`src/analysis/array_checks.vl`, `src/analysis/type_checker.vl`)**:
+     - Added `src/analysis/array_checks.vl` implementing `infer_array_lit`, `check_array_index`, and `check_array_member_access`.
+     - Added compile-time constant bounds checking: indexing `buf[N]` where index is a constant $\ge N$ or $< 0$ reports a compile error (`Array index out of bounds`).
+     - Enforced mutability rules: writing to elements of an array declared with `let` is rejected (`cannot assign to element of immutable variable`).
+     - Added property reads: `buf.len` returns `usize`, and `buf.ptr` returns `@T`.
+  4. **C99 Stack Storage & Codegen (`src/backend/array_gen.vl`, `src/backend/codegen_stmt.vl`, `src/backend/codegen_decl.vl`, `src/backend/codegen_expr.vl`, `src/backend/struct_lit_gen.vl`)**:
+     - Added `src/backend/array_gen.vl` implementing `emit_c_typed_var`, `emit_array_var_decl`, `emit_array_assign`, `emit_array_lit`, and `emit_array_member`.
+     - `mut buf: [N]T` lowers to zero-initialized stack memory `elem_c buf[N] = {0};`.
+     - `let buf: [N]T = [e0, ...]` lowers to `elem_c buf[N] = { e0, ... };`.
+     - Array assignment `a = b` lowers to `memcpy(a, b, sizeof(a));`.
+     - Function parameters `buf: [N]T` emit `elem_c buf[N]`.
+     - Struct fields `data Packet { buf: [64]u8 }` emit `uint8_t buf[64];`.
+     - Array literals in expressions lower to C99 compound literals `((elem_c[]){ e0, ... })`.
+     - Struct literals with array fields lower to `.field = { e0, ... }`.
+  5. **Monomorphization & Alias Integration (`src/analysis/alias_resolve.vl`, `src/analysis/monomorphize_expr.vl`, `src/analysis/mono_infer.vl`)**:
+     - Added alias resolution for element types inside `[N]T` (e.g. `aka Byte = u8; mut buf: [16]Byte` -> `[16]u8`).
+     - Added cloning and type inference for `EXPR_ARRAY_LIT`.
+  6. **Self-Hosting Bootstrap & Determinism**:
+     - Rebuilt 3-generation compiler chain (`bin/velo.exe build src/main.vl -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe -> bootstrap.c`).
+     - Verified bit-for-bit SHA-256 fixed-point determinism across Gen2, Gen3, and `bootstrap.c` (`7EC2131FD2D1C08A074F1A445C9F281938D0B1FEE665890884043491F5CFADD4`).
+* **Residual Limitation**:
+  - Functions cannot return fixed-size arrays directly by value due to C99 return type limitations (pointers `@T` or enclosing structs should be returned).
+* **Verification**:
+  - Created standalone Velo test suite `std/tests/fixed_array_test.vl` exercising zero-initialized stack buffers, element mutation, array literals, array copy, `.ptr`, `.len`, function parameter passing, pointer decay, and struct array fields.
+  - Created regression test suite `tests/test_fixed_array.py` verifying test battery execution and compile-time error diagnostics (out-of-bounds rejection, immutable mutation rejection, zero-size rejection).
+  - All 101 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
+  - Zero UTF-8 BOM across all `.vl` files.

@@ -1,0 +1,111 @@
+// Fixed-size stack array ([N]T) C99 code generation.
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../common/string_builder.vl"
+use "codegen_types.vl"
+use "codegen_expr.vl"
+
+// Emits a C variable/field declaration with its type (e.g. `uint8_t buf[16]` or `int32_t x`).
+act emit_c_typed_var(sb: @StringBuilder, type_name: string, var_name: string) {
+    if is_fixed_array_type(type_name) {
+        let elem_t = fixed_array_elem_type(type_name)
+        let arr_len = fixed_array_len(type_name)
+        sb_append_str(sb, map_type_to_c(elem_t))
+        sb_append_char(sb, ' ')
+        sb_append_str(sb, var_name)
+        sb_append_char(sb, '[')
+        sb_append_int(sb, arr_len as i32)
+        sb_append_char(sb, ']')
+        return
+    }
+    sb_append_str(sb, map_type_to_c(type_name))
+    sb_append_char(sb, ' ')
+    sb_append_str(sb, var_name)
+}
+
+// Emits a local variable declaration for a fixed-size stack array.
+act emit_array_var_decl(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32) {
+    define_variable(st, stmt.name, stmt.type_name, stmt.is_mut, stmt.line, stmt.col)
+    sb_append_indent(sb, indent)
+    emit_c_typed_var(sb, stmt.type_name, stmt.name)
+    if stmt.val_expr == null {
+        sb_append_str(sb, " = {0};\n")
+        return
+    }
+    if stmt.val_expr.kind == EXPR_ARRAY_LIT {
+        sb_append_str(sb, " = { ")
+        mut cur = stmt.val_expr.first_arg
+        loop cur != null {
+            emit_c_expr(sb, st, cur)
+            if cur.next != null { sb_append_str(sb, ", ") }
+            cur = cur.next
+        }
+        sb_append_str(sb, " };\n")
+        return
+    }
+    sb_append_str(sb, ";\n")
+    sb_append_indent(sb, indent)
+    sb_append_str(sb, "memcpy(")
+    sb_append_str(sb, stmt.name)
+    sb_append_str(sb, ", ")
+    emit_c_expr(sb, st, stmt.val_expr)
+    sb_append_str(sb, ", sizeof(")
+    sb_append_str(sb, stmt.name)
+    sb_append_str(sb, "));\n")
+}
+
+// Emits an assignment to a fixed-size stack array (`a = b`).
+act emit_array_assign(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32) {
+    sb_append_indent(sb, indent)
+    sb_append_str(sb, "memcpy(")
+    emit_c_expr(sb, st, stmt.expr)
+    sb_append_str(sb, ", ")
+    emit_c_expr(sb, st, stmt.val_expr)
+    sb_append_str(sb, ", sizeof(")
+    emit_c_expr(sb, st, stmt.expr)
+    sb_append_str(sb, "));\n")
+}
+
+// Emits an array literal expression as a C99 compound literal `((elem_type[]){ e0, e1, ... })`.
+act emit_array_lit(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    mut elem_c = "int32_t"
+    if expr.first_arg != null {
+        elem_c = map_type_to_c(infer_expr_type(st, expr.first_arg))
+    } else if expr.type_name != null and is_fixed_array_type(expr.type_name) {
+        elem_c = map_type_to_c(fixed_array_elem_type(expr.type_name))
+    }
+    sb_append_str(sb, "((")
+    sb_append_str(sb, elem_c)
+    sb_append_str(sb, "[]){ ")
+    mut cur = expr.first_arg
+    loop cur != null {
+        emit_c_expr(sb, st, cur)
+        if cur.next != null { sb_append_str(sb, ", ") }
+        cur = cur.next
+    }
+    sb_append_str(sb, " })")
+}
+
+// Emits fixed array property access: `.len` as integer constant, `.ptr` as pointer cast.
+act emit_array_member(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode, clean_tt: string) {
+    if expr.member_name == "len" {
+        sb_append_str(sb, "((size_t)")
+        sb_append_int(sb, fixed_array_len(clean_tt) as i32)
+        sb_append_char(sb, ')')
+        return
+    }
+    if expr.member_name == "ptr" {
+        let elem_c = map_type_to_c(fixed_array_elem_type(clean_tt))
+        sb_append_str(sb, "((")
+        sb_append_str(sb, elem_c)
+        sb_append_str(sb, "*)(")
+        emit_c_expr(sb, st, expr.target)
+        sb_append_str(sb, "))")
+        return
+    }
+}
+

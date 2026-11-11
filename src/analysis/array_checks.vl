@@ -1,0 +1,67 @@
+// Semantic validation and type inference for fixed-size stack arrays ([N]T).
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../common/string_builder.vl"
+use "../common/diagnostics.vl"
+use "symbol_table.vl"
+
+// Infers the type of an array literal [e0, e1, ...] as "[N]T".
+act infer_array_lit(st: @SymbolTable, expr: @ExprNode) -> string {
+    if expr == null { return "unknown" }
+    if expr.first_arg == null {
+        if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name }
+        return "[0]void"
+    }
+    let elem_t = infer_expr_type(st, expr.first_arg)
+    mut cur = expr.first_arg.next
+    loop cur != null {
+        let cur_t = infer_expr_type(st, cur)
+        if not types_are_compatible(elem_t, cur_t) {
+            report_error("semantic", cur.line, cur.col, "Mismatched element type in array literal")
+            st.error_count += 1
+            return "unknown"
+        }
+        cur = cur.next
+    }
+    mut sb = create_sb(str.len(elem_t) + 16)
+    sb_append_char(@sb, '[')
+    sb_append_int(@sb, expr.arg_count as i32)
+    sb_append_char(@sb, ']')
+    sb_append_str(@sb, elem_t)
+    let arr_t = sb_to_string(@sb)
+    expr.type_name = arr_t
+    return arr_t
+}
+
+// Checks index expression type and compile-time constant bounds on fixed array indexing.
+act check_array_index(st: @SymbolTable, expr: @ExprNode, clean_type: string) -> string {
+    let idx_t = infer_expr_type(st, expr.index)
+    if not is_int_type(idx_t) {
+        report_error("semantic", expr.line, expr.col, "Array index must be an integer")
+        st.error_count += 1
+        return "unknown"
+    }
+    if expr.index.kind == EXPR_INT {
+        let arr_len = fixed_array_len(clean_type)
+        if expr.index.int_val < 0 or (expr.index.int_val as i64) >= arr_len {
+            report_error("semantic", expr.line, expr.col, "Array index out of bounds")
+            st.error_count += 1
+            return "unknown"
+        }
+    }
+    return fixed_array_elem_type(clean_type)
+}
+
+// Checks member access on a fixed array: only `.len` (usize) and `.ptr` (@T) are supported.
+act check_array_member_access(st: @SymbolTable, expr: @ExprNode, clean_type: string) -> string {
+    if expr.member_name == "len" {
+        return "usize"
+    }
+    if expr.member_name == "ptr" {
+        return prepend_pointer_prefix(fixed_array_elem_type(clean_type))
+    }
+    report_error("semantic", expr.line, expr.col, "Fixed-size array only provides .len and .ptr")
+    st.error_count += 1
+    return "unknown"
+}
+

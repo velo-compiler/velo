@@ -59,6 +59,20 @@ act mono_canon_type(m: @Monomorphizer, t: string) -> string {
         sb_append_str(@sb, entry.target)
         return sb_to_string(@sb)
     }
+    if is_fixed_array_type(base) {
+        let arr_len = fixed_array_len(base)
+        let elem_t = fixed_array_elem_type(base)
+        let canon_elem = mono_canon_type(m, elem_t)
+        if canon_elem != elem_t {
+            mut sb = create_sb(str.len(canon_elem) + depth + 16)
+            loop depth > 0 { sb_append_char(@sb, '@'); depth -= 1 }
+            sb_append_char(@sb, '[')
+            sb_append_int(@sb, arr_len as i32)
+            sb_append_char(@sb, ']')
+            sb_append_str(@sb, canon_elem)
+            return sb_to_string(@sb)
+        }
+    }
     return t
 }
 
@@ -87,6 +101,12 @@ act mono_alias_resolve_expr(m: @Monomorphizer, e: @ExprNode) {
         loop cur != null {
             mono_alias_resolve_expr(m, cur.value)
             cur = cur.next
+        }
+    } else if e.kind == EXPR_ARRAY_LIT {
+        mut cur_a = e.first_arg
+        loop cur_a != null {
+            mono_alias_resolve_expr(m, cur_a)
+            cur_a = cur_a.next
         }
     } else if e.kind == EXPR_CALL {
         mut cur_a = e.first_arg
