@@ -3150,3 +3150,32 @@ flowchart TD
   - Verified full test suite passes with zero regressions: 618 passed (`python -m pytest tests -q`).
   - All 99 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
   - Zero UTF-8 BOM across all `.vl` files.
+
+### Phase 41: String Pattern Matching in `on` Statements (`on str { "a": ... }`) [COMPLETED] ✅
+#### Task 41.1: Direct C99 lowering of string matching to `velo_str_eq` conditional cascades [COMPLETED] ✅
+* **Former Defect**:
+  - In Velo, the `on` pattern matching / multi-way branching statement (`STMT_MATCH`) only worked for integer scalar types and tagged unions / enums (`switch (subj) { case val: ... }`).
+  - Matching on a `string` or `?string` (e.g. `on cmd { "start": ... "stop": ... else: ... }`) caused C compilation errors (`error: switch quantity not an integer` and `error: case label does not reduce to an integer constant`) because C99 `switch` only accepts integral expressions and integer constants.
+  - Developers were unable to use idiomatic pattern matching for string dispatch, routing, or command handling, forcing verbose `if-else if` chains.
+  - Furthermore, `type_checker_stmt.vl` did not validate whether pattern value types were compatible with the subject expression type, allowing silent mismatches until backend C compilation.
+* **Fix Applied**:
+  1. **Backend C99 Lowering (`src/backend/codegen_match.vl`)**:
+     - Added detection of string subject types (`subj_type == "string"`, `subj_type == "?string"`, or any `EXPR_STRING` pattern arm).
+     - Bound the match subject to a fresh local temporary pointer (`const char* __match_s_tmp = <expr>;`) within a scoped block `{ ... }`, guaranteeing that side-effecting subject expressions (such as function calls) evaluate strictly once.
+     - Lowered non-default case arms into `if (...)` and `else if (...)` cascades utilizing the runtime's null-safe `velo_str_eq(__match_s_tmp, pattern)` helper.
+     - Emitted multi-value string cases (`"exit", "quit", "q": ...`) with logical OR disjunctions (`||`).
+     - Emitted the default case (`else` or `_`) as a concluding `else { ... }` block.
+  2. **Type Checking & Semantic Validation (`src/analysis/type_checker_stmt.vl`)**:
+     - Added pattern type compatibility verification in `check_statement` for `STMT_MATCH`: verified each pattern value against `stmt.type_name` via `types_are_compatible`, reporting `Pattern type does not match subject type in 'on' statement` on mismatches.
+     - Added scoped flow-sensitive type narrowing for `?string`: non-null string pattern arms automatically narrow optional subject variables (`?string` -> `string`) within the arm's block.
+  3. **Self-Hosting Bootstrap & Determinism**:
+     - Rebuilt 3-generation compiler chain (`bin/velo.exe build src/main.vl -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe -> bootstrap.c`).
+     - Verified bit-for-bit SHA-256 fixed-point determinism across Gen2, Gen3, and `bootstrap.c` (`76D5D786403F0261996B305883ED7A09B9032C395E45FBEA910CCBB4A7F745E2`).
+* **Residual Limitation**:
+  - Regex or wildcard glob string patterns (`"test*"` or `r"..."`) are not yet part of the AST pattern grammar; patterns are exact equality checks or default wildcards (`_`).
+* **Verification**:
+  - Created standalone Velo test suite `std/tests/string_match_test.vl` exercising colon syntax, fat-arrow syntax, multi-value patterns, block statements with local mutations, single evaluation of side-effecting subjects, and optional string `?string` matching with `null` patterns.
+  - Created regression test suite `tests/test_string_match.py` verifying test battery execution and error diagnostics on incompatible pattern types.
+  - Verified full test suite passes with zero regressions: 620 passed (`python -m pytest tests -q`).
+  - All 99 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
+  - Zero UTF-8 BOM across all `.vl` files.

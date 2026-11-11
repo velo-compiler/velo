@@ -90,6 +90,83 @@ act emit_match_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, inden
         sb_append_str(sb, "}\n")
         return
     }
+
+    let is_str_type = (subj_type == "string" or (is_optional_type(subj_type) and optional_inner_type(subj_type) == "string"))
+    mut has_string_case = false
+    mut chk_c = stmt.first_case
+    loop chk_c != null {
+        if not chk_c.is_default and chk_c.first_val != null and chk_c.first_val.kind == EXPR_STRING {
+            has_string_case = true
+        }
+        chk_c = chk_c.next
+    }
+
+    if is_str_type or has_string_case {
+        st.fresh_counter += 1
+        let tmp_id = st.fresh_counter as i32
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "{\n")
+        sb_append_indent(sb, indent + 1)
+        sb_append_str(sb, "const char* __match_s_")
+        sb_append_int(sb, tmp_id)
+        sb_append_str(sb, " = ")
+        emit_c_expr(sb, st, stmt.expr)
+        sb_append_str(sb, ";\n")
+
+        mut cur_case = stmt.first_case
+        mut first_branch = true
+        mut default_case: @CaseNode = null
+
+        loop cur_case != null {
+            if cur_case.is_default {
+                default_case = cur_case
+            } else {
+                sb_append_indent(sb, indent + 1)
+                if first_branch {
+                    sb_append_str(sb, "if (")
+                } else {
+                    sb_append_str(sb, "else if (")
+                }
+                mut val = cur_case.first_val
+                mut first_val = true
+                loop val != null {
+                    if not first_val {
+                        sb_append_str(sb, " || ")
+                    }
+                    sb_append_str(sb, "velo_str_eq(__match_s_")
+                    sb_append_int(sb, tmp_id)
+                    sb_append_str(sb, ", ")
+                    emit_c_expr(sb, st, val)
+                    sb_append_char(sb, ')')
+                    first_val = false
+                    val = val.next
+                }
+                sb_append_str(sb, ") {\n")
+                emit_c_block_stmts(sb, st, cur_case.body, indent + 2, defers)
+                sb_append_indent(sb, indent + 1)
+                sb_append_str(sb, "}\n")
+                first_branch = false
+            }
+            cur_case = cur_case.next
+        }
+
+        if default_case != null {
+            sb_append_indent(sb, indent + 1)
+            if first_branch {
+                sb_append_str(sb, "{\n")
+            } else {
+                sb_append_str(sb, "else {\n")
+            }
+            emit_c_block_stmts(sb, st, default_case.body, indent + 2, defers)
+            sb_append_indent(sb, indent + 1)
+            sb_append_str(sb, "}\n")
+        }
+
+        sb_append_indent(sb, indent)
+        sb_append_str(sb, "}\n")
+        return
+    }
+
     sb_append_indent(sb, indent)
     sb_append_str(sb, "switch (")
     emit_c_expr(sb, st, stmt.expr)

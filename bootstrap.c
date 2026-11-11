@@ -24087,80 +24087,95 @@ void check_statement(SymbolTable* st, const char* expected_ret_type, StmtNode* s
                     val->type_name = m_type;
                 }
 #line 192 "src/main.vl"
-                infer_expr_type(st, val);
+                const char* val_t = infer_expr_type(st, val);
 #line 193 "src/main.vl"
-                if (((k_sym != NULL) && (val->kind == EXPR_VARIANT))) {
+                if ((((((m_type != NULL && "unknown" != NULL) ? (strcmp(m_type, "unknown") != 0) : (m_type != "unknown")) && ((val_t != NULL && "unknown" != NULL) ? (strcmp(val_t, "unknown") != 0) : (val_t != "unknown"))) && (!types_are_compatible(m_type, val_t))) && (!types_are_compatible(val_t, m_type)))) {
 #line 194 "src/main.vl"
-                    VariantSym* v_sym = find_variant(k_sym, val->member_name);
+                    report_error("semantic", val->line, val->col, "Pattern type does not match subject type in 'on' statement");
 #line 195 "src/main.vl"
-                    if ((v_sym != NULL)) {
-#line 196 "src/main.vl"
-                        if (velo_cmp_gt_u_s(v_sym->field_count, 0)) {
+                    st->error_count += 1;
+                }
 #line 197 "src/main.vl"
-                            ExprNode* cur_b = val->first_arg;
-#line 197 "src/main.vl"
-                            StructFieldSym* cur_f = v_sym->first_field;
+                if (((k_sym != NULL) && (val->kind == EXPR_VARIANT))) {
 #line 198 "src/main.vl"
+                    VariantSym* v_sym = find_variant(k_sym, val->member_name);
+#line 199 "src/main.vl"
+                    if ((v_sym != NULL)) {
+#line 200 "src/main.vl"
+                        if (velo_cmp_gt_u_s(v_sym->field_count, 0)) {
+#line 201 "src/main.vl"
+                            ExprNode* cur_b = val->first_arg;
+#line 201 "src/main.vl"
+                            StructFieldSym* cur_f = v_sym->first_field;
+#line 202 "src/main.vl"
                             for (int32_t it = 0; (((cur_b != NULL) && (cur_f != NULL))); it++) {
-#line 199 "src/main.vl"
+#line 203 "src/main.vl"
                                 if ((cur_b->kind == EXPR_IDENT)) {
-#line 199 "src/main.vl"
+#line 203 "src/main.vl"
                                     define_variable(st, cur_b->str_val, cur_f->type_name, false, cur_b->line, cur_b->col);
                                 }
-#line 200 "src/main.vl"
+#line 204 "src/main.vl"
                                 cur_b = cur_b->next;
-#line 200 "src/main.vl"
+#line 204 "src/main.vl"
                                 cur_f = cur_f->next;
                             }
                         } else
-#line 202 "src/main.vl"
+#line 206 "src/main.vl"
                         if (((v_sym->payload_type != NULL) && (val->first_arg != NULL))) {
-#line 203 "src/main.vl"
+#line 207 "src/main.vl"
                             if ((val->first_arg->kind == EXPR_IDENT)) {
-#line 203 "src/main.vl"
+#line 207 "src/main.vl"
                                 define_variable(st, val->first_arg->str_val, v_sym->payload_type, false, val->first_arg->line, val->first_arg->col);
                             }
                         }
                     }
                 }
-#line 207 "src/main.vl"
+#line 211 "src/main.vl"
                 val = val->next;
             }
-#line 209 "src/main.vl"
+#line 213 "src/main.vl"
+            if (((((((m_type != NULL && "?string" != NULL) ? (strcmp(m_type, "?string") == 0) : (m_type == "?string")) || is_optional_type(m_type)) && (!cur_case->is_default)) && (cur_case->first_val != NULL)) && (cur_case->first_val->kind != EXPR_NULL))) {
+#line 214 "src/main.vl"
+                if ((stmt->expr->kind == EXPR_IDENT)) {
+#line 215 "src/main.vl"
+                    narrow_variable(st, stmt->expr->str_val, optional_inner_type(m_type), m_type);
+                }
+            }
+#line 218 "src/main.vl"
             if ((cur_case->body != NULL)) {
-#line 209 "src/main.vl"
+#line 218 "src/main.vl"
                 check_statement(st, expected_ret_type, cur_case->body);
             }
-#line 210 "src/main.vl"
+#line 219 "src/main.vl"
             exit_scope(st);
-#line 210 "src/main.vl"
+#line 219 "src/main.vl"
             cur_case = cur_case->next;
         }
     } else
-#line 212 "src/main.vl"
+#line 221 "src/main.vl"
     if ((stmt->kind == STMT_BLOCK)) {
-#line 213 "src/main.vl"
+#line 222 "src/main.vl"
         enter_scope(st);
-#line 213 "src/main.vl"
+#line 222 "src/main.vl"
         StmtNode* cur = stmt->first_stmt;
-#line 214 "src/main.vl"
+#line 223 "src/main.vl"
         for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 215 "src/main.vl"
+#line 224 "src/main.vl"
             check_statement(st, expected_ret_type, cur);
-#line 216 "src/main.vl"
+#line 225 "src/main.vl"
             if ((((cur->kind == STMT_IF) && (cur->else_branch == NULL)) && stmt_unconditionally_exits(cur->body))) {
-#line 217 "src/main.vl"
+#line 226 "src/main.vl"
                 apply_flow_narrowing(st, cur->expr, false);
             }
-#line 219 "src/main.vl"
+#line 228 "src/main.vl"
             cur = cur->next;
         }
-#line 221 "src/main.vl"
+#line 230 "src/main.vl"
         exit_scope(st);
     } else
-#line 222 "src/main.vl"
+#line 231 "src/main.vl"
     if ((stmt->kind == STMT_EXPR)) {
-#line 222 "src/main.vl"
+#line 231 "src/main.vl"
         infer_expr_type(st, stmt->expr);
     }
 }
@@ -36145,66 +36160,193 @@ void emit_match_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t
 #line 91 "src/main.vl"
         return;
     }
-#line 93 "src/main.vl"
-    sb_append_indent(sb, indent);
 #line 94 "src/main.vl"
-    sb_append_str(sb, "switch (");
+    bool is_str_type = (((subj_type != NULL && "string" != NULL) ? (strcmp(subj_type, "string") == 0) : (subj_type == "string")) || (is_optional_type(subj_type) && velo_str_eq(optional_inner_type(subj_type), "string")));
 #line 95 "src/main.vl"
-    emit_c_expr(sb, st, stmt->expr);
+    bool has_string_case = false;
 #line 96 "src/main.vl"
-    sb_append_str(sb, ") {\n");
+    CaseNode* chk_c = stmt->first_case;
 #line 97 "src/main.vl"
-    CaseNode* cur_case = stmt->first_case;
+    for (int32_t it = 0; ((chk_c != NULL)); it++) {
 #line 98 "src/main.vl"
-    for (int32_t it = 0; ((cur_case != NULL)); it++) {
+        if ((((!chk_c->is_default) && (chk_c->first_val != NULL)) && (chk_c->first_val->kind == EXPR_STRING))) {
 #line 99 "src/main.vl"
-        if (cur_case->is_default) {
-#line 100 "src/main.vl"
-            sb_append_indent(sb, indent);
+            has_string_case = true;
+        }
 #line 101 "src/main.vl"
+        chk_c = chk_c->next;
+    }
+#line 104 "src/main.vl"
+    if ((is_str_type || has_string_case)) {
+#line 105 "src/main.vl"
+        st->fresh_counter += 1;
+#line 106 "src/main.vl"
+        int32_t tmp_id = ((int32_t)(st->fresh_counter));
+#line 107 "src/main.vl"
+        sb_append_indent(sb, indent);
+#line 108 "src/main.vl"
+        sb_append_str(sb, "{\n");
+#line 109 "src/main.vl"
+        sb_append_indent(sb, (indent + 1));
+#line 110 "src/main.vl"
+        sb_append_str(sb, "const char* __match_s_");
+#line 111 "src/main.vl"
+        sb_append_int(sb, tmp_id);
+#line 112 "src/main.vl"
+        sb_append_str(sb, " = ");
+#line 113 "src/main.vl"
+        emit_c_expr(sb, st, stmt->expr);
+#line 114 "src/main.vl"
+        sb_append_str(sb, ";\n");
+#line 116 "src/main.vl"
+        CaseNode* cur_case = stmt->first_case;
+#line 117 "src/main.vl"
+        bool first_branch = true;
+#line 118 "src/main.vl"
+        CaseNode* default_case = NULL;
+#line 120 "src/main.vl"
+        for (int32_t it = 0; ((cur_case != NULL)); it++) {
+#line 121 "src/main.vl"
+            if (cur_case->is_default) {
+#line 122 "src/main.vl"
+                default_case = cur_case;
+            } else {
+#line 124 "src/main.vl"
+                sb_append_indent(sb, (indent + 1));
+#line 125 "src/main.vl"
+                if (first_branch) {
+#line 126 "src/main.vl"
+                    sb_append_str(sb, "if (");
+                } else {
+#line 128 "src/main.vl"
+                    sb_append_str(sb, "else if (");
+                }
+#line 130 "src/main.vl"
+                ExprNode* val = cur_case->first_val;
+#line 131 "src/main.vl"
+                bool first_val = true;
+#line 132 "src/main.vl"
+                for (int32_t it = 0; ((val != NULL)); it++) {
+#line 133 "src/main.vl"
+                    if ((!first_val)) {
+#line 134 "src/main.vl"
+                        sb_append_str(sb, " || ");
+                    }
+#line 136 "src/main.vl"
+                    sb_append_str(sb, "velo_str_eq(__match_s_");
+#line 137 "src/main.vl"
+                    sb_append_int(sb, tmp_id);
+#line 138 "src/main.vl"
+                    sb_append_str(sb, ", ");
+#line 139 "src/main.vl"
+                    emit_c_expr(sb, st, val);
+#line 140 "src/main.vl"
+                    sb_append_char(sb, ')');
+#line 141 "src/main.vl"
+                    first_val = false;
+#line 142 "src/main.vl"
+                    val = val->next;
+                }
+#line 144 "src/main.vl"
+                sb_append_str(sb, ") {\n");
+#line 145 "src/main.vl"
+                emit_c_block_stmts(sb, st, cur_case->body, (indent + 2), defers);
+#line 146 "src/main.vl"
+                sb_append_indent(sb, (indent + 1));
+#line 147 "src/main.vl"
+                sb_append_str(sb, "}\n");
+#line 148 "src/main.vl"
+                first_branch = false;
+            }
+#line 150 "src/main.vl"
+            cur_case = cur_case->next;
+        }
+#line 153 "src/main.vl"
+        if ((default_case != NULL)) {
+#line 154 "src/main.vl"
+            sb_append_indent(sb, (indent + 1));
+#line 155 "src/main.vl"
+            if (first_branch) {
+#line 156 "src/main.vl"
+                sb_append_str(sb, "{\n");
+            } else {
+#line 158 "src/main.vl"
+                sb_append_str(sb, "else {\n");
+            }
+#line 160 "src/main.vl"
+            emit_c_block_stmts(sb, st, default_case->body, (indent + 2), defers);
+#line 161 "src/main.vl"
+            sb_append_indent(sb, (indent + 1));
+#line 162 "src/main.vl"
+            sb_append_str(sb, "}\n");
+        }
+#line 165 "src/main.vl"
+        sb_append_indent(sb, indent);
+#line 166 "src/main.vl"
+        sb_append_str(sb, "}\n");
+#line 167 "src/main.vl"
+        return;
+    }
+#line 170 "src/main.vl"
+    sb_append_indent(sb, indent);
+#line 171 "src/main.vl"
+    sb_append_str(sb, "switch (");
+#line 172 "src/main.vl"
+    emit_c_expr(sb, st, stmt->expr);
+#line 173 "src/main.vl"
+    sb_append_str(sb, ") {\n");
+#line 174 "src/main.vl"
+    CaseNode* cur_case = stmt->first_case;
+#line 175 "src/main.vl"
+    for (int32_t it = 0; ((cur_case != NULL)); it++) {
+#line 176 "src/main.vl"
+        if (cur_case->is_default) {
+#line 177 "src/main.vl"
+            sb_append_indent(sb, indent);
+#line 178 "src/main.vl"
             sb_append_str(sb, "default: {\n");
         } else {
-#line 103 "src/main.vl"
+#line 180 "src/main.vl"
             ExprNode* val = cur_case->first_val;
-#line 104 "src/main.vl"
+#line 181 "src/main.vl"
             for (int32_t it = 0; ((val != NULL)); it++) {
-#line 105 "src/main.vl"
+#line 182 "src/main.vl"
                 sb_append_indent(sb, indent);
-#line 106 "src/main.vl"
+#line 183 "src/main.vl"
                 sb_append_str(sb, "case ");
-#line 107 "src/main.vl"
+#line 184 "src/main.vl"
                 if ((((val->kind == EXPR_VARIANT) && ((val->type_name == NULL) || velo_cmp_eq_u_s(((usize)strlen(val->type_name)), 0))) && (k_sym != NULL))) {
-#line 108 "src/main.vl"
+#line 185 "src/main.vl"
                     val->type_name = k_sym->name;
                 }
-#line 110 "src/main.vl"
+#line 187 "src/main.vl"
                 emit_c_expr(sb, st, val);
-#line 111 "src/main.vl"
+#line 188 "src/main.vl"
                 sb_append_str(sb, ":\n");
-#line 112 "src/main.vl"
+#line 189 "src/main.vl"
                 val = val->next;
             }
-#line 114 "src/main.vl"
+#line 191 "src/main.vl"
             sb_append_indent(sb, indent);
-#line 115 "src/main.vl"
+#line 192 "src/main.vl"
             sb_append_str(sb, "{\n");
         }
-#line 117 "src/main.vl"
+#line 194 "src/main.vl"
         emit_c_block_stmts(sb, st, cur_case->body, (indent + 1), defers);
-#line 118 "src/main.vl"
+#line 195 "src/main.vl"
         sb_append_indent(sb, (indent + 1));
-#line 119 "src/main.vl"
+#line 196 "src/main.vl"
         sb_append_str(sb, "break;\n");
-#line 120 "src/main.vl"
+#line 197 "src/main.vl"
         sb_append_indent(sb, indent);
-#line 121 "src/main.vl"
+#line 198 "src/main.vl"
         sb_append_str(sb, "}\n");
-#line 122 "src/main.vl"
+#line 199 "src/main.vl"
         cur_case = cur_case->next;
     }
-#line 124 "src/main.vl"
+#line 201 "src/main.vl"
     sb_append_indent(sb, indent);
-#line 125 "src/main.vl"
+#line 202 "src/main.vl"
     sb_append_str(sb, "}\n");
 }
 

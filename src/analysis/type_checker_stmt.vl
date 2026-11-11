@@ -189,7 +189,11 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
             enter_scope(st); mut val = cur_case.first_val
             loop val != null {
                 if val.kind == EXPR_VARIANT and (val.type_name == null or str.len(val.type_name) == 0) { val.type_name = m_type }
-                infer_expr_type(st, val)
+                let val_t = infer_expr_type(st, val)
+                if m_type != "unknown" and val_t != "unknown" and not types_are_compatible(m_type, val_t) and not types_are_compatible(val_t, m_type) {
+                    report_error("semantic", val.line, val.col, "Pattern type does not match subject type in 'on' statement")
+                    st.error_count += 1
+                }
                 if k_sym != null and val.kind == EXPR_VARIANT {
                     let v_sym = find_variant(k_sym, val.member_name)
                     if v_sym != null {
@@ -205,6 +209,11 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
                     }
                 }
                 val = val.next
+            }
+            if (m_type == "?string" or is_optional_type(m_type)) and not cur_case.is_default and cur_case.first_val != null and cur_case.first_val.kind != EXPR_NULL {
+                if stmt.expr.kind == EXPR_IDENT {
+                    narrow_variable(st, stmt.expr.str_val, optional_inner_type(m_type), m_type)
+                }
             }
             if cur_case.body != null { check_statement(st, expected_ret_type, cur_case.body) }
             exit_scope(st); cur_case = cur_case.next

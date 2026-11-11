@@ -1,0 +1,109 @@
+// std/tests/string_match_test.vl — Tests for string pattern matching in `on` statements.
+use std.io
+
+act match_color(c: string) -> string {
+    on c {
+        "red": return "crimson"
+        "blue": return "azure"
+        "green": return "emerald"
+        else: return "unknown"
+    }
+}
+
+act match_http_method(m: string) -> string {
+    on m {
+        "GET" => return "read"
+        "POST" => return "create"
+        "PUT", "PATCH" => return "update"
+        "DELETE" => return "remove"
+        _ => return "unsupported"
+    }
+}
+
+act is_quit_command(cmd: string) -> bool {
+    on cmd {
+        "q", "quit", "exit", "stop" => return true
+        else => return false
+    }
+}
+
+mut eval_counter: i32 = 0
+act get_command_side_effect() -> string {
+    eval_counter += 1
+    return "execute"
+}
+
+act match_optional_str(s: ?string) -> string {
+    on s {
+        null => return "none"
+        "root", "admin" => return "privileged"
+        else => return "unprivileged"
+    }
+}
+
+act main() {
+    // 1. Basic string match with colons
+    assert(match_color("red") == "crimson")
+    assert(match_color("blue") == "azure")
+    assert(match_color("green") == "emerald")
+    assert(match_color("yellow") == "unknown")
+
+    // 2. Fat-arrow syntax with multi-value case
+    assert(match_http_method("GET") == "read")
+    assert(match_http_method("POST") == "create")
+    assert(match_http_method("PUT") == "update")
+    assert(match_http_method("PATCH") == "update")
+    assert(match_http_method("DELETE") == "remove")
+    assert(match_http_method("OPTIONS") == "unsupported")
+
+    // 3. Multi-value string match
+    assert(is_quit_command("q") == true)
+    assert(is_quit_command("quit") == true)
+    assert(is_quit_command("exit") == true)
+    assert(is_quit_command("stop") == true)
+    assert(is_quit_command("help") == false)
+
+    // 4. Block syntax with mut mutations
+    mut score: i32 = 0
+    let action = "reward"
+    on action {
+        "penalty": {
+            score -= 10
+        }
+        "reward": {
+            score += 100
+        }
+        else: {
+            score = 0
+        }
+    }
+    assert(score == 100)
+
+    // 5. Verify single evaluation of subject expression
+    eval_counter = 0
+    mut result = "none"
+    on get_command_side_effect() {
+        "check": result = "checked"
+        "verify": result = "verified"
+        "execute": result = "executed"
+        else: result = "unknown"
+    }
+    assert(result == "executed")
+    assert(eval_counter == 1)
+
+    // 6. Optional string matching (?string) including null pattern
+    let null_user: ?string = null
+    assert(match_optional_str(null_user) == "none")
+
+    let root_user: ?string = "root"
+    assert(match_optional_str(root_user) == "privileged")
+
+    let admin_user: ?string = "admin"
+    assert(match_optional_str(admin_user) == "privileged")
+
+    let guest_user: ?string = "guest"
+    assert(match_optional_str(guest_user) == "unprivileged")
+
+    io.println("All string match in 'on' tests passed successfully!")
+}
+
