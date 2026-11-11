@@ -127,6 +127,11 @@ act expr_lifetime_depth(st: @SymbolTable, expr: @ExprNode) -> i32 {
         let r = expr_lifetime_depth(st, expr.right)
         if l > r { return l } else { return r }
     }
+    if expr.kind == EXPR_IF {
+        let l = expr_lifetime_depth(st, expr.right)
+        let r = expr_lifetime_depth(st, expr.operand)
+        if l > r { return l } else { return r }
+    }
 
     return 0
 }

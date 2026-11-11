@@ -52,11 +52,46 @@ act parse_anon_act(p: @Parser) -> @ExprNode {
     return make_ident_expr(anon_name, act_tok.line, act_tok.col)
 }
 
+// Parses an if-else conditional expression (`if c { a } else { b }` or chained `else if`).
+act parse_if_expr(p: @Parser) -> @ExprNode {
+    let if_tok = parser_consume(p, TOK_IF, "Expected 'if'")
+    let cond = parse_expression(p)
+    parser_skip_newlines(p)
+    parser_consume(p, TOK_LBRACE, "Expected '{' after if condition")
+    parser_skip_newlines(p)
+    let then_expr = parse_expression(p)
+    parser_skip_newlines(p)
+    parser_match(p, TOK_SEMICOLON)
+    parser_skip_newlines(p)
+    parser_consume(p, TOK_RBRACE, "Expected '}' after then expression")
+    parser_skip_newlines(p)
+    parser_consume(p, TOK_ELSE, "Expected 'else' in if-expression")
+    parser_skip_newlines(p)
+    mut else_expr: @ExprNode = null
+    if parser_check(p, TOK_IF) {
+        else_expr = parse_if_expr(p)
+    } else {
+        parser_consume(p, TOK_LBRACE, "Expected '{' after 'else'")
+        parser_skip_newlines(p)
+        else_expr = parse_expression(p)
+        parser_skip_newlines(p)
+        parser_match(p, TOK_SEMICOLON)
+        parser_skip_newlines(p)
+        parser_consume(p, TOK_RBRACE, "Expected '}' after else expression")
+    }
+    return make_if_expr(cond, then_expr, else_expr, if_tok.line, if_tok.col)
+}
+
 // Parses primary expressions: literals, identifiers, grouped expressions, struct literals.
 act parse_primary(p: @Parser) -> @ExprNode {
     // 0. Anonymous function expression
     if parser_check(p, TOK_ACT) {
         return parse_anon_act(p)
+    }
+
+    // 0.5. Conditional expression (`if c { a } else { b }`)
+    if parser_check(p, TOK_IF) {
+        return parse_if_expr(p)
     }
 
     // 1. Struct instantiation literal (e.g. `Point{ x: 10, y: 20 }` or `Box[i32]{ value: 42 }`)

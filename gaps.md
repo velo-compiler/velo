@@ -3119,3 +3119,34 @@ flowchart TD
   - Verified full test suite passes with zero regressions: 616 passed in `tests/` (`python -m pytest tests -q`).
   - All 99 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
   - Zero UTF-8 BOM across all `.vl` files.
+
+### Phase 40: First-Class `if-else` Conditional Expressions [COMPLETED] ✅
+#### Task 40.1: `if-else` and Chained `else if` as Expressions Lowering to C99 Ternary [COMPLETED] ✅
+* **Former Defect**:
+  - In Velo, `if-else` was strictly a statement construct (`STMT_IF`). Developers could not use `if-else` directly inside expressions to initialize variables (`let x = if c { a } else { b }`), return values (`return if c { a } else { b }`), or pass conditional values as arguments to function calls.
+  - Developers were forced to use verbose multi-line mutable variables (`mut x = default; if c { x = a } else { x = b }`), losing immutability guarantees and clarity.
+* **Fix Applied**:
+  1. **AST & Grammar Integration (`src/ast/expr.vl`, `src/frontend/parser_primary.vl`)**:
+     - Added `EXPR_IF = 121` and `make_if_expr(cond, then_expr, else_expr, line, col)`.
+     - In `parser_primary.vl`, added `parse_if_expr(p)` supporting `{ then_expr }` block syntax and chained `else if` / `else` branches. Statement-level `if` remains disambiguated at the statement parsing level (`parser_stmt.vl`).
+  2. **Type Checking & Flow-Sensitive Narrowing (`src/analysis/type_checker.vl`, `src/ast/types.vl`)**:
+     - Integrated `infer_expr_type` for `EXPR_IF` with scoped flow-sensitive type narrowing on both branches: condition is known true in `then` branch and known false in `else` branch.
+     - Added `widen_if_branch_types` and `make_optional_type` to unify branch types, automatically widening scalar values (`T`) with `null` into optional types (`?T`).
+     - Added branch compatibility checking emitting descriptive diagnostics: `Incompatible branch types in if-expression: 'T1' vs 'T2'`.
+  3. **Analysis Pipelines (`src/analysis/alias_resolve.vl`, `src/analysis/escape_checks.vl`, `src/analysis/mono_infer.vl`, `src/analysis/monomorphize_expr.vl`)**:
+     - Added recursive handling for `EXPR_IF` in alias resolution, escape depth analysis (taking maximum depth of branches), type inference, and monomorphization cloning.
+  4. **C99 Ternary Lowering (`src/backend/codegen_expr.vl`)**:
+     - Lowered `EXPR_IF` directly to zero-overhead C99 ternary expressions `((cond) ? (then) : (else))`.
+     - Chained `else if` lowers naturally into nested C ternaries without GCC statement-expression extensions, ensuring full compatibility with MSVC `cl.exe`, GCC, and Clang.
+     - In `emit_if_branch`, automatically wrapped value optional types (`?i32`) into compound literals `(_Velo_Opt_i32){ .has = true, .val = ... }` and `(_Velo_Opt_i32){ .has = false }`.
+  5. **Self-Hosting Bootstrap & Determinism**:
+     - Rebuilt 3-generation compiler chain (`bin/velo.exe build src/main.vl -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe -> bootstrap.c`).
+     - Verified bit-for-bit SHA-256 determinism across Gen2, Gen3, and `bootstrap.c` (`7EB4498CCA3AEC5CA8FE4D90B46D19044928711AC90C8DF677D312209886CA90`).
+* **Residual Limitation**:
+  - `if-else` expressions require both `then` and `else` branches (an `if` without `else` is a statement, not an expression, since an expression must always produce a value).
+* **Verification**:
+  - Created standalone Velo test suite `std/tests/if_expr_test.vl` covering variable bindings, chained `else if`, return expressions, sub-expressions in arithmetic, call argument expressions, mutable re-assignment, flow-sensitive type narrowing within branches, and value optional promotion.
+  - Created regression test suite `tests/test_if_expr.py` verifying test battery execution and error diagnostics on incompatible branch types.
+  - Verified full test suite passes with zero regressions: 618 passed (`python -m pytest tests -q`).
+  - All 99 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
+  - Zero UTF-8 BOM across all `.vl` files.

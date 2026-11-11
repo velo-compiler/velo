@@ -22,6 +22,20 @@ use "os_checks.vl"
 use "fs_checks.vl"
 use "simd_checks.vl"
 use "reflect_checks.vl"
+use "scope.vl"
+use "narrow_flow.vl"
+
+act widen_if_branch_types(t1: string, t2: string) -> string {
+    if t1 == t2 { return t1 }
+    if is_optional_type(t2) and not is_optional_type(t1) { return t2 }
+    if is_optional_type(t1) and not is_optional_type(t2) { return t1 }
+    if t1 == "@void" or t1 == "null" { if t2 == "@void" or t2 == "null" { return "@void" }; return make_optional_type(t2) }
+    if t2 == "@void" or t2 == "null" { return make_optional_type(t1) }
+    if t1 == "i64" or t2 == "i64" { return "i64" }; if t1 == "u64" or t2 == "u64" { return "u64" }
+    if t1 == "usize" or t2 == "usize" { return "usize" }; if t1 == "f64" or t2 == "f64" { return "f64" }
+    return t1
+}
+
 act is_known_type(st: @SymbolTable, name: string) -> bool {
     if name == null { return false }
     let clean = strip_pointer_prefix(name)
@@ -336,6 +350,22 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             return op_type
         }
         return optional_inner_type(op_type)
+    }
+
+    if expr.kind == EXPR_IF {
+        infer_expr_type(st, expr.left)
+        enter_scope(st); apply_flow_narrowing(st, expr.left, true); let then_type = infer_expr_type(st, expr.right); exit_scope(st)
+        enter_scope(st); apply_flow_narrowing(st, expr.left, false); let else_type = infer_expr_type(st, expr.operand); exit_scope(st)
+        let is_t1_null = (then_type == "@void" or then_type == "null")
+        let is_t2_null = (else_type == "@void" or else_type == "null")
+        if not is_t1_null and not is_t2_null and not types_are_compatible(then_type, else_type) and not types_are_compatible(else_type, then_type) {
+            mut sb = create_sb(96); sb_append_str(@sb, "Incompatible branch types in if-expression: '"); sb_append_str(@sb, then_type); sb_append_str(@sb, "' vs '"); sb_append_str(@sb, else_type); sb_append_str(@sb, "'")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@sb)); st.error_count += 1
+            return "unknown"
+        }
+        let res_type = widen_if_branch_types(then_type, else_type)
+        expr.type_name = res_type
+        return res_type
     }
 
     return "unknown"

@@ -63,6 +63,7 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
     if e.kind == EXPR_FLOAT { return "f32" }
     if e.kind == EXPR_STRING { return "string" }
     if e.kind == EXPR_BOOL { return "bool" }
+    if e.kind == EXPR_IF { if e.type_name != null and str.len(e.type_name) > 0 { return e.type_name }; return mono_infer_type(e.right, scope) }
     if e.kind == EXPR_STRUCT_LIT { return e.type_name }
     if e.kind == EXPR_VARIANT { return e.type_name }
     if e.kind == EXPR_ADDRESS_OF {

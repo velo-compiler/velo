@@ -26,6 +26,33 @@ use "simd_gen.vl"
 use "codegen_line.vl"
 use "reflect_gen.vl"
 use "codegen_call.vl"
+use "../analysis/scope.vl"
+use "../analysis/narrow_flow.vl"
+
+act emit_if_branch(sb: @StringBuilder, st: @SymbolTable, branch: @ExprNode, target_t: string) {
+    if is_optional_type(target_t) {
+        let inner = optional_inner_type(target_t)
+        if inner[0] != '@' and inner != "string" {
+            let opt_c = opt_type_c_name(target_t)
+            if branch.kind == EXPR_NULL { sb_append_char(sb, '('); sb_append_str(sb, opt_c); sb_append_str(sb, "){ .has = false }"); return }
+            let bt = infer_expr_type(st, branch)
+            if not is_optional_type(bt) {
+                sb_append_char(sb, '('); sb_append_str(sb, opt_c); sb_append_str(sb, "){ .has = true, .val = "); emit_c_expr(sb, st, branch); sb_append_str(sb, " }"); return
+            }
+        }
+    }
+    emit_c_expr(sb, st, branch)
+}
+
+act emit_if_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    sb_append_str(sb, "((")
+    emit_c_expr(sb, st, expr.left)
+    sb_append_str(sb, ") ? (")
+    enter_scope(st); apply_flow_narrowing(st, expr.left, true); emit_if_branch(sb, st, expr.right, expr.type_name); exit_scope(st)
+    sb_append_str(sb, ") : (")
+    enter_scope(st); apply_flow_narrowing(st, expr.left, false); emit_if_branch(sb, st, expr.operand, expr.type_name); exit_scope(st)
+    sb_append_str(sb, "))")
+}
 
 // Emits C99 code for an AST expression into a StringBuilder.
 act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
@@ -315,13 +342,8 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             }
         }
 
-        sb_append_char(sb, '(')
-        emit_c_expr(sb, st, expr.left)
-        sb_append_char(sb, ' ')
-        sb_append_str(sb, op_to_c_str(expr.op))
-        sb_append_char(sb, ' ')
-        emit_c_expr(sb, st, expr.right)
-        sb_append_char(sb, ')')
+        sb_append_char(sb, '('); emit_c_expr(sb, st, expr.left); sb_append_char(sb, ' ')
+        sb_append_str(sb, op_to_c_str(expr.op)); sb_append_char(sb, ' '); emit_c_expr(sb, st, expr.right); sb_append_char(sb, ')')
         return
     }
 
@@ -333,13 +355,9 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
 
     // 9. Outcome propagation expression (`expr or return`)
     if expr.kind == EXPR_OR_RETURN {
-        let op_t = infer_expr_type(st, expr.operand)
-        let c_op_t = map_type_to_c(op_t)
-        let ret_c = map_type_to_c(st.current_func_ret_type)
-        st.fresh_counter += 1
-        let tmp_id = st.fresh_counter as i32
-        sb_append_str(sb, "({ ")
-        sb_append_str(sb, c_op_t); sb_append_str(sb, " __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, " = ")
+        let op_t = infer_expr_type(st, expr.operand); let c_op_t = map_type_to_c(op_t); let ret_c = map_type_to_c(st.current_func_ret_type)
+        st.fresh_counter += 1; let tmp_id = st.fresh_counter as i32
+        sb_append_str(sb, "({ "); sb_append_str(sb, c_op_t); sb_append_str(sb, " __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, " = ")
         emit_c_expr(sb, st, expr.operand)
         sb_append_str(sb, "; if (!__or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".ok) return ("); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = false, .as = { .err = __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.err } }; ")
         sb_append_str(sb, "__or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.val; })")
@@ -351,31 +369,20 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         let op_t = infer_expr_type(st, expr.operand)
         let inner = optional_inner_type(op_t)
         if inner[0] == '@' or inner == "string" {
-            let c_type = map_type_to_c(inner)
-            sb_append_str(sb, "((")
-            sb_append_str(sb, c_type)
-            sb_append_str(sb, ")velo_opt_unwrap_ptr(")
-            emit_c_expr(sb, st, expr.operand)
-            sb_append_str(sb, ", \"")
-            emit_source_path(sb, st)
-            sb_append_str(sb, "\", ")
-            sb_append_int(sb, expr.line)
-            sb_append_str(sb, ", ")
-            sb_append_int(sb, expr.col)
-            sb_append_str(sb, "))")
+            sb_append_str(sb, "(("); sb_append_str(sb, map_type_to_c(inner)); sb_append_str(sb, ")velo_opt_unwrap_ptr(")
+            emit_c_expr(sb, st, expr.operand); sb_append_str(sb, ", \""); emit_source_path(sb, st); sb_append_str(sb, "\", ")
+            sb_append_int(sb, expr.line); sb_append_str(sb, ", "); sb_append_int(sb, expr.col); sb_append_str(sb, "))")
         } else {
-            sb_append_str(sb, "velo_opt_unwrap_")
-            sb_append_str(sb, inner)
-            sb_append_char(sb, '(')
-            emit_c_expr(sb, st, expr.operand)
-            sb_append_str(sb, ", \"")
-            emit_source_path(sb, st)
-            sb_append_str(sb, "\", ")
-            sb_append_int(sb, expr.line)
-            sb_append_str(sb, ", ")
-            sb_append_int(sb, expr.col)
-            sb_append_char(sb, ')')
+            sb_append_str(sb, "velo_opt_unwrap_"); sb_append_str(sb, inner); sb_append_char(sb, '(')
+            emit_c_expr(sb, st, expr.operand); sb_append_str(sb, ", \""); emit_source_path(sb, st); sb_append_str(sb, "\", ")
+            sb_append_int(sb, expr.line); sb_append_str(sb, ", "); sb_append_int(sb, expr.col); sb_append_char(sb, ')')
         }
+        return
+    }
+
+    // 11. Conditional if-else expression (`if c { a } else { b }`)
+    if expr.kind == EXPR_IF {
+        emit_if_expr(sb, st, expr)
         return
     }
 }

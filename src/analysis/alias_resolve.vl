@@ -73,6 +73,10 @@ act mono_alias_resolve_expr(m: @Monomorphizer, e: @ExprNode) {
     } else if e.kind == EXPR_BINARY {
         mono_alias_resolve_expr(m, e.left)
         mono_alias_resolve_expr(m, e.right)
+    } else if e.kind == EXPR_IF {
+        mono_alias_resolve_expr(m, e.left)
+        mono_alias_resolve_expr(m, e.right)
+        mono_alias_resolve_expr(m, e.operand)
     } else if e.kind == EXPR_MEMBER {
         mono_alias_resolve_expr(m, e.target)
     } else if e.kind == EXPR_INDEX {

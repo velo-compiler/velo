@@ -1,0 +1,81 @@
+// std/tests/if_expr_test.vl — Tests for first-class if-else conditional expressions
+use std.io
+
+data Person {
+    name: string
+    age: i32
+}
+
+act classify_num(n: i32) -> string {
+    return if n > 0 { "positive" } else if n < 0 { "negative" } else { "zero" }
+}
+
+act add_vals(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+act main() {
+    // 1. Basic if-else expression binding
+    let x = if true { 10 } else { 20 }
+    assert(x == 10)
+
+    let y = if false { 10 } else { 20 }
+    assert(y == 20)
+
+    // 2. Chained else-if expressions
+    let score = 85
+    let grade = if score >= 90 { "A" } else if score >= 80 { "B" } else { "C" }
+    assert(grade == "B")
+
+    let score2 = 95
+    let grade2 = if score2 >= 90 { "A" } else if score2 >= 80 { "B" } else { "C" }
+    assert(grade2 == "A")
+
+    let score3 = 50
+    let grade3 = if score3 >= 90 { "A" } else if score3 >= 80 { "B" } else { "C" }
+    assert(grade3 == "C")
+
+    // 3. Return if-else expression
+    assert(classify_num(10) == "positive")
+    assert(classify_num(-5) == "negative")
+    assert(classify_num(0) == "zero")
+
+    // 4. Sub-expression in arithmetic
+    let calc = 100 + (if true { 5 } else { 10 }) * 2
+    assert(calc == 110)
+
+    let calc2 = 100 + (if false { 5 } else { 10 }) * 2
+    assert(calc2 == 120)
+
+    // 5. As function arguments
+    let sum = add_vals(if true { 3 } else { 0 }, if false { 0 } else { 7 })
+    assert(sum == 10)
+
+    // 6. Mutable variable assignment
+    mut status = false
+    mut state_str = if status { "online" } else { "offline" }
+    assert(state_str == "offline")
+    status = true
+    state_str = if status { "online" } else { "offline" }
+    assert(state_str == "online")
+
+    // 7. Flow-sensitive type narrowing in branch
+    let person: ?@Person = null
+    let display_name = if person != null { person.name } else { "Guest" }
+    assert(display_name == "Guest")
+
+    mut real_person = Person{ name: "Alice", age: 30 }
+    let opt_p: ?@Person = @real_person
+    let found_name = if opt_p != null { opt_p.name } else { "Guest" }
+    assert(found_name == "Alice")
+
+    // 8. Value optional type widening / wrapping
+    let opt_num1: ?i32 = if true { 42 } else { null }
+    assert(opt_num1 != null)
+    assert(opt_num1! == 42)
+
+    let opt_num2: ?i32 = if false { 42 } else { null }
+    assert(opt_num2 == null)
+
+    io.println("All if-else expression tests passed!")
+}

@@ -43,6 +43,7 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
         return make_binary_expr(l, e.op, r, e.line, e.col)
     }
     if e.kind == EXPR_UNARY { return make_unary_expr(e.op, mono_clone_expr(m, e.operand, scope, params, args), e.line, e.col) }
+    if e.kind == EXPR_IF { return make_if_expr(mono_clone_expr(m, e.left, scope, params, args), mono_clone_expr(m, e.right, scope, params, args), mono_clone_expr(m, e.operand, scope, params, args), e.line, e.col) }
     if e.kind == EXPR_OR_RETURN { return make_or_return_expr(mono_clone_expr(m, e.operand, scope, params, args), e.line, e.col) }
     if e.kind == EXPR_ADDRESS_OF { return make_address_of_expr(mono_clone_expr(m, e.operand, scope, params, args), e.line, e.col) }
     if e.kind == EXPR_DEREF { return make_deref_expr(mono_clone_expr(m, e.operand, scope, params, args), e.line, e.col) }

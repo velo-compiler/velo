@@ -26,6 +26,7 @@ let EXPR_HEAP_SHELF_LIT: i32 = 153  // 5.2 slice 10: a shelf literal whose paylo
 let EXPR_HEAP_MAP_LIT: i32 = 154    // Task 7.2: a map literal whose payload is heap-backed
 let EXPR_OR_RETURN: i32 = 119       // Algebraic error handling: `expr or return`
 let EXPR_UNWRAP: i32 = 120          // Optional unwrap: `expr!`
+let EXPR_IF: i32 = 121              // Conditional expression: `if c { a } else { b }`
 
 // Represents a single field initializer in a struct instantiation (e.g. `x: 10.0`).
 // Linked via `next` to support arbitrary numbers of fields without dynamic heap buffers.
@@ -345,6 +346,18 @@ act make_variant_expr(kind_name: string, variant_name: string, first_arg: @ExprN
     node.member_name = variant_name
     node.first_arg = first_arg
     node.arg_count = count
+    node.line = line
+    node.col = col
+    return node
+}
+
+// Creates a conditional if-else expression node (`if c { a } else { b }`).
+act make_if_expr(cond: @ExprNode, then_expr: @ExprNode, else_expr: @ExprNode, line: i32, col: i32) -> @ExprNode {
+    mut node: @ExprNode = mem.alloc(@ExprNode, 1)
+    node.kind = EXPR_IF
+    node.left = cond
+    node.right = then_expr
+    node.operand = else_expr
     node.line = line
     node.col = col
     return node

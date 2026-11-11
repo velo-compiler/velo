@@ -210,6 +210,22 @@ act opt_type_c_name(name: string) -> string {
     return sb_to_string(@sb)
 }
 
+// Wraps a type name into '?T'.
+act make_optional_type(name: string) -> string {
+    if name == null or name == "@void" or name == "null" or name == "void" { return "@void" }
+    if is_optional_type(name) { return name }
+    let len = str.len(name)
+    mut buf: @u8 = mem.alloc(@u8, len + 2)
+    buf[0] = '?'
+    mut i: usize = 0
+    loop i < len {
+        buf[1 + i] = name[i]
+        i += 1
+    }
+    buf[len + 1] = 0 as u8
+    return buf as string
+}
+
 // Checks if two type names are structurally or nominally compatible.
 act types_are_compatible(expected: string, actual: string) -> bool {
     if expected == null or actual == null { return false }
