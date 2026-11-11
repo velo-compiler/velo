@@ -1,0 +1,233 @@
+// std.http.async_client — Non-blocking asynchronous HTTP/1.1 client on std.async.
+use "request.vl"
+use "response.vl"
+use "headers.vl"
+use "url.vl"
+use "status.vl"
+use "async_server.vl"
+use "../async.vl"
+use "../mem/heap.vl"
+
+data _AsyncHttpClientState {
+    loop_ptr: @EventLoop
+    on_response: act(HttpResponse, @void) -> void
+    user_data: @void
+    req_wire: string
+    buf: @u8
+    len: usize
+    cap: usize
+    header_end: usize
+    content_length: usize
+    has_header_end: bool
+    is_done: bool
+}
+
+act async_http_client_state_sizeof() -> usize {
+    let dummy: @_AsyncHttpClientState = null
+    return (dummy + 1) as usize
+}
+
+act _http_client_state_append(state: @_AsyncHttpClientState, data: @u8, len: usize) {
+    if state == null or data == null or len == 0 { return }
+    if state.len + len + 1 >= state.cap {
+        let new_cap = (state.cap * 2) + len + 16
+        let new_buf = heap_alloc(new_cap) as @u8
+        if new_buf == null { return }
+        mut i: usize = 0
+        loop i < state.len {
+            new_buf[i] = state.buf[i]
+            i += 1
+        }
+        heap_free(state.buf)
+        state.buf = new_buf
+        state.cap = new_cap
+    }
+    mut j: usize = 0
+    loop j < len {
+        state.buf[state.len + j] = data[j]
+        j += 1
+    }
+    state.len += len
+    state.buf[state.len] = 0 as u8
+}
+
+act _async_http_client_on_data(stream: @AsyncTcpStream, data: @u8, len: usize, udata: @void) {
+    if udata == null { return }
+    let state = udata as @_AsyncHttpClientState
+    if state.is_done { return }
+
+    _http_client_state_append(state, data, len)
+
+    if not state.has_header_end {
+        mut h_end: usize = 0
+        if _http_scan_header_end(state.buf, state.len, @h_end) {
+            state.has_header_end = true
+            state.header_end = h_end
+            state.content_length = _http_extract_content_length(state.buf, h_end)
+        }
+    }
+
+    if state.has_header_end and state.content_length > 0 {
+        if state.len >= state.header_end + state.content_length {
+            state.is_done = true
+            let resp = http_parse_response(state.buf as string)
+            let on_resp = state.on_response
+            let u_data = state.user_data
+
+            heap_free(state.buf)
+            heap_free(state as @u8)
+            async_tcp_stream_close(stream)
+
+            if on_resp != null {
+                on_resp(resp, u_data)
+            }
+        }
+    }
+}
+
+act _async_http_client_on_close(stream: @AsyncTcpStream, udata: @void) {
+    if udata == null { return }
+    let state = udata as @_AsyncHttpClientState
+    if not state.is_done {
+        state.is_done = true
+        let on_resp = state.on_response
+        let u_data = state.user_data
+
+        mut resp: HttpResponse
+        if state.len > 0 {
+            resp = http_parse_response(state.buf as string)
+        } else {
+            resp = http_response_make(500 as u16, "Connection closed prematurely")
+        }
+
+        if state.buf != null {
+            heap_free(state.buf)
+            state.buf = null
+        }
+        heap_free(state as @u8)
+
+        if on_resp != null {
+            on_resp(resp, u_data)
+        }
+    }
+}
+
+act _async_http_client_on_connect(stream: @AsyncTcpStream, success: bool, udata: @void) {
+    if udata == null { return }
+    let state = udata as @_AsyncHttpClientState
+
+    if not success {
+        let on_resp = state.on_response
+        let u_data = state.user_data
+        let fail_resp = http_response_make(503 as u16, "Failed to connect to host")
+
+        if state.req_wire != null {
+            heap_free(state.req_wire as @u8)
+        }
+        if state.buf != null {
+            heap_free(state.buf)
+        }
+        heap_free(state as @u8)
+
+        if on_resp != null {
+            on_resp(fail_resp, u_data)
+        }
+        return
+    }
+
+    async_tcp_stream_on_data(stream, _async_http_client_on_data, state as @void)
+    async_tcp_stream_on_close(stream, _async_http_client_on_close, state as @void)
+
+    if state.req_wire != null {
+        async_tcp_stream_write_str(stream, state.req_wire)
+        heap_free(state.req_wire as @u8)
+        state.req_wire = null
+    }
+}
+
+// Sends an asynchronous non-blocking HTTP request and dispatches the response via callback
+act async_http_request(el: @EventLoop, method: string, url_str: string, headers: @HttpHeaderMap, body: string, on_response: act(HttpResponse, @void) -> void, user_data: @void) -> bool {
+    if el == null or url_str == null or on_response == null { return false }
+    let parsed_url = http_parse_url(url_str)
+    if parsed_url.host == null or str.len(parsed_url.host) == 0 { return false }
+
+    mut full_path = parsed_url.path
+    if str.len(parsed_url.query) > 0 {
+        let p_len = str.len(parsed_url.path)
+        let q_len = str.len(parsed_url.query)
+        mut q_buf: @u8 = heap_alloc(p_len + 1 + q_len + 1)
+        if q_buf != null {
+            mut pos: usize = 0
+            mut i: usize = 0
+            loop i < p_len { q_buf[pos] = parsed_url.path[i]; pos += 1; i += 1 }
+            q_buf[pos] = '?' as u8; pos += 1
+            mut j: usize = 0
+            loop j < q_len { q_buf[pos] = parsed_url.query[j]; pos += 1; j += 1 }
+            q_buf[pos] = 0 as u8
+            full_path = q_buf as string
+        }
+    }
+
+    mut req = http_request_make(method, full_path)
+    if body != null and str.len(body) > 0 {
+        req.body = body
+        req.content_length = str.len(body)
+    }
+
+    if headers != null and headers.headers != null {
+        mut hi: usize = 0
+        loop hi < headers.count {
+            headers_set(@req.headers, headers.headers[hi].name, headers.headers[hi].value)
+            hi += 1
+        }
+    }
+
+    if not headers_has(@req.headers, "User-Agent") {
+        headers_set(@req.headers, "User-Agent", "Velo-Http-Async/2.0")
+    }
+    if not headers_has(@req.headers, "Connection") {
+        headers_set(@req.headers, "Connection", "close")
+    }
+
+    let wire_req = http_format_request(@req, parsed_url.host)
+    http_request_free(@req)
+
+    let state = heap_alloc(async_http_client_state_sizeof()) as @_AsyncHttpClientState
+    state.loop_ptr = el
+    state.on_response = on_response
+    state.user_data = user_data
+    state.req_wire = wire_req
+    state.cap = 4096
+    state.buf = heap_alloc(state.cap)
+    state.len = 0
+    state.header_end = 0
+    state.content_length = 0
+    state.has_header_end = false
+    state.is_done = false
+
+    let client = async_tcp_connect(el, parsed_url.host, parsed_url.port, _async_http_client_on_connect, state as @void)
+    if client == null {
+        if state.req_wire != null { heap_free(state.req_wire as @u8) }
+        if state.buf != null { heap_free(state.buf) }
+        heap_free(state as @u8)
+        return false
+    }
+    return true
+}
+
+// Sends an asynchronous non-blocking HTTP GET request
+act async_http_get(el: @EventLoop, url_str: string, on_response: act(HttpResponse, @void) -> void, user_data: @void) -> bool {
+    return async_http_request(el, "GET", url_str, null, "", on_response, user_data)
+}
+
+// Sends an asynchronous non-blocking HTTP POST request
+act async_http_post(el: @EventLoop, url_str: string, content_type: string, body: string, on_response: act(HttpResponse, @void) -> void, user_data: @void) -> bool {
+    mut h: HttpHeaderMap
+    headers_init(@h, 4)
+    if content_type != null {
+        headers_set(@h, "Content-Type", content_type)
+    }
+    let res = async_http_request(el, "POST", url_str, @h, body, on_response, user_data)
+    headers_free(@h)
+    return res
+}

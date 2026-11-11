@@ -3025,3 +3025,39 @@ flowchart TD
   - All 98 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
   - Zero UTF-8 BOM in any `.vl` file.
   - Full test suite (614 passed) and all 5/5 VS Code extension suites passing.
+
+### Phase 37: Asynchronous HTTP Client & Server (`std.http` async upgrade) [COMPLETED] ✅
+
+* **Defect**:
+  - The standard HTTP module (`std.http`) previously provided only synchronous, blocking primitives (`http_request`, `http_server_listen`, `http_server_accept`).
+  - High-concurrency web services and asynchronous microservices were unable to handle multiple in-flight HTTP requests and responses concurrently on a single thread without blocking worker threads.
+  - Velo lacked high-level asynchronous non-blocking HTTP client helpers (`async_http_get`, `async_http_post`) and an event-driven request-response exchange model (`AsyncHttpExchange`).
+* **Fix Applied**:
+  1. **Non-Blocking Asynchronous HTTP Server (`std/http/async_server.vl`)**:
+     - `AsyncHttpServer`: non-blocking server bound to the `EventLoop` via `async_http_listen(el, host, port, on_request, user_data)`.
+     - Request Accumulator: streaming TCP chunk buffer with zero-allocation `_http_scan_header_end` and case-insensitive `_http_extract_content_length`.
+     - `AsyncHttpExchange`: represents an active in-flight request (`req: HttpRequest`) and provides response dispatchers:
+       - `async_http_respond(ex, status, content_type, body)`: transmits response with `Content-Length` and `Connection: close` and closes connection.
+       - `async_http_respond_text(ex, status, text)`: helper for `text/plain; charset=utf-8`.
+       - `async_http_respond_json(ex, status, json)`: helper for `application/json; charset=utf-8`.
+       - `async_http_respond_html(ex, status, html)`: helper for `text/html; charset=utf-8`.
+     - `async_http_server_close(server)`: cleanly unregisters listener from event loop and releases resources.
+  2. **Non-Blocking Asynchronous HTTP Client (`std/http/async_client.vl`)**:
+     - `async_http_request(el, method, url, headers, body, on_response, user_data)`: initiates non-blocking connection via `async_tcp_connect`, transmits HTTP/1.1 wire request, and accumulates incoming chunks.
+     - Supports both `Content-Length`-bounded and `Connection: close` EOF-bounded responses.
+     - `async_http_get(el, url, on_response, user_data)`: ergonomic one-line asynchronous GET request.
+     - `async_http_post(el, url, content_type, body, on_response, user_data)`: ergonomic one-line asynchronous POST request.
+  3. **Module Umbrella & Tooling Integration (`std/http.vl`)**:
+     - Exported `async_server.vl` and `async_client.vl` through `std.http` root module.
+  4. **Self-Hosting Bootstrap & Determinism**:
+     - Rebuilt 3-generation self-hosted bootstrap chain (`bin/velo.exe build src/main.vl -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe -> bootstrap.c`).
+     - Bit-for-bit SHA-256 match confirmed across Gen2, Gen3, and `bootstrap.c` (`fd324ef277f5a37ef28e04519847baeba2e532da07002a5a1a9e9a34bd9caea1`).
+* **Residual Limitation**:
+  - Asynchronous chunked transfer encoding (`Transfer-Encoding: chunked`) and WebSocket upgrades (`std.ws`) will be added in subsequent protocol expansions.
+* **Verification**:
+  - Created end-to-end integration test `std/tests/http/async_http_test.vl` exercising GET, POST with payload, and JSON responses concurrently on the event loop.
+  - Added pytest test case `test_std_http_async_server_client` in `tests/test_std_http.py` (7/7 passed).
+  - Bit-for-bit SHA-256 bootstrap determinism verified.
+  - All 98 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
+  - Zero UTF-8 BOM in any `.vl` file.
+  - Full test suite (615 passed) and all 5/5 VS Code extension suites passing.

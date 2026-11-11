@@ -1,0 +1,113 @@
+use std.io
+use std.async
+use std.http
+use std.net
+
+mut g_get_passed: bool = false
+mut g_post_passed: bool = false
+mut g_json_passed: bool = false
+
+act on_server_request(ex: @AsyncHttpExchange, udata: @void) {
+    if ex.req.path == "/hello" {
+        async_http_respond_text(ex, 200 as u16, "Hello Async World!")
+    } else if ex.req.path == "/json" {
+        async_http_respond_json(ex, 200 as u16, "{\"status\":\"ok\"}")
+    } else if ex.req.path == "/echo" {
+        async_http_respond(ex, 200 as u16, "text/plain", ex.req.body)
+    } else {
+        async_http_respond(ex, 404 as u16, "text/plain", "Not Found")
+    }
+}
+
+act on_hello_response(resp: HttpResponse, udata: @void) {
+    if resp.status_code == (200 as u16) and resp.body == "Hello Async World!" {
+        g_get_passed = true
+    }
+    http_response_free(@resp)
+}
+
+act on_post_response(resp: HttpResponse, udata: @void) {
+    if resp.status_code == (200 as u16) and resp.body == "ASYNC_PAYLOAD_123" {
+        g_post_passed = true
+    }
+    http_response_free(@resp)
+}
+
+act on_json_response(resp: HttpResponse, udata: @void) {
+    if resp.status_code == (200 as u16) and resp.body == "{\"status\":\"ok\"}" {
+        g_json_passed = true
+    }
+    http_response_free(@resp)
+}
+
+act main() -> i32 {
+    net_ensure_init()
+    mut el = loop_create()
+
+    let port: u16 = 29998
+
+    let server = async_http_listen(@el, "127.0.0.1", port, on_server_request, null)
+    if server == null {
+        io.println_str("async_http_listen failed")
+        loop_free(@el)
+        return 1
+    }
+
+    // Dispatch 1: GET /hello
+    if !async_http_get(@el, "http://127.0.0.1:29998/hello", on_hello_response, null) {
+        io.println_str("async_http_get failed to initiate")
+        async_http_server_close(server)
+        loop_free(@el)
+        return 2
+    }
+
+    // Dispatch 2: POST /echo
+    if !async_http_post(@el, "http://127.0.0.1:29998/echo", "text/plain", "ASYNC_PAYLOAD_123", on_post_response, null) {
+        io.println_str("async_http_post failed to initiate")
+        async_http_server_close(server)
+        loop_free(@el)
+        return 3
+    }
+
+    // Dispatch 3: GET /json
+    if !async_http_get(@el, "http://127.0.0.1:29998/json", on_json_response, null) {
+        io.println_str("async_http_get json failed to initiate")
+        async_http_server_close(server)
+        loop_free(@el)
+        return 4
+    }
+
+    // Run event loop until all 3 requests complete or max attempts timeout
+    mut attempts: i32 = 0
+    loop !(g_get_passed and g_post_passed and g_json_passed) and attempts < 100 {
+        loop_run_once(@el, 20)
+        attempts += 1
+    }
+
+    if !g_get_passed {
+        io.println_str("GET /hello test failed")
+        async_http_server_close(server)
+        loop_free(@el)
+        return 5
+    }
+
+    if !g_post_passed {
+        io.println_str("POST /echo test failed")
+        async_http_server_close(server)
+        loop_free(@el)
+        return 6
+    }
+
+    if !g_json_passed {
+        io.println_str("GET /json test failed")
+        async_http_server_close(server)
+        loop_free(@el)
+        return 7
+    }
+
+    async_http_server_close(server)
+    loop_free(@el)
+
+    io.println_str("OK: std.http async client/server test passed")
+    return 0
+}
