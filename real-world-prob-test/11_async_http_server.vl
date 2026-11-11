@@ -1,0 +1,93 @@
+// ============================================================================
+// PROBLEM 11: High-Performance Non-Blocking Asynchronous HTTP Server
+// Category:   Advanced - Microservices, Web Daemons & Event-Driven Networking
+//
+// PROBLEM DESCRIPTION:
+// High-concurrency backend services, web APIs, and microservices cannot afford
+// to allocate a dedicated OS thread per connection, as thread stacks quickly
+// exhaust virtual memory and kernel scheduler resources under heavy load.
+//
+// Modern web architectures (Node.js, Nginx, Go, Envoy) solve this via an
+// asynchronous event loop and non-blocking I/O multiplexer. In Velo, this is
+// powered by 'std.async' (WSAPoll / poll(2) reactor) and 'std.http'.
+//
+// This self-contained example runs a fully functional, live HTTP server on
+// http://127.0.0.1:8080/ supporting:
+// 1. GET / and /index.html: Serves an interactive HTML dashboard.
+// 2. GET /api/status: Returns a JSON service telemetry payload.
+// 3. POST /api/echo: Receives and echoes back arbitrary client payloads.
+// 4. 404 handler for unrecognized endpoints.
+//
+// RUNNING THE SERVER:
+//   .\bin\velo.exe run real-world-prob-test\11_async_http_server.vl
+//
+// TESTING THE SERVER (in browser or curl):
+//   Browser: Open http://127.0.0.1:8080/
+//   cURL 1:  curl http://127.0.0.1:8080/api/status
+//   cURL 2:  curl -X POST -d "Hello Velo Async HTTP!" http://127.0.0.1:8080/api/echo
+// ============================================================================
+
+use std.io
+use std.async
+use std.http
+
+act get_html_dashboard() -> string {
+    return "<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <title>Velo Asynchronous HTTP Server</title>\n</head>\n<body style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; margin: 0;\">\n  <div style=\"background: #1e293b; border-radius: 12px; padding: 28px; max-width: 680px; margin: 0 auto; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #334155;\">\n    <h1 style=\"color: #38bdf8; margin-top: 0; font-size: 26px;\">🚀 Velo HTTP Server <span style=\"background: #0284c7; color: white; padding: 4px 10px; border-radius: 6px; font-weight: bold; font-size: 13px;\">ASYNC EVENT LOOP</span></h1>\n    <p style=\"color: #94a3b8; line-height: 1.6;\">This server is running live on <strong>Velo 2.0</strong> powered by <code>std.http</code> and <code>std.async</code> over a non-blocking reactor event loop.</p>\n    \n    <h3 style=\"color: #e2e8f0; margin-top: 24px;\">Live Endpoint Probes:</h3>\n    <div style=\"margin: 16px 0;\">\n      <a href=\"/api/status\" target=\"_blank\" style=\"text-decoration: none;\">\n        <button style=\"background: #0284c7; color: white; border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; margin-right: 10px;\">Probe GET /api/status</button>\n      </a>\n    </div>\n\n    <h3 style=\"color: #e2e8f0; margin-top: 24px;\">Test POST /api/echo:</h3>\n    <form action=\"/api/echo\" method=\"POST\" style=\"margin: 16px 0;\">\n      <input type=\"text\" name=\"message\" value=\"Hello from Velo Browser Form!\" style=\"background: #090d16; border: 1px solid #334155; color: #f8fafc; padding: 8px 12px; border-radius: 6px; width: 320px; font-size: 14px;\">\n      <button type=\"submit\" style=\"background: #10b981; color: white; border: none; padding: 9px 18px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; margin-left: 8px;\">Submit POST</button>\n    </form>\n\n    <h3 style=\"color: #e2e8f0; margin-top: 24px;\">Test from Terminal (cURL):</h3>\n    <pre style=\"background: #090d16; padding: 12px; border-radius: 8px; overflow-x: auto; color: #38bdf8; font-size: 13px; border: 1px solid #1e293b;\">curl http://127.0.0.1:8080/api/status\ncurl -X POST -d \"Hello from cURL!\" http://127.0.0.1:8080/api/echo</pre>\n    \n    <div style=\"margin-top: 24px; font-size: 12px; color: #64748b; text-align: center;\">Velo Programming Language — Fast, Safe &amp; Easy</div>\n  </div>\n</body>\n</html>\n"
+}
+
+// Request handler dispatched asynchronously by the EventLoop
+act on_http_request(ex: @AsyncHttpExchange, udata: @void) {
+    if ex == null or ex.req.path == null { return }
+
+    // Log request to server console
+    io.print_str("[REQ] ")
+    io.print_str(ex.req.method)
+    io.print_str(" ")
+    io.println_str(ex.req.path)
+
+    let path = ex.req.path
+
+    if path == "/" or path == "/index.html" {
+        async_http_respond_html(ex, 200 as u16, get_html_dashboard())
+    } else if path == "/api/status" {
+        async_http_respond_json(ex, 200 as u16, "{\"status\":\"ok\",\"service\":\"velo-http\",\"version\":\"2.0\",\"reactor\":\"WSAPoll\",\"concurrency\":\"single-threaded-event-loop\"}")
+    } else if path == "/api/echo" {
+        if str.len(ex.req.body) > 0 {
+            async_http_respond(ex, 200 as u16, "text/plain; charset=utf-8", ex.req.body)
+        } else {
+            async_http_respond_text(ex, 200 as u16, "echo: (received empty body)")
+        }
+    } else {
+        async_http_respond_text(ex, 404 as u16, "404 Not Found: The requested endpoint does not exist.")
+    }
+}
+
+act main() -> i32 {
+    let port: u16 = 8080
+    mut el = loop_create()
+
+    let server = async_http_listen(@el, "127.0.0.1", port, on_http_request, null)
+    if server == null {
+        io.println_str("[Velo HTTP] ERROR: Could not bind server to 127.0.0.1:8080")
+        io.println_str("[Velo HTTP] Check if another process is using port 8080.")
+        loop_free(@el)
+        return 1
+    }
+
+    io.println_str("============================================================")
+    io.println_str(" 🚀 Velo Asynchronous HTTP Server")
+    io.println_str(" Powered by std.http & std.async (Reactor Event Loop)")
+    io.println_str("============================================================")
+    io.println_str("[Velo HTTP] Listening at: http://127.0.0.1:8080/")
+    io.println_str("[Velo HTTP] Try in browser: http://127.0.0.1:8080/")
+    io.println_str("[Velo HTTP] Or cURL probe:  curl http://127.0.0.1:8080/api/status")
+    io.println_str("[Velo HTTP] Event loop active. Press Ctrl+C to terminate.")
+    io.println_str("------------------------------------------------------------")
+
+    // Run the non-blocking event loop continuously
+    loop_run(@el)
+
+    async_http_server_close(server)
+    loop_free(@el)
+    return 0
+}

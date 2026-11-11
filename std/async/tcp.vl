@@ -55,8 +55,17 @@ act _async_stream_cb(fd: i64, events: u32, udata: @void) {
 
     // Check incoming data
     if stream.is_connected and (events & ASYNC_EVENT_READ) != (0 as u32) {
-        let buf_size: usize = 4096
-        let buf = heap_alloc(buf_size) as @u8
+        mut buf: @u8 = null
+        mut buf_size: usize = 0
+        mut need_free = false
+        if stream.loop_ptr != null and stream.loop_ptr.read_buf != null {
+            buf = stream.loop_ptr.read_buf
+            buf_size = stream.loop_ptr.read_buf_cap
+        } else {
+            buf_size = 4096
+            buf = heap_alloc(buf_size) as @u8
+            need_free = true
+        }
         let bytes_read = socket_recv(@stream.socket, buf, buf_size)
         if bytes_read > 0 {
             if stream.on_data != null {
@@ -70,7 +79,9 @@ act _async_stream_cb(fd: i64, events: u32, udata: @void) {
             }
             async_tcp_stream_close(stream)
         }
-        heap_free(buf)
+        if need_free and buf != null {
+            heap_free(buf)
+        }
     }
 
     // Check error or hangup

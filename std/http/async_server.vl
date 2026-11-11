@@ -3,6 +3,7 @@ use "request.vl"
 use "response.vl"
 use "headers.vl"
 use "status.vl"
+use "fast_writer.vl"
 use "../async.vl"
 use "../mem/heap.vl"
 
@@ -10,14 +11,7 @@ data AsyncHttpExchange {
     stream: @AsyncTcpStream
     req: HttpRequest
     is_responded: bool
-}
-
-data AsyncHttpServer {
-    listener: @AsyncTcpListener
-    loop_ptr: @EventLoop
-    on_request: act(@AsyncHttpExchange, @void) -> void
-    user_data: @void
-    is_running: bool
+    conn_ptr: @void
 }
 
 data _AsyncHttpServerConn {
@@ -29,6 +23,19 @@ data _AsyncHttpServerConn {
     header_end: usize
     content_length: usize
     has_header_end: bool
+    is_pooled: bool
+    in_use: bool
+    ex: AsyncHttpExchange
+}
+
+data AsyncHttpServer {
+    listener: @AsyncTcpListener
+    loop_ptr: @EventLoop
+    on_request: act(@AsyncHttpExchange, @void) -> void
+    user_data: @void
+    is_running: bool
+    conns: @_AsyncHttpServerConn
+    conn_cap: usize
 }
 
 act async_http_exchange_sizeof() -> usize {
@@ -46,60 +53,6 @@ act async_http_server_conn_sizeof() -> usize {
     return (dummy + 1) as usize
 }
 
-// Scans for CRLF CRLF (\r\n\r\n) or LF LF (\n\n) to locate header end
-act _http_scan_header_end(buf: @u8, len: usize, out_end: @usize) -> bool {
-    if buf == null or len < 4 { return false }
-    mut i: usize = 0
-    loop i + 3 < len {
-        if buf[i] == '\r' as u8 and buf[i + 1] == '\n' as u8 and
-           buf[i + 2] == '\r' as u8 and buf[i + 3] == '\n' as u8 {
-            out_end[0] = i + 4
-            return true
-        }
-        if buf[i] == '\n' as u8 and buf[i + 1] == '\n' as u8 {
-            out_end[0] = i + 2
-            return true
-        }
-        i += 1
-    }
-    return false
-}
-
-// Case-insensitive extractor for Content-Length header value
-act _http_extract_content_length(buf: @u8, header_end: usize) -> usize {
-    if buf == null or header_end < 16 { return 0 }
-    let target = "content-length"
-    let tlen: usize = 14
-    mut i: usize = 0
-    loop i + tlen < header_end {
-        mut match = true
-        mut k: usize = 0
-        loop k < tlen {
-            mut c = buf[i + k]
-            if c >= 'A' as u8 and c <= 'Z' as u8 { c = c + (32 as u8) }
-            if c != target[k] as u8 {
-                match = false
-                break
-            }
-            k += 1
-        }
-        if match {
-            mut pos = i + tlen
-            loop pos < header_end and (buf[pos] == ':' as u8 or buf[pos] == ' ' as u8 or buf[pos] == '\t' as u8) {
-                pos += 1
-            }
-            mut val: usize = 0
-            loop pos < header_end and buf[pos] >= '0' as u8 and buf[pos] <= '9' as u8 {
-                val = val * 10 + ((buf[pos] - ('0' as u8)) as usize)
-                pos += 1
-            }
-            return val
-        }
-        i += 1
-    }
-    return 0
-}
-
 act _http_server_conn_append(conn: @_AsyncHttpServerConn, data: @u8, len: usize) {
     if conn == null or data == null or len == 0 { return }
     if conn.len + len + 1 >= conn.cap {
@@ -111,9 +64,12 @@ act _http_server_conn_append(conn: @_AsyncHttpServerConn, data: @u8, len: usize)
             new_buf[i] = conn.buf[i]
             i += 1
         }
-        heap_free(conn.buf)
+        if not conn.is_pooled {
+            heap_free(conn.buf)
+        }
         conn.buf = new_buf
         conn.cap = new_cap
+        conn.is_pooled = false
     }
     mut j: usize = 0
     loop j < len {
@@ -122,6 +78,55 @@ act _http_server_conn_append(conn: @_AsyncHttpServerConn, data: @u8, len: usize)
     }
     conn.len += len
     conn.buf[conn.len] = 0 as u8
+}
+
+act _async_http_acquire_conn(server: @AsyncHttpServer, stream: @AsyncTcpStream) -> @_AsyncHttpServerConn {
+    if server != null and server.conns != null {
+        mut i: usize = 0
+        loop i < server.conn_cap {
+            let c = @server.conns[i]
+            if not c.in_use {
+                c.in_use = true
+                c.stream = stream
+                c.server_ptr = server
+                c.len = 0
+                c.header_end = 0
+                c.content_length = 0
+                c.has_header_end = false
+                return c
+            }
+            i += 1
+        }
+    }
+
+    let conn = heap_alloc(async_http_server_conn_sizeof()) as @_AsyncHttpServerConn
+    conn.stream = stream
+    conn.server_ptr = server
+    conn.cap = 8192
+    conn.buf = heap_alloc(conn.cap) as @u8
+    conn.len = 0
+    conn.header_end = 0
+    conn.content_length = 0
+    conn.has_header_end = false
+    conn.is_pooled = false
+    conn.in_use = true
+    return conn
+}
+
+act _async_http_release_conn(conn: @_AsyncHttpServerConn) {
+    if conn == null { return }
+    if conn.is_pooled {
+        conn.in_use = false
+        conn.stream = null
+        conn.len = 0
+        conn.has_header_end = false
+    } else {
+        if conn.buf != null {
+            heap_free(conn.buf)
+            conn.buf = null
+        }
+        heap_free(conn as @u8)
+    }
 }
 
 act _async_http_on_data(stream: @AsyncTcpStream, data: @u8, len: usize, udata: @void) {
@@ -143,20 +148,17 @@ act _async_http_on_data(stream: @AsyncTcpStream, data: @u8, len: usize, udata: @
             let raw_str = conn.buf as string
             let parsed_req = http_parse_request(raw_str)
 
-            let ex = heap_alloc(async_http_exchange_sizeof()) as @AsyncHttpExchange
+            let ex = @conn.ex
             ex.stream = stream
             ex.req = parsed_req
             ex.is_responded = false
+            ex.conn_ptr = conn as @void
 
             let srv = conn.server_ptr
             if srv != null and srv.on_request != null {
                 let handler = srv.on_request
                 handler(ex, srv.user_data)
             }
-
-            heap_free(conn.buf)
-            heap_free(conn as @u8)
-            stream.data_user_data = null
         }
     }
 }
@@ -164,27 +166,14 @@ act _async_http_on_data(stream: @AsyncTcpStream, data: @u8, len: usize, udata: @
 act _async_http_on_close(stream: @AsyncTcpStream, udata: @void) {
     if udata != null {
         let conn = udata as @_AsyncHttpServerConn
-        if conn.buf != null {
-            heap_free(conn.buf)
-            conn.buf = null
-        }
-        heap_free(conn as @u8)
+        _async_http_release_conn(conn)
     }
 }
 
 act _async_http_on_connection(stream: @AsyncTcpStream, udata: @void) {
     if udata == null { return }
     let server = udata as @AsyncHttpServer
-
-    let conn = heap_alloc(async_http_server_conn_sizeof()) as @_AsyncHttpServerConn
-    conn.stream = stream
-    conn.server_ptr = server
-    conn.cap = 4096
-    conn.buf = heap_alloc(conn.cap)
-    conn.len = 0
-    conn.header_end = 0
-    conn.content_length = 0
-    conn.has_header_end = false
+    let conn = _async_http_acquire_conn(server, stream)
 
     async_tcp_stream_on_data(stream, _async_http_on_data, conn as @void)
     async_tcp_stream_on_close(stream, _async_http_on_close, conn as @void)
@@ -200,8 +189,39 @@ act async_http_listen(el: @EventLoop, host: string, port: u16, on_request: act(@
     server.user_data = user_data
     server.is_running = true
 
+    // Initialize 64 pre-allocated connection buffers for zero-alloc fast path
+    let pool_size: usize = 64
+    server.conn_cap = pool_size
+    server.conns = heap_alloc(pool_size * async_http_server_conn_sizeof()) as @_AsyncHttpServerConn
+    if server.conns != null {
+        mut i: usize = 0
+        loop i < pool_size {
+            let c = @server.conns[i]
+            c.stream = null
+            c.server_ptr = server
+            c.cap = 8192
+            c.buf = heap_alloc(c.cap) as @u8
+            c.len = 0
+            c.header_end = 0
+            c.content_length = 0
+            c.has_header_end = false
+            c.is_pooled = true
+            c.in_use = false
+            i += 1
+        }
+    }
+
     let listener = async_tcp_listen(el, host, port, _async_http_on_connection, server as @void)
     if listener == null {
+        if server.conns != null {
+            mut j: usize = 0
+            loop j < server.conn_cap {
+                let c = @server.conns[j]
+                if c.buf != null { heap_free(c.buf) }
+                j += 1
+            }
+            heap_free(server.conns as @u8)
+        }
         heap_free(server as @u8)
         return null
     }
@@ -214,20 +234,67 @@ act async_http_respond(ex: @AsyncHttpExchange, status: u16, content_type: string
     if ex == null or ex.stream == null or ex.is_responded { return false }
     ex.is_responded = true
 
-    mut res = http_response_make(status, body)
-    if content_type != null and str.len(content_type) > 0 {
-        headers_set(@res.headers, "Content-Type", content_type)
+    let stream = ex.stream
+    mut conn: @_AsyncHttpServerConn = null
+    if ex.conn_ptr != null {
+        conn = ex.conn_ptr as @_AsyncHttpServerConn
     }
-    headers_set(@res.headers, "Connection", "close")
-    headers_set(@res.headers, "Content-Length", http_u64_to_str(res.content_length as u64))
 
-    let wire_res = http_format_response(@res)
-    async_tcp_stream_write_str(ex.stream, wire_res)
-    heap_free(wire_res as @u8)
-    http_response_free(@res)
+    mut b_len: usize = 0
+    if body != null {
+        b_len = str.len(body)
+    }
 
-    async_tcp_stream_close(ex.stream)
-    heap_free(ex as @u8)
+    if conn != null and conn.buf != null and (b_len + 256 <= conn.cap) {
+        let buf = conn.buf
+        mut pos: usize = 0
+
+        _http_fast_write_str(buf, @pos, "HTTP/1.1 ")
+        _http_fast_write_u64(buf, @pos, status as u64)
+        buf[pos] = ' ' as u8; pos += 1
+        _http_fast_write_str(buf, @pos, http_status_text(status))
+        buf[pos] = '\r' as u8; pos += 1
+        buf[pos] = '\n' as u8; pos += 1
+
+        if content_type != null and str.len(content_type) > 0 {
+            _http_fast_write_str(buf, @pos, "Content-Type: ")
+            _http_fast_write_str(buf, @pos, content_type)
+            buf[pos] = '\r' as u8; pos += 1
+            buf[pos] = '\n' as u8; pos += 1
+        }
+
+        _http_fast_write_str(buf, @pos, "Connection: close\r\nContent-Length: ")
+        _http_fast_write_u64(buf, @pos, b_len as u64)
+        buf[pos] = '\r' as u8; pos += 1
+        buf[pos] = '\n' as u8; pos += 1
+        buf[pos] = '\r' as u8; pos += 1
+        buf[pos] = '\n' as u8; pos += 1
+
+        if b_len > 0 {
+            _http_fast_write_str(buf, @pos, body)
+        }
+
+        async_tcp_stream_write(stream, buf, pos)
+    } else {
+        mut res = http_response_make(status, body)
+        if content_type != null and str.len(content_type) > 0 {
+            headers_set(@res.headers, "Content-Type", content_type)
+        }
+        headers_set(@res.headers, "Connection", "close")
+        headers_set(@res.headers, "Content-Length", http_u64_to_str(res.content_length as u64))
+
+        let wire_res = http_format_response(@res)
+        async_tcp_stream_write_str(stream, wire_res)
+        heap_free(wire_res as @u8)
+        http_response_free(@res)
+    }
+
+    async_tcp_stream_close(stream)
+    if conn != null {
+        _async_http_release_conn(conn)
+    } else {
+        heap_free(ex as @u8)
+    }
     return true
 }
 
@@ -254,6 +321,18 @@ act async_http_server_close(server: @AsyncHttpServer) {
         async_tcp_listener_close(server.listener)
         server.listener = null
     }
+    if server.conns != null {
+        mut i: usize = 0
+        loop i < server.conn_cap {
+            let c = @server.conns[i]
+            if c.buf != null {
+                heap_free(c.buf)
+                c.buf = null
+            }
+            i += 1
+        }
+        heap_free(server.conns as @u8)
+        server.conns = null
+    }
     heap_free(server as @u8)
 }
-

@@ -23,6 +23,7 @@ Every test file in this directory is fully self-contained with:
 | **08** | [`08_zero_leak_config_cache.vl`](file:///c:/projects/easylang/real-world-prob-test/08_zero_leak_config_cache.vl) | 🔴 **Advanced** | Cloud Daemons & IO | `sys.fs` file I/O, `mem.heap_alloc`, strict LIFO `defer mem.free`, 0-byte leak invariant |
 | **09** | [`09_particle_spatial_hash_grid.vl`](file:///c:/projects/easylang/real-world-prob-test/09_particle_spatial_hash_grid.vl) | 🔴 **Advanced** | 2D Physics Engine | 2D spatial hash grid, broadphase collision pruning (82% work eliminated in $O(1)$), 1-cycle reset |
 | **10** | [`10_functional_event_bus.vl`](file:///c:/projects/easylang/real-world-prob-test/10_functional_event_bus.vl) | 🔴 **Advanced** | Reactive UI & Callbacks | First-class function pointer signatures `act(...) -> void`, anonymous closures, pub-sub event bus |
+| **11** | [`11_async_http_server.vl`](file:///c:/projects/easylang/real-world-prob-test/11_async_http_server.vl) | 🔴 **Advanced** | Web Services & Microservices | `std.async`, `std.http`, single-threaded async event loop, non-blocking HTTP server, JSON & HTML routing |
 
 ---
 
@@ -42,9 +43,15 @@ To compile and execute any individual problem using the self-hosted Velo compile
 
 # Run Problem 9 (2D Spatial Hash Grid)
 .\bin\velo.exe run real-world-prob-test\09_particle_spatial_hash_grid.vl
+
+# Run Problem 11 (Asynchronous HTTP Server)
+.\bin\velo.exe run real-world-prob-test\11_async_http_server.vl
+# Or build standalone executable:
+# .\bin\velo.exe build real-world-prob-test\11_async_http_server.vl -o bin\server.exe
+# .\bin\server.exe
 ```
 
-To run all 10 problems in sequence:
+To run the offline validation problems (01-10) in sequence:
 
 ```powershell
 Get-ChildItem real-world-prob-test\*.vl | ForEach-Object {

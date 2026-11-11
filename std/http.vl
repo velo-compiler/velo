@@ -6,6 +6,7 @@ use "http/request.vl"
 use "http/response.vl"
 use "http/client.vl"
 use "http/server.vl"
+use "http/fast_writer.vl"
 use "http/async_server.vl"
 use "http/async_client.vl"
 

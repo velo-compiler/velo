@@ -19,7 +19,8 @@ data EventLoop {
     task_count: usize
     task_cap: usize
     next_task_id: u64
-
+    read_buf: @u8
+    read_buf_cap: usize
     is_running: bool
     stop_requested: bool
 }
@@ -49,6 +50,7 @@ act loop_create() -> EventLoop {
     let w_cap: usize = 16
     let t_cap: usize = 16
     let k_cap: usize = 16
+    let r_cap: usize = 8192
     return EventLoop {
         poller: poller_init(16),
         watchers: heap_alloc(w_cap * async_watcher_sizeof()) as @AsyncWatcher,
@@ -62,6 +64,8 @@ act loop_create() -> EventLoop {
         task_count: 0,
         task_cap: k_cap,
         next_task_id: 1 as u64,
+        read_buf: heap_alloc(r_cap) as @u8,
+        read_buf_cap: r_cap,
         is_running: false,
         stop_requested: false,
     }
@@ -74,6 +78,8 @@ act loop_free(el: @EventLoop) {
     if el.watchers != null { heap_free(el.watchers as @u8); el.watchers = null }
     if el.timers != null { heap_free(el.timers as @u8); el.timers = null }
     if el.tasks != null { heap_free(el.tasks as @u8); el.tasks = null }
+    if el.read_buf != null { heap_free(el.read_buf); el.read_buf = null }
+    el.read_buf_cap = 0
     el.watcher_count = 0
     el.timer_count = 0
     el.task_count = 0
@@ -85,10 +91,7 @@ act loop_ensure_watcher_cap(el: @EventLoop) {
     let new_buf = heap_alloc(new_cap * async_watcher_sizeof()) as @AsyncWatcher
     if new_buf == null { return }
     mut i: usize = 0
-    loop i < el.watcher_count {
-        new_buf[i] = el.watchers[i]
-        i += 1
-    }
+    loop i < el.watcher_count { new_buf[i] = el.watchers[i]; i += 1 }
     heap_free(el.watchers as @u8)
     el.watchers = new_buf
     el.watcher_cap = new_cap
@@ -100,10 +103,7 @@ act loop_ensure_timer_cap(el: @EventLoop) {
     let new_buf = heap_alloc(new_cap * async_timer_sizeof()) as @AsyncTimer
     if new_buf == null { return }
     mut i: usize = 0
-    loop i < el.timer_count {
-        new_buf[i] = el.timers[i]
-        i += 1
-    }
+    loop i < el.timer_count { new_buf[i] = el.timers[i]; i += 1 }
     heap_free(el.timers as @u8)
     el.timers = new_buf
     el.timer_cap = new_cap
@@ -115,10 +115,7 @@ act loop_ensure_task_cap(el: @EventLoop) {
     let new_buf = heap_alloc(new_cap * async_task_sizeof()) as @AsyncTask
     if new_buf == null { return }
     mut i: usize = 0
-    loop i < el.task_count {
-        new_buf[i] = el.tasks[i]
-        i += 1
-    }
+    loop i < el.task_count { new_buf[i] = el.tasks[i]; i += 1 }
     heap_free(el.tasks as @u8)
     el.tasks = new_buf
     el.task_cap = new_cap
