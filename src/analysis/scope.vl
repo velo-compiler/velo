@@ -65,6 +65,8 @@ act define_variable(st: @SymbolTable, name: string, type_name: string, is_mut: b
     sym.col = col
     sym.zone_depth = st.current_zone_depth
     sym.pointer_origin_depth = -1
+    sym.orig_type = type_name
+    sym.is_narrowed = false
     sym.next = st.current_scope.first_sym
 
     st.current_scope.first_sym = sym
@@ -83,6 +85,29 @@ act define_parameter(st: @SymbolTable, name: string, type_name: string, line: i3
     sym.col = col
     sym.zone_depth = 0
     sym.pointer_origin_depth = 0
+    sym.orig_type = type_name
+    sym.is_narrowed = false
+    sym.next = st.current_scope.first_sym
+
+    st.current_scope.first_sym = sym
+    st.current_scope.sym_count += 1
+    return true
+}
+
+// Shadows an optional variable in the current scope with its narrowed non-optional type.
+act narrow_variable(st: @SymbolTable, name: string, narrowed_type: string, orig_type: string) -> bool {
+    if st == null or st.current_scope == null { return false }
+    mut sym: @Symbol = mem.alloc(@Symbol, 1)
+    sym.name = name
+    sym.type_name = narrowed_type
+    sym.orig_type = orig_type
+    sym.kind = SYM_VAR
+    sym.is_mut = false
+    sym.line = 0
+    sym.col = 0
+    sym.zone_depth = st.current_zone_depth
+    sym.pointer_origin_depth = -1
+    sym.is_narrowed = true
     sym.next = st.current_scope.first_sym
 
     st.current_scope.first_sym = sym

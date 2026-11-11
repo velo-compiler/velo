@@ -1,0 +1,66 @@
+// Flow-sensitive type narrowing analysis for optional types (?T).
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "symbol_table.vl"
+use "scope.vl"
+
+// Determines if a statement unconditionally terminates execution flow.
+act stmt_unconditionally_exits(stmt: @StmtNode) -> bool {
+    if stmt == null { return false }
+    if stmt.kind == STMT_RETURN or stmt.kind == STMT_BREAK or stmt.kind == STMT_CONTINUE or stmt.kind == STMT_FAIL {
+        return true
+    }
+    if stmt.kind == STMT_BLOCK {
+        mut cur = stmt.first_stmt
+        loop cur != null {
+            if stmt_unconditionally_exits(cur) { return true }
+            cur = cur.next
+        }
+    }
+    return false
+}
+
+// Applies flow-sensitive narrowing to optional variables (?T -> T) based on condition truth polarity.
+act apply_flow_narrowing(st: @SymbolTable, cond: @ExprNode, is_positive: bool) {
+    if st == null or cond == null { return }
+
+    // 1. Conjunction `a and b`: if is_positive, both must be true
+    if is_positive and cond.kind == EXPR_BINARY and cond.op == TOK_AND {
+        apply_flow_narrowing(st, cond.left, true)
+        apply_flow_narrowing(st, cond.right, true)
+        return
+    }
+
+    // 2. Inversion `not expr` or `!expr`
+    if cond.kind == EXPR_UNARY and cond.op == TOK_NOT {
+        apply_flow_narrowing(st, cond.operand, not is_positive)
+        return
+    }
+
+    // 4. Equality checks: `x != null`, `null != x`, `x == null`, `null == x`
+    if cond.kind == EXPR_BINARY {
+        let is_neq = (cond.op == TOK_NEQ)
+        let is_eq = (cond.op == TOK_EQ)
+        if not is_neq and not is_eq { return }
+
+        mut ident_name: string = null
+        if cond.left != null and cond.left.kind == EXPR_IDENT and cond.right != null and cond.right.kind == EXPR_NULL {
+            ident_name = cond.left.str_val
+        } else if cond.right != null and cond.right.kind == EXPR_IDENT and cond.left != null and cond.left.kind == EXPR_NULL {
+            ident_name = cond.right.str_val
+        }
+
+        if ident_name != null {
+            let should_narrow = (is_neq and is_positive) or (is_eq and not is_positive)
+            if should_narrow {
+                let sym = resolve_variable(st, ident_name)
+                if sym != null and is_optional_type(sym.type_name) {
+                    let inner = optional_inner_type(sym.type_name)
+                    narrow_variable(st, ident_name, inner, sym.type_name)
+                }
+            }
+        }
+    }
+}

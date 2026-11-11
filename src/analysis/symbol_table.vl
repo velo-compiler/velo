@@ -18,6 +18,8 @@ data Symbol {
     col: i32
     zone_depth: i32
     pointer_origin_depth: i32
+    orig_type: string
+    is_narrowed: bool
     next: @Symbol
 }
 

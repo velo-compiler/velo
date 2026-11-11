@@ -1,0 +1,97 @@
+// std/tests/narrow_flow_test.vl — Tests for flow-sensitive type narrowing on ?T.
+use std.io
+
+data Node {
+    value: i32
+    tag: string
+}
+
+act get_node_val(n: @Node) -> i32 {
+    return n.value
+}
+
+act test_pointer_narrowing() {
+    mut n = Node{ value: 99, tag: "hello" }
+    let opt_node: ?@Node = @n
+    let null_node: ?@Node = null
+
+    // 1. Standard if != null narrowing
+    if opt_node != null {
+        // Smart-cast to @Node: member access without ! or .val
+        let v = opt_node.value
+        io.println("1. Pointer narrowed value: {v}")
+        // Passing to function expecting @Node
+        let v2 = get_node_val(opt_node)
+        io.println("2. Passed narrowed to func: {v2}")
+    }
+
+    // 2. else branch narrowing on == null
+    if null_node == null {
+        io.println("3. Null node is null OK")
+    } else {
+        io.println("FAIL: Should not be in else branch")
+        let v3 = null_node.value
+        io.println("Bad: {v3}")
+    }
+}
+
+act test_value_type_narrowing() {
+    let opt_int: ?i32 = 42
+    let null_int: ?i32 = null
+
+    // 1. Value type if != null
+    if opt_int != null {
+        let res = opt_int + 8
+        io.println("4. Value type narrowed: {res}")
+    }
+
+    // 2. Value type if null != opt_int
+    if null != opt_int {
+        let res2 = opt_int * 2
+        io.println("5. Value type null != x narrowed: {res2}")
+    }
+
+    // 3. Null value type in else
+    if null_int == null {
+        io.println("6. Null int is null OK")
+    } else {
+        let bad = null_int + 1
+        io.println("Bad: {bad}")
+    }
+}
+
+act test_conjunction_narrowing() {
+    mut n1 = Node{ value: 10, tag: "first" }
+    mut n2 = Node{ value: 20, tag: "second" }
+    let opt1: ?@Node = @n1
+    let opt2: ?@Node = @n2
+
+    if opt1 != null and opt2 != null {
+        let sum = opt1.value + opt2.value
+        io.println("7. Conjunction narrowed sum: {sum}")
+    }
+}
+
+act test_guard_clause_narrowing(opt: ?@Node) -> i32 {
+    if opt == null {
+        return -1
+    }
+    // opt is now narrowed to @Node for the rest of this function!
+    return opt.value * 3
+}
+
+act main() -> i32 {
+    io.println("=== Testing Flow-Sensitive Type Narrowing ===")
+    test_pointer_narrowing()
+    test_value_type_narrowing()
+    test_conjunction_narrowing()
+
+    mut n = Node{ value: 15, tag: "guard" }
+    let r1 = test_guard_clause_narrowing(@n)
+    let r2 = test_guard_clause_narrowing(null)
+    io.println("8. Guard clause result 1: {r1}")
+    io.println("9. Guard clause result 2: {r2}")
+
+    io.println("PASS: All flow-sensitive type narrowing tests succeeded!")
+    return 0
+}

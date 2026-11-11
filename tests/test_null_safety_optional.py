@@ -241,3 +241,58 @@ act main() {
 
     res2 = _run_stage2(["check", str(f)])
     assert res2.returncode != 0
+
+def test_flow_sensitive_type_narrowing(tmp_path):
+    code = """
+use std.io
+
+data Node {
+    val: i32
+}
+
+act get_node_val(n: @Node) -> i32 {
+    return n.val
+}
+
+act guard_test(opt: ?@Node) -> i32 {
+    if opt == null {
+        return -1
+    }
+    return opt.val * 2
+}
+
+act main() {
+    mut n = Node{ val: 42 }
+    let opt_node: ?@Node = @n
+    let opt_int: ?i32 = 100
+
+    if opt_node != null {
+        let v = opt_node.val
+        let v2 = get_node_val(opt_node)
+        io.println("narrowed pointer: {v} and {v2}")
+    }
+
+    if opt_int != null {
+        let sum = opt_int + 23
+        io.println("narrowed int: {sum}")
+    }
+
+    if null != opt_int {
+        let prod = opt_int * 3
+        io.println("narrowed rev: {prod}")
+    }
+
+    let g1 = guard_test(@n)
+    let g2 = guard_test(null)
+    io.println("guard: {g1} and {g2}")
+}
+"""
+    f = tmp_path / "test_flow_narrowing.vl"
+    f.write_text(code, encoding="utf-8")
+
+    res2 = _run_stage2(["run", str(f)])
+    assert res2.returncode == 0, f"Stage 2 failed: {res2.stderr}"
+    assert "narrowed pointer: 42 and 42" in res2.stdout
+    assert "narrowed int: 123" in res2.stdout
+    assert "narrowed rev: 300" in res2.stdout
+    assert "guard: 84 and -1" in res2.stdout

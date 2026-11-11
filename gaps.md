@@ -2973,7 +2973,7 @@ flowchart TD
      - Rebuilt 3-generation compiler chain (`bin/velo.exe build src/main.vl -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe -> bootstrap.c`).
      - Verified bit-for-bit SHA-256 determinism across Gen2, Gen3, and `bootstrap.c` (`02d944d4d4e7ed2a7d5904a3d94f28f64ca61a577dc1bc2f45f4427aae710379`).
 * **Residual Limitation**:
-  - Full flow-sensitive type narrowing (automatically unwrapping `opt` inside `if opt != null { ... }` blocks without requiring `.val` or `!`) will be introduced in a future dataflow-analysis pass.
+  - Full flow-sensitive type narrowing (automatically unwrapping `opt` inside `if opt != null { ... }` blocks without requiring `.val` or `!`) resolved in Phase 39.
 * **Verification**:
   - Created test suite `tests/test_null_safety_optional.py` (8 comprehensive tests) covering optional pointer `.has` and `.val`, `??` coalescing, `!` postfix unwrapping, postfix `T?` syntax, value optionals (`?i32`), and compile-time rejection of member access without unwrap, optional-to-non-optional assignment, and null-to-value assignment.
   - All 8 tests passed on both Stage 1 (Python) and Stage 2 (`bin/velo.exe`).
@@ -3085,3 +3085,37 @@ flowchart TD
   - All 12/12 `std.async` and `std.http` unit tests passed in 25.24s (`python -m pytest tests/test_std_async.py tests/test_std_http.py -q`).
   - Automated benchmark suite passed cleanly with verified sub-3ms average latency and 0 connection errors.
   - All modified standard library files $\le 392$ lines. Zero UTF-8 BOM.
+
+### Phase 39: Flow-Sensitive Type Narrowing for Optional Types (`?T`) [COMPLETED] ✅
+#### Task 39.1: Flow-Sensitive Smart-Casting, Guard Clause Propagation, and Value Type Unwrapping [COMPLETED] ✅
+* **Former Defect**:
+  - In Phase 35, optional types (`?T`) were introduced with null safety guarantees, but required explicit unwrapping via `.val`, `!`, or `??` even immediately after explicit null checks (e.g. `if opt != null { let v = opt.val }` or `if opt == null { return } let v = opt.val`).
+  - Accessing struct fields on narrowed pointer optionals (`?@Node`) directly inside null-guarded blocks produced compiler diagnostics (`Cannot access member without unwrapping`).
+  - Value type optionals (`?i32`, `?bool`) could not be used in arithmetic expressions or passed to functions expecting `i32` within null-checked scopes without explicit manual unwrapping.
+* **Fix Applied**:
+  1. **Flow-Sensitive Narrowing Engine (`src/analysis/narrow_flow.vl`)**:
+     - Created `apply_flow_narrowing(st: @SymbolTable, cond: @ExprNode, is_positive: bool)` to analyze condition predicates and narrow optional variables (`?T` -> `T`).
+     - Handled positive and inverted conditions: `opt != null`, `null != opt`, `opt == null`, `null == opt`, boolean inversion `not (expr)` / `!expr`, and conjunctions `a != null and b != null`.
+     - Created `stmt_unconditionally_exits(stmt: @StmtNode) -> bool` to recognize unconditional control flow exits (`return`, `break`, `continue`, `fail`).
+  2. **Symbol Table & Lexical Scoping Integration (`src/analysis/symbol_table.vl`, `src/analysis/scope.vl`)**:
+     - Extended `Symbol` with `orig_type: string` and `is_narrowed: bool` flags.
+     - Added `narrow_variable(st, name, inner_type, orig_type)` to shadow the optional variable in the current local lexical scope with its non-optional inner type.
+  3. **Type Checker & Codegen Flow Synchronization (`src/analysis/type_checker_stmt.vl`, `src/backend/codegen_stmt.vl`)**:
+     - Synchronized type checking and C code emission for `STMT_IF` and `STMT_BLOCK`.
+     - In `if` statements: narrowed variables in the `then` branch under positive polarity, and in the `else` branch under negative polarity.
+     - In block statements: detected guard clauses (`if opt == null { return }` without `else`) and propagated narrowing to all subsequent statements in the block.
+  4. **Backend Identifier & Equality Codegen (`src/backend/codegen_expr.vl`)**:
+     - For narrowed value types (`?i32`), automatically emitted `.val` on `EXPR_IDENT` so expressions like `opt_int + 23` emit `opt_int.val + 23` in C.
+     - Lowered `opt != null` and `opt == null` for value types to `opt.has` and `!opt.has`.
+     - Preserved backwards compatibility for container methods: `opt.has` and `opt.val` continue to work unchanged without conflicting with user struct fields named `val`.
+  5. **Self-Hosting Bootstrap & Determinism**:
+     - Rebuilt 3-generation compiler chain (`bin/velo.exe build src/main.vl -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe -> bootstrap.c`).
+     - Verified bit-for-bit SHA-256 determinism across Gen2, Gen3, and `bootstrap.c` (`9CFF30C804080CFC4C68CB5F9C3C3FA965B82E35889572D3D38F28F05B49366E`).
+* **Residual Limitation**:
+  - Narrowing across disjunctions (`if opt == null or other == null`) and complex reassignment dataflow tracking across loops will be added in future flow-analysis passes.
+* **Verification**:
+  - Created standalone Velo test suite `std/tests/narrow_flow_test.vl` exercising pointer narrowing, value type narrowing, reversed equality checks (`null != opt`), conjunctions, and guard clauses.
+  - Added test case `test_flow_sensitive_type_narrowing` in `tests/test_null_safety_optional.py` (9/9 passed in 15.91s).
+  - Verified full test suite passes with zero regressions: 616 passed in `tests/` (`python -m pytest tests -q`).
+  - All 99 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
+  - Zero UTF-8 BOM across all `.vl` files.

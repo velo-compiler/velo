@@ -43,7 +43,16 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr.kind == EXPR_STRING { emit_string_expr(sb, st, expr); return }
     if expr.kind == EXPR_BOOL { if expr.bool_val { sb_append_str(sb, "true") } else { sb_append_str(sb, "false") }; return }
     if expr.kind == EXPR_NULL { sb_append_str(sb, "NULL"); return }
-    if expr.kind == EXPR_IDENT { sb_append_str(sb, expr.str_val); return }
+    if expr.kind == EXPR_IDENT {
+        let sym = resolve_variable(st, expr.str_val)
+        if sym != null and sym.is_narrowed {
+            let inner = optional_inner_type(sym.orig_type)
+            if inner[0] != '@' and inner != "string" {
+                sb_append_str(sb, expr.str_val); sb_append_str(sb, ".val"); return
+            }
+        }
+        sb_append_str(sb, expr.str_val); return
+    }
     if expr.kind == EXPR_SHELF_LIT or expr.kind == EXPR_HEAP_SHELF_LIT { emit_shelf_literal(sb, st, expr); return }  // 5.2 (heap: slice 10)
     if expr.kind == EXPR_MAP_LIT or expr.kind == EXPR_HEAP_MAP_LIT { emit_map_literal(sb, st, expr); return }  // 5.2 slice 6 / 7.2
     if expr.kind == EXPR_RING_LIT or expr.kind == EXPR_BITSET_LIT { emit_coll9_literal(sb, st, expr); return }  // 5.2 slice 9
@@ -209,25 +218,12 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                 emit_c_expr(sb, st, expr.right)
                 sb_append_str(sb, "))")
             } else {
-                sb_append_str(sb, "((")
-                emit_c_expr(sb, st, expr.left)
-                sb_append_str(sb, ").has ? (")
-                emit_c_expr(sb, st, expr.left)
-                sb_append_str(sb, ").val : (")
-                emit_c_expr(sb, st, expr.right)
-                sb_append_str(sb, "))")
+                sb_append_str(sb, "(("); emit_c_expr(sb, st, expr.left); sb_append_str(sb, ").has ? ("); emit_c_expr(sb, st, expr.left); sb_append_str(sb, ").val : ("); emit_c_expr(sb, st, expr.right); sb_append_str(sb, "))")
             }
             return
         }
         if expr.op == TOK_OR and is_or_type(ltype) {
-            let c_name = or_type_c_name(ltype)
-            sb_append_str(sb, c_name)
-            sb_append_str(sb, "_fallback(")
-            emit_c_expr(sb, st, expr.left)
-            sb_append_str(sb, ", ")
-            emit_c_expr(sb, st, expr.right)
-            sb_append_char(sb, ')')
-            return
+            sb_append_str(sb, or_type_c_name(ltype)); sb_append_str(sb, "_fallback("); emit_c_expr(sb, st, expr.left); sb_append_str(sb, ", "); emit_c_expr(sb, st, expr.right); sb_append_char(sb, ')'); return
         }
         if is_simd_type(ltype) or is_simd_type(rtype) { emit_simd_binary(sb, st, expr, ltype, rtype); return }
         // 5.2 slice 8: raw dyn arithmetic/compares auto-unbox — identical C with Stage 1's _emit_dyn_binop
@@ -243,15 +239,13 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             if p0 != null { p1 = p0.next }
             let p0_ptr = p0 != null and str.len(p0.type_name) > 0 and p0.type_name[0] == '@'
             let l_ptr = str.len(ltype) > 0 and ltype[0] == '@'
-            if p0_ptr and not l_ptr { sb_append_str(sb, "&(") }
-            if l_ptr and not p0_ptr { sb_append_str(sb, "*(") }
+            if p0_ptr and not l_ptr { sb_append_str(sb, "&(") } else if l_ptr and not p0_ptr { sb_append_str(sb, "*(") }
             emit_c_expr(sb, st, expr.left)
             if (p0_ptr and not l_ptr) or (l_ptr and not p0_ptr) { sb_append_char(sb, ')') }
             sb_append_str(sb, ", ")
             let p1_ptr = p1 != null and str.len(p1.type_name) > 0 and p1.type_name[0] == '@'
             let r_ptr = str.len(rtype) > 0 and rtype[0] == '@'
-            if p1_ptr and not r_ptr { sb_append_str(sb, "&(") }
-            if r_ptr and not p1_ptr { sb_append_str(sb, "*(") }
+            if p1_ptr and not r_ptr { sb_append_str(sb, "&(") } else if r_ptr and not p1_ptr { sb_append_str(sb, "*(") }
             emit_c_expr(sb, st, expr.right)
             if (p1_ptr and not r_ptr) or (r_ptr and not p1_ptr) { sb_append_char(sb, ')') }
             sb_append_char(sb, ')')
@@ -260,6 +254,20 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         if expr.op == TOK_EQ or expr.op == TOK_NEQ {
             let ltype = infer_expr_type(st, expr.left)
             let rtype = infer_expr_type(st, expr.right)
+            if is_optional_type(ltype) and expr.right.kind == EXPR_NULL {
+                let inner = optional_inner_type(ltype)
+                if inner[0] != '@' and inner != "string" {
+                    if expr.op == TOK_NEQ { sb_append_char(sb, '('); emit_c_expr(sb, st, expr.left); sb_append_str(sb, ".has)"); return }
+                    else { sb_append_str(sb, "(!"); emit_c_expr(sb, st, expr.left); sb_append_str(sb, ".has)"); return }
+                }
+            }
+            if is_optional_type(rtype) and expr.left.kind == EXPR_NULL {
+                let inner = optional_inner_type(rtype)
+                if inner[0] != '@' and inner != "string" {
+                    if expr.op == TOK_NEQ { sb_append_char(sb, '('); emit_c_expr(sb, st, expr.right); sb_append_str(sb, ".has)"); return }
+                    else { sb_append_str(sb, "(!"); emit_c_expr(sb, st, expr.right); sb_append_str(sb, ".has)"); return }
+                }
+            }
             if expr.left.kind != EXPR_NULL and expr.right.kind != EXPR_NULL and ltype != "@void" and rtype != "@void" and (ltype == "string" and rtype == "string") {
                 if expr.left.kind == EXPR_CALL or expr.right.kind == EXPR_CALL {
                     if expr.op == TOK_EQ { sb_append_str(sb, "velo_str_eq(") } else { sb_append_str(sb, "velo_str_neq(") }

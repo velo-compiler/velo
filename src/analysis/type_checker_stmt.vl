@@ -9,6 +9,7 @@ use "shelf_checks.vl"
 use "map_checks.vl"
 use "escape_checks.vl"
 use "op_resolver.vl"
+use "narrow_flow.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
@@ -116,8 +117,16 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
         }
     } else if stmt.kind == STMT_IF {
         infer_expr_type(st, stmt.expr)
+        enter_scope(st)
+        apply_flow_narrowing(st, stmt.expr, true)
         check_statement(st, expected_ret_type, stmt.body)
-        if stmt.else_branch != null { check_statement(st, expected_ret_type, stmt.else_branch) }
+        exit_scope(st)
+        if stmt.else_branch != null {
+            enter_scope(st)
+            apply_flow_narrowing(st, stmt.expr, false)
+            check_statement(st, expected_ret_type, stmt.else_branch)
+            exit_scope(st)
+        }
     } else if stmt.kind == STMT_LOOP {
         // 5.2 slice 4/7: `loop v of coll` - the iterator takes the element (K for maps); range/count/condition loops keep the house "i32" var
         mut of_elem = "i32"
@@ -202,7 +211,13 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
         }
     } else if stmt.kind == STMT_BLOCK {
         enter_scope(st); mut cur = stmt.first_stmt
-        loop cur != null { check_statement(st, expected_ret_type, cur); cur = cur.next }
+        loop cur != null {
+            check_statement(st, expected_ret_type, cur)
+            if cur.kind == STMT_IF and cur.else_branch == null and stmt_unconditionally_exits(cur.body) {
+                apply_flow_narrowing(st, cur.expr, false)
+            }
+            cur = cur.next
+        }
         exit_scope(st)
     } else if stmt.kind == STMT_EXPR { infer_expr_type(st, stmt.expr) }
 }
