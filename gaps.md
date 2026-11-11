@@ -3253,3 +3253,47 @@ flowchart TD
   - Created regression test suite `tests/test_fixed_array.py` verifying test battery execution and compile-time error diagnostics (out-of-bounds rejection, immutable mutation rejection, zero-size rejection).
   - All 101 compiler source files $\le 394$ lines (`python scripts/count_lines.py`).
   - Zero UTF-8 BOM across all `.vl` files.
+
+### Phase 44: Tuples & Multiple Return Values (`-> (A, B)`) [COMPLETED] ✅
+#### Task 44.1: First-Class Tuples, Multiple Return Signatures, Destructuring, and Zero-Overhead C99 Lowering [COMPLETED] ✅
+* **Former Defect**:
+  - In Velo, functions could only return a single value or `void`.
+  - When a function naturally produced multiple results (e.g. `find_user(id) -> (string, bool)` or `div_mod(a, b) -> (i32, i32)` or `read() -> (usize, bool)`), developers were forced to create one-off wrapper `data` structs or pass mutable out-parameters via pointers (`@mut T`), introducing boilerplate and cognitive friction.
+  - Velo lacked tuple literals `(a, b)`, tuple destructuring declarations (`let (x, y) = ...`, `mut (x, y) = ...`), wildcard discards (`let (val, _) = ...`), and tuple member access (`t.0`, `t.1`, `t._0`, `t._1`).
+* **Fix Applied**:
+  1. **AST & Type Grammars (`src/ast/types.vl`, `src/ast/tuple_types.vl`, `src/frontend/parser.vl`)**:
+     - Added first-class tuple type parsing `(T0, T1, ...)` in `parse_type_annotation_ex`, supporting pointer prefixes (`@(T0, T1)`), optionals (`?(T0, T1)`), and outcome types (`(T0, T1) or Error`).
+     - Created dedicated module `src/ast/tuple_types.vl` providing `is_tuple_type`, `tuple_elem_count`, `tuple_elem_type`, and `tuple_c_name` mangling (`_Velo_Tuple_T0_T1`).
+     - Added structural compatibility check for tuples in `types_are_compatible`.
+     - Fixed `is_or_type`, `or_type_success`, `or_type_error`, and `or_type_c_name` in `types.vl` to account for nested tuple parentheses and prevent invalid C identifiers.
+  2. **AST Expression & Statement Nodes (`src/ast/expr.vl`, `src/ast/stmt.vl`, `src/ast/stmt_factory.vl`)**:
+     - Added `EXPR_TUPLE_LIT = 123` and `make_tuple_lit_expr`.
+     - Added `STMT_DESTRUCTURE = 215` and `make_destructure_stmt`, reusing existing `StmtNode.first_param` to store binding descriptors with zero struct bloat.
+  3. **Frontend Parsing (`src/frontend/parser_primary.vl`, `src/frontend/parser_expr.vl`, `src/frontend/parser_stmt.vl`)**:
+     - In `parser_primary.vl`, parsed `(e0, e1, ...)` tuple literals while preserving parenthesized grouping `(expr)`.
+     - In `parser_expr.vl`, permitted `TOK_INT_LIT` after `TOK_DOT` (`t.0`, `t.1`).
+     - In `parser_stmt.vl`, parsed `let (a, b) = val` and `mut (a, b) = val` with optional binding type annotations.
+  4. **Semantic Analysis & Type Validation (`src/analysis/tuple_checks.vl`, `src/analysis/type_checker.vl`, `src/analysis/type_checker_stmt.vl`)**:
+     - Added `src/analysis/tuple_checks.vl` implementing `infer_tuple_lit`, `check_tuple_member_access`, and `check_destructure_stmt`.
+     - Verified tuple index bounds checking, non-tuple destructuring rejection, and binding count mismatch rejection.
+     - Defined non-wildcard (`_`) bindings in the active symbol table with their respective element types.
+  5. **C99 Zero-Overhead Lowering (`src/backend/tuple_gen.vl`, `src/backend/codegen_decl.vl`, `src/backend/codegen_expr.vl`, `src/backend/codegen_stmt.vl`, `src/backend/codegen_types.vl`)**:
+     - Created `src/backend/tuple_gen.vl` implementing tuple type scanning and `typedef struct { T0 _0; T1 _1; ... } _Velo_Tuple_...;` emission.
+     - Tuple literals lower to designated compound literals `(_Velo_Tuple_...){ ._0 = e0, ._1 = e1 }`.
+     - Tuple destructuring evaluates RHS strictly once into a scoped temporary `_Velo_Tuple_... __tuple_tmp = <val>;` and assigns bindings `type var = __tuple_tmp._0;`.
+     - Integrated `EXPR_OR_RETURN` with destructuring: `let (a, b) = fn() or return` unpacks `__or_tmp.as.val._0`.
+     - Tuple member access `t.0` / `t._0` lowers directly to `t._0` (or `->` for pointers).
+  6. **Monomorphization & Alias Passes (`src/analysis/alias_resolve.vl`, `src/analysis/monomorphize_expr.vl`, `src/analysis/mono_infer.vl`, `src/analysis/mono_clone.vl`)**:
+     - Added alias resolution, expression cloning, type inference, and block scope tracking for `EXPR_TUPLE_LIT` and `STMT_DESTRUCTURE`.
+  7. **Self-Hosting Bootstrap & Determinism**:
+     - 3-generation self-hosting rebuild chain (`bin/velo.exe build src/main.vl -> bin/velo_gen2.exe -> bin/velo_gen3.exe -> bin/velo.exe -> bootstrap.c`).
+     - Verified bit-for-bit SHA-256 fixed-point determinism across Gen2, Gen3, and `bootstrap.c` (`363CE9B9354123212A35D96026E7CB1D8544487E894F3D5E190E39AE9517A193`).
+     - Verified `scripts\bootstrap.bat` compiles `bootstrap.c` into working `bin\velo.exe`.
+* **Residual Limitation**:
+  - 1-tuples `(T,)` are not part of the grammar; parenthesized single values `(x)` remain grouping expressions.
+* **Verification**:
+  - Created standalone Velo test suite `std/tests/tuple_test.vl` exercising multiple return values, 3-element tuples, mutable destructuring, wildcard `_`, member access `.0` / `.1` / `._0` / `._1`, outcome error propagation with `or return` and `fail`, and `if-else` expressions.
+  - Created regression test suite `tests/test_tuple.py` (9 tests passing) validating execution and compile-time diagnostics.
+  - Ran full test suite: all 636 tests passed with zero regressions.
+  - All 104 compiler source files in `src/` verified $\le 394$ lines (`python scripts/count_lines.py`).
+  - Zero UTF-8 BOM across all `.vl` files.

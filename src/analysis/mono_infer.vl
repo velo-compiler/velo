@@ -118,6 +118,22 @@ act mono_infer_type(e: @ExprNode, scope: @ScopeEntry) -> string {
         }
         return "i32"
     }
+    if e.kind == EXPR_TUPLE_LIT {
+        if e.type_name != null and str.len(e.type_name) > 0 { return e.type_name }
+        mut sb = create_sb(64)
+        sb_append_char(@sb, '(')
+        mut cur = e.first_arg
+        mut count: usize = 0
+        loop cur != null {
+            let elem_t = mono_infer_type(cur, scope)
+            if count > 0 { sb_append_str(@sb, ", ") }
+            sb_append_str(@sb, elem_t)
+            count += 1
+            cur = cur.next
+        }
+        sb_append_char(@sb, ')')
+        return sb_to_string(@sb)
+    }
     if e.kind == EXPR_MAP_LIT or e.kind == EXPR_HEAP_MAP_LIT {
         // 5.2 slice 6 / 7.2: best-effort Map[K, V] inference
         if e.type_name != null and str.len(e.type_name) > 0 { return e.type_name }

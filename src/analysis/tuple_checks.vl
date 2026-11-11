@@ -1,0 +1,132 @@
+// Semantic analysis and type checks for tuple types, tuple literals, member access, and destructuring.
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../ast/tuple_types.vl"
+use "symbol_table.vl"
+use "type_checker.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+
+// Infers the static tuple type for a tuple literal `(e0, e1, ...)`.
+act infer_tuple_lit(st: @SymbolTable, expr: @ExprNode) -> string {
+    if expr == null { return "unknown" }
+    mut sb = create_sb(64)
+    sb_append_char(@sb, '(')
+    mut cur = expr.first_arg
+    mut count: usize = 0
+    loop cur != null {
+        let elem_t = infer_expr_type(st, cur)
+        if count > 0 {
+            sb_append_str(@sb, ", ")
+        }
+        sb_append_str(@sb, elem_t)
+        count += 1
+        cur = cur.next
+    }
+    sb_append_char(@sb, ')')
+    let tup_type = sb_to_string(@sb)
+    expr.type_name = tup_type
+    return tup_type
+}
+
+// Checks and infers member access on tuple types (t.0, t.1, t._0, t._1).
+act check_tuple_member_access(st: @SymbolTable, expr: @ExprNode, clean_type: string) -> string {
+    let mname = expr.member_name
+    if mname == null or str.len(mname) == 0 {
+        report_error("semantic", expr.line, expr.col, "Invalid tuple element access")
+        st.error_count += 1
+        return "unknown"
+    }
+    mut start_idx: usize = 0
+    if mname[0] == '_' {
+        start_idx = 1
+    }
+    mut idx: usize = 0
+    mut i: usize = start_idx
+    mut valid_num = true
+    loop i < str.len(mname) {
+        let c = mname[i]
+        if c >= '0' and c <= '9' {
+            idx = idx * 10 + (c - '0') as usize
+        } else {
+            valid_num = false
+            break
+        }
+        i += 1
+    }
+    if not valid_num or i == start_idx {
+        mut msg = create_sb(str.len(mname) + 48)
+        sb_append_str(@msg, "Tuple member '")
+        sb_append_str(@msg, mname)
+        sb_append_str(@msg, "' is not a valid tuple index")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msg))
+        st.error_count += 1
+        return "unknown"
+    }
+    let elem_cnt = tuple_elem_count(clean_type)
+    if idx >= elem_cnt {
+        mut msg = create_sb(64)
+        sb_append_str(@msg, "Tuple index out of bounds: requested index ")
+        sb_append_str(@msg, mname)
+        sb_append_str(@msg, " on tuple with ")
+        sb_append_int(@msg, elem_cnt as i32)
+        sb_append_str(@msg, " elements")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msg))
+        st.error_count += 1
+        return "unknown"
+    }
+    return tuple_elem_type(clean_type, idx)
+}
+
+// Validates a destructuring declaration statement (`let (a, b) = val` or `mut (a, b) = val`).
+act check_destructure_stmt(st: @SymbolTable, stmt: @StmtNode) {
+    if stmt == null or stmt.val_expr == null { return }
+    let rhs_type = infer_expr_type(st, stmt.val_expr)
+    if not is_tuple_type(rhs_type) {
+        mut msg = create_sb(str.len(rhs_type) + 48)
+        sb_append_str(@msg, "Cannot destructure non-tuple type '")
+        sb_append_str(@msg, rhs_type)
+        sb_append_char(@msg, '\'')
+        report_error("semantic", stmt.line, stmt.col, sb_to_string(@msg))
+        st.error_count += 1
+        return
+    }
+    stmt.type_name = rhs_type
+    let elem_cnt = tuple_elem_count(rhs_type)
+    if stmt.param_count != elem_cnt {
+        mut msg = create_sb(96)
+        sb_append_str(@msg, "Destructuring binding count mismatch: tuple has ")
+        sb_append_int(@msg, elem_cnt as i32)
+        sb_append_str(@msg, " elements, but ")
+        sb_append_int(@msg, stmt.param_count as i32)
+        sb_append_str(@msg, " variables provided")
+        report_error("semantic", stmt.line, stmt.col, sb_to_string(@msg))
+        st.error_count += 1
+        return
+    }
+    mut cur_param = stmt.first_param
+    mut idx: usize = 0
+    loop cur_param != null {
+        let expected_t = tuple_elem_type(rhs_type, idx)
+        if cur_param.type_name != null and str.len(cur_param.type_name) > 0 {
+            if not types_are_compatible(cur_param.type_name, expected_t) {
+                mut msg = create_sb(str.len(cur_param.name) + 64)
+                sb_append_str(@msg, "Type mismatch in destructuring binding '")
+                sb_append_str(@msg, cur_param.name)
+                sb_append_str(@msg, "'")
+                report_error("semantic", cur_param.line, cur_param.col, sb_to_string(@msg))
+                st.error_count += 1
+            }
+        } else {
+            cur_param.type_name = expected_t
+        }
+        if cur_param.name != "_" {
+            define_variable(st, cur_param.name, cur_param.type_name, stmt.is_mut, cur_param.line, cur_param.col)
+        }
+        idx += 1
+        cur_param = cur_param.next
+    }
+}

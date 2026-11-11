@@ -1,0 +1,324 @@
+// Tuple types C99 emission and scanning utilities for Velo.
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../ast/tuple_types.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "codegen_types.vl"
+use "codegen_line.vl"
+use "codegen_expr.vl"
+use "codegen_stmt.vl"
+
+data TupleTypeNode {
+    type_name: string
+    c_name: string
+    next: @TupleTypeNode
+}
+
+act tuple_types_contains(list: @TupleTypeNode, type_name: string) -> bool {
+    mut cur = list
+    loop cur != null {
+        if cur.type_name == type_name { return true }
+        cur = cur.next
+    }
+    return false
+}
+
+act tuple_types_add(list: @@TupleTypeNode, type_name: string) {
+    if type_name == null { return }
+    if is_or_type(type_name) {
+        tuple_types_add(list, or_type_success(type_name))
+        tuple_types_add(list, or_type_error(type_name))
+        return
+    }
+    if is_optional_type(type_name) {
+        tuple_types_add(list, optional_inner_type(type_name))
+        return
+    }
+    if type_name[0] == '@' {
+        tuple_types_add(list, strip_pointer_prefix(type_name))
+        return
+    }
+    if not is_tuple_type(type_name) { return }
+    if tuple_types_contains(list.@, type_name) { return }
+
+    let elem_cnt = tuple_elem_count(type_name)
+    mut i: usize = 0
+    loop i < elem_cnt {
+        tuple_types_add(list, tuple_elem_type(type_name, i))
+        i += 1
+    }
+
+    mut node: @TupleTypeNode = mem.alloc(@TupleTypeNode, 1)
+    node.type_name = type_name
+    node.c_name = tuple_c_name(type_name)
+    node.next = list.@
+    list.@ = node
+}
+
+act scan_expr_tuple_types(e: @ExprNode, list: @@TupleTypeNode) {
+    if e == null { return }
+    if is_tuple_type(e.type_name) {
+        tuple_types_add(list, e.type_name)
+    }
+    if e.kind == EXPR_TUPLE_LIT {
+        mut cur = e.first_arg
+        loop cur != null {
+            scan_expr_tuple_types(cur, list)
+            cur = cur.next
+        }
+    } else if e.kind == EXPR_BINARY {
+        scan_expr_tuple_types(e.left, list)
+        scan_expr_tuple_types(e.right, list)
+    } else if e.kind == EXPR_UNARY or e.kind == EXPR_DEREF or e.kind == EXPR_ADDRESS_OF or e.kind == EXPR_CAST or e.kind == EXPR_OR_RETURN or e.kind == EXPR_UNWRAP {
+        scan_expr_tuple_types(e.operand, list)
+    } else if e.kind == EXPR_MEMBER {
+        scan_expr_tuple_types(e.target, list)
+    } else if e.kind == EXPR_INDEX {
+        scan_expr_tuple_types(e.target, list)
+        scan_expr_tuple_types(e.index, list)
+    } else if e.kind == EXPR_CALL {
+        scan_expr_tuple_types(e.callee, list)
+        mut cur = e.first_arg
+        loop cur != null {
+            scan_expr_tuple_types(cur, list)
+            cur = cur.next
+        }
+    } else if e.kind == EXPR_IF {
+        scan_expr_tuple_types(e.left, list)
+        scan_expr_tuple_types(e.right, list)
+        scan_expr_tuple_types(e.operand, list)
+    } else if e.kind == EXPR_STRUCT_LIT {
+        mut cur_init = e.first_init
+        loop cur_init != null {
+            scan_expr_tuple_types(cur_init.value, list)
+            cur_init = cur_init.next
+        }
+    }
+}
+
+act scan_stmt_tuple_types(s: @StmtNode, list: @@TupleTypeNode) {
+    if s == null { return }
+    if s.type_name != null {
+        tuple_types_add(list, s.type_name)
+    }
+    if s.kind == STMT_DESTRUCTURE {
+        scan_expr_tuple_types(s.val_expr, list)
+        mut cur_p = s.first_param
+        loop cur_p != null {
+            if cur_p.type_name != null {
+                tuple_types_add(list, cur_p.type_name)
+            }
+            cur_p = cur_p.next
+        }
+    } else if s.kind == STMT_VAR_DECL {
+        scan_expr_tuple_types(s.val_expr, list)
+    } else if s.kind == STMT_ASSIGN {
+        scan_expr_tuple_types(s.expr, list)
+        scan_expr_tuple_types(s.val_expr, list)
+    } else if s.kind == STMT_EXPR {
+        scan_expr_tuple_types(s.expr, list)
+    } else if s.kind == STMT_RETURN {
+        scan_expr_tuple_types(s.val_expr, list)
+    } else if s.kind == STMT_BLOCK {
+        mut cur = s.first_stmt
+        loop cur != null {
+            scan_stmt_tuple_types(cur, list)
+            cur = cur.next
+        }
+    } else if s.kind == STMT_IF {
+        scan_expr_tuple_types(s.expr, list)
+        scan_stmt_tuple_types(s.body, list)
+        if s.else_branch != null { scan_stmt_tuple_types(s.else_branch, list) }
+    } else if s.kind == STMT_LOOP {
+        scan_expr_tuple_types(s.expr, list)
+        scan_expr_tuple_types(s.loop_start, list)
+        scan_expr_tuple_types(s.loop_end, list)
+        scan_expr_tuple_types(s.loop_step, list)
+        scan_stmt_tuple_types(s.body, list)
+    } else if s.kind == STMT_ZONE {
+        scan_stmt_tuple_types(s.body, list)
+    } else if s.kind == STMT_MATCH {
+        scan_expr_tuple_types(s.expr, list)
+        mut c = s.first_case
+        loop c != null {
+            mut v = c.first_val
+            loop v != null { scan_expr_tuple_types(v, list); v = v.next }
+            scan_stmt_tuple_types(c.body, list)
+            c = c.next
+        }
+    }
+}
+
+act scan_program_tuple_types(prog: @ProgramNode, list: @@TupleTypeNode) {
+    if prog == null { return }
+    mut cur = prog.first_decl
+    loop cur != null {
+        if cur.kind == DECL_FUNCTION or cur.kind == DECL_TEST {
+            if cur.return_type != null { tuple_types_add(list, cur.return_type) }
+            mut cur_p = cur.first_param
+            loop cur_p != null {
+                tuple_types_add(list, cur_p.type_name)
+                cur_p = cur_p.next
+            }
+            scan_stmt_tuple_types(cur.body, list)
+        } else if cur.kind == DECL_DATA {
+            mut cur_f = cur.first_field
+            loop cur_f != null {
+                tuple_types_add(list, cur_f.type_name)
+                cur_f = cur_f.next
+            }
+        } else if cur.kind == DECL_EXTERN {
+            if cur.return_type != null { tuple_types_add(list, cur.return_type) }
+            mut cur_p = cur.first_param
+            loop cur_p != null {
+                tuple_types_add(list, cur_p.type_name)
+                cur_p = cur_p.next
+            }
+        } else if cur.kind == STMT_VAR_DECL {
+            scan_stmt_tuple_types(cur, list)
+        }
+        cur = cur.next
+    }
+}
+
+act emit_tuple_declarations(sb: @StringBuilder, list: @TupleTypeNode) {
+    mut cur = list
+    loop cur != null {
+        sb_append_str(sb, "#ifndef ")
+        sb_append_str(sb, cur.c_name)
+        sb_append_str(sb, "_DEFINED\n#define ")
+        sb_append_str(sb, cur.c_name)
+        sb_append_str(sb, "_DEFINED\ntypedef struct {\n")
+        let elem_cnt = tuple_elem_count(cur.type_name)
+        mut i: usize = 0
+        loop i < elem_cnt {
+            let elem_velo = tuple_elem_type(cur.type_name, i)
+            let elem_c = map_type_to_c(elem_velo)
+            sb_append_str(sb, "    ")
+            sb_append_str(sb, elem_c)
+            sb_append_str(sb, " _")
+            sb_append_int(sb, i as i32)
+            sb_append_str(sb, ";\n")
+            i += 1
+        }
+        sb_append_str(sb, "} ")
+        sb_append_str(sb, cur.c_name)
+        sb_append_str(sb, ";\n#endif\n\n")
+        cur = cur.next
+    }
+}
+
+act emit_tuple_lit(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    mut tname = expr.type_name
+    if tname == null or not is_tuple_type(tname) {
+        tname = infer_tuple_lit(st, expr)
+    }
+    let cname = tuple_c_name(tname)
+    sb_append_char(sb, '(')
+    sb_append_str(sb, cname)
+    sb_append_str(sb, "){ ")
+    mut cur = expr.first_arg
+    mut idx: usize = 0
+    loop cur != null {
+        sb_append_str(sb, "._")
+        sb_append_int(sb, idx as i32)
+        sb_append_str(sb, " = ")
+        emit_c_expr(sb, st, cur)
+        if cur.next != null {
+            sb_append_str(sb, ", ")
+        }
+        idx += 1
+        cur = cur.next
+    }
+    sb_append_str(sb, " }")
+}
+
+act emit_tuple_member(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode, target_type: string) {
+    emit_c_expr(sb, st, expr.target)
+    if str.len(target_type) > 0 and target_type[0] == '@' {
+        sb_append_str(sb, "->")
+    } else {
+        sb_append_str(sb, ".")
+    }
+    if expr.member_name != null and str.len(expr.member_name) > 0 and expr.member_name[0] != '_' {
+        sb_append_char(sb, '_')
+    }
+    sb_append_str(sb, expr.member_name)
+}
+
+act emit_destructure_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32, defers: @@DeferNode) {
+    emit_line_directive(sb, st, stmt.line)
+    let rhs_t = infer_expr_type(st, stmt.val_expr)
+    st.fresh_counter += 1
+    let tmp_id = st.fresh_counter as i32
+
+    if stmt.val_expr.kind == EXPR_OR_RETURN {
+        let op_t = infer_expr_type(st, stmt.val_expr.operand)
+        let c_op_t = map_type_to_c(op_t)
+        let ret_c = map_type_to_c(st.current_func_ret_type)
+
+        sb_append_indent(sb, indent); sb_append_str(sb, c_op_t); sb_append_str(sb, " __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, " = "); emit_c_expr(sb, st, stmt.val_expr.operand); sb_append_str(sb, ";\n")
+        sb_append_indent(sb, indent); sb_append_str(sb, "if (!__or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".ok) {\n")
+        mut cur_d = defers.@
+        loop cur_d != null {
+            emit_c_cleanup(sb, st, cur_d, indent + 1, defers)
+            cur_d = cur_d.next
+        }
+        sb_append_indent(sb, indent + 1); sb_append_str(sb, "return ("); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = false, .as = { .err = __or_tmp_"); sb_append_int(sb, tmp_id); sb_append_str(sb, ".as.err } };\n")
+        sb_append_indent(sb, indent); sb_append_str(sb, "}\n")
+
+        mut cur_p = stmt.first_param
+        mut idx: usize = 0
+        loop cur_p != null {
+            if cur_p.name != "_" {
+                define_variable(st, cur_p.name, cur_p.type_name, stmt.is_mut, cur_p.line, cur_p.col)
+                sb_append_indent(sb, indent)
+                sb_append_str(sb, map_type_to_c(cur_p.type_name))
+                sb_append_char(sb, ' ')
+                sb_append_str(sb, cur_p.name)
+                sb_append_str(sb, " = __or_tmp_")
+                sb_append_int(sb, tmp_id)
+                sb_append_str(sb, ".as.val._")
+                sb_append_int(sb, idx as i32)
+                sb_append_str(sb, ";\n")
+            }
+            idx += 1
+            cur_p = cur_p.next
+        }
+        return
+    }
+
+    let c_tuple_t = tuple_c_name(rhs_t)
+    sb_append_indent(sb, indent)
+    sb_append_str(sb, c_tuple_t)
+    sb_append_str(sb, " __tuple_tmp_")
+    sb_append_int(sb, tmp_id)
+    sb_append_str(sb, " = ")
+    emit_c_expr(sb, st, stmt.val_expr)
+    sb_append_str(sb, ";\n")
+
+    mut cur_p = stmt.first_param
+    mut idx: usize = 0
+    loop cur_p != null {
+        if cur_p.name != "_" {
+            define_variable(st, cur_p.name, cur_p.type_name, stmt.is_mut, cur_p.line, cur_p.col)
+            sb_append_indent(sb, indent)
+            sb_append_str(sb, map_type_to_c(cur_p.type_name))
+            sb_append_char(sb, ' ')
+            sb_append_str(sb, cur_p.name)
+            sb_append_str(sb, " = __tuple_tmp_")
+            sb_append_int(sb, tmp_id)
+            sb_append_str(sb, "._")
+            sb_append_int(sb, idx as i32)
+            sb_append_str(sb, ";\n")
+        }
+        idx += 1
+        cur_p = cur_p.next
+    }
+}
+

@@ -19,6 +19,7 @@ use "codegen_line.vl"
 use "codegen_match.vl"
 use "outcome_gen.vl"
 use "array_gen.vl"
+use "tuple_gen.vl"
 
 // Intrusive linked list node maintaining active LIFO deferred statements and zone cleanups.
 data DeferNode {
@@ -82,13 +83,11 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
     if stmt == null { return }
     if stmt.kind != STMT_DEFER { emit_line_directive(sb, st, stmt.line) }
 
-    // 1. Variable declaration
+    // 1. Variable declaration & Destructuring
+    if stmt.kind == STMT_DESTRUCTURE { emit_destructure_stmt(sb, st, stmt, indent, defers); return }
     if stmt.kind == STMT_VAR_DECL {
         if is_fixed_array_type(stmt.type_name) { emit_array_var_decl(sb, st, stmt, indent); return }
-        if stmt.val_expr != null and stmt.val_expr.kind == EXPR_OR_RETURN {
-            emit_or_return_var_decl(sb, st, stmt, indent, defers)
-            return
-        }
+        if stmt.val_expr != null and stmt.val_expr.kind == EXPR_OR_RETURN { emit_or_return_var_decl(sb, st, stmt, indent, defers); return }
         define_variable(st, stmt.name, stmt.type_name, stmt.is_mut, stmt.line, stmt.col)
         sb_append_indent(sb, indent); sb_append_str(sb, map_type_to_c(stmt.type_name)); sb_append_char(sb, ' '); sb_append_str(sb, stmt.name)
         if stmt.val_expr != null {

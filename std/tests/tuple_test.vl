@@ -1,0 +1,115 @@
+// Test suite for Velo first-class tuples and multiple return values
+use std.io
+
+act find_user(id: i32) -> (string, bool) {
+    if id == 42 {
+        return ("alice", true)
+    }
+    return ("unknown", false)
+}
+
+act compute_stats(x: i32, y: i32) -> (i32, i32, i32) {
+    return (x + y, x - y, x * y)
+}
+
+act safe_div_mod(a: i32, b: i32) -> (i32, i32) or string {
+    if b == 0 {
+        fail "division by zero"
+    }
+    return (a / b, a % b)
+}
+
+act run_div_test() -> i32 or string {
+    let (q, r) = safe_div_mod(17, 5) or return
+    if q != 3 or r != 2 {
+        fail "unexpected quotient or remainder"
+    }
+    return q + r
+}
+
+act test_tuples() -> bool {
+    // 1. Basic tuple literal and multiple return values
+    let (name, found) = find_user(42)
+    if name != "alice" or not found {
+        println_str("FAIL: find_user(42)")
+        return false
+    }
+
+    let (missing_name, missing_found) = find_user(99)
+    if missing_name != "unknown" or missing_found {
+        println_str("FAIL: find_user(99)")
+        return false
+    }
+
+    // 2. 3-element tuple
+    let (sum, diff, prod) = compute_stats(10, 4)
+    if sum != 14 or diff != 6 or prod != 40 {
+        println_str("FAIL: compute_stats")
+        return false
+    }
+
+    // 3. Mutable destructuring
+    mut (mx, my) = (100, 200)
+    mx += 10
+    my += 20
+    if mx != 110 or my != 220 {
+        println_str("FAIL: mutable destructuring")
+        return false
+    }
+
+    // 4. Wildcard destructuring
+    let (first_only, _) = (555, "ignored")
+    if first_only != 555 {
+        println_str("FAIL: wildcard destructuring")
+        return false
+    }
+
+    let (_, mid_only, _) = (1, 2, 3)
+    if mid_only != 2 {
+        println_str("FAIL: middle wildcard destructuring")
+        return false
+    }
+
+    // 5. Member / index access (.0 and .1 and ._0 and ._1)
+    let pair = ("velo", 42)
+    if pair.0 != "velo" or pair.1 != 42 {
+        println_str("FAIL: tuple index access .0 / .1")
+        return false
+    }
+    if pair._0 != "velo" or pair._1 != 42 {
+        println_str("FAIL: tuple index access ._0 / ._1")
+        return false
+    }
+
+    // 6. Tuples with outcome (T or E) error propagation
+    let div_res = run_div_test()
+    if not div_res.ok or div_res.val != 5 {
+        println_str("FAIL: safe_div_mod outcome")
+        return false
+    }
+
+    let err_res = safe_div_mod(10, 0)
+    if err_res.ok or err_res.err != "division by zero" {
+        println_str("FAIL: safe_div_mod error branch")
+        return false
+    }
+
+    // 7. Tuple in if-else expression
+    let flag = true
+    let (cond_a, cond_b) = if flag { (10, 20) } else { (30, 40) }
+    if cond_a != 10 or cond_b != 20 {
+        println_str("FAIL: tuple if-else expression")
+        return false
+    }
+
+    return true
+}
+
+act main() -> i32 {
+    if test_tuples() {
+        println_str("ALL TUPLE TESTS PASSED")
+        return 0
+    }
+    println_str("TUPLE TESTS FAILED")
+    return 1
+}

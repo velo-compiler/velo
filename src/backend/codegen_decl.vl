@@ -12,6 +12,7 @@ use "codegen_expr.vl"
 use "codegen_line.vl"
 use "outcome_gen.vl"
 use "array_gen.vl"
+use "tuple_gen.vl"
 
 // Checks if a function name corresponds to an anonymous lifted function.
 act is_anon_act_name(name: string) -> bool {
@@ -302,6 +303,13 @@ act emit_type_declarations(sb: @StringBuilder, st: @SymbolTable, prog: @ProgramN
             sb_append_str(sb, "};\n\n")
         }
         cur = cur.next
+    }
+
+    // 3.4. Tuple typedefs
+    mut tuple_list: @TupleTypeNode = null
+    scan_program_tuple_types(prog, @tuple_list)
+    if tuple_list != null {
+        emit_tuple_declarations(sb, tuple_list)
     }
 
     // 3.5. Algebraic Outcome (T or E) typedefs and fallback helpers

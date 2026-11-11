@@ -12,6 +12,36 @@ use "parser_binary.vl"
 use "parser_stmt.vl"
 use "parser_decl.vl"
 
+// Helper to apply '@' pointer prefixes, '?' optional prefixes, and 'or' outcome types.
+act wrap_type_modifiers(p: @Parser, base_type: string, at_count: usize, is_opt: bool, allow_or: bool) -> string {
+    mut res = base_type
+    if at_count > 0 {
+        let total_len = at_count + str.len(res)
+        mut buf: @u8 = mem.alloc(@u8, total_len + 1)
+        mut i: usize = 0
+        loop i < at_count { buf[i] = '@'; i += 1 }
+        mut j: usize = 0
+        loop j < str.len(res) { buf[at_count + j] = res[j]; j += 1 }
+        buf[total_len] = 0 as u8
+        res = buf as string
+    }
+    if is_opt or parser_match(p, TOK_QUESTION) {
+        mut qsb = create_sb(str.len(res) + 2)
+        sb_append_char(@qsb, '?')
+        sb_append_str(@qsb, res)
+        res = sb_to_string(@qsb)
+    }
+    if allow_or and parser_match(p, TOK_OR) {
+        let err_type = parse_type_annotation_ex(p, true)
+        mut osb = create_sb(str.len(res) + str.len(err_type) + 4)
+        sb_append_str(@osb, res)
+        sb_append_str(@osb, " or ")
+        sb_append_str(@osb, err_type)
+        res = sb_to_string(@osb)
+    }
+    return res
+}
+
 // Parses type annotations with pointer prefixes, function pointer types, and generic arguments.
 act parse_type_annotation_ex(p: @Parser, allow_or: bool) -> string {
     mut is_opt = false
@@ -47,24 +77,7 @@ act parse_type_annotation_ex(p: @Parser, allow_or: bool) -> string {
         }
         sb_append_str(@sb, ret_type)
         let act_str = sb_to_string(@sb)
-        mut act_res = act_str
-        if at_count > 0 {
-            let total_len = at_count + str.len(act_str)
-            mut buf: @u8 = mem.alloc(@u8, total_len + 1)
-            mut i: usize = 0
-            loop i < at_count { buf[i] = '@'; i += 1 }
-            mut j: usize = 0
-            loop j < str.len(act_str) { buf[at_count + j] = act_str[j]; j += 1 }
-            buf[total_len] = 0 as u8
-            act_res = buf as string
-        }
-        if is_opt or parser_match(p, TOK_QUESTION) {
-            mut qsb = create_sb(str.len(act_res) + 2)
-            sb_append_char(@qsb, '?')
-            sb_append_str(@qsb, act_res)
-            act_res = sb_to_string(@qsb)
-        }
-        return act_res
+        return wrap_type_modifiers(p, act_str, at_count, is_opt, false)
     }
 
     // Fixed-size stack array type: `[N]T`
@@ -83,32 +96,33 @@ act parse_type_annotation_ex(p: @Parser, allow_or: bool) -> string {
         sb_append_str(@sb, size_str)
         sb_append_char(@sb, ']')
         sb_append_str(@sb, elem_type)
-        mut arr_res = sb_to_string(@sb)
-        if at_count > 0 {
-            let total_len = at_count + str.len(arr_res)
-            mut buf: @u8 = mem.alloc(@u8, total_len + 1)
-            mut i: usize = 0
-            loop i < at_count { buf[i] = '@'; i += 1 }
-            mut j: usize = 0
-            loop j < str.len(arr_res) { buf[at_count + j] = arr_res[j]; j += 1 }
-            buf[total_len] = 0 as u8
-            arr_res = buf as string
+        let arr_res = sb_to_string(@sb)
+        return wrap_type_modifiers(p, arr_res, at_count, is_opt, allow_or)
+    }
+
+    // Tuple type: `(T0, T1, ...)`
+    if parser_match(p, TOK_LPAREN) {
+        mut sb = create_sb(64)
+        sb_append_char(@sb, '(')
+        mut count: usize = 0
+        loop not parser_check(p, TOK_RPAREN) and not parser_check(p, TOK_EOF) {
+            let elem_t = parse_type_annotation_ex(p, false)
+            if count > 0 {
+                sb_append_str(@sb, ", ")
+            }
+            sb_append_str(@sb, elem_t)
+            count += 1
+            if not parser_match(p, TOK_COMMA) {
+                break
+            }
         }
-        if is_opt or parser_match(p, TOK_QUESTION) {
-            mut qsb = create_sb(str.len(arr_res) + 2)
-            sb_append_char(@qsb, '?')
-            sb_append_str(@qsb, arr_res)
-            arr_res = sb_to_string(@qsb)
+        parser_consume(p, TOK_RPAREN, "Expected ')' after tuple element types")
+        sb_append_char(@sb, ')')
+        mut tup_res = sb_to_string(@sb)
+        if count == 1 and str.len(tup_res) > 2 {
+            tup_res = copy_slice_to_string(tup_res, 1, str.len(tup_res) - 2)
         }
-        if allow_or and parser_match(p, TOK_OR) {
-            let err_type = parse_type_annotation_ex(p, true)
-            mut osb = create_sb(str.len(arr_res) + str.len(err_type) + 4)
-            sb_append_str(@osb, arr_res)
-            sb_append_str(@osb, " or ")
-            sb_append_str(@osb, err_type)
-            arr_res = sb_to_string(@osb)
-        }
-        return arr_res
+        return wrap_type_modifiers(p, tup_res, at_count, is_opt, allow_or)
     }
 
     // 5.2: `shelf` is a reserved type keyword - annotations spell shelf[T]
@@ -184,35 +198,7 @@ act parse_type_annotation_ex(p: @Parser, allow_or: bool) -> string {
         base_name = sb_to_string(@sb)
     }
 
-    mut full_type = base_name
-    if at_count > 0 {
-        let total_len = at_count + str.len(base_name)
-        mut buf: @u8 = mem.alloc(@u8, total_len + 1)
-        mut i: usize = 0
-        loop i < at_count { buf[i] = '@'; i += 1 }
-        mut j: usize = 0
-        loop j < str.len(base_name) { buf[at_count + j] = base_name[j]; j += 1 }
-        buf[total_len] = 0 as u8
-        full_type = buf as string
-    }
-
-    if is_opt or parser_match(p, TOK_QUESTION) {
-        mut qsb = create_sb(str.len(full_type) + 2)
-        sb_append_char(@qsb, '?')
-        sb_append_str(@qsb, full_type)
-        full_type = sb_to_string(@qsb)
-    }
-
-    if allow_or and parser_match(p, TOK_OR) {
-        let err_type = parse_type_annotation_ex(p, true)
-        mut osb = create_sb(str.len(full_type) + str.len(err_type) + 4)
-        sb_append_str(@osb, full_type)
-        sb_append_str(@osb, " or ")
-        sb_append_str(@osb, err_type)
-        full_type = sb_to_string(@osb)
-    }
-
-    return full_type
+    return wrap_type_modifiers(p, base_name, at_count, is_opt, allow_or)
 }
 
 act parse_type_annotation(p: @Parser) -> string {

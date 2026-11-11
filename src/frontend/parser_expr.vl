@@ -29,6 +29,10 @@ act parse_postfix(p: @Parser) -> @ExprNode {
                 let mem_tok = parser_advance(p)
                 let mname = copy_slice_to_string(p.source, mem_tok.start, mem_tok.length)
                 expr = make_member_expr(expr, mname, mem_tok.line, mem_tok.col)
+            } else if parser_check(p, TOK_INT_LIT) {
+                let mem_tok = parser_advance(p)
+                let mname = copy_slice_to_string(p.source, mem_tok.start, mem_tok.length)
+                expr = make_member_expr(expr, mname, mem_tok.line, mem_tok.col)
             } else {
                 let mem_tok = parser_peek(p, 0)
                 report_parse(p, p.filename, mem_tok.line, mem_tok.col, mem_tok.length, "Expected member name after '.'")

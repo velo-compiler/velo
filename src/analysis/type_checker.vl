@@ -23,6 +23,7 @@ use "fs_checks.vl"
 use "simd_checks.vl"
 use "reflect_checks.vl"
 use "array_checks.vl"
+use "tuple_checks.vl"
 use "scope.vl"
 use "narrow_flow.vl"
 
@@ -40,10 +41,9 @@ act widen_if_branch_types(t1: string, t2: string) -> string {
 act is_known_type(st: @SymbolTable, name: string) -> bool {
     if name == null { return false }
     let clean = strip_pointer_prefix(name)
-    if is_act_type(clean) or is_primitive_type(clean) { return true }
+    if is_act_type(clean) or is_primitive_type(clean) or is_tuple_type(clean) or is_fixed_array_type(clean) { return true }
     if clean == "Allocator" or clean == "Thread" or clean == "Mutex" or clean == "File" { return true }
-    if is_shelf_type(clean) or find_struct(st, clean) != null or find_kind(st, clean) != null { return true }
-    return false
+    return is_shelf_type(clean) or find_struct(st, clean) != null or find_kind(st, clean) != null
 }
 
 // Infers the static type of an expression AST node (the wall vocabulary).
@@ -63,6 +63,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.kind == EXPR_MAP_LIT or expr.kind == EXPR_HEAP_MAP_LIT { return map_inferred_type(st, expr) }  // 5.2 slice 6: map constructor literal
     if expr.kind == EXPR_RING_LIT or expr.kind == EXPR_BITSET_LIT { return check_coll9_inferred_type(st, expr) }  // 5.2 slice 9
     if expr.kind == EXPR_ARRAY_LIT { return infer_array_lit(st, expr) }
+    if expr.kind == EXPR_TUPLE_LIT { return infer_tuple_lit(st, expr) }
     if expr.kind == EXPR_IDENT {
         let sym = resolve_variable(st, expr.str_val)
         if sym == null {
@@ -120,6 +121,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         if is_ring_type(target_type) or is_bitset_type(target_type) { return check_coll9_member_access(st, expr) }  // 5.2 slice 9
         if is_simd_type(clean_type) { return check_simd_member_access(st, expr, clean_type) }
         if is_fixed_array_type(clean_type) { return check_array_member_access(st, expr, clean_type) }
+        if is_tuple_type(clean_type) { return check_tuple_member_access(st, expr, clean_type) }
         let st_sym = find_struct(st, clean_type)
         if st_sym == null { report_error("semantic", expr.line, expr.col, "Member access on non-struct type"); st.error_count += 1; return "unknown" }
         let f_sym = find_struct_field(st_sym, expr.member_name)

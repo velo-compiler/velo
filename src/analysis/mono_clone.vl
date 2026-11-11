@@ -45,6 +45,25 @@ act mono_clone_stmt(m: @Monomorphizer, s: @StmtNode, scope: @ScopeEntry, params:
         let res = make_var_decl_stmt(s.name, vt, ve, s.is_mut, s.line, s.col)
         return res
     }
+    if s.kind == STMT_DESTRUCTURE {
+        let ve = mono_clone_expr(m, s.val_expr, scope, params, args)
+        mut first_p: @ParamNode = null
+        mut last_p: @ParamNode = null
+        mut cur_p = s.first_param
+        loop cur_p != null {
+            mut pt: string = null
+            if cur_p.type_name != null and str.len(cur_p.type_name) > 0 {
+                pt = mono_subst(cur_p.type_name, params, args)
+                mono_check_type(m, pt)
+                pt = mono_normalize_type(pt)
+            }
+            let np = make_param_node(cur_p.name, pt, cur_p.line, cur_p.col)
+            if first_p == null { first_p = np; last_p = np }
+            else { last_p.next = np; last_p = np }
+            cur_p = cur_p.next
+        }
+        return make_destructure_stmt(first_p, s.param_count, ve, s.is_mut, s.line, s.col)
+    }
     if s.kind == STMT_ASSIGN {
         let tgt = mono_clone_expr(m, s.expr, scope, params, args)
         let ve = mono_clone_expr(m, s.val_expr, scope, params, args)
@@ -74,6 +93,23 @@ act mono_clone_stmt(m: @Monomorphizer, s: @StmtNode, scope: @ScopeEntry, params:
                     sc.name = cs.name; mut sc_t = cs.type_name
                     if sc_t == null or str.len(sc_t) == 0 { sc_t = mono_infer_type(cs.val_expr, cur_scope) }
                     sc.type_name = sc_t; sc.next = cur_scope; cur_scope = sc
+                }
+                if cs.kind == STMT_DESTRUCTURE {
+                    let rhs_t = mono_infer_type(cs.val_expr, cur_scope)
+                    mut cur_p = cs.first_param
+                    mut p_idx: usize = 0
+                    loop cur_p != null {
+                        mut sc_t = cur_p.type_name
+                        if (sc_t == null or str.len(sc_t) == 0) and is_tuple_type(rhs_t) {
+                            sc_t = tuple_elem_type(rhs_t, p_idx)
+                        }
+                        if cur_p.name != "_" {
+                            mut sc: @ScopeEntry = mem.alloc(@ScopeEntry, 1)
+                            sc.name = cur_p.name; sc.type_name = sc_t; sc.next = cur_scope; cur_scope = sc
+                        }
+                        p_idx += 1
+                        cur_p = cur_p.next
+                    }
                 }
                 if first_s == null { first_s = cs; last_s = cs }
                 else { last_s.next = cs; last_s = cs }

@@ -24,6 +24,7 @@ use "os_gen.vl"
 use "fs_gen.vl"
 use "simd_gen.vl"
 use "array_gen.vl"
+use "tuple_gen.vl"
 use "codegen_line.vl"
 use "reflect_gen.vl"
 use "codegen_call.vl"
@@ -56,14 +57,8 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr == null { return }
 
     // 1. Literal expressions
-    if expr.kind == EXPR_INT {
-        if expr.str_val != null and str.len(expr.str_val) > 0 { sb_append_str(sb, expr.str_val) } else { sb_append_int(sb, expr.int_val) }
-        return
-    }
-    if expr.kind == EXPR_FLOAT {
-        if expr.str_val != null and str.len(expr.str_val) > 0 { sb_append_str(sb, expr.str_val) } else { sb_append_float(sb, expr.float_val) }
-        return
-    }
+    if expr.kind == EXPR_INT { if expr.str_val != null and str.len(expr.str_val) > 0 { sb_append_str(sb, expr.str_val) } else { sb_append_int(sb, expr.int_val) }; return }
+    if expr.kind == EXPR_FLOAT { if expr.str_val != null and str.len(expr.str_val) > 0 { sb_append_str(sb, expr.str_val) } else { sb_append_float(sb, expr.float_val) }; return }
     if expr.kind == EXPR_STRING { emit_string_expr(sb, st, expr); return }
     if expr.kind == EXPR_BOOL { if expr.bool_val { sb_append_str(sb, "true") } else { sb_append_str(sb, "false") }; return }
     if expr.kind == EXPR_NULL { sb_append_str(sb, "NULL"); return }
@@ -198,6 +193,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         if is_simd_type(strip_pointer_prefix(target_type)) { emit_simd_member(sb, st, expr, target_type); return }
         let clean_tt = strip_pointer_prefix(target_type)
         if is_fixed_array_type(clean_tt) { emit_array_member(sb, st, expr, clean_tt); return }
+        if is_tuple_type(clean_tt) { emit_tuple_member(sb, st, expr, target_type); return }
         emit_c_expr(sb, st, expr.target)
         if str.len(target_type) > 0 and target_type[0] == '@' { sb_append_str(sb, "->") } else { sb_append_str(sb, ".") }; sb_append_str(sb, expr.member_name); return
     }
@@ -227,6 +223,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     // 6. Struct instantiation literal (omitted fields fall back to their declared defaults)
     if expr.kind == EXPR_STRUCT_LIT { emit_struct_lit_expr(sb, st, expr); return }
     if expr.kind == EXPR_ARRAY_LIT { emit_array_lit(sb, st, expr); return }
+    if expr.kind == EXPR_TUPLE_LIT { emit_tuple_lit(sb, st, expr); return }
 
     // 7. Binary expression
     if expr.kind == EXPR_BINARY {

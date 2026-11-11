@@ -1,6 +1,7 @@
 // Type representation and descriptors for the Velo programming language AST.
 use "../common/utils.vl"
 use "../common/string_builder.vl"
+use "tuple_types.vl"
 
 // Type kind constants
 let TYPE_KIND_PRIMITIVE: i32 = 1
@@ -165,10 +166,7 @@ act prepend_pointer_prefix(type_name: string) -> string {
 // Checks if a type name corresponds to a primitive built-in type.
 act is_primitive_type(name: string) -> bool {
     if name == null { return false }
-    if is_int_type(name) or is_float_type(name) or is_simd_type(name) or name == "bool" or name == "string" or name == "void" {
-        return true
-    }
-    return false
+    return is_int_type(name) or is_float_type(name) or is_simd_type(name) or name == "bool" or name == "string" or name == "void"
 }
 
 // Checks if a type name is a function pointer type (e.g. `act(...) -> Ret`).
@@ -176,10 +174,7 @@ act is_act_type_name(name: string) -> bool {
     if name == null { return false }
     let clean = strip_pointer_prefix(name)
     let len = str.len(clean)
-    if len >= 4 and clean[0] == 'a' and clean[1] == 'c' and clean[2] == 't' and clean[3] == '(' {
-        return true
-    }
-    return false
+    return len >= 4 and clean[0] == 'a' and clean[1] == 'c' and clean[2] == 't' and clean[3] == '('
 }
 
 // Returns true if the type name represents an optional '?T' type.
@@ -204,6 +199,7 @@ act opt_type_c_name(name: string) -> string {
     loop i < str.len(inner) {
         let c = inner[i]
         if c == '@' { sb_append_str(@sb, "ptr_"); i += 1 }
+        else if c == '(' or c == ')' { i += 1 }
         else if c == '[' or c == ']' or c == ',' or c == ' ' { sb_append_char(@sb, '_'); i += 1 }
         else { sb_append_char(@sb, c); i += 1 }
     }
@@ -270,19 +266,29 @@ act types_are_compatible(expected: string, actual: string) -> bool {
     if is_or_type(expected) and is_or_type(actual) {
         return types_are_compatible(or_type_success(expected), or_type_success(actual)) and types_are_compatible(or_type_error(expected), or_type_error(actual))
     }
+    if is_tuple_type(expected) and is_tuple_type(actual) {
+        let e_cnt = tuple_elem_count(expected)
+        if e_cnt != tuple_elem_count(actual) { return false }
+        mut i: usize = 0
+        loop i < e_cnt {
+            if not types_are_compatible(tuple_elem_type(expected, i), tuple_elem_type(actual, i)) { return false }
+            i += 1
+        }
+        return true
+    }
     return false
 }
 
 // Returns true if the type name represents an algebraic 'T or E' outcome type.
 act is_or_type(name: string) -> bool {
     if name == null { return false }
-    let len = str.len(name)
-    if len < 6 { return false }
-    mut i: usize = 0
+    let len = str.len(name); if len < 6 { return false }
+    mut depth: usize = 0; mut i: usize = 0
     loop i + 4 <= len {
-        if name[i] == ' ' and name[i + 1] == 'o' and name[i + 2] == 'r' and name[i + 3] == ' ' {
-            return true
-        }
+        let c = name[i]
+        if c == '(' or c == '[' { depth += 1 }
+        else if c == ')' or c == ']' { if depth > 0 { depth -= 1 } }
+        else if depth == 0 and c == ' ' and name[i + 1] == 'o' and name[i + 2] == 'r' and name[i + 3] == ' ' { return true }
         i += 1
     }
     return false
@@ -292,11 +298,12 @@ act is_or_type(name: string) -> bool {
 act or_type_success(name: string) -> string {
     if name == null { return "" }
     let len = str.len(name)
-    mut idx: usize = 0
+    mut depth: usize = 0; mut idx: usize = 0
     loop idx + 4 <= len {
-        if name[idx] == ' ' and name[idx + 1] == 'o' and name[idx + 2] == 'r' and name[idx + 3] == ' ' {
-            return copy_slice_to_string(name, 0, idx)
-        }
+        let c = name[idx]
+        if c == '(' or c == '[' { depth += 1 }
+        else if c == ')' or c == ']' { if depth > 0 { depth -= 1 } }
+        else if depth == 0 and c == ' ' and name[idx + 1] == 'o' and name[idx + 2] == 'r' and name[idx + 3] == ' ' { return copy_slice_to_string(name, 0, idx) }
         idx += 1
     }
     return name
@@ -306,11 +313,12 @@ act or_type_success(name: string) -> string {
 act or_type_error(name: string) -> string {
     if name == null { return "" }
     let len = str.len(name)
-    mut idx: usize = 0
+    mut depth: usize = 0; mut idx: usize = 0
     loop idx + 4 <= len {
-        if name[idx] == ' ' and name[idx + 1] == 'o' and name[idx + 2] == 'r' and name[idx + 3] == ' ' {
-            return copy_slice_to_string(name, idx + 4, len - (idx + 4))
-        }
+        let c = name[idx]
+        if c == '(' or c == '[' { depth += 1 }
+        else if c == ')' or c == ']' { if depth > 0 { depth -= 1 } }
+        else if depth == 0 and c == ' ' and name[idx + 1] == 'o' and name[idx + 2] == 'r' and name[idx + 3] == ' ' { return copy_slice_to_string(name, idx + 4, len - (idx + 4)) }
         idx += 1
     }
     return ""
@@ -327,20 +335,13 @@ act or_type_c_name(name: string) -> string {
         if c == ' ' and i + 3 < str.len(name) and name[i + 1] == 'o' and name[i + 2] == 'r' and name[i + 3] == ' ' {
             sb_append_char(@sb, '_')
             i += 4
-        } else if c == '@' {
-            sb_append_str(@sb, "ptr_")
-            i += 1
-        } else if c == '[' or c == ']' or c == ',' or c == ' ' {
-            sb_append_char(@sb, '_')
-            i += 1
-        } else {
-            sb_append_char(@sb, c)
-            i += 1
-        }
+        } else if c == '@' { sb_append_str(@sb, "ptr_"); i += 1 }
+        else if c == '(' or c == ')' { i += 1 }
+        else if c == '[' or c == ']' or c == ',' or c == ' ' { sb_append_char(@sb, '_'); i += 1 }
+        else { sb_append_char(@sb, c); i += 1 }
     }
     return sb_to_string(@sb)
 }
-
 
 // Checks if a type name represents a fixed-size stack array (e.g. "[16]u8" or "@[16]u8").
 act is_fixed_array_type(name: string) -> bool {

@@ -153,6 +153,38 @@ act parse_loop_stmt(p: @Parser) -> @StmtNode {
     return make_loop_expr_stmt(first_expr, is_count, body, loop_tok.line, loop_tok.col)
 }
 
+// Helper: parses destructuring declaration `(a, b, ...) = val` after `let` or `mut`.
+act parse_destructure_stmt(p: @Parser, is_mut: bool, line: i32, col: i32) -> @StmtNode {
+    mut first_param: @ParamNode = null
+    mut last_param: @ParamNode = null
+    mut count: usize = 0
+    loop not parser_check(p, TOK_RPAREN) and not parser_check(p, TOK_EOF) {
+        let id_tok = parser_consume_ident(p, "Expected variable name in destructuring")
+        let bname = copy_slice_to_string(p.source, id_tok.start, id_tok.length)
+        mut btype = ""
+        if parser_match(p, TOK_COLON) {
+            btype = parse_type_annotation(p)
+        }
+        let param = make_param_node(bname, btype, id_tok.line, id_tok.col)
+        if first_param == null {
+            first_param = param
+            last_param = param
+        } else {
+            last_param.next = param
+            last_param = param
+        }
+        count += 1
+        if not parser_match(p, TOK_COMMA) {
+            break
+        }
+    }
+    parser_consume(p, TOK_RPAREN, "Expected ')' after destructuring variables")
+    parser_consume(p, TOK_ASSIGN, "Expected '=' in destructuring declaration")
+    let val = parse_expression(p)
+    parser_skip_newlines(p)
+    return make_destructure_stmt(first_param, count, val, is_mut, line, col)
+}
+
 // Parses any Velo statement (variable declarations, control flow, assignments, calls).
 act parse_statement(p: @Parser) -> @StmtNode {
     parser_skip_newlines(p)
@@ -177,9 +209,12 @@ act parse_statement(p: @Parser) -> @StmtNode {
         return make_zone_stmt(body, size, zone_tok.line, zone_tok.col)
     }
 
-    // 3. Mutable variable declaration: `mut x = val` or `mut x: Type = val`
+    // 3. Mutable variable declaration: `mut x = val`, `mut x: Type = val`, or `mut (a, b) = val`
     if parser_check(p, TOK_MUT) {
         let mut_tok = parser_advance(p)
+        if parser_match(p, TOK_LPAREN) {
+            return parse_destructure_stmt(p, true, mut_tok.line, mut_tok.col)
+        }
         let name_tok = parser_consume_ident(p, "Expected variable name after 'mut'")
         let name = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
         mut type_name = ""
@@ -194,9 +229,12 @@ act parse_statement(p: @Parser) -> @StmtNode {
         return make_var_decl_stmt(name, type_name, val, true, mut_tok.line, mut_tok.col)
     }
 
-    // 4. Immutable variable declaration: `let x = val` or `let x: Type = val`
+    // 4. Immutable variable declaration: `let x = val`, `let x: Type = val`, or `let (a, b) = val`
     if parser_check(p, TOK_LET) {
         let let_tok = parser_advance(p)
+        if parser_match(p, TOK_LPAREN) {
+            return parse_destructure_stmt(p, false, let_tok.line, let_tok.col)
+        }
         let name_tok = parser_consume_ident(p, "Expected variable name after 'let'")
         let name = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
         mut type_name = ""

@@ -99,6 +99,17 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
         lit.type_name = e.type_name
         return lit
     }
+    if e.kind == EXPR_TUPLE_LIT {
+        mut first_a: @ExprNode = null; mut last_a: @ExprNode = null; mut cur = e.first_arg
+        loop cur != null {
+            let a = mono_clone_expr(m, cur, scope, params, args)
+            if first_a == null { first_a = a; last_a = a } else { last_a.next = a; last_a = a }
+            cur = cur.next
+        }
+        let lit = make_tuple_lit_expr(first_a, e.arg_count, e.line, e.col)
+        lit.type_name = e.type_name
+        return lit
+    }
     if e.kind == EXPR_MAP_LIT or e.kind == EXPR_HEAP_MAP_LIT {
         mut first_a: @ExprNode = null; mut last_a: @ExprNode = null; mut cur = e.first_arg
         loop cur != null {

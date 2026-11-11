@@ -16,6 +16,7 @@ let STMT_BREAK: i32 = 211
 let STMT_CONTINUE: i32 = 212
 let STMT_MATCH: i32 = 213
 let STMT_FAIL: i32 = 214
+let STMT_DESTRUCTURE: i32 = 215
 
 // Top-level declaration kind constants
 let DECL_DATA: i32 = 301

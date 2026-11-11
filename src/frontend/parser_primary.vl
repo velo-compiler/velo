@@ -314,11 +314,30 @@ act parse_primary(p: @Parser) -> @ExprNode {
         return make_ident_expr(name, tok.line, tok.col)
     }
 
-    // 9. Parenthesized grouping expression: `(expr)`
-    if parser_match(p, TOK_LPAREN) {
-        let expr = parse_expression(p)
+    // 9. Parenthesized grouping expression `(expr)` or Tuple literal `(e0, e1, ...)`
+    if parser_check(p, TOK_LPAREN) {
+        let lp_tok = parser_advance(p)
+        let first_expr = parse_expression(p)
+        if parser_match(p, TOK_COMMA) {
+            mut first_arg: @ExprNode = first_expr
+            mut last_arg: @ExprNode = first_expr
+            mut count: usize = 1
+            loop not parser_check(p, TOK_RPAREN) and not parser_check(p, TOK_EOF) {
+                let elem = parse_expression(p)
+                if elem != null {
+                    last_arg.next = elem
+                    last_arg = elem
+                    count += 1
+                }
+                if not parser_match(p, TOK_COMMA) {
+                    break
+                }
+            }
+            parser_consume(p, TOK_RPAREN, "Expected ')' after tuple elements")
+            return make_tuple_lit_expr(first_arg, count, lp_tok.line, lp_tok.col)
+        }
         parser_consume(p, TOK_RPAREN, "Expected ')' after grouped expression")
-        return expr
+        return first_expr
     }
 
     let tok = parser_peek(p, 0)

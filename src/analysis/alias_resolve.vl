@@ -102,7 +102,7 @@ act mono_alias_resolve_expr(m: @Monomorphizer, e: @ExprNode) {
             mono_alias_resolve_expr(m, cur.value)
             cur = cur.next
         }
-    } else if e.kind == EXPR_ARRAY_LIT {
+    } else if e.kind == EXPR_ARRAY_LIT or e.kind == EXPR_TUPLE_LIT {
         mut cur_a = e.first_arg
         loop cur_a != null {
             mono_alias_resolve_expr(m, cur_a)
@@ -128,6 +128,13 @@ act mono_alias_resolve_stmt(m: @Monomorphizer, s: @StmtNode) {
         }
     } else if s.kind == STMT_VAR_DECL {
         s.type_name = mono_canon_type(m, s.type_name)
+        mono_alias_resolve_expr(m, s.val_expr)
+    } else if s.kind == STMT_DESTRUCTURE {
+        mut cur_p = s.first_param
+        loop cur_p != null {
+            cur_p.type_name = mono_canon_type(m, cur_p.type_name)
+            cur_p = cur_p.next
+        }
         mono_alias_resolve_expr(m, s.val_expr)
     } else if s.kind == STMT_ASSIGN {
         mono_alias_resolve_expr(m, s.expr)

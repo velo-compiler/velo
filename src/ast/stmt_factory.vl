@@ -273,6 +273,19 @@ act make_test_decl(name: string, body: @StmtNode, line: i32, col: i32) -> @StmtN
     return node
 }
 
+// Creates a destructuring assignment statement node (`let (a, b) = val` or `mut (a, b) = val`).
+act make_destructure_stmt(first_binding: @ParamNode, count: usize, val_expr: @ExprNode, is_mut: bool, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_DESTRUCTURE
+    node.first_param = first_binding
+    node.param_count = count
+    node.val_expr = val_expr
+    node.is_mut = is_mut
+    node.line = line
+    node.col = col
+    return node
+}
+
 // Creates the root program node containing all declarations.
 act make_program_node(first_decl: @StmtNode, count: usize) -> @ProgramNode {
     mut prog: @ProgramNode = mem.alloc(@ProgramNode, 1)

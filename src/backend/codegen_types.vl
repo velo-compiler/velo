@@ -37,6 +37,10 @@ act map_type_to_c(type_name: string) -> string {
         return or_type_c_name(type_name)
     }
 
+    if is_tuple_type(type_name) {
+        return tuple_c_name(type_name)
+    }
+
     // 5.2: `shelf[T]` / `@shelf[T]` / (slice 10) `heap shelf[T]` → the single
     // shared VeloShelf layout (is_shelf_form strips the heap modifier)
     if is_shelf_form(type_name) {

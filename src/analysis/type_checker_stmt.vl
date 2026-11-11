@@ -10,6 +10,7 @@ use "map_checks.vl"
 use "escape_checks.vl"
 use "op_resolver.vl"
 use "narrow_flow.vl"
+use "tuple_checks.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
@@ -94,6 +95,8 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
         if stmt.val_expr != null {
             check_escape_assign(st, make_ident_expr(stmt.name, stmt.line, stmt.col), stmt.val_expr, stmt.line, stmt.col)
         }
+    } else if stmt.kind == STMT_DESTRUCTURE {
+        check_destructure_stmt(st, stmt)
     } else if stmt.kind == STMT_ASSIGN {
         if stmt.expr != null and stmt.expr.kind == EXPR_INDEX and is_map_type(infer_expr_type(st, stmt.expr.target)) {  // 5.2 slice 6: mut / compound-assign / strict key and value
             check_map_assign(st, stmt); infer_expr_type(st, stmt.val_expr)
