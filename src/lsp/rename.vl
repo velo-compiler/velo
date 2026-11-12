@@ -118,7 +118,7 @@ act lsp_decl_has_local(stmt: @StmtNode, name: string) -> bool {
     } else if stmt.kind == STMT_IF {
         if lsp_decl_has_local(stmt.body, name) { return true }
         if lsp_decl_has_local(stmt.else_branch, name) { return true }
-    } else if stmt.kind == STMT_LOOP {
+    } else if stmt.kind == STMT_LOOP or stmt.kind == STMT_ZONE or stmt.kind == STMT_UNSAFE {
         return lsp_decl_has_local(stmt.body, name)
     }
     return false

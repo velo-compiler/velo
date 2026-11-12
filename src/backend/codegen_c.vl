@@ -66,8 +66,11 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
                 cur_param = cur_param.next
             }
 
+            let prev_strict = st.strict_safety
+            if cur.module_path != null and cur.module_path == "std" { st.strict_safety = false }
             mut defers: @DeferNode = null
             emit_c_block_stmts(@sb, st, cur.body, 1, @defers)
+            st.strict_safety = prev_strict
 
             mut cur_d = defers
             loop cur_d != null {

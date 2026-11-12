@@ -162,22 +162,46 @@ flowchart TD
 
 ---
 
-### Phase 48: Syntactic Safety Boundaries & Unsafe Blocks (`PLR-VELO-004`)
+### Phase 48: Syntactic Safety Boundaries & Unsafe Blocks (`PLR-VELO-004`) [COMPLETED] ✅
 
-#### Task 48.1: `unsafe { ... }` Block Syntax and `--strict-safety` Verification [OPEN] ⏳
-* **Defect**:
-  - Velo provides compile-time zone escape analysis, but raw pointer dereferencing (`ptr.@`, `ptr.field`) and unchecked pointer arithmetic are syntactically permitted anywhere in user code.
-  - Systems developers cannot easily audit where unsafe memory manipulations occur or enforce that high-level application logic remains free of raw pointer hazards.
-* **Required Fix**:
-  - Add `unsafe` keyword to lexical tokens and parser AST (`STMT_UNSAFE = 216`).
-  - Add compiler flag `--strict-safety`:
-    - When enabled, performing raw pointer dereferencing (`ptr.@`), pointer arithmetic, or unchecked foreign calls (`extern act`) outside of an `unsafe { ... }` block emits a compile error:
+#### Task 48.1: `unsafe { ... }` Block Syntax and `--strict-safety` Verification [COMPLETED] ✅
+* **Former Defect**:
+  - Velo provides compile-time zone escape analysis, but raw pointer dereferencing (`ptr.@`, `ptr.field`) and unchecked pointer arithmetic were syntactically permitted anywhere in user code.
+  - Systems developers could not easily audit where unsafe memory manipulations occur or enforce that high-level application logic remains free of raw pointer hazards.
+* **Fix Applied**:
+  - Added lexical token `TOK_UNSAFE = 156` in `src/frontend/token.vl`, `src/frontend/lexer.vl`, and `src/tooling/formatter_token.vl`.
+  - Added statement AST node `STMT_UNSAFE = 216` in `src/ast/stmt.vl` and AST factory `make_unsafe_stmt` in `src/ast/stmt_factory.vl`.
+  - Implemented parser support for `unsafe { ... }` blocks in `src/frontend/parser_stmt.vl` producing `STMT_UNSAFE` wrapping a scoped block statement.
+  - Added contextual identifier recognition for `unsafe` in `src/frontend/parser_core.vl` and formatting rule support in `src/tooling/formatter_rules.vl`.
+  - Traversed `STMT_UNSAFE` across AST transform and analysis passes: `src/analysis/alias_resolve.vl`, `src/analysis/mono_clone.vl`, `src/analysis/mono_unroll.vl`, `src/analysis/narrow_flow.vl`, `src/analysis/type_check_program.vl`, `src/backend/codegen_decl.vl`, `src/backend/outcome_gen.vl`, `src/backend/tuple_gen.vl`, and LSP providers (`src/lsp/completion.vl`, `src/lsp/definition.vl`, `src/lsp/hover.vl`, `src/lsp/rename.vl`).
+  - Added `strict_safety: bool` and `current_unsafe_depth: i32` to `SymbolTable` in `src/analysis/symbol_table.vl`.
+  - In `src/analysis/type_checker_stmt.vl` and `src/backend/codegen_stmt.vl`, tracked `current_unsafe_depth` on entering/exiting `STMT_UNSAFE`.
+  - In `src/analysis/type_checker.vl`, enforced `--strict-safety` compile-time gates when `st.strict_safety` is active and `st.current_unsafe_depth <= 0`:
+    * Raw pointer dereference (`ptr.@`, `ptr.field`, `ptr[i]` where target is `@T`):
       `[Velo Error] Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety.`
-    - When `--strict-safety` is omitted, `unsafe { ... }` blocks parse and execute normally with full backward compatibility.
-  - In emitted C, `unsafe { ... }` lowers to an ordinary scoped C block `{ ... }`.
-* **Acceptance & Verification**:
-  - Add test suite `tests/test_strict_safety.py` verifying that raw pointer operations are permitted inside `unsafe { ... }` and rejected outside when `--strict-safety` is active.
-  - Verify self-hosted compiler rebuilds cleanly with deterministic SHA-256 fixed point.
+    * Pointer arithmetic (`ptr + n`, `ptr - n`, `n + ptr`, `ptr1 - ptr2` where operands are `@T`):
+      `[Velo Error] Pointer arithmetic requires an 'unsafe { ... }' block when compiling with --strict-safety.`
+    * Unchecked foreign calls (`extern act`):
+      `[Velo Error] Call to foreign 'extern act' requires an 'unsafe { ... }' block when compiling with --strict-safety.`
+  - In `src/backend/driver.vl`, tracked module provenance via `load_file_and_deps_ex` so that internal standard library implementation details (`std.*`) are exempted from user-facing `--strict-safety` restrictions while preserving strict safety enforcement across user code.
+  - Lowered `unsafe { ... }` blocks to standard scoped C blocks `{ ... }` in emitted C.
+  - Added `--strict-safety` compiler flag to `SymbolTable`, `src/backend/driver.vl`, `src/backend/driver_run.vl`, `src/backend/check.vl`, `src/cli_cmd.vl`, and `src/main.vl` across `run`, `build`, `check`, and `emit-c`.
+  - When `--strict-safety` is omitted, all operations parse and execute normally with 100% backward compatibility.
+* **Residual Limitation**:
+  - The `--strict-safety` check flags individual raw pointer operations and foreign extern calls. It does not synthesize lifetime annotations for pointers escaping `unsafe` blocks into safe scopes (zone escape analysis handles safe zone references).
+* **Verification**:
+  - Added comprehensive test suite `tests/test_strict_safety.py` (17/17 tests passing) covering:
+    * Rejection and acceptance of raw pointer dereference (`ptr.@`) under `--strict-safety`
+    * Rejection and acceptance of raw pointer indexing (`ptr[i]`) under `--strict-safety`
+    * Rejection and acceptance of pointer member access (`ptr.field`) under `--strict-safety`
+    * Rejection and acceptance of pointer arithmetic (`ptr + n`, `ptr - n`, `n + ptr`, `ptr1 - ptr2`) under `--strict-safety`
+    * Rejection and acceptance of foreign `extern act` calls under `--strict-safety`
+    * 100% backward compatibility when `--strict-safety` is omitted
+    * End-to-end execution of `unsafe { ... }` programs compiled with `--strict-safety`
+    * Canonical formatting (`velo fmt`) of `unsafe { ... }` code blocks
+  - Ran full test suite: 687 passed in 563.49s (100% pass rate).
+  - Maintained 3-generation self-hosting bootstrap determinism (Gen2 and Gen3 emit identical bit-for-bit C output matching `bootstrap.c` with SHA-256 `EAAEE2CBF4D64AF583694DA84FACFCA744F3CD0730FA80C89DE072AF9217F26D`).
+  - Verified line count standards across all 101 compiler source files in `src/` ($\le 394$ lines, hard limit 400).
 
 ---
 

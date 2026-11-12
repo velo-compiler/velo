@@ -24,7 +24,7 @@ act print_usage() {
 }
 
 // Handles `velo run <source.vl> [opts...]`.
-act handle_run_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_directives: bool) -> i32 {
+act handle_run_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_directives: bool, strict_safety: bool) -> i32 {
     if argc < 3 {
         println_str("[Velo Error] 'run' requires a source file path")
         return 1
@@ -70,7 +70,7 @@ act handle_run_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_directi
             sb_append_str(@linker_sb, "-L")
             let raw_arg = copy_slice_to_string(arg, 2, str.len(arg) - 2)
             sb_append_str(@linker_sb, quote_path(path_to_native_str(raw_arg)))
-        } else if arg != "--unsafe-shelf-index" and arg != "--no-line-directives" and str.len(source_file) == 0 {
+        } else if arg != "--unsafe-shelf-index" and arg != "--no-line-directives" and arg != "--strict-safety" and str.len(source_file) == 0 {
             source_file = arg
         }
         i += 1
@@ -91,13 +91,17 @@ act handle_run_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_directi
     let linker_flags = sb_to_string(@linker_sb)
     mut exit_code = 0
     zone {
-        exit_code = run_source_file_opts(source_file, unsafe_index, opt_flags, linker_flags, cc, no_line_directives)
+        exit_code = run_source_file_all_opts(source_file, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety)
     }
     return exit_code
 }
 
+act handle_run_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_directives: bool) -> i32 {
+    return handle_run_cmd_opts(argc, argv, unsafe_index, no_line_directives, false)
+}
+
 // Handles `velo build <source.vl> [opts...]`.
-act handle_build_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_directives: bool) -> i32 {
+act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_directives: bool, strict_safety: bool) -> i32 {
     if argc < 3 {
         println_str("[Velo Error] 'build' requires a source file path")
         return 1
@@ -147,7 +151,7 @@ act handle_build_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_direc
             sb_append_str(@linker_sb, "-L")
             let raw_arg = copy_slice_to_string(arg, 2, str.len(arg) - 2)
             sb_append_str(@linker_sb, quote_path(path_to_native_str(raw_arg)))
-        } else if arg != "--unsafe-shelf-index" and arg != "--no-line-directives" and str.len(source_file) == 0 {
+        } else if arg != "--unsafe-shelf-index" and arg != "--no-line-directives" and arg != "--strict-safety" and str.len(source_file) == 0 {
             source_file = arg
         }
         i += 1
@@ -168,7 +172,7 @@ act handle_build_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_direc
     let linker_flags = sb_to_string(@linker_sb)
     mut ok = false
     zone {
-        ok = build_executable_opts(source_file, output_exe, unsafe_index, opt_flags, linker_flags, cc, no_line_directives)
+        ok = build_executable_all_opts(source_file, output_exe, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety)
         if ok {
             println_str("[Velo] Successfully built binary!")
         } else {
@@ -179,5 +183,9 @@ act handle_build_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_direc
         return 0
     }
     return 1
+}
+
+act handle_build_cmd(argc: i32, argv: @string, unsafe_index: bool, no_line_directives: bool) -> i32 {
+    return handle_build_cmd_opts(argc, argv, unsafe_index, no_line_directives, false)
 }
 

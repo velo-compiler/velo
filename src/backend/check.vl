@@ -287,7 +287,7 @@ act check_print_minimal_json(src_path: string, message: string) {
 }
 
 // Runs 'velo check --json'. Returns the process exit code (0 = clean).
-act run_check_json(src_path: string, unsafe_index: bool) -> i32 {
+act run_check_json_opts(src_path: string, unsafe_index: bool, strict_safety: bool) -> i32 {
     let tmp = "velo_check_capture.tmp"
     if velo_capture_begin(tmp) != 0 {
         check_print_minimal_json(src_path, "internal error: stdout capture failed")
@@ -297,7 +297,7 @@ act run_check_json(src_path: string, unsafe_index: bool) -> i32 {
     // codegen expands `f(x) != null` into a null-guarded ternary that
     // re-evaluates f(x) (a known defect recorded in gaps.md 6.7), which would
     // run the pipeline twice and duplicate captured diagnostics.
-    let c_code = compile_source_to_c(src_path, unsafe_index)
+    let c_code = compile_source_to_c_strict(src_path, unsafe_index, false, strict_safety)
     let ok: bool = c_code != null
     velo_capture_end()
     io_print_cleanup()
@@ -324,17 +324,21 @@ act run_check_json(src_path: string, unsafe_index: bool) -> i32 {
     return 1
 }
 
+act run_check_json(src_path: string, unsafe_index: bool) -> i32 {
+    return run_check_json_opts(src_path, unsafe_index, false)
+}
+
 // Runs 'velo check' in pretty mode. The compile stage's own success verdict
 // ignores recovered parse errors, so the captured stream is echoed and ANDed
 // with an error-line scan, exactly like the JSON path.
-act run_check_pretty(src_path: string, unsafe_index: bool) -> bool {
+act run_check_pretty_opts(src_path: string, unsafe_index: bool, strict_safety: bool) -> bool {
     let tmp = "velo_check_capture.tmp"
     if velo_capture_begin(tmp) != 0 {
         // Capture unavailable: degrade to the compiler's own verdict.
-        let c_code = compile_source_to_c(src_path, unsafe_index)
+        let c_code = compile_source_to_c_strict(src_path, unsafe_index, false, strict_safety)
         return c_code != null
     }
-    let c_code = compile_source_to_c(src_path, unsafe_index)
+    let c_code = compile_source_to_c_strict(src_path, unsafe_index, false, strict_safety)
     let ok: bool = c_code != null
     velo_capture_end()
     io_print_cleanup()
@@ -347,4 +351,8 @@ act run_check_pretty(src_path: string, unsafe_index: bool) -> bool {
     defer heap_free_str(captured)
     recon_emit_pretty(captured, src_path)
     return ok and check_count_errors(captured) == 0
+}
+
+act run_check_pretty(src_path: string, unsafe_index: bool) -> bool {
+    return run_check_pretty_opts(src_path, unsafe_index, false)
 }

@@ -19,6 +19,7 @@ act stmt_unconditionally_exits(stmt: @StmtNode) -> bool {
             cur = cur.next
         }
     }
+    if stmt.kind == STMT_UNSAFE { return stmt_unconditionally_exits(stmt.body) }
     return false
 }
 

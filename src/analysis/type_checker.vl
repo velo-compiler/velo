@@ -112,9 +112,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             if expr.member_name == "ok" { return "bool" }
             if expr.member_name == "val" { return or_type_success(target_type) }
             if expr.member_name == "err" { return or_type_error(target_type) }
-            report_error("semantic", expr.line, expr.col, "Outcome type only provides .ok, .val, and .err")
-            st.error_count += 1
-            return "unknown"
+            report_error("semantic", expr.line, expr.col, "Outcome type only provides .ok, .val, and .err"); st.error_count += 1; return "unknown"
         }
         if target_type == "dyn" { report_error("semantic", expr.line, expr.col, dyn_gate_error()); st.error_count += 1; return "unknown" }  // 5.2 slice 2: raw dyn exposes no members — cast (as) first; Stage 1 raises the same words
         if is_shelf_type(target_type) { return check_shelf_member_access(st, expr) }  // 5.2: shelf property reads (len = usize; others are loud errors)
@@ -127,24 +125,37 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         if st_sym == null { report_error("semantic", expr.line, expr.col, "Member access on non-struct type"); st.error_count += 1; return "unknown" }
         let f_sym = find_struct_field(st_sym, expr.member_name)
         if f_sym == null { report_error("semantic", expr.line, expr.col, "Struct does not have member field"); st.error_count += 1; return "unknown" }
+        if str.len(target_type) > 0 and target_type[0] == '@' and st.strict_safety and st.current_unsafe_depth <= 0 {
+            report_error("semantic", expr.line, expr.col, "Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety."); st.error_count += 1
+        }
         return f_sym.type_name
     }
 
     if expr.kind == EXPR_INDEX {
-        let target_type = infer_expr_type(st, expr.target)
-        let clean_type = strip_pointer_prefix(target_type)
+        let target_type = infer_expr_type(st, expr.target); let clean_type = strip_pointer_prefix(target_type)
         if is_simd_type(clean_type) { return check_simd_index(st, expr, clean_type) }
         if is_shelf_type(target_type) { return check_shelf_index_read(st, expr) }  // 5.2: bounds are runtime-checked; index type here
         if is_map_type(target_type) { return check_map_index_read(st, expr) }  // 5.2 slice 6: strict key; the miss fatal is runtime
         if is_ring_type(target_type) or is_bitset_type(target_type) { return check_coll9_index(st, expr) }  // 5.2 slice 9: no subscript
         if is_fixed_array_type(clean_type) { return check_array_index(st, expr, clean_type) }
         if target_type == "string" { return "u8" }
-        if str.len(target_type) > 0 and target_type[0] == '@' { return strip_pointer_prefix(target_type) }
+        if str.len(target_type) > 0 and target_type[0] == '@' {
+            if st.strict_safety and st.current_unsafe_depth <= 0 {
+                report_error("semantic", expr.line, expr.col, "Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety."); st.error_count += 1
+            }
+            return strip_pointer_prefix(target_type)
+        }
         report_error("semantic", expr.line, expr.col, "Cannot index non-pointer / non-string type"); st.error_count += 1; return "unknown"
     }
 
     if expr.kind == EXPR_DEREF {
-        let sub_type = infer_expr_type(st, expr.operand); if str.len(sub_type) > 0 and sub_type[0] == '@' { return strip_pointer_prefix(sub_type) }
+        let sub_type = infer_expr_type(st, expr.operand)
+        if str.len(sub_type) > 0 and sub_type[0] == '@' {
+            if st.strict_safety and st.current_unsafe_depth <= 0 {
+                report_error("semantic", expr.line, expr.col, "Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety."); st.error_count += 1
+            }
+            return strip_pointer_prefix(sub_type)
+        }
         report_error("semantic", expr.line, expr.col, "Cannot dereference non-pointer value"); st.error_count += 1; return "unknown"
     }
 
@@ -228,6 +239,9 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         if expr.callee.kind == EXPR_IDENT {
             let fn_sym = find_function(st, expr.callee.str_val)
             if fn_sym != null {
+                if fn_sym.is_extern and st.strict_safety and st.current_unsafe_depth <= 0 {
+                    report_error("semantic", expr.line, expr.col, "Call to foreign 'extern act' requires an 'unsafe { ... }' block when compiling with --strict-safety."); st.error_count += 1
+                }
                 if expr.arg_count != fn_sym.param_count { report_error("semantic", expr.line, expr.col, "Mismatched argument count in function call"); st.error_count += 1 }
                 adapt_and_check_call_args(st, expr, fn_sym.first_param)
                 check_shelf_call_args(st, expr, fn_sym)  // 5.2: shelf elems must string-match
@@ -260,6 +274,16 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         // 5.2 slice 8: raw dyn arithmetic/compares auto-unbox; the concrete mixed-compare and string-concat walls live in dyn_checks.vl too
         let bin_t = check_dyn_binary(st, expr, left_type, right_type); if bin_t != null { return bin_t }
         let s_bin = check_simd_binary(st, expr, left_type, right_type); if s_bin != null { return s_bin }
+        let is_l_ptr = str.len(left_type) > 0 and left_type[0] == '@'
+        let is_r_ptr = str.len(right_type) > 0 and right_type[0] == '@'
+        if (is_l_ptr or is_r_ptr) and (expr.op == TOK_PLUS or expr.op == TOK_MINUS) {
+            if st.strict_safety and st.current_unsafe_depth <= 0 {
+                report_error("semantic", expr.line, expr.col, "Pointer arithmetic requires an 'unsafe { ... }' block when compiling with --strict-safety."); st.error_count += 1
+            }
+            if is_l_ptr and is_int_type(right_type) { return left_type }
+            if is_r_ptr and is_int_type(left_type) { return right_type }
+            if is_l_ptr and is_r_ptr and expr.op == TOK_MINUS { return "isize" }
+        }
         if expr.op == TOK_OR and is_or_type(left_type) {
             let succ_t = or_type_success(left_type)
             try_adapt_int_literal(st, succ_t, expr.right, expr.line, expr.col)
@@ -286,9 +310,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             return inner_t
         }
         let op_fn = find_binary_op(st, expr.op, left_type, right_type); if op_fn != null { return op_fn.return_type }
-        if expr.op == TOK_EQ or expr.op == TOK_NEQ or expr.op == TOK_LT or expr.op == TOK_LTE or expr.op == TOK_GT or expr.op == TOK_GTE or expr.op == TOK_AND or expr.op == TOK_OR {
-            return "bool"
-        }
+        if expr.op == TOK_EQ or expr.op == TOK_NEQ or expr.op == TOK_LT or expr.op == TOK_LTE or expr.op == TOK_GT or expr.op == TOK_GTE or expr.op == TOK_AND or expr.op == TOK_OR { return "bool" }
         return adapt_binary_int_operands(st, expr, left_type, right_type)
     }
 
@@ -296,8 +318,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         let sub_type = infer_expr_type(st, expr.operand)
         if sub_type == "dyn" { report_error("semantic", expr.line, expr.col, dyn_gate_error()); st.error_count += 1; return "unknown" }  // slice 2: unbox with `as` first
         let s_un = check_simd_unary(st, expr, sub_type); if s_un != null { return s_un }
-        let op_fn = find_unary_op(st, expr.op, sub_type)
-        if op_fn != null { return op_fn.return_type }
+        let op_fn = find_unary_op(st, expr.op, sub_type); if op_fn != null { return op_fn.return_type }
         if expr.op == TOK_NOT { return "bool" }
         return sub_type
     }

@@ -80,7 +80,7 @@ act lsp_find_local_in_stmt(stmt: @StmtNode, target: string, max_line: i32, out_t
     } else if stmt.kind == STMT_IF {
         if lsp_find_local_in_stmt(stmt.body, target, max_line, out_type) { return true }
         if lsp_find_local_in_stmt(stmt.else_branch, target, max_line, out_type) { return true }
-    } else if stmt.kind == STMT_LOOP {
+    } else if stmt.kind == STMT_LOOP or stmt.kind == STMT_ZONE or stmt.kind == STMT_UNSAFE {
         if lsp_find_local_in_stmt(stmt.body, target, max_line, out_type) { return true }
     }
     return false

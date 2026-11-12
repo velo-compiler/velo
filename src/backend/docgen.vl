@@ -1,4 +1,10 @@
 // Markdown API documentation generator for Velo source modules.
+use std.io
+use std.fs
+use std.mem
+use "../frontend/token.vl"
+use "../frontend/lexer.vl"
+use "../frontend/parser.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"
 use "../ast/stmt.vl"
@@ -308,4 +314,34 @@ act generate_markdown_docs(filename: string, source: string, prog: @ProgramNode)
     }
 
     return sb_to_string(@sb)
+}
+
+// Generates Markdown documentation for a Velo source file.
+act generate_docs_for_source(source_path: string) -> string {
+    let source = fs_read_to_str(source_path)
+    if source == null {
+        println_str("[Velo Error] Failed to read source file: {source_path}")
+        return null
+    }
+    defer heap_free_str(source)
+
+    let slen = str.len(source)
+    mut lex = create_lexer(source, slen, slen + 2)
+    lex.file_path = source_path
+    tokenize(@lex)
+
+    if lex.dropped_count > 0 {
+        let dropped = lex.dropped_count
+        println_str("[Velo Error] {source_path}: lexer token buffer too small; {dropped} tokens were truncated; documentation output would be incomplete.")
+        return null
+    }
+
+    mut p: Parser
+    init_parser(@p, source_path, source, lex.tokens, lex.token_count)
+    let prog = parse_program(@p)
+    if prog == null {
+        return null
+    }
+
+    return generate_markdown_docs(source_path, source, prog)
 }

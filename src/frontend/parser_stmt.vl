@@ -209,6 +209,14 @@ act parse_statement(p: @Parser) -> @StmtNode {
         return make_zone_stmt(body, size, zone_tok.line, zone_tok.col)
     }
 
+    // 2.5. Unsafe block: `unsafe { ... }`
+    if parser_check(p, TOK_UNSAFE) {
+        let unsafe_tok = parser_advance(p)
+        parser_skip_newlines(p)
+        let body = parse_block(p)
+        return make_unsafe_stmt(body, unsafe_tok.line, unsafe_tok.col)
+    }
+
     // 3. Mutable variable declaration: `mut x = val`, `mut x: Type = val`, or `mut (a, b) = val`
     if parser_check(p, TOK_MUT) {
         let mut_tok = parser_advance(p)

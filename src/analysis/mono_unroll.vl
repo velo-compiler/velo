@@ -146,6 +146,7 @@ act mono_has_ident_in_reflect_stmt(s: @StmtNode, name: string) -> bool {
             cur = cur.next
         }
     }
+    if s.kind == STMT_UNSAFE { return mono_has_ident_in_reflect_stmt(s.body, name) }
     return false
 }
 
@@ -240,6 +241,7 @@ act mono_subst_ident_in_stmt(s: @StmtNode, name: string, val: i64, line: i32, co
         }
         return make_block_stmt(first_s, s.stmt_count, s.line, s.col)
     }
+    if s.kind == STMT_UNSAFE { return make_unsafe_stmt(mono_subst_ident_in_stmt(s.body, name, val, line, col), s.line, s.col) }
     if s.kind == STMT_LOOP {
         if s.loop_var == name { return s }
         let st = mono_subst_ident_in_expr(s.loop_start, name, val, line, col)
@@ -313,6 +315,7 @@ act mono_has_reflect_loops_in_stmt(s: @StmtNode) -> bool {
             cur = cur.next
         }
     }
+    if s.kind == STMT_UNSAFE { return mono_has_reflect_loops_in_stmt(s.body) }
     return false
 }
 

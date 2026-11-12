@@ -263,6 +263,10 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
             cur = cur.next
         }
         exit_scope(st)
+    } else if stmt.kind == STMT_UNSAFE {
+        st.current_unsafe_depth += 1
+        check_statement(st, expected_ret_type, stmt.body)
+        st.current_unsafe_depth -= 1
     } else if stmt.kind == STMT_EXPR { infer_expr_type(st, stmt.expr) }
 }
 

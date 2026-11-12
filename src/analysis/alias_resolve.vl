@@ -152,6 +152,8 @@ act mono_alias_resolve_stmt(m: @Monomorphizer, s: @StmtNode) {
     } else if s.kind == STMT_ZONE {
         mono_alias_resolve_expr(m, s.expr)   // §4.1: capacity expr may name aliases
         mono_alias_resolve_stmt(m, s.body)
+    } else if s.kind == STMT_UNSAFE {
+        mono_alias_resolve_stmt(m, s.body)
     } else if s.kind == STMT_DEFER {
         mono_alias_resolve_stmt(m, s.deferred_stmt)
     } else if s.kind == STMT_RETURN or s.kind == STMT_FAIL {

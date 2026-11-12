@@ -8,8 +8,8 @@ use "driver_cc.vl"
 use "driver.vl"
 
 // Builds a native executable from a Velo source file by compiling to C and invoking the C compiler backend.
-act build_executable_opts(source_path: string, output_exe: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string, no_line_directives: bool) -> bool {
-    let c_code = compile_source_to_c_opts(source_path, unsafe_index, no_line_directives)
+act build_executable_all_opts(source_path: string, output_exe: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string, no_line_directives: bool, strict_safety: bool) -> bool {
+    let c_code = compile_source_to_c_strict(source_path, unsafe_index, no_line_directives, strict_safety)
     if c_code == null {
         return false
     }
@@ -45,12 +45,16 @@ act build_executable_opts(source_path: string, output_exe: string, unsafe_index:
     return fs_exists(out_path)
 }
 
+act build_executable_opts(source_path: string, output_exe: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string, no_line_directives: bool) -> bool {
+    return build_executable_all_opts(source_path, output_exe, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, false)
+}
+
 act build_executable(source_path: string, output_exe: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string) -> bool {
     return build_executable_opts(source_path, output_exe, unsafe_index, opt_flags, linker_flags, cc, false)
 }
 
 // Compiles and runs a Velo source file.
-act run_source_file_opts(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string, no_line_directives: bool) -> i32 {
+act run_source_file_all_opts(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string, no_line_directives: bool, strict_safety: bool) -> i32 {
     let stem = path_stem_to_str(source_path)
     mut exe_sb = create_sb(128)
     sb_append_str(@exe_sb, ".velo_cache/")
@@ -58,13 +62,17 @@ act run_source_file_opts(source_path: string, unsafe_index: bool, opt_flags: str
     sb_append_str(@exe_sb, ".exe")
     let exe_path = sb_to_string(@exe_sb)
 
-    let ok = build_executable_opts(source_path, exe_path, unsafe_index, opt_flags, linker_flags, cc, no_line_directives)
+    let ok = build_executable_all_opts(source_path, exe_path, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety)
     if not ok {
         return 1
     }
 
     let run_cmd = assemble_runner_cmd(cc, exe_path, null)
     return os_system(run_cmd)
+}
+
+act run_source_file_opts(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string, no_line_directives: bool) -> i32 {
+    return run_source_file_all_opts(source_path, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, false)
 }
 
 act run_source_file(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string) -> i32 {

@@ -115,6 +115,8 @@ data SymbolTable {
     current_func_ret_type: string
     current_func_name: string
     current_zone_depth: i32
+    strict_safety: bool
+    current_unsafe_depth: i32
 }
 
 // Initializes the root Symbol Table.
@@ -123,6 +125,7 @@ act init_symbol_table(st: @SymbolTable) {
     st.global_scope = create_scope(null); st.current_scope = st.global_scope; st.error_count = 0; st.has_operator_overloads = false
     st.fresh_counter = 0; st.unsafe_shelf_index = false; st.is_test = false; st.source_file = ""; st.no_line_directives = false
     st.zone_counter = 0; st.current_func_ret_type = ""; st.current_func_name = ""; st.current_zone_depth = 0
+    st.strict_safety = false; st.current_unsafe_depth = 0
 }
 
 // Registers a struct blueprint in the symbol table.

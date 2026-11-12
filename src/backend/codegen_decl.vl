@@ -84,6 +84,8 @@ act scan_stmt_act_types(s: @StmtNode, list: @@ActTypeNode) {
         scan_stmt_act_types(s.body, list)
     } else if s.kind == STMT_ZONE {
         scan_stmt_act_types(s.body, list)
+    } else if s.kind == STMT_UNSAFE {
+        scan_stmt_act_types(s.body, list)
     } else if s.kind == STMT_MATCH {
         mut c = s.first_case
         loop c != null {

@@ -31,7 +31,7 @@ act is_unary_prefix_token(prev_tok: @FmtToken, sym: string) -> bool {
         if pt == "+=" or pt == "-=" or pt == "*=" or pt == "/=" or pt == "&=" or pt == "|=" or pt == "^=" { return true }
         if pt == "<<=" or pt == ">>=" or pt == "and" or pt == "or" or pt == "->" or pt == "=>" { return true }
         if pt == "(" or pt == "[" or pt == "{" or pt == "," or pt == ":" or pt == ";" { return true }
-        if pt == "return" or pt == "let" or pt == "mut" or pt == "if" or pt == "loop" or pt == "on" or pt == "as" or pt == "fail" { return true }
+        if pt == "return" or pt == "let" or pt == "mut" or pt == "if" or pt == "loop" or pt == "on" or pt == "as" or pt == "fail" or pt == "unsafe" { return true }
         return false
     }
     return false

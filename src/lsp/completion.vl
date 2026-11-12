@@ -63,7 +63,7 @@ act lsp_find_local_type(stmt: @StmtNode, var_name: string, max_line: i32) -> str
         if r1 != null { return r1 }
         let r2 = lsp_find_local_type(stmt.else_branch, var_name, max_line)
         if r2 != null { return r2 }
-    } else if stmt.kind == STMT_LOOP {
+    } else if stmt.kind == STMT_LOOP or stmt.kind == STMT_ZONE or stmt.kind == STMT_UNSAFE {
         return lsp_find_local_type(stmt.body, var_name, max_line)
     }
     return null

@@ -376,7 +376,10 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         sb_append_indent(sb, indent); sb_append_str(sb, "continue;\n"); return
     }
 
-    // 11.5. Nested Block statement (unrolled loops, scoped blocks)
+    // 11.5. Nested Block statement (unrolled loops, scoped blocks, unsafe blocks)
+    if stmt.kind == STMT_UNSAFE {
+        st.current_unsafe_depth += 1; emit_c_stmt(sb, st, stmt.body, indent, defers); st.current_unsafe_depth -= 1; return
+    }
     if stmt.kind == STMT_BLOCK {
         sb_append_indent(sb, indent); sb_append_str(sb, "{\n")
         emit_c_block_stmts(sb, st, stmt, indent + 1, defers)

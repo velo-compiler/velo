@@ -208,7 +208,7 @@ act resolve_std_module_path(dir: string, mod_path: string) -> string {
 }
 
 // Recursively loads a file and its imported dependencies in topological order.
-act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
+act load_file_and_deps_ex(d: @CompilerDriver, raw_path: string, is_std: bool) {
     if should_skip_platform_file(raw_path) {
         return
     }
@@ -261,10 +261,12 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
             let mod_path = cur.module_path
             if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" and mod_path != "sys.thread" and mod_path != "sys.math" and mod_path != "sys.time" and mod_path != "sys.os" and mod_path != "sys.simd" {
                 mut resolved_path = path_join_str(dir, mod_path)
+                mut child_is_std = is_std
                 if is_std_module(mod_path) {
                     resolved_path = resolve_std_module_path(dir, mod_path)
+                    child_is_std = true
                 }
-                load_file_and_deps(d, resolved_path)
+                load_file_and_deps_ex(d, resolved_path, child_is_std)
             }
         }
         cur = cur.next
@@ -285,6 +287,7 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
         }
 
         if not skip {
+            if is_std and decl.kind != DECL_USE { decl.module_path = "std" }
             if d.first_decl == null {
                 d.first_decl = decl
                 d.last_decl = decl
@@ -299,9 +302,13 @@ act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
     }
 }
 
+act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
+    load_file_and_deps_ex(d, raw_path, false)
+}
+
 // Compiles a single source file into an AST program with recursive multi-file resolution.
 act resolve_and_parse(d: @CompilerDriver, file_path: string) -> @ProgramNode {
-    load_file_and_deps(d, file_path)
+    load_file_and_deps_ex(d, file_path, false)
     if d.error_count > 0 or d.first_decl == null {
         return null
     }
@@ -314,7 +321,8 @@ act resolve_and_parse(d: @CompilerDriver, file_path: string) -> @ProgramNode {
 // Translates a Velo source program into a complete, standalone C99 source string.
 // Slice 11: unsafe_index carries the --unsafe-shelf-index knob to the emitter.
 // 9.1: no_line_directives suppresses #line preprocessor directives.
-act compile_source_to_c_test_opts(source_path: string, unsafe_index: bool, is_test: bool, no_line_directives: bool) -> string {
+// 48.1: strict_safety enforces unsafe { ... } blocks for raw pointer derefs and extern calls.
+act compile_source_to_c_all_opts(source_path: string, unsafe_index: bool, is_test: bool, no_line_directives: bool, strict_safety: bool) -> string {
     mut d: CompilerDriver
     init_driver(@d)
 
@@ -330,6 +338,7 @@ act compile_source_to_c_test_opts(source_path: string, unsafe_index: bool, is_te
     st.unsafe_shelf_index = unsafe_index
     st.is_test = is_test
     st.no_line_directives = no_line_directives
+    st.strict_safety = strict_safety
     st.source_file = source_path
 
     let sem_ok = check_program(@st, prog)
@@ -350,45 +359,22 @@ act compile_source_to_c_test_opts(source_path: string, unsafe_index: bool, is_te
     return c_out
 }
 
+act compile_source_to_c_test_opts(source_path: string, unsafe_index: bool, is_test: bool, no_line_directives: bool) -> string {
+    return compile_source_to_c_all_opts(source_path, unsafe_index, is_test, no_line_directives, false)
+}
+
 act compile_source_to_c_test(source_path: string, unsafe_index: bool, is_test: bool) -> string {
-    return compile_source_to_c_test_opts(source_path, unsafe_index, is_test, false)
+    return compile_source_to_c_all_opts(source_path, unsafe_index, is_test, false, false)
 }
 
 act compile_source_to_c(source_path: string, unsafe_index: bool) -> string {
-    return compile_source_to_c_test_opts(source_path, unsafe_index, false, false)
+    return compile_source_to_c_all_opts(source_path, unsafe_index, false, false, false)
 }
 
 act compile_source_to_c_opts(source_path: string, unsafe_index: bool, no_line_directives: bool) -> string {
-    return compile_source_to_c_test_opts(source_path, unsafe_index, false, no_line_directives)
+    return compile_source_to_c_all_opts(source_path, unsafe_index, false, no_line_directives, false)
 }
 
-// Generates Markdown documentation for a Velo source file.
-act generate_docs_for_source(source_path: string) -> string {
-    let source = fs_read_to_str(source_path)
-    if source == null {
-        println_str("[Velo Error] Failed to read source file: {source_path}")
-        return null
-    }
-    defer heap_free_str(source)
-
-    let slen = str.len(source)
-    // Same capacity rule and overflow guard as load_file_and_deps.
-    mut lex = create_lexer(source, slen, slen + 2)
-    lex.file_path = source_path
-    tokenize(@lex)
-
-    if lex.dropped_count > 0 {
-        let dropped = lex.dropped_count
-        println_str("[Velo Error] {source_path}: lexer token buffer too small; {dropped} tokens were truncated; documentation output would be incomplete.")
-        return null
-    }
-
-    mut p: Parser
-    init_parser(@p, source_path, source, lex.tokens, lex.token_count)
-    let prog = parse_program(@p)
-    if prog == null {
-        return null
-    }
-
-    return generate_markdown_docs(source_path, source, prog)
+act compile_source_to_c_strict(source_path: string, unsafe_index: bool, no_line_directives: bool, strict_safety: bool) -> string {
+    return compile_source_to_c_all_opts(source_path, unsafe_index, false, no_line_directives, strict_safety)
 }

@@ -75,6 +75,7 @@ act stmt_always_returns(st: @SymbolTable, stmt: @StmtNode) -> bool {
         }
         return false
     }
+    if stmt.kind == STMT_UNSAFE { return stmt_always_returns(st, stmt.body) }
     if stmt.kind == STMT_IF {
         if stmt.else_branch == null { return false }
         return stmt_always_returns(st, stmt.body) and stmt_always_returns(st, stmt.else_branch)
@@ -176,11 +177,14 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
             st.current_func_ret_type = cur.return_type
             st.current_func_name = cur.name
             st.current_zone_depth = 0
+            let prev_strict = st.strict_safety
+            if cur.module_path != null and cur.module_path == "std" { st.strict_safety = false }
             enter_scope(st)
             mut cur_p = cur.first_param
             loop cur_p != null { define_parameter(st, cur_p.name, cur_p.type_name, cur_p.line, cur_p.col); cur_p = cur_p.next }
             check_statement(st, cur.return_type, cur.body)
             exit_scope(st)
+            st.strict_safety = prev_strict
 
             if cur.name != "main" and cur.return_type != null and cur.return_type != "void" and str.len(cur.return_type) > 0 {
                 if not stmt_always_returns(st, cur.body) {

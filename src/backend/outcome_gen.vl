@@ -56,6 +56,8 @@ act scan_stmt_or_types(s: @StmtNode, list: @@OrTypeNode) {
         scan_stmt_or_types(s.body, list)
     } else if s.kind == STMT_ZONE {
         scan_stmt_or_types(s.body, list)
+    } else if s.kind == STMT_UNSAFE {
+        scan_stmt_or_types(s.body, list)
     } else if s.kind == STMT_MATCH {
         mut c = s.first_case
         loop c != null {

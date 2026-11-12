@@ -137,6 +137,16 @@ act make_block_stmt(first_stmt: @StmtNode, count: usize, line: i32, col: i32) ->
     return node
 }
 
+// Creates an unsafe block statement (`unsafe { ... }`).
+act make_unsafe_stmt(body: @StmtNode, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = STMT_UNSAFE
+    node.body = body
+    node.line = line
+    node.col = col
+    return node
+}
+
 // Creates a break statement (`break`).
 act make_break_stmt(line: i32, col: i32) -> @StmtNode {
     mut node: @StmtNode = mem.alloc(@StmtNode, 1)

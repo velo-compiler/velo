@@ -142,6 +142,8 @@ act scan_stmt_tuple_types(s: @StmtNode, list: @@TupleTypeNode) {
         scan_stmt_tuple_types(s.body, list)
     } else if s.kind == STMT_ZONE {
         scan_stmt_tuple_types(s.body, list)
+    } else if s.kind == STMT_UNSAFE {
+        scan_stmt_tuple_types(s.body, list)
     } else if s.kind == STMT_MATCH {
         scan_expr_tuple_types(s.expr, list)
         mut c = s.first_case
