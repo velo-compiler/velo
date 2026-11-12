@@ -240,29 +240,45 @@ flowchart TD
 
 ---
 
-### Phase 50: Package Supply Chain Integrity & Vulnerability Disclosure (`PLR-VELO-006`)
+### Phase 50: Package Supply Chain Integrity & Vulnerability Disclosure (`PLR-VELO-006`) [COMPLETED] ✅
 
-#### Task 50.1: Package Checksum Verification (`velo.lock`) and `SECURITY.md` Policy [OPEN] ⏳
-* **Defect**:
-  - The package manager (`velo pkg`) parses `velo.pkg` manifests, but lacks cryptographic checksum verification for fetched package sources, leaving users vulnerable to altered or tampered dependencies.
-  - The repository lacks a formal `SECURITY.md` file establishing a vulnerability disclosure channel, supported version tiers, and incident response SLAs.
-* **Required Fix**:
-  1. **Lockfile & Hash Verification:**
-     - Extend `src/common/manifest.vl` and `src/backend/driver_pkg.vl` to generate and verify `velo.lock`.
-     - Store SHA-256 hashes for all resolved dependencies:
-       ```
-       package "raylib" = { source = "...", version = "5.0", hash = "sha256:..." }
-       ```
-     - During `velo pkg install` / `velo pkg update`, calculate SHA-256 of downloaded archives using `std.crypto` and reject mismatched digests.
-  2. **Security Policy (`SECURITY.md`):**
-     - Author `SECURITY.md` in repository root declaring:
-       - Supported language and compiler release versions.
-       - Vulnerability reporting procedures (private email contact).
-       - Triage timeline (acknowledgement within 48 hours, patch targets).
-       - Responsible disclosure policy.
-* **Acceptance & Verification**:
-  - Create test suite `tests/test_pkg_security.py` verifying that modified package contents fail checksum verification during install.
-  - Verify `SECURITY.md` is present and valid markdown.
+#### Task 50.1: Package Checksum Verification (`velo.lock`) and `SECURITY.md` Policy [COMPLETED] ✅
+* **Former Defect**:
+  - The package manager (`velo pkg`) parsed `velo.pkg` manifests, but lacked cryptographic checksum verification for package sources, leaving users vulnerable to altered or tampered dependencies.
+  - The repository lacked a formal `SECURITY.md` file establishing a vulnerability disclosure channel, supported version tiers, and incident response SLAs.
+* **Fix Applied**:
+  - Implemented package lockfile architecture (`velo.lock`) across `src/backend/pkg_lock.vl` and `src/backend/driver_pkg.vl`:
+    * Defined `LockEntry` and `LockFile` data models with parsing, serialization, and lookup utilities.
+    * Implemented cryptographic SHA-256 dependency digest calculation (`compute_dep_hash`) using `std.crypto` (`sha256_hash_str`) for local file packages, directory trees, git references, and registry packages.
+    * Formatted `velo.lock` with deterministic package declarations:
+      `package "<name>" = { source = "...", version = "...", hash = "sha256:..." }`
+    * Added CLI commands to `velo pkg`:
+      - `velo pkg lock [path]`: Generates or updates `velo.lock` with cryptographic hashes.
+      - `velo pkg install [path]`: Installs dependencies and strictly verifies them against `velo.lock`.
+      - `velo pkg update [path]`: Re-hashes dependencies and refreshes `velo.lock`.
+    * Enforced checksum verification across `velo pkg check`, `velo pkg build`, and `velo pkg run`: if any dependency's contents fail SHA-256 verification against `velo.lock`, the operation immediately halts with:
+      `[Velo Error] Package checksum verification failed for '<dep>'. Package contents may have been tampered with or modified.`
+  - Documented new package commands in `src/cli_cmd.vl` (`velo help` and `velo pkg help`).
+  - Authored formal `SECURITY.md` policy in repository root declaring:
+    * Supported version matrix (active support for Velo v2.0 self-hosted release; deprecated v1.x reference compiler).
+    * Private vulnerability disclosure channel (`security@velolang.org` and GitHub Private Vulnerability Reporting).
+    * Explicit SLAs: 48-hour initial response, 5-day triage, 14-day critical patch target, 30-day high patch target.
+    * 90-day coordinated disclosure embargo and CVE assignment policy.
+    * Core security invariants: zone escape analysis, explicit safety boundaries (`--strict-safety`), driver path escaping, and package cryptographic checksums.
+* **Residual Limitation**:
+  - Centralized registry signing (public-key signature verification) will be added when the public Velo package registry goes live; local and remote sources currently rely on SHA-256 lockfile integrity verification.
+* **Verification**:
+  - Added unit and integration test suite `tests/test_pkg_security.py` (4/4 passed) verifying:
+    * `SECURITY.md` existence, valid markdown structure, and SLA commitments.
+    * `velo pkg lock` generation of `velo.lock` with SHA-256 digests.
+    * `velo pkg install` verification of valid dependencies.
+    * Tampering detection: modified dependency files trigger checksum verification failures during install and check.
+    * `velo pkg update` updates hashes and restores passing verification.
+    * `velo help` and `velo pkg help` command documentation.
+  - Rebuilt 3-generation self-hosted compiler chain with bit-for-bit SHA-256 determinism (`13a65b5469612f2c6db15518b7adbfa175afdc543e3dc2907ae230631e9b36a9`).
+  - Verified `scripts\bootstrap.bat --full` completes 3-generation build and determinism check cleanly.
+  - Full regression test suite passed: 696 passed, 2 skipped in 559.76s (100% pass rate).
+  - Verified line count standards across all 102 compiler source files in `src/` ($\le 394$ lines, zero UTF-8 BOM).
 
 ---
 

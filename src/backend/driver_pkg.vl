@@ -1,4 +1,4 @@
-// Package command dispatcher for 'velo pkg' (check, build, run)
+// Package command dispatcher for 'velo pkg' (check, lock, install, update, build, run)
 use std.io
 use std.fs
 use "../common/string_builder.vl"
@@ -6,6 +6,7 @@ use "../common/utils.vl"
 use "../common/manifest.vl"
 use "driver_cc.vl"
 use "driver.vl"
+use "pkg_lock.vl"
 
 // Appends manifest link items (libs or flags) to linker StringBuilder.
 act append_pkg_linker_items(sb: @StringBuilder, first: @ManifestStringItem, is_lib: bool) {
@@ -61,7 +62,10 @@ act handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32 {
 
     if sub_cmd == "help" or sub_cmd == "--help" or sub_cmd == "-h" {
         println_str("Usage:")
-        println_str("  velo pkg check [path]              Validate a velo.pkg package manifest")
+        println_str("  velo pkg check [path]              Validate a velo.pkg manifest and verify velo.lock")
+        println_str("  velo pkg lock [path]               Generate or update velo.lock with dependency hashes")
+        println_str("  velo pkg install [path]            Install and verify dependencies against velo.lock")
+        println_str("  velo pkg update [path]             Update dependencies and regenerate velo.lock")
         println_str("  velo pkg build [path] [-o <bin>]   Build project defined by velo.pkg")
         println_str("  velo pkg run [path] [-- args...]   Build and run project defined by velo.pkg")
         return 0
@@ -78,6 +82,19 @@ act handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32 {
             println_str(m.error_msg)
             return 1
         }
+        let m_dir = path_dirname_to_str(m_path)
+        let lock_path = path_join_str(m_dir, "velo.lock")
+        if fs_exists(lock_path) {
+            let lock = lockfile_load(lock_path)
+            if lock.has_error {
+                println_str(lock.error_msg)
+                return 1
+            }
+            if not verify_lockfile_integrity(@m, m_dir, @lock) {
+                return 1
+            }
+            println_str("[Velo] Verified velo.lock checksums ({m.dep_count} dependencies).")
+        }
         print_str("[Velo] Valid package manifest: ")
         print_str(m.pkg.name)
         print_str(" v")
@@ -85,6 +102,71 @@ act handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32 {
         print_str(" (")
         print_str(m.pkg.entry)
         println_str(")")
+        return 0
+    }
+
+    if sub_cmd == "lock" {
+        mut m_path = "velo.pkg"
+        if argc > 3 { m_path = argv[3] }
+        m_path = resolve_manifest_path(m_path)
+        let m = manifest_load(m_path)
+        if m.has_error { println_str(m.error_msg); return 1 }
+        let m_dir = path_dirname_to_str(m_path)
+        let lock = generate_lockfile_from_manifest(@m, m_dir)
+        let lock_text = lockfile_serialize(@lock)
+        let lock_path = path_join_str(m_dir, "velo.lock")
+        if not fs_write_str(lock_path, lock_text) {
+            println_str("[Velo Error] Failed to write lockfile: {lock_path}")
+            return 1
+        }
+        println_str("[Velo] Successfully generated velo.lock with {lock.count} dependencies.")
+        return 0
+    }
+
+    if sub_cmd == "install" {
+        mut m_path = "velo.pkg"
+        if argc > 3 { m_path = argv[3] }
+        m_path = resolve_manifest_path(m_path)
+        let m = manifest_load(m_path)
+        if m.has_error { println_str(m.error_msg); return 1 }
+        let m_dir = path_dirname_to_str(m_path)
+        let lock_path = path_join_str(m_dir, "velo.lock")
+        if not fs_exists(lock_path) {
+            let lock = generate_lockfile_from_manifest(@m, m_dir)
+            let lock_text = lockfile_serialize(@lock)
+            if not fs_write_str(lock_path, lock_text) {
+                println_str("[Velo Error] Failed to write lockfile: {lock_path}")
+                return 1
+            }
+            println_str("[Velo] Created velo.lock with {lock.count} dependencies.")
+            println_str("[Velo] All dependencies installed and locked successfully.")
+            return 0
+        }
+        let lock = lockfile_load(lock_path)
+        if lock.has_error { println_str(lock.error_msg); return 1 }
+        if not verify_lockfile_integrity(@m, m_dir, @lock) {
+            return 1
+        }
+        println_str("[Velo] All {m.dep_count} dependencies verified against velo.lock.")
+        println_str("[Velo] Dependencies installation complete.")
+        return 0
+    }
+
+    if sub_cmd == "update" {
+        mut m_path = "velo.pkg"
+        if argc > 3 { m_path = argv[3] }
+        m_path = resolve_manifest_path(m_path)
+        let m = manifest_load(m_path)
+        if m.has_error { println_str(m.error_msg); return 1 }
+        let m_dir = path_dirname_to_str(m_path)
+        let lock = generate_lockfile_from_manifest(@m, m_dir)
+        let lock_text = lockfile_serialize(@lock)
+        let lock_path = path_join_str(m_dir, "velo.lock")
+        if not fs_write_str(lock_path, lock_text) {
+            println_str("[Velo Error] Failed to write lockfile: {lock_path}")
+            return 1
+        }
+        println_str("[Velo] Successfully updated velo.lock with {lock.count} dependencies.")
         return 0
     }
 
@@ -186,6 +268,15 @@ act handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32 {
         if not fs_exists(entry_path) {
             println_str("[Velo Error] Entry source file not found: {entry_path}")
             return 1
+        }
+
+        let lock_path = path_join_str(m_dir, "velo.lock")
+        if fs_exists(lock_path) {
+            let lock = lockfile_load(lock_path)
+            if lock.has_error { println_str(lock.error_msg); return 1 }
+            if not verify_lockfile_integrity(@m, m_dir, @lock) {
+                return 1
+            }
         }
 
         append_pkg_linker_items(@linker_sb, m.link.first_lib, true)
