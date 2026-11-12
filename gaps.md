@@ -132,28 +132,33 @@ flowchart TD
 
 ---
 
-### Phase 47: Compiler Driver Command Quoting & Injection Hardening (`PLR-VELO-003`)
+### Phase 47: Compiler Driver Command Quoting & Injection Hardening (`PLR-VELO-003`) [COMPLETED] ✅
 
-#### Task 47.1: Robust Escaped Path Quoting Across GCC and MSVC Compiler Drivers [OPEN] ⏳
-* **Defect**:
-  - In `src/backend/driver.vl` and `src/backend/driver_cc.vl`, compilation, linking, and execution commands invoke GCC or MSVC `cl.exe` by assembling command strings without escaping paths:
+#### Task 47.1: Robust Escaped Path Quoting Across GCC and MSVC Compiler Drivers [COMPLETED] ✅
+* **Former Defect**:
+  - In `src/backend/driver_cc.vl`, compilation, linking, and execution commands assembled command strings without robustly quoting and escaping filesystem paths:
     ```rust
-    sb_append_str(@sb, "gcc -O2 ... -o ")
-    sb_append_str(@sb, out_path)
+    sb_append_str(@cmd_sb, path_to_native_str(c_file_path))
+    sb_append_str(@cmd_sb, " /Fe:")
+    sb_append_str(@cmd_sb, path_to_native_str(out_exe_path))
     ```
-  - If a project path, source file path, include directory, or output executable path contains spaces or shell metacharacters, the external shell or process launcher misinterprets flags, resulting in build failures or argument injection.
-* **Required Fix**:
-  - Implement a dedicated path quoting helper `quote_path(path: string) -> string` in `src/common/utils.vl`.
-  - Wrap all path operands in escaped double quotes (`"\"" + path + "\""`) across:
-    - Input source file paths and output executable paths (`-o "..."`, `/Fe:"..."`).
-    - Include paths (`-I "..."`, `/I "..."`).
-    - Library search paths (`-L "..."`, `/LIBPATH:"..."`).
-    - Cache directory paths (`.velo_cache`).
-  - Ensure Windows backslashes in quoted strings are handled correctly by GCC and MSVC drivers.
-* **Acceptance & Verification**:
-  - Add regression test in `tests/test_cc_backend.py` compiling and executing a `.vl` file inside a directory with spaces (e.g. `tests/fixtures/path with spaces/main.vl`).
-  - Verify clean execution with both `--cc gcc` and `--cc cl`.
-  - Verify line count of `src/backend/driver.vl` and `src/backend/driver_cc.vl` remains $\le 395$ lines.
+  - If a workspace, project path, source file path, include directory, or output executable path contained spaces or special characters, GCC or MSVC split the path across arguments, causing compilation/linker errors or argument injection.
+* **Fix Applied**:
+  - Implemented `quote_path(path: string) -> string` in `src/common/utils.vl` following standard Windows `CommandLineToArgvW` rules: wraps paths in double quotes, escapes embedded quotes, and doubles trailing backslashes so that directory trailing separators (e.g. `C:\path\dir\`) do not escape the closing quote character.
+  - In `src/backend/driver_cc.vl`:
+    * Quoted source and output executable paths in `assemble_msvc_compile_cmd` (`/Fe:<quote_path>`) and `assemble_gcc_compile_cmd` (`-o <quote_path>`).
+    * Quoted include paths in `append_include_flag` (`/I <quote_path>` / `-I <quote_path>`) and `append_runtime_includes` (`/I "runtime" /I "velo/runtime"` / `-I "runtime" -I "velo/runtime"`).
+    * Quoted linker search paths (`/LIBPATH:<quote_path>`) in `append_msvc_linker_flags` with quote-aware token splitting (`in_quotes`).
+    * Quoted runner command executable path in `assemble_runner_cmd`.
+  - In `src/cli_cmd.vl`, `src/backend/driver_pkg.vl`, and `src/main.vl`:
+    * Quoted `-L` library directory flags with `quote_path(path_to_native_str(...))`.
+* **Residual Limitation**:
+  - Single-token arbitrary raw linker flags passed via `-l` or `--link` containing unmatched quotes or custom shell pipeline operators are passed verbatim to the linker without shell interpolation.
+* **Verification**:
+  - Added regression test suite in `tests/test_cc_backend.py` testing build and run with paths containing spaces (both directories and file names) under both `--cc gcc` and `--cc cl` (10/10 tests passing).
+  - Maintained 3-generation self-hosting bootstrap determinism (Gen2 and Gen3 emit identical bit-for-bit C output matching `bootstrap.c` with SHA-256 `0406a4b751c3e33b78ddbbc10ff35a033612f53f3fcd29deb097f92d64f31fd4`).
+  - Ran full test suite: 663 passed in 552.48s (100% pass rate).
+  - Line standards verified (`scripts/count_lines.py`): all compiler source files remain $\le 394$ lines (well below 400-line ceiling).
 
 ---
 

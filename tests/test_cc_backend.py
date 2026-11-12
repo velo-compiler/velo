@@ -81,5 +81,87 @@ class TestCcBackend(unittest.TestCase):
         self.assertEqual(res_s2.returncode, 0)
         self.assertIn("cc answer: 42", res_s2.stdout)
 
+    def test_stage2_build_and_run_gcc_with_spaces_in_path(self):
+        self.assertTrue(self.velo_exe.exists(), "bin/velo.exe does not exist")
+        spaced_dir = self.cache_dir / "spaced gcc dir"
+        spaced_dir.mkdir(parents=True, exist_ok=True)
+        src = spaced_dir / "main test spaces.vl"
+        src.write_text(
+            'use sys.io\n'
+            'act main() -> i32 {\n'
+            '    io.println("gcc spaces passed")\n'
+            '    return 0\n'
+            '}\n',
+            encoding="utf-8"
+        )
+        out_exe = spaced_dir / "target output spaces.exe"
+        cmd = [str(self.velo_exe), "build", str(src), "--cc", "gcc", "-o", str(out_exe)]
+        res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(self.root_dir))
+        self.assertEqual(res.returncode, 0, f"Stage 2 build gcc with spaces failed: {res.stderr}\n{res.stdout}")
+        self.assertTrue(out_exe.exists(), "Output executable not created in spaced directory")
+
+        run_res = subprocess.run([str(out_exe)], capture_output=True, text=True)
+        self.assertEqual(run_res.returncode, 0)
+        self.assertIn("gcc spaces passed", run_res.stdout)
+
+    def test_stage2_run_gcc_with_spaces_in_path(self):
+        self.assertTrue(self.velo_exe.exists(), "bin/velo.exe does not exist")
+        spaced_dir = self.cache_dir / "spaced gcc run dir"
+        spaced_dir.mkdir(parents=True, exist_ok=True)
+        src = spaced_dir / "run spaces.vl"
+        src.write_text(
+            'use sys.io\n'
+            'act main() -> i32 {\n'
+            '    io.println("gcc run spaces passed")\n'
+            '    return 0\n'
+            '}\n',
+            encoding="utf-8"
+        )
+        cmd = [str(self.velo_exe), "run", str(src), "--cc", "gcc"]
+        res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(self.root_dir))
+        self.assertEqual(res.returncode, 0, f"Stage 2 run gcc with spaces failed: {res.stderr}\n{res.stdout}")
+        self.assertIn("gcc run spaces passed", res.stdout)
+
+    def test_stage2_build_and_run_cl_with_spaces_in_path(self):
+        self.assertTrue(self.velo_exe.exists(), "bin/velo.exe does not exist")
+        spaced_dir = self.cache_dir / "spaced cl dir"
+        spaced_dir.mkdir(parents=True, exist_ok=True)
+        src = spaced_dir / "main test spaces.vl"
+        src.write_text(
+            'use sys.io\n'
+            'act main() -> i32 {\n'
+            '    io.println("cl spaces passed")\n'
+            '    return 0\n'
+            '}\n',
+            encoding="utf-8"
+        )
+        out_exe = spaced_dir / "target cl spaces.exe"
+        cmd = [str(self.velo_exe), "build", str(src), "--cc", "cl", "-o", str(out_exe)]
+        res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(self.root_dir))
+        self.assertEqual(res.returncode, 0, f"Stage 2 build cl with spaces failed: {res.stderr}\n{res.stdout}")
+        self.assertTrue(out_exe.exists(), "Output executable not created in spaced directory by cl")
+
+        run_res = subprocess.run([str(out_exe)], capture_output=True, text=True)
+        self.assertEqual(run_res.returncode, 0)
+        self.assertIn("cl spaces passed", run_res.stdout)
+
+    def test_stage2_run_cl_with_spaces_in_path(self):
+        self.assertTrue(self.velo_exe.exists(), "bin/velo.exe does not exist")
+        spaced_dir = self.cache_dir / "spaced cl run dir"
+        spaced_dir.mkdir(parents=True, exist_ok=True)
+        src = spaced_dir / "run spaces.vl"
+        src.write_text(
+            'use sys.io\n'
+            'act main() -> i32 {\n'
+            '    io.println("cl run spaces passed")\n'
+            '    return 0\n'
+            '}\n',
+            encoding="utf-8"
+        )
+        cmd = [str(self.velo_exe), "run", str(src), "--cc", "cl"]
+        res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(self.root_dir))
+        self.assertEqual(res.returncode, 0, f"Stage 2 run cl with spaces failed: {res.stderr}\n{res.stdout}")
+        self.assertIn("cl run spaces passed", res.stdout)
+
 if __name__ == "__main__":
     unittest.main()
