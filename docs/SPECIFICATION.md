@@ -1,13 +1,13 @@
-# Velo Language Specification (Stage 1)
+# Velo Language Specification
 
-This document formally specifies the lexical grammar, type system, operator precedence, statements, expressions, and memory semantics of the **Velo** programming language for **Stage 1 (Bootstrap)**.
+This document formally specifies the lexical grammar, type system, operator precedence, statements, expressions, and memory semantics of the **Velo** programming language for **Stage 2 (Self-Hosted Native Compiler)**.
 
 ---
 
 ## 1. Lexical Structure
 
 ### 1.1 Source Encoding
-Velo source files are UTF-8 encoded text files with the `.vl` extension.
+Velo source files are UTF-8 encoded text files with the `.vl` extension. Files must not begin with a UTF-8 Byte Order Mark (BOM).
 
 ### 1.2 Comments
 * Single-line comments start with `//` and extend to the end of the line.
@@ -15,6 +15,10 @@ Velo source files are UTF-8 encoded text files with the `.vl` extension.
 // This is a single-line comment in Velo
 ```
 * Block comments are enclosed in `/* ... */` (nested comments supported).
+```rust
+/* This is a /* nested */ block comment */
+```
+* Documentation comments start with `///` and attach to following declarations.
 
 ### 1.3 Identifiers
 Identifiers name variables, functions, types, and fields.
@@ -23,14 +27,16 @@ Identifiers name variables, functions, types, and fields.
 * Case-sensitive (`foo` and `Foo` are distinct).
 
 ### 1.4 Keywords
-The following keywords are reserved in Stage 1:
+The following keywords are reserved in Velo:
 ```
 act       data      mut       let       if        else
 loop      in        return    zone      extern    defer
 use       true      false     null      sizeof    as
 break     continue  on        and       or        not
-kind
+kind      fail
 ```
+
+Contextual keywords recognized in specific declaration or expression contexts include `aka`, `op`, and `unsafe`.
 
 ### 1.5 Punctuation & Semicolons
 * Code blocks are delimited by curly braces `{` and `}`.
@@ -41,24 +47,29 @@ Operators are evaluated in the following order (from highest precedence to lowes
 
 | Precedence | Operator | Description | Associativity |
 | :---: | :--- | :--- | :---: |
-| **1 (Highest)** | `.` `()` `[]` | Member access, function call, array index | Left-to-right |
+| **1 (Highest)** | `.` `()` `[]` | Member access, function call, array index, tuple member (`t.0`) | Left-to-right |
 | **2** | `@` (prefix) | Address-of operator | Right-to-left |
 | **2** | `!` `not` `-` (unary) | Logical NOT, bitwise NOT, arithmetic negation | Right-to-left |
 | **2** | `as` | Type casting (`x as f32`) | Left-to-right |
 | **3** | `*` `/` `%` | Multiplication, division, modulo | Left-to-right |
-| **4** | `+` `-` | Addition, subtraction | Left-to-right |
-| **5** | `..` | Range creation (`0..10`) | Non-associative |
+| **4** | `+` `-` | Addition, subtraction, string concatenation (`+`) | Left-to-right |
+| **5** | `..` `..=` | Range creation (`0..10`, `1..=5`) | Non-associative |
 | **6** | `<` `<=` `>` `>=` | Relational comparisons | Left-to-right |
-| **7** | `==` `!=` | Equality comparisons | Left-to-right |
-| **8** | `and` `&&` | Logical AND | Left-to-right |
-| **9** | `or` `\|\|` | Logical OR | Left-to-right |
-| **10 (Lowest)**| `=` `+=` `-=` `*=` `/=` | Assignment operators | Right-to-left |
+| **7** | `==` `!=` | Equality comparisons (scalar, enum, string, pointer) | Left-to-right |
+| **8** | `and` `&&` | Logical AND (short-circuiting) | Left-to-right |
+| **9** | `or` `\|\|` | Logical OR (short-circuiting) | Left-to-right |
+| **10 (Lowest)**| `=` `+=` `-=` `*=` `/=` | Assignment operators, string append (`+=`) | Right-to-left |
 
 > [!NOTE]
 > **Precedence Rule for `@` vs `.`**:
 > Because `.` (precedence 1) binds tighter than `@` (precedence 2):
 > * `@player.pos.x` evaluates as `@((player.pos).x)` — it takes the memory address of the `x` field.
 > * To take the address of `player` first, use parentheses: `(@player).pos`.
+
+### 1.7 Expression Evaluation Order & Associativity
+* Binary expressions, function call arguments, and struct literal fields evaluate in strict **left-to-right** order.
+* Logical `and` (`&&`) and `or` (`||`) short-circuit: the right-hand operand is not evaluated if the left-hand operand determines the result.
+* The `or return` outcome unwrapping operator evaluates its operand; if it represents an error outcome, execution immediately returns the error from the enclosing function.
 
 ---
 
@@ -72,6 +83,7 @@ Velo requires explicit bit sizes to guarantee cross-platform predictability:
 | `i8`, `i16`, `i32`, `i64` | Signed integers | 1, 2, 4, 8 bytes | `int8_t`, `int16_t`, `int32_t`, `int64_t` |
 | `u8`, `u16`, `u32`, `u64` | Unsigned integers | 1, 2, 4, 8 bytes | `uint8_t`, `uint16_t`, `uint32_t`, `uint64_t` |
 | `f32`, `f64` | IEEE 754 floating-point | 4, 8 bytes | `float`, `double` |
+| `f32x4`, `i32x4` | 128-bit hardware SIMD vectors | 16 bytes | `__m128`, `__m128i` / vector extensions |
 | `bool` | Boolean (`true` or `false`) | 1 byte | `bool` (`stdbool.h`) |
 | `usize`, `isize` | Pointer-sized integers | 4 or 8 bytes | `size_t`, `ptrdiff_t` |
 | `string` | UTF-8 string view/slice | Pointer + Length | `const char*` (in C99) |
@@ -235,10 +247,6 @@ let calc = act(x: i32, y: i32) -> i32 { return x * 2 + y }
 let val = calc(10, 5) // 25
 ```
 
-#### C99 Lowering:
-* Each unique `act(...) -> Ret` signature generates a C function pointer typedef (e.g. `typedef int32_t (*velo_act_i32_i32_to_i32)(int32_t, int32_t);`).
-* Anonymous functions are lifted into static C functions with forward prototypes and definitions.
-
 ### 2.7 Method Syntax / Uniform Function Call Syntax (UFCS)
 Velo supports pure Uniform Function Call Syntax (UFCS) without requiring `class`, `impl`, or object-oriented keywords. Any top-level function whose first parameter matches the receiver type can be called using method syntax (`receiver.method(args...)`):
 
@@ -272,31 +280,9 @@ vec.scale(2.0)              // auto-borrows address: scale(&vec, 2.0)
 #### Struct Field Priority:
 Struct fields always take priority over free functions with the same name. If a struct has a function pointer field `on_click`, invoking `btn.on_click(...)` calls the struct's callback field, not a top-level `act on_click(...)`.
 
-#### Method Chaining & Primitive Extension:
-* Functions returning struct values or pointers can be chained fluently:
-  ```rust
-  let result = pt.translate(1.0, 2.0).scale(2.0)
-  ```
-* Functions on primitive types can also be invoked as methods:
-  ```rust
-  act square(n: i32) -> i32 { return n * n }
-  let s = 7.square() // 49
-  ```
-
-#### Generic Method Specialization:
-UFCS seamlessly integrates with generic functions and structs:
-```rust
-data Box[T] { value: T }
-act unwrap[T](b: @Box[T]) -> T { return b.value }
-
-mut b = Box[i32]{ value: 999 }
-let val = b.unwrap() // specializes unwrap[i32] and auto-borrows &b
-```
-
 ### 2.8 Operator Overloading (`act op <symbol>`)
-Velo enables custom types (such as game math vectors, matrices, and colors) to overload standard binary and unary operators using the punchy 2-letter `op` prefix. Overloaded operators have zero runtime overhead and compile directly to specialized C99 function calls.
+Velo enables custom types (such as game math vectors, matrices, and colors) to overload standard binary and unary operators using the punchy 2-letter `op` prefix. Overloaded operators compile directly to specialized C99 function calls with zero overhead.
 
-#### Declaration Syntax:
 ```rust
 data Vector2 {
     x: f32
@@ -316,44 +302,23 @@ act op *(s: f32, v: Vector2) -> Vector2 {
     return Vector2{ x: v.x * s, y: v.y * s }
 }
 
-// 3. Unary negation (single parameter, optional space)
+// 3. Unary negation
 act op -(v: Vector2) -> Vector2 {
     return Vector2{ x: -v.x, y: -v.y }
 }
 
-// 4. Equality and Inequality comparisons
+// 4. Equality comparisons
 act op ==(a: Vector2, b: Vector2) -> bool {
     return a.x == b.x and a.y == b.y
 }
-act op !=(a: Vector2, b: Vector2) -> bool {
-    return not (a == b)
-}
 ```
 
-#### Natural Mathematical Usage:
-```rust
-let pos = Vector2{ x: 10.0, y: 20.0 }
-let vel = Vector2{ x: 2.0, y: -3.0 }
-let dt: f32 = 0.5
-
-// Operator precedence is preserved: vel * dt runs first, then pos + ...
-let next_pos = pos + vel * dt
-let opposite = -vel
-```
-
-#### Automatic Compound Assignment:
-Statements like `pos += vel` or `pos *= 2.0` automatically desugar into `pos = pos + vel` and `pos = pos * 2.0`, calling the corresponding overloaded binary operator without requiring separate `+=` methods.
-
-#### Auto-Referencing / Auto-Dereferencing:
-Operators declared with pointer parameters (`act op +(a: @Vector2, b: @Vector2)`) automatically receive the address of value lvalues (`&a`, `&b`), and vice-versa, avoiding unnecessary struct copying.
-
----
+Compound assignments (`pos += vel`) automatically desugar into `pos = pos + vel`, calling the overloaded `+` operator.
 
 ### 2.9 Advanced Struct Features (Type Aliases, Field Defaults, `#align`/`#packed`)
 
 #### Type Aliases (`aka Name = T`):
-A type alias gives a primitive type a domain-specific name. `aka` is a contextual keyword recognized only at top level; the target must be a primitive type, optionally preceded by a single pointer marker:
-
+A type alias gives a primitive type a domain-specific name:
 ```rust
 aka EntityId = u64
 aka HealthPoints = i32
@@ -363,16 +328,8 @@ let entity: EntityId = 42
 let next = entity + 1   // alias resolves to u64 statically
 ```
 
-Semantics:
-- The target must be a primitive (`i8`..`i64`, `u8`..`u64`, `f32`, `f64`, `bool`, `usize`, `isize`, `string`) or `@<primitive>`; aliasing a struct or kind is a compile error.
-- No alias-of-alias: the target is validated at parse time.
-- Extra pointer levels compose over aliases and are applied before the alias target (`let p: @EntityId` where `aka EntityId = u64` has type `@u64`).
-- Resolution is order-free: aliases are collected from the whole program (including across `use`d files) before any use site is canonicalized, so an alias may be declared after its uses.
-- Both compilers canonicalize every type string (struct fields, kind payloads, parameters, return types, local declarations, casts) before code generation; the emitted C also carries a decorative `typedef <target> <Name>;`.
-
 #### Default Field Initializers:
-Struct fields may declare constant default initializers. Struct literal fields that are omitted are filled from their defaults, in declaration order, via C99 designated initializers:
-
+Struct fields may declare constant default initializers:
 ```rust
 data Vec4 {
     x: f32 = 0.0
@@ -384,24 +341,162 @@ data Vec4 {
 let v = Vec4{ x: 2.5 }   // v.y == 0.0, v.z == 0.0, v.w == 1.0
 ```
 
-Rules:
-- Defaults must be constant literals (integer, float, string, bool) or a unary `-` applied to a numeric literal.
-- An omitted field **without** a default is a compile error ("missing field ... no default initializer"); a literal must remain complete with respect to non-defaulted fields.
-- Field defaults may also reference other declared types (e.g. `id: EntityId = 1`).
-- Defaults in generic struct templates are carried into every specialization.
-- Defaults apply to `data` struct fields only; `kind` variant payload fields do not support default initializers.
-
 #### Struct Layout Attributes (`#align(N)` / `#packed`):
-Data declarations accept layout attributes between the header and the struct body; both compile to GCC/Clang `__attribute__` markers on the struct definition:
-
 ```rust
 data Vec4 #align(16) { ... }    // struct __attribute__((aligned(16))) Vec4 { ... };
 data Blob #packed { ... }       // struct __attribute__((packed)) Blob { ... };
-data Item #align(64) #packed { ... }   // __attribute__((aligned(64), packed))
+data Item #align(64) #packed { ... }
 ```
 
-- `#align(N)` takes a positive integer literal; the forward `typedef struct T T;` is emitted without attributes (which is valid C and does not affect layout).
-- Attributes appear on every specialization of a generic struct declaration.
+---
+
+### 2.10 Fixed-Size Stack Arrays (`[N]T`)
+
+Velo supports first-class fixed-size stack arrays (`[N]T`), providing deterministic $O(1)$ zero-overhead allocation on the native call stack without heap or arena overhead:
+
+```rust
+// 1. Stack buffer declaration (zero-initialized)
+mut packet: [64]u8
+
+// 2. Direct element assignment and indexing
+packet[0] = 0xAA as u8
+packet[1] = 0x55 as u8
+
+// 3. Array properties: .len and .ptr
+let count: usize = packet.len   // 64
+let raw: @u8 = packet.ptr       // pointer to first element
+
+// 4. Array literals
+let primes: [4]i32 = [2, 3, 5, 7]
+
+// 5. Value copy
+mut backup: [64]u8
+backup = packet                 // lowers to memcpy(backup, packet, sizeof(packet))
+```
+
+#### Semantic Rules:
+* **Size Constraint**: The array length `N` must be an integer constant strictly greater than 0 (`N > 0`).
+* **Compile-Time Bounds Checking**: Constant index expressions (`arr[idx]`) are validated at compile-time. Accessing an index where `idx >= N` or `idx < 0` produces a compile-time error: `[Velo Error] Array index out of bounds`.
+* **Mutability Enforcement**: Elements of an array declared with `let` cannot be modified (`cannot assign to element of immutable variable`).
+* **Pointer Decay & Compatibility**: A fixed-size array `[N]T` automatically decays to `@T` and `@void` when passed to functions expecting a raw pointer.
+* **Function Parameters**: Arrays passed by value (`act handle(buf: [64]u8)`) emit standard C parameter declarations `uint8_t buf[64]`.
+* **Struct Embedding**: Structs may contain embedded array fields (`data Header { magic: [4]u8 }`), maintaining flat C memory layout.
+
+---
+
+### 2.11 First-Class Tuples & Multiple Return Values (`-> (A, B)`)
+
+Functions in Velo can return multiple values simultaneously using first-class tuples. Tuples require zero heap allocations and lower to anonymous C99 value structs:
+
+```rust
+// 1. Function returning multiple values
+act div_rem(n: i32, d: i32) -> (i32, i32) {
+    return (n / d, n % d)
+}
+
+// 2. Tuple destructuring declaration
+let (quotient, remainder) = div_rem(10, 3)
+
+// 3. Mutable destructuring
+mut (x, y) = (100, 200)
+x += 5
+
+// 4. Wildcard discard (_)
+let (result, _) = div_rem(50, 8)
+
+// 5. Positional member access (.0, .1)
+let pair = (42, "velo")
+let first = pair.0              // 42
+let second = pair.1             // "velo"
+```
+
+#### Semantic Rules:
+* **Tuple Types**: Denoted as `(T0, T1, ...)`.
+* **Tuple Literals**: Constructed with parenthesized expressions containing at least one comma: `(e0, e1, ...)`. Single-element grouping expressions `(expr)` remain grouping expressions.
+* **Evaluation Guarantee**: During tuple destructuring (`let (a, b) = expr`), the right-hand side expression `expr` is evaluated strictly once into a scoped temporary before binding to variables.
+* **Zero Overhead**: Tuples are lowered to lightweight mangled structs (`_Velo_Tuple_T0_T1`) passed and returned directly by value in CPU registers or the stack per the standard platform C-ABI.
+
+---
+
+### 2.12 Optional Types & Compile-Time Null Safety (`?T`)
+
+Velo enforces compile-time null safety using optional types (`?T`). Variables that can hold `null` must be explicitly declared as optional:
+
+```rust
+// 1. Optional declarations
+mut maybe_name: ?string = null
+mut maybe_count: ?i32 = 42
+
+// 2. Direct property checking
+if maybe_count.has {
+    let val = maybe_count.val   // explicit unwrapping
+}
+```
+
+#### Flow-Sensitive Type Narrowing:
+Velo features flow-sensitive type narrowing. Inside a null-check guard (`if x != null`), the compiler automatically narrows `x` from `?T` to `T`, allowing direct field, method, and operator access without manual unwrapping:
+
+```rust
+data Node {
+    val: i32
+    name: string
+}
+
+act process_node(opt: ?@Node) -> i32 {
+    // Early exit guard clause narrows 'opt' for the remainder of the block
+    if opt == null { return 0 }
+
+    // 'opt' is statically narrowed to @Node here:
+    return opt.val + opt.name.len()
+}
+```
+
+#### Rules & Lowering:
+* **Pointer Optionals (`?@T`, `?string`)**: Directly lower to C pointers (`T*`), where `null` maps to `NULL` with zero overhead.
+* **Value Optionals (`?i32`, `?bool`, `?Struct`)**: Lower to an unboxed struct `_Velo_Opt_T` containing `bool has;` and `T val;`.
+* **Conjunctions**: Conjunctions `if a != null and b != null` simultaneously narrow both `a` and `b`.
+
+---
+
+### 2.13 Algebraic Outcome Types & Error Handling (`T or E`)
+
+Velo eliminates runtime exceptions and unhandled panics by providing first-class algebraic outcome types (`T or E`), representing either a successful value `T` or an error payload `E`:
+
+```rust
+// 1. Function returning an outcome type
+act parse_port(s: string) -> i32 or string {
+    if s.len() == 0 {
+        fail "port string is empty"     // constructs error outcome and returns
+    }
+    let port = s.to_i32()
+    if port < 1 or port > 65535 {
+        fail "port out of range"
+    }
+    return port                         // constructs success outcome
+}
+
+// 2. Error propagation with 'or return'
+act start_server(port_str: string) -> bool or string {
+    // Unwraps port on success; immediately returns error on failure:
+    let port = parse_port(port_str) or return
+
+    io.println("Server listening on port {port}")
+    return true
+}
+
+// 3. Explicit inspection via .ok, .val, .err
+let outcome = parse_port("8080")
+if outcome.ok {
+    io.println("Valid port: {outcome.val}")
+} else {
+    io.println("Error: {outcome.err}")
+}
+```
+
+#### Semantic Rules:
+* **`fail <expr>` Statement**: Can only be used inside a function whose return type is an outcome `T or E`. Constructs an error variant with the given error payload and immediately exits the function.
+* **`or return` Operator**: Evaluates an outcome expression. If `outcome.ok` is `true`, it evaluates to `outcome.val`. If `outcome.ok` is `false`, it propagates `fail outcome.err` out of the calling function.
+* **Combined Destructuring**: Seamlessly integrates with tuples: `let (data, bytes) = read_socket() or return`.
 
 ---
 
@@ -454,6 +549,13 @@ act main() {
 }
 ```
 
+Command-line arguments can optionally be received via:
+```rust
+act main(argc: i32, argv: @string) -> i32 {
+    return 0
+}
+```
+
 ---
 
 ## 5. Pointers & Memory Semantics
@@ -466,11 +568,7 @@ ptr: @i32 = @x  // ptr holds the memory address of x
 ```
 
 ### 5.2 Auto-Dereferencing Member Access (`.`)
-When accessing fields of a struct through a pointer, the compiler consults the Symbol Table:
-* If the base target is a pointer (`@T`), it translates to `target->member` in C.
-* If the base target is a struct value (`T`), it translates to `target.member` in C.
-
-Developers always write `.`:
+When accessing fields of a struct through a pointer, developers write `.`:
 ```rust
 data Player {
     health: i32
@@ -490,27 +588,28 @@ p.@ = 25  // Overwrite memory pointed to by p (emits *p = 25;)
 ```
 
 ### 5.4 The `zone` Memory Allocator
-A `zone` block defines an ultra-fast hardware arena:
-* **Default Size**: 16 MB pre-allocated contiguous buffer managed by `velo_runtime.h`.
+A `zone` block defines a hardware-level bump arena:
 * **Mechanism**: 
   1. Entering a `zone` saves the current arena offset (the watermark).
   2. Allocations via `mem.alloc` simply advance the offset ($O(1)$ pointer bump).
   3. Exiting the `zone` restores the saved offset ($O(1)$ instant reset).
-* **Guarantees**: Zero GC pauses, zero fragmentations, zero memory leaks.
+* **Guarantees**: Zero GC pauses, zero fragmentation, zero memory leaks.
+* **Zone Escape Analysis**: The compiler statically ensures that pointers allocated in an inner `zone` or stack addresses cannot escape into outer variables or return values.
 
 ```rust
 zone {
-    // Allocated on the 16MB arena
+    // Allocated on the active thread-local arena
     particles: @Particle = mem.alloc(@Particle, 1000)
     
     // Work with particles...
-} // All 1000 particles wiped in 1 CPU instruction here!
+} // All allocations wiped in 1 CPU instruction here!
 ```
 
 ---
 
-## 6. String Interpolation
+## 6. String Subsystem & Operations
 
+### 6.1 String Interpolation
 Strings containing `{expression}` syntax are desugared at compile time into formatted output:
 
 ```rust
@@ -519,14 +618,23 @@ speed = 100
 io.println("Running {name} at {speed}% speed!")
 ```
 
-### Lowering Rules:
-The compiler parses expressions inside `{}` and checks their types in the Symbol Table:
-* `i8`..`i64`, `isize` $\to$ `%lld` with `(long long)` cast.
-* `u8`..`u64`, `usize` $\to$ `%llu` with `(unsigned long long)` cast.
-* `f32`, `f64` $\to$ `%f` / `%.6f`.
-* `bool` $\to$ `%s` evaluated as `(expr ? "true" : "false")`.
-* `string` $\to$ `%s`.
-* `@T` (pointers) $\to$ `%p` with `(void*)` cast.
+Arbitrary expressions, function calls, and UFCS methods are supported inside `{}`:
+```rust
+io.println("Next power of two: {calc_next(speed)}")
+```
+
+### 6.2 Native String Concatenation (`+` and `+=`)
+Velo supports native string concatenation using binary `+` and in-place `+=`:
+
+```rust
+let first = "Hello, "
+let full = first + "world!"     // allocates in active zone/heap
+
+mut banner = "Velo"
+banner += " v2.0"
+```
+
+Concatenation automatically computes the combined string length, allocates the required memory in the active arena, and copies bytes with guaranteed null-termination.
 
 ---
 
@@ -545,10 +653,9 @@ if health <= 0 {
 ```
 
 ### 7.2 Loops (`loop`)
-Velo standardizes on a single, expressive `loop` keyword covering all iteration patterns:
+Velo standardizes on a single `loop` keyword covering all iteration patterns:
 
 #### 1. Infinite Loop (`loop { ... }`)
-Runs indefinitely; the implicit `it` counter tracks iterations starting at 0:
 ```rust
 loop {
     if it == 5 { break }
@@ -556,7 +663,6 @@ loop {
 ```
 
 #### 2. Count / Repeat Loop (`loop <count> { ... }`)
-Repeats `<count>` times with `it` taking values `0` through `<count> - 1`:
 ```rust
 loop 5 {
     io.println("Iteration {it}")
@@ -564,7 +670,6 @@ loop 5 {
 ```
 
 #### 3. Condition Loop (`loop <condition> { ... }`)
-Executes while the boolean expression is true (replacing `while`), with `it` counter:
 ```rust
 mut x = 10
 loop x > 0 {
@@ -574,7 +679,6 @@ loop x > 0 {
 ```
 
 #### 4. Named Range Loop (`loop <var> in <start>..<end>[:<step>]`)
-Iterates over a range with an explicit variable name and optional `:step` slice:
 ```rust
 loop i in 0..10:2 {
     io.println("Step 2: {i}") // 0, 2, 4, 6, 8
@@ -582,7 +686,6 @@ loop i in 0..10:2 {
 ```
 
 #### 5. Smart Reverse Auto-Countdown (`loop <start>..<end>`)
-When `start > end`, the loop automatically counts down without needing `:-1`:
 ```rust
 loop 5..0 {
     io.println("Liftoff in {it}...") // 5, 4, 3, 2, 1
@@ -590,7 +693,6 @@ loop 5..0 {
 ```
 
 #### 6. Inclusive Range (`..=`)
-Use `..=` for inclusive ranges:
 ```rust
 loop i in 1..=5 {
     io.println("{i}") // 1, 2, 3, 4, 5
@@ -598,21 +700,38 @@ loop i in 1..=5 {
 ```
 
 ### 7.3 Pattern Matching (`on`)
-The `on` statement performs pattern matching over scalar values, pure enums, and tagged unions. Payload variables are automatically extracted and bound within arm scope:
+The `on` statement performs pattern matching over scalar values, tagged unions, and strings:
 
+#### 1. Tagged Union Matching:
 ```rust
-on e {
-    .Quit => {
-        io.println("Quit received")
-    }
-    .KeyDown(key) => {
-        io.println("Key code: {key}")
-    }
-    .Click(button, x, y) => {
-        io.println("Button {button} at ({x}, {y})")
-    }
+on event {
+    .Quit => { io.println("Quit") }
+    .KeyDown(key) => { io.println("Key: {key}") }
+    .Click(button, x, y) => { io.println("Click at {x}, {y}") }
 }
 ```
+
+#### 2. String Pattern Matching:
+```rust
+on method {
+    "GET" => { handle_get() }
+    "POST" => { handle_post() }
+    "DELETE" => { handle_delete() }
+    _ => { handle_unknown() }
+}
+```
+
+### 7.4 First-Class Conditional Expressions (`if-else`)
+`if-else` blocks can be used directly as expressions producing values:
+
+```rust
+let score = 88
+let grade = if score >= 90 { "A" } else if score >= 80 { "B" } else { "C" }
+
+let max_val = if a > b { a } else { b }
+```
+
+Both branches are type-checked and automatically widened (`widen_if_branch_types`) to ensure type compatibility. Both `if` and `else` branches are mandatory when used as an expression.
 
 ---
 
@@ -625,31 +744,20 @@ extern act puts(s: @u8) -> i32
 extern act sqrtf(val: f32) -> f32
 ```
 
+---
+
 ## 9. Command-Line Interface
 
-Both compilers expose the same CLI surface (Stage 1: `python velo.py`; Stage 2: a built `velo` binary):
+The Velo compiler (`velo.exe` / `velo`) exposes the unified CLI toolchain:
 
-| Command | Behavior |
-| --- | --- |
+| Command | Description |
+| :--- | :--- |
 | `velo run <file> [args...]` | Compile and immediately execute the program |
-| `velo build <file> [-o <out>]` | Compile to a standalone native executable |
-| `velo emit-c <file>` | Print the generated C99 translation unit to stdout |
-| `velo check <file> [--json]` | Validate only: lex, parse, semantic analysis, monomorphization; no codegen or execution |
-| `velo doc <file> [-o <out.md>]` | Extract Markdown API documentation |
-| `velo version` / `velo help` | Version banner / usage manual |
-
-### 9.1 `velo check`
-
-`velo check` runs the full validation pipeline and stops before code generation. It exits 0 when the program is clean and 1 when diagnostics were reported. Without `--json`, diagnostics print in their habitual formats; with `--json`, exactly one JSON object is printed on stdout:
-
-```json
-{
-  "file": "app.vl",
-  "ok": false,
-  "diagnostics": [
-    {"file": "app.vl", "line": 3, "col": 5, "severity": "error", "message": "..."}
-  ]
-}
-```
-
-`file` echoes the invoked source path. `line`/`col` are 1-based; `0/0` marks unpositioned diagnostics (load errors and semantic ValueErrors, which carry no position today). `severity` is `error` or `warning`. Diagnostic counts and message wording may differ between compilers (each keeps its existing pipeline behavior; see gaps.md 6.7), while the schema, `ok` verdict, and exit codes are shared.
+| `velo build <file> [-o <out>]` | Compile to a standalone native executable (`--cc gcc\|cl`, `--debug\|--release`) |
+| `velo emit-c <file> [-o <out>]` | Print or export the generated C99 translation unit |
+| `velo check <file> [--json]` | Validate only: lex, parse, semantic analysis, monomorphization (no codegen) |
+| `velo doc <file> [-o <out.md>]` | Extract Markdown API documentation from `///` doc comments |
+| `velo test [path] [--filter <k>]` | Run native test suites with optional test name filter |
+| `velo pkg <cmd>` | Package manager (`init`, `add`, `install`, `build`, `run`, `test`, `tree`) |
+| `velo lsp` | Launch the Language Server Protocol (LSP 3.17) server over stdio |
+| `velo version` / `velo help` | Print version banner or command-line help manual |
