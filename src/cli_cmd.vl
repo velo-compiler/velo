@@ -8,12 +8,12 @@ use "common/utils.vl"
 act print_usage() {
     println_str("Velo Programming Language Compiler (Self-Hosted v2.0)")
     println_str("Usage:")
-    println_str("  velo run <source.vl> [--cc gcc|cl] [-l<lib>] [-L<dir>] [--debug|--release] [-O<level>] [--no-line-directives]")
-    println_str("  velo build <source.vl> [-o <bin>] [--cc gcc|cl] [-l<lib>] [-L<dir>] [--debug|--release] [--no-line-directives]")
+    println_str("  velo run <source.vl> [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release] [-O<level>] [--no-line-directives]")
+    println_str("  velo build <source.vl> [-o <bin>] [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release] [--no-line-directives]")
     println_str("  velo emit-c <source.vl> [-o <out.c>] [--no-line-directives] Emit generated C99 code")
     println_str("  velo check <source.vl> [--json] [--color auto|always|never]")
     println_str("  velo doc <source.vl> [-o <out.md>] Extract API documentation to Markdown")
-    println_str("  velo test [path] [--cc gcc|cl] [--filter <pattern>] Run native tests")
+    println_str("  velo test [path] [--cc gcc|clang|cl] [--filter <pattern>] Run native tests")
     println_str("  velo pkg check [path]              Validate a velo.pkg package manifest")
     println_str("  velo pkg build [path] [-o <bin>]   Build project defined by velo.pkg")
     println_str("  velo pkg run [path] [-- args...]   Build and run project defined by velo.pkg")
@@ -79,8 +79,8 @@ act handle_run_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_di
         println_str("[Velo Error] 'run' requires a source file path")
         return 1
     }
-    if cc != "gcc" and cc != "cl" {
-        println_str("[Velo Error] Unknown C compiler backend '{cc}'. Expected 'gcc' or 'cl'.")
+    if cc != "gcc" and cc != "cl" and cc != "clang" {
+        println_str("[Velo Error] Unknown C compiler backend '{cc}'. Expected 'gcc', 'clang', or 'cl'.")
         return 1
     }
     if debug_mode and release_mode {
@@ -160,8 +160,8 @@ act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_
         println_str("[Velo Error] 'build' requires a source file path")
         return 1
     }
-    if cc != "gcc" and cc != "cl" {
-        println_str("[Velo Error] Unknown C compiler backend '{cc}'. Expected 'gcc' or 'cl'.")
+    if cc != "gcc" and cc != "cl" and cc != "clang" {
+        println_str("[Velo Error] Unknown C compiler backend '{cc}'. Expected 'gcc', 'clang', or 'cl'.")
         return 1
     }
     if debug_mode and release_mode {

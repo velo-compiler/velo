@@ -166,8 +166,8 @@ act handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32 {
         }
         manifest_path = resolve_manifest_path(manifest_path)
 
-        if cc != "gcc" and cc != "cl" {
-            println_str("[Velo Error] Unknown C compiler backend '{cc}'. Expected 'gcc' or 'cl'.")
+        if cc != "gcc" and cc != "cl" and cc != "clang" {
+            println_str("[Velo Error] Unknown C compiler backend '{cc}'. Expected 'gcc', 'clang', or 'cl'.")
             return 1
         }
         if debug_mode and release_mode {

@@ -197,8 +197,8 @@ act main(argc: i32, argv: @string) -> i32 {
             i += 1
         }
         if str.len(target_path) == 0 { target_path = "." }
-        if cc != "gcc" and cc != "cl" {
-            println_str("[Velo Error] Unknown C compiler backend '{cc}'. Expected 'gcc' or 'cl'.")
+        if cc != "gcc" and cc != "cl" and cc != "clang" {
+            println_str("[Velo Error] Unknown C compiler backend '{cc}'. Expected 'gcc', 'clang', or 'cl'.")
             return 1
         }
         if debug_mode and release_mode {

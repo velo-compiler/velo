@@ -4,16 +4,19 @@ import subprocess
 from pathlib import Path
 import pytest
 
+import sys
+
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 BOOTSTRAP_C = REPO_ROOT / "bootstrap.c"
 BOOTSTRAP_BAT = REPO_ROOT / "scripts" / "bootstrap.bat"
 BOOTSTRAP_SH = REPO_ROOT / "scripts" / "bootstrap.sh"
-VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
+VELO_EXE = REPO_ROOT / "bin" / ("velo.exe" if sys.platform == "win32" else "velo")
 MAIN_VL = REPO_ROOT / "src" / "main.vl"
 
 def get_env():
     env = os.environ.copy()
-    env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
+    if sys.platform == "win32":
+        env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
     return env
 
 def test_bootstrap_c_file_integrity():
@@ -58,7 +61,7 @@ def test_emit_c_output_flag(tmp_path):
 
 def test_bootstrap_c_compilation(tmp_path):
     """Verify that bootstrap.c compiles cleanly with ambient GCC into a functional standalone compiler."""
-    test_exe = tmp_path / "velo_boot.exe"
+    test_exe = tmp_path / ("velo_boot.exe" if sys.platform == "win32" else "velo_boot")
     gcc_cmd = [
         "gcc", "-O2", "-std=c99",
         "-I", str(REPO_ROOT / "runtime"),
@@ -66,6 +69,8 @@ def test_bootstrap_c_compilation(tmp_path):
         str(BOOTSTRAP_C),
         "-o", str(test_exe)
     ]
+    if sys.platform != "win32":
+        gcc_cmd.extend(["-lm", "-lpthread"])
     res = subprocess.run(gcc_cmd, cwd=str(REPO_ROOT), capture_output=True, text=True, env=get_env())
     assert res.returncode == 0, f"Compilation of bootstrap.c failed:\n{res.stderr}"
     assert test_exe.exists(), "Target executable was not produced"

@@ -2246,7 +2246,7 @@ void append_msvc_linker_flags(StringBuilder* sb, const char* linker_flags, bool 
 void append_include_flag(StringBuilder* sb, bool is_msvc, const char* dir_path);
 void append_runtime_includes(StringBuilder* sb, bool is_msvc);
 const char* assemble_msvc_compile_cmd(const char* c_file_path, const char* out_exe_path, const char* opt_flags, const char* linker_flags);
-const char* assemble_gcc_compile_cmd(const char* c_file_path, const char* out_exe_path, const char* opt_flags, const char* linker_flags);
+const char* assemble_gcc_compile_cmd(const char* cc, const char* c_file_path, const char* out_exe_path, const char* opt_flags, const char* linker_flags);
 const char* assemble_compiler_cmd(const char* cc, const char* c_file_path, const char* out_exe_path, const char* opt_flags, const char* linker_flags);
 const char* assemble_runner_cmd(const char* cc, const char* exe_path, const char* extra_args);
 const char* resolve_opt_flags(bool debug_mode, bool release_mode, const char* opt_level);
@@ -46556,7 +46556,7 @@ const char* assemble_msvc_compile_cmd(const char* c_file_path, const char* out_e
 }
 
 #line 163 "src/main.vl"
-const char* assemble_gcc_compile_cmd(const char* c_file_path, const char* out_exe_path, const char* opt_flags, const char* linker_flags) {
+const char* assemble_gcc_compile_cmd(const char* cc, const char* c_file_path, const char* out_exe_path, const char* opt_flags, const char* linker_flags) {
 #line 164 "src/main.vl"
     StringBuilder cmd_sb = create_sb(512);
 #line 165 "src/main.vl"
@@ -46565,113 +46565,122 @@ const char* assemble_gcc_compile_cmd(const char* c_file_path, const char* out_ex
         sb_append_str((&(cmd_sb)), "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ");
     }
 #line 168 "src/main.vl"
-    sb_append_str((&(cmd_sb)), "gcc ");
+    if (((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") == 0) : (cc == "clang"))) {
 #line 169 "src/main.vl"
-    if (((opt_flags != NULL) && velo_cmp_gt_u_s(((usize)strlen(opt_flags)), 0))) {
-#line 170 "src/main.vl"
-        sb_append_str((&(cmd_sb)), opt_flags);
+        sb_append_str((&(cmd_sb)), "clang ");
+    } else {
 #line 171 "src/main.vl"
+        sb_append_str((&(cmd_sb)), "gcc ");
+    }
+#line 173 "src/main.vl"
+    if (((opt_flags != NULL) && velo_cmp_gt_u_s(((usize)strlen(opt_flags)), 0))) {
+#line 174 "src/main.vl"
+        sb_append_str((&(cmd_sb)), opt_flags);
+#line 175 "src/main.vl"
         sb_append_str((&(cmd_sb)), " ");
     } else {
-#line 173 "src/main.vl"
+#line 177 "src/main.vl"
         sb_append_str((&(cmd_sb)), "-O2 ");
     }
-#line 175 "src/main.vl"
-    sb_append_str((&(cmd_sb)), "-std=c99 ");
-#line 176 "src/main.vl"
-    append_runtime_includes((&(cmd_sb)), false);
-#line 177 "src/main.vl"
-    sb_append_str((&(cmd_sb)), " ");
-#line 178 "src/main.vl"
-    sb_append_str((&(cmd_sb)), quote_path(path_to_native_str(c_file_path)));
 #line 179 "src/main.vl"
-    if (((linker_flags != NULL) && velo_cmp_gt_u_s(((usize)strlen(linker_flags)), 0))) {
+    sb_append_str((&(cmd_sb)), "-std=c99 ");
 #line 180 "src/main.vl"
-        sb_append_str((&(cmd_sb)), " ");
+    append_runtime_includes((&(cmd_sb)), false);
 #line 181 "src/main.vl"
+    sb_append_str((&(cmd_sb)), " ");
+#line 182 "src/main.vl"
+    sb_append_str((&(cmd_sb)), quote_path(path_to_native_str(c_file_path)));
+#line 183 "src/main.vl"
+    if (((linker_flags != NULL) && velo_cmp_gt_u_s(((usize)strlen(linker_flags)), 0))) {
+#line 184 "src/main.vl"
+        sb_append_str((&(cmd_sb)), " ");
+#line 185 "src/main.vl"
         sb_append_str((&(cmd_sb)), linker_flags);
     }
-#line 183 "src/main.vl"
-    if ((fs_exists("C:/Windows") || fs_exists("C:/msys64/ucrt64/bin/gcc.exe"))) {
-#line 184 "src/main.vl"
-        sb_append_str((&(cmd_sb)), " -lws2_32 -ladvapi32");
-    }
-#line 186 "src/main.vl"
-    sb_append_str((&(cmd_sb)), " -o ");
 #line 187 "src/main.vl"
-    sb_append_str((&(cmd_sb)), quote_path(path_to_native_str(out_exe_path)));
+    if ((fs_exists("C:/Windows") || fs_exists("C:/msys64/ucrt64/bin/gcc.exe"))) {
 #line 188 "src/main.vl"
+        sb_append_str((&(cmd_sb)), " -lws2_32 -ladvapi32");
+    } else {
+#line 190 "src/main.vl"
+        sb_append_str((&(cmd_sb)), " -lm -lpthread");
+    }
+#line 192 "src/main.vl"
+    sb_append_str((&(cmd_sb)), " -o ");
+#line 193 "src/main.vl"
+    sb_append_str((&(cmd_sb)), quote_path(path_to_native_str(out_exe_path)));
+#line 194 "src/main.vl"
     return sb_to_string((&(cmd_sb)));
 }
 
-#line 192 "src/main.vl"
+#line 198 "src/main.vl"
 const char* assemble_compiler_cmd(const char* cc, const char* c_file_path, const char* out_exe_path, const char* opt_flags, const char* linker_flags) {
-#line 193 "src/main.vl"
+#line 199 "src/main.vl"
     if (((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") == 0) : (cc == "cl"))) {
-#line 194 "src/main.vl"
+#line 200 "src/main.vl"
         return assemble_msvc_compile_cmd(c_file_path, out_exe_path, opt_flags, linker_flags);
     }
-#line 196 "src/main.vl"
-    return assemble_gcc_compile_cmd(c_file_path, out_exe_path, opt_flags, linker_flags);
+#line 202 "src/main.vl"
+    return assemble_gcc_compile_cmd(cc, c_file_path, out_exe_path, opt_flags, linker_flags);
 }
 
-#line 200 "src/main.vl"
+#line 206 "src/main.vl"
 const char* assemble_runner_cmd(const char* cc, const char* exe_path, const char* extra_args) {
-#line 201 "src/main.vl"
+#line 207 "src/main.vl"
     StringBuilder run_sb = create_sb(256);
-#line 202 "src/main.vl"
+#line 208 "src/main.vl"
     if ((((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl")) && fs_exists("C:/msys64/ucrt64/bin/gcc.exe"))) {
-#line 203 "src/main.vl"
+#line 209 "src/main.vl"
         sb_append_str((&(run_sb)), "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ");
     }
-#line 205 "src/main.vl"
+#line 211 "src/main.vl"
     sb_append_str((&(run_sb)), quote_path(path_to_native_str(exe_path)));
-#line 206 "src/main.vl"
+#line 212 "src/main.vl"
     if (((extra_args != NULL) && velo_cmp_gt_u_s(((usize)strlen(extra_args)), 0))) {
-#line 207 "src/main.vl"
+#line 213 "src/main.vl"
         sb_append_str((&(run_sb)), " ");
-#line 208 "src/main.vl"
+#line 214 "src/main.vl"
         sb_append_str((&(run_sb)), extra_args);
     }
-#line 210 "src/main.vl"
+#line 216 "src/main.vl"
     return sb_to_string((&(run_sb)));
 }
 
-#line 214 "src/main.vl"
+#line 220 "src/main.vl"
 const char* resolve_opt_flags(bool debug_mode, bool release_mode, const char* opt_level) {
-#line 215 "src/main.vl"
+#line 221 "src/main.vl"
     StringBuilder sb = create_sb(64);
-#line 216 "src/main.vl"
+#line 222 "src/main.vl"
     if (((opt_level != NULL) && velo_cmp_gt_u_s(((usize)strlen(opt_level)), 0))) {
-#line 217 "src/main.vl"
+#line 223 "src/main.vl"
         sb_append_str((&(sb)), "-O");
-#line 218 "src/main.vl"
+#line 224 "src/main.vl"
         sb_append_str((&(sb)), opt_level);
     } else
-#line 219 "src/main.vl"
+#line 225 "src/main.vl"
     if (debug_mode) {
-#line 220 "src/main.vl"
+#line 226 "src/main.vl"
         sb_append_str((&(sb)), "-O0");
     } else
-#line 221 "src/main.vl"
+#line 227 "src/main.vl"
     if (release_mode) {
-#line 222 "src/main.vl"
+#line 228 "src/main.vl"
         sb_append_str((&(sb)), "-O3");
     } else {
-#line 224 "src/main.vl"
+#line 230 "src/main.vl"
         sb_append_str((&(sb)), "-O2");
     }
-#line 226 "src/main.vl"
+#line 232 "src/main.vl"
     if (debug_mode) {
-#line 227 "src/main.vl"
+#line 233 "src/main.vl"
         sb_append_str((&(sb)), " -g");
     }
-#line 229 "src/main.vl"
+#line 235 "src/main.vl"
     if (release_mode) {
-#line 230 "src/main.vl"
+#line 236 "src/main.vl"
         sb_append_str((&(sb)), " -flto");
     }
-#line 232 "src/main.vl"
+#line 238 "src/main.vl"
     return sb_to_string((&(sb)));
 }
 
@@ -49651,9 +49660,9 @@ int32_t handle_pkg_command(int32_t argc, const char** argv, bool unsafe_index) {
 #line 167 "src/main.vl"
         manifest_path = resolve_manifest_path(manifest_path);
 #line 169 "src/main.vl"
-        if ((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl")))) {
+        if (((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl"))) && ((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") != 0) : (cc != "clang")))) {
 #line 170 "src/main.vl"
-            println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc' or 'cl'.", (const char*)(cc)));
+            println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc', 'clang', or 'cl'.", (const char*)(cc)));
 #line 171 "src/main.vl"
             return 1;
         }
@@ -49768,9 +49777,9 @@ void print_usage(void) {
 #line 10 "src/main.vl"
     println_str("Usage:");
 #line 11 "src/main.vl"
-    println_str("  velo run <source.vl> [--cc gcc|cl] [-l<lib>] [-L<dir>] [--debug|--release] [-O<level>] [--no-line-directives]");
+    println_str("  velo run <source.vl> [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release] [-O<level>] [--no-line-directives]");
 #line 12 "src/main.vl"
-    println_str("  velo build <source.vl> [-o <bin>] [--cc gcc|cl] [-l<lib>] [-L<dir>] [--debug|--release] [--no-line-directives]");
+    println_str("  velo build <source.vl> [-o <bin>] [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release] [--no-line-directives]");
 #line 13 "src/main.vl"
     println_str("  velo emit-c <source.vl> [-o <out.c>] [--no-line-directives] Emit generated C99 code");
 #line 14 "src/main.vl"
@@ -49778,7 +49787,7 @@ void print_usage(void) {
 #line 15 "src/main.vl"
     println_str("  velo doc <source.vl> [-o <out.md>] Extract API documentation to Markdown");
 #line 16 "src/main.vl"
-    println_str("  velo test [path] [--cc gcc|cl] [--filter <pattern>] Run native tests");
+    println_str("  velo test [path] [--cc gcc|clang|cl] [--filter <pattern>] Run native tests");
 #line 17 "src/main.vl"
     println_str("  velo pkg check [path]              Validate a velo.pkg package manifest");
 #line 18 "src/main.vl"
@@ -49924,9 +49933,9 @@ int32_t handle_run_cmd_opts(int32_t argc, const char** argv, bool unsafe_index, 
         return 1;
     }
 #line 82 "src/main.vl"
-    if ((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl")))) {
+    if (((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl"))) && ((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") != 0) : (cc != "clang")))) {
 #line 83 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc' or 'cl'.", (const char*)(cc)));
+        println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc', 'clang', or 'cl'.", (const char*)(cc)));
 #line 84 "src/main.vl"
         return 1;
     }
@@ -50098,9 +50107,9 @@ int32_t handle_build_cmd_opts(int32_t argc, const char** argv, bool unsafe_index
         return 1;
     }
 #line 163 "src/main.vl"
-    if ((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl")))) {
+    if (((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl"))) && ((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") != 0) : (cc != "clang")))) {
 #line 164 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc' or 'cl'.", (const char*)(cc)));
+        println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc', 'clang', or 'cl'.", (const char*)(cc)));
 #line 165 "src/main.vl"
         return 1;
     }
@@ -60306,9 +60315,9 @@ g_velo_os_argv = argv;
             target_path = ".";
         }
 #line 200 "src/main.vl"
-        if ((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl")))) {
+        if (((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl"))) && ((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") != 0) : (cc != "clang")))) {
 #line 201 "src/main.vl"
-            println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc' or 'cl'.", (const char*)(cc)));
+            println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc', 'clang', or 'cl'.", (const char*)(cc)));
 #line 202 "src/main.vl"
             return 1;
         }

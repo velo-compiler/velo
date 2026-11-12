@@ -159,13 +159,17 @@ act assemble_msvc_compile_cmd(c_file_path: string, out_exe_path: string, opt_fla
     return sb_to_string(@cmd_sb)
 }
 
-// Assembles GCC compilation command.
-act assemble_gcc_compile_cmd(c_file_path: string, out_exe_path: string, opt_flags: string, linker_flags: string) -> string {
+// Assembles GCC or Clang compilation command.
+act assemble_gcc_compile_cmd(cc: string, c_file_path: string, out_exe_path: string, opt_flags: string, linker_flags: string) -> string {
     mut cmd_sb = create_sb(512)
     if fs_exists("C:/msys64/ucrt64/bin/gcc.exe") {
         sb_append_str(@cmd_sb, "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ")
     }
-    sb_append_str(@cmd_sb, "gcc ")
+    if cc == "clang" {
+        sb_append_str(@cmd_sb, "clang ")
+    } else {
+        sb_append_str(@cmd_sb, "gcc ")
+    }
     if opt_flags != null and str.len(opt_flags) > 0 {
         sb_append_str(@cmd_sb, opt_flags)
         sb_append_str(@cmd_sb, " ")
@@ -182,18 +186,20 @@ act assemble_gcc_compile_cmd(c_file_path: string, out_exe_path: string, opt_flag
     }
     if fs_exists("C:/Windows") or fs_exists("C:/msys64/ucrt64/bin/gcc.exe") {
         sb_append_str(@cmd_sb, " -lws2_32 -ladvapi32")
+    } else {
+        sb_append_str(@cmd_sb, " -lm -lpthread")
     }
     sb_append_str(@cmd_sb, " -o ")
     sb_append_str(@cmd_sb, quote_path(path_to_native_str(out_exe_path)))
     return sb_to_string(@cmd_sb)
 }
 
-// Assembles the C compiler invocation command for either GCC or MSVC cl.
+// Assembles the C compiler invocation command for either GCC, Clang, or MSVC cl.
 act assemble_compiler_cmd(cc: string, c_file_path: string, out_exe_path: string, opt_flags: string, linker_flags: string) -> string {
     if cc == "cl" {
         return assemble_msvc_compile_cmd(c_file_path, out_exe_path, opt_flags, linker_flags)
     }
-    return assemble_gcc_compile_cmd(c_file_path, out_exe_path, opt_flags, linker_flags)
+    return assemble_gcc_compile_cmd(cc, c_file_path, out_exe_path, opt_flags, linker_flags)
 }
 
 // Assembles executable runner command.

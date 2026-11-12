@@ -1,0 +1,173 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Linux (${{ matrix.os }} - ${{ matrix.compiler }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        compiler: [gcc, clang]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
+      - name: Install Clang (if selected)
+        if: matrix.compiler == 'clang'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
+
+      - name: Bootstrap self-hosted Velo compiler (3-stage Gen1 -> Gen2 -> Gen3)
+        env:
+          CC: ${{ matrix.compiler }}
+        run: |
+          bash scripts/bootstrap.sh --full
+
+      - name: Verify bootstrap determinism
+        run: |
+          python3 scripts/check_determinism.py
+
+      - name: Run test suite
+        run: |
+          python3 -m pytest tests -q
+
+  macos:
+    name: macOS (Apple Silicon - ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install pytest
+
+      - name: Bootstrap self-hosted Velo compiler (3-stage Gen1 -> Gen2 -> Gen3)
+        env:
+          CC: clang
+        run: |
+          bash scripts/bootstrap.sh --full
+
+      - name: Verify bootstrap determinism
+        run: |
+          python3 scripts/check_determinism.py
+
+      - name: Run test suite
+        run: |
+          python3 -m pytest tests -q
+
+  windows-gcc:
+    name: Windows Server 2022 (MSYS2 UCRT64 GCC)
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Set up MSYS2 UCRT64
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+
+      - name: Install Python test runner
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
+      - name: Add MSYS2 UCRT64 to PATH
+        shell: bash
+        run: |
+          echo "C:/msys64/ucrt64/bin" >> $GITHUB_PATH
+
+      - name: Bootstrap self-hosted Velo compiler (3-stage Gen1 -> Gen2 -> Gen3)
+        shell: cmd
+        run: |
+          scripts\bootstrap.bat --full
+
+      - name: Verify bootstrap determinism
+        run: |
+          python scripts/check_determinism.py
+
+      - name: Run test suite
+        run: |
+          python -m pytest tests -q
+
+  windows-msvc:
+    name: Windows Server 2022 (MSVC cl.exe)
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Set up MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Python test runner
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
+      - name: Bootstrap Velo compiler with MSVC
+        shell: cmd
+        run: |
+          scripts\bootstrap.bat
+
+      - name: Build self-hosted compiler using MSVC backend
+        shell: cmd
+        run: |
+          bin\velo.exe build src/main.vl --cc cl -o bin\velo_msvc.exe
+
+      - name: Verify MSVC binary execution
+        shell: cmd
+        run: |
+          bin\velo_msvc.exe version
+
+      - name: Run MSVC backend and snapshot tests
+        run: |
+          python -m pytest tests/test_cc_backend.py tests/test_bootstrap_snapshot.py -q
+

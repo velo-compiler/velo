@@ -78,4 +78,27 @@ exit /b 1
 :success
 echo [Velo] Successfully bootstrapped bin\velo.exe from bootstrap.c.
 bin\velo.exe version
+
+if "%1"=="--full" goto full_bootstrap
+if "%1"=="/full" goto full_bootstrap
+if "%1"=="-f" goto full_bootstrap
+exit /b 0
+
+:full_bootstrap
+echo.
+echo [Velo] Commencing 3-stage self-hosting verification (Gen1 -^> Gen2 -^> Gen3)...
+echo [Velo] Building Gen2 compiler (bin\velo.exe build src/main.vl -o bin\velo_gen2.exe)...
+bin\velo.exe build src/main.vl -o bin\velo_gen2.exe
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+
+echo [Velo] Building Gen3 compiler (bin\velo_gen2.exe build src/main.vl -o bin\velo_gen3.exe)...
+bin\velo_gen2.exe build src/main.vl -o bin\velo_gen3.exe
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+
+echo [Velo] Verifying SHA-256 fixed-point determinism...
+python scripts\check_determinism.py
+if %ERRORLEVEL% neq 0 exit /b %ERRORLEVEL%
+
+copy /Y bin\velo_gen3.exe bin\velo.exe >nul
+echo [Velo] Bootstrap complete! Canonical bin\velo.exe is verified deterministic Gen3.
 exit /b 0

@@ -2,13 +2,16 @@ import unittest
 import subprocess
 import sys
 import os
+import shutil
 from pathlib import Path
 
 class TestCcBackend(unittest.TestCase):
     def setUp(self):
         self.root_dir = Path(__file__).parent.parent.resolve()
         self.velo_py = self.root_dir / "velo.py"
-        self.velo_exe = self.root_dir / "bin" / "velo.exe"
+        self.velo_exe = self.root_dir / "bin" / ("velo.exe" if sys.platform == "win32" else "velo")
+        if not self.velo_exe.exists() and (self.root_dir / "bin" / "velo.exe").exists():
+            self.velo_exe = self.root_dir / "bin" / "velo.exe"
         self.cache_dir = self.root_dir / ".velo_cache"
         self.cache_dir.mkdir(exist_ok=True)
         self.sample_src = self.cache_dir / "cc_test_sample.vl"
@@ -25,6 +28,8 @@ class TestCcBackend(unittest.TestCase):
         )
 
     def test_stage1_build_and_run_cl(self):
+        if sys.platform != "win32":
+            self.skipTest("MSVC cl.exe is only available on Windows")
         out_exe = self.cache_dir / "stage1_cl_test.exe"
         cmd = [sys.executable, str(self.velo_py), "build", str(self.sample_src), "--cc", "cl", "-o", str(out_exe)]
         res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(self.root_dir))
@@ -36,12 +41,16 @@ class TestCcBackend(unittest.TestCase):
         self.assertIn("cc answer: 42", run_res.stdout)
 
     def test_stage1_run_cl(self):
+        if sys.platform != "win32":
+            self.skipTest("MSVC cl.exe is only available on Windows")
         cmd = [sys.executable, str(self.velo_py), "run", str(self.sample_src), "--cc", "cl"]
         res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(self.root_dir))
         self.assertEqual(res.returncode, 0, f"Stage 1 run --cc cl failed: {res.stderr}\n{res.stdout}")
         self.assertIn("cc answer: 42", res.stdout)
 
     def test_stage2_build_and_run_cl(self):
+        if sys.platform != "win32":
+            self.skipTest("MSVC cl.exe is only available on Windows")
         self.assertTrue(self.velo_exe.exists(), "bin/velo.exe does not exist")
         out_exe = self.cache_dir / "stage2_cl_test.exe"
         cmd = [str(self.velo_exe), "build", str(self.sample_src), "--cc", "cl", "-o", str(out_exe)]
@@ -54,6 +63,8 @@ class TestCcBackend(unittest.TestCase):
         self.assertIn("cc answer: 42", run_res.stdout)
 
     def test_stage2_run_cl(self):
+        if sys.platform != "win32":
+            self.skipTest("MSVC cl.exe is only available on Windows")
         self.assertTrue(self.velo_exe.exists(), "bin/velo.exe does not exist")
         cmd = [str(self.velo_exe), "run", str(self.sample_src), "--cc", "cl"]
         res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(self.root_dir))
@@ -123,6 +134,8 @@ class TestCcBackend(unittest.TestCase):
         self.assertIn("gcc run spaces passed", res.stdout)
 
     def test_stage2_build_and_run_cl_with_spaces_in_path(self):
+        if sys.platform != "win32":
+            self.skipTest("MSVC cl.exe is only available on Windows")
         self.assertTrue(self.velo_exe.exists(), "bin/velo.exe does not exist")
         spaced_dir = self.cache_dir / "spaced cl dir"
         spaced_dir.mkdir(parents=True, exist_ok=True)
@@ -146,6 +159,8 @@ class TestCcBackend(unittest.TestCase):
         self.assertIn("cl spaces passed", run_res.stdout)
 
     def test_stage2_run_cl_with_spaces_in_path(self):
+        if sys.platform != "win32":
+            self.skipTest("MSVC cl.exe is only available on Windows")
         self.assertTrue(self.velo_exe.exists(), "bin/velo.exe does not exist")
         spaced_dir = self.cache_dir / "spaced cl run dir"
         spaced_dir.mkdir(parents=True, exist_ok=True)
@@ -162,6 +177,29 @@ class TestCcBackend(unittest.TestCase):
         res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(self.root_dir))
         self.assertEqual(res.returncode, 0, f"Stage 2 run cl with spaces failed: {res.stderr}\n{res.stdout}")
         self.assertIn("cl run spaces passed", res.stdout)
+
+    def test_stage2_build_and_run_clang(self):
+        if not shutil.which("clang"):
+            self.skipTest("clang is not installed in PATH")
+        self.assertTrue(self.velo_exe.exists(), "bin/velo.exe does not exist")
+        out_exe = self.cache_dir / ("stage2_clang_test.exe" if sys.platform == "win32" else "stage2_clang_test")
+        cmd = [str(self.velo_exe), "build", str(self.sample_src), "--cc", "clang", "-o", str(out_exe)]
+        res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(self.root_dir))
+        self.assertEqual(res.returncode, 0, f"Stage 2 build --cc clang failed: {res.stderr}\n{res.stdout}")
+        self.assertTrue(out_exe.exists(), "Output executable not created by Stage 2 clang build")
+
+        run_res = subprocess.run([str(out_exe)], capture_output=True, text=True)
+        self.assertEqual(run_res.returncode, 0)
+        self.assertIn("cc answer: 42", run_res.stdout)
+
+    def test_stage2_run_clang(self):
+        if not shutil.which("clang"):
+            self.skipTest("clang is not installed in PATH")
+        self.assertTrue(self.velo_exe.exists(), "bin/velo.exe does not exist")
+        cmd = [str(self.velo_exe), "run", str(self.sample_src), "--cc", "clang"]
+        res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(self.root_dir))
+        self.assertEqual(res.returncode, 0, f"Stage 2 run --cc clang failed: {res.stderr}\n{res.stdout}")
+        self.assertIn("cc answer: 42", res.stdout)
 
 if __name__ == "__main__":
     unittest.main()

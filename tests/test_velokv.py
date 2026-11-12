@@ -9,10 +9,11 @@ import socket
 import subprocess
 import time
 import unittest
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-VELOKV_EXE = ROOT / "bin" / "velokv.exe"
+VELOKV_EXE = ROOT / "bin" / ("velokv.exe" if sys.platform == "win32" else "velokv")
 
 def recv_line(sock: socket.socket) -> bytes:
     line = b""
@@ -87,8 +88,11 @@ class TestVeloKV(unittest.TestCase):
 
         # Build fresh velokv.exe if missing
         if not VELOKV_EXE.exists():
+            build_cmd = [str(ROOT / "bin" / ("velo.exe" if sys.platform == "win32" else "velo")), "build", "apps/velokv/main.vl", "-o", str(VELOKV_EXE)]
+            if sys.platform == "win32":
+                build_cmd.extend(["-l", "ws2_32"])
             subprocess.run(
-                [str(ROOT / "bin" / "velo.exe"), "build", "apps/velokv/main.vl", "-o", str(VELOKV_EXE), "-l", "ws2_32"],
+                build_cmd,
                 check=True,
                 cwd=str(ROOT)
             )
