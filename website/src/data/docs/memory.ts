@@ -63,9 +63,51 @@ act main() {
     score_ptr: @i32 = @score
     score_ptr.@ = 99 // Overwrites score in memory
     io.println("Score: {score}") // 99
-}`
+}
+`
             }
           ]
+        },
+        {
+          id: 'unsafe-blocks-strict-safety',
+          title: 'Unsafe Blocks & Strict Safety Mode (--strict-safety)',
+          content: `While Velo provides ergonomic pointer references by default, low-level systems programming occasionally requires raw memory manipulation, untyped casts, and pointer arithmetic.
+
+To prevent accidental memory corruption, Velo introduces **\`unsafe { ... }\` blocks** and the **\`--strict-safety\`** compiler mode:
+
+\`\`\`rust
+use std.io
+
+act main() {
+    mut val: i32 = 42
+    let p: @i32 = @val
+
+    // Unsafe block encapsulates raw pointer operations:
+    unsafe {
+        // Raw pointer arithmetic and direct byte manipulation:
+        let raw_byte_ptr: @u8 = p as @u8
+        let next_byte = raw_byte_ptr + 1
+        io.println("Inspecting raw memory byte: {next_byte.@}")
+    }
+}
+\`\`\`
+
+### The \`--strict-safety\` Compiler Flag
+When compiling with \`--strict-safety\`:
+\`\`\`bash
+velo build main.vl --strict-safety
+\`\`\`
+The compiler strictly enforces that:
+1. **Pointer Arithmetic**: Offsetting raw pointers with \`+\` or \`-\` is prohibited outside \`unsafe\` blocks.
+2. **Untyped Pointer Casts**: Casting pointers across different types (e.g. \`@i32\` to \`@u8\`) requires an \`unsafe\` block.
+3. **Foreign C Calls**: Directly invoking \`extern act\` routines is flagged unless encapsulated in \`unsafe\`.
+
+This design gives production systems complete safety guarantees across the majority of code while isolating low-level drivers, allocators, and kernel shims into audited \`unsafe\` blocks.`,
+          callout: {
+            type: 'note',
+            title: 'Memory Safety Philosophy',
+            text: 'Safe by default, explicit when dangerous. Standard code enjoys clean zero-overhead semantics without risking unintended undefined behavior.'
+          }
         }
       ],
       prevPage: { title: 'Advanced Struct Features', slug: 'types-advanced-structs' },

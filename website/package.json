@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "package-dist": "python ../scripts/package_dist.py",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"

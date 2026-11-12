@@ -23,33 +23,47 @@ export const MODULES_FFI_CATEGORY: DocCategory = {
       ],
       sections: [
         {
-          id: 'velo-toml',
-          title: 'The velo.toml Package Manifest',
-          content: `Velo projects can be configured with a \`velo.toml\` manifest:
+          id: 'velo-manifest',
+          title: 'The velo.pkg Package Manifest & velo.lock',
+          content: `Velo projects are configured with a \`velo.pkg\` package manifest:
 
-\`\`\`toml
+\`\`\`ini
 [package]
-name = "my_game"
+name = "my_app"
 version = "1.0.0"
-authors = ["Alice <alice@example.com>"]
 entry = "src/main.vl"
 
 [dependencies]
-raylib = { git = "https://github.com/raysan5/raylib", branch = "master" }
-sqlite = { path = "../libs/sqlite" }
+raylib = { path = "../libs/raylib" }
+sqlite = { git = "https://github.com/velo-lang/sqlite", branch = "master" }
+\`\`\`
 
-[build]
-backend = "gcc"
-opt_level = 3
-flags = ["-lraylib", "-lopengl32", "-lgdi32", "-lwinmm"]
+### Supply Chain Security & velo.lock
+To guarantee deterministic, tamper-proof builds, Velo generates a **\`velo.lock\`** file with SHA-256 cryptographic hashes for every dependency:
+
+\`\`\`bash
+# Validate manifest structure and syntax:
+velo pkg check
+
+# Compute dependency hashes and record to velo.lock:
+velo pkg lock
+
+# Install and verify dependencies against recorded hashes:
+velo pkg install
+
+# Update dependencies and refresh cryptographic checksums:
+velo pkg update
 \`\`\``
         },
         {
           id: 'pkg-commands',
-          title: 'velo pkg Subcommands',
-          content: `- \`velo pkg new <name>\`: Scaffolds a new Velo project with source tree and manifest.
-- \`velo pkg build\`: Builds the project according to \`velo.toml\` settings.
-- \`velo pkg test\`: Runs all tests within the package.`
+          title: 'velo pkg CLI Subcommands',
+          content: `- \`velo pkg check [path]\`: Validates syntax and dependency graph of \`velo.pkg\`.
+- \`velo pkg lock [path]\`: Generates or updates \`velo.lock\` with deterministic SHA-256 dependency hashes.
+- \`velo pkg install [path]\`: Installs dependencies and strictly verifies integrity against \`velo.lock\`.
+- \`velo pkg update [path]\`: Updates dependencies and refreshes \`velo.lock\`.
+- \`velo pkg build [path] [-o bin]\`: Compiles the project defined by \`velo.pkg\` to a native executable.
+- \`velo pkg run [path] [-- args...]\`: Builds and executes the package entry point.`
         }
       ],
       prevPage: { title: '128-Bit SIMD Acceleration', slug: 'hardware-simd' },

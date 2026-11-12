@@ -100,6 +100,28 @@ velo build main.vl --debug -o game.exe
 The Velo compiler emits C preprocessor **\`#line\` directives** mapping each C line back to its original \`.vl\` file and line number. 
 
 When you open \`game.exe\` in **Visual Studio Debugger, CLion, or GDB**, you set breakpoints and step directly through your original \`.vl\` source code — not the generated C code!`
+        },
+        {
+          id: 'canonical-formatter',
+          title: 'Canonical Code Formatting (velo fmt)',
+          content: `Velo ships with an integrated canonical code formatter to ensure zero debates over code style:
+
+\`\`\`bash
+# Format a specific source file in place:
+velo fmt src/main.vl
+
+# Format an entire project directory recursively:
+velo fmt src/
+
+# Verify formatting in CI without modifying files (exits 1 if unformatted):
+velo fmt --check src/
+\`\`\`
+
+### Formatter Standards
+- **Indentation**: 4 spaces per nesting level (tabs rejected).
+- **Operators**: Consistent binary spacing around operators (\`a + b\`, \`x == y\`).
+- **Control Structures**: Canonical brace placement and keyword spacing.
+- **Purity**: Idempotent and deterministic across all platforms.`
         }
       ],
       prevPage: { title: 'Built-in LSP Server (velo lsp)', slug: 'tooling-lsp' },

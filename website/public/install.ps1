@@ -39,17 +39,38 @@ Write-Host "--> Creating target directories in $veloHome..." -ForegroundColor Ye
 
 # 2. Download and install pre-compiled binary
 Write-Host "--> Downloading standalone compiler from $downloadExeUrl..." -ForegroundColor Yellow
+$downloadSuccess = $false
 try {
     $wc = New-Object System.Net.WebClient
     $wc.DownloadFile($downloadExeUrl, $targetExe)
+    if ((Test-Path $targetExe) -and ((Get-Item $targetExe).Length -gt 0)) {
+        $downloadSuccess = $true
+    }
 } catch {
-    # Fallback to local copy if running from repo root
-    $localExe = Join-Path $PSScriptRoot "..\..\bin\velo.exe"
-    if (Test-Path $localExe) {
-        Write-Host "--> Falling back to local repo binary: $localExe" -ForegroundColor Yellow
-        Copy-Item -Force $localExe $targetExe
-    } else {
-        Write-Error "Failed to download velo.exe from $($downloadExeUrl). Error: $_"
+    $downloadSuccess = $false
+}
+
+if (-not $downloadSuccess) {
+    # Fallback to local copy if running from repo root or parent directories
+    $localCandidates = @(
+        (Join-Path $PSScriptRoot "..\..\bin\velo.exe"),
+        (Join-Path $PSScriptRoot "velo.exe"),
+        ".\bin\velo.exe",
+        "..\bin\velo.exe",
+        "..\..\bin\velo.exe",
+        (Join-Path (Get-Location) "bin\velo.exe")
+    )
+    $found = $false
+    foreach ($cand in $localCandidates) {
+        if ($cand -and (Test-Path $cand)) {
+            Write-Host "--> Falling back to local repo binary: $cand" -ForegroundColor Yellow
+            Copy-Item -Force $cand $targetExe
+            $found = $true
+            break
+        }
+    }
+    if (-not $found) {
+        Write-Error "Failed to install velo.exe from $($downloadExeUrl) and no local binary found."
         exit 1
     }
 }
@@ -75,22 +96,57 @@ try {
     }
 } catch {
     # Fallback to local repo directories
-    $localStd = Join-Path $PSScriptRoot "..\..\std"
-    $localRuntime = Join-Path $PSScriptRoot "..\..\runtime"
-    if (Test-Path $localStd) {
-        Write-Host "--> Copying standard library from local repo: $localStd" -ForegroundColor Yellow
-        Copy-Item -Recurse -Force (Join-Path $localStd "*") $targetStd
-        if (Test-Path $localRuntime) {
-            Copy-Item -Recurse -Force (Join-Path $localRuntime "*") $targetRuntime
+    $localStdCandidates = @(
+        (Join-Path $PSScriptRoot "..\..\std"),
+        ".\std",
+        "..\std",
+        "..\..\std",
+        (Join-Path (Get-Location) "std")
+    )
+    foreach ($cand in $localStdCandidates) {
+        if ($cand -and (Test-Path $cand)) {
+            Write-Host "--> Copying standard library from local repo: $cand" -ForegroundColor Yellow
+            Copy-Item -Recurse -Force (Join-Path $cand "*") $targetStd
+            $installedStd = $true
+            break
         }
-        $installedStd = $true
+    }
+    $localRuntimeCandidates = @(
+        (Join-Path $PSScriptRoot "..\..\runtime"),
+        ".\runtime",
+        "..\runtime",
+        "..\..\runtime",
+        (Join-Path (Get-Location) "runtime")
+    )
+    foreach ($cand in $localRuntimeCandidates) {
+        if ($cand -and (Test-Path $cand)) {
+            Copy-Item -Recurse -Force (Join-Path $cand "*") $targetRuntime
+            break
+        }
     }
 }
 
-# Ensure include/velo_runtime.h exists
+# Ensure include/velo_runtime.h and runtime/velo_runtime.h exist
 $runtimeHeader = Join-Path $targetRuntime "velo_runtime.h"
+$includeHeader = Join-Path $targetInclude "velo_runtime.h"
 if (Test-Path $runtimeHeader) {
-    Copy-Item -Force $runtimeHeader (Join-Path $targetInclude "velo_runtime.h")
+    Copy-Item -Force $runtimeHeader $includeHeader
+} elseif (Test-Path $includeHeader) {
+    Copy-Item -Force $includeHeader $runtimeHeader
+} else {
+    $fallbackHeader = @(
+        ".\runtime\velo_runtime.h",
+        "..\runtime\velo_runtime.h",
+        "..\..\runtime\velo_runtime.h",
+        (Join-Path (Get-Location) "runtime\velo_runtime.h")
+    )
+    foreach ($fh in $fallbackHeader) {
+        if ($fh -and (Test-Path $fh)) {
+            Copy-Item -Force $fh $runtimeHeader
+            Copy-Item -Force $fh $includeHeader
+            break
+        }
+    }
 }
 
 Write-Host "--> Standard library installed: $targetStd" -ForegroundColor Green

@@ -86,13 +86,13 @@ The bootstrap batch script verifies compiler self-hosting by compiling \`src/mai
           content: `Run the version command in your terminal to verify that Velo is active:
 
 \`\`\`bash
-bin\\velo.exe version
+velo version
 \`\`\`
 
 Expected output:
 \`\`\`
-Velo Systems Language v2.0 (Self-Hosted Gen3 Native Toolchain)
-Target: x86_64-pc-windows-gcc | C99 Native Backend
+Velo v2.0 (Self-Hosted Native Compiler)
+Target: Standard C99 / Native Machine Code
 \`\`\``
         }
       ],

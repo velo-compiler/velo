@@ -415,21 +415,6 @@ export const STDLIB_MODULES: StdlibModule[] = [
     ]
   },
   {
-    name: 'std.crypto',
-    category: 'Security & Cryptography',
-    tier: 2,
-    description: 'Pure-Velo implementations of SHA-256, HMAC, ChaCha20, and CSPRNG random bytes.',
-    pureVelo: true,
-    functions: [
-      {
-        name: 'crypto.sha256',
-        signature: 'act crypto.sha256(data: @u8, len: usize, out_hash: @u8)',
-        description: 'Computes the 256-bit cryptographic digest of input buffer.',
-        example: 'crypto.sha256(@bytes, len, @hash_buf)'
-      }
-    ]
-  },
-  {
     name: 'std.net',
     category: 'Networking & Sockets',
     tier: 2,
@@ -1290,6 +1275,9 @@ export const STDLIB_MODULES: StdlibModule[] = [
   },
   {
     name: 'std.url',
+    category: 'Web & Protocols',
+    tier: 2,
+    pureVelo: true,
     description: 'RFC 3986 URL parsing, building, percent-encoding, query parameters, and path joining.',
     functions: [
       {
@@ -1398,6 +1386,9 @@ export const STDLIB_MODULES: StdlibModule[] = [
   },
   {
     name: 'std.rand',
+    category: 'Algorithms & Math',
+    tier: 1,
+    pureVelo: true,
     description: 'High-performance pseudo-random number generation: PCG64 and Xoshiro256** algorithms, typed samplers, byte/string generation, and Fisher-Yates shuffling.',
     functions: [
       {
@@ -1589,6 +1580,9 @@ export const STDLIB_MODULES: StdlibModule[] = [
   },
   {
     name: 'std.uuid',
+    category: 'Data Structures & Identification',
+    tier: 2,
+    pureVelo: true,
     description: 'RFC 4122 and RFC 9562 UUID generation (v4 random, v7 time-ordered monotonic), parsing, validation, comparison, and formatting.',
     functions: [
       {
@@ -1722,6 +1716,9 @@ export const STDLIB_MODULES: StdlibModule[] = [
   },
   {
     name: 'std.text',
+    category: 'Text & Parsing',
+    tier: 2,
+    pureVelo: true,
     description: 'Text layout, greedy word wrapping, prefix indentation, alignment, and ANSI-aware measurement.',
     functions: [
       {
@@ -1825,6 +1822,9 @@ export const STDLIB_MODULES: StdlibModule[] = [
   },
   {
     name: 'std.timer',
+    category: 'Time & Concurrency',
+    tier: 2,
+    pureVelo: true,
     description: 'High-resolution interval timers, countdown deadlines, periodic tickers, and scheduled callbacks.',
     functions: [
       {
@@ -1997,6 +1997,9 @@ export const STDLIB_MODULES: StdlibModule[] = [
   },
   {
     name: 'std.validate',
+    category: 'Validation & Security',
+    tier: 2,
+    pureVelo: true,
     description: 'Input data validation engine for emails, URLs, IP addresses, domains, UUIDs, numeric bounds, and Luhn checksums.',
     functions: [
       {

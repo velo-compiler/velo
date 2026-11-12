@@ -5,14 +5,11 @@ import {
   Terminal, 
   BookOpen, 
   ShieldCheck, 
-  Layers, 
   Cpu, 
-  CheckCircle2, 
   Copy, 
   Check, 
   Activity,
   Box,
-  Compass,
   Code2
 } from 'lucide-react';
 import { CodeBlock } from '../components/CodeBlock';
@@ -27,9 +24,16 @@ export const HomePage: React.FC<HomePageProps> = ({ onNavigate, onSelectDocPage 
   const [installTab, setInstallTab] = useState<'powershell' | 'bash' | 'source'>('powershell');
   const [activeCodeTab, setActiveCodeTab] = useState<'zone' | 'particle' | 'simd' | 'ufcs'>('zone');
 
+  const origin = typeof window !== 'undefined' && window.location.origin ? window.location.origin : 'http://localhost:5173';
+  const isLocalhost = origin.includes('localhost') || origin.includes('127.0.0.1');
+
   const installCommands = {
-    powershell: 'irm http://localhost:5173/install.ps1 | iex',
-    bash: 'curl -fsSL http://localhost:5173/install.sh | bash',
+    powershell: isLocalhost 
+      ? `irm ${origin}/install.ps1 | iex` 
+      : `$env:VELO_INSTALL_URL='${origin}'; irm ${origin}/install.ps1 | iex`,
+    bash: isLocalhost
+      ? `curl -fsSL ${origin}/install.sh | bash`
+      : `VELO_INSTALL_URL='${origin}' curl -fsSL ${origin}/install.sh | bash`,
     source: 'git clone https://github.com/velo-lang/velo.git && cd velo && scripts\\bootstrap.bat'
   };
 
