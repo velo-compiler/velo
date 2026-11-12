@@ -16,7 +16,7 @@ act test_benchmark(name: string, iterations: usize, bench_fn: act() -> void) -> 
 
     // Warmup phase (up to 5 iterations)
     mut w: usize = 0
-    mut warmup_count = 5
+    mut warmup_count: usize = 5
     if iters < 5 { warmup_count = iters }
     loop w < warmup_count {
         bench_fn()

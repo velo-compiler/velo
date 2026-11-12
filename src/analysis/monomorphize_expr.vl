@@ -175,7 +175,7 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
                 let tmp_call = make_call_expr(callee, first_a, arg_count, e.line, e.col)
                 if callee.str_val == "field_count" {
                     mut fc: i64 = 0
-                    if mono_eval_const_int(m, tmp_call, @fc) { return make_int_expr(fc, e.line, e.col) }
+                    if mono_eval_const_int(m, tmp_call, @fc) { return make_int_expr(fc as i32, e.line, e.col) }
                 } else {
                     let fs = mono_eval_const_str(m, tmp_call)
                     if fs != null { return make_string_expr(fs, e.line, e.col) }

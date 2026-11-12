@@ -107,10 +107,10 @@ act main() -> i32 {
     // 9. rand_range_f64 stays in [lo, hi) and covers range
     // -----------------------------------------------------------------------
     mut rh = rng_seed(31 as u64)
-    let f_lo = 10.0
-    let f_hi_val = 20.0
-    mut f_min = 20.0
-    mut f_max = 10.0
+    let f_lo: f64 = 10.0
+    let f_hi_val: f64 = 20.0
+    mut f_min: f64 = 20.0
+    mut f_max: f64 = 10.0
     mut fj: usize = 0
     loop fj < 500 {
         let f = rand_range_f64(@rh, f_lo, f_hi_val)

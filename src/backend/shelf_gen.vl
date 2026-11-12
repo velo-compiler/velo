@@ -133,7 +133,7 @@ act shelf_fresh_name(st: @SymbolTable, prefix: string) -> string {
     mut sb = create_sb(str.len(prefix) + 22)
     sb_append_str(@sb, "_velo_")
     sb_append_str(@sb, prefix)
-    sb_append_int(@sb, st.fresh_counter + 1)
+    sb_append_int(@sb, (st.fresh_counter + 1) as i32)
     st.fresh_counter += 1
     return sb_to_string(@sb)
 }

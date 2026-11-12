@@ -11,6 +11,8 @@ use "escape_checks.vl"
 use "op_resolver.vl"
 use "narrow_flow.vl"
 use "tuple_checks.vl"
+use "literal_check.vl"
+use "../ast/int_types.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
@@ -75,8 +77,18 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
         check_map_annotation(st, stmt.type_name, stmt.val_expr, stmt.line, stmt.col)  // 5.2 slice 6: empty literals borrow BOTH slots / reject mismatches
         check_coll9_annotation(st, stmt.type_name, stmt.val_expr, stmt.line, stmt.col)  // 5.2 slice 9: ring + bitset
         if stmt.val_expr != null {
+            mut adapt_ok = true
             if stmt.type_name != null and str.len(stmt.type_name) > 0 {
                 if stmt.val_expr.kind == EXPR_VARIANT and (stmt.val_expr.type_name == null or str.len(stmt.val_expr.type_name) == 0) { stmt.val_expr.type_name = stmt.type_name }
+                if stmt.val_expr.kind == EXPR_ARRAY_LIT and is_fixed_array_type(stmt.type_name) {
+                    let elem_t = fixed_array_elem_type(stmt.type_name)
+                    mut cur_elem = stmt.val_expr.first_arg
+                    loop cur_elem != null {
+                        try_adapt_int_literal(st, elem_t, cur_elem, cur_elem.line, cur_elem.col)
+                        cur_elem = cur_elem.next
+                    }
+                }
+                adapt_ok = try_adapt_int_literal(st, stmt.type_name, stmt.val_expr, stmt.line, stmt.col)
             }
             let val_type = infer_expr_type(st, stmt.val_expr)
             if stmt.type_name != null and str.len(stmt.type_name) > 0 {
@@ -84,8 +96,11 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
                 // identifier, so the wall is name-based (Stage 1 raises in _map_type)
                 if strip_pointer_prefix(stmt.type_name) == "shelf" { report_error("semantic", stmt.line, stmt.col, "a bare 'shelf' needs an element type: use shelf[T]"); st.error_count += 1 }
                 else if not types_are_compatible(stmt.type_name, val_type) {
-                    // 5.2 slice 11: the retired split pairing gets the dedicated words
-                    if is_split_retire_pair(stmt.type_name, val_type) { report_error("semantic", stmt.line, stmt.col, split_retire_message(stmt.type_name)); st.error_count += 1 } else { report_error("semantic", stmt.line, stmt.col, "Type mismatch in variable declaration"); st.error_count += 1 }
+                    if not adapt_ok { }
+                    else if is_split_retire_pair(stmt.type_name, val_type) { report_error("semantic", stmt.line, stmt.col, split_retire_message(stmt.type_name)); st.error_count += 1 }
+                    else if is_int_type(stmt.type_name) and is_int_type(val_type) { report_error("semantic", stmt.line, stmt.col, int_conversion_error_msg(stmt.type_name, val_type)); st.error_count += 1 }
+                    else if is_float_type(stmt.type_name) and is_float_type(val_type) { report_error("semantic", stmt.line, stmt.col, float_conversion_error_msg(stmt.type_name, val_type)); st.error_count += 1 }
+                    else { report_error("semantic", stmt.line, stmt.col, "Type mismatch in variable declaration"); st.error_count += 1 }
                 }
             } else {
                 stmt.type_name = val_type
@@ -107,6 +122,15 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
         if stmt.val_expr.kind == EXPR_VARIANT and (stmt.val_expr.type_name == null or str.len(stmt.val_expr.type_name) == 0) {
             stmt.val_expr.type_name = target_type
         }
+        if stmt.val_expr.kind == EXPR_ARRAY_LIT and is_fixed_array_type(target_type) {
+            let elem_t = fixed_array_elem_type(target_type)
+            mut cur_elem = stmt.val_expr.first_arg
+            loop cur_elem != null {
+                try_adapt_int_literal(st, elem_t, cur_elem, cur_elem.line, cur_elem.col)
+                cur_elem = cur_elem.next
+            }
+        }
+        let adapt_ok = try_adapt_int_literal(st, target_type, stmt.val_expr, stmt.line, stmt.col)
         let val_type = infer_expr_type(st, stmt.val_expr)
         let base_op = get_base_assign_op(stmt.op)
         mut is_valid = types_are_compatible(target_type, val_type)
@@ -115,7 +139,11 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
             if op_fn != null and types_are_compatible(target_type, op_fn.return_type) { is_valid = true }
         }
         if not is_valid {
-            if is_split_retire_pair(target_type, val_type) { report_error("semantic", stmt.line, stmt.col, split_retire_message(target_type)); st.error_count += 1 } else { report_error("semantic", stmt.line, stmt.col, "Type mismatch in assignment"); st.error_count += 1 }  // slice 11: retired split pairing words
+            if not adapt_ok { }
+            else if is_split_retire_pair(target_type, val_type) { report_error("semantic", stmt.line, stmt.col, split_retire_message(target_type)); st.error_count += 1 }
+            else if is_int_type(target_type) and is_int_type(val_type) { report_error("semantic", stmt.line, stmt.col, int_conversion_error_msg(target_type, val_type)); st.error_count += 1 }
+            else if is_float_type(target_type) and is_float_type(val_type) { report_error("semantic", stmt.line, stmt.col, float_conversion_error_msg(target_type, val_type)); st.error_count += 1 }
+            else { report_error("semantic", stmt.line, stmt.col, "Type mismatch in assignment"); st.error_count += 1 }
         }
         }
     } else if stmt.kind == STMT_IF {
@@ -155,12 +183,15 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
             if stmt.val_expr.kind == EXPR_VARIANT and (stmt.val_expr.type_name == null or str.len(stmt.val_expr.type_name) == 0) {
                 stmt.val_expr.type_name = expected_ret_type
             }
-            let ret_type = infer_expr_type(st, stmt.val_expr)
             mut expected = expected_ret_type
             if is_or_type(expected_ret_type) { expected = or_type_success(expected_ret_type) }
+            let adapt_ok = try_adapt_int_literal(st, expected, stmt.val_expr, stmt.line, stmt.col)
+            let ret_type = infer_expr_type(st, stmt.val_expr)
             if not types_are_compatible(expected, ret_type) and not types_are_compatible(expected_ret_type, ret_type) {
-                report_error("semantic", stmt.line, stmt.col, "Return type mismatch")
-                st.error_count += 1
+                if not adapt_ok { }
+                else if is_int_type(expected) and is_int_type(ret_type) { report_error("semantic", stmt.line, stmt.col, int_conversion_error_msg(expected, ret_type)); st.error_count += 1 }
+                else if is_float_type(expected) and is_float_type(ret_type) { report_error("semantic", stmt.line, stmt.col, float_conversion_error_msg(expected, ret_type)); st.error_count += 1 }
+                else { report_error("semantic", stmt.line, stmt.col, "Return type mismatch"); st.error_count += 1 }
             }
         } else if expected_ret_type != null and expected_ret_type != "void" and str.len(expected_ret_type) > 0 {
             if not is_or_type(expected_ret_type) or or_type_success(expected_ret_type) != "void" {
@@ -174,11 +205,12 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
             st.error_count += 1
         } else if stmt.val_expr != null {
             check_escape_fail(st, stmt.val_expr, expected_ret_type, stmt.line, stmt.col)
-            let val_t = infer_expr_type(st, stmt.val_expr)
             let err_t = or_type_error(expected_ret_type)
+            try_adapt_int_literal(st, err_t, stmt.val_expr, stmt.line, stmt.col)
+            let val_t = infer_expr_type(st, stmt.val_expr)
             if not types_are_compatible(err_t, val_t) {
-                report_error("semantic", stmt.line, stmt.col, "Fail payload type mismatch")
-                st.error_count += 1
+                if is_int_type(err_t) and is_int_type(val_t) { report_error("semantic", stmt.line, stmt.col, int_conversion_error_msg(err_t, val_t)); st.error_count += 1 }
+                else { report_error("semantic", stmt.line, stmt.col, "Fail payload type mismatch"); st.error_count += 1 }
             }
         } else {
             report_error("semantic", stmt.line, stmt.col, "'fail' statement requires an error value")

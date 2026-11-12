@@ -26,6 +26,7 @@ use "array_checks.vl"
 use "tuple_checks.vl"
 use "scope.vl"
 use "narrow_flow.vl"
+use "literal_check.vl"
 
 act widen_if_branch_types(t1: string, t2: string) -> string {
     if t1 == t2 { return t1 }
@@ -203,6 +204,9 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             let fn_sym = find_function(st, expr.callee.member_name)
             if fn_sym != null {
                 if expr.arg_count + 1 != fn_sym.param_count { report_error("semantic", expr.line, expr.col, "Mismatched argument count in method call"); st.error_count += 1 }
+                mut pcur = fn_sym.first_param
+                if pcur != null { pcur = pcur.next }
+                adapt_and_check_call_args(st, expr, pcur)
                 return fn_sym.return_type
             }
         }
@@ -220,19 +224,12 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         }
         if expr.callee.kind == EXPR_IDENT and is_reflect_builtin(expr.callee.str_val) { return check_reflect_builtin(st, expr) }
         if expr.callee.kind == EXPR_IDENT and is_simd_constructor(expr.callee.str_val) { return check_simd_constructor(st, expr) }
+        if expr.callee.kind == EXPR_IDENT and expr.callee.str_val == "sizeof" { return "usize" }
         if expr.callee.kind == EXPR_IDENT {
             let fn_sym = find_function(st, expr.callee.str_val)
             if fn_sym != null {
                 if expr.arg_count != fn_sym.param_count { report_error("semantic", expr.line, expr.col, "Mismatched argument count in function call"); st.error_count += 1 }
-                mut cur_a = expr.first_arg
-                mut cur_p = fn_sym.first_param
-                loop cur_a != null and cur_p != null {
-                    if cur_a.kind == EXPR_VARIANT and (cur_a.type_name == null or str.len(cur_a.type_name) == 0) {
-                        cur_a.type_name = cur_p.type_name
-                    }
-                    cur_a = cur_a.next
-                    cur_p = cur_p.next
-                }
+                adapt_and_check_call_args(st, expr, fn_sym.first_param)
                 check_shelf_call_args(st, expr, fn_sym)  // 5.2: shelf elems must string-match
                 check_map_call_args(st, expr, fn_sym)    // 5.2 slice 6: maps match BOTH slots
                 return fn_sym.return_type
@@ -254,43 +251,20 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     }
 
     if expr.kind == EXPR_STRUCT_LIT {
-        let st_sym = find_struct(st, expr.type_name)
-        if st_sym == null {
-            report_error("semantic", expr.line, expr.col, "Instantiating unknown struct type"); st.error_count += 1; return "unknown"
-        }
-        mut cur_init = expr.first_init
-        loop cur_init != null {
-            let f_sym = find_struct_field(st_sym, cur_init.name)
-            if f_sym == null {
-                report_error("semantic", cur_init.line, cur_init.col, "Unknown field in struct literal"); st.error_count += 1
-            } else {
-                let val_type = infer_expr_type(st, cur_init.value)
-                if not types_are_compatible(f_sym.type_name, val_type) {
-                    report_error("semantic", cur_init.line, cur_init.col, "Type mismatch in field initializer"); st.error_count += 1
-                }
-            }
-            cur_init = cur_init.next
-        }
-        mut sf = st_sym.first_field  // fields without defaults must be provided (defaults validated in check_program)
-        loop sf != null {
-            mut seen_init = expr.first_init; mut covered = false
-            loop seen_init != null { if seen_init.name == sf.name { covered = true }; seen_init = seen_init.next }
-            if not covered and not sf.has_default {
-                report_error("semantic", expr.line, expr.col, "Struct literal is missing field with no default"); st.error_count += 1
-            }
-            sf = sf.next
-        }
-        return expr.type_name
+        return check_struct_literal(st, expr)
     }
 
     if expr.kind == EXPR_BINARY {
+        if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name }
         let left_type = infer_expr_type(st, expr.left); let right_type = infer_expr_type(st, expr.right)
         // 5.2 slice 8: raw dyn arithmetic/compares auto-unbox; the concrete mixed-compare and string-concat walls live in dyn_checks.vl too
         let bin_t = check_dyn_binary(st, expr, left_type, right_type); if bin_t != null { return bin_t }
         let s_bin = check_simd_binary(st, expr, left_type, right_type); if s_bin != null { return s_bin }
         if expr.op == TOK_OR and is_or_type(left_type) {
             let succ_t = or_type_success(left_type)
-            if not types_are_compatible(succ_t, right_type) {
+            try_adapt_int_literal(st, succ_t, expr.right, expr.line, expr.col)
+            let rt = infer_expr_type(st, expr.right)
+            if not types_are_compatible(succ_t, rt) {
                 report_error("semantic", expr.line, expr.col, "Fallback type mismatch for 'or' expression")
                 st.error_count += 1
             }
@@ -303,7 +277,9 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 return left_type
             }
             let inner_t = optional_inner_type(left_type)
-            if not types_are_compatible(inner_t, right_type) {
+            try_adapt_int_literal(st, inner_t, expr.right, expr.line, expr.col)
+            let rt = infer_expr_type(st, expr.right)
+            if not types_are_compatible(inner_t, rt) {
                 report_error("semantic", expr.line, expr.col, "Right operand of '??' is incompatible with optional unwrapped type")
                 st.error_count += 1
             }
@@ -313,7 +289,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         if expr.op == TOK_EQ or expr.op == TOK_NEQ or expr.op == TOK_LT or expr.op == TOK_LTE or expr.op == TOK_GT or expr.op == TOK_GTE or expr.op == TOK_AND or expr.op == TOK_OR {
             return "bool"
         }
-        return left_type
+        return adapt_binary_int_operands(st, expr, left_type, right_type)
     }
 
     if expr.kind == EXPR_UNARY {

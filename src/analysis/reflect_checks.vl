@@ -126,11 +126,11 @@ act check_reflect_field_value(st: @SymbolTable, expr: @ExprNode) -> string {
     if const_val < 0 or (const_val as usize) >= st_sym.field_count {
         mut sb = create_sb(128)
         sb_append_str(@sb, "field index out of bounds: ")
-        sb_append_int(@sb, const_val)
+        sb_append_int(@sb, const_val as i32)
         sb_append_str(@sb, " (struct '")
         sb_append_str(@sb, base_t)
         sb_append_str(@sb, "' has ")
-        sb_append_int(@sb, st_sym.field_count as i64)
+        sb_append_int(@sb, st_sym.field_count as i32)
         sb_append_str(@sb, " fields)")
         report_error("semantic", idx_node.line, idx_node.col, sb_to_string(@sb))
         st.error_count += 1
@@ -222,11 +222,11 @@ act check_reflect_builtin(st: @SymbolTable, expr: @ExprNode) -> string {
         if const_val < 0 or (const_val as usize) >= st_sym.field_count {
             mut sb = create_sb(128)
             sb_append_str(@sb, "field index out of bounds: ")
-            sb_append_int(@sb, const_val)
+            sb_append_int(@sb, const_val as i32)
             sb_append_str(@sb, " (struct '")
             sb_append_str(@sb, tname)
             sb_append_str(@sb, "' has ")
-            sb_append_int(@sb, st_sym.field_count as i64)
+            sb_append_int(@sb, st_sym.field_count as i32)
             sb_append_str(@sb, " fields)")
             report_error("semantic", idx_node.line, idx_node.col, sb_to_string(@sb))
             st.error_count += 1

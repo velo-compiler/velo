@@ -52,12 +52,12 @@ act check_rfind(s: string, needle: string) -> i32 {
         return 0
     }
     mut last: i32 = 0
-    let stop: i32 = slen - nlen
+    let stop: usize = slen - nlen
     mut i: usize = 0
     loop i <= stop {
         let all = check_match_at(s, needle, i)
         if all {
-            last = i + 1
+            last = (i + 1) as i32
         }
         i += 1
     }
@@ -121,7 +121,7 @@ act check_diag_to_json(sb: @StringBuilder, line_text: string, src_path: string) 
 
     if dash > 0 {
         // Left of " - " may be "<file>:<line>:<col>"; peel from the right.
-        let le: usize = dash - 1
+        let le: usize = (dash - 1) as usize
         mut cs: usize = le
         loop cs > 0 and is_digit(rest[cs - 1]) {
             cs -= 1
@@ -152,7 +152,7 @@ act check_diag_to_json(sb: @StringBuilder, line_text: string, src_path: string) 
                 sb_append_str(sb, ", \"severity\": \"")
                 sb_append_str(sb, name)
                 sb_append_str(sb, "\", \"message\": \"")
-                check_json_escape(sb, copy_slice_to_string(rest, dash + 2, rlen - dash - 2))
+                check_json_escape(sb, copy_slice_to_string(rest, (dash + 2) as usize, (rlen as i32 - dash - 2) as usize))
                 sb_append_str(sb, "\"}")
                 positioned = true
             }

@@ -4,6 +4,7 @@ use "../ast/expr.vl"
 use "../common/string_builder.vl"
 use "../common/diagnostics.vl"
 use "symbol_table.vl"
+use "literal_check.vl"
 
 // Infers the type of an array literal [e0, e1, ...] as "[N]T".
 act infer_array_lit(st: @SymbolTable, expr: @ExprNode) -> string {
@@ -15,6 +16,7 @@ act infer_array_lit(st: @SymbolTable, expr: @ExprNode) -> string {
     let elem_t = infer_expr_type(st, expr.first_arg)
     mut cur = expr.first_arg.next
     loop cur != null {
+        try_adapt_int_literal(st, elem_t, cur, cur.line, cur.col)
         let cur_t = infer_expr_type(st, cur)
         if not types_are_compatible(elem_t, cur_t) {
             report_error("semantic", cur.line, cur.col, "Mismatched element type in array literal")

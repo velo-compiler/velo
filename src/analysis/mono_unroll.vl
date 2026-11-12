@@ -151,7 +151,7 @@ act mono_has_ident_in_reflect_stmt(s: @StmtNode, name: string) -> bool {
 
 act mono_subst_ident_in_expr(e: @ExprNode, name: string, val: i64, line: i32, col: i32) -> @ExprNode {
     if e == null { return null }
-    if e.kind == EXPR_IDENT and e.str_val == name { return make_int_expr(val, line, col) }
+    if e.kind == EXPR_IDENT and e.str_val == name { return make_int_expr(val as i32, line, col) }
     if e.kind == EXPR_INT or e.kind == EXPR_FLOAT or e.kind == EXPR_STRING or e.kind == EXPR_BOOL or e.kind == EXPR_NULL or e.kind == EXPR_IDENT { return e }
     if e.kind == EXPR_UNARY { return make_unary_expr(e.op, mono_subst_ident_in_expr(e.operand, name, val, line, col), e.line, e.col) }
     if e.kind == EXPR_BINARY {

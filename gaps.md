@@ -28,15 +28,15 @@ The following roadmap comprises strictly the open gaps and findings identified d
 
 ```mermaid
 flowchart TD
-    P45["Phase 45 (P0): Specification Synchronization\n(Sync SPECIFICATION.md with Phases 30-44)"] --> P46["Phase 46 (P1): Type System Strictness & Integer Safety\n(Reject truncating int conversions without cast)"]
+    P45["Phase 45 (P0): Specification Synchronization ✅\n(Sync SPECIFICATION.md with Phases 30-44)"] --> P46["Phase 46 (P1): Type System Strictness & Integer Safety ✅\n(Reject truncating int conversions without cast)"]
     P46 --> P47["Phase 47 (P2): Compiler Driver Command Quoting\n(Escape paths against argument injection)"]
     P47 --> P48["Phase 48 (P2): Syntactic Safety Boundaries & Unsafe Blocks\n(unsafe { ... } blocks & --strict-safety)"]
     P48 --> P49["Phase 49 (P2): Multi-Platform Automated CI\n(Linux & macOS GitHub Actions workflows)"]
     P49 --> P50["Phase 50 (P3): Package Provenance & Security Policy\n(velo.lock checksums & SECURITY.md)"]
     P50 --> P51["Phase 51 (P3): Standalone Source Formatter\n(velo fmt CLI subcommand)"]
 
-    style P45 fill:#e53935,stroke:#b71c1c,color:#ffffff
-    style P46 fill:#fb8c00,stroke:#e65100,color:#ffffff
+    style P45 fill:#2e7d32,stroke:#1b5e20,color:#ffffff
+    style P46 fill:#2e7d32,stroke:#1b5e20,color:#ffffff
     style P47 fill:#1e88e5,stroke:#0d47a1,color:#ffffff
     style P48 fill:#43a047,stroke:#1b5e20,color:#ffffff
     style P49 fill:#8e24aa,stroke:#4a148c,color:#ffffff
@@ -82,30 +82,53 @@ flowchart TD
 
 ---
 
-### Phase 46: Type System Strictness & Implicit Integer Narrowing Safety (`PLR-VELO-002`)
+### Phase 46: Type System Strictness & Implicit Integer Narrowing Safety (`PLR-VELO-002`) [COMPLETED] ✅
 
-#### Task 46.1: Enforce Explicit Casts for Truncating or Signed/Unsigned Conversions [OPEN] ⏳
-* **Defect**:
-  - In `src/ast/types.vl` (lines 251–252), `types_are_compatible` defines:
+#### Task 46.1: Enforce Explicit Casts for Truncating or Signed/Unsigned Conversions [COMPLETED] ✅
+* **Former Defect**:
+  - In `src/ast/types.vl` (lines 251–252), `types_are_compatible` previously allowed all integer and float types to implicitly convert to one another:
     ```rust
     if is_int_type(expected) and is_int_type(actual) { return true }
     if is_float_type(expected) and is_float_type(actual) { return true }
     ```
-  - Any integer type (e.g. `u64`, `i64`) is treated as structurally compatible with any smaller integer type (e.g. `i8`, `u8`) without requiring an explicit cast (`x as i8`).
-  - In systems and embedded code, this permits silent integer truncation and unintended sign inversion at runtime.
-* **Required Fix**:
-  - Refactor `types_are_compatible` and `src/analysis/type_checker.vl`:
-    1. Exact matches (e.g. `i32` to `i32`) remain fully compatible.
-    2. Safe widening conversions (e.g. `i8` to `i16` to `i32` to `i64`, or `u8` to `u16` to `u32` to `u64`) may be permitted or strictly gated.
-    3. Narrowing conversions (e.g. `i64` or `u64` assigned to `i32`, `i16`, `u8`, etc.) and signed/unsigned mismatches (e.g. `i32` assigned to `u32`) MUST be rejected with a descriptive compiler error:
-       `[Velo Error] Cannot implicitly convert '{actual}' to narrower type '{expected}'. Use explicit cast 'as {expected}'.`
-    4. Numeric literal constants: If a literal value fits within the target type's range, permit assignment; if the constant overflows the target range, report a compile-time out-of-bounds error.
-  - Audit and update standard library and compiler sources where explicit casts are needed.
-* **Acceptance & Verification**:
-  - Add test cases in `tests/test_type_checker.py` asserting that narrowing assignments (e.g. `let b: u8 = 1000_u64`) produce compile-time type mismatch diagnostics.
-  - Verify that explicit casts (`let b: u8 = 1000_u64 as u8`) continue to compile cleanly.
-  - Run full test suite (`python -m pytest tests -q`) and verify 100% pass rate.
-  - Maintain the 3-generation self-hosting bootstrap determinism.
+  - Any integer type (e.g. `u64`, `i64`) was treated as structurally compatible with any smaller integer type (e.g. `i8`, `u8`) without requiring an explicit cast (`x as i8`).
+  - In systems and embedded code, this permitted silent integer truncation and unintended sign inversion at runtime.
+  - Furthermore, `f64` could implicitly convert to narrower float type `f32` without explicit cast.
+* **Fix Applied**:
+  - Implemented strict integer and float compatibility rules in `src/ast/int_types.vl`:
+    * Safe widening within the same signedness (`i8 -> i16 -> i32 -> i64 / isize`, `u8 -> u16 -> u32 -> u64 / usize`) and float widening (`f32 -> f64`) remain implicitly compatible.
+    * Narrowing integer conversions (e.g. `u64 -> u8`, `i64 -> i32`, `usize -> u32`), signed/unsigned mismatches (e.g. `i32 -> u32`, `u32 -> i32`), and narrowing float conversions (`f64 -> f32`) are strictly rejected at compile time unless an explicit cast `as <type>` is used.
+    * Descriptive error messages emitted:
+      `[Velo Error] Cannot implicitly convert '{actual}' to narrower type '{expected}'. Use explicit cast 'as {expected}'.`
+      `[Velo Error] Cannot implicitly convert '{actual}' to '{expected}'. Use explicit cast 'as {expected}'.`
+      `[Velo Error] Cannot implicitly convert '{actual}' to narrower type '{expected}'. Use explicit cast 'as {expected}'.`
+  - Created contextual literal adaptation in `src/analysis/literal_check.vl`:
+    * Unsuffixed integer literals and arithmetic/bitwise expressions composed of unsuffixed literals adapt contextually to target integer types (`u8`, `i8`, `u16`, `i16`, `u32`, `i32`, `u64`, `i64`, `usize`, `isize`) if the constant value fits within the target range.
+    * Compile-time out-of-range diagnostic emitted if the literal exceeds the target type range:
+      `[Velo Error] Integer literal '{lit}' out of range for type '{target}'`.
+    * Suffixed literals (`1000_u64`) are checked strictly according to their explicit type.
+  - Integrated literal adaptation and strict type checking across:
+    * Variable declarations (`STMT_VAR_DECL`).
+    * Variable assignments and compound assignments (`STMT_ASSIGN`).
+    * Return statements (`STMT_RETURN`).
+    * Struct field initializers and default field values (`DECL_DATA`).
+    * Function and method call arguments (`adapt_and_check_call_args`).
+    * Binary arithmetic/bitwise expressions and fallback operators (`TOK_OR`, `??`).
+    * Built-in `sizeof` expression support returning `"usize"`.
+  - Audited compiler source and standard library, fixing latent signedness/narrowing bugs and adding explicit casts:
+    * `src/frontend/parser_lit.vl`: fixed `parser_previous(p)` replacing invalid negative offset peek.
+    * `src/backend/check.vl`: added explicit `usize` casts.
+    * `src/analysis/reflect_checks.vl`, `src/backend/reflect_gen.vl`, `src/backend/shelf_gen.vl`, `src/analysis/mono_unroll.vl`, `src/analysis/monomorphize_expr.vl`: added explicit `as i32` casts for `sb_append_int` and `make_int_expr`.
+    * `std/test/benchmark.vl`: typed `mut warmup_count: usize = 5`.
+    * `std/tests/coll/shelf_test.vl`: typed `let slice_size: usize = 16`.
+    * `std/tests/rand/rand_test.vl`: typed `mut f_min: f64 = 20.0`, `mut f_max: f64 = 10.0`.
+* **Residual Limitation**:
+  - Unchecked truncating conversions are only allowed when an explicit `as <type>` cast is written. Pointer-to-integer conversions continue to require `as usize` or `as isize`.
+* **Verification**:
+  - Added comprehensive test suite `tests/test_type_checker.py` (23/23 tests passing) covering unsigned/signed widening, narrowing rejection, explicit cast acceptance, signed/unsigned rejection, function arg/return/struct field narrowing, integer literal adaptation and out-of-range diagnostics, suffixed literal enforcement, and float widening/narrowing.
+  - Passed full test suite: 659 passed in 555.47s (100% pass rate).
+  - Maintained 3-generation self-hosting bootstrap determinism (Gen2 and Gen3 emit identical bit-for-bit C output matching `bootstrap.c` with SHA-256 `c79988a72057e0826814ec8dd630446190e62d70ef6d4630b685b3d776905310`).
+  - Maintained line count standards across all 98 compiler source files in `src/` ($\le 394$ lines, ceiling 400).
 
 ---
 

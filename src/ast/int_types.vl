@@ -1,0 +1,79 @@
+// Integer and floating-point type compatibility and conversion diagnostics.
+use "../common/string_builder.vl"
+
+// Checks if a type name is a signed integer type.
+act is_signed_int_name(name: string) -> bool {
+    if name == null { return false }
+    return name == "i8" or name == "i16" or name == "i32" or name == "i64" or name == "isize"
+}
+
+// Checks if a type name is an unsigned integer type.
+act is_unsigned_int_name(name: string) -> bool {
+    if name == null { return false }
+    return name == "u8" or name == "u16" or name == "u32" or name == "u64" or name == "usize"
+}
+
+// Returns the bit width of an integer type name, or 0 if not an integer type.
+act int_type_width(name: string) -> i32 {
+    if name == null { return 0 }
+    if name == "i8" or name == "u8" { return 8 }
+    if name == "i16" or name == "u16" { return 16 }
+    if name == "i32" or name == "u32" { return 32 }
+    if name == "i64" or name == "u64" or name == "usize" or name == "isize" { return 64 }
+    return 0
+}
+
+// Checks if two integer types are compatible for implicit conversion (exact or safe widening).
+// Narrowing conversions (e.g. u64 -> u8, i64 -> i32) and signed/unsigned mismatches (e.g. i32 -> u32) return false.
+act int_types_are_compatible(expected: string, actual: string) -> bool {
+    if expected == null or actual == null { return false }
+    if expected == actual { return true }
+    let exp_signed = is_signed_int_name(expected)
+    let act_signed = is_signed_int_name(actual)
+    if exp_signed != act_signed { return false }
+    let ew = int_type_width(expected)
+    let aw = int_type_width(actual)
+    if ew == 0 or aw == 0 { return false }
+    return aw <= ew
+}
+
+// Checks if two float types are compatible for implicit conversion.
+// f32 -> f64 is safe widening; f64 -> f32 requires explicit cast.
+act float_types_are_compatible(expected: string, actual: string) -> bool {
+    if expected == null or actual == null { return false }
+    if expected == actual { return true }
+    if expected == "f64" and actual == "f32" { return true }
+    return false
+}
+
+// Formats a descriptive compiler error message for integer narrowing or signed/unsigned conversion failure.
+act int_conversion_error_msg(expected: string, actual: string) -> string {
+    mut sb = create_sb(128)
+    sb_append_str(@sb, "Cannot implicitly convert '")
+    sb_append_str(@sb, actual)
+    sb_append_str(@sb, "' to ")
+    if int_type_width(actual) > int_type_width(expected) {
+        sb_append_str(@sb, "narrower type '")
+    } else {
+        sb_append_str(@sb, "'")
+    }
+    sb_append_str(@sb, expected)
+    sb_append_str(@sb, "'. Use explicit cast 'as ")
+    sb_append_str(@sb, expected)
+    sb_append_str(@sb, "'.")
+    return sb_to_string(@sb)
+}
+
+// Formats a descriptive compiler error message for float narrowing conversion failure.
+act float_conversion_error_msg(expected: string, actual: string) -> string {
+    mut sb = create_sb(128)
+    sb_append_str(@sb, "Cannot implicitly convert '")
+    sb_append_str(@sb, actual)
+    sb_append_str(@sb, "' to narrower type '")
+    sb_append_str(@sb, expected)
+    sb_append_str(@sb, "'. Use explicit cast 'as ")
+    sb_append_str(@sb, expected)
+    sb_append_str(@sb, "'.")
+    return sb_to_string(@sb)
+}
+

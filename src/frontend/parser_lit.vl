@@ -81,7 +81,7 @@ act parse_coll9_literal(p: @Parser) -> @ExprNode {
 act parse_heap_literal(p: @Parser) -> @ExprNode {
     parser_advance(p)   // `heap`
     if parser_match(p, TOK_MAP) {
-        let map_tok = parser_peek(p, -1)
+        let map_tok = parser_previous(p)
         parser_consume(p, TOK_LBRACKET, "Expected '[' after 'heap map' (heap map literal: heap map[1: \"a\", 2: \"b\"])")
         mut first_elem: @ExprNode = null
         mut last_elem: @ExprNode = null

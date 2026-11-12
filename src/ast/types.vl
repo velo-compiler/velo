@@ -2,6 +2,7 @@
 use "../common/utils.vl"
 use "../common/string_builder.vl"
 use "tuple_types.vl"
+use "int_types.vl"
 
 // Type kind constants
 let TYPE_KIND_PRIMITIVE: i32 = 1
@@ -248,8 +249,8 @@ act types_are_compatible(expected: string, actual: string) -> bool {
     }
     if actual == "@void" and ((str.len(expected) > 0 and expected[0] == '@') or expected == "string" or is_act_type_name(expected)) { return true }
     if expected == "@void" and ((str.len(actual) > 0 and actual[0] == '@') or actual == "string" or is_act_type_name(actual)) { return true }
-    if is_int_type(expected) and is_int_type(actual) { return true }
-    if is_float_type(expected) and is_float_type(actual) { return true }
+    if is_int_type(expected) and is_int_type(actual) { return int_types_are_compatible(expected, actual) }
+    if is_float_type(expected) and is_float_type(actual) { return float_types_are_compatible(expected, actual) }
     if (expected == "@u8" and actual == "string") or (expected == "string" and actual == "@u8") { return true }
     if is_fixed_array_type(expected) and is_fixed_array_type(actual) {
         if fixed_array_len(expected) == fixed_array_len(actual) {

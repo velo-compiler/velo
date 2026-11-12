@@ -40,7 +40,7 @@ act recon_rfind(s: string, needle: string) -> i32 {
         return 0
     }
     mut last: i32 = 0
-    let stop: i32 = slen - nlen
+    let stop: usize = slen - nlen
     mut i: usize = 0
     loop i <= stop {
         mut matches: bool = true

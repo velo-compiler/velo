@@ -76,6 +76,11 @@ act parser_advance(p: @Parser) -> Token {
     return tok
 }
 
+act parser_previous(p: @Parser) -> Token {
+    if p.pos > 0 { return p.tokens[p.pos - 1] }
+    return parser_peek(p, 0)
+}
+
 // Contextual identifier re-acceptance: keywords valid in identifier positions.
 act is_contextual_ident_tok(k: i32) -> bool {
     if k == TOK_IDENTIFIER or k == TOK_KIND or k == TOK_OP or k == TOK_DATA or k == TOK_TEST { return true }

@@ -45,7 +45,7 @@ act emit_reflect_call(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if st_sym == null { return }
 
     if fn_name == "field_count" {
-        sb_append_int(sb, st_sym.field_count as i64)
+        sb_append_int(sb, st_sym.field_count as i32)
         return
     }
 
