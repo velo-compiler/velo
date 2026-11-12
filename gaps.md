@@ -229,19 +229,25 @@ flowchart TD
 
 ---
 
-### Phase 51: Standalone Canonical Source Formatter (`velo fmt`) (`PLR-VELO-007`)
+### Phase 51: Standalone Canonical Source Formatter (`velo fmt`) (`PLR-VELO-007`) [COMPLETED] ✅
 
-#### Task 51.1: AST/Token-Based Standalone Code Formatter Subcommand [OPEN] ⏳
-* **Defect**:
-  - Velo provides `velo check`, `velo doc`, `velo test`, and an LSP server, but lacks an automated, deterministic CLI formatter (`velo fmt <file>`).
-  - Formatting inconsistencies in multi-developer projects must currently be resolved manually.
-* **Required Fix**:
-  - Implement `src/tooling/formatter.vl` and dispatch `velo fmt <file> [--check]` in `src/main.vl`.
-  - The formatter:
-    - Scans tokens and comments preserving all doc comments (`///`) and block comments (`/* ... */`).
-    - Standardizes indentation to 4 spaces per block level.
-    - Normalizes spacing around binary operators (`+`, `-`, `*`, `==`, etc.), type annotations (`: T`), and control blocks (`if`, `loop`, `on`).
-    - `--check` flag returns exit code 0 if formatted, or exit code 1 with a diff if unformatted (for CI).
-* **Acceptance & Verification**:
-  - Add test suite `tests/test_formatter.py` verifying formatting idempotency: `format(format(code)) == format(code)`.
-  - Verify formatting preserving comments and AST semantics.
+#### Task 51.1: AST/Token-Based Standalone Code Formatter Subcommand [COMPLETED] ✅
+* **Former Defect**:
+  - Velo provided `velo check`, `velo doc`, `velo test`, and an LSP server, but lacked an automated, deterministic CLI formatter (`velo fmt <file>`).
+  - Formatting inconsistencies in multi-developer projects had to be resolved manually without a canonical standard tool.
+* **Fix Applied**:
+  - Implemented standalone token-based code formatter across `src/tooling/formatter_token.vl`, `src/tooling/formatter_rules.vl`, and `src/tooling/formatter.vl`:
+    * Scans all tokens and comments, preserving doc comments (`///`), line comments (`//`), and block comments (`/* ... */`).
+    * Standardizes indentation to 4 spaces per block level (`{ ... }`), adjusting indent if a line starts with closing delimiters (`}`, `)`, `]`).
+    * Normalizes spacing around binary operators (`+`, `-`, `*`, `/`, `%`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `=`, `+=`, `-=`, etc.), type annotations (`: T`), function signatures, tuples, and control blocks (`if`, `loop`, `on`, `case`).
+    * Correctly handles unary prefix operators (`@`, `?`, `!`, `-`), member access (`.`), and range expressions (`..`, `..=`).
+    * Preserves single-line guard blocks (`if cond { return 0 }`) while canonicalizing internal spacing.
+    * Collapses multiple consecutive empty lines to at most 1 blank line and trims trailing whitespace on all lines.
+    * Dispatched `velo fmt [path] [--check]` in `src/main.vl`: formats files or directories in place, or checks formatting compliance with a line-level diff preview, returning exit code 0 when formatted and exit code 1 when unformatted (for CI).
+* **Residual Limitation**:
+  - Complex custom multi-line expressions broken across arbitrarily many lines are preserved per original newline boundaries while normalizing tokens on each line rather than reflowing expressions to a fixed line width column (e.g. 80/100 chars).
+* **Verification**:
+  - Added comprehensive test suite `tests/test_formatter.py` (7/7 passed) covering `--check` failure on unformatted files, in-place formatting, strict idempotency `format(format(x)) == format(x)`, comment preservation, recursive directory formatting, and compiler semantic preservation.
+  - Rebuilt 3-generation self-hosting bootstrap chain with verified bit-for-bit SHA-256 determinism (Gen2 emit-c == Gen3 emit-c == bootstrap.c: `7ac2bd1bbfe77da751d1cc0b4fdd21f26fce7d4a8b087caf0ccba61cecb188b8`).
+  - All 101 compiler source files $\le 394$ lines (under 400-line ceiling, zero UTF-8 BOM).
+  - Full test suite passed: 670 passed in 561.09s (100% pass rate).

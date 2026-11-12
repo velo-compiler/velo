@@ -1,0 +1,141 @@
+// Formatting and spacing rules for the Velo standalone code formatter.
+use "formatter_token.vl"
+
+act is_binary_operator_str(s: string) -> bool {
+    if s == null { return false }
+    let slen = str.len(s)
+    if slen == 1 {
+        let c = s[0]
+        return c == '+' or c == '-' or c == '*' or c == '/' or c == '%' or c == '=' or c == '<' or c == '>' or c == '&' or c == '|' or c == '^'
+    } else if slen == 2 {
+        return s == "==" or s == "!=" or s == "<=" or s == ">=" or s == "+=" or s == "-=" or s == "*=" or s == "/=" or s == "&=" or s == "|=" or s == "^=" or s == "<<" or s == ">>" or s == "->" or s == "=>" or s == "??"
+    } else if slen == 3 {
+        return s == "<<=" or s == ">>=" or s == "and"
+    } else if slen == 2 and s == "or" {
+        return true
+    }
+    return false
+}
+
+act is_unary_prefix_token(prev_tok: @FmtToken, sym: string) -> bool {
+    if sym == "@" or sym == "?" or sym == "!" {
+        return true
+    }
+    if sym == "-" {
+        if prev_tok == null or prev_tok.kind == FMT_TOK_NEWLINE {
+            return true
+        }
+        let pt = prev_tok.text
+        if pt == "=" or pt == "+" or pt == "-" or pt == "*" or pt == "/" or pt == "%" { return true }
+        if pt == "==" or pt == "!=" or pt == "<" or pt == "<=" or pt == ">" or pt == ">=" { return true }
+        if pt == "+=" or pt == "-=" or pt == "*=" or pt == "/=" or pt == "&=" or pt == "|=" or pt == "^=" { return true }
+        if pt == "<<=" or pt == ">>=" or pt == "and" or pt == "or" or pt == "->" or pt == "=>" { return true }
+        if pt == "(" or pt == "[" or pt == "{" or pt == "," or pt == ":" or pt == ";" { return true }
+        if pt == "return" or pt == "let" or pt == "mut" or pt == "if" or pt == "loop" or pt == "on" or pt == "as" or pt == "fail" { return true }
+        return false
+    }
+    return false
+}
+
+act need_space_between(prev: @FmtToken, curr: @FmtToken, pprev: @FmtToken) -> bool {
+    if prev == null or curr == null { return false }
+    let pkind = prev.kind
+    let ptext = prev.text
+    let ckind = curr.kind
+    let ctext = curr.text
+
+    // Punctuation that never takes a leading space
+    if ctext == "," or ctext == ";" or ctext == ")" or ctext == "]" {
+        return false
+    }
+    if ctext == "}" {
+        return ptext != "{"
+    }
+
+    // Punctuation that always takes a trailing space
+    if ptext == "," or ptext == ";" or ptext == ":" {
+        return true
+    }
+    if ctext == ":" {
+        return false
+    }
+
+    // Member access and range operators never take spaces
+    if ptext == "." or ctext == "." {
+        return false
+    }
+    if ptext == ".." or ptext == "..=" or ctext == ".." or ctext == "..=" {
+        return false
+    }
+
+    // Unary prefix operators (@, ?, !, -)
+    if is_unary_prefix_token(prev, ctext) {
+        if ptext == "(" or ptext == "[" or ptext == "?" or ptext == "@" {
+            return false
+        }
+        return true
+    }
+    if ptext == "@" or ptext == "?" or ptext == "!" {
+        return false
+    }
+    if ptext == "-" and is_unary_prefix_token(pprev, "-") {
+        return false
+    }
+
+    // Parentheses
+    if ctext == "(" {
+        if pkind == FMT_TOK_KEYWORD and (ptext == "if" or ptext == "loop" or ptext == "return" or ptext == "on" or ptext == "as") {
+            return true
+        }
+        if pkind == FMT_TOK_IDENT or ptext == ")" or ptext == "]" {
+            return false
+        }
+        return true
+    }
+    if ptext == "(" {
+        return false
+    }
+
+    // Brackets
+    if ctext == "[" {
+        if pkind == FMT_TOK_IDENT or ptext == ")" or ptext == "]" {
+            return false
+        }
+        return true
+    }
+    if ptext == "[" {
+        return false
+    }
+
+    // Braces
+    if ctext == "{" {
+        return true
+    }
+    if ptext == "}" {
+        return true
+    }
+
+    // Binary operators
+    if is_binary_operator_str(ctext) or is_binary_operator_str(ptext) {
+        return true
+    }
+
+    // Keywords
+    if pkind == FMT_TOK_KEYWORD or ckind == FMT_TOK_KEYWORD {
+        return true
+    }
+
+    // Comments
+    if ckind == FMT_TOK_COMMENT_LINE or ckind == FMT_TOK_COMMENT_BLOCK {
+        return true
+    }
+
+    // Adjacent identifiers and literals
+    let p_is_lit = (pkind == FMT_TOK_IDENT or pkind == FMT_TOK_NUMBER or pkind == FMT_TOK_STRING or pkind == FMT_TOK_CHAR or pkind == FMT_TOK_RAW_STRING)
+    let c_is_lit = (ckind == FMT_TOK_IDENT or ckind == FMT_TOK_NUMBER or ckind == FMT_TOK_STRING or ckind == FMT_TOK_CHAR or ckind == FMT_TOK_RAW_STRING)
+    if p_is_lit and c_is_lit {
+        return true
+    }
+
+    return false
+}

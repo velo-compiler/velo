@@ -1,0 +1,250 @@
+// Standalone code formatter engine and CLI dispatcher for Velo.
+use std.io
+use std.fs
+use std.path
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "formatter_token.vl"
+use "formatter_rules.vl"
+
+act cleanup_formatted_text(text: string) -> string {
+    if text == null or str.len(text) == 0 { return "" }
+    let tlen = str.len(text)
+    mut sb = create_sb(tlen + 4)
+    mut i: usize = 0
+    loop i < tlen {
+        let c = text[i]
+        if c == ' ' or c == '\t' {
+            mut j = i + 1
+            loop j < tlen and (text[j] == ' ' or text[j] == '\t') {
+                j += 1
+            }
+            if j < tlen and (text[j] == '\n' or text[j] == '\r') {
+                i = j
+            } else if j == tlen {
+                i = j
+            } else {
+                sb_append_char(@sb, c)
+                i += 1
+            }
+        } else {
+            sb_append_char(@sb, c)
+            i += 1
+        }
+    }
+    loop sb.len > 0 and (sb.buffer[sb.len - 1] == '\n' or sb.buffer[sb.len - 1] == '\r') {
+        sb.len -= 1
+    }
+    if sb.len > 0 {
+        sb_append_char(@sb, '\n')
+    }
+    return sb_to_string(@sb)
+}
+
+// Canonical source formatter: formats tokens with 4-space indentation and normalized operator spacing.
+act format_source(source: string) -> string {
+    if source == null or str.len(source) == 0 { return "" }
+    let list = tokenize_for_fmt(source)
+    if list.len == 0 { return "" }
+
+    mut sb = create_sb(str.len(source) + 128)
+    mut indent_level: i32 = 0
+    mut at_line_start = true
+    mut consecutive_newlines: i32 = 0
+    mut i: usize = 0
+    let n = list.len
+
+    loop i < n {
+        let tok = list.tokens[i]
+        let kind = tok.kind
+        let text = tok.text
+
+        if kind == FMT_TOK_NEWLINE {
+            if at_line_start {
+                consecutive_newlines += 1
+                if consecutive_newlines == 2 and sb.len > 0 {
+                    sb_append_char(@sb, '\n')
+                }
+            } else {
+                sb_append_char(@sb, '\n')
+                at_line_start = true
+                consecutive_newlines = 1
+            }
+            i += 1
+        } else {
+            consecutive_newlines = 0
+
+            if at_line_start {
+                mut line_indent = indent_level
+                if text == "}" or text == ")" or text == "]" {
+                    if line_indent > 0 { line_indent -= 1 }
+                }
+                mut s: i32 = 0
+                loop s < line_indent * 4 {
+                    sb_append_char(@sb, ' ')
+                    s += 1
+                }
+                at_line_start = false
+            }
+
+            if i > 0 {
+                let prev = @list.tokens[i - 1]
+                if prev.kind != FMT_TOK_NEWLINE {
+                    mut pprev: @FmtToken = null
+                    if i > 1 {
+                        pprev = @list.tokens[i - 2]
+                    }
+                    if need_space_between(prev, @tok, pprev) {
+                        sb_append_char(@sb, ' ')
+                    }
+                }
+            }
+
+            sb_append_str(@sb, text)
+
+            if text == "{" {
+                indent_level += 1
+            } else if text == "}" {
+                if indent_level > 0 { indent_level -= 1 }
+            }
+
+            i += 1
+        }
+    }
+
+    let unformatted = sb_to_string(@sb)
+    return cleanup_formatted_text(unformatted)
+}
+
+act print_fmt_diff(path: string, original: string, formatted: string) {
+    println_str("[Velo fmt] File is not formatted: {path}")
+    let olen = str.len(original)
+    let flen = str.len(formatted)
+    mut o_idx: usize = 0
+    mut f_idx: usize = 0
+    mut line: i32 = 1
+    loop o_idx < olen and f_idx < flen {
+        let oc = original[o_idx]
+        let fc = formatted[f_idx]
+        if oc != fc {
+            mut o_start = o_idx
+            loop o_start > 0 and original[o_start - 1] != '\n' { o_start -= 1 }
+            mut o_end = o_idx
+            loop o_end < olen and original[o_end] != '\n' and original[o_end] != '\r' { o_end += 1 }
+            mut f_start = f_idx
+            loop f_start > 0 and formatted[f_start - 1] != '\n' { f_start -= 1 }
+            mut f_end = f_idx
+            loop f_end < flen and formatted[f_end] != '\n' and formatted[f_end] != '\r' { f_end += 1 }
+
+            let o_line = copy_slice_to_string(original, o_start, o_end - o_start)
+            let f_line = copy_slice_to_string(formatted, f_start, f_end - f_start)
+            println_str("  Diff at line {line}:")
+            println_str("  - {o_line}")
+            println_str("  + {f_line}")
+            return
+        }
+        if oc == '\n' { line += 1 }
+        o_idx += 1
+        f_idx += 1
+    }
+    if o_idx < olen or f_idx < flen {
+        println_str("  Diff at line {line}: trailing whitespace or empty line mismatch")
+    }
+}
+
+// Formats a single file in-place or verifies compliance in --check mode.
+act format_file(file_path: string, check_mode: bool) -> i32 {
+    if not fs_exists(file_path) {
+        println_str("[Velo Error] File not found: {file_path}")
+        return 1
+    }
+    let content = fs_read_to_str(file_path)
+    if content == null {
+        println_str("[Velo Error] Failed to read file: {file_path}")
+        return 1
+    }
+    let formatted = format_source(content)
+    if content == formatted {
+        return 0
+    }
+    if check_mode {
+        print_fmt_diff(file_path, content, formatted)
+        return 1
+    }
+    let ok = fs_write_str(file_path, formatted)
+    if not ok {
+        println_str("[Velo Error] Failed to write formatted file: {file_path}")
+        return 1
+    }
+    println_str("[Velo fmt] Formatted: {file_path}")
+    return 0
+}
+
+// Recursively walks directory formatting or checking all .vl files.
+act format_directory(dir_path: string, check_mode: bool) -> i32 {
+    mut dir_it = fs_dir_open(dir_path)
+    if dir_it.h_find == DIR_INVALID_HANDLE {
+        println_str("[Velo Error] Failed to open directory: {dir_path}")
+        return 1
+    }
+    mut had_unformatted: i32 = 0
+    loop fs_dir_next(@dir_it) {
+        let entry = fs_dir_entry(@dir_it)
+        let name = entry.name as string
+        if name != "." and name != ".." and name != ".git" and name != ".velo_cache" and name != "bin" {
+            let full_path = path_join_str(dir_path, name)
+            if entry.is_dir {
+                let sub_rc = format_directory(full_path, check_mode)
+                if sub_rc != 0 { had_unformatted = 1 }
+            } else if entry.is_file and str.ends_with(name, ".vl") {
+                let file_rc = format_file(full_path, check_mode)
+                if file_rc != 0 { had_unformatted = 1 }
+            }
+        }
+    }
+    fs_dir_close(@dir_it)
+    return had_unformatted
+}
+
+// CLI handler for `velo fmt [path] [--check]`.
+act handle_fmt_cmd(argc: i32, argv: @string) -> i32 {
+    mut check_mode = false
+    mut target_path = ""
+    mut i: i32 = 2
+    loop i < argc {
+        let arg = argv[i]
+        if arg == "--check" {
+            check_mode = true
+        } else if arg == "--write" or arg == "-w" {
+            // default mode
+        } else if arg == "--help" or arg == "-h" {
+            println_str("Usage: velo fmt [path] [--check]")
+            println_str("Formats Velo source files with canonical indentation and spacing.")
+            println_str("Options:")
+            println_str("  --check    Verify formatting without modifying files (exits 1 if unformatted)")
+            return 0
+        } else if str.len(target_path) == 0 {
+            target_path = arg
+        }
+        i += 1
+    }
+    if str.len(target_path) == 0 {
+        target_path = "."
+    }
+    if fs_is_dir(target_path) {
+        let rc = format_directory(target_path, check_mode)
+        if rc == 0 and check_mode {
+            println_str("[Velo fmt] All files properly formatted.")
+        }
+        return rc
+    }
+    if fs_is_file(target_path) {
+        let rc = format_file(target_path, check_mode)
+        if rc == 0 and check_mode {
+            println_str("[Velo fmt] File is properly formatted: {target_path}")
+        }
+        return rc
+    }
+    println_str("[Velo Error] Path not found: {target_path}")
+    return 1
+}

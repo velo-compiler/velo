@@ -8,6 +8,7 @@ use "common/manifest.vl"
 use "backend/driver_pkg.vl"
 use "cli_cmd.vl"
 use "lsp/server.vl"
+use "tooling/formatter.vl"
 
 // Main CLI argument dispatcher.
 act main(argc: i32, argv: @string) -> i32 {
@@ -213,6 +214,10 @@ act main(argc: i32, argv: @string) -> i32 {
 
     if cmd == "pkg" {
         return handle_pkg_command(argc, argv as @string, unsafe_index)
+    }
+
+    if cmd == "fmt" {
+        return handle_fmt_cmd(argc, argv as @string)
     }
 
     println_str("[Velo Error] Unknown command: '{cmd}'. Run 'velo help' for usage.")
