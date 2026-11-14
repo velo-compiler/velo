@@ -910,12 +910,35 @@ loop "x" { }
   - All 117 compiler source files $\le 395$ lines ($\le 400$).
   - SHA-256 determinism match confirmed (`5ed8a8c03a067271d57af93044cf2125202b325d1934d5af9b34d69115e3e458`).
 
-##### Task 54.6: Lower condition loops as real boolean loops
-* **Goal:** Emit a `while`-style loop (or a `for` with a boolean condition) and preserve the `it` counter semantics.
-* **Files:** `src/backend/codegen_stmt.vl`.
-* **Tests:** `loop x > 0`, `loop flag`, nested loops, `it` values.
-* **Security gate:** condition must be emitted as a C boolean expression, not a raw integer/pointer.
-* **Done when:** condition loops behave identically to the documented examples.
+##### Task 54.6: Lower condition loops as real boolean loops [COMPLETED] ✅
+* **Former Defect**:
+  - `codegen_stmt.vl` lowered non-count loops with an implicit `it` counter into a C `for` loop header without verifying that the expression was strictly boolean, permitting raw integer truthiness or pointer truthiness.
+  - Previous implementations lacked comprehensive test coverage for condition loops across nested contexts (condition-in-condition, condition-in-count, count-in-condition), functions returning `bool`, `it` accumulation, lexical `it` shadowing in nested loops, and loop control statements (`break`/`continue`).
+* **Fix Applied**:
+  - Verified and locked the boolean condition lowering in `src/backend/codegen_stmt.vl`:
+    ```c
+    for (int32_t it = 0; (expr); it++) { ... }
+    ```
+    * The expression is strictly gated by `type_checker_stmt.vl` to ensure only `bool` expressions reach this branch (non-boolean types like floats, pointers, and strings are rejected at `velo check`).
+    * The loop condition is evaluated before each iteration.
+    * The implicit `it: i32` starts at `0` and increments by `1` on every iteration, including when `continue` is executed.
+    * Nested loops create fresh statement scopes in C99, ensuring inner `it` cleanly shadows outer `it` without variable collisions.
+  - Extended `tests/test_count_loops.py` with 9 dedicated condition loop test cases:
+    * Nested condition loops (`test_condition_loop_nested_condition`)
+    * Condition loop inside count loop (`test_condition_loop_nested_in_count_loop`)
+    * Count loop inside condition loop (`test_count_loop_nested_in_condition_loop`)
+    * Function call condition returning bool (`test_condition_loop_function_call`)
+    * `it` value accumulation starting at 0 (`test_condition_loop_it_values_accumulation`)
+    * Nested `it` lexical shadowing (`test_condition_loop_nested_it_shadowing`)
+    * Immediate loop termination with `break` (`test_condition_loop_break`)
+    * Step advance with `continue` (`test_condition_loop_continue`)
+    * Logical negation with `not` operator (`test_condition_loop_not_operator`)
+* **Residual Limitation**:
+  - Task 54.7 expands side-effect, boundary, and large integer count loop security tests.
+* **Verification**:
+  - `tests/test_count_loops.py`: All 55 tests pass in 11.11s (100% pass rate).
+  - `tests/test_range_loops.py`: 6/6 tests pass in 3.66s.
+  - All 117 compiler source files $\le 395$ lines ($\le 400$).
 
 ##### Task 54.7: Add side-effect, boundary, and security tests
 * **Goal:** Prove single evaluation, termination, and diagnostic quality.

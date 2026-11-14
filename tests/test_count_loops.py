@@ -438,3 +438,200 @@ def test_loop_classification_emitted_c_syntax_independent(name, code, expected_p
     matched = any(expected_pattern in l for l in for_lines)
     assert matched, f"Pattern {expected_pattern!r} not found in loop headers:\n{for_lines}"
 
+
+# ==============================================================================
+# 7. Advanced Condition Loop Tests (Task 54.6 Verification)
+# ==============================================================================
+
+def test_condition_loop_nested_condition():
+    """Verifies nested condition loops execute cleanly with proper variable scoping."""
+    code = """
+act main() -> i32 {
+    mut outer: i32 = 3
+    mut count: i32 = 0
+    loop outer > 0 {
+        mut inner: i32 = 2
+        loop inner > 0 {
+            count += 1
+            inner -= 1
+        }
+        outer -= 1
+    }
+    assert(count == 6)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_condition_loop_nested_in_count_loop():
+    """Verifies a condition loop nested inside a count loop executes cleanly."""
+    code = """
+act main() -> i32 {
+    mut total: i32 = 0
+    loop 3 {
+        mut k: i32 = 4
+        loop k > 0 {
+            total += 1
+            k -= 1
+        }
+    }
+    assert(total == 12)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_count_loop_nested_in_condition_loop():
+    """Verifies a count loop nested inside a condition loop executes cleanly."""
+    code = """
+act main() -> i32 {
+    mut outer: i32 = 3
+    mut total: i32 = 0
+    loop outer > 0 {
+        loop 4 {
+            total += 1
+        }
+        outer -= 1
+    }
+    assert(total == 12)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_condition_loop_function_call():
+    """Verifies condition loop driven by a function returning bool."""
+    code = """
+mut g_val: i32 = 0
+
+act has_more() -> bool {
+    g_val += 1
+    return g_val <= 5
+}
+
+act main() -> i32 {
+    mut it_count: i32 = 0
+    loop has_more() {
+        it_count += 1
+    }
+    assert(it_count == 5)
+    assert(g_val == 6)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_condition_loop_it_values_accumulation():
+    """Verifies `it` starts at 0 and increments strictly by 1 on each iteration."""
+    code = """
+act main() -> i32 {
+    mut x: i32 = 5
+    mut it_sum: i32 = 0
+    loop x > 0 {
+        it_sum += (it as i32)
+        x -= 1
+    }
+    assert(it_sum == 10)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_condition_loop_nested_it_shadowing():
+    """Verifies inner loop's `it` properly shadows outer loop's `it`."""
+    code = """
+act main() -> i32 {
+    mut outer_iters: i32 = 0
+    mut inner_it_sum: i32 = 0
+    mut x: i32 = 2
+    loop x > 0 {
+        outer_iters += 1
+        mut y: i32 = 3
+        loop y > 0 {
+            inner_it_sum += (it as i32)
+            y -= 1
+        }
+        x -= 1
+    }
+    assert(outer_iters == 2)
+    assert(inner_it_sum == 6)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_condition_loop_break():
+    """Verifies `break` terminates a condition loop immediately."""
+    code = """
+act main() -> i32 {
+    mut x: i32 = 10
+    mut it_at_break: i32 = -1
+    loop x > 0 {
+        if (it as i32) == 3 {
+            it_at_break = (it as i32)
+            break
+        }
+        x -= 1
+    }
+    assert(it_at_break == 3)
+    assert(x == 7)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_condition_loop_continue():
+    """Verifies `continue` advances `it` and proceeds to next iteration."""
+    code = """
+act main() -> i32 {
+    mut x: i32 = 5
+    mut evens_it_sum: i32 = 0
+    loop x > 0 {
+        x -= 1
+        if (it as i32) % 2 != 0 {
+            continue
+        }
+        evens_it_sum += (it as i32)
+    }
+    assert(evens_it_sum == 6)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_condition_loop_not_operator():
+    """Verifies condition loop with logical negation `not done`."""
+    code = """
+act main() -> i32 {
+    mut done: bool = false
+    mut count: i32 = 0
+    loop not done {
+        count += 1
+        if count == 4 {
+            done = true
+        }
+    }
+    assert(count == 4)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
