@@ -807,12 +807,27 @@ loop "x" { }
 
 #### Tasks
 
-##### Task 54.1: Add the count/condition matrix (red baseline)
-* **Goal:** Cover every integer width, expression form, and invalid type.
-* **Files:** `tests/test_range_loops.py` (extend), `tests/test_count_loops.py` (new).
-* **Tests:** `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `isize`, `usize`; literals, identifiers, `n + 1`, `-1`, `0`; float, string, struct, bool, pointer.
-* **Security gate:** every runnable test has a hard timeout (e.g. 10s) so an infinite loop fails the test instead of hanging CI.
-* **Done when:** the matrix fails for the documented reasons.
+##### Task 54.1: Add the count/condition matrix (red baseline) [COMPLETED] ✅
+* **Former Defect**:
+  - `parser_stmt.vl:152` classified a loop as a count loop only when the expression was an integer literal (`first_expr.kind == EXPR_INT`).
+  - `codegen_stmt.vl:241` only re-classified identifiers as count loops for `{i32, i64, u32, usize}`.
+  - All other integer widths (`i8`, `i16`, `u8`, `u16`, `u64`, `isize`), all non-literal expressions (e.g. `n + 1`, `a * b`, function calls with side effects), and negative counts (`-1`) were lowered as condition loops (`for (int32_t it = 0; (expr); it++)`), causing infinite loops at runtime.
+  - Non-boolean types (`float`, `string`, `struct`, `pointer`) were accepted by `velo check` without any diagnostic and lowered to C truthiness conditions, resulting in infinite loops or invalid C.
+  - No unified test matrix existed to assert expected count and condition semantics across all types, expression forms, and invalid inputs.
+* **Fix Applied (Red Baseline Harness)**:
+  - Created `tests/test_count_loops.py` with 36 test cases establishing the count/condition baseline:
+    * Integer widths for count variables (10 tests): `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `isize`, `usize` (4 passed, 6 failed with timeout due to infinite condition loop lowering).
+    * Literals and suffixed literals (9 tests): `loop 5`, `loop 4u8`, `4u16`, `4u32`, `4u64`, `4i8`, `4i16`, `4i32`, `4i64` (all 9 passed).
+    * Non-literal expressions, zero/negative counts, and side-effects (6 tests): `loop n + 1`, `loop a * b`, `loop 0`, `loop z (u64 0)`, `loop -1`, `loop get_count()` (2 passed, 4 failed with timeout).
+    * Valid boolean condition loops (5 tests): `loop flag`, `loop false`, `loop x > 0`, `loop a > 0 and b > 0`, `loop x > 0` with `it` counter access (all 5 passed).
+    * Compile-time rejection of invalid types (6 tests): `float` literal, `float` variable, `string` literal, `string` variable, `struct`, `pointer` (all 6 failed: accepted by `velo check`).
+    * Enforced strict 1.0s timeout per runnable case via direct binary execution, catching infinite loops without hanging CI.
+  - Extended `tests/test_range_loops.py` with `test_count_loop_variable_and_expression` testing `loop n + 1` (fails with timeout on baseline).
+* **Residual Limitation**:
+  - Baseline establishes the red state (16 failed, 20 passed in `tests/test_count_loops.py`; 1 failed in `tests/test_range_loops.py`). Implementation of type-directed classification and codegen lowering follows in Tasks 54.2-54.6.
+* **Verification**:
+  - `tests/test_count_loops.py`: 20 passed, 16 failed for the exact documented causes in 30.96s.
+  - `tests/test_range_loops.py`: 5 passed, 1 failed (`test_count_loop_variable_and_expression`) in 5.24s.
 
 ##### Task 54.2: Define the count-vs-condition rule
 * **Goal:** Write the normative rule and the diagnostics: integer → count; `bool` → condition; anything else → error.

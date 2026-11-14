@@ -1,6 +1,8 @@
+import os
 import subprocess
 import sys
 from pathlib import Path
+import pytest
 
 def test_infinite_loop(tmp_path):
     source = tmp_path / "test_inf.vl"
@@ -153,3 +155,34 @@ act main() -> i32 {
     res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "inc_sum=15, inc_step=30, inc_rev=15" in res_sh.stdout
+
+
+def test_count_loop_variable_and_expression(tmp_path):
+    """Phase 54: Verifies loop with an expression like n + 1 iterates (n + 1) times."""
+    source = tmp_path / "test_count_expr.vl"
+    source.write_text("""
+use sys.io
+
+act main() -> i32 {
+    let n: i32 = 3
+    mut sum: i32 = 0
+    loop n + 1 {
+        sum += 1
+    }
+    io.println("sum={sum}")
+    return 0
+}
+""", encoding="utf-8")
+
+    exe = tmp_path / "test_count_expr.exe"
+    env = dict(os.environ)
+    env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
+    build_res = subprocess.run(["bin/velo.exe", "build", str(source), "-o", str(exe)], env=env, capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    assert build_res.returncode == 0
+    try:
+        res_sh = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", timeout=1.0)
+        assert res_sh.returncode == 0
+        assert "sum=4" in res_sh.stdout
+    except subprocess.TimeoutExpired as e:
+        pytest.fail(f"Loop timed out (infinite loop detected): {e}")
+
