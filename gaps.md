@@ -889,12 +889,26 @@ loop "x" { }
   - Line counts verified across all 117 compiler source files ($\le 395$ lines, zero UTF-8 BOM).
   - SHA-256 determinism match confirmed (`56342e21bc48d6d65c34e5e34035644cebf2bfa24939de2f177c934e09398ec1`).
 
-##### Task 54.5: Lower count loops for every integer width
-* **Goal:** Emit a terminating count loop for all integer types, using a temporary so the count is evaluated once.
-* **Files:** `src/backend/codegen_stmt.vl:243-256`.
-* **Tests:** `u8`/`u16`/`u64`/`isize` counts; side-effecting count function called once; count `0` and negative count terminate.
-* **Security gate:** no `for (...; (count); ...)` lowering for an integer count; no double evaluation.
-* **Done when:** every count row of the matrix terminates with the correct iteration count.
+##### Task 54.5: Lower count loops for every integer width [COMPLETED] ✅
+* **Former Defect**:
+  - `codegen_stmt.vl:244` lowered count loops directly against the count expression in the loop condition: `for (c_type it = 0; it < (expr); it++)`.
+  - When the count expression contained side effects (e.g. `loop get_count()`), the expression was re-evaluated on every single iteration, violating the security invariant requiring count expressions to be evaluated exactly once.
+* **Fix Applied**:
+  - Modified C lowering in `src/backend/codegen_stmt.vl`:
+    * Count loops now evaluate the count expression into an internal temporary `__cnt` of type `c_type` during loop initialization:
+      `for (c_type it = 0, __cnt = (expr); it < __cnt; it++)`
+    * The count expression is evaluated **exactly once** before loop entry.
+    * Re-evaluations during iteration are completely eliminated, satisfying the single-evaluation security invariant.
+    * Non-positive counts (`__cnt <= 0`) terminate immediately on the initial check `0 < __cnt`.
+  - Updated pattern assertions in `tests/test_count_loops.py` verifying that emitted C outputs `__cnt = (expr)` and `it < __cnt`.
+  - Rebuilt 3-stage bootstrap compiler chain (`velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified Gen2/Gen3 bit-for-bit SHA-256 fixed-point determinism (`5ed8a8c03a067271d57af93044cf2125202b325d1934d5af9b34d69115e3e458`).
+* **Residual Limitation**:
+  - Condition loops (`loop <condition>`) emission optimization follows in Task 54.6.
+* **Verification**:
+  - `tests/test_count_loops.py`: All 46 tests pass in 8.52s (100% pass rate, including `test_count_loop_side_effects_evaluated_once` which now passes with `g_calls == 1`).
+  - `tests/test_range_loops.py`: 6/6 tests pass in 3.66s.
+  - All 117 compiler source files $\le 395$ lines ($\le 400$).
+  - SHA-256 determinism match confirmed (`5ed8a8c03a067271d57af93044cf2125202b325d1934d5af9b34d69115e3e458`).
 
 ##### Task 54.6: Lower condition loops as real boolean loops
 * **Goal:** Emit a `while`-style loop (or a `for` with a boolean condition) and preserve the `it` counter semantics.

@@ -419,14 +419,14 @@ act main() {
 # ==============================================================================
 
 @pytest.mark.parametrize("name,code,expected_pattern", [
-    ("literal_int", "act main() { loop 5 { } }", "it < (5)"),
-    ("literal_u64", "act main() { loop 5u64 { } }", "it < (5ULL)"),
-    ("variable_u64", "act main() { let c: u64 = 3\nloop c { } }", "it < (c)"),
-    ("variable_u8", "act main() { let c: u8 = 3\nloop c { } }", "it < (c)"),
-    ("variable_i16", "act main() { let c: i16 = 3\nloop c { } }", "it < (c)"),
-    ("variable_isize", "act main() { let c: isize = 3\nloop c { } }", "it < (c)"),
-    ("binary_expr", "act main() { let n = 2\nloop n + 1 { } }", "it < ((n + 1))"),
-    ("complex_expr", "act main() { let a = 2\nlet b = 3\nloop a * b { } }", "it < ((a * b))"),
+    ("literal_int", "act main() { loop 5 { } }", "__cnt = (5)"),
+    ("literal_u64", "act main() { loop 5u64 { } }", "__cnt = (5ULL)"),
+    ("variable_u64", "act main() { let c: u64 = 3\nloop c { } }", "__cnt = (c)"),
+    ("variable_u8", "act main() { let c: u8 = 3\nloop c { } }", "__cnt = (c)"),
+    ("variable_i16", "act main() { let c: i16 = 3\nloop c { } }", "__cnt = (c)"),
+    ("variable_isize", "act main() { let c: isize = 3\nloop c { } }", "__cnt = (c)"),
+    ("binary_expr", "act main() { let n = 2\nloop n + 1 { } }", "__cnt = ((n + 1))"),
+    ("complex_expr", "act main() { let a = 2\nlet b = 3\nloop a * b { } }", "__cnt = ((a * b))"),
     ("bool_var", "act main() { mut b = true\nloop b { } }", "; (b);"),
     ("bool_cmp", "act main() { mut x = 5\nloop x > 0 { x -= 1 } }", "; ((x > 0));"),
 ])
