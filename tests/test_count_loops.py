@@ -635,3 +635,213 @@ act main() -> i32 {
     assert res.returncode == 0
 
 
+# ==============================================================================
+# 8. Side-Effect, Boundary, and Security Tests (Task 54.7 Verification)
+# ==============================================================================
+
+def test_count_loop_stateful_function_call():
+    """Verifies that a stateful function call in the count is called exactly once and controls iteration count."""
+    code = """
+mut g_counter: i32 = 0
+
+act calc_limit() -> i32 {
+    g_counter += 10
+    return g_counter
+}
+
+act main() -> i32 {
+    mut iterations: i32 = 0
+    loop calc_limit() {
+        iterations += 1
+    }
+    assert(g_counter == 10)
+    assert(iterations == 10)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_count_loop_function_returning_u64():
+    """Verifies function returning u64 works as count expression."""
+    code = """
+act get_u64_count() -> u64 {
+    return 4u64
+}
+
+act main() -> i32 {
+    mut count: i32 = 0
+    loop get_u64_count() {
+        count += 1
+    }
+    assert(count == 4)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_count_loop_u64_above_int32_max_with_break():
+    """Verifies that u64 count loop above INT32_MAX (e.g. 3000000000u64) uses uint64_t induction variable and terminates cleanly."""
+    code = """
+act main() -> i32 {
+    let large_count: u64 = 3000000000u64
+    mut iters: i32 = 0
+    loop large_count {
+        iters += 1
+        if iters == 5 {
+            break
+        }
+    }
+    assert(iters == 5)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_count_loop_u64_above_int32_max_emitted_c():
+    """Verifies emitted C for u64 count loop above INT32_MAX uses uint64_t induction and count."""
+    code = """
+act main() {
+    let large_count: u64 = 3000000000u64
+    loop large_count { }
+}
+"""
+    c_out = emit_c_velo_source(code)
+    assert "for (uint64_t it = 0, __cnt = (large_count); it < __cnt; it++)" in c_out
+
+
+def test_count_loop_nested_count_loops():
+    """Verifies nested count loops execute expected product of iterations and shadow it properly."""
+    code = """
+act main() -> i32 {
+    mut total: i32 = 0
+    mut outer_it_sum: i32 = 0
+    loop 3 {
+        outer_it_sum += (it as i32)
+        mut inner_it_sum: i32 = 0
+        loop 4 {
+            inner_it_sum += (it as i32)
+            total += 1
+        }
+        assert(inner_it_sum == 6)
+    }
+    assert(outer_it_sum == 3)
+    assert(total == 12)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_count_loop_deeply_nested():
+    """Verifies 3-level nested count loops with different widths (u8, i16, u64)."""
+    code = """
+act main() -> i32 {
+    mut count: i32 = 0
+    loop 2u8 {
+        loop 3i16 {
+            loop 4u64 {
+                count += 1
+            }
+        }
+    }
+    assert(count == 24)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_count_loop_break():
+    """Verifies break terminates count loop early."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    loop 10 {
+        if (it as i32) == 4 {
+            break
+        }
+        iters += 1
+    }
+    assert(iters == 4)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_count_loop_continue():
+    """Verifies continue skips remainder of loop body while properly incrementing it counter in count loops."""
+    code = """
+act main() -> i32 {
+    mut evens_sum: i32 = 0
+    loop 6 {
+        if (it as i32) % 2 != 0 {
+            continue
+        }
+        evens_sum += (it as i32)
+    }
+    assert(evens_sum == 6)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_count_loop_boundary_single_iteration():
+    """Verifies count loop with count 1 runs exactly once."""
+    code = """
+act main() -> i32 {
+    mut visited: i32 = 0
+    loop 1 {
+        visited += 1
+        assert((it as i32) == 0)
+    }
+    assert(visited == 1)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_count_loop_variable_negative():
+    """Verifies variable with negative integer terminates immediately (0 iterations)."""
+    code = """
+act main() -> i32 {
+    let n: i32 = -10
+    mut visited: i32 = 0
+    loop n {
+        visited += 1
+    }
+    assert(visited == 0)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_invalid_loop_address_of_pointer_rejected():
+    """Security Invariant: `loop @x` must be rejected at compile-time."""
+    code = """
+act main() {
+    let x: i32 = 10
+    loop @x { }
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for pointer loop expression"
+    assert "error" in res.stdout.lower() or "error" in res.stderr.lower()
+
+
+

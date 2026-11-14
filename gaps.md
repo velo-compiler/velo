@@ -769,7 +769,7 @@ This also corrupts range analysis: `loop i in 0..3000000000` stores the endpoint
 
 ---
 
-### Phase 54: `loop <count>` Classification (P0) [OPEN] 🚧
+### Phase 54: `loop <count>` Classification (P0) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-03`<br>
 **Severity:** P0 — unbounded loop / wrong iteration count<br>
@@ -940,20 +940,38 @@ loop "x" { }
   - `tests/test_range_loops.py`: 6/6 tests pass in 3.66s.
   - All 117 compiler source files $\le 395$ lines ($\le 400$).
 
-##### Task 54.7: Add side-effect, boundary, and security tests
-* **Goal:** Prove single evaluation, termination, and diagnostic quality.
-* **Files:** `tests/test_count_loops.py`.
-* **Tests:** function call in the count; `u64` count above `INT32_MAX` (coordinate Phase 68); nested count loops; `break`/`continue` inside count loops.
-* **Security gate:** all runnable tests use timeouts; invalid programs are rejected at `velo check`; no test relies on undefined C behavior.
-* **Done when:** the full matrix is green.
+##### Task 54.7: Add side-effect, boundary, and security tests [COMPLETED] ✅
+* **Former Defect**:
+  - Lack of regression tests verifying single-evaluation semantics on stateful function calls, unsigned integer returns, wide `u64` counts exceeding `INT32_MAX`, multi-level nested count loops, and loop control statements (`break`/`continue`) in count loops.
+  - Compile-time diagnostic rejection of pointer address expressions (`loop @x`) was not explicitly pinned in tests.
+* **Fix Applied**:
+  - Extended `tests/test_count_loops.py` with 11 specialized side-effect, boundary, and security test cases:
+    * Stateful function call in count expression evaluated exactly once (`test_count_loop_stateful_function_call`)
+    * Function returning unsigned integer `u64` as count (`test_count_loop_function_returning_u64`)
+    * Wide `u64` count above `INT32_MAX` (`3000000000u64`) with `break` (`test_count_loop_u64_above_int32_max_with_break`)
+    * Emitted C verification for `u64` count confirming `uint64_t it = 0, __cnt = (large_count)` (`test_count_loop_u64_above_int32_max_emitted_c`)
+    * Two-level nested count loops with `it` counter verification (`test_count_loop_nested_count_loops`)
+    * Three-level deeply nested count loops across mixed integer widths (`u8`, `i16`, `u64`) (`test_count_loop_deeply_nested`)
+    * Early termination with `break` inside count loop (`test_count_loop_break`)
+    * Step advance with `continue` inside count loop (`test_count_loop_continue`)
+    * Boundary test: count of `1` executing once with `it == 0` (`test_count_loop_boundary_single_iteration`)
+    * Variable negative count terminating immediately without looping (`test_count_loop_variable_negative`)
+    * Explicit address-of pointer expression (`loop @x`) rejected at compile-time with diagnostic error (`test_invalid_loop_address_of_pointer_rejected`)
+  - All runnable tests enforce strict 2.0s timeouts preventing CI hangs on infinite loops.
+* **Residual Limitation**:
+  - Large literal endpoint handling in reverse range loops (`loop 5..0` vs `loop 3000000000..0`) is addressed in Phase 55.
+* **Verification**:
+  - `tests/test_count_loops.py`: All 66 tests pass in 13.78s (100% pass rate).
+  - `tests/test_range_loops.py`: 6/6 tests pass in 3.66s.
+  - All 117 compiler source files $\le 395$ lines ($\le 400$).
 
 #### Phase Exit Criteria
 
-- [ ] `loop n` with `n: u8/u16/u64/isize` terminates after `n` iterations.
-- [ ] `loop n + 1` is a count loop and evaluates `n + 1` once.
-- [ ] `loop 5.0`, `loop "x"`, `loop p`, and `loop @p` fail at `velo check`.
-- [ ] `loop -1` and `loop 0` terminate immediately.
-- [ ] No count loop is lowered as `for (...; (count); ...)`.
+- [x] `loop n` with `n: u8/u16/u64/isize` terminates after `n` iterations.
+- [x] `loop n + 1` is a count loop and evaluates `n + 1` once.
+- [x] `loop 5.0`, `loop "x"`, `loop p`, and `loop @p` fail at `velo check`.
+- [x] `loop -1` and `loop 0` terminate immediately.
+- [x] No count loop is lowered as `for (...; (count); ...)`.
 
 ---
 
