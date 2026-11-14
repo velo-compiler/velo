@@ -681,12 +681,56 @@ This also corrupts range analysis: `loop i in 0..3000000000` stores the endpoint
   - `tests/test_type_checker.py`: all 23 tests pass.
   - Bootstrap Gen2/Gen3 SHA-256 match verified (`26148f185d34f0d93524783b98c12fdbf033c36107fa72c25ca44f1482b3f80d`); `python scripts/count_lines.py` verified all 99 compiler source files $\le 395$ lines ($\le 400$).
 
-##### Task 53.8: Audit every `int_val` consumer
+##### Task 53.8: Audit every `int_val` consumer [COMPLETED] ✅
 * **Goal:** Find all reads of `int_val` and classify them as safe (`i32`-only context) or needing wide access.
 * **Files:** `rg -n "int_val" src/`; ranges, enum values, array sizes, `case` labels, `sizeof`, struct defaults.
 * **Tests:** one boundary test per consumer.
 * **Security gate:** no consumer may truncate a wide literal without a diagnostic.
 * **Done when:** the audit table is attached to the task note and every unsafe consumer is fixed or explicitly gated.
+* **Former Defect:** An exhaustive codebase audit of all reads of `int_val` (and unvalidated 32-bit `parse_int_from_slice` calls) across `src/` revealed 7 critical sites where 64-bit integer values were silently truncated to 32 bits without diagnostics:
+  1. `src/analysis/array_checks.vl:48`: `expr.index.int_val < 0 or (expr.index.int_val as i64) >= arr_len` truncated wide literals, allowing `arr[4294967298]` on a 5-element array to wrap to 2 (or 0) and silently pass bounds checking.
+  2. `src/backend/codegen_stmt.vl:259`: `stmt.loop_start.int_val > stmt.loop_end.int_val` truncated wide range endpoints, causing wide descending loops (e.g. `3000000005..3000000000`) to fail `is_rev` detection and immediately terminate without running.
+  3. `src/backend/codegen_stmt.vl:250, 260`: range loops hardcoded `for (int32_t `, causing `loop i in 0..3000000000` to suffer signed 32-bit overflow wrap in C, hanging in an infinite loop.
+  4. `src/analysis/type_checker_stmt.vl:163`: range loops unconditionally typed loop variable `it` as `"i32"`, preventing 64-bit endpoint typing.
+  5. `src/analysis/reflect_checks.vl:63, 67` & `src/analysis/mono_unroll.vl:12`: `out_val[0] = expr.int_val` truncated wide constants to 32 bits during compile-time reflection and constant folding.
+  6. `src/frontend/parser_decl_types.vl:177`: enum discriminants used `parse_int_from_slice`, silently wrapping discriminants $> 2147483647$ (e.g. `3000000000`) without a diagnostic.
+  7. `src/frontend/parser.vl:87` & `src/frontend/parser_decl_types.vl:101`: fixed-size array lengths and struct `#align` used `parse_int_from_slice`, silently wrapping lengths $> 2147483647$ (e.g. `[4294967297]i32` wrapped to 1) or accepting excessive alignment without bounds validation.
+  8. `src/backend/driver.vl:253`: `driver.vl` ignored `p.had_error`, allowing parsing errors to proceed without aborting compilation.
+* **Audit Table:**
+
+| File:Line | Context | Classification | Audit Finding & Resolution |
+|---|---|---|---|
+| `src/analysis/literal_check.vl:24` | `parse_u64_checked` | Safe | Primary wide-number parser. Enhanced to support binary (`0b`), octal (`0o`), hex (`0x`), and decimal, with exact base-specific overflow checks and suffix termination. |
+| `src/analysis/literal_check.vl:59` | `infer_unsuffixed_int_type` | Safe | Reads `expr.str_val` first with `parse_u64_checked`. |
+| `src/analysis/literal_check.vl:79` | `infer_unsuffixed_neg_int_type` | Safe | Reads `operand.str_val` first with `parse_u64_checked`. |
+| `src/analysis/literal_check.vl:102` | `check_suffixed_int_literal` | Safe | Reads `expr.str_val` first with `parse_u64_checked`. |
+| `src/analysis/literal_check.vl:154` | `try_adapt_int_literal` | Safe | Reads `expr.str_val` first with `parse_u64_checked`. |
+| `src/backend/codegen_lit.vl:11` | `emit_c_int_literal` | Safe | Checks `expr.str_val` first, emitting literal string verbatim. |
+| `src/backend/codegen_lit.vl:21` | `try_emit_c_neg_int_literal` | Safe | Checks `expr.operand.str_val` first with `parse_u64_checked`. |
+| `src/analysis/monomorphize_expr.vl:34`| `mono_clone_expr` | Safe | Clones `int_val`, `str_val`, and `type_name` identically onto the new node. |
+| `src/lsp/completion.vl` | Line/Col coords | Safe | Text document coordinates and buffer offsets bounded $< 2 \times 10^9$. |
+| `src/lsp/doc_store.vl` | Line/Col coords | Safe | Text document line/column offsets bounded $< 2 \times 10^9$. |
+| `src/lsp/rename.vl` | Line/Col coords | Safe | Symbol rename range coordinates bounded $< 2 \times 10^9$. |
+| `src/lsp/server.vl` | Message IDs | Safe | JSON-RPC message identifiers bounded $< 2 \times 10^9$. |
+| `src/lsp/transport.vl` | Content-Length | Safe | JSON-RPC packet length header bounded $< 2 \times 10^9$. |
+| `src/backend/check.vl:85` | Diag line/col parsing | Safe | Reads line and column numbers from diagnostics output. |
+| `src/backend/pretty_recon.vl:65`| Diag line/col parsing | Safe | Reads line and column numbers from diagnostics output. |
+| `src/analysis/array_checks.vl:48` | `check_array_index` | **Unsafe → Fixed** | Replaced `expr.index.int_val` with `parse_u64_checked(expr.index.str_val)`. Added check for negative unary index `arr[-1]`. Rejects out-of-bounds indices like `arr[4294967298]`. |
+| `src/analysis/reflect_checks.vl:60` | `get_reflect_const_int` | **Unsafe → Fixed** | Replaced `expr.int_val` with 64-bit parsing using `parse_u64_checked`. Correctly returns `i64` constants across all 64-bit positive and negative ranges. |
+| `src/analysis/mono_unroll.vl:10` | `mono_eval_const_int` | **Unsafe → Fixed** | Delegated `mono_eval_const_int` to `get_reflect_const_int`, enabling wide 64-bit constant folding and reflection evaluation without 32-bit truncation. |
+| `src/analysis/type_checker_stmt.vl:163` | `STMT_LOOP` range typing | **Unsafe → Fixed** | Added `unify_loop_range_type` to infer and unify `start_t` and `end_t`. Stored wide type (`i64`/`u64`/`usize`/`u32`) in `stmt.type_name` and defined loop variable with unified type. |
+| `src/backend/codegen_lit.vl:58` | Loop range reverse check | **Unsafe → Fixed** | Implemented `is_reverse_loop_range` comparing 64-bit evaluated endpoint values, correctly identifying reverse loops with wide endpoints. Added `loop_var_c_type` mapping types to C declarations (`int64_t`, `uint64_t`, etc.). |
+| `src/backend/codegen_stmt.vl:250-265` | `STMT_LOOP` C emission | **Unsafe → Fixed** | Emits `loop_var_c_type(stmt.type_name)` in C `for` loop header and uses `is_reverse_loop_range`. Eliminates signed overflow wrap and infinite loops on wide ranges (`0..3000000000`). |
+| `src/frontend/parser.vl:87` | `[N]T` array length | **Unsafe → Fixed** | Replaced `parse_int_from_slice` with `parse_decimal_int_literal`. Rejects lengths exceeding 32-bit signed range ($> 2147483647$) with compile-time error `"Fixed-size array length exceeds 32-bit integer range"`. |
+| `src/frontend/parser_decl_types.vl:101`| `#align(N)` attribute | **Unsafe → Fixed** | Replaced `parse_int_from_slice` with `parse_decimal_int_literal`. Rejects alignment values $= 0$ or $> 65536$ with compile-time error. |
+| `src/frontend/parser_decl_types.vl:177`| `kind` enum discriminant | **Unsafe → Fixed** | Replaced `parse_int_from_slice` with wide decimal and hex parsing. Rejects discriminants exceeding 32-bit signed range ($> 2147483647$) with compile-time error. |
+| `src/backend/driver.vl:253` | Module parse gate | **Unsafe → Fixed** | Added check for `p.had_error` in `load_file_and_deps_ex`, incrementing `d.error_count` and halting build on parser errors. |
+
+* **Residual Limitation:** Property-based and fuzz testing comparing parser outputs against reference implementations follows in Task 53.9.
+* **Verification:**
+  - `tests/test_int_val_audit.py`: 11 passed in 1.03s verifying wide range loops (forward and reverse), negative range loops, array indexing compile-time rejection, array size limits, enum discriminant limits, and struct alignment limits.
+  - Phase 53 literal test suite: 133 tests passed in 63.95s across all literal test suites (`test_integer_literals.py`, `test_int_literal_model.py`, `test_literal_formatting.py`, `test_literal_type_ladder.py`, `test_safe_c_literal_emission.py`, `test_int_val_audit.py`).
+  - Bootstrap Gen2/Gen3 SHA-256 match verified (`bf85c941eb5a1e1101661060b31d524c96ce8bba5300c496f7c2a59bc947efa5`); `python scripts/count_lines.py` verified all 99 compiler source files $\le 395$ lines ($\le 400$).
 
 ##### Task 53.9: Add property/fuzz coverage
 * **Goal:** Compare the Velo parser's decimal/hex/binary/octal results against Python's arbitrary-precision integers for a deterministic corpus plus random valid/invalid strings.
@@ -697,10 +741,10 @@ This also corrupts range analysis: `loop i in 0..3000000000` stores the endpoint
 
 #### Phase Exit Criteria
 
-- [ ] `0xFFFFFFFF`, `0x80000000`, `0b111...32`, and `0o37777777777` produce their mathematical values with a well-defined type.
-- [ ] `18446744073709551616` is a compile-time error.
-- [ ] `loop i in 0..3000000000` is no longer corrupted by a wrapped endpoint.
-- [ ] Every `int_val` consumer is audited.
+- [x] `0xFFFFFFFF`, `0x80000000`, `0b111...32`, and `0o37777777777` produce their mathematical values with a well-defined type.
+- [x] `18446744073709551616` is a compile-time error.
+- [x] `loop i in 0..3000000000` is no longer corrupted by a wrapped endpoint.
+- [x] Every `int_val` consumer is audited.
 
 ---
 

@@ -69,6 +69,15 @@ act check_assign_mutability(st: @SymbolTable, target: @ExprNode, line: i32, col:
     }
 }
 
+// Determines the unified variable type for a numeric loop range [start..end].
+act unify_loop_range_type(start_t: string, end_t: string) -> string {
+    if start_t == "u64" or end_t == "u64" { return "u64" }
+    if start_t == "i64" or end_t == "i64" { return "i64" }
+    if start_t == "usize" or end_t == "usize" { return "usize" }
+    if start_t == "u32" or end_t == "u32" { return "u32" }
+    return "i32"
+}
+
 // Validates semantic correctness of a single statement.
 act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode) {
     if stmt == null { return }
@@ -159,9 +168,20 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
             exit_scope(st)
         }
     } else if stmt.kind == STMT_LOOP {
-        // 5.2 slice 4/7: `loop v of coll` - the iterator takes the element (K for maps); range/count/condition loops keep the house "i32" var
+        // 5.2 slice 4/7: `loop v of coll` - the iterator takes the element (K for maps); range/count/condition loops widen appropriately
         mut of_elem = "i32"
-        if stmt.is_of { of_elem = check_map_loop_source(st, stmt) } else if stmt.loop_start != null { infer_expr_type(st, stmt.loop_start); infer_expr_type(st, stmt.loop_end); if stmt.loop_step != null { infer_expr_type(st, stmt.loop_step) } } else if stmt.expr != null { infer_expr_type(st, stmt.expr) }
+        if stmt.is_of {
+            of_elem = check_map_loop_source(st, stmt)
+        } else if stmt.loop_start != null {
+            let start_t = infer_expr_type(st, stmt.loop_start)
+            let end_t = infer_expr_type(st, stmt.loop_end)
+            if stmt.loop_step != null { infer_expr_type(st, stmt.loop_step) }
+            of_elem = unify_loop_range_type(start_t, end_t)
+        } else if stmt.expr != null {
+            let expr_t = infer_expr_type(st, stmt.expr)
+            if stmt.is_count or is_int_type(expr_t) { of_elem = expr_t }
+        }
+        stmt.type_name = of_elem
         enter_scope(st)
         mut vname = "it"
         if stmt.loop_var != null and str.len(stmt.loop_var) > 0 { vname = stmt.loop_var }

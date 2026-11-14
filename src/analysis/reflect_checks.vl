@@ -6,6 +6,7 @@ use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../ast/types.vl"
 use "../ast/expr.vl"
+use "literal_check.vl"
 
 act is_reflect_builtin(name: string) -> bool {
     if name == null { return false }
@@ -58,13 +59,36 @@ act extract_type_arg_name(expr: @ExprNode) -> string {
 }
 
 act get_reflect_const_int(expr: @ExprNode, out_val: @i64) -> bool {
-    if expr == null { return false }
+    if expr == null or out_val == null { return false }
     if expr.kind == EXPR_INT {
-        out_val[0] = expr.int_val
+        if expr.str_val != null and str.len(expr.str_val) > 0 {
+            mut overflow = false
+            let u = parse_u64_checked(expr.str_val, @overflow)
+            if not overflow and u <= 0x7FFFFFFFFFFFFFFFu64 {
+                out_val[0] = u as i64
+                return true
+            }
+        }
+        out_val[0] = expr.int_val as i64
         return true
     }
     if expr.kind == EXPR_UNARY and expr.op == TOK_MINUS and expr.operand != null and expr.operand.kind == EXPR_INT {
-        out_val[0] = 0 - expr.operand.int_val
+        let op = expr.operand
+        if op.str_val != null and str.len(op.str_val) > 0 {
+            mut overflow = false
+            let u = parse_u64_checked(op.str_val, @overflow)
+            if not overflow {
+                if u == 0x8000000000000000u64 {
+                    out_val[0] = -9223372036854775807i64 - 1i64
+                    return true
+                }
+                if u < 0x8000000000000000u64 {
+                    out_val[0] = -(u as i64)
+                    return true
+                }
+            }
+        }
+        out_val[0] = 0i64 - (op.int_val as i64)
         return true
     }
     return false

@@ -251,6 +251,9 @@ act load_file_and_deps_ex(d: @CompilerDriver, raw_path: string, is_std: bool) {
     mut p: Parser
     init_parser(@p, file_path, source, lex.tokens, lex.token_count)
     let prog = parse_program(@p)
+    if p.had_error {
+        d.error_count += 1
+    }
 
     let dir = path_dirname_to_str(file_path)
 

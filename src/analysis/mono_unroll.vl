@@ -9,11 +9,7 @@ use "reflect_checks.vl"
 
 act mono_eval_const_int(m: @Monomorphizer, e: @ExprNode, out_val: @i64) -> bool {
     if e == null { return false }
-    if e.kind == EXPR_INT { out_val[0] = e.int_val; return true }
-    if e.kind == EXPR_UNARY and e.op == TOK_MINUS and e.operand != null {
-        mut sub: i64 = 0
-        if mono_eval_const_int(m, e.operand, @sub) { out_val[0] = 0 - sub; return true }
-    }
+    if get_reflect_const_int(e, out_val) { return true }
     if e.kind == EXPR_CALL and e.callee != null and e.callee.kind == EXPR_IDENT and e.callee.str_val == "field_count" {
         if e.first_arg != null {
             let tname = extract_type_arg_name(e.first_arg)

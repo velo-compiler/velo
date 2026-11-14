@@ -8,46 +8,76 @@ use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "../frontend/token.vl"
 
-// Parses an unsigned 64-bit integer from decimal or hex text, checking for arithmetic overflow.
+// Parses an unsigned 64-bit integer from decimal, hex, binary, or octal text, checking for arithmetic overflow.
 act parse_u64_checked(s: string, out_overflow: @bool) -> u64 {
     if s == null { return 0 as u64 }
     let len = str.len(s)
     if len == 0 { return 0 as u64 }
     mut i: usize = 0
     mut base: u64 = 10 as u64
-    if len >= 2 and s[0] == '0' and (s[1] == 'x' or s[1] == 'X') {
-        base = 16 as u64
-        i = 2
+    if len >= 2 and s[0] == '0' {
+        let b = s[1]
+        if b == 'x' or b == 'X' {
+            base = 16 as u64
+            i = 2
+        } else if b == 'b' or b == 'B' {
+            base = 2 as u64
+            i = 2
+        } else if b == 'o' or b == 'O' {
+            base = 8 as u64
+            i = 2
+        }
     }
     mut res: u64 = 0 as u64
     loop i < len {
         let c = s[i]
-        mut d: u64 = 0 as u64
-        if c >= '0' and c <= '9' {
-            d = (c - '0') as u64
-        } else if c >= 'a' and c <= 'f' {
-            d = ((c - 'a') as u64) + 10 as u64
-        } else if c >= 'A' and c <= 'F' {
-            d = ((c - 'A') as u64) + 10 as u64
+        if c == '_' {
+            i += 1
         } else {
-            break
-        }
-        if base == 10 as u64 {
-            if res > 1844674407370955161_u64 or (res == 1844674407370955161_u64 and d > 5 as u64) {
-                out_overflow.@ = true
-                return 0 as u64
+            mut d: u64 = 0 as u64
+            mut valid = false
+            if c >= '0' and c <= '9' {
+                d = (c - '0') as u64
+                if base == 10 as u64 or base == 16 as u64 or (base == 8 as u64 and d < 8 as u64) or (base == 2 as u64 and d < 2 as u64) {
+                    valid = true
+                }
+            } else if base == 16 as u64 and c >= 'a' and c <= 'f' {
+                d = ((c - 'a') as u64) + 10 as u64
+                valid = true
+            } else if base == 16 as u64 and c >= 'A' and c <= 'F' {
+                d = ((c - 'A') as u64) + 10 as u64
+                valid = true
             }
-        } else {
-            if res > 0x0FFFFFFFFFFFFFFF_u64 {
-                out_overflow.@ = true
-                return 0 as u64
+            if not valid { break }
+            if base == 10 as u64 {
+                if res > 1844674407370955161_u64 or (res == 1844674407370955161_u64 and d > 5 as u64) {
+                    out_overflow.@ = true
+                    return 0 as u64
+                }
+            } else if base == 16 as u64 {
+                if res > 0x0FFFFFFFFFFFFFFF_u64 {
+                    out_overflow.@ = true
+                    return 0 as u64
+                }
+            } else if base == 2 as u64 {
+                if res > 0x7FFFFFFFFFFFFFFF_u64 {
+                    out_overflow.@ = true
+                    return 0 as u64
+                }
+            } else if base == 8 as u64 {
+                if res > 0x1FFFFFFFFFFFFFFF_u64 {
+                    out_overflow.@ = true
+                    return 0 as u64
+                }
             }
+            res = res * base + d
+            i += 1
         }
-        res = res * base + d
-        i += 1
     }
     return res
 }
+
+
 
 // Infers the static type of an unsuffixed non-negative integer literal using the type ladder:
 // fits i32 (<= 2147483647) -> i32; else fits i64 (<= 9223372036854775807) -> i64; else fits u64 (<= 18446744073709551615) -> u64.

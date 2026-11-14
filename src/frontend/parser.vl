@@ -1,6 +1,7 @@
 // Main recursive descent parser driver and top-level declaration analyzer for Velo.
 use "token.vl"
 use "../common/utils.vl"
+use "../common/num_utils.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../ast/types.vl"
@@ -84,8 +85,11 @@ act parse_type_annotation_ex(p: @Parser, allow_or: bool) -> string {
     if parser_match(p, TOK_LBRACKET) {
         let size_tok = parser_consume(p, TOK_INT_LIT, "Expected array size inside '['")
         let size_str = copy_slice_to_string(p.source, size_tok.start, size_tok.length)
-        let size_val = parse_int_from_slice(p.source, size_tok.start, size_tok.length)
-        if size_val <= 0 {
+        let lit = parse_decimal_int_literal(p.source, size_tok.start, size_tok.length)
+        if lit.overflow or lit.val > 2147483647u64 {
+            report_parse(p, p.filename, size_tok.line, size_tok.col, size_tok.length, "Fixed-size array length exceeds 32-bit integer range")
+            p.had_error = true
+        } else if lit.val == 0u64 {
             report_parse(p, p.filename, size_tok.line, size_tok.col, size_tok.length, "Fixed-size array length must be greater than zero")
             p.had_error = true
         }

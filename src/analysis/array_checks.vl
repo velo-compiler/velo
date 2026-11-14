@@ -5,6 +5,7 @@ use "../common/string_builder.vl"
 use "../common/diagnostics.vl"
 use "symbol_table.vl"
 use "literal_check.vl"
+use "../frontend/token.vl"
 
 // Infers the type of an array literal [e0, e1, ...] as "[N]T".
 act infer_array_lit(st: @SymbolTable, expr: @ExprNode) -> string {
@@ -45,11 +46,24 @@ act check_array_index(st: @SymbolTable, expr: @ExprNode, clean_type: string) -> 
     }
     if expr.index.kind == EXPR_INT {
         let arr_len = fixed_array_len(clean_type)
-        if expr.index.int_val < 0 or (expr.index.int_val as i64) >= arr_len {
+        mut overflow = false
+        mut idx_u64: u64 = 0u64
+        if expr.index.str_val != null and str.len(expr.index.str_val) > 0 {
+            idx_u64 = parse_u64_checked(expr.index.str_val, @overflow)
+        } else if expr.index.int_val < 0 {
+            overflow = true
+        } else {
+            idx_u64 = expr.index.int_val as u64
+        }
+        if overflow or (idx_u64 as i64) >= arr_len {
             report_error("semantic", expr.line, expr.col, "Array index out of bounds")
             st.error_count += 1
             return "unknown"
         }
+    } else if expr.index.kind == EXPR_UNARY and expr.index.op == TOK_MINUS and expr.index.operand != null and expr.index.operand.kind == EXPR_INT {
+        report_error("semantic", expr.line, expr.col, "Array index out of bounds")
+        st.error_count += 1
+        return "unknown"
     }
     return fixed_array_elem_type(clean_type)
 }

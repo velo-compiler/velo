@@ -4,6 +4,7 @@ use "../ast/expr.vl"
 use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
 use "../analysis/literal_check.vl"
+use "../analysis/reflect_checks.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
 
@@ -54,4 +55,28 @@ act try_emit_c_neg_int_literal(sb: @StringBuilder, st: @SymbolTable, expr: @Expr
     }
 
     return false
+}
+
+// Returns true if the loop range represents a descending count (start > end).
+act is_reverse_loop_range(start_expr: @ExprNode, end_expr: @ExprNode) -> bool {
+    mut s_val: i64 = 0
+    mut e_val: i64 = 0
+    if get_reflect_const_int(start_expr, @s_val) and get_reflect_const_int(end_expr, @e_val) {
+        return s_val > e_val
+    }
+    return false
+}
+
+// Maps a Velo numeric type name to the corresponding C99 loop variable declaration type.
+act loop_var_c_type(type_name: string) -> string {
+    if type_name == null { return "int32_t " }
+    if type_name == "i64" { return "int64_t " }
+    if type_name == "u64" { return "uint64_t " }
+    if type_name == "usize" { return "size_t " }
+    if type_name == "u32" { return "uint32_t " }
+    if type_name == "i16" { return "int16_t " }
+    if type_name == "u16" { return "uint16_t " }
+    if type_name == "i8" { return "int8_t " }
+    if type_name == "u8" { return "uint8_t " }
+    return "int32_t "
 }

@@ -1,6 +1,7 @@
 // Struct, enum/kind, and type alias declaration parsing for Velo.
 use "token.vl"
 use "../common/utils.vl"
+use "../common/num_utils.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../ast/types.vl"
@@ -98,7 +99,13 @@ act parse_data_decl(p: @Parser) -> @StmtNode {
         if attr_name == "align" {
             parser_consume(p, TOK_LPAREN, "Expected '(' after '#align'")
             let align_tok = parser_consume(p, TOK_INT_LIT, "Expected integer alignment after '#align('")
-            align_bytes = parse_int_from_slice(p.source, align_tok.start, align_tok.length)
+            let a_lit = parse_decimal_int_literal(p.source, align_tok.start, align_tok.length)
+            if a_lit.overflow or a_lit.val == 0u64 or a_lit.val > 65536u64 {
+                report_parse(p, p.filename, align_tok.line, align_tok.col, align_tok.length, "Alignment value must be a positive integer <= 65536")
+                p.had_error = true
+            } else {
+                align_bytes = a_lit.val as i32
+            }
             parser_consume(p, TOK_RPAREN, "Expected ')' after alignment value")
         } else if attr_name == "packed" {
             is_packed = true
@@ -174,7 +181,19 @@ act parse_kind_decl(p: @Parser) -> @StmtNode {
 
         if parser_match(p, TOK_ASSIGN) {
             let num_tok = parser_consume(p, TOK_INT_LIT, "Expected integer discriminant after '='")
-            disc = parse_int_from_slice(p.source, num_tok.start, num_tok.length)
+            let is_hex = (num_tok.length >= 2 and p.source[num_tok.start] == '0' and (p.source[num_tok.start + 1] == 'x' or p.source[num_tok.start + 1] == 'X'))
+            mut d_lit = make_int_literal_overflow(10, false)
+            if is_hex {
+                d_lit = parse_hex_int_literal(p.source, num_tok.start, num_tok.length)
+            } else {
+                d_lit = parse_decimal_int_literal(p.source, num_tok.start, num_tok.length)
+            }
+            if d_lit.overflow or d_lit.val > 2147483647u64 {
+                report_parse(p, p.filename, num_tok.line, num_tok.col, num_tok.length, "Enum discriminant exceeds 32-bit signed integer range")
+                p.had_error = true
+            } else {
+                disc = d_lit.val as i32
+            }
             has_disc = true
         } else if parser_match(p, TOK_COLON) {
             ptype = parse_type_annotation(p)
