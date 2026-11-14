@@ -397,7 +397,7 @@ Every task in this section is intentionally small enough to be completed, tested
 
 ---
 
-### Phase 52: `io.*` Wildcard Dispatch & Standard-Library Bypass (P0) [OPEN] 🚧
+### Phase 52: `io.*` Wildcard Dispatch & Standard-Library Bypass (P0) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-01`<br>
 **Severity:** P0 — silent wrong output / API contract violation<br>
@@ -492,19 +492,20 @@ act main() {
 * **Done when:** parity is green on Windows and POSIX CI.
 * **Completion note (2026-11-14):** Created `std/tests/io/print_api_parity_test.vl` exercising all 51 non-intrinsic public acts declared in `std/io/print.vl` across both streams (`stdout` and `stderr`) with representative inputs (integers including 64-bit boundaries, unsigned integers up to `UINT64_MAX`, byte ASCII values, floating-point numbers with custom precisions, booleans, string literals and slices, format-directive-like text, empty line printers, stream writer accessors `io_get_stdout_writer` / `io_get_stderr_writer`, format buffer `io_get_fmt_buf`, stream flushes `io_flush_stdout` / `io_flush_stderr` / `io_flush_all`, and lifecycle cleanup `io_print_cleanup`). Extended `tests/test_std_io.py` with 5 targeted parity tests: programmatically verified that all 51 stdlib members are invoked in the parity matrix; confirmed both unqualified bare and `io.*`-prefixed executions produce exact matching stdout and stderr; verified byte-for-byte identity of stdout and stderr between `io.X` and unqualified `X` across the full API surface; and verified intrinsic `io.println` behavior and codegen lowering. Verification: `tests/test_std_io.py` (32 passed); full suite **764 passed, 2 skipped** (100% pass rate). Residual: documentation of the intrinsic boundary in `docs/SPECIFICATION.md` and phase closure is Task 52.8.
 
-##### Task 52.8: Document the intrinsic boundary and close the phase
+##### Task 52.8: Document the intrinsic boundary and close the phase [COMPLETED] ✅
 * **Goal:** Document which `io.*` names are compiler intrinsics and which are stdlib functions.
 * **Files:** `docs/SPECIFICATION.md`, `gaps.md`.
 * **Tests:** every documentation example compiles with `bin\velo.exe`.
 * **Security gate:** no undocumented fallback behavior remains.
 * **Done when:** all Phase 52 tasks are complete and the global phase exit criteria pass.
+* **Completion note (2026-11-14):** Documented the standard I/O subsystem in `docs/SPECIFICATION.md` (§10): formalized the compiler intrinsic boundary (`io.print` / `io.println` supporting string interpolation, primitive type formatting, zero-argument forms, arity limits, format string injection hardening, and deterministic stream ordering with automatic stdlib and libc buffer flushes); documented the closed-set `io.*` dispatch rule rejecting unknown members at compile time with actionable diagnostics; and cataloged all 51 standard library acts across stdout, stderr, generic stream `f*` operations, and stream/lifecycle management with guaranteed byte-for-byte parity against unqualified calls. Added `test_std_io_documentation_examples_compile_and_run` in `tests/test_std_io.py`, verifying that every executable code block in §10 compiles and runs cleanly with `bin/velo.exe`. Verification: `tests/test_std_io.py` 33 passed; full pytest suite **764 passed, 2 skipped** (100% pass rate). All Phase 52 exit criteria are satisfied; Phase 52 is closed.
 
 #### Phase Exit Criteria
 
-- [ ] `io.println_str`, `io.eprintln_str`, `io.println_u64`, `io.println_f64`, and all other declared `io.*` members behave identically to their unqualified counterparts.
-- [ ] `io.println("a", "b")`, `io.does_not_exist(123)`, and `io.also_missing()` fail at `velo check`.
-- [ ] `std/cli/help.vl` error output goes to stderr with a trailing newline.
-- [ ] The 163 `io.*` call sites under `std/` are audited; no call site relies on the old wildcard behavior.
+- [x] `io.println_str`, `io.eprintln_str`, `io.println_u64`, `io.println_f64`, and all other declared `io.*` members behave identically to their unqualified counterparts.
+- [x] `io.println("a", "b")`, `io.does_not_exist(123)`, and `io.also_missing()` fail at `velo check`.
+- [x] `std/cli/help.vl` error output goes to stderr with a trailing newline.
+- [x] The 163 `io.*` call sites under `std/` are audited; no call site relies on the old wildcard behavior.
 
 ---
 

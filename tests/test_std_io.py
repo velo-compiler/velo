@@ -569,6 +569,34 @@ def test_std_io_intrinsic_behavior_and_codegen_lowering(tmp_path):
     assert 'printf("%lld\\n"' in body
 
 
+# ---------------------------------------------------------------------------
+# Phase 52, Task 52.8: Documentation examples compilation.
+#
+# Verify that every code block in Section 10 of docs/SPECIFICATION.md compiles
+# and runs cleanly with bin/velo.exe.
+# ---------------------------------------------------------------------------
+
+
+def test_std_io_documentation_examples_compile_and_run(tmp_path):
+    """Every code example in Section 10 of docs/SPECIFICATION.md must compile and run."""
+    spec_md = REPO_ROOT / "docs" / "SPECIFICATION.md"
+    assert spec_md.exists(), "docs/SPECIFICATION.md does not exist"
+
+    spec_text = spec_md.read_text(encoding="utf-8")
+    assert "## 10. Standard I/O Subsystem" in spec_text
+
+    section_10 = spec_text.split("## 10. Standard I/O Subsystem", 1)[1]
+    code_blocks = re.findall(r"```velo\n(.*?)\n```", section_10, re.DOTALL)
+    assert len(code_blocks) >= 3, f"expected at least 3 code examples in Section 10, got {len(code_blocks)}"
+
+    for i, code in enumerate(code_blocks):
+        probe = tmp_path / f"spec_example_{i}.vl"
+        probe.write_text(code, encoding="utf-8", newline="\n")
+        res = run_velo(["run", str(probe)])
+        assert res.returncode == 0, f"spec example {i} failed to run:\n{res.stderr}\n{res.stdout}"
+
+
+
 
 
 

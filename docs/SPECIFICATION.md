@@ -761,3 +761,146 @@ The Velo compiler (`velo.exe` / `velo`) exposes the unified CLI toolchain:
 | `velo pkg <cmd>` | Package manager (`init`, `add`, `install`, `build`, `run`, `test`, `tree`) |
 | `velo lsp` | Launch the Language Server Protocol (LSP 3.17) server over stdio |
 | `velo version` / `velo help` | Print version banner or command-line help manual |
+
+---
+
+## 10. Standard I/O Subsystem (`io` & `std.io`)
+
+Velo provides a deterministic, buffered standard I/O subsystem combining compiler intrinsics with pure-Velo standard library acts.
+
+### 10.1 The Intrinsic Boundary (`io.print` and `io.println`)
+
+`io.print` and `io.println` are **compiler intrinsics** recognized directly by semantic analysis and code generation. They lower directly to formatted libc `printf` operations:
+
+* **Arity Enforcement:** Intrinsics accept at most one argument (`0` or `1`). Calls with extra arguments (e.g. `io.println("a", "b")`) are rejected at compile time (`velo check`).
+* **Zero-Argument Forms:**
+  - `io.println()` emits a newline character to standard output (`printf("\n")`).
+  - `io.print()` is a compile-time no-op (`((void)0)`).
+* **Single-Argument Formatting & String Interpolation:**
+  - String literals support compile-time `{expr}` interpolation (e.g. `io.println("Count: {count}")`).
+  - Primitive types format directly without manual conversions: integers (`i8`..`i64`, `u8`..`u64`), floating-point numbers (`f32`, `f64`), booleans (`true`/`false`), and pointers.
+* **Format Injection Hardening:** User data and format directives (such as `%s`, `%n`, or unresolved interpolation tokens) are treated strictly as data arguments, never as format strings.
+* **Deterministic Stream Ordering:** Calls to intrinsic `io.print` and `io.println` automatically flush standard library buffered streams (`io_flush_stdout()`) before the call and flush standard output (`fflush(stdout)`) after the call, ensuring deterministic interleaving with stdlib writes.
+
+```velo
+use std.io
+
+act main() {
+    let name = "Velo"
+    let version = 1
+
+    // Intrinsic formatting with string interpolation
+    io.println("Language: {name}, Major: {version}")
+
+    // Intrinsic formatting of primitive types
+    io.println(42)
+    io.println(true)
+
+    // Intrinsic newline
+    io.println()
+}
+```
+
+### 10.2 Closed-Set `io.*` Dispatch
+
+The `io.*` namespace is strictly closed. Calling any member not recognized as a compiler intrinsic or declared in `std/io/print.vl` is rejected at compile time during semantic analysis (`velo check`):
+
+```velo
+use std.io
+
+act main() {
+    // Compile error: unknown io member 'does_not_exist' (functions: io_ensure_atexit, ...)
+    // io.does_not_exist()
+}
+```
+
+An unknown member never falls through to a runtime no-op or an unresolved C symbol.
+
+### 10.3 Standard Library Acts (`std.io`)
+
+Every non-intrinsic member accessed under the `io.` prefix (such as `io.println_str`) routes directly to its corresponding pure-Velo act declared in `std/io/print.vl`.
+
+All standard library acts operate through buffered I/O (`BufferedWriter`) with zero C runtime dependencies. Unqualified calls (e.g. `println_str`) and qualified calls (e.g. `io.println_str`) are guaranteed to produce **identical, byte-for-byte output**.
+
+#### 1. Standard Output Acts
+* `print_str(s: string)` / `io.print_str(s)`
+* `println_str(s: string)` / `io.println_str(s)`
+* `println_empty()` / `io.println_empty()`
+* `print_byte(b: u8)` / `io.print_byte(b)`
+* `println_byte(b: u8)` / `io.println_byte(b)`
+* `print_i64(val: i64)` / `io.print_i64(val)`
+* `println_i64(val: i64)` / `io.println_i64(val)`
+* `print_u64(val: u64)` / `io.print_u64(val)`
+* `println_u64(val: u64)` / `io.println_u64(val)`
+* `print_f64(val: f64, precision: i32)` / `io.print_f64(val, precision)`
+* `println_f64(val: f64, precision: i32)` / `io.println_f64(val, precision)`
+* `print_bool(val: bool)` / `io.print_bool(val)`
+* `println_bool(val: bool)` / `io.println_bool(val)`
+
+#### 2. Standard Error Acts
+* `eprint(s: StrSlice)` / `io.eprint(s)`
+* `eprintln(s: StrSlice)` / `io.eprintln(s)`
+* `eprint_str(s: string)` / `io.eprint_str(s)`
+* `eprintln_str(s: string)` / `io.eprintln_str(s)`
+* `eprintln_empty()` / `io.eprintln_empty()`
+* `eprint_byte(b: u8)` / `io.eprint_byte(b)`
+* `eprintln_byte(b: u8)` / `io.eprintln_byte(b)`
+* `eprint_i64(val: i64)` / `io.eprint_i64(val)`
+* `eprintln_i64(val: i64)` / `io.eprintln_i64(val)`
+* `eprint_u64(val: u64)` / `io.eprint_u64(val)`
+* `eprintln_u64(val: u64)` / `io.eprintln_u64(val)`
+* `eprint_f64(val: f64, precision: i32)` / `io.eprint_f64(val, precision)`
+* `eprintln_f64(val: f64, precision: i32)` / `io.eprintln_f64(val, precision)`
+* `eprint_bool(val: bool)` / `io.eprint_bool(val)`
+* `eprintln_bool(val: bool)` / `io.eprintln_bool(val)`
+
+#### 3. Generic Stream Acts (`f*`)
+Operating on any `@BufferedWriter` handle (including file streams, pipes, and standard streams):
+* `fprint(w: @BufferedWriter, s: StrSlice)` / `io.fprint(w, s)`
+* `fprintln(w: @BufferedWriter, s: StrSlice)` / `io.fprintln(w, s)`
+* `fprint_str(w: @BufferedWriter, s: string)` / `io.fprint_str(w, s)`
+* `fprintln_str(w: @BufferedWriter, s: string)` / `io.fprintln_str(w, s)`
+* `fprintln_empty(w: @BufferedWriter)` / `io.fprintln_empty(w)`
+* `fprint_byte(w: @BufferedWriter, b: u8)` / `io.fprint_byte(w, b)`
+* `fprintln_byte(w: @BufferedWriter, b: u8)` / `io.fprintln_byte(w, b)`
+* `fprint_i64(w: @BufferedWriter, val: i64)` / `io.fprint_i64(w, val)`
+* `fprintln_i64(w: @BufferedWriter, val: i64)` / `io.fprintln_i64(w, val)`
+* `fprint_u64(w: @BufferedWriter, val: u64)` / `io.fprint_u64(w, val)`
+* `fprintln_u64(w: @BufferedWriter, val: u64)` / `io.fprintln_u64(w, val)`
+* `fprint_f64(w: @BufferedWriter, val: f64, precision: i32)` / `io.fprint_f64(w, val, precision)`
+* `fprintln_f64(w: @BufferedWriter, val: f64, precision: i32)` / `io.fprintln_f64(w, val, precision)`
+* `fprint_bool(w: @BufferedWriter, val: bool)` / `io.fprint_bool(w, val)`
+* `fprintln_bool(w: @BufferedWriter, val: bool)` / `io.fprintln_bool(w, val)`
+
+#### 4. Stream & Lifecycle Management
+* `io_ensure_atexit()`: Registers the exit flush hook with libc `atexit`.
+* `io_get_stdout_writer() -> @BufferedWriter`: Lazily acquires the stdout stream writer singleton.
+* `io_get_stderr_writer() -> @BufferedWriter`: Lazily acquires the stderr stream writer singleton.
+* `io_get_fmt_buf() -> @u8`: Lazily acquires the 64-byte numeric formatting buffer.
+* `io_flush_stdout() -> bool`: Flushes unwritten stdout buffer bytes to the OS handle.
+* `io_flush_stderr() -> bool`: Flushes unwritten stderr buffer bytes to the OS handle.
+* `io_flush_all() -> bool`: Flushes both stdout and stderr stream buffers.
+* `io_print_cleanup()`: Explicitly frees stream writer buffers and numeric format memory.
+
+### 10.4 Standard Library I/O Example
+
+```velo
+use std.io
+
+act main() {
+    // 1. Stdlib stdout and stderr printing
+    println_str("Standard output message")
+    eprintln_str("Standard error message")
+
+    // 2. High-precision numeric formatting
+    println_i64(-9223372036854775807 - 1)
+    println_u64(18446744073709551615u64)
+    println_f64(3.14159265, 4)
+
+    // 3. Explicit stream handles and flushes
+    let out = io_get_stdout_writer()
+    fprint_str(out, "Stream write to stdout\n")
+    io_flush_all()
+}
+```
+
