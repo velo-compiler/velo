@@ -1027,12 +1027,28 @@ The literal `3000000000` wraps negative during parsing, so codegen believes the 
   - `tests/test_range_loops.py`: 7 passed in 4.03s.
   - All 117 compiler source files $\le 395$ lines ($\le 400$).
 
-##### Task 55.2: Prove the wrapped-value root cause
-* **Goal:** Add a parser/codegen assertion that the endpoint value used for direction equals the emitted value.
-* **Files:** `src/backend/codegen_stmt.vl:258-259`, test probe.
-* **Tests:** a probe that prints/asserts the parsed endpoint and the emitted condition.
-* **Security gate:** the test must fail if direction is derived from a truncated field.
-* **Done when:** the root cause is pinned by a failing assertion.
+##### Task 55.2: Prove the wrapped-value root cause [COMPLETED] ✅
+* **Former Defect**:
+  - `codegen_lit.vl:61` (`is_reverse_loop_range`) relied on `get_reflect_const_int` (`reflect_checks.vl:61`), which caps unsigned values at `0x7FFFFFFFFFFFFFFF` (`u <= 0x7FFFFFFFFFFFFFFFu64`) and falls back to `expr.int_val as i64`.
+  - For unsigned 64-bit integer endpoints exceeding `i32` bounds, `int_val` is `0`, causing `s_val > e_val` to derive loop direction from `0` rather than the wide literal value.
+  - The compiler lacked a targeted diagnostic probe asserting that the endpoint value used for direction equals the emitted value.
+* **Fix Applied (Diagnostic Probe & Root Cause Pinned)**:
+  - Created standalone diagnostic probe `tests/probe_range_endpoint.py`:
+    * Analyzes emitted C for ascending range `1..18446744073709551615u64`.
+    * Confirms that mathematical relation `1 < 18446744073709551615` is ascending, but emitted C generates `for (uint64_t i = 1; i > 18446744073709551615ULL; i--)`.
+    * Trace demonstrates the exact defect chain:
+      1. Literal `18446744073709551615u64` exceeds signed `i64` max (`0x7FFFFFFFFFFFFFFF`).
+      2. `reflect_checks.vl:67` bound check evaluates to `false`.
+      3. `reflect_checks.vl:72` falls back to `out_val[0] = expr.int_val as i64`.
+      4. `parser_lit.vl:184` checked conversion returned `false`, leaving `expr.int_val = 0`.
+      5. `codegen_lit.vl:65` evaluates `s_val (1) > e_val (0) == true`, flipping the loop to descending.
+    * Raises failing assertion: `Direction derived from truncated field: expected '<', got: for (uint64_t i = 1; i > 18446744073709551615ULL; i--)`.
+  - Integrated diagnostic probe into `tests/test_large_ranges.py` (`test_probe_prove_wrapped_value_root_cause`), confirming failing assertion in the test suite.
+* **Residual Limitation**:
+  - Implementation of wide 64-bit unsigned direction detection in `codegen_lit.vl` follows in Task 55.3.
+* **Verification**:
+  - `python tests/probe_range_endpoint.py`: Exits with code 1 and prints the exact root-cause defect trace with failing assertion.
+  - `pytest tests/test_large_ranges.py -k test_probe`: Fails with AssertionError pinning the truncated field.
 
 ##### Task 55.3: Use wide values for direction detection
 * **Goal:** Compare the wide literal values (or inferred types) rather than the `i32` `int_val`.

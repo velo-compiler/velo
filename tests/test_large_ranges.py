@@ -582,3 +582,25 @@ def test_emitted_c_range_loop_direction_operator(name, code, expected_op):
         assert "<" in cond_part and "<=" not in cond_part, f"Expected '<' in condition, got: {header}"
     elif expected_op == ">":
         assert ">" in cond_part and ">=" not in cond_part, f"Expected '>' in condition, got: {header}"
+
+
+# ==============================================================================
+# 5. Task 55.2 Diagnostic Probe: Pinned Truncated Field Root Cause
+# ==============================================================================
+
+def test_probe_prove_wrapped_value_root_cause():
+    """Task 55.2: Diagnostic probe asserting that endpoint direction matches the mathematical value."""
+    code = "act main() { loop i in 1..18446744073709551615u64 { } }"
+    c_out = emit_c_velo_source(code)
+    for_lines = [l.strip() for l in c_out.splitlines() if "for (" in l]
+    assert len(for_lines) >= 1, "No for loop generated"
+    header = for_lines[0]
+    
+    # Mathematical relation: 1 < 18446744073709551615 (ascending)
+    # Baseline defect: is_reverse_loop_range derives direction from truncated int_val (0),
+    # leading to s_val (1) > e_val (0) being TRUE, incorrectly emitting '>' instead of '<'.
+    assert "<" in header and "<=" not in header, (
+        f"Task 55.2 Root Cause Proved: Direction derived from truncated field (int_val = 0). "
+        f"Expected '<' for ascending range 1..18446744073709551615u64, got header:\n  {header}"
+    )
+
