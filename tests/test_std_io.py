@@ -31,6 +31,47 @@ CONFORMANCE_STDERR = (
     "%s %n {not_interpolated}\n"
 )
 
+PARITY_VL = REPO_ROOT / "std" / "tests" / "io" / "print_api_parity_test.vl"
+
+PARITY_STDOUT = (
+    "out_str|out_println_str\n"
+    "AB\n"
+    "-92233720368547758089223372036854775807\n"
+    "018446744073709551615\n"
+    "3.142.7183\n"
+    "truefalse\n"
+    "\n"
+    "%s %n {not_interpolated}\n"
+    "f_out_str|f_out_println_str\n"
+    "XY\n"
+    "-777888\n"
+    "123456789012345987654321098765\n"
+    "1.235.678\n"
+    "truefalse\n"
+    "\n"
+    "f_out_slice|f_out_slice_ln\n"
+)
+
+PARITY_STDERR = (
+    "err_str|err_println_str\n"
+    "CD\n"
+    "-123456789987654321\n"
+    "018446744073709551615\n"
+    "0.51234.57\n"
+    "falsetrue\n"
+    "\n"
+    "%s %n {not_interpolated}\n"
+    "err_slice|err_slice_ln\n"
+    "f_err_str|f_err_println_str\n"
+    "Z[\n"
+    "-9991111\n"
+    "4218446744073709551615\n"
+    "9.954.32\n"
+    "falsetrue\n"
+    "\n"
+    "f_err_slice|f_err_slice_ln\n"
+)
+
 def get_env():
     env = os.environ.copy()
     if r"C:\msys64\ucrt64\bin" not in env.get("PATH", ""):
@@ -140,6 +181,12 @@ def bare_conformance_source():
     """Return the conformance program with the io. prefix stripped."""
     source = CONFORMANCE_VL.read_text(encoding="utf-8")
     return re.sub(r"(?m)^([ \t]*)io\.", r"\1", source)
+
+
+def bare_parity_source():
+    """Return the parity program with the io. prefix stripped."""
+    source = PARITY_VL.read_text(encoding="utf-8")
+    return re.sub(r"(?<!std\.)\bio\.", "", source)
 
 
 def test_std_io_bare_print_api_conformance_control(tmp_path):
@@ -424,6 +471,103 @@ def test_std_io_intrinsic_zero_arg(tmp_path):
     res = run_velo(["run", str(probe)])
     assert res.returncode == 0, f"run failed:\n{res.stderr}\n{res.stdout}"
     assert res.stdout == "\n", f"stdout mismatch:\n{res.stdout!r}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 52, Task 52.7: End-to-end parity test across the whole API surface.
+#
+# For every public member X in std/io/print.vl, io.X and unqualified X must
+# produce identical byte-for-byte output across stdout and stderr, except the
+# intentional interpolation behavior of intrinsic io.println.
+# ---------------------------------------------------------------------------
+
+
+def test_std_io_parity_all_51_stdlib_members_invoked():
+    """Verify that all 51 non-intrinsic public members are tested in PARITY_VL."""
+    valid_members_str = (
+        "io_ensure_atexit, io_get_stdout_writer, io_get_stderr_writer, io_get_fmt_buf, "
+        "io_flush_stdout, io_flush_stderr, io_flush_all, io_print_cleanup, "
+        "fprint, fprintln, fprint_str, fprintln_str, fprintln_empty, "
+        "fprint_byte, fprintln_byte, fprint_i64, fprintln_i64, "
+        "fprint_u64, fprintln_u64, fprint_f64, fprintln_f64, "
+        "fprint_bool, fprintln_bool, "
+        "print_str, println_str, println_empty, "
+        "print_byte, println_byte, print_i64, println_i64, "
+        "print_u64, println_u64, print_f64, println_f64, "
+        "print_bool, println_bool, "
+        "eprint, eprintln, eprint_str, eprintln_str, eprintln_empty, "
+        "eprint_byte, eprintln_byte, eprint_i64, eprintln_i64, "
+        "eprint_u64, eprintln_u64, eprint_f64, eprintln_f64, "
+        "eprint_bool, eprintln_bool"
+    )
+    expected_members = [m.strip() for m in valid_members_str.split(",") if m.strip()]
+    assert len(expected_members) == 51
+
+    source = PARITY_VL.read_text(encoding="utf-8")
+    for member in expected_members:
+        pattern = rf"(?<!std\.)\bio\.{member}\b"
+        assert re.search(pattern, source), f"PARITY_VL does not invoke 'io.{member}'"
+
+
+def test_std_io_bare_print_api_parity_control(tmp_path):
+    """Control: unqualified bare stdlib calls match expected parity output."""
+    bare = tmp_path / "bare_print_api_parity.vl"
+    bare.write_text(bare_parity_source(), encoding="utf-8", newline="\n")
+
+    res = run_velo(["run", str(bare)])
+    assert res.returncode == 0, f"bare parity run failed:\n{res.stderr}\n{res.stdout}"
+    assert res.stdout == PARITY_STDOUT, f"bare stdout mismatch:\n{res.stdout!r}"
+    assert res.stderr == PARITY_STDERR, f"bare stderr mismatch:\n{res.stderr!r}"
+
+
+def test_std_io_prefix_print_api_parity_conformance():
+    """io.* prefix calls match expected parity output across all 51 members."""
+    res = run_velo(["run", str(PARITY_VL)])
+    assert res.returncode == 0, f"io.* parity run failed:\n{res.stderr}\n{res.stdout}"
+    assert res.stdout == PARITY_STDOUT, f"io.* stdout mismatch:\n{res.stdout!r}"
+    assert res.stderr == PARITY_STDERR, f"io.* stderr mismatch:\n{res.stderr!r}"
+
+
+def test_std_io_full_surface_byte_for_byte_parity(tmp_path):
+    """Byte-for-byte stdout and stderr parity between io.X and bare X across all 51 members."""
+    bare = tmp_path / "bare_print_api_parity.vl"
+    bare.write_text(bare_parity_source(), encoding="utf-8", newline="\n")
+
+    prefix = run_velo(["run", str(PARITY_VL)])
+    plain = run_velo(["run", str(bare)])
+    assert prefix.returncode == 0, f"io.* run failed:\n{prefix.stderr}\n{prefix.stdout}"
+    assert plain.returncode == 0, f"bare run failed:\n{plain.stderr}\n{plain.stdout}"
+    assert prefix.stdout == plain.stdout, f"stdout parity mismatch:\nio:   {prefix.stdout!r}\nbare: {plain.stdout!r}"
+    assert prefix.stderr == plain.stderr, f"stderr parity mismatch:\nio:   {prefix.stderr!r}\nbare: {plain.stderr!r}"
+
+
+def test_std_io_intrinsic_behavior_and_codegen_lowering(tmp_path):
+    """io.println is an intrinsic supporting arbitrary values, zero-args, and direct printf lowering."""
+    source = (
+        "use std.io\n\n"
+        "act main() {\n"
+        "    let x = 42\n"
+        '    io.println("val={x}")\n'
+        "    io.println(x)\n"
+        "    io.println(true)\n"
+        "    io.println()\n"
+        "}\n"
+    )
+    probe = tmp_path / "intrinsic_behavior.vl"
+    probe.write_text(source, encoding="utf-8", newline="\n")
+
+    res = run_velo(["run", str(probe)])
+    assert res.returncode == 0, f"run failed:\n{res.stderr}\n{res.stdout}"
+    assert res.stdout == "val=42\n42\ntrue\n\n", f"stdout mismatch:\n{res.stdout!r}"
+    assert res.stderr == "", f"stderr mismatch:\n{res.stderr!r}"
+
+    # Verify that io.println lowers directly to printf
+    res_emit, out_c = emit_c(tmp_path, source, "intrinsic_c")
+    assert res_emit.returncode == 0, f"emit-c failed:\n{res_emit.stderr}"
+    body = main_body(out_c.read_text(encoding="utf-8"))
+    assert 'printf("val=%lld\\n"' in body
+    assert 'printf("%lld\\n"' in body
+
 
 
 

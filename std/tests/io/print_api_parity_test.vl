@@ -1,0 +1,94 @@
+// Parity test suite for the public std.io printing API reached through the
+// io.* prefix versus unqualified bare function calls.
+//
+// Every public non-intrinsic act declared in std/io/print.vl (51 acts across
+// stdout, stderr, generic stream f*, flush, and lifecycle helpers) is exercised
+// with representative inputs. The test runner executes this program and an
+// identical copy with the 'io.' prefix stripped, asserting byte-for-byte
+// identity of stdout and stderr.
+use std.io
+
+act main() {
+    // 1. Lifecycle and buffer access
+    io.io_ensure_atexit()
+    let fmt_buf = io.io_get_fmt_buf()
+
+    let out_w = io.io_get_stdout_writer()
+    let err_w = io.io_get_stderr_writer()
+
+    // 2. Direct stdout printing API
+    io.print_str("out_str|")
+    io.println_str("out_println_str")
+    io.print_byte(65 as u8)
+    io.println_byte(66 as u8)
+    io.print_i64(-9223372036854775807 - 1)
+    io.println_i64(9223372036854775807)
+    io.print_u64(0u64)
+    io.println_u64(18446744073709551615u64)
+    io.print_f64(3.14159, 2)
+    io.println_f64(2.71828, 4)
+    io.print_bool(true)
+    io.println_bool(false)
+    io.println_empty()
+    io.println_str("%s %n {not_interpolated}")
+
+    // 3. Direct stderr printing API
+    io.eprint_str("err_str|")
+    io.eprintln_str("err_println_str")
+    io.eprint_byte(67 as u8)
+    io.eprintln_byte(68 as u8)
+    io.eprint_i64(-123456789)
+    io.eprintln_i64(987654321)
+    io.eprint_u64(0u64)
+    io.eprintln_u64(18446744073709551615u64)
+    io.eprint_f64(0.5, 1)
+    io.eprintln_f64(1234.5678, 2)
+    io.eprint_bool(false)
+    io.eprintln_bool(true)
+    io.eprintln_empty()
+    io.eprintln_str("%s %n {not_interpolated}")
+    io.eprint(slice_from_str("err_slice|"))
+    io.eprintln(slice_from_str("err_slice_ln"))
+
+    // 4. Stream printing API (f*) routed to stdout
+    io.fprint_str(out_w, "f_out_str|")
+    io.fprintln_str(out_w, "f_out_println_str")
+    io.fprint_byte(out_w, 88 as u8)
+    io.fprintln_byte(out_w, 89 as u8)
+    io.fprint_i64(out_w, -777)
+    io.fprintln_i64(out_w, 888)
+    io.fprint_u64(out_w, 123456789012345u64)
+    io.fprintln_u64(out_w, 987654321098765u64)
+    io.fprint_f64(out_w, 1.234, 2)
+    io.fprintln_f64(out_w, 5.678, 3)
+    io.fprint_bool(out_w, true)
+    io.fprintln_bool(out_w, false)
+    io.fprintln_empty(out_w)
+    io.fprint(out_w, slice_from_str("f_out_slice|"))
+    io.fprintln(out_w, slice_from_str("f_out_slice_ln"))
+
+    // 5. Stream printing API (f*) routed to stderr
+    io.fprint_str(err_w, "f_err_str|")
+    io.fprintln_str(err_w, "f_err_println_str")
+    io.fprint_byte(err_w, 90 as u8)
+    io.fprintln_byte(err_w, 91 as u8)
+    io.fprint_i64(err_w, -999)
+    io.fprintln_i64(err_w, 1111)
+    io.fprint_u64(err_w, 42u64)
+    io.fprintln_u64(err_w, 18446744073709551615u64)
+    io.fprint_f64(err_w, 9.876, 1)
+    io.fprintln_f64(err_w, 54.321, 2)
+    io.fprint_bool(err_w, false)
+    io.fprintln_bool(err_w, true)
+    io.fprintln_empty(err_w)
+    io.fprint(err_w, slice_from_str("f_err_slice|"))
+    io.fprintln(err_w, slice_from_str("f_err_slice_ln"))
+
+    // 6. Explicit flushes
+    let flush_out_ok = io.io_flush_stdout()
+    let flush_err_ok = io.io_flush_stderr()
+    let flush_all_ok = io.io_flush_all()
+
+    // 7. Cleanup
+    io.io_print_cleanup()
+}
