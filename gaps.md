@@ -436,12 +436,13 @@ act main() {
 
 #### Tasks
 
-##### Task 52.1: Add the `io.*` conformance matrix (red baseline)
+##### Task 52.1: Add the `io.*` conformance matrix (red baseline) [COMPLETED] ✅
 * **Goal:** Encode the expected behavior of every public `io.*` function before changing code.
 * **Files:** `tests/test_std_io.py` (extend), `std/tests/io/print_api_conformance_test.vl` (new).
 * **Tests:** newline presence for every `println_*`; stderr routing for every `eprintln_*`; `u64` max; `f64` precision; `bool`; `byte`; zero-argument forms; arity errors; unknown members; `io.X` vs unqualified `X` parity.
 * **Security gate:** include user strings containing `%s`, `%n`, and `{...}`; they must be emitted as data, never interpreted as format directives.
 * **Done when:** the new tests fail for the documented reasons and are committed as the red baseline.
+* **Completion note (2026-11-14):** Added `std/tests/io/print_api_conformance_test.vl` and 9 tests in `tests/test_std_io.py` (prefix conformance, unqualified control, byte-for-byte parity, two unknown-member rows, three arity rows, printf-metacharacter data). Red run: `python -m pytest tests/test_std_io.py -q -k "print_api or rejects_unknown or rejects_arity or printf_metacharacters or matches_bare_parity"` → **8 failed, 1 passed**. The control test is green, proving the expected bytes are achievable through the unqualified API; the 8 red tests isolate the `io.*` wildcard dispatch. Observed red behavior: `io.println_str` drops the newline, `io.eprintln_*` writes to stdout, `io.println_u64` prints `-1`, `io.*_f64` ignores precision, `io.*_byte` prints decimal digits, and unknown members plus arity mismatches pass `velo check`.
 
 ##### Task 52.2: Define the intrinsic allowlist and closed member set
 * **Goal:** Separate compiler intrinsics (`print`, `println`) from stdlib functions and publish one closed set.

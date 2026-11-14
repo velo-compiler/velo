@@ -1,0 +1,42 @@
+// Conformance matrix for the public std.io printing API reached through the
+// io.* prefix. The Python wrapper asserts exact stdout/stderr bytes, so this
+// file must stay deterministic and free of incidental output.
+use std.io
+
+act main() {
+    // stdout: every print/println member
+    io.print_str("print_str|")
+    io.println_str("println_str")
+    io.print_byte(65 as u8)
+    io.println_byte(66 as u8)
+    io.print_i64(-42)
+    io.println_i64(-43)
+    io.print_u64(18446744073709551615u64)
+    io.println_u64(18446744073709551615u64)
+    io.print_f64(3.14159, 2)
+    io.println_f64(2.71828, 3)
+    io.print_bool(true)
+    io.println_bool(false)
+    io.println_empty()
+
+    // stdout: format-directive-looking data must stay literal
+    io.println_str("%s %n {not_interpolated}")
+
+    // stderr: every eprint/eprintln member
+    io.eprint_str("eprint_str|")
+    io.eprintln_str("eprintln_str")
+    io.eprint_byte(67 as u8)
+    io.eprintln_byte(68 as u8)
+    io.eprint_i64(-44)
+    io.eprintln_i64(-45)
+    io.eprint_u64(18446744073709551615u64)
+    io.eprintln_u64(18446744073709551615u64)
+    io.eprint_f64(1.25, 2)
+    io.eprintln_f64(1.5, 1)
+    io.eprint_bool(false)
+    io.eprintln_bool(true)
+    io.eprintln_empty()
+
+    // stderr: format-directive-looking data must stay literal
+    io.eprintln_str("%s %n {not_interpolated}")
+}
