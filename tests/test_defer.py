@@ -616,3 +616,145 @@ act main() -> i32 {
     res = run_velo_source(src)
     assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
     assert "PASS: security gate zero leaks and no double free" in res.stdout
+
+
+def test_block_scope_marker_primitives_in_emitted_compiler_c():
+    """Verify that the compiler C output defines block marker primitives in DeferNode."""
+    bootstrap_c = (REPO_ROOT / "bootstrap.c").read_text(encoding="utf-8")
+    assert "bool is_block;" in bootstrap_c
+    assert "push_block_scope" in bootstrap_c
+    assert "pop_block_scope" in bootstrap_c
+    assert "block_scope_depth" in bootstrap_c
+    assert "count_block_defers" in bootstrap_c
+    assert "cur_d->is_block" in bootstrap_c
+
+
+def test_block_scope_stack_balance_and_isolation_probe():
+    """Internal probe: verify that block markers isolate nested scopes and push/pop is strictly balanced."""
+    src = """
+use sys.io
+use sys.mem
+
+data ProbeNode {
+    is_block: bool
+    is_loop: bool
+    val: i32
+    next: @ProbeNode
+}
+
+act push_block(stack: @@ProbeNode) -> @ProbeNode {
+    let prev = stack.@
+    mut bd: @ProbeNode = mem.heap_alloc(@ProbeNode, 1)
+    bd.is_block = true
+    bd.is_loop = false
+    bd.val = 0
+    bd.next = stack.@
+    stack.@ = bd
+    return prev
+}
+
+act pop_block(stack: @@ProbeNode, prev: @ProbeNode) {
+    stack.@ = prev
+}
+
+act push_defer(stack: @@ProbeNode, val: i32) {
+    mut d: @ProbeNode = mem.heap_alloc(@ProbeNode, 1)
+    d.is_block = false
+    d.is_loop = false
+    d.val = val
+    d.next = stack.@
+    stack.@ = d
+}
+
+act probe_depth(stack: @@ProbeNode) -> i32 {
+    if stack == null { return 0 }
+    mut cur = stack.@
+    mut cnt: i32 = 0
+    loop cur != null {
+        if cur.is_block or cur.is_loop { cnt += 1 }
+        cur = cur.next
+    }
+    return cnt
+}
+
+act probe_count_innermost(stack: @@ProbeNode) -> i32 {
+    if stack == null { return 0 }
+    mut cur = stack.@
+    mut cnt: i32 = 0
+    loop cur != null and not cur.is_block and not cur.is_loop {
+        cnt += 1
+        cur = cur.next
+    }
+    return cnt
+}
+
+act main() -> i32 {
+    mut stack: @ProbeNode = null
+
+    // 0. Base: depth = 0, count = 0
+    if probe_depth(@stack) != 0 or probe_count_innermost(@stack) != 0 {
+        io.println("FAIL: initial state")
+        return 1
+    }
+
+    // 1. Enter Outer Scope (Block 1)
+    let p1 = push_block(@stack)
+    if probe_depth(@stack) != 1 or probe_count_innermost(@stack) != 0 {
+        io.println("FAIL: block 1 entered")
+        return 1
+    }
+    push_defer(@stack, 10)
+    push_defer(@stack, 11)
+    if probe_depth(@stack) != 1 or probe_count_innermost(@stack) != 2 {
+        io.println("FAIL: block 1 defers count")
+        return 1
+    }
+
+    // 2. Enter Inner Scope (Block 2)
+    let p2 = push_block(@stack)
+    if probe_depth(@stack) != 2 or probe_count_innermost(@stack) != 0 {
+        io.println("FAIL: block 2 isolation (must be 0)")
+        return 1
+    }
+    push_defer(@stack, 20)
+    if probe_depth(@stack) != 2 or probe_count_innermost(@stack) != 1 {
+        io.println("FAIL: block 2 defers count")
+        return 1
+    }
+
+    // 3. Enter Deep Scope (Block 3)
+    let p3 = push_block(@stack)
+    if probe_depth(@stack) != 3 or probe_count_innermost(@stack) != 0 {
+        io.println("FAIL: block 3 isolation")
+        return 1
+    }
+
+    // 4. Pop Deep Scope (Block 3)
+    pop_block(@stack, p3)
+    if probe_depth(@stack) != 2 or probe_count_innermost(@stack) != 1 {
+        io.println("FAIL: restored block 2")
+        return 1
+    }
+
+    // 5. Pop Inner Scope (Block 2)
+    pop_block(@stack, p2)
+    if probe_depth(@stack) != 1 or probe_count_innermost(@stack) != 2 {
+        io.println("FAIL: restored block 1")
+        return 1
+    }
+
+    // 6. Pop Outer Scope (Block 1)
+    pop_block(@stack, p1)
+    if probe_depth(@stack) != 0 or probe_count_innermost(@stack) != 0 {
+        io.println("FAIL: restored initial")
+        return 1
+    }
+
+    io.println("PASS: block markers balanced and scopes isolated")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: block markers balanced and scopes isolated" in res.stdout
+

@@ -33,6 +33,7 @@ use "range_gen.vl"
 data DeferNode {
     is_zone: bool
     is_loop: bool
+    is_block: bool
     stmt: @StmtNode
     zone_id: usize
     zone_has_expr: bool
@@ -40,24 +41,48 @@ data DeferNode {
     next: @DeferNode
 }
 
+// Pushes a block boundary marker onto the LIFO cleanup stack.
+act push_block_scope(defers: @@DeferNode) -> @DeferNode {
+    let prev = defers.@
+    mut bd: @DeferNode = mem.alloc(@DeferNode, 1)
+    bd.is_block = true; bd.is_loop = false; bd.is_zone = false; bd.stmt = null; bd.zone_id = 0
+    bd.zone_has_expr = false; bd.zone_is_arena = false; bd.next = defers.@; defers.@ = bd
+    return prev
+}
+act pop_block_scope(defers: @@DeferNode, prev: @DeferNode) { defers.@ = prev }
+
+// Returns the number of active block/loop boundary markers on the cleanup stack.
+act block_scope_depth(defers: @@DeferNode) -> i32 {
+    if defers == null { return 0 }
+    mut cur = defers.@; mut count: i32 = 0
+    loop cur != null { if cur.is_block or cur.is_loop { count += 1 }; cur = cur.next }
+    return count
+}
+
+// Returns the number of deferred statements in the current (innermost) block scope.
+act count_block_defers(defers: @@DeferNode) -> i32 {
+    if defers == null { return 0 }
+    mut cur = defers.@; mut count: i32 = 0
+    loop cur != null and not cur.is_block and not cur.is_loop {
+        if not cur.is_zone and cur.stmt != null { count += 1 }
+        cur = cur.next
+    }
+    return count
+}
+
 // Pushes a loop boundary marker onto the LIFO cleanup stack.
 act push_loop_scope(defers: @@DeferNode) -> @DeferNode {
     let prev = defers.@
     mut ld: @DeferNode = mem.alloc(@DeferNode, 1)
-    ld.is_loop = true; ld.is_zone = false; ld.stmt = null; ld.zone_id = 0
-    ld.zone_has_expr = false; ld.zone_is_arena = false; ld.next = defers.@
-    defers.@ = ld
+    ld.is_loop = true; ld.is_block = false; ld.is_zone = false; ld.stmt = null; ld.zone_id = 0
+    ld.zone_has_expr = false; ld.zone_is_arena = false; ld.next = defers.@; defers.@ = ld
     return prev
 }
-
-// Pops the loop boundary marker from the LIFO cleanup stack.
-act pop_loop_scope(defers: @@DeferNode, prev: @DeferNode) {
-    defers.@ = prev
-}
+act pop_loop_scope(defers: @@DeferNode, prev: @DeferNode) { defers.@ = prev }
 
 // Emits an individual deferred statement or zone scope cleanup.
 act emit_c_cleanup(sb: @StringBuilder, st: @SymbolTable, cur_d: @DeferNode, indent: i32, defers: @@DeferNode) {
-    if cur_d == null or cur_d.is_loop { return }
+    if cur_d == null or cur_d.is_loop or cur_d.is_block { return }
     if not cur_d.is_zone {
         emit_c_stmt(sb, st, cur_d.stmt, indent, defers)
     } else {
@@ -193,14 +218,8 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
 
     // 3. Expression statement
     if stmt.kind == STMT_EXPR {
-        if stmt.expr != null and stmt.expr.kind == EXPR_OR_RETURN {
-            emit_or_return_expr(sb, st, stmt, indent, defers)
-            return
-        }
-        sb_append_indent(sb, indent)
-        emit_c_expr(sb, st, stmt.expr)
-        sb_append_str(sb, ";\n")
-        return
+        if stmt.expr != null and stmt.expr.kind == EXPR_OR_RETURN { emit_or_return_expr(sb, st, stmt, indent, defers); return }
+        sb_append_indent(sb, indent); emit_c_expr(sb, st, stmt.expr); sb_append_str(sb, ";\n"); return
     }
 
     // 4. If / Else statement
@@ -305,12 +324,8 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
 
         let zone_df_target: @DeferNode = defers.@
         mut zd: @DeferNode = mem.alloc(@DeferNode, 1)
-        zd.is_zone = true
-        zd.is_loop = false
-        zd.zone_id = zid
-        zd.zone_has_expr = stmt.expr != null
-        zd.zone_is_arena = is_arena
-        zd.stmt = null
+        zd.is_zone = true; zd.is_loop = false; zd.is_block = false; zd.zone_id = zid
+        zd.zone_has_expr = stmt.expr != null; zd.zone_is_arena = is_arena; zd.stmt = null
         zd.next = defers.@
         defers.@ = zd
 
@@ -329,28 +344,15 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
     // 8. Defer statement (records deferred statement on LIFO stack)
     if stmt.kind == STMT_DEFER {
         mut d: @DeferNode = mem.alloc(@DeferNode, 1)
-        d.is_zone = false
-        d.is_loop = false
-        d.stmt = stmt.deferred_stmt
-        d.zone_id = 0
-        d.zone_has_expr = false
-        d.zone_is_arena = false
-        d.next = defers.@
+        d.is_zone = false; d.is_loop = false; d.is_block = false; d.stmt = stmt.deferred_stmt
+        d.zone_id = 0; d.zone_has_expr = false; d.zone_is_arena = false; d.next = defers.@
         defers.@ = d
         return
     }
 
-    // 9. Return statement (unrolls active defers and zone cleanups in LIFO order)
-    if stmt.kind == STMT_RETURN {
-        emit_return_stmt(sb, st, stmt, indent, defers)
-        return
-    }
-
-    // 9.5. Fail statement
-    if stmt.kind == STMT_FAIL {
-        emit_fail_stmt(sb, st, stmt, indent, defers)
-        return
-    }
+    // 9. Return & Fail statements (unroll active defers in LIFO order)
+    if stmt.kind == STMT_RETURN { emit_return_stmt(sb, st, stmt, indent, defers); return }
+    if stmt.kind == STMT_FAIL { emit_fail_stmt(sb, st, stmt, indent, defers); return }
 
     // 10. Break statement (unrolls loop-local zone cleanups before breaking)
     if stmt.kind == STMT_BREAK {
@@ -383,8 +385,5 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
     }
 
     // 12. Match / Switch statement
-    if stmt.kind == STMT_MATCH {
-        emit_match_stmt(sb, st, stmt, indent, defers)
-        return
-    }
+    if stmt.kind == STMT_MATCH { emit_match_stmt(sb, st, stmt, indent, defers); return }
 }

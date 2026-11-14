@@ -1765,12 +1765,33 @@ A `defer` inside `if` either runs at function exit (too late) or fails to compil
   - All 33 tests in `tests/test_std_io.py` passed in 28.98s.
   - Red baseline in `tests/test_defer.py` maintained (2 passed, 14 failed for documented causes).
 
-##### Task 58.3: Refactor the defer stack to block scopes
-* **Goal:** Add block markers (analogous to `push_loop_scope`) so cleanups can be emitted at the correct boundary.
-* **Files:** `src/backend/codegen_stmt.vl:25-48`.
-* **Tests:** internal probe or emitted-C assertions for nested blocks.
-* **Security gate:** marker push/pop must be balanced on every path.
-* **Done when:** nested blocks have distinct cleanup scopes.
+##### Task 58.3: Refactor the defer stack to block scopes [COMPLETED] ✅
+* **Former Defect**:
+  - `DeferNode` in `src/backend/codegen_stmt.vl` only differentiated between zones (`is_zone: bool`) and loops (`is_loop: bool`), lacking a block boundary marker (`is_block: bool`).
+  - Without block markers on the LIFO cleanup stack (`defers: @@DeferNode`), all defers pushed inside nested blocks (`if`, `else`, `on`, `{ ... }`) were indistinguishable from outer-scope and function-level defers.
+  - The compiler had no primitives to push/pop block boundary markers, measure block nesting depth, count block-local deferred cleanups, or isolate block cleanups from outer enclosing scopes.
+  - In `emit_c_cleanup`, only loop markers were skipped, meaning any block markers would have triggered invalid statement emissions if introduced without updating marker guards.
+* **Fix Applied**:
+  - Updated `data DeferNode` in `src/backend/codegen_stmt.vl` with `is_block: bool`.
+  - Implemented block scope stack primitives in `src/backend/codegen_stmt.vl`:
+    * `push_block_scope(defers: @@DeferNode) -> @DeferNode`: allocates and pushes an `is_block = true` boundary marker onto the LIFO cleanup stack, returning the previous top pointer.
+    * `pop_block_scope(defers: @@DeferNode, prev: @DeferNode)`: restores the cleanup stack to `prev`, popping all block-local cleanups and the marker.
+    * `block_scope_depth(defers: @@DeferNode) -> i32`: traverses the stack and counts active block and loop boundary markers.
+    * `count_block_defers(defers: @@DeferNode) -> i32`: counts deferred statements residing strictly in the innermost block scope, stopping traversal upon reaching the nearest `is_block` or `is_loop` boundary marker.
+  - Updated `emit_c_cleanup` to skip block markers (`if cur_d == null or cur_d.is_loop or cur_d.is_block { return }`).
+  - Updated `push_loop_scope`, `STMT_ZONE`, and `STMT_DEFER` to explicitly initialize `is_block = false`.
+  - Compacted statement handlers in `codegen_stmt.vl` to preserve strict line limits: 389 lines (ceiling $\le 400$).
+  - Added 2 new tests in `tests/test_defer.py`:
+    * `test_block_scope_marker_primitives_in_emitted_compiler_c`: asserts `bool is_block;`, `push_block_scope`, `pop_block_scope`, `block_scope_depth`, `count_block_defers`, and `cur_d->is_block` exist in emitted compiler C.
+    * `test_block_scope_stack_balance_and_isolation_probe`: compiles and executes a multi-level nested scope probe program verifying scope depth tracking, innermost count isolation across 3 nested blocks, and balanced unwinding back to 0.
+  - Rebuilt the 3-stage bootstrap compiler chain (`scripts/bootstrap.bat` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 fixed-point determinism (`250E3EA186DC75F7F31C3B46423A0406599EC0BCBEA47F0FDB4097253AB2D62C`).
+* **Residual Limitation**:
+  - Block markers are defined and tested on the stack, but not yet integrated into `emit_c_block_stmts` for automatic push/pop during block code generation.
+  - Emitting cleanups at normal block exit (`}`) and popping block markers follows in Task 58.4.
+* **Verification**:
+  - `python -m pytest tests/test_defer.py -k "marker or probe"`: 2 passed in 1.48s; overall suite 4 passed, 14 failing as expected for downstream tasks.
+  - `python scripts/count_lines.py`: `src/backend/codegen_stmt.vl` is at 389 lines ($\le 400$).
+  - Fixed-point determinism: SHA-256 between Gen2 and Gen3 identical (`250E3EA186DC75F7F31C3B46423A0406599EC0BCBEA47F0FDB4097253AB2D62C`), matching `bootstrap.c`.
 
 ##### Task 58.4: Emit cleanups at normal block exit
 * **Goal:** Emit the block's defers when control reaches `}` normally.
