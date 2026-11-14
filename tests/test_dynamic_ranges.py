@@ -1370,6 +1370,269 @@ act main() -> i32 {
     assert res.returncode == 0
 
 
+# ==============================================================================
+# 12. Security and Negative Gate Validation (Task 56.7)
+# ==============================================================================
+
+def test_negative_dynamic_float_start_rejected():
+    """Security Invariant: Float start endpoint must fail closed at velo check."""
+    code = """
+act main() -> i32 {
+    let start: f32 = 1.5
+    loop i in start..10 { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Range loop start endpoint must be an integer type, got 'f32'" in out
+
+
+def test_negative_dynamic_float_end_rejected():
+    """Security Invariant: Float end endpoint must fail closed at velo check."""
+    code = """
+act main() -> i32 {
+    let end: f64 = 10.5
+    loop i in 0..end { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Range loop end endpoint must be an integer type, got 'f64'" in out
+
+
+def test_negative_dynamic_string_start_rejected():
+    """Security Invariant: String start endpoint must fail closed at velo check."""
+    code = """
+act main() -> i32 {
+    let s: string = "hello"
+    loop i in s..10 { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Range loop start endpoint must be an integer type, got 'string'" in out
+
+
+def test_negative_dynamic_string_end_rejected():
+    """Security Invariant: String end endpoint must fail closed at velo check."""
+    code = """
+act main() -> i32 {
+    let s: string = "world"
+    loop i in 0..s { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Range loop end endpoint must be an integer type, got 'string'" in out
+
+
+def test_negative_dynamic_struct_start_rejected():
+    """Security Invariant: Custom struct start endpoint must fail closed at velo check."""
+    code = """
+data Point { x: i32, y: i32 }
+act main() -> i32 {
+    let p = Point{ x: 0, y: 0 }
+    loop i in p..10 { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Range loop start endpoint must be an integer type, got 'Point'" in out
+
+
+def test_negative_dynamic_struct_end_rejected():
+    """Security Invariant: Custom struct end endpoint must fail closed at velo check."""
+    code = """
+data Point { x: i32, y: i32 }
+act main() -> i32 {
+    let p = Point{ x: 10, y: 10 }
+    loop i in 0..p { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Range loop end endpoint must be an integer type, got 'Point'" in out
+
+
+def test_negative_dynamic_float_step_rejected():
+    """Security Invariant: Float step expression must fail closed at velo check."""
+    code = """
+act main() -> i32 {
+    let s: f32 = 2.5
+    loop i in 0..10:s { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Range loop step must be an integer type, got 'f32'" in out
+
+
+def test_negative_dynamic_string_step_rejected():
+    """Security Invariant: String step expression must fail closed at velo check."""
+    code = """
+act main() -> i32 {
+    let s: string = "two"
+    loop i in 0..10:s { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Range loop step must be an integer type, got 'string'" in out
+
+
+def test_negative_zero_step_unsuffixed_rejected():
+    """Security Invariant: Literal zero step must fail closed with positive step diagnostic."""
+    code = """
+act main() -> i32 {
+    let n: i32 = 10
+    loop i in 0..n:0 { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Range loop step must be greater than zero" in out
+
+
+def test_negative_zero_step_suffixed_rejected():
+    """Security Invariant: Suffixed zero steps (0u64, 0i32, 0usize) must fail closed."""
+    for zero_str in ["0i32", "0u32", "0i64", "0u64", "0usize", "0x0", "0b0"]:
+        code = f"""
+act main() -> i32 {{
+    let n: i32 = 10
+    loop i in 0..n:{zero_str} {{ }}
+    return 0
+}}
+"""
+        res = check_velo_source(code)
+        assert res.returncode != 0, f"Expected rejection for step {zero_str}"
+        out = res.stdout + res.stderr
+        assert "Range loop step must be greater than zero" in out
+
+
+def test_negative_negative_step_rejected():
+    """Security Invariant: Negative step literal must fail closed with positive step diagnostic."""
+    code = """
+act main() -> i32 {
+    let n: i32 = 10
+    loop i in 0..n:-2 { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Range loop step must be greater than zero" in out
+
+
+def test_negative_endpoint_literal_overflow_64bit_rejected():
+    """Security Invariant: Literals exceeding 64-bit maximum fail closed at compile time."""
+    code = """
+act main() -> i32 {
+    let a: i32 = 0
+    loop i in a..99999999999999999999999999 { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "exceeds 64-bit unsigned maximum" in out
+
+
+def test_negative_endpoint_literal_overflow_i32_rejected():
+    """Security Invariant: Explicitly suffixed literal overflowing i32 fails closed."""
+    code = """
+act main() -> i32 {
+    let a: i32 = 0
+    loop i in a..3000000000i32 { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Integer literal out of range for type 'i32'" in out
+
+
+def test_negative_endpoint_literal_overflow_u32_rejected():
+    """Security Invariant: Explicitly suffixed literal overflowing u32 fails closed."""
+    code = """
+act main() -> i32 {
+    let a: u32 = 0
+    loop i in a..5000000000u32 { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Integer literal out of range for type 'u32'" in out
+
+
+def test_negative_unsigned_negative_end_literal_rejected():
+    """Security Invariant: Negative literal endpoint for unsigned range fails closed."""
+    code = """
+act main() -> i32 {
+    let a: u32 = 0
+    loop i in a..-5 { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Range loop endpoint cannot be negative for unsigned type 'u32'" in out
+
+
+def test_negative_unsigned_negative_start_literal_rejected():
+    """Security Invariant: Negative literal start endpoint for unsigned range fails closed."""
+    code = """
+act main() -> i32 {
+    let a: usize = 0usize
+    loop i in -1..a { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Range loop endpoint cannot be negative for unsigned type 'usize'" in out
+
+
+def test_negative_boolean_endpoint_rejected():
+    """Security Invariant: Boolean endpoint must fail closed at velo check."""
+    code = """
+act main() -> i32 {
+    let b: bool = true
+    loop i in b..10 { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Range loop start endpoint must be an integer type, got 'bool'" in out
+
+
+
 
 
 

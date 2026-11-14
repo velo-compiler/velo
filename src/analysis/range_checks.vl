@@ -18,9 +18,9 @@ act is_range_step_non_positive(expr: @ExprNode) -> bool {
         if expr.int_val < 0 { return true }
         if expr.int_val == 0 {
             if expr.str_val == null { return true }
-            if expr.str_val == "0" or expr.str_val == "0u64" or expr.str_val == "0i64" or
-               expr.str_val == "0i32" or expr.str_val == "0u32" or expr.str_val == "0usize" or
-               expr.str_val == "0x0" or expr.str_val == "0b0" {
+            mut overflow = false
+            let val = parse_u64_checked(expr.str_val, @overflow)
+            if not overflow and val == 0 as u64 {
                 return true
             }
         }

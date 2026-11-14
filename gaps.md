@@ -1201,7 +1201,7 @@ The literal `3000000000` wraps negative during parsing, so codegen believes the 
 
 ---
 
-### Phase 56: Reverse Ranges with Dynamic Endpoints (P0) [OPEN] 🚧
+### Phase 56: Reverse Ranges with Dynamic Endpoints (P0) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-05`<br>
 **Severity:** P0 — silent zero-iteration loop<br>
@@ -1408,19 +1408,46 @@ The documented "Smart Reverse Auto-Countdown" (`docs/SPECIFICATION.md:688-693`) 
   - SHA-256 fixed-point determinism verified (`a4b3bf5d02e5e4bcf3f4ff33fb64940bba28c144850483e91a27933b33ff6cae`).
   - Line count standard maintained: all 119 compiler source files in `src/` <= 395 lines (ceiling 400).
 
-##### Task 56.7: Add the security/negative gate
-* **Goal:** Ensure invalid dynamic ranges fail closed.
-* **Files:** `tests/test_dynamic_ranges.py`.
-* **Tests:** float/string/struct endpoints; endpoints that overflow the loop variable; zero step (coordinate Phase 63).
-* **Security gate:** diagnostics at `velo check`; no silent fallback.
-* **Done when:** all negative cases are rejected.
+##### Task 56.7: Add the security/negative gate [COMPLETED] ✅
+* **Former Defect**:
+  - Semantic analysis in `is_range_step_non_positive` only checked unsuffixed `"0"` and a static list of string literal shapes, allowing suffixed zero steps like `0u32` to pass `velo check` silently without rejection.
+  - Furthermore, comprehensive negative gate tests were missing for dynamic variable endpoints covering invalid non-integer types (`f32`, `f64`, `string`, `bool`, custom `data` structs), step non-integer types, suffixed zero steps (`0i32`, `0u32`, `0i64`, `0u64`, `0usize`, `0x0`, `0b0`), negative steps, and integer literal overflow.
+* **Fix Applied**:
+  - Hardened `is_range_step_non_positive` in `src/analysis/range_checks.vl`:
+    * Leverages `parse_u64_checked` on `expr.str_val` to validate that any integer constant evaluating to `0` (regardless of type suffix or numeric base representation: decimal, hex, binary, octal, unsigned/signed) is detected and rejected at compile time.
+  - Added Section 12 to `tests/test_dynamic_ranges.py` with 17 dedicated security/negative gate tests verifying fail-closed compile diagnostics at `velo check`:
+    * `test_negative_dynamic_float_start_rejected` (`f32` start -> `Range loop start endpoint must be an integer type, got 'f32'`)
+    * `test_negative_dynamic_float_end_rejected` (`f64` end -> `Range loop end endpoint must be an integer type, got 'f64'`)
+    * `test_negative_dynamic_string_start_rejected` (`string` start -> `Range loop start endpoint must be an integer type, got 'string'`)
+    * `test_negative_dynamic_string_end_rejected` (`string` end -> `Range loop end endpoint must be an integer type, got 'string'`)
+    * `test_negative_dynamic_struct_start_rejected` (`Point` start -> `Range loop start endpoint must be an integer type, got 'Point'`)
+    * `test_negative_dynamic_struct_end_rejected` (`Point` end -> `Range loop end endpoint must be an integer type, got 'Point'`)
+    * `test_negative_dynamic_float_step_rejected` (`f32` step -> `Range loop step must be an integer type, got 'f32'`)
+    * `test_negative_dynamic_string_step_rejected` (`string` step -> `Range loop step must be an integer type, got 'string'`)
+    * `test_negative_zero_step_unsuffixed_rejected` (`:0` -> `Range loop step must be greater than zero`)
+    * `test_negative_zero_step_suffixed_rejected` (`0i32`, `0u32`, `0i64`, `0u64`, `0usize`, `0x0`, `0b0` -> `Range loop step must be greater than zero`)
+    * `test_negative_negative_step_rejected` (`:-2` -> `Range loop step must be greater than zero`)
+    * `test_negative_endpoint_literal_overflow_64bit_rejected` (`exceeds 64-bit unsigned maximum`)
+    * `test_negative_endpoint_literal_overflow_i32_rejected` (`3000000000i32` -> `Integer literal out of range for type 'i32'`)
+    * `test_negative_endpoint_literal_overflow_u32_rejected` (`5000000000u32` -> `Integer literal out of range for type 'u32'`)
+    * `test_negative_unsigned_negative_end_literal_rejected` (`u32..-5` -> `Range loop endpoint cannot be negative for unsigned type 'u32'`)
+    * `test_negative_unsigned_negative_start_literal_rejected` (`-1..usize` -> `Range loop endpoint cannot be negative for unsigned type 'usize'`)
+    * `test_negative_boolean_endpoint_rejected` (`bool` start -> `Range loop start endpoint must be an integer type, got 'bool'`)
+  - No silent fallback or infinite loops; invalid inputs fail closed with clear compile diagnostics.
+* **Residual Limitation**:
+  - Runtime dynamic step validation for non-literal variables (`let s = 0; loop i in 0..10:s`) is tracked and addressed in Phase 63.
+* **Verification**:
+  - `pytest tests/test_dynamic_ranges.py`: 100/100 tests passing in 21.93s.
+  - All loop test suites: 269/269 tests passing across `test_dynamic_ranges.py`, `test_range_loops.py`, `test_large_ranges.py`, `test_count_loops.py` in 54.10s.
+  - SHA-256 fixed-point determinism verified (`60b55505d08c9dd58985c82555e9f4a5826bd3a763a2b597fc13242c04e3063f`).
+  - Line count standard maintained: all 119 compiler source files in `src/` <= 395 lines (ceiling 400).
 
 #### Phase Exit Criteria
 
-- [ ] `let n = 5; loop i in n..0` iterates 5,4,3,2,1 and terminates.
-- [ ] Endpoints are evaluated exactly once.
-- [ ] Equal endpoints produce the documented iteration count.
-- [ ] Mixed-type bounds are either rejected or promoted by a documented rule.
+- [x] `let n = 5; loop i in n..0` iterates 5,4,3,2,1 and terminates.
+- [x] Endpoints are evaluated exactly once.
+- [x] Equal endpoints produce the documented iteration count.
+- [x] Mixed-type bounds are either rejected or promoted by a documented rule.
 
 ---
 

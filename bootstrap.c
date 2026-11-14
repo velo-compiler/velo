@@ -26628,7 +26628,11 @@ bool is_range_step_non_positive(ExprNode* expr) {
                 return true;
             }
 #line 21 "src/main.vl"
-            if ((((((((((expr->str_val != NULL && "0" != NULL) ? (strcmp(expr->str_val, "0") == 0) : (expr->str_val == "0")) || ((expr->str_val != NULL && "0u64" != NULL) ? (strcmp(expr->str_val, "0u64") == 0) : (expr->str_val == "0u64"))) || ((expr->str_val != NULL && "0i64" != NULL) ? (strcmp(expr->str_val, "0i64") == 0) : (expr->str_val == "0i64"))) || ((expr->str_val != NULL && "0i32" != NULL) ? (strcmp(expr->str_val, "0i32") == 0) : (expr->str_val == "0i32"))) || ((expr->str_val != NULL && "0u32" != NULL) ? (strcmp(expr->str_val, "0u32") == 0) : (expr->str_val == "0u32"))) || ((expr->str_val != NULL && "0usize" != NULL) ? (strcmp(expr->str_val, "0usize") == 0) : (expr->str_val == "0usize"))) || ((expr->str_val != NULL && "0x0" != NULL) ? (strcmp(expr->str_val, "0x0") == 0) : (expr->str_val == "0x0"))) || ((expr->str_val != NULL && "0b0" != NULL) ? (strcmp(expr->str_val, "0b0") == 0) : (expr->str_val == "0b0")))) {
+            bool overflow = false;
+#line 22 "src/main.vl"
+            uint64_t val = parse_u64_checked(expr->str_val, (&(overflow)));
+#line 23 "src/main.vl"
+            if (((!overflow) && (val == ((uint64_t)(0))))) {
 #line 24 "src/main.vl"
                 return true;
             }
