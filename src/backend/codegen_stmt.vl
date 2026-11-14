@@ -22,6 +22,13 @@ use "array_gen.vl"
 use "tuple_gen.vl"
 use "range_gen.vl"
 
+// Block-Scope Cleanup Architecture (Phase 58: AUDIT-2026-11-07):
+// 1. Lexical Scope: defers execute at block exit '}', before C and symbol scopes close.
+// 2. LIFO Order: defers execute in reverse declaration order within enclosing block.
+// 3. Loop Iterations: each iteration cleans up its own defers; break/continue unwind current iter.
+// 4. Early Exits: return/fail evaluate results first, then unwind active scopes up to fn boundary.
+// 5. Zone Safety: defers run before zone pop/leave; exactly-once execution, no double-free.
+
 // Intrusive linked list node maintaining active LIFO deferred statements and zone cleanups.
 data DeferNode {
     is_zone: bool

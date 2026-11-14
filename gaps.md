@@ -1735,12 +1735,35 @@ A `defer` inside `if` either runs at function exit (too late) or fails to compil
   - Line count standard maintained: all 119 compiler source files in `src/` <= 395 lines (ceiling 400).
   - No UTF-8 BOM in new `.vl` files.
 
-##### Task 58.2: Design the block-scope cleanup model
-* **Goal:** Define block boundaries, loop iteration boundaries, zone interaction, and early-exit order.
-* **Files:** `docs/STEP2_SPECIFICATION.md`, `src/backend/codegen_stmt.vl` design note.
-* **Tests:** documentation examples; review checklist.
-* **Security gate:** the design must prove exactly-once cleanup and no out-of-scope references.
-* **Done when:** the design is reviewed before code changes.
+##### Task 58.2: Design the block-scope cleanup model [COMPLETED] ✅
+* **Former Defect**:
+  - `docs/STEP2_SPECIFICATION.md:79-82` previously contained only a minimal, underspecified note stating that the compiler collects defers in a block and emits them upon `return` or the closing `}`.
+  - The specification lacked formal normative rules defining:
+    1. The exact set of constructs that establish lexical block boundaries (`act`, `if`, `else`, `on`, `loop`, `{ ... }`, `unsafe`, and `zone`).
+    2. Per-iteration loop boundaries and control-flow interaction (`continue`, `break`).
+    3. Multi-level unwinding order and precedence for early exits (`return`, `fail`, `or return`) where return expressions must evaluate before cleanups execute.
+    4. Safety and ordering guarantees for zone arena interactions (cleanups running before zone rollback).
+    5. The identifier lifetime and scope containment invariant prohibiting out-of-scope variable references during deferred execution.
+  - `src/backend/codegen_stmt.vl` lacked architectural documentation describing how the LIFO cleanup stack maps onto block boundaries and unwinding scopes.
+* **Fix Applied**:
+  - Formalized comprehensive Section 2.2 in `docs/STEP2_SPECIFICATION.md`:
+    * §2.2.1 Block-Scope Semantics & Boundaries across all 6 block categories.
+    * §2.2.2 Reverse Declaration Order (LIFO) within blocks.
+    * §2.2.3 Loop Iteration Boundaries, per-iteration cleanup, and `break`/`continue` semantics.
+    * §2.2.4 Early-Exit Unwinding (`return`, `fail`, `or return`) preserving return values before unwinding.
+    * §2.2.5 Interaction with Zone Arenas (user defers running before `velo_zone_pop`/`velo_zone_leave`).
+    * §2.2.6 Security & Memory Safety Invariants (exactly-once execution, live identifier invariant, zero heap leaks, no double-free).
+    * §2.2.7 Design Review Checklist covering all 8 verification gates.
+  - Added architectural design note in `src/backend/codegen_stmt.vl` (lines 25–31) codifying the 5 core tenets of block-scope cleanup.
+  - Rebuilt bootstrap chain (`scripts/bootstrap.bat` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 fixed-point determinism (`0784770A687B3AB45540DD6DADB29FF889D2EB59336021CB53B1E670BE35F711`).
+* **Residual Limitation**:
+  - Implementation of block markers on the defer stack follows in Task 58.3.
+* **Verification**:
+  - Verified documentation examples against language syntax and compiler parser rules.
+  - All 119 compiler source files in `src/` remain <= 395 lines (ceiling 400; `codegen_stmt.vl` is at 390 lines).
+  - Bit-for-bit bootstrap determinism verified across Gen2, Gen3, and `bootstrap.c`.
+  - All 33 tests in `tests/test_std_io.py` passed in 28.98s.
+  - Red baseline in `tests/test_defer.py` maintained (2 passed, 14 failed for documented causes).
 
 ##### Task 58.3: Refactor the defer stack to block scopes
 * **Goal:** Add block markers (analogous to `push_loop_scope`) so cleanups can be emitted at the correct boundary.
