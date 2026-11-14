@@ -78,6 +78,19 @@ def emit_c_velo_source(source_code: str) -> str:
 # 1. Ranges around INT32_MAX (2147483647)
 # ==============================================================================
 
+def check_velo_source(source_code: str) -> subprocess.CompletedProcess:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        src_path = Path(tmp_dir) / "test.vl"
+        src_path.write_text(source_code, encoding="utf-8")
+        return subprocess.run(
+            ["bin/velo.exe", "check", str(src_path)],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            cwd=Path.cwd()
+        )
+
+
 def test_range_ascending_3000000000():
     """Verifies ascending range 0..3000000000 iterates in ascending order."""
     code = """
@@ -955,3 +968,259 @@ act main() -> i32 {
 
 
 
+
+
+# ==============================================================================
+# 8. Boundary and Overflow Tests (Task 55.6)
+# ==============================================================================
+
+def test_boundary_crossing_int32_max_ascending():
+    """Verifies crossing INT32_MAX ascending seamlessly infers i64 and runs exact 5 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_i: i64 = 0
+    loop i in 2147483645..2147483650 {
+        iters += 1
+        last_i = i
+    }
+    assert(iters == 5)
+    assert(last_i == 2147483649)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_boundary_crossing_int32_max_descending():
+    """Verifies crossing INT32_MAX descending seamlessly infers i64 and runs exact 5 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_i: i64 = 0
+    loop i in 2147483650..2147483645 {
+        iters += 1
+        last_i = i
+    }
+    assert(iters == 5)
+    assert(last_i == 2147483646)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_boundary_crossing_int32_max_inclusive():
+    """Verifies inclusive boundary crossing INT32_MAX executes exact 6 iterations."""
+    code = """
+act main() -> i32 {
+    mut asc_iters: i32 = 0
+    loop i in 2147483645..=2147483650 {
+        asc_iters += 1
+    }
+    assert(asc_iters == 6)
+
+    mut desc_iters: i32 = 0
+    loop i in 2147483650..=2147483645 {
+        desc_iters += 1
+    }
+    assert(desc_iters == 6)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_boundary_crossing_uint32_max_ascending():
+    """Verifies crossing UINT32_MAX ascending runs exact 5 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_i: u64 = 0u64
+    loop i in 4294967293u64..4294967298u64 {
+        iters += 1
+        last_i = i
+    }
+    assert(iters == 5)
+    assert(last_i == 4294967297u64)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_boundary_crossing_uint32_max_descending():
+    """Verifies crossing UINT32_MAX descending runs exact 5 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_i: u64 = 0u64
+    loop i in 4294967298u64..4294967293u64 {
+        iters += 1
+        last_i = i
+    }
+    assert(iters == 5)
+    assert(last_i == 4294967294u64)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_boundary_crossing_int64_max_ascending():
+    """Verifies crossing INT64_MAX into u64 range ascending runs exact 5 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_i: u64 = 0u64
+    loop i in 9223372036854775805u64..9223372036854775810u64 {
+        iters += 1
+        last_i = i
+    }
+    assert(iters == 5)
+    assert(last_i == 9223372036854775809u64)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_boundary_crossing_int64_max_descending():
+    """Verifies crossing INT64_MAX descending into signed range runs exact 5 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_i: u64 = 0u64
+    loop i in 9223372036854775810u64..9223372036854775805u64 {
+        iters += 1
+        last_i = i
+    }
+    assert(iters == 5)
+    assert(last_i == 9223372036854775806u64)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_boundary_large_step_crossing_int32_max():
+    """Verifies large step of 1 billion increments 0, 1000000000, 2000000000 (3 iterations)."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_i: i64 = 0
+    loop i in 0..3000000000:1000000000 {
+        iters += 1
+        last_i = i
+    }
+    assert(iters == 3)
+    assert(last_i == 2000000000)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_boundary_large_step_descending_crossing_int32_max():
+    """Verifies large descending step of 1 billion decrements 3000000000, 2000000000, 1000000000 (3 iterations)."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_i: i64 = 0
+    loop i in 3000000000..0:1000000000 {
+        iters += 1
+        last_i = i
+    }
+    assert(iters == 3)
+    assert(last_i == 1000000000)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_boundary_sign_crossing_ascending():
+    """Verifies ascending range crossing negative to positive -5..5 runs 10 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut sum: i32 = 0
+    loop i in -5..5 {
+        iters += 1
+        sum += i
+    }
+    assert(iters == 10)
+    // sum(-5..5) = -5 + -4 + -3 + -2 + -1 + 0 + 1 + 2 + 3 + 4 = -5
+    assert(sum == -5)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_boundary_sign_crossing_descending():
+    """Verifies descending range crossing positive to negative 5..-5 runs 10 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut sum: i32 = 0
+    loop i in 5..-5 {
+        iters += 1
+        sum += i
+    }
+    assert(iters == 10)
+    // sum(5..-5) = 5 + 4 + 3 + 2 + 1 + 0 + -1 + -2 + -3 + -4 = 5
+    assert(sum == 5)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_boundary_sign_crossing_inclusive():
+    """Verifies inclusive range crossing sign boundaries -3..=3 runs 7 iterations with sum 0."""
+    code = """
+act main() -> i32 {
+    mut asc_sum: i32 = 0
+    loop i in -3..=3 {
+        asc_sum += i
+    }
+    assert(asc_sum == 0)
+
+    mut desc_sum: i32 = 0
+    loop i in 3..=-3 {
+        desc_sum += i
+    }
+    assert(desc_sum == 0)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_boundary_unrepresentable_decimal_rejected():
+    """Security Invariant: Endpoints exceeding 64-bit unsigned maximum must be rejected at velo check."""
+    code = "act main() { loop i in 0..18446744073709551616 { } }"
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for endpoint exceeding 64-bit unsigned max"
+    assert "exceeds 64-bit" in (res.stdout + res.stderr).lower() or "error" in (res.stdout + res.stderr).lower()
+
+
+def test_boundary_unrepresentable_hex_rejected():
+    """Security Invariant: Hexadecimal endpoint exceeding 64-bit maximum must be rejected at velo check."""
+    code = "act main() { loop i in 0..0x10000000000000000 { } }"
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for hex endpoint exceeding 64-bit unsigned max"
+    assert "exceeds 64-bit" in (res.stdout + res.stderr).lower() or "error" in (res.stdout + res.stderr).lower()

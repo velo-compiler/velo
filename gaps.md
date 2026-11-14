@@ -1121,12 +1121,33 @@ The literal `3000000000` wraps negative during parsing, so codegen believes the 
   - `tests/test_range_loops.py`: 7/7 tests pass in 4.05s.
   - All 117 compiler source files $\le 395$ lines ($\le 400$).
 
-##### Task 55.6: Add boundary/overflow tests
-* **Goal:** Cover `INT32_MAX`, `UINT32_MAX`, `INT64_MAX`, and values just outside the loop variable's range.
-* **Files:** `tests/test_large_ranges.py`.
-* **Tests:** endpoints at each boundary; step increments that would overflow.
-* **Security gate:** reject or diagnose unrepresentable ranges; no signed overflow.
-* **Done when:** boundary behavior is defined and tested.
+##### Task 55.6: Add boundary/overflow tests [COMPLETED] ✅
+* **Former Defect**:
+  - Prior loop tests lacked targeted coverage at critical integer boundaries: `INT32_MAX` (2147483647), `UINT32_MAX` (4294967295), `INT64_MAX` (9223372036854775807), and values crossing signed/unsigned integer boundaries.
+  - No automated tests checked large step increments crossing boundaries (e.g. step of 1 billion), sign-crossing ranges (`-5..5`, `5..-5`, `-3..=3`), or confirmed that endpoints beyond `UINT64_MAX` fail closed at compile time rather than wrapping or reversing direction.
+* **Fix Applied**:
+  - Added `check_velo_source` harness helper in `tests/test_large_ranges.py` running `bin/velo.exe check` on source snippets.
+  - Added Section 8 ("Boundary and Overflow Tests") to `tests/test_large_ranges.py` with 14 comprehensive boundary test cases:
+    * `test_boundary_crossing_int32_max_ascending`: `2147483645..2147483650` infers `i64` and runs exact 5 iterations (`last_i == 2147483649`).
+    * `test_boundary_crossing_int32_max_descending`: `2147483650..2147483645` executes exact 5 iterations descending across `INT32_MAX` (`last_i == 2147483646`).
+    * `test_boundary_crossing_int32_max_inclusive`: Inclusive ascending (`2147483645..=2147483650`) and descending (`2147483650..=2147483645`) each execute exact 6 iterations.
+    * `test_boundary_crossing_uint32_max_ascending`: `4294967293u64..4294967298u64` executes exact 5 iterations crossing `UINT32_MAX`.
+    * `test_boundary_crossing_uint32_max_descending`: `4294967298u64..4294967293u64` executes exact 5 iterations descending across `UINT32_MAX`.
+    * `test_boundary_crossing_int64_max_ascending`: `9223372036854775805u64..9223372036854775810u64` executes exact 5 iterations crossing `INT64_MAX` into unsigned space.
+    * `test_boundary_crossing_int64_max_descending`: `9223372036854775810u64..9223372036854775805u64` executes exact 5 iterations descending across `INT64_MAX` into signed space.
+    * `test_boundary_large_step_crossing_int32_max`: Step increment of `1000000000` over `0..3000000000` executes exact 3 iterations (0, 1000000000, 2000000000).
+    * `test_boundary_large_step_descending_crossing_int32_max`: Step decrement of `1000000000` over `3000000000..0` executes exact 3 iterations (3000000000, 2000000000, 1000000000).
+    * `test_boundary_sign_crossing_ascending`: Ascending range `-5..5` executes exact 10 iterations with sum -5.
+    * `test_boundary_sign_crossing_descending`: Descending range `5..-5` executes exact 10 iterations with sum 5.
+    * `test_boundary_sign_crossing_inclusive`: Inclusive sign-crossing ranges `-3..=3` and `3..=-3` execute exact 7 iterations each with sum 0.
+    * `test_boundary_unrepresentable_decimal_rejected`: Verifies `0..18446744073709551616` (> UINT64_MAX) is rejected at compile time by `velo check` with diagnostic (`Integer literal exceeds 64-bit unsigned maximum`).
+    * `test_boundary_unrepresentable_hex_rejected`: Verifies `0..0x10000000000000000` (> UINT64_MAX) is rejected at compile time by `velo check` with diagnostic (`Hexadecimal literal exceeds 64-bit unsigned maximum`).
+* **Residual Limitation**:
+  - Task 55.7 implements the security/negative gate for non-integer types (strings, floats, structs) and range loop endpoint diagnostics.
+* **Verification**:
+  - `tests/test_large_ranges.py`: All 78 tests pass in 14.43s (100% pass rate).
+  - `tests/test_range_loops.py` and `tests/test_count_loops.py`: All 73 tests pass in 17.87s.
+  - All 117 compiler source files <= 395 lines (<= 400).
 
 ##### Task 55.7: Add the security/negative gate
 * **Goal:** Ensure malformed or unrepresentable ranges fail closed.
