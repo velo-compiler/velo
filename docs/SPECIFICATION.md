@@ -498,6 +498,53 @@ if outcome.ok {
 * **`or return` Operator**: Evaluates an outcome expression. If `outcome.ok` is `true`, it evaluates to `outcome.val`. If `outcome.ok` is `false`, it propagates `fail outcome.err` out of the calling function.
 * **Combined Destructuring**: Seamlessly integrates with tuples: `let (data, bytes) = read_socket() or return`.
 
+### 2.14 Integer Literals & Unsuffixed Literal Type Ladder
+
+#### 2.14.1 Literal Bases & Syntax
+Velo supports integer literals in four numerical bases, with optional digit separators (`_`) for enhanced readability:
+* **Decimal**: digits `0-9` (e.g. `42`, `1_000_000`).
+* **Hexadecimal**: prefix `0x` or `0X` followed by hex digits `0-9`, `a-f`, `A-F` (e.g. `0xFF`, `0xDead_Beef`).
+* **Binary**: prefix `0b` or `0B` followed by binary digits `0` or `1` (e.g. `0b1010`, `0b11111111_00000000`).
+* **Octal**: prefix `0o` or `0O` followed by octal digits `0-7` (e.g. `0o755`, `0o17777777777`).
+
+All integer literals are verified at compile time to fit within the 64-bit unsigned magnitude range `[0, 18446744073709551615]`. Values exceeding $2^{64}-1$ trigger a loud compile-time error. Empty literals (`0x`, `0b`, `0o`) and literals containing invalid digits (e.g. `0b102`, `0o78`) are strictly rejected.
+
+#### 2.14.2 Explicit Suffixes (Strict Typing)
+Integer literals may carry an explicit type suffix designating their exact static type:
+* Signed: `i8`, `i16`, `i32`, `i64`, `isize` (e.g. `100i8`, `-42i64`, `0isize`).
+* Unsigned: `u8`, `u16`, `u32`, `u64`, `usize` (e.g. `255u8`, `1000u32`, `0xFFu64`, `64usize`).
+
+When an explicit suffix is supplied, the literal's static type is strictly pinned to that type. No implicit widening, narrowing, or cross-family conversions are permitted:
+```rust
+let a = 100u64         // Type is strictly u64
+let b: u32 = 100u64    // Compile Error: Cannot implicitly convert 'u64' to narrower type 'u32'
+```
+
+#### 2.14.3 Unsuffixed Literal Type Ladder
+When an integer literal has no explicit type suffix, its inferred static type is determined by the unsuffixed literal type ladder:
+1. **Fits `i32`**: Values in `[-2147483648, 2147483647]` are inferred as `i32`.
+2. **Else fits `i64`**: Values in `[-9223372036854775808, 9223372036854775807]` are inferred as `i64`.
+3. **Else fits `u64`**: Positive values in `[9223372036854775808, 18446744073709551615]` are inferred as `u64`.
+4. **Out of Range**: Values outside `[-9223372036854775808, 18446744073709551615]` trigger a compile-time overflow error.
+
+```rust
+let a = 42                   // Inferred as i32 (fits i32)
+let b = 2147483648           // Inferred as i64 (exceeds INT32_MAX, fits i64)
+let c = 0x80000000           // Inferred as i64 (2147483648 fits i64)
+let d = 9223372036854775808  // Inferred as u64 (exceeds INT64_MAX, fits u64)
+let e = -2147483648          // Inferred as i32 (INT32_MIN fits i32)
+let f = -9223372036854775808 // Inferred as i64 (INT64_MIN fits i64)
+```
+
+#### 2.14.4 Contextual Literal Adaptation
+To maintain clean ergonomics without compromising type safety, unsuffixed integer literals adapt to the target integer type of their enclosing context (variable annotations, struct fields, assignments, returns, and function arguments) if and only if the constant value fits within the target type's representable range:
+```rust
+let x: u8 = 255              // OK: 255 fits in u8
+let y: u8 = 256              // Compile Error: Integer literal '256' out of range for type 'u8'
+let z: i64 = -9223372036854775808 // OK: fits in i64
+let w: usize = 2305843009213693952 // OK: fits in usize
+```
+
 ---
 
 ## 3. Variables & Mutability

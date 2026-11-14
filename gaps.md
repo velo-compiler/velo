@@ -632,12 +632,29 @@ This also corrupts range analysis: `loop i in 0..3000000000` stores the endpoint
   - `tests/test_literal_formatting.py`: 6 passed in 3.30s.
   - Bootstrap Gen2/Gen3 SHA-256 match verified; `python scripts/count_lines.py` verified all files $\le 394$ lines ($\le 400$).
 
-##### Task 53.6: Define and implement the unsuffixed literal type ladder
+##### Task 53.6: Define and implement the unsuffixed literal type ladder [COMPLETED] ✅
 * **Goal:** Decide and document the rule: fits `i32` → `i32`; else fits `i64` → `i64`; else fits `u64` → `u64`; else error. Suffixed literals remain strict.
-* **Files:** `src/analysis/type_checker.vl:53`, `src/analysis/literal_check.vl`, `docs/SPECIFICATION.md`.
+* **Files:** `src/frontend/parser_lit.vl`, `src/analysis/literal_check.vl`, `src/analysis/type_checker.vl`, `docs/SPECIFICATION.md`.
 * **Tests:** inferred type for each boundary; explicit suffix overrides; out-of-range diagnostics.
 * **Security gate:** no implicit narrowing; no silent `u32`/`i64` guess that changes semantics.
 * **Done when:** the ladder is documented and the inferred types match the tests.
+* **Former Defect:** Unsuffixed integer literals were either unconditionally typed as `i32` in `infer_expr_type` (regardless of magnitude) or prematurely assigned `type_name = "i64"` / `"u64"` in the parser for wide literals. This premature typing caused `is_unsuffixed_int_literal` to return false, breaking contextual adaptation for large integer constants (e.g. `let huge: usize = 2305843009213693952` failed with type mismatch `i64` to `usize`, and `let h: i64 = -9223372036854775808` failed with `u64` to `i64`). Furthermore, negated literals like `-2147483648` were treated as a positive 64-bit value negated, failing to fit into `i32`.
+* **Fix Applied:**
+  - Removed premature `type_name` assignment in `src/frontend/parser_lit.vl` for unsuffixed integer literals across decimal, hex, binary, and octal formats. Unsuffixed literals keep `type_name = ""` so `is_unsuffixed_int_literal(expr)` correctly returns `true`.
+  - Implemented `infer_unsuffixed_int_type` and `infer_unsuffixed_neg_int_type` in `src/analysis/literal_check.vl`. If an unsuffixed literal is not contextually constrained, its standalone inferred type is determined by the deterministic type ladder:
+    - Positive: $\le 2147483647 \to \text{"i32"}$; $\le 9223372036854775807 \to \text{"i64"}$; $\le 18446744073709551615 \to \text{"u64"}$.
+    - Negated (`-` prefix): $\le 2147483648 \to \text{"i32"}$ (fitting `INT32_MIN`); $\le 9223372036854775808 \to \text{"i64"}$ (fitting `INT64_MIN`).
+  - Integrated `infer_unsuffixed_int_type` and `infer_unsuffixed_neg_int_type` into `infer_expr_type` in `src/analysis/type_checker.vl` (for standalone `EXPR_INT` and unary minus `EXPR_UNARY`).
+  - Formally specified §2.14 ("Integer Literals, Suffixes, and the Type Ladder") in `docs/SPECIFICATION.md` detailing grammar, representations, explicit suffixes, type ladder rules, and contextual adaptation.
+  - Added comprehensive test suite `tests/test_literal_type_ladder.py` with 53 tests covering boundaries, explicit suffixes, negative minimums, rejection of implicit conversions, and diagnostic ranges.
+* **Residual Limitation:** Wide literal C codegen formatting and safety guarantees are finalized in Task 53.7.
+* **Verification:**
+  - `tests/test_literal_type_ladder.py`: all 53 tests pass.
+  - `tests/test_integer_literals.py`: all 41 boundary tests pass.
+  - `tests/test_type_checker.py`: all 23 tests pass.
+  - `tests/test_allocators.py`: all 25 tests pass.
+  - `tests/test_std_rand.py`: all 4 tests pass.
+  - Bootstrap Gen2/Gen3 SHA-256 match verified (`abbfe3fbfcd04edd3abb0762c15b84541634f79d89897371a1b7da93016faeb0`); `python scripts/count_lines.py` verified all files $\le 394$ lines ($\le 400$).
 
 ##### Task 53.7: Emit wide C literals safely
 * **Goal:** Emit `INT64_C`/`UINT64_C`-style literals or explicit casts so the C compiler cannot re-wrap the value.

@@ -51,7 +51,7 @@ act is_known_type(st: @SymbolTable, name: string) -> bool {
 // Infers the static type of an expression AST node (the wall vocabulary).
 act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr == null { return "void" }
-    if expr.kind == EXPR_INT { if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name } return "i32" }
+    if expr.kind == EXPR_INT { if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name } return infer_unsuffixed_int_type(expr) }
     if expr.kind == EXPR_FLOAT { if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name } return "f32" }
     if expr.kind == EXPR_STRING { return "string" }; if expr.kind == EXPR_BOOL { return "bool" }; if expr.kind == EXPR_NULL { return "@void" }
     if expr.kind == EXPR_VARIANT {
@@ -316,6 +316,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     }
 
     if expr.kind == EXPR_UNARY {
+        if expr.op == TOK_MINUS and expr.operand != null and expr.operand.kind == EXPR_INT and (expr.operand.type_name == null or str.len(expr.operand.type_name) == 0) { return infer_unsuffixed_neg_int_type(expr.operand) }
         let sub_type = infer_expr_type(st, expr.operand)
         if sub_type == "dyn" { report_error("semantic", expr.line, expr.col, dyn_gate_error()); st.error_count += 1; return "unknown" }  // slice 2: unbox with `as` first
         let s_un = check_simd_unary(st, expr, sub_type); if s_un != null { return s_un }

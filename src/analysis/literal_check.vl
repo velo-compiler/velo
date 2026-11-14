@@ -49,6 +49,48 @@ act parse_u64_checked(s: string, out_overflow: @bool) -> u64 {
     return res
 }
 
+// Infers the static type of an unsuffixed non-negative integer literal using the type ladder:
+// fits i32 (<= 2147483647) -> i32; else fits i64 (<= 9223372036854775807) -> i64; else fits u64 (<= 18446744073709551615) -> u64.
+act infer_unsuffixed_int_type(expr: @ExprNode) -> string {
+    if expr == null { return "i32" }
+    mut overflow = false
+    mut val_u64: u64 = 0 as u64
+    if expr.str_val != null and str.len(expr.str_val) > 0 {
+        val_u64 = parse_u64_checked(expr.str_val, @overflow)
+    } else {
+        if expr.int_val < 0 {
+            val_u64 = (0 - expr.int_val) as u64
+        } else {
+            val_u64 = expr.int_val as u64
+        }
+    }
+    if overflow { return "u64" }
+    if val_u64 <= 2147483647_u64 { return "i32" }
+    if val_u64 <= 9223372036854775807_u64 { return "i64" }
+    return "u64"
+}
+
+// Infers the static type of an unsuffixed negated integer literal (-lit) using the type ladder:
+// fits i32 (<= 2147483648) -> i32; else fits i64 (<= 9223372036854775808) -> i64; else error.
+act infer_unsuffixed_neg_int_type(operand: @ExprNode) -> string {
+    if operand == null { return "i32" }
+    mut overflow = false
+    mut val_u64: u64 = 0 as u64
+    if operand.str_val != null and str.len(operand.str_val) > 0 {
+        val_u64 = parse_u64_checked(operand.str_val, @overflow)
+    } else {
+        if operand.int_val < 0 {
+            val_u64 = (0 - operand.int_val) as u64
+        } else {
+            val_u64 = operand.int_val as u64
+        }
+    }
+    if overflow { return "i64" }
+    if val_u64 <= 2147483648_u64 { return "i32" }
+    if val_u64 <= 9223372036854775808_u64 { return "i64" }
+    return "i64"
+}
+
 // Checks if an AST expression represents an unsuffixed integer literal.
 act is_unsuffixed_int_literal(expr: @ExprNode) -> bool {
     if expr == null { return false }
