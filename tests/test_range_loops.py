@@ -262,7 +262,7 @@ act main() -> i32 {
         res_sh = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", timeout=2.0)
         assert res_sh.returncode == 0
         assert "asc=5" in res_sh.stdout
-        # Note: desc_iters is 0 in baseline because n..0 is lowered as i < 0; i++
-        assert "desc=0" in res_sh.stdout
+        # Phase 56 Task 56.4: descending dynamic range n..0 now executes 5 iterations
+        assert "desc=5" in res_sh.stdout
     except subprocess.TimeoutExpired as e:
         pytest.fail(f"Loop timed out: {e}")

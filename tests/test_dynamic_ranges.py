@@ -681,8 +681,8 @@ act main() -> i32 {
 # 8. Diagnostic Probe: Emitted C Inspection for Dynamic Ranges
 # ==============================================================================
 
-def test_emitted_c_dynamic_descending_proves_ascending_defect():
-    """Diagnostic Probe: Proves that `loop i in n..0` hoists endpoints into temporaries but still emits ascending condition `i < __end_i; i++`."""
+def test_emitted_c_dynamic_descending_runtime_direction():
+    """Verify emitted C lowers dynamic direction selection using __rev temporary."""
     code = """
 act main() -> i32 {
     let n: i32 = 5
@@ -691,17 +691,13 @@ act main() -> i32 {
 }
 """
     c_code = emit_c_velo_source(code)
-    # Task 56.3 hoists start and end into temporaries.
-    # The remaining defect (to be solved in Task 56.4) is that condition is still ascending 'i < __end_i' and 'i++'.
-    has_hoisted_temps = "__start_i = (n)" in c_code and "__end_i = (0)" in c_code
-    has_ascending_defect = "i < __end_i" in c_code and "i++" in c_code
-    assert has_hoisted_temps and has_ascending_defect, (
-        f"Expected hoisted temps with baseline defect 'i < __end_i; i++' in emitted C, got:\n{c_code}"
-    )
+    assert "__rev_i = (__start_i > __end_i)" in c_code
+    assert "__rev_i ? (i > __end_i) : (i < __end_i)" in c_code
+    assert "__rev_i ? (i--) : (i++)" in c_code
 
 
-def test_emitted_c_dynamic_var_to_var_proves_ascending_defect():
-    """Diagnostic Probe: Proves that `loop i in n..m` hoists endpoints into temporaries but still emits ascending condition."""
+def test_emitted_c_dynamic_var_to_var_runtime_direction():
+    """Verify emitted C lowers dynamic direction selection for variable to variable bounds."""
     code = """
 act main() -> i32 {
     let n: i32 = 5
@@ -711,11 +707,9 @@ act main() -> i32 {
 }
 """
     c_code = emit_c_velo_source(code)
-    has_hoisted_temps = "__start_i = (n)" in c_code and "__end_i = (m)" in c_code
-    has_ascending_defect = "i < __end_i" in c_code and "i++" in c_code
-    assert has_hoisted_temps and has_ascending_defect, (
-        f"Expected hoisted temps with baseline defect 'i < __end_i; i++' in emitted C, got:\n{c_code}"
-    )
+    assert "__start_i = (n)" in c_code and "__end_i = (m)" in c_code
+    assert "__rev_i = (__start_i > __end_i)" in c_code
+    assert "__rev_i ? (i > __end_i) : (i < __end_i)" in c_code
 
 
 # ==============================================================================
@@ -922,7 +916,7 @@ act main() -> i32 {
 
 
 def test_emitted_c_endpoint_hoisting_temps():
-    """Verify C99 emission declares __start_i, __end_i, and loop var in loop header."""
+    """Verify C99 emission declares __start_i, __end_i, __rev_i, and loop var in loop header."""
     code = """
 act main() -> i32 {
     let a: i32 = 10
@@ -932,11 +926,11 @@ act main() -> i32 {
 }
 """
     c_code = emit_c_velo_source(code)
-    assert "for (int32_t __start_i = (a), __end_i = (b), i = __start_i; i < __end_i; i++)" in c_code
+    assert "for (int32_t __start_i = (a), __end_i = (b), __rev_i = (__start_i > __end_i), i = __start_i; __rev_i ? (i > __end_i) : (i < __end_i); __rev_i ? (i--) : (i++))" in c_code
 
 
 def test_emitted_c_stepped_hoisting_temps():
-    """Verify C99 emission declares __start_i, __end_i, __step_i, and loop var in loop header."""
+    """Verify C99 emission declares __start_i, __end_i, __step_i, __rev_i, and loop var in loop header."""
     code = """
 act main() -> i32 {
     let a: i32 = 10
@@ -947,6 +941,7 @@ act main() -> i32 {
 }
 """
     c_code = emit_c_velo_source(code)
-    assert "for (int32_t __start_i = (a), __end_i = (b), __step_i = (s), i = __start_i; i < __end_i; i += __step_i)" in c_code
+    assert "for (int32_t __start_i = (a), __end_i = (b), __step_i = (s), __rev_i = (__start_i > __end_i), i = __start_i; __rev_i ? (i > __end_i) : (i < __end_i); __rev_i ? (i -= __step_i) : (i += __step_i))" in c_code
+
 
 

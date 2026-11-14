@@ -1305,12 +1305,39 @@ The documented "Smart Reverse Auto-Countdown" (`docs/SPECIFICATION.md:688-693`) 
   - Rebuilt 3-generation self-hosting bootstrap compiler chain and confirmed SHA-256 fixed-point determinism (`ed5a22c6d0690a3bd3d082007c9cece9ce2fc5caa44f9875a02b61e732334cf3`).
   - Verified line count standards across all 118 compiler source files in `src/` (all <= 395 lines, ceiling 400).
 
-##### Task 56.4: Lower runtime direction selection
-* **Goal:** Emit code that chooses ascending or descending based on the temps, preserving `it` and the inclusive/exclusive boundary.
-* **Files:** `src/backend/codegen_stmt.vl`.
-* **Tests:** `n..0`, `n..m`, `n..=0`, equal endpoints.
-* **Security gate:** comparison must be overflow-safe; no `i++` in a descending loop.
-* **Done when:** dynamic descending ranges iterate correctly.
+##### Task 56.4: Lower runtime direction selection [COMPLETED] ✅
+* **Former Defect**:
+  - `codegen_stmt.vl` only detected countdown/reverse ranges when both endpoints were compile-time integer literals (`is_literal_range_step`).
+  - Dynamic descending ranges (`let n = 5; loop i in n..0`, `loop i in n..m`, `loop i in n..=0`) were unconditionally lowered as ascending loops:
+    `for (c_type __start_v = (n), __end_v = (0), v = __start_v; v < __end_v; v++)`
+  - Because `start > end`, the ascending condition `start < end` evaluated to `false` immediately on entry, executing 0 iterations instead of the documented countdown.
+* **Fix Applied**:
+  - Implemented runtime dynamic direction lowering in `src/backend/range_gen.vl`:
+    * Declared `__rev_v = (__start_v > __end_v)` in the C99 `for` init clause using the hoisted temporaries.
+    * Lowered relational loop condition using ternary direction selection:
+      `__rev_v ? (v > __end_v) : (v < __end_v)` (exclusive `..`)
+      `__rev_v ? (v >= __end_v) : (v <= __end_v)` (inclusive `..=`)
+    * Lowered increment using ternary direction selection:
+      `__rev_v ? (v -= __step_v) : (v += __step_v)` (explicit step)
+      `__rev_v ? (v--) : (v++)` (default step)
+    * Entire construct is lowered into a single C99 `for` loop header without outer blocks or shadow diagnostics.
+    * Guaranteed deterministic execution for equal endpoints: `n..n` executes 0 iterations; `n..=n` executes exactly 1 iteration with value `n`.
+* **Residual Limitation**:
+  - Mixed-type endpoint promotion and type-checking validation are addressed in Task 56.5.
+* **Verification**:
+  - Ran full test suite in `tests/test_dynamic_ranges.py` (40/40 tests passing, 100% pass rate) covering:
+    * Dynamic descending variable to literal (`n..0` -> 5 iterations).
+    * Dynamic descending variable to variable (`n..m` -> 5 iterations).
+    * Inclusive descending (`n..=0`, `n..=m` -> 6 iterations).
+    * Dynamic stepped descending (`n..0:2` -> 5 iterations, `n..=0:2` -> 6 iterations).
+    * 64-bit and unsigned dynamic descending (`i64`, `u32`, `u64`, `usize`).
+    * Sign crossing dynamic descending (`3..-3`, `3..=-3`).
+    * Anonymous dynamic descending (`loop n..0`).
+    * Equal endpoints (`n..n` -> 0, `n..=n` -> 1).
+    * Emitted C inspection verifying `__rev_v` and ternary condition/increment.
+  - Verified regression test suites (209 tests total across `test_dynamic_ranges.py`, `test_range_loops.py`, `test_large_ranges.py`, `test_count_loops.py`).
+  - Rebuilt 3-generation self-hosting bootstrap compiler chain and confirmed SHA-256 fixed-point determinism (`9d8979faeeffcc5c08356250d4f50533f1d5ac4e533e7c4ee6531b2ed110ad49`).
+  - Verified line count standards across all 118 compiler source files in `src/` (all <= 395 lines, ceiling 400).
 
 ##### Task 56.5: Handle mixed-type endpoints
 * **Goal:** Avoid signed/unsigned comparison bugs when `start` and `end` have different integer types.

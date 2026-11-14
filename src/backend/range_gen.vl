@@ -33,7 +33,8 @@ act emit_range_loop_header(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode
         return
     }
 
-    // Dynamic range: evaluate start, end, and optional step exactly once into temporaries.
+    // Dynamic range: evaluate start, end, and optional step exactly once into temporaries,
+    // and lower runtime dynamic direction selection based on start > end.
     sb_append_str(sb, "for (")
     sb_append_str(sb, c_type)
     sb_append_str(sb, "__start_")
@@ -52,13 +53,30 @@ act emit_range_loop_header(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode
         emit_c_expr(sb, st, stmt.loop_step)
         sb_append_str(sb, ")")
     }
-    sb_append_str(sb, ", ")
+    sb_append_str(sb, ", __rev_")
+    sb_append_str(sb, vname)
+    sb_append_str(sb, " = (__start_")
+    sb_append_str(sb, vname)
+    sb_append_str(sb, " > __end_")
+    sb_append_str(sb, vname)
+    sb_append_str(sb, "), ")
     sb_append_str(sb, vname)
     sb_append_str(sb, " = __start_")
     sb_append_str(sb, vname)
     sb_append_str(sb, "; ")
 
-    // Condition
+    // Runtime condition: __rev ? (v > end) : (v < end) [or >= and <= for inclusive]
+    sb_append_str(sb, "__rev_")
+    sb_append_str(sb, vname)
+    sb_append_str(sb, " ? (")
+    sb_append_str(sb, vname)
+    if stmt.is_inclusive {
+        sb_append_str(sb, " >= __end_")
+    } else {
+        sb_append_str(sb, " > __end_")
+    }
+    sb_append_str(sb, vname)
+    sb_append_str(sb, ") : (")
     sb_append_str(sb, vname)
     if stmt.is_inclusive {
         sb_append_str(sb, " <= __end_")
@@ -66,16 +84,25 @@ act emit_range_loop_header(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode
         sb_append_str(sb, " < __end_")
     }
     sb_append_str(sb, vname)
-    sb_append_str(sb, "; ")
+    sb_append_str(sb, "); ")
 
-    // Increment
+    // Runtime increment: __rev ? (v -= step) : (v += step) [or -- and ++]
+    sb_append_str(sb, "__rev_")
+    sb_append_str(sb, vname)
+    sb_append_str(sb, " ? (")
+    sb_append_str(sb, vname)
     if stmt.loop_step != null {
+        sb_append_str(sb, " -= __step_")
+        sb_append_str(sb, vname)
+        sb_append_str(sb, ") : (")
         sb_append_str(sb, vname)
         sb_append_str(sb, " += __step_")
         sb_append_str(sb, vname)
     } else {
+        sb_append_str(sb, "--) : (")
         sb_append_str(sb, vname)
         sb_append_str(sb, "++")
     }
+    sb_append_str(sb, ")")
     sb_append_str(sb, ") {\n")
 }
