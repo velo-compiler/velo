@@ -444,12 +444,13 @@ act main() {
 * **Done when:** the new tests fail for the documented reasons and are committed as the red baseline.
 * **Completion note (2026-11-14):** Added `std/tests/io/print_api_conformance_test.vl` and 9 tests in `tests/test_std_io.py` (prefix conformance, unqualified control, byte-for-byte parity, two unknown-member rows, three arity rows, printf-metacharacter data). Red run: `python -m pytest tests/test_std_io.py -q -k "print_api or rejects_unknown or rejects_arity or printf_metacharacters or matches_bare_parity"` → **8 failed, 1 passed**. The control test is green, proving the expected bytes are achievable through the unqualified API; the 8 red tests isolate the `io.*` wildcard dispatch. Observed red behavior: `io.println_str` drops the newline, `io.eprintln_*` writes to stdout, `io.println_u64` prints `-1`, `io.*_f64` ignores precision, `io.*_byte` prints decimal digits, and unknown members plus arity mismatches pass `velo check`.
 
-##### Task 52.2: Define the intrinsic allowlist and closed member set
+##### Task 52.2: Define the intrinsic allowlist and closed member set [COMPLETED] ✅
 * **Goal:** Separate compiler intrinsics (`print`, `println`) from stdlib functions and publish one closed set.
 * **Files:** `src/analysis/io_checks.vl` (new), `src/analysis/type_checker.vl`.
 * **Tests:** table-driven test covering every member declared in `std/io/print.vl`; unknown member rejected with a diagnostic that lists valid members.
 * **Security gate:** no wildcard fallback; a member missing from the allowlist must fail closed.
 * **Done when:** the checker accepts exactly the documented set.
+* **Completion note (2026-11-14):** Added `src/analysis/io_checks.vl` with `io_is_intrinsic` (`print`, `println`), the closed `io_is_known_member` set (all 53 top-level acts in `std/io/print.vl`), `io_valid_members`, and `check_io_call`. `type_checker.vl` now delegates every `io.*` call to `check_io_call`; an unknown member reports `unknown io member '<name>' (functions: ...)` and fails the check. Added `tests/test_io_checks.py` with 3 tests: a 53-member acceptance probe using signature-correct arguments, an unknown-member rejection that verifies every valid name is listed, and an unknown-member-with-argument rejection. Verification: `python -m pytest tests/test_io_checks.py -q` → **3 passed**; the `tests/test_std_io.py` unknown-member rows now pass. Bootstrap: Gen2/Gen3 `emit-c` SHA-256 `CE57019E7A2FC14B285953EAE8BFF312DA9A5D67A0E92581E37577D96903A3FF`, and `bootstrap.c` matches the emitted C. Residual: arity/type walls and result spells are Task 52.3; codegen dispatch is Task 52.4, so the Phase 52.1 conformance and arity rows remain red.
 
 ##### Task 52.3: Implement `check_io_call`
 * **Goal:** Validate arity and argument types; return correct result types (`void`, `bool` for flush, etc.).

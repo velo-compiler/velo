@@ -1,0 +1,71 @@
+// Phase 52: compile-time checks for the io.* namespace.
+//
+// The namespace is CLOSED: only the compiler intrinsics (print, println) and
+// the top-level acts declared by std/io/print.vl are valid members. Unknown
+// members report the closed-set wording and list the valid set, so a typo can
+// never silently lower to a no-op or to generic value printing.
+//
+// Task 52.2 owns the allowlist and the closed-set gate. Task 52.3 adds the
+// per-member arity/type walls and the correct result spells.
+use "type_checker.vl"
+use "symbol_table.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../ast/expr.vl"
+use "../frontend/token.vl"
+
+// Compiler intrinsics: these are lowered by codegen_io.vl instead of resolving
+// through normal module function lookup. Keep this list separate from the
+// stdlib member set so Task 52.4 can dispatch on it.
+act io_is_intrinsic(member: string) -> bool {
+    return member == "print" or member == "println"
+}
+
+// The published closed set: every top-level act declared in std/io/print.vl.
+// Order is the file's declaration order (lifecycle helpers first, then the
+// stream/output/error families) so the diagnostic stays stable.
+act io_is_known_member(member: string) -> bool {
+    if member == "io_ensure_atexit" or member == "io_get_stdout_writer" or member == "io_get_stderr_writer" or member == "io_get_fmt_buf" { return true }
+    if member == "io_flush_stdout" or member == "io_flush_stderr" or member == "io_flush_all" or member == "io_print_cleanup" { return true }
+
+    if member == "fprint" or member == "fprintln" or member == "fprint_str" or member == "fprintln_str" or member == "fprintln_empty" { return true }
+    if member == "fprint_byte" or member == "fprintln_byte" or member == "fprint_i64" or member == "fprintln_i64" { return true }
+    if member == "fprint_u64" or member == "fprintln_u64" or member == "fprint_f64" or member == "fprintln_f64" { return true }
+    if member == "fprint_bool" or member == "fprintln_bool" { return true }
+
+    if member == "print" or member == "println" or member == "print_str" or member == "println_str" or member == "println_empty" { return true }
+    if member == "print_byte" or member == "println_byte" or member == "print_i64" or member == "println_i64" { return true }
+    if member == "print_u64" or member == "println_u64" or member == "print_f64" or member == "println_f64" { return true }
+    if member == "print_bool" or member == "println_bool" { return true }
+
+    if member == "eprint" or member == "eprintln" or member == "eprint_str" or member == "eprintln_str" or member == "eprintln_empty" { return true }
+    if member == "eprint_byte" or member == "eprintln_byte" or member == "eprint_i64" or member == "eprintln_i64" { return true }
+    if member == "eprint_u64" or member == "eprintln_u64" or member == "eprint_f64" or member == "eprintln_f64" { return true }
+    if member == "eprint_bool" or member == "eprintln_bool" { return true }
+
+    return false
+}
+
+// The diagnostic payload. Kept as one constant so the checker and the tests
+// publish the same list; the acceptance test walks the same names.
+act io_valid_members() -> string {
+    return "io_ensure_atexit, io_get_stdout_writer, io_get_stderr_writer, io_get_fmt_buf, io_flush_stdout, io_flush_stderr, io_flush_all, io_print_cleanup, fprint, fprintln, fprint_str, fprintln_str, fprintln_empty, fprint_byte, fprintln_byte, fprint_i64, fprintln_i64, fprint_u64, fprintln_u64, fprint_f64, fprintln_f64, fprint_bool, fprintln_bool, print, println, print_str, println_str, println_empty, print_byte, println_byte, print_i64, println_i64, print_u64, println_u64, print_f64, println_f64, print_bool, println_bool, eprint, eprintln, eprint_str, eprintln_str, eprintln_empty, eprint_byte, eprintln_byte, eprint_i64, eprintln_i64, eprint_u64, eprintln_u64, eprint_f64, eprintln_f64, eprint_bool, eprintln_bool"
+}
+
+// Entry point: validates the member name and reports a closed-set diagnostic
+// for anything outside the allowlist. Result spells and arity/type walls are
+// added by Task 52.3; until then every accepted call yields "void".
+act check_io_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
+    if !io_is_known_member(member) {
+        let msb = create_sb(1024)
+        sb_append_str(@msb, "unknown io member '")
+        sb_append_str(@msb, member)
+        sb_append_str(@msb, "' (functions: ")
+        sb_append_str(@msb, io_valid_members())
+        sb_append_str(@msb, ")")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msb))
+        st.error_count += 1
+        return "unknown"
+    }
+    return "void"
+}

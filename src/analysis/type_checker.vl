@@ -20,6 +20,7 @@ use "math_checks.vl"
 use "time_checks.vl"
 use "os_checks.vl"
 use "fs_checks.vl"
+use "io_checks.vl"
 use "simd_checks.vl"
 use "reflect_checks.vl"
 use "array_checks.vl"
@@ -187,7 +188,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 }
                 if target.str_val == "fs" { return check_fs_call(st, expr, member) }  // 5.4 S2: fs goes CLOSED — the legacy six migrate in with their exact spells, joining the metadata family
                 if target.str_val == "str" { return check_str_call(st, expr, member) }  // 5.1/8.2: delegate to str_checks.vl
-                if target.str_val == "io" { return "void" }
+                if target.str_val == "io" { return check_io_call(st, expr, member) }
                 if target.str_val == "math" { return check_math_call(st, expr, member) }; if target.str_val == "time" { return check_time_call(st, expr, member) }; if target.str_val == "os" { return check_os_call(st, expr, member) }; if target.str_val == "simd" { return check_simd_call(st, expr, member) }; if target.str_val == "shelf" { return check_shelf_module_call(st, expr, member) }; if target.str_val == "map" { return check_map_module_call(st, expr, member) }
             }
         }
