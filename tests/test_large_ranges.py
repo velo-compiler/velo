@@ -1224,3 +1224,166 @@ def test_boundary_unrepresentable_hex_rejected():
     res = check_velo_source(code)
     assert res.returncode != 0, "Expected compile error for hex endpoint exceeding 64-bit unsigned max"
     assert "exceeds 64-bit" in (res.stdout + res.stderr).lower() or "error" in (res.stdout + res.stderr).lower()
+
+
+# ==============================================================================
+# 9. Security and Negative Gate (Task 55.7)
+# ==============================================================================
+
+def test_negative_string_literal_endpoints_rejected():
+    """Security Invariant: String endpoints in range loop must fail closed at velo check."""
+    code = 'act main() { loop i in "a".."z" { } }'
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for string range endpoints"
+    assert "integer type" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_string_start_endpoint_rejected():
+    """Security Invariant: String start endpoint must fail closed at velo check."""
+    code = 'act main() { loop i in "start"..10 { } }'
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for string start endpoint"
+    assert "integer type" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_string_end_endpoint_rejected():
+    """Security Invariant: String end endpoint must fail closed at velo check."""
+    code = 'act main() { loop i in 0.."end" { } }'
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for string end endpoint"
+    assert "integer type" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_float_literal_endpoints_rejected():
+    """Security Invariant: Float endpoints in range loop must fail closed at velo check."""
+    code = 'act main() { loop i in 1.0..5.0 { } }'
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for float range endpoints"
+    assert "integer type" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_float_start_endpoint_rejected():
+    """Security Invariant: Float start endpoint must fail closed at velo check."""
+    code = 'act main() { loop i in 0.5..10 { } }'
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for float start endpoint"
+    assert "integer type" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_float_end_endpoint_rejected():
+    """Security Invariant: Float end endpoint must fail closed at velo check."""
+    code = 'act main() { loop i in 0..10.5 { } }'
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for float end endpoint"
+    assert "integer type" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_struct_endpoints_rejected():
+    """Security Invariant: Struct endpoints in range loop must fail closed at velo check."""
+    code = """
+data Point { x: i32, y: i32 }
+act main() {
+    let p1 = Point{ x: 0, y: 0 }
+    let p2 = Point{ x: 10, y: 10 }
+    loop i in p1..p2 { }
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for struct endpoints"
+    assert "integer type" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_string_step_rejected():
+    """Security Invariant: String step in range loop must fail closed at velo check."""
+    code = 'act main() { loop i in 0..10:"two" { } }'
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for string step"
+    assert "integer type" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_float_step_rejected():
+    """Security Invariant: Float step in range loop must fail closed at velo check."""
+    code = 'act main() { loop i in 0..10:2.5 { } }'
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for float step"
+    assert "integer type" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_zero_step_rejected():
+    """Security Invariant: Step of 0 cannot advance to end; must fail closed at velo check."""
+    code = 'act main() { loop i in 0..10:0 { } }'
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for zero step"
+    assert "greater than zero" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_zero_step_descending_rejected():
+    """Security Invariant: Step of 0 in descending loop cannot advance; must fail closed at velo check."""
+    code = 'act main() { loop i in 10..0:0 { } }'
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for zero descending step"
+    assert "greater than zero" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_step_rejected():
+    """Security Invariant: Negative step cannot reach endpoint; must fail closed at velo check."""
+    code = 'act main() { loop i in 0..10:-1 { } }'
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for negative step"
+    assert "greater than zero" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_step_descending_rejected():
+    """Security Invariant: Negative descending step moves away from endpoint; must fail closed at velo check."""
+    code = 'act main() { loop i in 10..0:-2 { } }'
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for negative descending step"
+    assert "greater than zero" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_endpoint_with_unsigned_range_rejected():
+    """Security Invariant: Negative endpoint with unsigned u64 cannot be represented; must fail closed."""
+    code = 'act main() { loop i in -5..18446744073709551615u64 { } }'
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for negative endpoint with u64 range"
+    assert "cannot be negative for unsigned type" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_descending_endpoint_with_unsigned_range_rejected():
+    """Security Invariant: Negative descending endpoint with unsigned u64 cannot be represented; must fail closed."""
+    code = 'act main() { loop i in 18446744073709551615u64..-5 { } }'
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error for negative descending endpoint with u64 range"
+    assert "cannot be negative for unsigned type" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_u64max_assigned_to_i32_rejected():
+    """Security Invariant: Wide loop variable (u64) cannot be assigned to i32 variable without cast."""
+    code = """
+act main() -> i32 {
+    mut x: i32 = 0
+    loop i in 0..18446744073709551615u64 {
+        x = i
+    }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error assigning u64 loop var to i32"
+    assert "cannot implicitly convert" in (res.stdout + res.stderr).lower() or "narrower type" in (res.stdout + res.stderr).lower()
+
+
+def test_negative_u64max_passed_to_i32_param_rejected():
+    """Security Invariant: Wide loop variable (u64) cannot be passed to i32 function without cast."""
+    code = """
+act takes_i32(v: i32) { }
+act main() -> i32 {
+    loop i in 0..18446744073709551615u64 {
+        takes_i32(i)
+    }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0, "Expected compile error passing u64 loop var to i32 param"
+    assert "cannot implicitly convert" in (res.stdout + res.stderr).lower() or "narrower type" in (res.stdout + res.stderr).lower()

@@ -975,7 +975,7 @@ loop "x" { }
 
 ---
 
-### Phase 55: Reverse Ranges with Large Literal Endpoints (P0) [OPEN] 🚧
+### Phase 55: Reverse Ranges with Large Literal Endpoints (P0) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-04`<br>
 **Severity:** P0 — wrong iteration count / silent zero-iteration loop<br>
@@ -1149,19 +1149,55 @@ The literal `3000000000` wraps negative during parsing, so codegen believes the 
   - `tests/test_range_loops.py` and `tests/test_count_loops.py`: All 73 tests pass in 17.87s.
   - All 117 compiler source files <= 395 lines (<= 400).
 
-##### Task 55.7: Add the security/negative gate
-* **Goal:** Ensure malformed or unrepresentable ranges fail closed.
-* **Files:** `tests/test_large_ranges.py`, `src/analysis/type_checker_stmt.vl`.
-* **Tests:** string/float/struct endpoints; `0..u64max` on an `i32` loop; step that cannot reach the end.
-* **Security gate:** `velo check` rejects invalid ranges; no silent zero-iteration fallback.
-* **Done when:** all negative cases produce diagnostics.
+##### Task 55.7: Add the security/negative gate [COMPLETED] ✅
+* **Former Defect**:
+  - `src/analysis/type_checker_stmt.vl:175-179` previously inferred types of `stmt.loop_start`, `stmt.loop_end`, and `stmt.loop_step`, but never verified that they were integer types or valid range specifications.
+  - Non-integer endpoints (`string`, `float`, `struct`, `pointer`) and non-integer steps were silently accepted by `velo check`, passing through to C codegen where they failed with raw C compiler syntax errors or undefined runtime behavior.
+  - Constant steps `<= 0` (e.g. `0..10:0`, `0..10:-1`) were not rejected at compile time, leading to infinite loops or loops stepping in reverse away from endpoints.
+  - Unrepresentable ranges combining negative endpoints with unsigned loop variable types (e.g. `-5..UINT64_MAX` or `UINT64_MAX..-5` producing `u64` loop variables with negative start/end) were not diagnosed, leading to silent unsigned underflow/wrap.
+* **Fix Applied**:
+  - Implemented semantic analysis helpers in `src/analysis/type_checker_stmt.vl`:
+    * `is_range_step_non_positive`: Identifies non-positive constant steps (`<= 0`) by inspecting `EXPR_UNARY` (`TOK_MINUS`) and zero integer literals.
+    * `is_range_endpoint_negative`: Detects negative constant endpoints (< 0).
+    * `check_range_loop`:
+      - Enforces that `stmt.loop_start` is an integer type (`is_int_type`), reporting `Range loop start endpoint must be an integer type, got '<type>'`.
+      - Enforces that `stmt.loop_end` is an integer type (`is_int_type`), reporting `Range loop end endpoint must be an integer type, got '<type>'`.
+      - Enforces that `stmt.loop_step` is an integer type (`is_int_type`), reporting `Range loop step must be an integer type, got '<type>'`.
+      - Enforces that constant `stmt.loop_step` > 0, reporting `Range loop step must be greater than zero` on zero or negative steps.
+      - Enforces that unrepresentable ranges combining negative endpoints with unsigned range types (`u64`, `usize`, etc.) fail closed, reporting `Range loop endpoint cannot be negative for unsigned type '<type>'`.
+  - Rebuilt the 3-stage bootstrap compiler chain (`velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified Gen2/Gen3 bit-for-bit SHA-256 fixed-point determinism (`f3dfac42cd27cd0f2e410323af8e7033a65d0d439cd5b871127d676cc159cf13`).
+  - Extended `tests/test_large_ranges.py` with Section 9 ("Security and Negative Gate") containing 17 comprehensive negative tests:
+    * `test_negative_string_literal_endpoints_rejected`: Rejects string range `"a".."z"`.
+    * `test_negative_string_start_endpoint_rejected`: Rejects string start `"start"..10`.
+    * `test_negative_string_end_endpoint_rejected`: Rejects string end `0.."end"`.
+    * `test_negative_float_literal_endpoints_rejected`: Rejects float range `1.0..5.0`.
+    * `test_negative_float_start_endpoint_rejected`: Rejects float start `0.5..10`.
+    * `test_negative_float_end_endpoint_rejected`: Rejects float end `0..10.5`.
+    * `test_negative_struct_endpoints_rejected`: Rejects struct endpoints `p1..p2`.
+    * `test_negative_string_step_rejected`: Rejects string step `0..10:"two"`.
+    * `test_negative_float_step_rejected`: Rejects float step `0..10:2.5`.
+    * `test_negative_zero_step_rejected`: Rejects zero step `0..10:0`.
+    * `test_negative_zero_step_descending_rejected`: Rejects zero step in descending loop `10..0:0`.
+    * `test_negative_step_rejected`: Rejects negative step `0..10:-1`.
+    * `test_negative_step_descending_rejected`: Rejects negative descending step `10..0:-2`.
+    * `test_negative_endpoint_with_unsigned_range_rejected`: Rejects negative start with `u64` range `-5..UINT64_MAX`.
+    * `test_negative_descending_endpoint_with_unsigned_range_rejected`: Rejects negative end with `u64` range `UINT64_MAX..-5`.
+    * `test_negative_u64max_assigned_to_i32_rejected`: Rejects assignment of inferred `u64` loop variable to `i32` variable without explicit cast.
+    * `test_negative_u64max_passed_to_i32_param_rejected`: Rejects passing inferred `u64` loop variable to `i32` act parameter without explicit cast.
+* **Residual Limitation**:
+  - Dynamic range loops with runtime-variable endpoints (`loop i in a..b`) are addressed in Phase 56.
+* **Verification**:
+  - `tests/test_large_ranges.py`: All 95 tests pass in 14.58s (100% pass rate).
+  - `tests/test_range_loops.py` and `tests/test_count_loops.py`: All 73 tests pass in 17.60s.
+  - `scripts/check_determinism.py`: SHA-256 fixed-point match confirmed (`f3dfac42cd27cd0f2e410323af8e7033a65d0d439cd5b871127d676cc159cf13`).
+  - `scripts/count_lines.py`: All 117 compiler source files <= 395 lines (<= 400).
 
 #### Phase Exit Criteria
 
-- [ ] `loop i in 0..3000000000` iterates in ascending order and terminates correctly.
-- [ ] Large descending ranges iterate in descending order.
-- [ ] Direction detection uses the wide value, not `int_val`.
-- [ ] Unrepresentable ranges are rejected with a diagnostic.
+- [x] `loop i in 0..3000000000` iterates in ascending order and terminates correctly.
+- [x] Large descending ranges iterate in descending order.
+- [x] Direction detection uses the wide value, not `int_val`.
+- [x] Unrepresentable ranges are rejected with a diagnostic.
 
 ---
 
