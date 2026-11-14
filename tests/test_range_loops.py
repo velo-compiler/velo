@@ -186,3 +186,45 @@ act main() -> i32 {
     except subprocess.TimeoutExpired as e:
         pytest.fail(f"Loop timed out (infinite loop detected): {e}")
 
+
+def test_large_endpoint_range_loop_baseline(tmp_path):
+    """Phase 55: Baseline check for large endpoint ranges around 3 billion and wide endpoints."""
+    source = tmp_path / "test_large_range.vl"
+    source.write_text("""
+use sys.io
+
+act main() -> i32 {
+    mut asc_iters: i32 = 0
+    loop i in 0..3000000000 {
+        asc_iters += 1
+        if asc_iters == 3 {
+            break
+        }
+    }
+
+    mut desc_iters: i32 = 0
+    loop i in 3000000000..0 {
+        desc_iters += 1
+        if desc_iters == 3 {
+            break
+        }
+    }
+
+    io.println("asc={asc_iters}, desc={desc_iters}")
+    return 0
+}
+""", encoding="utf-8")
+
+    exe = tmp_path / "test_large_range.exe"
+    env = dict(os.environ)
+    env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
+    build_res = subprocess.run(["bin/velo.exe", "build", str(source), "-o", str(exe)], env=env, capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    assert build_res.returncode == 0
+    try:
+        res_sh = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", timeout=2.0)
+        assert res_sh.returncode == 0
+        assert "asc=3, desc=3" in res_sh.stdout
+    except subprocess.TimeoutExpired as e:
+        pytest.fail(f"Loop timed out: {e}")
+
+

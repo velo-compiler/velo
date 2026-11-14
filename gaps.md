@@ -1006,12 +1006,26 @@ The literal `3000000000` wraps negative during parsing, so codegen believes the 
 
 #### Tasks
 
-##### Task 55.1: Add the large-endpoint matrix (red baseline)
-* **Goal:** Cover ascending and descending ranges around `INT32_MAX`, `UINT32_MAX`, and `INT64_MAX`.
-* **Files:** `tests/test_range_loops.py` (extend), `tests/test_large_ranges.py` (new).
-* **Tests:** `0..3000000000`, `3000000000..0`, inclusive variants, `INT32_MAX..0`, `0..INT32_MAX+1`.
-* **Security gate:** each runnable test has a timeout; assert exact iteration counts.
-* **Done when:** the matrix fails for the documented reasons.
+##### Task 55.1: Add the large-endpoint matrix (red baseline) [COMPLETED] ✅
+* **Former Defect**:
+  - `codegen_stmt.vl:256` invokes `is_reverse_loop_range` (`codegen_lit.vl:61`), which relies on `get_reflect_const_int` (`reflect_checks.vl:61`).
+  - When range endpoints exceed signed 64-bit maximum (`0x7FFFFFFFFFFFFFFF` / `9223372036854775807`), `get_reflect_const_int` fails the `u <= 0x7FFFFFFFFFFFFFFF` check and falls back to `expr.int_val as i64`.
+  - For unsigned 64-bit endpoints exceeding `i32` bounds, `int_val` is `0`, causing direction comparison `s_val > e_val` to erroneously compute `false` for descending ranges (e.g. `UINT64_MAX..0` emits ascending condition `i < 0; i++`, executing 0 iterations) and `true` for ascending ranges (e.g. `1..UINT64_MAX` emits descending condition `i > UINT64_MAX; i--`, executing 0 iterations).
+  - No dedicated test matrix covered range loops with endpoints around `INT32_MAX`, `UINT32_MAX`, `INT64_MAX`, and `UINT64_MAX`.
+* **Fix Applied (Red Baseline Harness)**:
+  - Created `tests/test_large_ranges.py` with a 38-case test matrix:
+    * Ranges around `INT32_MAX` (6 cases): `0..3000000000`, `3000000000..0`, `0..=3000000000`, `3000000000..=0`, `2147483647..0`, `0..2147483648` (all 6 pass because `3000000000` fits in `i64`).
+    * Ranges around `UINT32_MAX` (4 cases): `0..4294967295u64`, `4294967295u64..0`, `0..4294967296u64`, `4294967296u64..0` (all 4 pass).
+    * Ranges around `INT64_MAX` and `UINT64_MAX` (14 cases): `0..9223372036854775807i64` and `9223372036854775807i64..0` pass; 12 cases exceeding `INT64_MAX` (`INT64_MAX + 1`, `UINT64_MAX`, `10^19`, and hex `0xFFFFFFFFFFFFFFFFu64`, both exclusive and inclusive) fail due to direction reversal (0 iterations executed instead of 5, assertion failure).
+    * Emitted C direction operator assertions (14 cases): 8 pass; 6 fail matching the exact cases where `<` was emitted as `>` or `>` was emitted as `<`.
+    * Strict 2.0s timeouts enforced on all executions.
+  - Extended `tests/test_range_loops.py` with `test_large_endpoint_range_loop_baseline` testing ascending and descending ranges around 3 billion.
+* **Residual Limitation**:
+  - Baseline establishes the red state (20 passed, 18 failed in `tests/test_large_ranges.py` in 7.40s) for the exact documented causes. Implementation of wide direction detection follows in Tasks 55.2–55.7.
+* **Verification**:
+  - `tests/test_large_ranges.py`: 20 passed, 18 failed for the exact documented causes in 7.40s.
+  - `tests/test_range_loops.py`: 7 passed in 4.03s.
+  - All 117 compiler source files $\le 395$ lines ($\le 400$).
 
 ##### Task 55.2: Prove the wrapped-value root cause
 * **Goal:** Add a parser/codegen assertion that the endpoint value used for direction equals the emitted value.
