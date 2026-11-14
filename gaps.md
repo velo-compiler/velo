@@ -4,7 +4,7 @@
 > **Target Version**: Velo 2.0+ (Production Systems & Game Engine Viability)  
 > **Source Baseline**: Programming Language Review Report `PLR-VELO-2026-001` (Commit `49b2010`)  
 > **Archive**: All completed historical gap audits (§1.1 through §44.1) are preserved in Git history.  
-> **Workflow Rule**: An AI agent or engineer MUST only implement **one single Phase and one single Task at a time**. After completing each task, verify with tests (`python -m pytest tests -q`), rebuild the bootstrap chain (`bin/velo.exe`), and update this document.
+> **Workflow Rule**: An AI agent or engineer MUST implement **one single Task at a time** from **one single Phase**. Every task starts with a failing regression test and ends with targeted tests green. Compiler-source tasks additionally require a Gen2/Gen3 bootstrap rebuild and SHA-256 determinism check. A phase is closed only after the full suite passes and this document is updated.
 
 ---
 
@@ -17,6 +17,7 @@ All foundational milestones and language extensions implemented prior to Review 
 | **Foundational Milestones (§1 – §6)** | Bitwise ops, control flow, `kind` enums/tagged unions, generics, function pointers, UFCS, operator overloading, advanced structs, zone arena, collections (`shelf`, `map`, `ring`, `bitset`, `dyn`), math, fs, time, build modes, visual error diagnostics, LSP 3.17, native test runner, MSVC C99 portability. | **COMPLETED** ✅ |
 | **Standard Library Modernization (Phases 1 – 29)** | Pure-Velo `std.*` migration (`io`, `str`, `fmt`, `coll`, `fs`, `json`, `time`, `math`, `os`, `net`, `crypto`, `http`, `log`, `test`, `encoding`, `csv`, `cli`, `url`, `rand`, `uuid`, `text`, `timer`, `validate`). | **COMPLETED** ✅ |
 | **Language & Systems Hardening (Phases 30 – 44)** | Codegen error gating, algebraic error handling (`or` / `fail`), lexical zone escape analysis, compile-time null safety (`?T`), non-blocking async event loop (`std.async`), async HTTP client/server, zero-alloc HTTP server fast-path, flow-sensitive type narrowing, first-class `if-else` expressions, string pattern matching in `on`, string `+`/`+=` concatenation, fixed-size stack arrays (`[N]T`), and first-class tuples with multiple return values (`-> (A, B)`). | **COMPLETED** ✅ |
+| **Post-Release Correctness Audit (Phases 52 – 68)** | 17 confirmed defects across the compiler, language semantics, runtime, tooling, and test infrastructure, split into small, independently testable tasks. | **OPEN** 🚧 |
 
 *(Full historical defect analyses, fix implementations, and verification proofs for Phases 1 through 44 are preserved in Git history).*
 
@@ -43,6 +44,8 @@ flowchart TD
     style P50 fill:#00acc1,stroke:#006064,color:#ffffff
     style P51 fill:#546e7a,stroke:#263238,color:#ffffff
 ```
+
+> **Post-release audit:** Phases 52–68 are tracked separately in **§3** below. They are correctness defects found after the 45–51 roadmap closed, not part of the completed milestone set.
 
 ---
 
@@ -304,3 +307,1504 @@ flowchart TD
   - Rebuilt 3-generation self-hosting bootstrap chain with verified bit-for-bit SHA-256 determinism (Gen2 emit-c == Gen3 emit-c == bootstrap.c: `7ac2bd1bbfe77da751d1cc0b4fdd21f26fce7d4a8b087caf0ccba61cecb188b8`).
   - All 101 compiler source files $\le 394$ lines (under 400-line ceiling, zero UTF-8 BOM).
   - Full test suite passed: 670 passed in 561.09s (100% pass rate).
+
+---
+
+## 3. Post-Release Correctness Audit (November 2026)
+
+> **Audit method:** Hands-on review of the self-hosted compiler (`src/**/*.vl`, `runtime/velo_runtime.h`, `scripts/`, `tests/`) plus 50+ executable probe programs compiled with `bin\velo.exe`.
+> **Baseline:** `python -m pytest tests -q` → **694 passed, 2 failed, 2 skipped**. The two failures are tracked in Phases 66 and 67.
+> **Scope:** 17 confirmed defects (13 compiler/language, 1 runtime, 1 tooling, 1 test-infrastructure, 1 architectural) split into **106 small tasks**. No feature work, no performance work, no style-only changes.
+> **Rule:** This is a correctness backlog, not a wish list. Every task must begin with a failing regression test and end with a security gate that proves the defect cannot silently return.
+
+### 3.1 Severity & Status Legend
+
+| Level | Meaning |
+| :--- | :--- |
+| **P0** | Silent wrong code, memory unsafety, or unbounded loop. Fix before any release. |
+| **P1** | Checker accepts an invalid program; runtime failure, type confusion, or undefined behavior. Fix next. |
+| **P2** | Hardening, diagnostics, tooling, or test hermeticity. |
+| **P3** | Architectural or breaking change; requires an explicit design decision and migration plan. |
+
+Status values: `[OPEN]`, `[IN PROGRESS]`, `[BLOCKED]`, `[COMPLETED] ✅`.
+
+### 3.2 Backlog Summary
+
+| Phase | Defect | Priority | Tasks | Depends on | Status |
+| :--- | :--- | :---: | :---: | :--- | :---: |
+| **52** | `io.*` wildcard dispatch bypasses the standard library | P0 | 8 | — | OPEN |
+| **53** | Unsuffixed integer literals above `i32` silently wrap | P0 | 9 | — | OPEN |
+| **54** | `loop <count>` classification is inconsistent | P0 | 7 | 53 | OPEN |
+| **55** | Reverse ranges break on large literal endpoints | P0 | 7 | 53 | OPEN |
+| **56** | Reverse ranges break on dynamic endpoints | P0 | 7 | 53, 55 | OPEN |
+| **57** | `u64`/`usize` printed as signed | P0 | 6 | 52, 53 | OPEN |
+| **58** | `defer` is function-scoped, not block-scoped | P0 | 9 | — | OPEN |
+| **59** | Function/method call argument types are not checked | P1 | 6 | — | OPEN |
+| **60** | `if`/`loop` condition types are not checked | P1 | 5 | 59 | OPEN |
+| **61** | `break` inside `on` breaks the C switch, not the loop | P1 | 7 | 58 | OPEN |
+| **62** | `break`/`continue` outside loops pass `velo check` | P1 | 5 | 58 | OPEN |
+| **63** | Zero range step is accepted and loops forever | P0 | 5 | 53, 54 | OPEN |
+| **64** | Unknown `mem.*`/`str.*` members pass `velo check` | P2 | 5 | 52 | OPEN |
+| **65** | Runtime zone allocator NULL/watermark hardening | P2 | 6 | — | OPEN |
+| **66** | Determinism script crashes on Windows cp1252 | P2 | 4 | — | OPEN |
+| **67** | `test_std_fs_ops` depends on an ambient `scratch/` dir | P2 | 4 | — | OPEN |
+| **68** | Loop induction variable is always `int32_t` | P3 | 6 | 53, 54, 55, 56 | OPEN |
+
+### 3.3 Recommended Execution Waves
+
+```mermaid
+flowchart TD
+    W1["Wave 1 (P0): Silent miscompilation & unbounded loops<br/>Phases 52–58, 63"] --> W2["Wave 2 (P1): Checker soundness<br/>Phases 59–62"]
+    W2 --> W3["Wave 3 (P2): Hardening & tooling<br/>Phases 64–67"]
+    W3 --> W4["Wave 4 (P3): Architectural<br/>Phase 68"]
+
+    style W1 fill:#c62828,stroke:#8e0000,color:#ffffff
+    style W2 fill:#ef6c00,stroke:#b53d00,color:#ffffff
+    style W3 fill:#1565c0,stroke:#0d47a1,color:#ffffff
+    style W4 fill:#546e7a,stroke:#263238,color:#ffffff
+```
+
+**Wave 1 — stop the bleeding.** Fix the compiler intrinsics and literal/loop machinery first. These defects produce wrong values or non-terminating programs without any diagnostic. Do not start Phase 68 before Wave 1 is closed.
+
+**Wave 2 — make the checker honest.** These are cases where `velo check` says "passed" and the C compiler later rejects the program, or where the generated program silently converts types. They are lower risk than Wave 1 but undermine the language's safety story.
+
+**Wave 3 — harden the edges.** Runtime OOM paths, tooling encoding, and test hermeticity. These do not change language semantics but are release blockers for CI reliability.
+
+**Wave 4 — pay the architectural debt.** The `int32_t` loop induction variable is a documented limitation. Treat it as a separate breaking-change project, not a drive-by fix.
+
+### 3.4 Task Execution Contract
+
+Every task in this section is intentionally small enough to be completed, tested, and reviewed in one sitting.
+
+1. **Red first.** Add the failing regression test described in the task. Run it and record the failure in the task's completion note. A task with no red test is not started.
+2. **Minimal fix.** Change only what the task describes. Do not bundle adjacent defects; file a new phase instead.
+3. **Targeted green.** Run the new test plus the existing tests for the touched area. For `.vl` probes, use `bin\velo.exe check` and `bin\velo.exe run`.
+4. **Bootstrap gate (compiler-source tasks only).** Rebuild the chain exactly as required by `AGENTS.md`:
+   `scripts\bootstrap.bat` → `bin\velo.exe build src/main.vl -o bin/velo_gen2.exe` → `bin\velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe` → copy Gen3 to `bin\velo.exe` → `bin\velo.exe emit-c src/main.vl -o bootstrap.c`. Gen2 and Gen3 `emit-c` SHA-256 must match, and `bootstrap.c` must match the emitted C.
+5. **Security gate.** Run the negative tests listed in the task. The gate must prove that malformed, oversized, unknown, or adversarial input is rejected with a diagnostic, not silently accepted. Where the task touches memory, run the relevant sanitizer or leak check.
+6. **Standards gate.** `python scripts/count_lines.py` must pass (no `src/` file over 400 lines). No `.vl` file may contain a UTF-8 BOM. New code must follow the surrounding style.
+7. **Documentation gate.** Mark the task `[COMPLETED] ✅` in this file using the established pattern: *Former Defect → Fix Applied → Residual Limitation → Verification*. Do not mark a phase complete while any of its tasks is open.
+8. **Commit gate.** One conventional commit per task where practical (`fix|feat|test|docs(scope): summary`). A task that only adds failing tests may be squashed into the implementation commit for the same phase. Never stage unrelated owner material (`VELO.md`, `editors/`, `real-world-prob-test/me/`).
+
+**Phase exit criteria (apply to every phase below):**
+
+- [ ] Every task in the phase is `[COMPLETED] ✅` with a red-test note and a verification note.
+- [ ] Full suite: `python -m pytest tests -q` passes (or the only failures are pre-existing and explicitly listed).
+- [ ] Bootstrap chain rebuilt; Gen2/Gen3 `emit-c` SHA-256 identical; `bootstrap.c` refreshed.
+- [ ] `python scripts/count_lines.py` passes; no `.vl` file contains a UTF-8 BOM.
+- [ ] Negative/security tests from the phase are part of the permanent suite.
+- [ ] The phase is moved to the completed pattern with *Former Defect → Fix Applied → Residual Limitation → Verification*.
+
+---
+
+### Phase 52: `io.*` Wildcard Dispatch & Standard-Library Bypass (P0) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-01`<br>
+**Severity:** P0 — silent wrong output / API contract violation<br>
+**Depends on:** —<br>
+**Blocks:** CLI error-path tests; Phase 64 (closed-set pattern)
+
+#### Defect
+
+`codegen_call.vl:104` routes **every** `io.<member>` call to `emit_io_call`. `codegen_io.vl:21-111` only recognizes the exact names `print` and `println`; any other member falls through to generic integer/float/string printing with no newline, no stderr routing, and no arity check. `type_checker.vl:190` returns `"void"` for every `io.*` call without validating the member name, arity, or argument types. The real pure-Velo implementations in `std/io/print.vl:209-255` are therefore unreachable through the `io.` prefix.
+
+```velo
+use std.io
+
+act main() {
+    io.println_str("io.println_str")          // no newline
+    println_str("println_str")                // correct
+    io.eprintln_str("io.eprintln_str")        // stdout, no newline
+    eprintln_str("eprintln_str")              // correct stderr
+    io.println_u64(18446744073709551615u64)   // -1
+    println_u64(18446744073709551615u64)      // 18446744073709551615
+    io.println("a", "b")                      // "b" silently dropped
+    io.does_not_exist(123)                    // compiles and prints 123
+    io.also_missing()                         // compiles to a no-op
+}
+```
+
+**Impact:** 163 call sites under `std/` use `io.println_*`/`io.eprintln_*`. `std/cli/help.vl:158,164,170` prints CLI errors to **stdout without a newline**. Typos compile silently, and the emitted behavior differs between `io.X` and unqualified `X`.
+
+#### Security Invariants
+
+- Unknown `io.*` members must be compile-time errors, never silent no-ops.
+- `eprint*` must write only to `stderr`; stdout must remain machine-readable.
+- User-controlled strings must never become `printf` format strings.
+- Arity mismatches must be rejected, not truncated.
+- The checker and codegen must agree on the closed member set (defense in depth).
+
+#### Tasks
+
+##### Task 52.1: Add the `io.*` conformance matrix (red baseline)
+* **Goal:** Encode the expected behavior of every public `io.*` function before changing code.
+* **Files:** `tests/test_std_io.py` (extend), `std/tests/io/print_api_conformance_test.vl` (new).
+* **Tests:** newline presence for every `println_*`; stderr routing for every `eprintln_*`; `u64` max; `f64` precision; `bool`; `byte`; zero-argument forms; arity errors; unknown members; `io.X` vs unqualified `X` parity.
+* **Security gate:** include user strings containing `%s`, `%n`, and `{...}`; they must be emitted as data, never interpreted as format directives.
+* **Done when:** the new tests fail for the documented reasons and are committed as the red baseline.
+
+##### Task 52.2: Define the intrinsic allowlist and closed member set
+* **Goal:** Separate compiler intrinsics (`print`, `println`) from stdlib functions and publish one closed set.
+* **Files:** `src/analysis/io_checks.vl` (new), `src/analysis/type_checker.vl`.
+* **Tests:** table-driven test covering every member declared in `std/io/print.vl`; unknown member rejected with a diagnostic that lists valid members.
+* **Security gate:** no wildcard fallback; a member missing from the allowlist must fail closed.
+* **Done when:** the checker accepts exactly the documented set.
+
+##### Task 52.3: Implement `check_io_call`
+* **Goal:** Validate arity and argument types; return correct result types (`void`, `bool` for flush, etc.).
+* **Files:** `src/analysis/io_checks.vl`, `src/analysis/type_checker.vl:190`.
+* **Tests:** wrong arity, wrong type, valid calls, `void` vs value-returning, unknown member.
+* **Security gate:** reject implicit float→int and bool→int at the `io` boundary; no silent truncation.
+* **Done when:** every call in the conformance matrix either checks cleanly or fails with a precise diagnostic.
+
+##### Task 52.4: Restrict `codegen_call.vl` dispatch
+* **Goal:** Only exact `print`/`println` reach `emit_io_call`; every other member resolves through normal module function lookup.
+* **Files:** `src/backend/codegen_call.vl:104`, `src/backend/codegen_io.vl`.
+* **Tests:** emitted C for `io.println_str` contains a call to `println_str`; `io.eprintln_str` calls `eprintln_str`; no `printf` hijack; unknown member cannot reach codegen after Task 52.3.
+* **Security gate:** defense in depth — if the checker is bypassed, codegen must not silently emit a no-op.
+* **Done when:** every `io.X` member maps to the real stdlib symbol.
+
+##### Task 52.5: Harden the `print`/`println` intrinsic
+* **Goal:** Enforce exactly one argument (zero-argument `println` only if the specification allows it); reject extra arguments; keep interpolation for `io.println` but not for `println_str`.
+* **Files:** `src/backend/codegen_io.vl:21-111`, `src/backend/codegen_fmt.vl`.
+* **Tests:** `io.println("a", "b")` fails; `io.println("%n")` prints literal `%n`; `io.println(u64)` uses unsigned formatting after Phase 57.
+* **Security gate:** the format string is always a compiler-owned constant; user text goes through `%s`/`%llu`, never as the format.
+* **Done when:** arity and format-injection tests pass.
+
+##### Task 52.6: Audit and fix standard-library call sites
+* **Goal:** Ensure `std/cli/help.vl` and every `io.eprintln_*`/`io.println_*` call site gets the intended stream and newline.
+* **Files:** `std/cli/help.vl`, plus an `rg` audit of `std/`.
+* **Tests:** CLI error path captures stdout and stderr separately; error text is absent from stdout and ends with a newline.
+* **Security gate:** errors must not leak to stdout where a caller may parse it as data.
+* **Done when:** all audited call sites behave as their names promise.
+
+##### Task 52.7: End-to-end parity test
+* **Goal:** For every public `X`, `io.X` and unqualified `X` produce identical output, except the intentional interpolation behavior of `io.println`.
+* **Files:** `tests/test_std_io.py`, `std/tests/io/print_api_parity_test.vl` (new).
+* **Tests:** byte-for-byte stdout/stderr diff across the whole API surface.
+* **Security gate:** deterministic output; no buffering or `atexit` race; no locale-dependent formatting.
+* **Done when:** parity is green on Windows and POSIX CI.
+
+##### Task 52.8: Document the intrinsic boundary and close the phase
+* **Goal:** Document which `io.*` names are compiler intrinsics and which are stdlib functions.
+* **Files:** `docs/SPECIFICATION.md`, `gaps.md`.
+* **Tests:** every documentation example compiles with `bin\velo.exe`.
+* **Security gate:** no undocumented fallback behavior remains.
+* **Done when:** all Phase 52 tasks are complete and the global phase exit criteria pass.
+
+#### Phase Exit Criteria
+
+- [ ] `io.println_str`, `io.eprintln_str`, `io.println_u64`, `io.println_f64`, and all other declared `io.*` members behave identically to their unqualified counterparts.
+- [ ] `io.println("a", "b")`, `io.does_not_exist(123)`, and `io.also_missing()` fail at `velo check`.
+- [ ] `std/cli/help.vl` error output goes to stderr with a trailing newline.
+- [ ] The 163 `io.*` call sites under `std/` are audited; no call site relies on the old wildcard behavior.
+
+---
+
+### Phase 53: Unsuffixed Integer Literal Width & Overflow (P0) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-02`<br>
+**Severity:** P0 — silent value corruption<br>
+**Depends on:** —<br>
+**Blocks:** Phases 54, 55, 56, 57, 63, 68
+
+#### Defect
+
+`parse_int_from_slice` returns `i32` (`num_utils.vl:13`), binary and octal conversion also flow through `i32` (`num_utils.vl:208-238`), and unsuffixed literals default to `i32` (`type_checker.vl:53`). Values above `INT32_MAX` wrap without a diagnostic.
+
+```velo
+let a = 0xFFFFFFFF                          // -1
+let b = 0x80000000                          // -2147483648
+let c = 0b11111111111111111111111111111111  // -1
+let d = 0o37777777777                       // -1
+let e: u64 = 18446744073709551615u64        // correct
+let f: u32 = 4294967295u32                  // correct
+```
+
+This also corrupts range analysis: `loop i in 0..3000000000` stores the endpoint as a negative `i32`, so codegen marks the range as reverse and the loop runs zero times.
+
+#### Security Invariants
+
+- A literal that does not fit its selected type must be a compile-time error, never a wrap.
+- A literal above `u64` must be rejected.
+- Literal parsing must be deterministic and independent of host `int` width.
+- Codegen must emit a C literal/cast that cannot be re-wrapped by the C compiler.
+- No consumer of `int_val` may assume 32-bit width without an explicit check.
+
+#### Tasks
+
+##### Task 53.1: Add boundary conformance tests (red baseline)
+* **Goal:** Pin the expected values and types for every base and every integer boundary.
+* **Files:** `tests/test_integer_literals.py` (new), `tests/test_literal_formatting.py` (extend).
+* **Tests:** `0`, `1`, `INT32_MAX`, `INT32_MAX+1`, `UINT32_MAX`, `INT64_MAX`, `UINT64_MAX`, `UINT64_MAX+1`, negative minimums; decimal, hex, binary, octal.
+* **Security gate:** assert that no test observes a wrapped negative value; assert a diagnostic for `> u64`.
+* **Done when:** the tests fail for the documented reasons and are committed as the red baseline.
+
+##### Task 53.2: Introduce an `IntLiteral` value model
+* **Goal:** Represent magnitude (`u64`), base, sign, and an explicit overflow flag without changing the public AST yet.
+* **Files:** `src/common/num_utils.vl`.
+* **Tests:** a Velo self-test or subprocess probe covering the model's constructors and overflow detection.
+* **Security gate:** overflow must be explicit; no API may silently truncate a `u64` to `i32`.
+* **Done when:** the model is unit-tested and the existing `parse_int_from_slice` wrapper still compiles.
+
+##### Task 53.3: Replace decimal parsing
+* **Goal:** Parse decimal literals into the wide model with overflow detection.
+* **Files:** `src/common/num_utils.vl`, `src/frontend/parser_lit.vl`.
+* **Tests:** `0`, `2147483647`, `2147483648`, `9223372036854775807`, `18446744073709551615`, `18446744073709551616`.
+* **Security gate:** reject `> u64`; reject malformed digits; no host-width dependence.
+* **Done when:** decimal boundary tests pass.
+
+##### Task 53.4: Replace hexadecimal parsing
+* **Goal:** Parse hex literals into the wide model with overflow detection.
+* **Files:** `src/common/num_utils.vl`.
+* **Tests:** `0x7FFFFFFF`, `0x80000000`, `0xFFFFFFFF`, `0xFFFFFFFFFFFFFFFF`, `0x1_0000_0000_0000_0000`.
+* **Security gate:** reject overflow; reject empty/`0x`-only input.
+* **Done when:** hex boundary tests pass.
+
+##### Task 53.5: Replace binary and octal parsing
+* **Goal:** Parse binary/octal literals into the wide model with overflow detection.
+* **Files:** `src/common/num_utils.vl`.
+* **Tests:** 32-bit and 64-bit all-ones patterns, leading zeros, invalid digits (`2` in binary, `8` in octal).
+* **Security gate:** reject overflow and invalid digits; no partial parse.
+* **Done when:** binary/octal boundary tests pass.
+
+##### Task 53.6: Define and implement the unsuffixed literal type ladder
+* **Goal:** Decide and document the rule: fits `i32` → `i32`; else fits `i64` → `i64`; else fits `u64` → `u64`; else error. Suffixed literals remain strict.
+* **Files:** `src/analysis/type_checker.vl:53`, `src/analysis/literal_check.vl`, `docs/SPECIFICATION.md`.
+* **Tests:** inferred type for each boundary; explicit suffix overrides; out-of-range diagnostics.
+* **Security gate:** no implicit narrowing; no silent `u32`/`i64` guess that changes semantics.
+* **Done when:** the ladder is documented and the inferred types match the tests.
+
+##### Task 53.7: Emit wide C literals safely
+* **Goal:** Emit `INT64_C`/`UINT64_C`-style literals or explicit casts so the C compiler cannot re-wrap the value.
+* **Files:** `src/backend/codegen_expr.vl`, `src/backend/codegen_lit.vl` (or the current literal emitter).
+* **Tests:** emitted C for boundary values; runtime values equal the source literal.
+* **Security gate:** no implementation-defined conversion; no signed overflow in emitted C.
+* **Done when:** boundary values survive parse → check → emit → run.
+
+##### Task 53.8: Audit every `int_val` consumer
+* **Goal:** Find all reads of `int_val` and classify them as safe (`i32`-only context) or needing wide access.
+* **Files:** `rg -n "int_val" src/`; ranges, enum values, array sizes, `case` labels, `sizeof`, struct defaults.
+* **Tests:** one boundary test per consumer.
+* **Security gate:** no consumer may truncate a wide literal without a diagnostic.
+* **Done when:** the audit table is attached to the task note and every unsafe consumer is fixed or explicitly gated.
+
+##### Task 53.9: Add property/fuzz coverage
+* **Goal:** Compare the Velo parser's decimal/hex/binary/octal results against Python's arbitrary-precision integers for a deterministic corpus plus random valid/invalid strings.
+* **Files:** `tests/test_integer_literals.py` (new helper), `scripts/` if a generator is needed.
+* **Tests:** at least 1,000 deterministic cases; malformed inputs must produce diagnostics, not crashes.
+* **Security gate:** fuzz corpus includes `0x`, empty strings, embedded underscores, Unicode digits, and 100+ digit inputs.
+* **Done when:** the property test is part of the suite and runs in bounded time.
+
+#### Phase Exit Criteria
+
+- [ ] `0xFFFFFFFF`, `0x80000000`, `0b111...32`, and `0o37777777777` produce their mathematical values with a well-defined type.
+- [ ] `18446744073709551616` is a compile-time error.
+- [ ] `loop i in 0..3000000000` is no longer corrupted by a wrapped endpoint.
+- [ ] Every `int_val` consumer is audited.
+
+---
+
+### Phase 54: `loop <count>` Classification (P0) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-03`<br>
+**Severity:** P0 — unbounded loop / wrong iteration count<br>
+**Depends on:** Phase 53<br>
+**Blocks:** Phases 63 and 68
+
+#### Defect
+
+The parser marks a loop as a count loop only when the expression is an integer literal (`parser_stmt.vl:152`). Codegen then re-classifies identifiers only for `i32`, `i64`, `u32`, and `usize` (`codegen_stmt.vl:243-253`). Every other integer width, and every non-literal expression, is lowered as a **condition** loop.
+
+```velo
+let c: u64 = 3
+loop c { io.println("x") }
+// for (int32_t it = 0; (c); it++)  → infinite
+
+loop n + 1 { io.println("x") }
+// for (int32_t it = 0; ((n + 1)); it++)  → infinite
+
+loop 5.0 { }
+// for (int32_t it = 0; (5.0f); it++)  → infinite
+
+loop "x" { }
+// for (int32_t it = 0; ("x"); it++)  → always true
+```
+
+`loop p` with a struct emits invalid C. `loop -1` is treated as a condition (`-1` is truthy), not a zero-iteration count.
+
+#### Security Invariants
+
+- A count expression must be an integer type; a condition expression must be `bool`.
+- A count expression with side effects must be evaluated exactly once.
+- A non-boolean condition must be rejected at `velo check`, not left to C truthiness.
+- A count of `0` or a negative count must terminate immediately, not loop forever.
+- No classification may depend on the spelling of the expression.
+
+#### Tasks
+
+##### Task 54.1: Add the count/condition matrix (red baseline)
+* **Goal:** Cover every integer width, expression form, and invalid type.
+* **Files:** `tests/test_range_loops.py` (extend), `tests/test_count_loops.py` (new).
+* **Tests:** `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `isize`, `usize`; literals, identifiers, `n + 1`, `-1`, `0`; float, string, struct, bool, pointer.
+* **Security gate:** every runnable test has a hard timeout (e.g. 10s) so an infinite loop fails the test instead of hanging CI.
+* **Done when:** the matrix fails for the documented reasons.
+
+##### Task 54.2: Define the count-vs-condition rule
+* **Goal:** Write the normative rule and the diagnostics: integer → count; `bool` → condition; anything else → error.
+* **Files:** `docs/SPECIFICATION.md` §7.2, `src/analysis/type_checker_stmt.vl`.
+* **Tests:** documentation examples compile; ambiguous cases are resolved explicitly.
+* **Security gate:** the rule must not permit pointer/string truthiness or float counts.
+* **Done when:** the rule is reviewed and documented before code changes.
+
+##### Task 54.3: Make the parser emit a neutral classification hint
+* **Goal:** Stop treating `EXPR_INT` as the semantic count flag; the parser may keep a hint, but the checker/codegen must decide from types.
+* **Files:** `src/frontend/parser_stmt.vl:152`, `src/ast/stmt.vl` if a field rename is needed.
+* **Tests:** AST-level or emitted-C tests for each form.
+* **Security gate:** no behavior may depend on literal spelling.
+* **Done when:** the parser no longer decides count-vs-condition alone.
+
+##### Task 54.4: Enforce count/condition types in the checker
+* **Goal:** Reject non-integer counts and non-`bool` conditions with precise diagnostics.
+* **Files:** `src/analysis/type_checker_stmt.vl:161-164`.
+* **Tests:** all invalid rows of the matrix; valid rows still pass.
+* **Security gate:** no implicit float→int or pointer→bool conversion.
+* **Done when:** `velo check` rejects every invalid form in the matrix.
+
+##### Task 54.5: Lower count loops for every integer width
+* **Goal:** Emit a terminating count loop for all integer types, using a temporary so the count is evaluated once.
+* **Files:** `src/backend/codegen_stmt.vl:243-256`.
+* **Tests:** `u8`/`u16`/`u64`/`isize` counts; side-effecting count function called once; count `0` and negative count terminate.
+* **Security gate:** no `for (...; (count); ...)` lowering for an integer count; no double evaluation.
+* **Done when:** every count row of the matrix terminates with the correct iteration count.
+
+##### Task 54.6: Lower condition loops as real boolean loops
+* **Goal:** Emit a `while`-style loop (or a `for` with a boolean condition) and preserve the `it` counter semantics.
+* **Files:** `src/backend/codegen_stmt.vl`.
+* **Tests:** `loop x > 0`, `loop flag`, nested loops, `it` values.
+* **Security gate:** condition must be emitted as a C boolean expression, not a raw integer/pointer.
+* **Done when:** condition loops behave identically to the documented examples.
+
+##### Task 54.7: Add side-effect, boundary, and security tests
+* **Goal:** Prove single evaluation, termination, and diagnostic quality.
+* **Files:** `tests/test_count_loops.py`.
+* **Tests:** function call in the count; `u64` count above `INT32_MAX` (coordinate Phase 68); nested count loops; `break`/`continue` inside count loops.
+* **Security gate:** all runnable tests use timeouts; invalid programs are rejected at `velo check`; no test relies on undefined C behavior.
+* **Done when:** the full matrix is green.
+
+#### Phase Exit Criteria
+
+- [ ] `loop n` with `n: u8/u16/u64/isize` terminates after `n` iterations.
+- [ ] `loop n + 1` is a count loop and evaluates `n + 1` once.
+- [ ] `loop 5.0`, `loop "x"`, `loop p`, and `loop @p` fail at `velo check`.
+- [ ] `loop -1` and `loop 0` terminate immediately.
+- [ ] No count loop is lowered as `for (...; (count); ...)`.
+
+---
+
+### Phase 55: Reverse Ranges with Large Literal Endpoints (P0) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-04`<br>
+**Severity:** P0 — wrong iteration count / silent zero-iteration loop<br>
+**Depends on:** Phase 53<br>
+**Blocks:** Phase 56 and Phase 68
+
+#### Defect
+
+`codegen_stmt.vl:258-259` detects a reverse range only when both endpoints are `EXPR_INT` and compares their `i32` `int_val`. Once Phase 53 stores wide values, this comparison must use the wide value, not the truncated field.
+
+```velo
+loop i in 0..3000000000 {
+    io.println(i)
+    if i == 2 { break }
+}
+// emitted: for (int32_t i = 0; i > 3000000000; i--)
+// runs 0 times; only "done" is printed
+```
+
+The literal `3000000000` wraps negative during parsing, so codegen believes the range is descending.
+
+#### Security Invariants
+
+- Direction detection must use the same value that is emitted.
+- A range whose endpoint cannot be represented must be rejected, not silently reversed.
+- No comparison may overflow or depend on `int` width.
+- The loop must either terminate or fail with a diagnostic; zero iterations must be provably correct.
+
+#### Tasks
+
+##### Task 55.1: Add the large-endpoint matrix (red baseline)
+* **Goal:** Cover ascending and descending ranges around `INT32_MAX`, `UINT32_MAX`, and `INT64_MAX`.
+* **Files:** `tests/test_range_loops.py` (extend), `tests/test_large_ranges.py` (new).
+* **Tests:** `0..3000000000`, `3000000000..0`, inclusive variants, `INT32_MAX..0`, `0..INT32_MAX+1`.
+* **Security gate:** each runnable test has a timeout; assert exact iteration counts.
+* **Done when:** the matrix fails for the documented reasons.
+
+##### Task 55.2: Prove the wrapped-value root cause
+* **Goal:** Add a parser/codegen assertion that the endpoint value used for direction equals the emitted value.
+* **Files:** `src/backend/codegen_stmt.vl:258-259`, test probe.
+* **Tests:** a probe that prints/asserts the parsed endpoint and the emitted condition.
+* **Security gate:** the test must fail if direction is derived from a truncated field.
+* **Done when:** the root cause is pinned by a failing assertion.
+
+##### Task 55.3: Use wide values for direction detection
+* **Goal:** Compare the wide literal values (or inferred types) rather than the `i32` `int_val`.
+* **Files:** `src/backend/codegen_stmt.vl`.
+* **Tests:** all large-endpoint rows; ascending vs descending.
+* **Security gate:** no `i32` cast in the direction path; overflow-safe comparison.
+* **Done when:** `0..3000000000` is ascending and iterates.
+
+##### Task 55.4: Assert the emitted C condition
+* **Goal:** Add tests that inspect `velo emit-c` output for the correct comparison operator and literal.
+* **Files:** `tests/test_large_ranges.py`.
+* **Tests:** emitted C contains `i < 3000000000` (or the correct wide suffix), not `i > 3000000000`.
+* **Security gate:** no implementation-defined literal suffix; no negative wrapped constant.
+* **Done when:** emitted C and runtime behavior agree.
+
+##### Task 55.5: Add runtime iteration-count tests
+* **Goal:** Verify the loop body executes the expected number of times and terminates.
+* **Files:** `tests/test_large_ranges.py`.
+* **Tests:** count iterations without printing billions of lines; break at a small sentinel; inclusive/exclusive boundaries.
+* **Security gate:** timeouts; no unbounded output.
+* **Done when:** ascending and descending large ranges both pass.
+
+##### Task 55.6: Add boundary/overflow tests
+* **Goal:** Cover `INT32_MAX`, `UINT32_MAX`, `INT64_MAX`, and values just outside the loop variable's range.
+* **Files:** `tests/test_large_ranges.py`.
+* **Tests:** endpoints at each boundary; step increments that would overflow.
+* **Security gate:** reject or diagnose unrepresentable ranges; no signed overflow.
+* **Done when:** boundary behavior is defined and tested.
+
+##### Task 55.7: Add the security/negative gate
+* **Goal:** Ensure malformed or unrepresentable ranges fail closed.
+* **Files:** `tests/test_large_ranges.py`, `src/analysis/type_checker_stmt.vl`.
+* **Tests:** string/float/struct endpoints; `0..u64max` on an `i32` loop; step that cannot reach the end.
+* **Security gate:** `velo check` rejects invalid ranges; no silent zero-iteration fallback.
+* **Done when:** all negative cases produce diagnostics.
+
+#### Phase Exit Criteria
+
+- [ ] `loop i in 0..3000000000` iterates in ascending order and terminates correctly.
+- [ ] Large descending ranges iterate in descending order.
+- [ ] Direction detection uses the wide value, not `int_val`.
+- [ ] Unrepresentable ranges are rejected with a diagnostic.
+
+---
+
+### Phase 56: Reverse Ranges with Dynamic Endpoints (P0) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-05`<br>
+**Severity:** P0 — silent zero-iteration loop<br>
+**Depends on:** Phases 53 and 55<br>
+**Blocks:** Phase 68
+
+#### Defect
+
+`codegen_stmt.vl:258-259` only detects reverse ranges when both endpoints are literals. A dynamic descending range is lowered as an ascending comparison and never executes.
+
+```velo
+let n: i32 = 5
+loop i in n..0 {
+    io.println(i)
+}
+// runs 0 times; literal 5..0 works
+```
+
+The documented "Smart Reverse Auto-Countdown" (`docs/SPECIFICATION.md:688-693`) is not implemented for dynamic bounds.
+
+#### Security Invariants
+
+- Dynamic endpoints must be evaluated exactly once.
+- Direction selection must not change the number of iterations for equal endpoints.
+- Signed/unsigned comparisons must not produce an infinite loop.
+- The generated code must terminate for every valid input; zero-step and overflow cases are handled in Phase 63 and Phase 68.
+
+#### Tasks
+
+##### Task 56.1: Add the dynamic-range matrix (red baseline)
+* **Goal:** Cover variables, mixed types, inclusive ranges, and equal endpoints.
+* **Files:** `tests/test_range_loops.py` (extend), `tests/test_dynamic_ranges.py` (new).
+* **Tests:** `n..0`, `n..m`, `0..n`, `n..=0`, equal endpoints, `u32`/`u64` bounds.
+* **Security gate:** timeouts; assert exact iteration counts.
+* **Done when:** the matrix fails for the documented reasons.
+
+##### Task 56.2: Define dynamic direction semantics
+* **Goal:** Decide whether direction is chosen at runtime from the endpoint comparison or whether an explicit step is required for descending dynamic ranges.
+* **Files:** `docs/SPECIFICATION.md` §7.2, `gaps.md`.
+* **Tests:** documentation examples; ambiguous cases resolved.
+* **Security gate:** no silent zero-iteration behavior; the rule must be predictable.
+* **Done when:** the semantics are documented and reviewed.
+
+##### Task 56.3: Evaluate endpoints once into temporaries
+* **Goal:** Hoist `start` and `end` into temps so side effects run once and direction/comparison use stable values.
+* **Files:** `src/backend/codegen_stmt.vl`.
+* **Tests:** endpoint expressions with function calls and increments; assert one evaluation.
+* **Security gate:** no double evaluation; no TOCTOU-style direction change mid-loop.
+* **Done when:** side-effect tests pass.
+
+##### Task 56.4: Lower runtime direction selection
+* **Goal:** Emit code that chooses ascending or descending based on the temps, preserving `it` and the inclusive/exclusive boundary.
+* **Files:** `src/backend/codegen_stmt.vl`.
+* **Tests:** `n..0`, `n..m`, `n..=0`, equal endpoints.
+* **Security gate:** comparison must be overflow-safe; no `i++` in a descending loop.
+* **Done when:** dynamic descending ranges iterate correctly.
+
+##### Task 56.5: Handle mixed-type endpoints
+* **Goal:** Avoid signed/unsigned comparison bugs when `start` and `end` have different integer types.
+* **Files:** `src/analysis/type_checker_stmt.vl`, `src/backend/codegen_stmt.vl`.
+* **Tests:** `i32..u32`, `u32..i32`, `usize..0`, `i64..u64`.
+* **Security gate:** reject incompatible pairs or promote with an explicit, documented rule; no silent wrap.
+* **Done when:** mixed-type cases are defined and tested.
+
+##### Task 56.6: Add emitted-C and runtime assertions
+* **Goal:** Verify the generated C contains a direction branch and the correct comparison.
+* **Files:** `tests/test_dynamic_ranges.py`.
+* **Tests:** `emit-c` inspection; runtime iteration counts.
+* **Security gate:** no undefined behavior; no infinite loop.
+* **Done when:** emitted C and runtime agree for all matrix rows.
+
+##### Task 56.7: Add the security/negative gate
+* **Goal:** Ensure invalid dynamic ranges fail closed.
+* **Files:** `tests/test_dynamic_ranges.py`.
+* **Tests:** float/string/struct endpoints; endpoints that overflow the loop variable; zero step (coordinate Phase 63).
+* **Security gate:** diagnostics at `velo check`; no silent fallback.
+* **Done when:** all negative cases are rejected.
+
+#### Phase Exit Criteria
+
+- [ ] `let n = 5; loop i in n..0` iterates 5,4,3,2,1 and terminates.
+- [ ] Endpoints are evaluated exactly once.
+- [ ] Equal endpoints produce the documented iteration count.
+- [ ] Mixed-type bounds are either rejected or promoted by a documented rule.
+
+---
+
+### Phase 57: Unsigned Integer Formatting (P0) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-06`<br>
+**Severity:** P0 — silent wrong output<br>
+**Depends on:** Phase 53<br>
+**Coordinates with:** Phase 52 (the `io.println(u64)` parity row is enabled by this phase)
+
+#### Defect
+
+`codegen_io.vl:74-80` prints every integer with `printf("%lld", (long long)(...))`, and `codegen_fmt.vl:213-219` does the same for `{...}` interpolation. `u64` values above `INT64_MAX` become negative.
+
+```velo
+let e: u64 = 18446744073709551615u64
+io.println(e)     // -1
+io.print(e)       // -1
+io.println("{e}") // -1
+```
+
+`println_u64` (unqualified) is correct because it calls the stdlib implementation, which uses `format_u64`.
+
+#### Security Invariants
+
+- Unsigned values must never be formatted through a signed conversion.
+- `usize`/`isize` must respect the target platform width.
+- Formatting must be locale-independent and deterministic.
+- No format string may be derived from user data.
+
+#### Tasks
+
+##### Task 57.1: Add the unsigned formatting matrix (red baseline)
+* **Goal:** Cover every unsigned width through every formatting path.
+* **Files:** `tests/test_literal_formatting.py` (extend), `tests/test_string_interpolation.py` (extend).
+* **Tests:** `u8`, `u16`, `u32`, `u64`, `usize`; `0`, `1`, `max-1`, `max`; `io.println`, `io.print`, `{...}`, `io.println_u64` after Phase 52.
+* **Security gate:** assert exact decimal strings; no `-` prefix for unsigned values.
+* **Done when:** the matrix fails for the documented reasons.
+
+##### Task 57.2: Fix `codegen_io` integer formatting
+* **Goal:** Select `%llu` + `(unsigned long long)` for unsigned types; keep `%lld` for signed.
+* **Files:** `src/backend/codegen_io.vl:74-80`.
+* **Tests:** all unsigned widths; signed regression tests.
+* **Security gate:** no signed cast for an unsigned expression; no format/argument mismatch.
+* **Done when:** `io.println(u64max)` prints `18446744073709551615`.
+
+##### Task 57.3: Fix `codegen_fmt` interpolation
+* **Goal:** Apply the same signed/unsigned split in `{...}` formatting.
+* **Files:** `src/backend/codegen_fmt.vl:213-219`.
+* **Tests:** `"{u64max}"`, `"{u32max}"`, signed regression.
+* **Security gate:** format/argument types must match exactly; no `%lld` for unsigned.
+* **Done when:** interpolation prints unsigned values correctly.
+
+##### Task 57.4: Handle `usize`/`isize` portably
+* **Goal:** Use `%zu`/`%zd` or a cast that is correct on 32-bit and 64-bit targets.
+* **Files:** `src/backend/codegen_io.vl`, `src/backend/codegen_fmt.vl`.
+* **Tests:** `usize`/`isize` at `0`, `max`; Windows and POSIX CI.
+* **Security gate:** no assumption that `usize` is 64-bit; no truncation.
+* **Done when:** both widths format correctly.
+
+##### Task 57.5: Audit other integer formatting paths
+* **Goal:** Find every place that formats an integer and classify signedness.
+* **Files:** `rg` audit of `sb_append_int`, log, JSON, test output, CLI help.
+* **Tests:** one boundary test per path.
+* **Security gate:** no signed/unsigned confusion in lengths, sizes, or hashes.
+* **Done when:** the audit table is attached and every path is fixed or explicitly signed-only.
+
+##### Task 57.6: Add boundary/security tests and documentation
+* **Goal:** Lock in the behavior and document the formatting rules.
+* **Files:** `tests/test_literal_formatting.py`, `docs/SPECIFICATION.md`.
+* **Tests:** `0`, `max`, `max-1`, signed negatives; format-injection strings.
+* **Security gate:** no locale-dependent output; no user-controlled format strings.
+* **Done when:** the matrix is green and the docs match.
+
+#### Phase Exit Criteria
+
+- [ ] `io.println(u64max)`, `io.print(u64max)`, and `"{u64max}"` all print `18446744073709551615`.
+- [ ] `usize`/`isize` are correct on 32-bit and 64-bit targets.
+- [ ] No integer formatting path uses a signed conversion for an unsigned type.
+
+---
+
+### Phase 58: `defer` Block Scoping & Loop Cleanup (P0) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-07`<br>
+**Severity:** P0 — use-after-free, double-free, and leaks<br>
+**Depends on:** —<br>
+**Blocks:** Phases 61 and 62 (cleanup interaction)
+
+#### Defect
+
+The specification says defers run at the closing `}` of their block (`docs/STEP2_SPECIFICATION.md:79-82`). The implementation keeps one LIFO stack per function (`codegen_stmt.vl:334-344`), emits it at function exit (`codegen_c.vl:71-79`), and discards loop-body entries without emitting them (`codegen_stmt.vl:274-276`).
+
+```velo
+loop 3 {
+    let p = mem.heap_alloc(@i32, 1)
+    defer mem.free(p)
+    p[0] = 7
+}
+// heap used after loop: 12  → leaked every iteration
+```
+
+A `defer` inside `if` either runs at function exit (too late) or fails to compile with `'p' undeclared` because the block-local variable is out of scope. This is a memory-safety defect, not just a spec mismatch.
+
+#### Security Invariants
+
+- A defer must run exactly once on every exit path from its block.
+- Deferred statements must run in reverse declaration order (LIFO).
+- Loop-body defers must run at the end of each iteration, including `continue` and `break`.
+- Early `return`/`fail` must unwind only the blocks actually exited.
+- No deferred statement may reference a variable whose lifetime has ended.
+
+#### Tasks
+
+##### Task 58.1: Add the defer lifecycle matrix (red baseline)
+* **Goal:** Cover every block and exit path.
+* **Files:** `tests/test_defer.py` (new), `std/tests/mem/defer_test.vl` (new).
+* **Tests:** defer in function body, `if`, `else`, `on`, `loop`, nested blocks; normal exit, `return`, `fail`, `break`, `continue`.
+* **Security gate:** assert exactly-once execution; `mem.heap_used()` returns to baseline; no double-free.
+* **Done when:** the matrix fails for the documented reasons.
+
+##### Task 58.2: Design the block-scope cleanup model
+* **Goal:** Define block boundaries, loop iteration boundaries, zone interaction, and early-exit order.
+* **Files:** `docs/STEP2_SPECIFICATION.md`, `src/backend/codegen_stmt.vl` design note.
+* **Tests:** documentation examples; review checklist.
+* **Security gate:** the design must prove exactly-once cleanup and no out-of-scope references.
+* **Done when:** the design is reviewed before code changes.
+
+##### Task 58.3: Refactor the defer stack to block scopes
+* **Goal:** Add block markers (analogous to `push_loop_scope`) so cleanups can be emitted at the correct boundary.
+* **Files:** `src/backend/codegen_stmt.vl:25-48`.
+* **Tests:** internal probe or emitted-C assertions for nested blocks.
+* **Security gate:** marker push/pop must be balanced on every path.
+* **Done when:** nested blocks have distinct cleanup scopes.
+
+##### Task 58.4: Emit cleanups at normal block exit
+* **Goal:** Emit the block's defers when control reaches `}` normally.
+* **Files:** `src/backend/codegen_stmt.vl:67-79`.
+* **Tests:** defer in `if` and plain blocks; block-local pointer.
+* **Security gate:** no reference to a variable after its C scope closes; compile with `-Werror`.
+* **Done when:** `if`-local defers compile and run at block exit.
+
+##### Task 58.5: Emit per-iteration loop cleanups
+* **Goal:** Emit loop-body defers at the end of each iteration and on `continue`/`break`.
+* **Files:** `src/backend/codegen_stmt.vl:272-279`.
+* **Tests:** `loop 3` allocation/free; `mem.heap_used()` baseline; `continue` and `break` paths.
+* **Security gate:** no leak per iteration; no double-free on `break`.
+* **Done when:** the loop leak repro reports baseline heap usage.
+
+##### Task 58.6: Correct early-exit ordering
+* **Goal:** Unwind innermost block first, then outer blocks, for `return`, `fail`, `break`, and `continue`.
+* **Files:** `src/backend/codegen_stmt.vl:347-377`, `src/backend/outcome_gen.vl`.
+* **Tests:** nested blocks with defers and early exits; LIFO order.
+* **Security gate:** exactly-once; no cleanup of blocks not exited.
+* **Done when:** ordering tests pass for every exit kind.
+
+##### Task 58.7: Handle `if`/`else`/`on` branches
+* **Goal:** Ensure branch-local defers do not leak into sibling branches or the enclosing function.
+* **Files:** `src/backend/codegen_stmt.vl`, `src/backend/codegen_match.vl`.
+* **Tests:** defer in each branch; only the taken branch runs its cleanup.
+* **Security gate:** no double emission; no branch-crossing cleanup.
+* **Done when:** branch tests pass.
+
+##### Task 58.8: Add leak/UAF sanitizer coverage
+* **Goal:** Run the defer matrix under ASan/UBSan (POSIX) and a leak check on Windows where available.
+* **Files:** `.github/workflows/ci.yml`, `tests/test_defer.py`.
+* **Tests:** allocation/free balance; use-after-free probes; double-free probes.
+* **Security gate:** zero sanitizer findings; zero leaks.
+* **Done when:** the sanitizer job is green.
+
+##### Task 58.9: Update the specification and close the phase
+* **Goal:** Align `STEP2_SPECIFICATION.md` with the implemented block-scope semantics.
+* **Files:** `docs/STEP2_SPECIFICATION.md`, `gaps.md`.
+* **Tests:** documentation examples compile and run.
+* **Security gate:** no undocumented lifetime rule.
+* **Done when:** all Phase 58 tasks are complete.
+
+#### Phase Exit Criteria
+
+- [ ] `defer` in `if`, `on`, and `loop` runs at the end of its own block.
+- [ ] Loop-body defers run on every iteration, `continue`, and `break`.
+- [ ] Early exits unwind in LIFO order with exactly-once semantics.
+- [ ] The leak repro reports baseline heap usage.
+- [ ] ASan/UBSan/leak checks are clean.
+
+---
+
+### Phase 59: Function/Method Call Argument Type Checking (P1) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-08`<br>
+**Severity:** P1 — checker accepts invalid programs; implicit truncation<br>
+**Depends on:** —<br>
+**Blocks:** Phase 60 (shared diagnostic helper)
+
+#### Defect
+
+`adapt_and_check_call_args` (`literal_check.vl:241-263`) checks integer and float conversion pairs but has no final `else`. When the argument is not an integer/float conversion case, nothing is reported.
+
+```velo
+act f(a: i32) { io.println(a) }
+act main() {
+    f("x")    // velo check passes → GCC error
+    f(1.5)    // velo check passes → prints 1 (C truncation)
+    f(true)   // velo check passes → prints 1
+}
+
+act g(a: bool) { ... }
+g(1)          // velo check passes → prints "true"
+```
+
+A struct passed to an `i32` parameter also passes `velo check` and fails only at GCC. The same helper is used for UFCS/method calls (`type_checker.vl:215-222`), so `p.show(1.5)` silently truncates.
+
+#### Security Invariants
+
+- Every argument must be checked against its parameter type, with no "fall through silently" branch.
+- Implicit narrowing and signed/unsigned mismatches remain rejected (Phase 46 contract).
+- Arity mismatches must be rejected.
+- Error messages must name the argument position, expected type, and actual type.
+- No C implicit conversion may be the only line of defense.
+
+#### Tasks
+
+##### Task 59.1: Add the mismatch matrix (red baseline)
+* **Goal:** Cover every type family for free functions, methods, UFCS, externs, and generic instantiations.
+* **Files:** `tests/test_type_checker.py` (extend), `tests/test_call_arguments.py` (new).
+* **Tests:** string→int, float→int, bool→int, int→bool, struct→int, pointer→int, int→string, int→pointer; too few/too many arguments.
+* **Security gate:** every invalid row must fail at `velo check`; no row may reach GCC.
+* **Done when:** the matrix fails for the documented reasons.
+
+##### Task 59.2: Add the final mismatch diagnostic
+* **Goal:** Add the missing `else` in `adapt_and_check_call_args` and report a precise mismatch.
+* **Files:** `src/analysis/literal_check.vl:250-258`.
+* **Tests:** all mismatch rows; valid rows still pass.
+* **Security gate:** no silent acceptance; no fallback that relies on C conversion.
+* **Done when:** every mismatch row is rejected at check time.
+
+##### Task 59.3: Enforce arity for all call forms
+* **Goal:** Reject too few and too many arguments for free functions, methods, UFCS, and externs.
+* **Files:** `src/analysis/type_checker.vl`, `src/analysis/literal_check.vl`.
+* **Tests:** zero args to a one-arg function; two args to a one-arg function; variadic/extern exceptions if any.
+* **Security gate:** no out-of-bounds argument access in checker or codegen.
+* **Done when:** arity errors are compile-time diagnostics.
+
+##### Task 59.4: Guard literal adaptation against truncation
+* **Goal:** Ensure `f(1.5)` to `i32` is an error, not a C truncation; ensure `f(1)` to `bool` is an error.
+* **Files:** `src/analysis/literal_check.vl:152-188`.
+* **Tests:** float literal → int parameter; int literal → bool; bool literal → int; negative literals.
+* **Security gate:** no implicit float→int; no implicit int→bool; explicit casts still work.
+* **Done when:** adaptation only applies where the language allows it.
+
+##### Task 59.5: Audit every call path
+* **Goal:** Verify constructors, builtins, module functions, function pointers, and generic calls use the same checks.
+* **Files:** `rg` audit of `adapt_and_check_call_args`, `check_call`, `check_method_call`.
+* **Tests:** one mismatch test per call path.
+* **Security gate:** no call path bypasses argument checking.
+* **Done when:** the audit table is attached and all paths are covered.
+
+##### Task 59.6: Add security/regression tests and documentation
+* **Goal:** Lock in the contract and document the diagnostic.
+* **Files:** `tests/test_call_arguments.py`, `docs/SPECIFICATION.md`.
+* **Tests:** all matrix rows; explicit-cast acceptance; error-message assertions.
+* **Security gate:** no implicit narrowing; no C-only failure.
+* **Done when:** the matrix is green and the docs match.
+
+#### Phase Exit Criteria
+
+- [ ] `f("x")`, `f(1.5)`, `f(true)`, `g(1)`, and `f(struct)` fail at `velo check`.
+- [ ] Arity errors are compile-time diagnostics.
+- [ ] Every call path (free, method, UFCS, extern, generic) is covered.
+- [ ] Explicit casts still work.
+
+---
+
+### Phase 60: `if`/`loop` Condition Type Checking (P1) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-09`<br>
+**Severity:** P1 — checker accepts invalid programs; pointer truthiness<br>
+**Depends on:** Phase 59 (shared condition/mismatch diagnostics)<br>
+**Blocks:** —
+
+#### Defect
+
+`type_checker_stmt.vl:149-164` only calls `infer_expr_type` for `if` and `loop` conditions; it never requires `bool`.
+
+```velo
+if 1 { }        // passes; always true
+if "x" { }      // passes; pointer is always true
+if p { }        // passes; GCC error (struct condition)
+loop 5.0 { }    // passes; infinite
+loop p { }      // passes; invalid C
+```
+
+This is both a soundness hole and a source of silent logic errors: a non-empty string or non-null pointer is always truthy.
+
+#### Security Invariants
+
+- Conditions must be `bool`; no pointer, string, integer, or struct truthiness.
+- Flow-sensitive narrowing (`if x != null`) must keep working.
+- `if` expressions must still type-check their branches independently.
+- Codegen must assert that a non-`bool` condition never reaches emission.
+
+#### Tasks
+
+##### Task 60.1: Add the condition matrix (red baseline)
+* **Goal:** Cover `if`, `loop`, `if` expressions, and `on` guards.
+* **Files:** `tests/test_type_checker.py` (extend), `tests/test_conditions.py` (new).
+* **Tests:** `if 1`, `if "x"`, `if p`, `if @p`, `if null`, `loop 5.0`, `loop p`, `loop "x"`, valid `bool` and optional comparisons.
+* **Security gate:** every invalid row must fail at `velo check`; no row may reach GCC.
+* **Done when:** the matrix fails for the documented reasons.
+
+##### Task 60.2: Implement `require_bool_condition`
+* **Goal:** Add one helper that infers the condition type, accepts `bool`, and reports a precise diagnostic otherwise.
+* **Files:** `src/analysis/type_checker_stmt.vl`, `src/analysis/type_checker.vl`.
+* **Tests:** valid `bool`, `x != null`, `flag`, `!flag`; invalid rows.
+* **Security gate:** no implicit conversion; error names the actual type.
+* **Done when:** the helper is used by every condition site.
+
+##### Task 60.3: Apply the helper to all condition sites
+* **Goal:** Cover `STMT_IF`, `STMT_LOOP` condition form, `if` expressions, and any `on` guard.
+* **Files:** `src/analysis/type_checker_stmt.vl:149-164`, `src/analysis/type_checker.vl`.
+* **Tests:** every site in the matrix.
+* **Security gate:** no condition path bypasses the helper.
+* **Done when:** all sites reject non-`bool`.
+
+##### Task 60.4: Protect flow-sensitive narrowing
+* **Goal:** Ensure `if x != null`, optional unwrapping, and early-return narrowing still work.
+* **Files:** `src/analysis/narrow_flow.vl`, `src/analysis/type_checker_stmt.vl`.
+* **Tests:** `?T` narrowing, `if x != null { x.val }`, else-branch narrowing, early return.
+* **Security gate:** no regression in null safety; no false positive on valid narrowing.
+* **Done when:** the existing null-safety suite passes unchanged.
+
+##### Task 60.5: Add codegen defense and negative tests
+* **Goal:** Fail loudly if a non-`bool` condition reaches codegen; lock in the diagnostics.
+* **Files:** `src/backend/codegen_stmt.vl`, `tests/test_conditions.py`.
+* **Tests:** internal-error assertion; all invalid rows; pointer/string truthiness.
+* **Security gate:** no C truthiness fallback; no undefined behavior.
+* **Done when:** the matrix is green and codegen is defensive.
+
+#### Phase Exit Criteria
+
+- [ ] `if 1`, `if "x"`, `if p`, `loop 5.0`, `loop p`, and `loop "x"` fail at `velo check`.
+- [ ] `if flag`, `if x != null`, and optional narrowing still work.
+- [ ] Codegen never emits a raw integer/pointer as a C condition.
+
+---
+
+### Phase 61: `break` Inside `on` (P1) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-10`<br>
+**Severity:** P1 — wrong control flow; cleanup may be skipped<br>
+**Depends on:** Phase 58 (defer cleanup interaction)<br>
+**Blocks:** —
+
+#### Defect
+
+`on` lowers to a C `switch` (`codegen_match.vl:18,171`), and `break` is emitted verbatim (`codegen_stmt.vl:366`). A `break` inside an `on` case exits the switch, not the enclosing loop.
+
+```velo
+loop i in 0..5 {
+    on i {
+        1 => { break }
+        else => { }
+    }
+}
+// prints all 5 iterations instead of stopping at i == 1
+```
+
+This is especially dangerous when the case body allocates and relies on loop-scoped cleanup.
+
+#### Security Invariants
+
+- `on` is not a loop; `break`/`continue` bind to the nearest enclosing loop.
+- A `break` must not be captured by the generated `switch`.
+- Loop-scoped defers/zones must still run exactly once on the break path.
+- Nested `on` must not change the binding target.
+
+#### Tasks
+
+##### Task 61.1: Add the `on` control-flow matrix (red baseline)
+* **Goal:** Cover `break` and `continue` in `on`, nested `on`, and `on` outside a loop.
+* **Files:** `tests/test_match_switch.py` (extend), `tests/test_break_continue.py` (extend).
+* **Tests:** break in case inside loop; continue in case; nested `on`; `on` outside loop; `break` in the last case vs first case.
+* **Security gate:** exact iteration counts; loop-scoped allocation freed on break.
+* **Done when:** the matrix fails for the documented reasons.
+
+##### Task 61.2: Define and document the binding rule
+* **Goal:** State that `on` is not a loop and `break`/`continue` target the nearest loop; update the specification.
+* **Files:** `docs/SPECIFICATION.md` §7.3, `gaps.md`.
+* **Tests:** documentation examples.
+* **Security gate:** no ambiguity for nested `on` or `on` outside a loop.
+* **Done when:** the rule is reviewed.
+
+##### Task 61.3: Lower `break` with an explicit loop target
+* **Goal:** Emit a labeled `goto` or a dedicated loop-exit flag instead of a raw `break` inside the switch.
+* **Files:** `src/backend/codegen_match.vl`, `src/backend/codegen_stmt.vl:359-367`.
+* **Tests:** break inside `on` inside a loop; emitted C inspection.
+* **Security gate:** no switch capture; cleanup emitted before the exit.
+* **Done when:** the loop stops at the expected iteration.
+
+##### Task 61.4: Lower `continue` with an explicit loop target
+* **Goal:** Ensure `continue` inside `on` continues the enclosing loop, not the switch.
+* **Files:** `src/backend/codegen_match.vl`, `src/backend/codegen_stmt.vl:369-377`.
+* **Tests:** continue inside `on`; iteration counts; `it` values.
+* **Security gate:** no fallthrough into the next case; cleanup runs.
+* **Done when:** continue behaves as documented.
+
+##### Task 61.5: Preserve cleanup ordering
+* **Goal:** Run loop-scoped defers/zones before the break/continue exit.
+* **Files:** `src/backend/codegen_stmt.vl`, `src/backend/codegen_match.vl`.
+* **Tests:** allocate in loop, defer free, break inside `on`; `mem.heap_used()` baseline.
+* **Security gate:** exactly-once cleanup; no leak/UAF.
+* **Done when:** cleanup tests pass.
+
+##### Task 61.6: Add nested-`on` and fallthrough tests
+* **Goal:** Prove the binding target is stable through multiple `on` levels and that cases do not fall through.
+* **Files:** `tests/test_match_switch.py`.
+* **Tests:** `on` inside `on` inside loop; break/continue at each level; default case.
+* **Security gate:** no accidental fallthrough; no switch-capture.
+* **Done when:** nested tests pass.
+
+##### Task 61.7: Add the security/regression gate
+* **Goal:** Compile the matrix with warnings-as-errors and run under sanitizers.
+* **Files:** `tests/test_break_continue.py`, `.github/workflows/ci.yml`.
+* **Tests:** `-Werror` build; ASan/UBSan run; loop-scoped allocation.
+* **Security gate:** zero warnings from the generated control flow; zero sanitizer findings.
+* **Done when:** the gate is green.
+
+#### Phase Exit Criteria
+
+- [ ] `break` inside `on` inside a loop stops the loop.
+- [ ] `continue` inside `on` continues the loop.
+- [ ] Loop-scoped cleanup runs exactly once on both paths.
+- [ ] Nested `on` does not change the binding target.
+
+---
+
+### Phase 62: `break`/`continue` Outside Loops (P1) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-11`<br>
+**Severity:** P1 — checker accepts invalid programs; GCC-only failure<br>
+**Depends on:** Phase 58 (cleanup interaction)<br>
+**Blocks:** —
+
+#### Defect
+
+`type_checker_stmt.vl:219-220` returns immediately for `STMT_BREAK` and `STMT_CONTINUE`; it does not track whether a loop is active.
+
+```velo
+act main() { break }     // velo check passes; GCC: break statement not within loop
+act main() { continue }  // velo check passes; GCC: continue statement not within a loop
+```
+
+#### Security Invariants
+
+- `break`/`continue` outside a loop must be a compile-time error.
+- The checker must reset loop depth at function boundaries.
+- The diagnostic must point at the statement and explain the missing loop.
+- Codegen must never emit an unbound `break`/`continue`.
+
+#### Tasks
+
+##### Task 62.1: Add the out-of-loop matrix (red baseline)
+* **Goal:** Cover every context where `break`/`continue` can appear.
+* **Files:** `tests/test_break_continue.py` (extend), `tests/test_loop_context.py` (new).
+* **Tests:** in `main`, in `if`, in `on`, in a plain block, in a nested function (if supported), inside a loop (valid).
+* **Security gate:** every invalid row must fail at `velo check`.
+* **Done when:** the matrix fails for the documented reasons.
+
+##### Task 62.2: Track loop depth in the symbol table
+* **Goal:** Add a `loop_depth` counter, increment/decrement around loop bodies, and reset at function entry/exit.
+* **Files:** `src/analysis/symbol_table.vl`, `src/analysis/type_checker_stmt.vl:161-170`.
+* **Tests:** nested loops; loop inside function; function inside loop (if supported).
+* **Security gate:** balanced counter on every path; no stale depth after an early return.
+* **Done when:** depth is correct for every context.
+
+##### Task 62.3: Reject `break`/`continue` when depth is zero
+* **Goal:** Emit a precise diagnostic and increment the error count.
+* **Files:** `src/analysis/type_checker_stmt.vl:219-220`.
+* **Tests:** all invalid rows; valid loop rows still pass.
+* **Security gate:** no GCC-only failure; no silent acceptance.
+* **Done when:** `velo check` rejects every out-of-loop case.
+
+##### Task 62.4: Add codegen defense
+* **Goal:** Assert that `break`/`continue` never reaches codegen without an active loop target.
+* **Files:** `src/backend/codegen_stmt.vl:359-377`.
+* **Tests:** internal-error probe; valid loops still emit correctly.
+* **Security gate:** no unbound `break`/`continue` in generated C.
+* **Done when:** codegen is defensive and tests pass.
+
+##### Task 62.5: Add the security/regression gate and documentation
+* **Goal:** Lock in the diagnostic and document the rule.
+* **Files:** `tests/test_loop_context.py`, `docs/SPECIFICATION.md`.
+* **Tests:** all invalid rows; error-message assertions; `-Werror` build.
+* **Security gate:** no compiler crash; no GCC-only failure.
+* **Done when:** the matrix is green and the docs match.
+
+#### Phase Exit Criteria
+
+- [ ] `break` and `continue` outside a loop fail at `velo check`.
+- [ ] Nested loops still work.
+- [ ] Codegen never emits an unbound `break`/`continue`.
+- [ ] The diagnostic is precise and documented.
+
+---
+
+### Phase 63: Zero Range Step (P0) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-12`<br>
+**Severity:** P0 — infinite loop<br>
+**Depends on:** Phases 53, 54, 55, 56<br>
+**Blocks:** Phase 68
+
+#### Defect
+
+`loop i in 0..10:0` is accepted and lowered to `for (int32_t i = 0; i < 10; i += 0)`, which never terminates.
+
+```velo
+loop i in 0..10:0 {
+    io.println(i)
+}
+// for (int32_t i = 0; i < 10; i += 0)  → infinite
+```
+
+There is no compile-time or runtime validation of the step.
+
+#### Security Invariants
+
+- A literal zero step must be a compile-time error.
+- A dynamic zero step must fail deterministically with a clear diagnostic or terminate by definition; it must never hang.
+- Negative steps must not silently invert a range without a documented rule.
+- Step evaluation must happen once.
+
+#### Tasks
+
+##### Task 63.1: Add the step matrix (red baseline)
+* **Goal:** Cover literal `0`, `+0`, `-0`, dynamic zero, float zero, negative steps, and valid positive steps.
+* **Files:** `tests/test_range_loops.py` (extend), `tests/test_range_steps.py` (new).
+* **Tests:** all forms; exact iteration counts; timeout on runnable cases.
+* **Security gate:** no test may hang CI; invalid cases must fail at `velo check`.
+* **Done when:** the matrix fails for the documented reasons.
+
+##### Task 63.2: Reject literal zero steps at compile time
+* **Goal:** Detect a zero-valued literal step and emit a diagnostic.
+* **Files:** `src/analysis/type_checker_stmt.vl`, `src/analysis/literal_check.vl`.
+* **Tests:** `:0`, `:+0`, `:-0`; valid `:1`, `:2`, `:-1`.
+* **Security gate:** no false positive on a non-zero expression; only provably zero literals are rejected; explicit diagnostic.
+* **Done when:** literal zero steps are rejected.
+
+##### Task 63.3: Handle dynamic zero steps deterministically
+* **Goal:** Decide and implement the behavior: compile-time rejection is impossible for a runtime value, so emit a guard that fails with a clear runtime error before the loop.
+* **Files:** `src/backend/codegen_stmt.vl`, `runtime/velo_runtime.h` if a helper is needed.
+* **Tests:** dynamic zero step; dynamic non-zero step; guard placement before the first iteration.
+* **Security gate:** no infinite loop; error message is actionable; no partial iteration before the check.
+* **Done when:** dynamic zero steps cannot hang.
+
+##### Task 63.4: Ensure codegen never emits `i += 0`
+* **Goal:** Add an assertion/test that a zero step cannot reach the emitted increment.
+* **Files:** `src/backend/codegen_stmt.vl`.
+* **Tests:** `emit-c` inspection for all step forms.
+* **Security gate:** no `+= 0` increment; no undefined behavior.
+* **Done when:** emitted C is provably terminating for valid steps.
+
+##### Task 63.5: Add security/timeout tests and documentation
+* **Goal:** Lock in termination and document the step rule.
+* **Files:** `tests/test_range_steps.py`, `docs/SPECIFICATION.md`.
+* **Tests:** runnable cases with timeouts; error-message assertions.
+* **Security gate:** no infinite loop; no silent fallback.
+* **Done when:** the matrix is green and the docs match.
+
+#### Phase Exit Criteria
+
+- [ ] `loop i in 0..10:0` fails at `velo check` (literal) or fails fast at runtime (dynamic).
+- [ ] No emitted loop contains `i += 0`.
+- [ ] Valid positive and negative steps still work.
+- [ ] All step tests are timeout-guarded.
+
+---
+
+### Phase 64: Closed-Set Validation for `mem.*` and `str.*` (P2) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-13`<br>
+**Severity:** P2 — checker accepts unknown members; GCC-only failure<br>
+**Depends on:** Phase 52 (closed-set pattern)<br>
+**Blocks:** —
+
+#### Defect
+
+`check_mem_call` returns `true` for any member outside `copy`/`move`/`set`/`realloc` (`mem_checks.vl:43`). `check_str_call` returns `"unknown"` for an unknown member and explicitly keeps the legacy fallthrough (`str_checks.vl:6,109`). `math.*` is correctly closed, which proves the pattern already exists.
+
+```velo
+mem.does_not_exist()   // velo check passes → GCC error
+str.does_not_exist()   // velo check passes → GCC error
+math.does_not_exist()  // velo check rejects: unknown math member
+```
+
+#### Security Invariants
+
+- Every module member must belong to a documented closed set.
+- Unknown members must fail at `velo check`, never at GCC or runtime.
+- Arity and argument types must be validated for every member.
+- The codegen must not silently emit a no-op or an unresolved symbol.
+
+#### Tasks
+
+##### Task 64.1: Inventory the `mem` and `str` public surfaces
+* **Goal:** Produce the authoritative member list from the stdlib declarations and existing codegen ladders.
+* **Files:** `std/mem/*.vl`, `std/str/*.vl`, `src/backend/*_gen.vl`, `src/analysis/mem_checks.vl`, `src/analysis/str_checks.vl`.
+* **Tests:** table-driven list used by the next tasks.
+* **Security gate:** the list must include every member the codegen can emit; no hidden fallback.
+* **Done when:** the inventory is reviewed and attached to the task note.
+
+##### Task 64.2: Close the `mem.*` checker
+* **Goal:** Replace the `return true` fallback with a closed-set check and per-member arity/type validation.
+* **Files:** `src/analysis/mem_checks.vl:42-99`, `src/analysis/type_checker.vl:173-181`.
+* **Tests:** unknown member, wrong arity, wrong type, valid `copy`/`move`/`set`/`realloc`/`alloc`/`used`.
+* **Security gate:** unknown member is a compile-time error with a list of valid members.
+* **Done when:** `mem.does_not_exist()` fails at `velo check`.
+
+##### Task 64.3: Close the `str.*` checker
+* **Goal:** Replace the legacy unknown-member fallthrough with a closed-set check and per-member validation.
+* **Files:** `src/analysis/str_checks.vl:46-130`, `src/analysis/type_checker.vl:189`.
+* **Tests:** unknown member, wrong arity, wrong type, valid string operations.
+* **Security gate:** unknown member is a compile-time error; no silent `"unknown"` type.
+* **Done when:** `str.does_not_exist()` fails at `velo check`.
+
+##### Task 64.4: Add codegen defense
+* **Goal:** Ensure an unknown member cannot reach the codegen ladder and emit a no-op.
+* **Files:** `src/backend/codegen_call.vl`, `src/backend/*_gen.vl`.
+* **Tests:** internal-error probe; valid members still emit correctly.
+* **Security gate:** defense in depth; no unresolved symbol in generated C.
+* **Done when:** codegen is defensive for both modules.
+
+##### Task 64.5: Add tests, diagnostics, and documentation
+* **Goal:** Lock in the closed sets and document the valid members.
+* **Files:** `tests/test_mem_intrinsics.py`, `tests/test_string_library.py`, `docs/SPECIFICATION.md`.
+* **Tests:** unknown/wrong-arity/wrong-type rows; valid rows; error-message assertions.
+* **Security gate:** no silent acceptance; no GCC-only failure.
+* **Done when:** both matrices are green and the docs match.
+
+#### Phase Exit Criteria
+
+- [ ] `mem.does_not_exist()` and `str.does_not_exist()` fail at `velo check`.
+- [ ] Valid `mem.*` and `str.*` calls still pass and run.
+- [ ] The valid-member lists are documented.
+
+---
+
+### Phase 65: Runtime Zone Allocator Hardening (P2) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-14`<br>
+**Severity:** P2 — OOM NULL dereference; invalid offset on a defensive path<br>
+**Depends on:** —<br>
+**Blocks:** —
+
+#### Defect
+
+`runtime/velo_runtime.h:518-532` allocates `z` with `malloc` and then dereferences `z->base` at line 531 before checking `z` for NULL; the check at line 532 is too late. `velo_zone_pop` sets `z->offset = watermark` at line 475, but `watermark` is a **watermark index** (1-based), not a byte offset; the valid path restores `wm.primary_offset`.
+
+```c
+VeloZoneArena* z = (VeloZoneArena*)malloc(sizeof(VeloZoneArena));
+...
+z->base = (uint8_t*)malloc(bytes);
+if (!z || !z->base) { ... }   // z->base already dereferenced
+```
+
+```c
+} else {
+    velo_zone_free_chunks(z);
+    z->offset = watermark;     // index, not bytes
+    ...
+}
+```
+
+These are OOM/defensive-path bugs, not normal-path bugs, but they turn an allocation failure into a NULL dereference or a corrupted arena offset.
+
+#### Security Invariants
+
+- Every allocation result must be checked before dereference.
+- Defensive/fallback paths must preserve a valid arena state.
+- OOM behavior must be documented (fatal vs recoverable).
+- Sanitizers must cover the runtime, not just compiler output.
+
+#### Tasks
+
+##### Task 65.1: Build a runtime test harness
+* **Goal:** Add a small C test or Velo probe that exercises zone enter/pop, nested zones, and allocation failure paths.
+* **Files:** `tests/test_runtime_zone.py` (new), `runtime/` test harness.
+* **Tests:** enter/pop balance; nested zones; watermark restore; simulated OOM if feasible.
+* **Security gate:** tests run under ASan/UBSan on POSIX.
+* **Done when:** the harness can reproduce the NULL/offset paths.
+
+##### Task 65.2: Fix the `velo_zone_enter` NULL check
+* **Goal:** Check `z` immediately after `malloc` and before any member access.
+* **Files:** `runtime/velo_runtime.h:518-538`.
+* **Tests:** simulated `malloc` failure (fail-injection macro or wrapper); assert a fatal diagnostic, not a crash.
+* **Security gate:** no NULL dereference; no leak on the failure path.
+* **Done when:** the OOM test reports the intended fatal error.
+
+##### Task 65.3: Fix the `velo_zone_pop` fallback
+* **Goal:** Do not assign a watermark index to `z->offset`; define the correct fallback (restore the last valid watermark or fail loudly).
+* **Files:** `runtime/velo_runtime.h:449-483`.
+* **Tests:** out-of-range/zero watermark; assert arena state remains valid.
+* **Security gate:** no corrupted offset; no out-of-bounds write after the fallback.
+* **Done when:** the fallback test passes and the arena remains usable.
+
+##### Task 65.4: Audit all runtime allocations
+* **Goal:** Find every `malloc`/`realloc`/`calloc` and verify the result is checked before use.
+* **Files:** `rg` audit of `runtime/velo_runtime.h`.
+* **Tests:** one failure-injection test per allocation site where feasible.
+* **Security gate:** no unchecked allocation; no integer-overflow in size calculations.
+* **Done when:** the audit table is attached and all sites are fixed or explicitly fatal.
+
+##### Task 65.5: Add sanitizer coverage to CI
+* **Goal:** Run the runtime tests under ASan/UBSan (and a leak check where available).
+* **Files:** `.github/workflows/ci.yml`.
+* **Tests:** the Phase 65 harness plus existing runtime tests.
+* **Security gate:** zero sanitizer findings.
+* **Done when:** the sanitizer job is green.
+
+##### Task 65.6: Document the OOM policy
+* **Goal:** State which allocations are fatal and which are recoverable; align diagnostics.
+* **Files:** `docs/SPECIFICATION.md`, `SECURITY.md`, `runtime/velo_runtime.h` comments.
+* **Tests:** documentation examples/links.
+* **Security gate:** no silent truncation or fallback on OOM.
+* **Done when:** the policy is documented and matches the code.
+
+#### Phase Exit Criteria
+
+- [ ] `velo_zone_enter` checks `z` before `z->base`.
+- [ ] `velo_zone_pop` never assigns a watermark index to `z->offset`.
+- [ ] All runtime allocations are checked.
+- [ ] ASan/UBSan runtime tests are clean.
+
+---
+
+### Phase 66: Determinism Script Encoding on Windows (P2) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-15`<br>
+**Severity:** P2 — CI false failure after a successful determinism check<br>
+**Depends on:** —<br>
+**Blocks:** —
+
+#### Defect
+
+`scripts/check_determinism.py:37` prints `\u2713` and `\u2014`. On Windows with the default cp1252 console encoding, the print raises `UnicodeEncodeError` **after** Gen2/Gen3 hashes match, so the script exits 1 and `tests/test_ci_matrix.py::test_check_determinism_script_runs` fails.
+
+```
+Gen2: 13a65b54...
+Gen3: 13a65b54...
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2713'
+```
+
+#### Security Invariants
+
+- CI output must be encoding-independent.
+- A successful determinism check must exit 0 on every supported platform.
+- The script must not depend on the terminal locale.
+
+#### Tasks
+
+##### Task 66.1: Reproduce under cp1252
+* **Goal:** Add a test that runs the script with `PYTHONIOENCODING=cp1252` (or a mocked cp1252 stdout).
+* **Files:** `tests/test_ci_matrix.py` (extend).
+* **Tests:** assert the current crash (red).
+* **Security gate:** the test must not depend on the host console.
+* **Done when:** the failure is reproducible in CI.
+
+##### Task 66.2: Make the output encoding-safe
+* **Goal:** Use ASCII-only status text, or reconfigure stdout to UTF-8 with a fallback.
+* **Files:** `scripts/check_determinism.py:34-40`.
+* **Tests:** cp1252 run exits 0; UTF-8 run still prints a readable result.
+* **Security gate:** no locale-dependent exception; no lost diagnostics.
+* **Done when:** the script exits 0 on both encodings.
+
+##### Task 66.3: Add the CI assertion
+* **Goal:** Keep the cp1252 regression test in the suite and assert the hash-match message.
+* **Files:** `tests/test_ci_matrix.py`.
+* **Tests:** exit code 0; Gen2/Gen3 hashes present; "MATCH" present.
+* **Security gate:** no flaky console detection.
+* **Done when:** the test is green on Windows and POSIX.
+
+##### Task 66.4: Document the determinism contract
+* **Goal:** Note that the script is encoding-independent and part of the release gate.
+* **Files:** `scripts/check_determinism.py` docstring, `gaps.md`.
+* **Tests:** docs link/readability.
+* **Security gate:** no hidden platform assumption.
+* **Done when:** the contract is documented.
+
+#### Phase Exit Criteria
+
+- [ ] `python scripts/check_determinism.py` exits 0 under cp1252 and UTF-8.
+- [ ] `test_check_determinism_script_runs` passes.
+- [ ] The script's output is readable on every supported platform.
+
+---
+
+### Phase 67: `test_std_fs_ops` Hermeticity (P2) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-16`<br>
+**Severity:** P2 — test passes only because an untracked directory exists<br>
+**Depends on:** —<br>
+**Blocks:** —
+
+#### Defect
+
+`std/tests/fs/ops_test.vl` writes under `scratch/...` but never creates `scratch/` itself. `tests/test_std_fs.py::test_std_fs_ops` therefore fails on a clean checkout and passes only when an untracked `scratch/` directory happens to exist.
+
+```
+scratch/test_dir_single
+scratch/test_dir_slice
+scratch/nest1/nest2/nest3
+scratch/test_io_ops.txt
+...
+```
+
+#### Security Invariants
+
+- Tests must create and clean up their own filesystem state.
+- Tests must not write outside a temporary directory.
+- Tests must pass from a clean checkout with no untracked directories.
+- Cleanup must run on failure.
+
+#### Tasks
+
+##### Task 67.1: Reproduce from a clean state
+* **Goal:** Add a test that runs the fs test with `scratch/` absent and asserts the current failure (red).
+* **Files:** `tests/test_std_fs.py`.
+* **Tests:** rename/remove `scratch` in a controlled temp copy; assert failure.
+* **Security gate:** do not touch the developer's real `scratch/` outside the test sandbox.
+* **Done when:** the failure is reproducible.
+
+##### Task 67.2: Make the Velo test self-contained
+* **Goal:** Create the base directory (and parents) at the start, and remove it at the end.
+* **Files:** `std/tests/fs/ops_test.vl:9-90`.
+* **Tests:** run from a clean checkout; assert all assertions pass; assert cleanup.
+* **Security gate:** no path traversal; no writes outside the temp base.
+* **Done when:** the test passes without an ambient `scratch/`.
+
+##### Task 67.3: Audit other tests for ambient filesystem dependencies
+* **Goal:** Find other `scratch/`, relative-path, or cwd-dependent tests.
+* **Files:** `rg -n "scratch|tmp|temp" tests/ std/tests/`.
+* **Tests:** run the suite from a clean checkout.
+* **Security gate:** every test uses `tmp_path` or a self-created directory.
+* **Done when:** the audit table is attached and all offenders are fixed.
+
+##### Task 67.4: Add a clean-checkout CI job
+* **Goal:** Prove the suite passes with no untracked directories.
+* **Files:** `.github/workflows/ci.yml`.
+* **Tests:** clean checkout + full suite.
+* **Security gate:** no hidden local state.
+* **Done when:** the job is green.
+
+#### Phase Exit Criteria
+
+- [ ] `test_std_fs_ops` passes with no pre-existing `scratch/`.
+- [ ] The test cleans up after itself.
+- [ ] No other test depends on ambient filesystem state.
+
+---
+
+### Phase 68: Loop Induction Variable Width (P3) [OPEN] 🚧
+
+**Audit ID:** `AUDIT-2026-11-17`<br>
+**Severity:** P3 — documented limitation; overflow/UB on large ranges<br>
+**Depends on:** Phases 53, 54, 55, 56<br>
+**Blocks:** —
+
+#### Defect
+
+Every range/count loop declares its induction variable as `int32_t` (`codegen_stmt.vl:250,260`). Ranges near `INT32_MAX` wrap at `-O0` and rely on undefined behavior at `-O2`. This is already acknowledged in `docs/gaps_archive.md` ("range loops remain `int32_t`"), but it becomes more visible once Phases 53–56 allow large endpoints.
+
+```velo
+loop i in 0..3000000000 { ... }   // endpoint now wide, induction still i32
+```
+
+#### Security Invariants
+
+- Loop induction must not overflow for any accepted range.
+- The chosen width must be documented and consistent across range/count/`of` loops.
+- The change is breaking; migration notes are mandatory.
+- Performance and determinism must be measured, not assumed.
+
+#### Tasks
+
+##### Task 68.1: Make the width decision
+* **Goal:** Choose `i64`/`isize`/`usize` (or a type derived from the bounds) and document the breaking change.
+* **Files:** `docs/SPECIFICATION.md`, `gaps.md`.
+* **Tests:** design examples; compatibility notes.
+* **Security gate:** no silent wrap; explicit overflow behavior.
+* **Done when:** the decision is reviewed and approved.
+
+##### Task 68.2: Audit every loop codegen path
+* **Goal:** Classify range, count, `of`, shelf, map, and ring loops by induction width.
+* **Files:** `src/backend/codegen_stmt.vl`, `map_gen.vl`, `ring_gen.vl`, `shelf_gen.vl`.
+* **Tests:** one boundary test per path.
+* **Security gate:** no path may keep an `i32` induction for a wide bound.
+* **Done when:** the audit table is attached.
+
+##### Task 68.3: Implement width selection
+* **Goal:** Derive the induction type from the bounds/step (or use a fixed wide type) and carry it through codegen.
+* **Files:** `src/backend/codegen_stmt.vl`.
+* **Tests:** `i32`, `u32`, `i64`, `u64` ranges; negative and descending.
+* **Security gate:** no signed/unsigned mismatch; no overflow.
+* **Done when:** emitted C uses the selected type.
+
+##### Task 68.4: Update `it` and boundary semantics
+* **Goal:** Ensure the `it` counter, inclusive bounds, and descending loops remain correct at the new width.
+* **Files:** `src/backend/codegen_stmt.vl`.
+* **Tests:** `INT32_MAX`, `UINT32_MAX`, `INT64_MAX`, `0`, negative.
+* **Security gate:** no UB at the boundary; no infinite loop.
+* **Done when:** boundary tests pass.
+
+##### Task 68.5: Add performance and determinism verification
+* **Goal:** Measure the cost of wider induction and confirm bootstrap determinism.
+* **Files:** `tests/`, `scripts/check_determinism.py`.
+* **Tests:** micro-benchmarks; Gen2/Gen3 SHA-256 match.
+* **Security gate:** no performance cliff; deterministic output.
+* **Done when:** the numbers are recorded.
+
+##### Task 68.6: Write migration notes
+* **Goal:** Document the breaking change and the recommended explicit casts.
+* **Files:** `docs/SPECIFICATION.md`, `gaps.md`, release notes.
+* **Tests:** migration examples compile.
+* **Security gate:** no silent behavior change for existing `i32` loops.
+* **Done when:** the notes are published with the change.
+
+#### Phase Exit Criteria
+
+- [ ] Loop induction no longer overflows for any accepted range.
+- [ ] The width rule is documented and consistent across loop kinds.
+- [ ] Boundary tests pass at `INT32_MAX`/`UINT32_MAX`/`INT64_MAX`.
+- [ ] Bootstrap determinism and performance are verified.
