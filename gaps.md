@@ -1231,12 +1231,30 @@ The documented "Smart Reverse Auto-Countdown" (`docs/SPECIFICATION.md:688-693`) 
 
 #### Tasks
 
-##### Task 56.1: Add the dynamic-range matrix (red baseline)
-* **Goal:** Cover variables, mixed types, inclusive ranges, and equal endpoints.
-* **Files:** `tests/test_range_loops.py` (extend), `tests/test_dynamic_ranges.py` (new).
-* **Tests:** `n..0`, `n..m`, `0..n`, `n..=0`, equal endpoints, `u32`/`u64` bounds.
-* **Security gate:** timeouts; assert exact iteration counts.
-* **Done when:** the matrix fails for the documented reasons.
+##### Task 56.1: Add the dynamic-range matrix (red baseline) [COMPLETED] ✅
+* **Former Defect**:
+  - `src/backend/codegen_stmt.vl:256-267` relies on `is_reverse_loop_range` (`codegen_lit.vl:61`) to decide loop direction at compile time.
+  - `is_reverse_loop_range` only checks literal integer expressions (`EXPR_INT` and unary minus literals via `get_range_endpoint_const`). When either endpoint is a variable (e.g. `n..0`, `n..m`, `10..n`), `is_reverse_loop_range` returns `false`.
+  - As a result, codegen unconditionally lowers dynamic descending ranges as ascending comparisons (e.g. `for (int32_t i = n; i < 0; i++)`). When `n = 5`, `5 < 0` immediately evaluates to `false`, causing the loop to execute 0 iterations silently.
+  - No dedicated test matrix existed covering dynamic range loops across variable bounds, inclusive bounds, equal endpoints, step increments, and wider types (`i64`, `u32`, `u64`, `usize`).
+* **Fix Applied (Red Baseline Harness)**:
+  - Created `tests/test_dynamic_ranges.py` with a 30-case test matrix across 8 sections:
+    * Section 1: Basic variable ranges (`n..0`, `n..m`, `0..n`, `n..m` ascending)
+    * Section 2: Inclusive dynamic ranges (`n..=0`, `n..=m`, `0..=n`, `n..=m` ascending)
+    * Section 3: Equal dynamic endpoints (`n..n` exclusive -> 0 iterations, `n..=n` inclusive -> 1 iteration)
+    * Section 4: Stepped dynamic ranges (`n..0:2`, `n..=0:2`, `0..n:2`, `0..=n:2`)
+    * Section 5: Wider integer types (`i64`, `u32`, `u64`, `usize` ascending and descending)
+    * Section 6: Sign-crossing dynamic ranges (`3..-3`, `3..=-3`, `-3..3`, `-3..=3`)
+    * Section 7: Anonymous dynamic ranges (`loop n..0`, `loop 0..n`)
+    * Section 8: Emitted C diagnostic probes verifying the baseline defect (`i < 0; i++` and `i < m; i++` emitted for descending loops)
+    * Strict 2.0s timeouts enforced across all runnable tests.
+  - Extended `tests/test_range_loops.py` with `test_dynamic_range_loop_baseline` validating ascending `0..n` (5 iters) and documenting the baseline descending `n..0` (0 iters).
+* **Residual Limitation**:
+  - Baseline establishes the red state (17 passed, 13 failed in `tests/test_dynamic_ranges.py` in 8.27s). Every single failure is a dynamic descending range failing due to ascending `i < end; i++` emission. Runtime direction lowering follows in Tasks 56.2–56.7.
+* **Verification**:
+  - `tests/test_dynamic_ranges.py`: 17 passed, 13 failed for the exact documented reasons in 8.27s.
+  - `tests/test_range_loops.py`: 8/8 tests pass in 4.30s.
+  - All 117 compiler source files <= 395 lines (<= 400).
 
 ##### Task 56.2: Define dynamic direction semantics
 * **Goal:** Decide whether direction is chosen at runtime from the endpoint comparison or whether an explicit step is required for descending dynamic ranges.
