@@ -129,5 +129,32 @@ act main() {
             if src_path.exists():
                 src_path.unlink()
 
+    def test_boundary_integer_literal_types_in_c(self):
+        code = """act main() {
+    let a = 2147483648
+    let b = 0xFFFFFFFF
+    let c = 9223372036854775807
+    let d = 18446744073709551615
+}
+"""
+        src_path = self.root_dir / ".velo_cache" / "test_boundary_emit.vl"
+        src_path.write_text(code, encoding="utf-8")
+        try:
+            cmd = [str(self.velo_exe), "emit-c", str(src_path)]
+            res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+            self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
+            # The type ladder (Task 53.6/53.7) requires wide types in emitted C:
+            # a (2147483648) fits i64 -> int64_t, not int32_t
+            # b (0xFFFFFFFF) fits i64 -> int64_t, not int32_t
+            # c (9223372036854775807) fits i64 -> int64_t, not int32_t
+            # d (18446744073709551615) fits u64 -> uint64_t, not int32_t
+            self.assertIn("int64_t a", res.stdout)
+            self.assertIn("int64_t b", res.stdout)
+            self.assertIn("int64_t c", res.stdout)
+            self.assertIn("uint64_t d", res.stdout)
+        finally:
+            if src_path.exists():
+                src_path.unlink()
+
 if __name__ == "__main__":
     unittest.main()
