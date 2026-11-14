@@ -1094,12 +1094,32 @@ The literal `3000000000` wraps negative during parsing, so codegen believes the 
   - `tests/test_range_loops.py`: 7/7 tests pass in 4.05s.
   - All 117 compiler source files $\le 395$ lines ($\le 400$).
 
-##### Task 55.5: Add runtime iteration-count tests
-* **Goal:** Verify the loop body executes the expected number of times and terminates.
-* **Files:** `tests/test_large_ranges.py`.
-* **Tests:** count iterations without printing billions of lines; break at a small sentinel; inclusive/exclusive boundaries.
-* **Security gate:** timeouts; no unbounded output.
-* **Done when:** ascending and descending large ranges both pass.
+##### Task 55.5: Add runtime iteration-count tests [COMPLETED] ✅
+* **Former Defect**:
+  - Test coverage lacked end-to-end executable execution verifying that ascending and descending large ranges execute the exact expected number of iterations without printing billions of lines or hanging CI.
+  - Sliced sub-ranges, inclusive endpoints, stepped wide iterations, sentinel breaks, empty ranges, and anonymous wide ranges were untested at runtime.
+* **Fix Applied**:
+  - Extended `tests/test_large_ranges.py` with Section 7 containing 13 runtime iteration-count tests:
+    * `test_runtime_iteration_count_slice_around_3b_ascending`: `3000000000..3000000005` executes exact 5 iterations (`last_val == 3000000004`).
+    * `test_runtime_iteration_count_slice_around_3b_descending`: `3000000005..3000000000` executes exact 5 iterations (`last_val == 3000000001`).
+    * `test_runtime_iteration_count_slice_around_3b_inclusive_ascending`: `3000000000..=3000000005` executes exact 6 iterations (`last_val == 3000000005`).
+    * `test_runtime_iteration_count_slice_around_3b_inclusive_descending`: `3000000005..=3000000000` executes exact 6 iterations (`last_val == 3000000000`).
+    * `test_runtime_iteration_count_near_uint64_max_ascending`: `18446744073709551610u64..18446744073709551615u64` executes exact 5 iterations.
+    * `test_runtime_iteration_count_near_uint64_max_descending`: `18446744073709551615u64..18446744073709551610u64` executes exact 5 iterations.
+    * `test_runtime_iteration_count_near_uint64_max_inclusive_descending`: `18446744073709551614u64..=18446744073709551610u64` executes exact 5 iterations.
+    * `test_runtime_iteration_stepped_ascending`: `3000000000..3000000010:2` executes exact 5 iterations (0, 2, 4, 6, 8).
+    * `test_runtime_iteration_stepped_descending`: `3000000010..3000000000:2` executes exact 5 iterations (10, 8, 6, 4, 2).
+    * `test_runtime_iteration_sentinel_break_ascending`: `0..3000000000` breaking at `i == 5` executes exact 6 iterations.
+    * `test_runtime_iteration_sentinel_break_descending`: `3000000000..0` breaking after 5 iterations terminates with `last_i == 2999999996`.
+    * `test_runtime_iteration_empty_ranges`: Identical bounds (`3000000000..3000000000`) execute 0 iterations; inclusive identical bounds (`3000000000..=3000000000`) execute 1 iteration.
+    * `test_runtime_iteration_anonymous_ranges`: Anonymous wide range loops `loop 3000000000..3000000004` execute exact 4 iterations.
+  - All runnable tests enforce strict 2.0s timeouts preventing CI hangs.
+* **Residual Limitation**:
+  - Tasks 55.6 and 55.7 cover boundary overflow and compile-time rejection of unrepresentable/invalid types.
+* **Verification**:
+  - `tests/test_large_ranges.py`: All 64 tests pass in 11.09s (100% pass rate).
+  - `tests/test_range_loops.py`: 7/7 tests pass in 4.05s.
+  - All 117 compiler source files $\le 395$ lines ($\le 400$).
 
 ##### Task 55.6: Add boundary/overflow tests
 * **Goal:** Cover `INT32_MAX`, `UINT32_MAX`, `INT64_MAX`, and values just outside the loop variable's range.

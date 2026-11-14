@@ -681,3 +681,277 @@ def test_emitted_c_exact_loop_header(name, code, expected_header):
     assert expected_header in header, f"Expected header '{expected_header}', got:\n  {header}"
 
 
+# ==============================================================================
+# 7. Runtime Iteration-Count Verification (Task 55.5)
+# ==============================================================================
+
+def test_runtime_iteration_count_slice_around_3b_ascending():
+    """Verifies 3000000000..3000000005 runs to completion with exact 5 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_val: i64 = 0
+    loop i in 3000000000..3000000005 {
+        iters += 1
+        last_val = i
+    }
+    assert(iters == 5)
+    assert(last_val == 3000000004)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_runtime_iteration_count_slice_around_3b_descending():
+    """Verifies 3000000005..3000000000 runs to completion with exact 5 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_val: i64 = 0
+    loop i in 3000000005..3000000000 {
+        iters += 1
+        last_val = i
+    }
+    assert(iters == 5)
+    assert(last_val == 3000000001)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_runtime_iteration_count_slice_around_3b_inclusive_ascending():
+    """Verifies 3000000000..=3000000005 runs to completion with exact 6 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_val: i64 = 0
+    loop i in 3000000000..=3000000005 {
+        iters += 1
+        last_val = i
+    }
+    assert(iters == 6)
+    assert(last_val == 3000000005)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_runtime_iteration_count_slice_around_3b_inclusive_descending():
+    """Verifies 3000000005..=3000000000 runs to completion with exact 6 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_val: i64 = 0
+    loop i in 3000000005..=3000000000 {
+        iters += 1
+        last_val = i
+    }
+    assert(iters == 6)
+    assert(last_val == 3000000000)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_runtime_iteration_count_near_uint64_max_ascending():
+    """Verifies 18446744073709551610u64..18446744073709551615u64 runs with exact 5 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_val: u64 = 0u64
+    loop i in 18446744073709551610u64..18446744073709551615u64 {
+        iters += 1
+        last_val = i
+    }
+    assert(iters == 5)
+    assert(last_val == 18446744073709551614u64)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_runtime_iteration_count_near_uint64_max_descending():
+    """Verifies 18446744073709551615u64..18446744073709551610u64 runs with exact 5 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_val: u64 = 0u64
+    loop i in 18446744073709551615u64..18446744073709551610u64 {
+        iters += 1
+        last_val = i
+    }
+    assert(iters == 5)
+    assert(last_val == 18446744073709551611u64)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_runtime_iteration_count_near_uint64_max_inclusive_descending():
+    """Verifies 18446744073709551614u64..=18446744073709551610u64 runs with exact 5 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_val: u64 = 0u64
+    loop i in 18446744073709551614u64..=18446744073709551610u64 {
+        iters += 1
+        last_val = i
+    }
+    assert(iters == 5)
+    assert(last_val == 18446744073709551610u64)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_runtime_iteration_stepped_ascending():
+    """Verifies 3000000000..3000000010:2 executes exact 5 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_val: i64 = 0
+    loop i in 3000000000..3000000010:2 {
+        iters += 1
+        last_val = i
+    }
+    assert(iters == 5)
+    assert(last_val == 3000000008)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_runtime_iteration_stepped_descending():
+    """Verifies 3000000010..3000000000:2 executes exact 5 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_val: i64 = 0
+    loop i in 3000000010..3000000000:2 {
+        iters += 1
+        last_val = i
+    }
+    assert(iters == 5)
+    assert(last_val == 3000000002)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_runtime_iteration_sentinel_break_ascending():
+    """Verifies breaking at sentinel i == 5 from 0..3000000000 terminates with exact 6 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_i: i64 = 0
+    loop i in 0..3000000000 {
+        iters += 1
+        last_i = i
+        if i == 5 {
+            break
+        }
+    }
+    assert(iters == 6)
+    assert(last_i == 5)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_runtime_iteration_sentinel_break_descending():
+    """Verifies breaking after 5 iterations descending from 3000000000..0."""
+    code = """
+act main() -> i32 {
+    mut iters: i32 = 0
+    mut last_i: i64 = 0
+    loop i in 3000000000..0 {
+        iters += 1
+        last_i = i
+        if iters == 5 {
+            break
+        }
+    }
+    assert(iters == 5)
+    assert(last_i == 2999999996)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_runtime_iteration_empty_ranges():
+    """Verifies empty ranges execute 0 iterations."""
+    code = """
+act main() -> i32 {
+    mut iters_3b: i32 = 0
+    loop i in 3000000000..3000000000 {
+        iters_3b += 1
+    }
+    assert(iters_3b == 0)
+
+    mut iters_u64: i32 = 0
+    loop i in 18446744073709551615u64..18446744073709551615u64 {
+        iters_u64 += 1
+    }
+    assert(iters_u64 == 0)
+
+    mut inc_3b: i32 = 0
+    mut inc_3b_val: i64 = 0
+    loop i in 3000000000..=3000000000 {
+        inc_3b += 1
+        inc_3b_val = i
+    }
+    assert(inc_3b == 1)
+    assert(inc_3b_val == 3000000000)
+
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_runtime_iteration_anonymous_ranges():
+    """Verifies anonymous range loop loop <start>..<end> iterates exact count."""
+    code = """
+act main() -> i32 {
+    mut asc_count: i32 = 0
+    loop 3000000000..3000000004 {
+        asc_count += 1
+    }
+    assert(asc_count == 4)
+
+    mut desc_count: i32 = 0
+    loop 3000000004..3000000000 {
+        desc_count += 1
+    }
+    assert(desc_count == 4)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+
