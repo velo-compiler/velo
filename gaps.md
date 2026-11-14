@@ -1256,12 +1256,23 @@ The documented "Smart Reverse Auto-Countdown" (`docs/SPECIFICATION.md:688-693`) 
   - `tests/test_range_loops.py`: 8/8 tests pass in 4.30s.
   - All 117 compiler source files <= 395 lines (<= 400).
 
-##### Task 56.2: Define dynamic direction semantics
-* **Goal:** Decide whether direction is chosen at runtime from the endpoint comparison or whether an explicit step is required for descending dynamic ranges.
-* **Files:** `docs/SPECIFICATION.md` §7.2, `gaps.md`.
-* **Tests:** documentation examples; ambiguous cases resolved.
-* **Security gate:** no silent zero-iteration behavior; the rule must be predictable.
-* **Done when:** the semantics are documented and reviewed.
+##### Task 56.2: Define dynamic direction semantics [COMPLETED] ✅
+* **Former Defect**:
+  - The specification for "Smart Reverse Auto-Countdown" (`docs/SPECIFICATION.md:750`) explicitly documented countdown semantics for literal ranges (`loop 5..0`), but lacked formal technical specifications for dynamic ranges where endpoints are runtime variables, expressions, or function calls (`loop i in n..0` or `loop i in n..m`).
+  - It was ambiguous whether dynamic descending ranges required an explicit step or whether direction was chosen at runtime, leaving the compiler's silent zero-iteration lowering (`for (int32_t i = n; i < 0; i++)`) unspecified.
+* **Fix Applied**:
+  - Formally specified dynamic direction semantics in `docs/SPECIFICATION.md` §7.2 (Subsections 5, 6, 7, and new Subsection 8 "Dynamic Direction Selection & Evaluation Semantics"):
+    * **Runtime Dynamic Direction Selection**: Resolved symmetrically with literal countdowns: when `start > end`, countdown is automatically selected without requiring an explicit negative step.
+    * **Deterministic Lowered Relational Table**: Fully documented execution matrix across exclusive (`..`), inclusive (`..=`), ascending (`start < end`), descending (`start > end`), and equal (`start == end`) endpoints.
+    * **Single Evaluation Guarantee**: Bound expressions (`start`, `end`, and optional `step`) are evaluated exactly once in left-to-right lexical order prior to loop initialization into internal temporaries, eliminating side-effect re-evaluation and TOCTOU bound drift.
+    * **Step Rules**: Optional step magnitude must be positive (> 0); step is subtracted in descending direction (`i -= step`) and added in ascending direction (`i += step`).
+    * **Equal Endpoints Guarantee**: Exclusive `n..n` deterministically executes 0 iterations; inclusive `n..=n` executes exactly 1 iteration with value `n`.
+    * **Literal Optimization**: Static literal bounds continue to be lowered directly at compile time via `is_reverse_loop_range` without runtime branching overhead.
+* **Residual Limitation**:
+  - Lowering implementation follows in Tasks 56.3 (temporary hoisting) and 56.4 (runtime direction selection).
+* **Verification**:
+  - Reviewed `docs/SPECIFICATION.md` §7.2 for completeness and consistency against all Phase 56 security invariants.
+  - Verified line counts: all 117 compiler source files <= 395 lines (<= 400).
 
 ##### Task 56.3: Evaluate endpoints once into temporaries
 * **Goal:** Hoist `start` and `end` into temps so side effects run once and direction/comparison use stable values.

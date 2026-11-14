@@ -741,6 +741,7 @@ When a single expression follows `loop` (i.e. `loop <expr> { ... }`), the compil
 4. **Syntax Independence**: Classification is determined exclusively by type inference in the semantic checker, never by AST syntax (literals, variables, binary expressions, and function calls of integer type all behave identically as count loops).
 
 #### 5. Named Range Loop (`loop <var> in <start>..<end>[:<step>]`)
+Iterates `<var>` across the numeric interval defined by `<start>` and `<end>`, with an optional positive `:step`:
 ```rust
 loop i in 0..10:2 {
     io.println("Step 2: {i}") // 0, 2, 4, 6, 8
@@ -748,18 +749,56 @@ loop i in 0..10:2 {
 ```
 
 #### 6. Smart Reverse Auto-Countdown (`loop <start>..<end>`)
+Velo enforces symmetrical **Smart Reverse Auto-Countdown** across both compile-time literal ranges and runtime dynamic ranges:
 ```rust
+// Compile-time literal countdown:
 loop 5..0 {
     io.println("Liftoff in {it}...") // 5, 4, 3, 2, 1
+}
+
+// Runtime dynamic countdown:
+let n = 5
+loop i in n..0 {
+    io.println("{i}") // 5, 4, 3, 2, 1
 }
 ```
 
 #### 7. Inclusive Range (`..=`)
+The `..=` operator includes the terminal endpoint value:
 ```rust
 loop i in 1..=5 {
     io.println("{i}") // 1, 2, 3, 4, 5
 }
+loop i in 5..=1 {
+    io.println("{i}") // 5, 4, 3, 2, 1
+}
 ```
+
+#### 8. Dynamic Direction Selection & Evaluation Semantics
+When either `<start>` or `<end>` is a runtime variable, expression, or function call, direction selection is resolved via **runtime dynamic direction lowering**:
+
+| Endpoint Relation | Range Kind | Direction | Iterations | Lowered Relational Test | Stepping |
+|---|---|---|---|---|---|
+| `start < end` | Exclusive (`..`) | Ascending | `end - start` | `i < end` | `i += step` |
+| `start < end` | Inclusive (`..=`) | Ascending | `end - start + 1` | `i <= end` | `i += step` |
+| `start > end` | Exclusive (`..`) | Descending | `start - end` | `i > end` | `i -= step` |
+| `start > end` | Inclusive (`..=`) | Descending | `start - end + 1` | `i >= end` | `i -= step` |
+| `start == end` | Exclusive (`..`) | Ascending | `0` | `i < end` (evaluates `false`) | None (0 runs) |
+| `start == end` | Inclusive (`..=`) | Ascending | `1` | `i <= end` (evaluates `true`) | Exactly 1 run (`start`) |
+
+##### Guarantees and Invariants:
+1. **Single Evaluation of Dynamic Bounds (No Re-evaluation)**:
+   - `<start>`, `<end>`, and optional `<step>` are evaluated **exactly once** in strict left-to-right lexical order prior to loop initialization and stored into temporary stack registers (`__start`, `__end`, `__step`).
+   - Side effects (e.g. function calls `loop i in pop()..peek()`, increments, mutating methods) execute exactly once.
+   - Prevents Time-of-Check to Time-of-Use (TOCTOU) direction changes or mid-loop bound drift.
+2. **Predictable Direction Without Explicit Step**:
+   - Descending dynamic ranges (`let n = 5; loop i in n..0`) **do not require an explicit negative step**. Velo automatically selects countdown (`i -= step`) when `start > end`.
+   - If an explicit step is provided (`loop i in n..0:step`), the step magnitude must be positive ($> 0$). In descending direction, the step is subtracted (`i -= step`); in ascending direction, the step is added (`i += step`).
+3. **Deterministic Equal Endpoints**:
+   - Exclusive `n..n` always produces 0 iterations regardless of initial direction assumption.
+   - Inclusive `n..=n` always produces exactly 1 iteration with value `n`.
+4. **Compile-Time Optimization for Literal Bounds**:
+   - When both endpoints are compile-time integer constants, the direction is resolved statically during compilation via `is_reverse_loop_range` with zero runtime branching or temporary hoisting overhead.
 
 ### 7.3 Pattern Matching (`on`)
 The `on` statement performs pattern matching over scalar values, tagged unions, and strings:
