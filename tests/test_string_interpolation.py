@@ -74,3 +74,36 @@ class TestStringInterpolation(unittest.TestCase):
             EXPECTED_LINES,
             "interpolation outputs do not match expected",
         )
+
+    def test_unsigned_interpolation_stage2(self):
+        """Phase 57 / Task 57.1: Verify interpolation of unsigned integers across all widths."""
+        prog = """use sys.io
+act main() -> i32 {
+    let u8_val: u8 = 255u8
+    let u16_val: u16 = 65535u16
+    let u32_val: u32 = 4294967295u32
+    let u64_val: u64 = 18446744073709551615u64
+    let usize_val: usize = 18446744073709551615usize
+    io.println("u8: {u8_val}, u16: {u16_val}, u32: {u32_val}, u64: {u64_val}, usize: {usize_val}")
+    return 0
+}
+"""
+        res = run_stage("stage2", prog, "u_interp")
+        self.assertEqual(res.returncode, 0, f"stage2 run failed: {res.stderr[-2000:]}")
+        expected = "u8: 255, u16: 65535, u32: 4294967295, u64: 18446744073709551615, usize: 18446744073709551615"
+        self.assertIn(expected, res.stdout)
+        self.assertNotIn("-1", res.stdout)
+
+    def test_unsigned_interpolation_expression_stage2(self):
+        """Phase 57 / Task 57.1: Verify interpolation of unsigned expressions."""
+        prog = """use sys.io
+act main() -> i32 {
+    let u64_val: u64 = 18446744073709551615u64
+    io.println("expr: {u64_val - 1u64}")
+    return 0
+}
+"""
+        res = run_stage("stage2", prog, "u_interp_expr")
+        self.assertEqual(res.returncode, 0, f"stage2 run failed: {res.stderr[-2000:]}")
+        self.assertIn("expr: 18446744073709551614", res.stdout)
+        self.assertNotIn("-1", res.stdout)

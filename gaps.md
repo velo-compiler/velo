@@ -1480,12 +1480,29 @@ io.println("{e}") // -1
 
 #### Tasks
 
-##### Task 57.1: Add the unsigned formatting matrix (red baseline)
-* **Goal:** Cover every unsigned width through every formatting path.
-* **Files:** `tests/test_literal_formatting.py` (extend), `tests/test_string_interpolation.py` (extend).
-* **Tests:** `u8`, `u16`, `u32`, `u64`, `usize`; `0`, `1`, `max-1`, `max`; `io.println`, `io.print`, `{...}`, `io.println_u64` after Phase 52.
-* **Security gate:** assert exact decimal strings; no `-` prefix for unsigned values.
-* **Done when:** the matrix fails for the documented reasons.
+##### Task 57.1: Add the unsigned formatting matrix (red baseline) [COMPLETED] ✅
+* **Former Defect**:
+  - `codegen_io.vl:103-111` prints every integer expression with `printf("%lld\n", (long long)(...))` or `printf("%lld", (long long)(...))`.
+  - Unsigned 64-bit integers (`u64` and `usize` on 64-bit targets) exceeding `INT64_MAX` (e.g. `18446744073709551615u64` and `18446744073709551614u64`) are cast to signed `long long`, wrapping into negative numbers (`-1` and `-2`).
+  - Emitted C for all unsigned integer types (`u8`, `u16`, `u32`, `u64`, `usize`) unconditionally uses signed format specifiers (`%lld`) and signed casts `(long long)`, violating the security invariant that unsigned values must never be formatted through signed conversions.
+  - No dedicated test matrix existed covering all unsigned widths across boundary values (`0`, `1`, `max-1`, `max`) and all formatting paths (`io.println`, `io.print`, string interpolation `{...}`).
+* **Fix Applied (Red Baseline Harness)**:
+  - Created `tests/test_unsigned_formatting.py` establishing an 85-case test matrix across 4 sections:
+    * Section 1: `io.println` for variables and literals across `u8`, `u16`, `u32`, `u64`, `usize` at `0`, `1`, `max-1`, `max` (40 tests).
+    * Section 2: `io.print` for variables across all 5 unsigned types at all 4 boundary values (20 tests).
+    * Section 3: String interpolation `"{val}"` across all 5 unsigned types at all 4 boundary values (20 tests).
+    * Section 4: Emitted C security invariant assertions checking that no unsigned type is formatted with signed `%lld` or `(long long)` (5 tests).
+    * Security Gate: Asserts that no unsigned value ever formats with a `-` prefix and matches exact expected decimal strings.
+  - Extended `tests/test_literal_formatting.py` with `test_unsigned_integer_formatting_red_baseline` asserting that `u64_max` and `usize_max` do not format as `-1` and do not emit `%lld`.
+  - Extended `tests/test_string_interpolation.py` with `test_unsigned_interpolation_stage2` and `test_unsigned_interpolation_expression_stage2` verifying stage2 interpolation of unsigned variables and expressions.
+* **Residual Limitation**:
+  - Red baseline established: 17 failed, 68 passed in `tests/test_unsigned_formatting.py` (and 1 failed in `test_literal_formatting.py`). All 17 failures are due to the exact documented defects: `u64` and `usize` wrapping to `-1`/`-2` in `io.println`/`io.print`, and `codegen_io.vl` emitting `%lld` for all unsigned types.
+  - Fixes for `codegen_io.vl` integer formatting follow in Task 57.2.
+* **Verification**:
+  - `tests/test_unsigned_formatting.py`: 68 passed, 17 failed for documented causes in 22.63s.
+  - `tests/test_literal_formatting.py`: `test_unsigned_integer_formatting_red_baseline` failed for documented cause (`%lld` emitted, `-1` at runtime).
+  - `tests/test_string_interpolation.py`: 3/3 passed (interpolation of unsigned variables and expressions passes in stage2).
+  - All 119 compiler source files <= 395 lines (ceiling 400).
 
 ##### Task 57.2: Fix `codegen_io` integer formatting
 * **Goal:** Select `%llu` + `(unsigned long long)` for unsigned types; keep `%lld` for signed.

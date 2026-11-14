@@ -156,5 +156,37 @@ act main() {
             if src_path.exists():
                 src_path.unlink()
 
+    def test_unsigned_integer_formatting_red_baseline(self):
+        """Defect (AUDIT-2026-11-06 / Phase 57): io.println(u64_max) formats as -1 via %lld."""
+        code = """use sys.io
+act main() {
+    let u64_max: u64 = 18446744073709551615u64
+    let usize_max: usize = 18446744073709551615usize
+    io.println(u64_max)
+    io.println(usize_max)
+    io.print(u64_max)
+    io.println("")
+}
+"""
+        src_path = self.root_dir / ".velo_cache" / "test_unsigned_fmt.vl"
+        src_path.write_text(code, encoding="utf-8")
+        try:
+            # 1. Verify emitted C does not use %lld or (long long) for u64/usize
+            cmd_emit = [str(self.velo_exe), "emit-c", str(src_path)]
+            res_emit = subprocess.run(cmd_emit, capture_output=True, text=True, env=self.env)
+            self.assertEqual(res_emit.returncode, 0, f"emit-c failed: {res_emit.stderr}")
+            self.assertNotIn("%lld", res_emit.stdout, "Unsigned values must not be formatted with signed %lld")
+            self.assertIn("%llu", res_emit.stdout, "Unsigned u64/usize must be formatted with %llu (or %zu)")
+
+            # 2. Verify runtime output does not wrap to negative -1
+            cmd_run = [str(self.velo_exe), "run", str(src_path)]
+            res_run = subprocess.run(cmd_run, capture_output=True, text=True, env=self.env)
+            self.assertEqual(res_run.returncode, 0, f"run failed: {res_run.stderr}")
+            self.assertIn("18446744073709551615", res_run.stdout)
+            self.assertNotIn("-1", res_run.stdout)
+        finally:
+            if src_path.exists():
+                src_path.unlink()
+
 if __name__ == "__main__":
     unittest.main()
