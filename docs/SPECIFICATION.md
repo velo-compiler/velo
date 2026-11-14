@@ -725,21 +725,36 @@ loop x > 0 {
 }
 ```
 
-#### 4. Named Range Loop (`loop <var> in <start>..<end>[:<step>]`)
+#### 4. Count-vs-Condition Disambiguation Rule
+When a single expression follows `loop` (i.e. `loop <expr> { ... }`), the compiler resolves count repeat vs. condition iteration strictly by the static type of `<expr>`:
+
+| Expression Type | Loop Kind | Evaluation & Execution Semantics |
+|---|---|---|
+| **Integer** (`i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `isize`, `usize`) | **Count Loop** | Evaluated **exactly once** before loop entry. Executes $N$ times (`it` from `0` to $N - 1$). If $N \le 0$, executes 0 times and terminates immediately. |
+| **Boolean** (`bool`) | **Condition Loop** | Evaluated **before each iteration** (like `while`). Runs while condition evaluates to `true`. Implicit `it: i32` starts at 0 and increments every iteration. |
+| **All Other Types** (`f32`, `f64`, `string`, `@T`, struct, array, etc.) | **Compile Error** | Semantic error: `Loop expression must be an integer (count) or 'bool' (condition), got '<type>'`. |
+
+##### Security Invariants & Disambiguation Guarantees:
+1. **Single Evaluation for Counts**: The count expression is evaluated once into an internal temporary. Function calls and side-effects in `loop get_count() { ... }` are never repeated per iteration.
+2. **Zero and Negative Counts**: A negative or zero count (`loop 0`, `loop -1`, `let c = -5; loop c`) executes zero times and terminates immediately without wrapping or running infinitely.
+3. **No Implicit Truthiness**: Velo rejects C-style truthiness. Neither pointers (`loop ptr`), strings (`loop str`), nor floats (`loop 1.0`) can be used as conditions. Explicit boolean comparisons are required (e.g. `loop ptr != null`, `loop str.len() > 0`).
+4. **Syntax Independence**: Classification is determined exclusively by type inference in the semantic checker, never by AST syntax (literals, variables, binary expressions, and function calls of integer type all behave identically as count loops).
+
+#### 5. Named Range Loop (`loop <var> in <start>..<end>[:<step>]`)
 ```rust
 loop i in 0..10:2 {
     io.println("Step 2: {i}") // 0, 2, 4, 6, 8
 }
 ```
 
-#### 5. Smart Reverse Auto-Countdown (`loop <start>..<end>`)
+#### 6. Smart Reverse Auto-Countdown (`loop <start>..<end>`)
 ```rust
 loop 5..0 {
     io.println("Liftoff in {it}...") // 5, 4, 3, 2, 1
 }
 ```
 
-#### 6. Inclusive Range (`..=`)
+#### 7. Inclusive Range (`..=`)
 ```rust
 loop i in 1..=5 {
     io.println("{i}") // 1, 2, 3, 4, 5

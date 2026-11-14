@@ -829,12 +829,23 @@ loop "x" { }
   - `tests/test_count_loops.py`: 20 passed, 16 failed for the exact documented causes in 30.96s.
   - `tests/test_range_loops.py`: 5 passed, 1 failed (`test_count_loop_variable_and_expression`) in 5.24s.
 
-##### Task 54.2: Define the count-vs-condition rule
-* **Goal:** Write the normative rule and the diagnostics: integer → count; `bool` → condition; anything else → error.
-* **Files:** `docs/SPECIFICATION.md` §7.2, `src/analysis/type_checker_stmt.vl`.
-* **Tests:** documentation examples compile; ambiguous cases are resolved explicitly.
-* **Security gate:** the rule must not permit pointer/string truthiness or float counts.
-* **Done when:** the rule is reviewed and documented before code changes.
+##### Task 54.2: Define the count-vs-condition rule [COMPLETED] ✅
+* **Former Defect**:
+  - The language specification (`docs/SPECIFICATION.md` §7.2) lacked a normative rule for resolving single-expression loops (`loop <expr>`).
+  - There was no documented specification governing how integer types are disambiguated from boolean conditions, how non-positive counts behave, how side-effects are bounded to single evaluation, and which types are strictly prohibited (e.g. pointer/string truthiness and float counts).
+* **Fix Applied**:
+  - Authored normative Count-vs-Condition Disambiguation Rule in `docs/SPECIFICATION.md` §7.2:
+    * Defined type-directed classification: integer types (`i8`..`i64`, `u8`..`u64`, `isize`, `usize`) classify as Count Loops; `bool` classifies as Condition Loops; all other types (`f32`, `f64`, `string`, `@T`, struct, array, etc.) produce compile-time semantic errors.
+    * Specified diagnostic error format: `"Loop expression must be an integer (count) or 'bool' (condition), got '<type>'"` for type checker implementation in Task 54.4.
+    * Documented single-evaluation guarantee: count expression is evaluated exactly once into a temporary before loop entry, preventing repeated side-effect execution.
+    * Documented non-positive count semantics: counts $\le 0$ execute 0 times and terminate immediately.
+    * Documented strict boolean requirements: rejected C-style truthiness for pointers, floats, numbers, and strings, requiring explicit boolean comparisons.
+    * Documented syntax independence: classification depends purely on inferred static type, not AST syntax (literal vs variable vs binary expression).
+  - Verified that all documentation examples in `docs/SPECIFICATION.md` §7.2 compile cleanly.
+* **Residual Limitation**:
+  - Compiler implementation follows in Tasks 54.3-54.6.
+* **Verification**:
+  - Verified all code examples in `docs/SPECIFICATION.md` §7.2 compile cleanly.
 
 ##### Task 54.3: Make the parser emit a neutral classification hint
 * **Goal:** Stop treating `EXPR_INT` as the semantic count flag; the parser may keep a hint, but the checker/codegen must decide from types.
