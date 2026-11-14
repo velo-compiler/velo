@@ -186,6 +186,44 @@ act check_int_literal_fits_type(expr: @ExprNode, target_t: string) -> bool {
     return false
 }
 
+// Validates that a suffixed integer literal (positive or negated) fits within its target type range.
+act validate_suffixed_int_literal(st: @SymbolTable, expr: @ExprNode, target_t: string) -> bool {
+    if check_int_literal_fits_type(expr, target_t) { return true }
+    mut msg = create_sb(64)
+    sb_append_str(@msg, "Integer literal out of range for type '")
+    sb_append_str(@msg, target_t)
+    sb_append_char(@msg, '\'')
+    report_error("semantic", expr.line, expr.col, sb_to_string(@msg))
+    st.error_count += 1
+    return false
+}
+
+// Infers the static type of an EXPR_INT node, validating suffixed ranges.
+act infer_int_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
+    if expr == null { return "i32" }
+    if expr.type_name != null and str.len(expr.type_name) > 0 {
+        if not validate_suffixed_int_literal(st, expr, expr.type_name) { return "unknown" }
+        return expr.type_name
+    }
+    return infer_unsuffixed_int_type(expr)
+}
+
+// Attempts to infer a negated integer literal expression (-lit), validating suffixed ranges.
+act try_infer_neg_int_expr_type(st: @SymbolTable, expr: @ExprNode, out_type: @string) -> bool {
+    if expr == null or expr.op != TOK_MINUS or expr.operand == null or expr.operand.kind != EXPR_INT { return false }
+    let op = expr.operand
+    if op.type_name == null or str.len(op.type_name) == 0 {
+        out_type[0] = infer_unsuffixed_neg_int_type(op)
+        return true
+    }
+    if not validate_suffixed_int_literal(st, expr, op.type_name) {
+        out_type[0] = "unknown"
+        return true
+    }
+    out_type[0] = op.type_name
+    return true
+}
+
 // Extracts string representation of an integer literal for diagnostic error reporting.
 act get_int_literal_text(expr: @ExprNode) -> string {
     if expr == null { return "0" }
