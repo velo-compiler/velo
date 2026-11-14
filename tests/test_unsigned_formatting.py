@@ -263,3 +263,166 @@ act main() -> i32 {
 """
     c_code = emit_c_velo_source(code)
     assert "printf(\"u=%llu, s=%lld\\n\", (unsigned long long)(u), (long long)(s))" in c_code
+
+
+# ==============================================================================
+# 6. Portable usize and isize Formatting Matrix (Task 57.4)
+# ==============================================================================
+
+USIZE_PORTABLE_MATRIX = [
+    # (label, literal_expr, expected_str)
+    ("zero", "0usize", "0"),
+    ("one", "1usize", "1"),
+    ("u32_max_minus_1", "4294967294usize", "4294967294"),
+    ("u32_max", "4294967295usize", "4294967295"),
+    ("u32_max_plus_1", "4294967296usize", "4294967296"),
+    ("u64_max_minus_1", "18446744073709551614usize", "18446744073709551614"),
+    ("u64_max", "18446744073709551615usize", "18446744073709551615"),
+]
+
+ISIZE_PORTABLE_MATRIX = [
+    # (label, literal_expr, expected_str)
+    ("zero", "0isize", "0"),
+    ("one", "1isize", "1"),
+    ("minus_one", "-1isize", "-1"),
+    ("i32_max_minus_1", "2147483646isize", "2147483646"),
+    ("i32_max", "2147483647isize", "2147483647"),
+    ("i32_min_plus_1", "-2147483647isize", "-2147483647"),
+    ("i32_min", "-2147483648isize", "-2147483648"),
+    ("i64_max_minus_1", "9223372036854775806isize", "9223372036854775806"),
+    ("i64_max", "9223372036854775807isize", "9223372036854775807"),
+    ("i64_min_plus_1", "-9223372036854775807isize", "-9223372036854775807"),
+    ("i64_min", "-9223372036854775807isize - 1isize", "-9223372036854775808"),
+]
+
+
+@pytest.mark.parametrize("label,literal_expr,expected_str", USIZE_PORTABLE_MATRIX)
+def test_usize_portable_println(label, literal_expr, expected_str):
+    """Verify io.println formats usize across 32-bit and 64-bit boundaries without signed wrap."""
+    code = f"""use sys.io
+act main() -> i32 {{
+    let u: usize = {literal_expr}
+    io.println(u)
+    return 0
+}}
+"""
+    res = run_velo_source(code)
+    assert res.returncode == 0
+    actual = res.stdout.strip()
+    assert not actual.startswith("-"), f"usize wrapped negative: got {actual}"
+    assert actual == expected_str, f"usize {label} mismatch: expected {expected_str}, got {actual}"
+
+
+@pytest.mark.parametrize("label,literal_expr,expected_str", USIZE_PORTABLE_MATRIX)
+def test_usize_portable_interpolation(label, literal_expr, expected_str):
+    """Verify string interpolation formats usize across 32-bit and 64-bit boundaries without signed wrap."""
+    code = f"""use sys.io
+act main() -> i32 {{
+    let u: usize = {literal_expr}
+    io.println("val={{u}}")
+    return 0
+}}
+"""
+    res = run_velo_source(code)
+    assert res.returncode == 0
+    actual = res.stdout.strip()
+    expected = f"val={expected_str}"
+    assert not actual.startswith("val=-"), f"usize wrapped negative: got {actual}"
+    assert actual == expected, f"usize {label} mismatch: expected {expected}, got {actual}"
+
+
+@pytest.mark.parametrize("label,literal_expr,expected_str", ISIZE_PORTABLE_MATRIX)
+def test_isize_portable_println(label, literal_expr, expected_str):
+    """Verify io.println formats isize across signed negative and positive boundaries."""
+    code = f"""use sys.io
+act main() -> i32 {{
+    let i: isize = {literal_expr}
+    io.println(i)
+    return 0
+}}
+"""
+    res = run_velo_source(code)
+    assert res.returncode == 0
+    actual = res.stdout.strip()
+    if expected_str.startswith("-"):
+        assert actual.startswith("-"), f"isize negative lost sign: got {actual}"
+    else:
+        assert not actual.startswith("-"), f"isize positive wrapped negative: got {actual}"
+    assert actual == expected_str, f"isize {label} mismatch: expected {expected_str}, got {actual}"
+
+
+@pytest.mark.parametrize("label,literal_expr,expected_str", ISIZE_PORTABLE_MATRIX)
+def test_isize_portable_print(label, literal_expr, expected_str):
+    """Verify io.print formats isize across signed negative and positive boundaries."""
+    code = f"""use sys.io
+act main() -> i32 {{
+    let i: isize = {literal_expr}
+    io.print(i)
+    return 0
+}}
+"""
+    res = run_velo_source(code)
+    assert res.returncode == 0
+    actual = res.stdout
+    assert actual == expected_str, f"isize print {label} mismatch: expected {expected_str}, got {actual}"
+
+
+@pytest.mark.parametrize("label,literal_expr,expected_str", ISIZE_PORTABLE_MATRIX)
+def test_isize_portable_interpolation(label, literal_expr, expected_str):
+    """Verify string interpolation formats isize across signed negative and positive boundaries."""
+    code = f"""use sys.io
+act main() -> i32 {{
+    let i: isize = {literal_expr}
+    io.println("val={{i}}")
+    return 0
+}}
+"""
+    res = run_velo_source(code)
+    assert res.returncode == 0
+    actual = res.stdout.strip()
+    expected = f"val={expected_str}"
+    assert actual == expected, f"isize interp {label} mismatch: expected {expected}, got {actual}"
+
+
+def test_usize_str_len_interpolation():
+    """Verify string length (usize) formats correctly via io.println and interpolation."""
+    code = """use sys.io
+act main() -> i32 {
+    let msg = "Hello, Velo world!"
+    let n = str.len(msg)
+    io.println(n)
+    io.println("len={n}")
+    io.println("inline={str.len(msg)}")
+    return 0
+}
+"""
+    res = run_velo_source(code)
+    assert res.returncode == 0
+    lines = res.stdout.strip().splitlines()
+    assert lines[0] == "18"
+    assert lines[1] == "len=18"
+    assert lines[2] == "inline=18"
+
+
+def test_portable_emitted_c_security_no_truncation():
+    """Security Gate: Verify emitted C for usize/isize uses wide casts without truncating casts."""
+    code = """use sys.io
+act main() -> i32 {
+    let u: usize = 18446744073709551615usize
+    let i: isize = -9223372036854775807isize - 1isize
+    io.println(u)
+    io.println(i)
+    io.println("u={u}, i={i}")
+    return 0
+}
+"""
+    c_code = emit_c_velo_source(code)
+    # Check that usize emits %llu and (unsigned long long)
+    assert "printf(\"%llu\\n\", (unsigned long long)(u))" in c_code
+    # Check that isize emits %lld and (long long)
+    assert "printf(\"%lld\\n\", (long long)(i))" in c_code
+    # Check that mixed interpolation uses (unsigned long long) and (long long)
+    assert "printf(\"u=%llu, i=%lld\\n\", (unsigned long long)(u), (long long)(i))" in c_code
+    # Security gate: no truncating casts like (uint32_t) or (int32_t)
+    assert "(uint32_t)" not in c_code
+    assert "(int32_t)" not in c_code

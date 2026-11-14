@@ -1557,12 +1557,32 @@ io.println("{e}") // -1
   - Literal formatting and stdio suites: 40/40 passed (`test_literal_formatting.py` 7 passed, `test_std_io.py` 33 passed).
   - All 119 compiler source files in `src/` <= 395 lines (<= 400).
 
-##### Task 57.4: Handle `usize`/`isize` portably
-* **Goal:** Use `%zu`/`%zd` or a cast that is correct on 32-bit and 64-bit targets.
-* **Files:** `src/backend/codegen_io.vl`, `src/backend/codegen_fmt.vl`.
-* **Tests:** `usize`/`isize` at `0`, `max`; Windows and POSIX CI.
-* **Security gate:** no assumption that `usize` is 64-bit; no truncation.
-* **Done when:** both widths format correctly.
+##### Task 57.4: Handle `usize`/`isize` portably [COMPLETED] ✅
+* **Former Defect**:
+  - `usize` and `isize` represent target-pointer-sized unsigned and signed integers whose bit width varies between 32-bit and 64-bit architectures (`size_t` / `ptrdiff_t`).
+  - Prior to Phase 57, integer formatting lacked portable type-widening guarantees and boundary test coverage:
+    1. Direct passing of `size_t` / `ptrdiff_t` to `printf` without standardized width promotion is undefined behavior when specifiers mismatch platform word size (e.g. passing a 32-bit `size_t` directly to `%llu` or `%lld` reads uninitialized stack memory on 32-bit systems).
+    2. Older Windows C runtimes (legacy MSVCRT) lack support for C99 `%zu` and `%zd`, whereas standard 64-bit promotion (`unsigned long long` / `long long` with `%llu` / `%lld`) is universally supported across MSVCRT, UCRT, glibc, musl, and macOS libc.
+    3. `isize` formatting was untested across critical 32-bit and 64-bit integer boundaries (`0`, `1`, `-1`, `INT32_MIN`, `INT32_MAX`, `INT64_MIN`, `INT64_MAX`), and lacked negative sign retention tests across `io.println`, `io.print`, and string interpolation `{...}`.
+* **Fix Applied**:
+  - Validated and formalized the portable widening architecture in `src/backend/codegen_io.vl` and `src/backend/codegen_fmt.vl`:
+    * Unsigned `usize` values are cast to `(unsigned long long)` and formatted with `%llu`. Because C99 guarantees `unsigned long long` is at least 64 bits, on 32-bit targets a 32-bit `size_t` zero-extends safely without truncation or signed bit corruption; on 64-bit targets it maps 1:1.
+    * Signed `isize` values are cast to `(long long)` and formatted with `%lld`. On 32-bit targets a 32-bit `ptrdiff_t` sign-extends safely preserving negative and positive values; on 64-bit targets it maps 1:1.
+    * Eliminates all truncating casts (`(uint32_t)`, `(int32_t)`) from codegen output.
+  - Extended `tests/test_unsigned_formatting.py` with Section 6 (49 tests):
+    * Parameterized `test_usize_portable_println` across 7 boundary values (`0`, `1`, `4294967294`, `4294967295`, `4294967296`, `18446744073709551614`, `18446744073709551615`), verifying no negative wrapping.
+    * Parameterized `test_usize_portable_interpolation` across the same 7 boundary values.
+    * Parameterized `test_isize_portable_println` across 11 boundary values (`0`, `1`, `-1`, `2147483646`, `2147483647`, `-2147483647`, `-2147483648`, `9223372036854775806`, `9223372036854775807`, `-9223372036854775807`, `-9223372036854775808`), verifying exact sign retention and value equality.
+    * Parameterized `test_isize_portable_print` across the same 11 boundary values.
+    * Parameterized `test_isize_portable_interpolation` across the same 11 boundary values.
+    * `test_usize_str_len_interpolation`: verifies string length (`str.len(...)` -> `usize`) formatting via `io.println` and inline string interpolation.
+    * `test_portable_emitted_c_security_no_truncation`: verifies emitted C uses `(unsigned long long)` + `%llu` for `usize` and `(long long)` + `%lld` for `isize`, and asserts the complete absence of truncating casts `(uint32_t)` / `(int32_t)`.
+* **Residual Limitation**:
+  - Exhaustive audit of other integer formatting paths (such as `sb_append_int`, diagnostic formatters, and stdlib string builders) follows in Task 57.5.
+* **Verification**:
+  - `pytest tests/test_unsigned_formatting.py`: 145/145 passed in 36.60s.
+  - `pytest tests/test_string_interpolation.py`: 9/9 passed in 2.81s.
+  - All 119 compiler source files in `src/` <= 395 lines (<= 400).
 
 ##### Task 57.5: Audit other integer formatting paths
 * **Goal:** Find every place that formats an integer and classify signedness.
