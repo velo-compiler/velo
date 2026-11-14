@@ -2324,6 +2324,7 @@ void emit_reflect_call(StringBuilder* sb, SymbolTable* st, ExprNode* expr);
 void emit_call_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr);
 void emit_c_int_literal(StringBuilder* sb, SymbolTable* st, ExprNode* expr);
 bool try_emit_c_neg_int_literal(StringBuilder* sb, SymbolTable* st, ExprNode* expr, const char* sub_type);
+bool get_range_endpoint_const(ExprNode* expr, uint64_t* out_val, bool* out_neg);
 bool is_reverse_loop_range(ExprNode* start_expr, ExprNode* end_expr);
 const char* loop_var_c_type(const char* type_name);
 void emit_if_branch(StringBuilder* sb, SymbolTable* st, ExprNode* branch, const char* target_t);
@@ -45350,68 +45351,165 @@ bool try_emit_c_neg_int_literal(StringBuilder* sb, SymbolTable* st, ExprNode* ex
 }
 
 #line 61 "src/main.vl"
-bool is_reverse_loop_range(ExprNode* start_expr, ExprNode* end_expr) {
+bool get_range_endpoint_const(ExprNode* expr, uint64_t* out_val, bool* out_neg) {
 #line 62 "src/main.vl"
-    int64_t s_val = 0;
-#line 63 "src/main.vl"
-    int64_t e_val = 0;
-#line 64 "src/main.vl"
-    if ((get_reflect_const_int(start_expr, (&(s_val))) && get_reflect_const_int(end_expr, (&(e_val))))) {
-#line 65 "src/main.vl"
-        return (s_val > e_val);
+    if ((((expr == NULL) || (out_val == NULL)) || (out_neg == NULL))) {
+#line 62 "src/main.vl"
+        return false;
     }
+#line 63 "src/main.vl"
+    if ((expr->kind == EXPR_INT)) {
+#line 64 "src/main.vl"
+        out_neg[0] = false;
+#line 65 "src/main.vl"
+        if (((expr->str_val != NULL) && velo_cmp_gt_u_s(((usize)strlen(expr->str_val)), 0))) {
+#line 66 "src/main.vl"
+            bool overflow = false;
 #line 67 "src/main.vl"
+            uint64_t u = parse_u64_checked(expr->str_val, (&(overflow)));
+#line 68 "src/main.vl"
+            if ((!overflow)) {
+#line 69 "src/main.vl"
+                out_val[0] = u;
+#line 70 "src/main.vl"
+                return true;
+            }
+        }
+#line 73 "src/main.vl"
+        if ((expr->int_val < 0)) {
+#line 74 "src/main.vl"
+            out_val[0] = ((uint64_t)((0 - expr->int_val)));
+#line 75 "src/main.vl"
+            out_neg[0] = true;
+        } else {
+#line 77 "src/main.vl"
+            out_val[0] = ((uint64_t)(expr->int_val));
+        }
+#line 79 "src/main.vl"
+        return true;
+    }
+#line 81 "src/main.vl"
+    if (((((expr->kind == EXPR_UNARY) && (expr->op == TOK_MINUS)) && (expr->operand != NULL)) && (expr->operand->kind == EXPR_INT))) {
+#line 82 "src/main.vl"
+        ExprNode* op = expr->operand;
+#line 83 "src/main.vl"
+        out_neg[0] = true;
+#line 84 "src/main.vl"
+        if (((op->str_val != NULL) && velo_cmp_gt_u_s(((usize)strlen(op->str_val)), 0))) {
+#line 85 "src/main.vl"
+            bool overflow = false;
+#line 86 "src/main.vl"
+            uint64_t u = parse_u64_checked(op->str_val, (&(overflow)));
+#line 87 "src/main.vl"
+            if ((!overflow)) {
+#line 88 "src/main.vl"
+                out_val[0] = u;
+#line 89 "src/main.vl"
+                return true;
+            }
+        }
+#line 92 "src/main.vl"
+        if ((op->int_val < 0)) {
+#line 93 "src/main.vl"
+            out_val[0] = ((uint64_t)((0 - op->int_val)));
+        } else {
+#line 95 "src/main.vl"
+            out_val[0] = ((uint64_t)(op->int_val));
+        }
+#line 97 "src/main.vl"
+        return true;
+    }
+#line 99 "src/main.vl"
     return false;
 }
 
-#line 71 "src/main.vl"
+#line 103 "src/main.vl"
+bool is_reverse_loop_range(ExprNode* start_expr, ExprNode* end_expr) {
+#line 104 "src/main.vl"
+    uint64_t s_val = 0ULL;
+#line 105 "src/main.vl"
+    bool s_neg = false;
+#line 106 "src/main.vl"
+    uint64_t e_val = 0ULL;
+#line 107 "src/main.vl"
+    bool e_neg = false;
+#line 108 "src/main.vl"
+    if ((get_range_endpoint_const(start_expr, (&(s_val)), (&(s_neg))) && get_range_endpoint_const(end_expr, (&(e_val)), (&(e_neg))))) {
+#line 109 "src/main.vl"
+        if ((s_neg && (!e_neg))) {
+#line 109 "src/main.vl"
+            return false;
+        }
+#line 110 "src/main.vl"
+        if (((!s_neg) && e_neg)) {
+#line 111 "src/main.vl"
+            if (((s_val == 0ULL) && (e_val == 0ULL))) {
+#line 111 "src/main.vl"
+                return false;
+            }
+#line 112 "src/main.vl"
+            return true;
+        }
+#line 114 "src/main.vl"
+        if ((s_neg && e_neg)) {
+#line 115 "src/main.vl"
+            return (s_val < e_val);
+        }
+#line 117 "src/main.vl"
+        return (s_val > e_val);
+    }
+#line 119 "src/main.vl"
+    return false;
+}
+
+#line 123 "src/main.vl"
 const char* loop_var_c_type(const char* type_name) {
-#line 72 "src/main.vl"
+#line 124 "src/main.vl"
     if ((type_name == NULL)) {
-#line 72 "src/main.vl"
+#line 124 "src/main.vl"
         return "int32_t ";
     }
-#line 73 "src/main.vl"
+#line 125 "src/main.vl"
     if (((type_name != NULL && "i64" != NULL) ? (strcmp(type_name, "i64") == 0) : (type_name == "i64"))) {
-#line 73 "src/main.vl"
+#line 125 "src/main.vl"
         return "int64_t ";
     }
-#line 74 "src/main.vl"
+#line 126 "src/main.vl"
     if (((type_name != NULL && "u64" != NULL) ? (strcmp(type_name, "u64") == 0) : (type_name == "u64"))) {
-#line 74 "src/main.vl"
+#line 126 "src/main.vl"
         return "uint64_t ";
     }
-#line 75 "src/main.vl"
+#line 127 "src/main.vl"
     if (((type_name != NULL && "usize" != NULL) ? (strcmp(type_name, "usize") == 0) : (type_name == "usize"))) {
-#line 75 "src/main.vl"
+#line 127 "src/main.vl"
         return "size_t ";
     }
-#line 76 "src/main.vl"
+#line 128 "src/main.vl"
     if (((type_name != NULL && "u32" != NULL) ? (strcmp(type_name, "u32") == 0) : (type_name == "u32"))) {
-#line 76 "src/main.vl"
+#line 128 "src/main.vl"
         return "uint32_t ";
     }
-#line 77 "src/main.vl"
+#line 129 "src/main.vl"
     if (((type_name != NULL && "i16" != NULL) ? (strcmp(type_name, "i16") == 0) : (type_name == "i16"))) {
-#line 77 "src/main.vl"
+#line 129 "src/main.vl"
         return "int16_t ";
     }
-#line 78 "src/main.vl"
+#line 130 "src/main.vl"
     if (((type_name != NULL && "u16" != NULL) ? (strcmp(type_name, "u16") == 0) : (type_name == "u16"))) {
-#line 78 "src/main.vl"
+#line 130 "src/main.vl"
         return "uint16_t ";
     }
-#line 79 "src/main.vl"
+#line 131 "src/main.vl"
     if (((type_name != NULL && "i8" != NULL) ? (strcmp(type_name, "i8") == 0) : (type_name == "i8"))) {
-#line 79 "src/main.vl"
+#line 131 "src/main.vl"
         return "int8_t ";
     }
-#line 80 "src/main.vl"
+#line 132 "src/main.vl"
     if (((type_name != NULL && "u8" != NULL) ? (strcmp(type_name, "u8") == 0) : (type_name == "u8"))) {
-#line 80 "src/main.vl"
+#line 132 "src/main.vl"
         return "uint8_t ";
     }
-#line 81 "src/main.vl"
+#line 133 "src/main.vl"
     return "int32_t ";
 }
 

@@ -1050,12 +1050,31 @@ The literal `3000000000` wraps negative during parsing, so codegen believes the 
   - `python tests/probe_range_endpoint.py`: Exits with code 1 and prints the exact root-cause defect trace with failing assertion.
   - `pytest tests/test_large_ranges.py -k test_probe`: Fails with AssertionError pinning the truncated field.
 
-##### Task 55.3: Use wide values for direction detection
-* **Goal:** Compare the wide literal values (or inferred types) rather than the `i32` `int_val`.
-* **Files:** `src/backend/codegen_stmt.vl`.
-* **Tests:** all large-endpoint rows; ascending vs descending.
-* **Security gate:** no `i32` cast in the direction path; overflow-safe comparison.
-* **Done when:** `0..3000000000` is ascending and iterates.
+##### Task 55.3: Use wide values for direction detection [COMPLETED] ✅
+* **Former Defect**:
+  - `codegen_lit.vl:61` (`is_reverse_loop_range`) called `get_reflect_const_int`, which returned signed `i64` and clamped values $> \text{INT64\_MAX}$ to truncated `i32` `int_val` (0).
+  - Comparing wide endpoints against 0 caused direction detection to evaluate `s_val > e_val` inversely for large unsigned ranges: ascending ranges (e.g. `1..UINT64_MAX`, `1..9223372036854775808u64`, `10..10^19`) were emitted as descending (`>`), and descending ranges (e.g. `UINT64_MAX..0`) were emitted as ascending (`<`).
+* **Fix Applied**:
+  - Added `get_range_endpoint_const` in `src/backend/codegen_lit.vl`:
+    * Safely extracts the full 64-bit unsigned magnitude (`val: u64`) and negative sign flag (`is_neg: bool`) from `EXPR_INT` and negated integer expressions (`EXPR_UNARY` with `TOK_MINUS`) without 32-bit truncation.
+    * Uses `parse_u64_checked` on `expr.str_val` to parse decimal, hex, binary, and octal wide literals up to `0xFFFFFFFFFFFFFFFFu64`.
+  - Replaced `is_reverse_loop_range` in `src/backend/codegen_lit.vl`:
+    * Compares endpoints using sign-aware 64-bit wide comparison:
+      - If `start` is negative and `end` is non-negative: returns `false` (ascending).
+      - If `start` is non-negative and `end` is negative: returns `true` (descending, unless both are 0).
+      - If both are negative: returns `s_val < e_val` (e.g. `-1 > -10` evaluates to `true`).
+      - If both are non-negative: returns `s_val > e_val` over the full `u64` range [0, 18446744073709551615].
+    * Completely eliminates `i32` truncation, signed overflow, and direction flipping.
+  - Rebuilt 3-stage bootstrap compiler chain (`velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified Gen2/Gen3 bit-for-bit SHA-256 fixed-point determinism (`C0E2116DF3D972918E961ACF8FB97C7F0759DE9B6B2443F81E44E5E0199F11FE`).
+* **Residual Limitation**:
+  - In Task 55.4 and 55.5, expand C emission checks and runtime iteration count coverage.
+* **Verification**:
+  - `tests/test_large_ranges.py`: All 39 tests pass in 7.15s (100% pass rate; all 18 previously failing red baseline tests now green).
+  - `tests/probe_range_endpoint.py`: Exits with code 0 (`[VERIFIED] Direction correctly derived using wide value`).
+  - `tests/test_range_loops.py`: 7/7 tests pass in 4.08s.
+  - `tests/test_count_loops.py`: 66/66 tests pass in 13.63s.
+  - All 117 compiler source files $\le 395$ lines ($\le 400$).
+  - SHA-256 determinism match confirmed (`C0E2116DF3D972918E961ACF8FB97C7F0759DE9B6B2443F81E44E5E0199F11FE`).
 
 ##### Task 55.4: Assert the emitted C condition
 * **Goal:** Add tests that inspect `velo emit-c` output for the correct comparison operator and literal.

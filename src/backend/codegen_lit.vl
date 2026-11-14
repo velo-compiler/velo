@@ -57,11 +57,63 @@ act try_emit_c_neg_int_literal(sb: @StringBuilder, st: @SymbolTable, expr: @Expr
     return false
 }
 
+// Safely extracts a constant integer endpoint's 64-bit magnitude and sign without 32-bit truncation.
+act get_range_endpoint_const(expr: @ExprNode, out_val: @u64, out_neg: @bool) -> bool {
+    if expr == null or out_val == null or out_neg == null { return false }
+    if expr.kind == EXPR_INT {
+        out_neg[0] = false
+        if expr.str_val != null and str.len(expr.str_val) > 0 {
+            mut overflow = false
+            let u = parse_u64_checked(expr.str_val, @overflow)
+            if not overflow {
+                out_val[0] = u
+                return true
+            }
+        }
+        if expr.int_val < 0 {
+            out_val[0] = (0 - expr.int_val) as u64
+            out_neg[0] = true
+        } else {
+            out_val[0] = expr.int_val as u64
+        }
+        return true
+    }
+    if expr.kind == EXPR_UNARY and expr.op == TOK_MINUS and expr.operand != null and expr.operand.kind == EXPR_INT {
+        let op = expr.operand
+        out_neg[0] = true
+        if op.str_val != null and str.len(op.str_val) > 0 {
+            mut overflow = false
+            let u = parse_u64_checked(op.str_val, @overflow)
+            if not overflow {
+                out_val[0] = u
+                return true
+            }
+        }
+        if op.int_val < 0 {
+            out_val[0] = (0 - op.int_val) as u64
+        } else {
+            out_val[0] = op.int_val as u64
+        }
+        return true
+    }
+    return false
+}
+
 // Returns true if the loop range represents a descending count (start > end).
 act is_reverse_loop_range(start_expr: @ExprNode, end_expr: @ExprNode) -> bool {
-    mut s_val: i64 = 0
-    mut e_val: i64 = 0
-    if get_reflect_const_int(start_expr, @s_val) and get_reflect_const_int(end_expr, @e_val) {
+    mut s_val: u64 = 0u64
+    mut s_neg = false
+    mut e_val: u64 = 0u64
+    mut e_neg = false
+    if get_range_endpoint_const(start_expr, @s_val, @s_neg) and get_range_endpoint_const(end_expr, @e_val, @e_neg) {
+        if s_neg and not e_neg { return false }
+        if not s_neg and e_neg {
+            if s_val == 0u64 and e_val == 0u64 { return false }
+            return true
+        }
+        if s_neg and e_neg {
+            return s_val < e_val
+        }
         return s_val > e_val
     }
     return false
