@@ -315,4 +315,116 @@ def test_std_io_stdlib_member_without_import_fails_loudly(tmp_path):
     )
 
 
+# ---------------------------------------------------------------------------
+# Phase 52, Task 52.5: Harden the print/println intrinsic.
+#
+# - Exact arity enforcement (zero or one argument; reject extra arguments).
+# - Format injection defense: format strings are always compiler-owned constants;
+#   user text and format directives (%s, %n) are emitted as data, never format.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("call", [
+    'io.println("a", "b")',
+    'io.print("a", "b")',
+    'io.println("a", "b", "c")',
+])
+def test_std_io_intrinsic_arity_rejected(call, tmp_path):
+    source = f"use std.io\n\nact main() {{\n    {call}\n}}\n"
+    probe = tmp_path / "intrinsic_arity.vl"
+    probe.write_text(source, encoding="utf-8", newline="\n")
+
+    res = run_velo(["check", str(probe)])
+    assert res.returncode != 0, f"check accepted extra intrinsic arguments: {call}"
+    combined = (res.stdout + res.stderr).lower()
+    assert "argument" in combined, f"diagnostic did not mention argument count: {combined}"
+
+    res_emit = run_velo(["emit-c", str(probe)])
+    assert res_emit.returncode != 0, f"emit-c accepted extra intrinsic arguments: {call}"
+
+
+def test_std_io_intrinsic_literal_percent_directives_printed_as_data(tmp_path):
+    source = (
+        "use std.io\n\n"
+        "act main() {\n"
+        '    io.println("%n")\n'
+        '    io.print("%n")\n'
+        '    io.println("%s %n")\n'
+        "}\n"
+    )
+    probe = tmp_path / "literal_percent.vl"
+    probe.write_text(source, encoding="utf-8", newline="\n")
+
+    res = run_velo(["run", str(probe)])
+    assert res.returncode == 0, f"run failed:\n{res.stderr}\n{res.stdout}"
+    assert res.stdout == "%n\n%n%s %n\n", f"stdout mismatch:\n{res.stdout!r}"
+
+
+def test_std_io_intrinsic_interpolated_format_directives_printed_as_data(tmp_path):
+    source = (
+        "use std.io\n\n"
+        "act main() {\n"
+        "    let x = 42\n"
+        '    io.println("data: %n {x}")\n'
+        '    io.println("%n {x} %s")\n'
+        "}\n"
+    )
+    probe = tmp_path / "interp_percent.vl"
+    probe.write_text(source, encoding="utf-8", newline="\n")
+
+    res = run_velo(["run", str(probe)])
+    assert res.returncode == 0, f"run failed:\n{res.stderr}\n{res.stdout}"
+    assert res.stdout == "data: %n 42\n%n 42 %s\n", f"stdout mismatch:\n{res.stdout!r}"
+
+
+def test_std_io_intrinsic_unresolved_interp_percent_n_does_not_inject(tmp_path):
+    source = (
+        "use std.io\n\n"
+        "act main() {\n"
+        "    let x = 42\n"
+        '    io.println("unresolved: {%n} {x}")\n'
+        "}\n"
+    )
+    probe = tmp_path / "unresolved_percent.vl"
+    probe.write_text(source, encoding="utf-8", newline="\n")
+
+    res = run_velo(["run", str(probe)])
+    assert res.returncode == 0, f"run failed:\n{res.stderr}\n{res.stdout}"
+    assert res.stdout == "unresolved: {%n} 42\n", f"stdout mismatch:\n{res.stdout!r}"
+
+
+def test_std_io_intrinsic_variable_format_directives_printed_as_data(tmp_path):
+    source = (
+        "use std.io\n\n"
+        "act main() {\n"
+        '    let s = "%n%s%x"\n'
+        "    io.println(s)\n"
+        '    io.println("User: {s}")\n'
+        "}\n"
+    )
+    probe = tmp_path / "var_percent.vl"
+    probe.write_text(source, encoding="utf-8", newline="\n")
+
+    res = run_velo(["run", str(probe)])
+    assert res.returncode == 0, f"run failed:\n{res.stderr}\n{res.stdout}"
+    assert res.stdout == "%n%s%x\nUser: %n%s%x\n", f"stdout mismatch:\n{res.stdout!r}"
+
+
+def test_std_io_intrinsic_zero_arg(tmp_path):
+    source = (
+        "use std.io\n\n"
+        "act main() {\n"
+        "    io.print()\n"
+        "    io.println()\n"
+        "}\n"
+    )
+    probe = tmp_path / "zero_arg.vl"
+    probe.write_text(source, encoding="utf-8", newline="\n")
+
+    res = run_velo(["run", str(probe)])
+    assert res.returncode == 0, f"run failed:\n{res.stderr}\n{res.stdout}"
+    assert res.stdout == "\n", f"stdout mismatch:\n{res.stdout!r}"
+
+
+
 

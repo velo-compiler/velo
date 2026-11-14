@@ -22,6 +22,16 @@ use "codegen_fmt.vl"
 // buffers. Flush the stdlib buffer before the intrinsic write and libc after
 // it so an interleaved io.println / io.println_str sequence keeps program order.
 act emit_io_call(sb: @StringBuilder, st: @SymbolTable, member: string, first_arg: @ExprNode) {
+    // Phase 52.5: defense in depth — reject extra arguments at codegen boundary
+    if first_arg != null and first_arg.next != null {
+        mut msg = create_sb(64)
+        sb_append_str(@msg, "io.")
+        sb_append_str(@msg, member)
+        sb_append_str(@msg, " expects at most 1 argument")
+        report_error("backend", first_arg.next.line, first_arg.next.col, sb_to_string(@msg))
+        st.error_count += 1
+        return
+    }
     mut inner = create_sb(128)
     emit_io_call_body(@inner, st, member, first_arg)
     if inner.len == 0 { return }

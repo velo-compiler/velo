@@ -179,7 +179,18 @@ act build_interp_fmt_and_args(st: @SymbolTable, raw: string, line: i32, col: i32
                     resolved_type = resolve_path_type_and_c(st, path, @c_sb)
                 }
                 if str.len(resolved_type) == 0 or resolved_type == "unknown" {
-                    sb_append_char(out_fmt, '{'); sb_append_str(out_fmt, path); sb_append_char(out_fmt, '}')
+                    sb_append_char(out_fmt, '{')
+                    mut pi: usize = 0
+                    let plen = str.len(path)
+                    loop pi < plen {
+                        if path[pi] == '%' {
+                            sb_append_str(out_fmt, "%%")
+                        } else {
+                            sb_append_char(out_fmt, path[pi])
+                        }
+                        pi += 1
+                    }
+                    sb_append_char(out_fmt, '}')
                     idx = close_idx + 1
                     continue
                 }
