@@ -1,6 +1,95 @@
 // Numeric literal parsing and C99 literal formatting helpers.
 use "utils.vl"
 
+// Wide integer literal representation: holds magnitude (u64), base (2, 8, 10, 16),
+// sign flag, and an explicit overflow flag.
+data IntLiteral {
+    val: u64
+    base: i32
+    is_neg: bool
+    overflow: bool
+}
+
+// Constructs an IntLiteral with explicit field values.
+act make_int_literal(val: u64, base: i32, is_neg: bool, overflow: bool) -> IntLiteral {
+    return IntLiteral{ val: val, base: base, is_neg: is_neg, overflow: overflow }
+}
+
+// Constructs a valid, non-negative, non-overflowing IntLiteral.
+act make_int_literal_val(val: u64, base: i32) -> IntLiteral {
+    return IntLiteral{ val: val, base: base, is_neg: false, overflow: false }
+}
+
+// Constructs an explicit overflow IntLiteral marker.
+act make_int_literal_overflow(base: i32, is_neg: bool) -> IntLiteral {
+    return IntLiteral{ val: 0u64, base: base, is_neg: is_neg, overflow: true }
+}
+
+// Returns true if the literal fits within signed 32-bit integer range [-2147483648, 2147483647].
+act int_lit_fits_i32(lit: IntLiteral) -> bool {
+    if lit.overflow { return false }
+    if lit.is_neg { return lit.val <= 2147483648u64 }
+    return lit.val <= 2147483647u64
+}
+
+// Returns true if the literal fits within unsigned 32-bit integer range [0, 4294967295].
+act int_lit_fits_u32(lit: IntLiteral) -> bool {
+    if lit.overflow or lit.is_neg { return false }
+    return lit.val <= 4294967295u64
+}
+
+// Returns true if the literal fits within signed 64-bit integer range [-9223372036854775808, 9223372036854775807].
+act int_lit_fits_i64(lit: IntLiteral) -> bool {
+    if lit.overflow { return false }
+    if lit.is_neg { return lit.val <= 0x8000000000000000u64 }
+    return lit.val <= 0x7FFFFFFFFFFFFFFFu64
+}
+
+// Returns true if the literal fits within unsigned 64-bit integer range [0, 18446744073709551615].
+act int_lit_fits_u64(lit: IntLiteral) -> bool {
+    return not lit.overflow and not lit.is_neg
+}
+
+// Safely converts an IntLiteral to signed 32-bit integer without truncation.
+// Returns false if the value does not fit i32 or has overflow set.
+act int_lit_to_i32_checked(lit: IntLiteral, out_val: @i32) -> bool {
+    if out_val == null or not int_lit_fits_i32(lit) { return false }
+    if lit.is_neg {
+        if lit.val == 2147483648u64 {
+            out_val[0] = -2147483647 - 1
+        } else {
+            out_val[0] = -((lit.val as u32) as i32)
+        }
+    } else {
+        out_val[0] = (lit.val as u32) as i32
+    }
+    return true
+}
+
+// Safely converts an IntLiteral to unsigned 64-bit integer without truncation.
+// Returns false if the value is negative or has overflow set.
+act int_lit_to_u64_checked(lit: IntLiteral, out_val: @u64) -> bool {
+    if out_val == null or lit.overflow or lit.is_neg { return false }
+    out_val[0] = lit.val
+    return true
+}
+
+// Safely converts an IntLiteral to signed 64-bit integer without truncation.
+// Returns false if the value does not fit i64 or has overflow set.
+act int_lit_to_i64_checked(lit: IntLiteral, out_val: @i64) -> bool {
+    if out_val == null or not int_lit_fits_i64(lit) { return false }
+    if lit.is_neg {
+        if lit.val == 0x8000000000000000u64 {
+            out_val[0] = -9223372036854775807i64 - 1i64
+        } else {
+            out_val[0] = -(lit.val as i64)
+        }
+    } else {
+        out_val[0] = lit.val as i64
+    }
+    return true
+}
+
 // Returns the numeric value (0-15) of an ASCII hexadecimal character.
 act parse_hex_digit(c: u8) -> i32 {
     if c >= '0' and c <= '9' { return (c as i32) - ('0' as i32) }
@@ -166,24 +255,17 @@ act parse_float_from_slice(source: string, start: usize, len: usize) -> f32 {
 act extract_literal_suffix(source: string, start: usize, len: usize) -> string {
     if len >= 5 {
         let s5 = copy_slice_to_string(source, start + len - 5, 5)
-        if s5 == "usize" { return "usize" }
-        if s5 == "isize" { return "isize" }
+        if s5 == "usize" or s5 == "isize" { return s5 }
     }
     if len >= 3 {
         let s3 = copy_slice_to_string(source, start + len - 3, 3)
-        if s3 == "u16" { return "u16" }
-        if s3 == "u32" { return "u32" }
-        if s3 == "u64" { return "u64" }
-        if s3 == "i16" { return "i16" }
-        if s3 == "i32" { return "i32" }
-        if s3 == "i64" { return "i64" }
-        if s3 == "f32" { return "f32" }
-        if s3 == "f64" { return "f64" }
+        if s3 == "u16" or s3 == "u32" or s3 == "u64" or s3 == "i16" or s3 == "i32" or s3 == "i64" or s3 == "f32" or s3 == "f64" {
+            return s3
+        }
     }
     if len >= 2 {
         let s2 = copy_slice_to_string(source, start + len - 2, 2)
-        if s2 == "u8" { return "u8" }
-        if s2 == "i8" { return "i8" }
+        if s2 == "u8" or s2 == "i8" { return s2 }
     }
     if len >= 1 {
         let c = source[start + len - 1]
