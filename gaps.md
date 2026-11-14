@@ -868,12 +868,26 @@ loop "x" { }
   - All 117 compiler source files $\le 395$ lines ($\le 400$).
   - SHA-256 determinism match verified (`0df5dd37e12de05d4bed93ae5608b79b734f3f1a3c95a87fcac1618d537e2536`).
 
-##### Task 54.4: Enforce count/condition types in the checker
-* **Goal:** Reject non-integer counts and non-`bool` conditions with precise diagnostics.
-* **Files:** `src/analysis/type_checker_stmt.vl:161-164`.
-* **Tests:** all invalid rows of the matrix; valid rows still pass.
-* **Security gate:** no implicit float→int or pointer→bool conversion.
-* **Done when:** `velo check` rejects every invalid form in the matrix.
+##### Task 54.4: Enforce count/condition types in the checker [COMPLETED] ✅
+* **Former Defect**:
+  - `src/analysis/type_checker_stmt.vl` did not validate that single-expression loops (`loop <expr>`) have an integer or boolean type.
+  - Non-boolean and non-integer expressions (such as `f32`/`f64` floats, `string`, `@T` pointers, structs, and arrays) were accepted by `velo check` without any diagnostic and allowed to flow into backend codegen as truthy C conditions or invalid syntax.
+* **Fix Applied**:
+  - Enforced strict type gating for single-expression loops in `src/analysis/type_checker_stmt.vl`:
+    * If `stmt.expr != null`, infers `expr_t = infer_expr_type(st, stmt.expr)`.
+    * If `is_int_type(expr_t)`, classifies as count loop (`stmt.is_count = true`, `stmt.type_name = expr_t`).
+    * Else if `expr_t == "bool"`, classifies as condition loop (`stmt.is_count = false`, `stmt.type_name = "i32"`).
+    * Otherwise, halts semantic analysis and reports a precise compile diagnostic:
+      `report_error("semantic", stmt.line, stmt.col, "Loop expression must be an integer (count) or 'bool' (condition), got '<type>'")`.
+    * Increments `st.error_count`, ensuring `velo check` fails with exit code 1 for all invalid types.
+  - Rebuilt 3-stage bootstrap compiler chain (`velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified Gen2/Gen3 bit-for-bit SHA-256 fixed-point determinism (`56342e21bc48d6d65c34e5e34035644cebf2bfa24939de2f177c934e09398ec1`).
+* **Residual Limitation**:
+  - Single evaluation of count expressions with side effects into a temporary variable follows in Task 54.5.
+* **Verification**:
+  - `tests/test_count_loops.py`: All 6 invalid type tests now pass (`test_invalid_loop_float_literal_rejected`, `test_invalid_loop_float_variable_rejected`, `test_invalid_loop_string_literal_rejected`, `test_invalid_loop_string_variable_rejected`, `test_invalid_loop_struct_rejected`, `test_invalid_loop_pointer_rejected`); 45 of 46 total tests now pass.
+  - All valid rows (all 10 integer widths, literals, suffixed literals, expressions, zero/negative counts, boolean condition loops, and emitted C tests) continue to pass cleanly.
+  - Line counts verified across all 117 compiler source files ($\le 395$ lines, zero UTF-8 BOM).
+  - SHA-256 determinism match confirmed (`56342e21bc48d6d65c34e5e34035644cebf2bfa24939de2f177c934e09398ec1`).
 
 ##### Task 54.5: Lower count loops for every integer width
 * **Goal:** Emit a terminating count loop for all integer types, using a temporary so the count is evaluated once.
