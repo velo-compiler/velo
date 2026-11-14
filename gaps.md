@@ -1524,12 +1524,38 @@ io.println("{e}") // -1
   - SHA-256 fixed-point determinism verified (`502218ffda92d619979586f298346deac5409ccbdae0eeccfad4339f7b6bbd24`).
   - Line count standard maintained: all 119 compiler source files in `src/` <= 395 lines (ceiling 400).
 
-##### Task 57.3: Fix `codegen_fmt` interpolation
-* **Goal:** Apply the same signed/unsigned split in `{...}` formatting.
-* **Files:** `src/backend/codegen_fmt.vl:213-219`.
-* **Tests:** `"{u64max}"`, `"{u32max}"`, signed regression.
-* **Security gate:** format/argument types must match exactly; no `%lld` for unsigned.
-* **Done when:** interpolation prints unsigned values correctly.
+##### Task 57.3: Fix `codegen_fmt` interpolation [COMPLETED] ✅
+* **Former Defect**:
+  - Prior to Phase 57, string interpolation `{...}` in `src/backend/codegen_fmt.vl` formatted all integer expressions using `%lld` and `(long long)(...)`. Unsigned expressions (`u64`, `usize`, `u32`) exceeding signed 64-bit bounds printed as negative values (e.g. `"{u64max}"` printed `-1`).
+  - While initial handling was added in Phase 53 (`b6d73423`), test coverage lacked verification for compound unsigned expressions (`{u64 - 1u64}`, `{u32 / 2u32}`, bitwise ops), struct/pointer member access (`{s.u64_val}`, `{p->u64_val}`, nested structs), function/UFCS method calls (`{get_u64()}`, `{b.get_val()}`), string variable interpolation (`let msg = "{u64max}"`), and signed regression across all signed integer types (`i8`, `i16`, `i32`, `i64`, `isize`).
+  - Furthermore, strict emitted C security invariant assertions were missing to verify that:
+    1. Pure unsigned interpolation never emits `%lld` or `(long long)` casts.
+    2. Pure signed interpolation never emits `%llu` or `(unsigned long long)` casts.
+    3. Mixed signed and unsigned interpolations maintain 1:1 order alignment between format specifiers and argument casts.
+* **Fix Applied**:
+  - Verified and locked the signed/unsigned split in `src/backend/codegen_fmt.vl` (lines 224–238):
+    * `is_unsigned_int_type(resolved_type)` emits `sb_append_str(out_fmt, "%llu")` and `sb_append_str(out_args, "(unsigned long long)(")`.
+    * Signed integer types emit `%lld` and `(long long)(...)`.
+  - Confirmed `resolve_path_type_and_c` and expression parser/type inference in `codegen_fmt.vl` accurately infer unsigned integer types for struct members, pointer arrow members, nested fields, function calls, UFCS methods, and compound expressions.
+  - Confirmed string variable assignment formatting via `velo_str_format` in `codegen_io.vl` shares `build_interp_fmt_and_args` and correctly formats unsigned interpolations.
+  - Extended `tests/test_string_interpolation.py` with 6 comprehensive test suites:
+    * `test_unsigned_interpolation_struct_and_pointer_members_stage2`: verifies struct, pointer, and nested struct member interpolation.
+    * `test_unsigned_interpolation_functions_and_ufcs_stage2`: verifies function and UFCS method return interpolation.
+    * `test_unsigned_interpolation_compound_expressions_stage2`: verifies arithmetic, modulo, bitwise, and cast expression interpolation.
+    * `test_signed_interpolation_regression_stage2`: verifies signed negative preservation across `i8`, `i16`, `i32`, `i64`, `isize`, expressions, and function returns.
+    * `test_interpolation_in_string_variable_stage2`: verifies `let msg = "..."` interpolation formatted through `velo_str_format`.
+    * `test_interpolation_emitted_c_security_split`: verifies pure unsigned emits `%llu` and `(unsigned long long)` with no `%lld` or `(long long)`; pure signed emits `%lld` and `(long long)` with no `%llu` or `(unsigned long long)`; mixed emits 1:1 aligned specifiers and casts.
+  - Extended `tests/test_unsigned_formatting.py` with Section 5 (11 tests):
+    * Parameterized `test_emitted_c_no_signed_conversion_for_unsigned_interpolation` across `u8`, `u16`, `u32`, `u64`, `usize`.
+    * Parameterized `test_emitted_c_signed_regression_interpolation` across `i8`, `i16`, `i32`, `i64`, `isize`.
+    * `test_emitted_c_mixed_interpolation_alignment` verifying exact alignment: `printf("u=%llu, s=%lld\n", (unsigned long long)(u), (long long)(s))`.
+* **Residual Limitation**:
+  - Portable formatting of `usize`/`isize` across 32-bit and 64-bit target architectures (`%zu`/`%zd` vs `%llu`/`%lld`) is addressed in Task 57.4.
+* **Verification**:
+  - `pytest tests/test_string_interpolation.py`: 9/9 passed in 2.81s.
+  - `pytest tests/test_unsigned_formatting.py`: 96/96 passed in 22.49s.
+  - Literal formatting and stdio suites: 40/40 passed (`test_literal_formatting.py` 7 passed, `test_std_io.py` 33 passed).
+  - All 119 compiler source files in `src/` <= 395 lines (<= 400).
 
 ##### Task 57.4: Handle `usize`/`isize` portably
 * **Goal:** Use `%zu`/`%zd` or a cast that is correct on 32-bit and 64-bit targets.

@@ -211,3 +211,55 @@ act main() -> i32 {{
     # The security gate requires unsigned specifier (%llu or %zu), never signed %lld
     assert "printf(\"%lld" not in c_code, f"Emitted signed %lld for unsigned type {type_name}"
     assert "(long long)" not in c_code, f"Emitted signed (long long) cast for unsigned type {type_name}"
+
+
+# ==============================================================================
+# 5. Emitted C Security Invariant: String Interpolation Format/Argument Split
+# ==============================================================================
+
+@pytest.mark.parametrize("type_name", ["u8", "u16", "u32", "u64", "usize"])
+def test_emitted_c_no_signed_conversion_for_unsigned_interpolation(type_name):
+    """Security Invariant: String interpolation of unsigned types must emit %llu / (unsigned long long)."""
+    code = f"""use sys.io
+act main() -> i32 {{
+    let val: {type_name} = 0{type_name}
+    io.println("val={{val}}")
+    return 0
+}}
+"""
+    c_code = emit_c_velo_source(code)
+    assert "%llu" in c_code, f"Missing unsigned %llu specifier for {type_name}"
+    assert "(unsigned long long)" in c_code, f"Missing unsigned (unsigned long long) cast for {type_name}"
+    assert "%lld" not in c_code, f"Emitted signed %lld for unsigned interpolation of {type_name}"
+    assert "(long long)" not in c_code, f"Emitted signed (long long) cast for unsigned interpolation of {type_name}"
+
+
+@pytest.mark.parametrize("type_name", ["i8", "i16", "i32", "i64", "isize"])
+def test_emitted_c_signed_regression_interpolation(type_name):
+    """Signed Regression: String interpolation of signed types must emit %lld / (long long)."""
+    code = f"""use sys.io
+act main() -> i32 {{
+    let val: {type_name} = 0{type_name}
+    io.println("val={{val}}")
+    return 0
+}}
+"""
+    c_code = emit_c_velo_source(code)
+    assert "%lld" in c_code, f"Missing signed %lld specifier for {type_name}"
+    assert "(long long)" in c_code, f"Missing signed (long long) cast for {type_name}"
+    assert "%llu" not in c_code, f"Emitted unsigned %llu for signed interpolation of {type_name}"
+    assert "(unsigned long long)" not in c_code, f"Emitted unsigned (unsigned long long) cast for signed interpolation of {type_name}"
+
+
+def test_emitted_c_mixed_interpolation_alignment():
+    """Security Gate: Mixed interpolation must maintain exact 1:1 format and argument alignment."""
+    code = """use sys.io
+act main() -> i32 {
+    let u: u64 = 18446744073709551615u64
+    let s: i64 = -42i64
+    io.println("u={u}, s={s}")
+    return 0
+}
+"""
+    c_code = emit_c_velo_source(code)
+    assert "printf(\"u=%llu, s=%lld\\n\", (unsigned long long)(u), (long long)(s))" in c_code
