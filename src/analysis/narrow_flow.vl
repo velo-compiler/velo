@@ -19,6 +19,9 @@ act stmt_unconditionally_exits(stmt: @StmtNode) -> bool {
             cur = cur.next
         }
     }
+    if stmt.kind == STMT_IF and stmt.else_branch != null {
+        return stmt_unconditionally_exits(stmt.body) and stmt_unconditionally_exits(stmt.else_branch)
+    }
     if stmt.kind == STMT_UNSAFE { return stmt_unconditionally_exits(stmt.body) }
     return false
 }

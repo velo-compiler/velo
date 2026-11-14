@@ -27,7 +27,7 @@ def get_build_env():
     """Returns an environment with ucrt64 GCC in PATH for compiling generated C."""
     env = dict(os.environ)
     ucrt_bin = r"C:\msys64\ucrt64\bin"
-    if os.path.exists(ucrt_bin) and ucrt_bin not in env.get("PATH", ""):
+    if os.path.exists(ucrt_bin):
         env["PATH"] = ucrt_bin + ";" + env.get("PATH", "")
     return env
 
@@ -757,4 +757,152 @@ act main() -> i32 {
     res = run_velo_source(src)
     assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
     assert "PASS: block markers balanced and scopes isolated" in res.stdout
+
+
+def test_defer_plain_block_local_pointer_and_werror():
+    """Security gate: emit cleanups before closing '}', compile emitted C with -Werror to ensure no out-of-scope references."""
+    src = """
+use sys.io
+use sys.mem
+
+act main() -> i32 {
+    let base = mem.heap_used()
+    mut order: i32 = 0
+
+    // 1. Plain block scope
+    {
+        let p_plain: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p_plain)
+        defer order += 10
+        p_plain[0] = 42
+    }
+    // Plain block closed: p_plain must be freed and order incremented
+    if order != 10 {
+        io.println("FAIL: plain block defer did not run at '}'")
+        return 1
+    }
+    let after_plain = mem.heap_used()
+    if after_plain != base {
+        io.println("FAIL: plain block leaked memory")
+        return 1
+    }
+
+    // 2. If block scope
+    if true {
+        let p_if: @i32 = mem.heap_alloc(@i32, 8)
+        defer mem.free(p_if)
+        defer order += 5
+        p_if[0] = 84
+    }
+    if order != 15 {
+        io.println("FAIL: if block defer did not run at '}'")
+        return 1
+    }
+    let after_if = mem.heap_used()
+    if after_if != base {
+        io.println("FAIL: if block leaked memory")
+        return 1
+    }
+
+    io.println("PASS: plain and if block local pointers freed cleanly")
+    return 0
+}
+"""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        src_path = Path(tmp_dir) / "test_werror.vl"
+        c_path = Path(tmp_dir) / "test_werror.c"
+        exe_path = Path(tmp_dir) / "test_werror.exe"
+        src_path.write_text(src, encoding="utf-8")
+
+        # Emit C
+        emit_res = subprocess.run(
+            [str(VELO_EXE), "emit-c", str(src_path), "-o", str(c_path)],
+            capture_output=True,
+            text=True,
+            env=get_build_env(),
+            timeout=10.0,
+        )
+        assert emit_res.returncode == 0, f"emit-c failed: {emit_res.stderr}\n{emit_res.stdout}"
+
+        # Compile with -Werror
+        gcc_bin = r"C:\msys64\ucrt64\bin\gcc.exe" if os.path.exists(r"C:\msys64\ucrt64\bin\gcc.exe") else "gcc"
+        gcc_cmd = [
+            gcc_bin,
+            "-std=c99",
+            "-Werror",
+            "-Wno-unknown-pragmas",
+            "-I", str(REPO_ROOT / "runtime"),
+            "-I", str(REPO_ROOT / "velo" / "runtime"),
+            str(c_path),
+            "-lws2_32",
+            "-ladvapi32",
+            "-o", str(exe_path),
+        ]
+        gcc_res = subprocess.run(
+            gcc_cmd,
+            capture_output=True,
+            text=True,
+            env=get_build_env(),
+            cwd=str(REPO_ROOT),
+            timeout=10.0,
+        )
+        assert gcc_res.returncode == 0, f"gcc -Werror failed: {gcc_res.stderr}\n{gcc_res.stdout}"
+
+        # Run executable
+        run_res = subprocess.run([str(exe_path)], capture_output=True, text=True, timeout=5.0)
+        assert run_res.returncode == 0, f"run failed: {run_res.stderr}\n{run_res.stdout}"
+        assert "PASS: plain and if block local pointers freed cleanly" in run_res.stdout
+
+
+def test_defer_nested_plain_and_if_blocks_with_local_pointers():
+    """Verify arbitrary nested combinations of plain blocks and if blocks with block-local pointers."""
+    src = """
+use sys.io
+use sys.mem
+
+act main() -> i32 {
+    let base = mem.heap_used()
+    mut trace: i32 = 0
+
+    {
+        let p1: @i32 = mem.heap_alloc(@i32, 2)
+        defer mem.free(p1)
+        defer trace = trace * 10 + 1
+        if true {
+            let p2: @i32 = mem.heap_alloc(@i32, 2)
+            defer mem.free(p2)
+            defer trace = trace * 10 + 2
+            {
+                let p3: @i32 = mem.heap_alloc(@i32, 2)
+                defer mem.free(p3)
+                defer trace = trace * 10 + 3
+            }
+            if trace != 3 {
+                io.println("FAIL: innermost plain block")
+                return 1
+            }
+        }
+        if trace != 32 {
+            io.println("FAIL: inner if block")
+            return 1
+        }
+    }
+    if trace != 321 {
+        io.println("FAIL: outer plain block")
+        return 1
+    }
+
+    let leaked: usize = mem.heap_used() - base
+    if leaked != 0 {
+        io.println("FAIL: leaked memory")
+        return 1
+    }
+    io.println("PASS: nested plain and if block defers LIFO verified")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: nested plain and if block defers LIFO verified" in res.stdout
+
 

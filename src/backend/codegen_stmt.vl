@@ -43,13 +43,12 @@ data DeferNode {
 
 // Pushes a block boundary marker onto the LIFO cleanup stack.
 act push_block_scope(defers: @@DeferNode) -> @DeferNode {
-    let prev = defers.@
-    mut bd: @DeferNode = mem.alloc(@DeferNode, 1)
+    if defers == null { return null }
+    let prev = defers.@; mut bd: @DeferNode = mem.alloc(@DeferNode, 1)
     bd.is_block = true; bd.is_loop = false; bd.is_zone = false; bd.stmt = null; bd.zone_id = 0
-    bd.zone_has_expr = false; bd.zone_is_arena = false; bd.next = defers.@; defers.@ = bd
-    return prev
+    bd.zone_has_expr = false; bd.zone_is_arena = false; bd.next = defers.@; defers.@ = bd; return prev
 }
-act pop_block_scope(defers: @@DeferNode, prev: @DeferNode) { defers.@ = prev }
+act pop_block_scope(defers: @@DeferNode, prev: @DeferNode) { if defers != null { defers.@ = prev } }
 
 // Returns the number of active block/loop boundary markers on the cleanup stack.
 act block_scope_depth(defers: @@DeferNode) -> i32 {
@@ -63,22 +62,26 @@ act block_scope_depth(defers: @@DeferNode) -> i32 {
 act count_block_defers(defers: @@DeferNode) -> i32 {
     if defers == null { return 0 }
     mut cur = defers.@; mut count: i32 = 0
-    loop cur != null and not cur.is_block and not cur.is_loop {
-        if not cur.is_zone and cur.stmt != null { count += 1 }
-        cur = cur.next
-    }
+    loop cur != null and not cur.is_block and not cur.is_loop { if not cur.is_zone and cur.stmt != null { count += 1 }; cur = cur.next }
     return count
+}
+
+// Returns true if there are any active defers or zone cleanups on the stack.
+act has_active_defers(defers: @@DeferNode) -> bool {
+    if defers == null { return false }
+    mut cur = defers.@
+    loop cur != null { if not cur.is_block and not cur.is_loop { return true }; cur = cur.next }
+    return false
 }
 
 // Pushes a loop boundary marker onto the LIFO cleanup stack.
 act push_loop_scope(defers: @@DeferNode) -> @DeferNode {
-    let prev = defers.@
-    mut ld: @DeferNode = mem.alloc(@DeferNode, 1)
+    if defers == null { return null }
+    let prev = defers.@; mut ld: @DeferNode = mem.alloc(@DeferNode, 1)
     ld.is_loop = true; ld.is_block = false; ld.is_zone = false; ld.stmt = null; ld.zone_id = 0
-    ld.zone_has_expr = false; ld.zone_is_arena = false; ld.next = defers.@; defers.@ = ld
-    return prev
+    ld.zone_has_expr = false; ld.zone_is_arena = false; ld.next = defers.@; defers.@ = ld; return prev
 }
-act pop_loop_scope(defers: @@DeferNode, prev: @DeferNode) { defers.@ = prev }
+act pop_loop_scope(defers: @@DeferNode, prev: @DeferNode) { if defers != null { defers.@ = prev } }
 
 // Emits an individual deferred statement or zone scope cleanup.
 act emit_c_cleanup(sb: @StringBuilder, st: @SymbolTable, cur_d: @DeferNode, indent: i32, defers: @@DeferNode) {
@@ -96,19 +99,28 @@ act emit_c_cleanup(sb: @StringBuilder, st: @SymbolTable, cur_d: @DeferNode, inde
     }
 }
 
-// Emits statements inside a block node.
+// Emits statements inside a block node and flushes block-local defers at closing '}'.
 act emit_c_block_stmts(sb: @StringBuilder, st: @SymbolTable, block: @StmtNode, indent: i32, defers: @@DeferNode) {
     if block == null { return }
+    let prev_scope = push_block_scope(defers)
     enter_scope(st)
+    mut block_exited: bool = false
     mut cur = block.first_stmt
     loop cur != null {
         emit_c_stmt(sb, st, cur, indent, defers)
+        if stmt_unconditionally_exits(cur) { block_exited = true }
         if cur.kind == STMT_IF and cur.else_branch == null and stmt_unconditionally_exits(cur.body) {
             apply_flow_narrowing(st, cur.expr, false)
         }
         cur = cur.next
     }
-    exit_scope(st)
+    if not block_exited and defers != null {
+        mut cur_d = defers.@
+        loop cur_d != null and not cur_d.is_block and not cur_d.is_loop {
+            emit_c_cleanup(sb, st, cur_d, indent, defers); cur_d = cur_d.next
+        }
+    }
+    pop_block_scope(defers, prev_scope); exit_scope(st)
 }
 
 // Emits an individual statement into the C output stream.
@@ -146,10 +158,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         if stmt.expr != null and stmt.op == TOK_ASSIGN and is_fixed_array_type(infer_expr_type(st, stmt.expr)) {
             emit_array_assign(sb, st, stmt, indent); return
         }
-        if stmt.val_expr != null and stmt.val_expr.kind == EXPR_OR_RETURN {
-            emit_or_return_assign(sb, st, stmt, indent, defers)
-            return
-        }
+        if stmt.val_expr != null and stmt.val_expr.kind == EXPR_OR_RETURN { emit_or_return_assign(sb, st, stmt, indent, defers); return }
         if is_simd_assign(st, stmt) { emit_simd_assign(sb, st, stmt, indent); return }
         // 5.2 slice 6: map indexed writes (m[k] = v) lower onto velo_map_put
         if stmt.expr != null and stmt.expr.kind == EXPR_INDEX {
@@ -357,20 +366,14 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
     // 10. Break statement (unrolls loop-local zone cleanups before breaking)
     if stmt.kind == STMT_BREAK {
         mut cur_d = defers.@
-        loop cur_d != null and not cur_d.is_loop {
-            emit_c_cleanup(sb, st, cur_d, indent, defers)
-            cur_d = cur_d.next
-        }
+        loop cur_d != null and not cur_d.is_loop { emit_c_cleanup(sb, st, cur_d, indent, defers); cur_d = cur_d.next }
         sb_append_indent(sb, indent); sb_append_str(sb, "break;\n"); return
     }
 
     // 11. Continue statement (unrolls loop-local zone cleanups before continuing)
     if stmt.kind == STMT_CONTINUE {
         mut cur_d = defers.@
-        loop cur_d != null and not cur_d.is_loop {
-            emit_c_cleanup(sb, st, cur_d, indent, defers)
-            cur_d = cur_d.next
-        }
+        loop cur_d != null and not cur_d.is_loop { emit_c_cleanup(sb, st, cur_d, indent, defers); cur_d = cur_d.next }
         sb_append_indent(sb, indent); sb_append_str(sb, "continue;\n"); return
     }
 

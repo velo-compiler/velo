@@ -217,6 +217,11 @@ act parse_statement(p: @Parser) -> @StmtNode {
         return make_unsafe_stmt(body, unsafe_tok.line, unsafe_tok.col)
     }
 
+    // 2.6. Plain scoped block: `{ ... }`
+    if parser_check(p, TOK_LBRACE) {
+        return parse_block(p)
+    }
+
     // 3. Mutable variable declaration: `mut x = val`, `mut x: Type = val`, or `mut (a, b) = val`
     if parser_check(p, TOK_MUT) {
         let mut_tok = parser_advance(p)

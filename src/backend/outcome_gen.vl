@@ -167,7 +167,7 @@ act emit_or_type_declarations(sb: @StringBuilder, list: @OrTypeNode) {
 
 act emit_fail_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32, defers: @@DeferNode) {
     let ret_c = map_type_to_c(st.current_func_ret_type)
-    if defers.@ == null {
+    if not has_active_defers(defers) {
         sb_append_indent(sb, indent)
         sb_append_str(sb, "return ("); sb_append_str(sb, ret_c); sb_append_str(sb, "){ .ok = false, .as = { .err = ")
         emit_c_expr(sb, st, stmt.val_expr)
@@ -260,7 +260,7 @@ act emit_return_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, inde
         let vt = infer_expr_type(st, stmt.val_expr)
         if is_or_type(vt) { is_val_or = true }
     }
-    if defers.@ == null {
+    if not has_active_defers(defers) {
         sb_append_indent(sb, indent)
         sb_append_str(sb, "return")
         if is_val_opt {

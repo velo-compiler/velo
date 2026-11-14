@@ -1793,12 +1793,36 @@ A `defer` inside `if` either runs at function exit (too late) or fails to compil
   - `python scripts/count_lines.py`: `src/backend/codegen_stmt.vl` is at 389 lines ($\le 400$).
   - Fixed-point determinism: SHA-256 between Gen2 and Gen3 identical (`250E3EA186DC75F7F31C3B46423A0406599EC0BCBEA47F0FDB4097253AB2D62C`), matching `bootstrap.c`.
 
-##### Task 58.4: Emit cleanups at normal block exit
-* **Goal:** Emit the block's defers when control reaches `}` normally.
-* **Files:** `src/backend/codegen_stmt.vl:67-79`.
-* **Tests:** defer in `if` and plain blocks; block-local pointer.
-* **Security gate:** no reference to a variable after its C scope closes; compile with `-Werror`.
-* **Done when:** `if`-local defers compile and run at block exit.
+##### Task 58.4: Emit cleanups at normal block exit [COMPLETED] ✅
+* **Former Defect**:
+  - `emit_c_block_stmts` in `src/backend/codegen_stmt.vl` previously only iterated block statements and exited scope without emitting deferred cleanups or managing cleanup stack boundaries.
+  - Deferred statements declared inside `if`, `else`, `match`, and plain blocks accumulated on the function-level cleanup stack until function exit.
+  - At function exit, the lexical C block (`{ ... }`) where block-local variables were defined had already closed, causing both the Velo compiler (`semantic: Undeclared identifier`) and GCC (`error: 'var' undeclared`) to reject any cleanups referencing block-scoped identifiers.
+  - Untaken branches (`if false { defer ... }`) leaked their defers to function exit, causing untaken cleanups to run unconditionally.
+  - Bare scoped blocks `{ ... }` were not recognized as valid statements by `parse_statement` in `src/frontend/parser_stmt.vl`.
+  - In `src/backend/outcome_gen.vl`, `emit_return_stmt` and `emit_fail_stmt` checked `if defers.@ == null` directly, causing empty block boundary markers on the stack to falsely trigger temporary variable wrappers (`__ret_val`) on every normal return.
+* **Fix Applied**:
+  - Integrated block scope management into `emit_c_block_stmts` in `src/backend/codegen_stmt.vl`:
+    * Pushes a block marker (`push_block_scope`) upon block entry and enters symbol table scope.
+    * Tracks whether the block terminates early via `stmt_unconditionally_exits`.
+    * At normal block exit (reaching `}`), iterates and emits all deferred cleanups in the innermost block scope (`loop cur_d != null and not cur_d.is_block and not cur_d.is_loop`) in reverse declaration (LIFO) order before the C scope closes.
+    * Restores cleanup stack via `pop_block_scope` and exits symbol table scope.
+  - Added plain scoped block support (`{ ... }`) to `parse_statement` in `src/frontend/parser_stmt.vl`.
+  - Added `has_active_defers(defers: @@DeferNode) -> bool` in `src/backend/codegen_stmt.vl`, checking for non-marker cleanups.
+  - Updated `emit_return_stmt` and `emit_fail_stmt` in `src/backend/outcome_gen.vl` to check `if not has_active_defers(defers)` so normal returns remain clean and direct without artificial wrappers.
+  - Extended `stmt_unconditionally_exits` in `src/analysis/narrow_flow.vl` to recognize `STMT_IF` when both `then` and `else` branches unconditionally exit.
+  - Fixed ucrt64 GCC path precedence in `tests/test_defer.py` `get_build_env()`, and added:
+    * `test_defer_plain_block_local_pointer_and_werror`: verifies plain blocks and `if` blocks with block-local pointers compiled directly under GCC with `-Werror` (security gate passed with 0 warnings).
+    * `test_defer_nested_plain_and_if_blocks_with_local_pointers`: validates arbitrary nesting of plain and `if` blocks with block-local pointers and LIFO order verification.
+  - Rebuilt the self-hosted bootstrap chain (`scripts/bootstrap.bat` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 fixed-point determinism (`e5a4c003821f75e2b78fecb66a6d3ab247e25143a8713c0f9eaea1bb582039c4`).
+* **Residual Limitation**:
+  - Early-exit unwinding for `fail` and `or return` outcome error string formatting is addressed in Task 58.6.
+  - Loop per-iteration cleanups with `break` and `continue` paths follow in Task 58.5.
+* **Verification**:
+  - `python -m pytest tests/test_defer.py -q`: 18 passed, 2 failing as expected for Task 58.6.
+  - `test_defer_matrix_std_test_vl`: PASSED (all 16 assertions in `std/tests/mem/defer_test.vl` succeeded).
+  - Security gate verified: C emitted code compiles under GCC `-std=c99 -Werror -Wno-unknown-pragmas` with 0 warnings.
+  - Line count discipline: all 119 files in `src/` $\le 395$ lines (`codegen_stmt.vl` is at 392 lines).
 
 ##### Task 58.5: Emit per-iteration loop cleanups
 * **Goal:** Emit loop-body defers at the end of each iteration and on `continue`/`break`.
