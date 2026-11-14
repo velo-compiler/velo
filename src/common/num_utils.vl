@@ -1,6 +1,7 @@
 // Numeric literal parsing and C99 literal formatting helpers.
 use "utils.vl"
 use "char_utils.vl"
+use "float_utils.vl"
 
 // Wide integer literal representation: holds magnitude (u64), base (2, 8, 10, 16),
 // sign flag, and an explicit overflow flag.
@@ -220,65 +221,49 @@ act parse_int_from_slice(source: string, start: usize, len: usize) -> i32 {
     return result
 }
 
-// Parses a 32-bit floating point value from an ASCII slice.
-act parse_float_from_slice(source: string, start: usize, len: usize) -> f32 {
-    mut i = start
-    let end = start + len
-    mut int_part: f32 = 0.0
-    mut frac_part: f32 = 0.0
-    mut divisor: f32 = 1.0
-    mut has_dot: bool = false
-    mut in_exponent: bool = false
-    mut exp_neg: bool = false
-    mut exp_val: i32 = 0
+// Parses a hexadecimal integer literal (0x... or 0X...) into the wide IntLiteral model.
+// Gating: checks for overflow beyond UINT64_MAX (0xFFFFFFFFFFFFFFFF) and rejects empty or malformed hex digits.
+act parse_hex_int_literal(source: string, start: usize, len: usize) -> IntLiteral {
+    let suffix = extract_literal_suffix(source, start, len)
+    let s_len = str.len(suffix)
+    let digits_len = len - s_len
+
+    if digits_len < 3 or source[start] != '0' {
+        return make_int_literal_overflow(16, false)
+    }
+    let pfx = source[start + 1]
+    if pfx != 'x' and pfx != 'X' {
+        return make_int_literal_overflow(16, false)
+    }
+
+    mut val: u64 = 0u64
+    mut overflow = false
+    mut has_digits = false
+    mut i = start + 2
+    let end = start + digits_len
 
     loop i < end {
         let c = source[i]
         if c == '_' {
             i += 1
-        } else if c == '.' and not in_exponent and not has_dot {
-            has_dot = true
-            i += 1
-        } else if (c == 'e' or c == 'E') and not in_exponent {
-            in_exponent = true
-            i += 1
-            if i < end and source[i] == '-' {
-                exp_neg = true
-                i += 1
-            } else if i < end and source[i] == '+' {
-                i += 1
-            }
-        } else if c >= '0' and c <= '9' {
-            let digit = ((c as i32) - ('0' as i32)) as f32
-            if in_exponent {
-                exp_val = exp_val * 10 + ((c as i32) - ('0' as i32))
-            } else if not has_dot {
-                int_part = int_part * 10.0 + digit
-            } else {
-                divisor = divisor * 10.0
-                frac_part = frac_part + (digit / divisor)
+        } else if (c >= '0' and c <= '9') or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F') {
+            has_digits = true
+            let digit = (char_hex_digit(c) as u32) as u64
+            if not overflow {
+                if val > 0x0FFFFFFFFFFFFFFFu64 {
+                    overflow = true
+                } else {
+                    val = (val << 4u64) | digit
+                }
             }
             i += 1
         } else {
+            overflow = true
             i = end
         }
     }
-
-    mut base_val = int_part + frac_part
-    if in_exponent and exp_val > 0 {
-        mut factor: f32 = 1.0
-        mut k = 0
-        loop k < exp_val {
-            factor = factor * 10.0
-            k += 1
-        }
-        if exp_neg {
-            base_val = base_val / factor
-        } else {
-            base_val = base_val * factor
-        }
-    }
-    return base_val
+    if not has_digits { overflow = true }
+    return make_int_literal(val, 16, false, overflow)
 }
 
 // Extracts the explicit type suffix from a number literal (e.g. "u8", "i64", "f64").

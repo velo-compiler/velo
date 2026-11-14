@@ -113,6 +113,35 @@ act parse_heap_shelf_literal(p: @Parser) -> @ExprNode {
     return parse_heap_literal(p)
 }
 
+// Formats a hexadecimal literal omitting underscores and appending an optional wide C suffix.
+act format_c_hex_with_suffix(source: string, start: usize, len: usize, sfx: string) -> string {
+    let suffix = extract_literal_suffix(source, start, len)
+    let digits_len = len - str.len(suffix)
+    mut buf: @u8 = mem.alloc(@u8, digits_len + 16)
+    mut count: usize = 0
+    mut i = start
+    let end = start + digits_len
+    loop i < end {
+        let c = source[i]
+        if c != '_' {
+            buf[count] = c
+            count += 1
+        }
+        i += 1
+    }
+    if sfx != null {
+        mut j: usize = 0
+        let s_len = str.len(sfx)
+        loop j < s_len {
+            buf[count] = sfx[j]
+            count += 1
+            j += 1
+        }
+    }
+    buf[count] = 0 as u8
+    return buf as string
+}
+
 // Parses an integer literal token into an ExprNode.
 // Integrates wide IntLiteral parsing for decimal literals (Task 53.3).
 act parse_int_literal_expr(p: @Parser) -> @ExprNode {
@@ -130,16 +159,53 @@ act parse_int_literal_expr(p: @Parser) -> @ExprNode {
     }
 
     // 2. Base check: hex (0x/0X), bin (0b/0B), oct (0o/0O) vs decimal
-    mut is_prefixed = false
+    mut is_hex = false
+    mut is_bin_or_oct = false
     if tok.length >= 2 and p.source[tok.start] == '0' {
         let b = p.source[tok.start + 1]
-        if b == 'x' or b == 'X' or b == 'b' or b == 'B' or b == 'o' or b == 'O' {
-            is_prefixed = true
+        if b == 'x' or b == 'X' {
+            is_hex = true
+        } else if b == 'b' or b == 'B' or b == 'o' or b == 'O' {
+            is_bin_or_oct = true
         }
     }
 
     let sfx = extract_literal_suffix(p.source, tok.start, tok.length)
-    if not is_prefixed {
+    if is_hex {
+        // Hexadecimal integer literal (Task 53.4)
+        let lit = parse_hex_int_literal(p.source, tok.start, tok.length)
+        if lit.overflow {
+            report_parse(p, p.filename, tok.line, tok.col, tok.length, "Hexadecimal literal exceeds 64-bit unsigned maximum (0xFFFFFFFFFFFFFFFF)")
+            p.had_error = true
+            return make_int_expr(0, tok.line, tok.col)
+        }
+
+        mut i32_val: i32 = 0
+        int_lit_to_i32_checked(lit, @i32_val)
+        mut node = make_int_expr(i32_val, tok.line, tok.col)
+
+        if str.len(sfx) > 0 {
+            node.type_name = sfx
+            node.str_val = format_c_number_literal(p.source, tok.start, tok.length, false)
+        } else {
+            // Unsuffixed hex literal:
+            // fits i32 -> default i32
+            // else fits i64 -> "i64"
+            // else fits u64 -> "u64"
+            if lit.val > 0x7FFFFFFFFFFFFFFFu64 {
+                node.type_name = "u64"
+                node.str_val = format_c_hex_with_suffix(p.source, tok.start, tok.length, "ULL")
+            } else if lit.val > 2147483647u64 {
+                node.type_name = "i64"
+                node.str_val = format_c_hex_with_suffix(p.source, tok.start, tok.length, "LL")
+            } else {
+                node.str_val = format_c_number_literal(p.source, tok.start, tok.length, false)
+            }
+        }
+        return node
+    }
+
+    if not is_bin_or_oct {
         // Decimal integer literal
         let lit = parse_decimal_int_literal(p.source, tok.start, tok.length)
         if lit.overflow {

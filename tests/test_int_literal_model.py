@@ -254,3 +254,63 @@ act main() {{
     res = run_velo_source(source, tmp_path)
     assert res.returncode == 0, f"run failed:\n{res.stderr}\n{res.stdout}"
     assert "OK_DECIMAL_BOUNDARIES" in res.stdout
+
+
+def test_parse_hex_int_literal_boundaries(tmp_path):
+    source = f"""use "{NUM_UTILS_PATH}"
+use std.io
+
+act main() {{
+    // 0x0
+    let lit0 = parse_hex_int_literal("0x0", 0, 3)
+    assert(lit0.val == 0u64)
+    assert(lit0.base == 16)
+    assert(not lit0.overflow)
+
+    // 0x7FFFFFFF (INT32_MAX)
+    let lit_i32_max = parse_hex_int_literal("0x7FFFFFFF", 0, 10)
+    assert(lit_i32_max.val == 0x7FFFFFFFu64)
+    assert(not lit_i32_max.overflow)
+
+    // 0x80000000
+    let lit_80m = parse_hex_int_literal("0x80000000", 0, 10)
+    assert(lit_80m.val == 0x80000000u64)
+    assert(not lit_80m.overflow)
+
+    // 0xFFFFFFFF
+    let lit_u32_max = parse_hex_int_literal("0xFFFFFFFF", 0, 10)
+    assert(lit_u32_max.val == 0xFFFFFFFFu64)
+    assert(not lit_u32_max.overflow)
+
+    // 0xFFFFFFFFFFFFFFFF (UINT64_MAX)
+    let lit_u64_max = parse_hex_int_literal("0xFFFFFFFFFFFFFFFF", 0, 18)
+    assert(lit_u64_max.val == 0xFFFFFFFFFFFFFFFFu64)
+    assert(not lit_u64_max.overflow)
+
+    // 0x1_0000_0000_0000_0000 (UINT64_MAX + 1) -> overflow!
+    let lit_ovf1 = parse_hex_int_literal("0x1_0000_0000_0000_0000", 0, 23)
+    assert(lit_ovf1.overflow)
+
+    // 0x10000000000000000 -> overflow!
+    let lit_ovf2 = parse_hex_int_literal("0x10000000000000000", 0, 19)
+    assert(lit_ovf2.overflow)
+
+    // 0x (empty input after prefix) -> overflow/rejected!
+    let lit_empty = parse_hex_int_literal("0x", 0, 2)
+    assert(lit_empty.overflow)
+
+    // 0xG (malformed hex digit) -> overflow/rejected!
+    let lit_malformed = parse_hex_int_literal("0xG", 0, 3)
+    assert(lit_malformed.overflow)
+
+    // Underscores and lower/upper case: 0xDead_Beef
+    let lit_mixed = parse_hex_int_literal("0xDead_Beef", 0, 11)
+    assert(lit_mixed.val == 0xDEADBEEFu64)
+    assert(not lit_mixed.overflow)
+
+    println_str("OK_HEX_BOUNDARIES")
+}}
+"""
+    res = run_velo_source(source, tmp_path)
+    assert res.returncode == 0, f"run failed:\n{res.stderr}\n{res.stdout}"
+    assert "OK_HEX_BOUNDARIES" in res.stdout
