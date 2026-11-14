@@ -1712,12 +1712,28 @@ A `defer` inside `if` either runs at function exit (too late) or fails to compil
 
 #### Tasks
 
-##### Task 58.1: Add the defer lifecycle matrix (red baseline)
-* **Goal:** Cover every block and exit path.
-* **Files:** `tests/test_defer.py` (new), `std/tests/mem/defer_test.vl` (new).
-* **Tests:** defer in function body, `if`, `else`, `on`, `loop`, nested blocks; normal exit, `return`, `fail`, `break`, `continue`.
-* **Security gate:** assert exactly-once execution; `mem.heap_used()` returns to baseline; no double-free.
-* **Done when:** the matrix fails for the documented reasons.
+##### Task 58.1: Add the defer lifecycle matrix (red baseline) [COMPLETED] ✅
+* **Former Defect**:
+  - The specification mandates that `defer` statements execute at the closing `}` of their enclosing lexical block (`docs/STEP2_SPECIFICATION.md:79-82`).
+  - However, `codegen_stmt.vl` maintained a single function-level LIFO cleanup stack (`defers: @@DeferNode`), emitting all deferred statements only at function exit (`codegen_c.vl:71-79`).
+  - Loop-body defers were pushed onto the stack but discarded without emission by `pop_loop_scope` (`codegen_stmt.vl:265`), leaking memory on every loop iteration.
+  - Defers declared inside `if`, `else`, `on` match arms, and nested blocks were emitted outside the block's lexical scope at function return. When referencing block-local variables, both the Velo compiler (`[Velo Error] semantic: Undeclared identifier`) and GCC (`error: 'var' undeclared`) failed with compilation errors; even when referencing outer variables, defers ran prematurely or too late, violating lexical block lifetime and exactly-once execution guarantees.
+  - No dedicated lifecycle test matrix existed covering all block types (`function`, `if`, `else`, `on`, `loop`, nested blocks) across all exit paths (`normal`, `return`, `fail`, `break`, `continue`).
+* **Fix Applied (Red Baseline Harness)**:
+  - Created `std/tests/mem/defer_test.vl`:
+    * Comprehensive standalone test program covering: function body (normal return and early return), `if` block scoping, untaken branch skipping, `else` block scoping, `on` pattern match arm scoping, `loop` per-iteration cleanup, loop `break` cleanup, loop `continue` cleanup, nested blocks scoping, early return unwinding, `fail` algebraic outcome unwinding, and `or return` unwinding.
+    * Security gate: verifies exactly-once execution, `mem.heap_used()` returns to baseline (zero memory leaks), and no double-free across complex control flow.
+  - Created `tests/test_defer.py`:
+    * 16 test cases establishing the automated pytest harness for Phase 58.
+    * Covers all block scopes, exit paths, memory ledger integrity, and end-to-end execution of `std/tests/mem/defer_test.vl`.
+* **Residual Limitation**:
+  - Red baseline established: 2 passed, 14 failed in `tests/test_defer.py` (and `std/tests/mem/defer_test.vl` fails compilation with 22 `Undeclared identifier` errors).
+  - The 2 passing tests verify baseline function-level defer LIFO execution. The 14 failing tests fail for the exact documented defects: block-local variables out of scope at function return, loop iterations leaking memory, and untaken branches executing.
+  - Design of the block-scope cleanup model follows in Task 58.2.
+* **Verification**:
+  - `python -m pytest tests/test_defer.py -v`: 2 passed, 14 failed for documented causes in 2.86s.
+  - Line count standard maintained: all 119 compiler source files in `src/` <= 395 lines (ceiling 400).
+  - No UTF-8 BOM in new `.vl` files.
 
 ##### Task 58.2: Design the block-scope cleanup model
 * **Goal:** Define block boundaries, loop iteration boundaries, zone interaction, and early-exit order.

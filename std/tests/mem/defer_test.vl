@@ -1,0 +1,363 @@
+use sys.io
+use sys.mem
+
+// Comprehensive defer lifecycle test matrix (Phase 58: AUDIT-2026-11-07)
+// Covers: function body, if, else, on, loop, nested blocks, normal exit, return, fail, break, continue.
+// Security gate: exactly-once execution, mem.heap_used() returns to baseline, no double-free.
+
+act helper_fn_normal(p_order: @i32) {
+    p_order[0] = 0
+    let p: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p)
+    defer p_order[0] = p_order[0] * 10 + 1
+    defer p_order[0] = p_order[0] * 10 + 2
+}
+
+act helper_fn_early(p_order: @i32, trigger: bool) {
+    p_order[0] = 0
+    let p: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p)
+    defer p_order[0] = p_order[0] * 10 + 1
+    if trigger {
+        defer p_order[0] = p_order[0] * 10 + 2
+        return
+    }
+    defer p_order[0] = p_order[0] * 10 + 3
+}
+
+act test_function_normal(base: usize) -> bool {
+    mut order: i32 = 0
+    helper_fn_normal(@order)
+    if order != 21 {
+        io.println("FAIL: test_function_normal order expected 21")
+        return false
+    }
+    if mem.heap_used() != base {
+        io.println("FAIL: test_function_normal leaked memory")
+        return false
+    }
+    return true
+}
+
+act test_function_early(base: usize) -> bool {
+    mut order: i32 = 0
+    helper_fn_early(@order, true)
+    if order != 21 {
+        io.println("FAIL: test_function_early order expected 21")
+        return false
+    }
+    if mem.heap_used() != base {
+        io.println("FAIL: test_function_early leaked memory")
+        return false
+    }
+    return true
+}
+
+act test_if_block(base: usize) -> bool {
+    mut order: i32 = 100
+    if true {
+        let p: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p)
+        defer order += 5
+        p[0] = 42
+    }
+    // Defer must have run at closing '}' of if block
+    if order != 105 {
+        io.println("FAIL: test_if_block defer did not run at if block exit")
+        return false
+    }
+    if mem.heap_used() != base {
+        io.println("FAIL: test_if_block memory not freed at if block exit")
+        return false
+    }
+    return true
+}
+
+act test_if_untaken(base: usize) -> bool {
+    mut order: i32 = 50
+    if false {
+        let p: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p)
+        defer order += 999
+    }
+    if order != 50 {
+        io.println("FAIL: test_if_untaken executed untaken branch defer")
+        return false
+    }
+    if mem.heap_used() != base {
+        io.println("FAIL: test_if_untaken heap corrupted")
+        return false
+    }
+    return true
+}
+
+act test_else_block(base: usize) -> bool {
+    mut order: i32 = 200
+    if false {
+        let p_bad: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p_bad)
+        defer order += 999
+    } else {
+        let p: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p)
+        defer order += 7
+        p[0] = 77
+    }
+    if order != 207 {
+        io.println("FAIL: test_else_block defer did not run at else block exit")
+        return false
+    }
+    if mem.heap_used() != base {
+        io.println("FAIL: test_else_block memory not freed at else block exit")
+        return false
+    }
+    return true
+}
+
+act test_match_arm(base: usize) -> bool {
+    mut order: i32 = 300
+    let tag: i32 = 2
+    on tag {
+        1 => {
+            let p1: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p1)
+            defer order += 10
+        }
+        2 => {
+            let p2: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p2)
+            defer order += 20
+        }
+        _ => {
+            order += 50
+        }
+    }
+    if order != 320 {
+        io.println("FAIL: test_match_arm defer did not run at on arm exit")
+        return false
+    }
+    if mem.heap_used() != base {
+        io.println("FAIL: test_match_arm memory not freed at on arm exit")
+        return false
+    }
+    return true
+}
+
+act test_loop_iteration(base: usize) -> bool {
+    mut cleanups: i32 = 0
+    loop 3 {
+        let p: @i32 = mem.heap_alloc(@i32, 16)
+        defer mem.free(p)
+        defer cleanups += 1
+        p[0] = 99
+    }
+    if cleanups != 3 {
+        io.println("FAIL: test_loop_iteration cleanups count mismatch")
+        return false
+    }
+    if mem.heap_used() != base {
+        io.println("FAIL: test_loop_iteration leaked memory across iterations")
+        return false
+    }
+    return true
+}
+
+act test_loop_break(base: usize) -> bool {
+    mut cleanups: i32 = 0
+    loop 5 {
+        let p: @i32 = mem.heap_alloc(@i32, 8)
+        defer mem.free(p)
+        defer cleanups += 1
+        if it == 2 {
+            break
+        }
+    }
+    if cleanups != 3 {
+        io.println("FAIL: test_loop_break cleanups count mismatch")
+        return false
+    }
+    if mem.heap_used() != base {
+        io.println("FAIL: test_loop_break leaked memory on break")
+        return false
+    }
+    return true
+}
+
+act test_loop_continue(base: usize) -> bool {
+    mut cleanups: i32 = 0
+    loop 3 {
+        let p: @i32 = mem.heap_alloc(@i32, 8)
+        defer mem.free(p)
+        defer cleanups += 1
+        if it == 1 {
+            continue
+        }
+    }
+    if cleanups != 3 {
+        io.println("FAIL: test_loop_continue cleanups count mismatch")
+        return false
+    }
+    if mem.heap_used() != base {
+        io.println("FAIL: test_loop_continue leaked memory on continue")
+        return false
+    }
+    return true
+}
+
+act test_nested_blocks(base: usize) -> bool {
+    mut order: i32 = 0
+    if true {
+        let p1: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p1)
+        defer order = order * 10 + 1
+        if true {
+            let p2: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p2)
+            defer order = order * 10 + 2
+        }
+        if order != 2 {
+            io.println("FAIL: test_nested_blocks inner defer did not run at inner exit")
+            return false
+        }
+    }
+    if order != 21 {
+        io.println("FAIL: test_nested_blocks outer defer did not run at outer exit")
+        return false
+    }
+    if mem.heap_used() != base {
+        io.println("FAIL: test_nested_blocks leaked memory")
+        return false
+    }
+    return true
+}
+
+act helper_nested_return(p_order: @i32) -> i32 {
+    let p_fn: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p_fn)
+    defer p_order[0] = p_order[0] * 10 + 1
+    if true {
+        let p_if: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p_if)
+        defer p_order[0] = p_order[0] * 10 + 2
+        loop 3 {
+            let p_lp: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p_lp)
+            defer p_order[0] = p_order[0] * 10 + 3
+            if it == 0 {
+                return 42
+            }
+        }
+    }
+    return 0
+}
+
+act test_early_return_unwinding(base: usize) -> bool {
+    mut order: i32 = 0
+    let res = helper_nested_return(@order)
+    if res != 42 {
+        io.println("FAIL: test_early_return_unwinding return value mismatch")
+        return false
+    }
+    if order != 321 {
+        io.println("FAIL: test_early_return_unwinding order expected 321")
+        return false
+    }
+    if mem.heap_used() != base {
+        io.println("FAIL: test_early_return_unwinding leaked memory")
+        return false
+    }
+    return true
+}
+
+act helper_fail_unwind(p_order: @i32) -> i32 or string {
+    let p_fn: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p_fn)
+    defer p_order[0] = p_order[0] * 10 + 1
+    if true {
+        let p_if: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p_if)
+        defer p_order[0] = p_order[0] * 10 + 2
+        fail "operation failed"
+    }
+    return 100
+}
+
+act test_fail_unwinding(base: usize) -> bool {
+    mut order: i32 = 0
+    let res = helper_fail_unwind(@order)
+    if res.ok {
+        io.println("FAIL: test_fail_unwinding expected error outcome")
+        return false
+    }
+    if order != 21 {
+        io.println("FAIL: test_fail_unwinding order expected 21")
+        return false
+    }
+    if mem.heap_used() != base {
+        io.println("FAIL: test_fail_unwinding leaked memory")
+        return false
+    }
+    return true
+}
+
+act helper_failing_call() -> i32 or string {
+    fail "callee error"
+}
+
+act helper_or_return_unwind(p_order: @i32) -> i32 or string {
+    let p_fn: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p_fn)
+    defer p_order[0] = p_order[0] * 10 + 1
+    if true {
+        let p_if: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p_if)
+        defer p_order[0] = p_order[0] * 10 + 2
+        let val: i32 = helper_failing_call() or return
+        defer p_order[0] = p_order[0] * 10 + 9
+    }
+    return 0
+}
+
+act test_or_return_unwinding(base: usize) -> bool {
+    mut order: i32 = 0
+    let res = helper_or_return_unwind(@order)
+    if res.ok {
+        io.println("FAIL: test_or_return_unwinding expected error outcome")
+        return false
+    }
+    if order != 21 {
+        io.println("FAIL: test_or_return_unwinding order expected 21")
+        return false
+    }
+    if mem.heap_used() != base {
+        io.println("FAIL: test_or_return_unwinding leaked memory")
+        return false
+    }
+    return true
+}
+
+act main() -> i32 {
+    let base = mem.heap_used()
+
+    if not test_function_normal(base) { return 1 }
+    if not test_function_early(base) { return 1 }
+    if not test_if_block(base) { return 1 }
+    if not test_if_untaken(base) { return 1 }
+    if not test_else_block(base) { return 1 }
+    if not test_match_arm(base) { return 1 }
+    if not test_loop_iteration(base) { return 1 }
+    if not test_loop_break(base) { return 1 }
+    if not test_loop_continue(base) { return 1 }
+    if not test_nested_blocks(base) { return 1 }
+    if not test_early_return_unwinding(base) { return 1 }
+    if not test_fail_unwinding(base) { return 1 }
+    if not test_or_return_unwinding(base) { return 1 }
+
+    if mem.heap_used() != base {
+        io.println("FAIL: end of test heap_used != base")
+        return 1
+    }
+
+    io.println("PASS: std.mem.defer all assertions succeeded")
+    return 0
+}
