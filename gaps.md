@@ -847,12 +847,26 @@ loop "x" { }
 * **Verification**:
   - Verified all code examples in `docs/SPECIFICATION.md` §7.2 compile cleanly.
 
-##### Task 54.3: Make the parser emit a neutral classification hint
-* **Goal:** Stop treating `EXPR_INT` as the semantic count flag; the parser may keep a hint, but the checker/codegen must decide from types.
-* **Files:** `src/frontend/parser_stmt.vl:152`, `src/ast/stmt.vl` if a field rename is needed.
-* **Tests:** AST-level or emitted-C tests for each form.
-* **Security gate:** no behavior may depend on literal spelling.
-* **Done when:** the parser no longer decides count-vs-condition alone.
+##### Task 54.3: Make the parser emit a neutral classification hint [COMPLETED] ✅
+* **Former Defect**:
+  - `parser_stmt.vl:152` unilaterally treated `(first_expr.kind == EXPR_INT)` as the definitive count flag, making loop classification depend entirely on the syntax of literal spelling.
+  - Non-literal expressions (e.g. `loop n + 1`), function calls, and integer variables of non-32/64-bit width were misclassified by the parser as condition loops, and the type checker never corrected `stmt.is_count`.
+  - Codegen only checked `EXPR_IDENT` against four types (`i32`, `i64`, `u32`, `usize`), leaving `i8`, `i16`, `u8`, `u16`, `u64`, `isize`, and all complex integer expressions to run as infinite condition loops.
+* **Fix Applied**:
+  - Updated `src/frontend/parser_stmt.vl`: the parser now emits a neutral classification hint `is_count_hint = (first_expr.kind == EXPR_INT)` without acting as the final semantic authority.
+  - Updated `src/analysis/type_checker_stmt.vl`: semantic analysis now resolves `stmt.is_count` strictly from static types:
+    * Sets `stmt.is_count = true` and `stmt.type_name = expr_t` for any integer type (`is_int_type(expr_t)`).
+    * Sets `stmt.is_count = false` and `stmt.type_name = "i32"` for `"bool"`.
+  - Updated `src/backend/codegen_stmt.vl`: codegen checks `is_int_type(infer_expr_type(st, stmt.expr))` rather than checking `EXPR_IDENT`, ensuring loop lowering is purely type-directed and syntax-independent.
+  - Added emitted-C test suite `test_loop_classification_emitted_c_syntax_independent` in `tests/test_count_loops.py` verifying that integer literals, suffixed literals, integer variables across widths (`u64`, `u8`, `i16`, `isize`), and binary expressions (`n + 1`, `a * b`) emit count loops (`it < (...)`), while booleans emit condition loops.
+  - Rebuilt 3-stage bootstrap compiler chain (`velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified Gen2/Gen3 bit-for-bit SHA-256 fixed-point determinism (`0df5dd37e12de05d4bed93ae5608b79b734f3f1a3c95a87fcac1618d537e2536`).
+* **Residual Limitation**:
+  - Semantic rejection of non-integer, non-boolean expressions in `velo check` with precise diagnostics follows in Task 54.4.
+* **Verification**:
+  - `tests/test_count_loops.py`: 10/10 emitted-C classification tests passed in 0.22s; 29/36 count loop tests now pass (all integer widths, expressions, and zero/negative counts now successfully iterate and terminate).
+  - `tests/test_range_loops.py`: 6/6 passed in 3.64s (`test_count_loop_variable_and_expression` now passing).
+  - All 117 compiler source files $\le 395$ lines ($\le 400$).
+  - SHA-256 determinism match verified (`0df5dd37e12de05d4bed93ae5608b79b734f3f1a3c95a87fcac1618d537e2536`).
 
 ##### Task 54.4: Enforce count/condition types in the checker
 * **Goal:** Reject non-integer counts and non-`bool` conditions with precise diagnostics.

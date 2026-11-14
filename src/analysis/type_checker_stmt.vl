@@ -179,7 +179,13 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
             of_elem = unify_loop_range_type(start_t, end_t)
         } else if stmt.expr != null {
             let expr_t = infer_expr_type(st, stmt.expr)
-            if stmt.is_count or is_int_type(expr_t) { of_elem = expr_t }
+            if is_int_type(expr_t) {
+                stmt.is_count = true
+                of_elem = expr_t
+            } else if expr_t == "bool" {
+                stmt.is_count = false
+                of_elem = "i32"
+            }
         }
         stmt.type_name = of_elem
         enter_scope(st)

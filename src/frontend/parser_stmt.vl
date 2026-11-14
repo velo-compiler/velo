@@ -146,11 +146,11 @@ act parse_loop_stmt(p: @Parser) -> @StmtNode {
         return make_loop_stmt("it", first_expr, end_expr, step_expr, is_inc, body, loop_tok.line, loop_tok.col)
     }
 
-    // Expression loop: count repeat or boolean condition
+    // Expression loop: count repeat or boolean condition (neutral hint; resolved by type checker)
     parser_skip_newlines(p)
     let body = parse_block(p)
-    let is_count = (first_expr.kind == EXPR_INT)
-    return make_loop_expr_stmt(first_expr, is_count, body, loop_tok.line, loop_tok.col)
+    let is_count_hint = (first_expr.kind == EXPR_INT)
+    return make_loop_expr_stmt(first_expr, is_count_hint, body, loop_tok.line, loop_tok.col)
 }
 
 // Helper: parses destructuring declaration `(a, b, ...) = val` after `let` or `mut`.

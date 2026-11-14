@@ -236,9 +236,9 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         if stmt.loop_start == null and stmt.loop_end == null {
             if stmt.expr != null {
                 mut is_cnt = stmt.is_count
-                if not is_cnt and stmt.expr.kind == EXPR_IDENT {
+                if not is_cnt {
                     let et = infer_expr_type(st, stmt.expr)
-                    if et == "i32" or et == "i64" or et == "u32" or et == "usize" { is_cnt = true }
+                    if is_int_type(et) { is_cnt = true }
                 }
                 sb_append_str(sb, "for ("); sb_append_str(sb, c_type); sb_append_str(sb, vname); sb_append_str(sb, " = 0; ")
                 if is_cnt { sb_append_str(sb, vname); sb_append_str(sb, " < ("); emit_c_expr(sb, st, stmt.expr); sb_append_char(sb, ')') }

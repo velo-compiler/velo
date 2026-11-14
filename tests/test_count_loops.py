@@ -61,6 +61,23 @@ def check_velo_source(code: str) -> subprocess.CompletedProcess:
         )
 
 
+def emit_c_velo_source(code: str) -> str:
+    """Runs `velo emit-c` and returns generated C code."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        src = os.path.join(tmpdir, "test.vl")
+        with open(src, "w", encoding="utf-8") as f:
+            f.write(code)
+        res = subprocess.run(
+            [COMPILER, "emit-c", src],
+            env=get_env(),
+            capture_output=True,
+            text=True,
+            timeout=10.0,
+        )
+        assert res.returncode == 0, f"emit-c failed:\n{res.stderr}\n{res.stdout}"
+        return res.stdout
+
+
 # ==============================================================================
 # 1. Integer Widths for Count Variables
 # ==============================================================================
@@ -395,3 +412,29 @@ act main() {
     res = check_velo_source(code)
     assert res.returncode != 0, "Expected compile error for pointer loop expression"
     assert "error" in res.stdout.lower() or "error" in res.stderr.lower()
+
+
+# ==============================================================================
+# 6. Emitted C Syntax Independence (Task 54.3 Verification)
+# ==============================================================================
+
+@pytest.mark.parametrize("name,code,expected_pattern", [
+    ("literal_int", "act main() { loop 5 { } }", "it < (5)"),
+    ("literal_u64", "act main() { loop 5u64 { } }", "it < (5ULL)"),
+    ("variable_u64", "act main() { let c: u64 = 3\nloop c { } }", "it < (c)"),
+    ("variable_u8", "act main() { let c: u8 = 3\nloop c { } }", "it < (c)"),
+    ("variable_i16", "act main() { let c: i16 = 3\nloop c { } }", "it < (c)"),
+    ("variable_isize", "act main() { let c: isize = 3\nloop c { } }", "it < (c)"),
+    ("binary_expr", "act main() { let n = 2\nloop n + 1 { } }", "it < ((n + 1))"),
+    ("complex_expr", "act main() { let a = 2\nlet b = 3\nloop a * b { } }", "it < ((a * b))"),
+    ("bool_var", "act main() { mut b = true\nloop b { } }", "; (b);"),
+    ("bool_cmp", "act main() { mut x = 5\nloop x > 0 { x -= 1 } }", "; ((x > 0));"),
+])
+def test_loop_classification_emitted_c_syntax_independent(name, code, expected_pattern):
+    """Verifies that loop classification in emitted C is type-directed and syntax-independent."""
+    c_out = emit_c_velo_source(code)
+    for_lines = [l.strip() for l in c_out.splitlines() if "for (" in l]
+    assert len(for_lines) >= 1, f"No for loop generated:\n{c_out}"
+    matched = any(expected_pattern in l for l in for_lines)
+    assert matched, f"Pattern {expected_pattern!r} not found in loop headers:\n{for_lines}"
+
