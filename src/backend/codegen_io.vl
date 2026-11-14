@@ -101,6 +101,16 @@ act emit_io_call_body(sb: @StringBuilder, st: @SymbolTable, member: string, firs
             return
         }
         // Integer or pointer types
+        if is_unsigned_int_type(arg_type) {
+            if is_println {
+                sb_append_str(sb, "printf(\"%llu\\n\", (unsigned long long)(")
+            } else {
+                sb_append_str(sb, "printf(\"%llu\", (unsigned long long)(")
+            }
+            emit_c_expr(sb, st, first_arg)
+            sb_append_str(sb, "))")
+            return
+        }
         if is_println {
             sb_append_str(sb, "printf(\"%lld\\n\", (long long)(")
         } else {

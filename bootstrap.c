@@ -37699,230 +37699,247 @@ void emit_io_call_body(StringBuilder* sb, SymbolTable* st, const char* member, E
             return;
         }
 #line 104 "src/main.vl"
-        if (is_println) {
+        if (is_unsigned_int_type(arg_type)) {
 #line 105 "src/main.vl"
+            if (is_println) {
+#line 106 "src/main.vl"
+                sb_append_str(sb, "printf(\"%llu\\n\", (unsigned long long)(");
+            } else {
+#line 108 "src/main.vl"
+                sb_append_str(sb, "printf(\"%llu\", (unsigned long long)(");
+            }
+#line 110 "src/main.vl"
+            emit_c_expr(sb, st, first_arg);
+#line 111 "src/main.vl"
+            sb_append_str(sb, "))");
+#line 112 "src/main.vl"
+            return;
+        }
+#line 114 "src/main.vl"
+        if (is_println) {
+#line 115 "src/main.vl"
             sb_append_str(sb, "printf(\"%lld\\n\", (long long)(");
         } else {
-#line 107 "src/main.vl"
+#line 117 "src/main.vl"
             sb_append_str(sb, "printf(\"%lld\", (long long)(");
         }
-#line 109 "src/main.vl"
+#line 119 "src/main.vl"
         emit_c_expr(sb, st, first_arg);
-#line 110 "src/main.vl"
+#line 120 "src/main.vl"
         sb_append_str(sb, "))");
-#line 111 "src/main.vl"
+#line 121 "src/main.vl"
         return;
     }
-#line 115 "src/main.vl"
+#line 125 "src/main.vl"
     const char* raw = first_arg->str_val;
-#line 116 "src/main.vl"
+#line 126 "src/main.vl"
     StringBuilder fmt_sb = create_sb((((usize)strlen(raw)) + 32));
-#line 117 "src/main.vl"
+#line 127 "src/main.vl"
     StringBuilder args_sb = create_sb(((((usize)strlen(raw)) * 2) + 32));
-#line 118 "src/main.vl"
+#line 128 "src/main.vl"
     int32_t n = build_interp_fmt_and_args(st, raw, first_arg->line, first_arg->col, (&(fmt_sb)), (&(args_sb)));
-#line 119 "src/main.vl"
+#line 129 "src/main.vl"
     if ((n < 0)) {
-#line 120 "src/main.vl"
+#line 130 "src/main.vl"
         if (is_println) {
-#line 121 "src/main.vl"
+#line 131 "src/main.vl"
             sb_append_str(sb, "printf(\"%s\\n\", (const char*)(\"");
         } else {
-#line 123 "src/main.vl"
+#line 133 "src/main.vl"
             sb_append_str(sb, "printf(\"%s\", (const char*)(\"");
         }
-#line 125 "src/main.vl"
-        sb_append_str(sb, raw);
-#line 126 "src/main.vl"
-        sb_append_str(sb, "\"))");
-#line 127 "src/main.vl"
-        return;
-    }
-#line 130 "src/main.vl"
-    sb_append_str(sb, "printf(\"");
-#line 131 "src/main.vl"
-    sb_append_str(sb, sb_to_string((&(fmt_sb))));
-#line 132 "src/main.vl"
-    if (is_println) {
-#line 133 "src/main.vl"
-        sb_append_str(sb, "\\n");
-    }
 #line 135 "src/main.vl"
-    sb_append_char(sb, '"');
+        sb_append_str(sb, raw);
 #line 136 "src/main.vl"
-    if ((n > 0)) {
+        sb_append_str(sb, "\"))");
 #line 137 "src/main.vl"
-        sb_append_str(sb, ", ");
-#line 138 "src/main.vl"
-        sb_append_str(sb, sb_to_string((&(args_sb))));
+        return;
     }
 #line 140 "src/main.vl"
-    sb_append_char(sb, ')');
-}
-
-#line 147 "src/main.vl"
-void emit_io_stdlib_call(StringBuilder* sb, SymbolTable* st, const char* member, ExprNode* expr) {
-#line 148 "src/main.vl"
-    FunctionSym* fn_sym = find_function(st, member);
-#line 149 "src/main.vl"
-    if ((fn_sym == NULL)) {
-#line 150 "src/main.vl"
-        StringBuilder msg = create_sb((((usize)strlen(member)) + 48));
-#line 151 "src/main.vl"
-        sb_append_str((&(msg)), "unknown io member '");
-#line 152 "src/main.vl"
-        sb_append_str((&(msg)), member);
-#line 153 "src/main.vl"
-        sb_append_str((&(msg)), "' reached codegen");
-#line 154 "src/main.vl"
-        report_error("backend", expr->line, expr->col, sb_to_string((&(msg))));
-#line 155 "src/main.vl"
-        st->error_count += 1;
-#line 156 "src/main.vl"
-        return;
-    }
-#line 158 "src/main.vl"
-    sb_append_str(sb, fn_sym->name);
-#line 159 "src/main.vl"
-    sb_append_char(sb, '(');
-#line 160 "src/main.vl"
-    ExprNode* cur = expr->first_arg;
-#line 161 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 162 "src/main.vl"
-        emit_c_expr(sb, st, cur);
-#line 163 "src/main.vl"
-        if ((cur->next != NULL)) {
-#line 163 "src/main.vl"
-            sb_append_str(sb, ", ");
-        }
-#line 164 "src/main.vl"
-        cur = cur->next;
-    }
-#line 166 "src/main.vl"
-    sb_append_char(sb, ')');
-}
-
-#line 170 "src/main.vl"
-void emit_string_expr_ex(StringBuilder* sb, SymbolTable* st, ExprNode* expr, bool on_heap) {
-#line 171 "src/main.vl"
-    if (((expr == NULL) || (expr->str_val == NULL))) {
-#line 171 "src/main.vl"
-        sb_append_str(sb, "\"\"");
-#line 171 "src/main.vl"
-        return;
-    }
-#line 172 "src/main.vl"
-    const char* raw = expr->str_val;
-#line 173 "src/main.vl"
-    StringBuilder fmt_sb = create_sb((((usize)strlen(raw)) + 32));
-#line 174 "src/main.vl"
-    StringBuilder args_sb = create_sb(((((usize)strlen(raw)) * 2) + 32));
-#line 175 "src/main.vl"
-    int32_t n = build_interp_fmt_and_args(st, raw, expr->line, expr->col, (&(fmt_sb)), (&(args_sb)));
-#line 176 "src/main.vl"
-    if ((n < 0)) {
-#line 177 "src/main.vl"
-        sb_append_char(sb, '"');
-#line 177 "src/main.vl"
-        sb_append_str(sb, raw);
-#line 177 "src/main.vl"
-        sb_append_char(sb, '"');
-#line 178 "src/main.vl"
-        return;
-    }
-#line 180 "src/main.vl"
-    if (on_heap) {
-#line 181 "src/main.vl"
-        sb_append_str(sb, "velo_str_heap_format(\"");
-    } else {
-#line 183 "src/main.vl"
-        sb_append_str(sb, "velo_str_format(\"");
-    }
-#line 185 "src/main.vl"
+    sb_append_str(sb, "printf(\"");
+#line 141 "src/main.vl"
     sb_append_str(sb, sb_to_string((&(fmt_sb))));
-#line 186 "src/main.vl"
+#line 142 "src/main.vl"
+    if (is_println) {
+#line 143 "src/main.vl"
+        sb_append_str(sb, "\\n");
+    }
+#line 145 "src/main.vl"
     sb_append_char(sb, '"');
-#line 187 "src/main.vl"
+#line 146 "src/main.vl"
     if ((n > 0)) {
-#line 188 "src/main.vl"
+#line 147 "src/main.vl"
         sb_append_str(sb, ", ");
-#line 189 "src/main.vl"
+#line 148 "src/main.vl"
         sb_append_str(sb, sb_to_string((&(args_sb))));
     }
-#line 191 "src/main.vl"
+#line 150 "src/main.vl"
     sb_append_char(sb, ')');
 }
 
-#line 194 "src/main.vl"
-void emit_string_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
+#line 157 "src/main.vl"
+void emit_io_stdlib_call(StringBuilder* sb, SymbolTable* st, const char* member, ExprNode* expr) {
+#line 158 "src/main.vl"
+    FunctionSym* fn_sym = find_function(st, member);
+#line 159 "src/main.vl"
+    if ((fn_sym == NULL)) {
+#line 160 "src/main.vl"
+        StringBuilder msg = create_sb((((usize)strlen(member)) + 48));
+#line 161 "src/main.vl"
+        sb_append_str((&(msg)), "unknown io member '");
+#line 162 "src/main.vl"
+        sb_append_str((&(msg)), member);
+#line 163 "src/main.vl"
+        sb_append_str((&(msg)), "' reached codegen");
+#line 164 "src/main.vl"
+        report_error("backend", expr->line, expr->col, sb_to_string((&(msg))));
+#line 165 "src/main.vl"
+        st->error_count += 1;
+#line 166 "src/main.vl"
+        return;
+    }
+#line 168 "src/main.vl"
+    sb_append_str(sb, fn_sym->name);
+#line 169 "src/main.vl"
+    sb_append_char(sb, '(');
+#line 170 "src/main.vl"
+    ExprNode* cur = expr->first_arg;
+#line 171 "src/main.vl"
+    for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 172 "src/main.vl"
+        emit_c_expr(sb, st, cur);
+#line 173 "src/main.vl"
+        if ((cur->next != NULL)) {
+#line 173 "src/main.vl"
+            sb_append_str(sb, ", ");
+        }
+#line 174 "src/main.vl"
+        cur = cur->next;
+    }
+#line 176 "src/main.vl"
+    sb_append_char(sb, ')');
+}
+
+#line 180 "src/main.vl"
+void emit_string_expr_ex(StringBuilder* sb, SymbolTable* st, ExprNode* expr, bool on_heap) {
+#line 181 "src/main.vl"
+    if (((expr == NULL) || (expr->str_val == NULL))) {
+#line 181 "src/main.vl"
+        sb_append_str(sb, "\"\"");
+#line 181 "src/main.vl"
+        return;
+    }
+#line 182 "src/main.vl"
+    const char* raw = expr->str_val;
+#line 183 "src/main.vl"
+    StringBuilder fmt_sb = create_sb((((usize)strlen(raw)) + 32));
+#line 184 "src/main.vl"
+    StringBuilder args_sb = create_sb(((((usize)strlen(raw)) * 2) + 32));
+#line 185 "src/main.vl"
+    int32_t n = build_interp_fmt_and_args(st, raw, expr->line, expr->col, (&(fmt_sb)), (&(args_sb)));
+#line 186 "src/main.vl"
+    if ((n < 0)) {
+#line 187 "src/main.vl"
+        sb_append_char(sb, '"');
+#line 187 "src/main.vl"
+        sb_append_str(sb, raw);
+#line 187 "src/main.vl"
+        sb_append_char(sb, '"');
+#line 188 "src/main.vl"
+        return;
+    }
+#line 190 "src/main.vl"
+    if (on_heap) {
+#line 191 "src/main.vl"
+        sb_append_str(sb, "velo_str_heap_format(\"");
+    } else {
+#line 193 "src/main.vl"
+        sb_append_str(sb, "velo_str_format(\"");
+    }
 #line 195 "src/main.vl"
+    sb_append_str(sb, sb_to_string((&(fmt_sb))));
+#line 196 "src/main.vl"
+    sb_append_char(sb, '"');
+#line 197 "src/main.vl"
+    if ((n > 0)) {
+#line 198 "src/main.vl"
+        sb_append_str(sb, ", ");
+#line 199 "src/main.vl"
+        sb_append_str(sb, sb_to_string((&(args_sb))));
+    }
+#line 201 "src/main.vl"
+    sb_append_char(sb, ')');
+}
+
+#line 204 "src/main.vl"
+void emit_string_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
+#line 205 "src/main.vl"
     emit_string_expr_ex(sb, st, expr, false);
 }
 
-#line 199 "src/main.vl"
+#line 209 "src/main.vl"
 void emit_str_call(StringBuilder* sb, SymbolTable* st, const char* member, ExprNode* expr) {
-#line 200 "src/main.vl"
+#line 210 "src/main.vl"
     if (((member != NULL && "len" != NULL) ? (strcmp(member, "len") == 0) : (member == "len"))) {
-#line 201 "src/main.vl"
+#line 211 "src/main.vl"
         sb_append_str(sb, "((usize)strlen(");
-#line 202 "src/main.vl"
+#line 212 "src/main.vl"
         emit_c_expr(sb, st, expr->first_arg);
-#line 203 "src/main.vl"
+#line 213 "src/main.vl"
         sb_append_str(sb, "))");
-#line 204 "src/main.vl"
+#line 214 "src/main.vl"
         return;
     }
-#line 206 "src/main.vl"
+#line 216 "src/main.vl"
     if ((((member != NULL && "format" != NULL) ? (strcmp(member, "format") == 0) : (member == "format")) || ((member != NULL && "heap_format" != NULL) ? (strcmp(member, "heap_format") == 0) : (member == "heap_format")))) {
-#line 207 "src/main.vl"
+#line 217 "src/main.vl"
         bool is_heap = ((member != NULL && "heap_format" != NULL) ? (strcmp(member, "heap_format") == 0) : (member == "heap_format"));
-#line 208 "src/main.vl"
+#line 218 "src/main.vl"
         if (((expr->first_arg != NULL) && (expr->first_arg->next == NULL))) {
-#line 209 "src/main.vl"
+#line 219 "src/main.vl"
             if ((expr->first_arg->kind == EXPR_STRING)) {
-#line 210 "src/main.vl"
+#line 220 "src/main.vl"
                 emit_string_expr_ex(sb, st, expr->first_arg, is_heap);
-#line 211 "src/main.vl"
+#line 221 "src/main.vl"
                 return;
             }
-#line 213 "src/main.vl"
+#line 223 "src/main.vl"
             if (is_heap) {
-#line 214 "src/main.vl"
+#line 224 "src/main.vl"
                 sb_append_str(sb, "velo_str_heap_format(\"%s\", (const char*)(");
             } else {
-#line 216 "src/main.vl"
+#line 226 "src/main.vl"
                 sb_append_str(sb, "velo_str_format(\"%s\", (const char*)(");
             }
-#line 218 "src/main.vl"
+#line 228 "src/main.vl"
             emit_c_expr(sb, st, expr->first_arg);
-#line 219 "src/main.vl"
+#line 229 "src/main.vl"
             sb_append_str(sb, "))");
-#line 220 "src/main.vl"
+#line 230 "src/main.vl"
             return;
         }
     }
-#line 223 "src/main.vl"
+#line 233 "src/main.vl"
     sb_append_str(sb, "velo_str_");
-#line 223 "src/main.vl"
+#line 233 "src/main.vl"
     sb_append_str(sb, member);
-#line 223 "src/main.vl"
+#line 233 "src/main.vl"
     sb_append_char(sb, '(');
-#line 224 "src/main.vl"
+#line 234 "src/main.vl"
     ExprNode* a = expr->first_arg;
-#line 225 "src/main.vl"
+#line 235 "src/main.vl"
     for (int32_t it = 0; ((a != NULL)); it++) {
-#line 226 "src/main.vl"
+#line 236 "src/main.vl"
         emit_c_expr(sb, st, a);
-#line 227 "src/main.vl"
+#line 237 "src/main.vl"
         if ((a->next != NULL)) {
-#line 227 "src/main.vl"
+#line 237 "src/main.vl"
             sb_append_str(sb, ", ");
         }
-#line 228 "src/main.vl"
+#line 238 "src/main.vl"
         a = a->next;
     }
-#line 230 "src/main.vl"
+#line 240 "src/main.vl"
     sb_append_char(sb, ')');
 }
 

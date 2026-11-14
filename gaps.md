@@ -1504,12 +1504,25 @@ io.println("{e}") // -1
   - `tests/test_string_interpolation.py`: 3/3 passed (interpolation of unsigned variables and expressions passes in stage2).
   - All 119 compiler source files <= 395 lines (ceiling 400).
 
-##### Task 57.2: Fix `codegen_io` integer formatting
-* **Goal:** Select `%llu` + `(unsigned long long)` for unsigned types; keep `%lld` for signed.
-* **Files:** `src/backend/codegen_io.vl:74-80`.
-* **Tests:** all unsigned widths; signed regression tests.
-* **Security gate:** no signed cast for an unsigned expression; no format/argument mismatch.
-* **Done when:** `io.println(u64max)` prints `18446744073709551615`.
+##### Task 57.2: Fix `codegen_io` integer formatting [COMPLETED] ✅
+* **Former Defect**:
+  - `codegen_io.vl` lines 103–111 lowered every integer expression argument in `io.println` and `io.print` using `printf("%lld\n", (long long)(...))` or `printf("%lld", (long long)(...))`.
+  - Unsigned integer expressions (`u8`, `u16`, `u32`, `u64`, `usize`) were converted through signed `(long long)`, causing `u64` and `usize` values exceeding `INT64_MAX` (`18446744073709551615` and `18446744073709551614`) to wrap to `-1` and `-2`.
+* **Fix Applied**:
+  - Updated `emit_io_call_body` in `src/backend/codegen_io.vl`:
+    * Added type branch: `if is_unsigned_int_type(arg_type)` checks if expression type is an unsigned integer (`u8`, `u16`, `u32`, `u64`, `usize`).
+    * Emits `printf("%llu\n", (unsigned long long)(...))` for `io.println` and `printf("%llu", (unsigned long long)(...))` for `io.print`.
+    * Retains signed `printf("%lld\n", (long long)(...))` for signed integers (`i8`, `i16`, `i32`, `i64`, `isize`) and pointer types.
+    * Eliminates all signed conversions and signed `%lld` emission for unsigned expressions.
+* **Residual Limitation**:
+  - String interpolation literal handling and `usize`/`isize` portable formatting (`%zu`/`%zd`) are addressed in Tasks 57.3 and 57.4.
+* **Verification**:
+  - `pytest tests/test_unsigned_formatting.py`: 85/85 passed (100% pass rate, turning all 17 red baseline failures green) in 23.56s.
+  - `pytest tests/test_literal_formatting.py`: 7/7 passed (including `test_unsigned_integer_formatting_red_baseline`) in 3.61s.
+  - `pytest tests/test_string_interpolation.py`: 3/3 passed in 1.26s.
+  - Signed regression tests (`test_std_io.py`, `test_integer_literals.py`, `test_int_val_audit.py`): 85/85 passed in 69.66s.
+  - SHA-256 fixed-point determinism verified (`502218ffda92d619979586f298346deac5409ccbdae0eeccfad4339f7b6bbd24`).
+  - Line count standard maintained: all 119 compiler source files in `src/` <= 395 lines (ceiling 400).
 
 ##### Task 57.3: Fix `codegen_fmt` interpolation
 * **Goal:** Apply the same signed/unsigned split in `{...}` formatting.
