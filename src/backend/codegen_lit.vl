@@ -119,6 +119,25 @@ act is_reverse_loop_range(start_expr: @ExprNode, end_expr: @ExprNode) -> bool {
     return false
 }
 
+// Returns true if start, end, and optional step are all compile-time integer constants.
+act is_literal_range_step(start_expr: @ExprNode, end_expr: @ExprNode, step_expr: @ExprNode) -> bool {
+    mut s_val: u64 = 0u64
+    mut s_neg = false
+    mut e_val: u64 = 0u64
+    mut e_neg = false
+    if not (get_range_endpoint_const(start_expr, @s_val, @s_neg) and get_range_endpoint_const(end_expr, @e_val, @e_neg)) {
+        return false
+    }
+    if step_expr != null {
+        mut st_val: u64 = 0u64
+        mut st_neg = false
+        if not get_range_endpoint_const(step_expr, @st_val, @st_neg) {
+            return false
+        }
+    }
+    return true
+}
+
 // Maps a Velo numeric type name to the corresponding C99 loop variable declaration type.
 act loop_var_c_type(type_name: string) -> string {
     if type_name == null { return "int32_t " }

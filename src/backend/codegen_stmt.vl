@@ -20,6 +20,7 @@ use "codegen_match.vl"
 use "outcome_gen.vl"
 use "array_gen.vl"
 use "tuple_gen.vl"
+use "range_gen.vl"
 
 // Intrusive linked list node maintaining active LIFO deferred statements and zone cleanups.
 data DeferNode {
@@ -253,18 +254,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
                 sb_append_str(sb, "for ("); sb_append_str(sb, c_type); sb_append_str(sb, vname); sb_append_str(sb, " = 0; ; "); sb_append_str(sb, vname); sb_append_str(sb, "++) {\n")
             }
         } else {
-            let is_rev = is_reverse_loop_range(stmt.loop_start, stmt.loop_end)
-            sb_append_str(sb, "for ("); sb_append_str(sb, c_type); sb_append_str(sb, vname); sb_append_str(sb, " = ")
-            emit_c_expr(sb, st, stmt.loop_start)
-            sb_append_str(sb, "; "); sb_append_str(sb, vname)
-            if is_rev { if stmt.is_inclusive { sb_append_str(sb, " >= ") } else { sb_append_str(sb, " > ") } } else { if stmt.is_inclusive { sb_append_str(sb, " <= ") } else { sb_append_str(sb, " < ") } }
-            emit_c_expr(sb, st, stmt.loop_end)
-            sb_append_str(sb, "; "); sb_append_str(sb, vname)
-            if stmt.loop_step != null {
-                if is_rev { sb_append_str(sb, " -= ") } else { sb_append_str(sb, " += ") }
-                emit_c_expr(sb, st, stmt.loop_step)
-            } else { if is_rev { sb_append_str(sb, "--") } else { sb_append_str(sb, "++") } }
-            sb_append_str(sb, ") {\n")
+            emit_range_loop_header(sb, st, stmt, c_type, vname)
         }
         enter_scope(st)
         mut loop_var_type = stmt.type_name

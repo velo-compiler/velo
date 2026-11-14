@@ -682,7 +682,7 @@ act main() -> i32 {
 # ==============================================================================
 
 def test_emitted_c_dynamic_descending_proves_ascending_defect():
-    """Diagnostic Probe: Proves that `loop i in n..0` currently emits `i < 0; i++` instead of countdown."""
+    """Diagnostic Probe: Proves that `loop i in n..0` hoists endpoints into temporaries but still emits ascending condition `i < __end_i; i++`."""
     code = """
 act main() -> i32 {
     let n: i32 = 5
@@ -691,16 +691,17 @@ act main() -> i32 {
 }
 """
     c_code = emit_c_velo_source(code)
-    # The defect: because n is not a literal, is_reverse_loop_range returns false,
-    # so codegen emits '< 0' and '++'.
-    has_ascending_defect = "i < 0" in c_code and "i++" in c_code
-    assert has_ascending_defect, (
-        f"Expected baseline defect 'i < 0; i++' in emitted C, got:\n{c_code}"
+    # Task 56.3 hoists start and end into temporaries.
+    # The remaining defect (to be solved in Task 56.4) is that condition is still ascending 'i < __end_i' and 'i++'.
+    has_hoisted_temps = "__start_i = (n)" in c_code and "__end_i = (0)" in c_code
+    has_ascending_defect = "i < __end_i" in c_code and "i++" in c_code
+    assert has_hoisted_temps and has_ascending_defect, (
+        f"Expected hoisted temps with baseline defect 'i < __end_i; i++' in emitted C, got:\n{c_code}"
     )
 
 
 def test_emitted_c_dynamic_var_to_var_proves_ascending_defect():
-    """Diagnostic Probe: Proves that `loop i in n..m` currently emits `i < m; i++` unconditionally."""
+    """Diagnostic Probe: Proves that `loop i in n..m` hoists endpoints into temporaries but still emits ascending condition."""
     code = """
 act main() -> i32 {
     let n: i32 = 5
@@ -710,7 +711,242 @@ act main() -> i32 {
 }
 """
     c_code = emit_c_velo_source(code)
-    has_ascending_defect = "i < m" in c_code and "i++" in c_code
-    assert has_ascending_defect, (
-        f"Expected baseline defect 'i < m; i++' in emitted C, got:\n{c_code}"
+    has_hoisted_temps = "__start_i = (n)" in c_code and "__end_i = (m)" in c_code
+    has_ascending_defect = "i < __end_i" in c_code and "i++" in c_code
+    assert has_hoisted_temps and has_ascending_defect, (
+        f"Expected hoisted temps with baseline defect 'i < __end_i; i++' in emitted C, got:\n{c_code}"
     )
+
+
+# ==============================================================================
+# 9. Endpoint Expressions Evaluated Exactly Once (Side Effect & TOCTOU Immunity)
+# ==============================================================================
+
+def test_dynamic_endpoint_function_call_evaluated_once_start():
+    """Start expression with function call side effect is evaluated exactly once."""
+    code = """
+mut start_calls: i32 = 0
+
+act get_start() -> i32 {
+    start_calls += 1
+    return 1
+}
+
+act main() -> i32 {
+    mut count: i32 = 0
+    loop i in get_start()..5 {
+        count += 1
+    }
+    assert(start_calls == 1)
+    assert(count == 4)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_dynamic_endpoint_function_call_evaluated_once_end():
+    """End expression with function call side effect is evaluated exactly once, not on each iteration."""
+    code = """
+mut end_calls: i32 = 0
+
+act get_end() -> i32 {
+    end_calls += 1
+    return 5
+}
+
+act main() -> i32 {
+    mut count: i32 = 0
+    loop i in 0..get_end() {
+        count += 1
+    }
+    assert(end_calls == 1)
+    assert(count == 5)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_dynamic_endpoint_function_call_evaluated_once_inclusive_end():
+    """Inclusive end expression with function call is evaluated exactly once."""
+    code = """
+mut end_calls: i32 = 0
+
+act get_end() -> i32 {
+    end_calls += 1
+    return 5
+}
+
+act main() -> i32 {
+    mut count: i32 = 0
+    loop i in 0..=get_end() {
+        count += 1
+    }
+    assert(end_calls == 1)
+    assert(count == 6)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_dynamic_step_function_call_evaluated_once():
+    """Step expression with function call is evaluated exactly once, not on each iteration."""
+    code = """
+mut step_calls: i32 = 0
+
+act get_step() -> i32 {
+    step_calls += 1
+    return 2
+}
+
+act main() -> i32 {
+    mut count: i32 = 0
+    loop i in 0..10 : get_step() {
+        count += 1
+    }
+    assert(step_calls == 1)
+    assert(count == 5)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_dynamic_endpoint_mutation_mid_loop_toctou_immune():
+    """Mutating the variable used in end bound mid-loop does not alter loop termination."""
+    code = """
+act main() -> i32 {
+    mut limit: i32 = 5
+    mut count: i32 = 0
+    loop i in 0..limit {
+        count += 1
+        limit = 0
+    }
+    assert(count == 5)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_dynamic_step_mutation_mid_loop_toctou_immune():
+    """Mutating the variable used in step mid-loop does not alter the stride."""
+    code = """
+act main() -> i32 {
+    mut step_val: i32 = 1
+    mut count: i32 = 0
+    loop i in 0..10 : step_val {
+        count += 1
+        step_val = 100
+    }
+    assert(count == 10)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_dynamic_endpoint_both_start_and_end_side_effects():
+    """Both start and end expressions evaluate in lexical order exactly once."""
+    code = """
+mut call_order: i32 = 0
+mut start_order: i32 = 0
+mut end_order: i32 = 0
+
+act eval_start() -> i32 {
+    call_order += 1
+    start_order = call_order
+    return 2
+}
+
+act eval_end() -> i32 {
+    call_order += 1
+    end_order = call_order
+    return 6
+}
+
+act main() -> i32 {
+    mut sum: i32 = 0
+    loop i in eval_start()..eval_end() {
+        sum += i
+    }
+    assert(start_order == 1)
+    assert(end_order == 2)
+    assert(sum == 14)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_dynamic_endpoint_nested_loops_single_evaluation():
+    """Nested dynamic loops evaluate outer bound once and inner bound once per outer iteration."""
+    code = """
+mut outer_calls: i32 = 0
+mut inner_calls: i32 = 0
+
+act get_outer() -> i32 {
+    outer_calls += 1
+    return 3
+}
+
+act get_inner() -> i32 {
+    inner_calls += 1
+    return 2
+}
+
+act main() -> i32 {
+    mut total: i32 = 0
+    loop i in 0..get_outer() {
+        loop j in 0..get_inner() {
+            total += 1
+        }
+    }
+    assert(outer_calls == 1)
+    assert(inner_calls == 3)
+    assert(total == 6)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_emitted_c_endpoint_hoisting_temps():
+    """Verify C99 emission declares __start_i, __end_i, and loop var in loop header."""
+    code = """
+act main() -> i32 {
+    let a: i32 = 10
+    let b: i32 = 20
+    loop i in a..b { }
+    return 0
+}
+"""
+    c_code = emit_c_velo_source(code)
+    assert "for (int32_t __start_i = (a), __end_i = (b), i = __start_i; i < __end_i; i++)" in c_code
+
+
+def test_emitted_c_stepped_hoisting_temps():
+    """Verify C99 emission declares __start_i, __end_i, __step_i, and loop var in loop header."""
+    code = """
+act main() -> i32 {
+    let a: i32 = 10
+    let b: i32 = 20
+    let s: i32 = 2
+    loop i in a..b:s { }
+    return 0
+}
+"""
+    c_code = emit_c_velo_source(code)
+    assert "for (int32_t __start_i = (a), __end_i = (b), __step_i = (s), i = __start_i; i < __end_i; i += __step_i)" in c_code
+
+

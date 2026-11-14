@@ -1274,12 +1274,36 @@ The documented "Smart Reverse Auto-Countdown" (`docs/SPECIFICATION.md:688-693`) 
   - Reviewed `docs/SPECIFICATION.md` §7.2 for completeness and consistency against all Phase 56 security invariants.
   - Verified line counts: all 117 compiler source files <= 395 lines (<= 400).
 
-##### Task 56.3: Evaluate endpoints once into temporaries
-* **Goal:** Hoist `start` and `end` into temps so side effects run once and direction/comparison use stable values.
-* **Files:** `src/backend/codegen_stmt.vl`.
-* **Tests:** endpoint expressions with function calls and increments; assert one evaluation.
-* **Security gate:** no double evaluation; no TOCTOU-style direction change mid-loop.
-* **Done when:** side-effect tests pass.
+##### Task 56.3: Evaluate endpoints once into temporaries [COMPLETED] ✅
+* **Former Defect**:
+  - In `src/backend/codegen_stmt.vl` (lines 257–266), range loops directly embedded `stmt.loop_end` into the C `for` condition clause (`i < emit_c_expr(stmt.loop_end)`) and `stmt.loop_step` into the increment clause (`i += emit_c_expr(stmt.loop_step)`).
+  - Consequently, if the end bound or step expression contained a function call, arithmetic computation, or mutating side effect (e.g. `loop i in 0..get_end()`), the expression was evaluated on every single iteration of the loop (e.g. 6 times for 5 iterations), causing side-effect multiplication.
+  - Furthermore, if variables used in the end bound or step were modified within the loop body, the loop's termination condition or stride was mutated dynamically during iteration (TOCTOU bound drift), causing premature termination or infinite looping.
+* **Fix Applied**:
+  - Implemented `is_literal_range_step(start_expr, end_expr, step_expr) -> bool` in `src/backend/codegen_lit.vl`:
+    * Distinguishes compile-time constant literal bounds (which emit branch-free static C loops) from dynamic bounds.
+  - Created modular range loop code generator in `src/backend/range_gen.vl`:
+    * Evaluates dynamic range endpoints and optional step strictly once into C99 temporaries scoped to the `for` loop header:
+      `for (c_type __start_v = (start), __end_v = (end)[, __step_v = (step)], v = __start_v; v < __end_v; v++[ += __step_v])`
+    * Variables share the loop variable's type `c_type` and are evaluated in left-to-right lexical order.
+    * Suffixing temporaries with variable name (`__start_` + `vname`, `__end_` + `vname`) prevents `-Wshadow` issues in nested loops.
+    * Preserves zero-overhead compile-time emission for static literal ranges.
+  - Integrated `range_gen.vl` into `src/backend/codegen_stmt.vl`, replacing 14 lines with a clean delegation call and reducing file size from 393 lines to 383 lines.
+* **Residual Limitation**:
+  - Runtime dynamic direction selection for descending dynamic ranges (`n..0`, `n..m`, `n..=0`) is lowered in Task 56.4.
+* **Verification**:
+  - Added Section 9 to `tests/test_dynamic_ranges.py` (10 tests) covering:
+    * Start function call side effect executed exactly once.
+    * End function call side effect executed exactly once (exclusive and inclusive).
+    * Step function call side effect executed exactly once.
+    * Loop body variable mutation immunity (TOCTOU protection).
+    * Lexical evaluation order (`start` then `end`).
+    * Nested dynamic loops with independent single-evaluation scopes.
+    * Emitted C inspection verifying `__start_v` and `__end_v` temporaries.
+  - Verified 100% pass rate across all side-effect tests (12 passed).
+  - Verified zero regressions on literal ranges: 103 passed in `test_range_loops.py` and `test_large_ranges.py`, 66 passed in `test_count_loops.py`.
+  - Rebuilt 3-generation self-hosting bootstrap compiler chain and confirmed SHA-256 fixed-point determinism (`ed5a22c6d0690a3bd3d082007c9cece9ce2fc5caa44f9875a02b61e732334cf3`).
+  - Verified line count standards across all 118 compiler source files in `src/` (all <= 395 lines, ceiling 400).
 
 ##### Task 56.4: Lower runtime direction selection
 * **Goal:** Emit code that chooses ascending or descending based on the temps, preserving `it` and the inclusive/exclusive boundary.
