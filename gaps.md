@@ -1339,12 +1339,37 @@ The documented "Smart Reverse Auto-Countdown" (`docs/SPECIFICATION.md:688-693`) 
   - Rebuilt 3-generation self-hosting bootstrap compiler chain and confirmed SHA-256 fixed-point determinism (`9d8979faeeffcc5c08356250d4f50533f1d5ac4e533e7c4ee6531b2ed110ad49`).
   - Verified line count standards across all 118 compiler source files in `src/` (all <= 395 lines, ceiling 400).
 
-##### Task 56.5: Handle mixed-type endpoints
-* **Goal:** Avoid signed/unsigned comparison bugs when `start` and `end` have different integer types.
-* **Files:** `src/analysis/type_checker_stmt.vl`, `src/backend/codegen_stmt.vl`.
-* **Tests:** `i32..u32`, `u32..i32`, `usize..0`, `i64..u64`.
-* **Security gate:** reject incompatible pairs or promote with an explicit, documented rule; no silent wrap.
-* **Done when:** mixed-type cases are defined and tested.
+##### Task 56.5: Handle mixed-type endpoints [COMPLETED] ✅
+* **Former Defect**:
+  - In `src/analysis/type_checker_stmt.vl`, `unify_loop_range_type` blindly checked if either endpoint was `u64`, `i64`, `usize`, or `u32` without validating signedness compatibility between endpoints.
+  - Incompatible mixed signed/unsigned variable pairs (e.g. `let a: i32 = 0; let b: u32 = 10; loop i in a..b` or `i64..u64`) were silently accepted, causing signed integers to be reinterpreted as unsigned in C (or vice versa), which silently wrapped negative values (e.g. `-5 as u32` becoming `4294967291`) and created infinite loops or massive iteration counts.
+  - Furthermore, contextual literal adaptation was not applied to endpoints, leaving literals like `0` in `loop i in n..0` (`n: usize`) untyped or inconsistently unified.
+* **Fix Applied**:
+  - Created dedicated range loop semantic analysis module in `src/analysis/range_checks.vl`:
+    * Implemented strict signed/unsigned security gate in `check_range_loop`: non-literal mixed signed/unsigned pairs (e.g. `i32` with `u32`, `i64` with `u64`, `isize` with `usize`) are strictly rejected at compile time with descriptive diagnostics:
+      `[Velo Error] Cannot mix signed '{start_t}' and unsigned '{end_t}' in range loop. Use explicit cast 'as {end_t}'.`
+      `[Velo Error] Cannot mix unsigned '{start_t}' and signed '{end_t}' in range loop. Use explicit cast 'as {start_t}'.`
+    * Implemented safe same-signedness widening:
+      - Signed integers (`i8`, `i16`, `i32`, `i64`, `isize`) safely widen to the wider signed type without truncation or sign inversion.
+      - Unsigned integers (`u8`, `u16`, `u32`, `u64`, `usize`) safely widen to the wider unsigned type without truncation.
+    * Integrated contextual literal adaptation: non-negative unsuffixed literals (e.g. `0` in `n..0` or `0..n` where `n: usize`) safely adapt to the target integer type.
+    * Enforced compile-time rejection of negative literal endpoints with unsigned range types prior to adaptation (`Range loop endpoint cannot be negative for unsigned type '<type>'`).
+  - Modularized `src/analysis/type_checker_stmt.vl` by delegating range checking to `range_checks.vl`, reducing `type_checker_stmt.vl` from 395 lines to 296 lines.
+* **Residual Limitation**:
+  - Emitted-C pattern validation and runtime assertion suite continue in Task 56.6.
+* **Verification**:
+  - Added Section 10 to `tests/test_dynamic_ranges.py` (10 tests) covering:
+    * Rejection of `i32..u32` with compile diagnostic.
+    * Rejection of `u32..i32` with compile diagnostic.
+    * Rejection of `i64..u64` with compile diagnostic.
+    * Rejection of `u64..i64` with compile diagnostic.
+    * Acceptance of unsuffixed literal adaptation (`usize..0` and `0..usize`).
+    * Acceptance of explicit cast `(a as u32)..b`.
+    * Safe widening between same-signedness variables (`i32..i64`, `i64..i32`, `u32..u64`).
+  - All 50 tests in `tests/test_dynamic_ranges.py` passing (100% pass rate).
+  - All 219 tests across `test_dynamic_ranges.py`, `test_range_loops.py`, `test_large_ranges.py`, `test_count_loops.py` passing in 44.13s.
+  - Rebuilt 3-generation self-hosting bootstrap compiler chain and confirmed SHA-256 fixed-point determinism (`a4b3bf5d02e5e4bcf3f4ff33fb64940bba28c144850483e91a27933b33ff6cae`).
+  - Verified line count standards across all 119 compiler source files in `src/` (all <= 395 lines, ceiling 400).
 
 ##### Task 56.6: Add emitted-C and runtime assertions
 * **Goal:** Verify the generated C contains a direction branch and the correct comparison.

@@ -12,6 +12,7 @@ use "op_resolver.vl"
 use "narrow_flow.vl"
 use "tuple_checks.vl"
 use "literal_check.vl"
+use "range_checks.vl"
 use "../ast/int_types.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
@@ -67,106 +68,6 @@ act check_assign_mutability(st: @SymbolTable, target: @ExprNode, line: i32, col:
             }
         }
     }
-}
-
-// Determines the unified variable type for a numeric loop range [start..end].
-act unify_loop_range_type(start_t: string, end_t: string) -> string {
-    if start_t == "u64" or end_t == "u64" { return "u64" }
-    if start_t == "i64" or end_t == "i64" { return "i64" }
-    if start_t == "usize" or end_t == "usize" { return "usize" }
-    if start_t == "u32" or end_t == "u32" { return "u32" }
-    return "i32"
-}
-
-// Checks if a loop step expression is a non-positive constant (<= 0).
-act is_range_step_non_positive(expr: @ExprNode) -> bool {
-    if expr == null { return false }
-    if expr.kind == EXPR_UNARY and expr.op == TOK_MINUS { return true }
-    if expr.kind == EXPR_INT {
-        if expr.int_val < 0 { return true }
-        if expr.int_val == 0 {
-            if expr.str_val == null { return true }
-            if expr.str_val == "0" or expr.str_val == "0u64" or expr.str_val == "0i64" or
-               expr.str_val == "0i32" or expr.str_val == "0u32" or expr.str_val == "0usize" or
-               expr.str_val == "0x0" or expr.str_val == "0b0" {
-                return true
-            }
-        }
-    }
-    return false
-}
-
-// Checks if a loop range endpoint expression is a negative constant (< 0).
-act is_range_endpoint_negative(expr: @ExprNode) -> bool {
-    if expr == null { return false }
-    if expr.kind == EXPR_UNARY and expr.op == TOK_MINUS { return true }
-    if expr.kind == EXPR_INT and expr.int_val < 0 { return true }
-    return false
-}
-
-// Validates semantic correctness of a range loop [start..end[:step]].
-act check_range_loop(st: @SymbolTable, stmt: @StmtNode) -> string {
-    let start_t = infer_expr_type(st, stmt.loop_start)
-    let end_t = infer_expr_type(st, stmt.loop_end)
-    mut step_t = "i32"
-    if stmt.loop_step != null { step_t = infer_expr_type(st, stmt.loop_step) }
-
-    if not is_int_type(start_t) {
-        if start_t != "unknown" or st.error_count == 0 {
-            mut msg = create_sb(64)
-            sb_append_str(@msg, "Range loop start endpoint must be an integer type, got '")
-            sb_append_str(@msg, start_t)
-            sb_append_char(@msg, '\'')
-            report_error("semantic", stmt.loop_start.line, stmt.loop_start.col, sb_to_string(@msg))
-            st.error_count += 1
-        }
-    }
-    if not is_int_type(end_t) {
-        if end_t != "unknown" or st.error_count == 0 {
-            mut msg = create_sb(64)
-            sb_append_str(@msg, "Range loop end endpoint must be an integer type, got '")
-            sb_append_str(@msg, end_t)
-            sb_append_char(@msg, '\'')
-            report_error("semantic", stmt.loop_end.line, stmt.loop_end.col, sb_to_string(@msg))
-            st.error_count += 1
-        }
-    }
-    if stmt.loop_step != null {
-        if not is_int_type(step_t) {
-            if step_t != "unknown" or st.error_count == 0 {
-                mut msg = create_sb(64)
-                sb_append_str(@msg, "Range loop step must be an integer type, got '")
-                sb_append_str(@msg, step_t)
-                sb_append_char(@msg, '\'')
-                report_error("semantic", stmt.loop_step.line, stmt.loop_step.col, sb_to_string(@msg))
-                st.error_count += 1
-            }
-        } else if is_range_step_non_positive(stmt.loop_step) {
-            report_error("semantic", stmt.loop_step.line, stmt.loop_step.col, "Range loop step must be greater than zero")
-            st.error_count += 1
-        }
-    }
-
-    let of_elem = unify_loop_range_type(start_t, end_t)
-    if is_unsigned_int_type(of_elem) {
-        if is_range_endpoint_negative(stmt.loop_start) {
-            mut msg = create_sb(64)
-            sb_append_str(@msg, "Range loop endpoint cannot be negative for unsigned type '")
-            sb_append_str(@msg, of_elem)
-            sb_append_char(@msg, '\'')
-            report_error("semantic", stmt.loop_start.line, stmt.loop_start.col, sb_to_string(@msg))
-            st.error_count += 1
-        }
-        if is_range_endpoint_negative(stmt.loop_end) {
-            mut msg = create_sb(64)
-            sb_append_str(@msg, "Range loop endpoint cannot be negative for unsigned type '")
-            sb_append_str(@msg, of_elem)
-            sb_append_char(@msg, '\'')
-            report_error("semantic", stmt.loop_end.line, stmt.loop_end.col, sb_to_string(@msg))
-            st.error_count += 1
-        }
-    }
-    return of_elem
 }
 
 // Validates semantic correctness of a single statement.

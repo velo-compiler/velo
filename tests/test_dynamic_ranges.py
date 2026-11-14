@@ -944,4 +944,179 @@ act main() -> i32 {
     assert "for (int32_t __start_i = (a), __end_i = (b), __step_i = (s), __rev_i = (__start_i > __end_i), i = __start_i; __rev_i ? (i > __end_i) : (i < __end_i); __rev_i ? (i -= __step_i) : (i += __step_i))" in c_code
 
 
+# ==============================================================================
+# 10. Mixed-Type Endpoint Compatibility & Promotion (Task 56.5)
+# ==============================================================================
+
+def test_mixed_type_i32_u32_rejected():
+    """Security Gate: Mixing signed i32 variable with unsigned u32 variable is rejected."""
+    code = """
+act main() -> i32 {
+    let a: i32 = 0
+    let b: u32 = 10
+    loop i in a..b { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Cannot mix signed 'i32' and unsigned 'u32'" in out
+
+
+def test_mixed_type_u32_i32_rejected():
+    """Security Gate: Mixing unsigned u32 variable with signed i32 variable is rejected."""
+    code = """
+act main() -> i32 {
+    let a: u32 = 10
+    let b: i32 = 0
+    loop i in a..b { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Cannot mix unsigned 'u32' and signed 'i32'" in out
+
+
+def test_mixed_type_i64_u64_rejected():
+    """Security Gate: Mixing signed i64 variable with unsigned u64 variable is rejected."""
+    code = """
+act main() -> i32 {
+    let a: i64 = 0
+    let b: u64 = 10
+    loop i in a..b { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Cannot mix signed 'i64' and unsigned 'u64'" in out
+
+
+def test_mixed_type_u64_i64_rejected():
+    """Security Gate: Mixing unsigned u64 variable with signed i64 variable is rejected."""
+    code = """
+act main() -> i32 {
+    let a: u64 = 10
+    let b: i64 = 0
+    loop i in a..b { }
+    return 0
+}
+"""
+    res = check_velo_source(code)
+    assert res.returncode != 0
+    out = res.stdout + res.stderr
+    assert "Cannot mix unsigned 'u64' and signed 'i64'" in out
+
+
+def test_mixed_type_usize_literal_zero_accepted():
+    """Unsuffixed literal 0 adapts to usize target type without diagnostic."""
+    code = """
+act main() -> i32 {
+    let n: usize = 5
+    mut iters: i32 = 0
+    loop i in n..0 {
+        iters += 1
+    }
+    assert(iters == 5)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_mixed_type_literal_zero_usize_accepted():
+    """Unsuffixed literal 0 adapts to ascending usize target type without diagnostic."""
+    code = """
+act main() -> i32 {
+    let n: usize = 5
+    mut iters: i32 = 0
+    loop i in 0..n {
+        iters += 1
+    }
+    assert(iters == 5)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_mixed_type_explicit_cast_accepted():
+    """Explicit cast resolves signed/unsigned difference safely."""
+    code = """
+act main() -> i32 {
+    let a: i32 = 0
+    let b: u32 = 5
+    mut iters: i32 = 0
+    loop i in (a as u32)..b {
+        iters += 1
+    }
+    assert(iters == 5)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_mixed_type_same_signedness_widening_i32_i64():
+    """Same signedness i32 and i64 safely widens to i64."""
+    code = """
+act main() -> i32 {
+    let a: i32 = 0
+    let b: i64 = 5
+    mut iters: i32 = 0
+    loop i in a..b {
+        iters += 1
+    }
+    assert(iters == 5)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_mixed_type_same_signedness_widening_descending_i64_i32():
+    """Same signedness i64 and i32 descending safely widens to i64."""
+    code = """
+act main() -> i32 {
+    let a: i64 = 5
+    let b: i32 = 0
+    mut iters: i32 = 0
+    loop i in a..b {
+        iters += 1
+    }
+    assert(iters == 5)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_mixed_type_same_signedness_widening_u32_u64():
+    """Same signedness u32 and u64 safely widens to u64."""
+    code = """
+act main() -> i32 {
+    let a: u32 = 0
+    let b: u64 = 5
+    mut iters: i32 = 0
+    loop i in a..b {
+        iters += 1
+    }
+    assert(iters == 5)
+    return 0
+}
+"""
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+
 

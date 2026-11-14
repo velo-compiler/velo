@@ -2105,11 +2105,11 @@ bool try_adapt_int_literal(SymbolTable* st, const char* target_t, ExprNode* expr
 const char* check_struct_literal(SymbolTable* st, ExprNode* expr);
 void adapt_and_check_call_args(SymbolTable* st, ExprNode* expr, ParamSym* first_param);
 const char* adapt_binary_int_operands(SymbolTable* st, ExprNode* expr, const char* left_t, const char* right_t);
-void check_assign_mutability(SymbolTable* st, ExprNode* target, int32_t line, int32_t col);
-const char* unify_loop_range_type(const char* start_t, const char* end_t);
 bool is_range_step_non_positive(ExprNode* expr);
 bool is_range_endpoint_negative(ExprNode* expr);
+const char* unify_loop_range_type(SymbolTable* st, StmtNode* stmt, const char* start_t, const char* end_t);
 const char* check_range_loop(SymbolTable* st, StmtNode* stmt);
+void check_assign_mutability(SymbolTable* st, ExprNode* target, int32_t line, int32_t col);
 void check_statement(SymbolTable* st, const char* expected_ret_type, StmtNode* stmt);
 void check_struct_default_field(SymbolTable* st, FieldNode* cur_f);
 bool is_exit_call_expr(ExprNode* e);
@@ -26601,846 +26601,1013 @@ const char* adapt_binary_int_operands(SymbolTable* st, ExprNode* expr, const cha
     return lt;
 }
 
+#line 14 "src/main.vl"
+bool is_range_step_non_positive(ExprNode* expr) {
+#line 15 "src/main.vl"
+    if ((expr == NULL)) {
+#line 15 "src/main.vl"
+        return false;
+    }
+#line 16 "src/main.vl"
+    if (((expr->kind == EXPR_UNARY) && (expr->op == TOK_MINUS))) {
+#line 16 "src/main.vl"
+        return true;
+    }
+#line 17 "src/main.vl"
+    if ((expr->kind == EXPR_INT)) {
+#line 18 "src/main.vl"
+        if ((expr->int_val < 0)) {
+#line 18 "src/main.vl"
+            return true;
+        }
+#line 19 "src/main.vl"
+        if ((expr->int_val == 0)) {
+#line 20 "src/main.vl"
+            if ((expr->str_val == NULL)) {
+#line 20 "src/main.vl"
+                return true;
+            }
 #line 21 "src/main.vl"
-void check_assign_mutability(SymbolTable* st, ExprNode* target, int32_t line, int32_t col) {
-#line 22 "src/main.vl"
-    if ((target == NULL)) {
-#line 22 "src/main.vl"
-        return;
-    }
-#line 23 "src/main.vl"
-    if ((target->kind == EXPR_IDENT)) {
+            if ((((((((((expr->str_val != NULL && "0" != NULL) ? (strcmp(expr->str_val, "0") == 0) : (expr->str_val == "0")) || ((expr->str_val != NULL && "0u64" != NULL) ? (strcmp(expr->str_val, "0u64") == 0) : (expr->str_val == "0u64"))) || ((expr->str_val != NULL && "0i64" != NULL) ? (strcmp(expr->str_val, "0i64") == 0) : (expr->str_val == "0i64"))) || ((expr->str_val != NULL && "0i32" != NULL) ? (strcmp(expr->str_val, "0i32") == 0) : (expr->str_val == "0i32"))) || ((expr->str_val != NULL && "0u32" != NULL) ? (strcmp(expr->str_val, "0u32") == 0) : (expr->str_val == "0u32"))) || ((expr->str_val != NULL && "0usize" != NULL) ? (strcmp(expr->str_val, "0usize") == 0) : (expr->str_val == "0usize"))) || ((expr->str_val != NULL && "0x0" != NULL) ? (strcmp(expr->str_val, "0x0") == 0) : (expr->str_val == "0x0"))) || ((expr->str_val != NULL && "0b0" != NULL) ? (strcmp(expr->str_val, "0b0") == 0) : (expr->str_val == "0b0")))) {
 #line 24 "src/main.vl"
-        Symbol* sym = resolve_variable(st, target->str_val);
-#line 25 "src/main.vl"
-        if (((sym != NULL) && (!sym->is_mut))) {
-#line 26 "src/main.vl"
-            StringBuilder msg = create_sb(((((usize)strlen(target->str_val)) * 2) + 80));
-#line 27 "src/main.vl"
-            sb_append_str((&(msg)), "cannot assign to immutable variable '");
-#line 28 "src/main.vl"
-            sb_append_str((&(msg)), target->str_val);
-#line 29 "src/main.vl"
-            sb_append_str((&(msg)), "'. Declare with 'mut ");
-#line 30 "src/main.vl"
-            sb_append_str((&(msg)), target->str_val);
-#line 31 "src/main.vl"
-            sb_append_str((&(msg)), "' to allow mutation.");
-#line 32 "src/main.vl"
-            report_error("semantic", line, col, sb_to_string((&(msg))));
-#line 33 "src/main.vl"
-            st->error_count += 1;
-        }
-    } else
-#line 35 "src/main.vl"
-    if ((target->kind == EXPR_MEMBER)) {
-#line 36 "src/main.vl"
-        if (((target->target != NULL) && (target->target->kind == EXPR_IDENT))) {
-#line 37 "src/main.vl"
-            const char* base_type = infer_expr_type(st, target->target);
-#line 38 "src/main.vl"
-            if ((velo_cmp_gt_u_s(((usize)strlen(base_type)), 0) && velo_cmp_ne_u_s(base_type[0], '@'))) {
-#line 39 "src/main.vl"
-                Symbol* sym = resolve_variable(st, target->target->str_val);
-#line 40 "src/main.vl"
-                if (((sym != NULL) && (!sym->is_mut))) {
-#line 41 "src/main.vl"
-                    StringBuilder msg = create_sb(((((usize)strlen(target->target->str_val)) * 2) + 88));
-#line 42 "src/main.vl"
-                    sb_append_str((&(msg)), "cannot assign to field of immutable variable '");
-#line 43 "src/main.vl"
-                    sb_append_str((&(msg)), target->target->str_val);
-#line 44 "src/main.vl"
-                    sb_append_str((&(msg)), "'. Declare with 'mut ");
-#line 45 "src/main.vl"
-                    sb_append_str((&(msg)), target->target->str_val);
-#line 46 "src/main.vl"
-                    sb_append_str((&(msg)), "' to allow mutation.");
-#line 47 "src/main.vl"
-                    report_error("semantic", line, col, sb_to_string((&(msg))));
-#line 48 "src/main.vl"
-                    st->error_count += 1;
-                }
-            }
-        }
-    } else
-#line 52 "src/main.vl"
-    if ((target->kind == EXPR_INDEX)) {
-#line 53 "src/main.vl"
-        if (((target->target != NULL) && (target->target->kind == EXPR_IDENT))) {
-#line 54 "src/main.vl"
-            const char* base_type = infer_expr_type(st, target->target);
-#line 55 "src/main.vl"
-            if ((velo_cmp_gt_u_s(((usize)strlen(base_type)), 0) && velo_cmp_ne_u_s(base_type[0], '@'))) {
-#line 56 "src/main.vl"
-                Symbol* sym = resolve_variable(st, target->target->str_val);
-#line 57 "src/main.vl"
-                if (((sym != NULL) && (!sym->is_mut))) {
-#line 58 "src/main.vl"
-                    StringBuilder msg = create_sb(((((usize)strlen(target->target->str_val)) * 2) + 88));
-#line 59 "src/main.vl"
-                    sb_append_str((&(msg)), "cannot assign to element of immutable variable '");
-#line 60 "src/main.vl"
-                    sb_append_str((&(msg)), target->target->str_val);
-#line 61 "src/main.vl"
-                    sb_append_str((&(msg)), "'. Declare with 'mut ");
-#line 62 "src/main.vl"
-                    sb_append_str((&(msg)), target->target->str_val);
-#line 63 "src/main.vl"
-                    sb_append_str((&(msg)), "' to allow mutation.");
-#line 64 "src/main.vl"
-                    report_error("semantic", line, col, sb_to_string((&(msg))));
-#line 65 "src/main.vl"
-                    st->error_count += 1;
-                }
+                return true;
             }
         }
     }
+#line 28 "src/main.vl"
+    return false;
 }
 
+#line 32 "src/main.vl"
+bool is_range_endpoint_negative(ExprNode* expr) {
+#line 33 "src/main.vl"
+    if ((expr == NULL)) {
+#line 33 "src/main.vl"
+        return false;
+    }
+#line 34 "src/main.vl"
+    if (((expr->kind == EXPR_UNARY) && (expr->op == TOK_MINUS))) {
+#line 34 "src/main.vl"
+        return true;
+    }
+#line 35 "src/main.vl"
+    if (((expr->kind == EXPR_INT) && (expr->int_val < 0))) {
+#line 35 "src/main.vl"
+        return true;
+    }
+#line 36 "src/main.vl"
+    return false;
+}
+
+#line 41 "src/main.vl"
+const char* unify_loop_range_type(SymbolTable* st, StmtNode* stmt, const char* start_t, const char* end_t) {
+#line 42 "src/main.vl"
+    if (((start_t == NULL) || (end_t == NULL))) {
+#line 42 "src/main.vl"
+        return "i32";
+    }
+#line 43 "src/main.vl"
+    if (((start_t != NULL && end_t != NULL) ? (strcmp(start_t, end_t) == 0) : (start_t == end_t))) {
+#line 43 "src/main.vl"
+        return start_t;
+    }
+#line 46 "src/main.vl"
+    if ((is_signed_int_name(start_t) != is_signed_int_name(end_t))) {
+#line 47 "src/main.vl"
+        StringBuilder msg = create_sb(96);
+#line 48 "src/main.vl"
+        sb_append_str((&(msg)), "Cannot mix ");
+#line 49 "src/main.vl"
+        if (is_signed_int_name(start_t)) {
+#line 50 "src/main.vl"
+            sb_append_str((&(msg)), "signed '");
+#line 51 "src/main.vl"
+            sb_append_str((&(msg)), start_t);
+#line 52 "src/main.vl"
+            sb_append_str((&(msg)), "' and unsigned '");
+#line 53 "src/main.vl"
+            sb_append_str((&(msg)), end_t);
+#line 54 "src/main.vl"
+            sb_append_str((&(msg)), "' in range loop. Use explicit cast 'as ");
+#line 55 "src/main.vl"
+            sb_append_str((&(msg)), end_t);
+#line 56 "src/main.vl"
+            sb_append_str((&(msg)), "'.");
+        } else {
+#line 58 "src/main.vl"
+            sb_append_str((&(msg)), "unsigned '");
+#line 59 "src/main.vl"
+            sb_append_str((&(msg)), start_t);
+#line 60 "src/main.vl"
+            sb_append_str((&(msg)), "' and signed '");
+#line 61 "src/main.vl"
+            sb_append_str((&(msg)), end_t);
+#line 62 "src/main.vl"
+            sb_append_str((&(msg)), "' in range loop. Use explicit cast 'as ");
+#line 63 "src/main.vl"
+            sb_append_str((&(msg)), start_t);
+#line 64 "src/main.vl"
+            sb_append_str((&(msg)), "'.");
+        }
+#line 66 "src/main.vl"
+        report_error("semantic", stmt->line, stmt->col, sb_to_string((&(msg))));
+#line 67 "src/main.vl"
+        st->error_count += 1;
+#line 68 "src/main.vl"
+        return "i32";
+    }
+#line 72 "src/main.vl"
+    if ((is_signed_int_name(start_t) && is_signed_int_name(end_t))) {
 #line 73 "src/main.vl"
-const char* unify_loop_range_type(const char* start_t, const char* end_t) {
+        if ((((start_t != NULL && "i64" != NULL) ? (strcmp(start_t, "i64") == 0) : (start_t == "i64")) || ((end_t != NULL && "i64" != NULL) ? (strcmp(end_t, "i64") == 0) : (end_t == "i64")))) {
+#line 73 "src/main.vl"
+            return "i64";
+        }
 #line 74 "src/main.vl"
-    if ((((start_t != NULL && "u64" != NULL) ? (strcmp(start_t, "u64") == 0) : (start_t == "u64")) || ((end_t != NULL && "u64" != NULL) ? (strcmp(end_t, "u64") == 0) : (end_t == "u64")))) {
+        if ((((start_t != NULL && "isize" != NULL) ? (strcmp(start_t, "isize") == 0) : (start_t == "isize")) || ((end_t != NULL && "isize" != NULL) ? (strcmp(end_t, "isize") == 0) : (end_t == "isize")))) {
 #line 74 "src/main.vl"
-        return "u64";
-    }
+            return "isize";
+        }
 #line 75 "src/main.vl"
-    if ((((start_t != NULL && "i64" != NULL) ? (strcmp(start_t, "i64") == 0) : (start_t == "i64")) || ((end_t != NULL && "i64" != NULL) ? (strcmp(end_t, "i64") == 0) : (end_t == "i64")))) {
+        if ((((start_t != NULL && "i32" != NULL) ? (strcmp(start_t, "i32") == 0) : (start_t == "i32")) || ((end_t != NULL && "i32" != NULL) ? (strcmp(end_t, "i32") == 0) : (end_t == "i32")))) {
 #line 75 "src/main.vl"
-        return "i64";
-    }
+            return "i32";
+        }
 #line 76 "src/main.vl"
-    if ((((start_t != NULL && "usize" != NULL) ? (strcmp(start_t, "usize") == 0) : (start_t == "usize")) || ((end_t != NULL && "usize" != NULL) ? (strcmp(end_t, "usize") == 0) : (end_t == "usize")))) {
+        if ((((start_t != NULL && "i16" != NULL) ? (strcmp(start_t, "i16") == 0) : (start_t == "i16")) || ((end_t != NULL && "i16" != NULL) ? (strcmp(end_t, "i16") == 0) : (end_t == "i16")))) {
 #line 76 "src/main.vl"
-        return "usize";
-    }
+            return "i16";
+        }
 #line 77 "src/main.vl"
-    if ((((start_t != NULL && "u32" != NULL) ? (strcmp(start_t, "u32") == 0) : (start_t == "u32")) || ((end_t != NULL && "u32" != NULL) ? (strcmp(end_t, "u32") == 0) : (end_t == "u32")))) {
-#line 77 "src/main.vl"
-        return "u32";
+        return "i8";
     }
-#line 78 "src/main.vl"
+#line 81 "src/main.vl"
+    if ((is_unsigned_int_name(start_t) && is_unsigned_int_name(end_t))) {
+#line 82 "src/main.vl"
+        if ((((start_t != NULL && "u64" != NULL) ? (strcmp(start_t, "u64") == 0) : (start_t == "u64")) || ((end_t != NULL && "u64" != NULL) ? (strcmp(end_t, "u64") == 0) : (end_t == "u64")))) {
+#line 82 "src/main.vl"
+            return "u64";
+        }
+#line 83 "src/main.vl"
+        if ((((start_t != NULL && "usize" != NULL) ? (strcmp(start_t, "usize") == 0) : (start_t == "usize")) || ((end_t != NULL && "usize" != NULL) ? (strcmp(end_t, "usize") == 0) : (end_t == "usize")))) {
+#line 83 "src/main.vl"
+            return "usize";
+        }
+#line 84 "src/main.vl"
+        if ((((start_t != NULL && "u32" != NULL) ? (strcmp(start_t, "u32") == 0) : (start_t == "u32")) || ((end_t != NULL && "u32" != NULL) ? (strcmp(end_t, "u32") == 0) : (end_t == "u32")))) {
+#line 84 "src/main.vl"
+            return "u32";
+        }
+#line 85 "src/main.vl"
+        if ((((start_t != NULL && "u16" != NULL) ? (strcmp(start_t, "u16") == 0) : (start_t == "u16")) || ((end_t != NULL && "u16" != NULL) ? (strcmp(end_t, "u16") == 0) : (end_t == "u16")))) {
+#line 85 "src/main.vl"
+            return "u16";
+        }
+#line 86 "src/main.vl"
+        return "u8";
+    }
+#line 89 "src/main.vl"
     return "i32";
 }
 
-#line 82 "src/main.vl"
-bool is_range_step_non_positive(ExprNode* expr) {
-#line 83 "src/main.vl"
-    if ((expr == NULL)) {
-#line 83 "src/main.vl"
-        return false;
-    }
-#line 84 "src/main.vl"
-    if (((expr->kind == EXPR_UNARY) && (expr->op == TOK_MINUS))) {
-#line 84 "src/main.vl"
-        return true;
-    }
-#line 85 "src/main.vl"
-    if ((expr->kind == EXPR_INT)) {
-#line 86 "src/main.vl"
-        if ((expr->int_val < 0)) {
-#line 86 "src/main.vl"
-            return true;
-        }
-#line 87 "src/main.vl"
-        if ((expr->int_val == 0)) {
-#line 88 "src/main.vl"
-            if ((expr->str_val == NULL)) {
-#line 88 "src/main.vl"
-                return true;
-            }
-#line 89 "src/main.vl"
-            if ((((((((((expr->str_val != NULL && "0" != NULL) ? (strcmp(expr->str_val, "0") == 0) : (expr->str_val == "0")) || ((expr->str_val != NULL && "0u64" != NULL) ? (strcmp(expr->str_val, "0u64") == 0) : (expr->str_val == "0u64"))) || ((expr->str_val != NULL && "0i64" != NULL) ? (strcmp(expr->str_val, "0i64") == 0) : (expr->str_val == "0i64"))) || ((expr->str_val != NULL && "0i32" != NULL) ? (strcmp(expr->str_val, "0i32") == 0) : (expr->str_val == "0i32"))) || ((expr->str_val != NULL && "0u32" != NULL) ? (strcmp(expr->str_val, "0u32") == 0) : (expr->str_val == "0u32"))) || ((expr->str_val != NULL && "0usize" != NULL) ? (strcmp(expr->str_val, "0usize") == 0) : (expr->str_val == "0usize"))) || ((expr->str_val != NULL && "0x0" != NULL) ? (strcmp(expr->str_val, "0x0") == 0) : (expr->str_val == "0x0"))) || ((expr->str_val != NULL && "0b0" != NULL) ? (strcmp(expr->str_val, "0b0") == 0) : (expr->str_val == "0b0")))) {
-#line 92 "src/main.vl"
-                return true;
-            }
-        }
-    }
-#line 96 "src/main.vl"
-    return false;
-}
-
-#line 100 "src/main.vl"
-bool is_range_endpoint_negative(ExprNode* expr) {
-#line 101 "src/main.vl"
-    if ((expr == NULL)) {
-#line 101 "src/main.vl"
-        return false;
-    }
-#line 102 "src/main.vl"
-    if (((expr->kind == EXPR_UNARY) && (expr->op == TOK_MINUS))) {
-#line 102 "src/main.vl"
-        return true;
-    }
-#line 103 "src/main.vl"
-    if (((expr->kind == EXPR_INT) && (expr->int_val < 0))) {
-#line 103 "src/main.vl"
-        return true;
-    }
-#line 104 "src/main.vl"
-    return false;
-}
-
-#line 108 "src/main.vl"
+#line 93 "src/main.vl"
 const char* check_range_loop(SymbolTable* st, StmtNode* stmt) {
-#line 109 "src/main.vl"
+#line 94 "src/main.vl"
     const char* start_t = infer_expr_type(st, stmt->loop_start);
-#line 110 "src/main.vl"
+#line 95 "src/main.vl"
     const char* end_t = infer_expr_type(st, stmt->loop_end);
-#line 111 "src/main.vl"
-    const char* step_t = "i32";
-#line 112 "src/main.vl"
-    if ((stmt->loop_step != NULL)) {
-#line 112 "src/main.vl"
-        step_t = infer_expr_type(st, stmt->loop_step);
-    }
-#line 114 "src/main.vl"
+#line 97 "src/main.vl"
     if ((!is_int_type(start_t))) {
-#line 115 "src/main.vl"
+#line 98 "src/main.vl"
         if ((((start_t != NULL && "unknown" != NULL) ? (strcmp(start_t, "unknown") != 0) : (start_t != "unknown")) || velo_cmp_eq_u_s(st->error_count, 0))) {
-#line 116 "src/main.vl"
+#line 99 "src/main.vl"
             StringBuilder msg = create_sb(64);
-#line 117 "src/main.vl"
+#line 100 "src/main.vl"
             sb_append_str((&(msg)), "Range loop start endpoint must be an integer type, got '");
-#line 118 "src/main.vl"
+#line 101 "src/main.vl"
             sb_append_str((&(msg)), start_t);
-#line 119 "src/main.vl"
+#line 102 "src/main.vl"
             sb_append_char((&(msg)), '\'');
-#line 120 "src/main.vl"
+#line 103 "src/main.vl"
             report_error("semantic", stmt->loop_start->line, stmt->loop_start->col, sb_to_string((&(msg))));
-#line 121 "src/main.vl"
+#line 104 "src/main.vl"
             st->error_count += 1;
         }
     }
-#line 124 "src/main.vl"
+#line 107 "src/main.vl"
     if ((!is_int_type(end_t))) {
-#line 125 "src/main.vl"
+#line 108 "src/main.vl"
         if ((((end_t != NULL && "unknown" != NULL) ? (strcmp(end_t, "unknown") != 0) : (end_t != "unknown")) || velo_cmp_eq_u_s(st->error_count, 0))) {
-#line 126 "src/main.vl"
+#line 109 "src/main.vl"
             StringBuilder msg = create_sb(64);
-#line 127 "src/main.vl"
+#line 110 "src/main.vl"
             sb_append_str((&(msg)), "Range loop end endpoint must be an integer type, got '");
-#line 128 "src/main.vl"
+#line 111 "src/main.vl"
             sb_append_str((&(msg)), end_t);
-#line 129 "src/main.vl"
+#line 112 "src/main.vl"
             sb_append_char((&(msg)), '\'');
-#line 130 "src/main.vl"
+#line 113 "src/main.vl"
             report_error("semantic", stmt->loop_end->line, stmt->loop_end->col, sb_to_string((&(msg))));
-#line 131 "src/main.vl"
+#line 114 "src/main.vl"
             st->error_count += 1;
         }
     }
+#line 119 "src/main.vl"
+    const char* of_elem = "i32";
+#line 120 "src/main.vl"
+    if ((((start_t != NULL && "u64" != NULL) ? (strcmp(start_t, "u64") == 0) : (start_t == "u64")) || ((end_t != NULL && "u64" != NULL) ? (strcmp(end_t, "u64") == 0) : (end_t == "u64")))) {
+#line 121 "src/main.vl"
+        of_elem = "u64";
+    } else
+#line 122 "src/main.vl"
+    if ((((start_t != NULL && "i64" != NULL) ? (strcmp(start_t, "i64") == 0) : (start_t == "i64")) || ((end_t != NULL && "i64" != NULL) ? (strcmp(end_t, "i64") == 0) : (end_t == "i64")))) {
+#line 123 "src/main.vl"
+        of_elem = "i64";
+    } else
+#line 124 "src/main.vl"
+    if ((((start_t != NULL && "usize" != NULL) ? (strcmp(start_t, "usize") == 0) : (start_t == "usize")) || ((end_t != NULL && "usize" != NULL) ? (strcmp(end_t, "usize") == 0) : (end_t == "usize")))) {
+#line 125 "src/main.vl"
+        of_elem = "usize";
+    } else
+#line 126 "src/main.vl"
+    if ((((start_t != NULL && "u32" != NULL) ? (strcmp(start_t, "u32") == 0) : (start_t == "u32")) || ((end_t != NULL && "u32" != NULL) ? (strcmp(end_t, "u32") == 0) : (end_t == "u32")))) {
+#line 127 "src/main.vl"
+        of_elem = "u32";
+    }
+#line 131 "src/main.vl"
+    if (is_unsigned_int_type(of_elem)) {
+#line 132 "src/main.vl"
+        if (is_range_endpoint_negative(stmt->loop_start)) {
+#line 133 "src/main.vl"
+            StringBuilder msg = create_sb(64);
 #line 134 "src/main.vl"
-    if ((stmt->loop_step != NULL)) {
+            sb_append_str((&(msg)), "Range loop endpoint cannot be negative for unsigned type '");
 #line 135 "src/main.vl"
-        if ((!is_int_type(step_t))) {
+            sb_append_str((&(msg)), of_elem);
 #line 136 "src/main.vl"
-            if ((((step_t != NULL && "unknown" != NULL) ? (strcmp(step_t, "unknown") != 0) : (step_t != "unknown")) || velo_cmp_eq_u_s(st->error_count, 0))) {
+            sb_append_char((&(msg)), '\'');
 #line 137 "src/main.vl"
-                StringBuilder msg = create_sb(64);
+            report_error("semantic", stmt->loop_start->line, stmt->loop_start->col, sb_to_string((&(msg))));
 #line 138 "src/main.vl"
-                sb_append_str((&(msg)), "Range loop step must be an integer type, got '");
-#line 139 "src/main.vl"
-                sb_append_str((&(msg)), step_t);
+            st->error_count += 1;
+        }
 #line 140 "src/main.vl"
-                sb_append_char((&(msg)), '\'');
+        if (is_range_endpoint_negative(stmt->loop_end)) {
 #line 141 "src/main.vl"
-                report_error("semantic", stmt->loop_step->line, stmt->loop_step->col, sb_to_string((&(msg))));
+            StringBuilder msg = create_sb(64);
 #line 142 "src/main.vl"
-                st->error_count += 1;
-            }
-        } else
+            sb_append_str((&(msg)), "Range loop endpoint cannot be negative for unsigned type '");
+#line 143 "src/main.vl"
+            sb_append_str((&(msg)), of_elem);
 #line 144 "src/main.vl"
-        if (is_range_step_non_positive(stmt->loop_step)) {
+            sb_append_char((&(msg)), '\'');
 #line 145 "src/main.vl"
-            report_error("semantic", stmt->loop_step->line, stmt->loop_step->col, "Range loop step must be greater than zero");
+            report_error("semantic", stmt->loop_end->line, stmt->loop_end->col, sb_to_string((&(msg))));
 #line 146 "src/main.vl"
             st->error_count += 1;
         }
     }
-#line 150 "src/main.vl"
-    const char* of_elem = unify_loop_range_type(start_t, end_t);
 #line 151 "src/main.vl"
-    if (is_unsigned_int_type(of_elem)) {
+    bool is_start_lit = (is_unsuffixed_int_literal(stmt->loop_start) || is_unsuffixed_int_expr(stmt->loop_start));
 #line 152 "src/main.vl"
-        if (is_range_endpoint_negative(stmt->loop_start)) {
-#line 153 "src/main.vl"
-            StringBuilder msg = create_sb(64);
+    bool is_end_lit = (is_unsuffixed_int_literal(stmt->loop_end) || is_unsuffixed_int_expr(stmt->loop_end));
 #line 154 "src/main.vl"
-            sb_append_str((&(msg)), "Range loop endpoint cannot be negative for unsigned type '");
+    if ((((!is_start_lit) && (!is_end_lit)) && ((start_t != NULL && end_t != NULL) ? (strcmp(start_t, end_t) != 0) : (start_t != end_t)))) {
 #line 155 "src/main.vl"
-            sb_append_str((&(msg)), of_elem);
+        if ((is_signed_int_name(start_t) != is_signed_int_name(end_t))) {
 #line 156 "src/main.vl"
-            sb_append_char((&(msg)), '\'');
+            StringBuilder msg = create_sb(96);
 #line 157 "src/main.vl"
-            report_error("semantic", stmt->loop_start->line, stmt->loop_start->col, sb_to_string((&(msg))));
+            sb_append_str((&(msg)), "Cannot mix ");
 #line 158 "src/main.vl"
-            st->error_count += 1;
-        }
+            if (is_signed_int_name(start_t)) {
+#line 159 "src/main.vl"
+                sb_append_str((&(msg)), "signed '");
 #line 160 "src/main.vl"
-        if (is_range_endpoint_negative(stmt->loop_end)) {
+                sb_append_str((&(msg)), start_t);
 #line 161 "src/main.vl"
-            StringBuilder msg = create_sb(64);
+                sb_append_str((&(msg)), "' and unsigned '");
 #line 162 "src/main.vl"
-            sb_append_str((&(msg)), "Range loop endpoint cannot be negative for unsigned type '");
+                sb_append_str((&(msg)), end_t);
 #line 163 "src/main.vl"
-            sb_append_str((&(msg)), of_elem);
+                sb_append_str((&(msg)), "' in range loop. Use explicit cast 'as ");
 #line 164 "src/main.vl"
-            sb_append_char((&(msg)), '\'');
+                sb_append_str((&(msg)), end_t);
 #line 165 "src/main.vl"
-            report_error("semantic", stmt->loop_end->line, stmt->loop_end->col, sb_to_string((&(msg))));
-#line 166 "src/main.vl"
+                sb_append_str((&(msg)), "'.");
+            } else {
+#line 167 "src/main.vl"
+                sb_append_str((&(msg)), "unsigned '");
+#line 168 "src/main.vl"
+                sb_append_str((&(msg)), start_t);
+#line 169 "src/main.vl"
+                sb_append_str((&(msg)), "' and signed '");
+#line 170 "src/main.vl"
+                sb_append_str((&(msg)), end_t);
+#line 171 "src/main.vl"
+                sb_append_str((&(msg)), "' in range loop. Use explicit cast 'as ");
+#line 172 "src/main.vl"
+                sb_append_str((&(msg)), start_t);
+#line 173 "src/main.vl"
+                sb_append_str((&(msg)), "'.");
+            }
+#line 175 "src/main.vl"
+            report_error("semantic", stmt->line, stmt->col, sb_to_string((&(msg))));
+#line 176 "src/main.vl"
+            st->error_count += 1;
+#line 177 "src/main.vl"
+            return "i32";
+        }
+    }
+#line 182 "src/main.vl"
+    if ((is_start_lit && (!is_range_endpoint_negative(stmt->loop_start)))) {
+#line 183 "src/main.vl"
+        try_adapt_int_literal(st, of_elem, stmt->loop_start, stmt->loop_start->line, stmt->loop_start->col);
+    }
+#line 185 "src/main.vl"
+    if ((is_end_lit && (!is_range_endpoint_negative(stmt->loop_end)))) {
+#line 186 "src/main.vl"
+        try_adapt_int_literal(st, of_elem, stmt->loop_end, stmt->loop_end->line, stmt->loop_end->col);
+    }
+#line 190 "src/main.vl"
+    if ((stmt->loop_step != NULL)) {
+#line 191 "src/main.vl"
+        if ((is_unsuffixed_int_literal(stmt->loop_step) || is_unsuffixed_int_expr(stmt->loop_step))) {
+#line 192 "src/main.vl"
+            try_adapt_int_literal(st, of_elem, stmt->loop_step, stmt->loop_step->line, stmt->loop_step->col);
+        }
+#line 194 "src/main.vl"
+        const char* step_t = infer_expr_type(st, stmt->loop_step);
+#line 195 "src/main.vl"
+        if ((!is_int_type(step_t))) {
+#line 196 "src/main.vl"
+            if ((((step_t != NULL && "unknown" != NULL) ? (strcmp(step_t, "unknown") != 0) : (step_t != "unknown")) || velo_cmp_eq_u_s(st->error_count, 0))) {
+#line 197 "src/main.vl"
+                StringBuilder msg = create_sb(64);
+#line 198 "src/main.vl"
+                sb_append_str((&(msg)), "Range loop step must be an integer type, got '");
+#line 199 "src/main.vl"
+                sb_append_str((&(msg)), step_t);
+#line 200 "src/main.vl"
+                sb_append_char((&(msg)), '\'');
+#line 201 "src/main.vl"
+                report_error("semantic", stmt->loop_step->line, stmt->loop_step->col, sb_to_string((&(msg))));
+#line 202 "src/main.vl"
+                st->error_count += 1;
+            }
+        } else
+#line 204 "src/main.vl"
+        if (is_range_step_non_positive(stmt->loop_step)) {
+#line 205 "src/main.vl"
+            report_error("semantic", stmt->loop_step->line, stmt->loop_step->col, "Range loop step must be greater than zero");
+#line 206 "src/main.vl"
             st->error_count += 1;
         }
     }
-#line 169 "src/main.vl"
+#line 210 "src/main.vl"
     return of_elem;
 }
 
-#line 173 "src/main.vl"
-void check_statement(SymbolTable* st, const char* expected_ret_type, StmtNode* stmt) {
-#line 174 "src/main.vl"
-    if ((stmt == NULL)) {
-#line 174 "src/main.vl"
+#line 22 "src/main.vl"
+void check_assign_mutability(SymbolTable* st, ExprNode* target, int32_t line, int32_t col) {
+#line 23 "src/main.vl"
+    if ((target == NULL)) {
+#line 23 "src/main.vl"
         return;
     }
-#line 175 "src/main.vl"
+#line 24 "src/main.vl"
+    if ((target->kind == EXPR_IDENT)) {
+#line 25 "src/main.vl"
+        Symbol* sym = resolve_variable(st, target->str_val);
+#line 26 "src/main.vl"
+        if (((sym != NULL) && (!sym->is_mut))) {
+#line 27 "src/main.vl"
+            StringBuilder msg = create_sb(((((usize)strlen(target->str_val)) * 2) + 80));
+#line 28 "src/main.vl"
+            sb_append_str((&(msg)), "cannot assign to immutable variable '");
+#line 29 "src/main.vl"
+            sb_append_str((&(msg)), target->str_val);
+#line 30 "src/main.vl"
+            sb_append_str((&(msg)), "'. Declare with 'mut ");
+#line 31 "src/main.vl"
+            sb_append_str((&(msg)), target->str_val);
+#line 32 "src/main.vl"
+            sb_append_str((&(msg)), "' to allow mutation.");
+#line 33 "src/main.vl"
+            report_error("semantic", line, col, sb_to_string((&(msg))));
+#line 34 "src/main.vl"
+            st->error_count += 1;
+        }
+    } else
+#line 36 "src/main.vl"
+    if ((target->kind == EXPR_MEMBER)) {
+#line 37 "src/main.vl"
+        if (((target->target != NULL) && (target->target->kind == EXPR_IDENT))) {
+#line 38 "src/main.vl"
+            const char* base_type = infer_expr_type(st, target->target);
+#line 39 "src/main.vl"
+            if ((velo_cmp_gt_u_s(((usize)strlen(base_type)), 0) && velo_cmp_ne_u_s(base_type[0], '@'))) {
+#line 40 "src/main.vl"
+                Symbol* sym = resolve_variable(st, target->target->str_val);
+#line 41 "src/main.vl"
+                if (((sym != NULL) && (!sym->is_mut))) {
+#line 42 "src/main.vl"
+                    StringBuilder msg = create_sb(((((usize)strlen(target->target->str_val)) * 2) + 88));
+#line 43 "src/main.vl"
+                    sb_append_str((&(msg)), "cannot assign to field of immutable variable '");
+#line 44 "src/main.vl"
+                    sb_append_str((&(msg)), target->target->str_val);
+#line 45 "src/main.vl"
+                    sb_append_str((&(msg)), "'. Declare with 'mut ");
+#line 46 "src/main.vl"
+                    sb_append_str((&(msg)), target->target->str_val);
+#line 47 "src/main.vl"
+                    sb_append_str((&(msg)), "' to allow mutation.");
+#line 48 "src/main.vl"
+                    report_error("semantic", line, col, sb_to_string((&(msg))));
+#line 49 "src/main.vl"
+                    st->error_count += 1;
+                }
+            }
+        }
+    } else
+#line 53 "src/main.vl"
+    if ((target->kind == EXPR_INDEX)) {
+#line 54 "src/main.vl"
+        if (((target->target != NULL) && (target->target->kind == EXPR_IDENT))) {
+#line 55 "src/main.vl"
+            const char* base_type = infer_expr_type(st, target->target);
+#line 56 "src/main.vl"
+            if ((velo_cmp_gt_u_s(((usize)strlen(base_type)), 0) && velo_cmp_ne_u_s(base_type[0], '@'))) {
+#line 57 "src/main.vl"
+                Symbol* sym = resolve_variable(st, target->target->str_val);
+#line 58 "src/main.vl"
+                if (((sym != NULL) && (!sym->is_mut))) {
+#line 59 "src/main.vl"
+                    StringBuilder msg = create_sb(((((usize)strlen(target->target->str_val)) * 2) + 88));
+#line 60 "src/main.vl"
+                    sb_append_str((&(msg)), "cannot assign to element of immutable variable '");
+#line 61 "src/main.vl"
+                    sb_append_str((&(msg)), target->target->str_val);
+#line 62 "src/main.vl"
+                    sb_append_str((&(msg)), "'. Declare with 'mut ");
+#line 63 "src/main.vl"
+                    sb_append_str((&(msg)), target->target->str_val);
+#line 64 "src/main.vl"
+                    sb_append_str((&(msg)), "' to allow mutation.");
+#line 65 "src/main.vl"
+                    report_error("semantic", line, col, sb_to_string((&(msg))));
+#line 66 "src/main.vl"
+                    st->error_count += 1;
+                }
+            }
+        }
+    }
+}
+
+#line 74 "src/main.vl"
+void check_statement(SymbolTable* st, const char* expected_ret_type, StmtNode* stmt) {
+#line 75 "src/main.vl"
+    if ((stmt == NULL)) {
+#line 75 "src/main.vl"
+        return;
+    }
+#line 76 "src/main.vl"
     if ((stmt->kind == STMT_VAR_DECL)) {
-#line 176 "src/main.vl"
+#line 77 "src/main.vl"
         check_shelf_annotation(st, stmt->type_name, stmt->val_expr, stmt->line, stmt->col);
-#line 177 "src/main.vl"
+#line 78 "src/main.vl"
         check_map_annotation(st, stmt->type_name, stmt->val_expr, stmt->line, stmt->col);
-#line 178 "src/main.vl"
+#line 79 "src/main.vl"
         check_coll9_annotation(st, stmt->type_name, stmt->val_expr, stmt->line, stmt->col);
-#line 179 "src/main.vl"
+#line 80 "src/main.vl"
         if ((stmt->val_expr != NULL)) {
-#line 180 "src/main.vl"
+#line 81 "src/main.vl"
             bool adapt_ok = true;
-#line 181 "src/main.vl"
+#line 82 "src/main.vl"
             if (((stmt->type_name != NULL) && velo_cmp_gt_u_s(((usize)strlen(stmt->type_name)), 0))) {
-#line 182 "src/main.vl"
+#line 83 "src/main.vl"
                 if (((stmt->val_expr->kind == EXPR_VARIANT) && ((stmt->val_expr->type_name == NULL) || velo_cmp_eq_u_s(((usize)strlen(stmt->val_expr->type_name)), 0)))) {
-#line 182 "src/main.vl"
+#line 83 "src/main.vl"
                     stmt->val_expr->type_name = stmt->type_name;
                 }
-#line 183 "src/main.vl"
+#line 84 "src/main.vl"
                 if (((stmt->val_expr->kind == EXPR_ARRAY_LIT) && is_fixed_array_type(stmt->type_name))) {
-#line 184 "src/main.vl"
+#line 85 "src/main.vl"
                     const char* elem_t = fixed_array_elem_type(stmt->type_name);
-#line 185 "src/main.vl"
+#line 86 "src/main.vl"
                     ExprNode* cur_elem = stmt->val_expr->first_arg;
-#line 186 "src/main.vl"
+#line 87 "src/main.vl"
                     for (int32_t it = 0; ((cur_elem != NULL)); it++) {
-#line 187 "src/main.vl"
+#line 88 "src/main.vl"
                         try_adapt_int_literal(st, elem_t, cur_elem, cur_elem->line, cur_elem->col);
-#line 188 "src/main.vl"
+#line 89 "src/main.vl"
                         cur_elem = cur_elem->next;
                     }
                 }
-#line 191 "src/main.vl"
+#line 92 "src/main.vl"
                 adapt_ok = try_adapt_int_literal(st, stmt->type_name, stmt->val_expr, stmt->line, stmt->col);
             }
-#line 193 "src/main.vl"
+#line 94 "src/main.vl"
             const char* val_type = infer_expr_type(st, stmt->val_expr);
-#line 194 "src/main.vl"
+#line 95 "src/main.vl"
             if (((stmt->type_name != NULL) && velo_cmp_gt_u_s(((usize)strlen(stmt->type_name)), 0))) {
-#line 197 "src/main.vl"
+#line 98 "src/main.vl"
                 if (velo_str_eq(strip_pointer_prefix(stmt->type_name), "shelf")) {
-#line 197 "src/main.vl"
+#line 98 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, "a bare 'shelf' needs an element type: use shelf[T]");
-#line 197 "src/main.vl"
+#line 98 "src/main.vl"
                     st->error_count += 1;
                 } else
-#line 198 "src/main.vl"
+#line 99 "src/main.vl"
                 if ((!types_are_compatible(stmt->type_name, val_type))) {
-#line 199 "src/main.vl"
+#line 100 "src/main.vl"
                     if ((!adapt_ok)) {
                     } else
-#line 200 "src/main.vl"
+#line 101 "src/main.vl"
                     if (is_split_retire_pair(stmt->type_name, val_type)) {
-#line 200 "src/main.vl"
+#line 101 "src/main.vl"
                         report_error("semantic", stmt->line, stmt->col, split_retire_message(stmt->type_name));
-#line 200 "src/main.vl"
+#line 101 "src/main.vl"
                         st->error_count += 1;
                     } else
-#line 201 "src/main.vl"
+#line 102 "src/main.vl"
                     if ((is_int_type(stmt->type_name) && is_int_type(val_type))) {
-#line 201 "src/main.vl"
+#line 102 "src/main.vl"
                         report_error("semantic", stmt->line, stmt->col, int_conversion_error_msg(stmt->type_name, val_type));
-#line 201 "src/main.vl"
+#line 102 "src/main.vl"
                         st->error_count += 1;
                     } else
-#line 202 "src/main.vl"
+#line 103 "src/main.vl"
                     if ((is_float_type(stmt->type_name) && is_float_type(val_type))) {
-#line 202 "src/main.vl"
+#line 103 "src/main.vl"
                         report_error("semantic", stmt->line, stmt->col, float_conversion_error_msg(stmt->type_name, val_type));
-#line 202 "src/main.vl"
+#line 103 "src/main.vl"
                         st->error_count += 1;
                     } else {
-#line 203 "src/main.vl"
+#line 104 "src/main.vl"
                         report_error("semantic", stmt->line, stmt->col, "Type mismatch in variable declaration");
-#line 203 "src/main.vl"
+#line 104 "src/main.vl"
                         st->error_count += 1;
                     }
                 }
             } else {
-#line 206 "src/main.vl"
+#line 107 "src/main.vl"
                 stmt->type_name = val_type;
             }
         }
-#line 209 "src/main.vl"
+#line 110 "src/main.vl"
         define_variable(st, stmt->name, stmt->type_name, stmt->is_mut, stmt->line, stmt->col);
-#line 210 "src/main.vl"
+#line 111 "src/main.vl"
         if ((stmt->val_expr != NULL)) {
-#line 211 "src/main.vl"
+#line 112 "src/main.vl"
             check_escape_assign(st, make_ident_expr(stmt->name, stmt->line, stmt->col), stmt->val_expr, stmt->line, stmt->col);
         }
     } else
-#line 213 "src/main.vl"
+#line 114 "src/main.vl"
     if ((stmt->kind == STMT_DESTRUCTURE)) {
-#line 214 "src/main.vl"
+#line 115 "src/main.vl"
         check_destructure_stmt(st, stmt);
     } else
-#line 215 "src/main.vl"
+#line 116 "src/main.vl"
     if ((stmt->kind == STMT_ASSIGN)) {
-#line 216 "src/main.vl"
+#line 117 "src/main.vl"
         if ((((stmt->expr != NULL) && (stmt->expr->kind == EXPR_INDEX)) && is_map_type(infer_expr_type(st, stmt->expr->target)))) {
-#line 217 "src/main.vl"
+#line 118 "src/main.vl"
             check_map_assign(st, stmt);
-#line 217 "src/main.vl"
+#line 118 "src/main.vl"
             infer_expr_type(st, stmt->val_expr);
         } else
-#line 218 "src/main.vl"
+#line 119 "src/main.vl"
         if ((((stmt->expr != NULL) && (stmt->expr->kind == EXPR_INDEX)) && is_shelf_type(infer_expr_type(st, stmt->expr->target)))) {
-#line 218 "src/main.vl"
+#line 119 "src/main.vl"
             check_shelf_assign(st, stmt);
-#line 218 "src/main.vl"
+#line 119 "src/main.vl"
             infer_expr_type(st, stmt->val_expr);
         } else {
-#line 219 "src/main.vl"
+#line 120 "src/main.vl"
             check_assign_mutability(st, stmt->expr, stmt->line, stmt->col);
-#line 220 "src/main.vl"
+#line 121 "src/main.vl"
             check_escape_assign(st, stmt->expr, stmt->val_expr, stmt->line, stmt->col);
-#line 221 "src/main.vl"
+#line 122 "src/main.vl"
             const char* target_type = infer_expr_type(st, stmt->expr);
-#line 222 "src/main.vl"
+#line 123 "src/main.vl"
             if (((stmt->val_expr->kind == EXPR_VARIANT) && ((stmt->val_expr->type_name == NULL) || velo_cmp_eq_u_s(((usize)strlen(stmt->val_expr->type_name)), 0)))) {
-#line 223 "src/main.vl"
+#line 124 "src/main.vl"
                 stmt->val_expr->type_name = target_type;
             }
-#line 225 "src/main.vl"
+#line 126 "src/main.vl"
             if (((stmt->val_expr->kind == EXPR_ARRAY_LIT) && is_fixed_array_type(target_type))) {
-#line 226 "src/main.vl"
+#line 127 "src/main.vl"
                 const char* elem_t = fixed_array_elem_type(target_type);
-#line 227 "src/main.vl"
+#line 128 "src/main.vl"
                 ExprNode* cur_elem = stmt->val_expr->first_arg;
-#line 228 "src/main.vl"
+#line 129 "src/main.vl"
                 for (int32_t it = 0; ((cur_elem != NULL)); it++) {
-#line 229 "src/main.vl"
+#line 130 "src/main.vl"
                     try_adapt_int_literal(st, elem_t, cur_elem, cur_elem->line, cur_elem->col);
-#line 230 "src/main.vl"
+#line 131 "src/main.vl"
                     cur_elem = cur_elem->next;
                 }
             }
-#line 233 "src/main.vl"
+#line 134 "src/main.vl"
             bool adapt_ok = try_adapt_int_literal(st, target_type, stmt->val_expr, stmt->line, stmt->col);
-#line 234 "src/main.vl"
+#line 135 "src/main.vl"
             const char* val_type = infer_expr_type(st, stmt->val_expr);
-#line 235 "src/main.vl"
+#line 136 "src/main.vl"
             int32_t base_op = get_base_assign_op(stmt->op);
-#line 236 "src/main.vl"
+#line 137 "src/main.vl"
             bool is_valid = types_are_compatible(target_type, val_type);
-#line 237 "src/main.vl"
+#line 138 "src/main.vl"
             if (((!is_valid) && (base_op != 0))) {
-#line 238 "src/main.vl"
+#line 139 "src/main.vl"
                 FunctionSym* op_fn = find_binary_op(st, base_op, target_type, val_type);
-#line 239 "src/main.vl"
+#line 140 "src/main.vl"
                 if (((op_fn != NULL) && types_are_compatible(target_type, op_fn->return_type))) {
-#line 239 "src/main.vl"
+#line 140 "src/main.vl"
                     is_valid = true;
                 }
             }
-#line 241 "src/main.vl"
+#line 142 "src/main.vl"
             if ((!is_valid)) {
-#line 242 "src/main.vl"
+#line 143 "src/main.vl"
                 if ((!adapt_ok)) {
                 } else
-#line 243 "src/main.vl"
+#line 144 "src/main.vl"
                 if (is_split_retire_pair(target_type, val_type)) {
-#line 243 "src/main.vl"
+#line 144 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, split_retire_message(target_type));
-#line 243 "src/main.vl"
+#line 144 "src/main.vl"
                     st->error_count += 1;
                 } else
-#line 244 "src/main.vl"
+#line 145 "src/main.vl"
                 if ((is_int_type(target_type) && is_int_type(val_type))) {
-#line 244 "src/main.vl"
+#line 145 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, int_conversion_error_msg(target_type, val_type));
-#line 244 "src/main.vl"
+#line 145 "src/main.vl"
                     st->error_count += 1;
                 } else
-#line 245 "src/main.vl"
+#line 146 "src/main.vl"
                 if ((is_float_type(target_type) && is_float_type(val_type))) {
-#line 245 "src/main.vl"
+#line 146 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, float_conversion_error_msg(target_type, val_type));
-#line 245 "src/main.vl"
+#line 146 "src/main.vl"
                     st->error_count += 1;
                 } else {
-#line 246 "src/main.vl"
+#line 147 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, "Type mismatch in assignment");
-#line 246 "src/main.vl"
+#line 147 "src/main.vl"
                     st->error_count += 1;
                 }
             }
         }
     } else
-#line 249 "src/main.vl"
+#line 150 "src/main.vl"
     if ((stmt->kind == STMT_IF)) {
-#line 250 "src/main.vl"
+#line 151 "src/main.vl"
         infer_expr_type(st, stmt->expr);
-#line 251 "src/main.vl"
+#line 152 "src/main.vl"
         enter_scope(st);
-#line 252 "src/main.vl"
+#line 153 "src/main.vl"
         apply_flow_narrowing(st, stmt->expr, true);
-#line 253 "src/main.vl"
+#line 154 "src/main.vl"
         check_statement(st, expected_ret_type, stmt->body);
-#line 254 "src/main.vl"
+#line 155 "src/main.vl"
         exit_scope(st);
-#line 255 "src/main.vl"
+#line 156 "src/main.vl"
         if ((stmt->else_branch != NULL)) {
-#line 256 "src/main.vl"
+#line 157 "src/main.vl"
             enter_scope(st);
-#line 257 "src/main.vl"
+#line 158 "src/main.vl"
             apply_flow_narrowing(st, stmt->expr, false);
-#line 258 "src/main.vl"
+#line 159 "src/main.vl"
             check_statement(st, expected_ret_type, stmt->else_branch);
-#line 259 "src/main.vl"
+#line 160 "src/main.vl"
             exit_scope(st);
         }
     } else
-#line 261 "src/main.vl"
+#line 162 "src/main.vl"
     if ((stmt->kind == STMT_LOOP)) {
-#line 263 "src/main.vl"
+#line 164 "src/main.vl"
         const char* of_elem = "i32";
-#line 264 "src/main.vl"
+#line 165 "src/main.vl"
         if (stmt->is_of) {
-#line 265 "src/main.vl"
+#line 166 "src/main.vl"
             of_elem = check_map_loop_source(st, stmt);
         } else
-#line 266 "src/main.vl"
+#line 167 "src/main.vl"
         if ((stmt->loop_start != NULL)) {
-#line 267 "src/main.vl"
+#line 168 "src/main.vl"
             of_elem = check_range_loop(st, stmt);
         } else
-#line 268 "src/main.vl"
+#line 169 "src/main.vl"
         if ((stmt->expr != NULL)) {
-#line 269 "src/main.vl"
+#line 170 "src/main.vl"
             const char* expr_t = infer_expr_type(st, stmt->expr);
-#line 270 "src/main.vl"
+#line 171 "src/main.vl"
             if (is_int_type(expr_t)) {
-#line 271 "src/main.vl"
+#line 172 "src/main.vl"
                 stmt->is_count = true;
-#line 272 "src/main.vl"
+#line 173 "src/main.vl"
                 of_elem = expr_t;
             } else
-#line 273 "src/main.vl"
+#line 174 "src/main.vl"
             if (((expr_t != NULL && "bool" != NULL) ? (strcmp(expr_t, "bool") == 0) : (expr_t == "bool"))) {
-#line 274 "src/main.vl"
+#line 175 "src/main.vl"
                 stmt->is_count = false;
-#line 275 "src/main.vl"
+#line 176 "src/main.vl"
                 of_elem = "i32";
             } else {
-#line 277 "src/main.vl"
+#line 178 "src/main.vl"
                 if ((((expr_t != NULL && "unknown" != NULL) ? (strcmp(expr_t, "unknown") != 0) : (expr_t != "unknown")) || velo_cmp_eq_u_s(st->error_count, 0))) {
-#line 278 "src/main.vl"
+#line 179 "src/main.vl"
                     StringBuilder msg = create_sb(64);
-#line 279 "src/main.vl"
+#line 180 "src/main.vl"
                     sb_append_str((&(msg)), "Loop expression must be an integer (count) or 'bool' (condition), got '");
-#line 280 "src/main.vl"
+#line 181 "src/main.vl"
                     sb_append_str((&(msg)), expr_t);
-#line 281 "src/main.vl"
+#line 182 "src/main.vl"
                     sb_append_char((&(msg)), '\'');
-#line 282 "src/main.vl"
+#line 183 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, sb_to_string((&(msg))));
-#line 283 "src/main.vl"
+#line 184 "src/main.vl"
                     st->error_count += 1;
                 }
             }
         }
-#line 287 "src/main.vl"
+#line 188 "src/main.vl"
         stmt->type_name = of_elem;
-#line 288 "src/main.vl"
+#line 189 "src/main.vl"
         enter_scope(st);
-#line 289 "src/main.vl"
+#line 190 "src/main.vl"
         const char* vname = "it";
-#line 290 "src/main.vl"
+#line 191 "src/main.vl"
         if (((stmt->loop_var != NULL) && velo_cmp_gt_u_s(((usize)strlen(stmt->loop_var)), 0))) {
-#line 290 "src/main.vl"
+#line 191 "src/main.vl"
             vname = stmt->loop_var;
         }
-#line 291 "src/main.vl"
+#line 192 "src/main.vl"
         define_variable(st, vname, of_elem, false, stmt->line, stmt->col);
-#line 292 "src/main.vl"
+#line 193 "src/main.vl"
         if (((stmt->loop_index != NULL) && velo_cmp_gt_u_s(((usize)strlen(stmt->loop_index)), 0))) {
-#line 292 "src/main.vl"
+#line 193 "src/main.vl"
             define_variable(st, stmt->loop_index, "usize", false, stmt->line, stmt->col);
         }
-#line 293 "src/main.vl"
+#line 194 "src/main.vl"
         check_statement(st, expected_ret_type, stmt->body);
-#line 294 "src/main.vl"
+#line 195 "src/main.vl"
         exit_scope(st);
     } else
-#line 295 "src/main.vl"
+#line 196 "src/main.vl"
     if ((stmt->kind == STMT_ZONE)) {
-#line 296 "src/main.vl"
+#line 197 "src/main.vl"
         if ((stmt->expr != NULL)) {
-#line 296 "src/main.vl"
+#line 197 "src/main.vl"
             infer_expr_type(st, stmt->expr);
         }
-#line 297 "src/main.vl"
+#line 198 "src/main.vl"
         st->current_zone_depth += 1;
-#line 298 "src/main.vl"
+#line 199 "src/main.vl"
         check_statement(st, expected_ret_type, stmt->body);
-#line 299 "src/main.vl"
+#line 200 "src/main.vl"
         st->current_zone_depth -= 1;
     } else
-#line 300 "src/main.vl"
+#line 201 "src/main.vl"
     if ((stmt->kind == STMT_DEFER)) {
-#line 300 "src/main.vl"
+#line 201 "src/main.vl"
         check_statement(st, expected_ret_type, stmt->deferred_stmt);
     } else
-#line 301 "src/main.vl"
+#line 202 "src/main.vl"
     if ((stmt->kind == STMT_RETURN)) {
-#line 302 "src/main.vl"
+#line 203 "src/main.vl"
         if ((stmt->val_expr != NULL)) {
-#line 303 "src/main.vl"
+#line 204 "src/main.vl"
             check_escape_return(st, stmt->val_expr, expected_ret_type, stmt->line, stmt->col);
-#line 304 "src/main.vl"
+#line 205 "src/main.vl"
             pin_empty_shelf_return(st, stmt->val_expr, expected_ret_type);
-#line 305 "src/main.vl"
+#line 206 "src/main.vl"
             pin_empty_map_return(st, stmt->val_expr, expected_ret_type);
-#line 306 "src/main.vl"
+#line 207 "src/main.vl"
             if (((stmt->val_expr->kind == EXPR_VARIANT) && ((stmt->val_expr->type_name == NULL) || velo_cmp_eq_u_s(((usize)strlen(stmt->val_expr->type_name)), 0)))) {
-#line 307 "src/main.vl"
+#line 208 "src/main.vl"
                 stmt->val_expr->type_name = expected_ret_type;
             }
-#line 309 "src/main.vl"
+#line 210 "src/main.vl"
             const char* expected = expected_ret_type;
-#line 310 "src/main.vl"
+#line 211 "src/main.vl"
             if (is_or_type(expected_ret_type)) {
-#line 310 "src/main.vl"
+#line 211 "src/main.vl"
                 expected = or_type_success(expected_ret_type);
             }
-#line 311 "src/main.vl"
+#line 212 "src/main.vl"
             bool adapt_ok = try_adapt_int_literal(st, expected, stmt->val_expr, stmt->line, stmt->col);
-#line 312 "src/main.vl"
+#line 213 "src/main.vl"
             const char* ret_type = infer_expr_type(st, stmt->val_expr);
-#line 313 "src/main.vl"
+#line 214 "src/main.vl"
             if (((!types_are_compatible(expected, ret_type)) && (!types_are_compatible(expected_ret_type, ret_type)))) {
-#line 314 "src/main.vl"
+#line 215 "src/main.vl"
                 if ((!adapt_ok)) {
                 } else
-#line 315 "src/main.vl"
+#line 216 "src/main.vl"
                 if ((is_int_type(expected) && is_int_type(ret_type))) {
-#line 315 "src/main.vl"
+#line 216 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, int_conversion_error_msg(expected, ret_type));
-#line 315 "src/main.vl"
+#line 216 "src/main.vl"
                     st->error_count += 1;
                 } else
-#line 316 "src/main.vl"
+#line 217 "src/main.vl"
                 if ((is_float_type(expected) && is_float_type(ret_type))) {
-#line 316 "src/main.vl"
+#line 217 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, float_conversion_error_msg(expected, ret_type));
-#line 316 "src/main.vl"
+#line 217 "src/main.vl"
                     st->error_count += 1;
                 } else {
-#line 317 "src/main.vl"
+#line 218 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, "Return type mismatch");
-#line 317 "src/main.vl"
+#line 218 "src/main.vl"
                     st->error_count += 1;
                 }
             }
         } else
-#line 319 "src/main.vl"
+#line 220 "src/main.vl"
         if ((((expected_ret_type != NULL) && ((expected_ret_type != NULL && "void" != NULL) ? (strcmp(expected_ret_type, "void") != 0) : (expected_ret_type != "void"))) && velo_cmp_gt_u_s(((usize)strlen(expected_ret_type)), 0))) {
-#line 320 "src/main.vl"
+#line 221 "src/main.vl"
             if (((!is_or_type(expected_ret_type)) || velo_str_neq(or_type_success(expected_ret_type), "void"))) {
-#line 321 "src/main.vl"
+#line 222 "src/main.vl"
                 report_error("semantic", stmt->line, stmt->col, "A function returning a value must return an expression");
-#line 322 "src/main.vl"
+#line 223 "src/main.vl"
                 st->error_count += 1;
             }
         }
     } else
-#line 325 "src/main.vl"
+#line 226 "src/main.vl"
     if ((stmt->kind == STMT_FAIL)) {
-#line 326 "src/main.vl"
+#line 227 "src/main.vl"
         if ((!is_or_type(expected_ret_type))) {
-#line 327 "src/main.vl"
+#line 228 "src/main.vl"
             report_error("semantic", stmt->line, stmt->col, "'fail' can only be used in a function returning an 'or' type");
-#line 328 "src/main.vl"
+#line 229 "src/main.vl"
             st->error_count += 1;
         } else
-#line 329 "src/main.vl"
+#line 230 "src/main.vl"
         if ((stmt->val_expr != NULL)) {
-#line 330 "src/main.vl"
+#line 231 "src/main.vl"
             check_escape_fail(st, stmt->val_expr, expected_ret_type, stmt->line, stmt->col);
-#line 331 "src/main.vl"
+#line 232 "src/main.vl"
             const char* err_t = or_type_error(expected_ret_type);
-#line 332 "src/main.vl"
+#line 233 "src/main.vl"
             try_adapt_int_literal(st, err_t, stmt->val_expr, stmt->line, stmt->col);
-#line 333 "src/main.vl"
+#line 234 "src/main.vl"
             const char* val_t = infer_expr_type(st, stmt->val_expr);
-#line 334 "src/main.vl"
+#line 235 "src/main.vl"
             if ((!types_are_compatible(err_t, val_t))) {
-#line 335 "src/main.vl"
+#line 236 "src/main.vl"
                 if ((is_int_type(err_t) && is_int_type(val_t))) {
-#line 335 "src/main.vl"
+#line 236 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, int_conversion_error_msg(err_t, val_t));
-#line 335 "src/main.vl"
+#line 236 "src/main.vl"
                     st->error_count += 1;
                 } else {
-#line 336 "src/main.vl"
+#line 237 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, "Fail payload type mismatch");
-#line 336 "src/main.vl"
+#line 237 "src/main.vl"
                     st->error_count += 1;
                 }
             }
         } else {
-#line 339 "src/main.vl"
+#line 240 "src/main.vl"
             report_error("semantic", stmt->line, stmt->col, "'fail' statement requires an error value");
-#line 340 "src/main.vl"
+#line 241 "src/main.vl"
             st->error_count += 1;
         }
     } else
-#line 342 "src/main.vl"
+#line 243 "src/main.vl"
     if (((stmt->kind == STMT_BREAK) || (stmt->kind == STMT_CONTINUE))) {
-#line 343 "src/main.vl"
+#line 244 "src/main.vl"
         return;
     } else
-#line 344 "src/main.vl"
+#line 245 "src/main.vl"
     if ((stmt->kind == STMT_MATCH)) {
-#line 345 "src/main.vl"
+#line 246 "src/main.vl"
         const char* m_type = infer_expr_type(st, stmt->expr);
-#line 345 "src/main.vl"
+#line 246 "src/main.vl"
         stmt->type_name = m_type;
-#line 345 "src/main.vl"
+#line 246 "src/main.vl"
         KindSym* k_sym = find_kind(st, m_type);
-#line 345 "src/main.vl"
+#line 246 "src/main.vl"
         CaseNode* cur_case = stmt->first_case;
-#line 346 "src/main.vl"
+#line 247 "src/main.vl"
         for (int32_t it = 0; ((cur_case != NULL)); it++) {
-#line 347 "src/main.vl"
+#line 248 "src/main.vl"
             enter_scope(st);
-#line 347 "src/main.vl"
+#line 248 "src/main.vl"
             ExprNode* val = cur_case->first_val;
-#line 348 "src/main.vl"
+#line 249 "src/main.vl"
             for (int32_t it = 0; ((val != NULL)); it++) {
-#line 349 "src/main.vl"
+#line 250 "src/main.vl"
                 if (((val->kind == EXPR_VARIANT) && ((val->type_name == NULL) || velo_cmp_eq_u_s(((usize)strlen(val->type_name)), 0)))) {
-#line 349 "src/main.vl"
+#line 250 "src/main.vl"
                     val->type_name = m_type;
                 }
-#line 350 "src/main.vl"
+#line 251 "src/main.vl"
                 const char* val_t = infer_expr_type(st, val);
-#line 351 "src/main.vl"
+#line 252 "src/main.vl"
                 if ((((((m_type != NULL && "unknown" != NULL) ? (strcmp(m_type, "unknown") != 0) : (m_type != "unknown")) && ((val_t != NULL && "unknown" != NULL) ? (strcmp(val_t, "unknown") != 0) : (val_t != "unknown"))) && (!types_are_compatible(m_type, val_t))) && (!types_are_compatible(val_t, m_type)))) {
-#line 352 "src/main.vl"
+#line 253 "src/main.vl"
                     report_error("semantic", val->line, val->col, "Pattern type does not match subject type in 'on' statement");
-#line 353 "src/main.vl"
+#line 254 "src/main.vl"
                     st->error_count += 1;
                 }
-#line 355 "src/main.vl"
+#line 256 "src/main.vl"
                 if (((k_sym != NULL) && (val->kind == EXPR_VARIANT))) {
-#line 356 "src/main.vl"
+#line 257 "src/main.vl"
                     VariantSym* v_sym = find_variant(k_sym, val->member_name);
-#line 357 "src/main.vl"
+#line 258 "src/main.vl"
                     if ((v_sym != NULL)) {
-#line 358 "src/main.vl"
+#line 259 "src/main.vl"
                         if (velo_cmp_gt_u_s(v_sym->field_count, 0)) {
-#line 359 "src/main.vl"
+#line 260 "src/main.vl"
                             ExprNode* cur_b = val->first_arg;
-#line 359 "src/main.vl"
+#line 260 "src/main.vl"
                             StructFieldSym* cur_f = v_sym->first_field;
-#line 360 "src/main.vl"
+#line 261 "src/main.vl"
                             for (int32_t it = 0; (((cur_b != NULL) && (cur_f != NULL))); it++) {
-#line 361 "src/main.vl"
+#line 262 "src/main.vl"
                                 if ((cur_b->kind == EXPR_IDENT)) {
-#line 361 "src/main.vl"
+#line 262 "src/main.vl"
                                     define_variable(st, cur_b->str_val, cur_f->type_name, false, cur_b->line, cur_b->col);
                                 }
-#line 362 "src/main.vl"
+#line 263 "src/main.vl"
                                 cur_b = cur_b->next;
-#line 362 "src/main.vl"
+#line 263 "src/main.vl"
                                 cur_f = cur_f->next;
                             }
                         } else
-#line 364 "src/main.vl"
+#line 265 "src/main.vl"
                         if (((v_sym->payload_type != NULL) && (val->first_arg != NULL))) {
-#line 365 "src/main.vl"
+#line 266 "src/main.vl"
                             if ((val->first_arg->kind == EXPR_IDENT)) {
-#line 365 "src/main.vl"
+#line 266 "src/main.vl"
                                 define_variable(st, val->first_arg->str_val, v_sym->payload_type, false, val->first_arg->line, val->first_arg->col);
                             }
                         }
                     }
                 }
-#line 369 "src/main.vl"
+#line 270 "src/main.vl"
                 val = val->next;
             }
-#line 371 "src/main.vl"
+#line 272 "src/main.vl"
             if (((((((m_type != NULL && "?string" != NULL) ? (strcmp(m_type, "?string") == 0) : (m_type == "?string")) || is_optional_type(m_type)) && (!cur_case->is_default)) && (cur_case->first_val != NULL)) && (cur_case->first_val->kind != EXPR_NULL))) {
-#line 372 "src/main.vl"
+#line 273 "src/main.vl"
                 if ((stmt->expr->kind == EXPR_IDENT)) {
-#line 373 "src/main.vl"
+#line 274 "src/main.vl"
                     narrow_variable(st, stmt->expr->str_val, optional_inner_type(m_type), m_type);
                 }
             }
-#line 376 "src/main.vl"
+#line 277 "src/main.vl"
             if ((cur_case->body != NULL)) {
-#line 376 "src/main.vl"
+#line 277 "src/main.vl"
                 check_statement(st, expected_ret_type, cur_case->body);
             }
-#line 377 "src/main.vl"
+#line 278 "src/main.vl"
             exit_scope(st);
-#line 377 "src/main.vl"
+#line 278 "src/main.vl"
             cur_case = cur_case->next;
         }
     } else
-#line 379 "src/main.vl"
+#line 280 "src/main.vl"
     if ((stmt->kind == STMT_BLOCK)) {
-#line 380 "src/main.vl"
+#line 281 "src/main.vl"
         enter_scope(st);
-#line 380 "src/main.vl"
+#line 281 "src/main.vl"
         StmtNode* cur = stmt->first_stmt;
-#line 381 "src/main.vl"
+#line 282 "src/main.vl"
         for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 382 "src/main.vl"
+#line 283 "src/main.vl"
             check_statement(st, expected_ret_type, cur);
-#line 383 "src/main.vl"
+#line 284 "src/main.vl"
             if ((((cur->kind == STMT_IF) && (cur->else_branch == NULL)) && stmt_unconditionally_exits(cur->body))) {
-#line 384 "src/main.vl"
+#line 285 "src/main.vl"
                 apply_flow_narrowing(st, cur->expr, false);
             }
-#line 386 "src/main.vl"
+#line 287 "src/main.vl"
             cur = cur->next;
         }
-#line 388 "src/main.vl"
+#line 289 "src/main.vl"
         exit_scope(st);
     } else
-#line 389 "src/main.vl"
+#line 290 "src/main.vl"
     if ((stmt->kind == STMT_UNSAFE)) {
-#line 390 "src/main.vl"
+#line 291 "src/main.vl"
         st->current_unsafe_depth += 1;
-#line 391 "src/main.vl"
+#line 292 "src/main.vl"
         check_statement(st, expected_ret_type, stmt->body);
-#line 392 "src/main.vl"
+#line 293 "src/main.vl"
         st->current_unsafe_depth -= 1;
     } else
-#line 393 "src/main.vl"
+#line 294 "src/main.vl"
     if ((stmt->kind == STMT_EXPR)) {
-#line 393 "src/main.vl"
+#line 294 "src/main.vl"
         infer_expr_type(st, stmt->expr);
     }
 }
