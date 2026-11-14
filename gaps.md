@@ -1371,12 +1371,42 @@ The documented "Smart Reverse Auto-Countdown" (`docs/SPECIFICATION.md:688-693`) 
   - Rebuilt 3-generation self-hosting bootstrap compiler chain and confirmed SHA-256 fixed-point determinism (`a4b3bf5d02e5e4bcf3f4ff33fb64940bba28c144850483e91a27933b33ff6cae`).
   - Verified line count standards across all 119 compiler source files in `src/` (all <= 395 lines, ceiling 400).
 
-##### Task 56.6: Add emitted-C and runtime assertions
-* **Goal:** Verify the generated C contains a direction branch and the correct comparison.
-* **Files:** `tests/test_dynamic_ranges.py`.
-* **Tests:** `emit-c` inspection; runtime iteration counts.
-* **Security gate:** no undefined behavior; no infinite loop.
-* **Done when:** emitted C and runtime agree for all matrix rows.
+##### Task 56.6: Add emitted-C and runtime assertions [COMPLETED] ✅
+* **Former Defect**:
+  - While individual test cases existed for dynamic range execution, there was no comprehensive parameterized cross-verification matrix ensuring that emitted C code structure and compiled runtime execution strictly agree across all boundary conditions.
+  - Specifically, emitted C temporary hoisting (`__start_v`, `__end_v`, `__step_v`), runtime direction selection (`__rev_v = (__start_v > __end_v)`), ternary relational comparison (`__rev_v ? (v >[=] __end_v) : (v <[=] __end_v)`), and ternary step increment (`__rev_v ? (v -= step / v--) : (v += step / v++)`) lacked joint automated assertions against exact runtime iteration counts, first/last elements, and total summation across the entire mathematical domain.
+* **Fix Applied**:
+  - Added Section 11 to `tests/test_dynamic_ranges.py` with 33 comprehensive matrix cross-verification tests:
+    * Parameterized matrix `test_matrix_emitted_c_and_runtime_dynamic_ranges` (14 rows):
+      - Ascending exclusive (`0..5` -> 5 iters, [0..4], sum 10; `__rev_i ? (i > __end_i) : (i < __end_i)`, `i++`)
+      - Ascending inclusive (`0..=5` -> 6 iters, [0..5], sum 15; `__rev_i ? (i >= __end_i) : (i <= __end_i)`, `i++`)
+      - Descending exclusive (`5..0` -> 5 iters, [5..1], sum 15; `__rev_i ? (i > __end_i) : (i < __end_i)`, `i--`)
+      - Descending inclusive (`5..=0` -> 6 iters, [5..0], sum 15; `__rev_i ? (i >= __end_i) : (i <= __end_i)`, `i--`)
+      - Equal endpoints exclusive (`5..5` -> 0 iters, sum 0)
+      - Equal endpoints inclusive (`5..=5` -> 1 iter, [5], sum 5)
+      - Negative bounds ascending (`-5..0` exclusive -> 5 iters, sum -15; `-5..=0` inclusive -> 6 iters, sum -15)
+      - Negative bounds descending (`0..-5` exclusive -> 5 iters, sum -10; `0..=-5` inclusive -> 6 iters, sum -15)
+      - Sign-crossing descending (`3..-3` exclusive -> 6 iters, sum 3; `3..=-3` inclusive -> 7 iters, sum 0)
+      - Sign-crossing ascending (`-3..3` exclusive -> 6 iters, sum -3; `-3..=3` inclusive -> 7 iters, sum 0)
+    * Parameterized matrix `test_matrix_emitted_c_and_runtime_stepped_dynamic_ranges` (16 rows):
+      - Ascending and descending divisible steps (`0..10:2` -> 5 iters, `0..=10:2` -> 6 iters, `10..0:2` -> 5 iters, `10..=0:2` -> 6 iters)
+      - Exact boundary stepped ranges (`0..9:3` -> 3 iters, `0..=9:3` -> 4 iters, `9..0:3` -> 3 iters, `9..=0:3` -> 4 iters)
+      - Non-divisible steps (`0..10:3` -> 4 iters, `0..=10:3` -> 4 iters, `10..0:3` -> 4 iters, `10..=0:3` -> 4 iters)
+      - Stepped equal endpoints (`10..10:2` -> 0 iters, `10..=10:2` -> 1 iter)
+      - Negative bounds stepped (`-10..0:3` -> 4 iters, `0..-10:3` -> 4 iters)
+      - Emitted C assertions for `__step_i = (s)` and `__rev_i ? (i -= __step_i) : (i += __step_i)`
+    * Wide integer types emitted C and runtime validation:
+      - `test_matrix_emitted_c_and_runtime_wide_i64` (`int64_t` temporaries, 5 iters)
+      - `test_matrix_emitted_c_and_runtime_wide_u64` (`uint64_t` temporaries, 5 iters)
+      - `test_matrix_emitted_c_and_runtime_wide_usize_stepped` (`size_t` temporaries and step, 5 iters)
+    * Verified 100% agreement between emitted C syntax trees and compiled machine code behavior without timeout, infinite loop, or undefined behavior.
+* **Residual Limitation**:
+  - Security and negative gate validation (type mismatch rejection, float/string/struct endpoint errors, zero-step detection) follows in Task 56.7.
+* **Verification**:
+  - `pytest tests/test_dynamic_ranges.py`: 83/83 tests passing (including 33 matrix rows) in 23.09s.
+  - All loop test suites: 252 tests passing (`test_dynamic_ranges.py`, `test_range_loops.py`, `test_large_ranges.py`, `test_count_loops.py`) in 55.18s.
+  - SHA-256 fixed-point determinism verified (`a4b3bf5d02e5e4bcf3f4ff33fb64940bba28c144850483e91a27933b33ff6cae`).
+  - Line count standard maintained: all 119 compiler source files in `src/` <= 395 lines (ceiling 400).
 
 ##### Task 56.7: Add the security/negative gate
 * **Goal:** Ensure invalid dynamic ranges fail closed.

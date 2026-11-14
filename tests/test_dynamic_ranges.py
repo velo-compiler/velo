@@ -1118,5 +1118,258 @@ act main() -> i32 {
     assert res.returncode == 0
 
 
+# ==============================================================================
+# 11. Emitted-C and Runtime Matrix Cross-Verification (Task 56.6)
+# ==============================================================================
+
+@pytest.mark.parametrize(
+    "start,end,inclusive,expected_iters,expected_first,expected_last,expected_sum",
+    [
+        # Ascending exclusive / inclusive
+        (0, 5, False, 5, 0, 4, 10),
+        (0, 5, True, 6, 0, 5, 15),
+        # Descending exclusive / inclusive
+        (5, 0, False, 5, 5, 1, 15),
+        (5, 0, True, 6, 5, 0, 15),
+        # Equal endpoints
+        (5, 5, False, 0, None, None, 0),
+        (5, 5, True, 1, 5, 5, 5),
+        # Negative bounds ascending
+        (-5, 0, False, 5, -5, -1, -15),
+        (-5, 0, True, 6, -5, 0, -15),
+        # Negative bounds descending
+        (0, -5, False, 5, 0, -4, -10),
+        (0, -5, True, 6, 0, -5, -15),
+        # Sign-crossing descending
+        (3, -3, False, 6, 3, -2, 3),
+        (3, -3, True, 7, 3, -3, 0),
+        # Sign-crossing ascending
+        (-3, 3, False, 6, -3, 2, -3),
+        (-3, 3, True, 7, -3, 3, 0),
+    ]
+)
+def test_matrix_emitted_c_and_runtime_dynamic_ranges(
+    start, end, inclusive, expected_iters, expected_first, expected_last, expected_sum
+):
+    """Matrix row cross-verification: checks emitted C structure and runtime execution."""
+    op = "..=" if inclusive else ".."
+    code = f"""
+act main() -> i32 {{
+    let a: i32 = {start}
+    let b: i32 = {end}
+    mut iters: i32 = 0
+    mut first_val: i32 = 9999
+    mut last_val: i32 = 9999
+    mut total: i32 = 0
+    loop i in a{op}b {{
+        if iters == 0 {{
+            first_val = i
+        }}
+        last_val = i
+        iters += 1
+        total += i
+    }}
+    assert(iters == {expected_iters})
+    assert(total == {expected_sum})
+"""
+    if expected_iters > 0:
+        code += f"""
+    assert(first_val == {expected_first})
+    assert(last_val == {expected_last})
+"""
+    code += """
+    return 0
+}
+"""
+    # 1. Assert emitted C contains dynamic direction branch, relational comparison, and step increment
+    c_code = emit_c_velo_source(code)
+    assert "__start_i = (a)" in c_code
+    assert "__end_i = (b)" in c_code
+    assert "__rev_i = (__start_i > __end_i)" in c_code
+    if inclusive:
+        assert "__rev_i ? (i >= __end_i) : (i <= __end_i)" in c_code
+    else:
+        assert "__rev_i ? (i > __end_i) : (i < __end_i)" in c_code
+    assert "__rev_i ? (i--) : (i++)" in c_code
+
+    # 2. Assert runtime execution matches expected bounds and counts without timeout
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+@pytest.mark.parametrize(
+    "start,end,step,inclusive,expected_iters,expected_first,expected_last,expected_sum",
+    [
+        # Ascending stepped divisible
+        (0, 10, 2, False, 5, 0, 8, 20),
+        (0, 10, 2, True, 6, 0, 10, 30),
+        # Descending stepped divisible
+        (10, 0, 2, False, 5, 10, 2, 30),
+        (10, 0, 2, True, 6, 10, 0, 30),
+        # Ascending stepped exact boundary
+        (0, 9, 3, False, 3, 0, 6, 9),
+        (0, 9, 3, True, 4, 0, 9, 18),
+        # Descending stepped exact boundary
+        (9, 0, 3, False, 3, 9, 3, 18),
+        (9, 0, 3, True, 4, 9, 0, 18),
+        # Ascending stepped non-divisible
+        (0, 10, 3, False, 4, 0, 9, 18),
+        (0, 10, 3, True, 4, 0, 9, 18),
+        # Descending stepped non-divisible
+        (10, 0, 3, False, 4, 10, 1, 22),
+        (10, 0, 3, True, 4, 10, 1, 22),
+        # Stepped equal endpoints
+        (10, 10, 2, False, 0, None, None, 0),
+        (10, 10, 2, True, 1, 10, 10, 10),
+        # Negative bounds stepped
+        (-10, 0, 3, False, 4, -10, -1, -22),
+        (0, -10, 3, False, 4, 0, -9, -18),
+    ]
+)
+def test_matrix_emitted_c_and_runtime_stepped_dynamic_ranges(
+    start, end, step, inclusive, expected_iters, expected_first, expected_last, expected_sum
+):
+    """Matrix row cross-verification for stepped ranges: emitted C step and runtime execution."""
+    op = "..=" if inclusive else ".."
+    code = f"""
+act main() -> i32 {{
+    let a: i32 = {start}
+    let b: i32 = {end}
+    let s: i32 = {step}
+    mut iters: i32 = 0
+    mut first_val: i32 = 9999
+    mut last_val: i32 = 9999
+    mut total: i32 = 0
+    loop i in a{op}b:s {{
+        if iters == 0 {{
+            first_val = i
+        }}
+        last_val = i
+        iters += 1
+        total += i
+    }}
+    assert(iters == {expected_iters})
+    assert(total == {expected_sum})
+"""
+    if expected_iters > 0:
+        code += f"""
+    assert(first_val == {expected_first})
+    assert(last_val == {expected_last})
+"""
+    code += """
+    return 0
+}
+"""
+    # 1. Assert emitted C contains step temporary and ternary stepping
+    c_code = emit_c_velo_source(code)
+    assert "__start_i = (a)" in c_code
+    assert "__end_i = (b)" in c_code
+    assert "__step_i = (s)" in c_code
+    assert "__rev_i = (__start_i > __end_i)" in c_code
+    if inclusive:
+        assert "__rev_i ? (i >= __end_i) : (i <= __end_i)" in c_code
+    else:
+        assert "__rev_i ? (i > __end_i) : (i < __end_i)" in c_code
+    assert "__rev_i ? (i -= __step_i) : (i += __step_i)" in c_code
+
+    # 2. Assert runtime execution matches
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_matrix_emitted_c_and_runtime_wide_i64():
+    """Verify emitted C int64_t and runtime execution for 64-bit signed ranges."""
+    code = """
+act main() -> i32 {
+    let a: i64 = 5000000000
+    let b: i64 = 4999999995
+    mut iters: i32 = 0
+    mut first_val: i64 = 0
+    mut last_val: i64 = 0
+    loop i in a..b {
+        if iters == 0 {
+            first_val = i
+        }
+        last_val = i
+        iters += 1
+    }
+    assert(iters == 5)
+    assert(first_val == 5000000000)
+    assert(last_val == 4999999996)
+    return 0
+}
+"""
+    c_code = emit_c_velo_source(code)
+    assert "int64_t __start_i = (a), __end_i = (b), __rev_i = (__start_i > __end_i), i = __start_i" in c_code
+    assert "__rev_i ? (i > __end_i) : (i < __end_i)" in c_code
+    assert "__rev_i ? (i--) : (i++)" in c_code
+
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_matrix_emitted_c_and_runtime_wide_u64():
+    """Verify emitted C uint64_t and runtime execution for 64-bit unsigned ranges."""
+    code = """
+act main() -> i32 {
+    let a: u64 = 5000000005
+    let b: u64 = 5000000000
+    mut iters: i32 = 0
+    mut first_val: u64 = 0
+    mut last_val: u64 = 0
+    loop i in a..b {
+        if iters == 0 {
+            first_val = i
+        }
+        last_val = i
+        iters += 1
+    }
+    assert(iters == 5)
+    assert(first_val == 5000000005)
+    assert(last_val == 5000000001)
+    return 0
+}
+"""
+    c_code = emit_c_velo_source(code)
+    assert "uint64_t __start_i = (a), __end_i = (b), __rev_i = (__start_i > __end_i), i = __start_i" in c_code
+    assert "__rev_i ? (i > __end_i) : (i < __end_i)" in c_code
+    assert "__rev_i ? (i--) : (i++)" in c_code
+
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+def test_matrix_emitted_c_and_runtime_wide_usize_stepped():
+    """Verify emitted C size_t and runtime execution for stepped usize ranges."""
+    code = """
+act main() -> i32 {
+    let a: usize = 10usize
+    let b: usize = 0usize
+    let s: usize = 2usize
+    mut iters: i32 = 0
+    mut first_val: usize = 0usize
+    mut last_val: usize = 0usize
+    loop i in a..b:s {
+        if iters == 0 {
+            first_val = i
+        }
+        last_val = i
+        iters += 1
+    }
+    assert(iters == 5)
+    assert(first_val == 10usize)
+    assert(last_val == 2usize)
+    return 0
+}
+"""
+    c_code = emit_c_velo_source(code)
+    assert "size_t __start_i = (a), __end_i = (b), __step_i = (s), __rev_i = (__start_i > __end_i), i = __start_i" in c_code
+    assert "__rev_i ? (i -= __step_i) : (i += __step_i)" in c_code
+
+    res = run_velo_source(code, timeout=2.0)
+    assert res.returncode == 0
+
+
+
 
 
