@@ -314,3 +314,148 @@ act main() {{
     res = run_velo_source(source, tmp_path)
     assert res.returncode == 0, f"run failed:\n{res.stderr}\n{res.stdout}"
     assert "OK_HEX_BOUNDARIES" in res.stdout
+
+
+def test_parse_bin_int_literal_boundaries(tmp_path):
+    source = f"""use "{NUM_UTILS_PATH}"
+use std.io
+
+act main() {{
+    // 0b0
+    let s0 = "0b0"
+    let lit0 = parse_bin_int_literal(s0, 0, str.len(s0))
+    assert(lit0.val == 0u64)
+    assert(lit0.base == 2)
+    assert(not lit0.overflow)
+
+    // Leading zeros: 0b001
+    let slz = "0b001"
+    let lit_lz = parse_bin_int_literal(slz, 0, str.len(slz))
+    assert(lit_lz.val == 1u64)
+    assert(not lit_lz.overflow)
+
+    // 32-bit all-ones: 0b11111111_11111111_11111111_11111111 (4294967295)
+    let s32 = "0b11111111_11111111_11111111_11111111"
+    let lit_u32_max = parse_bin_int_literal(s32, 0, str.len(s32))
+    assert(lit_u32_max.val == 4294967295u64)
+    assert(not lit_u32_max.overflow)
+
+    // 64-bit all-ones (UINT64_MAX)
+    let s64 = "0b11111111_11111111_11111111_11111111_11111111_11111111_11111111_11111111"
+    let lit_u64_max = parse_bin_int_literal(s64, 0, str.len(s64))
+    assert(lit_u64_max.val == 0xFFFFFFFFFFFFFFFFu64)
+    assert(not lit_u64_max.overflow)
+
+    // 65-bit overflow: 0b1_0000000000000000_0000000000000000_0000000000000000_0000000000000000
+    let sovf = "0b1_0000000000000000_0000000000000000_0000000000000000_0000000000000000"
+    let lit_ovf = parse_bin_int_literal(sovf, 0, str.len(sovf))
+    assert(lit_ovf.overflow)
+
+    // Empty 0b -> overflow/rejected
+    let sempty = "0b"
+    let lit_empty = parse_bin_int_literal(sempty, 0, str.len(sempty))
+    assert(lit_empty.overflow)
+
+    // Invalid digit '2' -> overflow/rejected
+    let sd2 = "0b102"
+    let lit_d2 = parse_bin_int_literal(sd2, 0, str.len(sd2))
+    assert(lit_d2.overflow)
+
+    let sbad = "0b2"
+    let lit_bad = parse_bin_int_literal(sbad, 0, str.len(sbad))
+    assert(lit_bad.overflow)
+
+    println_str("OK_BIN_BOUNDARIES")
+}}
+"""
+    res = run_velo_source(source, tmp_path)
+    assert res.returncode == 0, f"run failed:\n{res.stderr}\n{res.stdout}"
+    assert "OK_BIN_BOUNDARIES" in res.stdout
+
+
+def test_parse_oct_int_literal_boundaries(tmp_path):
+    source = f"""use "{NUM_UTILS_PATH}"
+use std.io
+
+act main() {{
+    // 0o0
+    let s0 = "0o0"
+    let lit0 = parse_oct_int_literal(s0, 0, str.len(s0))
+    assert(lit0.val == 0u64)
+    assert(lit0.base == 8)
+    assert(not lit0.overflow)
+
+    // Leading zeros: 0o007
+    let slz = "0o007"
+    let lit_lz = parse_oct_int_literal(slz, 0, str.len(slz))
+    assert(lit_lz.val == 7u64)
+    assert(not lit_lz.overflow)
+
+    // 32-bit all-ones: 0o37777777777 (4294967295)
+    let s32 = "0o37777777777"
+    let lit_u32_max = parse_oct_int_literal(s32, 0, str.len(s32))
+    assert(lit_u32_max.val == 4294967295u64)
+    assert(not lit_u32_max.overflow)
+
+    // 64-bit all-ones: 0o1777777777777777777777 (UINT64_MAX)
+    let s64 = "0o1777777777777777777777"
+    let lit_u64_max = parse_oct_int_literal(s64, 0, str.len(s64))
+    assert(lit_u64_max.val == 0xFFFFFFFFFFFFFFFFu64)
+    assert(not lit_u64_max.overflow)
+
+    // Overflow: 0o2000000000000000000000 (> UINT64_MAX)
+    let sovf = "0o2000000000000000000000"
+    let lit_ovf = parse_oct_int_literal(sovf, 0, str.len(sovf))
+    assert(lit_ovf.overflow)
+
+    // Empty 0o -> overflow/rejected
+    let sempty = "0o"
+    let lit_empty = parse_oct_int_literal(sempty, 0, str.len(sempty))
+    assert(lit_empty.overflow)
+
+    // Invalid digit '8' -> overflow/rejected
+    let sd8 = "0o18"
+    let lit_d8 = parse_oct_int_literal(sd8, 0, str.len(sd8))
+    assert(lit_d8.overflow)
+
+    let sbad = "0o8"
+    let lit_bad = parse_oct_int_literal(sbad, 0, str.len(sbad))
+    assert(lit_bad.overflow)
+
+    // Invalid digit '9' -> overflow/rejected
+    let sd9 = "0o79"
+    let lit_d9 = parse_oct_int_literal(sd9, 0, str.len(sd9))
+    assert(lit_d9.overflow)
+
+    println_str("OK_OCT_BOUNDARIES")
+}}
+"""
+    res = run_velo_source(source, tmp_path)
+    assert res.returncode == 0, f"run failed:\n{res.stderr}\n{res.stdout}"
+    assert "OK_OCT_BOUNDARIES" in res.stdout
+
+
+@pytest.mark.parametrize("lit", [
+    "0b2",
+    "0b102",
+    "0o8",
+    "0o78",
+    "0b",
+    "0o",
+])
+def test_bin_oct_invalid_digits_and_empty_rejected(lit, tmp_path):
+    source = (
+        "use std.io\n\n"
+        "act main() {\n"
+        f"    let x = {lit}\n"
+        "}\n"
+    )
+    probe = tmp_path / "invalid_lit.vl"
+    probe.write_text(source, encoding="utf-8", newline="\n")
+
+    res = subprocess.run(
+        [str(VELO_EXE), "check", str(probe)],
+        capture_output=True,
+        text=True,
+    )
+    assert res.returncode != 0, f"velo check accepted invalid literal {lit}"

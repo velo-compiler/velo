@@ -2,6 +2,7 @@
 use "utils.vl"
 use "char_utils.vl"
 use "float_utils.vl"
+use "num_format.vl"
 
 // Wide integer literal representation: holds magnitude (u64), base (2, 8, 10, 16),
 // sign flag, and an explicit overflow flag.
@@ -178,47 +179,21 @@ act parse_int_from_slice(source: string, start: usize, len: usize) -> i32 {
         return parse_char_literal(source, start, len)
     }
 
-    mut i = start
-    let end = start + len
-    mut base: i32 = 10
     if len >= 2 and source[start] == '0' {
         let b = source[start + 1]
         if b == 'x' or b == 'X' {
-            base = 16
-            i = start + 2
+            let hex_lit = parse_hex_int_literal(source, start, len)
+            return hex_lit.val as i32
         } else if b == 'b' or b == 'B' {
-            base = 2
-            i = start + 2
+            let bin_lit = parse_bin_int_literal(source, start, len)
+            return bin_lit.val as i32
         } else if b == 'o' or b == 'O' {
-            base = 8
-            i = start + 2
+            let oct_lit = parse_oct_int_literal(source, start, len)
+            return oct_lit.val as i32
         }
     }
-
-    mut result: i32 = 0
-    loop i < end {
-        let c = source[i]
-        if c == '_' {
-            i += 1
-        } else {
-            mut digit: i32 = -1
-            if c >= '0' and c <= '9' {
-                digit = (c as i32) - ('0' as i32)
-            } else if c >= 'a' and c <= 'f' {
-                digit = (c as i32) - ('a' as i32) + 10
-            } else if c >= 'A' and c <= 'F' {
-                digit = (c as i32) - ('A' as i32) + 10
-            }
-
-            if digit >= 0 and digit < base {
-                result = result * base + digit
-                i += 1
-            } else {
-                i = end
-            }
-        }
-    }
-    return result
+    let dec_lit = parse_decimal_int_literal(source, start, len)
+    return dec_lit.val as i32
 }
 
 // Parses a hexadecimal integer literal (0x... or 0X...) into the wide IntLiteral model.
@@ -266,117 +241,93 @@ act parse_hex_int_literal(source: string, start: usize, len: usize) -> IntLitera
     return make_int_literal(val, 16, false, overflow)
 }
 
-// Extracts the explicit type suffix from a number literal (e.g. "u8", "i64", "f64").
-act extract_literal_suffix(source: string, start: usize, len: usize) -> string {
-    if len >= 5 {
-        let s5 = copy_slice_to_string(source, start + len - 5, 5)
-        if s5 == "usize" or s5 == "isize" { return s5 }
-    }
-    if len >= 3 {
-        let s3 = copy_slice_to_string(source, start + len - 3, 3)
-        if s3 == "u16" or s3 == "u32" or s3 == "u64" or s3 == "i16" or s3 == "i32" or s3 == "i64" or s3 == "f32" or s3 == "f64" {
-            return s3
-        }
-    }
-    if len >= 2 {
-        let s2 = copy_slice_to_string(source, start + len - 2, 2)
-        if s2 == "u8" or s2 == "i8" { return s2 }
-    }
-    if len >= 1 {
-        let c = source[start + len - 1]
-        if (c == 'f' or c == 'F') and not (len >= 2 and (source[start + 1] == 'x' or source[start + 1] == 'X')) {
-            return "f32"
-        }
-    }
-    return ""
-}
-
-// Formats a literal into a C99-compatible numeric string, removing underscores and adapting suffixes.
-act format_c_number_literal(source: string, start: usize, len: usize, is_float: bool) -> string {
-    if len >= 1 and source[start] == '\'' {
-        return copy_slice_to_string(source, start, len)
-    }
-
+// Parses a binary integer literal (0b... or 0B...) into the wide IntLiteral model.
+// Gating: checks for overflow beyond UINT64_MAX, rejects empty (0b only) or invalid binary digits.
+act parse_bin_int_literal(source: string, start: usize, len: usize) -> IntLiteral {
     let suffix = extract_literal_suffix(source, start, len)
     let s_len = str.len(suffix)
     let digits_len = len - s_len
 
-    // Binary and Octal literals (0b..., 0o...) -> convert to integer decimal string
-    if digits_len >= 2 and source[start] == '0' and (source[start + 1] == 'b' or source[start + 1] == 'B' or source[start + 1] == 'o' or source[start + 1] == 'O') {
-        let val = parse_int_from_slice(source, start, len)
-        mut sfx_c = ""
-        if suffix == "u64" or suffix == "usize" { sfx_c = "ULL" }
-        else if suffix == "i64" or suffix == "isize" { sfx_c = "LL" }
-        else if suffix == "u32" or suffix == "u16" or suffix == "u8" { sfx_c = "U" }
-        return u64_to_decimal_string(val as u64, sfx_c)
+    if digits_len < 3 or source[start] != '0' {
+        return make_int_literal_overflow(2, false)
+    }
+    let pfx = source[start + 1]
+    if pfx != 'b' and pfx != 'B' {
+        return make_int_literal_overflow(2, false)
     }
 
-    // Decimal and Hexadecimal: copy digits omitting '_' underscores
-    mut buf: @u8 = mem.alloc(@u8, digits_len + 16)
-    mut count: usize = 0
-    mut has_dot = false
-    mut has_exp = false
+    mut val: u64 = 0u64
+    mut overflow = false
+    mut has_digits = false
+    mut i = start + 2
+    let end = start + digits_len
 
-    let is_hex = digits_len >= 2 and source[start] == '0' and (source[start + 1] == 'x' or source[start + 1] == 'X')
-    if not is_float and not is_hex {
-        // Strip leading zeros for decimal integer literals to avoid C treating them as octal
-        mut first_non_zero: usize = start + digits_len
-        mut j = start
-        loop j < start + digits_len {
-            let c = source[j]
-            if c >= '1' and c <= '9' {
-                first_non_zero = j
-                j = start + digits_len
-            } else {
-                j += 1
-            }
-        }
-        if first_non_zero == start + digits_len {
-            buf[count] = '0'
-            count += 1
-        } else {
-            mut i = first_non_zero
-            loop i < start + digits_len {
-                let c = source[i]
-                if c != '_' {
-                    buf[count] = c
-                    count += 1
+    loop i < end {
+        let c = source[i]
+        if c == '_' {
+            i += 1
+        } else if c == '0' or c == '1' {
+            has_digits = true
+            let digit = ((c as i32) - ('0' as i32)) as u64
+            if not overflow {
+                if val > 0x7FFFFFFFFFFFFFFFu64 {
+                    overflow = true
+                } else {
+                    val = (val << 1u64) | digit
                 }
-                i += 1
-            }
-        }
-    } else {
-        mut i = start
-        loop i < start + digits_len {
-            let c = source[i]
-            if c == '.' { has_dot = true }
-            if c == 'e' or c == 'E' { has_exp = true }
-            if c != '_' {
-                buf[count] = c
-                count += 1
             }
             i += 1
+        } else {
+            overflow = true
+            i = end
         }
     }
+    if not has_digits { overflow = true }
+    return make_int_literal(val, 2, false, overflow)
+}
 
-    if is_float {
-        if not has_dot and not has_exp {
-            buf[count] = '.'; buf[count + 1] = '0'; count += 2
-        }
-        if suffix != "f64" {
-            buf[count] = 'f'; count += 1
-        }
-    } else {
-        if suffix == "u64" or suffix == "usize" {
-            buf[count] = 'U'; buf[count + 1] = 'L'; buf[count + 2] = 'L'; count += 3
-        } else if suffix == "i64" or suffix == "isize" {
-            buf[count] = 'L'; buf[count + 1] = 'L'; count += 2
-        } else if suffix == "u32" or suffix == "u16" or suffix == "u8" {
-            buf[count] = 'U'; count += 1
-        }
+// Parses an octal integer literal (0o... or 0O...) into the wide IntLiteral model.
+// Gating: checks for overflow beyond UINT64_MAX, rejects empty (0o only) or invalid octal digits.
+act parse_oct_int_literal(source: string, start: usize, len: usize) -> IntLiteral {
+    let suffix = extract_literal_suffix(source, start, len)
+    let s_len = str.len(suffix)
+    let digits_len = len - s_len
+
+    if digits_len < 3 or source[start] != '0' {
+        return make_int_literal_overflow(8, false)
+    }
+    let pfx = source[start + 1]
+    if pfx != 'o' and pfx != 'O' {
+        return make_int_literal_overflow(8, false)
     }
 
-    buf[count] = 0 as u8
-    return buf as string
+    mut val: u64 = 0u64
+    mut overflow = false
+    mut has_digits = false
+    mut i = start + 2
+    let end = start + digits_len
+
+    loop i < end {
+        let c = source[i]
+        if c == '_' {
+            i += 1
+        } else if c >= '0' and c <= '7' {
+            has_digits = true
+            let digit = ((c as i32) - ('0' as i32)) as u64
+            if not overflow {
+                if val > 0x1FFFFFFFFFFFFFFFu64 {
+                    overflow = true
+                } else {
+                    val = (val << 3u64) | digit
+                }
+            }
+            i += 1
+        } else {
+            overflow = true
+            i = end
+        }
+    }
+    if not has_digits { overflow = true }
+    return make_int_literal(val, 8, false, overflow)
 }
 

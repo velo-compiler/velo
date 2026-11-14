@@ -205,11 +205,21 @@ act parse_int_literal_expr(p: @Parser) -> @ExprNode {
         return node
     }
 
-    if not is_bin_or_oct {
-        // Decimal integer literal
-        let lit = parse_decimal_int_literal(p.source, tok.start, tok.length)
+    if is_bin_or_oct {
+        // Binary or Octal integer literal (Task 53.5)
+        let is_bin = p.source[tok.start + 1] == 'b' or p.source[tok.start + 1] == 'B'
+        mut lit: IntLiteral = make_int_literal_overflow(2, false)
+        if is_bin {
+            lit = parse_bin_int_literal(p.source, tok.start, tok.length)
+        } else {
+            lit = parse_oct_int_literal(p.source, tok.start, tok.length)
+        }
         if lit.overflow {
-            report_parse(p, p.filename, tok.line, tok.col, tok.length, "Integer literal exceeds 64-bit unsigned maximum (18446744073709551615)")
+            if is_bin {
+                report_parse(p, p.filename, tok.line, tok.col, tok.length, "Binary literal exceeds 64-bit unsigned maximum or contains invalid digits (overflow)")
+            } else {
+                report_parse(p, p.filename, tok.line, tok.col, tok.length, "Octal literal exceeds 64-bit unsigned maximum or contains invalid digits (overflow)")
+            }
             p.had_error = true
             return make_int_expr(0, tok.line, tok.col)
         }
@@ -222,7 +232,7 @@ act parse_int_literal_expr(p: @Parser) -> @ExprNode {
             node.type_name = sfx
             node.str_val = format_c_number_literal(p.source, tok.start, tok.length, false)
         } else {
-            // Unsuffixed literal type ladder:
+            // Unsuffixed binary/octal literal:
             // fits i32 -> default i32
             // else fits i64 -> "i64"
             // else fits u64 -> "u64"
@@ -233,18 +243,41 @@ act parse_int_literal_expr(p: @Parser) -> @ExprNode {
                 node.type_name = "i64"
                 node.str_val = u64_to_decimal_string(lit.val, "LL")
             } else {
-                node.str_val = format_c_number_literal(p.source, tok.start, tok.length, false)
+                node.str_val = u64_to_decimal_string(lit.val, "")
             }
         }
         return node
     }
 
-    // Prefixed (hex, bin, oct) - handled in Tasks 53.4 and 53.5
-    let val = parse_int_from_slice(p.source, tok.start, tok.length)
-    mut node = make_int_expr(val, tok.line, tok.col)
-    node.str_val = format_c_number_literal(p.source, tok.start, tok.length, false)
+    // Decimal integer literal
+    let lit = parse_decimal_int_literal(p.source, tok.start, tok.length)
+    if lit.overflow {
+        report_parse(p, p.filename, tok.line, tok.col, tok.length, "Integer literal exceeds 64-bit unsigned maximum (18446744073709551615)")
+        p.had_error = true
+        return make_int_expr(0, tok.line, tok.col)
+    }
+
+    mut i32_val: i32 = 0
+    int_lit_to_i32_checked(lit, @i32_val)
+    mut node = make_int_expr(i32_val, tok.line, tok.col)
+
     if str.len(sfx) > 0 {
         node.type_name = sfx
+        node.str_val = format_c_number_literal(p.source, tok.start, tok.length, false)
+    } else {
+        // Unsuffixed literal type ladder:
+        // fits i32 -> default i32
+        // else fits i64 -> "i64"
+        // else fits u64 -> "u64"
+        if lit.val > 9223372036854775807u64 {
+            node.type_name = "u64"
+            node.str_val = u64_to_decimal_string(lit.val, "ULL")
+        } else if lit.val > 2147483647u64 {
+            node.type_name = "i64"
+            node.str_val = u64_to_decimal_string(lit.val, "LL")
+        } else {
+            node.str_val = format_c_number_literal(p.source, tok.start, tok.length, false)
+        }
     }
     return node
 }

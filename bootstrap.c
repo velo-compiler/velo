@@ -1726,6 +1726,8 @@ const char* token_name(int32_t kind);
 int32_t char_hex_digit(uint8_t c);
 int32_t parse_char_literal(const char* source, size_t start, size_t len);
 float parse_float_from_slice(const char* source, size_t start, size_t len);
+const char* extract_literal_suffix(const char* source, size_t start, size_t len);
+const char* format_c_number_literal(const char* source, size_t start, size_t len, bool is_float);
 IntLiteral make_int_literal(uint64_t val, int32_t base, bool is_neg, bool overflow);
 IntLiteral make_int_literal_val(uint64_t val, int32_t base);
 IntLiteral make_int_literal_overflow(int32_t base, bool is_neg);
@@ -1741,8 +1743,8 @@ IntLiteral parse_decimal_int_literal(const char* source, size_t start, size_t le
 int32_t parse_hex_digit(uint8_t c);
 int32_t parse_int_from_slice(const char* source, size_t start, size_t len);
 IntLiteral parse_hex_int_literal(const char* source, size_t start, size_t len);
-const char* extract_literal_suffix(const char* source, size_t start, size_t len);
-const char* format_c_number_literal(const char* source, size_t start, size_t len, bool is_float);
+IntLiteral parse_bin_int_literal(const char* source, size_t start, size_t len);
+IntLiteral parse_oct_int_literal(const char* source, size_t start, size_t len);
 bool is_whitespace(uint8_t c);
 bool is_newline(uint8_t c);
 bool is_alpha(uint8_t c);
@@ -11212,653 +11214,771 @@ float parse_float_from_slice(const char* source, size_t start, size_t len) {
     return base_val;
 }
 
-#line 16 "src/main.vl"
-IntLiteral make_int_literal(uint64_t val, int32_t base, bool is_neg, bool overflow) {
-#line 17 "src/main.vl"
-    return (IntLiteral){ .val = val, .base = base, .is_neg = is_neg, .overflow = overflow };
-}
-
-#line 21 "src/main.vl"
-IntLiteral make_int_literal_val(uint64_t val, int32_t base) {
-#line 22 "src/main.vl"
-    return (IntLiteral){ .val = val, .base = base, .is_neg = false, .overflow = false };
-}
-
-#line 26 "src/main.vl"
-IntLiteral make_int_literal_overflow(int32_t base, bool is_neg) {
-#line 27 "src/main.vl"
-    return (IntLiteral){ .val = 0ULL, .base = base, .is_neg = is_neg, .overflow = true };
-}
-
-#line 31 "src/main.vl"
-bool int_lit_fits_i32(IntLiteral lit) {
-#line 32 "src/main.vl"
-    if (lit.overflow) {
-#line 32 "src/main.vl"
-        return false;
-    }
-#line 33 "src/main.vl"
-    if (lit.is_neg) {
-#line 33 "src/main.vl"
-        return (lit.val <= 2147483648ULL);
-    }
-#line 34 "src/main.vl"
-    return (lit.val <= 2147483647ULL);
-}
-
-#line 38 "src/main.vl"
-bool int_lit_fits_u32(IntLiteral lit) {
-#line 39 "src/main.vl"
-    if ((lit.overflow || lit.is_neg)) {
-#line 39 "src/main.vl"
-        return false;
-    }
-#line 40 "src/main.vl"
-    return (lit.val <= 4294967295ULL);
-}
-
-#line 44 "src/main.vl"
-bool int_lit_fits_i64(IntLiteral lit) {
-#line 45 "src/main.vl"
-    if (lit.overflow) {
-#line 45 "src/main.vl"
-        return false;
-    }
-#line 46 "src/main.vl"
-    if (lit.is_neg) {
-#line 46 "src/main.vl"
-        return (lit.val <= 0x8000000000000000ULL);
-    }
-#line 47 "src/main.vl"
-    return (lit.val <= 0x7FFFFFFFFFFFFFFFULL);
-}
-
-#line 51 "src/main.vl"
-bool int_lit_fits_u64(IntLiteral lit) {
-#line 52 "src/main.vl"
-    return ((!lit.overflow) && (!lit.is_neg));
-}
-
-#line 57 "src/main.vl"
-bool int_lit_to_i32_checked(IntLiteral lit, int32_t* out_val) {
-#line 58 "src/main.vl"
-    if (((out_val == NULL) || (!int_lit_fits_i32(lit)))) {
-#line 58 "src/main.vl"
-        return false;
-    }
-#line 59 "src/main.vl"
-    if (lit.is_neg) {
-#line 60 "src/main.vl"
-        if ((lit.val == 2147483648ULL)) {
-#line 61 "src/main.vl"
-            out_val[0] = ((-2147483647) - 1);
-        } else {
-#line 63 "src/main.vl"
-            out_val[0] = (-((int32_t)(((uint32_t)(lit.val)))));
-        }
-    } else {
-#line 66 "src/main.vl"
-        out_val[0] = ((int32_t)(((uint32_t)(lit.val))));
-    }
-#line 68 "src/main.vl"
-    return true;
-}
-
-#line 73 "src/main.vl"
-bool int_lit_to_u64_checked(IntLiteral lit, uint64_t* out_val) {
-#line 74 "src/main.vl"
-    if ((((out_val == NULL) || lit.overflow) || lit.is_neg)) {
-#line 74 "src/main.vl"
-        return false;
-    }
-#line 75 "src/main.vl"
-    out_val[0] = lit.val;
-#line 76 "src/main.vl"
-    return true;
-}
-
-#line 81 "src/main.vl"
-bool int_lit_to_i64_checked(IntLiteral lit, int64_t* out_val) {
-#line 82 "src/main.vl"
-    if (((out_val == NULL) || (!int_lit_fits_i64(lit)))) {
-#line 82 "src/main.vl"
-        return false;
-    }
-#line 83 "src/main.vl"
-    if (lit.is_neg) {
-#line 84 "src/main.vl"
-        if ((lit.val == 0x8000000000000000ULL)) {
-#line 85 "src/main.vl"
-            out_val[0] = ((-9223372036854775807LL) - 1LL);
-        } else {
-#line 87 "src/main.vl"
-            out_val[0] = (-((int64_t)(lit.val)));
-        }
-    } else {
-#line 90 "src/main.vl"
-        out_val[0] = ((int64_t)(lit.val));
-    }
-#line 92 "src/main.vl"
-    return true;
-}
-
-#line 96 "src/main.vl"
-const char* u64_to_decimal_string(uint64_t val, const char* suffix) {
-#line 97 "src/main.vl"
-    uint8_t* buf = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)(32)));
-#line 98 "src/main.vl"
-    size_t count = 0;
-#line 99 "src/main.vl"
-    if ((val == 0ULL)) {
-#line 100 "src/main.vl"
-        buf[0] = '0';
-#line 101 "src/main.vl"
-        count = 1;
-    } else {
-#line 103 "src/main.vl"
-        uint8_t* temp = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)(24)));
-#line 104 "src/main.vl"
-        size_t tc = 0;
-#line 105 "src/main.vl"
-        uint64_t n = val;
-#line 106 "src/main.vl"
-        for (int32_t it = 0; ((n > 0ULL)); it++) {
-#line 107 "src/main.vl"
-            temp[tc] = (((uint8_t)('0')) + ((uint8_t)((n % 10ULL))));
-#line 108 "src/main.vl"
-            n = (n / 10ULL);
-#line 109 "src/main.vl"
-            tc += 1;
-        }
-#line 111 "src/main.vl"
-        for (int32_t it = 0; (velo_cmp_gt_u_s(tc, 0)); it++) {
-#line 112 "src/main.vl"
-            tc -= 1;
-#line 113 "src/main.vl"
-            buf[count] = temp[tc];
-#line 114 "src/main.vl"
-            count += 1;
-        }
-    }
-#line 117 "src/main.vl"
-    if ((suffix != NULL)) {
-#line 118 "src/main.vl"
-        size_t s_idx = 0;
-#line 119 "src/main.vl"
-        size_t s_len = ((usize)strlen(suffix));
-#line 120 "src/main.vl"
-        for (int32_t it = 0; ((s_idx < s_len)); it++) {
-#line 121 "src/main.vl"
-            buf[count] = suffix[s_idx];
-#line 122 "src/main.vl"
-            count += 1;
-#line 123 "src/main.vl"
-            s_idx += 1;
-        }
-    }
-#line 126 "src/main.vl"
-    buf[count] = ((uint8_t)(0));
-#line 127 "src/main.vl"
-    return ((const char*)(buf));
-}
-
-#line 132 "src/main.vl"
-IntLiteral parse_decimal_int_literal(const char* source, size_t start, size_t len) {
-#line 133 "src/main.vl"
-    const char* suffix = extract_literal_suffix(source, start, len);
-#line 134 "src/main.vl"
-    size_t s_len = ((usize)strlen(suffix));
-#line 135 "src/main.vl"
-    size_t digits_len = (len - s_len);
-#line 137 "src/main.vl"
-    uint64_t val = 0ULL;
-#line 138 "src/main.vl"
-    bool overflow = false;
-#line 139 "src/main.vl"
-    bool has_digits = false;
-#line 140 "src/main.vl"
-    size_t i = start;
-#line 141 "src/main.vl"
-    size_t end = (start + digits_len);
-#line 143 "src/main.vl"
-    for (int32_t it = 0; ((i < end)); it++) {
-#line 144 "src/main.vl"
-        uint8_t c = source[i];
-#line 145 "src/main.vl"
-        if (velo_cmp_eq_u_s(c, '_')) {
-#line 146 "src/main.vl"
-            i += 1;
-        } else
-#line 147 "src/main.vl"
-        if ((velo_cmp_ge_u_s(c, '0') && velo_cmp_le_u_s(c, '9'))) {
-#line 148 "src/main.vl"
-            has_digits = true;
-#line 149 "src/main.vl"
-            uint64_t digit = (((uint64_t)(c)) - ((uint64_t)('0')));
-#line 150 "src/main.vl"
-            if ((!overflow)) {
-#line 151 "src/main.vl"
-                if (((val > 1844674407370955161ULL) || ((val == 1844674407370955161ULL) && (digit > 5ULL)))) {
-#line 152 "src/main.vl"
-                    overflow = true;
-                } else {
-#line 154 "src/main.vl"
-                    val = ((val * 10ULL) + digit);
-                }
-            }
-#line 157 "src/main.vl"
-            i += 1;
-        } else {
-#line 159 "src/main.vl"
-            overflow = true;
-#line 160 "src/main.vl"
-            i = end;
-        }
-    }
-#line 163 "src/main.vl"
-    if ((!has_digits)) {
-#line 163 "src/main.vl"
-        overflow = true;
-    }
-#line 164 "src/main.vl"
-    return make_int_literal(val, 10, false, overflow);
-}
-
-#line 168 "src/main.vl"
-int32_t parse_hex_digit(uint8_t c) {
-#line 169 "src/main.vl"
-    if ((velo_cmp_ge_u_s(c, '0') && velo_cmp_le_u_s(c, '9'))) {
-#line 169 "src/main.vl"
-        return (((int32_t)(c)) - ((int32_t)('0')));
-    }
-#line 170 "src/main.vl"
-    if ((velo_cmp_ge_u_s(c, 'a') && velo_cmp_le_u_s(c, 'f'))) {
-#line 170 "src/main.vl"
-        return ((((int32_t)(c)) - ((int32_t)('a'))) + 10);
-    }
-#line 171 "src/main.vl"
-    if ((velo_cmp_ge_u_s(c, 'A') && velo_cmp_le_u_s(c, 'F'))) {
-#line 171 "src/main.vl"
-        return ((((int32_t)(c)) - ((int32_t)('A'))) + 10);
-    }
-#line 172 "src/main.vl"
-    return 0;
-}
-
-#line 176 "src/main.vl"
-int32_t parse_int_from_slice(const char* source, size_t start, size_t len) {
-#line 177 "src/main.vl"
-    if ((velo_cmp_ge_u_s(len, 2) && velo_cmp_eq_u_s(source[start], '\''))) {
-#line 178 "src/main.vl"
-        return parse_char_literal(source, start, len);
-    }
-#line 181 "src/main.vl"
-    size_t i = start;
-#line 182 "src/main.vl"
-    size_t end = (start + len);
-#line 183 "src/main.vl"
-    int32_t base = 10;
-#line 184 "src/main.vl"
-    if ((velo_cmp_ge_u_s(len, 2) && velo_cmp_eq_u_s(source[start], '0'))) {
-#line 185 "src/main.vl"
-        uint8_t b = source[(start + 1)];
-#line 186 "src/main.vl"
-        if ((velo_cmp_eq_u_s(b, 'x') || velo_cmp_eq_u_s(b, 'X'))) {
-#line 187 "src/main.vl"
-            base = 16;
-#line 188 "src/main.vl"
-            i = (start + 2);
-        } else
-#line 189 "src/main.vl"
-        if ((velo_cmp_eq_u_s(b, 'b') || velo_cmp_eq_u_s(b, 'B'))) {
-#line 190 "src/main.vl"
-            base = 2;
-#line 191 "src/main.vl"
-            i = (start + 2);
-        } else
-#line 192 "src/main.vl"
-        if ((velo_cmp_eq_u_s(b, 'o') || velo_cmp_eq_u_s(b, 'O'))) {
-#line 193 "src/main.vl"
-            base = 8;
-#line 194 "src/main.vl"
-            i = (start + 2);
-        }
-    }
-#line 198 "src/main.vl"
-    int32_t result = 0;
-#line 199 "src/main.vl"
-    for (int32_t it = 0; ((i < end)); it++) {
-#line 200 "src/main.vl"
-        uint8_t c = source[i];
-#line 201 "src/main.vl"
-        if (velo_cmp_eq_u_s(c, '_')) {
-#line 202 "src/main.vl"
-            i += 1;
-        } else {
-#line 204 "src/main.vl"
-            int32_t digit = (-1);
-#line 205 "src/main.vl"
-            if ((velo_cmp_ge_u_s(c, '0') && velo_cmp_le_u_s(c, '9'))) {
-#line 206 "src/main.vl"
-                digit = (((int32_t)(c)) - ((int32_t)('0')));
-            } else
-#line 207 "src/main.vl"
-            if ((velo_cmp_ge_u_s(c, 'a') && velo_cmp_le_u_s(c, 'f'))) {
-#line 208 "src/main.vl"
-                digit = ((((int32_t)(c)) - ((int32_t)('a'))) + 10);
-            } else
-#line 209 "src/main.vl"
-            if ((velo_cmp_ge_u_s(c, 'A') && velo_cmp_le_u_s(c, 'F'))) {
-#line 210 "src/main.vl"
-                digit = ((((int32_t)(c)) - ((int32_t)('A'))) + 10);
-            }
-#line 213 "src/main.vl"
-            if (((digit >= 0) && (digit < base))) {
-#line 214 "src/main.vl"
-                result = ((result * base) + digit);
-#line 215 "src/main.vl"
-                i += 1;
-            } else {
-#line 217 "src/main.vl"
-                i = end;
-            }
-        }
-    }
-#line 221 "src/main.vl"
-    return result;
-}
-
-#line 226 "src/main.vl"
-IntLiteral parse_hex_int_literal(const char* source, size_t start, size_t len) {
-#line 227 "src/main.vl"
-    const char* suffix = extract_literal_suffix(source, start, len);
-#line 228 "src/main.vl"
-    size_t s_len = ((usize)strlen(suffix));
-#line 229 "src/main.vl"
-    size_t digits_len = (len - s_len);
-#line 231 "src/main.vl"
-    if ((velo_cmp_lt_u_s(digits_len, 3) || velo_cmp_ne_u_s(source[start], '0'))) {
-#line 232 "src/main.vl"
-        return make_int_literal_overflow(16, false);
-    }
-#line 234 "src/main.vl"
-    uint8_t pfx = source[(start + 1)];
-#line 235 "src/main.vl"
-    if ((velo_cmp_ne_u_s(pfx, 'x') && velo_cmp_ne_u_s(pfx, 'X'))) {
-#line 236 "src/main.vl"
-        return make_int_literal_overflow(16, false);
-    }
-#line 239 "src/main.vl"
-    uint64_t val = 0ULL;
-#line 240 "src/main.vl"
-    bool overflow = false;
-#line 241 "src/main.vl"
-    bool has_digits = false;
-#line 242 "src/main.vl"
-    size_t i = (start + 2);
-#line 243 "src/main.vl"
-    size_t end = (start + digits_len);
-#line 245 "src/main.vl"
-    for (int32_t it = 0; ((i < end)); it++) {
-#line 246 "src/main.vl"
-        uint8_t c = source[i];
-#line 247 "src/main.vl"
-        if (velo_cmp_eq_u_s(c, '_')) {
-#line 248 "src/main.vl"
-            i += 1;
-        } else
-#line 249 "src/main.vl"
-        if ((((velo_cmp_ge_u_s(c, '0') && velo_cmp_le_u_s(c, '9')) || (velo_cmp_ge_u_s(c, 'a') && velo_cmp_le_u_s(c, 'f'))) || (velo_cmp_ge_u_s(c, 'A') && velo_cmp_le_u_s(c, 'F')))) {
-#line 250 "src/main.vl"
-            has_digits = true;
-#line 251 "src/main.vl"
-            uint64_t digit = ((uint64_t)(((uint32_t)(char_hex_digit(c)))));
-#line 252 "src/main.vl"
-            if ((!overflow)) {
-#line 253 "src/main.vl"
-                if ((val > 0x0FFFFFFFFFFFFFFFULL)) {
-#line 254 "src/main.vl"
-                    overflow = true;
-                } else {
-#line 256 "src/main.vl"
-                    val = ((val << 4ULL) | digit);
-                }
-            }
-#line 259 "src/main.vl"
-            i += 1;
-        } else {
-#line 261 "src/main.vl"
-            overflow = true;
-#line 262 "src/main.vl"
-            i = end;
-        }
-    }
-#line 265 "src/main.vl"
-    if ((!has_digits)) {
-#line 265 "src/main.vl"
-        overflow = true;
-    }
-#line 266 "src/main.vl"
-    return make_int_literal(val, 16, false, overflow);
-}
-
-#line 270 "src/main.vl"
+#line 6 "src/main.vl"
 const char* extract_literal_suffix(const char* source, size_t start, size_t len) {
-#line 271 "src/main.vl"
+#line 7 "src/main.vl"
     if (velo_cmp_ge_u_s(len, 5)) {
-#line 272 "src/main.vl"
+#line 8 "src/main.vl"
         const char* s5 = copy_slice_to_string(source, ((start + len) - 5), 5);
-#line 273 "src/main.vl"
+#line 9 "src/main.vl"
         if ((((s5 != NULL && "usize" != NULL) ? (strcmp(s5, "usize") == 0) : (s5 == "usize")) || ((s5 != NULL && "isize" != NULL) ? (strcmp(s5, "isize") == 0) : (s5 == "isize")))) {
-#line 273 "src/main.vl"
+#line 9 "src/main.vl"
             return s5;
         }
     }
-#line 275 "src/main.vl"
+#line 11 "src/main.vl"
     if (velo_cmp_ge_u_s(len, 3)) {
-#line 276 "src/main.vl"
+#line 12 "src/main.vl"
         const char* s3 = copy_slice_to_string(source, ((start + len) - 3), 3);
-#line 277 "src/main.vl"
+#line 13 "src/main.vl"
         if ((((((((((s3 != NULL && "u16" != NULL) ? (strcmp(s3, "u16") == 0) : (s3 == "u16")) || ((s3 != NULL && "u32" != NULL) ? (strcmp(s3, "u32") == 0) : (s3 == "u32"))) || ((s3 != NULL && "u64" != NULL) ? (strcmp(s3, "u64") == 0) : (s3 == "u64"))) || ((s3 != NULL && "i16" != NULL) ? (strcmp(s3, "i16") == 0) : (s3 == "i16"))) || ((s3 != NULL && "i32" != NULL) ? (strcmp(s3, "i32") == 0) : (s3 == "i32"))) || ((s3 != NULL && "i64" != NULL) ? (strcmp(s3, "i64") == 0) : (s3 == "i64"))) || ((s3 != NULL && "f32" != NULL) ? (strcmp(s3, "f32") == 0) : (s3 == "f32"))) || ((s3 != NULL && "f64" != NULL) ? (strcmp(s3, "f64") == 0) : (s3 == "f64")))) {
-#line 278 "src/main.vl"
+#line 14 "src/main.vl"
             return s3;
         }
     }
-#line 281 "src/main.vl"
+#line 17 "src/main.vl"
     if (velo_cmp_ge_u_s(len, 2)) {
-#line 282 "src/main.vl"
+#line 18 "src/main.vl"
         const char* s2 = copy_slice_to_string(source, ((start + len) - 2), 2);
-#line 283 "src/main.vl"
+#line 19 "src/main.vl"
         if ((((s2 != NULL && "u8" != NULL) ? (strcmp(s2, "u8") == 0) : (s2 == "u8")) || ((s2 != NULL && "i8" != NULL) ? (strcmp(s2, "i8") == 0) : (s2 == "i8")))) {
-#line 283 "src/main.vl"
+#line 19 "src/main.vl"
             return s2;
         }
     }
-#line 285 "src/main.vl"
+#line 21 "src/main.vl"
     if (velo_cmp_ge_u_s(len, 1)) {
-#line 286 "src/main.vl"
+#line 22 "src/main.vl"
         uint8_t c = source[((start + len) - 1)];
-#line 287 "src/main.vl"
+#line 23 "src/main.vl"
         if (((velo_cmp_eq_u_s(c, 'f') || velo_cmp_eq_u_s(c, 'F')) && (!(velo_cmp_ge_u_s(len, 2) && (velo_cmp_eq_u_s(source[(start + 1)], 'x') || velo_cmp_eq_u_s(source[(start + 1)], 'X')))))) {
-#line 288 "src/main.vl"
+#line 24 "src/main.vl"
             return "f32";
         }
     }
-#line 291 "src/main.vl"
+#line 27 "src/main.vl"
     return "";
 }
 
-#line 295 "src/main.vl"
+#line 31 "src/main.vl"
 const char* format_c_number_literal(const char* source, size_t start, size_t len, bool is_float) {
-#line 296 "src/main.vl"
+#line 32 "src/main.vl"
     if ((velo_cmp_ge_u_s(len, 1) && velo_cmp_eq_u_s(source[start], '\''))) {
-#line 297 "src/main.vl"
+#line 33 "src/main.vl"
         return copy_slice_to_string(source, start, len);
     }
-#line 300 "src/main.vl"
+#line 36 "src/main.vl"
     const char* suffix = extract_literal_suffix(source, start, len);
-#line 301 "src/main.vl"
+#line 37 "src/main.vl"
     size_t s_len = ((usize)strlen(suffix));
-#line 302 "src/main.vl"
+#line 38 "src/main.vl"
     size_t digits_len = (len - s_len);
-#line 305 "src/main.vl"
+#line 41 "src/main.vl"
     if (((velo_cmp_ge_u_s(digits_len, 2) && velo_cmp_eq_u_s(source[start], '0')) && (((velo_cmp_eq_u_s(source[(start + 1)], 'b') || velo_cmp_eq_u_s(source[(start + 1)], 'B')) || velo_cmp_eq_u_s(source[(start + 1)], 'o')) || velo_cmp_eq_u_s(source[(start + 1)], 'O')))) {
-#line 306 "src/main.vl"
-        int32_t val = parse_int_from_slice(source, start, len);
-#line 307 "src/main.vl"
+#line 42 "src/main.vl"
+        uint8_t b = source[(start + 1)];
+#line 43 "src/main.vl"
+        uint64_t val = 0ULL;
+#line 44 "src/main.vl"
+        if ((velo_cmp_eq_u_s(b, 'b') || velo_cmp_eq_u_s(b, 'B'))) {
+#line 45 "src/main.vl"
+            IntLiteral lit = parse_bin_int_literal(source, start, len);
+#line 46 "src/main.vl"
+            val = lit.val;
+        } else {
+#line 48 "src/main.vl"
+            IntLiteral lit = parse_oct_int_literal(source, start, len);
+#line 49 "src/main.vl"
+            val = lit.val;
+        }
+#line 51 "src/main.vl"
         const char* sfx_c = "";
-#line 308 "src/main.vl"
+#line 52 "src/main.vl"
         if ((((suffix != NULL && "u64" != NULL) ? (strcmp(suffix, "u64") == 0) : (suffix == "u64")) || ((suffix != NULL && "usize" != NULL) ? (strcmp(suffix, "usize") == 0) : (suffix == "usize")))) {
-#line 308 "src/main.vl"
+#line 52 "src/main.vl"
             sfx_c = "ULL";
         } else
-#line 309 "src/main.vl"
+#line 53 "src/main.vl"
         if ((((suffix != NULL && "i64" != NULL) ? (strcmp(suffix, "i64") == 0) : (suffix == "i64")) || ((suffix != NULL && "isize" != NULL) ? (strcmp(suffix, "isize") == 0) : (suffix == "isize")))) {
-#line 309 "src/main.vl"
+#line 53 "src/main.vl"
             sfx_c = "LL";
         } else
-#line 310 "src/main.vl"
+#line 54 "src/main.vl"
         if (((((suffix != NULL && "u32" != NULL) ? (strcmp(suffix, "u32") == 0) : (suffix == "u32")) || ((suffix != NULL && "u16" != NULL) ? (strcmp(suffix, "u16") == 0) : (suffix == "u16"))) || ((suffix != NULL && "u8" != NULL) ? (strcmp(suffix, "u8") == 0) : (suffix == "u8")))) {
-#line 310 "src/main.vl"
+#line 54 "src/main.vl"
             sfx_c = "U";
         }
-#line 311 "src/main.vl"
-        return u64_to_decimal_string(((uint64_t)(val)), sfx_c);
+#line 55 "src/main.vl"
+        return u64_to_decimal_string(val, sfx_c);
     }
-#line 315 "src/main.vl"
+#line 59 "src/main.vl"
     uint8_t* buf = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)((digits_len + 16))));
-#line 316 "src/main.vl"
+#line 60 "src/main.vl"
     size_t count = 0;
-#line 317 "src/main.vl"
+#line 61 "src/main.vl"
     bool has_dot = false;
-#line 318 "src/main.vl"
+#line 62 "src/main.vl"
     bool has_exp = false;
-#line 320 "src/main.vl"
+#line 64 "src/main.vl"
     bool is_hex = ((velo_cmp_ge_u_s(digits_len, 2) && velo_cmp_eq_u_s(source[start], '0')) && (velo_cmp_eq_u_s(source[(start + 1)], 'x') || velo_cmp_eq_u_s(source[(start + 1)], 'X')));
-#line 321 "src/main.vl"
+#line 65 "src/main.vl"
     if (((!is_float) && (!is_hex))) {
-#line 323 "src/main.vl"
+#line 67 "src/main.vl"
         size_t first_non_zero = (start + digits_len);
-#line 324 "src/main.vl"
+#line 68 "src/main.vl"
         size_t j = start;
-#line 325 "src/main.vl"
+#line 69 "src/main.vl"
         for (int32_t it = 0; ((j < (start + digits_len))); it++) {
-#line 326 "src/main.vl"
+#line 70 "src/main.vl"
             uint8_t c = source[j];
-#line 327 "src/main.vl"
+#line 71 "src/main.vl"
             if ((velo_cmp_ge_u_s(c, '1') && velo_cmp_le_u_s(c, '9'))) {
-#line 328 "src/main.vl"
+#line 72 "src/main.vl"
                 first_non_zero = j;
-#line 329 "src/main.vl"
+#line 73 "src/main.vl"
                 j = (start + digits_len);
             } else {
-#line 331 "src/main.vl"
+#line 75 "src/main.vl"
                 j += 1;
             }
         }
-#line 334 "src/main.vl"
+#line 78 "src/main.vl"
         if ((first_non_zero == (start + digits_len))) {
-#line 335 "src/main.vl"
+#line 79 "src/main.vl"
             buf[count] = '0';
-#line 336 "src/main.vl"
+#line 80 "src/main.vl"
             count += 1;
         } else {
-#line 338 "src/main.vl"
+#line 82 "src/main.vl"
             size_t i = first_non_zero;
-#line 339 "src/main.vl"
+#line 83 "src/main.vl"
             for (int32_t it = 0; ((i < (start + digits_len))); it++) {
-#line 340 "src/main.vl"
+#line 84 "src/main.vl"
                 uint8_t c = source[i];
-#line 341 "src/main.vl"
+#line 85 "src/main.vl"
                 if (velo_cmp_ne_u_s(c, '_')) {
-#line 342 "src/main.vl"
+#line 86 "src/main.vl"
                     buf[count] = c;
-#line 343 "src/main.vl"
+#line 87 "src/main.vl"
                     count += 1;
                 }
-#line 345 "src/main.vl"
+#line 89 "src/main.vl"
                 i += 1;
             }
         }
     } else {
-#line 349 "src/main.vl"
+#line 93 "src/main.vl"
         size_t i = start;
-#line 350 "src/main.vl"
+#line 94 "src/main.vl"
         for (int32_t it = 0; ((i < (start + digits_len))); it++) {
-#line 351 "src/main.vl"
+#line 95 "src/main.vl"
             uint8_t c = source[i];
-#line 352 "src/main.vl"
-            if (velo_cmp_eq_u_s(c, '.')) {
-#line 352 "src/main.vl"
-                has_dot = true;
-            }
-#line 353 "src/main.vl"
-            if ((velo_cmp_eq_u_s(c, 'e') || velo_cmp_eq_u_s(c, 'E'))) {
-#line 353 "src/main.vl"
-                has_exp = true;
-            }
-#line 354 "src/main.vl"
+#line 96 "src/main.vl"
             if (velo_cmp_ne_u_s(c, '_')) {
-#line 355 "src/main.vl"
+#line 97 "src/main.vl"
+                if (velo_cmp_eq_u_s(c, '.')) {
+#line 97 "src/main.vl"
+                    has_dot = true;
+                }
+#line 98 "src/main.vl"
+                if ((velo_cmp_eq_u_s(c, 'e') || velo_cmp_eq_u_s(c, 'E'))) {
+#line 98 "src/main.vl"
+                    has_exp = true;
+                }
+#line 99 "src/main.vl"
                 buf[count] = c;
-#line 356 "src/main.vl"
+#line 100 "src/main.vl"
                 count += 1;
             }
-#line 358 "src/main.vl"
+#line 102 "src/main.vl"
             i += 1;
         }
     }
-#line 362 "src/main.vl"
+#line 107 "src/main.vl"
     if (is_float) {
-#line 363 "src/main.vl"
+#line 108 "src/main.vl"
         if (((!has_dot) && (!has_exp))) {
-#line 364 "src/main.vl"
+#line 109 "src/main.vl"
             buf[count] = '.';
-#line 364 "src/main.vl"
+#line 109 "src/main.vl"
             buf[(count + 1)] = '0';
-#line 364 "src/main.vl"
+#line 109 "src/main.vl"
             count += 2;
         }
-#line 366 "src/main.vl"
+#line 111 "src/main.vl"
         if (((suffix != NULL && "f64" != NULL) ? (strcmp(suffix, "f64") != 0) : (suffix != "f64"))) {
-#line 367 "src/main.vl"
+#line 112 "src/main.vl"
             buf[count] = 'f';
-#line 367 "src/main.vl"
+#line 112 "src/main.vl"
             count += 1;
         }
     } else {
-#line 370 "src/main.vl"
+#line 115 "src/main.vl"
         if ((((suffix != NULL && "u64" != NULL) ? (strcmp(suffix, "u64") == 0) : (suffix == "u64")) || ((suffix != NULL && "usize" != NULL) ? (strcmp(suffix, "usize") == 0) : (suffix == "usize")))) {
-#line 371 "src/main.vl"
+#line 116 "src/main.vl"
             buf[count] = 'U';
-#line 371 "src/main.vl"
+#line 116 "src/main.vl"
             buf[(count + 1)] = 'L';
-#line 371 "src/main.vl"
+#line 116 "src/main.vl"
             buf[(count + 2)] = 'L';
-#line 371 "src/main.vl"
+#line 116 "src/main.vl"
             count += 3;
         } else
-#line 372 "src/main.vl"
+#line 117 "src/main.vl"
         if ((((suffix != NULL && "i64" != NULL) ? (strcmp(suffix, "i64") == 0) : (suffix == "i64")) || ((suffix != NULL && "isize" != NULL) ? (strcmp(suffix, "isize") == 0) : (suffix == "isize")))) {
-#line 373 "src/main.vl"
+#line 118 "src/main.vl"
             buf[count] = 'L';
-#line 373 "src/main.vl"
+#line 118 "src/main.vl"
             buf[(count + 1)] = 'L';
-#line 373 "src/main.vl"
+#line 118 "src/main.vl"
             count += 2;
         } else
-#line 374 "src/main.vl"
+#line 119 "src/main.vl"
         if (((((suffix != NULL && "u32" != NULL) ? (strcmp(suffix, "u32") == 0) : (suffix == "u32")) || ((suffix != NULL && "u16" != NULL) ? (strcmp(suffix, "u16") == 0) : (suffix == "u16"))) || ((suffix != NULL && "u8" != NULL) ? (strcmp(suffix, "u8") == 0) : (suffix == "u8")))) {
-#line 375 "src/main.vl"
+#line 120 "src/main.vl"
             buf[count] = 'U';
-#line 375 "src/main.vl"
+#line 120 "src/main.vl"
             count += 1;
         }
     }
-#line 379 "src/main.vl"
+#line 124 "src/main.vl"
     buf[count] = ((uint8_t)(0));
-#line 380 "src/main.vl"
+#line 125 "src/main.vl"
     return ((const char*)(buf));
+}
+
+#line 17 "src/main.vl"
+IntLiteral make_int_literal(uint64_t val, int32_t base, bool is_neg, bool overflow) {
+#line 18 "src/main.vl"
+    return (IntLiteral){ .val = val, .base = base, .is_neg = is_neg, .overflow = overflow };
+}
+
+#line 22 "src/main.vl"
+IntLiteral make_int_literal_val(uint64_t val, int32_t base) {
+#line 23 "src/main.vl"
+    return (IntLiteral){ .val = val, .base = base, .is_neg = false, .overflow = false };
+}
+
+#line 27 "src/main.vl"
+IntLiteral make_int_literal_overflow(int32_t base, bool is_neg) {
+#line 28 "src/main.vl"
+    return (IntLiteral){ .val = 0ULL, .base = base, .is_neg = is_neg, .overflow = true };
+}
+
+#line 32 "src/main.vl"
+bool int_lit_fits_i32(IntLiteral lit) {
+#line 33 "src/main.vl"
+    if (lit.overflow) {
+#line 33 "src/main.vl"
+        return false;
+    }
+#line 34 "src/main.vl"
+    if (lit.is_neg) {
+#line 34 "src/main.vl"
+        return (lit.val <= 2147483648ULL);
+    }
+#line 35 "src/main.vl"
+    return (lit.val <= 2147483647ULL);
+}
+
+#line 39 "src/main.vl"
+bool int_lit_fits_u32(IntLiteral lit) {
+#line 40 "src/main.vl"
+    if ((lit.overflow || lit.is_neg)) {
+#line 40 "src/main.vl"
+        return false;
+    }
+#line 41 "src/main.vl"
+    return (lit.val <= 4294967295ULL);
+}
+
+#line 45 "src/main.vl"
+bool int_lit_fits_i64(IntLiteral lit) {
+#line 46 "src/main.vl"
+    if (lit.overflow) {
+#line 46 "src/main.vl"
+        return false;
+    }
+#line 47 "src/main.vl"
+    if (lit.is_neg) {
+#line 47 "src/main.vl"
+        return (lit.val <= 0x8000000000000000ULL);
+    }
+#line 48 "src/main.vl"
+    return (lit.val <= 0x7FFFFFFFFFFFFFFFULL);
+}
+
+#line 52 "src/main.vl"
+bool int_lit_fits_u64(IntLiteral lit) {
+#line 53 "src/main.vl"
+    return ((!lit.overflow) && (!lit.is_neg));
+}
+
+#line 58 "src/main.vl"
+bool int_lit_to_i32_checked(IntLiteral lit, int32_t* out_val) {
+#line 59 "src/main.vl"
+    if (((out_val == NULL) || (!int_lit_fits_i32(lit)))) {
+#line 59 "src/main.vl"
+        return false;
+    }
+#line 60 "src/main.vl"
+    if (lit.is_neg) {
+#line 61 "src/main.vl"
+        if ((lit.val == 2147483648ULL)) {
+#line 62 "src/main.vl"
+            out_val[0] = ((-2147483647) - 1);
+        } else {
+#line 64 "src/main.vl"
+            out_val[0] = (-((int32_t)(((uint32_t)(lit.val)))));
+        }
+    } else {
+#line 67 "src/main.vl"
+        out_val[0] = ((int32_t)(((uint32_t)(lit.val))));
+    }
+#line 69 "src/main.vl"
+    return true;
+}
+
+#line 74 "src/main.vl"
+bool int_lit_to_u64_checked(IntLiteral lit, uint64_t* out_val) {
+#line 75 "src/main.vl"
+    if ((((out_val == NULL) || lit.overflow) || lit.is_neg)) {
+#line 75 "src/main.vl"
+        return false;
+    }
+#line 76 "src/main.vl"
+    out_val[0] = lit.val;
+#line 77 "src/main.vl"
+    return true;
+}
+
+#line 82 "src/main.vl"
+bool int_lit_to_i64_checked(IntLiteral lit, int64_t* out_val) {
+#line 83 "src/main.vl"
+    if (((out_val == NULL) || (!int_lit_fits_i64(lit)))) {
+#line 83 "src/main.vl"
+        return false;
+    }
+#line 84 "src/main.vl"
+    if (lit.is_neg) {
+#line 85 "src/main.vl"
+        if ((lit.val == 0x8000000000000000ULL)) {
+#line 86 "src/main.vl"
+            out_val[0] = ((-9223372036854775807LL) - 1LL);
+        } else {
+#line 88 "src/main.vl"
+            out_val[0] = (-((int64_t)(lit.val)));
+        }
+    } else {
+#line 91 "src/main.vl"
+        out_val[0] = ((int64_t)(lit.val));
+    }
+#line 93 "src/main.vl"
+    return true;
+}
+
+#line 97 "src/main.vl"
+const char* u64_to_decimal_string(uint64_t val, const char* suffix) {
+#line 98 "src/main.vl"
+    uint8_t* buf = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)(32)));
+#line 99 "src/main.vl"
+    size_t count = 0;
+#line 100 "src/main.vl"
+    if ((val == 0ULL)) {
+#line 101 "src/main.vl"
+        buf[0] = '0';
+#line 102 "src/main.vl"
+        count = 1;
+    } else {
+#line 104 "src/main.vl"
+        uint8_t* temp = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)(24)));
+#line 105 "src/main.vl"
+        size_t tc = 0;
+#line 106 "src/main.vl"
+        uint64_t n = val;
+#line 107 "src/main.vl"
+        for (int32_t it = 0; ((n > 0ULL)); it++) {
+#line 108 "src/main.vl"
+            temp[tc] = (((uint8_t)('0')) + ((uint8_t)((n % 10ULL))));
+#line 109 "src/main.vl"
+            n = (n / 10ULL);
+#line 110 "src/main.vl"
+            tc += 1;
+        }
+#line 112 "src/main.vl"
+        for (int32_t it = 0; (velo_cmp_gt_u_s(tc, 0)); it++) {
+#line 113 "src/main.vl"
+            tc -= 1;
+#line 114 "src/main.vl"
+            buf[count] = temp[tc];
+#line 115 "src/main.vl"
+            count += 1;
+        }
+    }
+#line 118 "src/main.vl"
+    if ((suffix != NULL)) {
+#line 119 "src/main.vl"
+        size_t s_idx = 0;
+#line 120 "src/main.vl"
+        size_t s_len = ((usize)strlen(suffix));
+#line 121 "src/main.vl"
+        for (int32_t it = 0; ((s_idx < s_len)); it++) {
+#line 122 "src/main.vl"
+            buf[count] = suffix[s_idx];
+#line 123 "src/main.vl"
+            count += 1;
+#line 124 "src/main.vl"
+            s_idx += 1;
+        }
+    }
+#line 127 "src/main.vl"
+    buf[count] = ((uint8_t)(0));
+#line 128 "src/main.vl"
+    return ((const char*)(buf));
+}
+
+#line 133 "src/main.vl"
+IntLiteral parse_decimal_int_literal(const char* source, size_t start, size_t len) {
+#line 134 "src/main.vl"
+    const char* suffix = extract_literal_suffix(source, start, len);
+#line 135 "src/main.vl"
+    size_t s_len = ((usize)strlen(suffix));
+#line 136 "src/main.vl"
+    size_t digits_len = (len - s_len);
+#line 138 "src/main.vl"
+    uint64_t val = 0ULL;
+#line 139 "src/main.vl"
+    bool overflow = false;
+#line 140 "src/main.vl"
+    bool has_digits = false;
+#line 141 "src/main.vl"
+    size_t i = start;
+#line 142 "src/main.vl"
+    size_t end = (start + digits_len);
+#line 144 "src/main.vl"
+    for (int32_t it = 0; ((i < end)); it++) {
+#line 145 "src/main.vl"
+        uint8_t c = source[i];
+#line 146 "src/main.vl"
+        if (velo_cmp_eq_u_s(c, '_')) {
+#line 147 "src/main.vl"
+            i += 1;
+        } else
+#line 148 "src/main.vl"
+        if ((velo_cmp_ge_u_s(c, '0') && velo_cmp_le_u_s(c, '9'))) {
+#line 149 "src/main.vl"
+            has_digits = true;
+#line 150 "src/main.vl"
+            uint64_t digit = (((uint64_t)(c)) - ((uint64_t)('0')));
+#line 151 "src/main.vl"
+            if ((!overflow)) {
+#line 152 "src/main.vl"
+                if (((val > 1844674407370955161ULL) || ((val == 1844674407370955161ULL) && (digit > 5ULL)))) {
+#line 153 "src/main.vl"
+                    overflow = true;
+                } else {
+#line 155 "src/main.vl"
+                    val = ((val * 10ULL) + digit);
+                }
+            }
+#line 158 "src/main.vl"
+            i += 1;
+        } else {
+#line 160 "src/main.vl"
+            overflow = true;
+#line 161 "src/main.vl"
+            i = end;
+        }
+    }
+#line 164 "src/main.vl"
+    if ((!has_digits)) {
+#line 164 "src/main.vl"
+        overflow = true;
+    }
+#line 165 "src/main.vl"
+    return make_int_literal(val, 10, false, overflow);
+}
+
+#line 169 "src/main.vl"
+int32_t parse_hex_digit(uint8_t c) {
+#line 170 "src/main.vl"
+    if ((velo_cmp_ge_u_s(c, '0') && velo_cmp_le_u_s(c, '9'))) {
+#line 170 "src/main.vl"
+        return (((int32_t)(c)) - ((int32_t)('0')));
+    }
+#line 171 "src/main.vl"
+    if ((velo_cmp_ge_u_s(c, 'a') && velo_cmp_le_u_s(c, 'f'))) {
+#line 171 "src/main.vl"
+        return ((((int32_t)(c)) - ((int32_t)('a'))) + 10);
+    }
+#line 172 "src/main.vl"
+    if ((velo_cmp_ge_u_s(c, 'A') && velo_cmp_le_u_s(c, 'F'))) {
+#line 172 "src/main.vl"
+        return ((((int32_t)(c)) - ((int32_t)('A'))) + 10);
+    }
+#line 173 "src/main.vl"
+    return 0;
+}
+
+#line 177 "src/main.vl"
+int32_t parse_int_from_slice(const char* source, size_t start, size_t len) {
+#line 178 "src/main.vl"
+    if ((velo_cmp_ge_u_s(len, 2) && velo_cmp_eq_u_s(source[start], '\''))) {
+#line 179 "src/main.vl"
+        return parse_char_literal(source, start, len);
+    }
+#line 182 "src/main.vl"
+    if ((velo_cmp_ge_u_s(len, 2) && velo_cmp_eq_u_s(source[start], '0'))) {
+#line 183 "src/main.vl"
+        uint8_t b = source[(start + 1)];
+#line 184 "src/main.vl"
+        if ((velo_cmp_eq_u_s(b, 'x') || velo_cmp_eq_u_s(b, 'X'))) {
+#line 185 "src/main.vl"
+            IntLiteral hex_lit = parse_hex_int_literal(source, start, len);
+#line 186 "src/main.vl"
+            return ((int32_t)(hex_lit.val));
+        } else
+#line 187 "src/main.vl"
+        if ((velo_cmp_eq_u_s(b, 'b') || velo_cmp_eq_u_s(b, 'B'))) {
+#line 188 "src/main.vl"
+            IntLiteral bin_lit = parse_bin_int_literal(source, start, len);
+#line 189 "src/main.vl"
+            return ((int32_t)(bin_lit.val));
+        } else
+#line 190 "src/main.vl"
+        if ((velo_cmp_eq_u_s(b, 'o') || velo_cmp_eq_u_s(b, 'O'))) {
+#line 191 "src/main.vl"
+            IntLiteral oct_lit = parse_oct_int_literal(source, start, len);
+#line 192 "src/main.vl"
+            return ((int32_t)(oct_lit.val));
+        }
+    }
+#line 195 "src/main.vl"
+    IntLiteral dec_lit = parse_decimal_int_literal(source, start, len);
+#line 196 "src/main.vl"
+    return ((int32_t)(dec_lit.val));
+}
+
+#line 201 "src/main.vl"
+IntLiteral parse_hex_int_literal(const char* source, size_t start, size_t len) {
+#line 202 "src/main.vl"
+    const char* suffix = extract_literal_suffix(source, start, len);
+#line 203 "src/main.vl"
+    size_t s_len = ((usize)strlen(suffix));
+#line 204 "src/main.vl"
+    size_t digits_len = (len - s_len);
+#line 206 "src/main.vl"
+    if ((velo_cmp_lt_u_s(digits_len, 3) || velo_cmp_ne_u_s(source[start], '0'))) {
+#line 207 "src/main.vl"
+        return make_int_literal_overflow(16, false);
+    }
+#line 209 "src/main.vl"
+    uint8_t pfx = source[(start + 1)];
+#line 210 "src/main.vl"
+    if ((velo_cmp_ne_u_s(pfx, 'x') && velo_cmp_ne_u_s(pfx, 'X'))) {
+#line 211 "src/main.vl"
+        return make_int_literal_overflow(16, false);
+    }
+#line 214 "src/main.vl"
+    uint64_t val = 0ULL;
+#line 215 "src/main.vl"
+    bool overflow = false;
+#line 216 "src/main.vl"
+    bool has_digits = false;
+#line 217 "src/main.vl"
+    size_t i = (start + 2);
+#line 218 "src/main.vl"
+    size_t end = (start + digits_len);
+#line 220 "src/main.vl"
+    for (int32_t it = 0; ((i < end)); it++) {
+#line 221 "src/main.vl"
+        uint8_t c = source[i];
+#line 222 "src/main.vl"
+        if (velo_cmp_eq_u_s(c, '_')) {
+#line 223 "src/main.vl"
+            i += 1;
+        } else
+#line 224 "src/main.vl"
+        if ((((velo_cmp_ge_u_s(c, '0') && velo_cmp_le_u_s(c, '9')) || (velo_cmp_ge_u_s(c, 'a') && velo_cmp_le_u_s(c, 'f'))) || (velo_cmp_ge_u_s(c, 'A') && velo_cmp_le_u_s(c, 'F')))) {
+#line 225 "src/main.vl"
+            has_digits = true;
+#line 226 "src/main.vl"
+            uint64_t digit = ((uint64_t)(((uint32_t)(char_hex_digit(c)))));
+#line 227 "src/main.vl"
+            if ((!overflow)) {
+#line 228 "src/main.vl"
+                if ((val > 0x0FFFFFFFFFFFFFFFULL)) {
+#line 229 "src/main.vl"
+                    overflow = true;
+                } else {
+#line 231 "src/main.vl"
+                    val = ((val << 4ULL) | digit);
+                }
+            }
+#line 234 "src/main.vl"
+            i += 1;
+        } else {
+#line 236 "src/main.vl"
+            overflow = true;
+#line 237 "src/main.vl"
+            i = end;
+        }
+    }
+#line 240 "src/main.vl"
+    if ((!has_digits)) {
+#line 240 "src/main.vl"
+        overflow = true;
+    }
+#line 241 "src/main.vl"
+    return make_int_literal(val, 16, false, overflow);
+}
+
+#line 246 "src/main.vl"
+IntLiteral parse_bin_int_literal(const char* source, size_t start, size_t len) {
+#line 247 "src/main.vl"
+    const char* suffix = extract_literal_suffix(source, start, len);
+#line 248 "src/main.vl"
+    size_t s_len = ((usize)strlen(suffix));
+#line 249 "src/main.vl"
+    size_t digits_len = (len - s_len);
+#line 251 "src/main.vl"
+    if ((velo_cmp_lt_u_s(digits_len, 3) || velo_cmp_ne_u_s(source[start], '0'))) {
+#line 252 "src/main.vl"
+        return make_int_literal_overflow(2, false);
+    }
+#line 254 "src/main.vl"
+    uint8_t pfx = source[(start + 1)];
+#line 255 "src/main.vl"
+    if ((velo_cmp_ne_u_s(pfx, 'b') && velo_cmp_ne_u_s(pfx, 'B'))) {
+#line 256 "src/main.vl"
+        return make_int_literal_overflow(2, false);
+    }
+#line 259 "src/main.vl"
+    uint64_t val = 0ULL;
+#line 260 "src/main.vl"
+    bool overflow = false;
+#line 261 "src/main.vl"
+    bool has_digits = false;
+#line 262 "src/main.vl"
+    size_t i = (start + 2);
+#line 263 "src/main.vl"
+    size_t end = (start + digits_len);
+#line 265 "src/main.vl"
+    for (int32_t it = 0; ((i < end)); it++) {
+#line 266 "src/main.vl"
+        uint8_t c = source[i];
+#line 267 "src/main.vl"
+        if (velo_cmp_eq_u_s(c, '_')) {
+#line 268 "src/main.vl"
+            i += 1;
+        } else
+#line 269 "src/main.vl"
+        if ((velo_cmp_eq_u_s(c, '0') || velo_cmp_eq_u_s(c, '1'))) {
+#line 270 "src/main.vl"
+            has_digits = true;
+#line 271 "src/main.vl"
+            uint64_t digit = ((uint64_t)((((int32_t)(c)) - ((int32_t)('0')))));
+#line 272 "src/main.vl"
+            if ((!overflow)) {
+#line 273 "src/main.vl"
+                if ((val > 0x7FFFFFFFFFFFFFFFULL)) {
+#line 274 "src/main.vl"
+                    overflow = true;
+                } else {
+#line 276 "src/main.vl"
+                    val = ((val << 1ULL) | digit);
+                }
+            }
+#line 279 "src/main.vl"
+            i += 1;
+        } else {
+#line 281 "src/main.vl"
+            overflow = true;
+#line 282 "src/main.vl"
+            i = end;
+        }
+    }
+#line 285 "src/main.vl"
+    if ((!has_digits)) {
+#line 285 "src/main.vl"
+        overflow = true;
+    }
+#line 286 "src/main.vl"
+    return make_int_literal(val, 2, false, overflow);
+}
+
+#line 291 "src/main.vl"
+IntLiteral parse_oct_int_literal(const char* source, size_t start, size_t len) {
+#line 292 "src/main.vl"
+    const char* suffix = extract_literal_suffix(source, start, len);
+#line 293 "src/main.vl"
+    size_t s_len = ((usize)strlen(suffix));
+#line 294 "src/main.vl"
+    size_t digits_len = (len - s_len);
+#line 296 "src/main.vl"
+    if ((velo_cmp_lt_u_s(digits_len, 3) || velo_cmp_ne_u_s(source[start], '0'))) {
+#line 297 "src/main.vl"
+        return make_int_literal_overflow(8, false);
+    }
+#line 299 "src/main.vl"
+    uint8_t pfx = source[(start + 1)];
+#line 300 "src/main.vl"
+    if ((velo_cmp_ne_u_s(pfx, 'o') && velo_cmp_ne_u_s(pfx, 'O'))) {
+#line 301 "src/main.vl"
+        return make_int_literal_overflow(8, false);
+    }
+#line 304 "src/main.vl"
+    uint64_t val = 0ULL;
+#line 305 "src/main.vl"
+    bool overflow = false;
+#line 306 "src/main.vl"
+    bool has_digits = false;
+#line 307 "src/main.vl"
+    size_t i = (start + 2);
+#line 308 "src/main.vl"
+    size_t end = (start + digits_len);
+#line 310 "src/main.vl"
+    for (int32_t it = 0; ((i < end)); it++) {
+#line 311 "src/main.vl"
+        uint8_t c = source[i];
+#line 312 "src/main.vl"
+        if (velo_cmp_eq_u_s(c, '_')) {
+#line 313 "src/main.vl"
+            i += 1;
+        } else
+#line 314 "src/main.vl"
+        if ((velo_cmp_ge_u_s(c, '0') && velo_cmp_le_u_s(c, '7'))) {
+#line 315 "src/main.vl"
+            has_digits = true;
+#line 316 "src/main.vl"
+            uint64_t digit = ((uint64_t)((((int32_t)(c)) - ((int32_t)('0')))));
+#line 317 "src/main.vl"
+            if ((!overflow)) {
+#line 318 "src/main.vl"
+                if ((val > 0x1FFFFFFFFFFFFFFFULL)) {
+#line 319 "src/main.vl"
+                    overflow = true;
+                } else {
+#line 321 "src/main.vl"
+                    val = ((val << 3ULL) | digit);
+                }
+            }
+#line 324 "src/main.vl"
+            i += 1;
+        } else {
+#line 326 "src/main.vl"
+            overflow = true;
+#line 327 "src/main.vl"
+            i = end;
+        }
+    }
+#line 330 "src/main.vl"
+    if ((!has_digits)) {
+#line 330 "src/main.vl"
+        overflow = true;
+    }
+#line 331 "src/main.vl"
+    return make_int_literal(val, 8, false, overflow);
 }
 
 #line 6 "src/main.vl"
@@ -12903,7 +13023,7 @@ void lex_number(Lexer* lex, size_t start_pos, int32_t start_line, int32_t start_
             }
         }
 #line 35 "src/main.vl"
-        if (((lex->pos < len) && is_alpha(src[lex->pos]))) {
+        if (((lex->pos < len) && is_ident_part(src[lex->pos]))) {
 #line 36 "src/main.vl"
             for (int32_t it = 0; (((lex->pos < len) && is_ident_part(src[lex->pos]))); it++) {
 #line 37 "src/main.vl"
@@ -17540,64 +17660,111 @@ ExprNode* parse_int_literal_expr(Parser* p) {
         return node;
     }
 #line 208 "src/main.vl"
-    if ((!is_bin_or_oct)) {
+    if (is_bin_or_oct) {
 #line 210 "src/main.vl"
-        IntLiteral lit = parse_decimal_int_literal(p->source, tok.start, tok.length);
+        bool is_bin = (velo_cmp_eq_u_s(p->source[(tok.start + 1)], 'b') || velo_cmp_eq_u_s(p->source[(tok.start + 1)], 'B'));
 #line 211 "src/main.vl"
-        if (lit.overflow) {
+        IntLiteral lit = make_int_literal_overflow(2, false);
 #line 212 "src/main.vl"
-            report_parse(p, p->filename, tok.line, tok.col, tok.length, "Integer literal exceeds 64-bit unsigned maximum (18446744073709551615)");
+        if (is_bin) {
 #line 213 "src/main.vl"
-            p->had_error = true;
-#line 214 "src/main.vl"
-            return make_int_expr(0, tok.line, tok.col);
+            lit = parse_bin_int_literal(p->source, tok.start, tok.length);
+        } else {
+#line 215 "src/main.vl"
+            lit = parse_oct_int_literal(p->source, tok.start, tok.length);
         }
 #line 217 "src/main.vl"
-        int32_t i32_val = 0;
+        if (lit.overflow) {
 #line 218 "src/main.vl"
-        int_lit_to_i32_checked(lit, (&(i32_val)));
+            if (is_bin) {
 #line 219 "src/main.vl"
-        ExprNode* node = make_int_expr(i32_val, tok.line, tok.col);
+                report_parse(p, p->filename, tok.line, tok.col, tok.length, "Binary literal exceeds 64-bit unsigned maximum or contains invalid digits (overflow)");
+            } else {
 #line 221 "src/main.vl"
-        if (velo_cmp_gt_u_s(((usize)strlen(sfx)), 0)) {
-#line 222 "src/main.vl"
-            node->type_name = sfx;
+                report_parse(p, p->filename, tok.line, tok.col, tok.length, "Octal literal exceeds 64-bit unsigned maximum or contains invalid digits (overflow)");
+            }
 #line 223 "src/main.vl"
+            p->had_error = true;
+#line 224 "src/main.vl"
+            return make_int_expr(0, tok.line, tok.col);
+        }
+#line 227 "src/main.vl"
+        int32_t i32_val = 0;
+#line 228 "src/main.vl"
+        int_lit_to_i32_checked(lit, (&(i32_val)));
+#line 229 "src/main.vl"
+        ExprNode* node = make_int_expr(i32_val, tok.line, tok.col);
+#line 231 "src/main.vl"
+        if (velo_cmp_gt_u_s(((usize)strlen(sfx)), 0)) {
+#line 232 "src/main.vl"
+            node->type_name = sfx;
+#line 233 "src/main.vl"
             node->str_val = format_c_number_literal(p->source, tok.start, tok.length, false);
         } else {
-#line 229 "src/main.vl"
+#line 239 "src/main.vl"
             if ((lit.val > 9223372036854775807ULL)) {
-#line 230 "src/main.vl"
+#line 240 "src/main.vl"
                 node->type_name = "u64";
-#line 231 "src/main.vl"
+#line 241 "src/main.vl"
                 node->str_val = u64_to_decimal_string(lit.val, "ULL");
             } else
-#line 232 "src/main.vl"
+#line 242 "src/main.vl"
             if ((lit.val > 2147483647ULL)) {
-#line 233 "src/main.vl"
+#line 243 "src/main.vl"
                 node->type_name = "i64";
-#line 234 "src/main.vl"
+#line 244 "src/main.vl"
                 node->str_val = u64_to_decimal_string(lit.val, "LL");
             } else {
-#line 236 "src/main.vl"
-                node->str_val = format_c_number_literal(p->source, tok.start, tok.length, false);
+#line 246 "src/main.vl"
+                node->str_val = u64_to_decimal_string(lit.val, "");
             }
         }
-#line 239 "src/main.vl"
+#line 249 "src/main.vl"
         return node;
     }
-#line 243 "src/main.vl"
-    int32_t val = parse_int_from_slice(p->source, tok.start, tok.length);
-#line 244 "src/main.vl"
-    ExprNode* node = make_int_expr(val, tok.line, tok.col);
-#line 245 "src/main.vl"
-    node->str_val = format_c_number_literal(p->source, tok.start, tok.length, false);
-#line 246 "src/main.vl"
-    if (velo_cmp_gt_u_s(((usize)strlen(sfx)), 0)) {
-#line 247 "src/main.vl"
-        node->type_name = sfx;
+#line 253 "src/main.vl"
+    IntLiteral lit = parse_decimal_int_literal(p->source, tok.start, tok.length);
+#line 254 "src/main.vl"
+    if (lit.overflow) {
+#line 255 "src/main.vl"
+        report_parse(p, p->filename, tok.line, tok.col, tok.length, "Integer literal exceeds 64-bit unsigned maximum (18446744073709551615)");
+#line 256 "src/main.vl"
+        p->had_error = true;
+#line 257 "src/main.vl"
+        return make_int_expr(0, tok.line, tok.col);
     }
-#line 249 "src/main.vl"
+#line 260 "src/main.vl"
+    int32_t i32_val = 0;
+#line 261 "src/main.vl"
+    int_lit_to_i32_checked(lit, (&(i32_val)));
+#line 262 "src/main.vl"
+    ExprNode* node = make_int_expr(i32_val, tok.line, tok.col);
+#line 264 "src/main.vl"
+    if (velo_cmp_gt_u_s(((usize)strlen(sfx)), 0)) {
+#line 265 "src/main.vl"
+        node->type_name = sfx;
+#line 266 "src/main.vl"
+        node->str_val = format_c_number_literal(p->source, tok.start, tok.length, false);
+    } else {
+#line 272 "src/main.vl"
+        if ((lit.val > 9223372036854775807ULL)) {
+#line 273 "src/main.vl"
+            node->type_name = "u64";
+#line 274 "src/main.vl"
+            node->str_val = u64_to_decimal_string(lit.val, "ULL");
+        } else
+#line 275 "src/main.vl"
+        if ((lit.val > 2147483647ULL)) {
+#line 276 "src/main.vl"
+            node->type_name = "i64";
+#line 277 "src/main.vl"
+            node->str_val = u64_to_decimal_string(lit.val, "LL");
+        } else {
+#line 279 "src/main.vl"
+            node->str_val = format_c_number_literal(p->source, tok.start, tok.length, false);
+        }
+    }
+#line 282 "src/main.vl"
     return node;
 }
 

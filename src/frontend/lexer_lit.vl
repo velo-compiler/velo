@@ -31,8 +31,8 @@ act lex_number(lex: @Lexer, start_pos: usize, start_line: i32, start_col: i32) {
                 lex.col += 1
             }
         }
-        // Optional integer suffix (e.g. 0xFFu8, 0x1000i64)
-        if lex.pos < len and is_alpha(src[lex.pos]) {
+        // Optional integer suffix or invalid trailing characters (e.g. 0xFFu8, 0b102, 0o78)
+        if lex.pos < len and is_ident_part(src[lex.pos]) {
             loop lex.pos < len and is_ident_part(src[lex.pos]) {
                 lex.pos += 1
                 lex.col += 1
