@@ -199,3 +199,58 @@ act main() {{
     res = run_velo_source(source, tmp_path)
     assert res.returncode == 0, f"run failed:\n{res.stderr}\n{res.stdout}"
     assert "OK_WRAPPER_WORKS" in res.stdout
+
+
+def test_parse_decimal_int_literal_boundaries(tmp_path):
+    source = f"""use "{NUM_UTILS_PATH}"
+use std.io
+
+act main() {{
+    // 0
+    let lit0 = parse_decimal_int_literal("0", 0, 1)
+    assert(lit0.val == 0u64)
+    assert(not lit0.overflow)
+
+    // 2147483647 (INT32_MAX)
+    let lit_i32_max = parse_decimal_int_literal("2147483647", 0, 10)
+    assert(lit_i32_max.val == 2147483647u64)
+    assert(not lit_i32_max.overflow)
+
+    // 2147483648 (INT32_MAX + 1)
+    let lit_i32_plus1 = parse_decimal_int_literal("2147483648", 0, 10)
+    assert(lit_i32_plus1.val == 2147483648u64)
+    assert(not lit_i32_plus1.overflow)
+
+    // 9223372036854775807 (INT64_MAX)
+    let lit_i64_max = parse_decimal_int_literal("9223372036854775807", 0, 19)
+    assert(lit_i64_max.val == 9223372036854775807u64)
+    assert(not lit_i64_max.overflow)
+
+    // 18446744073709551615 (UINT64_MAX)
+    let lit_u64_max = parse_decimal_int_literal("18446744073709551615", 0, 20)
+    assert(lit_u64_max.val == 18446744073709551615u64)
+    assert(not lit_u64_max.overflow)
+
+    // 18446744073709551616 (UINT64_MAX + 1) -> overflow!
+    let lit_ovf1 = parse_decimal_int_literal("18446744073709551616", 0, 20)
+    assert(lit_ovf1.overflow)
+
+    // Huge literal -> overflow!
+    let lit_ovf2 = parse_decimal_int_literal("99999999999999999999999999999999", 0, 32)
+    assert(lit_ovf2.overflow)
+
+    // Malformed digits -> rejected with overflow!
+    let lit_malformed = parse_decimal_int_literal("12a34", 0, 5)
+    assert(lit_malformed.overflow)
+
+    // Underscores handled properly
+    let lit_underscores = parse_decimal_int_literal("1_000_000", 0, 9)
+    assert(lit_underscores.val == 1000000u64)
+    assert(not lit_underscores.overflow)
+
+    println_str("OK_DECIMAL_BOUNDARIES")
+}}
+"""
+    res = run_velo_source(source, tmp_path)
+    assert res.returncode == 0, f"run failed:\n{res.stderr}\n{res.stdout}"
+    assert "OK_DECIMAL_BOUNDARIES" in res.stdout

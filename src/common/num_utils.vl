@@ -1,5 +1,6 @@
 // Numeric literal parsing and C99 literal formatting helpers.
 use "utils.vl"
+use "char_utils.vl"
 
 // Wide integer literal representation: holds magnitude (u64), base (2, 8, 10, 16),
 // sign flag, and an explicit overflow flag.
@@ -90,6 +91,78 @@ act int_lit_to_i64_checked(lit: IntLiteral, out_val: @i64) -> bool {
     return true
 }
 
+// Formats an unsigned 64-bit integer into a decimal string with an optional suffix.
+act u64_to_decimal_string(val: u64, suffix: string) -> string {
+    mut buf: @u8 = mem.alloc(@u8, 32)
+    mut count: usize = 0
+    if val == 0u64 {
+        buf[0] = '0'
+        count = 1
+    } else {
+        mut temp: @u8 = mem.alloc(@u8, 24)
+        mut tc: usize = 0
+        mut n = val
+        loop n > 0u64 {
+            temp[tc] = ('0' as u8) + ((n % 10u64) as u8)
+            n = n / 10u64
+            tc += 1
+        }
+        loop tc > 0 {
+            tc -= 1
+            buf[count] = temp[tc]
+            count += 1
+        }
+    }
+    if suffix != null {
+        mut s_idx: usize = 0
+        let s_len = str.len(suffix)
+        loop s_idx < s_len {
+            buf[count] = suffix[s_idx]
+            count += 1
+            s_idx += 1
+        }
+    }
+    buf[count] = 0 as u8
+    return buf as string
+}
+
+// Parses a decimal integer literal from an ASCII slice into the wide IntLiteral model.
+// Gating: checks for overflow beyond UINT64_MAX (18446744073709551615) and rejects malformed characters.
+act parse_decimal_int_literal(source: string, start: usize, len: usize) -> IntLiteral {
+    let suffix = extract_literal_suffix(source, start, len)
+    let s_len = str.len(suffix)
+    let digits_len = len - s_len
+
+    mut val: u64 = 0u64
+    mut overflow = false
+    mut has_digits = false
+    mut i = start
+    let end = start + digits_len
+
+    loop i < end {
+        let c = source[i]
+        if c == '_' {
+            i += 1
+        } else if c >= '0' and c <= '9' {
+            has_digits = true
+            let digit = ((c as u64) - ('0' as u64))
+            if not overflow {
+                if val > 1844674407370955161u64 or (val == 1844674407370955161u64 and digit > 5u64) {
+                    overflow = true
+                } else {
+                    val = val * 10u64 + digit
+                }
+            }
+            i += 1
+        } else {
+            overflow = true
+            i = end
+        }
+    }
+    if not has_digits { overflow = true }
+    return make_int_literal(val, 10, false, overflow)
+}
+
 // Returns the numeric value (0-15) of an ASCII hexadecimal character.
 act parse_hex_digit(c: u8) -> i32 {
     if c >= '0' and c <= '9' { return (c as i32) - ('0' as i32) }
@@ -101,50 +174,7 @@ act parse_hex_digit(c: u8) -> i32 {
 // Parses an integer or character literal value from an ASCII slice.
 act parse_int_from_slice(source: string, start: usize, len: usize) -> i32 {
     if len >= 2 and source[start] == '\'' {
-        if source[start + 1] == '\\' {
-            if len >= 3 {
-                let esc = source[start + 2]
-                if esc == 'n' { return 10 }
-                if esc == 't' { return 9 }
-                if esc == 'r' { return 13 }
-                if esc == '0' { return 0 }
-                if esc == '\'' { return 39 }
-                if esc == '"' { return 34 }
-                if esc == '\\' { return 92 }
-                if esc == 'x' and len >= 5 {
-                    let p = start + 3
-                    return (parse_hex_digit(source[p]) << 4) | parse_hex_digit(source[p + 1])
-                }
-                if esc == 'u' and len >= 7 {
-                    let p = start + 3
-                    return (parse_hex_digit(source[p]) << 12) | (parse_hex_digit(source[p + 1]) << 8) | (parse_hex_digit(source[p + 2]) << 4) | parse_hex_digit(source[p + 3])
-                }
-                return esc as i32
-            }
-        }
-        let b0: u32 = source[start + 1] as u32
-        if b0 <= 0x7F as u32 {
-            return b0 as i32
-        }
-        if (b0 & 0xE0 as u32) == 0xC0 as u32 and len >= 4 {
-            let b1: u32 = source[start + 2] as u32
-            let cp: u32 = ((b0 & 0x1F as u32) << 6) | (b1 & 0x3F as u32)
-            return cp as i32
-        }
-        if (b0 & 0xF0 as u32) == 0xE0 as u32 and len >= 5 {
-            let b1: u32 = source[start + 2] as u32
-            let b2: u32 = source[start + 3] as u32
-            let cp: u32 = ((b0 & 0x0F as u32) << 12) | ((b1 & 0x3F as u32) << 6) | (b2 & 0x3F as u32)
-            return cp as i32
-        }
-        if (b0 & 0xF8 as u32) == 0xF0 as u32 and len >= 6 {
-            let b1: u32 = source[start + 2] as u32
-            let b2: u32 = source[start + 3] as u32
-            let b3: u32 = source[start + 4] as u32
-            let cp: u32 = ((b0 & 0x07 as u32) << 18) | ((b1 & 0x3F as u32) << 12) | ((b2 & 0x3F as u32) << 6) | (b3 & 0x3F as u32)
-            return cp as i32
-        }
-        return b0 as i32
+        return parse_char_literal(source, start, len)
     }
 
     mut i = start
@@ -289,35 +319,11 @@ act format_c_number_literal(source: string, start: usize, len: usize, is_float: 
     // Binary and Octal literals (0b..., 0o...) -> convert to integer decimal string
     if digits_len >= 2 and source[start] == '0' and (source[start + 1] == 'b' or source[start + 1] == 'B' or source[start + 1] == 'o' or source[start + 1] == 'O') {
         let val = parse_int_from_slice(source, start, len)
-        mut buf: @u8 = mem.alloc(@u8, 32)
-        mut count: usize = 0
-        mut n = val
-        if n == 0 {
-            buf[0] = '0'
-            count = 1
-        } else {
-            mut temp: @u8 = mem.alloc(@u8, 16)
-            mut tc: usize = 0
-            loop n > 0 {
-                temp[tc] = ('0' as u8) + ((n % 10) as u8)
-                n = n / 10
-                tc += 1
-            }
-            loop tc > 0 {
-                tc -= 1
-                buf[count] = temp[tc]
-                count += 1
-            }
-        }
-        if suffix == "u64" or suffix == "usize" {
-            buf[count] = 'U'; buf[count + 1] = 'L'; buf[count + 2] = 'L'; count += 3
-        } else if suffix == "i64" or suffix == "isize" {
-            buf[count] = 'L'; buf[count + 1] = 'L'; count += 2
-        } else if suffix == "u32" or suffix == "u16" or suffix == "u8" {
-            buf[count] = 'U'; count += 1
-        }
-        buf[count] = 0 as u8
-        return buf as string
+        mut sfx_c = ""
+        if suffix == "u64" or suffix == "usize" { sfx_c = "ULL" }
+        else if suffix == "i64" or suffix == "isize" { sfx_c = "LL" }
+        else if suffix == "u32" or suffix == "u16" or suffix == "u8" { sfx_c = "U" }
+        return u64_to_decimal_string(val as u64, sfx_c)
     }
 
     // Decimal and Hexadecimal: copy digits omitting '_' underscores
