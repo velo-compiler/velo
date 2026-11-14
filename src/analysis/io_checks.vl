@@ -9,8 +9,8 @@
 // per-member arity/type walls and the correct result spells: the checker
 // rejects implicit float->int, bool->int, and narrowing conversions, and
 // adapts only in-range unsuffixed integer literals (the language-wide rule).
-// Codegen dispatch is Task 52.4: until then only print/println lower through
-// the intrinsic, so running the other members is still a codegen-side gap.
+// Task 52.4 restricts codegen dispatch to the intrinsic set: every other
+// member resolves through normal module function lookup.
 use "type_checker.vl"
 use "symbol_table.vl"
 use "literal_check.vl"

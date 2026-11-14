@@ -74,7 +74,7 @@ def test_std_url_module_import():
 
 def test_std_url_query_del_expansion_safety():
     test_code = """use std.url
-use sys.io
+use std.io
 
 act main() -> i32 {
     // 50 colons in value = 50 bytes in raw input, expands to 150 bytes (%3A) on re-encode

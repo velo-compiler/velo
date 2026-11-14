@@ -38,7 +38,7 @@ def test_std_rand_module_import():
 
 def test_std_rand_full_range_boundaries():
     test_code = """use std.rand
-use sys.io
+use std.io
 
 act main() -> i32 {
     mut r = rng_seed(42 as u64)
@@ -76,7 +76,7 @@ act main() -> i32 {
 
 def test_std_rand_pcg64_statistical_quality():
     test_code = """use std.rand
-use sys.io
+use std.io
 
 act main() -> i32 {
     mut r = rng_seed(42 as u64)

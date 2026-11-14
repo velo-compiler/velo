@@ -101,7 +101,11 @@ act emit_call_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             if target.str_val == "str" { emit_str_call(sb, st, member, expr); return }  // 5.1/8.2: delegate to codegen_io.vl
             if target.str_val == "math" { emit_math_call(sb, st, member, expr); return }  // 5.3 (S2): the ladder lives in math_gen.vl — compile-checks already ran at inference
             if target.str_val == "time" { emit_time_call(sb, st, member, expr); return }; if target.str_val == "os" { emit_os_call(sb, st, member, expr); return }; if target.str_val == "simd" { emit_simd_call(sb, st, expr); return }; if target.str_val == "shelf" { emit_shelf_module_call(sb, st, member, expr); return }; if target.str_val == "map" { emit_map_module_call(sb, st, member, expr); return }
-            if target.str_val == "io" { emit_io_call(sb, st, member, expr.first_arg); return }
+            if target.str_val == "io" {
+                // Phase 52.4: only the exact intrinsics lower through emit_io_call.
+                if member == "print" or member == "println" { emit_io_call(sb, st, member, expr.first_arg); return }
+                emit_io_stdlib_call(sb, st, member, expr); return
+            }
         }
     }
     // 5.2: shelf receivers — put / take lower onto VeloShelf helpers

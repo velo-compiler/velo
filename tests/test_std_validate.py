@@ -38,7 +38,7 @@ def test_std_validate_module_import():
 
 def test_std_validate_fqdn_domain():
     test_code = """use std.validate
-use sys.io
+use std.io
 
 act main() -> i32 {
     if not validate_domain("example.com.") { return 1 }

@@ -18,7 +18,27 @@ use "codegen_expr.vl"
 use "codegen_fmt.vl"
 
 // Emits code for `io.println` and `io.print` calls with full string interpolation and formatting.
+// Phase 52.4: intrinsic printf output and the stdlib writers use different
+// buffers. Flush the stdlib buffer before the intrinsic write and libc after
+// it so an interleaved io.println / io.println_str sequence keeps program order.
 act emit_io_call(sb: @StringBuilder, st: @SymbolTable, member: string, first_arg: @ExprNode) {
+    mut inner = create_sb(128)
+    emit_io_call_body(@inner, st, member, first_arg)
+    if inner.len == 0 { return }
+    // The stdlib flush helper only exists when std.io.print is imported; the
+    // libc flush is always available and still keeps printf ordered against
+    // raw OS writes from any stdlib stream helper.
+    if find_function(st, "io_flush_stdout") != null {
+        sb_append_str(sb, "(io_flush_stdout(), ")
+    } else {
+        sb_append_char(sb, '(')
+    }
+    sb_append_str(sb, sb_to_string(@inner))
+    sb_append_str(sb, ", fflush(stdout))")
+}
+
+// Emits the intrinsic printf expression; wrapped by emit_io_call for ordering.
+act emit_io_call_body(sb: @StringBuilder, st: @SymbolTable, member: string, first_arg: @ExprNode) {
     let is_println = (member == "println")
 
     // 1. Zero arguments: `io.println()` or `io.print()`
@@ -106,6 +126,32 @@ act emit_io_call(sb: @StringBuilder, st: @SymbolTable, member: string, first_arg
     if n > 0 {
         sb_append_str(sb, ", ")
         sb_append_str(sb, sb_to_string(@args_sb))
+    }
+    sb_append_char(sb, ')')
+}
+
+// Phase 52 / Task 52.4: non-intrinsic io.* members are ordinary stdlib acts.
+// The namespace identifier is not a value, so it never becomes a receiver:
+// io.println_str(s) lowers to println_str(s). If the checker was bypassed and
+// the member has no symbol, fail loudly instead of emitting a no-op.
+act emit_io_stdlib_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @ExprNode) {
+    let fn_sym = find_function(st, member)
+    if fn_sym == null {
+        mut msg = create_sb(str.len(member) + 48)
+        sb_append_str(@msg, "unknown io member '")
+        sb_append_str(@msg, member)
+        sb_append_str(@msg, "' reached codegen")
+        report_error("backend", expr.line, expr.col, sb_to_string(@msg))
+        st.error_count += 1
+        return
+    }
+    sb_append_str(sb, fn_sym.name)
+    sb_append_char(sb, '(')
+    mut cur = expr.first_arg
+    loop cur != null {
+        emit_c_expr(sb, st, cur)
+        if cur.next != null { sb_append_str(sb, ", ") }
+        cur = cur.next
     }
     sb_append_char(sb, ')')
 }

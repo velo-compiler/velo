@@ -232,3 +232,87 @@ def test_std_io_prefix_printf_metacharacters_are_data(tmp_path):
     assert res.stderr == "", f"stderr mismatch:\n{res.stderr!r}"
 
 
+# ---------------------------------------------------------------------------
+# Phase 52, Task 52.4: codegen dispatch boundary.
+#
+# Only the exact intrinsics print/println may lower through emit_io_call.
+# Every other member is a normal stdlib act and must appear in the emitted C
+# as a call to its real symbol, never as a printf hijack and never with the
+# namespace identifier passed as a receiver.
+# ---------------------------------------------------------------------------
+
+
+def emit_c(tmp_path, source, stem):
+    probe = tmp_path / f"{stem}.vl"
+    probe.write_text(source, encoding="utf-8", newline="\n")
+    out_c = tmp_path / f"{stem}.c"
+    res = run_velo(["emit-c", str(probe), "-o", str(out_c)])
+    return res, out_c
+
+
+def main_body(c_source):
+    match = re.search(r"int main\([^)]*\) \{(.*?)\n\}", c_source, re.S)
+    assert match, f"generated C has no main body:\n{c_source[:2000]}"
+    return match.group(1)
+
+
+def test_std_io_non_intrinsics_emit_real_stdlib_calls(tmp_path):
+    source = (
+        "use std.io\n\n"
+        "act main() {\n"
+        '    io.println_str("hello")\n'
+        '    io.eprintln_str("oops")\n'
+        "    io.println_u64(18446744073709551615u64)\n"
+        "    io.print_f64(3.5, 2)\n"
+        "}\n"
+    )
+    res, out_c = emit_c(tmp_path, source, "io_dispatch")
+    assert res.returncode == 0, f"emit-c failed:\n{res.stderr}\n{res.stdout}"
+
+    body = main_body(out_c.read_text(encoding="utf-8"))
+    assert 'println_str("hello")' in body, f"println_str was not emitted:\n{body}"
+    assert 'eprintln_str("oops")' in body, f"eprintln_str was not emitted:\n{body}"
+    assert "println_u64(" in body, f"println_u64 was not emitted:\n{body}"
+    assert "print_f64(" in body, f"print_f64 was not emitted:\n{body}"
+    assert "printf" not in body, f"non-intrinsic io member was hijacked by printf:\n{body}"
+    assert "println_str(io" not in body, f"namespace identifier passed as a receiver:\n{body}"
+    assert "eprintln_str(io" not in body, f"namespace identifier passed as a receiver:\n{body}"
+
+
+def test_std_io_intrinsics_still_lower_through_emit_io_call(tmp_path):
+    source = (
+        "use std.io\n\n"
+        "act main() {\n"
+        '    io.print("raw")\n'
+        '    io.println("line")\n'
+        "}\n"
+    )
+    res, out_c = emit_c(tmp_path, source, "io_intrinsic_dispatch")
+    assert res.returncode == 0, f"emit-c failed:\n{res.stderr}\n{res.stdout}"
+
+    body = main_body(out_c.read_text(encoding="utf-8"))
+    assert "printf" in body, f"intrinsic io.print/io.println lost the printf path:\n{body}"
+    assert "println_str(" not in body, f"intrinsic println resolved to the stdlib act:\n{body}"
+
+
+def test_std_io_unknown_member_never_reaches_codegen(tmp_path):
+    source = "use std.io\n\nact main() {\n    io.does_not_exist(123)\n}\n"
+    res, out_c = emit_c(tmp_path, source, "io_unknown_dispatch")
+    assert res.returncode != 0, "emit-c accepted an unknown io member"
+    assert not out_c.exists() or out_c.read_text(encoding="utf-8").strip() == "", (
+        f"unknown io member produced C output:\n{out_c.read_text(encoding='utf-8')}"
+    )
+
+
+def test_std_io_stdlib_member_without_import_fails_loudly(tmp_path):
+    """Defense-in-depth: if semantic analysis accepts a call whose symbol is missing, codegen fails."""
+    source = 'act main() {\n    io.println_str("hello")\n}\n'
+    res, out_c = emit_c(tmp_path, source, "io_no_import")
+    assert res.returncode != 0, "emit-c accepted io.println_str without use std.io"
+    combined = (res.stdout + res.stderr).lower()
+    assert "unknown io member" in combined or "reached codegen" in combined, (
+        f"did not report missing symbol at codegen:\n{res.stdout}\n{res.stderr}"
+    )
+
+
+
