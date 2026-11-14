@@ -604,3 +604,80 @@ def test_probe_prove_wrapped_value_root_cause():
         f"Expected '<' for ascending range 1..18446744073709551615u64, got header:\n  {header}"
     )
 
+
+# ==============================================================================
+# 6. Emitted C Condition and Literal Verification (Task 55.4)
+# ==============================================================================
+
+def test_emitted_c_exact_condition_3000000000():
+    """Security Invariant: Emitted C for 0..3000000000 must contain '< 3000000000LL' and never '> 3000000000'."""
+    asc_code = "act main() { loop i in 0..3000000000 { } }"
+    asc_c = emit_c_velo_source(asc_code)
+    assert "i < 3000000000LL" in asc_c
+    assert "i > 3000000000" not in asc_c
+
+    desc_code = "act main() { loop i in 3000000000..0 { } }"
+    desc_c = emit_c_velo_source(desc_code)
+    assert "i = 3000000000LL" in desc_c
+    assert "i > 0" in desc_c
+    assert "i < 0" not in desc_c
+
+
+def test_emitted_c_no_negative_wrapped_constants():
+    """Security Invariant: Emitted C must never contain negative wrapped integer constants."""
+    for code in [
+        "act main() { loop i in 0..3000000000 { } }",
+        "act main() { loop i in 1..9223372036854775808u64 { } }",
+        "act main() { loop i in 1..18446744073709551615u64 { } }",
+        "act main() { loop i in 10..10000000000000000000u64 { } }",
+    ]:
+        c_out = emit_c_velo_source(code)
+        for line in c_out.splitlines():
+            if "for (" in line:
+                assert "-1294967296" not in line
+                assert "-9223372036854775808" not in line
+                assert "i = -1" not in line
+                assert "i < -1" not in line
+
+
+def test_emitted_c_anonymous_large_ranges():
+    """Verifies emitted C for anonymous large ranges loop <start>..<end>."""
+    asc_code = "act main() { loop 0..3000000000 { } }"
+    asc_c = emit_c_velo_source(asc_code)
+    assert "for (int64_t it = 0; it < 3000000000LL; it++)" in asc_c
+
+    desc_code = "act main() { loop 3000000000..0 { } }"
+    desc_c = emit_c_velo_source(desc_code)
+    assert "for (int64_t it = 3000000000LL; it > 0; it--)" in desc_c
+
+
+def test_emitted_c_stepped_large_ranges():
+    """Verifies emitted C for stepped large ranges loop i in <start>..<end>:<step>."""
+    asc_code = "act main() { loop i in 0..3000000000:2 { } }"
+    asc_c = emit_c_velo_source(asc_code)
+    assert "for (int64_t i = 0; i < 3000000000LL; i += 2)" in asc_c
+
+    desc_code = "act main() { loop i in 3000000000..0:2 { } }"
+    desc_c = emit_c_velo_source(desc_code)
+    assert "for (int64_t i = 3000000000LL; i > 0; i -= 2)" in desc_c
+
+
+@pytest.mark.parametrize("name,code,expected_header", [
+    ("asc_3000000000", "act main() { loop i in 0..3000000000 { } }", "for (int64_t i = 0; i < 3000000000LL; i++)"),
+    ("desc_3000000000", "act main() { loop i in 3000000000..0 { } }", "for (int64_t i = 3000000000LL; i > 0; i--)"),
+    ("inc_asc_3000000000", "act main() { loop i in 0..=3000000000 { } }", "for (int64_t i = 0; i <= 3000000000LL; i++)"),
+    ("inc_desc_3000000000", "act main() { loop i in 3000000000..=0 { } }", "for (int64_t i = 3000000000LL; i >= 0; i--)"),
+    ("asc_u64_max", "act main() { loop i in 1..18446744073709551615u64 { } }", "for (uint64_t i = 1; i < 18446744073709551615ULL; i++)"),
+    ("desc_u64_max", "act main() { loop i in 18446744073709551615u64..0 { } }", "for (uint64_t i = 18446744073709551615ULL; i > 0; i--)"),
+    ("hex_asc_u64_max", "act main() { loop i in 1..0xFFFFFFFFFFFFFFFFu64 { } }", "for (uint64_t i = 1; i < 0xFFFFFFFFFFFFFFFFULL; i++)"),
+    ("hex_desc_u64_max", "act main() { loop i in 0xFFFFFFFFFFFFFFFFu64..0 { } }", "for (uint64_t i = 0xFFFFFFFFFFFFFFFFULL; i > 0; i--)"),
+])
+def test_emitted_c_exact_loop_header(name, code, expected_header):
+    """Verifies that emitted C generates exact standard C99 loop header with appropriate types and suffixes."""
+    c_out = emit_c_velo_source(code)
+    for_lines = [l.strip() for l in c_out.splitlines() if "for (" in l]
+    assert len(for_lines) >= 1, f"No for loop generated:\n{c_out}"
+    header = for_lines[0]
+    assert expected_header in header, f"Expected header '{expected_header}', got:\n  {header}"
+
+

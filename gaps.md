@@ -1076,12 +1076,23 @@ The literal `3000000000` wraps negative during parsing, so codegen believes the 
   - All 117 compiler source files $\le 395$ lines ($\le 400$).
   - SHA-256 determinism match confirmed (`C0E2116DF3D972918E961ACF8FB97C7F0759DE9B6B2443F81E44E5E0199F11FE`).
 
-##### Task 55.4: Assert the emitted C condition
-* **Goal:** Add tests that inspect `velo emit-c` output for the correct comparison operator and literal.
-* **Files:** `tests/test_large_ranges.py`.
-* **Tests:** emitted C contains `i < 3000000000` (or the correct wide suffix), not `i > 3000000000`.
-* **Security gate:** no implementation-defined literal suffix; no negative wrapped constant.
-* **Done when:** emitted C and runtime behavior agree.
+##### Task 55.4: Assert the emitted C condition [COMPLETED] ✅
+* **Former Defect**:
+  - Emitted C conditions previously lacked explicit assertions verifying exact relational operators (`<`, `>`, `<=`, `>=`), constant literal strings, and absence of negative wrapped constants (e.g. ensuring `i > 3000000000` or `-1294967296` is never emitted for ascending bounds).
+  - Emitted C for anonymous (`loop 0..3000000000`) and stepped (`loop i in 0..3000000000:2`) wide ranges was not verified against C99 standards.
+* **Fix Applied**:
+  - Extended `tests/test_large_ranges.py` with Section 6 containing 12 dedicated emitted C verification tests:
+    * `test_emitted_c_exact_condition_3000000000`: Verifies `0..3000000000` emits `i < 3000000000LL` and never `i > 3000000000`; `3000000000..0` emits `i = 3000000000LL; i > 0; i--`.
+    * `test_emitted_c_no_negative_wrapped_constants`: Validates that for all wide literals (`3000000000`, `INT64_MAX + 1`, `UINT64_MAX`, `10^19`), no negative wrapped constants (such as `-1294967296` or `-1`) appear anywhere in the generated `for` headers.
+    * `test_emitted_c_anonymous_large_ranges`: Verifies that anonymous ranges emit `for (int64_t it = 0; it < 3000000000LL; it++)` (ascending) and `for (int64_t it = 3000000000LL; it > 0; it--)` (descending).
+    * `test_emitted_c_stepped_large_ranges`: Verifies that step increments and decrements emit `i += 2` and `i -= 2` with correct comparison operators.
+    * `test_emitted_c_exact_loop_header`: Parameterized test covering 8 exact loop header strings for signed/unsigned wide endpoints and hex representations (`0xFFFFFFFFFFFFFFFFULL`).
+* **Residual Limitation**:
+  - Runtime iteration count tests and boundary/overflow verification follow in Tasks 55.5 and 55.6.
+* **Verification**:
+  - `tests/test_large_ranges.py`: All 51 tests pass in 7.97s (100% pass rate).
+  - `tests/test_range_loops.py`: 7/7 tests pass in 4.05s.
+  - All 117 compiler source files $\le 395$ lines ($\le 400$).
 
 ##### Task 55.5: Add runtime iteration-count tests
 * **Goal:** Verify the loop body executes the expected number of times and terminates.
