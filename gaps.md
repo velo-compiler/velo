@@ -1451,7 +1451,7 @@ The documented "Smart Reverse Auto-Countdown" (`docs/SPECIFICATION.md:688-693`) 
 
 ---
 
-### Phase 57: Unsigned Integer Formatting (P0) [OPEN] 🚧
+### Phase 57: Unsigned Integer Formatting (P0) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-06`<br>
 **Severity:** P0 — silent wrong output<br>
@@ -1639,18 +1639,44 @@ io.println("{e}") // -1
   - Bootstrap chain bit-for-bit determinism: Gen2/Gen3 SHA-256 match `4173222551a2d8f0bdb2f669df78e14e3b5644d2432986a1091c123370b38712`.
   - All 119 compiler source files in `src/` <= 395 lines (<= 400).
 
-##### Task 57.6: Add boundary/security tests and documentation
-* **Goal:** Lock in the behavior and document the formatting rules.
-* **Files:** `tests/test_literal_formatting.py`, `docs/SPECIFICATION.md`.
-* **Tests:** `0`, `max`, `max-1`, signed negatives; format-injection strings.
-* **Security gate:** no locale-dependent output; no user-controlled format strings.
-* **Done when:** the matrix is green and the docs match.
+##### Task 57.6: Add boundary/security tests and documentation [COMPLETED] ✅
+* **Former Defect**:
+  - Unsigned and signed integer formatting behavior, boundary limits, width promotion rules, and format-injection security guarantees were not formalized in `docs/SPECIFICATION.md`.
+  - `tests/test_literal_formatting.py` lacked tests for format-injection strings (`%s`, `%n`, `{%n}`), data safety, locale independence, and a unified boundary test matrix for `0`, `max`, `max-1`, and signed negative limits.
+  - In `src/backend/codegen_expr.vl`, `EXPR_UNARY` code generation unconditionally called `infer_expr_type(st, expr.operand)` before checking `try_emit_c_neg_int_literal`. When evaluating boundary negative integer literals (`-9223372036854775808`, `-2147483648`, `-32768`, `-128`), `infer_expr_type` evaluated the positive inner magnitude against positive signed limits, falsely triggering `Integer literal out of range for type '...'` during codegen and causing build failures in `test_safe_c_literal_emission.py`, `test_std_rand.py`, and `test_type_checker.py`.
+* **Fix Applied**:
+  - Formalized Section 10.5 in `docs/SPECIFICATION.md` ("Integer Formatting & Signed/Unsigned Guarantees") documenting:
+    * Unsigned formatting guarantee: `u8`, `u16`, `u32`, `u64`, `usize` strictly formatted through `%llu` with `(unsigned long long)` zero-extension without negative wrapping.
+    * Signed formatting guarantee: `i8`, `i16`, `i32`, `i64`, `isize` strictly preserve sign through `%lld` with `(long long)` sign-extension, covering `INT32_MIN` and `INT64_MIN`.
+    * Platform word-size portability: 32-bit and 64-bit target safety for `usize` and `isize`.
+    * String interpolation alignment: 1:1 format specifier and argument alignment in string interpolation.
+    * Hardened format-injection prevention: all compiler-emitted format strings are static literals, and user/variable strings flow strictly as data arguments.
+    * Locale independence: decimal representations are ASCII digit sequences `[0-9]` with optional leading `-`, free of thousands separators or locale variations.
+    * Runnable code example included in `docs/SPECIFICATION.md`, verified by `test_std_io_documentation_examples_compile_and_run`.
+  - Extended `tests/test_literal_formatting.py` with 3 comprehensive test suites:
+    * `test_integer_formatting_full_boundary_matrix`: 28 boundary checks covering `0`, `1`, `max-1`, `max` across `u8`, `u16`, `u32`, `u64`, `usize`, and signed negative boundaries across `i8`, `i16`, `i32`, `i64`, `isize` in both direct `io.println` and string interpolation.
+    * `test_format_injection_security_hardening`: verifies literal format metacharacters (`%s`, `%n`, `%d`, `%p`, etc.), variable payloads (`%n%s`), unresolved interpolation tokens (`{%n}`, `{%s}`), and mixed interpolation format strings are treated as data, preventing format string injection and arbitrary memory corruption.
+    * `test_formatting_locale_independence_and_determinism`: verifies integer and float outputs do not inject locale-dependent thousands separators (`,`, `'`, `.`, `_`) and float output deterministically uses `.` decimal separator.
+  - Fixed unary minus code generation in `src/backend/codegen_expr.vl`: prioritized negated integer literals (`expr.op == TOK_MINUS and expr.operand != null and expr.operand.kind == EXPR_INT`), delegating to `try_emit_c_neg_int_literal` for boundary values and `emit_c_int_literal` without prematurely calling `infer_expr_type` on positive inner magnitudes.
+  - Rebuilt bootstrap chain, verified bit-for-bit Gen2/Gen3 SHA-256 fixed-point determinism (`216acd6980717597aa6b817bf01a975efbd8073493fb416afe9fa43597c41c14`), and refreshed `bootstrap.c` (SHA-256 `2c145de7f0dada1f15c70c8d15b86a60be4e1f9a263b1bb9d9a5350dab34b478`).
+* **Residual Limitation**:
+  - None. All Phase 57 requirements and exit criteria are satisfied.
+* **Verification**:
+  - `tests/test_literal_formatting.py`: 10 passed (100%).
+  - `tests/test_unsigned_formatting.py`: 134 passed (100%).
+  - `tests/test_string_interpolation.py`: 20 passed (100%).
+  - `tests/test_integer_formatting_paths.py`: 13 passed (100%).
+  - `tests/test_std_io.py`: 33 passed (100%).
+  - `tests/test_safe_c_literal_emission.py`: 6 passed (100%).
+  - `tests/test_std_rand.py`: 4 passed (100%).
+  - `tests/test_type_checker.py`: 23 passed (100%).
+  - All 119 compiler source files in `src/` remain $\le 395$ lines ($\le 400$). No UTF-8 BOM.
 
 #### Phase Exit Criteria
 
-- [ ] `io.println(u64max)`, `io.print(u64max)`, and `"{u64max}"` all print `18446744073709551615`.
-- [ ] `usize`/`isize` are correct on 32-bit and 64-bit targets.
-- [ ] No integer formatting path uses a signed conversion for an unsigned type.
+- [x] `io.println(u64max)`, `io.print(u64max)`, and `"{u64max}"` all print `18446744073709551615`.
+- [x] `usize`/`isize` are correct on 32-bit and 64-bit targets.
+- [x] No integer formatting path uses a signed conversion for an unsigned type.
 
 ---
 

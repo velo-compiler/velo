@@ -188,5 +188,255 @@ act main() {
             if src_path.exists():
                 src_path.unlink()
 
+    def test_integer_formatting_full_boundary_matrix(self):
+        """Task 57.6: Comprehensive boundary matrix for 0, max, max-1, and signed negatives."""
+        code = """use sys.io
+
+act main() {
+    // Unsigned boundaries: 0, 1, max-1, max
+    let u8_0: u8 = 0u8
+    let u8_1: u8 = 1u8
+    let u8_prev: u8 = 254u8
+    let u8_max: u8 = 255u8
+
+    let u16_0: u16 = 0u16
+    let u16_1: u16 = 1u16
+    let u16_prev: u16 = 65534u16
+    let u16_max: u16 = 65535u16
+
+    let u32_0: u32 = 0u32
+    let u32_1: u32 = 1u32
+    let u32_prev: u32 = 4294967294u32
+    let u32_max: u32 = 4294967295u32
+
+    let u64_0: u64 = 0u64
+    let u64_1: u64 = 1u64
+    let u64_prev: u64 = 18446744073709551614u64
+    let u64_max: u64 = 18446744073709551615u64
+
+    let usize_0: usize = 0usize
+    let usize_1: usize = 1usize
+    let usize_prev: usize = 18446744073709551614usize
+    let usize_max: usize = 18446744073709551615usize
+
+    // Signed boundaries
+    let i8_min: i8 = -127i8 - 1i8
+    let i8_neg1: i8 = -1i8
+    let i8_max: i8 = 127i8
+
+    let i16_min: i16 = -32767i16 - 1i16
+    let i16_neg1: i16 = -1i16
+    let i16_max: i16 = 32767i16
+
+    let i32_min: i32 = -2147483647 - 1
+    let i32_neg1: i32 = -1
+    let i32_max: i32 = 2147483647
+
+    let i64_min: i64 = -9223372036854775807i64 - 1i64
+    let i64_neg1: i64 = -1i64
+    let i64_max: i64 = 9223372036854775807i64
+
+    let isize_neg: isize = -42isize
+    let isize_pos: isize = 42isize
+
+    // Direct printing
+    io.println(u8_0)
+    io.println(u8_1)
+    io.println(u8_prev)
+    io.println(u8_max)
+
+    io.println(u16_0)
+    io.println(u16_1)
+    io.println(u16_prev)
+    io.println(u16_max)
+
+    io.println(u32_0)
+    io.println(u32_1)
+    io.println(u32_prev)
+    io.println(u32_max)
+
+    io.println(u64_0)
+    io.println(u64_1)
+    io.println(u64_prev)
+    io.println(u64_max)
+
+    io.println(usize_0)
+    io.println(usize_1)
+    io.println(usize_prev)
+    io.println(usize_max)
+
+    io.println(i8_min)
+    io.println(i8_neg1)
+    io.println(i8_max)
+
+    io.println(i16_min)
+    io.println(i16_neg1)
+    io.println(i16_max)
+
+    io.println(i32_min)
+    io.println(i32_neg1)
+    io.println(i32_max)
+
+    io.println(i64_min)
+    io.println(i64_neg1)
+    io.println(i64_max)
+
+    io.println(isize_neg)
+    io.println(isize_pos)
+
+    // Interpolation checking
+    io.println("interp u64: {u64_max}, i64: {i64_min}, usize: {usize_max}, isize: {isize_neg}")
+}
+"""
+        src_path = self.root_dir / ".velo_cache" / "test_boundary_matrix.vl"
+        src_path.write_text(code, encoding="utf-8")
+        try:
+            # 1. Check emit-c for specifier correctness
+            cmd_emit = [str(self.velo_exe), "emit-c", str(src_path)]
+            res_emit = subprocess.run(cmd_emit, capture_output=True, text=True, env=self.env)
+            self.assertEqual(res_emit.returncode, 0, f"emit-c failed: {res_emit.stderr}")
+            # Ensure unsigned types use %llu and (unsigned long long)
+            self.assertIn("%llu", res_emit.stdout)
+            self.assertIn("(unsigned long long)", res_emit.stdout)
+            # Ensure signed types use %lld and (long long)
+            self.assertIn("%lld", res_emit.stdout)
+            self.assertIn("(long long)", res_emit.stdout)
+
+            # 2. Run and check exact outputs
+            cmd_run = [str(self.velo_exe), "run", str(src_path)]
+            res_run = subprocess.run(cmd_run, capture_output=True, text=True, env=self.env)
+            self.assertEqual(res_run.returncode, 0, f"run failed: {res_run.stderr}")
+            lines = [l.strip() for l in res_run.stdout.strip().splitlines() if l.strip()]
+
+            expected = [
+                # u8
+                "0", "1", "254", "255",
+                # u16
+                "0", "1", "65534", "65535",
+                # u32
+                "0", "1", "4294967294", "4294967295",
+                # u64
+                "0", "1", "18446744073709551614", "18446744073709551615",
+                # usize
+                "0", "1", "18446744073709551614", "18446744073709551615",
+                # i8
+                "-128", "-1", "127",
+                # i16
+                "-32768", "-1", "32767",
+                # i32
+                "-2147483648", "-1", "2147483647",
+                # i64
+                "-9223372036854775808", "-1", "9223372036854775807",
+                # isize
+                "-42", "42",
+                # interpolation
+                "interp u64: 18446744073709551615, i64: -9223372036854775808, usize: 18446744073709551615, isize: -42",
+            ]
+            self.assertEqual(lines, expected)
+        finally:
+            if src_path.exists():
+                src_path.unlink()
+
+    def test_format_injection_security_hardening(self):
+        """Task 57.6: Format-injection strings (%s, %n, {%n}) must be treated as pure data."""
+        code = """use sys.io
+
+act main() {
+    // Literal format metacharacters
+    io.println("%s%s%s%s%s")
+    io.println("%n%n%n%n")
+    io.println("%d %i %u %o %x %X %f %e %g %a %c %s %p %n %%")
+    io.println("data: %s, count: %n, ptr: %p")
+
+    // In variables
+    let attack: string = "%n%n%n%n%s%s%s"
+    io.println(attack)
+
+    // Unresolved interpolation tokens
+    io.println("{%n}")
+    io.println("{%s}")
+    io.println("{%p}")
+
+    // Mixed interpolation with variables and format directives
+    let u: u64 = 18446744073709551615u64
+    let payload: string = "%x_%n_%s"
+    io.println("val={u}, payload={payload}, raw=%n%s")
+}
+"""
+        src_path = self.root_dir / ".velo_cache" / "test_format_injection.vl"
+        src_path.write_text(code, encoding="utf-8")
+        try:
+            # 1. emit-c check: user strings must never become the format string itself
+            cmd_emit = [str(self.velo_exe), "emit-c", str(src_path)]
+            res_emit = subprocess.run(cmd_emit, capture_output=True, text=True, env=self.env)
+            self.assertEqual(res_emit.returncode, 0, f"emit-c failed: {res_emit.stderr}")
+            # Ensure printf format string argument is always a static literal format
+            self.assertNotIn('printf(attack', res_emit.stdout)
+            self.assertNotIn('printf(payload', res_emit.stdout)
+            self.assertNotIn('printf("%n', res_emit.stdout)
+
+            # 2. Execution check: must run cleanly with code 0 and not crash
+            cmd_run = [str(self.velo_exe), "run", str(src_path)]
+            res_run = subprocess.run(cmd_run, capture_output=True, text=True, env=self.env)
+            self.assertEqual(res_run.returncode, 0, f"run failed: {res_run.stderr}")
+            self.assertIn("%s%s%s%s%s", res_run.stdout)
+            self.assertIn("%n%n%n%n", res_run.stdout)
+            self.assertIn("data: %s, count: %n, ptr: %p", res_run.stdout)
+            self.assertIn("%n%n%n%n%s%s%s", res_run.stdout)
+            self.assertIn("{%n}", res_run.stdout)
+            self.assertIn("{%s}", res_run.stdout)
+            self.assertIn("{%p}", res_run.stdout)
+            self.assertIn("val=18446744073709551615, payload=%x_%n_%s, raw=%n%s", res_run.stdout)
+        finally:
+            if src_path.exists():
+                src_path.unlink()
+
+    def test_formatting_locale_independence_and_determinism(self):
+        """Task 57.6: Integer and float formatting must be deterministic and locale-independent."""
+        code = """use sys.io
+
+act main() {
+    let big_int: u64 = 18446744073709551615u64
+    let one_million: i32 = 1000000
+    let neg_val: i32 = -2147483647 - 1
+    let flt: f32 = 1234.56f32
+
+    io.println(big_int)
+    io.println(one_million)
+    io.println(neg_val)
+    io.println(flt)
+    io.println("formatted: {big_int} / {one_million} / {neg_val} / {flt}")
+}
+"""
+        src_path = self.root_dir / ".velo_cache" / "test_locale_independence.vl"
+        src_path.write_text(code, encoding="utf-8")
+        try:
+            cmd_run = [str(self.velo_exe), "run", str(src_path)]
+            res_run = subprocess.run(cmd_run, capture_output=True, text=True, env=self.env)
+            self.assertEqual(res_run.returncode, 0, f"run failed: {res_run.stderr}")
+
+            # Verify no locale-dependent thousands separators (comma, apostrophe, space)
+            # Output must strictly use ASCII digits
+            self.assertIn("18446744073709551615", res_run.stdout)
+            self.assertNotIn("18,446,744,073,709,551,615", res_run.stdout)
+            self.assertNotIn("18.446.744.073.709.551.615", res_run.stdout)
+            self.assertNotIn("18'446'744'073'709'551'615", res_run.stdout)
+
+            self.assertIn("1000000", res_run.stdout)
+            self.assertNotIn("1,000,000", res_run.stdout)
+            self.assertNotIn("1.000.000", res_run.stdout)
+
+            self.assertIn("-2147483648", res_run.stdout)
+            self.assertNotIn("-2,147,483,648", res_run.stdout)
+
+            # Decimal separator must be dot, never comma
+            self.assertIn("1234.56", res_run.stdout)
+            self.assertNotIn("1234,56", res_run.stdout)
+
+            self.assertIn("formatted: 18446744073709551615 / 1000000 / -2147483648 / 1234.56", res_run.stdout)
+        finally:
+            if src_path.exists():
+                src_path.unlink()
+
 if __name__ == "__main__":
     unittest.main()

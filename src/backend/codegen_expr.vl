@@ -114,6 +114,13 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr.kind == EXPR_ADDRESS_OF { sb_append_str(sb, "(&("); emit_c_expr(sb, st, expr.operand); sb_append_str(sb, "))"); return }
     if expr.kind == EXPR_DEREF { sb_append_str(sb, "(*("); emit_c_expr(sb, st, expr.operand); sb_append_str(sb, "))"); return }
     if expr.kind == EXPR_UNARY {
+        if expr.op == TOK_MINUS and expr.operand != null and expr.operand.kind == EXPR_INT {
+            mut nt = expr.operand.type_name
+            if nt == null or str.len(nt) == 0 { nt = expr.type_name }
+            if nt == null or str.len(nt) == 0 { nt = infer_unsuffixed_neg_int_type(expr.operand) }
+            if try_emit_c_neg_int_literal(sb, st, expr, nt) { return }
+            sb_append_str(sb, "(-"); emit_c_int_literal(sb, st, expr.operand); sb_append_str(sb, ")"); return
+        }
         let sub_type = infer_expr_type(st, expr.operand)
         if is_simd_type(strip_pointer_prefix(sub_type)) { emit_simd_unary(sb, st, expr); return }
         let op_fn = find_unary_op(st, expr.op, sub_type)
@@ -128,9 +135,6 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             if (p0_ptr and not s_ptr) or (s_ptr and not p0_ptr) { sb_append_char(sb, ')') }
             sb_append_char(sb, ')')
             return
-        }
-        if expr.op == TOK_MINUS and expr.operand != null and expr.operand.kind == EXPR_INT {
-            if try_emit_c_neg_int_literal(sb, st, expr, sub_type) { return }
         }
         sb_append_str(sb, "(")
         if expr.op == TOK_NOT { sb_append_str(sb, "!") } else if expr.op == TOK_TILDE { sb_append_str(sb, "~") } else { sb_append_str(sb, "-") }
@@ -355,10 +359,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     }
 
     // 8. Function call / Intrinsics
-    if expr.kind == EXPR_CALL {
-        emit_call_expr(sb, st, expr)
-        return
-    }
+    if expr.kind == EXPR_CALL { emit_call_expr(sb, st, expr); return }
 
     // 9. Outcome propagation expression (`expr or return`)
     if expr.kind == EXPR_OR_RETURN {
@@ -388,8 +389,5 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     }
 
     // 11. Conditional if-else expression (`if c { a } else { b }`)
-    if expr.kind == EXPR_IF {
-        emit_if_expr(sb, st, expr)
-        return
-    }
+    if expr.kind == EXPR_IF { emit_if_expr(sb, st, expr); return }
 }

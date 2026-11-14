@@ -46381,827 +46381,847 @@ void emit_c_expr(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
 #line 116 "src/main.vl"
     if ((expr->kind == EXPR_UNARY)) {
 #line 117 "src/main.vl"
-        const char* sub_type = infer_expr_type(st, expr->operand);
+        if ((((expr->op == TOK_MINUS) && (expr->operand != NULL)) && (expr->operand->kind == EXPR_INT))) {
 #line 118 "src/main.vl"
-        if (is_simd_type(strip_pointer_prefix(sub_type))) {
-#line 118 "src/main.vl"
-            emit_simd_unary(sb, st, expr);
-#line 118 "src/main.vl"
+            const char* nt = expr->operand->type_name;
+#line 119 "src/main.vl"
+            if (((nt == NULL) || velo_cmp_eq_u_s(((usize)strlen(nt)), 0))) {
+#line 119 "src/main.vl"
+                nt = expr->type_name;
+            }
+#line 120 "src/main.vl"
+            if (((nt == NULL) || velo_cmp_eq_u_s(((usize)strlen(nt)), 0))) {
+#line 120 "src/main.vl"
+                nt = infer_unsuffixed_neg_int_type(expr->operand);
+            }
+#line 121 "src/main.vl"
+            if (try_emit_c_neg_int_literal(sb, st, expr, nt)) {
+#line 121 "src/main.vl"
+                return;
+            }
+#line 122 "src/main.vl"
+            sb_append_str(sb, "(-");
+#line 122 "src/main.vl"
+            emit_c_int_literal(sb, st, expr->operand);
+#line 122 "src/main.vl"
+            sb_append_str(sb, ")");
+#line 122 "src/main.vl"
             return;
         }
-#line 119 "src/main.vl"
-        FunctionSym* op_fn = find_unary_op(st, expr->op, sub_type);
-#line 120 "src/main.vl"
-        if ((op_fn != NULL)) {
-#line 121 "src/main.vl"
-            sb_append_str(sb, op_fn->name);
-#line 121 "src/main.vl"
-            sb_append_char(sb, '(');
-#line 122 "src/main.vl"
-            ParamSym* p0 = op_fn->first_param;
-#line 123 "src/main.vl"
-            bool p0_ptr = (((p0 != NULL) && velo_cmp_gt_u_s(((usize)strlen(p0->type_name)), 0)) && velo_cmp_eq_u_s(p0->type_name[0], '@'));
 #line 124 "src/main.vl"
+        const char* sub_type = infer_expr_type(st, expr->operand);
+#line 125 "src/main.vl"
+        if (is_simd_type(strip_pointer_prefix(sub_type))) {
+#line 125 "src/main.vl"
+            emit_simd_unary(sb, st, expr);
+#line 125 "src/main.vl"
+            return;
+        }
+#line 126 "src/main.vl"
+        FunctionSym* op_fn = find_unary_op(st, expr->op, sub_type);
+#line 127 "src/main.vl"
+        if ((op_fn != NULL)) {
+#line 128 "src/main.vl"
+            sb_append_str(sb, op_fn->name);
+#line 128 "src/main.vl"
+            sb_append_char(sb, '(');
+#line 129 "src/main.vl"
+            ParamSym* p0 = op_fn->first_param;
+#line 130 "src/main.vl"
+            bool p0_ptr = (((p0 != NULL) && velo_cmp_gt_u_s(((usize)strlen(p0->type_name)), 0)) && velo_cmp_eq_u_s(p0->type_name[0], '@'));
+#line 131 "src/main.vl"
             bool s_ptr = (velo_cmp_gt_u_s(((usize)strlen(sub_type)), 0) && velo_cmp_eq_u_s(sub_type[0], '@'));
-#line 125 "src/main.vl"
+#line 132 "src/main.vl"
             if ((p0_ptr && (!s_ptr))) {
-#line 125 "src/main.vl"
+#line 132 "src/main.vl"
                 sb_append_str(sb, "&(");
             }
-#line 126 "src/main.vl"
+#line 133 "src/main.vl"
             if ((s_ptr && (!p0_ptr))) {
-#line 126 "src/main.vl"
+#line 133 "src/main.vl"
                 sb_append_str(sb, "*(");
             }
-#line 127 "src/main.vl"
+#line 134 "src/main.vl"
             emit_c_expr(sb, st, expr->operand);
-#line 128 "src/main.vl"
+#line 135 "src/main.vl"
             if (((p0_ptr && (!s_ptr)) || (s_ptr && (!p0_ptr)))) {
-#line 128 "src/main.vl"
+#line 135 "src/main.vl"
                 sb_append_char(sb, ')');
             }
-#line 129 "src/main.vl"
+#line 136 "src/main.vl"
             sb_append_char(sb, ')');
-#line 130 "src/main.vl"
+#line 137 "src/main.vl"
             return;
         }
-#line 132 "src/main.vl"
-        if ((((expr->op == TOK_MINUS) && (expr->operand != NULL)) && (expr->operand->kind == EXPR_INT))) {
-#line 133 "src/main.vl"
-            if (try_emit_c_neg_int_literal(sb, st, expr, sub_type)) {
-#line 133 "src/main.vl"
-                return;
-            }
-        }
-#line 135 "src/main.vl"
+#line 139 "src/main.vl"
         sb_append_str(sb, "(");
-#line 136 "src/main.vl"
+#line 140 "src/main.vl"
         if ((expr->op == TOK_NOT)) {
-#line 136 "src/main.vl"
+#line 140 "src/main.vl"
             sb_append_str(sb, "!");
         } else
-#line 136 "src/main.vl"
+#line 140 "src/main.vl"
         if ((expr->op == TOK_TILDE)) {
-#line 136 "src/main.vl"
+#line 140 "src/main.vl"
             sb_append_str(sb, "~");
         } else {
-#line 136 "src/main.vl"
+#line 140 "src/main.vl"
             sb_append_str(sb, "-");
         }
-#line 137 "src/main.vl"
+#line 141 "src/main.vl"
         emit_c_expr(sb, st, expr->operand);
-#line 138 "src/main.vl"
+#line 142 "src/main.vl"
         sb_append_str(sb, ")");
-#line 139 "src/main.vl"
+#line 143 "src/main.vl"
         return;
     }
-#line 143 "src/main.vl"
+#line 147 "src/main.vl"
     if ((expr->kind == EXPR_MEMBER)) {
-#line 144 "src/main.vl"
+#line 148 "src/main.vl"
         if ((((expr->target->kind == EXPR_IDENT) && ((expr->target->str_val != NULL && "math" != NULL) ? (strcmp(expr->target->str_val, "math") == 0) : (expr->target->str_val == "math"))) && (find_kind(st, expr->target->str_val) == NULL))) {
-#line 145 "src/main.vl"
+#line 149 "src/main.vl"
             const char* digits = math_constant_digits(expr->member_name);
-#line 146 "src/main.vl"
+#line 150 "src/main.vl"
             if (velo_cmp_gt_u_s(((usize)strlen(digits)), 0)) {
-#line 146 "src/main.vl"
+#line 150 "src/main.vl"
                 sb_append_str(sb, "(");
-#line 146 "src/main.vl"
+#line 150 "src/main.vl"
                 sb_append_str(sb, digits);
-#line 146 "src/main.vl"
+#line 150 "src/main.vl"
                 sb_append_str(sb, ")");
-#line 146 "src/main.vl"
+#line 150 "src/main.vl"
                 return;
             }
         }
-#line 148 "src/main.vl"
-        if ((expr->target->kind == EXPR_IDENT)) {
-#line 149 "src/main.vl"
-            KindSym* k_sym = find_kind(st, expr->target->str_val);
-#line 150 "src/main.vl"
-            if ((k_sym != NULL)) {
-#line 151 "src/main.vl"
-                VariantSym* v_sym = find_variant(k_sym, expr->member_name);
 #line 152 "src/main.vl"
-                if ((v_sym != NULL)) {
+        if ((expr->target->kind == EXPR_IDENT)) {
 #line 153 "src/main.vl"
+            KindSym* k_sym = find_kind(st, expr->target->str_val);
+#line 154 "src/main.vl"
+            if ((k_sym != NULL)) {
+#line 155 "src/main.vl"
+                VariantSym* v_sym = find_variant(k_sym, expr->member_name);
+#line 156 "src/main.vl"
+                if ((v_sym != NULL)) {
+#line 157 "src/main.vl"
                     if ((!k_sym->is_tagged_union)) {
-#line 154 "src/main.vl"
+#line 158 "src/main.vl"
                         sb_append_str(sb, k_sym->name);
-#line 154 "src/main.vl"
+#line 158 "src/main.vl"
                         sb_append_char(sb, '_');
-#line 154 "src/main.vl"
+#line 158 "src/main.vl"
                         sb_append_str(sb, expr->member_name);
                     } else {
-#line 156 "src/main.vl"
+#line 160 "src/main.vl"
                         sb_append_char(sb, '(');
-#line 156 "src/main.vl"
+#line 160 "src/main.vl"
                         sb_append_str(sb, k_sym->name);
-#line 156 "src/main.vl"
+#line 160 "src/main.vl"
                         sb_append_str(sb, "){ .kind = ");
-#line 156 "src/main.vl"
+#line 160 "src/main.vl"
                         sb_append_str(sb, k_sym->name);
-#line 156 "src/main.vl"
+#line 160 "src/main.vl"
                         sb_append_char(sb, '_');
-#line 156 "src/main.vl"
+#line 160 "src/main.vl"
                         sb_append_str(sb, expr->member_name);
-#line 156 "src/main.vl"
+#line 160 "src/main.vl"
                         sb_append_str(sb, " }");
                     }
-#line 158 "src/main.vl"
+#line 162 "src/main.vl"
                     return;
                 }
             }
         }
-#line 162 "src/main.vl"
-        const char* target_type = infer_expr_type(st, expr->target);
-#line 163 "src/main.vl"
-        if (is_optional_type(target_type)) {
-#line 164 "src/main.vl"
-            const char* inner = optional_inner_type(target_type);
-#line 165 "src/main.vl"
-            if ((velo_cmp_eq_u_s(inner[0], '@') || ((inner != NULL && "string" != NULL) ? (strcmp(inner, "string") == 0) : (inner == "string")))) {
 #line 166 "src/main.vl"
-                if (((expr->member_name != NULL && "has" != NULL) ? (strcmp(expr->member_name, "has") == 0) : (expr->member_name == "has"))) {
+        const char* target_type = infer_expr_type(st, expr->target);
 #line 167 "src/main.vl"
-                    sb_append_str(sb, "((");
+        if (is_optional_type(target_type)) {
 #line 168 "src/main.vl"
-                    emit_c_expr(sb, st, expr->target);
+            const char* inner = optional_inner_type(target_type);
 #line 169 "src/main.vl"
-                    sb_append_str(sb, ") != NULL)");
-                } else
+            if ((velo_cmp_eq_u_s(inner[0], '@') || ((inner != NULL && "string" != NULL) ? (strcmp(inner, "string") == 0) : (inner == "string")))) {
 #line 170 "src/main.vl"
-                if (((expr->member_name != NULL && "val" != NULL) ? (strcmp(expr->member_name, "val") == 0) : (expr->member_name == "val"))) {
+                if (((expr->member_name != NULL && "has" != NULL) ? (strcmp(expr->member_name, "has") == 0) : (expr->member_name == "has"))) {
 #line 171 "src/main.vl"
-                    sb_append_char(sb, '(');
+                    sb_append_str(sb, "((");
 #line 172 "src/main.vl"
                     emit_c_expr(sb, st, expr->target);
 #line 173 "src/main.vl"
+                    sb_append_str(sb, ") != NULL)");
+                } else
+#line 174 "src/main.vl"
+                if (((expr->member_name != NULL && "val" != NULL) ? (strcmp(expr->member_name, "val") == 0) : (expr->member_name == "val"))) {
+#line 175 "src/main.vl"
+                    sb_append_char(sb, '(');
+#line 176 "src/main.vl"
+                    emit_c_expr(sb, st, expr->target);
+#line 177 "src/main.vl"
                     sb_append_char(sb, ')');
                 }
             } else {
-#line 176 "src/main.vl"
-                sb_append_char(sb, '(');
-#line 177 "src/main.vl"
-                emit_c_expr(sb, st, expr->target);
-#line 178 "src/main.vl"
-                sb_append_char(sb, ')');
-#line 179 "src/main.vl"
-                sb_append_char(sb, '.');
 #line 180 "src/main.vl"
+                sb_append_char(sb, '(');
+#line 181 "src/main.vl"
+                emit_c_expr(sb, st, expr->target);
+#line 182 "src/main.vl"
+                sb_append_char(sb, ')');
+#line 183 "src/main.vl"
+                sb_append_char(sb, '.');
+#line 184 "src/main.vl"
                 sb_append_str(sb, expr->member_name);
             }
-#line 182 "src/main.vl"
+#line 186 "src/main.vl"
             return;
         }
-#line 184 "src/main.vl"
+#line 188 "src/main.vl"
         if (is_or_type(target_type)) {
-#line 185 "src/main.vl"
+#line 189 "src/main.vl"
             sb_append_char(sb, '(');
-#line 186 "src/main.vl"
+#line 190 "src/main.vl"
             emit_c_expr(sb, st, expr->target);
-#line 187 "src/main.vl"
+#line 191 "src/main.vl"
             sb_append_char(sb, ')');
-#line 188 "src/main.vl"
+#line 192 "src/main.vl"
             if ((velo_cmp_gt_u_s(((usize)strlen(target_type)), 0) && velo_cmp_eq_u_s(target_type[0], '@'))) {
-#line 188 "src/main.vl"
+#line 192 "src/main.vl"
                 sb_append_str(sb, "->");
             } else {
-#line 188 "src/main.vl"
+#line 192 "src/main.vl"
                 sb_append_str(sb, ".");
             }
-#line 189 "src/main.vl"
+#line 193 "src/main.vl"
             if (((expr->member_name != NULL && "ok" != NULL) ? (strcmp(expr->member_name, "ok") == 0) : (expr->member_name == "ok"))) {
-#line 190 "src/main.vl"
+#line 194 "src/main.vl"
                 sb_append_str(sb, "ok");
             } else {
-#line 192 "src/main.vl"
+#line 196 "src/main.vl"
                 sb_append_str(sb, "as.");
-#line 193 "src/main.vl"
+#line 197 "src/main.vl"
                 sb_append_str(sb, expr->member_name);
             }
-#line 195 "src/main.vl"
-            return;
-        }
-#line 197 "src/main.vl"
-        if (is_simd_type(strip_pointer_prefix(target_type))) {
-#line 197 "src/main.vl"
-            emit_simd_member(sb, st, expr, target_type);
-#line 197 "src/main.vl"
-            return;
-        }
-#line 198 "src/main.vl"
-        const char* clean_tt = strip_pointer_prefix(target_type);
 #line 199 "src/main.vl"
-        if (is_fixed_array_type(clean_tt)) {
-#line 199 "src/main.vl"
-            emit_array_member(sb, st, expr, clean_tt);
-#line 199 "src/main.vl"
-            return;
-        }
-#line 200 "src/main.vl"
-        if (is_tuple_type(clean_tt)) {
-#line 200 "src/main.vl"
-            emit_tuple_member(sb, st, expr, target_type);
-#line 200 "src/main.vl"
             return;
         }
 #line 201 "src/main.vl"
+        if (is_simd_type(strip_pointer_prefix(target_type))) {
+#line 201 "src/main.vl"
+            emit_simd_member(sb, st, expr, target_type);
+#line 201 "src/main.vl"
+            return;
+        }
+#line 202 "src/main.vl"
+        const char* clean_tt = strip_pointer_prefix(target_type);
+#line 203 "src/main.vl"
+        if (is_fixed_array_type(clean_tt)) {
+#line 203 "src/main.vl"
+            emit_array_member(sb, st, expr, clean_tt);
+#line 203 "src/main.vl"
+            return;
+        }
+#line 204 "src/main.vl"
+        if (is_tuple_type(clean_tt)) {
+#line 204 "src/main.vl"
+            emit_tuple_member(sb, st, expr, target_type);
+#line 204 "src/main.vl"
+            return;
+        }
+#line 205 "src/main.vl"
         emit_c_expr(sb, st, expr->target);
-#line 202 "src/main.vl"
+#line 206 "src/main.vl"
         if ((velo_cmp_gt_u_s(((usize)strlen(target_type)), 0) && velo_cmp_eq_u_s(target_type[0], '@'))) {
-#line 202 "src/main.vl"
+#line 206 "src/main.vl"
             sb_append_str(sb, "->");
         } else {
-#line 202 "src/main.vl"
+#line 206 "src/main.vl"
             sb_append_str(sb, ".");
         }
-#line 202 "src/main.vl"
-        sb_append_str(sb, expr->member_name);
-#line 202 "src/main.vl"
-        return;
-    }
 #line 206 "src/main.vl"
+        sb_append_str(sb, expr->member_name);
+#line 206 "src/main.vl"
+        return;
+    }
+#line 210 "src/main.vl"
     if ((expr->kind == EXPR_INDEX)) {
-#line 207 "src/main.vl"
+#line 211 "src/main.vl"
         const char* tt = infer_expr_type(st, expr->target);
-#line 208 "src/main.vl"
+#line 212 "src/main.vl"
         if (is_simd_type(strip_pointer_prefix(tt))) {
-#line 208 "src/main.vl"
+#line 212 "src/main.vl"
             emit_simd_index(sb, st, expr, tt);
-#line 208 "src/main.vl"
+#line 212 "src/main.vl"
             return;
         }
-#line 209 "src/main.vl"
+#line 213 "src/main.vl"
         if (is_shelf_form(tt)) {
-#line 209 "src/main.vl"
+#line 213 "src/main.vl"
             emit_shelf_index(sb, st, expr);
-#line 209 "src/main.vl"
+#line 213 "src/main.vl"
             return;
         }
-#line 210 "src/main.vl"
+#line 214 "src/main.vl"
         if (is_map_form(tt)) {
-#line 210 "src/main.vl"
+#line 214 "src/main.vl"
             emit_map_index(sb, st, expr);
-#line 210 "src/main.vl"
+#line 214 "src/main.vl"
             return;
         }
-#line 211 "src/main.vl"
+#line 215 "src/main.vl"
         emit_c_expr(sb, st, expr->target);
-#line 211 "src/main.vl"
+#line 215 "src/main.vl"
         sb_append_char(sb, '[');
-#line 212 "src/main.vl"
+#line 216 "src/main.vl"
         emit_c_expr(sb, st, expr->index);
-#line 212 "src/main.vl"
+#line 216 "src/main.vl"
         sb_append_char(sb, ']');
-#line 212 "src/main.vl"
+#line 216 "src/main.vl"
         return;
     }
-#line 216 "src/main.vl"
+#line 220 "src/main.vl"
     if ((expr->kind == EXPR_CAST)) {
-#line 217 "src/main.vl"
+#line 221 "src/main.vl"
         if (velo_str_eq(infer_expr_type(st, expr->operand), "dyn")) {
-#line 218 "src/main.vl"
+#line 222 "src/main.vl"
             emit_dyn_unbox(sb, st, expr->operand, expr->type_name);
-#line 219 "src/main.vl"
+#line 223 "src/main.vl"
             return;
         }
-#line 221 "src/main.vl"
+#line 225 "src/main.vl"
         sb_append_str(sb, "((");
-#line 221 "src/main.vl"
+#line 225 "src/main.vl"
         sb_append_str(sb, map_type_to_c(expr->type_name));
-#line 221 "src/main.vl"
+#line 225 "src/main.vl"
         sb_append_str(sb, ")(");
-#line 222 "src/main.vl"
+#line 226 "src/main.vl"
         emit_c_expr(sb, st, expr->operand);
-#line 223 "src/main.vl"
+#line 227 "src/main.vl"
         sb_append_str(sb, "))");
-#line 224 "src/main.vl"
+#line 228 "src/main.vl"
         return;
     }
-#line 228 "src/main.vl"
+#line 232 "src/main.vl"
     if ((expr->kind == EXPR_STRUCT_LIT)) {
-#line 228 "src/main.vl"
+#line 232 "src/main.vl"
         emit_struct_lit_expr(sb, st, expr);
-#line 228 "src/main.vl"
-        return;
-    }
-#line 229 "src/main.vl"
-    if ((expr->kind == EXPR_ARRAY_LIT)) {
-#line 229 "src/main.vl"
-        emit_array_lit(sb, st, expr);
-#line 229 "src/main.vl"
-        return;
-    }
-#line 230 "src/main.vl"
-    if ((expr->kind == EXPR_TUPLE_LIT)) {
-#line 230 "src/main.vl"
-        emit_tuple_lit(sb, st, expr);
-#line 230 "src/main.vl"
+#line 232 "src/main.vl"
         return;
     }
 #line 233 "src/main.vl"
-    if ((expr->kind == EXPR_BINARY)) {
+    if ((expr->kind == EXPR_ARRAY_LIT)) {
+#line 233 "src/main.vl"
+        emit_array_lit(sb, st, expr);
+#line 233 "src/main.vl"
+        return;
+    }
 #line 234 "src/main.vl"
-        const char* ltype = infer_expr_type(st, expr->left);
-#line 235 "src/main.vl"
-        const char* rtype = infer_expr_type(st, expr->right);
-#line 236 "src/main.vl"
-        if ((expr->op == TOK_DOUBLE_QUESTION)) {
+    if ((expr->kind == EXPR_TUPLE_LIT)) {
+#line 234 "src/main.vl"
+        emit_tuple_lit(sb, st, expr);
+#line 234 "src/main.vl"
+        return;
+    }
 #line 237 "src/main.vl"
-            const char* inner = optional_inner_type(ltype);
+    if ((expr->kind == EXPR_BINARY)) {
 #line 238 "src/main.vl"
-            if ((velo_cmp_eq_u_s(inner[0], '@') || ((inner != NULL && "string" != NULL) ? (strcmp(inner, "string") == 0) : (inner == "string")))) {
+        const char* ltype = infer_expr_type(st, expr->left);
 #line 239 "src/main.vl"
-                const char* c_type = map_type_to_c(inner);
+        const char* rtype = infer_expr_type(st, expr->right);
 #line 240 "src/main.vl"
-                sb_append_str(sb, "((");
+        if ((expr->op == TOK_DOUBLE_QUESTION)) {
 #line 241 "src/main.vl"
-                sb_append_str(sb, c_type);
+            const char* inner = optional_inner_type(ltype);
 #line 242 "src/main.vl"
-                sb_append_str(sb, ")velo_opt_coalesce_ptr(");
+            if ((velo_cmp_eq_u_s(inner[0], '@') || ((inner != NULL && "string" != NULL) ? (strcmp(inner, "string") == 0) : (inner == "string")))) {
 #line 243 "src/main.vl"
-                emit_c_expr(sb, st, expr->left);
+                const char* c_type = map_type_to_c(inner);
 #line 244 "src/main.vl"
-                sb_append_str(sb, ", ");
+                sb_append_str(sb, "((");
 #line 245 "src/main.vl"
-                emit_c_expr(sb, st, expr->right);
+                sb_append_str(sb, c_type);
 #line 246 "src/main.vl"
+                sb_append_str(sb, ")velo_opt_coalesce_ptr(");
+#line 247 "src/main.vl"
+                emit_c_expr(sb, st, expr->left);
+#line 248 "src/main.vl"
+                sb_append_str(sb, ", ");
+#line 249 "src/main.vl"
+                emit_c_expr(sb, st, expr->right);
+#line 250 "src/main.vl"
                 sb_append_str(sb, "))");
             } else {
-#line 248 "src/main.vl"
+#line 252 "src/main.vl"
                 sb_append_str(sb, "((");
-#line 248 "src/main.vl"
+#line 252 "src/main.vl"
                 emit_c_expr(sb, st, expr->left);
-#line 248 "src/main.vl"
+#line 252 "src/main.vl"
                 sb_append_str(sb, ").has ? (");
-#line 248 "src/main.vl"
+#line 252 "src/main.vl"
                 emit_c_expr(sb, st, expr->left);
-#line 248 "src/main.vl"
+#line 252 "src/main.vl"
                 sb_append_str(sb, ").val : (");
-#line 248 "src/main.vl"
+#line 252 "src/main.vl"
                 emit_c_expr(sb, st, expr->right);
-#line 248 "src/main.vl"
+#line 252 "src/main.vl"
                 sb_append_str(sb, "))");
             }
-#line 250 "src/main.vl"
+#line 254 "src/main.vl"
             return;
         }
-#line 252 "src/main.vl"
+#line 256 "src/main.vl"
         if (((expr->op == TOK_OR) && is_or_type(ltype))) {
-#line 253 "src/main.vl"
-            sb_append_str(sb, or_type_c_name(ltype));
-#line 253 "src/main.vl"
-            sb_append_str(sb, "_fallback(");
-#line 253 "src/main.vl"
-            emit_c_expr(sb, st, expr->left);
-#line 253 "src/main.vl"
-            sb_append_str(sb, ", ");
-#line 253 "src/main.vl"
-            emit_c_expr(sb, st, expr->right);
-#line 253 "src/main.vl"
-            sb_append_char(sb, ')');
-#line 253 "src/main.vl"
-            return;
-        }
-#line 255 "src/main.vl"
-        if ((is_simd_type(ltype) || is_simd_type(rtype))) {
-#line 255 "src/main.vl"
-            emit_simd_binary(sb, st, expr, ltype, rtype);
-#line 255 "src/main.vl"
-            return;
-        }
 #line 257 "src/main.vl"
-        if ((((ltype != NULL && "dyn" != NULL) ? (strcmp(ltype, "dyn") == 0) : (ltype == "dyn")) || ((rtype != NULL && "dyn" != NULL) ? (strcmp(rtype, "dyn") == 0) : (rtype == "dyn")))) {
-#line 258 "src/main.vl"
-            emit_dyn_binop(sb, st, expr, ltype, rtype);
+            sb_append_str(sb, or_type_c_name(ltype));
+#line 257 "src/main.vl"
+            sb_append_str(sb, "_fallback(");
+#line 257 "src/main.vl"
+            emit_c_expr(sb, st, expr->left);
+#line 257 "src/main.vl"
+            sb_append_str(sb, ", ");
+#line 257 "src/main.vl"
+            emit_c_expr(sb, st, expr->right);
+#line 257 "src/main.vl"
+            sb_append_char(sb, ')');
+#line 257 "src/main.vl"
+            return;
+        }
+#line 259 "src/main.vl"
+        if ((is_simd_type(ltype) || is_simd_type(rtype))) {
+#line 259 "src/main.vl"
+            emit_simd_binary(sb, st, expr, ltype, rtype);
 #line 259 "src/main.vl"
             return;
         }
 #line 261 "src/main.vl"
-        FunctionSym* op_fn = find_binary_op(st, expr->op, ltype, rtype);
+        if ((((ltype != NULL && "dyn" != NULL) ? (strcmp(ltype, "dyn") == 0) : (ltype == "dyn")) || ((rtype != NULL && "dyn" != NULL) ? (strcmp(rtype, "dyn") == 0) : (rtype == "dyn")))) {
 #line 262 "src/main.vl"
-        if ((op_fn != NULL)) {
+            emit_dyn_binop(sb, st, expr, ltype, rtype);
 #line 263 "src/main.vl"
-            sb_append_str(sb, op_fn->name);
-#line 263 "src/main.vl"
-            sb_append_char(sb, '(');
-#line 264 "src/main.vl"
-            ParamSym* p0 = op_fn->first_param;
-#line 265 "src/main.vl"
-            ParamSym* p1 = NULL;
-#line 266 "src/main.vl"
-            if ((p0 != NULL)) {
-#line 266 "src/main.vl"
-                p1 = p0->next;
-            }
-#line 267 "src/main.vl"
-            bool p0_ptr = (((p0 != NULL) && velo_cmp_gt_u_s(((usize)strlen(p0->type_name)), 0)) && velo_cmp_eq_u_s(p0->type_name[0], '@'));
-#line 268 "src/main.vl"
-            bool l_ptr = (velo_cmp_gt_u_s(((usize)strlen(ltype)), 0) && velo_cmp_eq_u_s(ltype[0], '@'));
-#line 269 "src/main.vl"
-            if ((p0_ptr && (!l_ptr))) {
-#line 269 "src/main.vl"
-                sb_append_str(sb, "&(");
-            } else
-#line 269 "src/main.vl"
-            if ((l_ptr && (!p0_ptr))) {
-#line 269 "src/main.vl"
-                sb_append_str(sb, "*(");
-            }
-#line 270 "src/main.vl"
-            emit_c_expr(sb, st, expr->left);
-#line 271 "src/main.vl"
-            if (((p0_ptr && (!l_ptr)) || (l_ptr && (!p0_ptr)))) {
-#line 271 "src/main.vl"
-                sb_append_char(sb, ')');
-            }
-#line 272 "src/main.vl"
-            sb_append_str(sb, ", ");
-#line 273 "src/main.vl"
-            bool p1_ptr = (((p1 != NULL) && velo_cmp_gt_u_s(((usize)strlen(p1->type_name)), 0)) && velo_cmp_eq_u_s(p1->type_name[0], '@'));
-#line 274 "src/main.vl"
-            bool r_ptr = (velo_cmp_gt_u_s(((usize)strlen(rtype)), 0) && velo_cmp_eq_u_s(rtype[0], '@'));
-#line 275 "src/main.vl"
-            if ((p1_ptr && (!r_ptr))) {
-#line 275 "src/main.vl"
-                sb_append_str(sb, "&(");
-            } else
-#line 275 "src/main.vl"
-            if ((r_ptr && (!p1_ptr))) {
-#line 275 "src/main.vl"
-                sb_append_str(sb, "*(");
-            }
-#line 276 "src/main.vl"
-            emit_c_expr(sb, st, expr->right);
-#line 277 "src/main.vl"
-            if (((p1_ptr && (!r_ptr)) || (r_ptr && (!p1_ptr)))) {
-#line 277 "src/main.vl"
-                sb_append_char(sb, ')');
-            }
-#line 278 "src/main.vl"
-            sb_append_char(sb, ')');
-#line 279 "src/main.vl"
             return;
         }
-#line 281 "src/main.vl"
-        if ((expr->op == TOK_PLUS)) {
-#line 282 "src/main.vl"
-            const char* ltype = infer_expr_type(st, expr->left);
-#line 282 "src/main.vl"
-            const char* rtype = infer_expr_type(st, expr->right);
-#line 283 "src/main.vl"
-            if ((((ltype != NULL && "string" != NULL) ? (strcmp(ltype, "string") == 0) : (ltype == "string")) && ((rtype != NULL && "string" != NULL) ? (strcmp(rtype, "string") == 0) : (rtype == "string")))) {
-#line 284 "src/main.vl"
-                sb_append_str(sb, "velo_str_concat(");
-#line 284 "src/main.vl"
-                emit_c_expr(sb, st, expr->left);
-#line 284 "src/main.vl"
-                sb_append_str(sb, ", ");
-#line 284 "src/main.vl"
-                emit_c_expr(sb, st, expr->right);
-#line 284 "src/main.vl"
+#line 265 "src/main.vl"
+        FunctionSym* op_fn = find_binary_op(st, expr->op, ltype, rtype);
+#line 266 "src/main.vl"
+        if ((op_fn != NULL)) {
+#line 267 "src/main.vl"
+            sb_append_str(sb, op_fn->name);
+#line 267 "src/main.vl"
+            sb_append_char(sb, '(');
+#line 268 "src/main.vl"
+            ParamSym* p0 = op_fn->first_param;
+#line 269 "src/main.vl"
+            ParamSym* p1 = NULL;
+#line 270 "src/main.vl"
+            if ((p0 != NULL)) {
+#line 270 "src/main.vl"
+                p1 = p0->next;
+            }
+#line 271 "src/main.vl"
+            bool p0_ptr = (((p0 != NULL) && velo_cmp_gt_u_s(((usize)strlen(p0->type_name)), 0)) && velo_cmp_eq_u_s(p0->type_name[0], '@'));
+#line 272 "src/main.vl"
+            bool l_ptr = (velo_cmp_gt_u_s(((usize)strlen(ltype)), 0) && velo_cmp_eq_u_s(ltype[0], '@'));
+#line 273 "src/main.vl"
+            if ((p0_ptr && (!l_ptr))) {
+#line 273 "src/main.vl"
+                sb_append_str(sb, "&(");
+            } else
+#line 273 "src/main.vl"
+            if ((l_ptr && (!p0_ptr))) {
+#line 273 "src/main.vl"
+                sb_append_str(sb, "*(");
+            }
+#line 274 "src/main.vl"
+            emit_c_expr(sb, st, expr->left);
+#line 275 "src/main.vl"
+            if (((p0_ptr && (!l_ptr)) || (l_ptr && (!p0_ptr)))) {
+#line 275 "src/main.vl"
                 sb_append_char(sb, ')');
+            }
+#line 276 "src/main.vl"
+            sb_append_str(sb, ", ");
+#line 277 "src/main.vl"
+            bool p1_ptr = (((p1 != NULL) && velo_cmp_gt_u_s(((usize)strlen(p1->type_name)), 0)) && velo_cmp_eq_u_s(p1->type_name[0], '@'));
+#line 278 "src/main.vl"
+            bool r_ptr = (velo_cmp_gt_u_s(((usize)strlen(rtype)), 0) && velo_cmp_eq_u_s(rtype[0], '@'));
+#line 279 "src/main.vl"
+            if ((p1_ptr && (!r_ptr))) {
+#line 279 "src/main.vl"
+                sb_append_str(sb, "&(");
+            } else
+#line 279 "src/main.vl"
+            if ((r_ptr && (!p1_ptr))) {
+#line 279 "src/main.vl"
+                sb_append_str(sb, "*(");
+            }
+#line 280 "src/main.vl"
+            emit_c_expr(sb, st, expr->right);
+#line 281 "src/main.vl"
+            if (((p1_ptr && (!r_ptr)) || (r_ptr && (!p1_ptr)))) {
+#line 281 "src/main.vl"
+                sb_append_char(sb, ')');
+            }
+#line 282 "src/main.vl"
+            sb_append_char(sb, ')');
+#line 283 "src/main.vl"
+            return;
+        }
 #line 285 "src/main.vl"
+        if ((expr->op == TOK_PLUS)) {
+#line 286 "src/main.vl"
+            const char* ltype = infer_expr_type(st, expr->left);
+#line 286 "src/main.vl"
+            const char* rtype = infer_expr_type(st, expr->right);
+#line 287 "src/main.vl"
+            if ((((ltype != NULL && "string" != NULL) ? (strcmp(ltype, "string") == 0) : (ltype == "string")) && ((rtype != NULL && "string" != NULL) ? (strcmp(rtype, "string") == 0) : (rtype == "string")))) {
+#line 288 "src/main.vl"
+                sb_append_str(sb, "velo_str_concat(");
+#line 288 "src/main.vl"
+                emit_c_expr(sb, st, expr->left);
+#line 288 "src/main.vl"
+                sb_append_str(sb, ", ");
+#line 288 "src/main.vl"
+                emit_c_expr(sb, st, expr->right);
+#line 288 "src/main.vl"
+                sb_append_char(sb, ')');
+#line 289 "src/main.vl"
                 return;
             }
         }
-#line 288 "src/main.vl"
-        if (((expr->op == TOK_EQ) || (expr->op == TOK_NEQ))) {
-#line 289 "src/main.vl"
-            const char* ltype = infer_expr_type(st, expr->left);
-#line 290 "src/main.vl"
-            const char* rtype = infer_expr_type(st, expr->right);
-#line 291 "src/main.vl"
-            if ((is_optional_type(ltype) && (expr->right->kind == EXPR_NULL))) {
 #line 292 "src/main.vl"
-                const char* inner = optional_inner_type(ltype);
+        if (((expr->op == TOK_EQ) || (expr->op == TOK_NEQ))) {
 #line 293 "src/main.vl"
+            const char* ltype = infer_expr_type(st, expr->left);
+#line 294 "src/main.vl"
+            const char* rtype = infer_expr_type(st, expr->right);
+#line 295 "src/main.vl"
+            if ((is_optional_type(ltype) && (expr->right->kind == EXPR_NULL))) {
+#line 296 "src/main.vl"
+                const char* inner = optional_inner_type(ltype);
+#line 297 "src/main.vl"
                 if ((velo_cmp_ne_u_s(inner[0], '@') && ((inner != NULL && "string" != NULL) ? (strcmp(inner, "string") != 0) : (inner != "string")))) {
-#line 294 "src/main.vl"
-                    if ((expr->op == TOK_NEQ)) {
-#line 294 "src/main.vl"
-                        sb_append_char(sb, '(');
-#line 294 "src/main.vl"
-                        emit_c_expr(sb, st, expr->left);
-#line 294 "src/main.vl"
-                        sb_append_str(sb, ".has)");
-#line 294 "src/main.vl"
-                        return;
-                    } else {
-#line 295 "src/main.vl"
-                        sb_append_str(sb, "(!");
-#line 295 "src/main.vl"
-                        emit_c_expr(sb, st, expr->left);
-#line 295 "src/main.vl"
-                        sb_append_str(sb, ".has)");
-#line 295 "src/main.vl"
-                        return;
-                    }
-                }
-            }
 #line 298 "src/main.vl"
-            if ((is_optional_type(rtype) && (expr->left->kind == EXPR_NULL))) {
-#line 299 "src/main.vl"
-                const char* inner = optional_inner_type(rtype);
-#line 300 "src/main.vl"
-                if ((velo_cmp_ne_u_s(inner[0], '@') && ((inner != NULL && "string" != NULL) ? (strcmp(inner, "string") != 0) : (inner != "string")))) {
-#line 301 "src/main.vl"
                     if ((expr->op == TOK_NEQ)) {
-#line 301 "src/main.vl"
+#line 298 "src/main.vl"
                         sb_append_char(sb, '(');
-#line 301 "src/main.vl"
-                        emit_c_expr(sb, st, expr->right);
-#line 301 "src/main.vl"
+#line 298 "src/main.vl"
+                        emit_c_expr(sb, st, expr->left);
+#line 298 "src/main.vl"
                         sb_append_str(sb, ".has)");
-#line 301 "src/main.vl"
+#line 298 "src/main.vl"
                         return;
                     } else {
-#line 302 "src/main.vl"
+#line 299 "src/main.vl"
                         sb_append_str(sb, "(!");
-#line 302 "src/main.vl"
-                        emit_c_expr(sb, st, expr->right);
-#line 302 "src/main.vl"
+#line 299 "src/main.vl"
+                        emit_c_expr(sb, st, expr->left);
+#line 299 "src/main.vl"
                         sb_append_str(sb, ".has)");
-#line 302 "src/main.vl"
+#line 299 "src/main.vl"
                         return;
                     }
                 }
             }
+#line 302 "src/main.vl"
+            if ((is_optional_type(rtype) && (expr->left->kind == EXPR_NULL))) {
+#line 303 "src/main.vl"
+                const char* inner = optional_inner_type(rtype);
+#line 304 "src/main.vl"
+                if ((velo_cmp_ne_u_s(inner[0], '@') && ((inner != NULL && "string" != NULL) ? (strcmp(inner, "string") != 0) : (inner != "string")))) {
 #line 305 "src/main.vl"
-            if ((((((expr->left->kind != EXPR_NULL) && (expr->right->kind != EXPR_NULL)) && ((ltype != NULL && "@void" != NULL) ? (strcmp(ltype, "@void") != 0) : (ltype != "@void"))) && ((rtype != NULL && "@void" != NULL) ? (strcmp(rtype, "@void") != 0) : (rtype != "@void"))) && (((ltype != NULL && "string" != NULL) ? (strcmp(ltype, "string") == 0) : (ltype == "string")) && ((rtype != NULL && "string" != NULL) ? (strcmp(rtype, "string") == 0) : (rtype == "string"))))) {
+                    if ((expr->op == TOK_NEQ)) {
+#line 305 "src/main.vl"
+                        sb_append_char(sb, '(');
+#line 305 "src/main.vl"
+                        emit_c_expr(sb, st, expr->right);
+#line 305 "src/main.vl"
+                        sb_append_str(sb, ".has)");
+#line 305 "src/main.vl"
+                        return;
+                    } else {
 #line 306 "src/main.vl"
+                        sb_append_str(sb, "(!");
+#line 306 "src/main.vl"
+                        emit_c_expr(sb, st, expr->right);
+#line 306 "src/main.vl"
+                        sb_append_str(sb, ".has)");
+#line 306 "src/main.vl"
+                        return;
+                    }
+                }
+            }
+#line 309 "src/main.vl"
+            if ((((((expr->left->kind != EXPR_NULL) && (expr->right->kind != EXPR_NULL)) && ((ltype != NULL && "@void" != NULL) ? (strcmp(ltype, "@void") != 0) : (ltype != "@void"))) && ((rtype != NULL && "@void" != NULL) ? (strcmp(rtype, "@void") != 0) : (rtype != "@void"))) && (((ltype != NULL && "string" != NULL) ? (strcmp(ltype, "string") == 0) : (ltype == "string")) && ((rtype != NULL && "string" != NULL) ? (strcmp(rtype, "string") == 0) : (rtype == "string"))))) {
+#line 310 "src/main.vl"
                 if (((expr->left->kind == EXPR_CALL) || (expr->right->kind == EXPR_CALL))) {
-#line 307 "src/main.vl"
+#line 311 "src/main.vl"
                     if ((expr->op == TOK_EQ)) {
-#line 307 "src/main.vl"
+#line 311 "src/main.vl"
                         sb_append_str(sb, "velo_str_eq(");
                     } else {
-#line 307 "src/main.vl"
+#line 311 "src/main.vl"
                         sb_append_str(sb, "velo_str_neq(");
                     }
-#line 308 "src/main.vl"
+#line 312 "src/main.vl"
                     emit_c_expr(sb, st, expr->left);
-#line 308 "src/main.vl"
+#line 312 "src/main.vl"
                     sb_append_str(sb, ", ");
-#line 308 "src/main.vl"
+#line 312 "src/main.vl"
                     emit_c_expr(sb, st, expr->right);
-#line 308 "src/main.vl"
+#line 312 "src/main.vl"
                     sb_append_char(sb, ')');
-#line 309 "src/main.vl"
+#line 313 "src/main.vl"
                     return;
                 }
-#line 311 "src/main.vl"
+#line 315 "src/main.vl"
                 sb_append_str(sb, "((");
-#line 311 "src/main.vl"
+#line 315 "src/main.vl"
                 emit_c_expr(sb, st, expr->left);
-#line 311 "src/main.vl"
+#line 315 "src/main.vl"
                 sb_append_str(sb, " != NULL && ");
-#line 311 "src/main.vl"
+#line 315 "src/main.vl"
                 emit_c_expr(sb, st, expr->right);
-#line 311 "src/main.vl"
+#line 315 "src/main.vl"
                 sb_append_str(sb, " != NULL) ? (strcmp(");
-#line 312 "src/main.vl"
+#line 316 "src/main.vl"
                 emit_c_expr(sb, st, expr->left);
-#line 312 "src/main.vl"
+#line 316 "src/main.vl"
                 sb_append_str(sb, ", ");
-#line 312 "src/main.vl"
+#line 316 "src/main.vl"
                 emit_c_expr(sb, st, expr->right);
-#line 313 "src/main.vl"
+#line 317 "src/main.vl"
                 if ((expr->op == TOK_EQ)) {
-#line 313 "src/main.vl"
+#line 317 "src/main.vl"
                     sb_append_str(sb, ") == 0) : (");
                 } else {
-#line 313 "src/main.vl"
+#line 317 "src/main.vl"
                     sb_append_str(sb, ") != 0) : (");
                 }
-#line 314 "src/main.vl"
+#line 318 "src/main.vl"
                 emit_c_expr(sb, st, expr->left);
-#line 314 "src/main.vl"
+#line 318 "src/main.vl"
                 sb_append_char(sb, ' ');
-#line 314 "src/main.vl"
+#line 318 "src/main.vl"
                 sb_append_str(sb, op_to_c_str(expr->op));
-#line 314 "src/main.vl"
+#line 318 "src/main.vl"
                 sb_append_char(sb, ' ');
-#line 314 "src/main.vl"
+#line 318 "src/main.vl"
                 emit_c_expr(sb, st, expr->right);
-#line 314 "src/main.vl"
+#line 318 "src/main.vl"
                 sb_append_str(sb, "))");
-#line 315 "src/main.vl"
+#line 319 "src/main.vl"
                 return;
             }
         }
-#line 320 "src/main.vl"
-        if (((((((expr->op == TOK_EQ) || (expr->op == TOK_NEQ)) || (expr->op == TOK_LT)) || (expr->op == TOK_LTE)) || (expr->op == TOK_GT)) || (expr->op == TOK_GTE))) {
-#line 321 "src/main.vl"
-            const char* ltype = infer_expr_type(st, expr->left);
-#line 322 "src/main.vl"
-            const char* rtype = infer_expr_type(st, expr->right);
-#line 323 "src/main.vl"
-            bool l_signed = is_signed_int_type(ltype);
 #line 324 "src/main.vl"
-            bool l_unsigned = is_unsigned_int_type(ltype);
+        if (((((((expr->op == TOK_EQ) || (expr->op == TOK_NEQ)) || (expr->op == TOK_LT)) || (expr->op == TOK_LTE)) || (expr->op == TOK_GT)) || (expr->op == TOK_GTE))) {
 #line 325 "src/main.vl"
-            bool r_signed = is_signed_int_type(rtype);
+            const char* ltype = infer_expr_type(st, expr->left);
 #line 326 "src/main.vl"
-            bool r_unsigned = is_unsigned_int_type(rtype);
+            const char* rtype = infer_expr_type(st, expr->right);
 #line 327 "src/main.vl"
-            if ((((expr->left->kind == EXPR_INT) && ((expr->left->type_name == NULL) || velo_cmp_eq_u_s(((usize)strlen(expr->left->type_name)), 0))) && int_literal_exceeds_i64(expr->left->str_val))) {
+            bool l_signed = is_signed_int_type(ltype);
 #line 328 "src/main.vl"
-                l_signed = false;
+            bool l_unsigned = is_unsigned_int_type(ltype);
 #line 329 "src/main.vl"
+            bool r_signed = is_signed_int_type(rtype);
+#line 330 "src/main.vl"
+            bool r_unsigned = is_unsigned_int_type(rtype);
+#line 331 "src/main.vl"
+            if ((((expr->left->kind == EXPR_INT) && ((expr->left->type_name == NULL) || velo_cmp_eq_u_s(((usize)strlen(expr->left->type_name)), 0))) && int_literal_exceeds_i64(expr->left->str_val))) {
+#line 332 "src/main.vl"
+                l_signed = false;
+#line 333 "src/main.vl"
                 l_unsigned = true;
             }
-#line 331 "src/main.vl"
+#line 335 "src/main.vl"
             if ((((expr->right->kind == EXPR_INT) && ((expr->right->type_name == NULL) || velo_cmp_eq_u_s(((usize)strlen(expr->right->type_name)), 0))) && int_literal_exceeds_i64(expr->right->str_val))) {
-#line 332 "src/main.vl"
+#line 336 "src/main.vl"
                 r_signed = false;
-#line 333 "src/main.vl"
+#line 337 "src/main.vl"
                 r_unsigned = true;
             }
-#line 335 "src/main.vl"
+#line 339 "src/main.vl"
             if (((l_signed && r_unsigned) || (l_unsigned && r_signed))) {
-#line 336 "src/main.vl"
+#line 340 "src/main.vl"
                 const char* fn_name = "velo_cmp_eq";
-#line 337 "src/main.vl"
+#line 341 "src/main.vl"
                 if ((expr->op == TOK_NEQ)) {
-#line 337 "src/main.vl"
+#line 341 "src/main.vl"
                     fn_name = "velo_cmp_ne";
                 } else
-#line 338 "src/main.vl"
+#line 342 "src/main.vl"
                 if ((expr->op == TOK_LT)) {
-#line 338 "src/main.vl"
+#line 342 "src/main.vl"
                     fn_name = "velo_cmp_lt";
                 } else
-#line 339 "src/main.vl"
+#line 343 "src/main.vl"
                 if ((expr->op == TOK_LTE)) {
-#line 339 "src/main.vl"
+#line 343 "src/main.vl"
                     fn_name = "velo_cmp_le";
                 } else
-#line 340 "src/main.vl"
+#line 344 "src/main.vl"
                 if ((expr->op == TOK_GT)) {
-#line 340 "src/main.vl"
+#line 344 "src/main.vl"
                     fn_name = "velo_cmp_gt";
                 } else
-#line 341 "src/main.vl"
+#line 345 "src/main.vl"
                 if ((expr->op == TOK_GTE)) {
-#line 341 "src/main.vl"
+#line 345 "src/main.vl"
                     fn_name = "velo_cmp_ge";
                 }
-#line 342 "src/main.vl"
+#line 346 "src/main.vl"
                 sb_append_str(sb, fn_name);
-#line 343 "src/main.vl"
+#line 347 "src/main.vl"
                 if (l_signed) {
-#line 343 "src/main.vl"
+#line 347 "src/main.vl"
                     sb_append_str(sb, "_s_u(");
                 } else {
-#line 343 "src/main.vl"
+#line 347 "src/main.vl"
                     sb_append_str(sb, "_u_s(");
                 }
-#line 344 "src/main.vl"
-                emit_c_expr(sb, st, expr->left);
-#line 345 "src/main.vl"
-                sb_append_str(sb, ", ");
-#line 346 "src/main.vl"
-                emit_c_expr(sb, st, expr->right);
-#line 347 "src/main.vl"
-                sb_append_char(sb, ')');
 #line 348 "src/main.vl"
+                emit_c_expr(sb, st, expr->left);
+#line 349 "src/main.vl"
+                sb_append_str(sb, ", ");
+#line 350 "src/main.vl"
+                emit_c_expr(sb, st, expr->right);
+#line 351 "src/main.vl"
+                sb_append_char(sb, ')');
+#line 352 "src/main.vl"
                 return;
             }
         }
-#line 352 "src/main.vl"
+#line 356 "src/main.vl"
         sb_append_char(sb, '(');
-#line 352 "src/main.vl"
+#line 356 "src/main.vl"
         emit_c_expr(sb, st, expr->left);
-#line 352 "src/main.vl"
+#line 356 "src/main.vl"
         sb_append_char(sb, ' ');
-#line 353 "src/main.vl"
+#line 357 "src/main.vl"
         sb_append_str(sb, op_to_c_str(expr->op));
-#line 353 "src/main.vl"
+#line 357 "src/main.vl"
         sb_append_char(sb, ' ');
-#line 353 "src/main.vl"
+#line 357 "src/main.vl"
         emit_c_expr(sb, st, expr->right);
-#line 353 "src/main.vl"
+#line 357 "src/main.vl"
         sb_append_char(sb, ')');
-#line 354 "src/main.vl"
-        return;
-    }
 #line 358 "src/main.vl"
+        return;
+    }
+#line 362 "src/main.vl"
     if ((expr->kind == EXPR_CALL)) {
-#line 359 "src/main.vl"
+#line 362 "src/main.vl"
         emit_call_expr(sb, st, expr);
-#line 360 "src/main.vl"
+#line 362 "src/main.vl"
         return;
     }
-#line 364 "src/main.vl"
+#line 365 "src/main.vl"
     if ((expr->kind == EXPR_OR_RETURN)) {
-#line 365 "src/main.vl"
+#line 366 "src/main.vl"
         const char* op_t = infer_expr_type(st, expr->operand);
-#line 365 "src/main.vl"
+#line 366 "src/main.vl"
         const char* c_op_t = map_type_to_c(op_t);
-#line 365 "src/main.vl"
+#line 366 "src/main.vl"
         const char* ret_c = map_type_to_c(st->current_func_ret_type);
-#line 366 "src/main.vl"
+#line 367 "src/main.vl"
         st->fresh_counter += 1;
-#line 366 "src/main.vl"
+#line 367 "src/main.vl"
         int32_t tmp_id = ((int32_t)(st->fresh_counter));
-#line 367 "src/main.vl"
-        sb_append_str(sb, "({ ");
-#line 367 "src/main.vl"
-        sb_append_str(sb, c_op_t);
-#line 367 "src/main.vl"
-        sb_append_str(sb, " __or_tmp_");
-#line 367 "src/main.vl"
-        sb_append_int(sb, tmp_id);
-#line 367 "src/main.vl"
-        sb_append_str(sb, " = ");
 #line 368 "src/main.vl"
+        sb_append_str(sb, "({ ");
+#line 368 "src/main.vl"
+        sb_append_str(sb, c_op_t);
+#line 368 "src/main.vl"
+        sb_append_str(sb, " __or_tmp_");
+#line 368 "src/main.vl"
+        sb_append_int(sb, tmp_id);
+#line 368 "src/main.vl"
+        sb_append_str(sb, " = ");
+#line 369 "src/main.vl"
         emit_c_expr(sb, st, expr->operand);
-#line 369 "src/main.vl"
+#line 370 "src/main.vl"
         sb_append_str(sb, "; if (!__or_tmp_");
-#line 369 "src/main.vl"
+#line 370 "src/main.vl"
         sb_append_int(sb, tmp_id);
-#line 369 "src/main.vl"
+#line 370 "src/main.vl"
         sb_append_str(sb, ".ok) return (");
-#line 369 "src/main.vl"
+#line 370 "src/main.vl"
         sb_append_str(sb, ret_c);
-#line 369 "src/main.vl"
+#line 370 "src/main.vl"
         sb_append_str(sb, "){ .ok = false, .as = { .err = __or_tmp_");
-#line 369 "src/main.vl"
+#line 370 "src/main.vl"
         sb_append_int(sb, tmp_id);
-#line 369 "src/main.vl"
+#line 370 "src/main.vl"
         sb_append_str(sb, ".as.err } }; ");
-#line 370 "src/main.vl"
-        sb_append_str(sb, "__or_tmp_");
-#line 370 "src/main.vl"
-        sb_append_int(sb, tmp_id);
-#line 370 "src/main.vl"
-        sb_append_str(sb, ".as.val; })");
 #line 371 "src/main.vl"
+        sb_append_str(sb, "__or_tmp_");
+#line 371 "src/main.vl"
+        sb_append_int(sb, tmp_id);
+#line 371 "src/main.vl"
+        sb_append_str(sb, ".as.val; })");
+#line 372 "src/main.vl"
         return;
     }
-#line 375 "src/main.vl"
-    if ((expr->kind == EXPR_UNWRAP)) {
 #line 376 "src/main.vl"
-        const char* op_t = infer_expr_type(st, expr->operand);
+    if ((expr->kind == EXPR_UNWRAP)) {
 #line 377 "src/main.vl"
-        const char* inner = optional_inner_type(op_t);
+        const char* op_t = infer_expr_type(st, expr->operand);
 #line 378 "src/main.vl"
+        const char* inner = optional_inner_type(op_t);
+#line 379 "src/main.vl"
         if ((velo_cmp_eq_u_s(inner[0], '@') || ((inner != NULL && "string" != NULL) ? (strcmp(inner, "string") == 0) : (inner == "string")))) {
-#line 379 "src/main.vl"
+#line 380 "src/main.vl"
             sb_append_str(sb, "((");
-#line 379 "src/main.vl"
+#line 380 "src/main.vl"
             sb_append_str(sb, map_type_to_c(inner));
-#line 379 "src/main.vl"
+#line 380 "src/main.vl"
             sb_append_str(sb, ")velo_opt_unwrap_ptr(");
-#line 380 "src/main.vl"
+#line 381 "src/main.vl"
             emit_c_expr(sb, st, expr->operand);
-#line 380 "src/main.vl"
+#line 381 "src/main.vl"
             sb_append_str(sb, ", \"");
-#line 380 "src/main.vl"
+#line 381 "src/main.vl"
             emit_source_path(sb, st);
-#line 380 "src/main.vl"
+#line 381 "src/main.vl"
             sb_append_str(sb, "\", ");
-#line 381 "src/main.vl"
+#line 382 "src/main.vl"
             sb_append_int(sb, expr->line);
-#line 381 "src/main.vl"
+#line 382 "src/main.vl"
             sb_append_str(sb, ", ");
-#line 381 "src/main.vl"
+#line 382 "src/main.vl"
             sb_append_int(sb, expr->col);
-#line 381 "src/main.vl"
+#line 382 "src/main.vl"
             sb_append_str(sb, "))");
         } else {
-#line 383 "src/main.vl"
+#line 384 "src/main.vl"
             sb_append_str(sb, "velo_opt_unwrap_");
-#line 383 "src/main.vl"
+#line 384 "src/main.vl"
             sb_append_str(sb, inner);
-#line 383 "src/main.vl"
+#line 384 "src/main.vl"
             sb_append_char(sb, '(');
-#line 384 "src/main.vl"
+#line 385 "src/main.vl"
             emit_c_expr(sb, st, expr->operand);
-#line 384 "src/main.vl"
+#line 385 "src/main.vl"
             sb_append_str(sb, ", \"");
-#line 384 "src/main.vl"
+#line 385 "src/main.vl"
             emit_source_path(sb, st);
-#line 384 "src/main.vl"
+#line 385 "src/main.vl"
             sb_append_str(sb, "\", ");
-#line 385 "src/main.vl"
+#line 386 "src/main.vl"
             sb_append_int(sb, expr->line);
-#line 385 "src/main.vl"
+#line 386 "src/main.vl"
             sb_append_str(sb, ", ");
-#line 385 "src/main.vl"
+#line 386 "src/main.vl"
             sb_append_int(sb, expr->col);
-#line 385 "src/main.vl"
+#line 386 "src/main.vl"
             sb_append_char(sb, ')');
         }
-#line 387 "src/main.vl"
+#line 388 "src/main.vl"
         return;
     }
-#line 391 "src/main.vl"
+#line 392 "src/main.vl"
     if ((expr->kind == EXPR_IF)) {
 #line 392 "src/main.vl"
         emit_if_expr(sb, st, expr);
-#line 393 "src/main.vl"
+#line 392 "src/main.vl"
         return;
     }
 }

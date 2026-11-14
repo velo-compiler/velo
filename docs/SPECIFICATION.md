@@ -1005,3 +1005,41 @@ act main() {
 }
 ```
 
+### 10.5 Integer Formatting & Signed/Unsigned Guarantees
+
+Velo enforces strict signed/unsigned type separation and portable width promotion across all formatting facilities (`io.println`, `io.print`, string interpolation `{...}`, and standard library printers):
+
+* **Unsigned Formatting Guarantee:**
+  Unsigned integer types (`u8`, `u16`, `u32`, `u64`, `usize`) are strictly formatted as non-negative unsigned decimal values. They are never cast to signed types and never produce negative wrapped outputs. In code generation, unsigned types format through standard C99 `%llu` with `(unsigned long long)(...)`.
+* **Signed Formatting Guarantee:**
+  Signed integer types (`i8`, `i16`, `i32`, `i64`, `isize`) preserve sign across their entire domain, including minimum limits (`INT32_MIN` and `INT64_MIN`). In code generation, signed types format through standard C99 `%lld` with `(long long)(...)`.
+* **Platform Word-Size Portability (`usize` and `isize`):**
+  `usize` and `isize` format portably across both 32-bit and 64-bit target architectures without truncation or undefined behavior:
+  - `usize` zero-extends safely to at least 64 bits (`(unsigned long long)`).
+  - `isize` sign-extends safely to at least 64 bits (`(long long)`).
+* **String Interpolation Alignment:**
+  Within `{...}` interpolation expressions, format specifiers and argument values maintain exact 1:1 order alignment. Unsigned expressions emit `%llu`; signed expressions emit `%lld`.
+* **Format Injection Hardening & Locale Independence:**
+  All format strings emitted by the compiler are owned static constants. User-controlled strings and format specifiers (e.g. `%n`, `%s`, `{%n}`) flow strictly through data arguments and are rendered literally. Decimal points and numeric digit representations are deterministic and locale-independent.
+
+```velo
+use std.io
+
+act main() {
+    // Unsigned formatting: boundary values never wrap negative
+    let u_max: u64 = 18446744073709551615u64
+    let usize_max: usize = 18446744073709551615usize
+    io.println(u_max)
+    io.println(usize_max)
+
+    // Signed formatting: negative boundaries preserve sign
+    let i_min: i64 = -9223372036854775807 - 1
+    let isize_val: isize = -42isize
+    io.println(i_min)
+    io.println(isize_val)
+
+    // String interpolation with mixed types
+    io.println("u64={u_max}, i64={i_min}, usize={usize_max}, isize={isize_val}")
+}
+```
+
