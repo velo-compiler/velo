@@ -6,12 +6,18 @@
 // never silently lower to a no-op or to generic value printing.
 //
 // Task 52.2 owns the allowlist and the closed-set gate. Task 52.3 adds the
-// per-member arity/type walls and the correct result spells.
+// per-member arity/type walls and the correct result spells: the checker
+// rejects implicit float->int, bool->int, and narrowing conversions, and
+// adapts only in-range unsuffixed integer literals (the language-wide rule).
+// Codegen dispatch is Task 52.4: until then only print/println lower through
+// the intrinsic, so running the other members is still a codegen-side gap.
 use "type_checker.vl"
 use "symbol_table.vl"
+use "literal_check.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../ast/expr.vl"
+use "../ast/types.vl"
 use "../frontend/token.vl"
 
 // Compiler intrinsics: these are lowered by codegen_io.vl instead of resolving
@@ -52,9 +58,107 @@ act io_valid_members() -> string {
     return "io_ensure_atexit, io_get_stdout_writer, io_get_stderr_writer, io_get_fmt_buf, io_flush_stdout, io_flush_stderr, io_flush_all, io_print_cleanup, fprint, fprintln, fprint_str, fprintln_str, fprintln_empty, fprint_byte, fprintln_byte, fprint_i64, fprintln_i64, fprint_u64, fprintln_u64, fprint_f64, fprintln_f64, fprint_bool, fprintln_bool, print, println, print_str, println_str, println_empty, print_byte, println_byte, print_i64, println_i64, print_u64, println_u64, print_f64, println_f64, print_bool, println_bool, eprint, eprintln, eprint_str, eprintln_str, eprintln_empty, eprint_byte, eprintln_byte, eprint_i64, eprintln_i64, eprint_u64, eprintln_u64, eprint_f64, eprintln_f64, eprint_bool, eprintln_bool"
 }
 
-// Entry point: validates the member name and reports a closed-set diagnostic
-// for anything outside the allowlist. Result spells and arity/type walls are
-// added by Task 52.3; until then every accepted call yields "void".
+// Expected argument count per member. The shape is derived from the public
+// names so a future slice that follows the naming convention lands here for
+// free: lifecycle helpers are 0-ary, `*_empty` line printers are 0-ary except
+// the stream form, `*_f64` carries a precision (3 args on a stream), stream
+// members start with `f` (2 args), and every other value printer is 1-ary.
+act io_member_arity(member: string) -> i32 {
+    if member == "io_ensure_atexit" or member == "io_get_stdout_writer" or member == "io_get_stderr_writer" or member == "io_get_fmt_buf" { return 0 }
+    if member == "io_flush_stdout" or member == "io_flush_stderr" or member == "io_flush_all" or member == "io_print_cleanup" { return 0 }
+    if member == "println_empty" or member == "eprintln_empty" { return 0 }
+    if member == "fprintln_empty" { return 1 }
+    if str.ends_with(member, "_f64") {
+        if str.len(member) > 0 and member[0] == 'f' { return 3 }
+        return 2
+    }
+    if str.len(member) > 0 and member[0] == 'f' { return 2 }
+    return 1
+}
+
+// Per-position argument KIND for the member: "W" = @BufferedWriter handle,
+// "S" = string, "L" = StrSlice, "B" = u8 byte, "I" = i64, "U" = u64,
+// "F" = f64, "P" = i32 precision, "Z" = bool. The stream handle occupies
+// position 0 of every f-prefixed member; the remaining positions follow the
+// member suffix.
+act io_arg_kind(member: string, idx: usize) -> string {
+    mut pos = idx
+    if str.len(member) > 0 and member[0] == 'f' {
+        if idx == 0 { return "W" }
+        pos = idx - 1
+    }
+    if str.ends_with(member, "_f64") {
+        if pos == 0 { return "F" }
+        return "P"
+    }
+    if str.ends_with(member, "_byte") { return "B" }
+    if str.ends_with(member, "_i64") { return "I" }
+    if str.ends_with(member, "_u64") { return "U" }
+    if str.ends_with(member, "_bool") { return "Z" }
+    if str.ends_with(member, "_str") { return "S" }
+    return "L"
+}
+
+// The type spell each kind accepts. The type wall compares these spells with
+// the language-wide compatibility rule: safe widening is allowed, narrowing
+// and signed/unsigned changes are not.
+act io_kind_expected(kind: string) -> string {
+    if kind == "W" { return "@BufferedWriter" }
+    if kind == "S" { return "string" }
+    if kind == "L" { return "StrSlice" }
+    if kind == "B" { return "u8" }
+    if kind == "I" { return "i64" }
+    if kind == "U" { return "u64" }
+    if kind == "F" { return "f64" }
+    if kind == "P" { return "i32" }
+    if kind == "Z" { return "bool" }
+    return "unknown"
+}
+
+// Parameter text for the arity diagnostic; names mirror std/io/print.vl.
+act io_kind_param(kind: string) -> string {
+    if kind == "W" { return "@BufferedWriter w" }
+    if kind == "S" { return "string s" }
+    if kind == "L" { return "StrSlice s" }
+    if kind == "B" { return "u8 b" }
+    if kind == "I" { return "i64 val" }
+    if kind == "U" { return "u64 val" }
+    if kind == "F" { return "f64 val" }
+    if kind == "P" { return "i32 precision" }
+    if kind == "Z" { return "bool val" }
+    return "?"
+}
+
+// Signature tail for the arity diagnostic, derived from the same kind table
+// the type wall uses so the two can never disagree.
+act io_member_sig(member: string) -> string {
+    let arity = io_member_arity(member)
+    if arity <= 0 { return "" }
+    let msb = create_sb(96)
+    sb_append_str(@msb, ": (")
+    mut i: usize = 0
+    loop i < (arity as usize) {
+        if i > 0 { sb_append_str(@msb, ", ") }
+        sb_append_str(@msb, io_kind_param(io_arg_kind(member, i)))
+        i += 1
+    }
+    sb_append_str(@msb, ")")
+    return sb_to_string(@msb)
+}
+
+// Result spell per member. Every printer and lifecycle helper is void; the
+// flush family reports bool and the accessors report their handle spells.
+act io_member_ret(member: string) -> string {
+    if member == "io_get_stdout_writer" or member == "io_get_stderr_writer" { return "@BufferedWriter" }
+    if member == "io_get_fmt_buf" { return "@u8" }
+    if member == "io_flush_stdout" or member == "io_flush_stderr" or member == "io_flush_all" { return "bool" }
+    return "void"
+}
+
+// Entry point: validates the member name, arity, and argument types, then
+// returns the call's RESULT spell — "unknown" after reporting (the infer
+// branch then yields "unknown"). Intrinsics accept zero or one argument and
+// yield void; every other member is checked against the kind table.
 act check_io_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
     if !io_is_known_member(member) {
         let msb = create_sb(1024)
@@ -67,5 +171,61 @@ act check_io_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
         st.error_count += 1
         return "unknown"
     }
-    return "void"
+
+    // The compiler intrinsics print/println format any value expression and
+    // accept an optional argument. Task 52.5 hardens the format path itself.
+    if io_is_intrinsic(member) {
+        if expr.arg_count > 1 {
+            let msb = create_sb(96)
+            sb_append_str(@msb, "io.")
+            sb_append_str(@msb, member)
+            sb_append_str(@msb, " expects at most 1 argument")
+            report_error("semantic", expr.line, expr.col, sb_to_string(@msb))
+            st.error_count += 1
+            return "unknown"
+        }
+        return "void"
+    }
+
+    let arity = io_member_arity(member)
+    if expr.arg_count != (arity as usize) {
+        let msb = create_sb(192)
+        sb_append_str(@msb, "io.")
+        sb_append_str(@msb, member)
+        sb_append_str(@msb, " expects exactly ")
+        sb_append_int(@msb, arity)
+        if arity == 1 { sb_append_str(@msb, " argument") } else { sb_append_str(@msb, " arguments") }
+        sb_append_str(@msb, io_member_sig(member))
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msb))
+        st.error_count += 1
+        return "unknown"
+    }
+
+    mut idx: usize = 0
+    mut cur = expr.first_arg
+    loop cur != null {
+        let expected = io_kind_expected(io_arg_kind(member, idx))
+        // Only unsuffixed integer literals adapt; an out-of-range literal has
+        // already reported its own diagnostic, so do not duplicate it here.
+        let adapt_ok = try_adapt_int_literal(st, expected, cur, cur.line, cur.col)
+        if adapt_ok {
+            let got = infer_expr_type(st, cur)
+            if !types_are_compatible(expected, got) {
+                let msb = create_sb(160)
+                sb_append_str(@msb, "io.")
+                sb_append_str(@msb, member)
+                sb_append_str(@msb, " expects ")
+                sb_append_str(@msb, expected)
+                sb_append_str(@msb, " (got ")
+                sb_append_str(@msb, got)
+                sb_append_str(@msb, ")")
+                report_error("semantic", expr.line, expr.col, sb_to_string(@msb))
+                st.error_count += 1
+                return "unknown"
+            }
+        }
+        idx += 1
+        cur = cur.next
+    }
+    return io_member_ret(member)
 }

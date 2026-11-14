@@ -2130,6 +2130,12 @@ const char* check_fs_constant(SymbolTable* st, ExprNode* expr);
 bool io_is_intrinsic(const char* member);
 bool io_is_known_member(const char* member);
 const char* io_valid_members(void);
+int32_t io_member_arity(const char* member);
+const char* io_arg_kind(const char* member, size_t idx);
+const char* io_kind_expected(const char* kind);
+const char* io_kind_param(const char* kind);
+const char* io_member_sig(const char* member);
+const char* io_member_ret(const char* member);
 const char* check_io_call(SymbolTable* st, ExprNode* expr, const char* member);
 bool is_simd_constructor(const char* name);
 const char* check_simd_constructor(SymbolTable* st, ExprNode* expr);
@@ -29572,119 +29578,470 @@ const char* check_fs_constant(SymbolTable* st, ExprNode* expr) {
     return "unknown";
 }
 
-#line 20 "src/main.vl"
+#line 26 "src/main.vl"
 bool io_is_intrinsic(const char* member) {
-#line 21 "src/main.vl"
+#line 27 "src/main.vl"
     return (((member != NULL && "print" != NULL) ? (strcmp(member, "print") == 0) : (member == "print")) || ((member != NULL && "println" != NULL) ? (strcmp(member, "println") == 0) : (member == "println")));
 }
 
-#line 27 "src/main.vl"
+#line 33 "src/main.vl"
 bool io_is_known_member(const char* member) {
-#line 28 "src/main.vl"
+#line 34 "src/main.vl"
     if ((((((member != NULL && "io_ensure_atexit" != NULL) ? (strcmp(member, "io_ensure_atexit") == 0) : (member == "io_ensure_atexit")) || ((member != NULL && "io_get_stdout_writer" != NULL) ? (strcmp(member, "io_get_stdout_writer") == 0) : (member == "io_get_stdout_writer"))) || ((member != NULL && "io_get_stderr_writer" != NULL) ? (strcmp(member, "io_get_stderr_writer") == 0) : (member == "io_get_stderr_writer"))) || ((member != NULL && "io_get_fmt_buf" != NULL) ? (strcmp(member, "io_get_fmt_buf") == 0) : (member == "io_get_fmt_buf")))) {
-#line 28 "src/main.vl"
+#line 34 "src/main.vl"
         return true;
     }
-#line 29 "src/main.vl"
+#line 35 "src/main.vl"
     if ((((((member != NULL && "io_flush_stdout" != NULL) ? (strcmp(member, "io_flush_stdout") == 0) : (member == "io_flush_stdout")) || ((member != NULL && "io_flush_stderr" != NULL) ? (strcmp(member, "io_flush_stderr") == 0) : (member == "io_flush_stderr"))) || ((member != NULL && "io_flush_all" != NULL) ? (strcmp(member, "io_flush_all") == 0) : (member == "io_flush_all"))) || ((member != NULL && "io_print_cleanup" != NULL) ? (strcmp(member, "io_print_cleanup") == 0) : (member == "io_print_cleanup")))) {
-#line 29 "src/main.vl"
+#line 35 "src/main.vl"
         return true;
     }
-#line 31 "src/main.vl"
+#line 37 "src/main.vl"
     if (((((((member != NULL && "fprint" != NULL) ? (strcmp(member, "fprint") == 0) : (member == "fprint")) || ((member != NULL && "fprintln" != NULL) ? (strcmp(member, "fprintln") == 0) : (member == "fprintln"))) || ((member != NULL && "fprint_str" != NULL) ? (strcmp(member, "fprint_str") == 0) : (member == "fprint_str"))) || ((member != NULL && "fprintln_str" != NULL) ? (strcmp(member, "fprintln_str") == 0) : (member == "fprintln_str"))) || ((member != NULL && "fprintln_empty" != NULL) ? (strcmp(member, "fprintln_empty") == 0) : (member == "fprintln_empty")))) {
-#line 31 "src/main.vl"
+#line 37 "src/main.vl"
         return true;
     }
-#line 32 "src/main.vl"
+#line 38 "src/main.vl"
     if ((((((member != NULL && "fprint_byte" != NULL) ? (strcmp(member, "fprint_byte") == 0) : (member == "fprint_byte")) || ((member != NULL && "fprintln_byte" != NULL) ? (strcmp(member, "fprintln_byte") == 0) : (member == "fprintln_byte"))) || ((member != NULL && "fprint_i64" != NULL) ? (strcmp(member, "fprint_i64") == 0) : (member == "fprint_i64"))) || ((member != NULL && "fprintln_i64" != NULL) ? (strcmp(member, "fprintln_i64") == 0) : (member == "fprintln_i64")))) {
-#line 32 "src/main.vl"
+#line 38 "src/main.vl"
         return true;
     }
-#line 33 "src/main.vl"
+#line 39 "src/main.vl"
     if ((((((member != NULL && "fprint_u64" != NULL) ? (strcmp(member, "fprint_u64") == 0) : (member == "fprint_u64")) || ((member != NULL && "fprintln_u64" != NULL) ? (strcmp(member, "fprintln_u64") == 0) : (member == "fprintln_u64"))) || ((member != NULL && "fprint_f64" != NULL) ? (strcmp(member, "fprint_f64") == 0) : (member == "fprint_f64"))) || ((member != NULL && "fprintln_f64" != NULL) ? (strcmp(member, "fprintln_f64") == 0) : (member == "fprintln_f64")))) {
-#line 33 "src/main.vl"
+#line 39 "src/main.vl"
         return true;
     }
-#line 34 "src/main.vl"
+#line 40 "src/main.vl"
     if ((((member != NULL && "fprint_bool" != NULL) ? (strcmp(member, "fprint_bool") == 0) : (member == "fprint_bool")) || ((member != NULL && "fprintln_bool" != NULL) ? (strcmp(member, "fprintln_bool") == 0) : (member == "fprintln_bool")))) {
-#line 34 "src/main.vl"
+#line 40 "src/main.vl"
         return true;
     }
-#line 36 "src/main.vl"
+#line 42 "src/main.vl"
     if (((((((member != NULL && "print" != NULL) ? (strcmp(member, "print") == 0) : (member == "print")) || ((member != NULL && "println" != NULL) ? (strcmp(member, "println") == 0) : (member == "println"))) || ((member != NULL && "print_str" != NULL) ? (strcmp(member, "print_str") == 0) : (member == "print_str"))) || ((member != NULL && "println_str" != NULL) ? (strcmp(member, "println_str") == 0) : (member == "println_str"))) || ((member != NULL && "println_empty" != NULL) ? (strcmp(member, "println_empty") == 0) : (member == "println_empty")))) {
-#line 36 "src/main.vl"
+#line 42 "src/main.vl"
         return true;
     }
-#line 37 "src/main.vl"
+#line 43 "src/main.vl"
     if ((((((member != NULL && "print_byte" != NULL) ? (strcmp(member, "print_byte") == 0) : (member == "print_byte")) || ((member != NULL && "println_byte" != NULL) ? (strcmp(member, "println_byte") == 0) : (member == "println_byte"))) || ((member != NULL && "print_i64" != NULL) ? (strcmp(member, "print_i64") == 0) : (member == "print_i64"))) || ((member != NULL && "println_i64" != NULL) ? (strcmp(member, "println_i64") == 0) : (member == "println_i64")))) {
-#line 37 "src/main.vl"
+#line 43 "src/main.vl"
         return true;
     }
-#line 38 "src/main.vl"
+#line 44 "src/main.vl"
     if ((((((member != NULL && "print_u64" != NULL) ? (strcmp(member, "print_u64") == 0) : (member == "print_u64")) || ((member != NULL && "println_u64" != NULL) ? (strcmp(member, "println_u64") == 0) : (member == "println_u64"))) || ((member != NULL && "print_f64" != NULL) ? (strcmp(member, "print_f64") == 0) : (member == "print_f64"))) || ((member != NULL && "println_f64" != NULL) ? (strcmp(member, "println_f64") == 0) : (member == "println_f64")))) {
-#line 38 "src/main.vl"
+#line 44 "src/main.vl"
         return true;
     }
-#line 39 "src/main.vl"
+#line 45 "src/main.vl"
     if ((((member != NULL && "print_bool" != NULL) ? (strcmp(member, "print_bool") == 0) : (member == "print_bool")) || ((member != NULL && "println_bool" != NULL) ? (strcmp(member, "println_bool") == 0) : (member == "println_bool")))) {
-#line 39 "src/main.vl"
+#line 45 "src/main.vl"
         return true;
     }
-#line 41 "src/main.vl"
+#line 47 "src/main.vl"
     if (((((((member != NULL && "eprint" != NULL) ? (strcmp(member, "eprint") == 0) : (member == "eprint")) || ((member != NULL && "eprintln" != NULL) ? (strcmp(member, "eprintln") == 0) : (member == "eprintln"))) || ((member != NULL && "eprint_str" != NULL) ? (strcmp(member, "eprint_str") == 0) : (member == "eprint_str"))) || ((member != NULL && "eprintln_str" != NULL) ? (strcmp(member, "eprintln_str") == 0) : (member == "eprintln_str"))) || ((member != NULL && "eprintln_empty" != NULL) ? (strcmp(member, "eprintln_empty") == 0) : (member == "eprintln_empty")))) {
-#line 41 "src/main.vl"
+#line 47 "src/main.vl"
         return true;
     }
-#line 42 "src/main.vl"
+#line 48 "src/main.vl"
     if ((((((member != NULL && "eprint_byte" != NULL) ? (strcmp(member, "eprint_byte") == 0) : (member == "eprint_byte")) || ((member != NULL && "eprintln_byte" != NULL) ? (strcmp(member, "eprintln_byte") == 0) : (member == "eprintln_byte"))) || ((member != NULL && "eprint_i64" != NULL) ? (strcmp(member, "eprint_i64") == 0) : (member == "eprint_i64"))) || ((member != NULL && "eprintln_i64" != NULL) ? (strcmp(member, "eprintln_i64") == 0) : (member == "eprintln_i64")))) {
-#line 42 "src/main.vl"
+#line 48 "src/main.vl"
         return true;
     }
-#line 43 "src/main.vl"
+#line 49 "src/main.vl"
     if ((((((member != NULL && "eprint_u64" != NULL) ? (strcmp(member, "eprint_u64") == 0) : (member == "eprint_u64")) || ((member != NULL && "eprintln_u64" != NULL) ? (strcmp(member, "eprintln_u64") == 0) : (member == "eprintln_u64"))) || ((member != NULL && "eprint_f64" != NULL) ? (strcmp(member, "eprint_f64") == 0) : (member == "eprint_f64"))) || ((member != NULL && "eprintln_f64" != NULL) ? (strcmp(member, "eprintln_f64") == 0) : (member == "eprintln_f64")))) {
-#line 43 "src/main.vl"
+#line 49 "src/main.vl"
         return true;
     }
-#line 44 "src/main.vl"
+#line 50 "src/main.vl"
     if ((((member != NULL && "eprint_bool" != NULL) ? (strcmp(member, "eprint_bool") == 0) : (member == "eprint_bool")) || ((member != NULL && "eprintln_bool" != NULL) ? (strcmp(member, "eprintln_bool") == 0) : (member == "eprintln_bool")))) {
-#line 44 "src/main.vl"
+#line 50 "src/main.vl"
         return true;
     }
-#line 46 "src/main.vl"
+#line 52 "src/main.vl"
     return false;
 }
 
-#line 51 "src/main.vl"
+#line 57 "src/main.vl"
 const char* io_valid_members(void) {
-#line 52 "src/main.vl"
+#line 58 "src/main.vl"
     return "io_ensure_atexit, io_get_stdout_writer, io_get_stderr_writer, io_get_fmt_buf, io_flush_stdout, io_flush_stderr, io_flush_all, io_print_cleanup, fprint, fprintln, fprint_str, fprintln_str, fprintln_empty, fprint_byte, fprintln_byte, fprint_i64, fprintln_i64, fprint_u64, fprintln_u64, fprint_f64, fprintln_f64, fprint_bool, fprintln_bool, print, println, print_str, println_str, println_empty, print_byte, println_byte, print_i64, println_i64, print_u64, println_u64, print_f64, println_f64, print_bool, println_bool, eprint, eprintln, eprint_str, eprintln_str, eprintln_empty, eprint_byte, eprintln_byte, eprint_i64, eprintln_i64, eprint_u64, eprintln_u64, eprint_f64, eprintln_f64, eprint_bool, eprintln_bool";
 }
 
-#line 58 "src/main.vl"
-const char* check_io_call(SymbolTable* st, ExprNode* expr, const char* member) {
-#line 59 "src/main.vl"
-    if ((!io_is_known_member(member))) {
-#line 60 "src/main.vl"
-        StringBuilder msb = create_sb(1024);
-#line 61 "src/main.vl"
-        sb_append_str((&(msb)), "unknown io member '");
-#line 62 "src/main.vl"
-        sb_append_str((&(msb)), member);
-#line 63 "src/main.vl"
-        sb_append_str((&(msb)), "' (functions: ");
-#line 64 "src/main.vl"
-        sb_append_str((&(msb)), io_valid_members());
-#line 65 "src/main.vl"
-        sb_append_str((&(msb)), ")");
 #line 66 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
+int32_t io_member_arity(const char* member) {
 #line 67 "src/main.vl"
-        st->error_count += 1;
+    if ((((((member != NULL && "io_ensure_atexit" != NULL) ? (strcmp(member, "io_ensure_atexit") == 0) : (member == "io_ensure_atexit")) || ((member != NULL && "io_get_stdout_writer" != NULL) ? (strcmp(member, "io_get_stdout_writer") == 0) : (member == "io_get_stdout_writer"))) || ((member != NULL && "io_get_stderr_writer" != NULL) ? (strcmp(member, "io_get_stderr_writer") == 0) : (member == "io_get_stderr_writer"))) || ((member != NULL && "io_get_fmt_buf" != NULL) ? (strcmp(member, "io_get_fmt_buf") == 0) : (member == "io_get_fmt_buf")))) {
+#line 67 "src/main.vl"
+        return 0;
+    }
 #line 68 "src/main.vl"
-        return "unknown";
+    if ((((((member != NULL && "io_flush_stdout" != NULL) ? (strcmp(member, "io_flush_stdout") == 0) : (member == "io_flush_stdout")) || ((member != NULL && "io_flush_stderr" != NULL) ? (strcmp(member, "io_flush_stderr") == 0) : (member == "io_flush_stderr"))) || ((member != NULL && "io_flush_all" != NULL) ? (strcmp(member, "io_flush_all") == 0) : (member == "io_flush_all"))) || ((member != NULL && "io_print_cleanup" != NULL) ? (strcmp(member, "io_print_cleanup") == 0) : (member == "io_print_cleanup")))) {
+#line 68 "src/main.vl"
+        return 0;
+    }
+#line 69 "src/main.vl"
+    if ((((member != NULL && "println_empty" != NULL) ? (strcmp(member, "println_empty") == 0) : (member == "println_empty")) || ((member != NULL && "eprintln_empty" != NULL) ? (strcmp(member, "eprintln_empty") == 0) : (member == "eprintln_empty")))) {
+#line 69 "src/main.vl"
+        return 0;
     }
 #line 70 "src/main.vl"
+    if (((member != NULL && "fprintln_empty" != NULL) ? (strcmp(member, "fprintln_empty") == 0) : (member == "fprintln_empty"))) {
+#line 70 "src/main.vl"
+        return 1;
+    }
+#line 71 "src/main.vl"
+    if (velo_str_ends_with(member, "_f64")) {
+#line 72 "src/main.vl"
+        if ((velo_cmp_gt_u_s(((usize)strlen(member)), 0) && velo_cmp_eq_u_s(member[0], 'f'))) {
+#line 72 "src/main.vl"
+            return 3;
+        }
+#line 73 "src/main.vl"
+        return 2;
+    }
+#line 75 "src/main.vl"
+    if ((velo_cmp_gt_u_s(((usize)strlen(member)), 0) && velo_cmp_eq_u_s(member[0], 'f'))) {
+#line 75 "src/main.vl"
+        return 2;
+    }
+#line 76 "src/main.vl"
+    return 1;
+}
+
+#line 84 "src/main.vl"
+const char* io_arg_kind(const char* member, size_t idx) {
+#line 85 "src/main.vl"
+    size_t pos = idx;
+#line 86 "src/main.vl"
+    if ((velo_cmp_gt_u_s(((usize)strlen(member)), 0) && velo_cmp_eq_u_s(member[0], 'f'))) {
+#line 87 "src/main.vl"
+        if (velo_cmp_eq_u_s(idx, 0)) {
+#line 87 "src/main.vl"
+            return "W";
+        }
+#line 88 "src/main.vl"
+        pos = (idx - 1);
+    }
+#line 90 "src/main.vl"
+    if (velo_str_ends_with(member, "_f64")) {
+#line 91 "src/main.vl"
+        if (velo_cmp_eq_u_s(pos, 0)) {
+#line 91 "src/main.vl"
+            return "F";
+        }
+#line 92 "src/main.vl"
+        return "P";
+    }
+#line 94 "src/main.vl"
+    if (velo_str_ends_with(member, "_byte")) {
+#line 94 "src/main.vl"
+        return "B";
+    }
+#line 95 "src/main.vl"
+    if (velo_str_ends_with(member, "_i64")) {
+#line 95 "src/main.vl"
+        return "I";
+    }
+#line 96 "src/main.vl"
+    if (velo_str_ends_with(member, "_u64")) {
+#line 96 "src/main.vl"
+        return "U";
+    }
+#line 97 "src/main.vl"
+    if (velo_str_ends_with(member, "_bool")) {
+#line 97 "src/main.vl"
+        return "Z";
+    }
+#line 98 "src/main.vl"
+    if (velo_str_ends_with(member, "_str")) {
+#line 98 "src/main.vl"
+        return "S";
+    }
+#line 99 "src/main.vl"
+    return "L";
+}
+
+#line 105 "src/main.vl"
+const char* io_kind_expected(const char* kind) {
+#line 106 "src/main.vl"
+    if (((kind != NULL && "W" != NULL) ? (strcmp(kind, "W") == 0) : (kind == "W"))) {
+#line 106 "src/main.vl"
+        return "@BufferedWriter";
+    }
+#line 107 "src/main.vl"
+    if (((kind != NULL && "S" != NULL) ? (strcmp(kind, "S") == 0) : (kind == "S"))) {
+#line 107 "src/main.vl"
+        return "string";
+    }
+#line 108 "src/main.vl"
+    if (((kind != NULL && "L" != NULL) ? (strcmp(kind, "L") == 0) : (kind == "L"))) {
+#line 108 "src/main.vl"
+        return "StrSlice";
+    }
+#line 109 "src/main.vl"
+    if (((kind != NULL && "B" != NULL) ? (strcmp(kind, "B") == 0) : (kind == "B"))) {
+#line 109 "src/main.vl"
+        return "u8";
+    }
+#line 110 "src/main.vl"
+    if (((kind != NULL && "I" != NULL) ? (strcmp(kind, "I") == 0) : (kind == "I"))) {
+#line 110 "src/main.vl"
+        return "i64";
+    }
+#line 111 "src/main.vl"
+    if (((kind != NULL && "U" != NULL) ? (strcmp(kind, "U") == 0) : (kind == "U"))) {
+#line 111 "src/main.vl"
+        return "u64";
+    }
+#line 112 "src/main.vl"
+    if (((kind != NULL && "F" != NULL) ? (strcmp(kind, "F") == 0) : (kind == "F"))) {
+#line 112 "src/main.vl"
+        return "f64";
+    }
+#line 113 "src/main.vl"
+    if (((kind != NULL && "P" != NULL) ? (strcmp(kind, "P") == 0) : (kind == "P"))) {
+#line 113 "src/main.vl"
+        return "i32";
+    }
+#line 114 "src/main.vl"
+    if (((kind != NULL && "Z" != NULL) ? (strcmp(kind, "Z") == 0) : (kind == "Z"))) {
+#line 114 "src/main.vl"
+        return "bool";
+    }
+#line 115 "src/main.vl"
+    return "unknown";
+}
+
+#line 119 "src/main.vl"
+const char* io_kind_param(const char* kind) {
+#line 120 "src/main.vl"
+    if (((kind != NULL && "W" != NULL) ? (strcmp(kind, "W") == 0) : (kind == "W"))) {
+#line 120 "src/main.vl"
+        return "@BufferedWriter w";
+    }
+#line 121 "src/main.vl"
+    if (((kind != NULL && "S" != NULL) ? (strcmp(kind, "S") == 0) : (kind == "S"))) {
+#line 121 "src/main.vl"
+        return "string s";
+    }
+#line 122 "src/main.vl"
+    if (((kind != NULL && "L" != NULL) ? (strcmp(kind, "L") == 0) : (kind == "L"))) {
+#line 122 "src/main.vl"
+        return "StrSlice s";
+    }
+#line 123 "src/main.vl"
+    if (((kind != NULL && "B" != NULL) ? (strcmp(kind, "B") == 0) : (kind == "B"))) {
+#line 123 "src/main.vl"
+        return "u8 b";
+    }
+#line 124 "src/main.vl"
+    if (((kind != NULL && "I" != NULL) ? (strcmp(kind, "I") == 0) : (kind == "I"))) {
+#line 124 "src/main.vl"
+        return "i64 val";
+    }
+#line 125 "src/main.vl"
+    if (((kind != NULL && "U" != NULL) ? (strcmp(kind, "U") == 0) : (kind == "U"))) {
+#line 125 "src/main.vl"
+        return "u64 val";
+    }
+#line 126 "src/main.vl"
+    if (((kind != NULL && "F" != NULL) ? (strcmp(kind, "F") == 0) : (kind == "F"))) {
+#line 126 "src/main.vl"
+        return "f64 val";
+    }
+#line 127 "src/main.vl"
+    if (((kind != NULL && "P" != NULL) ? (strcmp(kind, "P") == 0) : (kind == "P"))) {
+#line 127 "src/main.vl"
+        return "i32 precision";
+    }
+#line 128 "src/main.vl"
+    if (((kind != NULL && "Z" != NULL) ? (strcmp(kind, "Z") == 0) : (kind == "Z"))) {
+#line 128 "src/main.vl"
+        return "bool val";
+    }
+#line 129 "src/main.vl"
+    return "?";
+}
+
+#line 134 "src/main.vl"
+const char* io_member_sig(const char* member) {
+#line 135 "src/main.vl"
+    int32_t arity = io_member_arity(member);
+#line 136 "src/main.vl"
+    if ((arity <= 0)) {
+#line 136 "src/main.vl"
+        return "";
+    }
+#line 137 "src/main.vl"
+    StringBuilder msb = create_sb(96);
+#line 138 "src/main.vl"
+    sb_append_str((&(msb)), ": (");
+#line 139 "src/main.vl"
+    size_t i = 0;
+#line 140 "src/main.vl"
+    for (int32_t it = 0; ((i < ((size_t)(arity)))); it++) {
+#line 141 "src/main.vl"
+        if (velo_cmp_gt_u_s(i, 0)) {
+#line 141 "src/main.vl"
+            sb_append_str((&(msb)), ", ");
+        }
+#line 142 "src/main.vl"
+        sb_append_str((&(msb)), io_kind_param(io_arg_kind(member, i)));
+#line 143 "src/main.vl"
+        i += 1;
+    }
+#line 145 "src/main.vl"
+    sb_append_str((&(msb)), ")");
+#line 146 "src/main.vl"
+    return sb_to_string((&(msb)));
+}
+
+#line 151 "src/main.vl"
+const char* io_member_ret(const char* member) {
+#line 152 "src/main.vl"
+    if ((((member != NULL && "io_get_stdout_writer" != NULL) ? (strcmp(member, "io_get_stdout_writer") == 0) : (member == "io_get_stdout_writer")) || ((member != NULL && "io_get_stderr_writer" != NULL) ? (strcmp(member, "io_get_stderr_writer") == 0) : (member == "io_get_stderr_writer")))) {
+#line 152 "src/main.vl"
+        return "@BufferedWriter";
+    }
+#line 153 "src/main.vl"
+    if (((member != NULL && "io_get_fmt_buf" != NULL) ? (strcmp(member, "io_get_fmt_buf") == 0) : (member == "io_get_fmt_buf"))) {
+#line 153 "src/main.vl"
+        return "@u8";
+    }
+#line 154 "src/main.vl"
+    if (((((member != NULL && "io_flush_stdout" != NULL) ? (strcmp(member, "io_flush_stdout") == 0) : (member == "io_flush_stdout")) || ((member != NULL && "io_flush_stderr" != NULL) ? (strcmp(member, "io_flush_stderr") == 0) : (member == "io_flush_stderr"))) || ((member != NULL && "io_flush_all" != NULL) ? (strcmp(member, "io_flush_all") == 0) : (member == "io_flush_all")))) {
+#line 154 "src/main.vl"
+        return "bool";
+    }
+#line 155 "src/main.vl"
     return "void";
+}
+
+#line 162 "src/main.vl"
+const char* check_io_call(SymbolTable* st, ExprNode* expr, const char* member) {
+#line 163 "src/main.vl"
+    if ((!io_is_known_member(member))) {
+#line 164 "src/main.vl"
+        StringBuilder msb = create_sb(1024);
+#line 165 "src/main.vl"
+        sb_append_str((&(msb)), "unknown io member '");
+#line 166 "src/main.vl"
+        sb_append_str((&(msb)), member);
+#line 167 "src/main.vl"
+        sb_append_str((&(msb)), "' (functions: ");
+#line 168 "src/main.vl"
+        sb_append_str((&(msb)), io_valid_members());
+#line 169 "src/main.vl"
+        sb_append_str((&(msb)), ")");
+#line 170 "src/main.vl"
+        report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
+#line 171 "src/main.vl"
+        st->error_count += 1;
+#line 172 "src/main.vl"
+        return "unknown";
+    }
+#line 177 "src/main.vl"
+    if (io_is_intrinsic(member)) {
+#line 178 "src/main.vl"
+        if (velo_cmp_gt_u_s(expr->arg_count, 1)) {
+#line 179 "src/main.vl"
+            StringBuilder msb = create_sb(96);
+#line 180 "src/main.vl"
+            sb_append_str((&(msb)), "io.");
+#line 181 "src/main.vl"
+            sb_append_str((&(msb)), member);
+#line 182 "src/main.vl"
+            sb_append_str((&(msb)), " expects at most 1 argument");
+#line 183 "src/main.vl"
+            report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
+#line 184 "src/main.vl"
+            st->error_count += 1;
+#line 185 "src/main.vl"
+            return "unknown";
+        }
+#line 187 "src/main.vl"
+        return "void";
+    }
+#line 190 "src/main.vl"
+    int32_t arity = io_member_arity(member);
+#line 191 "src/main.vl"
+    if ((expr->arg_count != ((size_t)(arity)))) {
+#line 192 "src/main.vl"
+        StringBuilder msb = create_sb(192);
+#line 193 "src/main.vl"
+        sb_append_str((&(msb)), "io.");
+#line 194 "src/main.vl"
+        sb_append_str((&(msb)), member);
+#line 195 "src/main.vl"
+        sb_append_str((&(msb)), " expects exactly ");
+#line 196 "src/main.vl"
+        sb_append_int((&(msb)), arity);
+#line 197 "src/main.vl"
+        if ((arity == 1)) {
+#line 197 "src/main.vl"
+            sb_append_str((&(msb)), " argument");
+        } else {
+#line 197 "src/main.vl"
+            sb_append_str((&(msb)), " arguments");
+        }
+#line 198 "src/main.vl"
+        sb_append_str((&(msb)), io_member_sig(member));
+#line 199 "src/main.vl"
+        report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
+#line 200 "src/main.vl"
+        st->error_count += 1;
+#line 201 "src/main.vl"
+        return "unknown";
+    }
+#line 204 "src/main.vl"
+    size_t idx = 0;
+#line 205 "src/main.vl"
+    ExprNode* cur = expr->first_arg;
+#line 206 "src/main.vl"
+    for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 207 "src/main.vl"
+        const char* expected = io_kind_expected(io_arg_kind(member, idx));
+#line 210 "src/main.vl"
+        bool adapt_ok = try_adapt_int_literal(st, expected, cur, cur->line, cur->col);
+#line 211 "src/main.vl"
+        if (adapt_ok) {
+#line 212 "src/main.vl"
+            const char* got = infer_expr_type(st, cur);
+#line 213 "src/main.vl"
+            if ((!types_are_compatible(expected, got))) {
+#line 214 "src/main.vl"
+                StringBuilder msb = create_sb(160);
+#line 215 "src/main.vl"
+                sb_append_str((&(msb)), "io.");
+#line 216 "src/main.vl"
+                sb_append_str((&(msb)), member);
+#line 217 "src/main.vl"
+                sb_append_str((&(msb)), " expects ");
+#line 218 "src/main.vl"
+                sb_append_str((&(msb)), expected);
+#line 219 "src/main.vl"
+                sb_append_str((&(msb)), " (got ");
+#line 220 "src/main.vl"
+                sb_append_str((&(msb)), got);
+#line 221 "src/main.vl"
+                sb_append_str((&(msb)), ")");
+#line 222 "src/main.vl"
+                report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
+#line 223 "src/main.vl"
+                st->error_count += 1;
+#line 224 "src/main.vl"
+                {
+                    const char* __ret_val = "unknown";
+                    return __ret_val;
+                }
+            }
+        }
+#line 227 "src/main.vl"
+        idx += 1;
+#line 228 "src/main.vl"
+        cur = cur->next;
+    }
+#line 230 "src/main.vl"
+    return io_member_ret(member);
 }
 
 #line 13 "src/main.vl"

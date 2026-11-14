@@ -1,18 +1,20 @@
-"""Phase 52, Task 52.2: closed-set checks for the io.* namespace.
+"""Phase 52: closed-set, arity, type, and result-spell checks for io.*.
 
-The checker must accept exactly the members declared by std/io/print.vl and
-reject every other io.* member with a diagnostic that lists the valid set.
-This test drives the checker with one call per declared member, using
-signature-correct arguments so the same table survives Task 52.3's arity and
-type walls.
+Task 52.2 pins the member allowlist: the checker must accept exactly the
+members declared by std/io/print.vl and reject every other io.* member with a
+diagnostic that lists the valid set. Task 52.3 adds the per-member arity and
+argument-type walls plus the precise result spells (void, bool, handles).
 """
 import os
 import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
+CONFORMANCE_VL = REPO_ROOT / "std" / "tests" / "io" / "print_api_conformance_test.vl"
 
 
 def get_env():
@@ -43,8 +45,8 @@ IO_MEMBER_ARGS = {
     "print_bool": "true",
     "println_bool": "true",
     # Standard error (eprint / eprintln)
-    "eprint": '"x"',
-    "eprintln": '"x"',
+    "eprint": "s",
+    "eprintln": "s",
     "eprint_str": '"x"',
     "eprintln_str": '"x"',
     "eprintln_empty": "",
@@ -152,3 +154,206 @@ def test_io_unknown_member_with_argument_rejected(tmp_path):
         f"stdout: {res.stdout}\nstderr: {res.stderr}"
     )
     assert "also_missing" in (res.stdout + res.stderr)
+
+
+# ---------------------------------------------------------------------------
+# Task 52.3: arity and argument-type walls.
+# ---------------------------------------------------------------------------
+
+ARITY_REJECTS = [
+    # The intrinsic accepts zero or one argument, never two.
+    'io.println("a", "b")',
+    'io.print("a", "b")',
+    # One-argument stdlib members.
+    "io.println_str()",
+    'io.println_str("a", "b")',
+    "io.print_str()",
+    "io.println_empty(1)",
+    "io.print_byte()",
+    # Two-argument members.
+    "io.print_f64(1.0)",
+    "io.print_f64(1.0, 2, 3)",
+    # Three-argument members.
+    "io.fprint()",
+    "io.fprint_str(w)",
+    'io.fprint_str(w, "x", "y")',
+    "io.fprintln_empty(w, w)",
+]
+
+
+@pytest.mark.parametrize("call", ARITY_REJECTS)
+def test_io_arity_mismatch_rejected(call, tmp_path):
+    source = (
+        "use std.io\n\n"
+        "act main() {\n"
+        "    let w = io_get_stdout_writer()\n"
+        f"    {call}\n"
+        "}\n"
+    )
+    res = run_check(source, tmp_path, "io_arity.vl")
+
+    assert res.returncode != 0, (
+        f"velo check accepted an arity mismatch: {call}\n"
+        f"stdout: {res.stdout}\nstderr: {res.stderr}"
+    )
+    combined = res.stdout + res.stderr
+    assert "expects" in combined and "argument" in combined, (
+        f"diagnostic does not mention the argument mismatch:\n{combined}"
+    )
+    assert call.split("(", 1)[0].split(".", 1)[1] in combined, (
+        f"diagnostic does not name the member in {call}:\n{combined}"
+    )
+
+
+TYPE_REJECTS = [
+    # String positions accept exactly string.
+    ("io.println_str(123)", "expects string (got i32)"),
+    ("io.println_str(true)", "expects string (got bool)"),
+    ("io.fprint_str(w, 123)", "expects string (got i32)"),
+    # u8 byte positions reject bool/float and out-of-range literals.
+    ("io.print_byte(true)", "expects u8 (got bool)"),
+    ("io.print_byte(1.5)", "expects u8 (got f32)"),
+    ("io.print_byte(256)", "out of range for type 'u8'"),
+    ("io.print_byte(-1)", "out of range for type 'u8'"),
+    # i64 positions reject float/bool; no implicit float->int.
+    ("io.print_i64(1.5)", "expects i64 (got f32)"),
+    ("io.print_i64(true)", "expects i64 (got bool)"),
+    # u64 positions reject negative literals (no wrap).
+    ("io.print_u64(-1)", "out of range for type 'u64'"),
+    # f64 positions reject ints (no implicit int->float at the io boundary).
+    ("io.print_f64(1, 2)", "expects f64 (got i32)"),
+    ("io.print_f64(1.0, true)", "expects i32 (got bool)"),
+    ("io.fprint_f64(w, \"x\", 2)", "expects f64 (got string)"),
+    ("io.fprint_f64(w, 1.0, true)", "expects i32 (got bool)"),
+    # bool positions reject ints (no implicit bool<->int).
+    ("io.print_bool(1)", "expects bool (got i32)"),
+    # The stream handle is its own type.
+    ('io.fprint_str("not a writer", "x")', "expects @BufferedWriter (got string)"),
+]
+
+
+@pytest.mark.parametrize("call,expected", TYPE_REJECTS)
+def test_io_wrong_argument_type_rejected(call, expected, tmp_path):
+    source = (
+        "use std.io\n\n"
+        "act main() {\n"
+        "    let w = io_get_stdout_writer()\n"
+        f"    {call}\n"
+        "}\n"
+    )
+    res = run_check(source, tmp_path, "io_type.vl")
+
+    assert res.returncode != 0, (
+        f"velo check accepted a wrong argument type: {call}\n"
+        f"stdout: {res.stdout}\nstderr: {res.stderr}"
+    )
+    combined = res.stdout + res.stderr
+    assert expected in combined, (
+        f"diagnostic for {call} does not contain {expected!r}:\n{combined}"
+    )
+
+
+def test_io_unsuffixed_literals_adapt_at_the_boundary(tmp_path):
+    """In-range unsuffixed literals adapt; the walls stay explicit casts."""
+    source = (
+        "use std.io\n\n"
+        "act main() {\n"
+        "    io.print_byte(65)\n"
+        "    io.println_i64(-42)\n"
+        "    io.print_u64(42)\n"
+        "    io.print_f64(3.14159, 2)\n"
+        "    io.print_bool(true)\n"
+        "}\n"
+    )
+    res = run_check(source, tmp_path, "io_literal_adapt.vl")
+
+    assert res.returncode == 0, (
+        "velo check rejected in-range unsuffixed literals:\n"
+        f"stdout: {res.stdout}\nstderr: {res.stderr}"
+    )
+
+
+def test_io_intrinsics_accept_zero_or_one_value(tmp_path):
+    """print/println stay value-formatting intrinsics (zero or one arg)."""
+    source = (
+        "use std.io\n\n"
+        "act main() {\n"
+        "    io.println()\n"
+        "    io.print()\n"
+        "    io.println(123)\n"
+        "    io.print(true)\n"
+        "    io.println(3.5)\n"
+        "}\n"
+    )
+    res = run_check(source, tmp_path, "io_intrinsic_values.vl")
+
+    assert res.returncode == 0, (
+        "velo check rejected a valid intrinsic call:\n"
+        f"stdout: {res.stdout}\nstderr: {res.stderr}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Task 52.3: result spells (void vs bool vs handles).
+# ---------------------------------------------------------------------------
+
+
+def test_io_result_spells_are_precise(tmp_path):
+    source = (
+        "use std.io\n\n"
+        "act main() {\n"
+        "    let ok_out: bool = io.io_flush_stdout()\n"
+        "    let ok_err: bool = io.io_flush_stderr()\n"
+        "    let ok_all: bool = io.io_flush_all()\n"
+        "    let w_out: @BufferedWriter = io.io_get_stdout_writer()\n"
+        "    let w_err: @BufferedWriter = io.io_get_stderr_writer()\n"
+        "    let fmt_buf: @u8 = io.io_get_fmt_buf()\n"
+        "    io.io_ensure_atexit()\n"
+        "    io.io_print_cleanup()\n"
+        "}\n"
+    )
+    res = run_check(source, tmp_path, "io_result_types.vl")
+
+    assert res.returncode == 0, (
+        "velo check rejected a correct result-spell annotation:\n"
+        f"stdout: {res.stdout}\nstderr: {res.stderr}"
+    )
+
+
+RESULT_REJECTS = [
+    "let bad: i32 = io.io_flush_stdout()",
+    "let bad: bool = io.io_get_stdout_writer()",
+    "let bad: i32 = io.io_get_fmt_buf()",
+    'let bad: bool = io.println_str("x")',
+    "let bad: i32 = io.io_print_cleanup()",
+]
+
+
+@pytest.mark.parametrize("decl", RESULT_REJECTS)
+def test_io_wrong_result_spell_rejected(decl, tmp_path):
+    source = f"use std.io\n\nact main() {{\n    {decl}\n}}\n"
+    res = run_check(source, tmp_path, "io_result_mismatch.vl")
+
+    assert res.returncode != 0, (
+        f"velo check accepted a wrong result annotation: {decl}\n"
+        f"stdout: {res.stdout}\nstderr: {res.stderr}"
+    )
+    assert "Type mismatch in variable declaration" in (res.stdout + res.stderr), (
+        f"diagnostic does not report the declaration mismatch:\n{res.stdout}{res.stderr}"
+    )
+
+
+def test_io_conformance_program_checks_clean():
+    """Every call in the Phase 52.1 matrix must pass the semantic walls."""
+    res = subprocess.run(
+        [str(VELO_EXE), "check", str(CONFORMANCE_VL)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=get_env(),
+    )
+    assert res.returncode == 0, (
+        "velo check rejected the io.* conformance program:\n"
+        f"stdout: {res.stdout}\nstderr: {res.stderr}"
+    )
