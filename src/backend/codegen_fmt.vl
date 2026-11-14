@@ -221,6 +221,13 @@ act build_interp_fmt_and_args(st: @SymbolTable, raw: string, line: i32, col: i32
                     sb_append_str(out_args, c_expr_str)
                     sb_append_str(out_args, ") ? \"true\" : \"false\")")
                     arg_count += 1
+                } else if is_unsigned_int_type(resolved_type) {
+                    sb_append_str(out_fmt, "%llu")
+                    if arg_count > 0 { sb_append_str(out_args, ", ") }
+                    sb_append_str(out_args, "(unsigned long long)(")
+                    sb_append_str(out_args, c_expr_str)
+                    sb_append_char(out_args, ')')
+                    arg_count += 1
                 } else {
                     sb_append_str(out_fmt, "%lld")
                     if arg_count > 0 { sb_append_str(out_args, ", ") }

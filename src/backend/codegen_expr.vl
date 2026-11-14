@@ -28,6 +28,7 @@ use "tuple_gen.vl"
 use "codegen_line.vl"
 use "reflect_gen.vl"
 use "codegen_call.vl"
+use "codegen_lit.vl"
 use "../analysis/scope.vl"
 use "../analysis/narrow_flow.vl"
 
@@ -57,7 +58,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr == null { return }
 
     // 1. Literal expressions
-    if expr.kind == EXPR_INT { if expr.str_val != null and str.len(expr.str_val) > 0 { sb_append_str(sb, expr.str_val) } else { sb_append_int(sb, expr.int_val) }; return }
+    if expr.kind == EXPR_INT { emit_c_int_literal(sb, st, expr); return }
     if expr.kind == EXPR_FLOAT { if expr.str_val != null and str.len(expr.str_val) > 0 { sb_append_str(sb, expr.str_val) } else { sb_append_float(sb, expr.float_val) }; return }
     if expr.kind == EXPR_STRING { emit_string_expr(sb, st, expr); return }
     if expr.kind == EXPR_BOOL { if expr.bool_val { sb_append_str(sb, "true") } else { sb_append_str(sb, "false") }; return }
@@ -127,6 +128,9 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             if (p0_ptr and not s_ptr) or (s_ptr and not p0_ptr) { sb_append_char(sb, ')') }
             sb_append_char(sb, ')')
             return
+        }
+        if expr.op == TOK_MINUS and expr.operand != null and expr.operand.kind == EXPR_INT {
+            if try_emit_c_neg_int_literal(sb, st, expr, sub_type) { return }
         }
         sb_append_str(sb, "(")
         if expr.op == TOK_NOT { sb_append_str(sb, "!") } else if expr.op == TOK_TILDE { sb_append_str(sb, "~") } else { sb_append_str(sb, "-") }

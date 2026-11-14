@@ -656,12 +656,30 @@ This also corrupts range analysis: `loop i in 0..3000000000` stores the endpoint
   - `tests/test_std_rand.py`: all 4 tests pass.
   - Bootstrap Gen2/Gen3 SHA-256 match verified (`abbfe3fbfcd04edd3abb0762c15b84541634f79d89897371a1b7da93016faeb0`); `python scripts/count_lines.py` verified all files $\le 394$ lines ($\le 400$).
 
-##### Task 53.7: Emit wide C literals safely
+##### Task 53.7: Emit wide C literals safely [COMPLETED] ✅
 * **Goal:** Emit `INT64_C`/`UINT64_C`-style literals or explicit casts so the C compiler cannot re-wrap the value.
-* **Files:** `src/backend/codegen_expr.vl`, `src/backend/codegen_lit.vl` (or the current literal emitter).
+* **Files:** `src/backend/codegen_expr.vl`, `src/backend/codegen_lit.vl`, `src/backend/codegen_fmt.vl`.
 * **Tests:** emitted C for boundary values; runtime values equal the source literal.
 * **Security gate:** no implementation-defined conversion; no signed overflow in emitted C.
 * **Done when:** boundary values survive parse → check → emit → run.
+* **Former Defect:** Negated integer boundary literals like `-9223372036854775808` (`INT64_MIN`) were formatted as `(-9223372036854775808ULL)` in emitted C because the unsigned literal magnitude $2^{63}$ was formatted with `ULL`. In C99, unary minus on an unsigned expression remains unsigned (`9223372036854775808ULL`), causing `(-9223372036854775808ULL) < 0` to evaluate to `false` (0), division by 2 to yield a positive number, and assignments to `int64_t` to trigger implementation-defined unsigned-to-signed conversion warnings (`-Wsign-conversion`). Furthermore, `INT32_MIN` (`-2147483648`) when typed as `i32` was emitted as `(-2147483648LL)`, promoting to 64-bit `long long` instead of standard 32-bit `int`. Additionally, string interpolation in `codegen_fmt.vl` formatted all integer types using `%lld` and `(long long)`, causing unsigned 64-bit values $> \text{INT64\_MAX}$ (e.g. `18446744073709551615` and `0xFFFFFFFFFFFFFFFF`) to print as `-1`.
+* **Fix Applied:**
+  - Created `src/backend/codegen_lit.vl` (57 lines) providing `emit_c_int_literal` and `try_emit_c_neg_int_literal`.
+  - In `try_emit_c_neg_int_literal`:
+    * For `INT64_MIN` (magnitude $9223372036854775808 = 2^{63}$ across decimal, hex, binary, and octal), emits the standard C99 definition `(-9223372036854775807LL - 1LL)`, eliminating unsigned wrapping, signed overflow, and `-Wconversion` warnings.
+    * For `INT32_MIN` (magnitude $2147483648 = 2^{31}$) typed as `i32`, emits standard C99 `(-2147483647 - 1)` to preserve 32-bit `int` width.
+  - Integrated `codegen_lit.vl` into `src/backend/codegen_expr.vl` for `EXPR_INT` and `EXPR_UNARY` (`TOK_MINUS`).
+  - Updated `src/backend/codegen_fmt.vl` to format unsigned integer types (`is_unsigned_int_type(resolved_type)`) using `%llu` and `(unsigned long long)(...)` instead of `%lld` and `(long long)(...)`.
+  - Added test suite `tests/test_safe_c_literal_emission.py` covering C99 pattern verification, runtime execution of boundary values, mixed signed-unsigned comparisons with `min_i64` and `max_u64`, and compilation under strict GCC flags (`-Wall -Wextra -Wconversion -Werror`).
+* **Residual Limitation:** Safe access across all AST consumers reading `int_val` (e.g. ranges, slice bounds, enum discriminants) is audited in Task 53.8.
+* **Verification:**
+  - `tests/test_safe_c_literal_emission.py`: 6 tests pass (100%).
+  - `tests/test_literal_type_ladder.py`: 53 tests pass.
+  - `tests/test_integer_literals.py`: all 41 boundary tests pass.
+  - `tests/test_int_literal_model.py`: all 16 tests pass.
+  - `tests/test_literal_formatting.py`: all 6 tests pass.
+  - `tests/test_type_checker.py`: all 23 tests pass.
+  - Bootstrap Gen2/Gen3 SHA-256 match verified (`26148f185d34f0d93524783b98c12fdbf033c36107fa72c25ca44f1482b3f80d`); `python scripts/count_lines.py` verified all 99 compiler source files $\le 395$ lines ($\le 400$).
 
 ##### Task 53.8: Audit every `int_val` consumer
 * **Goal:** Find all reads of `int_val` and classify them as safe (`i32`-only context) or needing wide access.

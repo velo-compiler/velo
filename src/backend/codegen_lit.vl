@@ -1,0 +1,57 @@
+// C99 numeric and integer literal emission helpers.
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../analysis/literal_check.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+
+// Emits an EXPR_INT literal node safely into a C99 string builder.
+act emit_c_int_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    if expr == null { return }
+    if expr.str_val != null and str.len(expr.str_val) > 0 {
+        sb_append_str(sb, expr.str_val)
+    } else {
+        sb_append_int(sb, expr.int_val)
+    }
+}
+
+// Emits a negated integer literal expression safely. Returns true if handled as a wide/boundary literal.
+act try_emit_c_neg_int_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode, sub_type: string) -> bool {
+    if expr == null or expr.operand == null or expr.operand.kind != EXPR_INT { return false }
+    let op = expr.operand
+    mut overflow = false
+    mut val_u64: u64 = 0 as u64
+    if op.str_val != null and str.len(op.str_val) > 0 {
+        val_u64 = parse_u64_checked(op.str_val, @overflow)
+    } else {
+        if op.int_val < 0 {
+            val_u64 = (0 - op.int_val) as u64
+        } else {
+            val_u64 = op.int_val as u64
+        }
+    }
+    if overflow { return false }
+
+    // INT64_MIN: (-9223372036854775808).
+    // In C, -9223372036854775808ULL is unsigned, causing comparison (< 0) and division to produce positive values.
+    // Emitting (-9223372036854775807LL - 1LL) guarantees standard C99 signed 64-bit int64_t representation.
+    if val_u64 == 9223372036854775808_u64 {
+        sb_append_str(sb, "(-9223372036854775807LL - 1LL)")
+        return true
+    }
+
+    // INT32_MIN: (-2147483648).
+    // When typed as i32, emit (-2147483647 - 1) to keep 32-bit int type without promoting to long long.
+    if val_u64 == 2147483648_u64 {
+        if sub_type == "i32" or (expr.type_name != null and expr.type_name == "i32") {
+            sb_append_str(sb, "(-2147483647 - 1)")
+            return true
+        }
+        sb_append_str(sb, "(-2147483648LL)")
+        return true
+    }
+
+    return false
+}
