@@ -1758,6 +1758,8 @@ StringBuilder create_sb(size_t initial_cap);
 void sb_ensure_cap(StringBuilder* sb, size_t extra);
 void sb_append_char(StringBuilder* sb, uint8_t c);
 void sb_append_str(StringBuilder* sb, const char* s);
+void sb_append_int64(StringBuilder* sb, int64_t val);
+void sb_append_uint64(StringBuilder* sb, uint64_t val);
 void sb_append_int(StringBuilder* sb, int32_t val);
 void sb_append_float(StringBuilder* sb, float val);
 void sb_append_indent(StringBuilder* sb, int32_t indent);
@@ -12514,106 +12516,156 @@ void sb_append_str(StringBuilder* sb, const char* s) {
     sb->len += slen;
 }
 
-#line 62 "src/main.vl"
-void sb_append_int(StringBuilder* sb, int32_t val) {
 #line 63 "src/main.vl"
-    if ((val == 0)) {
+void sb_append_int64(StringBuilder* sb, int64_t val) {
 #line 64 "src/main.vl"
-        sb_append_char(sb, '0');
+    if ((val == ((int64_t)(0)))) {
 #line 65 "src/main.vl"
+        sb_append_char(sb, '0');
+#line 66 "src/main.vl"
         return;
     }
-#line 67 "src/main.vl"
-    int32_t n = val;
 #line 68 "src/main.vl"
-    if ((n < 0)) {
+    uint64_t u_val = ((uint64_t)(0));
 #line 69 "src/main.vl"
-        sb_append_char(sb, '-');
+    if ((val < ((int64_t)(0)))) {
 #line 70 "src/main.vl"
-        n = (-n);
-    }
+        sb_append_char(sb, '-');
+#line 71 "src/main.vl"
+        if ((val == ((-((int64_t)(9223372036854775807LL))) - ((int64_t)(1))))) {
 #line 72 "src/main.vl"
-    uint8_t* temp = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)(16)));
-#line 73 "src/main.vl"
-    size_t count = 0;
+            u_val = 9223372036854775808ULL;
+        } else {
 #line 74 "src/main.vl"
-    for (int32_t it = 0; ((n > 0)); it++) {
-#line 75 "src/main.vl"
-        temp[count] = (((uint8_t)('0')) + ((uint8_t)((n % 10))));
-#line 76 "src/main.vl"
-        n = (n / 10);
+            u_val = ((uint64_t)((0 - val)));
+        }
+    } else {
 #line 77 "src/main.vl"
-        count += 1;
+        u_val = ((uint64_t)(val));
     }
 #line 79 "src/main.vl"
-    size_t i = count;
+    uint8_t* temp = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)(24)));
 #line 80 "src/main.vl"
-    for (int32_t it = 0; (velo_cmp_gt_u_s(i, 0)); it++) {
+    size_t count = 0;
 #line 81 "src/main.vl"
-        i -= 1;
+    for (int32_t it = 0; ((u_val > ((uint64_t)(0)))); it++) {
 #line 82 "src/main.vl"
+        temp[count] = (((uint8_t)('0')) + ((uint8_t)((u_val % ((uint64_t)(10))))));
+#line 83 "src/main.vl"
+        u_val = (u_val / ((uint64_t)(10)));
+#line 84 "src/main.vl"
+        count += 1;
+    }
+#line 86 "src/main.vl"
+    size_t i = count;
+#line 87 "src/main.vl"
+    for (int32_t it = 0; (velo_cmp_gt_u_s(i, 0)); it++) {
+#line 88 "src/main.vl"
+        i -= 1;
+#line 89 "src/main.vl"
         sb_append_char(sb, temp[i]);
     }
 }
 
-#line 87 "src/main.vl"
-void sb_append_float(StringBuilder* sb, float val) {
-#line 88 "src/main.vl"
-    int32_t int_part = ((int32_t)(val));
-#line 89 "src/main.vl"
-    sb_append_int(sb, int_part);
-#line 90 "src/main.vl"
-    sb_append_char(sb, '.');
-#line 91 "src/main.vl"
-    float frac = (val - ((float)(int_part)));
-#line 92 "src/main.vl"
-    if ((frac < 0.0f)) {
-#line 93 "src/main.vl"
-        frac = (-frac);
-    }
+#line 94 "src/main.vl"
+void sb_append_uint64(StringBuilder* sb, uint64_t val) {
 #line 95 "src/main.vl"
-    int32_t frac_int = ((int32_t)(((frac * 100.0f) + 0.5f)));
+    if ((val == ((uint64_t)(0)))) {
 #line 96 "src/main.vl"
-    if ((frac_int < 10)) {
-#line 97 "src/main.vl"
         sb_append_char(sb, '0');
+#line 97 "src/main.vl"
+        return;
     }
 #line 99 "src/main.vl"
-    sb_append_int(sb, frac_int);
+    uint64_t n = val;
 #line 100 "src/main.vl"
+    uint8_t* temp = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)(24)));
+#line 101 "src/main.vl"
+    size_t count = 0;
+#line 102 "src/main.vl"
+    for (int32_t it = 0; ((n > ((uint64_t)(0)))); it++) {
+#line 103 "src/main.vl"
+        temp[count] = (((uint8_t)('0')) + ((uint8_t)((n % ((uint64_t)(10))))));
+#line 104 "src/main.vl"
+        n = (n / ((uint64_t)(10)));
+#line 105 "src/main.vl"
+        count += 1;
+    }
+#line 107 "src/main.vl"
+    size_t i = count;
+#line 108 "src/main.vl"
+    for (int32_t it = 0; (velo_cmp_gt_u_s(i, 0)); it++) {
+#line 109 "src/main.vl"
+        i -= 1;
+#line 110 "src/main.vl"
+        sb_append_char(sb, temp[i]);
+    }
+}
+
+#line 115 "src/main.vl"
+void sb_append_int(StringBuilder* sb, int32_t val) {
+#line 116 "src/main.vl"
+    sb_append_int64(sb, ((int64_t)(val)));
+}
+
+#line 120 "src/main.vl"
+void sb_append_float(StringBuilder* sb, float val) {
+#line 121 "src/main.vl"
+    int32_t int_part = ((int32_t)(val));
+#line 122 "src/main.vl"
+    sb_append_int(sb, int_part);
+#line 123 "src/main.vl"
+    sb_append_char(sb, '.');
+#line 124 "src/main.vl"
+    float frac = (val - ((float)(int_part)));
+#line 125 "src/main.vl"
+    if ((frac < 0.0f)) {
+#line 126 "src/main.vl"
+        frac = (-frac);
+    }
+#line 128 "src/main.vl"
+    int32_t frac_int = ((int32_t)(((frac * 100.0f) + 0.5f)));
+#line 129 "src/main.vl"
+    if ((frac_int < 10)) {
+#line 130 "src/main.vl"
+        sb_append_char(sb, '0');
+    }
+#line 132 "src/main.vl"
+    sb_append_int(sb, frac_int);
+#line 133 "src/main.vl"
     sb_append_char(sb, 'f');
 }
 
-#line 104 "src/main.vl"
+#line 137 "src/main.vl"
 void sb_append_indent(StringBuilder* sb, int32_t indent) {
-#line 105 "src/main.vl"
+#line 138 "src/main.vl"
     int32_t i = 0;
-#line 106 "src/main.vl"
+#line 139 "src/main.vl"
     for (int32_t it = 0; ((i < indent)); it++) {
-#line 107 "src/main.vl"
+#line 140 "src/main.vl"
         sb_append_str(sb, "    ");
-#line 108 "src/main.vl"
+#line 141 "src/main.vl"
         i += 1;
     }
 }
 
-#line 113 "src/main.vl"
+#line 146 "src/main.vl"
 void sb_append_line(StringBuilder* sb, const char* s, int32_t indent) {
-#line 114 "src/main.vl"
+#line 147 "src/main.vl"
     sb_append_indent(sb, indent);
-#line 115 "src/main.vl"
+#line 148 "src/main.vl"
     sb_append_str(sb, s);
-#line 116 "src/main.vl"
+#line 149 "src/main.vl"
     sb_append_char(sb, '\n');
 }
 
-#line 120 "src/main.vl"
+#line 153 "src/main.vl"
 const char* sb_to_string(StringBuilder* sb) {
-#line 121 "src/main.vl"
+#line 154 "src/main.vl"
     sb_ensure_cap(sb, 1);
-#line 122 "src/main.vl"
+#line 155 "src/main.vl"
     sb->buffer[sb->len] = ((uint8_t)(0));
-#line 123 "src/main.vl"
+#line 156 "src/main.vl"
     return ((const char*)(sb->buffer));
 }
 

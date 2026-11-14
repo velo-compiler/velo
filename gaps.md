@@ -1584,12 +1584,60 @@ io.println("{e}") // -1
   - `pytest tests/test_string_interpolation.py`: 9/9 passed in 2.81s.
   - All 119 compiler source files in `src/` <= 395 lines (<= 400).
 
-##### Task 57.5: Audit other integer formatting paths
-* **Goal:** Find every place that formats an integer and classify signedness.
-* **Files:** `rg` audit of `sb_append_int`, log, JSON, test output, CLI help.
-* **Tests:** one boundary test per path.
-* **Security gate:** no signed/unsigned confusion in lengths, sizes, or hashes.
-* **Done when:** the audit table is attached and every path is fixed or explicitly signed-only.
+##### Task 57.5: Audit other integer formatting paths [COMPLETED] ✅
+* **Former Defect**:
+  - Compiler and standard library integer formatting paths outside `codegen_io.vl` and `codegen_fmt.vl` lacked a unified signedness classification audit.
+  - Specifically, `sb_append_int` in `src/common/string_builder.vl` suffered from arithmetic negation overflow on `INT32_MIN` (`-2147483648`): `-n` overflowed in 32-bit signed arithmetic, remaining negative, which caused `loop n > 0` to skip digit emission entirely and emit only `"-"`.
+  - Furthermore, `src/common/string_builder.vl` lacked 64-bit integer appending utilities (`sb_append_int64` and `sb_append_uint64`), forcing callers to truncate 64-bit or pointer-sized integers with `as i32`.
+* **Fix Applied**:
+  - Fixed and expanded `src/common/string_builder.vl`:
+    * Implemented `sb_append_int64(sb: @StringBuilder, val: i64)` supporting the full signed 64-bit range and explicitly handling `INT64_MIN` (`-9223372036854775808`) without arithmetic overflow.
+    * Implemented `sb_append_uint64(sb: @StringBuilder, val: u64)` formatting unsigned 64-bit magnitudes from `0` to `UINT64_MAX` (`18446744073709551615`).
+    * Refactored `sb_append_int(sb: @StringBuilder, val: i32)` to delegate to `sb_append_int64(sb, val as i64)`, completely fixing the `INT32_MIN` bug and guaranteeing proper emission of `"-2147483648"`.
+  - Conducted an exhaustive codebase audit across all integer formatting paths (audit table below).
+  - Created `tests/test_integer_formatting_paths.py` with 13 comprehensive tests covering:
+    * `test_string_builder_int32_min_fix`: verifies `sb_append_int` formatting of `INT32_MIN` (-2147483648).
+    * `test_string_builder_int64_boundaries`: verifies `sb_append_int64` and `sb_append_uint64` across signed/unsigned 64-bit boundaries.
+    * `test_std_fmt_itoa_full_suite`: verifies `format_u64`, `format_i64`, `format_hex`, `format_bin`, `format_oct`.
+    * `test_std_fmt_ftoa_full_suite`: verifies float integer-part decomposition.
+    * `test_std_str_builder_full_suite`: verifies `sb_append_i64` and `sb_append_u64` in `std/str/builder.vl`.
+    * `test_std_json_integer_serialization_boundaries` & `test_std_json_writer_full_suite`: verifies JSON integer serialization preserves signedness without wrapping.
+    * `test_std_net_addr_formatting` & `test_std_net_addr_full_suite`: verifies IPv4 dotted-decimal formatting (`0.0.0.0`, `127.0.0.1`, `255.255.255.255`).
+    * `test_std_time_calendar_formatting` & `test_std_time_calendar_full_suite`: verifies ISO-8601 calendar date/time formatting.
+    * `test_check_json_diagnostic_line_col_formatting`: verifies diagnostic line and column number JSON formatting.
+    * `test_security_gate_array_and_slice_lengths_never_negative`: verifies lengths and counts remain non-negative unsigned values.
+  - Rebuilt bootstrap chain (`scripts/bootstrap.bat` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 fixed-point determinism (`4173222551a2d8f0bdb2f669df78e14e3b5644d2432986a1091c123370b38712`).
+* **Audit Table**:
+
+| Subsystem / Function | File:Line | Classification | Range / Domain | Audit Finding & Verification |
+|---|---|---|---|---|
+| `sb_append_int` | `src/common/string_builder.vl:108` | Signed 32-bit | `[-2147483648, 2147483647]` | **Defect Fixed**: Delegated to `sb_append_int64`. Negation overflow on `INT32_MIN` eliminated; outputs `"-2147483648"`. |
+| `sb_append_int64` | `src/common/string_builder.vl:63` | Signed 64-bit | `[-2^63, 2^63 - 1]` | **New**: Safe unsigned magnitude promotion for negative numbers, handling `INT64_MIN` without overflow. |
+| `sb_append_uint64` | `src/common/string_builder.vl:95` | Unsigned 64-bit | `[0, 2^64 - 1]` | **New**: Pure unsigned decimal formatting up to `UINT64_MAX` without truncation. |
+| `sb_append_float` | `src/common/string_builder.vl:113` | Signed 32-bit (parts) | Standard floats | Uses `sb_append_int` for integer and fraction parts. |
+| `u64_to_decimal_string` | `src/common/num_utils.vl:97` | Unsigned 64-bit | `[0, 2^64 - 1]` | Verified: Used for C literal code generation (`ULL` suffix). Safe across full 64-bit range. |
+| `format_c_number_literal` | `src/common/num_format.vl:70` | Text/Radix preserve | Multi-base literals | Verified: Preserves source digits and appends standard C99 suffixes (`ULL`, `LL`). |
+| `format_u64` | `std/fmt/itoa.vl:9` | Unsigned 64-bit | `[0, 2^64 - 1]` | Verified: Zero C dependencies. Pure Velo decimal formatting; tested up to `UINT64_MAX`. |
+| `format_i64` | `std/fmt/itoa.vl:46` | Signed 64-bit | `[-2^63, 2^63 - 1]` | Verified: Explicitly handles `INT64_MIN` via `0x8000000000000000u64` magnitude. |
+| `format_hex/bin/oct` | `std/fmt/itoa.vl:78-185` | Unsigned 64-bit | `[0, 2^64 - 1]` | Verified: Unsigned radices 16, 2, 8; upper/lower hex support. |
+| `sb_append_i64` (`StrBuilder`) | `std/str/builder.vl:113` | Signed 64-bit | `[-2^63, 2^63 - 1]` | Verified: Handles `INT64_MIN` via `"9223372036854775808"` slice. |
+| `sb_append_u64` (`StrBuilder`) | `std/str/builder.vl:150` | Unsigned 64-bit | `[0, 2^64 - 1]` | Verified: Direct unsigned decimal appending into arena-backed string buffer. |
+| `json_write_internal` | `std/json/writer.vl:103` | Signed 64-bit | `[-2^63, 2^63 - 1]` | Verified: `JSON_INT` delegates to `sb_append_i64`. No signed wrap. |
+| `net_format_ipv4` | `std/net/addr.vl:9` | Unsigned 32-bit | `[0, 0xFFFFFFFF]` | Verified: Unsigned octet shift/mask (`addr >> shift & 0xFF`). Output is canonical dotted-decimal. |
+| `time_format_iso8601` | `std/time/calendar.vl:190` | Decomposed Date/Time | Gregorian range | Verified: Non-negative year, month, day, hour, min, sec byte offsets. |
+| Diagnostic line/col | `src/backend/check.vl:107` | Non-negative i32 | `[0, 2^31 - 1]` | Verified: Emitted in JSON diagnostics via `sb_append_int`. |
+| LSP coordinates | `src/lsp/*.vl` | Non-negative i32 | `[0, 2^31 - 1]` | Verified: Lines, columns, versions, severities emitted via `sb_append_int`. |
+| Test block IDs | `src/backend/test_gen.vl:29` | Non-negative i32 | `[0, 2^31 - 1]` | Verified: Sequential test IDs (`_velo_test_N`) emitted via `sb_append_int`. |
+
+* **Residual Limitation**:
+  - Final documentation locking in formatting rules in `docs/SPECIFICATION.md` follows in Task 57.6.
+* **Verification**:
+  - `pytest tests/test_integer_formatting_paths.py`: 13/13 passed in 9.83s.
+  - `pytest tests/test_unsigned_formatting.py`: 145/145 passed in 36.60s.
+  - `pytest tests/test_string_interpolation.py`: 9/9 passed in 2.81s.
+  - `pytest tests/test_literal_formatting.py`: 7/7 passed in 3.61s.
+  - Bootstrap chain bit-for-bit determinism: Gen2/Gen3 SHA-256 match `4173222551a2d8f0bdb2f669df78e14e3b5644d2432986a1091c123370b38712`.
+  - All 119 compiler source files in `src/` <= 395 lines (<= 400).
 
 ##### Task 57.6: Add boundary/security tests and documentation
 * **Goal:** Lock in the behavior and document the formatting rules.

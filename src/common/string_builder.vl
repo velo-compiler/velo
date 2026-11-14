@@ -58,22 +58,29 @@ act sb_append_str(sb: @StringBuilder, s: string) {
     sb.len += slen
 }
 
-// Appends an integer converted to ASCII digits.
-act sb_append_int(sb: @StringBuilder, val: i32) {
-    if val == 0 {
+// Appends a signed 64-bit integer formatted as decimal digits.
+// Handles INT64_MIN (-9223372036854775808) safely without arithmetic overflow.
+act sb_append_int64(sb: @StringBuilder, val: i64) {
+    if val == 0 as i64 {
         sb_append_char(sb, '0')
         return
     }
-    mut n = val
-    if n < 0 {
+    mut u_val: u64 = 0 as u64
+    if val < 0 as i64 {
         sb_append_char(sb, '-')
-        n = -n
+        if val == (-9223372036854775807 as i64) - (1 as i64) {
+            u_val = 9223372036854775808_u64
+        } else {
+            u_val = (0 - val) as u64
+        }
+    } else {
+        u_val = val as u64
     }
-    mut temp: @u8 = mem.alloc(@u8, 16)
+    mut temp: @u8 = mem.alloc(@u8, 24)
     mut count: usize = 0
-    loop n > 0 {
-        temp[count] = ('0' as u8) + ((n % 10) as u8)
-        n = n / 10
+    loop u_val > 0 as u64 {
+        temp[count] = ('0' as u8) + ((u_val % 10 as u64) as u8)
+        u_val = u_val / 10 as u64
         count += 1
     }
     mut i: usize = count
@@ -81,6 +88,32 @@ act sb_append_int(sb: @StringBuilder, val: i32) {
         i -= 1
         sb_append_char(sb, temp[i])
     }
+}
+
+// Appends an unsigned 64-bit integer formatted as decimal digits.
+act sb_append_uint64(sb: @StringBuilder, val: u64) {
+    if val == 0 as u64 {
+        sb_append_char(sb, '0')
+        return
+    }
+    mut n = val
+    mut temp: @u8 = mem.alloc(@u8, 24)
+    mut count: usize = 0
+    loop n > 0 as u64 {
+        temp[count] = ('0' as u8) + ((n % 10 as u64) as u8)
+        n = n / 10 as u64
+        count += 1
+    }
+    mut i: usize = count
+    loop i > 0 {
+        i -= 1
+        sb_append_char(sb, temp[i])
+    }
+}
+
+// Appends a 32-bit integer converted to ASCII digits.
+act sb_append_int(sb: @StringBuilder, val: i32) {
+    sb_append_int64(sb, val as i64)
 }
 
 // Appends a float converted to formatted ASCII (e.g. `12.5f`).
