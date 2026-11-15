@@ -132,6 +132,116 @@ Deferred cleanups declared within a `zone` block execute *before* the zone water
 * [x] Cleanups emit inside the block's C scope where all block-local variables are live.
 * [x] Exactly-once execution and zero-leak security invariants proven.
 
+#### 2.2.8 Concrete Examples & Lifetime Contracts
+
+##### 1. Function Scope (LIFO Execution)
+```rust
+use sys.io
+
+act example_function_lifo() {
+    defer io.println("first declared, last executed (3)")
+    defer io.println("second declared, middle executed (2)")
+    defer io.println("third declared, first executed (1)")
+}
+```
+*Lifetime Contract*: On normal exit of `example_function_lifo`, statements execute in reverse declaration order: 1, then 2, then 3.
+
+##### 2. Conditional Branch Scoping & Sibling Isolation
+```rust
+use sys.io
+use sys.mem
+
+act example_branch_scoping(flag: bool) -> i32 {
+    let p_fn: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p_fn)
+
+    if flag {
+        let p_branch: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p_branch)
+        p_branch[0] = 42
+    } // p_branch is freed HERE at closing brace!
+
+    // p_branch is out of scope and already freed.
+    // p_fn remains valid and allocated until function exit.
+    return 0
+}
+```
+*Lifetime Contract*: `p_branch` is freed at the closing `}` of the `if` block. If `flag` is false, the branch is skipped and its defer is never registered or executed.
+
+##### 3. Tagged Union Pattern Match Arms
+```rust
+use sys.io
+use sys.mem
+
+kind Action {
+    Quit
+    Process(data: i32)
+}
+
+act example_match_arm_scoping(a: Action) {
+    on a {
+        .Process(v) => {
+            let p_arm: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p_arm)
+            p_arm[0] = v * 2
+        } // p_arm is freed HERE before break out of match!
+        .Quit => {}
+    }
+}
+```
+*Lifetime Contract*: Arm-local deferred statements run at the end of the taken `on` arm before jumping to the end of the `match` statement.
+
+##### 4. Loop Iteration Boundaries, Break, and Continue
+```rust
+use sys.mem
+
+act example_loop_iteration_cleanup() {
+    mut i: i32 = 0
+    loop i < 100 {
+        let buf = mem.heap_alloc(@u8, 1024)
+        defer mem.free(buf)
+
+        if i == 50 {
+            // Unwinds current iteration's defer mem.free(buf), then advances
+            i += 1
+            continue
+        }
+        if i == 80 {
+            // Unwinds current iteration's defer mem.free(buf), then breaks
+            break
+        }
+        i += 1
+    } // Peak heap usage is 1024 bytes, not 100 KB!
+}
+```
+*Lifetime Contract*: `buf` is freed at the end of each iteration, upon `continue`, and upon `break`. No memory accumulates across iterations.
+
+##### 5. Early-Exit Multi-Level Unwinding
+```rust
+use sys.mem
+
+act example_early_exit_unwind(trigger: bool) -> i32 {
+    let p_fn: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p_fn)
+
+    if trigger {
+        let p_if: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p_if)
+        return p_fn[0] + 10 // Evaluates return expr, frees p_if, frees p_fn, returns
+    }
+
+    return p_fn[0] // Frees p_fn, returns
+}
+```
+*Lifetime Contract*: The return expression is evaluated into temporary storage *before* any defer runs. Active defers unwind in LIFO order from the innermost active scope (`p_if`) to the outermost scope (`p_fn`), after which the C `return` executes.
+
+#### 2.2.9 Backend Lowering Model & Implementation Specification
+The self-hosted compiler lowers `defer` via a compile-time linked stack of `DeferNode` records (`src/backend/codegen_stmt.vl`):
+* `d.is_block`: Pushed by `push_scope_marker(defers)` upon entry into any lexical block (`{ ... }`, `if`, `else`, `on`). Popped by `pop_scope_cleanups(sb, st, indent, defers)` which emits cleanups down to the marker before closing `}`.
+* `d.is_loop`: Pushed upon loop entry. Pop cleanups down to `is_loop` are emitted at iteration end, before C `continue;`, and before C `break;`.
+* `d.is_zone`: Marks zone arena entries (`velo_zone_push`), ensuring user cleanups run *before* watermark rollback (`velo_zone_pop`).
+* Early exits (`STMT_RETURN`, `STMT_FAIL`, `or return`): Unwind all currently active nodes on the stack in LIFO order down to function entry without popping (since the code path terminates via C `return`).
+
 ---
 
 ## 3. Multi-File Module System

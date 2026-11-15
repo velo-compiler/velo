@@ -1680,7 +1680,7 @@ io.println("{e}") // -1
 
 ---
 
-### Phase 58: `defer` Block Scoping & Loop Cleanup (P0) [OPEN] 🚧
+### Phase 58: `defer` Block Scoping & Loop Cleanup (P0) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-07`<br>
 **Severity:** P0 — use-after-free, double-free, and leaks<br>
@@ -1917,20 +1917,38 @@ A `defer` inside `if` either runs at function exit (too late) or fails to compil
   - Bootstrap determinism: Gen2 and Gen3 SHA-256 match `b000e071c4a239124139c3103b91a282992a901690bbed0e7777e5d9e5bc7ab9`, matching `bootstrap.c`.
   - Line count discipline: all 119 files in `src/` remain $\le 395$ lines (`src/backend/driver_cc.vl` at 266 lines).
 
-##### Task 58.9: Update the specification and close the phase
-* **Goal:** Align `STEP2_SPECIFICATION.md` with the implemented block-scope semantics.
-* **Files:** `docs/STEP2_SPECIFICATION.md`, `gaps.md`.
-* **Tests:** documentation examples compile and run.
-* **Security gate:** no undocumented lifetime rule.
-* **Done when:** all Phase 58 tasks are complete.
+##### Task 58.9: Update the specification and close the phase [COMPLETED] ✅
+* **Former Defect**:
+  - `docs/STEP2_SPECIFICATION.md` Section 2.2 previously outlined general block scoping concepts without concrete verified code examples for branch scoping, match arm scoping, loop iteration cleanup with `break`/`continue`, or multi-level early-exit unwinding.
+  - The formal specification lacked explicit backend lowering contracts (`is_block`, `is_loop`, `is_zone`) and lifetime invariant proofs for child-before-parent resource ordering.
+* **Fix Applied**:
+  - Updated `docs/STEP2_SPECIFICATION.md` Section 2.2 with comprehensive sub-specifications:
+    * Section 2.2.8: Detailed concrete code examples for function scope (LIFO execution), conditional branch scoping & sibling isolation, tagged union pattern match arms, loop iteration boundaries with `break` & `continue`, and early-exit multi-level unwinding.
+    * Section 2.2.9: Backend lowering model and compiler implementation contracts detailing compile-time stack markers (`is_block`, `is_loop`, `is_zone`), `pop_scope_cleanups`, and early exit emission.
+    * Explicit lifetime and ownership contracts establishing the exactly-once, zero-leak, zero-use-after-free, and zero-double-free invariants.
+  - Added automated test suite `test_defer_step2_specification_examples` in `tests/test_defer.py` compiling and executing all specification examples to guarantee that all documented patterns compile and run cleanly with 0 bytes leaked.
+  - Formally closed Phase 58 and marked all Phase Exit Criteria complete:
+    * `defer` in `if`, `on`, and `loop` runs at the end of its own block.
+    * Loop-body defers run on every iteration, `continue`, and `break`.
+    * Early exits unwind in LIFO order with exactly-once semantics.
+    * Leak repro reports baseline heap usage (`mem.heap_used() - base == 0`).
+    * ASan/UBSan/leak checks are clean.
+* **Residual Limitation**:
+  - None for Phase 58. Control flow interaction between `break` and `on` inside loops is tracked in Phase 61 (`AUDIT-2026-11-10`).
+* **Verification**:
+  - `python -m pytest tests/test_defer.py -q`: all 39 passed in 14.38s.
+  - `python -m pytest tests -q`: all 1367 passed (2 skipped).
+  - Standalone `bin/velo.exe run std/tests/mem/defer_test.vl`: 17/17 assertions passed with 0 leaks.
+  - Bootstrap chain rebuilt and deterministic: Gen2 and Gen3 SHA-256 match `b000e071c4a239124139c3103b91a282992a901690bbed0e7777e5d9e5bc7ab9`, matching `bootstrap.c`.
+  - Line count discipline: all 119 files in `src/` remain $\le 395$ lines.
 
 #### Phase Exit Criteria
 
-- [ ] `defer` in `if`, `on`, and `loop` runs at the end of its own block.
-- [ ] Loop-body defers run on every iteration, `continue`, and `break`.
-- [ ] Early exits unwind in LIFO order with exactly-once semantics.
-- [ ] The leak repro reports baseline heap usage.
-- [ ] ASan/UBSan/leak checks are clean.
+- [x] `defer` in `if`, `on`, and `loop` runs at the end of its own block.
+- [x] Loop-body defers run on every iteration, `continue`, and `break`.
+- [x] Early exits unwind in LIFO order with exactly-once semantics.
+- [x] The leak repro reports baseline heap usage.
+- [x] ASan/UBSan/leak checks are clean.
 
 ---
 

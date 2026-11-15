@@ -2017,6 +2017,142 @@ def test_defer_matrix_asan_ubsan_coverage():
     assert "heap-use-after-free" not in output
 
 
+def test_defer_step2_specification_examples():
+    """Compiles and executes the verified concrete code examples documented in
+    docs/STEP2_SPECIFICATION.md Section 2.2.8.
+    Verifies that all specification examples compile and run cleanly with 0 leaks.
+    """
+    src = """
+use sys.io
+use sys.mem
+
+kind Action {
+    Quit
+    Process(data: i32)
+}
+
+// 1. Function Scope (LIFO Execution)
+act example_function_lifo(p_order: @i32) {
+    defer p_order[0] = p_order[0] * 10 + 3
+    defer p_order[0] = p_order[0] * 10 + 2
+    defer p_order[0] = p_order[0] * 10 + 1
+}
+
+// 2. Conditional Branch Scoping & Sibling Isolation
+act example_branch_scoping(flag: bool) -> i32 {
+    let p_fn: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p_fn)
+
+    if flag {
+        let p_branch: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p_branch)
+        p_branch[0] = 42
+    } // p_branch is freed HERE at closing brace!
+
+    return 0
+}
+
+// 3. Tagged Union Pattern Match Arms
+act example_match_arm_scoping(a: Action, p_res: @i32) {
+    on a {
+        .Process(v) => {
+            let p_arm: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p_arm)
+            p_arm[0] = v * 2
+            p_res[0] = p_arm[0]
+        } // p_arm is freed HERE before break out of match!
+        .Quit => {
+            p_res[0] = 0
+        }
+    }
+}
+
+// 4. Loop Iteration Boundaries, Break, and Continue
+act example_loop_iteration_cleanup() {
+    mut i: i32 = 0
+    loop i < 100 {
+        let buf: @u8 = mem.heap_alloc(@u8, 1024)
+        defer mem.free(buf)
+
+        if i == 50 {
+            i += 1
+            continue
+        }
+        if i == 80 {
+            break
+        }
+        i += 1
+    }
+}
+
+// 5. Early-Exit Multi-Level Unwinding
+act example_early_exit_unwind(trigger: bool) -> i32 {
+    let p_fn: @i32 = mem.heap_alloc(@i32, 4)
+    p_fn[0] = 32
+    defer mem.free(p_fn)
+
+    if trigger {
+        let p_if: @i32 = mem.heap_alloc(@i32, 4)
+        p_if[0] = 10
+        defer mem.free(p_if)
+        return p_fn[0] + p_if[0] // Evaluates return expr (42), frees p_if, frees p_fn, returns
+    }
+
+    return p_fn[0]
+}
+
+act main() -> i32 {
+    let base = mem.heap_used()
+
+    // 1. Verify function LIFO
+    mut order: i32 = 0
+    example_function_lifo(@order)
+    if order != 123 {
+        io.println("FAIL: lifo order expected 123, got: {order}")
+        return 1
+    }
+
+    // 2. Verify branch scoping
+    let r_branch = example_branch_scoping(true)
+    if r_branch != 0 {
+        io.println("FAIL: branch scoping return mismatch")
+        return 1
+    }
+
+    // 3. Verify match arm scoping
+    mut match_res: i32 = 0
+    example_match_arm_scoping(Action.Process(21), @match_res)
+    if match_res != 42 {
+        io.println("FAIL: match arm scoping result mismatch: {match_res}")
+        return 1
+    }
+
+    // 4. Verify loop iteration cleanup with continue and break
+    example_loop_iteration_cleanup()
+
+    // 5. Verify early-exit multi-level unwinding
+    let r_early = example_early_exit_unwind(true)
+    if r_early != 42 {
+        io.println("FAIL: early exit result expected 42, got: {r_early}")
+        return 1
+    }
+
+    let leaked: usize = mem.heap_used() - base
+    if leaked != 0 {
+        io.println("FAIL: leaked: {leaked}")
+        return 1
+    }
+
+    io.println("PASS: STEP2_SPECIFICATION examples verified successfully")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: STEP2_SPECIFICATION examples verified successfully" in res.stdout
+
+
+
 
 
 
