@@ -576,7 +576,10 @@ is_active = true      // Inferred as bool
 
 ## 4. Functions (`act`)
 
-Functions represent executable routines:
+Functions represent executable routines declared with the `act` keyword.
+
+### 4.1 Declaration & Signatures
+A function declaration specifies parameter names and their static types, followed by an optional return type (`-> ReturnType`, defaulting to `void` if omitted):
 
 ```rust
 act add(a: i32, b: i32) -> i32 {
@@ -602,6 +605,49 @@ act main(argc: i32, argv: @string) -> i32 {
     return 0
 }
 ```
+
+### 4.2 Function and Method Call Argument Type Checking
+
+Velo enforces strict, sound compile-time type checking for all call expressions across the language. No call path bypasses semantic type checking or relies solely on backend C compilation or silent implicit conversions.
+
+#### 4.2.1 Core Invariants
+* **No Implicit Narrowing or Truncation:** Passing a value of incompatible type (such as `f32`/`f64` to `i32`, `string` to `i32`, `bool` to `i32`, `i32` to `bool`, or a struct to a primitive) is strictly rejected at compile time during semantic analysis (`velo check`).
+* **Position-Aware Error Reporting:** Argument type mismatch errors pinpoint the 1-based argument position, expected parameter type, and actual argument type:
+  ```
+  [Velo Error] semantic:<line>:<col> - Type mismatch in call argument <position>: expected '<expected>', got '<actual>'
+  ```
+* **Strict Arity Enforcement:** Calls must provide the exact number of arguments required by the target signature. Both too few and too many arguments are rejected at compile time:
+  ```
+  [Velo Error] semantic:<line>:<col> - Mismatched argument count in function call
+  ```
+* **Contextual Integer Literal Adaptation:** Unsuffixed integer literals adapt to target integer parameter types if and only if the constant value fits within the target type's representable range (e.g. `255` adapts to `u8`, but `256` or `-1` is rejected for `u8`). Literal adaptation never crosses type family boundaries: float literals and boolean literals never adapt to integer parameters, and integer literals never adapt to boolean parameters.
+* **Explicit Casts (`as <type>`):** When intentional conversions are required, developers must supply explicit casts:
+  ```rust
+  act f(a: i32) {}
+  act g(a: bool) {}
+
+  f(1.5 as i32)   // OK: explicit truncation
+  f(true as i32)  // OK: explicit bool-to-int conversion
+  g(1 as bool)    // OK: explicit int-to-bool conversion
+  ```
+
+#### 4.2.2 Call Path Coverage Matrix
+The compiler enforces argument type and arity checking across all call forms:
+
+1. **Free Functions (`f(args...)`)**: Arguments are validated in declaration order against parameter types via `adapt_and_check_call_args`.
+2. **Methods & UFCS Calls (`receiver.method(args...)`)**: The receiver expression is validated against `self` (first parameter) via `check_method_receiver`, and remaining arguments are validated against trailing parameters.
+3. **Foreign Functions (`extern act`)**: Signatures declared with `extern act` are validated with the same strictness as native functions. Velo has no variadics; all extern functions require exact argument counts and compatible types.
+4. **Generic Functions (`f[T](args...)`)**: Monomorphized generic instantiations validate all arguments against the specialized parameter types.
+5. **Function Pointers (`act(...) -> ...`)**: Invocations of first-class function pointer variables (`cb(args...)`), struct field function pointers (`holder.cb(args...)`), and general function-typed expressions parse the target type signature and enforce exact arity and argument types.
+6. **Kind Variant Constructors (`Kind.Variant(...)`)**: Variant constructors enforce arity and payload types for zero-payload (`Variant does not take arguments`), single-payload, and multi-field variants.
+7. **Struct Literal Initializers (`Struct { field: expr }`)**: Field expressions are validated against declared field types and default initializers.
+8. **Builtin Intrinsics**:
+   - `sizeof(T)`: Enforces exactly 1 argument at compile time.
+   - `assert(cond, [msg])`: Enforces boolean condition expression and optional string message.
+   - `simd` (`f32x4`, `i32x4`): Enforces constructor arity (4 elements or 1 for splat) and numeric element types.
+   - `reflect` (`field_count`, `field_value`): Enforces struct type parameters and valid constant field indices.
+   - Builtin namespaces (`sys.io`, `sys.mem`, `sys.fs`, `sys.str`, `sys.math`, `sys.time`, `sys.os`): Closed-namespace member validation and per-member signature type walls.
+   - Dynamic collection methods (`shelf.*`, `ring.*`, `map.*`, `bitset.*`): Element, key, value, and index type compatibility.
 
 ---
 

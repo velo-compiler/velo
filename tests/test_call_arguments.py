@@ -1911,3 +1911,147 @@ class TestCallPathAuditMatrix:
         res = run_velo_check(code)
         assert res.returncode == 0
 
+
+# ==============================================================================
+# 9. Security & Regression Suite (Task 59.6)
+# ==============================================================================
+
+class TestSecurityRegressionSuite:
+    """
+    Validates Phase 59 Security Invariants and Phase Exit Criteria:
+    - Every argument must be checked against its parameter type (no silent fallthrough).
+    - Implicit narrowing and signed/unsigned mismatches remain rejected (Phase 46 contract).
+    - Arity mismatches must be rejected at compile time (velo check).
+    - Error messages must name the argument position, expected type, and actual type.
+    - No C implicit conversion may be the only line of defense.
+    - Explicit casts ('as <type>') must continue to be accepted.
+    - The canonical defect programs:
+        f("x") -> rejected at velo check
+        f(1.5) -> rejected at velo check
+        f(true) -> rejected at velo check
+        g(1) -> rejected at velo check
+        f(struct) -> rejected at velo check
+        p.show(1.5) -> rejected at velo check
+    """
+
+    @classmethod
+    def setup_class(cls):
+        if not VELO_EXE.exists():
+            pytest.skip("bin/velo not built")
+
+    def test_canonical_defect_string_to_int_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f("x")
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'i32', got 'string'" in res.stdout
+        assert "semantic:" in res.stdout
+
+    def test_canonical_defect_float_to_int_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(1.5)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'i32', got 'f32'" in res.stdout
+        assert "semantic:" in res.stdout
+
+    def test_canonical_defect_bool_to_int_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(true)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'i32', got 'bool'" in res.stdout
+        assert "semantic:" in res.stdout
+
+    def test_canonical_defect_int_to_bool_rejected(self):
+        code = """
+        act g(a: bool) {}
+        act main() {
+            g(1)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'bool', got 'i32'" in res.stdout
+        assert "semantic:" in res.stdout
+
+    def test_canonical_defect_struct_to_int_rejected(self):
+        code = """
+        data Item { id: i32 }
+        act f(a: i32) {}
+        act main() {
+            let it = Item { id: 10 }
+            f(it)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'i32', got 'Item'" in res.stdout
+        assert "semantic:" in res.stdout
+
+    def test_canonical_defect_method_ufcs_float_to_int_rejected(self):
+        code = """
+        data Point { x: i32 }
+        act show(self: @Point, a: i32) {}
+        act main() {
+            mut p = Point { x: 0 }
+            p.show(1.5)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'i32', got 'f32'" in res.stdout
+        assert "semantic:" in res.stdout
+
+    def test_multi_argument_position_reporting(self):
+        code = """
+        act h(a: i32, b: string, c: bool) {}
+        act main() {
+            h(1, "ok", 1.5)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 3: expected 'bool', got 'f32'" in res.stdout
+
+    def test_multi_argument_middle_position_reporting(self):
+        code = """
+        act h(a: i32, b: string, c: bool) {}
+        act main() {
+            h(1, 100, true)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 2: expected 'string', got 'i32'" in res.stdout
+
+    def test_explicit_casts_for_all_canonical_defects_pass(self):
+        code = """
+        act f(a: i32) {}
+        act g(a: bool) {}
+        data Point { x: i32 }
+        act show(self: @Point, a: i32) {}
+        act main() {
+            f(1.5 as i32)
+            f(true as i32)
+            g(1 as bool)
+            mut p = Point { x: 0 }
+            p.show(1.5 as i32)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+

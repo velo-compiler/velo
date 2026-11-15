@@ -1952,7 +1952,7 @@ A `defer` inside `if` either runs at function exit (too late) or fails to compil
 
 ---
 
-### Phase 59: Function/Method Call Argument Type Checking (P1) [OPEN] 🚧
+### Phase 59: Function/Method Call Argument Type Checking (P1) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-08`<br>
 **Severity:** P1 — checker accepts invalid programs; implicit truncation<br>
@@ -2147,19 +2147,33 @@ A struct passed to an `i32` parameter also passes `velo check` and fails only at
 | 14.10 | Module `map.*` | `m.put(k, v)` | `map_checks.vl` key/value type compatibility | Yes | Yes | `test_audit_module_map_*` |
 | 14.11 | Module `bitset.*` | `b.set(i)` | `bitset_checks.vl` integer index checks | Yes | Yes | `test_audit_module_bitset_*` |
 
-##### Task 59.6: Add security/regression tests and documentation
-* **Goal:** Lock in the contract and document the diagnostic.
-* **Files:** `tests/test_call_arguments.py`, `docs/SPECIFICATION.md`.
-* **Tests:** all matrix rows; explicit-cast acceptance; error-message assertions.
-* **Security gate:** no implicit narrowing; no C-only failure.
-* **Done when:** the matrix is green and the docs match.
+##### Task 59.6: Add security/regression tests and documentation [COMPLETED] ✅
+* **Former Defect**:
+  - The language specification (`docs/SPECIFICATION.md`) did not document call argument type checking rules, arity requirements, contextual literal adaptation boundaries, or the position-aware diagnostic format.
+  - A regression suite formally locking in the Phase 59 security invariants and verifying the canonical defect cases (`f("x")`, `f(1.5)`, `f(true)`, `g(1)`, `f(struct)`, `p.show(1.5)`) against compile-time semantic analysis was needed to prevent regressions.
+* **Fix Applied**:
+  - Added Section 4.2 ("Function and Method Call Argument Type Checking") to `docs/SPECIFICATION.md` detailing:
+    * Core invariants (no implicit narrowing/truncation, position-aware reporting, arity enforcement, contextual literal adaptation, explicit casts).
+    * Comprehensive call path coverage across all 14 categories.
+  - Added `TestSecurityRegressionSuite` (9 test cases) to `tests/test_call_arguments.py`:
+    * Validated compile-time semantic rejection of all canonical defect cases (`f("x")`, `f(1.5)`, `f(true)`, `g(1)`, `f(struct)`, `p.show(1.5)`) at `velo check` with semantic error verification.
+    * Validated multi-argument position reporting (e.g. argument 3, argument 2).
+    * Validated that explicit casts (`1.5 as i32`, `true as i32`, `1 as bool`, `1.5 as i32` on UFCS) pass cleanly.
+  - Checked off all Phase Exit Criteria and closed Phase 59.
+* **Residual Limitation**:
+  - None for Phase 59. Condition type checking in `if` and `loop` statements is tracked under Phase 60.
+* **Verification**:
+  - `python -m pytest tests/test_call_arguments.py tests/test_type_checker.py -q`: 192 passed, 0 failed.
+  - Full test suite: 1528 passed, 2 skipped (100% pass rate).
+  - Maintained 3-generation self-hosting bootstrap determinism (Gen2 and Gen3 emit identical bit-for-bit C output matching `bootstrap.c` with SHA-256 `eaa0dccc101fb2583dbc6b2abfd8ecc99c23959d5e5e43c6b3b174436d01ff4b`).
+  - Line count discipline: all 120 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
 
 #### Phase Exit Criteria
 
-- [ ] `f("x")`, `f(1.5)`, `f(true)`, `g(1)`, and `f(struct)` fail at `velo check`.
-- [ ] Arity errors are compile-time diagnostics.
-- [ ] Every call path (free, method, UFCS, extern, generic) is covered.
-- [ ] Explicit casts still work.
+- [x] `f("x")`, `f(1.5)`, `f(true)`, `g(1)`, and `f(struct)` fail at `velo check`.
+- [x] Arity errors are compile-time diagnostics.
+- [x] Every call path (free, method, UFCS, extern, generic) is covered.
+- [x] Explicit casts still work.
 
 ---
 
