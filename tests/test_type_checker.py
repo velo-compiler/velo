@@ -333,3 +333,76 @@ class TestFloatConversions:
         """
         res = run_velo_check(code)
         assert res.returncode == 0, f"Expected success, got {res.stdout}\n{res.stderr}"
+
+
+class TestCallArgumentTypeChecking:
+    """Matrix of function argument type mismatch checks (Phase 59: AUDIT-2026-11-08)."""
+    @classmethod
+    def setup_class(cls):
+        if not VELO_EXE.exists():
+            pytest.skip("bin/velo.exe not built")
+
+    def test_fn_call_string_to_int_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            let s: string = "hello"
+            f(s)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+
+    def test_fn_call_float_to_int_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(1.5)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+
+    def test_fn_call_bool_to_int_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(true)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+
+    def test_fn_call_int_to_bool_rejected(self):
+        code = """
+        act g(a: bool) {}
+        act main() {
+            g(1)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+
+    def test_fn_call_struct_to_int_rejected(self):
+        code = """
+        data S { x: i32 }
+        act f(a: i32) {}
+        act main() {
+            mut s: S
+            f(s)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+
+    def test_fn_call_pointer_to_int_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            let p: @i32 = null
+            f(p)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+

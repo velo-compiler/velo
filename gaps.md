@@ -1987,12 +1987,24 @@ A struct passed to an `i32` parameter also passes `velo check` and fails only at
 
 #### Tasks
 
-##### Task 59.1: Add the mismatch matrix (red baseline)
-* **Goal:** Cover every type family for free functions, methods, UFCS, externs, and generic instantiations.
-* **Files:** `tests/test_type_checker.py` (extend), `tests/test_call_arguments.py` (new).
-* **Tests:** string→int, float→int, bool→int, int→bool, struct→int, pointer→int, int→string, int→pointer; too few/too many arguments.
-* **Security gate:** every invalid row must fail at `velo check`; no row may reach GCC.
-* **Done when:** the matrix fails for the documented reasons.
+##### Task 59.1: Add the mismatch matrix (red baseline) [COMPLETED] ✅
+* **Former Defect**:
+  - `adapt_and_check_call_args` (`src/analysis/literal_check.vl:350-373`) only checked integer-to-integer (`is_int_type` and `is_int_type`) and float-to-float (`is_float_type` and `is_float_type`) conversion pairs when incompatible.
+  - Non-numeric or cross-family argument type mismatches (such as string passed to `i32`, float literal or variable passed to `i32`, boolean passed to `i32`, integer passed to `bool`, struct passed to `i32`, pointer passed to `i32`, integer passed to `string`, or struct/pointer mismatches) fell through silently without triggering a diagnostic or incrementing `st.error_count`.
+  - As a result, `velo check` silently reported success, allowing invalid programs to pass to C code generation where they either suffered silent implicit C conversion/truncation (`f(1.5)` printing `1`, `g(1)` printing `true`) or failed with GCC/Clang compilation errors.
+* **Fix Applied**:
+  - Established the Red Baseline test matrix for Phase 59 across two test suites:
+    * Created `tests/test_call_arguments.py` (27 test cases) covering the full matrix of argument mismatches across free functions, methods/UFCS, extern functions, and generic instantiations, along with arity checking and explicit-cast control groups.
+    * Extended `tests/test_type_checker.py` with `TestCallArgumentTypeChecking` (6 test cases) validating that string->int, float->int, bool->int, int->bool, struct->int, and pointer->int are rejected at `velo check`.
+* **Residual Limitation**:
+  - Red baseline established:
+    * `tests/test_call_arguments.py`: 18 failed, 9 passed (the 9 passed are 6 existing arity error checks and 3 valid control tests; the 18 failed fail for the exact documented defect: `velo check` silently passes with return code 0).
+    * `tests/test_type_checker.py`: 6 failed, 23 passed (the 6 call argument mismatch tests fail because `velo check` returns 0).
+  - Implementation of the missing fallback mismatch diagnostic follows in Task 59.2.
+* **Verification**:
+  - `python -m pytest tests/test_call_arguments.py -q`: 18 failed, 9 passed (red baseline confirmed).
+  - `python -m pytest tests/test_type_checker.py -q`: 6 failed, 23 passed (red baseline confirmed).
+  - Line count discipline: all 119 compiler source files in `src/` remain $\le 395$ lines.
 
 ##### Task 59.2: Add the final mismatch diagnostic
 * **Goal:** Add the missing `else` in `adapt_and_check_call_args` and report a precise mismatch.
