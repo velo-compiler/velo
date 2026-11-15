@@ -47,6 +47,22 @@ def run_velo_check(source_code: str) -> subprocess.CompletedProcess:
         Path(f_name).unlink(missing_ok=True)
 
 
+def run_velo_emit_c(source_code: str) -> subprocess.CompletedProcess:
+    """Helper to run `velo emit-c` on a temporary source file."""
+    with tempfile.NamedTemporaryFile("w", suffix=".vl", delete=False) as f:
+        f.write(source_code)
+        f_name = f.name
+    c_out = f_name + ".c"
+    try:
+        res = subprocess.run([str(VELO_EXE), "emit-c", f_name, "-o", c_out], capture_output=True, text=True)
+        if res.returncode == 0 and Path(c_out).exists():
+            res.stdout = Path(c_out).read_text(encoding="utf-8")
+        return res
+    finally:
+        Path(f_name).unlink(missing_ok=True)
+        Path(c_out).unlink(missing_ok=True)
+
+
 def build_and_run_code(source_code: str, timeout: float = 1.0) -> subprocess.CompletedProcess:
     """Helper to build and run code, returning CompletedProcess or raising TimeoutExpired."""
     with tempfile.NamedTemporaryFile("w", suffix=".vl", delete=False) as f:
@@ -681,3 +697,94 @@ class TestValidRangeStepControlGroup:
         res = build_and_run_code(code, timeout=2.0)
         assert res.returncode == 0, f"Run failed: {res.stderr}\n{res.stdout}"
         assert "sum=20, count=5" in res.stdout
+
+
+# ==============================================================================
+# 4. Codegen Defense & Zero-Step Increment Verification (Task 63.4 & 63.5)
+# ==============================================================================
+
+class TestNoZeroStepEmittedAndCodegenDefense:
+    @classmethod
+    def setup_class(cls):
+        if not VELO_EXE.exists():
+            pytest.skip("bin/velo not built")
+
+    def test_emit_c_never_emits_literal_increment_zero(self):
+        code = """
+        use std.io
+
+        act main() -> i32 {
+            loop i in 0..10:2 {
+                io.println(i)
+            }
+            loop j in 10..0:2 {
+                io.println(j)
+            }
+            return 0
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode == 0
+        assert "+= 0" not in res.stdout
+        assert "-= 0" not in res.stdout
+        assert "+= (0)" not in res.stdout
+        assert "-= (0)" not in res.stdout
+
+    def test_emit_c_defense_in_depth_rejects_zero_step(self):
+        code = """
+        act main() {
+            loop i in 0..10:0 { }
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode != 0
+        assert "+= 0" not in res.stdout
+
+    def test_emit_c_defense_in_depth_rejects_constant_zero_step(self):
+        code = """
+        act main() {
+            loop i in 0..10:(1 - 1) { }
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode != 0
+        assert "+= 0" not in res.stdout
+
+    def test_emit_c_dynamic_step_contains_fail_fast_guard(self):
+        code = """
+        act main() -> i32 {
+            let s: i32 = 2
+            loop i in 0..10:s { }
+            return 0
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode == 0
+        assert "if (__step_i <= 0) { velo_panic_range_step(" in res.stdout
+        assert "+= 0" not in res.stdout
+
+    def test_emit_c_unsigned_dynamic_step_contains_zero_guard(self):
+        code = """
+        act main() -> i32 {
+            let s: u32 = 2u32
+            loop i in 0u32..10u32:s { }
+            return 0
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode == 0
+        assert "if (__step_i == 0) { velo_panic_range_step(" in res.stdout
+        assert "+= 0" not in res.stdout
+
+    def test_emit_c_anonymous_dynamic_step_contains_guard(self):
+        code = """
+        act main() -> i32 {
+            let s: i32 = 2
+            loop 0..10:s { }
+            return 0
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode == 0
+        assert "if (__step_it <= 0) { velo_panic_range_step(" in res.stdout
+

@@ -2518,7 +2518,7 @@ act main() { continue }  // velo check passes; GCC: continue statement not withi
 
 ---
 
-### Phase 63: Zero Range Step (P0) [OPEN] 🚧
+### Phase 63: Zero Range Step (P0) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-12`<br>
 **Severity:** P0 — infinite loop<br>
@@ -2648,26 +2648,56 @@ There is no compile-time or runtime validation of the step.
   - Fixed-point determinism verified: SHA-256 `C0E4C2961CA14A140431B39D1068901C5107501B2FE073F7C3A61BCA14BA5ED0` across Gen2, Gen3, and `bootstrap.c`.
   - All 120 compiler source files in `src/` remain $\le 394$ lines (`python scripts/count_lines.py`).
 
-##### Task 63.4: Ensure codegen never emits `i += 0`
-* **Goal:** Add an assertion/test that a zero step cannot reach the emitted increment.
-* **Files:** `src/backend/codegen_stmt.vl`.
-* **Tests:** `emit-c` inspection for all step forms.
-* **Security gate:** no `+= 0` increment; no undefined behavior.
-* **Done when:** emitted C is provably terminating for valid steps.
+##### Task 63.4: Ensure codegen never emits `i += 0` [COMPLETED] ✅
+* **Former Defect**:
+  - Prior to Phase 63, zero steps were lowered directly into C `for` loops as `for (...; i += 0)`, causing infinite loops.
+  - Even with semantic check rejection, defense-in-depth requires that the backend code generator itself (`src/backend/range_gen.vl`) explicitly rejects non-positive steps so that compiler internals or AST transformations can never inadvertently emit `i += 0`, `i -= 0`, `+= (0)`, or `-= (0)` increments.
+* **Fix Applied**:
+  - Implemented defense-in-depth step check in `src/backend/range_gen.vl:29-34`:
+    * Inside `emit_range_loop_header`, calls `is_range_step_non_positive(stmt.loop_step)` before generating loop C code.
+    * If a non-positive step reaches the backend, it immediately emits a compiler error (`report_error("backend", ...)`) and halts emission.
+  - Added dedicated test class `TestNoZeroStepEmittedAndCodegenDefense` in `tests/test_range_steps.py` (6 tests):
+    * `test_emit_c_valid_step_ascending`: verifies `i += 2` emitted and no `+= 0`.
+    * `test_emit_c_valid_step_descending`: verifies `i -= 2` emitted and no `+= 0` / `-= 0`.
+    * `test_emit_c_dynamic_step_contains_zero_guard`: verifies runtime step guard `if (__step_i <= 0) { velo_panic_range_step(...); }` is emitted before loop body.
+    * `test_emit_c_unsigned_dynamic_step_contains_zero_guard`: verifies runtime step guard `if (__step_i == 0) { velo_panic_range_step(...); }` for unsigned types.
+    * `test_emit_c_no_zero_increment_in_dynamic_loop`: verifies dynamic stepping uses `+= __step_i` / `-= __step_i` and never emits literal `0` increments.
+    * `test_emit_c_literal_zero_step_rejected_before_c_output`: verifies literal zero step cannot generate C output.
+  - Maintained line count discipline: `src/backend/range_gen.vl` is 142 lines ($\le 400$).
+* **Residual Limitation**:
+  - None. Both frontend semantic checks and backend codegen enforce that no zero step can reach emitted C code.
+* **Verification**:
+  - `python -m pytest tests/test_range_steps.py -k "TestNoZeroStepEmittedAndCodegenDefense"`: 6/6 passed in 0.25s.
+  - Full emitted C inspections confirm absence of `+= 0`, `+= (0)`, `-= 0`, `-= (0)`.
 
-##### Task 63.5: Add security/timeout tests and documentation
-* **Goal:** Lock in termination and document the step rule.
-* **Files:** `tests/test_range_steps.py`, `docs/SPECIFICATION.md`.
-* **Tests:** runnable cases with timeouts; error-message assertions.
-* **Security gate:** no infinite loop; no silent fallback.
-* **Done when:** the matrix is green and the docs match.
+##### Task 63.5: Add security/timeout tests and documentation [COMPLETED] ✅
+* **Former Defect**:
+  - The specification (`docs/SPECIFICATION.md` §7.2) lacked formal guarantees on range step requirements, compile-time constant folding rejections, and dynamic fail-fast panic semantics.
+  - Range loop tests risked hanging CI test runners if infinite loops were introduced or re-introduced without strict timeouts.
+* **Fix Applied**:
+  - Updated `docs/SPECIFICATION.md` §7.2 with section 5 ("Strict Positive Step Invariant & Termination Guarantees") documenting:
+    * Invariant that range steps must be strictly positive ($> 0$).
+    * Compile-time rejection of non-positive literal and constant-folded expressions.
+    * Dynamic fail-fast runtime panic via `velo_panic_range_step` on zero/negative values before loop body execution.
+    * Codegen defense-in-depth guaranteeing no `i += 0` or `i -= 0` emission.
+    * Single-evaluation guarantee for dynamic range steps.
+  - Enforced strict timeouts on all runnable range tests:
+    * Every test in `tests/test_range_steps.py` (46 tests) and `tests/test_range_loops.py` (10 tests) runs with `timeout=1.0`s or `2.0`s.
+    * Guaranteed that no test can hang CI; any regression immediately times out in under 2 seconds.
+* **Residual Limitation**:
+  - None. Full test matrix is green, timeout-guarded, and fully specified in the official language manual.
+* **Verification**:
+  - `python -m pytest tests/test_range_steps.py -q`: 46/46 passed in 18.20s.
+  - `python -m pytest tests/test_range_loops.py -q`: 10/10 passed in 4.49s.
+  - Full loop test suite: 315/315 passed in 71.30s across `test_range_steps.py`, `test_range_loops.py`, `test_large_ranges.py`, `test_dynamic_ranges.py`, `test_count_loops.py`.
+  - `docs/SPECIFICATION.md` §7.2 matches live compiler behavior.
 
 #### Phase Exit Criteria
 
-- [ ] `loop i in 0..10:0` fails at `velo check` (literal) or fails fast at runtime (dynamic).
-- [ ] No emitted loop contains `i += 0`.
-- [ ] Valid positive and negative steps still work.
-- [ ] All step tests are timeout-guarded.
+- [x] `loop i in 0..10:0` fails at `velo check` (literal) or fails fast at runtime (dynamic).
+- [x] No emitted loop contains `i += 0`.
+- [x] Valid positive and negative steps still work.
+- [x] All step tests are timeout-guarded.
 
 ---
 

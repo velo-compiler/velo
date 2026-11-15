@@ -845,6 +845,12 @@ When either `<start>` or `<end>` is a runtime variable, expression, or function 
    - Inclusive `n..=n` always produces exactly 1 iteration with value `n`.
 4. **Compile-Time Optimization for Literal Bounds**:
    - When both endpoints are compile-time integer constants, the direction is resolved statically during compilation via `is_reverse_loop_range` with zero runtime branching or temporary hoisting overhead.
+5. **Strict Positive Step Invariant & Termination Guarantees**:
+   - The range loop step must be strictly positive ($> 0$). Zero steps (`:0`) and negative steps (`:-1`) are illegal and strictly prevented from creating infinite loops.
+   - **Compile-Time Rejection**: Any step expression that can be evaluated at compile time (integer literals, constant unary/binary arithmetic like `1 - 1`, `5 - 5`, `2 * 0`, bitshifts, or casts) with value $\le 0$ produces a fatal compile-time semantic error (`Range step must be positive, got <val>`).
+   - **Dynamic Fail-Fast Panic**: For dynamic step expressions (variables, parameter expressions, function calls), the compiler emits a fail-fast runtime guard prior to loop entry. If the evaluated step is $\le 0$ (signed) or $== 0$ (unsigned), the program immediately halts with an explicit runtime panic (`velo_panic_range_step`) reporting line and column:
+     `[Velo Panic] Range step must be positive (> 0) at line <line>, col <col>`
+   - **Codegen Defense-in-Depth**: Code generation never emits `i += 0` or `i -= 0` under any code path. Backend invariants guarantee every range loop iteration strictly advances toward termination.
 
 ### 7.3 Pattern Matching (`on`)
 The `on` statement performs pattern matching over scalar values, tagged unions, and strings:

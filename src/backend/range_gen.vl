@@ -5,7 +5,9 @@ use "../ast/expr.vl"
 use "../ast/stmt.vl"
 use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
+use "../analysis/range_checks.vl"
 use "../ast/int_types.vl"
+use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "codegen_lit.vl"
 use "codegen_expr.vl"
@@ -25,6 +27,11 @@ act emit_range_loop_header(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode
         emit_c_expr(sb, st, stmt.loop_end)
         sb_append_str(sb, "; "); sb_append_str(sb, vname)
         if stmt.loop_step != null {
+            if is_range_step_non_positive(stmt.loop_step) {
+                report_error("backend", stmt.loop_step.line, stmt.loop_step.col, "Range loop step must be greater than zero (defense in depth)")
+                st.error_count += 1
+                return
+            }
             if is_rev { sb_append_str(sb, " -= ") } else { sb_append_str(sb, " += ") }
             emit_c_expr(sb, st, stmt.loop_step)
         } else {
