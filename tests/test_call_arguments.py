@@ -59,6 +59,7 @@ class TestFreeFunctionArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got 'string'" in res.stdout
 
     def test_float_to_int_param_rejected(self):
         code = """
@@ -69,6 +70,7 @@ class TestFreeFunctionArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got 'f32'" in res.stdout
 
     def test_float_var_to_int_param_rejected(self):
         code = """
@@ -80,6 +82,7 @@ class TestFreeFunctionArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got 'f64'" in res.stdout
 
     def test_bool_to_int_param_rejected(self):
         code = """
@@ -90,6 +93,7 @@ class TestFreeFunctionArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got 'bool'" in res.stdout
 
     def test_int_to_bool_param_rejected(self):
         code = """
@@ -100,6 +104,7 @@ class TestFreeFunctionArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'bool', got 'i32'" in res.stdout
 
     def test_struct_to_int_param_rejected(self):
         code = """
@@ -112,6 +117,7 @@ class TestFreeFunctionArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got 'S'" in res.stdout
 
     def test_pointer_to_int_param_rejected(self):
         code = """
@@ -123,6 +129,7 @@ class TestFreeFunctionArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got '@i32'" in res.stdout
 
     def test_int_to_string_param_rejected(self):
         code = """
@@ -133,6 +140,7 @@ class TestFreeFunctionArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'string', got 'i32'" in res.stdout
 
     def test_int_to_pointer_param_rejected(self):
         code = """
@@ -143,6 +151,7 @@ class TestFreeFunctionArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected '@i32', got 'i32'" in res.stdout
 
     def test_struct_mismatch_param_rejected(self):
         code = """
@@ -156,6 +165,7 @@ class TestFreeFunctionArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'Alpha', got 'Beta'" in res.stdout
 
     def test_pointer_type_mismatch_param_rejected(self):
         code = """
@@ -167,6 +177,7 @@ class TestFreeFunctionArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected '@i32', got '@f64'" in res.stdout
 
     def test_string_to_bool_param_rejected(self):
         code = """
@@ -177,6 +188,7 @@ class TestFreeFunctionArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'bool', got 'string'" in res.stdout
 
 
 # ==============================================================================
@@ -201,6 +213,7 @@ class TestMethodArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got 'string'" in res.stdout
 
     def test_method_float_to_int_param_rejected(self):
         code = """
@@ -213,6 +226,7 @@ class TestMethodArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got 'f32'" in res.stdout
 
     def test_method_struct_to_int_param_rejected(self):
         code = """
@@ -227,6 +241,7 @@ class TestMethodArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got 'Other'" in res.stdout
 
 
 # ==============================================================================
@@ -249,6 +264,7 @@ class TestExternArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got 'string'" in res.stdout
 
     def test_extern_pointer_to_int_param_rejected(self):
         code = """
@@ -260,6 +276,7 @@ class TestExternArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got '@i32'" in res.stdout
 
 
 # ==============================================================================
@@ -282,6 +299,7 @@ class TestGenericArgTypeMismatches:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 2: expected 'i32', got 'string'" in res.stdout
 
 
 # ==============================================================================

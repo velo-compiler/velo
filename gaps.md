@@ -2006,12 +2006,25 @@ A struct passed to an `i32` parameter also passes `velo check` and fails only at
   - `python -m pytest tests/test_type_checker.py -q`: 6 failed, 23 passed (red baseline confirmed).
   - Line count discipline: all 119 compiler source files in `src/` remain $\le 395$ lines.
 
-##### Task 59.2: Add the final mismatch diagnostic
-* **Goal:** Add the missing `else` in `adapt_and_check_call_args` and report a precise mismatch.
-* **Files:** `src/analysis/literal_check.vl:250-258`.
-* **Tests:** all mismatch rows; valid rows still pass.
-* **Security gate:** no silent acceptance; no fallback that relies on C conversion.
-* **Done when:** every mismatch row is rejected at check time.
+##### Task 59.2: Add the final mismatch diagnostic [COMPLETED] ✅
+* **Former Defect**:
+  - In `src/analysis/literal_check.vl:351-373`, `adapt_and_check_call_args` evaluated `if not types_are_compatible(cur_p.type_name, a_type)`:
+    * It checked `if not adapt_ok` (for literal adaptation), `else if is_int_type(...) and is_int_type(...)` (integer range/signedness errors), and `else if is_float_type(...) and is_float_type(...)` (float narrowing errors).
+    * It lacked a terminal `else` branch for any argument whose actual type was fundamentally incompatible with the expected parameter type (e.g. `string` -> `i32`, `f32`/`f64` -> `i32`, `bool` -> `i32`, `i32` -> `bool`, `struct` -> `i32`, pointer mismatches, etc.).
+    * As a consequence, non-numeric and cross-family type mismatches passed through semantic analysis without emitting an error or incrementing `st.error_count`, relying solely on backend C compilation or silently truncating.
+* **Fix Applied**:
+  - Added the terminal `else if a_type != "unknown" or st.error_count == 0` diagnostic branch in `adapt_and_check_call_args` in `src/analysis/literal_check.vl`.
+  - Constructed and emitted a descriptive, position-aware diagnostic with 1-based argument index tracking:
+    `Type mismatch in call argument <index>: expected '<expected>', got '<actual>'`
+  - Compacted bounds checks and helper routines in `src/analysis/literal_check.vl` to preserve strict file length limits (388 lines, well under 400).
+  - Rebuilt the complete 3-generation self-hosted compiler chain (`bin/velo.exe` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe`) and updated `bootstrap.c`.
+  - Verified bit-for-bit compiler determinism: SHA-256 of `emit-c src/main.vl` is identical between Gen2 and Gen3 (`3654c89f25373d4047840e9e0d863de8ecae3a32ce4fba1abfe69cf7d05d1a00`).
+* **Residual Limitation**:
+  - Arity mismatch enforcement and comprehensive call-path auditing across all AST call sites (constructors, method/UFCS edge cases, variadics) are covered under Tasks 59.3 through 59.5.
+* **Verification**:
+  - `python -m pytest tests/test_call_arguments.py -q`: 27 passed, 0 failed (turned the 18 previously failing test cases green with exact diagnostic assertions).
+  - `python -m pytest tests/test_type_checker.py -q`: 29 passed, 0 failed (turned the 6 previously failing call argument tests green with exact diagnostic assertions).
+  - Line count discipline: all 119 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
 
 ##### Task 59.3: Enforce arity for all call forms
 * **Goal:** Reject too few and too many arguments for free functions, methods, UFCS, and externs.

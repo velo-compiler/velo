@@ -352,6 +352,7 @@ class TestCallArgumentTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got 'string'" in res.stdout
 
     def test_fn_call_float_to_int_rejected(self):
         code = """
@@ -362,6 +363,7 @@ class TestCallArgumentTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got 'f32'" in res.stdout
 
     def test_fn_call_bool_to_int_rejected(self):
         code = """
@@ -372,6 +374,7 @@ class TestCallArgumentTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got 'bool'" in res.stdout
 
     def test_fn_call_int_to_bool_rejected(self):
         code = """
@@ -382,6 +385,7 @@ class TestCallArgumentTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'bool', got 'i32'" in res.stdout
 
     def test_fn_call_struct_to_int_rejected(self):
         code = """
@@ -394,6 +398,7 @@ class TestCallArgumentTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got 'S'" in res.stdout
 
     def test_fn_call_pointer_to_int_rejected(self):
         code = """
@@ -405,4 +410,5 @@ class TestCallArgumentTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+        assert "Type mismatch in call argument 1: expected 'i32', got '@i32'" in res.stdout
 
