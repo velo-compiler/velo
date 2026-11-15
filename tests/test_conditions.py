@@ -640,3 +640,252 @@ class TestChainedAndNestedConditionSites:
         res = run_velo_check(code)
         assert res.returncode == 0, f"Expected valid nested if stmt and expr to pass, got: {res.stdout}"
 
+
+# ==============================================================================
+# 6. Flow-Sensitive Narrowing & Condition Interactions (Task 60.4)
+# ==============================================================================
+
+class TestFlowSensitiveNarrowingConditionInteractions:
+    @classmethod
+    def setup_class(cls):
+        if not VELO_EXE.exists():
+            pytest.skip("bin/velo not built")
+
+    def test_if_not_null_narrows_pointer_in_then_branch(self):
+        code = """
+        data Node { num: i32 }
+        act foo(p: ?@Node) -> i32 {
+            if p != null {
+                return p.num
+            }
+            return 0
+        }
+        act main() {}
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected narrowing in then branch to pass, got: {res.stdout}"
+
+    def test_if_null_narrows_pointer_in_else_branch(self):
+        code = """
+        data Node { num: i32 }
+        act foo(p: ?@Node) -> i32 {
+            if p == null {
+                return 0
+            } else {
+                return p.num
+            }
+        }
+        act main() {}
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected narrowing in else branch to pass, got: {res.stdout}"
+
+    def test_early_return_narrows_pointer_in_following_statements(self):
+        code = """
+        data Node { num: i32 }
+        act foo(p: ?@Node) -> i32 {
+            if p == null {
+                return 0
+            }
+            return p.num
+        }
+        act main() {}
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected early-return narrowing to pass, got: {res.stdout}"
+
+    def test_early_break_narrows_pointer_in_loop(self):
+        code = """
+        data Node { num: i32 }
+        act foo(p: ?@Node) -> i32 {
+            loop {
+                if p == null {
+                    break
+                }
+                return p.num
+            }
+            return 0
+        }
+        act main() {}
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected loop-break narrowing to pass, got: {res.stdout}"
+
+    def test_early_continue_narrows_pointer_in_loop(self):
+        code = """
+        data Node { num: i32 }
+        act foo(p: ?@Node) {
+            loop 5 {
+                if p == null {
+                    continue
+                }
+                let v = p.num
+            }
+        }
+        act main() {}
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected loop-continue narrowing to pass, got: {res.stdout}"
+
+    def test_early_fail_narrows_pointer(self):
+        code = """
+        data Node { num: i32 }
+        act foo(p: ?@Node) -> i32 or i32 {
+            if p == null {
+                fail 1
+            }
+            return p.num
+        }
+        act main() {}
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected fail-narrowing to pass, got: {res.stdout}"
+
+    def test_conjunction_and_narrows_both_variables(self):
+        code = """
+        data Node { num: i32 }
+        act foo(a: ?@Node, b: ?@Node) -> i32 {
+            if a != null and b != null {
+                return a.num + b.num
+            }
+            return 0
+        }
+        act main() {}
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected conjunction narrowing to pass, got: {res.stdout}"
+
+    def test_if_expr_then_branch_narrowing(self):
+        code = """
+        data Node { num: i32 }
+        act foo(p: ?@Node) -> i32 {
+            let v = if p != null { p.num } else { 0 }
+            return v
+        }
+        act main() {}
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected if-expr then narrowing to pass, got: {res.stdout}"
+
+    def test_if_expr_else_branch_narrowing(self):
+        code = """
+        data Node { num: i32 }
+        act foo(p: ?@Node) -> i32 {
+            let v = if p == null { 0 } else { p.num }
+            return v
+        }
+        act main() {}
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected if-expr else narrowing to pass, got: {res.stdout}"
+
+    def test_reversed_null_comparison_narrows(self):
+        code = """
+        data Node { num: i32 }
+        act foo(p: ?@Node) -> i32 {
+            if null != p {
+                return p.num
+            }
+            return 0
+        }
+        act main() {}
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected reversed null comparison to pass, got: {res.stdout}"
+
+    def test_primitive_optional_narrowing(self):
+        code = """
+        act foo(x: ?i32) -> i32 {
+            if x != null {
+                let sum = x + 10
+                return sum
+            }
+            return 0
+        }
+        act main() {}
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected primitive optional narrowing to pass, got: {res.stdout}"
+
+    def test_optional_without_null_check_rejected_member_access(self):
+        code = """
+        data Node { num: i32 }
+        act foo(p: ?@Node) -> i32 {
+            return p.num
+        }
+        act main() {}
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection without unwrapping, but passed: {res.stdout}"
+        assert "without unwrapping" in res.stdout
+
+    def test_optional_in_else_branch_of_neq_null_rejected_member_access(self):
+        code = """
+        data Node { num: i32 }
+        act foo(p: ?@Node) -> i32 {
+            if p != null {
+                return 0
+            } else {
+                return p.num
+            }
+        }
+        act main() {}
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection in else branch of != null, but passed: {res.stdout}"
+        assert "without unwrapping" in res.stdout
+
+    def test_optional_in_then_branch_of_eq_null_rejected_member_access(self):
+        code = """
+        data Node { num: i32 }
+        act foo(p: ?@Node) -> i32 {
+            if p == null {
+                return p.num
+            } else {
+                return 0
+            }
+        }
+        act main() {}
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection in then branch of == null, but passed: {res.stdout}"
+        assert "without unwrapping" in res.stdout
+
+    def test_bare_optional_condition_rejected_not_truthy(self):
+        code = """
+        data Node { num: i32 }
+        act main() {
+            let p: ?@Node = null
+            if p {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection of bare optional condition, but passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got '?@Node'" in res.stdout
+
+    def test_bare_primitive_optional_condition_rejected_not_truthy(self):
+        code = """
+        act main() {
+            let opt_i: ?i32 = 42
+            if opt_i {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection of bare optional condition, but passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got '?i32'" in res.stdout
+
+    def test_bare_optional_if_expr_condition_rejected_not_truthy(self):
+        code = """
+        data Node { val: i32 }
+        act main() {
+            let p: ?@Node = null
+            let x = if p { 1 } else { 0 }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection of bare optional condition in if-expr, but passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got '?@Node'" in res.stdout
+
+

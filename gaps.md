@@ -2288,12 +2288,37 @@ This is both a soundness hole and a source of silent logic errors: a non-empty s
   - Standard library suite: `tests/test_std_coll.py`, `tests/test_std_rand.py`, `tests/test_std_uuid.py`, and `tests/test_stdlib_or_modernization.py` passing cleanly (100% green).
   - Line count discipline: all 120 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
 
-##### Task 60.4: Protect flow-sensitive narrowing
-* **Goal:** Ensure `if x != null`, optional unwrapping, and early-return narrowing still work.
-* **Files:** `src/analysis/narrow_flow.vl`, `src/analysis/type_checker_stmt.vl`.
-* **Tests:** `?T` narrowing, `if x != null { x.val }`, else-branch narrowing, early return.
-* **Security gate:** no regression in null safety; no false positive on valid narrowing.
-* **Done when:** the existing null-safety suite passes unchanged.
+##### Task 60.4: Protect flow-sensitive narrowing [COMPLETED] ✅
+* **Former Defect**:
+  - Condition type checking must not break or regress flow-sensitive type narrowing (`?T` to `T`) in either `then` branches, `else` branches, ternary conditional expressions, or early-return guards (`return`, `break`, `continue`, `fail`).
+  - At the same time, optional types (`?@Node`, `?i32`) must never be treated as truthy conditions themselves (`if p {}`), which would create pointer/optional truthiness vulnerabilities and bypass explicit `!= null` checks.
+* **Fix Applied**:
+  - Verified flow-sensitive narrowing pipeline across `src/analysis/narrow_flow.vl`, `src/analysis/type_checker_stmt.vl`, and `src/analysis/type_checker.vl`:
+    * `require_bool_condition(st, stmt.expr)` evaluates the condition to `bool`, ensuring comparisons like `x != null`, `null != x`, `x == null`, and logical conjunctions `a != null and b != null` are valid boolean conditions.
+    * `apply_flow_narrowing(st, stmt.expr, true)` narrows optionals to concrete types in `then` branches and ternary `then` expressions.
+    * `apply_flow_narrowing(st, stmt.expr, false)` narrows optionals in `else` branches and ternary `else` expressions when checked against `== null`.
+    * Early exits (`return`, `break`, `continue`, `fail`) in `STMT_BLOCK` trigger `apply_flow_narrowing(st, cur.expr, false)` for the remaining statements in the block.
+    * Confirmed bare optional conditions (`if opt_ptr {}`, `if opt_int {}`, `let x = if opt_ptr { 1 } else { 0 }`) fail closed with `Condition must be of type 'bool', got '?@T'` / `'?T'`, preventing truthiness bypass.
+  - Added `TestFlowSensitiveNarrowingConditionInteractions` (17 tests) to `tests/test_conditions.py`:
+    * Optional pointer narrowing in `then` branch with `!= null`.
+    * Optional pointer narrowing in `else` branch with `== null`.
+    * Early-return narrowing for subsequent block statements.
+    * Loop `break` and `continue` early exit narrowing.
+    * `fail` early exit narrowing.
+    * Logical `and` conjunction narrowing multiple optionals.
+    * Ternary `if` expression `then` and `else` branch narrowing.
+    * Reversed null comparisons (`null != p`).
+    * Primitive optional narrowing (`?i32` to `i32`).
+    * Negative tests: member access without null check fails with `"without unwrapping"`.
+    * Negative tests: member access in non-narrowed branch fails with `"without unwrapping"`.
+    * Security tests: bare optional conditions in statements and expressions rejected with `Condition must be of type 'bool', got '...''`.
+* **Residual Limitation**:
+  - Codegen defense ensuring backend assertion triggers if non-`bool` condition ever reached codegen is tracked under Task 60.5.
+* **Verification**:
+  - `python -m pytest tests/test_conditions.py -q`: 65 passed, 0 failed.
+  - `python -m pytest tests/test_null_safety_optional.py tests/test_null_comparisons.py -q`: 10 passed, 0 failed.
+  - `python -m pytest tests/test_conditions.py tests/test_type_checker.py tests/test_call_arguments.py -q`: 263 passed, 0 failed.
+  - Line count discipline: all 120 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
 
 ##### Task 60.5: Add codegen defense and negative tests
 * **Goal:** Fail loudly if a non-`bool` condition reaches codegen; lock in the diagnostics.
