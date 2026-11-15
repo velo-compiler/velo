@@ -205,6 +205,146 @@ class TestLiteralStepCompileRejection:
         assert res.returncode != 0, f"Expected rejection of ':(1 - 1)', but check passed: {res.stdout}"
         assert "Range loop step must be greater than zero" in res.stdout
 
+    def test_constant_expr_multiplication_zero_step_rejected(self):
+        code = """
+        act main() {
+            loop i in 0..10:(2 * 0) {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Range loop step must be greater than zero" in res.stdout
+
+    def test_constant_expr_division_zero_step_rejected(self):
+        code = """
+        act main() {
+            loop i in 0..10:(0 / 5) {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Range loop step must be greater than zero" in res.stdout
+
+    def test_constant_expr_bitwise_and_zero_step_rejected(self):
+        code = """
+        act main() {
+            loop i in 0..10:(0 & 15) {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Range loop step must be greater than zero" in res.stdout
+
+    def test_constant_expr_shift_left_zero_step_rejected(self):
+        code = """
+        act main() {
+            loop i in 0..10:(0 << 4) {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Range loop step must be greater than zero" in res.stdout
+
+    def test_constant_expr_cast_zero_step_rejected(self):
+        code = """
+        act main() {
+            loop i in 0..10:(0 as i32) {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Range loop step must be greater than zero" in res.stdout
+
+    def test_constant_expr_cast_zero_u32_step_rejected(self):
+        code = """
+        act main() {
+            loop i in 0..10:(0 as u32) {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Range loop step must be greater than zero" in res.stdout
+
+    def test_constant_expr_cast_zero_i64_step_rejected(self):
+        code = """
+        act main() {
+            loop i in 0..10:(0 as i64) {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Range loop step must be greater than zero" in res.stdout
+
+    def test_constant_expr_negative_binary_step_rejected(self):
+        code = """
+        act main() {
+            loop i in 0..10:(5 - 10) {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Range loop step must be greater than zero" in res.stdout
+
+    def test_constant_expr_negative_cast_step_rejected(self):
+        code = """
+        act main() {
+            loop i in 0..10:(-1 as i32) {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Range loop step must be greater than zero" in res.stdout
+
+    def test_constant_expr_nested_subtraction_zero_step_rejected(self):
+        code = """
+        act main() {
+            loop i in 0..10:((5 - 3) - 2) {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Range loop step must be greater than zero" in res.stdout
+
+    def test_constant_expr_valid_positive_addition_passes(self):
+        code = """
+        act main() {
+            loop i in 0..10:(1 + 2) {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected valid positive step (1 + 2) to pass, got: {res.stdout}"
+
+    def test_constant_expr_valid_positive_division_passes(self):
+        code = """
+        act main() {
+            loop i in 0..10:(10 / 2) {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected valid positive step (10 / 2) to pass, got: {res.stdout}"
+
+    def test_constant_expr_valid_double_negative_passes(self):
+        code = """
+        act main() {
+            loop i in 0..10:(-(-1)) {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected valid positive step -(-1) to pass, got: {res.stdout}"
+
 
 # ==============================================================================
 # 2. Dynamic Zero & Negative Steps (Red Baseline: Must Fail Fast, Never Hang)

@@ -2592,12 +2592,32 @@ There is no compile-time or runtime validation of the step.
   - `python -m pytest tests/test_range_loops.py -q`: 1 failed, 9 passed (red baseline confirmed).
   - All runnable tests are timeout-guarded (`timeout=1.0` or `2.0`s) preventing CI hangs.
 
-##### Task 63.2: Reject literal zero steps at compile time
-* **Goal:** Detect a zero-valued literal step and emit a diagnostic.
-* **Files:** `src/analysis/type_checker_stmt.vl`, `src/analysis/literal_check.vl`.
-* **Tests:** `:0`, `:+0`, `:-0`; valid `:1`, `:2`, `:-1`.
-* **Security gate:** no false positive on a non-zero expression; only provably zero literals are rejected; explicit diagnostic.
-* **Done when:** literal zero steps are rejected.
+##### Task 63.2: Reject literal zero steps at compile time [COMPLETED] ✅
+* **Former Defect**:
+  - While literal `EXPR_INT` zero steps (`:0`, `:0u32`) and unary minus literals (`:-0`, `:-1`) were rejected by `is_range_step_non_positive`, constant expressions that evaluate to zero or negative values at compile time (`:(1 - 1)`, `:(2 * 0)`, `:(0 / 5)`, `:(0 << 4)`, `:(0 & 7)`, `:(0 as i32)`, `:(5 - 10)`) bypassed validation.
+  - These expressions silently passed `velo check` with exit code 0 and lowered into infinite loops (`i += 0`) at runtime.
+* **Fix Applied**:
+  - Implemented compile-time constant integer evaluation `eval_const_int_expr(expr: @ExprNode, out_val: @i64) -> bool` in `src/analysis/range_checks.vl`:
+    * Evaluates `EXPR_INT` (handling unsuffixed, suffixed, and boundary values without sign corruption on large unsigned integers).
+    * Evaluates `EXPR_CAST` recursively on operands.
+    * Evaluates `EXPR_UNARY` (`TOK_MINUS`, `TOK_PLUS`).
+    * Evaluates `EXPR_BINARY` (`+`, `-`, `*`, `/`, `%`, `<<`, `>>`, `&`, `|`, `^`) with zero-division guards.
+  - Upgraded `is_range_step_non_positive(expr: @ExprNode) -> bool` to check `eval_const_int_expr`: any constant step evaluating to $\le 0$ is rejected at compile time with:
+    `Range loop step must be greater than zero`
+  - Upgraded `is_range_endpoint_negative(expr: @ExprNode) -> bool` to check `eval_const_int_expr`: constant expressions evaluating to $< 0$ are recognized as negative endpoints for unsigned range validation.
+  - Maintained line count discipline in `src/analysis/range_checks.vl` (283 lines, $\le 394$).
+  - Rebuilt 3-generation self-hosted bootstrap chain (`bin/velo.exe` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 fixed-point determinism (`50FFAAE08511279CDF99FB2C1AA13AEF6B6A92EA8BE491AE3807DFEC180E0777`).
+  - Expanded `TestLiteralStepCompileRejection` in `tests/test_range_steps.py` to 24 tests:
+    * Rejection of `:(1 - 1)`, `:(2 * 0)`, `:(0 / 5)`, `:(0 & 15)`, `:(0 << 4)`, `:(0 as i32)`, `:(0 as u32)`, `:(0 as i64)`, `:(5 - 10)`, `:(-1 as i32)`, `:((5 - 3) - 2)`.
+    * Acceptance of valid positive constant steps `:(1 + 2)`, `:(10 / 2)`, and `:(-(-1))`.
+* **Residual Limitation**:
+  - Dynamic zero and negative steps (`let s: i32 = 0; loop i in 0..10:s`) cannot be evaluated at compile time; runtime guard generation is addressed in Task 63.3.
+* **Verification**:
+  - `python -m pytest tests/test_range_steps.py -k "TestLiteralStepCompileRejection"`: 24/24 passed in 0.50s.
+  - `python -m pytest tests/test_range_steps.py -k "TestValidRangeStepControlGroup"`: 8/8 passed in 9.49s.
+  - `python -m pytest tests/test_large_ranges.py tests/test_dynamic_ranges.py tests/test_count_loops.py -q`: 261 passed, 0 failed in 52.53s.
+  - Bootstrap fixed-point determinism verified: SHA-256 `50FFAAE08511279CDF99FB2C1AA13AEF6B6A92EA8BE491AE3807DFEC180E0777` across Gen2, Gen3, and `bootstrap.c`.
+  - All 120 compiler source files in `src/` remain $\le 394$ lines (`python scripts/count_lines.py`).
 
 ##### Task 63.3: Handle dynamic zero steps deterministically
 * **Goal:** Decide and implement the behavior: compile-time rejection is impossible for a runtime value, so emit a guard that fails with a clear runtime error before the loop.
