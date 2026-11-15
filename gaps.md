@@ -2048,12 +2048,34 @@ A struct passed to an `i32` parameter also passes `velo check` and fails only at
   - `python -m pytest tests/test_call_arguments.py tests/test_type_checker.py -q`: 78 passed, 0 failed.
   - Line count discipline: all 119 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
 
-##### Task 59.4: Guard literal adaptation against truncation
-* **Goal:** Ensure `f(1.5)` to `i32` is an error, not a C truncation; ensure `f(1)` to `bool` is an error.
-* **Files:** `src/analysis/literal_check.vl:152-188`.
-* **Tests:** float literal → int parameter; int literal → bool; bool literal → int; negative literals.
-* **Security gate:** no implicit float→int; no implicit int→bool; explicit casts still work.
-* **Done when:** adaptation only applies where the language allows it.
+##### Task 59.4: Guard literal adaptation against truncation [COMPLETED] ✅
+* **Former Defect**:
+  - Contextual literal adaptation in `src/analysis/literal_check.vl` needed rigorous boundary verification to ensure unsuffixed integer literals only adapt within strict integer bounds and never cross type family boundaries:
+    * Passing float literals to integer parameters (e.g. `f(1.5)` to `i32`) must be rejected at compile time and never silently truncate at C codegen.
+    * Passing integer literals to boolean parameters (e.g. `g(1)`, `g(0)`) must be rejected at compile time and never implicitly convert.
+    * Passing boolean literals to integer parameters (e.g. `f(true)`, `f(false)`) must be rejected at compile time.
+    * Negative integer literals must never adapt to unsigned integer parameters (e.g. `f(-1)` to `u8`, `u16`, `u32`, `u64`), and out-of-range negative signed values (e.g. `-129` to `i8`, `-32769` to `i16`, `-2147483649` to `i32`) must be rejected at compile time.
+    * Explicit casts (e.g. `1.5 as i32`, `1 as bool`, `true as i32`, `-1 as u32`) must continue to be accepted.
+* **Fix Applied**:
+  - Audited `try_adapt_int_literal` and `check_int_literal_fits_type` in `src/analysis/literal_check.vl`:
+    * Confirmed `try_adapt_int_literal` immediately guards with `if not is_int_type(target_t) { return true }`, ensuring it never adapts integer literals to non-integer types like `bool`, `f32`, `f64`, or pointers, leaving type compatibility to report precise diagnostics.
+    * Confirmed `is_unsuffixed_int_literal` rejects float and boolean literal expressions, preventing any implicit float-to-int or bool-to-int adaptation.
+    * Confirmed `check_int_literal_fits_type` strictly enforces negative bounds (`-128` for `i8`, `-32768` for `i16`, `-2147483648` for `i32`) and completely rejects negative literals for all unsigned target types (`is_unsigned_int_type(target_t)`).
+  - Added dedicated test suite `TestLiteralAdaptationGuards` (36 test cases) in `tests/test_call_arguments.py` validating:
+    * Float literals (`1.5`, `3.14`, `2.5`, `0.5`) to `i32`, `i64`, `u8`, `u32` are rejected with precise type mismatch diagnostics.
+    * Int literals (`1`, `0`, `-1`) to `bool` are rejected with precise type mismatch diagnostics.
+    * Bool literals (`true`, `false`) to `i32` are rejected with precise type mismatch diagnostics.
+    * Negative int literals (`-1`) to `u8`, `u16`, `u32`, `u64` are rejected with out-of-range diagnostics.
+    * Negative int literals out-of-range (`-129` to `i8`, `-32769` to `i16`, `-2147483649` to `i32`) are rejected.
+    * In-range negative int literals (`-128` to `i8`, `-32768` to `i16`, `-2147483648` to `i32`) and positive literals (`255` to `u8`, `65535` to `u16`, `2147483647` to `i32`, `4294967295` to `u32`) pass.
+    * Negative float literals (`-1.5`) to `i32` and `bool` are rejected.
+    * Explicit casts (`1.5 as i32`, `1 as bool`, `true as i32`, `-1 as u32`, `256 as u8`) pass.
+* **Residual Limitation**:
+  - Full call-path audit across constructors, builtins, module functions, function pointers, and generic calls is tracked under Task 59.5.
+* **Verification**:
+  - `python -m pytest tests/test_call_arguments.py -q`: 84 passed, 0 failed (36 new tests added).
+  - `python -m pytest tests/test_call_arguments.py tests/test_type_checker.py -q`: 114 passed, 0 failed.
+  - Line count discipline: all 119 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
 
 ##### Task 59.5: Audit every call path
 * **Goal:** Verify constructors, builtins, module functions, function pointers, and generic calls use the same checks.

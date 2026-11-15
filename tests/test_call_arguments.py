@@ -672,3 +672,404 @@ class TestCallArgValidControlGroup:
         """
         res = run_velo_check(code)
         assert res.returncode == 0, f"Expected success, got {res.stdout}\n{res.stderr}"
+
+
+# ==============================================================================
+# 7. Task 59.4: Guard Literal Adaptation Against Truncation & Type Invariants
+# ==============================================================================
+
+class TestLiteralAdaptationGuards:
+    @classmethod
+    def setup_class(cls):
+        if not VELO_EXE.exists():
+            pytest.skip("bin/velo not built")
+
+    def test_float_literal_to_i32_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(1.5)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'i32', got 'f32'" in res.stdout
+
+    def test_float_literal_to_i64_rejected(self):
+        code = """
+        act f(a: i64) {}
+        act main() {
+            f(3.14)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'i64', got 'f32'" in res.stdout
+
+    def test_float_literal_to_u8_rejected(self):
+        code = """
+        act f(a: u8) {}
+        act main() {
+            f(2.5)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'u8', got 'f32'" in res.stdout
+
+    def test_float_literal_to_u32_rejected(self):
+        code = """
+        act f(a: u32) {}
+        act main() {
+            f(0.5)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'u32', got 'f32'" in res.stdout
+
+    def test_int_literal_to_bool_one_rejected(self):
+        code = """
+        act g(a: bool) {}
+        act main() {
+            g(1)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'bool', got 'i32'" in res.stdout
+
+    def test_int_literal_to_bool_zero_rejected(self):
+        code = """
+        act g(a: bool) {}
+        act main() {
+            g(0)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'bool', got 'i32'" in res.stdout
+
+    def test_int_literal_to_bool_negative_rejected(self):
+        code = """
+        act g(a: bool) {}
+        act main() {
+            g(-1)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'bool', got 'i32'" in res.stdout
+
+    def test_bool_literal_to_int_true_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(true)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'i32', got 'bool'" in res.stdout
+
+    def test_bool_literal_to_int_false_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(false)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'i32', got 'bool'" in res.stdout
+
+    def test_negative_int_to_u8_rejected(self):
+        code = """
+        act f(a: u8) {}
+        act main() {
+            f(-1)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Integer literal '-1' out of range for type 'u8'" in res.stdout
+
+    def test_negative_int_to_u16_rejected(self):
+        code = """
+        act f(a: u16) {}
+        act main() {
+            f(-1)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Integer literal '-1' out of range for type 'u16'" in res.stdout
+
+    def test_negative_int_to_u32_rejected(self):
+        code = """
+        act f(a: u32) {}
+        act main() {
+            f(-1)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Integer literal '-1' out of range for type 'u32'" in res.stdout
+
+    def test_negative_int_to_u64_rejected(self):
+        code = """
+        act f(a: u64) {}
+        act main() {
+            f(-1)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Integer literal '-1' out of range for type 'u64'" in res.stdout
+
+    def test_negative_int_out_of_range_i8_rejected(self):
+        code = """
+        act f(a: i8) {}
+        act main() {
+            f(-129)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Integer literal '-129' out of range for type 'i8'" in res.stdout
+
+    def test_negative_int_out_of_range_i16_rejected(self):
+        code = """
+        act f(a: i16) {}
+        act main() {
+            f(-32769)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Integer literal '-32769' out of range for type 'i16'" in res.stdout
+
+    def test_negative_int_out_of_range_i32_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(-2147483649)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "out of range for type 'i32'" in res.stdout
+        assert "-2147483649" in res.stdout
+
+    def test_negative_int_in_range_i8_accepted(self):
+        code = """
+        act f(a: i8) {}
+        act main() {
+            f(-128)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_negative_int_in_range_i16_accepted(self):
+        code = """
+        act f(a: i16) {}
+        act main() {
+            f(-32768)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_negative_int_in_range_i32_accepted(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(-2147483648)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_positive_int_out_of_range_i8_rejected(self):
+        code = """
+        act f(a: i8) {}
+        act main() {
+            f(128)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Integer literal '128' out of range for type 'i8'" in res.stdout
+
+    def test_positive_int_out_of_range_u8_rejected(self):
+        code = """
+        act f(a: u8) {}
+        act main() {
+            f(256)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Integer literal '256' out of range for type 'u8'" in res.stdout
+
+    def test_positive_int_out_of_range_i16_rejected(self):
+        code = """
+        act f(a: i16) {}
+        act main() {
+            f(32768)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Integer literal '32768' out of range for type 'i16'" in res.stdout
+
+    def test_positive_int_out_of_range_u16_rejected(self):
+        code = """
+        act f(a: u16) {}
+        act main() {
+            f(65536)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Integer literal '65536' out of range for type 'u16'" in res.stdout
+
+    def test_positive_int_in_range_u8_accepted(self):
+        code = """
+        act f(a: u8) {}
+        act main() {
+            f(255)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_positive_int_in_range_u16_accepted(self):
+        code = """
+        act f(a: u16) {}
+        act main() {
+            f(65535)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_positive_int_out_of_range_i32_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(2147483648)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "out of range for type 'i32'" in res.stdout
+        assert "2147483648" in res.stdout
+
+    def test_positive_int_in_range_i32_accepted(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(2147483647)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_positive_int_out_of_range_u32_rejected(self):
+        code = """
+        act f(a: u32) {}
+        act main() {
+            f(4294967296)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "out of range for type 'u32'" in res.stdout
+        assert "4294967296" in res.stdout
+
+    def test_positive_int_in_range_u32_accepted(self):
+        code = """
+        act f(a: u32) {}
+        act main() {
+            f(4294967295)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_negative_float_literal_to_int_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(-1.5)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'i32', got 'f32'" in res.stdout
+
+    def test_negative_float_literal_to_bool_rejected(self):
+        code = """
+        act g(a: bool) {}
+        act main() {
+            g(-1.5)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Type mismatch in call argument 1: expected 'bool', got 'f32'" in res.stdout
+
+    def test_explicit_cast_float_to_int_accepted(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(1.5 as i32)
+            f(-1.5 as i32)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_explicit_cast_int_to_bool_accepted(self):
+        code = """
+        act g(a: bool) {}
+        act main() {
+            g(1 as bool)
+            g(0 as bool)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_explicit_cast_bool_to_int_accepted(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(true as i32)
+            f(false as i32)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_explicit_cast_negative_int_to_u32_accepted(self):
+        code = """
+        act f(a: u32) {}
+        act main() {
+            f(-1 as u32)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_explicit_cast_overflow_int_to_u8_accepted(self):
+        code = """
+        act f(a: u8) {}
+        act main() {
+            f(256 as u8)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
