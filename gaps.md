@@ -2255,12 +2255,38 @@ This is both a soundness hole and a source of silent logic errors: a non-empty s
   - Maintained 3-generation self-hosting bootstrap determinism (Gen2 and Gen3 emit identical bit-for-bit C output matching `bootstrap.c` with SHA-256 `dbe22bc4e956b8bf7387818b97bbd293cdf2d4ef2a053d629a4b63dff3dfa588`).
   - Verified line count discipline across all 120 compiler source files in `src/` ($\le 394$ lines, hard limit 400).
 
-##### Task 60.3: Apply the helper to all condition sites
-* **Goal:** Cover `STMT_IF`, `STMT_LOOP` condition form, `if` expressions, and any `on` guard.
-* **Files:** `src/analysis/type_checker_stmt.vl:149-164`, `src/analysis/type_checker.vl`.
-* **Tests:** every site in the matrix.
-* **Security gate:** no condition path bypasses the helper.
-* **Done when:** all sites reject non-`bool`.
+##### Task 60.3: Apply the helper to all condition sites [COMPLETED] ✅
+* **Former Defect**:
+  - Semantic condition checking needed to be verified across all recursive, nested, and chained control flow structures.
+  - Chained `if ... else if ... else` statements and expressions recursively nest conditions (`STMT_IF` in `stmt.else_branch` and `EXPR_IF` in `expr.operand`), which could potentially bypass boolean condition validation or produce incomplete diagnostic reporting on intermediate branches.
+  - Condition loops (`loop <cond> {}`) must reject non-boolean, non-integer expressions while preserving integer count loops, and `assert` expressions must enforce boolean conditions.
+* **Fix Applied**:
+  - Audited all condition evaluation sites across `src/analysis/type_checker_stmt.vl` and `src/analysis/type_checker.vl`:
+    * `STMT_IF`: guards `stmt.expr` with `require_bool_condition(st, stmt.expr)`; `else if` statements recursively parse into `STMT_IF` attached to `else_branch` and are checked via `check_statement(st, expected_ret_type, stmt.else_branch)`, ensuring all chained conditions are validated.
+    * `EXPR_IF`: guards `expr.left` with `require_bool_condition(st, expr.left)`; chained `else if` expressions recursively nest `EXPR_IF` in `expr.operand` and are checked via `infer_expr_type(st, expr.operand)`, ensuring all chained conditions are validated.
+    * `STMT_LOOP`: lines 169-186 strictly discriminate count loops (`is_int_type(expr_t)`) vs condition loops (`expr_t == "bool"`), rejecting all non-int/non-bool condition forms (`f32`, `string`, structs, pointers, `@void`) with `Loop expression must be an integer (count) or 'bool' (condition), got '<expr_t>'`.
+    * `assert`: lines 228-229 guard `expr.first_arg`, enforcing `ct == "bool"` and reporting `assert condition must be a boolean expression`.
+    * `on` (pattern match) statements in Velo AST use pattern value lists without condition guards.
+  - Expanded `tests/test_conditions.py` with `TestChainedAndNestedConditionSites` (17 tests) covering:
+    * Chained `else if` statement non-bool conditions (`i32`, `string`, `Point`, `@void`).
+    * Deeply chained `else if` statement rejecting at the culprit branch.
+    * Nested `if` statements inside `then` and `else` blocks rejecting non-bool conditions.
+    * Binary arithmetic expressions (`if a + b {}`) producing non-bool types rejected with `got 'i32'`.
+    * Chained `else if` expressions rejecting non-bool conditions (`i32`, `string`, `@void`).
+    * Nested `if` expressions in `then` and `else` branches rejecting non-bool conditions (`i32`, `f32`).
+    * Nested `if` statements inside loops rejecting non-bool conditions.
+    * Positive control cases verifying valid chained `else if` statements, chained `if` expressions, and nested `if` structures with boolean conditions pass cleanly.
+  - Resolved latent condition defect exposed by `require_bool_condition` in `std/rand/xoshiro.vl:62,73,84,95`:
+    * Unparenthesized bitwise AND comparisons `if (J0 >> b) & (1 as u64) != (0 as u64)` parsed equality tighter than bitwise AND (`(J0 >> b) & ((1 as u64) != (0 as u64))`), yielding a `u64` condition expression that previously passed semantic analysis due to integer truthiness.
+    * Corrected to `if ((J0 >> b) & (1 as u64)) != (0 as u64)` across all 4 polynomial unroll loop bodies, turning 8 dependent standard library test suites green.
+* **Residual Limitation**:
+  - Flow-sensitive narrowing (`if x != null`, optional unwrapping) verification is tracked under Task 60.4.
+  - Codegen defense ensuring backend assertion triggers if non-`bool` condition ever reached codegen is tracked under Task 60.5.
+* **Verification**:
+  - `python -m pytest tests/test_conditions.py -q`: 48 passed, 0 failed.
+  - `python -m pytest tests/test_conditions.py tests/test_type_checker.py tests/test_call_arguments.py -q`: 246 passed, 0 failed.
+  - Standard library suite: `tests/test_std_coll.py`, `tests/test_std_rand.py`, `tests/test_std_uuid.py`, and `tests/test_stdlib_or_modernization.py` passing cleanly (100% green).
+  - Line count discipline: all 120 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
 
 ##### Task 60.4: Protect flow-sensitive narrowing
 * **Goal:** Ensure `if x != null`, optional unwrapping, and early-return narrowing still work.

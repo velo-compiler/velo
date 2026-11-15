@@ -59,7 +59,7 @@ act xoshiro256_jump(rng: @Xoshiro256) {
     // Unroll the jump polynomial evaluation over the 4 constants
     mut b: u32 = 0
     loop b < 64 {
-        if (J0 >> b) & (1 as u64) != (0 as u64) {
+        if ((J0 >> b) & (1 as u64)) != (0 as u64) {
             s0 = s0 ^ rng.s0
             s1 = s1 ^ rng.s1
             s2 = s2 ^ rng.s2
@@ -70,7 +70,7 @@ act xoshiro256_jump(rng: @Xoshiro256) {
     }
     b = 0
     loop b < 64 {
-        if (J1 >> b) & (1 as u64) != (0 as u64) {
+        if ((J1 >> b) & (1 as u64)) != (0 as u64) {
             s0 = s0 ^ rng.s0
             s1 = s1 ^ rng.s1
             s2 = s2 ^ rng.s2
@@ -81,7 +81,7 @@ act xoshiro256_jump(rng: @Xoshiro256) {
     }
     b = 0
     loop b < 64 {
-        if (J2 >> b) & (1 as u64) != (0 as u64) {
+        if ((J2 >> b) & (1 as u64)) != (0 as u64) {
             s0 = s0 ^ rng.s0
             s1 = s1 ^ rng.s1
             s2 = s2 ^ rng.s2
@@ -92,7 +92,7 @@ act xoshiro256_jump(rng: @Xoshiro256) {
     }
     b = 0
     loop b < 64 {
-        if (J3 >> b) & (1 as u64) != (0 as u64) {
+        if ((J3 >> b) & (1 as u64)) != (0 as u64) {
             s0 = s0 ^ rng.s0
             s1 = s1 ^ rng.s1
             s2 = s2 ^ rng.s2

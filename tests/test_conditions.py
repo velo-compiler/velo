@@ -408,3 +408,235 @@ class TestValidConditionsControlGroup:
         """
         res = run_velo_check(code)
         assert res.returncode == 0
+
+
+# ==============================================================================
+# 5. Chained (`else if`) and Nested Condition Sites (Task 60.3)
+# ==============================================================================
+
+class TestChainedAndNestedConditionSites:
+    @classmethod
+    def setup_class(cls):
+        if not VELO_EXE.exists():
+            pytest.skip("bin/velo not built")
+
+    def test_if_else_if_int_condition_rejected(self):
+        code = """
+        act main() {
+            if false {
+            } else if 1 {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection of 'else if 1', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'i32'" in res.stdout
+
+    def test_if_else_if_string_condition_rejected(self):
+        code = """
+        act main() {
+            if false {
+            } else if "bad" {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection of 'else if \"bad\"', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'string'" in res.stdout
+
+    def test_if_else_if_struct_condition_rejected(self):
+        code = """
+        data Point {
+            x: i32
+            y: i32
+        }
+        act main() {
+            let p = Point{ x: 1, y: 2 }
+            if false {
+            } else if p {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection of 'else if <struct>', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'Point'" in res.stdout
+
+    def test_if_else_if_null_condition_rejected(self):
+        code = """
+        act main() {
+            if false {
+            } else if null {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection of 'else if null', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got '@void'" in res.stdout
+
+    def test_if_multiple_else_if_chain_rejected_at_culprit(self):
+        code = """
+        act main() {
+            let a = false
+            let b = false
+            if a {
+            } else if b {
+            } else if 42 {
+            } else {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection in multi-chain else if, but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'i32'" in res.stdout
+
+    def test_nested_if_in_then_branch_rejected(self):
+        code = """
+        act main() {
+            if true {
+                if 1 {
+                }
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection in nested then if, but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'i32'" in res.stdout
+
+    def test_nested_if_in_else_branch_rejected(self):
+        code = """
+        act main() {
+            if false {
+            } else {
+                if "nested_bad" {
+                }
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection in nested else if, but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'string'" in res.stdout
+
+    def test_if_binary_arithmetic_condition_rejected(self):
+        code = """
+        act main() {
+            let a = 1
+            let b = 2
+            if a + b {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection of 'if a + b', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'i32'" in res.stdout
+
+    def test_if_expr_chained_else_if_int_rejected(self):
+        code = """
+        act main() {
+            let x = if false { 1 } else if 2 { 3 } else { 4 }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection of chained if-expr int, but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'i32'" in res.stdout
+
+    def test_if_expr_chained_else_if_string_rejected(self):
+        code = """
+        act main() {
+            let x = if false { 1 } else if "not_a_bool" { 2 } else { 3 }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection of chained if-expr string, but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'string'" in res.stdout
+
+    def test_if_expr_chained_else_if_null_rejected(self):
+        code = """
+        act main() {
+            let x = if false { 1 } else if null { 2 } else { 3 }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection of chained if-expr null, but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got '@void'" in res.stdout
+
+    def test_if_expr_nested_in_then_rejected(self):
+        code = """
+        act main() {
+            let x = if true {
+                if 99 { 1 } else { 2 }
+            } else {
+                3
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection of nested then if-expr, but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'i32'" in res.stdout
+
+    def test_if_expr_nested_in_else_rejected(self):
+        code = """
+        act main() {
+            let x = if false {
+                1
+            } else {
+                if 3.14 { 2 } else { 3 }
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection of nested else if-expr, but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'f32'" in res.stdout
+
+    def test_nested_if_inside_loop_rejected(self):
+        code = """
+        act main() {
+            loop {
+                if 1 {
+                    break
+                }
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection of if inside loop, but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'i32'" in res.stdout
+
+    def test_valid_chained_else_if_statement_accepted(self):
+        code = """
+        act main() {
+            let x = 10
+            if x < 0 {
+            } else if x == 10 {
+            } else if x > 20 {
+            } else {
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected valid chained else if to pass, got: {res.stdout}"
+
+    def test_valid_chained_else_if_expr_accepted(self):
+        code = """
+        act main() {
+            let score = 85
+            let grade = if score >= 90 { "A" } else if score >= 80 { "B" } else if score >= 70 { "C" } else { "F" }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected valid chained if expr to pass, got: {res.stdout}"
+
+    def test_valid_nested_if_statement_and_expr_accepted(self):
+        code = """
+        act main() {
+            let a = true
+            let b = false
+            if a {
+                if not b {
+                    let val = if b { 1 } else { if a { 2 } else { 3 } }
+                }
+            }
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0, f"Expected valid nested if stmt and expr to pass, got: {res.stdout}"
+
