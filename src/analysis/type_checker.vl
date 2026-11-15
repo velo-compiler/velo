@@ -23,6 +23,7 @@ use "fs_checks.vl"
 use "io_checks.vl"
 use "simd_checks.vl"
 use "reflect_checks.vl"
+use "call_checks.vl"
 use "array_checks.vl"
 use "tuple_checks.vl"
 use "scope.vl"
@@ -200,7 +201,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             let k_sym = find_kind(st, expr.callee.target.str_val)
             if k_sym != null {
                 let v_sym = find_variant(k_sym, expr.callee.member_name)
-                if v_sym != null { return k_sym.name }
+                if v_sym != null { return check_variant_constructor(st, expr, k_sym, v_sym) }
             }
         }
         if expr.callee.kind == EXPR_MEMBER {
@@ -209,13 +210,12 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             let st_sym = find_struct(st, clean_type)
             if st_sym != null and find_struct_field(st_sym, expr.callee.member_name) != null {
                 let f_sym = find_struct_field(st_sym, expr.callee.member_name)
-                if is_act_type(f_sym.type_name) {
-                    return get_act_return_type(f_sym.type_name)
-                }
+                if is_act_type(f_sym.type_name) { return check_act_call(st, expr, f_sym.type_name) }
             }
             let fn_sym = find_function(st, expr.callee.member_name)
             if fn_sym != null {
                 if expr.arg_count + 1 != fn_sym.param_count { report_error("semantic", expr.line, expr.col, "Mismatched argument count in method call"); st.error_count += 1 }
+                if fn_sym.first_param != null { check_method_receiver(st, expr.callee.target, target_type, fn_sym.first_param.type_name) }
                 mut pcur = fn_sym.first_param
                 if pcur != null { pcur = pcur.next }
                 adapt_and_check_call_args(st, expr, pcur)
@@ -250,18 +250,15 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                 return fn_sym.return_type
             }
             let var_sym = resolve_variable(st, expr.callee.str_val)
-            if var_sym != null and is_act_type(var_sym.type_name) {
-                return get_act_return_type(var_sym.type_name)
-            }
+            if var_sym != null and is_act_type(var_sym.type_name) { return check_act_call(st, expr, var_sym.type_name) }
             report_error("semantic", expr.line, expr.col, "Call to undefined function")
             st.error_count += 1
             return "unknown"
         }
 
         let callee_type = infer_expr_type(st, expr.callee)
-        if is_act_type(callee_type) {
-            return get_act_return_type(callee_type)
-        }
+        if is_act_type(callee_type) { return check_act_call(st, expr, callee_type) }
+        return "unknown"
         return "unknown"
     }
 

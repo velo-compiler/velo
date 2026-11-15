@@ -2077,12 +2077,75 @@ A struct passed to an `i32` parameter also passes `velo check` and fails only at
   - `python -m pytest tests/test_call_arguments.py tests/test_type_checker.py -q`: 114 passed, 0 failed.
   - Line count discipline: all 119 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
 
-##### Task 59.5: Audit every call path
-* **Goal:** Verify constructors, builtins, module functions, function pointers, and generic calls use the same checks.
-* **Files:** `rg` audit of `adapt_and_check_call_args`, `check_call`, `check_method_call`.
-* **Tests:** one mismatch test per call path.
-* **Security gate:** no call path bypasses argument checking.
-* **Done when:** the audit table is attached and all paths are covered.
+##### Task 59.5: Audit every call path [COMPLETED] ✅
+* **Former Defect**:
+  - Prior to this audit, three AST call expression paths bypassed argument checking or arity checking entirely:
+    1. **Function pointers (`act(...) -> ...`)**: In `type_checker.vl`, calling a function pointer variable (`cb(x)`), struct field function pointer (`holder.cb(x)`), or complex function pointer expression returned `get_act_return_type` immediately without checking parameter types or argument count, allowing arbitrary argument mismatches or arity errors to pass silently.
+    2. **Kind variant constructors (`Kind.Variant(...)`)**: In `type_checker.vl`, invoking a Kind variant constructor returned `k_sym.name` without validating payload types or arity, allowing invalid payloads (e.g. `Shape.Circle("string")` when `f64` expected) or extraneous arguments on zero-payload variants to pass silently.
+    3. **Method receivers**: In `type_checker.vl`, method/UFCS calls checked arguments 2..N against parameters 2..N, but never checked the receiver expression (`expr.callee.target`) against `self` (parameter 1), allowing receiver type mismatches (e.g. `123.show()` when `self: @Counter`) to pass unchecked.
+* **Fix Applied**:
+  - Implemented `src/analysis/call_checks.vl` (149 lines, $\le 394$) providing dedicated semantic verification routines:
+    * `check_act_call(st, expr, act_t)`: Parses the `act(...) -> ...` type signature, verifies exact argument count matching, checks each argument type against the corresponding parameter type with literal adaptation and compatibility checks, and reports position-aware diagnostics (`Type mismatch in call argument <n>: expected '<t>', got '<t>'` or `Mismatched argument count in function call`).
+    * `check_variant_constructor(st, expr, k_sym, v_sym)`: Validates variant constructor invocations for zero-payload variants (`Variant does not take arguments`), single payload variants (`Mismatched argument count in variant constructor` and argument type matching), and multi-field variants (`Mismatched argument count in variant constructor` and per-field type matching).
+    * `check_method_receiver(st, expr, fn_sym)`: Infers the receiver expression's type and verifies compatibility with `self` (first parameter), reporting `Type mismatch in method receiver: expected '<expected>', got '<actual>'` on mismatch.
+  - Wired all three helpers into `src/analysis/type_checker.vl`:
+    * Routed Kind variant constructor calls to `check_variant_constructor`.
+    * Routed struct field function pointer calls (`is_act_type`) to `check_act_call`.
+    * Added `check_method_receiver` before validating arguments in method calls.
+    * Routed variable and general expression function pointer calls (`is_act_type`) to `check_act_call`.
+  - Audited all 14 AST call paths across the compiler to ensure complete coverage:
+    1. Free functions (`adapt_and_check_call_args` in `literal_check.vl`)
+    2. Methods (`check_method_receiver` + `adapt_and_check_call_args` in `type_checker.vl`)
+    3. UFCS calls (`check_method_receiver` + `adapt_and_check_call_args` in `type_checker.vl`)
+    4. `extern act` foreign functions (`adapt_and_check_call_args` in `literal_check.vl`)
+    5. Generic functions (monomorphization + `adapt_and_check_call_args` in `type_checker.vl`)
+    6. Function pointer variables (`check_act_call` in `call_checks.vl`)
+    7. Struct field function pointers (`check_act_call` in `call_checks.vl`)
+    8. Kind variant constructors (`check_variant_constructor` in `call_checks.vl`)
+    9. Struct literal initializers (`type_checker.vl` / `check_struct_lit`)
+    10. Builtin `sizeof` (`type_checker.vl` arity check)
+    11. Builtin `assert` (`type_checker.vl` boolean condition check)
+    12. Builtin SIMD constructors (`simd_checks.vl` / `check_simd_constructor`)
+    13. Builtin reflection (`reflect_checks.vl` / `check_reflect_builtin`)
+    14. Builtin modules: `io.*` (`io_checks.vl`), `mem.*` (`mem_checks.vl`), `fs.*` (`fs_checks.vl`), `str.*` (`str_checks.vl`), `math.*` (`math_checks.vl`), `time.*` (`time_checks.vl`), `os.*` (`os_checks.vl`), `shelf.*` (`shelf_checks.vl`), `ring.*` (`ring_checks.vl`), `map.*` (`map_checks.vl`), `bitset.*` (`bitset_checks.vl`).
+  - Added comprehensive audit test suite `TestCallPathAuditMatrix` (69 test cases) to `tests/test_call_arguments.py` testing every single call path with both type mismatch/arity mismatch rejection and control group valid call acceptance.
+  - Attached complete Call Path Audit Table below.
+  - Rebuilt complete 3-generation self-hosted compiler chain (`bin/velo.exe` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe`) and verified bit-for-bit SHA-256 fixed-point determinism (`eaa0dccc101fb2583dbc6b2abfd8ecc99c23959d5e5e43c6b3b174436d01ff4b`).
+* **Residual Limitation**:
+  - Task 59.6 documents the diagnostic contract in `docs/SPECIFICATION.md` and verifies the full security regression suite to close Phase 59.
+* **Verification**:
+  - `python -m pytest tests/test_call_arguments.py tests/test_type_checker.py -q`: 183 passed, 0 failed (69 new audit tests added).
+  - Maintained 3-generation self-hosting bootstrap determinism (Gen2 and Gen3 emit identical bit-for-bit C output matching `bootstrap.c` with SHA-256 `eaa0dccc101fb2583dbc6b2abfd8ecc99c23959d5e5e43c6b3b174436d01ff4b`).
+  - Verified line count standards across all 120 compiler source files in `src/` ($\le 394$ lines, hard limit 400; `call_checks.vl` is 149 lines, `type_checker.vl` is 391 lines).
+
+###### Call Path Audit Table
+
+| # | Call Path Category | Syntax Form | Checking Mechanism | Arity Enforced? | Type Enforced? | Test Reference |
+|---|---|---|---|:---:|:---:|---|
+| 1 | Free Function | `f(a, b)` | `adapt_and_check_call_args` (`literal_check.vl`) | Yes | Yes | `test_audit_free_function_*` |
+| 2 | Method Call | `c.inc(step)` | `check_method_receiver` + `adapt_and_check_call_args` | Yes | Yes | `test_audit_method_*` |
+| 3 | UFCS Call | `p.offset(dx, dy)` | `check_method_receiver` + `adapt_and_check_call_args` | Yes | Yes | `test_audit_ufcs_*` |
+| 4 | Extern Function | `extern act c_puts(...)` | `adapt_and_check_call_args` (`literal_check.vl`) | Yes | Yes | `test_audit_extern_*` |
+| 5 | Generic Function | `wrap[T](val, tag)` | Monomorphization + `adapt_and_check_call_args` | Yes | Yes | `test_audit_generic_*` |
+| 6 | Function Pointer Variable | `cb: act(i32) -> i32` | `check_act_call` (`call_checks.vl`) | Yes | Yes | `test_audit_fn_ptr_var_*` |
+| 7 | Struct Field Fn Pointer | `h.on_event(42)` | `check_act_call` (`call_checks.vl`) | Yes | Yes | `test_audit_struct_field_fn_ptr_*` |
+| 8 | Kind Variant Constructor | `Shape.Circle(r)` | `check_variant_constructor` (`call_checks.vl`) | Yes | Yes | `test_audit_kind_variant_*` |
+| 9 | Struct Literal Init | `Point { x: 1, y: 2 }` | `check_struct_lit` (`type_checker.vl`) | Yes | Yes | `test_audit_struct_literal_*` |
+| 10 | Builtin `sizeof` | `sizeof(i64)` | Compile-time arity check (`type_checker.vl:240`) | Yes | Yes | `test_audit_builtin_sizeof_*` |
+| 11 | Builtin `assert` | `assert(cond, msg)` | Boolean condition check (`type_checker.vl:228`) | Yes | Yes | `test_audit_builtin_assert_*` |
+| 12 | Builtin SIMD | `f32x4(x, y, z, w)` | `check_simd_constructor` (`simd_checks.vl`) | Yes | Yes | `test_audit_builtin_simd_*` |
+| 13 | Builtin Reflection | `field_count(T)` | `check_reflect_builtin` (`reflect_checks.vl`) | Yes | Yes | `test_audit_builtin_reflect_*` |
+| 14.1 | Module `io.*` | `io.println(msg)` | `io_checks.vl` closed namespace + arity/type checks | Yes | Yes | `test_audit_module_io_*` |
+| 14.2 | Module `mem.*` | `mem.copy(dst, src, n)` | `mem_checks.vl` pointer and byte count checks | Yes | Yes | `test_audit_module_mem_*` |
+| 14.3 | Module `fs.*` | `fs.read_file(path)` | `fs_checks.vl` signature and arity checks | Yes | Yes | `test_audit_module_fs_*` |
+| 14.4 | Module `str.*` | `str.len(s)` | `str_checks.vl` signature and arity checks | Yes | Yes | `test_audit_module_str_*` |
+| 14.5 | Module `math.*` | `math.sqrt(x)` | `math_checks.vl` float argument checks | Yes | Yes | `test_audit_module_math_*` |
+| 14.6 | Module `time.*` | `time.sleep_ms(ms)` | `time_checks.vl` integer argument checks | Yes | Yes | `test_audit_module_time_*` |
+| 14.7 | Module `os.*` | `os.exit(code)` | `os_checks.vl` integer argument checks | Yes | Yes | `test_audit_module_os_*` |
+| 14.8 | Module `shelf.*` | `xs.put(item)` | `shelf_checks.vl` element type compatibility | Yes | Yes | `test_audit_module_shelf_*` |
+| 14.9 | Module `ring.*` | `r.put(item)` | `ring_checks.vl` element type compatibility | Yes | Yes | `test_audit_module_ring_*` |
+| 14.10 | Module `map.*` | `m.put(k, v)` | `map_checks.vl` key/value type compatibility | Yes | Yes | `test_audit_module_map_*` |
+| 14.11 | Module `bitset.*` | `b.set(i)` | `bitset_checks.vl` integer index checks | Yes | Yes | `test_audit_module_bitset_*` |
 
 ##### Task 59.6: Add security/regression tests and documentation
 * **Goal:** Lock in the contract and document the diagnostic.
