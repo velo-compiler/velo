@@ -236,7 +236,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         }
         if expr.callee.kind == EXPR_IDENT and is_reflect_builtin(expr.callee.str_val) { return check_reflect_builtin(st, expr) }
         if expr.callee.kind == EXPR_IDENT and is_simd_constructor(expr.callee.str_val) { return check_simd_constructor(st, expr) }
-        if expr.callee.kind == EXPR_IDENT and expr.callee.str_val == "sizeof" { return "usize" }
+        if expr.callee.kind == EXPR_IDENT and expr.callee.str_val == "sizeof" { if expr.arg_count != 1 { report_error("semantic", expr.line, expr.col, "sizeof takes exactly 1 argument"); st.error_count += 1 }; return "usize" }
         if expr.callee.kind == EXPR_IDENT {
             let fn_sym = find_function(st, expr.callee.str_val)
             if fn_sym != null {

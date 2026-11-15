@@ -2026,12 +2026,27 @@ A struct passed to an `i32` parameter also passes `velo check` and fails only at
   - `python -m pytest tests/test_type_checker.py -q`: 29 passed, 0 failed (turned the 6 previously failing call argument tests green with exact diagnostic assertions).
   - Line count discipline: all 119 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
 
-##### Task 59.3: Enforce arity for all call forms
-* **Goal:** Reject too few and too many arguments for free functions, methods, UFCS, and externs.
-* **Files:** `src/analysis/type_checker.vl`, `src/analysis/literal_check.vl`.
-* **Tests:** zero args to a one-arg function; two args to a one-arg function; variadic/extern exceptions if any.
-* **Security gate:** no out-of-bounds argument access in checker or codegen.
-* **Done when:** arity errors are compile-time diagnostics.
+##### Task 59.3: Enforce arity for all call forms [COMPLETED] ✅
+* **Former Defect**:
+  - Arity checking across free functions, methods, UFCS calls, and extern declarations required formal coverage for edge cases (zero arguments passed to 1-argument parameters, multiple arguments passed to 1-argument parameters, zero-argument functions/methods invoked with extraneous arguments).
+  - Builtin `sizeof` call expressions in `src/analysis/type_checker.vl:239` lacked compile-time arity validation, returning `"usize"` unconditionally without checking `expr.arg_count != 1`, allowing malformed invocations like `sizeof()` or `sizeof(a, b)` to pass semantic analysis silently and fail only at backend C compilation.
+* **Fix Applied**:
+  - Added compile-time arity enforcement for `sizeof` in `src/analysis/type_checker.vl`:
+    `if expr.callee.kind == EXPR_IDENT and expr.callee.str_val == "sizeof" { if expr.arg_count != 1 { report_error("semantic", expr.line, expr.col, "sizeof takes exactly 1 argument"); st.error_count += 1 }; return "usize" }`
+  - Validated that `adapt_and_check_call_args` and `type_checker.vl` call paths strictly enforce arity:
+    * Free function calls: `expr.arg_count != fn_sym.param_count` -> `"Mismatched argument count in function call"`.
+    * Method/UFCS calls: `expr.arg_count + 1 != fn_sym.param_count` -> `"Mismatched argument count in method call"`.
+    * Extern function calls: `expr.arg_count != fn_sym.param_count` -> `"Mismatched argument count in function call"`.
+    * Confirmed Velo has no variadics; all foreign `extern act` signatures strictly enforce exact arities.
+    * All argument traversal loops in `literal_check.vl`, `shelf_checks.vl`, and `map_checks.vl` terminate safely (`cur_a != null and cur_p != null`), preventing out-of-bounds argument access.
+  - Expanded `tests/test_call_arguments.py` (`TestCallArityChecks`) from 6 tests to 27 comprehensive test cases covering zero-to-one, two-to-one, one-to-zero, zero-to-zero, UFCS free-to-method, UFCS method-to-free, extern arity, and `sizeof` arity.
+  - Rebuilt the complete 3-generation self-hosted compiler chain and verified bit-for-bit SHA-256 determinism (`dc7cb00c36e0cf9d690d62381115d8895e62d012a10f7a24ad9f5fe1c97a114b`).
+* **Residual Limitation**:
+  - Literal adaptation guarding against implicit truncation (`f(1.5)` to `i32`) and call path auditing (constructors, module functions, function pointers) are tracked under Tasks 59.4 and 59.5.
+* **Verification**:
+  - `python -m pytest tests/test_call_arguments.py -q`: 48 passed, 0 failed.
+  - `python -m pytest tests/test_call_arguments.py tests/test_type_checker.py -q`: 78 passed, 0 failed.
+  - Line count discipline: all 119 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
 
 ##### Task 59.4: Guard literal adaptation against truncation
 * **Goal:** Ensure `f(1.5)` to `i32` is an error, not a C truncation; ensure `f(1)` to `bool` is an error.

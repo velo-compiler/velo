@@ -32661,6 +32661,13 @@ const char* infer_expr_type(SymbolTable* st, ExprNode* expr) {
 #line 239 "src/main.vl"
         if (((expr->callee->kind == EXPR_IDENT) && ((expr->callee->str_val != NULL && "sizeof" != NULL) ? (strcmp(expr->callee->str_val, "sizeof") == 0) : (expr->callee->str_val == "sizeof")))) {
 #line 239 "src/main.vl"
+            if (velo_cmp_ne_u_s(expr->arg_count, 1)) {
+#line 239 "src/main.vl"
+                report_error("semantic", expr->line, expr->col, "sizeof takes exactly 1 argument");
+#line 239 "src/main.vl"
+                st->error_count += 1;
+            }
+#line 239 "src/main.vl"
             return "usize";
         }
 #line 240 "src/main.vl"

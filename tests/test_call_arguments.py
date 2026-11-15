@@ -382,6 +382,254 @@ class TestCallArityChecks:
         assert res.returncode != 0
         assert "Mismatched argument count in function call" in res.stdout
 
+    def test_free_fn_zero_args_to_one_arg_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f()
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Mismatched argument count in function call" in res.stdout
+
+    def test_free_fn_two_args_to_one_arg_rejected(self):
+        code = """
+        act f(a: i32) {}
+        act main() {
+            f(10, 20)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Mismatched argument count in function call" in res.stdout
+
+    def test_free_fn_one_arg_to_zero_arg_rejected(self):
+        code = """
+        act f() {}
+        act main() {
+            f(10)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Mismatched argument count in function call" in res.stdout
+
+    def test_free_fn_zero_args_to_zero_arg_accepted(self):
+        code = """
+        act f() {}
+        act main() {
+            f()
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_method_zero_args_to_one_arg_rejected(self):
+        code = """
+        data Item { id: i32 }
+        act show(self: @Item, a: i32) {}
+        act main() {
+            mut it: Item
+            it.show()
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Mismatched argument count in method call" in res.stdout
+
+    def test_method_two_args_to_one_arg_rejected(self):
+        code = """
+        data Item { id: i32 }
+        act show(self: @Item, a: i32) {}
+        act main() {
+            mut it: Item
+            it.show(10, 20)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Mismatched argument count in method call" in res.stdout
+
+    def test_method_one_arg_to_zero_arg_rejected(self):
+        code = """
+        data Item { id: i32 }
+        act get_id(self: @Item) -> i32 { return self.id }
+        act main() {
+            mut it: Item
+            it.get_id(10)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Mismatched argument count in method call" in res.stdout
+
+    def test_method_zero_args_to_zero_arg_accepted(self):
+        code = """
+        data Item { id: i32 }
+        act get_id(self: @Item) -> i32 { return self.id }
+        act main() {
+            mut it: Item
+            it.get_id()
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_ufcs_method_as_free_fn_zero_args_rejected(self):
+        code = """
+        data Item { id: i32 }
+        act show(self: @Item, a: i32) {}
+        act main() {
+            show()
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Mismatched argument count in function call" in res.stdout
+
+    def test_ufcs_method_as_free_fn_one_arg_rejected(self):
+        code = """
+        data Item { id: i32 }
+        act show(self: @Item, a: i32) {}
+        act main() {
+            mut it: Item
+            show(@it)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Mismatched argument count in function call" in res.stdout
+
+    def test_ufcs_method_as_free_fn_three_args_rejected(self):
+        code = """
+        data Item { id: i32 }
+        act show(self: @Item, a: i32) {}
+        act main() {
+            mut it: Item
+            show(@it, 10, 20)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Mismatched argument count in function call" in res.stdout
+
+    def test_ufcs_method_as_free_fn_exact_args_accepted(self):
+        code = """
+        data Item { id: i32 }
+        act show(self: @Item, a: i32) {}
+        act main() {
+            mut it: Item
+            show(@it, 10)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_ufcs_free_fn_as_method_too_few_args_rejected(self):
+        code = """
+        act add(a: i32, b: i32) -> i32 { return a + b }
+        act main() {
+            let x = 10.add()
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Mismatched argument count in method call" in res.stdout
+
+    def test_ufcs_free_fn_as_method_too_many_args_rejected(self):
+        code = """
+        act add(a: i32, b: i32) -> i32 { return a + b }
+        act main() {
+            let x = 10.add(20, 30)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Mismatched argument count in method call" in res.stdout
+
+    def test_ufcs_free_fn_as_method_exact_args_accepted(self):
+        code = """
+        act add(a: i32, b: i32) -> i32 { return a + b }
+        act main() {
+            let x = 10.add(20)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_extern_zero_args_to_one_arg_rejected(self):
+        code = """
+        extern act ext_one(a: i32) -> i32
+        act main() {
+            ext_one()
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Mismatched argument count in function call" in res.stdout
+
+    def test_extern_two_args_to_one_arg_rejected(self):
+        code = """
+        extern act ext_one(a: i32) -> i32
+        act main() {
+            ext_one(10, 20)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Mismatched argument count in function call" in res.stdout
+
+    def test_extern_zero_args_to_two_args_rejected(self):
+        code = """
+        extern act ext_two(a: i32, b: i32) -> i32
+        act main() {
+            ext_two()
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "Mismatched argument count in function call" in res.stdout
+
+    def test_extern_exact_args_accepted(self):
+        code = """
+        extern act ext_two(a: i32, b: i32) -> i32
+        act main() {
+            ext_two(10, 20)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
+    def test_sizeof_zero_args_rejected(self):
+        code = """
+        act main() {
+            let s = sizeof()
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "sizeof takes exactly 1 argument" in res.stdout
+
+    def test_sizeof_two_args_rejected(self):
+        code = """
+        act main() {
+            let s = sizeof(i32, i64)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0
+        assert "sizeof takes exactly 1 argument" in res.stdout
+
+    def test_sizeof_exact_one_arg_accepted(self):
+        code = """
+        act main() {
+            let s = sizeof(i32)
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode == 0
+
 
 # ==============================================================================
 # 6. Control Group: Valid Argument Types and Explicit Casts Must Pass
