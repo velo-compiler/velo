@@ -48976,165 +48976,213 @@ const char* assemble_msvc_compile_cmd(const char* c_file_path, const char* out_e
 #line 143 "src/main.vl"
     sb_append_str((&(cmd_sb)), " ");
 #line 144 "src/main.vl"
-    bool is_debug = false;
+    const char* env_cflags = velo_os_get_env("VELO_CFLAGS");
 #line 145 "src/main.vl"
-    if (((opt_flags == NULL) || velo_cmp_eq_u_s(((usize)strlen(opt_flags)), 0))) {
+    if (velo_cmp_gt_u_s(((usize)strlen(env_cflags)), 0)) {
 #line 146 "src/main.vl"
+        sb_append_str((&(cmd_sb)), env_cflags);
+#line 147 "src/main.vl"
+        sb_append_str((&(cmd_sb)), " ");
+    }
+#line 149 "src/main.vl"
+    bool is_debug = false;
+#line 150 "src/main.vl"
+    if (((opt_flags == NULL) || velo_cmp_eq_u_s(((usize)strlen(opt_flags)), 0))) {
+#line 151 "src/main.vl"
         sb_append_str((&(cmd_sb)), "/O2 ");
     } else
-#line 147 "src/main.vl"
+#line 152 "src/main.vl"
     if ((velo_str_contains(opt_flags, "-O0") || velo_str_contains(opt_flags, "-g"))) {
-#line 148 "src/main.vl"
+#line 153 "src/main.vl"
         is_debug = true;
-#line 149 "src/main.vl"
+#line 154 "src/main.vl"
         sb_append_str((&(cmd_sb)), "/Od /Zi ");
     } else
-#line 150 "src/main.vl"
+#line 155 "src/main.vl"
     if (velo_str_contains(opt_flags, "-O1")) {
-#line 151 "src/main.vl"
+#line 156 "src/main.vl"
         sb_append_str((&(cmd_sb)), "/O1 ");
     } else {
-#line 153 "src/main.vl"
+#line 158 "src/main.vl"
         sb_append_str((&(cmd_sb)), "/O2 ");
     }
-#line 155 "src/main.vl"
+#line 160 "src/main.vl"
     sb_append_str((&(cmd_sb)), quote_path(path_to_native_str(c_file_path)));
-#line 156 "src/main.vl"
+#line 161 "src/main.vl"
     sb_append_str((&(cmd_sb)), " /Fe:");
-#line 157 "src/main.vl"
+#line 162 "src/main.vl"
     sb_append_str((&(cmd_sb)), quote_path(path_to_native_str(out_exe_path)));
-#line 158 "src/main.vl"
+#line 163 "src/main.vl"
     append_msvc_linker_flags((&(cmd_sb)), linker_flags, is_debug);
-#line 159 "src/main.vl"
+#line 164 "src/main.vl"
+    const char* env_ldflags = velo_os_get_env("VELO_LDFLAGS");
+#line 165 "src/main.vl"
+    if (velo_cmp_gt_u_s(((usize)strlen(env_ldflags)), 0)) {
+#line 166 "src/main.vl"
+        sb_append_str((&(cmd_sb)), " ");
+#line 167 "src/main.vl"
+        sb_append_str((&(cmd_sb)), env_ldflags);
+    }
+#line 169 "src/main.vl"
     return sb_to_string((&(cmd_sb)));
 }
 
-#line 163 "src/main.vl"
+#line 173 "src/main.vl"
 const char* assemble_gcc_compile_cmd(const char* cc, const char* c_file_path, const char* out_exe_path, const char* opt_flags, const char* linker_flags) {
-#line 164 "src/main.vl"
+#line 174 "src/main.vl"
     StringBuilder cmd_sb = create_sb(512);
-#line 165 "src/main.vl"
+#line 175 "src/main.vl"
     if (fs_exists("C:/msys64/ucrt64/bin/gcc.exe")) {
-#line 166 "src/main.vl"
+#line 176 "src/main.vl"
         sb_append_str((&(cmd_sb)), "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ");
     }
-#line 168 "src/main.vl"
-    if (((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") == 0) : (cc == "clang"))) {
-#line 169 "src/main.vl"
+#line 178 "src/main.vl"
+    const char* actual_cc = cc;
+#line 179 "src/main.vl"
+    if (((actual_cc != NULL && "gcc" != NULL) ? (strcmp(actual_cc, "gcc") == 0) : (actual_cc == "gcc"))) {
+#line 180 "src/main.vl"
+        const char* env_cc = velo_os_get_env("CC");
+#line 181 "src/main.vl"
+        if ((velo_cmp_gt_u_s(((usize)strlen(env_cc)), 0) && (((env_cc != NULL && "clang" != NULL) ? (strcmp(env_cc, "clang") == 0) : (env_cc == "clang")) || velo_str_contains(env_cc, "clang")))) {
+#line 182 "src/main.vl"
+            actual_cc = "clang";
+        }
+    }
+#line 185 "src/main.vl"
+    if (((actual_cc != NULL && "clang" != NULL) ? (strcmp(actual_cc, "clang") == 0) : (actual_cc == "clang"))) {
+#line 186 "src/main.vl"
         sb_append_str((&(cmd_sb)), "clang ");
     } else {
-#line 171 "src/main.vl"
+#line 188 "src/main.vl"
         sb_append_str((&(cmd_sb)), "gcc ");
     }
-#line 173 "src/main.vl"
+#line 190 "src/main.vl"
     if (((opt_flags != NULL) && velo_cmp_gt_u_s(((usize)strlen(opt_flags)), 0))) {
-#line 174 "src/main.vl"
+#line 191 "src/main.vl"
         sb_append_str((&(cmd_sb)), opt_flags);
-#line 175 "src/main.vl"
+#line 192 "src/main.vl"
         sb_append_str((&(cmd_sb)), " ");
     } else {
-#line 177 "src/main.vl"
+#line 194 "src/main.vl"
         sb_append_str((&(cmd_sb)), "-O2 ");
     }
-#line 179 "src/main.vl"
+#line 196 "src/main.vl"
     sb_append_str((&(cmd_sb)), "-std=c99 ");
-#line 180 "src/main.vl"
+#line 197 "src/main.vl"
     append_runtime_includes((&(cmd_sb)), false);
-#line 181 "src/main.vl"
+#line 198 "src/main.vl"
     sb_append_str((&(cmd_sb)), " ");
-#line 182 "src/main.vl"
-    sb_append_str((&(cmd_sb)), quote_path(path_to_native_str(c_file_path)));
-#line 183 "src/main.vl"
-    if (((linker_flags != NULL) && velo_cmp_gt_u_s(((usize)strlen(linker_flags)), 0))) {
-#line 184 "src/main.vl"
+#line 199 "src/main.vl"
+    const char* env_cflags = velo_os_get_env("VELO_CFLAGS");
+#line 200 "src/main.vl"
+    if (velo_cmp_gt_u_s(((usize)strlen(env_cflags)), 0)) {
+#line 201 "src/main.vl"
+        sb_append_str((&(cmd_sb)), env_cflags);
+#line 202 "src/main.vl"
         sb_append_str((&(cmd_sb)), " ");
-#line 185 "src/main.vl"
+    }
+#line 204 "src/main.vl"
+    sb_append_str((&(cmd_sb)), quote_path(path_to_native_str(c_file_path)));
+#line 205 "src/main.vl"
+    if (((linker_flags != NULL) && velo_cmp_gt_u_s(((usize)strlen(linker_flags)), 0))) {
+#line 206 "src/main.vl"
+        sb_append_str((&(cmd_sb)), " ");
+#line 207 "src/main.vl"
         sb_append_str((&(cmd_sb)), linker_flags);
     }
-#line 187 "src/main.vl"
+#line 209 "src/main.vl"
+    const char* env_ldflags = velo_os_get_env("VELO_LDFLAGS");
+#line 210 "src/main.vl"
+    if (velo_cmp_gt_u_s(((usize)strlen(env_ldflags)), 0)) {
+#line 211 "src/main.vl"
+        sb_append_str((&(cmd_sb)), " ");
+#line 212 "src/main.vl"
+        sb_append_str((&(cmd_sb)), env_ldflags);
+    }
+#line 214 "src/main.vl"
     if ((fs_exists("C:/Windows") || fs_exists("C:/msys64/ucrt64/bin/gcc.exe"))) {
-#line 188 "src/main.vl"
+#line 215 "src/main.vl"
         sb_append_str((&(cmd_sb)), " -lws2_32 -ladvapi32");
     } else {
-#line 190 "src/main.vl"
+#line 217 "src/main.vl"
         sb_append_str((&(cmd_sb)), " -lm -lpthread");
     }
-#line 192 "src/main.vl"
+#line 219 "src/main.vl"
     sb_append_str((&(cmd_sb)), " -o ");
-#line 193 "src/main.vl"
+#line 220 "src/main.vl"
     sb_append_str((&(cmd_sb)), quote_path(path_to_native_str(out_exe_path)));
-#line 194 "src/main.vl"
+#line 221 "src/main.vl"
     return sb_to_string((&(cmd_sb)));
 }
 
-#line 198 "src/main.vl"
+#line 225 "src/main.vl"
 const char* assemble_compiler_cmd(const char* cc, const char* c_file_path, const char* out_exe_path, const char* opt_flags, const char* linker_flags) {
-#line 199 "src/main.vl"
+#line 226 "src/main.vl"
     if (((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") == 0) : (cc == "cl"))) {
-#line 200 "src/main.vl"
+#line 227 "src/main.vl"
         return assemble_msvc_compile_cmd(c_file_path, out_exe_path, opt_flags, linker_flags);
     }
-#line 202 "src/main.vl"
+#line 229 "src/main.vl"
     return assemble_gcc_compile_cmd(cc, c_file_path, out_exe_path, opt_flags, linker_flags);
 }
 
-#line 206 "src/main.vl"
+#line 233 "src/main.vl"
 const char* assemble_runner_cmd(const char* cc, const char* exe_path, const char* extra_args) {
-#line 207 "src/main.vl"
+#line 234 "src/main.vl"
     StringBuilder run_sb = create_sb(256);
-#line 208 "src/main.vl"
+#line 235 "src/main.vl"
     if ((((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl")) && fs_exists("C:/msys64/ucrt64/bin/gcc.exe"))) {
-#line 209 "src/main.vl"
+#line 236 "src/main.vl"
         sb_append_str((&(run_sb)), "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ");
     }
-#line 211 "src/main.vl"
+#line 238 "src/main.vl"
     sb_append_str((&(run_sb)), quote_path(path_to_native_str(exe_path)));
-#line 212 "src/main.vl"
+#line 239 "src/main.vl"
     if (((extra_args != NULL) && velo_cmp_gt_u_s(((usize)strlen(extra_args)), 0))) {
-#line 213 "src/main.vl"
+#line 240 "src/main.vl"
         sb_append_str((&(run_sb)), " ");
-#line 214 "src/main.vl"
+#line 241 "src/main.vl"
         sb_append_str((&(run_sb)), extra_args);
     }
-#line 216 "src/main.vl"
+#line 243 "src/main.vl"
     return sb_to_string((&(run_sb)));
 }
 
-#line 220 "src/main.vl"
+#line 247 "src/main.vl"
 const char* resolve_opt_flags(bool debug_mode, bool release_mode, const char* opt_level) {
-#line 221 "src/main.vl"
+#line 248 "src/main.vl"
     StringBuilder sb = create_sb(64);
-#line 222 "src/main.vl"
+#line 249 "src/main.vl"
     if (((opt_level != NULL) && velo_cmp_gt_u_s(((usize)strlen(opt_level)), 0))) {
-#line 223 "src/main.vl"
+#line 250 "src/main.vl"
         sb_append_str((&(sb)), "-O");
-#line 224 "src/main.vl"
+#line 251 "src/main.vl"
         sb_append_str((&(sb)), opt_level);
     } else
-#line 225 "src/main.vl"
+#line 252 "src/main.vl"
     if (debug_mode) {
-#line 226 "src/main.vl"
+#line 253 "src/main.vl"
         sb_append_str((&(sb)), "-O0");
     } else
-#line 227 "src/main.vl"
+#line 254 "src/main.vl"
     if (release_mode) {
-#line 228 "src/main.vl"
+#line 255 "src/main.vl"
         sb_append_str((&(sb)), "-O3");
     } else {
-#line 230 "src/main.vl"
+#line 257 "src/main.vl"
         sb_append_str((&(sb)), "-O2");
     }
-#line 232 "src/main.vl"
+#line 259 "src/main.vl"
     if (debug_mode) {
-#line 233 "src/main.vl"
+#line 260 "src/main.vl"
         sb_append_str((&(sb)), " -g");
     }
-#line 235 "src/main.vl"
+#line 262 "src/main.vl"
     if (release_mode) {
-#line 236 "src/main.vl"
+#line 263 "src/main.vl"
         sb_append_str((&(sb)), " -flto");
     }
-#line 238 "src/main.vl"
+#line 265 "src/main.vl"
     return sb_to_string((&(sb)));
 }
 

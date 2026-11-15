@@ -20,7 +20,9 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
-VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
+VELO_EXE = REPO_ROOT / "bin" / ("velo.exe" if os.name == "nt" else "velo")
+if not VELO_EXE.exists() and (REPO_ROOT / "bin" / "velo.exe").exists():
+    VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
 
 
 def get_build_env():
@@ -1615,6 +1617,405 @@ act main() -> i32 {
     res = run_velo_source(src)
     assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
     assert "PASS: branch early exit no double emission and sibling safe" in res.stdout
+
+
+def test_defer_allocation_free_balance_probe():
+    """Stress test allocation and free balance across loops, breaks, continues, and branching.
+    Verifies that mem.heap_used() - base == 0 and exactly balanced allocations/frees.
+    """
+    src = """
+use sys.io
+use sys.mem
+
+data Tracker {
+    alloc_count: i32
+    free_count: i32
+}
+
+act do_work(t: @Tracker, iter: i32) {
+    let p1: @i32 = mem.heap_alloc(@i32, 4)
+    t.alloc_count += 1
+    defer mem.free(p1)
+    defer t.free_count += 1
+
+    if iter % 2 == 0 {
+        let p_even: @i32 = mem.heap_alloc(@i32, 4)
+        t.alloc_count += 1
+        defer mem.free(p_even)
+        defer t.free_count += 1
+        p_even[0] = iter
+    } else {
+        let p_odd: @i32 = mem.heap_alloc(@i32, 4)
+        t.alloc_count += 1
+        defer mem.free(p_odd)
+        defer t.free_count += 1
+        p_odd[0] = iter * 2
+    }
+
+    mut inner_k: i32 = 0
+    loop inner_k < 3 {
+        let p_loop: @i32 = mem.heap_alloc(@i32, 4)
+        t.alloc_count += 1
+        defer mem.free(p_loop)
+        defer t.free_count += 1
+        if inner_k == 1 and iter % 3 == 0 {
+            inner_k += 1
+            continue
+        }
+        if inner_k == 2 and iter % 5 == 0 {
+            break
+        }
+        inner_k += 1
+    }
+}
+
+act main() -> i32 {
+    let base = mem.heap_used()
+    mut t: Tracker
+    t.alloc_count = 0
+    t.free_count = 0
+
+    mut i: i32 = 0
+    loop i < 50 {
+        do_work(@t, i)
+        i += 1
+    }
+
+    let leaked: usize = mem.heap_used() - base
+    if leaked != 0 {
+        io.println("FAIL: leaked: {leaked}")
+        return 1
+    }
+    if t.alloc_count != t.free_count {
+        io.println("FAIL: alloc/free count mismatch: alloc={t.alloc_count}, free={t.free_count}")
+        return 1
+    }
+    if t.alloc_count == 0 {
+        io.println("FAIL: no allocations performed")
+        return 1
+    }
+
+    io.println("PASS: allocation free balance probe succeeded count={t.alloc_count}")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: allocation free balance probe succeeded" in res.stdout
+
+
+def test_defer_uaf_prevention_parent_child_lifo():
+    """Use-after-free probe: Parent owns pointer to Child.
+    LIFO defer execution guarantees Child is freed before Parent.
+    If execution order were inverted (FIFO), freeing Child after freeing Parent
+    would trigger a heap-use-after-free under ASan.
+    """
+    src = """
+use sys.io
+use sys.mem
+
+data ChildNode {
+    val: i32
+}
+
+data ParentNode {
+    child: @ChildNode
+    tag: i32
+}
+
+act run_parent_child_lifecycle(p_order: @i32) {
+    // 1. Allocate Parent
+    let p_parent: @ParentNode = mem.heap_alloc(@ParentNode, 1)
+    p_parent.tag = 999
+    // Deferred free of parent must happen SECOND
+    defer mem.free(p_parent)
+    defer p_order[0] = p_order[0] * 10 + 2
+
+    // 2. Allocate Child and link to Parent
+    let p_child: @ChildNode = mem.heap_alloc(@ChildNode, 1)
+    p_child.val = 42
+    p_parent.child = p_child
+
+    // Deferred free of child must happen FIRST (LIFO) while parent is still valid
+    defer mem.free(p_child)
+    defer p_order[0] = p_order[0] * 10 + 1
+}
+
+act main() -> i32 {
+    let base = mem.heap_used()
+    mut order: i32 = 0
+    run_parent_child_lifecycle(@order)
+
+    // LIFO order: child defer (1), parent defer (2) => order becomes 12
+    if order != 12 {
+        io.println("FAIL: expected order 12, got: {order}")
+        return 1
+    }
+
+    let leaked: usize = mem.heap_used() - base
+    if leaked != 0 {
+        io.println("FAIL: leaked memory: {leaked}")
+        return 1
+    }
+
+    io.println("PASS: uaf prevention parent child lifo succeeded")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: uaf prevention parent child lifo succeeded" in res.stdout
+
+
+def test_defer_double_free_prevention_loop_break():
+    """Double-free probe: Loop iteration allocates heap memory and registers defer free,
+    then executes 'break'. The break unrolls loop defers. Loop exit block must NOT
+    re-emit loop defers. If double-emission occurred, double-free would crash under ASan.
+    """
+    src = """
+use sys.io
+use sys.mem
+
+act loop_with_break_free(p_cleanups: @i32) -> i32 {
+    let p_outer: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p_outer)
+    defer p_cleanups[0] += 1
+
+    mut i: i32 = 0
+    loop i < 10 {
+        let p_iter: @i32 = mem.heap_alloc(@i32, 4)
+        p_iter[0] = i * 10
+        defer mem.free(p_iter)
+        defer p_cleanups[0] += 1
+
+        if i == 3 {
+            // Break must free p_iter exactly once, and NOT free p_outer yet
+            break
+        }
+        i += 1
+    }
+
+    // p_outer is still valid and un-freed here
+    return 42
+}
+
+act main() -> i32 {
+    let base = mem.heap_used()
+    mut cleanups: i32 = 0
+    let res = loop_with_break_free(@cleanups)
+
+    if res != 42 {
+        io.println("FAIL: res expected 42")
+        return 1
+    }
+    // 4 iterations ran (i=0, 1, 2, 3), each freeing p_iter once (4 frees),
+    // plus 1 free for p_outer = 5 total frees
+    if cleanups != 5 {
+        io.println("FAIL: cleanups count expected 5, got: {cleanups}")
+        return 1
+    }
+
+    let leaked: usize = mem.heap_used() - base
+    if leaked != 0 {
+        io.println("FAIL: leaked: {leaked}")
+        return 1
+    }
+
+    io.println("PASS: double free prevention loop break succeeded")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: double free prevention loop break succeeded" in res.stdout
+
+
+def test_defer_double_free_prevention_early_return_in_branches():
+    """Double-free probe: If/else branch tree with heap allocations and deferred frees
+    where some branches return early and others fall through.
+    Verifies that no deferred free is emitted in duplicate.
+    """
+    src = """
+use sys.io
+use sys.mem
+
+act branching_frees(branch: i32, p_frees: @i32) -> i32 {
+    let p_fn: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p_fn)
+    defer p_frees[0] += 1
+
+    if branch == 1 {
+        let p1: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p1)
+        defer p_frees[0] += 1
+        return 11
+    } else if branch == 2 {
+        let p2: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p2)
+        defer p_frees[0] += 1
+        // Fallthrough out of if/else
+    } else {
+        let p3: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p3)
+        defer p_frees[0] += 1
+        return 33
+    }
+
+    let p_post: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p_post)
+    defer p_frees[0] += 1
+    return 22
+}
+
+act main() -> i32 {
+    let base = mem.heap_used()
+
+    // Pass 1: early return in branch 1 (p1 freed + p_fn freed = 2)
+    mut frees1: i32 = 0
+    let r1 = branching_frees(1, @frees1)
+    if r1 != 11 or frees1 != 2 {
+        io.println("FAIL: pass 1 r1={r1}, frees1={frees1}")
+        return 1
+    }
+
+    // Pass 2: fallthrough in branch 2 (p2 freed at branch exit, p_post freed at fn exit, p_fn freed at fn exit = 3)
+    mut frees2: i32 = 0
+    let r2 = branching_frees(2, @frees2)
+    if r2 != 22 or frees2 != 3 {
+        io.println("FAIL: pass 2 r2={r2}, frees2={frees2}")
+        return 1
+    }
+
+    // Pass 3: early return in branch 3 (p3 freed + p_fn freed = 2)
+    mut frees3: i32 = 0
+    let r3 = branching_frees(3, @frees3)
+    if r3 != 33 or frees3 != 2 {
+        io.println("FAIL: pass 3 r3={r3}, frees3={frees3}")
+        return 1
+    }
+
+    let leaked: usize = mem.heap_used() - base
+    if leaked != 0 {
+        io.println("FAIL: leaked: {leaked}")
+        return 1
+    }
+
+    io.println("PASS: double free prevention branches succeeded")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: double free prevention branches succeeded" in res.stdout
+
+
+def test_defer_double_free_prevention_tagged_union_arm():
+    """Double-free probe: Tagged union match arm allocates heap memory and registers defer free,
+    then reaches arm end (breaking to match exit). Verifies arm cleanup runs once and does not
+    conflict with outer function defer cleanups.
+    """
+    src = """
+use sys.io
+use sys.mem
+
+kind ValKind {
+    None
+    Integer(n: i32)
+    Text(s: string)
+}
+
+act match_with_frees(v: ValKind, p_frees: @i32) -> i32 {
+    let p_outer: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p_outer)
+    defer p_frees[0] += 1
+
+    mut result: i32 = 0
+    on v {
+        .Integer(n) => {
+            let p_arm: @i32 = mem.heap_alloc(@i32, 4)
+            p_arm[0] = n * 2
+            defer mem.free(p_arm)
+            defer p_frees[0] += 1
+            result = p_arm[0]
+        }
+        .Text(s) => {
+            let p_text: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p_text)
+            defer p_frees[0] += 1
+            result = 77
+        }
+        .None => {
+            result = 0
+        }
+    }
+
+    return result
+}
+
+act main() -> i32 {
+    let base = mem.heap_used()
+
+    mut frees: i32 = 0
+    let r1 = match_with_frees(ValKind.Integer(21), @frees)
+    if r1 != 42 or frees != 2 {
+        io.println("FAIL: match Integer r1={r1}, frees={frees}")
+        return 1
+    }
+
+    let r2 = match_with_frees(ValKind.None, @frees)
+    // None has no arm allocation, only p_outer (1 free => frees=3)
+    if r2 != 0 or frees != 3 {
+        io.println("FAIL: match None r2={r2}, frees={frees}")
+        return 1
+    }
+
+    let leaked: usize = mem.heap_used() - base
+    if leaked != 0 {
+        io.println("FAIL: leaked: {leaked}")
+        return 1
+    }
+
+    io.println("PASS: double free prevention tagged union arm succeeded")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: double free prevention tagged union arm succeeded" in res.stdout
+
+
+def test_defer_matrix_asan_ubsan_coverage():
+    """Verifies that the defer test matrix runs cleanly under AddressSanitizer and
+    UndefinedBehaviorSanitizer when available, and verifies zero leaks via mem.heap_used().
+    On POSIX (Ubuntu/Clang in CI), this executes with full ASan/UBSan instrumentation.
+    On Windows without libasan, it verifies exact zero-leak heap accounting.
+    """
+    test_vl = REPO_ROOT / "std" / "tests" / "mem" / "defer_test.vl"
+    assert test_vl.exists(), "defer_test.vl missing"
+
+    # If VELO_CFLAGS is set with sanitizer (as in CI sanitizer job), run_velo_source and velo run
+    # will compile under ASan/UBSan automatically via driver_cc.
+    env = get_build_env()
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=20.0,
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.mem.defer all assertions succeeded" in res.stdout
+
+    # Verify no sanitizer violation strings appeared in stderr or stdout
+    output = res.stdout + res.stderr
+    assert "AddressSanitizer" not in output
+    assert "UndefinedBehaviorSanitizer" not in output
+    assert "runtime error:" not in output
+    assert "leak-sanitizer" not in output
+    assert "attempting double-free" not in output
+    assert "heap-use-after-free" not in output
+
 
 
 

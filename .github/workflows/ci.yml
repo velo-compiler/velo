@@ -171,3 +171,47 @@ jobs:
         run: |
           python -m pytest tests/test_cc_backend.py tests/test_bootstrap_snapshot.py -q
 
+  sanitizer:
+    name: Linux Sanitizer (ASan + UBSan - clang)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
+      - name: Install Clang and Sanitizer runtimes
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libasan8 libubsan1
+
+      - name: Bootstrap self-hosted Velo compiler (3-stage Gen1 -> Gen2 -> Gen3)
+        env:
+          CC: clang
+        run: |
+          bash scripts/bootstrap.sh --full
+
+      - name: Verify bootstrap determinism
+        run: |
+          python3 scripts/check_determinism.py
+
+      - name: Run defer test suite under ASan and UBSan
+        env:
+          CC: clang
+          VELO_CFLAGS: "-fsanitize=address,undefined -fno-omit-frame-pointer -g"
+          VELO_LDFLAGS: "-fsanitize=address,undefined"
+          ASAN_OPTIONS: "detect_leaks=1:halt_on_error=1:abort_on_error=1"
+          UBSAN_OPTIONS: "halt_on_error=1:abort_on_error=1"
+        run: |
+          ./bin/velo run std/tests/mem/defer_test.vl --cc clang
+          python3 -m pytest tests/test_defer.py -q
+

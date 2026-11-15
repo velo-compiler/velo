@@ -141,6 +141,11 @@ act assemble_msvc_compile_cmd(c_file_path: string, out_exe_path: string, opt_fla
     sb_append_str(@cmd_sb, "cl /nologo /TC /W3 /wd4090 /wd4996 /D_CRT_SECURE_NO_WARNINGS ")
     append_runtime_includes(@cmd_sb, true)
     sb_append_str(@cmd_sb, " ")
+    let env_cflags = os.get_env("VELO_CFLAGS")
+    if str.len(env_cflags) > 0 {
+        sb_append_str(@cmd_sb, env_cflags)
+        sb_append_str(@cmd_sb, " ")
+    }
     mut is_debug = false
     if opt_flags == null or str.len(opt_flags) == 0 {
         sb_append_str(@cmd_sb, "/O2 ")
@@ -156,6 +161,11 @@ act assemble_msvc_compile_cmd(c_file_path: string, out_exe_path: string, opt_fla
     sb_append_str(@cmd_sb, " /Fe:")
     sb_append_str(@cmd_sb, quote_path(path_to_native_str(out_exe_path)))
     append_msvc_linker_flags(@cmd_sb, linker_flags, is_debug)
+    let env_ldflags = os.get_env("VELO_LDFLAGS")
+    if str.len(env_ldflags) > 0 {
+        sb_append_str(@cmd_sb, " ")
+        sb_append_str(@cmd_sb, env_ldflags)
+    }
     return sb_to_string(@cmd_sb)
 }
 
@@ -165,7 +175,14 @@ act assemble_gcc_compile_cmd(cc: string, c_file_path: string, out_exe_path: stri
     if fs_exists("C:/msys64/ucrt64/bin/gcc.exe") {
         sb_append_str(@cmd_sb, "set PATH=C:\\msys64\\ucrt64\\bin;%PATH% && ")
     }
-    if cc == "clang" {
+    mut actual_cc = cc
+    if actual_cc == "gcc" {
+        let env_cc = os.get_env("CC")
+        if str.len(env_cc) > 0 and (env_cc == "clang" or str.contains(env_cc, "clang")) {
+            actual_cc = "clang"
+        }
+    }
+    if actual_cc == "clang" {
         sb_append_str(@cmd_sb, "clang ")
     } else {
         sb_append_str(@cmd_sb, "gcc ")
@@ -179,10 +196,20 @@ act assemble_gcc_compile_cmd(cc: string, c_file_path: string, out_exe_path: stri
     sb_append_str(@cmd_sb, "-std=c99 ")
     append_runtime_includes(@cmd_sb, false)
     sb_append_str(@cmd_sb, " ")
+    let env_cflags = os.get_env("VELO_CFLAGS")
+    if str.len(env_cflags) > 0 {
+        sb_append_str(@cmd_sb, env_cflags)
+        sb_append_str(@cmd_sb, " ")
+    }
     sb_append_str(@cmd_sb, quote_path(path_to_native_str(c_file_path)))
     if linker_flags != null and str.len(linker_flags) > 0 {
         sb_append_str(@cmd_sb, " ")
         sb_append_str(@cmd_sb, linker_flags)
+    }
+    let env_ldflags = os.get_env("VELO_LDFLAGS")
+    if str.len(env_ldflags) > 0 {
+        sb_append_str(@cmd_sb, " ")
+        sb_append_str(@cmd_sb, env_ldflags)
     }
     if fs_exists("C:/Windows") or fs_exists("C:/msys64/ucrt64/bin/gcc.exe") {
         sb_append_str(@cmd_sb, " -lws2_32 -ladvapi32")
