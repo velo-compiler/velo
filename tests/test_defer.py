@@ -906,3 +906,169 @@ act main() -> i32 {
     assert "PASS: nested plain and if block defers LIFO verified" in res.stdout
 
 
+def test_defer_loop_leak_repro_audit_baseline():
+    """Exact audit repro AUDIT-2026-11-07: loop 10 with defer mem.free(p) must maintain zero heap growth."""
+    src = """
+use sys.io
+use sys.mem
+
+act main() -> i32 {
+    let base = mem.heap_used()
+    loop 10 {
+        let p: @i32 = mem.heap_alloc(@i32, 1)
+        defer mem.free(p)
+        p[0] = 7
+    }
+    let after_loop = mem.heap_used()
+    let leaked: usize = after_loop - base
+    if leaked != 0 {
+        io.println("FAIL: loop leaked memory: {leaked}")
+        return 1
+    }
+    io.println("PASS: loop leak repro zero heap growth")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: loop leak repro zero heap growth" in res.stdout
+
+
+def test_defer_loop_nested_loops_with_breaks_and_continues():
+    """Nested loops with defers, inner break and outer continue, ensuring accurate cleanup and zero leaks."""
+    src = """
+use sys.io
+use sys.mem
+
+act main() -> i32 {
+    let base = mem.heap_used()
+    mut outer_count: i32 = 0
+    mut inner_count: i32 = 0
+
+    loop 4 {
+        let p_out: @i32 = mem.heap_alloc(@i32, 2)
+        defer mem.free(p_out)
+        defer outer_count += 1
+
+        if it == 0 {
+            continue
+        }
+
+        loop 3 {
+            let p_in: @i32 = mem.heap_alloc(@i32, 2)
+            defer mem.free(p_in)
+            defer inner_count += 1
+            if it == 1 {
+                break
+            }
+        }
+    }
+
+    // Outer loop ran 4 times (all 4 iterations cleaned up): outer_count == 4
+    // Iter 0: continued before inner loop (0 inner)
+    // Iter 1: inner ran it=0 (+1), it=1 broke (+1) => 2
+    // Iter 2: inner ran it=0 (+1), it=1 broke (+1) => 2
+    // Iter 3: inner ran it=0 (+1), it=1 broke (+1) => 2
+    // Total inner: 6
+    if outer_count != 4 {
+        io.println("FAIL: outer_count mismatch: {outer_count}")
+        return 1
+    }
+    if inner_count != 6 {
+        io.println("FAIL: inner_count mismatch: {inner_count}")
+        return 1
+    }
+
+    let leaked: usize = mem.heap_used() - base
+    if leaked != 0 {
+        io.println("FAIL: nested loops leaked memory: {leaked}")
+        return 1
+    }
+    io.println("PASS: nested loops with break and continue cleaned up cleanly")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: nested loops with break and continue cleaned up cleanly" in res.stdout
+
+
+def test_defer_loop_infinite_with_conditional_break():
+    """Infinite loop 'loop' with conditional break must unwind the breaking iteration and leave zero leaks."""
+    src = """
+use sys.io
+use sys.mem
+
+act main() -> i32 {
+    let base = mem.heap_used()
+    mut iterations: i32 = 0
+
+    loop {
+        let p: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p)
+        defer iterations += 1
+        p[0] = it
+
+        if it == 5 {
+            break
+        }
+    }
+
+    // it ran for 0, 1, 2, 3, 4, 5 (6 iterations)
+    if iterations != 6 {
+        io.println("FAIL: iterations mismatch: {iterations}")
+        return 1
+    }
+
+    let leaked: usize = mem.heap_used() - base
+    if leaked != 0 {
+        io.println("FAIL: infinite loop break leaked: {leaked}")
+        return 1
+    }
+    io.println("PASS: infinite loop break cleaned up cleanly")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: infinite loop break cleaned up cleanly" in res.stdout
+
+
+def test_defer_loop_shelf_iteration_cleanup():
+    """Shelf collection iteration loop with per-iteration defers must clean up every iteration."""
+    src = """
+use sys.io
+use sys.mem
+
+act main() -> i32 {
+    mut xs: shelf[i32] = shelf[10, 20, 30]
+    let base = mem.heap_used()
+    mut cleanups: i32 = 0
+
+    loop x of xs {
+        let p: @i32 = mem.heap_alloc(@i32, 2)
+        defer mem.free(p)
+        defer cleanups += 1
+        p[0] = x
+    }
+
+    if cleanups != 3 {
+        io.println("FAIL: shelf cleanups mismatch")
+        return 1
+    }
+
+    let leaked: usize = mem.heap_used() - base
+    if leaked != 0 {
+        io.println("FAIL: shelf loop leaked: {leaked}")
+        return 1
+    }
+    io.println("PASS: shelf loop per-iteration cleanups verified")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: shelf loop per-iteration cleanups verified" in res.stdout
+
+
+

@@ -1824,12 +1824,29 @@ A `defer` inside `if` either runs at function exit (too late) or fails to compil
   - Security gate verified: C emitted code compiles under GCC `-std=c99 -Werror -Wno-unknown-pragmas` with 0 warnings.
   - Line count discipline: all 119 files in `src/` $\le 395$ lines (`codegen_stmt.vl` is at 392 lines).
 
-##### Task 58.5: Emit per-iteration loop cleanups
-* **Goal:** Emit loop-body defers at the end of each iteration and on `continue`/`break`.
-* **Files:** `src/backend/codegen_stmt.vl:272-279`.
-* **Tests:** `loop 3` allocation/free; `mem.heap_used()` baseline; `continue` and `break` paths.
-* **Security gate:** no leak per iteration; no double-free on `break`.
-* **Done when:** the loop leak repro reports baseline heap usage.
+##### Task 58.5: Emit per-iteration loop cleanups [COMPLETED] ✅
+* **Former Defect**:
+  - In `src/backend/codegen_stmt.vl:265-276` prior to Phase 58, `emit_loop_stmt` pushed a loop marker with `push_loop_scope`, but `pop_loop_scope` simply restored the pointer without emitting iteration defers.
+  - Defers declared within a loop body leaked memory on every iteration (`loop 3 { let p = mem.heap_alloc(@i32, 1); defer mem.free(p); }` leaked every iteration, accumulating heap usage instead of returning to baseline).
+  - Loop early exits via `break` and `continue` either failed to run loop-body cleanups or ran them improperly outside the loop.
+* **Fix Applied**:
+  - Bound loop iterations to lexical block cleanups in `src/backend/codegen_stmt.vl`:
+    * Loop body statements are emitted via `emit_c_block_stmts`, ensuring defers declared within each iteration execute at the end of each iteration in LIFO order before the C block scope closes.
+    * `STMT_BREAK` and `STMT_CONTINUE` unroll and execute all cleanups up to the enclosing `is_loop` marker (`loop cur_d != null and not cur_d.is_loop { emit_c_cleanup(...) }`), skipping intermediate block boundary markers, before emitting `break;` or `continue;`.
+    * Extended exit analysis so blocks terminating in `break` or `continue` do not re-emit cleanups at block fallthrough, preventing double-frees.
+    * Verified collection loops (`loop of` over `shelf`, `map`, and `ring`) in `shelf_gen.vl`, `map_gen.vl`, and `ring_gen.vl` correctly scope per-iteration defers with `push_loop_scope` and `pop_loop_scope`.
+  - Added comprehensive test coverage in `tests/test_defer.py`:
+    * `test_defer_loop_leak_repro_audit_baseline`: validates the exact `AUDIT-2026-11-07` repro snippet over 10 iterations, proving zero heap growth (`mem.heap_used() - base == 0`).
+    * `test_defer_loop_nested_loops_with_breaks_and_continues`: tests 4 outer iterations and nested inner loops with `continue` and `break`, asserting exact cleanup counts (outer: 4, inner: 6) and 0 bytes leaked.
+    * `test_defer_loop_infinite_with_conditional_break`: verifies unbounded `loop { ... }` with conditional `break` cleans up the breaking iteration with zero leaks.
+    * `test_defer_loop_shelf_iteration_cleanup`: verifies `loop x of xs` collection iteration cleans up each iteration's defers cleanly.
+* **Residual Limitation**:
+  - Early-exit unwinding order across multi-level nested scopes for `return`, `fail`, and `or return` follows in Task 58.6.
+* **Verification**:
+  - `python -m pytest tests/test_defer.py -k "test_defer_loop_"`: 7 passed in 2.17s.
+  - Overall `tests/test_defer.py`: 22 passed, 2 failing as expected for Task 58.6.
+  - `std/tests/mem/defer_test.vl`: PASSED (all 16 lifecycle assertions succeeded).
+  - All 119 source files in `src/` remain $\le 395$ lines (`codegen_stmt.vl` is at 392 lines).
 
 ##### Task 58.6: Correct early-exit ordering
 * **Goal:** Unwind innermost block first, then outer blocks, for `return`, `fail`, `break`, and `continue`.
