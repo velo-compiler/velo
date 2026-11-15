@@ -2177,7 +2177,7 @@ A struct passed to an `i32` parameter also passes `velo check` and fails only at
 
 ---
 
-### Phase 60: `if`/`loop` Condition Type Checking (P1) [OPEN] 🚧
+### Phase 60: `if`/`loop` Condition Type Checking (P1) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-09`<br>
 **Severity:** P1 — checker accepts invalid programs; pointer truthiness<br>
@@ -2313,25 +2313,49 @@ This is both a soundness hole and a source of silent logic errors: a non-empty s
     * Negative tests: member access in non-narrowed branch fails with `"without unwrapping"`.
     * Security tests: bare optional conditions in statements and expressions rejected with `Condition must be of type 'bool', got '...''`.
 * **Residual Limitation**:
-  - Codegen defense ensuring backend assertion triggers if non-`bool` condition ever reached codegen is tracked under Task 60.5.
+  - None; Task 60.5 adds codegen defense and completes all Phase 60 exit criteria.
 * **Verification**:
   - `python -m pytest tests/test_conditions.py -q`: 65 passed, 0 failed.
   - `python -m pytest tests/test_null_safety_optional.py tests/test_null_comparisons.py -q`: 10 passed, 0 failed.
   - `python -m pytest tests/test_conditions.py tests/test_type_checker.py tests/test_call_arguments.py -q`: 263 passed, 0 failed.
   - Line count discipline: all 120 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
 
-##### Task 60.5: Add codegen defense and negative tests
-* **Goal:** Fail loudly if a non-`bool` condition reaches codegen; lock in the diagnostics.
-* **Files:** `src/backend/codegen_stmt.vl`, `tests/test_conditions.py`.
-* **Tests:** internal-error assertion; all invalid rows; pointer/string truthiness.
-* **Security gate:** no C truthiness fallback; no undefined behavior.
-* **Done when:** the matrix is green and codegen is defensive.
+##### Task 60.5: Add codegen defense and negative tests [COMPLETED] ✅
+* **Former Defect**:
+  - Backend C code generation lacked defense-in-depth condition checks. If a non-boolean expression bypassed the type checker, `codegen_stmt.vl` (`STMT_IF`, `STMT_LOOP`) and `codegen_expr.vl` (`EXPR_IF`) would blindly emit C expressions like `if (<expr>)`, `for (...; (<expr>); ...)`, and `((<expr>) ? ... : ...)`, relying on C's scalar truthiness semantics or failing only at backend C compilation with undefined behavior or invalid struct comparisons.
+* **Fix Applied**:
+  - Implemented defense-in-depth condition assertions across backend code generators:
+    * `src/backend/codegen_stmt.vl:236-241` (`STMT_IF`): asserts `infer_expr_type(st, stmt.expr) == "bool"`, failing closed with `Condition in 'if' statement must be of type 'bool' (defense in depth)` and incrementing `st.error_count`.
+    * `src/backend/codegen_stmt.vl:285-290` (`STMT_LOOP` condition form): asserts `infer_expr_type(st, stmt.expr) == "bool"`, failing closed with `Condition in 'loop' statement must be of type 'bool' (defense in depth)` and incrementing `st.error_count`.
+    * `src/backend/codegen_expr.vl:51-56` (`emit_if_expr`): asserts `infer_expr_type(st, expr.left) == "bool"`, failing closed with `Condition in 'if' expression must be of type 'bool' (defense in depth)` and incrementing `st.error_count`.
+  - Rebuilt the self-hosted bootstrap chain (`bin/velo.exe` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe`) and refreshed `bootstrap.c`.
+  - Verified 3-generation bit-for-bit SHA-256 fixed-point determinism: `bb421d1612f828d096fe5c1521299c945dc4010e668651736bad1deb642154c4`.
+  - Added `TestCodegenDefenseAndConditionSafety` (11 tests) to `tests/test_conditions.py`:
+    * `velo emit-c` fails with non-zero exit code on integer condition (`if 1`).
+    * `velo emit-c` fails on string condition (`if "hello"`).
+    * `velo emit-c` fails on struct condition (`if Point{...}`).
+    * `velo emit-c` fails on raw pointer condition (`if @Point`).
+    * `velo emit-c` fails on float loop condition (`loop 5.0`).
+    * `velo emit-c` fails on string loop condition (`loop "forever"`).
+    * `velo emit-c` fails on if-expression integer condition (`let x = if 1 ...`).
+    * `velo emit-c` fails on bare optional condition (`if opt_ptr`).
+    * `velo emit-c` succeeds and emits valid C for valid boolean condition statements (`if flag`).
+    * `velo emit-c` succeeds for flow-narrowed optional conditions (`if p != null`).
+    * `velo emit-c` succeeds for valid condition loops (`loop not done`).
+* **Residual Limitation**:
+  - None; Phase 60 is fully complete and closed.
+* **Verification**:
+  - `python -m pytest tests/test_conditions.py -q`: 76 passed, 0 failed.
+  - `python -m pytest tests/test_null_safety_optional.py tests/test_null_comparisons.py -q`: 10 passed, 0 failed.
+  - `python -m pytest tests/test_conditions.py tests/test_type_checker.py tests/test_call_arguments.py tests/test_null_safety_optional.py tests/test_null_comparisons.py -q`: 284 passed, 0 failed.
+  - Full determinism verified: Gen2, Gen3, and `bootstrap.c` identical SHA-256 (`bb421d1612f828d096fe5c1521299c945dc4010e668651736bad1deb642154c4`).
+  - Line count discipline: all 120 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
 
 #### Phase Exit Criteria
 
-- [ ] `if 1`, `if "x"`, `if p`, `loop 5.0`, `loop p`, and `loop "x"` fail at `velo check`.
-- [ ] `if flag`, `if x != null`, and optional narrowing still work.
-- [ ] Codegen never emits a raw integer/pointer as a C condition.
+- [x] `if 1`, `if "x"`, `if p`, `loop 5.0`, `loop p`, and `loop "x"` fail at `velo check`.
+- [x] `if flag`, `if x != null`, and optional narrowing still work.
+- [x] Codegen never emits a raw integer/pointer as a C condition.
 
 ---
 

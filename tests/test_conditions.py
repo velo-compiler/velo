@@ -37,6 +37,18 @@ def run_velo_check(source_code: str) -> subprocess.CompletedProcess:
         Path(f_name).unlink(missing_ok=True)
 
 
+def run_velo_emit_c(source_code: str) -> subprocess.CompletedProcess:
+    """Helper to run `velo emit-c` on a temporary source file."""
+    with tempfile.NamedTemporaryFile("w", suffix=".vl", delete=False) as f:
+        f.write(source_code)
+        f_name = f.name
+    try:
+        res = subprocess.run([str(VELO_EXE), "emit-c", f_name], capture_output=True, text=True)
+        return res
+    finally:
+        Path(f_name).unlink(missing_ok=True)
+
+
 # ==============================================================================
 # 1. `if` Statement Condition Type Mismatches (Red Baseline)
 # ==============================================================================
@@ -887,5 +899,145 @@ class TestFlowSensitiveNarrowingConditionInteractions:
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of bare optional condition in if-expr, but passed: {res.stdout}"
         assert "Condition must be of type 'bool', got '?@Node'" in res.stdout
+
+
+# ==============================================================================
+# 7. Codegen Defense & Negative Tests (Task 60.5)
+# ==============================================================================
+
+class TestCodegenDefenseAndConditionSafety:
+    @classmethod
+    def setup_class(cls):
+        if not VELO_EXE.exists():
+            pytest.skip("bin/velo not built")
+
+    def test_emit_c_rejects_int_statement_condition(self):
+        code = """
+        act main() {
+            if 1 {}
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode != 0, f"Expected emit-c to fail on 'if 1', but succeeded: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'i32'" in res.stdout
+
+    def test_emit_c_rejects_string_statement_condition(self):
+        code = """
+        act main() {
+            if "hello" {}
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode != 0, f"Expected emit-c to fail on 'if \"hello\"', but succeeded: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'string'" in res.stdout
+
+    def test_emit_c_rejects_struct_statement_condition(self):
+        code = """
+        data Point { x: i32, y: i32 }
+        act main() {
+            let p = Point{ x: 1, y: 2 }
+            if p {}
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode != 0, f"Expected emit-c to fail on 'if <struct>', but succeeded: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'Point'" in res.stdout
+
+    def test_emit_c_rejects_pointer_statement_condition(self):
+        code = """
+        data Point { x: i32, y: i32 }
+        act main() {
+            let p = Point{ x: 1, y: 2 }
+            let ptr = @p
+            if ptr {}
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode != 0, f"Expected emit-c to fail on 'if <ptr>', but succeeded: {res.stdout}"
+        assert "Condition must be of type 'bool', got '@Point'" in res.stdout
+
+    def test_emit_c_rejects_loop_float_condition(self):
+        code = """
+        act main() {
+            loop 5.0 {}
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode != 0, f"Expected emit-c to fail on 'loop 5.0', but succeeded: {res.stdout}"
+        assert "Loop expression must be an integer (count) or 'bool' (condition), got 'f32'" in res.stdout
+
+    def test_emit_c_rejects_loop_string_condition(self):
+        code = """
+        act main() {
+            loop "forever" {}
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode != 0, f"Expected emit-c to fail on 'loop <string>', but succeeded: {res.stdout}"
+        assert "Loop expression must be an integer (count) or 'bool' (condition), got 'string'" in res.stdout
+
+    def test_emit_c_rejects_if_expr_int_condition(self):
+        code = """
+        act main() {
+            let x = if 1 { 10 } else { 20 }
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode != 0, f"Expected emit-c to fail on if-expr 'if 1', but succeeded: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'i32'" in res.stdout
+
+    def test_emit_c_rejects_bare_optional_condition(self):
+        code = """
+        data Node { val: i32 }
+        act main() {
+            let p: ?@Node = null
+            if p {}
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode != 0, f"Expected emit-c to fail on bare optional condition, but succeeded: {res.stdout}"
+        assert "Condition must be of type 'bool', got '?@Node'" in res.stdout
+
+    def test_emit_c_valid_condition_emits_clean_c(self):
+        code = """
+        act main() {
+            let flag = true
+            if flag {
+                let a = 1
+            }
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode == 0, f"Expected emit-c to succeed, got: {res.stdout}"
+        assert "if (flag)" in res.stdout
+
+    def test_emit_c_valid_flow_narrowed_condition_emits_clean_c(self):
+        code = """
+        data Node { num: i32 }
+        act main() {
+            mut n = Node{ num: 42 }
+            let p: ?@Node = @n
+            if p != null {
+                let v = p.num
+            }
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode == 0, f"Expected emit-c to succeed, got: {res.stdout}"
+        assert "!= NULL" in res.stdout or "p != NULL" in res.stdout or "NULL" in res.stdout
+
+    def test_emit_c_valid_condition_loop_emits_clean_c(self):
+        code = """
+        act main() {
+            mut done = false
+            loop not done {
+                done = true
+            }
+        }
+        """
+        res = run_velo_emit_c(code)
+        assert res.returncode == 0, f"Expected emit-c to succeed, got: {res.stdout}"
+        assert "for (" in res.stdout
+
 
 

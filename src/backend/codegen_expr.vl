@@ -26,6 +26,7 @@ use "simd_gen.vl"
 use "array_gen.vl"
 use "tuple_gen.vl"
 use "codegen_line.vl"
+use "../common/diagnostics.vl"
 use "reflect_gen.vl"
 use "codegen_call.vl"
 use "codegen_lit.vl"
@@ -39,15 +40,18 @@ act emit_if_branch(sb: @StringBuilder, st: @SymbolTable, branch: @ExprNode, targ
             let opt_c = opt_type_c_name(target_t)
             if branch.kind == EXPR_NULL { sb_append_char(sb, '('); sb_append_str(sb, opt_c); sb_append_str(sb, "){ .has = false }"); return }
             let bt = infer_expr_type(st, branch)
-            if not is_optional_type(bt) {
-                sb_append_char(sb, '('); sb_append_str(sb, opt_c); sb_append_str(sb, "){ .has = true, .val = "); emit_c_expr(sb, st, branch); sb_append_str(sb, " }"); return
-            }
+            if not is_optional_type(bt) { sb_append_char(sb, '('); sb_append_str(sb, opt_c); sb_append_str(sb, "){ .has = true, .val = "); emit_c_expr(sb, st, branch); sb_append_str(sb, " }"); return }
         }
     }
     emit_c_expr(sb, st, branch)
 }
 
 act emit_if_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    let cond_t = infer_expr_type(st, expr.left)
+    if cond_t != "bool" {
+        report_error("backend", expr.line, expr.col, "Condition in 'if' expression must be of type 'bool' (defense in depth)")
+        st.error_count += 1; return
+    }
     sb_append_str(sb, "(("); emit_c_expr(sb, st, expr.left); sb_append_str(sb, ") ? (")
     enter_scope(st); apply_flow_narrowing(st, expr.left, true); emit_if_branch(sb, st, expr.right, expr.type_name); exit_scope(st)
     sb_append_str(sb, ") : ("); enter_scope(st); apply_flow_narrowing(st, expr.left, false); emit_if_branch(sb, st, expr.operand, expr.type_name); exit_scope(st); sb_append_str(sb, "))")
@@ -67,9 +71,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         let sym = resolve_variable(st, expr.str_val)
         if sym != null and sym.is_narrowed {
             let inner = optional_inner_type(sym.orig_type)
-            if inner[0] != '@' and inner != "string" {
-                sb_append_str(sb, expr.str_val); sb_append_str(sb, ".val"); return
-            }
+            if inner[0] != '@' and inner != "string" { sb_append_str(sb, expr.str_val); sb_append_str(sb, ".val"); return }
         }
         sb_append_str(sb, expr.str_val); return
     }
@@ -77,14 +79,12 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr.kind == EXPR_MAP_LIT or expr.kind == EXPR_HEAP_MAP_LIT { emit_map_literal(sb, st, expr); return }  // 5.2 slice 6 / 7.2
     if expr.kind == EXPR_RING_LIT or expr.kind == EXPR_BITSET_LIT { emit_coll9_literal(sb, st, expr); return }  // 5.2 slice 9
     if expr.kind == EXPR_VARIANT {
-        mut kname = expr.type_name
-        mut k_sym: @KindSym = null
+        mut kname = expr.type_name; mut k_sym: @KindSym = null
         if kname != null and str.len(kname) > 0 { k_sym = find_kind(st, kname) }
         if k_sym == null { k_sym = find_kind_by_variant(st, expr.member_name) }
         if k_sym == null or not k_sym.is_tagged_union {
             if k_sym != null { sb_append_str(sb, k_sym.name); sb_append_char(sb, '_') }
-            sb_append_str(sb, expr.member_name)
-            return
+            sb_append_str(sb, expr.member_name); return
         }
         sb_append_char(sb, '('); sb_append_str(sb, k_sym.name); sb_append_str(sb, "){ .kind = ")
         sb_append_str(sb, k_sym.name); sb_append_char(sb, '_'); sb_append_str(sb, expr.member_name)

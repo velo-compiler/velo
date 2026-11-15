@@ -7,6 +7,7 @@ use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
 use "../analysis/map_checks.vl"
 use "../common/string_builder.vl"
+use "../common/diagnostics.vl"
 use "../analysis/op_resolver.vl"
 use "../analysis/narrow_flow.vl"
 use "codegen_expr.vl"
@@ -233,12 +234,13 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
 
     // 4. If / Else statement
     if stmt.kind == STMT_IF {
-        sb_append_indent(sb, indent)
-        sb_append_str(sb, "if ("); emit_c_expr(sb, st, stmt.expr); sb_append_str(sb, ") {\n")
-        enter_scope(st)
-        apply_flow_narrowing(st, stmt.expr, true)
-        emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
-        exit_scope(st)
+        let cond_t = infer_expr_type(st, stmt.expr)
+        if cond_t != "bool" {
+            report_error("backend", stmt.line, stmt.col, "Condition in 'if' statement must be of type 'bool' (defense in depth)")
+            st.error_count += 1; return
+        }
+        sb_append_indent(sb, indent); sb_append_str(sb, "if ("); emit_c_expr(sb, st, stmt.expr); sb_append_str(sb, ") {\n")
+        enter_scope(st); apply_flow_narrowing(st, stmt.expr, true); emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers); exit_scope(st)
         sb_append_indent(sb, indent); sb_append_str(sb, "}")
         if stmt.else_branch != null {
             if stmt.else_branch.kind == STMT_IF {
@@ -246,10 +248,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
                 emit_c_stmt(sb, st, stmt.else_branch, indent, defers)
             } else {
                 sb_append_str(sb, " else {\n")
-                enter_scope(st)
-                apply_flow_narrowing(st, stmt.expr, false)
-                emit_c_block_stmts(sb, st, stmt.else_branch, indent + 1, defers)
-                exit_scope(st)
+                enter_scope(st); apply_flow_narrowing(st, stmt.expr, false); emit_c_block_stmts(sb, st, stmt.else_branch, indent + 1, defers); exit_scope(st)
                 sb_append_indent(sb, indent); sb_append_str(sb, "}\n")
             }
         } else { sb_append_char(sb, '\n') }
@@ -281,6 +280,11 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
                     emit_c_expr(sb, st, stmt.expr)
                     sb_append_str(sb, "); "); sb_append_str(sb, vname); sb_append_str(sb, " < __cnt; "); sb_append_str(sb, vname); sb_append_str(sb, "++) {\n")
                 } else {
+                    let cond_t = infer_expr_type(st, stmt.expr)
+                    if cond_t != "bool" {
+                        report_error("backend", stmt.line, stmt.col, "Condition in 'loop' statement must be of type 'bool' (defense in depth)")
+                        st.error_count += 1; return
+                    }
                     sb_append_str(sb, "for ("); sb_append_str(sb, c_type); sb_append_str(sb, vname); sb_append_str(sb, " = 0; (")
                     emit_c_expr(sb, st, stmt.expr)
                     sb_append_str(sb, "); "); sb_append_str(sb, vname); sb_append_str(sb, "++) {\n")
@@ -295,10 +299,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         mut loop_var_type = stmt.type_name
         if loop_var_type == null or str.len(loop_var_type) == 0 { loop_var_type = "i32" }
         define_variable(st, vname, loop_var_type, false, stmt.line, stmt.col)
-        let loop_prev = push_loop_scope(defers)
-        emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
-        pop_loop_scope(defers, loop_prev)
-        exit_scope(st)
+        let loop_prev = push_loop_scope(defers); emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers); pop_loop_scope(defers, loop_prev); exit_scope(st)
         sb_append_indent(sb, indent)
         sb_append_str(sb, "}\n")
         return
