@@ -266,3 +266,47 @@ act main() -> i32 {
         assert "desc=5" in res_sh.stdout
     except subprocess.TimeoutExpired as e:
         pytest.fail(f"Loop timed out: {e}")
+
+
+def test_range_step_zero_rejected(tmp_path):
+    """Phase 63: Literal zero step (:0) must be rejected at compile time."""
+    source = tmp_path / "test_step_zero.vl"
+    source.write_text("""
+act main() -> i32 {
+    loop i in 0..10:0 {
+    }
+    return 0
+}
+""", encoding="utf-8")
+
+    res = subprocess.run(["bin/velo.exe", "check", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    assert res.returncode != 0
+    assert "Range loop step must be greater than zero" in res.stdout
+
+
+def test_range_step_dynamic_zero_baseline(tmp_path):
+    """Phase 63: Dynamic zero step must fail fast at runtime, not hang in an infinite loop (red baseline)."""
+    source = tmp_path / "test_dyn_zero_step.vl"
+    source.write_text("""
+use sys.io
+
+act main() -> i32 {
+    let s: i32 = 0
+    loop i in 0..10:s {
+        io.println(i)
+    }
+    return 0
+}
+""", encoding="utf-8")
+
+    exe = tmp_path / "test_dyn_zero_step.exe"
+    env = dict(os.environ)
+    env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
+    build_res = subprocess.run(["bin/velo.exe", "build", str(source), "-o", str(exe)], env=env, capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    assert build_res.returncode == 0
+    try:
+        res_sh = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", timeout=1.0)
+        assert res_sh.returncode != 0, f"Expected dynamic zero step to fail with error, but exited {res_sh.returncode}"
+    except subprocess.TimeoutExpired as e:
+        pytest.fail(f"Loop timed out (infinite loop detected on dynamic zero step): {e}")
+

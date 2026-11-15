@@ -2547,12 +2547,50 @@ There is no compile-time or runtime validation of the step.
 
 #### Tasks
 
-##### Task 63.1: Add the step matrix (red baseline)
-* **Goal:** Cover literal `0`, `+0`, `-0`, dynamic zero, float zero, negative steps, and valid positive steps.
-* **Files:** `tests/test_range_loops.py` (extend), `tests/test_range_steps.py` (new).
-* **Tests:** all forms; exact iteration counts; timeout on runnable cases.
-* **Security gate:** no test may hang CI; invalid cases must fail at `velo check`.
-* **Done when:** the matrix fails for the documented reasons.
+##### Task 63.1: Add the step matrix (red baseline) [COMPLETED] ✅
+* **Former Defect**:
+  - In `src/backend/range_gen.vl:36-107`, range loops with dynamic steps lower to `__step_i = (step)` and `i += __step_i` (or `i -= __step_i`).
+  - When the step evaluates to `0` at runtime (e.g. `let s: i32 = 0; loop i in 0..10:s`), no guard is emitted: `i += 0` executes repeatedly without advancing the loop counter, hanging indefinitely in an infinite loop.
+  - When the step evaluates to a negative value in an ascending loop (e.g. `let s: i32 = -1; loop i in 0..10:s`), `i += -1` decrements `i` away from the upper bound, also hanging in an infinite loop.
+  - Furthermore, constant binary expressions resulting in zero (such as `loop i in 0..10:(1 - 1)`) bypass the literal check in `src/analysis/range_checks.vl:188-210` (which only checks `EXPR_INT` and unary minus literals), passing `velo check` with exit code 0 and hanging indefinitely at runtime.
+* **Fix Applied**:
+  - Established the comprehensive Red Baseline test matrix for Phase 63 across two test suites:
+    * Created `tests/test_range_steps.py` (25 test cases) covering:
+      - `TestLiteralStepCompileRejection` (11 tests):
+        * Literal `:0`, `:+0`, `:-0`, `:-1`, `:0u32`, `:(0)` rejected at compile time (`Range loop step must be greater than zero`).
+        * Float step `:0.0` and dynamic float step `let s: f32 = 0.0; loop 0..10:s` rejected at compile time (`Range loop step must be an integer type, got 'f32'`).
+        * Anonymous range zero step `loop 0..10:0` rejected at compile time.
+        * Descending range zero step `loop 10..0:0` rejected at compile time.
+        * Constant expression zero step `:(1 - 1)` tested for compile-time rejection.
+      - `TestDynamicRangeStepExecution` (6 tests with 1.0s timeouts):
+        * Dynamic zero step (`let s: i32 = 0; loop 0..10:s`).
+        * Dynamic negative step (`let s: i32 = -1; loop 0..10:s`).
+        * Dynamic descending negative step (`let s: i32 = -2; loop 10..0:s`).
+        * Dynamic unsigned zero step (`let s: u32 = 0u32; loop 0..10:s`).
+        * Dynamic 64-bit zero step (`let s: i64 = 0; loop 0..10:s`).
+        * Constant expression zero step (`loop 0..10:(2 - 2)`).
+      - `TestValidRangeStepControlGroup` (8 tests):
+        * Ascending positive step (`0..10:2` -> 5 iterations, sum 20).
+        * Descending positive step (`10..0:2` -> 5 iterations, sum 30).
+        * Inclusive positive step (`0..=10:2` -> 6 iterations, sum 30).
+        * Dynamic positive ascending (`let s = 3; 0..10:s` -> 4 iterations, sum 18).
+        * Dynamic positive descending (`let s = 3; 10..0:s` -> 4 iterations, sum 22).
+        * Step equal to range length (`0..5:5` -> 1 iteration).
+        * Step larger than range length (`0..5:10` -> 1 iteration).
+        * Anonymous range valid step (`loop 0..10:2` -> 5 iterations, sum 20).
+    * Extended `tests/test_range_loops.py` with 2 tests:
+      - `test_range_step_zero_rejected`: validates compile-time rejection of `:0`.
+      - `test_range_step_dynamic_zero_baseline`: validates timeout on dynamic zero step (`timeout=1.0`).
+* **Residual Limitation**:
+  - Red baseline established:
+    * `tests/test_range_steps.py`: 7 failed, 18 passed (the 18 passed are 10 literal/type compile checks and 8 valid positive step control tests; the 7 failed fail for the exact documented defect: 1 compile-check row for `:(1 - 1)` passes `velo check` instead of failing, and 6 dynamic zero/negative/constant-expr runtime tests hang and time out after 1.0s due to missing runtime guards).
+    * `tests/test_range_loops.py`: 1 failed, 9 passed (the 1 failed is the dynamic zero step runtime timeout baseline).
+  - Compile-time literal/const step rejection is addressed in Task 63.2.
+  - Dynamic zero step runtime guard and termination defense is addressed in Tasks 63.3 and 63.4.
+* **Verification**:
+  - `python -m pytest tests/test_range_steps.py -q`: 7 failed, 18 passed (red baseline confirmed).
+  - `python -m pytest tests/test_range_loops.py -q`: 1 failed, 9 passed (red baseline confirmed).
+  - All runnable tests are timeout-guarded (`timeout=1.0` or `2.0`s) preventing CI hangs.
 
 ##### Task 63.2: Reject literal zero steps at compile time
 * **Goal:** Detect a zero-valued literal step and emit a diagnostic.
