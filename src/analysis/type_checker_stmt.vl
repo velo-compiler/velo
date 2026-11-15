@@ -148,7 +148,7 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
         }
         }
     } else if stmt.kind == STMT_IF {
-        infer_expr_type(st, stmt.expr)
+        require_bool_condition(st, stmt.expr)
         enter_scope(st)
         apply_flow_narrowing(st, stmt.expr, true)
         check_statement(st, expected_ret_type, stmt.body)

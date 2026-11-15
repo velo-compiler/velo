@@ -55,6 +55,7 @@ class TestIfStatementConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of 'if 1', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'i32'" in res.stdout
 
     def test_if_int_var_rejected(self):
         code = """
@@ -65,6 +66,7 @@ class TestIfStatementConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of 'if <int_var>', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'i32'" in res.stdout
 
     def test_if_negative_int_rejected(self):
         code = """
@@ -74,6 +76,7 @@ class TestIfStatementConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of 'if -1', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'i32'" in res.stdout
 
     def test_if_string_literal_rejected(self):
         code = """
@@ -83,6 +86,7 @@ class TestIfStatementConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of 'if \"x\"', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'string'" in res.stdout
 
     def test_if_string_var_rejected(self):
         code = """
@@ -93,6 +97,7 @@ class TestIfStatementConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of 'if <string_var>', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'string'" in res.stdout
 
     def test_if_struct_var_rejected(self):
         code = """
@@ -104,6 +109,7 @@ class TestIfStatementConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of 'if <struct_var>', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'Point'" in res.stdout
 
     def test_if_pointer_var_rejected(self):
         code = """
@@ -116,6 +122,7 @@ class TestIfStatementConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of 'if <pointer_var>', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got '@Point'" in res.stdout
 
     def test_if_null_literal_rejected(self):
         code = """
@@ -125,6 +132,7 @@ class TestIfStatementConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of 'if null', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got '@void'" in res.stdout
 
     def test_if_float_literal_rejected(self):
         code = """
@@ -134,6 +142,7 @@ class TestIfStatementConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of 'if 5.0', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'f32'" in res.stdout
 
     def test_if_array_rejected(self):
         code = """
@@ -144,6 +153,7 @@ class TestIfStatementConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of 'if <array>', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got '[4]i32'" in res.stdout
 
 
 # ==============================================================================
@@ -164,6 +174,7 @@ class TestIfExpressionConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of 'if 1 {{...}} else {{...}}', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'i32'" in res.stdout
 
     def test_if_expr_string_condition_rejected(self):
         code = """
@@ -173,6 +184,7 @@ class TestIfExpressionConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of 'if \"x\" {{...}} else {{...}}', but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'string'" in res.stdout
 
     def test_if_expr_struct_condition_rejected(self):
         code = """
@@ -184,6 +196,7 @@ class TestIfExpressionConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of struct in if-expression, but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'Point'" in res.stdout
 
     def test_if_expr_pointer_condition_rejected(self):
         code = """
@@ -195,6 +208,7 @@ class TestIfExpressionConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of pointer in if-expression, but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got '@i32'" in res.stdout
 
     def test_if_expr_null_condition_rejected(self):
         code = """
@@ -204,6 +218,7 @@ class TestIfExpressionConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of null in if-expression, but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got '@void'" in res.stdout
 
     def test_if_expr_float_condition_rejected(self):
         code = """
@@ -213,6 +228,7 @@ class TestIfExpressionConditionTypeChecking:
         """
         res = run_velo_check(code)
         assert res.returncode != 0, f"Expected rejection of float in if-expression, but check passed: {res.stdout}"
+        assert "Condition must be of type 'bool', got 'f32'" in res.stdout
 
 
 # ==============================================================================

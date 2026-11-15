@@ -356,7 +356,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     }
 
     if expr.kind == EXPR_IF {
-        infer_expr_type(st, expr.left)
+        require_bool_condition(st, expr.left)
         enter_scope(st); apply_flow_narrowing(st, expr.left, true); let then_type = infer_expr_type(st, expr.right); exit_scope(st)
         enter_scope(st); apply_flow_narrowing(st, expr.left, false); let else_type = infer_expr_type(st, expr.operand); exit_scope(st)
         let is_t1_null = (then_type == "@void" or then_type == "null")
@@ -374,18 +374,18 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     return "unknown"
 }
 
-
-// cm42: compile-checks thread.* intrinsic arguments — the mirror of velo/codegen_c.py::_thread_expect (both stages reject with the same words). Returns false after reporting.
-act check_thread_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
-    if member == "mutex" { if expr.first_arg != null { report_error("semantic", expr.line, expr.col, "thread.mutex takes no arguments"); st.error_count += 1; return false }; return true }
-    mut want = ""
-    if member == "spawn" { want = "act() -> i32" }; if member == "join" { want = "@Thread" }; if member == "acquire" or member == "release" or member == "free" { want = "@Mutex" }
-    if want == "" { return true }
-    if expr.first_arg == null or expr.first_arg.next != null { mut msb = create_sb(96); sb_append_str(@msb, "thread."); sb_append_str(@msb, member); sb_append_str(@msb, " takes exactly 1 argument"); report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1; return false }
-    let got = strip_type_spaces(infer_expr_type(st, expr.first_arg))
-    if got != strip_type_spaces(want) {
-        mut msb = create_sb(160); sb_append_str(@msb, "thread."); sb_append_str(@msb, member); sb_append_str(@msb, " expects "); sb_append_str(@msb, want); sb_append_str(@msb, " (got "); sb_append_str(@msb, infer_expr_type(st, expr.first_arg)); sb_append_str(@msb, ")")
-        report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1; return false
+// Enforces that an expression evaluating as a condition is of type 'bool'.
+act require_bool_condition(st: @SymbolTable, expr: @ExprNode) -> bool {
+    if expr == null { return false }
+    let cond_t = infer_expr_type(st, expr)
+    if cond_t == "bool" { return true }
+    if cond_t != "unknown" or st.error_count == 0 {
+        mut sb = create_sb(96)
+        sb_append_str(@sb, "Condition must be of type 'bool', got '")
+        sb_append_str(@sb, cond_t)
+        sb_append_char(@sb, '\'')
+        report_error("semantic", expr.line, expr.col, sb_to_string(@sb))
+        st.error_count += 1
     }
-    return true
+    return false
 }

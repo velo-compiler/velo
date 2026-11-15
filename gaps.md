@@ -2231,12 +2231,29 @@ This is both a soundness hole and a source of silent logic errors: a non-empty s
   - `python -m pytest tests/test_type_checker.py -q`: 6 failed, 29 passed (red baseline confirmed).
   - Line count discipline: all 120 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
 
-##### Task 60.2: Implement `require_bool_condition`
-* **Goal:** Add one helper that infers the condition type, accepts `bool`, and reports a precise diagnostic otherwise.
-* **Files:** `src/analysis/type_checker_stmt.vl`, `src/analysis/type_checker.vl`.
-* **Tests:** valid `bool`, `x != null`, `flag`, `!flag`; invalid rows.
-* **Security gate:** no implicit conversion; error names the actual type.
-* **Done when:** the helper is used by every condition site.
+##### Task 60.2: Implement `require_bool_condition` [COMPLETED] ✅
+* **Former Defect**:
+  - The compiler lacked a centralized helper to validate that expressions evaluated as conditions produce a boolean type (`bool`).
+  - Condition sites performed unchecked inference or ad-hoc checks, allowing non-boolean types (integers, strings, structs, raw pointers, null, floats, arrays) to pass semantic analysis.
+* **Fix Applied**:
+  - Implemented `require_bool_condition(st: @SymbolTable, expr: @ExprNode) -> bool` in `src/analysis/type_checker.vl`:
+    * Evaluates `infer_expr_type(st, expr)`.
+    * If the inferred type is `"bool"`, returns `true`.
+    * Otherwise, if not `"unknown"` (or if no previous errors have been reported), emits a clear, position-aware diagnostic that names the actual type:
+      `Condition must be of type 'bool', got '<actual>'`
+      and increments `st.error_count`, returning `false`.
+  - Moved `check_thread_call` to `src/analysis/call_checks.vl` to maintain strict line count discipline in `src/analysis/type_checker.vl` (391 lines, $\le 394$).
+  - Integrated `require_bool_condition` in `src/analysis/type_checker_stmt.vl` (`STMT_IF`) and `src/analysis/type_checker.vl` (`EXPR_IF`).
+  - Rebuilt the complete 3-generation self-hosted bootstrap chain (`bin/velo.exe` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe`) and updated `bootstrap.c`.
+  - Verified bit-for-bit SHA-256 fixed-point determinism: `dbe22bc4e956b8bf7387818b97bbd293cdf2d4ef2a053d629a4b63dff3dfa588`.
+  - Updated tests in `tests/test_conditions.py` and `tests/test_type_checker.py` with character-exact diagnostic assertions naming the actual type (including `i32`, `string`, `Point`, `@Point`, `@void`, `f32`, and `[4]i32`).
+* **Residual Limitation**:
+  - Full audit of all remaining condition sites (including loop condition forms and any future guards) is tracked under Task 60.3; codegen defense is tracked under Task 60.5.
+* **Verification**:
+  - `python -m pytest tests/test_conditions.py tests/test_type_checker.py -q`: 66 passed, 0 failed (turned all 22 red baseline failures green with exact diagnostic assertions).
+  - `python -m pytest tests/test_conditions.py tests/test_call_arguments.py tests/test_type_checker.py -q`: 229 passed, 0 failed.
+  - Maintained 3-generation self-hosting bootstrap determinism (Gen2 and Gen3 emit identical bit-for-bit C output matching `bootstrap.c` with SHA-256 `dbe22bc4e956b8bf7387818b97bbd293cdf2d4ef2a053d629a4b63dff3dfa588`).
+  - Verified line count discipline across all 120 compiler source files in `src/` ($\le 394$ lines, hard limit 400).
 
 ##### Task 60.3: Apply the helper to all condition sites
 * **Goal:** Cover `STMT_IF`, `STMT_LOOP` condition form, `if` expressions, and any `on` guard.

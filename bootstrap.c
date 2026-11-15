@@ -2188,13 +2188,14 @@ const char* check_simd_call(SymbolTable* st, ExprNode* expr, const char* member)
 void check_method_receiver(SymbolTable* st, ExprNode* target, const char* target_t, const char* expected_t);
 const char* check_act_call(SymbolTable* st, ExprNode* expr, const char* act_type);
 const char* check_variant_constructor(SymbolTable* st, ExprNode* expr, KindSym* k_sym, VariantSym* v_sym);
+bool check_thread_call(SymbolTable* st, ExprNode* expr, const char* member);
 const char* infer_array_lit(SymbolTable* st, ExprNode* expr);
 const char* check_array_index(SymbolTable* st, ExprNode* expr, const char* clean_type);
 const char* check_array_member_access(SymbolTable* st, ExprNode* expr, const char* clean_type);
 const char* widen_if_branch_types(const char* t1, const char* t2);
 bool is_known_type(SymbolTable* st, const char* name);
 const char* infer_expr_type(SymbolTable* st, ExprNode* expr);
-bool check_thread_call(SymbolTable* st, ExprNode* expr, const char* member);
+bool require_bool_condition(SymbolTable* st, ExprNode* expr);
 bool is_reflect_builtin(const char* name);
 const char* check_reflect_bare_constant(SymbolTable* st, ExprNode* expr);
 const char* extract_type_arg_name(ExprNode* expr);
@@ -27154,7 +27155,7 @@ void check_statement(SymbolTable* st, const char* expected_ret_type, StmtNode* s
 #line 150 "src/main.vl"
     if ((stmt->kind == STMT_IF)) {
 #line 151 "src/main.vl"
-        infer_expr_type(st, stmt->expr);
+        require_bool_condition(st, stmt->expr);
 #line 152 "src/main.vl"
         enter_scope(st);
 #line 153 "src/main.vl"
@@ -32054,6 +32055,92 @@ const char* check_variant_constructor(SymbolTable* st, ExprNode* expr, KindSym* 
     return k_sym->name;
 }
 
+#line 152 "src/main.vl"
+bool check_thread_call(SymbolTable* st, ExprNode* expr, const char* member) {
+#line 153 "src/main.vl"
+    if (((member != NULL && "mutex" != NULL) ? (strcmp(member, "mutex") == 0) : (member == "mutex"))) {
+#line 153 "src/main.vl"
+        if ((expr->first_arg != NULL)) {
+#line 153 "src/main.vl"
+            report_error("semantic", expr->line, expr->col, "thread.mutex takes no arguments");
+#line 153 "src/main.vl"
+            st->error_count += 1;
+#line 153 "src/main.vl"
+            return false;
+        }
+#line 153 "src/main.vl"
+        return true;
+    }
+#line 154 "src/main.vl"
+    const char* want = "";
+#line 155 "src/main.vl"
+    if (((member != NULL && "spawn" != NULL) ? (strcmp(member, "spawn") == 0) : (member == "spawn"))) {
+#line 155 "src/main.vl"
+        want = "act() -> i32";
+    }
+#line 155 "src/main.vl"
+    if (((member != NULL && "join" != NULL) ? (strcmp(member, "join") == 0) : (member == "join"))) {
+#line 155 "src/main.vl"
+        want = "@Thread";
+    }
+#line 155 "src/main.vl"
+    if (((((member != NULL && "acquire" != NULL) ? (strcmp(member, "acquire") == 0) : (member == "acquire")) || ((member != NULL && "release" != NULL) ? (strcmp(member, "release") == 0) : (member == "release"))) || ((member != NULL && "free" != NULL) ? (strcmp(member, "free") == 0) : (member == "free")))) {
+#line 155 "src/main.vl"
+        want = "@Mutex";
+    }
+#line 156 "src/main.vl"
+    if (((want != NULL && "" != NULL) ? (strcmp(want, "") == 0) : (want == ""))) {
+#line 156 "src/main.vl"
+        return true;
+    }
+#line 157 "src/main.vl"
+    if (((expr->first_arg == NULL) || (expr->first_arg->next != NULL))) {
+#line 157 "src/main.vl"
+        StringBuilder msb = create_sb(96);
+#line 157 "src/main.vl"
+        sb_append_str((&(msb)), "thread.");
+#line 157 "src/main.vl"
+        sb_append_str((&(msb)), member);
+#line 157 "src/main.vl"
+        sb_append_str((&(msb)), " takes exactly 1 argument");
+#line 157 "src/main.vl"
+        report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
+#line 157 "src/main.vl"
+        st->error_count += 1;
+#line 157 "src/main.vl"
+        return false;
+    }
+#line 158 "src/main.vl"
+    const char* got = strip_type_spaces(infer_expr_type(st, expr->first_arg));
+#line 159 "src/main.vl"
+    if (velo_str_neq(got, strip_type_spaces(want))) {
+#line 160 "src/main.vl"
+        StringBuilder msb = create_sb(160);
+#line 160 "src/main.vl"
+        sb_append_str((&(msb)), "thread.");
+#line 160 "src/main.vl"
+        sb_append_str((&(msb)), member);
+#line 160 "src/main.vl"
+        sb_append_str((&(msb)), " expects ");
+#line 160 "src/main.vl"
+        sb_append_str((&(msb)), want);
+#line 160 "src/main.vl"
+        sb_append_str((&(msb)), " (got ");
+#line 160 "src/main.vl"
+        sb_append_str((&(msb)), infer_expr_type(st, expr->first_arg));
+#line 160 "src/main.vl"
+        sb_append_str((&(msb)), ")");
+#line 161 "src/main.vl"
+        report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
+#line 161 "src/main.vl"
+        st->error_count += 1;
+#line 161 "src/main.vl"
+        return false;
+    }
+#line 163 "src/main.vl"
+    return true;
+}
+
 #line 11 "src/main.vl"
 const char* infer_array_lit(SymbolTable* st, ExprNode* expr) {
 #line 12 "src/main.vl"
@@ -33232,7 +33319,7 @@ const char* infer_expr_type(SymbolTable* st, ExprNode* expr) {
 #line 358 "src/main.vl"
     if ((expr->kind == EXPR_IF)) {
 #line 359 "src/main.vl"
-        infer_expr_type(st, expr->left);
+        require_bool_condition(st, expr->left);
 #line 360 "src/main.vl"
         enter_scope(st);
 #line 360 "src/main.vl"
@@ -33285,90 +33372,37 @@ const char* infer_expr_type(SymbolTable* st, ExprNode* expr) {
     return "unknown";
 }
 
+#line 378 "src/main.vl"
+bool require_bool_condition(SymbolTable* st, ExprNode* expr) {
 #line 379 "src/main.vl"
-bool check_thread_call(SymbolTable* st, ExprNode* expr, const char* member) {
-#line 380 "src/main.vl"
-    if (((member != NULL && "mutex" != NULL) ? (strcmp(member, "mutex") == 0) : (member == "mutex"))) {
-#line 380 "src/main.vl"
-        if ((expr->first_arg != NULL)) {
-#line 380 "src/main.vl"
-            report_error("semantic", expr->line, expr->col, "thread.mutex takes no arguments");
-#line 380 "src/main.vl"
-            st->error_count += 1;
-#line 380 "src/main.vl"
-            return false;
-        }
-#line 380 "src/main.vl"
-        return true;
+    if ((expr == NULL)) {
+#line 379 "src/main.vl"
+        return false;
     }
+#line 380 "src/main.vl"
+    const char* cond_t = infer_expr_type(st, expr);
 #line 381 "src/main.vl"
-    const char* want = "";
-#line 382 "src/main.vl"
-    if (((member != NULL && "spawn" != NULL) ? (strcmp(member, "spawn") == 0) : (member == "spawn"))) {
-#line 382 "src/main.vl"
-        want = "act() -> i32";
-    }
-#line 382 "src/main.vl"
-    if (((member != NULL && "join" != NULL) ? (strcmp(member, "join") == 0) : (member == "join"))) {
-#line 382 "src/main.vl"
-        want = "@Thread";
-    }
-#line 382 "src/main.vl"
-    if (((((member != NULL && "acquire" != NULL) ? (strcmp(member, "acquire") == 0) : (member == "acquire")) || ((member != NULL && "release" != NULL) ? (strcmp(member, "release") == 0) : (member == "release"))) || ((member != NULL && "free" != NULL) ? (strcmp(member, "free") == 0) : (member == "free")))) {
-#line 382 "src/main.vl"
-        want = "@Mutex";
-    }
-#line 383 "src/main.vl"
-    if (((want != NULL && "" != NULL) ? (strcmp(want, "") == 0) : (want == ""))) {
-#line 383 "src/main.vl"
+    if (((cond_t != NULL && "bool" != NULL) ? (strcmp(cond_t, "bool") == 0) : (cond_t == "bool"))) {
+#line 381 "src/main.vl"
         return true;
     }
+#line 382 "src/main.vl"
+    if ((((cond_t != NULL && "unknown" != NULL) ? (strcmp(cond_t, "unknown") != 0) : (cond_t != "unknown")) || velo_cmp_eq_u_s(st->error_count, 0))) {
+#line 383 "src/main.vl"
+        StringBuilder sb = create_sb(96);
 #line 384 "src/main.vl"
-    if (((expr->first_arg == NULL) || (expr->first_arg->next != NULL))) {
-#line 384 "src/main.vl"
-        StringBuilder msb = create_sb(96);
-#line 384 "src/main.vl"
-        sb_append_str((&(msb)), "thread.");
-#line 384 "src/main.vl"
-        sb_append_str((&(msb)), member);
-#line 384 "src/main.vl"
-        sb_append_str((&(msb)), " takes exactly 1 argument");
-#line 384 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
-#line 384 "src/main.vl"
-        st->error_count += 1;
-#line 384 "src/main.vl"
-        return false;
-    }
+        sb_append_str((&(sb)), "Condition must be of type 'bool', got '");
 #line 385 "src/main.vl"
-    const char* got = strip_type_spaces(infer_expr_type(st, expr->first_arg));
+        sb_append_str((&(sb)), cond_t);
 #line 386 "src/main.vl"
-    if (velo_str_neq(got, strip_type_spaces(want))) {
+        sb_append_char((&(sb)), '\'');
 #line 387 "src/main.vl"
-        StringBuilder msb = create_sb(160);
-#line 387 "src/main.vl"
-        sb_append_str((&(msb)), "thread.");
-#line 387 "src/main.vl"
-        sb_append_str((&(msb)), member);
-#line 387 "src/main.vl"
-        sb_append_str((&(msb)), " expects ");
-#line 387 "src/main.vl"
-        sb_append_str((&(msb)), want);
-#line 387 "src/main.vl"
-        sb_append_str((&(msb)), " (got ");
-#line 387 "src/main.vl"
-        sb_append_str((&(msb)), infer_expr_type(st, expr->first_arg));
-#line 387 "src/main.vl"
-        sb_append_str((&(msb)), ")");
-#line 388 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
+        report_error("semantic", expr->line, expr->col, sb_to_string((&(sb))));
 #line 388 "src/main.vl"
         st->error_count += 1;
-#line 388 "src/main.vl"
-        return false;
     }
 #line 390 "src/main.vl"
-    return true;
+    return false;
 }
 
 #line 11 "src/main.vl"
