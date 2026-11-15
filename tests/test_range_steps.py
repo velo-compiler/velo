@@ -370,8 +370,9 @@ class TestDynamicRangeStepExecution:
         """
         try:
             res = build_and_run_code(code, timeout=1.0)
-            # If it didn't time out, it must have failed with non-zero exit code
             assert res.returncode != 0, f"Expected dynamic zero step to fail with error, but exited {res.returncode}"
+            assert "Range loop step must be greater than zero" in res.stderr
+            assert "0" not in res.stdout, "Expected no partial iterations before step check"
         except subprocess.TimeoutExpired:
             pytest.fail("Dynamic zero step hung: infinite loop detected (timed out)")
 
@@ -390,6 +391,8 @@ class TestDynamicRangeStepExecution:
         try:
             res = build_and_run_code(code, timeout=1.0)
             assert res.returncode != 0, f"Expected dynamic negative step to fail with error, but exited {res.returncode}"
+            assert "Range loop step must be greater than zero" in res.stderr
+            assert "0" not in res.stdout, "Expected no partial iterations before step check"
         except subprocess.TimeoutExpired:
             pytest.fail("Dynamic negative step hung: infinite loop detected (timed out)")
 
@@ -408,6 +411,8 @@ class TestDynamicRangeStepExecution:
         try:
             res = build_and_run_code(code, timeout=1.0)
             assert res.returncode != 0, f"Expected dynamic descending negative step to fail with error, but exited {res.returncode}"
+            assert "Range loop step must be greater than zero" in res.stderr
+            assert "10" not in res.stdout, "Expected no partial iterations before step check"
         except subprocess.TimeoutExpired:
             pytest.fail("Dynamic descending negative step hung: infinite loop detected (timed out)")
 
@@ -426,6 +431,8 @@ class TestDynamicRangeStepExecution:
         try:
             res = build_and_run_code(code, timeout=1.0)
             assert res.returncode != 0, f"Expected dynamic unsigned zero step to fail with error, but exited {res.returncode}"
+            assert "Range loop step must be greater than zero" in res.stderr
+            assert "0" not in res.stdout, "Expected no partial iterations before step check"
         except subprocess.TimeoutExpired:
             pytest.fail("Dynamic unsigned zero step hung: infinite loop detected (timed out)")
 
@@ -444,6 +451,8 @@ class TestDynamicRangeStepExecution:
         try:
             res = build_and_run_code(code, timeout=1.0)
             assert res.returncode != 0, f"Expected dynamic i64 zero step to fail with error, but exited {res.returncode}"
+            assert "Range loop step must be greater than zero" in res.stderr
+            assert "0" not in res.stdout, "Expected no partial iterations before step check"
         except subprocess.TimeoutExpired:
             pytest.fail("Dynamic i64 zero step hung: infinite loop detected (timed out)")
 
@@ -463,6 +472,50 @@ class TestDynamicRangeStepExecution:
             assert res.returncode != 0, f"Expected (2 - 2) zero step to fail with error, but exited {res.returncode}"
         except subprocess.TimeoutExpired:
             pytest.fail("Constant expression zero step hung: infinite loop detected (timed out)")
+
+    def test_dynamic_anonymous_range_zero_step_fails_fast_runtime(self):
+        code = """
+        use std.io
+
+        act main() -> i32 {
+            let s: i32 = 0
+            loop 0..10:s {
+                io.println("UNREACHABLE")
+            }
+            return 0
+        }
+        """
+        try:
+            res = build_and_run_code(code, timeout=1.0)
+            assert res.returncode != 0, f"Expected anonymous zero step to fail, but exited {res.returncode}"
+            assert "Range loop step must be greater than zero" in res.stderr
+            assert "UNREACHABLE" not in res.stdout
+        except subprocess.TimeoutExpired:
+            pytest.fail("Anonymous dynamic zero step hung: infinite loop detected (timed out)")
+
+    def test_dynamic_zero_step_no_side_effects_before_check(self):
+        code = """
+        use std.io
+
+        act main() -> i32 {
+            mut side_effect: i32 = 0
+            let s: i32 = 0
+            loop i in 0..10:s {
+                side_effect += 1
+                io.println("ran iteration {i}")
+            }
+            io.println("final side_effect={side_effect}")
+            return 0
+        }
+        """
+        try:
+            res = build_and_run_code(code, timeout=1.0)
+            assert res.returncode != 0
+            assert "Range loop step must be greater than zero" in res.stderr
+            assert "ran iteration" not in res.stdout
+            assert "final side_effect" not in res.stdout
+        except subprocess.TimeoutExpired:
+            pytest.fail("Dynamic zero step hung: infinite loop detected (timed out)")
 
 
 # ==============================================================================

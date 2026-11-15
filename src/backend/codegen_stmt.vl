@@ -299,7 +299,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         mut loop_var_type = stmt.type_name
         if loop_var_type == null or str.len(loop_var_type) == 0 { loop_var_type = "i32" }
         define_variable(st, vname, loop_var_type, false, stmt.line, stmt.col)
-        let loop_prev = push_loop_scope(defers); emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers); pop_loop_scope(defers, loop_prev); exit_scope(st)
+        let loop_prev = push_loop_scope(defers); emit_range_step_guard(sb, stmt, vname, indent + 1); emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers); pop_loop_scope(defers, loop_prev); exit_scope(st)
         sb_append_indent(sb, indent)
         sb_append_str(sb, "}\n")
         return

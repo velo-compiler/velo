@@ -2316,6 +2316,7 @@ bool is_reverse_loop_range(ExprNode* start_expr, ExprNode* end_expr);
 bool is_literal_range_step(ExprNode* start_expr, ExprNode* end_expr, ExprNode* step_expr);
 const char* loop_var_c_type(const char* type_name);
 void emit_range_loop_header(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, const char* c_type, const char* vname);
+void emit_range_step_guard(StringBuilder* sb, StmtNode* stmt, const char* vname, int32_t indent);
 DeferNode* push_block_scope(DeferNode** defers);
 void pop_block_scope(DeferNode** defers, DeferNode* prev);
 int32_t block_scope_depth(DeferNode** defers);
@@ -43102,204 +43103,250 @@ const char* loop_var_c_type(const char* type_name) {
     return "int32_t ";
 }
 
-#line 13 "src/main.vl"
-void emit_range_loop_header(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, const char* c_type, const char* vname) {
 #line 14 "src/main.vl"
-    if (is_literal_range_step(stmt->loop_start, stmt->loop_end, stmt->loop_step)) {
+void emit_range_loop_header(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, const char* c_type, const char* vname) {
 #line 15 "src/main.vl"
+    if (is_literal_range_step(stmt->loop_start, stmt->loop_end, stmt->loop_step)) {
+#line 16 "src/main.vl"
         bool is_rev = is_reverse_loop_range(stmt->loop_start, stmt->loop_end);
-#line 16 "src/main.vl"
-        sb_append_str(sb, "for (");
-#line 16 "src/main.vl"
-        sb_append_str(sb, c_type);
-#line 16 "src/main.vl"
-        sb_append_str(sb, vname);
-#line 16 "src/main.vl"
-        sb_append_str(sb, " = ");
 #line 17 "src/main.vl"
-        emit_c_expr(sb, st, stmt->loop_start);
-#line 18 "src/main.vl"
-        sb_append_str(sb, "; ");
-#line 18 "src/main.vl"
+        sb_append_str(sb, "for (");
+#line 17 "src/main.vl"
+        sb_append_str(sb, c_type);
+#line 17 "src/main.vl"
         sb_append_str(sb, vname);
+#line 17 "src/main.vl"
+        sb_append_str(sb, " = ");
+#line 18 "src/main.vl"
+        emit_c_expr(sb, st, stmt->loop_start);
 #line 19 "src/main.vl"
+        sb_append_str(sb, "; ");
+#line 19 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 20 "src/main.vl"
         if (is_rev) {
-#line 20 "src/main.vl"
+#line 21 "src/main.vl"
             if (stmt->is_inclusive) {
-#line 20 "src/main.vl"
+#line 21 "src/main.vl"
                 sb_append_str(sb, " >= ");
             } else {
-#line 20 "src/main.vl"
+#line 21 "src/main.vl"
                 sb_append_str(sb, " > ");
             }
         } else {
-#line 22 "src/main.vl"
+#line 23 "src/main.vl"
             if (stmt->is_inclusive) {
-#line 22 "src/main.vl"
+#line 23 "src/main.vl"
                 sb_append_str(sb, " <= ");
             } else {
-#line 22 "src/main.vl"
+#line 23 "src/main.vl"
                 sb_append_str(sb, " < ");
             }
         }
-#line 24 "src/main.vl"
+#line 25 "src/main.vl"
         emit_c_expr(sb, st, stmt->loop_end);
-#line 25 "src/main.vl"
-        sb_append_str(sb, "; ");
-#line 25 "src/main.vl"
-        sb_append_str(sb, vname);
 #line 26 "src/main.vl"
+        sb_append_str(sb, "; ");
+#line 26 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 27 "src/main.vl"
         if ((stmt->loop_step != NULL)) {
-#line 27 "src/main.vl"
+#line 28 "src/main.vl"
             if (is_rev) {
-#line 27 "src/main.vl"
+#line 28 "src/main.vl"
                 sb_append_str(sb, " -= ");
             } else {
-#line 27 "src/main.vl"
+#line 28 "src/main.vl"
                 sb_append_str(sb, " += ");
             }
-#line 28 "src/main.vl"
+#line 29 "src/main.vl"
             emit_c_expr(sb, st, stmt->loop_step);
         } else {
-#line 30 "src/main.vl"
+#line 31 "src/main.vl"
             if (is_rev) {
-#line 30 "src/main.vl"
+#line 31 "src/main.vl"
                 sb_append_str(sb, "--");
             } else {
-#line 30 "src/main.vl"
+#line 31 "src/main.vl"
                 sb_append_str(sb, "++");
             }
         }
-#line 32 "src/main.vl"
-        sb_append_str(sb, ") {\n");
 #line 33 "src/main.vl"
+        sb_append_str(sb, ") {\n");
+#line 34 "src/main.vl"
         return;
     }
-#line 38 "src/main.vl"
-    sb_append_str(sb, "for (");
 #line 39 "src/main.vl"
-    sb_append_str(sb, c_type);
+    sb_append_str(sb, "for (");
 #line 40 "src/main.vl"
-    sb_append_str(sb, "__start_");
+    sb_append_str(sb, c_type);
 #line 41 "src/main.vl"
-    sb_append_str(sb, vname);
+    sb_append_str(sb, "__start_");
 #line 42 "src/main.vl"
-    sb_append_str(sb, " = (");
-#line 43 "src/main.vl"
-    emit_c_expr(sb, st, stmt->loop_start);
-#line 44 "src/main.vl"
-    sb_append_str(sb, "), __end_");
-#line 45 "src/main.vl"
     sb_append_str(sb, vname);
-#line 46 "src/main.vl"
+#line 43 "src/main.vl"
     sb_append_str(sb, " = (");
+#line 44 "src/main.vl"
+    emit_c_expr(sb, st, stmt->loop_start);
+#line 45 "src/main.vl"
+    sb_append_str(sb, "), __end_");
+#line 46 "src/main.vl"
+    sb_append_str(sb, vname);
 #line 47 "src/main.vl"
-    emit_c_expr(sb, st, stmt->loop_end);
+    sb_append_str(sb, " = (");
 #line 48 "src/main.vl"
-    sb_append_str(sb, ")");
+    emit_c_expr(sb, st, stmt->loop_end);
 #line 49 "src/main.vl"
-    if ((stmt->loop_step != NULL)) {
+    sb_append_str(sb, ")");
 #line 50 "src/main.vl"
-        sb_append_str(sb, ", __step_");
+    if ((stmt->loop_step != NULL)) {
 #line 51 "src/main.vl"
-        sb_append_str(sb, vname);
+        sb_append_str(sb, ", __step_");
 #line 52 "src/main.vl"
-        sb_append_str(sb, " = (");
+        sb_append_str(sb, vname);
 #line 53 "src/main.vl"
-        emit_c_expr(sb, st, stmt->loop_step);
+        sb_append_str(sb, " = (");
 #line 54 "src/main.vl"
+        emit_c_expr(sb, st, stmt->loop_step);
+#line 55 "src/main.vl"
         sb_append_str(sb, ")");
     }
-#line 56 "src/main.vl"
-    sb_append_str(sb, ", __rev_");
 #line 57 "src/main.vl"
-    sb_append_str(sb, vname);
+    sb_append_str(sb, ", __rev_");
 #line 58 "src/main.vl"
-    sb_append_str(sb, " = (__start_");
+    sb_append_str(sb, vname);
 #line 59 "src/main.vl"
-    sb_append_str(sb, vname);
+    sb_append_str(sb, " = (__start_");
 #line 60 "src/main.vl"
-    sb_append_str(sb, " > __end_");
+    sb_append_str(sb, vname);
 #line 61 "src/main.vl"
-    sb_append_str(sb, vname);
+    sb_append_str(sb, " > __end_");
 #line 62 "src/main.vl"
-    sb_append_str(sb, "), ");
+    sb_append_str(sb, vname);
 #line 63 "src/main.vl"
-    sb_append_str(sb, vname);
+    sb_append_str(sb, "), ");
 #line 64 "src/main.vl"
-    sb_append_str(sb, " = __start_");
+    sb_append_str(sb, vname);
 #line 65 "src/main.vl"
-    sb_append_str(sb, vname);
+    sb_append_str(sb, " = __start_");
 #line 66 "src/main.vl"
+    sb_append_str(sb, vname);
+#line 67 "src/main.vl"
     sb_append_str(sb, "; ");
-#line 69 "src/main.vl"
-    sb_append_str(sb, "__rev_");
 #line 70 "src/main.vl"
-    sb_append_str(sb, vname);
+    sb_append_str(sb, "__rev_");
 #line 71 "src/main.vl"
-    sb_append_str(sb, " ? (");
-#line 72 "src/main.vl"
     sb_append_str(sb, vname);
+#line 72 "src/main.vl"
+    sb_append_str(sb, " ? (");
 #line 73 "src/main.vl"
-    if (stmt->is_inclusive) {
+    sb_append_str(sb, vname);
 #line 74 "src/main.vl"
+    if (stmt->is_inclusive) {
+#line 75 "src/main.vl"
         sb_append_str(sb, " >= __end_");
     } else {
-#line 76 "src/main.vl"
+#line 77 "src/main.vl"
         sb_append_str(sb, " > __end_");
     }
-#line 78 "src/main.vl"
-    sb_append_str(sb, vname);
 #line 79 "src/main.vl"
-    sb_append_str(sb, ") : (");
-#line 80 "src/main.vl"
     sb_append_str(sb, vname);
+#line 80 "src/main.vl"
+    sb_append_str(sb, ") : (");
 #line 81 "src/main.vl"
-    if (stmt->is_inclusive) {
+    sb_append_str(sb, vname);
 #line 82 "src/main.vl"
+    if (stmt->is_inclusive) {
+#line 83 "src/main.vl"
         sb_append_str(sb, " <= __end_");
     } else {
-#line 84 "src/main.vl"
+#line 85 "src/main.vl"
         sb_append_str(sb, " < __end_");
     }
-#line 86 "src/main.vl"
-    sb_append_str(sb, vname);
 #line 87 "src/main.vl"
+    sb_append_str(sb, vname);
+#line 88 "src/main.vl"
     sb_append_str(sb, "); ");
-#line 90 "src/main.vl"
-    sb_append_str(sb, "__rev_");
 #line 91 "src/main.vl"
-    sb_append_str(sb, vname);
+    sb_append_str(sb, "__rev_");
 #line 92 "src/main.vl"
-    sb_append_str(sb, " ? (");
-#line 93 "src/main.vl"
     sb_append_str(sb, vname);
+#line 93 "src/main.vl"
+    sb_append_str(sb, " ? (");
 #line 94 "src/main.vl"
-    if ((stmt->loop_step != NULL)) {
+    sb_append_str(sb, vname);
 #line 95 "src/main.vl"
-        sb_append_str(sb, " -= __step_");
+    if ((stmt->loop_step != NULL)) {
 #line 96 "src/main.vl"
-        sb_append_str(sb, vname);
+        sb_append_str(sb, " -= __step_");
 #line 97 "src/main.vl"
-        sb_append_str(sb, ") : (");
-#line 98 "src/main.vl"
         sb_append_str(sb, vname);
+#line 98 "src/main.vl"
+        sb_append_str(sb, ") : (");
 #line 99 "src/main.vl"
-        sb_append_str(sb, " += __step_");
+        sb_append_str(sb, vname);
 #line 100 "src/main.vl"
+        sb_append_str(sb, " += __step_");
+#line 101 "src/main.vl"
         sb_append_str(sb, vname);
     } else {
-#line 102 "src/main.vl"
-        sb_append_str(sb, "--) : (");
 #line 103 "src/main.vl"
-        sb_append_str(sb, vname);
+        sb_append_str(sb, "--) : (");
 #line 104 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 105 "src/main.vl"
         sb_append_str(sb, "++");
     }
-#line 106 "src/main.vl"
-    sb_append_str(sb, ")");
 #line 107 "src/main.vl"
+    sb_append_str(sb, ")");
+#line 108 "src/main.vl"
     sb_append_str(sb, ") {\n");
+}
+
+#line 113 "src/main.vl"
+void emit_range_step_guard(StringBuilder* sb, StmtNode* stmt, const char* vname, int32_t indent) {
+#line 114 "src/main.vl"
+    if (((stmt == NULL) || (stmt->loop_step == NULL))) {
+#line 114 "src/main.vl"
+        return;
+    }
+#line 115 "src/main.vl"
+    if (is_literal_range_step(stmt->loop_start, stmt->loop_end, stmt->loop_step)) {
+#line 115 "src/main.vl"
+        return;
+    }
+#line 117 "src/main.vl"
+    sb_append_indent(sb, indent);
+#line 118 "src/main.vl"
+    sb_append_str(sb, "if (__step_");
+#line 119 "src/main.vl"
+    sb_append_str(sb, vname);
+#line 120 "src/main.vl"
+    if (is_unsigned_int_name(stmt->type_name)) {
+#line 121 "src/main.vl"
+        sb_append_str(sb, " == 0) { ");
+    } else {
+#line 123 "src/main.vl"
+        sb_append_str(sb, " <= 0) { ");
+    }
+#line 125 "src/main.vl"
+    sb_append_str(sb, "velo_panic_range_step(");
+#line 126 "src/main.vl"
+    StringBuilder num_sb = create_sb(16);
+#line 127 "src/main.vl"
+    sb_append_int((&(num_sb)), stmt->loop_step->line);
+#line 128 "src/main.vl"
+    sb_append_str(sb, sb_to_string((&(num_sb))));
+#line 129 "src/main.vl"
+    sb_append_str(sb, ", ");
+#line 130 "src/main.vl"
+    StringBuilder col_sb = create_sb(16);
+#line 131 "src/main.vl"
+    sb_append_int((&(col_sb)), stmt->loop_step->col);
+#line 132 "src/main.vl"
+    sb_append_str(sb, sb_to_string((&(col_sb))));
+#line 133 "src/main.vl"
+    sb_append_str(sb, "); }\n");
 }
 
 #line 46 "src/main.vl"
@@ -44073,6 +44120,8 @@ void emit_c_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t ind
         define_variable(st, vname, loop_var_type, false, stmt->line, stmt->col);
 #line 302 "src/main.vl"
         DeferNode* loop_prev = push_loop_scope(defers);
+#line 302 "src/main.vl"
+        emit_range_step_guard(sb, stmt, vname, (indent + 1));
 #line 302 "src/main.vl"
         emit_c_block_stmts(sb, st, stmt->body, (indent + 1), defers);
 #line 302 "src/main.vl"

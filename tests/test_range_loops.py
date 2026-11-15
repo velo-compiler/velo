@@ -307,6 +307,8 @@ act main() -> i32 {
     try:
         res_sh = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", timeout=1.0)
         assert res_sh.returncode != 0, f"Expected dynamic zero step to fail with error, but exited {res_sh.returncode}"
+        assert "Range loop step must be greater than zero" in res_sh.stderr
+        assert "0" not in res_sh.stdout, "Expected no partial iterations before step check"
     except subprocess.TimeoutExpired as e:
         pytest.fail(f"Loop timed out (infinite loop detected on dynamic zero step): {e}")
 

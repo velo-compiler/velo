@@ -2619,12 +2619,34 @@ There is no compile-time or runtime validation of the step.
   - Bootstrap fixed-point determinism verified: SHA-256 `50FFAAE08511279CDF99FB2C1AA13AEF6B6A92EA8BE491AE3807DFEC180E0777` across Gen2, Gen3, and `bootstrap.c`.
   - All 120 compiler source files in `src/` remain $\le 394$ lines (`python scripts/count_lines.py`).
 
-##### Task 63.3: Handle dynamic zero steps deterministically
-* **Goal:** Decide and implement the behavior: compile-time rejection is impossible for a runtime value, so emit a guard that fails with a clear runtime error before the loop.
-* **Files:** `src/backend/codegen_stmt.vl`, `runtime/velo_runtime.h` if a helper is needed.
-* **Tests:** dynamic zero step; dynamic non-zero step; guard placement before the first iteration.
-* **Security gate:** no infinite loop; error message is actionable; no partial iteration before the check.
-* **Done when:** dynamic zero steps cannot hang.
+##### Task 63.3: Handle dynamic zero steps deterministically [COMPLETED] ✅
+* **Former Defect**:
+  - While literal and constant zero/non-positive steps were rejected at compile time (Task 63.2), dynamic steps represented by runtime variables or expressions (e.g. `let s: i32 = 0; loop i in 0..10:s`) could not be validated at compile time.
+  - The compiler lowered dynamic ranges to `__step_i = (s)` without any runtime validation. When `s <= 0` at runtime, `i += __step_i` or `i -= __step_i` never advanced the loop towards termination, hanging indefinitely in an infinite loop.
+* **Fix Applied**:
+  - Added runtime panic helper `velo_panic_range_step(int line, int col)` in `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h`:
+    * Prints actionable diagnostic to `stderr`: `[Velo Panic] Range loop step must be greater than zero at line %d, col %d\n`.
+    * Exits immediately with code 1 (`exit(1);`), completely eliminating infinite loops.
+  - Implemented `emit_range_step_guard(sb: @StringBuilder, stmt: @StmtNode, vname: string, indent: i32)` in `src/backend/range_gen.vl`:
+    * Emits a runtime guard at the very start of the loop body before any iteration or side effects:
+      - For signed types (`i32`, `i64`, `isize`): `if (__step_v <= 0) { velo_panic_range_step(line, col); }`
+      - For unsigned types (`u32`, `u64`, `usize`): `if (__step_v == 0) { velo_panic_range_step(line, col); }`
+    * Avoids unsigned `< 0` compiler warnings by discriminating signed vs unsigned with `is_unsigned_int_name`.
+    * Guard executes strictly before any user statement in the loop body, guaranteeing zero partial iterations.
+    * Evaluates `step` exactly once in the `for` loop initialization header without duplicate evaluation.
+  - Integrated `emit_range_step_guard` into `src/backend/codegen_stmt.vl:302` keeping `codegen_stmt.vl` at exactly 393 lines ($\le 394$).
+  - Rebuilt 3-generation self-hosted bootstrap chain (`bin/velo.exe` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 fixed-point determinism (`C0E4C2961CA14A140431B39D1068901C5107501B2FE073F7C3A61BCA14BA5ED0`).
+  - Expanded `TestDynamicRangeStepExecution` in `tests/test_range_steps.py` (8 tests) and updated `tests/test_range_loops.py`:
+    * Validated that dynamic zero (`s = 0`), dynamic negative (`s = -1`), dynamic descending negative (`s = -2`), dynamic unsigned zero (`s = 0u32`), dynamic 64-bit zero (`s = 0i64`), and dynamic anonymous zero (`loop 0..10:s`) fail fast with code 1 and output `[Velo Panic] Range loop step must be greater than zero`.
+    * Validated that no loop body side effects or partial iterations occur before the panic.
+* **Residual Limitation**:
+  - Verification that codegen never emits a literal `i += 0` increment in any C output is completed in Task 63.4.
+* **Verification**:
+  - `python -m pytest tests/test_range_steps.py -q`: 40/40 passed in 18.02s (100% pass rate).
+  - `python -m pytest tests/test_range_loops.py -q`: 10/10 passed in 4.58s (100% pass rate).
+  - `python -m pytest tests/test_range_steps.py tests/test_range_loops.py tests/test_large_ranges.py tests/test_dynamic_ranges.py tests/test_count_loops.py -q`: 309 passed, 0 failed in 70.82s.
+  - Fixed-point determinism verified: SHA-256 `C0E4C2961CA14A140431B39D1068901C5107501B2FE073F7C3A61BCA14BA5ED0` across Gen2, Gen3, and `bootstrap.c`.
+  - All 120 compiler source files in `src/` remain $\le 394$ lines (`python scripts/count_lines.py`).
 
 ##### Task 63.4: Ensure codegen never emits `i += 0`
 * **Goal:** Add an assertion/test that a zero step cannot reach the emitted increment.

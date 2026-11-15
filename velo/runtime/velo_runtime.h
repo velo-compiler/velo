@@ -3147,4 +3147,13 @@ static inline bool velo_opt_unwrap_bool(_Velo_Opt_bool opt, const char* file, in
     return opt.val;
 }
 
+static inline void velo_panic_range_step(int line, int col) {
+    if (line > 0 && col > 0) {
+        fprintf(stderr, "[Velo Panic] Range loop step must be greater than zero at line %d, col %d\n", line, col);
+    } else {
+        fprintf(stderr, "[Velo Panic] Range loop step must be greater than zero\n");
+    }
+    exit(1);
+}
+
 #endif // VELO_RUNTIME_H

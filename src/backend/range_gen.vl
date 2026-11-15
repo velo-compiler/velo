@@ -5,6 +5,7 @@ use "../ast/expr.vl"
 use "../ast/stmt.vl"
 use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
+use "../ast/int_types.vl"
 use "../common/string_builder.vl"
 use "codegen_lit.vl"
 use "codegen_expr.vl"
@@ -106,3 +107,29 @@ act emit_range_loop_header(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode
     sb_append_str(sb, ")")
     sb_append_str(sb, ") {\n")
 }
+
+// Emits a runtime guard at the start of the loop body for dynamic range steps,
+// guaranteeing that steps <= 0 (or == 0 for unsigned) fail fast before any iteration.
+act emit_range_step_guard(sb: @StringBuilder, stmt: @StmtNode, vname: string, indent: i32) {
+    if stmt == null or stmt.loop_step == null { return }
+    if is_literal_range_step(stmt.loop_start, stmt.loop_end, stmt.loop_step) { return }
+
+    sb_append_indent(sb, indent)
+    sb_append_str(sb, "if (__step_")
+    sb_append_str(sb, vname)
+    if is_unsigned_int_name(stmt.type_name) {
+        sb_append_str(sb, " == 0) { ")
+    } else {
+        sb_append_str(sb, " <= 0) { ")
+    }
+    sb_append_str(sb, "velo_panic_range_step(")
+    mut num_sb = create_sb(16)
+    sb_append_int(@num_sb, stmt.loop_step.line)
+    sb_append_str(sb, sb_to_string(@num_sb))
+    sb_append_str(sb, ", ")
+    mut col_sb = create_sb(16)
+    sb_append_int(@col_sb, stmt.loop_step.col)
+    sb_append_str(sb, sb_to_string(@col_sb))
+    sb_append_str(sb, "); }\n")
+}
+
