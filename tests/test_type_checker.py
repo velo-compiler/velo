@@ -412,3 +412,73 @@ class TestCallArgumentTypeChecking:
         assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
         assert "Type mismatch in call argument 1: expected 'i32', got '@i32'" in res.stdout
 
+
+# ==============================================================================
+# Phase 60: Condition Type Checking Red Baseline (Task 60.1)
+# ==============================================================================
+
+class TestConditionTypeChecking:
+    @classmethod
+    def setup_class(cls):
+        if not VELO_EXE.exists():
+            pytest.skip("bin/velo.exe not built")
+
+    def test_if_int_literal_condition_rejected(self):
+        code = """
+        act main() {
+            if 1 {}
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+
+    def test_if_string_literal_condition_rejected(self):
+        code = """
+        act main() {
+            if "hello" {}
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+
+    def test_if_struct_condition_rejected(self):
+        code = """
+        data Point { x: i32 }
+        act main() {
+            let p = Point { x: 0 }
+            if p {}
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+
+    def test_if_pointer_condition_rejected(self):
+        code = """
+        act main() {
+            let x: i32 = 10
+            let p: @i32 = @x
+            if p {}
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+
+    def test_if_null_condition_rejected(self):
+        code = """
+        act main() {
+            if null {}
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+
+    def test_if_float_condition_rejected(self):
+        code = """
+        act main() {
+            if 1.5 {}
+        }
+        """
+        res = run_velo_check(code)
+        assert res.returncode != 0, f"Expected rejection, but check passed: {res.stdout}"
+
+

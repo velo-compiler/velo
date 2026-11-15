@@ -2207,12 +2207,29 @@ This is both a soundness hole and a source of silent logic errors: a non-empty s
 
 #### Tasks
 
-##### Task 60.1: Add the condition matrix (red baseline)
-* **Goal:** Cover `if`, `loop`, `if` expressions, and `on` guards.
-* **Files:** `tests/test_type_checker.py` (extend), `tests/test_conditions.py` (new).
-* **Tests:** `if 1`, `if "x"`, `if p`, `if @p`, `if null`, `loop 5.0`, `loop p`, `loop "x"`, valid `bool` and optional comparisons.
-* **Security gate:** every invalid row must fail at `velo check`; no row may reach GCC.
-* **Done when:** the matrix fails for the documented reasons.
+##### Task 60.1: Add the condition matrix (red baseline) [COMPLETED] ✅
+* **Former Defect**:
+  - `type_checker_stmt.vl:150-161` (`STMT_IF`) only called `infer_expr_type(st, stmt.expr)` without verifying that the condition expression evaluates to `bool`.
+  - `type_checker.vl:358-372` (`EXPR_IF`) only called `infer_expr_type(st, expr.left)` without verifying that the ternary condition expression evaluates to `bool`.
+  - Non-boolean values (integers, strings, structs, raw pointers, `null`, floats, arrays) in `if` statements and `if` expressions silently passed `velo check` with exit code 0.
+  - While scalar non-booleans (such as integers or raw pointers) became truthy C conditions (`if (1)` or `if (ptr)`) causing subtle logic bugs and pointer truthiness hazards, non-scalar conditions (such as structs `if p {}`) passed `velo check` and crashed only at backend C compilation (`used struct type value where scalar is required`).
+* **Fix Applied**:
+  - Established the Red Baseline test matrix for Phase 60 across two test suites:
+    * Created `tests/test_conditions.py` (31 test cases) covering:
+      - `TestIfStatementConditionTypeChecking` (10 tests: int literal, int var, negative int, string literal, string var, struct, pointer, null, float, array).
+      - `TestIfExpressionConditionTypeChecking` (6 tests: int, string, struct, pointer, null, float).
+      - `TestLoopConditionTypeChecking` (5 tests: float, string, struct, pointer, null).
+      - `TestValidConditionsControlGroup` (10 tests: bool literals, bool vars, binary comparisons, logical operators, optional null-checks, valid if-expressions, bool loop conditions, count loops, range loops).
+    * Extended `tests/test_type_checker.py` with `TestConditionTypeChecking` (6 tests) validating rejection of int, string, struct, pointer, null, and float conditions.
+* **Residual Limitation**:
+  - Red baseline established:
+    * `tests/test_conditions.py`: 16 failed, 15 passed (the 15 passed are 5 existing loop non-count/non-bool checks and 10 valid control tests; the 16 failed fail for the exact documented defect: `velo check` silently returns code 0 on non-`bool` conditions).
+    * `tests/test_type_checker.py`: 6 failed, 29 passed (the 6 condition type check tests fail because `velo check` returns 0).
+  - Implementation of `require_bool_condition` and its integration across all condition sites follows in Tasks 60.2 and 60.3.
+* **Verification**:
+  - `python -m pytest tests/test_conditions.py -q`: 16 failed, 15 passed (red baseline confirmed).
+  - `python -m pytest tests/test_type_checker.py -q`: 6 failed, 29 passed (red baseline confirmed).
+  - Line count discipline: all 120 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
 
 ##### Task 60.2: Implement `require_bool_condition`
 * **Goal:** Add one helper that infers the condition type, accepts `bool`, and reports a precise diagnostic otherwise.
