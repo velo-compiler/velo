@@ -490,7 +490,7 @@ act main() -> i32 {
         io.println("FAIL: expected error")
         return 1
     }
-    io.println("err={res.as.err}")
+    io.println("err={res.err}")
     io.println("order={order}")
     let leaked: usize = mem.heap_used() - base
     io.println("leaked={leaked}")
@@ -536,7 +536,7 @@ act main() -> i32 {
         io.println("FAIL: expected error")
         return 1
     }
-    io.println("err={res.as.err}")
+    io.println("err={res.err}")
     io.println("order={order}")
     let leaked: usize = mem.heap_used() - base
     io.println("leaked={leaked}")
@@ -1069,6 +1069,264 @@ act main() -> i32 {
     res = run_velo_source(src)
     assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
     assert "PASS: shelf loop per-iteration cleanups verified" in res.stdout
+
+
+def test_defer_early_exit_multi_level_return():
+    """Verify return from 4-level nested blocks unwinds in exact LIFO order and frees all allocations."""
+    src = """
+use sys.io
+use sys.mem
+
+act helper(p_order: @i32) -> i32 {
+    let p0: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p0)
+    defer p_order[0] = p_order[0] * 10 + 1
+
+    if true {
+        let p1: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p1)
+        defer p_order[0] = p_order[0] * 10 + 2
+
+        {
+            let p2: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p2)
+            defer p_order[0] = p_order[0] * 10 + 3
+
+            if true {
+                let p3: @i32 = mem.heap_alloc(@i32, 4)
+                defer mem.free(p3)
+                defer p_order[0] = p_order[0] * 10 + 4
+
+                return 42
+
+                defer p_order[0] = p_order[0] * 10 + 9
+            }
+            defer p_order[0] = p_order[0] * 10 + 8
+        }
+        defer p_order[0] = p_order[0] * 10 + 7
+    }
+    defer p_order[0] = p_order[0] * 10 + 6
+    return 0
+}
+
+act main() -> i32 {
+    let base = mem.heap_used()
+    mut order: i32 = 0
+    let ret = helper(@order)
+    io.println("ret={ret}")
+    io.println("order={order}")
+    let leaked: usize = mem.heap_used() - base
+    io.println("leaked={leaked}")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "ret=42" in res.stdout
+    assert "order=4321" in res.stdout
+    assert "leaked=0" in res.stdout
+
+
+def test_defer_early_exit_multi_level_fail():
+    """Verify fail from 4-level nested blocks unwinds in exact LIFO order and delivers error string."""
+    src = """
+use sys.io
+use sys.mem
+
+act helper(p_order: @i32) -> i32 or string {
+    let p0: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p0)
+    defer p_order[0] = p_order[0] * 10 + 1
+
+    if true {
+        let p1: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p1)
+        defer p_order[0] = p_order[0] * 10 + 2
+
+        {
+            let p2: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p2)
+            defer p_order[0] = p_order[0] * 10 + 3
+
+            if true {
+                let p3: @i32 = mem.heap_alloc(@i32, 4)
+                defer mem.free(p3)
+                defer p_order[0] = p_order[0] * 10 + 4
+
+                fail "deep failure"
+
+                defer p_order[0] = p_order[0] * 10 + 9
+            }
+            defer p_order[0] = p_order[0] * 10 + 8
+        }
+        defer p_order[0] = p_order[0] * 10 + 7
+    }
+    defer p_order[0] = p_order[0] * 10 + 6
+    return 0
+}
+
+act main() -> i32 {
+    let base = mem.heap_used()
+    mut order: i32 = 0
+    let res = helper(@order)
+    if res.ok {
+        io.println("FAIL: expected error outcome")
+        return 1
+    }
+    io.println("err={res.err}")
+    io.println("order={order}")
+    let leaked: usize = mem.heap_used() - base
+    io.println("leaked={leaked}")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "err=deep failure" in res.stdout
+    assert "order=4321" in res.stdout
+    assert "leaked=0" in res.stdout
+
+
+def test_defer_early_exit_multi_level_or_return():
+    """Verify `or return` from 4-level nested blocks unwinds in exact LIFO order and delivers error string."""
+    src = """
+use sys.io
+use sys.mem
+
+act callee() -> i32 or string {
+    fail "nested callee failure"
+}
+
+act helper(p_order: @i32) -> i32 or string {
+    let p0: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p0)
+    defer p_order[0] = p_order[0] * 10 + 1
+
+    if true {
+        let p1: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p1)
+        defer p_order[0] = p_order[0] * 10 + 2
+
+        {
+            let p2: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p2)
+            defer p_order[0] = p_order[0] * 10 + 3
+
+            if true {
+                let p3: @i32 = mem.heap_alloc(@i32, 4)
+                defer mem.free(p3)
+                defer p_order[0] = p_order[0] * 10 + 4
+
+                let v: i32 = callee() or return
+
+                defer p_order[0] = p_order[0] * 10 + 9
+            }
+            defer p_order[0] = p_order[0] * 10 + 8
+        }
+        defer p_order[0] = p_order[0] * 10 + 7
+    }
+    defer p_order[0] = p_order[0] * 10 + 6
+    return 0
+}
+
+act main() -> i32 {
+    let base = mem.heap_used()
+    mut order: i32 = 0
+    let res = helper(@order)
+    if res.ok {
+        io.println("FAIL: expected error outcome")
+        return 1
+    }
+    io.println("err={res.err}")
+    io.println("order={order}")
+    let leaked: usize = mem.heap_used() - base
+    io.println("leaked={leaked}")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "err=nested callee failure" in res.stdout
+    assert "order=4321" in res.stdout
+    assert "leaked=0" in res.stdout
+
+
+def test_defer_early_exit_nested_blocks_inside_loop_break_and_continue():
+    """Verify break/continue inside nested blocks within a loop unwind inner blocks up to loop boundary only."""
+    src = """
+use sys.io
+use sys.mem
+
+act main() -> i32 {
+    let base = mem.heap_used()
+    mut outer_defer_ran: bool = false
+    mut unwind_order: i32 = 0
+
+    // Outer block defer
+    defer outer_defer_ran = true
+
+    loop 3 {
+        let p_lp: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p_lp)
+        defer unwind_order = unwind_order * 10 + 1
+
+        if it == 0 {
+            // Nested block 1
+            {
+                let p_bk: @i32 = mem.heap_alloc(@i32, 4)
+                defer mem.free(p_bk)
+                defer unwind_order = unwind_order * 10 + 2
+
+                if true {
+                    let p_deep: @i32 = mem.heap_alloc(@i32, 4)
+                    defer mem.free(p_deep)
+                    defer unwind_order = unwind_order * 10 + 3
+
+                    // continue from 3 levels deep: must unwind 3 -> 2 -> 1, but NOT outer_defer!
+                    continue
+                }
+            }
+        }
+
+        if it == 1 {
+            // Nested block 1
+            {
+                let p_bk2: @i32 = mem.heap_alloc(@i32, 4)
+                defer mem.free(p_bk2)
+                defer unwind_order = unwind_order * 10 + 4
+
+                if true {
+                    let p_deep2: @i32 = mem.heap_alloc(@i32, 4)
+                    defer mem.free(p_deep2)
+                    defer unwind_order = unwind_order * 10 + 5
+
+                    // break from 3 levels deep: must unwind 5 -> 4 -> 1, but NOT outer_defer!
+                    break
+                }
+            }
+        }
+    }
+
+    // Outer defer must NOT have run yet!
+    if outer_defer_ran {
+        io.println("FAIL: outer defer ran prematurely during break/continue")
+        return 1
+    }
+
+    // Iteration 0 (continue): 3, then 2, then 1 => 321
+    // Iteration 1 (break): 5, then 4, then 1 => 321541
+    io.println("order={unwind_order}")
+
+    let leaked: usize = mem.heap_used() - base
+    io.println("leaked={leaked}")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "order=321541" in res.stdout
+    assert "leaked=0" in res.stdout
+
 
 
 

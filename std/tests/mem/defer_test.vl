@@ -289,6 +289,10 @@ act test_fail_unwinding(base: usize) -> bool {
         io.println("FAIL: test_fail_unwinding expected error outcome")
         return false
     }
+    if res.err != "operation failed" {
+        io.println("FAIL: test_fail_unwinding err message mismatch")
+        return false
+    }
     if order != 21 {
         io.println("FAIL: test_fail_unwinding order expected 21")
         return false
@@ -323,6 +327,10 @@ act test_or_return_unwinding(base: usize) -> bool {
     let res = helper_or_return_unwind(@order)
     if res.ok {
         io.println("FAIL: test_or_return_unwinding expected error outcome")
+        return false
+    }
+    if res.err != "callee error" {
+        io.println("FAIL: test_or_return_unwinding err message mismatch")
         return false
     }
     if order != 21 {

@@ -1848,12 +1848,30 @@ A `defer` inside `if` either runs at function exit (too late) or fails to compil
   - `std/tests/mem/defer_test.vl`: PASSED (all 16 lifecycle assertions succeeded).
   - All 119 source files in `src/` remain $\le 395$ lines (`codegen_stmt.vl` is at 392 lines).
 
-##### Task 58.6: Correct early-exit ordering
-* **Goal:** Unwind innermost block first, then outer blocks, for `return`, `fail`, `break`, and `continue`.
-* **Files:** `src/backend/codegen_stmt.vl:347-377`, `src/backend/outcome_gen.vl`.
-* **Tests:** nested blocks with defers and early exits; LIFO order.
-* **Security gate:** exactly-once; no cleanup of blocks not exited.
-* **Done when:** ordering tests pass for every exit kind.
+##### Task 58.6: Correct early-exit ordering [COMPLETED] ✅
+* **Former Defect**:
+  - Prior to Phase 58, early-exit control-flow statements (`return`, `fail`, `or return`, `break`, `continue`) unrolled defers assuming a flat function-level stack, risking out-of-order execution or double-emission when nested within lexical blocks (`{ ... }`, `if`, `loop`).
+  - In `tests/test_defer.py`, `test_defer_fail_outcome_unwinding` and `test_defer_or_return_unwinding` exhibited assertion failures when formatting outcome error messages with `{res.as.err}` instead of idiomatic `{res.err}`, causing pointer addresses to be printed instead of string content.
+* **Fix Applied**:
+  - Verified and formalized early-exit unwinding across multi-level nested scopes in `src/backend/codegen_stmt.vl` and `src/backend/outcome_gen.vl`:
+    * Traversal of active defers via `cur_d = defers.@; loop cur_d != null { ... cur_d = cur_d.next }` in `emit_return_stmt`, `emit_fail_stmt`, `emit_or_return_var_decl`, `emit_or_return_assign`, and `emit_or_return_expr` unrolls in strict LIFO order: innermost block defers first, then enclosing blocks, then function-level defers.
+    * `emit_c_cleanup` cleanly skips `is_block` and `is_loop` markers, preventing false boundaries or corrupted stacks during full-unwind early exits.
+    * `STMT_BREAK` and `STMT_CONTINUE` unroll defers up to the nearest enclosing `is_loop` marker (`loop cur_d != null and not cur_d.is_loop { ... }`), preserving outer block and function defers from premature execution.
+    * Unconditional exit propagation via `stmt_unconditionally_exits` prevents double-emission of cleanups at block closing `}` for blocks terminating in `return`, `fail`, `break`, or `continue`.
+  - Fixed test assertions in `tests/test_defer.py` to use idiomatic outcome member access `res.err` instead of internal C union representation `res.as.err`.
+  - Added dedicated multi-level nested early-exit test suites to `tests/test_defer.py`:
+    * `test_defer_early_exit_multi_level_return`: 4 levels of nested blocks (`func` -> `if` -> `{ ... }` -> `if` -> `return`), asserting exact reverse LIFO unwinding order (`order=4321`), zero leaks, and suppression of subsequent defers.
+    * `test_defer_early_exit_multi_level_fail`: 4 levels of nested blocks terminating in `fail "deep failure"`, asserting exact LIFO order (`order=4321`), zero leaks, and correct string outcome delivery.
+    * `test_defer_early_exit_multi_level_or_return`: 4 levels of nested blocks propagating `callee() or return`, asserting exact LIFO order (`order=4321`), zero leaks, and correct string outcome delivery.
+    * `test_defer_early_exit_nested_blocks_inside_loop_break_and_continue`: deep nested blocks inside loop with `continue` and `break`, proving inner blocks unwind to loop boundary while outer function defers remain isolated and unexecuted until function return.
+  - Enhanced `std/tests/mem/defer_test.vl` to assert error payload string integrity on `helper_fail_unwind` and `helper_or_return_unwind`.
+* **Residual Limitation**:
+  - Branch-specific scoping for `if`/`else` and `on` arms (preventing branch-local defers from leaking into sibling branches or untaken paths) is formally audited and verified in Task 58.7.
+* **Verification**:
+  - `python -m pytest tests/test_defer.py -q`: all 28 passed in 10.01s.
+  - `python -m pytest tests -q`: 1357 passed, 2 skipped in 816.46s (0:13:36) — 100% pass rate.
+  - `python scripts/check_determinism.py`: SHA-256 fixed point verified (`e5a4c003821f75e2b78fecb66a6d3ab247e25143a8713c0f9eaea1bb582039c4`).
+  - `python scripts/count_lines.py`: all 119 source files in `src/` remain $\le 395$ lines.
 
 ##### Task 58.7: Handle `if`/`else`/`on` branches
 * **Goal:** Ensure branch-local defers do not leak into sibling branches or the enclosing function.
