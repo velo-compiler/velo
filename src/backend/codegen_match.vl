@@ -77,8 +77,7 @@ act emit_match_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, inden
                     }
                 }
             }
-            mut cur_stmt = cur_case.body.first_stmt
-            loop cur_stmt != null { emit_c_stmt(sb, st, cur_stmt, indent + 1, defers); cur_stmt = cur_stmt.next }
+            emit_c_block_stmts(sb, st, cur_case.body, indent + 1, defers)
             exit_scope(st)
             sb_append_indent(sb, indent + 1)
             sb_append_str(sb, "break;\n")

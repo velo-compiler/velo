@@ -1873,12 +1873,26 @@ A `defer` inside `if` either runs at function exit (too late) or fails to compil
   - `python scripts/check_determinism.py`: SHA-256 fixed point verified (`e5a4c003821f75e2b78fecb66a6d3ab247e25143a8713c0f9eaea1bb582039c4`).
   - `python scripts/count_lines.py`: all 119 source files in `src/` remain $\le 395$ lines.
 
-##### Task 58.7: Handle `if`/`else`/`on` branches
-* **Goal:** Ensure branch-local defers do not leak into sibling branches or the enclosing function.
-* **Files:** `src/backend/codegen_stmt.vl`, `src/backend/codegen_match.vl`.
-* **Tests:** defer in each branch; only the taken branch runs its cleanup.
-* **Security gate:** no double emission; no branch-crossing cleanup.
-* **Done when:** branch tests pass.
+##### Task 58.7: Handle `if`/`else`/`on` branches [COMPLETED] ✅
+* **Former Defect**:
+  - In `src/backend/codegen_match.vl:80-82`, tagged union pattern matching cases iterated `cur_case.body.first_stmt` calling `emit_c_stmt` directly without lexical block scoping (`emit_c_block_stmts`). Any `defer` statement declared inside a tagged union `on` arm was never emitted at arm exit, remaining on the compiler's cleanup stack until function exit and failing compilation with `'p' undeclared` (or executing outside the switch case).
+  - In conditional branching constructs (`if`, `else if`, `else`, `on` string/variant/integer switches), branch-local cleanups needed strict isolation guarantees to prove that only the taken branch runs its cleanup, sibling branches remain isolated, and untaken branch cleanups are never executed.
+* **Fix Applied**:
+  - Bound tagged union `on` arms to lexical block cleanups in `src/backend/codegen_match.vl`: replaced manual statement iteration with `emit_c_block_stmts(sb, st, cur_case.body, indent + 1, defers)`, ensuring arm-local defers execute before `break;\n` at the closing `}` of the arm.
+  - Verified branch isolation in `src/backend/codegen_stmt.vl`: `if` and `else` branches invoke `emit_c_block_stmts` within isolated scopes, ensuring branch-local defers are popped and flushed at the end of each taken branch.
+  - Added 4 comprehensive test suites in `tests/test_defer.py`:
+    * `test_defer_if_else_chain_branch_isolation`: tests 3 branches in an `if`/`else if`/`else` chain with per-branch allocations and defers across 3 distinct passes; verifies exactly-once execution of the taken branch's cleanup, zero sibling leakage, and 0 bytes leaked.
+    * `test_defer_match_tagged_union_variant_arms_scoping`: tests unit variants (`.Stop`), single payload variants (`.Walk(steps)`), and multi-field variants (`.Teleport(x, y)`), verifying arm-local defers execute at arm closing `}` before `break` with full access to pattern variables and zero leaks.
+    * `test_defer_match_string_pattern_arms_scoping`: tests string pattern arms and default `else`, verifying clean execution at arm closing `}`.
+    * `test_defer_branch_early_exit_no_double_emission_and_sibling_safety`: tests early exit inside an `if` branch with return vs fallthrough `else`, proving no double emission and complete sibling isolation under early exits.
+  - Enhanced `std/tests/mem/defer_test.vl` with `test_tagged_union_arm` testing tagged union `.Move(dist)` pattern matching arm defer execution and zero memory leak.
+* **Residual Limitation**:
+  - Memory sanitizer (ASan/UBSan) and leak sanitizer integration in CI is addressed in Task 58.8.
+* **Verification**:
+  - `python -m pytest tests/test_defer.py -q`: all 32 passed in 10.23s.
+  - `std/tests/mem/defer_test.vl`: all 17 lifecycle assertions succeeded.
+  - Bootstrap chain rebuilt and deterministic: Gen2 and Gen3 SHA-256 match `43b85f57d652b5aefddf32d127f7c92220bc47e8d19b541ceaa9e3353926beb6`, matching `bootstrap.c`.
+  - Line count discipline: all 119 files in `src/` remain $\le 395$ lines (`codegen_match.vl` at 203 lines).
 
 ##### Task 58.8: Add leak/UAF sanitizer coverage
 * **Goal:** Run the defer matrix under ASan/UBSan (POSIX) and a leak check on Windows where available.

@@ -1328,5 +1328,295 @@ act main() -> i32 {
     assert "leaked=0" in res.stdout
 
 
+def test_defer_if_else_chain_branch_isolation():
+    """Defers in if/else if/else must only execute for the taken branch, with zero sibling leakage."""
+    src = """
+use sys.io
+use sys.mem
+
+act run_branch(branch: i32, p_order: @i32) {
+    if branch == 1 {
+        let p1: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p1)
+        defer p_order[0] = p_order[0] * 10 + 1
+        p_order[0] = p_order[0] * 10 + 4
+    } else if branch == 2 {
+        let p2: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p2)
+        defer p_order[0] = p_order[0] * 10 + 2
+        p_order[0] = p_order[0] * 10 + 5
+    } else {
+        let p3: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p3)
+        defer p_order[0] = p_order[0] * 10 + 3
+        p_order[0] = p_order[0] * 10 + 6
+    }
+}
+
+act main() -> i32 {
+    let base = mem.heap_used()
+
+    // Test branch 1
+    mut order1: i32 = 0
+    run_branch(1, @order1)
+    // body wrote 4, then defer wrote 1 => 41
+    if order1 != 41 {
+        io.println("FAIL: branch 1 mismatch: {order1}")
+        return 1
+    }
+
+    // Test branch 2
+    mut order2: i32 = 0
+    run_branch(2, @order2)
+    // body wrote 5, then defer wrote 2 => 52
+    if order2 != 52 {
+        io.println("FAIL: branch 2 mismatch: {order2}")
+        return 1
+    }
+
+    // Test branch 3 (else)
+    mut order3: i32 = 0
+    run_branch(3, @order3)
+    // body wrote 6, then defer wrote 3 => 63
+    if order3 != 63 {
+        io.println("FAIL: branch 3 mismatch: {order3}")
+        return 1
+    }
+
+    let leaked: usize = mem.heap_used() - base
+    if leaked != 0 {
+        io.println("FAIL: leaked: {leaked}")
+        return 1
+    }
+
+    io.println("PASS: if/else branch isolation verified")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: if/else branch isolation verified" in res.stdout
+
+
+def test_defer_match_tagged_union_variant_arms_scoping():
+    """Defers inside tagged union pattern arms must execute at arm closing '}' before break."""
+    src = """
+use sys.io
+use sys.mem
+
+kind Action {
+    Stop
+    Walk(steps: i32)
+    Teleport(x: i32, y: i32)
+}
+
+act run_action(act_val: Action, p_order: @i32) {
+    on act_val {
+        .Stop => {
+            let p0: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p0)
+            defer p_order[0] = p_order[0] * 10 + 1
+            p_order[0] = p_order[0] * 10 + 9
+        }
+        .Walk(steps) => {
+            let p1: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p1)
+            defer p_order[0] = p_order[0] * 10 + 2
+            p_order[0] = p_order[0] * 10 + steps
+        }
+        .Teleport(x, y) => {
+            let p2: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p2)
+            defer p_order[0] = p_order[0] * 10 + 3
+            p_order[0] = p_order[0] * 10 + (x + y)
+        }
+    }
+}
+
+act main() -> i32 {
+    let base = mem.heap_used()
+
+    // 1. Stop variant
+    mut order0: i32 = 0
+    run_action(Action.Stop, @order0)
+    // body wrote 9, defer wrote 1 => 91
+    if order0 != 91 {
+        io.println("FAIL: stop variant order mismatch: {order0}")
+        return 1
+    }
+
+    // 2. Walk variant
+    mut order1: i32 = 0
+    run_action(Action.Walk(5), @order1)
+    // body wrote 5, defer wrote 2 => 52
+    if order1 != 52 {
+        io.println("FAIL: walk variant order mismatch: {order1}")
+        return 1
+    }
+
+    // 3. Teleport variant
+    mut order2: i32 = 0
+    run_action(Action.Teleport(3, 4), @order2)
+    // body wrote 7, defer wrote 3 => 73
+    if order2 != 73 {
+        io.println("FAIL: teleport variant order mismatch: {order2}")
+        return 1
+    }
+
+    let leaked: usize = mem.heap_used() - base
+    if leaked != 0 {
+        io.println("FAIL: leaked: {leaked}")
+        return 1
+    }
+
+    io.println("PASS: tagged union variant arms scoping verified")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: tagged union variant arms scoping verified" in res.stdout
+
+
+def test_defer_match_string_pattern_arms_scoping():
+    """Defers inside string match arms must execute at arm closing '}' without leaking."""
+    src = """
+use sys.io
+use sys.mem
+
+act match_command(cmd: string, p_order: @i32) {
+    on cmd {
+        "start" => {
+            let p: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p)
+            defer p_order[0] = p_order[0] * 10 + 1
+            p_order[0] = p_order[0] * 10 + 4
+        }
+        "pause", "stop" => {
+            let p: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p)
+            defer p_order[0] = p_order[0] * 10 + 2
+            p_order[0] = p_order[0] * 10 + 5
+        }
+        else => {
+            let p: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p)
+            defer p_order[0] = p_order[0] * 10 + 3
+            p_order[0] = p_order[0] * 10 + 6
+        }
+    }
+}
+
+act main() -> i32 {
+    let base = mem.heap_used()
+
+    mut order1: i32 = 0
+    match_command("start", @order1)
+    if order1 != 41 {
+        io.println("FAIL: start mismatch: {order1}")
+        return 1
+    }
+
+    mut order2: i32 = 0
+    match_command("stop", @order2)
+    if order2 != 52 {
+        io.println("FAIL: stop mismatch: {order2}")
+        return 1
+    }
+
+    mut order3: i32 = 0
+    match_command("unknown", @order3)
+    if order3 != 63 {
+        io.println("FAIL: default mismatch: {order3}")
+        return 1
+    }
+
+    let leaked: usize = mem.heap_used() - base
+    if leaked != 0 {
+        io.println("FAIL: string match leaked: {leaked}")
+        return 1
+    }
+
+    io.println("PASS: string match arms scoping verified")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: string match arms scoping verified" in res.stdout
+
+
+def test_defer_branch_early_exit_no_double_emission_and_sibling_safety():
+    """Branch with early return runs its defers once, without executing sibling branch defers."""
+    src = """
+use sys.io
+use sys.mem
+
+act helper(take_early: bool, p_order: @i32) -> i32 {
+    let p_fn: @i32 = mem.heap_alloc(@i32, 4)
+    defer mem.free(p_fn)
+    defer p_order[0] = p_order[0] * 10 + 1
+
+    if take_early {
+        let p_if: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p_if)
+        defer p_order[0] = p_order[0] * 10 + 2
+        return 100
+        defer p_order[0] = p_order[0] * 10 + 9
+    } else {
+        let p_else: @i32 = mem.heap_alloc(@i32, 4)
+        defer mem.free(p_else)
+        defer p_order[0] = p_order[0] * 10 + 3
+    }
+
+    defer p_order[0] = p_order[0] * 10 + 8
+    return 200
+}
+
+act main() -> i32 {
+    let base = mem.heap_used()
+
+    // Pass 1: early exit taken in 'if'
+    mut order1: i32 = 0
+    let ret1 = helper(true, @order1)
+    if ret1 != 100 {
+        io.println("FAIL: ret1 mismatch")
+        return 1
+    }
+    // 'if' defer (2) then fn defer (1) => 21; else defer (3) must NOT have run!
+    if order1 != 21 {
+        io.println("FAIL: order1 mismatch: {order1}")
+        return 1
+    }
+
+    // Pass 2: normal exit through 'else'
+    mut order2: i32 = 0
+    let ret2 = helper(false, @order2)
+    if ret2 != 200 {
+        io.println("FAIL: ret2 mismatch")
+        return 1
+    }
+    // 'else' defer (3), then post-if defer (8), then fn defer (1) => 381
+    if order2 != 381 {
+        io.println("FAIL: order2 mismatch: {order2}")
+        return 1
+    }
+
+    let leaked: usize = mem.heap_used() - base
+    if leaked != 0 {
+        io.println("FAIL: leaked: {leaked}")
+        return 1
+    }
+
+    io.println("PASS: branch early exit no double emission and sibling safe")
+    return 0
+}
+"""
+    res = run_velo_source(src)
+    assert res.returncode == 0, f"failed: {res.stdout}\n{res.stderr}"
+    assert "PASS: branch early exit no double emission and sibling safe" in res.stdout
+
+
+
 
 

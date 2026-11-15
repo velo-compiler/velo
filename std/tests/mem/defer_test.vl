@@ -143,6 +143,36 @@ act test_match_arm(base: usize) -> bool {
     return true
 }
 
+kind DeferMsg {
+    Quit
+    Move(dist: i32)
+}
+
+act test_tagged_union_arm(base: usize) -> bool {
+    mut order: i32 = 0
+    let m = DeferMsg.Move(42)
+    on m {
+        .Quit => {
+            order += 1
+        }
+        .Move(dist) => {
+            let p: @i32 = mem.heap_alloc(@i32, 4)
+            defer mem.free(p)
+            defer order += 100
+            order += dist
+        }
+    }
+    if order != 142 {
+        io.println("FAIL: test_tagged_union_arm order mismatch")
+        return false
+    }
+    if mem.heap_used() != base {
+        io.println("FAIL: test_tagged_union_arm memory leaked")
+        return false
+    }
+    return true
+}
+
 act test_loop_iteration(base: usize) -> bool {
     mut cleanups: i32 = 0
     loop 3 {
@@ -353,6 +383,7 @@ act main() -> i32 {
     if not test_if_untaken(base) { return 1 }
     if not test_else_block(base) { return 1 }
     if not test_match_arm(base) { return 1 }
+    if not test_tagged_union_arm(base) { return 1 }
     if not test_loop_iteration(base) { return 1 }
     if not test_loop_break(base) { return 1 }
     if not test_loop_continue(base) { return 1 }
