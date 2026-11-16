@@ -874,6 +874,65 @@ on method {
 }
 ```
 
+#### 3. Control Flow & Loop Binding Invariants (`break` and `continue` inside `on`)
+Velo strictly defines the interaction between pattern matching branches and surrounding loop control flow:
+
+1. **`on` is Not a Loop**:
+   - The `on` statement is a multi-way branch, not an iteration construct.
+   - It introduces no loop scope and cannot serve as the target of `break` or `continue`.
+2. **Nearest Enclosing Loop Binding**:
+   - A `break` statement anywhere inside an `on` arm binds to and terminates the **nearest lexically enclosing `loop`**, never the `on` block.
+   - A `continue` statement anywhere inside an `on` arm advances the **nearest lexically enclosing `loop`** to its next iteration, skipping subsequent statements in the loop body.
+3. **No Switch-Capture Guarantee**:
+   - When scalar or tagged-union `on` statements lower to C99 `switch` statements in the backend, `break` and `continue` are never emitted as unadorned C `break;` statements that could be trapped by the `switch`. The backend emits explicit loop-level jumps (e.g. labeled `goto` or dedicated loop exit flags).
+4. **Transparent Nested `on` Invariant**:
+   - Arbitrarily deep nesting of `on` statements (`on a { ... on b { ... break } }`) preserves lexical binding to the innermost enclosing `loop`. Inner `on` boundaries are completely transparent to control-flow unwinding.
+5. **Exact-Once Cleanup on Break & Continue**:
+   - Exiting or advancing a loop via `break` or `continue` inside an `on` arm executes all active loop-scoped `defer` and zone cleanups in strict LIFO order **exactly once**.
+   - Cleanups are executed prior to transferring control, preventing duplicate cleanup execution at loop iteration boundaries.
+6. **Rejection Outside Loops**:
+   - A `break` or `continue` statement within an `on` arm that is not contained within a `loop` is rejected at compile time (`break statement not within a loop` / `continue statement not within a loop`).
+
+```rust
+// 1. Break inside 'on' terminates enclosing loop
+loop i in 0..10 {
+    on i {
+        3 => { break }     // Exits 'loop i in 0..10' immediately at i == 3
+        else => { }
+    }
+}
+
+// 2. Continue inside 'on' skips loop body tail
+loop i in 0..5 {
+    on i {
+        2 => { continue }  // Advances loop to i == 3
+        else => { }
+    }
+    process_item(i)        // Skipped when i == 2
+}
+
+// 3. Nested 'on' transparently targets outer loop
+loop i in 0..10 {
+    on i {
+        2 => {
+            on status {
+                .Halt => { break } // Binds directly to 'loop i in 0..10'
+                .Run  => { }
+            }
+        }
+        else => { }
+    }
+}
+
+// 4. Illegal: break inside 'on' without enclosing loop
+act inspect_value(val: i32) {
+    on val {
+        1 => { break }     // Compile Error: break statement not within a loop
+        else => { }
+    }
+}
+```
+
 ### 7.4 First-Class Conditional Expressions (`if-else`)
 `if-else` blocks can be used directly as expressions producing values:
 

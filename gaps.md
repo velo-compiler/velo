@@ -2425,12 +2425,25 @@ This is especially dangerous when the case body allocates and relies on loop-sco
   - `python -m pytest tests/test_match_switch.py tests/test_break_continue.py -q`: 12 failed, 13 passed in 14.68s.
   - All 12 failures documented and confirmed.
 
-##### Task 61.2: Define and document the binding rule
-* **Goal:** State that `on` is not a loop and `break`/`continue` target the nearest loop; update the specification.
-* **Files:** `docs/SPECIFICATION.md` §7.3, `gaps.md`.
-* **Tests:** documentation examples.
-* **Security gate:** no ambiguity for nested `on` or `on` outside a loop.
-* **Done when:** the rule is reviewed.
+##### Task 61.2: Define and document the binding rule [COMPLETED] ✅
+* **Former Defect**:
+  - The language specification (`docs/SPECIFICATION.md` §7.3) lacked formal definitions for control flow statements (`break` and `continue`) appearing within `on` arms.
+  - This ambiguity allowed the C backend to silently inherit C's `switch` break semantics (breaking only the `switch`) instead of language-level semantics where `break` and `continue` bind to the nearest enclosing loop.
+  - Furthermore, rules for nested `on` blocks, exact-once defer cleanup ordering, and prohibition of `break`/`continue` outside of loops were undocumented.
+* **Fix Applied**:
+  - Updated `docs/SPECIFICATION.md` §7.3 with Subsection 3 (*"Control Flow & Loop Binding Invariants (`break` and `continue` inside `on`)"*), formalizing 6 binding invariants:
+    1. **`on` is Not a Loop**: multi-way branch, not an iteration construct; introduces no loop scope.
+    2. **Nearest Enclosing Loop Binding**: `break` and `continue` within an `on` arm bind to and control the nearest enclosing `loop`.
+    3. **No Switch-Capture Guarantee**: codegen guarantees emitted C never allows a C `switch` to trap `break`/`continue`.
+    4. **Transparent Nested `on` Invariant**: arbitrarily nested `on` blocks remain transparent to lexical loop resolution.
+    5. **Exact-Once Cleanup on Break & Continue**: active loop-scoped `defer` and zone cleanups execute in LIFO order exactly once prior to control transfer.
+    6. **Rejection Outside Loops**: `break`/`continue` in `on` without an enclosing loop is rejected at compile time.
+  - Added 4 comprehensive code examples illustrating single-loop break, continue tail skip, nested `on` transparent binding, and compile-time rejection outside loops.
+* **Residual Limitation**:
+  - Backend lowering of explicit loop targets for `break` (Task 61.3) and `continue` (Task 61.4), cleanup ordering (Task 61.5), and out-of-loop checker validation (Phase 62) follow in subsequent tasks.
+* **Verification**:
+  - `docs/SPECIFICATION.md` §7.3 verified against Phase 61 architectural requirements.
+  - Documentation examples align with red baseline test matrix in `tests/test_match_switch.py` and `tests/test_break_continue.py`.
 
 ##### Task 61.3: Lower `break` with an explicit loop target
 * **Goal:** Emit a labeled `goto` or a dedicated loop-exit flag instead of a raw `break` inside the switch.
