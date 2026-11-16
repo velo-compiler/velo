@@ -497,3 +497,57 @@ def test_runtime_header_copies_are_identical():
         "runtime/velo_runtime.h and velo/runtime/velo_runtime.h diverged; "
         "apply the change to both and re-copy"
     )
+
+
+def test_oom_policy_is_documented_and_matches_the_code():
+    """Task 65.6: the policy has to be written down and stay true.
+
+    Checked in both directions so neither side can drift: every allocation-path
+    diagnostic the runtime can print must appear in the OOM policy tables, and
+    the policy must not describe diagnostics the runtime no longer has.
+
+    Bounds and type diagnostics (`shelf index out of bounds`, `map key not
+    found`, `shelf[dyn] unbox`, ...) are deliberately out of scope: they are
+    caller-error traps, not OOM policy, and belong to their own subsystems.
+    """
+    header = (RUNTIME_DIR / "velo_runtime.h").read_text(encoding="utf-8")
+    security = (REPO_ROOT / "SECURITY.md").read_text(encoding="utf-8")
+    spec = (REPO_ROOT / "docs" / "SPECIFICATION.md").read_text(encoding="utf-8")
+    documented = security + spec
+
+    # Every fatal on an allocation path, as it appears in the source. Matched
+    # verbatim against the header (so a reword fails here) and as a substring
+    # of the docs (so a removal from the policy fails here too).
+    ALLOC_FATALS = [
+        "Zone Arena allocation failed",
+        "Zone Arena Chunk Spilling allocation failed",
+        "Zone Arena Watermark Stack OOM",
+        "Zone Arena capacity must be > 0",
+        "Zone Arena Out of Memory",
+        "Arena allocation failed",
+        "Arena capacity must be > 0",
+        "Allocator Out of Memory",
+        "Allocation size overflow",
+        "Out of Heap Memory",
+        "Cannot enter null arena",
+        "got a negative byte count",
+        "thread spawn out of memory",
+    ]
+    for msg in ALLOC_FATALS:
+        assert msg in header, (
+            f"'{msg}' is in the OOM policy but no longer raised by "
+            "runtime/velo_runtime.h — update SECURITY.md/SPECIFICATION.md"
+        )
+        assert msg in documented, (
+            f"runtime raises '{msg}' but the OOM policy does not document it"
+        )
+
+    assert "Out-of-Memory Policy" in security
+    assert "fail-stop" in security.lower(), "SECURITY.md must state the fail-stop contract"
+    assert "### 5.7 Out-of-Memory Behaviour" in spec
+    assert "fail-stop" in spec.lower(), "SPECIFICATION.md §5.7 must state the contract"
+    # The intrinsics are not optional-returning, which is WHY the policy is
+    # fail-stop; the spec has to say so instead of leaving it unexplained.
+    assert "never an optional" in spec, "§5.7 must explain the @T (not ?@T) reason"
+    # The header itself must carry the policy for whoever edits it next.
+    assert "OOM POLICY" in header, "runtime header must document its own OOM policy"

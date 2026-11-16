@@ -68,3 +68,53 @@ Velo enforces several key architectural guarantees designed to minimize attack s
 3. **Compiler Driver Command Hardening:** The compiler driver escapes all file paths and compiler flags passed to ambient C compilers (`gcc`, `clang`, MSVC `cl.exe`), preventing command injection or argument smuggling.
 4. **Cryptographic Package Supply Chain Integrity (`velo.lock`):** The package manager calculates and verifies cryptographic SHA-256 digests (`sha256:...`) using `std.crypto` for all resolved dependencies, detecting and rejecting tampered or modified archives during `velo pkg install`, `velo pkg check`, and `velo pkg build`.
 
+---
+
+## Out-of-Memory Policy
+
+The runtime (`runtime/velo_runtime.h`) is **fail-stop on allocation failure**. There
+is no recoverable OOM path and no silent truncation: every allocation that cannot be
+satisfied terminates the process with a diagnostic on stderr.
+
+| Allocation site | Behaviour on failure |
+|:---|:---|
+| `velo_zone_create_default`, `velo_zone_enter`, `velo_mem_create_arena` (arena struct or buffer) | `Zone Arena allocation failed (<n> bytes)` / `Arena allocation failed (<n> bytes)` → `exit(1)` |
+| `velo_zone_enter`, `velo_mem_create_arena` with a zero capacity | `Zone Arena capacity must be > 0` / `Arena capacity must be > 0` → `exit(1)` |
+| `velo_zone_new_chunk` (spilled chunk struct or buffer) | `Zone Arena Chunk Spilling allocation failed (<n> bytes)` → `exit(1)` |
+| `velo_zone_push` (watermark heap growth; includes wrap and byte-size overflow) | `Zone Arena Watermark Stack OOM` → `exit(1)` |
+| `velo_zone_enter(NULL)` / entering a null arena handle | `Cannot enter null arena` → `exit(1)` |
+| `velo_heap_alloc`, `velo_heap_realloc` | `Out of Heap Memory` → `exit(1)`; a failed `realloc` leaves the old block intact until exit |
+| `velo_thread_spawn`, `velo_mutex_create` | `thread spawn out of memory` / `mutex creation failed` → `exit(1)` |
+| Fixed-budget arena overflow (`can_grow == 0`) | `Zone Arena Out of Memory (...)` → `exit(1)` |
+| `mem.alloc_with` on a fixed-budget arena | `Allocator Out of Memory (...)` → `exit(1)` |
+| Size computation overflow (`size * count`, `+ header`) | `Allocation size overflow (...)` → `exit(1)` |
+
+Why fail-stop rather than returning `null`:
+
+1. **A `null` return from the intrinsics is not observable.** `mem.alloc` and
+   `mem.heap_alloc` are declared to return `@T`/`@u8`, not `?@T`; there is no
+   language-level way to check for failure without adding an optional type to
+   every allocation. A `null` pointer would therefore be dereferenced immediately,
+   converting a diagnosable condition into undefined behaviour.
+2. **Partial failure is not a valid arena state.** A bump allocator cannot give back
+   an allocation it failed to satisfy, and a half-grown watermark stack or chunk
+   list has no consistent interpretation. Terminating keeps every observable arena
+   state either untouched or fully valid.
+3. **Defensive paths never guess.** An out-of-range watermark (`velo_zone_pop`
+   with `0` or an index above the stack depth) is treated as caller corruption:
+   the arena is reset to empty and its watermark stack cleared. The runtime does
+   not rewind to a "probably right" offset, because doing so would hide a
+   bookkeeping bug behind plausible-looking behaviour.
+
+Capacity arithmetic is checked before subtraction: every `cap - offset` test in the
+arena and chunk paths verifies `offset <= cap` first, so a corrupted watermark can
+never make the capacity check underflow and hand out a pointer past the buffer. Those
+paths are covered by `tests/test_runtime_zone.py` with deterministic allocation
+fail-injection, and that harness is executed under ASan/UBSan in the CI `sanitizer`
+job.
+
+A program that must tolerate memory pressure should pre-size its arena
+(`mem.create_arena(capacity)` / `zone` with an explicit budget) and check
+`mem.used()` / `mem.heap_used()` against its own budget before allocating, rather
+than relying on allocation failure being recoverable — it is not.
+

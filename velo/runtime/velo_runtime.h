@@ -292,6 +292,25 @@ static inline bool velo_cmp_ge_u_s(uint64_t a, int64_t b) { return (b <= 0) || (
 //     `zone <bytes> { ... }` blocks and by `mem.alloc(...)` calls.
 //   * Persistent heap    — malloc-backed, tracked (`mem.heap_alloc` / free).
 //
+// OOM POLICY: allocation is FAIL-STOP. An unsatisfiable request prints
+// `Velo Fatal Error: ...` to stderr and calls exit(1); no allocation returns
+// a NULL that a caller is expected to test, because the `mem.*` intrinsics
+// are typed to return @T/@u8 rather than ?@T (there is nothing to test with).
+// Consequences for every function in this section:
+//   * Allocate first, publish second — never store into a pointer whose
+//     allocation was not checked (see velo_zone_enter: the struct is checked
+//     before either the pool copy or the z->base write).
+//   * Capacity tests guard the subtraction: test `offset <= cap` BEFORE
+//     `cap - offset`, so a corrupted watermark cannot underflow the test and
+//     hand out a pointer past the buffer.
+//   * Defensive paths reset to a known-valid state (empty arena) rather than
+//     guessing a rewind target — a wrong watermark means caller bookkeeping
+//     is already untrustworthy, so it must surface rather than be smoothed
+//     over (see velo_zone_pop's out-of-range branch).
+// The policy is documented for users in SPECIFICATION.md §5.7 and SECURITY.md
+// § Out-of-Memory Policy; tests/test_runtime_zone.py exercises every fatal
+// site with deterministic fail-injection.
+//
 // Zone arenas are first-class objects (VeloZoneArena). Per §4.2 the arena
 // state is per-thread thread-local storage (TLS): every thread lazily gets
 // its own 32 MB heap-backed default arena and its own reuse pool, so two

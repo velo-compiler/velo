@@ -751,6 +751,38 @@ unknown mem member 'malloc' (functions: alloc, heap_alloc, free, realloc, copy,
 move, set, used, heap_used, current, alloc_with, create_arena, destroy_arena)
 ```
 
+### 5.7 Out-of-Memory Behaviour
+Allocation in Velo is **fail-stop**. The `mem.*` intrinsics return `@T` or `@u8`
+— never an optional — so there is no language-level way to observe a failed
+allocation. Rather than hand back a `null` that the caller would immediately
+dereference, the runtime prints a diagnostic to stderr and terminates with a
+non-zero exit status.
+
+| Condition | Diagnostic | Outcome |
+| :--- | :--- | :--- |
+| Arena or heap allocation fails | `Velo Fatal Error: Zone Arena allocation failed (<n> bytes)` / `Velo Fatal Error: Out of Heap Memory` | process exits |
+| `zone` / `mem.create_arena` exceeds a fixed budget | `Velo Fatal Error: Zone Arena Out of Memory (...)` / `Velo Fatal Error: Allocator Out of Memory (...)` | process exits |
+| `size * count` would overflow | `Velo Fatal Error: Allocation size overflow (...)` | process exits |
+| `zone` capacity is `0` | `Velo Fatal Error: Zone Arena capacity must be > 0` | process exits |
+| A watermark stack push cannot grow | `Velo Fatal Error: Zone Arena Watermark Stack OOM` | process exits |
+| `mem.copy`/`move`/`set`/`realloc` receive a negative count | `Velo Fatal Error: mem.<op> got a negative byte count` | process exits |
+
+The consequences for user code:
+
+* **Budget explicitly when failure matters.** `mem.create_arena(capacity)` gives
+  an arena with a fixed budget; exceeding it is a diagnosed failure rather than
+  an unbounded request. With the implicit thread-local arena, compare
+  `mem.used()` against your own ceiling before a large allocation.
+* **No partial results.** The process does not continue with a truncated buffer
+  or a half-initialised structure, so there is no "check for null and carry on"
+  idiom to learn — and no way to accidentally skip the check.
+* **Defensive paths reset, they do not guess.** An invalid watermark index is
+  treated as corruption: the arena is reset to empty rather than rewound to a
+  plausible guess, so a bookkeeping bug surfaces instead of hiding.
+
+See `SECURITY.md` § Out-of-Memory Policy for the full per-site table and the
+rationale.
+
 ---
 
 ## 6. String Subsystem & Operations
