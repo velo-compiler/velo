@@ -342,7 +342,7 @@ Status values: `[OPEN]`, `[IN PROGRESS]`, `[BLOCKED]`, `[COMPLETED] ✅`.
 | **59** | Function/method call argument types are not checked | P1 | 6 | — | OPEN |
 | **60** | `if`/`loop` condition types are not checked | P1 | 5 | 59 | OPEN |
 | **61** | `break` inside `on` breaks the C switch, not the loop | P1 | 7 | 58 | OPEN |
-| **62** | `break`/`continue` outside loops pass `velo check` | P1 | 5 | 58 | OPEN |
+| **62** | `break`/`continue` outside loops pass `velo check` | P1 | 5 | 58 | COMPLETED ✅ |
 | **63** | Zero range step is accepted and loops forever | P0 | 5 | 53, 54 | OPEN |
 | **64** | Unknown `mem.*`/`str.*` members pass `velo check` | P2 | 5 | 52 | OPEN |
 | **65** | Runtime zone allocator NULL/watermark hardening | P2 | 6 | — | OPEN |
@@ -2564,7 +2564,7 @@ This is especially dangerous when the case body allocates and relies on loop-sco
 
 ---
 
-### Phase 62: `break`/`continue` Outside Loops (P1) [OPEN] 🚧
+### Phase 62: `break`/`continue` Outside Loops (P1) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-11`<br>
 **Severity:** P1 — checker accepts invalid programs; GCC-only failure<br>
@@ -2647,19 +2647,41 @@ act main() { continue }  // velo check passes; GCC: continue statement not withi
   - The defense is unreachable from source today, so it has no positive trigger test. It fires only if a future lowering path (desugaring, monomorphization, a std module) produces a jump without a loop frame. The wording-contract test is the practical guard until such a path exists.
   - **New defect found during this task (not part of Phase 62):** `defer break`, `defer continue`, and `defer return` placed directly in a loop body (or `defer return` at function scope) crash the Stage-2 compiler with a stack overflow (`0xC00000FD`, exit `-1073741571`), producing no diagnostic at all. Stage 1 accepts the same programs (`velo.py check` → exit 0). `defer` followed by a non-terminating statement (e.g. `defer io.println(1)`, `defer break` after an explicit `break`) is fine, and `defer return` at function scope also crashes. The likely cause is `emit_c_cleanup` (`codegen_stmt.vl:77-90`) re-entering `emit_c_stmt` for the deferred statement, which re-unwinds the same cleanup stack without popping it. Needs its own phase entry; it is not required for the Phase 62 exit criteria.
 
-##### Task 62.5: Add the security/regression gate and documentation
+##### Task 62.5: Add the security/regression gate and documentation [COMPLETED] ✅
 * **Goal:** Lock in the diagnostic and document the rule.
 * **Files:** `tests/test_loop_context.py`, `docs/SPECIFICATION.md`.
 * **Tests:** all invalid rows; error-message assertions; `-Werror` build.
 * **Security gate:** no compiler crash; no GCC-only failure.
 * **Done when:** the matrix is green and the docs match.
+* **Fix applied (2026-11-16):**
+  1. `docs/SPECIFICATION.md` §7.3 invariant 6 was rewritten from an `on`-only rule into a general one: it now states the rule holds in every context (function body, `if`/`else`, `on` arms, plain blocks, `zone`, `unsafe`, and statements after a closed loop), that semantic analysis owns it so `velo check` reports it with lane `semantic` and no code generation, that emission asserts the invariant and reports an `internal compiler error` if it is ever violated, and that the depth counter resets at every function boundary.
+  2. Two new illustrative blocks were added to the same section: example 5 walks the rejecting contexts (`if`, `block`, `zone`, `unsafe`, then a valid `loop`, then a `break` after the loop closes) and example 6 shows the cross-function reset. Both are asserted by tests to stay in the document.
+  3. `tests/test_loop_context.py` gained 9 gate tests: three rejection-lane tests asserting `build`, `emit-c`, and `run` all refuse while producing **no** binary and **no** translation unit; three crash tests asserting exit code is exactly `1` (never an NTSTATUS value) with no traceback; one test that every invalid row's `emit-c` fails and writes nothing (the `-Werror` corpus guard — there is no C to compile); one exact-wording test; and one documentation test.
+* **Verification:**
+  - `python -m pytest tests/test_loop_context.py -q` → **59 passed** in 3.49s (38 from tasks 62.1–62.3, 12 from task 62.4, 9 from task 62.5).
+  - Broader regression: `tests/test_defer.py`, `test_break_continue.py`, `test_match_switch.py`, `test_check_cli.py`, `test_codegen_error_gate.py`, `test_diagnostics_pretty.py`, `test_stage2_semantics.py`, `test_zone_escape_analysis.py` → **149 passed** in 52.82s.
+  - `python scripts/count_lines.py` → exit 0, zero violations; largest file `src/lsp/hover.vl` at 309 lines, well under the 400 ceiling.
+  - Full suite and final determinism check recorded below.
 
 #### Phase Exit Criteria
 
-- [ ] `break` and `continue` outside a loop fail at `velo check`.
-- [ ] Nested loops still work.
-- [ ] Codegen never emits an unbound `break`/`continue`.
-- [ ] The diagnostic is precise and documented.
+- [x] `break` and `continue` outside a loop fail at `velo check`.
+- [x] Nested loops still work.
+- [x] Codegen never emits an unbound `break`/`continue`.
+- [x] The diagnostic is precise and documented.
+
+#### Phase 62 Summary
+
+**Former Defect:** `type_checker_stmt.vl` returned immediately for `STMT_BREAK`/`STMT_CONTINUE` without tracking whether a loop was active, so `act main() { break }` passed `velo check` and failed only in the backend lane (`backend:1:14 - break statement not within a loop` followed by `Code generation failed with 1 errors.`), contradicting `docs/SPECIFICATION.md` §9 which defines `velo check` as "lex, parse, semantic analysis, monomorphization (no codegen)". Invalid programs were accepted by the checker and the failure depended on the C compiler.
+
+**Fix Applied:** Added `SymbolTable.current_loop_depth` (Task 62.2), bracketed it around the `STMT_LOOP` body check so `on`/`zone`/`unsafe`/blocks/`if` stay transparent, and reset it at every function and test boundary on both entry and exit so no depth leaks across declarations or survives an early `return`. The checker now rejects depth-zero jumps with `report_error("semantic", ...)` and increments `error_count` (Task 62.3), keeping the backend's exact wording. The emission-lane fallback was reclassified from a user-facing `backend` diagnostic to `report_error("internal", ..., "internal compiler error: unbound break/continue reached codegen")`, since after the checker fix it can only mean a compiler defect (Task 62.4). `docs/SPECIFICATION.md` §7.3 invariant 6 was generalized from `on`-only to all contexts, with two new example blocks (Task 62.5).
+
+**Residual Limitation:**
+- The codegen defense has no positive trigger from source; it only fires if a future lowering path bypasses semantic analysis. The wording-contract test in `tests/test_loop_context.py` guards it.
+- Velo has no nested `act` declarations, so the task's optional "in a nested function" matrix row is unrepresentable. It is pinned as a parse error instead.
+- **Unrelated pre-existing crash discovered and documented, not fixed:** `defer break`, `defer continue`, `defer return` inside a loop body, and `defer return` at function scope, overflow the Stage-2 compiler stack (`0xC00000FD`, exit `-1073741571`) with no diagnostic. Stage 1 accepts all of them. Likely cause is `emit_c_cleanup` re-entering `emit_c_stmt` without popping the cleanup stack. Needs a separate phase entry.
+
+**Verification:** 59 tests in `tests/test_loop_context.py` (20 red rows turned green); 149-test regression subset green; line-count discipline clean; bootstrap chain rebuilt with Gen2/Gen3 emitting identical C.
 
 ---
 

@@ -541,6 +541,7 @@ struct SymbolTable {
     int32_t current_zone_depth;
     bool strict_safety;
     int32_t current_unsafe_depth;
+    int32_t current_loop_depth;
 };
 
 struct ActTypeNode {
@@ -21461,391 +21462,393 @@ Symbol* resolve_variable(SymbolTable* st, const char* name) {
     return scope_lookup(st->current_scope, name);
 }
 
-#line 123 "src/main.vl"
+#line 124 "src/main.vl"
 void init_symbol_table(SymbolTable* st) {
-#line 124 "src/main.vl"
+#line 125 "src/main.vl"
     st->first_struct = NULL;
-#line 124 "src/main.vl"
+#line 125 "src/main.vl"
     st->struct_count = 0;
-#line 124 "src/main.vl"
+#line 125 "src/main.vl"
     st->first_kind = NULL;
-#line 124 "src/main.vl"
+#line 125 "src/main.vl"
     st->kind_count = 0;
-#line 124 "src/main.vl"
+#line 125 "src/main.vl"
     st->first_function = NULL;
-#line 124 "src/main.vl"
+#line 125 "src/main.vl"
     st->function_count = 0;
-#line 125 "src/main.vl"
+#line 126 "src/main.vl"
     st->global_scope = create_scope(NULL);
-#line 125 "src/main.vl"
+#line 126 "src/main.vl"
     st->current_scope = st->global_scope;
-#line 125 "src/main.vl"
+#line 126 "src/main.vl"
     st->error_count = 0;
-#line 125 "src/main.vl"
+#line 126 "src/main.vl"
     st->has_operator_overloads = false;
-#line 126 "src/main.vl"
+#line 127 "src/main.vl"
     st->fresh_counter = 0;
-#line 126 "src/main.vl"
+#line 127 "src/main.vl"
     st->unsafe_shelf_index = false;
-#line 126 "src/main.vl"
+#line 127 "src/main.vl"
     st->is_test = false;
-#line 126 "src/main.vl"
+#line 127 "src/main.vl"
     st->source_file = "";
-#line 126 "src/main.vl"
+#line 127 "src/main.vl"
     st->no_line_directives = false;
-#line 127 "src/main.vl"
+#line 128 "src/main.vl"
     st->zone_counter = 0;
-#line 127 "src/main.vl"
+#line 128 "src/main.vl"
     st->current_func_ret_type = "";
-#line 127 "src/main.vl"
+#line 128 "src/main.vl"
     st->current_func_name = "";
-#line 127 "src/main.vl"
+#line 128 "src/main.vl"
     st->current_zone_depth = 0;
-#line 128 "src/main.vl"
+#line 129 "src/main.vl"
     st->strict_safety = false;
-#line 128 "src/main.vl"
+#line 129 "src/main.vl"
     st->current_unsafe_depth = 0;
+#line 130 "src/main.vl"
+    st->current_loop_depth = 0;
 }
 
-#line 132 "src/main.vl"
-StructSym* register_struct(SymbolTable* st, const char* name, int32_t line, int32_t col) {
-#line 133 "src/main.vl"
-    StructSym* s = ((StructSym*)velo_mem_alloc(sizeof(StructSym), (size_t)(1)));
 #line 134 "src/main.vl"
-    s->name = name;
+StructSym* register_struct(SymbolTable* st, const char* name, int32_t line, int32_t col) {
 #line 135 "src/main.vl"
-    s->first_field = NULL;
+    StructSym* s = ((StructSym*)velo_mem_alloc(sizeof(StructSym), (size_t)(1)));
 #line 136 "src/main.vl"
-    s->field_count = 0;
+    s->name = name;
 #line 137 "src/main.vl"
-    s->line = line;
+    s->first_field = NULL;
 #line 138 "src/main.vl"
-    s->col = col;
+    s->field_count = 0;
 #line 139 "src/main.vl"
-    s->next = st->first_struct;
+    s->line = line;
+#line 140 "src/main.vl"
+    s->col = col;
 #line 141 "src/main.vl"
-    st->first_struct = s;
-#line 142 "src/main.vl"
-    st->struct_count += 1;
+    s->next = st->first_struct;
 #line 143 "src/main.vl"
+    st->first_struct = s;
+#line 144 "src/main.vl"
+    st->struct_count += 1;
+#line 145 "src/main.vl"
     return s;
 }
 
-#line 147 "src/main.vl"
-bool struct_add_field(StructSym* st_sym, const char* fname, const char* ftype, bool has_default, ExprNode* default_value, int32_t line, int32_t col) {
-#line 148 "src/main.vl"
-    StructFieldSym* f = ((StructFieldSym*)velo_mem_alloc(sizeof(StructFieldSym), (size_t)(1)));
 #line 149 "src/main.vl"
-    f->name = fname;
+bool struct_add_field(StructSym* st_sym, const char* fname, const char* ftype, bool has_default, ExprNode* default_value, int32_t line, int32_t col) {
 #line 150 "src/main.vl"
-    f->type_name = ftype;
+    StructFieldSym* f = ((StructFieldSym*)velo_mem_alloc(sizeof(StructFieldSym), (size_t)(1)));
 #line 151 "src/main.vl"
-    f->has_default = has_default;
+    f->name = fname;
 #line 152 "src/main.vl"
-    f->default_value = default_value;
+    f->type_name = ftype;
 #line 153 "src/main.vl"
-    f->line = line;
+    f->has_default = has_default;
 #line 154 "src/main.vl"
-    f->col = col;
+    f->default_value = default_value;
 #line 155 "src/main.vl"
-    f->next = NULL;
+    f->line = line;
+#line 156 "src/main.vl"
+    f->col = col;
 #line 157 "src/main.vl"
+    f->next = NULL;
+#line 159 "src/main.vl"
     if ((st_sym->first_field == NULL)) {
-#line 158 "src/main.vl"
+#line 160 "src/main.vl"
         st_sym->first_field = f;
     } else {
-#line 160 "src/main.vl"
-        StructFieldSym* cur = st_sym->first_field;
-#line 161 "src/main.vl"
-        for (int32_t it = 0; ((cur->next != NULL)); it++) {
 #line 162 "src/main.vl"
+        StructFieldSym* cur = st_sym->first_field;
+#line 163 "src/main.vl"
+        for (int32_t it = 0; ((cur->next != NULL)); it++) {
+#line 164 "src/main.vl"
             cur = cur->next;
             __loop_cont_248: __attribute__((unused));
         }
         __loop_break_248: __attribute__((unused));
-#line 164 "src/main.vl"
+#line 166 "src/main.vl"
         cur->next = f;
     }
-#line 166 "src/main.vl"
+#line 168 "src/main.vl"
     st_sym->field_count += 1;
-#line 167 "src/main.vl"
+#line 169 "src/main.vl"
     return true;
 }
 
-#line 171 "src/main.vl"
-StructSym* find_struct(SymbolTable* st, const char* name) {
-#line 172 "src/main.vl"
-    StructSym* cur = st->first_struct;
 #line 173 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
+StructSym* find_struct(SymbolTable* st, const char* name) {
 #line 174 "src/main.vl"
-        if (((cur->name != NULL && name != NULL) ? (strcmp(cur->name, name) == 0) : (cur->name == name))) {
+    StructSym* cur = st->first_struct;
 #line 175 "src/main.vl"
+    for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 176 "src/main.vl"
+        if (((cur->name != NULL && name != NULL) ? (strcmp(cur->name, name) == 0) : (cur->name == name))) {
+#line 177 "src/main.vl"
             return cur;
         }
-#line 177 "src/main.vl"
+#line 179 "src/main.vl"
         cur = cur->next;
         __loop_cont_249: __attribute__((unused));
     }
     __loop_break_249: __attribute__((unused));
-#line 179 "src/main.vl"
+#line 181 "src/main.vl"
     return NULL;
 }
 
-#line 183 "src/main.vl"
+#line 185 "src/main.vl"
 StructFieldSym* find_struct_field(StructSym* st_sym, const char* fname) {
-#line 184 "src/main.vl"
+#line 186 "src/main.vl"
     if ((st_sym == NULL)) {
-#line 184 "src/main.vl"
+#line 186 "src/main.vl"
         return NULL;
     }
-#line 185 "src/main.vl"
-    StructFieldSym* cur = st_sym->first_field;
-#line 186 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
 #line 187 "src/main.vl"
-        if (((cur->name != NULL && fname != NULL) ? (strcmp(cur->name, fname) == 0) : (cur->name == fname))) {
+    StructFieldSym* cur = st_sym->first_field;
 #line 188 "src/main.vl"
+    for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 189 "src/main.vl"
+        if (((cur->name != NULL && fname != NULL) ? (strcmp(cur->name, fname) == 0) : (cur->name == fname))) {
+#line 190 "src/main.vl"
             return cur;
         }
-#line 190 "src/main.vl"
+#line 192 "src/main.vl"
         cur = cur->next;
         __loop_cont_250: __attribute__((unused));
     }
     __loop_break_250: __attribute__((unused));
-#line 192 "src/main.vl"
+#line 194 "src/main.vl"
     return NULL;
 }
 
-#line 196 "src/main.vl"
-FunctionSym* register_function(SymbolTable* st, const char* name, const char* ret_type, bool is_extern, int32_t line, int32_t col) {
-#line 197 "src/main.vl"
-    FunctionSym* fn_sym = ((FunctionSym*)velo_mem_alloc(sizeof(FunctionSym), (size_t)(1)));
 #line 198 "src/main.vl"
-    fn_sym->name = name;
+FunctionSym* register_function(SymbolTable* st, const char* name, const char* ret_type, bool is_extern, int32_t line, int32_t col) {
 #line 199 "src/main.vl"
-    fn_sym->return_type = ret_type;
+    FunctionSym* fn_sym = ((FunctionSym*)velo_mem_alloc(sizeof(FunctionSym), (size_t)(1)));
 #line 200 "src/main.vl"
-    fn_sym->first_param = NULL;
+    fn_sym->name = name;
 #line 201 "src/main.vl"
-    fn_sym->param_count = 0;
+    fn_sym->return_type = ret_type;
 #line 202 "src/main.vl"
-    fn_sym->is_extern = is_extern;
+    fn_sym->first_param = NULL;
 #line 203 "src/main.vl"
-    fn_sym->line = line;
+    fn_sym->param_count = 0;
 #line 204 "src/main.vl"
-    fn_sym->col = col;
+    fn_sym->is_extern = is_extern;
 #line 205 "src/main.vl"
-    fn_sym->next = st->first_function;
+    fn_sym->line = line;
+#line 206 "src/main.vl"
+    fn_sym->col = col;
 #line 207 "src/main.vl"
-    st->first_function = fn_sym;
-#line 208 "src/main.vl"
-    st->function_count += 1;
+    fn_sym->next = st->first_function;
 #line 209 "src/main.vl"
-    if (((((((((((name != NULL) && velo_cmp_ge_u_s(((usize)strlen(name)), 8)) && velo_cmp_eq_u_s(name[0], 'v')) && velo_cmp_eq_u_s(name[1], 'e')) && velo_cmp_eq_u_s(name[2], 'l')) && velo_cmp_eq_u_s(name[3], 'o')) && velo_cmp_eq_u_s(name[4], '_')) && velo_cmp_eq_u_s(name[5], 'o')) && velo_cmp_eq_u_s(name[6], 'p')) && velo_cmp_eq_u_s(name[7], '_'))) {
+    st->first_function = fn_sym;
 #line 210 "src/main.vl"
+    st->function_count += 1;
+#line 211 "src/main.vl"
+    if (((((((((((name != NULL) && velo_cmp_ge_u_s(((usize)strlen(name)), 8)) && velo_cmp_eq_u_s(name[0], 'v')) && velo_cmp_eq_u_s(name[1], 'e')) && velo_cmp_eq_u_s(name[2], 'l')) && velo_cmp_eq_u_s(name[3], 'o')) && velo_cmp_eq_u_s(name[4], '_')) && velo_cmp_eq_u_s(name[5], 'o')) && velo_cmp_eq_u_s(name[6], 'p')) && velo_cmp_eq_u_s(name[7], '_'))) {
+#line 212 "src/main.vl"
         st->has_operator_overloads = true;
     }
-#line 212 "src/main.vl"
+#line 214 "src/main.vl"
     return fn_sym;
 }
 
-#line 216 "src/main.vl"
-bool function_add_param(FunctionSym* fn_sym, const char* pname, const char* ptype) {
-#line 217 "src/main.vl"
-    ParamSym* p = ((ParamSym*)velo_mem_alloc(sizeof(ParamSym), (size_t)(1)));
 #line 218 "src/main.vl"
-    p->name = pname;
+bool function_add_param(FunctionSym* fn_sym, const char* pname, const char* ptype) {
 #line 219 "src/main.vl"
-    p->type_name = ptype;
+    ParamSym* p = ((ParamSym*)velo_mem_alloc(sizeof(ParamSym), (size_t)(1)));
 #line 220 "src/main.vl"
-    p->next = NULL;
+    p->name = pname;
+#line 221 "src/main.vl"
+    p->type_name = ptype;
 #line 222 "src/main.vl"
+    p->next = NULL;
+#line 224 "src/main.vl"
     if ((fn_sym->first_param == NULL)) {
-#line 223 "src/main.vl"
+#line 225 "src/main.vl"
         fn_sym->first_param = p;
     } else {
-#line 225 "src/main.vl"
-        ParamSym* cur = fn_sym->first_param;
-#line 226 "src/main.vl"
-        for (int32_t it = 0; ((cur->next != NULL)); it++) {
 #line 227 "src/main.vl"
+        ParamSym* cur = fn_sym->first_param;
+#line 228 "src/main.vl"
+        for (int32_t it = 0; ((cur->next != NULL)); it++) {
+#line 229 "src/main.vl"
             cur = cur->next;
             __loop_cont_251: __attribute__((unused));
         }
         __loop_break_251: __attribute__((unused));
-#line 229 "src/main.vl"
+#line 231 "src/main.vl"
         cur->next = p;
     }
-#line 231 "src/main.vl"
+#line 233 "src/main.vl"
     fn_sym->param_count += 1;
-#line 232 "src/main.vl"
+#line 234 "src/main.vl"
     return true;
 }
 
-#line 236 "src/main.vl"
-FunctionSym* find_function(SymbolTable* st, const char* name) {
-#line 237 "src/main.vl"
-    FunctionSym* cur = st->first_function;
 #line 238 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
+FunctionSym* find_function(SymbolTable* st, const char* name) {
 #line 239 "src/main.vl"
-        if (((cur->name != NULL && name != NULL) ? (strcmp(cur->name, name) == 0) : (cur->name == name))) {
+    FunctionSym* cur = st->first_function;
 #line 240 "src/main.vl"
+    for (int32_t it = 0; ((cur != NULL)); it++) {
+#line 241 "src/main.vl"
+        if (((cur->name != NULL && name != NULL) ? (strcmp(cur->name, name) == 0) : (cur->name == name))) {
+#line 242 "src/main.vl"
             return cur;
         }
-#line 242 "src/main.vl"
+#line 244 "src/main.vl"
         cur = cur->next;
         __loop_cont_252: __attribute__((unused));
     }
     __loop_break_252: __attribute__((unused));
-#line 244 "src/main.vl"
+#line 246 "src/main.vl"
     return NULL;
 }
 
-#line 248 "src/main.vl"
-KindSym* register_kind(SymbolTable* st, const char* name, bool is_tagged_union, int32_t line, int32_t col) {
-#line 249 "src/main.vl"
-    KindSym* k = ((KindSym*)velo_mem_alloc(sizeof(KindSym), (size_t)(1)));
 #line 250 "src/main.vl"
-    k->name = name;
+KindSym* register_kind(SymbolTable* st, const char* name, bool is_tagged_union, int32_t line, int32_t col) {
 #line 251 "src/main.vl"
-    k->first_variant = NULL;
+    KindSym* k = ((KindSym*)velo_mem_alloc(sizeof(KindSym), (size_t)(1)));
 #line 252 "src/main.vl"
-    k->variant_count = 0;
+    k->name = name;
 #line 253 "src/main.vl"
-    k->is_tagged_union = is_tagged_union;
+    k->first_variant = NULL;
 #line 254 "src/main.vl"
-    k->line = line;
+    k->variant_count = 0;
 #line 255 "src/main.vl"
-    k->col = col;
+    k->is_tagged_union = is_tagged_union;
 #line 256 "src/main.vl"
-    k->next = st->first_kind;
+    k->line = line;
 #line 257 "src/main.vl"
-    st->first_kind = k;
+    k->col = col;
 #line 258 "src/main.vl"
-    st->kind_count += 1;
+    k->next = st->first_kind;
 #line 259 "src/main.vl"
+    st->first_kind = k;
+#line 260 "src/main.vl"
+    st->kind_count += 1;
+#line 261 "src/main.vl"
     return k;
 }
 
-#line 263 "src/main.vl"
-bool kind_add_variant(KindSym* k_sym, const char* name, int32_t disc, bool has_disc, const char* ptype, StructFieldSym* f_field, size_t f_count, int32_t line, int32_t col) {
-#line 264 "src/main.vl"
-    VariantSym* v = ((VariantSym*)velo_mem_alloc(sizeof(VariantSym), (size_t)(1)));
 #line 265 "src/main.vl"
-    v->name = name;
+bool kind_add_variant(KindSym* k_sym, const char* name, int32_t disc, bool has_disc, const char* ptype, StructFieldSym* f_field, size_t f_count, int32_t line, int32_t col) {
 #line 266 "src/main.vl"
-    v->discriminant = disc;
+    VariantSym* v = ((VariantSym*)velo_mem_alloc(sizeof(VariantSym), (size_t)(1)));
 #line 267 "src/main.vl"
-    v->has_discriminant = has_disc;
+    v->name = name;
 #line 268 "src/main.vl"
-    v->payload_type = ptype;
+    v->discriminant = disc;
 #line 269 "src/main.vl"
-    v->first_field = f_field;
+    v->has_discriminant = has_disc;
 #line 270 "src/main.vl"
-    v->field_count = f_count;
+    v->payload_type = ptype;
 #line 271 "src/main.vl"
-    v->line = line;
+    v->first_field = f_field;
 #line 272 "src/main.vl"
-    v->col = col;
+    v->field_count = f_count;
 #line 273 "src/main.vl"
-    v->next = NULL;
+    v->line = line;
+#line 274 "src/main.vl"
+    v->col = col;
 #line 275 "src/main.vl"
+    v->next = NULL;
+#line 277 "src/main.vl"
     if ((k_sym->first_variant == NULL)) {
-#line 276 "src/main.vl"
+#line 278 "src/main.vl"
         k_sym->first_variant = v;
     } else {
-#line 278 "src/main.vl"
+#line 280 "src/main.vl"
         VariantSym* cur = k_sym->first_variant;
-#line 279 "src/main.vl"
+#line 281 "src/main.vl"
         for (int32_t it = 0; ((cur->next != NULL)); it++) {
-#line 279 "src/main.vl"
+#line 281 "src/main.vl"
             cur = cur->next;
             __loop_cont_253: __attribute__((unused));
         }
         __loop_break_253: __attribute__((unused));
-#line 280 "src/main.vl"
+#line 282 "src/main.vl"
         cur->next = v;
     }
-#line 282 "src/main.vl"
+#line 284 "src/main.vl"
     k_sym->variant_count += 1;
-#line 283 "src/main.vl"
+#line 285 "src/main.vl"
     return true;
 }
 
-#line 287 "src/main.vl"
+#line 289 "src/main.vl"
 KindSym* find_kind(SymbolTable* st, const char* name) {
-#line 288 "src/main.vl"
+#line 290 "src/main.vl"
     if (((st == NULL) || (name == NULL))) {
-#line 288 "src/main.vl"
+#line 290 "src/main.vl"
         return NULL;
     }
-#line 289 "src/main.vl"
+#line 291 "src/main.vl"
     KindSym* cur = st->first_kind;
-#line 290 "src/main.vl"
+#line 292 "src/main.vl"
     for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 291 "src/main.vl"
+#line 293 "src/main.vl"
         if (((cur->name != NULL && name != NULL) ? (strcmp(cur->name, name) == 0) : (cur->name == name))) {
-#line 291 "src/main.vl"
+#line 293 "src/main.vl"
             return cur;
         }
-#line 292 "src/main.vl"
+#line 294 "src/main.vl"
         cur = cur->next;
         __loop_cont_254: __attribute__((unused));
     }
     __loop_break_254: __attribute__((unused));
-#line 294 "src/main.vl"
+#line 296 "src/main.vl"
     return NULL;
 }
 
-#line 298 "src/main.vl"
+#line 300 "src/main.vl"
 VariantSym* find_variant(KindSym* k_sym, const char* vname) {
-#line 299 "src/main.vl"
+#line 301 "src/main.vl"
     if (((k_sym == NULL) || (vname == NULL))) {
-#line 299 "src/main.vl"
+#line 301 "src/main.vl"
         return NULL;
     }
-#line 300 "src/main.vl"
+#line 302 "src/main.vl"
     VariantSym* cur = k_sym->first_variant;
-#line 301 "src/main.vl"
+#line 303 "src/main.vl"
     for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 302 "src/main.vl"
+#line 304 "src/main.vl"
         if (((cur->name != NULL && vname != NULL) ? (strcmp(cur->name, vname) == 0) : (cur->name == vname))) {
-#line 302 "src/main.vl"
+#line 304 "src/main.vl"
             return cur;
         }
-#line 303 "src/main.vl"
+#line 305 "src/main.vl"
         cur = cur->next;
         __loop_cont_255: __attribute__((unused));
     }
     __loop_break_255: __attribute__((unused));
-#line 305 "src/main.vl"
+#line 307 "src/main.vl"
     return NULL;
 }
 
-#line 309 "src/main.vl"
+#line 311 "src/main.vl"
 KindSym* find_kind_by_variant(SymbolTable* st, const char* vname) {
-#line 310 "src/main.vl"
+#line 312 "src/main.vl"
     if (((st == NULL) || (vname == NULL))) {
-#line 310 "src/main.vl"
+#line 312 "src/main.vl"
         return NULL;
     }
-#line 311 "src/main.vl"
+#line 313 "src/main.vl"
     KindSym* cur_k = st->first_kind;
-#line 312 "src/main.vl"
+#line 314 "src/main.vl"
     for (int32_t it = 0; ((cur_k != NULL)); it++) {
-#line 313 "src/main.vl"
+#line 315 "src/main.vl"
         if ((find_variant(cur_k, vname) != NULL)) {
-#line 313 "src/main.vl"
+#line 315 "src/main.vl"
             return cur_k;
         }
-#line 314 "src/main.vl"
+#line 316 "src/main.vl"
         cur_k = cur_k->next;
         __loop_cont_256: __attribute__((unused));
     }
     __loop_break_256: __attribute__((unused));
-#line 316 "src/main.vl"
+#line 318 "src/main.vl"
     return NULL;
 }
 
@@ -27997,269 +28000,286 @@ void check_statement(SymbolTable* st, const char* expected_ret_type, StmtNode* s
 #line 193 "src/main.vl"
             define_variable(st, stmt->loop_index, "usize", false, stmt->line, stmt->col);
         }
-#line 194 "src/main.vl"
-        check_statement(st, expected_ret_type, stmt->body);
 #line 195 "src/main.vl"
+        st->current_loop_depth += 1;
+#line 196 "src/main.vl"
+        check_statement(st, expected_ret_type, stmt->body);
+#line 197 "src/main.vl"
+        st->current_loop_depth -= 1;
+#line 198 "src/main.vl"
         exit_scope(st);
     } else
-#line 196 "src/main.vl"
+#line 199 "src/main.vl"
     if ((stmt->kind == STMT_ZONE)) {
-#line 197 "src/main.vl"
+#line 200 "src/main.vl"
         if ((stmt->expr != NULL)) {
-#line 197 "src/main.vl"
+#line 200 "src/main.vl"
             infer_expr_type(st, stmt->expr);
         }
-#line 198 "src/main.vl"
+#line 201 "src/main.vl"
         st->current_zone_depth += 1;
-#line 199 "src/main.vl"
+#line 202 "src/main.vl"
         check_statement(st, expected_ret_type, stmt->body);
-#line 200 "src/main.vl"
+#line 203 "src/main.vl"
         st->current_zone_depth -= 1;
     } else
-#line 201 "src/main.vl"
+#line 204 "src/main.vl"
     if ((stmt->kind == STMT_DEFER)) {
-#line 201 "src/main.vl"
+#line 204 "src/main.vl"
         check_statement(st, expected_ret_type, stmt->deferred_stmt);
     } else
-#line 202 "src/main.vl"
-    if ((stmt->kind == STMT_RETURN)) {
-#line 203 "src/main.vl"
-        if ((stmt->val_expr != NULL)) {
-#line 204 "src/main.vl"
-            check_escape_return(st, stmt->val_expr, expected_ret_type, stmt->line, stmt->col);
 #line 205 "src/main.vl"
-            pin_empty_shelf_return(st, stmt->val_expr, expected_ret_type);
+    if ((stmt->kind == STMT_RETURN)) {
 #line 206 "src/main.vl"
-            pin_empty_map_return(st, stmt->val_expr, expected_ret_type);
+        if ((stmt->val_expr != NULL)) {
 #line 207 "src/main.vl"
-            if (((stmt->val_expr->kind == EXPR_VARIANT) && ((stmt->val_expr->type_name == NULL) || velo_cmp_eq_u_s(((usize)strlen(stmt->val_expr->type_name)), 0)))) {
+            check_escape_return(st, stmt->val_expr, expected_ret_type, stmt->line, stmt->col);
 #line 208 "src/main.vl"
+            pin_empty_shelf_return(st, stmt->val_expr, expected_ret_type);
+#line 209 "src/main.vl"
+            pin_empty_map_return(st, stmt->val_expr, expected_ret_type);
+#line 210 "src/main.vl"
+            if (((stmt->val_expr->kind == EXPR_VARIANT) && ((stmt->val_expr->type_name == NULL) || velo_cmp_eq_u_s(((usize)strlen(stmt->val_expr->type_name)), 0)))) {
+#line 211 "src/main.vl"
                 stmt->val_expr->type_name = expected_ret_type;
             }
-#line 210 "src/main.vl"
+#line 213 "src/main.vl"
             const char* expected = expected_ret_type;
-#line 211 "src/main.vl"
+#line 214 "src/main.vl"
             if (is_or_type(expected_ret_type)) {
-#line 211 "src/main.vl"
+#line 214 "src/main.vl"
                 expected = or_type_success(expected_ret_type);
             }
-#line 212 "src/main.vl"
-            bool adapt_ok = try_adapt_int_literal(st, expected, stmt->val_expr, stmt->line, stmt->col);
-#line 213 "src/main.vl"
-            const char* ret_type = infer_expr_type(st, stmt->val_expr);
-#line 214 "src/main.vl"
-            if (((!types_are_compatible(expected, ret_type)) && (!types_are_compatible(expected_ret_type, ret_type)))) {
 #line 215 "src/main.vl"
+            bool adapt_ok = try_adapt_int_literal(st, expected, stmt->val_expr, stmt->line, stmt->col);
+#line 216 "src/main.vl"
+            const char* ret_type = infer_expr_type(st, stmt->val_expr);
+#line 217 "src/main.vl"
+            if (((!types_are_compatible(expected, ret_type)) && (!types_are_compatible(expected_ret_type, ret_type)))) {
+#line 218 "src/main.vl"
                 if ((!adapt_ok)) {
                 } else
-#line 216 "src/main.vl"
+#line 219 "src/main.vl"
                 if ((is_int_type(expected) && is_int_type(ret_type))) {
-#line 216 "src/main.vl"
+#line 219 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, int_conversion_error_msg(expected, ret_type));
-#line 216 "src/main.vl"
+#line 219 "src/main.vl"
                     st->error_count += 1;
                 } else
-#line 217 "src/main.vl"
+#line 220 "src/main.vl"
                 if ((is_float_type(expected) && is_float_type(ret_type))) {
-#line 217 "src/main.vl"
+#line 220 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, float_conversion_error_msg(expected, ret_type));
-#line 217 "src/main.vl"
+#line 220 "src/main.vl"
                     st->error_count += 1;
                 } else {
-#line 218 "src/main.vl"
+#line 221 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, "Return type mismatch");
-#line 218 "src/main.vl"
+#line 221 "src/main.vl"
                     st->error_count += 1;
                 }
             }
         } else
-#line 220 "src/main.vl"
-        if ((((expected_ret_type != NULL) && ((expected_ret_type != NULL && "void" != NULL) ? (strcmp(expected_ret_type, "void") != 0) : (expected_ret_type != "void"))) && velo_cmp_gt_u_s(((usize)strlen(expected_ret_type)), 0))) {
-#line 221 "src/main.vl"
-            if (((!is_or_type(expected_ret_type)) || velo_str_neq(or_type_success(expected_ret_type), "void"))) {
-#line 222 "src/main.vl"
-                report_error("semantic", stmt->line, stmt->col, "A function returning a value must return an expression");
 #line 223 "src/main.vl"
+        if ((((expected_ret_type != NULL) && ((expected_ret_type != NULL && "void" != NULL) ? (strcmp(expected_ret_type, "void") != 0) : (expected_ret_type != "void"))) && velo_cmp_gt_u_s(((usize)strlen(expected_ret_type)), 0))) {
+#line 224 "src/main.vl"
+            if (((!is_or_type(expected_ret_type)) || velo_str_neq(or_type_success(expected_ret_type), "void"))) {
+#line 225 "src/main.vl"
+                report_error("semantic", stmt->line, stmt->col, "A function returning a value must return an expression");
+#line 226 "src/main.vl"
                 st->error_count += 1;
             }
         }
     } else
-#line 226 "src/main.vl"
-    if ((stmt->kind == STMT_FAIL)) {
-#line 227 "src/main.vl"
-        if ((!is_or_type(expected_ret_type))) {
-#line 228 "src/main.vl"
-            report_error("semantic", stmt->line, stmt->col, "'fail' can only be used in a function returning an 'or' type");
 #line 229 "src/main.vl"
+    if ((stmt->kind == STMT_FAIL)) {
+#line 230 "src/main.vl"
+        if ((!is_or_type(expected_ret_type))) {
+#line 231 "src/main.vl"
+            report_error("semantic", stmt->line, stmt->col, "'fail' can only be used in a function returning an 'or' type");
+#line 232 "src/main.vl"
             st->error_count += 1;
         } else
-#line 230 "src/main.vl"
-        if ((stmt->val_expr != NULL)) {
-#line 231 "src/main.vl"
-            check_escape_fail(st, stmt->val_expr, expected_ret_type, stmt->line, stmt->col);
-#line 232 "src/main.vl"
-            const char* err_t = or_type_error(expected_ret_type);
 #line 233 "src/main.vl"
-            try_adapt_int_literal(st, err_t, stmt->val_expr, stmt->line, stmt->col);
+        if ((stmt->val_expr != NULL)) {
 #line 234 "src/main.vl"
-            const char* val_t = infer_expr_type(st, stmt->val_expr);
+            check_escape_fail(st, stmt->val_expr, expected_ret_type, stmt->line, stmt->col);
 #line 235 "src/main.vl"
+            const char* err_t = or_type_error(expected_ret_type);
+#line 236 "src/main.vl"
+            try_adapt_int_literal(st, err_t, stmt->val_expr, stmt->line, stmt->col);
+#line 237 "src/main.vl"
+            const char* val_t = infer_expr_type(st, stmt->val_expr);
+#line 238 "src/main.vl"
             if ((!types_are_compatible(err_t, val_t))) {
-#line 236 "src/main.vl"
+#line 239 "src/main.vl"
                 if ((is_int_type(err_t) && is_int_type(val_t))) {
-#line 236 "src/main.vl"
+#line 239 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, int_conversion_error_msg(err_t, val_t));
-#line 236 "src/main.vl"
+#line 239 "src/main.vl"
                     st->error_count += 1;
                 } else {
-#line 237 "src/main.vl"
+#line 240 "src/main.vl"
                     report_error("semantic", stmt->line, stmt->col, "Fail payload type mismatch");
-#line 237 "src/main.vl"
+#line 240 "src/main.vl"
                     st->error_count += 1;
                 }
             }
         } else {
-#line 240 "src/main.vl"
+#line 243 "src/main.vl"
             report_error("semantic", stmt->line, stmt->col, "'fail' statement requires an error value");
-#line 241 "src/main.vl"
+#line 244 "src/main.vl"
             st->error_count += 1;
         }
     } else
-#line 243 "src/main.vl"
+#line 246 "src/main.vl"
     if (((stmt->kind == STMT_BREAK) || (stmt->kind == STMT_CONTINUE))) {
-#line 244 "src/main.vl"
+#line 250 "src/main.vl"
+        if ((st->current_loop_depth <= 0)) {
+#line 251 "src/main.vl"
+            if ((stmt->kind == STMT_BREAK)) {
+#line 251 "src/main.vl"
+                report_error("semantic", stmt->line, stmt->col, "break statement not within a loop");
+            } else {
+#line 252 "src/main.vl"
+                report_error("semantic", stmt->line, stmt->col, "continue statement not within a loop");
+            }
+#line 253 "src/main.vl"
+            st->error_count += 1;
+        }
+#line 255 "src/main.vl"
         return;
     } else
-#line 245 "src/main.vl"
+#line 256 "src/main.vl"
     if ((stmt->kind == STMT_MATCH)) {
-#line 246 "src/main.vl"
+#line 257 "src/main.vl"
         const char* m_type = infer_expr_type(st, stmt->expr);
-#line 246 "src/main.vl"
+#line 257 "src/main.vl"
         stmt->type_name = m_type;
-#line 246 "src/main.vl"
+#line 257 "src/main.vl"
         KindSym* k_sym = find_kind(st, m_type);
-#line 246 "src/main.vl"
+#line 257 "src/main.vl"
         CaseNode* cur_case = stmt->first_case;
-#line 247 "src/main.vl"
+#line 258 "src/main.vl"
         for (int32_t it = 0; ((cur_case != NULL)); it++) {
-#line 248 "src/main.vl"
+#line 259 "src/main.vl"
             enter_scope(st);
-#line 248 "src/main.vl"
+#line 259 "src/main.vl"
             ExprNode* val = cur_case->first_val;
-#line 249 "src/main.vl"
+#line 260 "src/main.vl"
             for (int32_t it = 0; ((val != NULL)); it++) {
-#line 250 "src/main.vl"
+#line 261 "src/main.vl"
                 if (((val->kind == EXPR_VARIANT) && ((val->type_name == NULL) || velo_cmp_eq_u_s(((usize)strlen(val->type_name)), 0)))) {
-#line 250 "src/main.vl"
+#line 261 "src/main.vl"
                     val->type_name = m_type;
                 }
-#line 251 "src/main.vl"
+#line 262 "src/main.vl"
                 const char* val_t = infer_expr_type(st, val);
-#line 252 "src/main.vl"
+#line 263 "src/main.vl"
                 if ((((((m_type != NULL && "unknown" != NULL) ? (strcmp(m_type, "unknown") != 0) : (m_type != "unknown")) && ((val_t != NULL && "unknown" != NULL) ? (strcmp(val_t, "unknown") != 0) : (val_t != "unknown"))) && (!types_are_compatible(m_type, val_t))) && (!types_are_compatible(val_t, m_type)))) {
-#line 253 "src/main.vl"
+#line 264 "src/main.vl"
                     report_error("semantic", val->line, val->col, "Pattern type does not match subject type in 'on' statement");
-#line 254 "src/main.vl"
+#line 265 "src/main.vl"
                     st->error_count += 1;
                 }
-#line 256 "src/main.vl"
+#line 267 "src/main.vl"
                 if (((k_sym != NULL) && (val->kind == EXPR_VARIANT))) {
-#line 257 "src/main.vl"
+#line 268 "src/main.vl"
                     VariantSym* v_sym = find_variant(k_sym, val->member_name);
-#line 258 "src/main.vl"
+#line 269 "src/main.vl"
                     if ((v_sym != NULL)) {
-#line 259 "src/main.vl"
+#line 270 "src/main.vl"
                         if (velo_cmp_gt_u_s(v_sym->field_count, 0)) {
-#line 260 "src/main.vl"
+#line 271 "src/main.vl"
                             ExprNode* cur_b = val->first_arg;
-#line 260 "src/main.vl"
+#line 271 "src/main.vl"
                             StructFieldSym* cur_f = v_sym->first_field;
-#line 261 "src/main.vl"
+#line 272 "src/main.vl"
                             for (int32_t it = 0; (((cur_b != NULL) && (cur_f != NULL))); it++) {
-#line 262 "src/main.vl"
+#line 273 "src/main.vl"
                                 if ((cur_b->kind == EXPR_IDENT)) {
-#line 262 "src/main.vl"
+#line 273 "src/main.vl"
                                     define_variable(st, cur_b->str_val, cur_f->type_name, false, cur_b->line, cur_b->col);
                                 }
-#line 263 "src/main.vl"
+#line 274 "src/main.vl"
                                 cur_b = cur_b->next;
-#line 263 "src/main.vl"
+#line 274 "src/main.vl"
                                 cur_f = cur_f->next;
                                 __loop_cont_296: __attribute__((unused));
                             }
                             __loop_break_296: __attribute__((unused));
                         } else
-#line 265 "src/main.vl"
+#line 276 "src/main.vl"
                         if (((v_sym->payload_type != NULL) && (val->first_arg != NULL))) {
-#line 266 "src/main.vl"
+#line 277 "src/main.vl"
                             if ((val->first_arg->kind == EXPR_IDENT)) {
-#line 266 "src/main.vl"
+#line 277 "src/main.vl"
                                 define_variable(st, val->first_arg->str_val, v_sym->payload_type, false, val->first_arg->line, val->first_arg->col);
                             }
                         }
                     }
                 }
-#line 270 "src/main.vl"
+#line 281 "src/main.vl"
                 val = val->next;
                 __loop_cont_295: __attribute__((unused));
             }
             __loop_break_295: __attribute__((unused));
-#line 272 "src/main.vl"
+#line 283 "src/main.vl"
             if (((((((m_type != NULL && "?string" != NULL) ? (strcmp(m_type, "?string") == 0) : (m_type == "?string")) || is_optional_type(m_type)) && (!cur_case->is_default)) && (cur_case->first_val != NULL)) && (cur_case->first_val->kind != EXPR_NULL))) {
-#line 273 "src/main.vl"
+#line 284 "src/main.vl"
                 if ((stmt->expr->kind == EXPR_IDENT)) {
-#line 274 "src/main.vl"
+#line 285 "src/main.vl"
                     narrow_variable(st, stmt->expr->str_val, optional_inner_type(m_type), m_type);
                 }
             }
-#line 277 "src/main.vl"
+#line 288 "src/main.vl"
             if ((cur_case->body != NULL)) {
-#line 277 "src/main.vl"
+#line 288 "src/main.vl"
                 check_statement(st, expected_ret_type, cur_case->body);
             }
-#line 278 "src/main.vl"
+#line 289 "src/main.vl"
             exit_scope(st);
-#line 278 "src/main.vl"
+#line 289 "src/main.vl"
             cur_case = cur_case->next;
             __loop_cont_294: __attribute__((unused));
         }
         __loop_break_294: __attribute__((unused));
     } else
-#line 280 "src/main.vl"
+#line 291 "src/main.vl"
     if ((stmt->kind == STMT_BLOCK)) {
-#line 281 "src/main.vl"
+#line 292 "src/main.vl"
         enter_scope(st);
-#line 281 "src/main.vl"
+#line 292 "src/main.vl"
         StmtNode* cur = stmt->first_stmt;
-#line 282 "src/main.vl"
+#line 293 "src/main.vl"
         for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 283 "src/main.vl"
+#line 294 "src/main.vl"
             check_statement(st, expected_ret_type, cur);
-#line 284 "src/main.vl"
+#line 295 "src/main.vl"
             if ((((cur->kind == STMT_IF) && (cur->else_branch == NULL)) && stmt_unconditionally_exits(cur->body))) {
-#line 285 "src/main.vl"
+#line 296 "src/main.vl"
                 apply_flow_narrowing(st, cur->expr, false);
             }
-#line 287 "src/main.vl"
+#line 298 "src/main.vl"
             cur = cur->next;
             __loop_cont_297: __attribute__((unused));
         }
         __loop_break_297: __attribute__((unused));
-#line 289 "src/main.vl"
+#line 300 "src/main.vl"
         exit_scope(st);
     } else
-#line 290 "src/main.vl"
+#line 301 "src/main.vl"
     if ((stmt->kind == STMT_UNSAFE)) {
-#line 291 "src/main.vl"
+#line 302 "src/main.vl"
         st->current_unsafe_depth += 1;
-#line 292 "src/main.vl"
+#line 303 "src/main.vl"
         check_statement(st, expected_ret_type, stmt->body);
-#line 293 "src/main.vl"
+#line 304 "src/main.vl"
         st->current_unsafe_depth -= 1;
     } else
-#line 294 "src/main.vl"
+#line 305 "src/main.vl"
     if ((stmt->kind == STMT_EXPR)) {
-#line 294 "src/main.vl"
+#line 305 "src/main.vl"
         infer_expr_type(st, stmt->expr);
     }
 }
@@ -28636,71 +28656,79 @@ bool check_program(SymbolTable* st, ProgramNode* prog) {
 #line 179 "src/main.vl"
             st->current_zone_depth = 0;
 #line 180 "src/main.vl"
+            st->current_loop_depth = 0;
+#line 181 "src/main.vl"
             bool prev_strict = st->strict_safety;
-#line 181 "src/main.vl"
+#line 182 "src/main.vl"
             if (((cur->module_path != NULL) && ((cur->module_path != NULL && "std" != NULL) ? (strcmp(cur->module_path, "std") == 0) : (cur->module_path == "std")))) {
-#line 181 "src/main.vl"
+#line 182 "src/main.vl"
                 st->strict_safety = false;
             }
-#line 182 "src/main.vl"
-            enter_scope(st);
 #line 183 "src/main.vl"
+            enter_scope(st);
+#line 184 "src/main.vl"
             ParamNode* cur_p = cur->first_param;
-#line 184 "src/main.vl"
+#line 185 "src/main.vl"
             for (int32_t it = 0; ((cur_p != NULL)); it++) {
-#line 184 "src/main.vl"
+#line 185 "src/main.vl"
                 define_parameter(st, cur_p->name, cur_p->type_name, cur_p->line, cur_p->col);
-#line 184 "src/main.vl"
+#line 185 "src/main.vl"
                 cur_p = cur_p->next;
                 __loop_cont_309: __attribute__((unused));
             }
             __loop_break_309: __attribute__((unused));
-#line 185 "src/main.vl"
-            check_statement(st, cur->return_type, cur->body);
 #line 186 "src/main.vl"
-            exit_scope(st);
+            check_statement(st, cur->return_type, cur->body);
 #line 187 "src/main.vl"
+            exit_scope(st);
+#line 188 "src/main.vl"
             st->strict_safety = prev_strict;
 #line 189 "src/main.vl"
-            if ((((((cur->name != NULL && "main" != NULL) ? (strcmp(cur->name, "main") != 0) : (cur->name != "main")) && (cur->return_type != NULL)) && ((cur->return_type != NULL && "void" != NULL) ? (strcmp(cur->return_type, "void") != 0) : (cur->return_type != "void"))) && velo_cmp_gt_u_s(((usize)strlen(cur->return_type)), 0))) {
-#line 190 "src/main.vl"
-                if ((!stmt_always_returns(st, cur->body))) {
+            st->current_loop_depth = 0;
 #line 191 "src/main.vl"
-                    StringBuilder msb = create_sb(96);
+            if ((((((cur->name != NULL && "main" != NULL) ? (strcmp(cur->name, "main") != 0) : (cur->name != "main")) && (cur->return_type != NULL)) && ((cur->return_type != NULL && "void" != NULL) ? (strcmp(cur->return_type, "void") != 0) : (cur->return_type != "void"))) && velo_cmp_gt_u_s(((usize)strlen(cur->return_type)), 0))) {
 #line 192 "src/main.vl"
-                    sb_append_str((&(msb)), "missing return statement on control path in function '");
+                if ((!stmt_always_returns(st, cur->body))) {
 #line 193 "src/main.vl"
-                    sb_append_str((&(msb)), cur->name);
+                    StringBuilder msb = create_sb(96);
 #line 194 "src/main.vl"
-                    sb_append_char((&(msb)), '\'');
+                    sb_append_str((&(msb)), "missing return statement on control path in function '");
 #line 195 "src/main.vl"
-                    report_error("semantic", cur->line, cur->col, sb_to_string((&(msb))));
+                    sb_append_str((&(msb)), cur->name);
 #line 196 "src/main.vl"
+                    sb_append_char((&(msb)), '\'');
+#line 197 "src/main.vl"
+                    report_error("semantic", cur->line, cur->col, sb_to_string((&(msb))));
+#line 198 "src/main.vl"
                     st->error_count += 1;
                 }
             }
         }
-#line 200 "src/main.vl"
-        if (((cur->kind == DECL_TEST) && (cur->body != NULL))) {
-#line 201 "src/main.vl"
-            st->current_func_ret_type = "void";
 #line 202 "src/main.vl"
-            st->current_func_name = cur->name;
+        if (((cur->kind == DECL_TEST) && (cur->body != NULL))) {
 #line 203 "src/main.vl"
-            st->current_zone_depth = 0;
+            st->current_func_ret_type = "void";
 #line 204 "src/main.vl"
-            enter_scope(st);
+            st->current_func_name = cur->name;
 #line 205 "src/main.vl"
-            check_statement(st, "void", cur->body);
+            st->current_zone_depth = 0;
 #line 206 "src/main.vl"
-            exit_scope(st);
-        }
+            st->current_loop_depth = 0;
+#line 207 "src/main.vl"
+            enter_scope(st);
 #line 208 "src/main.vl"
+            check_statement(st, "void", cur->body);
+#line 209 "src/main.vl"
+            exit_scope(st);
+#line 210 "src/main.vl"
+            st->current_loop_depth = 0;
+        }
+#line 212 "src/main.vl"
         cur = cur->next;
         __loop_cont_308: __attribute__((unused));
     }
     __loop_break_308: __attribute__((unused));
-#line 211 "src/main.vl"
+#line 215 "src/main.vl"
     return velo_cmp_eq_u_s(st->error_count, 0);
 }
 
@@ -45309,99 +45337,99 @@ void emit_c_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t ind
             __loop_cont_473: __attribute__((unused));
         }
         __loop_break_473: __attribute__((unused));
-#line 356 "src/main.vl"
+#line 359 "src/main.vl"
         if (velo_cmp_eq_u_s(target_loop_id, 0)) {
-#line 356 "src/main.vl"
-            report_error("backend", stmt->line, stmt->col, "break statement not within a loop");
-#line 356 "src/main.vl"
+#line 359 "src/main.vl"
+            report_error("internal", stmt->line, stmt->col, "internal compiler error: unbound break reached codegen");
+#line 359 "src/main.vl"
             st->error_count += 1;
-#line 356 "src/main.vl"
+#line 359 "src/main.vl"
             return;
         }
-#line 357 "src/main.vl"
+#line 360 "src/main.vl"
         sb_append_indent(sb, indent);
-#line 357 "src/main.vl"
+#line 360 "src/main.vl"
         sb_append_str(sb, "goto __loop_break_");
-#line 357 "src/main.vl"
+#line 360 "src/main.vl"
         sb_append_int(sb, ((int32_t)(target_loop_id)));
-#line 357 "src/main.vl"
+#line 360 "src/main.vl"
         sb_append_str(sb, ";\n");
-#line 357 "src/main.vl"
+#line 360 "src/main.vl"
         return;
     }
-#line 361 "src/main.vl"
+#line 364 "src/main.vl"
     if ((stmt->kind == STMT_CONTINUE)) {
-#line 362 "src/main.vl"
+#line 365 "src/main.vl"
         DeferNode* cur_d = (*(defers));
-#line 362 "src/main.vl"
+#line 365 "src/main.vl"
         size_t target_loop_id = 0;
-#line 363 "src/main.vl"
+#line 366 "src/main.vl"
         for (int32_t it = 0; ((cur_d != NULL)); it++) {
-#line 364 "src/main.vl"
+#line 367 "src/main.vl"
             if (cur_d->is_loop) {
-#line 364 "src/main.vl"
+#line 367 "src/main.vl"
                 target_loop_id = cur_d->loop_id;
-#line 364 "src/main.vl"
+#line 367 "src/main.vl"
                 goto __loop_break_474;
             }
-#line 365 "src/main.vl"
+#line 368 "src/main.vl"
             emit_c_cleanup(sb, st, cur_d, indent, defers);
-#line 365 "src/main.vl"
+#line 368 "src/main.vl"
             cur_d = cur_d->next;
             __loop_cont_474: __attribute__((unused));
         }
         __loop_break_474: __attribute__((unused));
-#line 367 "src/main.vl"
+#line 370 "src/main.vl"
         if (velo_cmp_eq_u_s(target_loop_id, 0)) {
-#line 367 "src/main.vl"
-            report_error("backend", stmt->line, stmt->col, "continue statement not within a loop");
-#line 367 "src/main.vl"
+#line 370 "src/main.vl"
+            report_error("internal", stmt->line, stmt->col, "internal compiler error: unbound continue reached codegen");
+#line 370 "src/main.vl"
             st->error_count += 1;
-#line 367 "src/main.vl"
+#line 370 "src/main.vl"
             return;
         }
-#line 368 "src/main.vl"
+#line 371 "src/main.vl"
         sb_append_indent(sb, indent);
-#line 368 "src/main.vl"
+#line 371 "src/main.vl"
         sb_append_str(sb, "goto __loop_cont_");
-#line 368 "src/main.vl"
+#line 371 "src/main.vl"
         sb_append_int(sb, ((int32_t)(target_loop_id)));
-#line 368 "src/main.vl"
+#line 371 "src/main.vl"
         sb_append_str(sb, ";\n");
-#line 368 "src/main.vl"
-        return;
-    }
-#line 372 "src/main.vl"
-    if ((stmt->kind == STMT_UNSAFE)) {
-#line 373 "src/main.vl"
-        st->current_unsafe_depth += 1;
-#line 373 "src/main.vl"
-        emit_c_stmt(sb, st, stmt->body, indent, defers);
-#line 373 "src/main.vl"
-        st->current_unsafe_depth -= 1;
-#line 373 "src/main.vl"
+#line 371 "src/main.vl"
         return;
     }
 #line 375 "src/main.vl"
-    if ((stmt->kind == STMT_BLOCK)) {
+    if ((stmt->kind == STMT_UNSAFE)) {
 #line 376 "src/main.vl"
-        sb_append_indent(sb, indent);
+        st->current_unsafe_depth += 1;
 #line 376 "src/main.vl"
-        sb_append_str(sb, "{\n");
-#line 377 "src/main.vl"
-        emit_c_block_stmts(sb, st, stmt, (indent + 1), defers);
-#line 378 "src/main.vl"
-        sb_append_indent(sb, indent);
-#line 378 "src/main.vl"
-        sb_append_str(sb, "}\n");
-#line 378 "src/main.vl"
+        emit_c_stmt(sb, st, stmt->body, indent, defers);
+#line 376 "src/main.vl"
+        st->current_unsafe_depth -= 1;
+#line 376 "src/main.vl"
         return;
     }
-#line 382 "src/main.vl"
+#line 378 "src/main.vl"
+    if ((stmt->kind == STMT_BLOCK)) {
+#line 379 "src/main.vl"
+        sb_append_indent(sb, indent);
+#line 379 "src/main.vl"
+        sb_append_str(sb, "{\n");
+#line 380 "src/main.vl"
+        emit_c_block_stmts(sb, st, stmt, (indent + 1), defers);
+#line 381 "src/main.vl"
+        sb_append_indent(sb, indent);
+#line 381 "src/main.vl"
+        sb_append_str(sb, "}\n");
+#line 381 "src/main.vl"
+        return;
+    }
+#line 385 "src/main.vl"
     if ((stmt->kind == STMT_MATCH)) {
-#line 382 "src/main.vl"
+#line 385 "src/main.vl"
         emit_match_stmt(sb, st, stmt, indent, defers);
-#line 382 "src/main.vl"
+#line 385 "src/main.vl"
         return;
     }
 }

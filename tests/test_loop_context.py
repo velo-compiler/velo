@@ -604,3 +604,192 @@ def test_defense_messages_are_internal_not_user_facing(tmp_path):
     assert 'report_error("backend", stmt.line, stmt.col, "continue statement not within a loop")' not in source
 
 
+# ==============================================================================
+# Task 62.5: security/regression gate and documentation
+# ==============================================================================
+
+SECURITY_BUILD_SOURCES = [
+    (
+        "break-in-main",
+        """act main() {
+    break
+}
+""",
+        BREAK,
+    ),
+    (
+        "continue-in-on",
+        """act inspect_value(val: i32) {
+    on val {
+        1 => { continue }
+        else => { }
+    }
+}
+""",
+        CONTINUE,
+    ),
+    (
+        "unbound-jump-does-not-emit-c",
+        """act main() {
+    loop i in 0..2 {
+        break
+    }
+    break
+}
+""",
+        BREAK,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "ident,source,message",
+    SECURITY_BUILD_SOURCES,
+    ids=[row[0] for row in SECURITY_BUILD_SOURCES],
+)
+def test_rejected_programs_never_produce_a_binary(tmp_path, ident, source, message):
+    """`run`, `build`, and `emit-c` must all refuse, with no crash and no artifact."""
+    _require_native()
+    path = _write(tmp_path, f"{ident}.vl", source)
+    exe = tmp_path / f"{ident}.exe"
+    c_out = tmp_path / f"{ident}.c"
+
+    built = subprocess.run(
+        [str(VELO_EXE), "build", str(path), "-o", str(exe)],
+        capture_output=True, text=True, encoding="utf-8", timeout=120,
+    )
+    blob = built.stdout + built.stderr
+    assert built.returncode != 0, blob
+    assert message in blob, blob
+    assert "Successfully built" not in blob, blob
+    assert not exe.exists(), "no binary may be produced for a rejected program"
+
+    emitted = subprocess.run(
+        [str(VELO_EXE), "emit-c", str(path), "-o", str(c_out)],
+        capture_output=True, text=True, encoding="utf-8", timeout=120,
+    )
+    emit_blob = emitted.stdout + emitted.stderr
+    assert emitted.returncode != 0, emit_blob
+    assert not c_out.exists(), "no translation unit may be written for a rejected program"
+
+    ran = subprocess.run(
+        [str(VELO_EXE), "run", str(path)],
+        capture_output=True, text=True, encoding="utf-8", timeout=120,
+    )
+    run_blob = ran.stdout + ran.stderr
+    assert ran.returncode != 0, run_blob
+    assert "Successfully built" not in run_blob, run_blob
+
+
+@pytest.mark.parametrize(
+    "ident,source,message",
+    SECURITY_BUILD_SOURCES,
+    ids=[row[0] for row in SECURITY_BUILD_SOURCES],
+)
+def test_rejection_is_a_clean_diagnostic_not_a_crash(tmp_path, ident, source, message):
+    """No compiler crash: exit code is the ordinary 1, never an NTSTATUS value."""
+    _require_native()
+    path = _write(tmp_path, f"{ident}_crash.vl", source)
+    result = _check(path)
+    blob = result.stdout + result.stderr
+    assert result.returncode == 1, f"expected clean exit 1, got {result.returncode}\n{blob}"
+    assert "Traceback" not in blob, blob
+    assert message in blob, blob
+
+
+def test_werror_build_has_no_unbound_jump_corpus(tmp_path):
+    """Every invalid row is rejected before emission, so no C can be gcc-compiled."""
+    _require_native()
+    for ident, source, message, line in INVALID_ROWS:
+        path = _write(tmp_path, f"werror_{ident}.vl", source)
+        c_out = tmp_path / f"werror_{ident}.c"
+        emitted = subprocess.run(
+            [str(VELO_EXE), "emit-c", str(path), "-o", str(c_out)],
+            capture_output=True, text=True, encoding="utf-8", timeout=120,
+        )
+        assert emitted.returncode != 0, f"{ident}: emit-c succeeded\n{emitted.stdout}{emitted.stderr}"
+        assert not c_out.exists(), f"{ident}: translation unit written"
+
+
+def test_error_message_assertions_are_exact(tmp_path):
+    """Both wordings must be byte-exact so downstream tooling can match on them."""
+    _require_native()
+    break_path = _write(tmp_path, "wording_break.vl", """act main() {
+    break
+}
+""")
+    continue_path = _write(tmp_path, "wording_continue.vl", """act main() {
+    continue
+}
+""")
+
+    b = _check(break_path)
+    assert b.returncode != 0
+    assert "break statement not within a loop" in (b.stdout + b.stderr)
+    assert "brk statement" not in (b.stdout + b.stderr)
+
+    c = _check(continue_path)
+    assert c.returncode != 0
+    assert "continue statement not within a loop" in (c.stdout + c.stderr)
+
+
+def test_specification_documents_the_rule():
+    """Docs must state the rule generally, not only for `on` arms."""
+    spec = (ROOT_DIR / "docs" / "SPECIFICATION.md").read_text(encoding="utf-8")
+    assert "break statement not within a loop" in spec
+    assert "continue statement not within a loop" in spec
+    assert "semantic analysis" in spec
+    assert "resets at every function boundary" in spec
+    # The example block must show the non-`on` contexts too.
+    assert "zone {" in spec
+    assert "unsafe {" in spec
+
+
+def test_specification_example_matches_compiler(tmp_path):
+    """The §7.3 example 5/6 block must compile to exactly the annotated diagnostics."""
+    _require_native()
+    path = _write(tmp_path, "spec_ex5.vl", """act scan() {
+    if true {
+        break
+    }
+    {
+        continue
+    }
+    zone {
+        break
+    }
+    unsafe {
+        continue
+    }
+    loop i in 0..3 {
+        break
+    }
+    break
+}
+
+act count_down() {
+    loop i in 0..3 { break }
+}
+
+act scan_again() {
+    continue
+}
+""")
+    result = _check(path, "--json")
+    assert result.returncode != 0, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    seen = [(d["line"], d["col"], d["message"]) for d in report["diagnostics"]]
+
+    assert seen == [
+        (3, 9, BREAK),
+        (6, 9, CONTINUE),
+        (9, 9, BREAK),
+        (12, 9, CONTINUE),
+        (17, 5, BREAK),
+        (25, 5, CONTINUE),
+    ], seen
+    # Line 15 (`break` inside the loop) must not be among them.
+    assert not any(line == 15 for line, _, _ in seen), seen
+
+
+

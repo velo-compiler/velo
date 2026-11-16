@@ -891,7 +891,10 @@ Velo strictly defines the interaction between pattern matching branches and surr
    - Exiting or advancing a loop via `break` or `continue` inside an `on` arm executes all active loop-scoped `defer` and zone cleanups in strict LIFO order **exactly once**.
    - Cleanups are executed prior to transferring control, preventing duplicate cleanup execution at loop iteration boundaries.
 6. **Rejection Outside Loops**:
-   - A `break` or `continue` statement within an `on` arm that is not contained within a `loop` is rejected at compile time (`break statement not within a loop` / `continue statement not within a loop`).
+   - A `break` or `continue` statement that is not contained within a `loop` is rejected at compile time with `break statement not within a loop` / `continue statement not within a loop`.
+   - This rule holds in **every** context, not only inside `on`: directly in a function body, in `if`/`else`, in `on` arms, in plain blocks, in `zone` blocks, in `unsafe` blocks, and in a statement following a loop.
+   - The rejection is owned by **semantic analysis**, so `velo check` reports it (lane `semantic`, positioned at the offending statement) without running code generation. Code generation additionally asserts the invariant and reports an `internal compiler error` if an unbound `break`/`continue` ever reaches emission, which can only indicate a compiler defect.
+   - The loop depth counter resets at every function boundary, so a loop in one function never authorizes a `break` or `continue` in another.
 
 ```rust
 // 1. Break inside 'on' terminates enclosing loop
@@ -930,6 +933,35 @@ act inspect_value(val: i32) {
         1 => { break }     // Compile Error: break statement not within a loop
         else => { }
     }
+}
+
+// 5. Illegal outside of `on` too: the rule is about loops, not branches
+act scan() {
+    if true {
+        break              // Compile Error: break statement not within a loop
+    }
+    {
+        continue           // Compile Error: continue statement not within a loop
+    }
+    zone {
+        break              // Compile Error: break statement not within a loop
+    }
+    unsafe {
+        continue           // Compile Error: continue statement not within a loop
+    }
+    loop i in 0..3 {
+        break              // OK: the nearest enclosing loop is this one
+    }
+    break                  // Compile Error: the loop above has already closed
+}
+
+// 6. Illegal across functions: depth resets at every function boundary
+act count_down() {
+    loop i in 0..3 { break }   // OK
+}
+
+act scan_again() {
+    continue                   // Compile Error: no loop in *this* function
 }
 ```
 
