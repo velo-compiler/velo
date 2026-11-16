@@ -3,13 +3,35 @@
 // Mutual mirror of velo/codegen_c.py::_str_expect / _STR_SIGS — both stages
 // must reject the same programs with the same words.
 // Returns false after reporting; the infer branch then yields "unknown".
-// An unknown member returns true (unchanged legacy fallthrough path).
+//
+// Phase 64.3: the namespace is CLOSED. Task 64.1 pinned the inventory (18
+// members, mirrored by tests/test_mem_str_surface.py); an unknown member now
+// reports the closed-set diagnostic instead of falling through with the
+// pseudo-type "unknown" that used to reach codegen and GCC.
 use "type_checker.vl"
 use "symbol_table.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../ast/expr.vl"
 use "../frontend/token.vl"
+
+// The published closed set: legacy `len` plus every public velo_str_* runtime
+// helper (runtime/velo_runtime.h). Order matches str_member_sig so the
+// diagnostic stays stable.
+act str_valid_members() -> string {
+    return "len, contains, starts_with, ends_with, index_of, trim, heap_trim, to_upper, heap_to_upper, to_lower, heap_to_lower, replace, heap_replace, concat, heap_concat, split, format, heap_format"
+}
+
+act str_is_known_member(member: string) -> bool {
+    if member == "len" or member == "contains" or member == "starts_with" or member == "ends_with" { return true }
+    if member == "index_of" or member == "split" { return true }
+    if member == "trim" or member == "heap_trim" { return true }
+    if member == "to_upper" or member == "heap_to_upper" or member == "to_lower" or member == "heap_to_lower" { return true }
+    if member == "replace" or member == "heap_replace" { return true }
+    if member == "concat" or member == "heap_concat" { return true }
+    if member == "format" or member == "heap_format" { return true }
+    return false
+}
 
 // Signature text per checked member ("" = not a checked str member).
 // Must stay character-identical with velo/codegen_c.py::_STR_SIGS.
@@ -44,6 +66,14 @@ act str_got_msg(member: string, got: string) -> string {
 }
 
 act check_str_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string {
+    if not str_is_known_member(member) {
+        let msb = create_sb(512)
+        sb_append_str(@msb, "unknown str member '"); sb_append_str(@msb, member)
+        sb_append_str(@msb, "' (functions: "); sb_append_str(@msb, str_valid_members()); sb_append_str(@msb, ")")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+        return "unknown"
+    }
+
     if member == "len" {
         mut argc: usize = 0; mut cur_a = expr.first_arg; loop cur_a != null { argc += 1; cur_a = cur_a.next }
         if argc != 1 {
@@ -106,7 +136,15 @@ act check_str_call(st: @SymbolTable, expr: @ExprNode, member: string) -> string 
     }
 
     let arity = str_member_arity(member)
-    if arity < 0 { return "unknown" }  // unknown member: keep the legacy path
+    if arity < 0 {
+        // Unreachable: every non-format member is in str_is_known_member and
+        // str_member_arity covers the same set. Kept as a defense so a future
+        // member added to one table but not the other cannot slip through.
+        let msb = create_sb(192)
+        sb_append_str(@msb, "internal: str."); sb_append_str(@msb, member); sb_append_str(@msb, " has no arity table entry")
+        report_error("internal", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+        return "unknown"
+    }
     mut argc: usize = 0
     mut cur_a = expr.first_arg
     loop cur_a != null { argc += 1; cur_a = cur_a.next }

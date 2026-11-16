@@ -2133,6 +2133,8 @@ bool mem_check_alloc(SymbolTable* st, ExprNode* expr, const char* member);
 bool mem_check_alloc_with(SymbolTable* st, ExprNode* expr);
 const char* mem_byte_sig(const char* member);
 bool check_mem_call(SymbolTable* st, ExprNode* expr, const char* member);
+const char* str_valid_members(void);
+bool str_is_known_member(const char* member);
 const char* str_member_sig(const char* member);
 int32_t str_member_arity(const char* member);
 const char* str_got_msg(const char* member, const char* got);
@@ -29177,469 +29179,549 @@ bool check_mem_call(SymbolTable* st, ExprNode* expr, const char* member) {
     return true;
 }
 
-#line 16 "src/main.vl"
-const char* str_member_sig(const char* member) {
-#line 17 "src/main.vl"
-    if (((member != NULL && "contains" != NULL) ? (strcmp(member, "contains") == 0) : (member == "contains"))) {
-#line 17 "src/main.vl"
-        return ": (string s, string sub)";
-    }
-#line 18 "src/main.vl"
-    if (((member != NULL && "starts_with" != NULL) ? (strcmp(member, "starts_with") == 0) : (member == "starts_with"))) {
-#line 18 "src/main.vl"
-        return ": (string s, string prefix)";
-    }
-#line 19 "src/main.vl"
-    if (((member != NULL && "ends_with" != NULL) ? (strcmp(member, "ends_with") == 0) : (member == "ends_with"))) {
-#line 19 "src/main.vl"
-        return ": (string s, string suffix)";
-    }
-#line 20 "src/main.vl"
-    if (((member != NULL && "index_of" != NULL) ? (strcmp(member, "index_of") == 0) : (member == "index_of"))) {
-#line 20 "src/main.vl"
-        return ": (string s, string needle)";
-    }
 #line 21 "src/main.vl"
-    if ((((member != NULL && "trim" != NULL) ? (strcmp(member, "trim") == 0) : (member == "trim")) || ((member != NULL && "heap_trim" != NULL) ? (strcmp(member, "heap_trim") == 0) : (member == "heap_trim")))) {
-#line 21 "src/main.vl"
-        return ": (string s)";
-    }
+const char* str_valid_members(void) {
 #line 22 "src/main.vl"
-    if ((((member != NULL && "to_upper" != NULL) ? (strcmp(member, "to_upper") == 0) : (member == "to_upper")) || ((member != NULL && "heap_to_upper" != NULL) ? (strcmp(member, "heap_to_upper") == 0) : (member == "heap_to_upper")))) {
-#line 22 "src/main.vl"
-        return ": (string s)";
-    }
-#line 23 "src/main.vl"
-    if ((((member != NULL && "to_lower" != NULL) ? (strcmp(member, "to_lower") == 0) : (member == "to_lower")) || ((member != NULL && "heap_to_lower" != NULL) ? (strcmp(member, "heap_to_lower") == 0) : (member == "heap_to_lower")))) {
-#line 23 "src/main.vl"
-        return ": (string s)";
-    }
-#line 24 "src/main.vl"
-    if ((((member != NULL && "replace" != NULL) ? (strcmp(member, "replace") == 0) : (member == "replace")) || ((member != NULL && "heap_replace" != NULL) ? (strcmp(member, "heap_replace") == 0) : (member == "heap_replace")))) {
-#line 24 "src/main.vl"
-        return ": (string s, string old, string new)";
-    }
+    return "len, contains, starts_with, ends_with, index_of, trim, heap_trim, to_upper, heap_to_upper, to_lower, heap_to_lower, replace, heap_replace, concat, heap_concat, split, format, heap_format";
+}
+
 #line 25 "src/main.vl"
-    if ((((member != NULL && "concat" != NULL) ? (strcmp(member, "concat") == 0) : (member == "concat")) || ((member != NULL && "heap_concat" != NULL) ? (strcmp(member, "heap_concat") == 0) : (member == "heap_concat")))) {
-#line 25 "src/main.vl"
-        return ": (string a, string b)";
-    }
+bool str_is_known_member(const char* member) {
 #line 26 "src/main.vl"
-    if (((member != NULL && "split" != NULL) ? (strcmp(member, "split") == 0) : (member == "split"))) {
+    if ((((((member != NULL && "len" != NULL) ? (strcmp(member, "len") == 0) : (member == "len")) || ((member != NULL && "contains" != NULL) ? (strcmp(member, "contains") == 0) : (member == "contains"))) || ((member != NULL && "starts_with" != NULL) ? (strcmp(member, "starts_with") == 0) : (member == "starts_with"))) || ((member != NULL && "ends_with" != NULL) ? (strcmp(member, "ends_with") == 0) : (member == "ends_with")))) {
 #line 26 "src/main.vl"
-        return ": (string s, string delimiter)";
+        return true;
     }
 #line 27 "src/main.vl"
-    if ((((member != NULL && "format" != NULL) ? (strcmp(member, "format") == 0) : (member == "format")) || ((member != NULL && "heap_format" != NULL) ? (strcmp(member, "heap_format") == 0) : (member == "heap_format")))) {
+    if ((((member != NULL && "index_of" != NULL) ? (strcmp(member, "index_of") == 0) : (member == "index_of")) || ((member != NULL && "split" != NULL) ? (strcmp(member, "split") == 0) : (member == "split")))) {
 #line 27 "src/main.vl"
-        return ": (string fmt, ...)";
+        return true;
     }
 #line 28 "src/main.vl"
+    if ((((member != NULL && "trim" != NULL) ? (strcmp(member, "trim") == 0) : (member == "trim")) || ((member != NULL && "heap_trim" != NULL) ? (strcmp(member, "heap_trim") == 0) : (member == "heap_trim")))) {
+#line 28 "src/main.vl"
+        return true;
+    }
+#line 29 "src/main.vl"
+    if ((((((member != NULL && "to_upper" != NULL) ? (strcmp(member, "to_upper") == 0) : (member == "to_upper")) || ((member != NULL && "heap_to_upper" != NULL) ? (strcmp(member, "heap_to_upper") == 0) : (member == "heap_to_upper"))) || ((member != NULL && "to_lower" != NULL) ? (strcmp(member, "to_lower") == 0) : (member == "to_lower"))) || ((member != NULL && "heap_to_lower" != NULL) ? (strcmp(member, "heap_to_lower") == 0) : (member == "heap_to_lower")))) {
+#line 29 "src/main.vl"
+        return true;
+    }
+#line 30 "src/main.vl"
+    if ((((member != NULL && "replace" != NULL) ? (strcmp(member, "replace") == 0) : (member == "replace")) || ((member != NULL && "heap_replace" != NULL) ? (strcmp(member, "heap_replace") == 0) : (member == "heap_replace")))) {
+#line 30 "src/main.vl"
+        return true;
+    }
+#line 31 "src/main.vl"
+    if ((((member != NULL && "concat" != NULL) ? (strcmp(member, "concat") == 0) : (member == "concat")) || ((member != NULL && "heap_concat" != NULL) ? (strcmp(member, "heap_concat") == 0) : (member == "heap_concat")))) {
+#line 31 "src/main.vl"
+        return true;
+    }
+#line 32 "src/main.vl"
+    if ((((member != NULL && "format" != NULL) ? (strcmp(member, "format") == 0) : (member == "format")) || ((member != NULL && "heap_format" != NULL) ? (strcmp(member, "heap_format") == 0) : (member == "heap_format")))) {
+#line 32 "src/main.vl"
+        return true;
+    }
+#line 33 "src/main.vl"
+    return false;
+}
+
+#line 38 "src/main.vl"
+const char* str_member_sig(const char* member) {
+#line 39 "src/main.vl"
+    if (((member != NULL && "contains" != NULL) ? (strcmp(member, "contains") == 0) : (member == "contains"))) {
+#line 39 "src/main.vl"
+        return ": (string s, string sub)";
+    }
+#line 40 "src/main.vl"
+    if (((member != NULL && "starts_with" != NULL) ? (strcmp(member, "starts_with") == 0) : (member == "starts_with"))) {
+#line 40 "src/main.vl"
+        return ": (string s, string prefix)";
+    }
+#line 41 "src/main.vl"
+    if (((member != NULL && "ends_with" != NULL) ? (strcmp(member, "ends_with") == 0) : (member == "ends_with"))) {
+#line 41 "src/main.vl"
+        return ": (string s, string suffix)";
+    }
+#line 42 "src/main.vl"
+    if (((member != NULL && "index_of" != NULL) ? (strcmp(member, "index_of") == 0) : (member == "index_of"))) {
+#line 42 "src/main.vl"
+        return ": (string s, string needle)";
+    }
+#line 43 "src/main.vl"
+    if ((((member != NULL && "trim" != NULL) ? (strcmp(member, "trim") == 0) : (member == "trim")) || ((member != NULL && "heap_trim" != NULL) ? (strcmp(member, "heap_trim") == 0) : (member == "heap_trim")))) {
+#line 43 "src/main.vl"
+        return ": (string s)";
+    }
+#line 44 "src/main.vl"
+    if ((((member != NULL && "to_upper" != NULL) ? (strcmp(member, "to_upper") == 0) : (member == "to_upper")) || ((member != NULL && "heap_to_upper" != NULL) ? (strcmp(member, "heap_to_upper") == 0) : (member == "heap_to_upper")))) {
+#line 44 "src/main.vl"
+        return ": (string s)";
+    }
+#line 45 "src/main.vl"
+    if ((((member != NULL && "to_lower" != NULL) ? (strcmp(member, "to_lower") == 0) : (member == "to_lower")) || ((member != NULL && "heap_to_lower" != NULL) ? (strcmp(member, "heap_to_lower") == 0) : (member == "heap_to_lower")))) {
+#line 45 "src/main.vl"
+        return ": (string s)";
+    }
+#line 46 "src/main.vl"
+    if ((((member != NULL && "replace" != NULL) ? (strcmp(member, "replace") == 0) : (member == "replace")) || ((member != NULL && "heap_replace" != NULL) ? (strcmp(member, "heap_replace") == 0) : (member == "heap_replace")))) {
+#line 46 "src/main.vl"
+        return ": (string s, string old, string new)";
+    }
+#line 47 "src/main.vl"
+    if ((((member != NULL && "concat" != NULL) ? (strcmp(member, "concat") == 0) : (member == "concat")) || ((member != NULL && "heap_concat" != NULL) ? (strcmp(member, "heap_concat") == 0) : (member == "heap_concat")))) {
+#line 47 "src/main.vl"
+        return ": (string a, string b)";
+    }
+#line 48 "src/main.vl"
+    if (((member != NULL && "split" != NULL) ? (strcmp(member, "split") == 0) : (member == "split"))) {
+#line 48 "src/main.vl"
+        return ": (string s, string delimiter)";
+    }
+#line 49 "src/main.vl"
+    if ((((member != NULL && "format" != NULL) ? (strcmp(member, "format") == 0) : (member == "format")) || ((member != NULL && "heap_format" != NULL) ? (strcmp(member, "heap_format") == 0) : (member == "heap_format")))) {
+#line 49 "src/main.vl"
+        return ": (string fmt, ...)";
+    }
+#line 50 "src/main.vl"
     return "";
 }
 
-#line 32 "src/main.vl"
+#line 54 "src/main.vl"
 int32_t str_member_arity(const char* member) {
-#line 33 "src/main.vl"
+#line 55 "src/main.vl"
     if ((((((((member != NULL && "trim" != NULL) ? (strcmp(member, "trim") == 0) : (member == "trim")) || ((member != NULL && "to_upper" != NULL) ? (strcmp(member, "to_upper") == 0) : (member == "to_upper"))) || ((member != NULL && "to_lower" != NULL) ? (strcmp(member, "to_lower") == 0) : (member == "to_lower"))) || ((member != NULL && "heap_trim" != NULL) ? (strcmp(member, "heap_trim") == 0) : (member == "heap_trim"))) || ((member != NULL && "heap_to_upper" != NULL) ? (strcmp(member, "heap_to_upper") == 0) : (member == "heap_to_upper"))) || ((member != NULL && "heap_to_lower" != NULL) ? (strcmp(member, "heap_to_lower") == 0) : (member == "heap_to_lower")))) {
-#line 33 "src/main.vl"
+#line 55 "src/main.vl"
         return 1;
     }
-#line 34 "src/main.vl"
+#line 56 "src/main.vl"
     if ((((member != NULL && "replace" != NULL) ? (strcmp(member, "replace") == 0) : (member == "replace")) || ((member != NULL && "heap_replace" != NULL) ? (strcmp(member, "heap_replace") == 0) : (member == "heap_replace")))) {
-#line 34 "src/main.vl"
+#line 56 "src/main.vl"
         return 3;
     }
-#line 35 "src/main.vl"
+#line 57 "src/main.vl"
     if (((((((((member != NULL && "contains" != NULL) ? (strcmp(member, "contains") == 0) : (member == "contains")) || ((member != NULL && "starts_with" != NULL) ? (strcmp(member, "starts_with") == 0) : (member == "starts_with"))) || ((member != NULL && "ends_with" != NULL) ? (strcmp(member, "ends_with") == 0) : (member == "ends_with"))) || ((member != NULL && "index_of" != NULL) ? (strcmp(member, "index_of") == 0) : (member == "index_of"))) || ((member != NULL && "concat" != NULL) ? (strcmp(member, "concat") == 0) : (member == "concat"))) || ((member != NULL && "split" != NULL) ? (strcmp(member, "split") == 0) : (member == "split"))) || ((member != NULL && "heap_concat" != NULL) ? (strcmp(member, "heap_concat") == 0) : (member == "heap_concat")))) {
-#line 35 "src/main.vl"
+#line 57 "src/main.vl"
         return 2;
     }
-#line 36 "src/main.vl"
+#line 58 "src/main.vl"
     return (-1);
 }
 
-#line 39 "src/main.vl"
+#line 61 "src/main.vl"
 const char* str_got_msg(const char* member, const char* got) {
-#line 40 "src/main.vl"
+#line 62 "src/main.vl"
     StringBuilder msb = create_sb(192);
-#line 41 "src/main.vl"
+#line 63 "src/main.vl"
     sb_append_str((&(msb)), "str.");
-#line 41 "src/main.vl"
+#line 63 "src/main.vl"
     sb_append_str((&(msb)), member);
-#line 41 "src/main.vl"
+#line 63 "src/main.vl"
     sb_append_str((&(msb)), " expects string arguments (got ");
-#line 42 "src/main.vl"
+#line 64 "src/main.vl"
     sb_append_str((&(msb)), got);
-#line 42 "src/main.vl"
+#line 64 "src/main.vl"
     sb_append_str((&(msb)), ")");
-#line 43 "src/main.vl"
+#line 65 "src/main.vl"
     return sb_to_string((&(msb)));
 }
 
-#line 46 "src/main.vl"
+#line 68 "src/main.vl"
 const char* check_str_call(SymbolTable* st, ExprNode* expr, const char* member) {
-#line 47 "src/main.vl"
+#line 69 "src/main.vl"
+    if ((!str_is_known_member(member))) {
+#line 70 "src/main.vl"
+        StringBuilder msb = create_sb(512);
+#line 71 "src/main.vl"
+        sb_append_str((&(msb)), "unknown str member '");
+#line 71 "src/main.vl"
+        sb_append_str((&(msb)), member);
+#line 72 "src/main.vl"
+        sb_append_str((&(msb)), "' (functions: ");
+#line 72 "src/main.vl"
+        sb_append_str((&(msb)), str_valid_members());
+#line 72 "src/main.vl"
+        sb_append_str((&(msb)), ")");
+#line 73 "src/main.vl"
+        report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
+#line 73 "src/main.vl"
+        st->error_count += 1;
+#line 74 "src/main.vl"
+        return "unknown";
+    }
+#line 77 "src/main.vl"
     if (((member != NULL && "len" != NULL) ? (strcmp(member, "len") == 0) : (member == "len"))) {
-#line 48 "src/main.vl"
+#line 78 "src/main.vl"
         size_t argc = 0;
-#line 48 "src/main.vl"
+#line 78 "src/main.vl"
         ExprNode* cur_a = expr->first_arg;
-#line 48 "src/main.vl"
+#line 78 "src/main.vl"
         for (int32_t it = 0; ((cur_a != NULL)); it++) {
-#line 48 "src/main.vl"
+#line 78 "src/main.vl"
             argc += 1;
-#line 48 "src/main.vl"
+#line 78 "src/main.vl"
             cur_a = cur_a->next;
             __loop_cont_310: __attribute__((unused));
         }
         __loop_break_310: __attribute__((unused));
-#line 49 "src/main.vl"
+#line 79 "src/main.vl"
         if (velo_cmp_ne_u_s(argc, 1)) {
-#line 50 "src/main.vl"
+#line 80 "src/main.vl"
             report_error("semantic", expr->line, expr->col, "str.len expects exactly 1 argument: (string s)");
-#line 50 "src/main.vl"
+#line 80 "src/main.vl"
             st->error_count += 1;
-#line 51 "src/main.vl"
+#line 81 "src/main.vl"
             return "unknown";
         }
-#line 53 "src/main.vl"
+#line 83 "src/main.vl"
         const char* t = infer_expr_type(st, expr->first_arg);
-#line 54 "src/main.vl"
+#line 84 "src/main.vl"
         if (((t != NULL && "string" != NULL) ? (strcmp(t, "string") != 0) : (t != "string"))) {
-#line 55 "src/main.vl"
+#line 85 "src/main.vl"
             report_error("semantic", expr->line, expr->col, str_got_msg(member, t));
-#line 55 "src/main.vl"
+#line 85 "src/main.vl"
             st->error_count += 1;
-#line 56 "src/main.vl"
+#line 86 "src/main.vl"
             return "unknown";
         }
-#line 58 "src/main.vl"
+#line 88 "src/main.vl"
         return "usize";
     }
-#line 61 "src/main.vl"
+#line 91 "src/main.vl"
     if ((((member != NULL && "format" != NULL) ? (strcmp(member, "format") == 0) : (member == "format")) || ((member != NULL && "heap_format" != NULL) ? (strcmp(member, "heap_format") == 0) : (member == "heap_format")))) {
-#line 62 "src/main.vl"
+#line 92 "src/main.vl"
         size_t argc = 0;
-#line 62 "src/main.vl"
+#line 92 "src/main.vl"
         ExprNode* cur_a = expr->first_arg;
-#line 62 "src/main.vl"
+#line 92 "src/main.vl"
         for (int32_t it = 0; ((cur_a != NULL)); it++) {
-#line 62 "src/main.vl"
+#line 92 "src/main.vl"
             argc += 1;
-#line 62 "src/main.vl"
+#line 92 "src/main.vl"
             cur_a = cur_a->next;
             __loop_cont_311: __attribute__((unused));
         }
         __loop_break_311: __attribute__((unused));
-#line 63 "src/main.vl"
+#line 93 "src/main.vl"
         if (velo_cmp_lt_u_s(argc, 1)) {
-#line 64 "src/main.vl"
+#line 94 "src/main.vl"
             StringBuilder msb = create_sb(192);
-#line 65 "src/main.vl"
+#line 95 "src/main.vl"
             sb_append_str((&(msb)), "str.");
-#line 65 "src/main.vl"
+#line 95 "src/main.vl"
             sb_append_str((&(msb)), member);
-#line 65 "src/main.vl"
+#line 95 "src/main.vl"
             sb_append_str((&(msb)), " expects at least 1 argument");
-#line 65 "src/main.vl"
+#line 95 "src/main.vl"
             sb_append_str((&(msb)), str_member_sig(member));
-#line 66 "src/main.vl"
+#line 96 "src/main.vl"
             report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
-#line 66 "src/main.vl"
+#line 96 "src/main.vl"
             st->error_count += 1;
-#line 67 "src/main.vl"
+#line 97 "src/main.vl"
             return "unknown";
         }
-#line 69 "src/main.vl"
+#line 99 "src/main.vl"
         const char* t0 = infer_expr_type(st, expr->first_arg);
-#line 70 "src/main.vl"
+#line 100 "src/main.vl"
         if (((t0 != NULL && "string" != NULL) ? (strcmp(t0, "string") != 0) : (t0 != "string"))) {
-#line 71 "src/main.vl"
+#line 101 "src/main.vl"
             report_error("semantic", expr->line, expr->col, str_got_msg(member, t0));
-#line 71 "src/main.vl"
+#line 101 "src/main.vl"
             st->error_count += 1;
-#line 72 "src/main.vl"
+#line 102 "src/main.vl"
             return "unknown";
         }
-#line 74 "src/main.vl"
+#line 104 "src/main.vl"
         if ((expr->first_arg->kind == EXPR_STRING)) {
-#line 75 "src/main.vl"
+#line 105 "src/main.vl"
             const char* raw_fmt = expr->first_arg->str_val;
-#line 76 "src/main.vl"
+#line 106 "src/main.vl"
             if (((raw_fmt != NULL) && (velo_str_index_of(raw_fmt, "{") == (-1)))) {
-#line 77 "src/main.vl"
+#line 107 "src/main.vl"
                 size_t flen = ((usize)strlen(raw_fmt));
-#line 78 "src/main.vl"
+#line 108 "src/main.vl"
                 size_t spec_count = 0;
-#line 79 "src/main.vl"
+#line 109 "src/main.vl"
                 size_t fi = 0;
-#line 80 "src/main.vl"
+#line 110 "src/main.vl"
                 for (int32_t it = 0; ((fi < flen)); it++) {
-#line 81 "src/main.vl"
+#line 111 "src/main.vl"
                     if (velo_cmp_eq_u_s(raw_fmt[fi], '%')) {
-#line 82 "src/main.vl"
+#line 112 "src/main.vl"
                         if ((((fi + 1) < flen) && velo_cmp_eq_u_s(raw_fmt[(fi + 1)], '%'))) {
-#line 83 "src/main.vl"
+#line 113 "src/main.vl"
                             fi += 2;
                         } else {
-#line 85 "src/main.vl"
+#line 115 "src/main.vl"
                             spec_count += 1;
-#line 86 "src/main.vl"
+#line 116 "src/main.vl"
                             fi += 1;
                         }
                     } else {
-#line 89 "src/main.vl"
+#line 119 "src/main.vl"
                         fi += 1;
                     }
                     __loop_cont_312: __attribute__((unused));
                 }
                 __loop_break_312: __attribute__((unused));
-#line 92 "src/main.vl"
+#line 122 "src/main.vl"
                 size_t additional_args = (argc - 1);
-#line 93 "src/main.vl"
+#line 123 "src/main.vl"
                 if ((spec_count != additional_args)) {
-#line 94 "src/main.vl"
+#line 124 "src/main.vl"
                     StringBuilder msb = create_sb(192);
-#line 95 "src/main.vl"
+#line 125 "src/main.vl"
                     sb_append_str((&(msb)), "str.");
-#line 95 "src/main.vl"
+#line 125 "src/main.vl"
                     sb_append_str((&(msb)), member);
-#line 95 "src/main.vl"
+#line 125 "src/main.vl"
                     sb_append_str((&(msb)), " format string expects ");
-#line 96 "src/main.vl"
+#line 126 "src/main.vl"
                     sb_append_int((&(msb)), ((int32_t)(spec_count)));
-#line 97 "src/main.vl"
+#line 127 "src/main.vl"
                     if (velo_cmp_eq_u_s(spec_count, 1)) {
-#line 97 "src/main.vl"
+#line 127 "src/main.vl"
                         sb_append_str((&(msb)), " argument (got ");
                     } else {
-#line 97 "src/main.vl"
+#line 127 "src/main.vl"
                         sb_append_str((&(msb)), " arguments (got ");
                     }
-#line 98 "src/main.vl"
+#line 128 "src/main.vl"
                     sb_append_int((&(msb)), ((int32_t)(additional_args)));
-#line 99 "src/main.vl"
+#line 129 "src/main.vl"
                     sb_append_str((&(msb)), ")");
-#line 100 "src/main.vl"
+#line 130 "src/main.vl"
                     report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
-#line 100 "src/main.vl"
+#line 130 "src/main.vl"
                     st->error_count += 1;
-#line 101 "src/main.vl"
+#line 131 "src/main.vl"
                     return "unknown";
                 }
             }
         }
-#line 105 "src/main.vl"
+#line 135 "src/main.vl"
         return "string";
     }
-#line 108 "src/main.vl"
+#line 138 "src/main.vl"
     int32_t arity = str_member_arity(member);
-#line 109 "src/main.vl"
+#line 139 "src/main.vl"
     if ((arity < 0)) {
-#line 109 "src/main.vl"
+#line 143 "src/main.vl"
+        StringBuilder msb = create_sb(192);
+#line 144 "src/main.vl"
+        sb_append_str((&(msb)), "internal: str.");
+#line 144 "src/main.vl"
+        sb_append_str((&(msb)), member);
+#line 144 "src/main.vl"
+        sb_append_str((&(msb)), " has no arity table entry");
+#line 145 "src/main.vl"
+        report_error("internal", expr->line, expr->col, sb_to_string((&(msb))));
+#line 145 "src/main.vl"
+        st->error_count += 1;
+#line 146 "src/main.vl"
         return "unknown";
     }
-#line 110 "src/main.vl"
+#line 148 "src/main.vl"
     size_t argc = 0;
-#line 111 "src/main.vl"
+#line 149 "src/main.vl"
     ExprNode* cur_a = expr->first_arg;
-#line 112 "src/main.vl"
+#line 150 "src/main.vl"
     for (int32_t it = 0; ((cur_a != NULL)); it++) {
-#line 112 "src/main.vl"
+#line 150 "src/main.vl"
         argc += 1;
-#line 112 "src/main.vl"
+#line 150 "src/main.vl"
         cur_a = cur_a->next;
         __loop_cont_313: __attribute__((unused));
     }
     __loop_break_313: __attribute__((unused));
-#line 113 "src/main.vl"
+#line 151 "src/main.vl"
     if ((argc != ((size_t)(arity)))) {
-#line 114 "src/main.vl"
+#line 152 "src/main.vl"
         StringBuilder msb = create_sb(192);
-#line 115 "src/main.vl"
+#line 153 "src/main.vl"
         sb_append_str((&(msb)), "str.");
-#line 115 "src/main.vl"
+#line 153 "src/main.vl"
         sb_append_str((&(msb)), member);
-#line 115 "src/main.vl"
+#line 153 "src/main.vl"
         sb_append_str((&(msb)), " expects exactly ");
-#line 116 "src/main.vl"
+#line 154 "src/main.vl"
         sb_append_int((&(msb)), arity);
-#line 117 "src/main.vl"
+#line 155 "src/main.vl"
         if ((arity == 1)) {
-#line 117 "src/main.vl"
+#line 155 "src/main.vl"
             sb_append_str((&(msb)), " argument");
         } else {
-#line 117 "src/main.vl"
+#line 155 "src/main.vl"
             sb_append_str((&(msb)), " arguments");
         }
-#line 118 "src/main.vl"
+#line 156 "src/main.vl"
         sb_append_str((&(msb)), str_member_sig(member));
-#line 119 "src/main.vl"
+#line 157 "src/main.vl"
         report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
-#line 119 "src/main.vl"
+#line 157 "src/main.vl"
         st->error_count += 1;
-#line 120 "src/main.vl"
+#line 158 "src/main.vl"
         return "unknown";
     }
-#line 122 "src/main.vl"
+#line 160 "src/main.vl"
     ExprNode* cur = expr->first_arg;
-#line 123 "src/main.vl"
+#line 161 "src/main.vl"
     for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 124 "src/main.vl"
+#line 162 "src/main.vl"
         const char* t = infer_expr_type(st, cur);
-#line 125 "src/main.vl"
+#line 163 "src/main.vl"
         if (((t != NULL && "string" != NULL) ? (strcmp(t, "string") != 0) : (t != "string"))) {
-#line 126 "src/main.vl"
+#line 164 "src/main.vl"
             report_error("semantic", expr->line, expr->col, str_got_msg(member, t));
-#line 126 "src/main.vl"
+#line 164 "src/main.vl"
             st->error_count += 1;
-#line 127 "src/main.vl"
+#line 165 "src/main.vl"
             return "unknown";
         }
-#line 129 "src/main.vl"
+#line 167 "src/main.vl"
         cur = cur->next;
         __loop_cont_314: __attribute__((unused));
     }
     __loop_break_314: __attribute__((unused));
-#line 131 "src/main.vl"
+#line 169 "src/main.vl"
     if (((((member != NULL && "contains" != NULL) ? (strcmp(member, "contains") == 0) : (member == "contains")) || ((member != NULL && "starts_with" != NULL) ? (strcmp(member, "starts_with") == 0) : (member == "starts_with"))) || ((member != NULL && "ends_with" != NULL) ? (strcmp(member, "ends_with") == 0) : (member == "ends_with")))) {
-#line 131 "src/main.vl"
+#line 169 "src/main.vl"
         return "bool";
     }
-#line 132 "src/main.vl"
+#line 170 "src/main.vl"
     if (((member != NULL && "index_of" != NULL) ? (strcmp(member, "index_of") == 0) : (member == "index_of"))) {
-#line 132 "src/main.vl"
+#line 170 "src/main.vl"
         return "i64";
     }
-#line 133 "src/main.vl"
+#line 171 "src/main.vl"
     if (((member != NULL && "split" != NULL) ? (strcmp(member, "split") == 0) : (member == "split"))) {
-#line 133 "src/main.vl"
+#line 171 "src/main.vl"
         return "shelf[string]";
     }
-#line 134 "src/main.vl"
+#line 172 "src/main.vl"
     return "string";
 }
 
-#line 139 "src/main.vl"
+#line 177 "src/main.vl"
 bool is_valid_interp_expr(SymbolTable* st, ExprNode* expr) {
-#line 140 "src/main.vl"
+#line 178 "src/main.vl"
     if ((expr == NULL)) {
-#line 140 "src/main.vl"
+#line 178 "src/main.vl"
         return false;
     }
-#line 141 "src/main.vl"
+#line 179 "src/main.vl"
     if ((((((expr->kind == EXPR_INT) || (expr->kind == EXPR_FLOAT)) || (expr->kind == EXPR_STRING)) || (expr->kind == EXPR_BOOL)) || (expr->kind == EXPR_NULL))) {
-#line 141 "src/main.vl"
+#line 179 "src/main.vl"
         return false;
     }
-#line 142 "src/main.vl"
+#line 180 "src/main.vl"
     return is_interp_expr_resolvable(st, expr);
 }
 
-#line 146 "src/main.vl"
+#line 184 "src/main.vl"
 bool is_interp_expr_resolvable(SymbolTable* st, ExprNode* expr) {
-#line 147 "src/main.vl"
+#line 185 "src/main.vl"
     if ((expr == NULL)) {
-#line 147 "src/main.vl"
+#line 185 "src/main.vl"
         return false;
     }
-#line 148 "src/main.vl"
+#line 186 "src/main.vl"
     if ((((((expr->kind == EXPR_INT) || (expr->kind == EXPR_FLOAT)) || (expr->kind == EXPR_STRING)) || (expr->kind == EXPR_BOOL)) || (expr->kind == EXPR_NULL))) {
-#line 148 "src/main.vl"
+#line 186 "src/main.vl"
         return true;
     }
-#line 149 "src/main.vl"
+#line 187 "src/main.vl"
     if ((expr->kind == EXPR_IDENT)) {
-#line 150 "src/main.vl"
+#line 188 "src/main.vl"
         if ((resolve_variable(st, expr->str_val) != NULL)) {
-#line 150 "src/main.vl"
+#line 188 "src/main.vl"
             return true;
         }
-#line 151 "src/main.vl"
+#line 189 "src/main.vl"
         if ((find_function(st, expr->str_val) != NULL)) {
-#line 151 "src/main.vl"
+#line 189 "src/main.vl"
             return true;
         }
-#line 152 "src/main.vl"
+#line 190 "src/main.vl"
         if ((((((expr->str_val != NULL && "math" != NULL) ? (strcmp(expr->str_val, "math") == 0) : (expr->str_val == "math")) || ((expr->str_val != NULL && "time" != NULL) ? (strcmp(expr->str_val, "time") == 0) : (expr->str_val == "time"))) || ((expr->str_val != NULL && "os" != NULL) ? (strcmp(expr->str_val, "os") == 0) : (expr->str_val == "os"))) || ((expr->str_val != NULL && "str" != NULL) ? (strcmp(expr->str_val, "str") == 0) : (expr->str_val == "str")))) {
-#line 152 "src/main.vl"
+#line 190 "src/main.vl"
             return true;
         }
-#line 153 "src/main.vl"
+#line 191 "src/main.vl"
         return false;
     }
-#line 155 "src/main.vl"
+#line 193 "src/main.vl"
     if ((expr->kind == EXPR_MEMBER)) {
-#line 156 "src/main.vl"
+#line 194 "src/main.vl"
         if (((expr->target->kind == EXPR_IDENT) && ((expr->target->str_val != NULL && "math" != NULL) ? (strcmp(expr->target->str_val, "math") == 0) : (expr->target->str_val == "math")))) {
-#line 156 "src/main.vl"
+#line 194 "src/main.vl"
             return true;
         }
-#line 157 "src/main.vl"
+#line 195 "src/main.vl"
         return is_interp_expr_resolvable(st, expr->target);
     }
-#line 159 "src/main.vl"
+#line 197 "src/main.vl"
     if ((expr->kind == EXPR_BINARY)) {
-#line 160 "src/main.vl"
+#line 198 "src/main.vl"
         return (is_interp_expr_resolvable(st, expr->left) && is_interp_expr_resolvable(st, expr->right));
     }
-#line 162 "src/main.vl"
+#line 200 "src/main.vl"
     if ((expr->kind == EXPR_UNARY)) {
-#line 163 "src/main.vl"
+#line 201 "src/main.vl"
         return is_interp_expr_resolvable(st, expr->operand);
     }
-#line 165 "src/main.vl"
+#line 203 "src/main.vl"
     if ((expr->kind == EXPR_CALL)) {
-#line 166 "src/main.vl"
+#line 204 "src/main.vl"
         if ((expr->callee->kind == EXPR_IDENT)) {
-#line 167 "src/main.vl"
+#line 205 "src/main.vl"
             if (((find_function(st, expr->callee->str_val) == NULL) && (resolve_variable(st, expr->callee->str_val) == NULL))) {
-#line 167 "src/main.vl"
+#line 205 "src/main.vl"
                 return false;
             }
         } else
-#line 168 "src/main.vl"
+#line 206 "src/main.vl"
         if ((expr->callee->kind == EXPR_MEMBER)) {
-#line 169 "src/main.vl"
+#line 207 "src/main.vl"
             if ((!is_interp_expr_resolvable(st, expr->callee->target))) {
-#line 169 "src/main.vl"
+#line 207 "src/main.vl"
                 return false;
             }
         }
-#line 171 "src/main.vl"
+#line 209 "src/main.vl"
         ExprNode* cur = expr->first_arg;
-#line 172 "src/main.vl"
+#line 210 "src/main.vl"
         for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 173 "src/main.vl"
+#line 211 "src/main.vl"
             if ((!is_interp_expr_resolvable(st, cur))) {
-#line 173 "src/main.vl"
+#line 211 "src/main.vl"
                 return false;
             }
-#line 174 "src/main.vl"
+#line 212 "src/main.vl"
             cur = cur->next;
             __loop_cont_315: __attribute__((unused));
         }
         __loop_break_315: __attribute__((unused));
-#line 176 "src/main.vl"
+#line 214 "src/main.vl"
         return true;
     }
-#line 178 "src/main.vl"
+#line 216 "src/main.vl"
     if ((expr->kind == EXPR_INDEX)) {
-#line 179 "src/main.vl"
+#line 217 "src/main.vl"
         return (is_interp_expr_resolvable(st, expr->target) && is_interp_expr_resolvable(st, expr->index));
     }
-#line 181 "src/main.vl"
+#line 219 "src/main.vl"
     if (((expr->kind == EXPR_ADDRESS_OF) || (expr->kind == EXPR_DEREF))) {
-#line 182 "src/main.vl"
+#line 220 "src/main.vl"
         return is_interp_expr_resolvable(st, expr->operand);
     }
-#line 184 "src/main.vl"
+#line 222 "src/main.vl"
     if ((expr->kind == EXPR_CAST)) {
-#line 185 "src/main.vl"
+#line 223 "src/main.vl"
         return is_interp_expr_resolvable(st, expr->operand);
     }
-#line 187 "src/main.vl"
+#line 225 "src/main.vl"
     return false;
 }
 

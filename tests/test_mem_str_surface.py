@@ -369,3 +369,98 @@ def test_mem_zero_arg_alloc_reports_instead_of_crashing(tmp_path):
     )
     assert res.returncode != 0, blob
     assert "mem.alloc expects 1 or 2 arguments" in blob, blob
+
+
+# ---------------------------------------------------------------------------
+# Task 64.3: the str closed set.
+# ---------------------------------------------------------------------------
+
+STR_REJECT_ROWS = [
+    # Unknown members: closed-set wording plus the valid list.
+    ("unknown_member", "str.does_not_exist()", "unknown str member 'does_not_exist'"),
+    ("unknown_member_arg", 'str.also_missing("x")', "unknown str member 'also_missing'"),
+    ("typo_contains", 'str.contain(s, "b")', "unknown str member 'contain'"),
+    # Internal runtime helpers are NOT members: reaching them used to cost a
+    # GCC failure ("unknown type name 'unknown'").
+    ("internal_eq", "str.eq(s, s)", "unknown str member 'eq'"),
+    ("internal_neq", "str.neq(s, s)", "unknown str member 'neq'"),
+    ("internal_nonnull", "str.nonnull(s)", "unknown str member 'nonnull'"),
+    ("internal_copy_heap", "str.copy_heap(s)", "unknown str member 'copy_heap'"),
+    ("internal_trim_impl", "str.trim_impl(s)", "unknown str member 'trim_impl'"),
+    # Arity walls stay intact after the rewrite.
+    ("len_none", "str.len()", "str.len expects exactly 1 argument: (string s)"),
+    ("len_two", 'str.len(s, s)', "str.len expects exactly 1 argument"),
+    ("trim_none", "str.trim()", "str.trim expects exactly 1 argument: (string s)"),
+    ("concat_one", "str.concat(s)", "str.concat expects exactly 2 arguments: (string a, string b)"),
+    ("replace_two", 'str.replace(s, "a")', "str.replace expects exactly 3 arguments"),
+    ("format_none", "str.format()", "str.format expects at least 1 argument"),
+    # Type walls.
+    ("len_int", "str.len(1)", "str.len expects string arguments (got i32)"),
+    ("trim_int", "str.trim(1)", "str.trim expects string arguments (got i32)"),
+    ("concat_int", "str.concat(s, 1)", "str.concat expects string arguments (got i32)"),
+    ("format_int", "str.format(1)", "str.format expects string arguments (got i32)"),
+]
+
+
+@pytest.mark.parametrize(
+    "ident,call,message",
+    STR_REJECT_ROWS,
+    ids=[row[0] for row in STR_REJECT_ROWS],
+)
+def test_str_rejects_closed_set_violations(tmp_path, ident, call, message):
+    """Every invalid str call must fail at `velo check`, never at GCC."""
+    _require_native()
+    source = PROBE_HEADER + f"    {call}\n}}\n"
+    res = run_check(source, tmp_path, f"str_reject_{ident}.vl")
+    blob = res.stdout + res.stderr
+    assert res.returncode != 0, f"velo check accepted {call}:\n{blob}"
+    assert message in blob, f"expected {message!r} for {call}:\n{blob}"
+    assert "gcc" not in blob.lower(), f"{call} reached the C lane:\n{blob}"
+
+
+def test_str_unknown_member_diagnostic_lists_the_closed_set(tmp_path):
+    _require_native()
+    source = PROBE_HEADER + "    str.does_not_exist()\n}\n"
+    res = run_check(source, tmp_path, "str_unknown_list.vl")
+    blob = res.stdout + res.stderr
+    assert res.returncode != 0, blob
+    listed_match = re.search(r"\(functions: (.*)\)", blob)
+    assert listed_match is not None, f"diagnostic has no member list:\n{blob}"
+    listed = [name.strip() for name in listed_match.group(1).split(",")]
+    assert len(listed) == len(set(listed)), f"duplicate names in diagnostic:\n{blob}"
+    assert set(listed) == set(STR_INVENTORY), (
+        "diagnostic list does not match the accepted set:\n"
+        f"missing: {sorted(set(STR_INVENTORY) - set(listed))}\n"
+        f"extra: {sorted(set(listed) - set(STR_INVENTORY))}"
+    )
+
+
+def test_str_rejection_never_emits_c(tmp_path):
+    """The checker owns the rule: emit-c must not produce a translation unit."""
+    _require_native()
+    source = PROBE_HEADER + "    str.does_not_exist()\n}\n"
+    probe = tmp_path / "str_unknown_emitc.vl"
+    probe.write_text(source, encoding="utf-8", newline="\n")
+    out_c = tmp_path / "str_unknown_emitc.c"
+    res = subprocess.run(
+        [str(VELO_EXE), "emit-c", str(probe), "-o", str(out_c)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=get_env(),
+    )
+    blob = res.stdout + res.stderr
+    assert res.returncode != 0, f"emit-c accepted an unknown str member:\n{blob}"
+    assert "unknown str member" in blob, blob
+
+
+def test_str_internal_helper_no_longer_reaches_gcc(tmp_path):
+    """Regression: str.eq used to pass check and die with 'unknown' at GCC."""
+    _require_native()
+    source = PROBE_HEADER + "    let same: bool = str.eq(s, s)\n}\n"
+    res = run_check(source, tmp_path, "str_eq_regression.vl")
+    blob = res.stdout + res.stderr
+    assert res.returncode != 0, blob
+    assert "unknown str member 'eq'" in blob, blob
+    assert "unknown type name" not in blob, blob

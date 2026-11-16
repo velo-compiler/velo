@@ -2944,12 +2944,25 @@ math.does_not_exist()  // velo check rejects: unknown math member
   - `bin/velo.exe check` on `mem.does_not_exist()` now exits 1 with the closed-set diagnostic; `emit-c` refuses and writes no output; `mem.alloc()` reports the arity error instead of crashing.
   - Bootstrap chain rebuilt (Gen2 -> Gen3 -> `bin/velo.exe`), determinism SHA-256 `b082d5d1c3d1c4abe59c72a9188b5b627b2db4f3d6b9483deaf733348e48db54`, `bootstrap.c` regenerated (`C0F0B30B80396A6B14B6066D81E465F3270783F54D721E191AFCA87B984E8E8D`), `tests/test_bootstrap_snapshot.py` 5 passed, `scripts/count_lines.py` all files under 400 lines.
 
-##### Task 64.3: Close the `str.*` checker
-* **Goal:** Replace the legacy unknown-member fallthrough with a closed-set check and per-member validation.
-* **Files:** `src/analysis/str_checks.vl:46-130`, `src/analysis/type_checker.vl:189`.
-* **Tests:** unknown member, wrong arity, wrong type, valid string operations.
-* **Security gate:** unknown member is a compile-time error; no silent `"unknown"` type.
-* **Done when:** `str.does_not_exist()` fails at `velo check`.
+##### Task 64.3: Close the `str.*` checker [COMPLETED] ✅
+* **Former Defect**:
+  - `check_str_call` returned `"unknown"` for any member missing from `str_member_arity`, deliberately preserving "the legacy fallthrough path" (`str_checks.vl:109`). `str.does_not_exist()` therefore passed `velo check` (exit 0) and only failed at GCC.
+  - Because `emit_str_call` builds the C symbol as `velo_str_<member>` generically, the internal runtime helpers were reachable from source even though they were never meant to be public: `str.eq`, `str.neq`, `str.nonnull`, `str.copy_heap`, `str.copy_zone` and the `*_impl` bodies all passed `velo check` and then failed at GCC with `unknown type name 'unknown'` — the pseudo-type the infer branch returns after a failed check.
+* **Fix Applied**:
+  - `src/analysis/str_checks.vl` (226 lines) now publishes the closed set:
+    * `str_valid_members()` returns the 18-member inventory in `str_member_sig` order; `str_is_known_member` gates it.
+    * Unknown members report `unknown str member '<m>' (functions: <list>)` with `report_error("semantic", ...)`, matching the `io.*`/`math.*`/`mem.*` wording.
+    * The `arity < 0` branch is no longer a silent `return "unknown"`: it is now an `internal` diagnostic ("has no arity table entry") so a future member added to one table but not the other cannot slip past codegen.
+    * The existing `len`/`format` special cases and the per-member arity/type walls are unchanged, so the mirrored Stage 1 wording still matches.
+* **Residual Limitation**:
+  - Stage 1 (`velo/codegen_c.py::_str_expect`) is the frozen reference compiler and keeps its own behaviour for unknown members; the closed-set rejection is Stage 2 only, consistent with the Phase 52 `io.*` closure.
+  - `str.split` returns `shelf[string]`, so its result supports shelf members, not `str.*` members. A call such as `str.split(s, ",").len()` fails with a shelf-member diagnostic rather than a str one; that is correct but worth knowing when reading the diagnostics.
+* **Verification**:
+  - `python -m pytest tests/test_mem_str_surface.py -q`: 91 passed in 2.87s (21 new str rejection rows, the diagnostic-list assertion, the emit-c gate, and the `str.eq` GCC regression).
+  - `python -m pytest tests/test_string_library.py tests/test_std_str.py tests/test_string_interpolation.py tests/test_string_concat.py tests/test_string_escapes.py tests/test_string_match.py -q`: 35 passed.
+  - `python -m pytest tests/test_call_arguments.py tests/test_type_checker.py tests/test_std_io.py tests/test_io_checks.py tests/test_math_library.py -q`: 281 passed.
+  - `bin/velo.exe check` on `str.does_not_exist()` and `str.eq(...)` both exit 1 with the closed-set diagnostic; `emit-c` refuses and writes no output.
+  - Bootstrap chain rebuilt, determinism SHA-256 `90375b3a4284daa0634d3c662d8bfe1c015295f3ed5bc9acfc8263f680301c81`; `bootstrap.c` regenerated (`F714706E34C1F359F510934DE5FFF5AA135A282194759E300A89327C288661D0`); `test_bootstrap_snapshot.py` + `test_stage2_bootstrap.py` 9 passed; `count_lines.py` all files under 400 lines.
 
 ##### Task 64.4: Add codegen defense
 * **Goal:** Ensure an unknown member cannot reach the codegen ladder and emit a no-op.
