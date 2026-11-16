@@ -2589,12 +2589,13 @@ act main() { continue }  // velo check passes; GCC: continue statement not withi
 
 #### Tasks
 
-##### Task 62.1: Add the out-of-loop matrix (red baseline)
+##### Task 62.1: Add the out-of-loop matrix (red baseline) [COMPLETED] ✅
 * **Goal:** Cover every context where `break`/`continue` can appear.
 * **Files:** `tests/test_break_continue.py` (extend), `tests/test_loop_context.py` (new).
 * **Tests:** in `main`, in `if`, in `on`, in a plain block, in a nested function (if supported), inside a loop (valid).
 * **Security gate:** every invalid row must fail at `velo check`.
 * **Done when:** the matrix fails for the documented reasons.
+* **Completion note (2026-11-16):** Added `tests/test_loop_context.py` with a 10-row invalid matrix (`main` direct `break`/`continue`, `if`, `if`/`else`, `on` arm, plain block, `zone`, `unsafe`, stale depth inside one function, stale depth across functions), an 8-row valid matrix (unconditional loop, count-loop `continue`, range loop, condition loop, nested loops, `on` inside a loop, `zone` inside a loop, `unsafe` inside a loop), and a row pinning that nested `act` is unrepresentable (parse error `Expected '(' after 'act'`), so the "nested function" row cannot exist in Velo. Red run: `python -m pytest tests/test_loop_context.py -q` → **20 failed, 9 passed** in 3.42s. All 20 failures fail for the documented defect and no other reason: the diagnostic carries lane `backend` (`{"file": "backend", "line": 8, "col": 5, ...}`) and `velo check` additionally prints `Code generation failed with 1 errors.`, proving the checker never enforces the rule. The 9 passing tests are the 8 valid loop rows plus the nested-`act` parse-error row, which proves the harness green-lights legal programs.
 
 ##### Task 62.2: Track loop depth in the symbol table
 * **Goal:** Add a `loop_depth` counter, increment/decrement around loop bodies, and reset at function entry/exit.
