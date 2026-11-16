@@ -3065,12 +3065,27 @@ These are OOM/defensive-path bugs, not normal-path bugs, but they turn an alloca
 
 #### Tasks
 
-##### Task 65.1: Build a runtime test harness
-* **Goal:** Add a small C test or Velo probe that exercises zone enter/pop, nested zones, and allocation failure paths.
-* **Files:** `tests/test_runtime_zone.py` (new), `runtime/` test harness.
-* **Tests:** enter/pop balance; nested zones; watermark restore; simulated OOM if feasible.
-* **Security gate:** tests run under ASan/UBSan on POSIX.
-* **Done when:** the harness can reproduce the NULL/offset paths.
+##### Task 65.1: Build a runtime test harness [COMPLETED] ✅
+* **Former Defect**:
+  - Nothing exercised the zone runtime's defensive paths. `runtime/velo_runtime.h` could be driven to a NULL dereference and to a corrupted arena offset with no signal from the test suite, because every existing test exercises only the healthy path (enter, allocate, pop, leave).
+  - Allocation failure was not reproducible: the OOM behaviour was whatever the host `malloc` happened to do, so the dangerous branches were unreachable in a deterministic test.
+* **Fix Applied**:
+  - Added `tests/test_runtime_zone.py` (5 tests). It compiles `runtime/velo_runtime.h` directly with the same GCC the compiler drivers use (`-O2 -std=c99 -static`) and links a `malloc`-interposing shim:
+    * `velo_test_malloc` counts calls and returns `NULL` at an armed index, so failure lands on the exact allocation under test.
+    * `velo_test_arm(n)` re-arms the counter immediately before the call, so a harness never depends on how many allocations the runtime made earlier.
+  - **Normal-path floor** (`test_zone_enter_pop_nested_and_watermarks`, passes today): enter/push/alloc/pop/leave returns `velo_mem_used()` to zero and restores the active-arena identity; nested zones scope independently and restore the *arena* handle (not the `prev` pointer, which for a nested `velo_zone_enter` is the outer arena — an easy assertion to get wrong); two sequential pushes restore the outer offset exactly.
+  - **Control row** (`test_zone_enter_buffer_oom_is_already_a_clean_fatal`, passes today): arming failure on the *buffer* allocation is caught by the existing `if (!z || !z->base)` check, exits 1 and prints `Velo Fatal Error: Zone Arena allocation failed`. This proves the harness reaches the intended code, so the failing rows below are not harness artefacts.
+  - **Defect 1 red row** (`test_zone_enter_struct_oom_reports_fatal_not_null_deref`): arming failure on the *struct* allocation exits `3221225477` (`0xC0000005`) with empty stderr — a NULL dereference, not the documented fatal.
+  - **Defect 2 red rows** (`test_zone_pop_out_of_range_keeps_the_arena_usable`, `test_zone_pop_fallback_does_not_store_the_index`): `velo_zone_pop(wm + 4096)` leaves `offset=4097` with `cap=4096`, and `velo_zone_pop(7)` on a two-deep watermark stack sets `offset=7` — literally the index, confirming the index-vs-byte-offset confusion directly rather than only through its consequence.
+  - The `pop_index` harness reads `offset` and `wm_count` **before** `velo_zone_leave`, because `leave` returns the arena to the reuse pool or frees it; reading after the call is use-after-free (found and fixed while building the harness).
+* **Residual Limitation**:
+  - **Sanitizers are unavailable on this host.** Task 65.1's security gate asks for ASan/UBSan; neither `clang` nor MSVC's sanitizer runtime is installed here (only `C:\msys64\ucrt64\bin\gcc.exe`). Fail-injection is used instead, which reaches the same branches deterministically but does not detect out-of-bounds reads the way ASan would. Task 65.5 must either provide a POSIX lane or the gate must be restated — recorded, not silently skipped.
+  - `runtime/velo_runtime.h` exists in **two byte-identical copies**: the canonical `runtime/velo_runtime.h` and the frozen Stage-1 copy `velo/runtime/velo_runtime.h`. Nothing in the suite asserts they stay identical. A fix applied to one copy alone would leave the other compiler stage broken while every test still passed. Tasks 65.2/65.3 must patch both and add an identity assertion.
+  - The harness compiles the header with `-static` and no `-pthread`; the thread-only runtime paths stay covered by `tests/test_thread_local_runtime.py`.
+* **Verification**:
+  - `python -m pytest tests/test_runtime_zone.py -q`: 3 failed, 2 passed — the three failures are exactly the documented defects (`struct OOM` NULL dereference, `offset > cap`, `offset == index`); the two passes are the normal-path floor and the buffer-OOM control.
+  - Red-baseline reproduction of defect 1: `rc=3221225477`, empty stderr.
+  - Red-baseline reproduction of defect 2: `offset=4097 cap=4096`, and `wm_count=0 offset=7`.
 
 ##### Task 65.2: Fix the `velo_zone_enter` NULL check
 * **Goal:** Check `z` immediately after `malloc` and before any member access.
