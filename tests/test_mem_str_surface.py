@@ -464,3 +464,63 @@ def test_str_internal_helper_no_longer_reaches_gcc(tmp_path):
     assert res.returncode != 0, blob
     assert "unknown str member 'eq'" in blob, blob
     assert "unknown type name" not in blob, blob
+
+
+# ---------------------------------------------------------------------------
+# Task 64.4: codegen defense in depth.
+#
+# The checker owns both rules, so the defensive branches are unreachable from
+# source. These tests assert the guards exist in the backend (so a future
+# lowering path cannot silently emit an unresolved symbol) and that no
+# source-reachable program ever reports the internal wording.
+# ---------------------------------------------------------------------------
+
+CODEGEN_INTERNAL = "internal compiler error: unknown {} member"
+
+
+def test_codegen_defends_the_mem_ladder():
+    text = CODEGEN_CALL.read_text(encoding="utf-8")
+    assert "unknown mem member reached codegen" in text, (
+        "codegen_call.vl no longer fails on an unknown mem member reaching the ladder"
+    )
+    start = text.index('if target.str_val == "mem" {')
+    end = text.index('if target.str_val == "thread"', start)
+    ladder = text[start:end]
+    assert 'report_error("internal"' in ladder, (
+        "the mem ladder must report an internal error, not a backend/user one"
+    )
+
+
+def test_codegen_defends_the_str_dispatch():
+    text = CODEGEN_IO.read_text(encoding="utf-8")
+    assert "unknown str member '" in text, (
+        "emit_str_call no longer guards the generic velo_str_<member> emission"
+    )
+    assert 'report_error("internal"' in text, (
+        "the str dispatch must report an internal error"
+    )
+    assert "str_is_known_member" in text, (
+        "emit_str_call must consult the checker's closed set, not a duplicate list"
+    )
+
+
+@pytest.mark.parametrize(
+    "ident,call",
+    [
+        ("mem", "mem.does_not_exist()"),
+        ("str", "str.does_not_exist()"),
+        ("str_internal", "str.eq(s, s)"),
+    ],
+    ids=["mem", "str", "str_internal"],
+)
+def test_source_never_reaches_the_codegen_defense(tmp_path, ident, call):
+    """The semantic lane must own the diagnostic; the internal lane is a net."""
+    _require_native()
+    source = PROBE_HEADER + f"    {call}\n}}\n"
+    res = run_check(source, tmp_path, f"defense_{ident}.vl")
+    blob = res.stdout + res.stderr
+    assert res.returncode != 0, blob
+    assert CODEGEN_INTERNAL.format(ident.split("_")[0]) not in blob, (
+        f"the codegen defense fired for {call}; the checker must reject it first:\n{blob}"
+    )
+    assert "reached codegen" not in blob, blob

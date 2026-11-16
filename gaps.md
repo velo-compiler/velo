@@ -2964,12 +2964,23 @@ math.does_not_exist()  // velo check rejects: unknown math member
   - `bin/velo.exe check` on `str.does_not_exist()` and `str.eq(...)` both exit 1 with the closed-set diagnostic; `emit-c` refuses and writes no output.
   - Bootstrap chain rebuilt, determinism SHA-256 `90375b3a4284daa0634d3c662d8bfe1c015295f3ed5bc9acfc8263f680301c81`; `bootstrap.c` regenerated (`F714706E34C1F359F510934DE5FFF5AA135A282194759E300A89327C288661D0`); `test_bootstrap_snapshot.py` + `test_stage2_bootstrap.py` 9 passed; `count_lines.py` all files under 400 lines.
 
-##### Task 64.4: Add codegen defense
-* **Goal:** Ensure an unknown member cannot reach the codegen ladder and emit a no-op.
-* **Files:** `src/backend/codegen_call.vl`, `src/backend/*_gen.vl`.
-* **Tests:** internal-error probe; valid members still emit correctly.
-* **Security gate:** defense in depth; no unresolved symbol in generated C.
-* **Done when:** codegen is defensive for both modules.
+##### Task 64.4: Add codegen defense [COMPLETED] ✅
+* **Former Defect**:
+  - Both backends were open-ended. The `mem` ladder in `src/backend/codegen_call.vl` simply fell off the end for any member it did not recognise, emitting **nothing** — the enclosing expression was then transcribed with no operand, so the failure surfaced as an unrelated C error or as silently wrong code.
+  - `emit_str_call` in `src/backend/codegen_io.vl` was worse: it concatenated the member name onto `velo_str_` unconditionally, so any unknown member produced a call to a symbol that does not exist. Before Task 64.3 this is exactly how `str.eq`/`str.neq`/`str.nonnull` reached GCC and failed with `unknown type name 'unknown'`.
+  - Neither lane had a defense, so a future lowering path that bypassed semantic analysis would place an unresolved symbol in the translation unit instead of failing loudly.
+* **Fix Applied**:
+  - `src/backend/codegen_call.vl`: the `mem` ladder now ends with an explicit internal-error report — `internal compiler error: unknown mem member reached codegen` via `report_error("internal", ...)` plus `st.error_count += 1` — mirroring the Phase 62 break/continue defense. Compressed ladder layout preserved; file 206 lines.
+  - `src/backend/codegen_io.vl`: `emit_str_call` now gates the generic tail on `str_is_known_member(member)` (the checker's own closed set, so the two lists cannot drift) and reports `internal compiler error: unknown str member '<m>' reached codegen` instead of emitting the symbol. Added `use "../analysis/str_checks.vl"` and `use "../common/diagnostics.vl"`; file 255 lines.
+  - Both guards use the `internal` lane, not `backend`, so the diagnostic contract from Phase 62 holds: a user-facing program never sees the wording.
+* **Residual Limitation**:
+  - The guards are unreachable from source by construction, so they cannot be exercised end-to-end without a synthetic bypass. The tests assert the guard text and lane statically, and assert that three real source programs (`mem.does_not_exist()`, `str.does_not_exist()`, `str.eq(s, s)`) are rejected by the semantic lane without ever reaching the internal wording. A true end-to-end exercise would require a compiler test hook that disables the checker; that hook does not exist and is not added here.
+  - `emit_str_call` depends on `str_checks.vl`, which in turn depends on `type_checker.vl`. The dependency already existed transitively through `codegen_expr.vl`, so build order is unchanged, but the backend now names the checker module directly — worth remembering if the analysis layer is ever split out of the compiler binary.
+* **Verification**:
+  - `python -m pytest tests/test_mem_str_surface.py -q`: 96 passed in 2.50s (5 new rows: two static guard assertions and three "checker owns it first" rows).
+  - `python -m pytest tests/test_string_library.py tests/test_std_str.py tests/test_string_interpolation.py tests/test_dynamic_collections.py tests/test_std_coll.py -q`: 72 passed in 109.48s — valid `str.*` emission and shelf receivers are unaffected.
+  - `python -m pytest tests/test_bootstrap_snapshot.py tests/test_codegen_error_gate.py tests/test_stage2_codegen.py -q`: 15 passed in 40.44s.
+  - Bootstrap chain rebuilt (Gen2 -> Gen3 -> `bin/velo.exe`), determinism SHA-256 `b4abe546a440fce6ca2a2c29c497ab777a7e85dcb3e96a2eb02a9d7b2db0f831`; `bootstrap.c` regenerated (`3497D289266AFA8B1D5CFD60A7032D97F52F70BEFFBF95B4DB8998E79F15BCCE`); `count_lines.py` all files under 400 lines (`codegen_io.vl` 255, `codegen_call.vl` 206).
 
 ##### Task 64.5: Add tests, diagnostics, and documentation
 * **Goal:** Lock in the closed sets and document the valid members.

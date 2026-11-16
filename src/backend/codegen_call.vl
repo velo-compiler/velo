@@ -92,6 +92,11 @@ act emit_call_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                 }
                 if member == "create_arena" { sb_append_str(sb, "velo_mem_create_arena((size_t)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
                 if member == "destroy_arena" { sb_append_str(sb, "velo_mem_destroy_arena((VeloZoneArena*)("); emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "))"); return }
+                // Phase 64.4 defense in depth: the checker owns the closed set
+                // (Task 64.2), so reaching here with any other member means a
+                // lowering path bypassed semantic analysis. Fail as an internal
+                // error rather than emitting an unresolved C symbol.
+                report_error("internal", expr.line, expr.col, "internal compiler error: unknown mem member reached codegen"); st.error_count += 1; return
             }
             // §4.2: spawn/join zero-arg i32 acts (@Thread = VeloThreadCtx*); @Mutex ops are opaque void*
             if target.str_val == "thread" and member == "spawn" { sb_append_str(sb, "velo_thread_spawn((VeloThreadFn)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }; if target.str_val == "thread" and member == "join" { sb_append_str(sb, "velo_thread_join("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, ")"); return }

@@ -12,6 +12,8 @@ use "../analysis/type_checker.vl"
 use "../analysis/shelf_checks.vl"
 use "../analysis/dyn_checks.vl"
 use "../analysis/math_checks.vl"
+use "../analysis/str_checks.vl"
+use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "codegen_expr.vl"
@@ -206,6 +208,11 @@ act emit_string_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
 }
 
 // Emits code for sys.str library calls.
+// Phase 64.4 defense in depth: the checker owns the closed set (Task 64.3), so
+// reaching the generic `velo_str_<member>` tail with an unknown member means a
+// lowering path bypassed semantic analysis. Emitting it would place an
+// unresolved symbol in the translation unit (and, before Task 64.3, an
+// `unknown type name` for the internal helpers), so fail as an internal error.
 act emit_str_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @ExprNode) {
     if member == "len" {
         sb_append_str(sb, "((usize)strlen(")
@@ -229,6 +236,13 @@ act emit_str_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @E
             sb_append_str(sb, "))")
             return
         }
+    }
+    if not str_is_known_member(member) {
+        let msb = create_sb(192)
+        sb_append_str(@msb, "internal compiler error: unknown str member '")
+        sb_append_str(@msb, member); sb_append_str(@msb, "' reached codegen")
+        report_error("internal", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
+        return
     }
     sb_append_str(sb, "velo_str_"); sb_append_str(sb, member); sb_append_char(sb, '(')
     mut a = expr.first_arg
