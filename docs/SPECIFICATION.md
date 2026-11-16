@@ -698,6 +698,59 @@ zone {
 } // All allocations wiped in 1 CPU instruction here!
 ```
 
+### 5.5 The `mem.*` Intrinsic Surface
+The `mem` namespace is a **closed set** of thirteen compiler intrinsics. A call
+to any other member is a compile-time error, so a typo can never reach C
+generation or the runtime:
+
+| Member | Signature | Result |
+| :--- | :--- | :--- |
+| `mem.alloc` | `(count)` or `(@Type, count)` | `@u8` or `@Type` |
+| `mem.heap_alloc` | `(count)` or `(@Type, count)` | `@u8` or `@Type` |
+| `mem.free` | `(pointer-or-heap-string)` | `void` |
+| `mem.realloc` | `(pointer, @Type, count)` | `@Type` |
+| `mem.copy` | `(pointer dest, pointer src, byte count)` | `void` |
+| `mem.move` | `(pointer dest, pointer src, byte count)` | `void` |
+| `mem.set` | `(pointer dest, byte value, byte count)` | `void` |
+| `mem.used` | `()` | `usize` |
+| `mem.heap_used` | `()` | `usize` |
+| `mem.current` | `()` | `@Allocator` |
+| `mem.alloc_with` | `(allocator, @Type, count)` | `@Type` |
+| `mem.create_arena` | `(capacity)` | `@Allocator` |
+| `mem.destroy_arena` | `(arena)` | `void` |
+
+* `mem.alloc` bumps the active `zone` arena; `mem.heap_alloc` takes a persistent
+  block from the shared ledger. The one-argument form allocates bytes, the
+  two-argument form allocates `count` elements of `@Type`.
+* `mem.copy`, `mem.move`, and `mem.set` count **bytes**, not elements, and
+  mirror `memcpy`, `memmove`, and `memset`. A statically negative count is
+  rejected at compile time; a variable-held negative count fails at runtime.
+* `mem.free` accepts raw pointers and heap strings (`str.heap_*` returns an
+  owning `string`). Freeing a zone-allocated value is not a compile-time error —
+  ownership is the caller's contract.
+
+```rust
+use std.io
+use std.mem
+
+act main() {
+    let buf: @u8 = mem.heap_alloc(@u8, 16)
+    mem.set(buf, 7, 16)
+    let grown: @u8 = mem.realloc(buf, @u8, 32)
+    let held: usize = mem.heap_used()
+    io.println("held={held}")
+    mem.free(grown)
+}
+```
+
+### 5.6 Unknown `mem.*` Members
+An unknown member reports the closed set and never reaches code generation:
+
+```
+unknown mem member 'malloc' (functions: alloc, heap_alloc, free, realloc, copy,
+move, set, used, heap_used, current, alloc_with, create_arena, destroy_arena)
+```
+
 ---
 
 ## 6. String Subsystem & Operations
@@ -728,6 +781,68 @@ banner += " v2.0"
 ```
 
 Concatenation automatically computes the combined string length, allocates the required memory in the active arena, and copies bytes with guaranteed null-termination.
+
+### 6.3 The `str.*` Intrinsic Surface
+The `str` namespace is a **closed set** of eighteen compiler intrinsics. A call
+to any other member is a compile-time error:
+
+| Member | Signature | Result | Storage |
+| :--- | :--- | :--- | :--- |
+| `str.len` | `(string s)` | `usize` | — |
+| `str.contains` | `(string s, string sub)` | `bool` | — |
+| `str.starts_with` | `(string s, string prefix)` | `bool` | — |
+| `str.ends_with` | `(string s, string suffix)` | `bool` | — |
+| `str.index_of` | `(string s, string needle)` | `i64` | — |
+| `str.trim` | `(string s)` | `string` | active zone |
+| `str.heap_trim` | `(string s)` | `string` | heap |
+| `str.to_upper` | `(string s)` | `string` | active zone |
+| `str.heap_to_upper` | `(string s)` | `string` | heap |
+| `str.to_lower` | `(string s)` | `string` | active zone |
+| `str.heap_to_lower` | `(string s)` | `string` | heap |
+| `str.replace` | `(string s, string old, string new)` | `string` | active zone |
+| `str.heap_replace` | `(string s, string old, string new)` | `string` | heap |
+| `str.concat` | `(string a, string b)` | `string` | active zone |
+| `str.heap_concat` | `(string a, string b)` | `string` | heap |
+| `str.split` | `(string s, string delimiter)` | `shelf[string]` | active zone |
+| `str.format` | `(string fmt, ...)` | `string` | active zone |
+| `str.heap_format` | `(string fmt, ...)` | `string` | heap |
+
+* The `heap_*` family allocates on the persistent heap and must be released with
+  `mem.free`. The un-prefixed family allocates in the active `zone` arena and is
+  reclaimed automatically when that zone exits.
+* `str.format` uses `printf`-style specifications when the format string has no
+  `{...}` interpolation. The checker validates that the number of `%`
+  conversions matches the number of additional arguments.
+* `str.split` returns a `shelf[string]` of arena-backed tokens; it is not a
+  `string` and does not support `str.*` members.
+
+```rust
+use std.io
+use std.str
+
+act main() {
+    let raw = "  Velo  "
+    let clean: string = str.trim(raw)
+    let upper: string = str.to_upper(clean)
+    let loud: string = str.heap_concat(upper, "!")
+    let idx: i64 = str.index_of(loud, "ELO")
+    let n: usize = str.len(loud)
+    io.println("{loud} idx={idx} len={n}")
+}
+```
+
+### 6.4 Unknown `str.*` Members
+An unknown member reports the closed set and never reaches code generation:
+
+```
+unknown str member 'substr' (functions: len, contains, starts_with, ends_with,
+index_of, trim, heap_trim, to_upper, heap_to_upper, to_lower, heap_to_lower,
+replace, heap_replace, concat, heap_concat, split, format, heap_format)
+```
+
+Internal runtime helpers such as `velo_str_eq` and `velo_str_nonnull` are **not**
+members. Reaching them through `str.*` is an unknown-member error, not a C
+codegen failure.
 
 ---
 

@@ -524,3 +524,136 @@ def test_source_never_reaches_the_codegen_defense(tmp_path, ident, call):
         f"the codegen defense fired for {call}; the checker must reject it first:\n{blob}"
     )
     assert "reached codegen" not in blob, blob
+
+
+# ---------------------------------------------------------------------------
+# Task 64.5: documentation gate.
+#
+# docs/SPECIFICATION.md 5.5/5.6 and 6.3/6.4 publish both closed sets. These
+# rows keep the prose honest: the documented member names must equal the
+# inventory, both worked examples must compile and run, and the documented
+# unknown-member diagnostic must be the one the compiler prints.
+# ---------------------------------------------------------------------------
+
+SPEC = REPO_ROOT / "docs" / "SPECIFICATION.md"
+
+SPEC_MEM_EXAMPLE = """use std.io
+use std.mem
+
+act main() {
+    let buf: @u8 = mem.heap_alloc(@u8, 16)
+    mem.set(buf, 7, 16)
+    let grown: @u8 = mem.realloc(buf, @u8, 32)
+    let held: usize = mem.heap_used()
+    io.println("held={held}")
+    mem.free(grown)
+}
+"""
+
+SPEC_STR_EXAMPLE = """use std.io
+use std.str
+
+act main() {
+    let raw = "  Velo  "
+    let clean: string = str.trim(raw)
+    let upper: string = str.to_upper(clean)
+    let loud: string = str.heap_concat(upper, "!")
+    let idx: i64 = str.index_of(loud, "ELO")
+    let n: usize = str.len(loud)
+    io.println("{loud} idx={idx} len={n}")
+}
+"""
+
+
+def _spec_section(title):
+    text = SPEC.read_text(encoding="utf-8")
+    start = text.index(title)
+    end = text.find("\n### ", start + len(title))
+    if end == -1:
+        end = text.find("\n## ", start + len(title))
+    return text[start:end]
+
+
+def test_spec_documents_every_mem_member():
+    section = _spec_section("### 5.5 The `mem.*` Intrinsic Surface")
+    missing = [m for m in MEM_INVENTORY if f"`mem.{m}`" not in section]
+    assert not missing, f"SPEC 5.5 does not document: {missing}"
+
+
+def test_spec_documents_every_str_member():
+    section = _spec_section("### 6.3 The `str.*` Intrinsic Surface")
+    missing = [m for m in STR_INVENTORY if f"`str.{m}`" not in section]
+    assert not missing, f"SPEC 6.3 does not document: {missing}"
+
+
+def test_spec_mem_example_runs(tmp_path):
+    _require_native()
+    probe = tmp_path / "spec_mem_example.vl"
+    probe.write_text(SPEC_MEM_EXAMPLE, encoding="utf-8", newline="\n")
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(probe)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=get_env(),
+        timeout=120,
+    )
+    assert res.returncode == 0, f"{res.stdout}\n{res.stderr}"
+    assert "held=32" in res.stdout, res.stdout
+
+
+def test_spec_str_example_runs(tmp_path):
+    _require_native()
+    probe = tmp_path / "spec_str_example.vl"
+    probe.write_text(SPEC_STR_EXAMPLE, encoding="utf-8", newline="\n")
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(probe)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=get_env(),
+        timeout=120,
+    )
+    assert res.returncode == 0, f"{res.stdout}\n{res.stderr}"
+    assert "VELO! idx=1 len=5" in res.stdout, res.stdout
+
+
+@pytest.mark.parametrize("module", ["mem", "str"])
+def test_spec_documented_diagnostic_matches_the_compiler(tmp_path, module):
+    """The wording published in SPEC 5.6/6.4 must be what the compiler prints.
+
+    The documented example uses a different typo than the probe, so only the
+    shape and the published member list are compared: the prefix up to the
+    quoted member name, and the `(functions: ...)` payload.
+    """
+    _require_native()
+    section_title = (
+        "### 5.6 Unknown `mem.*` Members"
+        if module == "mem"
+        else "### 6.4 Unknown `str.*` Members"
+    )
+    section = _spec_section(section_title)
+    # The last fenced block holds the published diagnostic; drop the fence.
+    blocks = re.findall(r"```\n(.*?)```", section, re.S)
+    assert blocks, f"{section_title} has no code block:\n{section}"
+    documented = " ".join(blocks[-1].split()).strip()
+
+    source = PROBE_HEADER + f"    {module}.does_not_exist()\n}}\n"
+    res = run_check(source, tmp_path, f"spec_{module}_diag.vl")
+    blob = res.stdout + res.stderr
+    assert res.returncode != 0, blob
+    printed = [line for line in blob.splitlines() if f"unknown {module} member" in line]
+    assert printed, blob
+    actual = printed[0].split(" - ", 1)[-1].strip()
+
+    def shape(text):
+        head, _, rest = text.partition("'")
+        _, _, payload = rest.partition("'")
+        return head, payload
+
+    assert shape(actual) == shape(documented), (
+        f"SPEC documents a different diagnostic shape than the compiler prints:\n"
+        f"documented: {documented}\nactual:     {actual}"
+    )

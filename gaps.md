@@ -2868,7 +2868,7 @@ There is no compile-time or runtime validation of the step.
 
 ---
 
-### Phase 64: Closed-Set Validation for `mem.*` and `str.*` (P2) [OPEN] 🚧
+### Phase 64: Closed-Set Validation for `mem.*` and `str.*` (P2) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-13`<br>
 **Severity:** P2 — checker accepts unknown members; GCC-only failure<br>
@@ -2982,18 +2982,48 @@ math.does_not_exist()  // velo check rejects: unknown math member
   - `python -m pytest tests/test_bootstrap_snapshot.py tests/test_codegen_error_gate.py tests/test_stage2_codegen.py -q`: 15 passed in 40.44s.
   - Bootstrap chain rebuilt (Gen2 -> Gen3 -> `bin/velo.exe`), determinism SHA-256 `b4abe546a440fce6ca2a2c29c497ab777a7e85dcb3e96a2eb02a9d7b2db0f831`; `bootstrap.c` regenerated (`3497D289266AFA8B1D5CFD60A7032D97F52F70BEFFBF95B4DB8998E79F15BCCE`); `count_lines.py` all files under 400 lines (`codegen_io.vl` 255, `codegen_call.vl` 206).
 
-##### Task 64.5: Add tests, diagnostics, and documentation
-* **Goal:** Lock in the closed sets and document the valid members.
-* **Files:** `tests/test_mem_intrinsics.py`, `tests/test_string_library.py`, `docs/SPECIFICATION.md`.
-* **Tests:** unknown/wrong-arity/wrong-type rows; valid rows; error-message assertions.
-* **Security gate:** no silent acceptance; no GCC-only failure.
-* **Done when:** both matrices are green and the docs match.
+##### Task 64.5: Add tests, diagnostics, and documentation [COMPLETED] ✅
+* **Former Defect**:
+  - `docs/SPECIFICATION.md` had no description of either intrinsic namespace. §5 covered `zone` and mentioned `mem.alloc` only in passing; §6 covered interpolation and `+` concatenation. Neither `mem.*` nor `str.*` published a member list, so there was nothing to check a call against and nothing to point a user at after a typo.
+  - No test bound the prose to the compiler: the documented members, the documented examples, and the documented diagnostic could all drift from the implementation without any signal.
+* **Fix Applied**:
+  - `docs/SPECIFICATION.md` gained four sections:
+    * **§5.5 The `mem.*` Intrinsic Surface** — a thirteen-row table with signature and result spell per member, the byte-count rule for `copy`/`move`/`set`, the negative-count rejection, the `mem.free` acceptance rule (raw pointers and heap strings), and a worked example.
+    * **§5.6 Unknown `mem.*` Members** — the exact closed-set diagnostic.
+    * **§6.3 The `str.*` Intrinsic Surface** — an eighteen-row table with signature, result, and **storage class** per member (active zone vs. persistent heap), the `heap_*`/`mem.free` pairing, the `str.format` argument-count rule, the `str.split` → `shelf[string]` note, and a worked example.
+    * **§6.4 Unknown `str.*` Members** — the exact closed-set diagnostic plus the explicit statement that internal helpers such as `velo_str_eq` are not members.
+  - `tests/test_mem_str_surface.py` grew to 102 assertions with a documentation gate:
+    * `test_spec_documents_every_mem_member` / `..._str_member` — every inventory member appears as `` `mem.<m>` `` / `` `str.<m>` `` in its section.
+    * `test_spec_mem_example_runs` / `test_spec_str_example_runs` — both SPEC examples are executed via `velo run` and must print `held=32` and `VELO! idx=1 len=5` respectively.
+    * `test_spec_documented_diagnostic_matches_the_compiler` — extracts the last fenced block from §5.6/§6.4, compares its shape (prefix up to the quoted member name plus the `(functions: ...)` payload) with the diagnostic the compiler actually prints, so a wording or list change fails the build.
+  - The reject/accept matrices from Tasks 64.2-64.4 already cover unknown members, wrong arity, wrong type, and the valid rows for both namespaces, so no separate matrix was added to `test_mem_intrinsics.py` or `test_string_library.py`; those suites stay focused on their original runtime-parity contracts.
+* **Residual Limitation**:
+  - The documentation gate compares the diagnostic *shape*, not the exact typo, because the SPEC example deliberately uses a different unknown name (`substr`, `malloc`) than the probe (`does_not_exist`). An exact-match gate would force the prose to use a meaningless identifier.
+  - The member tables are hand-maintained Markdown. The gate catches a missing member but not a wrong signature or a wrong result spell inside an existing row; those stay review-enforced.
+* **Verification**:
+  - `python -m pytest tests/test_mem_str_surface.py -q`: 102 passed in 5.41s.
+  - Both SPEC examples run and produce the documented output (`held=32`; `VELO! idx=1 len=5`).
+  - `docs/SPECIFICATION.md` §5.5/§5.6/§6.3/§6.4 list exactly the 13 `mem` and 18 `str` members from the Task 64.1 inventory.
+
+#### Phase 64 Summary
+
+Both intrinsic namespaces are now closed sets, end to end:
+
+| Layer | `mem` | `str` |
+| :--- | :--- | :--- |
+| Inventory + drift alarm | `test_mem_str_surface.py` (codegen ladder regex) | same (runtime helper scan) |
+| Closed-set check | `mem_checks.vl::mem_is_known_member` | `str_checks.vl::str_is_known_member` |
+| Per-member walls | `mem_expect_arity` + per-family type walls | existing arity/type walls (unchanged) |
+| Codegen defense | internal error at ladder tail | `str_is_known_member` gate before emission |
+| Documentation | SPEC §5.5/§5.6 | SPEC §6.3/§6.4 |
+
+Behaviour that changed: `mem.does_not_exist()`, `str.does_not_exist()`, `str.eq(...)` and every other unknown member now fail at `velo check` with a diagnostic that lists the valid set. `mem.alloc()`, `mem.heap_alloc()` and `mem.alloc_with(...)` no longer abort the compiler. Eight previously unwalled `mem` members now reject wrong arity and wrong argument types.
 
 #### Phase Exit Criteria
 
-- [ ] `mem.does_not_exist()` and `str.does_not_exist()` fail at `velo check`.
-- [ ] Valid `mem.*` and `str.*` calls still pass and run.
-- [ ] The valid-member lists are documented.
+- [x] `mem.does_not_exist()` and `str.does_not_exist()` fail at `velo check`.
+- [x] Valid `mem.*` and `str.*` calls still pass and run.
+- [x] The valid-member lists are documented.
 
 ---
 
