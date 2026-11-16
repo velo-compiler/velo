@@ -194,6 +194,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang libasan8 libubsan1
 
+      - name: Run the runtime zone harness under ASan + UBSan
+        env:
+          CC: clang
+          VELO_CFLAGS: "-fsanitize=address,undefined -fno-omit-frame-pointer -g"
+          VELO_LDFLAGS: "-fsanitize=address,undefined"
+          ASAN_OPTIONS: "detect_leaks=1:halt_on_error=1:abort_on_error=1"
+          UBSAN_OPTIONS: "halt_on_error=1:abort_on_error=1"
+        run: |
+          python3 -m pytest tests/test_runtime_zone.py -q
+
       - name: Bootstrap self-hosted Velo compiler (3-stage Gen1 -> Gen2 -> Gen3)
         env:
           CC: clang

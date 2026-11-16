@@ -3151,12 +3151,17 @@ These are OOM/defensive-path bugs, not normal-path bugs, but they turn an alloca
   - `python -m pytest tests/test_runtime_zone.py -q`: 10 passed.
   - `python -m pytest tests/test_thread_local_runtime.py tests/test_allocators.py tests/test_mem_intrinsics.py tests/test_bootstrap_snapshot.py -q`: 43 passed.
 
-##### Task 65.5: Add sanitizer coverage to CI
-* **Goal:** Run the runtime tests under ASan/UBSan (and a leak check where available).
-* **Files:** `.github/workflows/ci.yml`.
-* **Tests:** the Phase 65 harness plus existing runtime tests.
-* **Security gate:** zero sanitizer findings.
-* **Done when:** the sanitizer job is green.
+##### Task 65.5: Add sanitizer coverage to CI [COMPLETED] ✅ (local lane blocked, recorded)
+* **Former Defect**: The `sanitizer` job in `.github/workflows/ci.yml` installed clang with ASan/UBSan and ran only `tests/test_defer.py`, `tests/test_break_continue.py`, `tests/test_match_switch.py` plus one `std/tests/mem/defer_test.vl` binary. Nothing compiled the **runtime header itself** under a sanitizer, so the entire Phase 65 defect class — OOM NULL dereference, watermark corruption, unchecked capacity subtraction — was outside sanitizer coverage even where sanitizers were available. The harness also could not have been plugged in: it hardcoded `gcc` and `-static`, both of which prevent a sanitizer build.
+* **Fix Applied**:
+  - `tests/test_runtime_zone.py`: `find_gcc` → `find_cc`, honouring `CC` first so the lane can select clang; `build_and_run` now appends `VELO_CFLAGS`/`VELO_LDFLAGS` (the same variables the existing sanitizer steps already use) and drops `-static` when sanitizers are requested, because `-static` cannot link the sanitizer runtimes. Non-Windows hosts also get a platform-correct executable name.
+  - Leak detection: the harness leaked the thread's default 64 MB arena on every row, which `detect_leaks=1` would report. The healthy rows now call `velo_thread_tls_release()` (`CHUNK_GUARD` calls `velo_mem_destroy_arena`) so they run **with** leak detection on, and the four rows whose contract is to terminate inside the runtime's fatal handler pass `expected_fatal=True`, which disables leak detection for those rows only — the arena is unreachable after `exit`, so a leak report there would be noise, not a finding.
+  - `.github/workflows/ci.yml`: the `sanitizer` job gained a `Run the runtime zone harness under ASan + UBSan` step placed before the bootstrap, so a runtime memory error fails fast, with `CC=clang`, `-fsanitize=address,undefined`, `ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1`, `UBSAN_OPTIONS=halt_on_error=1:abort_on_error=1`.
+* **Residual Limitation**: **The sanitizer lane was not executed locally.** `clang` is not installed on this host, and the MSYS2 UCRT64 gcc has no sanitizer runtimes at all — attempting `VELO_CFLAGS=-fsanitize=address,undefined` fails at link with `cannot find -lasan` / `cannot find -lubsan`. So the harness's sanitizer code path is written, wired into CI, and verified to compile and run correctly under the plain-gcc lane, but its **first real sanitizer execution will be the first CI run**. That is an honest gap, not a pass. What *was* verified locally is the substitution the task cannot provide here: deterministic fail-injection (Tasks 65.1–65.4) reaches the same branches and the guards are proven load-bearing against the pre-fix header.
+* **Verification**:
+  - `python -m pytest tests/test_runtime_zone.py -q` with no `VELO_*` overrides: 10 passed (this is the lane available on this host).
+  - Negative check of the sanitizer wiring: with `VELO_CFLAGS`/`VELO_LDFLAGS` set to `-fsanitize=address,undefined`, the harness attempts a sanitizer link and fails with `cannot find -lasan`, proving the flags are actually applied and `-static` is correctly suppressed rather than silently ignored.
+  - `.github/workflows/ci.yml` parses as YAML and the `sanitizer` job's step list now reads `... 'Install Clang and Sanitizer runtimes', 'Run the runtime zone harness under ASan + UBSan', 'Bootstrap self-hosted Velo compiler ...'`.
 
 ##### Task 65.6: Document the OOM policy
 * **Goal:** State which allocations are fatal and which are recoverable; align diagnostics.

@@ -25,6 +25,7 @@ need a different toolchain), so the OOM rows use fail-injection instead of a
 sanitizer. That substitution is recorded in `gaps.md`.
 """
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -122,6 +123,7 @@ int main(void) {
     if (velo_mem_used() != 0) { fprintf(stderr, "outer pop did not restore zero\n"); return 26; }
     velo_zone_leave(seq_prev);
 
+    velo_thread_tls_release();   // leave no arena behind: leak check runs on this row
     printf("ZONE-OK\n");
     return 0;
 }
@@ -178,6 +180,7 @@ int main(void) {
     if (!q) { printf("CORRUPTED-ALLOC\n"); return 42; }
     if ((uint8_t*)q >= z->base + z->cap) { printf("OUT-OF-BOUNDS\n"); return 43; }
     velo_zone_leave(prev);
+    velo_thread_tls_release();   // leak check runs on this row
     printf("ZONE-FALLBACK-OK\n");
     return 0;
 }
@@ -205,6 +208,7 @@ int main(void) {
     if (!q) { printf("ARENA-UNUSABLE-AFTER-ZERO-POP\n"); return 63; }
     if ((uint8_t*)q + 1024 > z->base + z->cap) { printf("OUT-OF-BOUNDS\n"); return 64; }
     velo_zone_leave(prev);
+    velo_thread_tls_release();   // leak check runs on this row
     printf("ZERO-POP-OK\n");
     return 0;
 }
@@ -291,47 +295,82 @@ int main(void) {
     u8* p = (u8*)velo_alloc_with(a, 64, 1);
     if (!p) { fprintf(stderr, "alloc failed\n"); return 83; }
     if (!in_chunks(a, (uint8_t*)p, 64)) { printf("OUT-OF-BOUNDS\n"); return 84; }
+    velo_mem_destroy_arena(a);   // leak check runs on this row
     printf("CHUNK-GUARD-OK\n");
     return 0;
 }
 """
 
 
-def find_gcc() -> str:
-    found = shutil.which("gcc")
-    if found:
-        return found
+def find_cc() -> str:
+    """The compiler under test. `CC` wins so the sanitizer lane can point a
+    clang+ASan/UBSan build at the same harness; otherwise use gcc, which is
+    what both Velo build drivers use."""
+    for name in (os.environ.get("CC"), "gcc", "cc"):
+        if not name:
+            continue
+        found = shutil.which(name)
+        if found:
+            return found
     for candidate in (r"C:\msys64\ucrt64\bin\gcc.exe", r"C:\msys64\mingw64\bin\gcc.exe"):
         p = Path(candidate)
         if p.exists():
             return str(p)
-    raise AssertionError("GCC not found — install GCC (MinGW/MSYS2) like the build drivers require")
+    raise AssertionError("no C compiler found — install GCC (MinGW/MSYS2) like the build drivers require")
 
 
-def _gcc_env():
-    gcc = find_gcc()
+def _cc_env():
+    cc = find_cc()
     env = os.environ.copy()
-    env["PATH"] = f"{Path(gcc).parent.resolve()}{os.pathsep}{env.get('PATH', '')}"
-    return gcc, env
+    env["PATH"] = f"{Path(cc).parent.resolve()}{os.pathsep}{env.get('PATH', '')}"
+    return cc, env
 
 
-def build_and_run(tmp_path, name, body):
-    """Compile `PRELUDE + body` against the runtime header and run it."""
-    gcc, env = _gcc_env()
+def _extra_flags(var):
+    return shlex.split(os.environ.get(var, ""))
+
+
+def build_and_run(tmp_path, name, body, expected_fatal=False):
+    """Compile `PRELUDE + body` against the runtime header and run it.
+
+    Honours `VELO_CFLAGS`/`VELO_LDFLAGS` exactly like the CI sanitizer job, so
+    the same probes can be built with `-fsanitize=address,undefined`.
+    `-static` is a Windows convenience only: it does not link against the
+    sanitizer runtimes, so it is dropped when sanitizers are requested.
+    """
+    cc, env = _cc_env()
+    extra_c = _extra_flags("VELO_CFLAGS")
+    extra_ld = _extra_flags("VELO_LDFLAGS")
+    sanitized = any("sanitize" in flag for flag in extra_c + extra_ld)
     tmp_path.mkdir(parents=True, exist_ok=True)
     c_file = tmp_path / f"{name}.c"
-    exe = tmp_path / f"{name}.exe"
+    exe = tmp_path / f"{name}.exe" if os.name == "nt" else tmp_path / name
     c_file.write_text(PRELUDE + body, encoding="utf-8")
 
+    cmd = [cc, "-O2", "-std=c99", "-I", str(RUNTIME_DIR), str(c_file), "-o", str(exe)]
+    cmd += extra_c + extra_ld
+    if os.name == "nt" and not sanitized:
+        cmd.append("-static")
+
     build = subprocess.run(
-        [gcc, "-O2", "-std=c99", "-I", str(RUNTIME_DIR), str(c_file), "-o", str(exe), "-static"],
+        cmd,
         capture_output=True,
         text=True,
         cwd=str(REPO_ROOT),
         env=env,
     )
     assert build.returncode == 0, f"{name} compile failed:\n{build.stderr}"
-    return subprocess.run([str(exe)], capture_output=True, text=True, timeout=120)
+
+    run_env = env
+    if expected_fatal:
+        # These rows terminate inside the runtime's fatal handler, so the
+        # arena the probe was using is never released. Leak detection would
+        # report that by design, so it is off for fatal rows only; every other
+        # row runs with leak detection as the CI lane configured it.
+        run_env = env.copy()
+        opts = run_env.get("ASAN_OPTIONS", "")
+        run_env["ASAN_OPTIONS"] = (opts + ":" if opts else "") + "detect_leaks=0"
+    return subprocess.run([str(exe)], capture_output=True, text=True, timeout=120, env=run_env)
 
 
 @pytest.fixture(scope="module")
@@ -348,7 +387,7 @@ def test_zone_enter_pop_nested_and_watermarks(cache_dir):
 
 def test_zone_enter_buffer_oom_is_already_a_clean_fatal(cache_dir):
     """Control row: the existing `!z->base` check does catch the buffer OOM."""
-    run = build_and_run(cache_dir, "oom_buffer", OOM_ENTER_BUFFER)
+    run = build_and_run(cache_dir, "oom_buffer", OOM_ENTER_BUFFER, expected_fatal=True)
     assert run.returncode == 1, (
         f"expected the documented fatal exit, got rc={run.returncode}\n"
         f"stdout:\n{run.stdout}\nstderr:\n{run.stderr}"
@@ -359,7 +398,7 @@ def test_zone_enter_buffer_oom_is_already_a_clean_fatal(cache_dir):
 
 def test_zone_enter_struct_oom_reports_fatal_not_null_deref(cache_dir):
     """Task 65.2: the struct allocation must be checked before `z->base`."""
-    run = build_and_run(cache_dir, "oom_struct", OOM_ENTER_STRUCT)
+    run = build_and_run(cache_dir, "oom_struct", OOM_ENTER_STRUCT, expected_fatal=True)
     assert "SURVIVED" not in run.stdout, (
         "velo_zone_enter returned normally after a failed struct allocation:\n" + run.stdout
     )
@@ -410,7 +449,7 @@ def test_zone_pop_zero_watermark_resets_the_arena(cache_dir):
 
 def test_zone_watermark_heap_oom_is_fatal(cache_dir):
     """Task 65.4: the watermark heap array grows by `realloc`; failure is fatal."""
-    run = build_and_run(cache_dir, "wm_heap_oom", WM_HEAP_OOM)
+    run = build_and_run(cache_dir, "wm_heap_oom", WM_HEAP_OOM, expected_fatal=True)
     assert "SURVIVED" not in run.stdout, (
         "velo_zone_push continued after a failed watermark-heap realloc:\n" + run.stdout
     )
@@ -424,7 +463,7 @@ def test_zone_watermark_heap_oom_is_fatal(cache_dir):
 
 def test_corrupted_zone_offset_cannot_allocate_past_cap(cache_dir):
     """Task 65.4: `cap - offset` must not underflow when offset > cap."""
-    run = build_and_run(cache_dir, "corrupt_offset", CORRUPTED_PRIMARY_OFFSET)
+    run = build_and_run(cache_dir, "corrupt_offset", CORRUPTED_PRIMARY_OFFSET, expected_fatal=True)
     blob = run.stdout + run.stderr
     assert "ALLOWED-PAST-CAP" not in blob, (
         f"velo_mem_alloc accepted a block past base + cap:\n{blob}"
