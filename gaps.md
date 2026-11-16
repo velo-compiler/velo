@@ -344,7 +344,7 @@ Status values: `[OPEN]`, `[IN PROGRESS]`, `[BLOCKED]`, `[COMPLETED] ✅`.
 | **61** | `break` inside `on` breaks the C switch, not the loop | P1 | 7 | 58 | OPEN |
 | **62** | `break`/`continue` outside loops pass `velo check` | P1 | 5 | 58 | COMPLETED ✅ |
 | **63** | Zero range step is accepted and loops forever | P0 | 5 | 53, 54 | OPEN |
-| **64** | Unknown `mem.*`/`str.*` members pass `velo check` | P2 | 5 | 52 | OPEN |
+| **64** | Unknown `mem.*`/`str.*` members pass `velo check` | P2 | 5 | 52 | COMPLETED ✅ |
 | **65** | Runtime zone allocator NULL/watermark hardening | P2 | 6 | — | OPEN |
 | **66** | Determinism script crashes on Windows cp1252 | P2 | 4 | — | OPEN |
 | **67** | `test_std_fs_ops` depends on an ambient `scratch/` dir | P2 | 4 | — | OPEN |
@@ -3004,6 +3004,7 @@ math.does_not_exist()  // velo check rejects: unknown math member
   - `python -m pytest tests/test_mem_str_surface.py -q`: 102 passed in 5.41s.
   - Both SPEC examples run and produce the documented output (`held=32`; `VELO! idx=1 len=5`).
   - `docs/SPECIFICATION.md` §5.5/§5.6/§6.3/§6.4 list exactly the 13 `mem` and 18 `str` members from the Task 64.1 inventory.
+  - Full suite after the phase: `python -m pytest tests -q` -> **1870 passed, 2 skipped in 908.49s**. Caveat: this run used `PYTHONUTF8=1`, which is what keeps the Phase 66 `check_determinism.py` `✓` bug and the cp1252 fuzz harness from failing. Those two defects are **not** fixed by this phase; they are masked by the environment variable and remain open under Phase 66.
 
 #### Phase 64 Summary
 
