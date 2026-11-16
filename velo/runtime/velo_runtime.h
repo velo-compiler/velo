@@ -432,6 +432,13 @@ static inline size_t velo_zone_push(void) {
         size_t heap_idx = z->wm_count - VELO_ZONE_WM_INLINE;
         if (heap_idx >= z->wm_cap) {
             size_t new_cap = z->wm_cap == 0 ? 32 : z->wm_cap * 2;
+            // Task 65.4: the doubling must not wrap. A wrapped (small) new_cap
+            // would under-allocate the array and the store below would write
+            // past it, so treat overflow like OOM: loud, fatal, no write.
+            if (new_cap < z->wm_cap || new_cap > SIZE_MAX / sizeof(VeloZoneWatermark)) {
+                fprintf(stderr, "Velo Fatal Error: Zone Arena Watermark Stack OOM!\n");
+                exit(1);
+            }
             VeloZoneWatermark* new_heap = (VeloZoneWatermark*)realloc(z->wm_heap, new_cap * sizeof(VeloZoneWatermark));
             if (!new_heap) {
                 fprintf(stderr, "Velo Fatal Error: Zone Arena Watermark Stack OOM!\n");
@@ -599,7 +606,12 @@ static inline void* velo_mem_alloc(size_t size, size_t count) {
     size_t total = velo_check_alloc_size(size, count);
     VeloZoneArena* z = velo_zone_active();
     size_t aligned = (total + 7) & ~((size_t)7);
-    if (aligned <= z->cap - z->offset) {
+    // `offset <= cap` is checked first: if a corrupted arena ever has
+    // offset > cap, `z->cap - z->offset` underflows to a huge value and the
+    // capacity test would pass for any request, writing past the buffer.
+    // Task 65.4 hardening — the invariant should hold, but the check must not
+    // depend on it.
+    if (z->offset <= z->cap && aligned <= z->cap - z->offset) {
         void* ptr = (void*)&z->base[z->offset];
         z->offset += aligned;
         memset(ptr, 0, aligned);
@@ -611,7 +623,7 @@ static inline void* velo_mem_alloc(size_t size, size_t count) {
         exit(1);
     }
     VeloZoneChunk* cur = z->chunks;
-    if (!cur || aligned > cur->cap - cur->offset) {
+    if (!cur || cur->offset > cur->cap || aligned > cur->cap - cur->offset) {
         cur = velo_zone_new_chunk(z, aligned);
     }
     void* ptr = (void*)&cur->base[cur->offset];
@@ -639,7 +651,7 @@ typedef VeloZoneArena* VeloAllocator;
 static inline void* velo_alloc_with(VeloAllocator a, size_t size, size_t count) {
     size_t total = velo_check_alloc_size(size, count);
     size_t aligned = (total + 7) & ~((size_t)7);
-    if (aligned <= a->cap - a->offset) {
+    if (a->offset <= a->cap && aligned <= a->cap - a->offset) {
         void* ptr = (void*)&a->base[a->offset];
         a->offset += aligned;
         memset(ptr, 0, aligned);
@@ -651,7 +663,7 @@ static inline void* velo_alloc_with(VeloAllocator a, size_t size, size_t count) 
         exit(1);
     }
     VeloZoneChunk* cur = a->chunks;
-    if (!cur || aligned > cur->cap - cur->offset) {
+    if (!cur || cur->offset > cur->cap || aligned > cur->cap - cur->offset) {
         cur = velo_zone_new_chunk(a, aligned);
     }
     void* ptr = (void*)&cur->base[cur->offset];

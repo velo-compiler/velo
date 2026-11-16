@@ -3115,12 +3115,41 @@ These are OOM/defensive-path bugs, not normal-path bugs, but they turn an alloca
   - `python -m pytest tests/test_bootstrap_snapshot.py tests/test_thread_local_runtime.py tests/test_allocators.py tests/test_mem_intrinsics.py -q`: 43 passed.
   - Determinism unchanged: `b4abe546a440fce6ca2a2c29c497ab777a7e85dcb3e96a2eb02a9d7b2db0f831` for Gen2 and Gen3. A header-only change does not alter `emit-c` output (`bootstrap.c` carries only the `#include "velo_runtime.h"` line), so no snapshot regeneration was required.
 
-##### Task 65.4: Audit all runtime allocations
-* **Goal:** Find every `malloc`/`realloc`/`calloc` and verify the result is checked before use.
-* **Files:** `rg` audit of `runtime/velo_runtime.h`.
-* **Tests:** one failure-injection test per allocation site where feasible.
-* **Security gate:** no unchecked allocation; no integer-overflow in size calculations.
-* **Done when:** the audit table is attached and all sites are fixed or explicitly fatal.
+##### Task 65.4: Audit all runtime allocations [COMPLETED] ✅
+* **Former Defect**: A full audit of every `malloc`/`realloc`/`calloc` in `runtime/velo_runtime.h` found 14 sites. Nine were already correct (checked before use, or fatal on failure). Five were not:
+  1. `velo_zone_enter`'s struct allocation — the NULL dereference fixed in Task 65.2 (kept here for completeness of the table).
+  2. `velo_zone_pop`'s `z->offset = watermark` — the index-vs-offset confusion fixed in Task 65.3.
+  3. **`velo_mem_alloc` capacity test**: `aligned <= z->cap - z->offset`. If `offset > cap` (which Task 65.3 could produce before the fix, and any future corruption can still produce), the subtraction underflows to a huge value, so the test passes for *any* request and the arena hands out a pointer past `base + cap`.
+  4. **`velo_alloc_with` capacity test and its chunk fallback**: the same `cap - offset` subtraction on both the arena and the current chunk, reachable through the explicit-allocator API, so `mem.alloc_with` had the same underflow independent of the zone path.
+  5. **`velo_zone_push` watermark heap growth**: `new_cap = z->wm_cap * 2` could wrap to a small value, under-allocating the array while `heap_idx` stayed large — a heap write past the end.
+* **Fix Applied**:
+  - `velo_mem_alloc` / `velo_alloc_with`: test `offset <= cap` first and only then `aligned <= cap - offset`, so the subtraction can never underflow. A corrupt watermark now falls through to the existing loud "Out of Memory"/spill path instead of being trusted.
+  - Both chunk fallbacks: `cur->offset > cur->cap ||` added ahead of `aligned > cur->cap - cur->offset`, same reason.
+  - `velo_zone_push`: before the `realloc`, reject `new_cap < z->wm_cap` (wrap) or `new_cap > SIZE_MAX / sizeof(VeloZoneWatermark)` (byte-size overflow) with the existing `Watermark Stack OOM` fatal, so the array is never under-allocated.
+  - All changes copied to `velo/runtime/velo_runtime.h`; the identity test keeps the copies paired.
+  - Audit table (site → status):
+
+    | Line | Site | Result |
+    |---|---|---|
+    | 341/342 | `velo_zone_new_chunk` struct + buffer | checked, fatal |
+    | 388/389 | `velo_zone_create_default` struct + buffer | checked, fatal |
+    | 435 | `velo_zone_push` watermark heap | **wrap guard added** |
+    | 523/541 | `velo_zone_enter` struct + buffer | fixed in 65.2 |
+    | 681/682 | `velo_mem_create_arena` struct + buffer | checked, fatal |
+    | 860/932 | `velo_thread_spawn` ctx (Win32/pthread) | checked, fatal |
+    | 889/955/956 | `velo_mutex_create` cell + native | checked, fatal |
+    | 1145 | `velo_heap_alloc` raw block | checked, fatal |
+    | 1232 | `velo_heap_realloc` raw block | checked, fatal |
+    | 602/614 | `velo_mem_alloc` arena + chunk capacity | **underflow guard added** |
+    | 642/654 | `velo_alloc_with` arena + chunk capacity | **underflow guard added** |
+
+* **Residual Limitation**: The capacity guards defend against a corrupted `offset`, not against a corrupted `base`/`cap` pair or a chunk whose `base` was already freed — those are use-after-free classes that only a sanitizer detects, and sanitizers are unavailable on this host (recorded in Task 65.1, carried to Task 65.5). The watermark wrap guard is unreachable in practice (it needs `wm_count` in the billions) and is therefore asserted by inspection only, not by a test.
+* **Verification**:
+  - New `test_zone_watermark_heap_oom_is_fatal`: arming the `realloc` failure at the 33rd push exits 1 with `Velo Fatal Error: Zone Arena Watermark Stack OOM!` and never continues.
+  - New `test_corrupted_zone_offset_cannot_allocate_past_cap`: with `offset = cap + 4096` the old header returns a pointer past `base + cap` (verified: `ALLOWED-PAST-CAP p=...B8B0 base=...98B0 cap=4096`); the new header refuses and takes the existing fatal.
+  - New `test_corrupted_chunk_offset_cannot_allocate_past_chunk`: old header → `OUT-OF-BOUNDS`; new header → `CHUNK-GUARD-OK`. Both guards were re-verified against `git show HEAD:runtime/velo_runtime.h` so they are proven load-bearing rather than merely present.
+  - `python -m pytest tests/test_runtime_zone.py -q`: 10 passed.
+  - `python -m pytest tests/test_thread_local_runtime.py tests/test_allocators.py tests/test_mem_intrinsics.py tests/test_bootstrap_snapshot.py -q`: 43 passed.
 
 ##### Task 65.5: Add sanitizer coverage to CI
 * **Goal:** Run the runtime tests under ASan/UBSan (and a leak check where available).

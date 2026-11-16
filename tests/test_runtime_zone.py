@@ -51,9 +51,16 @@ static void* velo_test_malloc(size_t n) {
     return malloc(n);
 }
 
+static void* velo_test_realloc(void* p, size_t n) {
+    int idx = g_malloc_calls++;
+    if (idx == g_fail_at) return NULL;
+    return realloc(p, n);
+}
+
 static void velo_test_arm(int n) { g_malloc_calls = 0; g_fail_at = n; }
 
 #define malloc velo_test_malloc
+#define realloc velo_test_realloc
 """
 
 # Normal-path contract: enter/pop balance, nested zones, watermark restore, and
@@ -225,6 +232,71 @@ int main(void) {
 """
 
 
+# Task 65.4: every allocation site must be checked. These three probes reach
+# the sites the earlier defects did not: the watermark heap array, and the two
+# capacity subtractions that underflow when an arena watermark is corrupt.
+WM_HEAP_OOM = r"""
+#include "velo_runtime.h"
+
+int main(void) {
+    VeloZoneArena* prev = velo_zone_enter(65536);
+    for (int i = 0; i < VELO_ZONE_WM_INLINE; ++i) velo_zone_push();
+    velo_test_arm(0);        // the watermark heap realloc is the next allocation
+    velo_zone_push();
+    printf("SURVIVED\n");
+    velo_zone_leave(prev);
+    return 0;
+}
+"""
+
+CORRUPTED_PRIMARY_OFFSET = r"""
+#include "velo_runtime.h"
+
+int main(void) {
+    VeloZoneArena* prev = velo_zone_enter(4096);   // fixed budget: no spilling
+    VeloZoneArena* z = velo_zone_active();
+    z->offset = z->cap + 4096;                     // corrupt the arena watermark
+    u8* p = (u8*)velo_mem_alloc(64, 1);
+    if (p) {
+        printf("ALLOWED-PAST-CAP p=%p base=%p cap=%llu\n",
+               (void*)p, (void*)z->base, (unsigned long long)z->cap);
+        return 70;
+    }
+    printf("NOT-REACHED\n");
+    return 0;
+}
+"""
+
+CORRUPTED_CHUNK_OFFSET = r"""
+#include "velo_runtime.h"
+
+static int in_chunks(VeloZoneArena* z, uint8_t* p, size_t n) {
+    for (VeloZoneChunk* c = z->chunks; c; c = c->next)
+        if (p >= c->base && p + n <= c->base + c->cap) return 1;
+    if (z->base && p >= z->base && p + n <= z->base + z->cap) return 1;
+    return 0;
+}
+
+int main(void) {
+    VeloZoneArena* a = velo_mem_create_arena(4096);   // growable: can spill
+    // Fill the primary buffer so the guarded chunk path is the one that runs;
+    // otherwise a small request is served from the primary and never touches
+    // the corrupted chunk.
+    u8* fill = (u8*)velo_alloc_with(a, 4096, 1);
+    if (!fill) { fprintf(stderr, "primary fill failed\n"); return 80; }
+    u8* big = (u8*)velo_alloc_with(a, 8192, 1);
+    if (!big) { fprintf(stderr, "spill alloc failed\n"); return 81; }
+    if (!a->chunks) { fprintf(stderr, "expected a spilled chunk\n"); return 82; }
+    a->chunks->offset = a->chunks->cap + 1;           // corrupt the chunk watermark
+    u8* p = (u8*)velo_alloc_with(a, 64, 1);
+    if (!p) { fprintf(stderr, "alloc failed\n"); return 83; }
+    if (!in_chunks(a, (uint8_t*)p, 64)) { printf("OUT-OF-BOUNDS\n"); return 84; }
+    printf("CHUNK-GUARD-OK\n");
+    return 0;
+}
+"""
+
+
 def find_gcc() -> str:
     found = shutil.which("gcc")
     if found:
@@ -333,6 +405,44 @@ def test_zone_pop_zero_watermark_resets_the_arena(cache_dir):
     assert "ARENA-UNUSABLE-AFTER-ZERO-POP" not in blob, blob
     assert "OUT-OF-BOUNDS" not in blob, blob
     assert "ZERO-POP-OK" in run.stdout, blob
+    assert run.returncode == 0, blob
+
+
+def test_zone_watermark_heap_oom_is_fatal(cache_dir):
+    """Task 65.4: the watermark heap array grows by `realloc`; failure is fatal."""
+    run = build_and_run(cache_dir, "wm_heap_oom", WM_HEAP_OOM)
+    assert "SURVIVED" not in run.stdout, (
+        "velo_zone_push continued after a failed watermark-heap realloc:\n" + run.stdout
+    )
+    assert run.returncode == 1, (
+        f"expected a clean fatal, got rc={run.returncode}\n"
+        f"stdout:\n{run.stdout}\nstderr:\n{run.stderr}"
+    )
+    assert "Velo Fatal Error" in run.stderr, run.stderr
+    assert "Watermark Stack OOM" in run.stderr, run.stderr
+
+
+def test_corrupted_zone_offset_cannot_allocate_past_cap(cache_dir):
+    """Task 65.4: `cap - offset` must not underflow when offset > cap."""
+    run = build_and_run(cache_dir, "corrupt_offset", CORRUPTED_PRIMARY_OFFSET)
+    blob = run.stdout + run.stderr
+    assert "ALLOWED-PAST-CAP" not in blob, (
+        f"velo_mem_alloc accepted a block past base + cap:\n{blob}"
+    )
+    # The fixed-budget arena has nowhere to spill, so the guarded path takes
+    # the existing fatal. Either way the block is never handed out.
+    assert run.returncode == 1, blob
+    assert "Zone Arena Out of Memory" in run.stderr, blob
+
+
+def test_corrupted_chunk_offset_cannot_allocate_past_chunk(cache_dir):
+    """Task 65.4: the chunk fallback has the same subtraction, same guard."""
+    run = build_and_run(cache_dir, "corrupt_chunk", CORRUPTED_CHUNK_OFFSET)
+    blob = run.stdout + run.stderr
+    assert "OUT-OF-BOUNDS" not in blob, (
+        f"velo_alloc_with placed a block outside every chunk:\n{blob}"
+    )
+    assert "CHUNK-GUARD-OK" in run.stdout, blob
     assert run.returncode == 0, blob
 
 
