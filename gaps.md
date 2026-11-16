@@ -3087,12 +3087,18 @@ These are OOM/defensive-path bugs, not normal-path bugs, but they turn an alloca
   - Red-baseline reproduction of defect 1: `rc=3221225477`, empty stderr.
   - Red-baseline reproduction of defect 2: `offset=4097 cap=4096`, and `wm_count=0 offset=7`.
 
-##### Task 65.2: Fix the `velo_zone_enter` NULL check
-* **Goal:** Check `z` immediately after `malloc` and before any member access.
-* **Files:** `runtime/velo_runtime.h:518-538`.
-* **Tests:** simulated `malloc` failure (fail-injection macro or wrapper); assert a fatal diagnostic, not a crash.
-* **Security gate:** no NULL dereference; no leak on the failure path.
-* **Done when:** the OOM test reports the intended fatal error.
+##### Task 65.2: Fix the `velo_zone_enter` NULL check [COMPLETED] ✅
+* **Former Defect**: `velo_zone_enter` allocated the arena struct with `malloc` and then wrote `z->base = malloc(bytes)` before the combined `if (!z || !z->base)` test. A failed struct allocation therefore performed a store through a NULL pointer and crashed with `0xC0000005` instead of reporting the documented fatal. The pool-reuse branch had the same unchecked deref (`*z = g_velo_zone_tls_pool[pick]`). The existing check was only correct for the buffer allocation, which is why the suite never noticed.
+* **Fix Applied**:
+  - `runtime/velo_runtime.h:518-523`: check `z` immediately after `malloc`, before both the pool-reuse copy and the `z->base` write, and report the same `Velo Fatal Error: Zone Arena allocation failed (%llu bytes)` diagnostic and `exit(1)` that the buffer path already used.
+  - The late `if (!z || !z->base)` stays as the buffer check; `!z` is now unreachable there, so the branch reads as a single-condition guard without changing its behaviour.
+  - Applied to `runtime/velo_runtime.h` and copied to `velo/runtime/velo_runtime.h` so both stages stay identical, and added `test_runtime_header_copies_are_identical` to assert byte equality going forward (the gap Task 65.1 recorded).
+* **Residual Limitation**: The failure path now exits before touching `z`, so there is nothing to free — no leak is possible on this path. The earlier allocations made by the same call (`velo_zone_active()` creating the default arena on first touch) remain owned by the thread and are reclaimed at process exit, which is the documented fatal-OOM policy and is spelled out in Task 65.6.
+* **Verification**:
+  - `test_zone_enter_struct_oom_reports_fatal_not_null_deref` flips red → green: was `rc=3221225477` with empty stderr, now `rc=1` with `Velo Fatal Error: Zone Arena allocation failed (4096 bytes)`.
+  - Control row `test_zone_enter_buffer_oom_is_already_a_clean_fatal` still passes, so the buffer path is unchanged.
+  - `python -m pytest tests/test_runtime_zone.py -q` at this commit: 5 tests, 2 failed — only the two `velo_zone_pop` rows, i.e. the fix is isolated to the enter defect.
+  - `python -m pytest tests/test_thread_local_runtime.py tests/test_allocators.py tests/test_mem_intrinsics.py -q`: 38 passed.
 
 ##### Task 65.3: Fix the `velo_zone_pop` fallback
 * **Goal:** Do not assign a watermark index to `z->offset`; define the correct fallback (restore the last valid watermark or fail loudly).

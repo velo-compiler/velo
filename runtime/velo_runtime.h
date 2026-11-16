@@ -516,6 +516,11 @@ static inline VeloZoneArena* velo_zone_enter(size_t bytes) {
     }
     VeloZoneArena* prev = velo_zone_active();  // §4.2: per-thread active state
     VeloZoneArena* z = (VeloZoneArena*)malloc(sizeof(VeloZoneArena));
+    if (!z) {
+        fprintf(stderr, "Velo Fatal Error: Zone Arena allocation failed (%llu bytes)!\n",
+                (unsigned long long)bytes);
+        exit(1);
+    }
     size_t pick = g_velo_zone_tls_pool_count;
     for (size_t i = 0; i < g_velo_zone_tls_pool_count; ++i) {
         if (g_velo_zone_tls_pool[i].cap >= bytes) {  // reuse any arena that fits

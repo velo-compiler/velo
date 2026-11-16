@@ -275,6 +275,7 @@ def test_zone_enter_struct_oom_reports_fatal_not_null_deref(cache_dir):
     assert "Zone Arena allocation failed" in run.stderr, run.stderr
 
 
+@pytest.mark.xfail(strict=True, reason="Task 65.3 fixes the velo_zone_pop fallback")
 def test_zone_pop_out_of_range_keeps_the_arena_usable(cache_dir):
     """Task 65.3: the fallback must not write a watermark index into offset."""
     run = build_and_run(cache_dir, "pop_out_of_range", POP_OUT_OF_RANGE)
@@ -287,6 +288,7 @@ def test_zone_pop_out_of_range_keeps_the_arena_usable(cache_dir):
     assert "ZONE-FALLBACK-OK" in run.stdout, blob
 
 
+@pytest.mark.xfail(strict=True, reason="Task 65.3 fixes the velo_zone_pop fallback")
 def test_zone_pop_fallback_does_not_store_the_index(cache_dir):
     """The defect in isolation: offset must never equal the passed-in index."""
     run = build_and_run(cache_dir, "pop_index", POP_FALLBACK_STORES_INDEX)
@@ -295,3 +297,17 @@ def test_zone_pop_fallback_does_not_store_the_index(cache_dir):
         "velo_zone_pop assigned a watermark index to a byte offset:\n" + blob
     )
     assert run.returncode == 0, blob
+
+
+def test_runtime_header_copies_are_identical():
+    """Stage 2 uses runtime/, Stage 1 uses velo/runtime/. A fix applied to one
+    copy alone would leave the other stage broken while every test still
+    passed, so the two copies must stay byte-identical."""
+    stage2 = RUNTIME_DIR / "velo_runtime.h"
+    stage1 = REPO_ROOT / "velo" / "runtime" / "velo_runtime.h"
+    assert stage2.is_file(), stage2
+    assert stage1.is_file(), stage1
+    assert stage2.read_bytes() == stage1.read_bytes(), (
+        "runtime/velo_runtime.h and velo/runtime/velo_runtime.h diverged; "
+        "apply the change to both and re-copy"
+    )
