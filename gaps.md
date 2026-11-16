@@ -2471,12 +2471,29 @@ This is especially dangerous when the case body allocates and relies on loop-sco
   - Rebuilt bootstrap chain verified deterministic: SHA-256 `3F706A9DD3293BDE7A8958B0BFA5246EE93817263C370FA6D606B35A9512BCDB`.
   - All 120 compiler source files in `src/` remain $\le 394$ lines (`python scripts/count_lines.py`).
 
-##### Task 61.4: Lower `continue` with an explicit loop target
-* **Goal:** Ensure `continue` inside `on` continues the enclosing loop, not the switch.
-* **Files:** `src/backend/codegen_match.vl`, `src/backend/codegen_stmt.vl:369-377`.
-* **Tests:** continue inside `on`; iteration counts; `it` values.
-* **Security gate:** no fallthrough into the next case; cleanup runs.
-* **Done when:** continue behaves as documented.
+##### Task 61.4: Lower `continue` with an explicit loop target [COMPLETED] ✅
+* **Former Defect**:
+  - While C compilers generally allow `continue;` within a `switch` (binding to the enclosing loop in simple cases), emitting raw C `continue;` relied on C-level switch semantics, lacked defense-in-depth against unbound usage outside of loops, and lacked tests proving that `continue` in `on` arms avoids fallthrough and preserves iteration counters.
+* **Fix Applied**:
+  - Lowered `STMT_CONTINUE` in `src/backend/codegen_stmt.vl:360-369`:
+    * Traverses `defers.@` in LIFO order, unrolling active defers and zone cleanups until reaching the nearest enclosing loop (`cur_d.is_loop`).
+    * Resolves `target_loop_id = cur_d.loop_id`.
+    * If `target_loop_id == 0`, produces backend error `continue statement not within a loop`.
+    * Emits explicit `goto __loop_cont_<target_loop_id>;\n`, jumping directly to the continuation label immediately before the loop's closing brace.
+  - Expanded `TestOnControlFlowMatrix` in `tests/test_match_switch.py` with 8 dedicated `continue` tests (18 tests in class):
+    * `test_continue_inside_on_first_case`: skips tail of iteration 0, advances loop.
+    * `test_continue_inside_on_last_case`: skips tail of last explicit arm.
+    * `test_continue_inside_on_else_case`: skips tail of unmatched iterations via `else` arm.
+    * `test_continue_inside_on_in_nested_loops_continues_inner_only`: verifies inner loop continuation without skipping outer loop.
+    * `test_continue_inside_on_advances_implicit_it`: verifies iteration counter `it` advances properly.
+    * `test_continue_inside_tagged_union_on`: verifies `continue` inside tagged union pattern arm.
+    * `test_continue_inside_on_outside_loop_rejected`: verifies compile/build rejection of `continue` in `on` outside of any loop (`continue statement not within a loop`).
+    * `test_continue_inside_on_no_fallthrough`: verifies no fallthrough into subsequent switch arms.
+* **Residual Limitation*:
+  - Nested multi-level `on` and fallthrough tests are extended in Task 61.6; warnings-as-errors and sanitizer gates follow in Task 61.7.
+* **Verification**:
+  - `python -m pytest tests/test_match_switch.py tests/test_break_continue.py -v`: all 33 tests passed in 16.40s.
+  - All 120 compiler source files remain $\le 394$ lines (`python scripts/count_lines.py`).
 
 ##### Task 61.5: Preserve cleanup ordering
 * **Goal:** Run loop-scoped defers/zones before the break/continue exit.

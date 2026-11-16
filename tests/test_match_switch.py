@@ -450,4 +450,187 @@ class TestOnControlFlowMatrix:
         # either `velo check` fails, or compilation fails:
         assert chk.returncode != 0 or run.returncode != 0, "break outside loop inside on must be rejected"
 
+    def test_continue_inside_on_first_case(self):
+        """A `continue` in the first case skips remainder of iteration 0 and advances to 1."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut sum = 0
+            loop i in 0..5 {
+                on i {
+                    0 => { continue }
+                    else => { }
+                }
+                sum += i
+            }
+            io.println("sum={sum}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        # i=0 skipped; i=1, 2, 3, 4 summed = 10
+        assert "sum=10" in res.stdout
+
+    def test_continue_inside_on_last_case(self):
+        """A `continue` in the last explicit case skips remainder of that iteration."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut sum = 0
+            loop i in 0..5 {
+                on i {
+                    0 => { }
+                    1 => { }
+                    4 => { continue }
+                    else => { }
+                }
+                sum += i
+            }
+            io.println("sum={sum}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        # i=4 skipped; i=0, 1, 2, 3 summed = 6
+        assert "sum=6" in res.stdout
+
+    def test_continue_inside_on_else_case(self):
+        """A `continue` in the `else` case skips remainder of all unmatched iterations."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut tail_hits = 0
+            loop i in 0..6 {
+                on i {
+                    0, 1 => { }
+                    else => { continue }
+                }
+                tail_hits += 1
+            }
+            io.println("tail_hits={tail_hits}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        # Only i=0 and i=1 execute tail; 2, 3, 4, 5 hit continue
+        assert "tail_hits=2" in res.stdout
+
+    def test_continue_inside_on_in_nested_loops_continues_inner_only(self):
+        """A `continue` inside `on` in an inner loop continues only the inner loop."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut inner_tails = 0
+            loop r in 0..3 {
+                loop c in 0..4 {
+                    on c {
+                        1, 3 => { continue }
+                        else => { }
+                    }
+                    inner_tails += 1
+                }
+            }
+            io.println("inner_tails={inner_tails}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        # Each row executes c=0, 2 (2 times). 3 rows * 2 = 6.
+        assert "inner_tails=6" in res.stdout
+
+    def test_continue_inside_on_advances_implicit_it(self):
+        """A `continue` inside `on` properly advances the iteration counter."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut iters = 0
+            loop 5 {
+                on it {
+                    1, 3 => { continue }
+                    else => { }
+                }
+                iters += 1
+            }
+            io.println("iters={iters}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        # it=0, 2, 4 hit tail (+3); it=1, 3 continue
+        assert "iters=3" in res.stdout
+
+    def test_continue_inside_tagged_union_on(self):
+        """A `continue` inside an `on` matching a tagged union continues the enclosing loop."""
+        code = """
+        use sys.io
+        kind Task {
+            Skip
+            Do
+        }
+        act main() -> i32 {
+            mut done = 0
+            loop i in 0..4 {
+                mut t: Task = Task.Do
+                if i % 2 == 1 {
+                    t = Task.Skip
+                }
+                on t {
+                    .Skip => { continue }
+                    .Do => { }
+                }
+                done += 1
+            }
+            io.println("done={done}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        # i=0 (Do), i=1 (Skip), i=2 (Do), i=3 (Skip) => done=2
+        assert "done=2" in res.stdout
+
+    def test_continue_inside_on_outside_loop_rejected(self):
+        """A `continue` inside an `on` outside a loop must be rejected at compile/build time."""
+        code = """
+        act main() -> i32 {
+            let x = 1
+            on x {
+                1 => { continue }
+                else => { }
+            }
+            return 0
+        }
+        """
+        chk = run_velo_check(code)
+        run = build_and_run(code, timeout=2.0)
+        assert chk.returncode != 0 or run.returncode != 0, "continue outside loop inside on must be rejected"
+
+    def test_continue_inside_on_no_fallthrough(self):
+        """`continue` inside an `on` arm must not fall through to the next case."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut hit_next = 0
+            loop i in 0..3 {
+                on i {
+                    1 => { continue }
+                    2 => { hit_next += 1 }
+                    else => { }
+                }
+            }
+            io.println("hit_next={hit_next}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        # hit_next should only be incremented when i == 2 (hit_next=1), not when i == 1
+        assert "hit_next=1" in res.stdout
+
+
 
