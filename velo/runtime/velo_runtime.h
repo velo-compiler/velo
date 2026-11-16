@@ -471,8 +471,13 @@ static inline void velo_zone_pop(size_t watermark) {
         }
         z->offset = wm.primary_offset;
     } else {
+        // Out-of-range watermark (0, or above wm_count): a defensive reset, not
+        // a partial rewind. `watermark` is a 1-based watermark INDEX, so it
+        // must never be stored as a byte offset — doing so leaves offset > cap
+        // and makes the capacity check in velo_mem_alloc underflow. Dropping
+        // the spilled chunks and rewinding to empty is always a valid state.
         velo_zone_free_chunks(z);
-        z->offset = watermark;
+        z->offset = 0;
         if (z->wm_heap) {
             free(z->wm_heap);
             z->wm_heap = NULL;

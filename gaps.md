@@ -3100,12 +3100,20 @@ These are OOM/defensive-path bugs, not normal-path bugs, but they turn an alloca
   - `python -m pytest tests/test_runtime_zone.py -q` at this commit: 5 tests, 2 failed — only the two `velo_zone_pop` rows, i.e. the fix is isolated to the enter defect.
   - `python -m pytest tests/test_thread_local_runtime.py tests/test_allocators.py tests/test_mem_intrinsics.py -q`: 38 passed.
 
-##### Task 65.3: Fix the `velo_zone_pop` fallback
-* **Goal:** Do not assign a watermark index to `z->offset`; define the correct fallback (restore the last valid watermark or fail loudly).
-* **Files:** `runtime/velo_runtime.h:449-483`.
-* **Tests:** out-of-range/zero watermark; assert arena state remains valid.
-* **Security gate:** no corrupted offset; no out-of-bounds write after the fallback.
-* **Done when:** the fallback test passes and the arena remains usable.
+##### Task 65.3: Fix the `velo_zone_pop` fallback [COMPLETED] ✅
+* **Former Defect**: `velo_zone_pop` handled an out-of-range watermark in an else branch that did `velo_zone_free_chunks(z); z->offset = watermark;`. `watermark` is a 1-based **watermark index**, not a byte offset, so the branch left `offset` equal to whatever index the caller passed. Any index above `cap` then made `velo_mem_alloc`'s capacity check `z->cap - z->offset` underflow to a huge value, so the next allocation was placed past `base + cap`. The valid path never had the bug; only the defensive path did, which is why nothing caught it.
+* **Fix Applied**:
+  - `runtime/velo_runtime.h:473-482`: the fallback now drops the spilled chunks and rewinds to `offset = 0`, then clears the watermark stack exactly as before. Empty is always a valid arena state, so no arithmetic involving the index remains on any path.
+  - The comment states why the index must never be stored as an offset, so a future edit reintroducing the shortcut has the reason in place.
+  - Copied to `velo/runtime/velo_runtime.h`; `test_runtime_header_copies_are_identical` enforces the pairing.
+* **Residual Limitation**: The fallback is a full reset, not a partial rewind — after an invalid watermark the arena is empty rather than rewound to the last valid watermark. That is deliberate: an invalid index means the caller's watermark bookkeeping is already untrustworthy, and silently rewinding to a guessed watermark would hide the bug. The reset is still observably different from a no-op, so callers see it via `velo_mem_used()`. Task 65.6 documents this as the defensive-reset policy.
+* **Verification**:
+  - `test_zone_pop_out_of_range_keeps_the_arena_usable`: was `offset=4097 cap=4096` → `CORRUPTED`; now the arena stays usable and the follow-up allocation is inside the buffer (`ZONE-FALLBACK-OK`).
+  - `test_zone_pop_fallback_does_not_store_the_index`: was `wm_count=0 offset=7` → `INDEX-STORED-AS-OFFSET`; now `offset` is never the passed index.
+  - `test_zone_pop_zero_watermark_resets_the_arena` (new, covers the zero case the task named): `velo_zone_pop(0)` leaves `offset <= cap`, `wm_count == 0`, `wm_cap == 0`, `wm_heap == NULL`, and a following 1024-byte allocation succeeds in bounds.
+  - `python -m pytest tests/test_runtime_zone.py -q`: 7 passed.
+  - `python -m pytest tests/test_bootstrap_snapshot.py tests/test_thread_local_runtime.py tests/test_allocators.py tests/test_mem_intrinsics.py -q`: 43 passed.
+  - Determinism unchanged: `b4abe546a440fce6ca2a2c29c497ab777a7e85dcb3e96a2eb02a9d7b2db0f831` for Gen2 and Gen3. A header-only change does not alter `emit-c` output (`bootstrap.c` carries only the `#include "velo_runtime.h"` line), so no snapshot regeneration was required.
 
 ##### Task 65.4: Audit all runtime allocations
 * **Goal:** Find every `malloc`/`realloc`/`calloc` and verify the result is checked before use.

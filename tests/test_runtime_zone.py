@@ -176,6 +176,33 @@ int main(void) {
 }
 """
 
+# Zero is also out of range: watermark indices are 1-based. The fallback must
+# reset the arena rather than leave it pointing anywhere but a valid state.
+POP_ZERO_WATERMARK = r"""
+#include "velo_runtime.h"
+
+int main(void) {
+    VeloZoneArena* prev = velo_zone_enter(4096);
+    velo_zone_push();
+    u8* p = (u8*)velo_mem_alloc(64, 1);
+    if (!p) { fprintf(stderr, "alloc failed\n"); return 60; }
+    velo_zone_pop(0);
+    VeloZoneArena* z = velo_zone_active();
+    if (z->offset > z->cap) { printf("CORRUPTED\n"); return 61; }
+    if (z->wm_count != 0 || z->wm_cap != 0 || z->wm_heap != NULL) {
+        printf("WATERMARKS-NOT-RESET wm_count=%llu cap=%llu heap=%p\n",
+               (unsigned long long)z->wm_count, (unsigned long long)z->wm_cap, (void*)z->wm_heap);
+        return 62;
+    }
+    u8* q = (u8*)velo_mem_alloc(1024, 1);
+    if (!q) { printf("ARENA-UNUSABLE-AFTER-ZERO-POP\n"); return 63; }
+    if ((uint8_t*)q + 1024 > z->base + z->cap) { printf("OUT-OF-BOUNDS\n"); return 64; }
+    velo_zone_leave(prev);
+    printf("ZERO-POP-OK\n");
+    return 0;
+}
+"""
+
 # The index-vs-byte-offset confusion in isolation: after the fallback, `offset`
 # is literally the index that was passed in.
 POP_FALLBACK_STORES_INDEX = r"""
@@ -275,7 +302,6 @@ def test_zone_enter_struct_oom_reports_fatal_not_null_deref(cache_dir):
     assert "Zone Arena allocation failed" in run.stderr, run.stderr
 
 
-@pytest.mark.xfail(strict=True, reason="Task 65.3 fixes the velo_zone_pop fallback")
 def test_zone_pop_out_of_range_keeps_the_arena_usable(cache_dir):
     """Task 65.3: the fallback must not write a watermark index into offset."""
     run = build_and_run(cache_dir, "pop_out_of_range", POP_OUT_OF_RANGE)
@@ -288,7 +314,6 @@ def test_zone_pop_out_of_range_keeps_the_arena_usable(cache_dir):
     assert "ZONE-FALLBACK-OK" in run.stdout, blob
 
 
-@pytest.mark.xfail(strict=True, reason="Task 65.3 fixes the velo_zone_pop fallback")
 def test_zone_pop_fallback_does_not_store_the_index(cache_dir):
     """The defect in isolation: offset must never equal the passed-in index."""
     run = build_and_run(cache_dir, "pop_index", POP_FALLBACK_STORES_INDEX)
@@ -296,6 +321,18 @@ def test_zone_pop_fallback_does_not_store_the_index(cache_dir):
     assert "INDEX-STORED-AS-OFFSET" not in blob, (
         "velo_zone_pop assigned a watermark index to a byte offset:\n" + blob
     )
+    assert run.returncode == 0, blob
+
+
+def test_zone_pop_zero_watermark_resets_the_arena(cache_dir):
+    """Task 65.3: zero is out of range too; the arena must stay usable."""
+    run = build_and_run(cache_dir, "pop_zero", POP_ZERO_WATERMARK)
+    blob = run.stdout + run.stderr
+    assert "CORRUPTED" not in blob, blob
+    assert "WATERMARKS-NOT-RESET" not in blob, blob
+    assert "ARENA-UNUSABLE-AFTER-ZERO-POP" not in blob, blob
+    assert "OUT-OF-BOUNDS" not in blob, blob
+    assert "ZERO-POP-OK" in run.stdout, blob
     assert run.returncode == 0, blob
 
 
