@@ -2616,12 +2616,20 @@ act main() { continue }  // velo check passes; GCC: continue statement not withi
 * **Residual Limitation:**
   - Task 62.2 makes depth *correct*; it does not yet reject depth zero. `type_checker_stmt.vl` still `return`s early for `STMT_BREAK`/`STMT_CONTINUE`, so the 20 red-baseline rows stay red until Task 62.3 consumes the counter.
 
-##### Task 62.3: Reject `break`/`continue` when depth is zero
+##### Task 62.3: Reject `break`/`continue` when depth is zero [COMPLETED] ✅
 * **Goal:** Emit a precise diagnostic and increment the error count.
 * **Files:** `src/analysis/type_checker_stmt.vl:219-220`.
 * **Tests:** all invalid rows; valid loop rows still pass.
 * **Security gate:** no GCC-only failure; no silent acceptance.
 * **Done when:** `velo check` rejects every out-of-loop case.
+* **Fix applied (2026-11-16):** The early `return` for `STMT_BREAK`/`STMT_CONTINUE` in `check_statement` now consumes the Task 62.2 counter. When `st.current_loop_depth <= 0` it emits `report_error("semantic", stmt.line, stmt.col, "break statement not within a loop")` (or the `continue` wording) and increments `st.error_count`; when depth is positive it returns unchanged. The messages are byte-identical to the backend's old wording, so no downstream assertion or user-facing string changes. Placement in the checker — not the backend — is the point: `docs/SPECIFICATION.md` §9 defines `velo check` as "lex, parse, semantic analysis, monomorphization (no codegen)", and previously the rule could only fire in the emission lane.
+* **Verification:**
+  - `python -m pytest tests/test_loop_context.py -q` → **38 passed** in 3.11s (all 20 previously red rows green, both the pretty and `--json` position assertions included).
+  - Pretty output is now `[Velo Error] semantic:5:5 - continue statement not within a loop` followed by `Semantic analysis failed with 1 errors.` — the `backend:` lane and `Code generation failed` are gone, and `--json` reports `{"file": "<src path>", "line": 5, "col": 5, "severity": "error"}`.
+  - Regression subset: `tests/test_break_continue.py`, `test_match_switch.py`, `test_count_loops.py`, `test_range_loops.py`, `test_conditions.py`, `test_check_cli.py`, `test_codegen_error_gate.py`, `test_defer.py` → **265 passed** in 60.50s.
+  - Bootstrap rebuilt; Gen2 and Gen3 both emit `9f12e152b52d633e6ad4b8bd8d295bf266159fbd7c56175d24060c5b31767c9b`, determinism confirmed.
+* **Residual Limitation:**
+  - The `continue` check runs on the pre-desugared statement tree. A `continue` that reaches codegen from a lowered construct would still be caught by the Task 62.4 backend defense, which remains necessary as defense in depth.
 
 ##### Task 62.4: Add codegen defense
 * **Goal:** Assert that `break`/`continue` never reaches codegen without an active loop target.
