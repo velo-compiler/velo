@@ -547,3 +547,60 @@ act second() {
     assert result.returncode != 0, blob
     assert BREAK in blob, blob
 
+
+# ==============================================================================
+# Task 62.4: codegen defense in depth
+# ==============================================================================
+
+INTERNAL_BREAK = "internal compiler error: unbound break reached codegen"
+INTERNAL_CONTINUE = "internal compiler error: unbound continue reached codegen"
+
+
+@pytest.mark.parametrize(
+    "ident,source,message,line",
+    INVALID_ROWS,
+    ids=[row[0] for row in INVALID_ROWS],
+)
+def test_codegen_defense_is_never_reached_from_source(tmp_path, ident, source, message, line):
+    """The checker owns the rule, so emission must never see an unbound jump.
+
+    Reaching the backend now means an internal invariant broke, which is why the
+    lane reports an internal compiler error rather than a backend diagnostic.
+    Every source-level case must stop in semantic analysis first.
+    """
+    _require_native()
+    path = _write(tmp_path, f"{ident}_def.vl", source)
+    result = _check(path)
+    blob = result.stdout + result.stderr
+
+    assert result.returncode != 0, blob
+    assert message in blob, blob
+    assert "internal compiler error" not in blob, (
+        "the checker must reject this before any emission lane:\n" + blob
+    )
+    assert INTERNAL_BREAK not in blob and INTERNAL_CONTINUE not in blob, blob
+
+
+def test_backend_no_longer_owns_the_diagnostic(tmp_path):
+    """The old user-facing backend wording must be gone from the emission lane."""
+    _require_native()
+    path = _write(tmp_path, "no_backend_wording.vl", """act main() {
+    break
+}
+""")
+    result = _check(path)
+    blob = result.stdout + result.stderr
+    assert result.returncode != 0, blob
+    assert "backend:" not in blob, blob
+    assert "semantic:" in blob, blob
+
+
+def test_defense_messages_are_internal_not_user_facing(tmp_path):
+    """Guard the wording contract: the emit-lane strings say 'internal compiler error'."""
+    source = (ROOT_DIR / "src" / "backend" / "codegen_stmt.vl").read_text(encoding="utf-8")
+    assert INTERNAL_BREAK in source, "break defense missing from codegen_stmt.vl"
+    assert INTERNAL_CONTINUE in source, "continue defense missing from codegen_stmt.vl"
+    assert 'report_error("backend", stmt.line, stmt.col, "break statement not within a loop")' not in source
+    assert 'report_error("backend", stmt.line, stmt.col, "continue statement not within a loop")' not in source
+
+

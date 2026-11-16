@@ -353,7 +353,10 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
             if cur_d.is_loop { target_loop_id = cur_d.loop_id; break }
             emit_c_cleanup(sb, st, cur_d, indent, defers); cur_d = cur_d.next
         }
-        if target_loop_id == 0 { report_error("backend", stmt.line, stmt.col, "break statement not within a loop"); st.error_count += 1; return }
+        // Phase 62 defense in depth: the checker owns this rule (Task 62.3), so
+        // reaching here means a lowering path bypassed semantic analysis. Report
+        // it as an internal error rather than a user-facing backend diagnostic.
+        if target_loop_id == 0 { report_error("internal", stmt.line, stmt.col, "internal compiler error: unbound break reached codegen"); st.error_count += 1; return }
         sb_append_indent(sb, indent); sb_append_str(sb, "goto __loop_break_"); sb_append_int(sb, target_loop_id as i32); sb_append_str(sb, ";\n"); return
     }
 
@@ -364,7 +367,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
             if cur_d.is_loop { target_loop_id = cur_d.loop_id; break }
             emit_c_cleanup(sb, st, cur_d, indent, defers); cur_d = cur_d.next
         }
-        if target_loop_id == 0 { report_error("backend", stmt.line, stmt.col, "continue statement not within a loop"); st.error_count += 1; return }
+        if target_loop_id == 0 { report_error("internal", stmt.line, stmt.col, "internal compiler error: unbound continue reached codegen"); st.error_count += 1; return }
         sb_append_indent(sb, indent); sb_append_str(sb, "goto __loop_cont_"); sb_append_int(sb, target_loop_id as i32); sb_append_str(sb, ";\n"); return
     }
 

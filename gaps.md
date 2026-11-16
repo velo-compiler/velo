@@ -2631,12 +2631,21 @@ act main() { continue }  // velo check passes; GCC: continue statement not withi
 * **Residual Limitation:**
   - The `continue` check runs on the pre-desugared statement tree. A `continue` that reaches codegen from a lowered construct would still be caught by the Task 62.4 backend defense, which remains necessary as defense in depth.
 
-##### Task 62.4: Add codegen defense
+##### Task 62.4: Add codegen defense [COMPLETED] ✅
 * **Goal:** Assert that `break`/`continue` never reaches codegen without an active loop target.
 * **Files:** `src/backend/codegen_stmt.vl:359-377`.
 * **Tests:** internal-error probe; valid loops still emit correctly.
 * **Security gate:** no unbound `break`/`continue` in generated C.
 * **Done when:** codegen is defensive and tests pass.
+* **Fix applied (2026-11-16):** `codegen_stmt.vl` keeps the loop-target scan (which is also what orders the loop-local zone cleanups), but the zero-target fallback no longer reports a user-facing `"backend"` diagnostic. Because Task 62.3 moved the rule into semantic analysis, a zero target at emit time can only mean an internal invariant broke, so both fallbacks now emit `report_error("internal", ..., "internal compiler error: unbound break reached codegen")` (and the `continue` counterpart) and increment `error_count`. The C is still never written, so the existing `compile_source_to_c_*` gate turns the non-zero count into a failed build — no corpus change was needed. Distinguishing the lanes matters for diagnosis: `semantic:` is a user error, `internal:` is a compiler defect.
+* **Verification:**
+  - Added 12 tests to `tests/test_loop_context.py`: the 10 invalid rows now additionally assert that no `internal compiler error` and no `internal:` row appears (proving semantic analysis still stops them first), one test asserts `backend:` is gone and `semantic:` is present, and one reads `src/backend/codegen_stmt.vl` to pin the new wording and the absence of the old `report_error("backend", ..., "break statement not within a loop")` string. `python -m pytest tests/test_loop_context.py -q` → **50 passed** in 3.38s.
+  - Valid loops still emit and run: `bin/velo.exe run valid.vl` → exit 0.
+  - Regression subset: `tests/test_defer.py`, `test_break_continue.py`, `test_match_switch.py`, `test_check_cli.py`, `test_codegen_error_gate.py` → **113 passed** in 38.42s. `test_codegen_error_gate.py` is the one that proves a non-zero `error_count` still fails the build verbatim.
+  - Bootstrap rebuilt; Gen2 and Gen3 both emit `32610de5adb631e82a8347adad04fab8ec21d9255c7432940af561b546f034dd`.
+* **Residual Limitation:**
+  - The defense is unreachable from source today, so it has no positive trigger test. It fires only if a future lowering path (desugaring, monomorphization, a std module) produces a jump without a loop frame. The wording-contract test is the practical guard until such a path exists.
+  - **New defect found during this task (not part of Phase 62):** `defer break`, `defer continue`, and `defer return` placed directly in a loop body (or `defer return` at function scope) crash the Stage-2 compiler with a stack overflow (`0xC00000FD`, exit `-1073741571`), producing no diagnostic at all. Stage 1 accepts the same programs (`velo.py check` → exit 0). `defer` followed by a non-terminating statement (e.g. `defer io.println(1)`, `defer break` after an explicit `break`) is fine, and `defer return` at function scope also crashes. The likely cause is `emit_c_cleanup` (`codegen_stmt.vl:77-90`) re-entering `emit_c_stmt` for the deferred statement, which re-unwinds the same cleanup stack without popping it. Needs its own phase entry; it is not required for the Phase 62 exit criteria.
 
 ##### Task 62.5: Add the security/regression gate and documentation
 * **Goal:** Lock in the diagnostic and document the rule.
