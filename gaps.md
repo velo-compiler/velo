@@ -2894,12 +2894,27 @@ math.does_not_exist()  // velo check rejects: unknown math member
 
 #### Tasks
 
-##### Task 64.1: Inventory the `mem` and `str` public surfaces
-* **Goal:** Produce the authoritative member list from the stdlib declarations and existing codegen ladders.
-* **Files:** `std/mem/*.vl`, `std/str/*.vl`, `src/backend/*_gen.vl`, `src/analysis/mem_checks.vl`, `src/analysis/str_checks.vl`.
-* **Tests:** table-driven list used by the next tasks.
-* **Security gate:** the list must include every member the codegen can emit; no hidden fallback.
-* **Done when:** the inventory is reviewed and attached to the task note.
+##### Task 64.1: Inventory the `mem` and `str` public surfaces [COMPLETED] ✅
+* **Former Defect**:
+  - There was no authoritative written list of `mem.*` and `str.*` members. The only enumeration lived implicitly inside two code paths: the codegen ladder and the checker allowlist — and the checker allowlist was incomplete for `mem` (four of thirteen members) and open-ended for both modules.
+  - Nothing prevented the codegen ladder, the checker, and `runtime/velo_runtime.h` from drifting apart; the codegen `velo_str_<member>` fallback could emit a symbol with no inventory entry.
+* **Fix Applied**:
+  - Added `tests/test_mem_str_surface.py` (40 assertions) as the checked-in inventory and drift alarm.
+  - **`mem` closed set (13 members)**, derived from the dispatch ladder `src/backend/codegen_call.vl` under `target.str_val == "mem"`:
+    `alloc, heap_alloc, free, realloc, copy, move, set, used, heap_used, current, alloc_with, create_arena, destroy_arena`.
+  - **`str` closed set (18 members)**, derived from `velo_str_*` helpers in `runtime/velo_runtime.h` plus the legacy inline `len`:
+    `len, contains, starts_with, ends_with, index_of, trim, heap_trim, to_upper, heap_to_upper, to_lower, heap_to_lower, replace, heap_replace, concat, heap_concat, split, format, heap_format`.
+  - **Not public members (internal helpers)**: `velo_str_nonnull`, `velo_str_copy_heap`, `velo_str_copy_zone`, `velo_str_eq`, `velo_str_neq`, and the shared `*_impl` bodies. They are reachable from source today only because `emit_str_call` is generic; reaching them yields `unknown type name 'unknown'` at GCC. Task 64.4 closes this.
+  - `std/mem/*.vl` and `std/str/*.vl` declare plain acts (`heap_alloc`, `copy`, `set`, `eq`, `arena_*`, `slab_*`, `slice_*`, `sb_*`) in namespaces distinct from the `mem.*`/`str.*` intrinsics, so they add no members to either closed set.
+  - The suite asserts: the inventory equals the codegen ladder (static regex over the `mem` ladder block), the `str` inventory equals the public runtime helpers minus internal ones, internal helpers never appear as members, the four currently-checked `mem` members are a subset, and every documented member is accepted by `velo check` both individually and in one aggregate program per module.
+* **Residual Limitation**:
+  - The inventory is documentation plus a drift alarm only; `velo check` still accepts unknown `mem.*` and `str.*` members. Closing the sets is Task 64.2 (`mem`) and Task 64.3 (`str`).
+  - Confirmed live defects recorded for the next tasks: `mem.does_not_exist()` and `str.does_not_exist()` pass `velo check` (exit 0) then fail at GCC; `str.eq`/`str.neq` pass `velo check` and fail at GCC with `unknown type name 'unknown'`; `mem.alloc()` with zero arguments crashes the compiler with `-1073741819` (`0xC0000005`) instead of reporting a diagnostic.
+  - `mem` arity/type walls are missing for `free`, `used`, `heap_used`, `current`, `create_arena`, `destroy_arena`, `alloc` and `heap_alloc`: `free(1)`, `free(null, null)`, `used(1)`, `create_arena()`, `alloc(@i32, 8, 9)`, `alloc("abc")` are all accepted. Only `copy`/`move`/`set`/`realloc` are validated.
+  - `str` arity/type walls were already complete for the seventeen runtime members; only the unknown-member fallthrough remains (Task 64.3).
+* **Verification**:
+  - `python -m pytest tests/test_mem_str_surface.py -q`: 40 passed in 1.36s.
+  - Full-surface probes checked directly with `bin/velo.exe check` (exit 0) and one aggregate run via `bin/velo.exe run` printing every member result (exit 0).
 
 ##### Task 64.2: Close the `mem.*` checker
 * **Goal:** Replace the `return true` fallback with a closed-set check and per-member arity/type validation.
