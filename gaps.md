@@ -2445,12 +2445,31 @@ This is especially dangerous when the case body allocates and relies on loop-sco
   - `docs/SPECIFICATION.md` §7.3 verified against Phase 61 architectural requirements.
   - Documentation examples align with red baseline test matrix in `tests/test_match_switch.py` and `tests/test_break_continue.py`.
 
-##### Task 61.3: Lower `break` with an explicit loop target
-* **Goal:** Emit a labeled `goto` or a dedicated loop-exit flag instead of a raw `break` inside the switch.
-* **Files:** `src/backend/codegen_match.vl`, `src/backend/codegen_stmt.vl:359-367`.
-* **Tests:** break inside `on` inside a loop; emitted C inspection.
-* **Security gate:** no switch capture; cleanup emitted before the exit.
-* **Done when:** the loop stops at the expected iteration.
+##### Task 61.3: Lower `break` with an explicit loop target [COMPLETED] ✅
+* **Former Defect**:
+  - `codegen_stmt.vl:359-367` lowered `STMT_BREAK` as a raw `break;` statement in C.
+  - When enclosed within a C `switch` statement emitted by `on` pattern matching over integers or tagged unions, the C `break;` exited only the switch, leaving the enclosing loop running all subsequent iterations and executing duplicate cleanups.
+* **Fix Applied**:
+  - Added `loop_id: usize` to `DeferNode` in `src/backend/codegen_stmt.vl`.
+  - Updated `push_loop_scope(defers: @@DeferNode, loop_id: usize)`: records the unique `loop_id` on the loop boundary marker on the defer stack.
+  - In `STMT_LOOP` (`codegen_stmt.vl`), `emit_shelf_loop` (`shelf_gen.vl`), `emit_map_loop` (`map_gen.vl`), and `emit_ring_loop` (`ring_gen.vl`):
+    * Generated a unique `loop_id` from `st.fresh_counter += 1`.
+    * Emitted loop exit label `__loop_break_<loop_id>: __attribute__((unused));\n` immediately after the loop closing brace.
+    * Emitted loop continuation label `__loop_cont_<loop_id>: __attribute__((unused));\n` immediately before the loop closing brace.
+    * Post-label `__attribute__((unused))` ensures zero warnings under `-Wall -Wextra -Werror` when loops contain no breaks or continues.
+  - Lowered `STMT_BREAK` in `codegen_stmt.vl`:
+    * Traverses `defers.@` to unroll active defers and zone cleanups in strict LIFO order until reaching the nearest enclosing loop node (`cur_d.is_loop`).
+    * Captures `target_loop_id = cur_d.loop_id`.
+    * If `target_loop_id == 0`, reports backend error `break statement not within a loop`.
+    * Emits `goto __loop_break_<target_loop_id>;\n`, directly jumping to the enclosing loop's exit label and bypassing switch capture.
+  - Rebuilt 3-generation self-hosted bootstrap chain (`bin/velo.exe` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 fixed-point determinism (`3F706A9DD3293BDE7A8958B0BFA5246EE93817263C370FA6D606B35A9512BCDB`).
+* **Residual Limitation**:
+  - Dedicated verification of `continue` targets and iteration counter tests are tracked in Task 61.4.
+* **Verification**:
+  - `python -m pytest tests/test_match_switch.py tests/test_break_continue.py -q`: all 25 tests passed in 14.19s (100% pass rate; all 8 break tests previously failing in red baseline now pass).
+  - Emitted C inspections confirm `goto __loop_break_<id>;` is emitted and never captured by switch.
+  - Rebuilt bootstrap chain verified deterministic: SHA-256 `3F706A9DD3293BDE7A8958B0BFA5246EE93817263C370FA6D606B35A9512BCDB`.
+  - All 120 compiler source files in `src/` remain $\le 394$ lines (`python scripts/count_lines.py`).
 
 ##### Task 61.4: Lower `continue` with an explicit loop target
 * **Goal:** Ensure `continue` inside `on` continues the enclosing loop, not the switch.

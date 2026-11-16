@@ -238,12 +238,16 @@ act emit_shelf_loop(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, inden
     sb_append_str(sb, ")[")
     sb_append_str(sb, iname)
     sb_append_str(sb, "];\n")
-    let loop_prev = push_loop_scope(defers)
+    st.fresh_counter += 1
+    let loop_id = st.fresh_counter
+    let loop_prev = push_loop_scope(defers, loop_id)
     emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers)
     pop_loop_scope(defers, loop_prev)
     exit_scope(st)
+    sb_append_indent(sb, indent + 1); sb_append_str(sb, "__loop_cont_"); sb_append_int(sb, loop_id as i32); sb_append_str(sb, ": __attribute__((unused));\n")
     sb_append_indent(sb, indent)   // for-body close
     sb_append_str(sb, "}\n")
+    sb_append_indent(sb, indent); sb_append_str(sb, "__loop_break_"); sb_append_int(sb, loop_id as i32); sb_append_str(sb, ": __attribute__((unused));\n")
     sb_append_indent(sb, indent)   // snapshot view block close
     sb_append_str(sb, "}\n")
 }
