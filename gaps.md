@@ -3203,6 +3203,8 @@ Test file grew from 0 to **11 tests** in `tests/test_runtime_zone.py`, and `runt
 - **The `ALLOC_FATALS` doc gate is a curated list** of 13 fragments, not a full-header parse: a brand-new allocation fatal that nobody adds to the list would pass.
 - **9 non-allocation fatal sites** (bounds, empty-delimiter split, `shelf[dyn]` unbox) remain individually undocumented; they belong to the shelf/map/ring/bitset subsystem phases.
 
+**Full-suite verification:** `python -m pytest tests -q` with `PYTHONUTF8=1` — **1881 passed, 2 skipped in 883.44s**. That is exactly the pre-phase 1870 passing tests plus the 11 added in `tests/test_runtime_zone.py`, with no regressions elsewhere. (`PYTHONUTF8=1` is still required: Phase 66's `check_determinism.py` `✓` and Phase 67's ambient `scratch/` remain open and unrelated to this phase.)
+
 ---
 
 ### Phase 66: Determinism Script Encoding on Windows (P2) [OPEN] 🚧
