@@ -383,3 +383,167 @@ def test_nested_function_is_not_supported(tmp_path):
     blob = result.stdout + result.stderr
     assert result.returncode != 0, blob
     assert "Expected '(' after 'act'" in blob, blob
+
+
+# ==============================================================================
+# Task 62.2: loop-depth tracking must be balanced on every path
+# ==============================================================================
+
+DEPTH_SHAPES = [
+    (
+        "loop-inside-on",
+        """act main() -> i32 {
+    on 1 {
+        1 => {
+            loop i in 0..3 {
+                if i == 1 { break }
+            }
+        }
+        else => { }
+    }
+    return 0
+}
+""",
+    ),
+    (
+        "on-inside-loop-break-and-continue",
+        """act main() -> i32 {
+    loop i in 0..5 {
+        on i {
+            1 => { continue }
+            3 => { break }
+            else => { }
+        }
+    }
+    return 0
+}
+""",
+    ),
+    (
+        "early-return-inside-loop",
+        """act find(n: i32) -> i32 {
+    loop i in 0..10 {
+        if i == n { return i }
+    }
+    return -1
+}
+
+act main() -> i32 {
+    return find(3)
+}
+""",
+    ),
+    (
+        "loop-then-second-loop",
+        """act main() -> i32 {
+    loop i in 0..3 {
+        break
+    }
+    loop j in 0..3 {
+        continue
+    }
+    return 0
+}
+""",
+    ),
+    (
+        "deeply-nested-loops",
+        """act main() -> i32 {
+    loop a in 0..2 {
+        loop b in 0..2 {
+            loop c in 0..2 {
+                if c == 1 { continue }
+                if b == 1 { break }
+            }
+        }
+    }
+    return 0
+}
+""",
+    ),
+    (
+        "loop-in-zone-in-unsafe",
+        """act main() -> i32 {
+    unsafe {
+        zone {
+            loop i in 0..3 {
+                break
+            }
+        }
+    }
+    return 0
+}
+""",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "ident,source",
+    DEPTH_SHAPES,
+    ids=[row[0] for row in DEPTH_SHAPES],
+)
+def test_loop_depth_balances_on_every_path(tmp_path, ident, source):
+    """A balanced counter must never reject a validly nested break/continue."""
+    _require_native()
+    path = _write(tmp_path, f"{ident}.vl", source)
+    result = _check(path)
+    blob = result.stdout + result.stderr
+    assert result.returncode == 0, blob
+    assert not any(m in blob for m in (BREAK, CONTINUE)), blob
+
+
+def test_depth_does_not_leak_out_of_a_loop(tmp_path):
+    """A statement after a closed loop must not inherit its depth."""
+    _require_native()
+    path = _write(tmp_path, "leak_after_loop.vl", """act main() {
+    loop i in 0..3 {
+        break
+    }
+    break
+}
+""")
+    result = _check(path)
+    blob = result.stdout + result.stderr
+    assert result.returncode != 0, blob
+    assert BREAK in blob, blob
+
+
+def test_depth_does_not_leak_out_of_a_function(tmp_path):
+    """Depth must reset at function entry: a later function starts at zero."""
+    _require_native()
+    path = _write(tmp_path, "leak_across_funcs.vl", """act first() {
+    loop i in 0..3 {
+        break
+    }
+}
+
+act second() {
+    continue
+}
+""")
+    result = _check(path)
+    blob = result.stdout + result.stderr
+    assert result.returncode != 0, blob
+    assert CONTINUE in blob, blob
+
+
+def test_depth_resets_after_early_return_in_loop(tmp_path):
+    """An early `return` inside a loop must not leave stale depth behind."""
+    _require_native()
+    path = _write(tmp_path, "leak_after_early_return.vl", """act first(n: i32) -> i32 {
+    loop i in 0..10 {
+        if i == n { return i }
+    }
+    return -1
+}
+
+act second() {
+    break
+}
+""")
+    result = _check(path)
+    blob = result.stdout + result.stderr
+    assert result.returncode != 0, blob
+    assert BREAK in blob, blob
+

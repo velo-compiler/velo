@@ -177,6 +177,7 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
             st.current_func_ret_type = cur.return_type
             st.current_func_name = cur.name
             st.current_zone_depth = 0
+            st.current_loop_depth = 0
             let prev_strict = st.strict_safety
             if cur.module_path != null and cur.module_path == "std" { st.strict_safety = false }
             enter_scope(st)
@@ -185,6 +186,7 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
             check_statement(st, cur.return_type, cur.body)
             exit_scope(st)
             st.strict_safety = prev_strict
+            st.current_loop_depth = 0
 
             if cur.name != "main" and cur.return_type != null and cur.return_type != "void" and str.len(cur.return_type) > 0 {
                 if not stmt_always_returns(st, cur.body) {
@@ -201,9 +203,11 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
             st.current_func_ret_type = "void"
             st.current_func_name = cur.name
             st.current_zone_depth = 0
+            st.current_loop_depth = 0
             enter_scope(st)
             check_statement(st, "void", cur.body)
             exit_scope(st)
+            st.current_loop_depth = 0
         }
         cur = cur.next
     }

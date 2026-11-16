@@ -2597,12 +2597,24 @@ act main() { continue }  // velo check passes; GCC: continue statement not withi
 * **Done when:** the matrix fails for the documented reasons.
 * **Completion note (2026-11-16):** Added `tests/test_loop_context.py` with a 10-row invalid matrix (`main` direct `break`/`continue`, `if`, `if`/`else`, `on` arm, plain block, `zone`, `unsafe`, stale depth inside one function, stale depth across functions), an 8-row valid matrix (unconditional loop, count-loop `continue`, range loop, condition loop, nested loops, `on` inside a loop, `zone` inside a loop, `unsafe` inside a loop), and a row pinning that nested `act` is unrepresentable (parse error `Expected '(' after 'act'`), so the "nested function" row cannot exist in Velo. Red run: `python -m pytest tests/test_loop_context.py -q` → **20 failed, 9 passed** in 3.42s. All 20 failures fail for the documented defect and no other reason: the diagnostic carries lane `backend` (`{"file": "backend", "line": 8, "col": 5, ...}`) and `velo check` additionally prints `Code generation failed with 1 errors.`, proving the checker never enforces the rule. The 9 passing tests are the 8 valid loop rows plus the nested-`act` parse-error row, which proves the harness green-lights legal programs.
 
-##### Task 62.2: Track loop depth in the symbol table
+##### Task 62.2: Track loop depth in the symbol table [COMPLETED] ✅
 * **Goal:** Add a `loop_depth` counter, increment/decrement around loop bodies, and reset at function entry/exit.
 * **Files:** `src/analysis/symbol_table.vl`, `src/analysis/type_checker_stmt.vl:161-170`.
 * **Tests:** nested loops; loop inside function; function inside loop (if supported).
 * **Security gate:** balanced counter on every path; no stale depth after an early return.
 * **Done when:** depth is correct for every context.
+* **Fix applied (2026-11-16):**
+  1. `SymbolTable` gained `current_loop_depth: i32`, initialized to `0` in `init_symbol_table` (`symbol_table.vl`). It mirrors the existing `current_zone_depth`/`current_unsafe_depth` precedent so the phase needs no new plumbing.
+  2. `STMT_LOOP` in `check_statement` (`type_checker_stmt.vl`) now brackets the body check: `st.current_loop_depth += 1` before `check_statement(st, ..., stmt.body)` and `-= 1` immediately after, inside the surrounding `enter_scope`/`exit_scope`. Bracketing the call (not each nested scope) is what makes `on`, `zone`, `unsafe`, blocks, and `if` transparent to the counter, matching SPEC §7.3 "nearest lexically enclosing `loop`".
+  3. Function bodies reset the counter at entry *and* exit (`type_check_program.vl`): `st.current_loop_depth = 0` before `enter_scope`, and again after `exit_scope` for both `DECL_FUNCTION` and `DECL_TEST`. The entry reset makes each function independent of source order; the exit reset guarantees no stale depth survives an early `return` that left the loop body before its `-= 1` ran.
+* **Verification:**
+  - Added 6 depth shapes (`loop` inside `on`, `on` inside `loop` with both `continue` and `break`, early `return` inside a loop, two sibling loops, three-deep nesting, `loop` inside `zone` inside `unsafe`) plus 3 leak assertions (after a closed loop, across functions, after an early return) to `tests/test_loop_context.py`. All **9 pass**; `python -m pytest tests/test_loop_context.py -q -k "depth or leak"` → `9 passed, 25 deselected`.
+  - Over-blocking guard: all 8 valid matrix rows still compile *and* run, and all previously passing loop rows are unaffected.
+  - Control-flow regression subset: `python -m pytest tests/test_break_continue.py tests/test_match_switch.py tests/test_count_loops.py tests/test_range_loops.py tests/test_conditions.py -q` → **203 passed** in 43.14s.
+  - Bootstrap rebuilt from the modified `src/`: `bin/velo.exe build src/main.vl -o bin/velo_gen2.exe`, `bin/velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe`, promoted Gen3 to `bin/velo.exe`. `scripts/check_determinism.py` → Gen2 and Gen3 both `dcd924cbad2e679862d8fc2aedf1fc44863508beccc27fad6c094336495de90b`, SHA-256 match.
+  - Line counts unchanged in spirit: `symbol_table.vl` 318, `type_checker_stmt.vl` 299, `type_check_program.vl` 214 — all far below the 400-line ceiling.
+* **Residual Limitation:**
+  - Task 62.2 makes depth *correct*; it does not yet reject depth zero. `type_checker_stmt.vl` still `return`s early for `STMT_BREAK`/`STMT_CONTINUE`, so the 20 red-baseline rows stay red until Task 62.3 consumes the counter.
 
 ##### Task 62.3: Reject `break`/`continue` when depth is zero
 * **Goal:** Emit a precise diagnostic and increment the error count.
