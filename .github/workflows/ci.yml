@@ -204,7 +204,7 @@ jobs:
         run: |
           python3 scripts/check_determinism.py
 
-      - name: Run defer test suite under ASan and UBSan
+      - name: Run defer, break/continue, and match/switch test suite under ASan and UBSan
         env:
           CC: clang
           VELO_CFLAGS: "-fsanitize=address,undefined -fno-omit-frame-pointer -g"
@@ -213,5 +213,5 @@ jobs:
           UBSAN_OPTIONS: "halt_on_error=1:abort_on_error=1"
         run: |
           ./bin/velo run std/tests/mem/defer_test.vl --cc clang
-          python3 -m pytest tests/test_defer.py -q
+          python3 -m pytest tests/test_defer.py tests/test_break_continue.py tests/test_match_switch.py -q
 

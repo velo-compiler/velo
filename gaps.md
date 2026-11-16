@@ -2359,7 +2359,7 @@ This is both a soundness hole and a source of silent logic errors: a non-empty s
 
 ---
 
-### Phase 61: `break` Inside `on` (P1) [OPEN] 🚧
+### Phase 61: `break` Inside `on` (P1) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-10`<br>
 **Severity:** P1 — wrong control flow; cleanup may be skipped<br>
@@ -2537,19 +2537,30 @@ This is especially dangerous when the case body allocates and relies on loop-sco
   - `python -m pytest tests/test_match_switch.py tests/test_break_continue.py -v`: all 47 tests passed in 22.19s (100% pass rate).
   - All 120 compiler source files remain $\le 394$ lines (`python scripts/count_lines.py`).
 
-##### Task 61.7: Add the security/regression gate
-* **Goal:** Compile the matrix with warnings-as-errors and run under sanitizers.
-* **Files:** `tests/test_break_continue.py`, `.github/workflows/ci.yml`.
-* **Tests:** `-Werror` build; ASan/UBSan run; loop-scoped allocation.
-* **Security gate:** zero warnings from the generated control flow; zero sanitizer findings.
-* **Done when:** the gate is green.
+##### Task 61.7: Add the security/regression gate [COMPLETED] ✅
+* **Former Defect**:
+  - The C code emitted for explicit loop labels (`__loop_break_<id>` and `__loop_cont_<id>`), switch branches, and jump statements had not been validated against strict compiler warnings (`-Wall -Werror`). In particular, loops without breaks/continues could trigger `-Wunused-label` without `__attribute__((unused))`.
+  - In addition, CI lacked automated AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan) coverage across `tests/test_break_continue.py` and `tests/test_match_switch.py`.
+* **Fix Applied**:
+  - Added `TestOnControlFlowWarningsAndSecurityGate` to `tests/test_break_continue.py` with 4 dedicated `-Wall -Werror` compilation test cases:
+    * `test_werror_break_inside_on`: verifies loop break within `on` compiles under `-Wall -Werror` with zero warnings.
+    * `test_werror_continue_inside_on`: verifies loop continue within `on` compiles under `-Wall -Werror` with zero warnings.
+    * `test_werror_loop_without_break_or_continue`: verifies loop labels emitted with `__attribute__((unused))` produce zero `-Wunused-label` warnings under `-Wall -Werror`.
+    * `test_werror_nested_on_and_defers`: verifies 3-level nested `on` with loop allocations and defers compiles under `-Wall -Werror` and executes with zero memory leaks (`diff=0`).
+  - Integrated `tests/test_break_continue.py` and `tests/test_match_switch.py` into the CI Linux Sanitizer matrix in `.github/workflows/ci.yml`, running all control-flow break and continue tests under `-fsanitize=address,undefined`.
+* **Residual Limitation**:
+  - Compile-time checking and rejection of unbound `break`/`continue` outside of any loop at `velo check` is owned by Phase 62.
+* **Verification**:
+  - `python -m pytest tests/test_break_continue.py tests/test_match_switch.py -v`: all 51 tests passed in 21.83s (100% pass rate).
+  - Full test suite: `python -m pytest tests -q`: **1708 passed, 2 skipped** in 828.53s (100% pass rate).
+  - All 120 compiler source files remain $\le 394$ lines (`python scripts/count_lines.py`).
 
 #### Phase Exit Criteria
 
-- [ ] `break` inside `on` inside a loop stops the loop.
-- [ ] `continue` inside `on` continues the loop.
-- [ ] Loop-scoped cleanup runs exactly once on both paths.
-- [ ] Nested `on` does not change the binding target.
+- [x] `break` inside `on` inside a loop stops the loop.
+- [x] `continue` inside `on` continues the loop.
+- [x] Loop-scoped cleanup runs exactly once on both paths.
+- [x] Nested `on` does not change the binding target.
 
 ---
 

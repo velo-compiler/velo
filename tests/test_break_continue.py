@@ -126,12 +126,70 @@ if not VELO_EXE.exists() and (ROOT_DIR / "bin" / "velo.exe").exists():
     VELO_EXE = ROOT_DIR / "bin" / "velo.exe"
 
 
+def get_build_env():
+    """Returns an environment with ucrt64 GCC in PATH for compiling generated C."""
+    env = dict(os.environ)
+    ucrt_bin = r"C:\msys64\ucrt64\bin"
+    if os.path.exists(ucrt_bin):
+        env["PATH"] = ucrt_bin + ";" + env.get("PATH", "")
+    return env
+
+
+def get_gcc_bin():
+    if os.name == "nt":
+        ucrt_gcc = r"C:\msys64\ucrt64\bin\gcc.exe"
+        if os.path.exists(ucrt_gcc):
+            return ucrt_gcc
+        return "gcc.exe"
+    return os.environ.get("CC", "gcc")
+
+
+def compile_and_run_werror(source_code: str, timeout: float = 2.0) -> subprocess.CompletedProcess:
+    gcc_bin = get_gcc_bin()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        src_path = Path(tmp_dir) / "test.vl"
+        c_path = Path(tmp_dir) / "test.c"
+        exe_path = Path(tmp_dir) / ("test.exe" if os.name == "nt" else "test")
+        src_path.write_text(source_code, encoding="utf-8")
+
+        emit_res = subprocess.run(
+            [str(VELO_EXE), "emit-c", str(src_path), "-o", str(c_path)],
+            capture_output=True,
+            text=True,
+            env=get_build_env(),
+            timeout=timeout,
+        )
+        assert emit_res.returncode == 0, f"emit-c failed: {emit_res.stderr}\n{emit_res.stdout}"
+
+        gcc_cmd = [
+            gcc_bin,
+            "-std=c99",
+            "-Wall",
+            "-Werror",
+            "-Wno-unknown-pragmas",
+            "-Wno-unused-parameter",
+            "-I", str(ROOT_DIR / "runtime"),
+            "-I", str(ROOT_DIR / "velo" / "runtime"),
+            str(c_path),
+            "-o", str(exe_path),
+        ]
+        gcc_res = subprocess.run(
+            gcc_cmd,
+            capture_output=True,
+            text=True,
+            env=get_build_env(),
+            timeout=timeout,
+        )
+        assert gcc_res.returncode == 0, f"gcc -Werror failed: {gcc_res.stderr}\n{gcc_res.stdout}"
+        return subprocess.run([str(exe_path)], capture_output=True, text=True, timeout=timeout)
+
+
 def build_and_run(source_code: str, timeout: float = 2.0) -> subprocess.CompletedProcess:
     with tempfile.NamedTemporaryFile("w", suffix=".vl", delete=False) as f:
         f.write(source_code)
         f_name = f.name
     try:
-        return subprocess.run([str(VELO_EXE), "run", f_name], capture_output=True, text=True, timeout=timeout)
+        return subprocess.run([str(VELO_EXE), "run", f_name], capture_output=True, text=True, timeout=timeout, env=get_build_env())
     finally:
         Path(f_name).unlink(missing_ok=True)
 
@@ -396,5 +454,112 @@ class TestOnBreakLoopInteraction:
         res = build_and_run(code, timeout=2.0)
         assert res.returncode == 0
         assert "sum=8, diff=0" in res.stdout
+
+
+class TestOnControlFlowWarningsAndSecurityGate:
+    @classmethod
+    def setup_class(cls):
+        if not VELO_EXE.exists():
+            pytest.skip("bin/velo not built")
+        gcc_bin = get_gcc_bin()
+        try:
+            check_gcc = subprocess.run([gcc_bin, "--version"], capture_output=True, env=get_build_env())
+            if check_gcc.returncode != 0:
+                pytest.skip("C compiler not available")
+        except Exception:
+            pytest.skip("C compiler not available")
+
+    def test_werror_break_inside_on(self):
+        """Compiling `break` inside `on` under -Wall -Werror produces zero compiler warnings."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut iters = 0
+            loop i in 0..10 {
+                on i {
+                    3 => { break }
+                    else => { }
+                }
+                iters += 1
+            }
+            io.println("iters={iters}")
+            return 0
+        }
+        """
+        res = compile_and_run_werror(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "iters=3" in res.stdout
+
+    def test_werror_continue_inside_on(self):
+        """Compiling `continue` inside `on` under -Wall -Werror produces zero compiler warnings."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut sum = 0
+            loop i in 0..5 {
+                on i {
+                    2 => { continue }
+                    else => { }
+                }
+                sum += i
+            }
+            io.println("sum={sum}")
+            return 0
+        }
+        """
+        res = compile_and_run_werror(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "sum=8" in res.stdout
+
+    def test_werror_loop_without_break_or_continue(self):
+        """Unused loop labels with __attribute__((unused)) emit zero -Wunused-label warnings under -Wall -Werror."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut count = 0
+            loop i in 0..10 {
+                count += 1
+            }
+            io.println("count={count}")
+            return 0
+        }
+        """
+        res = compile_and_run_werror(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "count=10" in res.stdout
+
+    def test_werror_nested_on_and_defers(self):
+        """Multi-level nested on with loop defers compiles cleanly with -Wall -Werror and zero leaks."""
+        code = """
+        use sys.io
+        use sys.mem
+
+        act main() -> i32 {
+            let base = mem.heap_used()
+            mut iters = 0
+            loop i in 0..5 {
+                let buf = mem.alloc(@u8, 512)
+                defer mem.free(buf)
+                on i {
+                    2 => {
+                        let sub = 10
+                        on sub {
+                            10 => { break }
+                            else => { }
+                        }
+                    }
+                    else => { }
+                }
+                iters += 1
+            }
+            let diff = mem.heap_used() - base
+            io.println("iters={iters}, diff={diff}")
+            return 0
+        }
+        """
+        res = compile_and_run_werror(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "iters=2, diff=0" in res.stdout
+
 
 
