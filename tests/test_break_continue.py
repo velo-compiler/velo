@@ -263,3 +263,138 @@ class TestOnBreakLoopInteraction:
         assert res.returncode == 0
         assert "iters=2, break_hit=1, diff=0" in res.stdout
 
+    def test_on_break_case_and_loop_defer_lifo_order(self):
+        """Case-scoped defer must run before loop-scoped defer in strict LIFO order on break."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut val = 0
+            loop i in 0..5 {
+                defer val = val * 10 + 1
+                on i {
+                    2 => {
+                        defer val = val * 10 + 2
+                        break
+                    }
+                    else => { }
+                }
+            }
+            io.println("val={val}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "val=1121" in res.stdout
+
+    def test_on_continue_case_and_loop_defer_lifo_order(self):
+        """Case-scoped defer must run before loop-scoped defer in strict LIFO order on continue."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut val = 0
+            loop i in 0..2 {
+                defer val = val * 10 + 1
+                on i {
+                    0 => {
+                        defer val = val * 10 + 2
+                        continue
+                    }
+                    else => { }
+                }
+            }
+            io.println("val={val}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "val=211" in res.stdout
+
+    def test_on_break_inner_zone_cleaned_up(self):
+        """Inner zone allocations inside a loop must pop and leave cleanly on break inside on."""
+        code = """
+        use sys.io
+        use sys.mem
+
+        act main() -> i32 {
+            let base = mem.heap_used()
+            mut iters = 0
+            loop i in 0..5 {
+                zone {
+                    let buf = mem.alloc(@u8, 1024)
+                    on i {
+                        2 => { break }
+                        else => { }
+                    }
+                    iters += 1
+                }
+            }
+            let diff = mem.heap_used() - base
+            io.println("iters={iters}, diff={diff}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "iters=2, diff=0" in res.stdout
+
+    def test_on_break_outer_zone_preserved(self):
+        """Outer zone enclosing a loop must remain intact when break inside on exits the loop."""
+        code = """
+        use sys.io
+        use sys.mem
+
+        act main() -> i32 {
+            let base = mem.heap_used()
+            mut iters = 0
+            zone {
+                let outer_buf = mem.alloc(@u8, 2048)
+                loop i in 0..5 {
+                    let inner_buf = mem.alloc(@u8, 512)
+                    defer mem.free(inner_buf)
+                    on i {
+                        2 => { break }
+                        else => { }
+                    }
+                    iters += 1
+                }
+                mem.free(outer_buf)
+            }
+            let diff = mem.heap_used() - base
+            io.println("iters={iters}, diff={diff}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "iters=2, diff=0" in res.stdout
+
+    def test_on_continue_heap_allocation_cleaned_up(self):
+        """Loop-scoped heap allocations must be cleaned up on continue inside on without leaking."""
+        code = """
+        use sys.io
+        use sys.mem
+
+        act main() -> i32 {
+            let base = mem.heap_used()
+            mut sum = 0
+            loop i in 0..5 {
+                let buf = mem.alloc(@u8, 1024)
+                defer mem.free(buf)
+                on i {
+                    2 => { continue }
+                    else => { }
+                }
+                sum += i
+            }
+            let diff = mem.heap_used() - base
+            io.println("sum={sum}, diff={diff}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "sum=8, diff=0" in res.stdout
+
+

@@ -2489,18 +2489,32 @@ This is especially dangerous when the case body allocates and relies on loop-sco
     * `test_continue_inside_tagged_union_on`: verifies `continue` inside tagged union pattern arm.
     * `test_continue_inside_on_outside_loop_rejected`: verifies compile/build rejection of `continue` in `on` outside of any loop (`continue statement not within a loop`).
     * `test_continue_inside_on_no_fallthrough`: verifies no fallthrough into subsequent switch arms.
-* **Residual Limitation*:
+* **Residual Limitation**:
   - Nested multi-level `on` and fallthrough tests are extended in Task 61.6; warnings-as-errors and sanitizer gates follow in Task 61.7.
 * **Verification**:
   - `python -m pytest tests/test_match_switch.py tests/test_break_continue.py -v`: all 33 tests passed in 16.40s.
   - All 120 compiler source files remain $\le 394$ lines (`python scripts/count_lines.py`).
 
-##### Task 61.5: Preserve cleanup ordering
-* **Goal:** Run loop-scoped defers/zones before the break/continue exit.
-* **Files:** `src/backend/codegen_stmt.vl`, `src/backend/codegen_match.vl`.
-* **Tests:** allocate in loop, defer free, break inside `on`; `mem.heap_used()` baseline.
-* **Security gate:** exactly-once cleanup; no leak/UAF.
-* **Done when:** cleanup tests pass.
+##### Task 61.5: Preserve cleanup ordering [COMPLETED] ✅
+* **Former Defect**:
+  - Prior to explicit target lowering, `break` inside an `on` arm unrolled loop defers once via `emit_c_cleanup` up to `cur_d.is_loop`, but because the raw C `break;` only exited the switch rather than the loop, the loop body continued running and re-executed cleanups at iteration end, causing double-frees or corrupted state.
+  - Furthermore, interaction between arm-scoped defers, loop-scoped defers, inner zone cleanups, and outer zone preservation had no dedicated test coverage proving exact LIFO execution and zero heap leaks on both `break` and `continue`.
+* **Fix Applied**:
+  - Verified defer and zone stack unwinding semantics in `src/backend/codegen_stmt.vl`:
+    * When `break` or `continue` executes inside an `on` arm, `codegen_stmt.vl` traverses `defers.@` in strict LIFO order, executing all arm-scoped defers, block defers, and inner zone exits (`velo_zone_pop` + `velo_zone_leave`) up to the enclosing loop boundary (`cur_d.is_loop`).
+    * The jump directly transfers control outside the loop (`goto __loop_break_<id>;`) or to the continuation label (`goto __loop_cont_<id>;`), ensuring iteration-tail cleanups are bypassed and each active defer executes strictly once.
+    * Outer zones enclosing the loop are preserved without premature unrolling because unrolling halts at `cur_d.is_loop`.
+  - Expanded `TestOnBreakLoopInteraction` in `tests/test_break_continue.py` with 5 targeted tests (10 tests in class):
+    * `test_on_break_case_and_loop_defer_lifo_order`: verifies arm-scoped defer executes before loop-scoped defer in strict LIFO order on `break` (`val=1121`).
+    * `test_on_continue_case_and_loop_defer_lifo_order`: verifies arm-scoped defer executes before loop-scoped defer in strict LIFO order on `continue` (`val=211`).
+    * `test_on_break_inner_zone_cleaned_up`: verifies inner zone allocations are reclaimed with zero heap leaks (`diff=0, iters=2`) on `break`.
+    * `test_on_break_outer_zone_preserved`: verifies outer zone enclosing the loop remains intact until explicit exit with zero leaks (`diff=0, iters=2`).
+    * `test_on_continue_heap_allocation_cleaned_up`: verifies loop allocations with `defer mem.free(...)` clean up with zero leaks and zero double-frees on `continue` across all iterations (`sum=8, diff=0`).
+* **Residual Limitation**:
+  - Nested multi-level `on` and fallthrough tests are extended in Task 61.6; warnings-as-errors and sanitizer gates follow in Task 61.7.
+* **Verification**:
+  - `python -m pytest tests/test_match_switch.py tests/test_break_continue.py -v`: all 38 tests passed in 19.25s (100% pass rate).
+  - All 120 compiler source files remain $\le 394$ lines (`python scripts/count_lines.py`).
 
 ##### Task 61.6: Add nested-`on` and fallthrough tests
 * **Goal:** Prove the binding target is stable through multiple `on` levels and that cases do not fall through.
