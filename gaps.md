@@ -2916,12 +2916,33 @@ math.does_not_exist()  // velo check rejects: unknown math member
   - `python -m pytest tests/test_mem_str_surface.py -q`: 40 passed in 1.36s.
   - Full-surface probes checked directly with `bin/velo.exe check` (exit 0) and one aggregate run via `bin/velo.exe run` printing every member result (exit 0).
 
-##### Task 64.2: Close the `mem.*` checker
-* **Goal:** Replace the `return true` fallback with a closed-set check and per-member arity/type validation.
-* **Files:** `src/analysis/mem_checks.vl:42-99`, `src/analysis/type_checker.vl:173-181`.
-* **Tests:** unknown member, wrong arity, wrong type, valid `copy`/`move`/`set`/`realloc`/`alloc`/`used`.
-* **Security gate:** unknown member is a compile-time error with a list of valid members.
-* **Done when:** `mem.does_not_exist()` fails at `velo check`.
+##### Task 64.2: Close the `mem.*` checker [COMPLETED] ✅
+* **Former Defect**:
+  - `check_mem_call` returned `true` for every member outside `copy`/`move`/`set`/`realloc`, so `mem.does_not_exist()` passed `velo check` (exit 0) and only failed later at GCC.
+  - Eight of the thirteen inventory members had no arity or type wall at all: `mem.free(1)`, `mem.free(null, null)`, `mem.used(1)`, `mem.heap_used(1)`, `mem.current(1)`, `mem.create_arena()`, `mem.destroy_arena()`, `mem.alloc(@i32, 8, 9)`, `mem.alloc("abc")`, `mem.alloc(@i32, "x")` and `mem.heap_alloc(@i32, 8, 9)` were all accepted.
+  - `mem.alloc()` with zero arguments did not even report: the codegen ladder dereferences `expr.first_arg.next` unconditionally, so the compiler aborted with `0xC0000005` (`-1073741819`) and produced no diagnostic.
+* **Fix Applied**:
+  - Rewrote `src/analysis/mem_checks.vl` (205 lines) around the Task 64.1 inventory:
+    * `mem_valid_members()` publishes the closed set in ladder order (`alloc, heap_alloc, free, realloc, copy, move, set, used, heap_used, current, alloc_with, create_arena, destroy_arena`); `mem_is_known_member` gates it.
+    * Unknown members report `unknown mem member '<m>' (functions: <list>)`, mirroring the Phase 52 `io.*` and §5.3 `math.*` wording.
+    * New `mem_expect_arity` helper produces `mem.<m> expects exactly N argument(s)<sig>` for the zero- and one-argument families and for `alloc`/`heap_alloc`/`alloc_with`.
+    * `mem.alloc` / `mem.heap_alloc` accept `(count)` or `(@Type, count)`: a pointer-shaped `@Type` first argument plus a countable count, with `"[@]Type, count"` shapes rejected as `mem.<m> expects 1 or 2 arguments: (count) or (@Type, count)`.
+    * `mem.alloc_with` requires exactly three arguments before any `first_arg.next.next` dereference, then an allocator handle, a `@Type`, and a count.
+    * `mem.free` accepts pointers **and** `string` (heap strings returned by `str.heap_*` are `char*` and are legitimately freed; existing suites do this). `mem_is_freeable` documents the rule.
+    * `mem.create_arena` requires an integer capacity; `mem.destroy_arena` and `mem.free` require pointer-ish handles.
+    * The cm43 walls for `copy`/`move`/`set`/`realloc` keep their exact wording and the negative-literal count rejection, so Stage 1/Stage 2 parity is preserved.
+  - `src/analysis/type_checker.vl` needed no change: the result spells were already correct for every member and the `unknown` short-circuit is unchanged.
+* **Residual Limitation**:
+  - The nine newly-walled members are checked by Stage 2 only. Stage 1 (`velo/codegen_c.py`) is the frozen reference compiler and keeps its legacy `_mem_expect` behaviour for `alloc`/`heap_alloc`/`free`/`used`/`current`/`arena`, exactly like the Phase 52 `io.*` closed set. Programs rejected only by these new walls are therefore Stage-2-only rejections; the existing `assert_parity` suites cover only the four cm43 primitives, which remain word-identical on both stages.
+  - `mem.free` accepts any `string`, so a zone-allocated string passed to `mem.free` is still a runtime concern, not a compile-time one. Ownership escapes remain the job of `escape_checks.vl`.
+* **Verification**:
+  - `python -m pytest tests/test_mem_str_surface.py -q`: 70 passed in 2.47s (30 new reject rows plus the diagnostic-list and emit-c lanes).
+  - `python -m pytest tests/test_mem_intrinsics.py tests/test_std_mem.py -q`: 16 passed.
+  - `python -m pytest tests/test_allocators.py -q`: 25 passed.
+  - `python -m pytest tests/test_call_arguments.py tests/test_type_checker.py tests/test_zone_escape_analysis.py tests/test_strict_safety.py -q`: 223 passed.
+  - `python -m pytest tests/test_string_library.py tests/test_std_str.py tests/test_string_interpolation.py -q`: 45 passed (after the `mem.free(string)` allowance).
+  - `bin/velo.exe check` on `mem.does_not_exist()` now exits 1 with the closed-set diagnostic; `emit-c` refuses and writes no output; `mem.alloc()` reports the arity error instead of crashing.
+  - Bootstrap chain rebuilt (Gen2 -> Gen3 -> `bin/velo.exe`), determinism SHA-256 `b082d5d1c3d1c4abe59c72a9188b5b627b2db4f3d6b9483deaf733348e48db54`, `bootstrap.c` regenerated (`C0F0B30B80396A6B14B6066D81E465F3270783F54D721E191AFCA87B984E8E8D`), `tests/test_bootstrap_snapshot.py` 5 passed, `scripts/count_lines.py` all files under 400 lines.
 
 ##### Task 64.3: Close the `str.*` checker
 * **Goal:** Replace the legacy unknown-member fallthrough with a closed-set check and per-member validation.

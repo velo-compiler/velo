@@ -54,7 +54,6 @@ MEM_INVENTORY = {
     "create_arena": "65536",
     "destroy_arena": "arena",
 }
-
 # The closed set `str.*` must enforce. `len` is the legacy member (inline
 # strlen); the other seventeen are velo_str_* runtime helpers.
 STR_INVENTORY = {
@@ -95,8 +94,8 @@ STR_INTERNAL_HELPERS = {
     "format_impl",
 }
 
-# The four `mem` members the checker validates today. Task 64.2 extends this to
-# the full inventory; the row exists so the rewrite cannot silently drop them.
+# The four `mem` members the legacy checker validated before Task 64.2. The
+# closed-set rewrite must keep validating all of them.
 MEM_CHECKED_TODAY = {"copy", "move", "set", "realloc"}
 
 PROBE_HEADER = """use std.io
@@ -109,6 +108,8 @@ act main() {
     let heap_buf: @u8 = mem.heap_alloc(@u8, 8)
     let arena: @Allocator = mem.create_arena(65536)
     let active: @Allocator = mem.current()
+    let parts: shelf[string] = str.split(s, "B")
+    let h_str: string = str.heap_concat(s, "!")
 """
 
 
@@ -258,3 +259,113 @@ def test_whole_str_surface_checks_together(tmp_path):
     lines.append("}\n")
     res = run_check("".join(lines), tmp_path, "str_surface_all.vl")
     assert res.returncode == 0, f"stdout: {res.stdout}\nstderr: {res.stderr}"
+
+
+# ---------------------------------------------------------------------------
+# Task 64.2: the mem closed set and its per-member walls.
+# ---------------------------------------------------------------------------
+
+MEM_REJECT_ROWS = [
+    # Unknown members: closed-set wording plus the valid list.
+    ("unknown_member", "mem.does_not_exist()", "unknown mem member 'does_not_exist'"),
+    ("unknown_member_arg", "mem.also_missing(1)", "unknown mem member 'also_missing'"),
+    ("unknown_member_typo", "mem.freee(zone_buf)", "unknown mem member 'freee'"),
+    # Arity: zero-argument queries.
+    ("used_arg", "mem.used(1)", "mem.used expects exactly 0 arguments"),
+    ("heap_used_arg", "mem.heap_used(1)", "mem.heap_used expects exactly 0 arguments"),
+    ("current_arg", "mem.current(1)", "mem.current expects exactly 0 arguments"),
+    # Arity: one-argument members.
+    ("free_none", "mem.free()", "mem.free expects exactly 1 argument: (pointer)"),
+    ("free_two", "mem.free(zone_buf, heap_buf)", "mem.free expects exactly 1 argument: (pointer)"),
+    ("create_arena_none", "mem.create_arena()", "mem.create_arena expects exactly 1 argument: (capacity)"),
+    ("destroy_arena_none", "mem.destroy_arena()", "mem.destroy_arena expects exactly 1 argument: (arena)"),
+    # Arity: alloc family.
+    ("alloc_none", "mem.alloc()", "mem.alloc expects 1 or 2 arguments: (count) or (@Type, count)"),
+    ("alloc_three", "mem.alloc(@i32, 8, 9)", "mem.alloc expects 1 or 2 arguments"),
+    ("heap_alloc_none", "mem.heap_alloc()", "mem.heap_alloc expects 1 or 2 arguments"),
+    ("heap_alloc_three", "mem.heap_alloc(@i32, 8, 9)", "mem.heap_alloc expects 1 or 2 arguments"),
+    (
+        "alloc_with_none",
+        "mem.alloc_with()",
+        "mem.alloc_with expects exactly 3 arguments: (allocator, @Type, count)",
+    ),
+    ("alloc_with_two", "mem.alloc_with(active, @u8)", "mem.alloc_with expects exactly 3 arguments"),
+    ("alloc_with_four", "mem.alloc_with(active, @u8, 8, 9)", "mem.alloc_with expects exactly 3 arguments"),
+    # Types.
+    ("free_int", "mem.free(1)", "mem.free expects a pointer argument (got i32)"),
+    ("free_shelf", "mem.free(parts)", "mem.free expects a pointer argument (got shelf[string])"),
+    ("destroy_arena_int", "mem.destroy_arena(1)", "mem.destroy_arena expects a pointer argument (got i32)"),
+    ("create_arena_string", 'mem.create_arena("x")', "mem.create_arena expects an integer capacity (got string)"),
+    ("alloc_string", 'mem.alloc("abc")', "mem.alloc expects an integer count (got string)"),
+    ("alloc_ptr_count", 'mem.alloc(@i32, "x")', "mem.alloc expects an integer count (got string)"),
+    ("alloc_void_count", "mem.alloc(io.println(1))", "mem.alloc expects an integer count (got void)"),
+    ("heap_alloc_string", 'mem.heap_alloc("abc")', "mem.heap_alloc expects an integer count (got string)"),
+    ("alloc_with_int_ty", "mem.alloc_with(active, 1, 8)", "mem.alloc_with expects a @Type argument (got i32)"),
+    ("alloc_with_string_count", 'mem.alloc_with(active, @u8, "x")', "mem.alloc_with expects an integer count (got string)"),
+]
+
+
+@pytest.mark.parametrize(
+    "ident,call,message",
+    MEM_REJECT_ROWS,
+    ids=[row[0] for row in MEM_REJECT_ROWS],
+)
+def test_mem_rejects_closed_set_violations(tmp_path, ident, call, message):
+    """Every invalid mem call must fail at `velo check`, never at GCC."""
+    _require_native()
+    source = PROBE_HEADER + f"    {call}\n}}\n"
+    res = run_check(source, tmp_path, f"mem_reject_{ident}.vl")
+    blob = res.stdout + res.stderr
+    assert res.returncode != 0, f"velo check accepted {call}:\n{blob}"
+    assert message in blob, f"expected {message!r} for {call}:\n{blob}"
+    assert "gcc" not in blob.lower(), f"{call} reached the C lane:\n{blob}"
+
+
+def test_mem_unknown_member_diagnostic_lists_the_closed_set(tmp_path):
+    _require_native()
+    source = PROBE_HEADER + "    mem.does_not_exist()\n}\n"
+    res = run_check(source, tmp_path, "mem_unknown_list.vl")
+    blob = res.stdout + res.stderr
+    assert res.returncode != 0, blob
+    listed_match = re.search(r"\(functions: (.*)\)", blob)
+    assert listed_match is not None, f"diagnostic has no member list:\n{blob}"
+    listed = [name.strip() for name in listed_match.group(1).split(",")]
+    assert len(listed) == len(set(listed)), f"duplicate names in diagnostic:\n{blob}"
+    assert set(listed) == set(MEM_INVENTORY), (
+        "diagnostic list does not match the accepted set:\n"
+        f"missing: {sorted(set(MEM_INVENTORY) - set(listed))}\n"
+        f"extra: {sorted(set(listed) - set(MEM_INVENTORY))}"
+    )
+
+
+def test_mem_rejection_never_emits_c(tmp_path):
+    """The checker owns the rule: emit-c must not produce a translation unit."""
+    _require_native()
+    source = PROBE_HEADER + "    mem.does_not_exist()\n}\n"
+    probe = tmp_path / "mem_unknown_emitc.vl"
+    probe.write_text(source, encoding="utf-8", newline="\n")
+    out_c = tmp_path / "mem_unknown_emitc.c"
+    res = subprocess.run(
+        [str(VELO_EXE), "emit-c", str(probe), "-o", str(out_c)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=get_env(),
+    )
+    blob = res.stdout + res.stderr
+    assert res.returncode != 0, f"emit-c accepted an unknown mem member:\n{blob}"
+    assert "unknown mem member" in blob, blob
+
+
+def test_mem_zero_arg_alloc_reports_instead_of_crashing(tmp_path):
+    """Regression: `mem.alloc()` used to abort the compiler (0xC0000005)."""
+    _require_native()
+    source = PROBE_HEADER + "    mem.alloc()\n}\n"
+    res = run_check(source, tmp_path, "mem_alloc_zero.vl")
+    blob = res.stdout + res.stderr
+    assert res.returncode not in (-1073741819, -1073741571), (
+        f"velo check crashed instead of reporting:\n{blob}"
+    )
+    assert res.returncode != 0, blob
+    assert "mem.alloc expects 1 or 2 arguments" in blob, blob

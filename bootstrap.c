@@ -2121,9 +2121,17 @@ void check_struct_default_field(SymbolTable* st, FieldNode* cur_f);
 bool is_exit_call_expr(ExprNode* e);
 bool stmt_always_returns(SymbolTable* st, StmtNode* stmt);
 bool check_program(SymbolTable* st, ProgramNode* prog);
+const char* mem_valid_members(void);
+bool mem_is_known_member(const char* member);
 bool mem_is_ptrty(const char* t);
 bool mem_is_countable(const char* t);
+bool mem_is_freeable(const char* t);
 const char* mem_got_msg(const char* member, const char* wantpart, const char* gotpart);
+bool mem_report(SymbolTable* st, ExprNode* expr, const char* msg);
+bool mem_expect_arity(SymbolTable* st, ExprNode* expr, const char* member, size_t want, const char* sig);
+bool mem_check_alloc(SymbolTable* st, ExprNode* expr, const char* member);
+bool mem_check_alloc_with(SymbolTable* st, ExprNode* expr);
+const char* mem_byte_sig(const char* member);
 bool check_mem_call(SymbolTable* st, ExprNode* expr, const char* member);
 const char* str_member_sig(const char* member);
 int32_t str_member_arity(const char* member);
@@ -28732,216 +28740,440 @@ bool check_program(SymbolTable* st, ProgramNode* prog) {
     return velo_cmp_eq_u_s(st->error_count, 0);
 }
 
-#line 16 "src/main.vl"
+#line 28 "src/main.vl"
+const char* mem_valid_members(void) {
+#line 29 "src/main.vl"
+    return "alloc, heap_alloc, free, realloc, copy, move, set, used, heap_used, current, alloc_with, create_arena, destroy_arena";
+}
+
+#line 32 "src/main.vl"
+bool mem_is_known_member(const char* member) {
+#line 33 "src/main.vl"
+    if ((((((member != NULL && "alloc" != NULL) ? (strcmp(member, "alloc") == 0) : (member == "alloc")) || ((member != NULL && "heap_alloc" != NULL) ? (strcmp(member, "heap_alloc") == 0) : (member == "heap_alloc"))) || ((member != NULL && "free" != NULL) ? (strcmp(member, "free") == 0) : (member == "free"))) || ((member != NULL && "realloc" != NULL) ? (strcmp(member, "realloc") == 0) : (member == "realloc")))) {
+#line 33 "src/main.vl"
+        return true;
+    }
+#line 34 "src/main.vl"
+    if (((((member != NULL && "copy" != NULL) ? (strcmp(member, "copy") == 0) : (member == "copy")) || ((member != NULL && "move" != NULL) ? (strcmp(member, "move") == 0) : (member == "move"))) || ((member != NULL && "set" != NULL) ? (strcmp(member, "set") == 0) : (member == "set")))) {
+#line 34 "src/main.vl"
+        return true;
+    }
+#line 35 "src/main.vl"
+    if (((((member != NULL && "used" != NULL) ? (strcmp(member, "used") == 0) : (member == "used")) || ((member != NULL && "heap_used" != NULL) ? (strcmp(member, "heap_used") == 0) : (member == "heap_used"))) || ((member != NULL && "current" != NULL) ? (strcmp(member, "current") == 0) : (member == "current")))) {
+#line 35 "src/main.vl"
+        return true;
+    }
+#line 36 "src/main.vl"
+    if (((((member != NULL && "alloc_with" != NULL) ? (strcmp(member, "alloc_with") == 0) : (member == "alloc_with")) || ((member != NULL && "create_arena" != NULL) ? (strcmp(member, "create_arena") == 0) : (member == "create_arena"))) || ((member != NULL && "destroy_arena" != NULL) ? (strcmp(member, "destroy_arena") == 0) : (member == "destroy_arena")))) {
+#line 36 "src/main.vl"
+        return true;
+    }
+#line 37 "src/main.vl"
+    return false;
+}
+
+#line 43 "src/main.vl"
 bool mem_is_ptrty(const char* t) {
-#line 17 "src/main.vl"
+#line 44 "src/main.vl"
     if ((t == NULL)) {
-#line 17 "src/main.vl"
+#line 44 "src/main.vl"
         return false;
     }
-#line 18 "src/main.vl"
+#line 45 "src/main.vl"
     return (velo_cmp_gt_u_s(((usize)strlen(t)), 0) && velo_cmp_eq_u_s(t[0], '@'));
 }
 
-#line 26 "src/main.vl"
-bool mem_is_countable(const char* t) {
-#line 27 "src/main.vl"
-    if (((t == NULL) || velo_cmp_eq_u_s(((usize)strlen(t)), 0))) {
-#line 27 "src/main.vl"
-        return false;
-    }
-#line 28 "src/main.vl"
-    if (mem_is_ptrty(t)) {
-#line 28 "src/main.vl"
-        return false;
-    }
-#line 29 "src/main.vl"
-    if (((t != NULL && "string" != NULL) ? (strcmp(t, "string") == 0) : (t == "string"))) {
-#line 29 "src/main.vl"
-        return false;
-    }
-#line 30 "src/main.vl"
-    if (((t != NULL && "void" != NULL) ? (strcmp(t, "void") == 0) : (t == "void"))) {
-#line 30 "src/main.vl"
-        return false;
-    }
-#line 31 "src/main.vl"
-    if (is_act_type(strip_type_spaces(t))) {
-#line 31 "src/main.vl"
-        return false;
-    }
-#line 32 "src/main.vl"
-    return true;
-}
-
-#line 35 "src/main.vl"
-const char* mem_got_msg(const char* member, const char* wantpart, const char* gotpart) {
-#line 36 "src/main.vl"
-    StringBuilder msb = create_sb(224);
-#line 37 "src/main.vl"
-    sb_append_str((&(msb)), "mem.");
-#line 37 "src/main.vl"
-    sb_append_str((&(msb)), member);
-#line 37 "src/main.vl"
-    sb_append_str((&(msb)), wantpart);
-#line 38 "src/main.vl"
-    sb_append_str((&(msb)), " (got ");
-#line 38 "src/main.vl"
-    sb_append_str((&(msb)), gotpart);
-#line 38 "src/main.vl"
-    sb_append_str((&(msb)), ")");
-#line 39 "src/main.vl"
-    return sb_to_string((&(msb)));
-}
-
-#line 42 "src/main.vl"
-bool check_mem_call(SymbolTable* st, ExprNode* expr, const char* member) {
-#line 43 "src/main.vl"
-    if ((((((member != NULL && "copy" != NULL) ? (strcmp(member, "copy") != 0) : (member != "copy")) && ((member != NULL && "move" != NULL) ? (strcmp(member, "move") != 0) : (member != "move"))) && ((member != NULL && "set" != NULL) ? (strcmp(member, "set") != 0) : (member != "set"))) && ((member != NULL && "realloc" != NULL) ? (strcmp(member, "realloc") != 0) : (member != "realloc")))) {
-#line 43 "src/main.vl"
-        return true;
-    }
-#line 44 "src/main.vl"
-    if (((((expr->first_arg == NULL) || (expr->first_arg->next == NULL)) || (expr->first_arg->next->next == NULL)) || (expr->first_arg->next->next->next != NULL))) {
-#line 45 "src/main.vl"
-        const char* sig = "";
-#line 46 "src/main.vl"
-        if ((((member != NULL && "copy" != NULL) ? (strcmp(member, "copy") == 0) : (member == "copy")) || ((member != NULL && "move" != NULL) ? (strcmp(member, "move") == 0) : (member == "move")))) {
-#line 46 "src/main.vl"
-            sig = ": (pointer dest, pointer src, byte count)";
-        }
-#line 47 "src/main.vl"
-        if (((member != NULL && "set" != NULL) ? (strcmp(member, "set") == 0) : (member == "set"))) {
-#line 47 "src/main.vl"
-            sig = ": (pointer dest, byte value, byte count)";
-        }
-#line 48 "src/main.vl"
-        if (((member != NULL && "realloc" != NULL) ? (strcmp(member, "realloc") == 0) : (member == "realloc"))) {
-#line 48 "src/main.vl"
-            sig = ": (pointer, @Type, count)";
-        }
-#line 49 "src/main.vl"
-        StringBuilder msb = create_sb(192);
-#line 49 "src/main.vl"
-        sb_append_str((&(msb)), "mem.");
-#line 49 "src/main.vl"
-        sb_append_str((&(msb)), member);
-#line 49 "src/main.vl"
-        sb_append_str((&(msb)), " expects exactly 3 arguments");
-#line 49 "src/main.vl"
-        sb_append_str((&(msb)), sig);
-#line 50 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
-#line 50 "src/main.vl"
-        st->error_count += 1;
-#line 51 "src/main.vl"
-        return false;
-    }
 #line 53 "src/main.vl"
-    const char* d = infer_expr_type(st, expr->first_arg);
+bool mem_is_countable(const char* t) {
 #line 54 "src/main.vl"
-    if ((!mem_is_ptrty(d))) {
+    if (((t == NULL) || velo_cmp_eq_u_s(((usize)strlen(t)), 0))) {
+#line 54 "src/main.vl"
+        return false;
+    }
 #line 55 "src/main.vl"
-        report_error("semantic", expr->line, expr->col, mem_got_msg(member, " expects pointer arguments", d));
+    if (mem_is_ptrty(t)) {
 #line 55 "src/main.vl"
-        st->error_count += 1;
+        return false;
+    }
+#line 56 "src/main.vl"
+    if (((t != NULL && "string" != NULL) ? (strcmp(t, "string") == 0) : (t == "string"))) {
 #line 56 "src/main.vl"
         return false;
     }
+#line 57 "src/main.vl"
+    if (((t != NULL && "void" != NULL) ? (strcmp(t, "void") == 0) : (t == "void"))) {
+#line 57 "src/main.vl"
+        return false;
+    }
 #line 58 "src/main.vl"
-    if (((member != NULL && "realloc" != NULL) ? (strcmp(member, "realloc") == 0) : (member == "realloc"))) {
+    if (is_act_type(strip_type_spaces(t))) {
+#line 58 "src/main.vl"
+        return false;
+    }
 #line 59 "src/main.vl"
-        const char* ty = infer_expr_type(st, expr->first_arg->next);
-#line 60 "src/main.vl"
-        if ((!mem_is_ptrty(ty))) {
-#line 61 "src/main.vl"
-            report_error("semantic", expr->line, expr->col, mem_got_msg("realloc", " expects a @Type argument", ty));
-#line 61 "src/main.vl"
-            st->error_count += 1;
-#line 62 "src/main.vl"
-            return false;
-        }
-    }
-#line 65 "src/main.vl"
-    if ((((member != NULL && "copy" != NULL) ? (strcmp(member, "copy") == 0) : (member == "copy")) || ((member != NULL && "move" != NULL) ? (strcmp(member, "move") == 0) : (member == "move")))) {
+    return true;
+}
+
 #line 66 "src/main.vl"
-        const char* s = infer_expr_type(st, expr->first_arg->next);
+bool mem_is_freeable(const char* t) {
 #line 67 "src/main.vl"
-        if ((!mem_is_ptrty(s))) {
-#line 68 "src/main.vl"
-            report_error("semantic", expr->line, expr->col, mem_got_msg(member, " expects pointer arguments", s));
-#line 68 "src/main.vl"
-            st->error_count += 1;
-#line 69 "src/main.vl"
-            return false;
-        }
+    if (mem_is_ptrty(t)) {
+#line 67 "src/main.vl"
+        return true;
     }
+#line 68 "src/main.vl"
+    return ((t != NULL && "string" != NULL) ? (strcmp(t, "string") == 0) : (t == "string"));
+}
+
+#line 71 "src/main.vl"
+const char* mem_got_msg(const char* member, const char* wantpart, const char* gotpart) {
 #line 72 "src/main.vl"
-    if (((member != NULL && "set" != NULL) ? (strcmp(member, "set") == 0) : (member == "set"))) {
+    StringBuilder msb = create_sb(224);
 #line 73 "src/main.vl"
-        const char* v = infer_expr_type(st, expr->first_arg->next);
+    sb_append_str((&(msb)), "mem.");
+#line 73 "src/main.vl"
+    sb_append_str((&(msb)), member);
+#line 73 "src/main.vl"
+    sb_append_str((&(msb)), wantpart);
 #line 74 "src/main.vl"
-        if ((!mem_is_countable(v))) {
+    sb_append_str((&(msb)), " (got ");
+#line 74 "src/main.vl"
+    sb_append_str((&(msb)), gotpart);
+#line 74 "src/main.vl"
+    sb_append_str((&(msb)), ")");
 #line 75 "src/main.vl"
-            report_error("semantic", expr->line, expr->col, mem_got_msg("set", " expects an integer fill value", v));
-#line 75 "src/main.vl"
+    return sb_to_string((&(msb)));
+}
+
+#line 78 "src/main.vl"
+bool mem_report(SymbolTable* st, ExprNode* expr, const char* msg) {
+#line 79 "src/main.vl"
+    report_error("semantic", expr->line, expr->col, msg);
+#line 79 "src/main.vl"
+    st->error_count += 1;
+#line 80 "src/main.vl"
+    return false;
+}
+
+#line 84 "src/main.vl"
+bool mem_expect_arity(SymbolTable* st, ExprNode* expr, const char* member, size_t want, const char* sig) {
+#line 85 "src/main.vl"
+    if ((expr->arg_count == want)) {
+#line 85 "src/main.vl"
+        return true;
+    }
+#line 86 "src/main.vl"
+    StringBuilder msb = create_sb(192);
+#line 87 "src/main.vl"
+    sb_append_str((&(msb)), "mem.");
+#line 87 "src/main.vl"
+    sb_append_str((&(msb)), member);
+#line 87 "src/main.vl"
+    sb_append_str((&(msb)), " expects exactly ");
+#line 88 "src/main.vl"
+    sb_append_int((&(msb)), ((int32_t)(want)));
+#line 89 "src/main.vl"
+    if (velo_cmp_eq_u_s(want, 1)) {
+#line 89 "src/main.vl"
+        sb_append_str((&(msb)), " argument");
+    } else {
+#line 89 "src/main.vl"
+        sb_append_str((&(msb)), " arguments");
+    }
+#line 90 "src/main.vl"
+    sb_append_str((&(msb)), sig);
+#line 91 "src/main.vl"
+    return mem_report(st, expr, sb_to_string((&(msb))));
+}
+
+#line 95 "src/main.vl"
+bool mem_check_alloc(SymbolTable* st, ExprNode* expr, const char* member) {
+#line 96 "src/main.vl"
+    if (velo_cmp_eq_u_s(expr->arg_count, 1)) {
+#line 97 "src/main.vl"
+        const char* t = infer_expr_type(st, expr->first_arg);
+#line 98 "src/main.vl"
+        if ((!mem_is_countable(t))) {
+#line 98 "src/main.vl"
+            return mem_report(st, expr, mem_got_msg(member, " expects an integer count", t));
+        }
+#line 99 "src/main.vl"
+        return true;
+    }
+#line 101 "src/main.vl"
+    if (velo_cmp_ne_u_s(expr->arg_count, 2)) {
+#line 102 "src/main.vl"
+        StringBuilder msb = create_sb(192);
+#line 103 "src/main.vl"
+        sb_append_str((&(msb)), "mem.");
+#line 103 "src/main.vl"
+        sb_append_str((&(msb)), member);
+#line 104 "src/main.vl"
+        sb_append_str((&(msb)), " expects 1 or 2 arguments: (count) or (@Type, count)");
+#line 105 "src/main.vl"
+        return mem_report(st, expr, sb_to_string((&(msb))));
+    }
+#line 107 "src/main.vl"
+    const char* ty = infer_expr_type(st, expr->first_arg);
+#line 108 "src/main.vl"
+    if ((!mem_is_ptrty(ty))) {
+#line 108 "src/main.vl"
+        return mem_report(st, expr, mem_got_msg(member, " expects a @Type argument", ty));
+    }
+#line 109 "src/main.vl"
+    const char* c = infer_expr_type(st, expr->first_arg->next);
+#line 110 "src/main.vl"
+    if ((!mem_is_countable(c))) {
+#line 110 "src/main.vl"
+        return mem_report(st, expr, mem_got_msg(member, " expects an integer count", c));
+    }
+#line 111 "src/main.vl"
+    return true;
+}
+
+#line 117 "src/main.vl"
+bool mem_check_alloc_with(SymbolTable* st, ExprNode* expr) {
+#line 118 "src/main.vl"
+    if ((!mem_expect_arity(st, expr, "alloc_with", 3, ": (allocator, @Type, count)"))) {
+#line 118 "src/main.vl"
+        return false;
+    }
+#line 119 "src/main.vl"
+    const char* a = infer_expr_type(st, expr->first_arg);
+#line 120 "src/main.vl"
+    if ((!mem_is_ptrty(a))) {
+#line 120 "src/main.vl"
+        return mem_report(st, expr, mem_got_msg("alloc_with", " expects an allocator handle", a));
+    }
+#line 121 "src/main.vl"
+    const char* ty = infer_expr_type(st, expr->first_arg->next);
+#line 122 "src/main.vl"
+    if ((!mem_is_ptrty(ty))) {
+#line 122 "src/main.vl"
+        return mem_report(st, expr, mem_got_msg("alloc_with", " expects a @Type argument", ty));
+    }
+#line 123 "src/main.vl"
+    const char* c = infer_expr_type(st, expr->first_arg->next->next);
+#line 124 "src/main.vl"
+    if ((!mem_is_countable(c))) {
+#line 124 "src/main.vl"
+        return mem_report(st, expr, mem_got_msg("alloc_with", " expects an integer count", c));
+    }
+#line 125 "src/main.vl"
+    return true;
+}
+
+#line 128 "src/main.vl"
+const char* mem_byte_sig(const char* member) {
+#line 129 "src/main.vl"
+    if ((((member != NULL && "copy" != NULL) ? (strcmp(member, "copy") == 0) : (member == "copy")) || ((member != NULL && "move" != NULL) ? (strcmp(member, "move") == 0) : (member == "move")))) {
+#line 129 "src/main.vl"
+        return ": (pointer dest, pointer src, byte count)";
+    }
+#line 130 "src/main.vl"
+    if (((member != NULL && "set" != NULL) ? (strcmp(member, "set") == 0) : (member == "set"))) {
+#line 130 "src/main.vl"
+        return ": (pointer dest, byte value, byte count)";
+    }
+#line 131 "src/main.vl"
+    return ": (pointer, @Type, count)";
+}
+
+#line 134 "src/main.vl"
+bool check_mem_call(SymbolTable* st, ExprNode* expr, const char* member) {
+#line 135 "src/main.vl"
+    if ((!mem_is_known_member(member))) {
+#line 136 "src/main.vl"
+        StringBuilder msb = create_sb(512);
+#line 137 "src/main.vl"
+        sb_append_str((&(msb)), "unknown mem member '");
+#line 137 "src/main.vl"
+        sb_append_str((&(msb)), member);
+#line 138 "src/main.vl"
+        sb_append_str((&(msb)), "' (functions: ");
+#line 138 "src/main.vl"
+        sb_append_str((&(msb)), mem_valid_members());
+#line 138 "src/main.vl"
+        sb_append_str((&(msb)), ")");
+#line 139 "src/main.vl"
+        return mem_report(st, expr, sb_to_string((&(msb))));
+    }
+#line 143 "src/main.vl"
+    if (((((member != NULL && "used" != NULL) ? (strcmp(member, "used") == 0) : (member == "used")) || ((member != NULL && "heap_used" != NULL) ? (strcmp(member, "heap_used") == 0) : (member == "heap_used"))) || ((member != NULL && "current" != NULL) ? (strcmp(member, "current") == 0) : (member == "current")))) {
+#line 143 "src/main.vl"
+        return mem_expect_arity(st, expr, member, 0, "");
+    }
+#line 144 "src/main.vl"
+    if (((member != NULL && "free" != NULL) ? (strcmp(member, "free") == 0) : (member == "free"))) {
+#line 145 "src/main.vl"
+        if ((!mem_expect_arity(st, expr, member, 1, ": (pointer)"))) {
+#line 145 "src/main.vl"
+            return false;
+        }
+#line 146 "src/main.vl"
+        const char* t = infer_expr_type(st, expr->first_arg);
+#line 147 "src/main.vl"
+        if ((!mem_is_freeable(t))) {
+#line 147 "src/main.vl"
+            return mem_report(st, expr, mem_got_msg(member, " expects a pointer argument", t));
+        }
+#line 148 "src/main.vl"
+        return true;
+    }
+#line 150 "src/main.vl"
+    if (((member != NULL && "create_arena" != NULL) ? (strcmp(member, "create_arena") == 0) : (member == "create_arena"))) {
+#line 151 "src/main.vl"
+        if ((!mem_expect_arity(st, expr, member, 1, ": (capacity)"))) {
+#line 151 "src/main.vl"
+            return false;
+        }
+#line 152 "src/main.vl"
+        const char* t = infer_expr_type(st, expr->first_arg);
+#line 153 "src/main.vl"
+        if ((!mem_is_countable(t))) {
+#line 153 "src/main.vl"
+            return mem_report(st, expr, mem_got_msg(member, " expects an integer capacity", t));
+        }
+#line 154 "src/main.vl"
+        return true;
+    }
+#line 156 "src/main.vl"
+    if (((member != NULL && "destroy_arena" != NULL) ? (strcmp(member, "destroy_arena") == 0) : (member == "destroy_arena"))) {
+#line 157 "src/main.vl"
+        if ((!mem_expect_arity(st, expr, member, 1, ": (arena)"))) {
+#line 157 "src/main.vl"
+            return false;
+        }
+#line 158 "src/main.vl"
+        const char* t = infer_expr_type(st, expr->first_arg);
+#line 159 "src/main.vl"
+        if ((!mem_is_ptrty(t))) {
+#line 159 "src/main.vl"
+            return mem_report(st, expr, mem_got_msg(member, " expects a pointer argument", t));
+        }
+#line 160 "src/main.vl"
+        return true;
+    }
+#line 162 "src/main.vl"
+    if ((((member != NULL && "alloc" != NULL) ? (strcmp(member, "alloc") == 0) : (member == "alloc")) || ((member != NULL && "heap_alloc" != NULL) ? (strcmp(member, "heap_alloc") == 0) : (member == "heap_alloc")))) {
+#line 162 "src/main.vl"
+        return mem_check_alloc(st, expr, member);
+    }
+#line 163 "src/main.vl"
+    if (((member != NULL && "alloc_with" != NULL) ? (strcmp(member, "alloc_with") == 0) : (member == "alloc_with"))) {
+#line 163 "src/main.vl"
+        return mem_check_alloc_with(st, expr);
+    }
+#line 166 "src/main.vl"
+    if ((!mem_expect_arity(st, expr, member, 3, mem_byte_sig(member)))) {
+#line 166 "src/main.vl"
+        return false;
+    }
+#line 167 "src/main.vl"
+    const char* d = infer_expr_type(st, expr->first_arg);
+#line 168 "src/main.vl"
+    if ((!mem_is_ptrty(d))) {
+#line 169 "src/main.vl"
+        report_error("semantic", expr->line, expr->col, mem_got_msg(member, " expects pointer arguments", d));
+#line 169 "src/main.vl"
+        st->error_count += 1;
+#line 170 "src/main.vl"
+        return false;
+    }
+#line 172 "src/main.vl"
+    if (((member != NULL && "realloc" != NULL) ? (strcmp(member, "realloc") == 0) : (member == "realloc"))) {
+#line 173 "src/main.vl"
+        const char* ty = infer_expr_type(st, expr->first_arg->next);
+#line 174 "src/main.vl"
+        if ((!mem_is_ptrty(ty))) {
+#line 175 "src/main.vl"
+            report_error("semantic", expr->line, expr->col, mem_got_msg("realloc", " expects a @Type argument", ty));
+#line 175 "src/main.vl"
             st->error_count += 1;
-#line 76 "src/main.vl"
+#line 176 "src/main.vl"
             return false;
         }
     }
-#line 79 "src/main.vl"
-    const char* word = "byte count";
-#line 80 "src/main.vl"
+#line 179 "src/main.vl"
+    if ((((member != NULL && "copy" != NULL) ? (strcmp(member, "copy") == 0) : (member == "copy")) || ((member != NULL && "move" != NULL) ? (strcmp(member, "move") == 0) : (member == "move")))) {
+#line 180 "src/main.vl"
+        const char* s = infer_expr_type(st, expr->first_arg->next);
+#line 181 "src/main.vl"
+        if ((!mem_is_ptrty(s))) {
+#line 182 "src/main.vl"
+            report_error("semantic", expr->line, expr->col, mem_got_msg(member, " expects pointer arguments", s));
+#line 182 "src/main.vl"
+            st->error_count += 1;
+#line 183 "src/main.vl"
+            return false;
+        }
+    }
+#line 186 "src/main.vl"
     if (((member != NULL && "set" != NULL) ? (strcmp(member, "set") == 0) : (member == "set"))) {
-#line 80 "src/main.vl"
+#line 187 "src/main.vl"
+        const char* v = infer_expr_type(st, expr->first_arg->next);
+#line 188 "src/main.vl"
+        if ((!mem_is_countable(v))) {
+#line 189 "src/main.vl"
+            report_error("semantic", expr->line, expr->col, mem_got_msg("set", " expects an integer fill value", v));
+#line 189 "src/main.vl"
+            st->error_count += 1;
+#line 190 "src/main.vl"
+            return false;
+        }
+    }
+#line 193 "src/main.vl"
+    const char* word = "byte count";
+#line 194 "src/main.vl"
+    if (((member != NULL && "set" != NULL) ? (strcmp(member, "set") == 0) : (member == "set"))) {
+#line 194 "src/main.vl"
         word = "fill value";
     }
-#line 81 "src/main.vl"
+#line 195 "src/main.vl"
     const char* c = infer_expr_type(st, expr->first_arg->next->next);
-#line 82 "src/main.vl"
+#line 196 "src/main.vl"
     if ((!mem_is_countable(c))) {
-#line 83 "src/main.vl"
+#line 197 "src/main.vl"
         StringBuilder msb = create_sb(224);
-#line 84 "src/main.vl"
+#line 198 "src/main.vl"
         sb_append_str((&(msb)), "mem.");
-#line 84 "src/main.vl"
+#line 198 "src/main.vl"
         sb_append_str((&(msb)), member);
-#line 84 "src/main.vl"
+#line 198 "src/main.vl"
         sb_append_str((&(msb)), " expects an integer ");
-#line 84 "src/main.vl"
+#line 198 "src/main.vl"
         sb_append_str((&(msb)), word);
-#line 85 "src/main.vl"
+#line 199 "src/main.vl"
         sb_append_str((&(msb)), " (got ");
-#line 85 "src/main.vl"
+#line 199 "src/main.vl"
         sb_append_str((&(msb)), c);
-#line 85 "src/main.vl"
+#line 199 "src/main.vl"
         sb_append_str((&(msb)), ")");
-#line 86 "src/main.vl"
+#line 200 "src/main.vl"
         report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
-#line 86 "src/main.vl"
+#line 200 "src/main.vl"
         st->error_count += 1;
-#line 87 "src/main.vl"
+#line 201 "src/main.vl"
         return false;
     }
-#line 93 "src/main.vl"
+#line 207 "src/main.vl"
     if ((((expr->first_arg->next->next->kind == EXPR_UNARY) && (expr->first_arg->next->next->op == TOK_MINUS)) && (expr->first_arg->next->next->operand->kind == EXPR_INT))) {
-#line 94 "src/main.vl"
+#line 208 "src/main.vl"
         StringBuilder msb = create_sb(160);
-#line 95 "src/main.vl"
+#line 209 "src/main.vl"
         sb_append_str((&(msb)), "mem.");
-#line 95 "src/main.vl"
+#line 209 "src/main.vl"
         sb_append_str((&(msb)), member);
-#line 95 "src/main.vl"
+#line 209 "src/main.vl"
         sb_append_str((&(msb)), " expects a non-negative byte count");
-#line 96 "src/main.vl"
+#line 210 "src/main.vl"
         report_error("semantic", expr->line, expr->col, sb_to_string((&(msb))));
-#line 96 "src/main.vl"
+#line 210 "src/main.vl"
         st->error_count += 1;
-#line 97 "src/main.vl"
+#line 211 "src/main.vl"
         return false;
     }
-#line 99 "src/main.vl"
+#line 213 "src/main.vl"
     return true;
 }
 

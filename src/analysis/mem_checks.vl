@@ -1,6 +1,18 @@
-// cm43: compile-time argument checks for the mem.copy/move/set/realloc
-// byte primitives (§4.3). Mutual mirror of velo/codegen_c.py::_mem_expect
-// - both stages must reject the same programs with the same words.
+// cm43: compile-time argument checks for the mem.* intrinsic namespace.
+//
+// Phase 64: the namespace is CLOSED. Task 64.1 pinned the inventory (13
+// members, mirrored by tests/test_mem_str_surface.py); this file owns the
+// per-member arity/type walls and the closed-set diagnostic, so a typo can
+// never reach the codegen ladder or the GCC lane.
+//
+// The four byte primitives (§4.3) keep their cm43 wording: mem.copy/move/set/
+// realloc are mirrored by velo/codegen_c.py::_mem_expect, and both stages must
+// reject the same programs with the same words. The members added here
+// (alloc, heap_alloc, free, used, heap_used, current, alloc_with,
+// create_arena, destroy_arena) are checked by Stage 2 only — Stage 1 is the
+// frozen reference compiler and its legacy lowering stays untouched, exactly
+// like the Phase 52 io.* closed set.
+//
 // Returns false after reporting; the infer branch then yields "unknown".
 use "type_checker.vl"
 use "symbol_table.vl"
@@ -9,6 +21,21 @@ use "../common/string_builder.vl"
 use "../common/act_types.vl"
 use "../ast/expr.vl"
 use "../frontend/token.vl"
+
+// The published closed set: every member the codegen ladder in
+// src/backend/codegen_call.vl can lower. Order is the ladder's dispatch order
+// so the diagnostic stays stable.
+act mem_valid_members() -> string {
+    return "alloc, heap_alloc, free, realloc, copy, move, set, used, heap_used, current, alloc_with, create_arena, destroy_arena"
+}
+
+act mem_is_known_member(member: string) -> bool {
+    if member == "alloc" or member == "heap_alloc" or member == "free" or member == "realloc" { return true }
+    if member == "copy" or member == "move" or member == "set" { return true }
+    if member == "used" or member == "heap_used" or member == "current" { return true }
+    if member == "alloc_with" or member == "create_arena" or member == "destroy_arena" { return true }
+    return false
+}
 
 // Pointer-ish values only: @T handles (and "@void" from a null literal).
 // A plain "string" is deliberately NOT accepted as a byte buffer - writing
@@ -32,6 +59,15 @@ act mem_is_countable(t: string) -> bool {
     return true
 }
 
+// Freeable: pointers AND plain strings. Heap strings are char* and the
+// heap_*/str.heap_* families return owning string handles (§5.1), so freeing
+// one is legitimate - Stage 1 lowers it straight to velo_heap_free. Anything
+// else (ints, acts, shelf handles) is a caller bug.
+act mem_is_freeable(t: string) -> bool {
+    if mem_is_ptrty(t) { return true }
+    return t == "string"
+}
+
 act mem_got_msg(member: string, wantpart: string, gotpart: string) -> string {
     let msb = create_sb(224)
     sb_append_str(@msb, "mem."); sb_append_str(@msb, member); sb_append_str(@msb, wantpart)
@@ -39,17 +75,95 @@ act mem_got_msg(member: string, wantpart: string, gotpart: string) -> string {
     return sb_to_string(@msb)
 }
 
-act check_mem_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
-    if member != "copy" and member != "move" and member != "set" and member != "realloc" { return true }
-    if expr.first_arg == null or expr.first_arg.next == null or expr.first_arg.next.next == null or expr.first_arg.next.next.next != null {
-        mut sig = ""
-        if member == "copy" or member == "move" { sig = ": (pointer dest, pointer src, byte count)" }
-        if member == "set" { sig = ": (pointer dest, byte value, byte count)" }
-        if member == "realloc" { sig = ": (pointer, @Type, count)" }
-        let msb = create_sb(192); sb_append_str(@msb, "mem."); sb_append_str(@msb, member); sb_append_str(@msb, " expects exactly 3 arguments"); sb_append_str(@msb, sig)
-        report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
-        return false
+act mem_report(st: @SymbolTable, expr: @ExprNode, msg: string) -> bool {
+    report_error("semantic", expr.line, expr.col, msg); st.error_count += 1
+    return false
+}
+
+// Arity wall: "mem.<m> expects exactly N argument(s)<sig>".
+act mem_expect_arity(st: @SymbolTable, expr: @ExprNode, member: string, want: usize, sig: string) -> bool {
+    if expr.arg_count == want { return true }
+    let msb = create_sb(192)
+    sb_append_str(@msb, "mem."); sb_append_str(@msb, member); sb_append_str(@msb, " expects exactly ")
+    sb_append_int(@msb, want as i32)
+    if want == 1 { sb_append_str(@msb, " argument") } else { sb_append_str(@msb, " arguments") }
+    sb_append_str(@msb, sig)
+    return mem_report(st, expr, sb_to_string(@msb))
+}
+
+// mem.alloc / mem.heap_alloc: (count) or (@Type, count).
+act mem_check_alloc(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
+    if expr.arg_count == 1 {
+        let t = infer_expr_type(st, expr.first_arg)
+        if not mem_is_countable(t) { return mem_report(st, expr, mem_got_msg(member, " expects an integer count", t)) }
+        return true
     }
+    if expr.arg_count != 2 {
+        let msb = create_sb(192)
+        sb_append_str(@msb, "mem."); sb_append_str(@msb, member)
+        sb_append_str(@msb, " expects 1 or 2 arguments: (count) or (@Type, count)")
+        return mem_report(st, expr, sb_to_string(@msb))
+    }
+    let ty = infer_expr_type(st, expr.first_arg)
+    if not mem_is_ptrty(ty) { return mem_report(st, expr, mem_got_msg(member, " expects a @Type argument", ty)) }
+    let c = infer_expr_type(st, expr.first_arg.next)
+    if not mem_is_countable(c) { return mem_report(st, expr, mem_got_msg(member, " expects an integer count", c)) }
+    return true
+}
+
+// mem.alloc_with: (allocator, @Type, count) - the codegen reads
+// first_arg.next and first_arg.next.next unconditionally, so both positions
+// must exist before emission can be reached.
+act mem_check_alloc_with(st: @SymbolTable, expr: @ExprNode) -> bool {
+    if not mem_expect_arity(st, expr, "alloc_with", 3, ": (allocator, @Type, count)") { return false }
+    let a = infer_expr_type(st, expr.first_arg)
+    if not mem_is_ptrty(a) { return mem_report(st, expr, mem_got_msg("alloc_with", " expects an allocator handle", a)) }
+    let ty = infer_expr_type(st, expr.first_arg.next)
+    if not mem_is_ptrty(ty) { return mem_report(st, expr, mem_got_msg("alloc_with", " expects a @Type argument", ty)) }
+    let c = infer_expr_type(st, expr.first_arg.next.next)
+    if not mem_is_countable(c) { return mem_report(st, expr, mem_got_msg("alloc_with", " expects an integer count", c)) }
+    return true
+}
+
+act mem_byte_sig(member: string) -> string {
+    if member == "copy" or member == "move" { return ": (pointer dest, pointer src, byte count)" }
+    if member == "set" { return ": (pointer dest, byte value, byte count)" }
+    return ": (pointer, @Type, count)"
+}
+
+act check_mem_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
+    if not mem_is_known_member(member) {
+        let msb = create_sb(512)
+        sb_append_str(@msb, "unknown mem member '"); sb_append_str(@msb, member)
+        sb_append_str(@msb, "' (functions: "); sb_append_str(@msb, mem_valid_members()); sb_append_str(@msb, ")")
+        return mem_report(st, expr, sb_to_string(@msb))
+    }
+
+    // Zero-argument queries and lifecycle accessors.
+    if member == "used" or member == "heap_used" or member == "current" { return mem_expect_arity(st, expr, member, 0, "") }
+    if member == "free" {
+        if not mem_expect_arity(st, expr, member, 1, ": (pointer)") { return false }
+        let t = infer_expr_type(st, expr.first_arg)
+        if not mem_is_freeable(t) { return mem_report(st, expr, mem_got_msg(member, " expects a pointer argument", t)) }
+        return true
+    }
+    if member == "create_arena" {
+        if not mem_expect_arity(st, expr, member, 1, ": (capacity)") { return false }
+        let t = infer_expr_type(st, expr.first_arg)
+        if not mem_is_countable(t) { return mem_report(st, expr, mem_got_msg(member, " expects an integer capacity", t)) }
+        return true
+    }
+    if member == "destroy_arena" {
+        if not mem_expect_arity(st, expr, member, 1, ": (arena)") { return false }
+        let t = infer_expr_type(st, expr.first_arg)
+        if not mem_is_ptrty(t) { return mem_report(st, expr, mem_got_msg(member, " expects a pointer argument", t)) }
+        return true
+    }
+    if member == "alloc" or member == "heap_alloc" { return mem_check_alloc(st, expr, member) }
+    if member == "alloc_with" { return mem_check_alloc_with(st, expr) }
+
+    // §4.3 byte primitives: copy/move/set/realloc keep the cm43 walls.
+    if not mem_expect_arity(st, expr, member, 3, mem_byte_sig(member)) { return false }
     let d = infer_expr_type(st, expr.first_arg)
     if not mem_is_ptrty(d) {
         report_error("semantic", expr.line, expr.col, mem_got_msg(member, " expects pointer arguments", d)); st.error_count += 1
