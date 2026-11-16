@@ -632,5 +632,294 @@ class TestOnControlFlowMatrix:
         # hit_next should only be incremented when i == 2 (hit_next=1), not when i == 1
         assert "hit_next=1" in res.stdout
 
+    def test_nested_three_level_on_break(self):
+        """A `break` inside three levels of nested `on` blocks binds to and exits the enclosing loop."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut iters = 0
+            loop i in 0..10 {
+                on i {
+                    3 => {
+                        let a = 1
+                        on a {
+                            1 => {
+                                let b = 2
+                                on b {
+                                    2 => { break }
+                                    else => { }
+                                }
+                            }
+                            else => { }
+                        }
+                    }
+                    else => { }
+                }
+                iters += 1
+            }
+            io.println("iters={iters}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "iters=3" in res.stdout
+
+    def test_nested_three_level_on_continue(self):
+        """A `continue` inside three levels of nested `on` blocks continues the enclosing loop."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut sum = 0
+            loop i in 0..5 {
+                on i {
+                    2 => {
+                        let a = 10
+                        on a {
+                            10 => {
+                                let b = 20
+                                on b {
+                                    20 => { continue }
+                                    else => { }
+                                }
+                            }
+                            else => { }
+                        }
+                    }
+                    else => { }
+                }
+                sum += i
+            }
+            io.println("sum={sum}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "sum=8" in res.stdout
+
+    def test_nested_loops_with_nested_on_break_inner(self):
+        """In nested loops each with `on`, `break` in the inner `on` exits only the inner loop."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut outer_count = 0
+            mut inner_count = 0
+            loop r in 0..4 {
+                on r {
+                    3 => { break }
+                    else => { }
+                }
+                outer_count += 1
+                loop c in 0..5 {
+                    on c {
+                        1 => {
+                            let k = 9
+                            on k {
+                                9 => { break }
+                                else => { }
+                            }
+                        }
+                        else => { }
+                    }
+                    inner_count += 1
+                }
+            }
+            io.println("outer={outer_count}, inner={inner_count}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "outer=3, inner=3" in res.stdout
+
+    def test_nested_loops_with_nested_on_continue_inner(self):
+        """In nested loops each with `on`, `continue` in the inner `on` continues only the inner loop."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut inner_sum = 0
+            loop r in 0..3 {
+                loop c in 0..4 {
+                    on c {
+                        1 => {
+                            let sub = 42
+                            on sub {
+                                42 => { continue }
+                                else => { }
+                            }
+                        }
+                        else => { }
+                    }
+                    inner_sum += 1
+                }
+            }
+            io.println("inner_sum={inner_sum}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "inner_sum=9" in res.stdout
+
+    def test_nested_on_else_arm_break(self):
+        """A `break` inside an `else` (default) arm of a nested `on` exits the enclosing loop."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut iters = 0
+            loop i in 0..6 {
+                on i {
+                    2 => {
+                        let unknown_val = 999
+                        on unknown_val {
+                            1, 2, 3 => { }
+                            else => { break }
+                        }
+                    }
+                    else => { }
+                }
+                iters += 1
+            }
+            io.println("iters={iters}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "iters=2" in res.stdout
+
+    def test_nested_on_else_arm_continue(self):
+        """A `continue` inside an `else` (default) arm of a nested `on` continues the enclosing loop."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut tail_hits = 0
+            loop i in 0..4 {
+                on i {
+                    1 => {
+                        let unknown_val = 888
+                        on unknown_val {
+                            10 => { }
+                            else => { continue }
+                        }
+                    }
+                    else => { }
+                }
+                tail_hits += 1
+            }
+            io.println("tail_hits={tail_hits}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "tail_hits=3" in res.stdout
+
+    def test_nested_on_no_fallthrough_between_cases(self):
+        """Cases in outer and nested `on` must not fall through into adjacent arms."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut log = 0
+            loop i in 0..4 {
+                on i {
+                    0 => {
+                        log = log * 10 + 1
+                    }
+                    1 => {
+                        log = log * 10 + 2
+                        let sub = 1
+                        on sub {
+                            1 => { log = log * 10 + 3 }
+                            else => { }
+                        }
+                    }
+                    2 => {
+                        log = log * 10 + 4
+                        break
+                    }
+                    3 => {
+                        log = log * 10 + 5
+                    }
+                    else => { }
+                }
+            }
+            io.println("log={log}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "log=1234" in res.stdout
+
+    def test_nested_tagged_union_inside_integer_on_break(self):
+        """A `break` inside a tagged union `on` nested inside an integer `on` exits the enclosing loop."""
+        code = """
+        use sys.io
+        kind Command {
+            Step
+            Stop
+        }
+        act main() -> i32 {
+            mut iters = 0
+            loop i in 0..5 {
+                on i {
+                    2 => {
+                        mut cmd: Command = Command.Stop
+                        on cmd {
+                            .Stop => { break }
+                            .Step => { }
+                        }
+                    }
+                    else => { }
+                }
+                iters += 1
+            }
+            io.println("iters={iters}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "iters=2" in res.stdout
+
+    def test_nested_integer_on_inside_tagged_union_on_continue(self):
+        """A `continue` inside an integer `on` nested inside a tagged union `on` continues the enclosing loop."""
+        code = """
+        use sys.io
+        kind Signal {
+            Green
+            Yellow
+            Red
+        }
+        act main() -> i32 {
+            mut sum = 0
+            loop i in 0..5 {
+                mut sig: Signal = Signal.Green
+                if i == 1 {
+                    sig = Signal.Yellow
+                }
+                on sig {
+                    .Yellow => {
+                        let code = 100
+                        on code {
+                            100 => { continue }
+                            else => { }
+                        }
+                    }
+                    .Green, .Red => { }
+                }
+                sum += 10
+            }
+            io.println("sum={sum}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "sum=40" in res.stdout
+
+
 
 

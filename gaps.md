@@ -2516,12 +2516,26 @@ This is especially dangerous when the case body allocates and relies on loop-sco
   - `python -m pytest tests/test_match_switch.py tests/test_break_continue.py -v`: all 38 tests passed in 19.25s (100% pass rate).
   - All 120 compiler source files remain $\le 394$ lines (`python scripts/count_lines.py`).
 
-##### Task 61.6: Add nested-`on` and fallthrough tests
-* **Goal:** Prove the binding target is stable through multiple `on` levels and that cases do not fall through.
-* **Files:** `tests/test_match_switch.py`.
-* **Tests:** `on` inside `on` inside loop; break/continue at each level; default case.
-* **Security gate:** no accidental fallthrough; no switch-capture.
-* **Done when:** nested tests pass.
+##### Task 61.6: Add nested-`on` and fallthrough tests [COMPLETED] ✅
+* **Former Defect**:
+  - The compiler lacked comprehensive testing proving that loop binding targets remain completely stable when `break` or `continue` occurs deep inside arbitrarily nested `on` blocks (including 3 levels of nesting, default `else` cases, and mixed integer / tagged union matches).
+  - Additionally, tests were required to verify that explicit loop jump lowering prevents accidental fallthrough into subsequent switch cases across both outer and nested levels.
+* **Fix Applied**:
+  - Added 9 comprehensive test cases to `TestOnControlFlowMatrix` in `tests/test_match_switch.py` (27 tests total in class, 33 total in file):
+    * `test_nested_three_level_on_break`: 3 levels of nested `on` (`i` -> `a` -> `b`), `break` inside inner arm exits enclosing loop (`iters=3`).
+    * `test_nested_three_level_on_continue`: 3 levels of nested `on`, `continue` inside inner arm continues enclosing loop (`sum=8`).
+    * `test_nested_loops_with_nested_on_break_inner`: nested loops each containing `on` constructs; `break` in inner `on` exits only inner loop (`outer=3, inner=3`).
+    * `test_nested_loops_with_nested_on_continue_inner`: nested loops each containing `on`; `continue` in inner `on` continues only inner loop (`inner_sum=9`).
+    * `test_nested_on_else_arm_break`: `break` inside default `else` arm of nested `on` exits enclosing loop (`iters=2`).
+    * `test_nested_on_else_arm_continue`: `continue` inside default `else` arm of nested `on` continues enclosing loop (`tail_hits=3`).
+    * `test_nested_on_no_fallthrough_between_cases`: sequential execution across non-breaking and breaking arms proves zero case fallthrough (`log=1234`).
+    * `test_nested_tagged_union_inside_integer_on_break`: tagged union `on` nested inside integer `on` exits enclosing loop on `break` (`iters=2`).
+    * `test_nested_integer_on_inside_tagged_union_on_continue`: integer `on` nested inside tagged union `on` continues enclosing loop on `continue` (`sum=40`).
+* **Residual Limitation**:
+  - Warnings-as-errors (`-Werror`) and sanitizer verification follow in Task 61.7.
+* **Verification**:
+  - `python -m pytest tests/test_match_switch.py tests/test_break_continue.py -v`: all 47 tests passed in 22.19s (100% pass rate).
+  - All 120 compiler source files remain $\le 394$ lines (`python scripts/count_lines.py`).
 
 ##### Task 61.7: Add the security/regression gate
 * **Goal:** Compile the matrix with warnings-as-errors and run under sanitizers.
