@@ -1,6 +1,9 @@
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+import pytest
 
 def test_on_multi_value_and_else(tmp_path):
     source = tmp_path / "test_on_multi.vl"
@@ -177,4 +180,274 @@ act main() -> i32 {
 
     res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode != 0
+
+
+# ==============================================================================
+# Phase 61: `break` and `continue` Control-Flow Matrix (Task 61.1 Red Baseline)
+# ==============================================================================
+
+ROOT_DIR = Path(__file__).parent.parent.resolve()
+VELO_EXE = ROOT_DIR / "bin" / ("velo.exe" if os.name == "nt" else "velo")
+if not VELO_EXE.exists() and (ROOT_DIR / "bin" / "velo.exe").exists():
+    VELO_EXE = ROOT_DIR / "bin" / "velo.exe"
+
+
+def build_and_run(source_code: str, timeout: float = 2.0) -> subprocess.CompletedProcess:
+    with tempfile.NamedTemporaryFile("w", suffix=".vl", delete=False) as f:
+        f.write(source_code)
+        f_name = f.name
+    try:
+        return subprocess.run([str(VELO_EXE), "run", f_name], capture_output=True, text=True, timeout=timeout)
+    finally:
+        Path(f_name).unlink(missing_ok=True)
+
+
+def run_velo_check(source_code: str) -> subprocess.CompletedProcess:
+    with tempfile.NamedTemporaryFile("w", suffix=".vl", delete=False) as f:
+        f.write(source_code)
+        f_name = f.name
+    try:
+        return subprocess.run([str(VELO_EXE), "check", f_name], capture_output=True, text=True)
+    finally:
+        Path(f_name).unlink(missing_ok=True)
+
+
+class TestOnControlFlowMatrix:
+    @classmethod
+    def setup_class(cls):
+        if not VELO_EXE.exists():
+            pytest.skip("bin/velo not built")
+
+    def test_break_inside_on_exits_range_loop(self):
+        """A `break` inside an `on` case must exit the enclosing loop, not just the match switch."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut iters = 0
+            loop i in 0..10 {
+                on i {
+                    3 => { break }
+                    else => { }
+                }
+                iters += 1
+            }
+            io.println("iters={iters}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "iters=3" in res.stdout
+
+    def test_break_inside_on_first_case(self):
+        """A `break` in the first case must terminate the loop immediately on iteration 0."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut iters = 0
+            loop i in 0..10 {
+                on i {
+                    0 => { break }
+                    1 => { }
+                    else => { }
+                }
+                iters += 1
+            }
+            io.println("iters={iters}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "iters=0" in res.stdout
+
+    def test_break_inside_on_middle_case(self):
+        """A `break` in a middle case must exit the loop at that specific iteration."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut iters = 0
+            loop i in 0..10 {
+                on i {
+                    0, 1 => { }
+                    2 => { break }
+                    3, 4 => { }
+                    else => { }
+                }
+                iters += 1
+            }
+            io.println("iters={iters}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "iters=2" in res.stdout
+
+    def test_break_inside_on_last_case(self):
+        """A `break` in the last explicit case must exit the loop at that iteration."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut iters = 0
+            loop i in 0..10 {
+                on i {
+                    0 => { }
+                    1 => { }
+                    4 => { break }
+                    else => { }
+                }
+                iters += 1
+            }
+            io.println("iters={iters}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "iters=4" in res.stdout
+
+    def test_break_inside_on_else_case(self):
+        """A `break` in the `else` (default) arm must exit the loop on the first unmatched value."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut iters = 0
+            loop i in 0..10 {
+                on i {
+                    0, 1 => { }
+                    else => { break }
+                }
+                iters += 1
+            }
+            io.println("iters={iters}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "iters=2" in res.stdout
+
+    def test_break_inside_nested_on(self):
+        """A `break` inside a nested `on` must bind to and exit the enclosing loop."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut iters = 0
+            loop i in 0..10 {
+                on i {
+                    2 => {
+                        let sub = 100
+                        on sub {
+                            100 => { break }
+                            else => { }
+                        }
+                    }
+                    else => { }
+                }
+                iters += 1
+            }
+            io.println("iters={iters}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "iters=2" in res.stdout
+
+    def test_break_inside_tagged_union_on(self):
+        """A `break` inside an `on` matching a tagged union must exit the enclosing loop."""
+        code = """
+        use sys.io
+        kind Mode {
+            Run
+            Halt
+        }
+        act main() -> i32 {
+            mut iters = 0
+            loop i in 0..5 {
+                mut m: Mode = Mode.Run
+                if i == 2 {
+                    m = Mode.Halt
+                }
+                on m {
+                    .Halt => { break }
+                    .Run => { }
+                }
+                iters += 1
+            }
+            io.println("iters={iters}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "iters=2" in res.stdout
+
+    def test_continue_inside_on_skips_loop_tail(self):
+        """A `continue` inside an `on` arm skips subsequent statements in the loop body."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut sum = 0
+            loop i in 0..5 {
+                on i {
+                    2 => { continue }
+                    else => { }
+                }
+                sum += 10
+            }
+            io.println("sum={sum}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "sum=40" in res.stdout
+
+    def test_continue_inside_nested_on(self):
+        """A `continue` inside a nested `on` continues the enclosing loop."""
+        code = """
+        use sys.io
+        act main() -> i32 {
+            mut sum = 0
+            loop i in 0..5 {
+                on i {
+                    2 => {
+                        let sub = 50
+                        on sub {
+                            50 => { continue }
+                            else => { }
+                        }
+                    }
+                    else => { }
+                }
+                sum += 10
+            }
+            io.println("sum={sum}")
+            return 0
+        }
+        """
+        res = build_and_run(code, timeout=2.0)
+        assert res.returncode == 0
+        assert "sum=40" in res.stdout
+
+    def test_break_inside_on_outside_loop_rejected(self):
+        """A `break` inside an `on` outside a loop must be rejected (compile or build error)."""
+        code = """
+        act main() -> i32 {
+            let x = 1
+            on x {
+                1 => { break }
+                else => { }
+            }
+            return 0
+        }
+        """
+        chk = run_velo_check(code)
+        run = build_and_run(code, timeout=2.0)
+        # In a sound type checker, `break` outside a loop is illegal:
+        # either `velo check` fails, or compilation fails:
+        assert chk.returncode != 0 or run.returncode != 0, "break outside loop inside on must be rejected"
+
 

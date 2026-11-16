@@ -2391,12 +2391,39 @@ This is especially dangerous when the case body allocates and relies on loop-sco
 
 #### Tasks
 
-##### Task 61.1: Add the `on` control-flow matrix (red baseline)
-* **Goal:** Cover `break` and `continue` in `on`, nested `on`, and `on` outside a loop.
-* **Files:** `tests/test_match_switch.py` (extend), `tests/test_break_continue.py` (extend).
-* **Tests:** break in case inside loop; continue in case; nested `on`; `on` outside loop; `break` in the last case vs first case.
-* **Security gate:** exact iteration counts; loop-scoped allocation freed on break.
-* **Done when:** the matrix fails for the documented reasons.
+##### Task 61.1: Add the `on` control-flow matrix (red baseline) [COMPLETED] ✅
+* **Former Defect**:
+  - `on` statements over integers and tagged unions lower to C99 `switch (...)` statements (`codegen_match.vl:18,171`), while `break` statements are emitted verbatim as `break;` (`codegen_stmt.vl:371`).
+  - In C, a `break;` inside a `switch` exits only the `switch`, never the enclosing loop. Consequently, any Velo program executing `break` inside an `on` arm within a loop continues executing subsequent loop iterations.
+  - Furthermore, on `break`, `codegen_stmt.vl:369` unrolls loop-local defers. When `break;` only exits the `switch`, the deferred cleanups run again at the end of the loop iteration, resulting in duplicate cleanups (e.g. double free).
+  - Outside of any loop, `break` inside `on` is accepted without error because C permits `break;` inside `switch`.
+  - No dedicated test matrix existed covering `break` and `continue` inside `on`, nested `on`, or loop-scoped cleanup interaction.
+* **Fix Applied**:
+  - Established the comprehensive Red Baseline control-flow test matrix across two test suites:
+    * Extended `tests/test_match_switch.py` with `TestOnControlFlowMatrix` (10 test cases):
+      - `test_break_inside_on_exits_range_loop`: tests loop break from `on` case (expects 3 iters, baseline runs 10).
+      - `test_break_inside_on_first_case`: tests loop break from the first case `0 => break` (expects 0 iters, baseline runs 10).
+      - `test_break_inside_on_middle_case`: tests loop break from a middle case `2 => break` (expects 2 iters, baseline runs 10).
+      - `test_break_inside_on_last_case`: tests loop break from the last case `4 => break` (expects 4 iters, baseline runs 10).
+      - `test_break_inside_on_else_case`: tests loop break from default `else => break` (expects 2 iters, baseline runs 10).
+      - `test_break_inside_nested_on`: tests loop break from nested `on` inside `on` (expects 2 iters, baseline runs 10).
+      - `test_break_inside_tagged_union_on`: tests loop break from tagged union `on` matching (expects 2 iters, baseline runs 5).
+      - `test_continue_inside_on_skips_loop_tail`: control test verifying `continue` inside `on` skips post-match statements (passes: `sum=40`).
+      - `test_continue_inside_nested_on`: control test verifying `continue` inside nested `on` continues the loop (passes: `sum=40`).
+      - `test_break_inside_on_outside_loop_rejected`: tests that `break` in `on` outside a loop is rejected (baseline accepts exit code 0).
+    * Extended `tests/test_break_continue.py` with `TestOnBreakLoopInteraction` (5 test cases):
+      - `test_on_break_defer_cleanup_in_loop`: verifies loop-scoped `defer` runs exactly once per executed iteration (expects 3 cleanups, baseline runs 6 due to switch capture + loop continuation).
+      - `test_on_continue_defer_cleanup_in_loop`: control test verifying loop-scoped `defer` runs on `continue` inside `on` (passes: 5 cleanups, `sum=8`).
+      - `test_on_break_in_while_loop`: verifies `break` inside `on` in condition while-loop stops the loop (expects `count=3, i=3`, baseline runs 10).
+      - `test_on_break_in_nested_loops_exits_inner_only`: verifies `break` inside `on` exits only the inner loop, preserving outer loop execution (expects `inner_count=6`, baseline runs 15).
+      - `test_on_break_memory_heap_cleanup`: verifies loop heap allocations are freed on break without leak or double free (expects `iters=2`, baseline runs 5).
+    * All runnable tests enforce strict 2.0s timeouts.
+* **Residual Limitation**:
+  - Baseline establishes the red state (12 failed, 13 passed across both test suites). All 12 failures fail for the exact documented defect (C `switch` capturing `break`, duplicate cleanup, and unrejected out-of-loop break).
+  - Binding specification and lowered loop-exit mechanism follow in Tasks 61.2–61.7.
+* **Verification**:
+  - `python -m pytest tests/test_match_switch.py tests/test_break_continue.py -q`: 12 failed, 13 passed in 14.68s.
+  - All 12 failures documented and confirmed.
 
 ##### Task 61.2: Define and document the binding rule
 * **Goal:** State that `on` is not a loop and `break`/`continue` target the nearest loop; update the specification.
