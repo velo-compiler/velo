@@ -133,9 +133,13 @@ def loop_header(c_source: str, var: str) -> str:
 def test_w1_range_isize_endpoint_is_not_narrowed():
     """`isize` is 64-bit; the induction must be 64-bit.
 
-    Regression row for the actual live defect: `range_checks.vl` omits `isize`
-    from the widening ladder, so the emitted temporaries are `int32_t` and a
-    bound above INT32_MAX truncates.
+    Regression row for the actual live defect: `range_checks.vl` omitted
+    `isize` from the widening ladder, so the emitted temporaries were
+    `int32_t` and a bound above INT32_MAX truncated.
+
+    The assertion is on *width*, not on a specific C spelling: `isize` maps to
+    `ptrdiff_t` (the natural signed pointer-width type), not to `int64_t`, so
+    demanding `int64_t` would reject the correct fix.
     """
     header = loop_header(emit_c(
         "act main() -> i32 {\n"
@@ -145,10 +149,10 @@ def test_w1_range_isize_endpoint_is_not_narrowed():
         "    return n\n"
         "}\n"
     ), "i")
-    assert "int64_t" in header or "int64_t" in header, (
-        f"isize range narrowed the induction:\n{header}"
+    assert "int32_t" not in header, f"isize range narrowed to int32_t:\n{header}"
+    assert any(t in header for t in ("int64_t", "ptrdiff_t", "intptr_t", "long")), (
+        f"isize range induction is not a 64-bit signed type:\n{header}"
     )
-    assert "int32_t" not in header, f"isize range emitted int32_t:\n{header}"
 
 
 def test_w1_range_isize_endpoint_iterates_the_full_range():
@@ -198,6 +202,58 @@ def test_w1_range_i32_bounds_stay_i32():
     ), "i")
     assert "int32_t" in header, f"i32 range widened unnecessarily:\n{header}"
     assert "int64_t" not in header, f"i32 range widened:\n{header}"
+
+
+@pytest.mark.parametrize("row", [
+    ("i64", "0i64", "10i64", ("int64_t",)),
+    ("u64", "0u64", "10u64", ("uint64_t",)),
+    ("u32", "0u32", "10u32", ("uint32_t",)),
+    ("usize", "0usize", "10usize", ("size_t",)),
+    ("isize", "0isize", "10isize", ("ptrdiff_t", "int64_t")),
+])
+def test_w1_range_widens_to_the_endpoint_type(row):
+    """Each endpoint type must drive the induction type (W1 ladder).
+
+    `usize` and `isize` are both pointer-width; they map to `size_t` and
+    `ptrdiff_t` respectively, so each row accepts its own C spelling and no
+    other.
+    """
+    ty, start, end, expect = row
+    header = loop_header(emit_c(
+        "act main() -> i32 {\n"
+        "    mut n: i32 = 0\n"
+        f"    loop i in {start}..{end} {{ n += 1 }}\n"
+        "    return n\n"
+        "}\n"
+    ), "i")
+    assert any(t in header for t in expect), (
+        f"{ty} range did not widen to {expect}:\n{header}"
+    )
+
+
+def test_w1_negative_signed_range_keeps_its_width():
+    """A negative start must not collapse the induction to an unsigned type."""
+    header = loop_header(emit_c(
+        "act main() -> i32 {\n"
+        "    mut n: i32 = 0\n"
+        "    loop i in -5i64..5i64 { n += 1 }\n"
+        "    return n\n"
+        "}\n"
+    ), "i")
+    assert "int64_t" in header, f"negative i64 range lost its width:\n{header}"
+    assert "uint" not in header, f"negative range became unsigned:\n{header}"
+
+
+def test_w1_descending_wide_range_keeps_its_width():
+    """Descending ranges go through the same header, so width must survive."""
+    header = loop_header(emit_c(
+        "act main() -> i32 {\n"
+        "    mut n: i32 = 0\n"
+        "    loop i in 10i64..0i64 { n += 1 }\n"
+        "    return n\n"
+        "}\n"
+    ), "i")
+    assert "int64_t" in header, f"descending i64 range narrowed:\n{header}"
 
 
 # ---------------------------------------------------------------------------

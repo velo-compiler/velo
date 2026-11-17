@@ -187,12 +187,18 @@ act check_range_loop(st: @SymbolTable, stmt: @StmtNode) -> string {
         }
     }
 
-    // Determine unified element type using standard widening hierarchy
+    // Determine unified element type using standard widening hierarchy.
+    // `isize` is 64-bit (SPEC 2.1) and must appear here, or a loop over an
+    // `isize` bound is silently truncated to `int32_t` by the backend's
+    // defensively-narrow default. It is listed next to `i64` because both are
+    // signed 64-bit: either endpoint being 64-bit makes the induction 64-bit.
     mut of_elem = "i32"
     if start_t == "u64" or end_t == "u64" {
         of_elem = "u64"
     } else if start_t == "i64" or end_t == "i64" {
         of_elem = "i64"
+    } else if start_t == "isize" or end_t == "isize" {
+        of_elem = "isize"
     } else if start_t == "usize" or end_t == "usize" {
         of_elem = "usize"
     } else if start_t == "u32" or end_t == "u32" {

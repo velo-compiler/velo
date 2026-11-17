@@ -27465,159 +27465,164 @@ const char* check_range_loop(SymbolTable* st, StmtNode* stmt) {
             st->error_count += 1;
         }
     }
-#line 191 "src/main.vl"
+#line 195 "src/main.vl"
     const char* of_elem = "i32";
-#line 192 "src/main.vl"
+#line 196 "src/main.vl"
     if ((((start_t != NULL && "u64" != NULL) ? (strcmp(start_t, "u64") == 0) : (start_t == "u64")) || ((end_t != NULL && "u64" != NULL) ? (strcmp(end_t, "u64") == 0) : (end_t == "u64")))) {
-#line 193 "src/main.vl"
+#line 197 "src/main.vl"
         of_elem = "u64";
     } else
-#line 194 "src/main.vl"
+#line 198 "src/main.vl"
     if ((((start_t != NULL && "i64" != NULL) ? (strcmp(start_t, "i64") == 0) : (start_t == "i64")) || ((end_t != NULL && "i64" != NULL) ? (strcmp(end_t, "i64") == 0) : (end_t == "i64")))) {
-#line 195 "src/main.vl"
+#line 199 "src/main.vl"
         of_elem = "i64";
     } else
-#line 196 "src/main.vl"
+#line 200 "src/main.vl"
+    if ((((start_t != NULL && "isize" != NULL) ? (strcmp(start_t, "isize") == 0) : (start_t == "isize")) || ((end_t != NULL && "isize" != NULL) ? (strcmp(end_t, "isize") == 0) : (end_t == "isize")))) {
+#line 201 "src/main.vl"
+        of_elem = "isize";
+    } else
+#line 202 "src/main.vl"
     if ((((start_t != NULL && "usize" != NULL) ? (strcmp(start_t, "usize") == 0) : (start_t == "usize")) || ((end_t != NULL && "usize" != NULL) ? (strcmp(end_t, "usize") == 0) : (end_t == "usize")))) {
-#line 197 "src/main.vl"
+#line 203 "src/main.vl"
         of_elem = "usize";
     } else
-#line 198 "src/main.vl"
+#line 204 "src/main.vl"
     if ((((start_t != NULL && "u32" != NULL) ? (strcmp(start_t, "u32") == 0) : (start_t == "u32")) || ((end_t != NULL && "u32" != NULL) ? (strcmp(end_t, "u32") == 0) : (end_t == "u32")))) {
-#line 199 "src/main.vl"
+#line 205 "src/main.vl"
         of_elem = "u32";
     }
-#line 203 "src/main.vl"
-    if (is_unsigned_int_type(of_elem)) {
-#line 204 "src/main.vl"
-        if (is_range_endpoint_negative(stmt->loop_start)) {
-#line 205 "src/main.vl"
-            StringBuilder msg = create_sb(64);
-#line 206 "src/main.vl"
-            sb_append_str((&(msg)), "Range loop endpoint cannot be negative for unsigned type '");
-#line 207 "src/main.vl"
-            sb_append_str((&(msg)), of_elem);
-#line 208 "src/main.vl"
-            sb_append_char((&(msg)), '\'');
 #line 209 "src/main.vl"
-            report_error("semantic", stmt->loop_start->line, stmt->loop_start->col, sb_to_string((&(msg))));
+    if (is_unsigned_int_type(of_elem)) {
 #line 210 "src/main.vl"
+        if (is_range_endpoint_negative(stmt->loop_start)) {
+#line 211 "src/main.vl"
+            StringBuilder msg = create_sb(64);
+#line 212 "src/main.vl"
+            sb_append_str((&(msg)), "Range loop endpoint cannot be negative for unsigned type '");
+#line 213 "src/main.vl"
+            sb_append_str((&(msg)), of_elem);
+#line 214 "src/main.vl"
+            sb_append_char((&(msg)), '\'');
+#line 215 "src/main.vl"
+            report_error("semantic", stmt->loop_start->line, stmt->loop_start->col, sb_to_string((&(msg))));
+#line 216 "src/main.vl"
             st->error_count += 1;
         }
-#line 212 "src/main.vl"
-        if (is_range_endpoint_negative(stmt->loop_end)) {
-#line 213 "src/main.vl"
-            StringBuilder msg = create_sb(64);
-#line 214 "src/main.vl"
-            sb_append_str((&(msg)), "Range loop endpoint cannot be negative for unsigned type '");
-#line 215 "src/main.vl"
-            sb_append_str((&(msg)), of_elem);
-#line 216 "src/main.vl"
-            sb_append_char((&(msg)), '\'');
-#line 217 "src/main.vl"
-            report_error("semantic", stmt->loop_end->line, stmt->loop_end->col, sb_to_string((&(msg))));
 #line 218 "src/main.vl"
+        if (is_range_endpoint_negative(stmt->loop_end)) {
+#line 219 "src/main.vl"
+            StringBuilder msg = create_sb(64);
+#line 220 "src/main.vl"
+            sb_append_str((&(msg)), "Range loop endpoint cannot be negative for unsigned type '");
+#line 221 "src/main.vl"
+            sb_append_str((&(msg)), of_elem);
+#line 222 "src/main.vl"
+            sb_append_char((&(msg)), '\'');
+#line 223 "src/main.vl"
+            report_error("semantic", stmt->loop_end->line, stmt->loop_end->col, sb_to_string((&(msg))));
+#line 224 "src/main.vl"
             st->error_count += 1;
         }
     }
-#line 223 "src/main.vl"
-    bool is_start_lit = (is_unsuffixed_int_literal(stmt->loop_start) || is_unsuffixed_int_expr(stmt->loop_start));
-#line 224 "src/main.vl"
-    bool is_end_lit = (is_unsuffixed_int_literal(stmt->loop_end) || is_unsuffixed_int_expr(stmt->loop_end));
-#line 226 "src/main.vl"
-    if ((((!is_start_lit) && (!is_end_lit)) && ((start_t != NULL && end_t != NULL) ? (strcmp(start_t, end_t) != 0) : (start_t != end_t)))) {
-#line 227 "src/main.vl"
-        if ((is_signed_int_name(start_t) != is_signed_int_name(end_t))) {
-#line 228 "src/main.vl"
-            StringBuilder msg = create_sb(96);
 #line 229 "src/main.vl"
-            sb_append_str((&(msg)), "Cannot mix ");
+    bool is_start_lit = (is_unsuffixed_int_literal(stmt->loop_start) || is_unsuffixed_int_expr(stmt->loop_start));
 #line 230 "src/main.vl"
-            if (is_signed_int_name(start_t)) {
-#line 231 "src/main.vl"
-                sb_append_str((&(msg)), "signed '");
+    bool is_end_lit = (is_unsuffixed_int_literal(stmt->loop_end) || is_unsuffixed_int_expr(stmt->loop_end));
 #line 232 "src/main.vl"
-                sb_append_str((&(msg)), start_t);
+    if ((((!is_start_lit) && (!is_end_lit)) && ((start_t != NULL && end_t != NULL) ? (strcmp(start_t, end_t) != 0) : (start_t != end_t)))) {
 #line 233 "src/main.vl"
-                sb_append_str((&(msg)), "' and unsigned '");
+        if ((is_signed_int_name(start_t) != is_signed_int_name(end_t))) {
 #line 234 "src/main.vl"
-                sb_append_str((&(msg)), end_t);
+            StringBuilder msg = create_sb(96);
 #line 235 "src/main.vl"
-                sb_append_str((&(msg)), "' in range loop. Use explicit cast 'as ");
+            sb_append_str((&(msg)), "Cannot mix ");
 #line 236 "src/main.vl"
-                sb_append_str((&(msg)), end_t);
+            if (is_signed_int_name(start_t)) {
 #line 237 "src/main.vl"
-                sb_append_str((&(msg)), "'.");
-            } else {
-#line 239 "src/main.vl"
-                sb_append_str((&(msg)), "unsigned '");
-#line 240 "src/main.vl"
+                sb_append_str((&(msg)), "signed '");
+#line 238 "src/main.vl"
                 sb_append_str((&(msg)), start_t);
+#line 239 "src/main.vl"
+                sb_append_str((&(msg)), "' and unsigned '");
+#line 240 "src/main.vl"
+                sb_append_str((&(msg)), end_t);
 #line 241 "src/main.vl"
-                sb_append_str((&(msg)), "' and signed '");
+                sb_append_str((&(msg)), "' in range loop. Use explicit cast 'as ");
 #line 242 "src/main.vl"
                 sb_append_str((&(msg)), end_t);
 #line 243 "src/main.vl"
-                sb_append_str((&(msg)), "' in range loop. Use explicit cast 'as ");
-#line 244 "src/main.vl"
-                sb_append_str((&(msg)), start_t);
+                sb_append_str((&(msg)), "'.");
+            } else {
 #line 245 "src/main.vl"
+                sb_append_str((&(msg)), "unsigned '");
+#line 246 "src/main.vl"
+                sb_append_str((&(msg)), start_t);
+#line 247 "src/main.vl"
+                sb_append_str((&(msg)), "' and signed '");
+#line 248 "src/main.vl"
+                sb_append_str((&(msg)), end_t);
+#line 249 "src/main.vl"
+                sb_append_str((&(msg)), "' in range loop. Use explicit cast 'as ");
+#line 250 "src/main.vl"
+                sb_append_str((&(msg)), start_t);
+#line 251 "src/main.vl"
                 sb_append_str((&(msg)), "'.");
             }
-#line 247 "src/main.vl"
+#line 253 "src/main.vl"
             report_error("semantic", stmt->line, stmt->col, sb_to_string((&(msg))));
-#line 248 "src/main.vl"
+#line 254 "src/main.vl"
             st->error_count += 1;
-#line 249 "src/main.vl"
+#line 255 "src/main.vl"
             return "i32";
         }
     }
-#line 254 "src/main.vl"
+#line 260 "src/main.vl"
     if ((is_start_lit && (!is_range_endpoint_negative(stmt->loop_start)))) {
-#line 255 "src/main.vl"
+#line 261 "src/main.vl"
         try_adapt_int_literal(st, of_elem, stmt->loop_start, stmt->loop_start->line, stmt->loop_start->col);
     }
-#line 257 "src/main.vl"
+#line 263 "src/main.vl"
     if ((is_end_lit && (!is_range_endpoint_negative(stmt->loop_end)))) {
-#line 258 "src/main.vl"
+#line 264 "src/main.vl"
         try_adapt_int_literal(st, of_elem, stmt->loop_end, stmt->loop_end->line, stmt->loop_end->col);
     }
-#line 262 "src/main.vl"
+#line 268 "src/main.vl"
     if ((stmt->loop_step != NULL)) {
-#line 263 "src/main.vl"
+#line 269 "src/main.vl"
         if ((is_unsuffixed_int_literal(stmt->loop_step) || is_unsuffixed_int_expr(stmt->loop_step))) {
-#line 264 "src/main.vl"
+#line 270 "src/main.vl"
             try_adapt_int_literal(st, of_elem, stmt->loop_step, stmt->loop_step->line, stmt->loop_step->col);
         }
-#line 266 "src/main.vl"
-        const char* step_t = infer_expr_type(st, stmt->loop_step);
-#line 267 "src/main.vl"
-        if ((!is_int_type(step_t))) {
-#line 268 "src/main.vl"
-            if ((((step_t != NULL && "unknown" != NULL) ? (strcmp(step_t, "unknown") != 0) : (step_t != "unknown")) || velo_cmp_eq_u_s(st->error_count, 0))) {
-#line 269 "src/main.vl"
-                StringBuilder msg = create_sb(64);
-#line 270 "src/main.vl"
-                sb_append_str((&(msg)), "Range loop step must be an integer type, got '");
-#line 271 "src/main.vl"
-                sb_append_str((&(msg)), step_t);
 #line 272 "src/main.vl"
-                sb_append_char((&(msg)), '\'');
+        const char* step_t = infer_expr_type(st, stmt->loop_step);
 #line 273 "src/main.vl"
-                report_error("semantic", stmt->loop_step->line, stmt->loop_step->col, sb_to_string((&(msg))));
+        if ((!is_int_type(step_t))) {
 #line 274 "src/main.vl"
+            if ((((step_t != NULL && "unknown" != NULL) ? (strcmp(step_t, "unknown") != 0) : (step_t != "unknown")) || velo_cmp_eq_u_s(st->error_count, 0))) {
+#line 275 "src/main.vl"
+                StringBuilder msg = create_sb(64);
+#line 276 "src/main.vl"
+                sb_append_str((&(msg)), "Range loop step must be an integer type, got '");
+#line 277 "src/main.vl"
+                sb_append_str((&(msg)), step_t);
+#line 278 "src/main.vl"
+                sb_append_char((&(msg)), '\'');
+#line 279 "src/main.vl"
+                report_error("semantic", stmt->loop_step->line, stmt->loop_step->col, sb_to_string((&(msg))));
+#line 280 "src/main.vl"
                 st->error_count += 1;
             }
         } else
-#line 276 "src/main.vl"
+#line 282 "src/main.vl"
         if (is_range_step_non_positive(stmt->loop_step)) {
-#line 277 "src/main.vl"
+#line 283 "src/main.vl"
             report_error("semantic", stmt->loop_step->line, stmt->loop_step->col, "Range loop step must be greater than zero");
-#line 278 "src/main.vl"
+#line 284 "src/main.vl"
             st->error_count += 1;
         }
     }
-#line 282 "src/main.vl"
+#line 288 "src/main.vl"
     return of_elem;
 }
 
@@ -44384,54 +44389,59 @@ bool is_literal_range_step(ExprNode* start_expr, ExprNode* end_expr, ExprNode* s
     return true;
 }
 
-#line 142 "src/main.vl"
+#line 146 "src/main.vl"
 const char* loop_var_c_type(const char* type_name) {
-#line 143 "src/main.vl"
+#line 147 "src/main.vl"
     if ((type_name == NULL)) {
-#line 143 "src/main.vl"
+#line 147 "src/main.vl"
         return "int32_t ";
     }
-#line 144 "src/main.vl"
+#line 148 "src/main.vl"
     if (((type_name != NULL && "i64" != NULL) ? (strcmp(type_name, "i64") == 0) : (type_name == "i64"))) {
-#line 144 "src/main.vl"
+#line 148 "src/main.vl"
         return "int64_t ";
     }
-#line 145 "src/main.vl"
+#line 149 "src/main.vl"
     if (((type_name != NULL && "u64" != NULL) ? (strcmp(type_name, "u64") == 0) : (type_name == "u64"))) {
-#line 145 "src/main.vl"
+#line 149 "src/main.vl"
         return "uint64_t ";
     }
-#line 146 "src/main.vl"
+#line 150 "src/main.vl"
     if (((type_name != NULL && "usize" != NULL) ? (strcmp(type_name, "usize") == 0) : (type_name == "usize"))) {
-#line 146 "src/main.vl"
+#line 150 "src/main.vl"
         return "size_t ";
     }
-#line 147 "src/main.vl"
-    if (((type_name != NULL && "u32" != NULL) ? (strcmp(type_name, "u32") == 0) : (type_name == "u32"))) {
-#line 147 "src/main.vl"
-        return "uint32_t ";
-    }
-#line 148 "src/main.vl"
-    if (((type_name != NULL && "i16" != NULL) ? (strcmp(type_name, "i16") == 0) : (type_name == "i16"))) {
-#line 148 "src/main.vl"
-        return "int16_t ";
-    }
-#line 149 "src/main.vl"
-    if (((type_name != NULL && "u16" != NULL) ? (strcmp(type_name, "u16") == 0) : (type_name == "u16"))) {
-#line 149 "src/main.vl"
-        return "uint16_t ";
-    }
-#line 150 "src/main.vl"
-    if (((type_name != NULL && "i8" != NULL) ? (strcmp(type_name, "i8") == 0) : (type_name == "i8"))) {
-#line 150 "src/main.vl"
-        return "int8_t ";
-    }
 #line 151 "src/main.vl"
-    if (((type_name != NULL && "u8" != NULL) ? (strcmp(type_name, "u8") == 0) : (type_name == "u8"))) {
+    if (((type_name != NULL && "isize" != NULL) ? (strcmp(type_name, "isize") == 0) : (type_name == "isize"))) {
 #line 151 "src/main.vl"
-        return "uint8_t ";
+        return "ptrdiff_t ";
     }
 #line 152 "src/main.vl"
+    if (((type_name != NULL && "u32" != NULL) ? (strcmp(type_name, "u32") == 0) : (type_name == "u32"))) {
+#line 152 "src/main.vl"
+        return "uint32_t ";
+    }
+#line 153 "src/main.vl"
+    if (((type_name != NULL && "i16" != NULL) ? (strcmp(type_name, "i16") == 0) : (type_name == "i16"))) {
+#line 153 "src/main.vl"
+        return "int16_t ";
+    }
+#line 154 "src/main.vl"
+    if (((type_name != NULL && "u16" != NULL) ? (strcmp(type_name, "u16") == 0) : (type_name == "u16"))) {
+#line 154 "src/main.vl"
+        return "uint16_t ";
+    }
+#line 155 "src/main.vl"
+    if (((type_name != NULL && "i8" != NULL) ? (strcmp(type_name, "i8") == 0) : (type_name == "i8"))) {
+#line 155 "src/main.vl"
+        return "int8_t ";
+    }
+#line 156 "src/main.vl"
+    if (((type_name != NULL && "u8" != NULL) ? (strcmp(type_name, "u8") == 0) : (type_name == "u8"))) {
+#line 156 "src/main.vl"
+        return "uint8_t ";
+    }
+#line 157 "src/main.vl"
     return "int32_t ";
 }
 

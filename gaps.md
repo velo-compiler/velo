@@ -3540,12 +3540,19 @@ loop i in 0..3000000000 { ... }   // endpoint now wide, induction still i32
   - The 9 passing rows are the correctness-preservation guards (shelf/ring/map `usize`, `u64`/`i64` count width, `i32` floor, condition/infinite `i32`, `i32` range not widened), which must **stay** green through 68.3/68.4.
   - Two rows were found weak on first run and tightened rather than accepted: the `isize` runtime row originally asserted only the iteration count (which passes even when truncated, since truncation changes *which* values are visited, not whether the loop starts), and the descending-min row originally asserted nothing but the exit code. Both now assert observed values.
 
-##### Task 68.3: Implement width selection
-* **Goal:** Derive the induction type from the bounds/step (or use a fixed wide type) and carry it through codegen.
-* **Files:** `src/backend/codegen_stmt.vl`.
-* **Tests:** `i32`, `u32`, `i64`, `u64` ranges; negative and descending.
-* **Security gate:** no signed/unsigned mismatch; no overflow.
-* **Done when:** emitted C uses the selected type.
+##### Task 68.3: Implement width selection [COMPLETED] ✅
+* **Former Defect**: W1 (SPEC 7.2 item 9) requires a loop's induction to be at least as wide as its bounds. The rule was implemented in the type checker's widening ladder for `u64`, `i64`, `usize` and `u32` — but **`isize` was missing**, so `let lim: isize = 3000000000; loop i in 0..lim` fell through the ladder to the `i32` default. The backend then applied its own defensive default (`loop_var_c_type` returned `"int32_t "` for any name it did not recognise), and `isize` was missing there too. Two independent omissions for the same type meant the truncation was invisible in either file: the checker looked correct as long as you did not enumerate every 64-bit type, and the backend looked correct for every type the checker actually produced.
+* **Fix Applied**:
+  - `src/analysis/range_checks.vl`: added an `isize` branch to the widening ladder, listed next to `i64` because both are signed 64-bit. Order is `u64` > `i64` > `isize` > `usize` > `u32` > `i32`, matching the SPEC ladder and keeping mixed-signedness rejection (which runs earlier) untouched.
+  - `src/backend/codegen_lit.vl`: `loop_var_c_type` gained `isize` → `"ptrdiff_t "`. `isize` maps to `ptrdiff_t` everywhere else in codegen (`codegen_types.vl:15`), so the loop emitter had been the only place that disagreed.
+  - Both files now document *why* the fallback exists: the `int32_t` default is defensive for an internal error, not a licence to narrow. The comment records the W1 requirement so the next 64-bit type cannot be added to the type system without appearing here.
+* **Residual Limitation**: the ladder is still an ordered list of equality tests, so a new 64-bit integer type must be added to **three** places (the ladder, `loop_var_c_type`, `map_type_to_c`) and nothing forces that — the audit rows in `test_loop_induction_width.py` are the only guard. A table-driven mapping keyed on `int_type_width` would remove the class of defect, and is deliberately **not** done here: it would restructure the checker's coercion order in the same commit as a behavioural fix, which is exactly how the omission became invisible in the first place. Also unchanged: `i8`/`i16`/`u8`/`u16` endpoints still iterate in `i32` (the documented W1 floor), so a narrow loop is never narrower than 32 bits.
+* **Verification**:
+  - **Load-bearing, proven by reverting**: with the two source edits stashed and the compiler rebuilt, the same probe emits `for (int32_t __start_i = (0), __end_i = (lim), ..., i = __start_i; ...)`. With the fix it emits `for (ptrdiff_t __start_i = (0), __end_i = (lim), ...)`. So the change, not the probe, is what moves the type.
+  - **Runtime**: the `isize` probe over `3000000000..3000000003` now visits `['3', '3000000000', '3000000002']`; before the fix it visited `['3', '-1294967296', '-1294967294']`.
+  - `tests/test_loop_induction_width.py -q` → **18 passed, 6 failed**; all 18 W1 rows green, and the 6 failures are exactly the W2 boundary rows owned by Task 68.4.
+  - **No regressions**: `test_range_loops.py`, `test_count_loops.py`, `test_dynamic_ranges.py`, `test_large_ranges.py`, `test_range_steps.py`, `test_loop_context.py` → **377 passed**.
+  - **Compiler-source change, so the bootstrap chain was rebuilt and re-verified**: Gen2 → Gen3 → canonical `bin/velo.exe`; `scripts/check_determinism.py` → `SHA-256 MATCH`, Gen2 == Gen3 == `6ae9ef64a87cba21b7752d35e8e9e2970bfca85673f399e0167e10790b72b633` (the hash necessarily changed from the Phase 67 value `b4abe546…` because the compiler's own source changed). `bootstrap.c` regenerated (98 insertions, 88 deletions) and confirmed to contain exactly the two intended edits — `of_elem = "isize"` and `return "ptrdiff_t "` — plus their guards. `tests/test_bootstrap_snapshot.py` → **5 passed**.
 
 ##### Task 68.4: Update `it` and boundary semantics
 * **Goal:** Ensure the `it` counter, inclusive bounds, and descending loops remain correct at the new width.
