@@ -32,6 +32,8 @@ import shutil
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BIN_DIR = REPO_ROOT / "bin"
 
@@ -136,3 +138,64 @@ def cc_env():
 
 def is_windows() -> bool:
     return sys.platform == "win32"
+
+
+# ---------------------------------------------------------------------------
+# Test tiers (Phase 76 / Task 76.6)
+# ---------------------------------------------------------------------------
+# The full suite takes ~16 minutes because it invokes a C compiler hundreds of
+# times. A 16-minute red X on every push trains people to ignore CI, so the
+# suite is split into two lanes:
+#
+#   fast  - pure Python: source-text assertions, YAML parsing, helper contracts,
+#           JSON schema checks. No compiler invocation. Target: under 2 minutes.
+#   slow  - everything that shells out to the compiler or a built binary.
+#
+# `slow` is added at collection time by the hook below, from a heuristic on each
+# test function's source. It is *not* applied at first compiler invocation: a
+# marker cannot be added mid-test, and a hook that ran there could not influence
+# selection. The heuristic deliberately over-approximates -- a test wrongly
+# called slow only loses the 2-minute lane, while a test wrongly called fast
+# would put a compiler build in that lane and defeat its purpose.
+#
+# `fast` is never inferred. A module opts in explicitly with
+# `pytestmark = pytest.mark.fast`, which is a promise that it invokes no
+# compiler, and `-m fast` is what CI's push lane runs.
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "fast: pure-Python test that never invokes a C compiler"
+    )
+    config.addinivalue_line(
+        "markers", "slow: test that compiles or runs a built binary"
+    )
+
+
+# Presence of any of these in a test function's source means the test probably
+# reaches the compiler, a built binary, or a subprocess. Kept as names rather
+# than a subprocess-detection library because the point is a conservative
+# signal, not an analysis.
+_COMPILER_SIGNALS = (
+    "velo_exe",
+    "require_velo_exe",
+    "cc_path",
+    "cc_dir",
+    "cc_env",
+    "subprocess",
+    "Popen",
+)
+
+
+def pytest_collection_modifyitems(config, items):
+    """Mark tests that may invoke a compiler as `slow`, unless marked `fast`."""
+    import inspect
+
+    for item in items:
+        if item.get_closest_marker("fast"):
+            continue
+        try:
+            source = inspect.getsource(item.function)
+        except (OSError, TypeError):
+            source = ""
+        if any(token in source for token in _COMPILER_SIGNALS):
+            item.add_marker(pytest.mark.slow)

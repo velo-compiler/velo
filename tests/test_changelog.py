@@ -12,6 +12,10 @@ import re
 
 from release_meta import REPO_ROOT
 
+import pytest
+
+pytestmark = pytest.mark.fast
+
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 
 

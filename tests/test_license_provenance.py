@@ -15,6 +15,8 @@ import pytest
 
 from release_meta import REPO_ROOT
 
+pytestmark = pytest.mark.fast
+
 MIT = REPO_ROOT / "LICENSE-MIT"
 APACHE = REPO_ROOT / "LICENSE-APACHE"
 README = REPO_ROOT / "README.md"

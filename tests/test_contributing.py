@@ -9,6 +9,10 @@ verbatim, because a paraphrased command is a command that does not run.
 
 from release_meta import REPO_ROOT
 
+import pytest
+
+pytestmark = pytest.mark.fast
+
 CONTRIBUTING = REPO_ROOT / "CONTRIBUTING.md"
 
 

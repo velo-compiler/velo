@@ -28,6 +28,7 @@ import pytest
 
 from conftest import REPO_ROOT
 
+pytestmark = pytest.mark.fast
 
 CI_YML = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 CI_STATUS = REPO_ROOT / "docs" / "CI_STATUS.md"

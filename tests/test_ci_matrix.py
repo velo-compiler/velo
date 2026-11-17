@@ -102,6 +102,53 @@ def test_every_job_runs_the_test_suite():
         assert "pytest" in joined, f"job {name} never runs pytest"
 
 
+def test_fast_job_runs_only_the_fast_lane():
+    """
+    The push lane must select `-m fast` and must not bootstrap a compiler.
+
+    Task 76.6 exists because a 16-minute red X on every push trains people to
+    ignore CI. A `fast` job that quietly runs the whole suite, or that builds the
+    compiler first, restores the problem while looking solved.
+    """
+    yaml = pytest.importorskip("yaml")
+    jobs = yaml.safe_load(CI_YML.read_text(encoding="utf-8"))["jobs"]
+    assert "fast" in jobs, "the workflow must declare a `fast` job"
+
+    job = jobs["fast"]
+    commands = "\n".join(str(step.get("run", "")) for step in (job.get("steps") or []))
+
+    assert "-m fast" in commands, (
+        "the fast job must select the fast tier with `-m fast`, otherwise it runs "
+        "the full suite"
+    )
+    assert "bootstrap" not in commands, (
+        "the fast job must not bootstrap the compiler: the fast tier is defined "
+        "as tests that never invoke a C compiler"
+    )
+    assert job.get("if") in (None, ""), (
+        "the fast job must run on every push; a conditional defeats the lane"
+    )
+
+
+def test_heavy_jobs_do_not_run_on_push():
+    """
+    Only the fast lane runs on a push; the suite runs on pull requests.
+
+    Without this, every push starts six jobs that each spend ~16 minutes
+    compiling, which is exactly the cost Task 76.6 was written to remove.
+    """
+    yaml = pytest.importorskip("yaml")
+    jobs = yaml.safe_load(CI_YML.read_text(encoding="utf-8"))["jobs"]
+
+    for name, job in jobs.items():
+        if name == "fast":
+            continue
+        condition = str(job.get("if") or "")
+        assert "github.event_name" in condition and "push" in condition, (
+            f"job {name} has no condition excluding push, so it runs on every "
+            f"push (condition was {condition!r})"
+        )
+
 def test_bootstrap_sh_structure():
     """Verify that scripts/bootstrap.sh has the correct structure, permissions, and POSIX commands."""
     assert BOOTSTRAP_SH.exists(), "scripts/bootstrap.sh must exist"

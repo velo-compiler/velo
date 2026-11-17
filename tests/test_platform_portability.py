@@ -23,10 +23,11 @@ from conftest import (
     cc_dir,
     cc_env,
     cc_path,
-    require_velo_exe,
     velo_exe,
     velo_exe_or_none,
 )
+
+pytestmark = pytest.mark.fast
 
 TESTS_DIR = REPO_ROOT / "tests"
 CONFTEST = TESTS_DIR / "conftest.py"
@@ -102,8 +103,17 @@ def test_no_popen_monkeypatch_in_conftest():
 
 
 def test_velo_exe_resolves_to_a_real_file():
-    path = require_velo_exe()
-    assert path.exists()
+    """
+    The resolved path is a real file under `bin/`, or there is nothing to check.
+
+    This module is in the `fast` tier, which CI runs without building the
+    compiler, so a missing build must skip rather than fail: the contract being
+    pinned here is the *resolution* rule, and that rule is asserted without a
+    build by the `VELO_BIN` override tests below.
+    """
+    path = velo_exe_or_none()
+    if path is None:
+        pytest.skip("compiler not built")
     assert path.parent.name == "bin"
 
 

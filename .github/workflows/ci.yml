@@ -8,7 +8,38 @@ on:
   workflow_dispatch:
 
 jobs:
+  fast:
+    # Phase 76 / Task 76.6: the push lane. Pure-Python tests only -- no C
+    # compiler invocation -- so it finishes in seconds rather than 16 minutes.
+    # A red X here means something definite; the 16-minute suite runs on PRs
+    # and on the platform jobs below.
+    name: Fast lane (pure Python, no compiler)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pyyaml
+
+      - name: Run the fast lane
+        run: |
+          python -m pytest tests -q -m fast
+
   linux:
+    # Phase 76 / Task 76.6: the heavy jobs run on pull requests and manual
+    # dispatch, not on every push. The `fast` job above is the push lane; a
+    # push that breaks only compiler-dependent tests gets its red X from the
+    # pull request that carries it.
+    if: github.event_name != 'push'
     name: Linux (${{ matrix.os }} - ${{ matrix.compiler }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -52,6 +83,11 @@ jobs:
           python3 -m pytest tests -q
 
   macos:
+    # Phase 76 / Task 76.6: the heavy jobs run on pull requests and manual
+    # dispatch, not on every push. The `fast` job above is the push lane; a
+    # push that breaks only compiler-dependent tests gets its red X from the
+    # pull request that carries it.
+    if: github.event_name != 'push'
     name: macOS (Apple Silicon - ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -88,6 +124,11 @@ jobs:
           python3 -m pytest tests -q
 
   windows-gcc:
+    # Phase 76 / Task 76.6: the heavy jobs run on pull requests and manual
+    # dispatch, not on every push. The `fast` job above is the push lane; a
+    # push that breaks only compiler-dependent tests gets its red X from the
+    # pull request that carries it.
+    if: github.event_name != 'push'
     name: Windows Server 2022 (MSYS2 UCRT64 GCC)
     runs-on: windows-2022
     steps:
@@ -132,6 +173,11 @@ jobs:
           python -m pytest tests -q
 
   windows-msvc:
+    # Phase 76 / Task 76.6: the heavy jobs run on pull requests and manual
+    # dispatch, not on every push. The `fast` job above is the push lane; a
+    # push that breaks only compiler-dependent tests gets its red X from the
+    # pull request that carries it.
+    if: github.event_name != 'push'
     name: Windows Server 2022 (MSVC cl.exe)
     runs-on: windows-2022
     steps:
@@ -178,6 +224,11 @@ jobs:
           python -m pytest tests -q
 
   clean-checkout:
+    # Phase 76 / Task 76.6: the heavy jobs run on pull requests and manual
+    # dispatch, not on every push. The `fast` job above is the push lane; a
+    # push that breaks only compiler-dependent tests gets its red X from the
+    # pull request that carries it.
+    if: github.event_name != 'push'
     name: Clean checkout (no hidden local state)
     runs-on: ubuntu-24.04
     steps:
@@ -225,6 +276,11 @@ jobs:
           python3 scripts/check_clean_tree.py -- python3 -m pytest tests -q
 
   sanitizer:
+    # Phase 76 / Task 76.6: the heavy jobs run on pull requests and manual
+    # dispatch, not on every push. The `fast` job above is the push lane; a
+    # push that breaks only compiler-dependent tests gets its red X from the
+    # pull request that carries it.
+    if: github.event_name != 'push'
     name: Linux Sanitizer (ASan + UBSan - clang)
     runs-on: ubuntu-24.04
     steps:
