@@ -167,9 +167,15 @@ jobs:
         run: |
           bin\velo_msvc.exe version
 
-      - name: Run MSVC backend and snapshot tests
+      # Phase 76 / Task 76.5: this job used to run only two test files, so the
+      # MSVC backend was verified for 2 of 132. Run the whole suite against the
+      # MSVC-built compiler: VELO_BIN makes conftest.velo_exe() resolve to it,
+      # which is why the tests no longer need an MSVC-specific path.
+      - name: Run the full suite against the MSVC-built compiler
+        env:
+          VELO_BIN: bin\velo_msvc.exe
         run: |
-          python -m pytest tests/test_cc_backend.py tests/test_bootstrap_snapshot.py -q
+          python -m pytest tests -q
 
   clean-checkout:
     name: Clean checkout (no hidden local state)
