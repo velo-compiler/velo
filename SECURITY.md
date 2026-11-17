@@ -1,5 +1,7 @@
 # Security Policy
 
+<!-- SPDX-License-Identifier: MIT OR Apache-2.0 -->
+
 The Velo team is dedicated to providing a hardware-grade, high-performance systems programming environment that is robust, reliable, and secure. We welcome responsible security research and appreciate early notification of potential vulnerabilities.
 
 ---

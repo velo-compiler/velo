@@ -3,6 +3,8 @@
 > **Code at high velocity.**
 > The raw speed and hardware control of C, with modern syntax as clean as TypeScript, and zero garbage collection pauses.
 
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
+
 ---
 
 ## What is Velo?
@@ -139,5 +141,36 @@ python velo.py emit-c main.vl
 * [Stage 2 Self-Hosting Architecture](docs/STAGE2_ARCHITECTURE.md)
 * [Stage 2 Development Roadmap](docs/STAGE2_ROADMAP.md)
 * [Stage 2 Production Code Standards](docs/STAGE2_CODE_STANDARDS.md)
+* [Contributing](CONTRIBUTING.md)
+* [Changelog](CHANGELOG.md)
+
+---
+
+## License
+
+SPDX-License-Identifier: `MIT OR Apache-2.0`
+
+Velo is dual-licensed under either of
+
+* Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+* MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option. This is the same licensing arrangement used by the Rust
+project: you may choose the license that best fits your situation, and the
+Apache-2.0 option includes an explicit patent grant.
+
+Unless you explicitly state otherwise, any contribution intentionally
+submitted for inclusion in this project by you, as defined in the Apache-2.0
+license, shall be dual-licensed as above, without any additional terms or
+conditions.
+
+### Generated artifacts
+
+`bootstrap.c` is generated from `src/main.vl` by `velo emit-c` and is
+distributed under the same `MIT OR Apache-2.0` terms as the compiler source it
+is derived from. It contains no third-party code. Programs *you* write in Velo
+are yours; compiling them does not subject them to this license, exactly as
+using a C compiler does not license your own source under the compiler's terms.
+
 
 
