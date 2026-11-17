@@ -3356,13 +3356,6 @@ scratch/test_io_ops.txt
 
 #### Tasks
 
-##### Task 67.1: Reproduce from a clean state
-* **Goal:** Add a test that runs the fs test with `scratch/` absent and asserts the current failure (red).
-* **Files:** `tests/test_std_fs.py`.
-* **Tests:** rename/remove `scratch` in a controlled temp copy; assert failure.
-* **Security gate:** do not touch the developer's real `scratch/` outside the test sandbox.
-* **Done when:** the failure is reproducible.
-
 ##### Task 67.1: Reproduce from a clean state [COMPLETED] ✅
 * **Former Defect**: `std/tests/fs/ops_test.vl` writes to relative paths (`scratch/test_dir_single`, `scratch/nest1/nest2/nest3`, `scratch/test_io_ops.txt`, ...) and creates the **leaves** with `fs_create_dir_str`, which maps to a plain `CreateDirectoryA` (`std/fs/ops.vl:22-30`) with no parent creation. Only `fs_create_dir_all` walks parents, and the suite never uses it for `scratch/` itself. So the suite requires `scratch/` to already exist. In this working tree it does — `Test-Path scratch` is true and `git ls-files scratch` finds **zero** tracked files: it is untracked, empty residue. `tests/test_std_fs.py::test_std_fs_ops` therefore passed on this machine and would fail on a clean clone or any CI runner.
 * **Fix Applied**:
@@ -3381,15 +3374,9 @@ scratch/test_io_ops.txt
   - `python -m pytest tests/test_std_fs.py -q`: **1 failed, 6 passed** — the single failure is `test_std_fs_ops_needs_no_ambient_scratch` with `FAIL: test_dir_create_and_remove`, i.e. the defect reproduced from a clean state.
   - The sandboxed run never touched the repository's `scratch/`; the red row asserts its own sandbox is empty before starting.
 
-##### Task 67.2: Make the Velo test self-contained
-* **Goal:** Create the base directory (and parents) at the start, and remove it at the end.
-* **Files:** `std/tests/fs/ops_test.vl:9-90`.
-* **Tests:** run from a clean checkout; assert all assertions pass; assert cleanup.
-* **Security gate:** no path traversal; no writes outside the temp base.
-* **Done when:** the test passes without an ambient `scratch/`.
-
 ##### Task 67.2: Make the Velo test self-contained [COMPLETED] ✅
-* **Former Defect**: `std/tests/fs/ops_test.vl` assumed `scratch/` existed and never removed it. Two consequences, both structural rather than cosmetic: (1) the suite could not run from a clean checkout at all, and (2) the run that *did* succeed created the very directory every later run depended on — so the defect was self-healing on the developer's machine and permanently broken everywhere else. There was also no cleanup on the failure path, so a mid-suite failure left artifacts behind to poison subsequent runs.
+* **Former Defect**: `std/tests/fs/ops_test.vl` assumed `scratch/` existed and never removed it.
+ Two consequences, both structural rather than cosmetic: (1) the suite could not run from a clean checkout at all, and (2) the run that *did* succeed created the very directory every later run depended on — so the defect was self-healing on the developer's machine and permanently broken everywhere else. There was also no cleanup on the failure path, so a mid-suite failure left artifacts behind to poison subsequent runs.
 * **Fix Applied**:
   - Added `cleanup_scratch()`, which removes every artifact the suite can create (four files, two leaf dirs, the three-deep `nest1/nest2/nest3` chain, and `scratch` itself), innermost-first so the directories are empty when removed. Every step is allowed to fail, because on the failure path only some artifacts exist — a cleanup routine that requires its inputs to be present cannot be used for cleanup.
   - `main()` now does `cleanup_scratch()` (clear stale state), then creates `scratch/` with an explicit diagnosed failure (`FAIL: could not create the scratch directory`, exit 5), then registers `defer cleanup_scratch()`.
