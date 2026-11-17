@@ -63,7 +63,7 @@ that core and a usable product.
 | Phase | Title | Severity | Verified | Tasks | Est. commits |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **70** | POSIX / macOS Foundation Portability | P0 | yes | 8 | 8 |
-| **71** | Release Engineering and Legal Provenance | P0 | **COMPLETED** (71.4 tag pending) | 6 | 5 |
+| **71** | Release Engineering and Legal Provenance | P0 | **COMPLETED** | 6 | 5 |
 | **72** | Package Ecosystem That Actually Fetches | P0 | yes | 7 | 7 |
 | **73** | Transport Security and Cryptographic Completeness | P0 | yes | 8 | 8 |
 | **74** | Undefined-Behavior Containment | P0 | yes | 7 | 7 |
