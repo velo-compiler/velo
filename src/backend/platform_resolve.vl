@@ -1,0 +1,216 @@
+// Platform variant resolution for module loading (Phase 70 / Task 70.1).
+//
+// The compiler used to encode the platform convention twice, as two string
+// suffix chains:
+//
+//   should_skip_platform_file:     "_windows.vl" vs "_linux.vl"
+//   resolve_platform_source_path:  "_windows.vl" vs "_linux.vl"
+//
+// Both knew exactly two platforms, both decided "which platform am I?" by
+// calling os_is_windows(), and that predicate lives in std/os/env_windows.vl --
+// a Win32-only file. A compiler running on Linux therefore still believed it
+// was on Windows, resolved every module to its _windows variant, and emitted C
+// full of kernel32 externs. The convention could not express a third platform
+// at all: macOS was silently mapped onto "_linux".
+//
+// This module replaces the convention with one table:
+//
+//   windows -> "_windows.vl"
+//   linux   -> "_linux.vl"
+//   macos   -> "_macos.vl"
+//
+// Both the skip decision and the resolution read the same table, so they cannot
+// disagree, and adding a platform is an entry here rather than an edit in two
+// unrelated functions.
+//
+// Note that `_win32.vl` and `_posix.vl` are deliberately *not* rows here.
+// `std/os/pipe_win32.vl` and `std/os/pipe_posix.vl` are backends that
+// `std/os/pipe.vl` -- a facade carrying real declarations -- imports by name.
+// Treating those spellings as auto-resolution variants replaced the facade with
+// its backend, which silently deleted `os_spawn_capture` and broke `std.os`.
+// A suffix is a variant only when it names an alternative *implementation of the
+// same module*, and these two name something a module imports.
+//
+// Host identity comes from the runtime header, not from std.os. Every emitted
+// program links velo_runtime.h, whose `_WIN32` / `__APPLE__` / `__linux__`
+// branches know the true host; `velo_host_platform()` exposes that as a string.
+// The compiler therefore never has to import a platform-specific std module in
+// order to learn what it is running on -- which is what made the old predicate
+// circular.
+use "../frontend/token.vl"
+use "../analysis/symbol_table.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+
+// Platform keys. These are the three targets the project claims (Phase 70).
+let PLATFORM_WINDOWS: string = "windows"
+let PLATFORM_LINUX: string = "linux"
+let PLATFORM_MACOS: string = "macos"
+
+// Suffix tables. One canonical spelling per platform; the backend spellings
+// that facades import directly (`_win32.vl`, `_posix.vl`) are not variants.
+let SUFFIX_WINDOWS_A: string = "_windows.vl"
+let SUFFIX_LINUX_A: string = "_linux.vl"
+let SUFFIX_MACOS_A: string = "_macos.vl"
+
+// Host platform, as reported by the runtime header the emitted program links.
+// Declared as `string` (const char*) so the emitted extern declaration matches
+// the `static inline const char* velo_host_platform(void)` definition exactly.
+// C99 6.2.2p4 makes the linkage well defined: an `extern` declaration in a
+// scope where a prior `static` declaration is visible keeps internal linkage,
+// so this resolves to the inline definition in the same translation unit.
+extern act velo_host_platform() -> string
+
+// Returns true when `key` is a platform this compiler understands.
+act is_supported_platform(key: string) -> bool {
+    if key == null { return false }
+    if key == PLATFORM_WINDOWS { return true }
+    if key == PLATFORM_LINUX { return true }
+    if key == PLATFORM_MACOS { return true }
+    return false
+}
+
+// Returns the platform key for the host this compiler runs on.
+// Returns "" for a host with no variant support; callers then use the neutral
+// file, which is the correct behaviour rather than an error.
+act current_platform() -> string {
+    let key = velo_host_platform()
+    if key != null and is_supported_platform(key) { return key }
+    return ""
+}
+
+// Explicit target override, read through the runtime helper so this module does
+// not import std.os (importing a platform-specific std module to learn the
+// platform is what made the old predicate circular).
+extern act velo_host_getenv(key: string) -> string
+
+// Returns the platform to resolve modules for: `VELO_TARGET_PLATFORM` when it
+// names a supported platform, otherwise the host.
+//
+// The override makes the linux and macOS rows of the table *testable* on a
+// Windows maintainer host (emit-c only, no linking) and is the seed of real
+// cross-target selection. Without it those rows would be unverifiable dead
+// code, which is exactly the condition this phase exists to remove.
+act target_platform() -> string {
+    let override = velo_host_getenv("VELO_TARGET_PLATFORM")
+    if override != null and is_supported_platform(override) { return override }
+    return current_platform()
+}
+
+// Number of suffixes known across all platforms (used to bound table walks).
+act platform_suffix_count() -> usize {
+    return 3
+}
+
+// The suffix table in index form: rows are (platform, suffix) pairs.
+// Kept as one accessor so the whole table is visible in one place.
+act platform_suffix_at(index: usize) -> string {
+    if index == 0 { return SUFFIX_WINDOWS_A }
+    if index == 1 { return SUFFIX_LINUX_A }
+    if index == 2 { return SUFFIX_MACOS_A }
+    return ""
+}
+
+// The platform a table row belongs to.
+act platform_key_at(index: usize) -> string {
+    if index == 0 { return PLATFORM_WINDOWS }
+    if index == 1 { return PLATFORM_LINUX }
+    if index == 2 { return PLATFORM_MACOS }
+    return ""
+}
+
+// Returns the suffix `path` carries, or "" when it is platform-neutral.
+// A path is a platform variant exactly when it ends with a known suffix.
+act platform_suffix_of(path: string) -> string {
+    if path == null { return "" }
+    mut i: usize = 0
+    let total = platform_suffix_count()
+    loop i < total {
+        let suf = platform_suffix_at(i)
+        if str.ends_with(path, suf) { return suf }
+        i += 1
+    }
+    return ""
+}
+
+// Returns the platform key a variant path belongs to, or "" when neutral.
+act platform_of_path(path: string) -> string {
+    let suf = platform_suffix_of(path)
+    if str.len(suf) == 0 { return "" }
+    mut i: usize = 0
+    let total = platform_suffix_count()
+    loop i < total {
+        if platform_suffix_at(i) == suf { return platform_key_at(i) }
+        i += 1
+    }
+    return ""
+}
+
+// Returns true when `path` is a platform variant belonging to some platform.
+act is_platform_variant(path: string) -> bool {
+    return str.len(platform_suffix_of(path)) > 0
+}
+
+// Returns true when `path` names a variant that does not belong to `platform`.
+// A neutral path is never foreign.
+act is_foreign_variant(path: string, platform: string) -> bool {
+    let owner = platform_of_path(path)
+    if str.len(owner) == 0 { return false }
+    if str.len(platform) == 0 { return false }
+    return owner != platform
+}
+
+// Returns the candidate variant path for `neutral_path` on `platform`, or ""
+// when no suffix row exists for that platform. Only the canonical spelling is
+// tried first, so an alias never shadows the primary name.
+act candidate_variant_path(neutral_path: string, platform: string) -> string {
+    if neutral_path == null or not str.ends_with(neutral_path, ".vl") { return "" }
+    let stem = copy_slice_to_string(neutral_path, 0, str.len(neutral_path) - 3)
+    if platform == PLATFORM_WINDOWS { return str.concat(stem, SUFFIX_WINDOWS_A) }
+    if platform == PLATFORM_LINUX { return str.concat(stem, SUFFIX_LINUX_A) }
+    if platform == PLATFORM_MACOS { return str.concat(stem, SUFFIX_MACOS_A) }
+    return ""
+}
+
+// Returns the variant path that exists for `platform`, or "" when none does.
+act existing_variant_path(neutral_path: string, platform: string) -> string {
+    let candidate = candidate_variant_path(neutral_path, platform)
+    if str.len(candidate) > 0 and fs_exists(candidate) { return candidate }
+    return ""
+}
+
+// Returns true when some *other* platform has a variant for this neutral path.
+// Used to tell "not platform-specific at all" (fine) from "specific to the
+// wrong platform" (a missing implementation for this target).
+act foreign_variant_exists(neutral_path: string, platform: string) -> bool {
+    if not str.ends_with(neutral_path, ".vl") { return false }
+    let stem = copy_slice_to_string(neutral_path, 0, str.len(neutral_path) - 3)
+    mut i: usize = 0
+    let total = platform_suffix_count()
+    loop i < total {
+        let owner = platform_key_at(i)
+        if str.len(owner) > 0 and owner != platform {
+            let candidate = str.concat(stem, platform_suffix_at(i))
+            if fs_exists(candidate) { return true }
+        }
+        i += 1
+    }
+    return false
+}
+
+// Builds the name of the foreign variant that exists, for the diagnostic text.
+act foreign_variant_name(neutral_path: string, platform: string) -> string {
+    if not str.ends_with(neutral_path, ".vl") { return "" }
+    let stem = copy_slice_to_string(neutral_path, 0, str.len(neutral_path) - 3)
+    mut i: usize = 0
+    let total = platform_suffix_count()
+    loop i < total {
+        let owner = platform_key_at(i)
+        if str.len(owner) > 0 and owner != platform {
+            let candidate = str.concat(stem, platform_suffix_at(i))
+            if fs_exists(candidate) { return candidate }
+        }
+        i += 1
+    }
+    return ""
+}

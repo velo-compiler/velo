@@ -1126,6 +1126,47 @@ static inline bool velo_os_set_env(const char* key, const char* val) {
 #endif
 }
 
+// ============================================================================
+// Phase 70 / Task 70.1: host platform identity for the compiler itself.
+//
+// The compiler has to know which platform it is running on in order to resolve
+// `foo.vl` to `foo_<platform>.vl`. It used to ask std/os/env_windows.vl's
+// os_is_windows() -- a Win32-only module -- so a compiler built on Linux still
+// believed it was on Windows and emitted Win32 externs. The predicate and the
+// thing it was deciding about lived in the same place.
+//
+// This helper moves the answer into the runtime header, which every emitted
+// program links and which already carries the _WIN32 branches. A `static
+// inline` definition is visible to the compiler's own emitted code, and an
+// `extern` declaration in the Velo source reuses it (verified: C99 allows an
+// extern declaration after a static inline definition, and the linker resolves
+// it to the inline copy in this translation unit).
+//
+// Returns one of "windows", "linux", "macos". Any other POSIX host returns
+// "linux": the POSIX variants are the right fallback there, and a distinct name
+// would have to be added to the suffix table to mean anything.
+// ============================================================================
+static inline const char* velo_host_platform(void) {
+#if defined(_WIN32)
+    return "windows";
+#elif defined(__APPLE__)
+    return "macos";
+#else
+    return "linux";
+#endif
+}
+
+// Borrowed-pointer environment lookup for the compiler's own configuration
+// (VELO_TARGET_PLATFORM and friends). Distinct from velo_os_get_env, which
+// allocates an owned copy: this returns the getenv pointer directly, or "" when
+// the key is unset, so a caller that only compares or copies it never leaks and
+// never needs a free. The pointer is valid until the environment is modified.
+static inline const char* velo_host_getenv(const char* key) {
+    const char* raw = (key != NULL) ? getenv(key) : NULL;
+    return (raw != NULL) ? raw : "";
+}
+
+
 
 
 // Persistent Heap Allocation with Memory Usage Tracking

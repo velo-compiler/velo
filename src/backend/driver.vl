@@ -31,6 +31,7 @@ use "codegen_c.vl"
 use "docgen.vl"
 use "driver_cc.vl"
 use "driver_run.vl"
+use "platform_resolve.vl"
 
 // Linked list tracking visited files to prevent circular or duplicate module parsing.
 data VisitedFile {
@@ -76,47 +77,45 @@ act mark_file_visited(d: @CompilerDriver, path: string) {
     d.first_visited = vf
 }
 
-// Returns true if the current host or target operating system is Windows.
+// Returns true if the compile target is Windows.
+// Delegates to platform_resolve.vl, which reads the platform from the runtime
+// header instead of from the Win32-only std.os (see that module's header).
 act is_windows_platform() -> bool {
-    return os_is_windows()
+    return target_platform() == PLATFORM_WINDOWS
 }
 
 // Returns true if the file target is specific to another OS and must be skipped.
 act should_skip_platform_file(path: string) -> bool {
     if path == null { return false }
-    let is_win = is_windows_platform()
-    if is_win and str.ends_with(path, "_linux.vl") {
-        return true
-    }
-    if not is_win and str.ends_with(path, "_windows.vl") {
-        return true
-    }
-    return false
+    return is_foreign_variant(path, target_platform())
 }
 
-// Resolves a source path to its platform-specific variant (_windows.vl or _linux.vl) if available on disk.
+// Resolves a source path to its platform-specific variant if one exists for
+// this target, otherwise returns the path unchanged.
+//
+// Phase 70: the suffix knowledge lives in platform_resolve.vl, shared with
+// should_skip_platform_file, so the two cannot disagree about what a platform
+// variant is. A module that has variants only for foreign platforms and no
+// neutral file is a missing implementation for this target, and is reported
+// rather than silently emitting a program that cannot link.
+// A variant is a *replacement for* a neutral module that does not exist on this
+// target -- not a preference over one that does. `std/os/pipe.vl` is itself a
+// facade that defines the capture API and `use`s a backend variant; resolving
+// that existing file to `pipe_win32.vl` would drop the facade and leave every
+// caller of `os_spawn_capture` undefined.
 act resolve_platform_source_path(path: string) -> string {
     if path == null { return null }
-    let plen = str.len(path)
-    if plen < 3 or not str.ends_with(path, ".vl") {
-        return path
-    }
-    if str.ends_with(path, "_windows.vl") or str.ends_with(path, "_linux.vl") {
-        return path
-    }
+    if is_platform_variant(path) { return path }
+    let platform = target_platform()
+    if str.len(platform) == 0 { return path }
+    if fs_exists(path) { return path }
 
-    let is_win = is_windows_platform()
-    let stem = copy_slice_to_string(path, 0, plen - 3)
-    if is_win {
-        let win_path = str.concat(stem, "_windows.vl")
-        if fs_exists(win_path) {
-            return win_path
-        }
-    } else {
-        let linux_path = str.concat(stem, "_linux.vl")
-        if fs_exists(linux_path) {
-            return linux_path
-        }
+    let variant = existing_variant_path(path, platform)
+    if str.len(variant) > 0 { return variant }
+
+    if foreign_variant_exists(path, platform) {
+        let other = foreign_variant_name(path, platform)
+        println_str("[Velo Error] {path} has no implementation for platform '{platform}' (only {other} exists); this module cannot be built for the current target.")
     }
     return path
 }

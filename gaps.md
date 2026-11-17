@@ -162,6 +162,126 @@ when a platform-specific module has no variant for the current target.
 Constraint: `resolve_platform_source_path` and `should_skip_platform_file`
 must share one table (they currently duplicate the suffix knowledge).
 
+### 70.1 Completion Record
+
+**Former defect.** Three separate problems, all rooted in one design mistake:
+the compiler asked `os_is_windows()` which platform it was on, and that function
+lives in `std/os/env_windows.vl` - a Win32-only file.
+
+1. *Circularity.* A compiler built on Linux links the POSIX `env` variant, so
+   `os_is_windows()` on that build must come from `env_linux.vl`. But until the
+   facades are fixed (70.5), `std/os/env.vl` hardcodes `use "env_windows.vl"`,
+   so the Linux build would still get the Windows answer. In practice the
+   `_windows` variant was always chosen, and the emitted C always carried
+   kernel32 externs. The predicate and the decision it fed lived in the same
+   broken place.
+2. *Duplication.* `should_skip_platform_file` and
+   `resolve_platform_source_path` each hardcoded the suffix pair `_windows.vl` /
+   `_linux.vl` as separate `if` chains. Two copies of the platform convention
+   can disagree, and they decide complementary things (skip vs choose), so a
+   disagreement silently drops or silently duplicates a module.
+3. *No third platform.* There was no `_macos` spelling anywhere. macOS fell
+   through to the `else` branch and got `_linux`, which is wrong for `kqueue`,
+   `sysctl`, and the framework-relative paths that macOS needs.
+
+**Fix applied.**
+
+| Change | Detail |
+| :--- | :--- |
+| `src/backend/platform_resolve.vl` (new) | The table: `(platform, suffix)` rows for `windows`/`_windows.vl`, `linux`/`_linux.vl`, `macos`/`_macos.vl`. One accessor pair (`platform_suffix_at`, `platform_key_at`) holds the rows, so the whole table is in one place. |
+| `driver.vl::should_skip_platform_file` | Now `is_foreign_variant(path, target_platform())` - reads the table. |
+| `driver.vl::resolve_platform_source_path` | Now `existing_variant_path(path, platform)`, and only when the neutral file is *absent*: a module that exists is never replaced by a variant sibling. |
+| `runtime/velo_runtime.h` | `velo_host_platform()` returns `"windows"`/`"macos"`/`"linux"` from the `_WIN32`/`__APPLE__` branches the header already had, and `velo_host_getenv()` gives the compiler a borrowed-pointer environment read without importing `std.os`. |
+| `target_platform()` | `VELO_TARGET_PLATFORM` overrides the host when it names a supported platform. |
+| Missing implementation | A module with variants only for foreign platforms and no neutral file now reports `[Velo Error] <path> has no implementation for platform '<target>' (only <other> exists)`, and the build fails. |
+
+**`_win32.vl` and `_posix.vl` are not variant rows, and that distinction was
+learned the hard way.** The first cut of the table listed them as alternate
+spellings for windows and linux/POSIX, on the reasoning that `pipe_posix.vl`
+already existed on disk and would otherwise be unreachable. That was wrong:
+`std/os/pipe.vl` is a facade that *declares* `os_spawn_capture` and `use`s
+`pipe_win32.vl` as its backend, and `std/async/poller.vl`, `std/mem/page.vl`,
+`std/io/handle.vl`, `std/os/env.vl`, `std/time/clock.vl`, `std/time/sleep.vl` are
+the same shape. With the alias rows present, resolution replaced each facade
+with its backend, so the declarations disappeared; `std.os` failed to compile
+with 29 undefined-function errors, and `tests/test_std_os.py` caught it. The
+rule the code now encodes is the one that was missing from the specification: a
+suffix is a variant only when it names an alternative implementation *of the same
+module*; a spelling a module imports by name is a backend, not a variant.
+`test_a_backend_suffix_is_not_treated_as_a_variant` and
+`test_a_foreign_variant_does_not_replace_an_existing_neutral_module` pin both
+halves of that rule.
+
+The second half of the same rule is that a *present* neutral module wins over any
+variant. Resolving neutral `bar.vl` to `bar_linux.vl` merely because the target
+was linux is the same failure in the other direction, and it also made the
+facades unfixable: `pipe.vl` had to keep existing on every platform for the
+capture API to survive, which is exactly what a facade is for.
+
+The C linkage detail that made this work: an `extern` declaration in the
+emitted C resolves to the runtime header's `static inline` definition of the
+same name, because C99 6.2.2p4 keeps internal linkage for an `extern`
+declaration that follows a visible `static` one. Verified with a standalone C
+probe before relying on it, and by the compiler itself building and running.
+
+**Why `VELO_TARGET_PLATFORM` is part of 70.1 and not a convenience.** Without
+it, the `linux` and `macos` rows of the table can only be exercised on a Linux
+or macOS machine - and the repository has neither in CI yet (Phase 76.1). The
+rows would then be unverifiable dead code, which is exactly the defect Phase 70
+was opened to fix: the Linux branches existed and had never been run. The
+override makes every row testable on the maintainer's Windows host via
+`emit-c`, and it is the seed of real cross-target selection.
+
+**Residual limitation.** `VELO_TARGET_PLATFORM` selects which variants are
+*loaded*; it does not make the emitted C compile or link for that target. A
+`macos` build still fails today, because no `_macos` variant exists (70.3) and
+the facades still name `_windows` (70.5). Under a `linux` target the same is
+true for anything importing `std.io` or `std.fs`: those files still carry Win32
+externs and facades that hardcode `_windows`, so `emit-c` succeeds but the C
+does not compile off-Windows. That is task 70.2/70.5 work, and it is why the
+resolver tests deliberately use fixtures rather than the real `std/` tree. This
+is recorded rather than hidden: `test_macos_target_reports_missing_variants`
+asserts the current failure, so whoever lands 70.3 must change that test
+deliberately instead of discovering the gap from a link error.
+
+**Verification.**
+- `tests/test_platform_resolve.py` covers: windows target selects `_windows` and
+  excludes `_linux`; linux target selects `_linux` and excludes `_windows`;
+  neutral file used when no variant exists and also when a foreign variant
+  exists; a `_win32` backend never replaces an existing neutral facade; host
+  default comes from the runtime header and reports one of the three names; a
+  missing implementation is reported by name; macOS reports its missing variants.
+- The macOS row is asserted through a module that has only windows and linux
+  implementations, so the diagnostic is exercised (`macos` plus the foreign
+  variant name in the message) rather than the earlier, weaker "some error
+  happened" assertion.
+- Red baseline: built the pre-70.1 compiler from `HEAD` and ran the same file
+  against it (`VELO_BIN=bin/velo_prefix.exe`) - **6 failed, 3 passed**. The six
+  failures are the behaviours this task adds; the three that pass are the
+  properties that had to hold before and after (windows resolution, neutral
+  fallback, canonical precedence), which is the correct shape for a red
+  baseline on a refactor.
+- End-to-end on the real trees: `emit-c` for a `std.mem.page` program emits
+  `VirtualAlloc` and no `mmap` on the host target, and `mmap`/`munmap` and no
+  `VirtualAlloc` with `VELO_TARGET_PLATFORM=linux` - the first time the Linux
+  row of this table has ever been executed on this machine.
+- Regression caught and fixed in-task: the first full-suite run after the alias
+  rows landed reported `3 failed, 2032 passed`; two of the three were
+  `tests/test_std_os.py::test_std_os_pipe` and `::test_std_os_module_import`,
+  failing with 29 undefined-function errors because `std/os/pipe.vl` had been
+  resolved away. Removing the alias rows and restoring "a present neutral module
+  wins" fixed both; `test_std_os.py` and `test_platform_resolve.py` now report
+  14 passed together. The third failure was the known `.velo_cache` stem
+  collision (task 79.3), unrelated to this change.
+- Compiler-source change, so the full chain was rerun: Gen2 -> Gen3,
+  `check_determinism.py` reports `a1ca777a...` on both, `bootstrap.c`
+  regenerated and `tests/test_bootstrap_snapshot.py` is byte-identical.
+- `tests/test_std_mem.py`, `test_platform_portability.py`, `test_ci_matrix.py`,
+  `test_release_script.py` - 55 passed together with the snapshot test.
+- Fast lane: 39 passed, 1 xfailed.
+- `scripts/count_lines.py`: no file over 400 (`platform_resolve.vl` is 216,
+  `driver.vl` stays at 382).
+
 **70.2** Move the six Win32 `extern` blocks out of the platform-neutral files:
 `std/fs/stat.vl`, `std/fs/ops.vl`, `std/fs/dir.vl`, `std/net/socket.vl`,
 `std/net/addr.vl`, `std/crypto/rand.vl`. Create `std/fs/stat_windows.vl` /
