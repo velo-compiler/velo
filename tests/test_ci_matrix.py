@@ -133,6 +133,21 @@ def test_check_determinism_is_encoding_independent():
         assert "SHA-256 MATCH" in res.stdout, f"{encoding}: no match line:\n{blob}"
         assert "UnicodeEncodeError" not in blob, f"{encoding}: still raising:\n{blob}"
 
+        # The match line is only meaningful if the two hashes it reports are
+        # actually equal: a comparison that broke and printed the same label
+        # twice would still satisfy the assertions above.
+        hashes = [
+            line.split(":", 1)[1].strip()
+            for line in res.stdout.splitlines()
+            if line.startswith(("Gen2:", "Gen3:"))
+        ]
+        assert len(hashes) == 2, f"{encoding}: expected two hash lines:\n{blob}"
+        assert hashes[0] == hashes[1], f"{encoding}: reported hashes differ:\n{blob}"
+        assert len(hashes[0]) == 64, f"{encoding}: not a SHA-256 digest: {hashes[0]!r}"
+        assert all(c in "0123456789abcdef" for c in hashes[0]), (
+            f"{encoding}: digest is not lowercase hex: {hashes[0]!r}"
+        )
+
 
 def test_check_determinism_output_is_ascii():
     """The script's own source must not smuggle non-ASCII into its output.

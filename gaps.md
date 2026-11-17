@@ -3251,19 +3251,33 @@ UnicodeEncodeError: 'charmap' codec can't encode character '\u2713'
   - The same reproduction with `PYTHONIOENCODING=cp1252`: identical failure, which is what the test drives.
   - `python -m pytest tests/test_ci_matrix.py -q`: **1 failed, 5 passed** — the single failure is `test_check_determinism_script_runs`, i.e. the defect; the new red row `test_check_determinism_reproduces_cp1252_encoding_crash` **passes** because the defect is still present, which is precisely what "assert the current crash" means.
 
-##### Task 66.2: Make the output encoding-safe
-* **Goal:** Use ASCII-only status text, or reconfigure stdout to UTF-8 with a fallback.
-* **Files:** `scripts/check_determinism.py:34-40`.
-* **Tests:** cp1252 run exits 0; UTF-8 run still prints a readable result.
-* **Security gate:** no locale-dependent exception; no lost diagnostics.
-* **Done when:** the script exits 0 on both encodings.
+##### Task 66.2: Make the output encoding-safe [COMPLETED] ✅
+* **Former Defect**: `scripts/check_determinism.py` printed `SHA-256 MATCH \u2713 \u2014 bootstrap chain is deterministic`. Both code points are outside cp1252 (`\u2713` = U+2713 CHECK MARK, `\u2014` = U+2014 EM DASH), and the print happened *after* the Gen2/Gen3 comparison had already succeeded. On a default Windows console the release gate therefore reported failure for a chain that was provably deterministic.
+* **Fix Applied**:
+  - All printed text is now ASCII: the match line reads `SHA-256 MATCH - bootstrap chain is deterministic` (hyphen, not em dash; no check mark).
+  - Restructured the script into `emit_c(path, label)` and `main()`, so the failed-`emit-c` diagnostics keep their full stderr (decoded with `errors="replace"` so a non-UTF-8 compiler message cannot itself raise) and both share one code path. No diagnostic was dropped to achieve encoding safety — the failure messages are byte-for-byte as informative as before.
+  - Module docstring now carries an explicit **ENCODING CONTRACT** section: the script is ASCII-only, why (cp1252 default console, crash lands after a successful comparison), and an instruction not to reintroduce glyphs.
+  - `if __name__ == "__main__"` guard so the module can be imported by a test without executing the build.
+* **Residual Limitation**: The fix addresses the *status* output of this script only. Any other script that prints non-ASCII on Windows has the same latent defect; a repository-wide scan is out of scope for this phase (and `gaps.md` itself is intentionally UTF-8 Markdown, not console output). Also, if a future `emit-c` failure message from the compiler contains non-UTF-8 bytes, they are replaced rather than round-tripped — a deliberate trade so the gate can never itself crash, at the cost of possibly mangling a pathological diagnostic.
+* **Verification**:
+  - Plain shell, no overrides, cp1252 default console: `python scripts/check_determinism.py` → exit **0**, `SHA-256 MATCH - bootstrap chain is deterministic`.
+  - `PYTHONIOENCODING=cp1252` → exit **0**; `PYTHONIOENCODING=latin-1` → exit **0**; both print the same two hashes and the same match line.
+  - `python -m pytest tests/test_ci_matrix.py -q`: **7 passed**.
+  - The ASCII-only gate caught its own author: the first draft of the new docstring contained an em dash and `test_check_determinism_output_is_ascii` failed on line 11 until it was replaced.
 
-##### Task 66.3: Add the CI assertion
-* **Goal:** Keep the cp1252 regression test in the suite and assert the hash-match message.
-* **Files:** `tests/test_ci_matrix.py`.
-* **Tests:** exit code 0; Gen2/Gen3 hashes present; "MATCH" present.
-* **Security gate:** no flaky console detection.
-* **Done when:** the test is green on Windows and POSIX.
+##### Task 66.3: Add the CI assertion [COMPLETED] ✅
+* **Former Defect**: The phase needed the regression test to stay in the suite as the *green* contract, and the existing `test_check_determinism_script_runs` asserted nothing about encoding — it passed only while `PYTHONUTF8=1` happened to be exported. A test whose verdict depends on shell state cannot guard a release gate.
+* **Fix Applied**:
+  - Replaced the Task 66.1 red row with `test_check_determinism_is_encoding_independent`, which runs the script under **four** codecs (`cp1252`, `utf-8`, `ascii`, `latin-1`). Per codec it asserts exit 0, both hash lines present, `SHA-256 MATCH` present, and no `UnicodeEncodeError`.
+  - Strengthened it past the phase's literal wording: the two *reported* hashes must be equal, each must be 64 characters, and each must be lowercase hex. A comparison that broke and printed a plausible-looking label would otherwise still satisfy "exit 0 and MATCH present". This assertion was mutation-tested (below) rather than assumed to work.
+  - Added `test_check_determinism_output_is_ascii`, a source-level gate: the script's own text must contain no character above U+007F. This catches the reintroduction of a glyph even on a UTF-8 host, where the behavioural test alone would still pass.
+  - `test_check_determinism_script_runs` is green again and is now unambiguous: it runs with the inherited environment and passes without any `PYTHONUTF8` workaround.
+* **Residual Limitation**: The codecs exercised are single-byte/ASCII-compatible ones plus UTF-8. A UTF-16 console would still fail, but that is not a supported console codec on any platform Velo targets, and the ASCII-only design makes it moot for the script's own output. The four-codec matrix is a constant in the test, so adding a codec is a one-line change.
+* **Verification**:
+  - `python -m pytest tests/test_ci_matrix.py -q`: **7 passed** (was 1 failed / 5 passed at the Task 66.1 commit).
+  - **Mutation check that the new assertions are load-bearing**: replacing the printed `Gen3:` hash with 64 zeros — while leaving the comparison intact — makes `test_check_determinism_is_encoding_independent` fail with the expected digest mismatch. A weaker test that only checked "exit 0 + MATCH present" would have passed that mutant, so the hash-equality assertion is proven to close a real hole rather than merely adding lines.
+  - A second mutation (`if h2 == h3` → `if True`) correctly **passed**, which is the right outcome: the hashes genuinely were equal, so forcing the branch changed nothing observable. Recorded because it shows the test measures the reported values, not the branch itself.
+  - Both new tests were checked against the pre-fix script: the red row in commit `85b6e3b` failed for the documented reason, and this commit flips it to green — the transition is recorded in the two commits rather than asserted after the fact.
 
 ##### Task 66.4: Document the determinism contract
 * **Goal:** Note that the script is encoding-independent and part of the release gate.
