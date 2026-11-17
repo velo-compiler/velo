@@ -87,6 +87,61 @@ def test_check_determinism_script_runs():
     assert res.returncode == 0, f"check_determinism.py failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
     assert "SHA-256 MATCH" in res.stdout
 
+
+def _run_determinism_with_encoding(encoding):
+    """Run the determinism script with the CHILD's stdout forced to `encoding`.
+
+    PYTHONIOENCODING makes the encoding explicit on every platform, so the
+    test never inspects or depends on the host console (a Windows CI runner
+    and a Linux runner take the same path). This is the same mechanism a
+    cp1252 console uses, without needing one.
+    """
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = encoding
+    # Make sure no ambient UTF-8 mode masks the encoding under test.
+    env.pop("PYTHONUTF8", None)
+    return subprocess.run(
+        [sys.executable, str(CHECK_DET)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env,
+        timeout=600,
+    )
+
+
+def test_check_determinism_reproduces_cp1252_encoding_crash():
+    """Task 66.1: pin the cp1252 defect before fixing it.
+
+    `scripts/check_determinism.py` prints a non-ASCII status line (`\\u2713`,
+    `\\u2014`). Under cp1252 that print raises UnicodeEncodeError *after* the
+    Gen2/Gen3 hashes have already matched, so a successful determinism check
+    exits 1 and fails CI on Windows.
+
+    This test asserts the defect as it is today: the hashes match, yet the
+    process still fails with an encoding error and no MATCH line. Task 66.2
+    flips this to the correct contract.
+    """
+    res = _run_determinism_with_encoding("cp1252")
+    blob = res.stdout + res.stderr
+
+    # The determinism check itself succeeded — both hashes were computed and
+    # printed before the crash, which is what makes this a false failure.
+    assert "Gen2:" in res.stdout, blob
+    assert "Gen3:" in res.stdout, blob
+
+    assert res.returncode != 0, (
+        "expected the cp1252 failure; if this now exits 0 the defect is fixed "
+        f"and this test should be replaced by the Task 66.3 contract:\n{blob}"
+    )
+    assert "UnicodeEncodeError" in blob, blob
+    assert "charmap" in blob, blob
+    assert "SHA-256 MATCH" not in res.stdout, (
+        "the success line was printed, so the crash happens after it:\n" + blob
+    )
+
 def test_velo_accepts_clang_compiler_flag():
     """Verify that Velo CLI accepts --cc clang without rejecting it as an unknown backend."""
     if not VELO_EXE.exists():

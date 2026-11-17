@@ -3239,6 +3239,18 @@ UnicodeEncodeError: 'charmap' codec can't encode character '\u2713'
 * **Security gate:** the test must not depend on the host console.
 * **Done when:** the failure is reproducible in CI.
 
+##### Task 66.1: Reproduce under cp1252 [COMPLETED] ✅
+* **Former Defect**: Nothing in the suite exercised the determinism script under a non-UTF-8 encoding, so the cp1252 crash was invisible on any host whose console defaults to UTF-8. Worse, the existing `test_check_determinism_script_runs` was *silently* dependent on the ambient environment: it passes only when `PYTHONUTF8=1` happens to be exported and fails otherwise — a test that changes verdict based on shell state rather than on the code. Phase 65's notes had to carry "run the suite with `PYTHONUTF8=1`" as a workaround, which is exactly the class of hidden platform assumption this phase is meant to remove.
+* **Fix Applied**:
+  - `tests/test_ci_matrix.py`: extracted `_run_determinism_with_encoding(encoding)`, which runs the script with the **child's** stdout forced to a specific codec through `PYTHONIOENCODING` and *removes* `PYTHONUTF8` from the child environment so ambient UTF-8 mode cannot mask the encoding under test.
+  - New `test_check_determinism_reproduces_cp1252_encoding_crash` pins the defect: it asserts that both hashes are printed (the check itself succeeded), that the process still exits non-zero, that the failure is a `UnicodeEncodeError` from the `charmap` codec, and that the `SHA-256 MATCH` success line is **absent** — proving the crash happens on the success path, after the comparison, rather than on a failed comparison.
+  - The host console is never consulted: `PYTHONIOENCODING` is explicit, so a Windows runner and a Linux runner take the identical code path and neither depends on the terminal locale.
+* **Residual Limitation**: The red row is committed **failing on purpose**, as Task 66.1 requires, so the suite is not green again until Task 66.2 lands. `test_check_determinism_script_runs` is also red at this commit for the same underlying defect (it is the pre-existing test, and it only passed before because of an exported `PYTHONUTF8=1`) — Task 66.3 restores it as the green contract. This is a deliberate two-commit red window, recorded rather than hidden.
+* **Verification**:
+  - Manual reproduction with no environment overrides at all: `python scripts/check_determinism.py` → exit 1, `UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 14`, with `Gen2:`/`Gen3:` hashes already printed.
+  - The same reproduction with `PYTHONIOENCODING=cp1252`: identical failure, which is what the test drives.
+  - `python -m pytest tests/test_ci_matrix.py -q`: **1 failed, 5 passed** — the single failure is `test_check_determinism_script_runs`, i.e. the defect; the new red row `test_check_determinism_reproduces_cp1252_encoding_crash` **passes** because the defect is still present, which is precisely what "assert the current crash" means.
+
 ##### Task 66.2: Make the output encoding-safe
 * **Goal:** Use ASCII-only status text, or reconfigure stdout to UTF-8 with a fallback.
 * **Files:** `scripts/check_determinism.py:34-40`.
