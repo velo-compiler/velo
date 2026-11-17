@@ -676,7 +676,7 @@ outside of explicitly documented `_unsupported` modules.
 
 ---
 
-# Phase 76: CI Reality and Platform Test Harness (P0) - OPEN
+# Phase 76: CI Reality and Platform Test Harness (P0) - PARTIAL (76.1 blocked)
 
 ## Defect
 
@@ -754,12 +754,72 @@ is already unsynchronised. Recorded in the Phase 85 table.
 **76.1** Add a git remote and push. Publish the repository, even if private, so
 Actions can run. Without this every other CI task is theatre.
 
+### 76.1 Status: BLOCKED (external)
+
+Not a code task. `git remote -v` is empty on this machine and `gh` is not
+installed, so nothing in this repository can create the remote, push the branch,
+or read back a run. Everything downstream of it is done and verified; only the
+execution evidence is missing.
+
+What is in place so that unblocking is one command plus one edit:
+
+| Piece | State |
+| :--- | :--- |
+| Workflow declares seven jobs with real structure | `test_ci_matrix.py` parses it |
+| Every declared job is required to cite a run URL | `test_ci_evidence.py` |
+| The evidence test states the blocker and cannot rot silently | `@pytest.mark.xfail(strict=True)` |
+| The status document says plainly that nothing has run | `docs/CI_STATUS.md` |
+| The instructions to fill the table are written down | `docs/CI_STATUS.md`, "How to fill this table in" |
+
+The moment a remote exists and the workflow executes, the strict xfail starts
+failing, which is the signal to remove the marker and paste in the run URLs.
+
 **76.2** Replace the `test_ci_matrix.py` string assertions with a check of the
 workflow's actual required steps (parse the YAML, assert job matrix shape), and
 add a separate `tests/test_ci_evidence.py` that reads a committed
 `docs/CI_STATUS.md` containing the latest green run links per job. The test
 fails when a job has no link or the link's commit SHA is not an ancestor of
 `HEAD`.
+
+### 76.2 Completion Record
+
+**Former defect.** `tests/test_ci_matrix.py` asserted that literal strings such
+as `"ubuntu-22.04"`, `"macos-14"`, and `"pytest tests -q"` appeared somewhere in
+`.github/workflows/ci.yml`. That test passes for a workflow whose jobs are
+commented out, whose steps sit under the wrong key, whose `runs-on` never
+references its matrix, or that GitHub would reject outright. It also passed for
+a workflow that had never executed, which was the actual state of this
+repository: no remote, no run, no evidence. A test that greps YAML tests the
+prose, not the CI.
+
+**Fix applied.**
+
+| Change | Detail |
+| :--- | :--- |
+| `test_ci_matrix.py` | Loads the YAML with `yaml.safe_load` and walks the structure: triggers are a mapping containing `push` and `pull_request` (PyYAML resolves the bare `on:` key to boolean `True`, so both spellings are read), the required jobs exist, every job has `runs-on` and at least one step, no step is missing both `uses` and `run`. |
+| Matrix assertions | `linux` and `macos` must declare a matrix *and* reference `${{ matrix.* }}` in `runs-on`; the linux matrix must cover gcc and clang; every job must invoke pytest. |
+| `tests/test_ci_evidence.py` (new) | The separate question: has this run? Parses `docs/CI_STATUS.md` into `{job: (url, sha)}`, fails when a declared job has no row, when the URL is not an Actions run URL, and when the cited commit is not an ancestor of `HEAD`. |
+| `docs/CI_STATUS.md` (new) | The claim, written honestly: no run has executed, every job is "not yet - no remote", what *is* verified on the maintainer host, and why Linux/macOS cannot pass yet. |
+
+The ancestry check is the part that makes the document non-fakeable: a run on an
+unrelated branch says nothing about the tree being reviewed, and a fabricated SHA
+fails because git cannot resolve it.
+
+`test_every_declared_job_has_evidence` is `xfail(strict=True)` with the blocker
+named in the reason. When 76.1 unblocks it starts passing, the strict marker
+turns that into a failure, and the marker must be removed deliberately rather
+than being forgotten.
+
+**Residual limitation.** `yaml` is imported with `pytest.importorskip`, so a
+runner without PyYAML skips the structural checks instead of failing them. That
+is the lesser evil: the alternative is a hard dependency that makes the suite
+unrunnable before `pip install` in a fresh clone, and a skipped test is visible
+where a crash is not. Both CI lanes install `pyyaml`/`pytest` explicitly.
+
+**Verification.**
+- `pytest tests/test_ci_matrix.py tests/test_ci_evidence.py -q` -> 14 passed,
+  1 xfailed. The xfail is `test_every_declared_job_has_evidence`.
+- The workflow YAML parses and the parsed job set matches the file's seven jobs.
 
 **76.3** Introduce `tests/conftest.py::velo_exe()` and
 `tests/conftest.py::cc_path()`; delete all `msys64` literals and
@@ -837,6 +897,43 @@ PATH adjustment. That belongs to Phase 70 (portability) and is recorded there.
   `test_advanced_structs`, `test_build_modes`).
 - Full suite after the sweep: see the run recorded in the commit message.
 
+### 76.3 Follow-ups (three defects the sweep itself left behind)
+
+The first 76.3 commit fixed how collected tests find the toolchain. Auditing its
+own gate found three holes, each fixed in its own commit.
+
+**A. The guard only read collected files.** `test_platform_portability.py`
+scanned `tests/test_*.py`. `tests/probe_range_endpoint.py` is a helper script,
+not a `test_` module, so pytest never collects it and the guard never read it -
+and it still spawned `["bin/velo.exe", "emit-c", ...]`. The sweep and its guard
+shared one blind spot, which is why the sweep reported success. `_test_files()`
+now globs `*.py`: 136 files scanned instead of 129. Verified red by restoring the
+literal, which the widened glob reports by name and line, then green.
+
+**B. `text=True` with no encoding on 384 sites.** `invariant I76.3` was half
+done: the paths were fixed, the decoding was not. A subprocess call that passes
+`text=True` alone decodes with the platform default - cp1252 on a Western
+Windows runner, UTF-8 elsewhere - so a `.vl` program printing a non-ASCII byte,
+or a diagnostic quoting a source line, decodes differently per platform and
+surfaces as `UnicodeDecodeError` in the harness rather than as a compiler
+result. All 384 sites now pass `encoding="utf-8", errors="replace"`, inserted
+directly after the text flag so the two settings read together. `errors="replace"`
+is deliberate: a test asserting on compiler output should report a mismatch it
+can print, not raise while formatting the message. Only calls that already asked
+for text mode were touched, because adding `encoding=` to a bytes call changes
+its return type.
+
+`test_subprocess_text_calls_pin_their_encoding` guards it with an AST walk over
+every Python file under `tests/`, verified red by removing one `encoding=` (it
+named the file and line) and green after restoring it.
+
+**C. `require_velo_exe()` in the fast tier.** Covered in the 76.6 record: the
+push lane does not build the compiler, and this call raises when nothing is
+built, so the lane would have failed on its first CI run.
+
+Result: the suite is 2026 passed, 8 skipped, 1 xfailed, and every process
+spawn in it pins its decoding.
+
 **76.4** Replace `velo_check_capture.tmp` with a per-process temp path
 (`velo_check_capture_<pid>.tmp`, or `mkstemp`-equivalent inside
 `.velo_cache/`), making `velo check` safe to run concurrently. Test: run 8
@@ -848,19 +945,91 @@ succeed and no stray tmp file remains (`tests/test_check_concurrency.py`).
 `test_bootstrap_snapshot.py`, so the MSVC path is verified for two files out of
 129.
 
+### 76.5 Completion Record
+
+**Former defect.** The `windows-msvc` job built `bin\velo_msvc.exe` and then ran
+`tests/test_cc_backend.py tests/test_bootstrap_snapshot.py`. Two test modules
+out of 132 exercised the code generation path MSVC actually produces; every
+other module tested a binary MSVC had never built. The job looked like MSVC
+coverage and was MSVC smoke testing.
+
+**Fix applied.** The job runs `python -m pytest tests -q` with
+`VELO_BIN: bin\velo_msvc.exe`. That override is why 76.3 mattered:
+`conftest.velo_exe()` resolves `VELO_BIN` first, so the whole suite targets the
+MSVC binary without a single test knowing MSVC exists. `test_every_job_runs_the_test_suite`
+in `test_ci_matrix.py` now fails if any job stops invoking pytest, so a future
+narrowing is caught rather than shipped.
+
+**Residual limitation.** MSVC remains the least-exercised backend: the suite is
+written against gcc diagnostics and exit codes, so a full-suite MSVC run will
+very likely surface genuine backend differences the first time it executes. That
+is the information the job exists to produce, and it cannot be obtained without
+a remote (76.1).
+
+**Verification.** The YAML parses; the job keeps `runs-on`, its step list, and
+the `VELO_BIN` environment entry; `test_ci_matrix.py` asserts pytest is invoked
+in every job. This lane cannot execute locally on a machine without `cl.exe`; its
+first evidence comes from 76.1.
+
 **76.6** Split the suite into tiers and make CI honest about duration: a `fast`
 marker (no C compiler invocation) running in under 2 minutes on every push, and
 the full suite on PRs. The current suite is ~15.5 minutes; contributors will
 not wait, and a 15-minute red X trains people to ignore CI.
 
+### 76.6 Completion Record
+
+**Former defect.** One flat suite of 2032 tests, ~16 minutes wall clock, because
+it invokes a C compiler and runs built binaries hundreds of times. Every push and
+every pull request ran all of it in six jobs. A quarter-hour red X on every push
+is not a signal anyone reads; it is the reason people stop looking at CI. The
+suite also had no way to answer "which of these 2032 tests is cheap?" - that
+information existed nowhere.
+
+**Fix applied.**
+
+| Change | Detail |
+| :--- | :--- |
+| `tests/conftest.py` | `pytest_configure` registers `fast` and `slow`; `pytest_collection_modifyitems` adds `slow` from a source heuristic on each test function: any of `velo_exe`, `require_velo_exe`, `cc_path`, `cc_dir`, `cc_env`, `subprocess`, `Popen`. |
+| `fast` is explicit | Never inferred. A module opts in with `pytestmark = pytest.mark.fast`, a promise that it invokes no compiler. Five modules make it: `test_ci_evidence.py`, `test_changelog.py`, `test_contributing.py`, `test_license_provenance.py`, `test_platform_portability.py`. |
+| `.github/workflows/ci.yml` | New `fast` job: ubuntu-24.04, `pytest -q -m fast`, no bootstrap step, no condition, so it runs on every push. The six heavy jobs gained `if: github.event_name != 'push'`, so a push starts one seconds-long job and a pull request starts the full matrix. |
+| `test_ci_matrix.py` | `test_fast_job_runs_only_the_fast_lane` fails if the fast job bootstraps a compiler, drops `-m fast`, or grows a condition; `test_heavy_jobs_do_not_run_on_push` fails if a heavy job would run on push. |
+| `docs/CI_STATUS.md` | Lane table plus the measured local result. |
+
+The heuristic over-approximates on purpose: a test wrongly marked slow only
+loses the 2-minute lane, while a test wrongly marked fast drags a compiler build
+into that lane and destroys its reason to exist.
+
+**Discovered while verifying (fixed here).** `test_platform_portability.py` is
+in the fast tier, and CI runs that tier without building the compiler, but
+`test_velo_exe_resolves_to_a_real_file` called `require_velo_exe()`, which raises
+when nothing is built. On a fresh CI checkout the push lane would have failed on
+its first run. It now skips when there is no build and asserts the resolution
+rule instead, which the `VELO_BIN` override tests already cover without a binary.
+Found by running the lane with `VELO_BIN` pointed at a nonexistent path.
+
+**Verification.**
+- `pytest tests -q -m fast` -> 39 passed, 1 xfailed, ~3 s, 1995 deselected.
+- Same with `VELO_BIN` set to a nonexistent path -> 36 passed, 2 skipped,
+  1 xfailed, no collection error.
+- `pytest tests -q -m slow --collect-only` -> 335 selected.
+- `pytest tests/test_ci_matrix.py tests/test_ci_evidence.py
+  tests/test_platform_portability.py -q` -> 27 passed, 1 xfailed.
+- Full suite, unchanged selection: 2026 passed, 8 skipped, 1 xfailed in 16:55.
+
 ## Phase Exit Criteria
 
-- Actions runs on Linux (gcc + clang), macOS (clang), Windows (gcc + MSVC), and
-  the sanitizer lane, all green on the same commit, with links committed to
-  `docs/CI_STATUS.md`.
-- `grep -rl "msys64" tests/` and `grep -rl "velo\.exe" tests/` are empty except
-  in `conftest.py`.
-- `velo check` is safe to run concurrently, proven by test.
+| Criterion | State |
+| :--- | :--- |
+| Actions runs on Linux (gcc + clang), macOS (clang), Windows (gcc + MSVC), and the sanitizer lane, all green on the same commit, with links committed to `docs/CI_STATUS.md` | **Not met, blocked on 76.1.** The jobs exist, are structurally tested, and are gated to pull requests; no run has executed because the repository has no remote. |
+| `grep -rl "msys64" tests/` is empty except `conftest.py` | **Met.** Matches are `conftest.py` (documents the defect), `test_platform_portability.py` (states the spelling in order to forbid it), and nothing else. |
+| `grep -rl "velo\.exe" tests/` is empty except `conftest.py` | **Met in substance.** Remaining hits are prose in skip messages, content assertions about `bootstrap.bat`'s text, and the guard that forbids the spelling; no test spawns a hardcoded path. Enforced by `test_no_windows_compiler_filename_in_test_code`, which distinguishes the two cases and says so. |
+| `velo check` is safe to run concurrently, proven by test | **Met.** `tests/test_check_concurrency.py`, 4 rows. |
+| Every subprocess call that captures text pins its encoding | **Met** (added by the 76.3 follow-up). 384 sites pinned; AST guard in `test_platform_portability.py`. |
+| Only the fast tier runs on push; the full suite runs on pull requests | **Met.** `test_fast_job_runs_only_the_fast_lane`, `test_heavy_jobs_do_not_run_on_push`. |
+
+The phase cannot be marked fully closed while 76.1 is blocked. Six of the seven
+criteria are met and enforced by tests; the seventh is an external action, not an
+engineering defect.
 
 ---
 
@@ -1433,9 +1602,11 @@ listed so they are not rediscovered as surprises.
 
 | Item | Evidence | Residual risk | Close condition |
 | :--- | :--- | :--- | :--- |
-| 422 captured-subprocess test sites lack explicit encoding | recorded in the pre-Phase-69 audit baseline | Windows CI can fail on code-page-dependent output | Swept by Phase 76.3's conftest helper; assert `grep -c "text=True" without encoding` == 0 |
-| ASan/UBSan unverifiable on the maintainer host | sanitizer libs absent locally; `.github/workflows/ci.yml:221` lane unproven | Memory bugs can ship unnoticed | One green full-suite sanitizer run committed (Phase 74.6) |
+| CI exists as a workflow, not as a record of execution | no remote (`git remote -v` empty); every row in `docs/CI_STATUS.md` reads "not yet"; `test_every_declared_job_has_evidence` is strict-xfail | A reviewer cannot tell a green CI from an unrun one by looking at the repo alone - mitigated by `docs/CI_STATUS.md` stating "no run has executed" and by the strict xfail | One green run per declared job, recorded in `docs/CI_STATUS.md` (Phase 76.1) |
+| ASan/UBSan unverifiable on the maintainer host | sanitizer libs absent locally; `.github/workflows/ci.yml` sanitizer lane unproven | Memory bugs can ship unnoticed | One green full-suite sanitizer run committed (Phase 74.6) |
 | `velo_check_capture.tmp` fixed CWD filename | fixed in 76.4: `check_capture_path()` embeds the pid (`src/backend/check.vl`) | Concurrent `velo check` is safe per process; not per thread | None for the CLI; a thread-safe variant needs the capture global made reentrant |
+| Windows and MSVC lanes never executed | `windows-gcc` and `windows-msvc` jobs are structurally tested, but no run exists | The MSVC backend is verified locally for 2 of 132 modules; a full-suite MSVC run may surface genuine backend defects on first execution | First green `windows-msvc` run (Phase 76.1) |
+| `fast` tier membership is opt-in and could drift | `pytestmark = pytest.mark.fast` in 5 modules; `slow` inferred by source heuristic | A module that starts invoking the compiler while still marked `fast` slows the push lane; the heuristic cannot detect that because `fast` short-circuits it | Reviewed by `test_fast_job_runs_only_the_fast_lane` at the job level; per-module honesty is a review responsibility |
 | 400-line ceiling forces sliver modules | 40+ files under 150 lines in `src/analysis`/`src/backend` | Concept fragmentation, duplicated header contracts | Phase 80.4 (ceiling becomes a consequence, not a constraint) |
 | Frozen Stage-1 Python compiler still in the build story | `AGENTS.md`, `examples/12_stage2_semantics_test.vl` | Double maintenance, false parity signal | Phase 80.5 |
 | `bootstrap.c` is a 2.3 MB generated artifact in review | 67,952 lines | Compiler diffs are unreviewable at the artifact level | Phase 80.6 budget warning + Phase 76 tiering |
@@ -1460,7 +1631,8 @@ following are true and each is backed by a committed artifact, not a claim:
    compiler, and run the full suite green; the platform support matrix in
    `docs/COMPATIBILITY.md` matches reality (Phases 70, 76, 83). `[ ]`
 3. **CI evidence:** `docs/CI_STATUS.md` links a green run per job on the
-   release commit (Phase 76). `[ ]`
+   release commit (Phase 76). `[ ]` - the document and its enforcing test exist;
+   the runs do not, because there is no remote.
 4. **No lying stubs:** zero stub-return bodies in `std/`; every documented
    function either works or refuses (Phases 75, 83). `[ ]`
 5. **Memory safety story:** defined overflow semantics, divide-by-zero

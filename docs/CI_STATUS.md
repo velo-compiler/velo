@@ -37,7 +37,7 @@ invocations, and a 16-minute red X on every push teaches people to ignore CI
 `slow` is applied by a collection hook in `tests/conftest.py` from a source
 heuristic, not by annotating ~2000 tests by hand; `fast` is an explicit
 `pytestmark` in each module that promises never to invoke a C compiler. Locally
-the fast lane is 38 passed, 1 xfailed in about 2 seconds, against 1993
+the fast lane is 39 passed, 1 xfailed in about 3 seconds, against 1995
 deselected.
 
 ## What is known without CI
@@ -48,7 +48,7 @@ These are verified on the maintainer host and recorded here so the gap between
 | Check | Command | State |
 | :--- | :--- | :--- |
 | Full suite, Windows + MSYS2 gcc | `python -m pytest tests -q` | passes |
-| Fast lane, Windows + MSYS2 gcc | `python -m pytest tests -q -m fast` | passes (38 passed, 1 xfailed, ~2 s) |
+| Fast lane, Windows + MSYS2 gcc | `python -m pytest tests -q -m fast` | passes (39 passed, 1 xfailed, ~3 s) |
 | Bootstrap fixed point | `python scripts/check_determinism.py` | `SHA-256 MATCH` |
 | Snapshot freshness | `tests/test_bootstrap_snapshot.py` | byte-identical |
 | Line ceiling | `python scripts/count_lines.py` | no file over 400 |
