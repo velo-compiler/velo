@@ -19,31 +19,88 @@ CHECK_DET = REPO_ROOT / "scripts" / "check_determinism.py"
 VELO_EXE = velo_exe()
 
 def test_ci_workflow_exists_and_configured():
-    """Verify that .github/workflows/ci.yml exists and contains all required matrix configurations."""
+    """
+    Parse the workflow and assert its structure, not its substrings.
+
+    The previous version asserted that strings like "ubuntu-22.04" and
+    "pytest tests -q" appeared somewhere in the file. That passes for a workflow
+    whose jobs are commented out, whose steps are under the wrong key, or that
+    GitHub would reject outright. Parsing the YAML and walking the job/step tree
+    is the difference between testing the workflow and testing the prose.
+
+    Whether the workflow has ever *run* is a separate question, answered by
+    tests/test_ci_evidence.py against docs/CI_STATUS.md.
+    """
+    yaml = pytest.importorskip("yaml")
     assert CI_YML.exists(), ".github/workflows/ci.yml must exist"
-    content = CI_YML.read_text(encoding="utf-8")
+    doc = yaml.safe_load(CI_YML.read_text(encoding="utf-8"))
 
-    # Workflow triggers
-    assert "push:" in content
-    assert "pull_request:" in content
+    # Triggers: a real mapping, not the string "push:".
+    # PyYAML parses the bare key `on:` as the boolean True, so accept both.
+    triggers = doc.get("on", doc.get(True))
+    assert triggers, "workflow must declare triggers"
+    assert "push" in triggers, "workflow must trigger on push"
+    assert "pull_request" in triggers, "workflow must trigger on pull_request"
 
-    # Matrix platforms
-    assert "ubuntu-22.04" in content
-    assert "ubuntu-24.04" in content
-    assert "macos-14" in content
-    assert "macos-15" in content
-    assert "windows-2022" in content
+    jobs = doc.get("jobs") or {}
+    assert jobs, "workflow must declare jobs"
 
-    # Matrix compilers
-    assert "gcc" in content
-    assert "clang" in content
-    assert "cl.exe" in content or "--cc cl" in content
+    required = {"linux", "macos", "windows-gcc", "windows-msvc", "sanitizer"}
+    missing = required - set(jobs)
+    assert not missing, f"workflow is missing required jobs: {sorted(missing)}"
 
-    # Bootstrap & test steps
-    assert "scripts/bootstrap.sh --full" in content or "scripts/bootstrap.sh" in content
-    assert "scripts\\bootstrap.bat" in content
-    assert "check_determinism.py" in content
-    assert "pytest tests -q" in content
+    for name, job in jobs.items():
+        assert "runs-on" in job, f"job {name} has no runs-on"
+        steps = job.get("steps") or []
+        assert steps, f"job {name} has no steps"
+        for step in steps:
+            assert ("uses" in step) or ("run" in step), (
+                f"job {name} has a step with neither uses nor run"
+            )
+
+
+def test_linux_and_macos_jobs_use_a_matrix():
+    yaml = pytest.importorskip("yaml")
+    doc = yaml.safe_load(CI_YML.read_text(encoding="utf-8"))
+    jobs = doc["jobs"]
+
+    for name in ("linux", "macos"):
+        strategy = jobs[name].get("strategy") or {}
+        matrix = strategy.get("matrix") or {}
+        assert matrix, f"job {name} must define a matrix"
+        # runs-on must reference the matrix, otherwise every leg runs on one OS.
+        runs_on = str(jobs[name]["runs-on"])
+        assert "matrix." in runs_on, (
+            f"job {name} has a matrix but runs-on does not use it: {runs_on}"
+        )
+
+
+def test_linux_matrix_covers_both_compilers():
+    yaml = pytest.importorskip("yaml")
+    jobs = yaml.safe_load(CI_YML.read_text(encoding="utf-8"))["jobs"]
+    compilers = jobs["linux"]["strategy"]["matrix"].get("compiler") or []
+    assert {"gcc", "clang"} <= set(compilers), (
+        f"the linux job must test gcc and clang, got {compilers}"
+    )
+
+
+def test_every_job_runs_the_test_suite():
+    """
+    Each job must actually invoke pytest.
+
+    A job that bootstraps the compiler and stops proves only that it compiles,
+    which is how `windows-msvc` was silently reduced to two test files.
+    """
+    yaml = pytest.importorskip("yaml")
+    jobs = yaml.safe_load(CI_YML.read_text(encoding="utf-8"))["jobs"]
+    for name, job in jobs.items():
+        commands = [
+            str(step.get("run", ""))
+            for step in (job.get("steps") or [])
+        ]
+        joined = "\n".join(commands)
+        assert "pytest" in joined, f"job {name} never runs pytest"
+
 
 def test_bootstrap_sh_structure():
     """Verify that scripts/bootstrap.sh has the correct structure, permissions, and POSIX commands."""
