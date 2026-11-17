@@ -970,14 +970,16 @@ loop i in 5..=1 {
 #### 8. Dynamic Direction Selection & Evaluation Semantics
 When either `<start>` or `<end>` is a runtime variable, expression, or function call, direction selection is resolved via **runtime dynamic direction lowering**:
 
-| Endpoint Relation | Range Kind | Direction | Iterations | Lowered Relational Test | Stepping |
+| Endpoint Relation | Range Kind | Direction | Iterations | Lowered Exit Test | Stepping |
 |---|---|---|---|---|---|
 | `start < end` | Exclusive (`..`) | Ascending | `end - start` | `i < end` | `i += step` |
-| `start < end` | Inclusive (`..=`) | Ascending | `end - start + 1` | `i <= end` | `i += step` |
+| `start < end` | Inclusive (`..=`) | Ascending | `end - start + 1` | `end - i < step` (evaluated after the body) | `i += step` |
 | `start > end` | Exclusive (`..`) | Descending | `start - end` | `i > end` | `i -= step` |
-| `start > end` | Inclusive (`..=`) | Descending | `start - end + 1` | `i >= end` | `i -= step` |
+| `start > end` | Inclusive (`..=`) | Descending | `start - end + 1` | `i - end < step` (evaluated after the body) | `i -= step` |
 | `start == end` | Exclusive (`..`) | Ascending | `0` | `i < end` (evaluates `false`) | None (0 runs) |
-| `start == end` | Inclusive (`..=`) | Ascending | `1` | `i <= end` (evaluates `true`) | Exactly 1 run (`start`) |
+| `start == end` | Inclusive (`..=`) | Ascending | `1` | `end - i < step` (true on entry) | Exactly 1 run (`start`) |
+
+Inclusive rows terminate by remaining distance rather than by `<=`/`>=`, so the loop never forms a value past the endpoint and cannot overflow at the maximum of its type (Section 7.2, item 9, Rule W2). Item 9 governs when the two descriptions differ: the `Iterations` column is unchanged, only the exit test differs.
 
 ##### Guarantees and Invariants:
 1. **Single Evaluation of Dynamic Bounds (No Re-evaluation)**:
@@ -1050,6 +1052,58 @@ Therefore an inclusive range loop (`..=`) is lowered as an unbounded `for` whose
 
 Code that relied on wrapping at the inclusive bound was relying on undefined behaviour, so there is no behaviour to preserve. Migration guidance is therefore limited to: do not depend on the old truncation, and use an explicit cast when a narrower induction is genuinely wanted.
 
+##### 9.1 Migration from pre-Phase-68 loop semantics
+
+Two loop behaviours changed. Neither requires an edit for a correct program. Both require an edit for a program that was written against the old wrong result, because that result no longer exists.
+
+**W1 — the induction is now as wide as its bounds.** Previously a range loop whose bound was wider than `int32` could still emit an `int32_t` induction, and the loop then visited wrapped values:
+
+```rust
+let lim: isize = 3000000000
+loop i in 0..lim { ... }   // before: int32_t induction, visits -1294967296
+```
+
+The loop above now iterates the full `isize` range; that is the whole change. Anything that depended on the truncated values must be rewritten to depend on the real ones.
+
+If an `i32` induction is genuinely wanted — for a buffer index, say — say so at the bound, because the bound's type is what selects the width:
+
+```velo
+act main() {
+    let lim: i64 = 3
+    loop i in 0..(lim as i32) {
+        io.println("cast bound: {i}")
+    }
+}
+```
+
+Without the cast the same program iterates in the wider type, which is the default:
+
+```velo
+act main() {
+    let lim: i64 = 3
+    loop i in 0..lim {
+        io.println("wide bound: {i}")
+    }
+}
+```
+
+A cast that *truncates the value* is not a migration — `let lim: isize = 3000000000; loop i in 0..(lim as i32)` is a range to a negative endpoint, so it descends from 0 through `-1`, `-2`, … That reproduces the old defect on purpose; it is legal, and it is not a supported pattern.
+
+Widening the induction also widens the range of values the body sees, so an accumulator sized for the old iteration count may now overflow. Widen the accumulator rather than casting the induction back down.
+
+**W2 — inclusive ranges terminate without overflow.** Nothing to migrate. A loop such as `loop i in 2147483645..=2147483647` always ran three times; before, the fourth increment was undefined behaviour (signed) or a wrap to zero (unsigned), and whether the loop stopped at all depended on the optimiser. There is no correct program whose behaviour changes here:
+
+```velo
+act main() {
+    loop i in 2147483645..=2147483647 {
+        io.println("at max: {i}")
+    }
+}
+```
+
+`continue` inside an inclusive range is unchanged: it still runs the loop's advance and its exit test. Exclusive ranges are unchanged in both shape and result.
+
+**Unchanged:** count loops (`loop n`) and condition loops (`loop cond`) keep their induction type and their semantics; `loop 5` is still five `int32_t` iterations of `it`. Only the range form is affected, and only in width and terminal condition.
 
 ### 7.3 Pattern Matching (`on`)
 The `on` statement performs pattern matching over scalar values, tagged unions, and strings:

@@ -348,7 +348,7 @@ Status values: `[OPEN]`, `[IN PROGRESS]`, `[BLOCKED]`, `[COMPLETED] ✅`.
 | **65** | Runtime zone allocator NULL/watermark hardening | P2 | 6 | — | COMPLETED ✅ |
 | **66** | Determinism script crashes on Windows cp1252 | P2 | 4 | — | COMPLETED ✅ |
 | **67** | `test_std_fs_ops` depends on an ambient `scratch/` dir | P2 | 4 | — | COMPLETED ✅ |
-| **68** | Loop induction variable is always `int32_t` | P3 | 6 | 53, 54, 55, 56 | OPEN |
+| **68** | Loop induction variable is always `int32_t` | P3 | 6 | 53, 54, 55, 56 | COMPLETED ✅ |
 
 ### 3.3 Recommended Execution Waves
 
@@ -3473,7 +3473,7 @@ scratch/test_io_ops.txt
 
 ---
 
-### Phase 68: Loop Induction Variable Width (P3) [OPEN] 🚧
+### Phase 68: Loop Induction Variable Width (P3) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-17`<br>
 **Severity:** P3 — documented limitation; overflow/UB on large ranges<br>
@@ -3587,16 +3587,38 @@ loop i in 0..3000000000 { ... }   // endpoint now wide, induction still i32
 * **Residual Limitation**: the performance rows are a **relative** comparison of two generated binaries, not an absolute benchmark suite. They would not detect a slowdown that affects both forms equally, and they do not cover `-O0` builds, where the extra comparison is proportionally more expensive. Best-of-5 also hides variance rather than characterising it. Second: the pre-W2 comparison in this entry was a **manual measurement**, not a test — it required building a compiler from a historical snapshot, which is too slow and too dependent on git history to run in CI, so it is recorded as evidence rather than asserted. Third: determinism rows verify reproducibility on this host; they cannot prove cross-platform stability, which remains the CI matrix's job.
 * **Verification**: `python -m pytest tests/test_loop_performance.py -q` → **5 passed**. `test_bootstrap_snapshot.py` → 5 passed. One row was corrected during the task for a real reason: it originally compared `bootstrap.c` against `emit-c` **to stdout**, which is a different code path and is not byte-identical to `emit-c -o <file>`; it failed, and now uses the `-o` route that the bootstrap script and the existing snapshot test use.
 
-##### Task 68.6: Write migration notes
-* **Goal:** Document the breaking change and the recommended explicit casts.
-* **Files:** `docs/SPECIFICATION.md`, `gaps.md`, release notes.
-* **Tests:** migration examples compile.
-* **Security gate:** no silent behavior change for existing `i32` loops.
-* **Done when:** the notes are published with the change.
+##### Task 68.6: Write migration notes [COMPLETED] ✅
+* **Former Defect**: the phase is explicitly breaking ("The change is breaking; migration notes are mandatory"), and after 68.3/68.4 the only migration guidance in the tree was one sentence at the end of SPEC 7.2 item 9: *"do not depend on the old truncation, and use an explicit cast when a narrower induction is genuinely wanted."* That sentence is correct and useless — it names the remedy without showing it, and it does not say which of the two changes is the breaking one. Worse, the document had **already drifted**: the Section 7.2 item 8 dynamic-direction table still listed `i <= end` / `i >= end` as the lowered exit test for inclusive ranges, which W2 had replaced in 68.4. A user reading the table and then the loop's emitted C would find two different contracts in one section.
+* **Fix Applied**:
+  - New SPEC **7.2 item 9.1 "Migration from pre-Phase-68 loop semantics"**, split by which change a reader is actually reacting to:
+    - **W1 is the only change with a migration.** A program that produced correct output keeps producing it (the induction is only ever wider, never narrower), so the only edits needed are in programs that relied on the truncated values. The notes show the recommended narrowing pattern — cast the **bound**, not the induction — and why: the bound's type is what selects the width, so `loop i in 0..(lim as i32)` gets an `int32_t` induction without any per-iteration cast.
+    - **W2 has nothing to migrate**, and the notes say so with the reason: the pre-fix behaviour at the type maximum was undefined behaviour, so no correct program observed it. `continue`, exclusive ranges, count loops and condition loops are stated as unchanged rather than left to inference.
+  - **Both examples are runnable `velo` blocks**, not `rust`-fenced illustration like the rest of Section 7.2. Two blocks demonstrate cast-bound vs uncast-bound; a third is the inclusive-max program. This distinction is deliberate: a migration note is the only document a user reads *after* their loop starts producing different numbers, so it must be executable, and `tests/test_loop_migration_notes.py` now compiles every `velo` block in the section.
+  - Corrected the drifted **item 8 table** (`Lowered Relational Test` → `Lowered Exit Test`, inclusive rows now `end - i < step` / `i - end < step`, with a pointer that item 9 governs on conflict) and the truncating-cast paragraph, which originally said the cast "visits negative values" — measured, it is a range to a *negative endpoint*, so the loop descends from `0` through `-1`, `-2`. Both were documentation defects found while writing the notes, not while testing them.
+* **Residual Limitation**: the notes are prose plus tested examples; they do not attempt a mechanical upgrade tool, and there is no way to detect a program that depended on the old values other than it starting to produce new ones. The `velo`-fence convention is also new in Section 7.2 — the rest of the section still uses `rust` fences that are not compiled, so only the migration subsection is executable; converting the remaining 40-odd fences would be a separate audit, and doing it here would have mixed a documentation refactor into a breaking-change commit. Third: the notes describe `isize` (`ptrdiff_t`) and the four integer widths that are tested; a target where `isize` is not 64-bit would falsify the worked example, and no test asserts the platform assumption beyond the existing `test_loop_induction_width.py` rows.
+* **Verification**: `tests/test_loop_migration_notes.py` → **6 passed**: every `velo` block in 9.1 builds and runs; a cast bound emits an `int32_t` induction (asserted on the hoisted temporaries, since a dynamic bound has no bare `int32_t i` declaration); an uncast `i64` bound emits `int64_t`; the inclusive-max program runs exactly 3 times; and the truncating cast really does visit `0, -1, -2`, so the warning describes observable behaviour. Two rows failed on first run and were **tightened, not loosened**: the cast-bound row looked for `int32_t i` and had to read the hoisted temporaries instead, and the truncation row asserted a single first value of `-1294967296` which was wrong — the first visited value is `0`, and only the *direction* exposes the defect.
 
 #### Phase Exit Criteria
 
-- [ ] Loop induction no longer overflows for any accepted range.
-- [ ] The width rule is documented and consistent across loop kinds.
-- [ ] Boundary tests pass at `INT32_MAX`/`UINT32_MAX`/`INT64_MAX`.
-- [ ] Bootstrap determinism and performance are verified.
+- [x] Loop induction no longer overflows for any accepted range.
+- [x] The width rule is documented and consistent across loop kinds.
+- [x] Boundary tests pass at `INT32_MAX`/`UINT32_MAX`/`INT64_MAX`.
+- [x] Bootstrap determinism and performance are verified.
+
+#### Phase Summary
+
+**Former Defect**: every range loop declared its induction as `int32_t`, so a bound above `INT32_MAX` truncated and the loop visited the wrong values, and every inclusive range lowered to `for (T i = s; i <= e; i++)`, which overflows after the final iteration at the maximum of `T` — undefined behaviour for signed types, wrap-to-zero for unsigned. Measurement in 68.1 split this into two defects with different fixes and showed they are independent: the width truncation was gated on a single missing `isize` entry in a widening ladder, while the boundary overflow reproduced at `i32`, `i64`, `u32` **and** `u64`, so no width change could have fixed it.
+
+**Fix Applied**: Task 68.1 fixed the decision in SPEC 7.2 item 9 as two rules (W1 width from the bounds with an `i32` floor; W2 terminate by remaining distance, never passing the endpoint) and rejected widening everything to `i64`; 68.2 enumerated all **eight** loop codegen paths as an executable audit table and recorded a red baseline; 68.3 added `isize` to the range widening ladder and to `loop_var_c_type`; 68.4 replaced the inclusive-range lowering with an unbounded `for` plus a step-aware, body-terminated distance test emitted after the `__loop_cont_N` label so `continue` still advances; 68.5 measured the cost (ratio ≈ 1.0x, and equal to a compiler rebuilt from its own pre-fix snapshot) and re-verified Gen2 == Gen3 determinism; 68.6 published the migration notes with compiled examples and corrected the item 8 table that W2 had left stale.
+
+**Residual Limitation**: the width ladder is still an ordered list of equality tests, so a new 64-bit integer type must be added in three places (the ladder, `loop_var_c_type`, `map_type_to_c`) and only the audit rows guard that; `i8`/`i16`/`u8`/`u16` bounds still iterate in `i32` by the documented floor; an inclusive range now emits a body-terminated loop, so anything pattern-matching the old header shape had to change (four `test_large_ranges.py` rows and two `test_dynamic_ranges.py` assertions were updated); the performance rows are a relative cliff detector, not a benchmark, and the pre-fix comparison was a manual measurement rather than a test.
+
+**Verification**: `tests/test_loop_induction_width.py` 29 passed (red baseline 8 failed / 9 passed in 68.2); `tests/test_loop_performance.py` 5 passed; `tests/test_loop_migration_notes.py` 6 passed; loop regression set 463 passed; `check_determinism.py` → SHA-256 MATCH at `abebbf2b00ca498e1fd9880a7a03a161828e6536fbbcdd8192a60dd0e408a4b0`; `test_bootstrap_snapshot.py` 5 passed; full suite `python -m pytest tests -q` → **1945 passed, 2 skipped in 922.14s** (1905 at the Phase 67 close, +29 `test_loop_induction_width.py`, +5 `test_loop_performance.py`, +6 `test_loop_migration_notes.py`). No compiler source changed in 68.5/68.6, so the bootstrap chain built in 68.4 stands and `bootstrap.c` was not regenerated.
+
+- Task 68.1 — `3987b0f` `docs(loop)`: decide induction width and inclusive-range termination rule.
+- Task 68.2 — `496fb48` `test(loop)`: audit all eight loop codegen paths with a red baseline.
+- Task 68.3 — `d922937` `fix(loop)`: widen range induction for `isize` bounds (W1).
+- Task 68.4 — `fa7a5f4` `fix(loop)`: terminate inclusive ranges by distance, not overflow (W2).
+- Task 68.5 — `265101c` `test(loop)`: measure W2 cost and re-verify determinism.
+- Task 68.6 — this commit: SPEC 7.2 item 9.1 migration notes, item 8 table correction, `tests/test_loop_migration_notes.py`.
+
