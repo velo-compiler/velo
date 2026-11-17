@@ -3361,6 +3361,24 @@ scratch/test_io_ops.txt
 * **Security gate:** do not touch the developer's real `scratch/` outside the test sandbox.
 * **Done when:** the failure is reproducible.
 
+##### Task 67.1: Reproduce from a clean state [COMPLETED] ✅
+* **Former Defect**: `std/tests/fs/ops_test.vl` writes to relative paths (`scratch/test_dir_single`, `scratch/nest1/nest2/nest3`, `scratch/test_io_ops.txt`, ...) and creates the **leaves** with `fs_create_dir_str`, which maps to a plain `CreateDirectoryA` (`std/fs/ops.vl:22-30`) with no parent creation. Only `fs_create_dir_all` walks parents, and the suite never uses it for `scratch/` itself. So the suite requires `scratch/` to already exist. In this working tree it does — `Test-Path scratch` is true and `git ls-files scratch` finds **zero** tracked files: it is untracked, empty residue. `tests/test_std_fs.py::test_std_fs_ops` therefore passed on this machine and would fail on a clean clone or any CI runner.
+* **Fix Applied**:
+  - `tests/test_std_fs.py`: `run_fs_ops_in(sandbox)` runs the Velo suite with an explicit `cwd` pointing at a fresh `tmp_path`, instead of `cwd=REPO_ROOT`. `tmp_path` is pytest-managed and unique per test, so no ambient `scratch/` can exist and the developer's real `scratch/` is never read or written.
+  - `test_std_fs_ops_needs_no_ambient_scratch` asserts the sandbox starts empty (so the test cannot silently inherit state), then asserts exit 0 and the PASS line. This is the red row.
+  - `test_std_fs_ops_cleans_up_after_itself` asserts nothing but `.velo_cache` survives the run — the property that let the defect hide, since a first run creating `scratch/` is what makes every later run pass.
+  - `test_std_fs_ops_does_not_touch_the_repository_scratch` is a structural gate on the helper: it must pin `cwd=str(sandbox)` and must not contain `cwd=str(REPO_ROOT)`. This is the Task 67.1 security gate ("do not touch the developer's real `scratch/`") enforced as an assertion rather than trusted.
+* **Residual Limitation**: At this commit the cleanup row passes **vacuously** — the Velo suite fails at its first assertion (`test_dir_create_and_remove`), so it creates nothing and leaves nothing, and "no leftovers" is trivially true. It only becomes a meaningful assertion once Task 67.2 makes the suite run to completion. Recorded explicitly because a vacuously-green test is indistinguishable from a real pass in a summary line.
+  - The `.velo_cache` exclusion is a pragmatic allowance: the compiler writes its own cache into the cwd by design, so a strict "directory must be empty" assertion would fail for a reason unrelated to `std.fs.ops`.
+* **Verification**:
+  - Manual reproduction, three runs:
+    * repo root: `bin\velo.exe run std\tests\fs\ops_test.vl` → `PASS: std.fs.ops all assertions succeeded`, exit 0.
+    * fresh empty temp cwd → `FAIL: test_dir_create_and_remove`, exit **1**.
+    * fresh temp cwd **with** `scratch/` pre-created → `PASS`, exit 0, and `scratch/` was left behind.
+    The only variable between failing and passing is the existence of `scratch/`, which confirms the diagnosis rather than merely correlating with it.
+  - `python -m pytest tests/test_std_fs.py -q`: **1 failed, 6 passed** — the single failure is `test_std_fs_ops_needs_no_ambient_scratch` with `FAIL: test_dir_create_and_remove`, i.e. the defect reproduced from a clean state.
+  - The sandboxed run never touched the repository's `scratch/`; the red row asserts its own sandbox is empty before starting.
+
 ##### Task 67.2: Make the Velo test self-contained
 * **Goal:** Create the base directory (and parents) at the start, and remove it at the end.
 * **Files:** `std/tests/fs/ops_test.vl:9-90`.
