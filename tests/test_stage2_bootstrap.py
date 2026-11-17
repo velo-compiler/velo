@@ -4,6 +4,8 @@ import subprocess
 from pathlib import Path
 import pytest
 
+from release_meta import expected_banner_line
+
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 BIN_DIR = REPO_ROOT / "bin"
 CACHE_DIR = REPO_ROOT / ".velo_cache"
@@ -112,7 +114,7 @@ def test_gen3_version_and_help():
         env=get_env()
     )
     assert res_ver.returncode == 0
-    assert "Velo v2.0 (Self-Hosted Native Compiler)" in res_ver.stdout
+    assert expected_banner_line() in res_ver.stdout
 
     res_help = subprocess.run(
         [str(GEN3_EXE), "help"],

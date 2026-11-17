@@ -8,11 +8,11 @@ The Velo team is dedicated to providing a hardware-grade, high-performance syste
 
 ## Supported Versions
 
-Only the current major self-hosted release branch receives active security updates and patch releases:
+Only the current major self-hosted release branch receives active security updates and patch releases. The authoritative version string lives in the repository-root [`VERSION`](VERSION) file and is reported by `velo version`:
 
 | Version | Supported | Notes |
 |:---|:---:|:---|
-| **Velo v2.0 (Self-Hosted)** | :white_check_mark: | Canonical self-hosted compiler chain (`src/**/*.vl`, `bootstrap.c`) |
+| **Velo v2.x (Self-Hosted)** | :white_check_mark: | Canonical self-hosted compiler chain (`src/**/*.vl`, `bootstrap.c`) |
 | **Velo v1.x (Python Reference)** | :x: | Frozen Stage 1 historical reference compiler; not for production use |
 | **Velo < 1.0 (Pre-Alpha)** | :x: | End of Life (EOL) |
 

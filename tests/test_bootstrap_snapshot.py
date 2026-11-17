@@ -6,6 +6,8 @@ import pytest
 
 import sys
 
+from release_meta import expected_banner_line
+
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 BOOTSTRAP_C = REPO_ROOT / "bootstrap.c"
 BOOTSTRAP_BAT = REPO_ROOT / "scripts" / "bootstrap.bat"
@@ -77,7 +79,7 @@ def test_bootstrap_c_compilation(tmp_path):
 
     res_ver = subprocess.run([str(test_exe), "version"], capture_output=True, text=True, env=get_env())
     assert res_ver.returncode == 0
-    assert "Velo v2.0 (Self-Hosted Native Compiler)" in res_ver.stdout
+    assert expected_banner_line() in res_ver.stdout
 
 def test_bootstrap_c_determinism(tmp_path):
     """Verify that bootstrap.c matches the current emit-c -o output of src/main.vl."""

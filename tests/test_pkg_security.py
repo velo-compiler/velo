@@ -10,10 +10,11 @@ import subprocess
 from pathlib import Path
 import pytest
 
+from release_meta import read_version
+
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 VELO_EXE = REPO_ROOT / "bin" / ("velo.exe" if sys.platform == "win32" else "velo")
 SECURITY_MD = REPO_ROOT / "SECURITY.md"
-
 def test_security_policy_document_exists():
     """Verify that SECURITY.md exists at repository root and defines complete disclosure policies."""
     assert SECURITY_MD.exists(), "SECURITY.md must exist in repository root"
@@ -28,7 +29,7 @@ def test_security_policy_document_exists():
     assert "## Security Architecture & Invariants" in content
 
     # Key security commitments
-    assert "Velo v2.0" in content
+    assert f"Velo v{read_version().split('.')[0]}.x" in content
     assert "security@velolang.org" in content
     assert "48 hours" in content
     assert "14 calendar days" in content

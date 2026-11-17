@@ -1,0 +1,16 @@
+// Release version metadata for the Velo toolchain.
+//
+// SINGLE SOURCE OF TRUTH: the repository-root `VERSION` file. That file is
+// read by `scripts/release.py` (archive naming) and by
+// `scripts/check_version.py` / `tests/test_release_metadata.py`, which assert
+// that the values below, the `VERSION` file, and the `velo version` banner are
+// all identical. Editing this file without editing `VERSION` (or the reverse)
+// fails the test suite, so the CLI, the package tooling, and the released
+// artifact cannot drift apart.
+//
+// `VELO_VERSION` is the exact `MAJOR.MINOR.PATCH[-PRERELEASE]` string.
+// `VELO_VERSION_LABEL` is the human-readable build label shown in the banner.
+
+let VELO_VERSION: string = "2.0.0-pre"
+let VELO_VERSION_LABEL: string = "Self-Hosted Native Compiler"
+let VELO_TARGET_LABEL: string = "Standard C99 / Native Machine Code"

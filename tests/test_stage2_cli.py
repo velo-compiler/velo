@@ -3,6 +3,8 @@ import subprocess
 from pathlib import Path
 import pytest
 
+from release_meta import expected_banner_line
+
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
 
@@ -36,7 +38,7 @@ def run_velo(args):
 def test_cli_version():
     res = run_velo(["version"])
     assert res.returncode == 0
-    assert "Velo v2.0 (Self-Hosted Native Compiler)" in res.stdout
+    assert expected_banner_line() in res.stdout
 
 def test_cli_help():
     res = run_velo(["help"])
