@@ -1,3701 +1,1321 @@
-# The Velo Language Gap Analysis & Phased Engineering Roadmap 📋
+# The Velo Language Gap Registry - Pre-Public-Release Audit
 
-> **Document Status**: Active Phased Roadmap & Open Engineering Backlog  
-> **Target Version**: Velo 2.0+ (Production Systems & Game Engine Viability)  
-> **Source Baseline**: Programming Language Review Report `PLR-VELO-2026-001` (Commit `49b2010`)  
-> **Archive**: All completed historical gap audits (§1.1 through §44.1) are preserved in Git history.  
-> **Workflow Rule**: An AI agent or engineer MUST implement **one single Task at a time** from **one single Phase**. Every task starts with a failing regression test and ends with targeted tests green. Compiler-source tasks additionally require a Gen2/Gen3 bootstrap rebuild and SHA-256 determinism check. A phase is closed only after the full suite passes and this document is updated.
+Purpose: enumerate every gap that must be closed before Velo is published for
+real-world use, ordered by what actually blocks adoption. This file is the
+release gate, not a wish list. A gap is only closed when it has a regression
+test, a `gaps.md` entry in the `Former Defect -> Fix Applied -> Residual
+Limitation -> Verification` form, and a commit.
 
----
+Provenance: Phases 45-69 (see `docs/gaps_archive.md` plus git history) closed
+the *correctness* backlog of the compiler as it exists **on Windows with a
+Win32-hosted stdlib**. This registry starts from the question the previous
+backlog never asked: *can a stranger install this, on their platform, and ship
+something without being lied to?* The answer today is no, and the reasons are
+below.
 
-## 1. Summary of Completed Milestones
+Method: every item marked `[VERIFIED]` was reproduced in-tree on 2026-11-17
+with `bin/velo.exe`, `gcc -c` + `nm`, or `git ls-files`; the evidence column
+cites the probe. Nothing here is inferred from the roadmap files, and nothing
+here is copied from `AUDIT.md` or `README.md` - both are themselves audited in
+Phase 83.
 
-All foundational milestones and language extensions implemented prior to Review `PLR-VELO-2026-001` are **100% completed, self-hosted, and covered by the regression suite** (`python -m pytest tests -q` → **1945 passed, 2 skipped**):
-
-| Milestone Range | Scope & Capabilities Delivered | Status |
-| :--- | :--- | :---: |
-| **Foundational Milestones (§1 – §6)** | Bitwise ops, control flow, `kind` enums/tagged unions, generics, function pointers, UFCS, operator overloading, advanced structs, zone arena, collections (`shelf`, `map`, `ring`, `bitset`, `dyn`), math, fs, time, build modes, visual error diagnostics, LSP 3.17, native test runner, MSVC C99 portability. | **COMPLETED** ✅ |
-| **Standard Library Modernization (Phases 1 – 29)** | Pure-Velo `std.*` migration (`io`, `str`, `fmt`, `coll`, `fs`, `json`, `time`, `math`, `os`, `net`, `crypto`, `http`, `log`, `test`, `encoding`, `csv`, `cli`, `url`, `rand`, `uuid`, `text`, `timer`, `validate`). | **COMPLETED** ✅ |
-| **Language & Systems Hardening (Phases 30 – 44)** | Codegen error gating, algebraic error handling (`or` / `fail`), lexical zone escape analysis, compile-time null safety (`?T`), non-blocking async event loop (`std.async`), async HTTP client/server, zero-alloc HTTP server fast-path, flow-sensitive type narrowing, first-class `if-else` expressions, string pattern matching in `on`, string `+`/`+=` concatenation, fixed-size stack arrays (`[N]T`), and first-class tuples with multiple return values (`-> (A, B)`). | **COMPLETED** ✅ |
-| **Post-Release Correctness Audit (Phases 52 – 68)** | 17 confirmed defects across the compiler, language semantics, runtime, tooling, and test infrastructure, split into small, independently testable tasks. | **COMPLETED** ✅ |
-| **Follow-up Audit (Phase 69)** | 1 defect carried forward from a Phase 62 aside: deferred transfer statements crashed the compiler with no diagnostic. | **COMPLETED** ✅ |
-
-*(Full historical defect analyses, fix implementations, and verification proofs for Phases 1 through 44 are preserved in Git history).*
-
----
-
-## 2. Active Phased Engineering Roadmap (Gaps from Review `PLR-VELO-2026-001`)
-
-The following roadmap comprises strictly the open gaps and findings identified during the independent engineering review of Velo v2.0-beta.
-
-```mermaid
-flowchart TD
-    P45["Phase 45 (P0): Specification Synchronization ✅\n(Sync SPECIFICATION.md with Phases 30-44)"] --> P46["Phase 46 (P1): Type System Strictness & Integer Safety ✅\n(Reject truncating int conversions without cast)"]
-    P46 --> P47["Phase 47 (P2): Compiler Driver Command Quoting\n(Escape paths against argument injection)"]
-    P47 --> P48["Phase 48 (P2): Syntactic Safety Boundaries & Unsafe Blocks\n(unsafe { ... } blocks & --strict-safety)"]
-    P48 --> P49["Phase 49 (P2): Multi-Platform Automated CI\n(Linux & macOS GitHub Actions workflows)"]
-    P49 --> P50["Phase 50 (P3): Package Provenance & Security Policy\n(velo.lock checksums & SECURITY.md)"]
-    P50 --> P51["Phase 51 (P3): Standalone Source Formatter\n(velo fmt CLI subcommand)"]
-
-    style P45 fill:#2e7d32,stroke:#1b5e20,color:#ffffff
-    style P46 fill:#2e7d32,stroke:#1b5e20,color:#ffffff
-    style P47 fill:#1e88e5,stroke:#0d47a1,color:#ffffff
-    style P48 fill:#43a047,stroke:#1b5e20,color:#ffffff
-    style P49 fill:#8e24aa,stroke:#4a148c,color:#ffffff
-    style P50 fill:#00acc1,stroke:#006064,color:#ffffff
-    style P51 fill:#546e7a,stroke:#263238,color:#ffffff
-```
-
-> **Post-release audit:** Phases 52–68 are tracked separately in **§3** below. They are correctness defects found after the 45–51 roadmap closed, not part of the completed milestone set.
+Status legend: `OPEN` = confirmed, unfixed. `OPEN (unverified)` = suspected,
+needs a reproduction before it can be scheduled. `COMPLETED` = fixed, tested,
+committed, with the four-part entry.
 
 ---
 
-### Phase 45: Language Specification Synchronization & Contract Hardening (`PLR-VELO-001`) [COMPLETED] ✅
+## 1. Verified Baseline (what is genuinely done)
 
-#### Task 45.1: Specification Modernization for Post-Phase 30 Features [COMPLETED] ✅
-* **Former Defect**:
-  - `docs/SPECIFICATION.md` covered only Stage 1 and early Stage 2 features up to §2.9 and §9.
-  - Major language capabilities implemented and verified across Phases 30 through 44 were absent from the formal specification:
-    1. Fixed-size stack arrays (`[N]T`, `buf.len`, `buf.ptr`, stack allocation semantics).
-    2. First-class tuples and multiple return values (`-> (A, B)`, destructuring `let (a, b) = val`, wildcard `_`, member access `t.0`/`t.1`).
-    3. Algebraic outcome types (`T or E`, `fail err`, and `or return` unwrapping).
-    4. Compile-time null safety and optional types (`?T`, `opt.val`, `opt.has`, and `null` literal semantics).
-    5. Flow-sensitive type narrowing (`if x != null { ... }` narrowing `?T` to `T`).
-    6. First-class `if-else` expressions producing values (`let x = if cond { a } else { b }`).
-    7. String pattern matching in `on` statements.
-    8. Native string concatenation operators (`+` and `+=`).
-* **Fix Applied**:
-  - Updated `docs/SPECIFICATION.md` to Stage 2 Production Specification standard.
-  - Formalized §1.4 (`fail` keyword), §1.6 (precedence table with string concat `+` and append `+=`), and §1.7 (strict left-to-right evaluation order and short-circuit semantics).
-  - Authored comprehensive normative sections:
-    * **§2.10: Fixed-Size Stack Arrays (`[N]T`)**: syntax, zero-initialization, array literals, constant compile-time bounds checking, immutability, `.len` and `.ptr` properties, array copy assignment via `memcpy`, and C99 compound literal lowering.
-    * **§2.11: First-Class Tuples & Multiple Return Values (`-> (A, B)`)**: type annotations, tuple literals, destructuring declarations (`let (a, b) = ...`), wildcard discard `_`, member access (`.0`, `.1`), and zero-overhead mangled struct lowering.
-    * **§2.12: Optional Types & Compile-Time Null Safety (`?T`)**: nullable pointer representation, boxed value structs (`_Velo_Opt_T`), `.has` and `.val` properties, and flow-sensitive type narrowing across branches and early returns.
-    * **§2.13: Algebraic Outcome Types & Error Handling (`T or E`)**: outcome syntax, `fail` statements, `or return` error propagation, `.ok`, `.val`, `.err` properties, and C union lowering.
-    * **§6.2: Native String Concatenation (`+` and `+=`)**: zone/heap dynamic allocation and desugaring.
-    * **§7.3.2: String Pattern Matching in `on`**: string comparison lowering and wildcard matching.
-    * **§7.4: First-Class Conditional Expressions (`if-else`)**: expression evaluation, branch typing, and automatic widening (`widen_if_branch_types`).
-    * **§9: CLI Surface**: updated command reference table to include `test`, `pkg`, and `lsp`.
-* **Residual Limitation**:
-  - 1-tuples `(T,)` are not part of the grammar (parenthesized single expressions `(expr)` remain grouping expressions). Fixed-size stack arrays cannot be returned directly by value due to C99 return type limitations (pointers `@T` or enclosing structs should be returned).
-* **Verification**:
-  - Verified every specification code example compiles and runs cleanly with `bin/velo.exe`.
-  - Audited `docs/SPECIFICATION.md` against parser AST definitions in `src/ast/` and `src/frontend/`.
-  - Ran automated test suites with 100% pass rate.
-  - Line standards verified (`scripts/count_lines.py`).
+Recorded so the registry does not overstate the work. All of this was
+re-verified this session:
+
+| Property | Evidence |
+| :--- | :--- |
+| Full suite green on the maintainer host | 1964 passed, 2 skipped (~934 s) |
+| Bootstrap fixed point | `check_determinism.py` -> SHA-256 MATCH Gen2 == Gen3 |
+| Bootstrap snapshot | `bootstrap.c` == `emit-c src/main.vl -o fresh.c` |
+| Runtime header parity | `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h` share SHA-256 `86470B2C...351064` |
+| Line ceiling | `scripts/count_lines.py` reports no file over 400 lines |
+| Clean-tree gate | `scripts/check_clean_tree.py` PASS |
+| Deferred transfers | `defer return/break/continue/fail` rejected with a diagnostic instead of crashing (Phase 69) |
+| Loop induction width | widening ladder + inclusive-range terminators (Phase 68) |
+| Immutability | `let x = 5; x = 6` -> `cannot assign to immutable variable 'x'` [VERIFIED] |
+| String concatenation | `"a" + "b"` compiles and prints `ab` [VERIFIED] |
+| Static array bounds | `buf[7]` on `[4]i32` rejected at compile time [VERIFIED] |
+
+The compiler core is in decent shape. Everything below is what sits between
+that core and a usable product.
 
 ---
 
-### Phase 46: Type System Strictness & Implicit Integer Narrowing Safety (`PLR-VELO-002`) [COMPLETED] ✅
-
-#### Task 46.1: Enforce Explicit Casts for Truncating or Signed/Unsigned Conversions [COMPLETED] ✅
-* **Former Defect**:
-  - In `src/ast/types.vl` (lines 251–252), `types_are_compatible` previously allowed all integer and float types to implicitly convert to one another:
-    ```rust
-    if is_int_type(expected) and is_int_type(actual) { return true }
-    if is_float_type(expected) and is_float_type(actual) { return true }
-    ```
-  - Any integer type (e.g. `u64`, `i64`) was treated as structurally compatible with any smaller integer type (e.g. `i8`, `u8`) without requiring an explicit cast (`x as i8`).
-  - In systems and embedded code, this permitted silent integer truncation and unintended sign inversion at runtime.
-  - Furthermore, `f64` could implicitly convert to narrower float type `f32` without explicit cast.
-* **Fix Applied**:
-  - Implemented strict integer and float compatibility rules in `src/ast/int_types.vl`:
-    * Safe widening within the same signedness (`i8 -> i16 -> i32 -> i64 / isize`, `u8 -> u16 -> u32 -> u64 / usize`) and float widening (`f32 -> f64`) remain implicitly compatible.
-    * Narrowing integer conversions (e.g. `u64 -> u8`, `i64 -> i32`, `usize -> u32`), signed/unsigned mismatches (e.g. `i32 -> u32`, `u32 -> i32`), and narrowing float conversions (`f64 -> f32`) are strictly rejected at compile time unless an explicit cast `as <type>` is used.
-    * Descriptive error messages emitted:
-      `[Velo Error] Cannot implicitly convert '{actual}' to narrower type '{expected}'. Use explicit cast 'as {expected}'.`
-      `[Velo Error] Cannot implicitly convert '{actual}' to '{expected}'. Use explicit cast 'as {expected}'.`
-      `[Velo Error] Cannot implicitly convert '{actual}' to narrower type '{expected}'. Use explicit cast 'as {expected}'.`
-  - Created contextual literal adaptation in `src/analysis/literal_check.vl`:
-    * Unsuffixed integer literals and arithmetic/bitwise expressions composed of unsuffixed literals adapt contextually to target integer types (`u8`, `i8`, `u16`, `i16`, `u32`, `i32`, `u64`, `i64`, `usize`, `isize`) if the constant value fits within the target range.
-    * Compile-time out-of-range diagnostic emitted if the literal exceeds the target type range:
-      `[Velo Error] Integer literal '{lit}' out of range for type '{target}'`.
-    * Suffixed literals (`1000_u64`) are checked strictly according to their explicit type.
-  - Integrated literal adaptation and strict type checking across:
-    * Variable declarations (`STMT_VAR_DECL`).
-    * Variable assignments and compound assignments (`STMT_ASSIGN`).
-    * Return statements (`STMT_RETURN`).
-    * Struct field initializers and default field values (`DECL_DATA`).
-    * Function and method call arguments (`adapt_and_check_call_args`).
-    * Binary arithmetic/bitwise expressions and fallback operators (`TOK_OR`, `??`).
-    * Built-in `sizeof` expression support returning `"usize"`.
-  - Audited compiler source and standard library, fixing latent signedness/narrowing bugs and adding explicit casts:
-    * `src/frontend/parser_lit.vl`: fixed `parser_previous(p)` replacing invalid negative offset peek.
-    * `src/backend/check.vl`: added explicit `usize` casts.
-    * `src/analysis/reflect_checks.vl`, `src/backend/reflect_gen.vl`, `src/backend/shelf_gen.vl`, `src/analysis/mono_unroll.vl`, `src/analysis/monomorphize_expr.vl`: added explicit `as i32` casts for `sb_append_int` and `make_int_expr`.
-    * `std/test/benchmark.vl`: typed `mut warmup_count: usize = 5`.
-    * `std/tests/coll/shelf_test.vl`: typed `let slice_size: usize = 16`.
-    * `std/tests/rand/rand_test.vl`: typed `mut f_min: f64 = 20.0`, `mut f_max: f64 = 10.0`.
-* **Residual Limitation**:
-  - Unchecked truncating conversions are only allowed when an explicit `as <type>` cast is written. Pointer-to-integer conversions continue to require `as usize` or `as isize`.
-* **Verification**:
-  - Added comprehensive test suite `tests/test_type_checker.py` (23/23 tests passing) covering unsigned/signed widening, narrowing rejection, explicit cast acceptance, signed/unsigned rejection, function arg/return/struct field narrowing, integer literal adaptation and out-of-range diagnostics, suffixed literal enforcement, and float widening/narrowing.
-  - Passed full test suite: 659 passed in 555.47s (100% pass rate).
-  - Maintained 3-generation self-hosting bootstrap determinism (Gen2 and Gen3 emit identical bit-for-bit C output matching `bootstrap.c` with SHA-256 `c79988a72057e0826814ec8dd630446190e62d70ef6d4630b685b3d776905310`).
-  - Maintained line count standards across all 98 compiler source files in `src/` ($\le 394$ lines, ceiling 400).
-
----
-
-### Phase 47: Compiler Driver Command Quoting & Injection Hardening (`PLR-VELO-003`) [COMPLETED] ✅
-
-#### Task 47.1: Robust Escaped Path Quoting Across GCC and MSVC Compiler Drivers [COMPLETED] ✅
-* **Former Defect**:
-  - In `src/backend/driver_cc.vl`, compilation, linking, and execution commands assembled command strings without robustly quoting and escaping filesystem paths:
-    ```rust
-    sb_append_str(@cmd_sb, path_to_native_str(c_file_path))
-    sb_append_str(@cmd_sb, " /Fe:")
-    sb_append_str(@cmd_sb, path_to_native_str(out_exe_path))
-    ```
-  - If a workspace, project path, source file path, include directory, or output executable path contained spaces or special characters, GCC or MSVC split the path across arguments, causing compilation/linker errors or argument injection.
-* **Fix Applied**:
-  - Implemented `quote_path(path: string) -> string` in `src/common/utils.vl` following standard Windows `CommandLineToArgvW` rules: wraps paths in double quotes, escapes embedded quotes, and doubles trailing backslashes so that directory trailing separators (e.g. `C:\path\dir\`) do not escape the closing quote character.
-  - In `src/backend/driver_cc.vl`:
-    * Quoted source and output executable paths in `assemble_msvc_compile_cmd` (`/Fe:<quote_path>`) and `assemble_gcc_compile_cmd` (`-o <quote_path>`).
-    * Quoted include paths in `append_include_flag` (`/I <quote_path>` / `-I <quote_path>`) and `append_runtime_includes` (`/I "runtime" /I "velo/runtime"` / `-I "runtime" -I "velo/runtime"`).
-    * Quoted linker search paths (`/LIBPATH:<quote_path>`) in `append_msvc_linker_flags` with quote-aware token splitting (`in_quotes`).
-    * Quoted runner command executable path in `assemble_runner_cmd`.
-  - In `src/cli_cmd.vl`, `src/backend/driver_pkg.vl`, and `src/main.vl`:
-    * Quoted `-L` library directory flags with `quote_path(path_to_native_str(...))`.
-* **Residual Limitation**:
-  - Single-token arbitrary raw linker flags passed via `-l` or `--link` containing unmatched quotes or custom shell pipeline operators are passed verbatim to the linker without shell interpolation.
-* **Verification**:
-  - Added regression test suite in `tests/test_cc_backend.py` testing build and run with paths containing spaces (both directories and file names) under both `--cc gcc` and `--cc cl` (10/10 tests passing).
-  - Maintained 3-generation self-hosting bootstrap determinism (Gen2 and Gen3 emit identical bit-for-bit C output matching `bootstrap.c` with SHA-256 `0406a4b751c3e33b78ddbbc10ff35a033612f53f3fcd29deb097f92d64f31fd4`).
-  - Ran full test suite: 663 passed in 552.48s (100% pass rate).
-  - Line standards verified (`scripts/count_lines.py`): all compiler source files remain $\le 394$ lines (well below 400-line ceiling).
-
----
-
-### Phase 48: Syntactic Safety Boundaries & Unsafe Blocks (`PLR-VELO-004`) [COMPLETED] ✅
-
-#### Task 48.1: `unsafe { ... }` Block Syntax and `--strict-safety` Verification [COMPLETED] ✅
-* **Former Defect**:
-  - Velo provides compile-time zone escape analysis, but raw pointer dereferencing (`ptr.@`, `ptr.field`) and unchecked pointer arithmetic were syntactically permitted anywhere in user code.
-  - Systems developers could not easily audit where unsafe memory manipulations occur or enforce that high-level application logic remains free of raw pointer hazards.
-* **Fix Applied**:
-  - Added lexical token `TOK_UNSAFE = 156` in `src/frontend/token.vl`, `src/frontend/lexer.vl`, and `src/tooling/formatter_token.vl`.
-  - Added statement AST node `STMT_UNSAFE = 216` in `src/ast/stmt.vl` and AST factory `make_unsafe_stmt` in `src/ast/stmt_factory.vl`.
-  - Implemented parser support for `unsafe { ... }` blocks in `src/frontend/parser_stmt.vl` producing `STMT_UNSAFE` wrapping a scoped block statement.
-  - Added contextual identifier recognition for `unsafe` in `src/frontend/parser_core.vl` and formatting rule support in `src/tooling/formatter_rules.vl`.
-  - Traversed `STMT_UNSAFE` across AST transform and analysis passes: `src/analysis/alias_resolve.vl`, `src/analysis/mono_clone.vl`, `src/analysis/mono_unroll.vl`, `src/analysis/narrow_flow.vl`, `src/analysis/type_check_program.vl`, `src/backend/codegen_decl.vl`, `src/backend/outcome_gen.vl`, `src/backend/tuple_gen.vl`, and LSP providers (`src/lsp/completion.vl`, `src/lsp/definition.vl`, `src/lsp/hover.vl`, `src/lsp/rename.vl`).
-  - Added `strict_safety: bool` and `current_unsafe_depth: i32` to `SymbolTable` in `src/analysis/symbol_table.vl`.
-  - In `src/analysis/type_checker_stmt.vl` and `src/backend/codegen_stmt.vl`, tracked `current_unsafe_depth` on entering/exiting `STMT_UNSAFE`.
-  - In `src/analysis/type_checker.vl`, enforced `--strict-safety` compile-time gates when `st.strict_safety` is active and `st.current_unsafe_depth <= 0`:
-    * Raw pointer dereference (`ptr.@`, `ptr.field`, `ptr[i]` where target is `@T`):
-      `[Velo Error] Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety.`
-    * Pointer arithmetic (`ptr + n`, `ptr - n`, `n + ptr`, `ptr1 - ptr2` where operands are `@T`):
-      `[Velo Error] Pointer arithmetic requires an 'unsafe { ... }' block when compiling with --strict-safety.`
-    * Unchecked foreign calls (`extern act`):
-      `[Velo Error] Call to foreign 'extern act' requires an 'unsafe { ... }' block when compiling with --strict-safety.`
-  - In `src/backend/driver.vl`, tracked module provenance via `load_file_and_deps_ex` so that internal standard library implementation details (`std.*`) are exempted from user-facing `--strict-safety` restrictions while preserving strict safety enforcement across user code.
-  - Lowered `unsafe { ... }` blocks to standard scoped C blocks `{ ... }` in emitted C.
-  - Added `--strict-safety` compiler flag to `SymbolTable`, `src/backend/driver.vl`, `src/backend/driver_run.vl`, `src/backend/check.vl`, `src/cli_cmd.vl`, and `src/main.vl` across `run`, `build`, `check`, and `emit-c`.
-  - When `--strict-safety` is omitted, all operations parse and execute normally with 100% backward compatibility.
-* **Residual Limitation**:
-  - The `--strict-safety` check flags individual raw pointer operations and foreign extern calls. It does not synthesize lifetime annotations for pointers escaping `unsafe` blocks into safe scopes (zone escape analysis handles safe zone references).
-* **Verification**:
-  - Added comprehensive test suite `tests/test_strict_safety.py` (17/17 tests passing) covering:
-    * Rejection and acceptance of raw pointer dereference (`ptr.@`) under `--strict-safety`
-    * Rejection and acceptance of raw pointer indexing (`ptr[i]`) under `--strict-safety`
-    * Rejection and acceptance of pointer member access (`ptr.field`) under `--strict-safety`
-    * Rejection and acceptance of pointer arithmetic (`ptr + n`, `ptr - n`, `n + ptr`, `ptr1 - ptr2`) under `--strict-safety`
-    * Rejection and acceptance of foreign `extern act` calls under `--strict-safety`
-    * 100% backward compatibility when `--strict-safety` is omitted
-    * End-to-end execution of `unsafe { ... }` programs compiled with `--strict-safety`
-    * Canonical formatting (`velo fmt`) of `unsafe { ... }` code blocks
-  - Ran full test suite: 687 passed in 563.49s (100% pass rate).
-  - Maintained 3-generation self-hosting bootstrap determinism (Gen2 and Gen3 emit identical bit-for-bit C output matching `bootstrap.c` with SHA-256 `EAAEE2CBF4D64AF583694DA84FACFCA744F3CD0730FA80C89DE072AF9217F26D`).
-  - Verified line count standards across all 101 compiler source files in `src/` ($\le 394$ lines, hard limit 400).
-
----
-
-### Phase 49: Multi-Platform Automated Continuous Integration (`PLR-VELO-005`) [COMPLETED] ✅
-
-#### Task 49.1: Linux & macOS Automated Test and Bootstrap Matrix [COMPLETED] ✅
-* **Former Defect**:
-  - `runtime/velo_runtime.h` implements POSIX threading (`pthread`), monotonic clock, and filesystem compatibility shims, but automated testing was conducted almost exclusively on Windows (`x86_64-pc-windows-msvc` and MinGW/UCRT64).
-  - Cross-platform regressions on Linux (x86_64 / aarch64) and macOS (Apple Silicon) could go undetected until manual user testing.
-  - The C compiler backend in `src/backend/driver_cc.vl` lacked automatic `-lm -lpthread` linking on POSIX platforms and did not accept `--cc clang`.
-* **Fix Applied**:
-  - Added `.github/workflows/ci.yml` multi-platform continuous integration matrix covering 8 build environments:
-    - **Linux Matrix (4 jobs):** Ubuntu 22.04 LTS and 24.04 LTS runners with both GCC and Clang compilers.
-    - **macOS Matrix (2 jobs):** macOS 14 and 15 (Apple Silicon ARM64) runners with Apple Clang.
-    - **Windows GCC (1 job):** Windows Server 2022 runner with MSYS2 UCRT64 GCC.
-    - **Windows MSVC (1 job):** Windows Server 2022 runner with MSVC `cl.exe`.
-  - Implemented 3-stage self-hosting bootstrap POSIX script `scripts/bootstrap.sh`:
-    - Compiles `bootstrap.c` using ambient GCC, Clang, or `$CC` with `-std=c99 -O2 -I runtime -I velo/runtime -lm -lpthread`.
-    - Supports `--quick` / `-q` for immediate Gen1 compilation, and `--full` (default) for 3-stage self-hosting verification (`bin/velo build src/main.vl -o bin/velo_gen2 -> Gen3 -> check_determinism.py -> canonical bin/velo`).
-    - Configures executable permissions and symlinks `bin/velo.exe` for seamless cross-platform test compatibility.
-  - Enhanced Windows bootstrap script `scripts/bootstrap.bat` to support `--full` for 3-stage self-hosting verification and determinism verification.
-  - Updated `scripts/check_determinism.py` to resolve binary paths dynamically across Windows (`.exe`) and POSIX (extensionless).
-  - Extended compiler driver `src/backend/driver_cc.vl`, `src/backend/driver_pkg.vl`, `src/cli_cmd.vl`, and `src/main.vl`:
-    - Added native support for `--cc clang` across `build`, `run`, `test`, and `pkg`.
-    - Automatically links `-lm -lpthread` on non-Windows platforms when compiling with GCC or Clang.
-  - Updated `tests/conftest.py`, `tests/test_bootstrap_snapshot.py`, `tests/test_cc_backend.py`, and `tests/test_velokv.py` for cross-platform POSIX execution and MSVC conditional skipping.
-  - Added unit test suite `tests/test_ci_matrix.py` (5/5 passed) validating CI matrix structure, bootstrap scripts, determinism check, and `--cc clang` flag acceptance.
-* **Residual Limitation**:
-  - GitHub Actions runs on GitHub-hosted runners; self-hosted physical hardware runners (e.g. RISC-V) can be added as needed in future releases.
-* **Verification**:
-  - Rebuilt 3-generation self-hosted compiler chain with bit-for-bit SHA-256 fixed-point determinism (`b80b2633cfb61dbd54853ed62099fcd202e255faea93d202d82258cf78d0e20e`).
-  - Verified `scripts\bootstrap.bat --full` completes full 3-generation build and determinism check cleanly.
-  - Verified `tests/test_ci_matrix.py` (5/5 passed), `tests/test_bootstrap_snapshot.py` (5/5 passed), `tests/test_cc_backend.py` (10 passed, 2 skipped), and `tests/test_velokv.py` (9/9 passed).
-  - Ran full test suite: 692 passed, 2 skipped in 556.46s (100% pass rate).
-  - Verified line count standards across all 101 compiler source files in `src/` ($\le 394$ lines, zero UTF-8 BOM).
-
----
-
-### Phase 50: Package Supply Chain Integrity & Vulnerability Disclosure (`PLR-VELO-006`) [COMPLETED] ✅
-
-#### Task 50.1: Package Checksum Verification (`velo.lock`) and `SECURITY.md` Policy [COMPLETED] ✅
-* **Former Defect**:
-  - The package manager (`velo pkg`) parsed `velo.pkg` manifests, but lacked cryptographic checksum verification for package sources, leaving users vulnerable to altered or tampered dependencies.
-  - The repository lacked a formal `SECURITY.md` file establishing a vulnerability disclosure channel, supported version tiers, and incident response SLAs.
-* **Fix Applied**:
-  - Implemented package lockfile architecture (`velo.lock`) across `src/backend/pkg_lock.vl` and `src/backend/driver_pkg.vl`:
-    * Defined `LockEntry` and `LockFile` data models with parsing, serialization, and lookup utilities.
-    * Implemented cryptographic SHA-256 dependency digest calculation (`compute_dep_hash`) using `std.crypto` (`sha256_hash_str`) for local file packages, directory trees, git references, and registry packages.
-    * Formatted `velo.lock` with deterministic package declarations:
-      `package "<name>" = { source = "...", version = "...", hash = "sha256:..." }`
-    * Added CLI commands to `velo pkg`:
-      - `velo pkg lock [path]`: Generates or updates `velo.lock` with cryptographic hashes.
-      - `velo pkg install [path]`: Installs dependencies and strictly verifies them against `velo.lock`.
-      - `velo pkg update [path]`: Re-hashes dependencies and refreshes `velo.lock`.
-    * Enforced checksum verification across `velo pkg check`, `velo pkg build`, and `velo pkg run`: if any dependency's contents fail SHA-256 verification against `velo.lock`, the operation immediately halts with:
-      `[Velo Error] Package checksum verification failed for '<dep>'. Package contents may have been tampered with or modified.`
-  - Documented new package commands in `src/cli_cmd.vl` (`velo help` and `velo pkg help`).
-  - Authored formal `SECURITY.md` policy in repository root declaring:
-    * Supported version matrix (active support for Velo v2.0 self-hosted release; deprecated v1.x reference compiler).
-    * Private vulnerability disclosure channel (`security@velolang.org` and GitHub Private Vulnerability Reporting).
-    * Explicit SLAs: 48-hour initial response, 5-day triage, 14-day critical patch target, 30-day high patch target.
-    * 90-day coordinated disclosure embargo and CVE assignment policy.
-    * Core security invariants: zone escape analysis, explicit safety boundaries (`--strict-safety`), driver path escaping, and package cryptographic checksums.
-* **Residual Limitation**:
-  - Centralized registry signing (public-key signature verification) will be added when the public Velo package registry goes live; local and remote sources currently rely on SHA-256 lockfile integrity verification.
-* **Verification**:
-  - Added unit and integration test suite `tests/test_pkg_security.py` (4/4 passed) verifying:
-    * `SECURITY.md` existence, valid markdown structure, and SLA commitments.
-    * `velo pkg lock` generation of `velo.lock` with SHA-256 digests.
-    * `velo pkg install` verification of valid dependencies.
-    * Tampering detection: modified dependency files trigger checksum verification failures during install and check.
-    * `velo pkg update` updates hashes and restores passing verification.
-    * `velo help` and `velo pkg help` command documentation.
-  - Rebuilt 3-generation self-hosted compiler chain with bit-for-bit SHA-256 determinism (`13a65b5469612f2c6db15518b7adbfa175afdc543e3dc2907ae230631e9b36a9`).
-  - Verified `scripts\bootstrap.bat --full` completes 3-generation build and determinism check cleanly.
-  - Full regression test suite passed: 696 passed, 2 skipped in 559.76s (100% pass rate).
-  - Verified line count standards across all 102 compiler source files in `src/` ($\le 394$ lines, zero UTF-8 BOM).
-
----
-
-### Phase 51: Standalone Canonical Source Formatter (`velo fmt`) (`PLR-VELO-007`) [COMPLETED] ✅
-
-#### Task 51.1: AST/Token-Based Standalone Code Formatter Subcommand [COMPLETED] ✅
-* **Former Defect**:
-  - Velo provided `velo check`, `velo doc`, `velo test`, and an LSP server, but lacked an automated, deterministic CLI formatter (`velo fmt <file>`).
-  - Formatting inconsistencies in multi-developer projects had to be resolved manually without a canonical standard tool.
-* **Fix Applied**:
-  - Implemented standalone token-based code formatter across `src/tooling/formatter_token.vl`, `src/tooling/formatter_rules.vl`, and `src/tooling/formatter.vl`:
-    * Scans all tokens and comments, preserving doc comments (`///`), line comments (`//`), and block comments (`/* ... */`).
-    * Standardizes indentation to 4 spaces per block level (`{ ... }`), adjusting indent if a line starts with closing delimiters (`}`, `)`, `]`).
-    * Normalizes spacing around binary operators (`+`, `-`, `*`, `/`, `%`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `=`, `+=`, `-=`, etc.), type annotations (`: T`), function signatures, tuples, and control blocks (`if`, `loop`, `on`, `case`).
-    * Correctly handles unary prefix operators (`@`, `?`, `!`, `-`), member access (`.`), and range expressions (`..`, `..=`).
-    * Preserves single-line guard blocks (`if cond { return 0 }`) while canonicalizing internal spacing.
-    * Collapses multiple consecutive empty lines to at most 1 blank line and trims trailing whitespace on all lines.
-    * Dispatched `velo fmt [path] [--check]` in `src/main.vl`: formats files or directories in place, or checks formatting compliance with a line-level diff preview, returning exit code 0 when formatted and exit code 1 when unformatted (for CI).
-* **Residual Limitation**:
-  - Complex custom multi-line expressions broken across arbitrarily many lines are preserved per original newline boundaries while normalizing tokens on each line rather than reflowing expressions to a fixed line width column (e.g. 80/100 chars).
-* **Verification**:
-  - Added comprehensive test suite `tests/test_formatter.py` (7/7 passed) covering `--check` failure on unformatted files, in-place formatting, strict idempotency `format(format(x)) == format(x)`, comment preservation, recursive directory formatting, and compiler semantic preservation.
-  - Rebuilt 3-generation self-hosting bootstrap chain with verified bit-for-bit SHA-256 determinism (Gen2 emit-c == Gen3 emit-c == bootstrap.c: `7ac2bd1bbfe77da751d1cc0b4fdd21f26fce7d4a8b087caf0ccba61cecb188b8`).
-  - All 101 compiler source files $\le 394$ lines (under 400-line ceiling, zero UTF-8 BOM).
-  - Full test suite passed: 670 passed in 561.09s (100% pass rate).
-
----
-
-## 3. Post-Release Correctness Audit (November 2026)
-
-> **Audit method:** Hands-on review of the self-hosted compiler (`src/**/*.vl`, `runtime/velo_runtime.h`, `scripts/`, `tests/`) plus 50+ executable probe programs compiled with `bin\velo.exe`.
-> **Baseline:** `python -m pytest tests -q` → **694 passed, 2 failed, 2 skipped** at audit start. Both tracked failures (Phases 66 and 67) are now fixed; the suite is at **1964 passed, 2 skipped** after Phase 69.
-> **Scope:** 17 confirmed defects (13 compiler/language, 1 runtime, 1 tooling, 1 test-infrastructure, 1 architectural) split into **106 small tasks**. No feature work, no performance work, no style-only changes.
-> **Rule:** This is a correctness backlog, not a wish list. Every task must begin with a failing regression test and end with a security gate that proves the defect cannot silently return.
-
-### 3.1 Severity & Status Legend
+## 2. Severity Ladder
 
 | Level | Meaning |
 | :--- | :--- |
-| **P0** | Silent wrong code, memory unsafety, or unbounded loop. Fix before any release. |
-| **P1** | Checker accepts an invalid program; runtime failure, type confusion, or undefined behavior. Fix next. |
-| **P2** | Hardening, diagnostics, tooling, or test hermeticity. |
-| **P3** | Architectural or breaking change; requires an explicit design decision and migration plan. |
+| **P0** | Blocks publication. A user on a supported platform cannot build, cannot trust the artifact, or is actively misled. |
+| **P1** | Blocks serious adoption. The tool works but a professional team would reject it on this basis. |
+| **P2** | Debt that compounds. Tolerable at 1.0, expensive at 1.1. |
+| **P3** | Cosmetic or documentation only. |
 
-Status values: `[OPEN]`, `[IN PROGRESS]`, `[BLOCKED]`, `[COMPLETED] ✅`.
+## 3. Backlog Summary
 
-### 3.2 Backlog Summary
+| Phase | Title | Severity | Verified | Tasks | Est. commits |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **70** | POSIX / macOS Foundation Portability | P0 | yes | 8 | 8 |
+| **71** | Release Engineering and Legal Provenance | P0 | yes | 6 | 4 |
+| **72** | Package Ecosystem That Actually Fetches | P0 | yes | 7 | 7 |
+| **73** | Transport Security and Cryptographic Completeness | P0 | yes | 8 | 8 |
+| **74** | Undefined-Behavior Containment | P0 | yes | 7 | 7 |
+| **75** | Silent POSIX Process/IO Stubs | P0 | yes | 5 | 5 |
+| **76** | CI Reality and Platform Test Harness | P0 | yes | 6 | 6 |
+| **77** | Language Completeness | P1 | yes | 7 | 7 |
+| **78** | Standard Library Breadth | P1 | yes | 9 | 9 |
+| **79** | Tooling and Developer Experience | P1 | yes | 8 | 8 |
+| **80** | Compiler Maintainability | P1 | yes | 6 | 6 |
+| **81** | Performance and Benchmark Credibility | P1 | yes | 5 | 5 |
+| **82** | Compiler Robustness and Fuzzing | P1 | partial | 5 | 5 |
+| **83** | Documentation and Claims Integrity | P1 | yes | 6 | 3 |
+| **84** | Ecosystem, Governance, Showcase | P2 | yes | 5 | 4 |
+| **85** | Recorded Residual Limitations | P2 | yes | 4 | 4 |
 
-| Phase | Defect | Priority | Tasks | Depends on | Status |
-| :--- | :--- | :---: | :---: | :--- | :---: |
-| **52** | `io.*` wildcard dispatch bypasses the standard library | P0 | 8 | — | COMPLETED ✅ |
-| **53** | Unsuffixed integer literals above `i32` silently wrap | P0 | 9 | — | COMPLETED ✅ |
-| **54** | `loop <count>` classification is inconsistent | P0 | 7 | 53 | COMPLETED ✅ |
-| **55** | Reverse ranges break on large literal endpoints | P0 | 7 | 53 | COMPLETED ✅ |
-| **56** | Reverse ranges break on dynamic endpoints | P0 | 7 | 53, 55 | COMPLETED ✅ |
-| **57** | `u64`/`usize` printed as signed | P0 | 6 | 52, 53 | COMPLETED ✅ |
-| **58** | `defer` is function-scoped, not block-scoped | P0 | 9 | — | COMPLETED ✅ |
-| **59** | Function/method call argument types are not checked | P1 | 6 | — | COMPLETED ✅ |
-| **60** | `if`/`loop` condition types are not checked | P1 | 5 | 59 | COMPLETED ✅ |
-| **61** | `break` inside `on` breaks the C switch, not the loop | P1 | 7 | 58 | COMPLETED ✅ |
-| **62** | `break`/`continue` outside loops pass `velo check` | P1 | 5 | 58 | COMPLETED ✅ |
-| **63** | Zero range step is accepted and loops forever | P0 | 5 | 53, 54 | COMPLETED ✅ |
-| **64** | Unknown `mem.*`/`str.*` members pass `velo check` | P2 | 5 | 52 | COMPLETED ✅ |
-| **65** | Runtime zone allocator NULL/watermark hardening | P2 | 6 | — | COMPLETED ✅ |
-| **66** | Determinism script crashes on Windows cp1252 | P2 | 4 | — | COMPLETED ✅ |
-| **67** | `test_std_fs_ops` depends on an ambient `scratch/` dir | P2 | 4 | — | COMPLETED ✅ |
-| **68** | Loop induction variable is always `int32_t` | P3 | 6 | 53, 54, 55, 56 | COMPLETED ✅ |
-| **69** | Deferred `return`/`break`/`continue`/`fail` crash the compiler | P1 | 2 | 58 | COMPLETED ✅ |
+## 4. Recommended Execution Waves
 
-### 3.3 Recommended Execution Waves
+- **Wave A (publication blockers, in order):** 71 (legal/versioning) -> 76 (CI
+  reality) -> 70 (portability) -> 75 (stub honesty) -> 74 (UB) -> 73 (TLS) ->
+  72 (packages). Rationale: 71 and 76 are cheap and stop the project from
+  claiming things it cannot prove; 70 unblocks every other platform-facing
+  phase; 75 removes the two stubs that silently return success on Linux.
+- **Wave B (adoption blockers):** 77 -> 78 -> 79 -> 80.
+- **Wave C (credibility):** 81 -> 82 -> 83 -> 84 -> 85.
 
-```mermaid
-flowchart TD
-    W1["Wave 1 (P0): Silent miscompilation & unbounded loops<br/>Phases 52–58, 63"] --> W2["Wave 2 (P1): Checker soundness<br/>Phases 59–62"]
-    W2 --> W3["Wave 3 (P2): Hardening & tooling<br/>Phases 64–67"]
-    W3 --> W4["Wave 4 (P3): Architectural<br/>Phase 68"]
+## 5. Task Execution Contract
 
-    style W1 fill:#c62828,stroke:#8e0000,color:#ffffff
-    style W2 fill:#ef6c00,stroke:#b53d00,color:#ffffff
-    style W3 fill:#1565c0,stroke:#0d47a1,color:#ffffff
-    style W4 fill:#546e7a,stroke:#263238,color:#ffffff
-```
+Applies to every task below (inherited from the Phase 45-69 contract):
 
-**Wave 1 — stop the bleeding.** Fix the compiler intrinsics and literal/loop machinery first. These defects produce wrong values or non-terminating programs without any diagnostic. Do not start Phase 68 before Wave 1 is closed.
-
-**Wave 2 — make the checker honest.** These are cases where `velo check` says "passed" and the C compiler later rejects the program, or where the generated program silently converts types. They are lower risk than Wave 1 but undermine the language's safety story.
-
-**Wave 3 — harden the edges.** Runtime OOM paths, tooling encoding, and test hermeticity. These do not change language semantics but are release blockers for CI reliability.
-
-**Wave 4 — pay the architectural debt.** The `int32_t` loop induction variable is a documented limitation. Treat it as a separate breaking-change project, not a drive-by fix.
-
-### 3.4 Task Execution Contract
-
-Every task in this section is intentionally small enough to be completed, tested, and reviewed in one sitting.
-
-1. **Red first.** Add the failing regression test described in the task. Run it and record the failure in the task's completion note. A task with no red test is not started.
-2. **Minimal fix.** Change only what the task describes. Do not bundle adjacent defects; file a new phase instead.
-3. **Targeted green.** Run the new test plus the existing tests for the touched area. For `.vl` probes, use `bin\velo.exe check` and `bin\velo.exe run`.
-4. **Bootstrap gate (compiler-source tasks only).** Rebuild the chain exactly as required by `AGENTS.md`:
-   `scripts\bootstrap.bat` → `bin\velo.exe build src/main.vl -o bin/velo_gen2.exe` → `bin\velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe` → copy Gen3 to `bin\velo.exe` → `bin\velo.exe emit-c src/main.vl -o bootstrap.c`. Gen2 and Gen3 `emit-c` SHA-256 must match, and `bootstrap.c` must match the emitted C.
-5. **Security gate.** Run the negative tests listed in the task. The gate must prove that malformed, oversized, unknown, or adversarial input is rejected with a diagnostic, not silently accepted. Where the task touches memory, run the relevant sanitizer or leak check.
-6. **Standards gate.** `python scripts/count_lines.py` must pass (no `src/` file over 400 lines). No `.vl` file may contain a UTF-8 BOM. New code must follow the surrounding style.
-7. **Documentation gate.** Mark the task `[COMPLETED] ✅` in this file using the established pattern: *Former Defect → Fix Applied → Residual Limitation → Verification*. Do not mark a phase complete while any of its tasks is open.
-8. **Commit gate.** One conventional commit per task where practical (`fix|feat|test|docs(scope): summary`). A task that only adds failing tests may be squashed into the implementation commit for the same phase. Never stage unrelated owner material (`VELO.md`, `editors/`, `real-world-prob-test/me/`).
-
-**Phase exit criteria (apply to every phase below):**
-
-- [ ] Every task in the phase is `[COMPLETED] ✅` with a red-test note and a verification note.
-- [ ] Full suite: `python -m pytest tests -q` passes (or the only failures are pre-existing and explicitly listed).
-- [ ] Bootstrap chain rebuilt; Gen2/Gen3 `emit-c` SHA-256 identical; `bootstrap.c` refreshed.
-- [ ] `python scripts/count_lines.py` passes; no `.vl` file contains a UTF-8 BOM.
-- [ ] Negative/security tests from the phase are part of the permanent suite.
-- [ ] The phase is moved to the completed pattern with *Former Defect → Fix Applied → Residual Limitation → Verification*.
+1. One phase at a time, one commit per task, sequential. No phase skipping.
+2. Every task ships: implementation + regression test + `gaps.md` update.
+3. Compiler-source changes require the full chain: Gen2 -> Gen3 ->
+   `check_determinism.py` -> regenerate `bootstrap.c` from **file output, not
+   stdout** -> `pytest tests/test_bootstrap_snapshot.py`.
+4. New `.vl` files are written UTF-8 without BOM.
+5. No file over 400 lines. Prefer a new focused module over expanding a
+   near-limit one.
+6. A gap may be reclassified or dropped only with a written justification in
+   the phase body. "Too hard" is not a justification for a P0.
 
 ---
 
-### Phase 52: `io.*` Wildcard Dispatch & Standard-Library Bypass (P0) [COMPLETED] ✅
+# Phase 70: POSIX / macOS Foundation Portability (P0) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-01`<br>
-**Severity:** P0 — silent wrong output / API contract violation<br>
-**Depends on:** —<br>
-**Blocks:** CLI error-path tests; Phase 64 (closed-set pattern)
+## Defect
 
-#### Defect
+The stdlib is Windows-only. Not "mostly Windows with some POSIX branches" -
+the *emitted C for any program that imports `std.fs`, `std.net`, `std.crypto`,
+or `std.os` contains unresolved Win32 symbols with no `#if` guard anywhere in
+the chain*. On Linux or macOS such a program compiles to C and then fails to
+link. This makes the Linux and macOS CI jobs in `.github/workflows/ci.yml`
+guaranteed red, which means either nobody has run them or nobody has looked.
 
-`codegen_call.vl:104` routes **every** `io.<member>` call to `emit_io_call`. `codegen_io.vl:21-111` only recognizes the exact names `print` and `println`; any other member falls through to generic integer/float/string printing with no newline, no stderr routing, and no arity check. `type_checker.vl:190` returns `"void"` for every `io.*` call without validating the member name, arity, or argument types. The real pure-Velo implementations in `std/io/print.vl:209-255` are therefore unreachable through the `io.` prefix.
+## Evidence
 
-```velo
-use std.io
+| Fact | Evidence |
+| :--- | :--- |
+| `std.fs` is Win32-only | `std/fs/stat.vl:30` `extern act GetFileAttributesExA`; `std/fs/ops.vl:14-18` `CreateDirectoryA`/`MoveFileExA`/`CopyFileA`; `std/fs/dir.vl:15-17` `FindFirstFileA`/`FindNextFileA`/`FindClose` |
+| It reaches generated C | probe `use std.fs` + `fs_exists` -> emitted C line 102 `extern int32_t GetFileAttributesExA(...)`, line 112 `CreateDirectoryA`, line 117 `FindFirstFileA`, calls at 2573/3050/3997 [VERIFIED] |
+| `std.net` is Win32-only | `std/net/socket.vl:10-22` `WSAStartup`/`WSACleanup`/`closesocket`/`ioctlsocket` [VERIFIED in emitted C, lines 113/123/124] |
+| `std.crypto` is Win32-only | `std/crypto/rand.vl:7` `extern act SystemFunction036` (advapi32 "RtlGenRandom") [VERIFIED in emitted C line 127] |
+| `std.os` is Win32-only | `std/os/env_windows.vl` getenv/setenv/ExitProcess/GetCurrentDirectoryA; `std/os/proc_windows.vl` `CreateProcessA` [VERIFIED in `bootstrap.c` line 10296] |
+| Facades hardcode the Windows variant | `std/async/poller.vl:4`, `std/io/handle.vl:4`, `std/mem/page.vl:5`, `std/os/args.vl:6`, `std/os/env.vl:4`, `std/os/process.vl:6`, `std/time/clock.vl:5`, `std/time/sleep.vl:5` all `use "*_windows.vl"` |
+| The Linux variants are dead code | `grep "use .*_linux.vl"` across `std/` + `src/` finds exactly one hit (`std/os/pipe_posix.vl:8` -> `proc_linux.vl`). `handle_linux`, `page_linux`, `clock_linux`, `sleep_linux`, `env_linux`, `cmdline_linux`, `poller_linux` have **zero** importers [VERIFIED] |
+| The platform resolver cannot express POSIX | `src/backend/driver.vl:85-122`: `should_skip_platform_file` and `resolve_platform_source_path` only know `_windows.vl` and `_linux.vl`; `is_windows_platform()` delegates to `os_is_windows()` (`driver.vl:80-82`), itself implemented in the Win32-only `env_windows.vl` |
+| macOS is invisible | No `_macos.vl`, `_darwin.vl`, or `_posix.vl` file exists anywhere; macOS gets the `_linux` branch by elimination, and there is no kqueue backend (`grep kqueue` -> 0 hits) |
+| `bootstrap.c` cannot link on POSIX | `bootstrap.c` has **0** occurrences of `_WIN32` (its only `#if` strings are emitted *text*, lines 44108/44147) yet contains 60+ `extern` declarations and live calls to kernel32/advapi32 (`GetFileAttributesExA` 7894, `CreateDirectoryA` 8102, `SystemFunction036` 56035, `CreateProcessA` 10296). `gcc -c` then `nm -u` yields `U CreateDirectoryA`, `U FindFirstFileA`, `U GetFileAttributesExA`, `U SystemFunction036`, `U CreateProcessA`, `U VirtualAlloc`, `U Sleep`, `U GetEnvironmentVariableA` [VERIFIED] |
+| `bootstrap.sh` links without the Win32 libs | `scripts/bootstrap.sh:34` `-lm -lpthread` only; `-lws2_32 -ladvapi32` appears only in the Windows driver (`src/backend/driver_cc.vl:215`) |
+| The runtime header itself is clean | `runtime/velo_runtime.h` has 10 `_WIN32` guards and only 5 Win32 mentions, all inside `#if defined(_WIN32)` (`Sleep` at 1035). The portability work belongs to `std/`, not to the runtime |
 
-act main() {
-    io.println_str("io.println_str")          // no newline
-    println_str("println_str")                // correct
-    io.eprintln_str("io.eprintln_str")        // stdout, no newline
-    eprintln_str("eprintln_str")              // correct stderr
-    io.println_u64(18446744073709551615u64)   // -1
-    println_u64(18446744073709551615u64)      // 18446744073709551615
-    io.println("a", "b")                      // "b" silently dropped
-    io.does_not_exist(123)                    // compiles and prints 123
-    io.also_missing()                         // compiles to a no-op
-}
-```
+Root cause: the audit that closed Phases 45-69 measured the compiler, not the
+stdlib's platform reach. Six of the nine Win32 dependencies are `extern`
+declarations inside `.vl` source, so they never appear in the C runtime header
+where the portability review was looking.
 
-**Impact:** 163 call sites under `std/` use `io.println_*`/`io.eprintln_*`. `std/cli/help.vl:158,164,170` prints CLI errors to **stdout without a newline**. Typos compile silently, and the emitted behavior differs between `io.X` and unqualified `X`.
+## Security Invariants
 
-#### Security Invariants
+- **I70.1** No `.vl` file in `std/` outside a `*_windows.vl` or `*_win32.vl`
+  file may declare an `extern` bound to a kernel32/advapi32/ws2_32 symbol.
+- **I70.2** Every platform-specific module has a sibling implementation for
+  every platform the CI matrix claims to support, and a facade that resolves
+  at compile time rather than naming one variant.
+- **I70.3** `bootstrap.c` compiles *and links* with `cc -O2 -std=c99 -lm
+  -lpthread` on Linux and `clang -O2 -std=c99 -lm -lpthread` on macOS, with no
+  extra `-l` flags.
+- **I70.4** A program that imports `std.fs`, `std.net`, `std.os`, `std.crypto`,
+  `std.time`, `std.async` and touches one symbol from each must emit C that
+  compiles on the build host with no Win32-specific symbol present.
 
-- Unknown `io.*` members must be compile-time errors, never silent no-ops.
-- `eprint*` must write only to `stderr`; stdout must remain machine-readable.
-- User-controlled strings must never become `printf` format strings.
-- Arity mismatches must be rejected, not truncated.
-- The checker and codegen must agree on the closed member set (defense in depth).
+## Tasks
 
-#### Tasks
+**70.1** Replace the `_windows`/`_linux` suffix convention with an explicit
+platform-resolver table. `driver.vl` must resolve `foo.vl` -> `foo_<plat>.vl`
+for `plat in {windows, linux, macos}`, and must fail loudly with a diagnostic
+when a platform-specific module has no variant for the current target.
+Constraint: `resolve_platform_source_path` and `should_skip_platform_file`
+must share one table (they currently duplicate the suffix knowledge).
 
-##### Task 52.1: Add the `io.*` conformance matrix (red baseline) [COMPLETED] ✅
-* **Goal:** Encode the expected behavior of every public `io.*` function before changing code.
-* **Files:** `tests/test_std_io.py` (extend), `std/tests/io/print_api_conformance_test.vl` (new).
-* **Tests:** newline presence for every `println_*`; stderr routing for every `eprintln_*`; `u64` max; `f64` precision; `bool`; `byte`; zero-argument forms; arity errors; unknown members; `io.X` vs unqualified `X` parity.
-* **Security gate:** include user strings containing `%s`, `%n`, and `{...}`; they must be emitted as data, never interpreted as format directives.
-* **Done when:** the new tests fail for the documented reasons and are committed as the red baseline.
-* **Completion note (2026-11-14):** Added `std/tests/io/print_api_conformance_test.vl` and 9 tests in `tests/test_std_io.py` (prefix conformance, unqualified control, byte-for-byte parity, two unknown-member rows, three arity rows, printf-metacharacter data). Red run: `python -m pytest tests/test_std_io.py -q -k "print_api or rejects_unknown or rejects_arity or printf_metacharacters or matches_bare_parity"` → **8 failed, 1 passed**. The control test is green, proving the expected bytes are achievable through the unqualified API; the 8 red tests isolate the `io.*` wildcard dispatch. Observed red behavior: `io.println_str` drops the newline, `io.eprintln_*` writes to stdout, `io.println_u64` prints `-1`, `io.*_f64` ignores precision, `io.*_byte` prints decimal digits, and unknown members plus arity mismatches pass `velo check`.
+**70.2** Move the six Win32 `extern` blocks out of the platform-neutral files:
+`std/fs/stat.vl`, `std/fs/ops.vl`, `std/fs/dir.vl`, `std/net/socket.vl`,
+`std/net/addr.vl`, `std/crypto/rand.vl`. Create `std/fs/stat_windows.vl` /
+`stat_linux.vl` / `stat_macos.vl` (same for `ops`, `dir`, `socket`) and keep
+`std/fs/stat.vl` as the facade. Alternatively route the whole family onto the
+already-portable CRT helpers in `runtime/velo_runtime.h` (`velo_fs_is_dir` at
+1377, `velo_fs_read_dir` at 2236) and delete the Win32 duplicates - prefer
+this: it removes code rather than tripling it.
 
-##### Task 52.2: Define the intrinsic allowlist and closed member set [COMPLETED] ✅
-* **Goal:** Separate compiler intrinsics (`print`, `println`) from stdlib functions and publish one closed set.
-* **Files:** `src/analysis/io_checks.vl` (new), `src/analysis/type_checker.vl`.
-* **Tests:** table-driven test covering every member declared in `std/io/print.vl`; unknown member rejected with a diagnostic that lists valid members.
-* **Security gate:** no wildcard fallback; a member missing from the allowlist must fail closed.
-* **Done when:** the checker accepts exactly the documented set.
-* **Completion note (2026-11-14):** Added `src/analysis/io_checks.vl` with `io_is_intrinsic` (`print`, `println`), the closed `io_is_known_member` set (all 53 top-level acts in `std/io/print.vl`), `io_valid_members`, and `check_io_call`. `type_checker.vl` now delegates every `io.*` call to `check_io_call`; an unknown member reports `unknown io member '<name>' (functions: ...)` and fails the check. Added `tests/test_io_checks.py` with 3 tests: a 53-member acceptance probe using signature-correct arguments, an unknown-member rejection that verifies every valid name is listed, and an unknown-member-with-argument rejection. Verification: `python -m pytest tests/test_io_checks.py -q` → **3 passed**; the `tests/test_std_io.py` unknown-member rows now pass. Bootstrap: Gen2/Gen3 `emit-c` SHA-256 `CE57019E7A2FC14B285953EAE8BFF312DA9A5D67A0E92581E37577D96903A3FF`, and `bootstrap.c` matches the emitted C. Residual: arity/type walls and result spells are Task 52.3; codegen dispatch is Task 52.4, so the Phase 52.1 conformance and arity rows remain red.
+**70.3** Add `std/os/proc_macos.vl`, `std/os/env_macos.vl`, `std/io/handle_macos.vl`,
+`std/time/clock_macos.vl`, `std/time/sleep_macos.vl`, `std/mem/page_macos.vl`,
+`std/async/poller_macos.vl` (kqueue). Each may start as a thin POSIX
+implementation; macOS and Linux differ only where noted.
 
-##### Task 52.3: Implement `check_io_call` [COMPLETED] ✅
-* **Goal:** Validate arity and argument types; return correct result types (`void`, `bool` for flush, etc.).
-* **Files:** `src/analysis/io_checks.vl`, `src/analysis/type_checker.vl:190`.
-* **Tests:** wrong arity, wrong type, valid calls, `void` vs value-returning, unknown member.
-* **Security gate:** reject implicit float→int and bool→int at the `io` boundary; no silent truncation.
-* **Done when:** every call in the conformance matrix either checks cleanly or fails with a precise diagnostic.
-* **Completion note (2026-11-14):** Extended `io_checks.vl` with `io_member_arity`, `io_arg_kind`, `io_kind_expected`, `io_kind_param`, `io_member_sig`, and `io_member_ret`; `check_io_call` now enforces the intrinsic contract (`print`/`println`: zero or one argument) and exact arity plus per-position types for every other member. The type wall uses the language-wide `try_adapt_int_literal` + `types_are_compatible` pair: in-range unsuffixed integer literals adapt, while implicit float→int, bool→int, signed/unsigned changes, and narrowing conversions reject (`io.print_i64(1.5)`, `io.print_bool(1)`, `io.print_byte(256)`, `io.print_u64(-1)`). Result spells are precise: flush → `bool`, writer accessors → `@BufferedWriter`, fmt buffer → `@u8`, every printer/lifecycle helper → `void`. Diagnostics follow the family style (`io.println_str expects exactly 1 argument: (string s)`, `io.println_str expects string (got i32)`). Tests: `tests/test_io_checks.py` grew from 3 to 41 tests (13 arity rows, 16 type rows including out-of-range literals, literal adaptation, intrinsic zero/one-arg values, positive result spells, 5 wrong-result-spell rows, conformance-program check). Verification: `python -m pytest tests/test_io_checks.py tests/test_check_cli.py -q` → **56 passed**; the three Phase 52.1 arity rows are now green. Full suite: **741 passed, 4 failed, 2 skipped** — 3 failures are the Phase 52.1 runtime rows owned by Task 52.4, and 1 is the pre-existing Phase 66 cp1252 `check_determinism.py` print failure (passes with `PYTHONUTF8=1`). Bootstrap: Gen2/Gen3 `emit-c` SHA-256 `8792F9F131E085C09D04D6F77A04DE442D6418CC470394B6C583799997F4357D`, and `bootstrap.c` matches. Residual: codegen still wildcard-dispatches every `io.*` member (Task 52.4), so running non-intrinsic members is still wrong and a lifecycle call used as a value fails at GCC despite checking cleanly; the intrinsic format path is Task 52.5.
+**70.4** Replace `poll(2)` with `epoll(7)` in `std/async/poller_linux.vl`. The
+current file (line 13 `extern act poll`) scales O(n) per wakeup and has no
+edge-trigger mode; `poll` also cannot be used for file/descriptor watch on
+all targets. Keep `poll` as the fallback for unknown POSIX targets.
 
-##### Task 52.4: Restrict `codegen_call.vl` dispatch [COMPLETED] ✅
-* **Goal:** Only exact `print`/`println` reach `emit_io_call`; every other member resolves through normal module function lookup.
-* **Files:** `src/backend/codegen_call.vl:104`, `src/backend/codegen_io.vl`.
-* **Tests:** emitted C for `io.println_str` contains a call to `println_str`; `io.eprintln_str` calls `eprintln_str`; no `printf` hijack; unknown member cannot reach codegen after Task 52.3.
-* **Security gate:** defense in depth — if the checker is bypassed, codegen must not silently emit a no-op.
-* **Done when:** every `io.X` member maps to the real stdlib symbol.
-* **Completion note (2026-11-14):** Restricted `codegen_call.vl:104` dispatch so only exact `print` and `println` reach `emit_io_call`; every other `io.*` call delegates to `emit_io_stdlib_call`. In `codegen_io.vl`, `emit_io_stdlib_call` resolves the member symbol via `find_function(st, member)` and lowers it to a direct call (`fn_sym.name(...)`) with arguments and no receiver prefix; if `find_function` returns null (defense in depth), it reports a backend error and increments `st.error_count`, failing closed rather than silently emitting a no-op. Wrapped `emit_io_call` with buffer flushes (`io_flush_stdout()` and `fflush(stdout)`) to guarantee stream order between buffered stdlib writes and libc `printf`. Updated inadvertent `use sys.io` imports to `use std.io` in `tests/test_std_rand.py`, `tests/test_std_url.py`, and `tests/test_std_validate.py`. Added 4 targeted tests in `tests/test_std_io.py` (direct stdlib lowering, intrinsic preservation, unknown-member rejection, and defense-in-depth unimported symbol failure). Verification: `tests/test_std_io.py` 19 passed; full suite **750 passed, 2 skipped** (100% pass rate). Bootstrap: Gen2/Gen3 `emit-c` SHA-256 `b00f7f6598d87455ed33c23ec5f8cb213b5abe850ee70d42f608cf2b372c19b8`, and `bootstrap.c` matches `bin/velo.exe emit-c src/main.vl` with SHA-256 `3C498434F94A848CC03A91BA5E03A781CD692769AA240D3FD35460C6787AEED8`. Line ceiling verified ($\le 394$ lines); no UTF-8 BOM. Residual: intrinsic format hardening and arity checking is Task 52.5.
+**70.5** Remove every hardcoded `use "*_windows.vl"` facade line listed above;
+each becomes a resolver-mediated import. Then delete `std/os/pipe_win32.vl`'s
+`use "proc_windows.vl"` in favour of the same mechanism (line 8).
 
-##### Task 52.5: Harden the `print`/`println` intrinsic [COMPLETED] ✅
-* **Goal:** Enforce exactly one argument (zero-argument `println` only if the specification allows it); reject extra arguments; keep interpolation for `io.println` but not for `println_str`.
-* **Files:** `src/backend/codegen_io.vl:21-111`, `src/backend/codegen_fmt.vl`.
-* **Tests:** `io.println("a", "b")` fails; `io.println("%n")` prints literal `%n`; `io.println(u64)` uses unsigned formatting after Phase 57.
-* **Security gate:** the format string is always a compiler-owned constant; user text goes through `%s`/`%llu`, never as the format.
-* **Done when:** arity and format-injection tests pass.
-* **Completion note (2026-11-14):** Hardened the `print`/`println` intrinsic in `codegen_io.vl` and `codegen_fmt.vl`. Added defense-in-depth arity enforcement in `emit_io_call` (`if first_arg != null and first_arg.next != null`), failing closed with a backend diagnostic (`io.<member> expects at most 1 argument`) rather than silently dropping extra arguments. Closed a format string vulnerability in `codegen_fmt.vl`: unresolved interpolation paths (`{path}`) kept as literal text now escape `%` into `%%`, preventing directives like `{%n}` from injecting into libc `printf` format strings (which previously caused arbitrary memory corruption and truncated output). Guaranteed that format strings across all branches (`"%s\n"`, `"%s"`, `"%lld\n"`, `"%lld"`, `"%f\n"`, `"%f"`) are compiler-owned constants and user strings flow through data arguments `(const char*)`. Extended `tests/test_std_io.py` with 8 targeted tests (arity rejection at check and emit-c for multi-arg calls, literal `%n`/`%s` data printing, interpolated `%n` data printing, unresolved `{%n}` memory safety, variable `%n` printing, and zero-arg forms). Verification: `tests/test_std_io.py` 27 passed; full suite **758 passed, 2 skipped** (100% pass rate). Bootstrap: Gen2/Gen3 `emit-c` SHA-256 `690f95a3393389064f5c0ae718c37a67b970a5d51cd7c05236045fd20d36ce08`, and `bootstrap.c` matches `bin/velo.exe emit-c src/main.vl` with SHA-256 `1AAFE29A75809FF91588E29B4DC5E92F5D32C2B5E34E71DF44AD7D17479114B1`. Line ceiling verified ($\le 394$ lines); no UTF-8 BOM. Residual: unsigned integer formatting (`u64` max formatting as `%llu`) is scheduled for Phase 57; stdlib call site audit is Task 52.6.
+**70.6** Guard `bootstrap.c` generation itself: `emit-c src/main.vl` must emit a
+`#include "velo_runtime.h"`-style preamble that is platform-neutral, i.e. the
+Win32 externs must live in a platform section. Simplest correct fix: after
+70.2 lands, `bootstrap.c` contains no Win32 symbol at all (they move into
+`std/**_windows.vl`, which is only emitted when the target is Windows).
 
-##### Task 52.6: Audit and fix standard-library call sites [COMPLETED] ✅
-* **Goal:** Ensure `std/cli/help.vl` and every `io.eprintln_*`/`io.println_*` call site gets the intended stream and newline.
-* **Files:** `std/cli/help.vl`, plus an `rg` audit of `std/`.
-* **Tests:** CLI error path captures stdout and stderr separately; error text is absent from stdout and ends with a newline.
-* **Security gate:** errors must not leak to stdout where a caller may parse it as data.
-* **Done when:** all audited call sites behave as their names promise.
-* **Completion note (2026-11-14):** Audited all 441 `io.*` references across `std/` (204 `io.println` and 3 `io.print` intrinsics, 162 `io.println_str` calls, 5 `io.eprintln_str` calls, 36 `io.vl` module imports, 7 submodule imports, and 24 conformance members in `std/tests/io/print_api_conformance_test.vl`). Confirmed `std/cli/help.vl` correctly routes usage and version strings to `stdout` via `io.println_str` and parse errors plus usage hints to `stderr` via `io.eprintln_str` with trailing newlines. Added stream-isolation assertions in `tests/test_std_cli.py::test_std_cli_help` and added `tests/test_std_cli.py::test_std_cli_error_path_captures_stderr_with_newline_and_clean_stdout`, asserting that CLI error output is completely absent from stdout and ends with a newline on stderr. Verification: `tests/test_std_cli.py` (4 passed); full suite **759 passed, 2 skipped** (100% pass rate). Residual: full API surface parity matrix is Task 52.7.
+**70.7** Add `tests/test_posix_portability.py`: for each of `std.fs`, `std.net`,
+`std.os`, `std.crypto`, `std.time`, `std.async`, emit C for a probe program and
+assert the emitted text contains no symbol matching
+`/(GetFileAttributesExA|GetFileAttributesA|CreateDirectoryA|RemoveDirectoryA|DeleteFileA|MoveFileExA|CopyFileA|FindFirstFileA|FindNextFileA|FindClose|CreateProcessA|GetEnvironmentVariableA|SetEnvironmentVariableA|ExitProcess|GetCurrentProcessId|VirtualAlloc|VirtualFree|SystemFunction036|WSAStartup|WSACleanup|closesocket|ioctlsocket)/`
+when the build host is not Windows. Skip on Windows; the assertion is inverted
+there.
 
-##### Task 52.7: End-to-end parity test [COMPLETED] ✅
-* **Goal:** For every public `X`, `io.X` and unqualified `X` produce identical output, except the intentional interpolation behavior of `io.println`.
-* **Files:** `tests/test_std_io.py`, `std/tests/io/print_api_parity_test.vl` (new).
-* **Tests:** byte-for-byte stdout/stderr diff across the whole API surface.
-* **Security gate:** deterministic output; no buffering or `atexit` race; no locale-dependent formatting.
-* **Done when:** parity is green on Windows and POSIX CI.
-* **Completion note (2026-11-14):** Created `std/tests/io/print_api_parity_test.vl` exercising all 51 non-intrinsic public acts declared in `std/io/print.vl` across both streams (`stdout` and `stderr`) with representative inputs (integers including 64-bit boundaries, unsigned integers up to `UINT64_MAX`, byte ASCII values, floating-point numbers with custom precisions, booleans, string literals and slices, format-directive-like text, empty line printers, stream writer accessors `io_get_stdout_writer` / `io_get_stderr_writer`, format buffer `io_get_fmt_buf`, stream flushes `io_flush_stdout` / `io_flush_stderr` / `io_flush_all`, and lifecycle cleanup `io_print_cleanup`). Extended `tests/test_std_io.py` with 5 targeted parity tests: programmatically verified that all 51 stdlib members are invoked in the parity matrix; confirmed both unqualified bare and `io.*`-prefixed executions produce exact matching stdout and stderr; verified byte-for-byte identity of stdout and stderr between `io.X` and unqualified `X` across the full API surface; and verified intrinsic `io.println` behavior and codegen lowering. Verification: `tests/test_std_io.py` (32 passed); full suite **764 passed, 2 skipped** (100% pass rate). Residual: documentation of the intrinsic boundary in `docs/SPECIFICATION.md` and phase closure is Task 52.8.
+**70.8** Add `tests/test_postgres_bootstrap_platform.py` (or extend
+`test_bootstrap_snapshot.py`): compile `bootstrap.c` with `cc -c` and assert no
+undefined symbol from the Win32 set, on every non-Windows host.
 
-##### Task 52.8: Document the intrinsic boundary and close the phase [COMPLETED] ✅
-* **Goal:** Document which `io.*` names are compiler intrinsics and which are stdlib functions.
-* **Files:** `docs/SPECIFICATION.md`, `gaps.md`.
-* **Tests:** every documentation example compiles with `bin\velo.exe`.
-* **Security gate:** no undocumented fallback behavior remains.
-* **Done when:** all Phase 52 tasks are complete and the global phase exit criteria pass.
-* **Completion note (2026-11-14):** Documented the standard I/O subsystem in `docs/SPECIFICATION.md` (§10): formalized the compiler intrinsic boundary (`io.print` / `io.println` supporting string interpolation, primitive type formatting, zero-argument forms, arity limits, format string injection hardening, and deterministic stream ordering with automatic stdlib and libc buffer flushes); documented the closed-set `io.*` dispatch rule rejecting unknown members at compile time with actionable diagnostics; and cataloged all 51 standard library acts across stdout, stderr, generic stream `f*` operations, and stream/lifecycle management with guaranteed byte-for-byte parity against unqualified calls. Added `test_std_io_documentation_examples_compile_and_run` in `tests/test_std_io.py`, verifying that every executable code block in §10 compiles and runs cleanly with `bin/velo.exe`. Verification: `tests/test_std_io.py` 33 passed; full pytest suite **764 passed, 2 skipped** (100% pass rate). All Phase 52 exit criteria are satisfied; Phase 52 is closed.
+## Phase Exit Criteria
 
-#### Phase Exit Criteria
-
-- [x] `io.println_str`, `io.eprintln_str`, `io.println_u64`, `io.println_f64`, and all other declared `io.*` members behave identically to their unqualified counterparts.
-- [x] `io.println("a", "b")`, `io.does_not_exist(123)`, and `io.also_missing()` fail at `velo check`.
-- [x] `std/cli/help.vl` error output goes to stderr with a trailing newline.
-- [x] The 163 `io.*` call sites under `std/` are audited; no call site relies on the old wildcard behavior.
+- `nm -u` on `bootstrap.c`'s object file lists no kernel32/advapi32/ws2_32
+  symbol on Linux or macOS.
+- The seven Linux/macOS test files that currently have zero importers are
+  either wired in and exercised, or deleted.
+- Linux and macOS CI jobs pass for real (see Phase 76), with the evidence
+  committed as a linked run, not a claim.
+- `tests/test_posix_portability.py` fails on the pre-Phase-70 tree and passes
+  after it.
 
 ---
 
-### Phase 53: Unsuffixed Integer Literal Width & Overflow (P0) [COMPLETED] ✅
+# Phase 71: Release Engineering and Legal Provenance (P0) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-02`<br>
-**Severity:** P0 — silent value corruption<br>
-**Depends on:** —<br>
-**Blocks:** Phases 54, 55, 56, 57, 63, 68
+## Defect
 
-#### Defect
+There is no license, no version tag, no changelog, no remote, and the version
+string is a hand-written literal. Nobody can legally or reliably use this.
 
-`parse_int_from_slice` returns `i32` (`num_utils.vl:13`), binary and octal conversion also flow through `i32` (`num_utils.vl:208-238`), and unsuffixed literals default to `i32` (`type_checker.vl:53`). Values above `INT32_MAX` wrap without a diagnostic.
+## Evidence
 
-```velo
-let a = 0xFFFFFFFF                          // -1
-let b = 0x80000000                          // -2147483648
-let c = 0b11111111111111111111111111111111  // -1
-let d = 0o37777777777                       // -1
-let e: u64 = 18446744073709551615u64        // correct
-let f: u32 = 4294967295u32                  // correct
-```
+| Fact | Evidence |
+| :--- | :--- |
+| No license file | `git ls-files` matches `LICENSE|COPYING` zero times; no `LICENSE`, `COPYING`, `NOTICE`, or SPDX header anywhere [VERIFIED] |
+| No `CONTRIBUTING.md`, no `CODE_OF_CONDUCT.md`, no `GOVERNANCE.md` | `git ls-files` root list is 10 files: `.gitignore`, `AGENTS.md`, `AUDIT.md`, `FOUNDATIONAL_STDLIB_ROADMAP.md`, `README.md`, `SECURITY.md`, `bootstrap.c`, `gaps.md`, `stdlib_velo.md`, `velo.py` [VERIFIED] |
+| No release tags | `git tag` returns nothing; `git describe --tags --always` returns a bare SHA (`83dbfd3`) [VERIFIED] |
+| No remote | `git remote -v` is empty [VERIFIED] |
+| Version is a literal | `velo version` prints `Velo v2.0 (Self-Hosted Native Compiler)` from `src/main.vl:36` |
+| 367 commits on `master` | `git rev-list --count HEAD` |
+| `SECURITY.md` exists but no disclosure process has ever run | no remote, so no issue tracker, no advisory |
 
-This also corrupts range analysis: `loop i in 0..3000000000` stores the endpoint as a negative `i32`, so codegen marks the range as reverse and the loop runs zero times.
+Without a license, the default is "all rights reserved": the language cannot be
+used, forked, or vendored by anyone. This is the single cheapest P0 and it
+blocks everything else.
 
-#### Security Invariants
+## Security Invariants
 
-- A literal that does not fit its selected type must be a compile-time error, never a wrap.
-- A literal above `u64` must be rejected.
-- Literal parsing must be deterministic and independent of host `int` width.
-- Codegen must emit a C literal/cast that cannot be re-wrapped by the C compiler.
-- No consumer of `int_val` may assume 32-bit width without an explicit check.
+- **I71.1** Every tracked source file is covered by a declared license.
+- **I71.2** `velo version` derives its version from one machine-readable
+  source, so the CLI, the manifest parser, and the release artifact cannot
+  disagree.
+- **I71.3** Any published artifact has a reproducible build command and a
+  checksum.
 
-#### Tasks
+## Tasks
 
-##### Task 53.1: Add boundary conformance tests (red baseline) [COMPLETED] ✅
-* **Goal:** Pin the expected values and types for every base and every integer boundary.
-* **Files:** `tests/test_integer_literals.py` (new), `tests/test_literal_formatting.py` (extend).
-* **Tests:** `0`, `1`, `INT32_MAX`, `INT32_MAX+1`, `UINT32_MAX`, `INT64_MAX`, `UINT64_MAX`, `UINT64_MAX+1`, negative minimums; decimal, hex, binary, octal.
-* **Security gate:** assert that no test observes a wrapped negative value; assert a diagnostic for `> u64`.
-* **Done when:** the tests fail for the documented reasons and are committed as the red baseline.
-* **Former Defect:** Unchecked 32-bit arithmetic and signed `i32` returns in `parse_int_from_slice` (`num_utils.vl:13`) and `parse_binary_int`/`parse_octal_int` (`num_utils.vl:208-238`), coupled with defaulting unsuffixed literals to `i32` in `type_checker.vl:53`. Positive literals above `INT32_MAX` silently wrapped into negative numbers (e.g. `0xFFFFFFFF` -> `-1`, `0x80000000` -> `-2147483648`, `2147483648` -> `-2147483648`), corrupting arithmetic and range loops (`loop i in 0..3000000000` running 0 times). Literals exceeding `UINT64_MAX` were accepted by `velo check` without any compile-time diagnostics.
-* **Fix Applied (Red Baseline Harness):**
-  1. Created `tests/test_integer_literals.py` containing 41 test cases across 6 sections:
-     - Section 1: 32-bit in-range values (`0`, `1`, `INT32_MAX` in dec, hex, bin, oct) -> 12 tests (all PASS).
-     - Section 2: Values in `(INT32_MAX, UINT32_MAX]` (`INT32_MAX+1`, `UINT32_MAX` in dec, hex, bin, oct) -> 8 tests (all FAIL with assertion failure on `assert(x > 0)` due to negative wrap).
-     - Section 3: 64-bit boundaries (`INT64_MAX`, `INT64_MAX+1`, `UINT64_MAX` in dec, hex, bin, oct) -> 12 tests (all FAIL due to wrap, truncation to 0, or negative wrap failing `assert(x > 0)`).
-     - Section 4: Negative minimums (`-2147483648`, `-9223372036854775807 - 1`) -> 2 tests (all PASS).
-     - Section 5: Overflows above `UINT64_MAX` (`UINT64_MAX+1`, 32-digit dec, 65-bit hex, bin, oct) -> 6 tests (all FAIL: `velo check` accepted without error).
-     - Section 6: Range loop endpoint above `INT32_MAX` (`0..3000000000`) -> 1 test (FAILS: runs 0 iterations instead of $\ge 3$).
-  2. Extended `tests/test_literal_formatting.py` with `test_boundary_integer_literal_types_in_c` testing that `emit-c` emits wide types (`int64_t`/`uint64_t`) for unsuffixed boundary literals rather than `int32_t` -> 1 test (FAILS: currently emits `int32_t`).
-* **Residual Limitation:** Baseline establishes the red state (27 failed, 14 passed in `tests/test_integer_literals.py`; 1 failed in `tests/test_literal_formatting.py`). Implementation of `IntLiteral` wide value model and base parsers follows in Tasks 53.2-53.7.
-* **Verification:** `tests/test_integer_literals.py` 14 passed, 27 failed; `tests/test_literal_formatting.py::TestLiteralFormatting::test_boundary_integer_literal_types_in_c` failed for documented causes.
+**71.1** Choose and add `LICENSE` (MIT or Apache-2.0; Apache-2.0 if patent
+language matters for a compiler). Add SPDX identifiers to `README.md` and
+`SECURITY.md`. Decide explicitly whether `bootstrap.c` (generated) inherits the
+same license.
 
-##### Task 53.2: Introduce an `IntLiteral` value model [COMPLETED] ✅
-* **Goal:** Represent magnitude (`u64`), base, sign, and an explicit overflow flag without changing the public AST yet.
-* **Files:** `src/common/num_utils.vl`.
-* **Tests:** a Velo self-test or subprocess probe covering the model's constructors and overflow detection.
-* **Security gate:** overflow must be explicit; no API may silently truncate a `u64` to `i32`.
-* **Done when:** the model is unit-tested and the existing `parse_int_from_slice` wrapper still compiles.
-* **Former Defect:** Numeric parsing lacked a structured wide representation for integer literals. Numbers flowed through signed 32-bit `i32` returns in `parse_int_from_slice` (`num_utils.vl:13`), with no explicit fields for wide magnitude (`u64`), radix/base, sign, or explicit overflow flags.
-* **Fix Applied:**
-  1. Defined `data IntLiteral` in `src/common/num_utils.vl` with fields: `val: u64` (magnitude), `base: i32` (radix 2, 8, 10, 16), `is_neg: bool` (sign), and `overflow: bool` (explicit overflow flag).
-  2. Implemented constructors: `make_int_literal(val, base, is_neg, overflow)`, `make_int_literal_val(val, base)`, and `make_int_literal_overflow(base, is_neg)`.
-  3. Implemented boundary fitting predicates: `int_lit_fits_i32`, `int_lit_fits_u32`, `int_lit_fits_i64`, `int_lit_fits_u64`, explicitly rejecting any literal with `overflow == true` or out-of-range magnitude/sign.
-  4. Implemented non-truncating checked conversions: `int_lit_to_i32_checked(lit, out_val)`, `int_lit_to_u64_checked(lit, out_val)`, and `int_lit_to_i64_checked(lit, out_val)`, returning `false` on any overflow/out-of-range value and preventing silent truncation.
-  5. Kept the existing `parse_int_from_slice` wrapper intact and verified full backward compatibility.
-  6. Added test suite in `tests/test_int_literal_model.py` (6 tests covering constructors, boundary predicates, explicit overflow rejection, non-truncation guarantees, and wrapper compatibility).
-  7. Rebuilt the 3-stage bootstrap compiler chain (`velo_gen2.exe` -> `velo_gen3.exe` -> `velo.exe` -> `bootstrap.c`) and verified SHA-256 determinism match.
-* **Residual Limitation:** Parser and type checker still consume `parse_int_from_slice`; integration of the wide model into decimal parsing follows in Task 53.3.
-* **Verification:** `tests/test_int_literal_model.py` 6 passed in 8.72s; `scripts/check_determinism.py` SHA-256 match confirmed; line count of `src/common/num_utils.vl` is 391 lines ($\le 400$).
+**71.2** Add `VERSION` (or a `version` field in a single `velo.release` file),
+make `src/main.vl` read it at build time via the existing generated-include
+mechanism used for `#ifndef` symbol tables, and delete the literal at
+`src/main.vl:36`.
 
-##### Task 53.3: Replace decimal parsing [COMPLETED] ✅
-* **Goal:** Parse decimal literals into the wide model with overflow detection.
-* **Files:** `src/common/num_utils.vl`, `src/frontend/parser_lit.vl`.
-* **Tests:** `0`, `2147483647`, `2147483648`, `9223372036854775807`, `18446744073709551615`, `18446744073709551616`.
-* **Security gate:** reject `> u64`; reject malformed digits; no host-width dependence.
-* **Done when:** decimal boundary tests pass.
-* **Former Defect:** Decimal integer parsing used 32-bit signed arithmetic in `parse_int_from_slice` (`num_utils.vl:13`). Decimal literals above `INT32_MAX` silently wrapped to negative numbers (`2147483648` -> `-2147483648`, `4294967295` -> `-1`), corrupting 64-bit boundaries, and literals exceeding `UINT64_MAX` (e.g. `18446744073709551616`, `99999999999999999999999999999999`) were accepted without compile-time error.
-* **Fix Applied:**
-  1. Extracted character literal parsing into `src/common/char_utils.vl` (`parse_char_literal`), saving budget in `num_utils.vl`.
-  2. Implemented `parse_decimal_int_literal` in `src/common/num_utils.vl` accumulating wide `u64` magnitude with exact overflow detection (`val > 1844674407370955161u64 or (val == 1844674407370955161u64 and digit > 5u64)`) and rejection of malformed characters.
-  3. Implemented `u64_to_decimal_string` in `src/common/num_utils.vl` for wide numeric C literal emission.
-  4. Implemented `parse_int_literal_expr` in `src/frontend/parser_lit.vl` (and routed `parser_primary.vl` into it), emitting compile-time diagnostic errors via `report_parse` when a decimal literal exceeds `UINT64_MAX`.
-  5. Added `test_parse_decimal_int_literal_boundaries` to `tests/test_int_literal_model.py`.
-  6. Rebuilt bootstrap chain (`velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`), verified Gen2/Gen3 SHA-256 match, and verified all compiler files remain $\le 400$ lines.
-* **Residual Limitation:** Hexadecimal (`0x...`), binary (`0b...`), and octal (`0o...`) remain on legacy paths until Tasks 53.4 and 53.5.
-* **Verification:** Decimal boundary tests in `tests/test_integer_literals.py` (`2147483648`, `4294967295`, `9223372036854775807`, `9223372036854775808`, `18446744073709551615`, `18446744073709551616`, `99999999999999999999999999999999`) all pass; `tests/test_int_literal_model.py` 7 passed; SHA-256 determinism verified.
+**71.3** Add `CHANGELOG.md` in Keep-a-Changelog form, backfilled from the
+Phase 45-69 history. One entry per phase, each linking the commit.
 
-##### Task 53.4: Replace hexadecimal parsing [COMPLETED] ✅
-* **Goal:** Parse hex literals into the wide model with overflow detection.
-* **Files:** `src/common/num_utils.vl`, `src/frontend/parser_lit.vl`, `src/common/float_utils.vl`.
-* **Tests:** `0x7FFFFFFF`, `0x80000000`, `0xFFFFFFFF`, `0xFFFFFFFFFFFFFFFF`, `0x1_0000_0000_0000_0000`, `0x`, `0xG`.
-* **Security gate:** reject overflow; reject empty/`0x`-only input.
-* **Done when:** hex boundary tests pass.
-* **Former Defect:** Hexadecimal literals were parsed via 32-bit `parse_hex_from_slice` which accumulated into a 32-bit signed integer with wrapping multiplication and bitwise OR (`val * 16 + d`). Large hex literals like `0x80000000` wrapped negative to `-2147483648`, `0xFFFFFFFF` wrapped to `-1`, values $> \text{UINT64\_MAX}$ wrapped silently without overflow detection, and empty `0x` was not cleanly rejected.
-* **Fix Applied:**
-  - Implemented `parse_hex_int_literal(source: string, start: usize, len: usize) -> IntLiteral` in `src/common/num_utils.vl` with strict prefix checking (`0x`/`0X`), length guard ($\ge 3$), underscore skipping, malformed digit detection, and exact 64-bit overflow detection (`val > 0x0FFFFFFFFFFFFFFFu64`).
-  - Extracted `parse_float_from_slice` into `src/common/float_utils.vl` (63 lines) to maintain strict 400-line budget across compiler sources (`num_utils.vl` kept at 382 lines).
-  - Integrated `parse_hex_int_literal` into `parse_int_literal_expr` in `src/frontend/parser_lit.vl`, diagnosing and rejecting overflow at compile time with `report_parse` error and `p.had_error = true`.
-  - Added `format_c_hex_with_suffix` in `src/frontend/parser_lit.vl` preserving exact casing and formatting (e.g. `0x00FF`) while stripping underscores and appending `ULL`/`LL` suffixes for 64-bit integer ranges to prevent host C compiler truncation or signed overflow warnings.
-* **Residual Limitation:** Binary (`0b...`) and octal (`0o...`) remain on legacy 32-bit paths until Task 53.5.
-* **Verification:**
-  - `tests/test_integer_literals.py`: all 8 hex boundary tests pass (`0x7FFFFFFF`, `0x80000000`, `0xFFFFFFFF`, `0x7FFFFFFFFFFFFFFF`, `0x8000000000000000`, `0xFFFFFFFFFFFFFFFF`, `0x10000000000000000`, `0x1_0000_0000_0000_0000`).
-  - `tests/test_int_literal_model.py`: 8 passed in 11.79s including unit tests for `0x0`, `0x7FFFFFFF`, `0x80000000`, `0xFFFFFFFF`, `0xFFFFFFFFFFFFFFFF`, `0x1_0000_0000_0000_0000`, `0x10000000000000000`, empty `0x`, and malformed `0xG`.
-  - Bootstrap Gen2/Gen3 SHA-256 match verified; `python scripts/count_lines.py` verified all files $\le 394$ lines ($\le 400$).
+**71.4** Tag the current tree `v2.0.0-pre` after 71.1-71.3 land, so
+`git describe` produces something meaningful and Phase 76's CI has a target.
 
-##### Task 53.5: Replace binary and octal parsing [COMPLETED] ✅
-* **Goal:** Parse binary/octal literals into the wide model with overflow detection.
-* **Files:** `src/common/num_utils.vl`, `src/common/num_format.vl`, `src/frontend/parser_lit.vl`, `src/frontend/lexer_lit.vl`.
-* **Tests:** 32-bit and 64-bit all-ones patterns, leading zeros, invalid digits (`2` in binary, `8` in octal), empty literals (`0b`, `0o`), overflow $> \text{u64}$.
-* **Security gate:** reject overflow and invalid digits; no partial parse.
-* **Done when:** binary/octal boundary tests pass.
-* **Former Defect:** Binary (`0b...`) and octal (`0o...`) literals were parsed using the legacy 32-bit `parse_int_from_slice` which accumulated into a 32-bit signed integer. 32-bit boundary patterns (e.g. `0b10000000_00000000_00000000_00000000` / `0o20000000000`) wrapped negative to `-2147483648`, 64-bit boundary patterns silently truncated to 32 bits, overflow $> \text{u64}$ was ignored, and trailing invalid digits (`0b102`, `0o78`) were partially parsed by the lexer stopping at the invalid digit and splitting into two tokens.
-* **Fix Applied:**
-  - Implemented `parse_bin_int_literal` and `parse_oct_int_literal` in `src/common/num_utils.vl` with strict prefix checking (`0b`/`0B`, `0o`/`0O`), length guards ($\ge 3$), underscore skipping, invalid digit detection (`c > '1'` in binary, `c > '7'` in octal), and exact 64-bit overflow guards (`val > 0x7FFFFFFFFFFFFFFFu64` for binary, `val > 0x1FFFFFFFFFFFFFFFu64` for octal).
-  - Extracted C99 literal formatting helpers (`format_c_number_literal` and `extract_literal_suffix`) into `src/common/num_format.vl` (126 lines) to maintain strict 400-line budget (`num_utils.vl` is 333 lines).
-  - Updated `src/frontend/lexer_lit.vl` to consume trailing alphanumeric characters (`is_ident_part`) in prefixed literals, completely preventing partial parsing of malformed literals (e.g. `0b102` and `0o78` are tokenized as a single unit and rejected with a compile-time error).
-  - Integrated binary and octal literal parsing into `src/frontend/parser_lit.vl`, rejecting overflows and invalid digits via `report_parse` and typing unsuffixed wide literals into the `i64`/`u64` ladder with `LL`/`ULL` decimal strings for C emission.
-* **Residual Limitation:** General unsuffixed decimal literal type ladder across all semantic contexts is formalized in Task 53.6.
-* **Verification:**
-  - `tests/test_integer_literals.py`: all 41 boundary tests pass (100% pass rate across decimal, hex, binary, and octal).
-  - `tests/test_int_literal_model.py`: 16 passed in 15.18s including unit tests for binary/octal leading zeros, 32-bit and 64-bit all-ones, invalid digits (`0b2`, `0b102`, `0o8`, `0o78`), empty literals (`0b`, `0o`), and overflow.
-  - `tests/test_literal_formatting.py`: 6 passed in 3.30s.
-  - Bootstrap Gen2/Gen3 SHA-256 match verified; `python scripts/count_lines.py` verified all files $\le 394$ lines ($\le 400$).
+**71.5** Add `CONTRIBUTING.md` covering: bootstrap requirements (a C99
+compiler), the determinism gate, the 400-line ceiling, the `gaps.md` contract,
+and the commit style (`feat|fix|docs|test(scope): summary`).
 
-##### Task 53.6: Define and implement the unsuffixed literal type ladder [COMPLETED] ✅
-* **Goal:** Decide and document the rule: fits `i32` → `i32`; else fits `i64` → `i64`; else fits `u64` → `u64`; else error. Suffixed literals remain strict.
-* **Files:** `src/frontend/parser_lit.vl`, `src/analysis/literal_check.vl`, `src/analysis/type_checker.vl`, `docs/SPECIFICATION.md`.
-* **Tests:** inferred type for each boundary; explicit suffix overrides; out-of-range diagnostics.
-* **Security gate:** no implicit narrowing; no silent `u32`/`i64` guess that changes semantics.
-* **Done when:** the ladder is documented and the inferred types match the tests.
-* **Former Defect:** Unsuffixed integer literals were either unconditionally typed as `i32` in `infer_expr_type` (regardless of magnitude) or prematurely assigned `type_name = "i64"` / `"u64"` in the parser for wide literals. This premature typing caused `is_unsuffixed_int_literal` to return false, breaking contextual adaptation for large integer constants (e.g. `let huge: usize = 2305843009213693952` failed with type mismatch `i64` to `usize`, and `let h: i64 = -9223372036854775808` failed with `u64` to `i64`). Furthermore, negated literals like `-2147483648` were treated as a positive 64-bit value negated, failing to fit into `i32`.
-* **Fix Applied:**
-  - Removed premature `type_name` assignment in `src/frontend/parser_lit.vl` for unsuffixed integer literals across decimal, hex, binary, and octal formats. Unsuffixed literals keep `type_name = ""` so `is_unsuffixed_int_literal(expr)` correctly returns `true`.
-  - Implemented `infer_unsuffixed_int_type` and `infer_unsuffixed_neg_int_type` in `src/analysis/literal_check.vl`. If an unsuffixed literal is not contextually constrained, its standalone inferred type is determined by the deterministic type ladder:
-    - Positive: $\le 2147483647 \to \text{"i32"}$; $\le 9223372036854775807 \to \text{"i64"}$; $\le 18446744073709551615 \to \text{"u64"}$.
-    - Negated (`-` prefix): $\le 2147483648 \to \text{"i32"}$ (fitting `INT32_MIN`); $\le 9223372036854775808 \to \text{"i64"}$ (fitting `INT64_MIN`).
-  - Integrated `infer_unsuffixed_int_type` and `infer_unsuffixed_neg_int_type` into `infer_expr_type` in `src/analysis/type_checker.vl` (for standalone `EXPR_INT` and unary minus `EXPR_UNARY`).
-  - Formally specified §2.14 ("Integer Literals, Suffixes, and the Type Ladder") in `docs/SPECIFICATION.md` detailing grammar, representations, explicit suffixes, type ladder rules, and contextual adaptation.
-  - Added comprehensive test suite `tests/test_literal_type_ladder.py` with 53 tests covering boundaries, explicit suffixes, negative minimums, rejection of implicit conversions, and diagnostic ranges.
-* **Residual Limitation:** Wide literal C codegen formatting and safety guarantees are finalized in Task 53.7.
-* **Verification:**
-  - `tests/test_literal_type_ladder.py`: all 53 tests pass.
-  - `tests/test_integer_literals.py`: all 41 boundary tests pass.
-  - `tests/test_type_checker.py`: all 23 tests pass.
-  - `tests/test_allocators.py`: all 25 tests pass.
-  - `tests/test_std_rand.py`: all 4 tests pass.
-  - Bootstrap Gen2/Gen3 SHA-256 match verified (`abbfe3fbfcd04edd3abb0762c15b84541634f79d89897371a1b7da93016faeb0`); `python scripts/count_lines.py` verified all files $\le 394$ lines ($\le 400$).
+**71.6** Add `scripts/release.py`: build -> run suite -> check determinism ->
+emit `velo-<version>-<plat>.zip` with `velo`, `std/`, `runtime/`,
+`bootstrap.c`, `LICENSE`, `SHA256SUMS`.
 
-##### Task 53.7: Emit wide C literals safely [COMPLETED] ✅
-* **Goal:** Emit `INT64_C`/`UINT64_C`-style literals or explicit casts so the C compiler cannot re-wrap the value.
-* **Files:** `src/backend/codegen_expr.vl`, `src/backend/codegen_lit.vl`, `src/backend/codegen_fmt.vl`.
-* **Tests:** emitted C for boundary values; runtime values equal the source literal.
-* **Security gate:** no implementation-defined conversion; no signed overflow in emitted C.
-* **Done when:** boundary values survive parse → check → emit → run.
-* **Former Defect:** Negated integer boundary literals like `-9223372036854775808` (`INT64_MIN`) were formatted as `(-9223372036854775808ULL)` in emitted C because the unsigned literal magnitude $2^{63}$ was formatted with `ULL`. In C99, unary minus on an unsigned expression remains unsigned (`9223372036854775808ULL`), causing `(-9223372036854775808ULL) < 0` to evaluate to `false` (0), division by 2 to yield a positive number, and assignments to `int64_t` to trigger implementation-defined unsigned-to-signed conversion warnings (`-Wsign-conversion`). Furthermore, `INT32_MIN` (`-2147483648`) when typed as `i32` was emitted as `(-2147483648LL)`, promoting to 64-bit `long long` instead of standard 32-bit `int`. Additionally, string interpolation in `codegen_fmt.vl` formatted all integer types using `%lld` and `(long long)`, causing unsigned 64-bit values $> \text{INT64\_MAX}$ (e.g. `18446744073709551615` and `0xFFFFFFFFFFFFFFFF`) to print as `-1`.
-* **Fix Applied:**
-  - Created `src/backend/codegen_lit.vl` (57 lines) providing `emit_c_int_literal` and `try_emit_c_neg_int_literal`.
-  - In `try_emit_c_neg_int_literal`:
-    * For `INT64_MIN` (magnitude $9223372036854775808 = 2^{63}$ across decimal, hex, binary, and octal), emits the standard C99 definition `(-9223372036854775807LL - 1LL)`, eliminating unsigned wrapping, signed overflow, and `-Wconversion` warnings.
-    * For `INT32_MIN` (magnitude $2147483648 = 2^{31}$) typed as `i32`, emits standard C99 `(-2147483647 - 1)` to preserve 32-bit `int` width.
-  - Integrated `codegen_lit.vl` into `src/backend/codegen_expr.vl` for `EXPR_INT` and `EXPR_UNARY` (`TOK_MINUS`).
-  - Updated `src/backend/codegen_fmt.vl` to format unsigned integer types (`is_unsigned_int_type(resolved_type)`) using `%llu` and `(unsigned long long)(...)` instead of `%lld` and `(long long)(...)`.
-  - Added test suite `tests/test_safe_c_literal_emission.py` covering C99 pattern verification, runtime execution of boundary values, mixed signed-unsigned comparisons with `min_i64` and `max_u64`, and compilation under strict GCC flags (`-Wall -Wextra -Wconversion -Werror`).
-* **Residual Limitation:** Safe access across all AST consumers reading `int_val` (e.g. ranges, slice bounds, enum discriminants) is audited in Task 53.8.
-* **Verification:**
-  - `tests/test_safe_c_literal_emission.py`: 6 tests pass (100%).
-  - `tests/test_literal_type_ladder.py`: 53 tests pass.
-  - `tests/test_integer_literals.py`: all 41 boundary tests pass.
-  - `tests/test_int_literal_model.py`: all 16 tests pass.
-  - `tests/test_literal_formatting.py`: all 6 tests pass.
-  - `tests/test_type_checker.py`: all 23 tests pass.
-  - Bootstrap Gen2/Gen3 SHA-256 match verified (`26148f185d34f0d93524783b98c12fdbf033c36107fa72c25ca44f1482b3f80d`); `python scripts/count_lines.py` verified all 99 compiler source files $\le 395$ lines ($\le 400$).
+## Phase Exit Criteria
 
-##### Task 53.8: Audit every `int_val` consumer [COMPLETED] ✅
-* **Goal:** Find all reads of `int_val` and classify them as safe (`i32`-only context) or needing wide access.
-* **Files:** `rg -n "int_val" src/`; ranges, enum values, array sizes, `case` labels, `sizeof`, struct defaults.
-* **Tests:** one boundary test per consumer.
-* **Security gate:** no consumer may truncate a wide literal without a diagnostic.
-* **Done when:** the audit table is attached to the task note and every unsafe consumer is fixed or explicitly gated.
-* **Former Defect:** An exhaustive codebase audit of all reads of `int_val` (and unvalidated 32-bit `parse_int_from_slice` calls) across `src/` revealed 7 critical sites where 64-bit integer values were silently truncated to 32 bits without diagnostics:
-  1. `src/analysis/array_checks.vl:48`: `expr.index.int_val < 0 or (expr.index.int_val as i64) >= arr_len` truncated wide literals, allowing `arr[4294967298]` on a 5-element array to wrap to 2 (or 0) and silently pass bounds checking.
-  2. `src/backend/codegen_stmt.vl:259`: `stmt.loop_start.int_val > stmt.loop_end.int_val` truncated wide range endpoints, causing wide descending loops (e.g. `3000000005..3000000000`) to fail `is_rev` detection and immediately terminate without running.
-  3. `src/backend/codegen_stmt.vl:250, 260`: range loops hardcoded `for (int32_t `, causing `loop i in 0..3000000000` to suffer signed 32-bit overflow wrap in C, hanging in an infinite loop.
-  4. `src/analysis/type_checker_stmt.vl:163`: range loops unconditionally typed loop variable `it` as `"i32"`, preventing 64-bit endpoint typing.
-  5. `src/analysis/reflect_checks.vl:63, 67` & `src/analysis/mono_unroll.vl:12`: `out_val[0] = expr.int_val` truncated wide constants to 32 bits during compile-time reflection and constant folding.
-  6. `src/frontend/parser_decl_types.vl:177`: enum discriminants used `parse_int_from_slice`, silently wrapping discriminants $> 2147483647$ (e.g. `3000000000`) without a diagnostic.
-  7. `src/frontend/parser.vl:87` & `src/frontend/parser_decl_types.vl:101`: fixed-size array lengths and struct `#align` used `parse_int_from_slice`, silently wrapping lengths $> 2147483647$ (e.g. `[4294967297]i32` wrapped to 1) or accepting excessive alignment without bounds validation.
-  8. `src/backend/driver.vl:253`: `driver.vl` ignored `p.had_error`, allowing parsing errors to proceed without aborting compilation.
-* **Audit Table:**
-
-| File:Line | Context | Classification | Audit Finding & Resolution |
-|---|---|---|---|
-| `src/analysis/literal_check.vl:24` | `parse_u64_checked` | Safe | Primary wide-number parser. Enhanced to support binary (`0b`), octal (`0o`), hex (`0x`), and decimal, with exact base-specific overflow checks and suffix termination. |
-| `src/analysis/literal_check.vl:59` | `infer_unsuffixed_int_type` | Safe | Reads `expr.str_val` first with `parse_u64_checked`. |
-| `src/analysis/literal_check.vl:79` | `infer_unsuffixed_neg_int_type` | Safe | Reads `operand.str_val` first with `parse_u64_checked`. |
-| `src/analysis/literal_check.vl:102` | `check_suffixed_int_literal` | Safe | Reads `expr.str_val` first with `parse_u64_checked`. |
-| `src/analysis/literal_check.vl:154` | `try_adapt_int_literal` | Safe | Reads `expr.str_val` first with `parse_u64_checked`. |
-| `src/backend/codegen_lit.vl:11` | `emit_c_int_literal` | Safe | Checks `expr.str_val` first, emitting literal string verbatim. |
-| `src/backend/codegen_lit.vl:21` | `try_emit_c_neg_int_literal` | Safe | Checks `expr.operand.str_val` first with `parse_u64_checked`. |
-| `src/analysis/monomorphize_expr.vl:34`| `mono_clone_expr` | Safe | Clones `int_val`, `str_val`, and `type_name` identically onto the new node. |
-| `src/lsp/completion.vl` | Line/Col coords | Safe | Text document coordinates and buffer offsets bounded $< 2 \times 10^9$. |
-| `src/lsp/doc_store.vl` | Line/Col coords | Safe | Text document line/column offsets bounded $< 2 \times 10^9$. |
-| `src/lsp/rename.vl` | Line/Col coords | Safe | Symbol rename range coordinates bounded $< 2 \times 10^9$. |
-| `src/lsp/server.vl` | Message IDs | Safe | JSON-RPC message identifiers bounded $< 2 \times 10^9$. |
-| `src/lsp/transport.vl` | Content-Length | Safe | JSON-RPC packet length header bounded $< 2 \times 10^9$. |
-| `src/backend/check.vl:85` | Diag line/col parsing | Safe | Reads line and column numbers from diagnostics output. |
-| `src/backend/pretty_recon.vl:65`| Diag line/col parsing | Safe | Reads line and column numbers from diagnostics output. |
-| `src/analysis/array_checks.vl:48` | `check_array_index` | **Unsafe → Fixed** | Replaced `expr.index.int_val` with `parse_u64_checked(expr.index.str_val)`. Added check for negative unary index `arr[-1]`. Rejects out-of-bounds indices like `arr[4294967298]`. |
-| `src/analysis/reflect_checks.vl:60` | `get_reflect_const_int` | **Unsafe → Fixed** | Replaced `expr.int_val` with 64-bit parsing using `parse_u64_checked`. Correctly returns `i64` constants across all 64-bit positive and negative ranges. |
-| `src/analysis/mono_unroll.vl:10` | `mono_eval_const_int` | **Unsafe → Fixed** | Delegated `mono_eval_const_int` to `get_reflect_const_int`, enabling wide 64-bit constant folding and reflection evaluation without 32-bit truncation. |
-| `src/analysis/type_checker_stmt.vl:163` | `STMT_LOOP` range typing | **Unsafe → Fixed** | Added `unify_loop_range_type` to infer and unify `start_t` and `end_t`. Stored wide type (`i64`/`u64`/`usize`/`u32`) in `stmt.type_name` and defined loop variable with unified type. |
-| `src/backend/codegen_lit.vl:58` | Loop range reverse check | **Unsafe → Fixed** | Implemented `is_reverse_loop_range` comparing 64-bit evaluated endpoint values, correctly identifying reverse loops with wide endpoints. Added `loop_var_c_type` mapping types to C declarations (`int64_t`, `uint64_t`, etc.). |
-| `src/backend/codegen_stmt.vl:250-265` | `STMT_LOOP` C emission | **Unsafe → Fixed** | Emits `loop_var_c_type(stmt.type_name)` in C `for` loop header and uses `is_reverse_loop_range`. Eliminates signed overflow wrap and infinite loops on wide ranges (`0..3000000000`). |
-| `src/frontend/parser.vl:87` | `[N]T` array length | **Unsafe → Fixed** | Replaced `parse_int_from_slice` with `parse_decimal_int_literal`. Rejects lengths exceeding 32-bit signed range ($> 2147483647$) with compile-time error `"Fixed-size array length exceeds 32-bit integer range"`. |
-| `src/frontend/parser_decl_types.vl:101`| `#align(N)` attribute | **Unsafe → Fixed** | Replaced `parse_int_from_slice` with `parse_decimal_int_literal`. Rejects alignment values $= 0$ or $> 65536$ with compile-time error. |
-| `src/frontend/parser_decl_types.vl:177`| `kind` enum discriminant | **Unsafe → Fixed** | Replaced `parse_int_from_slice` with wide decimal and hex parsing. Rejects discriminants exceeding 32-bit signed range ($> 2147483647$) with compile-time error. |
-| `src/backend/driver.vl:253` | Module parse gate | **Unsafe → Fixed** | Added check for `p.had_error` in `load_file_and_deps_ex`, incrementing `d.error_count` and halting build on parser errors. |
-
-* **Residual Limitation:** Property-based and fuzz testing comparing parser outputs against reference implementations follows in Task 53.9.
-* **Verification:**
-  - `tests/test_int_val_audit.py`: 11 passed in 1.03s verifying wide range loops (forward and reverse), negative range loops, array indexing compile-time rejection, array size limits, enum discriminant limits, and struct alignment limits.
-  - Phase 53 literal test suite: 133 tests passed in 63.95s across all literal test suites (`test_integer_literals.py`, `test_int_literal_model.py`, `test_literal_formatting.py`, `test_literal_type_ladder.py`, `test_safe_c_literal_emission.py`, `test_int_val_audit.py`).
-  - Bootstrap Gen2/Gen3 SHA-256 match verified (`bf85c941eb5a1e1101661060b31d524c96ce8bba5300c496f7c2a59bc947efa5`); `python scripts/count_lines.py` verified all 99 compiler source files $\le 395$ lines ($\le 400$).
-
-##### Task 53.9: Add property/fuzz coverage [COMPLETED] ✅
-* **Former Defect**:
-  - The literal parsing pipeline lacked automated property-based verification comparing Velo's multi-radix integer parsing directly against an arbitrary-precision reference implementation (Python integers).
-  - Malformed literal edge cases (empty radix prefixes, invalid digits, 100+ digit inputs, integer overflow beyond `UINT64_MAX`, invalid underscore placement, Unicode digits, and out-of-range suffixed literals) had not been tested as a unified fuzz corpus to verify robust compile diagnostics without compiler crash or hang.
-  - Additionally, suffixed integer literals (e.g. `256_u8`, `128_i8`, `-129_i8`, `-1_u8`, `65536_u16`) lacked compile-time range validation against their declared suffix type in let declarations.
-* **Fix Applied**:
-  - Implemented `validate_suffixed_int_literal`, `infer_int_expr_type`, and `try_infer_neg_int_expr_type` in `src/analysis/literal_check.vl` and integrated with `src/analysis/type_checker.vl`:
-    * Rejects suffixed integer literals that exceed the bit width or sign boundaries of their explicit suffix type (`u8`, `i8`, `u16`, `i16`, `u32`, `i32`, `u64`, `i64`).
-    * Produces clear diagnostic errors: `Integer literal <lit> exceeds range of '<type>'` and `Negative integer literal <lit> cannot be assigned to unsigned type '<type>'`.
-  - Created automated property and fuzz test suite in `tests/test_literal_property_fuzz.py`:
-    * Deterministic corpus of >1,000 cases comparing decimal, hex, binary, and octal integer literals across 8-bit, 16-bit, 32-bit, and 64-bit boundaries (0, powers of 2, boundary - 1, boundary, boundary + 1, and pseudo-random `u64` values) against Python arbitrary-precision integers, verifying execution equality via `assert(val == val)`.
-    * Malformed fuzz corpus of 280+ test cases covering:
-      - Empty radix prefixes: `0x`, `0X`, `0b`, `0B`, `0o`, `0O`.
-      - Radix-invalid digits: e.g. `0b2`, `0b10a01`, `0o8`, `0o77z1`, `0xg`, `0x12z34`.
-      - Values exceeding `UINT64_MAX`: `18446744073709551616`, `20000000000000000000`, `0x10000000000000000`, etc.
-      - 100+ digit inputs: 100-digit decimal, 100-digit hex, 100-digit binary, 100-digit octal.
-      - Out-of-range integer suffixes: `256u8`, `128i8`, `-129i8`, `-1u8`, `65536u16`, `32768i16`, `-32769i16`, `-1u16`, `4294967296u32`, `2147483648i32`, `-2147483649i32`, `-1u32`, `18446744073709551616u64`, `9223372036854775808i64`, `-9223372036854775809i64`, `-1u64`.
-      - Invalid underscore placements: leading `_123`, trailing `123_`, double underscores `12__34`.
-      - Unicode digits: non-ASCII Arabic-Indic (`١٢٣٤`) and Devanagari (`१२३४`) digits rejected at lexing/parsing without crash.
-    * Ensured all malformed cases produce diagnostics without compiler aborts or hangs, running in bounded time (< 10 seconds).
-* **Residual Limitation**:
-  - None. All literal parsing, typing, and overflow checks across decimal, hex, binary, and octal are fully implemented, verified, and property-tested.
-* **Verification**:
-  - `tests/test_literal_property_fuzz.py`: 2 passed (evaluating >1,000 valid property assertions and 280+ malformed fuzz cases) in 7.27s (< 10s bound).
-  - Literal regression suite: 129 passed in 69.66s across `test_literal_formatting.py`, `test_literal_property_fuzz.py`, `test_literal_type_ladder.py`, `test_integer_literals.py`, `test_int_literal_model.py`, and `test_int_val_audit.py`.
-  - Rebuilt bootstrap chain with Gen2/Gen3 matching bit-for-bit SHA-256 (`585893fa8baccb1400a4f440ff69128fc1ba63dc386ca4487af117e254c1fc8a`).
-  - Verified line count standards across all 117 compiler source files in `src/` ($\le 395$ lines, zero UTF-8 BOM).
-
-#### Phase Exit Criteria
-
-- [x] `0xFFFFFFFF`, `0x80000000`, `0b111...32`, and `0o37777777777` produce their mathematical values with a well-defined type.
-- [x] `18446744073709551616` is a compile-time error.
-- [x] `loop i in 0..3000000000` is no longer corrupted by a wrapped endpoint.
-- [x] Every `int_val` consumer is audited.
+- `git ls-files | xargs grep -L "SPDX"` is empty for source files, or a license
+  file covers them explicitly.
+- `velo version` and `CHANGELOG.md` agree.
+- `git describe --tags` yields `v2.0.0-pre` or later.
+- A release archive builds from a clean checkout on Windows.
 
 ---
 
-### Phase 54: `loop <count>` Classification (P0) [COMPLETED] ✅
+# Phase 72: Package Ecosystem That Actually Fetches (P0) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-03`<br>
-**Severity:** P0 — unbounded loop / wrong iteration count<br>
-**Depends on:** Phase 53<br>
-**Blocks:** Phases 63 and 68
+## Defect
 
-#### Defect
+`velo pkg install` is a lockfile formatter. It never downloads anything. It
+prints `All dependencies installed and locked successfully` after writing a
+lock file for dependencies it never fetched. That is not an incomplete feature;
+it is a false success message, which is worse.
 
-The parser marks a loop as a count loop only when the expression is an integer literal (`parser_stmt.vl:152`). Codegen then re-classifies identifiers only for `i32`, `i64`, `u32`, and `usize` (`codegen_stmt.vl:243-253`). Every other integer width, and every non-literal expression, is lowered as a **condition** loop.
+## Evidence
 
-```velo
-let c: u64 = 3
-loop c { io.println("x") }
-// for (int32_t it = 0; (c); it++)  → infinite
+| Fact | Evidence |
+| :--- | :--- |
+| `pkg install` has no fetch path | `src/backend/driver_pkg.vl:126-152`: loads manifest, and either writes a fresh `velo.lock` or verifies the existing one. No network, no copy, no clone. |
+| No HTTP anywhere in the package code | `grep -c "http\|download\|curl\|fetch"` over `driver_pkg.vl` -> 0 [VERIFIED] |
+| No clone either | the only `os_system` call in `driver_pkg.vl` is line 320, in `pkg build/run` |
+| Three dependency kinds are parsed but only one is meaningful | `src/common/manifest.vl:208-223`: `registry` (default, `source` = version string), `git` (URL + `@tag`), `local` (path). Only `local` can ever resolve, because resolving `registry`/`git` requires fetching. |
+| The lockfile stores a hash it never validates against a download | `src/backend/pkg_lock.vl:43` `lockfile_add_entry(name, source, version, hash)`; hashes are computed from files on disk, so a missing dependency has no hash source |
+| No registry, no index format, no publish command | `velo help` lists `pkg check|lock|install|update|build|run` only (`src/backend/driver_pkg.vl:65-70`) |
+| Semver is unparsed | `version` is a `string` field (`src/common/manifest.vl:23`); no comparison, no range syntax |
 
-loop n + 1 { io.println("x") }
-// for (int32_t it = 0; ((n + 1)); it++)  → infinite
+## Security Invariants
 
-loop 5.0 { }
-// for (int32_t it = 0; (5.0f); it++)  → infinite
+- **I72.1** `pkg install` either fetches every non-local dependency or exits
+  non-zero. It never reports success for work it did not do.
+- **I72.2** A dependency's content hash is computed from the fetched bytes and
+  compared against `velo.lock` before the code is compiled into anything.
+- **I72.3** Fetching is done by invoking `git`/`curl` as a child process with
+  argument arrays, never by string-concatenating a shell command (see
+  Phase 47's quoting hardening for the existing pattern).
+- **I72.4** A lockfile mismatch is fatal and names the dependency, the expected
+  hash, and the actual hash.
 
-loop "x" { }
-// for (int32_t it = 0; ("x"); it++)  → always true
-```
+## Tasks
 
-`loop p` with a struct emits invalid C. `loop -1` is treated as a condition (`-1` is truthy), not a zero-iteration count.
+**72.1** Implement `manifest_resolve_dep(dep) -> DepLocation` for `local` and
+`git` kinds. `git` runs `git clone --depth 1 --branch <tag> <url>
+.velo_cache/deps/<name>` and then `git rev-parse HEAD`. A missing `git`
+executable is a hard error with an actionable message.
 
-#### Security Invariants
+**72.2** Implement `registry` kind against a minimal HTTP index: `<registry>/ 
+<name>/index.json` listing `version -> {url, sha256}`. Requires Phase 73's TLS
+or an explicit `--insecure` flag that prints a warning. Document the index
+format in `docs/PACKAGING.md`.
 
-- A count expression must be an integer type; a condition expression must be `bool`.
-- A count expression with side effects must be evaluated exactly once.
-- A non-boolean condition must be rejected at `velo check`, not left to C truthiness.
-- A count of `0` or a negative count must terminate immediately, not loop forever.
-- No classification may depend on the spelling of the expression.
+**72.3** Fix the lie: `pkg install` must call 72.1/72.2 for every dependency,
+verify hashes (I72.2), and only then print success. Add
+`tests/test_pkg_install_fetches.py` with a local `file://`-style registry
+fixture and a `git` fixture; the test asserts the dependency directory exists
+and its files match the lock hash.
 
-#### Tasks
+**72.4** Add semver: parse `MAJOR.MINOR.PATCH`, support `=`, `^`, `~`, and
+`>=` in manifests, reject ambiguous ranges with a diagnostic.
 
-##### Task 54.1: Add the count/condition matrix (red baseline) [COMPLETED] ✅
-* **Former Defect**:
-  - `parser_stmt.vl:152` classified a loop as a count loop only when the expression was an integer literal (`first_expr.kind == EXPR_INT`).
-  - `codegen_stmt.vl:241` only re-classified identifiers as count loops for `{i32, i64, u32, usize}`.
-  - All other integer widths (`i8`, `i16`, `u8`, `u16`, `u64`, `isize`), all non-literal expressions (e.g. `n + 1`, `a * b`, function calls with side effects), and negative counts (`-1`) were lowered as condition loops (`for (int32_t it = 0; (expr); it++)`), causing infinite loops at runtime.
-  - Non-boolean types (`float`, `string`, `struct`, `pointer`) were accepted by `velo check` without any diagnostic and lowered to C truthiness conditions, resulting in infinite loops or invalid C.
-  - No unified test matrix existed to assert expected count and condition semantics across all types, expression forms, and invalid inputs.
-* **Fix Applied (Red Baseline Harness)**:
-  - Created `tests/test_count_loops.py` with 36 test cases establishing the count/condition baseline:
-    * Integer widths for count variables (10 tests): `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`, `u64`, `isize`, `usize` (4 passed, 6 failed with timeout due to infinite condition loop lowering).
-    * Literals and suffixed literals (9 tests): `loop 5`, `loop 4u8`, `4u16`, `4u32`, `4u64`, `4i8`, `4i16`, `4i32`, `4i64` (all 9 passed).
-    * Non-literal expressions, zero/negative counts, and side-effects (6 tests): `loop n + 1`, `loop a * b`, `loop 0`, `loop z (u64 0)`, `loop -1`, `loop get_count()` (2 passed, 4 failed with timeout).
-    * Valid boolean condition loops (5 tests): `loop flag`, `loop false`, `loop x > 0`, `loop a > 0 and b > 0`, `loop x > 0` with `it` counter access (all 5 passed).
-    * Compile-time rejection of invalid types (6 tests): `float` literal, `float` variable, `string` literal, `string` variable, `struct`, `pointer` (all 6 failed: accepted by `velo check`).
-    * Enforced strict 1.0s timeout per runnable case via direct binary execution, catching infinite loops without hanging CI.
-  - Extended `tests/test_range_loops.py` with `test_count_loop_variable_and_expression` testing `loop n + 1` (fails with timeout on baseline).
-* **Residual Limitation**:
-  - Baseline establishes the red state (16 failed, 20 passed in `tests/test_count_loops.py`; 1 failed in `tests/test_range_loops.py`). Implementation of type-directed classification and codegen lowering follows in Tasks 54.2-54.6.
-* **Verification**:
-  - `tests/test_count_loops.py`: 20 passed, 16 failed for the exact documented causes in 30.96s.
-  - `tests/test_range_loops.py`: 5 passed, 1 failed (`test_count_loop_variable_and_expression`) in 5.24s.
+**72.5** Add `velo pkg tree` and `velo pkg verify` (read-only: recompute hashes
+and report drift). `verify` is what CI calls.
 
-##### Task 54.2: Define the count-vs-condition rule [COMPLETED] ✅
-* **Former Defect**:
-  - The language specification (`docs/SPECIFICATION.md` §7.2) lacked a normative rule for resolving single-expression loops (`loop <expr>`).
-  - There was no documented specification governing how integer types are disambiguated from boolean conditions, how non-positive counts behave, how side-effects are bounded to single evaluation, and which types are strictly prohibited (e.g. pointer/string truthiness and float counts).
-* **Fix Applied**:
-  - Authored normative Count-vs-Condition Disambiguation Rule in `docs/SPECIFICATION.md` §7.2:
-    * Defined type-directed classification: integer types (`i8`..`i64`, `u8`..`u64`, `isize`, `usize`) classify as Count Loops; `bool` classifies as Condition Loops; all other types (`f32`, `f64`, `string`, `@T`, struct, array, etc.) produce compile-time semantic errors.
-    * Specified diagnostic error format: `"Loop expression must be an integer (count) or 'bool' (condition), got '<type>'"` for type checker implementation in Task 54.4.
-    * Documented single-evaluation guarantee: count expression is evaluated exactly once into a temporary before loop entry, preventing repeated side-effect execution.
-    * Documented non-positive count semantics: counts $\le 0$ execute 0 times and terminate immediately.
-    * Documented strict boolean requirements: rejected C-style truthiness for pointers, floats, numbers, and strings, requiring explicit boolean comparisons.
-    * Documented syntax independence: classification depends purely on inferred static type, not AST syntax (literal vs variable vs binary expression).
-  - Verified that all documentation examples in `docs/SPECIFICATION.md` §7.2 compile cleanly.
-* **Residual Limitation**:
-  - Compiler implementation follows in Tasks 54.3-54.6.
-* **Verification**:
-  - Verified all code examples in `docs/SPECIFICATION.md` §7.2 compile cleanly.
+**72.6** Add `velo pkg publish` that tars the manifest's declared `src/` and
+`std/` subsets, computes the hash, and prints the index entry to paste. No
+upload servers, no accounts - publishing is a pull request to a registry
+repository. That keeps the trust model small enough to be honest.
 
-##### Task 54.3: Make the parser emit a neutral classification hint [COMPLETED] ✅
-* **Former Defect**:
-  - `parser_stmt.vl:152` unilaterally treated `(first_expr.kind == EXPR_INT)` as the definitive count flag, making loop classification depend entirely on the syntax of literal spelling.
-  - Non-literal expressions (e.g. `loop n + 1`), function calls, and integer variables of non-32/64-bit width were misclassified by the parser as condition loops, and the type checker never corrected `stmt.is_count`.
-  - Codegen only checked `EXPR_IDENT` against four types (`i32`, `i64`, `u32`, `usize`), leaving `i8`, `i16`, `u8`, `u16`, `u64`, `isize`, and all complex integer expressions to run as infinite condition loops.
-* **Fix Applied**:
-  - Updated `src/frontend/parser_stmt.vl`: the parser now emits a neutral classification hint `is_count_hint = (first_expr.kind == EXPR_INT)` without acting as the final semantic authority.
-  - Updated `src/analysis/type_checker_stmt.vl`: semantic analysis now resolves `stmt.is_count` strictly from static types:
-    * Sets `stmt.is_count = true` and `stmt.type_name = expr_t` for any integer type (`is_int_type(expr_t)`).
-    * Sets `stmt.is_count = false` and `stmt.type_name = "i32"` for `"bool"`.
-  - Updated `src/backend/codegen_stmt.vl`: codegen checks `is_int_type(infer_expr_type(st, stmt.expr))` rather than checking `EXPR_IDENT`, ensuring loop lowering is purely type-directed and syntax-independent.
-  - Added emitted-C test suite `test_loop_classification_emitted_c_syntax_independent` in `tests/test_count_loops.py` verifying that integer literals, suffixed literals, integer variables across widths (`u64`, `u8`, `i16`, `isize`), and binary expressions (`n + 1`, `a * b`) emit count loops (`it < (...)`), while booleans emit condition loops.
-  - Rebuilt 3-stage bootstrap compiler chain (`velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified Gen2/Gen3 bit-for-bit SHA-256 fixed-point determinism (`0df5dd37e12de05d4bed93ae5608b79b734f3f1a3c95a87fcac1618d537e2536`).
-* **Residual Limitation**:
-  - Semantic rejection of non-integer, non-boolean expressions in `velo check` with precise diagnostics follows in Task 54.4.
-* **Verification**:
-  - `tests/test_count_loops.py`: 10/10 emitted-C classification tests passed in 0.22s; 29/36 count loop tests now pass (all integer widths, expressions, and zero/negative counts now successfully iterate and terminate).
-  - `tests/test_range_loops.py`: 6/6 passed in 3.64s (`test_count_loop_variable_and_expression` now passing).
-  - All 117 compiler source files $\le 395$ lines ($\le 400$).
-  - SHA-256 determinism match verified (`0df5dd37e12de05d4bed93ae5608b79b734f3f1a3c95a87fcac1618d537e2536`).
+**72.7** Add a `tests/test_pkg_semver.py` matrix and a `deps-lock` CI job that
+builds a two-level dependency graph offline from fixtures.
 
-##### Task 54.4: Enforce count/condition types in the checker [COMPLETED] ✅
-* **Former Defect**:
-  - `src/analysis/type_checker_stmt.vl` did not validate that single-expression loops (`loop <expr>`) have an integer or boolean type.
-  - Non-boolean and non-integer expressions (such as `f32`/`f64` floats, `string`, `@T` pointers, structs, and arrays) were accepted by `velo check` without any diagnostic and allowed to flow into backend codegen as truthy C conditions or invalid syntax.
-* **Fix Applied**:
-  - Enforced strict type gating for single-expression loops in `src/analysis/type_checker_stmt.vl`:
-    * If `stmt.expr != null`, infers `expr_t = infer_expr_type(st, stmt.expr)`.
-    * If `is_int_type(expr_t)`, classifies as count loop (`stmt.is_count = true`, `stmt.type_name = expr_t`).
-    * Else if `expr_t == "bool"`, classifies as condition loop (`stmt.is_count = false`, `stmt.type_name = "i32"`).
-    * Otherwise, halts semantic analysis and reports a precise compile diagnostic:
-      `report_error("semantic", stmt.line, stmt.col, "Loop expression must be an integer (count) or 'bool' (condition), got '<type>'")`.
-    * Increments `st.error_count`, ensuring `velo check` fails with exit code 1 for all invalid types.
-  - Rebuilt 3-stage bootstrap compiler chain (`velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified Gen2/Gen3 bit-for-bit SHA-256 fixed-point determinism (`56342e21bc48d6d65c34e5e34035644cebf2bfa24939de2f177c934e09398ec1`).
-* **Residual Limitation**:
-  - Single evaluation of count expressions with side effects into a temporary variable follows in Task 54.5.
-* **Verification**:
-  - `tests/test_count_loops.py`: All 6 invalid type tests now pass (`test_invalid_loop_float_literal_rejected`, `test_invalid_loop_float_variable_rejected`, `test_invalid_loop_string_literal_rejected`, `test_invalid_loop_string_variable_rejected`, `test_invalid_loop_struct_rejected`, `test_invalid_loop_pointer_rejected`); 45 of 46 total tests now pass.
-  - All valid rows (all 10 integer widths, literals, suffixed literals, expressions, zero/negative counts, boolean condition loops, and emitted C tests) continue to pass cleanly.
-  - Line counts verified across all 117 compiler source files ($\le 395$ lines, zero UTF-8 BOM).
-  - SHA-256 determinism match confirmed (`56342e21bc48d6d65c34e5e34035644cebf2bfa24939de2f177c934e09398ec1`).
+## Phase Exit Criteria
 
-##### Task 54.5: Lower count loops for every integer width [COMPLETED] ✅
-* **Former Defect**:
-  - `codegen_stmt.vl:244` lowered count loops directly against the count expression in the loop condition: `for (c_type it = 0; it < (expr); it++)`.
-  - When the count expression contained side effects (e.g. `loop get_count()`), the expression was re-evaluated on every single iteration, violating the security invariant requiring count expressions to be evaluated exactly once.
-* **Fix Applied**:
-  - Modified C lowering in `src/backend/codegen_stmt.vl`:
-    * Count loops now evaluate the count expression into an internal temporary `__cnt` of type `c_type` during loop initialization:
-      `for (c_type it = 0, __cnt = (expr); it < __cnt; it++)`
-    * The count expression is evaluated **exactly once** before loop entry.
-    * Re-evaluations during iteration are completely eliminated, satisfying the single-evaluation security invariant.
-    * Non-positive counts (`__cnt <= 0`) terminate immediately on the initial check `0 < __cnt`.
-  - Updated pattern assertions in `tests/test_count_loops.py` verifying that emitted C outputs `__cnt = (expr)` and `it < __cnt`.
-  - Rebuilt 3-stage bootstrap compiler chain (`velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified Gen2/Gen3 bit-for-bit SHA-256 fixed-point determinism (`5ed8a8c03a067271d57af93044cf2125202b325d1934d5af9b34d69115e3e458`).
-* **Residual Limitation**:
-  - Condition loops (`loop <condition>`) emission optimization follows in Task 54.6.
-* **Verification**:
-  - `tests/test_count_loops.py`: All 46 tests pass in 8.52s (100% pass rate, including `test_count_loop_side_effects_evaluated_once` which now passes with `g_calls == 1`).
-  - `tests/test_range_loops.py`: 6/6 tests pass in 3.66s.
-  - All 117 compiler source files $\le 395$ lines ($\le 400$).
-  - SHA-256 determinism match confirmed (`5ed8a8c03a067271d57af93044cf2125202b325d1934d5af9b34d69115e3e458`).
-
-##### Task 54.6: Lower condition loops as real boolean loops [COMPLETED] ✅
-* **Former Defect**:
-  - `codegen_stmt.vl` lowered non-count loops with an implicit `it` counter into a C `for` loop header without verifying that the expression was strictly boolean, permitting raw integer truthiness or pointer truthiness.
-  - Previous implementations lacked comprehensive test coverage for condition loops across nested contexts (condition-in-condition, condition-in-count, count-in-condition), functions returning `bool`, `it` accumulation, lexical `it` shadowing in nested loops, and loop control statements (`break`/`continue`).
-* **Fix Applied**:
-  - Verified and locked the boolean condition lowering in `src/backend/codegen_stmt.vl`:
-    ```c
-    for (int32_t it = 0; (expr); it++) { ... }
-    ```
-    * The expression is strictly gated by `type_checker_stmt.vl` to ensure only `bool` expressions reach this branch (non-boolean types like floats, pointers, and strings are rejected at `velo check`).
-    * The loop condition is evaluated before each iteration.
-    * The implicit `it: i32` starts at `0` and increments by `1` on every iteration, including when `continue` is executed.
-    * Nested loops create fresh statement scopes in C99, ensuring inner `it` cleanly shadows outer `it` without variable collisions.
-  - Extended `tests/test_count_loops.py` with 9 dedicated condition loop test cases:
-    * Nested condition loops (`test_condition_loop_nested_condition`)
-    * Condition loop inside count loop (`test_condition_loop_nested_in_count_loop`)
-    * Count loop inside condition loop (`test_count_loop_nested_in_condition_loop`)
-    * Function call condition returning bool (`test_condition_loop_function_call`)
-    * `it` value accumulation starting at 0 (`test_condition_loop_it_values_accumulation`)
-    * Nested `it` lexical shadowing (`test_condition_loop_nested_it_shadowing`)
-    * Immediate loop termination with `break` (`test_condition_loop_break`)
-    * Step advance with `continue` (`test_condition_loop_continue`)
-    * Logical negation with `not` operator (`test_condition_loop_not_operator`)
-* **Residual Limitation**:
-  - Task 54.7 expands side-effect, boundary, and large integer count loop security tests.
-* **Verification**:
-  - `tests/test_count_loops.py`: All 55 tests pass in 11.11s (100% pass rate).
-  - `tests/test_range_loops.py`: 6/6 tests pass in 3.66s.
-  - All 117 compiler source files $\le 395$ lines ($\le 400$).
-
-##### Task 54.7: Add side-effect, boundary, and security tests [COMPLETED] ✅
-* **Former Defect**:
-  - Lack of regression tests verifying single-evaluation semantics on stateful function calls, unsigned integer returns, wide `u64` counts exceeding `INT32_MAX`, multi-level nested count loops, and loop control statements (`break`/`continue`) in count loops.
-  - Compile-time diagnostic rejection of pointer address expressions (`loop @x`) was not explicitly pinned in tests.
-* **Fix Applied**:
-  - Extended `tests/test_count_loops.py` with 11 specialized side-effect, boundary, and security test cases:
-    * Stateful function call in count expression evaluated exactly once (`test_count_loop_stateful_function_call`)
-    * Function returning unsigned integer `u64` as count (`test_count_loop_function_returning_u64`)
-    * Wide `u64` count above `INT32_MAX` (`3000000000u64`) with `break` (`test_count_loop_u64_above_int32_max_with_break`)
-    * Emitted C verification for `u64` count confirming `uint64_t it = 0, __cnt = (large_count)` (`test_count_loop_u64_above_int32_max_emitted_c`)
-    * Two-level nested count loops with `it` counter verification (`test_count_loop_nested_count_loops`)
-    * Three-level deeply nested count loops across mixed integer widths (`u8`, `i16`, `u64`) (`test_count_loop_deeply_nested`)
-    * Early termination with `break` inside count loop (`test_count_loop_break`)
-    * Step advance with `continue` inside count loop (`test_count_loop_continue`)
-    * Boundary test: count of `1` executing once with `it == 0` (`test_count_loop_boundary_single_iteration`)
-    * Variable negative count terminating immediately without looping (`test_count_loop_variable_negative`)
-    * Explicit address-of pointer expression (`loop @x`) rejected at compile-time with diagnostic error (`test_invalid_loop_address_of_pointer_rejected`)
-  - All runnable tests enforce strict 2.0s timeouts preventing CI hangs on infinite loops.
-* **Residual Limitation**:
-  - Large literal endpoint handling in reverse range loops (`loop 5..0` vs `loop 3000000000..0`) is addressed in Phase 55.
-* **Verification**:
-  - `tests/test_count_loops.py`: All 66 tests pass in 13.78s (100% pass rate).
-  - `tests/test_range_loops.py`: 6/6 tests pass in 3.66s.
-  - All 117 compiler source files $\le 395$ lines ($\le 400$).
-
-#### Phase Exit Criteria
-
-- [x] `loop n` with `n: u8/u16/u64/isize` terminates after `n` iterations.
-- [x] `loop n + 1` is a count loop and evaluates `n + 1` once.
-- [x] `loop 5.0`, `loop "x"`, `loop p`, and `loop @p` fail at `velo check`.
-- [x] `loop -1` and `loop 0` terminate immediately.
-- [x] No count loop is lowered as `for (...; (count); ...)`.
+- `velo pkg install` on a git dependency produces a working tree and a lock
+  entry whose hash matches, proven by test.
+- `velo pkg install` with a corrupted lock or a missing dependency exits
+  non-zero and names the problem.
+- A published index format exists in `docs/PACKAGING.md` and is exercised by
+  at least one test fixture.
 
 ---
 
-### Phase 55: Reverse Ranges with Large Literal Endpoints (P0) [COMPLETED] ✅
+# Phase 73: Transport Security and Cryptographic Completeness (P0) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-04`<br>
-**Severity:** P0 — wrong iteration count / silent zero-iteration loop<br>
-**Depends on:** Phase 53<br>
-**Blocks:** Phase 56 and Phase 68
+## Defect
 
-#### Defect
+There is no TLS. `std.http.client` speaks cleartext HTTP/1.1 only, so the
+language cannot talk to any modern endpoint. The crypto module ships MD5 and a
+hash-only HMAC with no constant-time comparison, and its CSPRNG silently falls
+back to a deterministic PRNG when the OS source fails - and the caller that
+consumes it (UUIDv4) ignores the failure flag entirely.
 
-`codegen_stmt.vl:258-259` detects a reverse range only when both endpoints are `EXPR_INT` and compares their `i32` `int_val`. Once Phase 53 stores wide values, this comparison must use the wide value, not the truncated field.
+## Evidence
 
-```velo
-loop i in 0..3000000000 {
-    io.println(i)
-    if i == 2 { break }
-}
-// emitted: for (int32_t i = 0; i > 3000000000; i--)
-// runs 0 times; only "done" is printed
-```
+| Fact | Evidence |
+| :--- | :--- |
+| No TLS anywhere | `grep -ri "tls\|ssl"` over `std/`, `src/`, `runtime/` -> 0 hits [VERIFIED] |
+| HTTP client is cleartext-only | `std/http/client.vl:10` `http_request(method, url_str, headers, body)`; URL handling in `std/url/*` has no scheme-based transport switch |
+| CSPRNG fails open into a deterministic PRNG | `std/crypto/rand.vl:7` `SystemFunction036`; on failure lines 30-42 fill the buffer from `rand_splitmix64()` and `return false` |
+| The failure flag is discarded by the only consumer | `std/uuid/v4.vl:10` calls `crypto_random_bytes(ptr, 16)` and ignores the return value [VERIFIED] |
+| UUIDv7 also ignores it | `std/uuid/v7.vl:26`, `:49` |
+| MD5 ships as a first-class member of the umbrella | `std/crypto.vl:3` `use "crypto/md5.vl"` |
+| HMAC has no verify function | `std/crypto/hmac.vl` exports exactly `hmac_sha256`, `hmac_sha256_hash`, `hmac_sha256_str` - no comparison helper |
+| No constant-time comparison anywhere | `grep -ri "constant_time\|ct_eq"` over `std/` -> 0 hits [VERIFIED] |
+| Only SHA-256, MD5, CRC32, HMAC-SHA256 exist | `std/crypto/` contains `crc32.vl`, `hex.vl`, `hmac.vl`, `md5.vl`, `rand.vl`, `sha256.vl` |
+| No AEAD, no public-key, no KDF | no `chacha`, `aes`, `poly1305`, `curve25519`, `ed25519`, `hkdf`, `pbkdf2`, `argon` anywhere |
 
-The literal `3000000000` wraps negative during parsing, so codegen believes the range is descending.
+A web-facing language without TLS, AEAD, and a constant-time comparison
+primitive is not publishable. Shipping MD5 in the default umbrella also invites
+its use for password hashing.
 
-#### Security Invariants
+## Security Invariants
 
-- Direction detection must use the same value that is emitted.
-- A range whose endpoint cannot be represented must be rejected, not silently reversed.
-- No comparison may overflow or depend on `int` width.
-- The loop must either terminate or fail with a diagnostic; zero iterations must be provably correct.
+- **I73.1** No cryptographic primitive returns success for a weaker
+  implementation. A CSPRNG failure is fatal or an explicit `or` error; it never
+  silently degrades.
+- **I73.2** Every MAC/password verification path compares in constant time.
+- **I73.3** Secrets are zeroed before their buffer is released on every exit
+  path, including `defer` unwinding and early `or return`.
+- **I73.4** MD5 and future legacy primitives are not reachable from the default
+  `std.crypto` umbrella; they live in `std.crypto.legacy`.
+- **I73.5** TLS verification is on by default and cannot be disabled without a
+  named, documented flag that prints a warning.
 
-#### Tasks
+## Tasks
 
-##### Task 55.1: Add the large-endpoint matrix (red baseline) [COMPLETED] ✅
-* **Former Defect**:
-  - `codegen_stmt.vl:256` invokes `is_reverse_loop_range` (`codegen_lit.vl:61`), which relies on `get_reflect_const_int` (`reflect_checks.vl:61`).
-  - When range endpoints exceed signed 64-bit maximum (`0x7FFFFFFFFFFFFFFF` / `9223372036854775807`), `get_reflect_const_int` fails the `u <= 0x7FFFFFFFFFFFFFFF` check and falls back to `expr.int_val as i64`.
-  - For unsigned 64-bit endpoints exceeding `i32` bounds, `int_val` is `0`, causing direction comparison `s_val > e_val` to erroneously compute `false` for descending ranges (e.g. `UINT64_MAX..0` emits ascending condition `i < 0; i++`, executing 0 iterations) and `true` for ascending ranges (e.g. `1..UINT64_MAX` emits descending condition `i > UINT64_MAX; i--`, executing 0 iterations).
-  - No dedicated test matrix covered range loops with endpoints around `INT32_MAX`, `UINT32_MAX`, `INT64_MAX`, and `UINT64_MAX`.
-* **Fix Applied (Red Baseline Harness)**:
-  - Created `tests/test_large_ranges.py` with a 38-case test matrix:
-    * Ranges around `INT32_MAX` (6 cases): `0..3000000000`, `3000000000..0`, `0..=3000000000`, `3000000000..=0`, `2147483647..0`, `0..2147483648` (all 6 pass because `3000000000` fits in `i64`).
-    * Ranges around `UINT32_MAX` (4 cases): `0..4294967295u64`, `4294967295u64..0`, `0..4294967296u64`, `4294967296u64..0` (all 4 pass).
-    * Ranges around `INT64_MAX` and `UINT64_MAX` (14 cases): `0..9223372036854775807i64` and `9223372036854775807i64..0` pass; 12 cases exceeding `INT64_MAX` (`INT64_MAX + 1`, `UINT64_MAX`, `10^19`, and hex `0xFFFFFFFFFFFFFFFFu64`, both exclusive and inclusive) fail due to direction reversal (0 iterations executed instead of 5, assertion failure).
-    * Emitted C direction operator assertions (14 cases): 8 pass; 6 fail matching the exact cases where `<` was emitted as `>` or `>` was emitted as `<`.
-    * Strict 2.0s timeouts enforced on all executions.
-  - Extended `tests/test_range_loops.py` with `test_large_endpoint_range_loop_baseline` testing ascending and descending ranges around 3 billion.
-* **Residual Limitation**:
-  - Baseline establishes the red state (20 passed, 18 failed in `tests/test_large_ranges.py` in 7.40s) for the exact documented causes. Implementation of wide direction detection follows in Tasks 55.2–55.7.
-* **Verification**:
-  - `tests/test_large_ranges.py`: 20 passed, 18 failed for the exact documented causes in 7.40s.
-  - `tests/test_range_loops.py`: 7 passed in 4.03s.
-  - All 117 compiler source files $\le 395$ lines ($\le 400$).
+**73.1** Move `md5` out of `std/crypto.vl` into `std/crypto/legacy.vl` with a
+`use std.crypto.legacy` requirement and a doc comment saying it is for
+interoperability only. Add `tests/test_crypto_umbrella.py` asserting MD5 is not
+reachable from the umbrella.
 
-##### Task 55.2: Prove the wrapped-value root cause [COMPLETED] ✅
-* **Former Defect**:
-  - `codegen_lit.vl:61` (`is_reverse_loop_range`) relied on `get_reflect_const_int` (`reflect_checks.vl:61`), which caps unsigned values at `0x7FFFFFFFFFFFFFFF` (`u <= 0x7FFFFFFFFFFFFFFFu64`) and falls back to `expr.int_val as i64`.
-  - For unsigned 64-bit integer endpoints exceeding `i32` bounds, `int_val` is `0`, causing `s_val > e_val` to derive loop direction from `0` rather than the wide literal value.
-  - The compiler lacked a targeted diagnostic probe asserting that the endpoint value used for direction equals the emitted value.
-* **Fix Applied (Diagnostic Probe & Root Cause Pinned)**:
-  - Created standalone diagnostic probe `tests/probe_range_endpoint.py`:
-    * Analyzes emitted C for ascending range `1..18446744073709551615u64`.
-    * Confirms that mathematical relation `1 < 18446744073709551615` is ascending, but emitted C generates `for (uint64_t i = 1; i > 18446744073709551615ULL; i--)`.
-    * Trace demonstrates the exact defect chain:
-      1. Literal `18446744073709551615u64` exceeds signed `i64` max (`0x7FFFFFFFFFFFFFFF`).
-      2. `reflect_checks.vl:67` bound check evaluates to `false`.
-      3. `reflect_checks.vl:72` falls back to `out_val[0] = expr.int_val as i64`.
-      4. `parser_lit.vl:184` checked conversion returned `false`, leaving `expr.int_val = 0`.
-      5. `codegen_lit.vl:65` evaluates `s_val (1) > e_val (0) == true`, flipping the loop to descending.
-    * Raises failing assertion: `Direction derived from truncated field: expected '<', got: for (uint64_t i = 1; i > 18446744073709551615ULL; i--)`.
-  - Integrated diagnostic probe into `tests/test_large_ranges.py` (`test_probe_prove_wrapped_value_root_cause`), confirming failing assertion in the test suite.
-* **Residual Limitation**:
-  - Implementation of wide 64-bit unsigned direction detection in `codegen_lit.vl` follows in Task 55.3.
-* **Verification**:
-  - `python tests/probe_range_endpoint.py`: Exits with code 1 and prints the exact root-cause defect trace with failing assertion.
-  - `pytest tests/test_large_ranges.py -k test_probe`: Fails with AssertionError pinning the truncated field.
+**73.2** Change `crypto_random_bytes` to fail closed: return `bool or string`
+and have `uuid_v4`/`uuid_v7` propagate (or abort with a named fatal). Delete the
+SplitMix64 fallback fill entirely, or keep it behind an explicit
+`crypto_unsafe_fallback` name. Add `tests/test_crypto_rand_failclosed.py` that
+injects a failing entropy function.
 
-##### Task 55.3: Use wide values for direction detection [COMPLETED] ✅
-* **Former Defect**:
-  - `codegen_lit.vl:61` (`is_reverse_loop_range`) called `get_reflect_const_int`, which returned signed `i64` and clamped values $> \text{INT64\_MAX}$ to truncated `i32` `int_val` (0).
-  - Comparing wide endpoints against 0 caused direction detection to evaluate `s_val > e_val` inversely for large unsigned ranges: ascending ranges (e.g. `1..UINT64_MAX`, `1..9223372036854775808u64`, `10..10^19`) were emitted as descending (`>`), and descending ranges (e.g. `UINT64_MAX..0`) were emitted as ascending (`<`).
-* **Fix Applied**:
-  - Added `get_range_endpoint_const` in `src/backend/codegen_lit.vl`:
-    * Safely extracts the full 64-bit unsigned magnitude (`val: u64`) and negative sign flag (`is_neg: bool`) from `EXPR_INT` and negated integer expressions (`EXPR_UNARY` with `TOK_MINUS`) without 32-bit truncation.
-    * Uses `parse_u64_checked` on `expr.str_val` to parse decimal, hex, binary, and octal wide literals up to `0xFFFFFFFFFFFFFFFFu64`.
-  - Replaced `is_reverse_loop_range` in `src/backend/codegen_lit.vl`:
-    * Compares endpoints using sign-aware 64-bit wide comparison:
-      - If `start` is negative and `end` is non-negative: returns `false` (ascending).
-      - If `start` is non-negative and `end` is negative: returns `true` (descending, unless both are 0).
-      - If both are negative: returns `s_val < e_val` (e.g. `-1 > -10` evaluates to `true`).
-      - If both are non-negative: returns `s_val > e_val` over the full `u64` range [0, 18446744073709551615].
-    * Completely eliminates `i32` truncation, signed overflow, and direction flipping.
-  - Rebuilt 3-stage bootstrap compiler chain (`velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified Gen2/Gen3 bit-for-bit SHA-256 fixed-point determinism (`C0E2116DF3D972918E961ACF8FB97C7F0759DE9B6B2443F81E44E5E0199F11FE`).
-* **Residual Limitation**:
-  - In Task 55.4 and 55.5, expand C emission checks and runtime iteration count coverage.
-* **Verification**:
-  - `tests/test_large_ranges.py`: All 39 tests pass in 7.15s (100% pass rate; all 18 previously failing red baseline tests now green).
-  - `tests/probe_range_endpoint.py`: Exits with code 0 (`[VERIFIED] Direction correctly derived using wide value`).
-  - `tests/test_range_loops.py`: 7/7 tests pass in 4.08s.
-  - `tests/test_count_loops.py`: 66/66 tests pass in 13.63s.
-  - All 117 compiler source files $\le 395$ lines ($\le 400$).
-  - SHA-256 determinism match confirmed (`C0E2116DF3D972918E961ACF8FB97C7F0759DE9B6B2443F81E44E5E0199F11FE`).
+**73.3** Add `crypto_secure_eq(a, b, len) -> bool` (constant time, no early
+exit, no length-dependent branch) plus `hmac_sha256_verify(key, data, tag)`.
+Add `tests/test_crypto_constant_time.py` with a statistical timing assertion
+(loose bound, 1e6 iterations, assert ratio < 1.5x between equal-prefix and
+differing-first-byte inputs) - document that this is a smoke test, not a proof.
 
-##### Task 55.4: Assert the emitted C condition [COMPLETED] ✅
-* **Former Defect**:
-  - Emitted C conditions previously lacked explicit assertions verifying exact relational operators (`<`, `>`, `<=`, `>=`), constant literal strings, and absence of negative wrapped constants (e.g. ensuring `i > 3000000000` or `-1294967296` is never emitted for ascending bounds).
-  - Emitted C for anonymous (`loop 0..3000000000`) and stepped (`loop i in 0..3000000000:2`) wide ranges was not verified against C99 standards.
-* **Fix Applied**:
-  - Extended `tests/test_large_ranges.py` with Section 6 containing 12 dedicated emitted C verification tests:
-    * `test_emitted_c_exact_condition_3000000000`: Verifies `0..3000000000` emits `i < 3000000000LL` and never `i > 3000000000`; `3000000000..0` emits `i = 3000000000LL; i > 0; i--`.
-    * `test_emitted_c_no_negative_wrapped_constants`: Validates that for all wide literals (`3000000000`, `INT64_MAX + 1`, `UINT64_MAX`, `10^19`), no negative wrapped constants (such as `-1294967296` or `-1`) appear anywhere in the generated `for` headers.
-    * `test_emitted_c_anonymous_large_ranges`: Verifies that anonymous ranges emit `for (int64_t it = 0; it < 3000000000LL; it++)` (ascending) and `for (int64_t it = 3000000000LL; it > 0; it--)` (descending).
-    * `test_emitted_c_stepped_large_ranges`: Verifies that step increments and decrements emit `i += 2` and `i -= 2` with correct comparison operators.
-    * `test_emitted_c_exact_loop_header`: Parameterized test covering 8 exact loop header strings for signed/unsigned wide endpoints and hex representations (`0xFFFFFFFFFFFFFFFFULL`).
-* **Residual Limitation**:
-  - Runtime iteration count tests and boundary/overflow verification follow in Tasks 55.5 and 55.6.
-* **Verification**:
-  - `tests/test_large_ranges.py`: All 51 tests pass in 7.97s (100% pass rate).
-  - `tests/test_range_loops.py`: 7/7 tests pass in 4.05s.
-  - All 117 compiler source files $\le 395$ lines ($\le 400$).
+**73.4** Add `crypto_zero(ptr, len)` that the compiler cannot optimize away
+(`volatile` store loop in the runtime) and use it in `hmac.vl`'s temporaries.
 
-##### Task 55.5: Add runtime iteration-count tests [COMPLETED] ✅
-* **Former Defect**:
-  - Test coverage lacked end-to-end executable execution verifying that ascending and descending large ranges execute the exact expected number of iterations without printing billions of lines or hanging CI.
-  - Sliced sub-ranges, inclusive endpoints, stepped wide iterations, sentinel breaks, empty ranges, and anonymous wide ranges were untested at runtime.
-* **Fix Applied**:
-  - Extended `tests/test_large_ranges.py` with Section 7 containing 13 runtime iteration-count tests:
-    * `test_runtime_iteration_count_slice_around_3b_ascending`: `3000000000..3000000005` executes exact 5 iterations (`last_val == 3000000004`).
-    * `test_runtime_iteration_count_slice_around_3b_descending`: `3000000005..3000000000` executes exact 5 iterations (`last_val == 3000000001`).
-    * `test_runtime_iteration_count_slice_around_3b_inclusive_ascending`: `3000000000..=3000000005` executes exact 6 iterations (`last_val == 3000000005`).
-    * `test_runtime_iteration_count_slice_around_3b_inclusive_descending`: `3000000005..=3000000000` executes exact 6 iterations (`last_val == 3000000000`).
-    * `test_runtime_iteration_count_near_uint64_max_ascending`: `18446744073709551610u64..18446744073709551615u64` executes exact 5 iterations.
-    * `test_runtime_iteration_count_near_uint64_max_descending`: `18446744073709551615u64..18446744073709551610u64` executes exact 5 iterations.
-    * `test_runtime_iteration_count_near_uint64_max_inclusive_descending`: `18446744073709551614u64..=18446744073709551610u64` executes exact 5 iterations.
-    * `test_runtime_iteration_stepped_ascending`: `3000000000..3000000010:2` executes exact 5 iterations (0, 2, 4, 6, 8).
-    * `test_runtime_iteration_stepped_descending`: `3000000010..3000000000:2` executes exact 5 iterations (10, 8, 6, 4, 2).
-    * `test_runtime_iteration_sentinel_break_ascending`: `0..3000000000` breaking at `i == 5` executes exact 6 iterations.
-    * `test_runtime_iteration_sentinel_break_descending`: `3000000000..0` breaking after 5 iterations terminates with `last_i == 2999999996`.
-    * `test_runtime_iteration_empty_ranges`: Identical bounds (`3000000000..3000000000`) execute 0 iterations; inclusive identical bounds (`3000000000..=3000000000`) execute 1 iteration.
-    * `test_runtime_iteration_anonymous_ranges`: Anonymous wide range loops `loop 3000000000..3000000004` execute exact 4 iterations.
-  - All runnable tests enforce strict 2.0s timeouts preventing CI hangs.
-* **Residual Limitation**:
-  - Tasks 55.6 and 55.7 cover boundary overflow and compile-time rejection of unrepresentable/invalid types.
-* **Verification**:
-  - `tests/test_large_ranges.py`: All 64 tests pass in 11.09s (100% pass rate).
-  - `tests/test_range_loops.py`: 7/7 tests pass in 4.05s.
-  - All 117 compiler source files $\le 395$ lines ($\le 400$).
+**73.5** Implement SHA-512 and HMAC-SHA512 (`std/crypto/sha512.vl`), matching
+the existing `sha256` structure. Test against RFC 4231 vectors.
 
-##### Task 55.6: Add boundary/overflow tests [COMPLETED] ✅
-* **Former Defect**:
-  - Prior loop tests lacked targeted coverage at critical integer boundaries: `INT32_MAX` (2147483647), `UINT32_MAX` (4294967295), `INT64_MAX` (9223372036854775807), and values crossing signed/unsigned integer boundaries.
-  - No automated tests checked large step increments crossing boundaries (e.g. step of 1 billion), sign-crossing ranges (`-5..5`, `5..-5`, `-3..=3`), or confirmed that endpoints beyond `UINT64_MAX` fail closed at compile time rather than wrapping or reversing direction.
-* **Fix Applied**:
-  - Added `check_velo_source` harness helper in `tests/test_large_ranges.py` running `bin/velo.exe check` on source snippets.
-  - Added Section 8 ("Boundary and Overflow Tests") to `tests/test_large_ranges.py` with 14 comprehensive boundary test cases:
-    * `test_boundary_crossing_int32_max_ascending`: `2147483645..2147483650` infers `i64` and runs exact 5 iterations (`last_i == 2147483649`).
-    * `test_boundary_crossing_int32_max_descending`: `2147483650..2147483645` executes exact 5 iterations descending across `INT32_MAX` (`last_i == 2147483646`).
-    * `test_boundary_crossing_int32_max_inclusive`: Inclusive ascending (`2147483645..=2147483650`) and descending (`2147483650..=2147483645`) each execute exact 6 iterations.
-    * `test_boundary_crossing_uint32_max_ascending`: `4294967293u64..4294967298u64` executes exact 5 iterations crossing `UINT32_MAX`.
-    * `test_boundary_crossing_uint32_max_descending`: `4294967298u64..4294967293u64` executes exact 5 iterations descending across `UINT32_MAX`.
-    * `test_boundary_crossing_int64_max_ascending`: `9223372036854775805u64..9223372036854775810u64` executes exact 5 iterations crossing `INT64_MAX` into unsigned space.
-    * `test_boundary_crossing_int64_max_descending`: `9223372036854775810u64..9223372036854775805u64` executes exact 5 iterations descending across `INT64_MAX` into signed space.
-    * `test_boundary_large_step_crossing_int32_max`: Step increment of `1000000000` over `0..3000000000` executes exact 3 iterations (0, 1000000000, 2000000000).
-    * `test_boundary_large_step_descending_crossing_int32_max`: Step decrement of `1000000000` over `3000000000..0` executes exact 3 iterations (3000000000, 2000000000, 1000000000).
-    * `test_boundary_sign_crossing_ascending`: Ascending range `-5..5` executes exact 10 iterations with sum -5.
-    * `test_boundary_sign_crossing_descending`: Descending range `5..-5` executes exact 10 iterations with sum 5.
-    * `test_boundary_sign_crossing_inclusive`: Inclusive sign-crossing ranges `-3..=3` and `3..=-3` execute exact 7 iterations each with sum 0.
-    * `test_boundary_unrepresentable_decimal_rejected`: Verifies `0..18446744073709551616` (> UINT64_MAX) is rejected at compile time by `velo check` with diagnostic (`Integer literal exceeds 64-bit unsigned maximum`).
-    * `test_boundary_unrepresentable_hex_rejected`: Verifies `0..0x10000000000000000` (> UINT64_MAX) is rejected at compile time by `velo check` with diagnostic (`Hexadecimal literal exceeds 64-bit unsigned maximum`).
-* **Residual Limitation**:
-  - Task 55.7 implements the security/negative gate for non-integer types (strings, floats, structs) and range loop endpoint diagnostics.
-* **Verification**:
-  - `tests/test_large_ranges.py`: All 78 tests pass in 14.43s (100% pass rate).
-  - `tests/test_range_loops.py` and `tests/test_count_loops.py`: All 73 tests pass in 17.87s.
-  - All 117 compiler source files <= 395 lines (<= 400).
+**73.6** Implement ChaCha20-Poly1305 AEAD (`std/crypto/chacha20poly1305.vl`)
+against RFC 8439 vectors, plus `crypto_random_bytes`-seeded nonce generation and
+an authenticated-encryption API that refuses nonce reuse via a `?` handle.
 
-##### Task 55.7: Add the security/negative gate [COMPLETED] ✅
-* **Former Defect**:
-  - `src/analysis/type_checker_stmt.vl:175-179` previously inferred types of `stmt.loop_start`, `stmt.loop_end`, and `stmt.loop_step`, but never verified that they were integer types or valid range specifications.
-  - Non-integer endpoints (`string`, `float`, `struct`, `pointer`) and non-integer steps were silently accepted by `velo check`, passing through to C codegen where they failed with raw C compiler syntax errors or undefined runtime behavior.
-  - Constant steps `<= 0` (e.g. `0..10:0`, `0..10:-1`) were not rejected at compile time, leading to infinite loops or loops stepping in reverse away from endpoints.
-  - Unrepresentable ranges combining negative endpoints with unsigned loop variable types (e.g. `-5..UINT64_MAX` or `UINT64_MAX..-5` producing `u64` loop variables with negative start/end) were not diagnosed, leading to silent unsigned underflow/wrap.
-* **Fix Applied**:
-  - Implemented semantic analysis helpers in `src/analysis/type_checker_stmt.vl`:
-    * `is_range_step_non_positive`: Identifies non-positive constant steps (`<= 0`) by inspecting `EXPR_UNARY` (`TOK_MINUS`) and zero integer literals.
-    * `is_range_endpoint_negative`: Detects negative constant endpoints (< 0).
-    * `check_range_loop`:
-      - Enforces that `stmt.loop_start` is an integer type (`is_int_type`), reporting `Range loop start endpoint must be an integer type, got '<type>'`.
-      - Enforces that `stmt.loop_end` is an integer type (`is_int_type`), reporting `Range loop end endpoint must be an integer type, got '<type>'`.
-      - Enforces that `stmt.loop_step` is an integer type (`is_int_type`), reporting `Range loop step must be an integer type, got '<type>'`.
-      - Enforces that constant `stmt.loop_step` > 0, reporting `Range loop step must be greater than zero` on zero or negative steps.
-      - Enforces that unrepresentable ranges combining negative endpoints with unsigned range types (`u64`, `usize`, etc.) fail closed, reporting `Range loop endpoint cannot be negative for unsigned type '<type>'`.
-  - Rebuilt the 3-stage bootstrap compiler chain (`velo_gen2.exe` -> `velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified Gen2/Gen3 bit-for-bit SHA-256 fixed-point determinism (`f3dfac42cd27cd0f2e410323af8e7033a65d0d439cd5b871127d676cc159cf13`).
-  - Extended `tests/test_large_ranges.py` with Section 9 ("Security and Negative Gate") containing 17 comprehensive negative tests:
-    * `test_negative_string_literal_endpoints_rejected`: Rejects string range `"a".."z"`.
-    * `test_negative_string_start_endpoint_rejected`: Rejects string start `"start"..10`.
-    * `test_negative_string_end_endpoint_rejected`: Rejects string end `0.."end"`.
-    * `test_negative_float_literal_endpoints_rejected`: Rejects float range `1.0..5.0`.
-    * `test_negative_float_start_endpoint_rejected`: Rejects float start `0.5..10`.
-    * `test_negative_float_end_endpoint_rejected`: Rejects float end `0..10.5`.
-    * `test_negative_struct_endpoints_rejected`: Rejects struct endpoints `p1..p2`.
-    * `test_negative_string_step_rejected`: Rejects string step `0..10:"two"`.
-    * `test_negative_float_step_rejected`: Rejects float step `0..10:2.5`.
-    * `test_negative_zero_step_rejected`: Rejects zero step `0..10:0`.
-    * `test_negative_zero_step_descending_rejected`: Rejects zero step in descending loop `10..0:0`.
-    * `test_negative_step_rejected`: Rejects negative step `0..10:-1`.
-    * `test_negative_step_descending_rejected`: Rejects negative descending step `10..0:-2`.
-    * `test_negative_endpoint_with_unsigned_range_rejected`: Rejects negative start with `u64` range `-5..UINT64_MAX`.
-    * `test_negative_descending_endpoint_with_unsigned_range_rejected`: Rejects negative end with `u64` range `UINT64_MAX..-5`.
-    * `test_negative_u64max_assigned_to_i32_rejected`: Rejects assignment of inferred `u64` loop variable to `i32` variable without explicit cast.
-    * `test_negative_u64max_passed_to_i32_param_rejected`: Rejects passing inferred `u64` loop variable to `i32` act parameter without explicit cast.
-* **Residual Limitation**:
-  - Dynamic range loops with runtime-variable endpoints (`loop i in a..b`) are addressed in Phase 56.
-* **Verification**:
-  - `tests/test_large_ranges.py`: All 95 tests pass in 14.58s (100% pass rate).
-  - `tests/test_range_loops.py` and `tests/test_count_loops.py`: All 73 tests pass in 17.60s.
-  - `scripts/check_determinism.py`: SHA-256 fixed-point match confirmed (`f3dfac42cd27cd0f2e410323af8e7033a65d0d439cd5b871127d676cc159cf13`).
-  - `scripts/count_lines.py`: All 117 compiler source files <= 395 lines (<= 400).
+**73.7** Implement TLS 1.3 client (`std/tls/`): record layer, key schedule
+(HKDF-SHA256 from 73.5/73.6), and a certificate-verification interface backed by
+the OS trust store where available. Minimum viable: X25519 key exchange
+(`std/crypto/x25519.vl`), Ed25519 verification for certificates, and a clear
+`tls_verify_peer` default of `true`. Test against a fixed local server with a
+pinned certificate; include one negative test per verification failure mode.
 
-#### Phase Exit Criteria
+**73.8** Wire `https://` into `std/http/client.vl` and fail with a named error
+when TLS is unavailable rather than silently downgrading.
 
-- [x] `loop i in 0..3000000000` iterates in ascending order and terminates correctly.
-- [x] Large descending ranges iterate in descending order.
-- [x] Direction detection uses the wide value, not `int_val`.
-- [x] Unrepresentable ranges are rejected with a diagnostic.
+## Phase Exit Criteria
+
+- `http_get("https://...")` against a local test server succeeds with
+  certificate verification enabled, and fails with a named error against a
+  self-signed certificate.
+- No cryptographic path returns success after a degraded fallback.
+- MD5 is not reachable from `std.crypto`.
+- `hmac_sha256_verify` exists and is constant-time by construction, with a
+  timing smoke test committed.
 
 ---
 
-### Phase 56: Reverse Ranges with Dynamic Endpoints (P0) [COMPLETED] ✅
+# Phase 74: Undefined-Behavior Containment (P0) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-05`<br>
-**Severity:** P0 — silent zero-iteration loop<br>
-**Depends on:** Phases 53 and 55<br>
-**Blocks:** Phase 68
+## Defect
 
-#### Defect
+Velo emits plain C99 with no overflow discipline. Signed integer overflow is C
+undefined behavior, is not detected by the compiler, and is not trapped at run
+time. Divided by zero aborts the process with an OS-level exception code and no
+Velo diagnostic. And a *runtime* index into a fixed-size array is not checked,
+so `[4]i32` plus a computed index corrupts memory with no trap - verified: the
+program printed `no trap` and exited 0.
 
-`codegen_stmt.vl:258-259` only detects reverse ranges when both endpoints are literals. A dynamic descending range is lowered as an ascending comparison and never executes.
+## Evidence
 
-```velo
-let n: i32 = 5
-loop i in n..0 {
-    io.println(i)
-}
-// runs 0 times; literal 5..0 works
-```
+| Fact | Evidence |
+| :--- | :--- |
+| Signed overflow is emitted as plain C | probe `x: i32 = 2147483647; x = x + 1` emits `int32_t x = 2147483647;` then `x = (x + 1);` - no `__builtin_add_overflow`, no `-fwrapv` anywhere (`grep -rn "fwrapv\|ftrapv\|strict-overflow" src/ runtime/ scripts/` -> 0 hits) [VERIFIED] |
+| Divide by zero kills the process with no diagnostic | probe `x = 1 / x` where `x == 0` -> no output on stdout/stderr, exit `-1073741795` (`0xC0000094`, STATUS_INTEGER_DIVIDE_BY_ZERO) [VERIFIED] |
+| Dynamic index into a fixed array is unchecked | probe `mut buf: [4]i32; mut i: i32 = 7; buf[i] = 1` -> emitted `buf[i] = 1;`, run prints `no trap`, exit 0 [VERIFIED]. Contrast: the literal index `buf[7]` IS rejected at compile time. |
+| Compiler-source UB is documented but untested | `docs/gaps_archive.md:181` records overlapping `mem.copy`/`mem.set`, `mem.realloc` on a non-heap pointer (observed `0xC0000374`), and the un-analyzed `count * sizeof` overflow |
+| No local sanitizer verification | ASan/UBSan libraries are unavailable on the maintainer host; the sanitizer CI lane (`.github/workflows/ci.yml:221-273`) has never been observed to run |
 
-The documented "Smart Reverse Auto-Countdown" (`docs/SPECIFICATION.md:688-693`) is not implemented for dynamic bounds.
+## Security Invariants
 
-#### Security Invariants
+- **I74.1** Every arithmetic operation with a defined-width integer type either
+  wraps with a documented, testable rule or traps; nothing is left to C UB.
+- **I74.2** Every array/shelf/ring/map access with a runtime index either
+  bounds-checks or is inside an explicitly named `unsafe` construct.
+- **I74.3** Division and modulo by zero produce a Velo diagnostic (compile time
+  when constant, deterministic fatal when runtime), never an OS exception.
+- **I74.4** No Velo program can reach `memcpy`/`memmove`/`memset` with
+  overlapping regions through the safe surface.
 
-- Dynamic endpoints must be evaluated exactly once.
-- Direction selection must not change the number of iterations for equal endpoints.
-- Signed/unsigned comparisons must not produce an infinite loop.
-- The generated code must terminate for every valid input; zero-step and overflow cases are handled in Phase 63 and Phase 68.
+## Tasks
 
-#### Tasks
+**74.1** Decide and specify the overflow policy. Recommended: wrap by default
+(matching the existing `hash`/`bits` code and the "systems language" promise),
+enforced by adding `-fwrapv` to GCC/Clang and `/d2`-style wrap semantics for
+MSVC, plus a documented `checked_add`/`checked_mul` family in `std.math.int`
+(some `*_sat` helpers already exist at `std/math/int.vl:18-25`). Write the rule
+into `docs/SPECIFICATION.md` section 2.1 and add the `-fwrapv` (and MSVC
+equivalent) to `src/backend/driver_cc.vl:247-263`. Test: add 32-bit and 64-bit
+overflow boundary rows to a new `tests/test_integer_overflow.py`, asserting
+wraparound in both Debug and Release - the current behaviour is
+`INT_MAX + 1` producing an UB-dependent value.
 
-##### Task 56.1: Add the dynamic-range matrix (red baseline) [COMPLETED] ✅
-* **Former Defect**:
-  - `src/backend/codegen_stmt.vl:256-267` relies on `is_reverse_loop_range` (`codegen_lit.vl:61`) to decide loop direction at compile time.
-  - `is_reverse_loop_range` only checks literal integer expressions (`EXPR_INT` and unary minus literals via `get_range_endpoint_const`). When either endpoint is a variable (e.g. `n..0`, `n..m`, `10..n`), `is_reverse_loop_range` returns `false`.
-  - As a result, codegen unconditionally lowers dynamic descending ranges as ascending comparisons (e.g. `for (int32_t i = n; i < 0; i++)`). When `n = 5`, `5 < 0` immediately evaluates to `false`, causing the loop to execute 0 iterations silently.
-  - No dedicated test matrix existed covering dynamic range loops across variable bounds, inclusive bounds, equal endpoints, step increments, and wider types (`i64`, `u32`, `u64`, `usize`).
-* **Fix Applied (Red Baseline Harness)**:
-  - Created `tests/test_dynamic_ranges.py` with a 30-case test matrix across 8 sections:
-    * Section 1: Basic variable ranges (`n..0`, `n..m`, `0..n`, `n..m` ascending)
-    * Section 2: Inclusive dynamic ranges (`n..=0`, `n..=m`, `0..=n`, `n..=m` ascending)
-    * Section 3: Equal dynamic endpoints (`n..n` exclusive -> 0 iterations, `n..=n` inclusive -> 1 iteration)
-    * Section 4: Stepped dynamic ranges (`n..0:2`, `n..=0:2`, `0..n:2`, `0..=n:2`)
-    * Section 5: Wider integer types (`i64`, `u32`, `u64`, `usize` ascending and descending)
-    * Section 6: Sign-crossing dynamic ranges (`3..-3`, `3..=-3`, `-3..3`, `-3..=3`)
-    * Section 7: Anonymous dynamic ranges (`loop n..0`, `loop 0..n`)
-    * Section 8: Emitted C diagnostic probes verifying the baseline defect (`i < 0; i++` and `i < m; i++` emitted for descending loops)
-    * Strict 2.0s timeouts enforced across all runnable tests.
-  - Extended `tests/test_range_loops.py` with `test_dynamic_range_loop_baseline` validating ascending `0..n` (5 iters) and documenting the baseline descending `n..0` (0 iters).
-* **Residual Limitation**:
-  - Baseline establishes the red state (17 passed, 13 failed in `tests/test_dynamic_ranges.py` in 8.27s). Every single failure is a dynamic descending range failing due to ascending `i < end; i++` emission. Runtime direction lowering follows in Tasks 56.2–56.7.
-* **Verification**:
-  - `tests/test_dynamic_ranges.py`: 17 passed, 13 failed for the exact documented reasons in 8.27s.
-  - `tests/test_range_loops.py`: 8/8 tests pass in 4.30s.
-  - All 117 compiler source files <= 395 lines (<= 400).
+**74.2** Add a runtime divide-by-zero guard for the runtime path: emit
+`velo_div_guard(b)` (a fatal with a Velo message and the `#line` of the
+division) before `/` and `%` when the divisor is not a proven non-zero constant.
+Test: `tests/test_div_zero.py` asserts a clean stderr message and a stable exit
+code, replacing today's silent `0xC0000094`.
 
-##### Task 56.2: Define dynamic direction semantics [COMPLETED] ✅
-* **Former Defect**:
-  - The specification for "Smart Reverse Auto-Countdown" (`docs/SPECIFICATION.md:750`) explicitly documented countdown semantics for literal ranges (`loop 5..0`), but lacked formal technical specifications for dynamic ranges where endpoints are runtime variables, expressions, or function calls (`loop i in n..0` or `loop i in n..m`).
-  - It was ambiguous whether dynamic descending ranges required an explicit step or whether direction was chosen at runtime, leaving the compiler's silent zero-iteration lowering (`for (int32_t i = n; i < 0; i++)`) unspecified.
-* **Fix Applied**:
-  - Formally specified dynamic direction semantics in `docs/SPECIFICATION.md` §7.2 (Subsections 5, 6, 7, and new Subsection 8 "Dynamic Direction Selection & Evaluation Semantics"):
-    * **Runtime Dynamic Direction Selection**: Resolved symmetrically with literal countdowns: when `start > end`, countdown is automatically selected without requiring an explicit negative step.
-    * **Deterministic Lowered Relational Table**: Fully documented execution matrix across exclusive (`..`), inclusive (`..=`), ascending (`start < end`), descending (`start > end`), and equal (`start == end`) endpoints.
-    * **Single Evaluation Guarantee**: Bound expressions (`start`, `end`, and optional `step`) are evaluated exactly once in left-to-right lexical order prior to loop initialization into internal temporaries, eliminating side-effect re-evaluation and TOCTOU bound drift.
-    * **Step Rules**: Optional step magnitude must be positive (> 0); step is subtracted in descending direction (`i -= step`) and added in ascending direction (`i += step`).
-    * **Equal Endpoints Guarantee**: Exclusive `n..n` deterministically executes 0 iterations; inclusive `n..=n` executes exactly 1 iteration with value `n`.
-    * **Literal Optimization**: Static literal bounds continue to be lowered directly at compile time via `is_reverse_loop_range` without runtime branching overhead.
-* **Residual Limitation**:
-  - Lowering implementation follows in Tasks 56.3 (temporary hoisting) and 56.4 (runtime direction selection).
-* **Verification**:
-  - Reviewed `docs/SPECIFICATION.md` §7.2 for completeness and consistency against all Phase 56 security invariants.
-  - Verified line counts: all 117 compiler source files <= 395 lines (<= 400).
+**74.3** Add runtime bounds checks for fixed-size array indexing that the
+compiler cannot prove. Either reuse the shelf/bitset fatal tier
+(`runtime/velo_runtime.h:1824` `velo_shelf_oob`, `2918` `velo_bitset_oob`) or add
+`velo_arr_oob`. Emit the check only when `--unsafe-shelf-index`-style opt-out is
+not requested. Test: `tests/test_fixed_array_runtime_bounds.py` with a dynamic
+index probe (the exact program above) asserting a fatal, and a
+`--unsafe-array-index` counterpart asserting the unchecked path for parity with
+the shelf policy.
 
-##### Task 56.3: Evaluate endpoints once into temporaries [COMPLETED] ✅
-* **Former Defect**:
-  - In `src/backend/codegen_stmt.vl` (lines 257–266), range loops directly embedded `stmt.loop_end` into the C `for` condition clause (`i < emit_c_expr(stmt.loop_end)`) and `stmt.loop_step` into the increment clause (`i += emit_c_expr(stmt.loop_step)`).
-  - Consequently, if the end bound or step expression contained a function call, arithmetic computation, or mutating side effect (e.g. `loop i in 0..get_end()`), the expression was evaluated on every single iteration of the loop (e.g. 6 times for 5 iterations), causing side-effect multiplication.
-  - Furthermore, if variables used in the end bound or step were modified within the loop body, the loop's termination condition or stride was mutated dynamically during iteration (TOCTOU bound drift), causing premature termination or infinite looping.
-* **Fix Applied**:
-  - Implemented `is_literal_range_step(start_expr, end_expr, step_expr) -> bool` in `src/backend/codegen_lit.vl`:
-    * Distinguishes compile-time constant literal bounds (which emit branch-free static C loops) from dynamic bounds.
-  - Created modular range loop code generator in `src/backend/range_gen.vl`:
-    * Evaluates dynamic range endpoints and optional step strictly once into C99 temporaries scoped to the `for` loop header:
-      `for (c_type __start_v = (start), __end_v = (end)[, __step_v = (step)], v = __start_v; v < __end_v; v++[ += __step_v])`
-    * Variables share the loop variable's type `c_type` and are evaluated in left-to-right lexical order.
-    * Suffixing temporaries with variable name (`__start_` + `vname`, `__end_` + `vname`) prevents `-Wshadow` issues in nested loops.
-    * Preserves zero-overhead compile-time emission for static literal ranges.
-  - Integrated `range_gen.vl` into `src/backend/codegen_stmt.vl`, replacing 14 lines with a clean delegation call and reducing file size from 393 lines to 383 lines.
-* **Residual Limitation**:
-  - Runtime dynamic direction selection for descending dynamic ranges (`n..0`, `n..m`, `n..=0`) is lowered in Task 56.4.
-* **Verification**:
-  - Added Section 9 to `tests/test_dynamic_ranges.py` (10 tests) covering:
-    * Start function call side effect executed exactly once.
-    * End function call side effect executed exactly once (exclusive and inclusive).
-    * Step function call side effect executed exactly once.
-    * Loop body variable mutation immunity (TOCTOU protection).
-    * Lexical evaluation order (`start` then `end`).
-    * Nested dynamic loops with independent single-evaluation scopes.
-    * Emitted C inspection verifying `__start_v` and `__end_v` temporaries.
-  - Verified 100% pass rate across all side-effect tests (12 passed).
-  - Verified zero regressions on literal ranges: 103 passed in `test_range_loops.py` and `test_large_ranges.py`, 66 passed in `test_count_loops.py`.
-  - Rebuilt 3-generation self-hosting bootstrap compiler chain and confirmed SHA-256 fixed-point determinism (`ed5a22c6d0690a3bd3d082007c9cece9ce2fc5caa44f9875a02b61e732334cf3`).
-  - Verified line count standards across all 118 compiler source files in `src/` (all <= 395 lines, ceiling 400).
+**74.4** Add `mem.overlaps(a, b, len_a, len_b) -> bool` and make `mem.copy` /
+`mem.set` assert non-overlap in Debug builds (fatal with a named message),
+documenting `mem.move` as the overlapping-safe primitive. Test: overlapping
+`mem.copy` in Debug -> fatal; in Release -> documented memcpy behaviour.
 
-##### Task 56.4: Lower runtime direction selection [COMPLETED] ✅
-* **Former Defect**:
-  - `codegen_stmt.vl` only detected countdown/reverse ranges when both endpoints were compile-time integer literals (`is_literal_range_step`).
-  - Dynamic descending ranges (`let n = 5; loop i in n..0`, `loop i in n..m`, `loop i in n..=0`) were unconditionally lowered as ascending loops:
-    `for (c_type __start_v = (n), __end_v = (0), v = __start_v; v < __end_v; v++)`
-  - Because `start > end`, the ascending condition `start < end` evaluated to `false` immediately on entry, executing 0 iterations instead of the documented countdown.
-* **Fix Applied**:
-  - Implemented runtime dynamic direction lowering in `src/backend/range_gen.vl`:
-    * Declared `__rev_v = (__start_v > __end_v)` in the C99 `for` init clause using the hoisted temporaries.
-    * Lowered relational loop condition using ternary direction selection:
-      `__rev_v ? (v > __end_v) : (v < __end_v)` (exclusive `..`)
-      `__rev_v ? (v >= __end_v) : (v <= __end_v)` (inclusive `..=`)
-    * Lowered increment using ternary direction selection:
-      `__rev_v ? (v -= __step_v) : (v += __step_v)` (explicit step)
-      `__rev_v ? (v--) : (v++)` (default step)
-    * Entire construct is lowered into a single C99 `for` loop header without outer blocks or shadow diagnostics.
-    * Guaranteed deterministic execution for equal endpoints: `n..n` executes 0 iterations; `n..=n` executes exactly 1 iteration with value `n`.
-* **Residual Limitation**:
-  - Mixed-type endpoint promotion and type-checking validation are addressed in Task 56.5.
-* **Verification**:
-  - Ran full test suite in `tests/test_dynamic_ranges.py` (40/40 tests passing, 100% pass rate) covering:
-    * Dynamic descending variable to literal (`n..0` -> 5 iterations).
-    * Dynamic descending variable to variable (`n..m` -> 5 iterations).
-    * Inclusive descending (`n..=0`, `n..=m` -> 6 iterations).
-    * Dynamic stepped descending (`n..0:2` -> 5 iterations, `n..=0:2` -> 6 iterations).
-    * 64-bit and unsigned dynamic descending (`i64`, `u32`, `u64`, `usize`).
-    * Sign crossing dynamic descending (`3..-3`, `3..=-3`).
-    * Anonymous dynamic descending (`loop n..0`).
-    * Equal endpoints (`n..n` -> 0, `n..=n` -> 1).
-    * Emitted C inspection verifying `__rev_v` and ternary condition/increment.
-  - Verified regression test suites (209 tests total across `test_dynamic_ranges.py`, `test_range_loops.py`, `test_large_ranges.py`, `test_count_loops.py`).
-  - Rebuilt 3-generation self-hosting bootstrap compiler chain and confirmed SHA-256 fixed-point determinism (`9d8979faeeffcc5c08356250d4f50533f1d5ac4e533e7c4ee6531b2ed110ad49`).
-  - Verified line count standards across all 118 compiler source files in `src/` (all <= 395 lines, ceiling 400).
+**74.5** Add `mem.realloc`/`mem.free` provenance checks. Cheapest honest
+version: a magic header + owner tag around heap allocations
+(`std/mem/heap.vl:201` already has the freelist machinery), validating on free
+and realloc and fataling on mismatch. Document the cost (8-16 bytes/allocation)
+and the opt-out flag.
 
-##### Task 56.5: Handle mixed-type endpoints [COMPLETED] ✅
-* **Former Defect**:
-  - In `src/analysis/type_checker_stmt.vl`, `unify_loop_range_type` blindly checked if either endpoint was `u64`, `i64`, `usize`, or `u32` without validating signedness compatibility between endpoints.
-  - Incompatible mixed signed/unsigned variable pairs (e.g. `let a: i32 = 0; let b: u32 = 10; loop i in a..b` or `i64..u64`) were silently accepted, causing signed integers to be reinterpreted as unsigned in C (or vice versa), which silently wrapped negative values (e.g. `-5 as u32` becoming `4294967291`) and created infinite loops or massive iteration counts.
-  - Furthermore, contextual literal adaptation was not applied to endpoints, leaving literals like `0` in `loop i in n..0` (`n: usize`) untyped or inconsistently unified.
-* **Fix Applied**:
-  - Created dedicated range loop semantic analysis module in `src/analysis/range_checks.vl`:
-    * Implemented strict signed/unsigned security gate in `check_range_loop`: non-literal mixed signed/unsigned pairs (e.g. `i32` with `u32`, `i64` with `u64`, `isize` with `usize`) are strictly rejected at compile time with descriptive diagnostics:
-      `[Velo Error] Cannot mix signed '{start_t}' and unsigned '{end_t}' in range loop. Use explicit cast 'as {end_t}'.`
-      `[Velo Error] Cannot mix unsigned '{start_t}' and signed '{end_t}' in range loop. Use explicit cast 'as {start_t}'.`
-    * Implemented safe same-signedness widening:
-      - Signed integers (`i8`, `i16`, `i32`, `i64`, `isize`) safely widen to the wider signed type without truncation or sign inversion.
-      - Unsigned integers (`u8`, `u16`, `u32`, `u64`, `usize`) safely widen to the wider unsigned type without truncation.
-    * Integrated contextual literal adaptation: non-negative unsuffixed literals (e.g. `0` in `n..0` or `0..n` where `n: usize`) safely adapt to the target integer type.
-    * Enforced compile-time rejection of negative literal endpoints with unsigned range types prior to adaptation (`Range loop endpoint cannot be negative for unsigned type '<type>'`).
-  - Modularized `src/analysis/type_checker_stmt.vl` by delegating range checking to `range_checks.vl`, reducing `type_checker_stmt.vl` from 395 lines to 296 lines.
-* **Residual Limitation**:
-  - Emitted-C pattern validation and runtime assertion suite continue in Task 56.6.
-* **Verification**:
-  - Added Section 10 to `tests/test_dynamic_ranges.py` (10 tests) covering:
-    * Rejection of `i32..u32` with compile diagnostic.
-    * Rejection of `u32..i32` with compile diagnostic.
-    * Rejection of `i64..u64` with compile diagnostic.
-    * Rejection of `u64..i64` with compile diagnostic.
-    * Acceptance of unsuffixed literal adaptation (`usize..0` and `0..usize`).
-    * Acceptance of explicit cast `(a as u32)..b`.
-    * Safe widening between same-signedness variables (`i32..i64`, `i64..i32`, `u32..u64`).
-  - All 50 tests in `tests/test_dynamic_ranges.py` passing (100% pass rate).
-  - All 219 tests across `test_dynamic_ranges.py`, `test_range_loops.py`, `test_large_ranges.py`, `test_count_loops.py` passing in 44.13s.
-  - Rebuilt 3-generation self-hosting bootstrap compiler chain and confirmed SHA-256 fixed-point determinism (`a4b3bf5d02e5e4bcf3f4ff33fb64940bba28c144850483e91a27933b33ff6cae`).
-  - Verified line count standards across all 119 compiler source files in `src/` (all <= 395 lines, ceiling 400).
+**74.6** Make the sanitizer lane real. Add `scripts/bootstrap_sanitized.sh`
+that builds with `-fsanitize=address,undefined -fno-sanitize-recover=all` and
+runs the full `.vl` battery; add a `sanitizer-local` section to
+`docs/build_sheets/build_modes.md` listing the exact packages. Then run it once
+on Linux CI and commit the green run link to this file (Phase 76 depends on
+this).
 
-##### Task 56.6: Add emitted-C and runtime assertions [COMPLETED] ✅
-* **Former Defect**:
-  - While individual test cases existed for dynamic range execution, there was no comprehensive parameterized cross-verification matrix ensuring that emitted C code structure and compiled runtime execution strictly agree across all boundary conditions.
-  - Specifically, emitted C temporary hoisting (`__start_v`, `__end_v`, `__step_v`), runtime direction selection (`__rev_v = (__start_v > __end_v)`), ternary relational comparison (`__rev_v ? (v >[=] __end_v) : (v <[=] __end_v)`), and ternary step increment (`__rev_v ? (v -= step / v--) : (v += step / v++)`) lacked joint automated assertions against exact runtime iteration counts, first/last elements, and total summation across the entire mathematical domain.
-* **Fix Applied**:
-  - Added Section 11 to `tests/test_dynamic_ranges.py` with 33 comprehensive matrix cross-verification tests:
-    * Parameterized matrix `test_matrix_emitted_c_and_runtime_dynamic_ranges` (14 rows):
-      - Ascending exclusive (`0..5` -> 5 iters, [0..4], sum 10; `__rev_i ? (i > __end_i) : (i < __end_i)`, `i++`)
-      - Ascending inclusive (`0..=5` -> 6 iters, [0..5], sum 15; `__rev_i ? (i >= __end_i) : (i <= __end_i)`, `i++`)
-      - Descending exclusive (`5..0` -> 5 iters, [5..1], sum 15; `__rev_i ? (i > __end_i) : (i < __end_i)`, `i--`)
-      - Descending inclusive (`5..=0` -> 6 iters, [5..0], sum 15; `__rev_i ? (i >= __end_i) : (i <= __end_i)`, `i--`)
-      - Equal endpoints exclusive (`5..5` -> 0 iters, sum 0)
-      - Equal endpoints inclusive (`5..=5` -> 1 iter, [5], sum 5)
-      - Negative bounds ascending (`-5..0` exclusive -> 5 iters, sum -15; `-5..=0` inclusive -> 6 iters, sum -15)
-      - Negative bounds descending (`0..-5` exclusive -> 5 iters, sum -10; `0..=-5` inclusive -> 6 iters, sum -15)
-      - Sign-crossing descending (`3..-3` exclusive -> 6 iters, sum 3; `3..=-3` inclusive -> 7 iters, sum 0)
-      - Sign-crossing ascending (`-3..3` exclusive -> 6 iters, sum -3; `-3..=3` inclusive -> 7 iters, sum 0)
-    * Parameterized matrix `test_matrix_emitted_c_and_runtime_stepped_dynamic_ranges` (16 rows):
-      - Ascending and descending divisible steps (`0..10:2` -> 5 iters, `0..=10:2` -> 6 iters, `10..0:2` -> 5 iters, `10..=0:2` -> 6 iters)
-      - Exact boundary stepped ranges (`0..9:3` -> 3 iters, `0..=9:3` -> 4 iters, `9..0:3` -> 3 iters, `9..=0:3` -> 4 iters)
-      - Non-divisible steps (`0..10:3` -> 4 iters, `0..=10:3` -> 4 iters, `10..0:3` -> 4 iters, `10..=0:3` -> 4 iters)
-      - Stepped equal endpoints (`10..10:2` -> 0 iters, `10..=10:2` -> 1 iter)
-      - Negative bounds stepped (`-10..0:3` -> 4 iters, `0..-10:3` -> 4 iters)
-      - Emitted C assertions for `__step_i = (s)` and `__rev_i ? (i -= __step_i) : (i += __step_i)`
-    * Wide integer types emitted C and runtime validation:
-      - `test_matrix_emitted_c_and_runtime_wide_i64` (`int64_t` temporaries, 5 iters)
-      - `test_matrix_emitted_c_and_runtime_wide_u64` (`uint64_t` temporaries, 5 iters)
-      - `test_matrix_emitted_c_and_runtime_wide_usize_stepped` (`size_t` temporaries and step, 5 iters)
-    * Verified 100% agreement between emitted C syntax trees and compiled machine code behavior without timeout, infinite loop, or undefined behavior.
-* **Residual Limitation**:
-  - Security and negative gate validation (type mismatch rejection, float/string/struct endpoint errors, zero-step detection) follows in Task 56.7.
-* **Verification**:
-  - `pytest tests/test_dynamic_ranges.py`: 83/83 tests passing (including 33 matrix rows) in 23.09s.
-  - All loop test suites: 252 tests passing (`test_dynamic_ranges.py`, `test_range_loops.py`, `test_large_ranges.py`, `test_count_loops.py`) in 55.18s.
-  - SHA-256 fixed-point determinism verified (`a4b3bf5d02e5e4bcf3f4ff33fb64940bba28c144850483e91a27933b33ff6cae`).
-  - Line count standard maintained: all 119 compiler source files in `src/` <= 395 lines (ceiling 400).
+**74.7** Add `tests/test_ub_probes.py` containing every probe in this phase's
+evidence table as an executable row, so the phase cannot silently regress.
 
-##### Task 56.7: Add the security/negative gate [COMPLETED] ✅
-* **Former Defect**:
-  - Semantic analysis in `is_range_step_non_positive` only checked unsuffixed `"0"` and a static list of string literal shapes, allowing suffixed zero steps like `0u32` to pass `velo check` silently without rejection.
-  - Furthermore, comprehensive negative gate tests were missing for dynamic variable endpoints covering invalid non-integer types (`f32`, `f64`, `string`, `bool`, custom `data` structs), step non-integer types, suffixed zero steps (`0i32`, `0u32`, `0i64`, `0u64`, `0usize`, `0x0`, `0b0`), negative steps, and integer literal overflow.
-* **Fix Applied**:
-  - Hardened `is_range_step_non_positive` in `src/analysis/range_checks.vl`:
-    * Leverages `parse_u64_checked` on `expr.str_val` to validate that any integer constant evaluating to `0` (regardless of type suffix or numeric base representation: decimal, hex, binary, octal, unsigned/signed) is detected and rejected at compile time.
-  - Added Section 12 to `tests/test_dynamic_ranges.py` with 17 dedicated security/negative gate tests verifying fail-closed compile diagnostics at `velo check`:
-    * `test_negative_dynamic_float_start_rejected` (`f32` start -> `Range loop start endpoint must be an integer type, got 'f32'`)
-    * `test_negative_dynamic_float_end_rejected` (`f64` end -> `Range loop end endpoint must be an integer type, got 'f64'`)
-    * `test_negative_dynamic_string_start_rejected` (`string` start -> `Range loop start endpoint must be an integer type, got 'string'`)
-    * `test_negative_dynamic_string_end_rejected` (`string` end -> `Range loop end endpoint must be an integer type, got 'string'`)
-    * `test_negative_dynamic_struct_start_rejected` (`Point` start -> `Range loop start endpoint must be an integer type, got 'Point'`)
-    * `test_negative_dynamic_struct_end_rejected` (`Point` end -> `Range loop end endpoint must be an integer type, got 'Point'`)
-    * `test_negative_dynamic_float_step_rejected` (`f32` step -> `Range loop step must be an integer type, got 'f32'`)
-    * `test_negative_dynamic_string_step_rejected` (`string` step -> `Range loop step must be an integer type, got 'string'`)
-    * `test_negative_zero_step_unsuffixed_rejected` (`:0` -> `Range loop step must be greater than zero`)
-    * `test_negative_zero_step_suffixed_rejected` (`0i32`, `0u32`, `0i64`, `0u64`, `0usize`, `0x0`, `0b0` -> `Range loop step must be greater than zero`)
-    * `test_negative_negative_step_rejected` (`:-2` -> `Range loop step must be greater than zero`)
-    * `test_negative_endpoint_literal_overflow_64bit_rejected` (`exceeds 64-bit unsigned maximum`)
-    * `test_negative_endpoint_literal_overflow_i32_rejected` (`3000000000i32` -> `Integer literal out of range for type 'i32'`)
-    * `test_negative_endpoint_literal_overflow_u32_rejected` (`5000000000u32` -> `Integer literal out of range for type 'u32'`)
-    * `test_negative_unsigned_negative_end_literal_rejected` (`u32..-5` -> `Range loop endpoint cannot be negative for unsigned type 'u32'`)
-    * `test_negative_unsigned_negative_start_literal_rejected` (`-1..usize` -> `Range loop endpoint cannot be negative for unsigned type 'usize'`)
-    * `test_negative_boolean_endpoint_rejected` (`bool` start -> `Range loop start endpoint must be an integer type, got 'bool'`)
-  - No silent fallback or infinite loops; invalid inputs fail closed with clear compile diagnostics.
-* **Residual Limitation**:
-  - Runtime dynamic step validation for non-literal variables (`let s = 0; loop i in 0..10:s`) is tracked and addressed in Phase 63.
-* **Verification**:
-  - `pytest tests/test_dynamic_ranges.py`: 100/100 tests passing in 21.93s.
-  - All loop test suites: 269/269 tests passing across `test_dynamic_ranges.py`, `test_range_loops.py`, `test_large_ranges.py`, `test_count_loops.py` in 54.10s.
-  - SHA-256 fixed-point determinism verified (`60b55505d08c9dd58985c82555e9f4a5826bd3a763a2b597fc13242c04e3063f`).
-  - Line count standard maintained: all 119 compiler source files in `src/` <= 395 lines (ceiling 400).
+## Phase Exit Criteria
 
-#### Phase Exit Criteria
-
-- [x] `let n = 5; loop i in n..0` iterates 5,4,3,2,1 and terminates.
-- [x] Endpoints are evaluated exactly once.
-- [x] Equal endpoints produce the documented iteration count.
-- [x] Mixed-type bounds are either rejected or promoted by a documented rule.
+- `INT_MAX + 1` has a documented, tested result on all three compilers.
+- Divide by zero produces a Velo message and a stable exit code.
+- A dynamic out-of-bounds write into `[N]T` traps with a Velo message.
+- The sanitizer lane has produced at least one green full-suite run, evidenced
+  by a committed link and a date.
 
 ---
 
-### Phase 57: Unsigned Integer Formatting (P0) [COMPLETED] ✅
+# Phase 75: Silent POSIX Process/IO Stubs (P0) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-06`<br>
-**Severity:** P0 — silent wrong output<br>
-**Depends on:** Phase 53<br>
-**Coordinates with:** Phase 52 (the `io.println(u64)` parity row is enabled by this phase)
+## Defect
 
-#### Defect
+Two Linux implementations in `std/os/` are not implementations. `os_spawn_ex`
+returns a dead handle (`pid: 0, is_alive: false`) and the pipe drainer returns
+`success: true` with empty output. `os_spawn` therefore "fails" in a way that
+looks like a normal failure, and `os_spawn_sync` reports `exit_code: -1`, while
+the pipe drainer lies outright. Worse: these files are currently unreachable
+because the facades hardcode the Windows variants (Phase 70), so nobody has
+noticed.
 
-`codegen_io.vl:74-80` prints every integer with `printf("%lld", (long long)(...))`, and `codegen_fmt.vl:213-219` does the same for `{...}` interpolation. `u64` values above `INT64_MAX` become negative.
+## Evidence
 
-```velo
-let e: u64 = 18446744073709551615u64
-io.println(e)     // -1
-io.print(e)       // -1
-io.println("{e}") // -1
-```
+| Fact | Evidence |
+| :--- | :--- |
+| Linux spawn is a stub that always fails | `std/os/proc_linux.vl:11-21` `os_spawn_ex(...)` returns `ProcessHandle { pid: 0, handle: null, thread_handle: null, is_alive: false }` under the comment `// POSIX fork stub` |
+| Linux pipe drain lies | `std/os/pipe_posix.vl:57` `os_pipe_drain_streams` returns `ProcessOutput { stdout_str: "", stderr_str: "", exit_code: 0, success: true }` under `// POSIX drain stub` |
+| Linux handles real `pipe()` | `std/os/pipe_posix.vl:15-33` - the pipe primitive is implemented, only the drain is not. So the fix is narrow. |
+| Windows spawn is real | `std/os/proc_windows.vl` builds a full `STARTUPINFOA` + `CreateProcessA` sequence |
+| The compiler itself spawns processes | `src/backend/driver_cc.vl` invokes `gcc`/`cl`/`clang`; `driver_pkg.vl:320` uses `os_system`. On a hypothetical Linux build, compiling anything would silently fail. |
 
-`println_u64` (unqualified) is correct because it calls the stdlib implementation, which uses `format_u64`.
+## Security Invariants
 
-#### Security Invariants
+- **I75.1** A function that cannot perform its operation returns failure. It
+  never returns a success-shaped value with empty output.
+- **I75.2** No `std/` function body may consist only of a stub return; a
+  `#endif`-style platform gap must be a compile error, not a runtime lie.
+- **I75.3** Child-process handles are never silently dropped; a spawned child
+  is waitable or the spawn fails.
 
-- Unsigned values must never be formatted through a signed conversion.
-- `usize`/`isize` must respect the target platform width.
-- Formatting must be locale-independent and deterministic.
-- No format string may be derived from user data.
+## Tasks
 
-#### Tasks
+**75.1** Replace `proc_linux.vl`'s `os_spawn_ex` with a real `posix_spawn` or
+`fork`+`execvp` implementation: pipe redirection for `h_in`/`h_out`/`h_err`,
+`proc_spawn_file_actions`/`dup2`, and a `ProcessHandle` carrying the pid.
+Provide a `_macos` variant only if the flags differ.
 
-##### Task 57.1: Add the unsigned formatting matrix (red baseline) [COMPLETED] ✅
-* **Former Defect**:
-  - `codegen_io.vl:103-111` prints every integer expression with `printf("%lld\n", (long long)(...))` or `printf("%lld", (long long)(...))`.
-  - Unsigned 64-bit integers (`u64` and `usize` on 64-bit targets) exceeding `INT64_MAX` (e.g. `18446744073709551615u64` and `18446744073709551614u64`) are cast to signed `long long`, wrapping into negative numbers (`-1` and `-2`).
-  - Emitted C for all unsigned integer types (`u8`, `u16`, `u32`, `u64`, `usize`) unconditionally uses signed format specifiers (`%lld`) and signed casts `(long long)`, violating the security invariant that unsigned values must never be formatted through signed conversions.
-  - No dedicated test matrix existed covering all unsigned widths across boundary values (`0`, `1`, `max-1`, `max`) and all formatting paths (`io.println`, `io.print`, string interpolation `{...}`).
-* **Fix Applied (Red Baseline Harness)**:
-  - Created `tests/test_unsigned_formatting.py` establishing an 85-case test matrix across 4 sections:
-    * Section 1: `io.println` for variables and literals across `u8`, `u16`, `u32`, `u64`, `usize` at `0`, `1`, `max-1`, `max` (40 tests).
-    * Section 2: `io.print` for variables across all 5 unsigned types at all 4 boundary values (20 tests).
-    * Section 3: String interpolation `"{val}"` across all 5 unsigned types at all 4 boundary values (20 tests).
-    * Section 4: Emitted C security invariant assertions checking that no unsigned type is formatted with signed `%lld` or `(long long)` (5 tests).
-    * Security Gate: Asserts that no unsigned value ever formats with a `-` prefix and matches exact expected decimal strings.
-  - Extended `tests/test_literal_formatting.py` with `test_unsigned_integer_formatting_red_baseline` asserting that `u64_max` and `usize_max` do not format as `-1` and do not emit `%lld`.
-  - Extended `tests/test_string_interpolation.py` with `test_unsigned_interpolation_stage2` and `test_unsigned_interpolation_expression_stage2` verifying stage2 interpolation of unsigned variables and expressions.
-* **Residual Limitation**:
-  - Red baseline established: 17 failed, 68 passed in `tests/test_unsigned_formatting.py` (and 1 failed in `test_literal_formatting.py`). All 17 failures are due to the exact documented defects: `u64` and `usize` wrapping to `-1`/`-2` in `io.println`/`io.print`, and `codegen_io.vl` emitting `%lld` for all unsigned types.
-  - Fixes for `codegen_io.vl` integer formatting follow in Task 57.2.
-* **Verification**:
-  - `tests/test_unsigned_formatting.py`: 68 passed, 17 failed for documented causes in 22.63s.
-  - `tests/test_literal_formatting.py`: `test_unsigned_integer_formatting_red_baseline` failed for documented cause (`%lld` emitted, `-1` at runtime).
-  - `tests/test_string_interpolation.py`: 3/3 passed (interpolation of unsigned variables and expressions passes in stage2).
-  - All 119 compiler source files <= 395 lines (ceiling 400).
+**75.2** Replace `os_pipe_drain_streams` with a real reader: `read(2)` loop
+until EOF on both fds, arena-accumulated strings, and the true `exit_code` from
+`waitpid` (decoding `WIFEXITED`/`WEXITSTATUS`/`WIFSIGNALED`). Test with a child
+that writes to both streams and exits 7.
 
-##### Task 57.2: Fix `codegen_io` integer formatting [COMPLETED] ✅
-* **Former Defect**:
-  - `codegen_io.vl` lines 103–111 lowered every integer expression argument in `io.println` and `io.print` using `printf("%lld\n", (long long)(...))` or `printf("%lld", (long long)(...))`.
-  - Unsigned integer expressions (`u8`, `u16`, `u32`, `u64`, `usize`) were converted through signed `(long long)`, causing `u64` and `usize` values exceeding `INT64_MAX` (`18446744073709551615` and `18446744073709551614`) to wrap to `-1` and `-2`.
-* **Fix Applied**:
-  - Updated `emit_io_call_body` in `src/backend/codegen_io.vl`:
-    * Added type branch: `if is_unsigned_int_type(arg_type)` checks if expression type is an unsigned integer (`u8`, `u16`, `u32`, `u64`, `usize`).
-    * Emits `printf("%llu\n", (unsigned long long)(...))` for `io.println` and `printf("%llu", (unsigned long long)(...))` for `io.print`.
-    * Retains signed `printf("%lld\n", (long long)(...))` for signed integers (`i8`, `i16`, `i32`, `i64`, `isize`) and pointer types.
-    * Eliminates all signed conversions and signed `%lld` emission for unsigned expressions.
-* **Residual Limitation**:
-  - String interpolation literal handling and `usize`/`isize` portable formatting (`%zu`/`%zd`) are addressed in Tasks 57.3 and 57.4.
-* **Verification**:
-  - `pytest tests/test_unsigned_formatting.py`: 85/85 passed (100% pass rate, turning all 17 red baseline failures green) in 23.56s.
-  - `pytest tests/test_literal_formatting.py`: 7/7 passed (including `test_unsigned_integer_formatting_red_baseline`) in 3.61s.
-  - `pytest tests/test_string_interpolation.py`: 3/3 passed in 1.26s.
-  - Signed regression tests (`test_std_io.py`, `test_integer_literals.py`, `test_int_val_audit.py`): 85/85 passed in 69.66s.
-  - SHA-256 fixed-point determinism verified (`502218ffda92d619979586f298346deac5409ccbdae0eeccfad4339f7b6bbd24`).
-  - Line count standard maintained: all 119 compiler source files in `src/` <= 395 lines (ceiling 400).
+**75.3** Implement signal decoding: `os_process_signal(proc)` returning the
+terminating signal on POSIX and `0` on Windows. The current API cannot express
+"killed by SIGSEGV", which matters for build tools.
 
-##### Task 57.3: Fix `codegen_fmt` interpolation [COMPLETED] ✅
-* **Former Defect**:
-  - Prior to Phase 57, string interpolation `{...}` in `src/backend/codegen_fmt.vl` formatted all integer expressions using `%lld` and `(long long)(...)`. Unsigned expressions (`u64`, `usize`, `u32`) exceeding signed 64-bit bounds printed as negative values (e.g. `"{u64max}"` printed `-1`).
-  - While initial handling was added in Phase 53 (`b6d73423`), test coverage lacked verification for compound unsigned expressions (`{u64 - 1u64}`, `{u32 / 2u32}`, bitwise ops), struct/pointer member access (`{s.u64_val}`, `{p->u64_val}`, nested structs), function/UFCS method calls (`{get_u64()}`, `{b.get_val()}`), string variable interpolation (`let msg = "{u64max}"`), and signed regression across all signed integer types (`i8`, `i16`, `i32`, `i64`, `isize`).
-  - Furthermore, strict emitted C security invariant assertions were missing to verify that:
-    1. Pure unsigned interpolation never emits `%lld` or `(long long)` casts.
-    2. Pure signed interpolation never emits `%llu` or `(unsigned long long)` casts.
-    3. Mixed signed and unsigned interpolations maintain 1:1 order alignment between format specifiers and argument casts.
-* **Fix Applied**:
-  - Verified and locked the signed/unsigned split in `src/backend/codegen_fmt.vl` (lines 224–238):
-    * `is_unsigned_int_type(resolved_type)` emits `sb_append_str(out_fmt, "%llu")` and `sb_append_str(out_args, "(unsigned long long)(")`.
-    * Signed integer types emit `%lld` and `(long long)(...)`.
-  - Confirmed `resolve_path_type_and_c` and expression parser/type inference in `codegen_fmt.vl` accurately infer unsigned integer types for struct members, pointer arrow members, nested fields, function calls, UFCS methods, and compound expressions.
-  - Confirmed string variable assignment formatting via `velo_str_format` in `codegen_io.vl` shares `build_interp_fmt_and_args` and correctly formats unsigned interpolations.
-  - Extended `tests/test_string_interpolation.py` with 6 comprehensive test suites:
-    * `test_unsigned_interpolation_struct_and_pointer_members_stage2`: verifies struct, pointer, and nested struct member interpolation.
-    * `test_unsigned_interpolation_functions_and_ufcs_stage2`: verifies function and UFCS method return interpolation.
-    * `test_unsigned_interpolation_compound_expressions_stage2`: verifies arithmetic, modulo, bitwise, and cast expression interpolation.
-    * `test_signed_interpolation_regression_stage2`: verifies signed negative preservation across `i8`, `i16`, `i32`, `i64`, `isize`, expressions, and function returns.
-    * `test_interpolation_in_string_variable_stage2`: verifies `let msg = "..."` interpolation formatted through `velo_str_format`.
-    * `test_interpolation_emitted_c_security_split`: verifies pure unsigned emits `%llu` and `(unsigned long long)` with no `%lld` or `(long long)`; pure signed emits `%lld` and `(long long)` with no `%llu` or `(unsigned long long)`; mixed emits 1:1 aligned specifiers and casts.
-  - Extended `tests/test_unsigned_formatting.py` with Section 5 (11 tests):
-    * Parameterized `test_emitted_c_no_signed_conversion_for_unsigned_interpolation` across `u8`, `u16`, `u32`, `u64`, `usize`.
-    * Parameterized `test_emitted_c_signed_regression_interpolation` across `i8`, `i16`, `i32`, `i64`, `isize`.
-    * `test_emitted_c_mixed_interpolation_alignment` verifying exact alignment: `printf("u=%llu, s=%lld\n", (unsigned long long)(u), (long long)(s))`.
-* **Residual Limitation**:
-  - Portable formatting of `usize`/`isize` across 32-bit and 64-bit target architectures (`%zu`/`%zd` vs `%llu`/`%lld`) is addressed in Task 57.4.
-* **Verification**:
-  - `pytest tests/test_string_interpolation.py`: 9/9 passed in 2.81s.
-  - `pytest tests/test_unsigned_formatting.py`: 96/96 passed in 22.49s.
-  - Literal formatting and stdio suites: 40/40 passed (`test_literal_formatting.py` 7 passed, `test_std_io.py` 33 passed).
-  - All 119 compiler source files in `src/` <= 395 lines (<= 400).
+**75.4** Add `tests/test_os_process_posix.py` covering: spawn+wait exit code,
+stdout/stderr capture, signal termination, non-existent binary (named error,
+not crash), and pipe close ordering. Gate on `sys.platform != "win32"`.
 
-##### Task 57.4: Handle `usize`/`isize` portably [COMPLETED] ✅
-* **Former Defect**:
-  - `usize` and `isize` represent target-pointer-sized unsigned and signed integers whose bit width varies between 32-bit and 64-bit architectures (`size_t` / `ptrdiff_t`).
-  - Prior to Phase 57, integer formatting lacked portable type-widening guarantees and boundary test coverage:
-    1. Direct passing of `size_t` / `ptrdiff_t` to `printf` without standardized width promotion is undefined behavior when specifiers mismatch platform word size (e.g. passing a 32-bit `size_t` directly to `%llu` or `%lld` reads uninitialized stack memory on 32-bit systems).
-    2. Older Windows C runtimes (legacy MSVCRT) lack support for C99 `%zu` and `%zd`, whereas standard 64-bit promotion (`unsigned long long` / `long long` with `%llu` / `%lld`) is universally supported across MSVCRT, UCRT, glibc, musl, and macOS libc.
-    3. `isize` formatting was untested across critical 32-bit and 64-bit integer boundaries (`0`, `1`, `-1`, `INT32_MIN`, `INT32_MAX`, `INT64_MIN`, `INT64_MAX`), and lacked negative sign retention tests across `io.println`, `io.print`, and string interpolation `{...}`.
-* **Fix Applied**:
-  - Validated and formalized the portable widening architecture in `src/backend/codegen_io.vl` and `src/backend/codegen_fmt.vl`:
-    * Unsigned `usize` values are cast to `(unsigned long long)` and formatted with `%llu`. Because C99 guarantees `unsigned long long` is at least 64 bits, on 32-bit targets a 32-bit `size_t` zero-extends safely without truncation or signed bit corruption; on 64-bit targets it maps 1:1.
-    * Signed `isize` values are cast to `(long long)` and formatted with `%lld`. On 32-bit targets a 32-bit `ptrdiff_t` sign-extends safely preserving negative and positive values; on 64-bit targets it maps 1:1.
-    * Eliminates all truncating casts (`(uint32_t)`, `(int32_t)`) from codegen output.
-  - Extended `tests/test_unsigned_formatting.py` with Section 6 (49 tests):
-    * Parameterized `test_usize_portable_println` across 7 boundary values (`0`, `1`, `4294967294`, `4294967295`, `4294967296`, `18446744073709551614`, `18446744073709551615`), verifying no negative wrapping.
-    * Parameterized `test_usize_portable_interpolation` across the same 7 boundary values.
-    * Parameterized `test_isize_portable_println` across 11 boundary values (`0`, `1`, `-1`, `2147483646`, `2147483647`, `-2147483647`, `-2147483648`, `9223372036854775806`, `9223372036854775807`, `-9223372036854775807`, `-9223372036854775808`), verifying exact sign retention and value equality.
-    * Parameterized `test_isize_portable_print` across the same 11 boundary values.
-    * Parameterized `test_isize_portable_interpolation` across the same 11 boundary values.
-    * `test_usize_str_len_interpolation`: verifies string length (`str.len(...)` -> `usize`) formatting via `io.println` and inline string interpolation.
-    * `test_portable_emitted_c_security_no_truncation`: verifies emitted C uses `(unsigned long long)` + `%llu` for `usize` and `(long long)` + `%lld` for `isize`, and asserts the complete absence of truncating casts `(uint32_t)` / `(int32_t)`.
-* **Residual Limitation**:
-  - Exhaustive audit of other integer formatting paths (such as `sb_append_int`, diagnostic formatters, and stdlib string builders) follows in Task 57.5.
-* **Verification**:
-  - `pytest tests/test_unsigned_formatting.py`: 145/145 passed in 36.60s.
-  - `pytest tests/test_string_interpolation.py`: 9/9 passed in 2.81s.
-  - All 119 compiler source files in `src/` <= 395 lines (<= 400).
+**75.5** Audit every remaining `stub` comment in `std/` and either implement,
+delete, or convert into a compile-time unsupported-platform error.
+`grep -rin "stub" std/` is the work list; the current count must go to zero
+outside of explicitly documented `_unsupported` modules.
 
-##### Task 57.5: Audit other integer formatting paths [COMPLETED] ✅
-* **Former Defect**:
-  - Compiler and standard library integer formatting paths outside `codegen_io.vl` and `codegen_fmt.vl` lacked a unified signedness classification audit.
-  - Specifically, `sb_append_int` in `src/common/string_builder.vl` suffered from arithmetic negation overflow on `INT32_MIN` (`-2147483648`): `-n` overflowed in 32-bit signed arithmetic, remaining negative, which caused `loop n > 0` to skip digit emission entirely and emit only `"-"`.
-  - Furthermore, `src/common/string_builder.vl` lacked 64-bit integer appending utilities (`sb_append_int64` and `sb_append_uint64`), forcing callers to truncate 64-bit or pointer-sized integers with `as i32`.
-* **Fix Applied**:
-  - Fixed and expanded `src/common/string_builder.vl`:
-    * Implemented `sb_append_int64(sb: @StringBuilder, val: i64)` supporting the full signed 64-bit range and explicitly handling `INT64_MIN` (`-9223372036854775808`) without arithmetic overflow.
-    * Implemented `sb_append_uint64(sb: @StringBuilder, val: u64)` formatting unsigned 64-bit magnitudes from `0` to `UINT64_MAX` (`18446744073709551615`).
-    * Refactored `sb_append_int(sb: @StringBuilder, val: i32)` to delegate to `sb_append_int64(sb, val as i64)`, completely fixing the `INT32_MIN` bug and guaranteeing proper emission of `"-2147483648"`.
-  - Conducted an exhaustive codebase audit across all integer formatting paths (audit table below).
-  - Created `tests/test_integer_formatting_paths.py` with 13 comprehensive tests covering:
-    * `test_string_builder_int32_min_fix`: verifies `sb_append_int` formatting of `INT32_MIN` (-2147483648).
-    * `test_string_builder_int64_boundaries`: verifies `sb_append_int64` and `sb_append_uint64` across signed/unsigned 64-bit boundaries.
-    * `test_std_fmt_itoa_full_suite`: verifies `format_u64`, `format_i64`, `format_hex`, `format_bin`, `format_oct`.
-    * `test_std_fmt_ftoa_full_suite`: verifies float integer-part decomposition.
-    * `test_std_str_builder_full_suite`: verifies `sb_append_i64` and `sb_append_u64` in `std/str/builder.vl`.
-    * `test_std_json_integer_serialization_boundaries` & `test_std_json_writer_full_suite`: verifies JSON integer serialization preserves signedness without wrapping.
-    * `test_std_net_addr_formatting` & `test_std_net_addr_full_suite`: verifies IPv4 dotted-decimal formatting (`0.0.0.0`, `127.0.0.1`, `255.255.255.255`).
-    * `test_std_time_calendar_formatting` & `test_std_time_calendar_full_suite`: verifies ISO-8601 calendar date/time formatting.
-    * `test_check_json_diagnostic_line_col_formatting`: verifies diagnostic line and column number JSON formatting.
-    * `test_security_gate_array_and_slice_lengths_never_negative`: verifies lengths and counts remain non-negative unsigned values.
-  - Rebuilt bootstrap chain (`scripts/bootstrap.bat` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 fixed-point determinism (`4173222551a2d8f0bdb2f669df78e14e3b5644d2432986a1091c123370b38712`).
-* **Audit Table**:
+## Phase Exit Criteria
 
-| Subsystem / Function | File:Line | Classification | Range / Domain | Audit Finding & Verification |
-|---|---|---|---|---|
-| `sb_append_int` | `src/common/string_builder.vl:108` | Signed 32-bit | `[-2147483648, 2147483647]` | **Defect Fixed**: Delegated to `sb_append_int64`. Negation overflow on `INT32_MIN` eliminated; outputs `"-2147483648"`. |
-| `sb_append_int64` | `src/common/string_builder.vl:63` | Signed 64-bit | `[-2^63, 2^63 - 1]` | **New**: Safe unsigned magnitude promotion for negative numbers, handling `INT64_MIN` without overflow. |
-| `sb_append_uint64` | `src/common/string_builder.vl:95` | Unsigned 64-bit | `[0, 2^64 - 1]` | **New**: Pure unsigned decimal formatting up to `UINT64_MAX` without truncation. |
-| `sb_append_float` | `src/common/string_builder.vl:113` | Signed 32-bit (parts) | Standard floats | Uses `sb_append_int` for integer and fraction parts. |
-| `u64_to_decimal_string` | `src/common/num_utils.vl:97` | Unsigned 64-bit | `[0, 2^64 - 1]` | Verified: Used for C literal code generation (`ULL` suffix). Safe across full 64-bit range. |
-| `format_c_number_literal` | `src/common/num_format.vl:70` | Text/Radix preserve | Multi-base literals | Verified: Preserves source digits and appends standard C99 suffixes (`ULL`, `LL`). |
-| `format_u64` | `std/fmt/itoa.vl:9` | Unsigned 64-bit | `[0, 2^64 - 1]` | Verified: Zero C dependencies. Pure Velo decimal formatting; tested up to `UINT64_MAX`. |
-| `format_i64` | `std/fmt/itoa.vl:46` | Signed 64-bit | `[-2^63, 2^63 - 1]` | Verified: Explicitly handles `INT64_MIN` via `0x8000000000000000u64` magnitude. |
-| `format_hex/bin/oct` | `std/fmt/itoa.vl:78-185` | Unsigned 64-bit | `[0, 2^64 - 1]` | Verified: Unsigned radices 16, 2, 8; upper/lower hex support. |
-| `sb_append_i64` (`StrBuilder`) | `std/str/builder.vl:113` | Signed 64-bit | `[-2^63, 2^63 - 1]` | Verified: Handles `INT64_MIN` via `"9223372036854775808"` slice. |
-| `sb_append_u64` (`StrBuilder`) | `std/str/builder.vl:150` | Unsigned 64-bit | `[0, 2^64 - 1]` | Verified: Direct unsigned decimal appending into arena-backed string buffer. |
-| `json_write_internal` | `std/json/writer.vl:103` | Signed 64-bit | `[-2^63, 2^63 - 1]` | Verified: `JSON_INT` delegates to `sb_append_i64`. No signed wrap. |
-| `net_format_ipv4` | `std/net/addr.vl:9` | Unsigned 32-bit | `[0, 0xFFFFFFFF]` | Verified: Unsigned octet shift/mask (`addr >> shift & 0xFF`). Output is canonical dotted-decimal. |
-| `time_format_iso8601` | `std/time/calendar.vl:190` | Decomposed Date/Time | Gregorian range | Verified: Non-negative year, month, day, hour, min, sec byte offsets. |
-| Diagnostic line/col | `src/backend/check.vl:107` | Non-negative i32 | `[0, 2^31 - 1]` | Verified: Emitted in JSON diagnostics via `sb_append_int`. |
-| LSP coordinates | `src/lsp/*.vl` | Non-negative i32 | `[0, 2^31 - 1]` | Verified: Lines, columns, versions, severities emitted via `sb_append_int`. |
-| Test block IDs | `src/backend/test_gen.vl:29` | Non-negative i32 | `[0, 2^31 - 1]` | Verified: Sequential test IDs (`_velo_test_N`) emitted via `sb_append_int`. |
-
-* **Residual Limitation**:
-  - Final documentation locking in formatting rules in `docs/SPECIFICATION.md` follows in Task 57.6.
-* **Verification**:
-  - `pytest tests/test_integer_formatting_paths.py`: 13/13 passed in 9.83s.
-  - `pytest tests/test_unsigned_formatting.py`: 145/145 passed in 36.60s.
-  - `pytest tests/test_string_interpolation.py`: 9/9 passed in 2.81s.
-  - `pytest tests/test_literal_formatting.py`: 7/7 passed in 3.61s.
-  - Bootstrap chain bit-for-bit determinism: Gen2/Gen3 SHA-256 match `4173222551a2d8f0bdb2f669df78e14e3b5644d2432986a1091c123370b38712`.
-  - All 119 compiler source files in `src/` <= 395 lines (<= 400).
-
-##### Task 57.6: Add boundary/security tests and documentation [COMPLETED] ✅
-* **Former Defect**:
-  - Unsigned and signed integer formatting behavior, boundary limits, width promotion rules, and format-injection security guarantees were not formalized in `docs/SPECIFICATION.md`.
-  - `tests/test_literal_formatting.py` lacked tests for format-injection strings (`%s`, `%n`, `{%n}`), data safety, locale independence, and a unified boundary test matrix for `0`, `max`, `max-1`, and signed negative limits.
-  - In `src/backend/codegen_expr.vl`, `EXPR_UNARY` code generation unconditionally called `infer_expr_type(st, expr.operand)` before checking `try_emit_c_neg_int_literal`. When evaluating boundary negative integer literals (`-9223372036854775808`, `-2147483648`, `-32768`, `-128`), `infer_expr_type` evaluated the positive inner magnitude against positive signed limits, falsely triggering `Integer literal out of range for type '...'` during codegen and causing build failures in `test_safe_c_literal_emission.py`, `test_std_rand.py`, and `test_type_checker.py`.
-* **Fix Applied**:
-  - Formalized Section 10.5 in `docs/SPECIFICATION.md` ("Integer Formatting & Signed/Unsigned Guarantees") documenting:
-    * Unsigned formatting guarantee: `u8`, `u16`, `u32`, `u64`, `usize` strictly formatted through `%llu` with `(unsigned long long)` zero-extension without negative wrapping.
-    * Signed formatting guarantee: `i8`, `i16`, `i32`, `i64`, `isize` strictly preserve sign through `%lld` with `(long long)` sign-extension, covering `INT32_MIN` and `INT64_MIN`.
-    * Platform word-size portability: 32-bit and 64-bit target safety for `usize` and `isize`.
-    * String interpolation alignment: 1:1 format specifier and argument alignment in string interpolation.
-    * Hardened format-injection prevention: all compiler-emitted format strings are static literals, and user/variable strings flow strictly as data arguments.
-    * Locale independence: decimal representations are ASCII digit sequences `[0-9]` with optional leading `-`, free of thousands separators or locale variations.
-    * Runnable code example included in `docs/SPECIFICATION.md`, verified by `test_std_io_documentation_examples_compile_and_run`.
-  - Extended `tests/test_literal_formatting.py` with 3 comprehensive test suites:
-    * `test_integer_formatting_full_boundary_matrix`: 28 boundary checks covering `0`, `1`, `max-1`, `max` across `u8`, `u16`, `u32`, `u64`, `usize`, and signed negative boundaries across `i8`, `i16`, `i32`, `i64`, `isize` in both direct `io.println` and string interpolation.
-    * `test_format_injection_security_hardening`: verifies literal format metacharacters (`%s`, `%n`, `%d`, `%p`, etc.), variable payloads (`%n%s`), unresolved interpolation tokens (`{%n}`, `{%s}`), and mixed interpolation format strings are treated as data, preventing format string injection and arbitrary memory corruption.
-    * `test_formatting_locale_independence_and_determinism`: verifies integer and float outputs do not inject locale-dependent thousands separators (`,`, `'`, `.`, `_`) and float output deterministically uses `.` decimal separator.
-  - Fixed unary minus code generation in `src/backend/codegen_expr.vl`: prioritized negated integer literals (`expr.op == TOK_MINUS and expr.operand != null and expr.operand.kind == EXPR_INT`), delegating to `try_emit_c_neg_int_literal` for boundary values and `emit_c_int_literal` without prematurely calling `infer_expr_type` on positive inner magnitudes.
-  - Rebuilt bootstrap chain, verified bit-for-bit Gen2/Gen3 SHA-256 fixed-point determinism (`216acd6980717597aa6b817bf01a975efbd8073493fb416afe9fa43597c41c14`), and refreshed `bootstrap.c` (SHA-256 `2c145de7f0dada1f15c70c8d15b86a60be4e1f9a263b1bb9d9a5350dab34b478`).
-* **Residual Limitation**:
-  - None. All Phase 57 requirements and exit criteria are satisfied.
-* **Verification**:
-  - `tests/test_literal_formatting.py`: 10 passed (100%).
-  - `tests/test_unsigned_formatting.py`: 134 passed (100%).
-  - `tests/test_string_interpolation.py`: 20 passed (100%).
-  - `tests/test_integer_formatting_paths.py`: 13 passed (100%).
-  - `tests/test_std_io.py`: 33 passed (100%).
-  - `tests/test_safe_c_literal_emission.py`: 6 passed (100%).
-  - `tests/test_std_rand.py`: 4 passed (100%).
-  - `tests/test_type_checker.py`: 23 passed (100%).
-  - All 119 compiler source files in `src/` remain $\le 395$ lines ($\le 400$). No UTF-8 BOM.
-
-#### Phase Exit Criteria
-
-- [x] `io.println(u64max)`, `io.print(u64max)`, and `"{u64max}"` all print `18446744073709551615`.
-- [x] `usize`/`isize` are correct on 32-bit and 64-bit targets.
-- [x] No integer formatting path uses a signed conversion for an unsigned type.
+- `velo run` of a program doing `os_spawn_sync("echo hi")` prints `hi` and
+  reports exit code 0 on Linux and macOS.
+- Zero stub returns remain in `std/`.
+- A child killed by a signal is reported as such through the public API.
 
 ---
 
-### Phase 58: `defer` Block Scoping & Loop Cleanup (P0) [COMPLETED] ✅
+# Phase 76: CI Reality and Platform Test Harness (P0) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-07`<br>
-**Severity:** P0 — use-after-free, double-free, and leaks<br>
-**Depends on:** —<br>
-**Blocks:** Phases 61 and 62 (cleanup interaction)
+## Defect
 
-#### Defect
+`.github/workflows/ci.yml` declares six jobs across Linux, macOS, and Windows.
+Two facts make the green state unknowable: there is no git remote, so the
+workflow has almost certainly never executed; and even if it did, the Linux and
+macOS jobs cannot pass, because `bootstrap.c` carries unguarded Win32 externs
+(Phase 70) and 109 of the 129 test files hardcode `C:\msys64\ucrt64\bin`, with
+66 hardcoding `bin/velo.exe`.
 
-The specification says defers run at the closing `}` of their block (`docs/STEP2_SPECIFICATION.md:79-82`). The implementation keeps one LIFO stack per function (`codegen_stmt.vl:334-344`), emits it at function exit (`codegen_c.vl:71-79`), and discards loop-body entries without emitting them (`codegen_stmt.vl:274-276`).
+This is not "CI is misconfigured". It is "CI results are a claim with no
+evidence", and CI claims are what reviewers check first.
 
-```velo
-loop 3 {
-    let p = mem.heap_alloc(@i32, 1)
-    defer mem.free(p)
-    p[0] = 7
-}
-// heap used after loop: 12  → leaked every iteration
-```
+## Evidence
 
-A `defer` inside `if` either runs at function exit (too late) or fails to compile with `'p' undeclared` because the block-local variable is out of scope. This is a memory-safety defect, not just a spec mismatch.
+| Fact | Evidence |
+| :--- | :--- |
+| No remote, so no CI execution | `git remote -v` empty; no `README` badge; no run link anywhere [VERIFIED] |
+| The Linux job cannot link `bootstrap.c` | see Phase 70 (eight `nm -u` Win32 symbols) |
+| The test harness is Windows-only | `tests/test_std_fs.py:7` `VELO_EXE = REPO_ROOT / "bin" / "velo.exe"` with no platform branch; 109 files mention `msys64`; 66 files hardcode `bin/velo.exe` [VERIFIED] |
+| `tests/conftest.py` papers over it two different ways | lines 6-15 symlink `bin/velo` -> `bin/velo.exe` on POSIX; lines 18-45 patch `subprocess.Popen` to rewrite paths on both platforms. A patched `Popen` inside a test process is a strong signal the paths should have been fixed, not intercepted. |
+| The CI test asserts the YAML text, not the CI result | `tests/test_ci_matrix.py:20-68` asserts the strings `ubuntu-22.04`, `macos-14`, `check_determinism.py`, etc. appear in the file. It passes with a workflow that has never run. |
+| Only the sanitizer lane actually skips Windows-only work | `.github/workflows/ci.yml:221-273` - the other five jobs run the full suite unguarded |
+| One known concurrency hazard | `velo_check_capture.tmp` is a fixed CWD filename (`src/backend/check.vl:291`, `:335`), so two `velo check` processes in the same directory collide. The maintainer works around it by never running two suites at once; CI will not honour that. |
 
-#### Security Invariants
+## Security Invariants
 
-- A defer must run exactly once on every exit path from its block.
-- Deferred statements must run in reverse declaration order (LIFO).
-- Loop-body defers must run at the end of each iteration, including `continue` and `break`.
-- Early `return`/`fail` must unwind only the blocks actually exited.
-- No deferred statement may reference a variable whose lifetime has ended.
+- **I76.1** A green CI run is a link to an actual execution on the commit being
+  reviewed. A test that greps YAML is not evidence.
+- **I76.2** Tests locate the compiler through one helper (`conftest.py`),
+  never through a literal path. No test may contain `msys64` or `velo.exe`.
+- **I76.3** Any test that shells out with captured text passes an explicit
+  encoding (this also closes the 422-site gap in Phase 85).
+- **I76.4** No test writes to a fixed filename in the process CWD; all scratch
+  paths come from `tmp_path`.
 
-#### Tasks
+## Tasks
 
-##### Task 58.1: Add the defer lifecycle matrix (red baseline) [COMPLETED] ✅
-* **Former Defect**:
-  - The specification mandates that `defer` statements execute at the closing `}` of their enclosing lexical block (`docs/STEP2_SPECIFICATION.md:79-82`).
-  - However, `codegen_stmt.vl` maintained a single function-level LIFO cleanup stack (`defers: @@DeferNode`), emitting all deferred statements only at function exit (`codegen_c.vl:71-79`).
-  - Loop-body defers were pushed onto the stack but discarded without emission by `pop_loop_scope` (`codegen_stmt.vl:265`), leaking memory on every loop iteration.
-  - Defers declared inside `if`, `else`, `on` match arms, and nested blocks were emitted outside the block's lexical scope at function return. When referencing block-local variables, both the Velo compiler (`[Velo Error] semantic: Undeclared identifier`) and GCC (`error: 'var' undeclared`) failed with compilation errors; even when referencing outer variables, defers ran prematurely or too late, violating lexical block lifetime and exactly-once execution guarantees.
-  - No dedicated lifecycle test matrix existed covering all block types (`function`, `if`, `else`, `on`, `loop`, nested blocks) across all exit paths (`normal`, `return`, `fail`, `break`, `continue`).
-* **Fix Applied (Red Baseline Harness)**:
-  - Created `std/tests/mem/defer_test.vl`:
-    * Comprehensive standalone test program covering: function body (normal return and early return), `if` block scoping, untaken branch skipping, `else` block scoping, `on` pattern match arm scoping, `loop` per-iteration cleanup, loop `break` cleanup, loop `continue` cleanup, nested blocks scoping, early return unwinding, `fail` algebraic outcome unwinding, and `or return` unwinding.
-    * Security gate: verifies exactly-once execution, `mem.heap_used()` returns to baseline (zero memory leaks), and no double-free across complex control flow.
-  - Created `tests/test_defer.py`:
-    * 16 test cases establishing the automated pytest harness for Phase 58.
-    * Covers all block scopes, exit paths, memory ledger integrity, and end-to-end execution of `std/tests/mem/defer_test.vl`.
-* **Residual Limitation**:
-  - Red baseline established: 2 passed, 14 failed in `tests/test_defer.py` (and `std/tests/mem/defer_test.vl` fails compilation with 22 `Undeclared identifier` errors).
-  - The 2 passing tests verify baseline function-level defer LIFO execution. The 14 failing tests fail for the exact documented defects: block-local variables out of scope at function return, loop iterations leaking memory, and untaken branches executing.
-  - Design of the block-scope cleanup model follows in Task 58.2.
-* **Verification**:
-  - `python -m pytest tests/test_defer.py -v`: 2 passed, 14 failed for documented causes in 2.86s.
-  - Line count standard maintained: all 119 compiler source files in `src/` <= 395 lines (ceiling 400).
-  - No UTF-8 BOM in new `.vl` files.
+**76.1** Add a git remote and push. Publish the repository, even if private, so
+Actions can run. Without this every other CI task is theatre.
 
-##### Task 58.2: Design the block-scope cleanup model [COMPLETED] ✅
-* **Former Defect**:
-  - `docs/STEP2_SPECIFICATION.md:79-82` previously contained only a minimal, underspecified note stating that the compiler collects defers in a block and emits them upon `return` or the closing `}`.
-  - The specification lacked formal normative rules defining:
-    1. The exact set of constructs that establish lexical block boundaries (`act`, `if`, `else`, `on`, `loop`, `{ ... }`, `unsafe`, and `zone`).
-    2. Per-iteration loop boundaries and control-flow interaction (`continue`, `break`).
-    3. Multi-level unwinding order and precedence for early exits (`return`, `fail`, `or return`) where return expressions must evaluate before cleanups execute.
-    4. Safety and ordering guarantees for zone arena interactions (cleanups running before zone rollback).
-    5. The identifier lifetime and scope containment invariant prohibiting out-of-scope variable references during deferred execution.
-  - `src/backend/codegen_stmt.vl` lacked architectural documentation describing how the LIFO cleanup stack maps onto block boundaries and unwinding scopes.
-* **Fix Applied**:
-  - Formalized comprehensive Section 2.2 in `docs/STEP2_SPECIFICATION.md`:
-    * §2.2.1 Block-Scope Semantics & Boundaries across all 6 block categories.
-    * §2.2.2 Reverse Declaration Order (LIFO) within blocks.
-    * §2.2.3 Loop Iteration Boundaries, per-iteration cleanup, and `break`/`continue` semantics.
-    * §2.2.4 Early-Exit Unwinding (`return`, `fail`, `or return`) preserving return values before unwinding.
-    * §2.2.5 Interaction with Zone Arenas (user defers running before `velo_zone_pop`/`velo_zone_leave`).
-    * §2.2.6 Security & Memory Safety Invariants (exactly-once execution, live identifier invariant, zero heap leaks, no double-free).
-    * §2.2.7 Design Review Checklist covering all 8 verification gates.
-  - Added architectural design note in `src/backend/codegen_stmt.vl` (lines 25–31) codifying the 5 core tenets of block-scope cleanup.
-  - Rebuilt bootstrap chain (`scripts/bootstrap.bat` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 fixed-point determinism (`0784770A687B3AB45540DD6DADB29FF889D2EB59336021CB53B1E670BE35F711`).
-* **Residual Limitation**:
-  - Implementation of block markers on the defer stack follows in Task 58.3.
-* **Verification**:
-  - Verified documentation examples against language syntax and compiler parser rules.
-  - All 119 compiler source files in `src/` remain <= 395 lines (ceiling 400; `codegen_stmt.vl` is at 390 lines).
-  - Bit-for-bit bootstrap determinism verified across Gen2, Gen3, and `bootstrap.c`.
-  - All 33 tests in `tests/test_std_io.py` passed in 28.98s.
-  - Red baseline in `tests/test_defer.py` maintained (2 passed, 14 failed for documented causes).
+**76.2** Replace the `test_ci_matrix.py` string assertions with a check of the
+workflow's actual required steps (parse the YAML, assert job matrix shape), and
+add a separate `tests/test_ci_evidence.py` that reads a committed
+`docs/CI_STATUS.md` containing the latest green run links per job. The test
+fails when a job has no link or the link's commit SHA is not an ancestor of
+`HEAD`.
 
-##### Task 58.3: Refactor the defer stack to block scopes [COMPLETED] ✅
-* **Former Defect**:
-  - `DeferNode` in `src/backend/codegen_stmt.vl` only differentiated between zones (`is_zone: bool`) and loops (`is_loop: bool`), lacking a block boundary marker (`is_block: bool`).
-  - Without block markers on the LIFO cleanup stack (`defers: @@DeferNode`), all defers pushed inside nested blocks (`if`, `else`, `on`, `{ ... }`) were indistinguishable from outer-scope and function-level defers.
-  - The compiler had no primitives to push/pop block boundary markers, measure block nesting depth, count block-local deferred cleanups, or isolate block cleanups from outer enclosing scopes.
-  - In `emit_c_cleanup`, only loop markers were skipped, meaning any block markers would have triggered invalid statement emissions if introduced without updating marker guards.
-* **Fix Applied**:
-  - Updated `data DeferNode` in `src/backend/codegen_stmt.vl` with `is_block: bool`.
-  - Implemented block scope stack primitives in `src/backend/codegen_stmt.vl`:
-    * `push_block_scope(defers: @@DeferNode) -> @DeferNode`: allocates and pushes an `is_block = true` boundary marker onto the LIFO cleanup stack, returning the previous top pointer.
-    * `pop_block_scope(defers: @@DeferNode, prev: @DeferNode)`: restores the cleanup stack to `prev`, popping all block-local cleanups and the marker.
-    * `block_scope_depth(defers: @@DeferNode) -> i32`: traverses the stack and counts active block and loop boundary markers.
-    * `count_block_defers(defers: @@DeferNode) -> i32`: counts deferred statements residing strictly in the innermost block scope, stopping traversal upon reaching the nearest `is_block` or `is_loop` boundary marker.
-  - Updated `emit_c_cleanup` to skip block markers (`if cur_d == null or cur_d.is_loop or cur_d.is_block { return }`).
-  - Updated `push_loop_scope`, `STMT_ZONE`, and `STMT_DEFER` to explicitly initialize `is_block = false`.
-  - Compacted statement handlers in `codegen_stmt.vl` to preserve strict line limits: 389 lines (ceiling $\le 400$).
-  - Added 2 new tests in `tests/test_defer.py`:
-    * `test_block_scope_marker_primitives_in_emitted_compiler_c`: asserts `bool is_block;`, `push_block_scope`, `pop_block_scope`, `block_scope_depth`, `count_block_defers`, and `cur_d->is_block` exist in emitted compiler C.
-    * `test_block_scope_stack_balance_and_isolation_probe`: compiles and executes a multi-level nested scope probe program verifying scope depth tracking, innermost count isolation across 3 nested blocks, and balanced unwinding back to 0.
-  - Rebuilt the 3-stage bootstrap compiler chain (`scripts/bootstrap.bat` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 fixed-point determinism (`250E3EA186DC75F7F31C3B46423A0406599EC0BCBEA47F0FDB4097253AB2D62C`).
-* **Residual Limitation**:
-  - Block markers are defined and tested on the stack, but not yet integrated into `emit_c_block_stmts` for automatic push/pop during block code generation.
-  - Emitting cleanups at normal block exit (`}`) and popping block markers follows in Task 58.4.
-* **Verification**:
-  - `python -m pytest tests/test_defer.py -k "marker or probe"`: 2 passed in 1.48s; overall suite 4 passed, 14 failing as expected for downstream tasks.
-  - `python scripts/count_lines.py`: `src/backend/codegen_stmt.vl` is at 389 lines ($\le 400$).
-  - Fixed-point determinism: SHA-256 between Gen2 and Gen3 identical (`250E3EA186DC75F7F31C3B46423A0406599EC0BCBEA47F0FDB4097253AB2D62C`), matching `bootstrap.c`.
+**76.3** Introduce `tests/conftest.py::velo_exe()` and
+`tests/conftest.py::cc_path()`; delete all `msys64` literals and
+`bin/velo.exe` literals from tests. Remove the `Popen` monkeypatches once the
+paths are correct. Gate: `grep -rl "msys64" tests/` is empty.
 
-##### Task 58.4: Emit cleanups at normal block exit [COMPLETED] ✅
-* **Former Defect**:
-  - `emit_c_block_stmts` in `src/backend/codegen_stmt.vl` previously only iterated block statements and exited scope without emitting deferred cleanups or managing cleanup stack boundaries.
-  - Deferred statements declared inside `if`, `else`, `match`, and plain blocks accumulated on the function-level cleanup stack until function exit.
-  - At function exit, the lexical C block (`{ ... }`) where block-local variables were defined had already closed, causing both the Velo compiler (`semantic: Undeclared identifier`) and GCC (`error: 'var' undeclared`) to reject any cleanups referencing block-scoped identifiers.
-  - Untaken branches (`if false { defer ... }`) leaked their defers to function exit, causing untaken cleanups to run unconditionally.
-  - Bare scoped blocks `{ ... }` were not recognized as valid statements by `parse_statement` in `src/frontend/parser_stmt.vl`.
-  - In `src/backend/outcome_gen.vl`, `emit_return_stmt` and `emit_fail_stmt` checked `if defers.@ == null` directly, causing empty block boundary markers on the stack to falsely trigger temporary variable wrappers (`__ret_val`) on every normal return.
-* **Fix Applied**:
-  - Integrated block scope management into `emit_c_block_stmts` in `src/backend/codegen_stmt.vl`:
-    * Pushes a block marker (`push_block_scope`) upon block entry and enters symbol table scope.
-    * Tracks whether the block terminates early via `stmt_unconditionally_exits`.
-    * At normal block exit (reaching `}`), iterates and emits all deferred cleanups in the innermost block scope (`loop cur_d != null and not cur_d.is_block and not cur_d.is_loop`) in reverse declaration (LIFO) order before the C scope closes.
-    * Restores cleanup stack via `pop_block_scope` and exits symbol table scope.
-  - Added plain scoped block support (`{ ... }`) to `parse_statement` in `src/frontend/parser_stmt.vl`.
-  - Added `has_active_defers(defers: @@DeferNode) -> bool` in `src/backend/codegen_stmt.vl`, checking for non-marker cleanups.
-  - Updated `emit_return_stmt` and `emit_fail_stmt` in `src/backend/outcome_gen.vl` to check `if not has_active_defers(defers)` so normal returns remain clean and direct without artificial wrappers.
-  - Extended `stmt_unconditionally_exits` in `src/analysis/narrow_flow.vl` to recognize `STMT_IF` when both `then` and `else` branches unconditionally exit.
-  - Fixed ucrt64 GCC path precedence in `tests/test_defer.py` `get_build_env()`, and added:
-    * `test_defer_plain_block_local_pointer_and_werror`: verifies plain blocks and `if` blocks with block-local pointers compiled directly under GCC with `-Werror` (security gate passed with 0 warnings).
-    * `test_defer_nested_plain_and_if_blocks_with_local_pointers`: validates arbitrary nesting of plain and `if` blocks with block-local pointers and LIFO order verification.
-  - Rebuilt the self-hosted bootstrap chain (`scripts/bootstrap.bat` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 fixed-point determinism (`e5a4c003821f75e2b78fecb66a6d3ab247e25143a8713c0f9eaea1bb582039c4`).
-* **Residual Limitation**:
-  - Early-exit unwinding for `fail` and `or return` outcome error string formatting is addressed in Task 58.6.
-  - Loop per-iteration cleanups with `break` and `continue` paths follow in Task 58.5.
-* **Verification**:
-  - `python -m pytest tests/test_defer.py -q`: 18 passed, 2 failing as expected for Task 58.6.
-  - `test_defer_matrix_std_test_vl`: PASSED (all 16 assertions in `std/tests/mem/defer_test.vl` succeeded).
-  - Security gate verified: C emitted code compiles under GCC `-std=c99 -Werror -Wno-unknown-pragmas` with 0 warnings.
-  - Line count discipline: all 119 files in `src/` $\le 395$ lines (`codegen_stmt.vl` is at 392 lines).
+**76.4** Replace `velo_check_capture.tmp` with a per-process temp path
+(`velo_check_capture_<pid>.tmp`, or `mkstemp`-equivalent inside
+`.velo_cache/`), making `velo check` safe to run concurrently. Test: run 8
+`velo check` processes in parallel in the same directory and assert all
+succeed and no stray tmp file remains (`tests/test_check_concurrency.py`).
 
-##### Task 58.5: Emit per-iteration loop cleanups [COMPLETED] ✅
-* **Former Defect**:
-  - In `src/backend/codegen_stmt.vl:265-276` prior to Phase 58, `emit_loop_stmt` pushed a loop marker with `push_loop_scope`, but `pop_loop_scope` simply restored the pointer without emitting iteration defers.
-  - Defers declared within a loop body leaked memory on every iteration (`loop 3 { let p = mem.heap_alloc(@i32, 1); defer mem.free(p); }` leaked every iteration, accumulating heap usage instead of returning to baseline).
-  - Loop early exits via `break` and `continue` either failed to run loop-body cleanups or ran them improperly outside the loop.
-* **Fix Applied**:
-  - Bound loop iterations to lexical block cleanups in `src/backend/codegen_stmt.vl`:
-    * Loop body statements are emitted via `emit_c_block_stmts`, ensuring defers declared within each iteration execute at the end of each iteration in LIFO order before the C block scope closes.
-    * `STMT_BREAK` and `STMT_CONTINUE` unroll and execute all cleanups up to the enclosing `is_loop` marker (`loop cur_d != null and not cur_d.is_loop { emit_c_cleanup(...) }`), skipping intermediate block boundary markers, before emitting `break;` or `continue;`.
-    * Extended exit analysis so blocks terminating in `break` or `continue` do not re-emit cleanups at block fallthrough, preventing double-frees.
-    * Verified collection loops (`loop of` over `shelf`, `map`, and `ring`) in `shelf_gen.vl`, `map_gen.vl`, and `ring_gen.vl` correctly scope per-iteration defers with `push_loop_scope` and `pop_loop_scope`.
-  - Added comprehensive test coverage in `tests/test_defer.py`:
-    * `test_defer_loop_leak_repro_audit_baseline`: validates the exact `AUDIT-2026-11-07` repro snippet over 10 iterations, proving zero heap growth (`mem.heap_used() - base == 0`).
-    * `test_defer_loop_nested_loops_with_breaks_and_continues`: tests 4 outer iterations and nested inner loops with `continue` and `break`, asserting exact cleanup counts (outer: 4, inner: 6) and 0 bytes leaked.
-    * `test_defer_loop_infinite_with_conditional_break`: verifies unbounded `loop { ... }` with conditional `break` cleans up the breaking iteration with zero leaks.
-    * `test_defer_loop_shelf_iteration_cleanup`: verifies `loop x of xs` collection iteration cleans up each iteration's defers cleanly.
-* **Residual Limitation**:
-  - Early-exit unwinding order across multi-level nested scopes for `return`, `fail`, and `or return` follows in Task 58.6.
-* **Verification**:
-  - `python -m pytest tests/test_defer.py -k "test_defer_loop_"`: 7 passed in 2.17s.
-  - Overall `tests/test_defer.py`: 22 passed, 2 failing as expected for Task 58.6.
-  - `std/tests/mem/defer_test.vl`: PASSED (all 16 lifecycle assertions succeeded).
-  - All 119 source files in `src/` remain $\le 395$ lines (`codegen_stmt.vl` is at 392 lines).
+**76.5** Add a `windows-msvc` full-suite job. Today `windows-msvc`
+(`ci.yml:134-172`) runs only `test_cc_backend.py` and
+`test_bootstrap_snapshot.py`, so the MSVC path is verified for two files out of
+129.
 
-##### Task 58.6: Correct early-exit ordering [COMPLETED] ✅
-* **Former Defect**:
-  - Prior to Phase 58, early-exit control-flow statements (`return`, `fail`, `or return`, `break`, `continue`) unrolled defers assuming a flat function-level stack, risking out-of-order execution or double-emission when nested within lexical blocks (`{ ... }`, `if`, `loop`).
-  - In `tests/test_defer.py`, `test_defer_fail_outcome_unwinding` and `test_defer_or_return_unwinding` exhibited assertion failures when formatting outcome error messages with `{res.as.err}` instead of idiomatic `{res.err}`, causing pointer addresses to be printed instead of string content.
-* **Fix Applied**:
-  - Verified and formalized early-exit unwinding across multi-level nested scopes in `src/backend/codegen_stmt.vl` and `src/backend/outcome_gen.vl`:
-    * Traversal of active defers via `cur_d = defers.@; loop cur_d != null { ... cur_d = cur_d.next }` in `emit_return_stmt`, `emit_fail_stmt`, `emit_or_return_var_decl`, `emit_or_return_assign`, and `emit_or_return_expr` unrolls in strict LIFO order: innermost block defers first, then enclosing blocks, then function-level defers.
-    * `emit_c_cleanup` cleanly skips `is_block` and `is_loop` markers, preventing false boundaries or corrupted stacks during full-unwind early exits.
-    * `STMT_BREAK` and `STMT_CONTINUE` unroll defers up to the nearest enclosing `is_loop` marker (`loop cur_d != null and not cur_d.is_loop { ... }`), preserving outer block and function defers from premature execution.
-    * Unconditional exit propagation via `stmt_unconditionally_exits` prevents double-emission of cleanups at block closing `}` for blocks terminating in `return`, `fail`, `break`, or `continue`.
-  - Fixed test assertions in `tests/test_defer.py` to use idiomatic outcome member access `res.err` instead of internal C union representation `res.as.err`.
-  - Added dedicated multi-level nested early-exit test suites to `tests/test_defer.py`:
-    * `test_defer_early_exit_multi_level_return`: 4 levels of nested blocks (`func` -> `if` -> `{ ... }` -> `if` -> `return`), asserting exact reverse LIFO unwinding order (`order=4321`), zero leaks, and suppression of subsequent defers.
-    * `test_defer_early_exit_multi_level_fail`: 4 levels of nested blocks terminating in `fail "deep failure"`, asserting exact LIFO order (`order=4321`), zero leaks, and correct string outcome delivery.
-    * `test_defer_early_exit_multi_level_or_return`: 4 levels of nested blocks propagating `callee() or return`, asserting exact LIFO order (`order=4321`), zero leaks, and correct string outcome delivery.
-    * `test_defer_early_exit_nested_blocks_inside_loop_break_and_continue`: deep nested blocks inside loop with `continue` and `break`, proving inner blocks unwind to loop boundary while outer function defers remain isolated and unexecuted until function return.
-  - Enhanced `std/tests/mem/defer_test.vl` to assert error payload string integrity on `helper_fail_unwind` and `helper_or_return_unwind`.
-* **Residual Limitation**:
-  - Branch-specific scoping for `if`/`else` and `on` arms (preventing branch-local defers from leaking into sibling branches or untaken paths) is formally audited and verified in Task 58.7.
-* **Verification**:
-  - `python -m pytest tests/test_defer.py -q`: all 28 passed in 10.01s.
-  - `python -m pytest tests -q`: 1357 passed, 2 skipped in 816.46s (0:13:36) — 100% pass rate.
-  - `python scripts/check_determinism.py`: SHA-256 fixed point verified (`e5a4c003821f75e2b78fecb66a6d3ab247e25143a8713c0f9eaea1bb582039c4`).
-  - `python scripts/count_lines.py`: all 119 source files in `src/` remain $\le 395$ lines.
+**76.6** Split the suite into tiers and make CI honest about duration: a `fast`
+marker (no C compiler invocation) running in under 2 minutes on every push, and
+the full suite on PRs. The current suite is ~15.5 minutes; contributors will
+not wait, and a 15-minute red X trains people to ignore CI.
 
-##### Task 58.7: Handle `if`/`else`/`on` branches [COMPLETED] ✅
-* **Former Defect**:
-  - In `src/backend/codegen_match.vl:80-82`, tagged union pattern matching cases iterated `cur_case.body.first_stmt` calling `emit_c_stmt` directly without lexical block scoping (`emit_c_block_stmts`). Any `defer` statement declared inside a tagged union `on` arm was never emitted at arm exit, remaining on the compiler's cleanup stack until function exit and failing compilation with `'p' undeclared` (or executing outside the switch case).
-  - In conditional branching constructs (`if`, `else if`, `else`, `on` string/variant/integer switches), branch-local cleanups needed strict isolation guarantees to prove that only the taken branch runs its cleanup, sibling branches remain isolated, and untaken branch cleanups are never executed.
-* **Fix Applied**:
-  - Bound tagged union `on` arms to lexical block cleanups in `src/backend/codegen_match.vl`: replaced manual statement iteration with `emit_c_block_stmts(sb, st, cur_case.body, indent + 1, defers)`, ensuring arm-local defers execute before `break;\n` at the closing `}` of the arm.
-  - Verified branch isolation in `src/backend/codegen_stmt.vl`: `if` and `else` branches invoke `emit_c_block_stmts` within isolated scopes, ensuring branch-local defers are popped and flushed at the end of each taken branch.
-  - Added 4 comprehensive test suites in `tests/test_defer.py`:
-    * `test_defer_if_else_chain_branch_isolation`: tests 3 branches in an `if`/`else if`/`else` chain with per-branch allocations and defers across 3 distinct passes; verifies exactly-once execution of the taken branch's cleanup, zero sibling leakage, and 0 bytes leaked.
-    * `test_defer_match_tagged_union_variant_arms_scoping`: tests unit variants (`.Stop`), single payload variants (`.Walk(steps)`), and multi-field variants (`.Teleport(x, y)`), verifying arm-local defers execute at arm closing `}` before `break` with full access to pattern variables and zero leaks.
-    * `test_defer_match_string_pattern_arms_scoping`: tests string pattern arms and default `else`, verifying clean execution at arm closing `}`.
-    * `test_defer_branch_early_exit_no_double_emission_and_sibling_safety`: tests early exit inside an `if` branch with return vs fallthrough `else`, proving no double emission and complete sibling isolation under early exits.
-  - Enhanced `std/tests/mem/defer_test.vl` with `test_tagged_union_arm` testing tagged union `.Move(dist)` pattern matching arm defer execution and zero memory leak.
-* **Residual Limitation**:
-  - Memory sanitizer (ASan/UBSan) and leak sanitizer integration in CI is addressed in Task 58.8.
-* **Verification**:
-  - `python -m pytest tests/test_defer.py -q`: all 32 passed in 10.23s.
-  - `std/tests/mem/defer_test.vl`: all 17 lifecycle assertions succeeded.
-  - Bootstrap chain rebuilt and deterministic: Gen2 and Gen3 SHA-256 match `43b85f57d652b5aefddf32d127f7c92220bc47e8d19b541ceaa9e3353926beb6`, matching `bootstrap.c`.
-  - Line count discipline: all 119 files in `src/` remain $\le 395$ lines (`codegen_match.vl` at 203 lines).
+## Phase Exit Criteria
 
-##### Task 58.8: Add leak/UAF sanitizer coverage [COMPLETED] ✅
-* **Former Defect**:
-  - The defer lifecycle test matrix lacked automated AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan) execution in continuous integration, and lacked explicit use-after-free (UAF) and double-free stress probes under complex defer control-flow paths.
-  - The self-hosted backend driver (`src/backend/driver_cc.vl`) did not forward user/CI-supplied `VELO_CFLAGS` or `VELO_LDFLAGS` to backend C compiler invocations, preventing external sanitizer flags from instrumenting emitted C code during `velo run` / `velo build`.
-* **Fix Applied**:
-  - Enhanced backend driver in `src/backend/driver_cc.vl` to inspect and pass `VELO_CFLAGS` and `VELO_LDFLAGS` across GCC, Clang, and MSVC compilations, and respect the `CC` environment variable (e.g. `CC=clang`).
-  - Added a dedicated `sanitizer` workflow job to `.github/workflows/ci.yml` running on Ubuntu 24.04 with Clang, testing both `std/tests/mem/defer_test.vl` and `tests/test_defer.py` under `-fsanitize=address,undefined -fno-omit-frame-pointer -g`, with `ASAN_OPTIONS="detect_leaks=1:halt_on_error=1:abort_on_error=1"` and `UBSAN_OPTIONS="halt_on_error=1:abort_on_error=1"`.
-  - Added 6 explicit sanitizer and memory-safety probe suites in `tests/test_defer.py`:
-    * `test_defer_allocation_free_balance_probe`: 50-iteration stress test across nested loops, breaks, continues, and branching; validates `mem.heap_used() - base == 0` and exact `alloc_count == free_count`.
-    * `test_defer_uaf_prevention_parent_child_lifo`: parent-child ownership probe proving strict LIFO cleanup frees child before parent; under ASan/UBSan, inverted ordering would cause an immediate heap-use-after-free.
-    * `test_defer_double_free_prevention_loop_break`: validates that loop iteration cleanups run on `break` without being re-emitted by loop exit blocks, preventing double-free crashes.
-    * `test_defer_double_free_prevention_early_return_in_branches`: multi-branch `if`/`else if`/`else` probe validating exactly-once execution and zero duplicate frees across early return and fallthrough paths.
-    * `test_defer_double_free_prevention_tagged_union_arm`: tagged union match arm allocation and defer free; proves arm-local defers do not collide or double-free with enclosing function cleanups.
-    * `test_defer_matrix_asan_ubsan_coverage`: executes `std/tests/mem/defer_test.vl` under active sanitizer flags (if available/configured) or heap accounting, asserting 0-leak baseline and zero sanitizer violation outputs.
-* **Residual Limitation**:
-  - Specification documentation in `docs/STEP2_SPECIFICATION.md` to be aligned with all implemented block-scoped defer semantics in Task 58.9.
-* **Verification**:
-  - `python -m pytest tests/test_defer.py -q`: all 38 passed in 13.06s.
-  - `python -m pytest tests -q`: all 1367 passed (2 skipped).
-  - Standalone `bin/velo.exe run std/tests/mem/defer_test.vl`: all assertions passed with 0 leaks.
-  - Bootstrap determinism: Gen2 and Gen3 SHA-256 match `b000e071c4a239124139c3103b91a282992a901690bbed0e7777e5d9e5bc7ab9`, matching `bootstrap.c`.
-  - Line count discipline: all 119 files in `src/` remain $\le 395$ lines (`src/backend/driver_cc.vl` at 266 lines).
-
-##### Task 58.9: Update the specification and close the phase [COMPLETED] ✅
-* **Former Defect**:
-  - `docs/STEP2_SPECIFICATION.md` Section 2.2 previously outlined general block scoping concepts without concrete verified code examples for branch scoping, match arm scoping, loop iteration cleanup with `break`/`continue`, or multi-level early-exit unwinding.
-  - The formal specification lacked explicit backend lowering contracts (`is_block`, `is_loop`, `is_zone`) and lifetime invariant proofs for child-before-parent resource ordering.
-* **Fix Applied**:
-  - Updated `docs/STEP2_SPECIFICATION.md` Section 2.2 with comprehensive sub-specifications:
-    * Section 2.2.8: Detailed concrete code examples for function scope (LIFO execution), conditional branch scoping & sibling isolation, tagged union pattern match arms, loop iteration boundaries with `break` & `continue`, and early-exit multi-level unwinding.
-    * Section 2.2.9: Backend lowering model and compiler implementation contracts detailing compile-time stack markers (`is_block`, `is_loop`, `is_zone`), `pop_scope_cleanups`, and early exit emission.
-    * Explicit lifetime and ownership contracts establishing the exactly-once, zero-leak, zero-use-after-free, and zero-double-free invariants.
-  - Added automated test suite `test_defer_step2_specification_examples` in `tests/test_defer.py` compiling and executing all specification examples to guarantee that all documented patterns compile and run cleanly with 0 bytes leaked.
-  - Formally closed Phase 58 and marked all Phase Exit Criteria complete:
-    * `defer` in `if`, `on`, and `loop` runs at the end of its own block.
-    * Loop-body defers run on every iteration, `continue`, and `break`.
-    * Early exits unwind in LIFO order with exactly-once semantics.
-    * Leak repro reports baseline heap usage (`mem.heap_used() - base == 0`).
-    * ASan/UBSan/leak checks are clean.
-* **Residual Limitation**:
-  - None for Phase 58. Control flow interaction between `break` and `on` inside loops is tracked in Phase 61 (`AUDIT-2026-11-10`).
-* **Verification**:
-  - `python -m pytest tests/test_defer.py -q`: all 39 passed in 14.38s.
-  - `python -m pytest tests -q`: all 1367 passed (2 skipped).
-  - Standalone `bin/velo.exe run std/tests/mem/defer_test.vl`: 17/17 assertions passed with 0 leaks.
-  - Bootstrap chain rebuilt and deterministic: Gen2 and Gen3 SHA-256 match `b000e071c4a239124139c3103b91a282992a901690bbed0e7777e5d9e5bc7ab9`, matching `bootstrap.c`.
-  - Line count discipline: all 119 files in `src/` remain $\le 395$ lines.
-
-#### Phase Exit Criteria
-
-- [x] `defer` in `if`, `on`, and `loop` runs at the end of its own block.
-- [x] Loop-body defers run on every iteration, `continue`, and `break`.
-- [x] Early exits unwind in LIFO order with exactly-once semantics.
-- [x] The leak repro reports baseline heap usage.
-- [x] ASan/UBSan/leak checks are clean.
+- Actions runs on Linux (gcc + clang), macOS (clang), Windows (gcc + MSVC), and
+  the sanitizer lane, all green on the same commit, with links committed to
+  `docs/CI_STATUS.md`.
+- `grep -rl "msys64" tests/` and `grep -rl "velo\.exe" tests/` are empty except
+  in `conftest.py`.
+- `velo check` is safe to run concurrently, proven by test.
 
 ---
 
-### Phase 59: Function/Method Call Argument Type Checking (P1) [COMPLETED] ✅
+# Phase 77: Language Completeness (P1) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-08`<br>
-**Severity:** P1 — checker accepts invalid programs; implicit truncation<br>
-**Depends on:** —<br>
-**Blocks:** Phase 60 (shared diagnostic helper)
+## Defect
 
-#### Defect
+Four absences push ordinary programs into hand-rolled workarounds or make them
+impossible to express cleanly: no closures, no interfaces/traits, no module
+privacy, and no conditional compilation. Each one is a design decision that may
+be defensible, but each currently forces a real cost on users, and none is
+documented as a deliberate limitation.
 
-`adapt_and_check_call_args` (`literal_check.vl:241-263`) checks integer and float conversion pairs but has no final `else`. When the argument is not an integer/float conversion case, nothing is reported.
+## Evidence
 
-```velo
-act f(a: i32) { io.println(a) }
-act main() {
-    f("x")    // velo check passes → GCC error
-    f(1.5)    // velo check passes → prints 1 (C truncation)
-    f(true)   // velo check passes → prints 1
-}
+| Fact | Evidence |
+| :--- | :--- |
+| No closures or lambdas | no `lambda`/`closure` token or parser path in `src/frontend/*`; async APIs take `act(...) -> void` function pointers plus a separate `user_data: @void` (`std/async/tcp.vl:10-11`) - the classic manual-capture workaround |
+| No traits/interfaces | `grep -rn "trait\|interface"` over `src/` and `docs/SPECIFICATION.md` finds only Prose hits in `docgen.vl` output text; there is no `trait` keyword in the lexer (`docs/SPECIFICATION.md:33` keyword table) |
+| No module privacy | no `pub`/`private`/`export` keyword in the keyword table (`docs/SPECIFICATION.md:33`); every `act`/`data` in an imported file is visible to the importer |
+| No conditional compilation | no `#if`, `ifdef`, or `cfg` construct in the lexer/parser; the language's only platform mechanism is the filename-suffix resolver (`src/backend/driver.vl:97-122`), which lives outside the language |
+| No import aliasing or selective import | no `as` in the import grammar; symbol collisions between modules are unavoidable |
+| `defer` takes a block, not an expression | Phase 58/69 semantics; there is no `defer fclose(f)` shape, so every cleanup site spells out a block |
+| No operator overloading escape hatch for new types | `act op <symbol>` exists (`docs/SPECIFICATION.md` 2.8) but there is no way to declare a type satisfies a contract, so generic code cannot constrain `T` beyond monomorphization |
 
-act g(a: bool) { ... }
-g(1)          // velo check passes → prints "true"
-```
+## Security Invariants
 
-A struct passed to an `i32` parameter also passes `velo check` and fails only at GCC. The same helper is used for UFCS/method calls (`type_checker.vl:215-222`), so `p.show(1.5)` silently truncates.
+- **I77.1** A missing language feature is documented in `docs/SPECIFICATION.md`
+  under "Deliberate limitations" with the workaround and the cost. Silence is
+  not allowed.
+- **I77.2** Any feature added must not weaken the existing borrow/escape
+  analysis (`docs/SPECIFICATION.md` 5.4 zone escape rules).
 
-#### Security Invariants
+## Tasks
 
-- Every argument must be checked against its parameter type, with no "fall through silently" branch.
-- Implicit narrowing and signed/unsigned mismatches remain rejected (Phase 46 contract).
-- Arity mismatches must be rejected.
-- Error messages must name the argument position, expected type, and actual type.
-- No C implicit conversion may be the only line of defense.
+**77.1** Document the four absences in a new `docs/SPECIFICATION.md` section
+"Deliberate Limitations" with workarounds. This is a one-commit, high-value
+task: it converts "unfinished" into "chosen", which is a legitimate position.
 
-#### Tasks
+**77.2** Decide on closures. Either (a) implement non-escaping closures
+(bare function pointers + stack context, rejected by the escape checker when
+they outlive their frame) - the cheap, sound option - or (b) keep function
+pointers and add a `bind(fn, args...) -> act(...)` helper in `std` that
+allocates a trampoline in a caller-provided arena. Either way, replace the
+`user_data: @void` pattern in `std/async/tcp.vl` and `std/http/async_server.vl`
+with the chosen mechanism, and add `examples/39_closures.vl`.
 
-##### Task 59.1: Add the mismatch matrix (red baseline) [COMPLETED] ✅
-* **Former Defect**:
-  - `adapt_and_check_call_args` (`src/analysis/literal_check.vl:350-373`) only checked integer-to-integer (`is_int_type` and `is_int_type`) and float-to-float (`is_float_type` and `is_float_type`) conversion pairs when incompatible.
-  - Non-numeric or cross-family argument type mismatches (such as string passed to `i32`, float literal or variable passed to `i32`, boolean passed to `i32`, integer passed to `bool`, struct passed to `i32`, pointer passed to `i32`, integer passed to `string`, or struct/pointer mismatches) fell through silently without triggering a diagnostic or incrementing `st.error_count`.
-  - As a result, `velo check` silently reported success, allowing invalid programs to pass to C code generation where they either suffered silent implicit C conversion/truncation (`f(1.5)` printing `1`, `g(1)` printing `true`) or failed with GCC/Clang compilation errors.
-* **Fix Applied**:
-  - Established the Red Baseline test matrix for Phase 59 across two test suites:
-    * Created `tests/test_call_arguments.py` (27 test cases) covering the full matrix of argument mismatches across free functions, methods/UFCS, extern functions, and generic instantiations, along with arity checking and explicit-cast control groups.
-    * Extended `tests/test_type_checker.py` with `TestCallArgumentTypeChecking` (6 test cases) validating that string->int, float->int, bool->int, int->bool, struct->int, and pointer->int are rejected at `velo check`.
-* **Residual Limitation**:
-  - Red baseline established:
-    * `tests/test_call_arguments.py`: 18 failed, 9 passed (the 9 passed are 6 existing arity error checks and 3 valid control tests; the 18 failed fail for the exact documented defect: `velo check` silently passes with return code 0).
-    * `tests/test_type_checker.py`: 6 failed, 23 passed (the 6 call argument mismatch tests fail because `velo check` returns 0).
-  - Implementation of the missing fallback mismatch diagnostic follows in Task 59.2.
-* **Verification**:
-  - `python -m pytest tests/test_call_arguments.py -q`: 18 failed, 9 passed (red baseline confirmed).
-  - `python -m pytest tests/test_type_checker.py -q`: 6 failed, 23 passed (red baseline confirmed).
-  - Line count discipline: all 119 compiler source files in `src/` remain $\le 395$ lines.
+**77.3** Decide on interfaces. Minimum viable: `contract Name { act f(...) }`
+plus static dispatch only (no vtables) - monomorphization already exists
+(`src/analysis/monomorphize.vl`), so static-only contracts are a small step and
+give generic code meaningful constraints. If rejected, document why in 77.1 and
+close the task.
 
-##### Task 59.2: Add the final mismatch diagnostic [COMPLETED] ✅
-* **Former Defect**:
-  - In `src/analysis/literal_check.vl:351-373`, `adapt_and_check_call_args` evaluated `if not types_are_compatible(cur_p.type_name, a_type)`:
-    * It checked `if not adapt_ok` (for literal adaptation), `else if is_int_type(...) and is_int_type(...)` (integer range/signedness errors), and `else if is_float_type(...) and is_float_type(...)` (float narrowing errors).
-    * It lacked a terminal `else` branch for any argument whose actual type was fundamentally incompatible with the expected parameter type (e.g. `string` -> `i32`, `f32`/`f64` -> `i32`, `bool` -> `i32`, `i32` -> `bool`, `struct` -> `i32`, pointer mismatches, etc.).
-    * As a consequence, non-numeric and cross-family type mismatches passed through semantic analysis without emitting an error or incrementing `st.error_count`, relying solely on backend C compilation or silently truncating.
-* **Fix Applied**:
-  - Added the terminal `else if a_type != "unknown" or st.error_count == 0` diagnostic branch in `adapt_and_check_call_args` in `src/analysis/literal_check.vl`.
-  - Constructed and emitted a descriptive, position-aware diagnostic with 1-based argument index tracking:
-    `Type mismatch in call argument <index>: expected '<expected>', got '<actual>'`
-  - Compacted bounds checks and helper routines in `src/analysis/literal_check.vl` to preserve strict file length limits (388 lines, well under 400).
-  - Rebuilt the complete 3-generation self-hosted compiler chain (`bin/velo.exe` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe`) and updated `bootstrap.c`.
-  - Verified bit-for-bit compiler determinism: SHA-256 of `emit-c src/main.vl` is identical between Gen2 and Gen3 (`3654c89f25373d4047840e9e0d863de8ecae3a32ce4fba1abfe69cf7d05d1a00`).
-* **Residual Limitation**:
-  - Arity mismatch enforcement and comprehensive call-path auditing across all AST call sites (constructors, method/UFCS edge cases, variadics) are covered under Tasks 59.3 through 59.5.
-* **Verification**:
-  - `python -m pytest tests/test_call_arguments.py -q`: 27 passed, 0 failed (turned the 18 previously failing test cases green with exact diagnostic assertions).
-  - `python -m pytest tests/test_type_checker.py -q`: 29 passed, 0 failed (turned the 6 previously failing call argument tests green with exact diagnostic assertions).
-  - Line count discipline: all 119 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
+**77.4** Add module privacy: `pub` prefix on `act`/`data` declarations, with
+unmarked declarations visible only inside their file. This is a breaking change;
+schedule it before 1.0 or never. Requires touching `symbol_table.vl` and every
+`std/` file's exported surface (mechanically: everything currently used
+cross-file gets `pub`).
 
-##### Task 59.3: Enforce arity for all call forms [COMPLETED] ✅
-* **Former Defect**:
-  - Arity checking across free functions, methods, UFCS calls, and extern declarations required formal coverage for edge cases (zero arguments passed to 1-argument parameters, multiple arguments passed to 1-argument parameters, zero-argument functions/methods invoked with extraneous arguments).
-  - Builtin `sizeof` call expressions in `src/analysis/type_checker.vl:239` lacked compile-time arity validation, returning `"usize"` unconditionally without checking `expr.arg_count != 1`, allowing malformed invocations like `sizeof()` or `sizeof(a, b)` to pass semantic analysis silently and fail only at backend C compilation.
-* **Fix Applied**:
-  - Added compile-time arity enforcement for `sizeof` in `src/analysis/type_checker.vl`:
-    `if expr.callee.kind == EXPR_IDENT and expr.callee.str_val == "sizeof" { if expr.arg_count != 1 { report_error("semantic", expr.line, expr.col, "sizeof takes exactly 1 argument"); st.error_count += 1 }; return "usize" }`
-  - Validated that `adapt_and_check_call_args` and `type_checker.vl` call paths strictly enforce arity:
-    * Free function calls: `expr.arg_count != fn_sym.param_count` -> `"Mismatched argument count in function call"`.
-    * Method/UFCS calls: `expr.arg_count + 1 != fn_sym.param_count` -> `"Mismatched argument count in method call"`.
-    * Extern function calls: `expr.arg_count != fn_sym.param_count` -> `"Mismatched argument count in function call"`.
-    * Confirmed Velo has no variadics; all foreign `extern act` signatures strictly enforce exact arities.
-    * All argument traversal loops in `literal_check.vl`, `shelf_checks.vl`, and `map_checks.vl` terminate safely (`cur_a != null and cur_p != null`), preventing out-of-bounds argument access.
-  - Expanded `tests/test_call_arguments.py` (`TestCallArityChecks`) from 6 tests to 27 comprehensive test cases covering zero-to-one, two-to-one, one-to-zero, zero-to-zero, UFCS free-to-method, UFCS method-to-free, extern arity, and `sizeof` arity.
-  - Rebuilt the complete 3-generation self-hosted compiler chain and verified bit-for-bit SHA-256 determinism (`dc7cb00c36e0cf9d690d62381115d8895e62d012a10f7a24ad9f5fe1c97a114b`).
-* **Residual Limitation**:
-  - Literal adaptation guarding against implicit truncation (`f(1.5)` to `i32`) and call path auditing (constructors, module functions, function pointers) are tracked under Tasks 59.4 and 59.5.
-* **Verification**:
-  - `python -m pytest tests/test_call_arguments.py -q`: 48 passed, 0 failed.
-  - `python -m pytest tests/test_call_arguments.py tests/test_type_checker.py -q`: 78 passed, 0 failed.
-  - Line count discipline: all 119 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
+**77.5** Add import aliasing (`use std.json as j`) and selective import
+(`use std.json { JsonValue, json_parse }`). Collisions are already reachable:
+`std/os/args.vl` and `std/cli/*` both define argument concepts.
 
-##### Task 59.4: Guard literal adaptation against truncation [COMPLETED] ✅
-* **Former Defect**:
-  - Contextual literal adaptation in `src/analysis/literal_check.vl` needed rigorous boundary verification to ensure unsuffixed integer literals only adapt within strict integer bounds and never cross type family boundaries:
-    * Passing float literals to integer parameters (e.g. `f(1.5)` to `i32`) must be rejected at compile time and never silently truncate at C codegen.
-    * Passing integer literals to boolean parameters (e.g. `g(1)`, `g(0)`) must be rejected at compile time and never implicitly convert.
-    * Passing boolean literals to integer parameters (e.g. `f(true)`, `f(false)`) must be rejected at compile time.
-    * Negative integer literals must never adapt to unsigned integer parameters (e.g. `f(-1)` to `u8`, `u16`, `u32`, `u64`), and out-of-range negative signed values (e.g. `-129` to `i8`, `-32769` to `i16`, `-2147483649` to `i32`) must be rejected at compile time.
-    * Explicit casts (e.g. `1.5 as i32`, `1 as bool`, `true as i32`, `-1 as u32`) must continue to be accepted.
-* **Fix Applied**:
-  - Audited `try_adapt_int_literal` and `check_int_literal_fits_type` in `src/analysis/literal_check.vl`:
-    * Confirmed `try_adapt_int_literal` immediately guards with `if not is_int_type(target_t) { return true }`, ensuring it never adapts integer literals to non-integer types like `bool`, `f32`, `f64`, or pointers, leaving type compatibility to report precise diagnostics.
-    * Confirmed `is_unsuffixed_int_literal` rejects float and boolean literal expressions, preventing any implicit float-to-int or bool-to-int adaptation.
-    * Confirmed `check_int_literal_fits_type` strictly enforces negative bounds (`-128` for `i8`, `-32768` for `i16`, `-2147483648` for `i32`) and completely rejects negative literals for all unsigned target types (`is_unsigned_int_type(target_t)`).
-  - Added dedicated test suite `TestLiteralAdaptationGuards` (36 test cases) in `tests/test_call_arguments.py` validating:
-    * Float literals (`1.5`, `3.14`, `2.5`, `0.5`) to `i32`, `i64`, `u8`, `u32` are rejected with precise type mismatch diagnostics.
-    * Int literals (`1`, `0`, `-1`) to `bool` are rejected with precise type mismatch diagnostics.
-    * Bool literals (`true`, `false`) to `i32` are rejected with precise type mismatch diagnostics.
-    * Negative int literals (`-1`) to `u8`, `u16`, `u32`, `u64` are rejected with out-of-range diagnostics.
-    * Negative int literals out-of-range (`-129` to `i8`, `-32769` to `i16`, `-2147483649` to `i32`) are rejected.
-    * In-range negative int literals (`-128` to `i8`, `-32768` to `i16`, `-2147483648` to `i32`) and positive literals (`255` to `u8`, `65535` to `u16`, `2147483647` to `i32`, `4294967295` to `u32`) pass.
-    * Negative float literals (`-1.5`) to `i32` and `bool` are rejected.
-    * Explicit casts (`1.5 as i32`, `1 as bool`, `true as i32`, `-1 as u32`, `256 as u8`) pass.
-* **Residual Limitation**:
-  - Full call-path audit across constructors, builtins, module functions, function pointers, and generic calls is tracked under Task 59.5.
-* **Verification**:
-  - `python -m pytest tests/test_call_arguments.py -q`: 84 passed, 0 failed (36 new tests added).
-  - `python -m pytest tests/test_call_arguments.py tests/test_type_checker.py -q`: 114 passed, 0 failed.
-  - Line count discipline: all 119 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
+**77.6** Allow expression `defer`: `defer fclose(f)` lowering to the existing
+block-defer path with a single call statement. Test in
+`tests/test_defer.py` alongside the Phase 58 matrix.
 
-##### Task 59.5: Audit every call path [COMPLETED] ✅
-* **Former Defect**:
-  - Prior to this audit, three AST call expression paths bypassed argument checking or arity checking entirely:
-    1. **Function pointers (`act(...) -> ...`)**: In `type_checker.vl`, calling a function pointer variable (`cb(x)`), struct field function pointer (`holder.cb(x)`), or complex function pointer expression returned `get_act_return_type` immediately without checking parameter types or argument count, allowing arbitrary argument mismatches or arity errors to pass silently.
-    2. **Kind variant constructors (`Kind.Variant(...)`)**: In `type_checker.vl`, invoking a Kind variant constructor returned `k_sym.name` without validating payload types or arity, allowing invalid payloads (e.g. `Shape.Circle("string")` when `f64` expected) or extraneous arguments on zero-payload variants to pass silently.
-    3. **Method receivers**: In `type_checker.vl`, method/UFCS calls checked arguments 2..N against parameters 2..N, but never checked the receiver expression (`expr.callee.target`) against `self` (parameter 1), allowing receiver type mismatches (e.g. `123.show()` when `self: @Counter`) to pass unchecked.
-* **Fix Applied**:
-  - Implemented `src/analysis/call_checks.vl` (149 lines, $\le 394$) providing dedicated semantic verification routines:
-    * `check_act_call(st, expr, act_t)`: Parses the `act(...) -> ...` type signature, verifies exact argument count matching, checks each argument type against the corresponding parameter type with literal adaptation and compatibility checks, and reports position-aware diagnostics (`Type mismatch in call argument <n>: expected '<t>', got '<t>'` or `Mismatched argument count in function call`).
-    * `check_variant_constructor(st, expr, k_sym, v_sym)`: Validates variant constructor invocations for zero-payload variants (`Variant does not take arguments`), single payload variants (`Mismatched argument count in variant constructor` and argument type matching), and multi-field variants (`Mismatched argument count in variant constructor` and per-field type matching).
-    * `check_method_receiver(st, expr, fn_sym)`: Infers the receiver expression's type and verifies compatibility with `self` (first parameter), reporting `Type mismatch in method receiver: expected '<expected>', got '<actual>'` on mismatch.
-  - Wired all three helpers into `src/analysis/type_checker.vl`:
-    * Routed Kind variant constructor calls to `check_variant_constructor`.
-    * Routed struct field function pointer calls (`is_act_type`) to `check_act_call`.
-    * Added `check_method_receiver` before validating arguments in method calls.
-    * Routed variable and general expression function pointer calls (`is_act_type`) to `check_act_call`.
-  - Audited all 14 AST call paths across the compiler to ensure complete coverage:
-    1. Free functions (`adapt_and_check_call_args` in `literal_check.vl`)
-    2. Methods (`check_method_receiver` + `adapt_and_check_call_args` in `type_checker.vl`)
-    3. UFCS calls (`check_method_receiver` + `adapt_and_check_call_args` in `type_checker.vl`)
-    4. `extern act` foreign functions (`adapt_and_check_call_args` in `literal_check.vl`)
-    5. Generic functions (monomorphization + `adapt_and_check_call_args` in `type_checker.vl`)
-    6. Function pointer variables (`check_act_call` in `call_checks.vl`)
-    7. Struct field function pointers (`check_act_call` in `call_checks.vl`)
-    8. Kind variant constructors (`check_variant_constructor` in `call_checks.vl`)
-    9. Struct literal initializers (`type_checker.vl` / `check_struct_lit`)
-    10. Builtin `sizeof` (`type_checker.vl` arity check)
-    11. Builtin `assert` (`type_checker.vl` boolean condition check)
-    12. Builtin SIMD constructors (`simd_checks.vl` / `check_simd_constructor`)
-    13. Builtin reflection (`reflect_checks.vl` / `check_reflect_builtin`)
-    14. Builtin modules: `io.*` (`io_checks.vl`), `mem.*` (`mem_checks.vl`), `fs.*` (`fs_checks.vl`), `str.*` (`str_checks.vl`), `math.*` (`math_checks.vl`), `time.*` (`time_checks.vl`), `os.*` (`os_checks.vl`), `shelf.*` (`shelf_checks.vl`), `ring.*` (`ring_checks.vl`), `map.*` (`map_checks.vl`), `bitset.*` (`bitset_checks.vl`).
-  - Added comprehensive audit test suite `TestCallPathAuditMatrix` (69 test cases) to `tests/test_call_arguments.py` testing every single call path with both type mismatch/arity mismatch rejection and control group valid call acceptance.
-  - Attached complete Call Path Audit Table below.
-  - Rebuilt complete 3-generation self-hosted compiler chain (`bin/velo.exe` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe`) and verified bit-for-bit SHA-256 fixed-point determinism (`eaa0dccc101fb2583dbc6b2abfd8ecc99c23959d5e5e43c6b3b174436d01ff4b`).
-* **Residual Limitation**:
-  - Task 59.6 documents the diagnostic contract in `docs/SPECIFICATION.md` and verifies the full security regression suite to close Phase 59.
-* **Verification**:
-  - `python -m pytest tests/test_call_arguments.py tests/test_type_checker.py -q`: 183 passed, 0 failed (69 new audit tests added).
-  - Maintained 3-generation self-hosting bootstrap determinism (Gen2 and Gen3 emit identical bit-for-bit C output matching `bootstrap.c` with SHA-256 `eaa0dccc101fb2583dbc6b2abfd8ecc99c23959d5e5e43c6b3b174436d01ff4b`).
-  - Verified line count standards across all 120 compiler source files in `src/` ($\le 394$ lines, hard limit 400; `call_checks.vl` is 149 lines, `type_checker.vl` is 391 lines).
+**77.7** Add a "language surface" conformance test that enumerates every
+keyword from `docs/SPECIFICATION.md` section 1.4 and asserts each appears in
+`src/frontend/token.vl`, so documentation and lexer cannot drift.
 
-###### Call Path Audit Table
+## Phase Exit Criteria
 
-| # | Call Path Category | Syntax Form | Checking Mechanism | Arity Enforced? | Type Enforced? | Test Reference |
-|---|---|---|---|:---:|:---:|---|
-| 1 | Free Function | `f(a, b)` | `adapt_and_check_call_args` (`literal_check.vl`) | Yes | Yes | `test_audit_free_function_*` |
-| 2 | Method Call | `c.inc(step)` | `check_method_receiver` + `adapt_and_check_call_args` | Yes | Yes | `test_audit_method_*` |
-| 3 | UFCS Call | `p.offset(dx, dy)` | `check_method_receiver` + `adapt_and_check_call_args` | Yes | Yes | `test_audit_ufcs_*` |
-| 4 | Extern Function | `extern act c_puts(...)` | `adapt_and_check_call_args` (`literal_check.vl`) | Yes | Yes | `test_audit_extern_*` |
-| 5 | Generic Function | `wrap[T](val, tag)` | Monomorphization + `adapt_and_check_call_args` | Yes | Yes | `test_audit_generic_*` |
-| 6 | Function Pointer Variable | `cb: act(i32) -> i32` | `check_act_call` (`call_checks.vl`) | Yes | Yes | `test_audit_fn_ptr_var_*` |
-| 7 | Struct Field Fn Pointer | `h.on_event(42)` | `check_act_call` (`call_checks.vl`) | Yes | Yes | `test_audit_struct_field_fn_ptr_*` |
-| 8 | Kind Variant Constructor | `Shape.Circle(r)` | `check_variant_constructor` (`call_checks.vl`) | Yes | Yes | `test_audit_kind_variant_*` |
-| 9 | Struct Literal Init | `Point { x: 1, y: 2 }` | `check_struct_lit` (`type_checker.vl`) | Yes | Yes | `test_audit_struct_literal_*` |
-| 10 | Builtin `sizeof` | `sizeof(i64)` | Compile-time arity check (`type_checker.vl:240`) | Yes | Yes | `test_audit_builtin_sizeof_*` |
-| 11 | Builtin `assert` | `assert(cond, msg)` | Boolean condition check (`type_checker.vl:228`) | Yes | Yes | `test_audit_builtin_assert_*` |
-| 12 | Builtin SIMD | `f32x4(x, y, z, w)` | `check_simd_constructor` (`simd_checks.vl`) | Yes | Yes | `test_audit_builtin_simd_*` |
-| 13 | Builtin Reflection | `field_count(T)` | `check_reflect_builtin` (`reflect_checks.vl`) | Yes | Yes | `test_audit_builtin_reflect_*` |
-| 14.1 | Module `io.*` | `io.println(msg)` | `io_checks.vl` closed namespace + arity/type checks | Yes | Yes | `test_audit_module_io_*` |
-| 14.2 | Module `mem.*` | `mem.copy(dst, src, n)` | `mem_checks.vl` pointer and byte count checks | Yes | Yes | `test_audit_module_mem_*` |
-| 14.3 | Module `fs.*` | `fs.read_file(path)` | `fs_checks.vl` signature and arity checks | Yes | Yes | `test_audit_module_fs_*` |
-| 14.4 | Module `str.*` | `str.len(s)` | `str_checks.vl` signature and arity checks | Yes | Yes | `test_audit_module_str_*` |
-| 14.5 | Module `math.*` | `math.sqrt(x)` | `math_checks.vl` float argument checks | Yes | Yes | `test_audit_module_math_*` |
-| 14.6 | Module `time.*` | `time.sleep_ms(ms)` | `time_checks.vl` integer argument checks | Yes | Yes | `test_audit_module_time_*` |
-| 14.7 | Module `os.*` | `os.exit(code)` | `os_checks.vl` integer argument checks | Yes | Yes | `test_audit_module_os_*` |
-| 14.8 | Module `shelf.*` | `xs.put(item)` | `shelf_checks.vl` element type compatibility | Yes | Yes | `test_audit_module_shelf_*` |
-| 14.9 | Module `ring.*` | `r.put(item)` | `ring_checks.vl` element type compatibility | Yes | Yes | `test_audit_module_ring_*` |
-| 14.10 | Module `map.*` | `m.put(k, v)` | `map_checks.vl` key/value type compatibility | Yes | Yes | `test_audit_module_map_*` |
-| 14.11 | Module `bitset.*` | `b.set(i)` | `bitset_checks.vl` integer index checks | Yes | Yes | `test_audit_module_bitset_*` |
-
-##### Task 59.6: Add security/regression tests and documentation [COMPLETED] ✅
-* **Former Defect**:
-  - The language specification (`docs/SPECIFICATION.md`) did not document call argument type checking rules, arity requirements, contextual literal adaptation boundaries, or the position-aware diagnostic format.
-  - A regression suite formally locking in the Phase 59 security invariants and verifying the canonical defect cases (`f("x")`, `f(1.5)`, `f(true)`, `g(1)`, `f(struct)`, `p.show(1.5)`) against compile-time semantic analysis was needed to prevent regressions.
-* **Fix Applied**:
-  - Added Section 4.2 ("Function and Method Call Argument Type Checking") to `docs/SPECIFICATION.md` detailing:
-    * Core invariants (no implicit narrowing/truncation, position-aware reporting, arity enforcement, contextual literal adaptation, explicit casts).
-    * Comprehensive call path coverage across all 14 categories.
-  - Added `TestSecurityRegressionSuite` (9 test cases) to `tests/test_call_arguments.py`:
-    * Validated compile-time semantic rejection of all canonical defect cases (`f("x")`, `f(1.5)`, `f(true)`, `g(1)`, `f(struct)`, `p.show(1.5)`) at `velo check` with semantic error verification.
-    * Validated multi-argument position reporting (e.g. argument 3, argument 2).
-    * Validated that explicit casts (`1.5 as i32`, `true as i32`, `1 as bool`, `1.5 as i32` on UFCS) pass cleanly.
-  - Checked off all Phase Exit Criteria and closed Phase 59.
-* **Residual Limitation**:
-  - None for Phase 59. Condition type checking in `if` and `loop` statements is tracked under Phase 60.
-* **Verification**:
-  - `python -m pytest tests/test_call_arguments.py tests/test_type_checker.py -q`: 192 passed, 0 failed.
-  - Full test suite: 1528 passed, 2 skipped (100% pass rate).
-  - Maintained 3-generation self-hosting bootstrap determinism (Gen2 and Gen3 emit identical bit-for-bit C output matching `bootstrap.c` with SHA-256 `eaa0dccc101fb2583dbc6b2abfd8ecc99c23959d5e5e43c6b3b174436d01ff4b`).
-  - Line count discipline: all 120 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
-
-#### Phase Exit Criteria
-
-- [x] `f("x")`, `f(1.5)`, `f(true)`, `g(1)`, and `f(struct)` fail at `velo check`.
-- [x] Arity errors are compile-time diagnostics.
-- [x] Every call path (free, method, UFCS, extern, generic) is covered.
-- [x] Explicit casts still work.
+- "Deliberate Limitations" exists and covers every absence found by
+  `77.7`'s conformance test.
+- At least the closure decision is resolved either way, with the async APIs
+  updated or a documented rationale committed.
 
 ---
 
-### Phase 60: `if`/`loop` Condition Type Checking (P1) [COMPLETED] ✅
+# Phase 78: Standard Library Breadth (P1) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-09`<br>
-**Severity:** P1 — checker accepts invalid programs; pointer truthiness<br>
-**Depends on:** Phase 59 (shared condition/mismatch diagnostics)<br>
-**Blocks:** —
+## Defect
 
-#### Defect
+The stdlib covers what the compiler needed to exist. It does not cover what a
+program needs to exist. The most damaging omissions: no sorting at all, no
+regular expressions, no DNS resolution, no local time / time zones, no
+compression, and no way to decode anything but UTF-8/hex/base32/base64/binary.
 
-`type_checker_stmt.vl:149-164` only calls `infer_expr_type` for `if` and `loop` conditions; it never requires `bool`.
+## Evidence
 
-```velo
-if 1 { }        // passes; always true
-if "x" { }      // passes; pointer is always true
-if p { }        // passes; GCC error (struct condition)
-loop 5.0 { }    // passes; infinite
-loop p { }      // passes; invalid C
-```
+| Fact | Evidence |
+| :--- | :--- |
+| No sorting anywhere | `grep -rn "sort\|qsort"` over `std/` excluding tests -> one hit, a comment in `std/url/defs.vl:16` [VERIFIED]. A collection library without `sort` is not usable for data work. |
+| No regular expressions | `grep -rn "regex"` over `std/`, `src/` -> 0 hits [VERIFIED] |
+| No DNS | `grep -rn "getaddrinfo\|gethostbyname\|inet_pton\|DNS"` over `std/`, `runtime/` -> 0 hits [VERIFIED]. `std/net/addr.vl` uses `inet_addr`, so **hostnames cannot be resolved at all**; every connection needs a numeric IP. |
+| No local time or time zones | `std/time/calendar.vl:7` "decomposed UTC calendar date"; `grep -rn "timezone\|tzset\|localtime"` over `std/` -> 0 hits [VERIFIED] |
+| No compression | no zlib/gzip/deflate/zstd module anywhere in `std/` |
+| No text encodings beyond UTF-8 | `std/encoding/` holds `base32`, `base64`, `binary`, `hex` only; no UTF-16, no Latin-1, no Windows-1252 |
+| JSON is a `data` tree, not a typed codec | `std/json/value.vl` `data JsonValue`; `std/json/value_ops.vl` for access - no derive/reflection-based struct mapping, so every schema is hand-written traversal |
+| CSV is a full-buffer parser | `std/csv/reader.vl:5` `csv_reader_init(s: StrSlice)` - a `StrSlice` requires the whole document in memory; no streaming reader despite the name |
+| Collections lack a deque/set | `std/coll/` has `hash`, `map`, `map_ops`, `ring`, `shelf`, `shelf_ops`; a `Set` is a `Map` with a dummy value, a priority queue is absent |
+| String search is byte-oriented only | `std/str/search.vl` - no case-insensitive rune-aware search beyond what `utf8.vl` exposes |
+| No decimal/fixed-point arithmetic in `std.math` | `std/math/` has `bits`, `float`, `int`, `trig`; `real-world-prob-test/02_fixed_point_currency.vl` exists precisely because this is missing |
 
-This is both a soundness hole and a source of silent logic errors: a non-empty string or non-null pointer is always truthy.
+## Security Invariants
 
-#### Security Invariants
+- **I78.1** Every parser that reads attacker-controlled bytes (JSON, CSV, URL,
+  HTTP, base64) has a fuzz corpus and a documented maximum input size or an
+  explicit unbounded-input warning.
+- **I78.2** No stdlib function allocates without a bounds on the amount
+  derived from input length unless it is documented as O(input).
 
-- Conditions must be `bool`; no pointer, string, integer, or struct truthiness.
-- Flow-sensitive narrowing (`if x != null`) must keep working.
-- `if` expressions must still type-check their branches independently.
-- Codegen must assert that a non-`bool` condition never reaches emission.
+## Tasks
 
-#### Tasks
+**78.1** `std/coll/sort.vl`: stable merge sort and unstable introsort for
+shelves, generic over element size, with a comparator `act(@void, @void) -> i32`
+and typed convenience wrappers for primitives. Test: 10k-element randomized
+matrix against Python's `sorted`, plus a stability test.
 
-##### Task 60.1: Add the condition matrix (red baseline) [COMPLETED] ✅
-* **Former Defect**:
-  - `type_checker_stmt.vl:150-161` (`STMT_IF`) only called `infer_expr_type(st, stmt.expr)` without verifying that the condition expression evaluates to `bool`.
-  - `type_checker.vl:358-372` (`EXPR_IF`) only called `infer_expr_type(st, expr.left)` without verifying that the ternary condition expression evaluates to `bool`.
-  - Non-boolean values (integers, strings, structs, raw pointers, `null`, floats, arrays) in `if` statements and `if` expressions silently passed `velo check` with exit code 0.
-  - While scalar non-booleans (such as integers or raw pointers) became truthy C conditions (`if (1)` or `if (ptr)`) causing subtle logic bugs and pointer truthiness hazards, non-scalar conditions (such as structs `if p {}`) passed `velo check` and crashed only at backend C compilation (`used struct type value where scalar is required`).
-* **Fix Applied**:
-  - Established the Red Baseline test matrix for Phase 60 across two test suites:
-    * Created `tests/test_conditions.py` (31 test cases) covering:
-      - `TestIfStatementConditionTypeChecking` (10 tests: int literal, int var, negative int, string literal, string var, struct, pointer, null, float, array).
-      - `TestIfExpressionConditionTypeChecking` (6 tests: int, string, struct, pointer, null, float).
-      - `TestLoopConditionTypeChecking` (5 tests: float, string, struct, pointer, null).
-      - `TestValidConditionsControlGroup` (10 tests: bool literals, bool vars, binary comparisons, logical operators, optional null-checks, valid if-expressions, bool loop conditions, count loops, range loops).
-    * Extended `tests/test_type_checker.py` with `TestConditionTypeChecking` (6 tests) validating rejection of int, string, struct, pointer, null, and float conditions.
-* **Residual Limitation**:
-  - Red baseline established:
-    * `tests/test_conditions.py`: 16 failed, 15 passed (the 15 passed are 5 existing loop non-count/non-bool checks and 10 valid control tests; the 16 failed fail for the exact documented defect: `velo check` silently returns code 0 on non-`bool` conditions).
-    * `tests/test_type_checker.py`: 6 failed, 29 passed (the 6 condition type check tests fail because `velo check` returns 0).
-  - Implementation of `require_bool_condition` and its integration across all condition sites follows in Tasks 60.2 and 60.3.
-* **Verification**:
-  - `python -m pytest tests/test_conditions.py -q`: 16 failed, 15 passed (red baseline confirmed).
-  - `python -m pytest tests/test_type_checker.py -q`: 6 failed, 29 passed (red baseline confirmed).
-  - Line count discipline: all 120 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
+**78.2** `std/text/regex.vl`: a backtracking-free Thompson NFA engine (POSIX
+ERE subset: classes, anchors, `*+?{}`, alternation, groups). No backreferences.
+Test against a 200-row fixture table; add a ReDoS test asserting linear time on
+`(a+)+b` style patterns.
 
-##### Task 60.2: Implement `require_bool_condition` [COMPLETED] ✅
-* **Former Defect**:
-  - The compiler lacked a centralized helper to validate that expressions evaluated as conditions produce a boolean type (`bool`).
-  - Condition sites performed unchecked inference or ad-hoc checks, allowing non-boolean types (integers, strings, structs, raw pointers, null, floats, arrays) to pass semantic analysis.
-* **Fix Applied**:
-  - Implemented `require_bool_condition(st: @SymbolTable, expr: @ExprNode) -> bool` in `src/analysis/type_checker.vl`:
-    * Evaluates `infer_expr_type(st, expr)`.
-    * If the inferred type is `"bool"`, returns `true`.
-    * Otherwise, if not `"unknown"` (or if no previous errors have been reported), emits a clear, position-aware diagnostic that names the actual type:
-      `Condition must be of type 'bool', got '<actual>'`
-      and increments `st.error_count`, returning `false`.
-  - Moved `check_thread_call` to `src/analysis/call_checks.vl` to maintain strict line count discipline in `src/analysis/type_checker.vl` (391 lines, $\le 394$).
-  - Integrated `require_bool_condition` in `src/analysis/type_checker_stmt.vl` (`STMT_IF`) and `src/analysis/type_checker.vl` (`EXPR_IF`).
-  - Rebuilt the complete 3-generation self-hosted bootstrap chain (`bin/velo.exe` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe`) and updated `bootstrap.c`.
-  - Verified bit-for-bit SHA-256 fixed-point determinism: `dbe22bc4e956b8bf7387818b97bbd293cdf2d4ef2a053d629a4b63dff3dfa588`.
-  - Updated tests in `tests/test_conditions.py` and `tests/test_type_checker.py` with character-exact diagnostic assertions naming the actual type (including `i32`, `string`, `Point`, `@Point`, `@void`, `f32`, and `[4]i32`).
-* **Residual Limitation**:
-  - Full audit of all remaining condition sites (including loop condition forms and any future guards) is tracked under Task 60.3; codegen defense is tracked under Task 60.5.
-* **Verification**:
-  - `python -m pytest tests/test_conditions.py tests/test_type_checker.py -q`: 66 passed, 0 failed (turned all 22 red baseline failures green with exact diagnostic assertions).
-  - `python -m pytest tests/test_conditions.py tests/test_call_arguments.py tests/test_type_checker.py -q`: 229 passed, 0 failed.
-  - Maintained 3-generation self-hosting bootstrap determinism (Gen2 and Gen3 emit identical bit-for-bit C output matching `bootstrap.c` with SHA-256 `dbe22bc4e956b8bf7387818b97bbd293cdf2d4ef2a053d629a4b63dff3dfa588`).
-  - Verified line count discipline across all 120 compiler source files in `src/` ($\le 394$ lines, hard limit 400).
+**78.3** DNS: `std/net/dns.vl` implementing A/AAAA lookup via `getaddrinfo` on
+both platforms (Win32 `getaddrinfo`, POSIX `getaddrinfo`), then rewrite
+`std/net/tcp.vl:3` `tcp_connect` and `std/async/tcp.vl` to accept hostnames.
+This is arguably P0 for network use; it is listed P1 only because Phase 70
+already rewrites both files. Test: resolve `localhost` and an IP literal, assert
+both connect.
 
-##### Task 60.3: Apply the helper to all condition sites [COMPLETED] ✅
-* **Former Defect**:
-  - Semantic condition checking needed to be verified across all recursive, nested, and chained control flow structures.
-  - Chained `if ... else if ... else` statements and expressions recursively nest conditions (`STMT_IF` in `stmt.else_branch` and `EXPR_IF` in `expr.operand`), which could potentially bypass boolean condition validation or produce incomplete diagnostic reporting on intermediate branches.
-  - Condition loops (`loop <cond> {}`) must reject non-boolean, non-integer expressions while preserving integer count loops, and `assert` expressions must enforce boolean conditions.
-* **Fix Applied**:
-  - Audited all condition evaluation sites across `src/analysis/type_checker_stmt.vl` and `src/analysis/type_checker.vl`:
-    * `STMT_IF`: guards `stmt.expr` with `require_bool_condition(st, stmt.expr)`; `else if` statements recursively parse into `STMT_IF` attached to `else_branch` and are checked via `check_statement(st, expected_ret_type, stmt.else_branch)`, ensuring all chained conditions are validated.
-    * `EXPR_IF`: guards `expr.left` with `require_bool_condition(st, expr.left)`; chained `else if` expressions recursively nest `EXPR_IF` in `expr.operand` and are checked via `infer_expr_type(st, expr.operand)`, ensuring all chained conditions are validated.
-    * `STMT_LOOP`: lines 169-186 strictly discriminate count loops (`is_int_type(expr_t)`) vs condition loops (`expr_t == "bool"`), rejecting all non-int/non-bool condition forms (`f32`, `string`, structs, pointers, `@void`) with `Loop expression must be an integer (count) or 'bool' (condition), got '<expr_t>'`.
-    * `assert`: lines 228-229 guard `expr.first_arg`, enforcing `ct == "bool"` and reporting `assert condition must be a boolean expression`.
-    * `on` (pattern match) statements in Velo AST use pattern value lists without condition guards.
-  - Expanded `tests/test_conditions.py` with `TestChainedAndNestedConditionSites` (17 tests) covering:
-    * Chained `else if` statement non-bool conditions (`i32`, `string`, `Point`, `@void`).
-    * Deeply chained `else if` statement rejecting at the culprit branch.
-    * Nested `if` statements inside `then` and `else` blocks rejecting non-bool conditions.
-    * Binary arithmetic expressions (`if a + b {}`) producing non-bool types rejected with `got 'i32'`.
-    * Chained `else if` expressions rejecting non-bool conditions (`i32`, `string`, `@void`).
-    * Nested `if` expressions in `then` and `else` branches rejecting non-bool conditions (`i32`, `f32`).
-    * Nested `if` statements inside loops rejecting non-bool conditions.
-    * Positive control cases verifying valid chained `else if` statements, chained `if` expressions, and nested `if` structures with boolean conditions pass cleanly.
-  - Resolved latent condition defect exposed by `require_bool_condition` in `std/rand/xoshiro.vl:62,73,84,95`:
-    * Unparenthesized bitwise AND comparisons `if (J0 >> b) & (1 as u64) != (0 as u64)` parsed equality tighter than bitwise AND (`(J0 >> b) & ((1 as u64) != (0 as u64))`), yielding a `u64` condition expression that previously passed semantic analysis due to integer truthiness.
-    * Corrected to `if ((J0 >> b) & (1 as u64)) != (0 as u64)` across all 4 polynomial unroll loop bodies, turning 8 dependent standard library test suites green.
-* **Residual Limitation**:
-  - Flow-sensitive narrowing (`if x != null`, optional unwrapping) verification is tracked under Task 60.4.
-  - Codegen defense ensuring backend assertion triggers if non-`bool` condition ever reached codegen is tracked under Task 60.5.
-* **Verification**:
-  - `python -m pytest tests/test_conditions.py -q`: 48 passed, 0 failed.
-  - `python -m pytest tests/test_conditions.py tests/test_type_checker.py tests/test_call_arguments.py -q`: 246 passed, 0 failed.
-  - Standard library suite: `tests/test_std_coll.py`, `tests/test_std_rand.py`, `tests/test_std_uuid.py`, and `tests/test_stdlib_or_modernization.py` passing cleanly (100% green).
-  - Line count discipline: all 120 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
+**78.4** Local time: `std/time/tz.vl` reading the platform zone database
+(`TZif` parsing for POSIX, registry/`GetTimeZoneInformation` for Windows), plus
+`time_local(dt, tz)` alongside the existing UTC `calendar.vl`. Minimum: fixed
+offset zones and DST rules for the system zone.
 
-##### Task 60.4: Protect flow-sensitive narrowing [COMPLETED] ✅
-* **Former Defect**:
-  - Condition type checking must not break or regress flow-sensitive type narrowing (`?T` to `T`) in either `then` branches, `else` branches, ternary conditional expressions, or early-return guards (`return`, `break`, `continue`, `fail`).
-  - At the same time, optional types (`?@Node`, `?i32`) must never be treated as truthy conditions themselves (`if p {}`), which would create pointer/optional truthiness vulnerabilities and bypass explicit `!= null` checks.
-* **Fix Applied**:
-  - Verified flow-sensitive narrowing pipeline across `src/analysis/narrow_flow.vl`, `src/analysis/type_checker_stmt.vl`, and `src/analysis/type_checker.vl`:
-    * `require_bool_condition(st, stmt.expr)` evaluates the condition to `bool`, ensuring comparisons like `x != null`, `null != x`, `x == null`, and logical conjunctions `a != null and b != null` are valid boolean conditions.
-    * `apply_flow_narrowing(st, stmt.expr, true)` narrows optionals to concrete types in `then` branches and ternary `then` expressions.
-    * `apply_flow_narrowing(st, stmt.expr, false)` narrows optionals in `else` branches and ternary `else` expressions when checked against `== null`.
-    * Early exits (`return`, `break`, `continue`, `fail`) in `STMT_BLOCK` trigger `apply_flow_narrowing(st, cur.expr, false)` for the remaining statements in the block.
-    * Confirmed bare optional conditions (`if opt_ptr {}`, `if opt_int {}`, `let x = if opt_ptr { 1 } else { 0 }`) fail closed with `Condition must be of type 'bool', got '?@T'` / `'?T'`, preventing truthiness bypass.
-  - Added `TestFlowSensitiveNarrowingConditionInteractions` (17 tests) to `tests/test_conditions.py`:
-    * Optional pointer narrowing in `then` branch with `!= null`.
-    * Optional pointer narrowing in `else` branch with `== null`.
-    * Early-return narrowing for subsequent block statements.
-    * Loop `break` and `continue` early exit narrowing.
-    * `fail` early exit narrowing.
-    * Logical `and` conjunction narrowing multiple optionals.
-    * Ternary `if` expression `then` and `else` branch narrowing.
-    * Reversed null comparisons (`null != p`).
-    * Primitive optional narrowing (`?i32` to `i32`).
-    * Negative tests: member access without null check fails with `"without unwrapping"`.
-    * Negative tests: member access in non-narrowed branch fails with `"without unwrapping"`.
-    * Security tests: bare optional conditions in statements and expressions rejected with `Condition must be of type 'bool', got '...''`.
-* **Residual Limitation**:
-  - None; Task 60.5 adds codegen defense and completes all Phase 60 exit criteria.
-* **Verification**:
-  - `python -m pytest tests/test_conditions.py -q`: 65 passed, 0 failed.
-  - `python -m pytest tests/test_null_safety_optional.py tests/test_null_comparisons.py -q`: 10 passed, 0 failed.
-  - `python -m pytest tests/test_conditions.py tests/test_type_checker.py tests/test_call_arguments.py -q`: 263 passed, 0 failed.
-  - Line count discipline: all 120 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
+**78.5** Compression: `std/compress/deflate.vl` (raw DEFLATE, then zlib
+wrapper) with `inflate` first - decompression is what HTTP clients need. Then
+gzip framing. Test against known vectors; fuzz `inflate` with truncated input.
 
-##### Task 60.5: Add codegen defense and negative tests [COMPLETED] ✅
-* **Former Defect**:
-  - Backend C code generation lacked defense-in-depth condition checks. If a non-boolean expression bypassed the type checker, `codegen_stmt.vl` (`STMT_IF`, `STMT_LOOP`) and `codegen_expr.vl` (`EXPR_IF`) would blindly emit C expressions like `if (<expr>)`, `for (...; (<expr>); ...)`, and `((<expr>) ? ... : ...)`, relying on C's scalar truthiness semantics or failing only at backend C compilation with undefined behavior or invalid struct comparisons.
-* **Fix Applied**:
-  - Implemented defense-in-depth condition assertions across backend code generators:
-    * `src/backend/codegen_stmt.vl:236-241` (`STMT_IF`): asserts `infer_expr_type(st, stmt.expr) == "bool"`, failing closed with `Condition in 'if' statement must be of type 'bool' (defense in depth)` and incrementing `st.error_count`.
-    * `src/backend/codegen_stmt.vl:285-290` (`STMT_LOOP` condition form): asserts `infer_expr_type(st, stmt.expr) == "bool"`, failing closed with `Condition in 'loop' statement must be of type 'bool' (defense in depth)` and incrementing `st.error_count`.
-    * `src/backend/codegen_expr.vl:51-56` (`emit_if_expr`): asserts `infer_expr_type(st, expr.left) == "bool"`, failing closed with `Condition in 'if' expression must be of type 'bool' (defense in depth)` and incrementing `st.error_count`.
-  - Rebuilt the self-hosted bootstrap chain (`bin/velo.exe` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe`) and refreshed `bootstrap.c`.
-  - Verified 3-generation bit-for-bit SHA-256 fixed-point determinism: `bb421d1612f828d096fe5c1521299c945dc4010e668651736bad1deb642154c4`.
-  - Added `TestCodegenDefenseAndConditionSafety` (11 tests) to `tests/test_conditions.py`:
-    * `velo emit-c` fails with non-zero exit code on integer condition (`if 1`).
-    * `velo emit-c` fails on string condition (`if "hello"`).
-    * `velo emit-c` fails on struct condition (`if Point{...}`).
-    * `velo emit-c` fails on raw pointer condition (`if @Point`).
-    * `velo emit-c` fails on float loop condition (`loop 5.0`).
-    * `velo emit-c` fails on string loop condition (`loop "forever"`).
-    * `velo emit-c` fails on if-expression integer condition (`let x = if 1 ...`).
-    * `velo emit-c` fails on bare optional condition (`if opt_ptr`).
-    * `velo emit-c` succeeds and emits valid C for valid boolean condition statements (`if flag`).
-    * `velo emit-c` succeeds for flow-narrowed optional conditions (`if p != null`).
-    * `velo emit-c` succeeds for valid condition loops (`loop not done`).
-* **Residual Limitation**:
-  - None; Phase 60 is fully complete and closed.
-* **Verification**:
-  - `python -m pytest tests/test_conditions.py -q`: 76 passed, 0 failed.
-  - `python -m pytest tests/test_null_safety_optional.py tests/test_null_comparisons.py -q`: 10 passed, 0 failed.
-  - `python -m pytest tests/test_conditions.py tests/test_type_checker.py tests/test_call_arguments.py tests/test_null_safety_optional.py tests/test_null_comparisons.py -q`: 284 passed, 0 failed.
-  - Full determinism verified: Gen2, Gen3, and `bootstrap.c` identical SHA-256 (`bb421d1612f828d096fe5c1521299c945dc4010e668651736bad1deb642154c4`).
-  - Line count discipline: all 120 compiler source files in `src/` remain $\le 394$ lines (`scripts/count_lines.py`).
+**78.6** Typed JSON: `std/json/codec.vl` exposing
+`json_encode(@T) -> string` / `json_decode(string) -> T or string` using the
+existing struct reflection (`src/backend/reflect_gen.vl`,
+`examples/37_struct_reflection.vl` prove the mechanism exists). Test with a
+nested struct containing optional fields and a tagged union.
 
-#### Phase Exit Criteria
+**78.7** Streaming CSV: change `std/csv/reader.vl` to accept an
+`@BufferedReader` incrementally, keeping the `StrSlice` constructor as a
+convenience wrapper. Test with a 1M-row generated file asserting bounded memory
+(peak RSS below a fixed ceiling).
 
-- [x] `if 1`, `if "x"`, `if p`, `loop 5.0`, `loop p`, and `loop "x"` fail at `velo check`.
-- [x] `if flag`, `if x != null`, and optional narrowing still work.
-- [x] Codegen never emits a raw integer/pointer as a C condition.
+**78.8** Fill collection gaps: `std/coll/set.vl` (wrapping `map.vl`),
+`std/coll/deque.vl` (growable ring), `std/coll/heap.vl` (binary heap). Each with
+a property test against a Python reference for a random operation sequence.
+
+**78.9** `std/math/decimal.vl`: fixed-point decimal with explicit scale and
+rounding modes, for money. Test: cent arithmetic, `0.1 + 0.2 == 0.3` in
+decimal, rounding-mode matrix.
+
+## Phase Exit Criteria
+
+- A program can: sort a shelf, resolve a hostname, connect to it, parse a regex
+  over the response, decompress a gzip body, decode JSON into a struct, and
+  format a local timestamp. Each step has a test.
+- Every new parser has a fuzz corpus checked into `tests/fuzz/`.
 
 ---
 
-### Phase 61: `break` Inside `on` (P1) [COMPLETED] ✅
+# Phase 79: Tooling and Developer Experience (P1) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-10`<br>
-**Severity:** P1 — wrong control flow; cleanup may be skipped<br>
-**Depends on:** Phase 58 (defer cleanup interaction)<br>
-**Blocks:** —
+## Defect
 
-#### Defect
+There is no debugger integration beyond `#line` directives, no REPL, no
+incremental compilation, no profiler hook, and the diagnostic surface is
+inconsistent (some errors name the member, some print raw C compiler output).
+A language is adopted on its worst debugging session, not its best.
 
-`on` lowers to a C `switch` (`codegen_match.vl:18,171`), and `break` is emitted verbatim (`codegen_stmt.vl:366`). A `break` inside an `on` case exits the switch, not the enclosing loop.
+## Evidence
 
-```velo
-loop i in 0..5 {
-    on i {
-        1 => { break }
-        else => { }
-    }
-}
-// prints all 5 iterations instead of stopping at i == 1
-```
+| Fact | Evidence |
+| :--- | :--- |
+| `#line` directives are the only debug story | `src/backend/codegen_line.vl:22-28` `emit_line_directive`, opt-out via `--no-line-directives`; nothing generates DWARF info of its own or maps locals |
+| No REPL | `grep -c "repl\|REPL"` over `src/main.vl` + `src/cli_cmd.vl` -> 0 [VERIFIED]; `velo help` has no such command |
+| No incremental compilation | `src/backend/driver.vl:328` `compile_source_to_c_all_opts` parses, monomorphizes, and codegens the whole program every time; `.velo_cache` (`driver_run.vl:18-32`) caches only the output artifact by filename, not by content hash |
+| `.velo_cache` is keyed by source stem | `driver_run.vl:32` builds `.velo_cache/<stem>.exe`; editing a header-like imported module does not invalidate the sibling's artifact if the stem is unchanged |
+| Diagnostic shapes vary | compare `[Velo Error] semantic:4:20 - unknown io member 'println_int' (functions: ... 60 names)` (`src/backend/codegen_expr.vl`) with `[Velo Error] backend:4:20 - unknown io member 'println_i64' reached codegen` - the second is an internal fallback leaking to the user [VERIFIED by probe] |
+| No error-code registry | messages are inline string literals; nothing can be documented or searched by code |
+| No `velo fmt --check` in CI | `velo fmt` exists (`src/backend/driver_pkg.vl:70`) but no CI job runs it |
+| LSP exists and is decent | `src/lsp/` implements completion, definition, hover, rename, symbols, code actions - this is a genuine strength, so the task list preserves it |
 
-This is especially dangerous when the case body allocates and relies on loop-scoped cleanup.
+## Security Invariants
 
-#### Security Invariants
+- **I79.1** Every user-visible diagnostic has a stable code (`VELO-E####`) and a
+  doc entry. Internal-stage messages never reach users.
+- **I79.2** Cache validity is content-hash based, not name based. A stale cache
+  must be impossible, not unlikely.
 
-- `on` is not a loop; `break`/`continue` bind to the nearest enclosing loop.
-- A `break` must not be captured by the generated `switch`.
-- Loop-scoped defers/zones must still run exactly once on the break path.
-- Nested `on` must not change the binding target.
+## Tasks
 
-#### Tasks
+**79.1** Add an error-code registry: `docs/ERRORS.md` with codes, plus a
+`diag(code, line, col, args...)` helper replacing inline literals in
+`src/common/diagnostics.vl`. Migrate the 20 most common messages first; add a
+test that every code in the registry is emitted by at least one test fixture.
 
-##### Task 61.1: Add the `on` control-flow matrix (red baseline) [COMPLETED] ✅
-* **Former Defect**:
-  - `on` statements over integers and tagged unions lower to C99 `switch (...)` statements (`codegen_match.vl:18,171`), while `break` statements are emitted verbatim as `break;` (`codegen_stmt.vl:371`).
-  - In C, a `break;` inside a `switch` exits only the `switch`, never the enclosing loop. Consequently, any Velo program executing `break` inside an `on` arm within a loop continues executing subsequent loop iterations.
-  - Furthermore, on `break`, `codegen_stmt.vl:369` unrolls loop-local defers. When `break;` only exits the `switch`, the deferred cleanups run again at the end of the loop iteration, resulting in duplicate cleanups (e.g. double free).
-  - Outside of any loop, `break` inside `on` is accepted without error because C permits `break;` inside `switch`.
-  - No dedicated test matrix existed covering `break` and `continue` inside `on`, nested `on`, or loop-scoped cleanup interaction.
-* **Fix Applied**:
-  - Established the comprehensive Red Baseline control-flow test matrix across two test suites:
-    * Extended `tests/test_match_switch.py` with `TestOnControlFlowMatrix` (10 test cases):
-      - `test_break_inside_on_exits_range_loop`: tests loop break from `on` case (expects 3 iters, baseline runs 10).
-      - `test_break_inside_on_first_case`: tests loop break from the first case `0 => break` (expects 0 iters, baseline runs 10).
-      - `test_break_inside_on_middle_case`: tests loop break from a middle case `2 => break` (expects 2 iters, baseline runs 10).
-      - `test_break_inside_on_last_case`: tests loop break from the last case `4 => break` (expects 4 iters, baseline runs 10).
-      - `test_break_inside_on_else_case`: tests loop break from default `else => break` (expects 2 iters, baseline runs 10).
-      - `test_break_inside_nested_on`: tests loop break from nested `on` inside `on` (expects 2 iters, baseline runs 10).
-      - `test_break_inside_tagged_union_on`: tests loop break from tagged union `on` matching (expects 2 iters, baseline runs 5).
-      - `test_continue_inside_on_skips_loop_tail`: control test verifying `continue` inside `on` skips post-match statements (passes: `sum=40`).
-      - `test_continue_inside_nested_on`: control test verifying `continue` inside nested `on` continues the loop (passes: `sum=40`).
-      - `test_break_inside_on_outside_loop_rejected`: tests that `break` in `on` outside a loop is rejected (baseline accepts exit code 0).
-    * Extended `tests/test_break_continue.py` with `TestOnBreakLoopInteraction` (5 test cases):
-      - `test_on_break_defer_cleanup_in_loop`: verifies loop-scoped `defer` runs exactly once per executed iteration (expects 3 cleanups, baseline runs 6 due to switch capture + loop continuation).
-      - `test_on_continue_defer_cleanup_in_loop`: control test verifying loop-scoped `defer` runs on `continue` inside `on` (passes: 5 cleanups, `sum=8`).
-      - `test_on_break_in_while_loop`: verifies `break` inside `on` in condition while-loop stops the loop (expects `count=3, i=3`, baseline runs 10).
-      - `test_on_break_in_nested_loops_exits_inner_only`: verifies `break` inside `on` exits only the inner loop, preserving outer loop execution (expects `inner_count=6`, baseline runs 15).
-      - `test_on_break_memory_heap_cleanup`: verifies loop heap allocations are freed on break without leak or double free (expects `iters=2`, baseline runs 5).
-    * All runnable tests enforce strict 2.0s timeouts.
-* **Residual Limitation**:
-  - Baseline establishes the red state (12 failed, 13 passed across both test suites). All 12 failures fail for the exact documented defect (C `switch` capturing `break`, duplicate cleanup, and unrejected out-of-loop break).
-  - Binding specification and lowered loop-exit mechanism follow in Tasks 61.2–61.7.
-* **Verification**:
-  - `python -m pytest tests/test_match_switch.py tests/test_break_continue.py -q`: 12 failed, 13 passed in 14.68s.
-  - All 12 failures documented and confirmed.
+**79.2** Remove the internal-fallback diagnostics: any `reached codegen` /
+`backend:` message means an earlier check missed a case. Convert each into a
+compile-time check plus a normal diagnostic. Test: a fixture per former
+fallback.
 
-##### Task 61.2: Define and document the binding rule [COMPLETED] ✅
-* **Former Defect**:
-  - The language specification (`docs/SPECIFICATION.md` §7.3) lacked formal definitions for control flow statements (`break` and `continue`) appearing within `on` arms.
-  - This ambiguity allowed the C backend to silently inherit C's `switch` break semantics (breaking only the `switch`) instead of language-level semantics where `break` and `continue` bind to the nearest enclosing loop.
-  - Furthermore, rules for nested `on` blocks, exact-once defer cleanup ordering, and prohibition of `break`/`continue` outside of loops were undocumented.
-* **Fix Applied**:
-  - Updated `docs/SPECIFICATION.md` §7.3 with Subsection 3 (*"Control Flow & Loop Binding Invariants (`break` and `continue` inside `on`)"*), formalizing 6 binding invariants:
-    1. **`on` is Not a Loop**: multi-way branch, not an iteration construct; introduces no loop scope.
-    2. **Nearest Enclosing Loop Binding**: `break` and `continue` within an `on` arm bind to and control the nearest enclosing `loop`.
-    3. **No Switch-Capture Guarantee**: codegen guarantees emitted C never allows a C `switch` to trap `break`/`continue`.
-    4. **Transparent Nested `on` Invariant**: arbitrarily nested `on` blocks remain transparent to lexical loop resolution.
-    5. **Exact-Once Cleanup on Break & Continue**: active loop-scoped `defer` and zone cleanups execute in LIFO order exactly once prior to control transfer.
-    6. **Rejection Outside Loops**: `break`/`continue` in `on` without an enclosing loop is rejected at compile time.
-  - Added 4 comprehensive code examples illustrating single-loop break, continue tail skip, nested `on` transparent binding, and compile-time rejection outside loops.
-* **Residual Limitation**:
-  - Backend lowering of explicit loop targets for `break` (Task 61.3) and `continue` (Task 61.4), cleanup ordering (Task 61.5), and out-of-loop checker validation (Phase 62) follow in subsequent tasks.
-* **Verification**:
-  - `docs/SPECIFICATION.md` §7.3 verified against Phase 61 architectural requirements.
-  - Documentation examples align with red baseline test matrix in `tests/test_match_switch.py` and `tests/test_break_continue.py`.
+**79.3** Content-hash the build cache: key `.velo_cache` artifacts by
+SHA-256 of the fully resolved source closure (source + imported files +
+compiler version + flags). Test: touch an imported module, rebuild, assert
+recompilation happened; touch nothing, rebuild, assert it did not.
 
-##### Task 61.3: Lower `break` with an explicit loop target [COMPLETED] ✅
-* **Former Defect**:
-  - `codegen_stmt.vl:359-367` lowered `STMT_BREAK` as a raw `break;` statement in C.
-  - When enclosed within a C `switch` statement emitted by `on` pattern matching over integers or tagged unions, the C `break;` exited only the switch, leaving the enclosing loop running all subsequent iterations and executing duplicate cleanups.
-* **Fix Applied**:
-  - Added `loop_id: usize` to `DeferNode` in `src/backend/codegen_stmt.vl`.
-  - Updated `push_loop_scope(defers: @@DeferNode, loop_id: usize)`: records the unique `loop_id` on the loop boundary marker on the defer stack.
-  - In `STMT_LOOP` (`codegen_stmt.vl`), `emit_shelf_loop` (`shelf_gen.vl`), `emit_map_loop` (`map_gen.vl`), and `emit_ring_loop` (`ring_gen.vl`):
-    * Generated a unique `loop_id` from `st.fresh_counter += 1`.
-    * Emitted loop exit label `__loop_break_<loop_id>: __attribute__((unused));\n` immediately after the loop closing brace.
-    * Emitted loop continuation label `__loop_cont_<loop_id>: __attribute__((unused));\n` immediately before the loop closing brace.
-    * Post-label `__attribute__((unused))` ensures zero warnings under `-Wall -Wextra -Werror` when loops contain no breaks or continues.
-  - Lowered `STMT_BREAK` in `codegen_stmt.vl`:
-    * Traverses `defers.@` to unroll active defers and zone cleanups in strict LIFO order until reaching the nearest enclosing loop node (`cur_d.is_loop`).
-    * Captures `target_loop_id = cur_d.loop_id`.
-    * If `target_loop_id == 0`, reports backend error `break statement not within a loop`.
-    * Emits `goto __loop_break_<target_loop_id>;\n`, directly jumping to the enclosing loop's exit label and bypassing switch capture.
-  - Rebuilt 3-generation self-hosted bootstrap chain (`bin/velo.exe` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 fixed-point determinism (`3F706A9DD3293BDE7A8958B0BFA5246EE93817263C370FA6D606B35A9512BCDB`).
-* **Residual Limitation**:
-  - Dedicated verification of `continue` targets and iteration counter tests are tracked in Task 61.4.
-* **Verification**:
-  - `python -m pytest tests/test_match_switch.py tests/test_break_continue.py -q`: all 25 tests passed in 14.19s (100% pass rate; all 8 break tests previously failing in red baseline now pass).
-  - Emitted C inspections confirm `goto __loop_break_<id>;` is emitted and never captured by switch.
-  - Rebuilt bootstrap chain verified deterministic: SHA-256 `3F706A9DD3293BDE7A8958B0BFA5246EE93817263C370FA6D606B35A9512BCDB`.
-  - All 120 compiler source files in `src/` remain $\le 394$ lines (`python scripts/count_lines.py`).
+**79.4** Add a `velo repl`: read-eval-print over the existing frontend +
+`emit-c` + immediate `cc` of a single expression wrapper. Scope it to
+statements and expressions, no module definition. This is cheap relative to its
+adoption value and is the single most-requested entry point for trying a
+language.
 
-##### Task 61.4: Lower `continue` with an explicit loop target [COMPLETED] ✅
-* **Former Defect**:
-  - While C compilers generally allow `continue;` within a `switch` (binding to the enclosing loop in simple cases), emitting raw C `continue;` relied on C-level switch semantics, lacked defense-in-depth against unbound usage outside of loops, and lacked tests proving that `continue` in `on` arms avoids fallthrough and preserves iteration counters.
-* **Fix Applied**:
-  - Lowered `STMT_CONTINUE` in `src/backend/codegen_stmt.vl:360-369`:
-    * Traverses `defers.@` in LIFO order, unrolling active defers and zone cleanups until reaching the nearest enclosing loop (`cur_d.is_loop`).
-    * Resolves `target_loop_id = cur_d.loop_id`.
-    * If `target_loop_id == 0`, produces backend error `continue statement not within a loop`.
-    * Emits explicit `goto __loop_cont_<target_loop_id>;\n`, jumping directly to the continuation label immediately before the loop's closing brace.
-  - Expanded `TestOnControlFlowMatrix` in `tests/test_match_switch.py` with 8 dedicated `continue` tests (18 tests in class):
-    * `test_continue_inside_on_first_case`: skips tail of iteration 0, advances loop.
-    * `test_continue_inside_on_last_case`: skips tail of last explicit arm.
-    * `test_continue_inside_on_else_case`: skips tail of unmatched iterations via `else` arm.
-    * `test_continue_inside_on_in_nested_loops_continues_inner_only`: verifies inner loop continuation without skipping outer loop.
-    * `test_continue_inside_on_advances_implicit_it`: verifies iteration counter `it` advances properly.
-    * `test_continue_inside_tagged_union_on`: verifies `continue` inside tagged union pattern arm.
-    * `test_continue_inside_on_outside_loop_rejected`: verifies compile/build rejection of `continue` in `on` outside of any loop (`continue statement not within a loop`).
-    * `test_continue_inside_on_no_fallthrough`: verifies no fallthrough into subsequent switch arms.
-* **Residual Limitation**:
-  - Nested multi-level `on` and fallthrough tests are extended in Task 61.6; warnings-as-errors and sanitizer gates follow in Task 61.7.
-* **Verification**:
-  - `python -m pytest tests/test_match_switch.py tests/test_break_continue.py -v`: all 33 tests passed in 16.40s.
-  - All 120 compiler source files remain $\le 394$ lines (`python scripts/count_lines.py`).
+**79.5** Add a debug build story: `velo build --debug` currently maps to
+`-O0 -g` (`driver_cc.vl:247-263`). Verify with a real debugger session that
+`#line` + `-g` gives working breakpoints on Velo lines; document the exact
+`gdb`/`lldb` commands in `docs/DEBUGGING.md`. If DWARF line mapping is
+inaccurate (likely, given generated temporaries), fix the emission so
+breakpoints land on the right Velo line. Add
+`tests/test_debug_line_mapping.py` asserting emitted `#line` numbers match
+source lines for a sample program.
 
-##### Task 61.5: Preserve cleanup ordering [COMPLETED] ✅
-* **Former Defect**:
-  - Prior to explicit target lowering, `break` inside an `on` arm unrolled loop defers once via `emit_c_cleanup` up to `cur_d.is_loop`, but because the raw C `break;` only exited the switch rather than the loop, the loop body continued running and re-executed cleanups at iteration end, causing double-frees or corrupted state.
-  - Furthermore, interaction between arm-scoped defers, loop-scoped defers, inner zone cleanups, and outer zone preservation had no dedicated test coverage proving exact LIFO execution and zero heap leaks on both `break` and `continue`.
-* **Fix Applied**:
-  - Verified defer and zone stack unwinding semantics in `src/backend/codegen_stmt.vl`:
-    * When `break` or `continue` executes inside an `on` arm, `codegen_stmt.vl` traverses `defers.@` in strict LIFO order, executing all arm-scoped defers, block defers, and inner zone exits (`velo_zone_pop` + `velo_zone_leave`) up to the enclosing loop boundary (`cur_d.is_loop`).
-    * The jump directly transfers control outside the loop (`goto __loop_break_<id>;`) or to the continuation label (`goto __loop_cont_<id>;`), ensuring iteration-tail cleanups are bypassed and each active defer executes strictly once.
-    * Outer zones enclosing the loop are preserved without premature unrolling because unrolling halts at `cur_d.is_loop`.
-  - Expanded `TestOnBreakLoopInteraction` in `tests/test_break_continue.py` with 5 targeted tests (10 tests in class):
-    * `test_on_break_case_and_loop_defer_lifo_order`: verifies arm-scoped defer executes before loop-scoped defer in strict LIFO order on `break` (`val=1121`).
-    * `test_on_continue_case_and_loop_defer_lifo_order`: verifies arm-scoped defer executes before loop-scoped defer in strict LIFO order on `continue` (`val=211`).
-    * `test_on_break_inner_zone_cleaned_up`: verifies inner zone allocations are reclaimed with zero heap leaks (`diff=0, iters=2`) on `break`.
-    * `test_on_break_outer_zone_preserved`: verifies outer zone enclosing the loop remains intact until explicit exit with zero leaks (`diff=0, iters=2`).
-    * `test_on_continue_heap_allocation_cleaned_up`: verifies loop allocations with `defer mem.free(...)` clean up with zero leaks and zero double-frees on `continue` across all iterations (`sum=8, diff=0`).
-* **Residual Limitation**:
-  - Nested multi-level `on` and fallthrough tests are extended in Task 61.6; warnings-as-errors and sanitizer gates follow in Task 61.7.
-* **Verification**:
-  - `python -m pytest tests/test_match_switch.py tests/test_break_continue.py -v`: all 38 tests passed in 19.25s (100% pass rate).
-  - All 120 compiler source files remain $\le 394$ lines (`python scripts/count_lines.py`).
+**79.6** Add `velo fmt --check` to CI and a pre-commit hook script in
+`scripts/hooks/`.
 
-##### Task 61.6: Add nested-`on` and fallthrough tests [COMPLETED] ✅
-* **Former Defect**:
-  - The compiler lacked comprehensive testing proving that loop binding targets remain completely stable when `break` or `continue` occurs deep inside arbitrarily nested `on` blocks (including 3 levels of nesting, default `else` cases, and mixed integer / tagged union matches).
-  - Additionally, tests were required to verify that explicit loop jump lowering prevents accidental fallthrough into subsequent switch cases across both outer and nested levels.
-* **Fix Applied**:
-  - Added 9 comprehensive test cases to `TestOnControlFlowMatrix` in `tests/test_match_switch.py` (27 tests total in class, 33 total in file):
-    * `test_nested_three_level_on_break`: 3 levels of nested `on` (`i` -> `a` -> `b`), `break` inside inner arm exits enclosing loop (`iters=3`).
-    * `test_nested_three_level_on_continue`: 3 levels of nested `on`, `continue` inside inner arm continues enclosing loop (`sum=8`).
-    * `test_nested_loops_with_nested_on_break_inner`: nested loops each containing `on` constructs; `break` in inner `on` exits only inner loop (`outer=3, inner=3`).
-    * `test_nested_loops_with_nested_on_continue_inner`: nested loops each containing `on`; `continue` in inner `on` continues only inner loop (`inner_sum=9`).
-    * `test_nested_on_else_arm_break`: `break` inside default `else` arm of nested `on` exits enclosing loop (`iters=2`).
-    * `test_nested_on_else_arm_continue`: `continue` inside default `else` arm of nested `on` continues enclosing loop (`tail_hits=3`).
-    * `test_nested_on_no_fallthrough_between_cases`: sequential execution across non-breaking and breaking arms proves zero case fallthrough (`log=1234`).
-    * `test_nested_tagged_union_inside_integer_on_break`: tagged union `on` nested inside integer `on` exits enclosing loop on `break` (`iters=2`).
-    * `test_nested_integer_on_inside_tagged_union_on_continue`: integer `on` nested inside tagged union `on` continues enclosing loop on `continue` (`sum=40`).
-* **Residual Limitation**:
-  - Warnings-as-errors (`-Werror`) and sanitizer verification follow in Task 61.7.
-* **Verification**:
-  - `python -m pytest tests/test_match_switch.py tests/test_break_continue.py -v`: all 47 tests passed in 22.19s (100% pass rate).
-  - All 120 compiler source files remain $\le 394$ lines (`python scripts/count_lines.py`).
+**79.7** Add a profiler hook: `--profile` that emits `-pg` (GCC/Clang) or
+`/PROFILE` guidance, plus a documented `perf`/`Instruments` workflow in
+`docs/PROFILING.md`. A language promising "native speed" owes users a way to
+measure it.
 
-##### Task 61.7: Add the security/regression gate [COMPLETED] ✅
-* **Former Defect**:
-  - The C code emitted for explicit loop labels (`__loop_break_<id>` and `__loop_cont_<id>`), switch branches, and jump statements had not been validated against strict compiler warnings (`-Wall -Werror`). In particular, loops without breaks/continues could trigger `-Wunused-label` without `__attribute__((unused))`.
-  - In addition, CI lacked automated AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan) coverage across `tests/test_break_continue.py` and `tests/test_match_switch.py`.
-* **Fix Applied**:
-  - Added `TestOnControlFlowWarningsAndSecurityGate` to `tests/test_break_continue.py` with 4 dedicated `-Wall -Werror` compilation test cases:
-    * `test_werror_break_inside_on`: verifies loop break within `on` compiles under `-Wall -Werror` with zero warnings.
-    * `test_werror_continue_inside_on`: verifies loop continue within `on` compiles under `-Wall -Werror` with zero warnings.
-    * `test_werror_loop_without_break_or_continue`: verifies loop labels emitted with `__attribute__((unused))` produce zero `-Wunused-label` warnings under `-Wall -Werror`.
-    * `test_werror_nested_on_and_defers`: verifies 3-level nested `on` with loop allocations and defers compiles under `-Wall -Werror` and executes with zero memory leaks (`diff=0`).
-  - Integrated `tests/test_break_continue.py` and `tests/test_match_switch.py` into the CI Linux Sanitizer matrix in `.github/workflows/ci.yml`, running all control-flow break and continue tests under `-fsanitize=address,undefined`.
-* **Residual Limitation**:
-  - Compile-time checking and rejection of unbound `break`/`continue` outside of any loop at `velo check` is owned by Phase 62.
-* **Verification**:
-  - `python -m pytest tests/test_break_continue.py tests/test_match_switch.py -v`: all 51 tests passed in 21.83s (100% pass rate).
-  - Full test suite: `python -m pytest tests -q`: **1708 passed, 2 skipped** in 828.53s (100% pass rate).
-  - All 120 compiler source files remain $\le 394$ lines (`python scripts/count_lines.py`).
+**79.8** Add `velo doc --json` and serve it to the LSP so hover text comes from
+the same source as the generated docs (`src/backend/docgen.vl` already walks the
+AST).
 
-#### Phase Exit Criteria
+## Phase Exit Criteria
 
-- [x] `break` inside `on` inside a loop stops the loop.
-- [x] `continue` inside `on` continues the loop.
-- [x] Loop-scoped cleanup runs exactly once on both paths.
-- [x] Nested `on` does not change the binding target.
+- A new user can open a REPL, get completion in an editor, set a breakpoint on
+  a Velo line and hit it, and read a diagnostic with a code they can look up.
+- No `reached codegen` message is reachable from any fixture.
 
 ---
 
-### Phase 62: `break`/`continue` Outside Loops (P1) [COMPLETED] ✅
+# Phase 80: Compiler Maintainability (P1) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-11`<br>
-**Severity:** P1 — checker accepts invalid programs; GCC-only failure<br>
-**Depends on:** Phase 58 (cleanup interaction)<br>
-**Blocks:** —
+## Defect
 
-#### Defect
+The compiler works, and its internal structure actively fights the next
+contributor. Codegen is stringly typed; one fact (the `sys.*` allowlist) is
+copied five times; a 400-line ceiling forces the logic into 40+ sliver modules
+that each carry their own header comment restating the same contract; and a
+frozen second implementation in Python still gates the build.
 
-`type_checker_stmt.vl:219-220` returns immediately for `STMT_BREAK` and `STMT_CONTINUE`; it does not track whether a loop is active.
+## Evidence
 
-```velo
-act main() { break }     // velo check passes; GCC: break statement not within loop
-act main() { continue }  // velo check passes; GCC: continue statement not within a loop
-```
+| Fact | Evidence |
+| :--- | :--- |
+| The `sys.*` allowlist is duplicated five times | `src/backend/driver.vl:265`, `:287`; `src/lsp/analysis.vl:142`, `:161`; `src/backend/pretty_recon.vl:65` - all spell out the same eight names [VERIFIED] |
+| Codegen returns strings with embedded formatting | `src/backend/codegen_lit.vl:146-152` `loop_var_c_type(...) -> string` returns `"int32_t "` **with a trailing space**, so the call site's concatenation is load-bearing and undocumented [VERIFIED] |
+| One-line `if` chains are the core of the emitter | `src/backend/codegen_call.vl:102-103` - whole intrinsic families lowered as semicolon-chained one-liners, invisible in diffs and untestable in isolation |
+| The 400-line ceiling splits by syntax, not by concept | 40+ files under 150 lines in `src/analysis/` and `src/backend/`; `src/backend/range_gen.vl` (248), `src/backend/fs_gen.vl` (86), `src/backend/os_gen.vl` (45), `src/backend/time_gen.vl` (33) - the last three are a single concept split three ways |
+| Header comments duplicate the contract | e.g. `src/backend/fs_gen.vl:1-19` restates emit rules that must also be honoured in `src/analysis/fs_checks.vl`; the two can drift with no test |
+| The frozen Python implementation still gates the build | `AGENTS.md` calls `velo/` + `velo.py` a frozen Stage-1 reference, but `examples/12_stage2_semantics_test.vl` and several tests import `../src/...`, and `docs/SPECIFICATION.md` still documents Stage-1/Stage-2 parity as a requirement |
+| Determinism is a script, not a compiler flag | `scripts/check_determinism.py` compares two binaries; the compiler itself has no `--verify-determinism` |
+| Generated `bootstrap.c` is 2.3 MB / 67,952 lines | `(Get-Item bootstrap.c).Length` = 2302323; review of a compiler change requires diffing a generated artifact |
 
-#### Security Invariants
+## Security Invariants
 
-- `break`/`continue` outside a loop must be a compile-time error.
-- The checker must reset loop depth at function boundaries.
-- The diagnostic must point at the statement and explain the missing loop.
-- Codegen must never emit an unbound `break`/`continue`.
+- **I80.1** No semantic fact is encoded twice. A table used by the driver, the
+  LSP, and the pretty-printer is one table.
+- **I80.2** Codegen receives typed data (`CType`, `IntWidth`), never a string
+  that a caller must format correctly.
+- **I80.3** There is exactly one compiler implementation in the build chain.
 
-#### Tasks
+## Tasks
 
-##### Task 62.1: Add the out-of-loop matrix (red baseline) [COMPLETED] ✅
-* **Goal:** Cover every context where `break`/`continue` can appear.
-* **Files:** `tests/test_break_continue.py` (extend), `tests/test_loop_context.py` (new).
-* **Tests:** in `main`, in `if`, in `on`, in a plain block, in a nested function (if supported), inside a loop (valid).
-* **Security gate:** every invalid row must fail at `velo check`.
-* **Done when:** the matrix fails for the documented reasons.
-* **Completion note (2026-11-16):** Added `tests/test_loop_context.py` with a 10-row invalid matrix (`main` direct `break`/`continue`, `if`, `if`/`else`, `on` arm, plain block, `zone`, `unsafe`, stale depth inside one function, stale depth across functions), an 8-row valid matrix (unconditional loop, count-loop `continue`, range loop, condition loop, nested loops, `on` inside a loop, `zone` inside a loop, `unsafe` inside a loop), and a row pinning that nested `act` is unrepresentable (parse error `Expected '(' after 'act'`), so the "nested function" row cannot exist in Velo. Red run: `python -m pytest tests/test_loop_context.py -q` → **20 failed, 9 passed** in 3.42s. All 20 failures fail for the documented defect and no other reason: the diagnostic carries lane `backend` (`{"file": "backend", "line": 8, "col": 5, ...}`) and `velo check` additionally prints `Code generation failed with 1 errors.`, proving the checker never enforces the rule. The 9 passing tests are the 8 valid loop rows plus the nested-`act` parse-error row, which proves the harness green-lights legal programs.
+**80.1** Extract the intrinsic allowlist into one `std`-visible table
+(`src/common/intrinsics.vl`: `intrinsic_namespaces() -> @string` and
+`intrinsic_members(ns) -> @string`) and make all five current sites call it.
+Test: `tests/test_intrinsic_allowlist_single_source.py` asserts each site
+imports the table (grep-level) and that adding a namespace in one place changes
+all consumers (behavioural: resolve `sys.newthing` and assert the same verdict
+from driver, LSP, and pretty-printer paths).
 
-##### Task 62.2: Track loop depth in the symbol table [COMPLETED] ✅
-* **Goal:** Add a `loop_depth` counter, increment/decrement around loop bodies, and reset at function entry/exit.
-* **Files:** `src/analysis/symbol_table.vl`, `src/analysis/type_checker_stmt.vl:161-170`.
-* **Tests:** nested loops; loop inside function; function inside loop (if supported).
-* **Security gate:** balanced counter on every path; no stale depth after an early return.
-* **Done when:** depth is correct for every context.
-* **Fix applied (2026-11-16):**
-  1. `SymbolTable` gained `current_loop_depth: i32`, initialized to `0` in `init_symbol_table` (`symbol_table.vl`). It mirrors the existing `current_zone_depth`/`current_unsafe_depth` precedent so the phase needs no new plumbing.
-  2. `STMT_LOOP` in `check_statement` (`type_checker_stmt.vl`) now brackets the body check: `st.current_loop_depth += 1` before `check_statement(st, ..., stmt.body)` and `-= 1` immediately after, inside the surrounding `enter_scope`/`exit_scope`. Bracketing the call (not each nested scope) is what makes `on`, `zone`, `unsafe`, blocks, and `if` transparent to the counter, matching SPEC §7.3 "nearest lexically enclosing `loop`".
-  3. Function bodies reset the counter at entry *and* exit (`type_check_program.vl`): `st.current_loop_depth = 0` before `enter_scope`, and again after `exit_scope` for both `DECL_FUNCTION` and `DECL_TEST`. The entry reset makes each function independent of source order; the exit reset guarantees no stale depth survives an early `return` that left the loop body before its `-= 1` ran.
-* **Verification:**
-  - Added 6 depth shapes (`loop` inside `on`, `on` inside `loop` with both `continue` and `break`, early `return` inside a loop, two sibling loops, three-deep nesting, `loop` inside `zone` inside `unsafe`) plus 3 leak assertions (after a closed loop, across functions, after an early return) to `tests/test_loop_context.py`. All **9 pass**; `python -m pytest tests/test_loop_context.py -q -k "depth or leak"` → `9 passed, 25 deselected`.
-  - Over-blocking guard: all 8 valid matrix rows still compile *and* run, and all previously passing loop rows are unaffected.
-  - Control-flow regression subset: `python -m pytest tests/test_break_continue.py tests/test_match_switch.py tests/test_count_loops.py tests/test_range_loops.py tests/test_conditions.py -q` → **203 passed** in 43.14s.
-  - Bootstrap rebuilt from the modified `src/`: `bin/velo.exe build src/main.vl -o bin/velo_gen2.exe`, `bin/velo_gen2.exe build src/main.vl -o bin/velo_gen3.exe`, promoted Gen3 to `bin/velo.exe`. `scripts/check_determinism.py` → Gen2 and Gen3 both `dcd924cbad2e679862d8fc2aedf1fc44863508beccc27fad6c094336495de90b`, SHA-256 match.
-  - Line counts unchanged in spirit: `symbol_table.vl` 318, `type_checker_stmt.vl` 299, `type_check_program.vl` 214 — all far below the 400-line ceiling.
-* **Residual Limitation:**
-  - Task 62.2 makes depth *correct*; it does not yet reject depth zero. `type_checker_stmt.vl` still `return`s early for `STMT_BREAK`/`STMT_CONTINUE`, so the 20 red-baseline rows stay red until Task 62.3 consumes the counter.
+**80.2** Replace `loop_var_c_type`'s string returns with a `CType` value
+(`{name, width, signed, needs_space}`) and a single `ctype_render`. Audit every
+`-> string` codegen helper and convert the top ten. Test: `emit-c` output for
+the Phase 68 loop matrix must stay byte-identical (`bootstrap.c` snapshot
+already enforces this).
 
-##### Task 62.3: Reject `break`/`continue` when depth is zero [COMPLETED] ✅
-* **Goal:** Emit a precise diagnostic and increment the error count.
-* **Files:** `src/analysis/type_checker_stmt.vl:219-220`.
-* **Tests:** all invalid rows; valid loop rows still pass.
-* **Security gate:** no GCC-only failure; no silent acceptance.
-* **Done when:** `velo check` rejects every out-of-loop case.
-* **Fix applied (2026-11-16):** The early `return` for `STMT_BREAK`/`STMT_CONTINUE` in `check_statement` now consumes the Task 62.2 counter. When `st.current_loop_depth <= 0` it emits `report_error("semantic", stmt.line, stmt.col, "break statement not within a loop")` (or the `continue` wording) and increments `st.error_count`; when depth is positive it returns unchanged. The messages are byte-identical to the backend's old wording, so no downstream assertion or user-facing string changes. Placement in the checker — not the backend — is the point: `docs/SPECIFICATION.md` §9 defines `velo check` as "lex, parse, semantic analysis, monomorphization (no codegen)", and previously the rule could only fire in the emission lane.
-* **Verification:**
-  - `python -m pytest tests/test_loop_context.py -q` → **38 passed** in 3.11s (all 20 previously red rows green, both the pretty and `--json` position assertions included).
-  - Pretty output is now `[Velo Error] semantic:5:5 - continue statement not within a loop` followed by `Semantic analysis failed with 1 errors.` — the `backend:` lane and `Code generation failed` are gone, and `--json` reports `{"file": "<src path>", "line": 5, "col": 5, "severity": "error"}`.
-  - Regression subset: `tests/test_break_continue.py`, `test_match_switch.py`, `test_count_loops.py`, `test_range_loops.py`, `test_conditions.py`, `test_check_cli.py`, `test_codegen_error_gate.py`, `test_defer.py` → **265 passed** in 60.50s.
-  - Bootstrap rebuilt; Gen2 and Gen3 both emit `9f12e152b52d633e6ad4b8bd8d295bf266159fbd7c56175d24060c5b31767c9b`, determinism confirmed.
-* **Residual Limitation:**
-  - The `continue` check runs on the pre-desugared statement tree. A `continue` that reaches codegen from a lowered construct would still be caught by the Task 62.4 backend defense, which remains necessary as defense in depth.
+**80.3** Replace the trailing-space convention with explicit emission helpers
+(`emit_type_then_space`), which makes `"int32_t "` structurally impossible.
 
-##### Task 62.4: Add codegen defense [COMPLETED] ✅
-* **Goal:** Assert that `break`/`continue` never reaches codegen without an active loop target.
-* **Files:** `src/backend/codegen_stmt.vl:359-377`.
-* **Tests:** internal-error probe; valid loops still emit correctly.
-* **Security gate:** no unbound `break`/`continue` in generated C.
-* **Done when:** codegen is defensive and tests pass.
-* **Fix applied (2026-11-16):** `codegen_stmt.vl` keeps the loop-target scan (which is also what orders the loop-local zone cleanups), but the zero-target fallback no longer reports a user-facing `"backend"` diagnostic. Because Task 62.3 moved the rule into semantic analysis, a zero target at emit time can only mean an internal invariant broke, so both fallbacks now emit `report_error("internal", ..., "internal compiler error: unbound break reached codegen")` (and the `continue` counterpart) and increment `error_count`. The C is still never written, so the existing `compile_source_to_c_*` gate turns the non-zero count into a failed build — no corpus change was needed. Distinguishing the lanes matters for diagnosis: `semantic:` is a user error, `internal:` is a compiler defect.
-* **Verification:**
-  - Added 12 tests to `tests/test_loop_context.py`: the 10 invalid rows now additionally assert that no `internal compiler error` and no `internal:` row appears (proving semantic analysis still stops them first), one test asserts `backend:` is gone and `semantic:` is present, and one reads `src/backend/codegen_stmt.vl` to pin the new wording and the absence of the old `report_error("backend", ..., "break statement not within a loop")` string. `python -m pytest tests/test_loop_context.py -q` → **50 passed** in 3.38s.
-  - Valid loops still emit and run: `bin/velo.exe run valid.vl` → exit 0.
-  - Regression subset: `tests/test_defer.py`, `test_break_continue.py`, `test_match_switch.py`, `test_check_cli.py`, `test_codegen_error_gate.py` → **113 passed** in 38.42s. `test_codegen_error_gate.py` is the one that proves a non-zero `error_count` still fails the build verbatim.
-  - Bootstrap rebuilt; Gen2 and Gen3 both emit `32610de5adb631e82a8347adad04fab8ec21d9255c7432940af561b546f034dd`.
-* **Residual Limitation:**
-  - The defense is unreachable from source today, so it has no positive trigger test. It fires only if a future lowering path (desugaring, monomorphization, a std module) produces a jump without a loop frame. The wording-contract test is the practical guard until such a path exists.
-  - **New defect found during this task (not part of Phase 62):** `defer break`, `defer continue`, `defer return` and `defer fail` crash the Stage-2 compiler with a stack overflow (`0xC00000FD`, exit `-1073741571`), producing no diagnostic at all. Stage 1 accepts the same programs (`velo.py check` → exit 0). `defer` followed by a non-terminating statement (e.g. `defer io.println(1)`) is fine. The recorded hypothesis was `emit_c_cleanup` (`codegen_stmt.vl:77-90`) re-entering `emit_c_stmt` for the deferred statement and re-unwinding the same cleanup stack. **Closed in Phase 69** — the mechanism was right but the lane attribution was wrong (`velo check` crashes too, since it runs the same lowering pass); the real fix was a checker rule rejecting any transfer inside a `defer`, not a codegen change. See §Phase 69.
+**80.4** Consolidate `fs_gen`/`os_gen`/`time_gen` (and the `range_gen` emit
+ladder) behind one `IntrinsicEmitter` dispatch keyed by namespace + member, so a
+new intrinsic is one table entry instead of a new file. Keep the 400-line
+ceiling as a consequence, not a design driver.
 
-##### Task 62.5: Add the security/regression gate and documentation [COMPLETED] ✅
-* **Goal:** Lock in the diagnostic and document the rule.
-* **Files:** `tests/test_loop_context.py`, `docs/SPECIFICATION.md`.
-* **Tests:** all invalid rows; error-message assertions; `-Werror` build.
-* **Security gate:** no compiler crash; no GCC-only failure.
-* **Done when:** the matrix is green and the docs match.
-* **Fix applied (2026-11-16):**
-  1. `docs/SPECIFICATION.md` §7.3 invariant 6 was rewritten from an `on`-only rule into a general one: it now states the rule holds in every context (function body, `if`/`else`, `on` arms, plain blocks, `zone`, `unsafe`, and statements after a closed loop), that semantic analysis owns it so `velo check` reports it with lane `semantic` and no code generation, that emission asserts the invariant and reports an `internal compiler error` if it is ever violated, and that the depth counter resets at every function boundary.
-  2. Two new illustrative blocks were added to the same section: example 5 walks the rejecting contexts (`if`, `block`, `zone`, `unsafe`, then a valid `loop`, then a `break` after the loop closes) and example 6 shows the cross-function reset. Both are asserted by tests to stay in the document.
-  3. `tests/test_loop_context.py` gained 9 gate tests: three rejection-lane tests asserting `build`, `emit-c`, and `run` all refuse while producing **no** binary and **no** translation unit; three crash tests asserting exit code is exactly `1` (never an NTSTATUS value) with no traceback; one test that every invalid row's `emit-c` fails and writes nothing (the `-Werror` corpus guard — there is no C to compile); one exact-wording test; and one documentation test.
-* **Verification:**
-  - `python -m pytest tests/test_loop_context.py -q` → **59 passed** in 3.49s (38 from tasks 62.1–62.3, 12 from task 62.4, 9 from task 62.5).
-  - Broader regression: `tests/test_defer.py`, `test_break_continue.py`, `test_match_switch.py`, `test_check_cli.py`, `test_codegen_error_gate.py`, `test_diagnostics_pretty.py`, `test_stage2_semantics.py`, `test_zone_escape_analysis.py` → **149 passed** in 52.82s.
-  - `python scripts/count_lines.py` → exit 0, zero violations; largest file `src/lsp/hover.vl` at 309 lines, well under the 400 ceiling.
-  - Full suite and final determinism check recorded below.
+**80.5** Decide the Stage-1 question: either delete `velo/` + `velo.py` and
+rewrite `examples/12_stage2_semantics_test.vl` against the self-hosted compiler,
+or demote it to an untested historical artifact. Keeping a frozen second
+compiler that still appears in the build and docs is a permanent tax with no
+benefit; `AGENTS.md` already declares `src/` canonical.
 
-#### Phase Exit Criteria
+**80.6** Add `velo build --verify-determinism` that builds Gen2 and Gen3
+internally and compares hashes, replacing the Python script as the primary gate
+(keep the script as the CI wrapper). Also add a `bootstrap.c` size/loc budget
+warning so generation growth is visible in review.
 
-- [x] `break` and `continue` outside a loop fail at `velo check`.
-- [x] Nested loops still work.
-- [x] Codegen never emits an unbound `break`/`continue`.
-- [x] The diagnostic is precise and documented.
+## Phase Exit Criteria
 
-#### Phase 62 Summary
-
-**Former Defect:** `type_checker_stmt.vl` returned immediately for `STMT_BREAK`/`STMT_CONTINUE` without tracking whether a loop was active, so `act main() { break }` passed `velo check` and failed only in the backend lane (`backend:1:14 - break statement not within a loop` followed by `Code generation failed with 1 errors.`), contradicting `docs/SPECIFICATION.md` §9 which defines `velo check` as "lex, parse, semantic analysis, monomorphization (no codegen)". Invalid programs were accepted by the checker and the failure depended on the C compiler.
-
-**Fix Applied:** Added `SymbolTable.current_loop_depth` (Task 62.2), bracketed it around the `STMT_LOOP` body check so `on`/`zone`/`unsafe`/blocks/`if` stay transparent, and reset it at every function and test boundary on both entry and exit so no depth leaks across declarations or survives an early `return`. The checker now rejects depth-zero jumps with `report_error("semantic", ...)` and increments `error_count` (Task 62.3), keeping the backend's exact wording. The emission-lane fallback was reclassified from a user-facing `backend` diagnostic to `report_error("internal", ..., "internal compiler error: unbound break/continue reached codegen")`, since after the checker fix it can only mean a compiler defect (Task 62.4). `docs/SPECIFICATION.md` §7.3 invariant 6 was generalized from `on`-only to all contexts, with two new example blocks (Task 62.5).
-
-**Residual Limitation:**
-- The codegen defense has no positive trigger from source; it only fires if a future lowering path bypasses semantic analysis. The wording-contract test in `tests/test_loop_context.py` guards it.
-- Velo has no nested `act` declarations, so the task's optional "in a nested function" matrix row is unrepresentable. It is pinned as a parse error instead.
-- **Pre-existing crash at the time, since fixed (Phase 69):** `defer break`, `defer continue`, `defer return` inside a loop body, and `defer return` at function scope, overflowed the Stage-2 compiler stack (`0xC00000FD`, exit `-1073741571`) with no diagnostic. Stage 1 accepted all of them. The recorded hypothesis (`emit_c_cleanup` re-entering `emit_c_stmt` without popping the cleanup stack) was the right mechanism but the wrong lane; Phase 69 fixed it as a checker rule and documented that `velo check` crashes too.
-
-**Verification:** 59 tests in `tests/test_loop_context.py` (20 red rows turned green); 149-test regression subset green; line-count discipline clean; bootstrap chain rebuilt with Gen2/Gen3 emitting identical C.
+- `grep -c "sys.io" src/backend/driver.vl src/lsp/analysis.vl src/backend/pretty_recon.vl`
+  yields only the table reference.
+- No codegen function returns a C type name as a string.
+- The Stage-1 question is resolved with a commit, not a comment.
 
 ---
 
-### Phase 63: Zero Range Step (P0) [COMPLETED] ✅
+# Phase 81: Performance and Benchmark Credibility (P1) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-12`<br>
-**Severity:** P0 — infinite loop<br>
-**Depends on:** Phases 53, 54, 55, 56<br>
-**Blocks:** Phase 68
+## Defect
 
-#### Defect
+The only published benchmark compares Velo against Node.js on HTTP throughput.
+Node is not the peer group for a native compiler. There is no comparison
+against C, Rust, or Go, no memory-per-operation measurement beyond `Working Set`,
+no build-time measurement, no regression tracking - and the compiler's own
+performance is never measured, which matters because a self-hosting compiler
+that is slow to compile loses the "high velocity" claim outright.
 
-`loop i in 0..10:0` is accepted and lowered to `for (int32_t i = 0; i < 10; i += 0)`, which never terminates.
+## Evidence
 
-```velo
-loop i in 0..10:0 {
-    io.println(i)
-}
-// for (int32_t i = 0; i < 10; i += 0)  → infinite
-```
+| Fact | Evidence |
+| :--- | :--- |
+| Benchmark peer is Node.js only | `benchmark/BENCHMARK_RESULTS.md:1` "Velo vs. Node.js HTTP Server Benchmark"; `benchmark/server_node.js` is the only comparator |
+| Results are hand-copied into Markdown | `benchmark/BENCHMARK_RESULTS.md` has no generator; `run_benchmark.py` exists but the numbers are static text, so nothing prevents drift |
+| No compile-time benchmark | nothing measures `velo build src/main.vl`; the self-hosted compiler's own speed is unmeasured |
+| No regression gate | no CI job compares benchmark numbers across commits |
+| One loop microbenchmark exists | `tests/test_loop_performance.py` (Phase 68) - 20M iterations, 2x ratio detector. This is the only automated performance test. |
+| Memory claims exist but are unverified | `README.md:13` "Runs in < 64KB RAM"; `benchmark` shows 4.59 MB baseline RSS |
 
-There is no compile-time or runtime validation of the step.
+## Security Invariants
 
-#### Security Invariants
+- **I81.1** Every performance claim in `README.md` and the docs is produced by a
+  committed script and reproducible by a reader.
+- **I81.2** A performance regression above a fixed threshold fails CI.
 
-- A literal zero step must be a compile-time error.
-- A dynamic zero step must fail deterministically with a clear diagnostic or terminate by definition; it must never hang.
-- Negative steps must not silently invert a range without a documented rule.
-- Step evaluation must happen once.
+## Tasks
 
-#### Tasks
+**81.1** Rewrite the benchmark as generated output: `benchmark/run_benchmark.py`
+runs Velo, C, Rust, Go, and Node variants of the same three workloads and writes
+`benchmark/RESULTS.md` with a machine/version header. The static Markdown file
+becomes generated and is regenerated in CI (or on a schedule).
 
-##### Task 63.1: Add the step matrix (red baseline) [COMPLETED] ✅
-* **Former Defect**:
-  - In `src/backend/range_gen.vl:36-107`, range loops with dynamic steps lower to `__step_i = (step)` and `i += __step_i` (or `i -= __step_i`).
-  - When the step evaluates to `0` at runtime (e.g. `let s: i32 = 0; loop i in 0..10:s`), no guard is emitted: `i += 0` executes repeatedly without advancing the loop counter, hanging indefinitely in an infinite loop.
-  - When the step evaluates to a negative value in an ascending loop (e.g. `let s: i32 = -1; loop i in 0..10:s`), `i += -1` decrements `i` away from the upper bound, also hanging in an infinite loop.
-  - Furthermore, constant binary expressions resulting in zero (such as `loop i in 0..10:(1 - 1)`) bypass the literal check in `src/analysis/range_checks.vl:188-210` (which only checks `EXPR_INT` and unary minus literals), passing `velo check` with exit code 0 and hanging indefinitely at runtime.
-* **Fix Applied**:
-  - Established the comprehensive Red Baseline test matrix for Phase 63 across two test suites:
-    * Created `tests/test_range_steps.py` (25 test cases) covering:
-      - `TestLiteralStepCompileRejection` (11 tests):
-        * Literal `:0`, `:+0`, `:-0`, `:-1`, `:0u32`, `:(0)` rejected at compile time (`Range loop step must be greater than zero`).
-        * Float step `:0.0` and dynamic float step `let s: f32 = 0.0; loop 0..10:s` rejected at compile time (`Range loop step must be an integer type, got 'f32'`).
-        * Anonymous range zero step `loop 0..10:0` rejected at compile time.
-        * Descending range zero step `loop 10..0:0` rejected at compile time.
-        * Constant expression zero step `:(1 - 1)` tested for compile-time rejection.
-      - `TestDynamicRangeStepExecution` (6 tests with 1.0s timeouts):
-        * Dynamic zero step (`let s: i32 = 0; loop 0..10:s`).
-        * Dynamic negative step (`let s: i32 = -1; loop 0..10:s`).
-        * Dynamic descending negative step (`let s: i32 = -2; loop 10..0:s`).
-        * Dynamic unsigned zero step (`let s: u32 = 0u32; loop 0..10:s`).
-        * Dynamic 64-bit zero step (`let s: i64 = 0; loop 0..10:s`).
-        * Constant expression zero step (`loop 0..10:(2 - 2)`).
-      - `TestValidRangeStepControlGroup` (8 tests):
-        * Ascending positive step (`0..10:2` -> 5 iterations, sum 20).
-        * Descending positive step (`10..0:2` -> 5 iterations, sum 30).
-        * Inclusive positive step (`0..=10:2` -> 6 iterations, sum 30).
-        * Dynamic positive ascending (`let s = 3; 0..10:s` -> 4 iterations, sum 18).
-        * Dynamic positive descending (`let s = 3; 10..0:s` -> 4 iterations, sum 22).
-        * Step equal to range length (`0..5:5` -> 1 iteration).
-        * Step larger than range length (`0..5:10` -> 1 iteration).
-        * Anonymous range valid step (`loop 0..10:2` -> 5 iterations, sum 20).
-    * Extended `tests/test_range_loops.py` with 2 tests:
-      - `test_range_step_zero_rejected`: validates compile-time rejection of `:0`.
-      - `test_range_step_dynamic_zero_baseline`: validates timeout on dynamic zero step (`timeout=1.0`).
-* **Residual Limitation**:
-  - Red baseline established:
-    * `tests/test_range_steps.py`: 7 failed, 18 passed (the 18 passed are 10 literal/type compile checks and 8 valid positive step control tests; the 7 failed fail for the exact documented defect: 1 compile-check row for `:(1 - 1)` passes `velo check` instead of failing, and 6 dynamic zero/negative/constant-expr runtime tests hang and time out after 1.0s due to missing runtime guards).
-    * `tests/test_range_loops.py`: 1 failed, 9 passed (the 1 failed is the dynamic zero step runtime timeout baseline).
-  - Compile-time literal/const step rejection is addressed in Task 63.2.
-  - Dynamic zero step runtime guard and termination defense is addressed in Tasks 63.3 and 63.4.
-* **Verification**:
-  - `python -m pytest tests/test_range_steps.py -q`: 7 failed, 18 passed (red baseline confirmed).
-  - `python -m pytest tests/test_range_loops.py -q`: 1 failed, 9 passed (red baseline confirmed).
-  - All runnable tests are timeout-guarded (`timeout=1.0` or `2.0`s) preventing CI hangs.
+**81.2** Add C, Rust, and Go peers for the HTTP workload, plus a JSON parse
+workload and a file-scanning workload (the actual intended use cases from
+Section 1's positioning).
 
-##### Task 63.2: Reject literal zero steps at compile time [COMPLETED] ✅
-* **Former Defect**:
-  - While literal `EXPR_INT` zero steps (`:0`, `:0u32`) and unary minus literals (`:-0`, `:-1`) were rejected by `is_range_step_non_positive`, constant expressions that evaluate to zero or negative values at compile time (`:(1 - 1)`, `:(2 * 0)`, `:(0 / 5)`, `:(0 << 4)`, `:(0 & 7)`, `:(0 as i32)`, `:(5 - 10)`) bypassed validation.
-  - These expressions silently passed `velo check` with exit code 0 and lowered into infinite loops (`i += 0`) at runtime.
-* **Fix Applied**:
-  - Implemented compile-time constant integer evaluation `eval_const_int_expr(expr: @ExprNode, out_val: @i64) -> bool` in `src/analysis/range_checks.vl`:
-    * Evaluates `EXPR_INT` (handling unsuffixed, suffixed, and boundary values without sign corruption on large unsigned integers).
-    * Evaluates `EXPR_CAST` recursively on operands.
-    * Evaluates `EXPR_UNARY` (`TOK_MINUS`, `TOK_PLUS`).
-    * Evaluates `EXPR_BINARY` (`+`, `-`, `*`, `/`, `%`, `<<`, `>>`, `&`, `|`, `^`) with zero-division guards.
-  - Upgraded `is_range_step_non_positive(expr: @ExprNode) -> bool` to check `eval_const_int_expr`: any constant step evaluating to $\le 0$ is rejected at compile time with:
-    `Range loop step must be greater than zero`
-  - Upgraded `is_range_endpoint_negative(expr: @ExprNode) -> bool` to check `eval_const_int_expr`: constant expressions evaluating to $< 0$ are recognized as negative endpoints for unsigned range validation.
-  - Maintained line count discipline in `src/analysis/range_checks.vl` (283 lines, $\le 394$).
-  - Rebuilt 3-generation self-hosted bootstrap chain (`bin/velo.exe` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 fixed-point determinism (`50FFAAE08511279CDF99FB2C1AA13AEF6B6A92EA8BE491AE3807DFEC180E0777`).
-  - Expanded `TestLiteralStepCompileRejection` in `tests/test_range_steps.py` to 24 tests:
-    * Rejection of `:(1 - 1)`, `:(2 * 0)`, `:(0 / 5)`, `:(0 & 15)`, `:(0 << 4)`, `:(0 as i32)`, `:(0 as u32)`, `:(0 as i64)`, `:(5 - 10)`, `:(-1 as i32)`, `:((5 - 3) - 2)`.
-    * Acceptance of valid positive constant steps `:(1 + 2)`, `:(10 / 2)`, and `:(-(-1))`.
-* **Residual Limitation**:
-  - Dynamic zero and negative steps (`let s: i32 = 0; loop i in 0..10:s`) cannot be evaluated at compile time; runtime guard generation is addressed in Task 63.3.
-* **Verification**:
-  - `python -m pytest tests/test_range_steps.py -k "TestLiteralStepCompileRejection"`: 24/24 passed in 0.50s.
-  - `python -m pytest tests/test_range_steps.py -k "TestValidRangeStepControlGroup"`: 8/8 passed in 9.49s.
-  - `python -m pytest tests/test_large_ranges.py tests/test_dynamic_ranges.py tests/test_count_loops.py -q`: 261 passed, 0 failed in 52.53s.
-  - Bootstrap fixed-point determinism verified: SHA-256 `50FFAAE08511279CDF99FB2C1AA13AEF6B6A92EA8BE491AE3807DFEC180E0777` across Gen2, Gen3, and `bootstrap.c`.
-  - All 120 compiler source files in `src/` remain $\le 394$ lines (`python scripts/count_lines.py`).
+**81.3** Add `benchmark/compile_speed.py`: measure clean and incremental
+`velo build src/main.vl` time, track it per commit, and fail CI on a >20%
+regression.
 
-##### Task 63.3: Handle dynamic zero steps deterministically [COMPLETED] ✅
-* **Former Defect**:
-  - While literal and constant zero/non-positive steps were rejected at compile time (Task 63.2), dynamic steps represented by runtime variables or expressions (e.g. `let s: i32 = 0; loop i in 0..10:s`) could not be validated at compile time.
-  - The compiler lowered dynamic ranges to `__step_i = (s)` without any runtime validation. When `s <= 0` at runtime, `i += __step_i` or `i -= __step_i` never advanced the loop towards termination, hanging indefinitely in an infinite loop.
-* **Fix Applied**:
-  - Added runtime panic helper `velo_panic_range_step(int line, int col)` in `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h`:
-    * Prints actionable diagnostic to `stderr`: `[Velo Panic] Range loop step must be greater than zero at line %d, col %d\n`.
-    * Exits immediately with code 1 (`exit(1);`), completely eliminating infinite loops.
-  - Implemented `emit_range_step_guard(sb: @StringBuilder, stmt: @StmtNode, vname: string, indent: i32)` in `src/backend/range_gen.vl`:
-    * Emits a runtime guard at the very start of the loop body before any iteration or side effects:
-      - For signed types (`i32`, `i64`, `isize`): `if (__step_v <= 0) { velo_panic_range_step(line, col); }`
-      - For unsigned types (`u32`, `u64`, `usize`): `if (__step_v == 0) { velo_panic_range_step(line, col); }`
-    * Avoids unsigned `< 0` compiler warnings by discriminating signed vs unsigned with `is_unsigned_int_name`.
-    * Guard executes strictly before any user statement in the loop body, guaranteeing zero partial iterations.
-    * Evaluates `step` exactly once in the `for` loop initialization header without duplicate evaluation.
-  - Integrated `emit_range_step_guard` into `src/backend/codegen_stmt.vl:302` keeping `codegen_stmt.vl` at exactly 393 lines ($\le 394$).
-  - Rebuilt 3-generation self-hosted bootstrap chain (`bin/velo.exe` -> `bin/velo_gen2.exe` -> `bin/velo_gen3.exe` -> `bin/velo.exe` -> `bootstrap.c`) and verified bit-for-bit SHA-256 fixed-point determinism (`C0E4C2961CA14A140431B39D1068901C5107501B2FE073F7C3A61BCA14BA5ED0`).
-  - Expanded `TestDynamicRangeStepExecution` in `tests/test_range_steps.py` (8 tests) and updated `tests/test_range_loops.py`:
-    * Validated that dynamic zero (`s = 0`), dynamic negative (`s = -1`), dynamic descending negative (`s = -2`), dynamic unsigned zero (`s = 0u32`), dynamic 64-bit zero (`s = 0i64`), and dynamic anonymous zero (`loop 0..10:s`) fail fast with code 1 and output `[Velo Panic] Range loop step must be greater than zero`.
-    * Validated that no loop body side effects or partial iterations occur before the panic.
-* **Residual Limitation**:
-  - Verification that codegen never emits a literal `i += 0` increment in any C output is completed in Task 63.4.
-* **Verification**:
-  - `python -m pytest tests/test_range_steps.py -q`: 40/40 passed in 18.02s (100% pass rate).
-  - `python -m pytest tests/test_range_loops.py -q`: 10/10 passed in 4.58s (100% pass rate).
-  - `python -m pytest tests/test_range_steps.py tests/test_range_loops.py tests/test_large_ranges.py tests/test_dynamic_ranges.py tests/test_count_loops.py -q`: 309 passed, 0 failed in 70.82s.
-  - Fixed-point determinism verified: SHA-256 `C0E4C2961CA14A140431B39D1068901C5107501B2FE073F7C3A61BCA14BA5ED0` across Gen2, Gen3, and `bootstrap.c`.
-  - All 120 compiler source files in `src/` remain $\le 394$ lines (`python scripts/count_lines.py`).
+**81.4** Add `benchmark/memory.py` using per-workload peak RSS on all three
+platforms; replace `README.md`'s "< 64KB" claim with measured numbers or delete
+the claim (Phase 83 owns the deletion decision).
 
-##### Task 63.4: Ensure codegen never emits `i += 0` [COMPLETED] ✅
-* **Former Defect**:
-  - Prior to Phase 63, zero steps were lowered directly into C `for` loops as `for (...; i += 0)`, causing infinite loops.
-  - Even with semantic check rejection, defense-in-depth requires that the backend code generator itself (`src/backend/range_gen.vl`) explicitly rejects non-positive steps so that compiler internals or AST transformations can never inadvertently emit `i += 0`, `i -= 0`, `+= (0)`, or `-= (0)` increments.
-* **Fix Applied**:
-  - Implemented defense-in-depth step check in `src/backend/range_gen.vl:29-34`:
-    * Inside `emit_range_loop_header`, calls `is_range_step_non_positive(stmt.loop_step)` before generating loop C code.
-    * If a non-positive step reaches the backend, it immediately emits a compiler error (`report_error("backend", ...)`) and halts emission.
-  - Added dedicated test class `TestNoZeroStepEmittedAndCodegenDefense` in `tests/test_range_steps.py` (6 tests):
-    * `test_emit_c_valid_step_ascending`: verifies `i += 2` emitted and no `+= 0`.
-    * `test_emit_c_valid_step_descending`: verifies `i -= 2` emitted and no `+= 0` / `-= 0`.
-    * `test_emit_c_dynamic_step_contains_zero_guard`: verifies runtime step guard `if (__step_i <= 0) { velo_panic_range_step(...); }` is emitted before loop body.
-    * `test_emit_c_unsigned_dynamic_step_contains_zero_guard`: verifies runtime step guard `if (__step_i == 0) { velo_panic_range_step(...); }` for unsigned types.
-    * `test_emit_c_no_zero_increment_in_dynamic_loop`: verifies dynamic stepping uses `+= __step_i` / `-= __step_i` and never emits literal `0` increments.
-    * `test_emit_c_literal_zero_step_rejected_before_c_output`: verifies literal zero step cannot generate C output.
-  - Maintained line count discipline: `src/backend/range_gen.vl` is 142 lines ($\le 400$).
-* **Residual Limitation**:
-  - None. Both frontend semantic checks and backend codegen enforce that no zero step can reach emitted C code.
-* **Verification**:
-  - `python -m pytest tests/test_range_steps.py -k "TestNoZeroStepEmittedAndCodegenDefense"`: 6/6 passed in 0.25s.
-  - Full emitted C inspections confirm absence of `+= 0`, `+= (0)`, `-= 0`, `-= (0)`.
+**81.5** Promote `tests/test_loop_performance.py`'s pattern into a
+`tests/benchmarks/` tier behind a `--bench` flag so it runs in CI nightly, not
+per-PR.
 
-##### Task 63.5: Add security/timeout tests and documentation [COMPLETED] ✅
-* **Former Defect**:
-  - The specification (`docs/SPECIFICATION.md` §7.2) lacked formal guarantees on range step requirements, compile-time constant folding rejections, and dynamic fail-fast panic semantics.
-  - Range loop tests risked hanging CI test runners if infinite loops were introduced or re-introduced without strict timeouts.
-* **Fix Applied**:
-  - Updated `docs/SPECIFICATION.md` §7.2 with section 5 ("Strict Positive Step Invariant & Termination Guarantees") documenting:
-    * Invariant that range steps must be strictly positive ($> 0$).
-    * Compile-time rejection of non-positive literal and constant-folded expressions.
-    * Dynamic fail-fast runtime panic via `velo_panic_range_step` on zero/negative values before loop body execution.
-    * Codegen defense-in-depth guaranteeing no `i += 0` or `i -= 0` emission.
-    * Single-evaluation guarantee for dynamic range steps.
-  - Enforced strict timeouts on all runnable range tests:
-    * Every test in `tests/test_range_steps.py` (46 tests) and `tests/test_range_loops.py` (10 tests) runs with `timeout=1.0`s or `2.0`s.
-    * Guaranteed that no test can hang CI; any regression immediately times out in under 2 seconds.
-* **Residual Limitation**:
-  - None. Full test matrix is green, timeout-guarded, and fully specified in the official language manual.
-* **Verification**:
-  - `python -m pytest tests/test_range_steps.py -q`: 46/46 passed in 18.20s.
-  - `python -m pytest tests/test_range_loops.py -q`: 10/10 passed in 4.49s.
-  - Full loop test suite: 315/315 passed in 71.30s across `test_range_steps.py`, `test_range_loops.py`, `test_large_ranges.py`, `test_dynamic_ranges.py`, `test_count_loops.py`.
-  - `docs/SPECIFICATION.md` §7.2 matches live compiler behavior.
+## Phase Exit Criteria
 
-#### Phase Exit Criteria
-
-- [x] `loop i in 0..10:0` fails at `velo check` (literal) or fails fast at runtime (dynamic).
-- [x] No emitted loop contains `i += 0`.
-- [x] Valid positive and negative steps still work.
-- [x] All step tests are timeout-guarded.
+- `benchmark/RESULTS.md` is generated, names compiler versions and hardware, and
+  includes C, Rust, and Go peers.
+- A compile-time regression fails a CI job.
 
 ---
 
-### Phase 64: Closed-Set Validation for `mem.*` and `str.*` (P2) [COMPLETED] ✅
+# Phase 82: Compiler Robustness and Fuzzing (P1) - OPEN (partially verified)
 
-**Audit ID:** `AUDIT-2026-11-13`<br>
-**Severity:** P2 — checker accepts unknown members; GCC-only failure<br>
-**Depends on:** Phase 52 (closed-set pattern)<br>
-**Blocks:** —
+## Defect
 
-#### Defect
+The compiler has no fuzzing. Every defect in Phases 52-69 was found by a human
+reading code or writing a probe - several were process crashes
+(`0xC00000FD` stack overflow, `0xC0000374` heap corruption, `0xC0000094`
+divide-by-zero). A crash on malformed input in a compiler that emits C is a
+security issue, because the compiler is a build dependency.
 
-`check_mem_call` returns `true` for any member outside `copy`/`move`/`set`/`realloc` (`mem_checks.vl:43`). `check_str_call` returns `"unknown"` for an unknown member and explicitly keeps the legacy fallthrough (`str_checks.vl:6,109`). `math.*` is correctly closed, which proves the pattern already exists.
+## Evidence
 
-```velo
-mem.does_not_exist()   // velo check passes → GCC error
-str.does_not_exist()   // velo check passes → GCC error
-math.does_not_exist()  // velo check rejects: unknown math member
-```
+| Fact | Evidence |
+| :--- | :--- |
+| No fuzz harness | no `fuzz` directory, no libFuzzer/AFL target, no property-test dependency in any test |
+| Crashing inputs are a proved pattern | Phase 69: `defer return` overflowed the stack in both `check` and `emit-c`, exit `-1073741571`/`3221225725`, no diagnostic |
+| The compiler still crashes on other inputs | Phase 74 probes show uncaught `0xC0000094` on divide-by-zero; `docs/gaps_archive.md:181` records `STATUS_HEAP_CORRUPTION` from `mem.realloc` on a zone pointer |
+| Error recovery is unmeasured | `st.error_count` exists (`src/analysis/symbol_table.vl`) but nothing asserts a valid parse tree after N errors |
+| No resource limits | a deeply nested expression or a very long line has no documented limit; the lexer/parser recursion depth is unbounded |
 
-#### Security Invariants
+## Security Invariants
 
-- Every module member must belong to a documented closed set.
-- Unknown members must fail at `velo check`, never at GCC or runtime.
-- Arity and argument types must be validated for every member.
-- The codegen must not silently emit a no-op or an unresolved symbol.
+- **I82.1** No input reaches a signal or an OS exception. Every failure is a
+  diagnostic with a code and a non-crashing exit status.
+- **I82.2** Recursion in lexer, parser, and checker is depth-bounded with a
+  named diagnostic.
+- **I82.3** A fuzz corpus is committed and runs in CI on a time budget.
 
-#### Tasks
+## Tasks
 
-##### Task 64.1: Inventory the `mem` and `str` public surfaces [COMPLETED] ✅
-* **Former Defect**:
-  - There was no authoritative written list of `mem.*` and `str.*` members. The only enumeration lived implicitly inside two code paths: the codegen ladder and the checker allowlist — and the checker allowlist was incomplete for `mem` (four of thirteen members) and open-ended for both modules.
-  - Nothing prevented the codegen ladder, the checker, and `runtime/velo_runtime.h` from drifting apart; the codegen `velo_str_<member>` fallback could emit a symbol with no inventory entry.
-* **Fix Applied**:
-  - Added `tests/test_mem_str_surface.py` (40 assertions) as the checked-in inventory and drift alarm.
-  - **`mem` closed set (13 members)**, derived from the dispatch ladder `src/backend/codegen_call.vl` under `target.str_val == "mem"`:
-    `alloc, heap_alloc, free, realloc, copy, move, set, used, heap_used, current, alloc_with, create_arena, destroy_arena`.
-  - **`str` closed set (18 members)**, derived from `velo_str_*` helpers in `runtime/velo_runtime.h` plus the legacy inline `len`:
-    `len, contains, starts_with, ends_with, index_of, trim, heap_trim, to_upper, heap_to_upper, to_lower, heap_to_lower, replace, heap_replace, concat, heap_concat, split, format, heap_format`.
-  - **Not public members (internal helpers)**: `velo_str_nonnull`, `velo_str_copy_heap`, `velo_str_copy_zone`, `velo_str_eq`, `velo_str_neq`, and the shared `*_impl` bodies. They are reachable from source today only because `emit_str_call` is generic; reaching them yields `unknown type name 'unknown'` at GCC. Task 64.4 closes this.
-  - `std/mem/*.vl` and `std/str/*.vl` declare plain acts (`heap_alloc`, `copy`, `set`, `eq`, `arena_*`, `slab_*`, `slice_*`, `sb_*`) in namespaces distinct from the `mem.*`/`str.*` intrinsics, so they add no members to either closed set.
-  - The suite asserts: the inventory equals the codegen ladder (static regex over the `mem` ladder block), the `str` inventory equals the public runtime helpers minus internal ones, internal helpers never appear as members, the four currently-checked `mem` members are a subset, and every documented member is accepted by `velo check` both individually and in one aggregate program per module.
-* **Residual Limitation**:
-  - The inventory is documentation plus a drift alarm only; `velo check` still accepts unknown `mem.*` and `str.*` members. Closing the sets is Task 64.2 (`mem`) and Task 64.3 (`str`).
-  - Confirmed live defects recorded for the next tasks: `mem.does_not_exist()` and `str.does_not_exist()` pass `velo check` (exit 0) then fail at GCC; `str.eq`/`str.neq` pass `velo check` and fail at GCC with `unknown type name 'unknown'`; `mem.alloc()` with zero arguments crashes the compiler with `-1073741819` (`0xC0000005`) instead of reporting a diagnostic.
-  - `mem` arity/type walls are missing for `free`, `used`, `heap_used`, `current`, `create_arena`, `destroy_arena`, `alloc` and `heap_alloc`: `free(1)`, `free(null, null)`, `used(1)`, `create_arena()`, `alloc(@i32, 8, 9)`, `alloc("abc")` are all accepted. Only `copy`/`move`/`set`/`realloc` are validated.
-  - `str` arity/type walls were already complete for the seventeen runtime members; only the unknown-member fallthrough remains (Task 64.3).
-* **Verification**:
-  - `python -m pytest tests/test_mem_str_surface.py -q`: 40 passed in 1.36s.
-  - Full-surface probes checked directly with `bin/velo.exe check` (exit 0) and one aggregate run via `bin/velo.exe run` printing every member result (exit 0).
+**82.1** Add `tests/test_compiler_no_crash.py`: a generator producing malformed
+inputs (truncated tokens, mismatched braces, 10k-deep nesting, 1 MB identifiers,
+invalid UTF-8, NUL bytes, BOMs) and asserting for each that `velo check` and
+`velo emit-c` exit with a documented status and emit a diagnostic. Seed the
+generator with every historical crash input from Phases 52-69 and this file.
 
-##### Task 64.2: Close the `mem.*` checker [COMPLETED] ✅
-* **Former Defect**:
-  - `check_mem_call` returned `true` for every member outside `copy`/`move`/`set`/`realloc`, so `mem.does_not_exist()` passed `velo check` (exit 0) and only failed later at GCC.
-  - Eight of the thirteen inventory members had no arity or type wall at all: `mem.free(1)`, `mem.free(null, null)`, `mem.used(1)`, `mem.heap_used(1)`, `mem.current(1)`, `mem.create_arena()`, `mem.destroy_arena()`, `mem.alloc(@i32, 8, 9)`, `mem.alloc("abc")`, `mem.alloc(@i32, "x")` and `mem.heap_alloc(@i32, 8, 9)` were all accepted.
-  - `mem.alloc()` with zero arguments did not even report: the codegen ladder dereferences `expr.first_arg.next` unconditionally, so the compiler aborted with `0xC0000005` (`-1073741819`) and produced no diagnostic.
-* **Fix Applied**:
-  - Rewrote `src/analysis/mem_checks.vl` (205 lines) around the Task 64.1 inventory:
-    * `mem_valid_members()` publishes the closed set in ladder order (`alloc, heap_alloc, free, realloc, copy, move, set, used, heap_used, current, alloc_with, create_arena, destroy_arena`); `mem_is_known_member` gates it.
-    * Unknown members report `unknown mem member '<m>' (functions: <list>)`, mirroring the Phase 52 `io.*` and §5.3 `math.*` wording.
-    * New `mem_expect_arity` helper produces `mem.<m> expects exactly N argument(s)<sig>` for the zero- and one-argument families and for `alloc`/`heap_alloc`/`alloc_with`.
-    * `mem.alloc` / `mem.heap_alloc` accept `(count)` or `(@Type, count)`: a pointer-shaped `@Type` first argument plus a countable count, with `"[@]Type, count"` shapes rejected as `mem.<m> expects 1 or 2 arguments: (count) or (@Type, count)`.
-    * `mem.alloc_with` requires exactly three arguments before any `first_arg.next.next` dereference, then an allocator handle, a `@Type`, and a count.
-    * `mem.free` accepts pointers **and** `string` (heap strings returned by `str.heap_*` are `char*` and are legitimately freed; existing suites do this). `mem_is_freeable` documents the rule.
-    * `mem.create_arena` requires an integer capacity; `mem.destroy_arena` and `mem.free` require pointer-ish handles.
-    * The cm43 walls for `copy`/`move`/`set`/`realloc` keep their exact wording and the negative-literal count rejection, so Stage 1/Stage 2 parity is preserved.
-  - `src/analysis/type_checker.vl` needed no change: the result spells were already correct for every member and the `unknown` short-circuit is unchanged.
-* **Residual Limitation**:
-  - The nine newly-walled members are checked by Stage 2 only. Stage 1 (`velo/codegen_c.py`) is the frozen reference compiler and keeps its legacy `_mem_expect` behaviour for `alloc`/`heap_alloc`/`free`/`used`/`current`/`arena`, exactly like the Phase 52 `io.*` closed set. Programs rejected only by these new walls are therefore Stage-2-only rejections; the existing `assert_parity` suites cover only the four cm43 primitives, which remain word-identical on both stages.
-  - `mem.free` accepts any `string`, so a zone-allocated string passed to `mem.free` is still a runtime concern, not a compile-time one. Ownership escapes remain the job of `escape_checks.vl`.
-* **Verification**:
-  - `python -m pytest tests/test_mem_str_surface.py -q`: 70 passed in 2.47s (30 new reject rows plus the diagnostic-list and emit-c lanes).
-  - `python -m pytest tests/test_mem_intrinsics.py tests/test_std_mem.py -q`: 16 passed.
-  - `python -m pytest tests/test_allocators.py -q`: 25 passed.
-  - `python -m pytest tests/test_call_arguments.py tests/test_type_checker.py tests/test_zone_escape_analysis.py tests/test_strict_safety.py -q`: 223 passed.
-  - `python -m pytest tests/test_string_library.py tests/test_std_str.py tests/test_string_interpolation.py -q`: 45 passed (after the `mem.free(string)` allowance).
-  - `bin/velo.exe check` on `mem.does_not_exist()` now exits 1 with the closed-set diagnostic; `emit-c` refuses and writes no output; `mem.alloc()` reports the arity error instead of crashing.
-  - Bootstrap chain rebuilt (Gen2 -> Gen3 -> `bin/velo.exe`), determinism SHA-256 `b082d5d1c3d1c4abe59c72a9188b5b627b2db4f3d6b9483deaf733348e48db54`, `bootstrap.c` regenerated (`C0F0B30B80396A6B14B6066D81E465F3270783F54D721E191AFCA87B984E8E8D`), `tests/test_bootstrap_snapshot.py` 5 passed, `scripts/count_lines.py` all files under 400 lines.
+**82.2** Add depth limits to the lexer/parser/checker with a named diagnostic
+and a test at limit-1, limit, limit+1.
 
-##### Task 64.3: Close the `str.*` checker [COMPLETED] ✅
-* **Former Defect**:
-  - `check_str_call` returned `"unknown"` for any member missing from `str_member_arity`, deliberately preserving "the legacy fallthrough path" (`str_checks.vl:109`). `str.does_not_exist()` therefore passed `velo check` (exit 0) and only failed at GCC.
-  - Because `emit_str_call` builds the C symbol as `velo_str_<member>` generically, the internal runtime helpers were reachable from source even though they were never meant to be public: `str.eq`, `str.neq`, `str.nonnull`, `str.copy_heap`, `str.copy_zone` and the `*_impl` bodies all passed `velo check` and then failed at GCC with `unknown type name 'unknown'` — the pseudo-type the infer branch returns after a failed check.
-* **Fix Applied**:
-  - `src/analysis/str_checks.vl` (226 lines) now publishes the closed set:
-    * `str_valid_members()` returns the 18-member inventory in `str_member_sig` order; `str_is_known_member` gates it.
-    * Unknown members report `unknown str member '<m>' (functions: <list>)` with `report_error("semantic", ...)`, matching the `io.*`/`math.*`/`mem.*` wording.
-    * The `arity < 0` branch is no longer a silent `return "unknown"`: it is now an `internal` diagnostic ("has no arity table entry") so a future member added to one table but not the other cannot slip past codegen.
-    * The existing `len`/`format` special cases and the per-member arity/type walls are unchanged, so the mirrored Stage 1 wording still matches.
-* **Residual Limitation**:
-  - Stage 1 (`velo/codegen_c.py::_str_expect`) is the frozen reference compiler and keeps its own behaviour for unknown members; the closed-set rejection is Stage 2 only, consistent with the Phase 52 `io.*` closure.
-  - `str.split` returns `shelf[string]`, so its result supports shelf members, not `str.*` members. A call such as `str.split(s, ",").len()` fails with a shelf-member diagnostic rather than a str one; that is correct but worth knowing when reading the diagnostics.
-* **Verification**:
-  - `python -m pytest tests/test_mem_str_surface.py -q`: 91 passed in 2.87s (21 new str rejection rows, the diagnostic-list assertion, the emit-c gate, and the `str.eq` GCC regression).
-  - `python -m pytest tests/test_string_library.py tests/test_std_str.py tests/test_string_interpolation.py tests/test_string_concat.py tests/test_string_escapes.py tests/test_string_match.py -q`: 35 passed.
-  - `python -m pytest tests/test_call_arguments.py tests/test_type_checker.py tests/test_std_io.py tests/test_io_checks.py tests/test_math_library.py -q`: 281 passed.
-  - `bin/velo.exe check` on `str.does_not_exist()` and `str.eq(...)` both exit 1 with the closed-set diagnostic; `emit-c` refuses and writes no output.
-  - Bootstrap chain rebuilt, determinism SHA-256 `90375b3a4284daa0634d3c662d8bfe1c015295f3ed5bc9acfc8263f680301c81`; `bootstrap.c` regenerated (`F714706E34C1F359F510934DE5FFF5AA135A282194759E300A89327C288661D0`); `test_bootstrap_snapshot.py` + `test_stage2_bootstrap.py` 9 passed; `count_lines.py` all files under 400 lines.
+**82.3** Build an AFL/libFuzzer target for the C-transpiler path
+(`compile_source_to_c_all_opts` exposed via a thin C entry point), run it for a
+fixed budget in CI nightly, and commit `tests/fuzz/corpus/` with the discovered
+inputs.
 
-##### Task 64.4: Add codegen defense [COMPLETED] ✅
-* **Former Defect**:
-  - Both backends were open-ended. The `mem` ladder in `src/backend/codegen_call.vl` simply fell off the end for any member it did not recognise, emitting **nothing** — the enclosing expression was then transcribed with no operand, so the failure surfaced as an unrelated C error or as silently wrong code.
-  - `emit_str_call` in `src/backend/codegen_io.vl` was worse: it concatenated the member name onto `velo_str_` unconditionally, so any unknown member produced a call to a symbol that does not exist. Before Task 64.3 this is exactly how `str.eq`/`str.neq`/`str.nonnull` reached GCC and failed with `unknown type name 'unknown'`.
-  - Neither lane had a defense, so a future lowering path that bypassed semantic analysis would place an unresolved symbol in the translation unit instead of failing loudly.
-* **Fix Applied**:
-  - `src/backend/codegen_call.vl`: the `mem` ladder now ends with an explicit internal-error report — `internal compiler error: unknown mem member reached codegen` via `report_error("internal", ...)` plus `st.error_count += 1` — mirroring the Phase 62 break/continue defense. Compressed ladder layout preserved; file 206 lines.
-  - `src/backend/codegen_io.vl`: `emit_str_call` now gates the generic tail on `str_is_known_member(member)` (the checker's own closed set, so the two lists cannot drift) and reports `internal compiler error: unknown str member '<m>' reached codegen` instead of emitting the symbol. Added `use "../analysis/str_checks.vl"` and `use "../common/diagnostics.vl"`; file 255 lines.
-  - Both guards use the `internal` lane, not `backend`, so the diagnostic contract from Phase 62 holds: a user-facing program never sees the wording.
-* **Residual Limitation**:
-  - The guards are unreachable from source by construction, so they cannot be exercised end-to-end without a synthetic bypass. The tests assert the guard text and lane statically, and assert that three real source programs (`mem.does_not_exist()`, `str.does_not_exist()`, `str.eq(s, s)`) are rejected by the semantic lane without ever reaching the internal wording. A true end-to-end exercise would require a compiler test hook that disables the checker; that hook does not exist and is not added here.
-  - `emit_str_call` depends on `str_checks.vl`, which in turn depends on `type_checker.vl`. The dependency already existed transitively through `codegen_expr.vl`, so build order is unchanged, but the backend now names the checker module directly — worth remembering if the analysis layer is ever split out of the compiler binary.
-* **Verification**:
-  - `python -m pytest tests/test_mem_str_surface.py -q`: 96 passed in 2.50s (5 new rows: two static guard assertions and three "checker owns it first" rows).
-  - `python -m pytest tests/test_string_library.py tests/test_std_str.py tests/test_string_interpolation.py tests/test_dynamic_collections.py tests/test_std_coll.py -q`: 72 passed in 109.48s — valid `str.*` emission and shelf receivers are unaffected.
-  - `python -m pytest tests/test_bootstrap_snapshot.py tests/test_codegen_error_gate.py tests/test_stage2_codegen.py -q`: 15 passed in 40.44s.
-  - Bootstrap chain rebuilt (Gen2 -> Gen3 -> `bin/velo.exe`), determinism SHA-256 `b4abe546a440fce6ca2a2c29c497ab777a7e85dcb3e96a2eb02a9d7b2db0f831`; `bootstrap.c` regenerated (`3497D289266AFA8B1D5CFD60A7032D97F52F70BEFFBF95B4DB8998E79F15BCCE`); `count_lines.py` all files under 400 lines (`codegen_io.vl` 255, `codegen_call.vl` 206).
+**82.4** Add an error-recovery assertion: after any single-error input, the
+diagnostic list is non-empty, contains no internal `backend:`/`reached codegen`
+message, and the process exit code is in the documented set.
 
-##### Task 64.5: Add tests, diagnostics, and documentation [COMPLETED] ✅
-* **Former Defect**:
-  - `docs/SPECIFICATION.md` had no description of either intrinsic namespace. §5 covered `zone` and mentioned `mem.alloc` only in passing; §6 covered interpolation and `+` concatenation. Neither `mem.*` nor `str.*` published a member list, so there was nothing to check a call against and nothing to point a user at after a typo.
-  - No test bound the prose to the compiler: the documented members, the documented examples, and the documented diagnostic could all drift from the implementation without any signal.
-* **Fix Applied**:
-  - `docs/SPECIFICATION.md` gained four sections:
-    * **§5.5 The `mem.*` Intrinsic Surface** — a thirteen-row table with signature and result spell per member, the byte-count rule for `copy`/`move`/`set`, the negative-count rejection, the `mem.free` acceptance rule (raw pointers and heap strings), and a worked example.
-    * **§5.6 Unknown `mem.*` Members** — the exact closed-set diagnostic.
-    * **§6.3 The `str.*` Intrinsic Surface** — an eighteen-row table with signature, result, and **storage class** per member (active zone vs. persistent heap), the `heap_*`/`mem.free` pairing, the `str.format` argument-count rule, the `str.split` → `shelf[string]` note, and a worked example.
-    * **§6.4 Unknown `str.*` Members** — the exact closed-set diagnostic plus the explicit statement that internal helpers such as `velo_str_eq` are not members.
-  - `tests/test_mem_str_surface.py` grew to 102 assertions with a documentation gate:
-    * `test_spec_documents_every_mem_member` / `..._str_member` — every inventory member appears as `` `mem.<m>` `` / `` `str.<m>` `` in its section.
-    * `test_spec_mem_example_runs` / `test_spec_str_example_runs` — both SPEC examples are executed via `velo run` and must print `held=32` and `VELO! idx=1 len=5` respectively.
-    * `test_spec_documented_diagnostic_matches_the_compiler` — extracts the last fenced block from §5.6/§6.4, compares its shape (prefix up to the quoted member name plus the `(functions: ...)` payload) with the diagnostic the compiler actually prints, so a wording or list change fails the build.
-  - The reject/accept matrices from Tasks 64.2-64.4 already cover unknown members, wrong arity, wrong type, and the valid rows for both namespaces, so no separate matrix was added to `test_mem_intrinsics.py` or `test_string_library.py`; those suites stay focused on their original runtime-parity contracts.
-* **Residual Limitation**:
-  - The documentation gate compares the diagnostic *shape*, not the exact typo, because the SPEC example deliberately uses a different unknown name (`substr`, `malloc`) than the probe (`does_not_exist`). An exact-match gate would force the prose to use a meaningless identifier.
-  - The member tables are hand-maintained Markdown. The gate catches a missing member but not a wrong signature or a wrong result spell inside an existing row; those stay review-enforced.
-* **Verification**:
-  - `python -m pytest tests/test_mem_str_surface.py -q`: 102 passed in 5.41s.
-  - Both SPEC examples run and produce the documented output (`held=32`; `VELO! idx=1 len=5`).
-  - `docs/SPECIFICATION.md` §5.5/§5.6/§6.3/§6.4 list exactly the 13 `mem` and 18 `str` members from the Task 64.1 inventory.
-  - Full suite after the phase: `python -m pytest tests -q` -> **1870 passed, 2 skipped in 908.49s**. Caveat: this run used `PYTHONUTF8=1`, which is what keeps the Phase 66 `check_determinism.py` `✓` bug and the cp1252 fuzz harness from failing. Those two defects are **not** fixed by this phase; they are masked by the environment variable and remain open under Phase 66.
+**82.5** Add resource ceilings: maximum source file size, maximum token count,
+maximum AST depth, maximum error count (stop after N and print "too many
+errors"), each with a test.
 
-#### Phase 64 Summary
+## Phase Exit Criteria
 
-Both intrinsic namespaces are now closed sets, end to end:
-
-| Layer | `mem` | `str` |
-| :--- | :--- | :--- |
-| Inventory + drift alarm | `test_mem_str_surface.py` (codegen ladder regex) | same (runtime helper scan) |
-| Closed-set check | `mem_checks.vl::mem_is_known_member` | `str_checks.vl::str_is_known_member` |
-| Per-member walls | `mem_expect_arity` + per-family type walls | existing arity/type walls (unchanged) |
-| Codegen defense | internal error at ladder tail | `str_is_known_member` gate before emission |
-| Documentation | SPEC §5.5/§5.6 | SPEC §6.3/§6.4 |
-
-Behaviour that changed: `mem.does_not_exist()`, `str.does_not_exist()`, `str.eq(...)` and every other unknown member now fail at `velo check` with a diagnostic that lists the valid set. `mem.alloc()`, `mem.heap_alloc()` and `mem.alloc_with(...)` no longer abort the compiler. Eight previously unwalled `mem` members now reject wrong arity and wrong argument types.
-
-#### Phase Exit Criteria
-
-- [x] `mem.does_not_exist()` and `str.does_not_exist()` fail at `velo check`.
-- [x] Valid `mem.*` and `str.*` calls still pass and run.
-- [x] The valid-member lists are documented.
+- The historical crash corpus from Phases 52-69 all produce diagnostics, not
+  signals.
+- A nightly fuzz job exists with a committed corpus, evidenced by a run link.
 
 ---
 
-### Phase 65: Runtime Zone Allocator Hardening (P2) [COMPLETED] ✅
+# Phase 83: Documentation and Claims Integrity (P1) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-14`<br>
-**Severity:** P2 — OOM NULL dereference; invalid offset on a defensive path<br>
-**Depends on:** —<br>
-**Blocks:** —
+## Defect
 
-#### Defect
+The `README.md` makes claims that the tree does not support, and `AUDIT.md`
+reads as a self-assessment with an inflated scorecard. Overclaiming in the first
+two files a reviewer reads is worse than the missing features, because it
+destroys the credibility of everything else - including the parts that are
+genuinely good.
 
-`runtime/velo_runtime.h:518-532` allocates `z` with `malloc` and then dereferences `z->base` at line 531 before checking `z` for NULL; the check at line 532 is too late. `velo_zone_pop` sets `z->offset = watermark` at line 475, but `watermark` is a **watermark index** (1-based), not a byte offset; the valid path restores `wm.primary_offset`.
+## Evidence
 
-```c
-VeloZoneArena* z = (VeloZoneArena*)malloc(sizeof(VeloZoneArena));
-...
-z->base = (uint8_t*)malloc(bytes);
-if (!z || !z->base) { ... }   // z->base already dereferenced
-```
+| Fact | Evidence |
+| :--- | :--- |
+| "< 64KB RAM" is not supported | `README.md:13`; the runtime header includes `<stdio.h>`, `<stdlib.h>`, `<string.h>`, `<time.h>`, `<setjmp.h>`, `<math.h>`, `<sys/stat.h>` (`runtime/velo_runtime.h:20-50`), and the published baseline RSS is 4.59 MB (`benchmark/BENCHMARK_RESULTS.md:4`). No embedded target exists: no cross-compile flag, no `--target`, no bare-metal runtime profile. |
+| "0.001s startup time" is undocumented | `README.md:12`; no measurement script, no test, no CI number |
+| "120+ FPS guarantee" is undocumentable | `README.md:11`; no frame-time test, no engine, no benchmark |
+| "Single portable `.exe`" | `README.md:12`; true on Windows, and Phase 70 documents that it is not portable at all today |
+| Games and apps are untracked, so the showcase is invisible | `git ls-files games apps` -> 0 files, despite `games/flappy_bird`, `games/survivors`, `games/velocraft`, `apps/velokv`, `apps/velostudio` existing on disk [VERIFIED] |
+| `AUDIT.md` is a self-review with a scorecard | `AUDIT.md` "Reviewer Scorecard", "Reviewer's Final Verdict" - no reviewer identity, no date, no reproduction |
+| `README.md` quick-look compiles | verified: the `use sys.io` / `zone {}` snippet checks clean [VERIFIED] - so the docs are not uniformly wrong, which makes the specific overclaims more damaging |
+| No architecture doc for the stdlib | `docs/ARCHITECTURE.md` covers the compiler; the `std/` platform model (Phase 70's root cause) is undocumented |
 
-```c
-} else {
-    velo_zone_free_chunks(z);
-    z->offset = watermark;     // index, not bytes
-    ...
-}
-```
+## Security Invariants
 
-These are OOM/defensive-path bugs, not normal-path bugs, but they turn an allocation failure into a NULL dereference or a corrupted arena offset.
+- **I83.1** Every quantitative claim in user-facing docs is backed by a
+  committed script and a dated result.
+- **I83.2** A claim that cannot be measured is removed, not softened.
 
-#### Security Invariants
+## Tasks
 
-- Every allocation result must be checked before dereference.
-- Defensive/fallback paths must preserve a valid arena state.
-- OOM behavior must be documented (fatal vs recoverable).
-- Sanitizers must cover the runtime, not just compiler output.
+**83.1** Rewrite `README.md`'s "What is Velo?" targets to state what is
+measured today: systems tooling, compilers, CLI utilities, constrained-memory
+batch jobs - and mark platform support explicitly (Windows: supported; Linux and
+macOS: work in progress, see Phase 70). Delete "< 64KB RAM", "0.001s startup",
+and "120+ FPS guarantee" until 81.3/81.4 produce numbers.
 
-#### Tasks
+**83.2** Move `AUDIT.md` to `docs/reviews/AUDIT-2026-01.md`, label it as an
+internal self-assessment, and add the date. Add a `docs/REVIEWS.md` index that
+distinguishes internal from external reviews. Never present a self-review as a
+reviewer scorecard.
 
-##### Task 65.1: Build a runtime test harness [COMPLETED] ✅
-* **Former Defect**:
-  - Nothing exercised the zone runtime's defensive paths. `runtime/velo_runtime.h` could be driven to a NULL dereference and to a corrupted arena offset with no signal from the test suite, because every existing test exercises only the healthy path (enter, allocate, pop, leave).
-  - Allocation failure was not reproducible: the OOM behaviour was whatever the host `malloc` happened to do, so the dangerous branches were unreachable in a deterministic test.
-* **Fix Applied**:
-  - Added `tests/test_runtime_zone.py` (5 tests). It compiles `runtime/velo_runtime.h` directly with the same GCC the compiler drivers use (`-O2 -std=c99 -static`) and links a `malloc`-interposing shim:
-    * `velo_test_malloc` counts calls and returns `NULL` at an armed index, so failure lands on the exact allocation under test.
-    * `velo_test_arm(n)` re-arms the counter immediately before the call, so a harness never depends on how many allocations the runtime made earlier.
-  - **Normal-path floor** (`test_zone_enter_pop_nested_and_watermarks`, passes today): enter/push/alloc/pop/leave returns `velo_mem_used()` to zero and restores the active-arena identity; nested zones scope independently and restore the *arena* handle (not the `prev` pointer, which for a nested `velo_zone_enter` is the outer arena — an easy assertion to get wrong); two sequential pushes restore the outer offset exactly.
-  - **Control row** (`test_zone_enter_buffer_oom_is_already_a_clean_fatal`, passes today): arming failure on the *buffer* allocation is caught by the existing `if (!z || !z->base)` check, exits 1 and prints `Velo Fatal Error: Zone Arena allocation failed`. This proves the harness reaches the intended code, so the failing rows below are not harness artefacts.
-  - **Defect 1 red row** (`test_zone_enter_struct_oom_reports_fatal_not_null_deref`): arming failure on the *struct* allocation exits `3221225477` (`0xC0000005`) with empty stderr — a NULL dereference, not the documented fatal.
-  - **Defect 2 red rows** (`test_zone_pop_out_of_range_keeps_the_arena_usable`, `test_zone_pop_fallback_does_not_store_the_index`): `velo_zone_pop(wm + 4096)` leaves `offset=4097` with `cap=4096`, and `velo_zone_pop(7)` on a two-deep watermark stack sets `offset=7` — literally the index, confirming the index-vs-byte-offset confusion directly rather than only through its consequence.
-  - The `pop_index` harness reads `offset` and `wm_count` **before** `velo_zone_leave`, because `leave` returns the arena to the reuse pool or frees it; reading after the call is use-after-free (found and fixed while building the harness).
-* **Residual Limitation**:
-  - **Sanitizers are unavailable on this host.** Task 65.1's security gate asks for ASan/UBSan; neither `clang` nor MSVC's sanitizer runtime is installed here (only `C:\msys64\ucrt64\bin\gcc.exe`). Fail-injection is used instead, which reaches the same branches deterministically but does not detect out-of-bounds reads the way ASan would. Task 65.5 must either provide a POSIX lane or the gate must be restated — recorded, not silently skipped.
-  - `runtime/velo_runtime.h` exists in **two byte-identical copies**: the canonical `runtime/velo_runtime.h` and the frozen Stage-1 copy `velo/runtime/velo_runtime.h`. Nothing in the suite asserts they stay identical. A fix applied to one copy alone would leave the other compiler stage broken while every test still passed. Tasks 65.2/65.3 must patch both and add an identity assertion.
-  - The harness compiles the header with `-static` and no `-pthread`; the thread-only runtime paths stay covered by `tests/test_thread_local_runtime.py`.
-* **Verification**:
-  - `python -m pytest tests/test_runtime_zone.py -q`: 3 failed, 2 passed — the three failures are exactly the documented defects (`struct OOM` NULL dereference, `offset > cap`, `offset == index`); the two passes are the normal-path floor and the buffer-OOM control.
-  - Red-baseline reproduction of defect 1: `rc=3221225477`, empty stderr.
-  - Red-baseline reproduction of defect 2: `offset=4097 cap=4096`, and `wm_count=0 offset=7`.
+**83.3** Track `games/` and `apps/` (or move them to a separate examples repo
+and link it). The showcase is the strongest evidence the language works; leaving
+it untracked discards that evidence. If they are not ready, say so in the README
+and remove the claim of game-development readiness.
 
-##### Task 65.2: Fix the `velo_zone_enter` NULL check [COMPLETED] ✅
-* **Former Defect**: `velo_zone_enter` allocated the arena struct with `malloc` and then wrote `z->base = malloc(bytes)` before the combined `if (!z || !z->base)` test. A failed struct allocation therefore performed a store through a NULL pointer and crashed with `0xC0000005` instead of reporting the documented fatal. The pool-reuse branch had the same unchecked deref (`*z = g_velo_zone_tls_pool[pick]`). The existing check was only correct for the buffer allocation, which is why the suite never noticed.
-* **Fix Applied**:
-  - `runtime/velo_runtime.h:518-523`: check `z` immediately after `malloc`, before both the pool-reuse copy and the `z->base` write, and report the same `Velo Fatal Error: Zone Arena allocation failed (%llu bytes)` diagnostic and `exit(1)` that the buffer path already used.
-  - The late `if (!z || !z->base)` stays as the buffer check; `!z` is now unreachable there, so the branch reads as a single-condition guard without changing its behaviour.
-  - Applied to `runtime/velo_runtime.h` and copied to `velo/runtime/velo_runtime.h` so both stages stay identical, and added `test_runtime_header_copies_are_identical` to assert byte equality going forward (the gap Task 65.1 recorded).
-* **Residual Limitation**: The failure path now exits before touching `z`, so there is nothing to free — no leak is possible on this path. The earlier allocations made by the same call (`velo_zone_active()` creating the default arena on first touch) remain owned by the thread and are reclaimed at process exit, which is the documented fatal-OOM policy and is spelled out in Task 65.6.
-* **Verification**:
-  - `test_zone_enter_struct_oom_reports_fatal_not_null_deref` flips red → green: was `rc=3221225477` with empty stderr, now `rc=1` with `Velo Fatal Error: Zone Arena allocation failed (4096 bytes)`.
-  - Control row `test_zone_enter_buffer_oom_is_already_a_clean_fatal` still passes, so the buffer path is unchanged.
-  - `python -m pytest tests/test_runtime_zone.py -q` at this commit: 5 tests, 2 failed — only the two `velo_zone_pop` rows, i.e. the fix is isolated to the enter defect.
-  - `python -m pytest tests/test_thread_local_runtime.py tests/test_allocators.py tests/test_mem_intrinsics.py -q`: 38 passed.
+**83.4** Write `docs/STDLIB_ARCHITECTURE.md`: the platform-model contract
+(facade + `_<plat>` variants), the intrinsic boundary (`sys.*` vs `std.*`), the
+allocation tiers (zone/heap/arena/page), and the error model. This is the
+document whose absence let Phase 70's defect survive five audit phases.
 
-##### Task 65.3: Fix the `velo_zone_pop` fallback [COMPLETED] ✅
-* **Former Defect**: `velo_zone_pop` handled an out-of-range watermark in an else branch that did `velo_zone_free_chunks(z); z->offset = watermark;`. `watermark` is a 1-based **watermark index**, not a byte offset, so the branch left `offset` equal to whatever index the caller passed. Any index above `cap` then made `velo_mem_alloc`'s capacity check `z->cap - z->offset` underflow to a huge value, so the next allocation was placed past `base + cap`. The valid path never had the bug; only the defensive path did, which is why nothing caught it.
-* **Fix Applied**:
-  - `runtime/velo_runtime.h:473-482`: the fallback now drops the spilled chunks and rewinds to `offset = 0`, then clears the watermark stack exactly as before. Empty is always a valid arena state, so no arithmetic involving the index remains on any path.
-  - The comment states why the index must never be stored as an offset, so a future edit reintroducing the shortcut has the reason in place.
-  - Copied to `velo/runtime/velo_runtime.h`; `test_runtime_header_copies_are_identical` enforces the pairing.
-* **Residual Limitation**: The fallback is a full reset, not a partial rewind — after an invalid watermark the arena is empty rather than rewound to the last valid watermark. That is deliberate: an invalid index means the caller's watermark bookkeeping is already untrustworthy, and silently rewinding to a guessed watermark would hide the bug. The reset is still observably different from a no-op, so callers see it via `velo_mem_used()`. Task 65.6 documents this as the defensive-reset policy.
-* **Verification**:
-  - `test_zone_pop_out_of_range_keeps_the_arena_usable`: was `offset=4097 cap=4096` → `CORRUPTED`; now the arena stays usable and the follow-up allocation is inside the buffer (`ZONE-FALLBACK-OK`).
-  - `test_zone_pop_fallback_does_not_store_the_index`: was `wm_count=0 offset=7` → `INDEX-STORED-AS-OFFSET`; now `offset` is never the passed index.
-  - `test_zone_pop_zero_watermark_resets_the_arena` (new, covers the zero case the task named): `velo_zone_pop(0)` leaves `offset <= cap`, `wm_count == 0`, `wm_cap == 0`, `wm_heap == NULL`, and a following 1024-byte allocation succeeds in bounds.
-  - `python -m pytest tests/test_runtime_zone.py -q`: 7 passed.
-  - `python -m pytest tests/test_bootstrap_snapshot.py tests/test_thread_local_runtime.py tests/test_allocators.py tests/test_mem_intrinsics.py -q`: 43 passed.
-  - Determinism unchanged: `b4abe546a440fce6ca2a2c29c497ab777a7e85dcb3e96a2eb02a9d7b2db0f831` for Gen2 and Gen3. A header-only change does not alter `emit-c` output (`bootstrap.c` carries only the `#include "velo_runtime.h"` line), so no snapshot regeneration was required.
+**83.5** Add `tests/test_readme_claims.py`: every code block in `README.md` and
+`docs/SPECIFICATION.md` must compile or be explicitly marked
+`<!-- not-compiled -->`. This catches the drift that makes docs wrong over time.
 
-##### Task 65.4: Audit all runtime allocations [COMPLETED] ✅
-* **Former Defect**: A full audit of every `malloc`/`realloc`/`calloc` in `runtime/velo_runtime.h` found 14 sites. Nine were already correct (checked before use, or fatal on failure). Five were not:
-  1. `velo_zone_enter`'s struct allocation — the NULL dereference fixed in Task 65.2 (kept here for completeness of the table).
-  2. `velo_zone_pop`'s `z->offset = watermark` — the index-vs-offset confusion fixed in Task 65.3.
-  3. **`velo_mem_alloc` capacity test**: `aligned <= z->cap - z->offset`. If `offset > cap` (which Task 65.3 could produce before the fix, and any future corruption can still produce), the subtraction underflows to a huge value, so the test passes for *any* request and the arena hands out a pointer past `base + cap`.
-  4. **`velo_alloc_with` capacity test and its chunk fallback**: the same `cap - offset` subtraction on both the arena and the current chunk, reachable through the explicit-allocator API, so `mem.alloc_with` had the same underflow independent of the zone path.
-  5. **`velo_zone_push` watermark heap growth**: `new_cap = z->wm_cap * 2` could wrap to a small value, under-allocating the array while `heap_idx` stayed large — a heap write past the end.
-* **Fix Applied**:
-  - `velo_mem_alloc` / `velo_alloc_with`: test `offset <= cap` first and only then `aligned <= cap - offset`, so the subtraction can never underflow. A corrupt watermark now falls through to the existing loud "Out of Memory"/spill path instead of being trusted.
-  - Both chunk fallbacks: `cur->offset > cur->cap ||` added ahead of `aligned > cur->cap - cur->offset`, same reason.
-  - `velo_zone_push`: before the `realloc`, reject `new_cap < z->wm_cap` (wrap) or `new_cap > SIZE_MAX / sizeof(VeloZoneWatermark)` (byte-size overflow) with the existing `Watermark Stack OOM` fatal, so the array is never under-allocated.
-  - All changes copied to `velo/runtime/velo_runtime.h`; the identity test keeps the copies paired.
-  - Audit table (site → status):
+**83.6** Add `docs/COMPATIBILITY.md`: a support matrix (OS x compiler x
+architecture) with an explicit "not supported" column. Refuse to imply support
+that Phase 70 has not delivered.
 
-    | Line | Site | Result |
-    |---|---|---|
-    | 341/342 | `velo_zone_new_chunk` struct + buffer | checked, fatal |
-    | 388/389 | `velo_zone_create_default` struct + buffer | checked, fatal |
-    | 435 | `velo_zone_push` watermark heap | **wrap guard added** |
-    | 523/541 | `velo_zone_enter` struct + buffer | fixed in 65.2 |
-    | 681/682 | `velo_mem_create_arena` struct + buffer | checked, fatal |
-    | 860/932 | `velo_thread_spawn` ctx (Win32/pthread) | checked, fatal |
-    | 889/955/956 | `velo_mutex_create` cell + native | checked, fatal |
-    | 1145 | `velo_heap_alloc` raw block | checked, fatal |
-    | 1232 | `velo_heap_realloc` raw block | checked, fatal |
-    | 602/614 | `velo_mem_alloc` arena + chunk capacity | **underflow guard added** |
-    | 642/654 | `velo_alloc_with` arena + chunk capacity | **underflow guard added** |
+## Phase Exit Criteria
 
-* **Residual Limitation**: The capacity guards defend against a corrupted `offset`, not against a corrupted `base`/`cap` pair or a chunk whose `base` was already freed — those are use-after-free classes that only a sanitizer detects, and sanitizers are unavailable on this host (recorded in Task 65.1, carried to Task 65.5). The watermark wrap guard is unreachable in practice (it needs `wm_count` in the billions) and is therefore asserted by inspection only, not by a test.
-* **Verification**:
-  - New `test_zone_watermark_heap_oom_is_fatal`: arming the `realloc` failure at the 33rd push exits 1 with `Velo Fatal Error: Zone Arena Watermark Stack OOM!` and never continues.
-  - New `test_corrupted_zone_offset_cannot_allocate_past_cap`: with `offset = cap + 4096` the old header returns a pointer past `base + cap` (verified: `ALLOWED-PAST-CAP p=...B8B0 base=...98B0 cap=4096`); the new header refuses and takes the existing fatal.
-  - New `test_corrupted_chunk_offset_cannot_allocate_past_chunk`: old header → `OUT-OF-BOUNDS`; new header → `CHUNK-GUARD-OK`. Both guards were re-verified against `git show HEAD:runtime/velo_runtime.h` so they are proven load-bearing rather than merely present.
-  - `python -m pytest tests/test_runtime_zone.py -q`: 10 passed.
-  - `python -m pytest tests/test_thread_local_runtime.py tests/test_allocators.py tests/test_mem_intrinsics.py tests/test_bootstrap_snapshot.py -q`: 43 passed.
-
-##### Task 65.5: Add sanitizer coverage to CI [COMPLETED] ✅ (local lane blocked, recorded)
-* **Former Defect**: The `sanitizer` job in `.github/workflows/ci.yml` installed clang with ASan/UBSan and ran only `tests/test_defer.py`, `tests/test_break_continue.py`, `tests/test_match_switch.py` plus one `std/tests/mem/defer_test.vl` binary. Nothing compiled the **runtime header itself** under a sanitizer, so the entire Phase 65 defect class — OOM NULL dereference, watermark corruption, unchecked capacity subtraction — was outside sanitizer coverage even where sanitizers were available. The harness also could not have been plugged in: it hardcoded `gcc` and `-static`, both of which prevent a sanitizer build.
-* **Fix Applied**:
-  - `tests/test_runtime_zone.py`: `find_gcc` → `find_cc`, honouring `CC` first so the lane can select clang; `build_and_run` now appends `VELO_CFLAGS`/`VELO_LDFLAGS` (the same variables the existing sanitizer steps already use) and drops `-static` when sanitizers are requested, because `-static` cannot link the sanitizer runtimes. Non-Windows hosts also get a platform-correct executable name.
-  - Leak detection: the harness leaked the thread's default 64 MB arena on every row, which `detect_leaks=1` would report. The healthy rows now call `velo_thread_tls_release()` (`CHUNK_GUARD` calls `velo_mem_destroy_arena`) so they run **with** leak detection on, and the four rows whose contract is to terminate inside the runtime's fatal handler pass `expected_fatal=True`, which disables leak detection for those rows only — the arena is unreachable after `exit`, so a leak report there would be noise, not a finding.
-  - `.github/workflows/ci.yml`: the `sanitizer` job gained a `Run the runtime zone harness under ASan + UBSan` step placed before the bootstrap, so a runtime memory error fails fast, with `CC=clang`, `-fsanitize=address,undefined`, `ASAN_OPTIONS=detect_leaks=1:halt_on_error=1:abort_on_error=1`, `UBSAN_OPTIONS=halt_on_error=1:abort_on_error=1`.
-* **Residual Limitation**: **The sanitizer lane was not executed locally.** `clang` is not installed on this host, and the MSYS2 UCRT64 gcc has no sanitizer runtimes at all — attempting `VELO_CFLAGS=-fsanitize=address,undefined` fails at link with `cannot find -lasan` / `cannot find -lubsan`. So the harness's sanitizer code path is written, wired into CI, and verified to compile and run correctly under the plain-gcc lane, but its **first real sanitizer execution will be the first CI run**. That is an honest gap, not a pass. What *was* verified locally is the substitution the task cannot provide here: deterministic fail-injection (Tasks 65.1–65.4) reaches the same branches and the guards are proven load-bearing against the pre-fix header.
-* **Verification**:
-  - `python -m pytest tests/test_runtime_zone.py -q` with no `VELO_*` overrides: 10 passed (this is the lane available on this host).
-  - Negative check of the sanitizer wiring: with `VELO_CFLAGS`/`VELO_LDFLAGS` set to `-fsanitize=address,undefined`, the harness attempts a sanitizer link and fails with `cannot find -lasan`, proving the flags are actually applied and `-static` is correctly suppressed rather than silently ignored.
-  - `.github/workflows/ci.yml` parses as YAML and the `sanitizer` job's step list now reads `... 'Install Clang and Sanitizer runtimes', 'Run the runtime zone harness under ASan + UBSan', 'Bootstrap self-hosted Velo compiler ...'`.
-
-##### Task 65.6: Document the OOM policy [COMPLETED] ✅
-* **Former Defect**: 22 distinct `Velo Fatal Error:` sites existed in `runtime/velo_runtime.h` and **none of them were documented anywhere**. A user reading `docs/SPECIFICATION.md` §5.5 could reasonably assume `mem.alloc` returns something they should test for failure, when in fact it is typed `@T` (not `?@T`) and terminates the process. Nothing stated that the policy is fail-stop, so "handle OOM" was undefined behaviour from the user's point of view — and the allocation-path comments gave a future editor no rule to follow.
-* **Fix Applied**:
-  - `docs/SPECIFICATION.md` **§5.7 Out-of-Memory Behaviour**: the user-facing contract — fail-stop, the six condition/diagnostic/outcome rows a caller can actually hit, three consequences (budget explicitly, no partial results, defensive paths reset rather than guess), and a pointer to `SECURITY.md` for the per-site table.
-  - `SECURITY.md` **§ Out-of-Memory Policy**: the full per-site table (arena struct/buffer, spilled chunk, watermark heap including wrap and byte-size overflow, heap alloc/realloc, thread/mutex, fixed-budget overflow, `alloc_with`, size overflow, null arena, zero capacity, negative counts), plus the three-reason rationale for fail-stop (a `null` return is unobservable through a `@T` intrinsic; a partial arena state is not a valid state; defensive paths must not guess a rewind target).
-  - `runtime/velo_runtime.h`: an **OOM POLICY** block in the allocator section header stating the three editing rules (allocate-then-publish, guard the subtraction, reset rather than guess) with inline pointers to the two documents and the test file, so the rule is visible where the code is.
-  - `tests/test_runtime_zone.py::test_oom_policy_is_documented_and_matches_the_code`: a bidirectional gate. Each allocation-path diagnostic must still exist in the header **and** appear in the policy documents, so removing a diagnostic also fails the test (the docs cannot describe a message that no longer exists), and the prose must keep saying `fail-stop` and explain the `@T`-not-`?@T` reason. Bounds/type traps (`shelf index out of bounds`, `map key not found`, `shelf[dyn] unbox`, ...) are explicitly out of scope — they are caller-error traps owned by other subsystems, not OOM policy, and conflating them would make the table meaningless.
-* **Residual Limitation**: The table is scoped to the allocation/OOM class. The other ~9 fatal sites in the header (bounds checks, string split with an empty delimiter, dynamic-typing unbox mismatches) remain undocumented individually; they are documented by their own `velo_runtime.h` comments and belong to the shelf/map/ring/bitset phases, not here. The docs are also not generated from the code — the gate is a curated list of 13 message fragments, so a brand-new allocation fatal that nobody adds to `ALLOC_FATALS` would pass; that is a deliberate trade against a brittle whole-header parse, and the list is small enough to review.
-* **Verification**:
-  - `python -m pytest tests/test_runtime_zone.py -q`: **11 passed** (10 behavioural + the new documentation gate).
-  - The gate was checked failing-first for both directions: before the `SECURITY.md` rows for `Cannot enter null arena` / `Arena allocation failed` / `Arena capacity must be > 0` were added it reported each as undocumented; the earlier whole-header scan version was rejected because it swept in bounds/type traps.
-  - Neighbouring document-sensitive suites still pass: `python -m pytest tests/test_mem_str_surface.py tests/test_mem_intrinsics.py tests/test_allocators.py -q`: **137 passed** (that suite executes the SPEC's `mem.*` examples, so a broken edit to §5.5–5.7 would surface there).
-  - Cross-document consistency: `python -m pytest tests/test_bootstrap_snapshot.py -q` 5 passed; `check_determinism.py` Gen2 == Gen3 `b4abe546a440fce6ca2a2c29c497ab777a7e85dcb3e96a2eb02a9d7b2db0f831` (unchanged — this task touched no compiler source, and a header comment does not affect `emit-c`).
-
-#### Phase Exit Criteria
-
-- [x] `velo_zone_enter` checks `z` before `z->base`.
-- [x] `velo_zone_pop` never assigns a watermark index to `z->offset`.
-- [x] All runtime allocations are checked.
-- [x] ASan/UBSan runtime tests are wired into CI — **but first execution is the first CI run**; sanitizers are absent on the development host, so local coverage is deterministic fail-injection instead. Recorded, not claimed green.
-
-#### Phase 65 Summary
-
-All six tasks complete. Five commits:
-
-1. `test(runtime)`: the zone harness with malloc fail-injection — red baseline of the two documented defects (3 failures).
-2. `fix(runtime)`: `velo_zone_enter` checks the struct before the pool copy and the `z->base` write.
-3. `fix(runtime)`: `velo_zone_pop`'s out-of-range fallback resets to empty instead of storing the watermark index.
-4. `fix(runtime)`: every arena/chunk capacity subtraction guarded by `offset <= cap`, plus a wrap guard on the watermark heap doubling. Two of these were found by the audit, not by the original phase description.
-5. `ci(runtime)` + `docs`: the harness runs under ASan/UBSan in CI, and the fail-stop OOM policy is documented in `SPECIFICATION.md` §5.7, `SECURITY.md`, and the runtime header, gated by a test.
-
-Test file grew from 0 to **11 tests** in `tests/test_runtime_zone.py`, and `runtime/velo_runtime.h` / `velo/runtime/velo_runtime.h` are now asserted byte-identical.
-
-**Residual limitations carried forward (honest):**
-
-- **No local sanitizer run.** `clang` absent; MSYS2 UCRT64 gcc has no `-lasan`/`-lubsan`. The sanitizer lane is wired and its flags verified to be applied, but the first real execution is CI. Fail-injection substitutes for reaching the branches, and the guards were proven load-bearing against the pre-fix header, but this is *not* a sanitizer pass.
-- **Use-after-free classes are still unseen.** A corrupted `base`/`cap` pair, or a chunk whose `base` was already freed, is not caught by the capacity guards — only a sanitizer catches those.
-- **The `ALLOC_FATALS` doc gate is a curated list** of 13 fragments, not a full-header parse: a brand-new allocation fatal that nobody adds to the list would pass.
-- **9 non-allocation fatal sites** (bounds, empty-delimiter split, `shelf[dyn]` unbox) remain individually undocumented; they belong to the shelf/map/ring/bitset subsystem phases.
-
-**Full-suite verification:** `python -m pytest tests -q` with `PYTHONUTF8=1` — **1881 passed, 2 skipped in 883.44s**. That is exactly the pre-phase 1870 passing tests plus the 11 added in `tests/test_runtime_zone.py`, with no regressions elsewhere. (`PYTHONUTF8=1` is still required: Phase 66's `check_determinism.py` `✓` and Phase 67's ambient `scratch/` remain open and unrelated to this phase.)
+- `README.md` contains no quantitative claim without a script and a result.
+- Every doc code block is either compiled by a test or marked as prose.
+- `AUDIT.md`'s status is unambiguous as an internal self-assessment.
 
 ---
 
-### Phase 66: Determinism Script Encoding on Windows (P2) [COMPLETED] ✅
+# Phase 84: Ecosystem, Governance, Showcase (P2) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-15`<br>
-**Severity:** P2 — CI false failure after a successful determinism check<br>
-**Depends on:** —<br>
-**Blocks:** —
+## Defect
 
-#### Defect
+Beyond code: no editor packages are tracked, no governance, no issue templates,
+no release process, no community surface. `editors/` exists on disk and is
+untracked (0 tracked files), which means the LSP - a genuine strength - is
+invisible to everyone who is not sitting at the maintainer's machine.
 
-`scripts/check_determinism.py:37` prints `\u2713` and `\u2014`. On Windows with the default cp1252 console encoding, the print raises `UnicodeEncodeError` **after** Gen2/Gen3 hashes match, so the script exits 1 and `tests/test_ci_matrix.py::test_check_determinism_script_runs` fails.
+## Evidence
 
-```
-Gen2: 13a65b54...
-Gen3: 13a65b54...
-UnicodeEncodeError: 'charmap' codec can't encode character '\u2713'
-```
+| Fact | Evidence |
+| :--- | :--- |
+| `editors/` is untracked | `git ls-files editors` -> 0 [VERIFIED] |
+| No issue/PR templates, no dependabot, no funding | `.github/` contains only `workflows/ci.yml` [VERIFIED] |
+| No governance or support policy beyond `SECURITY.md` | the 10 tracked root files listed in Phase 71 |
+| `website/` is partially untracked | `git status --short` shows untracked `website/public/bootstrap.c`, favicons, logo assets, and `website/src/components/VeloLogo.tsx` [VERIFIED] |
+| Nothing is published | no remote, no tags, no releases |
 
-#### Security Invariants
+## Security Invariants
 
-- CI output must be encoding-independent.
-- A successful determinism check must exit 0 on every supported platform.
-- The script must not depend on the terminal locale.
+- **I84.1** Tooling that users rely on (editor integration, release artifacts)
+  is tracked in the repository it belongs to.
+- **I84.2** A security report has a documented, monitored channel.
 
-#### Tasks
+## Tasks
 
-##### Task 66.1: Reproduce under cp1252 [COMPLETED] ✅
-* **Former Defect**: Nothing in the suite exercised the determinism script under a non-UTF-8 encoding, so the cp1252 crash was invisible on any host whose console defaults to UTF-8. Worse, the existing `test_check_determinism_script_runs` was *silently* dependent on the ambient environment: it passes only when `PYTHONUTF8=1` happens to be exported and fails otherwise — a test that changes verdict based on shell state rather than on the code. Phase 65's notes had to carry "run the suite with `PYTHONUTF8=1`" as a workaround, which is exactly the class of hidden platform assumption this phase is meant to remove.
-* **Fix Applied**:
-  - `tests/test_ci_matrix.py`: extracted `_run_determinism_with_encoding(encoding)`, which runs the script with the **child's** stdout forced to a specific codec through `PYTHONIOENCODING` and *removes* `PYTHONUTF8` from the child environment so ambient UTF-8 mode cannot mask the encoding under test.
-  - New `test_check_determinism_reproduces_cp1252_encoding_crash` pins the defect: it asserts that both hashes are printed (the check itself succeeded), that the process still exits non-zero, that the failure is a `UnicodeEncodeError` from the `charmap` codec, and that the `SHA-256 MATCH` success line is **absent** — proving the crash happens on the success path, after the comparison, rather than on a failed comparison.
-  - The host console is never consulted: `PYTHONIOENCODING` is explicit, so a Windows runner and a Linux runner take the identical code path and neither depends on the terminal locale.
-* **Residual Limitation**: The red row is committed **failing on purpose**, as Task 66.1 requires, so the suite is not green again until Task 66.2 lands. `test_check_determinism_script_runs` is also red at this commit for the same underlying defect (it is the pre-existing test, and it only passed before because of an exported `PYTHONUTF8=1`) — Task 66.3 restores it as the green contract. This is a deliberate two-commit red window, recorded rather than hidden.
-* **Verification**:
-  - Manual reproduction with no environment overrides at all: `python scripts/check_determinism.py` → exit 1, `UnicodeEncodeError: 'charmap' codec can't encode character '\u2713' in position 14`, with `Gen2:`/`Gen3:` hashes already printed.
-  - The same reproduction with `PYTHONIOENCODING=cp1252`: identical failure, which is what the test drives.
-  - `python -m pytest tests/test_ci_matrix.py -q`: **1 failed, 5 passed** — the single failure is `test_check_determinism_script_runs`, i.e. the defect; the new red row `test_check_determinism_reproduces_cp1252_encoding_crash` **passes** because the defect is still present, which is precisely what "assert the current crash" means.
+**84.1** Track the editor integrations (VSCode grammar + LSP client, at
+minimum) under `editors/`, with install instructions. Add a grammar-conformance
+test that tokenizes a fixture with both the grammar and the compiler lexer.
 
-##### Task 66.2: Make the output encoding-safe [COMPLETED] ✅
-* **Former Defect**: `scripts/check_determinism.py` printed `SHA-256 MATCH \u2713 \u2014 bootstrap chain is deterministic`. Both code points are outside cp1252 (`\u2713` = U+2713 CHECK MARK, `\u2014` = U+2014 EM DASH), and the print happened *after* the Gen2/Gen3 comparison had already succeeded. On a default Windows console the release gate therefore reported failure for a chain that was provably deterministic.
-* **Fix Applied**:
-  - All printed text is now ASCII: the match line reads `SHA-256 MATCH - bootstrap chain is deterministic` (hyphen, not em dash; no check mark).
-  - Restructured the script into `emit_c(path, label)` and `main()`, so the failed-`emit-c` diagnostics keep their full stderr (decoded with `errors="replace"` so a non-UTF-8 compiler message cannot itself raise) and both share one code path. No diagnostic was dropped to achieve encoding safety — the failure messages are byte-for-byte as informative as before.
-  - Module docstring now carries an explicit **ENCODING CONTRACT** section: the script is ASCII-only, why (cp1252 default console, crash lands after a successful comparison), and an instruction not to reintroduce glyphs.
-  - `if __name__ == "__main__"` guard so the module can be imported by a test without executing the build.
-* **Residual Limitation**: The fix addresses the *status* output of this script only. Any other script that prints non-ASCII on Windows has the same latent defect; a repository-wide scan is out of scope for this phase (and `gaps.md` itself is intentionally UTF-8 Markdown, not console output). Also, if a future `emit-c` failure message from the compiler contains non-UTF-8 bytes, they are replaced rather than round-tripped — a deliberate trade so the gate can never itself crash, at the cost of possibly mangling a pathological diagnostic.
-* **Verification**:
-  - Plain shell, no overrides, cp1252 default console: `python scripts/check_determinism.py` → exit **0**, `SHA-256 MATCH - bootstrap chain is deterministic`.
-  - `PYTHONIOENCODING=cp1252` → exit **0**; `PYTHONIOENCODING=latin-1` → exit **0**; both print the same two hashes and the same match line.
-  - `python -m pytest tests/test_ci_matrix.py -q`: **7 passed**.
-  - The ASCII-only gate caught its own author: the first draft of the new docstring contained an em dash and `test_check_determinism_output_is_ascii` failed on line 11 until it was replaced.
+**84.2** Add `.github/ISSUE_TEMPLATE/bug.md` (with a "minimal `.vl` repro" and
+`velo version` field), `feature.md`, and `PULL_REQUEST_TEMPLATE.md` referencing
+the Phase 45-69 task contract.
 
-##### Task 66.3: Add the CI assertion [COMPLETED] ✅
-* **Former Defect**: The phase needed the regression test to stay in the suite as the *green* contract, and the existing `test_check_determinism_script_runs` asserted nothing about encoding — it passed only while `PYTHONUTF8=1` happened to be exported. A test whose verdict depends on shell state cannot guard a release gate.
-* **Fix Applied**:
-  - Replaced the Task 66.1 red row with `test_check_determinism_is_encoding_independent`, which runs the script under **four** codecs (`cp1252`, `utf-8`, `ascii`, `latin-1`). Per codec it asserts exit 0, both hash lines present, `SHA-256 MATCH` present, and no `UnicodeEncodeError`.
-  - Strengthened it past the phase's literal wording: the two *reported* hashes must be equal, each must be 64 characters, and each must be lowercase hex. A comparison that broke and printed a plausible-looking label would otherwise still satisfy "exit 0 and MATCH present". This assertion was mutation-tested (below) rather than assumed to work.
-  - Added `test_check_determinism_output_is_ascii`, a source-level gate: the script's own text must contain no character above U+007F. This catches the reintroduction of a glyph even on a UTF-8 host, where the behavioural test alone would still pass.
-  - `test_check_determinism_script_runs` is green again and is now unambiguous: it runs with the inherited environment and passes without any `PYTHONUTF8` workaround.
-* **Residual Limitation**: The codecs exercised are single-byte/ASCII-compatible ones plus UTF-8. A UTF-16 console would still fail, but that is not a supported console codec on any platform Velo targets, and the ASCII-only design makes it moot for the script's own output. The four-codec matrix is a constant in the test, so adding a codec is a one-line change.
-* **Verification**:
-  - `python -m pytest tests/test_ci_matrix.py -q`: **7 passed** (was 1 failed / 5 passed at the Task 66.1 commit).
-  - **Mutation check that the new assertions are load-bearing**: replacing the printed `Gen3:` hash with 64 zeros — while leaving the comparison intact — makes `test_check_determinism_is_encoding_independent` fail with the expected digest mismatch. A weaker test that only checked "exit 0 + MATCH present" would have passed that mutant, so the hash-equality assertion is proven to close a real hole rather than merely adding lines.
-  - A second mutation (`if h2 == h3` → `if True`) correctly **passed**, which is the right outcome: the hashes genuinely were equal, so forcing the branch changed nothing observable. Recorded because it shows the test measures the reported values, not the branch itself.
-  - Both new tests were checked against the pre-fix script: the red row in commit `85b6e3b` failed for the documented reason, and this commit flips it to green — the transition is recorded in the two commits rather than asserted after the fact.
+**84.3** Add `GOVERNANCE.md`: who decides, how a breaking change is approved,
+what "1.0" means, and the deprecation policy (minimum two minor versions).
 
-##### Task 66.4: Document the determinism contract [COMPLETED] ✅
-* **Former Defect**: The script's docstring was a single line — `"""Verify SHA-256 fixed-point between Gen2 and Gen3 emit-c output."""` — which said nothing about encoding, nothing about the exit-status contract, and nothing about its role as a **release gate**. A future contributor had no way to know that adding a glyph to a status message would break CI on Windows, so the defect fixed in Task 66.2 would have been reintroduced by the next cosmetic output tweak. The phase's own security invariant ("no hidden platform assumption") was stated in the audit but not in the artifact that carries the assumption.
-* **Fix Applied**:
-  - `scripts/check_determinism.py` module docstring now documents, in order: what the script proves (Gen2 and Gen3 must emit byte-identical C, which is the fixed-point proof that makes regenerating `bootstrap.c` safe), that it is a **release-gate** script, and an explicit **ENCODING CONTRACT** section naming the cp1252 default console, why the failure lands *after* a successful comparison, and the instruction not to reintroduce non-ASCII glyphs in any message.
-  - The docstring also records the invocation and exit-status contract (`0` when the two stages agree, non-zero otherwise), so the script is self-describing without reading `gaps.md`.
-  - The ASCII-only source gate from Task 66.3 enforces the docstring's central claim mechanically: the contract text itself must remain ASCII, so documenting the rule cannot violate it.
-  - `gaps.md` records the phase contract here, with the residual limitations listed honestly rather than only the success path.
-* **Residual Limitation**: The contract is documented only in this one script. The repository has other scripts that print to a console (`bootstrap.sh`, `bootstrap.bat`, `count_lines.py`) and none are covered by the ASCII gate — a repository-wide encoding sweep is a separate piece of work, and `gaps.md` deliberately remains UTF-8 Markdown because it is documentation, not console output. There is also no automated check that *other* release-gate scripts document an exit-status contract; only this one is held to it.
-* **Verification**:
-  - The docstring's claims are machine-checked, not just prose: `test_check_determinism_output_is_ascii` enforces ASCII-only source, and `test_check_determinism_is_encoding_independent` enforces exit 0 and correct hashes across four codecs.
-  - Documentation matches observed behaviour exactly: the message the docstring quotes (`SHA-256 MATCH - bootstrap chain is deterministic`) is byte-identical to what the script prints under cp1252, latin-1, ascii, and utf-8.
-  - `python -m pytest tests/test_ci_matrix.py -q`: **7 passed**.
+**84.4** Commit the website assets currently untracked, or delete them. A
+half-tracked site is a half-broken release process.
 
-#### Phase Exit Criteria
+**84.5** Add `docs/ROADMAP.md` generated from this file's open phases, so the
+public roadmap cannot drift from the registry (`scripts/gen_roadmap.py`,
+checked in CI).
 
-- [x] `python scripts/check_determinism.py` exits 0 under cp1252 and UTF-8.
-- [x] `test_check_determinism_script_runs` passes.
-- [x] The script's output is readable on every supported platform.
+## Phase Exit Criteria
 
-#### Phase 66 Summary
-
-Five commits, all four tasks complete:
-
-1. `test(ci)`: `_run_determinism_with_encoding` plus the red row that pins the cp1252 crash — deliberately red, as the task requires.
-2. `fix(ci)`: ASCII-only output, `emit_c`/`main` restructure that preserves full failure diagnostics, and the ENCODING CONTRACT docstring.
-3. `test(ci)`: the green four-codec contract, plus a source-level ASCII gate and hash-validity assertions proven load-bearing by mutation.
-4. `docs(ci)`: the documented contract, **plus** the second defect of the same class that a clean-environment run exposed in `test_literal_property_fuzz.py` (ambient-codec decoding of UTF-8 compiler diagnostics).
-
-`python -m pytest tests/test_ci_matrix.py -q`: **7 passed**.
-Clean-environment full suite: **1883 passed, 2 skipped in 905.24s**.
-
-**Residual limitations carried forward (honest):**
-
-- **Only this script is held to the encoding contract.** `bootstrap.sh`, `bootstrap.bat`, and `count_lines.py` print to a console and have no equivalent gate; a repository-wide sweep is separate work.
-- **No UTF-16 coverage.** The four codecs are cp1252, latin-1, ascii, and utf-8 — every console encoding Velo targets, but not the full space.
-- **The suite no longer needs `PYTHONUTF8=1` for the determinism script.** That workaround was a Phase 65 note; it is unnecessary for `tests/test_ci_matrix.py` once this phase lands.
-
-#### Second instance of the same defect class — found by running the suite without the workaround
-
-Closing this phase meant proving the suite no longer needs `PYTHONUTF8=1`, so the full suite was run **with both `PYTHONUTF8` and `PYTHONIOENCODING` unset**. It exposed a second, independent defect of exactly the same class:
-
-* **Defect**: `tests/test_literal_property_fuzz.py` (Task 53.9 property/fuzz suite) decoded `bin/velo.exe` output with `subprocess.run(..., text=True)` and no `encoding`. That decodes with the **ambient** codec. The corpus deliberately feeds non-ASCII source (full-width digits `\uff11\uff12\uff13`, Arabic-Indic `\u0661`, Devanagari `\u0967`) so compiler diagnostics legitimately contain UTF-8 bytes. On a cp1252 console the decoder raises `UnicodeDecodeError: 'charmap' codec can't decode byte 0x90 in position 175` **inside subprocess's reader thread**, so `stdout` becomes `None` and the harness dies with `TypeError: unsupported operand type(s) for +: 'NoneType' and 'str'` — a test failure that has nothing to do with the compiler under test.
-* **Cause of invisibility**: the same one as the primary defect. Every prior run of this suite in this repository carried `PYTHONUTF8=1`, which silently fixed the ambient codec. The defect is only reachable when the environment is clean, which is exactly the condition CI on Windows runs in — so this would have failed CI after the Phase 66 fix made the workaround unnecessary.
-* **Fix**: both `run_velo_source` and `check_velo_source` now pass `encoding="utf-8", errors="replace"`. UTF-8 is the compiler's real diagnostic encoding (its lexer rejects a BOM and its messages are UTF-8), and `errors="replace"` guarantees the harness can never fail on a decoding problem — the assertions are about the *compiler's* behaviour, not about whether a byte is representable in the console's codec.
-* **Proven load-bearing**: reverting just those arguments and re-running with a clean environment reproduces the exact `UnicodeDecodeError` and the `TypeError`; restoring them gives 2 passed. Recorded because an encoding fix that is never shown to matter is indistinguishable from dead code.
-* **Residual limitation**: This is one file. A survey found **422** `text=True` call sites across `tests/` without an explicit encoding. Most are harmless in practice (ASCII output), but the class is not closed — a repository-wide sweep that pins `encoding="utf-8", errors="replace"` on every compiler-invoking subprocess is the correct follow-up and is **not** part of Phase 66. It is recorded here so the incompleteness is visible rather than implied to be fixed.
-
-**Full-suite verification (no `PYTHONUTF8`, no `PYTHONIOENCODING`):**
-
-- Before this fix: **1 failed, 1882 passed, 2 skipped** — the failure being the fuzz harness decoding bug above.
-- After the fix: **1883 passed, 2 skipped in 905.24s** with both `PYTHONUTF8` and `PYTHONIOENCODING` unset. This is the first recorded full-suite run in this project that needs **no** encoding workaround, so the `PYTHONUTF8=1` prerequisite carried in the Phase 64 and Phase 65 notes is now obsolete.
+- `git status --short` is clean for `editors/` and `website/`.
+- Issue and PR templates exist and reference the task contract.
+- `docs/ROADMAP.md` is generated from `gaps.md` and fails CI when stale.
 
 ---
 
-### Phase 67: `test_std_fs_ops` Hermeticity (P2) [COMPLETED] ✅
+# Phase 85: Recorded Residual Limitations (P2) - OPEN
 
-**Audit ID:** `AUDIT-2026-11-16`<br>
-**Severity:** P2 — test passes only because an untracked directory exists<br>
-**Depends on:** —<br>
-**Blocks:** —
+Honest, low-severity items that are known and deliberately deferred. They are
+listed so they are not rediscovered as surprises.
 
-#### Defect
-
-`std/tests/fs/ops_test.vl` writes under `scratch/...` but never creates `scratch/` itself. `tests/test_std_fs.py::test_std_fs_ops` therefore fails on a clean checkout and passes only when an untracked `scratch/` directory happens to exist.
-
-```
-scratch/test_dir_single
-scratch/test_dir_slice
-scratch/nest1/nest2/nest3
-scratch/test_io_ops.txt
-...
-```
-
-#### Security Invariants
-
-- Tests must create and clean up their own filesystem state.
-- Tests must not write outside a temporary directory.
-- Tests must pass from a clean checkout with no untracked directories.
-- Cleanup must run on failure.
-
-#### Tasks
-
-##### Task 67.1: Reproduce from a clean state [COMPLETED] ✅
-* **Former Defect**: `std/tests/fs/ops_test.vl` writes to relative paths (`scratch/test_dir_single`, `scratch/nest1/nest2/nest3`, `scratch/test_io_ops.txt`, ...) and creates the **leaves** with `fs_create_dir_str`, which maps to a plain `CreateDirectoryA` (`std/fs/ops.vl:22-30`) with no parent creation. Only `fs_create_dir_all` walks parents, and the suite never uses it for `scratch/` itself. So the suite requires `scratch/` to already exist. In this working tree it does — `Test-Path scratch` is true and `git ls-files scratch` finds **zero** tracked files: it is untracked, empty residue. `tests/test_std_fs.py::test_std_fs_ops` therefore passed on this machine and would fail on a clean clone or any CI runner.
-* **Fix Applied**:
-  - `tests/test_std_fs.py`: `run_fs_ops_in(sandbox)` runs the Velo suite with an explicit `cwd` pointing at a fresh `tmp_path`, instead of `cwd=REPO_ROOT`. `tmp_path` is pytest-managed and unique per test, so no ambient `scratch/` can exist and the developer's real `scratch/` is never read or written.
-  - `test_std_fs_ops_needs_no_ambient_scratch` asserts the sandbox starts empty (so the test cannot silently inherit state), then asserts exit 0 and the PASS line. This is the red row.
-  - `test_std_fs_ops_cleans_up_after_itself` asserts nothing but `.velo_cache` survives the run — the property that let the defect hide, since a first run creating `scratch/` is what makes every later run pass.
-  - `test_std_fs_ops_does_not_touch_the_repository_scratch` is a structural gate on the helper: it must pin `cwd=str(sandbox)` and must not contain `cwd=str(REPO_ROOT)`. This is the Task 67.1 security gate ("do not touch the developer's real `scratch/`") enforced as an assertion rather than trusted.
-* **Residual Limitation**: At this commit the cleanup row passes **vacuously** — the Velo suite fails at its first assertion (`test_dir_create_and_remove`), so it creates nothing and leaves nothing, and "no leftovers" is trivially true. It only becomes a meaningful assertion once Task 67.2 makes the suite run to completion. Recorded explicitly because a vacuously-green test is indistinguishable from a real pass in a summary line.
-  - The `.velo_cache` exclusion is a pragmatic allowance: the compiler writes its own cache into the cwd by design, so a strict "directory must be empty" assertion would fail for a reason unrelated to `std.fs.ops`.
-* **Verification**:
-  - Manual reproduction, three runs:
-    * repo root: `bin\velo.exe run std\tests\fs\ops_test.vl` → `PASS: std.fs.ops all assertions succeeded`, exit 0.
-    * fresh empty temp cwd → `FAIL: test_dir_create_and_remove`, exit **1**.
-    * fresh temp cwd **with** `scratch/` pre-created → `PASS`, exit 0, and `scratch/` was left behind.
-    The only variable between failing and passing is the existence of `scratch/`, which confirms the diagnosis rather than merely correlating with it.
-  - `python -m pytest tests/test_std_fs.py -q`: **1 failed, 6 passed** — the single failure is `test_std_fs_ops_needs_no_ambient_scratch` with `FAIL: test_dir_create_and_remove`, i.e. the defect reproduced from a clean state.
-  - The sandboxed run never touched the repository's `scratch/`; the red row asserts its own sandbox is empty before starting.
-
-##### Task 67.2: Make the Velo test self-contained [COMPLETED] ✅
-* **Former Defect**: `std/tests/fs/ops_test.vl` assumed `scratch/` existed and never removed it.
- Two consequences, both structural rather than cosmetic: (1) the suite could not run from a clean checkout at all, and (2) the run that *did* succeed created the very directory every later run depended on — so the defect was self-healing on the developer's machine and permanently broken everywhere else. There was also no cleanup on the failure path, so a mid-suite failure left artifacts behind to poison subsequent runs.
-* **Fix Applied**:
-  - Added `cleanup_scratch()`, which removes every artifact the suite can create (four files, two leaf dirs, the three-deep `nest1/nest2/nest3` chain, and `scratch` itself), innermost-first so the directories are empty when removed. Every step is allowed to fail, because on the failure path only some artifacts exist — a cleanup routine that requires its inputs to be present cannot be used for cleanup.
-  - `main()` now does `cleanup_scratch()` (clear stale state), then creates `scratch/` with an explicit diagnosed failure (`FAIL: could not create the scratch directory`, exit 5), then registers `defer cleanup_scratch()`.
-  - `defer` runs on **every** exit path, including the early `return 1..4` failure branches, so a failing suite no longer leaves state behind. This was verified rather than assumed.
-* **Residual Limitation**: The suite still uses **relative** paths, so it writes into whatever the process cwd is. That is now safe because it creates and destroys its own `scratch/` subtree, but it is not hermetic in the strongest sense: two concurrent runs in the same cwd would still collide on `scratch/`. Making the directory name unique (pid- or temp-derived) would fix that, and is deliberately **not** done here — it would require the Velo test to read an ambient value, which is a different design change. Recorded so the concurrency limitation is visible.
-  - `cleanup_scratch()` enumerates artifacts explicitly rather than walking the directory. A recursively deleting test would destroy a real `scratch/` if it ever ran in a cwd where one exists for other reasons. The explicit list is the safer choice, at the cost of needing an edit when the suite gains artifacts.
-* **Verification**:
-  - Clean temp cwd, `bin\velo.exe run std\tests\fs\ops_test.vl`: `PASS: std.fs.ops all assertions succeeded`, exit **0**, and the only leftover is `.velo_cache` (the compiler's own cache).
-  - **Idempotency**: a second run in the same directory also exits 0 and again leaves only `.velo_cache`, proving the first run did not create state the second depends on.
-  - **Failure-path cleanup**: a probe that creates `scratch/`, registers `defer cleanup_scratch()`, writes a file, then returns 3 — exits 3 with only `.velo_cache` left. So `defer` runs on a failing exit, not just the success path.
-  - **Cleanup test is no longer vacuous**: removing the `defer` line in a mutation check makes `test_std_fs_ops_cleans_up_after_itself` fail with `assert not ['scratch']`; restoring it returns 7 passed. This is what converts the Task 67.1 caveat ("passes vacuously") into a real assertion.
-  - `python -m pytest tests/test_std_fs.py -q`: **7 passed** (was 1 failed / 6 passed).
-
-##### Task 67.3: Audit other tests for ambient filesystem dependencies [COMPLETED] ✅
-* **Former Defect**: Task 67.2 fixed one test that needed an ambient `scratch/`, but the audit of the rest of `std/tests/` found **five more** suites with the same defect and a sixth that was the **root cause** of the ambient directory itself. Every one of them wrote into `scratch/...` without ever creating `scratch/`, so each passed only because some *other* run had left the directory behind. That is the worst failure mode for a test: green on the machine where the defect was introduced, red on every clean checkout, with no diagnostic connecting the two.
-* **Fix Applied** — the same three-step pattern as Task 67.2, applied per suite:
-  1. `cleanup_scratch()`, enumerating that suite's own artifacts innermost-first (files, then their leaf directory, then `scratch`), every step tolerant of failure because on the failure path only some artifacts exist.
-  2. `main()` calls `cleanup_scratch()` first (clears stale state), then `fs_create_dir_str("scratch")` with an explicit diagnosed failure (`FAIL: could not create the scratch directory`) and a distinct exit code per file.
-  3. `defer cleanup_scratch()` so the teardown runs on **every** exit path, including the early `return 1..n` failure branches.
-  - The four `std/tests/io/*` suites and `std/tests/log/logger_test.vl` did not previously import `fs/ops.vl`; each gained the import. `path_fs_module_import_test.vl` already had `use std.fs`, so it uses `fs_remove_dir_str`/`fs_create_dir_str` directly with two `defer` statements (file first, then directory) instead of a helper procedure.
-* **Audit table** — measured by running each suite with `bin\velo.exe run <file>` **from the repository root with `scratch/` moved out of the tree**, i.e. the true clean-checkout condition:
-
-  | Suite | Before (clean root) | Cause | After |
-  |---|---|---|---|
-  | `std/tests/fs/dir_test.vl` | exit 0 but `created_scratch=True` | `fs_create_dir_all("scratch/test_dir_scan")` created the ambient directory every other suite then depended on | exit 0, no `scratch/` |
-  | `std/tests/fs/ops_test.vl` | exit 1 | fixed in Task 67.2 | exit 0, no `scratch/` |
-  | `std/tests/io/buffered_reader_test.vl` | exit 1 (`FAIL: test_read_byte_and_peek`) | 4 `scratch/test_br_*.txt` writes, never created `scratch/` | exit 0, no `scratch/` |
-  | `std/tests/io/buffered_writer_test.vl` | exit 1 (`FAIL: test_buffered_small_writes`) | 4 `scratch/test_bw_*.txt` writes | exit 0, no `scratch/` |
-  | `std/tests/io/handle_test.vl` | exit 1 (`FAIL: test_file_create_write_read_seek`) | `scratch/test_io_temp.txt` | exit 0, no `scratch/` |
-  | `std/tests/io/print_test.vl` | exit 1 (`FAIL: test_file_stream_printing`) | `scratch/test_print_file.txt` | exit 0, no `scratch/` |
-  | `std/tests/path_fs_module_import_test.vl` | exit 6 | `fs_write_str("scratch/test_std_fs_umbrella.tmp")` | exit 0, no `scratch/` |
-  | `std/tests/log/logger_test.vl` | exit 0, but leaked `test_output.log` on its `return 10/11` paths | relative log file, cleaned only on the success path | exit 0, no `test_output.log` |
-  | `std/tests/fs/stat_test.vl` | exit 0 | only *negative* `scratch/...` checks plus reads of tracked paths | no change needed |
-
-* **Root cause worth naming**: the ambient `scratch/` that every other suite silently depended on was created by `dir_test.vl` and **never removed**. A single suite with a missing teardown had converted five independent defects into five passes. This is why the audit had to move the directory away rather than trusting a green run — and why Task 67.1's `cwd=str(sandbox)` harness exists: without an empty sandbox, the same self-healing illusion would reproduce in the harness.
-* **Second class found, deliberately not "fixed"**: three suites read **tracked** repository paths (`README.md`, `src`, `std`) — `stat_test.vl`, `dir_test.vl` (`fs_dir_open("std")`, `fs_count_dir("std")`), `path_fs_module_import_test.vl`. Running them from a clean temp cwd makes them fail, so they are cwd-dependent, but not clean-*checkout*-breaking: tracked files always exist, and every Python harness pins `cwd=str(REPO_ROOT)`. Rewriting them to use synthetic files would be a redesign (they exist to exercise the real APIs against real trees), so the dependency is documented rather than removed.
-* **Coverage note**: the four io suites *are* wired into `tests/test_std_io.py` (`test_std_io_handle`, `test_std_io_buffered_writer`, `test_std_io_print`, `test_std_io_buffered_reader`), and that harness pins `cwd=str(REPO_ROOT)`. So the suite had the coverage but not the isolation: with the ambient `scratch/` present in the developer tree the rows passed, and the defect only appears once the directory is absent — which is exactly what the red baseline below reproduces. Task 67.4's clean-checkout job is what makes that condition permanent in CI.
-* **Residual Limitation**: these suites still use **relative** paths, so they write into whatever the process cwd is. Safe now because each creates and destroys its own subtree, but not hermetic in the strong sense: two concurrent runs in one cwd would still collide. Same deliberate deferral as Task 67.2 — making the directory name unique requires the Velo test to read an ambient value. Also unchanged: the io suites clean up with explicit artifact lists rather than a recursive walk, so a future artifact needs a matching cleanup line.
-* **Verification**:
-  - **Red baseline (load-bearing)**: with `scratch/` absent and the fixes stashed, `python -m pytest tests/test_std_io.py -q` → **4 failed, 29 passed**, the four failures being exactly the four io suites with `returncode=1` and the expected `FAIL: test_...` lines. This is what proves the fixes, not the ambient directory, are what make them pass.
-  - **Green with fixes, no ambient `scratch/`**: `python -m pytest tests/test_std_io.py -q` → **33 passed**; `tests/test_std_fs.py` + `tests/test_std_log.py` → **11 passed**; `scratch_exists=False` and `test_output.log` absent after both runs.
-  - **Per-file verification from a clean root** (`bin\velo.exe run`, `scratch/` moved aside): all six fixed Velo suites print their `PASS:`/`OK:` line, exit **0**, and leave no `scratch/` or log file.
-  - **Idempotency**: a second run of all six in the same cwd is also exit 0 with nothing left behind, so no suite depends on state produced by the previous one.
-  - `git status --porcelain` shows only the six intended `.vl` files modified — no stray artifacts in the worktree.
-
-##### Task 67.4: Add a clean-checkout CI job [COMPLETED] ✅
-* **Former Defect**: Phases 67.1–67.3 fixed eight tests by hand, but nothing enforced the property they were fixed for. Every existing CI job does start from a fresh checkout and *would* eventually catch the regression — as a test failure attributed to whichever suite ran first, with no statement of the actual invariant and no name for the leaked path. And the whole class had already survived indefinitely on developer machines, so "a job would have caught it" was demonstrably false: the matrix had been green the entire time, because the matrix does not run on a tree that already carries the directory.
-* **Fix Applied**:
-  - New `scripts/check_clean_tree.py`: snapshots the tree, runs a command, snapshots again, and fails if the command created a path outside the allowlist or modified a tracked file. `bin/`, `.velo_cache/`, `__pycache__/`, `.pytest_cache/`, `node_modules/` and compiled artefacts (`*.pyc`, `*.exe`, `*.o`, ...) are allowed; everything else is a leak.
-  - **Two snapshots, deliberately**: a filesystem walk **and** `git status --porcelain -uall`. A git-only gate is unsound for exactly this defect, because git does not track empty directories — a suite that creates `scratch/`, writes its files, and deletes them leaves an empty directory that `git status` reports as nothing at all. That is precisely the ambient state Task 67.3 found in the repository. This was found by testing the gate against a throwaway repo (`os.makedirs('scratch')` was reported clean); the filesystem walk was added because of that failing row, not on principle.
-  - New `clean-checkout` job in `.github/workflows/ci.yml`: asserts `scratch/` is absent from the checkout, bootstraps the chain, verifies determinism, then runs the full suite *through the gate* (`check_clean_tree.py -- python3 -m pytest tests -q`). The gate wraps pytest in one step so its before-snapshot precedes every test.
-  - Exit-code contract: a leak exits **1** even when the command also failed, because the leak is what makes the workspace unreliable; a clean run propagates the command's own status so a failing suite is never reported as a passing gate.
-* **Residual Limitation**: the job's **first execution is the first CI run** — it has not been observed green in GitHub Actions from this workstation, same honesty caveat as the Phase 65.5 sanitizer lane. What *has* been verified locally is the whole gate: unit rows against a throwaway git repo, and a full 1905-test suite run under the gate. Second limitation: the gate is a global "did anything leak" check, not a per-test attribution — it names the leaked path, not the test that created it. Third: it allows any file ending in the build-artefact suffixes, so a test that writes `notes.txt` fails but one that writes `data.o` would pass; the allowlist is a heuristic on build products, and it is deliberately generous so the gate is not disabled as noise. Fourth: it diffs path sets, so a test that rewrites an existing **untracked** file to different bytes is not detected (tracked files are). Fifth: the gate assumes the tree is **immutable during the run**. Editing any tracked file while it runs is reported as a leak — observed on the first gated full-suite run, where the only finding was `M gaps.md`, an edit made by the agent in parallel. That is correct strictness for CI (the tree really is immutable there) but it means the gate cannot be used on a tree someone is actively editing, and a local run must not be started alongside other work.
-* **Verification**:
-  - `python -m pytest tests/test_clean_tree.py -q` → **19 passed**.
-  - **Soundness rows** (each against a throwaway git repo): new file → fail; **new empty directory** → fail (the row that exposed the git-only hole); modified tracked file → fail; nested `scratch/deep/er/f.txt` → fail; `bin/`, `.velo_cache/`, `__pycache__/`, `*.pyc`, `*.exe`, `*.o` → pass, and none appear in the output.
-  - **Failure propagation**: command exiting 7 → gate exits **7**; command exiting 3 *and* leaking `scratch/` → gate exits **1** and names `scratch/`; no command → non-zero with `no command given`.
-  - **Load-bearing against the real compiler**: five self-contained Velo suites (`fs/ops_test`, `io/handle_test`, `io/print_test`, `io/buffered_reader_test`, `io/buffered_writer_test`) run inside a temp git repo under the gate → clean; a purpose-built leaky `.vl` (`fs_create_dir_str("scratch")` + `fs_write_str`) → gate fires and names `scratch/`. The negative row exists because "nothing leaked" and "the gate cannot see leaks" read identically from a green summary.
-  - **In the real repository**: `check_clean_tree.py -- python -c "os.makedirs('scratch')"` → exit **1**, `created  scratch/`; the same command with a no-op → exit **0**, `no leaked paths`.
-  - **CI wiring pinned by tests**, not by inspection: `test_ci_has_a_clean_checkout_job`, `test_ci_clean_checkout_job_asserts_scratch_is_absent`, and `test_ci_clean_checkout_gate_precedes_the_suite_in_the_same_step` parse `ci.yml` and assert the job exists, the `[ -e scratch ]` tripwire is present, and exactly one gate step launches pytest itself — so a future refactor that splits the gate from the suite fails a test instead of silently gutting the job.
-  - Full suite run through the gate: `python scripts/check_clean_tree.py -- python -m pytest tests -q` → **1905 passed, 2 skipped in 966.80s** (1883 at the Phase 66 close, +3 from Task 67.1's `test_std_fs.py` rows, +19 from this task's `tests/test_clean_tree.py`). The gate's verdict on that run was `CLEAN-TREE GATE FAILED` naming exactly one path, `M gaps.md` — the documentation edit being written *while* the suite ran. No workspace leak was reported: `scratch/`, `test_output.log` and the io artifacts are all absent, which is the property being asserted. This is honest rather than green: the run proves the suite leaves no artifacts and proves tracked-file detection works end to end, and the separate no-op/leak invocations above establish the exit-code contract on a static tree.
-
-#### Phase Exit Criteria
-
-- [x] `test_std_fs_ops` passes with no pre-existing `scratch/`.
-- [x] The test cleans up after itself.
-- [x] No other test depends on ambient filesystem state.
-
-#### Phase Summary
-
-**Former Defect**: eight Velo test suites wrote into a relative `scratch/` directory without creating it, so they passed only on a machine where an earlier run had left the directory behind — green on the developer tree, broken on every clean checkout, with no diagnostic connecting the two. One of the eight (`std/tests/fs/dir_test.vl`) was itself the source of the ambient directory and never removed it, which is why a single missing teardown had converted five independent defects into five passes.
-
-**Fix Applied**: Task 67.1 added the red-baseline harness (`run_fs_ops_in`, pinned to an empty temp cwd so the defect is reproducible); Task 67.2 made `ops_test.vl` create and `defer`-remove its own subtree; Task 67.3 extended that pattern to the six remaining offenders found by audit; Task 67.4 added `scripts/check_clean_tree.py` and a `clean-checkout` CI job so the property is enforced rather than merely achieved.
-
-**Residual Limitation**: the suites still use relative paths (two concurrent runs in one cwd would collide); three of them additionally read tracked repository paths (`README.md`, `src`, `std`) and are therefore cwd-dependent, documented rather than rewritten; the clean-tree gate's first real execution is its first CI run; and the gate cannot attribute a leak to a specific test, only name the path.
-
-**Verification**: `tests/test_std_fs.py` 7 passed (from 1 failed / 6 passed); `tests/test_std_io.py` 33 passed and red-baseline confirmed at 4 failed / 29 passed with the fixes stashed and `scratch/` absent; `tests/test_clean_tree.py` 19 passed; full suite **1905 passed, 2 skipped in 966.80s** run under the gate, whose only finding was a concurrently-edited `gaps.md` and no workspace leak.
-
-- Task 67.1 — `2f7c17e` `test(fs)`: red-baseline harness + cleanup/no-ambient rows.
-- Task 67.2 — `a68dd98` `fix(std)`: `ops_test.vl` owns its `scratch/` subtree.
-- Task 67.3 — `7341c47` `fix(std)`: six further suites own their `scratch/` subtree (and `logger_test.vl` its log file).
-- Task 67.4 — this commit: `scripts/check_clean_tree.py`, `tests/test_clean_tree.py`, `clean-checkout` CI job.
+| Item | Evidence | Residual risk | Close condition |
+| :--- | :--- | :--- | :--- |
+| 422 captured-subprocess test sites lack explicit encoding | recorded in the pre-Phase-69 audit baseline | Windows CI can fail on code-page-dependent output | Swept by Phase 76.3's conftest helper; assert `grep -c "text=True" without encoding` == 0 |
+| ASan/UBSan unverifiable on the maintainer host | sanitizer libs absent locally; `.github/workflows/ci.yml:221` lane unproven | Memory bugs can ship unnoticed | One green full-suite sanitizer run committed (Phase 74.6) |
+| `velo_check_capture.tmp` fixed CWD filename | `src/backend/check.vl:291`, `:335` | Concurrent `velo check` races | Phase 76.4 |
+| 400-line ceiling forces sliver modules | 40+ files under 150 lines in `src/analysis`/`src/backend` | Concept fragmentation, duplicated header contracts | Phase 80.4 (ceiling becomes a consequence, not a constraint) |
+| Frozen Stage-1 Python compiler still in the build story | `AGENTS.md`, `examples/12_stage2_semantics_test.vl` | Double maintenance, false parity signal | Phase 80.5 |
+| `bootstrap.c` is a 2.3 MB generated artifact in review | 67,952 lines | Compiler diffs are unreviewable at the artifact level | Phase 80.6 budget warning + Phase 76 tiering |
+| `std/async` is `poll(2)` on Linux | `std/async/poller_linux.vl:13` | O(n) wakeup scaling | Phase 70.4 (`epoll`) |
+| Overlapping `mem.copy`/`mem.set` remain C UB | `docs/gaps_archive.md:181` | Silent corruption on aliased buffers | Phase 74.4 |
+| No `Set`/`Deque`/priority queue | `std/coll/` inventory | Users hand-roll them, inconsistently | Phase 78.8 |
+| `defer` takes a block, not an expression | Phase 58/69 semantics | Verbose cleanup sites | Phase 77.6 |
 
 ---
 
-### Phase 68: Loop Induction Variable Width (P3) [COMPLETED] ✅
+## 6. Definition of Public Release
 
-**Audit ID:** `AUDIT-2026-11-17`<br>
-**Severity:** P3 — documented limitation; overflow/UB on large ranges<br>
-**Depends on:** Phases 53, 54, 55, 56<br>
-**Blocks:** —
+Velo may be published for real-world use when, and only when, all of the
+following are true and each is backed by a committed artifact, not a claim:
 
-#### Defect
+1. **Legal:** `LICENSE` present; `velo version` derives from one source;
+   `CHANGELOG.md` exists; a tag exists (Phases 71). `[ ]`
+2. **Platforms:** Linux, macOS, and Windows each build `bootstrap.c`, build the
+   compiler, and run the full suite green; the platform support matrix in
+   `docs/COMPATIBILITY.md` matches reality (Phases 70, 76, 83). `[ ]`
+3. **CI evidence:** `docs/CI_STATUS.md` links a green run per job on the
+   release commit (Phase 76). `[ ]`
+4. **No lying stubs:** zero stub-return bodies in `std/`; every documented
+   function either works or refuses (Phases 75, 83). `[ ]`
+5. **Memory safety story:** defined overflow semantics, divide-by-zero
+   diagnostic, runtime bounds checks for dynamic indices, sanitizer lane green
+   (Phase 74). `[ ]`
+6. **Network reality:** TLS with verification on by default, DNS resolution,
+   constant-time MAC verification, fail-closed CSPRNG (Phases 73, 78). `[ ]`
+7. **Packages:** `pkg install` fetches, verifies hashes, and never reports
+   success for work not done (Phase 72). `[ ]`
+8. **Robustness:** the historical crash corpus produces diagnostics, not
+   signals; recursion is depth-bounded (Phase 82). `[ ]`
+9. **Docs:** every quantitative claim has a script; every doc code block is
+   compiled or marked (Phase 83). `[ ]`
+10. **Maintainability:** one intrinsic allowlist, typed codegen, one compiler
+    implementation (Phase 80). `[ ]`
 
-Every range/count loop declares its induction variable as `int32_t` (`codegen_stmt.vl:250,260`). Ranges near `INT32_MAX` wrap at `-O0` and rely on undefined behavior at `-O2`. This is already acknowledged in `docs/gaps_archive.md` ("range loops remain `int32_t`"), but it becomes more visible once Phases 53–56 allow large endpoints.
+Phases 77, 78, 79, 81, 84 can trail 1.0 as documented limitations; Phases 70-76
+and 82-83 cannot. A 1.0 that ships with a Windows-only stdlib, a package manager
+that fakes installs, and a README claiming 64 KB embedded support would burn the
+project's credibility in one release, and credibility is the only asset a
+one-person language has.
 
-```velo
-loop i in 0..3000000000 { ... }   // endpoint now wide, induction still i32
-```
+## 7. Deliberate Non-Goals
 
-#### Security Invariants
+Stated so contributors do not relitigate them:
 
-- Loop induction must not overflow for any accepted range.
-- The chosen width must be documented and consistent across range/count/`of` loops.
-- The change is breaking; migration notes are mandatory.
-- Performance and determinism must be measured, not assumed.
-
-#### Tasks
-
-##### Task 68.1: Make the width decision [COMPLETED] ✅
-* **Former Defect**: `loop_var_c_type` (`src/backend/codegen_lit.vl:142`) returns `"int32_t "` for every unrecognised type, so the induction width of a loop depends on whether the *type checker* happened to widen the bounds first. The phase was scoped as "make the induction wide", but measuring the failure first split it into two defects with different fixes — and only one of them is about width at all.
-* **Fix Applied (decision, not code)**: SPEC Section 7.2 item 9 now states the rule in two parts.
-  - **W1 — width is derived from the bounds, with an `i32` floor.** Range induction = widest integer type among the endpoints under `u64` > `i64` > `usize`/`isize` > `u32` > `i32`; count induction = static type of the count; condition induction = `i32`. Never narrower than `i32`.
-  - **W2 — inclusive ranges terminate by equality, not by overflow.** `..=` lowers to an unbounded `for` with `if (i == end) break;` *before* the increment (`__loop_cont_N` label emitted before both, so `continue` still advances).
-  - Rejected alternative: widen every induction to `i64`. It cannot fix W2 (see the measurement below) and it would change the emitted C for the entire standard library, so it costs performance and a full determinism re-baseline while fixing nothing extra.
-* **Evidence for splitting the defect** — all measured with `bin/velo.exe emit-c`/`run`, not inferred from the doc:
-  - **Width truncation is real but narrow**: `let lim: isize = 3000000000; loop i in 0..lim` emits `for (int32_t __start_i = (0), __end_i = (lim), ..., i = __start_i; ...)` and runs the wrong number of iterations, because `range_checks.vl:192-200` omits `isize` from the widening ladder while `int_type_width` returns 64 for it. So this is a **missing entry in a ladder**, not a missing policy.
-  - **`i32` bounds already stay `i32`**: `loop i in 0..10` → `int32_t i`. Phases 53–56 already widen a *literal* wide endpoint (`loop i in 0..3000000000` → `int64_t i = 0; i < 3000000000LL`), so the doc's `loop i in 0..3000000000` example was **already fixed** and is not the live defect.
-  - **Inclusive-max overflow is width-independent, which is what makes W2 necessary**: `loop i in 2147483645..=2147483647` emits `for (int32_t i = 2147483645; i <= 2147483647; i++)`, gcc emits `warning: iteration 2 invokes undefined behavior [-Waggressive-loop-optimizations]`, and the run executed the body **more than 10 times** (returned the guard value 99 instead of 3). The identical program at `u64` width — `loop i in 18446744073709551613u64..=18446744073709551615u64` — also returned 99 from a 5-iteration guard. A wider type moves the boundary, it does not remove it.
-  - **Other loop kinds already use wide inductions**: map/ring/shelf emitters use `size_t`/`usize` (`map_gen.vl:223,230,242`, `ring_gen.vl:161,192`, `shelf_gen.vl:217`), and a `u64` count loop emits `uint64_t it`. So W1 is a consistency-and-ladder fix, not a sweeping codegen rewrite.
-* **Residual Limitation**: this task lands only the **decision and its compatibility table** (SPEC Section 7.2 item 9); no compiler behaviour changes here, so the two measured defects are still live until 68.3/68.4. The `i32` floor means a `u64`-typed induction over `i8` bounds is deliberately not preserved as `i8` — an existing behaviour, now documented rather than changed. Descending inclusive ranges at the *minimum* of `T` have the mirror-image wrap; W2 as specified covers it symmetrically in 68.4 and must be verified there, not assumed.
-* **Verification**: decision approved by the user's instruction to proceed; evidence is the four probed programs above, each run against the current `bin/velo.exe` with its emitted C inspected. No tests added in this task — the boundary rows belong to 68.4, and adding them now would only record the defects 68.3/68.4 are about to fix.
-
-##### Task 68.2: Audit every loop codegen path [COMPLETED] ✅
-* **Former Defect**: the phase described one defect ("the induction is always `int32_t`"), which implies a single codegen site. There are **eight** loop codegen paths across five files, and they had already diverged: collection loops used `usize`, count loops used the count's type, and only range loops consulted the type checker's widening decision. Without the table, "fix the induction width" would have been applied to whichever path was found first, and the remaining seven would have kept whatever width they happened to have.
-* **Fix Applied (audit artefact + red baseline)**: `tests/test_loop_induction_width.py` (17 rows) enumerates all eight paths and pins each one's induction, plus the W2 boundary rows from Task 68.1. This is the 68.2 audit table in executable form:
-
-  | Loop path | Induction | Codegen site | Rows |
-  |---|---|---|---|
-  | Range, literal bounds | from W1 | `range_gen.vl:19` `emit_range_loop_header` | W1 isize ×2, W1 i32 ×1, W2 ×6 |
-  | Range, dynamic bounds | from W1 | `range_gen.vl:47` | W1 isize ×2 |
-  | Count loop | count's type, `i32` floor | `codegen_stmt.vl:270` | W1 count ×3 |
-  | Condition loop | `i32` (`it` only) | `codegen_stmt.vl:279` | ×1 |
-  | Infinite loop | `i32` (`it` only) | `codegen_stmt.vl:284` | ×1 |
-  | Shelf `loop v of s` | `usize` | `shelf_gen.vl:217` | ×1 |
-  | Ring `loop v of r` | `usize` | `ring_gen.vl:192` | ×1 |
-  | Map `loop k of m` | `usize` | `map_gen.vl:242` | ×1 |
-
-* **Measured findings** (each by emitting C for a probe, not by reading the code):
-  - **Three paths are already correct and must not be "fixed"**: shelf, ring and map all emit `for (usize _velo_lidx_N = 0; ...)`; a `u64` count loop emits `uint64_t it`; a `u64` inclusive range emits `uint64_t i`. Widening these would be a regression, so their rows assert `usize`/`uint64_t` **positively** rather than merely passing.
-  - **Range loops are the only broken path, and only via `isize`**: `let lim: isize = 3000000000; loop i in 0..lim` emits `int32_t __start_i/__end_i` and visits `-1294967296` instead of `3000000000` — measured, not inferred. The cause is the missing `isize` branch in `range_checks.vl:192-200` while `int_type_width` already reports 64 for it.
-  - **`i32` ranges must stay `i32`** (no gratuitous widening) and narrow counts keep the `i32` floor; both are asserted so 68.3 cannot over-widen.
-  - **W2 is width-independent, confirmed at four widths**: `i32`, `i64`, `u32` and `u64` inclusive-max rows all currently return the non-termination guard value `99`. Since each row runs at its own type's maximum, no width change can make them pass — which is the evidence that 68.4 is a separate fix, not part of 68.3.
-* **Residual Limitation**: the audit covers the eight paths that exist today. A ninth loop form added later will not appear in this table unless its author adds a row — the test file states the mapping so the omission is at least visible in review. The `of` loop family is pinned only for shelf/ring/map, not for every collection type that might gain an `of` lowering. Boundary rows run each program under a 10 s timeout and are therefore unsuitable as a benchmark; performance measurement is Task 68.5.
-* **Verification**: `python -m pytest tests/test_loop_induction_width.py -q` → **8 failed, 9 passed**, and every failure was inspected to confirm it fails for the intended reason:
-  - `test_w1_range_isize_endpoint_iterates_the_full_range` → visited `['3', '-1294967296', '-1294967294']` (truncation), expected `['3', '3000000000', '3000000002']`.
-  - `test_w2_inclusive_signed_max_terminates[i32]`, `[i64]`, `test_w2_inclusive_unsigned_max_terminates[u32]`, `[u64]`, `test_w2_inclusive_descending_min_terminates` → all returned `99`, the deliberate non-termination guard, instead of `3`.
-  - `test_w1_range_isize_endpoint_is_not_narrowed` → header contains `int32_t`.
-  - `test_w2_inclusive_max_emits_an_equality_terminator` → the emitted header is still `for (int32_t i = 0; i <= 5; i++)`.
-  - The 9 passing rows are the correctness-preservation guards (shelf/ring/map `usize`, `u64`/`i64` count width, `i32` floor, condition/infinite `i32`, `i32` range not widened), which must **stay** green through 68.3/68.4.
-  - Two rows were found weak on first run and tightened rather than accepted: the `isize` runtime row originally asserted only the iteration count (which passes even when truncated, since truncation changes *which* values are visited, not whether the loop starts), and the descending-min row originally asserted nothing but the exit code. Both now assert observed values.
-
-##### Task 68.3: Implement width selection [COMPLETED] ✅
-* **Former Defect**: W1 (SPEC 7.2 item 9) requires a loop's induction to be at least as wide as its bounds. The rule was implemented in the type checker's widening ladder for `u64`, `i64`, `usize` and `u32` — but **`isize` was missing**, so `let lim: isize = 3000000000; loop i in 0..lim` fell through the ladder to the `i32` default. The backend then applied its own defensive default (`loop_var_c_type` returned `"int32_t "` for any name it did not recognise), and `isize` was missing there too. Two independent omissions for the same type meant the truncation was invisible in either file: the checker looked correct as long as you did not enumerate every 64-bit type, and the backend looked correct for every type the checker actually produced.
-* **Fix Applied**:
-  - `src/analysis/range_checks.vl`: added an `isize` branch to the widening ladder, listed next to `i64` because both are signed 64-bit. Order is `u64` > `i64` > `isize` > `usize` > `u32` > `i32`, matching the SPEC ladder and keeping mixed-signedness rejection (which runs earlier) untouched.
-  - `src/backend/codegen_lit.vl`: `loop_var_c_type` gained `isize` → `"ptrdiff_t "`. `isize` maps to `ptrdiff_t` everywhere else in codegen (`codegen_types.vl:15`), so the loop emitter had been the only place that disagreed.
-  - Both files now document *why* the fallback exists: the `int32_t` default is defensive for an internal error, not a licence to narrow. The comment records the W1 requirement so the next 64-bit type cannot be added to the type system without appearing here.
-* **Residual Limitation**: the ladder is still an ordered list of equality tests, so a new 64-bit integer type must be added to **three** places (the ladder, `loop_var_c_type`, `map_type_to_c`) and nothing forces that — the audit rows in `test_loop_induction_width.py` are the only guard. A table-driven mapping keyed on `int_type_width` would remove the class of defect, and is deliberately **not** done here: it would restructure the checker's coercion order in the same commit as a behavioural fix, which is exactly how the omission became invisible in the first place. Also unchanged: `i8`/`i16`/`u8`/`u16` endpoints still iterate in `i32` (the documented W1 floor), so a narrow loop is never narrower than 32 bits.
-* **Verification**:
-  - **Load-bearing, proven by reverting**: with the two source edits stashed and the compiler rebuilt, the same probe emits `for (int32_t __start_i = (0), __end_i = (lim), ..., i = __start_i; ...)`. With the fix it emits `for (ptrdiff_t __start_i = (0), __end_i = (lim), ...)`. So the change, not the probe, is what moves the type.
-  - **Runtime**: the `isize` probe over `3000000000..3000000003` now visits `['3', '3000000000', '3000000002']`; before the fix it visited `['3', '-1294967296', '-1294967294']`.
-  - `tests/test_loop_induction_width.py -q` → **18 passed, 6 failed**; all 18 W1 rows green, and the 6 failures are exactly the W2 boundary rows owned by Task 68.4.
-  - **No regressions**: `test_range_loops.py`, `test_count_loops.py`, `test_dynamic_ranges.py`, `test_large_ranges.py`, `test_range_steps.py`, `test_loop_context.py` → **377 passed**.
-  - **Compiler-source change, so the bootstrap chain was rebuilt and re-verified**: Gen2 → Gen3 → canonical `bin/velo.exe`; `scripts/check_determinism.py` → `SHA-256 MATCH`, Gen2 == Gen3 == `6ae9ef64a87cba21b7752d35e8e9e2970bfca85673f399e0167e10790b72b633` (the hash necessarily changed from the Phase 67 value `b4abe546…` because the compiler's own source changed). `bootstrap.c` regenerated (98 insertions, 88 deletions) and confirmed to contain exactly the two intended edits — `of_elem = "isize"` and `return "ptrdiff_t "` — plus their guards. `tests/test_bootstrap_snapshot.py` → **5 passed**.
-
-##### Task 68.4: Update `it` and boundary semantics [COMPLETED] ✅
-* **Former Defect**: W2 (SPEC 7.2 item 9) requires an inclusive range to terminate without ever forming a value outside the range. Both range paths lowered `..=` to `for (T i = s; i <= e; i++)`, so the increment after the final iteration overflows at the type maximum: **undefined behaviour** for signed types (gcc reports `iteration N invokes undefined behavior [-Waggressive-loop-optimizations]` and is licensed to delete the loop exit) and **wrap-to-zero** for unsigned types, which restarts the loop from the bottom. The defect is width-independent — it reproduced at `i32`, `i64`, `u32` and `u64` — so no amount of width selection could have fixed it.
-* **Fix Applied**:
-  - `src/backend/range_gen.vl`: an inclusive range now emits an unbounded `for` header (`for (T i = start;;)`) with **no** bound test, and a new `emit_inclusive_range_terminator` emits the exit test after the body: `if (end - i < step) break;` ascending, `if (i - end < step) break;` descending, and `if (__rev_i ? (i - end < step) : (end - i < step)) break;` for dynamic direction. The decrement/increment follows the test.
-  - `src/backend/codegen_stmt.vl`: calls the terminator **after** the `__loop_cont_N` label, so `continue` performs both the test and the advance. Emitting it before the label would hang on the first `continue` — that placement is the invariant, so it is stated in the code and in the SPEC rather than left implicit.
-  - Exclusive ranges are untouched: `..` cannot overflow, so their `<` / `>` header is unchanged.
-* **Why a distance test and not equality**: SPEC 7.2 has always allowed an explicit step, and `loop i in 0..=10:3` must visit `0, 3, 6, 9`. An `i == end` test never fires there (9 + 3 skips 10) and loops forever. Comparing the *remaining distance* against the step is step-aware, degenerates to `i == end` when step is 1, and — because the induction never passes the endpoint — cannot itself underflow. Both differences are non-negative by construction.
-* **Residual Limitation**: an inclusive range now emits a body-terminated loop rather than a header-terminated one, so the `for` header carries no bound. Anything that pattern-matches the old header shape must be updated — which is exactly what happened to four `test_large_ranges.py` rows and two `test_dynamic_ranges.py` shape assertions, all updated in this task to assert the new contract instead. Second: the terminator re-emits literal endpoints and literal steps in the exit test. That is safe because compile-time constants have no side effects (SPEC 7.2 guarantee 1), but it does mean a literal bound appears twice in the generated C; a dynamic endpoint is *not* re-evaluated, it is read from the hoisted `__end_<v>` temporary. Third: performance was not measured here — Task 68.5 owns that.
-* **Verification**:
-  - `tests/test_loop_induction_width.py` → **29 passed** (was 18 passed / 6 failed after 68.3). The six W2 boundary rows now pass: `i32` MAX, `i64` MAX, `u32` MAX, `u64` MAX, descending `i32` MIN, and the emitted-shape row.
-  - **Semantics rows added after the first implementation failed them** — each was found by running the code, not by review:
-    - `test_w2_inclusive_step_visits_the_whole_ladder`: `0..=10:3` → `0, 3, 6, 9`. The equality-based first attempt hung here.
-    - `test_w2_inclusive_continue_still_advances`: `continue` at `i == 2` still yields 5 iterations; placing the terminator above the label would hang.
-    - `test_w2_dynamic_descending_inclusive_counts_every_value`: a runtime `start > end` yields 4 iterations, not 1. The first attempt tested `end - i` unconditionally, which is negative when descending.
-    - `test_w2_inclusive_equal_endpoints_run_exactly_once`: `2..=2` and `2..=2:5` both run once.
-    - `test_w2_exclusive_range_shape_is_unchanged`: this row caught a **real regression I introduced mid-task** — an edit had changed the exclusive operators to `<=`/`>=`, which would have been an off-by-one in every exclusive literal range. It failed, was diagnosed, and fixed before commit.
-  - **Load-bearing, proven by reverting**: with `range_gen.vl` + `codegen_stmt.vl` stashed and the compiler rebuilt, `loop i in 0..=5` emits `for (int32_t i = 0; i <= 5; i++)`; with the fix it emits `for (int32_t i = 0;;)`.
-  - **No regressions**: `test_range_loops`, `test_count_loops`, `test_dynamic_ranges` (100 passed individually), `test_large_ranges`, `test_range_steps`, `test_loop_context`, `test_break_continue`, `test_defer`, `test_loop_induction_width` → **463 passed**.
-  - **Bootstrap**: compiler source changed, so Gen2 → Gen3 → canonical `bin/velo.exe` was rebuilt; `check_determinism.py` → `SHA-256 MATCH`, Gen2 == Gen3 == `abebbf2b00ca498e1fd9880a7a03a161828e6536fbbcdd8192a60dd0e408a4b0`; `bootstrap.c` regenerated; `test_bootstrap_snapshot.py` → **5 passed**.
-
-##### Task 68.5: Add performance and determinism verification [COMPLETED] ✅
-* **Former Defect**: none — this is the verification task Phase 68's invariants require ("Performance and determinism must be measured, not assumed", SPEC 7.2 item 9 preamble). It is recorded as a defect-class entry anyway because the phase would otherwise be *claimed* complete on the strength of correctness tests alone, and W2 adds a comparison to every inclusive iteration while W1 changes the emitted type for `isize` loops. Both are exactly the kind of change that is assumed harmless and later found not to be.
-* **Fix Applied**: `tests/test_loop_performance.py` (5 rows), split into what each claim actually needs:
-  - **Performance, as a cliff detector rather than a benchmark.** Two programs differing only in `..` vs `..=` (same body, same bound) are built and run, best-of-5 each, and the ratio must stay under 2x. A tight threshold on a shared runner would be flaky and would say nothing about the property being asserted: the risk is an accidental complexity change or a lost optimisation, not a few percent. A second row does the same for `:4`-stepped loops, because the step-aware terminator is the more expensive form.
-  - **Determinism, three separate rows** because they fail for different reasons: `emit-c` run twice on one source must produce identical bytes (guards against the new temporaries depending on state that resets differently); `bootstrap.c` must equal a fresh `emit-c -o` output (guards against a stale snapshot, the failure mode where the compiler can no longer reproduce itself); and `scripts/check_determinism.py` must still report a Gen2/Gen3 match.
-* **Measured numbers** (Windows, gcc -O2, 20 000 000 iterations, best-of-5, recorded rather than asserted):
-  - exclusive `0..n`: **6–7 ms**; inclusive `0..=n`: **6–7 ms** → ratio ≈ **1.0x**. W2's extra comparison per iteration is not measurable at this scale.
-  - At 300 000 000 iterations the two forms were again equal (6–8 ms best-of). The first sample in each series is consistently ~45–60 ms and is process/loader startup; best-of-5 discards it, which is why it is the statistic used.
-  - **Pre-W2 vs post-W2**: the pre-W2 compiler was rebuilt from its own `bootstrap.c` snapshot (`git show d922937:bootstrap.c`, gcc -O2) and the same inclusive program measured at ~7 ms best-of-4 against ~7 ms for the current compiler. This is the comparison that matters — it shows the *fix* did not cost performance, not merely that inclusive resembles exclusive.
-* **Determinism result**: Gen2 == Gen3 == `abebbf2b00ca498e1fd9880a7a03a161828e6536fbbcdd8192a60dd0e408a4b0`. The value changed from `b4abe546…` (Phase 67) **by design** — the compiler's own source changed in 68.3 and 68.4 — and the invariant that survives is that the two generations agree and `bootstrap.c` matches the current emission.
-* **Residual Limitation**: the performance rows are a **relative** comparison of two generated binaries, not an absolute benchmark suite. They would not detect a slowdown that affects both forms equally, and they do not cover `-O0` builds, where the extra comparison is proportionally more expensive. Best-of-5 also hides variance rather than characterising it. Second: the pre-W2 comparison in this entry was a **manual measurement**, not a test — it required building a compiler from a historical snapshot, which is too slow and too dependent on git history to run in CI, so it is recorded as evidence rather than asserted. Third: determinism rows verify reproducibility on this host; they cannot prove cross-platform stability, which remains the CI matrix's job.
-* **Verification**: `python -m pytest tests/test_loop_performance.py -q` → **5 passed**. `test_bootstrap_snapshot.py` → 5 passed. One row was corrected during the task for a real reason: it originally compared `bootstrap.c` against `emit-c` **to stdout**, which is a different code path and is not byte-identical to `emit-c -o <file>`; it failed, and now uses the `-o` route that the bootstrap script and the existing snapshot test use.
-
-##### Task 68.6: Write migration notes [COMPLETED] ✅
-* **Former Defect**: the phase is explicitly breaking ("The change is breaking; migration notes are mandatory"), and after 68.3/68.4 the only migration guidance in the tree was one sentence at the end of SPEC 7.2 item 9: *"do not depend on the old truncation, and use an explicit cast when a narrower induction is genuinely wanted."* That sentence is correct and useless — it names the remedy without showing it, and it does not say which of the two changes is the breaking one. Worse, the document had **already drifted**: the Section 7.2 item 8 dynamic-direction table still listed `i <= end` / `i >= end` as the lowered exit test for inclusive ranges, which W2 had replaced in 68.4. A user reading the table and then the loop's emitted C would find two different contracts in one section.
-* **Fix Applied**:
-  - New SPEC **7.2 item 9.1 "Migration from pre-Phase-68 loop semantics"**, split by which change a reader is actually reacting to:
-    - **W1 is the only change with a migration.** A program that produced correct output keeps producing it (the induction is only ever wider, never narrower), so the only edits needed are in programs that relied on the truncated values. The notes show the recommended narrowing pattern — cast the **bound**, not the induction — and why: the bound's type is what selects the width, so `loop i in 0..(lim as i32)` gets an `int32_t` induction without any per-iteration cast.
-    - **W2 has nothing to migrate**, and the notes say so with the reason: the pre-fix behaviour at the type maximum was undefined behaviour, so no correct program observed it. `continue`, exclusive ranges, count loops and condition loops are stated as unchanged rather than left to inference.
-  - **Both examples are runnable `velo` blocks**, not `rust`-fenced illustration like the rest of Section 7.2. Two blocks demonstrate cast-bound vs uncast-bound; a third is the inclusive-max program. This distinction is deliberate: a migration note is the only document a user reads *after* their loop starts producing different numbers, so it must be executable, and `tests/test_loop_migration_notes.py` now compiles every `velo` block in the section.
-  - Corrected the drifted **item 8 table** (`Lowered Relational Test` → `Lowered Exit Test`, inclusive rows now `end - i < step` / `i - end < step`, with a pointer that item 9 governs on conflict) and the truncating-cast paragraph, which originally said the cast "visits negative values" — measured, it is a range to a *negative endpoint*, so the loop descends from `0` through `-1`, `-2`. Both were documentation defects found while writing the notes, not while testing them.
-* **Residual Limitation**: the notes are prose plus tested examples; they do not attempt a mechanical upgrade tool, and there is no way to detect a program that depended on the old values other than it starting to produce new ones. The `velo`-fence convention is also new in Section 7.2 — the rest of the section still uses `rust` fences that are not compiled, so only the migration subsection is executable; converting the remaining 40-odd fences would be a separate audit, and doing it here would have mixed a documentation refactor into a breaking-change commit. Third: the notes describe `isize` (`ptrdiff_t`) and the four integer widths that are tested; a target where `isize` is not 64-bit would falsify the worked example, and no test asserts the platform assumption beyond the existing `test_loop_induction_width.py` rows.
-* **Verification**: `tests/test_loop_migration_notes.py` → **6 passed**: every `velo` block in 9.1 builds and runs; a cast bound emits an `int32_t` induction (asserted on the hoisted temporaries, since a dynamic bound has no bare `int32_t i` declaration); an uncast `i64` bound emits `int64_t`; the inclusive-max program runs exactly 3 times; and the truncating cast really does visit `0, -1, -2`, so the warning describes observable behaviour. Two rows failed on first run and were **tightened, not loosened**: the cast-bound row looked for `int32_t i` and had to read the hoisted temporaries instead, and the truncation row asserted a single first value of `-1294967296` which was wrong — the first visited value is `0`, and only the *direction* exposes the defect.
-
-#### Phase Exit Criteria
-
-- [x] Loop induction no longer overflows for any accepted range.
-- [x] The width rule is documented and consistent across loop kinds.
-- [x] Boundary tests pass at `INT32_MAX`/`UINT32_MAX`/`INT64_MAX`.
-- [x] Bootstrap determinism and performance are verified.
-
-#### Phase Summary
-
-**Former Defect**: every range loop declared its induction as `int32_t`, so a bound above `INT32_MAX` truncated and the loop visited the wrong values, and every inclusive range lowered to `for (T i = s; i <= e; i++)`, which overflows after the final iteration at the maximum of `T` — undefined behaviour for signed types, wrap-to-zero for unsigned. Measurement in 68.1 split this into two defects with different fixes and showed they are independent: the width truncation was gated on a single missing `isize` entry in a widening ladder, while the boundary overflow reproduced at `i32`, `i64`, `u32` **and** `u64`, so no width change could have fixed it.
-
-**Fix Applied**: Task 68.1 fixed the decision in SPEC 7.2 item 9 as two rules (W1 width from the bounds with an `i32` floor; W2 terminate by remaining distance, never passing the endpoint) and rejected widening everything to `i64`; 68.2 enumerated all **eight** loop codegen paths as an executable audit table and recorded a red baseline; 68.3 added `isize` to the range widening ladder and to `loop_var_c_type`; 68.4 replaced the inclusive-range lowering with an unbounded `for` plus a step-aware, body-terminated distance test emitted after the `__loop_cont_N` label so `continue` still advances; 68.5 measured the cost (ratio ≈ 1.0x, and equal to a compiler rebuilt from its own pre-fix snapshot) and re-verified Gen2 == Gen3 determinism; 68.6 published the migration notes with compiled examples and corrected the item 8 table that W2 had left stale.
-
-**Residual Limitation**: the width ladder is still an ordered list of equality tests, so a new 64-bit integer type must be added in three places (the ladder, `loop_var_c_type`, `map_type_to_c`) and only the audit rows guard that; `i8`/`i16`/`u8`/`u16` bounds still iterate in `i32` by the documented floor; an inclusive range now emits a body-terminated loop, so anything pattern-matching the old header shape had to change (four `test_large_ranges.py` rows and two `test_dynamic_ranges.py` assertions were updated); the performance rows are a relative cliff detector, not a benchmark, and the pre-fix comparison was a manual measurement rather than a test.
-
-**Verification**: `tests/test_loop_induction_width.py` 29 passed (red baseline 8 failed / 9 passed in 68.2); `tests/test_loop_performance.py` 5 passed; `tests/test_loop_migration_notes.py` 6 passed; loop regression set 463 passed; `check_determinism.py` → SHA-256 MATCH at `abebbf2b00ca498e1fd9880a7a03a161828e6536fbbcdd8192a60dd0e408a4b0`; `test_bootstrap_snapshot.py` 5 passed; full suite `python -m pytest tests -q` → **1945 passed, 2 skipped in 922.14s** (1905 at the Phase 67 close, +29 `test_loop_induction_width.py`, +5 `test_loop_performance.py`, +6 `test_loop_migration_notes.py`). No compiler source changed in 68.5/68.6, so the bootstrap chain built in 68.4 stands and `bootstrap.c` was not regenerated.
-
-- Task 68.1 — `3987b0f` `docs(loop)`: decide induction width and inclusive-range termination rule.
-- Task 68.2 — `496fb48` `test(loop)`: audit all eight loop codegen paths with a red baseline.
-- Task 68.3 — `d922937` `fix(loop)`: widen range induction for `isize` bounds (W1).
-- Task 68.4 — `fa7a5f4` `fix(loop)`: terminate inclusive ranges by distance, not overflow (W2).
-- Task 68.5 — `265101c` `test(loop)`: measure W2 cost and re-verify determinism.
-- Task 68.6 — `39ccc6a` `docs(loop)`: migration notes, item 8 table correction, `tests/test_loop_migration_notes.py`.
-
----
-
-### Phase 69: Deferred Transfer Statements Crash the Compiler (P1) [COMPLETED] ✅
-
-**Audit ID:** `AUDIT-2026-11-17`<br>
-**Severity:** P1 — checker accepts an invalid program; compiler crashes with no diagnostic<br>
-**Depends on:** Phase 58 (`defer` block scoping)<br>
-**Blocks:** —
-
-#### Defect
-
-`defer` takes a *statement*, so `defer return`, `defer break`, `defer continue` and `defer fail` parse cleanly. They were then lowered as if they were ordinary cleanup work, and emitting one re-enters the cleanup chain that is currently being emitted. The result was a stack overflow — exit `-1073741571` (`0xC00000FD`) — with **no diagnostic at all**. `velo check` and `velo emit-c` both died, so a user got no line number, no message, and no hint that the `defer` was the problem.
-
-```velo
-act f() -> i32 {
-    defer return 1   // crashed the compiler
-    return 0
-}
-```
-
-Measured on the pre-fix compiler, in both the `check` and `emit-c` lanes:
-
-| Program | Before |
-|---|---|
-| `defer return` | exit `-1073741571` |
-| `defer return 1` | exit `-1073741571` |
-| `defer break` (in a loop) | exit `-1073741571` |
-| `defer continue` (in a loop) | exit `-1073741571` |
-| `defer fail "x"` (in an `or` function) | exit `-1073741571` |
-| `defer { return 1 }` | exit `-1073741571` |
-| `defer if true { break }` | exit `-1073741571` |
-| `defer io.println(1)` | exit 0 — unaffected |
-
-So the class is exactly *a transfer statement reached through a defer*, including transfers nested inside a block or `if` within the defer.
-
-#### Why reject rather than define semantics
-
-A deferred `return` would have to replace the function's result **after** the real return value was computed and its cleanups had begun. A deferred `break`/`continue` would target a loop the iteration has already left. A deferred `fail` would replace an outcome whose success path already ran. None of the four has a coherent meaning; `std/` and `src/` contain zero uses; and Go sidesteps the same question by making `defer` take a call rather than a statement.
-
-The rule lives in the **checker**, not the backend, for the same reason Phase 62 put the out-of-loop `break`/`continue` rule there: `velo check` must reject an invalid program without depending on code generation.
-
-#### Tasks
-
-##### Task 69.1: Record the red baseline [COMPLETED] ✅
-* **Former Defect**: the defect was known only as an aside inside the Phase 62 completion note (`gaps.md` §62), with a *hypothesised* cause — "`emit_c_cleanup` re-enters `emit_c_stmt` without popping the cleanup stack" — that placed it in codegen. It had no phase, no test, and no owner, so it could not be closed.
-* **Fix Applied**: `tests/test_defer_transfer_rejection.py`, 19 rows over three groups:
-  - 7 rejection rows (one per crashing form above), each asserting the compiler does **not** crash, that `check` fails, and that the diagnostic names both `defer` and the keyword;
-  - the same 7 forms again through `emit-c`, because a checker-only fix that still crashes in the backend would leave `velo build` broken for the same program;
-  - 5 preservation rows (deferred call, declaration, assignment, block, `if`) that must stay accepted — the row that stops a too-broad fix, since rejecting every deferred statement would pass all 14 rejection rows and silently delete the feature.
-* **Measured correction to the recorded cause**: the crash reproduces in `velo check` and `emit-c` alike, and `check` runs the same lowering pipeline (`compile_source_to_c_strict`, `check.vl:338/341`), so the codegen hypothesis was right about the *mechanism* but wrong about the *lane* — "codegen-only" would have implied `check` was safe, and it was not.
-* **Residual Limitation**: the rows assert a crash is absent and a diagnostic is present; they do not diff the exact diagnostic wording, so the message can be improved without breaking them. They also cover the four transfer keywords Velo has today; a future `goto`-like statement would need a row.
-* **Verification**: `python -m pytest tests/test_defer_transfer_rejection.py -q` → **14 failed, 5 passed** in 80.18s. Every failure was the stack-overflow assertion (`assert 3221225725 not in (-1073741571, 3221225725)`), i.e. the pre-fix compiler dying exactly as documented; the 5 passing rows are the preservation guards, which must stay green.
-
-##### Task 69.2: Reject deferred transfers in the checker [COMPLETED] ✅
-* **Former Defect**: `check_statement`'s `STMT_DEFER` branch recursed into the deferred statement through the ordinary statement path, so a deferred transfer was validated as if it were reachable code. Nothing rejected it, and the backend then lowered it into the cleanup chain it was already emitting.
-* **Fix Applied**:
-  - New `src/analysis/defer_checks.vl` (106 lines): `defer_body_transfers` reports whether a defer body can transfer control at any depth, traversing `STMT_BLOCK`, `STMT_IF` (both arms), `STMT_MATCH` (every arm), `STMT_LOOP`, `STMT_ZONE`, `STMT_UNSAFE` and nested `STMT_DEFER`; `find_defer_transfer_keyword` returns the innermost keyword so the message names what the user wrote.
-  - `src/analysis/type_checker_stmt.vl`: the `STMT_DEFER` branch now reports `'defer' cannot defer <keyword>: a deferred transfer has no defined target at cleanup time` and increments `error_count` before still checking the body (so the body's own type errors are reported too, rather than masked by the new one).
-  - A dedicated file rather than another branch in `type_checker_stmt.vl` (307 lines) keeps the recursive scan out of a near-ceiling file, per the project's line-budget rule.
-* **Residual Limitation**: the rule is purely syntactic — it rejects a transfer *anywhere* in the defer body, including one that is provably unreachable (`defer if false { return 1 }`). That is deliberate: reachability analysis here would need the flow-narrowing machinery, and an unreachable deferred transfer is a mistake worth reporting anyway. Second: nested `defer` inside `defer` is reported once per outer defer, which can produce two diagnostics for one program; both are true. Third: the message is English prose like every other diagnostic, so it is not localised.
-* **Verification**:
-  - **Load-bearing, proven by reverting**: with the checker change stashed and the compiler rebuilt, the same programs crash with exit `-1073741571` and empty stdout/stderr; with it, each reports the diagnostic at the `defer` line/col and exits 1.
-  - `python -m pytest tests/test_defer_transfer_rejection.py -q` → **19 passed** in 0.37s (from 14 failed / 5 passed in 80s — the runtime collapse is itself evidence, since the pre-fix run was spending its time in the crash).
-  - **No regressions in the defer suite**: `tests/test_defer.py`, `tests/test_loop_context.py`, `tests/test_bootstrap_snapshot.py` → **104 passed**.
-  - **Compiler-source change, so the bootstrap chain was rebuilt**: Gen2 → Gen3 → canonical `bin/velo.exe`; `check_determinism.py` → `SHA-256 MATCH`, Gen2 == Gen3 == `dd252191957467c44c5332990da413439749e52d3cad2b1660072026e013218c`; `bootstrap.c` regenerated.
-  - **A real defect in this task, found by the full suite and fixed**: the diagnostic was first built with string `+` concatenation, which Velo rejects (`cannot apply '+' to string operands (concatenation is str.concat)`). That broke 4 tests — `tests/test_stage2_semantics.py` and `tests/test_stage2_codegen.py` — because `examples/12_stage2_semantics_test.vl` *compiles the compiler's own `src/` sources*, so my broken file was itself the input. The fix uses `str.concat` and the 4 tests return to green; the episode is recorded because it shows the example programs are a real build gate on `src/`, not documentation.
-
-#### Phase Exit Criteria
-
-- [x] No deferred transfer crashes the compiler in any lane (`check`, `emit-c`, `run`).
-- [x] The rule is owned by the semantic checker, so `velo check` rejects without codegen.
-- [x] The diagnostic names both the `defer` and the transfer keyword.
-- [x] Legitimate deferred work (calls, declarations, assignments, blocks, `if` of plain statements) is still accepted.
-- [x] Bootstrap chain rebuilt; Gen2/Gen3 `emit-c` SHA-256 identical; `bootstrap.c` refreshed.
-
-#### Phase Summary
-
-**Former Defect**: `defer` accepts any statement, so `defer return` / `defer break` / `defer continue` / `defer fail` parsed and then killed the Stage-2 compiler with a stack overflow (`0xC00000FD`, exit `-1073741571`) and no diagnostic in any lane. The defect had been known only as an aside in the Phase 62 note, attributed to codegen alone, with no phase and no test.
-
-**Fix Applied**: Task 69.1 turned the aside into a 19-row executable baseline (7 rejection forms × 2 lanes, plus 5 preservation rows) and corrected the recorded lane attribution; Task 69.2 added `src/analysis/defer_checks.vl` with a recursive transfer scan and wired it into the checker's `STMT_DEFER` branch, so `velo check` rejects the program with a diagnostic naming the keyword instead of the compiler dying.
-
-**Residual Limitation**: the rule is syntactic, so a provably-unreachable deferred transfer is also rejected; nested `defer`-in-`defer` can produce two diagnostics for one program; the wording is not asserted by the tests, so it can be reworded freely.
-
-**Verification**: `tests/test_defer_transfer_rejection.py` 19 passed (red baseline 14 failed / 5 passed); `tests/test_defer.py` + `test_loop_context.py` + `test_bootstrap_snapshot.py` 104 passed; `check_determinism.py` → SHA-256 MATCH at `dd252191957467c44c5332990da413439749e52d3cad2b1660072026e013218c`; SPEC §2.2.10 documents the rule (and the §2.2.6 invariant list plus the §2.2.7 checklist gained a matching row); full suite `python -m pytest tests -q` → **1964 passed, 2 skipped in 933.81s** (1945 at the Phase 68 close, +19 `test_defer_transfer_rejection.py`).
-
-- Task 69.1 — this commit's test file: `tests/test_defer_transfer_rejection.py` (red baseline).
-- Task 69.2 — `src/analysis/defer_checks.vl`, `src/analysis/type_checker_stmt.vl`, `bootstrap.c`.
-
+- **Garbage collection.** The zone/heap/defer model is the point of the
+  language.
+- **A borrow checker with lifetimes.** Escape analysis plus arenas is the
+  chosen trade.
+- **A macro system.** Codegen-level metaprogramming is out of scope; reflection
+  covers the struct-mapping use case.
+- **Backends other than C.** Emitting C is what makes the FFI and bootstrap
+  story work.
+- **Package hosting with accounts.** A registry repository plus hashes is the
+  trust model (Phase 72.6).
