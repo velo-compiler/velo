@@ -3293,14 +3293,15 @@ UnicodeEncodeError: 'charmap' codec can't encode character '\u2713'
 
 #### Phase 66 Summary
 
-Four commits, all four tasks complete:
+Five commits, all four tasks complete:
 
 1. `test(ci)`: `_run_determinism_with_encoding` plus the red row that pins the cp1252 crash — deliberately red, as the task requires.
 2. `fix(ci)`: ASCII-only output, `emit_c`/`main` restructure that preserves full failure diagnostics, and the ENCODING CONTRACT docstring.
 3. `test(ci)`: the green four-codec contract, plus a source-level ASCII gate and hash-validity assertions proven load-bearing by mutation.
-4. `docs`: this contract record.
+4. `docs(ci)`: the documented contract, **plus** the second defect of the same class that a clean-environment run exposed in `test_literal_property_fuzz.py` (ambient-codec decoding of UTF-8 compiler diagnostics).
 
 `python -m pytest tests/test_ci_matrix.py -q`: **7 passed**.
+Clean-environment full suite: **1883 passed, 2 skipped in 905.24s**.
 
 **Residual limitations carried forward (honest):**
 
@@ -3321,7 +3322,7 @@ Closing this phase meant proving the suite no longer needs `PYTHONUTF8=1`, so th
 **Full-suite verification (no `PYTHONUTF8`, no `PYTHONIOENCODING`):**
 
 - Before this fix: **1 failed, 1882 passed, 2 skipped** — the failure being the fuzz harness decoding bug above.
-- After the fix: see the commit that follows; the same clean-environment run is repeated and recorded there.
+- After the fix: **1883 passed, 2 skipped in 905.24s** with both `PYTHONUTF8` and `PYTHONIOENCODING` unset. This is the first recorded full-suite run in this project that needs **no** encoding workaround, so the `PYTHONUTF8=1` prerequisite carried in the Phase 64 and Phase 65 notes is now obsolete.
 
 ---
 
