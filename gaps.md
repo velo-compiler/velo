@@ -3511,12 +3511,34 @@ loop i in 0..3000000000 { ... }   // endpoint now wide, induction still i32
 * **Residual Limitation**: this task lands only the **decision and its compatibility table** (SPEC Section 7.2 item 9); no compiler behaviour changes here, so the two measured defects are still live until 68.3/68.4. The `i32` floor means a `u64`-typed induction over `i8` bounds is deliberately not preserved as `i8` — an existing behaviour, now documented rather than changed. Descending inclusive ranges at the *minimum* of `T` have the mirror-image wrap; W2 as specified covers it symmetrically in 68.4 and must be verified there, not assumed.
 * **Verification**: decision approved by the user's instruction to proceed; evidence is the four probed programs above, each run against the current `bin/velo.exe` with its emitted C inspected. No tests added in this task — the boundary rows belong to 68.4, and adding them now would only record the defects 68.3/68.4 are about to fix.
 
-##### Task 68.2: Audit every loop codegen path
-* **Goal:** Classify range, count, `of`, shelf, map, and ring loops by induction width.
-* **Files:** `src/backend/codegen_stmt.vl`, `map_gen.vl`, `ring_gen.vl`, `shelf_gen.vl`.
-* **Tests:** one boundary test per path.
-* **Security gate:** no path may keep an `i32` induction for a wide bound.
-* **Done when:** the audit table is attached.
+##### Task 68.2: Audit every loop codegen path [COMPLETED] ✅
+* **Former Defect**: the phase described one defect ("the induction is always `int32_t`"), which implies a single codegen site. There are **eight** loop codegen paths across five files, and they had already diverged: collection loops used `usize`, count loops used the count's type, and only range loops consulted the type checker's widening decision. Without the table, "fix the induction width" would have been applied to whichever path was found first, and the remaining seven would have kept whatever width they happened to have.
+* **Fix Applied (audit artefact + red baseline)**: `tests/test_loop_induction_width.py` (17 rows) enumerates all eight paths and pins each one's induction, plus the W2 boundary rows from Task 68.1. This is the 68.2 audit table in executable form:
+
+  | Loop path | Induction | Codegen site | Rows |
+  |---|---|---|---|
+  | Range, literal bounds | from W1 | `range_gen.vl:19` `emit_range_loop_header` | W1 isize ×2, W1 i32 ×1, W2 ×6 |
+  | Range, dynamic bounds | from W1 | `range_gen.vl:47` | W1 isize ×2 |
+  | Count loop | count's type, `i32` floor | `codegen_stmt.vl:270` | W1 count ×3 |
+  | Condition loop | `i32` (`it` only) | `codegen_stmt.vl:279` | ×1 |
+  | Infinite loop | `i32` (`it` only) | `codegen_stmt.vl:284` | ×1 |
+  | Shelf `loop v of s` | `usize` | `shelf_gen.vl:217` | ×1 |
+  | Ring `loop v of r` | `usize` | `ring_gen.vl:192` | ×1 |
+  | Map `loop k of m` | `usize` | `map_gen.vl:242` | ×1 |
+
+* **Measured findings** (each by emitting C for a probe, not by reading the code):
+  - **Three paths are already correct and must not be "fixed"**: shelf, ring and map all emit `for (usize _velo_lidx_N = 0; ...)`; a `u64` count loop emits `uint64_t it`; a `u64` inclusive range emits `uint64_t i`. Widening these would be a regression, so their rows assert `usize`/`uint64_t` **positively** rather than merely passing.
+  - **Range loops are the only broken path, and only via `isize`**: `let lim: isize = 3000000000; loop i in 0..lim` emits `int32_t __start_i/__end_i` and visits `-1294967296` instead of `3000000000` — measured, not inferred. The cause is the missing `isize` branch in `range_checks.vl:192-200` while `int_type_width` already reports 64 for it.
+  - **`i32` ranges must stay `i32`** (no gratuitous widening) and narrow counts keep the `i32` floor; both are asserted so 68.3 cannot over-widen.
+  - **W2 is width-independent, confirmed at four widths**: `i32`, `i64`, `u32` and `u64` inclusive-max rows all currently return the non-termination guard value `99`. Since each row runs at its own type's maximum, no width change can make them pass — which is the evidence that 68.4 is a separate fix, not part of 68.3.
+* **Residual Limitation**: the audit covers the eight paths that exist today. A ninth loop form added later will not appear in this table unless its author adds a row — the test file states the mapping so the omission is at least visible in review. The `of` loop family is pinned only for shelf/ring/map, not for every collection type that might gain an `of` lowering. Boundary rows run each program under a 10 s timeout and are therefore unsuitable as a benchmark; performance measurement is Task 68.5.
+* **Verification**: `python -m pytest tests/test_loop_induction_width.py -q` → **8 failed, 9 passed**, and every failure was inspected to confirm it fails for the intended reason:
+  - `test_w1_range_isize_endpoint_iterates_the_full_range` → visited `['3', '-1294967296', '-1294967294']` (truncation), expected `['3', '3000000000', '3000000002']`.
+  - `test_w2_inclusive_signed_max_terminates[i32]`, `[i64]`, `test_w2_inclusive_unsigned_max_terminates[u32]`, `[u64]`, `test_w2_inclusive_descending_min_terminates` → all returned `99`, the deliberate non-termination guard, instead of `3`.
+  - `test_w1_range_isize_endpoint_is_not_narrowed` → header contains `int32_t`.
+  - `test_w2_inclusive_max_emits_an_equality_terminator` → the emitted header is still `for (int32_t i = 0; i <= 5; i++)`.
+  - The 9 passing rows are the correctness-preservation guards (shelf/ring/map `usize`, `u64`/`i64` count width, `i32` floor, condition/infinite `i32`, `i32` range not widened), which must **stay** green through 68.3/68.4.
+  - Two rows were found weak on first run and tightened rather than accepted: the `isize` runtime row originally asserted only the iteration count (which passes even when truncated, since truncation changes *which* values are visited, not whether the loop starts), and the descending-min row originally asserted nothing but the exit code. Both now assert observed values.
 
 ##### Task 68.3: Implement width selection
 * **Goal:** Derive the induction type from the bounds/step (or use a fixed wide type) and carry it through codegen.
