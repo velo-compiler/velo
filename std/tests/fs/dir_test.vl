@@ -7,6 +7,16 @@ use "../../fs/stat.vl"
 use "../../fs/ops.vl"
 use "../../fs/dir.vl"
 
+// Removes the suite's working tree. Each step may fail: this also runs on the
+// failure path, where only some artifacts were created.
+act cleanup_scratch() {
+    fs_remove_file_str("scratch/test_dir_scan/item_one.txt")
+    fs_remove_file_str("scratch/test_dir_scan/item_two.txt")
+    fs_remove_file_str("scratch/test_dir_scan/item_three.txt")
+    fs_remove_dir_str("scratch/test_dir_scan")
+    fs_remove_dir_str("scratch")
+}
+
 act test_dir_iterator() -> bool {
     mut dir_it = fs_dir_open("std")
     if dir_it.h_find == DIR_INVALID_HANDLE or !dir_it.has_current {
@@ -109,6 +119,17 @@ act test_count_dir() -> bool {
 }
 
 act main() -> i32 {
+    // test_read_dir_names writes under scratch/, so the suite owns that subtree:
+    // create it here and remove it on every exit path. Leaving it behind is what
+    // produced the ambient scratch/ that other suites (fs.ops, io.*) silently
+    // depended on, so this cleanup is what makes a clean checkout sufficient.
+    cleanup_scratch()
+    if !fs_create_dir_str("scratch") {
+        io.println("FAIL: could not create the scratch directory")
+        return 4
+    }
+    defer cleanup_scratch()
+
     if !test_dir_iterator() {
         io.println("FAIL: test_dir_iterator")
         return 1

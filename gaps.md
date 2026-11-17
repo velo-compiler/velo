@@ -3401,12 +3401,37 @@ scratch/test_io_ops.txt
   - **Cleanup test is no longer vacuous**: removing the `defer` line in a mutation check makes `test_std_fs_ops_cleans_up_after_itself` fail with `assert not ['scratch']`; restoring it returns 7 passed. This is what converts the Task 67.1 caveat ("passes vacuously") into a real assertion.
   - `python -m pytest tests/test_std_fs.py -q`: **7 passed** (was 1 failed / 6 passed).
 
-##### Task 67.3: Audit other tests for ambient filesystem dependencies
-* **Goal:** Find other `scratch/`, relative-path, or cwd-dependent tests.
-* **Files:** `rg -n "scratch|tmp|temp" tests/ std/tests/`.
-* **Tests:** run the suite from a clean checkout.
-* **Security gate:** every test uses `tmp_path` or a self-created directory.
-* **Done when:** the audit table is attached and all offenders are fixed.
+##### Task 67.3: Audit other tests for ambient filesystem dependencies [COMPLETED] ✅
+* **Former Defect**: Task 67.2 fixed one test that needed an ambient `scratch/`, but the audit of the rest of `std/tests/` found **five more** suites with the same defect and a sixth that was the **root cause** of the ambient directory itself. Every one of them wrote into `scratch/...` without ever creating `scratch/`, so each passed only because some *other* run had left the directory behind. That is the worst failure mode for a test: green on the machine where the defect was introduced, red on every clean checkout, with no diagnostic connecting the two.
+* **Fix Applied** — the same three-step pattern as Task 67.2, applied per suite:
+  1. `cleanup_scratch()`, enumerating that suite's own artifacts innermost-first (files, then their leaf directory, then `scratch`), every step tolerant of failure because on the failure path only some artifacts exist.
+  2. `main()` calls `cleanup_scratch()` first (clears stale state), then `fs_create_dir_str("scratch")` with an explicit diagnosed failure (`FAIL: could not create the scratch directory`) and a distinct exit code per file.
+  3. `defer cleanup_scratch()` so the teardown runs on **every** exit path, including the early `return 1..n` failure branches.
+  - The four `std/tests/io/*` suites and `std/tests/log/logger_test.vl` did not previously import `fs/ops.vl`; each gained the import. `path_fs_module_import_test.vl` already had `use std.fs`, so it uses `fs_remove_dir_str`/`fs_create_dir_str` directly with two `defer` statements (file first, then directory) instead of a helper procedure.
+* **Audit table** — measured by running each suite with `bin\velo.exe run <file>` **from the repository root with `scratch/` moved out of the tree**, i.e. the true clean-checkout condition:
+
+  | Suite | Before (clean root) | Cause | After |
+  |---|---|---|---|
+  | `std/tests/fs/dir_test.vl` | exit 0 but `created_scratch=True` | `fs_create_dir_all("scratch/test_dir_scan")` created the ambient directory every other suite then depended on | exit 0, no `scratch/` |
+  | `std/tests/fs/ops_test.vl` | exit 1 | fixed in Task 67.2 | exit 0, no `scratch/` |
+  | `std/tests/io/buffered_reader_test.vl` | exit 1 (`FAIL: test_read_byte_and_peek`) | 4 `scratch/test_br_*.txt` writes, never created `scratch/` | exit 0, no `scratch/` |
+  | `std/tests/io/buffered_writer_test.vl` | exit 1 (`FAIL: test_buffered_small_writes`) | 4 `scratch/test_bw_*.txt` writes | exit 0, no `scratch/` |
+  | `std/tests/io/handle_test.vl` | exit 1 (`FAIL: test_file_create_write_read_seek`) | `scratch/test_io_temp.txt` | exit 0, no `scratch/` |
+  | `std/tests/io/print_test.vl` | exit 1 (`FAIL: test_file_stream_printing`) | `scratch/test_print_file.txt` | exit 0, no `scratch/` |
+  | `std/tests/path_fs_module_import_test.vl` | exit 6 | `fs_write_str("scratch/test_std_fs_umbrella.tmp")` | exit 0, no `scratch/` |
+  | `std/tests/log/logger_test.vl` | exit 0, but leaked `test_output.log` on its `return 10/11` paths | relative log file, cleaned only on the success path | exit 0, no `test_output.log` |
+  | `std/tests/fs/stat_test.vl` | exit 0 | only *negative* `scratch/...` checks plus reads of tracked paths | no change needed |
+
+* **Root cause worth naming**: the ambient `scratch/` that every other suite silently depended on was created by `dir_test.vl` and **never removed**. A single suite with a missing teardown had converted five independent defects into five passes. This is why the audit had to move the directory away rather than trusting a green run — and why Task 67.1's `cwd=str(sandbox)` harness exists: without an empty sandbox, the same self-healing illusion would reproduce in the harness.
+* **Second class found, deliberately not "fixed"**: three suites read **tracked** repository paths (`README.md`, `src`, `std`) — `stat_test.vl`, `dir_test.vl` (`fs_dir_open("std")`, `fs_count_dir("std")`), `path_fs_module_import_test.vl`. Running them from a clean temp cwd makes them fail, so they are cwd-dependent, but not clean-*checkout*-breaking: tracked files always exist, and every Python harness pins `cwd=str(REPO_ROOT)`. Rewriting them to use synthetic files would be a redesign (they exist to exercise the real APIs against real trees), so the dependency is documented rather than removed.
+* **Coverage note**: the four io suites *are* wired into `tests/test_std_io.py` (`test_std_io_handle`, `test_std_io_buffered_writer`, `test_std_io_print`, `test_std_io_buffered_reader`), and that harness pins `cwd=str(REPO_ROOT)`. So the suite had the coverage but not the isolation: with the ambient `scratch/` present in the developer tree the rows passed, and the defect only appears once the directory is absent — which is exactly what the red baseline below reproduces. Task 67.4's clean-checkout job is what makes that condition permanent in CI.
+* **Residual Limitation**: these suites still use **relative** paths, so they write into whatever the process cwd is. Safe now because each creates and destroys its own subtree, but not hermetic in the strong sense: two concurrent runs in one cwd would still collide. Same deliberate deferral as Task 67.2 — making the directory name unique requires the Velo test to read an ambient value. Also unchanged: the io suites clean up with explicit artifact lists rather than a recursive walk, so a future artifact needs a matching cleanup line.
+* **Verification**:
+  - **Red baseline (load-bearing)**: with `scratch/` absent and the fixes stashed, `python -m pytest tests/test_std_io.py -q` → **4 failed, 29 passed**, the four failures being exactly the four io suites with `returncode=1` and the expected `FAIL: test_...` lines. This is what proves the fixes, not the ambient directory, are what make them pass.
+  - **Green with fixes, no ambient `scratch/`**: `python -m pytest tests/test_std_io.py -q` → **33 passed**; `tests/test_std_fs.py` + `tests/test_std_log.py` → **11 passed**; `scratch_exists=False` and `test_output.log` absent after both runs.
+  - **Per-file verification from a clean root** (`bin\velo.exe run`, `scratch/` moved aside): all six fixed Velo suites print their `PASS:`/`OK:` line, exit **0**, and leave no `scratch/` or log file.
+  - **Idempotency**: a second run of all six in the same cwd is also exit 0 with nothing left behind, so no suite depends on state produced by the previous one.
+  - `git status --porcelain` shows only the six intended `.vl` files modified — no stray artifacts in the worktree.
 
 ##### Task 67.4: Add a clean-checkout CI job
 * **Goal:** Prove the suite passes with no untracked directories.

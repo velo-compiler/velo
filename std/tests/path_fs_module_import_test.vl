@@ -4,6 +4,17 @@ use std.fs;
 use std.io;
 
 act main() -> i32 {
+    // This suite writes under scratch/, so it owns that subtree: create it and
+    // remove it on every exit path instead of relying on an ambient directory.
+    fs_remove_file_str("scratch/test_std_fs_umbrella.tmp")
+    fs_remove_dir_str("scratch")
+    if !fs_create_dir_str("scratch") {
+        println_str("FAIL: could not create the scratch directory")
+        return 10
+    }
+    defer fs_remove_file_str("scratch/test_std_fs_umbrella.tmp")
+    defer fs_remove_dir_str("scratch")
+
     // 1. Path manipulation via use std.path
     let base = path_basename_str("foo/bar/test.vl")
     if !slice_eq_str(base, "test.vl") {

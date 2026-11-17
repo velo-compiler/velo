@@ -6,6 +6,17 @@ use "../../str/builder.vl"
 use "../../io/handle.vl"
 use "../../io/buffered_writer.vl"
 use "../../io/buffered_reader.vl"
+use "../../fs/ops.vl"
+
+// Removes this suite's artifacts, innermost first; every step is allowed to
+// fail because this also runs on the failure path where only some exist.
+act cleanup_scratch() {
+    io_file_delete_str("scratch/test_br_bytes.txt")
+    io_file_delete_str("scratch/test_br_lines.txt")
+    io_file_delete_str("scratch/test_br_tiny.txt")
+    io_file_delete_str("scratch/test_br_all.txt")
+    fs_remove_dir_str("scratch")
+}
 
 act test_read_byte_and_peek() -> bool {
     let test_path = "scratch/test_br_bytes.txt"
@@ -213,6 +224,15 @@ act test_read_all() -> bool {
 }
 
 act main() -> i32 {
+    // This suite writes under scratch/, so it owns that subtree: create it and
+    // remove it on every exit path instead of relying on an ambient directory.
+    cleanup_scratch()
+    if !fs_create_dir_str("scratch") {
+        io.println("FAIL: could not create the scratch directory")
+        return 3
+    }
+    defer cleanup_scratch()
+
     if !test_read_byte_and_peek() {
         io.println("FAIL: test_read_byte_and_peek")
         return 1
