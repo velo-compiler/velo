@@ -19,6 +19,7 @@
 use std.io
 use std.mem
 use std.fs
+use std.os
 use "../common/utils.vl"
 use "../common/string_builder.vl"
 use "driver.vl"
@@ -26,6 +27,29 @@ use "pretty_recon.vl"
 
 extern act velo_capture_begin(path: string) -> i32
 extern act velo_capture_end() -> i32
+
+// Builds a capture path unique to this process.
+//
+// The capture file used to be the constant "velo_check_capture.tmp", opened in
+// the process working directory. Two `velo check` processes started in the same
+// directory therefore shared one file: each read back whatever the other had
+// written, so a clean file could be reported as failing with the other
+// process's diagnostics. That made `velo check` unusable from anything that
+// runs checks in parallel (two pytest sessions, CI on one runner, an editor
+// with two panes open).
+//
+// The name embeds the process id, so separate processes never collide. The
+// file stays in the working directory rather than a system temp directory
+// because the existing capture helper takes a plain relative path and the
+// tests assert the CWD is left clean.
+act check_capture_path() -> string {
+    let pid = os_get_pid()
+    let sb = create_sb(64)
+    sb_append_str(@sb, "velo_check_capture_")
+    sb_append_int64(@sb, pid as i64)
+    sb_append_str(@sb, ".tmp")
+    return sb_to_string(@sb)
+}
 
 // True when s starts with prefix (byte comparison).
 act check_starts_with(s: string, prefix: string) -> bool {
@@ -288,7 +312,7 @@ act check_print_minimal_json(src_path: string, message: string) {
 
 // Runs 'velo check --json'. Returns the process exit code (0 = clean).
 act run_check_json_opts(src_path: string, unsafe_index: bool, strict_safety: bool) -> i32 {
-    let tmp = "velo_check_capture.tmp"
+    let tmp = check_capture_path()
     if velo_capture_begin(tmp) != 0 {
         check_print_minimal_json(src_path, "internal error: stdout capture failed")
         return 1
@@ -332,7 +356,7 @@ act run_check_json(src_path: string, unsafe_index: bool) -> i32 {
 // ignores recovered parse errors, so the captured stream is echoed and ANDed
 // with an error-line scan, exactly like the JSON path.
 act run_check_pretty_opts(src_path: string, unsafe_index: bool, strict_safety: bool) -> bool {
-    let tmp = "velo_check_capture.tmp"
+    let tmp = check_capture_path()
     if velo_capture_begin(tmp) != 0 {
         // Capture unavailable: degrade to the compiler's own verdict.
         let c_code = compile_source_to_c_strict(src_path, unsafe_index, false, strict_safety)

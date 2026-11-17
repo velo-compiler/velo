@@ -2428,6 +2428,7 @@ int32_t recon_rfind(const char* s, const char* needle);
 bool recon_is_builtin_mod(const char* mod_name);
 bool recon_is_single_file(const char* source);
 void recon_emit_pretty(const char* captured, const char* src_path);
+const char* check_capture_path(void);
 bool check_starts_with(const char* s, const char* prefix);
 int32_t check_rfind(const char* s, const char* needle);
 bool check_match_at(const char* s, const char* needle, size_t start);
@@ -53052,554 +53053,570 @@ void recon_emit_pretty(const char* captured, const char* src_path) {
     }
 }
 
-#line 31 "src/main.vl"
+#line 45 "src/main.vl"
+const char* check_capture_path(void) {
+#line 46 "src/main.vl"
+    uint32_t pid = os_get_pid();
+#line 47 "src/main.vl"
+    StringBuilder sb = create_sb(64);
+#line 48 "src/main.vl"
+    sb_append_str((&(sb)), "velo_check_capture_");
+#line 49 "src/main.vl"
+    sb_append_int64((&(sb)), ((int64_t)(pid)));
+#line 50 "src/main.vl"
+    sb_append_str((&(sb)), ".tmp");
+#line 51 "src/main.vl"
+    return sb_to_string((&(sb)));
+}
+
+#line 55 "src/main.vl"
 bool check_starts_with(const char* s, const char* prefix) {
-#line 32 "src/main.vl"
+#line 56 "src/main.vl"
     size_t slen = ((usize)strlen(s));
-#line 33 "src/main.vl"
+#line 57 "src/main.vl"
     size_t plen = ((usize)strlen(prefix));
-#line 34 "src/main.vl"
+#line 58 "src/main.vl"
     if ((plen > slen)) {
-#line 35 "src/main.vl"
+#line 59 "src/main.vl"
         return false;
     }
-#line 37 "src/main.vl"
+#line 61 "src/main.vl"
     size_t i = 0;
-#line 38 "src/main.vl"
+#line 62 "src/main.vl"
     for (int32_t it = 0; ((i < plen)); it++) {
-#line 39 "src/main.vl"
+#line 63 "src/main.vl"
         if ((s[i] != prefix[i])) {
-#line 40 "src/main.vl"
+#line 64 "src/main.vl"
             return false;
         }
-#line 42 "src/main.vl"
+#line 66 "src/main.vl"
         i += 1;
         __loop_cont_580: __attribute__((unused));
     }
     __loop_break_580: __attribute__((unused));
-#line 44 "src/main.vl"
+#line 68 "src/main.vl"
     return true;
 }
 
-#line 48 "src/main.vl"
+#line 72 "src/main.vl"
 int32_t check_rfind(const char* s, const char* needle) {
-#line 49 "src/main.vl"
+#line 73 "src/main.vl"
     size_t slen = ((usize)strlen(s));
-#line 50 "src/main.vl"
+#line 74 "src/main.vl"
     size_t nlen = ((usize)strlen(needle));
-#line 51 "src/main.vl"
+#line 75 "src/main.vl"
     if ((velo_cmp_eq_u_s(nlen, 0) || (nlen > slen))) {
-#line 52 "src/main.vl"
+#line 76 "src/main.vl"
         return 0;
     }
-#line 54 "src/main.vl"
+#line 78 "src/main.vl"
     int32_t last = 0;
-#line 55 "src/main.vl"
+#line 79 "src/main.vl"
     size_t stop = (slen - nlen);
-#line 56 "src/main.vl"
+#line 80 "src/main.vl"
     size_t i = 0;
-#line 57 "src/main.vl"
+#line 81 "src/main.vl"
     for (int32_t it = 0; ((i <= stop)); it++) {
-#line 58 "src/main.vl"
+#line 82 "src/main.vl"
         bool all = check_match_at(s, needle, i);
-#line 59 "src/main.vl"
+#line 83 "src/main.vl"
         if (all) {
-#line 60 "src/main.vl"
+#line 84 "src/main.vl"
             last = ((int32_t)((i + 1)));
         }
-#line 62 "src/main.vl"
+#line 86 "src/main.vl"
         i += 1;
         __loop_cont_581: __attribute__((unused));
     }
     __loop_break_581: __attribute__((unused));
-#line 64 "src/main.vl"
+#line 88 "src/main.vl"
     return last;
 }
 
-#line 68 "src/main.vl"
+#line 92 "src/main.vl"
 bool check_match_at(const char* s, const char* needle, size_t start) {
-#line 69 "src/main.vl"
+#line 93 "src/main.vl"
     size_t nlen = ((usize)strlen(needle));
-#line 70 "src/main.vl"
+#line 94 "src/main.vl"
     size_t j = 0;
-#line 71 "src/main.vl"
+#line 95 "src/main.vl"
     for (int32_t it = 0; ((j < nlen)); it++) {
-#line 72 "src/main.vl"
+#line 96 "src/main.vl"
         if ((s[(start + j)] != needle[j])) {
-#line 73 "src/main.vl"
+#line 97 "src/main.vl"
             return false;
         }
-#line 75 "src/main.vl"
+#line 99 "src/main.vl"
         j += 1;
         __loop_cont_582: __attribute__((unused));
     }
     __loop_break_582: __attribute__((unused));
-#line 77 "src/main.vl"
+#line 101 "src/main.vl"
     return true;
 }
 
-#line 81 "src/main.vl"
+#line 105 "src/main.vl"
 void check_json_escape(StringBuilder* sb, const char* s) {
-#line 82 "src/main.vl"
+#line 106 "src/main.vl"
     size_t n = ((usize)strlen(s));
-#line 83 "src/main.vl"
+#line 107 "src/main.vl"
     size_t i = 0;
-#line 84 "src/main.vl"
+#line 108 "src/main.vl"
     for (int32_t it = 0; ((i < n)); it++) {
-#line 85 "src/main.vl"
+#line 109 "src/main.vl"
         uint8_t c = s[i];
-#line 86 "src/main.vl"
+#line 110 "src/main.vl"
         if (velo_cmp_eq_u_s(c, '"')) {
-#line 87 "src/main.vl"
+#line 111 "src/main.vl"
             sb_append_str(sb, "\\\"");
         } else
-#line 88 "src/main.vl"
+#line 112 "src/main.vl"
         if (velo_cmp_eq_u_s(c, '\\')) {
-#line 89 "src/main.vl"
+#line 113 "src/main.vl"
             sb_append_str(sb, "\\\\");
         } else
-#line 90 "src/main.vl"
+#line 114 "src/main.vl"
         if (velo_cmp_eq_u_s(c, '\n')) {
-#line 91 "src/main.vl"
+#line 115 "src/main.vl"
             sb_append_str(sb, "\\n");
         } else
-#line 92 "src/main.vl"
+#line 116 "src/main.vl"
         if (velo_cmp_eq_u_s(c, '\r')) {
-#line 93 "src/main.vl"
+#line 117 "src/main.vl"
             sb_append_str(sb, "\\r");
         } else
-#line 94 "src/main.vl"
+#line 118 "src/main.vl"
         if (velo_cmp_eq_u_s(c, '\t')) {
-#line 95 "src/main.vl"
+#line 119 "src/main.vl"
             sb_append_str(sb, "\\t");
         } else {
-#line 97 "src/main.vl"
+#line 121 "src/main.vl"
             sb_append_char(sb, c);
         }
-#line 99 "src/main.vl"
+#line 123 "src/main.vl"
         i += 1;
         __loop_cont_583: __attribute__((unused));
     }
     __loop_break_583: __attribute__((unused));
 }
 
-#line 107 "src/main.vl"
+#line 131 "src/main.vl"
 void check_diag_to_json(StringBuilder* sb, const char* line_text, const char* src_path) {
-#line 108 "src/main.vl"
+#line 132 "src/main.vl"
     size_t n = ((usize)strlen(line_text));
-#line 109 "src/main.vl"
+#line 133 "src/main.vl"
     const char* name = "error";
-#line 110 "src/main.vl"
+#line 134 "src/main.vl"
     const char* rest = line_text;
-#line 111 "src/main.vl"
+#line 135 "src/main.vl"
     if (check_starts_with(line_text, "[Velo Warning] ")) {
-#line 112 "src/main.vl"
+#line 136 "src/main.vl"
         name = "warning";
-#line 113 "src/main.vl"
+#line 137 "src/main.vl"
         rest = copy_slice_to_string(line_text, 15, (n - 15));
     } else
-#line 114 "src/main.vl"
+#line 138 "src/main.vl"
     if (check_starts_with(line_text, "[Velo Error] ")) {
-#line 115 "src/main.vl"
+#line 139 "src/main.vl"
         rest = copy_slice_to_string(line_text, 13, (n - 13));
     }
-#line 118 "src/main.vl"
+#line 142 "src/main.vl"
     size_t rlen = ((usize)strlen(rest));
-#line 119 "src/main.vl"
+#line 143 "src/main.vl"
     int32_t dash = check_rfind(rest, " - ");
-#line 120 "src/main.vl"
+#line 144 "src/main.vl"
     bool positioned = false;
-#line 122 "src/main.vl"
+#line 146 "src/main.vl"
     if ((dash > 0)) {
-#line 124 "src/main.vl"
+#line 148 "src/main.vl"
         size_t le = ((size_t)((dash - 1)));
-#line 125 "src/main.vl"
+#line 149 "src/main.vl"
         size_t cs = le;
-#line 126 "src/main.vl"
+#line 150 "src/main.vl"
         for (int32_t it = 0; ((velo_cmp_gt_u_s(cs, 0) && is_digit(rest[(cs - 1)]))); it++) {
-#line 127 "src/main.vl"
+#line 151 "src/main.vl"
             cs -= 1;
             __loop_cont_584: __attribute__((unused));
         }
         __loop_break_584: __attribute__((unused));
-#line 129 "src/main.vl"
+#line 153 "src/main.vl"
         if ((((cs < le) && velo_cmp_gt_u_s(cs, 0)) && velo_cmp_eq_u_s(rest[(cs - 1)], ':'))) {
-#line 130 "src/main.vl"
+#line 154 "src/main.vl"
             size_t ls = (cs - 1);
-#line 131 "src/main.vl"
+#line 155 "src/main.vl"
             for (int32_t it = 0; ((velo_cmp_gt_u_s(ls, 0) && is_digit(rest[(ls - 1)]))); it++) {
-#line 132 "src/main.vl"
+#line 156 "src/main.vl"
                 ls -= 1;
                 __loop_cont_585: __attribute__((unused));
             }
             __loop_break_585: __attribute__((unused));
-#line 134 "src/main.vl"
+#line 158 "src/main.vl"
             if (((((ls < (cs - 1)) && velo_cmp_gt_u_s(ls, 0)) && velo_cmp_eq_u_s(rest[(ls - 1)], ':')) && velo_cmp_gt_u_s(ls, 1))) {
-#line 135 "src/main.vl"
+#line 159 "src/main.vl"
                 const char* ffile = copy_slice_to_string(rest, 0, (ls - 1));
-#line 136 "src/main.vl"
+#line 160 "src/main.vl"
                 int32_t flines = parse_int_from_slice(rest, ls, ((cs - 1) - ls));
-#line 137 "src/main.vl"
+#line 161 "src/main.vl"
                 int32_t fcols = parse_int_from_slice(rest, cs, (le - cs));
-#line 141 "src/main.vl"
+#line 165 "src/main.vl"
                 const char* fname = ffile;
-#line 142 "src/main.vl"
+#line 166 "src/main.vl"
                 if (((((ffile != NULL && "semantic" != NULL) ? (strcmp(ffile, "semantic") == 0) : (ffile == "semantic")) || ((ffile != NULL && "parser" != NULL) ? (strcmp(ffile, "parser") == 0) : (ffile == "parser"))) || ((ffile != NULL && "parse" != NULL) ? (strcmp(ffile, "parse") == 0) : (ffile == "parse")))) {
-#line 143 "src/main.vl"
+#line 167 "src/main.vl"
                     fname = src_path;
                 }
-#line 146 "src/main.vl"
+#line 170 "src/main.vl"
                 sb_append_str(sb, "{\"file\": \"");
-#line 147 "src/main.vl"
+#line 171 "src/main.vl"
                 check_json_escape(sb, fname);
-#line 148 "src/main.vl"
+#line 172 "src/main.vl"
                 sb_append_str(sb, "\", \"line\": ");
-#line 149 "src/main.vl"
+#line 173 "src/main.vl"
                 sb_append_int(sb, flines);
-#line 150 "src/main.vl"
+#line 174 "src/main.vl"
                 sb_append_str(sb, ", \"col\": ");
-#line 151 "src/main.vl"
+#line 175 "src/main.vl"
                 sb_append_int(sb, fcols);
-#line 152 "src/main.vl"
+#line 176 "src/main.vl"
                 sb_append_str(sb, ", \"severity\": \"");
-#line 153 "src/main.vl"
+#line 177 "src/main.vl"
                 sb_append_str(sb, name);
-#line 154 "src/main.vl"
+#line 178 "src/main.vl"
                 sb_append_str(sb, "\", \"message\": \"");
-#line 155 "src/main.vl"
+#line 179 "src/main.vl"
                 check_json_escape(sb, copy_slice_to_string(rest, ((size_t)((dash + 2))), ((size_t)(((((int32_t)(rlen)) - dash) - 2)))));
-#line 156 "src/main.vl"
+#line 180 "src/main.vl"
                 sb_append_str(sb, "\"}");
-#line 157 "src/main.vl"
+#line 181 "src/main.vl"
                 positioned = true;
             }
         }
     }
-#line 161 "src/main.vl"
+#line 185 "src/main.vl"
     if ((!positioned)) {
-#line 163 "src/main.vl"
+#line 187 "src/main.vl"
         sb_append_str(sb, "{\"file\": \"");
-#line 164 "src/main.vl"
+#line 188 "src/main.vl"
         check_json_escape(sb, src_path);
-#line 165 "src/main.vl"
+#line 189 "src/main.vl"
         sb_append_str(sb, "\", \"line\": 0, \"col\": 0, \"severity\": \"");
-#line 166 "src/main.vl"
+#line 190 "src/main.vl"
         sb_append_str(sb, name);
-#line 167 "src/main.vl"
+#line 191 "src/main.vl"
         sb_append_str(sb, "\", \"message\": \"");
-#line 168 "src/main.vl"
+#line 192 "src/main.vl"
         check_json_escape(sb, rest);
-#line 169 "src/main.vl"
+#line 193 "src/main.vl"
         sb_append_str(sb, "\"}");
     }
 }
 
-#line 174 "src/main.vl"
+#line 198 "src/main.vl"
 bool check_is_noise(const char* line_text) {
-#line 178 "src/main.vl"
+#line 202 "src/main.vl"
     if ((!check_starts_with(line_text, "[Velo"))) {
-#line 179 "src/main.vl"
+#line 203 "src/main.vl"
         return true;
     }
-#line 181 "src/main.vl"
+#line 205 "src/main.vl"
     if (check_starts_with(line_text, "[Velo] ")) {
-#line 182 "src/main.vl"
+#line 206 "src/main.vl"
         return true;
     }
-#line 184 "src/main.vl"
+#line 208 "src/main.vl"
     if (check_starts_with(line_text, "Semantic analysis failed with")) {
-#line 185 "src/main.vl"
+#line 209 "src/main.vl"
         return true;
     }
-#line 187 "src/main.vl"
+#line 211 "src/main.vl"
     if (check_starts_with(line_text, "[Velo Error] Semantic analysis failed with")) {
-#line 188 "src/main.vl"
+#line 212 "src/main.vl"
         return true;
     }
-#line 190 "src/main.vl"
+#line 214 "src/main.vl"
     size_t n = ((usize)strlen(line_text));
-#line 191 "src/main.vl"
+#line 215 "src/main.vl"
     bool all_blank = true;
-#line 192 "src/main.vl"
+#line 216 "src/main.vl"
     size_t i = 0;
-#line 193 "src/main.vl"
+#line 217 "src/main.vl"
     for (int32_t it = 0; ((i < n)); it++) {
-#line 194 "src/main.vl"
+#line 218 "src/main.vl"
         if ((!is_whitespace(line_text[i]))) {
-#line 195 "src/main.vl"
+#line 219 "src/main.vl"
             all_blank = false;
-#line 196 "src/main.vl"
+#line 220 "src/main.vl"
             i += n;
         }
-#line 198 "src/main.vl"
+#line 222 "src/main.vl"
         i += 1;
         __loop_cont_586: __attribute__((unused));
     }
     __loop_break_586: __attribute__((unused));
-#line 200 "src/main.vl"
+#line 224 "src/main.vl"
     return all_blank;
 }
 
-#line 206 "src/main.vl"
+#line 230 "src/main.vl"
 int32_t check_count_errors(const char* captured) {
-#line 207 "src/main.vl"
+#line 231 "src/main.vl"
     size_t n = ((usize)strlen(captured));
-#line 208 "src/main.vl"
+#line 232 "src/main.vl"
     int32_t count = 0;
-#line 209 "src/main.vl"
+#line 233 "src/main.vl"
     size_t stop = n;
-#line 210 "src/main.vl"
+#line 234 "src/main.vl"
     size_t line_start = 0;
-#line 211 "src/main.vl"
+#line 235 "src/main.vl"
     size_t i = 0;
-#line 212 "src/main.vl"
+#line 236 "src/main.vl"
     for (int32_t it = 0; ((i <= stop)); it++) {
-#line 213 "src/main.vl"
+#line 237 "src/main.vl"
         if (((i == stop) || velo_cmp_eq_u_s(captured[i], '\n'))) {
-#line 214 "src/main.vl"
+#line 238 "src/main.vl"
             size_t llen = (i - line_start);
-#line 215 "src/main.vl"
+#line 239 "src/main.vl"
             if ((velo_cmp_gt_u_s(llen, 0) && velo_cmp_eq_u_s(captured[(i - 1)], '\r'))) {
-#line 216 "src/main.vl"
+#line 240 "src/main.vl"
                 llen -= 1;
             }
-#line 218 "src/main.vl"
+#line 242 "src/main.vl"
             if (velo_cmp_gt_u_s(llen, 0)) {
-#line 219 "src/main.vl"
+#line 243 "src/main.vl"
                 const char* line_text = copy_slice_to_string(captured, line_start, llen);
-#line 220 "src/main.vl"
+#line 244 "src/main.vl"
                 if ((check_starts_with(line_text, "[Velo Error] ") && (!check_is_noise(line_text)))) {
-#line 221 "src/main.vl"
+#line 245 "src/main.vl"
                     count += 1;
                 }
             }
-#line 224 "src/main.vl"
+#line 248 "src/main.vl"
             line_start = (i + 1);
         }
-#line 226 "src/main.vl"
+#line 250 "src/main.vl"
         i += 1;
         __loop_cont_587: __attribute__((unused));
     }
     __loop_break_587: __attribute__((unused));
-#line 228 "src/main.vl"
+#line 252 "src/main.vl"
     return count;
 }
 
-#line 232 "src/main.vl"
+#line 256 "src/main.vl"
 const char* check_build_json(const char* captured, const char* src_path, bool ok) {
-#line 233 "src/main.vl"
+#line 257 "src/main.vl"
     size_t n = ((usize)strlen(captured));
-#line 234 "src/main.vl"
+#line 258 "src/main.vl"
     StringBuilder body = create_sb((n + 256));
-#line 235 "src/main.vl"
+#line 259 "src/main.vl"
     bool have_diag = false;
-#line 237 "src/main.vl"
+#line 261 "src/main.vl"
     size_t stop = n;
-#line 238 "src/main.vl"
+#line 262 "src/main.vl"
     size_t line_start = 0;
-#line 239 "src/main.vl"
+#line 263 "src/main.vl"
     size_t i = 0;
-#line 240 "src/main.vl"
+#line 264 "src/main.vl"
     for (int32_t it = 0; ((i <= stop)); it++) {
-#line 241 "src/main.vl"
+#line 265 "src/main.vl"
         if (((i == stop) || velo_cmp_eq_u_s(captured[i], '\n'))) {
-#line 242 "src/main.vl"
+#line 266 "src/main.vl"
             size_t llen = (i - line_start);
-#line 243 "src/main.vl"
+#line 267 "src/main.vl"
             if ((velo_cmp_gt_u_s(llen, 0) && velo_cmp_eq_u_s(captured[(i - 1)], '\r'))) {
-#line 244 "src/main.vl"
+#line 268 "src/main.vl"
                 llen -= 1;
             }
-#line 246 "src/main.vl"
+#line 270 "src/main.vl"
             if (velo_cmp_gt_u_s(llen, 0)) {
-#line 247 "src/main.vl"
+#line 271 "src/main.vl"
                 const char* line_text = copy_slice_to_string(captured, line_start, llen);
-#line 248 "src/main.vl"
+#line 272 "src/main.vl"
                 if ((!check_is_noise(line_text))) {
-#line 249 "src/main.vl"
+#line 273 "src/main.vl"
                     if (have_diag) {
-#line 250 "src/main.vl"
+#line 274 "src/main.vl"
                         sb_append_str((&(body)), ", ");
                     }
-#line 252 "src/main.vl"
+#line 276 "src/main.vl"
                     check_diag_to_json((&(body)), line_text, src_path);
-#line 253 "src/main.vl"
+#line 277 "src/main.vl"
                     have_diag = true;
                 }
             }
-#line 256 "src/main.vl"
+#line 280 "src/main.vl"
             line_start = (i + 1);
         }
-#line 258 "src/main.vl"
+#line 282 "src/main.vl"
         i += 1;
         __loop_cont_588: __attribute__((unused));
     }
     __loop_break_588: __attribute__((unused));
-#line 261 "src/main.vl"
+#line 285 "src/main.vl"
     StringBuilder out = create_sb((n + 256));
-#line 262 "src/main.vl"
+#line 286 "src/main.vl"
     sb_append_str((&(out)), "{\"file\": \"");
-#line 263 "src/main.vl"
+#line 287 "src/main.vl"
     check_json_escape((&(out)), src_path);
-#line 264 "src/main.vl"
+#line 288 "src/main.vl"
     sb_append_str((&(out)), "\", \"ok\": ");
-#line 265 "src/main.vl"
+#line 289 "src/main.vl"
     if (ok) {
-#line 266 "src/main.vl"
+#line 290 "src/main.vl"
         sb_append_str((&(out)), "true");
     } else {
-#line 268 "src/main.vl"
+#line 292 "src/main.vl"
         sb_append_str((&(out)), "false");
     }
-#line 270 "src/main.vl"
+#line 294 "src/main.vl"
     sb_append_str((&(out)), ", \"diagnostics\": [");
-#line 271 "src/main.vl"
+#line 295 "src/main.vl"
     sb_append_str((&(out)), sb_to_string((&(body))));
-#line 272 "src/main.vl"
+#line 296 "src/main.vl"
     sb_append_str((&(out)), "]}");
-#line 273 "src/main.vl"
+#line 297 "src/main.vl"
     return sb_to_string((&(out)));
 }
 
-#line 277 "src/main.vl"
+#line 301 "src/main.vl"
 void check_print_minimal_json(const char* src_path, const char* message) {
-#line 278 "src/main.vl"
+#line 302 "src/main.vl"
     StringBuilder out = create_sb(((((usize)strlen(src_path)) + ((usize)strlen(message))) + 128));
-#line 279 "src/main.vl"
+#line 303 "src/main.vl"
     sb_append_str((&(out)), "{\"file\": \"");
-#line 280 "src/main.vl"
+#line 304 "src/main.vl"
     check_json_escape((&(out)), src_path);
-#line 281 "src/main.vl"
+#line 305 "src/main.vl"
     sb_append_str((&(out)), "\", \"ok\": false, \"diagnostics\": [{\"file\": \"");
-#line 282 "src/main.vl"
+#line 306 "src/main.vl"
     check_json_escape((&(out)), src_path);
-#line 283 "src/main.vl"
+#line 307 "src/main.vl"
     sb_append_str((&(out)), "\", \"line\": 0, \"col\": 0, \"severity\": \"error\", \"message\": \"");
-#line 284 "src/main.vl"
+#line 308 "src/main.vl"
     check_json_escape((&(out)), message);
-#line 285 "src/main.vl"
+#line 309 "src/main.vl"
     sb_append_str((&(out)), "\"}]}");
-#line 286 "src/main.vl"
+#line 310 "src/main.vl"
     println_str(sb_to_string((&(out))));
 }
 
-#line 290 "src/main.vl"
-int32_t run_check_json_opts(const char* src_path, bool unsafe_index, bool strict_safety) {
-#line 291 "src/main.vl"
-    const char* tmp = "velo_check_capture.tmp";
-#line 292 "src/main.vl"
-    if ((velo_capture_begin(tmp) != 0)) {
-#line 293 "src/main.vl"
-        check_print_minimal_json(src_path, "internal error: stdout capture failed");
-#line 294 "src/main.vl"
-        return 1;
-    }
-#line 300 "src/main.vl"
-    const char* c_code = compile_source_to_c_strict(src_path, unsafe_index, false, strict_safety);
-#line 301 "src/main.vl"
-    bool ok = (c_code != NULL);
-#line 302 "src/main.vl"
-    velo_capture_end();
-#line 303 "src/main.vl"
-    io_print_cleanup();
-#line 305 "src/main.vl"
-    const char* captured = fs_read_to_str(tmp);
-#line 306 "src/main.vl"
-    if ((captured == NULL)) {
-#line 307 "src/main.vl"
-        check_print_minimal_json(src_path, "internal error: capture file unreadable");
-#line 308 "src/main.vl"
-        fs_remove_file_str(tmp);
-#line 309 "src/main.vl"
-        return 1;
-    }
-#line 313 "src/main.vl"
-    if ((check_count_errors(captured) > 0)) {
 #line 314 "src/main.vl"
-        println_str(check_build_json(captured, src_path, false));
+int32_t run_check_json_opts(const char* src_path, bool unsafe_index, bool strict_safety) {
 #line 315 "src/main.vl"
-        fs_remove_file_str(tmp);
+    const char* tmp = check_capture_path();
 #line 316 "src/main.vl"
-        {
-            int32_t __ret_val = 1;
-#line 311 "src/main.vl"
-            heap_free_str(captured);
-            return __ret_val;
-        }
-    }
+    if ((velo_capture_begin(tmp) != 0)) {
+#line 317 "src/main.vl"
+        check_print_minimal_json(src_path, "internal error: stdout capture failed");
 #line 318 "src/main.vl"
-    const char* out = check_build_json(captured, src_path, ok);
-#line 319 "src/main.vl"
-    println_str(out);
-#line 320 "src/main.vl"
-    fs_remove_file_str(tmp);
-#line 321 "src/main.vl"
-    if (ok) {
-#line 322 "src/main.vl"
-        {
-            int32_t __ret_val = 0;
-#line 311 "src/main.vl"
-            heap_free_str(captured);
-            return __ret_val;
-        }
+        return 1;
     }
 #line 324 "src/main.vl"
+    const char* c_code = compile_source_to_c_strict(src_path, unsafe_index, false, strict_safety);
+#line 325 "src/main.vl"
+    bool ok = (c_code != NULL);
+#line 326 "src/main.vl"
+    velo_capture_end();
+#line 327 "src/main.vl"
+    io_print_cleanup();
+#line 329 "src/main.vl"
+    const char* captured = fs_read_to_str(tmp);
+#line 330 "src/main.vl"
+    if ((captured == NULL)) {
+#line 331 "src/main.vl"
+        check_print_minimal_json(src_path, "internal error: capture file unreadable");
+#line 332 "src/main.vl"
+        fs_remove_file_str(tmp);
+#line 333 "src/main.vl"
+        return 1;
+    }
+#line 337 "src/main.vl"
+    if ((check_count_errors(captured) > 0)) {
+#line 338 "src/main.vl"
+        println_str(check_build_json(captured, src_path, false));
+#line 339 "src/main.vl"
+        fs_remove_file_str(tmp);
+#line 340 "src/main.vl"
+        {
+            int32_t __ret_val = 1;
+#line 335 "src/main.vl"
+            heap_free_str(captured);
+            return __ret_val;
+        }
+    }
+#line 342 "src/main.vl"
+    const char* out = check_build_json(captured, src_path, ok);
+#line 343 "src/main.vl"
+    println_str(out);
+#line 344 "src/main.vl"
+    fs_remove_file_str(tmp);
+#line 345 "src/main.vl"
+    if (ok) {
+#line 346 "src/main.vl"
+        {
+            int32_t __ret_val = 0;
+#line 335 "src/main.vl"
+            heap_free_str(captured);
+            return __ret_val;
+        }
+    }
+#line 348 "src/main.vl"
     {
         int32_t __ret_val = 1;
-#line 311 "src/main.vl"
+#line 335 "src/main.vl"
         heap_free_str(captured);
         return __ret_val;
     }
 }
 
-#line 327 "src/main.vl"
+#line 351 "src/main.vl"
 int32_t run_check_json(const char* src_path, bool unsafe_index) {
-#line 328 "src/main.vl"
+#line 352 "src/main.vl"
     return run_check_json_opts(src_path, unsafe_index, false);
 }
 
-#line 334 "src/main.vl"
+#line 358 "src/main.vl"
 bool run_check_pretty_opts(const char* src_path, bool unsafe_index, bool strict_safety) {
-#line 335 "src/main.vl"
-    const char* tmp = "velo_check_capture.tmp";
-#line 336 "src/main.vl"
+#line 359 "src/main.vl"
+    const char* tmp = check_capture_path();
+#line 360 "src/main.vl"
     if ((velo_capture_begin(tmp) != 0)) {
-#line 338 "src/main.vl"
+#line 362 "src/main.vl"
         const char* c_code = compile_source_to_c_strict(src_path, unsafe_index, false, strict_safety);
-#line 339 "src/main.vl"
+#line 363 "src/main.vl"
         return (c_code != NULL);
     }
-#line 341 "src/main.vl"
+#line 365 "src/main.vl"
     const char* c_code = compile_source_to_c_strict(src_path, unsafe_index, false, strict_safety);
-#line 342 "src/main.vl"
+#line 366 "src/main.vl"
     bool ok = (c_code != NULL);
-#line 343 "src/main.vl"
+#line 367 "src/main.vl"
     velo_capture_end();
-#line 344 "src/main.vl"
+#line 368 "src/main.vl"
     io_print_cleanup();
-#line 346 "src/main.vl"
+#line 370 "src/main.vl"
     const char* captured = fs_read_to_str(tmp);
-#line 347 "src/main.vl"
+#line 371 "src/main.vl"
     fs_remove_file_str(tmp);
-#line 348 "src/main.vl"
+#line 372 "src/main.vl"
     if ((captured == NULL)) {
-#line 349 "src/main.vl"
+#line 373 "src/main.vl"
         return ok;
     }
-#line 352 "src/main.vl"
+#line 376 "src/main.vl"
     recon_emit_pretty(captured, src_path);
-#line 353 "src/main.vl"
+#line 377 "src/main.vl"
     {
         bool __ret_val = (ok && (check_count_errors(captured) == 0));
-#line 351 "src/main.vl"
+#line 375 "src/main.vl"
         heap_free_str(captured);
         return __ret_val;
     }
 }
 
-#line 356 "src/main.vl"
+#line 380 "src/main.vl"
 bool run_check_pretty(const char* src_path, bool unsafe_index) {
-#line 357 "src/main.vl"
+#line 381 "src/main.vl"
     return run_check_pretty_opts(src_path, unsafe_index, false);
 }
 

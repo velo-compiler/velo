@@ -713,6 +713,42 @@ evidence", and CI claims are what reviewers check first.
 - **I76.4** No test writes to a fixed filename in the process CWD; all scratch
   paths come from `tmp_path`.
 
+### 76.4 Completion Record
+
+**Former defect.** `run_check_json_opts` and `run_check_pretty_opts` both
+captured the diagnostics stream into the constant path
+`velo_check_capture.tmp`, resolved against the process working directory
+(`src/backend/check.vl:291`, `:335`). Two `velo check` processes started in the
+same directory opened the same file, so each read back whatever the other had
+written. The maintainer's workaround was to never run two suites at once; CI
+cannot honour that, and neither can an editor running checks per pane.
+
+**Fix applied.** Added `check_capture_path()`, which builds
+`velo_check_capture_<pid>.tmp` from `os_get_pid()`, and routed both call sites
+through it. The file still lives in the working directory because the capture
+helper takes a relative path and the cleanup contract is "the CWD is left
+clean", which the tests now assert.
+
+**Residual limitation.** The name is unique per *process*, not per *thread*.
+`velo check` is a whole-program CLI with no in-process concurrency, so two
+checks inside one process cannot overlap today; if a library-embedding use ever
+runs two checks on threads, the capture helper's single global
+(`g_velo_capture_file`, `runtime/velo_runtime.h:3039`) is the real obstacle and
+is already unsynchronised. Recorded in the Phase 85 table.
+
+**Verification.**
+- `tests/test_check_concurrency.py` (4 rows) failed before the fix with the
+  exact corruption it was written for: an 8-way concurrent run reported
+  `"ok": false` for the *valid* file, quoting three `Unexpected top-level
+  token` diagnostics whose `file` field named `broken.vl`. After the fix all
+  four rows pass, including 8 concurrent runs in one directory and the pretty
+  (non-JSON) path.
+- `tests/test_check_cli.py` (15 rows) still passes: the capture path change did
+  not alter the JSON schema, exit codes, or diagnostic positions.
+- Compiler-source change: Gen2 -> Gen3 rebuilt, `check_determinism.py` reports
+  `51fd575c...` on both, `bootstrap.c` regenerated and
+  `tests/test_bootstrap_snapshot.py` (5 rows) is byte-identical.
+
 ## Tasks
 
 **76.1** Add a git remote and push. Publish the repository, even if private, so
