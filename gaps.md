@@ -314,7 +314,7 @@ flowchart TD
 ## 3. Post-Release Correctness Audit (November 2026)
 
 > **Audit method:** Hands-on review of the self-hosted compiler (`src/**/*.vl`, `runtime/velo_runtime.h`, `scripts/`, `tests/`) plus 50+ executable probe programs compiled with `bin\velo.exe`.
-> **Baseline:** `python -m pytest tests -q` → **694 passed, 2 failed, 2 skipped** at audit start. Both tracked failures (Phases 66 and 67) are now fixed; the suite is at **1945 passed, 2 skipped**.
+> **Baseline:** `python -m pytest tests -q` → **694 passed, 2 failed, 2 skipped** at audit start. Both tracked failures (Phases 66 and 67) are now fixed; the suite is at **1964 passed, 2 skipped** after Phase 69.
 > **Scope:** 17 confirmed defects (13 compiler/language, 1 runtime, 1 tooling, 1 test-infrastructure, 1 architectural) split into **106 small tasks**. No feature work, no performance work, no style-only changes.
 > **Rule:** This is a correctness backlog, not a wish list. Every task must begin with a failing regression test and end with a security gate that proves the defect cannot silently return.
 
