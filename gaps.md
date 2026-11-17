@@ -10,14 +10,15 @@
 
 ## 1. Summary of Completed Milestones
 
-All foundational milestones and language extensions implemented prior to Review `PLR-VELO-2026-001` are **100% completed, self-hosted, and passing all 636 regression tests**:
+All foundational milestones and language extensions implemented prior to Review `PLR-VELO-2026-001` are **100% completed, self-hosted, and covered by the regression suite** (`python -m pytest tests -q` → **1945 passed, 2 skipped**):
 
 | Milestone Range | Scope & Capabilities Delivered | Status |
 | :--- | :--- | :---: |
 | **Foundational Milestones (§1 – §6)** | Bitwise ops, control flow, `kind` enums/tagged unions, generics, function pointers, UFCS, operator overloading, advanced structs, zone arena, collections (`shelf`, `map`, `ring`, `bitset`, `dyn`), math, fs, time, build modes, visual error diagnostics, LSP 3.17, native test runner, MSVC C99 portability. | **COMPLETED** ✅ |
 | **Standard Library Modernization (Phases 1 – 29)** | Pure-Velo `std.*` migration (`io`, `str`, `fmt`, `coll`, `fs`, `json`, `time`, `math`, `os`, `net`, `crypto`, `http`, `log`, `test`, `encoding`, `csv`, `cli`, `url`, `rand`, `uuid`, `text`, `timer`, `validate`). | **COMPLETED** ✅ |
 | **Language & Systems Hardening (Phases 30 – 44)** | Codegen error gating, algebraic error handling (`or` / `fail`), lexical zone escape analysis, compile-time null safety (`?T`), non-blocking async event loop (`std.async`), async HTTP client/server, zero-alloc HTTP server fast-path, flow-sensitive type narrowing, first-class `if-else` expressions, string pattern matching in `on`, string `+`/`+=` concatenation, fixed-size stack arrays (`[N]T`), and first-class tuples with multiple return values (`-> (A, B)`). | **COMPLETED** ✅ |
-| **Post-Release Correctness Audit (Phases 52 – 68)** | 17 confirmed defects across the compiler, language semantics, runtime, tooling, and test infrastructure, split into small, independently testable tasks. | **OPEN** 🚧 |
+| **Post-Release Correctness Audit (Phases 52 – 68)** | 17 confirmed defects across the compiler, language semantics, runtime, tooling, and test infrastructure, split into small, independently testable tasks. | **COMPLETED** ✅ |
+| **Follow-up Audit (Phase 69)** | 1 defect carried forward from a Phase 62 aside: deferred transfer statements crashed the compiler with no diagnostic. | **COMPLETED** ✅ |
 
 *(Full historical defect analyses, fix implementations, and verification proofs for Phases 1 through 44 are preserved in Git history).*
 
@@ -313,7 +314,7 @@ flowchart TD
 ## 3. Post-Release Correctness Audit (November 2026)
 
 > **Audit method:** Hands-on review of the self-hosted compiler (`src/**/*.vl`, `runtime/velo_runtime.h`, `scripts/`, `tests/`) plus 50+ executable probe programs compiled with `bin\velo.exe`.
-> **Baseline:** `python -m pytest tests -q` → **694 passed, 2 failed, 2 skipped**. The two failures are tracked in Phases 66 and 67.
+> **Baseline:** `python -m pytest tests -q` → **694 passed, 2 failed, 2 skipped** at audit start. Both tracked failures (Phases 66 and 67) are now fixed; the suite is at **1945 passed, 2 skipped**.
 > **Scope:** 17 confirmed defects (13 compiler/language, 1 runtime, 1 tooling, 1 test-infrastructure, 1 architectural) split into **106 small tasks**. No feature work, no performance work, no style-only changes.
 > **Rule:** This is a correctness backlog, not a wish list. Every task must begin with a failing regression test and end with a security gate that proves the defect cannot silently return.
 
@@ -332,23 +333,24 @@ Status values: `[OPEN]`, `[IN PROGRESS]`, `[BLOCKED]`, `[COMPLETED] ✅`.
 
 | Phase | Defect | Priority | Tasks | Depends on | Status |
 | :--- | :--- | :---: | :---: | :--- | :---: |
-| **52** | `io.*` wildcard dispatch bypasses the standard library | P0 | 8 | — | OPEN |
-| **53** | Unsuffixed integer literals above `i32` silently wrap | P0 | 9 | — | OPEN |
-| **54** | `loop <count>` classification is inconsistent | P0 | 7 | 53 | OPEN |
-| **55** | Reverse ranges break on large literal endpoints | P0 | 7 | 53 | OPEN |
-| **56** | Reverse ranges break on dynamic endpoints | P0 | 7 | 53, 55 | OPEN |
-| **57** | `u64`/`usize` printed as signed | P0 | 6 | 52, 53 | OPEN |
-| **58** | `defer` is function-scoped, not block-scoped | P0 | 9 | — | OPEN |
-| **59** | Function/method call argument types are not checked | P1 | 6 | — | OPEN |
-| **60** | `if`/`loop` condition types are not checked | P1 | 5 | 59 | OPEN |
-| **61** | `break` inside `on` breaks the C switch, not the loop | P1 | 7 | 58 | OPEN |
+| **52** | `io.*` wildcard dispatch bypasses the standard library | P0 | 8 | — | COMPLETED ✅ |
+| **53** | Unsuffixed integer literals above `i32` silently wrap | P0 | 9 | — | COMPLETED ✅ |
+| **54** | `loop <count>` classification is inconsistent | P0 | 7 | 53 | COMPLETED ✅ |
+| **55** | Reverse ranges break on large literal endpoints | P0 | 7 | 53 | COMPLETED ✅ |
+| **56** | Reverse ranges break on dynamic endpoints | P0 | 7 | 53, 55 | COMPLETED ✅ |
+| **57** | `u64`/`usize` printed as signed | P0 | 6 | 52, 53 | COMPLETED ✅ |
+| **58** | `defer` is function-scoped, not block-scoped | P0 | 9 | — | COMPLETED ✅ |
+| **59** | Function/method call argument types are not checked | P1 | 6 | — | COMPLETED ✅ |
+| **60** | `if`/`loop` condition types are not checked | P1 | 5 | 59 | COMPLETED ✅ |
+| **61** | `break` inside `on` breaks the C switch, not the loop | P1 | 7 | 58 | COMPLETED ✅ |
 | **62** | `break`/`continue` outside loops pass `velo check` | P1 | 5 | 58 | COMPLETED ✅ |
-| **63** | Zero range step is accepted and loops forever | P0 | 5 | 53, 54 | OPEN |
+| **63** | Zero range step is accepted and loops forever | P0 | 5 | 53, 54 | COMPLETED ✅ |
 | **64** | Unknown `mem.*`/`str.*` members pass `velo check` | P2 | 5 | 52 | COMPLETED ✅ |
 | **65** | Runtime zone allocator NULL/watermark hardening | P2 | 6 | — | COMPLETED ✅ |
 | **66** | Determinism script crashes on Windows cp1252 | P2 | 4 | — | COMPLETED ✅ |
 | **67** | `test_std_fs_ops` depends on an ambient `scratch/` dir | P2 | 4 | — | COMPLETED ✅ |
 | **68** | Loop induction variable is always `int32_t` | P3 | 6 | 53, 54, 55, 56 | COMPLETED ✅ |
+| **69** | Deferred `return`/`break`/`continue`/`fail` crash the compiler | P1 | 2 | 58 | COMPLETED ✅ |
 
 ### 3.3 Recommended Execution Waves
 
@@ -2645,7 +2647,7 @@ act main() { continue }  // velo check passes; GCC: continue statement not withi
   - Bootstrap rebuilt; Gen2 and Gen3 both emit `32610de5adb631e82a8347adad04fab8ec21d9255c7432940af561b546f034dd`.
 * **Residual Limitation:**
   - The defense is unreachable from source today, so it has no positive trigger test. It fires only if a future lowering path (desugaring, monomorphization, a std module) produces a jump without a loop frame. The wording-contract test is the practical guard until such a path exists.
-  - **New defect found during this task (not part of Phase 62):** `defer break`, `defer continue`, and `defer return` placed directly in a loop body (or `defer return` at function scope) crash the Stage-2 compiler with a stack overflow (`0xC00000FD`, exit `-1073741571`), producing no diagnostic at all. Stage 1 accepts the same programs (`velo.py check` → exit 0). `defer` followed by a non-terminating statement (e.g. `defer io.println(1)`, `defer break` after an explicit `break`) is fine, and `defer return` at function scope also crashes. The likely cause is `emit_c_cleanup` (`codegen_stmt.vl:77-90`) re-entering `emit_c_stmt` for the deferred statement, which re-unwinds the same cleanup stack without popping it. Needs its own phase entry; it is not required for the Phase 62 exit criteria.
+  - **New defect found during this task (not part of Phase 62):** `defer break`, `defer continue`, `defer return` and `defer fail` crash the Stage-2 compiler with a stack overflow (`0xC00000FD`, exit `-1073741571`), producing no diagnostic at all. Stage 1 accepts the same programs (`velo.py check` → exit 0). `defer` followed by a non-terminating statement (e.g. `defer io.println(1)`) is fine. The recorded hypothesis was `emit_c_cleanup` (`codegen_stmt.vl:77-90`) re-entering `emit_c_stmt` for the deferred statement and re-unwinding the same cleanup stack. **Closed in Phase 69** — the mechanism was right but the lane attribution was wrong (`velo check` crashes too, since it runs the same lowering pass); the real fix was a checker rule rejecting any transfer inside a `defer`, not a codegen change. See §Phase 69.
 
 ##### Task 62.5: Add the security/regression gate and documentation [COMPLETED] ✅
 * **Goal:** Lock in the diagnostic and document the rule.
@@ -2679,7 +2681,7 @@ act main() { continue }  // velo check passes; GCC: continue statement not withi
 **Residual Limitation:**
 - The codegen defense has no positive trigger from source; it only fires if a future lowering path bypasses semantic analysis. The wording-contract test in `tests/test_loop_context.py` guards it.
 - Velo has no nested `act` declarations, so the task's optional "in a nested function" matrix row is unrepresentable. It is pinned as a parse error instead.
-- **Unrelated pre-existing crash discovered and documented, not fixed:** `defer break`, `defer continue`, `defer return` inside a loop body, and `defer return` at function scope, overflow the Stage-2 compiler stack (`0xC00000FD`, exit `-1073741571`) with no diagnostic. Stage 1 accepts all of them. Likely cause is `emit_c_cleanup` re-entering `emit_c_stmt` without popping the cleanup stack. Needs a separate phase entry.
+- **Pre-existing crash at the time, since fixed (Phase 69):** `defer break`, `defer continue`, `defer return` inside a loop body, and `defer return` at function scope, overflowed the Stage-2 compiler stack (`0xC00000FD`, exit `-1073741571`) with no diagnostic. Stage 1 accepted all of them. The recorded hypothesis (`emit_c_cleanup` re-entering `emit_c_stmt` without popping the cleanup stack) was the right mechanism but the wrong lane; Phase 69 fixed it as a checker rule and documented that `velo check` crashes too.
 
 **Verification:** 59 tests in `tests/test_loop_context.py` (20 red rows turned green); 149-test regression subset green; line-count discipline clean; bootstrap chain rebuilt with Gen2/Gen3 emitting identical C.
 
@@ -3620,5 +3622,93 @@ loop i in 0..3000000000 { ... }   // endpoint now wide, induction still i32
 - Task 68.3 — `d922937` `fix(loop)`: widen range induction for `isize` bounds (W1).
 - Task 68.4 — `fa7a5f4` `fix(loop)`: terminate inclusive ranges by distance, not overflow (W2).
 - Task 68.5 — `265101c` `test(loop)`: measure W2 cost and re-verify determinism.
-- Task 68.6 — this commit: SPEC 7.2 item 9.1 migration notes, item 8 table correction, `tests/test_loop_migration_notes.py`.
+- Task 68.6 — `39ccc6a` `docs(loop)`: migration notes, item 8 table correction, `tests/test_loop_migration_notes.py`.
+
+---
+
+### Phase 69: Deferred Transfer Statements Crash the Compiler (P1) [COMPLETED] ✅
+
+**Audit ID:** `AUDIT-2026-11-17`<br>
+**Severity:** P1 — checker accepts an invalid program; compiler crashes with no diagnostic<br>
+**Depends on:** Phase 58 (`defer` block scoping)<br>
+**Blocks:** —
+
+#### Defect
+
+`defer` takes a *statement*, so `defer return`, `defer break`, `defer continue` and `defer fail` parse cleanly. They were then lowered as if they were ordinary cleanup work, and emitting one re-enters the cleanup chain that is currently being emitted. The result was a stack overflow — exit `-1073741571` (`0xC00000FD`) — with **no diagnostic at all**. `velo check` and `velo emit-c` both died, so a user got no line number, no message, and no hint that the `defer` was the problem.
+
+```velo
+act f() -> i32 {
+    defer return 1   // crashed the compiler
+    return 0
+}
+```
+
+Measured on the pre-fix compiler, in both the `check` and `emit-c` lanes:
+
+| Program | Before |
+|---|---|
+| `defer return` | exit `-1073741571` |
+| `defer return 1` | exit `-1073741571` |
+| `defer break` (in a loop) | exit `-1073741571` |
+| `defer continue` (in a loop) | exit `-1073741571` |
+| `defer fail "x"` (in an `or` function) | exit `-1073741571` |
+| `defer { return 1 }` | exit `-1073741571` |
+| `defer if true { break }` | exit `-1073741571` |
+| `defer io.println(1)` | exit 0 — unaffected |
+
+So the class is exactly *a transfer statement reached through a defer*, including transfers nested inside a block or `if` within the defer.
+
+#### Why reject rather than define semantics
+
+A deferred `return` would have to replace the function's result **after** the real return value was computed and its cleanups had begun. A deferred `break`/`continue` would target a loop the iteration has already left. A deferred `fail` would replace an outcome whose success path already ran. None of the four has a coherent meaning; `std/` and `src/` contain zero uses; and Go sidesteps the same question by making `defer` take a call rather than a statement.
+
+The rule lives in the **checker**, not the backend, for the same reason Phase 62 put the out-of-loop `break`/`continue` rule there: `velo check` must reject an invalid program without depending on code generation.
+
+#### Tasks
+
+##### Task 69.1: Record the red baseline [COMPLETED] ✅
+* **Former Defect**: the defect was known only as an aside inside the Phase 62 completion note (`gaps.md` §62), with a *hypothesised* cause — "`emit_c_cleanup` re-enters `emit_c_stmt` without popping the cleanup stack" — that placed it in codegen. It had no phase, no test, and no owner, so it could not be closed.
+* **Fix Applied**: `tests/test_defer_transfer_rejection.py`, 19 rows over three groups:
+  - 7 rejection rows (one per crashing form above), each asserting the compiler does **not** crash, that `check` fails, and that the diagnostic names both `defer` and the keyword;
+  - the same 7 forms again through `emit-c`, because a checker-only fix that still crashes in the backend would leave `velo build` broken for the same program;
+  - 5 preservation rows (deferred call, declaration, assignment, block, `if`) that must stay accepted — the row that stops a too-broad fix, since rejecting every deferred statement would pass all 14 rejection rows and silently delete the feature.
+* **Measured correction to the recorded cause**: the crash reproduces in `velo check` and `emit-c` alike, and `check` runs the same lowering pipeline (`compile_source_to_c_strict`, `check.vl:338/341`), so the codegen hypothesis was right about the *mechanism* but wrong about the *lane* — "codegen-only" would have implied `check` was safe, and it was not.
+* **Residual Limitation**: the rows assert a crash is absent and a diagnostic is present; they do not diff the exact diagnostic wording, so the message can be improved without breaking them. They also cover the four transfer keywords Velo has today; a future `goto`-like statement would need a row.
+* **Verification**: `python -m pytest tests/test_defer_transfer_rejection.py -q` → **14 failed, 5 passed** in 80.18s. Every failure was the stack-overflow assertion (`assert 3221225725 not in (-1073741571, 3221225725)`), i.e. the pre-fix compiler dying exactly as documented; the 5 passing rows are the preservation guards, which must stay green.
+
+##### Task 69.2: Reject deferred transfers in the checker [COMPLETED] ✅
+* **Former Defect**: `check_statement`'s `STMT_DEFER` branch recursed into the deferred statement through the ordinary statement path, so a deferred transfer was validated as if it were reachable code. Nothing rejected it, and the backend then lowered it into the cleanup chain it was already emitting.
+* **Fix Applied**:
+  - New `src/analysis/defer_checks.vl` (106 lines): `defer_body_transfers` reports whether a defer body can transfer control at any depth, traversing `STMT_BLOCK`, `STMT_IF` (both arms), `STMT_MATCH` (every arm), `STMT_LOOP`, `STMT_ZONE`, `STMT_UNSAFE` and nested `STMT_DEFER`; `find_defer_transfer_keyword` returns the innermost keyword so the message names what the user wrote.
+  - `src/analysis/type_checker_stmt.vl`: the `STMT_DEFER` branch now reports `'defer' cannot defer <keyword>: a deferred transfer has no defined target at cleanup time` and increments `error_count` before still checking the body (so the body's own type errors are reported too, rather than masked by the new one).
+  - A dedicated file rather than another branch in `type_checker_stmt.vl` (307 lines) keeps the recursive scan out of a near-ceiling file, per the project's line-budget rule.
+* **Residual Limitation**: the rule is purely syntactic — it rejects a transfer *anywhere* in the defer body, including one that is provably unreachable (`defer if false { return 1 }`). That is deliberate: reachability analysis here would need the flow-narrowing machinery, and an unreachable deferred transfer is a mistake worth reporting anyway. Second: nested `defer` inside `defer` is reported once per outer defer, which can produce two diagnostics for one program; both are true. Third: the message is English prose like every other diagnostic, so it is not localised.
+* **Verification**:
+  - **Load-bearing, proven by reverting**: with the checker change stashed and the compiler rebuilt, the same programs crash with exit `-1073741571` and empty stdout/stderr; with it, each reports the diagnostic at the `defer` line/col and exits 1.
+  - `python -m pytest tests/test_defer_transfer_rejection.py -q` → **19 passed** in 0.37s (from 14 failed / 5 passed in 80s — the runtime collapse is itself evidence, since the pre-fix run was spending its time in the crash).
+  - **No regressions in the defer suite**: `tests/test_defer.py`, `tests/test_loop_context.py`, `tests/test_bootstrap_snapshot.py` → **104 passed**.
+  - **Compiler-source change, so the bootstrap chain was rebuilt**: Gen2 → Gen3 → canonical `bin/velo.exe`; `check_determinism.py` → `SHA-256 MATCH`, Gen2 == Gen3 == `dd252191957467c44c5332990da413439749e52d3cad2b1660072026e013218c`; `bootstrap.c` regenerated.
+  - **A real defect in this task, found by the full suite and fixed**: the diagnostic was first built with string `+` concatenation, which Velo rejects (`cannot apply '+' to string operands (concatenation is str.concat)`). That broke 4 tests — `tests/test_stage2_semantics.py` and `tests/test_stage2_codegen.py` — because `examples/12_stage2_semantics_test.vl` *compiles the compiler's own `src/` sources*, so my broken file was itself the input. The fix uses `str.concat` and the 4 tests return to green; the episode is recorded because it shows the example programs are a real build gate on `src/`, not documentation.
+
+#### Phase Exit Criteria
+
+- [x] No deferred transfer crashes the compiler in any lane (`check`, `emit-c`, `run`).
+- [x] The rule is owned by the semantic checker, so `velo check` rejects without codegen.
+- [x] The diagnostic names both the `defer` and the transfer keyword.
+- [x] Legitimate deferred work (calls, declarations, assignments, blocks, `if` of plain statements) is still accepted.
+- [x] Bootstrap chain rebuilt; Gen2/Gen3 `emit-c` SHA-256 identical; `bootstrap.c` refreshed.
+
+#### Phase Summary
+
+**Former Defect**: `defer` accepts any statement, so `defer return` / `defer break` / `defer continue` / `defer fail` parsed and then killed the Stage-2 compiler with a stack overflow (`0xC00000FD`, exit `-1073741571`) and no diagnostic in any lane. The defect had been known only as an aside in the Phase 62 note, attributed to codegen alone, with no phase and no test.
+
+**Fix Applied**: Task 69.1 turned the aside into a 19-row executable baseline (7 rejection forms × 2 lanes, plus 5 preservation rows) and corrected the recorded lane attribution; Task 69.2 added `src/analysis/defer_checks.vl` with a recursive transfer scan and wired it into the checker's `STMT_DEFER` branch, so `velo check` rejects the program with a diagnostic naming the keyword instead of the compiler dying.
+
+**Residual Limitation**: the rule is syntactic, so a provably-unreachable deferred transfer is also rejected; nested `defer`-in-`defer` can produce two diagnostics for one program; the wording is not asserted by the tests, so it can be reworded freely.
+
+**Verification**: `tests/test_defer_transfer_rejection.py` 19 passed (red baseline 14 failed / 5 passed); `tests/test_defer.py` + `test_loop_context.py` + `test_bootstrap_snapshot.py` 104 passed; `check_determinism.py` → SHA-256 MATCH at `dd252191957467c44c5332990da413439749e52d3cad2b1660072026e013218c`; SPEC §2.2.10 documents the rule (and the §2.2.6 invariant list plus the §2.2.7 checklist gained a matching row); full suite `python -m pytest tests -q` → **1964 passed, 2 skipped in 933.81s** (1945 at the Phase 68 close, +19 `test_defer_transfer_rejection.py`).
+
+- Task 69.1 — this commit's test file: `tests/test_defer_transfer_rejection.py` (red baseline).
+- Task 69.2 — `src/analysis/defer_checks.vl`, `src/analysis/type_checker_stmt.vl`, `bootstrap.c`.
 

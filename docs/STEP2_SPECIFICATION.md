@@ -121,6 +121,7 @@ Deferred cleanups declared within a `zone` block execute *before* the zone water
 * **Live Identifier Invariant**: Cleanups execute inside the block's C scope while all block-local identifiers remain declared in both the compiler symbol table and the generated C block scope, eliminating undeclared identifier and use-after-scope errors.
 * **Zero Heap Leaks**: Allocations paired with `defer mem.free(...)` guarantee `mem.heap_used()` returns to baseline immediately upon block exit.
 * **No Double-Free**: Cleanups are popped upon normal block exit, preventing re-execution on subsequent returns or function completion.
+* **No Deferred Transfers**: A transfer inside `defer` is a compile error (Section 2.2.10), so cleanup can never re-enter the unwinding it is part of.
 
 #### 2.2.7 Design Review Checklist
 * [x] Block boundaries explicitly defined across `act`, `if`, `else`, `on`, `loop`, `{ ... }`, `unsafe`, and `zone`.
@@ -131,6 +132,7 @@ Deferred cleanups declared within a `zone` block execute *before* the zone water
 * [x] Zone unwinding executes user defers before zone watermark rollback.
 * [x] Cleanups emit inside the block's C scope where all block-local variables are live.
 * [x] Exactly-once execution and zero-leak security invariants proven.
+* [x] Deferred transfers rejected, so a cleanup cannot re-enter unwinding.
 
 #### 2.2.8 Concrete Examples & Lifetime Contracts
 
@@ -241,6 +243,25 @@ The self-hosted compiler lowers `defer` via a compile-time linked stack of `Defe
 * `d.is_loop`: Pushed upon loop entry. Pop cleanups down to `is_loop` are emitted at iteration end, before C `continue;`, and before C `break;`.
 * `d.is_zone`: Marks zone arena entries (`velo_zone_push`), ensuring user cleanups run *before* watermark rollback (`velo_zone_pop`).
 * Early exits (`STMT_RETURN`, `STMT_FAIL`, `or return`): Unwind all currently active nodes on the stack in LIFO order down to function entry without popping (since the code path terminates via C `return`).
+
+#### 2.2.10 Deferred Transfer Statements Are Rejected
+`defer` accepts a statement, but it cannot accept a statement that transfers control. A deferred `return`, `break`, `continue` or `fail` has no defined target at cleanup time:
+
+* a deferred `return` would have to replace the function's result **after** the real return value was computed and its cleanups had already begun;
+* a deferred `break`/`continue` would target a loop the enclosing iteration has already left;
+* a deferred `fail` would replace an outcome whose success path already ran.
+
+Semantic analysis therefore rejects all four with
+
+```
+'defer' cannot defer <return|break|continue|fail>: a deferred transfer has no defined target at cleanup time
+```
+
+reported at the `defer` line and column. The rule is syntactic and applies at any nesting depth, so `defer { return 1 }` and `defer if cond { break }` are rejected identically. It is owned by the checker (`src/analysis/defer_checks.vl`), like the out-of-loop `break`/`continue` rule (Section 7.3 of `SPECIFICATION.md`), so `velo check` rejects the program without code generation.
+
+Before this rule existed the four forms were not rejected at all: lowering one re-entered the cleanup chain currently being emitted, and the compiler died from stack overflow (`0xC00000FD`) with no diagnostic in **either** lane, since `velo check` runs the same lowering pass as `velo build`.
+
+Ordinary deferred work — a call, a declaration, an assignment, a plain block, or an `if` of non-transferring statements — remains valid.
 
 ---
 

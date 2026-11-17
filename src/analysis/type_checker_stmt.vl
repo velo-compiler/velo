@@ -13,6 +13,7 @@ use "narrow_flow.vl"
 use "tuple_checks.vl"
 use "literal_check.vl"
 use "range_checks.vl"
+use "defer_checks.vl"
 use "../ast/int_types.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
@@ -201,7 +202,16 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
         st.current_zone_depth += 1
         check_statement(st, expected_ret_type, stmt.body)
         st.current_zone_depth -= 1
-    } else if stmt.kind == STMT_DEFER { check_statement(st, expected_ret_type, stmt.deferred_stmt)
+    } else if stmt.kind == STMT_DEFER {
+        // Phase 69: a deferred transfer has no defined target at cleanup time, and
+        // lowering one re-enters the cleanup chain being emitted (stack overflow,
+        // no diagnostic). Reject it here so `velo check` owns the rule.
+        if defer_body_transfers(stmt.deferred_stmt) {
+            let kw = find_defer_transfer_keyword(stmt.deferred_stmt)
+            report_error("semantic", stmt.line, stmt.col, str.concat("'defer' cannot defer ", str.concat(kw, ": a deferred transfer has no defined target at cleanup time")))
+            st.error_count += 1
+        }
+        check_statement(st, expected_ret_type, stmt.deferred_stmt)
     } else if stmt.kind == STMT_RETURN {
         if stmt.val_expr != null {
             check_escape_return(st, stmt.val_expr, expected_ret_type, stmt.line, stmt.col)

@@ -1,0 +1,115 @@
+// Phase 69: reject transfer statements inside `defer`.
+//
+// `defer` takes a statement, so `defer return`, `defer break`, `defer continue`
+// and `defer fail` parse cleanly and then mean nothing coherent:
+//
+//   * a deferred `return` would have to replace the function's result *after*
+//     the real return value was already computed and its cleanups started;
+//   * a deferred `break`/`continue` would target a loop the iteration has left;
+//   * a deferred `fail` would replace an outcome whose success path already ran.
+//
+// Before this rule the compiler did not reject them — it died with a stack
+// overflow (0xC00000FD, exit -1073741571) and no diagnostic at all, because
+// emitting a deferred transfer re-enters the cleanup chain currently being
+// emitted. The rule lives in the checker, not the backend, for the same reason
+// Phase 62 put the out-of-loop `break`/`continue` rule there: `velo check` must
+// reject an invalid program without depending on code generation.
+//
+// The scan recurses because the transfer can be nested:
+//
+//     defer { return 1 }
+//     defer if true { break }
+//
+// Only *transfer* statements are rejected. A deferred call, declaration,
+// assignment or `zone` is ordinary cleanup work and stays valid.
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../common/diagnostics.vl"
+
+// The user-facing keyword for a transfer statement, for the diagnostic.
+act defer_transfer_keyword(stmt: @StmtNode) -> string {
+    if stmt == null { return "statement" }
+    if stmt.kind == STMT_RETURN { return "return" }
+    if stmt.kind == STMT_BREAK { return "break" }
+    if stmt.kind == STMT_CONTINUE { return "continue" }
+    if stmt.kind == STMT_FAIL { return "fail" }
+    return "statement"
+}
+
+// Returns true when the defer body can transfer control, at any nesting depth.
+// Blocks, `if`/`else`, `on` arms, loops, `zone` and `unsafe` are all traversed
+// because any of them can hold the transfer that makes the defer incoherent.
+act defer_body_transfers(stmt: @StmtNode) -> bool {
+    if stmt == null { return false }
+    if stmt.kind == STMT_RETURN or stmt.kind == STMT_BREAK or stmt.kind == STMT_CONTINUE or stmt.kind == STMT_FAIL { return true }
+
+    if stmt.kind == STMT_DEFER { return defer_body_transfers(stmt.deferred_stmt) }
+
+    if stmt.kind == STMT_BLOCK {
+        mut cur = stmt.first_stmt
+        loop cur != null {
+            if defer_body_transfers(cur) { return true }
+            cur = cur.next
+        }
+        return false
+    }
+
+    if stmt.kind == STMT_IF {
+        if defer_body_transfers(stmt.body) { return true }
+        if stmt.else_branch != null and defer_body_transfers(stmt.else_branch) { return true }
+        return false
+    }
+
+    if stmt.kind == STMT_MATCH {
+        mut c = stmt.first_case
+        loop c != null {
+            if defer_body_transfers(c.body) { return true }
+            c = c.next
+        }
+        return false
+    }
+
+    if stmt.kind == STMT_LOOP or stmt.kind == STMT_ZONE or stmt.kind == STMT_UNSAFE {
+        return defer_body_transfers(stmt.body)
+    }
+
+    return false
+}
+
+// Finds the innermost transfer keyword inside a defer body, so the diagnostic
+// names what the user actually wrote rather than "statement".
+act find_defer_transfer_keyword(stmt: @StmtNode) -> string {
+    if stmt == null { return "statement" }
+    if stmt.kind == STMT_RETURN or stmt.kind == STMT_BREAK or stmt.kind == STMT_CONTINUE or stmt.kind == STMT_FAIL {
+        return defer_transfer_keyword(stmt)
+    }
+    if stmt.kind == STMT_DEFER { return find_defer_transfer_keyword(stmt.deferred_stmt) }
+    if stmt.kind == STMT_BLOCK {
+        mut cur = stmt.first_stmt
+        loop cur != null {
+            let kw = find_defer_transfer_keyword(cur)
+            if kw != "statement" { return kw }
+            cur = cur.next
+        }
+        return "statement"
+    }
+    if stmt.kind == STMT_IF {
+        let kw = find_defer_transfer_keyword(stmt.body)
+        if kw != "statement" { return kw }
+        if stmt.else_branch != null { return find_defer_transfer_keyword(stmt.else_branch) }
+        return "statement"
+    }
+    if stmt.kind == STMT_MATCH {
+        mut c = stmt.first_case
+        loop c != null {
+            let kw = find_defer_transfer_keyword(c.body)
+            if kw != "statement" { return kw }
+            c = c.next
+        }
+        return "statement"
+    }
+    if stmt.kind == STMT_LOOP or stmt.kind == STMT_ZONE or stmt.kind == STMT_UNSAFE {
+        return find_defer_transfer_keyword(stmt.body)
+    }
+    return "statement"
+}
