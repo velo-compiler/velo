@@ -11,6 +11,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from conftest import velo_exe
+
 
 def emit_c(source_code: str) -> str:
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -18,7 +20,7 @@ def emit_c(source_code: str) -> str:
         out_c = Path(tmp_dir) / "probe.c"
         src.write_text(source_code, encoding="utf-8")
         res = subprocess.run(
-            ["bin/velo.exe", "emit-c", str(src), "-o", str(out_c)],
+            [str(velo_exe()), "emit-c", str(src), "-o", str(out_c)],
             capture_output=True,
             text=True,
             encoding="utf-8",

@@ -38,7 +38,15 @@ ALLOWED = {"conftest.py", "test_platform_portability.py"}
 
 
 def _test_files():
-    for path in sorted(TESTS_DIR.glob("test_*.py")):
+    """
+    Every Python file under tests/ that could spawn a process.
+
+    Deliberately `*.py`, not `test_*.py`: the first sweep in task 76.3 used the
+    narrower glob and missed `probe_range_endpoint.py`, a helper module that
+    spawned `bin/velo.exe` and so could not run on POSIX. A guard that only
+    reads files pytest happens to collect is a guard with a blind spot.
+    """
+    for path in sorted(TESTS_DIR.glob("*.py")):
         if path.name in ALLOWED:
             continue
         yield path
