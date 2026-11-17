@@ -3554,12 +3554,25 @@ loop i in 0..3000000000 { ... }   // endpoint now wide, induction still i32
   - **No regressions**: `test_range_loops.py`, `test_count_loops.py`, `test_dynamic_ranges.py`, `test_large_ranges.py`, `test_range_steps.py`, `test_loop_context.py` → **377 passed**.
   - **Compiler-source change, so the bootstrap chain was rebuilt and re-verified**: Gen2 → Gen3 → canonical `bin/velo.exe`; `scripts/check_determinism.py` → `SHA-256 MATCH`, Gen2 == Gen3 == `6ae9ef64a87cba21b7752d35e8e9e2970bfca85673f399e0167e10790b72b633` (the hash necessarily changed from the Phase 67 value `b4abe546…` because the compiler's own source changed). `bootstrap.c` regenerated (98 insertions, 88 deletions) and confirmed to contain exactly the two intended edits — `of_elem = "isize"` and `return "ptrdiff_t "` — plus their guards. `tests/test_bootstrap_snapshot.py` → **5 passed**.
 
-##### Task 68.4: Update `it` and boundary semantics
-* **Goal:** Ensure the `it` counter, inclusive bounds, and descending loops remain correct at the new width.
-* **Files:** `src/backend/codegen_stmt.vl`.
-* **Tests:** `INT32_MAX`, `UINT32_MAX`, `INT64_MAX`, `0`, negative.
-* **Security gate:** no UB at the boundary; no infinite loop.
-* **Done when:** boundary tests pass.
+##### Task 68.4: Update `it` and boundary semantics [COMPLETED] ✅
+* **Former Defect**: W2 (SPEC 7.2 item 9) requires an inclusive range to terminate without ever forming a value outside the range. Both range paths lowered `..=` to `for (T i = s; i <= e; i++)`, so the increment after the final iteration overflows at the type maximum: **undefined behaviour** for signed types (gcc reports `iteration N invokes undefined behavior [-Waggressive-loop-optimizations]` and is licensed to delete the loop exit) and **wrap-to-zero** for unsigned types, which restarts the loop from the bottom. The defect is width-independent — it reproduced at `i32`, `i64`, `u32` and `u64` — so no amount of width selection could have fixed it.
+* **Fix Applied**:
+  - `src/backend/range_gen.vl`: an inclusive range now emits an unbounded `for` header (`for (T i = start;;)`) with **no** bound test, and a new `emit_inclusive_range_terminator` emits the exit test after the body: `if (end - i < step) break;` ascending, `if (i - end < step) break;` descending, and `if (__rev_i ? (i - end < step) : (end - i < step)) break;` for dynamic direction. The decrement/increment follows the test.
+  - `src/backend/codegen_stmt.vl`: calls the terminator **after** the `__loop_cont_N` label, so `continue` performs both the test and the advance. Emitting it before the label would hang on the first `continue` — that placement is the invariant, so it is stated in the code and in the SPEC rather than left implicit.
+  - Exclusive ranges are untouched: `..` cannot overflow, so their `<` / `>` header is unchanged.
+* **Why a distance test and not equality**: SPEC 7.2 has always allowed an explicit step, and `loop i in 0..=10:3` must visit `0, 3, 6, 9`. An `i == end` test never fires there (9 + 3 skips 10) and loops forever. Comparing the *remaining distance* against the step is step-aware, degenerates to `i == end` when step is 1, and — because the induction never passes the endpoint — cannot itself underflow. Both differences are non-negative by construction.
+* **Residual Limitation**: an inclusive range now emits a body-terminated loop rather than a header-terminated one, so the `for` header carries no bound. Anything that pattern-matches the old header shape must be updated — which is exactly what happened to four `test_large_ranges.py` rows and two `test_dynamic_ranges.py` shape assertions, all updated in this task to assert the new contract instead. Second: the terminator re-emits literal endpoints and literal steps in the exit test. That is safe because compile-time constants have no side effects (SPEC 7.2 guarantee 1), but it does mean a literal bound appears twice in the generated C; a dynamic endpoint is *not* re-evaluated, it is read from the hoisted `__end_<v>` temporary. Third: performance was not measured here — Task 68.5 owns that.
+* **Verification**:
+  - `tests/test_loop_induction_width.py` → **29 passed** (was 18 passed / 6 failed after 68.3). The six W2 boundary rows now pass: `i32` MAX, `i64` MAX, `u32` MAX, `u64` MAX, descending `i32` MIN, and the emitted-shape row.
+  - **Semantics rows added after the first implementation failed them** — each was found by running the code, not by review:
+    - `test_w2_inclusive_step_visits_the_whole_ladder`: `0..=10:3` → `0, 3, 6, 9`. The equality-based first attempt hung here.
+    - `test_w2_inclusive_continue_still_advances`: `continue` at `i == 2` still yields 5 iterations; placing the terminator above the label would hang.
+    - `test_w2_dynamic_descending_inclusive_counts_every_value`: a runtime `start > end` yields 4 iterations, not 1. The first attempt tested `end - i` unconditionally, which is negative when descending.
+    - `test_w2_inclusive_equal_endpoints_run_exactly_once`: `2..=2` and `2..=2:5` both run once.
+    - `test_w2_exclusive_range_shape_is_unchanged`: this row caught a **real regression I introduced mid-task** — an edit had changed the exclusive operators to `<=`/`>=`, which would have been an off-by-one in every exclusive literal range. It failed, was diagnosed, and fixed before commit.
+  - **Load-bearing, proven by reverting**: with `range_gen.vl` + `codegen_stmt.vl` stashed and the compiler rebuilt, `loop i in 0..=5` emits `for (int32_t i = 0; i <= 5; i++)`; with the fix it emits `for (int32_t i = 0;;)`.
+  - **No regressions**: `test_range_loops`, `test_count_loops`, `test_dynamic_ranges` (100 passed individually), `test_large_ranges`, `test_range_steps`, `test_loop_context`, `test_break_continue`, `test_defer`, `test_loop_induction_width` → **463 passed**.
+  - **Bootstrap**: compiler source changed, so Gen2 → Gen3 → canonical `bin/velo.exe` was rebuilt; `check_determinism.py` → `SHA-256 MATCH`, Gen2 == Gen3 == `abebbf2b00ca498e1fd9880a7a03a161828e6536fbbcdd8192a60dd0e408a4b0`; `bootstrap.c` regenerated; `test_bootstrap_snapshot.py` → **5 passed**.
 
 ##### Task 68.5: Add performance and determinism verification
 * **Goal:** Measure the cost of wider induction and confirm bootstrap determinism.

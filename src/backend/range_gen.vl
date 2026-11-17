@@ -13,16 +13,29 @@ use "codegen_lit.vl"
 use "codegen_expr.vl"
 
 // Emits the C99 `for (...)` header for range-based loop statements.
+//
+// Exclusive ranges (`..`) terminate with `<` / `>`, which is sound: the final
+// increment lands exactly on `end`. Inclusive ranges (`..=`) walk
+// `end - start` steps and would need `<=`, which overflows when `end` is the
+// maximum of the induction type (undefined behaviour for signed, wrap-to-zero
+// and restart for unsigned). W2 therefore lowers an inclusive range as an
+// unbounded loop whose terminator is emitted by
+// `emit_inclusive_range_terminator` after the body.
 act emit_range_loop_header(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, c_type: string, vname: string) {
     if is_literal_range_step(stmt.loop_start, stmt.loop_end, stmt.loop_step) {
         let is_rev = is_reverse_loop_range(stmt.loop_start, stmt.loop_end)
         sb_append_str(sb, "for ("); sb_append_str(sb, c_type); sb_append_str(sb, vname); sb_append_str(sb, " = ")
         emit_c_expr(sb, st, stmt.loop_start)
+        if stmt.is_inclusive {
+            // W2: no condition here; the terminator owns the exit test.
+            sb_append_str(sb, ";;) {\n")
+            return
+        }
         sb_append_str(sb, "; "); sb_append_str(sb, vname)
         if is_rev {
-            if stmt.is_inclusive { sb_append_str(sb, " >= ") } else { sb_append_str(sb, " > ") }
+            sb_append_str(sb, " > ")
         } else {
-            if stmt.is_inclusive { sb_append_str(sb, " <= ") } else { sb_append_str(sb, " < ") }
+            sb_append_str(sb, " < ")
         }
         emit_c_expr(sb, st, stmt.loop_end)
         sb_append_str(sb, "; "); sb_append_str(sb, vname)
@@ -71,26 +84,22 @@ act emit_range_loop_header(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode
     sb_append_str(sb, vname)
     sb_append_str(sb, " = __start_")
     sb_append_str(sb, vname)
+    if stmt.is_inclusive {
+        sb_append_str(sb, ";;) {\n")
+        return
+    }
     sb_append_str(sb, "; ")
 
-    // Runtime condition: __rev ? (v > end) : (v < end) [or >= and <= for inclusive]
+    // Runtime condition: __rev ? (v > end) : (v < end) for exclusive ranges.
     sb_append_str(sb, "__rev_")
     sb_append_str(sb, vname)
     sb_append_str(sb, " ? (")
     sb_append_str(sb, vname)
-    if stmt.is_inclusive {
-        sb_append_str(sb, " >= __end_")
-    } else {
-        sb_append_str(sb, " > __end_")
-    }
+    sb_append_str(sb, " > __end_")
     sb_append_str(sb, vname)
     sb_append_str(sb, ") : (")
     sb_append_str(sb, vname)
-    if stmt.is_inclusive {
-        sb_append_str(sb, " <= __end_")
-    } else {
-        sb_append_str(sb, " < __end_")
-    }
+    sb_append_str(sb, " < __end_")
     sb_append_str(sb, vname)
     sb_append_str(sb, "); ")
 
@@ -113,6 +122,103 @@ act emit_range_loop_header(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode
     }
     sb_append_str(sb, ")")
     sb_append_str(sb, ") {\n")
+}
+
+// Emits the W2 terminator for an inclusive range loop, after the body and
+// after the `__loop_cont_N` label so `continue` still advances.
+//
+// The exit test is a DISTANCE comparison, not `i <= end` and not `i == end`:
+//   ascending  : break when (end - i) < step
+//   descending : break when (i - end) < step
+// Both differences are non-negative by construction (the induction never
+// passes the endpoint, because it stops before doing so), so the subtraction
+// itself cannot overflow. The comparison is `step`-aware, which equality is
+// not: `0..=10:3` visits 0,3,6,9 and would never equal 10. With step 1 the
+// test degenerates to `i == end`, so the plain countdown case is covered.
+act emit_inclusive_range_terminator(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, vname: string, indent: i32) {
+    let is_lit = is_literal_range_step(stmt.loop_start, stmt.loop_end, stmt.loop_step)
+    let is_rev = is_reverse_loop_range(stmt.loop_start, stmt.loop_end)
+
+    sb_append_indent(sb, indent)
+    sb_append_str(sb, "if (")
+    if is_lit {
+        // Literal endpoints are compile-time constants, so re-emitting them
+        // here cannot duplicate a side effect (SPEC 7.2 guarantee 1).
+        if is_rev {
+            sb_append_str(sb, vname); sb_append_str(sb, " - ")
+            emit_c_expr(sb, st, stmt.loop_end)
+        } else {
+            emit_c_expr(sb, st, stmt.loop_end)
+            sb_append_str(sb, " - "); sb_append_str(sb, vname)
+        }
+        if stmt.loop_step != null {
+            sb_append_str(sb, " < ")
+            emit_c_expr(sb, st, stmt.loop_step)
+        } else {
+            sb_append_str(sb, " < 1")
+        }
+        sb_append_str(sb, ") break;\n")
+    } else {
+        // Dynamic direction: the direction is only known at runtime, so the
+        // distance test selects it with the same `__rev_<v>` temporary the
+        // header used. Both arms are non-negative by construction.
+        sb_append_str(sb, "__rev_")
+        sb_append_str(sb, vname)
+        sb_append_str(sb, " ? (")
+        sb_append_str(sb, vname)
+        sb_append_str(sb, " - __end_")
+        sb_append_str(sb, vname)
+        sb_append_str(sb, " < ")
+        if stmt.loop_step != null {
+            sb_append_str(sb, "__step_")
+            sb_append_str(sb, vname)
+        } else {
+            sb_append_str(sb, "1")
+        }
+        sb_append_str(sb, ") : (__end_")
+        sb_append_str(sb, vname)
+        sb_append_str(sb, " - ")
+        sb_append_str(sb, vname)
+        sb_append_str(sb, " < ")
+        if stmt.loop_step != null {
+            sb_append_str(sb, "__step_")
+            sb_append_str(sb, vname)
+        } else {
+            sb_append_str(sb, "1")
+        }
+        sb_append_str(sb, ")) break;\n")
+    }
+
+    // Advance only when the iteration was not the last one.
+    sb_append_indent(sb, indent)
+    if is_lit {
+        sb_append_str(sb, vname)
+        if stmt.loop_step != null {
+            if is_rev { sb_append_str(sb, " -= ") } else { sb_append_str(sb, " += ") }
+            emit_c_expr(sb, st, stmt.loop_step)
+        } else {
+            if is_rev { sb_append_str(sb, "--") } else { sb_append_str(sb, "++") }
+        }
+        sb_append_str(sb, ";\n")
+        return
+    }
+    sb_append_str(sb, "__rev_")
+    sb_append_str(sb, vname)
+    sb_append_str(sb, " ? (")
+    sb_append_str(sb, vname)
+    if stmt.loop_step != null {
+        sb_append_str(sb, " -= __step_")
+        sb_append_str(sb, vname)
+        sb_append_str(sb, ") : (")
+        sb_append_str(sb, vname)
+        sb_append_str(sb, " += __step_")
+        sb_append_str(sb, vname)
+    } else {
+        sb_append_str(sb, "--) : (")
+        sb_append_str(sb, vname)
+        sb_append_str(sb, "++")
+    }
+    sb_append_str(sb, ");\n")
 }
 
 // Emits a runtime guard at the start of the loop body for dynamic range steps,

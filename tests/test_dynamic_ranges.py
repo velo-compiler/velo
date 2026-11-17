@@ -1187,7 +1187,13 @@ act main() -> i32 {{
     assert "__end_i = (b)" in c_code
     assert "__rev_i = (__start_i > __end_i)" in c_code
     if inclusive:
-        assert "__rev_i ? (i >= __end_i) : (i <= __end_i)" in c_code
+        # Phase 68 / W2: an inclusive range must not test `i <= __end_i`, which
+        # overflows when the bound is the type maximum. The terminator is a
+        # step-aware distance test placed after the body/continue label, so
+        # both directions are covered by one branch on the runtime direction.
+        assert "__rev_i ? (i - __end_i < " in c_code
+        assert "__end_i - i < " in c_code
+        assert "i <= __end_i" not in c_code
     else:
         assert "__rev_i ? (i > __end_i) : (i < __end_i)" in c_code
     assert "__rev_i ? (i--) : (i++)" in c_code
@@ -1267,7 +1273,11 @@ act main() -> i32 {{
     assert "__step_i = (s)" in c_code
     assert "__rev_i = (__start_i > __end_i)" in c_code
     if inclusive:
-        assert "__rev_i ? (i >= __end_i) : (i <= __end_i)" in c_code
+        # Phase 68 / W2: see the non-stepped row above. The terminator compares
+        # the remaining distance against the runtime step, so an uneven step
+        # (`0..=10:3` -> 0,3,6,9) still terminates.
+        assert "__rev_i ? (i - __end_i < __step_i) : (__end_i - i < __step_i)" in c_code
+        assert "i <= __end_i" not in c_code
     else:
         assert "__rev_i ? (i > __end_i) : (i < __end_i)" in c_code
     assert "__rev_i ? (i -= __step_i) : (i += __step_i)" in c_code

@@ -471,3 +471,124 @@ def test_w2_inclusive_max_emits_an_equality_terminator():
     assert "i <= 5" not in header, (
         f"inclusive range still uses an overflowing `<=` test:\n{header}"
     )
+
+
+# ---------------------------------------------------------------------------
+# W2 semantics that equality alone would get wrong. These are the cases that
+# forced the terminator to be a step-aware distance test; each was found by
+# running the first (equality-based) implementation and watching it hang or
+# under-count.
+# ---------------------------------------------------------------------------
+
+
+def test_w2_inclusive_step_visits_the_whole_ladder():
+    """`0..=10:3` yields 0,3,6,9 — equality on `end` would never fire.
+
+    An `if (i == end) break;` terminator loops forever here, because 9+3 skips
+    past 10. The distance test stops as soon as fewer than `step` remain.
+    """
+    res = build_and_run(
+        "use std.io\n"
+        "act main() -> i32 {\n"
+        "    mut n: i64 = 0\n"
+        "    loop i in 0..=10:3 {\n"
+        "        io.println_i64(i as i64)\n"
+        "        n += 1\n"
+        "        if n > 20 { return 99 }\n"
+        "    }\n"
+        "    return 0\n"
+        "}\n"
+    )
+    assert res.returncode == 0, f"stepped inclusive loop did not finish:\n{res.stdout}"
+    assert res.stdout.split() == ["0", "3", "6", "9"], (
+        f"stepped inclusive ladder wrong: {res.stdout.split()}"
+    )
+
+
+def test_w2_inclusive_continue_still_advances():
+    """`continue` must advance; a terminator placed below the label would hang.
+
+    The exit test must sit AFTER `__loop_cont_N` so `goto __loop_cont_N`
+    reaches both the test and the increment.
+    """
+    res = build_and_run(
+        "use std.io\n"
+        "act main() -> i32 {\n"
+        "    mut n: i64 = 0\n"
+        "    loop i in 0..=5 {\n"
+        "        if i == 2 { continue }\n"
+        "        n += 1\n"
+        "        if n > 20 { return 99 }\n"
+        "    }\n"
+        "    io.println_i64(n)\n"
+        "    return 0\n"
+        "}\n"
+    )
+    assert res.returncode == 0, f"continue hung the inclusive loop:\n{res.stdout}"
+    assert res.stdout.strip() == "5", (
+        f"continue skipped the increment: {res.stdout.strip()}"
+    )
+
+
+def test_w2_dynamic_descending_inclusive_counts_every_value():
+    """A runtime `start > end` must use the runtime direction, not a static guess.
+
+    The first implementation tested `end - i` unconditionally, which for a
+    descending dynamic range is negative and stops after one iteration. The
+    direction is a runtime temporary (`__rev_<v>`), so the terminator has to
+    branch on it.
+    """
+    res = build_and_run(
+        "use std.io\n"
+        "act main() -> i32 {\n"
+        "    let lo: i32 = 1\n"
+        "    let hi: i32 = 4\n"
+        "    mut acc: i64 = 0\n"
+        "    loop i in hi..=lo { acc += 1 }\n"
+        "    io.println_i64(acc)\n"
+        "    let a: i32 = 1\n"
+        "    let b: i32 = 4\n"
+        "    mut up: i64 = 0\n"
+        "    loop i in a..=b {\n"
+        "        up += i as i64\n"
+        "    }\n"
+        "    io.println_i64(up)\n"
+        "    return 0\n"
+        "}\n"
+    )
+    assert res.returncode == 0, f"dynamic inclusive loop failed:\n{res.stderr}"
+    assert res.stdout.split() == ["4", "10"], (
+        f"dynamic direction mishandled: {res.stdout.split()}"
+    )
+
+
+def test_w2_inclusive_equal_endpoints_run_exactly_once():
+    """`n..=n` is one iteration, with and without a step."""
+    res = build_and_run(
+        "use std.io\n"
+        "act main() -> i32 {\n"
+        "    mut a: i64 = 0\n"
+        "    loop i in 2..=2 { a += 1 }\n"
+        "    mut b: i64 = 0\n"
+        "    loop i in 2..=2:5 { b += 1 }\n"
+        "    io.println_i64(a)\n"
+        "    io.println_i64(b)\n"
+        "    return 0\n"
+        "}\n"
+    )
+    assert res.returncode == 0, f"equal-endpoint loop failed:\n{res.stderr}"
+    assert res.stdout.split() == ["1", "1"], (
+        f"equal endpoints wrong: {res.stdout.split()}"
+    )
+
+
+def test_w2_exclusive_range_shape_is_unchanged():
+    """`..` keeps its plain `<` test: it cannot overflow, so W2 must not touch it."""
+    header = loop_header(emit_c(
+        "act main() -> i32 {\n"
+        "    mut n: i32 = 0\n"
+        "    loop i in 0..5 { n += 1 }\n"
+        "    return n\n"
+        "}\n"
+    ), "i")
+    assert "i < 5" in header, f"exclusive range lost its `<` test:\n{header}"

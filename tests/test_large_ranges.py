@@ -562,8 +562,11 @@ act main() -> i32 {
 @pytest.mark.parametrize("name,code,expected_op", [
     ("asc_3000000000", "act main() { loop i in 0..3000000000 { } }", "<"),
     ("desc_3000000000", "act main() { loop i in 3000000000..0 { } }", ">"),
-    ("inc_asc_3000000000", "act main() { loop i in 0..=3000000000 { } }", "<="),
-    ("inc_desc_3000000000", "act main() { loop i in 3000000000..=0 { } }", ">="),
+    # Phase 68 / W2: inclusive ranges no longer carry a `<=` / `>=` condition,
+    # because that test overflows at the type maximum. They emit an empty
+    # condition plus a step-aware distance terminator after the body.
+    ("inc_asc_3000000000", "act main() { loop i in 0..=3000000000 { } }", "inclusive"),
+    ("inc_desc_3000000000", "act main() { loop i in 3000000000..=0 { } }", "inclusive"),
     ("desc_int32_max", "act main() { loop i in 2147483647..0 { } }", ">"),
     ("asc_int32_max_plus_1", "act main() { loop i in 0..2147483648 { } }", "<"),
     ("asc_uint32_max", "act main() { loop i in 0..4294967295u64 { } }", "<"),
@@ -572,8 +575,8 @@ act main() -> i32 {
     ("desc_int64_max_plus_1", "act main() { loop i in 9223372036854775808u64..0 { } }", ">"),
     ("asc_uint64_max", "act main() { loop i in 1..18446744073709551615u64 { } }", "<"),
     ("desc_uint64_max", "act main() { loop i in 18446744073709551615u64..0 { } }", ">"),
-    ("inc_asc_uint64_max", "act main() { loop i in 1..=18446744073709551615u64 { } }", "<="),
-    ("inc_desc_uint64_max", "act main() { loop i in 18446744073709551615u64..=0 { } }", ">="),
+    ("inc_asc_uint64_max", "act main() { loop i in 1..=18446744073709551615u64 { } }", "inclusive"),
+    ("inc_desc_uint64_max", "act main() { loop i in 18446744073709551615u64..=0 { } }", "inclusive"),
 ])
 def test_emitted_c_range_loop_direction_operator(name, code, expected_op):
     """Verifies that emitted C generates the correct comparison operator for range direction."""
@@ -585,13 +588,21 @@ def test_emitted_c_range_loop_direction_operator(name, code, expected_op):
     parts = header.split(";")
     assert len(parts) >= 3, f"Unexpected for loop header format: {header}"
     cond_part = parts[1]
-    
+
+    if expected_op == "inclusive":
+        # W2: the condition is empty and the exit test is a distance comparison
+        # emitted after the loop body, so no `<=` / `>=` can overflow at MAX.
+        assert cond_part.strip() == "", (
+            f"inclusive range still carries a possibly-overflowing condition: {header}"
+        )
+        assert "<=" not in header and ">=" not in header, (
+            f"inclusive range still uses a non-strict bound test: {header}"
+        )
+        assert " < " in c_out, f"no distance terminator emitted:\n{c_out}"
+        return
+
     # Check if expected operator is present in the condition
-    if expected_op == "<=":
-        assert "<=" in cond_part, f"Expected '<=' in condition, got: {header}"
-    elif expected_op == ">=":
-        assert ">=" in cond_part, f"Expected '>=' in condition, got: {header}"
-    elif expected_op == "<":
+    if expected_op == "<":
         assert "<" in cond_part and "<=" not in cond_part, f"Expected '<' in condition, got: {header}"
     elif expected_op == ">":
         assert ">" in cond_part and ">=" not in cond_part, f"Expected '>' in condition, got: {header}"
@@ -678,8 +689,10 @@ def test_emitted_c_stepped_large_ranges():
 @pytest.mark.parametrize("name,code,expected_header", [
     ("asc_3000000000", "act main() { loop i in 0..3000000000 { } }", "for (int64_t i = 0; i < 3000000000LL; i++)"),
     ("desc_3000000000", "act main() { loop i in 3000000000..0 { } }", "for (int64_t i = 3000000000LL; i > 0; i--)"),
-    ("inc_asc_3000000000", "act main() { loop i in 0..=3000000000 { } }", "for (int64_t i = 0; i <= 3000000000LL; i++)"),
-    ("inc_desc_3000000000", "act main() { loop i in 3000000000..=0 { } }", "for (int64_t i = 3000000000LL; i >= 0; i--)"),
+    # Phase 68 / W2: inclusive ranges emit an empty condition and terminate on
+    # a distance comparison after the body, so the header carries no bound.
+    ("inc_asc_3000000000", "act main() { loop i in 0..=3000000000 { } }", "for (int64_t i = 0;;)"),
+    ("inc_desc_3000000000", "act main() { loop i in 3000000000..=0 { } }", "for (int64_t i = 3000000000LL;;)"),
     ("asc_u64_max", "act main() { loop i in 1..18446744073709551615u64 { } }", "for (uint64_t i = 1; i < 18446744073709551615ULL; i++)"),
     ("desc_u64_max", "act main() { loop i in 18446744073709551615u64..0 { } }", "for (uint64_t i = 18446744073709551615ULL; i > 0; i--)"),
     ("hex_asc_u64_max", "act main() { loop i in 1..0xFFFFFFFFFFFFFFFFu64 { } }", "for (uint64_t i = 1; i < 0xFFFFFFFFFFFFFFFFULL; i++)"),

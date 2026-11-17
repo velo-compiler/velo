@@ -292,6 +292,11 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
         define_variable(st, vname, loop_var_type, false, stmt.line, stmt.col)
         let loop_prev = push_loop_scope(defers, loop_id); emit_range_step_guard(sb, stmt, vname, indent + 1); emit_c_block_stmts(sb, st, stmt.body, indent + 1, defers); pop_loop_scope(defers, loop_prev); exit_scope(st)
         sb_append_indent(sb, indent + 1); sb_append_str(sb, "__loop_cont_"); sb_append_int(sb, loop_id as i32); sb_append_str(sb, ": __attribute__((unused));\n")
+        // W2: an inclusive range's exit test lives after the body, and after
+        // the continue label, so `continue` still advances toward the end.
+        if stmt.loop_start != null and stmt.loop_end != null and stmt.is_inclusive {
+            emit_inclusive_range_terminator(sb, st, stmt, vname, indent + 1)
+        }
         sb_append_indent(sb, indent)
         sb_append_str(sb, "}\n")
         sb_append_indent(sb, indent); sb_append_str(sb, "__loop_break_"); sb_append_int(sb, loop_id as i32); sb_append_str(sb, ": __attribute__((unused));\n")

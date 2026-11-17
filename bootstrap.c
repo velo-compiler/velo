@@ -2328,6 +2328,7 @@ bool is_reverse_loop_range(ExprNode* start_expr, ExprNode* end_expr);
 bool is_literal_range_step(ExprNode* start_expr, ExprNode* end_expr, ExprNode* step_expr);
 const char* loop_var_c_type(const char* type_name);
 void emit_range_loop_header(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, const char* c_type, const char* vname);
+void emit_inclusive_range_terminator(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, const char* vname, int32_t indent);
 void emit_range_step_guard(StringBuilder* sb, StmtNode* stmt, const char* vname, int32_t indent);
 DeferNode* push_block_scope(DeferNode** defers);
 void pop_block_scope(DeferNode** defers, DeferNode* prev);
@@ -44445,258 +44446,403 @@ const char* loop_var_c_type(const char* type_name) {
     return "int32_t ";
 }
 
-#line 16 "src/main.vl"
+#line 24 "src/main.vl"
 void emit_range_loop_header(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, const char* c_type, const char* vname) {
-#line 17 "src/main.vl"
+#line 25 "src/main.vl"
     if (is_literal_range_step(stmt->loop_start, stmt->loop_end, stmt->loop_step)) {
-#line 18 "src/main.vl"
+#line 26 "src/main.vl"
         bool is_rev = is_reverse_loop_range(stmt->loop_start, stmt->loop_end);
-#line 19 "src/main.vl"
-        sb_append_str(sb, "for (");
-#line 19 "src/main.vl"
-        sb_append_str(sb, c_type);
-#line 19 "src/main.vl"
-        sb_append_str(sb, vname);
-#line 19 "src/main.vl"
-        sb_append_str(sb, " = ");
-#line 20 "src/main.vl"
-        emit_c_expr(sb, st, stmt->loop_start);
-#line 21 "src/main.vl"
-        sb_append_str(sb, "; ");
-#line 21 "src/main.vl"
-        sb_append_str(sb, vname);
-#line 22 "src/main.vl"
-        if (is_rev) {
-#line 23 "src/main.vl"
-            if (stmt->is_inclusive) {
-#line 23 "src/main.vl"
-                sb_append_str(sb, " >= ");
-            } else {
-#line 23 "src/main.vl"
-                sb_append_str(sb, " > ");
-            }
-        } else {
-#line 25 "src/main.vl"
-            if (stmt->is_inclusive) {
-#line 25 "src/main.vl"
-                sb_append_str(sb, " <= ");
-            } else {
-#line 25 "src/main.vl"
-                sb_append_str(sb, " < ");
-            }
-        }
 #line 27 "src/main.vl"
-        emit_c_expr(sb, st, stmt->loop_end);
-#line 28 "src/main.vl"
-        sb_append_str(sb, "; ");
-#line 28 "src/main.vl"
+        sb_append_str(sb, "for (");
+#line 27 "src/main.vl"
+        sb_append_str(sb, c_type);
+#line 27 "src/main.vl"
         sb_append_str(sb, vname);
+#line 27 "src/main.vl"
+        sb_append_str(sb, " = ");
+#line 28 "src/main.vl"
+        emit_c_expr(sb, st, stmt->loop_start);
 #line 29 "src/main.vl"
-        if ((stmt->loop_step != NULL)) {
-#line 30 "src/main.vl"
-            if (is_range_step_non_positive(stmt->loop_step)) {
+        if (stmt->is_inclusive) {
 #line 31 "src/main.vl"
-                report_error("backend", stmt->loop_step->line, stmt->loop_step->col, "Range loop step must be greater than zero (defense in depth)");
+            sb_append_str(sb, ";;) {\n");
 #line 32 "src/main.vl"
+            return;
+        }
+#line 34 "src/main.vl"
+        sb_append_str(sb, "; ");
+#line 34 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 35 "src/main.vl"
+        if (is_rev) {
+#line 36 "src/main.vl"
+            sb_append_str(sb, " > ");
+        } else {
+#line 38 "src/main.vl"
+            sb_append_str(sb, " < ");
+        }
+#line 40 "src/main.vl"
+        emit_c_expr(sb, st, stmt->loop_end);
+#line 41 "src/main.vl"
+        sb_append_str(sb, "; ");
+#line 41 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 42 "src/main.vl"
+        if ((stmt->loop_step != NULL)) {
+#line 43 "src/main.vl"
+            if (is_range_step_non_positive(stmt->loop_step)) {
+#line 44 "src/main.vl"
+                report_error("backend", stmt->loop_step->line, stmt->loop_step->col, "Range loop step must be greater than zero (defense in depth)");
+#line 45 "src/main.vl"
                 st->error_count += 1;
-#line 33 "src/main.vl"
+#line 46 "src/main.vl"
                 return;
             }
-#line 35 "src/main.vl"
+#line 48 "src/main.vl"
             if (is_rev) {
-#line 35 "src/main.vl"
+#line 48 "src/main.vl"
                 sb_append_str(sb, " -= ");
             } else {
-#line 35 "src/main.vl"
+#line 48 "src/main.vl"
                 sb_append_str(sb, " += ");
             }
-#line 36 "src/main.vl"
+#line 49 "src/main.vl"
             emit_c_expr(sb, st, stmt->loop_step);
         } else {
-#line 38 "src/main.vl"
+#line 51 "src/main.vl"
             if (is_rev) {
-#line 38 "src/main.vl"
+#line 51 "src/main.vl"
                 sb_append_str(sb, "--");
             } else {
-#line 38 "src/main.vl"
+#line 51 "src/main.vl"
                 sb_append_str(sb, "++");
             }
         }
-#line 40 "src/main.vl"
+#line 53 "src/main.vl"
         sb_append_str(sb, ") {\n");
-#line 41 "src/main.vl"
+#line 54 "src/main.vl"
         return;
     }
-#line 46 "src/main.vl"
-    sb_append_str(sb, "for (");
-#line 47 "src/main.vl"
-    sb_append_str(sb, c_type);
-#line 48 "src/main.vl"
-    sb_append_str(sb, "__start_");
-#line 49 "src/main.vl"
-    sb_append_str(sb, vname);
-#line 50 "src/main.vl"
-    sb_append_str(sb, " = (");
-#line 51 "src/main.vl"
-    emit_c_expr(sb, st, stmt->loop_start);
-#line 52 "src/main.vl"
-    sb_append_str(sb, "), __end_");
-#line 53 "src/main.vl"
-    sb_append_str(sb, vname);
-#line 54 "src/main.vl"
-    sb_append_str(sb, " = (");
-#line 55 "src/main.vl"
-    emit_c_expr(sb, st, stmt->loop_end);
-#line 56 "src/main.vl"
-    sb_append_str(sb, ")");
-#line 57 "src/main.vl"
-    if ((stmt->loop_step != NULL)) {
-#line 58 "src/main.vl"
-        sb_append_str(sb, ", __step_");
 #line 59 "src/main.vl"
-        sb_append_str(sb, vname);
+    sb_append_str(sb, "for (");
 #line 60 "src/main.vl"
-        sb_append_str(sb, " = (");
+    sb_append_str(sb, c_type);
 #line 61 "src/main.vl"
-        emit_c_expr(sb, st, stmt->loop_step);
+    sb_append_str(sb, "__start_");
 #line 62 "src/main.vl"
+    sb_append_str(sb, vname);
+#line 63 "src/main.vl"
+    sb_append_str(sb, " = (");
+#line 64 "src/main.vl"
+    emit_c_expr(sb, st, stmt->loop_start);
+#line 65 "src/main.vl"
+    sb_append_str(sb, "), __end_");
+#line 66 "src/main.vl"
+    sb_append_str(sb, vname);
+#line 67 "src/main.vl"
+    sb_append_str(sb, " = (");
+#line 68 "src/main.vl"
+    emit_c_expr(sb, st, stmt->loop_end);
+#line 69 "src/main.vl"
+    sb_append_str(sb, ")");
+#line 70 "src/main.vl"
+    if ((stmt->loop_step != NULL)) {
+#line 71 "src/main.vl"
+        sb_append_str(sb, ", __step_");
+#line 72 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 73 "src/main.vl"
+        sb_append_str(sb, " = (");
+#line 74 "src/main.vl"
+        emit_c_expr(sb, st, stmt->loop_step);
+#line 75 "src/main.vl"
         sb_append_str(sb, ")");
     }
-#line 64 "src/main.vl"
-    sb_append_str(sb, ", __rev_");
-#line 65 "src/main.vl"
-    sb_append_str(sb, vname);
-#line 66 "src/main.vl"
-    sb_append_str(sb, " = (__start_");
-#line 67 "src/main.vl"
-    sb_append_str(sb, vname);
-#line 68 "src/main.vl"
-    sb_append_str(sb, " > __end_");
-#line 69 "src/main.vl"
-    sb_append_str(sb, vname);
-#line 70 "src/main.vl"
-    sb_append_str(sb, "), ");
-#line 71 "src/main.vl"
-    sb_append_str(sb, vname);
-#line 72 "src/main.vl"
-    sb_append_str(sb, " = __start_");
-#line 73 "src/main.vl"
-    sb_append_str(sb, vname);
-#line 74 "src/main.vl"
-    sb_append_str(sb, "; ");
 #line 77 "src/main.vl"
-    sb_append_str(sb, "__rev_");
+    sb_append_str(sb, ", __rev_");
 #line 78 "src/main.vl"
     sb_append_str(sb, vname);
 #line 79 "src/main.vl"
-    sb_append_str(sb, " ? (");
+    sb_append_str(sb, " = (__start_");
 #line 80 "src/main.vl"
     sb_append_str(sb, vname);
 #line 81 "src/main.vl"
-    if (stmt->is_inclusive) {
+    sb_append_str(sb, " > __end_");
 #line 82 "src/main.vl"
-        sb_append_str(sb, " >= __end_");
-    } else {
+    sb_append_str(sb, vname);
+#line 83 "src/main.vl"
+    sb_append_str(sb, "), ");
 #line 84 "src/main.vl"
-        sb_append_str(sb, " > __end_");
-    }
+    sb_append_str(sb, vname);
+#line 85 "src/main.vl"
+    sb_append_str(sb, " = __start_");
 #line 86 "src/main.vl"
     sb_append_str(sb, vname);
 #line 87 "src/main.vl"
-    sb_append_str(sb, ") : (");
-#line 88 "src/main.vl"
-    sb_append_str(sb, vname);
-#line 89 "src/main.vl"
     if (stmt->is_inclusive) {
-#line 90 "src/main.vl"
-        sb_append_str(sb, " <= __end_");
-    } else {
-#line 92 "src/main.vl"
-        sb_append_str(sb, " < __end_");
+#line 88 "src/main.vl"
+        sb_append_str(sb, ";;) {\n");
+#line 89 "src/main.vl"
+        return;
     }
+#line 91 "src/main.vl"
+    sb_append_str(sb, "; ");
 #line 94 "src/main.vl"
-    sb_append_str(sb, vname);
-#line 95 "src/main.vl"
-    sb_append_str(sb, "); ");
-#line 98 "src/main.vl"
     sb_append_str(sb, "__rev_");
+#line 95 "src/main.vl"
+    sb_append_str(sb, vname);
+#line 96 "src/main.vl"
+    sb_append_str(sb, " ? (");
+#line 97 "src/main.vl"
+    sb_append_str(sb, vname);
+#line 98 "src/main.vl"
+    sb_append_str(sb, " > __end_");
 #line 99 "src/main.vl"
     sb_append_str(sb, vname);
 #line 100 "src/main.vl"
-    sb_append_str(sb, " ? (");
+    sb_append_str(sb, ") : (");
 #line 101 "src/main.vl"
     sb_append_str(sb, vname);
 #line 102 "src/main.vl"
-    if ((stmt->loop_step != NULL)) {
+    sb_append_str(sb, " < __end_");
 #line 103 "src/main.vl"
-        sb_append_str(sb, " -= __step_");
+    sb_append_str(sb, vname);
 #line 104 "src/main.vl"
-        sb_append_str(sb, vname);
-#line 105 "src/main.vl"
-        sb_append_str(sb, ") : (");
-#line 106 "src/main.vl"
-        sb_append_str(sb, vname);
+    sb_append_str(sb, "); ");
 #line 107 "src/main.vl"
-        sb_append_str(sb, " += __step_");
+    sb_append_str(sb, "__rev_");
 #line 108 "src/main.vl"
+    sb_append_str(sb, vname);
+#line 109 "src/main.vl"
+    sb_append_str(sb, " ? (");
+#line 110 "src/main.vl"
+    sb_append_str(sb, vname);
+#line 111 "src/main.vl"
+    if ((stmt->loop_step != NULL)) {
+#line 112 "src/main.vl"
+        sb_append_str(sb, " -= __step_");
+#line 113 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 114 "src/main.vl"
+        sb_append_str(sb, ") : (");
+#line 115 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 116 "src/main.vl"
+        sb_append_str(sb, " += __step_");
+#line 117 "src/main.vl"
         sb_append_str(sb, vname);
     } else {
-#line 110 "src/main.vl"
+#line 119 "src/main.vl"
         sb_append_str(sb, "--) : (");
-#line 111 "src/main.vl"
+#line 120 "src/main.vl"
         sb_append_str(sb, vname);
-#line 112 "src/main.vl"
+#line 121 "src/main.vl"
         sb_append_str(sb, "++");
     }
-#line 114 "src/main.vl"
+#line 123 "src/main.vl"
     sb_append_str(sb, ")");
-#line 115 "src/main.vl"
+#line 124 "src/main.vl"
     sb_append_str(sb, ") {\n");
 }
 
-#line 120 "src/main.vl"
-void emit_range_step_guard(StringBuilder* sb, StmtNode* stmt, const char* vname, int32_t indent) {
-#line 121 "src/main.vl"
-    if (((stmt == NULL) || (stmt->loop_step == NULL))) {
-#line 121 "src/main.vl"
-        return;
-    }
-#line 122 "src/main.vl"
-    if (is_literal_range_step(stmt->loop_start, stmt->loop_end, stmt->loop_step)) {
-#line 122 "src/main.vl"
-        return;
-    }
-#line 124 "src/main.vl"
+#line 138 "src/main.vl"
+void emit_inclusive_range_terminator(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, const char* vname, int32_t indent) {
+#line 139 "src/main.vl"
+    bool is_lit = is_literal_range_step(stmt->loop_start, stmt->loop_end, stmt->loop_step);
+#line 140 "src/main.vl"
+    bool is_rev = is_reverse_loop_range(stmt->loop_start, stmt->loop_end);
+#line 142 "src/main.vl"
     sb_append_indent(sb, indent);
-#line 125 "src/main.vl"
-    sb_append_str(sb, "if (__step_");
-#line 126 "src/main.vl"
+#line 143 "src/main.vl"
+    sb_append_str(sb, "if (");
+#line 144 "src/main.vl"
+    if (is_lit) {
+#line 147 "src/main.vl"
+        if (is_rev) {
+#line 148 "src/main.vl"
+            sb_append_str(sb, vname);
+#line 148 "src/main.vl"
+            sb_append_str(sb, " - ");
+#line 149 "src/main.vl"
+            emit_c_expr(sb, st, stmt->loop_end);
+        } else {
+#line 151 "src/main.vl"
+            emit_c_expr(sb, st, stmt->loop_end);
+#line 152 "src/main.vl"
+            sb_append_str(sb, " - ");
+#line 152 "src/main.vl"
+            sb_append_str(sb, vname);
+        }
+#line 154 "src/main.vl"
+        if ((stmt->loop_step != NULL)) {
+#line 155 "src/main.vl"
+            sb_append_str(sb, " < ");
+#line 156 "src/main.vl"
+            emit_c_expr(sb, st, stmt->loop_step);
+        } else {
+#line 158 "src/main.vl"
+            sb_append_str(sb, " < 1");
+        }
+#line 160 "src/main.vl"
+        sb_append_str(sb, ") break;\n");
+    } else {
+#line 165 "src/main.vl"
+        sb_append_str(sb, "__rev_");
+#line 166 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 167 "src/main.vl"
+        sb_append_str(sb, " ? (");
+#line 168 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 169 "src/main.vl"
+        sb_append_str(sb, " - __end_");
+#line 170 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 171 "src/main.vl"
+        sb_append_str(sb, " < ");
+#line 172 "src/main.vl"
+        if ((stmt->loop_step != NULL)) {
+#line 173 "src/main.vl"
+            sb_append_str(sb, "__step_");
+#line 174 "src/main.vl"
+            sb_append_str(sb, vname);
+        } else {
+#line 176 "src/main.vl"
+            sb_append_str(sb, "1");
+        }
+#line 178 "src/main.vl"
+        sb_append_str(sb, ") : (__end_");
+#line 179 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 180 "src/main.vl"
+        sb_append_str(sb, " - ");
+#line 181 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 182 "src/main.vl"
+        sb_append_str(sb, " < ");
+#line 183 "src/main.vl"
+        if ((stmt->loop_step != NULL)) {
+#line 184 "src/main.vl"
+            sb_append_str(sb, "__step_");
+#line 185 "src/main.vl"
+            sb_append_str(sb, vname);
+        } else {
+#line 187 "src/main.vl"
+            sb_append_str(sb, "1");
+        }
+#line 189 "src/main.vl"
+        sb_append_str(sb, ")) break;\n");
+    }
+#line 193 "src/main.vl"
+    sb_append_indent(sb, indent);
+#line 194 "src/main.vl"
+    if (is_lit) {
+#line 195 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 196 "src/main.vl"
+        if ((stmt->loop_step != NULL)) {
+#line 197 "src/main.vl"
+            if (is_rev) {
+#line 197 "src/main.vl"
+                sb_append_str(sb, " -= ");
+            } else {
+#line 197 "src/main.vl"
+                sb_append_str(sb, " += ");
+            }
+#line 198 "src/main.vl"
+            emit_c_expr(sb, st, stmt->loop_step);
+        } else {
+#line 200 "src/main.vl"
+            if (is_rev) {
+#line 200 "src/main.vl"
+                sb_append_str(sb, "--");
+            } else {
+#line 200 "src/main.vl"
+                sb_append_str(sb, "++");
+            }
+        }
+#line 202 "src/main.vl"
+        sb_append_str(sb, ";\n");
+#line 203 "src/main.vl"
+        return;
+    }
+#line 205 "src/main.vl"
+    sb_append_str(sb, "__rev_");
+#line 206 "src/main.vl"
     sb_append_str(sb, vname);
-#line 127 "src/main.vl"
+#line 207 "src/main.vl"
+    sb_append_str(sb, " ? (");
+#line 208 "src/main.vl"
+    sb_append_str(sb, vname);
+#line 209 "src/main.vl"
+    if ((stmt->loop_step != NULL)) {
+#line 210 "src/main.vl"
+        sb_append_str(sb, " -= __step_");
+#line 211 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 212 "src/main.vl"
+        sb_append_str(sb, ") : (");
+#line 213 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 214 "src/main.vl"
+        sb_append_str(sb, " += __step_");
+#line 215 "src/main.vl"
+        sb_append_str(sb, vname);
+    } else {
+#line 217 "src/main.vl"
+        sb_append_str(sb, "--) : (");
+#line 218 "src/main.vl"
+        sb_append_str(sb, vname);
+#line 219 "src/main.vl"
+        sb_append_str(sb, "++");
+    }
+#line 221 "src/main.vl"
+    sb_append_str(sb, ");\n");
+}
+
+#line 226 "src/main.vl"
+void emit_range_step_guard(StringBuilder* sb, StmtNode* stmt, const char* vname, int32_t indent) {
+#line 227 "src/main.vl"
+    if (((stmt == NULL) || (stmt->loop_step == NULL))) {
+#line 227 "src/main.vl"
+        return;
+    }
+#line 228 "src/main.vl"
+    if (is_literal_range_step(stmt->loop_start, stmt->loop_end, stmt->loop_step)) {
+#line 228 "src/main.vl"
+        return;
+    }
+#line 230 "src/main.vl"
+    sb_append_indent(sb, indent);
+#line 231 "src/main.vl"
+    sb_append_str(sb, "if (__step_");
+#line 232 "src/main.vl"
+    sb_append_str(sb, vname);
+#line 233 "src/main.vl"
     if (is_unsigned_int_name(stmt->type_name)) {
-#line 128 "src/main.vl"
+#line 234 "src/main.vl"
         sb_append_str(sb, " == 0) { ");
     } else {
-#line 130 "src/main.vl"
+#line 236 "src/main.vl"
         sb_append_str(sb, " <= 0) { ");
     }
-#line 132 "src/main.vl"
+#line 238 "src/main.vl"
     sb_append_str(sb, "velo_panic_range_step(");
-#line 133 "src/main.vl"
+#line 239 "src/main.vl"
     StringBuilder num_sb = create_sb(16);
-#line 134 "src/main.vl"
+#line 240 "src/main.vl"
     sb_append_int((&(num_sb)), stmt->loop_step->line);
-#line 135 "src/main.vl"
+#line 241 "src/main.vl"
     sb_append_str(sb, sb_to_string((&(num_sb))));
-#line 136 "src/main.vl"
+#line 242 "src/main.vl"
     sb_append_str(sb, ", ");
-#line 137 "src/main.vl"
+#line 243 "src/main.vl"
     StringBuilder col_sb = create_sb(16);
-#line 138 "src/main.vl"
+#line 244 "src/main.vl"
     sb_append_int((&(col_sb)), stmt->loop_step->col);
-#line 139 "src/main.vl"
+#line 245 "src/main.vl"
     sb_append_str(sb, sb_to_string((&(col_sb))));
-#line 140 "src/main.vl"
+#line 246 "src/main.vl"
     sb_append_str(sb, "); }\n");
 }
 
@@ -45505,272 +45651,277 @@ void emit_c_stmt(StringBuilder* sb, SymbolTable* st, StmtNode* stmt, int32_t ind
         sb_append_int(sb, ((int32_t)(loop_id)));
 #line 294 "src/main.vl"
         sb_append_str(sb, ": __attribute__((unused));\n");
-#line 295 "src/main.vl"
-        sb_append_indent(sb, indent);
-#line 296 "src/main.vl"
-        sb_append_str(sb, "}\n");
 #line 297 "src/main.vl"
-        sb_append_indent(sb, indent);
-#line 297 "src/main.vl"
-        sb_append_str(sb, "__loop_break_");
-#line 297 "src/main.vl"
-        sb_append_int(sb, ((int32_t)(loop_id)));
-#line 297 "src/main.vl"
-        sb_append_str(sb, ": __attribute__((unused));\n");
+        if ((((stmt->loop_start != NULL) && (stmt->loop_end != NULL)) && stmt->is_inclusive)) {
 #line 298 "src/main.vl"
+            emit_inclusive_range_terminator(sb, st, stmt, vname, (indent + 1));
+        }
+#line 300 "src/main.vl"
+        sb_append_indent(sb, indent);
+#line 301 "src/main.vl"
+        sb_append_str(sb, "}\n");
+#line 302 "src/main.vl"
+        sb_append_indent(sb, indent);
+#line 302 "src/main.vl"
+        sb_append_str(sb, "__loop_break_");
+#line 302 "src/main.vl"
+        sb_append_int(sb, ((int32_t)(loop_id)));
+#line 302 "src/main.vl"
+        sb_append_str(sb, ": __attribute__((unused));\n");
+#line 303 "src/main.vl"
         return;
     }
-#line 302 "src/main.vl"
-    if ((stmt->kind == STMT_ZONE)) {
-#line 303 "src/main.vl"
-        st->zone_counter += 1;
-#line 304 "src/main.vl"
-        size_t zid = st->zone_counter;
-#line 305 "src/main.vl"
-        sb_append_indent(sb, indent);
-#line 306 "src/main.vl"
-        sb_append_str(sb, "{\n");
 #line 307 "src/main.vl"
-        sb_append_indent(sb, (indent + 1));
+    if ((stmt->kind == STMT_ZONE)) {
 #line 308 "src/main.vl"
-        bool is_arena = false;
+        st->zone_counter += 1;
 #line 309 "src/main.vl"
-        if ((stmt->expr != NULL)) {
+        size_t zid = st->zone_counter;
 #line 310 "src/main.vl"
-            const char* et = infer_expr_type(st, stmt->expr);
+        sb_append_indent(sb, indent);
 #line 311 "src/main.vl"
-            if ((((et != NULL && "@Allocator" != NULL) ? (strcmp(et, "@Allocator") == 0) : (et == "@Allocator")) || ((et != NULL && "Allocator" != NULL) ? (strcmp(et, "Allocator") == 0) : (et == "Allocator")))) {
+        sb_append_str(sb, "{\n");
 #line 312 "src/main.vl"
-                is_arena = true;
+        sb_append_indent(sb, (indent + 1));
 #line 313 "src/main.vl"
-                sb_append_str(sb, "VeloZoneArena* __zone_prev_");
+        bool is_arena = false;
 #line 314 "src/main.vl"
-                sb_append_int(sb, ((int32_t)(zid)));
+        if ((stmt->expr != NULL)) {
 #line 315 "src/main.vl"
+            const char* et = infer_expr_type(st, stmt->expr);
+#line 316 "src/main.vl"
+            if ((((et != NULL && "@Allocator" != NULL) ? (strcmp(et, "@Allocator") == 0) : (et == "@Allocator")) || ((et != NULL && "Allocator" != NULL) ? (strcmp(et, "Allocator") == 0) : (et == "Allocator")))) {
+#line 317 "src/main.vl"
+                is_arena = true;
+#line 318 "src/main.vl"
+                sb_append_str(sb, "VeloZoneArena* __zone_prev_");
+#line 319 "src/main.vl"
+                sb_append_int(sb, ((int32_t)(zid)));
+#line 320 "src/main.vl"
                 sb_append_str(sb, " = velo_zone_enter_arena((VeloZoneArena*)(");
             } else {
-#line 317 "src/main.vl"
+#line 322 "src/main.vl"
                 sb_append_str(sb, "VeloZoneArena* __zone_prev_");
-#line 318 "src/main.vl"
+#line 323 "src/main.vl"
                 sb_append_int(sb, ((int32_t)(zid)));
-#line 319 "src/main.vl"
+#line 324 "src/main.vl"
                 sb_append_str(sb, " = velo_zone_enter((size_t)(");
             }
-#line 321 "src/main.vl"
+#line 326 "src/main.vl"
             emit_c_expr(sb, st, stmt->expr);
-#line 321 "src/main.vl"
+#line 326 "src/main.vl"
             sb_append_str(sb, "));\n");
-#line 322 "src/main.vl"
+#line 327 "src/main.vl"
             sb_append_indent(sb, (indent + 1));
         }
-#line 324 "src/main.vl"
+#line 329 "src/main.vl"
         sb_append_str(sb, "size_t __zone_wm_");
-#line 325 "src/main.vl"
+#line 330 "src/main.vl"
         sb_append_int(sb, ((int32_t)(zid)));
-#line 326 "src/main.vl"
+#line 331 "src/main.vl"
         sb_append_str(sb, " = velo_zone_push();\n");
-#line 328 "src/main.vl"
-        DeferNode* zone_df_target = (*(defers));
-#line 328 "src/main.vl"
-        DeferNode* zd = ((DeferNode*)velo_mem_alloc(sizeof(DeferNode), (size_t)(1)));
-#line 329 "src/main.vl"
-        zd->is_zone = true;
-#line 329 "src/main.vl"
-        zd->is_loop = false;
-#line 329 "src/main.vl"
-        zd->is_block = false;
-#line 329 "src/main.vl"
-        zd->zone_id = zid;
-#line 329 "src/main.vl"
-        zd->loop_id = 0;
-#line 330 "src/main.vl"
-        zd->zone_has_expr = (stmt->expr != NULL);
-#line 330 "src/main.vl"
-        zd->zone_is_arena = is_arena;
-#line 330 "src/main.vl"
-        zd->stmt = NULL;
-#line 330 "src/main.vl"
-        zd->next = (*(defers));
-#line 330 "src/main.vl"
-        (*(defers)) = zd;
-#line 332 "src/main.vl"
-        emit_c_block_stmts(sb, st, stmt->body, (indent + 1), defers);
 #line 333 "src/main.vl"
+        DeferNode* zone_df_target = (*(defers));
+#line 333 "src/main.vl"
+        DeferNode* zd = ((DeferNode*)velo_mem_alloc(sizeof(DeferNode), (size_t)(1)));
+#line 334 "src/main.vl"
+        zd->is_zone = true;
+#line 334 "src/main.vl"
+        zd->is_loop = false;
+#line 334 "src/main.vl"
+        zd->is_block = false;
+#line 334 "src/main.vl"
+        zd->zone_id = zid;
+#line 334 "src/main.vl"
+        zd->loop_id = 0;
+#line 335 "src/main.vl"
+        zd->zone_has_expr = (stmt->expr != NULL);
+#line 335 "src/main.vl"
+        zd->zone_is_arena = is_arena;
+#line 335 "src/main.vl"
+        zd->stmt = NULL;
+#line 335 "src/main.vl"
+        zd->next = (*(defers));
+#line 335 "src/main.vl"
+        (*(defers)) = zd;
+#line 337 "src/main.vl"
+        emit_c_block_stmts(sb, st, stmt->body, (indent + 1), defers);
+#line 338 "src/main.vl"
         DeferNode* df_cur = (*(defers));
-#line 334 "src/main.vl"
+#line 339 "src/main.vl"
         for (int32_t it = 0; ((df_cur != zone_df_target)); it++) {
-#line 334 "src/main.vl"
+#line 339 "src/main.vl"
             emit_c_cleanup(sb, st, df_cur, (indent + 1), defers);
-#line 334 "src/main.vl"
+#line 339 "src/main.vl"
             df_cur = df_cur->next;
             __loop_cont_472: __attribute__((unused));
         }
         __loop_break_472: __attribute__((unused));
-#line 335 "src/main.vl"
-        (*(defers)) = zone_df_target;
-#line 335 "src/main.vl"
-        sb_append_indent(sb, indent);
-#line 335 "src/main.vl"
-        sb_append_str(sb, "}\n");
-#line 335 "src/main.vl"
-        return;
-    }
-#line 339 "src/main.vl"
-    if ((stmt->kind == STMT_DEFER)) {
 #line 340 "src/main.vl"
+        (*(defers)) = zone_df_target;
+#line 340 "src/main.vl"
+        sb_append_indent(sb, indent);
+#line 340 "src/main.vl"
+        sb_append_str(sb, "}\n");
+#line 340 "src/main.vl"
+        return;
+    }
+#line 344 "src/main.vl"
+    if ((stmt->kind == STMT_DEFER)) {
+#line 345 "src/main.vl"
         DeferNode* d = ((DeferNode*)velo_mem_alloc(sizeof(DeferNode), (size_t)(1)));
-#line 341 "src/main.vl"
+#line 346 "src/main.vl"
         d->is_zone = false;
-#line 341 "src/main.vl"
+#line 346 "src/main.vl"
         d->is_loop = false;
-#line 341 "src/main.vl"
+#line 346 "src/main.vl"
         d->is_block = false;
-#line 341 "src/main.vl"
+#line 346 "src/main.vl"
         d->stmt = stmt->deferred_stmt;
-#line 342 "src/main.vl"
+#line 347 "src/main.vl"
         d->zone_id = 0;
-#line 342 "src/main.vl"
+#line 347 "src/main.vl"
         d->loop_id = 0;
-#line 342 "src/main.vl"
+#line 347 "src/main.vl"
         d->zone_has_expr = false;
-#line 342 "src/main.vl"
+#line 347 "src/main.vl"
         d->zone_is_arena = false;
-#line 342 "src/main.vl"
+#line 347 "src/main.vl"
         d->next = (*(defers));
-#line 342 "src/main.vl"
+#line 347 "src/main.vl"
         (*(defers)) = d;
-#line 342 "src/main.vl"
+#line 347 "src/main.vl"
         return;
     }
-#line 346 "src/main.vl"
+#line 351 "src/main.vl"
     if ((stmt->kind == STMT_RETURN)) {
-#line 346 "src/main.vl"
+#line 351 "src/main.vl"
         emit_return_stmt(sb, st, stmt, indent, defers);
-#line 346 "src/main.vl"
+#line 351 "src/main.vl"
         return;
     }
-#line 347 "src/main.vl"
-    if ((stmt->kind == STMT_FAIL)) {
-#line 347 "src/main.vl"
-        emit_fail_stmt(sb, st, stmt, indent, defers);
-#line 347 "src/main.vl"
-        return;
-    }
-#line 350 "src/main.vl"
-    if ((stmt->kind == STMT_BREAK)) {
-#line 351 "src/main.vl"
-        DeferNode* cur_d = (*(defers));
-#line 351 "src/main.vl"
-        size_t target_loop_id = 0;
 #line 352 "src/main.vl"
+    if ((stmt->kind == STMT_FAIL)) {
+#line 352 "src/main.vl"
+        emit_fail_stmt(sb, st, stmt, indent, defers);
+#line 352 "src/main.vl"
+        return;
+    }
+#line 355 "src/main.vl"
+    if ((stmt->kind == STMT_BREAK)) {
+#line 356 "src/main.vl"
+        DeferNode* cur_d = (*(defers));
+#line 356 "src/main.vl"
+        size_t target_loop_id = 0;
+#line 357 "src/main.vl"
         for (int32_t it = 0; ((cur_d != NULL)); it++) {
-#line 353 "src/main.vl"
+#line 358 "src/main.vl"
             if (cur_d->is_loop) {
-#line 353 "src/main.vl"
+#line 358 "src/main.vl"
                 target_loop_id = cur_d->loop_id;
-#line 353 "src/main.vl"
+#line 358 "src/main.vl"
                 goto __loop_break_473;
             }
-#line 354 "src/main.vl"
+#line 359 "src/main.vl"
             emit_c_cleanup(sb, st, cur_d, indent, defers);
-#line 354 "src/main.vl"
+#line 359 "src/main.vl"
             cur_d = cur_d->next;
             __loop_cont_473: __attribute__((unused));
         }
         __loop_break_473: __attribute__((unused));
-#line 359 "src/main.vl"
+#line 364 "src/main.vl"
         if (velo_cmp_eq_u_s(target_loop_id, 0)) {
-#line 359 "src/main.vl"
+#line 364 "src/main.vl"
             report_error("internal", stmt->line, stmt->col, "internal compiler error: unbound break reached codegen");
-#line 359 "src/main.vl"
+#line 364 "src/main.vl"
             st->error_count += 1;
-#line 359 "src/main.vl"
+#line 364 "src/main.vl"
             return;
         }
-#line 360 "src/main.vl"
+#line 365 "src/main.vl"
         sb_append_indent(sb, indent);
-#line 360 "src/main.vl"
+#line 365 "src/main.vl"
         sb_append_str(sb, "goto __loop_break_");
-#line 360 "src/main.vl"
+#line 365 "src/main.vl"
         sb_append_int(sb, ((int32_t)(target_loop_id)));
-#line 360 "src/main.vl"
+#line 365 "src/main.vl"
         sb_append_str(sb, ";\n");
-#line 360 "src/main.vl"
+#line 365 "src/main.vl"
         return;
     }
-#line 364 "src/main.vl"
+#line 369 "src/main.vl"
     if ((stmt->kind == STMT_CONTINUE)) {
-#line 365 "src/main.vl"
+#line 370 "src/main.vl"
         DeferNode* cur_d = (*(defers));
-#line 365 "src/main.vl"
+#line 370 "src/main.vl"
         size_t target_loop_id = 0;
-#line 366 "src/main.vl"
+#line 371 "src/main.vl"
         for (int32_t it = 0; ((cur_d != NULL)); it++) {
-#line 367 "src/main.vl"
+#line 372 "src/main.vl"
             if (cur_d->is_loop) {
-#line 367 "src/main.vl"
+#line 372 "src/main.vl"
                 target_loop_id = cur_d->loop_id;
-#line 367 "src/main.vl"
+#line 372 "src/main.vl"
                 goto __loop_break_474;
             }
-#line 368 "src/main.vl"
+#line 373 "src/main.vl"
             emit_c_cleanup(sb, st, cur_d, indent, defers);
-#line 368 "src/main.vl"
+#line 373 "src/main.vl"
             cur_d = cur_d->next;
             __loop_cont_474: __attribute__((unused));
         }
         __loop_break_474: __attribute__((unused));
-#line 370 "src/main.vl"
+#line 375 "src/main.vl"
         if (velo_cmp_eq_u_s(target_loop_id, 0)) {
-#line 370 "src/main.vl"
+#line 375 "src/main.vl"
             report_error("internal", stmt->line, stmt->col, "internal compiler error: unbound continue reached codegen");
-#line 370 "src/main.vl"
+#line 375 "src/main.vl"
             st->error_count += 1;
-#line 370 "src/main.vl"
+#line 375 "src/main.vl"
             return;
         }
-#line 371 "src/main.vl"
+#line 376 "src/main.vl"
         sb_append_indent(sb, indent);
-#line 371 "src/main.vl"
+#line 376 "src/main.vl"
         sb_append_str(sb, "goto __loop_cont_");
-#line 371 "src/main.vl"
+#line 376 "src/main.vl"
         sb_append_int(sb, ((int32_t)(target_loop_id)));
-#line 371 "src/main.vl"
+#line 376 "src/main.vl"
         sb_append_str(sb, ";\n");
-#line 371 "src/main.vl"
-        return;
-    }
-#line 375 "src/main.vl"
-    if ((stmt->kind == STMT_UNSAFE)) {
-#line 376 "src/main.vl"
-        st->current_unsafe_depth += 1;
-#line 376 "src/main.vl"
-        emit_c_stmt(sb, st, stmt->body, indent, defers);
-#line 376 "src/main.vl"
-        st->current_unsafe_depth -= 1;
 #line 376 "src/main.vl"
         return;
     }
-#line 378 "src/main.vl"
-    if ((stmt->kind == STMT_BLOCK)) {
-#line 379 "src/main.vl"
-        sb_append_indent(sb, indent);
-#line 379 "src/main.vl"
-        sb_append_str(sb, "{\n");
 #line 380 "src/main.vl"
-        emit_c_block_stmts(sb, st, stmt, (indent + 1), defers);
+    if ((stmt->kind == STMT_UNSAFE)) {
 #line 381 "src/main.vl"
-        sb_append_indent(sb, indent);
+        st->current_unsafe_depth += 1;
 #line 381 "src/main.vl"
-        sb_append_str(sb, "}\n");
+        emit_c_stmt(sb, st, stmt->body, indent, defers);
+#line 381 "src/main.vl"
+        st->current_unsafe_depth -= 1;
 #line 381 "src/main.vl"
         return;
     }
+#line 383 "src/main.vl"
+    if ((stmt->kind == STMT_BLOCK)) {
+#line 384 "src/main.vl"
+        sb_append_indent(sb, indent);
+#line 384 "src/main.vl"
+        sb_append_str(sb, "{\n");
 #line 385 "src/main.vl"
+        emit_c_block_stmts(sb, st, stmt, (indent + 1), defers);
+#line 386 "src/main.vl"
+        sb_append_indent(sb, indent);
+#line 386 "src/main.vl"
+        sb_append_str(sb, "}\n");
+#line 386 "src/main.vl"
+        return;
+    }
+#line 390 "src/main.vl"
     if ((stmt->kind == STMT_MATCH)) {
-#line 385 "src/main.vl"
+#line 390 "src/main.vl"
         emit_match_stmt(sb, st, stmt, indent, defers);
-#line 385 "src/main.vl"
+#line 390 "src/main.vl"
         return;
     }
 }

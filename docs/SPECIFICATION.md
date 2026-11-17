@@ -1017,26 +1017,25 @@ Consequences that are part of the contract:
 2. **No gratuitous widening.** A loop over `i32` bounds keeps an `int32_t` induction. Widening every loop to `i64` would change the emitted C for the whole standard library, cost cache and register pressure, and — see `W2` — would not fix the boundary defect anyway.
 3. **The `i32` floor is intentional.** `loop i in a..b` with `i8`/`i16`/`u8`/`u16` endpoints still iterates in `i32`, so the induction cannot overflow when a narrow bound sits at its own maximum.
 
-**Rule W2 — inclusive ranges terminate by equality, not by overflow.**
+**Rule W2 — inclusive ranges terminate by distance, not by overflow.**
 
 `for (T i = start; i <= end; i++)` is unsound when `end` is the maximum of `T`: the increment after the last iteration overflows. For signed `T` this is undefined behaviour (gcc `-O2` reports `iteration N invokes undefined behavior` under `-Waggressive-loop-optimizations` and may delete the loop exit); for unsigned `T` it wraps to 0 and the loop runs again from the bottom.
 
 This is **not a width problem**. It reproduces at `INT32_MAX`, at `UINT32_MAX`, and at `UINT64_MAX`. A width change cannot fix it, which is why `W1` is about not truncating rather than about going wider.
 
-Therefore an inclusive range loop (`..=`) is lowered so that the terminating comparison is an equality test performed **before** the increment:
+Therefore an inclusive range loop (`..=`) is lowered as an unbounded `for` whose exit test is emitted **after** the body, comparing the remaining distance against the step:
 
 ```c
-for (T i = start;;) {
-    /* body */
-  __loop_cont_N: ;
-    if (i == end) break;
-    i++;              /* or i-- for descending, i += step / i -= step */
-}
+/* ascending,  step 1  */   if (end - i < 1) break;   i++;
+/* descending, step 1  */   if (i - end < 1) break;   i--;
+/* dynamic direction   */   if (rev ? (i - end < step) : (end - i < step)) break;
 ```
 
-- When `i` reaches `end` the loop breaks **without** incrementing, so no value outside the range is ever formed. This holds at every width, including the maximum of the type.
-- `continue` still advances: the loop's `__loop_cont_N` label is emitted **before** the equality test and the increment, so `goto __loop_cont_N` performs both. A `continue` that skipped the increment would hang, so the label placement is part of the invariant, not an implementation detail.
-- Direction is already resolved before the loop (`start > end`), and both directions converge on `end`; a single `if (i == end) break;` therefore serves ascending and descending, literal and dynamic ranges alike.
+- When fewer than `step` values remain the loop breaks **without** incrementing, so no value outside the range is ever formed. This holds at every width, including the maximum of the type.
+- Both differences are non-negative by construction — the induction never passes the endpoint, because it stops before doing so — so the subtraction cannot overflow either.
+- The test is **step-aware, not equality-based**. `loop i in 0..=10:3` visits `0, 3, 6, 9`; an `i == end` test would never fire and would hang. With `step == 1` the comparison degenerates to `i == end`, so the ordinary countdown case is covered by the same rule.
+- `continue` still advances: the loop's `__loop_cont_N` label is emitted **before** the terminator and the increment, so `goto __loop_cont_N` performs both. A `continue` that skipped the increment would hang, so the label placement is part of the invariant, not an implementation detail.
+- Direction is resolved before the loop (`start > end`); both directions converge on `end`. Literal ranges pick the arm at compile time; dynamic ranges branch on the emitted `__rev_<v>` temporary, so a runtime `start > end` is handled without a separate code path.
 - Exclusive ranges (`..`) keep the `<` / `>` test. They terminate at `end - 1` (or `end + 1` descending) and the final increment reaches `end` exactly, which is representable for every `end` that is itself a valid bound.
 
 **Breaking-change surface.** `W1` and `W2` change observable behaviour only where the previous behaviour was wrong:
