@@ -296,8 +296,9 @@ reserved", which is a hard block on use, forking, or vendoring by anyone else.
 | 71.1 | `95aac3f` | Dual `MIT OR Apache-2.0`: `LICENSE-MIT`, `LICENSE-APACHE`, SPDX in `README.md`/`SECURITY.md`, `.gitattributes`, `tests/test_license_provenance.py` (8 rows) |
 | 71.2 | `567ab5f` | `VERSION` (`2.0.0-pre`) as the single source; `src/common/version.vl` holds `VELO_VERSION`/`VELO_VERSION_LABEL`/`VELO_TARGET_LABEL`; banner interpolated at `src/main.vl`; `tests/release_meta.py` + `tests/test_release_metadata.py` (7 rows) |
 | 71.3 | `a275505` | `CHANGELOG.md` (Keep a Changelog) with an `[Unreleased]` section, a leading "Known limitations" list citing the tracking phase, and Added/Changed/Fixed/Security backfilled from `git log` with a short sha per entry; `tests/test_changelog.py` (7 rows) |
+| 71.4 | tag `v2.0.0-pre` | Annotated tag on the Phase 71 completion commit, after the full gate chain (suite + determinism + line ceiling + clean tree) passed. `git describe --tags` now yields `v2.0.0-pre`. |
 | 71.5 | `4ad94ae` | `CONTRIBUTING.md` (9 sections) + `tests/test_contributing.py` (8 rows) pinning each gate command verbatim |
-| 71.6 | this commit | `scripts/release.py` with six gates, a zip archive and `SHA256SUMS`; `tests/test_release_script.py` (14 rows) |
+| 71.6 | `4251386` | `scripts/release.py` with six gates, a zip archive and `SHA256SUMS`; `tests/test_release_script.py` (14 rows) |
 
 The activity-consistency decision was orthogonal to the licence: `bootstrap.c`
 is a generated artifact and is covered by the same dual licence, stated under
@@ -306,11 +307,12 @@ infer it.
 
 **Residual limitation.**
 
-- **71.4 is not done.** No tag `v2.0.0-pre` exists yet, so `git describe` still
-  yields a bare SHA and Phase 76's CI has no release target to key on. The tag
-  is deliberately held until the release commit is chosen; creating it earlier
-  would tag a tree that has not been through the full gate chain in this phase.
-  This is recorded in the Phase 85 residual table.- `scripts/release.py` packages the compiler binary and the sources, not a
+- The tag is local only. There is no remote, so `v2.0.0-pre` is not published
+  and no third party can fetch it; `git describe` works for the maintainer but
+  a release consumer cannot yet pin the commit by tag. This resolves when the
+  repository gets a remote (Phase 84's ecosystem work), not when a further
+  commit lands.
+- `scripts/release.py` packages the compiler binary and the sources, not a
   prebuilt library triple. A consumer on a platform without a C compiler still
   cannot use the archive, which is inherent to the "compile C on first use"
   model rather than a packaging defect (Phase 70 gates the platform set).
@@ -1334,7 +1336,7 @@ listed so they are not rediscovered as surprises.
 | Overlapping `mem.copy`/`mem.set` remain C UB | `docs/gaps_archive.md:181` | Silent corruption on aliased buffers | Phase 74.4 |
 | No `Set`/`Deque`/priority queue | `std/coll/` inventory | Users hand-roll them, inconsistently | Phase 78.8 |
 | `defer` takes a block, not an expression | Phase 58/69 semantics | Verbose cleanup sites | Phase 77.6 |
-| No `v2.0.0-pre` tag yet, so `git describe` yields a bare SHA | `git tag` empty; Phase 71 completion record | Phase 76's CI has no release target to key on | Create the tag at `v2.0.0-pre` on the release commit (Phase 71.4) |
+| No `v2.0.0-pre` tag was published anywhere | tag exists locally; no remote configured | A consumer cannot pin the release commit | Add a remote and push tags (Phase 84) |
 | Release archive cannot be used without a C compiler | `scripts/release.py` ships `velo.exe` + sources, no prebuilt library triple | Consumers on compiler-less hosts are unsupported by design | Documented in Phase 71's residual limitation; revisit with Phase 70's platform set |
 | `emit-c` output depends on how the source path is spelled | `src/backend/codegen_line.vl:6-17` embeds the path in `#line` | A build driven from an absolute path produces a byte-different snapshot | Pinned by `tests/test_release_script.py`; normalizing paths is Phase 79 (reproducible-build work) |
 
