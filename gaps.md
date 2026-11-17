@@ -3386,6 +3386,21 @@ scratch/test_io_ops.txt
 * **Security gate:** no path traversal; no writes outside the temp base.
 * **Done when:** the test passes without an ambient `scratch/`.
 
+##### Task 67.2: Make the Velo test self-contained [COMPLETED] ✅
+* **Former Defect**: `std/tests/fs/ops_test.vl` assumed `scratch/` existed and never removed it. Two consequences, both structural rather than cosmetic: (1) the suite could not run from a clean checkout at all, and (2) the run that *did* succeed created the very directory every later run depended on — so the defect was self-healing on the developer's machine and permanently broken everywhere else. There was also no cleanup on the failure path, so a mid-suite failure left artifacts behind to poison subsequent runs.
+* **Fix Applied**:
+  - Added `cleanup_scratch()`, which removes every artifact the suite can create (four files, two leaf dirs, the three-deep `nest1/nest2/nest3` chain, and `scratch` itself), innermost-first so the directories are empty when removed. Every step is allowed to fail, because on the failure path only some artifacts exist — a cleanup routine that requires its inputs to be present cannot be used for cleanup.
+  - `main()` now does `cleanup_scratch()` (clear stale state), then creates `scratch/` with an explicit diagnosed failure (`FAIL: could not create the scratch directory`, exit 5), then registers `defer cleanup_scratch()`.
+  - `defer` runs on **every** exit path, including the early `return 1..4` failure branches, so a failing suite no longer leaves state behind. This was verified rather than assumed.
+* **Residual Limitation**: The suite still uses **relative** paths, so it writes into whatever the process cwd is. That is now safe because it creates and destroys its own `scratch/` subtree, but it is not hermetic in the strongest sense: two concurrent runs in the same cwd would still collide on `scratch/`. Making the directory name unique (pid- or temp-derived) would fix that, and is deliberately **not** done here — it would require the Velo test to read an ambient value, which is a different design change. Recorded so the concurrency limitation is visible.
+  - `cleanup_scratch()` enumerates artifacts explicitly rather than walking the directory. A recursively deleting test would destroy a real `scratch/` if it ever ran in a cwd where one exists for other reasons. The explicit list is the safer choice, at the cost of needing an edit when the suite gains artifacts.
+* **Verification**:
+  - Clean temp cwd, `bin\velo.exe run std\tests\fs\ops_test.vl`: `PASS: std.fs.ops all assertions succeeded`, exit **0**, and the only leftover is `.velo_cache` (the compiler's own cache).
+  - **Idempotency**: a second run in the same directory also exits 0 and again leaves only `.velo_cache`, proving the first run did not create state the second depends on.
+  - **Failure-path cleanup**: a probe that creates `scratch/`, registers `defer cleanup_scratch()`, writes a file, then returns 3 — exits 3 with only `.velo_cache` left. So `defer` runs on a failing exit, not just the success path.
+  - **Cleanup test is no longer vacuous**: removing the `defer` line in a mutation check makes `test_std_fs_ops_cleans_up_after_itself` fail with `assert not ['scratch']`; restoring it returns 7 passed. This is what converts the Task 67.1 caveat ("passes vacuously") into a real assertion.
+  - `python -m pytest tests/test_std_fs.py -q`: **7 passed** (was 1 failed / 6 passed).
+
 ##### Task 67.3: Audit other tests for ambient filesystem dependencies
 * **Goal:** Find other `scratch/`, relative-path, or cwd-dependent tests.
 * **Files:** `rg -n "scratch|tmp|temp" tests/ std/tests/`.

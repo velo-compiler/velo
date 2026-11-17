@@ -5,6 +5,21 @@ use "../../mem/heap.vl"
 use "../../fs/stat.vl"
 use "../../fs/ops.vl"
 
+// Removes the suite's working tree. Every step is allowed to fail: this also
+// runs on the failure path, where only some of the artifacts were created.
+act cleanup_scratch() {
+    fs_remove_file_str("scratch/test_io_ops.txt")
+    fs_remove_file_str("scratch/test_orig.txt")
+    fs_remove_file_str("scratch/test_copy.txt")
+    fs_remove_file_str("scratch/test_moved.txt")
+    fs_remove_dir_str("scratch/test_dir_single")
+    fs_remove_dir_str("scratch/test_dir_slice")
+    fs_remove_dir_str("scratch/nest1/nest2/nest3")
+    fs_remove_dir_str("scratch/nest1/nest2")
+    fs_remove_dir_str("scratch/nest1")
+    fs_remove_dir_str("scratch")
+}
+
 act test_dir_create_and_remove() -> bool {
     let d1 = "scratch/test_dir_single"
     if fs_exists(d1) {
@@ -116,6 +131,18 @@ act test_file_copy_and_rename() -> bool {
 }
 
 act main() -> i32 {
+    // The suite writes to paths relative to the process cwd, so it must own
+    // that subtree: create it here and remove it on every exit path. Without
+    // this the suite only passed when an untracked `scratch/` already existed
+    // (a clean checkout has none), and each run left the directory behind for
+    // the next one to depend on.
+    cleanup_scratch()
+    if !fs_create_dir_str("scratch") {
+        io.println("FAIL: could not create the scratch directory")
+        return 5
+    }
+    defer cleanup_scratch()
+
     if !test_dir_create_and_remove() {
         io.println("FAIL: test_dir_create_and_remove")
         return 1
