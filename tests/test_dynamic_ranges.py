@@ -15,12 +15,13 @@ import sys
 import tempfile
 from pathlib import Path
 import pytest
+from conftest import cc_dir, velo_exe
 
 
 def get_build_env():
     """Returns an environment with ucrt64 GCC in PATH for compiling generated C."""
     env = dict(os.environ)
-    ucrt_bin = r"C:\msys64\ucrt64\bin"
+    ucrt_bin = cc_dir()
     if os.path.exists(ucrt_bin) and ucrt_bin not in env.get("PATH", ""):
         env["PATH"] = ucrt_bin + ";" + env.get("PATH", "")
     return env
@@ -34,7 +35,7 @@ def run_velo_source(source_code: str, timeout: float = 2.0) -> subprocess.Comple
         src_path.write_text(source_code, encoding="utf-8")
 
         build_res = subprocess.run(
-            ["bin/velo.exe", "build", str(src_path), "-o", str(exe_path)],
+            [str(velo_exe()), "build", str(src_path), "-o", str(exe_path)],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -65,7 +66,7 @@ def emit_c_velo_source(source_code: str) -> str:
         src_path.write_text(source_code, encoding="utf-8")
 
         res = subprocess.run(
-            ["bin/velo.exe", "emit-c", str(src_path), "-o", str(c_path)],
+            [str(velo_exe()), "emit-c", str(src_path), "-o", str(c_path)],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -82,7 +83,7 @@ def check_velo_source(source_code: str) -> subprocess.CompletedProcess:
         src_path.write_text(source_code, encoding="utf-8")
 
         return subprocess.run(
-            ["bin/velo.exe", "check", str(src_path)],
+            [str(velo_exe()), "check", str(src_path)],
             capture_output=True,
             text=True,
             encoding="utf-8",

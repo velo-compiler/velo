@@ -14,15 +14,16 @@ import subprocess
 import pytest
 from pathlib import Path
 from velo.driver import CompilerDriver
+from conftest import cc_dir, velo_exe
 
-GCC_BIN_DIR = r"C:\msys64\ucrt64\bin"
+GCC_BIN_DIR = cc_dir()
 ENV_WITH_GCC = os.environ.copy()
 if GCC_BIN_DIR not in ENV_WITH_GCC.get("PATH", ""):
     ENV_WITH_GCC["PATH"] = GCC_BIN_DIR + ";" + ENV_WITH_GCC.get("PATH", "")
 
 REPO_ROOT = Path(__file__).parent.parent
 VELO_PY = REPO_ROOT / "velo.py"
-VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
+VELO_EXE = velo_exe()
 
 WINMM_SOURCE = """use sys.io
 

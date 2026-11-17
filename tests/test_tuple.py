@@ -15,7 +15,9 @@ import subprocess
 import os
 import pytest
 
-VELO_BIN = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "bin", "velo.exe"))
+from conftest import velo_exe
+
+VELO_BIN = str(velo_exe())
 
 
 def run_velo_source(code: str, tmp_path) -> subprocess.CompletedProcess:

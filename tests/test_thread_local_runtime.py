@@ -4,6 +4,7 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from conftest import cc_path
 
 ROOT = Path(__file__).parent.parent.resolve()
 RUNTIME = ROOT / "velo" / "runtime"
@@ -165,7 +166,7 @@ def find_gcc() -> str:
     found = shutil.which("gcc")
     if found:
         return found
-    for candidate in (r"C:\msys64\ucrt64\bin\gcc.exe", r"C:\msys64\mingw64\bin\gcc.exe"):
+    for candidate in (cc_path(), cc_path()):
         p = Path(candidate)
         if p.exists():
             return str(p)

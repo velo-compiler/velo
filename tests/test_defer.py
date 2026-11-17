@@ -18,17 +18,18 @@ import subprocess
 import tempfile
 from pathlib import Path
 import pytest
+from conftest import cc_dir, cc_path, velo_exe
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
-VELO_EXE = REPO_ROOT / "bin" / ("velo.exe" if os.name == "nt" else "velo")
-if not VELO_EXE.exists() and (REPO_ROOT / "bin" / "velo.exe").exists():
-    VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
+VELO_EXE = velo_exe()
+if not VELO_EXE.exists() and (velo_exe()).exists():
+    VELO_EXE = velo_exe()
 
 
 def get_build_env():
     """Returns an environment with ucrt64 GCC in PATH for compiling generated C."""
     env = dict(os.environ)
-    ucrt_bin = r"C:\msys64\ucrt64\bin"
+    ucrt_bin = cc_dir()
     if os.path.exists(ucrt_bin):
         env["PATH"] = ucrt_bin + ";" + env.get("PATH", "")
     return env
@@ -827,7 +828,7 @@ act main() -> i32 {
         assert emit_res.returncode == 0, f"emit-c failed: {emit_res.stderr}\n{emit_res.stdout}"
 
         # Compile with -Werror
-        gcc_bin = r"C:\msys64\ucrt64\bin\gcc.exe" if os.path.exists(r"C:\msys64\ucrt64\bin\gcc.exe") else "gcc"
+        gcc_bin = cc_path() if os.path.exists(cc_path()) else "gcc"
         gcc_cmd = [
             gcc_bin,
             "-std=c99",

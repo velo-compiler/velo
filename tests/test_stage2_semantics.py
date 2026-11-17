@@ -2,6 +2,7 @@ import unittest
 import subprocess
 import sys
 from pathlib import Path
+from conftest import velo_exe
 
 class TestStage2Semantics(unittest.TestCase):
     def setUp(self):
@@ -38,60 +39,60 @@ class TestStage2Semantics(unittest.TestCase):
         self.assertIn("check_program((&st), prog)", res.stdout)
 
     def test_immutable_variable_reassignment_rejected(self):
-        velo_exe = self.root_dir / "bin" / "velo.exe"
-        if not velo_exe.exists():
+        velo_bin = velo_exe()
+        if not velo_bin.exists():
             self.skipTest("bin/velo.exe not built")
         import tempfile
         with tempfile.NamedTemporaryFile("w", suffix=".vl", delete=False) as f:
             f.write("act main() {\n    let num: i64 = 100\n    num = 50\n}\n")
             fname = f.name
         try:
-            res = subprocess.run([str(velo_exe), "check", fname], capture_output=True, text=True)
+            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True)
             self.assertNotEqual(res.returncode, 0)
             self.assertIn("cannot assign to immutable variable 'num'. Declare with 'mut num' to allow mutation.", res.stdout)
         finally:
             Path(fname).unlink(missing_ok=True)
 
     def test_immutable_variable_compound_assign_rejected(self):
-        velo_exe = self.root_dir / "bin" / "velo.exe"
-        if not velo_exe.exists():
+        velo_bin = velo_exe()
+        if not velo_bin.exists():
             self.skipTest("bin/velo.exe not built")
         import tempfile
         with tempfile.NamedTemporaryFile("w", suffix=".vl", delete=False) as f:
             f.write("act main() {\n    let counter: i32 = 0\n    counter += 1\n}\n")
             fname = f.name
         try:
-            res = subprocess.run([str(velo_exe), "check", fname], capture_output=True, text=True)
+            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True)
             self.assertNotEqual(res.returncode, 0)
             self.assertIn("cannot assign to immutable variable 'counter'. Declare with 'mut counter' to allow mutation.", res.stdout)
         finally:
             Path(fname).unlink(missing_ok=True)
 
     def test_immutable_struct_field_mutation_rejected(self):
-        velo_exe = self.root_dir / "bin" / "velo.exe"
-        if not velo_exe.exists():
+        velo_bin = velo_exe()
+        if not velo_bin.exists():
             self.skipTest("bin/velo.exe not built")
         import tempfile
         with tempfile.NamedTemporaryFile("w", suffix=".vl", delete=False) as f:
             f.write("data Point { x: f32, y: f32 }\nact main() {\n    let pt = Point{ x: 1.0, y: 2.0 }\n    pt.x = 5.0\n}\n")
             fname = f.name
         try:
-            res = subprocess.run([str(velo_exe), "check", fname], capture_output=True, text=True)
+            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True)
             self.assertNotEqual(res.returncode, 0)
             self.assertIn("cannot assign to field of immutable variable 'pt'. Declare with 'mut pt' to allow mutation.", res.stdout)
         finally:
             Path(fname).unlink(missing_ok=True)
 
     def test_mutable_variable_assignment_allowed(self):
-        velo_exe = self.root_dir / "bin" / "velo.exe"
-        if not velo_exe.exists():
+        velo_bin = velo_exe()
+        if not velo_bin.exists():
             self.skipTest("bin/velo.exe not built")
         import tempfile
         with tempfile.NamedTemporaryFile("w", suffix=".vl", delete=False) as f:
             f.write("act main() {\n    mut num: i64 = 100\n    num = 50\n    mut count: i32 = 0\n    count += 1\n}\n")
             fname = f.name
         try:
-            res = subprocess.run([str(velo_exe), "check", fname], capture_output=True, text=True)
+            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True)
             self.assertEqual(res.returncode, 0, f"Check failed: {res.stdout}")
         finally:
             Path(fname).unlink(missing_ok=True)

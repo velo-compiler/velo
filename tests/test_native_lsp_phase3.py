@@ -23,8 +23,10 @@ import sys
 from pathlib import Path
 import pytest
 
+from conftest import velo_exe
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
-VELO_BIN = REPO_ROOT / "bin" / ("velo.exe" if sys.platform == "win32" else "velo")
+VELO_BIN = velo_exe()
 
 
 def spawn_native_lsp():

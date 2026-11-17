@@ -4,9 +4,10 @@ from pathlib import Path
 import pytest
 
 from release_meta import expected_banner_line
+from conftest import cc_dir, velo_exe
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
-VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
+VELO_EXE = velo_exe()
 
 @pytest.fixture(scope="session", autouse=True)
 def ensure_velo_exe():
@@ -25,8 +26,8 @@ def ensure_velo_exe():
 def run_velo(args):
     """Helper to run bin/velo.exe with MSYS2 GCC in PATH."""
     env = os.environ.copy()
-    if r"C:\msys64\ucrt64\bin" not in env.get("PATH", ""):
-        env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
+    if cc_dir() not in env.get("PATH", ""):
+        env["PATH"] = cc_dir() + ";" + env.get("PATH", "")
     return subprocess.run(
         [str(VELO_EXE)] + args,
         cwd=str(REPO_ROOT),
@@ -100,8 +101,8 @@ def test_cli_build_and_run():
     assert out_exe.exists()
 
     env = os.environ.copy()
-    if r"C:\msys64\ucrt64\bin" not in env.get("PATH", ""):
-        env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
+    if cc_dir() not in env.get("PATH", ""):
+        env["PATH"] = cc_dir() + ";" + env.get("PATH", "")
     run_res = subprocess.run([str(out_exe)], capture_output=True, text=True, env=env)
     assert run_res.returncode == 0
     assert "Hello, world!!" in run_res.stdout

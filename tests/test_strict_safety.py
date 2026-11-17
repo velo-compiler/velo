@@ -17,9 +17,10 @@ import tempfile
 import subprocess
 from pathlib import Path
 import pytest
+from conftest import velo_exe
 
 ROOT_DIR = Path(__file__).parent.parent.resolve()
-VELO_EXE = ROOT_DIR / "bin" / "velo.exe"
+VELO_EXE = velo_exe()
 
 
 def run_velo_check(source_code: str, strict_safety: bool = True) -> subprocess.CompletedProcess:

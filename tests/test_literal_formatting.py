@@ -3,16 +3,17 @@ import sys
 import subprocess
 import unittest
 from pathlib import Path
+from conftest import cc_dir, velo_exe
 
 class TestLiteralFormatting(unittest.TestCase):
     def setUp(self):
         self.root_dir = Path(__file__).parent.parent.resolve()
         self.velo_py = self.root_dir / "velo.py"
-        self.velo_exe = self.root_dir / "bin" / "velo.exe"
+        self.velo_exe = velo_exe()
         self.example = self.root_dir / "examples" / "16_literal_formatting.vl"
         self.env = os.environ.copy()
-        if r"C:\msys64\ucrt64\bin" not in self.env.get("PATH", ""):
-            self.env["PATH"] = r"C:\msys64\ucrt64\bin;" + self.env.get("PATH", "")
+        if cc_dir() not in self.env.get("PATH", ""):
+            self.env["PATH"] = cc_dir() + ";" + self.env.get("PATH", "")
 
     def test_stage1_run_literal_formatting(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]

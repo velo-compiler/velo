@@ -47,9 +47,10 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from conftest import cc_dir, velo_exe
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
-VELO_EXE = REPO_ROOT / "bin" / ("velo.exe" if sys.platform == "win32" else "velo")
+VELO_EXE = velo_exe()
 
 CRASH_CODE = -1073741571
 CRASH_CODE_UNSIGNED = 3221225725
@@ -57,7 +58,7 @@ CRASH_CODE_UNSIGNED = 3221225725
 
 def get_build_env():
     env = dict(os.environ)
-    ucrt_bin = r"C:\msys64\ucrt64\bin"
+    ucrt_bin = cc_dir()
     if os.path.exists(ucrt_bin) and ucrt_bin not in env.get("PATH", ""):
         env["PATH"] = ucrt_bin + ";" + env.get("PATH", "")
     return env

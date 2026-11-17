@@ -11,9 +11,10 @@ from pathlib import Path
 import pytest
 
 from release_meta import read_version
+from conftest import velo_exe
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
-VELO_EXE = REPO_ROOT / "bin" / ("velo.exe" if sys.platform == "win32" else "velo")
+VELO_EXE = velo_exe()
 SECURITY_MD = REPO_ROOT / "SECURITY.md"
 def test_security_policy_document_exists():
     """Verify that SECURITY.md exists at repository root and defines complete disclosure policies."""

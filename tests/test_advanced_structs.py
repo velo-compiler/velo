@@ -2,6 +2,7 @@ import subprocess
 import sys
 import os
 import pytest
+from conftest import velo_exe
 
 NEG_TEMPLATE_MISSING_FIELD = """use sys.io
 
@@ -72,10 +73,10 @@ def test_advanced_structs_emit_c():
     assert ".magic = 7, .version = 1, .size = 8" in output
 
 def test_advanced_structs_native_execution():
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native test")
     result = subprocess.run(
-        ["bin/velo.exe", "run", "examples/26_advanced_structs.vl"],
+        [str(velo_exe()), "run", "examples/26_advanced_structs.vl"],
         capture_output=True,
         text=True
     )
@@ -88,10 +89,10 @@ def test_advanced_structs_native_execution():
     assert "particle: id=1, hp=100, pos.x=2.50, pos.w=1.00" in output
 
 def test_native_emit_c_attributes():
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native test")
     result = subprocess.run(
-        ["bin/velo.exe", "emit-c", "examples/26_advanced_structs.vl"],
+        [str(velo_exe()), "emit-c", "examples/26_advanced_structs.vl"],
         capture_output=True,
         text=True
     )
@@ -104,11 +105,11 @@ def test_native_emit_c_attributes():
     assert ".id = 1, .hp = 100" in output
 
 def test_native_missing_field_without_default_is_error(tmp_path):
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native test")
     src = _write(tmp_path, "neg_missing_native.vl", NEG_TEMPLATE_MISSING_FIELD)
     result = subprocess.run(
-        ["bin/velo.exe", "run", src],
+        [str(velo_exe()), "run", src],
         capture_output=True,
         text=True
     )

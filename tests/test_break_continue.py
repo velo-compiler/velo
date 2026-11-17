@@ -4,6 +4,7 @@ import sys
 import tempfile
 from pathlib import Path
 import pytest
+from conftest import cc_dir, cc_path, velo_exe
 
 def test_while_break_and_continue(tmp_path):
     source = tmp_path / "test_while.vl"
@@ -37,7 +38,7 @@ act main() -> i32 {
     assert "count=7, odds=25" in res_py.stdout
 
     # Self-hosted stage 2
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "count=7, odds=25" in res_sh.stdout
 
@@ -71,7 +72,7 @@ act main() -> i32 {
     assert "b=42, sum=40" in res_py.stdout
 
     # Self-hosted stage 2
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "b=42, sum=40" in res_sh.stdout
 
@@ -100,7 +101,7 @@ act main() -> i32 {
     assert "total=12" in res_py.stdout
 
     # Self-hosted stage 2
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "total=12" in res_sh.stdout
 
@@ -111,7 +112,7 @@ def test_example_18_e2e():
     assert res_py.returncode == 0
     assert "[SUCCESS] Milestone 2.1: Loop Controls (break & continue) Verified!" in res_py.stdout
 
-    res_sh = subprocess.run(["bin/velo.exe", "run", example_path], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", example_path], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "[SUCCESS] Milestone 2.1: Loop Controls (break & continue) Verified!" in res_sh.stdout
 
@@ -121,15 +122,15 @@ def test_example_18_e2e():
 # ==============================================================================
 
 ROOT_DIR = Path(__file__).parent.parent.resolve()
-VELO_EXE = ROOT_DIR / "bin" / ("velo.exe" if os.name == "nt" else "velo")
-if not VELO_EXE.exists() and (ROOT_DIR / "bin" / "velo.exe").exists():
-    VELO_EXE = ROOT_DIR / "bin" / "velo.exe"
+VELO_EXE = velo_exe()
+if not VELO_EXE.exists() and (velo_exe()).exists():
+    VELO_EXE = velo_exe()
 
 
 def get_build_env():
     """Returns an environment with ucrt64 GCC in PATH for compiling generated C."""
     env = dict(os.environ)
-    ucrt_bin = r"C:\msys64\ucrt64\bin"
+    ucrt_bin = cc_dir()
     if os.path.exists(ucrt_bin):
         env["PATH"] = ucrt_bin + ";" + env.get("PATH", "")
     return env
@@ -137,7 +138,7 @@ def get_build_env():
 
 def get_gcc_bin():
     if os.name == "nt":
-        ucrt_gcc = r"C:\msys64\ucrt64\bin\gcc.exe"
+        ucrt_gcc = cc_path()
         if os.path.exists(ucrt_gcc):
             return ucrt_gcc
         return "gcc.exe"

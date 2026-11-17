@@ -24,11 +24,12 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import velo_exe
 
 ROOT_DIR = Path(__file__).parent.parent.resolve()
-VELO_EXE = ROOT_DIR / "bin" / ("velo.exe" if os.name == "nt" else "velo")
-if not VELO_EXE.exists() and (ROOT_DIR / "bin" / "velo.exe").exists():
-    VELO_EXE = ROOT_DIR / "bin" / "velo.exe"
+VELO_EXE = velo_exe()
+if not VELO_EXE.exists() and (velo_exe()).exists():
+    VELO_EXE = velo_exe()
 
 BREAK = "break statement not within a loop"
 CONTINUE = "continue statement not within a loop"

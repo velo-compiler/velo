@@ -4,15 +4,16 @@ import shutil
 import subprocess
 from pathlib import Path
 import pytest
+from conftest import cc_dir, velo_exe
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 VELO_PY = REPO_ROOT / "velo.py"
-VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
+VELO_EXE = velo_exe()
 
 
 def get_env():
     env = os.environ.copy()
-    env["PATH"] = f"{REPO_ROOT};{REPO_ROOT / 'bin'};" + env.get("PATH", "") + ";C:\\msys64\\ucrt64\\bin"
+    env["PATH"] = f"{REPO_ROOT};{REPO_ROOT / 'bin'};" + env.get("PATH", "") + os.pathsep + cc_dir()
     return env
 
 
@@ -190,7 +191,7 @@ def test_control_flow_statements_line_directives(tmp_path):
 
 
 def test_debugger_gdb_backtrace_reports_source_line(tmp_path):
-    gdb_path = shutil.which("gdb") or r"C:\msys64\ucrt64\bin\gdb.exe"
+    gdb_path = shutil.which("gdb") or "gdb"
     if not os.path.exists(gdb_path):
         pytest.skip("gdb not available for debugger backtrace test")
 

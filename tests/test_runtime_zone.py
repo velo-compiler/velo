@@ -31,6 +31,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import cc_path
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 RUNTIME_DIR = REPO_ROOT / "runtime"
@@ -312,7 +313,7 @@ def find_cc() -> str:
         found = shutil.which(name)
         if found:
             return found
-    for candidate in (r"C:\msys64\ucrt64\bin\gcc.exe", r"C:\msys64\mingw64\bin\gcc.exe"):
+    for candidate in (cc_path(), cc_path()):
         p = Path(candidate)
         if p.exists():
             return str(p)

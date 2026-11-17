@@ -1,12 +1,13 @@
 import subprocess
 import pytest
 from pathlib import Path
+from conftest import velo_exe
 
 def _run_stage2(cmd: list) -> subprocess.CompletedProcess:
-    velo_exe = Path("bin/velo.exe").resolve()
-    if not velo_exe.exists():
+    velo_bin = Path(str(velo_exe())).resolve()
+    if not velo_bin.exists():
         pytest.skip("bin/velo.exe not built yet")
-    full_cmd = [str(velo_exe)] + cmd
+    full_cmd = [str(velo_bin)] + cmd
     return subprocess.run(full_cmd, capture_output=True, text=True)
 
 def test_if_expr_std_test():

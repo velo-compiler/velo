@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 from test_allocators import run_stage
+from conftest import velo_exe
 
 INTERP_PROGRAM = """use sys.io
 
@@ -277,7 +278,7 @@ act main() -> i32 {
                 c_path = Path(tmp_dir) / "test.c"
                 src_path.write_text(code, encoding="utf-8")
                 res = subprocess.run(
-                    ["bin/velo.exe", "emit-c", str(src_path), "-o", str(c_path)],
+                    [str(velo_exe()), "emit-c", str(src_path), "-o", str(c_path)],
                     capture_output=True,
                     text=True,
                     encoding="utf-8",

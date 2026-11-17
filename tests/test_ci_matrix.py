@@ -9,13 +9,14 @@ import sys
 import subprocess
 from pathlib import Path
 import pytest
+from conftest import velo_exe
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 CI_YML = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 BOOTSTRAP_SH = REPO_ROOT / "scripts" / "bootstrap.sh"
 BOOTSTRAP_BAT = REPO_ROOT / "scripts" / "bootstrap.bat"
 CHECK_DET = REPO_ROOT / "scripts" / "check_determinism.py"
-VELO_EXE = REPO_ROOT / "bin" / ("velo.exe" if sys.platform == "win32" else "velo")
+VELO_EXE = velo_exe()
 
 def test_ci_workflow_exists_and_configured():
     """Verify that .github/workflows/ci.yml exists and contains all required matrix configurations."""

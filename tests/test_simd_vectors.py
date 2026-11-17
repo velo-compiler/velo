@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import pytest
+from conftest import velo_exe
 
 def _write(tmp_path, name, content):
     p = tmp_path / name
@@ -17,10 +18,10 @@ def _run_stage1(args):
     )
 
 def _run_stage2(args):
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native stage 2 test")
     return subprocess.run(
-        ["bin/velo.exe"] + args,
+        [str(velo_exe())] + args,
         capture_output=True,
         text=True
     )

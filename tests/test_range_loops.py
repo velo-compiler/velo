@@ -3,6 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 import pytest
+from conftest import cc_dir, velo_exe
 
 def test_infinite_loop(tmp_path):
     source = tmp_path / "test_inf.vl"
@@ -26,7 +27,7 @@ act main() -> i32 {
     assert res_py.returncode == 0
     assert "count=5" in res_py.stdout
 
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "count=5" in res_sh.stdout
 
@@ -50,7 +51,7 @@ act main() -> i32 {
     assert res_py.returncode == 0
     assert "sum=10" in res_py.stdout
 
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "sum=10" in res_sh.stdout
 
@@ -76,7 +77,7 @@ act main() -> i32 {
     assert res_py.returncode == 0
     assert "n=5, it_sum=10" in res_py.stdout
 
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "n=5, it_sum=10" in res_sh.stdout
 
@@ -114,7 +115,7 @@ act main() -> i32 {
     assert res_py.returncode == 0
     assert "fwd_step=20, rev_auto=15, rev_step=30" in res_py.stdout
 
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "fwd_step=20, rev_auto=15, rev_step=30" in res_sh.stdout
 
@@ -152,7 +153,7 @@ act main() -> i32 {
     assert res_py.returncode == 0
     assert "inc_sum=15, inc_step=30, inc_rev=15" in res_py.stdout
 
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "inc_sum=15, inc_step=30, inc_rev=15" in res_sh.stdout
 
@@ -176,8 +177,8 @@ act main() -> i32 {
 
     exe = tmp_path / "test_count_expr.exe"
     env = dict(os.environ)
-    env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
-    build_res = subprocess.run(["bin/velo.exe", "build", str(source), "-o", str(exe)], env=env, capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    env["PATH"] = cc_dir() + ";" + env.get("PATH", "")
+    build_res = subprocess.run([str(velo_exe()), "build", str(source), "-o", str(exe)], env=env, capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert build_res.returncode == 0
     try:
         res_sh = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", timeout=1.0)
@@ -217,8 +218,8 @@ act main() -> i32 {
 
     exe = tmp_path / "test_large_range.exe"
     env = dict(os.environ)
-    env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
-    build_res = subprocess.run(["bin/velo.exe", "build", str(source), "-o", str(exe)], env=env, capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    env["PATH"] = cc_dir() + ";" + env.get("PATH", "")
+    build_res = subprocess.run([str(velo_exe()), "build", str(source), "-o", str(exe)], env=env, capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert build_res.returncode == 0
     try:
         res_sh = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", timeout=2.0)
@@ -255,8 +256,8 @@ act main() -> i32 {
 
     exe = tmp_path / "test_dyn_range.exe"
     env = dict(os.environ)
-    env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
-    build_res = subprocess.run(["bin/velo.exe", "build", str(source), "-o", str(exe)], env=env, capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    env["PATH"] = cc_dir() + ";" + env.get("PATH", "")
+    build_res = subprocess.run([str(velo_exe()), "build", str(source), "-o", str(exe)], env=env, capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert build_res.returncode == 0
     try:
         res_sh = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", timeout=2.0)
@@ -279,7 +280,7 @@ act main() -> i32 {
 }
 """, encoding="utf-8")
 
-    res = subprocess.run(["bin/velo.exe", "check", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res = subprocess.run([str(velo_exe()), "check", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res.returncode != 0
     assert "Range loop step must be greater than zero" in res.stdout
 
@@ -301,8 +302,8 @@ act main() -> i32 {
 
     exe = tmp_path / "test_dyn_zero_step.exe"
     env = dict(os.environ)
-    env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
-    build_res = subprocess.run(["bin/velo.exe", "build", str(source), "-o", str(exe)], env=env, capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    env["PATH"] = cc_dir() + ";" + env.get("PATH", "")
+    build_res = subprocess.run([str(velo_exe()), "build", str(source), "-o", str(exe)], env=env, capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert build_res.returncode == 0
     try:
         res_sh = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", timeout=1.0)

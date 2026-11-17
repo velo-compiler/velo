@@ -18,12 +18,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 import pytest
+from conftest import cc_dir, velo_exe
 
 
 def get_build_env():
     """Returns an environment with ucrt64 GCC in PATH for compiling generated C."""
     env = dict(os.environ)
-    ucrt_bin = r"C:\msys64\ucrt64\bin"
+    ucrt_bin = cc_dir()
     if os.path.exists(ucrt_bin) and ucrt_bin not in env.get("PATH", ""):
         env["PATH"] = ucrt_bin + ";" + env.get("PATH", "")
     return env
@@ -37,7 +38,7 @@ def run_velo_source(source_code: str, timeout: float = 2.0) -> subprocess.Comple
         src_path.write_text(source_code, encoding="utf-8")
 
         build_res = subprocess.run(
-            ["bin/velo.exe", "build", str(src_path), "-o", str(exe_path)],
+            [str(velo_exe()), "build", str(src_path), "-o", str(exe_path)],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -67,7 +68,7 @@ def check_velo_source_json(source_code: str) -> subprocess.CompletedProcess:
         src_path.write_text(source_code, encoding="utf-8")
 
         return subprocess.run(
-            ["bin/velo.exe", "check", str(src_path), "--json"],
+            [str(velo_exe()), "check", str(src_path), "--json"],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -124,7 +125,7 @@ act main() -> i32 {
 def test_std_fmt_itoa_full_suite():
     """Run native std/tests/fmt/itoa_test.vl verifying std.fmt formatting correctness."""
     res = subprocess.run(
-        ["bin/velo.exe", "run", "std/tests/fmt/itoa_test.vl"],
+        [str(velo_exe()), "run", "std/tests/fmt/itoa_test.vl"],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -138,7 +139,7 @@ def test_std_fmt_itoa_full_suite():
 def test_std_fmt_ftoa_full_suite():
     """Run native std/tests/fmt/ftoa_test.vl verifying float formatting correctness."""
     res = subprocess.run(
-        ["bin/velo.exe", "run", "std/tests/fmt/ftoa_test.vl"],
+        [str(velo_exe()), "run", "std/tests/fmt/ftoa_test.vl"],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -156,7 +157,7 @@ def test_std_fmt_ftoa_full_suite():
 def test_std_str_builder_full_suite():
     """Run native std/tests/str/builder_test.vl verifying StrBuilder 64-bit integer appending."""
     res = subprocess.run(
-        ["bin/velo.exe", "run", "std/tests/str/builder_test.vl"],
+        [str(velo_exe()), "run", "std/tests/str/builder_test.vl"],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -204,7 +205,7 @@ act main() -> i32 {
 def test_std_json_writer_full_suite():
     """Run native std/tests/json/writer_test.vl verifying full JSON serialization."""
     res = subprocess.run(
-        ["bin/velo.exe", "run", "std/tests/json/writer_test.vl"],
+        [str(velo_exe()), "run", "std/tests/json/writer_test.vl"],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -248,7 +249,7 @@ act main() -> i32 {
 def test_std_net_addr_full_suite():
     """Run native std/tests/net/addr_test.vl verifying full network address formatting."""
     res = subprocess.run(
-        ["bin/velo.exe", "run", "std/tests/net/addr_test.vl"],
+        [str(velo_exe()), "run", "std/tests/net/addr_test.vl"],
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -296,7 +297,7 @@ act main() -> i32 {
 def test_std_time_calendar_full_suite():
     """Run native std/tests/time/calendar_test.vl verifying full calendar formatting."""
     res = subprocess.run(
-        ["bin/velo.exe", "run", "std/tests/time/calendar_test.vl"],
+        [str(velo_exe()), "run", "std/tests/time/calendar_test.vl"],
         capture_output=True,
         text=True,
         encoding="utf-8",

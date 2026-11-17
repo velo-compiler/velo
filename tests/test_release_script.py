@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from release_meta import REPO_ROOT, read_version
+from conftest import velo_exe
 
 RELEASE_PY = REPO_ROOT / "scripts" / "release.py"
 
@@ -136,7 +137,7 @@ def test_emit_c_output_depends_on_source_path_spelling(tmp_path):
 
     from release_meta import REPO_ROOT as root
 
-    velo = root / "bin" / "velo.exe"
+    velo = velo_exe()
     if not velo.exists():
         pytest.skip("compiler binary not built")
 
@@ -177,7 +178,7 @@ def test_committed_bootstrap_matches_relative_invocation(tmp_path):
 
     from release_meta import REPO_ROOT as root
 
-    velo = root / "bin" / "velo.exe"
+    velo = velo_exe()
     if not velo.exists():
         pytest.skip("compiler binary not built")
 

@@ -3,10 +3,11 @@ import subprocess
 from pathlib import Path
 import shutil
 import pytest
+from conftest import cc_dir, velo_exe
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
-VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
-MSYS2_BIN = r"C:\msys64\ucrt64\bin"
+VELO_EXE = velo_exe()
+MSYS2_BIN = cc_dir()
 
 
 def get_env():

@@ -3,11 +3,12 @@ import subprocess
 import os
 import shutil
 from pathlib import Path
+from conftest import velo_exe
 
 class TestVeloFormatter(unittest.TestCase):
     def setUp(self):
         self.root_dir = Path(__file__).parent.parent.resolve()
-        self.velo_exe = self.root_dir / "bin" / "velo.exe"
+        self.velo_exe = velo_exe()
         self.assertTrue(self.velo_exe.exists(), "bin/velo.exe does not exist")
         self.cache_dir = self.root_dir / ".velo_cache" / "fmt_tests"
         self.cache_dir.mkdir(parents=True, exist_ok=True)

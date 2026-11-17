@@ -1,6 +1,7 @@
 import subprocess
 import sys
 from pathlib import Path
+from conftest import velo_exe
 
 def test_raw_strings_python(tmp_path):
     source = tmp_path / "raw.vl"
@@ -34,7 +35,7 @@ raw \\n text`
 }
 """, encoding="utf-8")
 
-    res = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res.returncode == 0
     assert "multi\nline\nraw \\n text" in res.stdout or ("multi" in res.stdout and "raw \\n text" in res.stdout)
 
@@ -65,7 +66,7 @@ act main() -> i32 {
     assert "Symbol: © and ❤ and hex A" in res_py.stdout
 
     # Run with self-hosted compiler
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "All char escapes match!" in res_sh.stdout
     assert "Symbol: © and ❤ and hex A" in res_sh.stdout
@@ -79,7 +80,7 @@ def test_example_17_e2e():
     assert "[SUCCESS] Milestone 1.4: String & Character Escapes Verified!" in res_py.stdout
 
     # Test with Self-Hosted Stage 2
-    res_sh = subprocess.run(["bin/velo.exe", "run", example_path], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", example_path], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "[SUCCESS] Milestone 1.4: String & Character Escapes Verified!" in res_sh.stdout
 
@@ -108,7 +109,7 @@ act main() -> i32 {
     assert "All multibyte UTF-8 char literals match!" in res_py.stdout
 
     # Run with self-hosted compiler (Stage 2)
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "All multibyte UTF-8 char literals match!" in res_sh.stdout
 

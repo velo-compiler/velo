@@ -4,14 +4,13 @@ import sys
 import os
 import shutil
 from pathlib import Path
+from conftest import velo_exe
 
 class TestCcBackend(unittest.TestCase):
     def setUp(self):
         self.root_dir = Path(__file__).parent.parent.resolve()
         self.velo_py = self.root_dir / "velo.py"
-        self.velo_exe = self.root_dir / "bin" / ("velo.exe" if sys.platform == "win32" else "velo")
-        if not self.velo_exe.exists() and (self.root_dir / "bin" / "velo.exe").exists():
-            self.velo_exe = self.root_dir / "bin" / "velo.exe"
+        self.velo_exe = velo_exe()
         self.cache_dir = self.root_dir / ".velo_cache"
         self.cache_dir.mkdir(exist_ok=True)
         self.sample_src = self.cache_dir / "cc_test_sample.vl"

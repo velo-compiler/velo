@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import pytest
+from conftest import velo_exe
 
 DIAG_KEYS = {"file", "line", "col", "severity", "message"}
 
@@ -76,10 +77,10 @@ def _run_stage1(args):
 
 
 def _run_native(args):
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native test")
     return subprocess.run(
-        ["bin/velo.exe"] + args,
+        [str(velo_exe())] + args,
         capture_output=True,
         text=True
     )
@@ -223,7 +224,7 @@ def test_check_pretty_parse_error_native(tmp_path):
 
 def test_check_parse_error_position_parity(tmp_path):
     """First parse diagnostic must land on the same line/col in both compilers."""
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native test")
     path = _write(tmp_path, "broken.vl", PARSE_BROKEN_PROGRAM)
     py_report = json.loads(_run_stage1(["check", path, "--json"]).stdout)

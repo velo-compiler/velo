@@ -15,6 +15,7 @@ import subprocess
 import sys
 
 import pytest
+from conftest import velo_exe
 
 # `{s.len()}` - `s` is a string, so member access is resolved in the emit lane.
 INTERP_MEMBER_ERROR = """use std.io
@@ -55,12 +56,12 @@ def _write(tmp_path, name, content):
 
 @pytest.fixture(scope="module", autouse=True)
 def _require_native():
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native tests")
 
 
 def _native(args):
-    return subprocess.run(["bin/velo.exe"] + args, capture_output=True, text=True)
+    return subprocess.run([str(velo_exe())] + args, capture_output=True, text=True)
 
 
 @pytest.mark.parametrize("source", [INTERP_MEMBER_ERROR, INTERP_ARITH_ERROR],

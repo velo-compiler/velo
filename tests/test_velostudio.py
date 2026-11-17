@@ -8,10 +8,11 @@ import os
 import subprocess
 import unittest
 from pathlib import Path
+from conftest import cc_dir, velo_exe
 
 ROOT = Path(__file__).resolve().parent.parent
-VELO_EXE = ROOT / "bin" / "velo.exe"
-UCRT64_BIN = Path(r"C:\msys64\ucrt64\bin")
+VELO_EXE = velo_exe()
+UCRT64_BIN = Path(cc_dir())
 
 def get_env() -> dict:
     env = os.environ.copy()

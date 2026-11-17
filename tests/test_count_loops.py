@@ -9,13 +9,14 @@ import os
 import subprocess
 import tempfile
 import pytest
+from conftest import cc_dir, velo_exe
 
-COMPILER = "bin/velo.exe"
+COMPILER = str(velo_exe())
 
 
 def get_env():
     env = dict(os.environ)
-    env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
+    env["PATH"] = cc_dir() + ";" + env.get("PATH", "")
     return env
 
 

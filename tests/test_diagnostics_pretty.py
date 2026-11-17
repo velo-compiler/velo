@@ -24,6 +24,7 @@ import subprocess
 import sys
 
 import pytest
+from conftest import velo_exe
 
 
 PARSE_BROKEN = """use sys.io
@@ -107,10 +108,10 @@ def _run_stage1(args):
 
 
 def _run_native(args):
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native test")
     return subprocess.run(
-        ["bin/velo.exe"] + args,
+        [str(velo_exe())] + args,
         capture_output=True,
         text=True
     )
@@ -346,7 +347,7 @@ def test_semantic_row_stage1_block_free(tmp_path):
 def test_block_shape_parity_gutter_and_caret(tmp_path):
     """6.7 divergence means row WORDINGS differ; the block under the FIRST
     row pins the same gutter line and the same col-1 caret bytes."""
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native test")
     path = _write(tmp_path, "broken.vl", PARSE_BROKEN)
     s1 = _run_stage1(["check", path])
@@ -358,7 +359,7 @@ def test_block_shape_parity_gutter_and_caret(tmp_path):
 
 
 def test_block_position_parity_first_row(tmp_path):
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native test")
     path = _write(tmp_path, "eof.vl", EOF_BRACE)
     py_report = json.loads(_run_stage1(["check", path, "--json"]).stdout)
@@ -371,7 +372,7 @@ def test_block_position_parity_first_row(tmp_path):
 # ---------------- 6.3 S3: Span carets and lexer warnings ----------------
 
 def test_lexer_warning_blocks_native(tmp_path):
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native test")
     # Unclosed block comment: warning row + warning block with span carets (^^)
     p1 = _write(tmp_path, "warn_comment.vl", "/* unclosed comment\nact main() -> i32 { return 0; }\n")
@@ -431,7 +432,7 @@ def test_color_modes_stage1(tmp_path):
 
 
 def test_color_modes_native(tmp_path):
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native test")
     path = _write(tmp_path, "broken.vl", PARSE_BROKEN)
 

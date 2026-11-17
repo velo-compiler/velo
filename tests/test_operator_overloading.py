@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import pytest
+from conftest import velo_exe
 
 def test_operator_overloading_execution():
     result = subprocess.run(
@@ -39,7 +40,7 @@ def test_operator_overloading_emit_c():
 
 def test_operator_overloading_native():
     import os
-    exe = "bin/velo.exe"
+    exe = str(velo_exe())
     if not os.path.exists(exe):
         pytest.skip("bin/velo.exe not built")
     result = subprocess.run([exe, "run", "examples/25_operator_overloading.vl"], capture_output=True, text=True)

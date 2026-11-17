@@ -3,9 +3,10 @@ import re
 import subprocess
 import pytest
 from pathlib import Path
+from conftest import cc_dir, velo_exe
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
-VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
+VELO_EXE = velo_exe()
 
 CONFORMANCE_VL = REPO_ROOT / "std" / "tests" / "io" / "print_api_conformance_test.vl"
 
@@ -74,8 +75,8 @@ PARITY_STDERR = (
 
 def get_env():
     env = os.environ.copy()
-    if r"C:\msys64\ucrt64\bin" not in env.get("PATH", ""):
-        env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
+    if cc_dir() not in env.get("PATH", ""):
+        env["PATH"] = cc_dir() + ";" + env.get("PATH", "")
     return env
 
 def test_std_io_handle():

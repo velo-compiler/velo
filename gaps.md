@@ -766,6 +766,77 @@ fails when a job has no link or the link's commit SHA is not an ancestor of
 `bin/velo.exe` literals from tests. Remove the `Popen` monkeypatches once the
 paths are correct. Gate: `grep -rl "msys64" tests/` is empty.
 
+### 76.3 Completion Record
+
+**Former defect.** 129 test files reached for the toolchain through literal
+paths: 62 appended `C:\msys64\ucrt64\bin` to `PATH`, 99 spelled the compiler as
+`bin/velo.exe` (either as a `Path` join or as a bare string in an argv list), and
+`tests/conftest.py` patched `subprocess.Popen` on both platforms to rewrite
+those paths at call time so the suite would pass anyway.
+
+The result was a harness that could not work anywhere but the maintainer's
+machine, and a `Popen` patch that made the breakage invisible. `bootstrap.sh`
+produces `bin/velo`, not `bin/velo.exe`; MSYS2 does not exist on Linux or macOS.
+The two Linux jobs and two macOS jobs in `.github/workflows/ci.yml` were
+therefore dead on arrival, which is why their green state had never been
+observed. The `Popen` shim is the real defect: a test process that rewrites an
+executable path is asserting about a different path than the one it wrote.
+
+**Fix applied.**
+
+| Change | Detail |
+| :--- | :--- |
+| `tests/conftest.py` | Now a helper module: `velo_exe()`, `require_velo_exe()`, `velo_exe_or_none()`, `cc_path()`, `cc_dir()`, `cc_env()`, `is_windows()`. Both `Popen` monkeypatches and the POSIX symlink shim deleted. |
+| `velo_exe()` | Resolves `VELO_BIN` (so a CI job can point at `velo_msvc.exe`), then `bin/velo.exe`, then `bin/velo`. Deliberately does not raise when nothing is built: 60+ call sites guard with `velo_exe().exists()`, and raising would turn every skip into a collection error. `require_velo_exe()` is the loud variant. |
+| `cc_path()` | Honours `CC`, else the first of gcc/clang/cc on `PATH`. Returns a bare name so `subprocess` does not depend on an absolute location. |
+| `cc_dir()` | The compiler's directory, or `""` when it is a bare name. Existing callers append it to `PATH` unconditionally, and an empty component is skipped by the OS, so no call site needed restructuring. |
+| Sweep | 108 files rewritten. `VELO_EXE` definitions became `VELO_EXE = velo_exe()`; 84 bare `"bin/velo.exe"` argv literals became `str(velo_exe())`; 6 msys64 path/toolchain literal families became `cc_dir()`/`cc_path()`. |
+| `tests/test_platform_portability.py` | 11 rows pinning the invariants, including that neither `msys64` nor a compiler path literal reappears and that `conftest` contains no `Popen` patch. |
+
+Prose in skip messages ("bin/velo.exe not built") was deliberately left alone:
+it is a message a human reads, not a path a process uses, and rewriting it would
+have made the diff noisier without changing behaviour. The guard test states
+that distinction so a future reader does not "fix" it back.
+
+**Residual limitation.** The sweep changed how tests find the toolchain, not
+what they assert. A test that was silently depending on an MSYS2-only compiler
+feature would still pass on Windows and now fail on POSIX, which is the point,
+but it means the first real Linux run may surface genuinely platform-specific
+test failures that Windows has been hiding. Those are Phase 70/76 follow-ups,
+not regressions in this change.
+
+**Discovered while verifying (not fixed here).** The full suite surfaced a
+pre-existing flake, reproduced at the parent commit with 1-in-3 frequency:
+`tests/test_integer_literals.py::test_integer_literal_32bit_in_range_values`
+and its siblings fail intermittently, naming a different case each run.
+
+Cause: `src/backend/driver_run.vl:58-63` builds the run artifact path from
+`path_stem_to_str(source_path)` alone, discarding the directory. Every
+parametrized case in that file writes a differently-named probe into its own
+`tmp_path`, but two test functions reuse the same stem (`nowrap64.vl`,
+`in_range.vl`), and any other test anywhere in the suite that writes a file with
+a matching stem targets the same `.velo_cache/<stem>.exe`. `build_executable_all_opts`
+does rebuild unconditionally, so a stale binary is normally overwritten; the
+observed failure mode is the narrow window where the previous case's binary is
+executed while the new one is still being produced. This needs a cache key that
+includes a content or path hash, which is Phase 81 (performance) work because
+hashing every source file on every `velo run` is a deliberate trade-off, not a
+one-line fix.
+
+A second instance of the same class of defect lives in the compiler itself:
+`src/backend/driver_cc.vl:235-236` hardcodes `C:/msys64/ucrt64/bin/gcc.exe` when
+assembling the run command, so `velo run` on any other host silently skips the
+PATH adjustment. That belongs to Phase 70 (portability) and is recorded there.
+
+**Verification.**
+- `python -m pytest tests --collect-only -q` -> 2010 tests collected, 0 errors.
+- `python -m pytest tests/test_platform_portability.py -q` -> 11 passed.
+- Targeted slices exercising rewritten files: 104 passed (`test_check_cli`,
+  `test_std_fs`, `test_std_mem`, `test_conditions`); 50 passed, 2 skipped
+  (`test_cc_backend`, `test_tuple`, both `test_native_lsp` modules,
+  `test_advanced_structs`, `test_build_modes`).
+- Full suite after the sweep: see the run recorded in the commit message.
+
 **76.4** Replace `velo_check_capture.tmp` with a per-process temp path
 (`velo_check_capture_<pid>.tmp`, or `mkstemp`-equivalent inside
 `.velo_cache/`), making `velo check` safe to run concurrently. Test: run 8
@@ -975,7 +1046,7 @@ A language is adopted on its worst debugging session, not its best.
 | `#line` directives are the only debug story | `src/backend/codegen_line.vl:22-28` `emit_line_directive`, opt-out via `--no-line-directives`; nothing generates DWARF info of its own or maps locals |
 | No REPL | `grep -c "repl\|REPL"` over `src/main.vl` + `src/cli_cmd.vl` -> 0 [VERIFIED]; `velo help` has no such command |
 | No incremental compilation | `src/backend/driver.vl:328` `compile_source_to_c_all_opts` parses, monomorphizes, and codegens the whole program every time; `.velo_cache` (`driver_run.vl:18-32`) caches only the output artifact by filename, not by content hash |
-| `.velo_cache` is keyed by source stem | `driver_run.vl:32` builds `.velo_cache/<stem>.exe`; editing a header-like imported module does not invalidate the sibling's artifact if the stem is unchanged |
+| `.velo_cache` is keyed by source stem | `driver_run.vl:32` builds `.velo_cache/<stem>.exe`; editing a header-like imported module does not invalidate the sibling's artifact if the stem is unchanged. Observed as a 1-in-3 flake in `tests/test_integer_literals.py` (two functions reuse the `nowrap64.vl` / `in_range.vl` stems), reproduced at `f2a8b11`. |
 | Diagnostic shapes vary | compare `[Velo Error] semantic:4:20 - unknown io member 'println_int' (functions: ... 60 names)` (`src/backend/codegen_expr.vl`) with `[Velo Error] backend:4:20 - unknown io member 'println_i64' reached codegen` - the second is an internal fallback leaking to the user [VERIFIED by probe] |
 | No error-code registry | messages are inline string literals; nothing can be documented or searched by code |
 | No `velo fmt --check` in CI | `velo fmt` exists (`src/backend/driver_pkg.vl:70`) but no CI job runs it |
@@ -1364,7 +1435,7 @@ listed so they are not rediscovered as surprises.
 | :--- | :--- | :--- | :--- |
 | 422 captured-subprocess test sites lack explicit encoding | recorded in the pre-Phase-69 audit baseline | Windows CI can fail on code-page-dependent output | Swept by Phase 76.3's conftest helper; assert `grep -c "text=True" without encoding` == 0 |
 | ASan/UBSan unverifiable on the maintainer host | sanitizer libs absent locally; `.github/workflows/ci.yml:221` lane unproven | Memory bugs can ship unnoticed | One green full-suite sanitizer run committed (Phase 74.6) |
-| `velo_check_capture.tmp` fixed CWD filename | `src/backend/check.vl:291`, `:335` | Concurrent `velo check` races | Phase 76.4 |
+| `velo_check_capture.tmp` fixed CWD filename | fixed in 76.4: `check_capture_path()` embeds the pid (`src/backend/check.vl`) | Concurrent `velo check` is safe per process; not per thread | None for the CLI; a thread-safe variant needs the capture global made reentrant |
 | 400-line ceiling forces sliver modules | 40+ files under 150 lines in `src/analysis`/`src/backend` | Concept fragmentation, duplicated header contracts | Phase 80.4 (ceiling becomes a consequence, not a constraint) |
 | Frozen Stage-1 Python compiler still in the build story | `AGENTS.md`, `examples/12_stage2_semantics_test.vl` | Double maintenance, false parity signal | Phase 80.5 |
 | `bootstrap.c` is a 2.3 MB generated artifact in review | 67,952 lines | Compiler diffs are unreviewable at the artifact level | Phase 80.6 budget warning + Phase 76 tiering |

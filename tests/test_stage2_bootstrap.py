@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from release_meta import expected_banner_line
+from conftest import cc_dir
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 BIN_DIR = REPO_ROOT / "bin"
@@ -16,8 +17,8 @@ MAIN_VL = REPO_ROOT / "src" / "main.vl"
 
 def get_env():
     env = os.environ.copy()
-    if r"C:\msys64\ucrt64\bin" not in env.get("PATH", ""):
-        env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
+    if cc_dir() not in env.get("PATH", ""):
+        env["PATH"] = cc_dir() + ";" + env.get("PATH", "")
     return env
 
 @pytest.fixture(scope="session", autouse=True)

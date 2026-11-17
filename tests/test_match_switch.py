@@ -4,6 +4,7 @@ import sys
 import tempfile
 from pathlib import Path
 import pytest
+from conftest import velo_exe
 
 def test_on_multi_value_and_else(tmp_path):
     source = tmp_path / "test_on_multi.vl"
@@ -44,7 +45,7 @@ act main() -> i32 {
     assert "r1=one, r2=two_or_three, r3=two_or_three, r5=four_to_six, r9=other" in res_py.stdout
 
     # Self-hosted stage 2
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "r1=one, r2=two_or_three, r3=two_or_three, r5=four_to_six, r9=other" in res_sh.stdout
 
@@ -79,7 +80,7 @@ act main() -> i32 {
     assert "g1=15, g3=65, g4=65, g9=0" in res_py.stdout
 
     # Self-hosted stage 2
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "g1=15, g3=65, g4=65, g9=0" in res_sh.stdout
 
@@ -111,7 +112,7 @@ act main() -> i32 {
     assert "final_score=2121" in res_py.stdout
 
     # Self-hosted stage 2
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "final_score=2121" in res_sh.stdout
 
@@ -136,7 +137,7 @@ act main() -> i32 {
     assert "total=100" in res_py.stdout
 
     # Self-hosted stage 2
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "total=100" in res_sh.stdout
 
@@ -154,7 +155,7 @@ def test_example_19_execution():
     assert "Action for key 2 = attack" in res_py.stdout
 
     # Stage 2
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(example_path)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(example_path)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode == 0
     assert "Status 200: OK" in res_sh.stdout
     assert "Score 10: A+" in res_sh.stdout
@@ -178,7 +179,7 @@ act main() -> i32 {
     res_py = subprocess.run([sys.executable, "velo.py", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_py.returncode != 0
 
-    res_sh = subprocess.run(["bin/velo.exe", "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
+    res_sh = subprocess.run([str(velo_exe()), "run", str(source)], capture_output=True, text=True, encoding="utf-8", cwd=Path.cwd())
     assert res_sh.returncode != 0
 
 
@@ -187,9 +188,9 @@ act main() -> i32 {
 # ==============================================================================
 
 ROOT_DIR = Path(__file__).parent.parent.resolve()
-VELO_EXE = ROOT_DIR / "bin" / ("velo.exe" if os.name == "nt" else "velo")
-if not VELO_EXE.exists() and (ROOT_DIR / "bin" / "velo.exe").exists():
-    VELO_EXE = ROOT_DIR / "bin" / "velo.exe"
+VELO_EXE = velo_exe()
+if not VELO_EXE.exists() and (velo_exe()).exists():
+    VELO_EXE = velo_exe()
 
 
 def build_and_run(source_code: str, timeout: float = 2.0) -> subprocess.CompletedProcess:

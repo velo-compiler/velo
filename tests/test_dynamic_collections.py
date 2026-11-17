@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 from test_allocators import run_stage, assert_parity, ROOT, VELO_PY, VELO_EXE
+from conftest import cc_path
 
 EXAMPLE31 = ROOT / "examples" / "31_shelf_basics.vl"
 EXAMPLE31_LINES = [
@@ -522,7 +523,7 @@ def find_gcc() -> str:
     found = shutil.which("gcc")
     if found:
         return found
-    for candidate in (r"C:\msys64\ucrt64\bin\gcc.exe", r"C:\msys64\mingw64\bin\gcc.exe"):
+    for candidate in (cc_path(), cc_path()):
         if Path(candidate).exists():
             return candidate
     raise RuntimeError("gcc not found \u2014 needed for the runtime fatal harnesses")

@@ -4,15 +4,16 @@ import subprocess
 import unittest
 import tempfile
 from pathlib import Path
+from conftest import cc_dir, velo_exe
 
 class TestMixedComparisons(unittest.TestCase):
     def setUp(self):
         self.root_dir = Path(__file__).parent.parent.resolve()
         self.velo_py = self.root_dir / "velo.py"
-        self.velo_exe = self.root_dir / "bin" / "velo.exe"
+        self.velo_exe = velo_exe()
         self.env = os.environ.copy()
-        if r"C:\msys64\ucrt64\bin" not in self.env.get("PATH", ""):
-            self.env["PATH"] = r"C:\msys64\ucrt64\bin;" + self.env.get("PATH", "")
+        if cc_dir() not in self.env.get("PATH", ""):
+            self.env["PATH"] = cc_dir() + ";" + self.env.get("PATH", "")
 
     def _test_program(self, code: str, expected_output: str):
         with tempfile.TemporaryDirectory() as tmpdir:

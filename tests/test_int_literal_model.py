@@ -8,9 +8,10 @@ import subprocess
 import sys
 from pathlib import Path
 import pytest
+from conftest import velo_exe
 
 ROOT = Path(__file__).resolve().parent.parent
-VELO_EXE = ROOT / "bin" / "velo.exe"
+VELO_EXE = velo_exe()
 NUM_UTILS_PATH = (ROOT / "src" / "common" / "num_utils.vl").as_posix()
 
 

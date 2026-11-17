@@ -5,6 +5,7 @@ import sys
 import pytest
 
 from velo.driver import CompilerDriver
+from conftest import velo_exe
 
 SIMPLE_PROGRAM = """use sys.io
 
@@ -25,7 +26,7 @@ def _run_stage1(args):
     return subprocess.run(cmd, capture_output=True, text=True)
 
 def _run_native(args):
-    cmd = ["bin/velo.exe"] + args
+    cmd = [str(velo_exe())] + args
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
@@ -142,7 +143,7 @@ def test_stage1_cli_conflict(tmp_path):
 # ---------------- Stage 2 Native CLI Tests ----------------
 
 def test_native_cli_build_and_run_debug(tmp_path):
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native test")
     src = _write(tmp_path, "prog.vl", SIMPLE_PROGRAM)
     out = tmp_path / "native_dbg.exe"
@@ -160,7 +161,7 @@ def test_native_cli_build_and_run_debug(tmp_path):
 
 
 def test_native_cli_build_and_run_release(tmp_path):
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native test")
     src = _write(tmp_path, "prog.vl", SIMPLE_PROGRAM)
     out = tmp_path / "native_rel.exe"
@@ -178,7 +179,7 @@ def test_native_cli_build_and_run_release(tmp_path):
 
 
 def test_native_cli_conflict(tmp_path):
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native test")
     src = _write(tmp_path, "prog.vl", SIMPLE_PROGRAM)
     res_b = _run_native(["build", src, "--debug", "--release"])
@@ -193,7 +194,7 @@ def test_native_cli_conflict(tmp_path):
 
 
 def test_native_cli_size_comparison(tmp_path):
-    if not os.path.exists("bin/velo.exe"):
+    if not os.path.exists(str(velo_exe())):
         pytest.skip("bin/velo.exe not built; skipping native test")
     src = _write(tmp_path, "prog.vl", SIMPLE_PROGRAM)
     out_dbg = tmp_path / "dbg.exe"

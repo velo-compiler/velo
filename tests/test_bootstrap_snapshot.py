@@ -7,18 +7,19 @@ import pytest
 import sys
 
 from release_meta import expected_banner_line
+from conftest import cc_dir, velo_exe
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 BOOTSTRAP_C = REPO_ROOT / "bootstrap.c"
 BOOTSTRAP_BAT = REPO_ROOT / "scripts" / "bootstrap.bat"
 BOOTSTRAP_SH = REPO_ROOT / "scripts" / "bootstrap.sh"
-VELO_EXE = REPO_ROOT / "bin" / ("velo.exe" if sys.platform == "win32" else "velo")
+VELO_EXE = velo_exe()
 MAIN_VL = REPO_ROOT / "src" / "main.vl"
 
 def get_env():
     env = os.environ.copy()
     if sys.platform == "win32":
-        env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
+        env["PATH"] = cc_dir() + ";" + env.get("PATH", "")
     return env
 
 def test_bootstrap_c_file_integrity():

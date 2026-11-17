@@ -14,9 +14,10 @@ import os
 import subprocess
 import tempfile
 import pytest
+from conftest import cc_dir, cc_path, velo_exe
 
-COMPILER = "bin/velo.exe"
-GCC = r"C:\msys64\ucrt64\bin\gcc.exe"
+COMPILER = str(velo_exe())
+GCC = cc_path()
 
 
 def has_toolchain():
@@ -28,7 +29,7 @@ pytestmark = pytest.mark.skipif(not has_toolchain(), reason="velo.exe or gcc not
 
 def get_env():
     env = dict(os.environ)
-    env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
+    env["PATH"] = cc_dir() + ";" + env.get("PATH", "")
     return env
 
 

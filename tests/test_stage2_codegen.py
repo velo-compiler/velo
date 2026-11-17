@@ -4,6 +4,7 @@ import sys
 import os
 import shutil
 from pathlib import Path
+from conftest import cc_path
 
 class TestStage2Codegen(unittest.TestCase):
     def setUp(self):
@@ -16,8 +17,8 @@ class TestStage2Codegen(unittest.TestCase):
         gcc_path = shutil.which("gcc")
         if not gcc_path and sys.platform == "win32":
             for candidate in [
-                r"C:\msys64\ucrt64\bin\gcc.exe",
-                r"C:\msys64\mingw64\bin\gcc.exe",
+                cc_path(),
+                cc_path(),
             ]:
                 if os.path.exists(candidate):
                     return candidate

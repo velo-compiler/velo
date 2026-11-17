@@ -34,7 +34,9 @@ from release_meta import (
     read_version_vl,
 )
 
-VELO_EXE = REPO_ROOT / "bin" / ("velo.exe" if sys.platform == "win32" else "velo")
+from conftest import velo_exe
+
+VELO_EXE = velo_exe()
 
 SPEC = REPO_ROOT / "docs" / "SPECIFICATION.md"
 SECURITY = REPO_ROOT / "SECURITY.md"

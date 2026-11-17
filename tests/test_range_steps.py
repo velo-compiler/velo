@@ -21,17 +21,18 @@ import subprocess
 import tempfile
 from pathlib import Path
 import pytest
+from conftest import cc_dir, velo_exe
 
 ROOT_DIR = Path(__file__).parent.parent.resolve()
-VELO_EXE = ROOT_DIR / "bin" / ("velo.exe" if os.name == "nt" else "velo")
-if not VELO_EXE.exists() and (ROOT_DIR / "bin" / "velo.exe").exists():
-    VELO_EXE = ROOT_DIR / "bin" / "velo.exe"
+VELO_EXE = velo_exe()
+if not VELO_EXE.exists() and (velo_exe()).exists():
+    VELO_EXE = velo_exe()
 
 
 def get_build_env():
     env = dict(os.environ)
     if os.name == "nt":
-        env["PATH"] = r"C:\msys64\ucrt64\bin;" + env.get("PATH", "")
+        env["PATH"] = cc_dir() + ";" + env.get("PATH", "")
     return env
 
 

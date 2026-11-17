@@ -26,11 +26,12 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import velo_exe
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
 GATE = REPO_ROOT / "scripts" / "check_clean_tree.py"
 CI_YML = REPO_ROOT / ".github" / "workflows" / "ci.yml"
-VELO_EXE = REPO_ROOT / "bin" / ("velo.exe" if sys.platform == "win32" else "velo")
+VELO_EXE = velo_exe()
 
 
 def run_gate(root, *command, timeout=120):

@@ -2,10 +2,11 @@ import unittest
 import subprocess
 import sys
 from pathlib import Path
+from conftest import velo_exe
 
 ROOT = Path(__file__).parent.parent.resolve()
 VELO_PY = ROOT / "velo.py"
-VELO_EXE = ROOT / "bin" / "velo.exe"
+VELO_EXE = velo_exe()
 
 
 def run_stage(stage: str, program: str, name: str) -> subprocess.CompletedProcess:

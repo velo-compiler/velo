@@ -19,8 +19,10 @@ from pathlib import Path
 
 import pytest
 
+from conftest import velo_exe
+
 REPO_ROOT = Path(__file__).parent.parent.resolve()
-VELO_EXE = REPO_ROOT / "bin" / ("velo.exe" if sys.platform == "win32" else "velo")
+VELO_EXE = velo_exe()
 
 sys.path.insert(0, str(REPO_ROOT / "tests"))
 from test_loop_induction_width import (  # noqa: E402
