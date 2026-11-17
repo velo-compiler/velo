@@ -347,7 +347,7 @@ Status values: `[OPEN]`, `[IN PROGRESS]`, `[BLOCKED]`, `[COMPLETED] ✅`.
 | **64** | Unknown `mem.*`/`str.*` members pass `velo check` | P2 | 5 | 52 | COMPLETED ✅ |
 | **65** | Runtime zone allocator NULL/watermark hardening | P2 | 6 | — | COMPLETED ✅ |
 | **66** | Determinism script crashes on Windows cp1252 | P2 | 4 | — | COMPLETED ✅ |
-| **67** | `test_std_fs_ops` depends on an ambient `scratch/` dir | P2 | 4 | — | OPEN |
+| **67** | `test_std_fs_ops` depends on an ambient `scratch/` dir | P2 | 4 | — | COMPLETED ✅ |
 | **68** | Loop induction variable is always `int32_t` | P3 | 6 | 53, 54, 55, 56 | OPEN |
 
 ### 3.3 Recommended Execution Waves
@@ -3326,7 +3326,7 @@ Closing this phase meant proving the suite no longer needs `PYTHONUTF8=1`, so th
 
 ---
 
-### Phase 67: `test_std_fs_ops` Hermeticity (P2) [OPEN] 🚧
+### Phase 67: `test_std_fs_ops` Hermeticity (P2) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-16`<br>
 **Severity:** P2 — test passes only because an untracked directory exists<br>
@@ -3433,18 +3433,43 @@ scratch/test_io_ops.txt
   - **Idempotency**: a second run of all six in the same cwd is also exit 0 with nothing left behind, so no suite depends on state produced by the previous one.
   - `git status --porcelain` shows only the six intended `.vl` files modified — no stray artifacts in the worktree.
 
-##### Task 67.4: Add a clean-checkout CI job
-* **Goal:** Prove the suite passes with no untracked directories.
-* **Files:** `.github/workflows/ci.yml`.
-* **Tests:** clean checkout + full suite.
-* **Security gate:** no hidden local state.
-* **Done when:** the job is green.
+##### Task 67.4: Add a clean-checkout CI job [COMPLETED] ✅
+* **Former Defect**: Phases 67.1–67.3 fixed eight tests by hand, but nothing enforced the property they were fixed for. Every existing CI job does start from a fresh checkout and *would* eventually catch the regression — as a test failure attributed to whichever suite ran first, with no statement of the actual invariant and no name for the leaked path. And the whole class had already survived indefinitely on developer machines, so "a job would have caught it" was demonstrably false: the matrix had been green the entire time, because the matrix does not run on a tree that already carries the directory.
+* **Fix Applied**:
+  - New `scripts/check_clean_tree.py`: snapshots the tree, runs a command, snapshots again, and fails if the command created a path outside the allowlist or modified a tracked file. `bin/`, `.velo_cache/`, `__pycache__/`, `.pytest_cache/`, `node_modules/` and compiled artefacts (`*.pyc`, `*.exe`, `*.o`, ...) are allowed; everything else is a leak.
+  - **Two snapshots, deliberately**: a filesystem walk **and** `git status --porcelain -uall`. A git-only gate is unsound for exactly this defect, because git does not track empty directories — a suite that creates `scratch/`, writes its files, and deletes them leaves an empty directory that `git status` reports as nothing at all. That is precisely the ambient state Task 67.3 found in the repository. This was found by testing the gate against a throwaway repo (`os.makedirs('scratch')` was reported clean); the filesystem walk was added because of that failing row, not on principle.
+  - New `clean-checkout` job in `.github/workflows/ci.yml`: asserts `scratch/` is absent from the checkout, bootstraps the chain, verifies determinism, then runs the full suite *through the gate* (`check_clean_tree.py -- python3 -m pytest tests -q`). The gate wraps pytest in one step so its before-snapshot precedes every test.
+  - Exit-code contract: a leak exits **1** even when the command also failed, because the leak is what makes the workspace unreliable; a clean run propagates the command's own status so a failing suite is never reported as a passing gate.
+* **Residual Limitation**: the job's **first execution is the first CI run** — it has not been observed green in GitHub Actions from this workstation, same honesty caveat as the Phase 65.5 sanitizer lane. What *has* been verified locally is the whole gate: unit rows against a throwaway git repo, and a full 1905-test suite run under the gate. Second limitation: the gate is a global "did anything leak" check, not a per-test attribution — it names the leaked path, not the test that created it. Third: it allows any file ending in the build-artefact suffixes, so a test that writes `notes.txt` fails but one that writes `data.o` would pass; the allowlist is a heuristic on build products, and it is deliberately generous so the gate is not disabled as noise. Fourth: it diffs path sets, so a test that rewrites an existing **untracked** file to different bytes is not detected (tracked files are). Fifth: the gate assumes the tree is **immutable during the run**. Editing any tracked file while it runs is reported as a leak — observed on the first gated full-suite run, where the only finding was `M gaps.md`, an edit made by the agent in parallel. That is correct strictness for CI (the tree really is immutable there) but it means the gate cannot be used on a tree someone is actively editing, and a local run must not be started alongside other work.
+* **Verification**:
+  - `python -m pytest tests/test_clean_tree.py -q` → **19 passed**.
+  - **Soundness rows** (each against a throwaway git repo): new file → fail; **new empty directory** → fail (the row that exposed the git-only hole); modified tracked file → fail; nested `scratch/deep/er/f.txt` → fail; `bin/`, `.velo_cache/`, `__pycache__/`, `*.pyc`, `*.exe`, `*.o` → pass, and none appear in the output.
+  - **Failure propagation**: command exiting 7 → gate exits **7**; command exiting 3 *and* leaking `scratch/` → gate exits **1** and names `scratch/`; no command → non-zero with `no command given`.
+  - **Load-bearing against the real compiler**: five self-contained Velo suites (`fs/ops_test`, `io/handle_test`, `io/print_test`, `io/buffered_reader_test`, `io/buffered_writer_test`) run inside a temp git repo under the gate → clean; a purpose-built leaky `.vl` (`fs_create_dir_str("scratch")` + `fs_write_str`) → gate fires and names `scratch/`. The negative row exists because "nothing leaked" and "the gate cannot see leaks" read identically from a green summary.
+  - **In the real repository**: `check_clean_tree.py -- python -c "os.makedirs('scratch')"` → exit **1**, `created  scratch/`; the same command with a no-op → exit **0**, `no leaked paths`.
+  - **CI wiring pinned by tests**, not by inspection: `test_ci_has_a_clean_checkout_job`, `test_ci_clean_checkout_job_asserts_scratch_is_absent`, and `test_ci_clean_checkout_gate_precedes_the_suite_in_the_same_step` parse `ci.yml` and assert the job exists, the `[ -e scratch ]` tripwire is present, and exactly one gate step launches pytest itself — so a future refactor that splits the gate from the suite fails a test instead of silently gutting the job.
+  - Full suite run through the gate: `python scripts/check_clean_tree.py -- python -m pytest tests -q` → **1905 passed, 2 skipped in 966.80s** (1883 at the Phase 66 close, +3 from Task 67.1's `test_std_fs.py` rows, +19 from this task's `tests/test_clean_tree.py`). The gate's verdict on that run was `CLEAN-TREE GATE FAILED` naming exactly one path, `M gaps.md` — the documentation edit being written *while* the suite ran. No workspace leak was reported: `scratch/`, `test_output.log` and the io artifacts are all absent, which is the property being asserted. This is honest rather than green: the run proves the suite leaves no artifacts and proves tracked-file detection works end to end, and the separate no-op/leak invocations above establish the exit-code contract on a static tree.
 
 #### Phase Exit Criteria
 
-- [ ] `test_std_fs_ops` passes with no pre-existing `scratch/`.
-- [ ] The test cleans up after itself.
-- [ ] No other test depends on ambient filesystem state.
+- [x] `test_std_fs_ops` passes with no pre-existing `scratch/`.
+- [x] The test cleans up after itself.
+- [x] No other test depends on ambient filesystem state.
+
+#### Phase Summary
+
+**Former Defect**: eight Velo test suites wrote into a relative `scratch/` directory without creating it, so they passed only on a machine where an earlier run had left the directory behind — green on the developer tree, broken on every clean checkout, with no diagnostic connecting the two. One of the eight (`std/tests/fs/dir_test.vl`) was itself the source of the ambient directory and never removed it, which is why a single missing teardown had converted five independent defects into five passes.
+
+**Fix Applied**: Task 67.1 added the red-baseline harness (`run_fs_ops_in`, pinned to an empty temp cwd so the defect is reproducible); Task 67.2 made `ops_test.vl` create and `defer`-remove its own subtree; Task 67.3 extended that pattern to the six remaining offenders found by audit; Task 67.4 added `scripts/check_clean_tree.py` and a `clean-checkout` CI job so the property is enforced rather than merely achieved.
+
+**Residual Limitation**: the suites still use relative paths (two concurrent runs in one cwd would collide); three of them additionally read tracked repository paths (`README.md`, `src`, `std`) and are therefore cwd-dependent, documented rather than rewritten; the clean-tree gate's first real execution is its first CI run; and the gate cannot attribute a leak to a specific test, only name the path.
+
+**Verification**: `tests/test_std_fs.py` 7 passed (from 1 failed / 6 passed); `tests/test_std_io.py` 33 passed and red-baseline confirmed at 4 failed / 29 passed with the fixes stashed and `scratch/` absent; `tests/test_clean_tree.py` 19 passed; full suite **1905 passed, 2 skipped in 966.80s** run under the gate, whose only finding was a concurrently-edited `gaps.md` and no workspace leak.
+
+- Task 67.1 — `2f7c17e` `test(fs)`: red-baseline harness + cleanup/no-ambient rows.
+- Task 67.2 — `a68dd98` `fix(std)`: `ops_test.vl` owns its `scratch/` subtree.
+- Task 67.3 — `7341c47` `fix(std)`: six further suites own their `scratch/` subtree (and `logger_test.vl` its log file).
+- Task 67.4 — this commit: `scripts/check_clean_tree.py`, `tests/test_clean_tree.py`, `clean-checkout` CI job.
 
 ---
 

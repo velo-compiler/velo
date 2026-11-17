@@ -171,6 +171,53 @@ jobs:
         run: |
           python -m pytest tests/test_cc_backend.py tests/test_bootstrap_snapshot.py -q
 
+  clean-checkout:
+    name: Clean checkout (no hidden local state)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
+      # Phase 67: the suite must pass with no untracked directory present.
+      # Eight Velo tests used to write into a relative `scratch/` without
+      # creating it, so they passed only on machines where an earlier run had
+      # left the directory behind. `actions/checkout` guarantees a clean tree
+      # here, and the step below asserts it stays clean.
+      - name: Confirm the checkout has no ambient scratch directory
+        run: |
+          if [ -e scratch ]; then
+            echo "::error::a scratch/ directory exists in a clean checkout"
+            exit 1
+          fi
+          echo "No ambient scratch/ directory present."
+
+      - name: Bootstrap self-hosted Velo compiler (3-stage Gen1 -> Gen2 -> Gen3)
+        run: |
+          bash scripts/bootstrap.sh --full
+
+      - name: Verify bootstrap determinism
+        run: |
+          python3 scripts/check_determinism.py
+
+      # The gate runs under git, which is initialized regardless, so it diffs
+      # the filesystem (catches new and empty directories) and git status
+      # (catches modifications to tracked files) before and after the suite.
+      # Build products are allowlisted; anything else fails the job.
+      - name: Run test suite under the clean-tree gate
+        run: |
+          python3 scripts/check_clean_tree.py -- python3 -m pytest tests -q
+
   sanitizer:
     name: Linux Sanitizer (ASan + UBSan - clang)
     runs-on: ubuntu-24.04
