@@ -63,7 +63,7 @@ that core and a usable product.
 | Phase | Title | Severity | Verified | Tasks | Est. commits |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **70** | POSIX / macOS Foundation Portability | P0 | yes | 8 | 8 |
-| **71** | Release Engineering and Legal Provenance | P0 | yes | 6 | 4 |
+| **71** | Release Engineering and Legal Provenance | P0 | **COMPLETED** (71.4 tag pending) | 6 | 5 |
 | **72** | Package Ecosystem That Actually Fetches | P0 | yes | 7 | 7 |
 | **73** | Transport Security and Cryptographic Completeness | P0 | yes | 8 | 8 |
 | **74** | Undefined-Behavior Containment | P0 | yes | 7 | 7 |
@@ -215,7 +215,7 @@ undefined symbol from the Win32 set, on every non-Windows host.
 
 ---
 
-# Phase 71: Release Engineering and Legal Provenance (P0) - OPEN
+# Phase 71: Release Engineering and Legal Provenance (P0) - [COMPLETED] ✅
 
 ## Defect
 
@@ -280,6 +280,72 @@ emit `velo-<version>-<plat>.zip` with `velo`, `std/`, `runtime/`,
 - `velo version` and `CHANGELOG.md` agree.
 - `git describe --tags` yields `v2.0.0-pre` or later.
 - A release archive builds from a clean checkout on Windows.
+
+## Completion Record
+
+**Former defect.** The tree had no license, no `VERSION`, no `CHANGELOG.md`, no
+`CONTRIBUTING.md`, no release script and no tag. `velo version` printed a
+hand-written literal at `src/main.vl:36`, so the CLI string, the docs, and any
+future artifact could drift independently. Legally the default was "all rights
+reserved", which is a hard block on use, forking, or vendoring by anyone else.
+
+**Fix applied.**
+
+| Task | Commit | Deliverable |
+| :--- | :--- | :--- |
+| 71.1 | `95aac3f` | Dual `MIT OR Apache-2.0`: `LICENSE-MIT`, `LICENSE-APACHE`, SPDX in `README.md`/`SECURITY.md`, `.gitattributes`, `tests/test_license_provenance.py` (8 rows) |
+| 71.2 | `567ab5f` | `VERSION` (`2.0.0-pre`) as the single source; `src/common/version.vl` holds `VELO_VERSION`/`VELO_VERSION_LABEL`/`VELO_TARGET_LABEL`; banner interpolated at `src/main.vl`; `tests/release_meta.py` + `tests/test_release_metadata.py` (7 rows) |
+| 71.3 | `a275505` | `CHANGELOG.md` (Keep a Changelog) with an `[Unreleased]` section, a leading "Known limitations" list citing the tracking phase, and Added/Changed/Fixed/Security backfilled from `git log` with a short sha per entry; `tests/test_changelog.py` (7 rows) |
+| 71.5 | `4ad94ae` | `CONTRIBUTING.md` (9 sections) + `tests/test_contributing.py` (8 rows) pinning each gate command verbatim |
+| 71.6 | this commit | `scripts/release.py` with six gates, a zip archive and `SHA256SUMS`; `tests/test_release_script.py` (14 rows) |
+
+The activity-consistency decision was orthogonal to the licence: `bootstrap.c`
+is a generated artifact and is covered by the same dual licence, stated under
+`README.md`'s "Generated artifacts" heading so a redistributor does not have to
+infer it.
+
+**Residual limitation.**
+
+- **71.4 is not done.** No tag `v2.0.0-pre` exists yet, so `git describe` still
+  yields a bare SHA and Phase 76's CI has no release target to key on. The tag
+  is deliberately held until the release commit is chosen; creating it earlier
+  would tag a tree that has not been through the full gate chain in this phase.
+  This is recorded in the Phase 85 residual table.- `scripts/release.py` packages the compiler binary and the sources, not a
+  prebuilt library triple. A consumer on a platform without a C compiler still
+  cannot use the archive, which is inherent to the "compile C on first use"
+  model rather than a packaging defect (Phase 70 gates the platform set).
+- The archive is Windows-only in practice: it embeds a `velo.exe`, and the
+  bundled `bootstrap.c` cannot link off Windows (Phase 70). The filename says
+  `windows-x86_64` so the limitation is visible at download time rather than
+  discovered at run time.
+- ASan/UBSan are unverifiable on the maintainer host, so the sanitizer lane's
+  first real evidence will come from CI, not from this phase (Phase 74.6,
+  Phase 85).
+
+**Verification.**
+
+- `python -m pytest tests/test_release_metadata.py tests/test_release_script.py
+  tests/test_changelog.py tests/test_contributing.py tests/test_license_provenance.py
+  -q` → all pass; `tests/test_bootstrap_snapshot.py` → 5 passed
+  (byte-identical snapshot).
+- `python scripts/release.py --skip-tests --out <tmp>` →
+  `dist/velo-2.0.0-pre-windows-x86_64.zip`, 1,224,327 bytes, 313 entries,
+  SHA-256 `eb2dc2a2ab5face29763f5a3ee891c7e85f1beb2000a7f9add08c1b4e8de5bef`.
+- The archive was extracted to a scratch directory and built with only a C
+  compiler: `gcc -O2 -std=c99 -I runtime bootstrap.c -o velo_built -lm` →
+  `Velo v2.0.0-pre (Self-Hosted Native Compiler)`; a probe program using
+  `std/io/print.vl` compiled and printed `archive ok`. This is the exit
+  criterion "a release archive builds from a clean checkout", executed rather
+  than asserted.
+- Building the release exposed a real defect in the gate itself, fixed in this
+  commit: `gate_bootstrap_snapshot` passed an absolute source path, and `#line`
+  directives embed the path verbatim (`src/backend/codegen_line.vl:6-17` only
+  normalizes `\` to `/`), so a consistent tree reported a mismatch
+  (2,871,783 bytes absolute vs 2,302,641 relative). The gate now spells the
+  source relatively, exactly as the committed snapshot was generated, and three
+  tests pin both the gate's invocation and the underlying compiler behaviour.
+- `velo version` and `CHANGELOG.md` agree on `2.0.0-pre`, enforced by
+  `tests/test_changelog.py` rather than by inspection.
 
 ---
 
@@ -1268,6 +1334,9 @@ listed so they are not rediscovered as surprises.
 | Overlapping `mem.copy`/`mem.set` remain C UB | `docs/gaps_archive.md:181` | Silent corruption on aliased buffers | Phase 74.4 |
 | No `Set`/`Deque`/priority queue | `std/coll/` inventory | Users hand-roll them, inconsistently | Phase 78.8 |
 | `defer` takes a block, not an expression | Phase 58/69 semantics | Verbose cleanup sites | Phase 77.6 |
+| No `v2.0.0-pre` tag yet, so `git describe` yields a bare SHA | `git tag` empty; Phase 71 completion record | Phase 76's CI has no release target to key on | Create the tag at `v2.0.0-pre` on the release commit (Phase 71.4) |
+| Release archive cannot be used without a C compiler | `scripts/release.py` ships `velo.exe` + sources, no prebuilt library triple | Consumers on compiler-less hosts are unsupported by design | Documented in Phase 71's residual limitation; revisit with Phase 70's platform set |
+| `emit-c` output depends on how the source path is spelled | `src/backend/codegen_line.vl:6-17` embeds the path in `#line` | A build driven from an absolute path produces a byte-different snapshot | Pinned by `tests/test_release_script.py`; normalizing paths is Phase 79 (reproducible-build work) |
 
 ---
 
