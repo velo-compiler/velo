@@ -14,7 +14,7 @@ def _run_stage1(args):
     return subprocess.run(
         [sys.executable, "velo.py"] + args,
         capture_output=True,
-        text=True
+        text=True, encoding="utf-8", errors="replace"
     )
 
 def _run_stage2(args):
@@ -23,7 +23,7 @@ def _run_stage2(args):
     return subprocess.run(
         [str(velo_exe())] + args,
         capture_output=True,
-        text=True
+        text=True, encoding="utf-8", errors="replace"
     )
 
 FULL_MANIFEST_SRC = """# Velo Package Manifest
@@ -197,7 +197,7 @@ act main() {
     assert "[Velo] Successfully built binary!" in p1_build.stdout
     exe1 = proj_dir / "mini_calc.exe"
     assert exe1.exists()
-    run1 = subprocess.run([str(exe1)], capture_output=True, text=True)
+    run1 = subprocess.run([str(exe1)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert run1.returncode == 0
     assert "CALC_READY: 42" in run1.stdout
 
@@ -212,7 +212,7 @@ act main() {
     assert p2_build.returncode == 0, f"Stage 2 pkg build failed:\n{p2_build.stderr}"
     assert "[Velo] Successfully built binary!" in p2_build.stdout
     assert exe1.exists()
-    run2 = subprocess.run([str(exe1)], capture_output=True, text=True)
+    run2 = subprocess.run([str(exe1)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert run2.returncode == 0
     assert "CALC_READY: 42" in run2.stdout
 
@@ -241,7 +241,7 @@ act main() {
     p1 = _run_stage1(["pkg", "build", m_path, "-o", custom_out])
     assert p1.returncode == 0, f"Stage 1 custom output failed: {p1.stderr}"
     assert os.path.exists(custom_out)
-    r1 = subprocess.run([custom_out], capture_output=True, text=True)
+    r1 = subprocess.run([custom_out], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert r1.returncode == 0
     assert "NESTED_OK" in r1.stdout
     os.remove(custom_out)
@@ -250,7 +250,7 @@ act main() {
     p2 = _run_stage2(["pkg", "build", m_path, "-o", custom_out])
     assert p2.returncode == 0, f"Stage 2 custom output failed: {p2.stderr}"
     assert os.path.exists(custom_out)
-    r2 = subprocess.run([custom_out], capture_output=True, text=True)
+    r2 = subprocess.run([custom_out], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert r2.returncode == 0
     assert "NESTED_OK" in r2.stdout
 
@@ -281,7 +281,7 @@ act main() {
     p2 = _run_stage2(["pkg", "build", m_path])
     assert p2.returncode == 0
     assert expected_exe.exists()
-    r2 = subprocess.run([str(expected_exe)], capture_output=True, text=True)
+    r2 = subprocess.run([str(expected_exe)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert r2.returncode == 0
     assert "AUTO_BIN_DETECTED" in r2.stdout
 

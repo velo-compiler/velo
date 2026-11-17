@@ -25,7 +25,7 @@ def ensure_velo_exe():
             ["python", "velo.py", "build", "src/main.vl", "-o", str(VELO_EXE)],
             cwd=str(REPO_ROOT),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=get_env(),
         )
         assert res.returncode == 0, f"Failed to bootstrap bin/velo.exe:\n{res.stderr}"
@@ -56,7 +56,7 @@ def big_program(tmp_path_factory):
         [str(VELO_EXE), "build", str(src), "-o", str(exe)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env(),
     )
     assert res.returncode == 0, f"Big program failed to build:\n{res.stdout}\n{res.stderr}"
@@ -68,7 +68,7 @@ def test_large_file_compiles(big_program):
     """A file whose token count exceeds the old hardcoded 8192 cap must compile."""
     exe, _ = big_program
     assert "Total: 4501500" in subprocess.run(
-        [str(exe)], capture_output=True, text=True, env=get_env()
+        [str(exe)], capture_output=True, text=True, encoding="utf-8", errors="replace", env=get_env()
     ).stdout
 
 
@@ -95,7 +95,7 @@ def test_lexer_overflow_reports_diagnostic(monkeypatch, tmp_path_factory):
         builder,
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env(),
     )
     assert res.returncode == 0, f"Tiny-cap compiler failed to build:\n{res.stdout}\n{res.stderr}"
@@ -112,7 +112,7 @@ def test_lexer_overflow_reports_diagnostic(monkeypatch, tmp_path_factory):
         [str(tiny_exe), "build", str(big_src), "-o", str(out_dir / "never.exe")],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env(),
     )
     assert res.returncode != 0, "Saturated lexer must fail the build"

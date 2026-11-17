@@ -36,7 +36,7 @@ def test_emit_c_contains_line_directives_stage1(tmp_path):
     res = subprocess.run(
         [sys.executable, str(VELO_PY), "emit-c", str(source_file)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         check=True,
         cwd=str(REPO_ROOT),
         env=get_env()
@@ -76,7 +76,7 @@ def test_emit_c_contains_line_directives_stage2(tmp_path):
     res = subprocess.run(
         [str(VELO_EXE), "emit-c", str(source_file)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         check=True,
         cwd=str(REPO_ROOT),
         env=get_env()
@@ -105,7 +105,7 @@ def test_no_line_directives_flag_stage1(tmp_path):
     res = subprocess.run(
         [sys.executable, str(VELO_PY), "emit-c", "--no-line-directives", str(source_file)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         check=True,
         cwd=str(REPO_ROOT),
         env=get_env()
@@ -131,7 +131,7 @@ def test_no_line_directives_flag_stage2(tmp_path):
     res = subprocess.run(
         [str(VELO_EXE), "emit-c", "--no-line-directives", str(source_file)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         check=True,
         cwd=str(REPO_ROOT),
         env=get_env()
@@ -170,7 +170,7 @@ def test_control_flow_statements_line_directives(tmp_path):
     res = subprocess.run(
         [str(VELO_EXE), "emit-c", str(source_file)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         check=True,
         cwd=str(REPO_ROOT),
         env=get_env()
@@ -214,7 +214,7 @@ def test_debugger_gdb_backtrace_reports_source_line(tmp_path):
     build_res = subprocess.run(
         [str(VELO_EXE), "build", "--debug", str(source_file), "-o", str(exe_file)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         cwd=str(REPO_ROOT),
         env=get_env()
     )
@@ -224,7 +224,7 @@ def test_debugger_gdb_backtrace_reports_source_line(tmp_path):
     gdb_res = subprocess.run(
         [gdb_path, "-batch", "-ex", "run", "-ex", "bt", str(exe_file)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
 

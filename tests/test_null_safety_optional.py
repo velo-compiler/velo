@@ -5,14 +5,14 @@ from conftest import velo_exe
 
 def _run_stage1(cmd: list) -> subprocess.CompletedProcess:
     full_cmd = ["python", "velo.py"] + cmd
-    return subprocess.run(full_cmd, capture_output=True, text=True)
+    return subprocess.run(full_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 def _run_stage2(cmd: list) -> subprocess.CompletedProcess:
     velo_bin = Path(str(velo_exe())).resolve()
     if not velo_bin.exists():
         pytest.skip("bin/velo.exe not built yet")
     full_cmd = [str(velo_bin)] + cmd
-    return subprocess.run(full_cmd, capture_output=True, text=True)
+    return subprocess.run(full_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 def test_optional_pointer_has_and_val(tmp_path):
     code = """

@@ -11,7 +11,7 @@ class TestStage2Lexer(unittest.TestCase):
 
     def test_run_stage2_lexer(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"run failed: {res.stderr}")
         self.assertIn("--- Velo Stage 2 Milestone 2.1: Native Lexer Verification ---", res.stdout)
         self.assertIn("Successfully tokenized sample Velo source code!", res.stdout)
@@ -24,7 +24,7 @@ class TestStage2Lexer(unittest.TestCase):
 
     def test_emit_c_stage2_lexer(self):
         cmd = [sys.executable, str(self.velo_py), "emit-c", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
         self.assertIn("typedef struct Lexer Lexer;", res.stdout)
         self.assertIn("typedef struct Token Token;", res.stdout)

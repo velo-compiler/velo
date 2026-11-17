@@ -17,7 +17,7 @@ class TestBitwiseOperators(unittest.TestCase):
 
     def test_stage1_run_bitwise(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"Stage 1 run failed: {res.stderr}")
         self.assertIn("a & b = 8", res.stdout)
         self.assertIn("a | b = 14", res.stdout)
@@ -38,7 +38,7 @@ class TestBitwiseOperators(unittest.TestCase):
     def test_self_hosted_run_bitwise(self):
         self.assertTrue(self.velo_exe.exists(), "velo.exe must exist")
         cmd = [str(self.velo_exe), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"Self-hosted run failed: {res.stderr}")
         self.assertIn("a & b = 8", res.stdout)
         self.assertIn("a | b = 14", res.stdout)
@@ -58,7 +58,7 @@ class TestBitwiseOperators(unittest.TestCase):
 
     def test_emit_c_bitwise_operators(self):
         cmd = [str(self.velo_exe), "emit-c", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
         self.assertIn("&", res.stdout)
         self.assertIn("|", res.stdout)

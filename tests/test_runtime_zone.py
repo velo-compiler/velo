@@ -356,7 +356,7 @@ def build_and_run(tmp_path, name, body, expected_fatal=False):
     build = subprocess.run(
         cmd,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         cwd=str(REPO_ROOT),
         env=env,
     )
@@ -371,7 +371,7 @@ def build_and_run(tmp_path, name, body, expected_fatal=False):
         run_env = env.copy()
         opts = run_env.get("ASAN_OPTIONS", "")
         run_env["ASAN_OPTIONS"] = (opts + ":" if opts else "") + "detect_leaks=0"
-    return subprocess.run([str(exe)], capture_output=True, text=True, timeout=120, env=run_env)
+    return subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, env=run_env)
 
 
 @pytest.fixture(scope="module")

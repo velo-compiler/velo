@@ -246,11 +246,11 @@ class TestThreadLocalZoneRuntime(unittest.TestCase):
             str(c_file), "-o", str(exe),
             "-pthread", "-static",
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, env=env)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT, env=env)
         self.assertEqual(res.returncode, 0,
                          f"harness compile failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}")
 
-        run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=120)
+        run = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         self.assertEqual(run.returncode, 0,
                          f"harness run failed:\nSTDOUT:\n{run.stdout}\nSTDERR:\n{run.stderr}")
         self.assertIn("TLS-OK", run.stdout)
@@ -278,10 +278,10 @@ class TestThreadLocalZoneRuntime(unittest.TestCase):
                 str(c_file), "-o", str(exe),
                 "-static",
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, env=env)
+            res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT, env=env)
             self.assertEqual(res.returncode, 0,
                              f"{name} compile failed:\nSTDERR:\n{res.stderr}")
-            run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=120)
+            run = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             self.assertNotEqual(run.returncode, 0,
                                 f"{name}: expected fatal exit, got rc=0 with stdout {run.stdout!r}")
             self.assertIn("Velo Fatal Error", run.stderr, f"{name}: stderr was {run.stderr!r}")
@@ -307,11 +307,11 @@ class TestThreadLocalZoneRuntime(unittest.TestCase):
         ]
         env = os.environ.copy()
         env["PATH"] = f"{gcc_bin_dir}{os.pathsep}{env.get('PATH', '')}"
-        res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, env=env)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT, env=env)
         self.assertEqual(res.returncode, 0,
                          f"harness compile failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}")
 
-        run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=120)
+        run = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         self.assertEqual(run.returncode, 0,
                          f"harness run failed:\nSTDOUT:\n{run.stdout}\nSTDERR:\n{run.stderr}")
         self.assertIn("THREADS-OK", run.stdout)

@@ -34,7 +34,7 @@ def run_velo_check(source_code: str) -> subprocess.CompletedProcess:
         f.write(source_code)
         f_name = f.name
     try:
-        res = subprocess.run([str(VELO_EXE), "check", f_name], capture_output=True, text=True)
+        res = subprocess.run([str(VELO_EXE), "check", f_name], capture_output=True, text=True, encoding="utf-8", errors="replace")
         return res
     finally:
         Path(f_name).unlink(missing_ok=True)

@@ -18,7 +18,7 @@ class TestVeloFormatter(unittest.TestCase):
             shutil.rmtree(self.cache_dir, ignore_errors=True)
 
     def test_fmt_help_flag(self):
-        res = subprocess.run([str(self.velo_exe), "fmt", "--help"], capture_output=True, text=True)
+        res = subprocess.run([str(self.velo_exe), "fmt", "--help"], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0)
         self.assertIn("Usage: velo fmt [path] [--check]", res.stdout)
         self.assertIn("--check", res.stdout)
@@ -27,7 +27,7 @@ class TestVeloFormatter(unittest.TestCase):
         test_file = self.cache_dir / "unformatted.vl"
         test_file.write_text("act foo(a:i32,b:i32)->i32{return a+b}\n", encoding="utf-8")
 
-        res = subprocess.run([str(self.velo_exe), "fmt", str(test_file), "--check"], capture_output=True, text=True)
+        res = subprocess.run([str(self.velo_exe), "fmt", str(test_file), "--check"], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 1, "Expected exit code 1 for unformatted file")
         self.assertIn("File is not formatted", res.stdout)
         self.assertIn("Diff at line", res.stdout)
@@ -49,7 +49,7 @@ class TestVeloFormatter(unittest.TestCase):
         test_file.write_text(raw_code, encoding="utf-8")
 
         # 1. Format in-place
-        res_fmt = subprocess.run([str(self.velo_exe), "fmt", str(test_file)], capture_output=True, text=True)
+        res_fmt = subprocess.run([str(self.velo_exe), "fmt", str(test_file)], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res_fmt.returncode, 0, f"velo fmt failed: {res_fmt.stderr}")
         self.assertIn("Formatted:", res_fmt.stdout)
 
@@ -70,7 +70,7 @@ class TestVeloFormatter(unittest.TestCase):
         self.assertEqual(formatted_text, expected_text)
 
         # 3. Subsequent check returns 0
-        res_check = subprocess.run([str(self.velo_exe), "fmt", str(test_file), "--check"], capture_output=True, text=True)
+        res_check = subprocess.run([str(self.velo_exe), "fmt", str(test_file), "--check"], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res_check.returncode, 0, f"Expected 0 on formatted file: {res_check.stdout}")
         self.assertIn("File is properly formatted", res_check.stdout)
 
@@ -138,11 +138,11 @@ class TestVeloFormatter(unittest.TestCase):
         f2.write_text("act b()->i32{return 2}\n", encoding="utf-8")
 
         # Format entire directory
-        res = subprocess.run([str(self.velo_exe), "fmt", str(self.cache_dir)], capture_output=True, text=True)
+        res = subprocess.run([str(self.velo_exe), "fmt", str(self.cache_dir)], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0)
 
         # Verify both formatted
-        res_check = subprocess.run([str(self.velo_exe), "fmt", str(self.cache_dir), "--check"], capture_output=True, text=True)
+        res_check = subprocess.run([str(self.velo_exe), "fmt", str(self.cache_dir), "--check"], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res_check.returncode, 0)
         self.assertIn("All files properly formatted", res_check.stdout)
 
@@ -164,7 +164,7 @@ class TestVeloFormatter(unittest.TestCase):
         subprocess.run([str(self.velo_exe), "fmt", str(test_file)], check=True)
 
         # Run with velo run
-        res = subprocess.run([str(self.velo_exe), "run", str(test_file)], capture_output=True, text=True)
+        res = subprocess.run([str(self.velo_exe), "run", str(test_file)], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"velo run failed: {res.stderr}")
         self.assertIn("formatted sum: 42", res.stdout)
 

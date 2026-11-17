@@ -45,7 +45,7 @@ def run_velo_source(source_code: str, timeout: float = 3.0) -> subprocess.Comple
         build_res = subprocess.run(
             [str(VELO_EXE), "build", str(src_path), "-o", str(exe_path)],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=get_build_env(),
             timeout=10.0,
         )
@@ -55,7 +55,7 @@ def run_velo_source(source_code: str, timeout: float = 3.0) -> subprocess.Comple
         run_res = subprocess.run(
             [str(exe_path)],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=timeout,
         )
         return run_res
@@ -68,7 +68,7 @@ def test_defer_matrix_std_test_vl():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_build_env(),
         timeout=15.0,
     )
@@ -821,7 +821,7 @@ act main() -> i32 {
         emit_res = subprocess.run(
             [str(VELO_EXE), "emit-c", str(src_path), "-o", str(c_path)],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=get_build_env(),
             timeout=10.0,
         )
@@ -844,7 +844,7 @@ act main() -> i32 {
         gcc_res = subprocess.run(
             gcc_cmd,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=get_build_env(),
             cwd=str(REPO_ROOT),
             timeout=10.0,
@@ -852,7 +852,7 @@ act main() -> i32 {
         assert gcc_res.returncode == 0, f"gcc -Werror failed: {gcc_res.stderr}\n{gcc_res.stdout}"
 
         # Run executable
-        run_res = subprocess.run([str(exe_path)], capture_output=True, text=True, timeout=5.0)
+        run_res = subprocess.run([str(exe_path)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5.0)
         assert run_res.returncode == 0, f"run failed: {run_res.stderr}\n{run_res.stdout}"
         assert "PASS: plain and if block local pointers freed cleanly" in run_res.stdout
 
@@ -2001,7 +2001,7 @@ def test_defer_matrix_asan_ubsan_coverage():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=env,
         timeout=20.0,
     )

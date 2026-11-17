@@ -17,7 +17,7 @@ class TestLiteralFormatting(unittest.TestCase):
 
     def test_stage1_run_literal_formatting(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"Stage 1 run failed: {res.stderr}")
         self.assertIn("Hex 0xFF: 255", res.stdout)
         self.assertIn("Binary 0b1010: 10", res.stdout)
@@ -35,7 +35,7 @@ class TestLiteralFormatting(unittest.TestCase):
     def test_self_hosted_run_literal_formatting(self):
         self.assertTrue(self.velo_exe.exists(), "velo.exe must exist")
         cmd = [str(self.velo_exe), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"Self-hosted run failed: {res.stderr}")
         self.assertIn("Hex 0xFF: 255", res.stdout)
         self.assertIn("Binary 0b1010: 10", res.stdout)
@@ -52,7 +52,7 @@ class TestLiteralFormatting(unittest.TestCase):
 
     def test_emit_c_literal_formatting(self):
         cmd = [str(self.velo_exe), "emit-c", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
         self.assertIn("0xFF", res.stdout)
         self.assertIn("0xAABBCCDD", res.stdout)
@@ -70,7 +70,7 @@ class TestLiteralFormatting(unittest.TestCase):
         src_path = self.root_dir / ".velo_cache" / "test_range.vl"
         src_path.write_text(code, encoding="utf-8")
         cmd = [str(self.velo_exe), "run", str(src_path)]
-        res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"Range loop execution failed: {res.stderr}")
         self.assertIn("Sum: 10", res.stdout)
         src_path.unlink()
@@ -102,7 +102,7 @@ act main() {
         src_path.write_text(code, encoding="utf-8")
         try:
             cmd = [str(self.velo_exe), "run", str(src_path)]
-            res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+            res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res.returncode, 0, f"Run failed: {res.stderr}")
             self.assertIn("a: 99", res.stdout)
             self.assertIn("b: 17", res.stdout)
@@ -115,7 +115,7 @@ act main() {
 
             # Also verify emit-c output format
             cmd_emit = [str(self.velo_exe), "emit-c", str(src_path)]
-            res_emit = subprocess.run(cmd_emit, capture_output=True, text=True, env=self.env)
+            res_emit = subprocess.run(cmd_emit, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res_emit.returncode, 0, f"emit-c failed: {res_emit.stderr}")
             # Ensure C source does not have leading zero decimal literals (e.g. 017 or 099)
             self.assertIn("int32_t a = 99;", res_emit.stdout)
@@ -142,7 +142,7 @@ act main() {
         src_path.write_text(code, encoding="utf-8")
         try:
             cmd = [str(self.velo_exe), "emit-c", str(src_path)]
-            res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+            res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
             # The type ladder (Task 53.6/53.7) requires wide types in emitted C:
             # a (2147483648) fits i64 -> int64_t, not int32_t
@@ -174,14 +174,14 @@ act main() {
         try:
             # 1. Verify emitted C does not use %lld or (long long) for u64/usize
             cmd_emit = [str(self.velo_exe), "emit-c", str(src_path)]
-            res_emit = subprocess.run(cmd_emit, capture_output=True, text=True, env=self.env)
+            res_emit = subprocess.run(cmd_emit, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res_emit.returncode, 0, f"emit-c failed: {res_emit.stderr}")
             self.assertNotIn("%lld", res_emit.stdout, "Unsigned values must not be formatted with signed %lld")
             self.assertIn("%llu", res_emit.stdout, "Unsigned u64/usize must be formatted with %llu (or %zu)")
 
             # 2. Verify runtime output does not wrap to negative -1
             cmd_run = [str(self.velo_exe), "run", str(src_path)]
-            res_run = subprocess.run(cmd_run, capture_output=True, text=True, env=self.env)
+            res_run = subprocess.run(cmd_run, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res_run.returncode, 0, f"run failed: {res_run.stderr}")
             self.assertIn("18446744073709551615", res_run.stdout)
             self.assertNotIn("-1", res_run.stdout)
@@ -294,7 +294,7 @@ act main() {
         try:
             # 1. Check emit-c for specifier correctness
             cmd_emit = [str(self.velo_exe), "emit-c", str(src_path)]
-            res_emit = subprocess.run(cmd_emit, capture_output=True, text=True, env=self.env)
+            res_emit = subprocess.run(cmd_emit, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res_emit.returncode, 0, f"emit-c failed: {res_emit.stderr}")
             # Ensure unsigned types use %llu and (unsigned long long)
             self.assertIn("%llu", res_emit.stdout)
@@ -305,7 +305,7 @@ act main() {
 
             # 2. Run and check exact outputs
             cmd_run = [str(self.velo_exe), "run", str(src_path)]
-            res_run = subprocess.run(cmd_run, capture_output=True, text=True, env=self.env)
+            res_run = subprocess.run(cmd_run, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res_run.returncode, 0, f"run failed: {res_run.stderr}")
             lines = [l.strip() for l in res_run.stdout.strip().splitlines() if l.strip()]
 
@@ -369,7 +369,7 @@ act main() {
         try:
             # 1. emit-c check: user strings must never become the format string itself
             cmd_emit = [str(self.velo_exe), "emit-c", str(src_path)]
-            res_emit = subprocess.run(cmd_emit, capture_output=True, text=True, env=self.env)
+            res_emit = subprocess.run(cmd_emit, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res_emit.returncode, 0, f"emit-c failed: {res_emit.stderr}")
             # Ensure printf format string argument is always a static literal format
             self.assertNotIn('printf(attack', res_emit.stdout)
@@ -378,7 +378,7 @@ act main() {
 
             # 2. Execution check: must run cleanly with code 0 and not crash
             cmd_run = [str(self.velo_exe), "run", str(src_path)]
-            res_run = subprocess.run(cmd_run, capture_output=True, text=True, env=self.env)
+            res_run = subprocess.run(cmd_run, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res_run.returncode, 0, f"run failed: {res_run.stderr}")
             self.assertIn("%s%s%s%s%s", res_run.stdout)
             self.assertIn("%n%n%n%n", res_run.stdout)
@@ -413,7 +413,7 @@ act main() {
         src_path.write_text(code, encoding="utf-8")
         try:
             cmd_run = [str(self.velo_exe), "run", str(src_path)]
-            res_run = subprocess.run(cmd_run, capture_output=True, text=True, env=self.env)
+            res_run = subprocess.run(cmd_run, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res_run.returncode, 0, f"run failed: {res_run.stderr}")
 
             # Verify no locale-dependent thousands separators (comma, apostrophe, space)

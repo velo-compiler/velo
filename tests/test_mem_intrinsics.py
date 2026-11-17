@@ -296,7 +296,7 @@ class TestMemIntrinsics(unittest.TestCase):
             ("stage1", [sys.executable, str(VELO_PY), "build", str(src), "-o", str(src.with_suffix(".exe"))]),
             ("stage2", [str(VELO_EXE), "build", str(src), "-o", str(src.with_suffix(".exe"))]),
         ):
-            res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+            res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT)
             assert res.returncode != 0, (
                 f"{stage} accepted an invalid program ({name}):\n{res.stdout}")
             assert want_msg in (res.stdout + res.stderr), (
@@ -334,11 +334,11 @@ class TestMemIntrinsics(unittest.TestCase):
             ("stage1", [sys.executable, str(VELO_PY), "build", str(src), "-o", str(src.with_suffix(".exe"))]),
             ("stage2", [str(VELO_EXE), "build", str(src), "-o", str(src.with_suffix(".exe"))]),
         ):
-            res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+            res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT)
             assert res.returncode == 0, (
                 f"{stage} rejected a valid program:\n{res.stdout}{res.stderr}")
             exe = src.with_suffix(".exe")
-            run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=120)
+            run = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             assert run.returncode != 0, (
                 f"{stage} survived a negative count: {run.stdout}")
             assert want_msg in (run.stdout + run.stderr), (
@@ -370,9 +370,9 @@ class TestMemIntrinsics(unittest.TestCase):
         env["PATH"] = f"{Path(gcc).parent.resolve()}{os.pathsep}{env.get('PATH', '')}"
         res = subprocess.run(
             [gcc, "-O2", "-std=c99", "-I", str(RUNTIME), str(c_file), "-o", str(exe)],
-            capture_output=True, text=True, cwd=ROOT, env=env)
+            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT, env=env)
         assert res.returncode == 0, f"harness compile failed:\n{res.stderr}"
-        run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=120)
+        run = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         assert run.returncode != 0, f"OOM survived silently: {run.stdout}"
         assert "Velo Fatal Error: Out of Heap Memory!" in (run.stdout + run.stderr), (
             f"wrong fatal:\n{run.stdout}\n{run.stderr}")

@@ -83,7 +83,7 @@ def test_pkg_lock_generation_and_checksum_verification(tmp_path):
     )
 
     # 3. Generate velo.lock with 'velo pkg lock'
-    res_lock = subprocess.run([str(VELO_EXE), "pkg", "lock", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True)
+    res_lock = subprocess.run([str(VELO_EXE), "pkg", "lock", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_lock.returncode == 0, f"velo pkg lock failed:\n{res_lock.stderr}\n{res_lock.stdout}"
     assert "Successfully generated velo.lock" in res_lock.stdout
 
@@ -94,12 +94,12 @@ def test_pkg_lock_generation_and_checksum_verification(tmp_path):
     assert 'hash = "sha256:' in lock_content
 
     # 4. Verify that 'velo pkg install' verifies without modification
-    res_install = subprocess.run([str(VELO_EXE), "pkg", "install", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True)
+    res_install = subprocess.run([str(VELO_EXE), "pkg", "install", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_install.returncode == 0, f"velo pkg install failed:\n{res_install.stderr}\n{res_install.stdout}"
     assert "verified against velo.lock" in res_install.stdout
 
     # 5. Verify that 'velo pkg check' passes with valid lockfile
-    res_check = subprocess.run([str(VELO_EXE), "pkg", "check", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True)
+    res_check = subprocess.run([str(VELO_EXE), "pkg", "check", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_check.returncode == 0, f"velo pkg check failed:\n{res_check.stderr}\n{res_check.stdout}"
     assert "Verified velo.lock checksums" in res_check.stdout
 
@@ -141,7 +141,7 @@ def test_pkg_detects_tampered_dependency_contents(tmp_path):
     )
 
     # 1. Generate lockfile
-    res_lock = subprocess.run([str(VELO_EXE), "pkg", "lock", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True)
+    res_lock = subprocess.run([str(VELO_EXE), "pkg", "lock", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_lock.returncode == 0
 
     # 2. Tamper with the dependency file
@@ -153,23 +153,23 @@ def test_pkg_detects_tampered_dependency_contents(tmp_path):
     )
 
     # 3. 'velo pkg install' must reject tampered dependency
-    res_install_tampered = subprocess.run([str(VELO_EXE), "pkg", "install", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True)
+    res_install_tampered = subprocess.run([str(VELO_EXE), "pkg", "install", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_install_tampered.returncode != 0
     assert "Package checksum verification failed for 'crypto_helper'" in res_install_tampered.stdout or "Package checksum verification failed for 'crypto_helper'" in res_install_tampered.stderr
     assert "Package contents may have been tampered with or modified" in res_install_tampered.stdout or "Package contents may have been tampered with or modified" in res_install_tampered.stderr
 
     # 4. 'velo pkg check' must also reject tampered dependency
-    res_check_tampered = subprocess.run([str(VELO_EXE), "pkg", "check", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True)
+    res_check_tampered = subprocess.run([str(VELO_EXE), "pkg", "check", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_check_tampered.returncode != 0
     assert "Package checksum verification failed" in res_check_tampered.stdout or "Package checksum verification failed" in res_check_tampered.stderr
 
     # 5. 'velo pkg update' must update lockfile to accept new contents
-    res_update = subprocess.run([str(VELO_EXE), "pkg", "update", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True)
+    res_update = subprocess.run([str(VELO_EXE), "pkg", "update", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_update.returncode == 0
     assert "Successfully updated velo.lock" in res_update.stdout
 
     # 6. Now install must succeed with updated lock
-    res_reinstall = subprocess.run([str(VELO_EXE), "pkg", "install", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True)
+    res_reinstall = subprocess.run([str(VELO_EXE), "pkg", "install", str(pkg_dir)], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_reinstall.returncode == 0
     assert "verified against velo.lock" in res_reinstall.stdout
 
@@ -178,13 +178,13 @@ def test_pkg_help_manual_documents_security_commands():
     if not VELO_EXE.exists():
         pytest.skip("bin/velo not built")
 
-    res_pkg_help = subprocess.run([str(VELO_EXE), "pkg", "help"], cwd=str(REPO_ROOT), capture_output=True, text=True)
+    res_pkg_help = subprocess.run([str(VELO_EXE), "pkg", "help"], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_pkg_help.returncode == 0
     assert "velo pkg lock" in res_pkg_help.stdout
     assert "velo pkg install" in res_pkg_help.stdout
     assert "velo pkg update" in res_pkg_help.stdout
 
-    res_cli_help = subprocess.run([str(VELO_EXE), "help"], cwd=str(REPO_ROOT), capture_output=True, text=True)
+    res_cli_help = subprocess.run([str(VELO_EXE), "help"], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_cli_help.returncode == 0
     assert "velo pkg lock" in res_cli_help.stdout
     assert "velo pkg install" in res_cli_help.stdout

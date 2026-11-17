@@ -19,7 +19,7 @@ def test_std_os_env():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
@@ -31,7 +31,7 @@ def test_std_os_args():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
@@ -44,7 +44,7 @@ def test_std_os_args_cli(tmp_path):
         [str(VELO_EXE), "build", str(test_vl), "-o", str(out_exe)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert build_res.returncode == 0, f"build failed with code {build_res.returncode}:\n{build_res.stderr}\n{build_res.stdout}"
@@ -54,7 +54,7 @@ def test_std_os_args_cli(tmp_path):
         [str(out_exe), "alpha", "beta with spaces", "--output", "bin/foo.exe", "-v"],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert run_res.returncode == 0, f"run failed with code {run_res.returncode}:\n{run_res.stderr}\n{run_res.stdout}"
@@ -74,7 +74,7 @@ def test_std_os_process():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
@@ -87,7 +87,7 @@ def test_std_os_pipe():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
@@ -100,7 +100,7 @@ def test_std_os_module_import():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"

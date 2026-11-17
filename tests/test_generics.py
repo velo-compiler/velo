@@ -11,7 +11,7 @@ class TestGenerics(unittest.TestCase):
 
     def test_run_generics(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"run failed: {res.stderr}\nSTDOUT:\n{res.stdout}")
         self.assertIn("Box value: 42", res.stdout)
         self.assertIn("Pair key: score, val: 100", res.stdout)
@@ -25,7 +25,7 @@ class TestGenerics(unittest.TestCase):
 
     def test_emit_c_generics(self):
         cmd = [sys.executable, str(self.velo_py), "emit-c", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
         self.assertIn("typedef struct Box_i32 Box_i32;", res.stdout)
         self.assertIn("typedef struct Pair_string_i32 Pair_string_i32;", res.stdout)

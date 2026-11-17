@@ -18,7 +18,7 @@ def ensure_velo_exe():
             ["python", "velo.py", "build", "src/main.vl", "-o", str(VELO_EXE)],
             cwd=str(REPO_ROOT),
             capture_output=True,
-            text=True
+            text=True, encoding="utf-8", errors="replace"
         )
         assert res.returncode == 0, f"Failed to bootstrap bin/velo.exe:\n{res.stderr}"
     assert VELO_EXE.exists(), "bin/velo.exe must exist"
@@ -32,7 +32,7 @@ def run_velo(args):
         [str(VELO_EXE)] + args,
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=env
     )
 
@@ -103,7 +103,7 @@ def test_cli_build_and_run():
     env = os.environ.copy()
     if cc_dir() not in env.get("PATH", ""):
         env["PATH"] = cc_dir() + ";" + env.get("PATH", "")
-    run_res = subprocess.run([str(out_exe)], capture_output=True, text=True, env=env)
+    run_res = subprocess.run([str(out_exe)], capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
     assert run_res.returncode == 0
     assert "Hello, world!!" in run_res.stdout
 

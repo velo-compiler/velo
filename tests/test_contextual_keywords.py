@@ -173,14 +173,14 @@ class TestContextualKeywords(unittest.TestCase):
         # Stage 1 emit-c
         s1 = subprocess.run(
             [sys.executable, str(VELO_PY), "emit-c", str(src_file)],
-            capture_output=True, text=True, cwd=ROOT
+            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT
         )
         self.assertEqual(s1.returncode, 0, f"Stage 1 emit-c failed: {s1.stderr}")
 
         # Stage 2 emit-c
         s2 = subprocess.run(
             [str(VELO_EXE), "emit-c", str(src_file)],
-            capture_output=True, text=True, cwd=ROOT
+            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT
         )
         self.assertEqual(s2.returncode, 0, f"Stage 2 emit-c failed: {s2.stderr}\n{s2.stdout}")
 

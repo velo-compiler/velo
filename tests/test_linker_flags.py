@@ -84,7 +84,7 @@ def test_stage1_build_without_lib_fails(tmp_path):
     res = subprocess.run(
         [sys.executable, str(VELO_PY), "build", str(src_file), "-o", str(out_exe)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=ENV_WITH_GCC
     )
     assert res.returncode != 0, f"Expected link failure, got exit code 0:\n{res.stdout}\n{res.stderr}"
@@ -101,13 +101,13 @@ def test_stage1_build_with_attached_lib(tmp_path):
     res = subprocess.run(
         [sys.executable, str(VELO_PY), "build", str(src_file), "-lwinmm", "-o", str(out_exe)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=ENV_WITH_GCC
     )
     assert res.returncode == 0, f"Build with -lwinmm failed:\n{res.stdout}\n{res.stderr}"
     assert out_exe.exists()
 
-    run_res = subprocess.run([str(out_exe)], capture_output=True, text=True)
+    run_res = subprocess.run([str(out_exe)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert run_res.returncode == 0
     assert "WINMM_LINK_SUCCESS" in run_res.stdout
 
@@ -121,13 +121,13 @@ def test_stage1_build_with_detached_lib(tmp_path):
     res = subprocess.run(
         [sys.executable, str(VELO_PY), "build", str(src_file), "-l", "winmm", "-o", str(out_exe)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=ENV_WITH_GCC
     )
     assert res.returncode == 0, f"Build with -l winmm failed:\n{res.stdout}\n{res.stderr}"
     assert out_exe.exists()
 
-    run_res = subprocess.run([str(out_exe)], capture_output=True, text=True)
+    run_res = subprocess.run([str(out_exe)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert run_res.returncode == 0
     assert "WINMM_LINK_SUCCESS" in run_res.stdout
 
@@ -140,7 +140,7 @@ def test_stage1_run_with_lib(tmp_path):
     res = subprocess.run(
         [sys.executable, str(VELO_PY), "run", str(src_file), "-lwinmm"],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=ENV_WITH_GCC
     )
     assert res.returncode == 0, f"Run with -lwinmm failed:\n{res.stdout}\n{res.stderr}"
@@ -157,7 +157,7 @@ def test_stage1_lib_dirs_flag(tmp_path):
     res = subprocess.run(
         [sys.executable, str(VELO_PY), "build", str(src_file), "-L", str(tmp_path), "-lwinmm", "-o", str(out_exe)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=ENV_WITH_GCC
     )
     assert res.returncode == 0, f"Build with -L and -l failed:\n{res.stdout}\n{res.stderr}"
@@ -173,11 +173,11 @@ def test_stage1_combination_with_build_modes(tmp_path):
     res = subprocess.run(
         [sys.executable, str(VELO_PY), "build", str(src_file), "--release", "-lwinmm", "-o", str(out_exe)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=ENV_WITH_GCC
     )
     assert res.returncode == 0, f"Release build with -lwinmm failed:\n{res.stdout}\n{res.stderr}"
-    run_res = subprocess.run([str(out_exe)], capture_output=True, text=True)
+    run_res = subprocess.run([str(out_exe)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert "WINMM_LINK_SUCCESS" in run_res.stdout
 
 
@@ -191,7 +191,7 @@ def test_stage2_build_without_lib_fails(tmp_path):
     res = subprocess.run(
         [str(VELO_EXE), "build", str(src_file), "-o", str(out_exe)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=ENV_WITH_GCC
     )
     assert res.returncode != 0, f"Expected Stage 2 link failure, got 0:\n{res.stdout}\n{res.stderr}"
@@ -208,11 +208,11 @@ def test_stage2_build_attached_and_detached_lib(tmp_path):
     res1 = subprocess.run(
         [str(VELO_EXE), "build", str(src_file), "-lwinmm", "-o", str(out_exe_att)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=ENV_WITH_GCC
     )
     assert res1.returncode == 0, f"Stage 2 build with -lwinmm failed:\n{res1.stdout}\n{res1.stderr}"
-    run_res1 = subprocess.run([str(out_exe_att)], capture_output=True, text=True)
+    run_res1 = subprocess.run([str(out_exe_att)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert "WINMM_LINK_SUCCESS" in run_res1.stdout
 
     # Detached: -l winmm
@@ -220,11 +220,11 @@ def test_stage2_build_attached_and_detached_lib(tmp_path):
     res2 = subprocess.run(
         [str(VELO_EXE), "build", str(src_file), "-l", "winmm", "-o", str(out_exe_det)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=ENV_WITH_GCC
     )
     assert res2.returncode == 0, f"Stage 2 build with -l winmm failed:\n{res2.stdout}\n{res2.stderr}"
-    run_res2 = subprocess.run([str(out_exe_det)], capture_output=True, text=True)
+    run_res2 = subprocess.run([str(out_exe_det)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert "WINMM_LINK_SUCCESS" in run_res2.stdout
 
 
@@ -237,7 +237,7 @@ def test_stage2_run_with_lib(tmp_path):
     res = subprocess.run(
         [str(VELO_EXE), "run", str(src_file), "-lwinmm"],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=ENV_WITH_GCC
     )
     assert res.returncode == 0, f"Stage 2 run with -lwinmm failed:\n{res.stdout}\n{res.stderr}"
@@ -254,9 +254,9 @@ def test_stage2_combination_with_release(tmp_path):
     res = subprocess.run(
         [str(VELO_EXE), "build", str(src_file), "--release", "-lwinmm", "-o", str(out_exe)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=ENV_WITH_GCC
     )
     assert res.returncode == 0, f"Stage 2 release build with -lwinmm failed:\n{res.stdout}\n{res.stderr}"
-    run_res = subprocess.run([str(out_exe)], capture_output=True, text=True)
+    run_res = subprocess.run([str(out_exe)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert "WINMM_LINK_SUCCESS" in run_res.stdout

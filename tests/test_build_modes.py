@@ -23,11 +23,11 @@ def _write(tmp_path, name, content):
 
 def _run_stage1(args):
     cmd = [sys.executable, "velo.py"] + args
-    return subprocess.run(cmd, capture_output=True, text=True)
+    return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 def _run_native(args):
     cmd = [str(velo_exe())] + args
-    return subprocess.run(cmd, capture_output=True, text=True)
+    return subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 
 # ---------------- Stage 1 CompilerDriver Unit Tests ----------------
@@ -42,7 +42,7 @@ def test_driver_default_flags(tmp_path):
     assert "-g" not in driver.last_gcc_cmd
     assert "-flto" not in driver.last_gcc_cmd
 
-    res = subprocess.run([exe], capture_output=True, text=True)
+    res = subprocess.run([exe], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res.returncode == 0
     assert "build mode test" in res.stdout
 
@@ -57,7 +57,7 @@ def test_driver_debug_flags(tmp_path):
     assert "-g" in driver.last_gcc_cmd
     assert "-flto" not in driver.last_gcc_cmd
 
-    res = subprocess.run([exe], capture_output=True, text=True)
+    res = subprocess.run([exe], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res.returncode == 0
     assert "build mode test" in res.stdout
 
@@ -72,7 +72,7 @@ def test_driver_release_flags(tmp_path):
     assert "-flto" in driver.last_gcc_cmd
     assert "-g" not in driver.last_gcc_cmd
 
-    res = subprocess.run([exe], capture_output=True, text=True)
+    res = subprocess.run([exe], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res.returncode == 0
     assert "build mode test" in res.stdout
 
@@ -104,7 +104,7 @@ def test_stage1_cli_build_and_run_debug(tmp_path):
     assert res_build.returncode == 0
     assert os.path.exists(out)
 
-    res_run = subprocess.run([str(out)], capture_output=True, text=True)
+    res_run = subprocess.run([str(out)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_run.returncode == 0
     assert "build mode test" in res_run.stdout
 
@@ -120,7 +120,7 @@ def test_stage1_cli_build_and_run_release(tmp_path):
     assert res_build.returncode == 0
     assert os.path.exists(out)
 
-    res_run = subprocess.run([str(out)], capture_output=True, text=True)
+    res_run = subprocess.run([str(out)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_run.returncode == 0
     assert "build mode test" in res_run.stdout
 
@@ -151,7 +151,7 @@ def test_native_cli_build_and_run_debug(tmp_path):
     assert res_build.returncode == 0
     assert os.path.exists(out)
 
-    res_run = subprocess.run([str(out)], capture_output=True, text=True)
+    res_run = subprocess.run([str(out)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_run.returncode == 0
     assert "build mode test" in res_run.stdout
 
@@ -169,7 +169,7 @@ def test_native_cli_build_and_run_release(tmp_path):
     assert res_build.returncode == 0
     assert os.path.exists(out)
 
-    res_run = subprocess.run([str(out)], capture_output=True, text=True)
+    res_run = subprocess.run([str(out)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_run.returncode == 0
     assert "build mode test" in res_run.stdout
 

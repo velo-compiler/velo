@@ -37,7 +37,7 @@ def _run_stage1(args):
     return subprocess.run(
         [sys.executable, "velo.py"] + args,
         capture_output=True,
-        text=True
+        text=True, encoding="utf-8", errors="replace"
     )
 
 def test_advanced_structs_execution():
@@ -78,7 +78,7 @@ def test_advanced_structs_native_execution():
     result = subprocess.run(
         [str(velo_exe()), "run", "examples/26_advanced_structs.vl"],
         capture_output=True,
-        text=True
+        text=True, encoding="utf-8", errors="replace"
     )
     assert result.returncode == 0, f"Error: {result.stderr}"
     output = result.stdout
@@ -94,7 +94,7 @@ def test_native_emit_c_attributes():
     result = subprocess.run(
         [str(velo_exe()), "emit-c", "examples/26_advanced_structs.vl"],
         capture_output=True,
-        text=True
+        text=True, encoding="utf-8", errors="replace"
     )
     assert result.returncode == 0, f"Error: {result.stderr}"
     output = result.stdout
@@ -111,7 +111,7 @@ def test_native_missing_field_without_default_is_error(tmp_path):
     result = subprocess.run(
         [str(velo_exe()), "run", src],
         capture_output=True,
-        text=True
+        text=True, encoding="utf-8", errors="replace"
     )
     assert result.returncode != 0
     combined = result.stdout + result.stderr

@@ -11,7 +11,7 @@ class TestMilestone24(unittest.TestCase):
 
     def test_run_self_hosting_readiness(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.entry_file)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"run failed: {res.stderr}")
         self.assertIn("--- Velo Milestone 2.4: Self-Hosting Readiness Test ---", res.stdout)
         self.assertIn("Target file exists on disk: true", res.stdout)
@@ -26,7 +26,7 @@ class TestMilestone24(unittest.TestCase):
 
     def test_emit_c_readiness_pipeline(self):
         cmd = [sys.executable, str(self.velo_py), "emit-c", str(self.entry_file)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
         self.assertIn("typedef struct Token Token;", res.stdout)
         self.assertIn("typedef struct LexerSummary LexerSummary;", res.stdout)

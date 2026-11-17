@@ -21,7 +21,7 @@ def run_velo_source(source: str, tmp_path: Path):
     return subprocess.run(
         [str(VELO_EXE), "run", str(probe)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
     )
 
 
@@ -457,6 +457,6 @@ def test_bin_oct_invalid_digits_and_empty_rejected(lit, tmp_path):
     res = subprocess.run(
         [str(VELO_EXE), "check", str(probe)],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
     )
     assert res.returncode != 0, f"velo check accepted invalid literal {lit}"

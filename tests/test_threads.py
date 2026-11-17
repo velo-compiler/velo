@@ -173,7 +173,7 @@ class TestThreadSurface(unittest.TestCase):
             ("stage1", [sys.executable, str(VELO_PY), "build", str(src)]),
             ("stage2", [str(VELO_EXE), "build", str(src)]),
         ):
-            res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT)
+            res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT)
             assert res.returncode != 0, (
                 f"{stage} accepted an invalid program ({name}):\n{res.stdout}")
             assert want_msg in (res.stdout + res.stderr), (

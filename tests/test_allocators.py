@@ -20,7 +20,7 @@ def run_stage(stage: str, program: str, name: str) -> subprocess.CompletedProces
         exe = tmp / f"{name}_s1.exe"
         res = subprocess.run(
             [sys.executable, str(VELO_PY), "build", str(src), "-o", str(exe)],
-            capture_output=True, text=True, cwd=ROOT,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT,
         )
         if res.returncode != 0:
             raise AssertionError(f"stage1 build failed: {res.stderr[-2000:]}")
@@ -28,11 +28,11 @@ def run_stage(stage: str, program: str, name: str) -> subprocess.CompletedProces
         exe = tmp / f"{name}_s2.exe"
         res = subprocess.run(
             [str(VELO_EXE), "build", str(src), "-o", str(exe)],
-            capture_output=True, text=True, cwd=ROOT,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT,
         )
         if res.returncode != 0:
             raise AssertionError(f"stage2 build failed: {res.stdout[-2000:]}")
-    return subprocess.run([str(exe)], capture_output=True, text=True, timeout=60)
+    return subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
 
 
 def assert_parity(program: str, name: str, expected_lines=None):
@@ -77,7 +77,7 @@ class TestAllocatorArchitecture(unittest.TestCase):
             tmp.write_text(program, encoding="utf-8")
             res = subprocess.run(
                 [sys.executable, str(VELO_PY), "emit-c", str(tmp)],
-                capture_output=True, text=True, cwd=ROOT,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT,
             )
             self.assertEqual(res.returncode, 0, res.stderr)
             self.assertIn("velo_zone_push();", res.stdout)

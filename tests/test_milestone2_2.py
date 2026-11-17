@@ -11,7 +11,7 @@ class TestMilestone22(unittest.TestCase):
 
     def test_run_file_io(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"run failed: {res.stderr}")
         self.assertIn("--- Velo Milestone 2.2: Standard File I/O ---", res.stdout)
         self.assertIn("File exists before write: false", res.stdout)
@@ -28,7 +28,7 @@ class TestMilestone22(unittest.TestCase):
 
     def test_emit_c_file_io_primitives(self):
         cmd = [sys.executable, str(self.velo_py), "emit-c", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
         self.assertIn("velo_fs_exists(test_file)", res.stdout)
         self.assertIn("velo_fs_write_file(test_file, sample_payload)", res.stdout)

@@ -20,7 +20,7 @@ def run_velo_source(code: str) -> subprocess.CompletedProcess:
             [COMPILER, "run", src],
             env=get_env(),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=30,
         )
 
@@ -34,7 +34,7 @@ def build_velo_source(code: str) -> subprocess.CompletedProcess:
             [COMPILER, "build", src, "-o", out_bin],
             env=get_env(),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=30,
         )
 
@@ -48,7 +48,7 @@ def emit_c_source(code: str) -> str:
             [COMPILER, "emit-c", src, "-o", out_c],
             env=get_env(),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=30,
         )
         assert res.returncode == 0, f"emit-c failed: {res.stdout}\n{res.stderr}"

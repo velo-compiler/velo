@@ -11,7 +11,7 @@ class TestMilestone3(unittest.TestCase):
 
     def test_run_pointers_and_structs(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"run failed: {res.stderr}")
         self.assertIn("Initial Point: (10.00, 20.00)", res.stdout)
         self.assertIn("Point after move: (15.50, 17.50)", res.stdout)
@@ -21,7 +21,7 @@ class TestMilestone3(unittest.TestCase):
 
     def test_emit_c_has_struct_and_arrow(self):
         cmd = [sys.executable, str(self.velo_py), "emit-c", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
         # Verify typedef struct Point
         self.assertIn("typedef struct Point Point;", res.stdout)

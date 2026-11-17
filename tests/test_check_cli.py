@@ -72,7 +72,7 @@ def _run_stage1(args):
     return subprocess.run(
         [sys.executable, "velo.py"] + args,
         capture_output=True,
-        text=True
+        text=True, encoding="utf-8", errors="replace"
     )
 
 
@@ -82,7 +82,7 @@ def _run_native(args):
     return subprocess.run(
         [str(velo_exe())] + args,
         capture_output=True,
-        text=True
+        text=True, encoding="utf-8", errors="replace"
     )
 
 

@@ -26,7 +26,7 @@ class TestStage2Codegen(unittest.TestCase):
 
     def test_run_stage2_codegen(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"run failed: {res.stderr}")
         self.assertIn("--- Velo Stage 2 Milestone 2.4: Native C99 Code Generator Verification ---", res.stdout)
         self.assertIn("AST parsed and semantic check passed: true", res.stdout)
@@ -39,7 +39,7 @@ class TestStage2Codegen(unittest.TestCase):
     def test_compile_and_run_generated_c(self):
         # 1. Run the Velo codegen script to generate the C file
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
-        subprocess.run(cmd, capture_output=True, text=True, check=True)
+        subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", check=True)
 
         c_file = self.cache_dir / "stage2_generated.c"
         self.assertTrue(c_file.exists(), "stage2_generated.c was not created")
@@ -60,11 +60,11 @@ class TestStage2Codegen(unittest.TestCase):
             "-o",
             str(exe_file)
         ]
-        res = subprocess.run(compile_cmd, capture_output=True, text=True, env=env)
+        res = subprocess.run(compile_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
         self.assertEqual(res.returncode, 0, f"GCC compilation failed: {res.stderr}")
 
         # 3. Execute the binary
-        run_res = subprocess.run([str(exe_file)], capture_output=True, text=True)
+        run_res = subprocess.run([str(exe_file)], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(run_res.returncode, 0, f"Execution failed: {run_res.stderr}")
         self.assertIn("Computed result successfully!", run_res.stdout)
 

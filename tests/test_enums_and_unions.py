@@ -11,7 +11,7 @@ class TestEnumsAndUnions(unittest.TestCase):
 
     def test_run_enums_and_unions(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"run failed: {res.stderr}\nSTDOUT:\n{res.stdout}")
         self.assertIn("Facing North", res.stdout)
         self.assertIn("Facing East", res.stdout)
@@ -23,7 +23,7 @@ class TestEnumsAndUnions(unittest.TestCase):
 
     def test_emit_c_enums_and_unions(self):
         cmd = [sys.executable, str(self.velo_py), "emit-c", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
         self.assertIn("typedef int32_t Direction;", res.stdout)
         self.assertIn("Direction_North = 0,", res.stdout)

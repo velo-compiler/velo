@@ -198,7 +198,7 @@ def build_and_run(source_code: str, timeout: float = 2.0) -> subprocess.Complete
         f.write(source_code)
         f_name = f.name
     try:
-        return subprocess.run([str(VELO_EXE), "run", f_name], capture_output=True, text=True, timeout=timeout)
+        return subprocess.run([str(VELO_EXE), "run", f_name], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
     finally:
         Path(f_name).unlink(missing_ok=True)
 
@@ -208,7 +208,7 @@ def run_velo_check(source_code: str) -> subprocess.CompletedProcess:
         f.write(source_code)
         f_name = f.name
     try:
-        return subprocess.run([str(VELO_EXE), "check", f_name], capture_output=True, text=True)
+        return subprocess.run([str(VELO_EXE), "check", f_name], capture_output=True, text=True, encoding="utf-8", errors="replace")
     finally:
         Path(f_name).unlink(missing_ok=True)
 

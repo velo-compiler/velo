@@ -17,7 +17,7 @@ class TestDocsAndComments(unittest.TestCase):
 
     def test_stage1_run_docs_and_comments(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"Stage 1 run failed: {res.stderr}")
         self.assertIn("=== Milestone 1.2: Comments & Documentation Test ===", res.stdout)
         self.assertIn("Vector 1: (3.00, 4.00)", res.stdout)
@@ -29,7 +29,7 @@ class TestDocsAndComments(unittest.TestCase):
     def test_self_hosted_run_docs_and_comments(self):
         self.assertTrue(self.velo_exe.exists(), "velo.exe must exist")
         cmd = [str(self.velo_exe), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"Self-hosted run failed: {res.stderr}")
         self.assertIn("=== Milestone 1.2: Comments & Documentation Test ===", res.stdout)
         self.assertIn("Vector 1: (3.00, 4.00)", res.stdout)
@@ -40,7 +40,7 @@ class TestDocsAndComments(unittest.TestCase):
 
     def test_stage1_doc_generator(self):
         cmd = [sys.executable, str(self.velo_py), "doc", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"Stage 1 doc failed: {res.stderr}")
         self.assertIn("# API Reference:", res.stdout)
         self.assertIn("## Data Structures", res.stdout)
@@ -59,7 +59,7 @@ class TestDocsAndComments(unittest.TestCase):
 
     def test_self_hosted_doc_generator(self):
         cmd = [str(self.velo_exe), "doc", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"Self-hosted doc failed: {res.stderr}")
         self.assertIn("# API Reference:", res.stdout)
         self.assertIn("## Data Structures", res.stdout)
@@ -81,7 +81,7 @@ class TestDocsAndComments(unittest.TestCase):
         if out_file.exists():
             out_file.unlink()
         cmd = [str(self.velo_exe), "doc", str(self.example), "-o", str(out_file)]
-        res = subprocess.run(cmd, capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"Self-hosted doc with -o failed: {res.stderr}")
         self.assertTrue(out_file.exists(), "Output markdown file must be created")
         content = out_file.read_text(encoding="utf-8")

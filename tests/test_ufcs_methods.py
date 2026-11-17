@@ -11,7 +11,7 @@ class TestUFCSMethods(unittest.TestCase):
 
     def test_run_ufcs_methods(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"run failed: {res.stderr}\nSTDOUT:\n{res.stdout}")
         self.assertIn("Initial length_sq: 25.00", res.stdout)
         self.assertIn("After scale(2.0): x=6.00, y=8.00", res.stdout)
@@ -26,7 +26,7 @@ class TestUFCSMethods(unittest.TestCase):
 
     def test_emit_c_ufcs_methods(self):
         cmd = [sys.executable, str(self.velo_py), "emit-c", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
         self.assertIn("scale((&v), 2.0", res.stdout)
         self.assertIn("scale(pv, 0.5", res.stdout)

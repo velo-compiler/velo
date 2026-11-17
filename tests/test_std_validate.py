@@ -19,7 +19,7 @@ def test_std_validate_core():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
@@ -31,7 +31,7 @@ def test_std_validate_module_import():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
@@ -59,7 +59,7 @@ act main() -> i32 {
             [str(VELO_EXE), "run", str(src_file)],
             cwd=str(REPO_ROOT),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=get_env()
         )
         assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"

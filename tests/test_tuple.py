@@ -26,7 +26,7 @@ def run_velo_source(code: str, tmp_path) -> subprocess.CompletedProcess:
     return subprocess.run(
         [VELO_BIN, "run", str(source_file)],
         capture_output=True,
-        text=True
+        text=True, encoding="utf-8", errors="replace"
     )
 
 
@@ -36,7 +36,7 @@ def build_velo_source(code: str, tmp_path) -> subprocess.CompletedProcess:
     return subprocess.run(
         [VELO_BIN, "build", str(source_file), "-o", str(tmp_path / "out.exe")],
         capture_output=True,
-        text=True
+        text=True, encoding="utf-8", errors="replace"
     )
 
 

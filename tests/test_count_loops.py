@@ -31,7 +31,7 @@ def run_velo_source(code: str, timeout: float = 1.0) -> subprocess.CompletedProc
             [COMPILER, "build", src, "-o", exe],
             env=get_env(),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=10.0,
         )
         if build_res.returncode != 0:
@@ -40,7 +40,7 @@ def run_velo_source(code: str, timeout: float = 1.0) -> subprocess.CompletedProc
             return subprocess.run(
                 [exe],
                 capture_output=True,
-                text=True,
+                text=True, encoding="utf-8", errors="replace",
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired as e:
@@ -57,7 +57,7 @@ def check_velo_source(code: str) -> subprocess.CompletedProcess:
             [COMPILER, "check", src],
             env=get_env(),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=10.0,
         )
 
@@ -72,7 +72,7 @@ def emit_c_velo_source(code: str) -> str:
             [COMPILER, "emit-c", src],
             env=get_env(),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=10.0,
         )
         assert res.returncode == 0, f"emit-c failed:\n{res.stderr}\n{res.stdout}"

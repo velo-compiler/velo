@@ -22,13 +22,13 @@ class TestMixedComparisons(unittest.TestCase):
 
             # Stage 1 (Python)
             res1 = subprocess.run([sys.executable, str(self.velo_py), "run", str(src_file)],
-                                  capture_output=True, text=True, env=self.env)
+                                  capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res1.returncode, 0, f"Stage 1 failed:\nSTDOUT:\n{res1.stdout}\nSTDERR:\n{res1.stderr}")
             self.assertIn(expected_output, res1.stdout)
 
             # Stage 2 (Self-hosted)
             res2 = subprocess.run([str(self.velo_exe), "run", str(src_file)],
-                                  capture_output=True, text=True, env=self.env)
+                                  capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res2.returncode, 0, f"Stage 2 failed:\nSTDOUT:\n{res2.stdout}\nSTDERR:\n{res2.stderr}")
             self.assertIn(expected_output, res2.stdout)
 
@@ -136,7 +136,7 @@ act main() -> i32 {
             src_file = Path(tmpdir) / "emit.vl"
             src_file.write_text(code, encoding="utf-8")
             res = subprocess.run([str(self.velo_exe), "emit-c", str(src_file)],
-                                 capture_output=True, text=True, env=self.env)
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res.returncode, 0)
             self.assertIn("velo_cmp_lt_s_u", res.stdout)
 

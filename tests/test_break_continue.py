@@ -156,7 +156,7 @@ def compile_and_run_werror(source_code: str, timeout: float = 2.0) -> subprocess
         emit_res = subprocess.run(
             [str(VELO_EXE), "emit-c", str(src_path), "-o", str(c_path)],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=get_build_env(),
             timeout=timeout,
         )
@@ -177,12 +177,12 @@ def compile_and_run_werror(source_code: str, timeout: float = 2.0) -> subprocess
         gcc_res = subprocess.run(
             gcc_cmd,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=get_build_env(),
             timeout=timeout,
         )
         assert gcc_res.returncode == 0, f"gcc -Werror failed: {gcc_res.stderr}\n{gcc_res.stdout}"
-        return subprocess.run([str(exe_path)], capture_output=True, text=True, timeout=timeout)
+        return subprocess.run([str(exe_path)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
 
 
 def build_and_run(source_code: str, timeout: float = 2.0) -> subprocess.CompletedProcess:
@@ -190,7 +190,7 @@ def build_and_run(source_code: str, timeout: float = 2.0) -> subprocess.Complete
         f.write(source_code)
         f_name = f.name
     try:
-        return subprocess.run([str(VELO_EXE), "run", f_name], capture_output=True, text=True, timeout=timeout, env=get_build_env())
+        return subprocess.run([str(VELO_EXE), "run", f_name], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, env=get_build_env())
     finally:
         Path(f_name).unlink(missing_ok=True)
 

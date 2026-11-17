@@ -39,14 +39,14 @@ def setup_bootstrap():
                 str(bootstrap_c),
                 "-o", str(GEN1_EXE)
             ]
-            res = subprocess.run(gcc_cmd, cwd=str(REPO_ROOT), capture_output=True, text=True, env=env)
+            res = subprocess.run(gcc_cmd, cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
             assert res.returncode == 0, f"Gen1 build from bootstrap.c failed:\n{res.stderr}"
         else:
             res = subprocess.run(
                 ["python", "velo.py", "build", str(MAIN_VL), "-o", str(GEN1_EXE)],
                 cwd=str(REPO_ROOT),
                 capture_output=True,
-                text=True
+                text=True, encoding="utf-8", errors="replace"
             )
             assert res.returncode == 0, f"Gen1 build failed:\n{res.stderr}"
 
@@ -56,7 +56,7 @@ def setup_bootstrap():
             [str(GEN1_EXE), "build", str(MAIN_VL), "-o", str(GEN2_EXE)],
             cwd=str(REPO_ROOT),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=get_env()
         )
         assert res.returncode == 0, f"Gen2 build failed:\n{res.stdout}\n{res.stderr}"
@@ -67,7 +67,7 @@ def setup_bootstrap():
             [str(GEN2_EXE), "build", str(MAIN_VL), "-o", str(GEN3_EXE)],
             cwd=str(REPO_ROOT),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             env=get_env()
         )
         assert res.returncode == 0, f"Gen3 build failed:\n{res.stdout}\n{res.stderr}"
@@ -83,7 +83,7 @@ def test_triple_bootstrap_sha256_determinism():
         [str(GEN2_EXE), "emit-c", str(MAIN_VL)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res2.returncode == 0, f"Gen2 emit-c failed:\n{res2.stderr}"
@@ -92,7 +92,7 @@ def test_triple_bootstrap_sha256_determinism():
         [str(GEN3_EXE), "emit-c", str(MAIN_VL)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res3.returncode == 0, f"Gen3 emit-c failed:\n{res3.stderr}"
@@ -111,7 +111,7 @@ def test_gen3_version_and_help():
         [str(GEN3_EXE), "version"],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res_ver.returncode == 0
@@ -121,7 +121,7 @@ def test_gen3_version_and_help():
         [str(GEN3_EXE), "help"],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res_help.returncode == 0
@@ -133,7 +133,7 @@ def test_gen3_run_examples():
         [str(GEN3_EXE), "run", str(hello_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0

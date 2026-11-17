@@ -77,7 +77,7 @@ def _build_exe(stage: str, content: str, name: str) -> Path:
         cmd = [sys.executable, str(VELO_PY), "build", str(src), "-o", str(exe)]
     else:
         cmd = [str(VELO_EXE), "build", str(src), "-o", str(exe)]
-    res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, timeout=300)
+    res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT, timeout=300)
     if res.returncode != 0:
         raise AssertionError(f"{stage} build failed: {res.stderr[-2000:]}")
     if not exe.exists():
@@ -188,7 +188,7 @@ class TestOsSlice1(unittest.TestCase):
         for exe in (exe1, exe2):
             res = subprocess.run(
                 [str(exe), "alpha", "beta"],
-                capture_output=True, text=True, timeout=120, cwd=ROOT)
+                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120, cwd=ROOT)
             out = res.stdout.replace("\r\n", "\n")
             self.assertEqual(res.returncode, 0, res.stderr[-2000:])
             self.assertEqual(out.strip().splitlines(), want.strip().splitlines(),

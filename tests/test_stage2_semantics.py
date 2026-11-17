@@ -12,7 +12,7 @@ class TestStage2Semantics(unittest.TestCase):
 
     def test_run_stage2_semantics(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"run failed: {res.stderr}")
         self.assertIn("--- Velo Stage 2 Milestone 2.3: Semantic Analysis Verification ---", res.stdout)
         self.assertIn("Semantic analysis pass result: true", res.stdout)
@@ -30,7 +30,7 @@ class TestStage2Semantics(unittest.TestCase):
 
     def test_emit_c_stage2_semantics(self):
         cmd = [sys.executable, str(self.velo_py), "emit-c", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
         self.assertIn("typedef struct SymbolTable SymbolTable;", res.stdout)
         self.assertIn("typedef struct Scope Scope;", res.stdout)
@@ -47,7 +47,7 @@ class TestStage2Semantics(unittest.TestCase):
             f.write("act main() {\n    let num: i64 = 100\n    num = 50\n}\n")
             fname = f.name
         try:
-            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True)
+            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertNotEqual(res.returncode, 0)
             self.assertIn("cannot assign to immutable variable 'num'. Declare with 'mut num' to allow mutation.", res.stdout)
         finally:
@@ -62,7 +62,7 @@ class TestStage2Semantics(unittest.TestCase):
             f.write("act main() {\n    let counter: i32 = 0\n    counter += 1\n}\n")
             fname = f.name
         try:
-            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True)
+            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertNotEqual(res.returncode, 0)
             self.assertIn("cannot assign to immutable variable 'counter'. Declare with 'mut counter' to allow mutation.", res.stdout)
         finally:
@@ -77,7 +77,7 @@ class TestStage2Semantics(unittest.TestCase):
             f.write("data Point { x: f32, y: f32 }\nact main() {\n    let pt = Point{ x: 1.0, y: 2.0 }\n    pt.x = 5.0\n}\n")
             fname = f.name
         try:
-            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True)
+            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertNotEqual(res.returncode, 0)
             self.assertIn("cannot assign to field of immutable variable 'pt'. Declare with 'mut pt' to allow mutation.", res.stdout)
         finally:
@@ -92,7 +92,7 @@ class TestStage2Semantics(unittest.TestCase):
             f.write("act main() {\n    mut num: i64 = 100\n    num = 50\n    mut count: i32 = 0\n    count += 1\n}\n")
             fname = f.name
         try:
-            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True)
+            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True, encoding="utf-8", errors="replace")
             self.assertEqual(res.returncode, 0, f"Check failed: {res.stdout}")
         finally:
             Path(fname).unlink(missing_ok=True)

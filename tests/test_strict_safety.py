@@ -32,7 +32,7 @@ def run_velo_check(source_code: str, strict_safety: bool = True) -> subprocess.C
         cmd = [str(VELO_EXE), "check", f_name]
         if strict_safety:
             cmd.append("--strict-safety")
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         return res
     finally:
         Path(f_name).unlink(missing_ok=True)
@@ -47,7 +47,7 @@ def run_velo_program(source_code: str, strict_safety: bool = True) -> subprocess
         cmd = [str(VELO_EXE), "run", f_name]
         if strict_safety:
             cmd.append("--strict-safety")
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         return res
     finally:
         Path(f_name).unlink(missing_ok=True)
@@ -306,7 +306,7 @@ class TestStrictSafety:
             f.write(snippet)
             f_name = f.name
         try:
-            res = subprocess.run([str(VELO_EXE), "fmt", f_name], capture_output=True, text=True)
+            res = subprocess.run([str(VELO_EXE), "fmt", f_name], capture_output=True, text=True, encoding="utf-8", errors="replace")
             assert res.returncode == 0
             content = Path(f_name).read_text()
             assert "unsafe {" in content

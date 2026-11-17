@@ -19,7 +19,7 @@ def test_std_str_slice():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
@@ -31,7 +31,7 @@ def test_std_str_utf8():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
@@ -43,7 +43,7 @@ def test_std_str_search():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
@@ -55,7 +55,7 @@ def test_std_str_builder():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
@@ -67,7 +67,7 @@ def test_std_str_manip():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"

@@ -11,7 +11,7 @@ class TestMilestone4(unittest.TestCase):
 
     def test_run_zone_memory_and_ffi(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"run failed: {res.stderr}")
         self.assertIn("Arena memory before zone: 0 bytes", res.stdout)
         self.assertIn("Arena memory inside zone: 800 bytes", res.stdout)
@@ -21,7 +21,7 @@ class TestMilestone4(unittest.TestCase):
 
     def test_emit_c_has_zone_push_and_pop(self):
         cmd = [sys.executable, str(self.velo_py), "emit-c", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
         self.assertIn("velo_zone_push();", res.stdout)
         self.assertIn("velo_zone_pop(", res.stdout)

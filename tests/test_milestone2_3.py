@@ -14,7 +14,7 @@ class TestMilestone23(unittest.TestCase):
 
     def test_run_multifile(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.entry_file)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"run failed: {res.stderr}")
         self.assertIn("--- Velo Milestone 2.3: Multi-File Imports ---", res.stdout)
         self.assertIn("Sum of vectors: (16.00, 16.00)", res.stdout)
@@ -24,7 +24,7 @@ class TestMilestone23(unittest.TestCase):
 
     def test_emit_c_multifile_structure(self):
         cmd = [sys.executable, str(self.velo_py), "emit-c", str(self.entry_file)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
         self.assertIn("typedef struct Vector2 Vector2;", res.stdout)
         self.assertIn("typedef struct Stats Stats;", res.stdout)

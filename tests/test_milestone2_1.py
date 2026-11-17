@@ -11,7 +11,7 @@ class TestMilestone21(unittest.TestCase):
 
     def test_run_heap_and_defer(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"run failed: {res.stderr}")
         self.assertIn("--- Velo Milestone 2.1: Persistent Heap & Defer ---", res.stdout)
         self.assertIn("Initial active heap: 0 bytes", res.stdout)
@@ -26,7 +26,7 @@ class TestMilestone21(unittest.TestCase):
 
     def test_emit_c_heap_and_defer(self):
         cmd = [sys.executable, str(self.velo_py), "emit-c", str(self.example)]
-        res = subprocess.run(cmd, capture_output=True, text=True)
+        res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"emit-c failed: {res.stderr}")
         self.assertIn("velo_heap_alloc(sizeof(i32), (size_t)(10))", res.stdout)
         self.assertIn("velo_heap_alloc(sizeof(i32), (size_t)(20))", res.stdout)

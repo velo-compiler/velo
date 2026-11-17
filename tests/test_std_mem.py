@@ -19,7 +19,7 @@ def test_std_mem_page_alloc():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
@@ -31,7 +31,7 @@ def test_std_mem_ops():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
@@ -44,7 +44,7 @@ def test_platform_suffix_resolution():
         [str(VELO_EXE), "emit-c", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"emit-c failed:\n{res.stderr}"
@@ -57,7 +57,7 @@ def test_std_mem_arena():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
@@ -69,7 +69,7 @@ def test_std_mem_slab():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
@@ -81,7 +81,7 @@ def test_std_mem_heap():
         [str(VELO_EXE), "run", str(test_vl)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"

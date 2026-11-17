@@ -7,7 +7,7 @@ def test_operator_overloading_execution():
     result = subprocess.run(
         [sys.executable, "velo.py", "run", "examples/25_operator_overloading.vl"],
         capture_output=True,
-        text=True
+        text=True, encoding="utf-8", errors="replace"
     )
     assert result.returncode == 0, f"Error: {result.stderr}"
     output = result.stdout
@@ -26,7 +26,7 @@ def test_operator_overloading_emit_c():
     result = subprocess.run(
         [sys.executable, "velo.py", "emit-c", "examples/25_operator_overloading.vl"],
         capture_output=True,
-        text=True
+        text=True, encoding="utf-8", errors="replace"
     )
     assert result.returncode == 0, f"Error: {result.stderr}"
     c_code = result.stdout
@@ -43,7 +43,7 @@ def test_operator_overloading_native():
     exe = str(velo_exe())
     if not os.path.exists(exe):
         pytest.skip("bin/velo.exe not built")
-    result = subprocess.run([exe, "run", "examples/25_operator_overloading.vl"], capture_output=True, text=True)
+    result = subprocess.run([exe, "run", "examples/25_operator_overloading.vl"], capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert result.returncode == 0, f"Error: {result.stderr}"
     assert "=== Operator Overloading Verification Complete ===" in result.stdout
     assert "next_pos: x=11.00, y=18.50" in result.stdout

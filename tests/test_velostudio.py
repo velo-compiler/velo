@@ -37,7 +37,7 @@ class TestVeloStudio(unittest.TestCase):
             "-l",
             "psapi",
         ]
-        res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"velo.exe test failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}")
         self.assertIn("2 passed; 0 failed", res.stdout)
 
@@ -53,7 +53,7 @@ class TestVeloStudio(unittest.TestCase):
             "-l",
             "psapi",
         ]
-        res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"python velo.py test failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}")
         self.assertIn("2 passed; 0 failed", res.stdout)
 
@@ -73,7 +73,7 @@ class TestVeloStudio(unittest.TestCase):
             "-l", "sqlite3",
             "-l", "psapi",
         ]
-        res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, env=self.env)
+        res = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
         self.assertEqual(res.returncode, 0, f"Compilation failed:\nSTDOUT: {res.stdout}\nSTDERR: {res.stderr}")
         self.assertTrue(out_exe.exists(), "velostudio.exe was not created")
         # Ensure executable is a compact native binary (< 500 KB)

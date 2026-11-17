@@ -175,3 +175,55 @@ def test_bootstrap_snapshot_uses_the_helper():
     """The snapshot test is the one that hardcoded the name most consequentially."""
     text = (TESTS_DIR / "test_bootstrap_snapshot.py").read_text(encoding="utf-8")
     assert "velo_exe()" in text
+
+
+def _text_mode_calls_without_encoding():
+    """
+    Subprocess calls that ask for text but do not pin the decoding.
+
+    `text=True` alone decodes with the platform's locale encoding: cp1252 on a
+    Western Windows runner, UTF-8 elsewhere. A .vl program that prints a non-ASCII
+    byte then fails on Windows and passes on Linux, or vice versa, and the failure
+    is a UnicodeDecodeError in the test harness rather than in the compiler. The
+    sweep pinned `encoding="utf-8", errors="replace"` on all 384 such sites; this
+    keeps them pinned.
+    """
+    import ast
+
+    offenders = []
+    for path in _test_files():
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not (
+                isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "subprocess"
+            ):
+                continue
+            keywords = {k.arg for k in node.keywords}
+            if "encoding" in keywords:
+                continue
+            wants_text = any(
+                k.arg in ("text", "universal_newlines")
+                and isinstance(k.value, ast.Constant)
+                and k.value.value is True
+                for k in node.keywords
+            )
+            if wants_text:
+                offenders.append(f"{path.name}:{node.lineno}")
+    return offenders
+
+
+def test_subprocess_text_calls_pin_their_encoding():
+    offenders = _text_mode_calls_without_encoding()
+    assert not offenders, (
+        "subprocess calls that pass text=True must also pass encoding=, "
+        "otherwise the decoded output depends on the runner's locale:\n"
+        + "\n".join(offenders[:20])
+    )
+

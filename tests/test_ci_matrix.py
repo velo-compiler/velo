@@ -188,7 +188,7 @@ def test_bootstrap_bat_structure():
 def test_check_determinism_script_runs():
     """Verify that scripts/check_determinism.py executes and confirms SHA-256 fixed-point determinism."""
     assert CHECK_DET.exists(), "scripts/check_determinism.py must exist"
-    res = subprocess.run([sys.executable, str(CHECK_DET)], cwd=str(REPO_ROOT), capture_output=True, text=True)
+    res = subprocess.run([sys.executable, str(CHECK_DET)], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res.returncode == 0, f"check_determinism.py failed:\nSTDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
     assert "SHA-256 MATCH" in res.stdout
 
@@ -280,13 +280,13 @@ def test_velo_accepts_clang_compiler_flag():
         pytest.skip("bin/velo not built")
     
     # Check help text
-    res_help = subprocess.run([str(VELO_EXE), "help"], cwd=str(REPO_ROOT), capture_output=True, text=True)
+    res_help = subprocess.run([str(VELO_EXE), "help"], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert res_help.returncode == 0
     assert "--cc gcc|clang|cl" in res_help.stdout
 
     # Test invalid vs accepted cc backend diagnostic
-    res_unknown = subprocess.run([str(VELO_EXE), "check", "examples/01_hello.vl", "--cc", "bad_compiler"], cwd=str(REPO_ROOT), capture_output=True, text=True)
+    res_unknown = subprocess.run([str(VELO_EXE), "check", "examples/01_hello.vl", "--cc", "bad_compiler"], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     # When --cc is passed to check/build, bad_compiler error should mention clang
-    res_build_bad = subprocess.run([str(VELO_EXE), "build", "examples/01_hello.vl", "--cc", "bad_compiler"], cwd=str(REPO_ROOT), capture_output=True, text=True)
+    res_build_bad = subprocess.run([str(VELO_EXE), "build", "examples/01_hello.vl", "--cc", "bad_compiler"], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert "Expected 'gcc', 'clang', or 'cl'" in res_build_bad.stdout or "Expected 'gcc', 'clang', or 'cl'" in res_build_bad.stderr
 

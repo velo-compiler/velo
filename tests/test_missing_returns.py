@@ -22,14 +22,14 @@ class TestMissingReturns(unittest.TestCase):
 
             # Stage 1 (Python)
             res1 = subprocess.run([sys.executable, str(self.velo_py), "check", str(src_file)],
-                                  capture_output=True, text=True, env=self.env)
+                                  capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertNotEqual(res1.returncode, 0, f"Stage 1 should fail check but succeeded:\nSTDOUT:\n{res1.stdout}\nSTDERR:\n{res1.stderr}")
             combined_err1 = res1.stdout + res1.stderr
             self.assertIn(expected_snippet, combined_err1)
 
             # Stage 2 (Self-hosted)
             res2 = subprocess.run([str(self.velo_exe), "check", str(src_file)],
-                                  capture_output=True, text=True, env=self.env)
+                                  capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertNotEqual(res2.returncode, 0, f"Stage 2 should fail check but succeeded:\nSTDOUT:\n{res2.stdout}\nSTDERR:\n{res2.stderr}")
             combined_err2 = res2.stdout + res2.stderr
             self.assertIn(expected_snippet, combined_err2)
@@ -41,12 +41,12 @@ class TestMissingReturns(unittest.TestCase):
 
             # Stage 1 (Python)
             res1 = subprocess.run([sys.executable, str(self.velo_py), "check", str(src_file)],
-                                  capture_output=True, text=True, env=self.env)
+                                  capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res1.returncode, 0, f"Stage 1 failed check:\nSTDOUT:\n{res1.stdout}\nSTDERR:\n{res1.stderr}")
 
             # Stage 2 (Self-hosted)
             res2 = subprocess.run([str(self.velo_exe), "check", str(src_file)],
-                                  capture_output=True, text=True, env=self.env)
+                                  capture_output=True, text=True, encoding="utf-8", errors="replace", env=self.env)
             self.assertEqual(res2.returncode, 0, f"Stage 2 failed check:\nSTDOUT:\n{res2.stdout}\nSTDERR:\n{res2.stderr}")
 
     def test_missing_return_in_if_without_else(self):

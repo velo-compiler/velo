@@ -42,7 +42,7 @@ def run_velo_source(code: str) -> subprocess.CompletedProcess:
             [COMPILER, "run", src],
             env=get_env(),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=30,
         )
 
@@ -57,7 +57,7 @@ def emit_c_source(code: str) -> str:
             [COMPILER, "emit-c", src, "-o", out_c],
             env=get_env(),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=30,
         )
         assert res.returncode == 0, f"emit-c failed: {res.stderr}\n{res.stdout}"
@@ -209,7 +209,7 @@ act main() {
             [COMPILER, "emit-c", src, "-o", out_c],
             env=get_env(),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
         )
         assert res_emit.returncode == 0
 
@@ -233,6 +233,6 @@ act main() {
             ],
             env=get_env(),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
         )
         assert res_gcc.returncode == 0, f"GCC failed with warnings/errors: {res_gcc.stderr}"

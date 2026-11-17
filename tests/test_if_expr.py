@@ -8,7 +8,7 @@ def _run_stage2(cmd: list) -> subprocess.CompletedProcess:
     if not velo_bin.exists():
         pytest.skip("bin/velo.exe not built yet")
     full_cmd = [str(velo_bin)] + cmd
-    return subprocess.run(full_cmd, capture_output=True, text=True)
+    return subprocess.run(full_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 def test_if_expr_std_test():
     """Runs the full std/tests/if_expr_test.vl battery."""

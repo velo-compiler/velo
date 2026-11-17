@@ -317,10 +317,10 @@ act main() -> i32 {
             c_file.write_text(MINI_TEMPLATE % call, encoding="utf-8")
             res = subprocess.run(
                 [gcc, "-O2", "-std=c99", "-I", str(RUNTIME), str(c_file), "-o", str(exe)],
-                capture_output=True, text=True, cwd=ROOT, env=env,
+                capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT, env=env,
             )
             self.assertEqual(res.returncode, 0, f"{name} compile failed:\n{res.stderr[-1500:]}")
-            run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=120)
+            run = subprocess.run([str(exe)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             self.assertNotEqual(run.returncode, 0, f"{name} survived: {call}")
             self.assertIn(want_msg, run.stderr, f"{name} message mismatch:\n{run.stderr}")
 
@@ -386,7 +386,7 @@ act main() -> i32 {
             tmp.parent.mkdir(parents=True, exist_ok=True)
             tmp.write_text(oob_program, encoding="utf-8")
             cmd = [c.replace("{src}", str(tmp)) for c in cmd]
-            res = subprocess.run(cmd, capture_output=True, text=True, cwd=ROOT, timeout=300)
+            res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ROOT, timeout=300)
             self.assertEqual(res.returncode, 0, f"{stage} unsafe knob crashed:\n{res.stderr[-1500:]}")
             self.assertNotIn("shelf index out of bounds", res.stderr)
 

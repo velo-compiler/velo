@@ -61,7 +61,7 @@ def _require_native():
 
 
 def _native(args):
-    return subprocess.run([str(velo_exe())] + args, capture_output=True, text=True)
+    return subprocess.run([str(velo_exe())] + args, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 
 @pytest.mark.parametrize("source", [INTERP_MEMBER_ERROR, INTERP_ARITH_ERROR],

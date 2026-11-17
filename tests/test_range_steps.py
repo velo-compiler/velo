@@ -42,7 +42,7 @@ def run_velo_check(source_code: str) -> subprocess.CompletedProcess:
         f.write(source_code)
         f_name = f.name
     try:
-        res = subprocess.run([str(VELO_EXE), "check", f_name], capture_output=True, text=True)
+        res = subprocess.run([str(VELO_EXE), "check", f_name], capture_output=True, text=True, encoding="utf-8", errors="replace")
         return res
     finally:
         Path(f_name).unlink(missing_ok=True)
@@ -55,7 +55,7 @@ def run_velo_emit_c(source_code: str) -> subprocess.CompletedProcess:
         f_name = f.name
     c_out = f_name + ".c"
     try:
-        res = subprocess.run([str(VELO_EXE), "emit-c", f_name, "-o", c_out], capture_output=True, text=True)
+        res = subprocess.run([str(VELO_EXE), "emit-c", f_name, "-o", c_out], capture_output=True, text=True, encoding="utf-8", errors="replace")
         if res.returncode == 0 and Path(c_out).exists():
             res.stdout = Path(c_out).read_text(encoding="utf-8")
         return res
@@ -75,14 +75,14 @@ def build_and_run_code(source_code: str, timeout: float = 1.0) -> subprocess.Com
             [str(VELO_EXE), "build", src_path, "-o", exe_path],
             env=get_build_env(),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
         )
         if build_res.returncode != 0:
             return build_res
         run_res = subprocess.run(
             [exe_path],
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=timeout,
         )
         return run_res

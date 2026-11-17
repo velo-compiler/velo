@@ -8,7 +8,7 @@ VELO_PY = REPO_ROOT / "velo.py"
 
 def run_velo_cli(args, cwd=REPO_ROOT):
     cmd = [sys.executable, str(VELO_PY)] + args
-    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
 
 def test_native_test_runner_all_pass(tmp_path):
     source = """

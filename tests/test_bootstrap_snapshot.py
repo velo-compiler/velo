@@ -53,7 +53,7 @@ def test_emit_c_output_flag(tmp_path):
         [str(VELO_EXE), "emit-c", "examples/01_hello.vl", "-o", str(out_c)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"emit-c with -o failed:\n{res.stderr}"
@@ -74,11 +74,11 @@ def test_bootstrap_c_compilation(tmp_path):
     ]
     if sys.platform != "win32":
         gcc_cmd.extend(["-lm", "-lpthread"])
-    res = subprocess.run(gcc_cmd, cwd=str(REPO_ROOT), capture_output=True, text=True, env=get_env())
+    res = subprocess.run(gcc_cmd, cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace", env=get_env())
     assert res.returncode == 0, f"Compilation of bootstrap.c failed:\n{res.stderr}"
     assert test_exe.exists(), "Target executable was not produced"
 
-    res_ver = subprocess.run([str(test_exe), "version"], capture_output=True, text=True, env=get_env())
+    res_ver = subprocess.run([str(test_exe), "version"], capture_output=True, text=True, encoding="utf-8", errors="replace", env=get_env())
     assert res_ver.returncode == 0
     assert expected_banner_line() in res_ver.stdout
 
@@ -89,7 +89,7 @@ def test_bootstrap_c_determinism(tmp_path):
         [str(VELO_EXE), "emit-c", "src/main.vl", "-o", str(fresh_c)],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         env=get_env()
     )
     assert res.returncode == 0, f"emit-c failed:\n{res.stderr}"
