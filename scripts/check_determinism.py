@@ -1,9 +1,31 @@
-"""Verify SHA-256 fixed-point between Gen2 and Gen3 emit-c output."""
-import subprocess, hashlib, sys
+"""Verify SHA-256 fixed-point between Gen2 and Gen3 emit-c output.
+
+Release-gate script: both compilers must produce byte-identical C for
+`src/main.vl`. A match is the proof that the bootstrap chain has reached a
+fixed point and that `bootstrap.c` can be regenerated safely.
+
+ENCODING CONTRACT
+-----------------
+This script's output is encoding-independent. It prints ASCII only, so it
+cannot raise `UnicodeEncodeError` on a cp1252 console, a latin-1 CI runner,
+or a UTF-8 terminal: the status text is identical everywhere and no locale
+detection is involved. Do not reintroduce non-ASCII glyphs (for example a
+check mark or an em dash) in any message: on Windows the default console
+codec is cp1252, and the resulting `UnicodeEncodeError` arrives *after* the
+hashes have already matched, turning a successful determinism check into a
+CI failure.
+
+Run it from the repository root: `python scripts/check_determinism.py`.
+Exit status is 0 when Gen2 and Gen3 agree and non-zero otherwise.
+"""
+import hashlib
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
-src = str(ROOT / "src" / "main.vl")
+SRC = str(ROOT / "src" / "main.vl")
+
 
 def find_bin(name: str) -> str:
     # Check with .exe on Windows or without on POSIX; handle either existing
@@ -16,26 +38,33 @@ def find_bin(name: str) -> str:
             return str(c)
     return str(candidates[0])
 
-g2_path = find_bin("velo_gen2")
-g3_path = find_bin("velo_gen3")
 
-g2 = subprocess.run([g2_path, "emit-c", src], capture_output=True, cwd=str(ROOT))
-g3 = subprocess.run([g3_path, "emit-c", src], capture_output=True, cwd=str(ROOT))
+def emit_c(path: str, label: str):
+    """Run `emit-c` and return its stdout bytes, or exit with its status."""
+    proc = subprocess.run([path, "emit-c", SRC], capture_output=True, cwd=str(ROOT))
+    if proc.returncode != 0:
+        stderr = proc.stderr.decode("utf-8", errors="replace")
+        print(f"{label} emit-c failed with code {proc.returncode}:\n{stderr}")
+        sys.exit(proc.returncode)
+    return proc.stdout
 
-if g2.returncode != 0:
-    print(f"Gen2 emit-c failed with code {g2.returncode}:\n{g2.stderr.decode('utf-8', errors='replace')}")
-    sys.exit(g2.returncode)
-if g3.returncode != 0:
-    print(f"Gen3 emit-c failed with code {g3.returncode}:\n{g3.stderr.decode('utf-8', errors='replace')}")
-    sys.exit(g3.returncode)
 
-h2 = hashlib.sha256(g2.stdout).hexdigest()
-h3 = hashlib.sha256(g3.stdout).hexdigest()
-print(f"Gen2: {h2}")
-print(f"Gen3: {h3}")
-if h2 == h3:
-    print("SHA-256 MATCH \u2713 \u2014 bootstrap chain is deterministic")
-    sys.exit(0)
-else:
+def main() -> int:
+    g2_out = emit_c(find_bin("velo_gen2"), "Gen2")
+    g3_out = emit_c(find_bin("velo_gen3"), "Gen3")
+
+    h2 = hashlib.sha256(g2_out).hexdigest()
+    h3 = hashlib.sha256(g3_out).hexdigest()
+    print(f"Gen2: {h2}")
+    print(f"Gen3: {h3}")
+
+    if h2 == h3:
+        # ASCII only: see the ENCODING CONTRACT above.
+        print("SHA-256 MATCH - bootstrap chain is deterministic")
+        return 0
     print("SHA-256 DIVERGED! Gen2 and Gen3 differ.")
-    sys.exit(1)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

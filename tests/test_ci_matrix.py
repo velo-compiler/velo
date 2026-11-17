@@ -112,34 +112,46 @@ def _run_determinism_with_encoding(encoding):
     )
 
 
-def test_check_determinism_reproduces_cp1252_encoding_crash():
-    """Task 66.1: pin the cp1252 defect before fixing it.
+def test_check_determinism_is_encoding_independent():
+    """Task 66.2: the determinism check must succeed under any codec.
 
-    `scripts/check_determinism.py` prints a non-ASCII status line (`\\u2713`,
-    `\\u2014`). Under cp1252 that print raises UnicodeEncodeError *after* the
-    Gen2/Gen3 hashes have already matched, so a successful determinism check
-    exits 1 and fails CI on Windows.
+    This is the contract that replaced the Task 66.1 red row. The script was
+    printing a check mark and an em dash, so a cp1252 console raised
+    UnicodeEncodeError *after* the hashes had matched and the release gate
+    exited 1 for no reason. Its output is now ASCII only.
 
-    This test asserts the defect as it is today: the hashes match, yet the
-    process still fails with an encoding error and no MATCH line. Task 66.2
-    flips this to the correct contract.
+    The codecs are exercised through the child's `PYTHONIOENCODING`, so the
+    assertion never inspects the host console and behaves identically on a
+    Windows runner and a Linux runner.
     """
-    res = _run_determinism_with_encoding("cp1252")
-    blob = res.stdout + res.stderr
+    for encoding in ("cp1252", "utf-8", "ascii", "latin-1"):
+        res = _run_determinism_with_encoding(encoding)
+        blob = res.stdout + res.stderr
+        assert res.returncode == 0, f"{encoding}: expected exit 0, got {res.returncode}:\n{blob}"
+        assert "Gen2:" in res.stdout, f"{encoding}: no Gen2 hash:\n{blob}"
+        assert "Gen3:" in res.stdout, f"{encoding}: no Gen3 hash:\n{blob}"
+        assert "SHA-256 MATCH" in res.stdout, f"{encoding}: no match line:\n{blob}"
+        assert "UnicodeEncodeError" not in blob, f"{encoding}: still raising:\n{blob}"
 
-    # The determinism check itself succeeded — both hashes were computed and
-    # printed before the crash, which is what makes this a false failure.
-    assert "Gen2:" in res.stdout, blob
-    assert "Gen3:" in res.stdout, blob
 
-    assert res.returncode != 0, (
-        "expected the cp1252 failure; if this now exits 0 the defect is fixed "
-        f"and this test should be replaced by the Task 66.3 contract:\n{blob}"
-    )
-    assert "UnicodeEncodeError" in blob, blob
-    assert "charmap" in blob, blob
-    assert "SHA-256 MATCH" not in res.stdout, (
-        "the success line was printed, so the crash happens after it:\n" + blob
+def test_check_determinism_output_is_ascii():
+    """The script's own source must not smuggle non-ASCII into its output.
+
+    Encoding-independence is a property of the bytes this script prints, so it
+    is checked at the source: a future edit that adds a glyph would reintroduce
+    the cp1252 crash even though the behavioural test above still passed on a
+    UTF-8 host.
+    """
+    source = CHECK_DET.read_text(encoding="utf-8")
+    non_ascii = [
+        (lineno, line)
+        for lineno, line in enumerate(source.splitlines(), 1)
+        if any(ord(ch) > 127 for ch in line)
+    ]
+    assert not non_ascii, (
+        "scripts/check_determinism.py must stay ASCII-only so its output "
+        "cannot raise UnicodeEncodeError on a cp1252 console; found:\n  "
+        + "\n  ".join(f"line {n}: {text!r}" for n, text in non_ascii)
     )
 
 def test_velo_accepts_clang_compiler_flag():
