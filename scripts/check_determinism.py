@@ -16,7 +16,13 @@ hashes have already matched, turning a successful determinism check into a
 CI failure.
 
 Run it from the repository root: `python scripts/check_determinism.py`.
-Exit status is 0 when Gen2 and Gen3 agree and non-zero otherwise.
+Exit status is 0 when Gen2 and Gen3 agree and non-zero otherwise. It is part
+of the release gate, so a green run is the precondition for regenerating
+`bootstrap.c` and for cutting a release.
+
+The contract is enforced by `tests/test_ci_matrix.py`
+(`test_check_determinism_is_encoding_independent` for behaviour across
+codecs, `test_check_determinism_output_is_ascii` for the source).
 """
 import hashlib
 import subprocess

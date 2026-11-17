@@ -27,6 +27,15 @@ def get_env():
     return env
 
 
+# Compiler diagnostics are UTF-8, and this corpus deliberately feeds non-ASCII
+# source (full-width digits, Arabic-Indic, Devanagari). Decoding with the
+# ambient codec -- which `text=True` alone does -- raises UnicodeDecodeError on
+# a cp1252 console inside subprocess's reader thread, which then yields
+# stdout=None and turns a passing rejection case into a TypeError. Pin the
+# codec and replace undecodable bytes so the harness never fails on encoding.
+DIAGNOSTIC_ENCODING = "utf-8"
+
+
 def run_velo_source(code: str) -> subprocess.CompletedProcess:
     with tempfile.TemporaryDirectory() as tmpdir:
         src = os.path.join(tmpdir, "test.vl")
@@ -37,6 +46,8 @@ def run_velo_source(code: str) -> subprocess.CompletedProcess:
             env=get_env(),
             capture_output=True,
             text=True,
+            encoding=DIAGNOSTIC_ENCODING,
+            errors="replace",
             timeout=30,
         )
 
@@ -51,6 +62,8 @@ def check_velo_source(code: str) -> subprocess.CompletedProcess:
             env=get_env(),
             capture_output=True,
             text=True,
+            encoding=DIAGNOSTIC_ENCODING,
+            errors="replace",
             timeout=10,
         )
 

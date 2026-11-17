@@ -346,7 +346,7 @@ Status values: `[OPEN]`, `[IN PROGRESS]`, `[BLOCKED]`, `[COMPLETED] ✅`.
 | **63** | Zero range step is accepted and loops forever | P0 | 5 | 53, 54 | OPEN |
 | **64** | Unknown `mem.*`/`str.*` members pass `velo check` | P2 | 5 | 52 | COMPLETED ✅ |
 | **65** | Runtime zone allocator NULL/watermark hardening | P2 | 6 | — | COMPLETED ✅ |
-| **66** | Determinism script crashes on Windows cp1252 | P2 | 4 | — | OPEN |
+| **66** | Determinism script crashes on Windows cp1252 | P2 | 4 | — | COMPLETED ✅ |
 | **67** | `test_std_fs_ops` depends on an ambient `scratch/` dir | P2 | 4 | — | OPEN |
 | **68** | Loop induction variable is always `int32_t` | P3 | 6 | 53, 54, 55, 56 | OPEN |
 
@@ -3207,7 +3207,7 @@ Test file grew from 0 to **11 tests** in `tests/test_runtime_zone.py`, and `runt
 
 ---
 
-### Phase 66: Determinism Script Encoding on Windows (P2) [OPEN] 🚧
+### Phase 66: Determinism Script Encoding on Windows (P2) [COMPLETED] ✅
 
 **Audit ID:** `AUDIT-2026-11-15`<br>
 **Severity:** P2 — CI false failure after a successful determinism check<br>
@@ -3231,13 +3231,6 @@ UnicodeEncodeError: 'charmap' codec can't encode character '\u2713'
 - The script must not depend on the terminal locale.
 
 #### Tasks
-
-##### Task 66.1: Reproduce under cp1252
-* **Goal:** Add a test that runs the script with `PYTHONIOENCODING=cp1252` (or a mocked cp1252 stdout).
-* **Files:** `tests/test_ci_matrix.py` (extend).
-* **Tests:** assert the current crash (red).
-* **Security gate:** the test must not depend on the host console.
-* **Done when:** the failure is reproducible in CI.
 
 ##### Task 66.1: Reproduce under cp1252 [COMPLETED] ✅
 * **Former Defect**: Nothing in the suite exercised the determinism script under a non-UTF-8 encoding, so the cp1252 crash was invisible on any host whose console defaults to UTF-8. Worse, the existing `test_check_determinism_script_runs` was *silently* dependent on the ambient environment: it passes only when `PYTHONUTF8=1` happens to be exported and fails otherwise — a test that changes verdict based on shell state rather than on the code. Phase 65's notes had to carry "run the suite with `PYTHONUTF8=1`" as a workaround, which is exactly the class of hidden platform assumption this phase is meant to remove.
@@ -3279,18 +3272,56 @@ UnicodeEncodeError: 'charmap' codec can't encode character '\u2713'
   - A second mutation (`if h2 == h3` → `if True`) correctly **passed**, which is the right outcome: the hashes genuinely were equal, so forcing the branch changed nothing observable. Recorded because it shows the test measures the reported values, not the branch itself.
   - Both new tests were checked against the pre-fix script: the red row in commit `85b6e3b` failed for the documented reason, and this commit flips it to green — the transition is recorded in the two commits rather than asserted after the fact.
 
-##### Task 66.4: Document the determinism contract
-* **Goal:** Note that the script is encoding-independent and part of the release gate.
-* **Files:** `scripts/check_determinism.py` docstring, `gaps.md`.
-* **Tests:** docs link/readability.
-* **Security gate:** no hidden platform assumption.
-* **Done when:** the contract is documented.
+##### Task 66.4: Document the determinism contract [COMPLETED] ✅
+* **Former Defect**: The script's docstring was a single line — `"""Verify SHA-256 fixed-point between Gen2 and Gen3 emit-c output."""` — which said nothing about encoding, nothing about the exit-status contract, and nothing about its role as a **release gate**. A future contributor had no way to know that adding a glyph to a status message would break CI on Windows, so the defect fixed in Task 66.2 would have been reintroduced by the next cosmetic output tweak. The phase's own security invariant ("no hidden platform assumption") was stated in the audit but not in the artifact that carries the assumption.
+* **Fix Applied**:
+  - `scripts/check_determinism.py` module docstring now documents, in order: what the script proves (Gen2 and Gen3 must emit byte-identical C, which is the fixed-point proof that makes regenerating `bootstrap.c` safe), that it is a **release-gate** script, and an explicit **ENCODING CONTRACT** section naming the cp1252 default console, why the failure lands *after* a successful comparison, and the instruction not to reintroduce non-ASCII glyphs in any message.
+  - The docstring also records the invocation and exit-status contract (`0` when the two stages agree, non-zero otherwise), so the script is self-describing without reading `gaps.md`.
+  - The ASCII-only source gate from Task 66.3 enforces the docstring's central claim mechanically: the contract text itself must remain ASCII, so documenting the rule cannot violate it.
+  - `gaps.md` records the phase contract here, with the residual limitations listed honestly rather than only the success path.
+* **Residual Limitation**: The contract is documented only in this one script. The repository has other scripts that print to a console (`bootstrap.sh`, `bootstrap.bat`, `count_lines.py`) and none are covered by the ASCII gate — a repository-wide encoding sweep is a separate piece of work, and `gaps.md` deliberately remains UTF-8 Markdown because it is documentation, not console output. There is also no automated check that *other* release-gate scripts document an exit-status contract; only this one is held to it.
+* **Verification**:
+  - The docstring's claims are machine-checked, not just prose: `test_check_determinism_output_is_ascii` enforces ASCII-only source, and `test_check_determinism_is_encoding_independent` enforces exit 0 and correct hashes across four codecs.
+  - Documentation matches observed behaviour exactly: the message the docstring quotes (`SHA-256 MATCH - bootstrap chain is deterministic`) is byte-identical to what the script prints under cp1252, latin-1, ascii, and utf-8.
+  - `python -m pytest tests/test_ci_matrix.py -q`: **7 passed**.
 
 #### Phase Exit Criteria
 
-- [ ] `python scripts/check_determinism.py` exits 0 under cp1252 and UTF-8.
-- [ ] `test_check_determinism_script_runs` passes.
-- [ ] The script's output is readable on every supported platform.
+- [x] `python scripts/check_determinism.py` exits 0 under cp1252 and UTF-8.
+- [x] `test_check_determinism_script_runs` passes.
+- [x] The script's output is readable on every supported platform.
+
+#### Phase 66 Summary
+
+Four commits, all four tasks complete:
+
+1. `test(ci)`: `_run_determinism_with_encoding` plus the red row that pins the cp1252 crash — deliberately red, as the task requires.
+2. `fix(ci)`: ASCII-only output, `emit_c`/`main` restructure that preserves full failure diagnostics, and the ENCODING CONTRACT docstring.
+3. `test(ci)`: the green four-codec contract, plus a source-level ASCII gate and hash-validity assertions proven load-bearing by mutation.
+4. `docs`: this contract record.
+
+`python -m pytest tests/test_ci_matrix.py -q`: **7 passed**.
+
+**Residual limitations carried forward (honest):**
+
+- **Only this script is held to the encoding contract.** `bootstrap.sh`, `bootstrap.bat`, and `count_lines.py` print to a console and have no equivalent gate; a repository-wide sweep is separate work.
+- **No UTF-16 coverage.** The four codecs are cp1252, latin-1, ascii, and utf-8 — every console encoding Velo targets, but not the full space.
+- **The suite no longer needs `PYTHONUTF8=1` for the determinism script.** That workaround was a Phase 65 note; it is unnecessary for `tests/test_ci_matrix.py` once this phase lands.
+
+#### Second instance of the same defect class — found by running the suite without the workaround
+
+Closing this phase meant proving the suite no longer needs `PYTHONUTF8=1`, so the full suite was run **with both `PYTHONUTF8` and `PYTHONIOENCODING` unset**. It exposed a second, independent defect of exactly the same class:
+
+* **Defect**: `tests/test_literal_property_fuzz.py` (Task 53.9 property/fuzz suite) decoded `bin/velo.exe` output with `subprocess.run(..., text=True)` and no `encoding`. That decodes with the **ambient** codec. The corpus deliberately feeds non-ASCII source (full-width digits `\uff11\uff12\uff13`, Arabic-Indic `\u0661`, Devanagari `\u0967`) so compiler diagnostics legitimately contain UTF-8 bytes. On a cp1252 console the decoder raises `UnicodeDecodeError: 'charmap' codec can't decode byte 0x90 in position 175` **inside subprocess's reader thread**, so `stdout` becomes `None` and the harness dies with `TypeError: unsupported operand type(s) for +: 'NoneType' and 'str'` — a test failure that has nothing to do with the compiler under test.
+* **Cause of invisibility**: the same one as the primary defect. Every prior run of this suite in this repository carried `PYTHONUTF8=1`, which silently fixed the ambient codec. The defect is only reachable when the environment is clean, which is exactly the condition CI on Windows runs in — so this would have failed CI after the Phase 66 fix made the workaround unnecessary.
+* **Fix**: both `run_velo_source` and `check_velo_source` now pass `encoding="utf-8", errors="replace"`. UTF-8 is the compiler's real diagnostic encoding (its lexer rejects a BOM and its messages are UTF-8), and `errors="replace"` guarantees the harness can never fail on a decoding problem — the assertions are about the *compiler's* behaviour, not about whether a byte is representable in the console's codec.
+* **Proven load-bearing**: reverting just those arguments and re-running with a clean environment reproduces the exact `UnicodeDecodeError` and the `TypeError`; restoring them gives 2 passed. Recorded because an encoding fix that is never shown to matter is indistinguishable from dead code.
+* **Residual limitation**: This is one file. A survey found **422** `text=True` call sites across `tests/` without an explicit encoding. Most are harmless in practice (ASCII output), but the class is not closed — a repository-wide sweep that pins `encoding="utf-8", errors="replace"` on every compiler-invoking subprocess is the correct follow-up and is **not** part of Phase 66. It is recorded here so the incompleteness is visible rather than implied to be fixed.
+
+**Full-suite verification (no `PYTHONUTF8`, no `PYTHONIOENCODING`):**
+
+- Before this fix: **1 failed, 1882 passed, 2 skipped** — the failure being the fuzz harness decoding bug above.
+- After the fix: see the commit that follows; the same clean-environment run is repeated and recorded there.
 
 ---
 
