@@ -3497,12 +3497,19 @@ loop i in 0..3000000000 { ... }   // endpoint now wide, induction still i32
 
 #### Tasks
 
-##### Task 68.1: Make the width decision
-* **Goal:** Choose `i64`/`isize`/`usize` (or a type derived from the bounds) and document the breaking change.
-* **Files:** `docs/SPECIFICATION.md`, `gaps.md`.
-* **Tests:** design examples; compatibility notes.
-* **Security gate:** no silent wrap; explicit overflow behavior.
-* **Done when:** the decision is reviewed and approved.
+##### Task 68.1: Make the width decision [COMPLETED] ✅
+* **Former Defect**: `loop_var_c_type` (`src/backend/codegen_lit.vl:142`) returns `"int32_t "` for every unrecognised type, so the induction width of a loop depends on whether the *type checker* happened to widen the bounds first. The phase was scoped as "make the induction wide", but measuring the failure first split it into two defects with different fixes — and only one of them is about width at all.
+* **Fix Applied (decision, not code)**: SPEC Section 7.2 item 9 now states the rule in two parts.
+  - **W1 — width is derived from the bounds, with an `i32` floor.** Range induction = widest integer type among the endpoints under `u64` > `i64` > `usize`/`isize` > `u32` > `i32`; count induction = static type of the count; condition induction = `i32`. Never narrower than `i32`.
+  - **W2 — inclusive ranges terminate by equality, not by overflow.** `..=` lowers to an unbounded `for` with `if (i == end) break;` *before* the increment (`__loop_cont_N` label emitted before both, so `continue` still advances).
+  - Rejected alternative: widen every induction to `i64`. It cannot fix W2 (see the measurement below) and it would change the emitted C for the entire standard library, so it costs performance and a full determinism re-baseline while fixing nothing extra.
+* **Evidence for splitting the defect** — all measured with `bin/velo.exe emit-c`/`run`, not inferred from the doc:
+  - **Width truncation is real but narrow**: `let lim: isize = 3000000000; loop i in 0..lim` emits `for (int32_t __start_i = (0), __end_i = (lim), ..., i = __start_i; ...)` and runs the wrong number of iterations, because `range_checks.vl:192-200` omits `isize` from the widening ladder while `int_type_width` returns 64 for it. So this is a **missing entry in a ladder**, not a missing policy.
+  - **`i32` bounds already stay `i32`**: `loop i in 0..10` → `int32_t i`. Phases 53–56 already widen a *literal* wide endpoint (`loop i in 0..3000000000` → `int64_t i = 0; i < 3000000000LL`), so the doc's `loop i in 0..3000000000` example was **already fixed** and is not the live defect.
+  - **Inclusive-max overflow is width-independent, which is what makes W2 necessary**: `loop i in 2147483645..=2147483647` emits `for (int32_t i = 2147483645; i <= 2147483647; i++)`, gcc emits `warning: iteration 2 invokes undefined behavior [-Waggressive-loop-optimizations]`, and the run executed the body **more than 10 times** (returned the guard value 99 instead of 3). The identical program at `u64` width — `loop i in 18446744073709551613u64..=18446744073709551615u64` — also returned 99 from a 5-iteration guard. A wider type moves the boundary, it does not remove it.
+  - **Other loop kinds already use wide inductions**: map/ring/shelf emitters use `size_t`/`usize` (`map_gen.vl:223,230,242`, `ring_gen.vl:161,192`, `shelf_gen.vl:217`), and a `u64` count loop emits `uint64_t it`. So W1 is a consistency-and-ladder fix, not a sweeping codegen rewrite.
+* **Residual Limitation**: this task lands only the **decision and its compatibility table** (SPEC Section 7.2 item 9); no compiler behaviour changes here, so the two measured defects are still live until 68.3/68.4. The `i32` floor means a `u64`-typed induction over `i8` bounds is deliberately not preserved as `i8` — an existing behaviour, now documented rather than changed. Descending inclusive ranges at the *minimum* of `T` have the mirror-image wrap; W2 as specified covers it symmetrically in 68.4 and must be verified there, not assumed.
+* **Verification**: decision approved by the user's instruction to proceed; evidence is the four probed programs above, each run against the current `bin/velo.exe` with its emitted C inspected. No tests added in this task — the boundary rows belong to 68.4, and adding them now would only record the defects 68.3/68.4 are about to fix.
 
 ##### Task 68.2: Audit every loop codegen path
 * **Goal:** Classify range, count, `of`, shelf, map, and ring loops by induction width.

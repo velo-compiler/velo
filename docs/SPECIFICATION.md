@@ -997,7 +997,60 @@ When either `<start>` or `<end>` is a runtime variable, expression, or function 
    - **Compile-Time Rejection**: Any step expression that can be evaluated at compile time (integer literals, constant unary/binary arithmetic like `1 - 1`, `5 - 5`, `2 * 0`, bitshifts, or casts) with value $\le 0$ produces a fatal compile-time semantic error (`Range step must be positive, got <val>`).
    - **Dynamic Fail-Fast Panic**: For dynamic step expressions (variables, parameter expressions, function calls), the compiler emits a fail-fast runtime guard prior to loop entry. If the evaluated step is $\le 0$ (signed) or $== 0$ (unsigned), the program immediately halts with an explicit runtime panic (`velo_panic_range_step`) reporting line and column:
      `[Velo Panic] Range step must be positive (> 0) at line <line>, col <col>`
-   - **Codegen Defense-in-Depth**: Code generation never emits `i += 0` or `i -= 0` under any code path. Backend invariants guarantee every range loop iteration strictly advances toward termination.
+    - **Codegen Defense-in-Depth**: Code generation never emits `i += 0` or `i -= 0` under any code path. Backend invariants guarantee every range loop iteration strictly advances toward termination.
+
+#### 9. Induction Width & Overflow-Free Termination
+Every loop that exposes an induction value — range loops (`loop i in a..b`), count loops (`loop n`), and condition loops (`loop cond`) — has its induction variable typed by a single rule, and every loop terminates without ever incrementing past its type's maximum.
+
+**Rule W1 — width is derived from the bounds, with an `i32` floor.**
+
+| Loop kind | Induction type |
+|---|---|
+| Range (`loop i in a..b`) | Widest integer type among `a` and `b` under the widening order `u64` > `i64` > `usize`/`isize` > `u32` > `i32`; never narrower than `i32`. |
+| Count (`loop n`) | The static type of `n` (`loop c` where `c: u64` gives `u64`); never narrower than `i32`. |
+| Condition (`loop cond`) | `i32` (`it` only). |
+
+Mixed signed/unsigned bounds remain a compile error (Section 7.2, item 5); `W1` therefore never has to reconcile signedness, only width.
+
+Consequences that are part of the contract:
+1. **No truncation.** A bound wider than `int32` must not be narrowed to make the loop compile. `let lim: isize = 3000000000; loop i in 0..lim` iterates the full range, because `isize` is `i64`-wide on every supported target.
+2. **No gratuitous widening.** A loop over `i32` bounds keeps an `int32_t` induction. Widening every loop to `i64` would change the emitted C for the whole standard library, cost cache and register pressure, and — see `W2` — would not fix the boundary defect anyway.
+3. **The `i32` floor is intentional.** `loop i in a..b` with `i8`/`i16`/`u8`/`u16` endpoints still iterates in `i32`, so the induction cannot overflow when a narrow bound sits at its own maximum.
+
+**Rule W2 — inclusive ranges terminate by equality, not by overflow.**
+
+`for (T i = start; i <= end; i++)` is unsound when `end` is the maximum of `T`: the increment after the last iteration overflows. For signed `T` this is undefined behaviour (gcc `-O2` reports `iteration N invokes undefined behavior` under `-Waggressive-loop-optimizations` and may delete the loop exit); for unsigned `T` it wraps to 0 and the loop runs again from the bottom.
+
+This is **not a width problem**. It reproduces at `INT32_MAX`, at `UINT32_MAX`, and at `UINT64_MAX`. A width change cannot fix it, which is why `W1` is about not truncating rather than about going wider.
+
+Therefore an inclusive range loop (`..=`) is lowered so that the terminating comparison is an equality test performed **before** the increment:
+
+```c
+for (T i = start;;) {
+    /* body */
+  __loop_cont_N: ;
+    if (i == end) break;
+    i++;              /* or i-- for descending, i += step / i -= step */
+}
+```
+
+- When `i` reaches `end` the loop breaks **without** incrementing, so no value outside the range is ever formed. This holds at every width, including the maximum of the type.
+- `continue` still advances: the loop's `__loop_cont_N` label is emitted **before** the equality test and the increment, so `goto __loop_cont_N` performs both. A `continue` that skipped the increment would hang, so the label placement is part of the invariant, not an implementation detail.
+- Direction is already resolved before the loop (`start > end`), and both directions converge on `end`; a single `if (i == end) break;` therefore serves ascending and descending, literal and dynamic ranges alike.
+- Exclusive ranges (`..`) keep the `<` / `>` test. They terminate at `end - 1` (or `end + 1` descending) and the final increment reaches `end` exactly, which is representable for every `end` that is itself a valid bound.
+
+**Breaking-change surface.** `W1` and `W2` change observable behaviour only where the previous behaviour was wrong:
+
+| Program | Before | After |
+|---|---|---|
+| `loop i in 0..lim` with `lim: isize = 3000000000` | silently truncated to `int32_t`; wrong iteration count | full `isize` range |
+| `loop i in 2147483645..=2147483647` | undefined behaviour; loop may not terminate | 3 iterations, always |
+| `loop i in MAX-2..=MAX` for any width `T` | wraps / UB at `MAX` | 3 iterations, always |
+| `loop i in 0..10` with `i32` bounds | `int32_t i` | `int32_t i` — unchanged |
+| `loop 5` | `int32_t it` | `int32_t it` — unchanged |
+
+Code that relied on wrapping at the inclusive bound was relying on undefined behaviour, so there is no behaviour to preserve. Migration guidance is therefore limited to: do not depend on the old truncation, and use an explicit cast when a narrower induction is genuinely wanted.
+
 
 ### 7.3 Pattern Matching (`on`)
 The `on` statement performs pattern matching over scalar values, tagged unions, and strings:
