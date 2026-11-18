@@ -1,27 +1,32 @@
-// Pure Velo filesystem mutation operations (zero C runtime dependencies).
+// Pure Velo filesystem mutation operations (zero kernel32 dependencies).
 // Provides directory creation/removal, file deletion, renaming, file copying,
-// and atomic file reading and writing directly via OS kernel services.
+// and atomic file reading and writing.
+//
+// Phase 70 / Task 70.2: the five Win32 externs that used to live here
+// (CreateDirectoryA/RemoveDirectoryA/DeleteFileA/MoveFileExA/CopyFileA) are
+// gone. They sat in a file with no platform suffix, so no variant could
+// displace them and `std.fs` could not be built off Windows no matter what the
+// resolver did. Each now rides a runtime helper that owns the only platform
+// branch, in the header.
 use "../str/slice.vl"
 use "../mem/ops.vl"
 use "../mem/heap.vl"
 use "../io/handle.vl"
 use "stat.vl"
 
-// Win32 MoveFileEx flags
-let MOVEFILE_REPLACE_EXISTING: u32 = 1
-let MOVEFILE_COPY_ALLOWED: u32 = 2
-
-// Foreign interface to Windows kernel services
-extern act CreateDirectoryA(lpPathName: @u8, lpSecurityAttributes: @u8) -> i32
-extern act RemoveDirectoryA(lpPathName: @u8) -> i32
-extern act DeleteFileA(lpFileName: @u8) -> i32
-extern act MoveFileExA(lpExistingFileName: @u8, lpNewFileName: @u8, dwFlags: u32) -> i32
-extern act CopyFileA(lpExistingFileName: @u8, lpNewFileName: @u8, bFailIfExists: i32) -> i32
+// Foreign interface to the runtime header's portable filesystem helpers.
+// Extern declarations reuse the header's `static inline` definitions (C99
+// 6.2.2p4, the mechanism Phase 70 / Task 70.1 established).
+extern act velo_fs_create_dir(path: string) -> bool
+extern act velo_fs_remove_dir(path: string) -> bool
+extern act velo_fs_remove(path: string) -> bool
+extern act velo_fs_rename(src: string, dst: string) -> bool
+extern act velo_fs_copy(src: string, dst: string) -> bool
 
 // Creates a single directory. Returns true on success.
 act fs_create_dir(path: @u8) -> bool {
     if path == null { return false }
-    return CreateDirectoryA(path, null) != 0
+    return velo_fs_create_dir(path as string)
 }
 
 // Creates a single directory from a Velo string.
@@ -66,7 +71,7 @@ act fs_create_dir_all(path: string) -> bool {
             if !skip {
                 tmp[i] = 0 as u8
                 if !fs_exists(tmp as string) {
-                    CreateDirectoryA(tmp, null)
+                    fs_create_dir(tmp)
                 }
                 tmp[i] = c
             }
@@ -75,7 +80,7 @@ act fs_create_dir_all(path: string) -> bool {
     }
 
     if !fs_exists(tmp as string) {
-        CreateDirectoryA(tmp, null)
+        fs_create_dir(tmp)
     }
 
     let ok = fs_is_dir(tmp as string)
@@ -86,7 +91,7 @@ act fs_create_dir_all(path: string) -> bool {
 // Removes an empty directory. Returns true on success.
 act fs_remove_dir(path: @u8) -> bool {
     if path == null { return false }
-    return RemoveDirectoryA(path) != 0
+    return velo_fs_remove_dir(path as string)
 }
 
 // Removes an empty directory from a Velo string.
@@ -110,7 +115,7 @@ act fs_remove_dir_slice(path: StrSlice) -> bool {
 // Deletes a file. Returns true on success.
 act fs_remove_file(path: @u8) -> bool {
     if path == null { return false }
-    return DeleteFileA(path) != 0
+    return velo_fs_remove(path as string)
 }
 
 // Deletes a file from a Velo string.
@@ -134,8 +139,7 @@ act fs_remove_file_slice(path: StrSlice) -> bool {
 // Renames or moves a file/directory. Overwrites destination if it exists.
 act fs_rename(old_path: @u8, new_path: @u8) -> bool {
     if old_path == null or new_path == null { return false }
-    let flags = MOVEFILE_REPLACE_EXISTING | MOVEFILE_COPY_ALLOWED
-    return MoveFileExA(old_path, new_path, flags) != 0
+    return velo_fs_rename(old_path as string, new_path as string)
 }
 
 // Renames or moves a file/directory from Velo strings.
@@ -168,11 +172,14 @@ act fs_rename_slice(old_path: StrSlice, new_path: StrSlice) -> bool {
 // Copies a file. If overwrite is true, replaces existing destination.
 act fs_copy_file(src: @u8, dst: @u8, overwrite: bool) -> bool {
     if src == null or dst == null { return false }
-    mut fail_if_exists: i32 = 1
-    if overwrite {
-        fail_if_exists = 0
+    // CopyFileA's bFailIfExists is the semantic this signature always had: when
+    // `overwrite` is false an existing destination is an ERROR, not a no-op.
+    // velo_fs_copy writes unconditionally, so the refusal is enforced here
+    // rather than by relying on the helper's behaviour.
+    if !overwrite and fs_exists(dst as string) {
+        return false
     }
-    return CopyFileA(src, dst, fail_if_exists) != 0
+    return velo_fs_copy(src as string, dst as string)
 }
 
 // Copies a file from Velo strings.

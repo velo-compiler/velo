@@ -1,9 +1,19 @@
 // std.crypto.rand — Cryptographically Secure Pseudorandom Number Generation (CSPRNG).
+//
+// Phase 70 / Task 70.2: this file bound advapi32's SystemFunction036 directly,
+// in a file with no platform suffix, so every program importing `std.crypto` --
+// including this compiler, through `pkg_lock` -- carried a Win32-only extern and
+// could not be built off Windows. The OS entropy source now comes from the
+// runtime header's velo_crypto_random_fill, which is the one place allowed to
+// hold a `#if defined(_WIN32)` branch (rand_s there, /dev/urandom on POSIX).
 use "hex.vl"
 use "../mem/heap.vl"
 
-// Windows CryptoAPI / Kernel CSPRNG binding (advapi32.dll)
-extern act SystemFunction036(pbBuffer: @u8, dwLen: u32) -> u8
+// Foreign interface to the runtime header's portable CSPRNG fill. An extern
+// declaration reuses the header's `static inline` definition (C99 6.2.2p4).
+// The buffer parameter is @void (untyped) because the header takes void*: a
+// declaration typed @u8 would emit uint8_t* and conflict with the definition.
+extern act velo_crypto_random_fill(buf: @void, len: usize) -> bool
 
 // SplitMix64 fallback PRNG state
 mut g_rand_fallback_seed: u64 = 0x853C49E65D6F2B8E as u64
@@ -22,27 +32,19 @@ act crypto_random_bytes(buf: @u8, len: usize) -> bool {
     if buf == null { return false }
     if len == 0 { return true }
 
-    mut remaining: usize = len
-    mut offset: usize = 0
-    loop remaining > 0 {
-        mut chunk: u32 = 0x40000000 as u32
-        if (remaining as u64) < (chunk as u64) {
-            chunk = remaining as u32
+    // One call: the helper already loops over its own partial reads, and returns
+    // false without touching the buffer when the source fails, so a caller can
+    // never mistake partial entropy for random output.
+    let ok = velo_crypto_random_fill(buf as @void, len)
+    if !ok {
+        // OS CSPRNG failed: fallback fill
+        mut i: usize = 0
+        loop i < len {
+            let r = rand_splitmix64()
+            buf[i] = (r & (0xFF as u64)) as u8
+            i += 1
         }
-        let ptr = ((buf as usize) + offset) as @u8
-        let ok = SystemFunction036(ptr, chunk)
-        if ok == (0 as u8) {
-            // OS CSPRNG failed: fallback fill
-            mut i: usize = 0
-            loop i < remaining {
-                let r = rand_splitmix64()
-                buf[offset + i] = (r & (0xFF as u64)) as u8
-                i += 1
-            }
-            return false
-        }
-        offset += chunk as usize
-        remaining -= chunk as usize
+        return false
     }
     return true
 }

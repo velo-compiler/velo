@@ -17,6 +17,27 @@
 #define _POSIX_C_SOURCE 200112L
 #endif
 
+// Phase 70 / Task 70.2: rand_s (the CRT's CSPRNG) is declared by <stdlib.h> only
+// when this is defined BEFORE the first system include. It replaces the direct
+// advapi32 SystemFunction036 binding that std/crypto/rand.vl used to carry.
+// Confirmed available on the maintenance toolchain before being relied on.
+//
+// The define is necessary but not sufficient, and the gap was found by
+// tests/test_runtime_zone.py rather than by the compiler: that harness includes
+// <stdlib.h> in its own prelude BEFORE this header, so by the time we get here
+// the define is too late to affect the declaration and `rand_s` was implicitly
+// declared. Any translation unit that includes stdlib.h first hits the same
+// thing -- the guard is in the wrong place to be relied on alone.
+//
+// So the prototype is also declared explicitly below and every use of rand_s
+// goes through it. Measured: with the dllimport attribute present the
+// redeclaration is accepted in both orders with no diagnostic, while omitting it
+// produces -Wattributes ("redeclared without dllimport attribute") when the
+// system declaration came first.
+#if !defined(_CRT_RAND_S)
+#define _CRT_RAND_S
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -39,6 +60,15 @@
 #ifndef S_ISREG
 #define S_ISREG(mode) (((mode) & S_IFMT) == S_IFREG)
 #endif
+#ifndef S_IWUSR
+#if defined(_S_IWRITE)
+#define S_IWUSR _S_IWRITE
+#elif defined(S_IWRITE)
+#define S_IWUSR S_IWRITE
+#else
+#define S_IWUSR 0200
+#endif
+#endif
 #if defined(_WIN32)
 #include <direct.h>
 // 5.4 (S3): _findfirst/_findnext/_findclose + struct _finddata_t for the
@@ -48,6 +78,21 @@
 #else
 // 5.4 (S3): POSIX directory iteration (declared under the 200112L flags).
 #include <dirent.h>
+// Phase 70 / Task 70.2: the BSD socket surface. `socket`, `bind`, `listen`,
+// `accept`, `recv`, `send`, `recvfrom`, `sendto`, `setsockopt`, `connect` and
+// `inet_addr` are declared by these three headers under the SAME names the
+// std library already uses, so the emitted extern declarations agree with the
+// declarations here and no per-platform socket module is needed for them.
+// Only WSAStartup/WSACleanup/closesocket/ioctlsocket are Windows-specific.
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+// Phase 70 / Task 70.2: _NSGetExecutablePath is the only supported way to ask
+// a macOS process where its own binary lives; /proc/self/exe does not exist there.
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 #endif
 
 // §4.2 platform plumbing for the thread surface (spawn/join + mutex).
@@ -1127,6 +1172,59 @@ static inline bool velo_os_set_env(const char* key, const char* val) {
 }
 
 // ============================================================================
+// Phase 70 / Task 70.2: portable CSPRNG fill.
+//
+// `std/crypto/rand.vl` bound advapi32's SystemFunction036 directly, in a file
+// with no platform suffix, so every program that imported `std.crypto` -- which
+// includes this compiler, through `pkg_lock` -- carried a Win32-only extern and
+// could not build off Windows.
+//
+// The portable answer is the CRT's own entropy source: rand_s on Windows (the
+// documented SystemFunction036 replacement, and confirmed working on this
+// toolchain), /dev/urandom on POSIX. Both are read in a loop because neither
+// guarantees filling a large request in one call.
+//
+// Returns true when every byte was produced by the OS source. A false return
+// means the caller's fallback should run; the buffer is left untouched then
+// rather than filled with partial entropy, so a caller can never mistake a
+// failed read for random output.
+// ============================================================================
+#if defined(_WIN32) && !defined(_MSC_VER)
+// Declared here for MinGW rather than relying on the _CRT_RAND_S guard at the top
+// of this file, which cannot help a translation unit that included <stdlib.h> first.
+// On MSVC, _CRT_RAND_S is defined before <stdlib.h> so the system declaration matches
+// the configured CRT linkage (_ACRTIMP for /MD vs /MT).
+// The dllimport attribute makes this compatible with MinGW's system declaration in
+// either order (no diagnostic, measured both ways). errno_t is int on this CRT,
+// so the int return type agrees with it.
+__declspec(dllimport) int __cdecl rand_s(unsigned int* randomValue);
+#endif
+
+static inline bool velo_crypto_random_fill(void* buf, size_t len) {
+    if (buf == NULL) return false;
+    if (len == 0) return true;
+#if defined(_WIN32)
+    unsigned int* words = (unsigned int*)buf;
+    size_t remaining = len;
+    while (remaining > 0) {
+        unsigned int r = 0;
+        if (rand_s(&r) != 0) return false;
+        size_t take = remaining < sizeof(unsigned int) ? remaining : sizeof(unsigned int);
+        memcpy(words, &r, take);
+        words = (unsigned int*)((char*)words + take);
+        remaining -= take;
+    }
+    return true;
+#else
+    FILE* f = fopen("/dev/urandom", "rb");
+    if (f == NULL) return false;
+    size_t got = fread(buf, 1, len, f);
+    fclose(f);
+    return got == len;
+#endif
+}
+
+// ============================================================================
 // Phase 70 / Task 70.1: host platform identity for the compiler itself.
 //
 // The compiler has to know which platform it is running on in order to resolve
@@ -1164,6 +1262,48 @@ static inline const char* velo_host_platform(void) {
 static inline const char* velo_host_getenv(const char* key) {
     const char* raw = (key != NULL) ? getenv(key) : NULL;
     return (raw != NULL) ? raw : "";
+}
+
+// ============================================================================
+// Phase 70 / Task 70.2: path of the running binary.
+//
+// The compiler located its own `runtime/` header directory with the relative
+// paths "-I runtime" and "-I velo/runtime", i.e. relative to the *caller's*
+// working directory. That is only correct when the caller happens to sit at the
+// repository root. Run from a temp directory -- which is exactly what the test
+// suite does -- the flag silently matched nothing, gcc fell back to a stale
+// installed copy under ~/.velo/include, and a program using a helper that only
+// exists in the in-tree header failed to link.
+//
+// A relative path cannot be repaired by trying more relative candidates; the
+// answer has to come from the OS. So the runtime reports where this process was
+// loaded from, and the caller derives the include directory from that.
+//
+// The returned pointer is a process-wide static buffer: valid until the next
+// call, never freed. Concurrent callers can race, which is harmless here
+// because every caller wants the same value.
+// ============================================================================
+#if defined(_WIN32)
+uint32_t __stdcall GetModuleFileNameA(void* hmod, char* buf, uint32_t size);
+#endif
+
+static inline const char* velo_host_exe_path(void) {
+    static char buf[4096];
+#if defined(_WIN32)
+    uint32_t n = GetModuleFileNameA(NULL, buf, (uint32_t)sizeof(buf));
+    if (n == 0 || n >= (uint32_t)sizeof(buf)) return "";
+    buf[n] = '\0';
+    return buf;
+#elif defined(__APPLE__)
+    uint32_t size = (uint32_t)sizeof(buf);
+    if (_NSGetExecutablePath(buf, &size) != 0) return "";
+    return buf;
+#else
+    ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n <= 0) return "";
+    buf[n] = '\0';
+    return buf;
+#endif
 }
 
 
@@ -1498,9 +1638,268 @@ static inline bool velo_fs_copy(const char* src, const char* dst) {
     return ok;
 }
 
+// Renames/moves `src` to `dst`, REPLACING `dst` when it already exists.
+//
+// The overwrite clause is why this is not a bare rename() call. Measured on this
+// toolchain: POSIX rename() replaces the target atomically, but the Windows CRT
+// rename() fails with EEXIST (errno 17) and leaves the destination untouched --
+// while the MoveFileExA(MOVEFILE_REPLACE_EXISTING) call the std library used to
+// make did replace it. A plain rename() would therefore have silently changed
+// documented behaviour on Windows. The destination is removed first there.
+//
+// Residual: the Windows path is remove-then-rename, so it is not atomic. POSIX
+// keeps the atomic single call. Callers that need atomicity on Windows need a
+// different primitive, which is stated rather than implied.
+//
+// velo_fs_remove_dir is defined below (Task 70.2 section), so it is declared
+// here rather than relying on definition order.
+static inline bool velo_fs_remove_dir(const char* path);
+
 static inline bool velo_fs_rename(const char* src, const char* dst) {
     if (!src || !dst) return false;
+#if defined(_WIN32)
+    if (velo_fs_is_file(dst) || velo_fs_is_dir(dst)) {
+        if (velo_fs_is_dir(dst)) {
+            if (!velo_fs_remove_dir(dst)) return false;
+        } else {
+            if (!velo_fs_remove(dst)) return false;
+        }
+    }
+#endif
     return rename(src, dst) == 0;
+}
+
+// ============================================================================
+// Phase 70 / Task 70.2: the metadata and directory-removal gap in the CRT set.
+//
+// Three operations the std/ modules needed could not be expressed with the
+// helpers above, so they were written as Win32 kernel32 calls inside
+// platform-NEUTRAL files: `stat` rode GetFileAttributesExA, directory removal
+// rode RemoveDirectoryA, and the directory iterator rode
+// FindFirstFileA/FindNextFileA/FindClose. That is what made `std.fs`
+// unbuildable off Windows while claiming to be portable -- the extern block
+// lived in `std/fs/stat.vl`, not in a `_windows.vl` variant.
+//
+// Each is added here instead, because the header is the one place already
+// allowed to carry a `#if defined(_WIN32)` branch. Two facts were measured
+// before writing them rather than assumed:
+//
+//   * remove() cannot delete a directory on this CRT. It returns -1 with
+//     EACCES (probe: errno 13 "Permission denied"), so directory removal needs
+//     _rmdir on Windows and rmdir on POSIX. remove() stays file-only.
+//   * There is no POSIX lstat in this CRT, so `is_symlink` cannot be answered
+//     portably from stat(). It stays false on Windows, where the attribute bit
+//     is available, and is answered by lstat on POSIX.
+//
+// mtime is reported in epoch MILLISECONDS because that is the unit FileStat
+// documents and the one the platform variants' callers already consume. The
+// loss of sub-second precision on POSIX hosts whose stat() has only whole
+// seconds is stated rather than hidden -- it is a property of the CRT
+// surface, not of this helper.
+// ============================================================================
+// Returns the metadata of `path` into a caller-supplied flat buffer of nine
+// machine words laid out as:
+//
+//   [0] size (i64)      [1] is_dir      [2] is_file    [3] is_readonly
+//   [4] is_symlink      [5] exists      [6] modified_time_ms (i64)
+//   [7] created_time_ms (i64)           [8] (reserved, always 0)
+//
+// A flat i64 array rather than a struct return, because a struct return would
+// have to name a type both this header and the Velo file declare, and the
+// emitted C defines Velo `data` types itself -- two definitions of one name is
+// a redefinition error (measured, not assumed). An out-parameter of plain
+// integers keeps the ABI identical on every target and lets the Velo side keep
+// its own FileStat type with no naming overlap.
+//
+// Returns false when the path does not exist or cannot be stat'ed; the buffer
+// is zeroed in that case so a caller can never read stale fields as "exists".
+static inline bool velo_fs_stat_into(const char* path, i64* out) {
+    if (out == NULL) return false;
+    for (int i = 0; i < 9; i++) out[i] = 0;
+    if (path == NULL) return false;
+
+    struct stat st;
+    if (stat(path, &st) != 0) return false;
+
+    out[0] = (i64)st.st_size;
+    out[1] = S_ISDIR(st.st_mode) ? 1 : 0;
+    out[2] = S_ISREG(st.st_mode) ? 1 : 0;
+    out[3] = ((st.st_mode & S_IWUSR) == 0) ? 1 : 0;
+    out[5] = 1;
+    out[6] = (i64)st.st_mtime * 1000LL;
+    // A portable creation/birth time does not exist in C99 <sys/stat.h>:
+    // Windows st_ctime is creation time, POSIX st_ctime is inode-change time.
+    // Reporting POSIX ctime as "created" would be a lie, so it stays 0 there and
+    // the field is documented as Windows-meaningful only.
+#if defined(_WIN32)
+    out[7] = (i64)st.st_ctime * 1000LL;
+    out[4] = 0;  // the reparse-point bit is not exposed through the CRT here
+#else
+    out[7] = 0;
+    struct stat lst;
+    out[4] = (lstat(path, &lst) == 0 && S_ISLNK(lst.st_mode)) ? 1 : 0;
+#endif
+    return true;
+}
+
+// Removes an EMPTY directory. remove() is file-only on the Windows CRT, so the
+// platform call is explicit on both sides rather than relying on remove()'s
+// divergent behaviour.
+static inline bool velo_fs_remove_dir(const char* path) {
+    if (path == NULL) return false;
+#if defined(_WIN32)
+    return _rmdir(path) == 0;
+#else
+    return rmdir(path) == 0;
+#endif
+}
+
+// Directory-entry classification for the iterator family. Writes into a flat
+// buffer of three i64 words: [0] is_dir, [1] is_file, [2] size.
+//
+// A flat scalar out-parameter for the same reason as velo_fs_stat_into: the
+// emitted C defines Velo `data` types itself, so a struct shared with this
+// header would be declared twice and fail to compile (measured).
+static inline bool velo_fs_entry_info_into(const char* path, i64* out) {
+    if (out == NULL) return false;
+    out[0] = 0;
+    out[1] = 0;
+    out[2] = 0;
+    if (path == NULL) return false;
+    struct stat st;
+    if (stat(path, &st) != 0) return false;
+    out[0] = S_ISDIR(st.st_mode) ? 1 : 0;
+    out[1] = S_ISREG(st.st_mode) ? 1 : 0;
+    out[2] = (i64)st.st_size;
+    return true;
+}
+
+// Reads one directory level into owned storage and reports it through a flat
+// 5-word out-buffer:
+//
+//   [0] names   (pointer to a NUL-separated block of entry names)
+//   [1] offsets (pointer to a size_t array of byte offsets into `names`)
+//   [2] count   (number of entries)
+//   [3] opened  (1 when the directory opened; 0 when missing, empty result)
+//   [4] reserved (always 0)
+//
+// Names come back in one block with a parallel offset table so the caller can
+// free exactly twice regardless of entry count. `opened` distinguishes "no such
+// directory" from "a directory with no entries" -- the distinction the old
+// FindFirstFileA code got for free from an invalid handle.
+//
+// The offsets array is `size_t`, so this module also exposes the element width
+// through velo_dir_listing_elem_size() rather than letting a caller assume it.
+//
+// Returns nothing; the caller inspects [3]. Allocation failure reports
+// opened=0, because a caller cannot use a listing it cannot read.
+static inline void velo_fs_list_dir_into(const char* path, i64* out) {
+    if (out == NULL) return;
+    for (int i = 0; i < 5; i++) out[i] = 0;
+    if (path == NULL) return;
+
+    size_t block_cap = 256;
+    size_t block_len = 0;
+    char* block = (char*)malloc(block_cap);
+    size_t idx_cap = 16;
+    size_t* offsets = (size_t*)malloc(idx_cap * sizeof(size_t));
+    if (block == NULL || offsets == NULL) {
+        free(block);
+        free(offsets);
+        return;
+    }
+
+    size_t count = 0;
+#if defined(_WIN32)
+    char pattern[1024];
+    size_t plen = strlen(path);
+    if (plen == 0 || plen + 3 >= sizeof(pattern)) {
+        free(block);
+        free(offsets);
+        return;
+    }
+    memcpy(pattern, path, plen);
+    if (pattern[plen - 1] != '/' && pattern[plen - 1] != '\\') {
+        pattern[plen++] = '/';
+    }
+    pattern[plen++] = '*';
+    pattern[plen] = '\0';
+    struct _finddata_t fd;
+    intptr_t h = _findfirst(pattern, &fd);
+    if (h == -1) {
+        free(block);
+        free(offsets);
+        return;
+    }
+    do {
+        const char* nm = fd.name;
+        if (nm[0] == '.' && (nm[1] == '\0' || (nm[1] == '.' && nm[2] == '\0'))) continue;
+        size_t len = strlen(nm);
+        if (count + 1 > idx_cap) {
+            idx_cap *= 2;
+            size_t* grown = (size_t*)realloc(offsets, idx_cap * sizeof(size_t));
+            if (grown == NULL) break;
+            offsets = grown;
+        }
+        if (block_len + len + 1 > block_cap) {
+            while (block_len + len + 1 > block_cap) block_cap *= 2;
+            char* grown = (char*)realloc(block, block_cap);
+            if (grown == NULL) break;
+            block = grown;
+        }
+        offsets[count++] = block_len;
+        memcpy(block + block_len, nm, len);
+        block_len += len;
+        block[block_len++] = '\0';
+    } while (_findnext(h, &fd) == 0);
+    _findclose(h);
+#else
+    DIR* dir = opendir(path);
+    if (dir == NULL) {
+        free(block);
+        free(offsets);
+        return;
+    }
+    struct dirent* ent;
+    while ((ent = readdir(dir)) != NULL) {
+        const char* nm = ent->d_name;
+        if (nm[0] == '.' && (nm[1] == '\0' || (nm[1] == '.' && nm[2] == '\0'))) continue;
+        size_t len = strlen(nm);
+        if (count + 1 > idx_cap) {
+            idx_cap *= 2;
+            size_t* grown = (size_t*)realloc(offsets, idx_cap * sizeof(size_t));
+            if (grown == NULL) break;
+            offsets = grown;
+        }
+        if (block_len + len + 1 > block_cap) {
+            while (block_len + len + 1 > block_cap) block_cap *= 2;
+            char* grown = (char*)realloc(block, block_cap);
+            if (grown == NULL) break;
+            block = grown;
+        }
+        offsets[count++] = block_len;
+        memcpy(block + block_len, nm, len);
+        block_len += len;
+        block[block_len++] = '\0';
+    }
+    closedir(dir);
+#endif
+    out[0] = (i64)(intptr_t)block;
+    out[1] = (i64)(intptr_t)offsets;
+    out[2] = (i64)count;
+    out[3] = 1;
+}
+
+// Releases a listing produced by velo_fs_list_dir_into. Takes the same flat
+// 5-word buffer so the caller passes one consistent thing to free as to read.
+static inline void velo_dir_listing_free(i64* out) {
+    if (out == NULL) return;
+    if (out[0] != 0) free((void*)(intptr_t)out[0]);
+    if (out[1] != 0) free((void*)(intptr_t)out[1]);
+    out[0] = 0;
+    out[1] = 0;
+    out[2] = 0;
+    out[3] = 0;
 }
 
 // 5.4 (slice 4): the streaming family — FILE* handles pass through Velo

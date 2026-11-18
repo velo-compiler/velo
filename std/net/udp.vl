@@ -66,11 +66,8 @@ act udp_recv_str_from(sock: @UdpSocket, max_len: usize, out_addr: @SocketAddr) -
 
 // Enables or disables broadcasting on the UDP socket.
 act udp_set_broadcast(sock: @UdpSocket, enabled: bool) -> bool {
-    if sock == null or not socket_is_valid(@sock.sock) { return false }
-    mut val: i32 = 0
-    if enabled { val = 1 }
-    let res = setsockopt(sock.sock.fd, SOL_SOCKET, SO_BROADCAST, @val, 4)
-    return res == 0
+    if sock == null { return false }
+    return socket_set_broadcast(@sock.sock, enabled)
 }
 
 // Sets the send and receive timeout on the UDP socket in milliseconds.

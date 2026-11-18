@@ -282,14 +282,253 @@ deliberately instead of discovering the gap from a link error.
 - `scripts/count_lines.py`: no file over 400 (`platform_resolve.vl` is 216,
   `driver.vl` stays at 382).
 
-**70.2** Move the six Win32 `extern` blocks out of the platform-neutral files:
-`std/fs/stat.vl`, `std/fs/ops.vl`, `std/fs/dir.vl`, `std/net/socket.vl`,
-`std/net/addr.vl`, `std/crypto/rand.vl`. Create `std/fs/stat_windows.vl` /
-`stat_linux.vl` / `stat_macos.vl` (same for `ops`, `dir`, `socket`) and keep
-`std/fs/stat.vl` as the facade. Alternatively route the whole family onto the
-already-portable CRT helpers in `runtime/velo_runtime.h` (`velo_fs_is_dir` at
-1377, `velo_fs_read_dir` at 2236) and delete the Win32 duplicates - prefer
-this: it removes code rather than tripling it.
+### 70.2 Completion Record
+
+**Former defect.** Five platform-neutral files bound Win32 symbols directly, so
+every program importing `std.fs`, `std.net`, or `std.crypto` emitted C that
+could not link off Windows:
+
+- `std/fs/stat.vl:30` `GetFileAttributesExA`
+- `std/fs/ops.vl:14-18` `CreateDirectoryA` / `MoveFileExA` / `CopyFileA` /
+  `RemoveDirectoryA` / `DeleteFileA`
+- `std/fs/dir.vl:15-17` `FindFirstFileA` / `FindNextFileA` / `FindClose`
+- `std/net/socket.vl:10-22` `WSAStartup` / `WSACleanup` / `closesocket` /
+  `ioctlsocket`, plus `SOL_SOCKET`-family constants with Winsock's values
+- `std/crypto/rand.vl:7` `SystemFunction036` (advapi32 "RtlGenRandom")
+
+The sixth file named in the task, `std/net/addr.vl`, was examined and needed no
+change: its only extern is `inet_addr`, used as a fallback for inputs the pure
+Velo parser rejects, and `net_htons`/`ntohs`/`htonl`/`ntohl`/`net_parse_ipv4` are
+already byte-manipulation in Velo.
+
+The specification preferred routing this family onto the runtime header's
+already-portable helpers over tripling it into `_windows`/`_linux`/`_macos`
+siblings, on the grounds that the header removes code instead of multiplying it.
+That was the right call for `std.fs` and `std.crypto` and the wrong one for
+`std.net`, for a reason the specification did not anticipate: constants cannot be
+moved into a C header, so the header route has no answer for a module whose
+*values* differ per platform. Which files went which way, and why, is the
+substantive part of this task.
+
+**Fix applied - routed into the runtime header (`std.fs`, `std.crypto`).**
+
+| Change | Detail |
+| :--- | :--- |
+| `velo_fs_stat_into(i64*)` | Nine flat words: size, `is_dir`, `is_file`, `is_readonly`, `is_symlink`, `exists`, `modified_time_ms`, `created_time_ms`, reserved. `stat`/`GetFileAttributesExA` on Windows, `lstat` on POSIX. |
+| `velo_fs_remove_dir` | `_rmdir` / `rmdir`. Distinct from `velo_fs_remove_file` because the Windows CRT's `remove()` refuses directories (errno 13) - probed before the split was made. |
+| `velo_fs_rename` | `_WIN32` removes the destination first, because `rename()` onto an existing path fails with `EEXIST` and leaves the destination untouched (probed). POSIX `rename()` is atomic and needs no such step. |
+| `velo_fs_copy` | `CopyFileA(bFailIfExists)` on Windows, `open`/`read`/`write` loop on POSIX, so `fs_copy_file`'s overwrite flag keeps its exact semantics. |
+| `velo_fs_list_dir_into(i64*)` | Five words: names, offsets, count, opened, reserved. `_findfirst`/`_findnext`/`_findclose` vs `opendir`/`readdir`/`closedir`; filters `.` and `..`; geometric growth. Paired with `velo_dir_listing_free`. |
+| `velo_fs_entry_info_into(i64*)` | Three words: `is_dir`, `is_file`, size - the per-entry stat that `FindFirstFileA` used to hand back for free. |
+| `velo_crypto_random_fill(void*, size_t)` | `rand_s` on Windows (needs `_CRT_RAND_S` defined before the first system include), `/dev/urandom` on POSIX. Both are read in a loop, because neither guarantees filling an arbitrary request in one call; a short read returns false and leaves the buffer untouched so a caller cannot mistake failure for entropy. |
+
+**Fix applied - split into platform variants (`std.net`).** `std.net` could not
+take the same route. Its constants *are* the interface: `SOL_SOCKET` is 65535 on
+Winsock and 1 on POSIX, and `AF_INET6` is 23 vs 10. `std/net/types.vl` declared
+them as module-level constants, and this compiler rejects a duplicate global
+constant across modules (`semantic:3:1 - Redeclaration of variable 'SOL_SOCKET'
+in current scope`), so a single neutral file with `if platform { ... }` blocks is
+not expressible at all - the values have to live in files that are never both
+loaded. Hence `std/net/types_windows.vl` and `std/net/types_linux.vl`, and
+`std/net/socket_windows.vl` / `socket_linux.vl` for the four genuinely
+Windows-only calls (`WSAStartup`, `WSACleanup`, `closesocket`, `ioctlsocket`)
+plus the differing non-blocking mechanism. `std/net/types.vl` and
+`std/net/socket.vl` were deleted; callers keep their `use "types.vl"` /
+`use "socket.vl"` lines and the resolver substitutes.
+
+**Why there is no neutral facade for `std.net`.** The `70.1` pattern for a facade
+is a file that declares the API and imports one backend by name. That cannot work
+here: a facade's `use "socket_windows.vl"` line is emitted text, not something
+the resolver rewrites, so on a linux build the facade would still pull in Winsock.
+Variant-only is the correct shape for a module whose *values* differ per platform;
+facade-plus-backend is correct when only the *implementation* differs. Both shapes
+now exist in the tree and the distinction is deliberate.
+
+**The `-I runtime` defect this task exposed.** Moving `std.fs` onto header helpers
+turned a latent bug into a link error, which is the useful outcome. Two stale
+header copies exist on a develop machine - `~/.velo/include/velo_runtime.h` and
+`~/.velo/runtime/velo_runtime.h` - and `append_runtime_includes`
+(`src/backend/driver_cc.vl:97`) emitted `-I "runtime" -I "velo/runtime"`,
+both *relative to the caller's working directory*. Invoked from the repository
+root that works by accident; run from a temp directory - which is exactly what
+`tests/test_std_fs.py::test_std_fs_ops_needs_no_ambient_scratch` does - the flag
+matched nothing, gcc fell through to `~/.velo/include`, and every `velo_fs_*`
+the compiler had just emitted a call to was undeclared and undefined. The
+previous `std.fs` needed nothing from the header (kernel32 only), so the shadowing
+was invisible until now.
+
+It is not repairable with more relative candidates; the answer has to come from
+the OS. `runtime/velo_runtime.h` gained `velo_host_exe_path()`
+(`GetModuleFileNameA` / `_NSGetExecutablePath` / `readlink("/proc/self/exe")`),
+and `append_binary_relative_include` derives the include directory from it,
+probing beside the binary and one and two parents up so that both `bin/velo.exe`
+in a checkout and the release archive's flat layout resolve. The binary-relative
+absolute path is emitted **first**, so the header shipping with this compiler
+always beats an installed copy; the old relative flags survive only as a fallback
+for a binary that cannot report its own path.
+
+**A second defect the full suite caught: `_CRT_RAND_S` is order-dependent.**
+The first cut of `velo_crypto_random_fill` relied on defining `_CRT_RAND_S`
+before the header's own `#include <stdlib.h>`. That is correct for every
+translation unit the compiler emits, but not for every translation unit that
+includes the header: `tests/test_runtime_zone.py` builds its own `.c` file whose
+prelude includes `<stdio.h>`/`<stdlib.h>`/`<stdint.h>` *before*
+`velo_runtime.h`, so the define ran too late to influence the system declaration
+and `rand_s` was implicitly declared - 9 zone rows failed with
+`error: implicit declaration of function 'rand_s'`. The zone harness was right and
+the header was wrong. Three harnesses in the tree include a system header before
+this one - `tests/test_runtime_zone.py`, and both preludes in
+`tests/test_thread_local_runtime.py` - so the ordering is not an exotic case, it
+is a normal way to write a C harness.
+
+The fix declares the prototype explicitly next to the helper and routes every use
+through it, so the header no longer depends on being included first. The
+`dllimport` attribute matters: with it the redeclaration is accepted in both
+orders with no diagnostic, without it the system-first order warns
+`-Wattributes: 'rand_s' redeclared without dllimport attribute`. Both orders and
+both attribute choices were compiled and run as standalone probes before the
+change was kept.
+
+**A third defect, found by auditing the neutral files after the split:
+`std/net/udp.vl` still called `setsockopt` directly.** Splitting `socket.vl` into
+variants removed the raw Winsock externs from the neutral surface, but `udp.vl`
+never went through `socket.vl` for broadcast - it declared the call itself, with
+`fd: i64` matching the Windows `SOCKET`. On a linux target that is
+`Cannot implicitly convert 'i64' to narrower type 'i32'`, and on macOS the
+`SOL_SOCKET`/`SO_BROADCAST` values would also have been wrong. This is exactly
+the invariant Phase 70 states as I70.1, and it survived the first pass because it
+was in a *different* neutral file from the one being converted.
+
+`socket_set_broadcast` now lives in both variants, beside `socket_set_reuse_addr`
+and `socket_set_timeout` which were already there, and `udp_set_broadcast`
+delegates to it. The regression test is
+`tests/test_std_net_variants.py::test_no_platform_neutral_file_calls_a_platform_typed_socket_function`,
+which scans `std/` for any non-variant file calling a platform-typed socket
+function - the source-level scan is deliberate, because the emitted C on this
+host can only ever show the Windows branch and would not reveal the defect.
+Verified to fail on the pre-fix tree (`std\net\udp.vl:72 setsockopt`) and pass
+after.
+
+**Residual limitations.**
+- Directory iteration now costs one extra `stat` per entry. `FindFirstFileA` handed
+  back the attributes and size inside `WIN32_FIND_DATA`, so classification was
+  free; the portable listing helper returns names only, and `dir_fill_entry`
+  resolves each name and stats it. For a directory listing of n entries this is
+  n extra syscalls. The alternative - exposing `dirent.d_type` on POSIX and the
+  attribute word on Windows - would be correct and faster but adds a second
+  platform-typed helper, so it is recorded as a known cost rather than paid for
+  with more surface.
+- `fs_stat`'s `is_readonly` now means "the owner write bit is clear" rather than
+  "`FILE_ATTRIBUTE_READONLY` is set". On Windows the two normally agree, because
+  the CRT derives `S_IWUSR` from that attribute; on POSIX only the permission bit
+  is available, and a file writable through a group or ACL is reported as
+  read-only. No test in the tree asserts `is_readonly` on any platform, so this
+  shifted without a witness. Recorded rather than claimed as parity, and it is a
+  candidate for a focused test once 70.7 exists.
+- `fs_copy_file` and `fs_rename` are not atomic on Windows, because
+  `MoveFileExA(MOVEFILE_REPLACE_EXISTING)` was replaced by remove-then-rename to
+  stay inside the CRT. A crash between the two steps loses the destination.
+  POSIX is atomic. Recorded rather than hidden; closing it needs
+  `ReplaceFileW`/`MoveFileExA`, i.e. a Win32 binding the header deliberately
+  avoids.
+- `velo_host_exe_path` uses a process-wide static buffer, so concurrent callers
+  race. Every caller wants the same value, so the race is benign, but it is a
+  race.
+- `std/net/socket_linux.vl` uses Linux values for `F_GETFL`/`F_SETFL`/
+  `O_NONBLOCK` (3 / 4 / 2048). macOS differs on all three, so a `macos` target
+  would set non-blocking mode wrongly. This belongs to 70.3.
+- `resolve_std_module_path` (`src/backend/driver.vl:153`) has the same
+  CWD-relative weakness for `stdlib` itself: `use std.fs` does not resolve when
+  the compiler is invoked from an unrelated directory with no `VELO_STD`/
+  `VELO_HOME`/`~/.velo` install. Not fixed here - it is a different defect from
+  the include path, with a different fix (it must search beside the binary too),
+  and bundling it would have made this task's verification ambiguous. It is
+  promoted to a named gap below. Note that this means a build launched from a
+  foreign directory can still succeed today by silently reading the *installed*
+  `std/` instead of the in-tree one; the `-I` fix guarantees the header, not the
+  module tree. That asymmetry is the honest state of things.
+
+**Verification.**
+- `std/tests/fs/{stat,ops,dir}_test.vl` and `std/tests/crypto/rand_test.vl` pass:
+  `PASS: std.fs.stat all assertions succeeded`, `PASS: std.fs.ops all assertions
+  succeeded`, `PASS: std.fs.dir all assertions succeeded`, `OK: std.crypto.rand
+  tests passed`.
+- `std/tests/net/addr_test.vl` passes (`OK: std.net.addr tests passed`);
+  `std/net/addr.vl` needed no change - its only extern is `inet_addr`, used as a
+  fallback, and its `net_htons`/`ntohs`/`htonl`/`ntohl`/`net_parse_ipv4` are pure
+  Velo.
+- `tests/test_std_fs.py` **7 passed** including the sandboxed
+  `test_std_fs_ops_needs_no_ambient_scratch`, which is the row that failed with
+  `undefined reference to 'velo_fs_remove_dir'` before the include fix. That row
+  is the regression test for the `-I runtime` defect.
+- `tests/test_std_fs.py tests/test_std_net.py tests/test_std_async.py` ->
+  **16 passed**; with `test_std_crypto.py`, `test_platform_resolve.py`,
+  `test_platform_portability.py`, `test_std_mem.py`, `test_std_os.py`,
+  `test_bootstrap_snapshot.py` -> **60 passed**.
+- `tests/test_std_net_variants.py` (new) **3 passed**: no neutral file calls a
+  platform-typed socket function; both variants expose the same 17-function API;
+  the `linux` row of the variant table is reachable. Red-baselined against the
+  pre-fix tree, where the first row reports `std\net\udp.vl:72 setsockopt`.
+- `tests/test_std_net.py tests/test_std_net_variants.py tests/test_std_async.py
+  tests/test_std_fs.py tests/test_runtime_zone.py` -> **30 passed**.
+- `tests/test_thread_local_runtime.py` **3 passed** - the other harness in the
+  tree whose prelude includes `<stdlib.h>` before the runtime header, and
+  therefore the second witness for the `rand_s` ordering fix.
+- Emitted-C scan for the Phase 70 Win32 symbol set: `std.fs` retains only
+  `DeleteFileA` (from `std/io/handle_windows.vl`, 70.5) and `VirtualAlloc`/
+  `VirtualFree` (from `std/mem/page_windows.vl`, 70.5); `std.crypto` retains only
+  the two `VirtualAlloc` names, which arrive through `std.mem` and are likewise
+  70.5's. Zero `std.fs`- or `std.crypto`-owned Win32 symbols remain. `std.net`
+  emits Winsock on a Windows *host* because it selects `socket_windows.vl`, which
+  is the correct result and not a residual; the property that matters is that the
+  symbols come from a `_windows.vl` variant, which
+  `test_no_platform_neutral_file_calls_a_platform_typed_socket_function` pins.
+- `VELO_TARGET_PLATFORM=linux emit-c` on a `std.net` program selects
+  `types_linux.vl`/`socket_linux.vl` and reports no `AF_INET`/`SockAddrIn`/
+  `net_htons` errors once the `std.mem` page facade (70.5) is out of the
+  dependency chain; `std.net.types` alone emits cleanly for `linux`.
+- The include fix was verified by mechanism, not by inference. `gcc -H` through
+  `VELO_CFLAGS` shows the compiler opening
+  `C:\projects\easylang\runtime/velo_runtime.h`, i.e. the in-tree copy, from a
+  working directory outside the repository. The stale copies that used to win
+  that search are still installed and still stale -
+  `~/.velo/include/velo_runtime.h` and `~/.velo/runtime/velo_runtime.h` contain
+  2 of the 10 helpers this task added (126,178 bytes each) against 10 of 10 in
+  the in-tree header (144,434 bytes) - which is what makes the shadowing
+  reproducible rather than hypothetical.
+- Compiler-source change, so the full chain was rerun: Gen2 -> Gen3, promoted to
+  `bin/velo.exe`, `check_determinism.py` reports
+  `e9e7dc712a1f89aaf74679599d920bd709ae2075a8da5447a85915edbd503f92` on both,
+  `bootstrap.c` regenerated and `tests/test_bootstrap_snapshot.py` 5 passed.
+- `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h` verified
+  byte-identical after the edits (SHA-256 `76fddb4a...` on both).
+- MSVC compatibility verified: `tests/test_cc_backend.py` (10 passed, 2 skipped)
+  after defining `S_IWUSR` for `<sys/stat.h>` and restricting the explicit `rand_s`
+  prototype to `!defined(_MSC_VER)` so MSVC's `<stdlib.h>` declaration governs
+  CRT linkage without conflict.
+- Red baseline, stated precisely because a naive one is misleading. Stashing only
+  `runtime/velo_runtime.h std/crypto/rand.vl std/fs/dir.vl std/fs/ops.vl
+  std/fs/stat.vl` (leaving the `driver_cc.vl` include fix and the deleted
+  `std/net` files in place) and running `tests/test_std_fs.py` gives **7 passed**.
+  So the suite alone does not detect the *include* defect: with the fix already
+  applied, removing the header changes nothing observable from the repository
+  root. The defect needs the temp-CWD row, which is exactly the row that the fix
+  makes pass, and the `gcc -H` probe above. The include defect's red baseline is
+  the failing pytest run recorded at the top of this task, not a stashed run.
+- Regression caught by the full suite and fixed in-task: the first full run with
+  the new header reported `10 failed` - 9 rows of `tests/test_runtime_zone.py`
+  (all failing with `error: implicit declaration of function 'rand_s'`) plus one
+  `tests/test_defer.py` row carrying the known `.velo_cache` stem collision
+  (task 79.3, reproducible only under parallel load: it passed 4/4 in isolation
+  and 39/39 as a suite). After the explicit prototype,
+  `tests/test_runtime_zone.py` is **11 passed** and `tests/test_defer.py` is
+  **39 passed**.
+- `scripts/count_lines.py`: no file over 400 (`driver_cc.vl` 331).
+
+**70.2a (new, folded into this record):** `velo_host_exe_path` landed inside
+70.2 rather than as a separate task because without it 70.2's own regression test
+cannot pass. It is the runtime half of "the compiler must know where it is".
+
 
 **70.3** Add `std/os/proc_macos.vl`, `std/os/env_macos.vl`, `std/io/handle_macos.vl`,
 `std/time/clock_macos.vl`, `std/time/sleep_macos.vl`, `std/mem/page_macos.vl`,
@@ -321,6 +560,21 @@ there.
 **70.8** Add `tests/test_postgres_bootstrap_platform.py` (or extend
 `test_bootstrap_snapshot.py`): compile `bootstrap.c` with `cc -c` and assert no
 undefined symbol from the Win32 set, on every non-Windows host.
+
+**70.9 (found during 70.2)** `resolve_std_module_path`
+(`src/backend/driver.vl:153-207`) finds `stdlib` through relative candidates
+(`dir`, `dir/..`, `dir/../..`, bare `rel_file`) before falling back to
+`VELO_STD`, `VELO_HOME`, `~/.velo`, and `/usr/...`. It has no
+"beside the binary" candidate, so `use std.fs` fails to resolve when the compiler
+is invoked from a directory unrelated to any of those, reporting
+`semantic:6:21 - Call to undefined function` for every std call in the file.
+70.2 fixed the sibling defect for the *C include* path by adding
+`velo_host_exe_path()`; the same primitive applies here and the fix is small, but
+it is a distinct defect with a distinct symptom and was left out to keep 70.2's
+verification unambiguous. Found by writing a probe in a temp directory - the
+test suite does not exercise it because every row runs from the repo root or
+passes absolute source paths.
+
 
 ## Phase Exit Criteria
 

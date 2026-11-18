@@ -1,18 +1,36 @@
-// Pure Velo directory scanning and iterator engine (zero C runtime dependencies).
-// Scans directories and streams directory entries directly via OS kernel services without dirent.h.
+// Pure Velo directory scanning and iterator engine (zero kernel32 dependencies).
+// Scans directories and streams directory entries through the runtime header's
+// portable listing helper.
+//
+// Phase 70 / Task 70.2: this file used to declare FindFirstFileA/FindNextFileA/
+// FindClose and parse a raw WIN32_FIND_DATAA buffer at hardcoded offsets (name
+// at byte 44, size at words 7/8). Because the file carries no platform suffix,
+// no variant could displace those externs and `std.fs` could not be built off
+// Windows.
+//
+// The DirIterator shape is deliberately unchanged: `src/tooling/formatter.vl`
+// reads `.h_find` directly and compares it against DIR_INVALID_HANDLE, so
+// changing the fields would have meant editing the compiler to enable the
+// portability fix -- the tail wagging the dog. `h_find` keeps its meaning
+// ("a stream is open") and `find_data` keeps its meaning ("the backing
+// storage"), with the Win32 buffer replaced by the listing block.
 use "../str/slice.vl"
 use "../mem/ops.vl"
 use "../mem/heap.vl"
 use "../coll/shelf.vl"
 
-// Win32 directory and file attribute constants
-let DIR_ATTR_DIRECTORY: u32 = 16
+// Sentinel for "no open directory stream". Kept numeric and unchanged so
+// existing `iter.h_find == DIR_INVALID_HANDLE` comparisons keep compiling.
 let DIR_INVALID_HANDLE: usize = (0 - 1) as usize
 
-// Foreign interface to Windows kernel directory services
-extern act FindFirstFileA(lpFileName: @u8, lpFindFileData: @u8) -> usize
-extern act FindNextFileA(hFindFile: usize, lpFindFileData: @u8) -> i32
-extern act FindClose(hFindFile: usize) -> i32
+// Foreign interface to the runtime header's portable directory helpers.
+//
+// Both take a flat i64 out-buffer rather than returning a struct: the emitted C
+// defines Velo `data` types itself, so a struct shared with the header would be
+// declared twice (verified with a probe before choosing this shape).
+extern act velo_fs_list_dir_into(path: string, out: @i64) -> void
+extern act velo_dir_listing_free(out: @i64) -> void
+extern act velo_fs_entry_info_into(path: string, out: @i64) -> bool
 
 // Self-contained directory entry record
 data DirEntry {
@@ -29,6 +47,12 @@ data DirIterator {
     find_data: @u8,
     has_current: bool,
     current: DirEntry,
+    // Portable listing state: the 5-word buffer from velo_fs_list_dir_into,
+    // held as a byte pointer so it can be freed with heap_free like every other
+    // heap block, and reinterpreted as @i64 at each access.
+    listing: @u8,
+    index: usize,
+    dir_path: string,
 }
 
 // Returns true if name is "." or ".."
@@ -41,38 +65,84 @@ act dir_is_dot_or_dotdot(name: @u8) -> bool {
     return false
 }
 
-// Extracts a DirEntry from raw WIN32_FIND_DATAA buffer
-act dir_populate_entry(find_data: @u8, out_entry: @DirEntry) {
-    if find_data == null or out_entry == null { return }
+// Joins a directory path and a bare entry name into a fresh heap string.
+act dir_join_entry(dir_path: string, name: @u8) -> string {
+    let dlen = raw_str_len(dir_path as @u8)
+    let nlen = raw_str_len(name)
+    let buf = heap_alloc(dlen + nlen + 2)
+    if buf == null { return null }
+    copy(buf, dir_path as @u8, dlen)
+    mut pos = dlen
+    let last_c = buf[dlen - 1]
+    if last_c != 47 as u8 and last_c != 92 as u8 {
+        buf[pos] = 47 as u8
+        pos += 1
+    }
+    copy(buf + pos, name, nlen)
+    buf[pos + nlen] = 0 as u8
+    return buf as string
+}
 
-    let p_u32 = find_data as @u32
-    let attrs = p_u32[0]
-    let is_dir = (attrs & DIR_ATTR_DIRECTORY) != 0 as u32
-    let is_file = !is_dir
+// Fills out_entry for the listing entry at `iter.index`.
+act dir_fill_entry(iter: @DirIterator, out_entry: @DirEntry) -> bool {
+    if iter == null or out_entry == null or iter.listing == null { return false }
+    let listing = iter.listing as @i64
+    let count = listing[2] as usize
+    if iter.index >= count { return false }
 
-    let sz_high = p_u32[7] as i64
-    let sz_low = p_u32[8] as i64
-    let file_size: i64 = (sz_high << 32) | sz_low
+    let offsets = listing[1] as @usize
+    let block = listing[0] as @u8
+    let name = block + offsets[iter.index]
+    let nlen = raw_str_len(name)
 
-    let name_src = find_data + 44
-    let nlen = raw_str_len(name_src)
-
-    out_entry.name = name_src
+    out_entry.name = name
     out_entry.name_len = nlen
-    out_entry.is_dir = is_dir
-    out_entry.is_file = is_file
-    out_entry.size = file_size
+
+    // Classification needs the full path, so the entry is resolved against the
+    // directory the stream was opened for. A failure to stat leaves the entry
+    // as "neither file nor directory", which is honest for a dangling link.
+    let full = dir_join_entry(iter.dir_path, name)
+    if full != null {
+        let info_buf = heap_alloc(24)
+        if info_buf != null {
+            let info = info_buf as @i64
+            if velo_fs_entry_info_into(full, info) {
+                out_entry.is_dir = info[0] != 0
+                out_entry.is_file = info[1] != 0
+                out_entry.size = info[2]
+            } else {
+                out_entry.is_dir = false
+                out_entry.is_file = false
+                out_entry.size = 0
+            }
+            heap_free(info_buf)
+        }
+        heap_free_str(full)
+    } else {
+        out_entry.is_dir = false
+        out_entry.is_file = false
+        out_entry.size = 0
+    }
+    return true
+}
+
+// Returns an iterator in the closed/empty state.
+act dir_iterator_empty() -> DirIterator {
+    return DirIterator {
+        h_find: DIR_INVALID_HANDLE,
+        find_data: null,
+        has_current: false,
+        current: DirEntry { name: null, name_len: 0, is_dir: false, is_file: false, size: 0 },
+        listing: null,
+        index: 0,
+        dir_path: null,
+    }
 }
 
 // Opens a directory stream for iteration. Automatically skips "." and "..".
 act fs_dir_open(path: string) -> DirIterator {
     if path == null {
-        return DirIterator {
-            h_find: DIR_INVALID_HANDLE,
-            find_data: null,
-            has_current: false,
-            current: DirEntry { name: null, name_len: 0, is_dir: false, is_file: false, size: 0 },
-        }
+        return dir_iterator_empty()
     }
     return fs_dir_open_slice(slice_from_str(path))
 }
@@ -80,114 +150,63 @@ act fs_dir_open(path: string) -> DirIterator {
 // Opens a directory stream from a StrSlice view.
 act fs_dir_open_slice(path: StrSlice) -> DirIterator {
     if slice_is_empty(path) {
-        return DirIterator {
-            h_find: DIR_INVALID_HANDLE,
-            find_data: null,
-            has_current: false,
-            current: DirEntry { name: null, name_len: 0, is_dir: false, is_file: false, size: 0 },
-        }
+        return dir_iterator_empty()
     }
 
-    // Allocate pattern buffer: path + "/*\0"
-    let plen = path.len
-    let pat = heap_alloc(plen + 4) as @u8
-    if pat == null {
-        return DirIterator {
-            h_find: DIR_INVALID_HANDLE,
-            find_data: null,
-            has_current: false,
-            current: DirEntry { name: null, name_len: 0, is_dir: false, is_file: false, size: 0 },
-        }
+    // The helper takes a NUL-terminated path; a slice is not one.
+    let dir_cstr = heap_alloc(path.len + 1)
+    if dir_cstr == null {
+        return dir_iterator_empty()
+    }
+    copy(dir_cstr, path.ptr, path.len)
+    dir_cstr[path.len] = 0 as u8
+
+    let listing_buf = heap_alloc(40)
+    if listing_buf == null {
+        heap_free(dir_cstr)
+        return dir_iterator_empty()
+    }
+    let listing = listing_buf as @i64
+    velo_fs_list_dir_into(dir_cstr as string, listing)
+
+    // [3] = opened. A missing or unreadable directory closes the stream.
+    if listing[3] == 0 {
+        heap_free(listing_buf)
+        heap_free(dir_cstr)
+        return dir_iterator_empty()
     }
 
-    copy(pat, path.ptr, plen)
-    mut pos = plen
-    let last_c = path.ptr[plen - 1]
-    if last_c != 47 as u8 and last_c != 92 as u8 { // not '/' or '\\'
-        pat[pos] = 47 as u8 // '/'
-        pos += 1
-    }
-    pat[pos] = 42 as u8 // '*'
-    pos += 1
-    pat[pos] = 0 as u8
-
-    let find_data = heap_alloc(512)
-    if find_data == null {
-        heap_free(pat)
-        return DirIterator {
-            h_find: DIR_INVALID_HANDLE,
-            find_data: null,
-            has_current: false,
-            current: DirEntry { name: null, name_len: 0, is_dir: false, is_file: false, size: 0 },
-        }
-    }
-
-    let h = FindFirstFileA(pat, find_data)
-    heap_free(pat)
-
-    if h == DIR_INVALID_HANDLE {
-        heap_free(find_data)
-        return DirIterator {
-            h_find: DIR_INVALID_HANDLE,
-            find_data: null,
-            has_current: false,
-            current: DirEntry { name: null, name_len: 0, is_dir: false, is_file: false, size: 0 },
-        }
-    }
-
-    mut res_it = DirIterator {
-        h_find: h,
-        find_data: find_data,
+    mut iter = DirIterator {
+        h_find: 1 as usize,   // any value but DIR_INVALID_HANDLE means "open"
+        find_data: listing[0] as @u8,
         has_current: false,
         current: DirEntry { name: null, name_len: 0, is_dir: false, is_file: false, size: 0 },
+        listing: listing_buf,
+        index: 0,
+        dir_path: dir_cstr as string,
     }
 
-    // Advance past "." and ".."
-    mut found_valid = false
-    mut active = true
-    loop active {
-        let name_src = find_data + 44
-        if !dir_is_dot_or_dotdot(name_src) {
-            dir_populate_entry(find_data, @res_it.current)
-            found_valid = true
-            active = false
-        } else {
-            let ok = FindNextFileA(h, find_data)
-            if ok == 0 {
-                active = false
-            }
-        }
+    // The listing already excludes "." and "..", so the first entry (if any) is
+    // the current one.
+    if listing[2] > 0 {
+        iter.has_current = dir_fill_entry(@iter, @iter.current)
     }
-
-    res_it.has_current = found_valid
-    return res_it
+    return iter
 }
 
 // Advances the directory iterator to the next entry. Returns true if an entry is available.
 act fs_dir_next(iter: @DirIterator) -> bool {
-    if iter == null or iter.h_find == DIR_INVALID_HANDLE or iter.find_data == null {
+    if iter == null or iter.h_find == DIR_INVALID_HANDLE or iter.listing == null {
         return false
     }
-
-    mut active = true
-    mut found_valid = false
-    loop active {
-        let ok = FindNextFileA(iter.h_find, iter.find_data)
-        if ok == 0 {
-            active = false
-        } else {
-            let fd = iter.find_data
-            let name_src = fd + 44
-            if !dir_is_dot_or_dotdot(name_src) {
-                dir_populate_entry(iter.find_data, @iter.current)
-                found_valid = true
-                active = false
-            }
-        }
+    iter.index += 1
+    let count = (iter.listing as @i64)[2] as usize
+    if iter.index >= count {
+        iter.has_current = false
+        return false
     }
-
-    iter.has_current = found_valid
-    return found_valid
+    iter.has_current = dir_fill_entry(iter, @iter.current)
+    return iter.has_current
 }
 
 // Returns a pointer to the current entry of the iterator.
@@ -199,15 +218,19 @@ act fs_dir_entry(iter: @DirIterator) -> @DirEntry {
 // Closes a directory iterator and releases OS resources.
 act fs_dir_close(iter: @DirIterator) {
     if iter == null { return }
-    if iter.h_find != DIR_INVALID_HANDLE {
-        FindClose(iter.h_find)
-        iter.h_find = DIR_INVALID_HANDLE
+    if iter.listing != null {
+        velo_dir_listing_free(iter.listing as @i64)
+        heap_free(iter.listing)
+        iter.listing = null
     }
-    if iter.find_data != null {
-        heap_free(iter.find_data)
-        iter.find_data = null
-    }
+    iter.h_find = DIR_INVALID_HANDLE
+    iter.find_data = null
     iter.has_current = false
+    iter.index = 0
+    if iter.dir_path != null {
+        heap_free_str(iter.dir_path)
+        iter.dir_path = null
+    }
 }
 
 // Returns a StrSlice view over the entry name.

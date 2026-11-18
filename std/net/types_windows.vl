@@ -1,9 +1,19 @@
-// std.net.types — Core networking constants, protocol identifiers, and socket structures.
+// std.net.types (Windows) — Core networking constants for Win32/Winsock.
+//
+// Phase 70 / Task 70.2: these values are Win32's. `SOL_SOCKET` is 0xFFFF here
+// and 1 on POSIX; `SO_REUSEADDR` is 4 here and 2 there; `AF_INET6` is 23 here
+// and 10 there. A single neutral file could only be correct on one platform,
+// so the constants are split per platform and the resolver picks by target
+// (Phase 70 / Task 70.1). Callers keep writing `use "types.vl"`; that path
+// resolves to this file when the target is windows.
+//
+// Constants cannot be `extern`-bound from the runtime header (only functions
+// can), which is why this is a variant file rather than a header branch.
 
 // Address Families
 let AF_UNSPEC: i32 = 0
 let AF_INET: i32 = 2
-let AF_INET6: i32 = 23 // Windows AF_INET6 is 23; Linux is 10
+let AF_INET6: i32 = 23 // Win32; POSIX uses 10
 
 // Socket Types
 let SOCK_STREAM: i32 = 1 // Sequenced, reliable, two-way connection-based byte streams (TCP)
@@ -38,6 +48,11 @@ let FIONBIO: i32 = -2147195266 // 0x8004667E: non-blocking I/O mode
 // Error Values
 let INVALID_SOCKET: i64 = -1
 let SOCKET_ERROR: i32 = -1
+
+// True when the backend uses the Win32 socket API (WSAStartup, closesocket,
+// ioctlsocket). Read by the socket variants so the platform difference is
+// stated once rather than re-derived from flag values.
+let NET_WIN32_API: bool = true
 
 // IPv4 Internet socket address structure matching struct sockaddr_in (16 bytes).
 data SockAddrIn {

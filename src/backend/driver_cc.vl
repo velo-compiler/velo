@@ -94,12 +94,77 @@ act append_include_flag(sb: @StringBuilder, is_msvc: bool, dir_path: string) {
     }
 }
 
+// Phase 70 / Task 70.2: absolute location of the running compiler binary,
+// supplied by the runtime header. Declared `string` (const char*) so the
+// emitted extern declaration matches `static inline const char*
+// velo_host_exe_path(void)` exactly; C99 6.2.2p4 keeps the inline definition's
+// internal linkage, so the call resolves to the copy in this translation unit.
+extern act velo_host_exe_path() -> string
+
+// Appends every existing include directory named `include_name` that sits next
+// to the running compiler binary, and returns true when at least one was added.
+//
+// `bin/velo.exe` inside a source checkout needs two parent hops to reach the
+// repository root, while the release archive keeps `runtime/` beside the binary,
+// so all three positions are probed. Parents are taken with dirname rather than
+// a ".." segment so the result stays absolute and needs no normalization.
+act append_binary_relative_include(sb: @StringBuilder, is_msvc: bool, include_name: string) -> bool {
+    let exe = velo_host_exe_path()
+    if exe == null or str.len(exe) == 0 {
+        return false
+    }
+    let exe_dir = path_dirname_to_str(exe)
+    if exe_dir == null or str.len(exe_dir) == 0 {
+        return false
+    }
+    mut found = false
+    let beside = path_join_str(exe_dir, include_name)
+    if fs_exists(beside) {
+        append_include_flag(sb, is_msvc, beside)
+        found = true
+    }
+    let up_one = path_dirname_to_str(exe_dir)
+    if up_one != null and str.len(up_one) > 0 {
+        let one_up = path_join_str(up_one, include_name)
+        if fs_exists(one_up) {
+            append_include_flag(sb, is_msvc, one_up)
+            found = true
+        }
+        let up_two = path_dirname_to_str(up_one)
+        if up_two != null and str.len(up_two) > 0 {
+            let two_up = path_join_str(up_two, include_name)
+            if fs_exists(two_up) {
+                append_include_flag(sb, is_msvc, two_up)
+                found = true
+            }
+        }
+    }
+    return found
+}
+
 // Appends runtime include directories (in-tree runtime, VELO_INCLUDE, ~/.velo/include, ~/.velo/runtime).
 act append_runtime_includes(sb: @StringBuilder, is_msvc: bool) {
-    if is_msvc {
-        sb_append_str(sb, "/I \"runtime\" /I \"velo/runtime\"")
-    } else {
-        sb_append_str(sb, "-I \"runtime\" -I \"velo/runtime\"")
+    // The in-tree header is located through the running binary, not through the
+    // working directory. "-I runtime" is resolved against the caller's CWD, so it
+    // only matched when the compiler was invoked from the repository root; from
+    // any other directory it silently matched nothing and the search fell
+    // through to a stale installed copy under ~/.velo/include. A header older
+    // than the compiler then wins the include, and every helper the compiler
+    // emits a call to but the stale header does not declare fails at link time.
+    //
+    // Absolute binary-relative paths are appended first so the header that
+    // ships with this compiler always wins. The relative flags survive only as a
+    // fallback for an installation whose binary cannot report its own path.
+    mut resolved = append_binary_relative_include(sb, is_msvc, "runtime")
+    if append_binary_relative_include(sb, is_msvc, "velo/runtime") {
+        resolved = true
+    }
+    if not resolved {
+        if is_msvc {
+            sb_append_str(sb, " /I \"runtime\" /I \"velo/runtime\"")
+        } else {
+            sb_append_str(sb, " -I \"runtime\" -I \"velo/runtime\"")
+        }
     }
 
     let env_inc = os.get_env("VELO_INCLUDE")

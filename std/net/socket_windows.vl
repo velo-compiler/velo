@@ -1,9 +1,17 @@
-// std.net.socket — Low-level cross-platform socket lifecycle, options, and I/O primitives.
+// std.net.socket (Windows) — Winsock socket lifecycle, options, and I/O.
+//
+// Phase 70 / Task 70.2: the neutral `std/net/socket.vl` used to hold these
+// Winsock externs directly, so no variant could displace them and the module
+// could not be built off Windows.
+//
+// The fd type is `i64` here because a Win32 SOCKET is an unsigned pointer-sized
+// handle, not an int. The POSIX variant uses `i32`, matching <sys/socket.h>'s
+// `int` -- which is exactly why the two cannot share one extern block.
 use "types.vl"
 use "addr.vl"
 use "../mem/heap.vl"
 
-// Foreign C / Winsock bindings
+// Foreign Winsock bindings (ws2_32)
 extern act WSAStartup(wVersionRequired: u16, lpWSAData: @u8) -> i32
 extern act WSACleanup() -> i32
 extern act socket(af: i32, type_: i32, protocol: i32) -> i64
@@ -21,7 +29,7 @@ extern act connect(s: i64, name: @SockAddrIn, namelen: i32) -> i32
 
 mut g_net_initialized: bool = false
 
-// Automatically initializes the underlying network subsystem (WSAStartup on Windows).
+// Automatically initializes the underlying network subsystem (WSAStartup).
 act net_ensure_init() -> bool {
     if g_net_initialized { return true }
     let wsadata: @u8 = heap_alloc(512)
@@ -109,6 +117,20 @@ act socket_set_timeout(s: @Socket, timeout_ms: u32) -> bool {
     let r1 = setsockopt(s.fd, SOL_SOCKET, SO_RCVTIMEO, @ms, 4)
     let r2 = setsockopt(s.fd, SOL_SOCKET, SO_SNDTIMEO, @ms, 4)
     return r1 == 0 and r2 == 0
+}
+
+// Enables or disables datagram broadcast (SO_BROADCAST).
+//
+// Phase 70 / Task 70.2: `std/net/udp.vl` used to call setsockopt itself. That is
+// a platform-typed extern - `SOCKET` here, `int` on POSIX - so a neutral file
+// holding the call cannot be correct on both targets. It belongs to the variant
+// that already owns the descriptor type.
+act socket_set_broadcast(s: @Socket, enabled: bool) -> bool {
+    if not socket_is_valid(s) { return false }
+    mut val: i32 = 0
+    if enabled { val = 1 }
+    let res = setsockopt(s.fd, SOL_SOCKET, SO_BROADCAST, @val, 4)
+    return res == 0
 }
 
 // Binds a socket to a local IPv4 address and port.
