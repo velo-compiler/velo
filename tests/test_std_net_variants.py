@@ -94,9 +94,14 @@ def test_socket_variants_expose_the_same_public_api():
 
     windows = names("windows")
     linux = names("linux")
+    macos = names("macos")
     assert windows == linux, (
         f"socket variants disagree; only-windows={sorted(windows - linux)} "
         f"only-linux={sorted(linux - windows)}"
+    )
+    assert windows == macos, (
+        f"socket variants disagree; only-windows={sorted(windows - macos)} "
+        f"only-macos={sorted(macos - windows)}"
     )
     assert "socket_set_broadcast" in windows, (
         "socket_set_broadcast must live in the variants so udp.vl can stay neutral"
@@ -107,3 +112,13 @@ def test_linux_target_emits_bsd_sockets_for_std_net_types(tmp_path):
     """The linux row of the variant table has to actually be reachable."""
     res = emit_c(tmp_path, "std.net.types", "linux")
     assert res.returncode == 0, res.stdout + res.stderr
+    out = (tmp_path / "probe.c").read_text(encoding="utf-8")
+    assert "int32_t AF_INET6 = 10;" in out, "Linux AF_INET6 must be 10"
+
+
+def test_macos_target_emits_darwin_sockets_for_std_net_types(tmp_path):
+    """The macos row of the variant table has to select types_macos.vl (Task 70.3)."""
+    res = emit_c(tmp_path, "std.net.types", "macos")
+    assert res.returncode == 0, res.stdout + res.stderr
+    out = (tmp_path / "probe.c").read_text(encoding="utf-8")
+    assert "int32_t AF_INET6 = 30;" in out, "Darwin AF_INET6 must be 30"

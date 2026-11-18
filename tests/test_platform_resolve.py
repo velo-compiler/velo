@@ -57,6 +57,12 @@ act bar_name() -> string {
 }
 """
 
+MACOS = """
+act bar_name() -> string {
+    return "variant-macos"
+}
+"""
+
 
 def _env(target=None):
     env = os.environ.copy()
@@ -113,18 +119,31 @@ def test_linux_target_selects_the_linux_variant(tmp_path):
     )
 
 
+def test_macos_target_selects_the_macos_variant(tmp_path):
+    """
+    Task 70.3: With bar_macos.vl present, target=macos selects it.
+    """
+    files = {
+        "main.vl": MAIN,
+        "bar_windows.vl": WINDOWS,
+        "bar_linux.vl": LINUX,
+        "bar_macos.vl": MACOS,
+    }
+    res, emitted = _emit(tmp_path, files, target="macos")
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "variant-macos" in emitted
+    assert "variant-windows" not in emitted
+    assert "variant-linux" not in emitted
+
+
 def test_neutral_file_is_used_when_no_variant_exists(tmp_path):
     """
     A module with no platform variant is not platform-specific at all.
 
-    Windows and linux each have a variant on disk for the std modules this probe
-    reaches, so both targets must still fall through to the neutral `bar.vl`.
-    macOS is excluded here on purpose: it has no `_macos` variants yet, which is
-    Task 70.3, and `test_macos_target_reports_missing_variants` pins that state
-    instead of pretending otherwise.
+    All supported targets fall through to the neutral bar.vl when no variant exists.
     """
     files = {"main.vl": MAIN, "bar.vl": NEUTRAL}
-    for target in (None, "windows", "linux"):
+    for target in (None, "windows", "linux", "macos"):
         case = tmp_path / (target or "host")
         case.mkdir()
         res, emitted = _emit(case, files, target=target)
@@ -179,15 +198,10 @@ def test_host_target_defaults_to_the_host_platform(tmp_path):
 
 def test_macos_target_reports_missing_variants(tmp_path):
     """
-    macOS is a declared target with no implementations yet, and must say so.
+    When a module exists for windows/linux but lacks a _macos variant, target=macos fails.
 
-    Task 70.1 gave the table a macOS row; Task 70.3/70.5 supply the `_macos`
-    variants and the facades that would use them. Until then a module implemented
-    only for windows and linux has no macOS implementation, and the build has to
-    fail with a diagnostic naming that, rather than emit C that cannot link.
-
-    This is the record of that gap: when 70.3 lands the diagnostic disappears and
-    this assertion is what will need updating.
+    The fixture omits bar_macos.vl, verifying that the compiler diagnoses
+    missing macOS variants rather than silently emitting C that cannot link.
     """
     files = {
         "main.vl": MAIN,
@@ -242,3 +256,32 @@ def test_a_backend_suffix_is_not_treated_as_a_variant(tmp_path):
     assert "variant-windows" not in emitted, (
         "a neutral module that exists must not be replaced by a _win32 backend"
     )
+
+
+@pytest.mark.parametrize("mod", [
+    "std.time.clock",
+    "std.time.sleep",
+    "std.mem.page",
+    "std.os.env",
+    "std.os.proc_macos",
+    "std.os.cmdline_macos",
+    "std.io.handle",
+    "std.async.poller",
+    "std.net.types",
+])
+def test_macos_target_resolves_foundation_modules(tmp_path, mod):
+    """Foundation std modules resolve and emit C cleanly under target=macos (Task 70.3)."""
+    src = tmp_path / "probe.vl"
+    src.write_text(f"use {mod}\n\nact main() -> i32 {{ return 0 }}\n", encoding="utf-8")
+    out = tmp_path / "probe.c"
+    res = subprocess.run(
+        [str(require_velo_exe()), "emit-c", str(src), "-o", str(out)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=_env("macos"),
+        timeout=30,
+    )
+    assert res.returncode == 0, f"failed for {mod}:\n" + res.stdout + res.stderr

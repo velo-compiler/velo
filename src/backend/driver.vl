@@ -154,25 +154,25 @@ act std_module_to_rel_path(mod_path: string) -> string {
 act resolve_std_module_path(dir: string, mod_path: string) -> string {
     let rel_file = std_module_to_rel_path(mod_path)
     let p1 = path_join_str(dir, rel_file)
-    if fs_exists(p1) { return p1 }
+    if file_or_variant_exists(p1) { return p1 }
 
     let p2 = path_join_str(dir, path_join_str("..", rel_file))
-    if fs_exists(p2) { return p2 }
+    if file_or_variant_exists(p2) { return p2 }
 
     let p3 = path_join_str(dir, path_join_str("../..", rel_file))
-    if fs_exists(p3) { return p3 }
+    if file_or_variant_exists(p3) { return p3 }
 
-    if fs_exists(rel_file) { return path_normalize_str(rel_file) }
+    if file_or_variant_exists(rel_file) { return path_normalize_str(rel_file) }
 
     // Check VELO_STD environment variable (direct path or ~/.velo/std)
     let env_std = os.get_env("VELO_STD")
     if str.len(env_std) > 0 {
         let p_env1 = path_join_str(env_std, rel_file)
-        if fs_exists(p_env1) { return p_env1 }
+        if file_or_variant_exists(p_env1) { return p_env1 }
         if str.len(rel_file) > 4 {
             let sub = copy_slice_to_string(rel_file, 4, str.len(rel_file) - 4)
             let p_env2 = path_join_str(env_std, sub)
-            if fs_exists(p_env2) { return p_env2 }
+            if file_or_variant_exists(p_env2) { return p_env2 }
         }
     }
 

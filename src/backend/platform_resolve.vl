@@ -214,3 +214,12 @@ act foreign_variant_name(neutral_path: string, platform: string) -> string {
     }
     return ""
 }
+
+// Returns true when path exists as a file or has a platform variant on disk.
+act file_or_variant_exists(path: string) -> bool {
+    if path == null { return false }
+    if fs_exists(path) { return true }
+    let platform = target_platform()
+    if str.len(existing_variant_path(path, platform)) > 0 { return true }
+    return foreign_variant_exists(path, platform)
+}

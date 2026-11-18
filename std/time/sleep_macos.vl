@@ -1,0 +1,56 @@
+// High-precision thread sleep and delays for macOS / Darwin.
+// Backed directly by POSIX nanosleep syscall.
+use "clock.vl"
+use "duration.vl"
+
+extern act nanosleep(req: @Timespec, rem: @Timespec) -> i32
+
+// Suspends the calling thread for at least the specified nanoseconds.
+// Re-arms automatically on interruption by signals (EINTR).
+act time_sleep_ns(ns: u64) {
+    if ns == 0 as u64 {
+        return
+    }
+    mut req = Timespec {
+        tv_sec: (ns / 1000000000) as i64,
+        tv_nsec: (ns % 1000000000) as i64
+    }
+    mut rem = Timespec { tv_sec: 0, tv_nsec: 0 }
+    loop nanosleep(@req, @rem) != 0 {
+        req.tv_sec = rem.tv_sec
+        req.tv_nsec = rem.tv_nsec
+        if req.tv_sec <= 0 and req.tv_nsec <= 0 {
+            break
+        }
+    }
+}
+
+// Suspends the calling thread for at least the specified milliseconds.
+act time_sleep_ms(ms: u32) {
+    time_sleep_ns((ms as u64) * 1000000)
+}
+
+// Suspends the calling thread for at least the specified microseconds.
+act time_sleep_us(us: u64) {
+    time_sleep_ns(us * 1000)
+}
+
+// Suspends the calling thread for at least the specified floating-point seconds.
+act time_sleep_s(s: f64) {
+    if s <= 0.0 {
+        return
+    }
+    let ns = (s * 1000000000.0) as u64
+    time_sleep_ns(ns)
+}
+
+// Suspends the calling thread for the given Duration.
+act time_sleep_duration(d: Duration) {
+    time_sleep_ns(d.nanos)
+}
+
+// Yields the current thread's remaining timeslice.
+act time_yield() {
+    mut req = Timespec { tv_sec: 0, tv_nsec: 0 }
+    nanosleep(@req, null)
+}

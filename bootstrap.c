@@ -2417,6 +2417,7 @@ const char* candidate_variant_path(const char* neutral_path, const char* platfor
 const char* existing_variant_path(const char* neutral_path, const char* platform);
 bool foreign_variant_exists(const char* neutral_path, const char* platform);
 const char* foreign_variant_name(const char* neutral_path, const char* platform);
+bool file_or_variant_exists(const char* path);
 void init_driver(CompilerDriver* d);
 bool is_file_visited(CompilerDriver* d, const char* path);
 void mark_file_visited(CompilerDriver* d, const char* path);
@@ -52389,6 +52390,29 @@ const char* foreign_variant_name(const char* neutral_path, const char* platform)
     return "";
 }
 
+#line 219 "src/main.vl"
+bool file_or_variant_exists(const char* path) {
+#line 220 "src/main.vl"
+    if ((path == NULL)) {
+#line 220 "src/main.vl"
+        return false;
+    }
+#line 221 "src/main.vl"
+    if (fs_exists(path)) {
+#line 221 "src/main.vl"
+        return true;
+    }
+#line 222 "src/main.vl"
+    const char* platform = target_platform();
+#line 223 "src/main.vl"
+    if (velo_cmp_gt_u_s(((usize)strlen(existing_variant_path(path, platform))), 0)) {
+#line 223 "src/main.vl"
+        return true;
+    }
+#line 224 "src/main.vl"
+    return foreign_variant_exists(path, platform);
+}
+
 #line 52 "src/main.vl"
 void init_driver(CompilerDriver* d) {
 #line 53 "src/main.vl"
@@ -52561,26 +52585,26 @@ const char* resolve_std_module_path(const char* dir, const char* mod_path) {
 #line 156 "src/main.vl"
     const char* p1 = path_join_str(dir, rel_file);
 #line 157 "src/main.vl"
-    if (fs_exists(p1)) {
+    if (file_or_variant_exists(p1)) {
 #line 157 "src/main.vl"
         return p1;
     }
 #line 159 "src/main.vl"
     const char* p2 = path_join_str(dir, path_join_str("..", rel_file));
 #line 160 "src/main.vl"
-    if (fs_exists(p2)) {
+    if (file_or_variant_exists(p2)) {
 #line 160 "src/main.vl"
         return p2;
     }
 #line 162 "src/main.vl"
     const char* p3 = path_join_str(dir, path_join_str("../..", rel_file));
 #line 163 "src/main.vl"
-    if (fs_exists(p3)) {
+    if (file_or_variant_exists(p3)) {
 #line 163 "src/main.vl"
         return p3;
     }
 #line 165 "src/main.vl"
-    if (fs_exists(rel_file)) {
+    if (file_or_variant_exists(rel_file)) {
 #line 165 "src/main.vl"
         return path_normalize_str(rel_file);
     }
@@ -52591,7 +52615,7 @@ const char* resolve_std_module_path(const char* dir, const char* mod_path) {
 #line 170 "src/main.vl"
         const char* p_env1 = path_join_str(env_std, rel_file);
 #line 171 "src/main.vl"
-        if (fs_exists(p_env1)) {
+        if (file_or_variant_exists(p_env1)) {
 #line 171 "src/main.vl"
             return p_env1;
         }
@@ -52602,7 +52626,7 @@ const char* resolve_std_module_path(const char* dir, const char* mod_path) {
 #line 174 "src/main.vl"
             const char* p_env2 = path_join_str(env_std, sub);
 #line 175 "src/main.vl"
-            if (fs_exists(p_env2)) {
+            if (file_or_variant_exists(p_env2)) {
 #line 175 "src/main.vl"
                 return p_env2;
             }

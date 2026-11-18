@@ -1,0 +1,7 @@
+// std.os.cmdline_macos — macOS native command-line retrieval fallback.
+// Zero C runtime dependencies.
+
+// Retrieves the raw command line string of the calling process on macOS.
+act os_raw_cmdline() -> string {
+    return ""
+}

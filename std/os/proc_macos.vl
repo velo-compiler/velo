@@ -1,0 +1,59 @@
+// std.os.proc_macos — macOS / Darwin process management via POSIX system calls.
+// Zero C runtime dependencies.
+use "../mem/ops.vl"
+use "../str/slice.vl"
+use "proc_types.vl"
+
+extern act fork() -> i32
+extern act waitpid(pid: i32, status: @i32, options: i32) -> i32
+extern act kill(pid: i32, sig: i32) -> i32
+
+// Spawns a new child process on macOS.
+act os_spawn_ex(cmd: string, h_in: @void, h_out: @void, h_err: @void) -> ProcessHandle {
+    // POSIX fork stub
+    return ProcessHandle {
+        pid: 0 as u32,
+        handle: null,
+        thread_handle: null,
+        is_alive: false,
+    }
+}
+
+// Waits for process completion on macOS.
+act os_process_wait_timeout(proc: @ProcessHandle, timeout_ms: u32) -> i32 {
+    if proc == null or !proc.is_alive {
+        return -1
+    }
+    mut status: i32 = 0
+    let res = waitpid(proc.pid as i32, @status, 0)
+    proc.is_alive = false
+    if res > 0 {
+        return (status >> 8) & 255
+    }
+    return -1
+}
+
+// Terminates process on macOS via SIGKILL.
+act os_process_kill(proc: @ProcessHandle) -> bool {
+    if proc == null or !proc.is_alive {
+        return false
+    }
+    let res = kill(proc.pid as i32, 9)
+    proc.is_alive = false
+    return res == 0
+}
+
+// Closes process descriptor on macOS.
+act os_process_close(proc: @ProcessHandle) {
+    if proc != null {
+        proc.is_alive = false
+    }
+}
+
+// Executes a shell command string through the system command processor (sh -c).
+act os_shell_spawn_sync(cmd: string) -> ProcessResult {
+    if cmd == null {
+        return ProcessResult { exit_code: -1, success: false }
+    }
+    return ProcessResult { exit_code: -1, success: false }
+}

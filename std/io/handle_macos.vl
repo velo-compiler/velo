@@ -1,0 +1,160 @@
+// Raw OS standard handle and file descriptor provider for macOS / Darwin.
+// Backed directly by Darwin kernel syscalls (read, write, lseek, open, close, unlink).
+
+// Standard Handle and Seek Constants
+let INVALID_HANDLE: usize = (0 - 1) as usize
+
+let IO_SEEK_SET: i32 = 0
+let IO_SEEK_CUR: i32 = 1
+let IO_SEEK_END: i32 = 2
+
+// File Open Mode Flags
+let IO_READ: u32 = 1
+let IO_WRITE: u32 = 2
+let IO_APPEND: u32 = 4
+let IO_CREATE: u32 = 8
+let IO_TRUNCATE: u32 = 16
+
+// Strong typed OS file handle wrapper
+data FileHandle {
+    os_handle: usize
+}
+
+// Foreign interface to macOS / Darwin kernel services
+extern act read(fd: i32, buf: @u8, count: usize) -> isize
+extern act write(fd: i32, buf: @u8, count: usize) -> isize
+extern act lseek(fd: i32, offset: i64, whence: i32) -> i64
+extern act close(fd: i32) -> i32
+extern act open(pathname: @u8, flags: i32, mode: u32) -> i32
+extern act unlink(pathname: @u8) -> i32
+
+// Retrieves raw OS standard input handle (STDIN_FILENO = 0)
+act io_stdin_handle() -> FileHandle {
+    return FileHandle { os_handle: 0 }
+}
+
+// Retrieves raw OS standard output handle (STDOUT_FILENO = 1)
+act io_stdout_handle() -> FileHandle {
+    return FileHandle { os_handle: 1 }
+}
+
+// Retrieves raw OS standard error handle (STDERR_FILENO = 2)
+act io_stderr_handle() -> FileHandle {
+    return FileHandle { os_handle: 2 }
+}
+
+// Checks if a handle is valid
+act io_is_valid_handle(h: FileHandle) -> bool {
+    return (h.os_handle as isize) >= 0 and h.os_handle != INVALID_HANDLE
+}
+
+// Performs a raw unbuffered write of data to the given OS handle.
+act io_raw_write(h: FileHandle, data: @u8, len: usize) -> usize {
+    if !io_is_valid_handle(h) or data == null or len == 0 {
+        return 0
+    }
+    let base_addr: usize = data as usize
+    mut total: usize = 0
+    mut remaining = len
+    loop remaining > 0 {
+        let cur_ptr = (base_addr + total) as @u8
+        let n = write(h.os_handle as i32, cur_ptr, remaining)
+        if n <= 0 {
+            break
+        }
+        total += n as usize
+        remaining -= n as usize
+    }
+    return total
+}
+
+// Performs a raw unbuffered read from the given OS handle into buf.
+// Returns the number of bytes read (> 0), 0 on EOF, or -1 on error.
+act io_raw_read(h: FileHandle, buf: @u8, max_len: usize) -> isize {
+    if !io_is_valid_handle(h) or buf == null or max_len == 0 {
+        return -1
+    }
+    return read(h.os_handle as i32, buf, max_len)
+}
+
+// Repositions read/write file offset.
+// whence: SEEK_SET (0), SEEK_CUR (1), SEEK_END (2).
+// Returns new offset or -1 on error.
+act io_raw_seek(h: FileHandle, offset: i64, whence: i32) -> i64 {
+    if !io_is_valid_handle(h) {
+        return -1 as i64
+    }
+    return lseek(h.os_handle as i32, offset, whence)
+}
+
+// Returns the file size in bytes, or -1 on error.
+act io_file_size(h: FileHandle) -> i64 {
+    if !io_is_valid_handle(h) {
+        return -1 as i64
+    }
+    let cur = lseek(h.os_handle as i32, 0 as i64, IO_SEEK_CUR)
+    if cur < 0 as i64 { return -1 as i64 }
+    let end_pos = lseek(h.os_handle as i32, 0 as i64, IO_SEEK_END)
+    lseek(h.os_handle as i32, cur, IO_SEEK_SET)
+    return end_pos
+}
+
+// Closes a file handle. Standard handles (0, 1, 2) are protected from closure.
+act io_file_close(h: FileHandle) -> bool {
+    if !io_is_valid_handle(h) {
+        return false
+    }
+    if h.os_handle <= 2 {
+        return false
+    }
+    let res = close(h.os_handle as i32)
+    return res == 0
+}
+
+// Opens a file by C-string path with mode_flags.
+act io_file_open(path: @u8, flags: u32) -> FileHandle {
+    if path == null {
+        return FileHandle { os_handle: INVALID_HANDLE }
+    }
+    mut oflags: i32 = 0
+    let is_r = (flags & IO_READ) != 0 as u32
+    let is_w = (flags & IO_WRITE) != 0 as u32
+    let is_a = (flags & IO_APPEND) != 0 as u32
+    if is_r and (is_w or is_a) {
+        oflags = 2 // O_RDWR
+    } else if is_w or is_a {
+        oflags = 1 // O_WRONLY
+    } else {
+        oflags = 0 // O_RDONLY
+    }
+    // macOS Darwin fcntl.h values:
+    // O_APPEND = 0x0008 (8)
+    // O_CREAT  = 0x0200 (512)
+    // O_TRUNC  = 0x0400 (1024)
+    if (flags & IO_CREATE) != 0 as u32 { oflags = oflags | 512 }
+    if (flags & IO_TRUNCATE) != 0 as u32 { oflags = oflags | 1024 }
+    if is_a { oflags = oflags | 8 }
+
+    let fd = open(path, oflags, 438 as u32) // 0666 permissions
+    if fd < 0 {
+        return FileHandle { os_handle: INVALID_HANDLE }
+    }
+    return FileHandle { os_handle: fd as usize }
+}
+
+// Opens a file by Velo string path literal.
+act io_file_open_str(path: string, flags: u32) -> FileHandle {
+    return io_file_open(path as @u8, flags)
+}
+
+// Deletes a file by C-string path.
+act io_file_delete(path: @u8) -> bool {
+    if path == null { return false }
+    let res = unlink(path)
+    return res == 0
+}
+
+// Deletes a file by Velo string path literal.
+act io_file_delete_str(path: string) -> bool {
+    return io_file_delete(path as @u8)
+}
