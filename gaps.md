@@ -572,10 +572,25 @@ so all variant-only modules resolve for `target=macos`.
   - All compiler files $\le 400$ lines (`driver.vl` 382, `platform_resolve.vl` 225).
   - All new `.vl` files verified free of UTF-8 BOM.
 
-**70.4** Replace `poll(2)` with `epoll(7)` in `std/async/poller_linux.vl`. The
+**70.4 [COMPLETED] ✅** Replace `poll(2)` with `epoll(7)` in `std/async/poller_linux.vl`. The
 current file (line 13 `extern act poll`) scales O(n) per wakeup and has no
 edge-trigger mode; `poll` also cannot be used for file/descriptor watch on
 all targets. Keep `poll` as the fallback for unknown POSIX targets.
+
+- *Former Defect:* `std/async/poller_linux.vl` was implemented using `poll(2)`, which scales $O(n)$ with the total number of watched file descriptors on every event check and lacks edge-trigger (`EPOLLET`) capabilities. Furthermore, there was no generic POSIX fallback for non-Linux/non-Darwin POSIX environments.
+- *Fix Applied:*
+  - Rewrote `std/async/poller_linux.vl` using Linux `epoll(7)` system calls (`epoll_create1(EPOLL_CLOEXEC)`, `epoll_create(1024)` fallback, `epoll_ctl(EPOLL_CTL_ADD/MOD/DEL)`, `epoll_wait`, `close`).
+  - Added `#packed` `data EpollEvent` (12 bytes on x86-64: `events: u32, fd: i64`), mapping `ASYNC_EVENT_*` to Linux epoll flags (`EPOLLIN | EPOLLRDHUP`, `EPOLLOUT`, `EPOLLERR`, `EPOLLHUP`).
+  - Created `std/async/poller_posix.vl` preserving standard POSIX `poll(2)` as a universal fallback for unknown POSIX platforms.
+  - Added tests in `tests/test_std_async.py`: verified that `poller_linux.vl` uses `epoll(7)` and contains no `poll(2)` declaration, `poller_posix.vl` maintains `poll(2)`, and all 4 poller variants (`windows`, `linux`, `macos`, `posix`) expose identical public poller lifecycle acts (`poller_init`, `poller_free`, `poller_ensure_cap`, `poller_add`, `poller_modify`, `poller_remove`, `poller_poll`).
+- *Residual Limitation:*
+  - `std/async/poller_macos.vl` uses Darwin POSIX `poll(2)` rather than `kqueue(2)`. Scalable event backends are now in place for Linux (`epoll`) and Windows (`WSAPoll` / IOCP); `kqueue` for Darwin remains a future enhancement.
+- *Verification:*
+  - `tests/test_std_async.py`: 8 passed.
+  - `tests/test_platform_resolve.py`: 18 passed.
+  - `tests/test_std_net_variants.py`: 4 passed.
+  - `scripts/count_lines.py`: all compiler and stdlib files $\le 400$ lines (`poller_linux.vl` 186, `poller_posix.vl` 181).
+  - Clean raw UTF-8 without BOM on all new and modified files.
 
 **70.5** Remove every hardcoded `use "*_windows.vl"` facade line listed above;
 each becomes a resolver-mediated import. Then delete `std/os/pipe_win32.vl`'s
