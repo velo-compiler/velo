@@ -101,3 +101,76 @@ def test_bootstrap_c_determinism(tmp_path):
         f"Current SHA256:   {current_sha256}\n"
         f"bootstrap SHA256: {bootstrap_sha256}"
     )
+
+
+def test_bootstrap_c_object_cleanliness(tmp_path):
+    """
+    Task 70.8: Compiling bootstrap.c with 'cc -c' produces an object file with
+    no undefined symbols from the Win32 portability set on non-Windows hosts,
+    and no unwanted process/env/fs/crypto/net symbols on Windows hosts.
+    """
+    import shutil
+    cc = "gcc" if sys.platform == "win32" else "cc"
+    obj_out = tmp_path / "bootstrap.o"
+    res = subprocess.run(
+        [
+            cc, "-c", "-O2", "-std=c99",
+            "-I", str(REPO_ROOT / "runtime"),
+            "-I", str(REPO_ROOT / "velo" / "runtime"),
+            str(BOOTSTRAP_C),
+            "-o", str(obj_out),
+        ],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=get_env(),
+        timeout=60,
+    )
+    assert res.returncode == 0, f"Compilation of bootstrap.c with '{cc} -c' failed:\n{res.stderr}"
+    assert obj_out.exists(), f"Object file {obj_out} was not produced"
+
+    nm_bin = shutil.which("nm", path=get_env().get("PATH"))
+    if not nm_bin:
+        pytest.skip("'nm' utility not found in PATH")
+
+    res_nm = subprocess.run(
+        [nm_bin, "-u", str(obj_out)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=get_env(),
+        timeout=30,
+    )
+    assert res_nm.returncode == 0, f"nm -u failed:\n{res_nm.stderr}"
+
+    undefined = set()
+    for line in res_nm.stdout.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        sym = parts[-1]
+        if sys.platform == "win32" and sym.startswith("_") and not sym.startswith("__"):
+            sym = sym[1:]
+        undefined.add(sym)
+
+    win32_symbols = {
+        "GetFileAttributesExA", "GetFileAttributesA", "CreateDirectoryA", "RemoveDirectoryA",
+        "DeleteFileA", "MoveFileExA", "CopyFileA", "FindFirstFileA", "FindNextFileA",
+        "FindClose", "CreateProcessA", "GetEnvironmentVariableA", "SetEnvironmentVariableA",
+        "ExitProcess", "GetCurrentProcessId", "VirtualAlloc", "VirtualFree",
+        "SystemFunction036", "WSAStartup", "WSACleanup", "closesocket", "ioctlsocket"
+    }
+
+    if sys.platform != "win32":
+        bad = undefined & win32_symbols
+        assert len(bad) == 0, f"Undefined Win32 symbols in bootstrap.o on {sys.platform}: {bad}"
+    else:
+        unwanted = win32_symbols - {"VirtualAlloc", "VirtualFree"}
+        bad = undefined & unwanted
+        assert len(bad) == 0, f"Unexpected Win32 symbols in bootstrap.o on Windows: {bad}"
+

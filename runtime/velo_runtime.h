@@ -93,6 +93,34 @@
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
 #endif
+#include <sys/mman.h>
+#ifndef MAP_ANONYMOUS
+#ifdef MAP_ANON
+#define MAP_ANONYMOUS MAP_ANON
+#else
+#define MAP_ANONYMOUS 0x20
+#endif
+#endif
+
+// Phase 70 / Task 70.8: POSIX fallback definitions for Windows virtual memory APIs.
+// When bootstrap.c (or any C source generated on Windows) is compiled on Linux or macOS,
+// os_page_alloc calls VirtualAlloc and os_page_free calls VirtualFree. Providing these
+// static inline fallbacks ensures that nm -u on bootstrap.o contains zero undefined
+// Win32 symbols and bootstrap.c links cleanly with standard libc on non-Windows hosts.
+static inline uint8_t* VirtualAlloc(uint8_t* lpAddress, size_t dwSize, uint32_t flAllocationType, uint32_t flProtect) {
+    (void)lpAddress; (void)flAllocationType; (void)flProtect;
+    void* ptr = mmap(NULL, dwSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (ptr == MAP_FAILED) return NULL;
+    return (uint8_t*)ptr;
+}
+
+static inline int32_t VirtualFree(uint8_t* lpAddress, size_t dwSize, uint32_t dwFreeType) {
+    (void)dwFreeType;
+    if (lpAddress != NULL && dwSize > 0) {
+        return munmap((void*)lpAddress, dwSize) == 0 ? 1 : 0;
+    }
+    return 1;
+}
 #endif
 
 // §4.2 platform plumbing for the thread surface (spawn/join + mutex).
