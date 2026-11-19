@@ -106,7 +106,7 @@ Applies to every task below (inherited from the Phase 45-69 contract):
 
 ---
 
-# Phase 70: POSIX / macOS Foundation Portability (P0) - OPEN
+# Phase 70: POSIX / macOS Foundation Portability (P0) - [COMPLETED] ✅
 
 ## Defect
 
@@ -698,7 +698,7 @@ undefined symbol from the Win32 set, on every non-Windows host.
   - `scripts/count_lines.py`: clean.
   - No UTF-8 BOM on any source or test file.
 
-**70.9 (found during 70.2)** `resolve_std_module_path`
+**70.9 [COMPLETED] ✅ (found during 70.2)** `resolve_std_module_path`
 (`src/backend/driver.vl:153-207`) finds `stdlib` through relative candidates
 (`dir`, `dir/..`, `dir/../..`, bare `rel_file`) before falling back to
 `VELO_STD`, `VELO_HOME`, `~/.velo`, and `/usr/...`. It has no
@@ -711,6 +711,28 @@ it is a distinct defect with a distinct symptom and was left out to keep 70.2's
 verification unambiguous. Found by writing a probe in a temp directory - the
 test suite does not exercise it because every row runs from the repo root or
 passes absolute source paths.
+
+- *Former Defect:*
+  `resolve_std_module_path` (`src/backend/driver.vl:153-207`) searched for standard library files through source-relative candidates (`dir`, `dir/..`, `dir/../..`, bare `rel_file`) before falling back to environment variables (`VELO_STD`, `VELO_HOME`, `~/.velo`, and `/usr/...`). It had no binary-relative resolution candidates. When invoked from an isolated directory unrelated to the repository or standard library location with `VELO_STD`, `VELO_HOME`, `USERPROFILE`, and `HOME` unconfigured or masked, `use std.fs` (or any `std.*` module) failed with `[Velo Error] Source file does not exist: <dir>/std/fs.vl` followed by `Call to undefined function` errors for all standard library functions.
+- *Fix Applied:*
+  - Added `resolve_binary_relative_std(rel_file: string) -> string` to `src/backend/driver.vl` using `velo_host_exe_path()`. It searches for candidate paths beside the compiler executable binary and up to two parent directories (`hops < 3`: `bin/`, `bin/..`, and `bin/../..`).
+  - Wired `resolve_binary_relative_std` into `resolve_std_module_path` immediately following relative source candidates and `VELO_STD`, prioritizing binary-relative discovery before falling back to ambient user profile directories.
+  - Rebuilt the self-hosted compiler bootstrap chain (`bootstrap.bat`, `velo_gen2.exe`, `velo_gen3.exe`, `velo.exe`, `bootstrap.c`) and verified Gen2 == Gen3 == `bootstrap.c` fixed-point determinism (`ABEB0C23...`).
+  - Created dedicated automated test suite in `tests/test_std_resolve_binary_relative.py`:
+    - `test_emit_c_resolves_std_fs_from_unrelated_directory`: executes `velo emit-c` from an isolated temp directory with environment variables masked (`VELO_STD`, `VELO_HOME` unset; `USERPROFILE` and `HOME` pointed to temp directory), asserting clean C emission and presence of `fs_exists`.
+    - `test_emit_c_resolves_multiple_std_modules_from_unrelated_directory`: verifies resolution across multiple std modules (`std.fs`, `std.io`, `std.crypto`).
+    - `test_build_and_run_from_unrelated_directory`: builds and executes a standalone executable importing `std.fs` from an unrelated temp directory, asserting returncode 0.
+- *Residual Limitation:*
+  If the compiler binary is relocated away from its standard library directory structure and no `VELO_STD` or `VELO_HOME` environment variable is defined, standard library modules will not be found (expected for unbundled standalone binaries without runtime/stdlib assets).
+- *Verification:*
+  - `tests/test_std_resolve_binary_relative.py`: 3 passed in 1.4s.
+  - `tests/test_platform_resolve.py`: 46 passed in 4.2s.
+  - `tests/test_bootstrap_snapshot.py`: 6 passed in 30.2s.
+  - `tests/test_posix_portability.py`: 18 passed, 6 skipped on Windows.
+  - `tests/test_posix_bootstrap_platform.py`: 1 passed, 2 skipped on Windows.
+  - Joint suite run: 74 passed, 8 skipped.
+  - `scripts/count_lines.py`: `src/backend/driver.vl` is at 395 lines ($\le 400$).
+  - No UTF-8 BOM on any source or test file.
 
 
 ## Phase Exit Criteria

@@ -148,6 +148,21 @@ act std_module_to_rel_path(mod_path: string) -> string {
     return buf as string
 }
 
+// Resolves a std module path relative to the running compiler binary (Phase 70 / Task 70.9).
+act resolve_binary_relative_std(rel_file: string) -> string {
+    let exe = velo_host_exe_path()
+    if exe == null or str.len(exe) == 0 { return "" }
+    mut cur_dir = path_dirname_to_str(exe)
+    mut hops: usize = 0
+    loop hops < 3 and cur_dir != null and str.len(cur_dir) > 0 {
+        let cand = path_join_str(cur_dir, rel_file)
+        if file_or_variant_exists(cand) { return cand }
+        cur_dir = path_dirname_to_str(cur_dir)
+        hops += 1
+    }
+    return ""
+}
+
 // Resolves a std module path against current directory, parent directories, or project root.
 act resolve_std_module_path(dir: string, mod_path: string) -> string {
     let rel_file = std_module_to_rel_path(mod_path)
@@ -173,6 +188,10 @@ act resolve_std_module_path(dir: string, mod_path: string) -> string {
             if file_or_variant_exists(p_env2) { return p_env2 }
         }
     }
+
+    // Candidates beside or relative to the compiler binary (Phase 70 / Task 70.9)
+    let p_bin = resolve_binary_relative_std(rel_file)
+    if str.len(p_bin) > 0 { return p_bin }
 
     // Check VELO_HOME environment variable (e.g. ~/.velo)
     let env_home = velo_host_getenv("VELO_HOME")
@@ -362,19 +381,15 @@ act compile_source_to_c_all_opts(source_path: string, unsafe_index: bool, is_tes
 act compile_source_to_c_test_opts(source_path: string, unsafe_index: bool, is_test: bool, no_line_directives: bool) -> string {
     return compile_source_to_c_all_opts(source_path, unsafe_index, is_test, no_line_directives, false)
 }
-
 act compile_source_to_c_test(source_path: string, unsafe_index: bool, is_test: bool) -> string {
     return compile_source_to_c_all_opts(source_path, unsafe_index, is_test, false, false)
 }
-
 act compile_source_to_c(source_path: string, unsafe_index: bool) -> string {
     return compile_source_to_c_all_opts(source_path, unsafe_index, false, false, false)
 }
-
 act compile_source_to_c_opts(source_path: string, unsafe_index: bool, no_line_directives: bool) -> string {
     return compile_source_to_c_all_opts(source_path, unsafe_index, false, no_line_directives, false)
 }
-
 act compile_source_to_c_strict(source_path: string, unsafe_index: bool, no_line_directives: bool, strict_safety: bool) -> string {
     return compile_source_to_c_all_opts(source_path, unsafe_index, false, no_line_directives, strict_safety)
 }
