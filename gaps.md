@@ -644,12 +644,35 @@ Win32 externs must live in a platform section. Simplest correct fix: after
   - Gen2 == Gen3 SHA-256 determinism verified (`c4815c69...`).
 
 
-**70.7** Add `tests/test_posix_portability.py`: for each of `std.fs`, `std.net`,
+**70.7 [COMPLETED] ✅** Add `tests/test_posix_portability.py`: for each of `std.fs`, `std.net`,
 `std.os`, `std.crypto`, `std.time`, `std.async`, emit C for a probe program and
 assert the emitted text contains no symbol matching
 `/(GetFileAttributesExA|GetFileAttributesA|CreateDirectoryA|RemoveDirectoryA|DeleteFileA|MoveFileExA|CopyFileA|FindFirstFileA|FindNextFileA|FindClose|CreateProcessA|GetEnvironmentVariableA|SetEnvironmentVariableA|ExitProcess|GetCurrentProcessId|VirtualAlloc|VirtualFree|SystemFunction036|WSAStartup|WSACleanup|closesocket|ioctlsocket)/`
 when the build host is not Windows. Skip on Windows; the assertion is inverted
 there.
+
+- *Former Defect:*
+  Prior to Task 70.7, there was no end-to-end automated regression test verifying that probe programs consuming the six foundation standard library modules (`std.fs`, `std.net`, `std.os`, `std.crypto`, `std.time`, `std.async`) emit clean C translation units free of Win32 symbols when targeting non-Windows platforms (Linux, macOS Darwin). Furthermore, `std/os/pipe.vl:7` hardcoded `use "pipe_win32.vl"`, causing semantic analysis to fail when compiling `std.os` for Linux or macOS with 5 undefined symbol errors (`proc_write_u32_le`, `proc_write_ptr_le`, `CloseHandle`).
+- *Fix Applied:*
+  - Extracted platform pipe implementations into resolver-mediated variants: `std/os/pipe_io_windows.vl` (Windows `CreatePipe`/`PeekNamedPipe`/`ReadFile`), `std/os/pipe_io_linux.vl` (POSIX `pipe`/`read`/`write`), and `std/os/pipe_io_macos.vl` (POSIX `pipe`/`read`/`write`).
+  - In `std/os/pipe.vl`, replaced hardcoded `use "pipe_win32.vl"` with resolver-mediated `use "pipe_io.vl"`.
+  - Converted `std/os/pipe_win32.vl` and `std/os/pipe_posix.vl` into 1-line backward compatibility facades delegating to `pipe_io_windows.vl` and `pipe_io_linux.vl`.
+  - Created `tests/test_posix_portability.py`:
+    - Defined `WIN32_PORTABILITY_REGEX` covering all 22 Win32 portability symbols: `GetFileAttributesExA`, `GetFileAttributesA`, `CreateDirectoryA`, `RemoveDirectoryA`, `DeleteFileA`, `MoveFileExA`, `CopyFileA`, `FindFirstFileA`, `FindNextFileA`, `FindClose`, `CreateProcessA`, `GetEnvironmentVariableA`, `SetEnvironmentVariableA`, `ExitProcess`, `GetCurrentProcessId`, `VirtualAlloc`, `VirtualFree`, `SystemFunction036`, `WSAStartup`, `WSACleanup`, `closesocket`, `ioctlsocket`.
+    - Defined representative probe programs for each of the 6 foundation modules (`std.fs`, `std.net`, `std.os`, `std.crypto`, `std.time`, `std.async`).
+    - Added `test_posix_host_portability`: asserts RC=0 and 0 regex matches on non-Windows hosts (skipped on Windows host).
+    - Added `test_windows_host_inversion`: on Windows host, asserts RC=0, asserts expected Win32 externs are emitted, and strictly verifies that all Win32 extern declarations are wrapped in `#if defined(_WIN32) ... #endif`.
+    - Added `test_cross_target_posix_portability`: parameterized across all 6 foundation modules and both POSIX targets (`linux`, `macos`), asserting RC=0 and 0 regex matches under `VELO_TARGET_PLATFORM=linux|macos`.
+- *Residual Limitation:*
+  Native compilation on non-Windows hosts requires a native Linux/macOS C compiler environment (CI or off-Windows builder); local Windows verification tests cross-target emission via `VELO_TARGET_PLATFORM=linux|macos` and verifies strict `#if defined(_WIN32)` guarding on native Windows builds. Compiling `bootstrap.c` with `cc -c` on non-Windows hosts is covered by Task 70.8.
+- *Verification:*
+  - `tests/test_posix_portability.py`: 18 passed, 6 skipped on Windows (12 cross-target tests passed with 0 Win32 symbols, 6 Windows inversion tests passed verifying `#if defined(_WIN32)` guarding).
+  - `tests/test_std_os.py`: 6 passed in 9.5s.
+  - `tests/test_platform_resolve.py`: 46 passed in 4.2s.
+  - `tests/test_bootstrap_snapshot.py`: 5 passed in 15.6s (fixed-point determinism preserved).
+  - Full test suite `python -m pytest tests -q`: 2097 passed, 14 skipped, 1 xfailed in 991.8s (18 new tests, 0 regressions).
+  - `scripts/count_lines.py`: clean.
+  - No UTF-8 BOM on any source or test file.
 
 **70.8** Add `tests/test_postgres_bootstrap_platform.py` (or extend
 `test_bootstrap_snapshot.py`): compile `bootstrap.c` with `cc -c` and assert no

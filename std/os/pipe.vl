@@ -4,7 +4,7 @@ use "../mem/arena.vl"
 use "../str/slice.vl"
 use "proc_types.vl"
 use "process.vl"
-use "pipe_win32.vl"
+use "pipe_io.vl"
 use "args.vl"
 
 // Spawns a command line and captures both its stdout and stderr streams.
