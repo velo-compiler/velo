@@ -107,6 +107,8 @@ def test_build_and_run_from_unrelated_directory(tmp_path):
         cwd=str(tmp_path),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=10,
     )
     assert run_res.returncode == 0, f"Execution failed with return code {run_res.returncode}"

@@ -193,12 +193,21 @@ def test_posix_host_spawn_sync_execution(tmp_path):
         cwd=str(tmp_path),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         env=_env(),
         timeout=30,
     )
     assert build_res.returncode == 0, f"build failed:\n{build_res.stdout}\n{build_res.stderr}"
 
-    run_res = subprocess.run([str(out_bin)], capture_output=True, text=True, timeout=10)
+    run_res = subprocess.run(
+        [str(out_bin)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=10,
+    )
     assert run_res.returncode == 0, f"run failed with code {run_res.returncode}"
 
 
@@ -228,12 +237,21 @@ def test_posix_host_pipe_drain_two_streams_and_exit_7(tmp_path):
         cwd=str(tmp_path),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         env=_env(),
         timeout=30,
     )
     assert build_res.returncode == 0, f"build failed:\n{build_res.stdout}\n{build_res.stderr}"
 
-    run_res = subprocess.run([str(out_bin)], capture_output=True, text=True, timeout=10)
+    run_res = subprocess.run(
+        [str(out_bin)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=10,
+    )
     assert run_res.returncode == 0, f"run failed with code {run_res.returncode}"
 
 
@@ -308,12 +326,21 @@ def test_windows_host_process_signal_returns_zero(tmp_path):
         cwd=str(tmp_path),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         env=_env(),
         timeout=30,
     )
     assert build_res.returncode == 0, f"build failed:\n{build_res.stdout}\n{build_res.stderr}"
 
-    run_res = subprocess.run([str(out_bin)], capture_output=True, text=True, timeout=10)
+    run_res = subprocess.run(
+        [str(out_bin)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=10,
+    )
     assert run_res.returncode == 0, f"run failed with code {run_res.returncode}"
 
 
@@ -355,11 +382,20 @@ def test_posix_host_process_signal_decoding(tmp_path):
         cwd=str(tmp_path),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         env=_env(),
         timeout=30,
     )
     assert build_res.returncode == 0, f"build failed:\n{build_res.stdout}\n{build_res.stderr}"
 
-    run_res = subprocess.run([str(out_bin)], capture_output=True, text=True, timeout=10)
+    run_res = subprocess.run(
+        [str(out_bin)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=10,
+    )
     assert run_res.returncode == 0, f"run failed with code {run_res.returncode}"
 

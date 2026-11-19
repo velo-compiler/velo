@@ -50169,7 +50169,7 @@ const char* assemble_gcc_compile_cmd(const char* cc, const char* c_file_path, co
         sb_append_str((&(cmd_sb)), "-O2 ");
     }
 #line 261 "src/main.vl"
-    sb_append_str((&(cmd_sb)), "-std=c99 ");
+    sb_append_str((&(cmd_sb)), "-fwrapv -std=c99 ");
 #line 262 "src/main.vl"
     append_runtime_includes((&(cmd_sb)), false);
 #line 263 "src/main.vl"

@@ -1,6 +1,7 @@
 // std.math.int — Pure Velo integer mathematics, saturating arithmetic, and number theory.
 // Zero-dependency, portable, overflow-safe implementations without libc dependencies.
 use "bits.vl"
+use "checked.vl"
 
 // --- Basic Signed and Unsigned Integer Utilities ---
 

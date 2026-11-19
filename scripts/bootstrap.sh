@@ -31,7 +31,7 @@ if [[ -z "${CC_BIN}" ]]; then
 fi
 
 echo "[Velo] Using ${CC_BIN} to compile bootstrap.c..."
-${CC_BIN} -O2 -std=c99 -I runtime -I velo/runtime bootstrap.c -o bin/velo -lm -lpthread
+${CC_BIN} -O2 -fwrapv -std=c99 -I runtime -I velo/runtime bootstrap.c -o bin/velo -lm -lpthread
 chmod +x bin/velo
 ln -sf velo bin/velo.exe 2>/dev/null || cp bin/velo bin/velo.exe 2>/dev/null || true
 

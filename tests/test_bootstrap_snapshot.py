@@ -66,7 +66,7 @@ def test_bootstrap_c_compilation(tmp_path):
     """Verify that bootstrap.c compiles cleanly with ambient GCC into a functional standalone compiler."""
     test_exe = tmp_path / ("velo_boot.exe" if sys.platform == "win32" else "velo_boot")
     gcc_cmd = [
-        "gcc", "-O2", "-std=c99",
+        "gcc", "-O2", "-fwrapv", "-std=c99",
         "-I", str(REPO_ROOT / "runtime"),
         "-I", str(REPO_ROOT / "velo" / "runtime"),
         str(BOOTSTRAP_C),

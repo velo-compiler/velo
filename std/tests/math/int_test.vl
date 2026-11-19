@@ -160,6 +160,60 @@ act test_div_ceil() -> bool {
     return true
 }
 
+act test_checked_arith() -> bool {
+    let min_i32_val: i32 = (-2147483647 as i32) - (1 as i32)
+    let max_i32_val: i32 = 2147483647 as i32
+
+    mut r32: i32 = 0
+    if checked_add_i32(max_i32_val, 1 as i32, @r32) { return false }
+    if r32 != min_i32_val { return false }
+
+    if not checked_add_i32(100 as i32, 200 as i32, @r32) { return false }
+    if r32 != (300 as i32) { return false }
+
+    if checked_sub_i32(min_i32_val, 1 as i32, @r32) { return false }
+    if r32 != max_i32_val { return false }
+
+    if checked_mul_i32(2000000 as i32, 2000 as i32, @r32) { return false }
+    if not checked_mul_i32(6 as i32, 7 as i32, @r32) { return false }
+    if r32 != (42 as i32) { return false }
+
+    if checked_div_i32(min_i32_val, -1 as i32, @r32) { return false }
+    if checked_div_i32(42 as i32, 0 as i32, @r32) { return false }
+    if not checked_div_i32(42 as i32, 6 as i32, @r32) { return false }
+    if r32 != (7 as i32) { return false }
+
+    let min_i64_val: i64 = (-9223372036854775807 as i64) - (1 as i64)
+    let max_i64_val: i64 = 9223372036854775807 as i64
+
+    mut r64: i64 = 0
+    if checked_add_i64(max_i64_val, 1 as i64, @r64) { return false }
+    if r64 != min_i64_val { return false }
+
+    if checked_sub_i64(min_i64_val, 1 as i64, @r64) { return false }
+    if r64 != max_i64_val { return false }
+
+    if checked_mul_i64(9000000000000000000 as i64, 2 as i64, @r64) { return false }
+    if checked_div_i64(min_i64_val, -1 as i64, @r64) { return false }
+    if checked_div_i64(100 as i64, 0 as i64, @r64) { return false }
+    if not checked_div_i64(100 as i64, 4 as i64, @r64) { return false }
+    if r64 != (25 as i64) { return false }
+
+    mut ru32: u32 = 0
+    if checked_add_u32(0xFFFFFFFF as u32, 1 as u32, @ru32) { return false }
+    if ru32 != (0 as u32) { return false }
+    if checked_sub_u32(0 as u32, 1 as u32, @ru32) { return false }
+    if checked_mul_u32(0x10000 as u32, 0x10000 as u32, @ru32) { return false }
+
+    mut ru64: u64 = 0
+    if checked_add_u64(0xFFFFFFFFFFFFFFFF as u64, 1 as u64, @ru64) { return false }
+    if ru64 != (0 as u64) { return false }
+    if checked_sub_u64(0 as u64, 1 as u64, @ru64) { return false }
+    if checked_mul_u64(0xFFFFFFFFFFFFFFFF as u64, 2 as u64, @ru64) { return false }
+
+    return true
+}
+
 act main() -> i32 {
     if not test_basic_int() {
         println_str("FAIL: test_basic_int")
@@ -184,6 +238,10 @@ act main() -> i32 {
     if not test_div_ceil() {
         println_str("FAIL: test_div_ceil")
         return 6
+    }
+    if not test_checked_arith() {
+        println_str("FAIL: test_checked_arith")
+        return 7
     }
 
     println_str("PASS: std.math.int tests succeeded")

@@ -4,6 +4,7 @@
 // and pure-Velo transcendental and trigonometry functions.
 use "math/bits.vl"
 use "math/int.vl"
+use "math/checked.vl"
 use "math/float.vl"
 use "math/trig.vl"
 

@@ -9,14 +9,14 @@ rem 1. Check known MSYS2 GCC locations first (ensuring clean DLL resolution)
 if exist "C:\msys64\ucrt64\bin\gcc.exe" (
     echo [Velo] Found GCC at C:\msys64\ucrt64\bin\gcc.exe...
     set "PATH=C:\msys64\ucrt64\bin;%PATH%"
-    gcc -O2 -std=c99 -I runtime -I velo/runtime bootstrap.c -o bin\velo.exe
+    gcc -O2 -fwrapv -std=c99 -I runtime -I velo/runtime bootstrap.c -o bin\velo.exe
     if %ERRORLEVEL% equ 0 goto success
 )
 
 if exist "C:\msys64\mingw64\bin\gcc.exe" (
     echo [Velo] Found GCC at C:\msys64\mingw64\bin\gcc.exe...
     set "PATH=C:\msys64\mingw64\bin;%PATH%"
-    gcc -O2 -std=c99 -I runtime -I velo/runtime bootstrap.c -o bin\velo.exe
+    gcc -O2 -fwrapv -std=c99 -I runtime -I velo/runtime bootstrap.c -o bin\velo.exe
     if %ERRORLEVEL% equ 0 goto success
 )
 
@@ -24,7 +24,7 @@ rem 2. Check GCC in existing PATH
 where gcc >nul 2>&1
 if %ERRORLEVEL% equ 0 (
     echo [Velo] Using GCC from PATH...
-    gcc -O2 -std=c99 -I runtime -I velo/runtime bootstrap.c -o bin\velo.exe
+    gcc -O2 -fwrapv -std=c99 -I runtime -I velo/runtime bootstrap.c -o bin\velo.exe
     if %ERRORLEVEL% equ 0 goto success
 )
 
@@ -32,7 +32,7 @@ rem 3. Check Clang in PATH
 where clang >nul 2>&1
 if %ERRORLEVEL% equ 0 (
     echo [Velo] Using Clang from PATH...
-    clang -O2 -std=c99 -I runtime -I velo/runtime bootstrap.c -o bin\velo.exe
+    clang -O2 -fwrapv -std=c99 -I runtime -I velo/runtime bootstrap.c -o bin\velo.exe
     if %ERRORLEVEL% equ 0 goto success
 )
 

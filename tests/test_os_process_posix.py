@@ -64,13 +64,22 @@ def _build_and_run(tmp_path, name, velo_code, timeout=20):
         cwd=str(tmp_path),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         env=_env(),
         timeout=30,
     )
     assert build_res.returncode == 0, (
         f"build failed for {name}:\nstdout:\n{build_res.stdout}\nstderr:\n{build_res.stderr}"
     )
-    run_res = subprocess.run([str(out_bin)], capture_output=True, text=True, timeout=timeout)
+    run_res = subprocess.run(
+        [str(out_bin)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+    )
     assert run_res.returncode == 0, (
         f"execution failed for {name} with code {run_res.returncode}\n"
         f"stdout:\n{run_res.stdout}\nstderr:\n{run_res.stderr}"

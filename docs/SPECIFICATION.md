@@ -89,6 +89,15 @@ Velo requires explicit bit sizes to guarantee cross-platform predictability:
 | `string` | UTF-8 string view/slice | Pointer + Length | `const char*` (in C99) |
 | `void` | Absence of value | 0 bytes | `void` |
 
+#### Integer Overflow Policy
+Velo specifies **two's-complement wraparound arithmetic by default** for all signed integer types (`i8`, `i16`, `i32`, `i64`, `isize`) and unsigned integer types (`u8`, `u16`, `u32`, `u64`, `usize`) across standard arithmetic operators (`+`, `-`, `*`).
+
+* **Predictable Semantics:** Signed integer overflow in Velo is well-defined modular arithmetic and never invokes C undefined behaviour (UB). For example, `2147483647_i32 + 1 == -2147483648_i32`, and `9223372036854775807_i64 + 1 == -9223372036854775808_i64`.
+* **Toolchain Enforcement:** When compiling via GCC or Clang, the compiler backend automatically emits the `-fwrapv` flag, ensuring the C backend compiler does not optimize away overflow checks or assume that signed overflow cannot occur. On MSVC, two's-complement wrapping is the guaranteed native representation.
+* **Checked and Saturating Arithmetic:** Applications requiring explicit overflow detection or clamp-on-overflow semantics should use the `std.math.int` standard library module:
+  * Saturating arithmetic: `add_sat_*`, `sub_sat_*`, `mul_sat_*`.
+  * Checked arithmetic: `checked_add_*`, `checked_sub_*`, `checked_mul_*`, `checked_div_*`, `checked_rem_*` (returns `bool` indicating whether the calculation completed without overflow, storing the wrapped value into an out-pointer `@T`).
+
 ### 2.2 Pointer Types (`@T`)
 A pointer to a type `T` is denoted as `@T`:
 * `@i32`: Pointer to a 32-bit integer (emits `int32_t*` in C).

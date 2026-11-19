@@ -258,7 +258,7 @@ act assemble_gcc_compile_cmd(cc: string, c_file_path: string, out_exe_path: stri
     } else {
         sb_append_str(@cmd_sb, "-O2 ")
     }
-    sb_append_str(@cmd_sb, "-std=c99 ")
+    sb_append_str(@cmd_sb, "-fwrapv -std=c99 ")
     append_runtime_includes(@cmd_sb, false)
     sb_append_str(@cmd_sb, " ")
     let env_cflags = os.get_env("VELO_CFLAGS")
