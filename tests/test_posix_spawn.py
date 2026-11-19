@@ -24,6 +24,7 @@ def _env(target=None):
     directory = cc_dir()
     if directory and directory not in env.get("PATH", ""):
         env["PATH"] = directory + os.pathsep + env.get("PATH", "")
+    env["VELO_STD"] = str(REPO_ROOT / "std")
     env.pop("VELO_TARGET_PLATFORM", None)
     if target is not None:
         env["VELO_TARGET_PLATFORM"] = target
@@ -171,6 +172,7 @@ def test_posix_host_spawn_sync_execution(tmp_path):
         cwd=str(tmp_path),
         capture_output=True,
         text=True,
+        env=_env(),
         timeout=30,
     )
     assert build_res.returncode == 0, f"build failed:\n{build_res.stdout}\n{build_res.stderr}"
@@ -205,9 +207,138 @@ def test_posix_host_pipe_drain_two_streams_and_exit_7(tmp_path):
         cwd=str(tmp_path),
         capture_output=True,
         text=True,
+        env=_env(),
         timeout=30,
     )
     assert build_res.returncode == 0, f"build failed:\n{build_res.stdout}\n{build_res.stderr}"
 
     run_res = subprocess.run([str(out_bin)], capture_output=True, text=True, timeout=10)
     assert run_res.returncode == 0, f"run failed with code {run_res.returncode}"
+
+
+@pytest.mark.parametrize("target", ["linux", "macos", "windows"])
+def test_cross_target_emission_os_process_signal(tmp_path, target):
+    """
+    Task 75.3: Verify cross-target emission of os_process_signal for linux, macos, and windows.
+    POSIX targets must include status decoding with signal isolation, and Windows must
+    consistently return 0.
+    """
+    src = tmp_path / f"sig_probe_{target}.vl"
+    src.write_text(
+        'use std.os.process\n\n'
+        'act main() -> i32 {\n'
+        '    mut proc = os_spawn("echo test")\n'
+        '    let sig = os_process_signal(@proc)\n'
+        '    let sig_null = os_process_signal(null)\n'
+        '    let code = os_process_wait(@proc)\n'
+        '    return 0\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    out_c = tmp_path / f"sig_probe_{target}.c"
+    res = subprocess.run(
+        [str(require_velo_exe()), "emit-c", str(src), "-o", str(out_c)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=_env(target),
+        timeout=30,
+    )
+    assert res.returncode == 0, f"emit-c failed for {target}:\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+    c_text = out_c.read_text(encoding="utf-8")
+
+    assert "os_process_signal" in c_text, f"Missing os_process_signal in emitted C for {target}"
+    if target in ("linux", "macos"):
+        assert "waitpid(" in c_text, f"Missing waitpid in emitted C for {target}"
+        assert "127" in c_text, f"Missing signal mask in emitted C for {target}"
+        assert "CreateProcessA" not in c_text
+    else:
+        assert "CreateProcessA" in c_text
+        assert "waitpid" not in c_text
+
+
+def test_windows_host_process_signal_returns_zero(tmp_path):
+    """
+    Task 75.3: On Windows host, verify that os_process_signal returns 0 for a finished process
+    and for null.
+    """
+    if sys.platform != "win32":
+        pytest.skip("Windows-specific test")
+    src = tmp_path / "test_win_signal.vl"
+    src.write_text(
+        'use std.os.process\n\n'
+        'act main() -> i32 {\n'
+        '    mut proc = os_spawn("cmd.exe /c exit 0")\n'
+        '    let wait_res = os_process_wait(@proc)\n'
+        '    if wait_res != 0 { return 1 }\n'
+        '    let sig = os_process_signal(@proc)\n'
+        '    if sig != 0 { return 2 }\n'
+        '    let sig_null = os_process_signal(null)\n'
+        '    if sig_null != 0 { return 3 }\n'
+        '    return 0\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    out_bin = tmp_path / "test_win_signal.exe"
+    build_res = subprocess.run(
+        [str(require_velo_exe()), "build", str(src), "-o", str(out_bin)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        env=_env(),
+        timeout=30,
+    )
+    assert build_res.returncode == 0, f"build failed:\n{build_res.stdout}\n{build_res.stderr}"
+
+    run_res = subprocess.run([str(out_bin)], capture_output=True, text=True, timeout=10)
+    assert run_res.returncode == 0, f"run failed with code {run_res.returncode}"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX host execution test; runs on Linux/macOS")
+def test_posix_host_process_signal_decoding(tmp_path):
+    """
+    Task 75.3: On POSIX hosts, verify that terminating signals (e.g. SIGTERM=15, SIGSEGV=11)
+    are accurately decoded by os_process_signal and waitpid status decoding.
+    """
+    src = tmp_path / "test_posix_sig.vl"
+    src.write_text(
+        'use std.os.process\n\n'
+        'act main() -> i32 {\n'
+        '    // 1. Process killed by SIGTERM (15)\n'
+        '    mut proc_term = os_spawn("kill -15 $$")\n'
+        '    let code_term = os_process_wait(@proc_term)\n'
+        '    let sig_term = os_process_signal(@proc_term)\n'
+        '    if sig_term != 15 { return 1 }\n'
+        '    if code_term != 128 + 15 { return 2 }\n\n'
+        '    // 2. Process killed by SIGSEGV (11)\n'
+        '    mut proc_segv = os_spawn("kill -11 $$")\n'
+        '    let code_segv = os_process_wait(@proc_segv)\n'
+        '    let sig_segv = os_process_signal(@proc_segv)\n'
+        '    if sig_segv != 11 { return 3 }\n'
+        '    if code_segv != 128 + 11 { return 4 }\n\n'
+        '    // 3. Normal process has signal == 0\n'
+        '    mut proc_norm = os_spawn("echo normal")\n'
+        '    let code_norm = os_process_wait(@proc_norm)\n'
+        '    let sig_norm = os_process_signal(@proc_norm)\n'
+        '    if sig_norm != 0 { return 5 }\n'
+        '    if code_norm != 0 { return 6 }\n\n'
+        '    return 0\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    out_bin = tmp_path / "test_posix_sig"
+    build_res = subprocess.run(
+        [str(require_velo_exe()), "build", str(src), "-o", str(out_bin)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        env=_env(),
+        timeout=30,
+    )
+    assert build_res.returncode == 0, f"build failed:\n{build_res.stdout}\n{build_res.stderr}"
+
+    run_res = subprocess.run([str(out_bin)], capture_output=True, text=True, timeout=10)
+    assert run_res.returncode == 0, f"run failed with code {run_res.returncode}"
+

@@ -47,6 +47,7 @@ act main() -> i32 {
     let wait_code = os_process_wait(@proc)
     assert(wait_code == 88, "os_process_wait must return 88")
     assert(!proc.is_alive, "proc must not be alive after wait")
+    assert(os_process_signal(@proc) == 0, "normal exit must report signal == 0")
 
     // 5. Asynchronous polling with try_wait and process termination with kill
     mut long_proc = os_spawn("cmd.exe /c ping -n 4 127.0.0.1 >nul")
@@ -90,6 +91,7 @@ act main() -> i32 {
 
     let wait_null = os_process_wait(null)
     assert(wait_null == -1, "waiting on null must return -1")
+    assert(os_process_signal(null) == 0, "null proc signal must return 0")
 
     println_str("PASS: std.os.process tests succeeded")
     return 0

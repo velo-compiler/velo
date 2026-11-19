@@ -21,6 +21,7 @@ act os_spawn_ex(cmd: string, h_in: @void, h_out: @void, h_err: @void) -> Process
             handle: null,
             thread_handle: null,
             is_alive: false,
+            signal: 0,
         }
     }
     let cmd_len = raw_str_len(cmd as @u8)
@@ -30,6 +31,7 @@ act os_spawn_ex(cmd: string, h_in: @void, h_out: @void, h_err: @void) -> Process
             handle: null,
             thread_handle: null,
             is_alive: false,
+            signal: 0,
         }
     }
 
@@ -40,6 +42,7 @@ act os_spawn_ex(cmd: string, h_in: @void, h_out: @void, h_err: @void) -> Process
             handle: null,
             thread_handle: null,
             is_alive: false,
+            signal: 0,
         }
     }
 
@@ -103,6 +106,7 @@ act os_spawn_ex(cmd: string, h_in: @void, h_out: @void, h_err: @void) -> Process
         handle: (pid as usize) as @void,
         thread_handle: null,
         is_alive: true,
+        signal: 0,
     }
 }
 
@@ -137,6 +141,12 @@ act os_process_wait_timeout(proc: @ProcessHandle, timeout_ms: u32) -> i32 {
     }
     proc.is_alive = false
     if res > 0 {
+        let sig = status & 127
+        if sig != 0 and sig != 127 {
+            proc.signal = sig
+        } else {
+            proc.signal = 0
+        }
         return posix_decode_status(status)
     }
     return -1
@@ -148,6 +158,9 @@ act os_process_kill(proc: @ProcessHandle) -> bool {
         return false
     }
     let res = kill(proc.pid as i32, 9)
+    mut status: i32 = 0
+    waitpid(proc.pid as i32, @status, 1)
+    proc.signal = 9
     proc.is_alive = false
     return res == 0
 }

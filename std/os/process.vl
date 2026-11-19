@@ -14,7 +14,7 @@ act os_spawn(cmd: string) -> ProcessHandle {
 // Spawns a child process asynchronously from an argument array.
 act os_spawn_argv(arena: @Arena, argv: @string, argc: usize) -> ProcessHandle {
     if arena == null or argv == null or argc == 0 {
-        return ProcessHandle { pid: 0 as u32, handle: null, thread_handle: null, is_alive: false }
+        return ProcessHandle { pid: 0 as u32, handle: null, thread_handle: null, is_alive: false, signal: 0 }
     }
     let cmd = os_join_argv(arena, argv, argc)
     return os_spawn(cmd)
@@ -29,6 +29,15 @@ act os_process_wait(proc: @ProcessHandle) -> i32 {
 // Returns the exit code if finished, or -1 if still running.
 act os_process_try_wait(proc: @ProcessHandle) -> i32 {
     return os_process_wait_timeout(proc, 0 as u32)
+}
+
+// Returns the terminating signal of the child process on POSIX, or 0 on Windows.
+act os_process_signal(proc: @ProcessHandle) -> i32 {
+    if proc == null { return 0 }
+    if proc.is_alive {
+        os_process_try_wait(proc)
+    }
+    return proc.signal
 }
 
 // Spawns a child process synchronously, blocks until termination, and returns the result.

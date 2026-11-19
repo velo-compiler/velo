@@ -1235,9 +1235,38 @@ that writes to both streams and exits 7.
   - Runtime header parity: SHA-256 identical on `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h`.
   - No UTF-8 BOM on any modified or new files.
 
-**75.3** Implement signal decoding: `os_process_signal(proc)` returning the
+**75.3 [COMPLETED] ✅** Implement signal decoding: `os_process_signal(proc)` returning the
 terminating signal on POSIX and `0` on Windows. The current API cannot express
 "killed by SIGSEGV", which matters for build tools.
+
+- *Former Defect:*
+  `ProcessHandle` tracked only `pid`, `handle`, `thread_handle`, and `is_alive`. There was no mechanism to inspect whether a child process terminated normally or was killed by an OS signal (e.g. `SIGSEGV`, `SIGKILL`, `SIGTERM`), and no public API existed to retrieve terminating signals. Consequently, build tools, test runners, and process supervisors had no way to distinguish a deliberate exit code from a segmentation fault or crash.
+- *Fix Applied:*
+  - Added `signal: i32` field to `ProcessHandle` in `std/os/proc_types.vl`.
+  - Implemented `os_process_signal(proc: @ProcessHandle) -> i32` in `std/os/process.vl`. If `proc.is_alive` is true, it calls `os_process_try_wait(proc)` to reap any pending status without blocking before returning `proc.signal`. Returns 0 if `proc == null`.
+  - In `std/os/proc_linux.vl` and `std/os/proc_macos.vl`: updated `os_process_wait_timeout` to isolate the signal byte `sig = status & 127`; if `sig != 0 and sig != 127` (WIFSIGNALED), `proc.signal` is recorded as `sig` and exit code returns `128 + sig`; otherwise `proc.signal` is set to 0.
+  - In `std/os/proc_linux.vl` and `std/os/proc_macos.vl`: updated `os_process_kill` to reap with `waitpid(proc.pid, @status, 1)` (WNOHANG) and record `proc.signal = 9` (SIGKILL).
+  - In `std/os/proc_windows.vl`: updated all `ProcessHandle` literals with `signal: 0`. On Windows, `os_process_signal` consistently returns `0`.
+  - Updated `std/tests/os/process_test.vl` with assertions verifying `os_process_signal(@proc) == 0` on normal exit and `os_process_signal(null) == 0`.
+  - Extended `tests/test_posix_spawn.py` with:
+    - Cross-target emission testing for `os_process_signal` targeting `linux`, `macos`, and `windows`.
+    - Host execution test on Windows verifying `os_process_signal` compiles and returns 0.
+    - POSIX host execution test verifying terminating signals (`SIGTERM` = 15, `SIGSEGV` = 11) are accurately captured in `proc.signal` and returned by `os_process_signal`.
+- *Residual Limitation:*
+  Windows processes do not have POSIX signals; `os_process_signal` returns `0` on Windows by design as specified by the task contract.
+- *Verification:*
+  - `tests/test_posix_spawn.py`: 10 passed, 3 skipped on Windows (100% pass).
+  - `std/tests/os/process_test.vl`: built and ran cleanly with `bin/velo.exe run` (`PASS: std.os.process tests succeeded`).
+  - `tests/test_std_os.py`: 6 passed in 10.5s.
+  - `tests/test_platform_resolve.py`: 46 passed in 4.2s.
+  - `tests/test_posix_portability.py`: 18 passed, 6 skipped on Windows.
+  - `tests/test_std_resolve_binary_relative.py`: 3 passed in 1.4s.
+  - `tests/test_posix_bootstrap_platform.py`: 1 passed, 2 skipped on Windows.
+  - `tests/test_bootstrap_snapshot.py`: 6 passed in 46s.
+  - Joint suite run: 90 passed, 11 skipped in 70s.
+  - Line count ceiling: clean (`proc_windows.vl`: 250, `proc_linux.vl`: 189, `proc_macos.vl`: 189, `pipe_io_linux.vl`: 203, `process.vl`: 71 $\le 400$).
+  - Runtime header parity: SHA-256 identical on `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h`.
+  - No UTF-8 BOM on any modified or new files.
 
 **75.4** Add `tests/test_os_process_posix.py` covering: spawn+wait exit code,
 stdout/stderr capture, signal termination, non-existent binary (named error,

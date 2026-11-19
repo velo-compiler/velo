@@ -13,6 +13,7 @@ data ProcessHandle {
     handle: @void,
     thread_handle: @void,
     is_alive: bool,
+    signal: i32,
 }
 
 // Represents an anonymous OS pipe with read and write endpoints.
