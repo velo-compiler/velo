@@ -1264,6 +1264,15 @@ static inline const char* velo_host_getenv(const char* key) {
     return (raw != NULL) ? raw : "";
 }
 
+// Portable process ID retrieval for compiler temporary files and diagnostics.
+static inline uint32_t velo_host_getpid(void) {
+#if defined(_WIN32)
+    return (uint32_t)_getpid();
+#else
+    return (uint32_t)getpid();
+#endif
+}
+
 // ============================================================================
 // Phase 70 / Task 70.2: path of the running binary.
 //

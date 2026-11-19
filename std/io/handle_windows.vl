@@ -28,7 +28,7 @@ extern act SetFilePointerEx(hFile: @u8, liDistanceToMove: i64, lpNewFilePointer:
 extern act GetFileSizeEx(hFile: @u8, lpFileSize: @i64) -> i32
 extern act CloseHandle(hObject: @void) -> i32
 extern act CreateFileA(lpFileName: @u8, dwDesiredAccess: u32, dwShareMode: u32, lpSecurityAttributes: @u8, dwCreationDisposition: u32, dwFlagsAndAttributes: u32, hTemplateFile: @u8) -> @u8
-extern act DeleteFileA(lpFileName: @u8) -> i32
+extern act velo_fs_remove(path: string) -> bool
 
 // Retrieves raw OS standard input handle (STDIN)
 act io_stdin_handle() -> FileHandle {
@@ -197,8 +197,7 @@ act io_file_open_str(path: string, flags: u32) -> FileHandle {
 // Deletes a file by C-string path.
 act io_file_delete(path: @u8) -> bool {
     if path == null { return false }
-    let res = DeleteFileA(path)
-    return res != 0
+    return velo_fs_remove(path as string)
 }
 
 // Deletes a file by Velo string path literal.

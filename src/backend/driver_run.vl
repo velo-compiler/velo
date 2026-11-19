@@ -1,3 +1,5 @@
+extern act system(cmd: string) -> i32
+act os_system(cmd: string) -> i32 { return system(cmd) }
 // Execution, build, and test running orchestration for the compiler driver.
 use std.io
 use std.fs

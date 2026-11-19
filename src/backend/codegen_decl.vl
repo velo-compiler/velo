@@ -167,6 +167,21 @@ act emit_param_list(sb: @StringBuilder, first_param: @ParamNode, param_count: us
     sb_append_char(sb, ')')
 }
 
+
+act is_win32_extern(name: string) -> bool {
+    if name == null { return false }
+    if name == "VirtualAlloc" or name == "VirtualFree" { return true }
+    if name == "CreateProcessA" or name == "ExitProcess" or name == "GetCurrentProcessId" { return true }
+    if name == "GetEnvironmentVariableA" or name == "SetEnvironmentVariableA" { return true }
+    if name == "DeleteFileA" or name == "CreateFileA" or name == "CloseHandle" { return true }
+    if name == "WriteFile" or name == "ReadFile" or name == "SetFilePointerEx" or name == "GetFileSizeEx" { return true }
+    if name == "GetStdHandle" or name == "CreateDirectoryA" or name == "RemoveDirectoryA" { return true }
+    if name == "MoveFileExA" or name == "CopyFileA" or name == "FindFirstFileA" or name == "FindNextFileA" or name == "FindClose" { return true }
+    if name == "GetFileAttributesA" or name == "GetFileAttributesExA" { return true }
+    if name == "SystemFunction036" or name == "WSAStartup" or name == "WSACleanup" or name == "closesocket" or name == "ioctlsocket" { return true }
+    return false
+}
+
 // Emits all type declarations, structs, kinds, aliases, globals, and extern prototypes.
 act emit_type_declarations(sb: @StringBuilder, st: @SymbolTable, prog: @ProgramNode) {
     // 2. Struct and Kind forward declarations
@@ -321,13 +336,17 @@ act emit_type_declarations(sb: @StringBuilder, st: @SymbolTable, prog: @ProgramN
         emit_or_type_declarations(sb, or_list)
     }
 
+
     // 4. Extern function declarations
     cur = prog.first_decl
     loop cur != null {
         if cur.kind == DECL_EXTERN {
+            let is_win32 = is_win32_extern(cur.name)
+            if is_win32 { sb_append_str(sb, "#if defined(_WIN32)\n") }
             sb_append_str(sb, "extern "); sb_append_str(sb, map_type_to_c(cur.return_type)); sb_append_char(sb, ' '); sb_append_str(sb, cur.name)
             emit_param_list(sb, cur.first_param, cur.param_count)
             sb_append_str(sb, ";\n")
+            if is_win32 { sb_append_str(sb, "#endif\n") }
         }
         cur = cur.next
     }

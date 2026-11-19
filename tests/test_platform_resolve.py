@@ -351,3 +351,96 @@ def test_facade_modules_resolve_and_emit_across_all_platforms(tmp_path, target, 
             assert "clock_gettime" in emitted
             assert "QueryPerformanceCounter" not in emitted
 
+
+WIN32_PORTABILITY_SYMBOLS = (
+    "GetFileAttributesExA", "GetFileAttributesA", "CreateDirectoryA", "RemoveDirectoryA",
+    "DeleteFileA", "MoveFileExA", "CopyFileA", "FindFirstFileA", "FindNextFileA",
+    "FindClose", "CreateProcessA", "GetEnvironmentVariableA", "SetEnvironmentVariableA",
+    "ExitProcess", "GetCurrentProcessId", "VirtualAlloc", "VirtualFree",
+    "SystemFunction036", "WSAStartup", "WSACleanup", "closesocket", "ioctlsocket"
+)
+
+
+def test_win32_externs_are_guarded_with_if_defined_win32(tmp_path):
+    """
+    Task 70.6: Any emitted Win32 extern declaration must be wrapped in
+    #if defined(_WIN32) ... #endif in the emitted C translation unit.
+    """
+    src = tmp_path / "probe_extern.vl"
+    src.write_text(
+        'extern act VirtualAlloc(lpAddress: @u8, dwSize: usize, flAllocationType: u32, flProtect: u32) -> @u8\n'
+        'act main() -> i32 { return 0 }\n',
+        encoding="utf-8",
+    )
+    out = tmp_path / "probe_extern.c"
+    res = subprocess.run(
+        [str(require_velo_exe()), "emit-c", str(src), "-o", str(out)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+    )
+    assert res.returncode == 0, f"emit-c failed:\n{res.stderr}"
+    lines = out.read_text(encoding="utf-8").splitlines()
+    found = False
+    for i, line in enumerate(lines):
+        if "extern uint8_t* VirtualAlloc" in line:
+            found = True
+            assert lines[i - 1] == "#if defined(_WIN32)", f"Expected guard before extern at line {i+1}: {line}"
+            assert lines[i + 1] == "#endif", f"Expected #endif after extern at line {i+1}: {line}"
+    assert found, "Expected extern declaration of VirtualAlloc"
+
+
+@pytest.mark.parametrize("target", ["linux", "macos"])
+def test_compiler_emission_cross_target_zero_win32_symbols(tmp_path, target):
+    """
+    Task 70.6: When emit-c compiles src/main.vl for a POSIX target (linux, macos),
+    the emitted C must contain ZERO symbols from the 22-symbol Win32 set.
+    """
+    import re
+    out = tmp_path / f"boot_{target}.c"
+    res = subprocess.run(
+        [str(require_velo_exe()), "emit-c", "src/main.vl", "-o", str(out)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=_env(target),
+        timeout=60,
+    )
+    assert res.returncode == 0, f"emit-c src/main.vl for {target} failed:\n{res.stderr}"
+    c_text = out.read_text(encoding="utf-8")
+    win32_pat = re.compile(
+        r'extern\s+[^\n;]*\b(' + '|'.join(WIN32_PORTABILITY_SYMBOLS) + r')\b'
+    )
+    matches = win32_pat.findall(c_text)
+    assert len(matches) == 0, f"Unexpected Win32 externs for target={target}: {matches}"
+
+
+def test_bootstrap_c_has_guarded_win32_externs_and_no_unwanted_win32_symbols():
+    """
+    Task 70.6: In bootstrap.c, Win32 process and environment externs must not be present,
+    and all Win32 extern declarations must be wrapped in #if defined(_WIN32).
+    """
+    import re
+    boot_path = REPO_ROOT / "bootstrap.c"
+    assert boot_path.exists()
+    lines = boot_path.read_text(encoding="utf-8").splitlines()
+    win32_extern_pat = re.compile(
+        r'extern\s+[^\n;]*\b(' + '|'.join(WIN32_PORTABILITY_SYMBOLS) + r')\b'
+    )
+    # 1. Any Win32 extern declaration must be guarded by #if defined(_WIN32)
+    for i, line in enumerate(lines):
+        if win32_extern_pat.search(line):
+            assert lines[i - 1] == "#if defined(_WIN32)", f"Unguarded Win32 extern at L{i+1}: {line}"
+            assert lines[i + 1] == "#endif", f"Missing #endif at L{i+1}: {line}"
+
+    # 2. Verify unwanted Win32 process/env APIs are completely eliminated from bootstrap.c
+    text = "\n".join(lines)
+    for sym in ("CreateProcessA", "DeleteFileA", "GetEnvironmentVariableA", "SetEnvironmentVariableA", "ExitProcess", "GetCurrentProcessId"):
+        assert not re.search(r'extern\s+[^\n;]*\b' + sym + r'\b', text), f"Unwanted extern {sym} found in bootstrap.c"
+
+

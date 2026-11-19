@@ -19,7 +19,6 @@
 use std.io
 use std.mem
 use std.fs
-use std.os
 use "../common/utils.vl"
 use "../common/string_builder.vl"
 use "driver.vl"
@@ -27,6 +26,7 @@ use "pretty_recon.vl"
 
 extern act velo_capture_begin(path: string) -> i32
 extern act velo_capture_end() -> i32
+extern act velo_host_getpid() -> u32
 
 // Builds a capture path unique to this process.
 //
@@ -43,7 +43,7 @@ extern act velo_capture_end() -> i32
 // because the existing capture helper takes a plain relative path and the
 // tests assert the CWD is left clean.
 act check_capture_path() -> string {
-    let pid = os_get_pid()
+    let pid = velo_host_getpid()
     let sb = create_sb(64)
     sb_append_str(@sb, "velo_check_capture_")
     sb_append_int64(@sb, pid as i64)

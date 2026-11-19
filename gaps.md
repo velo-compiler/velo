@@ -617,11 +617,32 @@ each becomes a resolver-mediated import. Then delete `std/os/pipe_win32.vl`'s
   - `scripts/count_lines.py`: clean.
   - Determinism: `Gen2 SHA-256 == Gen3 SHA-256 == e1bfc753...`, `bootstrap.c` in sync.
 
-**70.6** Guard `bootstrap.c` generation itself: `emit-c src/main.vl` must emit a
+**70.6 [COMPLETED] ✅** Guard `bootstrap.c` generation itself: `emit-c src/main.vl` must emit a
 `#include "velo_runtime.h"`-style preamble that is platform-neutral, i.e. the
 Win32 externs must live in a platform section. Simplest correct fix: after
 70.2 lands, `bootstrap.c` contains no Win32 symbol at all (they move into
 `std/**_windows.vl`, which is only emitted when the target is Windows).
+
+- *Former Defect:*
+  `bootstrap.c` and emitted C translation units containing Win32 externs had no `#if defined(_WIN32)` preprocessor guards, so foreign build hosts attempting to compile or link emitted C or `bootstrap.c` encountered undeclared identifier errors and unresolved Win32 symbol errors. Furthermore, `src/main.vl` transitively imported `use std.os` via `src/backend/driver.vl` and `src/backend/check.vl`, which pulled in Win32-specific process creation (`CreateProcessA`), file deletion (`DeleteFileA`), process identification (`GetCurrentProcessId`), process exit (`ExitProcess`), and environment management (`GetEnvironmentVariableA`, `SetEnvironmentVariableA`) into `bootstrap.c`, bloating the bootstrap snapshot by over 1,500 lines and causing cross-target `emit-c` to fail.
+- *Fix Applied:*
+  - In `src/backend/codegen_decl.vl`: added `is_win32_extern(name)` check wrapping all Win32 extern declarations (including `VirtualAlloc`, `VirtualFree`, `CreateProcessA`, etc.) in `#if defined(_WIN32) ... #endif` preprocessor blocks, ensuring Win32 externs strictly reside in a platform-guarded section.
+  - In `src/backend/driver.vl`: removed unused `use std.os`, `use std.os.process`, `use std.os.env`, and `use sys.os`. Replaced `os.get_env` calls with `velo_host_getenv`.
+  - In `src/backend/check.vl`: removed `use std.os.env`, added `velo_host_getpid()` runtime helper, and replaced `os_get_pid()` with `velo_host_getpid()`.
+  - In `src/backend/driver_run.vl`: routed `os_system(cmd)` directly onto C99 standard library `system(cmd)` via `extern act system(cmd: string) -> i32`, eliminating transitive dependency on `std.os.process`.
+  - In `std/io/handle_windows.vl`: replaced Win32 `DeleteFileA` with portable runtime helper `velo_fs_remove(path as string)`.
+  - In `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h`: added portable `velo_host_getpid()` returning `(uint32_t)_getpid()` on Windows and `(uint32_t)getpid()` on POSIX.
+  - In `tests/test_platform_resolve.py`: added 4 new unit tests (`test_win32_externs_are_guarded_with_if_defined_win32`, `test_compiler_emission_cross_target_zero_win32_symbols` for Linux and macOS, `test_bootstrap_c_has_guarded_win32_externs_and_no_unwanted_win32_symbols`) verifying zero Win32 symbols in cross-target emission of `src/main.vl`, strict `#if defined(_WIN32)` guarding of Win32 externs, and complete absence of unwanted Win32 process/env APIs in `bootstrap.c`.
+  - Rebuilt bootstrap chain: `velo_gen2.exe` -> `velo_gen3.exe` -> `velo.exe` -> `bootstrap.c`, verified fixed-point determinism (`Gen2 SHA-256 == Gen3 SHA-256 == c4815c69d688b29e30d9b0d4a61c35d7abceecc935f92f1edb0419026ec45812`).
+- *Residual Limitation:*
+  - `bootstrap.c` still retains `#if defined(_WIN32)`-guarded `VirtualAlloc` and `VirtualFree` externs when generated on Windows host due to `std.mem.page` being pulled in transitively by `std/fs/ops.vl`'s use of `std/mem/heap.vl`. Off-Windows portability testing of probe programs and off-Windows compilation assertions are covered in Tasks 70.7 and 70.8.
+- *Verification:*
+  - `tests/test_platform_resolve.py`: 46 passed (including 4 new Task 70.6 tests).
+  - `tests/test_bootstrap_snapshot.py`: 5 passed (including determinism and clean compilation).
+  - Full test suite `python -m pytest tests -q`: 2079 passed, 8 skipped, 1 xfailed (0 regressions).
+  - `scripts/count_lines.py`: clean (all files $\le 394$ lines; `driver.vl` 380, `check.vl` 382, `codegen_decl.vl` 376).
+  - Gen2 == Gen3 SHA-256 determinism verified (`c4815c69...`).
+
 
 **70.7** Add `tests/test_posix_portability.py`: for each of `std.fs`, `std.net`,
 `std.os`, `std.crypto`, `std.time`, `std.async`, emit C for a probe program and
