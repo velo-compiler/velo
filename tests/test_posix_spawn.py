@@ -59,6 +59,27 @@ def test_pipe_io_linux_and_macos_contain_no_stub_comments():
     assert "os_pipe_drain_streams" in macos_src
 
 
+def test_zero_stub_comments_remain_in_std():
+    """
+    Task 75.5: Audit every remaining stub comment in std/ ensuring the count is zero.
+    `grep -rin 'stub' std/` must return zero hits outside explicitly documented _unsupported modules.
+    """
+    stub_pattern = re.compile(r'\bstubs?\b', re.IGNORECASE)
+    std_dir = REPO_ROOT / "std"
+    violating_files = []
+    for file_path in std_dir.rglob("*.vl"):
+        if "_unsupported" in file_path.name:
+            continue
+        text = file_path.read_text(encoding="utf-8", errors="replace")
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if stub_pattern.search(line):
+                violating_files.append((str(file_path.relative_to(REPO_ROOT)), line_no, line.strip()))
+
+    assert not violating_files, "Found stub comments in std/:\n" + "\n".join(
+        f"  {f}:{ln}: {line}" for f, ln, line in violating_files
+    )
+
+
 @pytest.mark.parametrize("target", ["linux", "macos"])
 def test_cross_target_emission_contains_posix_spawn_primitives(tmp_path, target):
     """
