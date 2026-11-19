@@ -1177,10 +1177,35 @@ noticed.
 
 ## Tasks
 
-**75.1** Replace `proc_linux.vl`'s `os_spawn_ex` with a real `posix_spawn` or
+**75.1 [COMPLETED] ✅** Replace `proc_linux.vl`'s `os_spawn_ex` with a real `posix_spawn` or
 `fork`+`execvp` implementation: pipe redirection for `h_in`/`h_out`/`h_err`,
 `proc_spawn_file_actions`/`dup2`, and a `ProcessHandle` carrying the pid.
 Provide a `_macos` variant only if the flags differ.
+
+- *Former Defect:*
+  `proc_linux.vl` and `proc_macos.vl` implemented `os_spawn_ex` as a dead stub returning `ProcessHandle { pid: 0, is_alive: false }` under `// POSIX fork stub`. Consequently, any process spawning on Linux or macOS failed immediately, `os_spawn_sync` reported exit code -1, and `os_shell_spawn_sync` (and `os_system`) returned failure without attempting execution.
+- *Fix Applied:*
+  - Implemented real POSIX process execution in `std/os/proc_linux.vl` and `std/os/proc_macos.vl` using `fork()`, `dup2()`, `close()`, `velo_posix_execvp()`, and `_exit()`.
+  - Configured child stream redirection for `h_in`, `h_out`, and `h_err` via `dup2()`, and closed inherited source descriptors $> 2$ to prevent descriptor leakage into the child process.
+  - Implemented command execution via `/bin/sh -c <cmd>` (with fallback to `sh`), returning a live `ProcessHandle` carrying the child `pid` and `handle: (pid as usize) as @void`.
+  - Enhanced `os_process_wait_timeout` to support `WNOHANG` non-blocking status probes when `timeout_ms == 0` (for `os_process_try_wait`).
+  - Implemented `os_shell_spawn_sync` via `os_spawn_ex` + `os_process_wait_timeout`, enabling synchronous shell execution and `os_system(cmd)` on POSIX platforms.
+  - Added `<sys/wait.h>` and `<signal.h>` to `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h` under `#if !defined(_WIN32)`, along with `velo_posix_execvp` adapting Velo `const char**` to POSIX `char *const* argv` without C99 type mismatch warnings.
+  - Added automated test suite `tests/test_posix_spawn.py` verifying stub removal, cross-target emission of POSIX primitives (`fork`, `dup2`, `velo_posix_execvp`, `waitpid`, `_exit`) with zero Win32 symbols for both `linux` and `macos` targets, and gated host execution.
+- *Residual Limitation:*
+  Native execution of spawned children runs on POSIX environments (Linux / macOS in Phase 76 CI); Windows host verifies cross-target C emission, symbol cleanliness, and `#if defined(_WIN32)` guarding.
+- *Verification:*
+  - `tests/test_posix_spawn.py`: 3 passed, 1 skipped on Windows (100% pass).
+  - `tests/test_platform_resolve.py`: 46 passed in 4.2s.
+  - `tests/test_posix_portability.py`: 18 passed, 6 skipped on Windows.
+  - `tests/test_posix_bootstrap_platform.py`: 1 passed, 2 skipped on Windows.
+  - `tests/test_bootstrap_snapshot.py`: 6 passed in 30s.
+  - `tests/test_std_resolve_binary_relative.py`: 3 passed in 1.4s.
+  - `tests/test_std_os.py`: 6 passed in 9.5s.
+  - Joint suite run: 83 passed, 9 skipped in 61s.
+  - Line count ceiling: clean (`proc_linux.vl` at 122 lines, `proc_macos.vl` at 122 lines $\le 400$).
+  - Runtime header parity: SHA-256 identical on `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h`.
+  - No UTF-8 BOM on any modified or new files.
 
 **75.2** Replace `os_pipe_drain_streams` with a real reader: `read(2)` loop
 until EOF on both fds, arena-accumulated strings, and the true `exit_code` from

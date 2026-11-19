@@ -1,21 +1,108 @@
 // std.os.proc_macos — macOS / Darwin process management via POSIX system calls.
 // Zero C runtime dependencies.
+use "../mem/heap.vl"
 use "../mem/ops.vl"
 use "../str/slice.vl"
 use "proc_types.vl"
 
 extern act fork() -> i32
+extern act velo_posix_execvp(file: string, argv: @string) -> i32
+extern act dup2(oldfd: i32, newfd: i32) -> i32
+extern act close(fd: i32) -> i32
+extern act _exit(status: i32)
 extern act waitpid(pid: i32, status: @i32, options: i32) -> i32
 extern act kill(pid: i32, sig: i32) -> i32
 
 // Spawns a new child process on macOS.
 act os_spawn_ex(cmd: string, h_in: @void, h_out: @void, h_err: @void) -> ProcessHandle {
-    // POSIX fork stub
+    if cmd == null {
+        return ProcessHandle {
+            pid: 0 as u32,
+            handle: null,
+            thread_handle: null,
+            is_alive: false,
+        }
+    }
+    let cmd_len = raw_str_len(cmd as @u8)
+    if cmd_len == 0 {
+        return ProcessHandle {
+            pid: 0 as u32,
+            handle: null,
+            thread_handle: null,
+            is_alive: false,
+        }
+    }
+
+    let pid = fork()
+    if pid < 0 {
+        return ProcessHandle {
+            pid: 0 as u32,
+            handle: null,
+            thread_handle: null,
+            is_alive: false,
+        }
+    }
+
+    if pid == 0 {
+        // Child process: apply standard stream redirections if handles were supplied
+        if h_in != null {
+            let fd_in = (h_in as usize) as i32
+            if fd_in != 0 {
+                dup2(fd_in, 0)
+            }
+        }
+        if h_out != null {
+            let fd_out = (h_out as usize) as i32
+            if fd_out != 1 {
+                dup2(fd_out, 1)
+            }
+        }
+        if h_err != null {
+            let fd_err = (h_err as usize) as i32
+            if fd_err != 2 {
+                dup2(fd_err, 2)
+            }
+        }
+
+        // Close redirected source file descriptors > 2 to prevent descriptor leakage
+        if h_in != null {
+            let fd_in = (h_in as usize) as i32
+            if fd_in > 2 {
+                close(fd_in)
+            }
+        }
+        if h_out != null {
+            let fd_out = (h_out as usize) as i32
+            if fd_out > 2 {
+                close(fd_out)
+            }
+        }
+        if h_err != null {
+            let fd_err = (h_err as usize) as i32
+            if fd_err > 2 and (h_out == null or fd_err != ((h_out as usize) as i32)) {
+                close(fd_err)
+            }
+        }
+
+        // Execute command line via system shell (/bin/sh -c <cmd>)
+        let args = heap_alloc(32) as @string
+        if args != null {
+            args[0] = "sh"
+            args[1] = "-c"
+            args[2] = cmd
+            args[3] = null
+            velo_posix_execvp("/bin/sh", args)
+            velo_posix_execvp("sh", args)
+        }
+        _exit(127)
+    }
+
+    // Parent process: return process handle carrying child pid
     return ProcessHandle {
-        pid: 0 as u32,
-        handle: null,
+        pid: pid as u32,
+        handle: (pid as usize) as @void,
         thread_handle: null,
-        is_alive: false,
+        is_alive: true,
     }
 }
 
@@ -25,7 +112,15 @@ act os_process_wait_timeout(proc: @ProcessHandle, timeout_ms: u32) -> i32 {
         return -1
     }
     mut status: i32 = 0
-    let res = waitpid(proc.pid as i32, @status, 0)
+    mut options: i32 = 0
+    if timeout_ms == (0 as u32) {
+        options = 1 // WNOHANG
+    }
+    let res = waitpid(proc.pid as i32, @status, options)
+    if res == 0 {
+        // Child is still running (non-blocking check)
+        return -1
+    }
     proc.is_alive = false
     if res > 0 {
         return (status >> 8) & 255
@@ -55,5 +150,13 @@ act os_shell_spawn_sync(cmd: string) -> ProcessResult {
     if cmd == null {
         return ProcessResult { exit_code: -1, success: false }
     }
-    return ProcessResult { exit_code: -1, success: false }
+    mut proc = os_spawn_ex(cmd, null, null, null)
+    if !proc.is_alive {
+        return ProcessResult { exit_code: -1, success: false }
+    }
+    let code = os_process_wait_timeout(@proc, 0xFFFFFFFF as u32)
+    return ProcessResult {
+        exit_code: code,
+        success: code == 0,
+    }
 }

@@ -88,6 +88,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
+#include <sys/wait.h>
+#include <signal.h>
 // Phase 70 / Task 70.2: _NSGetExecutablePath is the only supported way to ask
 // a macOS process where its own binary lives; /proc/self/exe does not exist there.
 #if defined(__APPLE__)
@@ -120,6 +122,20 @@ static inline int32_t VirtualFree(uint8_t* lpAddress, size_t dwSize, uint32_t dw
         return munmap((void*)lpAddress, dwSize) == 0 ? 1 : 0;
     }
     return 1;
+}
+
+// Phase 75 / Task 75.1: POSIX execvp adapter for Velo.
+// Adapts Velo's string array (`const char**`) to standard POSIX `execvp(file, char *const argv[])`
+// without type mismatch warnings in C99.
+static inline int32_t velo_posix_execvp(const char* file, const char** argv) {
+    return execvp(file, (char* const*)argv);
+}
+#endif
+
+#if defined(_WIN32)
+static inline int32_t velo_posix_execvp(const char* file, const char** argv) {
+    (void)file; (void)argv;
+    return -1;
 }
 #endif
 
