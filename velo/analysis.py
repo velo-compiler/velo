@@ -326,13 +326,29 @@ class VeloAnalysis:
                     if not target.exists() and not mod.endswith(".vl"):
                         target = (resolved.parent / f"{mod}.vl").resolve()
                     if not target.exists():
+                        plat_suffix = "_windows.vl" if sys.platform == "win32" else ("_macos.vl" if sys.platform == "darwin" else "_linux.vl")
+                        cand = target.parent / f"{target.stem}{plat_suffix}"
+                        if cand.exists():
+                            target = cand
+                    if not target.exists():
                         alt_target = (root.parent / mod).resolve()
                         if not alt_target.exists() and not mod.endswith(".vl"):
                             alt_target = (root.parent / f"{mod}.vl").resolve()
+                        if not alt_target.exists():
+                            cand = alt_target.parent / f"{alt_target.stem}{plat_suffix}"
+                            if cand.exists():
+                                alt_target = cand
                         if alt_target.exists():
                             target = alt_target
                         else:
                             raise FileNotFoundError(f"Module not found: '{mod}' referenced in {resolved}")
+                    name = target.name
+                    if sys.platform == "win32" and (name.endswith("_linux.vl") or name.endswith("_macos.vl")):
+                        continue
+                    if sys.platform == "darwin" and (name.endswith("_windows.vl") or name.endswith("_linux.vl")):
+                        continue
+                    if sys.platform not in ("win32", "darwin") and (name.endswith("_windows.vl") or name.endswith("_macos.vl")):
+                        continue
                     load(target)
 
             records[key] = FileRecord(key, text, tokens, ast)

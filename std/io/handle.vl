@@ -1,5 +1,0 @@
-// Raw OS standard handle and file descriptor provider facade for Velo.
-// Dispatches platform-specific OS handle operations at compile time.
-
-use "handle_windows.vl"
-

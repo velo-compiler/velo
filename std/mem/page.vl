@@ -1,5 +1,0 @@
-// Raw OS virtual memory page allocator facade for Velo.
-// Automatically resolved at compile-time to page_windows.vl on Windows
-// and page_linux.vl on Linux based on host/target platform.
-
-use "page_windows.vl"

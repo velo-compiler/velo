@@ -1676,6 +1676,7 @@ void slab_destroy(SlabPool* p);
 const char* os_family(void);
 bool os_is_windows(void);
 bool os_is_linux(void);
+bool os_is_macos(void);
 bool os_has_env(const char* name);
 size_t os_get_env_buf(const char* name, uint8_t* out_buf, size_t buf_cap);
 const char* os_get_env(Arena* arena, const char* name);
@@ -9459,166 +9460,172 @@ bool os_is_linux(void) {
 }
 
 #line 30 "src/main.vl"
+bool os_is_macos(void) {
+#line 31 "src/main.vl"
+    return false;
+}
+
+#line 35 "src/main.vl"
 bool os_has_env(const char* name) {
-#line 31 "src/main.vl"
+#line 36 "src/main.vl"
     if ((name == NULL)) {
-#line 31 "src/main.vl"
+#line 36 "src/main.vl"
         return false;
     }
-#line 32 "src/main.vl"
+#line 37 "src/main.vl"
     uint32_t needed = GetEnvironmentVariableA(((uint8_t*)(name)), NULL, ((uint32_t)(0)));
-#line 33 "src/main.vl"
+#line 38 "src/main.vl"
     return (needed > ((uint32_t)(0)));
 }
 
-#line 38 "src/main.vl"
+#line 43 "src/main.vl"
 size_t os_get_env_buf(const char* name, uint8_t* out_buf, size_t buf_cap) {
-#line 39 "src/main.vl"
-    if ((((name == NULL) || (out_buf == NULL)) || velo_cmp_eq_u_s(buf_cap, 0))) {
-#line 39 "src/main.vl"
-        return 0;
-    }
-#line 40 "src/main.vl"
-    uint32_t written = GetEnvironmentVariableA(((uint8_t*)(name)), out_buf, ((uint32_t)(buf_cap)));
-#line 41 "src/main.vl"
-    if (((written == ((uint32_t)(0))) || (((size_t)(written)) >= buf_cap))) {
-#line 42 "src/main.vl"
-        return 0;
-    }
 #line 44 "src/main.vl"
+    if ((((name == NULL) || (out_buf == NULL)) || velo_cmp_eq_u_s(buf_cap, 0))) {
+#line 44 "src/main.vl"
+        return 0;
+    }
+#line 45 "src/main.vl"
+    uint32_t written = GetEnvironmentVariableA(((uint8_t*)(name)), out_buf, ((uint32_t)(buf_cap)));
+#line 46 "src/main.vl"
+    if (((written == ((uint32_t)(0))) || (((size_t)(written)) >= buf_cap))) {
+#line 47 "src/main.vl"
+        return 0;
+    }
+#line 49 "src/main.vl"
     return ((size_t)(written));
 }
 
-#line 49 "src/main.vl"
+#line 54 "src/main.vl"
 const char* os_get_env(Arena* arena, const char* name) {
-#line 50 "src/main.vl"
-    if (((arena == NULL) || (name == NULL))) {
-#line 50 "src/main.vl"
-        return NULL;
-    }
-#line 51 "src/main.vl"
-    uint32_t needed = GetEnvironmentVariableA(((uint8_t*)(name)), NULL, ((uint32_t)(0)));
-#line 52 "src/main.vl"
-    if ((needed == ((uint32_t)(0)))) {
-#line 53 "src/main.vl"
-        return NULL;
-    }
 #line 55 "src/main.vl"
-    uint8_t* buf = arena_alloc(arena, ((size_t)(needed)), 1);
+    if (((arena == NULL) || (name == NULL))) {
+#line 55 "src/main.vl"
+        return NULL;
+    }
 #line 56 "src/main.vl"
-    if ((buf == NULL)) {
+    uint32_t needed = GetEnvironmentVariableA(((uint8_t*)(name)), NULL, ((uint32_t)(0)));
 #line 57 "src/main.vl"
+    if ((needed == ((uint32_t)(0)))) {
+#line 58 "src/main.vl"
         return NULL;
     }
-#line 59 "src/main.vl"
-    uint32_t written = GetEnvironmentVariableA(((uint8_t*)(name)), buf, needed);
 #line 60 "src/main.vl"
-    if ((written == ((uint32_t)(0)))) {
+    uint8_t* buf = arena_alloc(arena, ((size_t)(needed)), 1);
 #line 61 "src/main.vl"
+    if ((buf == NULL)) {
+#line 62 "src/main.vl"
         return NULL;
     }
-#line 63 "src/main.vl"
+#line 64 "src/main.vl"
+    uint32_t written = GetEnvironmentVariableA(((uint8_t*)(name)), buf, needed);
+#line 65 "src/main.vl"
+    if ((written == ((uint32_t)(0)))) {
+#line 66 "src/main.vl"
+        return NULL;
+    }
+#line 68 "src/main.vl"
     return ((const char*)(buf));
 }
 
-#line 67 "src/main.vl"
+#line 72 "src/main.vl"
 bool os_set_env(const char* name, const char* val) {
-#line 68 "src/main.vl"
+#line 73 "src/main.vl"
     if (((name == NULL) || (val == NULL))) {
-#line 68 "src/main.vl"
+#line 73 "src/main.vl"
         return false;
     }
-#line 69 "src/main.vl"
-    int32_t res = SetEnvironmentVariableA(((uint8_t*)(name)), ((uint8_t*)(val)));
-#line 70 "src/main.vl"
-    return (res != 0);
-}
-
 #line 74 "src/main.vl"
-bool os_unset_env(const char* name) {
+    int32_t res = SetEnvironmentVariableA(((uint8_t*)(name)), ((uint8_t*)(val)));
 #line 75 "src/main.vl"
-    if ((name == NULL)) {
-#line 75 "src/main.vl"
-        return false;
-    }
-#line 76 "src/main.vl"
-    int32_t res = SetEnvironmentVariableA(((uint8_t*)(name)), NULL);
-#line 77 "src/main.vl"
     return (res != 0);
 }
 
+#line 79 "src/main.vl"
+bool os_unset_env(const char* name) {
+#line 80 "src/main.vl"
+    if ((name == NULL)) {
+#line 80 "src/main.vl"
+        return false;
+    }
 #line 81 "src/main.vl"
-uint32_t os_get_pid(void) {
+    int32_t res = SetEnvironmentVariableA(((uint8_t*)(name)), NULL);
 #line 82 "src/main.vl"
-    return GetCurrentProcessId();
+    return (res != 0);
 }
 
 #line 86 "src/main.vl"
-void os_exit(int32_t code) {
+uint32_t os_get_pid(void) {
 #line 87 "src/main.vl"
+    return GetCurrentProcessId();
+}
+
+#line 91 "src/main.vl"
+void os_exit(int32_t code) {
+#line 92 "src/main.vl"
     ExitProcess(((uint32_t)(code)));
 }
 
-#line 92 "src/main.vl"
+#line 97 "src/main.vl"
 size_t os_get_cwd_buf(uint8_t* out_buf, size_t buf_cap) {
-#line 93 "src/main.vl"
-    if (((out_buf == NULL) || velo_cmp_eq_u_s(buf_cap, 0))) {
-#line 93 "src/main.vl"
-        return 0;
-    }
-#line 94 "src/main.vl"
-    uint32_t written = GetCurrentDirectoryA(((uint32_t)(buf_cap)), out_buf);
-#line 95 "src/main.vl"
-    if (((written == ((uint32_t)(0))) || (((size_t)(written)) >= buf_cap))) {
-#line 96 "src/main.vl"
-        return 0;
-    }
 #line 98 "src/main.vl"
+    if (((out_buf == NULL) || velo_cmp_eq_u_s(buf_cap, 0))) {
+#line 98 "src/main.vl"
+        return 0;
+    }
+#line 99 "src/main.vl"
+    uint32_t written = GetCurrentDirectoryA(((uint32_t)(buf_cap)), out_buf);
+#line 100 "src/main.vl"
+    if (((written == ((uint32_t)(0))) || (((size_t)(written)) >= buf_cap))) {
+#line 101 "src/main.vl"
+        return 0;
+    }
+#line 103 "src/main.vl"
     return ((size_t)(written));
 }
 
-#line 103 "src/main.vl"
+#line 108 "src/main.vl"
 const char* os_get_cwd(Arena* arena) {
-#line 104 "src/main.vl"
-    if ((arena == NULL)) {
-#line 104 "src/main.vl"
-        return NULL;
-    }
-#line 105 "src/main.vl"
-    uint32_t needed = GetCurrentDirectoryA(((uint32_t)(0)), NULL);
-#line 106 "src/main.vl"
-    if ((needed == ((uint32_t)(0)))) {
-#line 107 "src/main.vl"
-        return NULL;
-    }
 #line 109 "src/main.vl"
-    uint8_t* buf = arena_alloc(arena, ((size_t)(needed)), 1);
+    if ((arena == NULL)) {
+#line 109 "src/main.vl"
+        return NULL;
+    }
 #line 110 "src/main.vl"
-    if ((buf == NULL)) {
+    uint32_t needed = GetCurrentDirectoryA(((uint32_t)(0)), NULL);
 #line 111 "src/main.vl"
+    if ((needed == ((uint32_t)(0)))) {
+#line 112 "src/main.vl"
         return NULL;
     }
-#line 113 "src/main.vl"
-    uint32_t written = GetCurrentDirectoryA(needed, buf);
 #line 114 "src/main.vl"
-    if ((written == ((uint32_t)(0)))) {
+    uint8_t* buf = arena_alloc(arena, ((size_t)(needed)), 1);
 #line 115 "src/main.vl"
+    if ((buf == NULL)) {
+#line 116 "src/main.vl"
         return NULL;
     }
-#line 117 "src/main.vl"
+#line 118 "src/main.vl"
+    uint32_t written = GetCurrentDirectoryA(needed, buf);
+#line 119 "src/main.vl"
+    if ((written == ((uint32_t)(0)))) {
+#line 120 "src/main.vl"
+        return NULL;
+    }
+#line 122 "src/main.vl"
     return ((const char*)(buf));
 }
 
-#line 121 "src/main.vl"
+#line 126 "src/main.vl"
 bool os_set_cwd(const char* path) {
-#line 122 "src/main.vl"
+#line 127 "src/main.vl"
     if ((path == NULL)) {
-#line 122 "src/main.vl"
+#line 127 "src/main.vl"
         return false;
     }
-#line 123 "src/main.vl"
+#line 128 "src/main.vl"
     int32_t res = SetCurrentDirectoryA(((uint8_t*)(path)));
-#line 124 "src/main.vl"
+#line 129 "src/main.vl"
     return (res != 0);
 }
 

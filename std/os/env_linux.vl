@@ -27,6 +27,11 @@ act os_is_linux() -> bool {
     return true
 }
 
+// Returns true if running on macOS.
+act os_is_macos() -> bool {
+    return false
+}
+
 // Returns true if the environment variable with the given name exists.
 act os_has_env(name: string) -> bool {
     if name == null { return false }

@@ -5,7 +5,7 @@ use "../mem/ops.vl"
 use "../str/slice.vl"
 use "../str/builder.vl"
 use "proc_types.vl"
-use "proc_linux.vl"
+use "proc.vl"
 
 extern act pipe(pipefd: @i32) -> i32
 extern act read(fd: i32, buf: @u8, count: usize) -> isize

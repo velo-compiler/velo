@@ -1,5 +1,0 @@
-// std.async.poller — Cross-platform socket multiplexing facade.
-// Dispatches platform-specific poller backend at compile time.
-
-use "poller_windows.vl"
-

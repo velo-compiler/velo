@@ -5,7 +5,7 @@ use "../mem/ops.vl"
 use "../str/slice.vl"
 use "../str/builder.vl"
 use "proc_types.vl"
-use "proc_windows.vl"
+use "proc.vl"
 
 // Foreign interface to Windows kernel32.dll
 extern act CreatePipe(

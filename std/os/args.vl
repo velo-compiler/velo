@@ -3,7 +3,7 @@
 use "../mem/arena.vl"
 use "../str/slice.vl"
 use "../str/builder.vl"
-use "cmdline_windows.vl"
+use "cmdline.vl"
 
 // Parsed command-line arguments container.
 data Args {

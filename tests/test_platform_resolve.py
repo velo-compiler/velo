@@ -263,14 +263,14 @@ def test_a_backend_suffix_is_not_treated_as_a_variant(tmp_path):
     "std.time.sleep",
     "std.mem.page",
     "std.os.env",
-    "std.os.proc_macos",
-    "std.os.cmdline_macos",
+    "std.os.process",
+    "std.os.args",
     "std.io.handle",
     "std.async.poller",
     "std.net.types",
 ])
 def test_macos_target_resolves_foundation_modules(tmp_path, mod):
-    """Foundation std modules resolve and emit C cleanly under target=macos (Task 70.3)."""
+    """Foundation std modules resolve and emit C cleanly under target=macos (Task 70.3/70.5)."""
     src = tmp_path / "probe.vl"
     src.write_text(f"use {mod}\n\nact main() -> i32 {{ return 0 }}\n", encoding="utf-8")
     out = tmp_path / "probe.c"
@@ -285,3 +285,69 @@ def test_macos_target_resolves_foundation_modules(tmp_path, mod):
         timeout=30,
     )
     assert res.returncode == 0, f"failed for {mod}:\n" + res.stdout + res.stderr
+
+
+@pytest.mark.parametrize("target", ["windows", "linux", "macos"])
+@pytest.mark.parametrize("module_case", [
+    ("std.mem.page", "let p = os_page_alloc(4096)"),
+    ("std.time.clock", "let t = time_monotonic_ms()"),
+    ("std.time.sleep", "time_sleep_ms(1 as u32)"),
+    ("std.os.env", "let fam = os_family()\n    let is_m = os_is_macos()"),
+    ("std.os.process", "let p = os_spawn(\"echo\")"),
+    ("std.os.args", "let raw = os_raw_cmdline()"),
+    ("std.io.handle", "let h = io_stdout_handle()\n    let ok = io_is_valid_handle(h)"),
+    ("std.async.poller", "let p = poller_init(16)"),
+])
+def test_facade_modules_resolve_and_emit_across_all_platforms(tmp_path, target, module_case):
+    """
+    Task 70.5: The 6 pure facades (page, clock, sleep, env, handle, poller)
+    are deleted in favor of resolver-mediated variants, and process/args route
+    through proc.vl and cmdline.vl.
+
+    Calling acts from each module resolves to the target variant and emits valid C
+    for windows, linux, and macos.
+    """
+    mod_name, act_call = module_case
+    src = tmp_path / f"probe_{target}.vl"
+    src.write_text(
+        f"use {mod_name}\n\nact main() -> i32 {{\n    {act_call}\n    return 0\n}}\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / f"probe_{target}.c"
+    res = subprocess.run(
+        [str(require_velo_exe()), "emit-c", str(src), "-o", str(out)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=_env(target),
+        timeout=30,
+    )
+    assert res.returncode == 0, f"target={target} failed for {mod_name}:\n" + res.stdout + res.stderr
+    emitted = out.read_text(encoding="utf-8")
+
+    # Platform-specific assertions on emitted C
+    if mod_name == "std.mem.page":
+        if target == "windows":
+            assert "VirtualAlloc" in emitted
+            assert "mmap" not in emitted
+        elif target == "linux":
+            assert "mmap" in emitted
+            assert "VirtualAlloc" not in emitted
+            # Linux MAP_ANON is 32 (0x20)
+            assert "32" in emitted
+        elif target == "macos":
+            assert "mmap" in emitted
+            assert "VirtualAlloc" not in emitted
+            # Darwin MAP_ANON is 4096 (0x1000)
+            assert "4096" in emitted
+
+    if mod_name == "std.time.clock":
+        if target == "windows":
+            assert "QueryPerformanceCounter" in emitted
+            assert "clock_gettime" not in emitted
+        elif target in ("linux", "macos"):
+            assert "clock_gettime" in emitted
+            assert "QueryPerformanceCounter" not in emitted
+

@@ -592,9 +592,30 @@ all targets. Keep `poll` as the fallback for unknown POSIX targets.
   - `scripts/count_lines.py`: all compiler and stdlib files $\le 400$ lines (`poller_linux.vl` 186, `poller_posix.vl` 181).
   - Clean raw UTF-8 without BOM on all new and modified files.
 
-**70.5** Remove every hardcoded `use "*_windows.vl"` facade line listed above;
+**70.5 [COMPLETED] ✅** Remove every hardcoded `use "*_windows.vl"` facade line listed above;
 each becomes a resolver-mediated import. Then delete `std/os/pipe_win32.vl`'s
 `use "proc_windows.vl"` in favour of the same mechanism (line 8).
+
+- *Former Defect:*
+  Six foundation modules in stdlib (`std/mem/page.vl`, `std/io/handle.vl`, `std/time/clock.vl`, `std/time/sleep.vl`, `std/os/env.vl`, `std/async/poller.vl`) were 1-line facades hardcoding `use "*_windows.vl"`. When `VELO_TARGET_PLATFORM=linux` or `macos`, `resolve_platform_source_path` skipped foreign variants, leaving the neutral facade completely empty and causing all exported acts (`os_page_alloc`, `time_monotonic_ms`, `time_sleep_ms`, `os_family`, `io_raw_write`, `poller_init`, etc.) to be undefined (e.g., `use std.mem` failed with 5 semantic errors, `std.time` with 19 errors, `std.io` with 25 errors). Furthermore, implementation modules (`std/os/process.vl:6`, `std/os/args.vl:6`, `std/os/pipe_win32.vl:8`, `std/os/pipe_posix.vl:8`) hardcoded imports to Windows or Linux variants (`proc_windows.vl`, `cmdline_windows.vl`, `proc_linux.vl`), preventing cross-platform compilation of process execution and argument parsing. In `std/os/env_windows.vl` and `std/os/env_linux.vl`, `os_is_macos()` was missing, causing API divergence across variants.
+- *Fix Applied:*
+  - Deleted the 6 pure 1-line facade files (`std/async/poller.vl`, `std/io/handle.vl`, `std/mem/page.vl`, `std/os/env.vl`, `std/time/clock.vl`, `std/time/sleep.vl`), converting them into pure variant-only modules. Callers (`use "page.vl"`, `use "handle.vl"`, `use "clock.vl"`, `use "sleep.vl"`, `use "env.vl"`, `use "poller.vl"`, and their `std.*` counterparts) now resolve directly via `resolve_platform_source_path` to `*_windows.vl`, `*_linux.vl`, or `*_macos.vl` depending on `target_platform()`.
+  - Updated `std/os/process.vl` line 6: replaced `use "proc_windows.vl"` with resolver-mediated `use "proc.vl"`.
+  - Updated `std/os/args.vl` line 6: replaced `use "cmdline_windows.vl"` with resolver-mediated `use "cmdline.vl"`.
+  - Updated `std/os/pipe_win32.vl` line 8: replaced `use "proc_windows.vl"` with resolver-mediated `use "proc.vl"`.
+  - Updated `std/os/pipe_posix.vl` line 8: replaced `use "proc_linux.vl"` with resolver-mediated `use "proc.vl"`.
+  - Added `act os_is_macos() -> bool { return false }` to `std/os/env_windows.vl` and `std/os/env_linux.vl` for complete multi-platform predicate parity.
+  - Added platform variant fallback and foreign-variant skipping to Stage 1 Python compiler (`velo/driver.py`, `velo/analysis.py`) so tests invoking Stage 1 (`test_advanced_structs.py`) seamlessly resolve variant-only stdlib modules on any host.
+  - Added comprehensive tests in `tests/test_platform_resolve.py` (`test_facade_modules_resolve_and_emit_across_all_platforms` with 24 parameterized cases covering all 8 modules across all 3 platforms, asserting platform-specific emitted symbols: `VirtualAlloc` on Windows vs `mmap` with `MAP_ANON=32` on Linux vs `MAP_ANON=4096` on macOS; `QueryPerformanceCounter` on Windows vs `clock_gettime` on Linux/macOS).
+  - Regenerated the self-hosted compiler chain (`velo.exe` -> `velo_gen2.exe` -> `velo_gen3.exe` -> `velo.exe` -> `bootstrap.c`) and verified Gen2 == Gen3 determinism (SHA-256 `e1bfc753838a33e7a39d0da3767161fd4b75ba4f4a877bc660bc9f77f6fc4f86`).
+- *Residual Limitation:*
+  - Subprocess pipe redirection and capture (`std/os/pipe.vl`) still delegates to `pipe_win32.vl` directly on Windows; Linux / macOS POSIX pipe capture implementation belongs to Phase 75.
+- *Verification:*
+  - `tests/test_platform_resolve.py`: 42 passed (up from 18).
+  - `tests/test_bootstrap_snapshot.py`: 5 passed (including determinism).
+  - `tests/test_advanced_structs.py`: 7 passed (Stage 1 compatibility).
+  - `scripts/count_lines.py`: clean.
+  - Determinism: `Gen2 SHA-256 == Gen3 SHA-256 == e1bfc753...`, `bootstrap.c` in sync.
 
 **70.6** Guard `bootstrap.c` generation itself: `emit-c src/main.vl` must emit a
 `#include "velo_runtime.h"`-style preamble that is platform-neutral, i.e. the
