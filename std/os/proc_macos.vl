@@ -106,6 +106,20 @@ act os_spawn_ex(cmd: string, h_in: @void, h_out: @void, h_err: @void) -> Process
     }
 }
 
+// Decodes POSIX waitpid status into an exit code (WIFEXITED / WEXITSTATUS / WIFSIGNALED).
+act posix_decode_status(status: i32) -> i32 {
+    let sig = status & 127
+    if sig == 0 {
+        // Exited normally: return exit code (0..255)
+        return (status >> 8) & 255
+    }
+    if sig != 127 {
+        // Terminated by signal: return 128 + signal number
+        return 128 + sig
+    }
+    return -1
+}
+
 // Waits for process completion on macOS.
 act os_process_wait_timeout(proc: @ProcessHandle, timeout_ms: u32) -> i32 {
     if proc == null or !proc.is_alive {
@@ -123,7 +137,7 @@ act os_process_wait_timeout(proc: @ProcessHandle, timeout_ms: u32) -> i32 {
     }
     proc.is_alive = false
     if res > 0 {
-        return (status >> 8) & 255
+        return posix_decode_status(status)
     }
     return -1
 }

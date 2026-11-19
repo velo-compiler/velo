@@ -90,6 +90,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <poll.h>
 // Phase 70 / Task 70.2: _NSGetExecutablePath is the only supported way to ask
 // a macOS process where its own binary lives; /proc/self/exe does not exist there.
 #if defined(__APPLE__)
@@ -130,11 +131,21 @@ static inline int32_t VirtualFree(uint8_t* lpAddress, size_t dwSize, uint32_t dw
 static inline int32_t velo_posix_execvp(const char* file, const char** argv) {
     return execvp(file, (char* const*)argv);
 }
+
+// Phase 75 / Task 75.2: POSIX poll adapter for Velo stream draining.
+static inline int32_t velo_posix_poll(void* fds, uint32_t nfds, int32_t timeout) {
+    return poll((struct pollfd*)fds, (nfds_t)nfds, timeout);
+}
 #endif
 
 #if defined(_WIN32)
 static inline int32_t velo_posix_execvp(const char* file, const char** argv) {
     (void)file; (void)argv;
+    return -1;
+}
+
+static inline int32_t velo_posix_poll(void* fds, uint32_t nfds, int32_t timeout) {
+    (void)fds; (void)nfds; (void)timeout;
     return -1;
 }
 #endif

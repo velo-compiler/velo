@@ -7,12 +7,19 @@ use "../str/builder.vl"
 use "proc_types.vl"
 use "proc.vl"
 
+data PipePollFd {
+    fd: i32,
+    events: i16,
+    revents: i16,
+}
+
 extern act pipe(pipefd: @i32) -> i32
 extern act read(fd: i32, buf: @u8, count: usize) -> isize
 extern act write(fd: i32, buf: @u8, count: usize) -> isize
 extern act close(fd: i32) -> i32
+extern act velo_posix_poll(fds: @void, nfds: u32, timeout: i32) -> i32
 
-// Creates an anonymous OS pipe on macOS Darwin.
+// Creates an anonymous OS pipe on macOS.
 act os_pipe_create() -> Pipe {
     let fds = heap_alloc(8) as @i32
     if fds == null {
@@ -67,12 +74,130 @@ act os_pipe_close(pipe: @Pipe) {
     os_pipe_close_write(pipe)
 }
 
+// Asynchronously drains stdout and stderr pipes until child process terminates.
 act os_pipe_drain_streams(arena: @Arena, h_out: @void, h_err: @void, proc: @ProcessHandle) -> ProcessOutput {
-    // POSIX drain stub
+    mut out_sb = sb_init(arena, 256)
+    mut err_sb = sb_init(arena, 256)
+    let buf = heap_alloc(4096)
+    if buf == null {
+        return ProcessOutput { stdout_str: "", stderr_str: "", exit_code: -1, success: false }
+    }
+
+    let poll_buf = heap_alloc(16) as @PipePollFd
+    if poll_buf == null {
+        heap_free(buf)
+        return ProcessOutput { stdout_str: "", stderr_str: "", exit_code: -1, success: false }
+    }
+
+    let fd_out = if h_out != null { (h_out as usize) as i32 } else { -1 }
+    let fd_err = if h_err != null { (h_err as usize) as i32 } else { -1 }
+    mut out_open = fd_out >= 0
+    mut err_open = fd_err >= 0
+    mut exit_code: i32 = -1
+
+    loop out_open or err_open {
+        poll_buf[0].fd = if out_open { fd_out } else { -1 }
+        poll_buf[0].events = 1 as i16
+        poll_buf[0].revents = 0 as i16
+
+        poll_buf[1].fd = if err_open { fd_err } else { -1 }
+        poll_buf[1].events = 1 as i16
+        poll_buf[1].revents = 0 as i16
+
+        let p_res = velo_posix_poll(poll_buf as @void, 2 as u32, 100)
+        if p_res > 0 {
+            if out_open and ((poll_buf[0].revents as i32) & 25) != 0 {
+                let n = read(fd_out, buf, 4096)
+                if n > 0 {
+                    mut i: usize = 0
+                    let count = n as usize
+                    loop i < count {
+                        sb_append_byte(@out_sb, buf[i])
+                        i += 1
+                    }
+                } else {
+                    out_open = false
+                }
+            }
+            if err_open and ((poll_buf[1].revents as i32) & 25) != 0 {
+                let n = read(fd_err, buf, 4096)
+                if n > 0 {
+                    mut i: usize = 0
+                    let count = n as usize
+                    loop i < count {
+                        sb_append_byte(@err_sb, buf[i])
+                        i += 1
+                    }
+                } else {
+                    err_open = false
+                }
+            }
+        } else if p_res == 0 {
+            // Timeout: check if child process has exited
+            if proc != null and proc.is_alive {
+                let code = os_process_wait_timeout(proc, 0 as u32)
+                if code >= 0 {
+                    exit_code = code
+                    // Child finished: drain any residual bytes from streams
+                    if out_open {
+                        mut draining = true
+                        loop draining {
+                            let n = read(fd_out, buf, 4096)
+                            if n > 0 {
+                                mut i: usize = 0
+                                let count = n as usize
+                                loop i < count {
+                                    sb_append_byte(@out_sb, buf[i])
+                                    i += 1
+                                }
+                            } else {
+                                draining = false
+                            }
+                        }
+                        out_open = false
+                    }
+                    if err_open {
+                        mut draining = true
+                        loop draining {
+                            let n = read(fd_err, buf, 4096)
+                            if n > 0 {
+                                mut i: usize = 0
+                                let count = n as usize
+                                loop i < count {
+                                    sb_append_byte(@err_sb, buf[i])
+                                    i += 1
+                                }
+                            } else {
+                                draining = false
+                            }
+                        }
+                        err_open = false
+                    }
+                    break
+                }
+            }
+        } else {
+            // poll error or interrupted: if process is dead, exit loop
+            if proc != null and !proc.is_alive {
+                break
+            }
+        }
+    }
+
+    heap_free(poll_buf as @u8)
+    heap_free(buf)
+
+    if exit_code == -1 and proc != null and proc.is_alive {
+        exit_code = os_process_wait_timeout(proc, 0xFFFFFFFF as u32)
+    }
+
+    let s_out = sb_to_cstr(@out_sb) as string
+    let s_err = sb_to_cstr(@err_sb) as string
+
     return ProcessOutput {
-        stdout_str: "",
-        stderr_str: "",
-        exit_code: 0,
-        success: true,
+        stdout_str: s_out,
+        stderr_str: s_err,
+        exit_code: exit_code,
+        success: exit_code == 0,
     }
 }

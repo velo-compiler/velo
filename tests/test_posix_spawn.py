@@ -1,9 +1,10 @@
 """
-Tests for POSIX process spawning (Phase 75 / Task 75.1).
+Tests for POSIX process spawning and pipe draining (Phase 75 / Tasks 75.1 & 75.2).
 
-Verifies that `std.os.proc_linux` and `std.os.proc_macos` implement real POSIX
-process spawning via `fork()`, `dup2()`, `velo_posix_execvp()`, and `waitpid()`
-replacing the former dead stub handle.
+Verifies that `std.os.proc_linux`, `std.os.proc_macos`, `std.os.pipe_io_linux`,
+and `std.os.pipe_io_macos` implement real POSIX process execution and stream
+draining via `fork()`, `dup2()`, `velo_posix_execvp()`, `velo_posix_poll()`,
+and `waitpid()` replacing former dead stubs.
 """
 
 import os
@@ -30,7 +31,7 @@ def _env(target=None):
 
 
 def test_proc_linux_and_macos_contain_no_stub_comments():
-    """Verify that proc_linux.vl and proc_macos.vl no longer have the fork stub comment."""
+    """Task 75.1: Verify proc_linux.vl and proc_macos.vl no longer have the fork stub comment."""
     linux_src = (REPO_ROOT / "std" / "os" / "proc_linux.vl").read_text(encoding="utf-8")
     macos_src = (REPO_ROOT / "std" / "os" / "proc_macos.vl").read_text(encoding="utf-8")
     assert "POSIX fork stub" not in linux_src, "proc_linux.vl still contains POSIX fork stub comment"
@@ -41,12 +42,26 @@ def test_proc_linux_and_macos_contain_no_stub_comments():
     assert "dup2" in macos_src
     assert "velo_posix_execvp" in linux_src
     assert "velo_posix_execvp" in macos_src
+    assert "posix_decode_status" in linux_src
+    assert "posix_decode_status" in macos_src
+
+
+def test_pipe_io_linux_and_macos_contain_no_stub_comments():
+    """Task 75.2: Verify pipe_io_linux.vl and pipe_io_macos.vl no longer have the drain stub comment."""
+    linux_src = (REPO_ROOT / "std" / "os" / "pipe_io_linux.vl").read_text(encoding="utf-8")
+    macos_src = (REPO_ROOT / "std" / "os" / "pipe_io_macos.vl").read_text(encoding="utf-8")
+    assert "POSIX drain stub" not in linux_src, "pipe_io_linux.vl still contains POSIX drain stub comment"
+    assert "POSIX drain stub" not in macos_src, "pipe_io_macos.vl still contains POSIX drain stub comment"
+    assert "velo_posix_poll" in linux_src
+    assert "velo_posix_poll" in macos_src
+    assert "os_pipe_drain_streams" in linux_src
+    assert "os_pipe_drain_streams" in macos_src
 
 
 @pytest.mark.parametrize("target", ["linux", "macos"])
 def test_cross_target_emission_contains_posix_spawn_primitives(tmp_path, target):
     """
-    When emitting C for linux or macos, std.os.process emits real POSIX
+    Task 75.1: When emitting C for linux or macos, std.os.process emits real POSIX
     fork/dup2/execvp/waitpid calls with zero Win32 symbols.
     """
     src = tmp_path / f"spawn_probe_{target}.vl"
@@ -76,17 +91,57 @@ def test_cross_target_emission_contains_posix_spawn_primitives(tmp_path, target)
     assert res.returncode == 0, f"emit-c failed for {target}:\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
     c_text = out_c.read_text(encoding="utf-8")
 
-    # Assert POSIX primitives are present
     assert "fork(" in c_text, f"Missing fork in emitted C for {target}"
     assert "dup2(" in c_text, f"Missing dup2 in emitted C for {target}"
     assert "velo_posix_execvp(" in c_text, f"Missing velo_posix_execvp in emitted C for {target}"
     assert "waitpid(" in c_text, f"Missing waitpid in emitted C for {target}"
     assert "_exit(" in c_text, f"Missing _exit in emitted C for {target}"
 
-    # Assert NO Win32 symbols are emitted
     win32_symbols = [
         "CreateProcessA", "WaitForSingleObject", "GetExitCodeProcess",
         "TerminateProcess", "CloseHandle", "STARTUPINFOA", "PROCESS_INFORMATION"
+    ]
+    for sym in win32_symbols:
+        assert sym not in c_text, f"Unexpected Win32 symbol {sym} emitted for target={target}"
+
+
+@pytest.mark.parametrize("target", ["linux", "macos"])
+def test_cross_target_emission_contains_posix_pipe_drain_primitives(tmp_path, target):
+    """
+    Task 75.2: When emitting C for linux or macos, std.os.pipe emits real POSIX
+    pipe/read/velo_posix_poll calls with zero Win32 symbols.
+    """
+    src = tmp_path / f"drain_probe_{target}.vl"
+    src.write_text(
+        'use std.os.pipe\nuse std.mem.arena\n\n'
+        'act main() -> i32 {\n'
+        '    mut arena = arena_init(4096)\n'
+        '    let out = os_spawn_capture(@arena, "echo test")\n'
+        '    arena_free(@arena)\n'
+        '    return 0\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    out_c = tmp_path / f"drain_probe_{target}.c"
+    res = subprocess.run(
+        [str(require_velo_exe()), "emit-c", str(src), "-o", str(out_c)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=_env(target),
+        timeout=30,
+    )
+    assert res.returncode == 0, f"emit-c failed for {target}:\nstdout:\n{res.stdout}\nstderr:\n{res.stderr}"
+    c_text = out_c.read_text(encoding="utf-8")
+
+    assert "velo_posix_poll(" in c_text, f"Missing velo_posix_poll in emitted C for {target}"
+    assert "read(" in c_text, f"Missing read in emitted C for {target}"
+    assert "pipe(" in c_text, f"Missing pipe in emitted C for {target}"
+
+    win32_symbols = [
+        "PeekNamedPipe", "ReadFile", "CreatePipe", "STARTF_USESTDHANDLES"
     ]
     for sym in win32_symbols:
         assert sym not in c_text, f"Unexpected Win32 symbol {sym} emitted for target={target}"
@@ -111,6 +166,40 @@ def test_posix_host_spawn_sync_execution(tmp_path):
         encoding="utf-8",
     )
     out_bin = tmp_path / "run_spawn"
+    build_res = subprocess.run(
+        [str(require_velo_exe()), "build", str(src), "-o", str(out_bin)],
+        cwd=str(tmp_path),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert build_res.returncode == 0, f"build failed:\n{build_res.stdout}\n{build_res.stderr}"
+
+    run_res = subprocess.run([str(out_bin)], capture_output=True, text=True, timeout=10)
+    assert run_res.returncode == 0, f"run failed with code {run_res.returncode}"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX host execution test; runs on Linux/macOS")
+def test_posix_host_pipe_drain_two_streams_and_exit_7(tmp_path):
+    """
+    Task 75.2 exit criterion: A child process writing to both stdout and stderr
+    and exiting with code 7 must be cleanly drained and report exit_code == 7
+    with success == false.
+    """
+    src = tmp_path / "test_drain_7.vl"
+    src.write_text(
+        'use std.os.pipe\nuse std.mem.arena\n\n'
+        'act main() -> i32 {\n'
+        '    mut arena = arena_init(65536)\n'
+        '    let out = os_spawn_capture(@arena, "echo out_msg; echo err_msg >&2; exit 7")\n'
+        '    if out.exit_code != 7 { return 1 }\n'
+        '    if out.success { return 2 }\n'
+        '    arena_free(@arena)\n'
+        '    return 0\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    out_bin = tmp_path / "test_drain_7"
     build_res = subprocess.run(
         [str(require_velo_exe()), "build", str(src), "-o", str(out_bin)],
         cwd=str(tmp_path),
