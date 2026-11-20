@@ -1,0 +1,157 @@
+// Package fetcher and installer for 'velo pkg install' and 'velo pkg update' (Phase 72 / Task 72.3).
+// Fetches git and registry dependencies, verifies archive hashes, unpacks archives,
+// and enforces Security Invariants I72.1, I72.2, I72.3, and I72.4.
+
+extern act system(cmd: string) -> i32
+
+use std.io
+use std.fs
+use std.path
+use std.crypto
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "../common/manifest.vl"
+use "../common/manifest_resolve.vl"
+
+// Executes a shell command via C runtime system().
+act pkg_install_run_cmd(cmd: string) -> i32 {
+    return system(cmd)
+}
+
+// Downloads and extracts a registry package archive into dest_path, verifying its SHA-256 digest.
+act manifest_fetch_archive(dest_path: string, archive_url: string, expected_sha: string, insecure: bool) -> bool {
+    let parent_dir = path_dirname_to_str(dest_path)
+    if !fs_exists(parent_dir) {
+        fs_create_dir_all(parent_dir)
+    }
+
+    let is_http = str.starts_with(archive_url, "http://")
+    let is_https = str.starts_with(archive_url, "https://")
+
+    if is_http and !insecure {
+        println_str("[Velo Error] Plaintext HTTP archive URL '" + archive_url + "' is disallowed without explicit --insecure flag.")
+        return false
+    }
+    if is_http and insecure {
+        println_str("[Velo Warning] Insecure connection to '" + archive_url + "': cleartext HTTP used.")
+    }
+    if is_https and insecure {
+        println_str("[Velo Warning] TLS certificate verification disabled via --insecure for archive '" + archive_url + "'.")
+    }
+
+    let name = path_stem_to_str(dest_path)
+    let archive_tmp = path_join_str(parent_dir, name + "_pkg_archive.tmp")
+    let curl_err_tmp = path_join_str(parent_dir, name + "_curl_err.tmp")
+
+    // Download archive via curl
+    mut curl_sb = create_sb(512)
+    sb_append_str(@curl_sb, "curl -sSf -L")
+    if insecure {
+        sb_append_str(@curl_sb, " -k")
+    }
+    sb_append_char(@curl_sb, ' ')
+    sb_append_str(@curl_sb, quote_path(archive_url))
+    sb_append_str(@curl_sb, " -o ")
+    sb_append_str(@curl_sb, quote_path(archive_tmp))
+    sb_append_str(@curl_sb, " 2> ")
+    sb_append_str(@curl_sb, quote_path(curl_err_tmp))
+    let curl_cmd = sb_to_string(@curl_sb)
+    let curl_res = pkg_install_run_cmd(curl_cmd)
+
+    mut curl_err = ""
+    if fs_exists(curl_err_tmp) {
+        let err_content = fs_read_to_str(curl_err_tmp)
+        if err_content != null { curl_err = str.trim(err_content) }
+        fs_remove_file_str(curl_err_tmp)
+    }
+
+    if curl_res != 0 or !fs_exists(archive_tmp) {
+        mut msg = "[Velo Error] Failed to download package archive from '" + archive_url + "'"
+        if str.len(curl_err) > 0 {
+            msg = msg + ": " + curl_err
+        }
+        println_str(msg)
+        return false
+    }
+
+    // Verify archive SHA-256 hash (Security Invariant I72.2 & I72.4)
+    mut archive_len: usize = 0
+    let archive_bytes = fs_read_bytes(archive_tmp, @archive_len)
+    if archive_bytes == null or archive_len == 0 {
+        fs_remove_file_str(archive_tmp)
+        println_str("[Velo Error] Downloaded archive for '" + name + "' is empty.")
+        return false
+    }
+
+    let actual_sha = sha256_hash(archive_bytes, archive_len)
+    if str.len(expected_sha) > 0 and actual_sha != expected_sha {
+        fs_remove_file_str(archive_tmp)
+        println_str("[Velo Error] Package archive checksum verification failed for '" + name + "'.")
+        println_str("  Expected: " + expected_sha)
+        println_str("  Actual:   " + actual_sha)
+        println_str("  Downloaded archive may have been tampered with or corrupted.")
+        return false
+    }
+
+    // Extract archive with tar -xf into dest_path
+    if !fs_exists(dest_path) {
+        fs_create_dir_all(dest_path)
+    }
+    let tar_err_tmp = path_join_str(parent_dir, name + "_tar_err.tmp")
+    mut tar_sb = create_sb(512)
+    sb_append_str(@tar_sb, "tar -xf ")
+    sb_append_str(@tar_sb, quote_path(archive_tmp))
+    sb_append_str(@tar_sb, " -C ")
+    sb_append_str(@tar_sb, quote_path(dest_path))
+    sb_append_str(@tar_sb, " 2> ")
+    sb_append_str(@tar_sb, quote_path(tar_err_tmp))
+    let tar_cmd = sb_to_string(@tar_sb)
+    let tar_res = pkg_install_run_cmd(tar_cmd)
+
+    fs_remove_file_str(archive_tmp)
+    mut tar_err = ""
+    if fs_exists(tar_err_tmp) {
+        let err_txt = fs_read_to_str(tar_err_tmp)
+        if err_txt != null { tar_err = str.trim(err_txt) }
+        fs_remove_file_str(tar_err_tmp)
+    }
+
+    if tar_res != 0 {
+        mut msg = "[Velo Error] Failed to extract package archive for '" + name + "'"
+        if str.len(tar_err) > 0 { msg = msg + ": " + tar_err }
+        println_str(msg)
+        return false
+    }
+
+    return true
+}
+
+// Installs and fetches every dependency declared in the manifest (Security Invariant I72.1).
+act install_all_dependencies(m: @PackageManifest, m_dir: string, insecure: bool, registry_override: string) -> bool {
+    if m == null { return true }
+    mut cur = m.first_dep
+    loop cur != null {
+        let loc = manifest_resolve_dep_full(m_dir, cur, insecure, registry_override)
+        if loc.has_error {
+            println_str(loc.error_msg)
+            return false
+        }
+        if cur.kind == "registry" {
+            if !fs_exists(loc.path) {
+                if str.len(loc.archive_url) == 0 {
+                    println_str("[Velo Error] Missing archive URL for registry dependency '" + cur.name + "'.")
+                    return false
+                }
+                if !manifest_fetch_archive(loc.path, loc.archive_url, loc.expected_hash, insecure) {
+                    return false
+                }
+            }
+        }
+        if !fs_exists(loc.path) {
+            println_str("[Velo Error] Dependency directory '" + loc.path + "' does not exist after installation.")
+            return false
+        }
+        cur = cur.next
+    }
+    return true
+}

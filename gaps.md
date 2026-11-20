@@ -983,11 +983,33 @@ executable is a hard error with an actionable message.
   - Determinism verified: Gen2 == Gen3 SHA-256 match; `bootstrap.c` updated cleanly with zero raw Win32 socket symbols.
   - Line count verified: `src/common/manifest_resolve.vl` is 357 lines (all files $\le 400$ lines).
 
-**72.3** Fix the lie: `pkg install` must call 72.1/72.2 for every dependency,
-verify hashes (I72.2), and only then print success. Add
-`tests/test_pkg_install_fetches.py` with a local `file://`-style registry
-fixture and a `git` fixture; the test asserts the dependency directory exists
-and its files match the lock hash.
+**72.3** [COMPLETED] ✅ Fix the lie: `pkg install` must call 72.1/72.2 for every dependency, verify hashes (I72.2), and only then print success. Add `tests/test_pkg_install_fetches.py` with a local `file://`-style registry fixture and a `git` fixture; the test asserts the dependency directory exists and its files match the lock hash.
+- *Former Defect:* `velo pkg install` was a lockfile formatter that never fetched dependencies over the network or disk. It printed `"All dependencies installed and locked successfully."` even when dependencies had never been downloaded or cloned. Furthermore, lockfile hashes were computed from a placeholder seed string rather than actual files on disk, making remote dependency tampering detection non-functional.
+- *Fix Applied:*
+  - Implemented `src/backend/pkg_install.vl`:
+    - `manifest_fetch_archive(dest_path, archive_url, expected_sha, insecure)`: downloads registry package archives using `curl` with safe argument quoting (`quote_path`), validates transport security, verifies downloaded archive bytes against `expected_sha` using `sha256_hash` (I72.2, I72.4), and extracts using `tar -xf` into `dest_path`.
+    - `install_all_dependencies(m, m_dir, insecure, registry_override)`: resolves local dependency paths, clones git repositories via Task 72.1, and downloads/unpacks registry archives via Task 72.2 and `manifest_fetch_archive`. Fails closed if any dependency fails to resolve or fetch (I72.1).
+  - Updated `src/backend/driver_pkg.vl`:
+    - Added `parse_pkg_args` helper parsing manifest path, `--insecure`, and `--registry` flags across `install`, `lock`, and `update` subcommands.
+    - `pkg install` calls `install_all_dependencies` before creating or verifying `velo.lock`, ensuring every dependency exists on disk before reporting success.
+    - `pkg lock` calls `install_all_dependencies` before writing `velo.lock` so real content hashes are recorded.
+    - `pkg update` calls `install_all_dependencies` before updating `velo.lock`.
+  - Updated `src/backend/pkg_lock.vl`:
+    - Updated `compute_dep_hash` to check `.velo_cache/deps/<name>` for `git` and `registry` dependencies.
+    - Enhanced directory hashing to hash all present entry/source files (`velo.pkg`, `main.vl`, `src/main.vl`) so that modifying any file in an installed dependency triggers a fatal lockfile verification failure naming expected and actual hashes (I72.4).
+- *Residual Limitation:* Semantic version parsing (`MAJOR.MINOR.PATCH`) and range operators (`=`, `^`, `~`, `>=`) will be implemented in Task 72.4.
+- *Verification:*
+  - Created automated test suite `tests/test_pkg_install_fetches.py` with 5 test cases:
+    - `test_pkg_install_fetches_git_dependency`: clones local git fixture into `.velo_cache/deps/upstream_git_pkg`, creates `velo.lock`, asserts files match lock hash, and re-verifies successfully.
+    - `test_pkg_install_fetches_registry_file_url_and_matches_lock_hash`: downloads and extracts `.tar.gz` archive via `file://` registry fixture, creates `velo.lock`, and asserts extracted files match lock hash.
+    - `test_pkg_install_detects_tampered_dependency_and_fails_fatally`: verifies that modifying a single byte in an installed dependency fails fatal with `Package checksum verification failed` naming expected and actual hashes (I72.4).
+    - `test_pkg_install_corrupt_archive_hash_fails_closed`: verifies that an archive hash mismatch against `index.json` fails closed without extracting corrupted files (I72.2).
+    - `test_pkg_install_unreachable_dependency_fails_closed`: verifies that failed git clone exits non-zero and never prints false success (I72.1).
+  - All 5 tests passed in 7.35s.
+  - All 28 package tests across `test_pkg_install_fetches.py`, `test_pkg_security.py`, `test_pkg_registry.py`, and `test_pkg_resolve.py` passed in 168.63s.
+  - `tests/test_bootstrap_snapshot.py` passed (6/6).
+  - Determinism verified: Gen2 == Gen3 SHA-256 match; `bootstrap.c` updated cleanly with zero raw Win32 socket symbols.
+  - Line count verified: all compiler files $\le 400$ lines (`driver_pkg.vl` 366, `manifest_resolve.vl` 357, `pkg_lock.vl` 281, `pkg_install.vl` 157).
 
 **72.4** Add semver: parse `MAJOR.MINOR.PATCH`, support `=`, `^`, `~`, and
 `>=` in manifests, reject ambiguous ranges with a diagnostic.

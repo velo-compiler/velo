@@ -63,7 +63,16 @@ act lockfile_add_entry(lock: @LockFile, name: string, source: string, version: s
 // Computes cryptographic SHA-256 hash for a dependency source or files.
 act compute_dep_hash(m_dir: string, dep: @DependencySpec) -> string {
     mut target_path = dep.source
-    if dep.kind == "local" and not (str.starts_with(dep.source, "/") or (str.len(dep.source) > 2 and dep.source[1] == ':')) {
+    if dep.kind == "git" or dep.kind == "registry" {
+        mut deps_parent = ".velo_cache/deps"
+        if m_dir != null and str.len(m_dir) > 0 and m_dir != "." {
+            deps_parent = path_join_str(m_dir, ".velo_cache/deps")
+        }
+        let cached_path = path_join_str(deps_parent, dep.name)
+        if fs_exists(cached_path) {
+            target_path = cached_path
+        }
+    } else if dep.kind == "local" and not (str.starts_with(dep.source, "/") or (str.len(dep.source) > 2 and dep.source[1] == ':')) {
         target_path = path_join_str(m_dir, dep.source)
     }
 
@@ -78,15 +87,21 @@ act compute_dep_hash(m_dir: string, dep: @DependencySpec) -> string {
             let pkg_file = path_join_str(target_path, "velo.pkg")
             let main_file = path_join_str(target_path, "main.vl")
             let src_main = path_join_str(target_path, "src/main.vl")
+            mut combined_sb = create_sb(1024)
             if fs_is_file(pkg_file) {
                 let content = fs_read_to_str(pkg_file)
-                if content != null { hash_hex = sha256_hash_str(content) }
-            } else if fs_is_file(main_file) {
+                if content != null { sb_append_str(@combined_sb, content) }
+            }
+            if fs_is_file(main_file) {
                 let content = fs_read_to_str(main_file)
-                if content != null { hash_hex = sha256_hash_str(content) }
-            } else if fs_is_file(src_main) {
+                if content != null { sb_append_str(@combined_sb, content) }
+            }
+            if fs_is_file(src_main) {
                 let content = fs_read_to_str(src_main)
-                if content != null { hash_hex = sha256_hash_str(content) }
+                if content != null { sb_append_str(@combined_sb, content) }
+            }
+            if combined_sb.len > 0 {
+                hash_hex = sha256_hash_str(sb_to_string(@combined_sb))
             }
         }
     }
