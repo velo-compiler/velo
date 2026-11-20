@@ -1096,10 +1096,39 @@ executable is a hard error with an actionable message.
   - Determinism verified: Gen2 == Gen3 SHA-256 match (`6b099ad6f454ac592f7c00fb4d0ce2947adba5f6f8d1705985dc31e068a4923b`); `bootstrap.c` updated cleanly with zero raw Win32 socket symbols.
   - Line count verified: all compiler files $\le 400$ lines (`src/backend/pkg_inspect.vl`: 290, `src/backend/driver_pkg.vl`: 385, `src/common/manifest.vl`: 317).
 
-**72.6** Add `velo pkg publish` that tars the manifest's declared `src/` and
+**72.6** [COMPLETED] ✅ Add `velo pkg publish` that tars the manifest's declared `src/` and
 `std/` subsets, computes the hash, and prints the index entry to paste. No
 upload servers, no accounts - publishing is a pull request to a registry
 repository. That keeps the trust model small enough to be honest.
+- *Former Defect:* The toolchain lacked any mechanism to package library releases or generate registry index entries. Package maintainers had no automated way to bundle source files into standardized `.tar.gz` distribution archives, calculate verifiable cryptographic SHA-256 digests, or generate registry-compatible `index.json` descriptors for the pull-request-based publishing workflow.
+- *Fix Applied:*
+  - Implemented `src/backend/pkg_publish.vl`:
+    - `pkg_publish_run(argc: i32, argv: @string) -> i32`:
+      - Validates package manifest (`velo.pkg`), verifying that `name` is present, `version` is valid SemVer (via `semver_parse`), and at least one source directory or entry file exists (`src/`, `std/`, or declared `entry`).
+      - Packages `velo.pkg`, `src/` (if present), `std/` (if present), and any root entry file into `<name>-<version>.tar.gz` using standard `tar -czf` with securely quoted path arguments (Security Invariant I72.3).
+      - Supports custom archive destination via `-o` / `--out <path>`, defaulting to `dist/<name>-<version>.tar.gz`.
+      - Computes cryptographic SHA-256 digest of the archive bytes via `sha256_hash` (Security Invariant I72.2).
+      - Resolves archive download URL, supporting custom overrides via `--url <url>`, `--registry <url>`, or environment variable `VELO_REGISTRY`.
+      - Prints human-readable summary with archive path, SHA-256 digest, the exact JSON descriptor snippet to paste into `<name>/index.json` under `"versions"`, and PR submission instructions.
+      - Supports `--json` flag to emit structured machine-readable metadata (`name`, `version`, `archive`, `url`, `sha256`) for CI/CD scripting.
+  - Updated `src/backend/driver_pkg.vl` and `src/cli_cmd.vl` to expose `publish` subcommand and documentation.
+- *Residual Limitation:* CI test matrix and offline multi-level dependency graph fixtures will be finalized in Task 72.7.
+- *Verification:*
+  - Created automated test suite `tests/test_pkg_publish.py` with 9 test cases:
+    - `test_pkg_publish_default_options`: packages `src/` and `velo.pkg`, asserts tarball creation, verifies SHA-256 and printed JSON snippet, and checks archive contents.
+    - `test_pkg_publish_custom_out_tarball`: verifies custom archive output path via `-o`.
+    - `test_pkg_publish_custom_url_and_registry`: verifies `--url` and `--registry` overrides in generated snippet.
+    - `test_pkg_publish_json_flag`: parses stdout as JSON and validates structured metadata.
+    - `test_pkg_publish_packages_std_subset`: verifies `std/` subset packaging into archive.
+    - `test_pkg_publish_fails_on_missing_manifest`: verifies fail-closed error when manifest is missing.
+    - `test_pkg_publish_fails_on_invalid_semver`: verifies fail-closed error on non-semver version.
+    - `test_pkg_publish_fails_when_no_source_files_exist`: verifies fail-closed error on empty package.
+    - `test_pkg_publish_roundtrip_with_pkg_install`: end-to-end integration test publishing a library with `velo pkg publish`, constructing a registry index from its output, installing the dependency in a consumer app via `velo pkg install`, extracting files, and verifying with zero drift via `velo pkg verify` (exercising Phase Exit Criterion 3).
+  - All 9 tests in `tests/test_pkg_publish.py` passed in 2.71s.
+  - Full package test suite (61 tests across `test_pkg_publish.py`, `test_pkg_tree_verify.py`, `test_pkg_semver.py`, `test_pkg_install_fetches.py`, `test_pkg_security.py`, `test_pkg_registry.py`, `test_pkg_resolve.py`) passed in 234.93s.
+  - `tests/test_bootstrap_snapshot.py` passed (6/6).
+  - Determinism verified: Gen2 == Gen3 SHA-256 match (`32468215329b2cfa253e412db35f99c1120cfbc62cf501f2cdfd69f55779053a`); `bootstrap.c` updated cleanly with zero raw Win32 socket symbols.
+  - Line count verified: all compiler files $\le 400$ lines (`src/backend/pkg_publish.vl`: 189, `src/backend/driver_pkg.vl`: 391).
 
 **72.7** Add a `tests/test_pkg_semver.py` matrix and a `deps-lock` CI job that
 builds a two-level dependency graph offline from fixtures.

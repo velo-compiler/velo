@@ -9,6 +9,7 @@ use "driver.vl"
 use "pkg_lock.vl"
 use "pkg_install.vl"
 use "pkg_inspect.vl"
+use "pkg_publish.vl"
 
 // Parses common package command arguments (manifest path, --insecure, --registry).
 act parse_pkg_args(argc: i32, argv: @string, out_insecure: @bool, out_reg: @string) -> string {
@@ -94,6 +95,7 @@ act handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32 {
         println_str("  velo pkg update [path]             Update dependencies and regenerate velo.lock")
         println_str("  velo pkg tree [path]               Display dependency tree")
         println_str("  velo pkg verify [path]             Verify dependencies and report drift (read-only)")
+        println_str("  velo pkg publish [path]            Package and generate registry index entry to paste")
         println_str("  velo pkg build [path] [-o <bin>]   Build project defined by velo.pkg")
         println_str("  velo pkg run [path] [-- args...]   Build and run project defined by velo.pkg")
         return 0
@@ -228,6 +230,10 @@ act handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32 {
             m_path = argv[3]
         }
         return pkg_verify_run(resolve_manifest_path(m_path))
+    }
+
+    if sub_cmd == "publish" {
+        return pkg_publish_run(argc, argv)
     }
 
     if sub_cmd == "build" or sub_cmd == "run" {
