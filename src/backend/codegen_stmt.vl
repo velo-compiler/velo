@@ -22,6 +22,7 @@ use "outcome_gen.vl"
 use "array_gen.vl"
 use "tuple_gen.vl"
 use "range_gen.vl"
+use "math_gen.vl"
 
 // Block-Scope Cleanup Architecture (Phase 58: AUDIT-2026-11-07):
 // 1. Lexical Scope: defers execute at block exit '}', before C and symbol scopes close.
@@ -210,6 +211,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
                 return
             }
         }
+        if emit_div_assign_guard(sb, st, stmt, indent) { return }
         sb_append_indent(sb, indent); emit_c_expr(sb, st, stmt.expr); sb_append_char(sb, ' '); sb_append_str(sb, map_assign_op(stmt.op))
         sb_append_char(sb, ' '); emit_c_expr(sb, st, stmt.val_expr); sb_append_str(sb, ";\n")
         return

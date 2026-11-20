@@ -3701,4 +3701,19 @@ static inline void velo_panic_range_step(int line, int col) {
     exit(1);
 }
 
+// 74.2: Divide-by-zero runtime fatal guard with source location diagnostic
+static inline int64_t velo_div_guard_loc(int64_t b, const char* file, int line) {
+    if (b == 0) {
+        if (file && file[0] != '\0') {
+            fprintf(stderr, "Velo Fatal Error: division by zero at %s:%d!\n", file, line);
+        } else {
+            fprintf(stderr, "Velo Fatal Error: division by zero at line %d!\n", line);
+        }
+        exit(1);
+    }
+    return b;
+}
+
+#define velo_div_guard(b) velo_div_guard_loc((int64_t)(b), __FILE__, __LINE__)
+
 #endif // VELO_RUNTIME_H

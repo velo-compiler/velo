@@ -10,9 +10,11 @@
 // member names a known function).
 use "type_checker.vl"
 use "symbol_table.vl"
+use "range_checks.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../ast/expr.vl"
+use "../ast/stmt.vl"
 use "../frontend/token.vl"
 
 // Digit strings MUST stay character-identical with velo/codegen_c.py
@@ -185,4 +187,44 @@ act check_math_constant(st: @SymbolTable, expr: @ExprNode) -> string {
     }
     report_error("semantic", expr.line, expr.col, sb_to_string(@msb)); st.error_count += 1
     return "unknown"
+}
+
+// 74.2: Checks if an expression is a proven non-zero integer constant at compile time.
+act is_proven_nonzero_const(expr: @ExprNode) -> bool {
+    if expr == null { return false }
+    mut v: i64 = 0
+    if eval_const_int_expr(expr, @v) {
+        return v != 0i64
+    }
+    return false
+}
+
+// 74.2: Compile-time check for division or modulo by constant zero in binary expressions.
+act check_div_zero_expr(st: @SymbolTable, expr: @ExprNode) -> bool {
+    if expr == null { return false }
+    if expr.op != TOK_SLASH and expr.op != TOK_PERCENT { return false }
+    mut v: i64 = 0
+    if eval_const_int_expr(expr.right, @v) and v == 0i64 {
+        if expr.op == TOK_SLASH {
+            report_error("semantic", expr.line, expr.col, "Division by zero")
+        } else {
+            report_error("semantic", expr.line, expr.col, "Modulo by zero")
+        }
+        st.error_count += 1
+        return true
+    }
+    return false
+}
+
+// 74.2: Compile-time check for compound division assignment by constant zero (x /= 0).
+act check_div_zero_assign(st: @SymbolTable, stmt: @StmtNode) -> bool {
+    if stmt == null { return false }
+    if stmt.op != TOK_SLASH_ASSIGN { return false }
+    mut v: i64 = 0
+    if eval_const_int_expr(stmt.val_expr, @v) and v == 0i64 {
+        report_error("semantic", stmt.line, stmt.col, "Division by zero")
+        st.error_count += 1
+        return true
+    }
+    return false
 }

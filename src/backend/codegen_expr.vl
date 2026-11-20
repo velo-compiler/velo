@@ -353,6 +353,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             }
         }
 
+        if emit_div_or_mod(sb, st, expr, ltype, rtype) { return }
         sb_append_char(sb, '('); emit_c_expr(sb, st, expr.left); sb_append_char(sb, ' ')
         sb_append_str(sb, op_to_c_str(expr.op)); sb_append_char(sb, ' '); emit_c_expr(sb, st, expr.right); sb_append_char(sb, ')')
         return

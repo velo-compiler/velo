@@ -267,6 +267,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     }
 
     if expr.kind == EXPR_BINARY {
+        check_div_zero_expr(st, expr)
         if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name }
         let left_type = infer_expr_type(st, expr.left); let right_type = infer_expr_type(st, expr.right)
         // 5.2 slice 8: raw dyn arithmetic/compares auto-unbox; the concrete mixed-compare and string-concat walls live in dyn_checks.vl too

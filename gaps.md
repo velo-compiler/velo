@@ -1114,11 +1114,27 @@ wraparound in both Debug and Release - the current behaviour is
   - Verified determinism and snapshot integrity (`tests/test_bootstrap_snapshot.py`, `tests/test_ci_matrix.py`).
   - Audited compiler source line counts (`python scripts/count_lines.py` confirms all 103 files <= 400 lines).
 
-**74.2** Add a runtime divide-by-zero guard for the runtime path: emit
+**74.2 [COMPLETED] ✅** Add a runtime divide-by-zero guard for the runtime path: emit
 `velo_div_guard(b)` (a fatal with a Velo message and the `#line` of the
 division) before `/` and `%` when the divisor is not a proven non-zero constant.
 Test: `tests/test_div_zero.py` asserts a clean stderr message and a stable exit
 code, replacing today's silent `0xC0000094`.
+
+- *Former Defect:*
+  Integer division and modulo by zero (`/`, `%`, `/=`) lowered directly to raw C operations (`a / b`, `a % b`, `a /= b`). When the divisor evaluated to zero at runtime, execution crashed abruptly with an unhandled OS hardware trap/signal (`0xC0000094`, `STATUS_INTEGER_DIVIDE_BY_ZERO` on Windows or `SIGFPE` on POSIX) without any Velo diagnostic message or source file/line location. Furthermore, compile-time division by constant zero (`10 / 0`, `10 % 0`, `x /= 0`) was not diagnosed during semantic analysis.
+- *Fix Applied:*
+  - Implemented `velo_div_guard_loc` and macro `#define velo_div_guard(b) velo_div_guard_loc((int64_t)(b), __FILE__, __LINE__)` in `runtime/velo_runtime.h` (and mirrored identically in `velo/runtime/velo_runtime.h`). When `b == 0`, it prints `"Velo Fatal Error: division by zero at <file>:<line>!\n"` to stderr and exits with deterministic exit code `1`.
+  - Added compile-time constant analysis helpers in `src/analysis/math_checks.vl`: `is_proven_nonzero_const(expr)`, `check_div_zero_expr(st, expr)`, and `check_div_zero_assign(st, stmt)` leveraging `eval_const_int_expr` from `src/analysis/range_checks.vl`. Constant division or modulo by zero is diagnosed and rejected at compile time during semantic analysis.
+  - Implemented C code generation lowering in `src/backend/math_gen.vl`: `emit_div_or_mod` and `emit_div_assign_guard`. When the divisor is a proven non-zero constant, standard C division (`a / b`, `a % b`, `a /= b`) is emitted without any runtime overhead. When the divisor is dynamic (not proven non-zero), `velo_div_guard(b)` wraps the divisor operand in-place, preserving short-circuit evaluation in logical expressions without statement-expression compiler extensions.
+  - Hooked lowering into `src/backend/codegen_expr.vl` and `src/backend/codegen_stmt.vl`, and compile-time diagnostics into `src/analysis/type_checker.vl` and `src/analysis/type_checker_stmt.vl`.
+  - Rebuilt self-hosting compiler chain (`bootstrap.c` -> Gen2 -> Gen3 -> `bin/velo.exe` -> updated `bootstrap.c`) and verified byte-for-byte output hash determinism.
+- *Residual Limitation (if any):*
+  None. Dynamic integer division and modulo by zero trigger deterministic fatal diagnostics with exact source line numbers; constant zero divisors are rejected at compile time; proven non-zero constants incur zero runtime overhead. Floating-point division follows IEEE 754 (+inf/-inf/NaN) per specification.
+- *Verification:*
+  - Created `tests/test_div_zero.py` containing 20 test cases asserting runtime fatal messages and exit code 1 across `--debug` and `--release` modes for `/`, `%`, and `/=`, unsigned 32-bit and 64-bit divisions, compile-time semantic rejections for literal 0 and constant expressions (`5 - 5`), elision of guards for proven non-zero constants in emitted C, short-circuit preservation, and arithmetic accuracy (all 20 tests pass).
+  - Verified full test suite (`python -m pytest tests -q`: 2,141 passed, 24 skipped, 1 xfailed).
+  - Verified bootstrap determinism (`tests/test_bootstrap_snapshot.py`: all 6 tests pass).
+  - Audited compiler source file line counts (`python scripts/count_lines.py` confirms all 103 files <= 400 lines).
 
 **74.3** Add runtime bounds checks for fixed-size array indexing that the
 compiler cannot prove. Either reuse the shelf/bitset fatal tier

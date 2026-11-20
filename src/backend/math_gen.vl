@@ -15,6 +15,7 @@ use "../ast/expr.vl"
 use "../ast/stmt.vl"
 use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
+use "../analysis/math_checks.vl"
 use "../common/string_builder.vl"
 use "codegen_types.vl"
 use "codegen_expr.vl"
@@ -142,4 +143,39 @@ act emit_math_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @
         sb_append_str(sb, ")))")
         return
     }
+}
+
+// 74.2: Emits division or modulo expression with runtime zero guard if not proven non-zero constant.
+act emit_div_or_mod(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode, ltype: string, rtype: string) -> bool {
+    if expr.op != TOK_SLASH and expr.op != TOK_PERCENT { return false }
+    if is_float_type(ltype) or is_float_type(rtype) { return false }
+    sb_append_char(sb, '(')
+    emit_c_expr(sb, st, expr.left)
+    sb_append_char(sb, ' ')
+    sb_append_str(sb, op_to_c_str(expr.op))
+    sb_append_char(sb, ' ')
+    if is_proven_nonzero_const(expr.right) {
+        emit_c_expr(sb, st, expr.right)
+    } else {
+        sb_append_str(sb, "velo_div_guard(")
+        emit_c_expr(sb, st, expr.right)
+        sb_append_char(sb, ')')
+    }
+    sb_append_char(sb, ')')
+    return true
+}
+
+// 74.2: Emits compound division assignment (/=) with runtime zero guard if not proven non-zero constant.
+act emit_div_assign_guard(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i32) -> bool {
+    if stmt.op != TOK_SLASH_ASSIGN { return false }
+    let target_t = infer_expr_type(st, stmt.expr)
+    let val_t = infer_expr_type(st, stmt.val_expr)
+    if is_float_type(target_t) or is_float_type(val_t) { return false }
+    if is_proven_nonzero_const(stmt.val_expr) { return false }
+    sb_append_indent(sb, indent)
+    emit_c_expr(sb, st, stmt.expr)
+    sb_append_str(sb, " /= velo_div_guard(")
+    emit_c_expr(sb, st, stmt.val_expr)
+    sb_append_str(sb, ");\n")
+    return true
 }
