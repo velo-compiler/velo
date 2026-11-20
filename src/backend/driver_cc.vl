@@ -222,6 +222,9 @@ act assemble_msvc_compile_cmd(c_file_path: string, out_exe_path: string, opt_fla
     } else {
         sb_append_str(@cmd_sb, "/O2 ")
     }
+    if str.contains(opt_flags, "-DVELO_UNSAFE_HEAP") {
+        sb_append_str(@cmd_sb, "/DVELO_UNSAFE_HEAP ")
+    }
     sb_append_str(@cmd_sb, quote_path(path_to_native_str(c_file_path)))
     sb_append_str(@cmd_sb, " /Fe:")
     sb_append_str(@cmd_sb, quote_path(path_to_native_str(out_exe_path)))

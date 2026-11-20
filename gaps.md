@@ -1188,11 +1188,45 @@ documenting `mem.move` as the overlapping-safe primitive. Test: overlapping
   - Verified `tests/test_bootstrap_snapshot.py` (all 6 tests pass).
   - Audited compiler source file line counts (`python scripts/count_lines.py` confirms all 103 files <= 400 lines).
 
-**74.5** Add `mem.realloc`/`mem.free` provenance checks. Cheapest honest
+**74.5 [COMPLETED] ✅** Add `mem.realloc`/`mem.free` provenance checks. Cheapest honest
 version: a magic header + owner tag around heap allocations
 (`std/mem/heap.vl:201` already has the freelist machinery), validating on free
 and realloc and fataling on mismatch. Document the cost (8-16 bytes/allocation)
 and the opt-out flag.
+
+- *Former Defect:*
+  `mem.free` and `mem.realloc` lacked provenance validation. Passing an invalid pointer, stack/wild pointer, pointer from a bump-allocated `zone` arena, or an already-freed pointer (double-free or use-after-free realloc) lowered directly to standard C library `free(ptr)` and `realloc(ptr, size)`. On host platforms this caused undefined behavior, silent memory heap metadata corruption, or unhandled OS crashes without a Velo diagnostic.
+- *Fix Applied:*
+  - Implemented 16-byte heap allocation provenance protocol in `runtime/velo_runtime.h` (and mirrored identically in `velo/runtime/velo_runtime.h`):
+    - Payload header stores allocation byte size (`size_t total`, offset 0..7) and verification magic tag (`uint64_t magic`, offset 8..15).
+    - Magic tag initialized to `VELO_HEAP_MAGIC` (`0x56454C4F48454150ULL` = `"VELOHEAP"`).
+    - On `free`, magic tag is overwritten with tombstone `VELO_HEAP_FREED_MAGIC` (`0x56454C4F46524545ULL` = `"VELOFREE"`) before libc `free`.
+    - Hardened `velo_heap_free` and `velo_heap_realloc` with rigorous validation checks:
+      1. Safe `null` handling: `mem.free(null)` is an explicit no-op; `mem.realloc(null, @T, count)` cleanly allocates fresh heap memory.
+      2. Zone arena detection: `velo_is_in_zone(ptr)` triggers fatal `"Velo Fatal Error: mem.<op> called with non-heap pointer (pointer is in zone arena)!\n"`.
+      3. Alignment & range check: addresses `< 4096` or with `(ptr & 7) != 0` trigger fatal `"Velo Fatal Error: mem.<op> called with invalid pointer (not a valid heap allocation)!\n"` without risking OS-level segfaults on dereference.
+      4. Double-free / realloc-freed detection: header magic matching `VELO_HEAP_FREED_MAGIC` triggers fatal `"Velo Fatal Error: mem.free called on already-freed pointer (double free)!\n"` or `"Velo Fatal Error: mem.realloc called on already-freed pointer!\n"`.
+      5. Foreign/corrupt pointer detection: header magic differing from `VELO_HEAP_MAGIC` triggers fatal `"Velo Fatal Error: mem.<op> called with invalid pointer (not a valid heap allocation)!\n"`.
+  - Stamped and validated magic tags (`HEAP_MAGIC` and `HEAP_FREED_MAGIC`) in pure-Velo freelist allocator in `std/mem/heap.vl`.
+  - Added `--unsafe-heap` compiler CLI flag across `src/cli_cmd.vl`, `src/main.vl`, and `src/backend/driver_cc.vl` (`-DVELO_UNSAFE_HEAP` / `/DVELO_UNSAFE_HEAP` / `#define VELO_UNSAFE_HEAP 1`) allowing performance-critical builds to bypass header overhead and provenance assertions.
+  - Documented 16 bytes/allocation overhead, provenance diagnostics, and `--unsafe-heap` flag in `docs/SPECIFICATION.md` (§5.5, §5.7, §9).
+  - Rebuilt self-hosting compiler chain (`bootstrap.c` -> Gen2 -> Gen3 -> `bin/velo.exe` -> updated `bootstrap.c`) and verified byte-for-byte output hash determinism.
+- *Residual Limitation (if any):*
+  Provenance tracking incurs 16 bytes per heap allocation (`size_t` + `uint64_t` magic) when enabled (the default). Use `--unsafe-heap` for zero-overhead legacy behavior. Cross-allocator tracking between distinct custom user allocators created via `mem.create_arena` relies on the allocator instances rather than the global heap runtime.
+- *Verification:*
+  - Created `tests/test_heap_provenance.py` covering 9 comprehensive test scenarios:
+    - `test_free_zone_pointer_fatal`: `mem.free` on zone arena pointer aborts with deterministic message and non-zero exit code.
+    - `test_realloc_zone_pointer_fatal`: `mem.realloc` on zone arena pointer aborts with deterministic message and non-zero exit code.
+    - `test_double_free_fatal`: double `mem.free` aborts with `"already-freed pointer (double free)!"`.
+    - `test_realloc_already_freed_fatal`: `mem.realloc` on freed pointer aborts with `"already-freed pointer!"`.
+    - `test_free_stack_pointer_fatal`: passing stack address to `mem.free` aborts with `"invalid pointer (not a valid heap allocation)!"`.
+    - `test_realloc_stack_pointer_fatal`: passing stack address to `mem.realloc` aborts with `"invalid pointer (not a valid heap allocation)!"`.
+    - `test_free_and_realloc_null`: verifies `mem.free(null)` is safe no-op and `mem.realloc(null, ...)` cleanly allocates.
+    - `test_valid_heap_lifecycle_debug_and_release`: verifies alloc -> realloc growth/shrink with payload data preservation -> free in both `--debug` and `--release` modes.
+    - `test_unsafe_heap_opt_out`: verifies `--unsafe-heap` flag passes to `velo run`, `velo build`, and defines `VELO_UNSAFE_HEAP 1` in `velo emit-c`.
+  - Verified full Phase 74 suite: 72 tests passed in 42.93s (`test_integer_overflow.py`, `test_div_zero.py`, `test_fixed_array_runtime_bounds.py`, `test_mem_overlaps.py`, `test_heap_provenance.py`, `test_std_mem.py`).
+  - Verified `tests/test_bootstrap_snapshot.py` (all 6 tests pass).
+  - Audited compiler source file line counts (`python scripts/count_lines.py` confirms all 103 files <= 400 lines).
 
 **74.6** Make the sanitizer lane real. Add `scripts/bootstrap_sanitized.sh`
 that builds with `-fsanitize=address,undefined -fno-sanitize-recover=all` and

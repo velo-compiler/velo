@@ -743,8 +743,18 @@ generation or the runtime:
   diagnostic (`Velo Fatal Error: mem.copy destination and source overlap (use mem.move instead)!`)
   if they overlap; in Release builds, raw C `memcpy` behavior is invoked.
 * `mem.free` accepts raw pointers and heap strings (`str.heap_*` returns an
-  owning `string`). Freeing a zone-allocated value is not a compile-time error —
-  ownership is the caller's contract.
+  owning `string`). Freeing `null` is a safe no-op.
+* `mem.free` and `mem.realloc` enforce provenance verification by default. Every
+  heap allocation prepends a 16-byte header containing payload length and magic tag
+  (`VELOHEAP` = `0x56454C4F48454150ULL`). On free or realloc, the runtime verifies:
+  1. Pointer alignment and range (must be aligned to 8 bytes and >= 4096).
+  2. Pointer source (must not point into an active `zone` bump arena).
+  3. Header magic tag: must match `VELOHEAP`. Passing an already-freed pointer
+     (tombstoned with `VELOFREE` = `0x56454C4F46524545ULL`) or invalid/stack address
+     fails with an explanatory fatal error.
+* Passing `--unsafe-heap` to `velo run`, `velo build`, `velo test`, or `velo emit-c`
+  bypasses the 16-byte header and provenance checks (`#define VELO_UNSAFE_HEAP 1`)
+  for zero-overhead hot paths where raw `free()` / `realloc()` speed is paramount.
 
 ```rust
 use std.io
@@ -784,6 +794,12 @@ non-zero exit status.
 | A watermark stack push cannot grow | `Velo Fatal Error: Zone Arena Watermark Stack OOM` | process exits |
 | `mem.copy`/`move`/`set`/`realloc` receive a negative count | `Velo Fatal Error: mem.<op> got a negative byte count` | process exits |
 | `mem.copy` regions overlap in Debug mode | `Velo Fatal Error: mem.copy destination and source overlap (use mem.move instead)!` | process exits |
+| `mem.free` on zone arena pointer | `Velo Fatal Error: mem.free called with non-heap pointer (pointer is in zone arena)!` | process exits |
+| `mem.free` on already-freed pointer (double free) | `Velo Fatal Error: mem.free called on already-freed pointer (double free)!` | process exits |
+| `mem.free` on invalid/stack/foreign pointer | `Velo Fatal Error: mem.free called with invalid pointer (not a valid heap allocation)!` | process exits |
+| `mem.realloc` on zone arena pointer | `Velo Fatal Error: mem.realloc called with non-heap pointer (pointer is in zone arena)!` | process exits |
+| `mem.realloc` on already-freed pointer | `Velo Fatal Error: mem.realloc called on already-freed pointer!` | process exits |
+| `mem.realloc` on invalid/stack/foreign pointer | `Velo Fatal Error: mem.realloc called with invalid pointer (not a valid heap allocation)!` | process exits |
 
 The consequences for user code:
 
@@ -1267,9 +1283,9 @@ The Velo compiler (`velo.exe` / `velo`) exposes the unified CLI toolchain:
 
 | Command | Description |
 | :--- | :--- |
-| `velo run <file> [args...]` | Compile and immediately execute the program |
-| `velo build <file> [-o <out>]` | Compile to a standalone native executable (`--cc gcc\|cl`, `--debug\|--release`) |
-| `velo emit-c <file> [-o <out>]` | Print or export the generated C99 translation unit |
+| `velo run <file> [args...]` | Compile and immediately execute the program (`--debug\|--release`, `--unsafe-heap`) |
+| `velo build <file> [-o <out>]` | Compile to a standalone native executable (`--cc gcc\|cl`, `--debug\|--release`, `--unsafe-heap`) |
+| `velo emit-c <file> [-o <out>]` | Print or export the generated C99 translation unit (`--unsafe-heap`) |
 | `velo check <file> [--json]` | Validate only: lex, parse, semantic analysis, monomorphization (no codegen) |
 | `velo doc <file> [-o <out.md>]` | Extract Markdown API documentation from `///` doc comments |
 | `velo test [path] [--filter <k>]` | Run native test suites with optional test name filter |

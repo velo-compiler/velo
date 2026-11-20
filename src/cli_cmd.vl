@@ -8,8 +8,8 @@ use "common/utils.vl"
 act print_usage() {
     println_str("Velo Programming Language Compiler (Self-Hosted v2.0)")
     println_str("Usage:")
-    println_str("  velo run <source.vl> [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release] [-O<level>] [--no-line-directives]")
-    println_str("  velo build <source.vl> [-o <bin>] [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release] [--no-line-directives]")
+    println_str("  velo run <source.vl> [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release] [-O<level>] [--no-line-directives] [--unsafe-heap]")
+    println_str("  velo build <source.vl> [-o <bin>] [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release] [--no-line-directives] [--unsafe-heap]")
     println_str("  velo emit-c <source.vl> [-o <out.c>] [--no-line-directives] Emit generated C99 code")
     println_str("  velo check <source.vl> [--json] [--color auto|always|never]")
     println_str("  velo doc <source.vl> [-o <out.md>] Extract API documentation to Markdown")
@@ -36,6 +36,7 @@ act handle_run_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_di
     mut cc = "gcc"
     mut debug_mode: bool = false
     mut release_mode: bool = false
+    mut unsafe_heap: bool = false
     mut opt_level = ""
     mut linker_sb = create_sb(256)
     mut i: i32 = 2
@@ -50,6 +51,8 @@ act handle_run_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_di
             debug_mode = true
         } else if arg == "--release" {
             release_mode = true
+        } else if arg == "--unsafe-heap" {
+            unsafe_heap = true
         } else if arg == "-O" and i + 1 < argc {
             opt_level = argv[i + 1]
             i += 1
@@ -73,7 +76,7 @@ act handle_run_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_di
             sb_append_str(@linker_sb, "-L")
             let raw_arg = copy_slice_to_string(arg, 2, str.len(arg) - 2)
             sb_append_str(@linker_sb, quote_path(path_to_native_str(raw_arg)))
-        } else if arg != "--unsafe-shelf-index" and arg != "--unsafe-array-index" and arg != "--unsafe-index" and arg != "--no-line-directives" and arg != "--strict-safety" and str.len(source_file) == 0 {
+        } else if arg != "--unsafe-shelf-index" and arg != "--unsafe-array-index" and arg != "--unsafe-index" and arg != "--unsafe-heap" and arg != "--no-line-directives" and arg != "--strict-safety" and str.len(source_file) == 0 {
             source_file = arg
         }
         i += 1
@@ -90,7 +93,11 @@ act handle_run_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_di
         println_str("[Velo Error] Cannot specify both --debug and --release")
         return 1
     }
-    let opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level)
+    mut opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level)
+    if unsafe_heap {
+        mut u_sb = create_sb(str.len(opt_flags) + 32)
+        sb_append_str(@u_sb, opt_flags); sb_append_str(@u_sb, " -DVELO_UNSAFE_HEAP"); opt_flags = sb_to_string(@u_sb)
+    }
     let linker_flags = sb_to_string(@linker_sb)
     mut exit_code = 0
     zone {
@@ -114,6 +121,7 @@ act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_
     mut cc = "gcc"
     mut debug_mode: bool = false
     mut release_mode: bool = false
+    mut unsafe_heap: bool = false
     mut opt_level = ""
     mut linker_sb = create_sb(256)
     mut i: i32 = 2
@@ -131,6 +139,8 @@ act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_
             debug_mode = true
         } else if arg == "--release" {
             release_mode = true
+        } else if arg == "--unsafe-heap" {
+            unsafe_heap = true
         } else if arg == "-O" and i + 1 < argc {
             opt_level = argv[i + 1]
             i += 1
@@ -154,7 +164,7 @@ act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_
             sb_append_str(@linker_sb, "-L")
             let raw_arg = copy_slice_to_string(arg, 2, str.len(arg) - 2)
             sb_append_str(@linker_sb, quote_path(path_to_native_str(raw_arg)))
-        } else if arg != "--unsafe-shelf-index" and arg != "--unsafe-array-index" and arg != "--unsafe-index" and arg != "--no-line-directives" and arg != "--strict-safety" and str.len(source_file) == 0 {
+        } else if arg != "--unsafe-shelf-index" and arg != "--unsafe-array-index" and arg != "--unsafe-index" and arg != "--unsafe-heap" and arg != "--no-line-directives" and arg != "--strict-safety" and str.len(source_file) == 0 {
             source_file = arg
         }
         i += 1
@@ -171,7 +181,11 @@ act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_
         println_str("[Velo Error] Cannot specify both --debug and --release")
         return 1
     }
-    let opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level)
+    mut opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level)
+    if unsafe_heap {
+        mut u_sb = create_sb(str.len(opt_flags) + 32)
+        sb_append_str(@u_sb, opt_flags); sb_append_str(@u_sb, " -DVELO_UNSAFE_HEAP"); opt_flags = sb_to_string(@u_sb)
+    }
     let linker_flags = sb_to_string(@linker_sb)
     mut ok = false
     zone {

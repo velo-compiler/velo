@@ -1389,6 +1389,7 @@ static inline const char* velo_host_exe_path(void) {
 #endif
 
 #define VELO_HEAP_MAGIC 0x56454C4F48454150ULL
+#define VELO_HEAP_FREED_MAGIC 0x56454C4F46524545ULL
 
 static size_t g_velo_heap_active = 0;
 
@@ -1431,13 +1432,40 @@ static inline void* velo_heap_alloc(size_t size, size_t count) {
 
 static inline void velo_heap_free(void* ptr) {
     if (!ptr) return;
-    if (velo_is_in_zone(ptr)) return;
+    if (velo_is_in_zone(ptr)) {
+#ifndef VELO_UNSAFE_HEAP
+        fprintf(stderr, "Velo Fatal Error: mem.free called with non-heap pointer (pointer is in zone arena)!\n");
+        exit(1);
+#else
+        return;
+#endif
+    }
+    if ((uintptr_t)ptr < 4096 || ((uintptr_t)ptr & 7) != 0) {
+#ifndef VELO_UNSAFE_HEAP
+        fprintf(stderr, "Velo Fatal Error: mem.free called with invalid pointer (not a valid heap allocation)!\n");
+        exit(1);
+#else
+        return;
+#endif
+    }
     size_t header_size = (sizeof(size_t) + 15) & ~((size_t)15);
     uint8_t* raw = ((uint8_t*)ptr) - header_size;
-    if (*((uint64_t*)(raw + sizeof(size_t))) != VELO_HEAP_MAGIC) {
+    uint64_t magic = *((uint64_t*)(raw + sizeof(size_t)));
+#ifndef VELO_UNSAFE_HEAP
+    if (magic == VELO_HEAP_FREED_MAGIC || magic == 0) {
+        fprintf(stderr, "Velo Fatal Error: mem.free called on already-freed pointer (double free)!\n");
+        exit(1);
+    }
+    if (magic != VELO_HEAP_MAGIC) {
+        fprintf(stderr, "Velo Fatal Error: mem.free called with invalid pointer (not a valid heap allocation)!\n");
+        exit(1);
+    }
+#else
+    if (magic != VELO_HEAP_MAGIC) {
         return;
     }
-    *((uint64_t*)(raw + sizeof(size_t))) = 0;
+#endif
+    *((uint64_t*)(raw + sizeof(size_t))) = VELO_HEAP_FREED_MAGIC;
     size_t total = *((size_t*)raw);
     size_t prev = VELO_ATOMIC_ADD64(&g_velo_heap_active, -(long long)total);
     if (prev < total) {
@@ -1514,11 +1542,39 @@ static inline void* velo_heap_realloc(void* ptr, size_t size, long long count) {
         exit(1);
     }
     if (!ptr) return velo_heap_alloc(size, (size_t)count);
+    if (velo_is_in_zone(ptr)) {
+#ifndef VELO_UNSAFE_HEAP
+        fprintf(stderr, "Velo Fatal Error: mem.realloc called with non-heap pointer (pointer is in zone arena)!\n");
+        exit(1);
+#else
+        return NULL;
+#endif
+    }
+    if ((uintptr_t)ptr < 4096 || ((uintptr_t)ptr & 7) != 0) {
+#ifndef VELO_UNSAFE_HEAP
+        fprintf(stderr, "Velo Fatal Error: mem.realloc called with invalid pointer (not a valid heap allocation)!\n");
+        exit(1);
+#else
+        return NULL;
+#endif
+    }
     size_t header_size = (sizeof(size_t) + 15) & ~((size_t)15);
     uint8_t* raw = ((uint8_t*)ptr) - header_size;
-    if (*((uint64_t*)(raw + sizeof(size_t))) != VELO_HEAP_MAGIC) {
+    uint64_t magic = *((uint64_t*)(raw + sizeof(size_t)));
+#ifndef VELO_UNSAFE_HEAP
+    if (magic == VELO_HEAP_FREED_MAGIC || magic == 0) {
+        fprintf(stderr, "Velo Fatal Error: mem.realloc called on already-freed pointer!\n");
+        exit(1);
+    }
+    if (magic != VELO_HEAP_MAGIC) {
+        fprintf(stderr, "Velo Fatal Error: mem.realloc called with invalid pointer (not a valid heap allocation)!\n");
+        exit(1);
+    }
+#else
+    if (magic != VELO_HEAP_MAGIC) {
         return NULL;
     }
+#endif
     size_t old_total = *((size_t*)raw);
     size_t new_total = velo_check_alloc_size(size, (size_t)count);
     if (new_total == 0) {

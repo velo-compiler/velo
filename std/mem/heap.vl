@@ -8,10 +8,13 @@ use "ops.vl"
 data HeapHeader {
     size: usize
     is_free: bool
+    magic: usize
     next: @HeapHeader
 }
 
 let HEAP_HEADER_SIZE: usize = 32
+let HEAP_MAGIC: usize = 0x56454C4F48454150
+let HEAP_FREED_MAGIC: usize = 0x56454C4F46524545
 
 mut g_heap_first: @HeapHeader = null
 mut g_heap_total_capacity: usize = 0
@@ -33,6 +36,7 @@ act heap_init(initial_bytes: usize) {
     let h: @HeapHeader = raw as @HeapHeader
     h.size = cap - HEAP_HEADER_SIZE
     h.is_free = true
+    h.magic = HEAP_MAGIC
     h.next = null
 
     g_heap_first = h
@@ -65,12 +69,14 @@ act heap_alloc(size: usize) -> @u8 {
                 let new_block: @HeapHeader = split_addr as @HeapHeader
                 new_block.size = cur.size - needed - HEAP_HEADER_SIZE
                 new_block.is_free = true
+                new_block.magic = HEAP_MAGIC
                 new_block.next = cur.next
 
                 cur.next = new_block
                 cur.size = needed
             }
             cur.is_free = false
+            cur.magic = HEAP_MAGIC
             g_heap_allocated_bytes += cur.size
             return ((cur as usize) + HEAP_HEADER_SIZE) as @u8
         }
@@ -89,6 +95,7 @@ act heap_alloc(size: usize) -> @u8 {
     let new_h: @HeapHeader = new_chunk as @HeapHeader
     new_h.size = chunk_size - HEAP_HEADER_SIZE
     new_h.is_free = true
+    new_h.magic = HEAP_MAGIC
     new_h.next = g_heap_first
     g_heap_first = new_h
     g_heap_total_capacity += chunk_size
@@ -99,12 +106,14 @@ act heap_alloc(size: usize) -> @u8 {
         let new_block: @HeapHeader = split_addr as @HeapHeader
         new_block.size = new_h.size - needed - HEAP_HEADER_SIZE
         new_block.is_free = true
+        new_block.magic = HEAP_MAGIC
         new_block.next = new_h.next
 
         new_h.next = new_block
         new_h.size = needed
     }
     new_h.is_free = false
+    new_h.magic = HEAP_MAGIC
     g_heap_allocated_bytes += new_h.size
     return ((new_h as usize) + HEAP_HEADER_SIZE) as @u8
 }
@@ -115,9 +124,13 @@ act heap_free(ptr: @u8) {
         return
     }
     let h: @HeapHeader = ((ptr as usize) - HEAP_HEADER_SIZE) as @HeapHeader
-    if h.is_free {
+    if h.magic == HEAP_FREED_MAGIC or h.is_free {
         return // double free guard
     }
+    if h.magic != HEAP_MAGIC {
+        return // invalid pointer guard
+    }
+    h.magic = HEAP_FREED_MAGIC
     h.is_free = true
     if g_heap_allocated_bytes >= h.size {
         g_heap_allocated_bytes -= h.size
@@ -160,6 +173,9 @@ act heap_realloc(ptr: @u8, new_size: usize) -> @u8 {
     }
 
     let h: @HeapHeader = ((ptr as usize) - HEAP_HEADER_SIZE) as @HeapHeader
+    if h.magic != HEAP_MAGIC {
+        return null
+    }
     let mask: usize = 7
     let needed: usize = (new_size + mask) & ~mask
 
