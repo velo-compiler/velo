@@ -2211,9 +2211,28 @@ documented as a deliberate limitation.
 
 ## Tasks
 
-**77.1** Document the four absences in a new `docs/SPECIFICATION.md` section
+**77.1 [COMPLETED] ✅** Document the four absences in a new `docs/SPECIFICATION.md` section
 "Deliberate Limitations" with workarounds. This is a one-commit, high-value
 task: it converts "unfinished" into "chosen", which is a legitimate position.
+
+- *Former Defect:*
+  `docs/SPECIFICATION.md` was silent on the absence of closures, dynamic interfaces/vtables, module privacy, and conditional compilation. Ordinary programs encountering these gaps had no documented guidance or architectural explanation, leaving users to assume these features were accidental omissions rather than deliberate design decisions. Silence violated Security Invariant I77.1 ("A missing language feature is documented in docs/SPECIFICATION.md under 'Deliberate limitations' with the workaround and the cost. Silence is not allowed.").
+- *Fix Applied:*
+  - Added Section 11: "Deliberate Limitations & Workarounds" to `docs/SPECIFICATION.md`:
+    - §11.1 Closures and Environment Capture: documents absence, architectural rationale (preserving explicit region/zone memory model without hidden heap or reference counting), associated costs, and official workaround (bare function pointer with typed context struct `@Context`).
+    - §11.2 Dynamic Interfaces, Traits, and Vtables: documents absence, architectural rationale (zero runtime indirection / cache efficiency via monomorphization), associated costs, and official workarounds (monomorphized generics and manual dispatch tables / tagged unions).
+    - §11.3 Module Privacy and Export Control: documents absence, rationale, costs, and official workarounds (underscore prefixing and subdirectory isolation) prior to the `pub` keyword in Task 77.4.
+    - §11.4 Preprocessor Directives and Conditional Compilation: documents absence, rationale (deterministic single-pass AST without preprocessor macro state), costs, and official workarounds (driver platform file suffixes and constant-folded runtime platform checks).
+    - §11.5 Import Aliasing and Selective Imports: documents absence, costs, and workarounds prior to Task 77.5.
+    - §11.6 Expression Defer: documents block requirement, costs, and single-expression workaround prior to Task 77.6.
+  - Added automated audit test suite `tests/test_deliberate_limitations.py` (7 tests) in the fast lane asserting that Section 11 exists and covers all four core absences, their rationales, costs, and workarounds with code examples.
+  - Hardened platform portability in `tests/test_std_https.py`, `tests/test_std_tls.py`, and `tests/test_heap_provenance.py` using `conftest.velo_exe()` and pinning `encoding="utf-8"`.
+- *Residual Limitation (if any):*
+  As syntax features are chosen and implemented across Tasks 77.2–77.6, Section 11 will be updated to reflect the new syntax capabilities and their updated contracts.
+- *Verification:*
+  - `python -m pytest tests/test_deliberate_limitations.py -v`: 7 passed in 0.02s.
+  - `python -m pytest tests -q -m fast`: 46 passed, 1 xfailed in 3.00s.
+  - `python -m pytest tests/test_platform_portability.py -v`: 12 passed in 0.53s.
 
 **77.2** Decide on closures. Either (a) implement non-escaping closures
 (bare function pointers + stack context, rejected by the escape checker when

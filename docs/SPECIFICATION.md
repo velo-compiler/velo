@@ -1473,3 +1473,116 @@ act main() {
 }
 ```
 
+---
+
+## 11. Deliberate Limitations & Workarounds
+
+To maintain a predictable, zero-overhead systems runtime, fast compilation speeds, and a sound static type system, Velo intentionally omits several features common in high-level garbage-collected languages or complex multi-pass compilers. This section documents these deliberate absences, their architectural rationale, their associated costs, and the official, idiomatic workarounds (Security Invariant I77.1).
+
+### 11.1 Closures and Environment Capture
+
+* **Absence:** Velo functions (`act`) and function pointers do not support anonymous lexical closures that implicitly capture variables from enclosing scopes.
+* **Architectural Rationale:** Silent heap allocation of closure environments or hidden reference counting directly undermines Velo's explicit region/zone-based memory model. Stack-capturing closures introduce risks of use-after-free and dangling pointers if escaped across lifetimes without complex borrow analysis.
+* **The Cost:** Higher-order functions, event listeners, and asynchronous callbacks cannot capture local state implicitly.
+* **Official Workaround:** Bare function pointers with an explicit context pointer (`user_data: @void` or a typed context struct pointer `@Context`).
+
+```velo
+data TimerContext {
+    ticks: i32
+    label: string
+}
+
+act on_timer_tick(ctx: @TimerContext) {
+    ctx.ticks += 1
+    io.println("[{ctx.label}] tick {ctx.ticks}")
+}
+
+act register_timer(ctx: @TimerContext, callback: act(@TimerContext) -> void) {
+    callback(ctx)
+}
+```
+
+> [!NOTE]
+> Non-escaping stack-frame closures or a standard `bind()` helper will be formalized in Task 77.2 as a first-class language/library mechanism without violating zone escape invariants.
+
+### 11.2 Dynamic Interfaces, Traits, and Vtables
+
+* **Absence:** Velo does not provide runtime dynamic dispatch, interface pointers, or trait objects with hidden virtual method tables (vtables).
+* **Architectural Rationale:** Vtable pointer indirection incurs runtime penalties (cache misses, indirect branch mispredictions) and complicates binary ABI layout. All generic code in Velo is monomorphized at compile time for maximum performance and zero runtime indirection.
+* **The Cost:** Heterogeneous collections of different types sharing an interface cannot be stored in a single flat array without a tagged union or manual vtable struct.
+* **Official Workaround:**
+  1. **Compile-Time Polymorphism:** Use monomorphized generics (`T`) for compile-time polymorphism.
+  2. **Runtime Polymorphism:** Use tagged unions (`enum` or `data` with `kind` discriminant + `match`) or explicit struct-based function pointer tables (first-class vtables).
+
+```velo
+// 1. Compile-time generic polymorphism (monomorphized, zero overhead)
+act print_value[T](val: T) {
+    io.println(val)
+}
+
+// 2. Explicit runtime polymorphism via manual dispatch table
+data WriterVTable {
+    write: act(ctx: @void, bytes: @u8, len: usize) -> usize
+    flush: act(ctx: @void) -> bool
+}
+
+data AnyWriter {
+    ctx: @void
+    vtable: @WriterVTable
+}
+```
+
+> [!NOTE]
+> Static compile-time contracts (`contract Name { ... }`) checked during generic monomorphization with zero runtime vtable overhead will be introduced in Task 77.3.
+
+### 11.3 Module Privacy and Export Control
+
+* **Absence:** Prior to Task 77.4, all top-level functions (`act`), data structures (`data`), and constants in an imported file are visible to any importing module.
+* **Architectural Rationale:** Avoided access-control overhead and complex visibility graph tracking during the compiler's initial bootstrap phases.
+* **The Cost:** Internal helper functions and implementation details cannot be hidden from consumers at compile time; accidental dependencies on internal symbols can occur.
+* **Official Workaround:**
+  1. Follow naming conventions: prefix private helper functions and structs with an underscore `_` (e.g. `_helper_parse_token()`).
+  2. Isolate internal subsystems in dedicated `internal/` subdirectories.
+
+> [!NOTE]
+> Explicit module privacy via the `pub` keyword (`pub act`, `pub data`) will be introduced in Task 77.4, making unmarked declarations private to their file by default.
+
+### 11.4 Preprocessor Directives and Conditional Compilation
+
+* **Absence:** Velo contains no `#if`, `#ifdef`, `#define`, or preprocessor macro subsystem.
+* **Architectural Rationale:** Preprocessor macros create non-deterministic ASTs, obscure source code semantics, degrade syntax highlighting and IDE/LSP navigation, and prevent single-pass compilation. Velo source code is always syntactically and semantically unambiguous.
+* **The Cost:** Code paths for different platforms or configurations cannot be interleaved line-by-line within the same function or file.
+* **Official Workaround:**
+  1. **Platform-Suffixed Files:** Use the build driver's platform resolution suffix: `_windows.vl`, `_linux.vl`, `_macos.vl`, and `_posix.vl`. The driver selects the matching file at compile time without preprocessing.
+  2. **Runtime Platform Checks:** Use standard library platform helpers: `os_is_windows()`, `os_platform_name()`. The compiler optimizes constant-folded branches during code generation.
+
+```velo
+// Clean cross-platform abstraction via runtime query
+if os_is_windows() {
+    // Windows branch
+} else {
+    // POSIX branch
+}
+```
+
+### 11.5 Import Aliasing and Selective Imports
+
+* **Absence:** Prior to Task 77.5, imports are whole-module declarations (`use path.to.module`) without symbol renaming or selective import braces.
+* **Architectural Rationale:** Simple flat import graphs and straightforward symbol lookup during early compiler design.
+* **The Cost:** Potential symbol collisions when two imported modules define symbols with identical names.
+* **Official Workaround:** Qualify module references through dedicated namespace prefixes in symbol names, or refactor colliding declarations into separate wrapper files.
+
+> [!NOTE]
+> Import aliasing (`use std.json as j`) and selective importing (`use std.json { JsonValue, json_parse }`) will be introduced in Task 77.5.
+
+### 11.6 Expression Defer
+
+* **Absence:** Prior to Task 77.6, the `defer` statement requires a block body (`defer { ... }`), even for single function calls.
+* **Architectural Rationale:** Phase 58/69 established block-scoped defer semantics with explicit scope boundaries.
+* **The Cost:** Extra syntax ceremony for simple cleanup actions like closing a file handle.
+* **Official Workaround:** Wrap single statements in curly braces: `defer { fs_close(file) }`.
+
+> [!NOTE]
+> Single-expression defer (`defer fs_close(file)`) will be introduced in Task 77.6.
+
+

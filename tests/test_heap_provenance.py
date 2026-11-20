@@ -282,7 +282,7 @@ act main() {
     exe_out = tmp_path / "unsafe_build.exe"
     res_build = run_velo(["build", "--unsafe-heap", str(src), "-o", str(exe_out)])
     assert res_build.returncode == 0, f"build failed: {res_build.stderr}"
-    res_built_exe = subprocess.run([str(exe_out)], capture_output=True, text=True, timeout=30)
+    res_built_exe = subprocess.run([str(exe_out)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
     assert res_built_exe.returncode == 0
     assert "val=77" in res_built_exe.stdout
     assert "freed cleanly" in res_built_exe.stdout

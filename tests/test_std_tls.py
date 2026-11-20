@@ -13,7 +13,8 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
 REPO_ROOT = Path(__file__).parent.parent
-VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
+from conftest import velo_exe
+VELO_EXE = velo_exe()
 
 def generate_ed25519_cert(common_name="localhost", san_dns=None):
     priv = ed25519.Ed25519PrivateKey.generate()
@@ -123,7 +124,7 @@ def test_tls_positive_handshake_and_echo():
     client_vl.write_text(client_code, encoding="utf-8")
 
     try:
-        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=15)
+        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT), timeout=15)
         t.join(timeout=5)
         assert res.returncode == 0, f"Client exited with {res.returncode}:\n{res.stdout}\n{res.stderr}"
         assert "REPLY: PONG_TLS13" in res.stdout, f"Unexpected output:\n{res.stdout}"
@@ -189,7 +190,7 @@ def test_tls_negative_untrusted_peer():
     client_vl.write_text(client_code, encoding="utf-8")
 
     try:
-        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=15)
+        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT), timeout=15)
         t.join(timeout=5)
         assert res.returncode == 0, f"Client exited with {res.returncode}:\n{res.stdout}\n{res.stderr}"
         assert "EXPECTED_ERR: TlsUntrustedPeer" in res.stdout, f"Unexpected output:\n{res.stdout}"
@@ -253,7 +254,7 @@ def test_tls_negative_hostname_mismatch():
     client_vl.write_text(client_code, encoding="utf-8")
 
     try:
-        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=15)
+        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT), timeout=15)
         t.join(timeout=5)
         assert res.returncode == 0, f"Client exited with {res.returncode}:\n{res.stdout}\n{res.stderr}"
         assert "EXPECTED_ERR: TlsHostnameMismatch" in res.stdout, f"Unexpected output:\n{res.stdout}"
@@ -353,7 +354,7 @@ def test_tls_negative_tampered_record():
     client_vl.write_text(client_code, encoding="utf-8")
 
     try:
-        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=15)
+        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT), timeout=15)
         t_srv.join(timeout=5)
         t_proxy.join(timeout=5)
         assert res.returncode == 0, f"Client exited with {res.returncode}:\n{res.stdout}\n{res.stderr}"

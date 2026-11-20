@@ -13,7 +13,8 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import ed25519
 
 REPO_ROOT = Path(__file__).parent.parent
-VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
+from conftest import velo_exe
+VELO_EXE = velo_exe()
 
 def generate_ed25519_cert(common_name="localhost", san_dns=None):
     priv = ed25519.Ed25519PrivateKey.generate()
@@ -116,7 +117,7 @@ def test_https_get_success_pinned_cert():
     client_vl.write_text(client_code, encoding="utf-8")
 
     try:
-        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=15)
+        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT), timeout=15)
         t.join(timeout=5)
         assert res.returncode == 0, f"Client exited with {res.returncode}:\n{res.stdout}\n{res.stderr}"
         assert "OK_GET_SUCCESS" in res.stdout
@@ -179,7 +180,7 @@ def test_https_get_fails_untrusted_peer():
     client_vl.write_text(client_code, encoding="utf-8")
 
     try:
-        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=15)
+        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT), timeout=15)
         t.join(timeout=5)
         assert res.returncode == 0, f"Client exited with {res.returncode}:\n{res.stdout}\n{res.stderr}"
         assert "OK_UNTRUSTED_FAIL_CLOSED" in res.stdout
@@ -245,7 +246,7 @@ def test_https_get_fails_hostname_mismatch():
     client_vl.write_text(client_code, encoding="utf-8")
 
     try:
-        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=15)
+        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT), timeout=15)
         t.join(timeout=5)
         assert res.returncode == 0, f"Client exited with {res.returncode}:\n{res.stdout}\n{res.stderr}"
         assert "OK_HOSTNAME_FAIL_CLOSED" in res.stdout
@@ -325,7 +326,7 @@ def test_https_post_success_pinned_cert():
     client_vl.write_text(client_code, encoding="utf-8")
 
     try:
-        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=15)
+        res = subprocess.run([str(VELO_EXE), "run", str(client_vl)], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(REPO_ROOT), timeout=15)
         t.join(timeout=5)
         assert res.returncode == 0, f"Client exited with {res.returncode}:\n{res.stdout}\n{res.stderr}"
         assert "OK_POST_SUCCESS" in res.stdout
