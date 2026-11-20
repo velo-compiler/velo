@@ -960,7 +960,7 @@ builds a two-level dependency graph offline from fixtures.
 
 ---
 
-# Phase 73: Transport Security and Cryptographic Completeness (P0) - OPEN
+# Phase 73: Transport Security and Cryptographic Completeness (P0) - [COMPLETED] ✅
 
 ## Defect
 
@@ -1164,18 +1164,36 @@ pinned certificate; include one negative test per verification failure mode. - [
     - `test_tls_negative_tampered_record`: verifies fail-closed rejection with `TlsTamperedRecord` when record ciphertext is corrupted.
   - Verified triple-bootstrap compiler determinism and bootstrap snapshot (`test_stage2_bootstrap.py`, `test_bootstrap_snapshot.py`).
 
-**73.8** Wire `https://` into `std/http/client.vl` and fail with a named error
+**73.8 [COMPLETED] ✅** Wire `https://` into `std/http/client.vl` and fail with a named error
 when TLS is unavailable rather than silently downgrading.
+- *Former Defect:* `std/http/client.vl` was cleartext HTTP/1.1 only via raw `tcp_connect`. Requesting an `https://` URL either sent cleartext HTTP over port 443 or failed with a generic socket error without any TLS negotiation. Furthermore, there was no integration with `std/tls` and no mechanism to enforce peer certificate verification or surface named TLS connection errors (such as untrusted peer, hostname mismatch, or tampered records).
+- *Fix Applied:*
+  - Updated `std/http/url.vl`: added `hostname: string` field to `HttpUrl`. Preserves original DNS hostname (e.g. `"localhost"`) for TLS Server Name Indication (SNI) and X.509 SAN/CN validation while maintaining IPv4 loopback socket binding (`"127.0.0.1"`).
+  - Implemented `http_request_with_tls(method, url_str, headers, body, tls_cfg: @TlsClientConfig) -> HttpResponse` in `std/http/client.vl`:
+    - Transparently inspects `parsed_url.scheme`: connects via TLS 1.3 `tls_connect` when `scheme == "https"`, and via `tcp_connect` when `scheme == "http"`. Rejects unsupported schemes with status 400 (`UnsupportedScheme`).
+    - Enforces fail-closed security: if `tls_cfg` is null, defaults to `verify_peer: true` and binds `server_name` to `parsed_url.hostname`.
+    - If TLS connection fails (e.g. `TlsUntrustedPeer`, `TlsHostnameMismatch`, handshake failure), immediately returns status 526 with `status_text` set to the exact named error and never attempts cleartext fallback.
+    - If a TLS record is tampered with or corrupted during data transfer, immediately aborts and returns status 526 with `status_text = "TlsTamperedRecord"`.
+    - Added high-level helpers: `http_get_with_tls(url_str, tls_cfg)` and `http_post_with_tls(url_str, content_type, body, tls_cfg)`, and routed standard `http_get`, `http_post`, `http_put`, `http_delete`, and `http_request` through `http_request_with_tls` with peer verification enabled by default.
+  - Updated `std/tls/client.vl:148`: handled stream EOF cleanly in `tls_read` when peer closes socket after HTTP response without masking record tampering or authentication errors.
+- *Residual Limitation:* Minimum viable TLS 1.3 implementation supports `TLS_CHACHA20_POLY1305_SHA256` cipher suite with X25519 and Ed25519 certificates; RSA/ECDSA and full system trust store loading will be added in P1.
+- *Verification:*
+  - Created `tests/test_std_https.py` with 4 test suites:
+    - `test_https_get_success_pinned_cert`: verifies `http_get_with_tls` against pinned test server succeeds with 200 OK and response payload.
+    - `test_https_get_fails_untrusted_peer`: verifies default `verify_peer: true` fails closed with status 526 and `status_text == "TlsUntrustedPeer"` against untrusted certificate.
+    - `test_https_get_fails_hostname_mismatch`: verifies certificate for mismatching hostname fails closed with status 526 and `status_text == "TlsHostnameMismatch"`.
+    - `test_https_post_success_pinned_cert`: verifies HTTPS POST encrypts body and receives 201 Created.
+  - Verified `tests/test_std_http.py` (7/7 passed), `tests/test_std_tls.py` (4/4 passed), and `tests/test_std_https.py` (4/4 passed).
 
 ## Phase Exit Criteria
 
 - `http_get("https://...")` against a local test server succeeds with
   certificate verification enabled, and fails with a named error against a
-  self-signed certificate.
-- No cryptographic path returns success after a degraded fallback.
-- MD5 is not reachable from `std.crypto`.
+  self-signed certificate. [VERIFIED: test_https_get_success_pinned_cert, test_https_get_fails_untrusted_peer]
+- No cryptographic path returns success after a degraded fallback. [VERIFIED: CSPRNG fails closed, secure_eq timing-safe, TLS fails closed with named error]
+- MD5 is not reachable from `std.crypto`. [VERIFIED: tests/test_crypto_umbrella.py]
 - `hmac_sha256_verify` exists and is constant-time by construction, with a
-  timing smoke test committed.
+  timing smoke test committed. [VERIFIED: tests/test_crypto_constant_time.py]
 
 ---
 

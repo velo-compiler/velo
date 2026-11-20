@@ -1,21 +1,56 @@
-// std.http.client — Synchronous HTTP/1.1 client built on std.net.tcp.
+// std.http.client — Synchronous HTTP/1.1 client built on std.net.tcp and std.tls.
 use "../net/tcp.vl"
+use "../tls.vl"
 use "url.vl"
 use "headers.vl"
 use "request.vl"
 use "response.vl"
 use "../mem/heap.vl"
 
-// Sends an HTTP request and waits for the server's response.
-act http_request(method: string, url_str: string, headers: @HttpHeaderMap, body: string) -> HttpResponse {
+// Sends an HTTP request with optional TLS configuration for https:// URLs.
+act http_request_with_tls(method: string, url_str: string, headers: @HttpHeaderMap, body: string, tls_cfg: @TlsClientConfig) -> HttpResponse {
     let parsed_url = http_parse_url(url_str)
-    mut stream = tcp_connect(parsed_url.host, parsed_url.port)
-    if stream == null {
-        return http_response_make(503 as u16, "Failed to connect to host")
+    let is_https = (parsed_url.scheme == "https")
+    if !is_https and parsed_url.scheme != "http" {
+        mut bad_scheme = http_response_make(400 as u16, "Unsupported URL Scheme")
+        bad_scheme.status_text = "UnsupportedScheme"
+        return bad_scheme
     }
 
-    // Set connection timeout to 5 seconds
-    tcp_set_timeout(stream, 5000 as u32)
+    mut tcp_stream: @TcpStream = null
+    mut tls_sock: @TlsSocket = null
+
+    if is_https {
+        mut cfg = tls_cfg
+        mut created_default = false
+        if cfg == null {
+            cfg = tls_config_new()
+            cfg.verify_peer = true
+            cfg.server_name = parsed_url.hostname
+            created_default = true
+        } else if str.len(cfg.server_name) == 0 {
+            cfg.server_name = parsed_url.hostname
+        }
+
+        let c_res = tls_connect(parsed_url.host, parsed_url.port, cfg)
+        if !c_res.ok {
+            let err_reason = c_res.err
+            if created_default { heap_free(cfg as @void) }
+            mut err_resp = http_response_make(526 as u16, str.concat("TLS Connection Failed: ", err_reason))
+            err_resp.status_text = err_reason
+            return err_resp
+        }
+        tls_sock = c_res.val
+        if created_default { heap_free(cfg as @void) }
+    } else {
+        tcp_stream = tcp_connect(parsed_url.host, parsed_url.port)
+        if tcp_stream == null {
+            mut fail_resp = http_response_make(503 as u16, "Failed to connect to host")
+            fail_resp.status_text = "ConnectFailed"
+            return fail_resp
+        }
+        tcp_set_timeout(tcp_stream, 5000 as u32)
+    }
 
     // Assemble full request path including query string
     mut full_path = parsed_url.path
@@ -58,29 +93,56 @@ act http_request(method: string, url_str: string, headers: @HttpHeaderMap, body:
         headers_set(@req.headers, "Connection", "close")
     }
 
-    let wire_req = http_format_request(@req, parsed_url.host)
-    let sent = tcp_write_str(stream, wire_req)
+    let wire_req = http_format_request(@req, parsed_url.hostname)
+
+    mut sent = 0
+    if is_https {
+        let w_res = tls_write_str(tls_sock, wire_req)
+        if w_res.ok { sent = w_res.val } else { sent = -1 }
+    } else {
+        sent = tcp_write_str(tcp_stream, wire_req)
+    }
     heap_free(wire_req as @u8)
     http_request_free(@req)
 
     if sent <= 0 {
-        tcp_close(stream)
-        return http_response_make(500 as u16, "Failed to transmit request bytes")
+        if is_https { tls_close(tls_sock) } else { tcp_close(tcp_stream) }
+        mut tx_resp = http_response_make(500 as u16, "Failed to transmit request bytes")
+        tx_resp.status_text = "TransmitError"
+        return tx_resp
     }
 
     // Read full HTTP response until connection is closed by server
     mut resp_cap: usize = 16384
     mut resp_buf: @u8 = heap_alloc(resp_cap)
     if resp_buf == null {
-        tcp_close(stream)
-        return http_response_make(500 as u16, "Out of memory allocating response buffer")
+        if is_https { tls_close(tls_sock) } else { tcp_close(tcp_stream) }
+        mut oom_resp = http_response_make(500 as u16, "Out of memory allocating response buffer")
+        oom_resp.status_text = "OutOfMemory"
+        return oom_resp
     }
 
     mut total_read: usize = 0
     mut chunk_buf: @u8 = heap_alloc(4096)
 
     loop {
-        let n = tcp_read(stream, chunk_buf, 4096)
+        mut n = 0
+        if is_https {
+            let r_res = tls_read(tls_sock, chunk_buf, 4096)
+            if !r_res.ok {
+                let err_reason = r_res.err
+                heap_free(chunk_buf as @void)
+                heap_free(resp_buf as @void)
+                tls_close(tls_sock)
+                mut err_resp = http_response_make(526 as u16, str.concat("TLS Read Error: ", err_reason))
+                err_resp.status_text = err_reason
+                return err_resp
+            }
+            n = r_res.val
+        } else {
+            n = tcp_read(tcp_stream, chunk_buf, 4096)
+        }
+
         if n <= 0 {
             break
         }
@@ -105,7 +167,7 @@ act http_request(method: string, url_str: string, headers: @HttpHeaderMap, body:
     }
 
     heap_free(chunk_buf)
-    tcp_close(stream)
+    if is_https { tls_close(tls_sock) } else { tcp_close(tcp_stream) }
 
     resp_buf[total_read] = 0 as u8
     let resp = http_parse_response(resp_buf as string)
@@ -113,21 +175,36 @@ act http_request(method: string, url_str: string, headers: @HttpHeaderMap, body:
     return resp
 }
 
+// Sends an HTTP request and waits for the server's response.
+act http_request(method: string, url_str: string, headers: @HttpHeaderMap, body: string) -> HttpResponse {
+    return http_request_with_tls(method, url_str, headers, body, null)
+}
+
+// Executes an HTTP GET request to the specified URL with custom TLS configuration.
+act http_get_with_tls(url_str: string, tls_cfg: @TlsClientConfig) -> HttpResponse {
+    return http_request_with_tls("GET", url_str, null, "", tls_cfg)
+}
+
 // Executes an HTTP GET request to the specified URL.
 act http_get(url_str: string) -> HttpResponse {
     return http_request("GET", url_str, null, "")
 }
 
-// Executes an HTTP POST request with a payload and Content-Type header.
-act http_post(url_str: string, content_type: string, body: string) -> HttpResponse {
+// Executes an HTTP POST request with a payload and custom TLS configuration.
+act http_post_with_tls(url_str: string, content_type: string, body: string, tls_cfg: @TlsClientConfig) -> HttpResponse {
     mut h = HttpHeaderMap { headers: null, count: 0, cap: 0 }
     headers_init(@h, 2)
     if content_type != null and str.len(content_type) > 0 {
         headers_set(@h, "Content-Type", content_type)
     }
-    let res = http_request("POST", url_str, @h, body)
+    let res = http_request_with_tls("POST", url_str, @h, body, tls_cfg)
     headers_free(@h)
     return res
+}
+
+// Executes an HTTP POST request with a payload and Content-Type header.
+act http_post(url_str: string, content_type: string, body: string) -> HttpResponse {
+    return http_post_with_tls(url_str, content_type, body, null)
 }
 
 // Executes an HTTP PUT request with a payload and Content-Type header.

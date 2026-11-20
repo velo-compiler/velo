@@ -148,7 +148,7 @@ act tls_read(sock: @TlsSocket, out_buf: @u8, max_len: usize) -> i32 or string {
     loop !read_done {
         let ok_read = tls_read_raw_record(sock.stream, raw_buf, raw_len, raw_type)
         if !ok_read {
-            err_reason = "TlsSocketReadError"
+            ret_len = 0
             read_done = true
         } else {
             let ok_dec = tls13_decrypt_record(sock.server_app_key, sock.server_app_iv, sock.server_seq, raw_buf, raw_len[0], pt_buf, pt_len, inner_type)

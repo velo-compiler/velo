@@ -8,6 +8,7 @@ data HttpUrl {
     port: u16
     path: string
     query: string
+    hostname: string
 }
 
 // Parses an HTTP or HTTPS URL into its constituent components.
@@ -18,6 +19,7 @@ act http_parse_url(url_str: string) -> HttpUrl {
         port: 80 as u16,
         path: "/",
         query: "",
+        hostname: "127.0.0.1",
     }
     if url_str == null { return res }
     let len = str.len(url_str)
@@ -82,7 +84,9 @@ act http_parse_url(url_str: string) -> HttpUrl {
         j += 1
     }
 
-    res.host = url_substr(url_str, host_start, host_end - host_start)
+    let raw_host = url_substr(url_str, host_start, host_end - host_start)
+    res.hostname = raw_host
+    res.host = raw_host
     if res.host == "localhost" {
         res.host = "127.0.0.1"
     }
