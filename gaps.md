@@ -65,10 +65,10 @@ that core and a usable product.
 | **70** | POSIX / macOS Foundation Portability | P0 | **COMPLETED** | 8 | 8 |
 | **71** | Release Engineering and Legal Provenance | P0 | **COMPLETED** | 6 | 5 |
 | **72** | Package Ecosystem That Actually Fetches | P0 | yes | 7 | 7 |
-| **73** | Transport Security and Cryptographic Completeness | P0 | yes | 8 | 8 |
-| **74** | Undefined-Behavior Containment | P0 | yes | 7 | 7 |
+| **73** | Transport Security and Cryptographic Completeness | P0 | **COMPLETED** | 8 | 8 |
+| **74** | Undefined-Behavior Containment | P0 | **COMPLETED** | 7 | 7 |
 | **75** | Silent POSIX Process/IO Stubs | P0 | **COMPLETED** | 5 | 5 |
-| **76** | CI Reality and Platform Test Harness | P0 | yes | 6 | 6 |
+| **76** | CI Reality and Platform Test Harness | P0 | PARTIAL (76.1 blocked) | 6 | 6 |
 | **77** | Language Completeness | P1 | yes | 7 | 7 |
 | **78** | Standard Library Breadth | P1 | yes | 9 | 9 |
 | **79** | Tooling and Developer Experience | P1 | yes | 8 | 8 |
