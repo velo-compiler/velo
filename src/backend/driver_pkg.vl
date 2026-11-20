@@ -8,6 +8,7 @@ use "driver_cc.vl"
 use "driver.vl"
 use "pkg_lock.vl"
 use "pkg_install.vl"
+use "pkg_inspect.vl"
 
 // Parses common package command arguments (manifest path, --insecure, --registry).
 act parse_pkg_args(argc: i32, argv: @string, out_insecure: @bool, out_reg: @string) -> string {
@@ -91,6 +92,8 @@ act handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32 {
         println_str("  velo pkg lock [path]               Generate or update velo.lock with dependency hashes")
         println_str("  velo pkg install [path]            Install and verify dependencies against velo.lock")
         println_str("  velo pkg update [path]             Update dependencies and regenerate velo.lock")
+        println_str("  velo pkg tree [path]               Display dependency tree")
+        println_str("  velo pkg verify [path]             Verify dependencies and report drift (read-only)")
         println_str("  velo pkg build [path] [-o <bin>]   Build project defined by velo.pkg")
         println_str("  velo pkg run [path] [-- args...]   Build and run project defined by velo.pkg")
         return 0
@@ -209,6 +212,22 @@ act handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32 {
         }
         println_str("[Velo] Successfully updated velo.lock with {lock.count} dependencies.")
         return 0
+    }
+
+    if sub_cmd == "tree" {
+        mut m_path = "velo.pkg"
+        if argc > 3 {
+            m_path = argv[3]
+        }
+        return pkg_tree_run(resolve_manifest_path(m_path))
+    }
+
+    if sub_cmd == "verify" {
+        mut m_path = "velo.pkg"
+        if argc > 3 {
+            m_path = argv[3]
+        }
+        return pkg_verify_run(resolve_manifest_path(m_path))
     }
 
     if sub_cmd == "build" or sub_cmd == "run" {

@@ -1051,8 +1051,50 @@ executable is a hard error with an actionable message.
   - Determinism verified: Gen2 == Gen3 SHA-256 match (`81486c034ce1f5b2b7fa8b6030c8303c200ada6c002652280e6ebd1d10b75865`); `bootstrap.c` updated cleanly with zero raw Win32 socket symbols.
   - Line count verified: all compiler files $\le 400$ lines (`src/common/semver.vl` 279, `src/common/manifest_resolve.vl` 382, `src/backend/pkg_lock.vl` 298).
 
-**72.5** Add `velo pkg tree` and `velo pkg verify` (read-only: recompute hashes
-and report drift). `verify` is what CI calls.
+**72.5** [COMPLETED] ✅ Add `velo pkg tree` and `velo pkg verify` (read-only: recompute hashes and report drift). `verify` is what CI calls.
+- *Former Defect:* The package manager lacked read-only dependency inspection and automated drift verification. Developers had no command to visualize the project dependency tree or diagnose uninstalled/transitive dependencies, and CI workflows had no mechanism to verify that installed packages and local files match `velo.lock` without mutating lockfiles, writing to disk, or making network calls.
+- *Fix Applied:*
+  - Implemented `src/backend/pkg_inspect.vl`:
+    - `pkg_tree_run(manifest_path: string) -> i32`:
+      - Recursively traverses and renders the dependency tree of `velo.pkg` with standard tree box characters (`├── `, `└── `, `│   `).
+      - Resolves and displays installed concrete versions, dependency kinds (`registry`, `git`, `local`), and uninstalled indicators (`(not installed, ...)`).
+      - Recursively traverses nested and hoisted transitive dependencies (`velo.pkg` in child directories).
+      - Implements cycle detection with ancestry tracking to prevent infinite recursion on circular dependencies, marking cyclic edges with `(*)`.
+    - `pkg_verify_run(manifest_path: string) -> i32`:
+      - Strictly read-only audit command designed for CI verification: never writes to `velo.lock`, never downloads archives, and never clones repositories.
+      - Requires `velo.lock` to exist if dependencies are declared.
+      - Recomputes cryptographic SHA-256 hashes for all dependencies and verifies bidirectional consistency between `velo.pkg` and `velo.lock`.
+      - Detects and reports all forms of drift with `[Velo Error] Drift detected: ...`:
+        - Manifest dependency missing from lockfile.
+        - Dependency directory missing on disk (not installed).
+        - File content tampering or corruption (checksum mismatch, Security Invariant I72.4).
+        - Extra/stale lockfile entries not declared in manifest.
+        - Semantic version requirement drift (locked version failing to satisfy updated manifest semver range).
+        - Git tag mismatches.
+      - Returns exit code 0 when zero drift is detected (`[Velo] All <N> dependencies match velo.lock with zero drift.`); exits code 1 if any drift is found.
+  - Updated `src/backend/driver_pkg.vl` and `src/cli_cmd.vl` adding `tree` and `verify` CLI subcommands and help documentation.
+  - Fixed `parse_manifest_pkg` in `src/common/manifest.vl` to properly retain `m.pkg.name` when specified inside `pkg { name: "..." }` block, and added `registry` keyword support in `parse_manifest_deps`.
+- *Residual Limitation:* Creating package tarballs and generating registry index entries (`velo pkg publish`) will be implemented in Task 72.6.
+- *Verification:*
+  - Created automated test suite `tests/test_pkg_tree_verify.py` with 13 test cases:
+    - `test_pkg_tree_single_package_no_deps`: verifies tree output on standalone package with 0 dependencies.
+    - `test_pkg_tree_with_installed_dependencies`: verifies tree branches with local and git dependencies.
+    - `test_pkg_tree_shows_not_installed_status`: asserts `(not installed)` marker for missing dependencies.
+    - `test_pkg_tree_transitive_multi_level`: verifies nested 2-level dependency tree rendering.
+    - `test_pkg_tree_cycle_detection`: verifies cycle prevention and `(*)` marker on circular dependencies.
+    - `test_pkg_verify_success_clean_state`: asserts exit code 0 and zero drift confirmation on verified dependencies.
+    - `test_pkg_verify_missing_lockfile_fails`: asserts fail-closed exit 1 when `velo.lock` is missing.
+    - `test_pkg_verify_detects_uninstalled_dependency_drift`: asserts drift detection when dependency folder is missing.
+    - `test_pkg_verify_detects_tampered_content_hash_drift`: asserts drift detection with expected and actual SHA-256 hashes when files are modified.
+    - `test_pkg_verify_detects_missing_lock_entry_drift`: asserts drift detection when new dependency is added without lock.
+    - `test_pkg_verify_detects_extra_lock_entry_drift`: asserts drift detection when orphan entry remains in lockfile.
+    - `test_pkg_verify_detects_version_requirement_drift`: asserts drift detection when manifest semver requirement is changed without updating lock.
+    - `test_pkg_verify_is_strictly_read_only`: asserts that file contents and timestamps remain byte-for-byte identical across multiple `verify` runs.
+  - All 13 tests in `tests/test_pkg_tree_verify.py` passed in 1.61s.
+  - Full package test suite (52 tests across `test_pkg_tree_verify.py`, `test_pkg_semver.py`, `test_pkg_install_fetches.py`, `test_pkg_security.py`, `test_pkg_registry.py`, `test_pkg_resolve.py`) passed in 153.11s.
+  - `tests/test_bootstrap_snapshot.py` passed (6/6).
+  - Determinism verified: Gen2 == Gen3 SHA-256 match (`6b099ad6f454ac592f7c00fb4d0ce2947adba5f6f8d1705985dc31e068a4923b`); `bootstrap.c` updated cleanly with zero raw Win32 socket symbols.
+  - Line count verified: all compiler files $\le 400$ lines (`src/backend/pkg_inspect.vl`: 290, `src/backend/driver_pkg.vl`: 385, `src/common/manifest.vl`: 317).
 
 **72.6** Add `velo pkg publish` that tars the manifest's declared `src/` and
 `std/` subsets, computes the hash, and prints the index entry to paste. No

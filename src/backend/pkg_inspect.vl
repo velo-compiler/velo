@@ -1,0 +1,290 @@
+// Package Inspection Commands: 'velo pkg tree' and 'velo pkg verify' (Phase 72 / Task 72.5).
+// 'tree' displays the dependency tree recursively.
+// 'verify' is a read-only audit command (used by CI) that recomputes hashes and reports all drift.
+use std.io
+use std.fs
+use std.mem
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "../common/manifest.vl"
+use "../common/semver.vl"
+use "pkg_lock.vl"
+
+// Resolves disk directory path for a dependency.
+act resolve_dep_disk_path(m_dir: string, dep: @DependencySpec) -> string {
+    if dep.kind == "local" {
+        if str.starts_with(dep.source, "/") or (str.len(dep.source) > 2 and dep.source[1] == ':') {
+            return dep.source
+        }
+        return path_join_str(m_dir, dep.source)
+    }
+    mut deps_dir = ".velo_cache/deps"
+    if m_dir != null and str.len(m_dir) > 0 and m_dir != "." {
+        deps_dir = path_join_str(m_dir, ".velo_cache/deps")
+    }
+    return path_join_str(deps_dir, dep.name)
+}
+
+// Recursively prints the dependency tree for a package manifest.
+act print_dep_tree(root_dir: string, pkg_dir: string, cur_manifest: @PackageManifest, root_lock: @LockFile, prefix: string, depth: i32, ancestors: @string, ancestor_count: i32) {
+    if cur_manifest == null { return }
+    let total = cur_manifest.dep_count
+    if total == 0 { return }
+
+    mut cur = cur_manifest.first_dep
+    mut idx: i32 = 0
+    loop cur != null {
+        let is_last = (idx == total - 1)
+        mut branch = "├── "
+        if is_last {
+            branch = "└── "
+        }
+
+        // Determine disk location for dependency
+        mut dep_path = resolve_dep_disk_path(pkg_dir, cur)
+        if not fs_exists(dep_path) and root_dir != pkg_dir {
+            // Also check root project's .velo_cache/deps for hoisted layout
+            let candidate_root = resolve_dep_disk_path(root_dir, cur)
+            if fs_exists(candidate_root) {
+                dep_path = candidate_root
+            }
+        }
+        let is_installed = fs_exists(dep_path)
+
+        // Resolve display version
+        mut ver = ""
+        if root_lock != null {
+            let entry = lockfile_find(root_lock, cur.name)
+            if entry != null and str.len(entry.version) > 0 {
+                ver = entry.version
+            }
+        }
+        if str.len(ver) == 0 and is_installed {
+            let sub_pkg_path = path_join_str(dep_path, "velo.pkg")
+            if fs_exists(sub_pkg_path) {
+                let sub_m = manifest_load(sub_pkg_path)
+                if not sub_m.has_error and str.len(sub_m.pkg.version) > 0 {
+                    ver = sub_m.pkg.version
+                }
+            }
+        }
+        if str.len(ver) == 0 {
+            if cur.kind == "git" and str.len(cur.tag) > 0 {
+                ver = cur.tag
+            } else {
+                ver = cur.source
+            }
+        }
+
+        // Build output line
+        mut line_sb = create_sb(256)
+        sb_append_str(@line_sb, prefix)
+        sb_append_str(@line_sb, branch)
+        sb_append_str(@line_sb, cur.name)
+
+        if str.len(ver) > 0 {
+            sb_append_str(@line_sb, " v")
+            sb_append_str(@line_sb, ver)
+        }
+
+        sb_append_str(@line_sb, " (")
+        if not is_installed {
+            sb_append_str(@line_sb, "not installed, ")
+        }
+        if cur.kind == "registry" {
+            sb_append_str(@line_sb, "registry: ")
+            sb_append_str(@line_sb, cur.source)
+        } else if cur.kind == "git" {
+            sb_append_str(@line_sb, "git: ")
+            sb_append_str(@line_sb, cur.source)
+            if str.len(cur.tag) > 0 {
+                sb_append_char(@line_sb, '@')
+                sb_append_str(@line_sb, cur.tag)
+            }
+        } else if cur.kind == "local" {
+            sb_append_str(@line_sb, "local: ")
+            sb_append_str(@line_sb, cur.source)
+        } else {
+            sb_append_str(@line_sb, cur.kind)
+        }
+        sb_append_char(@line_sb, ')')
+
+        // Check for cyclic dependency
+        mut is_cycle = false
+        mut a: i32 = 0
+        loop a < ancestor_count {
+            if ancestors[a] == cur.name {
+                is_cycle = true
+                break
+            }
+            a += 1
+        }
+
+        if is_cycle {
+            sb_append_str(@line_sb, " (*)")
+            println_str(sb_to_string(@line_sb))
+        } else {
+            println_str(sb_to_string(@line_sb))
+
+            // Recurse into sub-dependencies if installed and depth < 16
+            if is_installed and depth < 16 {
+                let sub_pkg_file = path_join_str(dep_path, "velo.pkg")
+                if fs_exists(sub_pkg_file) {
+                    let sub_m = manifest_load(sub_pkg_file)
+                    if not sub_m.has_error and sub_m.dep_count > 0 {
+                        mut child_prefix_sb = create_sb(128)
+                        sb_append_str(@child_prefix_sb, prefix)
+                        if is_last {
+                            sb_append_str(@child_prefix_sb, "    ")
+                        } else {
+                            sb_append_str(@child_prefix_sb, "│   ")
+                        }
+                        let next_prefix = sb_to_string(@child_prefix_sb)
+
+                        mut next_ancestors: @string = mem.alloc(@string, 32)
+                        mut ai: i32 = 0
+                        loop ai < ancestor_count {
+                            next_ancestors[ai] = ancestors[ai]
+                            ai += 1
+                        }
+                        next_ancestors[ancestor_count] = cur.name
+
+                        print_dep_tree(root_dir, dep_path, @sub_m, root_lock, next_prefix, depth + 1, next_ancestors, ancestor_count + 1)
+                    }
+                }
+            }
+        }
+
+        idx += 1
+        cur = cur.next
+    }
+}
+
+// Executes 'velo pkg tree [path]'.
+act pkg_tree_run(manifest_path: string) -> i32 {
+    if not fs_exists(manifest_path) {
+        println_str("[Velo Error] Package manifest not found: " + manifest_path)
+        return 1
+    }
+    let m = manifest_load(manifest_path)
+    if m.has_error {
+        println_str(m.error_msg)
+        return 1
+    }
+
+    let m_dir = path_dirname_to_str(manifest_path)
+    let lock_path = path_join_str(m_dir, "velo.lock")
+    mut lock = create_empty_lockfile()
+    if fs_exists(lock_path) {
+        lock = lockfile_load(lock_path)
+    }
+
+    // Print root node
+    mut root_sb = create_sb(128)
+    sb_append_str(@root_sb, m.pkg.name)
+    if str.len(m.pkg.version) > 0 {
+        sb_append_str(@root_sb, " v")
+        sb_append_str(@root_sb, m.pkg.version)
+    }
+    sb_append_str(@root_sb, " (")
+    sb_append_str(@root_sb, manifest_path)
+    sb_append_char(@root_sb, ')')
+    println_str(sb_to_string(@root_sb))
+
+    mut init_ancestors: @string = mem.alloc(@string, 32)
+    init_ancestors[0] = m.pkg.name
+    print_dep_tree(m_dir, m_dir, @m, @lock, "", 0, init_ancestors, 1)
+    return 0
+}
+
+// Executes 'velo pkg verify [path]'. Read-only verification for CI.
+act pkg_verify_run(manifest_path: string) -> i32 {
+    if not fs_exists(manifest_path) {
+        println_str("[Velo Error] Package manifest not found: " + manifest_path)
+        return 1
+    }
+    let m = manifest_load(manifest_path)
+    if m.has_error {
+        println_str(m.error_msg)
+        return 1
+    }
+
+    let m_dir = path_dirname_to_str(manifest_path)
+    let lock_path = path_join_str(m_dir, "velo.lock")
+
+    // If manifest has dependencies, lockfile is strictly required
+    if m.dep_count > 0 and not fs_exists(lock_path) {
+        println_str("[Velo Error] Lockfile not found: " + lock_path + ". Run 'velo pkg lock' or 'velo pkg install' first.")
+        return 1
+    }
+
+    if m.dep_count == 0 and not fs_exists(lock_path) {
+        println_str("[Velo] All 0 dependencies match velo.lock with zero drift.")
+        return 0
+    }
+
+    let lock = lockfile_load(lock_path)
+    if lock.has_error {
+        println_str(lock.error_msg)
+        return 1
+    }
+
+    mut drift_count: i32 = 0
+
+    // 1. Check all manifest dependencies against velo.lock and files on disk
+    mut cur = m.first_dep
+    loop cur != null {
+        let entry = lockfile_find(@lock, cur.name)
+        if entry == null {
+            println_str("[Velo Error] Drift detected: dependency '" + cur.name + "' is declared in manifest but missing from velo.lock.")
+            drift_count += 1
+        } else {
+            let dep_path = resolve_dep_disk_path(m_dir, cur)
+            if not fs_exists(dep_path) {
+                println_str("[Velo Error] Drift detected: dependency '" + cur.name + "' is not installed on disk. Expected at: " + dep_path)
+                drift_count += 1
+            } else {
+                let actual_hash = compute_dep_hash(m_dir, cur)
+                if actual_hash != entry.hash {
+                    println_str("[Velo Error] Drift detected: checksum mismatch for dependency '" + cur.name + "'.")
+                    println_str("  Expected (velo.lock): " + entry.hash)
+                    println_str("  Actual (disk):        " + actual_hash)
+                    drift_count += 1
+                }
+            }
+
+            // Verify version consistency
+            if cur.kind == "registry" and str.len(entry.version) > 0 and str.len(cur.source) > 0 {
+                if not semver_matches(entry.version, cur.source) {
+                    println_str("[Velo Error] Drift detected: locked version '" + entry.version + "' does not satisfy manifest requirement '" + cur.source + "' for dependency '" + cur.name + "'.")
+                    drift_count += 1
+                }
+            }
+            if cur.kind == "git" and str.len(cur.tag) > 0 and str.len(entry.version) > 0 {
+                if entry.version != cur.tag {
+                    println_str("[Velo Error] Drift detected: locked version '" + entry.version + "' does not match manifest tag '" + cur.tag + "' for dependency '" + cur.name + "'.")
+                    drift_count += 1
+                }
+            }
+        }
+        cur = cur.next
+    }
+
+    // 2. Check that no extra/stale dependencies exist in velo.lock
+    mut lcur = lock.first
+    loop lcur != null {
+        if manifest_find_dep(@m, lcur.name) == null {
+            println_str("[Velo Error] Drift detected: package '" + lcur.name + "' is present in velo.lock but not declared in manifest.")
+            drift_count += 1
+        }
+        lcur = lcur.next
+    }
+
+    if drift_count > 0 {
+        println_str("[Velo Error] Drift verification failed: {drift_count} issue(s) detected.")
+        return 1
+    }
+
+    println_str("[Velo] All {m.dep_count} dependencies match velo.lock with zero drift.")
+    return 0
+}

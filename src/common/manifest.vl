@@ -183,7 +183,7 @@ act parse_manifest_pkg(lex: @ManifestLexer, m: @PackageManifest) {
         let key = lex.cur_val; let k_line = lex.cur_line; let k_col = lex.cur_col
         mlex_advance(lex)
         if not mlex_expect(lex, MTOK_COLON, "expected ':' after field") { return }
-        if key == "name" { if mlex_expect(lex, MTOK_STRING, "expected string for 'name'") { m.pkg.name = lex.cur_val } }
+        if key == "name" { if lex.cur_kind == MTOK_STRING { m.pkg.name = lex.cur_val; mlex_advance(lex) } else { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected string for 'name'"); return } }
         else if key == "version" { if lex.cur_kind == MTOK_STRING { m.pkg.version = lex.cur_val; mlex_advance(lex) } else { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected string for 'version'"); return } }
         else if key == "entry" { if lex.cur_kind == MTOK_STRING { m.pkg.entry = lex.cur_val; mlex_advance(lex) } else { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected string for 'entry'"); return } }
         else if key == "description" { if lex.cur_kind == MTOK_STRING { m.pkg.description = lex.cur_val; mlex_advance(lex) } else { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected string for 'description'"); return } }
@@ -220,6 +220,10 @@ act parse_manifest_deps(lex: @ManifestLexer, m: @PackageManifest) {
             mlex_advance(lex)
             if lex.cur_kind != MTOK_STRING { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected local path string"); return }
             dep.kind = "local"; dep.source = lex.cur_val; mlex_advance(lex)
+        } else if lex.cur_kind == MTOK_IDENT and lex.cur_val == "registry" {
+            mlex_advance(lex)
+            if lex.cur_kind != MTOK_STRING { mlex_set_err(lex, lex.cur_line, lex.cur_col, "expected version string after 'registry'"); return }
+            dep.kind = "registry"; dep.source = lex.cur_val; mlex_advance(lex)
         } else if lex.cur_kind == MTOK_STRING {
             dep.kind = "registry"; dep.source = lex.cur_val; mlex_advance(lex)
         } else {
