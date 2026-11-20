@@ -1,0 +1,279 @@
+// Semantic Versioning (SemVer 2.0.0) parser, comparator, and requirement matcher.
+// Phase 72 / Task 72.4: Parses MAJOR.MINOR.PATCH, supports '=', '^', '~', and '>=',
+// and rejects ambiguous/invalid ranges with fail-closed diagnostics.
+
+use "string_builder.vl"
+use "utils.vl"
+
+data SemVer {
+    major: i64
+    minor: i64
+    patch: i64
+    is_valid: bool
+}
+
+data SemVerReq {
+    op: string
+    version: SemVer
+    is_valid: bool
+    error_msg: string
+}
+
+// Parses a non-negative decimal integer string without leading zeroes into an i64.
+act parse_semver_component(s: string, start_idx: usize, end_idx: usize, out_val: @i64) -> bool {
+    if end_idx <= start_idx { return false }
+    let len = end_idx - start_idx
+    if len > 1 and s[start_idx] == '0' {
+        // Leading zeros are forbidden by SemVer 2.0.0 spec
+        return false
+    }
+    mut val: i64 = 0
+    mut i = start_idx
+    loop i < end_idx {
+        let c = s[i]
+        if c < '0' or c > '9' {
+            return false
+        }
+        val = val * 10 + ((c - '0') as i64)
+        i += 1
+    }
+    out_val[0] = val
+    return true
+}
+
+// Parses a concrete version string in MAJOR.MINOR.PATCH format (e.g. "1.2.3").
+act semver_parse(s: string) -> SemVer {
+    mut res = SemVer{ major: 0, minor: 0, patch: 0, is_valid: false }
+    if s == null { return res }
+    let slen = str.len(s)
+    if slen == 0 { return res }
+
+    // Strip leading 'v' or 'V' if present
+    mut start_idx: usize = 0
+    if s[0] == 'v' or s[0] == 'V' {
+        start_idx = 1
+    }
+    if start_idx >= slen { return res }
+
+    // Strip build metadata (+...) or pre-release (-...) for core version comparison
+    mut core_end = start_idx
+    loop core_end < slen and s[core_end] != '-' and s[core_end] != '+' {
+        core_end += 1
+    }
+
+    // Find the two dot separators
+    mut dot1: usize = slen
+    mut dot2: usize = slen
+    mut i = start_idx
+    loop i < core_end {
+        if s[i] == '.' {
+            if dot1 == slen {
+                dot1 = i
+            } else if dot2 == slen {
+                dot2 = i
+            } else {
+                // More than two dots -> invalid semver
+                return res
+            }
+        }
+        i += 1
+    }
+
+    if dot1 == slen or dot2 == slen {
+        return res
+    }
+
+    mut maj: i64 = 0
+    mut min: i64 = 0
+    mut pat: i64 = 0
+    if not parse_semver_component(s, start_idx, dot1, @maj) { return res }
+    if not parse_semver_component(s, dot1 + 1, dot2, @min) { return res }
+    if not parse_semver_component(s, dot2 + 1, core_end, @pat) { return res }
+
+    res.major = maj
+    res.minor = min
+    res.patch = pat
+    res.is_valid = true
+    return res
+}
+
+// Converts a SemVer struct to a string representation "MAJOR.MINOR.PATCH".
+act semver_to_str(v: @SemVer) -> string {
+    if v == null or !v.is_valid { return "" }
+    mut sb = create_sb(32)
+    sb_append_int64(@sb, v.major)
+    sb_append_char(@sb, '.')
+    sb_append_int64(@sb, v.minor)
+    sb_append_char(@sb, '.')
+    sb_append_int64(@sb, v.patch)
+    return sb_to_string(@sb)
+}
+
+// Compares two SemVer values: returns 1 if a > b, -1 if a < b, 0 if equal.
+act semver_cmp(a: @SemVer, b: @SemVer) -> i32 {
+    if a.major != b.major {
+        return if a.major > b.major { 1 } else { -1 }
+    }
+    if a.minor != b.minor {
+        return if a.minor > b.minor { 1 } else { -1 }
+    }
+    if a.patch != b.patch {
+        return if a.patch > b.patch { 1 } else { -1 }
+    }
+    return 0
+}
+
+// Parses a SemVer requirement string supporting '=', '^', '~', and '>='.
+// Rejects ambiguous ranges, wildcards, and invalid syntax with descriptive error.
+act semver_parse_req(req_str: string) -> SemVerReq {
+    mut req = SemVerReq{
+        op: "=",
+        version: SemVer{ major: 0, minor: 0, patch: 0, is_valid: false },
+        is_valid: false,
+        error_msg: ""
+    }
+    if req_str == null or str.len(req_str) == 0 {
+        req.error_msg = "empty version requirement string"
+        return req
+    }
+
+    let trimmed = str.trim(req_str)
+    let tlen = str.len(trimmed)
+    if tlen == 0 {
+        req.error_msg = "empty version requirement string"
+        return req
+    }
+
+    // Reject ambiguous or unsupported operators
+    if trimmed[0] == '*' or str.starts_with(trimmed, "<>") or str.starts_with(trimmed, "~>") or str.starts_with(trimmed, "==") {
+        req.error_msg = "ambiguous range operator in '" + trimmed + "'"
+        return req
+    }
+    if str.starts_with(trimmed, "^~") or str.starts_with(trimmed, "~^") or str.starts_with(trimmed, ">=^") or str.starts_with(trimmed, ">=~") {
+        req.error_msg = "conflicting multiple prefix operators in '" + trimmed + "'"
+        return req
+    }
+    if str.starts_with(trimmed, "<=") or (trimmed[0] == '<' and (tlen < 2 or trimmed[1] != '=')) or (trimmed[0] == '>' and (tlen < 2 or trimmed[1] != '=')) {
+        req.error_msg = "unsupported upper-bound or strict inequality in '" + trimmed + "'"
+        return req
+    }
+
+    mut op = "="
+    mut v_start: usize = 0
+
+    if str.starts_with(trimmed, ">=") {
+        op = ">="
+        v_start = 2
+    } else if trimmed[0] == '^' {
+        op = "^"
+        v_start = 1
+    } else if trimmed[0] == '~' {
+        op = "~"
+        v_start = 1
+    } else if trimmed[0] == '=' {
+        op = "="
+        v_start = 1
+    } else if (trimmed[0] >= '0' and trimmed[0] <= '9') or trimmed[0] == 'v' or trimmed[0] == 'V' {
+        op = "="
+        v_start = 0
+    } else {
+        req.error_msg = "unrecognized operator or invalid version start character in '" + trimmed + "'"
+        return req
+    }
+
+    // Skip whitespace between operator and version digits
+    loop v_start < tlen and (trimmed[v_start] == ' ' or trimmed[v_start] == '\t') {
+        v_start += 1
+    }
+    if v_start >= tlen {
+        req.error_msg = "missing version number after operator in '" + trimmed + "'"
+        return req
+    }
+
+    let v_str = copy_slice_to_string(trimmed, v_start, tlen - v_start)
+
+    // Check if version contains invalid characters or multiple spaces
+    mut p: usize = 0
+    let vlen = str.len(v_str)
+    loop p < vlen {
+        let ch = v_str[p]
+        if ch == ' ' or ch == '\t' or ch == ',' or ch == '|' {
+            req.error_msg = "ambiguous compound range or spaces in version '" + v_str + "'"
+            return req
+        }
+        p += 1
+    }
+
+    // Try full MAJOR.MINOR.PATCH parse
+    mut parsed = semver_parse(v_str)
+    if not parsed.is_valid {
+        // Check if partial: MAJOR.MINOR or MAJOR
+        mut dot_count = 0
+        mut d: usize = 0
+        loop d < vlen {
+            if v_str[d] == '.' { dot_count += 1 }
+            d += 1
+        }
+        if dot_count == 0 {
+            // "1" -> "1.0.0"
+            parsed = semver_parse(v_str + ".0.0")
+        } else if dot_count == 1 {
+            // "1.2" -> "1.2.0"
+            parsed = semver_parse(v_str + ".0")
+        }
+    }
+
+    if not parsed.is_valid {
+        req.error_msg = "malformed version string '" + v_str + "'"
+        return req
+    }
+
+    req.op = op
+    req.version = parsed
+    req.is_valid = true
+    return req
+}
+
+// Evaluates whether a concrete SemVer satisfies a SemVer requirement.
+act semver_satisfies(v: @SemVer, req: @SemVerReq) -> bool {
+    if v == null or !v.is_valid or req == null or !req.is_valid {
+        return false
+    }
+
+    // 1. Exact match operator '='
+    if req.op == "=" {
+        return semver_cmp(v, @req.version) == 0
+    }
+
+    // 2. Greater-than-or-equal operator '>='
+    if req.op == ">=" {
+        return semver_cmp(v, @req.version) >= 0
+    }
+
+    // 3. Tilde operator '~' (allows patch-level changes: >= req and < next minor)
+    if req.op == "~" {
+        if semver_cmp(v, @req.version) < 0 { return false }
+        return v.major == req.version.major and v.minor == req.version.minor
+    }
+
+    // 4. Caret operator '^' (compatible changes: does not modify leftmost non-zero)
+    if req.op == "^" {
+        if semver_cmp(v, @req.version) < 0 { return false }
+        if req.version.major > 0 {
+            return v.major == req.version.major
+        }
+        if req.version.minor > 0 {
+            return v.major == 0 and v.minor == req.version.minor
+        }
+        return v.major == 0 and v.minor == 0 and v.patch == req.version.patch
+    }
+
+    return false
+}
+
+// Convenience act: checks whether a version string matches a requirement string.
+act semver_matches(version_str: string, req_str: string) -> bool {
+    let v = semver_parse(version_str)
+    let req = semver_parse_req(req_str)
+    return semver_satisfies(@v, @req)
+}

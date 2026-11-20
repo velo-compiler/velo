@@ -1011,8 +1011,45 @@ executable is a hard error with an actionable message.
   - Determinism verified: Gen2 == Gen3 SHA-256 match; `bootstrap.c` updated cleanly with zero raw Win32 socket symbols.
   - Line count verified: all compiler files $\le 400$ lines (`driver_pkg.vl` 366, `manifest_resolve.vl` 357, `pkg_lock.vl` 281, `pkg_install.vl` 157).
 
-**72.4** Add semver: parse `MAJOR.MINOR.PATCH`, support `=`, `^`, `~`, and
+**72.4** [COMPLETED] ✅ Add semver: parse `MAJOR.MINOR.PATCH`, support `=`, `^`, `~`, and
 `>=` in manifests, reject ambiguous ranges with a diagnostic.
+- *Former Defect:* Package manifests and registry resolution treated versions as unparsed literal strings with exact-match dictionary lookups (`doc.root[v]`). Version requirements like `^1.0.0`, `~1.2.0`, or `>= 2.0.0` could not be specified, maximal version selection among matching candidates was not supported, ambiguous or conflicting range operators (such as `^~1.0`, `*`, `1.x`, `<>`, `==`) were silently rejected or mishandled, and lockfiles recorded the range requirement string rather than pinning the concrete resolved version.
+- *Fix Applied:*
+  - Implemented SemVer 2.0.0 parser, comparator, and requirement evaluator in `src/common/semver.vl`:
+    - `SemVer` struct (`major: i64`, `minor: i64`, `patch: i64`, `is_valid: bool`) and `SemVerReq` struct (`op: string`, `version: SemVer`, `is_valid: bool`, `error_msg: string`).
+    - `semver_parse(s)`: parses standard `MAJOR.MINOR.PATCH` with non-negative components, strips optional pre-release (`-`) or build metadata (`+`), and enforces SemVer specification rule prohibiting leading zeroes on multi-digit components (`01.0.0` rejected).
+    - `semver_cmp(a, b)`: lexicographical comparison returning negative, zero, or positive integer.
+    - `semver_parse_req(req_str)`: parses requirement operators `=`, `^`, `~`, and `>=` (with optional whitespace, defaulting bare versions to exact match `=`). Rejects unsupported or ambiguous ranges (wildcards `*`/`x`, conflicting prefixes `^~`/`~^`/`>=^`, comparison operators `<`/`>`/`<=`/`==`, and compound bounds) with clear diagnostic messaging.
+    - `semver_satisfies(v, req)`: evaluates candidate versions against operators:
+      - `=` requires exact `(major, minor, patch)` equality.
+      - `~` allows patch-level updates (`~1.2.3` matches `>= 1.2.3 and < 1.3.0`).
+      - `^` allows non-breaking compatible updates per SemVer 2.0 (for `major > 0`: `< (major+1).0.0`; for `0.x.y`: patch bumps only `< 0.(minor+1).0`; for `0.0.z`: exact match only `== 0.0.z`).
+      - `>=` allows any version greater than or equal to the requirement.
+  - Updated `src/common/manifest_resolve.vl`:
+    - Validates dependency semver requirement via `semver_parse_req`. Rejects invalid or ambiguous requirements fail-closed with actionable diagnostic: `[Velo Error] Invalid or ambiguous semver requirement '<req>' for dependency '<name>'. Supported operators are '=', '^', '~', and '>='.`
+    - Inspects index JSON version map (supporting both nested `versions` key and flat schema), filters candidate versions that satisfy requirement via `semver_satisfies`, and selects the maximal matching version (`best_ver` via `semver_cmp > 0`).
+    - Populates `loc.version` with the concrete selected version key (`best_key`).
+  - Updated `src/backend/pkg_lock.vl`:
+    - Added `resolve_installed_dep_version(m_dir, dep)` which reads `.velo_cache/deps/<name>/velo.pkg` after installation so `generate_lockfile_from_manifest` pins the concrete resolved version in `velo.lock` rather than the manifest range requirement.
+- *Residual Limitation:* Read-only drift inspection (`velo pkg tree` and `velo pkg verify`) will be implemented in Task 72.5.
+- *Verification:*
+  - Created automated test suite `tests/test_pkg_semver.py` with 11 test cases:
+    - `test_semver_parse_and_compare`: verifies ordering, equality, and component extraction across diverse versions.
+    - `test_semver_exact_match_operator`: verifies `=` operator matches only exact version and rejects mismatches.
+    - `test_semver_tilde_operator`: verifies `~` operator allows patch bumps within minor version and rejects minor/major bumps.
+    - `test_semver_caret_operator`: verifies `^` operator for `1.x.x` (allows minor/patch bumps, rejects `2.0.0`), `0.x.x` (allows patch bumps only, rejects `0.3.0`), and `0.0.x` (exact match only).
+    - `test_semver_gte_operator`: verifies `>=` operator accepts equal or higher versions across minor and major, rejects lower versions.
+    - `test_semver_rejects_conflicting_ambiguous_prefixes`: verifies rejection of `^~1.0.0`, `~^1.0.0`, and `>=^1.0.0`.
+    - `test_semver_rejects_wildcard_ranges`: verifies rejection of `*`, `1.*`, and `1.x`.
+    - `test_semver_rejects_unsupported_operators`: verifies rejection of `<>`, `==`, `<`, `>`, and `<=`.
+    - `test_semver_rejects_malformed_version_numbers`: verifies rejection of leading zeroes (`01.0.0`), four components (`1.2.3.4`), and non-numeric strings.
+    - `test_registry_resolves_highest_matching_semver`: runs `manifest_resolve_dep_full` on registry with multiple candidates (`1.0.0`, `1.1.0`, `1.2.0`, `2.0.0`) and asserts `^1.0.0` resolves to `1.2.0`.
+    - `test_pkg_install_semver_caret_selects_highest_compatible`: end-to-end `velo pkg install` verifying that caret range `^1.0.0` selects highest compatible candidate (`1.1.0`), creates `.velo_cache/deps/math_lib`, and pins `version = "1.1.0"` in `velo.lock`.
+  - All 11 tests in `tests/test_pkg_semver.py` passed in 76.81s.
+  - Full package test suite (45 tests across `test_pkg_semver.py`, `test_pkg_install_fetches.py`, `test_pkg_security.py`, `test_pkg_registry.py`, `test_pkg_resolve.py`) passed in 423.88s.
+  - `tests/test_bootstrap_snapshot.py` passed (6/6).
+  - Determinism verified: Gen2 == Gen3 SHA-256 match (`81486c034ce1f5b2b7fa8b6030c8303c200ada6c002652280e6ebd1d10b75865`); `bootstrap.c` updated cleanly with zero raw Win32 socket symbols.
+  - Line count verified: all compiler files $\le 400$ lines (`src/common/semver.vl` 279, `src/common/manifest_resolve.vl` 382, `src/backend/pkg_lock.vl` 298).
 
 **72.5** Add `velo pkg tree` and `velo pkg verify` (read-only: recompute hashes
 and report drift). `verify` is what CI calls.

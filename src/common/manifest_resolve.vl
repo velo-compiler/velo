@@ -8,6 +8,7 @@ use std.fs
 use std.path
 use std.json
 use "manifest.vl"
+use "semver.vl"
 use "string_builder.vl"
 use "utils.vl"
 
@@ -194,6 +195,14 @@ act manifest_resolve_dep_full(m_dir: string, dep: @DependencySpec, insecure: boo
             return loc
         }
 
+        // Validate semver requirement syntax (Phase 72 / Task 72.4)
+        let req = semver_parse_req(dep.source)
+        if !req.is_valid {
+            loc.has_error = true
+            loc.error_msg = "[Velo Error] Invalid or ambiguous semver requirement '" + dep.source + "' for dependency '" + dep.name + "'. Supported operators are '=', '^', '~', and '>='; " + req.error_msg
+            return loc
+        }
+
         // Determine registry base URL
         mut reg_url = registry_override
         if str.len(reg_url) == 0 {
@@ -308,43 +317,59 @@ act manifest_resolve_dep_full(m_dir: string, dep: @DependencySpec, insecure: boo
             return loc
         }
 
-        mut ver_obj: @JsonValue = null
-        let versions_node = json_obj_get_str(doc.root, "versions")
-        if versions_node != null and versions_node.kind == JSON_OBJECT {
-            ver_obj = json_obj_get_str(versions_node, dep.source)
-        }
-        if ver_obj == null {
-            ver_obj = json_obj_get_str(doc.root, dep.source)
+        mut versions_obj: @JsonValue = json_obj_get_str(doc.root, "versions")
+        if versions_obj == null or versions_obj.kind != JSON_OBJECT {
+            versions_obj = doc.root
         }
 
-        if ver_obj == null or ver_obj.kind != JSON_OBJECT {
+        mut best_obj: @JsonValue = null
+        mut best_ver = SemVer{ major: -1, minor: -1, patch: -1, is_valid: false }
+        mut best_key = ""
+
+        mut cur_child = versions_obj.first_child
+        loop cur_child != null {
+            let ver_key = json_slice_to_str(cur_child.key)
+            if str.len(ver_key) > 0 and cur_child.kind == JSON_OBJECT {
+                let parsed_ver = semver_parse(ver_key)
+                if parsed_ver.is_valid and semver_satisfies(@parsed_ver, @req) {
+                    if !best_ver.is_valid or semver_cmp(@parsed_ver, @best_ver) > 0 {
+                        best_ver = parsed_ver
+                        best_key = ver_key
+                        best_obj = cur_child
+                    }
+                }
+            }
+            cur_child = cur_child.next
+        }
+
+        if best_obj == null {
             json_doc_free(@doc)
             loc.has_error = true
             loc.error_msg = "[Velo Error] Version '" + dep.source + "' of package '" + dep.name + "' not found in registry index at '" + index_url + "'"
             return loc
         }
 
-        let url_slice = json_obj_get_str_val(ver_obj, "url", "")
-        let sha_slice = json_obj_get_str_val(ver_obj, "sha256", "")
+        let url_slice = json_obj_get_str_val(best_obj, "url", "")
+        let sha_slice = json_obj_get_str_val(best_obj, "sha256", "")
         let pkg_url = json_slice_to_str(url_slice)
         let expected_sha = json_slice_to_str(sha_slice)
         json_doc_free(@doc)
 
         if str.len(pkg_url) == 0 {
             loc.has_error = true
-            loc.error_msg = "[Velo Error] Registry index entry for '" + dep.name + "@" + dep.source + "' is missing 'url' field"
+            loc.error_msg = "[Velo Error] Registry index entry for '" + dep.name + "@" + best_key + "' is missing 'url' field"
             return loc
         }
         if str.len(expected_sha) == 0 {
             loc.has_error = true
-            loc.error_msg = "[Velo Error] Registry index entry for '" + dep.name + "@" + dep.source + "' is missing 'sha256' field"
+            loc.error_msg = "[Velo Error] Registry index entry for '" + dep.name + "@" + best_key + "' is missing 'sha256' field"
             return loc
         }
 
         let dest_path = path_join_str(deps_parent, dep.name)
         loc.path = dest_path
         loc.commit = expected_sha
-        loc.version = dep.source
+        loc.version = best_key
         loc.archive_url = pkg_url
         loc.expected_hash = expected_sha
         loc.has_error = false

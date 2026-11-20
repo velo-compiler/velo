@@ -247,12 +247,29 @@ act lockfile_load(lock_path: string) -> LockFile {
     return lockfile_parse(content, lock_path)
 }
 
+act resolve_installed_dep_version(m_dir: string, dep: @DependencySpec) -> string {
+    if str.len(dep.tag) > 0 { return dep.tag }
+    mut deps_parent = ".velo_cache/deps"
+    if m_dir != null and str.len(m_dir) > 0 and m_dir != "." {
+        deps_parent = path_join_str(m_dir, ".velo_cache/deps")
+    }
+    let dep_dir = path_join_str(deps_parent, dep.name)
+    let pkg_file = path_join_str(dep_dir, "velo.pkg")
+    if fs_exists(pkg_file) {
+        let dep_m = manifest_load(pkg_file)
+        if not dep_m.has_error and str.len(dep_m.pkg.version) > 0 {
+            return dep_m.pkg.version
+        }
+    }
+    return dep.source
+}
+
 act generate_lockfile_from_manifest(m: @PackageManifest, m_dir: string) -> LockFile {
     mut lock = create_empty_lockfile()
     mut cur = m.first_dep
     loop cur != null {
         let h = compute_dep_hash(m_dir, cur)
-        let v = if str.len(cur.tag) > 0 { cur.tag } else { cur.source }
+        let v = resolve_installed_dep_version(m_dir, cur)
         lockfile_add_entry(@lock, cur.name, cur.source, v, h)
         cur = cur.next
     }
