@@ -1029,11 +1029,26 @@ reachable from the umbrella.
   - All 6 tests passed in 3.23s.
   - Verified `tests/test_std_crypto.py` (7/7 passed).
 
-**73.2** Change `crypto_random_bytes` to fail closed: return `bool or string`
+**73.2 [COMPLETED] ✅** Change `crypto_random_bytes` to fail closed: return `bool or string`
 and have `uuid_v4`/`uuid_v7` propagate (or abort with a named fatal). Delete the
 SplitMix64 fallback fill entirely, or keep it behind an explicit
 `crypto_unsafe_fallback` name. Add `tests/test_crypto_rand_failclosed.py` that
 injects a failing entropy function.
+- *Former Defect:* `crypto_random_bytes` previously returned a bare `bool`, silently degraded to a deterministic, non-cryptographic SplitMix64 pseudo-random generator whenever the OS entropy source failed, and filled caller buffers with predictable output. Furthermore, consumers like `uuid_v4` and `uuid_v7` discarded the return value of `crypto_random_bytes`, allowing predictable UUIDs to be minted without notice under entropy exhaustion.
+- *Fix Applied:*
+  - Updated `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h` (byte-identical) with entropy failure injection support (`g_velo_fail_entropy_injected`, `velo_crypto_inject_entropy_failure`, `VELO_FAIL_ENTROPY` env var check) and named fatal abort helper `velo_crypto_rand_fatal`.
+  - Changed `crypto_random_bytes(buf: @u8, len: usize) -> bool or string` in `std/crypto/rand.vl` to fail closed: on CSPRNG failure, it scrubs/zeros the destination buffer and fails with `"OS entropy source unavailable (CSPRNG failure)"`.
+  - Eliminated silent degradation to SplitMix64 PRNG in `crypto_random_bytes`. Extracted PRNG into explicit `crypto_unsafe_fallback_bytes(buf, len)` clearly documented as insecure and intended solely for deterministic simulation.
+  - Updated `crypto_random_u32()`, `crypto_random_u64()`, and `crypto_random_hex()` to fail loudly/fatally via `velo_crypto_rand_fatal` on entropy exhaustion, and provided fallible variants `crypto_random_u32_try()`, `crypto_random_u64_try()`, and `crypto_random_hex_try()` returning `T or string`.
+  - Updated `std/uuid/v4.vl`: `uuid_v4()` aborts with named fatal on entropy exhaustion, and added `uuid_v4_try() -> Uuid or string` for propagation.
+  - Updated `std/uuid/v7.vl`: `uuid_v7()` and `uuid_v7_at()` abort with named fatal on entropy exhaustion, and added `uuid_v7_try()` and `uuid_v7_at_try() -> Uuid or string`.
+  - Updated `tests/test_posix_portability.py` and `website/src/data/stdlib.ts` to reflect the modernized `bool or string` return type.
+  - Re-bootstrapped compiler chain: `bin/velo.exe` $\rightarrow$ `bin/velo_gen2.exe` $\rightarrow$ `bin/velo_gen3.exe` $\rightarrow$ `bin/velo.exe`, refreshed `bootstrap.c`, verified byte-identical C emission and determinism.
+- *Residual Limitation:* None for CSPRNG fail-closed semantics; all callers now fail closed either by error propagation or fatal abort.
+- *Verification:*
+  - Created `tests/test_crypto_rand_failclosed.py` with 14 comprehensive tests covering normal operation, fail-closed zeroing under `VELO_FAIL_ENTROPY=1`, null buffer rejection, named fatal aborts for `uuid_v4`, `uuid_v7`, `uuid_v7_at`, `crypto_random_u32/u64/hex`, error propagation for all `_try` variants, dynamic in-process failure injection toggle, and explicit unsafe fallback. All 14 tests pass.
+  - Verified `std/tests/crypto/rand_test.vl` and `std/tests/uuid/uuid_test.vl`.
+  - Verified `tests/test_std_crypto.py` (7/7 passed), `tests/test_std_uuid.py` (2/2 passed), `tests/test_posix_portability.py` (18 passed, 6 skipped), `tests/test_crypto_umbrella.py` (6/6 passed), `tests/test_bootstrap_snapshot.py` (6/6 passed), `tests/test_stdlib_or_modernization.py` (5/5 passed).
 
 **73.3** Add `crypto_secure_eq(a, b, len) -> bool` (constant time, no early
 exit, no length-dependent branch) plus `hmac_sha256_verify(key, data, tag)`.

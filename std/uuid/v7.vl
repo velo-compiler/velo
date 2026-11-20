@@ -17,13 +17,13 @@ act uuid_write_ts48(ptr: @u8, ms: u64) {
     ptr[5] = (ms & (0xFF as u64)) as u8
 }
 
-// Generates a UUID Version 7 with an explicit Unix epoch timestamp in milliseconds.
-act uuid_v7_at(timestamp_ms: u64) -> Uuid {
+// Generates a UUID Version 7 with an explicit Unix epoch timestamp in milliseconds, propagating errors.
+act uuid_v7_at_try(timestamp_ms: u64) -> Uuid or string {
     mut u = uuid_nil()
     let ptr = (@u) as @u8
 
     // 1. Fill with random entropy
-    crypto_random_bytes(ptr, 16)
+    crypto_random_bytes(ptr, 16) or return
 
     // 2. Set 48-bit Unix epoch millisecond timestamp
     uuid_write_ts48(ptr, timestamp_ms)
@@ -37,22 +37,33 @@ act uuid_v7_at(timestamp_ms: u64) -> Uuid {
     return u
 }
 
-// Generates a modern RFC 9562 UUID Version 7 (Unix time-ordered monotonic identifier).
-// Optimized for indexed databases, B-trees, and distributed ordered streams.
-act uuid_v7() -> Uuid {
+// Generates a UUID Version 7 with an explicit Unix epoch timestamp in milliseconds.
+// Aborts with a named fatal diagnostic if the OS entropy source is unavailable.
+act uuid_v7_at(timestamp_ms: u64) -> Uuid {
+    let res = uuid_v7_at_try(timestamp_ms)
+    if !res.ok {
+        velo_crypto_rand_fatal("uuid_v7_at: OS entropy source failed during UUID generation")
+        return uuid_nil()
+    }
+    return res.val
+}
+
+// Generates a modern RFC 9562 UUID Version 7 (Unix time-ordered monotonic identifier), propagating errors.
+act uuid_v7_try() -> Uuid or string {
     mut now_ms: u64 = time_now_epoch_ms() as u64
     mut u = uuid_nil()
     let ptr = (@u) as @u8
 
     // Fill trailing 8 bytes (bytes 8..15) with cryptographically secure random bytes
     let rand_buf = ((ptr as usize) + 8) as @u8
-    crypto_random_bytes(rand_buf, 8)
+    crypto_random_bytes(rand_buf, 8) or return
 
     // Monotonic counter protection for calls within the exact same millisecond
     if now_ms > g_uuid_v7_last_ms {
         g_uuid_v7_last_ms = now_ms
         // Seed 12-bit sequence counter with low random bits
-        g_uuid_v7_seq = crypto_random_u32() & (0x0FFF as u32)
+        let seq_seed = (rand_buf[0] as u32) | ((rand_buf[1] as u32) << 8)
+        g_uuid_v7_seq = seq_seed & (0x0FFF as u32)
     } else {
         // Same millisecond or clock stepped back: monotonically increment 12-bit counter
         g_uuid_v7_seq = (g_uuid_v7_seq + (1 as u32)) & (0x0FFF as u32)
@@ -78,6 +89,17 @@ act uuid_v7() -> Uuid {
     ptr[8] = ((ptr[8] & (0x3F as u8)) | (0x80 as u8)) as u8
 
     return u
+}
+
+// Generates a modern RFC 9562 UUID Version 7 (Unix time-ordered monotonic identifier).
+// Aborts with a named fatal diagnostic if the OS entropy source is unavailable.
+act uuid_v7() -> Uuid {
+    let res = uuid_v7_try()
+    if !res.ok {
+        velo_crypto_rand_fatal("uuid_v7: OS entropy source failed during UUID generation")
+        return uuid_nil()
+    }
+    return res.val
 }
 
 // Extracts the 48-bit Unix timestamp in milliseconds from a UUID Version 7.

@@ -65,8 +65,8 @@ MODULE_PROBES = {
         'use std.crypto\n\n'
         'act main() -> i32 {\n'
         '    mut buf: [16]u8\n'
-        '    let ok = crypto_random_bytes(buf as @u8, 16)\n'
-        '    if ok { return 0 }\n'
+        '    let res = crypto_random_bytes(buf as @u8, 16)\n'
+        '    if res.ok { return 0 }\n'
         '    return 1\n'
         '}\n'
     ),

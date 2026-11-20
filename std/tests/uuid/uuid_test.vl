@@ -25,6 +25,12 @@ act main() -> i32 {
     let u4_b = uuid_v4()
     if uuid_eq(@u4, @u4_b) { return 10 }
 
+    // UUID Version 4 try variant
+    let u4_try = uuid_v4_try()
+    if !u4_try.ok { return 46 }
+    let u4_try_val = u4_try.val
+    if uuid_version(@u4_try_val) != 4 { return 47 }
+
     // 3. UUID Version 4 from PRNG
     mut prng = rng_seed(42 as u64)
     let u4_prng = uuid_v4_from_rng(@prng)
@@ -51,6 +57,27 @@ act main() -> i32 {
     let u7_fixed = uuid_v7_at(custom_ms)
     if uuid_timestamp_ms(@u7_fixed) != custom_ms { return 18 }
     if uuid_version(@u7_fixed) != 7 { return 19 }
+
+    // UUID Version 7 try variants
+    let u7_try = uuid_v7_try()
+    if !u7_try.ok { return 48 }
+    let u7_try_val = u7_try.val
+    if uuid_version(@u7_try_val) != 7 { return 49 }
+
+    let u7_at_try = uuid_v7_at_try(custom_ms)
+    if !u7_at_try.ok { return 50 }
+    let u7_at_try_val = u7_at_try.val
+    if uuid_timestamp_ms(@u7_at_try_val) != custom_ms { return 51 }
+
+    // Test fail-closed UUID generation under entropy failure
+    crypto_inject_entropy_failure(true)
+    let bad_u4 = uuid_v4_try()
+    if bad_u4.ok { return 52 }
+    let bad_u7 = uuid_v7_try()
+    if bad_u7.ok { return 53 }
+    let bad_u7_at = uuid_v7_at_try(custom_ms)
+    if bad_u7_at.ok { return 54 }
+    crypto_inject_entropy_failure(false)
 
     // 7. Parsing standard hyphenated format (lowercase and uppercase)
     let test_str = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"

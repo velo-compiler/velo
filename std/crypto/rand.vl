@@ -1,21 +1,33 @@
 // std.crypto.rand — Cryptographically Secure Pseudorandom Number Generation (CSPRNG).
 //
-// Phase 70 / Task 70.2: this file bound advapi32's SystemFunction036 directly,
-// in a file with no platform suffix, so every program importing `std.crypto` --
-// including this compiler, through `pkg_lock` -- carried a Win32-only extern and
-// could not be built off Windows. The OS entropy source now comes from the
-// runtime header's velo_crypto_random_fill, which is the one place allowed to
-// hold a `#if defined(_WIN32)` branch (rand_s there, /dev/urandom on POSIX).
+// Phase 70 / Task 70.2: OS entropy source comes from the runtime header's
+// velo_crypto_random_fill, portable across Windows, Linux, and macOS.
+// Phase 73 / Task 73.2: fail-closed CSPRNG semantics. crypto_random_bytes returns
+// `bool or string` and never silently degrades to SplitMix64 or predictable PRNG.
+// On entropy source failure or null buffer, it fails closed, zeroing the buffer.
 use "hex.vl"
 use "../mem/heap.vl"
 
-// Foreign interface to the runtime header's portable CSPRNG fill. An extern
-// declaration reuses the header's `static inline` definition (C99 6.2.2p4).
-// The buffer parameter is @void (untyped) because the header takes void*: a
-// declaration typed @u8 would emit uint8_t* and conflict with the definition.
+// Foreign interface to the runtime header's portable CSPRNG fill.
 extern act velo_crypto_random_fill(buf: @void, len: usize) -> bool
 
-// SplitMix64 fallback PRNG state
+// Fatal diagnostic helper for unrecoverable entropy exhaustion in fallthrough APIs.
+extern act velo_crypto_rand_fatal(msg: string)
+
+// Test hook to inject simulated entropy failure.
+extern act velo_crypto_inject_entropy_failure(enable: i32)
+
+// Injects simulated OS CSPRNG entropy failure (for testing fail-closed behavior).
+// Pass true to simulate failure, false to restore normal CSPRNG operation.
+act crypto_inject_entropy_failure(enable: bool) {
+    if enable {
+        velo_crypto_inject_entropy_failure(1 as i32)
+    } else {
+        velo_crypto_inject_entropy_failure(0 as i32)
+    }
+}
+
+// SplitMix64 PRNG state for explicit insecure simulation/testing.
 mut g_rand_fallback_seed: u64 = 0x853C49E65D6F2B8E as u64
 
 act rand_splitmix64() -> u64 {
@@ -26,34 +38,50 @@ act rand_splitmix64() -> u64 {
     return z ^ (z >> 31)
 }
 
-// Fills the destination buffer with cryptographically secure random bytes from the OS CSPRNG.
-// Returns true on success, false if OS entropy source was unavailable.
-act crypto_random_bytes(buf: @u8, len: usize) -> bool {
-    if buf == null { return false }
-    if len == 0 { return true }
+// Explicit insecure fallback fill using SplitMix64 PRNG.
+// WARNING: NOT cryptographically secure. Use ONLY for deterministic non-crypto simulation.
+act crypto_unsafe_fallback_bytes(buf: @u8, len: usize) {
+    if buf == null { return }
+    mut i: usize = 0
+    loop i < len {
+        let r = rand_splitmix64()
+        buf[i] = (r & (0xFF as u64)) as u8
+        i += 1
+    }
+}
 
-    // One call: the helper already loops over its own partial reads, and returns
-    // false without touching the buffer when the source fails, so a caller can
-    // never mistake partial entropy for random output.
+// Fills the destination buffer with cryptographically secure random bytes from the OS CSPRNG.
+// Returns true on success, or fails with an error description if the OS entropy source is unavailable.
+// On failure, zeros the destination buffer so no partial or uninitialized entropy is leaked.
+act crypto_random_bytes(buf: @u8, len: usize) -> bool or string {
+    if buf == null {
+        fail "null buffer passed to crypto_random_bytes"
+    }
+    if len == 0 {
+        return true
+    }
+
     let ok = velo_crypto_random_fill(buf as @void, len)
     if !ok {
-        // OS CSPRNG failed: fallback fill
         mut i: usize = 0
         loop i < len {
-            let r = rand_splitmix64()
-            buf[i] = (r & (0xFF as u64)) as u8
+            buf[i] = 0 as u8
             i += 1
         }
-        return false
+        fail "OS entropy source unavailable (CSPRNG failure)"
     }
     return true
 }
 
-// Generates a cryptographically secure random unsigned 32-bit integer.
-act crypto_random_u32() -> u32 {
+// Generates a cryptographically secure random unsigned 32-bit integer, propagating errors.
+act crypto_random_u32_try() -> u32 or string {
     mut b: @u8 = heap_alloc(4)
-    if b == null { return 0 as u32 }
-    crypto_random_bytes(b, 4)
+    if b == null { fail "out of memory" }
+    let res = crypto_random_bytes(b, 4)
+    if !res.ok {
+        heap_free(b)
+        fail res.err
+    }
     let b0 = b[0] as u32
     let b1 = b[1] as u32
     let b2 = b[2] as u32
@@ -62,11 +90,26 @@ act crypto_random_u32() -> u32 {
     return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 }
 
-// Generates a cryptographically secure random unsigned 64-bit integer.
-act crypto_random_u64() -> u64 {
+// Generates a cryptographically secure random unsigned 32-bit integer.
+// Aborts with a named fatal diagnostic if the OS entropy source is unavailable.
+act crypto_random_u32() -> u32 {
+    let res = crypto_random_u32_try()
+    if !res.ok {
+        velo_crypto_rand_fatal("crypto_random_u32: OS entropy source unavailable")
+        return 0 as u32
+    }
+    return res.val
+}
+
+// Generates a cryptographically secure random unsigned 64-bit integer, propagating errors.
+act crypto_random_u64_try() -> u64 or string {
     mut b: @u8 = heap_alloc(8)
-    if b == null { return 0 as u64 }
-    crypto_random_bytes(b, 8)
+    if b == null { fail "out of memory" }
+    let res = crypto_random_bytes(b, 8)
+    if !res.ok {
+        heap_free(b)
+        fail res.err
+    }
     let b0 = b[0] as u64
     let b1 = b[1] as u64
     let b2 = b[2] as u64
@@ -81,7 +124,19 @@ act crypto_random_u64() -> u64 {
     return lo | (hi << 32)
 }
 
+// Generates a cryptographically secure random unsigned 64-bit integer.
+// Aborts with a named fatal diagnostic if the OS entropy source is unavailable.
+act crypto_random_u64() -> u64 {
+    let res = crypto_random_u64_try()
+    if !res.ok {
+        velo_crypto_rand_fatal("crypto_random_u64: OS entropy source unavailable")
+        return 0 as u64
+    }
+    return res.val
+}
+
 // Generates a cryptographically secure random integer uniformly distributed in [min, max].
+// Aborts with a named fatal diagnostic if the OS entropy source is unavailable.
 act crypto_random_range(min: u64, max: u64) -> u64 {
     if min >= max {
         return min
@@ -96,17 +151,32 @@ act crypto_random_range(min: u64, max: u64) -> u64 {
     return min + (r % range)
 }
 
-// Generates a random hexadecimal string representing byte_count secure random bytes.
-act crypto_random_hex(byte_count: usize) -> string {
+// Generates a random hexadecimal string representing byte_count secure random bytes, propagating errors.
+act crypto_random_hex_try(byte_count: usize) -> string or string {
     if byte_count == 0 {
         return ""
     }
     mut buf: @u8 = heap_alloc(byte_count)
     if buf == null {
-        return ""
+        fail "out of memory"
     }
-    crypto_random_bytes(buf, byte_count)
+    let res = crypto_random_bytes(buf, byte_count)
+    if !res.ok {
+        heap_free(buf)
+        fail res.err
+    }
     let hex_res = bytes_to_hex(buf, byte_count)
     heap_free(buf)
     return hex_res
+}
+
+// Generates a random hexadecimal string representing byte_count secure random bytes.
+// Aborts with a named fatal diagnostic if the OS entropy source is unavailable.
+act crypto_random_hex(byte_count: usize) -> string {
+    let res = crypto_random_hex_try(byte_count)
+    if !res.ok {
+        velo_crypto_rand_fatal("crypto_random_hex: OS entropy source unavailable")
+        return ""
+    }
+    return res.val
 }

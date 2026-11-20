@@ -3,11 +3,11 @@ use "defs.vl"
 use "../crypto/rand.vl"
 use "../rand.vl"
 
-// Generates a cryptographically secure random UUID Version 4 using the OS CSPRNG.
-act uuid_v4() -> Uuid {
+// Generates a UUID Version 4, propagating errors if the OS entropy source is unavailable.
+act uuid_v4_try() -> Uuid or string {
     mut u = uuid_nil()
     let ptr = (@u) as @u8
-    crypto_random_bytes(ptr, 16)
+    crypto_random_bytes(ptr, 16) or return
 
     // Set version 4: bits 12-15 of time_hi_and_version to 0100 (4)
     ptr[6] = ((ptr[6] & (0x0F as u8)) | (0x40 as u8)) as u8
@@ -16,6 +16,17 @@ act uuid_v4() -> Uuid {
     ptr[8] = ((ptr[8] & (0x3F as u8)) | (0x80 as u8)) as u8
 
     return u
+}
+
+// Generates a cryptographically secure random UUID Version 4 using the OS CSPRNG.
+// Aborts with a named fatal diagnostic if the OS entropy source is unavailable.
+act uuid_v4() -> Uuid {
+    let res = uuid_v4_try()
+    if !res.ok {
+        velo_crypto_rand_fatal("uuid_v4: OS entropy source failed during UUID generation")
+        return uuid_nil()
+    }
+    return res.val
 }
 
 // Generates a fast pseudo-random UUID Version 4 using an explicit std.rand Rng instance.

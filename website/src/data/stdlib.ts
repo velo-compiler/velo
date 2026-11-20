@@ -523,9 +523,9 @@ export const STDLIB_MODULES: StdlibModule[] = [
       },
       {
         name: 'crypto_random_bytes',
-        signature: 'act crypto_random_bytes(buf: @u8, len: usize) -> bool',
-        description: 'Fills a byte buffer with cryptographically secure random bytes from the OS kernel entropy source.',
-        example: 'crypto_random_bytes(key_buf, 32)'
+        signature: 'act crypto_random_bytes(buf: @u8, len: usize) -> bool or string',
+        description: 'Fills a byte buffer with cryptographically secure random bytes from the OS kernel entropy source. Fails closed if entropy is unavailable.',
+        example: 'let res = crypto_random_bytes(key_buf, 32)'
       },
       {
         name: 'crypto_random_u32',

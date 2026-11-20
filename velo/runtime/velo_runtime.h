@@ -1255,7 +1255,20 @@ static inline bool velo_os_set_env(const char* key, const char* val) {
 __declspec(dllimport) int __cdecl rand_s(unsigned int* randomValue);
 #endif
 
+// Phase 73 / Task 73.2: fail-closed CSPRNG entropy exhaustion support.
+static int g_velo_fail_entropy_injected = 0;
+
+static inline void velo_crypto_inject_entropy_failure(int32_t enable) {
+    g_velo_fail_entropy_injected = (int)enable;
+}
+
+static inline void velo_crypto_rand_fatal(const char* msg) {
+    fprintf(stderr, "Velo Fatal Error: %s\n", msg);
+    exit(1);
+}
+
 static inline bool velo_crypto_random_fill(void* buf, size_t len) {
+    if (g_velo_fail_entropy_injected || getenv("VELO_FAIL_ENTROPY") != NULL) return false;
     if (buf == NULL) return false;
     if (len == 0) return true;
 #if defined(_WIN32)

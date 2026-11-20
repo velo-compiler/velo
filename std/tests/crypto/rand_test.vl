@@ -4,11 +4,11 @@ use "../../io.vl"
 use "../../mem/heap.vl"
 
 act main() -> i32 {
-    // 1. Test random bytes
+    // 1. Test random bytes (success case)
     mut buf: @u8 = heap_alloc(16)
-    let ok = crypto_random_bytes(buf, 16)
-    if !ok {
-        io.println_str("FAIL: crypto_random_bytes returned false")
+    let res = crypto_random_bytes(buf, 16)
+    if !res.ok {
+        io.println_str("FAIL: crypto_random_bytes failed")
         heap_free(buf)
         return 1
     }
@@ -28,7 +28,6 @@ act main() -> i32 {
     // 2. Test random integers
     let u1 = crypto_random_u32()
     let u2 = crypto_random_u32()
-    // It's technically possible but astronomically unlikely that both are 0
     if u1 == 0 and u2 == 0 {
         io.println_str("FAIL: crypto_random_u32 returned two zero values")
         return 3
@@ -52,6 +51,73 @@ act main() -> i32 {
     if str.len(hex_val) != 32 {
         io.println_str("FAIL: crypto_random_hex length != 32")
         return 5
+    }
+
+    // 5. Test explicit unsafe fallback fill
+    mut fb: @u8 = heap_alloc(16)
+    crypto_unsafe_fallback_bytes(fb, 16)
+    mut fb_sum: u32 = 0
+    mut fi: usize = 0
+    loop fi < 16 {
+        fb_sum += fb[fi] as u32
+        fi += 1
+    }
+    heap_free(fb)
+    if fb_sum == 0 {
+        io.println_str("FAIL: crypto_unsafe_fallback_bytes returned all zeroes")
+        return 6
+    }
+
+    // 6. Test fail-closed behavior under simulated entropy exhaustion
+    mut fail_buf: @u8 = heap_alloc(16)
+    fail_buf[0] = 0xAA as u8
+    fail_buf[1] = 0xBB as u8
+    fail_buf[15] = 0xCC as u8
+
+    crypto_inject_entropy_failure(true)
+
+    let fail_res = crypto_random_bytes(fail_buf, 16)
+    if fail_res.ok {
+        io.println_str("FAIL: crypto_random_bytes succeeded when entropy failed")
+        heap_free(fail_buf)
+        return 7
+    }
+
+    // Verify buffer was scrubbed/zeroed
+    if fail_buf[0] != (0 as u8) or fail_buf[1] != (0 as u8) or fail_buf[15] != (0 as u8) {
+        io.println_str("FAIL: crypto_random_bytes did not zero buffer on failure")
+        heap_free(fail_buf)
+        return 8
+    }
+    heap_free(fail_buf)
+
+    // Test _try variants fail gracefully without aborting
+    let u32_err = crypto_random_u32_try()
+    if u32_err.ok {
+        io.println_str("FAIL: crypto_random_u32_try succeeded under entropy exhaustion")
+        return 9
+    }
+
+    let u64_err = crypto_random_u64_try()
+    if u64_err.ok {
+        io.println_str("FAIL: crypto_random_u64_try succeeded under entropy exhaustion")
+        return 10
+    }
+
+    let hex_err = crypto_random_hex_try(16)
+    if hex_err.ok {
+        io.println_str("FAIL: crypto_random_hex_try succeeded under entropy exhaustion")
+        return 11
+    }
+
+    // Restore normal entropy
+    crypto_inject_entropy_failure(false)
+
+    // Verify normal operation restored
+    let restored_u32 = crypto_random_u32_try()
+    if !restored_u32.ok {
+        io.println_str("FAIL: failed to restore entropy operation")
+        return 12
     }
 
     io.println_str("OK: std.crypto.rand tests passed")
