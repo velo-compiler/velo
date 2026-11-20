@@ -10,6 +10,7 @@ use std.math
 use std.os
 use std.net
 use std.crypto
+use std.crypto.legacy
 use std.http
 use std.log
 use std.test

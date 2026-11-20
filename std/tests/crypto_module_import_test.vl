@@ -9,28 +9,21 @@ act main() -> i32 {
         return 1
     }
 
-    // 2. MD5
-    let m = md5_hash_str("velo")
-    if m != "939c04836f9dda50950db42092831eec" {
-        io.println_str("FAIL: umbrella md5 mismatch")
-        return 2
-    }
-
-    // 3. CRC-32
+    // 2. CRC-32
     let c = crc32_hash_str("velo")
     if c != (0x354971f5 as u32) {
         io.println_str("FAIL: umbrella crc32 mismatch")
         return 3
     }
 
-    // 4. HMAC-SHA256
+    // 3. HMAC-SHA256
     let h = hmac_sha256_str("secret", "velo")
     if h != "3d60592aea1342a9bada59d6ebce09a52b5af47aa5f881fafb47daf55d1023b3" {
         io.println_str("FAIL: umbrella hmac mismatch")
         return 4
     }
 
-    // 5. CSPRNG
+    // 4. CSPRNG
     let rnd_hex = crypto_random_hex(8)
     if str.len(rnd_hex) != 16 {
         io.println_str("FAIL: umbrella crypto_random_hex length mismatch")

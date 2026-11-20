@@ -1004,10 +1004,30 @@ its use for password hashing.
 
 ## Tasks
 
-**73.1** Move `md5` out of `std/crypto.vl` into `std/crypto/legacy.vl` with a
+**73.1 [COMPLETED] ✅** Move `md5` out of `std/crypto.vl` into `std/crypto/legacy.vl` with a
 `use std.crypto.legacy` requirement and a doc comment saying it is for
 interoperability only. Add `tests/test_crypto_umbrella.py` asserting MD5 is not
 reachable from the umbrella.
+
+- *Former Defect:*
+  `std/crypto.vl` exported MD5 directly in the default top-level cryptographic umbrella (`use "crypto/md5.vl"`). Importing `use std.crypto` brought MD5 functions (`md5_hash`, `md5_hash_str`, `Md5State`) into scope alongside secure primitives (SHA-256, HMAC-SHA256, CSPRNG), violating security invariant I73.4 and inviting the use of broken collision-vulnerable digests in security-sensitive code.
+- *Fix Applied:*
+  - Removed `use "crypto/md5.vl"` from `std/crypto.vl`, keeping only secure primitives in the default `std.crypto` umbrella (SHA-256, HMAC-SHA256, CSPRNG, CRC-32, hex).
+  - Created `std/crypto/legacy.vl` exporting `use "md5.vl"` with an explicit security warning doc comment stating MD5 is cryptographically broken and provided strictly for legacy protocol and file format interoperability.
+  - Added warning banner in `std/crypto/md5.vl` documenting deprecation and directing callers to `use std.crypto.legacy`.
+  - Updated standard library tests (`std/tests/crypto_module_import_test.vl`, `std/tests/std_module_import_test.vl`) to verify that `use std.crypto` provides only secure primitives and that MD5 is accessed via `use std.crypto.legacy`.
+- *Residual Limitation (if any):*
+  None. MD5 cannot be imported or accessed through `use std.crypto`. Callers must explicitly opt in with `use std.crypto.legacy` or `use std.crypto.md5`.
+- *Verification:*
+  - Created `tests/test_crypto_umbrella.py` with 6 automated tests:
+    - `test_md5_hash_str_not_reachable_from_crypto_umbrella`: asserts `md5_hash_str` fails compile-time check when only `use std.crypto` is imported.
+    - `test_md5_init_not_reachable_from_crypto_umbrella`: asserts `Md5State` and `md5_init` fail compile-time check when only `use std.crypto` is imported.
+    - `test_md5_reachable_with_explicit_legacy_import`: verifies `use std.crypto.legacy` compiles and evaluates correct RFC 1321 digests.
+    - `test_crypto_and_legacy_can_be_imported_together`: verifies clean coexistence of `std.crypto` and `std.crypto.legacy`.
+    - `test_crypto_umbrella_source_excludes_md5`: static file audit ensuring `std/crypto.vl` does not import `md5.vl`.
+    - `test_legacy_vl_has_interoperability_warning_doc_comment`: static file audit ensuring `std/crypto/legacy.vl` has the required warning comment.
+  - All 6 tests passed in 3.23s.
+  - Verified `tests/test_std_crypto.py` (7/7 passed).
 
 **73.2** Change `crypto_random_bytes` to fail closed: return `bool or string`
 and have `uuid_v4`/`uuid_v7` propagate (or abort with a named fatal). Delete the

@@ -1,4 +1,8 @@
 // std.crypto.md5 — RFC 1321 compliant MD5 cryptographic checksum algorithm.
+//
+// WARNING: MD5 is cryptographically broken and vulnerable to collision attacks.
+// It is deprecated and provided strictly for legacy interoperability and checksums.
+// To use MD5, import via `use std.crypto.legacy`. Do not use for security-sensitive purposes.
 use "../mem/heap.vl"
 use "hex.vl"
 

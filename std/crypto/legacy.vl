@@ -1,0 +1,8 @@
+// std.crypto.legacy — Deprecated cryptographic algorithms for legacy interoperability only.
+//
+// WARNING: The algorithms in this module (such as MD5) are cryptographically broken
+// and MUST NOT be used for security-sensitive contexts (e.g. password storage, digital
+// signatures, HMAC authentication, or security tokens). They are provided strictly for
+// backwards compatibility and interoperability with legacy protocols, legacy file checksums,
+// and existing external data formats.
+use "md5.vl"
