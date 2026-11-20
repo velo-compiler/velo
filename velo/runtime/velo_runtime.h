@@ -3716,4 +3716,18 @@ static inline int64_t velo_div_guard_loc(int64_t b, const char* file, int line) 
 
 #define velo_div_guard(b) velo_div_guard_loc((int64_t)(b), __FILE__, __LINE__)
 
+// 74.3: Fixed-size array bounds fatal tier
+static inline void velo_arr_oob(int64_t idx, size_t len) {
+    fprintf(stderr, "Velo Fatal Error: array index out of bounds: %lld (len %llu)!\n",
+            (long long)idx, (unsigned long long)len);
+    exit(1);
+}
+
+static inline size_t velo_arr_idx(int64_t idx, size_t len) {
+    if (idx < 0 || (uint64_t)idx >= len) {
+        velo_arr_oob(idx, len);
+    }
+    return (size_t)idx;
+}
+
 #endif // VELO_RUNTIME_H

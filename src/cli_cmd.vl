@@ -73,7 +73,7 @@ act handle_run_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_di
             sb_append_str(@linker_sb, "-L")
             let raw_arg = copy_slice_to_string(arg, 2, str.len(arg) - 2)
             sb_append_str(@linker_sb, quote_path(path_to_native_str(raw_arg)))
-        } else if arg != "--unsafe-shelf-index" and arg != "--no-line-directives" and arg != "--strict-safety" and str.len(source_file) == 0 {
+        } else if arg != "--unsafe-shelf-index" and arg != "--unsafe-array-index" and arg != "--unsafe-index" and arg != "--no-line-directives" and arg != "--strict-safety" and str.len(source_file) == 0 {
             source_file = arg
         }
         i += 1
@@ -154,7 +154,7 @@ act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_
             sb_append_str(@linker_sb, "-L")
             let raw_arg = copy_slice_to_string(arg, 2, str.len(arg) - 2)
             sb_append_str(@linker_sb, quote_path(path_to_native_str(raw_arg)))
-        } else if arg != "--unsafe-shelf-index" and arg != "--no-line-directives" and arg != "--strict-safety" and str.len(source_file) == 0 {
+        } else if arg != "--unsafe-shelf-index" and arg != "--unsafe-array-index" and arg != "--unsafe-index" and arg != "--no-line-directives" and arg != "--strict-safety" and str.len(source_file) == 0 {
             source_file = arg
         }
         i += 1

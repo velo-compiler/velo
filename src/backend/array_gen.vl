@@ -5,6 +5,7 @@ use "../ast/expr.vl"
 use "../ast/stmt.vl"
 use "../analysis/symbol_table.vl"
 use "../analysis/type_checker.vl"
+use "../analysis/array_checks.vl"
 use "../common/string_builder.vl"
 use "codegen_types.vl"
 use "codegen_expr.vl"
@@ -107,5 +108,22 @@ act emit_array_member(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode, cle
         sb_append_str(sb, "))")
         return
     }
+}
+
+// 74.3: Emits fixed array index read/write with bounds checking if not proven in-bounds constant.
+act emit_array_index(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode, tt: string) {
+    let arr_len = fixed_array_len(tt)
+    emit_c_expr(sb, st, expr.target)
+    sb_append_char(sb, '[')
+    if st.unsafe_array_index or is_proven_in_bounds_const(expr.index, arr_len) {
+        emit_c_expr(sb, st, expr.index)
+    } else {
+        sb_append_str(sb, "velo_arr_idx(")
+        emit_c_expr(sb, st, expr.index)
+        sb_append_str(sb, ", ")
+        sb_append_int64(sb, arr_len)
+        sb_append_char(sb, ')')
+    }
+    sb_append_char(sb, ']')
 }
 

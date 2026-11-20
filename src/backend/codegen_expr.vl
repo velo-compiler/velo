@@ -212,6 +212,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
         if is_simd_type(strip_pointer_prefix(tt)) { emit_simd_index(sb, st, expr, tt); return }
         if is_shelf_form(tt) { emit_shelf_index(sb, st, expr); return }
         if is_map_form(tt) { emit_map_index(sb, st, expr); return }
+        if is_fixed_array_type(tt) { emit_array_index(sb, st, expr, tt); return }
         emit_c_expr(sb, st, expr.target); sb_append_char(sb, '[')
         emit_c_expr(sb, st, expr.index); sb_append_char(sb, ']'); return
     }

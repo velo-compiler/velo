@@ -354,7 +354,7 @@ act compile_source_to_c_all_opts(source_path: string, unsafe_index: bool, is_tes
 
     mut st: SymbolTable
     init_symbol_table(@st)
-    st.unsafe_shelf_index = unsafe_index
+    st.unsafe_shelf_index = unsafe_index; st.unsafe_array_index = unsafe_index
     st.is_test = is_test
     st.no_line_directives = no_line_directives
     st.strict_safety = strict_safety

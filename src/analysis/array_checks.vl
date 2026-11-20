@@ -5,6 +5,7 @@ use "../common/string_builder.vl"
 use "../common/diagnostics.vl"
 use "symbol_table.vl"
 use "literal_check.vl"
+use "range_checks.vl"
 use "../frontend/token.vl"
 
 // Infers the type of an array literal [e0, e1, ...] as "[N]T".
@@ -36,6 +37,16 @@ act infer_array_lit(st: @SymbolTable, expr: @ExprNode) -> string {
     return arr_t
 }
 
+// 74.3: Checks if an index expression is a proven in-bounds constant (0 <= idx < arr_len).
+act is_proven_in_bounds_const(expr: @ExprNode, arr_len: i64) -> bool {
+    if expr == null or arr_len <= 0i64 { return false }
+    mut v: i64 = 0
+    if eval_const_int_expr(expr, @v) {
+        return v >= 0i64 and v < arr_len
+    }
+    return false
+}
+
 // Checks index expression type and compile-time constant bounds on fixed array indexing.
 act check_array_index(st: @SymbolTable, expr: @ExprNode, clean_type: string) -> string {
     let idx_t = infer_expr_type(st, expr.index)
@@ -44,18 +55,10 @@ act check_array_index(st: @SymbolTable, expr: @ExprNode, clean_type: string) -> 
         st.error_count += 1
         return "unknown"
     }
-    if expr.index.kind == EXPR_INT {
-        let arr_len = fixed_array_len(clean_type)
-        mut overflow = false
-        mut idx_u64: u64 = 0u64
-        if expr.index.str_val != null and str.len(expr.index.str_val) > 0 {
-            idx_u64 = parse_u64_checked(expr.index.str_val, @overflow)
-        } else if expr.index.int_val < 0 {
-            overflow = true
-        } else {
-            idx_u64 = expr.index.int_val as u64
-        }
-        if overflow or (idx_u64 as i64) >= arr_len {
+    let arr_len = fixed_array_len(clean_type)
+    mut const_idx: i64 = 0
+    if eval_const_int_expr(expr.index, @const_idx) {
+        if const_idx < 0i64 or const_idx >= arr_len {
             report_error("semantic", expr.line, expr.col, "Array index out of bounds")
             st.error_count += 1
             return "unknown"

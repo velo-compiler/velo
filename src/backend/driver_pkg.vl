@@ -224,7 +224,7 @@ act handle_pkg_command(argc: i32, argv: @string, unsafe_index: bool) -> i32 {
                 sb_append_str(@linker_sb, "-L")
                 let raw_arg = copy_slice_to_string(arg, 2, str.len(arg) - 2)
                 sb_append_str(@linker_sb, quote_path(path_to_native_str(raw_arg)))
-            } else if arg != "--unsafe-shelf-index" {
+            } else if arg != "--unsafe-shelf-index" and arg != "--unsafe-array-index" and arg != "--unsafe-index" {
                 if str.len(manifest_path) == 0 {
                     let is_pkg_file = fs_is_file(arg) or str.ends_with(arg, ".pkg")
                     let is_dir = fs_is_dir(arg)

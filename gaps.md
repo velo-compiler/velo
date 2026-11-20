@@ -1136,7 +1136,7 @@ code, replacing today's silent `0xC0000094`.
   - Verified bootstrap determinism (`tests/test_bootstrap_snapshot.py`: all 6 tests pass).
   - Audited compiler source file line counts (`python scripts/count_lines.py` confirms all 103 files <= 400 lines).
 
-**74.3** Add runtime bounds checks for fixed-size array indexing that the
+**74.3 [COMPLETED] ✅** Add runtime bounds checks for fixed-size array indexing that the
 compiler cannot prove. Either reuse the shelf/bitset fatal tier
 (`runtime/velo_runtime.h:1824` `velo_shelf_oob`, `2918` `velo_bitset_oob`) or add
 `velo_arr_oob`. Emit the check only when `--unsafe-shelf-index`-style opt-out is
@@ -1144,6 +1144,22 @@ not requested. Test: `tests/test_fixed_array_runtime_bounds.py` with a dynamic
 index probe (the exact program above) asserting a fatal, and a
 `--unsafe-array-index` counterpart asserting the unchecked path for parity with
 the shelf policy.
+
+- *Former Defect:*
+  Dynamic indexing into fixed-size stack arrays (`[N]T` and `@[N]T`) was emitted as raw C array subscripting (`buf[i]`) without runtime bounds checking. When a computed index was out of bounds (such as the probe `mut buf: [4]i32; mut i: i32 = 7; buf[i] = 1`), execution quietly corrupted memory or read invalid memory without trapping. Constant expressions (`buf[2 + 2]`, `buf[-1]`) beyond simple literals were also not fully caught at compile time.
+- *Fix Applied:*
+  - Implemented `velo_arr_oob(idx, len)` and inline `velo_arr_idx(idx, len)` in `runtime/velo_runtime.h` (and mirrored identically in `velo/runtime/velo_runtime.h`). When an index is negative or $\ge len$, it prints `"Velo Fatal Error: array index out of bounds: <idx> (len <len>)!"` and terminates with exit code `1`.
+  - Added `unsafe_array_index: bool` to `SymbolTable` and wired `--unsafe-array-index` and `--unsafe-index` CLI flags across `src/main.vl`, `src/cli_cmd.vl`, `src/backend/driver.vl`, and `src/backend/driver_pkg.vl`.
+  - Upgraded compile-time constant bounds analysis in `src/analysis/array_checks.vl` using `eval_const_int_expr` from `src/analysis/range_checks.vl`, rejecting all constant out-of-bounds expressions at compile time.
+  - Implemented `is_proven_in_bounds_const(expr, arr_len)` in `src/analysis/array_checks.vl` and `emit_array_index` in `src/backend/array_gen.vl`, lowering into `src/backend/codegen_expr.vl`. Proven in-bounds constants (`buf[2]`) elide the guard and emit raw `buf[2]`; unproven dynamic indices emit `buf[velo_arr_idx(i, N)]` protecting both reads and writes; passing `--unsafe-array-index` elides the guard for parity with the shelf policy.
+  - Rebuilt self-hosting compiler chain (`bootstrap.c` -> Gen2 -> Gen3 -> `bin/velo.exe` -> updated `bootstrap.c`) and verified byte-for-byte output hash determinism.
+- *Residual Limitation (if any):*
+  None. Fixed-size array indexing is guaranteed memory-safe: compile-time rejection for constant OOB, deterministic runtime fatal for dynamic OOB, zero-cost elision for proven in-bounds constants, and an explicit `--unsafe-array-index` opt-out.
+- *Verification:*
+  - Created `tests/test_fixed_array_runtime_bounds.py` with 25 test cases covering the exact probe from §74 evidence table (`buf[7] = 1` trapping in `--debug` and `--release`), the `--unsafe-array-index` unchecked path, dynamic reads, negative indices, valid loops, unsigned indices, compile-time rejections, guard elision verification in emitted C, multidimensional arrays, struct array fields, and logical short-circuit preservation (all 25 tests pass).
+  - Verified Phase 74 test battery (`test_fixed_array_runtime_bounds.py`, `test_div_zero.py`, `test_integer_overflow.py`: all 53 tests pass).
+  - Verified snapshot determinism (`tests/test_bootstrap_snapshot.py`: all 6 tests pass).
+  - Audited compiler source file line counts (`python scripts/count_lines.py` confirms all 103 files <= 400 lines).
 
 **74.4** Add `mem.overlaps(a, b, len_a, len_b) -> bool` and make `mem.copy` /
 `mem.set` assert non-overlap in Debug builds (fatal with a named message),
