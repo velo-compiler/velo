@@ -1,0 +1,396 @@
+// std.crypto.sha512 — NIST FIPS 180-4 compliant SHA-512 cryptographic hash function
+// and RFC 2104 / RFC 4231 Keyed-Hashing for Message Authentication (HMAC-SHA512).
+use "../mem/heap.vl"
+use "hex.vl"
+use "subtle.vl"
+
+// SHA-512 streaming state context.
+data Sha512State {
+    h0: u64
+    h1: u64
+    h2: u64
+    h3: u64
+    h4: u64
+    h5: u64
+    h6: u64
+    h7: u64
+    buf: @u8
+    buf_len: usize
+    total_bytes: u64
+}
+
+// 64-bit right-rotation helper.
+act sha512_rotr64(x: u64, n: u64) -> u64 {
+    return (x >> n) | (x << ((64 as u64) - n))
+}
+
+act sha512_ch(x: u64, y: u64, z: u64) -> u64 {
+    return (x & y) ^ ((~x) & z)
+}
+
+act sha512_maj(x: u64, y: u64, z: u64) -> u64 {
+    return (x & y) ^ (x & z) ^ (y & z)
+}
+
+act sha512_sigma0(x: u64) -> u64 {
+    return sha512_rotr64(x, 28 as u64) ^ sha512_rotr64(x, 34 as u64) ^ sha512_rotr64(x, 39 as u64)
+}
+
+act sha512_sigma1(x: u64) -> u64 {
+    return sha512_rotr64(x, 14 as u64) ^ sha512_rotr64(x, 18 as u64) ^ sha512_rotr64(x, 41 as u64)
+}
+
+act sha512_sig0(x: u64) -> u64 {
+    return sha512_rotr64(x, 1 as u64) ^ sha512_rotr64(x, 8 as u64) ^ (x >> (7 as u64))
+}
+
+act sha512_sig1(x: u64) -> u64 {
+    return sha512_rotr64(x, 19 as u64) ^ sha512_rotr64(x, 61 as u64) ^ (x >> (6 as u64))
+}
+
+mut g_sha512_k: @u64 = null
+
+act sha512_ensure_k() {
+    if g_sha512_k != null { return }
+    g_sha512_k = heap_alloc(80 * 8) as @u64
+    g_sha512_k[0] = 0x428a2f98d728ae22 as u64; g_sha512_k[1] = 0x7137449123ef65cd as u64; g_sha512_k[2] = 0xb5c0fbcfec4d3b2f as u64; g_sha512_k[3] = 0xe9b5dba58189dbbc as u64
+    g_sha512_k[4] = 0x3956c25bf348b538 as u64; g_sha512_k[5] = 0x59f111f1b605d019 as u64; g_sha512_k[6] = 0x923f82a4af194f9b as u64; g_sha512_k[7] = 0xab1c5ed5da6d8118 as u64
+    g_sha512_k[8] = 0xd807aa98a3030242 as u64; g_sha512_k[9] = 0x12835b0145706fbe as u64; g_sha512_k[10] = 0x243185be4ee4b28c as u64; g_sha512_k[11] = 0x550c7dc3d5ffb4e2 as u64
+    g_sha512_k[12] = 0x72be5d74f27b896f as u64; g_sha512_k[13] = 0x80deb1fe3b1696b1 as u64; g_sha512_k[14] = 0x9bdc06a725c71235 as u64; g_sha512_k[15] = 0xc19bf174cf692694 as u64
+    g_sha512_k[16] = 0xe49b69c19ef14ad2 as u64; g_sha512_k[17] = 0xefbe4786384f25e3 as u64; g_sha512_k[18] = 0x0fc19dc68b8cd5b5 as u64; g_sha512_k[19] = 0x240ca1cc77ac9c65 as u64
+    g_sha512_k[20] = 0x2de92c6f592b0275 as u64; g_sha512_k[21] = 0x4a7484aa6ea6e483 as u64; g_sha512_k[22] = 0x5cb0a9dcbd41fbd4 as u64; g_sha512_k[23] = 0x76f988da831153b5 as u64
+    g_sha512_k[24] = 0x983e5152ee66dfab as u64; g_sha512_k[25] = 0xa831c66d2db43210 as u64; g_sha512_k[26] = 0xb00327c898fb213f as u64; g_sha512_k[27] = 0xbf597fc7beef0ee4 as u64
+    g_sha512_k[28] = 0xc6e00bf33da88fc2 as u64; g_sha512_k[29] = 0xd5a79147930aa725 as u64; g_sha512_k[30] = 0x06ca6351e003826f as u64; g_sha512_k[31] = 0x142929670a0e6e70 as u64
+    g_sha512_k[32] = 0x27b70a8546d22ffc as u64; g_sha512_k[33] = 0x2e1b21385c26c926 as u64; g_sha512_k[34] = 0x4d2c6dfc5ac42aed as u64; g_sha512_k[35] = 0x53380d139d95b3df as u64
+    g_sha512_k[36] = 0x650a73548baf63de as u64; g_sha512_k[37] = 0x766a0abb3c77b2a8 as u64; g_sha512_k[38] = 0x81c2c92e47edaee6 as u64; g_sha512_k[39] = 0x92722c851482353b as u64
+    g_sha512_k[40] = 0xa2bfe8a14cf10364 as u64; g_sha512_k[41] = 0xa81a664bbc423001 as u64; g_sha512_k[42] = 0xc24b8b70d0f89791 as u64; g_sha512_k[43] = 0xc76c51a30654be30 as u64
+    g_sha512_k[44] = 0xd192e819d6ef5218 as u64; g_sha512_k[45] = 0xd69906245565a910 as u64; g_sha512_k[46] = 0xf40e35855771202a as u64; g_sha512_k[47] = 0x106aa07032bbd1b8 as u64
+    g_sha512_k[48] = 0x19a4c116b8d2d0c8 as u64; g_sha512_k[49] = 0x1e376c085141ab53 as u64; g_sha512_k[50] = 0x2748774cdf8eeb99 as u64; g_sha512_k[51] = 0x34b0bcb5e19b48a8 as u64
+    g_sha512_k[52] = 0x391c0cb3c5c95a63 as u64; g_sha512_k[53] = 0x4ed8aa4ae3418acb as u64; g_sha512_k[54] = 0x5b9cca4f7763e373 as u64; g_sha512_k[55] = 0x682e6ff3d6b2b8a3 as u64
+    g_sha512_k[56] = 0x748f82ee5defb2fc as u64; g_sha512_k[57] = 0x78a5636f43172f60 as u64; g_sha512_k[58] = 0x84c87814a1f0ab72 as u64; g_sha512_k[59] = 0x8cc702081a6439ec as u64
+    g_sha512_k[60] = 0x90befffa23631e28 as u64; g_sha512_k[61] = 0xa4506cebde82bde9 as u64; g_sha512_k[62] = 0xbef9a3f7b2c67915 as u64; g_sha512_k[63] = 0xc67178f2e372532b as u64
+    g_sha512_k[64] = 0xca273eceea26619c as u64; g_sha512_k[65] = 0xd186b8c721c0c207 as u64; g_sha512_k[66] = 0xeada7dd6cde0eb1e as u64; g_sha512_k[67] = 0xf57d4f7fee6ed178 as u64
+    g_sha512_k[68] = 0x06f067aa72176fba as u64; g_sha512_k[69] = 0x0a637dc5a2c898a6 as u64; g_sha512_k[70] = 0x113f9804bef90dae as u64; g_sha512_k[71] = 0x1b710b35131c471b as u64
+    g_sha512_k[72] = 0x28db77f523047d84 as u64; g_sha512_k[73] = 0x32caab7b40c72493 as u64; g_sha512_k[74] = 0x3c9ebe0a15c9bebc as u64; g_sha512_k[75] = 0x431d67c49c100d4c as u64
+    g_sha512_k[76] = 0x4cc5d4becb3e42b6 as u64; g_sha512_k[77] = 0x597f299cfc657e2a as u64; g_sha512_k[78] = 0x5fcb6fab3ad6faec as u64; g_sha512_k[79] = 0x6c44198c4a475817 as u64
+}
+
+// Transforms a single 128-byte block updating the 8 hash words.
+act sha512_transform(s: @Sha512State, block: @u8) {
+    sha512_ensure_k()
+    mut w: @u64 = heap_alloc(80 * 8) as @u64
+
+    mut t: usize = 0
+    loop t < 16 {
+        mut word: u64 = 0 as u64
+        mut b: usize = 0
+        loop b < 8 {
+            word = (word << (8 as u64)) | (block[t * 8 + b] as u64)
+            b += 1
+        }
+        w[t] = word
+        t += 1
+    }
+
+    loop t < 80 {
+        w[t] = sha512_sig1(w[t - 2]) + w[t - 7] + sha512_sig0(w[t - 15]) + w[t - 16]
+        t += 1
+    }
+
+    mut a = s.h0; mut b = s.h1; mut c = s.h2; mut d = s.h3
+    mut e = s.h4; mut f = s.h5; mut g = s.h6; mut h = s.h7
+
+    mut i: usize = 0
+    loop i < 80 {
+        let t1 = h + sha512_sigma1(e) + sha512_ch(e, f, g) + g_sha512_k[i] + w[i]
+        let t2 = sha512_sigma0(a) + sha512_maj(a, b, c)
+        h = g
+        g = f
+        f = e
+        e = d + t1
+        d = c
+        c = b
+        b = a
+        a = t1 + t2
+        i += 1
+    }
+
+    s.h0 = s.h0 + a; s.h1 = s.h1 + b; s.h2 = s.h2 + c; s.h3 = s.h3 + d
+    s.h4 = s.h4 + e; s.h5 = s.h5 + f; s.h6 = s.h6 + g; s.h7 = s.h7 + h
+
+    crypto_zero(w as @u8, 80 * 8)
+    heap_free(w as @u8)
+}
+
+// Initializes a SHA-512 context with standard NIST FIPS initial hash values.
+act sha512_init(s: @Sha512State) {
+    if s == null { return }
+    s.h0 = 0x6a09e667f3bcc908 as u64
+    s.h1 = 0xbb67ae8584caa73b as u64
+    s.h2 = 0x3c6ef372fe94f82b as u64
+    s.h3 = 0xa54ff53a5f1d36f1 as u64
+    s.h4 = 0x510e527fade682d1 as u64
+    s.h5 = 0x9b05688c2b3e6c1f as u64
+    s.h6 = 0x1f83d9abfb41bd6b as u64
+    s.h7 = 0x5be0cd19137e2179 as u64
+    if s.buf == null {
+        s.buf = heap_alloc(128)
+    }
+    s.buf_len = 0
+    s.total_bytes = 0 as u64
+}
+
+// Feeds binary data into the SHA-512 context.
+act sha512_update(s: @Sha512State, data: @u8, len: usize) {
+    if s == null or data == null or len == 0 { return }
+    s.total_bytes = s.total_bytes + (len as u64)
+
+    mut i: usize = 0
+    loop i < len {
+        s.buf[s.buf_len] = data[i]
+        s.buf_len += 1
+        if s.buf_len == 128 {
+            sha512_transform(s, s.buf)
+            s.buf_len = 0
+        }
+        i += 1
+    }
+}
+
+// Feeds a string into the SHA-512 context.
+act sha512_update_str(s: @Sha512State, text: string) {
+    if s == null or text == null { return }
+    let len = str.len(text)
+    if len == 0 { return }
+    sha512_update(s, text as @u8, len)
+}
+
+// Finalizes the hash, writes 64 digest bytes to out_digest, and cleans up context buffer.
+act sha512_final(s: @Sha512State, out_digest: @u8) {
+    if s == null or out_digest == null { return }
+
+    // 1. Append 0x80 bit marker
+    s.buf[s.buf_len] = 0x80 as u8
+    s.buf_len += 1
+
+    // 2. Pad with zeroes if needed to fit 128-bit length
+    if s.buf_len > 112 {
+        loop s.buf_len < 128 {
+            s.buf[s.buf_len] = 0 as u8
+            s.buf_len += 1
+        }
+        sha512_transform(s, s.buf)
+        s.buf_len = 0
+    }
+
+    loop s.buf_len < 112 {
+        s.buf[s.buf_len] = 0 as u8
+        s.buf_len += 1
+    }
+
+    // 3. Append 128-bit big-endian bit length
+    let total_bits_hi: u64 = s.total_bytes >> (61 as u64)
+    let total_bits_lo: u64 = s.total_bytes << (3 as u64)
+    mut bi: usize = 0
+    loop bi < 8 {
+        let shift = ((7 - bi) * 8) as u64
+        s.buf[112 + bi] = ((total_bits_hi >> shift) & (0xFF as u64)) as u8
+        s.buf[120 + bi] = ((total_bits_lo >> shift) & (0xFF as u64)) as u8
+        bi += 1
+    }
+
+    sha512_transform(s, s.buf)
+
+    // 4. Output big-endian 64-byte hash
+    mut k: usize = 0
+    mut h_val: u64 = 0
+    loop k < 8 {
+        if k == 0 { h_val = s.h0 }
+        else if k == 1 { h_val = s.h1 }
+        else if k == 2 { h_val = s.h2 }
+        else if k == 3 { h_val = s.h3 }
+        else if k == 4 { h_val = s.h4 }
+        else if k == 5 { h_val = s.h5 }
+        else if k == 6 { h_val = s.h6 }
+        else { h_val = s.h7 }
+
+        mut b: usize = 0
+        loop b < 8 {
+            let shift = ((7 - b) * 8) as u64
+            out_digest[k * 8 + b] = ((h_val >> shift) & (0xFF as u64)) as u8
+            b += 1
+        }
+        k += 1
+    }
+
+    if s.buf != null {
+        crypto_zero(s.buf, 128)
+        heap_free(s.buf)
+        s.buf = null
+    }
+}
+
+// Computes 64 raw bytes of SHA-512 for a byte slice.
+act sha512_bytes(data: @u8, len: usize, out_digest: @u8) {
+    mut s: Sha512State
+    s.buf = null
+    sha512_init(@s)
+    sha512_update(@s, data, len)
+    sha512_final(@s, out_digest)
+}
+
+// Finalizes the SHA-512 context and returns a 128-character lowercase hexadecimal string.
+act sha512_final_hex(s: @Sha512State) -> string {
+    mut digest: @u8 = heap_alloc(64)
+    sha512_final(s, digest)
+    let hex_res = bytes_to_hex(digest, 64)
+    crypto_zero(digest, 64)
+    heap_free(digest)
+    return hex_res
+}
+
+// Computes a 128-character lowercase hex string SHA-512 digest of binary data.
+act sha512_hash(data: @u8, len: usize) -> string {
+    mut digest: @u8 = heap_alloc(64)
+    sha512_bytes(data, len, digest)
+    let hex_res = bytes_to_hex(digest, 64)
+    crypto_zero(digest, 64)
+    heap_free(digest)
+    return hex_res
+}
+
+// Computes a 128-character lowercase hex string SHA-512 digest of a string.
+act sha512_hash_str(text: string) -> string {
+    if text == null { return sha512_hash(null, 0) }
+    return sha512_hash(text as @u8, str.len(text))
+}
+
+// ============================================================================
+// HMAC-SHA512 (RFC 2104 / RFC 4231)
+// ============================================================================
+
+// Computes a 64-byte HMAC-SHA512 authentication code into out_digest.
+act hmac_sha512(key: @u8, key_len: usize, data: @u8, data_len: usize, out_digest: @u8) {
+    if out_digest == null { return }
+
+    mut k: @u8 = heap_alloc(128)
+    crypto_zero(k, 128)
+
+    // Step 1: Normalize key to 128 bytes
+    if key != null and key_len > 0 {
+        if key_len > 128 {
+            sha512_bytes(key, key_len, k)
+        } else {
+            mut ki: usize = 0
+            loop ki < key_len {
+                k[ki] = key[ki]
+                ki += 1
+            }
+        }
+    }
+
+    // Step 2: Inner hash = SHA512((k ^ 0x36) || data)
+    mut ipad: @u8 = heap_alloc(128)
+    mut opad: @u8 = heap_alloc(128)
+    mut j: usize = 0
+    loop j < 128 {
+        ipad[j] = k[j] ^ (0x36 as u8)
+        opad[j] = k[j] ^ (0x5C as u8)
+        j += 1
+    }
+
+    mut inner_state: Sha512State
+    inner_state.buf = null
+    sha512_init(@inner_state)
+    sha512_update(@inner_state, ipad, 128)
+    if data != null and data_len > 0 {
+        sha512_update(@inner_state, data, data_len)
+    }
+    mut inner_digest: @u8 = heap_alloc(64)
+    sha512_final(@inner_state, inner_digest)
+
+    // Step 3: Outer hash = SHA512((k ^ 0x5C) || inner_digest)
+    mut outer_state: Sha512State
+    outer_state.buf = null
+    sha512_init(@outer_state)
+    sha512_update(@outer_state, opad, 128)
+    sha512_update(@outer_state, inner_digest, 64)
+    sha512_final(@outer_state, out_digest)
+
+    // Securely wipe sensitive intermediate buffers before freeing
+    crypto_zero(k, 128); crypto_zero(ipad, 128); crypto_zero(opad, 128); crypto_zero(inner_digest, 64)
+    heap_free(k); heap_free(ipad); heap_free(opad); heap_free(inner_digest)
+}
+
+// Computes a 128-character lowercase hex HMAC-SHA512 string for binary data.
+act hmac_sha512_hash(key: @u8, key_len: usize, data: @u8, data_len: usize) -> string {
+    mut digest: @u8 = heap_alloc(64)
+    hmac_sha512(key, key_len, data, data_len, digest)
+    let hex_res = bytes_to_hex(digest, 64)
+    crypto_zero(digest, 64)
+    heap_free(digest)
+    return hex_res
+}
+
+// Computes a 128-character lowercase hex HMAC-SHA512 string for string inputs.
+act hmac_sha512_str(key: string, data: string) -> string {
+    mut k_ptr: @u8 = null; mut k_len: usize = 0
+    if key != null { k_ptr = key as @u8; k_len = str.len(key) }
+    mut d_ptr: @u8 = null; mut d_len: usize = 0
+    if data != null { d_ptr = data as @u8; d_len = str.len(data) }
+    return hmac_sha512_hash(k_ptr, k_len, d_ptr, d_len)
+}
+
+// Verifies in constant time that tag matches the HMAC-SHA512 of data under key.
+// Accepts either a 128-character hex string tag or a 64-byte raw binary tag string.
+// Returns true if authentic, false if corrupted, forged, or invalid length.
+// Executes in constant time with respect to tag content.
+act hmac_sha512_verify(key: string, data: string, tag: string) -> bool {
+    if tag == null { return false }
+    let tag_len = str.len(tag)
+
+    mut computed: @u8 = heap_alloc(64)
+    if computed == null { return false }
+
+    mut k_ptr: @u8 = null; mut k_len: usize = 0
+    if key != null { k_ptr = key as @u8; k_len = str.len(key) }
+    mut d_ptr: @u8 = null; mut d_len: usize = 0
+    if data != null { d_ptr = data as @u8; d_len = str.len(data) }
+    hmac_sha512(k_ptr, k_len, d_ptr, d_len, computed)
+
+    mut is_valid = false
+    if tag_len == 128 {
+        let hex_str = bytes_to_hex(computed, 64)
+        is_valid = crypto_secure_eq(hex_str as @u8, tag as @u8, 128)
+        heap_free(hex_str as @u8)
+    } else if tag_len == 64 {
+        is_valid = crypto_secure_eq(computed, tag as @u8, 64)
+    } else {
+        // Execute comparison over 64 bytes to normalize execution time
+        let dummy = crypto_secure_eq(computed, computed, 64)
+        is_valid = false
+    }
+
+    crypto_zero(computed, 64)
+    heap_free(computed)
+    return is_valid
+}
+
+// Verifies in constant time that raw tag matches the 64-byte HMAC-SHA512 of binary data under key.
+act hmac_sha512_verify_bytes(key: @u8, key_len: usize, data: @u8, data_len: usize, tag: @u8, tag_len: usize) -> bool {
+    if tag == null { return false }
+    mut computed: @u8 = heap_alloc(64)
+    if computed == null { return false }
+    hmac_sha512(key, key_len, data, data_len, computed)
+
+    mut is_valid = false
+    if tag_len == 64 {
+        is_valid = crypto_secure_eq(computed, tag, 64)
+    } else {
+        let dummy = crypto_secure_eq(computed, computed, 64)
+        is_valid = false
+    }
+    crypto_zero(computed, 64)
+    heap_free(computed)
+    return is_valid
+}

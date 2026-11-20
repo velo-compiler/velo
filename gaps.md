@@ -1093,8 +1093,24 @@ differing-first-byte inputs) - document that this is a smoke test, not a proof.
   - Added `test_std_crypto_subtle()` to `tests/test_std_crypto.py`.
   - Verified `tests/test_bootstrap_snapshot.py` (6/6 passed), `tests/test_crypto_constant_time.py` (5/5 passed), `tests/test_crypto_rand_failclosed.py` (14/14 passed), `tests/test_crypto_umbrella.py` (6/6 passed), `tests/test_crypto_zero.py` (5/5 passed), `tests/test_std_crypto.py` (8/8 passed), `tests/test_std_uuid.py` (2/2 passed). Total 46/46 passed.
 
-**73.5** Implement SHA-512 and HMAC-SHA512 (`std/crypto/sha512.vl`), matching
+**73.5 [COMPLETED] ✅** Implement SHA-512 and HMAC-SHA512 (`std/crypto/sha512.vl`), matching
 the existing `sha256` structure. Test against RFC 4231 vectors.
+- *Former Defect:* The standard library only supported 256-bit hashing (SHA-256 and HMAC-SHA256). Cryptographic protocols, TLS 1.3 suites, modern signature schemes, and higher-security MAC requirements needing 512-bit digest security had no implementation in Velo.
+- *Fix Applied:*
+  - Implemented pure Velo NIST FIPS 180-4 compliant SHA-512 in `std/crypto/sha512.vl`, matching the existing `sha256.vl` architecture with 64-bit words, 1024-bit blocks (128 bytes), 80-round compression loop, message schedule expansion, and 64-byte digest output.
+  - Implemented RFC 2104 / RFC 4231 compliant HMAC-SHA512 with 128-byte key normalization (handling keys larger than block size via recursive hashing), 128-byte inner/outer padding blocks (`ipad`/`opad`), zeroization of sensitive temporaries via `crypto_zero`, and constant-time verification APIs (`hmac_sha512_verify` and `hmac_sha512_verify_bytes`).
+  - Added `use "crypto/sha512.vl"` to `std/crypto.vl` umbrella and `use "sha512.vl"` to `std/crypto/hmac.vl`.
+  - Added documentation to `website/src/data/stdlib.ts`, updated `std/tests/crypto_module_import_test.vl`, and created `std/tests/crypto/sha512_test.vl`.
+  - Rebuilt bootstrap chain (`bin/velo.exe` $\rightarrow$ `bin/velo_gen2.exe` $\rightarrow$ `bin/velo_gen3.exe` $\rightarrow$ `bin/velo.exe`), verified byte-identical C emission determinism, and refreshed `bootstrap.c`.
+- *Residual Limitation:* None for SHA-512 and HMAC-SHA512; operates strictly in pure Velo with memory-safe buffer zeroing.
+- *Verification:*
+  - Created `tests/test_crypto_sha512.py` containing 4 comprehensive test suites:
+    - `test_sha512_nist_vectors`: verifies NIST FIPS 180-4 vectors for empty string, `"abc"`, and `"The quick brown fox jumps over the lazy dog"`.
+    - `test_sha512_streaming_and_raw_bytes`: verifies multi-chunk incremental streaming state (`sha512_init`, `sha512_update_str`, `sha512_final_hex`) and raw 64-byte binary output (`sha512_bytes`).
+    - `test_hmac_sha512_rfc4231_vectors`: verifies all applicable RFC 4231 test vectors (Cases 1, 2, 3, 4, 6, 7), including keys larger than 128-byte block size and data larger than block size.
+    - `test_hmac_sha512_verification_and_tampering`: verifies constant-time verification (`hmac_sha512_verify` and `hmac_sha512_verify_bytes`), and rejection of tampered keys, messages, first/last tag bytes, truncated tags, and null tags.
+  - Added `test_std_crypto_sha512()` to `tests/test_std_crypto.py`.
+  - Verified `tests/test_bootstrap_snapshot.py` (6/6 passed), `tests/test_crypto_constant_time.py` (5/5 passed), `tests/test_crypto_rand_failclosed.py` (14/14 passed), `tests/test_crypto_sha512.py` (4/4 passed), `tests/test_crypto_umbrella.py` (6/6 passed), `tests/test_crypto_zero.py` (5/5 passed), `tests/test_std_crypto.py` (9/9 passed), `tests/test_std_uuid.py` (2/2 passed). Total 51/51 passed.
 
 **73.6** Implement ChaCha20-Poly1305 AEAD (`std/crypto/chacha20poly1305.vl`)
 against RFC 8439 vectors, plus `crypto_random_bytes`-seeded nonce generation and

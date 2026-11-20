@@ -1,5 +1,6 @@
-// std.crypto.hmac — RFC 2104 compliant Keyed-Hashing for Message Authentication (HMAC-SHA256).
+// std.crypto.hmac — RFC 2104 compliant Keyed-Hashing for Message Authentication (HMAC-SHA256 & HMAC-SHA512).
 use "sha256.vl"
+use "sha512.vl"
 use "hex.vl"
 use "subtle.vl"
 use "../mem/heap.vl"

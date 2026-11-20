@@ -488,7 +488,7 @@ export const STDLIB_MODULES: StdlibModule[] = [
     name: 'std.crypto',
     category: 'Security & Cryptography',
     tier: 1,
-    description: 'Pure Velo cryptographic primitives: FIPS 180-4 SHA-256, RFC 1321 MD5, IEEE 802.3 CRC-32, RFC 2104 HMAC-SHA256, Hex encoding/decoding, and OS kernel CSPRNG.',
+    description: 'Pure Velo cryptographic primitives: FIPS 180-4 SHA-256 and SHA-512, RFC 1321 MD5, IEEE 802.3 CRC-32, RFC 2104 / RFC 4231 HMAC-SHA256 and HMAC-SHA512, constant-time comparisons, unoptimizable zeroing, Hex encoding/decoding, and OS kernel CSPRNG.',
     pureVelo: true,
     functions: [
       {
@@ -496,6 +496,12 @@ export const STDLIB_MODULES: StdlibModule[] = [
         signature: 'act sha256_hash_str(text: string) -> string',
         description: 'Computes a 64-character lowercase hexadecimal SHA-256 digest of a string.',
         example: 'let hash = sha256_hash_str("Hello, Velo!")'
+      },
+      {
+        name: 'sha512_hash_str',
+        signature: 'act sha512_hash_str(text: string) -> string',
+        description: 'Computes a 128-character lowercase hexadecimal SHA-512 digest of a string.',
+        example: 'let hash = sha512_hash_str("Hello, Velo!")'
       },
       {
         name: 'md5_hash_str',
@@ -526,6 +532,18 @@ export const STDLIB_MODULES: StdlibModule[] = [
         signature: 'act hmac_sha256_verify(key: string, data: string, tag: string) -> bool',
         description: 'Verifies an HMAC-SHA256 authentication code in constant time against timing attacks.',
         example: 'let ok = hmac_sha256_verify("secret-key", "request-payload", signature)'
+      },
+      {
+        name: 'hmac_sha512_str',
+        signature: 'act hmac_sha512_str(key: string, data: string) -> string',
+        description: 'Computes an RFC 4231 HMAC-SHA512 message authentication code as a 128-character hex string.',
+        example: 'let sig = hmac_sha512_str("secret-key", "request-payload")'
+      },
+      {
+        name: 'hmac_sha512_verify',
+        signature: 'act hmac_sha512_verify(key: string, data: string, tag: string) -> bool',
+        description: 'Verifies an HMAC-SHA512 authentication code in constant time against timing attacks.',
+        example: 'let ok = hmac_sha512_verify("secret-key", "request-payload", signature)'
       },
       {
         name: 'crypto_secure_eq',
@@ -593,6 +611,11 @@ export const STDLIB_MODULES: StdlibModule[] = [
         name: 'Sha256State',
         definition: 'data Sha256State { h0: u32, h1: u32, ... total_bytes: u64 }',
         description: 'Streaming SHA-256 state context for multi-chunk incremental hashing.'
+      },
+      {
+        name: 'Sha512State',
+        definition: 'data Sha512State { h0: u64, h1: u64, ... total_bytes: u64 }',
+        description: 'Streaming SHA-512 state context for multi-chunk incremental hashing.'
       },
       {
         name: 'Md5State',

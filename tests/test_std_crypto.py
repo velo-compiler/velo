@@ -37,6 +37,18 @@ def test_std_crypto_sha256():
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "OK: std.crypto.sha256 tests passed" in res.stdout
 
+def test_std_crypto_sha512():
+    test_vl = REPO_ROOT / "std" / "tests" / "crypto" / "sha512_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True, encoding="utf-8", errors="replace",
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "OK: std.crypto.sha512 tests passed" in res.stdout
+
 def test_std_crypto_md5():
     test_vl = REPO_ROOT / "std" / "tests" / "crypto" / "md5_test.vl"
     res = subprocess.run(

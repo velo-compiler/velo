@@ -1,0 +1,176 @@
+// Tests for std.crypto.sha512 (SHA-512 and HMAC-SHA512)
+// Test vectors from NIST FIPS 180-4 and IETF RFC 4231.
+use "../../crypto/sha512.vl"
+use "../../crypto/hex.vl"
+use "../../mem/heap.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    // =========================================================================
+    // 1. NIST SHA-512 Test Vectors
+    // =========================================================================
+
+    // Vector 1.1: Empty string
+    let h_empty = sha512_hash_str("")
+    if h_empty != "cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e" {
+        io.println_str("FAIL: sha512 empty string mismatch")
+        return 1
+    }
+
+    // Vector 1.2: "abc"
+    let h_abc = sha512_hash_str("abc")
+    if h_abc != "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f" {
+        io.println_str("FAIL: sha512 'abc' mismatch")
+        return 2
+    }
+
+    // Vector 1.3: "The quick brown fox jumps over the lazy dog"
+    let h_fox = sha512_hash_str("The quick brown fox jumps over the lazy dog")
+    if h_fox != "07e547d9586f6a73f73fbac0435ed76951218fb7d0c8d788a309d785436bbb642e93a252a954f23912547d1e8a3b5ed6e1bfd7097821233fa0538f3db854fee6" {
+        io.println_str("FAIL: sha512 fox mismatch")
+        return 3
+    }
+
+    // Vector 1.4: Multi-block streaming verification
+    mut s: Sha512State
+    s.buf = null
+    sha512_init(@s)
+    sha512_update_str(@s, "The quick brown ")
+    sha512_update_str(@s, "fox jumps over ")
+    sha512_update_str(@s, "the lazy dog")
+    let h_stream = sha512_final_hex(@s)
+    if h_stream != h_fox {
+        io.println_str("FAIL: sha512 streaming mismatch")
+        return 4
+    }
+
+    // =========================================================================
+    // 2. RFC 4231 HMAC-SHA512 Test Vectors
+    // =========================================================================
+
+    // RFC 4231 Case 1: 20 bytes of 0x0b, data "Hi There"
+    mut k1: @u8 = heap_alloc(20)
+    mut i1: usize = 0
+    loop i1 < 20 {
+        k1[i1] = 0x0b as u8
+        i1 += 1
+    }
+    let mac1 = hmac_sha512_hash(k1, 20, "Hi There" as @u8, 8)
+    if mac1 != "87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854" {
+        io.println_str("FAIL: RFC 4231 Case 1 mismatch")
+        heap_free(k1)
+        return 10
+    }
+    heap_free(k1)
+
+    // RFC 4231 Case 2: key "Jefe", data "what do ya want for nothing?"
+    let mac2 = hmac_sha512_str("Jefe", "what do ya want for nothing?")
+    if mac2 != "164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce737" {
+        io.println_str("FAIL: RFC 4231 Case 2 mismatch")
+        return 11
+    }
+
+    // RFC 4231 Case 3: key 20 bytes of 0xaa, data 50 bytes of 0xdd
+    mut k3: @u8 = heap_alloc(20)
+    mut i3: usize = 0
+    loop i3 < 20 { k3[i3] = 0xaa as u8; i3 += 1 }
+    mut d3: @u8 = heap_alloc(50)
+    mut j3: usize = 0
+    loop j3 < 50 { d3[j3] = 0xdd as u8; j3 += 1 }
+    let mac3 = hmac_sha512_hash(k3, 20, d3, 50)
+    if mac3 != "fa73b0089d56a284efb0f0756c890be9b1b5dbdd8ee81a3655f83e33b2279d39bf3e848279a722c806b485a47e67c807b946a337bee8942674278859e13292fb" {
+        io.println_str("FAIL: RFC 4231 Case 3 mismatch")
+        heap_free(k3)
+        heap_free(d3)
+        return 12
+    }
+    heap_free(k3)
+    heap_free(d3)
+
+    // RFC 4231 Case 4: key 25 bytes 0x01..0x19, data 50 bytes 0xcd
+    mut k4: @u8 = heap_alloc(25)
+    mut i4: usize = 0
+    loop i4 < 25 { k4[i4] = (i4 + 1) as u8; i4 += 1 }
+    mut d4: @u8 = heap_alloc(50)
+    mut j4: usize = 0
+    loop j4 < 50 { d4[j4] = 0xcd as u8; j4 += 1 }
+    let mac4 = hmac_sha512_hash(k4, 25, d4, 50)
+    if mac4 != "b0ba465637458c6990e5a8c5f61d4af7e576d97ff94b872de76f8050361ee3dba91ca5c11aa25eb4d679275cc5788063a5f19741120c4f2de2adebeb10a298dd" {
+        io.println_str("FAIL: RFC 4231 Case 4 mismatch")
+        heap_free(k4)
+        heap_free(d4)
+        return 13
+    }
+    heap_free(k4)
+    heap_free(d4)
+
+    // RFC 4231 Case 6: key 131 bytes 0xaa (> 128 byte block size), data "Test Using Larger Than Block-Size Key - Hash Key First"
+    mut k6: @u8 = heap_alloc(131)
+    mut i6: usize = 0
+    loop i6 < 131 { k6[i6] = 0xaa as u8; i6 += 1 }
+    let d6 = "Test Using Larger Than Block-Size Key - Hash Key First"
+    let mac6 = hmac_sha512_hash(k6, 131, d6 as @u8, str.len(d6))
+    if mac6 != "80b24263c7c1a3ebb71493c1dd7be8b49b46d1f41b4aeec1121b013783f8f3526b56d037e05f2598bd0fd2215d6a1e5295e64f73f63f0aec8b915a985d786598" {
+        io.println_str("FAIL: RFC 4231 Case 6 mismatch")
+        heap_free(k6)
+        return 14
+    }
+    heap_free(k6)
+
+    // RFC 4231 Case 7: key 131 bytes 0xaa, data 152 bytes
+    mut k7: @u8 = heap_alloc(131)
+    mut i7: usize = 0
+    loop i7 < 131 { k7[i7] = 0xaa as u8; i7 += 1 }
+    let d7 = "This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm."
+    let mac7 = hmac_sha512_hash(k7, 131, d7 as @u8, str.len(d7))
+    if mac7 != "e37b6a775dc87dbaa4dfa9f96e5e3ffddebd71f8867289865df5a32d20cdc944b6022cac3c4982b10d5eeb55c3e4de15134676fb6de0446065c97440fa8c6a58" {
+        io.println_str("FAIL: RFC 4231 Case 7 mismatch")
+        heap_free(k7)
+        return 15
+    }
+    heap_free(k7)
+
+    // =========================================================================
+    // 3. Constant-Time HMAC-SHA512 Verification Tests
+    // =========================================================================
+
+    // Authentic verification
+    if !hmac_sha512_verify("Jefe", "what do ya want for nothing?", mac2) {
+        io.println_str("FAIL: hmac_sha512_verify authentic tag rejected")
+        return 20
+    }
+
+    // Tampered message
+    if hmac_sha512_verify("Jefe", "what do ya want for something?", mac2) {
+        io.println_str("FAIL: hmac_sha512_verify tampered message accepted")
+        return 21
+    }
+
+    // Tampered key
+    if hmac_sha512_verify("jefe", "what do ya want for nothing?", mac2) {
+        io.println_str("FAIL: hmac_sha512_verify tampered key accepted")
+        return 22
+    }
+
+    // Tampered tag (flipped last byte)
+    let bad_tag = "164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce738"
+    if hmac_sha512_verify("Jefe", "what do ya want for nothing?", bad_tag) {
+        io.println_str("FAIL: hmac_sha512_verify tampered tag accepted")
+        return 23
+    }
+
+    // Truncated tag
+    if hmac_sha512_verify("Jefe", "what do ya want for nothing?", "164b0759ae65a7508d9e30a588547338") {
+        io.println_str("FAIL: hmac_sha512_verify truncated tag accepted")
+        return 24
+    }
+
+    // Null tag
+    if hmac_sha512_verify("Jefe", "what do ya want for nothing?", null) {
+        io.println_str("FAIL: hmac_sha512_verify null tag accepted")
+        return 25
+    }
+
+    io.println_str("OK: std.crypto.sha512 tests passed")
+    return 0
+}

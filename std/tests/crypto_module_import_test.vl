@@ -61,6 +61,22 @@ act main() -> i32 {
     }
     heap_free(zbuf)
 
+    // 8. SHA-512 and HMAC-SHA512
+    let s512 = sha512_hash_str("velo")
+    if str.len(s512) != 128 {
+        io.println_str("FAIL: umbrella sha512 length mismatch")
+        return 11
+    }
+    let h512 = hmac_sha512_str("key", "velo")
+    if str.len(h512) != 128 {
+        io.println_str("FAIL: umbrella hmac_sha512 length mismatch")
+        return 12
+    }
+    if !hmac_sha512_verify("key", "velo", h512) {
+        io.println_str("FAIL: umbrella hmac_sha512_verify failed")
+        return 13
+    }
+
     io.println_str("PASS: std.crypto umbrella import all tests passed")
     return 0
 }
