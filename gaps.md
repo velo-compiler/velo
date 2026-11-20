@@ -919,10 +919,38 @@ it is a false success message, which is worse.
 
 ## Tasks
 
-**72.1** Implement `manifest_resolve_dep(dep) -> DepLocation` for `local` and
+**72.1 [COMPLETED] ✅** Implement `manifest_resolve_dep(dep) -> DepLocation` for `local` and
 `git` kinds. `git` runs `git clone --depth 1 --branch <tag> <url>
 .velo_cache/deps/<name>` and then `git rev-parse HEAD`. A missing `git`
 executable is a hard error with an actionable message.
+- *Former Defect:* Velo package dependency resolution was non-functional for remote dependencies. There was no mechanism to resolve `local` or `git` dependencies into physical directory locations, clone repositories, or extract git commit hashes. If a manifest declared a `git` dependency, `velo pkg install` simply ignored it or failed silently without downloading files.
+- *Fix Applied:*
+  - Defined `data DepLocation` with fields `path: string`, `commit: string`, `version: string`, `has_error: bool`, `error_msg: string`.
+  - Implemented `manifest_resolve_dep(dep: @DependencySpec) -> DepLocation` and `manifest_resolve_dep_in(m_dir: string, dep: @DependencySpec) -> DepLocation` in `src/common/manifest_resolve.vl`.
+  - For `local` dependencies: validates disk existence (relative to base directory or absolute), sets `path`, version, and returns `has_error: false`, or returns an actionable error if the path does not exist.
+  - For `git` dependencies:
+    - Verifies `git` availability; if `git` is absent from PATH, returns a hard failure with actionable error: `"[Velo Error] 'git' executable not found in PATH. Git is required to resolve dependency '<name>' from '<url>'. Please install Git and ensure it is available in your PATH."`
+    - Prepares `.velo_cache/deps/<name>` directory.
+    - Clones repository using `git clone --depth 1` (with `--branch <tag>` if tag specified) and securely quoted arguments preventing command injection (I72.3).
+    - Runs `git -C <dest_path> rev-parse HEAD` to extract the exact 40-character commit SHA.
+    - Captures and surfaces detailed git error output if clone or rev-parse fails.
+  - Hardened dependency names against directory traversal (`..`, `/`, `\\`).
+  - Added `use "manifest_resolve.vl"` in `src/common/manifest.vl`.
+  - Re-bootstrapped compiler chain (`bin/velo.exe` $\rightarrow$ `bin/velo_gen2.exe` $\rightarrow$ `bin/velo_gen3.exe` $\rightarrow$ `bin/velo.exe`), verified bit-for-bit SHA-256 determinism (`0ea5b86b4edb...`), refreshed `bootstrap.c`, and confirmed `test_bootstrap_snapshot.py` object cleanliness and determinism.
+- *Residual Limitation:* Registry dependencies (`kind = "registry"`) produce a clear unsupported diagnostic pending Task 72.2.
+- *Verification:*
+  - Created automated test suite `tests/test_pkg_resolve.py` with 8 test cases:
+    - `test_resolve_local_dependency_success`: local dependency resolves path and version.
+    - `test_resolve_local_dependency_missing`: non-existent local path fails closed with error.
+    - `test_resolve_git_dependency_with_tag`: creates local git repo fixture with tag `v1.2.3`, clones to `.velo_cache/deps`, and verifies 40-char SHA and version.
+    - `test_resolve_git_dependency_without_tag`: clones default branch and parses commit SHA as version.
+    - `test_resolve_git_dependency_missing_git_actionable_error`: verifies actionable error message when `git` is not on PATH.
+    - `test_resolve_git_dependency_invalid_url`: verifies failure on invalid/unreachable git URL.
+    - `test_resolve_invalid_dependency_name_traversal`: verifies rejection of traversal characters in package name.
+    - `test_resolve_registry_dependency_unsupported`: verifies clear diagnostic for registry dependencies.
+  - All 8 tests passed in 23.51s.
+  - `tests/test_bootstrap_snapshot.py` passed (6/6).
+  - `tests/test_pkg_security.py` passed (4/4).
 
 **72.2** Implement `registry` kind against a minimal HTTP index: `<registry>/ 
 <name>/index.json` listing `version -> {url, sha256}`. Requires Phase 73's TLS

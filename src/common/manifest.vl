@@ -2,6 +2,7 @@
 // Parses Velo-native declarative block manifest syntax.
 use std.fs
 use "string_builder.vl"
+use "manifest_resolve.vl"
 
 let MTOK_IDENT: i32 = 1
 let MTOK_STRING: i32 = 2

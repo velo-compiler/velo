@@ -1,0 +1,177 @@
+// Dependency resolution for package manifests (Phase 72 / Task 72.1).
+// Resolves 'local' and 'git' dependencies with fail-closed diagnostics.
+extern act system(cmd: string) -> i32
+
+use std.io
+use std.fs
+use std.path
+use "manifest.vl"
+use "string_builder.vl"
+use "utils.vl"
+
+data DepLocation {
+    path: string
+    commit: string
+    version: string
+    has_error: bool
+    error_msg: string
+}
+
+// Executes an external command string via the C runtime.
+act run_sys_cmd(cmd: string) -> i32 {
+    return system(cmd)
+}
+
+// Resolves a dependency specification to a local directory location and commit/version.
+act manifest_resolve_dep(dep: @DependencySpec) -> DepLocation {
+    return manifest_resolve_dep_in(".", dep)
+}
+
+// Resolves a dependency specification relative to a base manifest directory.
+act manifest_resolve_dep_in(m_dir: string, dep: @DependencySpec) -> DepLocation {
+    mut loc = DepLocation{ path: "", commit: "", version: "", has_error: false, error_msg: "" }
+    if dep == null {
+        loc.has_error = true
+        loc.error_msg = "[Velo Error] Null dependency specification"
+        return loc
+    }
+
+    if str.contains(dep.name, "/") or str.contains(dep.name, "\\") or str.contains(dep.name, "..") {
+        loc.has_error = true
+        loc.error_msg = "[Velo Error] Invalid dependency name '" + dep.name + "': contains path separators"
+        return loc
+    }
+
+    if dep.kind == "local" {
+        if dep.source == null or str.len(dep.source) == 0 {
+            loc.has_error = true
+            loc.error_msg = "[Velo Error] Local dependency '" + dep.name + "' has empty path."
+            return loc
+        }
+        mut resolved_path = dep.source
+        let is_abs = str.starts_with(dep.source, "/") or str.starts_with(dep.source, "\\") or (str.len(dep.source) > 2 and dep.source[1] == ':')
+        if !is_abs and m_dir != null and str.len(m_dir) > 0 and m_dir != "." {
+            resolved_path = path_join_str(m_dir, dep.source)
+        }
+        if !fs_exists(resolved_path) {
+            loc.has_error = true
+            loc.error_msg = "[Velo Error] Local dependency '" + dep.name + "' not found at path '" + resolved_path + "'"
+            return loc
+        }
+        loc.path = resolved_path
+        loc.commit = ""
+        loc.version = if str.len(dep.tag) > 0 { dep.tag } else { "local" }
+        return loc
+    }
+
+    if dep.kind == "git" {
+        if dep.source == null or str.len(dep.source) == 0 {
+            loc.has_error = true
+            loc.error_msg = "[Velo Error] Git dependency '" + dep.name + "' has empty repository URL."
+            return loc
+        }
+
+        mut deps_parent = ".velo_cache/deps"
+        if m_dir != null and str.len(m_dir) > 0 and m_dir != "." {
+            deps_parent = path_join_str(m_dir, ".velo_cache/deps")
+        }
+        if !fs_exists(deps_parent) {
+            fs_create_dir_all(deps_parent)
+        }
+
+        // 1. Check git availability using safe probe output file in .velo_cache
+        let git_check_file = path_join_str(deps_parent, "_git_probe.tmp")
+        mut probe_sb = create_sb(128)
+        sb_append_str(@probe_sb, "git --version > ")
+        sb_append_str(@probe_sb, quote_path(git_check_file))
+        sb_append_str(@probe_sb, " 2>&1")
+        let probe_cmd = sb_to_string(@probe_sb)
+        let probe_res = run_sys_cmd(probe_cmd)
+        if fs_exists(git_check_file) {
+            fs_remove_file_str(git_check_file)
+        }
+        if probe_res != 0 {
+            loc.has_error = true
+            loc.error_msg = "[Velo Error] 'git' executable not found in PATH. Git is required to resolve dependency '" + dep.name + "' from '" + dep.source + "'. Please install Git and ensure it is available in your PATH."
+            return loc
+        }
+
+        let dest_path = path_join_str(deps_parent, dep.name)
+
+        // 2. Clone if destination directory does not exist
+        if !fs_exists(dest_path) {
+            mut clone_sb = create_sb(512)
+            sb_append_str(@clone_sb, "git clone --depth 1")
+            if dep.tag != null and str.len(dep.tag) > 0 {
+                sb_append_str(@clone_sb, " --branch ")
+                sb_append_str(@clone_sb, quote_path(dep.tag))
+            }
+            sb_append_char(@clone_sb, ' ')
+            sb_append_str(@clone_sb, quote_path(dep.source))
+            sb_append_char(@clone_sb, ' ')
+            sb_append_str(@clone_sb, quote_path(dest_path))
+
+            let clone_err_file = path_join_str(deps_parent, "_clone_err.tmp")
+            sb_append_str(@clone_sb, " 2> ")
+            sb_append_str(@clone_sb, quote_path(clone_err_file))
+
+            let clone_cmd = sb_to_string(@clone_sb)
+            let clone_res = run_sys_cmd(clone_cmd)
+            mut clone_err = ""
+            if fs_exists(clone_err_file) {
+                let err_content = fs_read_to_str(clone_err_file)
+                if err_content != null { clone_err = str.trim(err_content) }
+                fs_remove_file_str(clone_err_file)
+            }
+
+            if clone_res != 0 or !fs_exists(dest_path) {
+                loc.has_error = true
+                mut err_msg = "[Velo Error] Failed to clone git dependency '" + dep.name + "' from '" + dep.source + "'"
+                if str.len(clone_err) > 0 {
+                    err_msg = err_msg + ": " + clone_err
+                }
+                loc.error_msg = err_msg
+                return loc
+            }
+        }
+
+        // 3. Run git rev-parse HEAD inside dest_path to capture exact commit hash
+        let rev_out_file = path_join_str(dest_path, "_head_rev.tmp")
+        mut rev_sb = create_sb(256)
+        sb_append_str(@rev_sb, "git -C ")
+        sb_append_str(@rev_sb, quote_path(dest_path))
+        sb_append_str(@rev_sb, " rev-parse HEAD > ")
+        sb_append_str(@rev_sb, quote_path(rev_out_file))
+        sb_append_str(@rev_sb, " 2>&1")
+        let rev_cmd = sb_to_string(@rev_sb)
+        let rev_res = run_sys_cmd(rev_cmd)
+
+        mut commit_sha = ""
+        if fs_exists(rev_out_file) {
+            let sha_content = fs_read_to_str(rev_out_file)
+            if sha_content != null { commit_sha = str.trim(sha_content) }
+            fs_remove_file_str(rev_out_file)
+        }
+
+        if rev_res != 0 or str.len(commit_sha) == 0 {
+            loc.has_error = true
+            loc.error_msg = "[Velo Error] Failed to get git commit for dependency '" + dep.name + "'"
+            return loc
+        }
+
+        loc.path = dest_path
+        loc.commit = commit_sha
+        loc.version = if str.len(dep.tag) > 0 { dep.tag } else { commit_sha }
+        return loc
+    }
+
+    if dep.kind == "registry" {
+        loc.has_error = true
+        loc.error_msg = "[Velo Error] Registry dependencies are not yet supported (Phase 72.2). Dependency: '" + dep.name + "'"
+        return loc
+    }
+
+    loc.has_error = true
+    loc.error_msg = "[Velo Error] Unknown dependency kind '" + dep.kind + "' for dependency '" + dep.name + "'"
+    return loc
+}

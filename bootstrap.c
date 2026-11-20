@@ -52,6 +52,7 @@ typedef struct TupleTypeNode TupleTypeNode;
 typedef struct DeferNode DeferNode;
 typedef struct VisitedFile VisitedFile;
 typedef struct CompilerDriver CompilerDriver;
+typedef struct DepLocation DepLocation;
 typedef struct ManifestStringItem ManifestStringItem;
 typedef struct PackageMeta PackageMeta;
 typedef struct DependencySpec DependencySpec;
@@ -558,6 +559,14 @@ struct CompilerDriver {
     size_t total_decls;
 };
 
+struct DepLocation {
+    const char* path;
+    const char* commit;
+    const char* version;
+    bool has_error;
+    const char* error_msg;
+};
+
 struct ManifestStringItem {
     const char* value;
     ManifestStringItem* next;
@@ -888,6 +897,7 @@ extern const char* velo_host_getenv(const char* key);
 extern int32_t velo_capture_begin(const char* path);
 extern int32_t velo_capture_end(void);
 extern uint32_t velo_host_getpid(void);
+extern int32_t system(const char* cmd);
 extern bool velo_crypto_secure_eq(void* a, void* b, size_t len);
 extern void velo_crypto_zero(void* ptr, size_t len);
 extern bool velo_crypto_random_fill(void* buf, size_t len);
@@ -1264,25 +1274,25 @@ const char* SUFFIX_WINDOWS_A = "_windows.vl";
 const char* SUFFIX_LINUX_A = "_linux.vl";
 #line 54 "src/main.vl"
 const char* SUFFIX_MACOS_A = "_macos.vl";
-#line 6 "src/main.vl"
-int32_t MTOK_IDENT = 1;
 #line 7 "src/main.vl"
-int32_t MTOK_STRING = 2;
+int32_t MTOK_IDENT = 1;
 #line 8 "src/main.vl"
-int32_t MTOK_LBRACE = 3;
+int32_t MTOK_STRING = 2;
 #line 9 "src/main.vl"
-int32_t MTOK_RBRACE = 4;
+int32_t MTOK_LBRACE = 3;
 #line 10 "src/main.vl"
-int32_t MTOK_LBRACKET = 5;
+int32_t MTOK_RBRACE = 4;
 #line 11 "src/main.vl"
-int32_t MTOK_RBRACKET = 6;
+int32_t MTOK_LBRACKET = 5;
 #line 12 "src/main.vl"
-int32_t MTOK_COLON = 7;
+int32_t MTOK_RBRACKET = 6;
 #line 13 "src/main.vl"
-int32_t MTOK_COMMA = 8;
+int32_t MTOK_COLON = 7;
 #line 14 "src/main.vl"
-int32_t MTOK_AT = 9;
+int32_t MTOK_COMMA = 8;
 #line 15 "src/main.vl"
+int32_t MTOK_AT = 9;
+#line 16 "src/main.vl"
 int32_t MTOK_EOF = 10;
 #line 14 "src/main.vl"
 const char* VELO_VERSION = "2.0.0-pre";
@@ -2411,6 +2421,9 @@ int32_t run_check_json_opts(const char* src_path, bool unsafe_index, bool strict
 int32_t run_check_json(const char* src_path, bool unsafe_index);
 bool run_check_pretty_opts(const char* src_path, bool unsafe_index, bool strict_safety);
 bool run_check_pretty(const char* src_path, bool unsafe_index);
+int32_t run_sys_cmd(const char* cmd);
+DepLocation manifest_resolve_dep(DependencySpec* dep);
+DepLocation manifest_resolve_dep_in(const char* m_dir, DependencySpec* dep);
 const char* format_manifest_error(const char* filename, int32_t line, int32_t col, const char* msg);
 void mlex_set_err(ManifestLexer* lex, int32_t line, int32_t col, const char* msg);
 void mlex_advance(ManifestLexer* lex);
@@ -52931,896 +52944,1150 @@ bool run_check_pretty(const char* src_path, bool unsafe_index) {
     return run_check_pretty_opts(src_path, unsafe_index, false);
 }
 
+#line 21 "src/main.vl"
+int32_t run_sys_cmd(const char* cmd) {
+#line 22 "src/main.vl"
+    return system(cmd);
+}
+
+#line 26 "src/main.vl"
+DepLocation manifest_resolve_dep(DependencySpec* dep) {
+#line 27 "src/main.vl"
+    return manifest_resolve_dep_in(".", dep);
+}
+
+#line 31 "src/main.vl"
+DepLocation manifest_resolve_dep_in(const char* m_dir, DependencySpec* dep) {
+#line 32 "src/main.vl"
+    DepLocation loc = (DepLocation){ .path = "", .commit = "", .version = "", .has_error = false, .error_msg = "" };
+#line 33 "src/main.vl"
+    if ((dep == NULL)) {
+#line 34 "src/main.vl"
+        loc.has_error = true;
+#line 35 "src/main.vl"
+        loc.error_msg = "[Velo Error] Null dependency specification";
+#line 36 "src/main.vl"
+        return loc;
+    }
+#line 39 "src/main.vl"
+    if (((velo_str_contains(dep->name, "/") || velo_str_contains(dep->name, "\\")) || velo_str_contains(dep->name, ".."))) {
+#line 40 "src/main.vl"
+        loc.has_error = true;
+#line 41 "src/main.vl"
+        loc.error_msg = velo_str_concat(velo_str_concat("[Velo Error] Invalid dependency name '", dep->name), "': contains path separators");
+#line 42 "src/main.vl"
+        return loc;
+    }
+#line 45 "src/main.vl"
+    if (((dep->kind != NULL && "local" != NULL) ? (strcmp(dep->kind, "local") == 0) : (dep->kind == "local"))) {
+#line 46 "src/main.vl"
+        if (((dep->source == NULL) || velo_cmp_eq_u_s(((usize)strlen(dep->source)), 0))) {
+#line 47 "src/main.vl"
+            loc.has_error = true;
+#line 48 "src/main.vl"
+            loc.error_msg = velo_str_concat(velo_str_concat("[Velo Error] Local dependency '", dep->name), "' has empty path.");
+#line 49 "src/main.vl"
+            return loc;
+        }
+#line 51 "src/main.vl"
+        const char* resolved_path = dep->source;
+#line 52 "src/main.vl"
+        bool is_abs = ((velo_str_starts_with(dep->source, "/") || velo_str_starts_with(dep->source, "\\")) || (velo_cmp_gt_u_s(((usize)strlen(dep->source)), 2) && velo_cmp_eq_u_s(dep->source[1], ':')));
+#line 53 "src/main.vl"
+        if (((((!is_abs) && (m_dir != NULL)) && velo_cmp_gt_u_s(((usize)strlen(m_dir)), 0)) && ((m_dir != NULL && "." != NULL) ? (strcmp(m_dir, ".") != 0) : (m_dir != ".")))) {
+#line 54 "src/main.vl"
+            resolved_path = path_join_str(m_dir, dep->source);
+        }
+#line 56 "src/main.vl"
+        if ((!fs_exists(resolved_path))) {
+#line 57 "src/main.vl"
+            loc.has_error = true;
+#line 58 "src/main.vl"
+            loc.error_msg = velo_str_concat(velo_str_concat(velo_str_concat(velo_str_concat("[Velo Error] Local dependency '", dep->name), "' not found at path '"), resolved_path), "'");
+#line 59 "src/main.vl"
+            return loc;
+        }
+#line 61 "src/main.vl"
+        loc.path = resolved_path;
+#line 62 "src/main.vl"
+        loc.commit = "";
+#line 63 "src/main.vl"
+        loc.version = ((velo_cmp_gt_u_s(((usize)strlen(dep->tag)), 0)) ? (dep->tag) : ("local"));
+#line 64 "src/main.vl"
+        return loc;
+    }
+#line 67 "src/main.vl"
+    if (((dep->kind != NULL && "git" != NULL) ? (strcmp(dep->kind, "git") == 0) : (dep->kind == "git"))) {
+#line 68 "src/main.vl"
+        if (((dep->source == NULL) || velo_cmp_eq_u_s(((usize)strlen(dep->source)), 0))) {
+#line 69 "src/main.vl"
+            loc.has_error = true;
+#line 70 "src/main.vl"
+            loc.error_msg = velo_str_concat(velo_str_concat("[Velo Error] Git dependency '", dep->name), "' has empty repository URL.");
 #line 71 "src/main.vl"
-const char* format_manifest_error(const char* filename, int32_t line, int32_t col, const char* msg) {
-#line 72 "src/main.vl"
-    StringBuilder sb = create_sb(128);
-#line 73 "src/main.vl"
-    sb_append_str((&(sb)), "[Velo Error] ");
+            return loc;
+        }
 #line 74 "src/main.vl"
-    sb_append_str((&(sb)), filename);
+        const char* deps_parent = ".velo_cache/deps";
 #line 75 "src/main.vl"
-    sb_append_char((&(sb)), ':');
+        if ((((m_dir != NULL) && velo_cmp_gt_u_s(((usize)strlen(m_dir)), 0)) && ((m_dir != NULL && "." != NULL) ? (strcmp(m_dir, ".") != 0) : (m_dir != ".")))) {
 #line 76 "src/main.vl"
-    sb_append_int((&(sb)), line);
-#line 77 "src/main.vl"
-    sb_append_char((&(sb)), ':');
+            deps_parent = path_join_str(m_dir, ".velo_cache/deps");
+        }
 #line 78 "src/main.vl"
-    sb_append_int((&(sb)), col);
+        if ((!fs_exists(deps_parent))) {
 #line 79 "src/main.vl"
-    sb_append_str((&(sb)), " - ");
+            fs_create_dir_all(deps_parent);
+        }
+#line 83 "src/main.vl"
+        const char* git_check_file = path_join_str(deps_parent, "_git_probe.tmp");
+#line 84 "src/main.vl"
+        StringBuilder probe_sb = create_sb(128);
+#line 85 "src/main.vl"
+        sb_append_str((&(probe_sb)), "git --version > ");
+#line 86 "src/main.vl"
+        sb_append_str((&(probe_sb)), quote_path(git_check_file));
+#line 87 "src/main.vl"
+        sb_append_str((&(probe_sb)), " 2>&1");
+#line 88 "src/main.vl"
+        const char* probe_cmd = sb_to_string((&(probe_sb)));
+#line 89 "src/main.vl"
+        int32_t probe_res = run_sys_cmd(probe_cmd);
+#line 90 "src/main.vl"
+        if (fs_exists(git_check_file)) {
+#line 91 "src/main.vl"
+            fs_remove_file_str(git_check_file);
+        }
+#line 93 "src/main.vl"
+        if ((probe_res != 0)) {
+#line 94 "src/main.vl"
+            loc.has_error = true;
+#line 95 "src/main.vl"
+            loc.error_msg = velo_str_concat(velo_str_concat(velo_str_concat(velo_str_concat("[Velo Error] 'git' executable not found in PATH. Git is required to resolve dependency '", dep->name), "' from '"), dep->source), "'. Please install Git and ensure it is available in your PATH.");
+#line 96 "src/main.vl"
+            return loc;
+        }
+#line 99 "src/main.vl"
+        const char* dest_path = path_join_str(deps_parent, dep->name);
+#line 102 "src/main.vl"
+        if ((!fs_exists(dest_path))) {
+#line 103 "src/main.vl"
+            StringBuilder clone_sb = create_sb(512);
+#line 104 "src/main.vl"
+            sb_append_str((&(clone_sb)), "git clone --depth 1");
+#line 105 "src/main.vl"
+            if (((dep->tag != NULL) && velo_cmp_gt_u_s(((usize)strlen(dep->tag)), 0))) {
+#line 106 "src/main.vl"
+                sb_append_str((&(clone_sb)), " --branch ");
+#line 107 "src/main.vl"
+                sb_append_str((&(clone_sb)), quote_path(dep->tag));
+            }
+#line 109 "src/main.vl"
+            sb_append_char((&(clone_sb)), ' ');
+#line 110 "src/main.vl"
+            sb_append_str((&(clone_sb)), quote_path(dep->source));
+#line 111 "src/main.vl"
+            sb_append_char((&(clone_sb)), ' ');
+#line 112 "src/main.vl"
+            sb_append_str((&(clone_sb)), quote_path(dest_path));
+#line 114 "src/main.vl"
+            const char* clone_err_file = path_join_str(deps_parent, "_clone_err.tmp");
+#line 115 "src/main.vl"
+            sb_append_str((&(clone_sb)), " 2> ");
+#line 116 "src/main.vl"
+            sb_append_str((&(clone_sb)), quote_path(clone_err_file));
+#line 118 "src/main.vl"
+            const char* clone_cmd = sb_to_string((&(clone_sb)));
+#line 119 "src/main.vl"
+            int32_t clone_res = run_sys_cmd(clone_cmd);
+#line 120 "src/main.vl"
+            const char* clone_err = "";
+#line 121 "src/main.vl"
+            if (fs_exists(clone_err_file)) {
+#line 122 "src/main.vl"
+                const char* err_content = fs_read_to_str(clone_err_file);
+#line 123 "src/main.vl"
+                if ((err_content != NULL)) {
+#line 123 "src/main.vl"
+                    clone_err = velo_str_trim(err_content);
+                }
+#line 124 "src/main.vl"
+                fs_remove_file_str(clone_err_file);
+            }
+#line 127 "src/main.vl"
+            if (((clone_res != 0) || (!fs_exists(dest_path)))) {
+#line 128 "src/main.vl"
+                loc.has_error = true;
+#line 129 "src/main.vl"
+                const char* err_msg = velo_str_concat(velo_str_concat(velo_str_concat(velo_str_concat("[Velo Error] Failed to clone git dependency '", dep->name), "' from '"), dep->source), "'");
+#line 130 "src/main.vl"
+                if (velo_cmp_gt_u_s(((usize)strlen(clone_err)), 0)) {
+#line 131 "src/main.vl"
+                    err_msg = velo_str_concat(velo_str_concat(err_msg, ": "), clone_err);
+                }
+#line 133 "src/main.vl"
+                loc.error_msg = err_msg;
+#line 134 "src/main.vl"
+                return loc;
+            }
+        }
+#line 139 "src/main.vl"
+        const char* rev_out_file = path_join_str(dest_path, "_head_rev.tmp");
+#line 140 "src/main.vl"
+        StringBuilder rev_sb = create_sb(256);
+#line 141 "src/main.vl"
+        sb_append_str((&(rev_sb)), "git -C ");
+#line 142 "src/main.vl"
+        sb_append_str((&(rev_sb)), quote_path(dest_path));
+#line 143 "src/main.vl"
+        sb_append_str((&(rev_sb)), " rev-parse HEAD > ");
+#line 144 "src/main.vl"
+        sb_append_str((&(rev_sb)), quote_path(rev_out_file));
+#line 145 "src/main.vl"
+        sb_append_str((&(rev_sb)), " 2>&1");
+#line 146 "src/main.vl"
+        const char* rev_cmd = sb_to_string((&(rev_sb)));
+#line 147 "src/main.vl"
+        int32_t rev_res = run_sys_cmd(rev_cmd);
+#line 149 "src/main.vl"
+        const char* commit_sha = "";
+#line 150 "src/main.vl"
+        if (fs_exists(rev_out_file)) {
+#line 151 "src/main.vl"
+            const char* sha_content = fs_read_to_str(rev_out_file);
+#line 152 "src/main.vl"
+            if ((sha_content != NULL)) {
+#line 152 "src/main.vl"
+                commit_sha = velo_str_trim(sha_content);
+            }
+#line 153 "src/main.vl"
+            fs_remove_file_str(rev_out_file);
+        }
+#line 156 "src/main.vl"
+        if (((rev_res != 0) || velo_cmp_eq_u_s(((usize)strlen(commit_sha)), 0))) {
+#line 157 "src/main.vl"
+            loc.has_error = true;
+#line 158 "src/main.vl"
+            loc.error_msg = velo_str_concat(velo_str_concat("[Velo Error] Failed to get git commit for dependency '", dep->name), "'");
+#line 159 "src/main.vl"
+            return loc;
+        }
+#line 162 "src/main.vl"
+        loc.path = dest_path;
+#line 163 "src/main.vl"
+        loc.commit = commit_sha;
+#line 164 "src/main.vl"
+        loc.version = ((velo_cmp_gt_u_s(((usize)strlen(dep->tag)), 0)) ? (dep->tag) : (commit_sha));
+#line 165 "src/main.vl"
+        return loc;
+    }
+#line 168 "src/main.vl"
+    if (((dep->kind != NULL && "registry" != NULL) ? (strcmp(dep->kind, "registry") == 0) : (dep->kind == "registry"))) {
+#line 169 "src/main.vl"
+        loc.has_error = true;
+#line 170 "src/main.vl"
+        loc.error_msg = velo_str_concat(velo_str_concat("[Velo Error] Registry dependencies are not yet supported (Phase 72.2). Dependency: '", dep->name), "'");
+#line 171 "src/main.vl"
+        return loc;
+    }
+#line 174 "src/main.vl"
+    loc.has_error = true;
+#line 175 "src/main.vl"
+    loc.error_msg = velo_str_concat(velo_str_concat(velo_str_concat(velo_str_concat("[Velo Error] Unknown dependency kind '", dep->kind), "' for dependency '"), dep->name), "'");
+#line 176 "src/main.vl"
+    return loc;
+}
+
+#line 72 "src/main.vl"
+const char* format_manifest_error(const char* filename, int32_t line, int32_t col, const char* msg) {
+#line 73 "src/main.vl"
+    StringBuilder sb = create_sb(128);
+#line 74 "src/main.vl"
+    sb_append_str((&(sb)), "[Velo Error] ");
+#line 75 "src/main.vl"
+    sb_append_str((&(sb)), filename);
+#line 76 "src/main.vl"
+    sb_append_char((&(sb)), ':');
+#line 77 "src/main.vl"
+    sb_append_int((&(sb)), line);
+#line 78 "src/main.vl"
+    sb_append_char((&(sb)), ':');
+#line 79 "src/main.vl"
+    sb_append_int((&(sb)), col);
 #line 80 "src/main.vl"
-    sb_append_str((&(sb)), msg);
+    sb_append_str((&(sb)), " - ");
 #line 81 "src/main.vl"
+    sb_append_str((&(sb)), msg);
+#line 82 "src/main.vl"
     return sb_to_string((&(sb)));
 }
 
-#line 84 "src/main.vl"
-void mlex_set_err(ManifestLexer* lex, int32_t line, int32_t col, const char* msg) {
 #line 85 "src/main.vl"
-    if ((!lex->has_error)) {
+void mlex_set_err(ManifestLexer* lex, int32_t line, int32_t col, const char* msg) {
 #line 86 "src/main.vl"
-        lex->has_error = true;
+    if ((!lex->has_error)) {
 #line 87 "src/main.vl"
+        lex->has_error = true;
+#line 88 "src/main.vl"
         lex->error_msg = format_manifest_error(lex->filename, line, col, msg);
     }
 }
 
-#line 91 "src/main.vl"
+#line 92 "src/main.vl"
 void mlex_advance(ManifestLexer* lex) {
-#line 92 "src/main.vl"
+#line 93 "src/main.vl"
     if (lex->has_error) {
-#line 92 "src/main.vl"
+#line 93 "src/main.vl"
         return;
     }
-#line 93 "src/main.vl"
-    const char* src = lex->source;
-#line 93 "src/main.vl"
-    size_t n = lex->len;
 #line 94 "src/main.vl"
-    for (int32_t it = 0; ((lex->pos < n)); it++) {
+    const char* src = lex->source;
+#line 94 "src/main.vl"
+    size_t n = lex->len;
 #line 95 "src/main.vl"
+    for (int32_t it = 0; ((lex->pos < n)); it++) {
+#line 96 "src/main.vl"
         uint8_t ch = src[lex->pos];
-#line 96 "src/main.vl"
+#line 97 "src/main.vl"
         if (((velo_cmp_eq_u_s(ch, ' ') || velo_cmp_eq_u_s(ch, '\t')) || velo_cmp_eq_u_s(ch, '\r'))) {
-#line 96 "src/main.vl"
+#line 97 "src/main.vl"
             lex->pos += 1;
-#line 96 "src/main.vl"
+#line 97 "src/main.vl"
             lex->col += 1;
         } else
-#line 97 "src/main.vl"
+#line 98 "src/main.vl"
         if (velo_cmp_eq_u_s(ch, '\n')) {
-#line 97 "src/main.vl"
+#line 98 "src/main.vl"
             lex->pos += 1;
-#line 97 "src/main.vl"
+#line 98 "src/main.vl"
             lex->line += 1;
-#line 97 "src/main.vl"
+#line 98 "src/main.vl"
             lex->col = 1;
         } else
-#line 98 "src/main.vl"
+#line 99 "src/main.vl"
         if ((velo_cmp_eq_u_s(ch, '#') || ((velo_cmp_eq_u_s(ch, '/') && ((lex->pos + 1) < n)) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '/')))) {
-#line 99 "src/main.vl"
+#line 100 "src/main.vl"
             for (int32_t it = 0; (((lex->pos < n) && velo_cmp_ne_u_s(src[lex->pos], '\n'))); it++) {
-#line 99 "src/main.vl"
+#line 100 "src/main.vl"
                 lex->pos += 1;
                 __loop_cont_568: __attribute__((unused));
             }
             __loop_break_568: __attribute__((unused));
         } else {
-#line 100 "src/main.vl"
+#line 101 "src/main.vl"
             goto __loop_break_567;
         }
         __loop_cont_567: __attribute__((unused));
     }
     __loop_break_567: __attribute__((unused));
-#line 102 "src/main.vl"
+#line 103 "src/main.vl"
     if ((lex->pos >= n)) {
-#line 102 "src/main.vl"
+#line 103 "src/main.vl"
         lex->cur_kind = MTOK_EOF;
-#line 102 "src/main.vl"
+#line 103 "src/main.vl"
         lex->cur_val = "";
-#line 102 "src/main.vl"
+#line 103 "src/main.vl"
         lex->cur_line = lex->line;
-#line 102 "src/main.vl"
+#line 103 "src/main.vl"
         lex->cur_col = lex->col;
-#line 102 "src/main.vl"
+#line 103 "src/main.vl"
         return;
     }
-#line 103 "src/main.vl"
+#line 104 "src/main.vl"
     int32_t s_line = lex->line;
-#line 103 "src/main.vl"
+#line 104 "src/main.vl"
     int32_t s_col = lex->col;
-#line 103 "src/main.vl"
+#line 104 "src/main.vl"
     uint8_t c = src[lex->pos];
-#line 104 "src/main.vl"
+#line 105 "src/main.vl"
     lex->cur_line = s_line;
-#line 104 "src/main.vl"
+#line 105 "src/main.vl"
     lex->cur_col = s_col;
-#line 105 "src/main.vl"
+#line 106 "src/main.vl"
     if (velo_cmp_eq_u_s(c, '{')) {
-#line 105 "src/main.vl"
+#line 106 "src/main.vl"
         lex->pos += 1;
-#line 105 "src/main.vl"
+#line 106 "src/main.vl"
         lex->col += 1;
-#line 105 "src/main.vl"
+#line 106 "src/main.vl"
         lex->cur_kind = MTOK_LBRACE;
-#line 105 "src/main.vl"
+#line 106 "src/main.vl"
         lex->cur_val = "{";
-#line 105 "src/main.vl"
+#line 106 "src/main.vl"
         return;
     }
-#line 106 "src/main.vl"
+#line 107 "src/main.vl"
     if (velo_cmp_eq_u_s(c, '}')) {
-#line 106 "src/main.vl"
+#line 107 "src/main.vl"
         lex->pos += 1;
-#line 106 "src/main.vl"
+#line 107 "src/main.vl"
         lex->col += 1;
-#line 106 "src/main.vl"
+#line 107 "src/main.vl"
         lex->cur_kind = MTOK_RBRACE;
-#line 106 "src/main.vl"
+#line 107 "src/main.vl"
         lex->cur_val = "}";
-#line 106 "src/main.vl"
+#line 107 "src/main.vl"
         return;
     }
-#line 107 "src/main.vl"
+#line 108 "src/main.vl"
     if (velo_cmp_eq_u_s(c, '[')) {
-#line 107 "src/main.vl"
+#line 108 "src/main.vl"
         lex->pos += 1;
-#line 107 "src/main.vl"
+#line 108 "src/main.vl"
         lex->col += 1;
-#line 107 "src/main.vl"
+#line 108 "src/main.vl"
         lex->cur_kind = MTOK_LBRACKET;
-#line 107 "src/main.vl"
+#line 108 "src/main.vl"
         lex->cur_val = "[";
-#line 107 "src/main.vl"
+#line 108 "src/main.vl"
         return;
     }
-#line 108 "src/main.vl"
+#line 109 "src/main.vl"
     if (velo_cmp_eq_u_s(c, ']')) {
-#line 108 "src/main.vl"
+#line 109 "src/main.vl"
         lex->pos += 1;
-#line 108 "src/main.vl"
+#line 109 "src/main.vl"
         lex->col += 1;
-#line 108 "src/main.vl"
+#line 109 "src/main.vl"
         lex->cur_kind = MTOK_RBRACKET;
-#line 108 "src/main.vl"
+#line 109 "src/main.vl"
         lex->cur_val = "]";
-#line 108 "src/main.vl"
+#line 109 "src/main.vl"
         return;
     }
-#line 109 "src/main.vl"
+#line 110 "src/main.vl"
     if (velo_cmp_eq_u_s(c, ':')) {
-#line 109 "src/main.vl"
+#line 110 "src/main.vl"
         lex->pos += 1;
-#line 109 "src/main.vl"
+#line 110 "src/main.vl"
         lex->col += 1;
-#line 109 "src/main.vl"
+#line 110 "src/main.vl"
         lex->cur_kind = MTOK_COLON;
-#line 109 "src/main.vl"
+#line 110 "src/main.vl"
         lex->cur_val = ":";
-#line 109 "src/main.vl"
+#line 110 "src/main.vl"
         return;
     }
-#line 110 "src/main.vl"
+#line 111 "src/main.vl"
     if (velo_cmp_eq_u_s(c, ',')) {
-#line 110 "src/main.vl"
+#line 111 "src/main.vl"
         lex->pos += 1;
-#line 110 "src/main.vl"
+#line 111 "src/main.vl"
         lex->col += 1;
-#line 110 "src/main.vl"
+#line 111 "src/main.vl"
         lex->cur_kind = MTOK_COMMA;
-#line 110 "src/main.vl"
+#line 111 "src/main.vl"
         lex->cur_val = ",";
-#line 110 "src/main.vl"
-        return;
-    }
-#line 111 "src/main.vl"
-    if (velo_cmp_eq_u_s(c, '@')) {
-#line 111 "src/main.vl"
-        lex->pos += 1;
-#line 111 "src/main.vl"
-        lex->col += 1;
-#line 111 "src/main.vl"
-        lex->cur_kind = MTOK_AT;
-#line 111 "src/main.vl"
-        lex->cur_val = "@";
 #line 111 "src/main.vl"
         return;
     }
 #line 112 "src/main.vl"
-    if (velo_cmp_eq_u_s(c, '"')) {
-#line 113 "src/main.vl"
+    if (velo_cmp_eq_u_s(c, '@')) {
+#line 112 "src/main.vl"
         lex->pos += 1;
-#line 113 "src/main.vl"
+#line 112 "src/main.vl"
         lex->col += 1;
+#line 112 "src/main.vl"
+        lex->cur_kind = MTOK_AT;
+#line 112 "src/main.vl"
+        lex->cur_val = "@";
+#line 112 "src/main.vl"
+        return;
+    }
+#line 113 "src/main.vl"
+    if (velo_cmp_eq_u_s(c, '"')) {
 #line 114 "src/main.vl"
-        StringBuilder sb = create_sb(64);
+        lex->pos += 1;
+#line 114 "src/main.vl"
+        lex->col += 1;
 #line 115 "src/main.vl"
-        for (int32_t it = 0; (((lex->pos < n) && velo_cmp_ne_u_s(src[lex->pos], '"'))); it++) {
+        StringBuilder sb = create_sb(64);
 #line 116 "src/main.vl"
+        for (int32_t it = 0; (((lex->pos < n) && velo_cmp_ne_u_s(src[lex->pos], '"'))); it++) {
+#line 117 "src/main.vl"
             uint8_t sc = src[lex->pos];
-#line 117 "src/main.vl"
+#line 118 "src/main.vl"
             if (velo_cmp_eq_u_s(sc, '\n')) {
-#line 117 "src/main.vl"
+#line 118 "src/main.vl"
                 mlex_set_err(lex, s_line, s_col, "unterminated string literal");
-#line 117 "src/main.vl"
+#line 118 "src/main.vl"
                 return;
             }
-#line 118 "src/main.vl"
+#line 119 "src/main.vl"
             if (velo_cmp_eq_u_s(sc, '\\')) {
-#line 119 "src/main.vl"
-                lex->pos += 1;
-#line 119 "src/main.vl"
-                lex->col += 1;
 #line 120 "src/main.vl"
-                if ((lex->pos < n)) {
+                lex->pos += 1;
+#line 120 "src/main.vl"
+                lex->col += 1;
 #line 121 "src/main.vl"
+                if ((lex->pos < n)) {
+#line 122 "src/main.vl"
                     uint8_t esc = src[lex->pos];
-#line 122 "src/main.vl"
+#line 123 "src/main.vl"
                     if (velo_cmp_eq_u_s(esc, 'n')) {
-#line 122 "src/main.vl"
+#line 123 "src/main.vl"
                         sb_append_char((&(sb)), '\n');
                     } else
-#line 123 "src/main.vl"
+#line 124 "src/main.vl"
                     if (velo_cmp_eq_u_s(esc, 't')) {
-#line 123 "src/main.vl"
+#line 124 "src/main.vl"
                         sb_append_char((&(sb)), '\t');
                     } else
-#line 124 "src/main.vl"
+#line 125 "src/main.vl"
                     if (velo_cmp_eq_u_s(esc, 'r')) {
-#line 124 "src/main.vl"
+#line 125 "src/main.vl"
                         sb_append_char((&(sb)), '\r');
                     } else
-#line 125 "src/main.vl"
+#line 126 "src/main.vl"
                     if (velo_cmp_eq_u_s(esc, '"')) {
-#line 125 "src/main.vl"
+#line 126 "src/main.vl"
                         sb_append_char((&(sb)), '"');
                     } else
-#line 126 "src/main.vl"
+#line 127 "src/main.vl"
                     if (velo_cmp_eq_u_s(esc, '\\')) {
-#line 126 "src/main.vl"
+#line 127 "src/main.vl"
                         sb_append_char((&(sb)), '\\');
                     } else {
-#line 127 "src/main.vl"
+#line 128 "src/main.vl"
                         sb_append_char((&(sb)), esc);
                     }
                 }
             } else {
-#line 129 "src/main.vl"
+#line 130 "src/main.vl"
                 sb_append_char((&(sb)), sc);
             }
-#line 130 "src/main.vl"
+#line 131 "src/main.vl"
             lex->pos += 1;
-#line 130 "src/main.vl"
+#line 131 "src/main.vl"
             lex->col += 1;
             __loop_cont_569: __attribute__((unused));
         }
         __loop_break_569: __attribute__((unused));
-#line 132 "src/main.vl"
+#line 133 "src/main.vl"
         if ((lex->pos >= n)) {
-#line 132 "src/main.vl"
+#line 133 "src/main.vl"
             mlex_set_err(lex, s_line, s_col, "unterminated string literal");
-#line 132 "src/main.vl"
+#line 133 "src/main.vl"
             return;
         }
-#line 133 "src/main.vl"
+#line 134 "src/main.vl"
         lex->pos += 1;
-#line 133 "src/main.vl"
+#line 134 "src/main.vl"
         lex->col += 1;
-#line 134 "src/main.vl"
+#line 135 "src/main.vl"
         lex->cur_kind = MTOK_STRING;
-#line 134 "src/main.vl"
+#line 135 "src/main.vl"
         lex->cur_val = sb_to_string((&(sb)));
-#line 134 "src/main.vl"
+#line 135 "src/main.vl"
         return;
     }
-#line 136 "src/main.vl"
-    bool is_id_start = (((velo_cmp_ge_u_s(c, 'a') && velo_cmp_le_u_s(c, 'z')) || (velo_cmp_ge_u_s(c, 'A') && velo_cmp_le_u_s(c, 'Z'))) || velo_cmp_eq_u_s(c, '_'));
 #line 137 "src/main.vl"
-    if (is_id_start) {
+    bool is_id_start = (((velo_cmp_ge_u_s(c, 'a') && velo_cmp_le_u_s(c, 'z')) || (velo_cmp_ge_u_s(c, 'A') && velo_cmp_le_u_s(c, 'Z'))) || velo_cmp_eq_u_s(c, '_'));
 #line 138 "src/main.vl"
-        StringBuilder sb = create_sb(32);
+    if (is_id_start) {
 #line 139 "src/main.vl"
-        for (int32_t it = 0; ((lex->pos < n)); it++) {
+        StringBuilder sb = create_sb(32);
 #line 140 "src/main.vl"
-            uint8_t ic = src[lex->pos];
+        for (int32_t it = 0; ((lex->pos < n)); it++) {
 #line 141 "src/main.vl"
+            uint8_t ic = src[lex->pos];
+#line 142 "src/main.vl"
             bool is_id = (((((velo_cmp_ge_u_s(ic, 'a') && velo_cmp_le_u_s(ic, 'z')) || (velo_cmp_ge_u_s(ic, 'A') && velo_cmp_le_u_s(ic, 'Z'))) || (velo_cmp_ge_u_s(ic, '0') && velo_cmp_le_u_s(ic, '9'))) || velo_cmp_eq_u_s(ic, '_')) || velo_cmp_eq_u_s(ic, '-'));
-#line 142 "src/main.vl"
+#line 143 "src/main.vl"
             if ((!is_id)) {
-#line 142 "src/main.vl"
+#line 143 "src/main.vl"
                 goto __loop_break_570;
             }
-#line 143 "src/main.vl"
+#line 144 "src/main.vl"
             sb_append_char((&(sb)), ic);
-#line 144 "src/main.vl"
+#line 145 "src/main.vl"
             lex->pos += 1;
-#line 144 "src/main.vl"
+#line 145 "src/main.vl"
             lex->col += 1;
             __loop_cont_570: __attribute__((unused));
         }
         __loop_break_570: __attribute__((unused));
-#line 146 "src/main.vl"
+#line 147 "src/main.vl"
         lex->cur_kind = MTOK_IDENT;
-#line 146 "src/main.vl"
+#line 147 "src/main.vl"
         lex->cur_val = sb_to_string((&(sb)));
-#line 146 "src/main.vl"
+#line 147 "src/main.vl"
         return;
     }
-#line 148 "src/main.vl"
+#line 149 "src/main.vl"
     mlex_set_err(lex, s_line, s_col, "unexpected character in manifest");
 }
 
-#line 151 "src/main.vl"
+#line 152 "src/main.vl"
 bool mlex_expect(ManifestLexer* lex, int32_t kind, const char* msg) {
-#line 152 "src/main.vl"
-    if (lex->has_error) {
-#line 152 "src/main.vl"
-        return false;
-    }
 #line 153 "src/main.vl"
-    if ((lex->cur_kind != kind)) {
-#line 154 "src/main.vl"
-        StringBuilder sb = create_sb(64);
-#line 154 "src/main.vl"
-        sb_append_str((&(sb)), msg);
-#line 154 "src/main.vl"
-        sb_append_str((&(sb)), " (got '");
-#line 154 "src/main.vl"
-        sb_append_str((&(sb)), lex->cur_val);
-#line 154 "src/main.vl"
-        sb_append_str((&(sb)), "')");
-#line 155 "src/main.vl"
-        mlex_set_err(lex, lex->cur_line, lex->cur_col, sb_to_string((&(sb))));
-#line 155 "src/main.vl"
+    if (lex->has_error) {
+#line 153 "src/main.vl"
         return false;
     }
-#line 157 "src/main.vl"
-    mlex_advance(lex);
+#line 154 "src/main.vl"
+    if ((lex->cur_kind != kind)) {
+#line 155 "src/main.vl"
+        StringBuilder sb = create_sb(64);
+#line 155 "src/main.vl"
+        sb_append_str((&(sb)), msg);
+#line 155 "src/main.vl"
+        sb_append_str((&(sb)), " (got '");
+#line 155 "src/main.vl"
+        sb_append_str((&(sb)), lex->cur_val);
+#line 155 "src/main.vl"
+        sb_append_str((&(sb)), "')");
+#line 156 "src/main.vl"
+        mlex_set_err(lex, lex->cur_line, lex->cur_col, sb_to_string((&(sb))));
+#line 156 "src/main.vl"
+        return false;
+    }
 #line 158 "src/main.vl"
+    mlex_advance(lex);
+#line 159 "src/main.vl"
     return true;
 }
 
-#line 161 "src/main.vl"
+#line 162 "src/main.vl"
 void parse_str_list(ManifestLexer* lex, ManifestStringItem** first_out, int32_t* count_out) {
-#line 162 "src/main.vl"
+#line 163 "src/main.vl"
     if ((!mlex_expect(lex, MTOK_LBRACKET, "expected '['"))) {
-#line 162 "src/main.vl"
+#line 163 "src/main.vl"
         return;
     }
-#line 163 "src/main.vl"
-    ManifestStringItem* last = NULL;
 #line 164 "src/main.vl"
+    ManifestStringItem* last = NULL;
+#line 165 "src/main.vl"
     for (int32_t it = 0; ((((lex->cur_kind != MTOK_RBRACKET) && (lex->cur_kind != MTOK_EOF)) && (!lex->has_error))); it++) {
-#line 165 "src/main.vl"
+#line 166 "src/main.vl"
         if ((lex->cur_kind != MTOK_STRING)) {
-#line 165 "src/main.vl"
+#line 166 "src/main.vl"
             mlex_set_err(lex, lex->cur_line, lex->cur_col, "expected string item in list");
-#line 165 "src/main.vl"
+#line 166 "src/main.vl"
             return;
         }
-#line 166 "src/main.vl"
+#line 167 "src/main.vl"
         ManifestStringItem* item = ((ManifestStringItem*)velo_mem_alloc(sizeof(ManifestStringItem), (size_t)(1)));
-#line 167 "src/main.vl"
+#line 168 "src/main.vl"
         item->value = lex->cur_val;
-#line 167 "src/main.vl"
+#line 168 "src/main.vl"
         item->next = NULL;
-#line 168 "src/main.vl"
+#line 169 "src/main.vl"
         if ((last == NULL)) {
-#line 168 "src/main.vl"
+#line 169 "src/main.vl"
             first_out[0] = item;
         } else {
-#line 168 "src/main.vl"
+#line 169 "src/main.vl"
             last->next = item;
         }
-#line 169 "src/main.vl"
-        last = item;
-#line 169 "src/main.vl"
-        count_out[0] += 1;
 #line 170 "src/main.vl"
+        last = item;
+#line 170 "src/main.vl"
+        count_out[0] += 1;
+#line 171 "src/main.vl"
         mlex_advance(lex);
-#line 171 "src/main.vl"
+#line 172 "src/main.vl"
         if ((lex->cur_kind == MTOK_COMMA)) {
-#line 171 "src/main.vl"
+#line 172 "src/main.vl"
             mlex_advance(lex);
         } else {
-#line 171 "src/main.vl"
+#line 172 "src/main.vl"
             goto __loop_break_571;
         }
         __loop_cont_571: __attribute__((unused));
     }
     __loop_break_571: __attribute__((unused));
-#line 173 "src/main.vl"
+#line 174 "src/main.vl"
     mlex_expect(lex, MTOK_RBRACKET, "expected ']' closing list");
 }
 
-#line 176 "src/main.vl"
-void parse_manifest_pkg(ManifestLexer* lex, PackageManifest* m) {
 #line 177 "src/main.vl"
+void parse_manifest_pkg(ManifestLexer* lex, PackageManifest* m) {
+#line 178 "src/main.vl"
     mlex_advance(lex);
-#line 178 "src/main.vl"
+#line 179 "src/main.vl"
     if ((lex->cur_kind == MTOK_STRING)) {
-#line 178 "src/main.vl"
+#line 179 "src/main.vl"
         m->pkg.name = lex->cur_val;
-#line 178 "src/main.vl"
+#line 179 "src/main.vl"
         mlex_advance(lex);
-    }
-#line 179 "src/main.vl"
-    if ((!mlex_expect(lex, MTOK_LBRACE, "expected '{' after 'pkg'"))) {
-#line 179 "src/main.vl"
-        return;
     }
 #line 180 "src/main.vl"
+    if ((!mlex_expect(lex, MTOK_LBRACE, "expected '{' after 'pkg'"))) {
+#line 180 "src/main.vl"
+        return;
+    }
+#line 181 "src/main.vl"
     for (int32_t it = 0; ((((lex->cur_kind != MTOK_RBRACE) && (lex->cur_kind != MTOK_EOF)) && (!lex->has_error))); it++) {
-#line 181 "src/main.vl"
+#line 182 "src/main.vl"
         if ((lex->cur_kind != MTOK_IDENT)) {
-#line 181 "src/main.vl"
+#line 182 "src/main.vl"
             mlex_set_err(lex, lex->cur_line, lex->cur_col, "expected field name in 'pkg' block");
-#line 181 "src/main.vl"
+#line 182 "src/main.vl"
             return;
         }
-#line 182 "src/main.vl"
-        const char* key = lex->cur_val;
-#line 182 "src/main.vl"
-        int32_t k_line = lex->cur_line;
-#line 182 "src/main.vl"
-        int32_t k_col = lex->cur_col;
 #line 183 "src/main.vl"
+        const char* key = lex->cur_val;
+#line 183 "src/main.vl"
+        int32_t k_line = lex->cur_line;
+#line 183 "src/main.vl"
+        int32_t k_col = lex->cur_col;
+#line 184 "src/main.vl"
         mlex_advance(lex);
-#line 184 "src/main.vl"
+#line 185 "src/main.vl"
         if ((!mlex_expect(lex, MTOK_COLON, "expected ':' after field"))) {
-#line 184 "src/main.vl"
+#line 185 "src/main.vl"
             return;
         }
-#line 185 "src/main.vl"
+#line 186 "src/main.vl"
         if (((key != NULL && "name" != NULL) ? (strcmp(key, "name") == 0) : (key == "name"))) {
-#line 185 "src/main.vl"
+#line 186 "src/main.vl"
             if (mlex_expect(lex, MTOK_STRING, "expected string for 'name'")) {
-#line 185 "src/main.vl"
+#line 186 "src/main.vl"
                 m->pkg.name = lex->cur_val;
             }
         } else
-#line 186 "src/main.vl"
+#line 187 "src/main.vl"
         if (((key != NULL && "version" != NULL) ? (strcmp(key, "version") == 0) : (key == "version"))) {
-#line 186 "src/main.vl"
+#line 187 "src/main.vl"
             if ((lex->cur_kind == MTOK_STRING)) {
-#line 186 "src/main.vl"
+#line 187 "src/main.vl"
                 m->pkg.version = lex->cur_val;
-#line 186 "src/main.vl"
+#line 187 "src/main.vl"
                 mlex_advance(lex);
             } else {
-#line 186 "src/main.vl"
+#line 187 "src/main.vl"
                 mlex_set_err(lex, lex->cur_line, lex->cur_col, "expected string for 'version'");
-#line 186 "src/main.vl"
+#line 187 "src/main.vl"
                 return;
             }
         } else
-#line 187 "src/main.vl"
+#line 188 "src/main.vl"
         if (((key != NULL && "entry" != NULL) ? (strcmp(key, "entry") == 0) : (key == "entry"))) {
-#line 187 "src/main.vl"
+#line 188 "src/main.vl"
             if ((lex->cur_kind == MTOK_STRING)) {
-#line 187 "src/main.vl"
+#line 188 "src/main.vl"
                 m->pkg.entry = lex->cur_val;
-#line 187 "src/main.vl"
+#line 188 "src/main.vl"
                 mlex_advance(lex);
             } else {
-#line 187 "src/main.vl"
+#line 188 "src/main.vl"
                 mlex_set_err(lex, lex->cur_line, lex->cur_col, "expected string for 'entry'");
-#line 187 "src/main.vl"
+#line 188 "src/main.vl"
                 return;
             }
         } else
-#line 188 "src/main.vl"
+#line 189 "src/main.vl"
         if (((key != NULL && "description" != NULL) ? (strcmp(key, "description") == 0) : (key == "description"))) {
-#line 188 "src/main.vl"
+#line 189 "src/main.vl"
             if ((lex->cur_kind == MTOK_STRING)) {
-#line 188 "src/main.vl"
+#line 189 "src/main.vl"
                 m->pkg.description = lex->cur_val;
-#line 188 "src/main.vl"
+#line 189 "src/main.vl"
                 mlex_advance(lex);
             } else {
-#line 188 "src/main.vl"
+#line 189 "src/main.vl"
                 mlex_set_err(lex, lex->cur_line, lex->cur_col, "expected string for 'description'");
-#line 188 "src/main.vl"
+#line 189 "src/main.vl"
                 return;
             }
         } else
-#line 189 "src/main.vl"
+#line 190 "src/main.vl"
         if (((key != NULL && "license" != NULL) ? (strcmp(key, "license") == 0) : (key == "license"))) {
-#line 189 "src/main.vl"
+#line 190 "src/main.vl"
             if ((lex->cur_kind == MTOK_STRING)) {
-#line 189 "src/main.vl"
+#line 190 "src/main.vl"
                 m->pkg.license = lex->cur_val;
-#line 189 "src/main.vl"
+#line 190 "src/main.vl"
                 mlex_advance(lex);
             } else {
-#line 189 "src/main.vl"
+#line 190 "src/main.vl"
                 mlex_set_err(lex, lex->cur_line, lex->cur_col, "expected string for 'license'");
-#line 189 "src/main.vl"
+#line 190 "src/main.vl"
                 return;
             }
         } else
-#line 190 "src/main.vl"
+#line 191 "src/main.vl"
         if (((key != NULL && "authors" != NULL) ? (strcmp(key, "authors") == 0) : (key == "authors"))) {
-#line 190 "src/main.vl"
+#line 191 "src/main.vl"
             parse_str_list(lex, (&(m->pkg.first_author)), (&(m->pkg.author_count)));
         } else {
-#line 192 "src/main.vl"
+#line 193 "src/main.vl"
             StringBuilder sb = create_sb(64);
-#line 192 "src/main.vl"
+#line 193 "src/main.vl"
             sb_append_str((&(sb)), "unknown field '");
-#line 192 "src/main.vl"
+#line 193 "src/main.vl"
             sb_append_str((&(sb)), key);
-#line 192 "src/main.vl"
+#line 193 "src/main.vl"
             sb_append_str((&(sb)), "' in 'pkg' block");
-#line 193 "src/main.vl"
+#line 194 "src/main.vl"
             mlex_set_err(lex, k_line, k_col, sb_to_string((&(sb))));
-#line 193 "src/main.vl"
+#line 194 "src/main.vl"
             return;
         }
         __loop_cont_572: __attribute__((unused));
     }
     __loop_break_572: __attribute__((unused));
-#line 196 "src/main.vl"
+#line 197 "src/main.vl"
     mlex_expect(lex, MTOK_RBRACE, "expected '}' closing 'pkg' block");
 }
 
-#line 199 "src/main.vl"
-void parse_manifest_deps(ManifestLexer* lex, PackageManifest* m) {
 #line 200 "src/main.vl"
+void parse_manifest_deps(ManifestLexer* lex, PackageManifest* m) {
+#line 201 "src/main.vl"
     mlex_advance(lex);
-#line 201 "src/main.vl"
+#line 202 "src/main.vl"
     if ((!mlex_expect(lex, MTOK_LBRACE, "expected '{' after 'deps'"))) {
-#line 201 "src/main.vl"
+#line 202 "src/main.vl"
         return;
     }
-#line 202 "src/main.vl"
-    DependencySpec* last = NULL;
 #line 203 "src/main.vl"
+    DependencySpec* last = NULL;
+#line 204 "src/main.vl"
     for (int32_t it = 0; ((((lex->cur_kind != MTOK_RBRACE) && (lex->cur_kind != MTOK_EOF)) && (!lex->has_error))); it++) {
-#line 204 "src/main.vl"
+#line 205 "src/main.vl"
         if ((lex->cur_kind != MTOK_IDENT)) {
-#line 204 "src/main.vl"
+#line 205 "src/main.vl"
             mlex_set_err(lex, lex->cur_line, lex->cur_col, "expected dependency name");
-#line 204 "src/main.vl"
+#line 205 "src/main.vl"
             return;
         }
-#line 205 "src/main.vl"
+#line 206 "src/main.vl"
         const char* dname = lex->cur_val;
-#line 205 "src/main.vl"
+#line 206 "src/main.vl"
         mlex_advance(lex);
-#line 206 "src/main.vl"
+#line 207 "src/main.vl"
         if ((!mlex_expect(lex, MTOK_COLON, "expected ':' after dependency name"))) {
-#line 206 "src/main.vl"
+#line 207 "src/main.vl"
             return;
         }
-#line 207 "src/main.vl"
+#line 208 "src/main.vl"
         DependencySpec* dep = ((DependencySpec*)velo_mem_alloc(sizeof(DependencySpec), (size_t)(1)));
-#line 208 "src/main.vl"
-        dep->name = dname;
-#line 208 "src/main.vl"
-        dep->kind = "registry";
-#line 208 "src/main.vl"
-        dep->source = "";
-#line 208 "src/main.vl"
-        dep->tag = "";
-#line 208 "src/main.vl"
-        dep->next = NULL;
 #line 209 "src/main.vl"
-        if (((lex->cur_kind == MTOK_IDENT) && ((lex->cur_val != NULL && "git" != NULL) ? (strcmp(lex->cur_val, "git") == 0) : (lex->cur_val == "git")))) {
+        dep->name = dname;
+#line 209 "src/main.vl"
+        dep->kind = "registry";
+#line 209 "src/main.vl"
+        dep->source = "";
+#line 209 "src/main.vl"
+        dep->tag = "";
+#line 209 "src/main.vl"
+        dep->next = NULL;
 #line 210 "src/main.vl"
+        if (((lex->cur_kind == MTOK_IDENT) && ((lex->cur_val != NULL && "git" != NULL) ? (strcmp(lex->cur_val, "git") == 0) : (lex->cur_val == "git")))) {
+#line 211 "src/main.vl"
             mlex_advance(lex);
-#line 211 "src/main.vl"
+#line 212 "src/main.vl"
             if ((lex->cur_kind != MTOK_STRING)) {
-#line 211 "src/main.vl"
+#line 212 "src/main.vl"
                 mlex_set_err(lex, lex->cur_line, lex->cur_col, "expected git URL string");
-#line 211 "src/main.vl"
+#line 212 "src/main.vl"
                 return;
             }
-#line 212 "src/main.vl"
-            dep->kind = "git";
-#line 212 "src/main.vl"
-            dep->source = lex->cur_val;
-#line 212 "src/main.vl"
-            mlex_advance(lex);
 #line 213 "src/main.vl"
-            if ((lex->cur_kind == MTOK_AT)) {
+            dep->kind = "git";
+#line 213 "src/main.vl"
+            dep->source = lex->cur_val;
+#line 213 "src/main.vl"
+            mlex_advance(lex);
 #line 214 "src/main.vl"
+            if ((lex->cur_kind == MTOK_AT)) {
+#line 215 "src/main.vl"
                 mlex_advance(lex);
-#line 215 "src/main.vl"
+#line 216 "src/main.vl"
                 if ((lex->cur_kind != MTOK_STRING)) {
-#line 215 "src/main.vl"
+#line 216 "src/main.vl"
                     mlex_set_err(lex, lex->cur_line, lex->cur_col, "expected git tag string after '@'");
-#line 215 "src/main.vl"
+#line 216 "src/main.vl"
                     return;
                 }
-#line 216 "src/main.vl"
+#line 217 "src/main.vl"
                 dep->tag = lex->cur_val;
-#line 216 "src/main.vl"
+#line 217 "src/main.vl"
                 mlex_advance(lex);
             }
         } else
-#line 218 "src/main.vl"
-        if (((lex->cur_kind == MTOK_IDENT) && ((lex->cur_val != NULL && "local" != NULL) ? (strcmp(lex->cur_val, "local") == 0) : (lex->cur_val == "local")))) {
 #line 219 "src/main.vl"
+        if (((lex->cur_kind == MTOK_IDENT) && ((lex->cur_val != NULL && "local" != NULL) ? (strcmp(lex->cur_val, "local") == 0) : (lex->cur_val == "local")))) {
+#line 220 "src/main.vl"
             mlex_advance(lex);
-#line 220 "src/main.vl"
+#line 221 "src/main.vl"
             if ((lex->cur_kind != MTOK_STRING)) {
-#line 220 "src/main.vl"
+#line 221 "src/main.vl"
                 mlex_set_err(lex, lex->cur_line, lex->cur_col, "expected local path string");
-#line 220 "src/main.vl"
+#line 221 "src/main.vl"
                 return;
             }
-#line 221 "src/main.vl"
+#line 222 "src/main.vl"
             dep->kind = "local";
-#line 221 "src/main.vl"
+#line 222 "src/main.vl"
             dep->source = lex->cur_val;
-#line 221 "src/main.vl"
+#line 222 "src/main.vl"
             mlex_advance(lex);
         } else
-#line 222 "src/main.vl"
+#line 223 "src/main.vl"
         if ((lex->cur_kind == MTOK_STRING)) {
-#line 223 "src/main.vl"
+#line 224 "src/main.vl"
             dep->kind = "registry";
-#line 223 "src/main.vl"
+#line 224 "src/main.vl"
             dep->source = lex->cur_val;
-#line 223 "src/main.vl"
+#line 224 "src/main.vl"
             mlex_advance(lex);
         } else {
-#line 225 "src/main.vl"
+#line 226 "src/main.vl"
             StringBuilder sb = create_sb(64);
-#line 225 "src/main.vl"
+#line 226 "src/main.vl"
             sb_append_str((&(sb)), "expected 'git', 'local', or version string for dependency '");
-#line 225 "src/main.vl"
+#line 226 "src/main.vl"
             sb_append_str((&(sb)), dname);
-#line 225 "src/main.vl"
+#line 226 "src/main.vl"
             sb_append_str((&(sb)), "'");
-#line 226 "src/main.vl"
+#line 227 "src/main.vl"
             mlex_set_err(lex, lex->cur_line, lex->cur_col, sb_to_string((&(sb))));
-#line 226 "src/main.vl"
+#line 227 "src/main.vl"
             return;
         }
-#line 228 "src/main.vl"
+#line 229 "src/main.vl"
         if ((last == NULL)) {
-#line 228 "src/main.vl"
+#line 229 "src/main.vl"
             m->first_dep = dep;
         } else {
-#line 228 "src/main.vl"
+#line 229 "src/main.vl"
             last->next = dep;
         }
-#line 229 "src/main.vl"
+#line 230 "src/main.vl"
         last = dep;
-#line 229 "src/main.vl"
+#line 230 "src/main.vl"
         m->dep_count += 1;
         __loop_cont_573: __attribute__((unused));
     }
     __loop_break_573: __attribute__((unused));
-#line 231 "src/main.vl"
+#line 232 "src/main.vl"
     mlex_expect(lex, MTOK_RBRACE, "expected '}' closing 'deps' block");
 }
 
-#line 234 "src/main.vl"
-void parse_manifest_link(ManifestLexer* lex, PackageManifest* m) {
 #line 235 "src/main.vl"
+void parse_manifest_link(ManifestLexer* lex, PackageManifest* m) {
+#line 236 "src/main.vl"
     mlex_advance(lex);
-#line 236 "src/main.vl"
+#line 237 "src/main.vl"
     if ((!mlex_expect(lex, MTOK_LBRACE, "expected '{' after 'link'"))) {
-#line 236 "src/main.vl"
+#line 237 "src/main.vl"
         return;
     }
-#line 237 "src/main.vl"
+#line 238 "src/main.vl"
     for (int32_t it = 0; ((((lex->cur_kind != MTOK_RBRACE) && (lex->cur_kind != MTOK_EOF)) && (!lex->has_error))); it++) {
-#line 238 "src/main.vl"
+#line 239 "src/main.vl"
         if ((lex->cur_kind != MTOK_IDENT)) {
-#line 238 "src/main.vl"
+#line 239 "src/main.vl"
             mlex_set_err(lex, lex->cur_line, lex->cur_col, "expected field name in 'link' block");
-#line 238 "src/main.vl"
+#line 239 "src/main.vl"
             return;
         }
-#line 239 "src/main.vl"
-        const char* lkey = lex->cur_val;
-#line 239 "src/main.vl"
-        int32_t l_line = lex->cur_line;
-#line 239 "src/main.vl"
-        int32_t l_col = lex->cur_col;
 #line 240 "src/main.vl"
+        const char* lkey = lex->cur_val;
+#line 240 "src/main.vl"
+        int32_t l_line = lex->cur_line;
+#line 240 "src/main.vl"
+        int32_t l_col = lex->cur_col;
+#line 241 "src/main.vl"
         mlex_advance(lex);
-#line 241 "src/main.vl"
+#line 242 "src/main.vl"
         if ((!mlex_expect(lex, MTOK_COLON, "expected ':' after field"))) {
-#line 241 "src/main.vl"
+#line 242 "src/main.vl"
             return;
         }
-#line 242 "src/main.vl"
+#line 243 "src/main.vl"
         if (((lkey != NULL && "libs" != NULL) ? (strcmp(lkey, "libs") == 0) : (lkey == "libs"))) {
-#line 242 "src/main.vl"
+#line 243 "src/main.vl"
             parse_str_list(lex, (&(m->link.first_lib)), (&(m->link.lib_count)));
         } else
-#line 243 "src/main.vl"
+#line 244 "src/main.vl"
         if (((lkey != NULL && "flags" != NULL) ? (strcmp(lkey, "flags") == 0) : (lkey == "flags"))) {
-#line 243 "src/main.vl"
+#line 244 "src/main.vl"
             parse_str_list(lex, (&(m->link.first_flag)), (&(m->link.flag_count)));
         } else {
-#line 245 "src/main.vl"
+#line 246 "src/main.vl"
             StringBuilder sb = create_sb(64);
-#line 245 "src/main.vl"
+#line 246 "src/main.vl"
             sb_append_str((&(sb)), "unknown field '");
-#line 245 "src/main.vl"
+#line 246 "src/main.vl"
             sb_append_str((&(sb)), lkey);
-#line 245 "src/main.vl"
+#line 246 "src/main.vl"
             sb_append_str((&(sb)), "' in 'link' block (expected 'libs' or 'flags')");
-#line 246 "src/main.vl"
+#line 247 "src/main.vl"
             mlex_set_err(lex, l_line, l_col, sb_to_string((&(sb))));
-#line 246 "src/main.vl"
+#line 247 "src/main.vl"
             return;
         }
         __loop_cont_574: __attribute__((unused));
     }
     __loop_break_574: __attribute__((unused));
-#line 249 "src/main.vl"
+#line 250 "src/main.vl"
     mlex_expect(lex, MTOK_RBRACE, "expected '}' closing 'link' block");
 }
 
-#line 252 "src/main.vl"
-PackageManifest create_empty_manifest(void) {
 #line 253 "src/main.vl"
+PackageManifest create_empty_manifest(void) {
+#line 254 "src/main.vl"
     return (PackageManifest){ .pkg = (PackageMeta){ .name = "", .version = "", .entry = "", .first_author = NULL, .author_count = 0, .description = "", .license = "" }, .first_dep = NULL, .dep_count = 0, .link = (LinkConfig){ .first_lib = NULL, .lib_count = 0, .first_flag = NULL, .flag_count = 0 }, .has_error = false, .error_msg = "" };
 }
 
-#line 261 "src/main.vl"
-PackageManifest manifest_parse(const char* source, const char* filename) {
 #line 262 "src/main.vl"
-    PackageManifest m = create_empty_manifest();
+PackageManifest manifest_parse(const char* source, const char* filename) {
 #line 263 "src/main.vl"
+    PackageManifest m = create_empty_manifest();
+#line 264 "src/main.vl"
     if (((source == NULL) || velo_cmp_eq_u_s(((usize)strlen(source)), 0))) {
-#line 264 "src/main.vl"
+#line 265 "src/main.vl"
         m.has_error = true;
-#line 264 "src/main.vl"
+#line 265 "src/main.vl"
         m.error_msg = format_manifest_error(filename, 1, 1, "missing required 'pkg' block in manifest");
-#line 264 "src/main.vl"
+#line 265 "src/main.vl"
         return m;
     }
-#line 266 "src/main.vl"
+#line 267 "src/main.vl"
     ManifestLexer lex = (ManifestLexer){ .source = source, .pos = 0, .len = ((usize)strlen(source)), .line = 1, .col = 1, .cur_kind = 0, .cur_val = "", .cur_line = 1, .cur_col = 1, .has_error = false, .error_msg = "", .filename = filename };
-#line 270 "src/main.vl"
-    mlex_advance((&(lex)));
 #line 271 "src/main.vl"
-    bool has_pkg = false;
+    mlex_advance((&(lex)));
 #line 272 "src/main.vl"
-    for (int32_t it = 0; (((lex.cur_kind != MTOK_EOF) && (!lex.has_error))); it++) {
+    bool has_pkg = false;
 #line 273 "src/main.vl"
+    for (int32_t it = 0; (((lex.cur_kind != MTOK_EOF) && (!lex.has_error))); it++) {
+#line 274 "src/main.vl"
         if (((lex.cur_kind == MTOK_IDENT) && ((lex.cur_val != NULL && "pkg" != NULL) ? (strcmp(lex.cur_val, "pkg") == 0) : (lex.cur_val == "pkg")))) {
-#line 274 "src/main.vl"
+#line 275 "src/main.vl"
             if (has_pkg) {
-#line 274 "src/main.vl"
+#line 275 "src/main.vl"
                 mlex_set_err((&(lex)), lex.cur_line, lex.cur_col, "duplicate 'pkg' block");
-#line 274 "src/main.vl"
+#line 275 "src/main.vl"
                 goto __loop_break_575;
             }
-#line 275 "src/main.vl"
+#line 276 "src/main.vl"
             has_pkg = true;
-#line 275 "src/main.vl"
+#line 276 "src/main.vl"
             parse_manifest_pkg((&(lex)), (&(m)));
         } else
-#line 276 "src/main.vl"
-        if (((lex.cur_kind == MTOK_IDENT) && ((lex.cur_val != NULL && "deps" != NULL) ? (strcmp(lex.cur_val, "deps") == 0) : (lex.cur_val == "deps")))) {
 #line 277 "src/main.vl"
+        if (((lex.cur_kind == MTOK_IDENT) && ((lex.cur_val != NULL && "deps" != NULL) ? (strcmp(lex.cur_val, "deps") == 0) : (lex.cur_val == "deps")))) {
+#line 278 "src/main.vl"
             parse_manifest_deps((&(lex)), (&(m)));
         } else
-#line 278 "src/main.vl"
-        if (((lex.cur_kind == MTOK_IDENT) && ((lex.cur_val != NULL && "link" != NULL) ? (strcmp(lex.cur_val, "link") == 0) : (lex.cur_val == "link")))) {
 #line 279 "src/main.vl"
+        if (((lex.cur_kind == MTOK_IDENT) && ((lex.cur_val != NULL && "link" != NULL) ? (strcmp(lex.cur_val, "link") == 0) : (lex.cur_val == "link")))) {
+#line 280 "src/main.vl"
             parse_manifest_link((&(lex)), (&(m)));
         } else {
-#line 281 "src/main.vl"
+#line 282 "src/main.vl"
             StringBuilder sb = create_sb(64);
-#line 281 "src/main.vl"
+#line 282 "src/main.vl"
             sb_append_str((&(sb)), "unexpected top-level item '");
-#line 281 "src/main.vl"
+#line 282 "src/main.vl"
             sb_append_str((&(sb)), lex.cur_val);
-#line 281 "src/main.vl"
+#line 282 "src/main.vl"
             sb_append_str((&(sb)), "' (expected 'pkg', 'deps', or 'link')");
-#line 282 "src/main.vl"
+#line 283 "src/main.vl"
             mlex_set_err((&(lex)), lex.cur_line, lex.cur_col, sb_to_string((&(sb))));
-#line 282 "src/main.vl"
+#line 283 "src/main.vl"
             goto __loop_break_575;
         }
         __loop_cont_575: __attribute__((unused));
     }
     __loop_break_575: __attribute__((unused));
-#line 285 "src/main.vl"
+#line 286 "src/main.vl"
     if (lex.has_error) {
-#line 285 "src/main.vl"
+#line 286 "src/main.vl"
         m.has_error = true;
-#line 285 "src/main.vl"
+#line 286 "src/main.vl"
         m.error_msg = lex.error_msg;
-#line 285 "src/main.vl"
+#line 286 "src/main.vl"
         return m;
     }
-#line 286 "src/main.vl"
+#line 287 "src/main.vl"
     if ((!has_pkg)) {
-#line 286 "src/main.vl"
+#line 287 "src/main.vl"
         m.has_error = true;
-#line 286 "src/main.vl"
+#line 287 "src/main.vl"
         m.error_msg = format_manifest_error(filename, 1, 1, "missing required 'pkg' block in manifest");
-#line 286 "src/main.vl"
+#line 287 "src/main.vl"
         return m;
     }
-#line 287 "src/main.vl"
+#line 288 "src/main.vl"
     if (velo_cmp_eq_u_s(((usize)strlen(m.pkg.name)), 0)) {
-#line 287 "src/main.vl"
+#line 288 "src/main.vl"
         m.has_error = true;
-#line 287 "src/main.vl"
+#line 288 "src/main.vl"
         m.error_msg = format_manifest_error(filename, 1, 1, "missing required field 'name' in pkg block");
-#line 287 "src/main.vl"
+#line 288 "src/main.vl"
         return m;
     }
-#line 288 "src/main.vl"
+#line 289 "src/main.vl"
     if (velo_cmp_eq_u_s(((usize)strlen(m.pkg.version)), 0)) {
-#line 288 "src/main.vl"
+#line 289 "src/main.vl"
         m.has_error = true;
-#line 288 "src/main.vl"
+#line 289 "src/main.vl"
         m.error_msg = format_manifest_error(filename, 1, 1, "missing required field 'version' in pkg block");
-#line 288 "src/main.vl"
-        return m;
-    }
-#line 289 "src/main.vl"
-    if (velo_cmp_eq_u_s(((usize)strlen(m.pkg.entry)), 0)) {
-#line 289 "src/main.vl"
-        m.has_error = true;
-#line 289 "src/main.vl"
-        m.error_msg = format_manifest_error(filename, 1, 1, "missing required field 'entry' in pkg block");
 #line 289 "src/main.vl"
         return m;
     }
 #line 290 "src/main.vl"
+    if (velo_cmp_eq_u_s(((usize)strlen(m.pkg.entry)), 0)) {
+#line 290 "src/main.vl"
+        m.has_error = true;
+#line 290 "src/main.vl"
+        m.error_msg = format_manifest_error(filename, 1, 1, "missing required field 'entry' in pkg block");
+#line 290 "src/main.vl"
+        return m;
+    }
+#line 291 "src/main.vl"
     return m;
 }
 
-#line 293 "src/main.vl"
-PackageManifest manifest_load(const char* filepath) {
 #line 294 "src/main.vl"
-    PackageManifest m = create_empty_manifest();
+PackageManifest manifest_load(const char* filepath) {
 #line 295 "src/main.vl"
+    PackageManifest m = create_empty_manifest();
+#line 296 "src/main.vl"
     if ((!fs_exists(filepath))) {
-#line 296 "src/main.vl"
+#line 297 "src/main.vl"
         m.has_error = true;
-#line 296 "src/main.vl"
+#line 297 "src/main.vl"
         m.error_msg = format_manifest_error(filepath, 1, 1, "manifest file not found");
-#line 296 "src/main.vl"
+#line 297 "src/main.vl"
         return m;
     }
-#line 298 "src/main.vl"
-    const char* content = fs_read_to_str(filepath);
 #line 299 "src/main.vl"
+    const char* content = fs_read_to_str(filepath);
+#line 300 "src/main.vl"
     if ((content == NULL)) {
-#line 300 "src/main.vl"
+#line 301 "src/main.vl"
         m.has_error = true;
-#line 300 "src/main.vl"
+#line 301 "src/main.vl"
         m.error_msg = format_manifest_error(filepath, 1, 1, "failed to read manifest file");
-#line 300 "src/main.vl"
+#line 301 "src/main.vl"
         return m;
     }
-#line 302 "src/main.vl"
+#line 303 "src/main.vl"
     return manifest_parse(content, filepath);
 }
 
-#line 305 "src/main.vl"
-DependencySpec* manifest_find_dep(PackageManifest* m, const char* name) {
 #line 306 "src/main.vl"
-    DependencySpec* cur = m->first_dep;
+DependencySpec* manifest_find_dep(PackageManifest* m, const char* name) {
 #line 307 "src/main.vl"
+    DependencySpec* cur = m->first_dep;
+#line 308 "src/main.vl"
     for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 308 "src/main.vl"
+#line 309 "src/main.vl"
         if (((cur->name != NULL && name != NULL) ? (strcmp(cur->name, name) == 0) : (cur->name == name))) {
-#line 308 "src/main.vl"
+#line 309 "src/main.vl"
             return cur;
         }
-#line 309 "src/main.vl"
+#line 310 "src/main.vl"
         cur = cur->next;
         __loop_cont_576: __attribute__((unused));
     }
     __loop_break_576: __attribute__((unused));
-#line 311 "src/main.vl"
+#line 312 "src/main.vl"
     return NULL;
 }
 
