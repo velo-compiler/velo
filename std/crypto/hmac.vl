@@ -1,6 +1,7 @@
 // std.crypto.hmac — RFC 2104 compliant Keyed-Hashing for Message Authentication (HMAC-SHA256).
 use "sha256.vl"
 use "hex.vl"
+use "subtle.vl"
 use "../mem/heap.vl"
 
 // Computes a 32-byte HMAC-SHA256 authentication code into out_digest.
@@ -86,4 +87,64 @@ act hmac_sha256_str(key: string, data: string) -> string {
         d_len = str.len(data)
     }
     return hmac_sha256_hash(k_ptr, k_len, d_ptr, d_len)
+}
+
+// Verifies in constant time that tag matches the HMAC-SHA256 of data under key.
+// Accepts either a 64-character hex string tag or a 32-byte raw binary tag string.
+// Returns true if authentic, false if corrupted, forged, or invalid length.
+// Executes in constant time with respect to tag content.
+act hmac_sha256_verify(key: string, data: string, tag: string) -> bool {
+    if tag == null { return false }
+    let tag_len = str.len(tag)
+
+    mut computed: @u8 = heap_alloc(32)
+    if computed == null { return false }
+
+    mut k_ptr: @u8 = null
+    mut k_len: usize = 0
+    if key != null {
+        k_ptr = key as @u8
+        k_len = str.len(key)
+    }
+    mut d_ptr: @u8 = null
+    mut d_len: usize = 0
+    if data != null {
+        d_ptr = data as @u8
+        d_len = str.len(data)
+    }
+    hmac_sha256(k_ptr, k_len, d_ptr, d_len, computed)
+
+    mut is_valid = false
+    if tag_len == 64 {
+        let hex_str = bytes_to_hex(computed, 32)
+        is_valid = crypto_secure_eq(hex_str as @u8, tag as @u8, 64)
+        heap_free(hex_str as @u8)
+    } else if tag_len == 32 {
+        is_valid = crypto_secure_eq(computed, tag as @u8, 32)
+    } else {
+        // Execute comparison over 32 bytes to normalize execution time
+        let dummy = crypto_secure_eq(computed, computed, 32)
+        is_valid = false
+    }
+
+    heap_free(computed)
+    return is_valid
+}
+
+// Verifies in constant time that raw tag matches the 32-byte HMAC-SHA256 of binary data under key.
+act hmac_sha256_verify_bytes(key: @u8, key_len: usize, data: @u8, data_len: usize, tag: @u8, tag_len: usize) -> bool {
+    if tag == null { return false }
+    mut computed: @u8 = heap_alloc(32)
+    if computed == null { return false }
+    hmac_sha256(key, key_len, data, data_len, computed)
+
+    mut is_valid = false
+    if tag_len == 32 {
+        is_valid = crypto_secure_eq(computed, tag, 32)
+    } else {
+        let dummy = crypto_secure_eq(computed, computed, 32)
+        is_valid = false
+    }
+    heap_free(computed)
+    return is_valid
 }

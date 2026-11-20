@@ -30,6 +30,26 @@ act main() -> i32 {
         return 5
     }
 
+    // 5. Constant-time secure comparison
+    if !crypto_secure_eq("abc" as @u8, "abc" as @u8, 3) {
+        io.println_str("FAIL: umbrella crypto_secure_eq mismatch")
+        return 6
+    }
+    if crypto_secure_eq("abc" as @u8, "abd" as @u8, 3) {
+        io.println_str("FAIL: umbrella crypto_secure_eq unexpected match")
+        return 7
+    }
+
+    // 6. HMAC-SHA256 constant-time verification
+    if !hmac_sha256_verify("secret", "velo", h) {
+        io.println_str("FAIL: umbrella hmac_sha256_verify failed")
+        return 8
+    }
+    if hmac_sha256_verify("secret", "velo", "0000000000000000000000000000000000000000000000000000000000000000") {
+        io.println_str("FAIL: umbrella hmac_sha256_verify unexpected match")
+        return 9
+    }
+
     io.println_str("PASS: std.crypto umbrella import all tests passed")
     return 0
 }

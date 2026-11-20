@@ -866,6 +866,7 @@ extern const char* velo_host_getenv(const char* key);
 extern int32_t velo_capture_begin(const char* path);
 extern int32_t velo_capture_end(void);
 extern uint32_t velo_host_getpid(void);
+extern bool velo_crypto_secure_eq(void* a, void* b, size_t len);
 extern bool velo_crypto_random_fill(void* buf, size_t len);
 extern void velo_crypto_rand_fatal(const char* msg);
 extern void velo_crypto_inject_entropy_failure(int32_t enable);
@@ -2414,9 +2415,13 @@ uint32_t crc32_final(uint32_t crc);
 uint32_t crc32_hash(uint8_t* data, size_t len);
 uint32_t crc32_hash_str(const char* text);
 const char* crc32_hex(uint32_t val);
+bool crypto_secure_eq(uint8_t* a, uint8_t* b, size_t len);
+bool crypto_secure_eq_str(const char* a, const char* b);
 void hmac_sha256(uint8_t* key, size_t key_len, uint8_t* data, size_t data_len, uint8_t* out_digest);
 const char* hmac_sha256_hash(uint8_t* key, size_t key_len, uint8_t* data, size_t data_len);
 const char* hmac_sha256_str(const char* key, const char* data);
+bool hmac_sha256_verify(const char* key, const char* data, const char* tag);
+bool hmac_sha256_verify_bytes(uint8_t* key, size_t key_len, uint8_t* data, size_t data_len, uint8_t* tag, size_t tag_len);
 void crypto_inject_entropy_failure(bool enable);
 uint64_t rand_splitmix64(void);
 void crypto_unsafe_fallback_bytes(uint8_t* buf, size_t len);
@@ -54497,142 +54502,276 @@ const char* crc32_hex(uint32_t val) {
     return s;
 }
 
-#line 7 "src/main.vl"
+#line 12 "src/main.vl"
+bool crypto_secure_eq(uint8_t* a, uint8_t* b, size_t len) {
+#line 13 "src/main.vl"
+    return velo_crypto_secure_eq(((void*)(a)), ((void*)(b)), len);
+}
+
+#line 19 "src/main.vl"
+bool crypto_secure_eq_str(const char* a, const char* b) {
+#line 20 "src/main.vl"
+    if (((a == NULL) && (b == NULL))) {
+#line 20 "src/main.vl"
+        return true;
+    }
+#line 21 "src/main.vl"
+    if (((a == NULL) || (b == NULL))) {
+#line 21 "src/main.vl"
+        return false;
+    }
+#line 22 "src/main.vl"
+    size_t len_a = ((usize)strlen(a));
+#line 23 "src/main.vl"
+    size_t len_b = ((usize)strlen(b));
+#line 24 "src/main.vl"
+    if ((len_a != len_b)) {
+#line 26 "src/main.vl"
+        bool dummy = velo_crypto_secure_eq(((void*)(a)), ((void*)(a)), len_a);
+#line 27 "src/main.vl"
+        return false;
+    }
+#line 29 "src/main.vl"
+    return velo_crypto_secure_eq(((void*)(a)), ((void*)(b)), len_a);
+}
+
+#line 8 "src/main.vl"
 void hmac_sha256(uint8_t* key, size_t key_len, uint8_t* data, size_t data_len, uint8_t* out_digest) {
-#line 8 "src/main.vl"
+#line 9 "src/main.vl"
     if ((out_digest == NULL)) {
-#line 8 "src/main.vl"
+#line 9 "src/main.vl"
         return;
     }
-#line 10 "src/main.vl"
-    uint8_t* k = heap_alloc(64);
 #line 11 "src/main.vl"
-    size_t i = 0;
+    uint8_t* k = heap_alloc(64);
 #line 12 "src/main.vl"
-    for (int32_t it = 0; (velo_cmp_lt_u_s(i, 64)); it++) {
+    size_t i = 0;
 #line 13 "src/main.vl"
-        k[i] = ((uint8_t)(0));
+    for (int32_t it = 0; (velo_cmp_lt_u_s(i, 64)); it++) {
 #line 14 "src/main.vl"
+        k[i] = ((uint8_t)(0));
+#line 15 "src/main.vl"
         i += 1;
         __loop_cont_589: __attribute__((unused));
     }
     __loop_break_589: __attribute__((unused));
-#line 18 "src/main.vl"
-    if (((key != NULL) && velo_cmp_gt_u_s(key_len, 0))) {
 #line 19 "src/main.vl"
-        if (velo_cmp_gt_u_s(key_len, 64)) {
+    if (((key != NULL) && velo_cmp_gt_u_s(key_len, 0))) {
 #line 20 "src/main.vl"
+        if (velo_cmp_gt_u_s(key_len, 64)) {
+#line 21 "src/main.vl"
             sha256_bytes(key, key_len, k);
         } else {
-#line 22 "src/main.vl"
-            size_t ki = 0;
 #line 23 "src/main.vl"
-            for (int32_t it = 0; ((ki < key_len)); it++) {
+            size_t ki = 0;
 #line 24 "src/main.vl"
-                k[ki] = key[ki];
+            for (int32_t it = 0; ((ki < key_len)); it++) {
 #line 25 "src/main.vl"
+                k[ki] = key[ki];
+#line 26 "src/main.vl"
                 ki += 1;
                 __loop_cont_590: __attribute__((unused));
             }
             __loop_break_590: __attribute__((unused));
         }
     }
-#line 31 "src/main.vl"
-    uint8_t* ipad = heap_alloc(64);
 #line 32 "src/main.vl"
-    uint8_t* opad = heap_alloc(64);
+    uint8_t* ipad = heap_alloc(64);
 #line 33 "src/main.vl"
-    size_t j = 0;
+    uint8_t* opad = heap_alloc(64);
 #line 34 "src/main.vl"
-    for (int32_t it = 0; (velo_cmp_lt_u_s(j, 64)); it++) {
+    size_t j = 0;
 #line 35 "src/main.vl"
-        ipad[j] = (k[j] ^ ((uint8_t)(0x36)));
+    for (int32_t it = 0; (velo_cmp_lt_u_s(j, 64)); it++) {
 #line 36 "src/main.vl"
-        opad[j] = (k[j] ^ ((uint8_t)(0x5C)));
+        ipad[j] = (k[j] ^ ((uint8_t)(0x36)));
 #line 37 "src/main.vl"
+        opad[j] = (k[j] ^ ((uint8_t)(0x5C)));
+#line 38 "src/main.vl"
         j += 1;
         __loop_cont_591: __attribute__((unused));
     }
     __loop_break_591: __attribute__((unused));
-#line 40 "src/main.vl"
-    Sha256State inner_state;
 #line 41 "src/main.vl"
-    inner_state.buf = NULL;
+    Sha256State inner_state;
 #line 42 "src/main.vl"
-    sha256_init((&(inner_state)));
+    inner_state.buf = NULL;
 #line 43 "src/main.vl"
-    sha256_update((&(inner_state)), ipad, 64);
+    sha256_init((&(inner_state)));
 #line 44 "src/main.vl"
-    if (((data != NULL) && velo_cmp_gt_u_s(data_len, 0))) {
+    sha256_update((&(inner_state)), ipad, 64);
 #line 45 "src/main.vl"
+    if (((data != NULL) && velo_cmp_gt_u_s(data_len, 0))) {
+#line 46 "src/main.vl"
         sha256_update((&(inner_state)), data, data_len);
     }
-#line 47 "src/main.vl"
-    uint8_t* inner_digest = heap_alloc(32);
 #line 48 "src/main.vl"
+    uint8_t* inner_digest = heap_alloc(32);
+#line 49 "src/main.vl"
     sha256_final((&(inner_state)), inner_digest);
-#line 51 "src/main.vl"
-    Sha256State outer_state;
 #line 52 "src/main.vl"
-    outer_state.buf = NULL;
+    Sha256State outer_state;
 #line 53 "src/main.vl"
-    sha256_init((&(outer_state)));
+    outer_state.buf = NULL;
 #line 54 "src/main.vl"
-    sha256_update((&(outer_state)), opad, 64);
+    sha256_init((&(outer_state)));
 #line 55 "src/main.vl"
-    sha256_update((&(outer_state)), inner_digest, 32);
+    sha256_update((&(outer_state)), opad, 64);
 #line 56 "src/main.vl"
+    sha256_update((&(outer_state)), inner_digest, 32);
+#line 57 "src/main.vl"
     sha256_final((&(outer_state)), out_digest);
-#line 59 "src/main.vl"
-    heap_free(k);
 #line 60 "src/main.vl"
-    heap_free(ipad);
+    heap_free(k);
 #line 61 "src/main.vl"
-    heap_free(opad);
+    heap_free(ipad);
 #line 62 "src/main.vl"
+    heap_free(opad);
+#line 63 "src/main.vl"
     heap_free(inner_digest);
 }
 
-#line 66 "src/main.vl"
-const char* hmac_sha256_hash(uint8_t* key, size_t key_len, uint8_t* data, size_t data_len) {
 #line 67 "src/main.vl"
-    uint8_t* digest = heap_alloc(32);
+const char* hmac_sha256_hash(uint8_t* key, size_t key_len, uint8_t* data, size_t data_len) {
 #line 68 "src/main.vl"
-    hmac_sha256(key, key_len, data, data_len, digest);
+    uint8_t* digest = heap_alloc(32);
 #line 69 "src/main.vl"
-    const char* hex_res = bytes_to_hex(digest, 32);
+    hmac_sha256(key, key_len, data, data_len, digest);
 #line 70 "src/main.vl"
-    heap_free(digest);
+    const char* hex_res = bytes_to_hex(digest, 32);
 #line 71 "src/main.vl"
+    heap_free(digest);
+#line 72 "src/main.vl"
     return hex_res;
 }
 
-#line 75 "src/main.vl"
-const char* hmac_sha256_str(const char* key, const char* data) {
 #line 76 "src/main.vl"
-    uint8_t* k_ptr = NULL;
+const char* hmac_sha256_str(const char* key, const char* data) {
 #line 77 "src/main.vl"
-    size_t k_len = 0;
+    uint8_t* k_ptr = NULL;
 #line 78 "src/main.vl"
-    if ((key != NULL)) {
+    size_t k_len = 0;
 #line 79 "src/main.vl"
-        k_ptr = ((uint8_t*)(key));
+    if ((key != NULL)) {
 #line 80 "src/main.vl"
+        k_ptr = ((uint8_t*)(key));
+#line 81 "src/main.vl"
         k_len = ((usize)strlen(key));
     }
-#line 82 "src/main.vl"
-    uint8_t* d_ptr = NULL;
 #line 83 "src/main.vl"
-    size_t d_len = 0;
+    uint8_t* d_ptr = NULL;
 #line 84 "src/main.vl"
-    if ((data != NULL)) {
+    size_t d_len = 0;
 #line 85 "src/main.vl"
-        d_ptr = ((uint8_t*)(data));
+    if ((data != NULL)) {
 #line 86 "src/main.vl"
+        d_ptr = ((uint8_t*)(data));
+#line 87 "src/main.vl"
         d_len = ((usize)strlen(data));
     }
-#line 88 "src/main.vl"
+#line 89 "src/main.vl"
     return hmac_sha256_hash(k_ptr, k_len, d_ptr, d_len);
+}
+
+#line 96 "src/main.vl"
+bool hmac_sha256_verify(const char* key, const char* data, const char* tag) {
+#line 97 "src/main.vl"
+    if ((tag == NULL)) {
+#line 97 "src/main.vl"
+        return false;
+    }
+#line 98 "src/main.vl"
+    size_t tag_len = ((usize)strlen(tag));
+#line 100 "src/main.vl"
+    uint8_t* computed = heap_alloc(32);
+#line 101 "src/main.vl"
+    if ((computed == NULL)) {
+#line 101 "src/main.vl"
+        return false;
+    }
+#line 103 "src/main.vl"
+    uint8_t* k_ptr = NULL;
+#line 104 "src/main.vl"
+    size_t k_len = 0;
+#line 105 "src/main.vl"
+    if ((key != NULL)) {
+#line 106 "src/main.vl"
+        k_ptr = ((uint8_t*)(key));
+#line 107 "src/main.vl"
+        k_len = ((usize)strlen(key));
+    }
+#line 109 "src/main.vl"
+    uint8_t* d_ptr = NULL;
+#line 110 "src/main.vl"
+    size_t d_len = 0;
+#line 111 "src/main.vl"
+    if ((data != NULL)) {
+#line 112 "src/main.vl"
+        d_ptr = ((uint8_t*)(data));
+#line 113 "src/main.vl"
+        d_len = ((usize)strlen(data));
+    }
+#line 115 "src/main.vl"
+    hmac_sha256(k_ptr, k_len, d_ptr, d_len, computed);
+#line 117 "src/main.vl"
+    bool is_valid = false;
+#line 118 "src/main.vl"
+    if (velo_cmp_eq_u_s(tag_len, 64)) {
+#line 119 "src/main.vl"
+        const char* hex_str = bytes_to_hex(computed, 32);
+#line 120 "src/main.vl"
+        is_valid = crypto_secure_eq(((uint8_t*)(hex_str)), ((uint8_t*)(tag)), 64);
+#line 121 "src/main.vl"
+        heap_free(((uint8_t*)(hex_str)));
+    } else
+#line 122 "src/main.vl"
+    if (velo_cmp_eq_u_s(tag_len, 32)) {
+#line 123 "src/main.vl"
+        is_valid = crypto_secure_eq(computed, ((uint8_t*)(tag)), 32);
+    } else {
+#line 126 "src/main.vl"
+        bool dummy = crypto_secure_eq(computed, computed, 32);
+#line 127 "src/main.vl"
+        is_valid = false;
+    }
+#line 130 "src/main.vl"
+    heap_free(computed);
+#line 131 "src/main.vl"
+    return is_valid;
+}
+
+#line 135 "src/main.vl"
+bool hmac_sha256_verify_bytes(uint8_t* key, size_t key_len, uint8_t* data, size_t data_len, uint8_t* tag, size_t tag_len) {
+#line 136 "src/main.vl"
+    if ((tag == NULL)) {
+#line 136 "src/main.vl"
+        return false;
+    }
+#line 137 "src/main.vl"
+    uint8_t* computed = heap_alloc(32);
+#line 138 "src/main.vl"
+    if ((computed == NULL)) {
+#line 138 "src/main.vl"
+        return false;
+    }
+#line 139 "src/main.vl"
+    hmac_sha256(key, key_len, data, data_len, computed);
+#line 141 "src/main.vl"
+    bool is_valid = false;
+#line 142 "src/main.vl"
+    if (velo_cmp_eq_u_s(tag_len, 32)) {
+#line 143 "src/main.vl"
+        is_valid = crypto_secure_eq(computed, tag, 32);
+    } else {
+#line 145 "src/main.vl"
+        bool dummy = crypto_secure_eq(computed, computed, 32);
+#line 146 "src/main.vl"
+        is_valid = false;
+    }
+#line 148 "src/main.vl"
+    heap_free(computed);
+#line 149 "src/main.vl"
+    return is_valid;
 }
 
 #line 22 "src/main.vl"

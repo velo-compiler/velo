@@ -522,6 +522,24 @@ export const STDLIB_MODULES: StdlibModule[] = [
         example: 'let sig = hmac_sha256_str("secret-key", "request-payload")'
       },
       {
+        name: 'hmac_sha256_verify',
+        signature: 'act hmac_sha256_verify(key: string, data: string, tag: string) -> bool',
+        description: 'Verifies an HMAC-SHA256 authentication code in constant time against timing attacks.',
+        example: 'let ok = hmac_sha256_verify("secret-key", "request-payload", signature)'
+      },
+      {
+        name: 'crypto_secure_eq',
+        signature: 'act crypto_secure_eq(a: @u8, b: @u8, len: usize) -> bool',
+        description: 'Compares two byte buffers in constant time without early-exit branches.',
+        example: 'let match = crypto_secure_eq(computed_mac, incoming_mac, 32)'
+      },
+      {
+        name: 'crypto_secure_eq_str',
+        signature: 'act crypto_secure_eq_str(a: string, b: string) -> bool',
+        description: 'Compares two strings in constant time without timing side channels.',
+        example: 'let match = crypto_secure_eq_str(expected_token, token)'
+      },
+      {
         name: 'crypto_random_bytes',
         signature: 'act crypto_random_bytes(buf: @u8, len: usize) -> bool or string',
         description: 'Fills a byte buffer with cryptographically secure random bytes from the OS kernel entropy source. Fails closed if entropy is unavailable.',

@@ -1050,11 +1050,27 @@ injects a failing entropy function.
   - Verified `std/tests/crypto/rand_test.vl` and `std/tests/uuid/uuid_test.vl`.
   - Verified `tests/test_std_crypto.py` (7/7 passed), `tests/test_std_uuid.py` (2/2 passed), `tests/test_posix_portability.py` (18 passed, 6 skipped), `tests/test_crypto_umbrella.py` (6/6 passed), `tests/test_bootstrap_snapshot.py` (6/6 passed), `tests/test_stdlib_or_modernization.py` (5/5 passed).
 
-**73.3** Add `crypto_secure_eq(a, b, len) -> bool` (constant time, no early
+**73.3 [COMPLETED] ✅** Add `crypto_secure_eq(a, b, len) -> bool` (constant time, no early
 exit, no length-dependent branch) plus `hmac_sha256_verify(key, data, tag)`.
 Add `tests/test_crypto_constant_time.py` with a statistical timing assertion
 (loose bound, 1e6 iterations, assert ratio < 1.5x between equal-prefix and
 differing-first-byte inputs) - document that this is a smoke test, not a proof.
+- *Former Defect:* There was no constant-time memory comparison function in the standard library. All string/byte comparisons used standard `==` or `strcmp`/`memcmp` which short-circuit and early-exit on the first differing byte, creating timing side-channel attack vectors against message authentication code and password verification. Furthermore, `std.crypto.hmac` only supported digest generation (`hmac_sha256_hash`, `hmac_sha256_str`) with zero authentication verification API.
+- *Fix Applied:*
+  - Added `velo_crypto_secure_eq(void* a, void* b, size_t len) -> bool` to `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h` using `const volatile unsigned char*` pointers and unconditional bitwise-OR accumulation over all `len` bytes, preventing compiler short-circuit or `memcmp` substitutions.
+  - Created `std/crypto/subtle.vl` exporting `crypto_secure_eq(a: @u8, b: @u8, len: usize) -> bool` and `crypto_secure_eq_str(a: string, b: string) -> bool`. Included in `std/crypto.vl` umbrella.
+  - Added `hmac_sha256_verify(key: string, data: string, tag: string) -> bool` and `hmac_sha256_verify_bytes(key: @u8, key_len: usize, data: @u8, data_len: usize, tag: @u8, tag_len: usize) -> bool` to `std/crypto/hmac.vl` providing constant-time HMAC verification supporting both 64-char hex strings and raw 32-byte digests.
+  - Added stdlib documentation in `website/src/data/stdlib.ts` and updated `std/tests/crypto_module_import_test.vl`.
+  - Rebuilt bootstrap chain (`bin/velo.exe` $\rightarrow$ `bin/velo_gen2.exe` $\rightarrow$ `bin/velo_gen3.exe` $\rightarrow$ `bin/velo.exe`), verified identical C emission, and refreshed `bootstrap.c`.
+- *Residual Limitation:* None for MAC verification paths; timing equality comparisons run unconditionally without early exit.
+- *Verification:*
+  - Created `tests/test_crypto_constant_time.py` containing 5 comprehensive tests:
+    - `test_crypto_secure_eq_correctness`: verifies full-range byte differences, zero-length, and null buffers.
+    - `test_crypto_secure_eq_str_correctness`: verifies constant-time string comparisons and length mismatches.
+    - `test_hmac_sha256_verify_rfc_vectors`: verifies RFC 4231 vectors, key tampering, message tampering, tag corruptions at first/last byte, truncation, extension, and null tags.
+    - `test_hmac_sha256_verify_bytes`: verifies binary MAC verification.
+    - `test_crypto_secure_eq_statistical_timing_smoke_test`: performs 1,000,000 iterations comparing equal-prefix (differing at byte 63) vs differing-first-byte (differing at byte 0), achieving an execution time ratio of 1.057x (asserted < 1.5x).
+  - Verified `tests/test_crypto_rand_failclosed.py` (14/14 passed), `tests/test_crypto_umbrella.py` (6/6 passed), `tests/test_std_crypto.py` (7/7 passed), `tests/test_std_uuid.py` (2/2 passed).
 
 **73.4** Add `crypto_zero(ptr, len)` that the compiler cannot optimize away
 (`volatile` store loop in the runtime) and use it in `hmac.vl`'s temporaries.

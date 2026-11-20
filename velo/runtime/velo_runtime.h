@@ -1292,6 +1292,20 @@ static inline bool velo_crypto_random_fill(void* buf, size_t len) {
 #endif
 }
 
+// Phase 73 / Task 73.3: constant-time memory comparison for MAC/tag verifications.
+// Volatile pointers prevent compiler loop-unrolling early exits or memcmp emission.
+static inline bool velo_crypto_secure_eq(void* a, void* b, size_t len) {
+    if (len == 0) return true;
+    if (a == NULL || b == NULL) return false;
+    const volatile unsigned char* pa = (const volatile unsigned char*)a;
+    const volatile unsigned char* pb = (const volatile unsigned char*)b;
+    unsigned char diff = 0;
+    for (size_t i = 0; i < len; i++) {
+        diff |= (pa[i] ^ pb[i]);
+    }
+    return diff == 0;
+}
+
 // ============================================================================
 // Phase 70 / Task 70.1: host platform identity for the compiler itself.
 //

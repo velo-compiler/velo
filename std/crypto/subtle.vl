@@ -1,0 +1,30 @@
+// std.crypto.subtle — Constant-time cryptographic operations and comparisons.
+//
+// All routines in this module execute in constant time with respect to secret
+// data, preventing timing side-channel attacks against cryptographic verifications.
+
+// Foreign interface to the runtime header's volatile-guarded constant-time byte comparison.
+extern act velo_crypto_secure_eq(a: @void, b: @void, len: usize) -> bool
+
+// Compares two byte buffers of length len in constant time.
+// Returns true if all len bytes are identical, false otherwise.
+// Does not short-circuit or branch on intermediate differences.
+act crypto_secure_eq(a: @u8, b: @u8, len: usize) -> bool {
+    return velo_crypto_secure_eq(a as @void, b as @void, len)
+}
+
+// Compares two strings in constant time.
+// Returns true if both strings are non-null and identical in content, or if both are null.
+// If lengths differ, executes comparison over the minimum length and returns false.
+act crypto_secure_eq_str(a: string, b: string) -> bool {
+    if a == null and b == null { return true }
+    if a == null or b == null { return false }
+    let len_a = str.len(a)
+    let len_b = str.len(b)
+    if len_a != len_b {
+        // Compare against self to consume equivalent comparison time before returning false
+        let dummy = velo_crypto_secure_eq(a as @void, a as @void, len_a)
+        return false
+    }
+    return velo_crypto_secure_eq(a as @void, b as @void, len_a)
+}
