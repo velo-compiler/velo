@@ -488,7 +488,7 @@ export const STDLIB_MODULES: StdlibModule[] = [
     name: 'std.crypto',
     category: 'Security & Cryptography',
     tier: 1,
-    description: 'Pure Velo cryptographic primitives: FIPS 180-4 SHA-256 and SHA-512, RFC 1321 MD5, IEEE 802.3 CRC-32, RFC 2104 / RFC 4231 HMAC-SHA256 and HMAC-SHA512, constant-time comparisons, unoptimizable zeroing, Hex encoding/decoding, and OS kernel CSPRNG.',
+    description: 'Pure Velo cryptographic primitives: FIPS 180-4 SHA-256 and SHA-512, RFC 8439 ChaCha20-Poly1305 AEAD, RFC 1321 MD5, IEEE 802.3 CRC-32, RFC 2104 / RFC 4231 HMAC-SHA256 and HMAC-SHA512, constant-time comparisons, unoptimizable zeroing, Hex encoding/decoding, and OS kernel CSPRNG.',
     pureVelo: true,
     functions: [
       {
@@ -604,6 +604,30 @@ export const STDLIB_MODULES: StdlibModule[] = [
         signature: 'act hex_to_bytes(hex_str: string, out_bytes: @u8, max_len: usize) -> usize',
         description: 'Decodes a hexadecimal string into an output byte buffer.',
         example: 'let decoded = hex_to_bytes("a1b2c3d4", buf, 4)'
+      },
+      {
+        name: 'chacha20poly1305_encrypt',
+        signature: 'act chacha20poly1305_encrypt(key: @u8, nonce: @u8, aad: @u8, aad_len: usize, plaintext: @u8, pt_len: usize, out_ciphertext: @u8, out_tag: @u8)',
+        description: 'Encrypts and authenticates plaintext under RFC 8439 ChaCha20-Poly1305 AEAD.',
+        example: 'chacha20poly1305_encrypt(key, nonce, aad, aad_len, pt, pt_len, ct, tag)'
+      },
+      {
+        name: 'chacha20poly1305_decrypt',
+        signature: 'act chacha20poly1305_decrypt(key: @u8, nonce: @u8, aad: @u8, aad_len: usize, ciphertext: @u8, ct_len: usize, expected_tag: @u8, out_plaintext: @u8) -> bool',
+        description: 'Verifies the 16-byte Poly1305 tag in constant time and decrypts ciphertext; returns false if verification fails.',
+        example: 'let valid = chacha20poly1305_decrypt(key, nonce, aad, aad_len, ct, ct_len, tag, pt)'
+      },
+      {
+        name: 'chacha20poly1305_handle_new',
+        signature: 'act chacha20poly1305_handle_new(key: @u8, key_len: usize, nonce: @u8, nonce_len: usize) -> ?@ChaCha20Poly1305Handle',
+        description: 'Creates a ChaCha20-Poly1305 AEAD handle. Generates a fresh random 12-byte nonce if nonce is null.',
+        example: 'let handle = chacha20poly1305_handle_new(key, 32, null, 0)'
+      },
+      {
+        name: 'chacha20poly1305_handle_seal',
+        signature: 'act chacha20poly1305_handle_seal(handle: ?@ChaCha20Poly1305Handle, plaintext: @u8, pt_len: usize, aad: @u8, aad_len: usize, out_tag: @u8) -> ?@u8',
+        description: 'Encrypts using the handle and strictly refuses nonce reuse: returns null if the handle was already used.',
+        example: 'let ct = chacha20poly1305_handle_seal(handle, msg, len, aad, aad_len, tag)'
       }
     ],
     types: [
@@ -621,6 +645,11 @@ export const STDLIB_MODULES: StdlibModule[] = [
         name: 'Md5State',
         definition: 'data Md5State { a: u32, b: u32, c: u32, d: u32, ... total_bytes: u64 }',
         description: 'Streaming MD5 state context for multi-chunk incremental hashing.'
+      },
+      {
+        name: 'ChaCha20Poly1305Handle',
+        definition: 'data ChaCha20Poly1305Handle { key: @u8, nonce: @u8, used: bool }',
+        description: 'Single-use AEAD cipher handle enforcing strict nonce-reuse refusal.'
       }
     ]
   },

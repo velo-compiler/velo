@@ -1,0 +1,205 @@
+// Tests for std.crypto.chacha20poly1305 (RFC 8439 ChaCha20-Poly1305 AEAD).
+use "../../crypto/chacha20poly1305.vl"
+use "../../crypto/hex.vl"
+use "../../crypto/subtle.vl"
+use "../../mem/heap.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    // =========================================================================
+    // 1. RFC 8439 Section 2.1.2: Quarter Round Test Vector
+    // =========================================================================
+    let w_qr: @u32 = heap_alloc(4 * 4) as @u32
+    w_qr[0] = 0x11111111
+    w_qr[1] = 0x01020304
+    w_qr[2] = 0x9b8d6f43
+    w_qr[3] = 0x01234567
+
+    chacha20_qr(w_qr, 0, 1, 2, 3)
+
+    let qr_ok = (w_qr[0] == 0xea2a92f4) and (w_qr[1] == 0xcb1cf8ce) and (w_qr[2] == 0x4581472e) and (w_qr[3] == 0x5881c4bb)
+    heap_free(w_qr as @void)
+    if !qr_ok {
+        io.println_str("FAIL: RFC 8439 Section 2.1.2 Quarter Round mismatch")
+        return 1
+    }
+
+    // =========================================================================
+    // 2. RFC 8439 Section 2.3.2: ChaCha20 Block Function Test Vector
+    // =========================================================================
+    let k23: @u8 = heap_alloc(32) as @u8
+    mut i: usize = 0
+    loop i < 32 { k23[i] = i as u8; i += 1 }
+
+    let n23: @u8 = heap_alloc(12) as @u8
+    hex_to_bytes("000000090000004a00000000", n23, 12)
+
+    let blk23: @u8 = heap_alloc(64) as @u8
+    chacha20_block(k23, 1, n23, blk23)
+
+    let blk23_hex = bytes_to_hex(blk23, 64)
+    // First 16 bytes: 10f1e7e4d1b04ef2fc3f434f65403264
+    if !str.starts_with(blk23_hex, "10f1e7e4d13b5915500fdd1fa32071c4") {
+        io.println_str("FAIL: RFC 8439 Section 2.3.2 Block Function mismatch")
+        return 2
+    }
+    heap_free(k23 as @void); heap_free(n23 as @void); heap_free(blk23 as @void)
+
+    // =========================================================================
+    // 3. RFC 8439 Section 2.5.2: Poly1305 One-Time Authenticator Test Vector
+    // =========================================================================
+    let poly_k: @u8 = heap_alloc(32) as @u8
+    hex_to_bytes("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b", poly_k, 32)
+
+    let poly_msg = "Cryptographic Forum Research Group"
+    let poly_tag: @u8 = heap_alloc(16) as @u8
+    poly1305_mac(poly_k, poly_msg as @u8, str.len(poly_msg), poly_tag)
+
+    let poly_tag_hex = bytes_to_hex(poly_tag, 16)
+    if poly_tag_hex != "a8061dc1305136c6c22b8baf0c0127a9" {
+        io.println_str("FAIL: RFC 8439 Section 2.5.2 Poly1305 mismatch")
+        return 3
+    }
+    heap_free(poly_k as @void); heap_free(poly_tag as @void)
+
+    // =========================================================================
+    // 4. RFC 8439 Section 2.8.2: ChaCha20-Poly1305 AEAD Test Vector
+    // =========================================================================
+    let aead_key: @u8 = heap_alloc(32) as @u8
+    hex_to_bytes("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f", aead_key, 32)
+
+    let aead_nonce: @u8 = heap_alloc(12) as @u8
+    hex_to_bytes("070000004041424344454647", aead_nonce, 12)
+
+    let aead_aad: @u8 = heap_alloc(12) as @u8
+    hex_to_bytes("50515253c0c1c2c3c4c5c6c7", aead_aad, 12)
+
+    let pt = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it."
+    let pt_len = str.len(pt)
+
+    let ct: @u8 = heap_alloc(pt_len) as @u8
+    let tag: @u8 = heap_alloc(16) as @u8
+
+    chacha20poly1305_encrypt(aead_key, aead_nonce, aead_aad, 12, pt as @u8, pt_len, ct, tag)
+
+    let ct_hex = bytes_to_hex(ct, pt_len)
+    let tag_hex = bytes_to_hex(tag, 16)
+
+    let exp_ct = "d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b6116"
+    let exp_tag = "1ae10b594f09e26a7e902ecbd0600691"
+
+    if ct_hex != exp_ct {
+        io.println_str("FAIL: RFC 8439 Section 2.8.2 ciphertext mismatch")
+        return 4
+    }
+    if tag_hex != exp_tag {
+        io.println_str("FAIL: RFC 8439 Section 2.8.2 tag mismatch")
+        return 5
+    }
+
+    // Decrypt and verify round-trip
+    let dec_pt: @u8 = heap_alloc(pt_len) as @u8
+    if !chacha20poly1305_decrypt(aead_key, aead_nonce, aead_aad, 12, ct, pt_len, tag, dec_pt) {
+        io.println_str("FAIL: RFC 8439 Section 2.8.2 decryption failed")
+        return 6
+    }
+    if !crypto_secure_eq(pt as @u8, dec_pt, pt_len) {
+        io.println_str("FAIL: RFC 8439 Section 2.8.2 decrypted plaintext mismatch")
+        return 7
+    }
+
+    // =========================================================================
+    // 5. Tampering & Fail-Closed Rejections
+    // =========================================================================
+
+    // Tamper ciphertext byte
+    ct[0] = ct[0] ^ 0x01
+    if chacha20poly1305_decrypt(aead_key, aead_nonce, aead_aad, 12, ct, pt_len, tag, dec_pt) {
+        io.println_str("FAIL: chacha20poly1305_decrypt accepted tampered ciphertext")
+        return 8
+    }
+    ct[0] = ct[0] ^ 0x01 // restore
+
+    // Tamper tag byte
+    tag[15] = tag[15] ^ 0x80
+    if chacha20poly1305_decrypt(aead_key, aead_nonce, aead_aad, 12, ct, pt_len, tag, dec_pt) {
+        io.println_str("FAIL: chacha20poly1305_decrypt accepted tampered tag")
+        return 9
+    }
+    tag[15] = tag[15] ^ 0x80 // restore
+
+    // Tamper AAD
+    aead_aad[0] = aead_aad[0] ^ 0xFF
+    if chacha20poly1305_decrypt(aead_key, aead_nonce, aead_aad, 12, ct, pt_len, tag, dec_pt) {
+        io.println_str("FAIL: chacha20poly1305_decrypt accepted tampered AAD")
+        return 10
+    }
+    aead_aad[0] = aead_aad[0] ^ 0xFF // restore
+
+    // =========================================================================
+    // 6. Safe Nonce-Reuse Refusal Handle API
+    // =========================================================================
+    let h = chacha20poly1305_handle_new(aead_key, 32, aead_nonce, 12)
+    if h == null {
+        io.println_str("FAIL: chacha20poly1305_handle_new returned null")
+        return 11
+    }
+    if chacha20poly1305_handle_is_used(h) {
+        io.println_str("FAIL: fresh handle marked as used")
+        return 12
+    }
+
+    let h_tag: @u8 = heap_alloc(16) as @u8
+    let h_ct = chacha20poly1305_handle_seal(h, pt as @u8, pt_len, aead_aad, 12, h_tag)
+    if h_ct == null {
+        io.println_str("FAIL: first chacha20poly1305_handle_seal failed")
+        return 13
+    }
+    if !chacha20poly1305_handle_is_used(h) {
+        io.println_str("FAIL: handle not marked as used after seal")
+        return 14
+    }
+
+    // Attempt second encryption with same handle -> MUST BE REFUSED (null return)
+    let h_ct_reused = chacha20poly1305_handle_seal(h, pt as @u8, pt_len, aead_aad, 12, h_tag)
+    if h_ct_reused != null {
+        io.println_str("FAIL: handle permitted nonce reuse! Expected null handle return.")
+        return 15
+    }
+
+    // Verify handle decryption
+    if !chacha20poly1305_handle_open(h, h_ct, pt_len, aead_aad, 12, h_tag, dec_pt) {
+        io.println_str("FAIL: chacha20poly1305_handle_open failed")
+        return 16
+    }
+    if !crypto_secure_eq(pt as @u8, dec_pt, pt_len) {
+        io.println_str("FAIL: handle decrypted plaintext mismatch")
+        return 17
+    }
+
+    chacha20poly1305_handle_free(h)
+    heap_free(h_tag as @void); heap_free(h_ct as @void)
+
+    // =========================================================================
+    // 7. Random Nonce Generation
+    // =========================================================================
+    let rnd_nonce: @u8 = heap_alloc(12) as @u8
+    let res = chacha20poly1305_random_nonce(rnd_nonce)
+    if !res.ok {
+        io.println_str("FAIL: chacha20poly1305_random_nonce failed")
+        return 18
+    }
+    let rnd_hex = chacha20poly1305_random_nonce_hex()
+    if str.len(rnd_hex) != 24 {
+        io.println_str("FAIL: chacha20poly1305_random_nonce_hex length mismatch")
+        return 19
+    }
+    heap_free(rnd_nonce as @void)
+
+    // Clean up
+    heap_free(aead_key as @void); heap_free(aead_nonce as @void); heap_free(aead_aad as @void)
+    heap_free(ct as @void); heap_free(tag as @void); heap_free(dec_pt as @void)
+
+    io.println_str("OK: std.crypto.chacha20poly1305 tests passed")
+    return 0
+}

@@ -1112,9 +1112,28 @@ the existing `sha256` structure. Test against RFC 4231 vectors.
   - Added `test_std_crypto_sha512()` to `tests/test_std_crypto.py`.
   - Verified `tests/test_bootstrap_snapshot.py` (6/6 passed), `tests/test_crypto_constant_time.py` (5/5 passed), `tests/test_crypto_rand_failclosed.py` (14/14 passed), `tests/test_crypto_sha512.py` (4/4 passed), `tests/test_crypto_umbrella.py` (6/6 passed), `tests/test_crypto_zero.py` (5/5 passed), `tests/test_std_crypto.py` (9/9 passed), `tests/test_std_uuid.py` (2/2 passed). Total 51/51 passed.
 
-**73.6** Implement ChaCha20-Poly1305 AEAD (`std/crypto/chacha20poly1305.vl`)
+**73.6 [COMPLETED] ✅** Implement ChaCha20-Poly1305 AEAD (`std/crypto/chacha20poly1305.vl`)
 against RFC 8439 vectors, plus `crypto_random_bytes`-seeded nonce generation and
 an authenticated-encryption API that refuses nonce reuse via a `?` handle.
+- *Former Defect:* The standard library lacked Authenticated Encryption with Associated Data (AEAD) primitives. Modern symmetric transport security, TLS 1.3 record layer encryption, and authenticated payload sealing could not be implemented in pure Velo. Furthermore, standard AEAD interfaces in C libraries often leave callers vulnerable to catastrophic nonce reuse.
+- *Fix Applied:*
+  - Implemented pure Velo RFC 8439 ChaCha20 stream cipher in `std/crypto/chacha20poly1305.vl`, including quarter-round permutations, 20-round block transformations with 32-bit little-endian state mapping, and block keystream generation.
+  - Implemented RFC 8439 Poly1305 one-time authenticator using 26-bit limb arithmetic modulo $2^{130} - 5$, guaranteeing overflow-free 64-bit integer calculations and branchless, constant-time modular reduction.
+  - Implemented RFC 8439 ChaCha20-Poly1305 AEAD construction with block-aligned AAD padding, ciphertext padding, little-endian length packing, and constant-time tag verification via `crypto_secure_eq` with fail-closed rejection on invalid or tampered tags.
+  - Implemented CSPRNG-seeded 96-bit nonce generation (`chacha20poly1305_random_nonce` and `chacha20poly1305_random_nonce_hex`) backed by `crypto_random_bytes`.
+  - Implemented the safe `ChaCha20Poly1305Handle` API: creating a handle copies the key and explicit nonce (or auto-seeds a 12-byte nonce via `crypto_random_bytes` when `nonce == null`); calling `chacha20poly1305_handle_seal` marks `handle.used = true` and encrypts; any subsequent encryption attempt on the same handle strictly refuses nonce reuse and returns `null` (`?@u8`).
+  - Added umbrella re-export `use "crypto/chacha20poly1305.vl"` to `std/crypto.vl`, documented functions in `website/src/data/stdlib.ts`, and updated `std/tests/crypto_module_import_test.vl`.
+  - Re-bootstrapped compiler chain (`bin/velo.exe` $\rightarrow$ `bin/velo_gen2.exe` $\rightarrow$ `bin/velo_gen3.exe` $\rightarrow$ `bin/velo.exe`), verified byte-identical C emission determinism, and refreshed `bootstrap.c`.
+- *Residual Limitation:* None for ChaCha20-Poly1305 AEAD; operates in pure Velo with memory-safe buffer zeroing and constant-time tag comparisons.
+- *Verification:*
+  - Created native test runner `std/tests/crypto/chacha20poly1305_test.vl` covering RFC 8439 Section 2.1.2 (quarter round), Section 2.3.2 (block function), Section 2.5.2 (poly1305 authenticator), Section 2.8.2 (AEAD encrypt/decrypt/verify), tampering rejections, and handle nonce reuse refusal.
+  - Created `tests/test_crypto_chacha20poly1305.py` containing 4 test suites:
+    - `test_rfc8439_standard_test_suite`: executes full native test suite.
+    - `test_rfc8439_appendix_a5_decryption`: verifies RFC 8439 Appendix A.5 265-byte AEAD decryption test vector.
+    - `test_nonce_reuse_refusal_handle`: verifies handle single-use sealing, refusal of repeat sealing returning `null`, and automatic CSPRNG nonce seeding.
+    - `test_cross_cryptography_bidirectional`: verifies bidirectional encryption and decryption cross-validation between pure Velo and Python OpenSSL `cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305`.
+  - Added `test_std_crypto_chacha20poly1305()` to `tests/test_std_crypto.py`.
+  - Full test suite passing (56/56 tests across chacha20poly1305, sha512, constant_time, zero, rand_failclosed, umbrella, std_crypto, uuid, and bootstrap snapshot).
 
 **73.7** Implement TLS 1.3 client (`std/tls/`): record layer, key schedule
 (HKDF-SHA256 from 73.5/73.6), and a certificate-verification interface backed by

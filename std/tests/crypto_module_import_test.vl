@@ -77,6 +77,49 @@ act main() -> i32 {
         return 13
     }
 
+    // 9. ChaCha20-Poly1305 AEAD & Nonce-Reuse Refusal Handle
+    let aead_key_hex = "808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f"
+    let aead_nonce_hex = "070000004041424344454647"
+    let aead_aad_hex = "50515253c0c1c2c3c4c5c6c7"
+    let aead_pt = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it."
+
+    let a_k: @u8 = heap_alloc(32) as @u8
+    hex_to_bytes(aead_key_hex, a_k, 32)
+    let a_n: @u8 = heap_alloc(12) as @u8
+    hex_to_bytes(aead_nonce_hex, a_n, 12)
+    let a_aad: @u8 = heap_alloc(12) as @u8
+    hex_to_bytes(aead_aad_hex, a_aad, 12)
+
+    let a_h = chacha20poly1305_handle_new(a_k, 32, a_n, 12)
+    if a_h == null {
+        io.println_str("FAIL: umbrella chacha20poly1305_handle_new failed")
+        return 14
+    }
+    let a_tag: @u8 = heap_alloc(16) as @u8
+    let a_ct = chacha20poly1305_handle_seal(a_h, aead_pt as @u8, str.len(aead_pt), a_aad, 12, a_tag)
+    if a_ct == null {
+        io.println_str("FAIL: umbrella chacha20poly1305_handle_seal failed")
+        return 15
+    }
+
+    // Verify nonce reuse is refused
+    let a_ct_reused = chacha20poly1305_handle_seal(a_h, aead_pt as @u8, str.len(aead_pt), a_aad, 12, a_tag)
+    if a_ct_reused != null {
+        io.println_str("FAIL: umbrella chacha20poly1305_handle_seal allowed nonce reuse")
+        return 16
+    }
+
+    // Verify decryption
+    let a_dec: @u8 = heap_alloc(str.len(aead_pt)) as @u8
+    if !chacha20poly1305_handle_open(a_h, a_ct, str.len(aead_pt), a_aad, 12, a_tag, a_dec) {
+        io.println_str("FAIL: umbrella chacha20poly1305_handle_open failed")
+        return 17
+    }
+
+    chacha20poly1305_handle_free(a_h)
+    heap_free(a_k as @void); heap_free(a_n as @void); heap_free(a_aad as @void)
+    heap_free(a_ct as @void); heap_free(a_tag as @void); heap_free(a_dec as @void)
+
     io.println_str("PASS: std.crypto umbrella import all tests passed")
     return 0
 }
