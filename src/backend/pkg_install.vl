@@ -126,12 +126,12 @@ act manifest_fetch_archive(dest_path: string, archive_url: string, expected_sha:
     return true
 }
 
-// Installs and fetches every dependency declared in the manifest (Security Invariant I72.1).
-act install_all_dependencies(m: @PackageManifest, m_dir: string, insecure: bool, registry_override: string) -> bool {
-    if m == null { return true }
+// Recursively fetches and installs dependencies across multi-level graphs (Phase 72 / Task 72.7).
+act install_dependencies_rec(root_dir: string, m: @PackageManifest, insecure: bool, registry_override: string, depth: i32) -> bool {
+    if m == null or depth > 8 { return true }
     mut cur = m.first_dep
     loop cur != null {
-        let loc = manifest_resolve_dep_full(m_dir, cur, insecure, registry_override)
+        let loc = manifest_resolve_dep_full(root_dir, cur, insecure, registry_override)
         if loc.has_error {
             println_str(loc.error_msg)
             return false
@@ -151,7 +151,26 @@ act install_all_dependencies(m: @PackageManifest, m_dir: string, insecure: bool,
             println_str("[Velo Error] Dependency directory '" + loc.path + "' does not exist after installation.")
             return false
         }
+
+        // Check for transitive dependencies
+        let sub_pkg_path = path_join_str(loc.path, "velo.pkg")
+        if fs_exists(sub_pkg_path) {
+            let sub_m = manifest_load(sub_pkg_path)
+            if !sub_m.has_error and sub_m.dep_count > 0 {
+                if !install_dependencies_rec(root_dir, @sub_m, insecure, registry_override, depth + 1) {
+                    return false
+                }
+            }
+        }
+
         cur = cur.next
     }
     return true
+}
+
+// Installs and fetches every dependency declared in the manifest (Security Invariant I72.1).
+act install_all_dependencies(m: @PackageManifest, m_dir: string, insecure: bool, registry_override: string) -> bool {
+    mut base = m_dir
+    if str.len(base) == 0 { base = "." }
+    return install_dependencies_rec(base, m, insecure, registry_override, 0)
 }

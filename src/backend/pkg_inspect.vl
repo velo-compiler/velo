@@ -10,21 +10,6 @@ use "../common/manifest.vl"
 use "../common/semver.vl"
 use "pkg_lock.vl"
 
-// Resolves disk directory path for a dependency.
-act resolve_dep_disk_path(m_dir: string, dep: @DependencySpec) -> string {
-    if dep.kind == "local" {
-        if str.starts_with(dep.source, "/") or (str.len(dep.source) > 2 and dep.source[1] == ':') {
-            return dep.source
-        }
-        return path_join_str(m_dir, dep.source)
-    }
-    mut deps_dir = ".velo_cache/deps"
-    if m_dir != null and str.len(m_dir) > 0 and m_dir != "." {
-        deps_dir = path_join_str(m_dir, ".velo_cache/deps")
-    }
-    return path_join_str(deps_dir, dep.name)
-}
-
 // Recursively prints the dependency tree for a package manifest.
 act print_dep_tree(root_dir: string, pkg_dir: string, cur_manifest: @PackageManifest, root_lock: @LockFile, prefix: string, depth: i32, ancestors: @string, ancestor_count: i32) {
     if cur_manifest == null { return }
@@ -231,7 +216,7 @@ act pkg_verify_run(manifest_path: string) -> i32 {
 
     mut drift_count: i32 = 0
 
-    // 1. Check all manifest dependencies against velo.lock and files on disk
+    // 1. Check all direct manifest dependencies against velo.lock and semver
     mut cur = m.first_dep
     loop cur != null {
         let entry = lockfile_find(@lock, cur.name)
@@ -239,20 +224,6 @@ act pkg_verify_run(manifest_path: string) -> i32 {
             println_str("[Velo Error] Drift detected: dependency '" + cur.name + "' is declared in manifest but missing from velo.lock.")
             drift_count += 1
         } else {
-            let dep_path = resolve_dep_disk_path(m_dir, cur)
-            if not fs_exists(dep_path) {
-                println_str("[Velo Error] Drift detected: dependency '" + cur.name + "' is not installed on disk. Expected at: " + dep_path)
-                drift_count += 1
-            } else {
-                let actual_hash = compute_dep_hash(m_dir, cur)
-                if actual_hash != entry.hash {
-                    println_str("[Velo Error] Drift detected: checksum mismatch for dependency '" + cur.name + "'.")
-                    println_str("  Expected (velo.lock): " + entry.hash)
-                    println_str("  Actual (disk):        " + actual_hash)
-                    drift_count += 1
-                }
-            }
-
             // Verify version consistency
             if cur.kind == "registry" and str.len(entry.version) > 0 and str.len(cur.source) > 0 {
                 if not semver_matches(entry.version, cur.source) {
@@ -270,12 +241,36 @@ act pkg_verify_run(manifest_path: string) -> i32 {
         cur = cur.next
     }
 
-    // 2. Check that no extra/stale dependencies exist in velo.lock
+    // 2. Check all locked packages against graph, disk existence, and disk hash
     mut lcur = lock.first
     loop lcur != null {
-        if manifest_find_dep(@m, lcur.name) == null {
-            println_str("[Velo Error] Drift detected: package '" + lcur.name + "' is present in velo.lock but not declared in manifest.")
+        let dep = manifest_find_dep_in_graph(m_dir, @m, lcur.name, 0)
+        if dep == null {
+            println_str("[Velo Error] Drift detected: package '" + lcur.name + "' is present in velo.lock but not declared in manifest or any dependency.")
             drift_count += 1
+        }
+        mut dep_path = ""
+        if dep != null {
+            dep_path = resolve_dep_disk_path(m_dir, dep)
+        } else {
+            dep_path = path_join_str(path_join_str(m_dir, ".velo_cache/deps"), lcur.name)
+        }
+        if not fs_exists(dep_path) {
+            println_str("[Velo Error] Drift detected: dependency '" + lcur.name + "' is not installed on disk. Expected at: " + dep_path)
+            drift_count += 1
+        } else {
+            mut actual_hash = ""
+            if dep != null {
+                actual_hash = compute_dep_hash(m_dir, dep)
+            } else {
+                actual_hash = compute_path_content_hash(dep_path)
+            }
+            if actual_hash != lcur.hash {
+                println_str("[Velo Error] Drift detected: checksum mismatch for dependency '" + lcur.name + "'.")
+                println_str("  Expected (velo.lock): " + lcur.hash)
+                println_str("  Actual (disk):        " + actual_hash)
+                drift_count += 1
+            }
         }
         lcur = lcur.next
     }
@@ -285,6 +280,6 @@ act pkg_verify_run(manifest_path: string) -> i32 {
         return 1
     }
 
-    println_str("[Velo] All {m.dep_count} dependencies match velo.lock with zero drift.")
+    println_str("[Velo] All {lock.count} dependencies match velo.lock with zero drift.")
     return 0
 }

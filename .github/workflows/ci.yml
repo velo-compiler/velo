@@ -34,6 +34,41 @@ jobs:
         run: |
           python -m pytest tests -q -m fast
 
+  deps-lock:
+    # Phase 72 / Task 72.7: builds and verifies multi-level dependency graphs
+    # offline from fixtures, validating semver resolution, lockfile pinning,
+    # transitive fetching, and lock verification.
+    if: github.event_name != 'push'
+    name: Dependency lock and offline graph (deps-lock)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
+      - name: Bootstrap self-hosted Velo compiler (3-stage Gen1 -> Gen2 -> Gen3)
+        run: |
+          bash scripts/bootstrap.sh --full
+
+      - name: Verify bootstrap determinism
+        run: |
+          python3 scripts/check_determinism.py
+
+      - name: Run package and dependency graph test suite
+        run: |
+          python3 -m pytest tests/test_pkg_semver.py tests/test_pkg_tree_verify.py tests/test_pkg_install_fetches.py tests/test_pkg_publish.py tests/test_pkg_registry.py tests/test_pkg_resolve.py tests/test_pkg_security.py -q
+
+
   linux:
     # Phase 76 / Task 76.6: the heavy jobs run on pull requests and manual
     # dispatch, not on every push. The `fast` job above is the push lane; a

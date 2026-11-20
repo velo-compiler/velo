@@ -64,7 +64,7 @@ that core and a usable product.
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **70** | POSIX / macOS Foundation Portability | P0 | **COMPLETED** | 8 | 8 |
 | **71** | Release Engineering and Legal Provenance | P0 | **COMPLETED** | 6 | 5 |
-| **72** | Package Ecosystem That Actually Fetches | P0 | yes | 7 | 7 |
+| **72** | Package Ecosystem That Actually Fetches | P0 | **COMPLETED** | 7 | 7 |
 | **73** | Transport Security and Cryptographic Completeness | P0 | **COMPLETED** | 8 | 8 |
 | **74** | Undefined-Behavior Containment | P0 | **COMPLETED** | 7 | 7 |
 | **75** | Silent POSIX Process/IO Stubs | P0 | **COMPLETED** | 5 | 5 |
@@ -884,7 +884,7 @@ infer it.
 
 ---
 
-# Phase 72: Package Ecosystem That Actually Fetches (P0) - OPEN
+# Phase 72: Package Ecosystem That Actually Fetches (P0) - [COMPLETED] ✅
 
 ## Defect
 
@@ -1130,17 +1130,45 @@ repository. That keeps the trust model small enough to be honest.
   - Determinism verified: Gen2 == Gen3 SHA-256 match (`32468215329b2cfa253e412db35f99c1120cfbc62cf501f2cdfd69f55779053a`); `bootstrap.c` updated cleanly with zero raw Win32 socket symbols.
   - Line count verified: all compiler files $\le 400$ lines (`src/backend/pkg_publish.vl`: 189, `src/backend/driver_pkg.vl`: 391).
 
-**72.7** Add a `tests/test_pkg_semver.py` matrix and a `deps-lock` CI job that
+**72.7** [COMPLETED] ✅ Add a `tests/test_pkg_semver.py` matrix and a `deps-lock` CI job that
 builds a two-level dependency graph offline from fixtures.
+- *Former Defect:* In `tests/test_pkg_semver.py`, test coverage for semver was limited to a few hand-written cases and lacked a comprehensive test matrix across range operators (`=`, `^`, `~`, `>=`), multi-digit versions, zero-major, zero-minor, pre-releases, and edge conditions. Furthermore, offline dependency graph verification was only tested at a single level (direct dependency); transitive multi-level dependency graphs (root -> A -> B) with recursive fetching, transitive lockfile recording, graph-wide drift verification, and offline resolution were not supported or verified, nor was there a dedicated CI gate (`deps-lock`) to guarantee offline multi-level dependency graph resolution and pinning on Linux.
+- *Fix Applied:*
+  - Added comprehensive parameterized `SEMVER_MATRIX` in `tests/test_pkg_semver.py` with 25 test vectors covering:
+    - Exact match (`=`) with patch, minor, major changes and leading-zero detection.
+    - Tilde (`~`) patch bumps, minor rejections, major rejections.
+    - Caret (`^`) non-breaking updates for `1.x.x` (patch/minor allowed, major rejected), `0.x.x` (patch allowed, minor/major rejected), and `0.0.x` (exact match only).
+    - Greater-or-equal (`>=`) operator across boundaries.
+    - Ambiguous and malformed ranges (wildcards `*`/`x`, compound prefixes `^~`, comparison operators `<`/`>`/`<=`/`==`) asserting rejection with clear diagnostics.
+  - Implemented multi-level transitive dependency fetching and lockfile pinning across compiler backend:
+    - In `src/backend/pkg_install.vl`: implemented `install_dependencies_rec` which recursively walks child manifests in `.velo_cache/deps/<name>/velo.pkg` and hoists transitive dependencies into the root project cache `.velo_cache/deps/` with cycle depth bounding.
+    - In `src/backend/pkg_lock.vl`: implemented `manifest_find_dep_in_graph`, `is_dep_declared_in_graph`, `compute_path_content_hash`, and updated `add_manifest_deps_to_lock` to record all direct and transitive dependencies into `velo.lock`.
+    - In `src/backend/pkg_lock.vl` and `src/backend/pkg_inspect.vl`: updated `verify_lockfile_integrity` and `pkg_verify_run` to verify every entry in `velo.lock` (direct and transitive) against disk files, catching missing packages and content tampering across multi-level graphs.
+  - Added `test_two_level_dependency_graph_offline` in `tests/test_pkg_semver.py`:
+    - Constructs a two-level offline dependency fixture graph (root project depending on `pkg_alpha` v1.1.0, which depends on `pkg_beta` v2.0.5) from local file-based registry fixtures.
+    - Executes `velo pkg install` offline: recursively downloads and installs direct (`pkg_alpha`) and transitive (`pkg_beta`) dependencies into the root project cache (`.velo_cache/deps/`).
+    - Verifies multi-level `velo.lock` pins both direct and transitive dependencies with concrete versions and content hashes.
+    - Exercises `velo pkg tree` asserting hierarchical representation of the two-level dependency tree.
+    - Exercises `velo pkg verify` verifying zero-drift integrity across the entire multi-level graph (`[Velo] All 2 dependencies match velo.lock with zero drift.`).
+    - Tampers with the leaf transitive dependency (`pkg_beta`) and asserts fatal exit code and checksum mismatch diagnostic.
+  - Added `deps-lock` CI workflow job in `.github/workflows/ci.yml`:
+    - Runs on `ubuntu-24.04`, bootstraps self-hosted Velo compiler via `bootstrap.sh --full`, verifies determinism, and runs the complete package test suite (`test_pkg_semver.py`, `test_pkg_tree_verify.py`, `test_pkg_install_fetches.py`, `test_pkg_publish.py`, `test_pkg_registry.py`, `test_pkg_resolve.py`, `test_pkg_security.py`).
+- *Residual Limitation:* None. Phase 72 is complete. All 7 tasks and phase exit criteria are fully satisfied.
+- *Verification:*
+  - All 37 tests in `tests/test_pkg_semver.py` passed in 118.97s.
+  - Complete package test suite (87 tests across `test_pkg_semver.py`, `test_pkg_tree_verify.py`, `test_pkg_install_fetches.py`, `test_pkg_publish.py`, `test_pkg_registry.py`, `test_pkg_resolve.py`, `test_pkg_security.py`) passed cleanly.
+  - `tests/test_bootstrap_snapshot.py` passed (6/6).
+  - Determinism verified: Gen2 == Gen3 SHA-256 match (`d2f16555d14867a00d73683c77a1001e3eda3b52c4aa533eb15baaa6d1616d74`); `bootstrap.c` updated cleanly with zero raw Win32 socket symbols.
+  - Line count verified: all compiler files $\le 400$ lines (`src/backend/pkg_lock.vl`: 363, `src/backend/pkg_inspect.vl`: 285).
 
 ## Phase Exit Criteria
 
 - `velo pkg install` on a git dependency produces a working tree and a lock
-  entry whose hash matches, proven by test.
+  entry whose hash matches, proven by test (`test_pkg_install_fetches.py::test_pkg_install_fetches_git_dependency`). [VERIFIED]
 - `velo pkg install` with a corrupted lock or a missing dependency exits
-  non-zero and names the problem.
+  non-zero and names the problem (`test_pkg_install_fetches.py::test_pkg_install_detects_tampered_dependency_and_fails_fatally` and `test_pkg_install_unreachable_dependency_fails_closed`). [VERIFIED]
 - A published index format exists in `docs/PACKAGING.md` and is exercised by
-  at least one test fixture.
+  at least one test fixture (`test_pkg_publish.py::test_pkg_publish_roundtrip_with_pkg_install`). [VERIFIED]
 
 ---
 

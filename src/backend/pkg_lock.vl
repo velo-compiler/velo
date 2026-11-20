@@ -60,22 +60,50 @@ act lockfile_add_entry(lock: @LockFile, name: string, source: string, version: s
     lock.count += 1
 }
 
-// Computes cryptographic SHA-256 hash for a dependency source or files.
-act compute_dep_hash(m_dir: string, dep: @DependencySpec) -> string {
-    mut target_path = dep.source
-    if dep.kind == "git" or dep.kind == "registry" {
-        mut deps_parent = ".velo_cache/deps"
-        if m_dir != null and str.len(m_dir) > 0 and m_dir != "." {
-            deps_parent = path_join_str(m_dir, ".velo_cache/deps")
+// Resolves disk directory path for a dependency.
+act resolve_dep_disk_path(m_dir: string, dep: @DependencySpec) -> string {
+    if dep.kind == "local" {
+        if str.starts_with(dep.source, "/") or (str.len(dep.source) > 2 and dep.source[1] == ':') {
+            return dep.source
         }
-        let cached_path = path_join_str(deps_parent, dep.name)
-        if fs_exists(cached_path) {
-            target_path = cached_path
-        }
-    } else if dep.kind == "local" and not (str.starts_with(dep.source, "/") or (str.len(dep.source) > 2 and dep.source[1] == ':')) {
-        target_path = path_join_str(m_dir, dep.source)
+        return path_join_str(m_dir, dep.source)
     }
+    mut deps_parent = ".velo_cache/deps"
+    if m_dir != null and str.len(m_dir) > 0 and m_dir != "." {
+        deps_parent = path_join_str(m_dir, ".velo_cache/deps")
+    }
+    return path_join_str(deps_parent, dep.name)
+}
 
+// Searches the manifest and all transitive child manifests for a dependency by name.
+act manifest_find_dep_in_graph(root_dir: string, m: @PackageManifest, dep_name: string, depth: i32) -> @DependencySpec {
+    if m == null or depth > 8 { return null }
+    let direct = manifest_find_dep(m, dep_name)
+    if direct != null { return direct }
+    mut cur = m.first_dep
+    loop cur != null {
+        let dep_path = resolve_dep_disk_path(root_dir, cur)
+        if fs_exists(dep_path) {
+            let sub_pkg = path_join_str(dep_path, "velo.pkg")
+            if fs_exists(sub_pkg) {
+                let sub_m = manifest_load(sub_pkg)
+                if not sub_m.has_error and sub_m.dep_count > 0 {
+                    let sub_found = manifest_find_dep_in_graph(root_dir, @sub_m, dep_name, depth + 1)
+                    if sub_found != null { return sub_found }
+                }
+            }
+        }
+        cur = cur.next
+    }
+    return null
+}
+
+act is_dep_declared_in_graph(root_dir: string, m: @PackageManifest, dep_name: string, depth: i32) -> bool {
+    return manifest_find_dep_in_graph(root_dir, m, dep_name, depth) != null
+}
+
+// Computes cryptographic SHA-256 hash for files within target directory or file.
+act compute_path_content_hash(target_path: string) -> string {
     mut hash_hex = ""
     if fs_exists(target_path) {
         if fs_is_file(target_path) {
@@ -105,25 +133,31 @@ act compute_dep_hash(m_dir: string, dep: @DependencySpec) -> string {
             }
         }
     }
+    if str.len(hash_hex) > 0 {
+        return "sha256:" + hash_hex
+    }
+    return ""
+}
 
-    if str.len(hash_hex) == 0 {
-        mut seed_sb = create_sb(128)
-        sb_append_str(@seed_sb, dep.name)
-        sb_append_char(@seed_sb, ':')
-        sb_append_str(@seed_sb, dep.kind)
-        sb_append_char(@seed_sb, ':')
-        sb_append_str(@seed_sb, dep.source)
-        if str.len(dep.tag) > 0 {
-            sb_append_char(@seed_sb, '@')
-            sb_append_str(@seed_sb, dep.tag)
-        }
-        hash_hex = sha256_hash_str(sb_to_string(@seed_sb))
+// Computes cryptographic SHA-256 hash for a dependency source or files.
+act compute_dep_hash(m_dir: string, dep: @DependencySpec) -> string {
+    let target_path = resolve_dep_disk_path(m_dir, dep)
+    let content_h = compute_path_content_hash(target_path)
+    if str.len(content_h) > 0 {
+        return content_h
     }
 
-    mut res_sb = create_sb(80)
-    sb_append_str(@res_sb, "sha256:")
-    sb_append_str(@res_sb, hash_hex)
-    return sb_to_string(@res_sb)
+    mut seed_sb = create_sb(128)
+    sb_append_str(@seed_sb, dep.name)
+    sb_append_char(@seed_sb, ':')
+    sb_append_str(@seed_sb, dep.kind)
+    sb_append_char(@seed_sb, ':')
+    sb_append_str(@seed_sb, dep.source)
+    if str.len(dep.tag) > 0 {
+        sb_append_char(@seed_sb, '@')
+        sb_append_str(@seed_sb, dep.tag)
+    }
+    return "sha256:" + sha256_hash_str(sb_to_string(@seed_sb))
 }
 
 act lockfile_serialize(lock: @LockFile) -> string {
@@ -264,32 +298,63 @@ act resolve_installed_dep_version(m_dir: string, dep: @DependencySpec) -> string
     return dep.source
 }
 
-act generate_lockfile_from_manifest(m: @PackageManifest, m_dir: string) -> LockFile {
-    mut lock = create_empty_lockfile()
+act add_manifest_deps_to_lock(root_dir: string, m: @PackageManifest, lock: @LockFile, depth: i32) {
+    if m == null or depth > 8 { return }
     mut cur = m.first_dep
     loop cur != null {
-        let h = compute_dep_hash(m_dir, cur)
-        let v = resolve_installed_dep_version(m_dir, cur)
-        lockfile_add_entry(@lock, cur.name, cur.source, v, h)
+        if lockfile_find(lock, cur.name) == null {
+            let h = compute_dep_hash(root_dir, cur)
+            let v = resolve_installed_dep_version(root_dir, cur)
+            lockfile_add_entry(lock, cur.name, cur.source, v, h)
+
+            let dep_path = resolve_dep_disk_path(root_dir, cur)
+            if fs_exists(dep_path) {
+                let sub_pkg = path_join_str(dep_path, "velo.pkg")
+                if fs_exists(sub_pkg) {
+                    let sub_m = manifest_load(sub_pkg)
+                    if not sub_m.has_error and sub_m.dep_count > 0 {
+                        add_manifest_deps_to_lock(root_dir, @sub_m, lock, depth + 1)
+                    }
+                }
+            }
+        }
         cur = cur.next
     }
+}
+
+act generate_lockfile_from_manifest(m: @PackageManifest, m_dir: string) -> LockFile {
+    mut lock = create_empty_lockfile()
+    mut base = m_dir
+    if str.len(base) == 0 { base = "." }
+    add_manifest_deps_to_lock(base, m, @lock, 0)
     return lock
 }
 
 act verify_lockfile_integrity(m: @PackageManifest, m_dir: string, lock: @LockFile) -> bool {
+    mut lcur = lock.first
+    loop lcur != null {
+        let dep = manifest_find_dep_in_graph(m_dir, m, lcur.name, 0)
+        mut actual_hash = ""
+        if dep != null {
+            actual_hash = compute_dep_hash(m_dir, dep)
+        } else {
+            let dep_path = path_join_str(path_join_str(m_dir, ".velo_cache/deps"), lcur.name)
+            actual_hash = compute_path_content_hash(dep_path)
+        }
+        if actual_hash != lcur.hash {
+            println_str("[Velo Error] Package checksum verification failed for '" + lcur.name + "'.")
+            println_str("  Expected: " + lcur.hash)
+            println_str("  Actual:   " + actual_hash)
+            println_str("  Package contents may have been tampered with or modified.")
+            return false
+        }
+        lcur = lcur.next
+    }
     mut cur = m.first_dep
     loop cur != null {
         let entry = lockfile_find(lock, cur.name)
         if entry == null {
-            println_str("[Velo Error] Dependency '{cur.name}' is missing from velo.lock. Run 'velo pkg lock' to update lockfile.")
-            return false
-        }
-        let actual_hash = compute_dep_hash(m_dir, cur)
-        if actual_hash != entry.hash {
-            println_str("[Velo Error] Package checksum verification failed for '{cur.name}'.")
-            println_str("  Expected: {entry.hash}")
-            println_str("  Actual:   {actual_hash}")
-            println_str("  Package contents may have been tampered with or modified.")
+            println_str("[Velo Error] Dependency '" + cur.name + "' is missing from velo.lock. Run 'velo pkg lock' to update lockfile.")
             return false
         }
         cur = cur.next

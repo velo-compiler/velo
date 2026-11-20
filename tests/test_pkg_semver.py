@@ -398,3 +398,240 @@ deps {
     lock_file = app_dir / "velo.lock"
     assert lock_file.exists()
     assert 'version = "1.1.0"' in lock_file.read_text(encoding="utf-8")
+
+
+# -----------------------------------------------------------------------------
+# Parameterized SemVer Requirement Matrix (Phase 72 / Task 72.7)
+# -----------------------------------------------------------------------------
+
+SEMVER_MATRIX = [
+    # (version, requirement, should_match)
+    # Exact and bare
+    ("1.0.0", "1.0.0", True),
+    ("1.0.0", "=1.0.0", True),
+    ("1.0.1", "=1.0.0", False),
+    ("2.0.0", "=1.0.0", False),
+    # Caret (major > 0)
+    ("1.0.0", "^1.0.0", True),
+    ("1.2.3", "^1.0.0", True),
+    ("1.9.9", "^1.2.0", True),
+    ("1.1.9", "^1.2.0", False),
+    ("2.0.0", "^1.0.0", False),
+    ("0.9.9", "^1.0.0", False),
+    # Caret (0.x.y)
+    ("0.2.0", "^0.2.0", True),
+    ("0.2.5", "^0.2.0", True),
+    ("0.3.0", "^0.2.0", False),
+    ("0.1.9", "^0.2.0", False),
+    # Caret (0.0.z)
+    ("0.0.3", "^0.0.3", True),
+    ("0.0.4", "^0.0.3", False),
+    ("0.1.0", "^0.0.3", False),
+    # Tilde
+    ("1.2.3", "~1.2.0", True),
+    ("1.2.9", "~1.2.0", True),
+    ("1.3.0", "~1.2.0", False),
+    ("1.1.9", "~1.2.0", False),
+    # Greater than or equal (>=)
+    ("1.0.0", ">=1.0.0", True),
+    ("1.5.0", ">=1.0.0", True),
+    ("2.0.0", ">=1.0.0", True),
+    ("0.9.9", ">=1.0.0", False),
+]
+
+@pytest.mark.parametrize("version,req,expected", SEMVER_MATRIX)
+def test_semver_matrix_evaluation(version, req, expected):
+    """Matrix testing semver evaluation across diverse operator and boundary conditions."""
+    if not VELO_EXE.exists():
+        pytest.skip("bin/velo.exe not built")
+    code, out = run_semver_probe(version, req)
+    if expected:
+        assert code == 0, f"Expected {version} to match {req}, got:\n{out}"
+        assert "STATUS:MATCH" in out
+    else:
+        assert code == 1, f"Expected {version} NOT to match {req}, got:\n{out}"
+        assert "STATUS:NO_MATCH" in out
+
+
+# -----------------------------------------------------------------------------
+# Two-Level Dependency Graph Offline Build and Lock (Phase 72 / Task 72.7)
+# -----------------------------------------------------------------------------
+
+def test_two_level_dependency_graph_offline(tmp_path):
+    """Build and verify a two-level dependency graph offline from local registry fixtures."""
+    if not VELO_EXE.exists():
+        pytest.skip("bin/velo.exe not built")
+
+    # 1. Author Level 2 leaf library: pkg_beta v2.0.5
+    beta_dir = tmp_path / "pkg_beta_src"
+    (beta_dir / "src").mkdir(parents=True, exist_ok=True)
+    (beta_dir / "velo.pkg").write_text(
+        """pkg {
+    name: "pkg_beta"
+    version: "2.0.5"
+    entry: "src/main.vl"
+}
+""",
+        encoding="utf-8",
+    )
+    (beta_dir / "src" / "main.vl").write_text("act beta_val() -> i32 { return 42 }\n", encoding="utf-8")
+
+    # Publish pkg_beta to get its tarball and hash
+    res_pub_beta = subprocess.run(
+        [str(VELO_EXE), "pkg", "publish", str(beta_dir), "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=str(REPO_ROOT),
+        env=get_base_env(),
+    )
+    beta_meta = json.loads(res_pub_beta.stdout.strip())
+    beta_tar = Path(beta_meta["archive"])
+    beta_sha = beta_meta["sha256"]
+
+    # 2. Author Level 1 middle library: pkg_alpha v1.1.0 depending on pkg_beta ~2.0.0
+    alpha_dir = tmp_path / "pkg_alpha_src"
+    (alpha_dir / "src").mkdir(parents=True, exist_ok=True)
+    (alpha_dir / "velo.pkg").write_text(
+        """pkg {
+    name: "pkg_alpha"
+    version: "1.1.0"
+    entry: "src/main.vl"
+}
+deps {
+    pkg_beta: "~2.0.0"
+}
+""",
+        encoding="utf-8",
+    )
+    (alpha_dir / "src" / "main.vl").write_text("act alpha_val() -> i32 { return 100 }\n", encoding="utf-8")
+
+    res_pub_alpha = subprocess.run(
+        [str(VELO_EXE), "pkg", "publish", str(alpha_dir), "--json"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        cwd=str(REPO_ROOT),
+        env=get_base_env(),
+    )
+    alpha_meta = json.loads(res_pub_alpha.stdout.strip())
+    alpha_tar = Path(alpha_meta["archive"])
+    alpha_sha = alpha_meta["sha256"]
+
+    # 3. Create static offline file:// registry with index.json for both packages
+    reg_root = tmp_path / "offline_reg"
+    (reg_root / "pkg_alpha").mkdir(parents=True, exist_ok=True)
+    (reg_root / "pkg_beta").mkdir(parents=True, exist_ok=True)
+
+    clean_alpha_url = "file:///" + str(alpha_tar).replace("\\", "/")
+    clean_beta_url = "file:///" + str(beta_tar).replace("\\", "/")
+
+    (reg_root / "pkg_alpha" / "index.json").write_text(
+        json.dumps({
+            "name": "pkg_alpha",
+            "versions": {
+                "1.1.0": {"url": clean_alpha_url, "sha256": alpha_sha}
+            }
+        }, indent=2),
+        encoding="utf-8",
+    )
+
+    (reg_root / "pkg_beta" / "index.json").write_text(
+        json.dumps({
+            "name": "pkg_beta",
+            "versions": {
+                "2.0.5": {"url": clean_beta_url, "sha256": beta_sha}
+            }
+        }, indent=2),
+        encoding="utf-8",
+    )
+
+    # 4. Author Level 0 root application: consumer_app depending on pkg_alpha ^1.0.0
+    app_dir = tmp_path / "offline_consumer_app"
+    app_dir.mkdir(parents=True, exist_ok=True)
+    (app_dir / "main.vl").write_text("act main() -> i32 { return 0 }\n", encoding="utf-8")
+    (app_dir / "velo.pkg").write_text(
+        """pkg {
+    name: "offline_consumer_app"
+    version: "0.1.0"
+    entry: "main.vl"
+}
+deps {
+    pkg_alpha: "^1.0.0"
+}
+""",
+        encoding="utf-8",
+    )
+
+    # 5. Run 'velo pkg install'
+    clean_reg_url = "file:///" + str(reg_root).replace("\\", "/")
+    res_inst = subprocess.run(
+        [str(VELO_EXE), "pkg", "install", str(app_dir), "--registry", clean_reg_url, "--insecure"],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=get_base_env(),
+        timeout=60,
+    )
+    assert res_inst.returncode == 0, f"install failed:\n{res_inst.stderr}\n{res_inst.stdout}"
+
+    # 6. Verify that both Level 1 and Level 2 packages are installed
+    deps_dir = app_dir / ".velo_cache" / "deps"
+    assert (deps_dir / "pkg_alpha" / "src" / "main.vl").exists()
+    assert (deps_dir / "pkg_beta" / "src" / "main.vl").exists()
+
+    # 7. Verify lockfile contains both packages pinned to concrete versions
+    lock_file = app_dir / "velo.lock"
+    assert lock_file.exists()
+    lock_text = lock_file.read_text(encoding="utf-8")
+    assert 'package "pkg_alpha"' in lock_text
+    assert 'version = "1.1.0"' in lock_text
+    assert 'package "pkg_beta"' in lock_text
+    assert 'version = "2.0.5"' in lock_text
+
+    # 8. Verify tree renders multi-level graph
+    res_tree = subprocess.run(
+        [str(VELO_EXE), "pkg", "tree", str(app_dir)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=get_base_env(),
+        timeout=30,
+    )
+    assert res_tree.returncode == 0
+    tree_out = res_tree.stdout
+    assert "offline_consumer_app v0.1.0" in tree_out
+    assert "pkg_alpha v1.1.0" in tree_out
+    assert "pkg_beta v2.0.5" in tree_out
+
+    # 9. Verify read-only verify passes with zero drift
+    res_ver = subprocess.run(
+        [str(VELO_EXE), "pkg", "verify", str(app_dir)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=get_base_env(),
+        timeout=30,
+    )
+    assert res_ver.returncode == 0
+    assert "zero drift" in res_ver.stdout
+
+    # 10. Tamper with leaf package pkg_beta and verify drift detection
+    (deps_dir / "pkg_beta" / "src" / "main.vl").write_text("act tampered() {}\n", encoding="utf-8")
+    res_drift = subprocess.run(
+        [str(VELO_EXE), "pkg", "verify", str(app_dir)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env=get_base_env(),
+        timeout=30,
+    )
+    assert res_drift.returncode != 0
+    assert "Drift detected: checksum mismatch for dependency 'pkg_beta'" in res_drift.stdout
+
