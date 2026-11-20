@@ -6,6 +6,7 @@
 // `bool or string` and never silently degrades to SplitMix64 or predictable PRNG.
 // On entropy source failure or null buffer, it fails closed, zeroing the buffer.
 use "hex.vl"
+use "subtle.vl"
 use "../mem/heap.vl"
 
 // Foreign interface to the runtime header's portable CSPRNG fill.
@@ -63,11 +64,7 @@ act crypto_random_bytes(buf: @u8, len: usize) -> bool or string {
 
     let ok = velo_crypto_random_fill(buf as @void, len)
     if !ok {
-        mut i: usize = 0
-        loop i < len {
-            buf[i] = 0 as u8
-            i += 1
-        }
+        crypto_zero(buf, len)
         fail "OS entropy source unavailable (CSPRNG failure)"
     }
     return true
@@ -79,6 +76,7 @@ act crypto_random_u32_try() -> u32 or string {
     if b == null { fail "out of memory" }
     let res = crypto_random_bytes(b, 4)
     if !res.ok {
+        crypto_zero(b, 4)
         heap_free(b)
         fail res.err
     }
@@ -86,6 +84,7 @@ act crypto_random_u32_try() -> u32 or string {
     let b1 = b[1] as u32
     let b2 = b[2] as u32
     let b3 = b[3] as u32
+    crypto_zero(b, 4)
     heap_free(b)
     return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 }
@@ -107,6 +106,7 @@ act crypto_random_u64_try() -> u64 or string {
     if b == null { fail "out of memory" }
     let res = crypto_random_bytes(b, 8)
     if !res.ok {
+        crypto_zero(b, 8)
         heap_free(b)
         fail res.err
     }
@@ -118,6 +118,7 @@ act crypto_random_u64_try() -> u64 or string {
     let b5 = b[5] as u64
     let b6 = b[6] as u64
     let b7 = b[7] as u64
+    crypto_zero(b, 8)
     heap_free(b)
     let lo: u64 = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
     let hi: u64 = b4 | (b5 << 8) | (b6 << 16) | (b7 << 24)
@@ -162,10 +163,12 @@ act crypto_random_hex_try(byte_count: usize) -> string or string {
     }
     let res = crypto_random_bytes(buf, byte_count)
     if !res.ok {
+        crypto_zero(buf, byte_count)
         heap_free(buf)
         fail res.err
     }
     let hex_res = bytes_to_hex(buf, byte_count)
+    crypto_zero(buf, byte_count)
     heap_free(buf)
     return hex_res
 }

@@ -85,6 +85,18 @@ def test_std_crypto_rand():
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "OK: std.crypto.rand tests passed" in res.stdout
 
+def test_std_crypto_subtle():
+    test_vl = REPO_ROOT / "std" / "tests" / "crypto" / "subtle_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True, encoding="utf-8", errors="replace",
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "OK: std.crypto.subtle tests passed" in res.stdout
+
 def test_std_crypto_module_import():
     test_vl = REPO_ROOT / "std" / "tests" / "crypto_module_import_test.vl"
     res = subprocess.run(

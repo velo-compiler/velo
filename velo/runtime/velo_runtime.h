@@ -1306,6 +1306,18 @@ static inline bool velo_crypto_secure_eq(void* a, void* b, size_t len) {
     return diff == 0;
 }
 
+// Phase 73 / Task 73.4: zeroize sensitive memory so compiler cannot optimize away (volatile store loop).
+static inline void velo_crypto_zero(void* ptr, size_t len) {
+    if (ptr == NULL || len == 0) return;
+    volatile unsigned char* p = (volatile unsigned char*)ptr;
+    while (len--) {
+        *p++ = 0;
+    }
+#if defined(__GNUC__) || defined(__clang__)
+    __asm__ __volatile__("" : : "r"(ptr) : "memory");
+#endif
+}
+
 // ============================================================================
 // Phase 70 / Task 70.1: host platform identity for the compiler itself.
 //

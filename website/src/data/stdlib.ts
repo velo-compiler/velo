@@ -540,6 +540,12 @@ export const STDLIB_MODULES: StdlibModule[] = [
         example: 'let match = crypto_secure_eq_str(expected_token, token)'
       },
       {
+        name: 'crypto_zero',
+        signature: 'act crypto_zero(ptr: @u8, len: usize)',
+        description: 'Securely zeros a memory buffer so that the compiler cannot optimize the write away (volatile store loop).',
+        example: 'crypto_zero(secret_key, 32)'
+      },
+      {
         name: 'crypto_random_bytes',
         signature: 'act crypto_random_bytes(buf: @u8, len: usize) -> bool or string',
         description: 'Fills a byte buffer with cryptographically secure random bytes from the OS kernel entropy source. Fails closed if entropy is unavailable.',

@@ -50,6 +50,17 @@ act main() -> i32 {
         return 9
     }
 
+    // 7. Secure memory zeroing
+    mut zbuf: @u8 = heap_alloc(8)
+    zbuf[0] = 0x55 as u8
+    zbuf[7] = 0xAA as u8
+    crypto_zero(zbuf, 8)
+    if zbuf[0] != (0 as u8) or zbuf[7] != (0 as u8) {
+        io.println_str("FAIL: umbrella crypto_zero did not clear buffer")
+        return 10
+    }
+    heap_free(zbuf)
+
     io.println_str("PASS: std.crypto umbrella import all tests passed")
     return 0
 }

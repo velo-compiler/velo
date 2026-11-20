@@ -6,6 +6,9 @@
 // Foreign interface to the runtime header's volatile-guarded constant-time byte comparison.
 extern act velo_crypto_secure_eq(a: @void, b: @void, len: usize) -> bool
 
+// Foreign interface to the runtime header's volatile-guarded memory zeroing.
+extern act velo_crypto_zero(ptr: @void, len: usize)
+
 // Compares two byte buffers of length len in constant time.
 // Returns true if all len bytes are identical, false otherwise.
 // Does not short-circuit or branch on intermediate differences.
@@ -27,4 +30,17 @@ act crypto_secure_eq_str(a: string, b: string) -> bool {
         return false
     }
     return velo_crypto_secure_eq(a as @void, b as @void, len_a)
+}
+
+// Securely zeros a memory buffer so that the compiler cannot optimize the write away.
+// Uses a volatile store loop in the runtime, preventing dead-store elimination.
+act crypto_zero(ptr: @u8, len: usize) {
+    if ptr == null or len == 0 { return }
+    velo_crypto_zero(ptr as @void, len)
+}
+
+// Securely zeros raw memory via untyped pointer.
+act crypto_zero_raw(ptr: @void, len: usize) {
+    if ptr == null or len == 0 { return }
+    velo_crypto_zero(ptr, len)
 }

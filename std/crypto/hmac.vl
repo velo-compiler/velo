@@ -9,11 +9,7 @@ act hmac_sha256(key: @u8, key_len: usize, data: @u8, data_len: usize, out_digest
     if out_digest == null { return }
 
     mut k: @u8 = heap_alloc(64)
-    mut i: usize = 0
-    loop i < 64 {
-        k[i] = 0 as u8
-        i += 1
-    }
+    crypto_zero(k, 64)
 
     // Step 1: Normalize key to 64 bytes
     if key != null and key_len > 0 {
@@ -56,7 +52,11 @@ act hmac_sha256(key: @u8, key_len: usize, data: @u8, data_len: usize, out_digest
     sha256_update(@outer_state, inner_digest, 32)
     sha256_final(@outer_state, out_digest)
 
-    // Clean up temporary buffers
+    // Securely wipe sensitive intermediate buffers before freeing
+    crypto_zero(k, 64)
+    crypto_zero(ipad, 64)
+    crypto_zero(opad, 64)
+    crypto_zero(inner_digest, 32)
     heap_free(k)
     heap_free(ipad)
     heap_free(opad)
@@ -68,6 +68,7 @@ act hmac_sha256_hash(key: @u8, key_len: usize, data: @u8, data_len: usize) -> st
     mut digest: @u8 = heap_alloc(32)
     hmac_sha256(key, key_len, data, data_len, digest)
     let hex_res = bytes_to_hex(digest, 32)
+    crypto_zero(digest, 32)
     heap_free(digest)
     return hex_res
 }
@@ -127,6 +128,7 @@ act hmac_sha256_verify(key: string, data: string, tag: string) -> bool {
         is_valid = false
     }
 
+    crypto_zero(computed, 32)
     heap_free(computed)
     return is_valid
 }
@@ -145,6 +147,7 @@ act hmac_sha256_verify_bytes(key: @u8, key_len: usize, data: @u8, data_len: usiz
         let dummy = crypto_secure_eq(computed, computed, 32)
         is_valid = false
     }
+    crypto_zero(computed, 32)
     heap_free(computed)
     return is_valid
 }

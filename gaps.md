@@ -1072,8 +1072,26 @@ differing-first-byte inputs) - document that this is a smoke test, not a proof.
     - `test_crypto_secure_eq_statistical_timing_smoke_test`: performs 1,000,000 iterations comparing equal-prefix (differing at byte 63) vs differing-first-byte (differing at byte 0), achieving an execution time ratio of 1.057x (asserted < 1.5x).
   - Verified `tests/test_crypto_rand_failclosed.py` (14/14 passed), `tests/test_crypto_umbrella.py` (6/6 passed), `tests/test_std_crypto.py` (7/7 passed), `tests/test_std_uuid.py` (2/2 passed).
 
-**73.4** Add `crypto_zero(ptr, len)` that the compiler cannot optimize away
+**73.4 [COMPLETED] ✅** Add `crypto_zero(ptr, len)` that the compiler cannot optimize away
 (`volatile` store loop in the runtime) and use it in `hmac.vl`'s temporaries.
+- *Former Defect:* Sensitive cryptographic secrets in dynamically allocated memory (such as normalized HMAC key material, inner/outer SHA-256 padding blocks, and intermediate digests) were released via `heap_free` without zeroing. Calling conventional memory clear loops before `free` risks dead-store elimination (DSE) by optimizing compilers (GCC/Clang) because the memory is dead following the free call, leaving plaintext keys, hashes, and session secrets residing in reclaimed heap chunks.
+- *Fix Applied:*
+  - Added `velo_crypto_zero(void* ptr, size_t len)` in `runtime/velo_runtime.h` and `velo/runtime/velo_runtime.h` using a volatile unsigned char store loop (`while (len--) { *p++ = 0; }`) accompanied by a compiler memory clobber (`__asm__ __volatile__("" : : "r"(ptr) : "memory")` on GCC/Clang) to strictly prevent dead-store elimination across any optimization level.
+  - Added `crypto_zero(ptr: @u8, len: usize)` and `crypto_zero_raw(ptr: @void, len: usize)` to `std/crypto/subtle.vl`, exported via the `std.crypto` umbrella.
+  - Updated `std/crypto/hmac.vl` to zeroize secret key buffers (`k`), padding blocks (`ipad`, `opad`), intermediate digests (`inner_digest`), and verification hashes (`computed`) before freeing.
+  - Updated `std/crypto/rand.vl` to zeroize random byte buffers on CSPRNG entropy failure (fail-closed wipe) and zeroize temporary stack/heap entropy buffers before `heap_free`.
+  - Added stdlib documentation in `website/src/data/stdlib.ts`, updated `std/tests/crypto_module_import_test.vl`, and created `std/tests/crypto/subtle_test.vl`.
+  - Rebuilt bootstrap chain (`bin/velo.exe` $\rightarrow$ `bin/velo_gen2.exe` $\rightarrow$ `bin/velo_gen3.exe` $\rightarrow$ `bin/velo.exe`), verified byte-identical C emission determinism between Gen2 and Gen3, and refreshed `bootstrap.c`.
+- *Residual Limitation:* None for heap-allocated and slice-backed secrets; memory is wiped using volatile stores before being returned to the allocator. Local scalar variables residing solely in machine registers remain managed by processor calling conventions.
+- *Verification:*
+  - Created `tests/test_crypto_zero.py` containing 5 comprehensive tests:
+    - `test_crypto_zero_direct_and_partial`: verifies full buffer zeroing, partial offset sub-slice clearing (untouched prefix/suffix preserved), null pointer safety, and zero-length safety.
+    - `test_crypto_zero_in_hmac_temporaries`: verifies RFC 4231 vectors 1 & 6 (including keys larger than block size) and invalid tag rejection with zeroed temporaries.
+    - `test_crypto_zero_dead_store_optimization_resistance`: compiles binary with high optimization to verify volatile stores are not elided before `heap_free`.
+    - `test_crypto_zero_large_buffer_and_raw`: tests 64KB buffer wiping and untyped `@void` raw pointer zeroing (`crypto_zero_raw`).
+    - `test_crypto_zero_failclosed_entropy_wipe`: tests that simulated entropy failure triggers automatic buffer zeroing.
+  - Added `test_std_crypto_subtle()` to `tests/test_std_crypto.py`.
+  - Verified `tests/test_bootstrap_snapshot.py` (6/6 passed), `tests/test_crypto_constant_time.py` (5/5 passed), `tests/test_crypto_rand_failclosed.py` (14/14 passed), `tests/test_crypto_umbrella.py` (6/6 passed), `tests/test_crypto_zero.py` (5/5 passed), `tests/test_std_crypto.py` (8/8 passed), `tests/test_std_uuid.py` (2/2 passed). Total 46/46 passed.
 
 **73.5** Implement SHA-512 and HMAC-SHA512 (`std/crypto/sha512.vl`), matching
 the existing `sha256` structure. Test against RFC 4231 vectors.

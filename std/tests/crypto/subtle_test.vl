@@ -1,0 +1,113 @@
+// Tests for std.crypto.subtle (crypto_secure_eq, crypto_secure_eq_str, crypto_zero)
+use "../../crypto/subtle.vl"
+use "../../mem/heap.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    // 1. crypto_secure_eq basic
+    let a = "abcdef0123456789"
+    let b = "abcdef0123456789"
+    let c = "xbcdef0123456789"
+    let d = "abcdef012345678x"
+
+    if !crypto_secure_eq(a as @u8, b as @u8, 16) {
+        io.println_str("FAIL: crypto_secure_eq identical buffers mismatch")
+        return 1
+    }
+    if crypto_secure_eq(a as @u8, c as @u8, 16) {
+        io.println_str("FAIL: crypto_secure_eq differing first byte matched")
+        return 2
+    }
+    if crypto_secure_eq(a as @u8, d as @u8, 16) {
+        io.println_str("FAIL: crypto_secure_eq differing last byte matched")
+        return 3
+    }
+    if !crypto_secure_eq(a as @u8, c as @u8, 0) {
+        io.println_str("FAIL: crypto_secure_eq zero length should return true")
+        return 4
+    }
+
+    // 2. crypto_secure_eq_str
+    if !crypto_secure_eq_str("hello", "hello") {
+        io.println_str("FAIL: crypto_secure_eq_str identical strings mismatch")
+        return 5
+    }
+    if crypto_secure_eq_str("hello", "world") {
+        io.println_str("FAIL: crypto_secure_eq_str differing strings matched")
+        return 6
+    }
+    if crypto_secure_eq_str("hello", "hell") {
+        io.println_str("FAIL: crypto_secure_eq_str differing length matched")
+        return 7
+    }
+    if !crypto_secure_eq_str("", "") {
+        io.println_str("FAIL: crypto_secure_eq_str empty strings mismatch")
+        return 8
+    }
+
+    // 3. crypto_zero full buffer
+    mut buf: @u8 = heap_alloc(32)
+    mut i: usize = 0
+    loop i < 32 {
+        buf[i] = (i + 1) as u8
+        i += 1
+    }
+    crypto_zero(buf, 32)
+    mut j: usize = 0
+    loop j < 32 {
+        if buf[j] != (0 as u8) {
+            io.println_str("FAIL: crypto_zero did not zero byte in full buffer")
+            heap_free(buf)
+            return 9
+        }
+        j += 1
+    }
+    heap_free(buf)
+
+    // 4. crypto_zero partial range
+    mut pbuf: @u8 = heap_alloc(16)
+    mut k: usize = 0
+    loop k < 16 {
+        pbuf[k] = 0xAA as u8
+        k += 1
+    }
+    // Zero bytes 4..11 (length 8)
+    crypto_zero(pbuf + 4, 8)
+    if pbuf[0] != (0xAA as u8) or pbuf[3] != (0xAA as u8) {
+        io.println_str("FAIL: crypto_zero corrupted prefix")
+        heap_free(pbuf)
+        return 10
+    }
+    if pbuf[4] != (0 as u8) or pbuf[11] != (0 as u8) {
+        io.println_str("FAIL: crypto_zero did not zero middle range")
+        heap_free(pbuf)
+        return 11
+    }
+    if pbuf[12] != (0xAA as u8) or pbuf[15] != (0xAA as u8) {
+        io.println_str("FAIL: crypto_zero corrupted suffix")
+        heap_free(pbuf)
+        return 12
+    }
+    heap_free(pbuf)
+
+    // 5. crypto_zero null and zero len safety
+    crypto_zero(null, 100)
+    mut safe_buf: @u8 = heap_alloc(4)
+    safe_buf[0] = 42 as u8
+    crypto_zero(safe_buf, 0)
+    if safe_buf[0] != (42 as u8) {
+        io.println_str("FAIL: crypto_zero with len 0 modified buffer")
+        heap_free(safe_buf)
+        return 13
+    }
+    crypto_zero_raw(safe_buf as @void, 4)
+    if safe_buf[0] != (0 as u8) {
+        io.println_str("FAIL: crypto_zero_raw did not zero buffer")
+        heap_free(safe_buf)
+        return 14
+    }
+    heap_free(safe_buf)
+
+    io.println_str("OK: std.crypto.subtle tests passed")
+    return 0
+}
