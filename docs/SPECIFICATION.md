@@ -708,7 +708,7 @@ zone {
 ```
 
 ### 5.5 The `mem.*` Intrinsic Surface
-The `mem` namespace is a **closed set** of thirteen compiler intrinsics. A call
+The `mem` namespace is a **closed set** of fourteen compiler intrinsics. A call
 to any other member is a compile-time error, so a typo can never reach C
 generation or the runtime:
 
@@ -721,6 +721,7 @@ generation or the runtime:
 | `mem.copy` | `(pointer dest, pointer src, byte count)` | `void` |
 | `mem.move` | `(pointer dest, pointer src, byte count)` | `void` |
 | `mem.set` | `(pointer dest, byte value, byte count)` | `void` |
+| `mem.overlaps` | `(pointer a, pointer b, byte count a, byte count b)` | `bool` |
 | `mem.used` | `()` | `usize` |
 | `mem.heap_used` | `()` | `usize` |
 | `mem.current` | `()` | `@Allocator` |
@@ -734,6 +735,13 @@ generation or the runtime:
 * `mem.copy`, `mem.move`, and `mem.set` count **bytes**, not elements, and
   mirror `memcpy`, `memmove`, and `memset`. A statically negative count is
   rejected at compile time; a variable-held negative count fails at runtime.
+* `mem.overlaps(a, b, len_a, len_b)` returns true if byte regions $[a, a + len_a)$
+  and $[b, b + len_b)$ overlap.
+* Overlapping regions are only permitted through `mem.move` (the designated
+  overlapping-safe primitive). In Debug builds (`--debug`), `mem.copy` asserts
+  non-overlap between destination and source buffers and aborts with a fatal
+  diagnostic (`Velo Fatal Error: mem.copy destination and source overlap (use mem.move instead)!`)
+  if they overlap; in Release builds, raw C `memcpy` behavior is invoked.
 * `mem.free` accepts raw pointers and heap strings (`str.heap_*` returns an
   owning `string`). Freeing a zone-allocated value is not a compile-time error —
   ownership is the caller's contract.
@@ -757,7 +765,7 @@ An unknown member reports the closed set and never reaches code generation:
 
 ```
 unknown mem member 'malloc' (functions: alloc, heap_alloc, free, realloc, copy,
-move, set, used, heap_used, current, alloc_with, create_arena, destroy_arena)
+move, set, overlaps, used, heap_used, current, alloc_with, create_arena, destroy_arena)
 ```
 
 ### 5.7 Out-of-Memory Behaviour
@@ -775,6 +783,7 @@ non-zero exit status.
 | `zone` capacity is `0` | `Velo Fatal Error: Zone Arena capacity must be > 0` | process exits |
 | A watermark stack push cannot grow | `Velo Fatal Error: Zone Arena Watermark Stack OOM` | process exits |
 | `mem.copy`/`move`/`set`/`realloc` receive a negative count | `Velo Fatal Error: mem.<op> got a negative byte count` | process exits |
+| `mem.copy` regions overlap in Debug mode | `Velo Fatal Error: mem.copy destination and source overlap (use mem.move instead)!` | process exits |
 
 The consequences for user code:
 

@@ -181,7 +181,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
                     if member == "alloc_with" { if expr.first_arg != null and expr.first_arg.next != null { return infer_expr_type(st, expr.first_arg.next) } }
                     // cm43: mem.realloc(ptr, @T, count) -> @T (like alloc_with)
                     if member == "realloc" { if expr.first_arg != null and expr.first_arg.next != null { return infer_expr_type(st, expr.first_arg.next) }; return "unknown" }
-                    return "void"
+                    if member == "overlaps" { return "bool" }; return "void"
                 }
                 // cm42: thread intrinsics - args are compile-checked
                 if target.str_val == "thread" {

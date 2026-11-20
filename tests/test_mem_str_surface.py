@@ -48,6 +48,7 @@ MEM_INVENTORY = {
     "copy": "zone_buf, heap_buf, 8",
     "move": "zone_buf, heap_buf, 8",
     "set": "zone_buf, 0, 8",
+    "overlaps": "zone_buf, heap_buf, 8, 8",
     "used": "",
     "heap_used": "",
     "current": "",
@@ -303,6 +304,16 @@ MEM_REJECT_ROWS = [
     ("heap_alloc_string", 'mem.heap_alloc("abc")', "mem.heap_alloc expects an integer count (got string)"),
     ("alloc_with_int_ty", "mem.alloc_with(active, 1, 8)", "mem.alloc_with expects a @Type argument (got i32)"),
     ("alloc_with_string_count", 'mem.alloc_with(active, @u8, "x")', "mem.alloc_with expects an integer count (got string)"),
+    # mem.overlaps walls
+    ("overlaps_none", "mem.overlaps()", "mem.overlaps expects exactly 4 arguments: (pointer a, pointer b, byte count a, byte count b)"),
+    ("overlaps_two", "mem.overlaps(zone_buf, heap_buf)", "mem.overlaps expects exactly 4 arguments"),
+    ("overlaps_five", "mem.overlaps(zone_buf, heap_buf, 8, 8, 8)", "mem.overlaps expects exactly 4 arguments"),
+    ("overlaps_int_a", "mem.overlaps(1, heap_buf, 8, 8)", "mem.overlaps expects pointer arguments (got i32)"),
+    ("overlaps_int_b", "mem.overlaps(zone_buf, 1, 8, 8)", "mem.overlaps expects pointer arguments (got i32)"),
+    ("overlaps_str_count_a", 'mem.overlaps(zone_buf, heap_buf, "x", 8)', "mem.overlaps expects an integer byte count (got string)"),
+    ("overlaps_str_count_b", 'mem.overlaps(zone_buf, heap_buf, 8, "x")', "mem.overlaps expects an integer byte count (got string)"),
+    ("overlaps_neg_literal_a", "mem.overlaps(zone_buf, heap_buf, -1, 8)", "mem.overlaps expects non-negative byte counts"),
+    ("overlaps_neg_literal_b", "mem.overlaps(zone_buf, heap_buf, 8, -1)", "mem.overlaps expects non-negative byte counts"),
 ]
 
 

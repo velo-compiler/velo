@@ -1449,6 +1449,20 @@ static inline void velo_heap_free(void* ptr) {
     free(raw);
 }
 
+// §74.4: memory overlap detector. Two byte regions [a, a + len_a) and
+// [b, b + len_b) overlap iff max(a, b) < min(a + len_a, b + len_b).
+// Empty/non-positive length ranges or NULL pointers never overlap.
+static inline bool velo_mem_overlaps(const void* a, const void* b, long long len_a, long long len_b) {
+    if (!a || !b || len_a <= 0 || len_b <= 0) return false;
+    uintptr_t ua = (uintptr_t)a;
+    uintptr_t ub = (uintptr_t)b;
+    if (ua <= ub) {
+        return (ub - ua) < (size_t)len_a;
+    } else {
+        return (ua - ub) < (size_t)len_b;
+    }
+}
+
 // §4.3 hardening: byte-trio runtime wrappers. A negative byte count is a
 // caller bug that the raw C trio would silently launder into a gigantic
 // size_t (an instant wipe/write of huge size — UB); Velo turns it into a
@@ -1458,6 +1472,12 @@ static inline void velo_byte_copy(void* dest, const void* src, long long count) 
         fprintf(stderr, "Velo Fatal Error: mem.copy got a negative byte count!\n");
         exit(1);
     }
+#if defined(VELO_DEBUG) || (defined(DEBUG) && !defined(NDEBUG))
+    if (count > 0 && velo_mem_overlaps(dest, src, count, count)) {
+        fprintf(stderr, "Velo Fatal Error: mem.copy destination and source overlap (use mem.move instead)!\n");
+        exit(1);
+    }
+#endif
     memcpy(dest, src, (size_t)count);
 }
 

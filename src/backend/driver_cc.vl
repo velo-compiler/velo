@@ -216,7 +216,7 @@ act assemble_msvc_compile_cmd(c_file_path: string, out_exe_path: string, opt_fla
         sb_append_str(@cmd_sb, "/O2 ")
     } else if str.contains(opt_flags, "-O0") or str.contains(opt_flags, "-g") {
         is_debug = true
-        sb_append_str(@cmd_sb, "/Od /Zi ")
+        sb_append_str(@cmd_sb, "/Od /Zi /DVELO_DEBUG ")
     } else if str.contains(opt_flags, "-O1") {
         sb_append_str(@cmd_sb, "/O1 ")
     } else {
@@ -322,7 +322,7 @@ act resolve_opt_flags(debug_mode: bool, release_mode: bool, opt_level: string) -
         sb_append_str(@sb, "-O2")
     }
     if debug_mode {
-        sb_append_str(@sb, " -g")
+        sb_append_str(@sb, " -g -DVELO_DEBUG")
     }
     if release_mode {
         sb_append_str(@sb, " -flto")

@@ -57,7 +57,11 @@ act lsp_complete_builtin_module(sb: @StringBuilder, mod_name: string, after: str
         if lsp_str_starts_with("create_arena", after) { lsp_append_item(sb, "create_arena", 3, "mem", is_first) }
         if lsp_str_starts_with("destroy_arena", after) { lsp_append_item(sb, "destroy_arena", 3, "mem", is_first) }
         if lsp_str_starts_with("copy", after) { lsp_append_item(sb, "copy", 3, "mem", is_first) }
+        if lsp_str_starts_with("move", after) { lsp_append_item(sb, "move", 3, "mem", is_first) }
         if lsp_str_starts_with("set", after) { lsp_append_item(sb, "set", 3, "mem", is_first) }
+        if lsp_str_starts_with("overlaps", after) { lsp_append_item(sb, "overlaps", 3, "mem", is_first) }
+        if lsp_str_starts_with("used", after) { lsp_append_item(sb, "used", 3, "mem", is_first) }
+        if lsp_str_starts_with("heap_used", after) { lsp_append_item(sb, "heap_used", 3, "mem", is_first) }
         return true
     }
     if slice_eq_str(slice_from_str(mod_name), "fs") {

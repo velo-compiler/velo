@@ -1161,10 +1161,32 @@ the shelf policy.
   - Verified snapshot determinism (`tests/test_bootstrap_snapshot.py`: all 6 tests pass).
   - Audited compiler source file line counts (`python scripts/count_lines.py` confirms all 103 files <= 400 lines).
 
-**74.4** Add `mem.overlaps(a, b, len_a, len_b) -> bool` and make `mem.copy` /
+**74.4 [COMPLETED] ✅** Add `mem.overlaps(a, b, len_a, len_b) -> bool` and make `mem.copy` /
 `mem.set` assert non-overlap in Debug builds (fatal with a named message),
 documenting `mem.move` as the overlapping-safe primitive. Test: overlapping
 `mem.copy` in Debug -> fatal; in Release -> documented memcpy behaviour.
+- *Former Defect:*
+  `mem.copy` lowered directly to raw C `memcpy` without validating whether destination and source buffers overlapped. In C99 (§7.21.2.1), calling `memcpy` on overlapping memory regions is undefined behavior leading to silent data corruption or unpredictable behavior. Additionally, there was no standard language intrinsic to check whether two memory ranges overlapped, and the documentation in `docs/SPECIFICATION.md` lacked guidance distinguishing `mem.copy` from `mem.move`.
+- *Fix Applied:*
+  - Implemented `velo_mem_overlaps(const void* a, const void* b, long long len_a, long long len_b) -> bool` in `runtime/velo_runtime.h` (and mirrored byte-identically in `velo/runtime/velo_runtime.h`). It detects whether $[a, a + len_a)$ and $[b, b + len_b)$ intersect using subtraction comparison (`(ub - ua) < len_a` and `(ua - ub) < len_b`) without risking integer or pointer-arithmetic overflow, returning `false` for non-positive lengths and NULL pointers.
+  - Added debug-mode assertion to `velo_byte_copy` under `#if defined(VELO_DEBUG) || (defined(DEBUG) && !defined(NDEBUG))`: when `count > 0` and `velo_mem_overlaps(dest, src, count, count)` evaluates to true, it prints `"Velo Fatal Error: mem.copy destination and source overlap (use mem.move instead)!\n"` and exits with code 1.
+  - Wired `-DVELO_DEBUG` across `src/backend/driver_cc.vl` in `resolve_opt_flags` (and `/DVELO_DEBUG` in `assemble_msvc_compile_cmd`) whenever `--debug` is specified.
+  - Exposed `mem.overlaps(a, b, len_a, len_b) -> bool` in `src/analysis/mem_checks.vl`, `src/analysis/type_checker.vl`, `src/backend/codegen_call.vl`, and `src/lsp/completion_builtins.vl`, expanding the `mem.*` closed set to 14 intrinsics with strict arity (4) and pointer/integer type checks as well as negative literal rejection.
+  - Documented `mem.overlaps`, `mem.move` (the designated overlapping-safe primitive), and debug-mode `mem.copy` fatal error in `docs/SPECIFICATION.md` (§5.5, §5.6, §5.7).
+  - Note on `mem.set`: `mem.set(dest, val, count)` operates on a single destination buffer and an integer fill value; overlap detection applies to `mem.copy` (which has distinct destination and source buffers $[dest, dest + count)$ and $[src, src + count)$) with `mem.move` documented as the overlapping-safe primitive.
+  - Rebuilt the complete self-hosting compiler bootstrap chain (`bootstrap.c` -> Gen2 -> Gen3 -> `bin/velo.exe` -> refreshed `bootstrap.c`) and verified byte-for-byte SHA-256 hash determinism.
+- *Residual Limitation (if any):*
+  In Release mode (`--release`), `mem.copy` invokes raw C `memcpy` for maximum performance as specified; programs that require overlapping-safe memory transfers must use `mem.move`.
+- *Verification:*
+  - Created `tests/test_mem_overlaps.py` testing:
+    - Truth table of `mem.overlaps` (overlapping forward, backward, identical pointers, subset, superset -> `true`; adjacent forward, backward, separated gap, zero length, null pointer -> `false`).
+    - Debug fatal: `mem.copy` with overlapping regions under `--debug` exits with code 1 and prints `"Velo Fatal Error: mem.copy destination and source overlap (use mem.move instead)!"`.
+    - Release passthrough: `mem.copy` with overlapping regions under `--release` runs without fatal error.
+    - `mem.move` safety: overlapping forward shifts execute cleanly and preserve correct data in both `--debug` and `--release` modes.
+  - Verified static inventory and specification tests in `tests/test_mem_str_surface.py` (112 tests pass).
+  - Verified `tests/test_mem_intrinsics.py` (10 tests pass).
+  - Verified `tests/test_bootstrap_snapshot.py` (all 6 tests pass).
+  - Audited compiler source file line counts (`python scripts/count_lines.py` confirms all 103 files <= 400 lines).
 
 **74.5** Add `mem.realloc`/`mem.free` provenance checks. Cheapest honest
 version: a magic header + owner tag around heap allocations
@@ -2311,7 +2333,7 @@ listed so they are not rediscovered as surprises.
 | Frozen Stage-1 Python compiler still in the build story | `AGENTS.md`, `examples/12_stage2_semantics_test.vl` | Double maintenance, false parity signal | Phase 80.5 |
 | `bootstrap.c` is a 2.3 MB generated artifact in review | 67,952 lines | Compiler diffs are unreviewable at the artifact level | Phase 80.6 budget warning + Phase 76 tiering |
 | `std/async` is `poll(2)` on Linux | `std/async/poller_linux.vl:13` | O(n) wakeup scaling | Phase 70.4 (`epoll`) |
-| Overlapping `mem.copy`/`mem.set` remain C UB | `docs/gaps_archive.md:181` | Silent corruption on aliased buffers | Phase 74.4 |
+| Overlapping `mem.copy`/`mem.set` remain C UB | `docs/gaps_archive.md:181` | Silent corruption on aliased buffers | Phase 74.4 [COMPLETED] ✅ |
 | No `Set`/`Deque`/priority queue | `std/coll/` inventory | Users hand-roll them, inconsistently | Phase 78.8 |
 | `defer` takes a block, not an expression | Phase 58/69 semantics | Verbose cleanup sites | Phase 77.6 |
 | No `v2.0.0-pre` tag was published anywhere | tag exists locally; no remote configured | A consumer cannot pin the release commit | Add a remote and push tags (Phase 84) |

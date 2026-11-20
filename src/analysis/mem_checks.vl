@@ -26,12 +26,12 @@ use "../frontend/token.vl"
 // src/backend/codegen_call.vl can lower. Order is the ladder's dispatch order
 // so the diagnostic stays stable.
 act mem_valid_members() -> string {
-    return "alloc, heap_alloc, free, realloc, copy, move, set, used, heap_used, current, alloc_with, create_arena, destroy_arena"
+    return "alloc, heap_alloc, free, realloc, copy, move, set, overlaps, used, heap_used, current, alloc_with, create_arena, destroy_arena"
 }
 
 act mem_is_known_member(member: string) -> bool {
     if member == "alloc" or member == "heap_alloc" or member == "free" or member == "realloc" { return true }
-    if member == "copy" or member == "move" or member == "set" { return true }
+    if member == "copy" or member == "move" or member == "set" or member == "overlaps" { return true }
     if member == "used" or member == "heap_used" or member == "current" { return true }
     if member == "alloc_with" or member == "create_arena" or member == "destroy_arena" { return true }
     return false
@@ -125,6 +125,26 @@ act mem_check_alloc_with(st: @SymbolTable, expr: @ExprNode) -> bool {
     return true
 }
 
+// mem.overlaps: (pointer a, pointer b, byte count a, byte count b) -> bool
+act mem_check_overlaps(st: @SymbolTable, expr: @ExprNode) -> bool {
+    if not mem_expect_arity(st, expr, "overlaps", 4, ": (pointer a, pointer b, byte count a, byte count b)") { return false }
+    let a = infer_expr_type(st, expr.first_arg)
+    if not mem_is_ptrty(a) { return mem_report(st, expr, mem_got_msg("overlaps", " expects pointer arguments", a)) }
+    let b = infer_expr_type(st, expr.first_arg.next)
+    if not mem_is_ptrty(b) { return mem_report(st, expr, mem_got_msg("overlaps", " expects pointer arguments", b)) }
+    let la = infer_expr_type(st, expr.first_arg.next.next)
+    if not mem_is_countable(la) { return mem_report(st, expr, mem_got_msg("overlaps", " expects an integer byte count", la)) }
+    let lb = infer_expr_type(st, expr.first_arg.next.next.next)
+    if not mem_is_countable(lb) { return mem_report(st, expr, mem_got_msg("overlaps", " expects an integer byte count", lb)) }
+    if expr.first_arg.next.next.kind == EXPR_UNARY and expr.first_arg.next.next.op == TOK_MINUS and expr.first_arg.next.next.operand.kind == EXPR_INT {
+        return mem_report(st, expr, "mem.overlaps expects non-negative byte counts")
+    }
+    if expr.first_arg.next.next.next.kind == EXPR_UNARY and expr.first_arg.next.next.next.op == TOK_MINUS and expr.first_arg.next.next.next.operand.kind == EXPR_INT {
+        return mem_report(st, expr, "mem.overlaps expects non-negative byte counts")
+    }
+    return true
+}
+
 act mem_byte_sig(member: string) -> string {
     if member == "copy" or member == "move" { return ": (pointer dest, pointer src, byte count)" }
     if member == "set" { return ": (pointer dest, byte value, byte count)" }
@@ -161,6 +181,7 @@ act check_mem_call(st: @SymbolTable, expr: @ExprNode, member: string) -> bool {
     }
     if member == "alloc" or member == "heap_alloc" { return mem_check_alloc(st, expr, member) }
     if member == "alloc_with" { return mem_check_alloc_with(st, expr) }
+    if member == "overlaps" { return mem_check_overlaps(st, expr) }
 
     // §4.3 byte primitives: copy/move/set/realloc keep the cm43 walls.
     if not mem_expect_arity(st, expr, member, 3, mem_byte_sig(member)) { return false }
