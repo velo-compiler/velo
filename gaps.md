@@ -1140,7 +1140,29 @@ an authenticated-encryption API that refuses nonce reuse via a `?` handle.
 the OS trust store where available. Minimum viable: X25519 key exchange
 (`std/crypto/x25519.vl`), Ed25519 verification for certificates, and a clear
 `tls_verify_peer` default of `true`. Test against a fixed local server with a
-pinned certificate; include one negative test per verification failure mode.
+pinned certificate; include one negative test per verification failure mode. - [COMPLETED] ✅
+- *Former Defect:* Velo lacked TLS transport security; any networked communication was restricted to plaintext TCP, with no standard cryptographic primitives for Diffie-Hellman key exchange (RFC 7748 X25519), digital signature verification (RFC 8032 Ed25519), key derivation (RFC 5869 HKDF), or TLS 1.3 handshake and record encapsulation (RFC 8446).
+- *Fix Applied:*
+  - Implemented RFC 5869 HKDF-SHA256 and RFC 8446 §7.1 TLS 1.3 HKDF label expansion (`tls13_hkdf_expand_label`, `tls13_derive_secret`) in `std/crypto/hkdf.vl`.
+  - Implemented RFC 7748 X25519 Montgomery curve scalar multiplication (`x25519_scalarmult`, `x25519_public_key`, `x25519_keypair`) with 16-bit limb field arithmetic modulo $2^{255}-19$, constant-time ladder swaps, scalar bit-clamping, and small-order rejection in `std/crypto/x25519.vl`.
+  - Implemented RFC 8032 Ed25519 digital signature verification (`ed25519_verify`, `ed25519_verify_str`) with Edwards curve point decompression, order $L$ scalar reduction, and group multiplication in `std/crypto/ed25519.vl`.
+  - Implemented RFC 8446 §7.1 TLS 1.3 key schedule in `std/tls/key_schedule.vl`, deriving early secrets, handshake secrets, master secrets, traffic secrets, ChaCha20-Poly1305 32-byte keys, 12-byte IVs, and Finished `verify_data`.
+  - Implemented RFC 8446 §5 TLS 1.3 record layer in `std/tls/record.vl` with sequence-number AEAD nonce derivation (`iv ^ seq_num`), additional data binding, and trailing-zero padding stripping for inner ContentType recovery.
+  - Implemented X.509 DER certificate parsing in `std/tls/x509.vl` with Subject Alternative Name (SAN) and Common Name (CN) extraction, wildcard/exact hostname matching (`x509_verify_hostname`), certificate SHA-256 fingerprint pinning (`x509_verify_pinned_cert`), Ed25519 SubjectPublicKeyInfo extraction, and RFC 8446 §4.4.3 `CertificateVerify` signature validation (`x509_verify_tls13_cert_verify`).
+  - Implemented RFC 8446 TLS 1.3 client handshake engine in `std/tls/handshake.vl` with ClientHello generation (X25519 key share, SNI, supported versions), ServerHello parsing, server flight validation (`EncryptedExtensions`, `Certificate`, `CertificateVerify`, `Finished`), Client `Finished` generation, and post-handshake record resilience.
+  - Implemented high-level client API in `std/tls/client.vl` with `TlsClientConfig` (enforcing `verify_peer: true` default), `TlsSocket`, `tls_connect`, `tls_write`, `tls_write_str`, `tls_read`, `tls_read_str`, and `tls_close`.
+  - Fixed compiler outcome struct member access codegen in `src/backend/codegen_expr.vl` to always emit dot operator on value outcome structs.
+  - Re-bootstrapped compiler chain (`bin/velo.exe` $\rightarrow$ `bin/velo_gen2.exe` $\rightarrow$ `bin/velo_gen3.exe` $\rightarrow$ `bin/velo.exe`), verified byte-identical C emission determinism, and refreshed `bootstrap.c`.
+- *Residual Limitation:* Minimum viable TLS 1.3 implementation supports `TLS_CHACHA20_POLY1305_SHA256` with X25519 and Ed25519 certificates with SHA-256 fingerprint pinning and hostname validation; RSA/ECDSA certificates and full X.509 PKI trust store chain resolution will be expanded in P1.
+- *Verification:*
+  - Created native test suites `std/tests/crypto/hkdf_test.vl`, `std/tests/crypto/x25519_test.vl`, and `std/tests/crypto/ed25519_test.vl` covering RFC 5869, RFC 8448, RFC 7748, and RFC 8032 test vectors.
+  - Added test cases to `tests/test_std_crypto.py` covering HKDF, X25519, and Ed25519.
+  - Created `tests/test_std_tls.py` with 4 test suites:
+    - `test_tls_positive_handshake_and_echo`: full TLS 1.3 handshake with X25519 key exchange, Ed25519 cert verification, Finished mutual validation, and bidirectional encrypted application data exchange.
+    - `test_tls_negative_untrusted_peer`: verifies fail-closed rejection with `TlsUntrustedPeer` on certificate fingerprint mismatch.
+    - `test_tls_negative_hostname_mismatch`: verifies fail-closed rejection with `TlsHostnameMismatch` on CN/SAN hostname mismatch.
+    - `test_tls_negative_tampered_record`: verifies fail-closed rejection with `TlsTamperedRecord` when record ciphertext is corrupted.
+  - Verified triple-bootstrap compiler determinism and bootstrap snapshot (`test_stage2_bootstrap.py`, `test_bootstrap_snapshot.py`).
 
 **73.8** Wire `https://` into `std/http/client.vl` and fail with a named error
 when TLS is unavailable rather than silently downgrading.

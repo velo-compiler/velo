@@ -1,0 +1,200 @@
+// std.tls.x509 — X.509 Certificate and Trust Evaluation for TLS 1.3.
+use "../crypto/sha256.vl"
+use "../crypto/subtle.vl"
+use "../crypto/hex.vl"
+use "../crypto/ed25519.vl"
+use "../mem/heap.vl"
+
+// Checks if character is uppercase ASCII.
+act x509_to_lower(c: u8) -> u8 {
+    if c >= 'A' and c <= 'Z' {
+        return (c + 32) as u8
+    }
+    return c
+}
+
+// Case-insensitive ASCII string equality.
+act x509_str_eq_ignore_case(a: string, b: string) -> bool {
+    if a == null or b == null { return false }
+    let len_a = str.len(a)
+    let len_b = str.len(b)
+    if len_a != len_b { return false }
+    mut i: usize = 0
+    loop i < len_a {
+        if x509_to_lower(a[i]) != x509_to_lower(b[i]) { return false }
+        i += 1
+    }
+    return true
+}
+
+// Matches a certificate domain pattern (exact or wildcard *.domain) against requested hostname.
+act x509_match_hostname(pattern: string, host: string) -> bool {
+    if pattern == null or host == null { return false }
+    if x509_str_eq_ignore_case(pattern, host) { return true }
+
+    let plen = str.len(pattern)
+    let hlen = str.len(host)
+
+    // Wildcard support: *.example.com
+    if plen > 2 and pattern[0] == '*' and pattern[1] == '.' {
+        let suffix_len = plen - 2
+        if hlen <= suffix_len { return false }
+        let h_offset = hlen - suffix_len
+
+        // Check suffix matches
+        mut i: usize = 0
+        loop i < suffix_len {
+            if x509_to_lower(pattern[2 + i]) != x509_to_lower(host[h_offset + i]) { return false }
+            i += 1
+        }
+        // Ensure the wildcard does not span across subdomains (e.g. *.foo.com matches bar.foo.com, not a.b.foo.com)
+        i = 0
+        loop i < h_offset - 1 {
+            if host[i] == '.' { return false }
+            i += 1
+        }
+        return true
+    }
+    return false
+}
+
+// Extracts the 32-byte Ed25519 subject public key from an X.509 DER certificate.
+// Returns true on success, false if certificate does not contain an Ed25519 key.
+act x509_extract_ed25519_pubkey(cert_der: @u8, cert_len: usize, out_pubkey: @u8) -> bool {
+    if cert_der == null or cert_len < 40 or out_pubkey == null { return false }
+
+    // Pattern for Ed25519 SubjectPublicKeyInfo:
+    // 0x06 0x03 0x2b 0x65 0x70  (OID 1.3.101.112)
+    // 0x03 0x21 0x00            (BIT STRING len 33, 0 unused bits)
+    // followed by 32 bytes of public key.
+    if cert_len < 40 { return false }
+    let limit = cert_len - 40
+    mut i: usize = 0
+    loop i <= limit {
+        if cert_der[i]     == (0x06 as u8) and
+           cert_der[i + 1] == (0x03 as u8) and
+           cert_der[i + 2] == (0x2b as u8) and
+           cert_der[i + 3] == (0x65 as u8) and
+           cert_der[i + 4] == (0x70 as u8) and
+           cert_der[i + 5] == (0x03 as u8) and
+           cert_der[i + 6] == (0x21 as u8) and
+           cert_der[i + 7] == (0x00 as u8) {
+            mut k: usize = 0
+            loop k < 32 {
+                out_pubkey[k] = cert_der[i + 8 + k]
+                k += 1
+            }
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// Scans an X.509 DER certificate for DNS SANs and Common Name matching the target hostname.
+act x509_verify_hostname(cert_der: @u8, cert_len: usize, expected_host: string) -> bool {
+    if cert_der == null or cert_len == 0 or expected_host == null { return false }
+    let hlen = str.len(expected_host)
+    if hlen == 0 { return false }
+
+    // 1. Scan for Subject Alternative Names (dNSName tag: 0x82 len name)
+    mut i: usize = 0
+    loop i + 2 < cert_len {
+        if cert_der[i] == (0x82 as u8) {
+            let nlen = cert_der[i + 1] as usize
+            if i + 2 + nlen <= cert_len and nlen > 0 and nlen < 256 {
+                let name_buf: @u8 = heap_alloc(nlen + 1) as @u8
+                mut k: usize = 0
+                loop k < nlen { name_buf[k] = cert_der[i + 2 + k]; k += 1 }
+                name_buf[nlen] = 0 as u8
+                let matched = x509_match_hostname(name_buf as string, expected_host)
+                heap_free(name_buf as @void)
+                if matched { return true }
+            }
+        }
+        i += 1
+    }
+
+    // 2. Fallback: Common Name (OID 2.5.4.3: 0x06 0x03 0x55 0x04 0x03)
+    if cert_len >= 8 {
+        let cn_limit = cert_len - 8
+        i = 0
+        loop i <= cn_limit {
+            if cert_der[i]     == (0x06 as u8) and
+               cert_der[i + 1] == (0x03 as u8) and
+               cert_der[i + 2] == (0x55 as u8) and
+               cert_der[i + 3] == (0x04 as u8) and
+               cert_der[i + 4] == (0x03 as u8) {
+                // Next byte is ASN.1 string tag (e.g. 0x0c UTF8String, 0x13 PrintableString)
+                let str_tag = cert_der[i + 5]
+                if str_tag == (0x0c as u8) or str_tag == (0x13 as u8) or str_tag == (0x16 as u8) {
+                    let cn_len = cert_der[i + 6] as usize
+                    if i + 7 + cn_len <= cert_len and cn_len > 0 and cn_len < 256 {
+                        let cn_buf: @u8 = heap_alloc(cn_len + 1) as @u8
+                        mut k: usize = 0
+                        loop k < cn_len { cn_buf[k] = cert_der[i + 7 + k]; k += 1 }
+                        cn_buf[cn_len] = 0 as u8
+                        let matched = x509_match_hostname(cn_buf as string, expected_host)
+                        heap_free(cn_buf as @void)
+                        if matched { return true }
+                    }
+                }
+            }
+            i += 1
+        }
+    }
+
+    return false
+}
+
+// Verifies certificate pinning against pinned DER bytes or SHA-256 fingerprint hex.
+act x509_verify_pinned_cert(cert_der: @u8, cert_len: usize, pinned_der: @u8, pinned_len: usize, pinned_fp_hex: string) -> bool {
+    if cert_der == null or cert_len == 0 { return false }
+
+    // Direct byte comparison
+    if pinned_der != null and pinned_len > 0 {
+        if cert_len != pinned_len { return false }
+        return crypto_secure_eq(cert_der, pinned_der, cert_len)
+    }
+
+    // SHA-256 fingerprint comparison
+    if pinned_fp_hex != null and str.len(pinned_fp_hex) == 64 {
+        let fp: @u8 = heap_alloc(32) as @u8
+        sha256_bytes(cert_der, cert_len, fp)
+        let fp_hex = bytes_to_hex(fp, 32)
+        let eq = crypto_secure_eq_str(fp_hex, pinned_fp_hex)
+        heap_free(fp as @void)
+        return eq
+    }
+
+    return false
+}
+
+// Verifies RFC 8446 Section 4.4.3 server CertificateVerify message using Ed25519.
+// Context: 64 spaces || "TLS 1.3, server CertificateVerify" || 0x00 || transcript_hash (32 bytes).
+act x509_verify_tls13_cert_verify(ed25519_pk: @u8, transcript_hash_before_cv: @u8, signature: @u8) -> bool {
+    if ed25519_pk == null or transcript_hash_before_cv == null or signature == null { return false }
+
+    let prefix_spaces: usize = 64
+    let label = "TLS 1.3, server CertificateVerify"
+    let label_len: usize = 33
+    let total_len: usize = prefix_spaces + label_len + 1 + 32
+
+    let signed_msg: @u8 = heap_alloc(total_len) as @u8
+    mut pos: usize = 0
+
+    mut i: usize = 0
+    loop i < prefix_spaces { signed_msg[pos] = 0x20 as u8; pos += 1; i += 1 }
+    i = 0
+    loop i < label_len { signed_msg[pos] = label[i]; pos += 1; i += 1 }
+    signed_msg[pos] = 0 as u8
+    pos += 1
+    i = 0
+    loop i < 32 { signed_msg[pos] = transcript_hash_before_cv[i]; pos += 1; i += 1 }
+
+    let valid = ed25519_verify(ed25519_pk, signed_msg, total_len, signature)
+
+    crypto_zero(signed_msg, total_len)
+    heap_free(signed_msg as @void)
+    return valid
+}

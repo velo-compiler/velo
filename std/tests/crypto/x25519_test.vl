@@ -1,0 +1,87 @@
+// Tests for std.crypto.x25519 (RFC 7748)
+use "../../crypto/x25519.vl"
+use "../../crypto/hex.vl"
+use "../../crypto/subtle.vl"
+use "../../mem/heap.vl"
+use "../../io/print.vl"
+
+act main() -> i32 {
+    let alice_priv_hex = "77076d0a7318a57d3c16c172515253046dd30441f33e2872e45a831131002226"
+    let alice_pub_hex  = "65073315a5b0258465a51839108cf3678ea82dfa162557e1cbabcfce4c206c1d"
+
+    let bob_priv_hex   = "5dab087e624a8a4b79e17f8ab829c916c9150d4f295ce2dcdfb297b94e20c08b"
+    let bob_pub_hex    = "5cac61f0a06d4691395c05894b125e6c76c98defce998ec4abdfa99f4fa9fd06"
+
+    let shared_hex     = "72431486181a5e028fa1efc0177c30b38f51b932c915a09070c6fdb0b0f73447"
+
+    let a_priv: @u8 = heap_alloc(32) as @u8
+    hex_to_bytes(alice_priv_hex, a_priv, 32)
+    let a_pub: @u8 = heap_alloc(32) as @u8
+    x25519_public_key(a_priv, a_pub)
+
+    let a_pub_computed = bytes_to_hex(a_pub, 32)
+    if not crypto_secure_eq_str(a_pub_computed, alice_pub_hex) {
+        println_str("Alice public key mismatch")
+        return 1
+    }
+
+    let b_priv: @u8 = heap_alloc(32) as @u8
+    hex_to_bytes(bob_priv_hex, b_priv, 32)
+    let b_pub: @u8 = heap_alloc(32) as @u8
+    x25519_public_key(b_priv, b_pub)
+
+    let b_pub_computed = bytes_to_hex(b_pub, 32)
+    if not crypto_secure_eq_str(b_pub_computed, bob_pub_hex) {
+        println_str("Bob public key mismatch")
+        return 2
+    }
+
+    // Alice computes shared secret using Bob's public key
+    let shared_alice: @u8 = heap_alloc(32) as @u8
+    let ok_a = x25519_scalarmult(a_priv, b_pub, shared_alice)
+    if not ok_a {
+        println_str("Alice scalarmult failed")
+        return 3
+    }
+    let shared_a_hex = bytes_to_hex(shared_alice, 32)
+    if not crypto_secure_eq_str(shared_a_hex, shared_hex) {
+        println_str("Alice shared secret mismatch")
+        return 4
+    }
+
+    // Bob computes shared secret using Alice's public key
+    let shared_bob: @u8 = heap_alloc(32) as @u8
+    let ok_b = x25519_scalarmult(b_priv, a_pub, shared_bob)
+    if not ok_b {
+        println_str("Bob scalarmult failed")
+        return 5
+    }
+    let shared_b_hex = bytes_to_hex(shared_bob, 32)
+    if not crypto_secure_eq_str(shared_b_hex, shared_hex) {
+        println_str("Bob shared secret mismatch")
+        return 6
+    }
+
+    // Both shared secrets must be identical
+    if not crypto_secure_eq(shared_alice, shared_bob, 32) {
+        println_str("Shared secret equality check failed")
+        return 7
+    }
+
+    // Random keypair generation smoke test
+    let rand_pub: @u8 = heap_alloc(32) as @u8
+    let rand_priv: @u8 = heap_alloc(32) as @u8
+    let ok_kp = x25519_keypair(rand_pub, rand_priv)
+    if not ok_kp {
+        println_str("Random keypair generation failed")
+        return 8
+    }
+
+    heap_free(a_priv as @void); heap_free(a_pub as @void)
+    heap_free(b_priv as @void); heap_free(b_pub as @void)
+    heap_free(shared_alice as @void); heap_free(shared_bob as @void)
+    heap_free(rand_pub as @void); heap_free(rand_priv as @void)
+
+    println_str("X25519 RFC 7748 tests passed")
+    return 0
+}

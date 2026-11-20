@@ -189,7 +189,7 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             sb_append_char(sb, '(')
             emit_c_expr(sb, st, expr.target)
             sb_append_char(sb, ')')
-            if str.len(target_type) > 0 and target_type[0] == '@' { sb_append_str(sb, "->") } else { sb_append_str(sb, ".") }
+            sb_append_str(sb, ".")
             if expr.member_name == "ok" {
                 sb_append_str(sb, "ok")
             } else {

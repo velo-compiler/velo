@@ -1,0 +1,217 @@
+// std.tls.client — High-level TLS 1.3 Client API and Socket abstraction.
+use "../net/tcp.vl"
+use "../crypto/subtle.vl"
+use "../crypto/hex.vl"
+use "../mem/heap.vl"
+use "handshake.vl"
+use "record.vl"
+
+// Client TLS configuration with secure defaults.
+data TlsClientConfig {
+    verify_peer: bool,
+    server_name: string,
+    pinned_cert_der: @u8,
+    pinned_cert_len: usize,
+    pinned_cert_fp_hex: string
+}
+
+// Active TLS 1.3 client connection socket.
+data TlsSocket {
+    stream: @TcpStream,
+    client_app_key: @u8,
+    client_app_iv: @u8,
+    server_app_key: @u8,
+    server_app_iv: @u8,
+    client_seq: u64,
+    server_seq: u64,
+    is_connected: bool,
+    error_reason: string
+}
+
+// Allocates a TLS client configuration with secure defaults (verify_peer = true).
+act tls_config_new() -> @TlsClientConfig {
+    let cfg = heap_alloc(128) as @TlsClientConfig
+    cfg.verify_peer = true
+    cfg.server_name = ""
+    cfg.pinned_cert_der = null
+    cfg.pinned_cert_len = 0
+    cfg.pinned_cert_fp_hex = ""
+    return cfg
+}
+
+// Connects to a TLS 1.3 server at host:port.
+// Default policy is fail-closed with full peer verification enabled.
+act tls_connect(host: string, port: u16, config: @TlsClientConfig) -> @TlsSocket or string {
+    if host == null or port == 0 {
+        fail "TlsHandshakeFailed"
+    }
+
+    mut effective_cfg = config
+    mut need_free_cfg = false
+    if effective_cfg == null {
+        effective_cfg = tls_config_new()
+        need_free_cfg = true
+    }
+
+    let sni = if effective_cfg.server_name != null and str.len(effective_cfg.server_name) > 0 {
+        effective_cfg.server_name
+    } else {
+        host
+    }
+
+    let stream = tcp_connect(host, port)
+    if stream == null {
+        if need_free_cfg { heap_free(effective_cfg as @void) }
+        fail "TlsHandshakeFailed"
+    }
+
+    // Set 10-second timeout for handshake
+    tcp_set_timeout(stream, 10000 as u32)
+
+    let hs = tls13_handshake_init(stream, sni, effective_cfg.verify_peer, effective_cfg.pinned_cert_der, effective_cfg.pinned_cert_len, effective_cfg.pinned_cert_fp_hex)
+
+    let ok = tls13_client_handshake(hs)
+    if !ok {
+        let err = if hs.error_reason != null and str.len(hs.error_reason) > 0 { hs.error_reason } else { "TlsHandshakeFailed" }
+        tcp_close(stream)
+        heap_free(hs as @void)
+        if need_free_cfg { heap_free(effective_cfg as @void) }
+        fail err
+    }
+
+    // Create socket holding application traffic keys
+    let sock = heap_alloc(256) as @TlsSocket
+    sock.stream = stream
+    sock.client_app_key = hs.client_app_key
+    sock.client_app_iv = hs.client_app_iv
+    sock.server_app_key = hs.server_app_key
+    sock.server_app_iv = hs.server_app_iv
+    sock.client_seq = 0 as u64
+    sock.server_seq = 0 as u64
+    sock.is_connected = true
+    sock.error_reason = ""
+
+    heap_free(hs as @void)
+    if need_free_cfg { heap_free(effective_cfg as @void) }
+    return sock
+}
+
+// Writes encrypted application data to the TLS connection.
+act tls_write(sock: @TlsSocket, data: @u8, len: usize) -> i32 or string {
+    if sock == null or !sock.is_connected or sock.stream == null {
+        fail "TlsSocketClosed"
+    }
+    if data == null or len == 0 { return 0 }
+
+    let out_buf: @u8 = heap_alloc(5 + len + 1 + 16) as @u8
+    let out_len: @usize = heap_alloc(8) as @usize
+
+    let ok = tls13_encrypt_record(sock.client_app_key, sock.client_app_iv, sock.client_seq, TLS_RECORD_APPLICATION_DATA, data, len, out_buf, out_len)
+    sock.client_seq += (1 as u64)
+
+    if !ok {
+        heap_free(out_buf as @void); heap_free(out_len as @void)
+        fail "TlsEncryptionFailed"
+    }
+
+    let written = tcp_write(sock.stream, out_buf, out_len[0])
+    heap_free(out_buf as @void); heap_free(out_len as @void)
+
+    if written < 0 { fail "TlsSocketWriteError" }
+    return len as i32
+}
+
+// Writes a string as encrypted application data.
+act tls_write_str(sock: @TlsSocket, text: string) -> i32 or string {
+    if text == null { return 0 }
+    return tls_write(sock, text as @u8, str.len(text))
+}
+
+// Reads and decrypts an application data record from the TLS connection into out_buf.
+act tls_read(sock: @TlsSocket, out_buf: @u8, max_len: usize) -> i32 or string {
+    if sock == null or !sock.is_connected or sock.stream == null {
+        fail "TlsSocketClosed"
+    }
+    if out_buf == null or max_len == 0 { return 0 }
+
+    let raw_buf: @u8 = heap_alloc(16384 + 512) as @u8
+    let raw_len: @usize = heap_alloc(8) as @usize
+    let raw_type: @u8 = heap_alloc(1) as @u8
+    let pt_buf: @u8 = heap_alloc(16384 + 512) as @u8
+    let pt_len: @usize = heap_alloc(8) as @usize
+    let inner_type: @u8 = heap_alloc(1) as @u8
+
+    mut read_done = false
+    mut ret_len: i32 = 0
+    mut err_reason: string = ""
+
+    loop !read_done {
+        let ok_read = tls_read_raw_record(sock.stream, raw_buf, raw_len, raw_type)
+        if !ok_read {
+            err_reason = "TlsSocketReadError"
+            read_done = true
+        } else {
+            let ok_dec = tls13_decrypt_record(sock.server_app_key, sock.server_app_iv, sock.server_seq, raw_buf, raw_len[0], pt_buf, pt_len, inner_type)
+            sock.server_seq += (1 as u64)
+
+            if !ok_dec {
+                err_reason = "TlsTamperedRecord"
+                read_done = true
+            } else if inner_type[0] == TLS_RECORD_APPLICATION_DATA {
+                mut copy_len = pt_len[0]
+                if copy_len > max_len { copy_len = max_len }
+                mut i: usize = 0
+                loop i < copy_len {
+                    out_buf[i] = pt_buf[i]
+                    i += 1
+                }
+                ret_len = copy_len as i32
+                read_done = true
+            } else if inner_type[0] == TLS_RECORD_ALERT {
+                ret_len = 0
+                read_done = true
+            }
+        }
+    }
+
+    crypto_zero(pt_buf, 16384 + 512)
+    heap_free(raw_buf as @void); heap_free(raw_len as @void); heap_free(raw_type as @void)
+    heap_free(pt_buf as @void); heap_free(pt_len as @void); heap_free(inner_type as @void)
+
+    if str.len(err_reason) > 0 {
+        fail err_reason
+    }
+    return ret_len
+}
+
+// Reads decrypted application data into a newly allocated string.
+act tls_read_str(sock: @TlsSocket, max_len: usize) -> string or string {
+    let buf: @u8 = heap_alloc(max_len + 1) as @u8
+    let n = tls_read(sock, buf, max_len) or return
+    buf[n as usize] = 0 as u8
+    let res = buf as string
+    return res
+}
+
+// Securely closes the TLS connection and wipes application keys.
+act tls_close(sock: @TlsSocket) {
+    if sock == null { return }
+    if sock.stream != null {
+        tcp_close(sock.stream)
+        sock.stream = null
+    }
+    if sock.client_app_key != null {
+        crypto_zero(sock.client_app_key, 32); heap_free(sock.client_app_key as @void); sock.client_app_key = null
+    }
+    if sock.client_app_iv != null {
+        crypto_zero(sock.client_app_iv, 12); heap_free(sock.client_app_iv as @void); sock.client_app_iv = null
+    }
+    if sock.server_app_key != null {
+        crypto_zero(sock.server_app_key, 32); heap_free(sock.server_app_key as @void); sock.server_app_key = null
+    }
+    if sock.server_app_iv != null {
+        crypto_zero(sock.server_app_iv, 12); heap_free(sock.server_app_iv as @void); sock.server_app_iv = null
+    }
+    sock.is_connected = false
+    heap_free(sock as @void)
+}

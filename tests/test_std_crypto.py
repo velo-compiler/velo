@@ -121,6 +121,42 @@ def test_std_crypto_chacha20poly1305():
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "OK: std.crypto.chacha20poly1305 tests passed" in res.stdout
 
+def test_std_crypto_hkdf():
+    test_vl = REPO_ROOT / "std" / "tests" / "crypto" / "hkdf_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True, encoding="utf-8", errors="replace",
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "HKDF RFC 5869 & RFC 8448 tests passed" in res.stdout
+
+def test_std_crypto_x25519():
+    test_vl = REPO_ROOT / "std" / "tests" / "crypto" / "x25519_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True, encoding="utf-8", errors="replace",
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "X25519 RFC 7748 tests passed" in res.stdout
+
+def test_std_crypto_ed25519():
+    test_vl = REPO_ROOT / "std" / "tests" / "crypto" / "ed25519_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True, encoding="utf-8", errors="replace",
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "Ed25519 RFC 8032 tests passed" in res.stdout
+
 def test_std_crypto_module_import():
     test_vl = REPO_ROOT / "std" / "tests" / "crypto_module_import_test.vl"
     res = subprocess.run(

@@ -1,0 +1,387 @@
+// std.tls.handshake — RFC 8446 TLS 1.3 Client Handshake Engine.
+use "../net/tcp.vl"
+use "../crypto/rand.vl"
+use "../crypto/sha256.vl"
+use "../crypto/subtle.vl"
+use "../crypto/x25519.vl"
+use "../mem/heap.vl"
+use "key_schedule.vl"
+use "record.vl"
+use "x509.vl"
+
+data TlsHandshakeState {
+    stream: @TcpStream,
+    server_name: string,
+    verify_peer: bool,
+    pinned_der: @u8,
+    pinned_len: usize,
+    pinned_fp_hex: string,
+
+    client_random: @u8,
+    client_priv: @u8,
+    client_pub: @u8,
+
+    sha_state: Sha256State,
+    error_reason: string,
+
+    client_hs_key: @u8,
+    client_hs_iv: @u8,
+    server_hs_key: @u8,
+    server_hs_iv: @u8,
+    client_hs_traffic: @u8,
+    server_hs_traffic: @u8,
+    hs_secret: @u8,
+
+    client_app_key: @u8,
+    client_app_iv: @u8,
+    server_app_key: @u8,
+    server_app_iv: @u8,
+
+    client_seq: u64,
+    server_seq: u64
+}
+
+act tls_sha256_snapshot(src: @Sha256State, out_digest: @u8) {
+    mut copy: Sha256State
+    copy.h0 = src.h0; copy.h1 = src.h1; copy.h2 = src.h2; copy.h3 = src.h3
+    copy.h4 = src.h4; copy.h5 = src.h5; copy.h6 = src.h6; copy.h7 = src.h7
+    copy.buf_len = src.buf_len; copy.total_bytes = src.total_bytes
+    copy.buf = heap_alloc(64) as @u8
+    mut i: usize = 0
+    loop i < src.buf_len { copy.buf[i] = src.buf[i]; i += 1 }
+    sha256_final(@copy, out_digest)
+}
+
+act tls_stream_read_exact(stream: @TcpStream, buf: @u8, count: usize) -> bool {
+    mut pos: usize = 0
+    loop pos < count {
+        let n = tcp_read(stream, buf + pos, count - pos)
+        if n <= 0 { return false }
+        pos += n as usize
+    }
+    return true
+}
+
+act tls_read_raw_record(stream: @TcpStream, out_buf: @u8, out_len: @usize, out_type: @u8) -> bool {
+    let hdr: @u8 = heap_alloc(5) as @u8
+    if !tls_stream_read_exact(stream, hdr, 5) {
+        heap_free(hdr as @void)
+        return false
+    }
+    let r_type = hdr[0]
+    let frag_len = ((hdr[3] as usize) << 8) | (hdr[4] as usize)
+    out_type[0] = r_type
+    mut i: usize = 0
+    loop i < 5 { out_buf[i] = hdr[i]; i += 1 }
+    heap_free(hdr as @void)
+
+    if !tls_stream_read_exact(stream, out_buf + 5, frag_len) {
+        return false
+    }
+    out_len[0] = 5 + frag_len
+    return true
+}
+
+act tls13_handshake_init(stream: @TcpStream, server_name: string, verify_peer: bool, pinned_der: @u8, pinned_len: usize, pinned_fp_hex: string) -> @TlsHandshakeState {
+    let s = heap_alloc(512) as @TlsHandshakeState
+    s.stream = stream
+    s.server_name = server_name
+    s.verify_peer = verify_peer
+    s.pinned_der = pinned_der
+    s.pinned_len = pinned_len
+    s.pinned_fp_hex = pinned_fp_hex
+    s.error_reason = ""
+
+    s.client_random = heap_alloc(32) as @u8
+    crypto_random_bytes(s.client_random, 32)
+    s.client_priv = heap_alloc(32) as @u8
+    s.client_pub = heap_alloc(32) as @u8
+    x25519_keypair(s.client_pub, s.client_priv)
+
+    sha256_init(@s.sha_state)
+    s.client_hs_key = heap_alloc(32) as @u8; s.client_hs_iv = heap_alloc(12) as @u8
+    s.server_hs_key = heap_alloc(32) as @u8; s.server_hs_iv = heap_alloc(12) as @u8
+    s.client_hs_traffic = heap_alloc(32) as @u8; s.server_hs_traffic = heap_alloc(32) as @u8
+    s.hs_secret = heap_alloc(32) as @u8
+
+    s.client_app_key = heap_alloc(32) as @u8; s.client_app_iv = heap_alloc(12) as @u8
+    s.server_app_key = heap_alloc(32) as @u8; s.server_app_iv = heap_alloc(12) as @u8
+    s.client_seq = 0 as u64; s.server_seq = 0 as u64
+    return s
+}
+
+act tls13_build_client_hello(s: @TlsHandshakeState, out_len: @usize) -> @u8 {
+    let sni_len = if s.server_name != null { str.len(s.server_name) } else { 0 as usize }
+    let buf: @u8 = heap_alloc(512 + sni_len) as @u8
+    buf[0] = 0x01 as u8
+    mut p: usize = 4
+    buf[p] = 0x03 as u8; p += 1; buf[p] = 0x03 as u8; p += 1
+
+    mut i: usize = 0
+    loop i < 32 { buf[p] = s.client_random[i]; p += 1; i += 1 }
+
+    buf[p] = 32 as u8; p += 1
+    let sess_id: @u8 = heap_alloc(32) as @u8; crypto_random_bytes(sess_id, 32)
+    i = 0; loop i < 32 { buf[p] = sess_id[i]; p += 1; i += 1 }
+    heap_free(sess_id as @void)
+
+    buf[p] = 0x00; buf[p + 1] = 0x02; buf[p + 2] = 0x13; buf[p + 3] = 0x03; p += 4
+    buf[p] = 0x01; buf[p + 1] = 0x00; p += 2
+
+    let ext_len_pos = p; p += 2
+    // supported_versions (0x002b)
+    buf[p] = 0x00; buf[p+1] = 0x2b; buf[p+2] = 0x00; buf[p+3] = 0x03; buf[p+4] = 0x02; buf[p+5] = 0x03; buf[p+6] = 0x04; p += 7
+    // supported_groups (0x000a)
+    buf[p] = 0x00; buf[p+1] = 0x0a; buf[p+2] = 0x00; buf[p+3] = 0x04; buf[p+4] = 0x00; buf[p+5] = 0x02; buf[p+6] = 0x00; buf[p+7] = 0x1d; p += 8
+    // signature_algorithms (0x000d)
+    buf[p] = 0x00; buf[p+1] = 0x0d; buf[p+2] = 0x00; buf[p+3] = 0x04; buf[p+4] = 0x00; buf[p+5] = 0x02; buf[p+6] = 0x08; buf[p+7] = 0x07; p += 8
+    // key_share (0x0033)
+    buf[p] = 0x00; buf[p+1] = 0x33; buf[p+2] = 0x00; buf[p+3] = 0x26; buf[p+4] = 0x00; buf[p+5] = 0x24; buf[p+6] = 0x00; buf[p+7] = 0x1d; buf[p+8] = 0x00; buf[p+9] = 0x20; p += 10
+    i = 0; loop i < 32 { buf[p] = s.client_pub[i]; p += 1; i += 1 }
+
+    if sni_len > 0 {
+        let sni_ext_len = 5 + sni_len
+        buf[p] = 0x00; buf[p+1] = 0x00; buf[p+2] = ((sni_ext_len >> 8) & 0xff) as u8; buf[p+3] = (sni_ext_len & 0xff) as u8
+        let sni_list_len = 3 + sni_len
+        buf[p+4] = ((sni_list_len >> 8) & 0xff) as u8; buf[p+5] = (sni_list_len & 0xff) as u8; buf[p+6] = 0x00
+        buf[p+7] = ((sni_len >> 8) & 0xff) as u8; buf[p+8] = (sni_len & 0xff) as u8; p += 9
+        i = 0; loop i < sni_len { buf[p] = s.server_name[i]; p += 1; i += 1 }
+    }
+
+    let total_ext = p - (ext_len_pos + 2)
+    buf[ext_len_pos] = ((total_ext >> 8) & 0xff) as u8; buf[ext_len_pos + 1] = (total_ext & 0xff) as u8
+    let hs_len = p - 4
+    buf[1] = ((hs_len >> 16) & 0xff) as u8; buf[2] = ((hs_len >> 8) & 0xff) as u8; buf[3] = (hs_len & 0xff) as u8
+    out_len[0] = p
+    return buf
+}
+
+// Parses ServerHello message, derives DHE shared secret and handshake traffic keys.
+act tls13_parse_server_hello(s: @TlsHandshakeState, hs: @u8, hs_len: usize) -> bool {
+    if hs == null or hs_len < 38 { s.error_reason = "TlsHandshakeFailed"; return false }
+    if hs[0] != (0x02 as u8) { s.error_reason = "TlsHandshakeFailed"; return false }
+
+    let sess_id_len = hs[38] as usize
+    let mut_pos = 39 + sess_id_len
+    if mut_pos + 6 > hs_len { s.error_reason = "TlsHandshakeFailed"; return false }
+
+    // Selected cipher suite must be 0x1303
+    let cs = ((hs[mut_pos] as u16) << 8) | (hs[mut_pos + 1] as u16)
+    if cs != (0x1303 as u16) { s.error_reason = "TlsHandshakeFailed"; return false }
+    let ext_start = mut_pos + 3 // skip cipher suite (2) + compression (1)
+    if ext_start + 2 > hs_len { s.error_reason = "TlsHandshakeFailed"; return false }
+    let ext_total = ((hs[ext_start] as usize) << 8) | (hs[ext_start + 1] as usize)
+    mut p = ext_start + 2
+    let ext_end = p + ext_total
+
+    let server_pub: @u8 = heap_alloc(32) as @u8
+    mut found_key_share = false
+
+    loop p + 4 <= ext_end {
+        let etype = ((hs[p] as u16) << 8) | (hs[p + 1] as u16)
+        let elen  = ((hs[p + 2] as usize) << 8) | (hs[p + 3] as usize)
+        p += 4
+        if etype == (0x0033 as u16) and elen >= 36 {
+            let grp = ((hs[p] as u16) << 8) | (hs[p + 1] as u16)
+            let klen = ((hs[p + 2] as usize) << 8) | (hs[p + 3] as usize)
+            if grp == (0x001d as u16) and klen == 32 {
+                mut i: usize = 0
+                loop i < 32 { server_pub[i] = hs[p + 4 + i]; i += 1 }
+                found_key_share = true
+            }
+        }
+        p += elen
+    }
+
+    if !found_key_share {
+        heap_free(server_pub as @void); s.error_reason = "TlsHandshakeFailed"; return false
+    }
+
+    let dhe_shared: @u8 = heap_alloc(32) as @u8
+    let ok_dhe = x25519_scalarmult(s.client_priv, server_pub, dhe_shared)
+    heap_free(server_pub as @void)
+    if !ok_dhe {
+        heap_free(dhe_shared as @void); s.error_reason = "TlsHandshakeFailed"; return false
+    }
+
+    // Add ServerHello to transcript hash
+    sha256_update(@s.sha_state, hs, hs_len)
+
+    // Compute handshake secret and handshake traffic keys
+    tls13_compute_handshake_secret(dhe_shared, 32, s.hs_secret)
+    crypto_zero(dhe_shared, 32); heap_free(dhe_shared as @void)
+
+    let hs_trans_hash: @u8 = heap_alloc(32) as @u8
+    tls_sha256_snapshot(@s.sha_state, hs_trans_hash)
+    tls13_derive_handshake_traffic_secrets(s.hs_secret, hs_trans_hash, s.client_hs_traffic, s.server_hs_traffic)
+    tls13_derive_traffic_key_iv(s.client_hs_traffic, s.client_hs_key, s.client_hs_iv)
+    tls13_derive_traffic_key_iv(s.server_hs_traffic, s.server_hs_key, s.server_hs_iv)
+    heap_free(hs_trans_hash as @void)
+    return true
+}
+
+// Full TLS 1.3 client handshake execution.
+act tls13_client_handshake(s: @TlsHandshakeState) -> bool {
+    // 1. Send ClientHello in plaintext record
+    let ch_len: @usize = heap_alloc(8) as @usize
+    let ch = tls13_build_client_hello(s, ch_len)
+    sha256_update(@s.sha_state, ch, ch_len[0])
+
+    let full_ch_len = 5 + ch_len[0]
+    let full_ch: @u8 = heap_alloc(full_ch_len) as @u8
+    full_ch[0] = TLS_RECORD_HANDSHAKE; full_ch[1] = 0x03; full_ch[2] = 0x01
+    full_ch[3] = ((ch_len[0] >> 8) & 0xff) as u8; full_ch[4] = (ch_len[0] & 0xff) as u8
+    mut ci: usize = 0
+    loop ci < ch_len[0] { full_ch[5 + ci] = ch[ci]; ci += 1 }
+    tcp_write(s.stream, full_ch, full_ch_len)
+    heap_free(full_ch as @void); heap_free(ch as @void); heap_free(ch_len as @void)
+
+    // 2. Read ServerHello record (ignoring any ChangeCipherSpec 0x14)
+    let raw_buf: @u8 = heap_alloc(16384 + 512) as @u8
+    let raw_len: @usize = heap_alloc(8) as @usize
+    let raw_type: @u8 = heap_alloc(1) as @u8
+
+    mut got_sh = false
+    loop !got_sh {
+        if !tls_read_raw_record(s.stream, raw_buf, raw_len, raw_type) {
+            heap_free(raw_buf as @void); heap_free(raw_len as @void); heap_free(raw_type as @void)
+            s.error_reason = "TlsHandshakeFailed"; return false
+        }
+        if raw_type[0] == TLS_RECORD_HANDSHAKE {
+            got_sh = true
+        } else if raw_type[0] != TLS_RECORD_CHANGE_CIPHER_SPEC {
+            heap_free(raw_buf as @void); heap_free(raw_len as @void); heap_free(raw_type as @void)
+            s.error_reason = "TlsHandshakeFailed"; return false
+        }
+    }
+
+    if !tls13_parse_server_hello(s, raw_buf + 5, raw_len[0] - 5) {
+        heap_free(raw_buf as @void); heap_free(raw_len as @void); heap_free(raw_type as @void)
+        return false
+    }
+
+    // 3. Read protected server flight (EncryptedExtensions, Certificate, CertificateVerify, Finished)
+    let pt_buf: @u8 = heap_alloc(16384 + 512) as @u8
+    let pt_len: @usize = heap_alloc(8) as @usize
+    let inner_type: @u8 = heap_alloc(1) as @u8
+    let server_ed_pk: @u8 = heap_alloc(32) as @u8
+
+    mut handshake_complete = false
+    loop !handshake_complete {
+        if !tls_read_raw_record(s.stream, raw_buf, raw_len, raw_type) {
+            heap_free(raw_buf as @void); heap_free(raw_len as @void); heap_free(raw_type as @void)
+            heap_free(pt_buf as @void); heap_free(pt_len as @void); heap_free(inner_type as @void)
+            heap_free(server_ed_pk as @void); s.error_reason = "TlsHandshakeFailed"; return false
+        }
+        if raw_type[0] == TLS_RECORD_APPLICATION_DATA {
+            let ok_dec = tls13_decrypt_record(s.server_hs_key, s.server_hs_iv, s.server_seq, raw_buf, raw_len[0], pt_buf, pt_len, inner_type)
+            s.server_seq += (1 as u64)
+            if !ok_dec {
+                heap_free(raw_buf as @void); heap_free(raw_len as @void); heap_free(raw_type as @void)
+                heap_free(pt_buf as @void); heap_free(pt_len as @void); heap_free(inner_type as @void)
+                heap_free(server_ed_pk as @void); s.error_reason = "TlsTamperedRecord"; return false
+            }
+            if inner_type[0] == TLS_RECORD_HANDSHAKE {
+                mut pos: usize = 0
+                loop pos < pt_len[0] {
+                    let mtype = pt_buf[pos]
+                    let mlen = ((pt_buf[pos + 1] as usize) << 16) | ((pt_buf[pos + 2] as usize) << 8) | (pt_buf[pos + 3] as usize)
+                    let total_mlen = 4 + mlen
+
+                    if mtype == (0x08 as u8) {
+                        // EncryptedExtensions
+                        sha256_update(@s.sha_state, pt_buf + pos, total_mlen)
+                    } else if mtype == (0x0b as u8) {
+                        // Certificate
+                        let req_ctx_len = pt_buf[pos + 4] as usize
+                        let cert_list_start = pos + 5 + req_ctx_len + 3
+                        let cert_len = ((pt_buf[cert_list_start] as usize) << 16) | ((pt_buf[cert_list_start + 1] as usize) << 8) | (pt_buf[cert_list_start + 2] as usize)
+                        let cert_der = pt_buf + cert_list_start + 3
+
+                        if s.verify_peer {
+                            let has_pin = (s.pinned_der != null and s.pinned_len > 0) or (s.pinned_fp_hex != null and str.len(s.pinned_fp_hex) > 0)
+                            if has_pin {
+                                if !x509_verify_pinned_cert(cert_der, cert_len, s.pinned_der, s.pinned_len, s.pinned_fp_hex) {
+                                    s.error_reason = "TlsUntrustedPeer"; return false
+                                }
+                            } else {
+                                s.error_reason = "TlsUntrustedPeer"; return false
+                            }
+                            if !x509_verify_hostname(cert_der, cert_len, s.server_name) {
+                                s.error_reason = "TlsHostnameMismatch"; return false
+                            }
+                        }
+                        if !x509_extract_ed25519_pubkey(cert_der, cert_len, server_ed_pk) {
+                            s.error_reason = "TlsUntrustedPeer"; return false
+                        }
+                        sha256_update(@s.sha_state, pt_buf + pos, total_mlen)
+                    } else if mtype == (0x0f as u8) {
+                        // CertificateVerify
+                        let hash_before_cv: @u8 = heap_alloc(32) as @u8
+                        tls_sha256_snapshot(@s.sha_state, hash_before_cv)
+                        let sig_len = ((pt_buf[pos + 6] as usize) << 8) | (pt_buf[pos + 7] as usize)
+                        let sig_ptr = pt_buf + pos + 8
+                        if sig_len != 64 or !x509_verify_tls13_cert_verify(server_ed_pk, hash_before_cv, sig_ptr) {
+                            heap_free(hash_before_cv as @void)
+                            s.error_reason = "TlsUntrustedPeer"; return false
+                        }
+                        heap_free(hash_before_cv as @void)
+                        sha256_update(@s.sha_state, pt_buf + pos, total_mlen)
+                    } else if mtype == (0x14 as u8) {
+                        // Finished
+                        let hash_before_fin: @u8 = heap_alloc(32) as @u8
+                        tls_sha256_snapshot(@s.sha_state, hash_before_fin)
+                        let exp_vd: @u8 = heap_alloc(32) as @u8
+                        tls13_compute_finished_verify_data(s.server_hs_traffic, hash_before_fin, exp_vd)
+                        let vd_match = crypto_secure_eq(pt_buf + pos + 4, exp_vd, 32)
+                        heap_free(hash_before_fin as @void); heap_free(exp_vd as @void)
+                        if !vd_match {
+                            s.error_reason = "TlsHandshakeFailed"; return false
+                        }
+                        sha256_update(@s.sha_state, pt_buf + pos, total_mlen)
+                        handshake_complete = true
+                    }
+                    pos += total_mlen
+                }
+            }
+        }
+    }
+
+    // 4. Derive Application Traffic Secrets and Application Keys (from Server Finished snapshot)
+    let app_trans_hash: @u8 = heap_alloc(32) as @u8
+    tls_sha256_snapshot(@s.sha_state, app_trans_hash)
+    let master_secret: @u8 = heap_alloc(32) as @u8
+    tls13_compute_master_secret(s.hs_secret, master_secret)
+    let client_app_secret: @u8 = heap_alloc(32) as @u8
+    let server_app_secret: @u8 = heap_alloc(32) as @u8
+    tls13_derive_app_traffic_secrets(master_secret, app_trans_hash, client_app_secret, server_app_secret)
+    tls13_derive_traffic_key_iv(client_app_secret, s.client_app_key, s.client_app_iv)
+    tls13_derive_traffic_key_iv(server_app_secret, s.server_app_key, s.server_app_iv)
+
+    // 5. Send Client Finished protected record (using handshake keys)
+    let c_fin_msg: @u8 = heap_alloc(36) as @u8
+    c_fin_msg[0] = 0x14 as u8; c_fin_msg[1] = 0x00; c_fin_msg[2] = 0x00; c_fin_msg[3] = 0x20
+    tls13_compute_finished_verify_data(s.client_hs_traffic, app_trans_hash, c_fin_msg + 4)
+
+    let enc_rec: @u8 = heap_alloc(5 + 36 + 1 + 16) as @u8
+    let enc_rec_len: @usize = heap_alloc(8) as @usize
+    tls13_encrypt_record(s.client_hs_key, s.client_hs_iv, s.client_seq, TLS_RECORD_HANDSHAKE, c_fin_msg, 36, enc_rec, enc_rec_len)
+    s.client_seq += (1 as u64)
+    tcp_write(s.stream, enc_rec, enc_rec_len[0])
+    heap_free(c_fin_msg as @void); heap_free(enc_rec as @void); heap_free(enc_rec_len as @void)
+
+    // Clean up sensitive secrets
+    crypto_zero(master_secret, 32); crypto_zero(client_app_secret, 32); crypto_zero(server_app_secret, 32)
+    crypto_zero(s.hs_secret, 32); crypto_zero(s.client_hs_key, 32); crypto_zero(s.server_hs_key, 32)
+    crypto_zero(s.client_hs_traffic, 32); crypto_zero(s.server_hs_traffic, 32)
+    heap_free(app_trans_hash as @void); heap_free(master_secret as @void)
+    heap_free(client_app_secret as @void); heap_free(server_app_secret as @void)
+    heap_free(raw_buf as @void); heap_free(raw_len as @void); heap_free(raw_type as @void)
+    heap_free(pt_buf as @void); heap_free(pt_len as @void); heap_free(inner_type as @void)
+    heap_free(server_ed_pk as @void)
+
+    // Reset sequence numbers for Application Data
+    s.client_seq = 0 as u64
+    s.server_seq = 0 as u64
+    return true
+}

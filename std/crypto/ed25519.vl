@@ -1,0 +1,327 @@
+// std.crypto.ed25519 — Pure Velo RFC 8032 Ed25519 Digital Signature Verification.
+//
+// Implements:
+//   - Edwards-curve arithmetic on Curve25519 (-x^2 + y^2 = 1 - (121665/121666) x^2 y^2)
+//   - Point decompression, negation, addition, scalar base, and scalar multiplication
+//   - Hash reduction modulo group order L = 2^252 + 27742317777372353535851937790883648493
+//   - Constant-time signature verification (ed25519_verify)
+use "../mem/heap.vl"
+use "subtle.vl"
+use "sha512.vl"
+use "x25519.vl"
+use "hex.vl"
+
+mut g_ed_d: @i64 = null
+mut g_ed_d2: @i64 = null
+mut g_ed_x: @i64 = null
+mut g_ed_y: @i64 = null
+mut g_ed_i: @i64 = null
+mut g_ed_l: @i64 = null
+
+act ed25519_ensure_constants() {
+    if g_ed_d != null { return }
+    g_ed_d = heap_alloc(16 * 8) as @i64
+    g_ed_d[0] = 0x78a3 as i64; g_ed_d[1] = 0x1359 as i64; g_ed_d[2] = 0x4dca as i64; g_ed_d[3] = 0x75eb as i64
+    g_ed_d[4] = 0xd8ab as i64; g_ed_d[5] = 0x4141 as i64; g_ed_d[6] = 0x0a4d as i64; g_ed_d[7] = 0x0070 as i64
+    g_ed_d[8] = 0xe898 as i64; g_ed_d[9] = 0x7779 as i64; g_ed_d[10] = 0x4079 as i64; g_ed_d[11] = 0x8cc7 as i64
+    g_ed_d[12] = 0xfe73 as i64; g_ed_d[13] = 0x2b6f as i64; g_ed_d[14] = 0x6cee as i64; g_ed_d[15] = 0x5203 as i64
+
+    g_ed_d2 = heap_alloc(16 * 8) as @i64
+    g_ed_d2[0] = 0xf159 as i64; g_ed_d2[1] = 0x26b2 as i64; g_ed_d2[2] = 0x9b94 as i64; g_ed_d2[3] = 0xebd6 as i64
+    g_ed_d2[4] = 0xb156 as i64; g_ed_d2[5] = 0x8283 as i64; g_ed_d2[6] = 0x149a as i64; g_ed_d2[7] = 0x00e0 as i64
+    g_ed_d2[8] = 0xd130 as i64; g_ed_d2[9] = 0xeef3 as i64; g_ed_d2[10] = 0x80f2 as i64; g_ed_d2[11] = 0x198e as i64
+    g_ed_d2[12] = 0xfce7 as i64; g_ed_d2[13] = 0x56df as i64; g_ed_d2[14] = 0xd9dc as i64; g_ed_d2[15] = 0x2406 as i64
+
+    g_ed_x = heap_alloc(16 * 8) as @i64
+    g_ed_x[0] = 0xd51a as i64; g_ed_x[1] = 0x8f25 as i64; g_ed_x[2] = 0x2d60 as i64; g_ed_x[3] = 0xc956 as i64
+    g_ed_x[4] = 0xa7b2 as i64; g_ed_x[5] = 0x9525 as i64; g_ed_x[6] = 0xc760 as i64; g_ed_x[7] = 0x692c as i64
+    g_ed_x[8] = 0xdc5c as i64; g_ed_x[9] = 0xfdd6 as i64; g_ed_x[10] = 0xe231 as i64; g_ed_x[11] = 0xc0a4 as i64
+    g_ed_x[12] = 0x53fe as i64; g_ed_x[13] = 0xcd6e as i64; g_ed_x[14] = 0x36d3 as i64; g_ed_x[15] = 0x2169 as i64
+
+    g_ed_y = heap_alloc(16 * 8) as @i64
+    g_ed_y[0] = 0x6658 as i64
+    mut i: usize = 1
+    loop i < 16 { g_ed_y[i] = 0x6666 as i64; i += 1 }
+
+    g_ed_i = heap_alloc(16 * 8) as @i64
+    g_ed_i[0] = 0xa0b0 as i64; g_ed_i[1] = 0x4a0e as i64; g_ed_i[2] = 0x1b27 as i64; g_ed_i[3] = 0xc4ee as i64
+    g_ed_i[4] = 0xe478 as i64; g_ed_i[5] = 0xad2f as i64; g_ed_i[6] = 0x1806 as i64; g_ed_i[7] = 0x2f43 as i64
+    g_ed_i[8] = 0xd7a7 as i64; g_ed_i[9] = 0x3dfb as i64; g_ed_i[10] = 0x0099 as i64; g_ed_i[11] = 0x2b4d as i64
+    g_ed_i[12] = 0xdf0b as i64; g_ed_i[13] = 0x4fc1 as i64; g_ed_i[14] = 0x2480 as i64; g_ed_i[15] = 0x2b83 as i64
+
+    g_ed_l = heap_alloc(32 * 8) as @i64
+    crypto_zero(g_ed_l as @u8, 32 * 8)
+    g_ed_l[0] = 0xed as i64; g_ed_l[1] = 0xd3 as i64; g_ed_l[2] = 0xf5 as i64; g_ed_l[3] = 0x5c as i64
+    g_ed_l[4] = 0x1a as i64; g_ed_l[5] = 0x63 as i64; g_ed_l[6] = 0x12 as i64; g_ed_l[7] = 0x58 as i64
+    g_ed_l[8] = 0xd6 as i64; g_ed_l[9] = 0x9c as i64; g_ed_l[10] = 0xf7 as i64; g_ed_l[11] = 0xa2 as i64
+    g_ed_l[12] = 0xde as i64; g_ed_l[13] = 0xf9 as i64; g_ed_l[14] = 0xde as i64; g_ed_l[15] = 0x14 as i64
+    g_ed_l[31] = 0x10 as i64
+}
+
+act ed25519_set(r: @i64, a: @i64) {
+    mut i: usize = 0
+    loop i < 16 { r[i] = a[i]; i += 1 }
+}
+
+act ed25519_add(p: @i64, q: @i64) {
+    ed25519_ensure_constants()
+    let a: @i64 = heap_alloc(16 * 8) as @i64
+    let b: @i64 = heap_alloc(16 * 8) as @i64
+    let c: @i64 = heap_alloc(16 * 8) as @i64
+    let d: @i64 = heap_alloc(16 * 8) as @i64
+    let t: @i64 = heap_alloc(16 * 8) as @i64
+    let e: @i64 = heap_alloc(16 * 8) as @i64
+    let f: @i64 = heap_alloc(16 * 8) as @i64
+    let g: @i64 = heap_alloc(16 * 8) as @i64
+    let h: @i64 = heap_alloc(16 * 8) as @i64
+
+    let px = p; let py = p + 16; let pz = p + 32; let pt = p + 48
+    let qx = q; let qy = q + 16; let qz = q + 32; let qt = q + 48
+
+    x25519_sub(a, py, px)
+    x25519_sub(t, qy, qx)
+    x25519_mul(a, a, t)
+    x25519_add(b, px, py)
+    x25519_add(t, qx, qy)
+    x25519_mul(b, b, t)
+    x25519_mul(c, pt, qt)
+    x25519_mul(c, c, g_ed_d2)
+    x25519_mul(d, pz, qz)
+    x25519_add(d, d, d)
+    x25519_sub(e, b, a)
+    x25519_sub(f, d, c)
+    x25519_add(g, d, c)
+    x25519_add(h, b, a)
+
+    x25519_mul(px, e, f)
+    x25519_mul(py, h, g)
+    x25519_mul(pz, g, f)
+    x25519_mul(pt, e, h)
+
+    heap_free(a as @void); heap_free(b as @void); heap_free(c as @void)
+    heap_free(d as @void); heap_free(t as @void); heap_free(e as @void)
+    heap_free(f as @void); heap_free(g as @void); heap_free(h as @void)
+}
+
+act ed25519_cswap(p: @i64, q: @i64, b: i32) {
+    mut i: usize = 0
+    loop i < 4 {
+        x25519_sel(p + i * 16, q + i * 16, b)
+        i += 1
+    }
+}
+
+act ed25519_pack(r: @u8, p: @i64) {
+    let tx: @i64 = heap_alloc(16 * 8) as @i64
+    let ty: @i64 = heap_alloc(16 * 8) as @i64
+    let zi: @i64 = heap_alloc(16 * 8) as @i64
+
+    x25519_inv(zi, p + 32)
+    x25519_mul(tx, p, zi)
+    x25519_mul(ty, p + 16, zi)
+    x25519_pack(r, ty)
+    r[31] ^= (x25519_par(tx) << 7)
+
+    heap_free(tx as @void); heap_free(ty as @void); heap_free(zi as @void)
+}
+
+act ed25519_scalarmult(p: @i64, q: @i64, s: @u8) {
+    crypto_zero(p as @u8, 64 * 8)
+    p[16] = 1 as i64
+    p[32] = 1 as i64
+
+    mut i: i32 = 255
+    loop i >= 0 {
+        let byte_pos = (i / 8) as usize
+        let bit_pos = ((i & 7) as u8)
+        let b = ((s[byte_pos] >> bit_pos) & (1 as u8)) as i32
+
+        ed25519_cswap(p, q, b)
+        ed25519_add(q, p)
+        ed25519_add(p, p)
+        ed25519_cswap(p, q, b)
+        i -= 1
+    }
+}
+
+act ed25519_scalarbase(p: @i64, s: @u8) {
+    ed25519_ensure_constants()
+    let q: @i64 = heap_alloc(64 * 8) as @i64
+    crypto_zero(q as @u8, 64 * 8)
+    ed25519_set(q, g_ed_x)
+    ed25519_set(q + 16, g_ed_y)
+    q[32] = 1 as i64
+    x25519_mul(q + 48, g_ed_x, g_ed_y)
+    ed25519_scalarmult(p, q, s)
+    heap_free(q as @void)
+}
+
+act ed25519_unpackneg(r: @i64, p: @u8) -> bool {
+    ed25519_ensure_constants()
+    let t: @i64 = heap_alloc(16 * 8) as @i64
+    let chk: @i64 = heap_alloc(16 * 8) as @i64
+    let num: @i64 = heap_alloc(16 * 8) as @i64
+    let den: @i64 = heap_alloc(16 * 8) as @i64
+    let den2: @i64 = heap_alloc(16 * 8) as @i64
+    let den4: @i64 = heap_alloc(16 * 8) as @i64
+    let den6: @i64 = heap_alloc(16 * 8) as @i64
+    let gf0: @i64 = heap_alloc(16 * 8) as @i64; crypto_zero(gf0 as @u8, 16 * 8)
+
+    crypto_zero(r as @u8, 64 * 8)
+    r[32] = 1 as i64
+    x25519_unpack(r + 16, p)
+    x25519_sq(num, r + 16)
+    x25519_mul(den, num, g_ed_d)
+    x25519_sub(num, num, r + 32)
+    x25519_add(den, r + 32, den)
+
+    x25519_sq(den2, den)
+    x25519_sq(den4, den2)
+    x25519_mul(den6, den4, den2)
+    x25519_mul(t, den6, num)
+    x25519_mul(t, t, den)
+
+    x25519_pow2523(t, t)
+    x25519_mul(t, t, num)
+    x25519_mul(t, t, den)
+    x25519_mul(t, t, den)
+    x25519_mul(r, t, den)
+
+    x25519_sq(chk, r)
+    x25519_mul(chk, chk, den)
+    if x25519_neq(chk, num) {
+        x25519_mul(r, r, g_ed_i)
+    }
+
+    x25519_sq(chk, r)
+    x25519_mul(chk, chk, den)
+    if x25519_neq(chk, num) {
+        heap_free(t as @void); heap_free(chk as @void); heap_free(num as @void)
+        heap_free(den as @void); heap_free(den2 as @void); heap_free(den4 as @void)
+        heap_free(den6 as @void); heap_free(gf0 as @void)
+        return false
+    }
+
+    if x25519_par(r) == ((p[31] >> 7) & (1 as u8)) {
+        x25519_sub(r, gf0, r)
+    }
+
+    x25519_mul(r + 48, r, r + 16)
+
+    heap_free(t as @void); heap_free(chk as @void); heap_free(num as @void)
+    heap_free(den as @void); heap_free(den2 as @void); heap_free(den4 as @void)
+    heap_free(den6 as @void); heap_free(gf0 as @void)
+    return true
+}
+
+act ed25519_reduce(r: @u8) {
+    ed25519_ensure_constants()
+    let x: @i64 = heap_alloc(64 * 8) as @i64
+    mut i: usize = 0
+    loop i < 64 { x[i] = r[i] as i64; i += 1 }
+
+    mut carry: i64 = 0
+    mut step_i: i32 = 63
+    loop step_i >= 32 {
+        carry = 0 as i64
+        let ui = step_i as usize
+        mut j: usize = ui - 32
+        loop j < (ui - 12) {
+            x[j] += carry - (16 as i64) * x[ui] * g_ed_l[j - (ui - 32)]
+            carry = (x[j] + (128 as i64)) >> 8
+            x[j] -= carry << 8
+            j += 1
+        }
+        x[ui - 12] += carry
+        x[ui] = 0 as i64
+        step_i -= 1
+    }
+
+    carry = 0 as i64
+    mut j: usize = 0
+    loop j < 32 {
+        x[j] += carry - (x[31] >> 4) * g_ed_l[j]
+        carry = x[j] >> 8
+        x[j] &= (255 as i64)
+        j += 1
+    }
+    j = 0
+    loop j < 32 {
+        x[j] -= carry * g_ed_l[j]
+        j += 1
+    }
+    i = 0
+    loop i < 32 {
+        x[i + 1] += x[i] >> 8
+        r[i] = (x[i] & (255 as i64)) as u8
+        i += 1
+    }
+    heap_free(x as @void)
+}
+
+// Verifies an Ed25519 signature over msg using public_key.
+// signature is 64 bytes (R || S). public_key is 32 bytes.
+act ed25519_verify(public_key: @u8, msg: @u8, msg_len: usize, signature: @u8) -> bool {
+    if public_key == null or signature == null { return false }
+    ed25519_ensure_constants()
+
+    let q: @i64 = heap_alloc(64 * 8) as @i64
+    if !ed25519_unpackneg(q, public_key) {
+        heap_free(q as @void)
+        return false
+    }
+
+    mut s_state: Sha512State
+    s_state.buf = null
+    sha512_init(@s_state)
+    sha512_update(@s_state, signature, 32)
+    sha512_update(@s_state, public_key, 32)
+    if msg != null and msg_len > 0 {
+        sha512_update(@s_state, msg, msg_len)
+    }
+    let h: @u8 = heap_alloc(64) as @u8
+    sha512_final(@s_state, h)
+
+    ed25519_reduce(h)
+
+    let p: @i64 = heap_alloc(64 * 8) as @i64
+    ed25519_scalarmult(p, q, h)
+
+    let q2: @i64 = heap_alloc(64 * 8) as @i64
+    ed25519_scalarbase(q2, signature + 32)
+    ed25519_add(p, q2)
+
+    let t: @u8 = heap_alloc(32) as @u8
+    ed25519_pack(t, p)
+
+    let valid = crypto_secure_eq(signature, t, 32)
+
+    crypto_zero(h, 64); crypto_zero(t, 32)
+    heap_free(q as @void); heap_free(h as @void); heap_free(p as @void)
+    heap_free(q2 as @void); heap_free(t as @void)
+    return valid
+}
+
+// Convenience verification for hex public key and hex signature.
+act ed25519_verify_str(public_key_hex: string, msg: string, signature_hex: string) -> bool {
+    if public_key_hex == null or signature_hex == null { return false }
+    if str.len(public_key_hex) != 64 or str.len(signature_hex) != 128 { return false }
+
+    let pk: @u8 = heap_alloc(32) as @u8
+    hex_to_bytes(public_key_hex, pk, 32)
+    let sig: @u8 = heap_alloc(64) as @u8
+    hex_to_bytes(signature_hex, sig, 64)
+
+    mut m_ptr: @u8 = null
+    mut m_len: usize = 0
+    if msg != null {
+        m_ptr = msg as @u8
+        m_len = str.len(msg)
+    }
+
+    let valid = ed25519_verify(pk, m_ptr, m_len, sig)
+
+    crypto_zero(pk, 32); crypto_zero(sig, 64)
+    heap_free(pk as @void); heap_free(sig as @void)
+    return valid
+}

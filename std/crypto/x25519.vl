@@ -1,0 +1,291 @@
+// std.crypto.x25519 — Pure Velo RFC 7748 Elliptic-Curve Diffie-Hellman on Curve25519.
+//
+// Features:
+//   - Portable 16-bit limb field arithmetic modulo 2^255 - 19
+//   - Constant-time conditional swap (sel25519) and Montgomery ladder
+//   - Automatic clamping of scalar inputs (RFC 7748 Section 5)
+//   - Small-order point detection and rejection (all-zero shared secret)
+//   - Sensitive intermediate state wiped via crypto_zero
+use "../mem/heap.vl"
+use "subtle.vl"
+use "rand.vl"
+
+// =========================================================================
+// 1. Field Arithmetic Modulo 2^255 - 19 (16 x 16-bit limbs)
+// =========================================================================
+
+act x25519_car(o: @i64) {
+    mut i: usize = 0
+    loop i < 16 {
+        o[i] += (1 as i64) << 16
+        let c = o[i] >> 16
+        if i < 15 {
+            o[i + 1] += c - (1 as i64)
+        } else {
+            o[0] += (38 as i64) * (c - (1 as i64))
+        }
+        o[i] -= c << 16
+        i += 1
+    }
+}
+
+act x25519_sel(p: @i64, q: @i64, b: i32) {
+    let mask = if b != 0 { 0 - (1 as i64) } else { 0 as i64 }
+    mut i: usize = 0
+    loop i < 16 {
+        let t = mask & (p[i] ^ q[i])
+        p[i] ^= t
+        q[i] ^= t
+        i += 1
+    }
+}
+
+act x25519_pack(out_bytes: @u8, n: @i64) {
+    let t: @i64 = heap_alloc(16 * 8) as @i64
+    let m: @i64 = heap_alloc(16 * 8) as @i64
+    mut i: usize = 0
+    loop i < 16 { t[i] = n[i]; i += 1 }
+
+    x25519_car(t)
+    x25519_car(t)
+    x25519_car(t)
+
+    mut j: usize = 0
+    loop j < 2 {
+        m[0] = t[0] - (0xffed as i64)
+        i = 1
+        loop i < 15 {
+            m[i] = t[i] - (0xffff as i64) - ((m[i - 1] >> 16) & (1 as i64))
+            m[i - 1] &= (0xffff as i64)
+            i += 1
+        }
+        m[15] = t[15] - (0x7fff as i64) - ((m[14] >> 16) & (1 as i64))
+        let b = ((m[15] >> 16) & (1 as i64)) as i32
+        m[14] &= (0xffff as i64)
+        x25519_sel(t, m, 1 - b)
+        j += 1
+    }
+
+    i = 0
+    loop i < 16 {
+        out_bytes[2 * i] = (t[i] & (0xff as i64)) as u8
+        out_bytes[2 * i + 1] = ((t[i] >> 8) & (0xff as i64)) as u8
+        i += 1
+    }
+
+    crypto_zero(t as @u8, 16 * 8)
+    crypto_zero(m as @u8, 16 * 8)
+    heap_free(t as @void)
+    heap_free(m as @void)
+}
+
+act x25519_unpack(o: @i64, in_bytes: @u8) {
+    mut i: usize = 0
+    loop i < 16 {
+        let lo = in_bytes[2 * i] as i64
+        let hi = (in_bytes[2 * i + 1] as i64) << 8
+        o[i] = lo | hi
+        i += 1
+    }
+    o[15] &= (0x7fff as i64)
+}
+
+act x25519_add(o: @i64, a: @i64, b: @i64) {
+    mut i: usize = 0
+    loop i < 16 { o[i] = a[i] + b[i]; i += 1 }
+}
+
+act x25519_sub(o: @i64, a: @i64, b: @i64) {
+    mut i: usize = 0
+    loop i < 16 { o[i] = a[i] - b[i]; i += 1 }
+}
+
+act x25519_mul(o: @i64, a: @i64, b: @i64) {
+    let t: @i64 = heap_alloc(31 * 8) as @i64
+    crypto_zero(t as @u8, 31 * 8)
+
+    mut i: usize = 0
+    loop i < 16 {
+        mut j: usize = 0
+        loop j < 16 {
+            t[i + j] += a[i] * b[j]
+            j += 1
+        }
+        i += 1
+    }
+
+    i = 0
+    loop i < 15 {
+        t[i] += (38 as i64) * t[i + 16]
+        i += 1
+    }
+
+    i = 0
+    loop i < 16 { o[i] = t[i]; i += 1 }
+
+    x25519_car(o)
+    x25519_car(o)
+
+    crypto_zero(t as @u8, 31 * 8)
+    heap_free(t as @void)
+}
+
+act x25519_sq(o: @i64, a: @i64) {
+    x25519_mul(o, a, a)
+}
+
+act x25519_inv(o: @i64, inp: @i64) {
+    let c: @i64 = heap_alloc(16 * 8) as @i64
+    mut k: usize = 0
+    loop k < 16 { c[k] = inp[k]; k += 1 }
+
+    mut a: i32 = 253
+    loop a >= 0 {
+        x25519_sq(c, c)
+        if a != 2 and a != 4 {
+            x25519_mul(c, c, inp)
+        }
+        a -= 1
+    }
+
+    k = 0
+    loop k < 16 { o[k] = c[k]; k += 1 }
+
+    crypto_zero(c as @u8, 16 * 8)
+    heap_free(c as @void)
+}
+
+act x25519_pow2523(o: @i64, inp: @i64) {
+    let c: @i64 = heap_alloc(16 * 8) as @i64
+    mut k: usize = 0
+    loop k < 16 { c[k] = inp[k]; k += 1 }
+
+    mut a: i32 = 250
+    loop a >= 0 {
+        x25519_sq(c, c)
+        if a != 1 {
+            x25519_mul(c, c, inp)
+        }
+        a -= 1
+    }
+
+    k = 0
+    loop k < 16 { o[k] = c[k]; k += 1 }
+
+    crypto_zero(c as @u8, 16 * 8)
+    heap_free(c as @void)
+}
+
+act x25519_neq(a: @i64, b: @i64) -> bool {
+    let ca: @u8 = heap_alloc(32) as @u8
+    let cb: @u8 = heap_alloc(32) as @u8
+    x25519_pack(ca, a)
+    x25519_pack(cb, b)
+    let eq = crypto_secure_eq(ca, cb, 32)
+    crypto_zero(ca, 32); crypto_zero(cb, 32)
+    heap_free(ca as @void); heap_free(cb as @void)
+    return !eq
+}
+
+act x25519_par(a: @i64) -> u8 {
+    let d: @u8 = heap_alloc(32) as @u8
+    x25519_pack(d, a)
+    let p = d[0] & (1 as u8)
+    crypto_zero(d, 32)
+    heap_free(d as @void)
+    return p
+}
+
+// =========================================================================
+// 2. High-Level X25519 Key Exchange APIs
+// =========================================================================
+
+// Computes X25519 scalar multiplication: out_shared = scalar * point.
+// Automatically clamps scalar. Returns false if input point is of small order (all-zero output).
+act x25519_scalarmult(scalar: @u8, point: @u8, out_shared: @u8) -> bool {
+    if out_shared == null or scalar == null or point == null { return false }
+
+    let z: @u8 = heap_alloc(32) as @u8
+    mut i: usize = 0
+    loop i < 32 { z[i] = scalar[i]; i += 1 }
+    z[0] &= (248 as u8)
+    z[31] = (z[31] & (127 as u8)) | (64 as u8)
+
+    let x: @i64 = heap_alloc(16 * 8) as @i64
+    x25519_unpack(x, point)
+
+    let a: @i64 = heap_alloc(16 * 8) as @i64; crypto_zero(a as @u8, 16 * 8); a[0] = 1 as i64
+    let b: @i64 = heap_alloc(16 * 8) as @i64; i = 0; loop i < 16 { b[i] = x[i]; i += 1 }
+    let c: @i64 = heap_alloc(16 * 8) as @i64; crypto_zero(c as @u8, 16 * 8)
+    let d: @i64 = heap_alloc(16 * 8) as @i64; crypto_zero(d as @u8, 16 * 8); d[0] = 1 as i64
+
+    let e: @i64 = heap_alloc(16 * 8) as @i64
+    let f: @i64 = heap_alloc(16 * 8) as @i64
+    let c121665: @i64 = heap_alloc(16 * 8) as @i64; crypto_zero(c121665 as @u8, 16 * 8)
+    c121665[0] = 0xdb41 as i64
+    c121665[1] = 1 as i64
+
+    mut bit_idx: i32 = 254
+    loop bit_idx >= 0 {
+        let byte_pos = (bit_idx / 8) as usize
+        let bit_pos = ((bit_idx & 7) as u8)
+        let r = ((z[byte_pos] >> bit_pos) & (1 as u8)) as i32
+
+        x25519_sel(a, b, r); x25519_sel(c, d, r)
+        x25519_add(e, a, c); x25519_sub(a, a, c)
+        x25519_add(c, b, d); x25519_sub(b, b, d)
+        x25519_sq(d, e); x25519_sq(f, a)
+        x25519_mul(a, c, a); x25519_mul(c, b, e)
+        x25519_add(e, a, c); x25519_sub(a, a, c)
+        x25519_sq(b, a); x25519_sub(c, d, f)
+        x25519_mul(a, c, c121665); x25519_add(a, a, d)
+        x25519_mul(c, c, a); x25519_mul(a, d, f)
+        x25519_mul(d, b, x); x25519_sq(b, e)
+        x25519_sel(a, b, r); x25519_sel(c, d, r)
+        bit_idx -= 1
+    }
+
+    let inv_c: @i64 = heap_alloc(16 * 8) as @i64
+    x25519_inv(inv_c, c)
+    let res_a: @i64 = heap_alloc(16 * 8) as @i64
+    x25519_mul(res_a, a, inv_c)
+    x25519_pack(out_shared, res_a)
+
+    mut d_or: u8 = 0 as u8
+    i = 0
+    loop i < 32 { d_or |= out_shared[i]; i += 1 }
+
+    crypto_zero(z, 32); crypto_zero(x as @u8, 16 * 8)
+    crypto_zero(a as @u8, 16 * 8); crypto_zero(b as @u8, 16 * 8)
+    crypto_zero(c as @u8, 16 * 8); crypto_zero(d as @u8, 16 * 8)
+    crypto_zero(e as @u8, 16 * 8); crypto_zero(f as @u8, 16 * 8)
+    crypto_zero(c121665 as @u8, 16 * 8); crypto_zero(inv_c as @u8, 16 * 8)
+    crypto_zero(res_a as @u8, 16 * 8)
+
+    heap_free(z as @void); heap_free(x as @void)
+    heap_free(a as @void); heap_free(b as @void)
+    heap_free(c as @void); heap_free(d as @void)
+    heap_free(e as @void); heap_free(f as @void)
+    heap_free(c121665 as @void); heap_free(inv_c as @void)
+    heap_free(res_a as @void)
+
+    return d_or != (0 as u8)
+}
+
+// Derives a 32-byte X25519 public key from a 32-byte private key.
+act x25519_public_key(private_key: @u8, out_pubkey: @u8) -> bool {
+    let base_pt: @u8 = heap_alloc(32) as @u8
+    crypto_zero(base_pt, 32)
+    base_pt[0] = 9 as u8
+    let ok = x25519_scalarmult(private_key, base_pt, out_pubkey)
+    heap_free(base_pt as @void)
+    return ok
+}
+
+// Generates a cryptographically secure random X25519 keypair.
+act x25519_keypair(out_pubkey: @u8, out_privkey: @u8) -> bool {
+    if out_pubkey == null or out_privkey == null { return false }
+    let res = crypto_random_bytes(out_privkey, 32)
+    if !res.ok { return false }
+    return x25519_public_key(out_privkey, out_pubkey)
+}

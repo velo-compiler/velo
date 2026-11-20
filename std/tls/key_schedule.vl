@@ -1,0 +1,99 @@
+// std.tls.key_schedule — RFC 8446 Section 7.1 TLS 1.3 Key Schedule Engine.
+use "../crypto/hkdf.vl"
+use "../crypto/hmac.vl"
+use "../crypto/sha256.vl"
+use "../crypto/subtle.vl"
+use "../mem/heap.vl"
+
+// Computes the 32-byte Early Secret for a standard handshake without PSK (IKM = 32 zeros).
+act tls13_compute_early_secret(out_early_secret: @u8) {
+    if out_early_secret == null { return }
+    let zeros: @u8 = heap_alloc(32) as @u8
+    crypto_zero(zeros, 32)
+    hkdf_sha256_extract(zeros, 32, zeros, 32, out_early_secret)
+    crypto_zero(zeros, 32)
+    heap_free(zeros as @void)
+}
+
+// Computes the 32-byte Handshake Secret from the early secret and the ECDHE shared secret.
+act tls13_compute_handshake_secret(dhe_shared: @u8, dhe_shared_len: usize, out_hs_secret: @u8) {
+    if dhe_shared == null or out_hs_secret == null { return }
+    let early_secret: @u8 = heap_alloc(32) as @u8
+    tls13_compute_early_secret(early_secret)
+
+    // derived_early = Derive-Secret(early_secret, "derived", empty_hash)
+    let empty_hash: @u8 = heap_alloc(32) as @u8
+    sha256_bytes(early_secret, 0, empty_hash)
+    let derived_early: @u8 = heap_alloc(32) as @u8
+    tls13_derive_secret(early_secret, "derived", empty_hash, derived_early)
+
+    // Handshake Secret = HKDF-Extract(Salt=derived_early, IKM=dhe_shared)
+    hkdf_sha256_extract(derived_early, 32, dhe_shared, dhe_shared_len, out_hs_secret)
+
+    crypto_zero(early_secret, 32); crypto_zero(derived_early, 32)
+    heap_free(early_secret as @void); heap_free(empty_hash as @void); heap_free(derived_early as @void)
+}
+
+// Derives client and server handshake traffic secrets from Handshake Secret and transcript hash.
+act tls13_derive_handshake_traffic_secrets(hs_secret: @u8, transcript_hash: @u8, out_client_hs: @u8, out_server_hs: @u8) {
+    if hs_secret == null or transcript_hash == null { return }
+    if out_client_hs != null {
+        tls13_derive_secret(hs_secret, "c hs traffic", transcript_hash, out_client_hs)
+    }
+    if out_server_hs != null {
+        tls13_derive_secret(hs_secret, "s hs traffic", transcript_hash, out_server_hs)
+    }
+}
+
+// Derives ChaCha20-Poly1305 traffic key (32 bytes) and IV (12 bytes) from a traffic secret.
+act tls13_derive_traffic_key_iv(traffic_secret: @u8, out_key: @u8, out_iv: @u8) {
+    if traffic_secret == null { return }
+    let empty_ctx: @u8 = heap_alloc(1) as @u8
+    if out_key != null {
+        tls13_hkdf_expand_label(traffic_secret, "key", empty_ctx, 0, 32 as u16, out_key)
+    }
+    if out_iv != null {
+        tls13_hkdf_expand_label(traffic_secret, "iv", empty_ctx, 0, 12 as u16, out_iv)
+    }
+    heap_free(empty_ctx as @void)
+}
+
+// Computes the 32-byte Finished verify_data:
+// verify_data = HMAC-SHA256(finished_key, transcript_hash)
+// where finished_key = HKDF-Expand-Label(base_traffic_secret, "finished", "", 32)
+act tls13_compute_finished_verify_data(base_traffic_secret: @u8, transcript_hash: @u8, out_verify_data: @u8) {
+    if base_traffic_secret == null or transcript_hash == null or out_verify_data == null { return }
+    let finished_key: @u8 = heap_alloc(32) as @u8
+    let empty_ctx: @u8 = heap_alloc(1) as @u8
+    tls13_hkdf_expand_label(base_traffic_secret, "finished", empty_ctx, 0, 32 as u16, finished_key)
+    hmac_sha256(finished_key, 32, transcript_hash, 32, out_verify_data)
+    crypto_zero(finished_key, 32)
+    heap_free(finished_key as @void); heap_free(empty_ctx as @void)
+}
+
+// Computes Master Secret from Handshake Secret.
+act tls13_compute_master_secret(hs_secret: @u8, out_master_secret: @u8) {
+    if hs_secret == null or out_master_secret == null { return }
+    let empty_hash: @u8 = heap_alloc(32) as @u8
+    sha256_bytes(hs_secret, 0, empty_hash)
+    let derived_hs: @u8 = heap_alloc(32) as @u8
+    tls13_derive_secret(hs_secret, "derived", empty_hash, derived_hs)
+
+    let zeros: @u8 = heap_alloc(32) as @u8
+    crypto_zero(zeros, 32)
+    hkdf_sha256_extract(derived_hs, 32, zeros, 32, out_master_secret)
+
+    crypto_zero(derived_hs, 32); crypto_zero(zeros, 32)
+    heap_free(empty_hash as @void); heap_free(derived_hs as @void); heap_free(zeros as @void)
+}
+
+// Derives client and server application traffic secrets from Master Secret and transcript hash.
+act tls13_derive_app_traffic_secrets(master_secret: @u8, transcript_hash: @u8, out_client_app: @u8, out_server_app: @u8) {
+    if master_secret == null or transcript_hash == null { return }
+    if out_client_app != null {
+        tls13_derive_secret(master_secret, "c ap traffic", transcript_hash, out_client_app)
+    }
+    if out_server_app != null {
+        tls13_derive_secret(master_secret, "s ap traffic", transcript_hash, out_server_app)
+    }
+}
