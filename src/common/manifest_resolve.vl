@@ -1,10 +1,12 @@
-// Dependency resolution for package manifests (Phase 72 / Task 72.1).
-// Resolves 'local' and 'git' dependencies with fail-closed diagnostics.
+// Dependency resolution for package manifests (Phase 72 / Tasks 72.1 & 72.2).
+// Resolves 'local', 'git', and 'registry' dependencies with fail-closed diagnostics.
 extern act system(cmd: string) -> i32
+extern act velo_host_getenv(key: string) -> string
 
 use std.io
 use std.fs
 use std.path
+use std.json
 use "manifest.vl"
 use "string_builder.vl"
 use "utils.vl"
@@ -13,8 +15,23 @@ data DepLocation {
     path: string
     commit: string
     version: string
+    archive_url: string
+    expected_hash: string
     has_error: bool
     error_msg: string
+}
+
+// Converts a StrSlice to a null-terminated string.
+act json_slice_to_str(s: StrSlice) -> string {
+    if s.ptr == null or s.len == 0 { return "" }
+    mut buf: @u8 = mem.alloc(@u8, s.len + 1)
+    mut i: usize = 0
+    loop i < s.len {
+        buf[i] = s.ptr[i]
+        i += 1
+    }
+    buf[s.len] = 0 as u8
+    return buf as string
 }
 
 // Executes an external command string via the C runtime.
@@ -29,7 +46,12 @@ act manifest_resolve_dep(dep: @DependencySpec) -> DepLocation {
 
 // Resolves a dependency specification relative to a base manifest directory.
 act manifest_resolve_dep_in(m_dir: string, dep: @DependencySpec) -> DepLocation {
-    mut loc = DepLocation{ path: "", commit: "", version: "", has_error: false, error_msg: "" }
+    return manifest_resolve_dep_full(m_dir, dep, false, "")
+}
+
+// Resolves a dependency with full options (insecure TLS override, custom registry URL).
+act manifest_resolve_dep_full(m_dir: string, dep: @DependencySpec, insecure: bool, registry_override: string) -> DepLocation {
+    mut loc = DepLocation{ path: "", commit: "", version: "", archive_url: "", expected_hash: "", has_error: false, error_msg: "" }
     if dep == null {
         loc.has_error = true
         loc.error_msg = "[Velo Error] Null dependency specification"
@@ -166,8 +188,166 @@ act manifest_resolve_dep_in(m_dir: string, dep: @DependencySpec) -> DepLocation 
     }
 
     if dep.kind == "registry" {
-        loc.has_error = true
-        loc.error_msg = "[Velo Error] Registry dependencies are not yet supported (Phase 72.2). Dependency: '" + dep.name + "'"
+        if dep.source == null or str.len(dep.source) == 0 {
+            loc.has_error = true
+            loc.error_msg = "[Velo Error] Registry dependency '" + dep.name + "' has empty version string."
+            return loc
+        }
+
+        // Determine registry base URL
+        mut reg_url = registry_override
+        if str.len(reg_url) == 0 {
+            reg_url = velo_host_getenv("VELO_REGISTRY")
+        }
+        if str.len(reg_url) == 0 {
+            reg_url = "https://pkg.velolang.org"
+        }
+        let rlen = str.len(reg_url)
+        if rlen > 0 and reg_url[rlen - 1] == '/' {
+            reg_url = copy_slice_to_string(reg_url, 0, rlen - 1)
+        }
+
+        // Build index URL: <reg_url>/<dep.name>/index.json
+        mut url_sb = create_sb(256)
+        sb_append_str(@url_sb, reg_url)
+        sb_append_char(@url_sb, '/')
+        sb_append_str(@url_sb, dep.name)
+        sb_append_str(@url_sb, "/index.json")
+        let index_url = sb_to_string(@url_sb)
+
+        // Validate transport security (Phase 73 / Task 72.2)
+        let is_https = str.starts_with(index_url, "https://")
+        let is_http = str.starts_with(index_url, "http://")
+
+        if is_http and !insecure {
+            loc.has_error = true
+            loc.error_msg = "[Velo Error] Plaintext HTTP registry URL '" + index_url + "' is disallowed without explicit --insecure flag."
+            return loc
+        }
+        if is_http and insecure {
+            println_str("[Velo Warning] Insecure connection to '" + index_url + "': cleartext HTTP used.")
+        }
+        if is_https and insecure {
+            println_str("[Velo Warning] TLS certificate verification disabled via --insecure for registry '" + index_url + "'.")
+        }
+
+        mut deps_parent = ".velo_cache/deps"
+        if m_dir != null and str.len(m_dir) > 0 and m_dir != "." {
+            deps_parent = path_join_str(m_dir, ".velo_cache/deps")
+        }
+        if !fs_exists(deps_parent) {
+            fs_create_dir_all(deps_parent)
+        }
+
+        // Check curl availability
+        let curl_check_file = path_join_str(deps_parent, "_curl_probe.tmp")
+        mut probe_sb = create_sb(128)
+        sb_append_str(@probe_sb, "curl --version > ")
+        sb_append_str(@probe_sb, quote_path(curl_check_file))
+        sb_append_str(@probe_sb, " 2>&1")
+        let probe_cmd = sb_to_string(@probe_sb)
+        let probe_res = run_sys_cmd(probe_cmd)
+        if fs_exists(curl_check_file) {
+            fs_remove_file_str(curl_check_file)
+        }
+        if probe_res != 0 {
+            loc.has_error = true
+            loc.error_msg = "[Velo Error] 'curl' executable not found in PATH. Curl is required to fetch registry dependencies from '" + index_url + "'. Please install Curl and ensure it is available in your PATH."
+            return loc
+        }
+
+        // Fetch index.json to a temporary file
+        let index_tmp_file = path_join_str(deps_parent, dep.name + "_index.json.tmp")
+        let curl_err_file = path_join_str(deps_parent, dep.name + "_curl_err.tmp")
+
+        mut curl_sb = create_sb(512)
+        sb_append_str(@curl_sb, "curl -sSf -L")
+        if insecure {
+            sb_append_str(@curl_sb, " -k")
+        }
+        sb_append_char(@curl_sb, ' ')
+        sb_append_str(@curl_sb, quote_path(index_url))
+        sb_append_str(@curl_sb, " -o ")
+        sb_append_str(@curl_sb, quote_path(index_tmp_file))
+        sb_append_str(@curl_sb, " 2> ")
+        sb_append_str(@curl_sb, quote_path(curl_err_file))
+        let curl_cmd = sb_to_string(@curl_sb)
+        let curl_res = run_sys_cmd(curl_cmd)
+
+        mut curl_err = ""
+        if fs_exists(curl_err_file) {
+            let err_txt = fs_read_to_str(curl_err_file)
+            if err_txt != null { curl_err = str.trim(err_txt) }
+            fs_remove_file_str(curl_err_file)
+        }
+
+        if curl_res != 0 or !fs_exists(index_tmp_file) {
+            loc.has_error = true
+            mut msg = "[Velo Error] Failed to fetch registry index from '" + index_url + "'"
+            if str.len(curl_err) > 0 {
+                msg = msg + ": " + curl_err
+            }
+            loc.error_msg = msg
+            return loc
+        }
+
+        let index_content = fs_read_to_str(index_tmp_file)
+        fs_remove_file_str(index_tmp_file)
+        if index_content == null or str.len(index_content) == 0 {
+            loc.has_error = true
+            loc.error_msg = "[Velo Error] Empty registry index received from '" + index_url + "'"
+            return loc
+        }
+
+        // Parse JSON index
+        mut doc = json_parse_doc_str(index_content, 65536)
+        if doc.root == null or doc.root.kind != JSON_OBJECT {
+            json_doc_free(@doc)
+            loc.has_error = true
+            loc.error_msg = "[Velo Error] Invalid JSON in registry index from '" + index_url + "'"
+            return loc
+        }
+
+        mut ver_obj: @JsonValue = null
+        let versions_node = json_obj_get_str(doc.root, "versions")
+        if versions_node != null and versions_node.kind == JSON_OBJECT {
+            ver_obj = json_obj_get_str(versions_node, dep.source)
+        }
+        if ver_obj == null {
+            ver_obj = json_obj_get_str(doc.root, dep.source)
+        }
+
+        if ver_obj == null or ver_obj.kind != JSON_OBJECT {
+            json_doc_free(@doc)
+            loc.has_error = true
+            loc.error_msg = "[Velo Error] Version '" + dep.source + "' of package '" + dep.name + "' not found in registry index at '" + index_url + "'"
+            return loc
+        }
+
+        let url_slice = json_obj_get_str_val(ver_obj, "url", "")
+        let sha_slice = json_obj_get_str_val(ver_obj, "sha256", "")
+        let pkg_url = json_slice_to_str(url_slice)
+        let expected_sha = json_slice_to_str(sha_slice)
+        json_doc_free(@doc)
+
+        if str.len(pkg_url) == 0 {
+            loc.has_error = true
+            loc.error_msg = "[Velo Error] Registry index entry for '" + dep.name + "@" + dep.source + "' is missing 'url' field"
+            return loc
+        }
+        if str.len(expected_sha) == 0 {
+            loc.has_error = true
+            loc.error_msg = "[Velo Error] Registry index entry for '" + dep.name + "@" + dep.source + "' is missing 'sha256' field"
+            return loc
+        }
+
+        let dest_path = path_join_str(deps_parent, dep.name)
+        loc.path = dest_path
+        loc.commit = expected_sha
+        loc.version = dep.source
+        loc.archive_url = pkg_url
+        loc.expected_hash = expected_sha
+        loc.has_error = false
         return loc
     }
 

@@ -952,10 +952,36 @@ executable is a hard error with an actionable message.
   - `tests/test_bootstrap_snapshot.py` passed (6/6).
   - `tests/test_pkg_security.py` passed (4/4).
 
-**72.2** Implement `registry` kind against a minimal HTTP index: `<registry>/ 
-<name>/index.json` listing `version -> {url, sha256}`. Requires Phase 73's TLS
-or an explicit `--insecure` flag that prints a warning. Document the index
-format in `docs/PACKAGING.md`.
+**72.2** [COMPLETED] ✅ Implement `registry` kind against a minimal HTTP index: `<registry>/<name>/index.json` listing `version -> {url, sha256}`. Requires Phase 73's TLS or an explicit `--insecure` flag that prints a warning. Document the index format in `docs/PACKAGING.md`.
+- *Former Defect:* Manifest resolution lacked support for `registry` dependencies (`kind = "registry"`), failing closed with an unsupported diagnostic. Package indexes lacked a formal specification, JSON schema definition, and transport security controls.
+- *Fix Applied:*
+  - Created `docs/PACKAGING.md` documenting package manifest schema, index URL layout (`<registry-root>/<name>/index.json`), JSON schema (supporting both nested `{ "versions": { "<ver>": { "url", "sha256" } } }` and flat `{ "<ver>": { "url", "sha256" } }` formats), required fields, transport security semantics, `--insecure` behavior, and pull-request-based publishing workflow.
+  - Implemented registry resolution in `src/common/manifest_resolve.vl` via `manifest_resolve_dep_full(m_dir, dep, insecure, registry_override)`:
+    - Resolves registry base URL from parameter override, `VELO_REGISTRY` environment variable, or default `https://pkg.velolang.org`.
+    - Enforces transport security: cleartext `http://` URLs fail closed unless `--insecure` is explicitly specified; emits visible warning when `--insecure` is active (`[Velo Warning] Insecure connection to '<url>': cleartext HTTP used.` or `[Velo Warning] TLS certificate verification disabled via --insecure for registry '<url>'.`).
+    - Validates presence of `curl` executable and emits actionable diagnostic if missing from PATH.
+    - Fetches index JSON to temporary cache using subprocess invocation with argument quoting (`quote_path`).
+    - Parses JSON document using `std.json`, extracting `url` and `sha256` for the requested version with comprehensive error handling (missing version, missing required fields, malformed JSON, 404 response).
+    - Populates `DepLocation` with destination path, expected commit/hash, version, archive URL, and expected SHA-256 hash.
+- *Residual Limitation:* Archive download (tar/zip), unpacking, and verifying hash integrity during `pkg install` is implemented in Task 72.3.
+- *Verification:*
+  - Created automated test suite `tests/test_pkg_registry.py` with 11 test cases:
+    - `test_registry_resolve_success_nested_versions`: parses nested `"versions"` mapping and asserts `archive_url` and `expected_hash`.
+    - `test_registry_resolve_success_flat_versions`: parses flat version mapping format.
+    - `test_registry_plaintext_http_disallowed_without_insecure`: confirms fail-closed rejection of `http://` without `--insecure`.
+    - `test_registry_insecure_warning_on_https`: asserts TLS verification disabled warning on HTTPS with `--insecure`.
+    - `test_registry_version_not_found`: asserts actionable diagnostic on missing version.
+    - `test_registry_404_package_not_found`: asserts error on 404 response.
+    - `test_registry_missing_url_field`: asserts error when `url` is absent.
+    - `test_registry_missing_sha256_field`: asserts error when `sha256` is absent.
+    - `test_registry_invalid_json`: asserts fail-closed on corrupt JSON index.
+    - `test_registry_via_velo_registry_env`: verifies `VELO_REGISTRY` environment variable resolution.
+    - `test_registry_missing_curl_actionable_error`: verifies actionable diagnostic when `curl` is missing from PATH.
+  - Updated `tests/test_pkg_resolve.py` with `test_resolve_registry_dependency_empty_version` to verify fail-closed check on empty version.
+  - All 19 tests in `tests/test_pkg_registry.py` and `tests/test_pkg_resolve.py` passed in 69.32s.
+  - `tests/test_bootstrap_snapshot.py` passed (6/6).
+  - Determinism verified: Gen2 == Gen3 SHA-256 match; `bootstrap.c` updated cleanly with zero raw Win32 socket symbols.
+  - Line count verified: `src/common/manifest_resolve.vl` is 357 lines (all files $\le 400$ lines).
 
 **72.3** Fix the lie: `pkg install` must call 72.1/72.2 for every dependency,
 verify hashes (I72.2), and only then print success. Add

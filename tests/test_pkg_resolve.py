@@ -49,7 +49,7 @@ def create_local_git_repo(repo_dir: Path, tag: str = None) -> str:
     if tag:
         subprocess.run(["git", "tag", tag], cwd=str(repo_dir), check=True, capture_output=True, env=env)
 
-    rev = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo_dir), check=True, capture_output=True, text=True, env=env)
+    rev = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(repo_dir), check=True, capture_output=True, text=True, encoding="utf-8", env=env)
     return rev.stdout.strip()
 
 
@@ -91,6 +91,7 @@ act main() -> i32 {{
             cwd=str(REPO_ROOT),
             capture_output=True,
             text=True,
+            encoding="utf-8",
             env=run_env,
             timeout=60,
         )
@@ -191,9 +192,9 @@ def test_resolve_invalid_dependency_name_traversal(tmp_path):
     assert "Invalid dependency name" in out
 
 
-def test_resolve_registry_dependency_unsupported(tmp_path):
-    """Verify that registry dependencies produce a clear unsupported diagnostic pending Task 72.2."""
-    code, out = run_resolve_probe("reg_dep", "registry", "1.0.0", "", str(tmp_path))
+def test_resolve_registry_dependency_empty_version(tmp_path):
+    """Verify that a registry dependency with empty version fails closed immediately."""
+    code, out = run_resolve_probe("reg_dep", "registry", "", "", str(tmp_path))
     assert code == 1, f"Expected 1, got {code}:\n{out}"
     assert "STATUS:ERROR" in out
-    assert "Registry dependencies are not yet supported (Phase 72.2)" in out
+    assert "has empty version string" in out
