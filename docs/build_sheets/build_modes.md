@@ -93,3 +93,61 @@ THE CHAPTER SHIPS IN FULL: `--debug` (-O0 -g), `--release` (-O3 -flto), `-O<leve
 controls on `velo build` and `velo run`, mutual exclusion conflict enforcement, and
 flag position flexibility across both compiler stages.
 
+---
+
+## Sanitizer Local Build Mode (`sanitizer-local`)
+
+Task 74.6: Dedicated AddressSanitizer (ASan) and UndefinedBehaviorSanitizer (UBSan) configuration for local and CI instrumentation.
+
+### Goal
+
+Enable deep instrumentation of the compiler binary and generated native executables to trap memory corruption (use-after-free, double-free, out-of-bounds heap/stack accesses) and C undefined behaviour (signed integer overflow, unaligned pointer dereference, null pointer dereference) immediately at the point of occurrence.
+
+### Required Host Packages
+
+#### Ubuntu / Debian (x86_64 / aarch64)
+```bash
+sudo apt-get update
+sudo apt-get install -y clang gcc libasan8 libubsan1 python3 python3-pytest
+```
+
+#### macOS (Apple Silicon / Intel)
+```bash
+brew install llvm python3
+pip3 install pytest
+```
+
+#### Windows (MSYS2 UCRT64 / Clang64)
+```bash
+pacman -S --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-clang
+```
+
+### Compiler & Linker Flags
+
+* **C Compiler Flags (`VELO_CFLAGS`)**:
+  `-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g -fwrapv`
+* **Linker Flags (`VELO_LDFLAGS`)**:
+  `-fsanitize=address,undefined`
+* **Runtime Trap Environment (`ASAN_OPTIONS` / `UBSAN_OPTIONS`)**:
+  - `ASAN_OPTIONS="detect_leaks=1:halt_on_error=1:abort_on_error=1"`
+  - `UBSAN_OPTIONS="halt_on_error=1:abort_on_error=1"`
+
+### Invocation Commands
+
+1. **Full 3-Stage Sanitized Bootstrap & Verification**:
+   ```bash
+   bash scripts/bootstrap_sanitized.sh --full
+   ```
+   Compiles `bootstrap.c` with Clang/GCC under ASan+UBSan into `bin/velo`, verifies `bin/velo version`, builds Gen2 with sanitizers, builds Gen3 with sanitizers, verifies SHA-256 fixed-point determinism (`scripts/check_determinism.py`), and executes the test battery.
+
+2. **Quick Sanitized Bootstrap (Bootstrap Snapshot Only)**:
+   ```bash
+   bash scripts/bootstrap_sanitized.sh --quick --no-test
+   ```
+
+3. **Running Targeted Test Battery Under Sanitizers**:
+   ```bash
+   bash scripts/bootstrap_sanitized.sh tests/test_heap_provenance.py tests/test_mem_overlaps.py
+   ```
+
+

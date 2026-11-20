@@ -313,24 +313,20 @@ jobs:
         run: |
           python3 -m pytest tests/test_runtime_zone.py -q
 
-      - name: Bootstrap self-hosted Velo compiler (3-stage Gen1 -> Gen2 -> Gen3)
+      - name: Bootstrap self-hosted Velo compiler under ASan + UBSan (3-stage Gen1 -> Gen2 -> Gen3)
         env:
           CC: clang
         run: |
-          bash scripts/bootstrap.sh --full
+          bash scripts/bootstrap_sanitized.sh --full --no-test
 
-      - name: Verify bootstrap determinism
-        run: |
-          python3 scripts/check_determinism.py
-
-      - name: Run defer, break/continue, and match/switch test suite under ASan and UBSan
+      - name: Run full test suite under ASan + UBSan
         env:
           CC: clang
-          VELO_CFLAGS: "-fsanitize=address,undefined -fno-omit-frame-pointer -g"
+          VELO_CFLAGS: "-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g"
           VELO_LDFLAGS: "-fsanitize=address,undefined"
           ASAN_OPTIONS: "detect_leaks=1:halt_on_error=1:abort_on_error=1"
           UBSAN_OPTIONS: "halt_on_error=1:abort_on_error=1"
         run: |
           ./bin/velo run std/tests/mem/defer_test.vl --cc clang
-          python3 -m pytest tests/test_defer.py tests/test_break_continue.py tests/test_match_switch.py -q
+          python3 -m pytest tests -q
 

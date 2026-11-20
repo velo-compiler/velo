@@ -15,6 +15,7 @@ REPO_ROOT = Path(__file__).parent.parent.resolve()
 CI_YML = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 BOOTSTRAP_SH = REPO_ROOT / "scripts" / "bootstrap.sh"
 BOOTSTRAP_BAT = REPO_ROOT / "scripts" / "bootstrap.bat"
+BOOTSTRAP_SANITIZED_SH = REPO_ROOT / "scripts" / "bootstrap_sanitized.sh"
 CHECK_DET = REPO_ROOT / "scripts" / "check_determinism.py"
 VELO_EXE = velo_exe()
 
@@ -289,4 +290,52 @@ def test_velo_accepts_clang_compiler_flag():
     # When --cc is passed to check/build, bad_compiler error should mention clang
     res_build_bad = subprocess.run([str(VELO_EXE), "build", "examples/01_hello.vl", "--cc", "bad_compiler"], cwd=str(REPO_ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace")
     assert "Expected 'gcc', 'clang', or 'cl'" in res_build_bad.stdout or "Expected 'gcc', 'clang', or 'cl'" in res_build_bad.stderr
+
+
+def test_bootstrap_sanitized_sh_structure():
+    """Verify that scripts/bootstrap_sanitized.sh defines sanitizer flags and runs self-hosting."""
+    assert BOOTSTRAP_SANITIZED_SH.exists(), "scripts/bootstrap_sanitized.sh must exist"
+    content = BOOTSTRAP_SANITIZED_SH.read_text(encoding="utf-8")
+
+    assert content.startswith("#!/usr/bin/env bash")
+    assert "set -euo pipefail" in content
+
+    # Sanitizer flags (Task 74.6)
+    assert "-fsanitize=address,undefined" in content
+    assert "-fno-sanitize-recover=all" in content
+    assert "-fno-omit-frame-pointer" in content
+    assert "VELO_CFLAGS" in content
+    assert "VELO_LDFLAGS" in content
+    assert "ASAN_OPTIONS" in content
+    assert "UBSAN_OPTIONS" in content
+
+    # Self-hosting verification
+    assert "bin/velo build src/main.vl -o bin/velo_gen2" in content
+    assert "bin/velo_gen2 build src/main.vl -o bin/velo_gen3" in content
+    assert "check_determinism.py" in content
+    assert "pytest" in content
+
+
+def test_ci_sanitizer_job_uses_bootstrap_sanitized_script():
+    """Verify that .github/workflows/ci.yml sanitizer job invokes scripts/bootstrap_sanitized.sh."""
+    yaml = pytest.importorskip("yaml")
+    jobs = yaml.safe_load(CI_YML.read_text(encoding="utf-8"))["jobs"]
+    assert "sanitizer" in jobs, "ci.yml must define a sanitizer job"
+    steps = jobs["sanitizer"].get("steps") or []
+    runs = "\n".join(str(s.get("run", "")) for s in steps)
+    assert "bootstrap_sanitized.sh" in runs, "sanitizer job must invoke bootstrap_sanitized.sh"
+    assert "pytest" in runs, "sanitizer job must run pytest"
+
+
+def test_build_modes_doc_has_sanitizer_local_section():
+    """Verify that docs/build_sheets/build_modes.md documents sanitizer-local configuration."""
+    build_modes_doc = REPO_ROOT / "docs" / "build_sheets" / "build_modes.md"
+    assert build_modes_doc.exists(), "docs/build_sheets/build_modes.md must exist"
+    content = build_modes_doc.read_text(encoding="utf-8")
+    assert "sanitizer-local" in content
+    assert "libasan8" in content
+    assert "libubsan1" in content
+    assert "-fsanitize=address,undefined" in content
+    assert "bootstrap_sanitized.sh" in content
+
 
