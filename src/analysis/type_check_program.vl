@@ -8,6 +8,7 @@ use "type_checker.vl"
 use "type_checker_stmt.vl"
 use "shelf_checks.vl"
 use "literal_check.vl"
+use "pact_checks.vl"
 use "../ast/int_types.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
@@ -140,6 +141,8 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
                 kind_add_variant(k_sym, cv.name, cv.discriminant, cv.has_discriminant, cv.payload_type, f_sym, cv.field_count, cv.line, cv.col)
                 cv = cv.next
             }
+        } else if cur.kind == DECL_PACT {
+            register_pact(st, cur.name, cur.first_stmt, cur.stmt_count, cur.line, cur.col)
         }
         cur = cur.next
     }
@@ -206,6 +209,9 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
         }
         cur = cur.next
     }
+
+    // Pass 2.6: Verify static pact bounds on instantiated functions and structs
+    check_pact_bounds(st, prog)
 
     // Pass 3: Validate function bodies, statements, and expressions
     cur = prog.first_decl

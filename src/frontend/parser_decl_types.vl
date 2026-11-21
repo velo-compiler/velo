@@ -25,6 +25,12 @@ act parse_type_params(p: @Parser) -> string {
             sb_append_str(@sb, ", ")
         }
         sb_append_str(@sb, pname)
+        if parser_match(p, TOK_COLON) {
+            sb_append_char(@sb, ':')
+            let pact_tok = parser_consume(p, TOK_IDENTIFIER, "Expected pact name after ':' in type parameter bound")
+            let pact_name = copy_slice_to_string(p.source, pact_tok.start, pact_tok.length)
+            sb_append_str(@sb, pact_name)
+        }
         count += 1
         if not parser_match(p, TOK_COMMA) {
             break
@@ -237,4 +243,78 @@ act parse_kind_decl(p: @Parser) -> @StmtNode {
     mut node = make_kind_decl(kname, first_var, count, kind_tok.line, kind_tok.col)
     node.type_params = type_params
     return node
+}
+
+// Parses a pact static contract declaration (`pact Name { act method(...); ... }`).
+act parse_pact_decl(p: @Parser) -> @StmtNode {
+    let pact_tok = parser_consume(p, TOK_PACT, "Expected 'pact'")
+    let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected pact name after 'pact'")
+    let pname = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
+
+    parser_skip_newlines(p)
+    parser_consume(p, TOK_LBRACE, "Expected '{' before pact body")
+    parser_skip_newlines(p)
+
+    mut first_method: @StmtNode = null
+    mut last_method: @StmtNode = null
+    mut method_count: usize = 0
+
+    loop not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
+        let act_tok = parser_consume(p, TOK_ACT, "Expected 'act' in pact method declaration")
+        let mname_tok = parser_consume(p, TOK_IDENTIFIER, "Expected method name")
+        let mname = copy_slice_to_string(p.source, mname_tok.start, mname_tok.length)
+
+        parser_consume(p, TOK_LPAREN, "Expected '(' after method name")
+
+        mut first_param: @ParamNode = null
+        mut last_param: @ParamNode = null
+        mut p_count: usize = 0
+
+        if not parser_check(p, TOK_RPAREN) {
+            mut more_params = true
+            loop more_params {
+                let ptok = parser_consume_ident(p, "Expected parameter name")
+                let pvar = copy_slice_to_string(p.source, ptok.start, ptok.length)
+                parser_consume(p, TOK_COLON, "Expected ':' after parameter name")
+                let ptype = parse_type_annotation(p)
+                let pnode = make_param_node(pvar, ptype, ptok.line, ptok.col)
+
+                if first_param == null {
+                    first_param = pnode
+                    last_param = pnode
+                } else {
+                    last_param.next = pnode
+                    last_param = pnode
+                }
+                p_count += 1
+
+                if not parser_match(p, TOK_COMMA) {
+                    more_params = false
+                }
+            }
+        }
+        parser_consume(p, TOK_RPAREN, "Expected ')' after parameters")
+
+        mut ret_type = "void"
+        if parser_match(p, TOK_ARROW) {
+            ret_type = parse_type_annotation(p)
+        }
+
+        parser_match(p, TOK_SEMICOLON)
+        parser_skip_newlines(p)
+
+        let mnode = make_function_decl(mname, first_param, p_count, ret_type, null, act_tok.line, act_tok.col)
+        if first_method == null {
+            first_method = mnode
+            last_method = mnode
+        } else {
+            last_method.next = mnode
+            last_method = mnode
+        }
+        method_count += 1
+    }
+
+    parser_consume(p, TOK_RBRACE, "Expected '}' after pact body")
+    parser_skip_newlines(p)
+    return make_pact_decl(pname, first_method, method_count, pact_tok.line, pact_tok.col)
 }

@@ -222,6 +222,7 @@ act parse_top_level_declaration(p: @Parser) -> @StmtNode {
 
     if parser_check(p, TOK_USE) { return parse_use_decl(p) }
     if parser_check(p, TOK_DATA) { return parse_data_decl(p) }
+    if parser_check(p, TOK_PACT) { return parse_pact_decl(p) }
     if parser_check(p, TOK_KIND) { return parse_kind_decl(p) }
     if parser_check(p, TOK_ACT) { return parse_function_decl(p) }
     if parser_check(p, TOK_TEST) { return parse_test_decl(p) }

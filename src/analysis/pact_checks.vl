@@ -1,0 +1,156 @@
+// Pact static contract and generic constraint verification for Velo.
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "symbol_table.vl"
+use "mono_subst.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+
+// Substitutes Self / @Self with the concrete type name in a method signature type string.
+act pact_subst_self(t: string, concrete_type: string) -> string {
+    if t == null { return null }
+    let clean = strip_pointer_prefix(concrete_type)
+    if t == "Self" { return clean }
+    if t == "@Self" {
+        mut sb = create_sb(str.len(clean) + 2)
+        sb_append_char(@sb, '@')
+        sb_append_str(@sb, clean)
+        return sb_to_string(@sb)
+    }
+    if t == "@@Self" {
+        mut sb = create_sb(str.len(clean) + 3)
+        sb_append_str(@sb, "@@")
+        sb_append_str(@sb, clean)
+        return sb_to_string(@sb)
+    }
+    return mono_str_replace(t, "Self", clean)
+}
+
+// Checks if a registered function signature satisfies a required pact method signature.
+act pact_signature_matches(fn_sym: @FunctionSym, clean_concrete: string, req_m: @StmtNode) -> bool {
+    mut fp = fn_sym.first_param
+    mut rp = req_m.first_param
+    mut is_first = true
+
+    loop fp != null and rp != null {
+        if is_first {
+            // Receiver parameter: in Velo, receiver can be @T or T
+            let clean_fp = strip_pointer_prefix(fp.type_name)
+            if clean_fp != clean_concrete {
+                return false
+            }
+            is_first = false
+        } else {
+            let exp_t = pact_subst_self(rp.type_name, clean_concrete)
+            if fp.type_name != exp_t {
+                return false
+            }
+        }
+        fp = fp.next
+        rp = rp.next
+    }
+
+    if fp != null or rp != null {
+        return false
+    }
+
+    // Return type check
+    let exp_ret = pact_subst_self(req_m.return_type, clean_concrete)
+    mut act_ret = fn_sym.return_type
+    if act_ret == null { act_ret = "void" }
+    mut exp_clean = exp_ret
+    if exp_clean == null { exp_clean = "void" }
+
+    if act_ret != exp_clean {
+        return false
+    }
+
+    return true
+}
+
+// Searches registered functions for a method matching the pact requirement for the concrete type.
+act pact_method_is_satisfied(st: @SymbolTable, clean_concrete: string, req_m: @StmtNode) -> bool {
+    mut fn_sym = st.first_function
+    loop fn_sym != null {
+        if fn_sym.name == req_m.name and fn_sym.param_count == req_m.param_count {
+            if pact_signature_matches(fn_sym, clean_concrete, req_m) {
+                return true
+            }
+        }
+        fn_sym = fn_sym.next
+    }
+    return false
+}
+
+// Verifies that a concrete type satisfies all methods declared in a single pact bound.
+act verify_single_pact_bound(st: @SymbolTable, concrete_type: string, pact_name: string, line: i32, col: i32) {
+    let pact_sym = find_pact(st, pact_name)
+    if pact_sym == null {
+        mut esb = create_sb(64 + str.len(pact_name))
+        sb_append_str(@esb, "Unknown pact '")
+        sb_append_str(@esb, pact_name)
+        sb_append_char(@esb, '\'')
+        report_error("semantic", line, col, sb_to_string(@esb))
+        st.error_count += 1
+        return
+    }
+
+    let clean_concrete = strip_pointer_prefix(concrete_type)
+    mut cur_m = pact_sym.first_method
+    loop cur_m != null {
+        if not pact_method_is_satisfied(st, clean_concrete, cur_m) {
+            mut esb = create_sb(128 + str.len(clean_concrete) + str.len(pact_name) + str.len(cur_m.name))
+            sb_append_str(@esb, "Type '")
+            sb_append_str(@esb, clean_concrete)
+            sb_append_str(@esb, "' does not satisfy pact '")
+            sb_append_str(@esb, pact_name)
+            sb_append_str(@esb, "': missing method '")
+            sb_append_str(@esb, cur_m.name)
+            sb_append_char(@esb, '\'')
+            report_error("semantic", line, col, sb_to_string(@esb))
+            st.error_count += 1
+        }
+        cur_m = cur_m.next
+    }
+}
+
+// Verifies type parameters with bounds against their concrete type arguments.
+act verify_type_pact_constraints(st: @SymbolTable, type_params: string, type_args: string, line: i32, col: i32) {
+    if type_params == null or type_args == null { return }
+    let plen = str.len(type_params)
+    let alen = str.len(type_args)
+    mut p_start: usize = 0
+    mut a_start: usize = 0
+
+    loop p_start < plen and a_start < alen {
+        mut p_end = p_start
+        loop p_end < plen and type_params[p_end] != ',' { p_end += 1 }
+        mut a_end = a_start
+        loop a_end < alen and type_args[a_end] != ',' { a_end += 1 }
+
+        let cur_param = mono_trim(copy_slice_to_string(type_params, p_start, p_end - p_start))
+        let cur_arg = mono_trim(copy_slice_to_string(type_args, a_start, a_end - a_start))
+
+        let colon = mono_find_char(cur_param, ':')
+        if colon >= 0 {
+            let pact_name = mono_trim(copy_slice_to_string(cur_param, (colon + 1) as usize, (str.len(cur_param) - colon - 1) as usize))
+            verify_single_pact_bound(st, cur_arg, pact_name, line, col)
+        }
+
+        p_start = p_end + 1
+        a_start = a_end + 1
+    }
+}
+
+// Walks all declarations and verifies pact bounds on all instantiated generic functions and structs.
+act check_pact_bounds(st: @SymbolTable, prog: @ProgramNode) {
+    mut cur = prog.first_decl
+    loop cur != null {
+        if (cur.kind == DECL_FUNCTION or cur.kind == DECL_DATA) and cur.type_params != null and cur.type_name != null {
+            verify_type_pact_constraints(st, cur.type_params, cur.type_name, cur.line, cur.col)
+        }
+        cur = cur.next
+    }
+}

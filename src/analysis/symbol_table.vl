@@ -94,12 +94,24 @@ data FunctionSym {
     next: @FunctionSym
 }
 
+// Represents a registered pact static contract.
+data PactSym {
+    name: string
+    first_method: @StmtNode
+    method_count: usize
+    line: i32
+    col: i32
+    next: @PactSym
+}
+
 // Unified Symbol Table maintaining global and nested lexical scopes.
 data SymbolTable {
     first_struct: @StructSym
     struct_count: usize
     first_kind: @KindSym
     kind_count: usize
+    first_pact: @PactSym
+    pact_count: usize
     first_function: @FunctionSym
     function_count: usize
     global_scope: @Scope
@@ -123,7 +135,9 @@ data SymbolTable {
 
 // Initializes the root Symbol Table.
 act init_symbol_table(st: @SymbolTable) {
-    st.first_struct = null; st.struct_count = 0; st.first_kind = null; st.kind_count = 0; st.first_function = null; st.function_count = 0
+    st.first_struct = null; st.struct_count = 0; st.first_kind = null; st.kind_count = 0
+    st.first_pact = null; st.pact_count = 0
+    st.first_function = null; st.function_count = 0
     st.global_scope = create_scope(null); st.current_scope = st.global_scope; st.error_count = 0; st.has_operator_overloads = false
     st.fresh_counter = 0; st.unsafe_shelf_index = false; st.unsafe_array_index = false; st.is_test = false; st.source_file = ""; st.no_line_directives = false
     st.zone_counter = 0; st.current_func_ret_type = ""; st.current_func_name = ""; st.current_zone_depth = 0
@@ -315,6 +329,31 @@ act find_kind_by_variant(st: @SymbolTable, vname: string) -> @KindSym {
     loop cur_k != null {
         if find_variant(cur_k, vname) != null { return cur_k }
         cur_k = cur_k.next
+    }
+    return null
+}
+
+// Registers a pact contract in the symbol table.
+act register_pact(st: @SymbolTable, name: string, first_method: @StmtNode, count: usize, line: i32, col: i32) -> @PactSym {
+    mut p: @PactSym = mem.alloc(@PactSym, 1)
+    p.name = name
+    p.first_method = first_method
+    p.method_count = count
+    p.line = line
+    p.col = col
+    p.next = st.first_pact
+    st.first_pact = p
+    st.pact_count += 1
+    return p
+}
+
+// Finds a registered pact by name.
+act find_pact(st: @SymbolTable, name: string) -> @PactSym {
+    if st == null or name == null { return null }
+    mut cur = st.first_pact
+    loop cur != null {
+        if cur.name == name { return cur }
+        cur = cur.next
     }
     return null
 }

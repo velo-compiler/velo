@@ -296,6 +296,18 @@ act make_destructure_stmt(first_binding: @ParamNode, count: usize, val_expr: @Ex
     return node
 }
 
+// Creates a pact static contract declaration node (`pact Name { ... }`).
+act make_pact_decl(name: string, first_method: @StmtNode, count: usize, line: i32, col: i32) -> @StmtNode {
+    mut node: @StmtNode = mem.alloc(@StmtNode, 1)
+    node.kind = DECL_PACT
+    node.name = name
+    node.first_stmt = first_method
+    node.stmt_count = count
+    node.line = line
+    node.col = col
+    return node
+}
+
 // Creates the root program node containing all declarations.
 act make_program_node(first_decl: @StmtNode, count: usize) -> @ProgramNode {
     mut prog: @ProgramNode = mem.alloc(@ProgramNode, 1)

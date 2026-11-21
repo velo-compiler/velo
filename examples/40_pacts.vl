@@ -1,0 +1,48 @@
+// Example 40: Static contracts and generic constraints (`pact`)
+pact Printable {
+    act print(self: @Self) -> void
+}
+
+pact Measurable {
+    act area(self: @Self) -> i32
+    act perimeter(self: @Self) -> i32
+}
+
+data User {
+    name: string
+}
+
+act print(u: @User) {
+    io.println(u.name)
+}
+
+data Rectangle {
+    width: i32
+    height: i32
+}
+
+act area(r: @Rectangle) -> i32 {
+    return r.width * r.height
+}
+
+act perimeter(r: @Rectangle) -> i32 {
+    return 2 * (r.width + r.height)
+}
+
+act display[T: Printable](item: @T) {
+    item.print()
+}
+
+act inspect_shape[S: Measurable](s: @S) {
+    let a = s.area()
+    let p = s.perimeter()
+    io.println("area={a}, perim={p}")
+}
+
+act main() {
+    mut u = User{ name: "Alice" }
+    display(@u)
+
+    mut rect = Rectangle{ width: 5, height: 10 }
+    inspect_shape(@rect)
+}

@@ -589,6 +589,67 @@ let w: usize = 2305843009213693952 // OK: fits in usize
 
 ---
 
+### 2.15 Static Contracts & Generic Constraints (`pact`)
+
+Velo supports compile-time static contracts and interface constraints using the unique, punchy 4-character keyword `pact`. A `pact` defines a set of required method signatures that a concrete type must satisfy:
+
+```velo
+// 1. Defining a static contract (pact)
+pact Printable {
+    act print(self: @Self) -> void
+}
+
+pact Measurable {
+    act area(self: @Self) -> i32
+    act perimeter(self: @Self) -> i32
+}
+```
+
+#### Generic Constraints (`[T: PactName]`):
+Generic functions and data structures can constrain their type parameters using `: PactName`:
+
+```velo
+// 2. Generic function bounded by Printable
+act display[T: Printable](item: @T) {
+    item.print()
+}
+
+// 3. Multi-parameter generic function with pact bound
+act pair_inspect[T: Printable, U](item: @T, tag: U) {
+    item.print()
+    io.println("Tag: {tag}")
+}
+```
+
+#### Implementing a Pact:
+In accordance with Velo's philosophy of structural elegance and zero boilerplate, types do not need explicit `implements` or `conforms` keywords. Any type that provides matching methods (via free functions using Uniform Function Call Syntax) automatically satisfies the pact:
+
+```velo
+data User {
+    name: string
+}
+
+// Satisfies pact Printable for User
+act print(u: @User) {
+    io.println(u.name)
+}
+
+act main() {
+    mut u = User{ name: "Alice" }
+    display(@u) // Monomorphized static call, zero runtime overhead
+}
+```
+
+#### Semantic Rules & Guarantees:
+* **Zero Runtime Overhead**: Pacts are verified strictly at compile time during semantic analysis and monomorphization. No dynamic dispatch tables (vtables), pointer indirections, or runtime boxing overhead are introduced.
+* **UFCS Receiver Flexibility**: Pact methods can be satisfied by functions accepting either pointer receivers (`@T`) or value receivers (`T`), taking full advantage of Velo's automatic referencing and dereferencing.
+* **Deterministic Compiler Diagnostics**: When a concrete type fails to satisfy a pact constraint during generic instantiation, the compiler reports a clear, actionable error:
+  ```
+  [Velo Error] semantic:<line>:<col> - Type '<ConcreteType>' does not satisfy pact '<PactName>': missing method '<method>'
+  ```
+
+---
+
 ## 3. Variables & Mutability
 
 ### 3.1 Immutable by Default
@@ -1548,9 +1609,13 @@ act register_timer(ctx: @TimerContext, callback: act(@TimerContext) -> void) {
   2. **Runtime Polymorphism:** Use tagged unions (`enum` or `data` with `kind` discriminant + `match`) or explicit struct-based function pointer tables (first-class vtables).
 
 ```velo
-// 1. Compile-time generic polymorphism (monomorphized, zero overhead)
-act print_value[T](val: T) {
-    io.println(val)
+// 1. Compile-time generic polymorphism with pact constraints (monomorphized, zero overhead)
+pact Formatter {
+    act format(self: @Self) -> string
+}
+
+act log_item[T: Formatter](item: @T) {
+    io.println(item.format())
 }
 
 // 2. Explicit runtime polymorphism via manual dispatch table
@@ -1566,7 +1631,7 @@ data AnyWriter {
 ```
 
 > [!NOTE]
-> Static compile-time contracts (`contract Name { ... }`) checked during generic monomorphization with zero runtime vtable overhead will be introduced in Task 77.3.
+> Static compile-time contracts (`pact Name { ... }`) checked during generic monomorphization with zero runtime vtable overhead are fully supported via the `pact` keyword (see §2.15). For dynamic runtime polymorphism, manual function-pointer tables remain the explicit, zero-hidden-overhead pattern.
 
 ### 11.3 Module Privacy and Export Control
 

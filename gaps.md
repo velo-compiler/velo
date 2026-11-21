@@ -2263,11 +2263,29 @@ with the chosen mechanism, and add `examples/39_closures.vl`.
   - `python -m pytest tests/test_platform_portability.py -v`: 12 passed in 0.57s.
   - `python scripts/count_lines.py`: all compiler source files $\le 400$ lines.
 
-**77.3** Decide on interfaces. Minimum viable: `contract Name { act f(...) }`
-plus static dispatch only (no vtables) - monomorphization already exists
-(`src/analysis/monomorphize.vl`), so static-only contracts are a small step and
-give generic code meaningful constraints. If rejected, document why in 77.1 and
-close the task.
+**77.3 [COMPLETED] ✅** Static contracts and generic constraints (`pact`):
+- *Former Defect:*
+  Velo generics (`[T]`, `[K, V]`) were completely unconstrained, behaving as untyped template substitutions. If a generic function expected an argument type to implement specific methods (e.g. `item.print()`), semantic errors were only caught deep inside cloned function bodies during expression type checking, producing confusing diagnostics without declaring an interface contract. There was no mechanism to specify or enforce compile-time behavioral contracts on generic parameters.
+- *Fix Applied:*
+  - Adopted Velo's 4-character, "easy and unique" keyword motto and introduced `pact` (`TOK_PACT = 157` in `src/frontend/token.vl` and `src/frontend/lexer.vl`) to declare static contracts (`pact Printable { act print(self: @Self) -> void }`).
+  - Added AST declaration node `DECL_PACT = 308` in `src/ast/stmt.vl` and `make_pact_decl` in `src/ast/stmt_factory.vl`.
+  - Added `parse_pact_decl` and updated `parse_type_params` in `src/frontend/parser_decl_types.vl` to parse generic parameter bounds (`[T: PactName]` and `[T: PactName, U]`).
+  - Updated generic template substitution in `src/analysis/mono_subst.vl` (`mono_strip_bounds`) to cleanly strip pact bounds during template monomorphization and type instantiation.
+  - Extended multi-parameter type argument inference in `src/analysis/monomorphize_expr.vl` to seamlessly infer multiple type arguments from argument expressions.
+  - Implemented `PactSym` and symbol registration (`register_pact`, `find_pact`) in `src/analysis/symbol_table.vl`.
+  - Created `src/analysis/pact_checks.vl` and integrated Pass 2.6 in `src/analysis/type_check_program.vl` to statically verify all instantiated functions and structs against their pact bounds, emitting clear, deterministic diagnostics on violations:
+    `Type '<ConcreteType>' does not satisfy pact '<PactName>': missing method '<method>'`.
+  - Added `examples/40_pacts.vl` demonstrating static contracts, multi-method pacts, and monomorphized zero-vtable dispatch.
+  - Added automated test suite `tests/test_pacts.py` (7 test vectors in the `fast` CI lane).
+  - Maintained Gen2 == Gen3 bit-for-bit determinism (`DDBCA904C61EFB2D6AA833BA1F85C5D48D4C4AED500CBBCFD124CF8F803F009A`) and refreshed `bootstrap.c`.
+  - Updated `docs/SPECIFICATION.md` §2.15 and §11.2 documenting static contracts and generic constraints.
+- *Residual Limitation (if any):*
+  Static contracts compile via monomorphization without dynamic vtables; dynamic runtime polymorphism continues to use explicit typed function-pointer tables as documented in §11.2.
+- *Verification:*
+  - `python -m pytest tests/test_pacts.py -v`: 7 passed in 7.97s.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -v`: 6 passed in 40.14s.
+  - `python -m pytest tests -q -m fast`: 61 passed, 1 xfailed in 18.52s.
+  - `python scripts/count_lines.py`: all compiler source files $\le 400$ lines.
 
 **77.4** Add module privacy: `pub` prefix on `act`/`data` declarations, with
 unmarked declarations visible only inside their file. This is a breaking change;

@@ -27,6 +27,7 @@ let DECL_USE: i32 = 304
 let DECL_KIND: i32 = 305
 let DECL_TYPE_ALIAS: i32 = 306
 let DECL_TEST: i32 = 307
+let DECL_PACT: i32 = 308
 
 data VariantNode {
     name: string

@@ -26,7 +26,10 @@ act mono_instantiate_struct(m: @Monomorphizer, tmpl: @GenericTemplate, type_args
         count += 1
         cur_f = cur_f.next
     }
-    return make_data_decl(mangled_name, first_f, count, tmpl.node.align_bytes, tmpl.node.is_packed, tmpl.node.line, tmpl.node.col)
+    mut inst_s = make_data_decl(mangled_name, first_f, count, tmpl.node.align_bytes, tmpl.node.is_packed, tmpl.node.line, tmpl.node.col)
+    inst_s.type_params = tmpl.type_params
+    inst_s.type_name = type_args
+    return inst_s
 }
 
 act mono_instantiate_kind(m: @Monomorphizer, tmpl: @GenericTemplate, type_args: string, mangled_name: string) -> @StmtNode {
@@ -77,7 +80,10 @@ act mono_instantiate_func(m: @Monomorphizer, tmpl: @GenericTemplate, type_args: 
         rt = mono_normalize_type(rt)
     }
     let body = mono_clone_stmt(m, tmpl.node.body, scope, tmpl.type_params, type_args, rt)
-    return make_function_decl(mangled_name, first_p, count, rt, body, tmpl.node.line, tmpl.node.col)
+    mut inst_fn = make_function_decl(mangled_name, first_p, count, rt, body, tmpl.node.line, tmpl.node.col)
+    inst_fn.type_params = tmpl.type_params
+    inst_fn.type_name = type_args
+    return inst_fn
 }
 
 // Main entry point for AST monomorphization.

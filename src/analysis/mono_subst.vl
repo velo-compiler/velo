@@ -144,17 +144,40 @@ act mono_subst_single(t: string, p: string, a: string) -> string {
     return res
 }
 
+// Strips static pact constraint bounds from a type parameter list (e.g. "T:Printable, U" -> "T, U").
+act mono_strip_bounds(params: string) -> string {
+    if params == null { return null }
+    let len = str.len(params)
+    mut sb = create_sb(len)
+    mut i: usize = 0
+    mut in_bound = false
+    loop i < len {
+        let c = params[i]
+        if c == ':' {
+            in_bound = true
+        } else if c == ',' {
+            in_bound = false
+            sb_append_char(@sb, c)
+        } else if not in_bound {
+            sb_append_char(@sb, c)
+        }
+        i += 1
+    }
+    return sb_to_string(@sb)
+}
+
 act mono_subst(t: string, params: string, args: string) -> string {
     if t == null or params == null or args == null { return t }
-    let comma_p = mono_find_char(params, ',')
+    let clean_params = mono_strip_bounds(params)
+    let comma_p = mono_find_char(clean_params, ',')
     let comma_a = mono_find_char(args, ',')
     if comma_p < 0 or comma_a < 0 {
-        let p = mono_trim(params)
+        let p = mono_trim(clean_params)
         let a = mono_trim(args)
         return mono_subst_single(t, p, a)
     }
-    let p1 = mono_trim(copy_slice_to_string(params, 0, comma_p as usize))
-    let p2 = mono_trim(copy_slice_to_string(params, (comma_p + 1) as usize, (str.len(params) - comma_p - 1) as usize))
+    let p1 = mono_trim(copy_slice_to_string(clean_params, 0, comma_p as usize))
+    let p2 = mono_trim(copy_slice_to_string(clean_params, (comma_p + 1) as usize, (str.len(clean_params) - comma_p - 1) as usize))
     let a1 = mono_trim(copy_slice_to_string(args, 0, comma_a as usize))
     let a2 = mono_trim(copy_slice_to_string(args, (comma_a + 1) as usize, (str.len(args) - comma_a - 1) as usize))
     let step1 = mono_subst_single(t, p1, a1)

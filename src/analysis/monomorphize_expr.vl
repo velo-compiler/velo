@@ -187,8 +187,32 @@ act mono_clone_expr(m: @Monomorphizer, e: @ExprNode, scope: @ScopeEntry, params:
                 if call_targs != null and str.len(call_targs) > 0 {
                     call_targs = mono_subst(call_targs, params, args)
                 } else if first_a != null {
-                    let a_type = mono_infer_type(first_a, scope)
-                    call_targs = mono_extract_type_arg(a_type)
+                    if mono_find_char(fn_tmpl.type_params, ',') >= 0 {
+                        mut tsb = create_sb(64)
+                        mut cur_arg = first_a
+                        mut p_scan = fn_tmpl.node.first_param
+                        mut count: usize = 0
+                        mut exp_count: usize = 1
+                        let tplen = str.len(fn_tmpl.type_params)
+                        mut ti: usize = 0
+                        loop ti < tplen {
+                            if fn_tmpl.type_params[ti] == ',' { exp_count += 1 }
+                            ti += 1
+                        }
+                        loop cur_arg != null and p_scan != null and count < exp_count {
+                            let arg_t = mono_infer_type(cur_arg, scope)
+                            let targ = mono_extract_type_arg(arg_t)
+                            if count > 0 { sb_append_str(@tsb, ", ") }
+                            sb_append_str(@tsb, targ)
+                            count += 1
+                            cur_arg = cur_arg.next
+                            p_scan = p_scan.next
+                        }
+                        call_targs = sb_to_string(@tsb)
+                    } else {
+                        let a_type = mono_infer_type(first_a, scope)
+                        call_targs = mono_extract_type_arg(a_type)
+                    }
                 }
                 if call_targs != null {
                     let mangled = mono_concat(callee.str_val, mono_concat("_", mono_mangle_type(call_targs)))
