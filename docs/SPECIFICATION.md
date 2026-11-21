@@ -742,6 +742,44 @@ act sum(c: Coord) -> i32 {
 
 ---
 
+### 2.18 Deferred Execution (`defer`)
+
+The `defer` keyword registers a cleanup action to be executed automatically when the enclosing scope exits (via return, break, continue, or natural block completion). Multiple `defer` statements execute in strict **LIFO** (last-in, first-out) order.
+
+#### 1. Single-Expression Defer
+For simple cleanup tasks (such as closing a file, releasing a mutex, or freeing memory), `defer` takes a single expression or call without curly braces:
+```velo
+act read_config(path: string) -> string {
+    let file = fs.open(path, "r")
+    defer fs.close(file) // runs automatically upon exiting read_config
+
+    return fs.read_all(file)
+}
+```
+
+#### 2. Multi-Statement Block Defer
+When cleanup requires multiple steps or statements, `defer` takes a block enclosed in curly braces:
+```velo
+act process_data(session_id: i32) {
+    let log = fs.open("session.log", "a")
+    let arena = mem.create_arena()
+
+    defer {
+        fs.flush(log)
+        fs.close(log)
+        mem.destroy_arena(arena)
+    }
+
+    // do work...
+}
+```
+
+#### 3. Control Flow Invariants
+* **Strict LIFO Order:** Later deferred actions run before earlier ones.
+* **Prohibited Statements:** Control transfer statements (`return`, `break`, `continue`, `fail`) are strictly prohibited inside `defer` at compile time, preventing undefined control targets and ensuring clean scope unwinding.
+
+---
+
 ## 3. Variables & Mutability
 
 ### 3.1 Immutable by Default
@@ -1760,12 +1798,6 @@ if os_is_windows() {
 
 ### 11.6 Expression Defer
 
-* **Absence:** Prior to Task 77.6, the `defer` statement requires a block body (`defer { ... }`), even for single function calls.
-* **Architectural Rationale:** Phase 58/69 established block-scoped defer semantics with explicit scope boundaries.
-* **The Cost:** Extra syntax ceremony for simple cleanup actions like closing a file handle.
-* **Official Workaround:** Wrap single statements in curly braces: `defer { fs_close(file) }`.
-
-> [!NOTE]
-> Single-expression defer (`defer fs_close(file)`) will be introduced in Task 77.6.
+* **Status:** Resolved in Task 77.6 (see §2.18). Both single-expression defer (`defer fs.close(file)`) and multi-statement block defer (`defer { ... }`) are fully supported, executing in strict LIFO order upon scope exit. Control transfer statements (`return`, `break`, `continue`, `fail`) remain strictly prohibited inside defer.
 
 

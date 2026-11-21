@@ -2337,9 +2337,23 @@ with the chosen mechanism, and add `examples/39_closures.vl`.
   - `python -m pytest tests -q -m fast`: 80 passed, 1 xfailed in 24.63s.
   - `python scripts/count_lines.py`: all compiler source files $\le 400$ lines.
 
-**77.6** Allow expression `defer`: `defer fclose(f)` lowering to the existing
-block-defer path with a single call statement. Test in
-`tests/test_defer.py` alongside the Phase 58 matrix.
+**77.6 [COMPLETED] ✅** Expression `defer` (`defer <expr>`):
+- *Former Defect:*
+  Prior to Task 77.6, the `defer` keyword was documented as requiring a full curly-brace block (`defer { ... }`) even for single cleanup calls such as `fs.close(file)` or `m.unlock()`, causing unnecessary syntactic ceremony for single-action cleanups.
+- *Fix Applied:*
+  - Documented and standardized single-expression `defer <expr>` alongside block `defer { ... }` in `docs/SPECIFICATION.md` §2.18 and §11.6.
+  - In `src/frontend/parser_stmt.vl`, `defer` parses either a block statement (`defer { ... }`) or an expression/call statement (`defer expr`), wrapping the statement into `make_defer_stmt`.
+  - In `src/analysis/type_checker_stmt.vl` and `src/analysis/defer_checks.vl`, semantic checks ensure deferred expressions are validated and control transfer statements (`return`, `break`, `continue`, `fail`) are strictly prohibited inside `defer`.
+  - In `src/backend/codegen_stmt.vl`, lowered expression defers integrate with the LIFO cleanup unwinding system at scope exit and on early returns/breaks.
+  - Added dedicated test suite `tests/test_defer_expr.py` (5 tests covering single calls, LIFO order, mixed expression and block defers, early return unwinding, and transfer statement rejection) alongside the Phase 58 matrix (39 tests in `tests/test_defer.py`, 44 total passed).
+- *Residual Limitation (if any):*
+  None. Both expression and block defer are fully operational, unwinding in strict LIFO order upon function, block, or loop scope exit.
+- *Verification:*
+  - `python -m pytest tests/test_defer_expr.py -v`: 5 passed in 1.49s.
+  - `python -m pytest tests/test_defer.py -q`: 39 passed in 14.58s.
+  - `python -m pytest tests/test_deliberate_limitations.py -v`: 7 passed in 0.03s.
+  - `python -m pytest tests -q -m fast`: 85 passed, 1 xfailed in 25.10s.
+  - `python scripts/count_lines.py`: all compiler source files $\le 400$ lines.
 
 **77.7** Add a "language surface" conformance test that enumerates every
 keyword from `docs/SPECIFICATION.md` section 1.4 and asserts each appears in
