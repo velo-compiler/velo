@@ -2422,7 +2422,26 @@ compression, and no way to decode anything but UTF-8/hex/base32/base64/binary.
 **78.1** `std/coll/sort.vl`: stable merge sort and unstable introsort for
 shelves, generic over element size, with a comparator `act(@void, @void) -> i32`
 and typed convenience wrappers for primitives. Test: 10k-element randomized
-matrix against Python's `sorted`, plus a stability test.
+matrix against Python's `sorted`, plus a stability test. [COMPLETED] ✅
+- *Former Defect:*
+  Prior to Task 78.1, Velo's pure-Velo collection standard library (`std/coll`) had zero sorting algorithms. Dynamic collections (`shelf`, `RawShelf`) lacked in-place sort, stable sort, and custom comparator sorting, forcing manual implementations.
+- *Fix Applied:*
+  - Implemented `std/coll/sort.vl` containing:
+    - In-place introsort (`shelf_introsort`, `shelf_sort`): hybrid Quicksort with median-of-three pivot, Heapsort fallback when recursion depth exceeds $2 \lfloor \log_2 N \rfloor$ ($O(N \log N)$ worst-case guarantee), and Insertion sort for small partitions (<= 16).
+    - Stable merge sort (`shelf_merge_sort`, `shelf_sort_stable`): guaranteed $O(N \log N)$ stable sort preserving insertion order of equal keys.
+    - Copy-based non-mutating sort (`shelf_sorted`, `shelf_sorted_stable`).
+    - Standard comparators: `cmp_i64`, `cmp_i64_desc`, `cmp_u64`, `cmp_u64_desc`, `cmp_i32`, `cmp_i32_desc`, `cmp_f64`, `cmp_f64_desc`, `cmp_str`, `cmp_str_desc`.
+    - Typed convenience wrappers for `i64`, `u64`, `i32`, `f64`, and `str`.
+  - Added `use "coll/sort.vl"` to `std/coll.vl`.
+  - Added pure-Velo unit test suite in `std/tests/coll/sort_test.vl`.
+  - Added `tests/test_std_sort.py` verifying 10,000 randomized 64-bit integer sort, merge sort stability with duplicate keys, float sorting, and pure-Velo test assertions.
+- *Residual Limitation:*
+  None. Both unstable introsort and stable merge sort are fully functional for arbitrary homogeneous element sizes.
+- *Verification:*
+  - `python -m pytest tests/test_std_sort.py -v`: 4 passed in 7.53s.
+  - `python -m pytest tests/test_std_coll.py -k "test_std_coll_sort" -v`: passed in 0.53s.
+  - `bin/velo.exe run std/tests/coll/sort_test.vl`: passed with exit 0 (`PASS: std.coll.sort all assertions succeeded`).
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines; `std/coll/sort.vl` is 338 lines (<= 400).
 
 **78.2** `std/text/regex.vl`: a backtracking-free Thompson NFA engine (POSIX
 ERE subset: classes, anchors, `*+?{}`, alternation, groups). No backreferences.

@@ -1,0 +1,221 @@
+// Unit test suite for std.coll.sort (pure Velo collection sorting algorithms).
+use "../../mem/page.vl"
+use "../../mem/heap.vl"
+use "../../str/slice.vl"
+use "../../coll/shelf.vl"
+use "../../coll/shelf_ops.vl"
+use "../../coll/sort.vl"
+
+extern act puts(s: string) -> i32
+
+view data Pair {
+    key: i32
+    val: i32
+}
+
+act cmp_pair_key(a: @u8, b: @u8) -> i32 {
+    let pa = a as @Pair
+    let pb = b as @Pair
+    let ka = pa.key
+    let kb = pb.key
+    if ka < kb { return -1 }
+    if ka > kb { return 1 }
+    return 0
+}
+
+act test_shelf_sort_i64_basic() -> bool {
+    mut s = shelf_create(8, 7)
+    shelf_push_i64(@s, 64)
+    shelf_push_i64(@s, 34)
+    shelf_push_i64(@s, 25)
+    shelf_push_i64(@s, 12)
+    shelf_push_i64(@s, 22)
+    shelf_push_i64(@s, 11)
+    shelf_push_i64(@s, 90)
+
+    shelf_sort_i64(@s)
+
+    if shelf_len(@s) != 7 { shelf_free(@s); return false }
+    if shelf_get_i64(@s, 0) != 11 { shelf_free(@s); return false }
+    if shelf_get_i64(@s, 1) != 12 { shelf_free(@s); return false }
+    if shelf_get_i64(@s, 2) != 22 { shelf_free(@s); return false }
+    if shelf_get_i64(@s, 3) != 25 { shelf_free(@s); return false }
+    if shelf_get_i64(@s, 4) != 34 { shelf_free(@s); return false }
+    if shelf_get_i64(@s, 5) != 64 { shelf_free(@s); return false }
+    if shelf_get_i64(@s, 6) != 90 { shelf_free(@s); return false }
+
+    shelf_free(@s)
+    return true
+}
+
+act test_shelf_sort_i64_descending() -> bool {
+    mut s = shelf_create(8, 7)
+    shelf_push_i64(@s, 64)
+    shelf_push_i64(@s, 34)
+    shelf_push_i64(@s, 25)
+    shelf_push_i64(@s, 12)
+    shelf_push_i64(@s, 22)
+    shelf_push_i64(@s, 11)
+    shelf_push_i64(@s, 90)
+
+    shelf_sort_i64_desc(@s)
+
+    if shelf_len(@s) != 7 { shelf_free(@s); return false }
+    if shelf_get_i64(@s, 0) != 90 { shelf_free(@s); return false }
+    if shelf_get_i64(@s, 1) != 64 { shelf_free(@s); return false }
+    if shelf_get_i64(@s, 2) != 34 { shelf_free(@s); return false }
+    if shelf_get_i64(@s, 3) != 25 { shelf_free(@s); return false }
+    if shelf_get_i64(@s, 4) != 22 { shelf_free(@s); return false }
+    if shelf_get_i64(@s, 5) != 12 { shelf_free(@s); return false }
+    if shelf_get_i64(@s, 6) != 11 { shelf_free(@s); return false }
+
+    shelf_free(@s)
+    return true
+}
+
+act test_shelf_sorted_copy_non_mutating() -> bool {
+    mut original = shelf_create(8, 4)
+    shelf_push_i64(@original, 50)
+    shelf_push_i64(@original, 10)
+    shelf_push_i64(@original, 40)
+    shelf_push_i64(@original, 20)
+
+    mut sorted = shelf_sorted_i64(@original)
+
+    // Original must remain untouched: [50, 10, 40, 20]
+    if shelf_get_i64(@original, 0) != 50 { shelf_free(@original); shelf_free(@sorted); return false }
+    if shelf_get_i64(@original, 1) != 10 { shelf_free(@original); shelf_free(@sorted); return false }
+    if shelf_get_i64(@original, 2) != 40 { shelf_free(@original); shelf_free(@sorted); return false }
+    if shelf_get_i64(@original, 3) != 20 { shelf_free(@original); shelf_free(@sorted); return false }
+
+    // Sorted copy must be: [10, 20, 40, 50]
+    if shelf_get_i64(@sorted, 0) != 10 { shelf_free(@original); shelf_free(@sorted); return false }
+    if shelf_get_i64(@sorted, 1) != 20 { shelf_free(@original); shelf_free(@sorted); return false }
+    if shelf_get_i64(@sorted, 2) != 40 { shelf_free(@original); shelf_free(@sorted); return false }
+    if shelf_get_i64(@sorted, 3) != 50 { shelf_free(@original); shelf_free(@sorted); return false }
+
+    shelf_free(@original)
+    shelf_free(@sorted)
+    return true
+}
+
+act test_shelf_sort_strings() -> bool {
+    let s_banana = slice_from_str("banana")
+    let s_apple = slice_from_str("apple")
+    let s_cherry = slice_from_str("cherry")
+    let s_date = slice_from_str("date")
+
+    mut s = shelf_create(16, 4) // StrSlice is 16 bytes (ptr: 8, len: 8)
+    shelf_push_slice(@s, s_banana)
+    shelf_push_slice(@s, s_apple)
+    shelf_push_slice(@s, s_cherry)
+    shelf_push_slice(@s, s_date)
+
+    shelf_sort_str(@s)
+
+    if slice_cmp(shelf_get_slice(@s, 0), s_apple) != 0 { shelf_free(@s); return false }
+    if slice_cmp(shelf_get_slice(@s, 1), s_banana) != 0 { shelf_free(@s); return false }
+    if slice_cmp(shelf_get_slice(@s, 2), s_cherry) != 0 { shelf_free(@s); return false }
+    if slice_cmp(shelf_get_slice(@s, 3), s_date) != 0 { shelf_free(@s); return false }
+
+    shelf_free(@s)
+    return true
+}
+
+act test_shelf_merge_sort_stability() -> bool {
+    // Stability test: elements with equal keys must preserve relative insertion order
+    mut s = shelf_create(8, 6) // Pair is 8 bytes (key: 4, val: 4)
+
+    mut p1 = Pair{ key: 10, val: 1 }
+    mut p2 = Pair{ key: 5,  val: 2 }
+    mut p3 = Pair{ key: 10, val: 3 }
+    mut p4 = Pair{ key: 5,  val: 4 }
+    mut p5 = Pair{ key: 20, val: 5 }
+    mut p6 = Pair{ key: 5,  val: 6 }
+
+    let ptr1: @Pair = @p1
+    let ptr2: @Pair = @p2
+    let ptr3: @Pair = @p3
+    let ptr4: @Pair = @p4
+    let ptr5: @Pair = @p5
+    let ptr6: @Pair = @p6
+
+    shelf_push(@s, ptr1 as @u8)
+    shelf_push(@s, ptr2 as @u8)
+    shelf_push(@s, ptr3 as @u8)
+    shelf_push(@s, ptr4 as @u8)
+    shelf_push(@s, ptr5 as @u8)
+    shelf_push(@s, ptr6 as @u8)
+
+    // Run stable merge sort
+    if !shelf_merge_sort(@s, cmp_pair_key) {
+        shelf_free(@s)
+        return false
+    }
+
+    // Expected order:
+    // (5, 2), (5, 4), (5, 6), (10, 1), (10, 3), (20, 5)
+    let r0 = (shelf_get(@s, 0)) as @Pair
+    let r1 = (shelf_get(@s, 1)) as @Pair
+    let r2 = (shelf_get(@s, 2)) as @Pair
+    let r3 = (shelf_get(@s, 3)) as @Pair
+    let r4 = (shelf_get(@s, 4)) as @Pair
+    let r5 = (shelf_get(@s, 5)) as @Pair
+
+    if r0.key != 5 or r0.val != 2 { shelf_free(@s); return false }
+    if r1.key != 5 or r1.val != 4 { shelf_free(@s); return false }
+    if r2.key != 5 or r2.val != 6 { shelf_free(@s); return false }
+    if r3.key != 10 or r3.val != 1 { shelf_free(@s); return false }
+    if r4.key != 10 or r4.val != 3 { shelf_free(@s); return false }
+    if r5.key != 20 or r5.val != 5 { shelf_free(@s); return false }
+
+    shelf_free(@s)
+    return true
+}
+
+act test_shelf_introsort_stress_reverse() -> bool {
+    mut s = shelf_create(8, 1000)
+    mut i: i64 = 1000
+    loop i >= 1 {
+        shelf_push_i64(@s, i)
+        i -= 1
+    }
+
+    shelf_sort_i64(@s)
+
+    if shelf_len(@s) != 1000 { shelf_free(@s); return false }
+    mut j: usize = 0
+    loop j < 1000 {
+        if shelf_get_i64(@s, j) != (j as i64 + 1) {
+            shelf_free(@s)
+            return false
+        }
+        j += 1
+    }
+
+    shelf_free(@s)
+    return true
+}
+
+act main() -> i32 {
+    if !test_shelf_sort_i64_basic() {
+        return 1
+    }
+    if !test_shelf_sort_i64_descending() {
+        return 2
+    }
+    if !test_shelf_sorted_copy_non_mutating() {
+        return 3
+    }
+    if !test_shelf_sort_strings() {
+        return 4
+    }
+    if !test_shelf_merge_sort_stability() {
+        return 5
+    }
+    if !test_shelf_introsort_stress_reverse() {
+        return 6
+    }
+    puts("PASS: std.coll.sort all assertions succeeded")
+    return 0
+}

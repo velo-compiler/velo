@@ -1,0 +1,338 @@
+// Pure Velo collection sorting algorithms (zero C runtime dependencies).
+// Provides fast in-place introsort (quicksort + heapsort fallback + insertion sort)
+// and stable merge sort for dynamic shelves with custom or primitive comparators.
+
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+use "../str/slice.vl"
+use "shelf.vl"
+
+// Swaps two elements of elem_size bytes at indices i and j in raw buffer data.
+view act shelf_raw_swap(data: @u8, elem_size: usize, i: usize, j: usize) {
+    if i == j { return }
+    let pi = (data as usize + i * elem_size) as @u8
+    let pj = (data as usize + j * elem_size) as @u8
+    mut b: usize = 0
+    loop b < elem_size {
+        let tmp = pi[b]
+        pi[b] = pj[b]
+        pj[b] = tmp
+        b += 1
+    }
+}
+
+// In-place insertion sort on a subarray range [left, right].
+// Fast for small ranges (<= 16 elements) and maintains stability.
+view act insertion_sort_range(data: @u8, elem_size: usize, left: usize, right: usize, cmp: act(@u8, @u8) -> i32) {
+    mut i = left + 1
+    loop i <= right {
+        mut j = i
+        loop j > left {
+            let p_cur = (data as usize + j * elem_size) as @u8
+            let p_prev = (data as usize + (j - 1) * elem_size) as @u8
+            if cmp(p_prev, p_cur) > 0 {
+                shelf_raw_swap(data, elem_size, j, j - 1)
+                j -= 1
+            } else {
+                break
+            }
+        }
+        i += 1
+    }
+}
+
+// Sifts down element at root in binary max-heap over range [left, left + count - 1].
+view act heap_sift_down(data: @u8, elem_size: usize, left: usize, root: usize, count: usize, cmp: act(@u8, @u8) -> i32) {
+    mut parent = root
+    loop {
+        let left_child = 2 * parent + 1
+        if left_child >= count { break }
+        mut largest = left_child
+        let right_child = left_child + 1
+        if right_child < count {
+            let p_lc = (data as usize + (left + left_child) * elem_size) as @u8
+            let p_rc = (data as usize + (left + right_child) * elem_size) as @u8
+            if cmp(p_rc, p_lc) > 0 {
+                largest = right_child
+            }
+        }
+        let p_parent = (data as usize + (left + parent) * elem_size) as @u8
+        let p_largest = (data as usize + (left + largest) * elem_size) as @u8
+        if cmp(p_largest, p_parent) > 0 {
+            shelf_raw_swap(data, elem_size, left + parent, left + largest)
+            parent = largest
+        } else {
+            break
+        }
+    }
+}
+
+// Heapsort on subarray range [left, right] to guarantee O(N log N) worst-case time in introsort.
+view act heapsort_range(data: @u8, elem_size: usize, left: usize, right: usize, cmp: act(@u8, @u8) -> i32) {
+    let count = right - left + 1
+    if count <= 1 { return }
+    mut p = count / 2
+    loop {
+        heap_sift_down(data, elem_size, left, p, count, cmp)
+        if p == 0 { break }
+        p -= 1
+    }
+    mut end = count - 1
+    loop end > 0 {
+        shelf_raw_swap(data, elem_size, left, left + end)
+        heap_sift_down(data, elem_size, left, 0, end, cmp)
+        end -= 1
+    }
+}
+
+// Quicksort partition with median-of-three pivot selection.
+view act quicksort_partition(data: @u8, elem_size: usize, left: usize, right: usize, cmp: act(@u8, @u8) -> i32) -> usize {
+    let mid = left + (right - left) / 2
+    let p_l = (data as usize + left * elem_size) as @u8
+    let p_m = (data as usize + mid * elem_size) as @u8
+    let p_r = (data as usize + right * elem_size) as @u8
+    if cmp(p_l, p_m) > 0 { shelf_raw_swap(data, elem_size, left, mid) }
+    if cmp(p_l, p_r) > 0 { shelf_raw_swap(data, elem_size, left, right) }
+    if cmp(p_m, p_r) > 0 { shelf_raw_swap(data, elem_size, mid, right) }
+
+    shelf_raw_swap(data, elem_size, mid, right)
+    let p_pivot = (data as usize + right * elem_size) as @u8
+
+    mut i = left
+    mut j = left
+    loop j < right {
+        let pj = (data as usize + j * elem_size) as @u8
+        if cmp(pj, p_pivot) < 0 {
+            if i != j {
+                shelf_raw_swap(data, elem_size, i, j)
+            }
+            i += 1
+        }
+        j += 1
+    }
+    shelf_raw_swap(data, elem_size, i, right)
+    return i
+}
+
+// Calculates 2 * floor(log2(n)) recursion depth limit for introsort.
+view act calc_max_depth(n: usize) -> usize {
+    mut depth: usize = 0
+    mut val = n
+    loop val > 0 {
+        depth += 1
+        val /= 2
+    }
+    return depth * 2
+}
+
+// Recursive introsort engine switching between quicksort, heapsort, and insertion sort.
+view act introsort_range(data: @u8, elem_size: usize, left: usize, right: usize, max_depth: usize, cmp: act(@u8, @u8) -> i32) {
+    if left >= right { return }
+    let count = right - left + 1
+    if count <= 16 {
+        insertion_sort_range(data, elem_size, left, right, cmp)
+        return
+    }
+    if max_depth == 0 {
+        heapsort_range(data, elem_size, left, right, cmp)
+        return
+    }
+    let pivot_idx = quicksort_partition(data, elem_size, left, right, cmp)
+    if pivot_idx > left {
+        introsort_range(data, elem_size, left, pivot_idx - 1, max_depth - 1, cmp)
+    }
+    if pivot_idx < right {
+        introsort_range(data, elem_size, pivot_idx + 1, right, max_depth - 1, cmp)
+    }
+}
+
+// Sorts shelf in place using fast introsort (unstable O(N log N)).
+view act shelf_introsort(s: @RawShelf, cmp: act(@u8, @u8) -> i32) {
+    if s == null or s.data == null or s.len <= 1 { return }
+    let max_depth = calc_max_depth(s.len)
+    introsort_range(s.data, s.elem_size, 0, s.len - 1, max_depth, cmp)
+}
+
+// Recursive merge sort with stability guarantee.
+view act merge_sort_range(data: @u8, scratch: @u8, elem_size: usize, left: usize, right: usize, cmp: act(@u8, @u8) -> i32) {
+    if left >= right { return }
+    let count = right - left + 1
+    if count <= 16 {
+        insertion_sort_range(data, elem_size, left, right, cmp)
+        return
+    }
+    let mid = left + (right - left) / 2
+    merge_sort_range(data, scratch, elem_size, left, mid, cmp)
+    merge_sort_range(data, scratch, elem_size, mid + 1, right, cmp)
+
+    mut i = left
+    mut j = mid + 1
+    mut k = left
+    loop i <= mid and j <= right {
+        let pi = (data as usize + i * elem_size) as @u8
+        let pj = (data as usize + j * elem_size) as @u8
+        if cmp(pi, pj) <= 0 {
+            copy((scratch as usize + k * elem_size) as @u8, pi, elem_size)
+            i += 1
+        } else {
+            copy((scratch as usize + k * elem_size) as @u8, pj, elem_size)
+            j += 1
+        }
+        k += 1
+    }
+    loop i <= mid {
+        copy((scratch as usize + k * elem_size) as @u8, (data as usize + i * elem_size) as @u8, elem_size)
+        i += 1
+        k += 1
+    }
+    loop j <= right {
+        copy((scratch as usize + k * elem_size) as @u8, (data as usize + j * elem_size) as @u8, elem_size)
+        j += 1
+        k += 1
+    }
+    copy((data as usize + left * elem_size) as @u8, (scratch as usize + left * elem_size) as @u8, count * elem_size)
+}
+
+// Sorts shelf in place using stable merge sort (O(N log N) time, O(N) memory).
+view act shelf_merge_sort(s: @RawShelf, cmp: act(@u8, @u8) -> i32) -> bool {
+    if s == null or s.data == null or s.len <= 1 { return true }
+    let scratch = heap_alloc(s.len * s.elem_size)
+    if scratch == null { return false }
+    merge_sort_range(s.data, scratch, s.elem_size, 0, s.len - 1, cmp)
+    heap_free(scratch)
+    return true
+}
+
+// Default in-place sort on RawShelf (introsort).
+view act shelf_sort(s: @RawShelf, cmp: act(@u8, @u8) -> i32) {
+    shelf_introsort(s, cmp)
+}
+
+// In-place stable sort on RawShelf.
+view act shelf_sort_stable(s: @RawShelf, cmp: act(@u8, @u8) -> i32) -> bool {
+    return shelf_merge_sort(s, cmp)
+}
+
+// Internal shelf copy helper.
+act shelf_clone_internal(s: @RawShelf) -> RawShelf {
+    if s == null {
+        return RawShelf{ data: null, elem_size: 0, len: 0, cap: 0 }
+    }
+    mut out = shelf_create(s.elem_size, s.len)
+    if s.len > 0 and s.data != null {
+        copy(out.data, s.data, s.len * s.elem_size)
+        out.len = s.len
+    }
+    return out
+}
+
+// Returns a new sorted shelf copy without mutating original.
+view act shelf_sorted(s: @RawShelf, cmp: act(@u8, @u8) -> i32) -> RawShelf {
+    mut res = shelf_clone_internal(s)
+    shelf_sort(@res, cmp)
+    return res
+}
+
+// Returns a new sorted shelf copy using stable merge sort.
+view act shelf_sorted_stable(s: @RawShelf, cmp: act(@u8, @u8) -> i32) -> RawShelf {
+    mut res = shelf_clone_internal(s)
+    shelf_sort_stable(@res, cmp)
+    return res
+}
+
+// ============================================================================
+// Built-in Comparators
+// ============================================================================
+
+view act cmp_i64(a: @u8, b: @u8) -> i32 {
+    let pa = a as @i64
+    let pb = b as @i64
+    let va = pa[0]
+    let vb = pb[0]
+    if va < vb { return -1 }
+    if va > vb { return 1 }
+    return 0
+}
+
+view act cmp_i64_desc(a: @u8, b: @u8) -> i32 {
+    return cmp_i64(b, a)
+}
+
+view act cmp_u64(a: @u8, b: @u8) -> i32 {
+    let pa = a as @u64
+    let pb = b as @u64
+    let va = pa[0]
+    let vb = pb[0]
+    if va < vb { return -1 }
+    if va > vb { return 1 }
+    return 0
+}
+
+view act cmp_u64_desc(a: @u8, b: @u8) -> i32 {
+    return cmp_u64(b, a)
+}
+
+view act cmp_i32(a: @u8, b: @u8) -> i32 {
+    let pa = a as @i32
+    let pb = b as @i32
+    let va = pa[0]
+    let vb = pb[0]
+    if va < vb { return -1 }
+    if va > vb { return 1 }
+    return 0
+}
+
+view act cmp_i32_desc(a: @u8, b: @u8) -> i32 {
+    return cmp_i32(b, a)
+}
+
+view act cmp_f64(a: @u8, b: @u8) -> i32 {
+    let pa = a as @f64
+    let pb = b as @f64
+    let va = pa[0]
+    let vb = pb[0]
+    if va < vb { return -1 }
+    if va > vb { return 1 }
+    return 0
+}
+
+view act cmp_f64_desc(a: @u8, b: @u8) -> i32 {
+    return cmp_f64(b, a)
+}
+
+view act cmp_str(a: @u8, b: @u8) -> i32 {
+    let pa = a as @StrSlice
+    let pb = b as @StrSlice
+    return slice_cmp(pa[0], pb[0])
+}
+
+view act cmp_str_desc(a: @u8, b: @u8) -> i32 {
+    return cmp_str(b, a)
+}
+
+// ============================================================================
+// Typed Convenience Wrappers
+// ============================================================================
+
+view act shelf_sort_i64(s: @RawShelf) { shelf_sort(s, cmp_i64) }
+view act shelf_sort_i64_desc(s: @RawShelf) { shelf_sort(s, cmp_i64_desc) }
+view act shelf_sorted_i64(s: @RawShelf) -> RawShelf { return shelf_sorted(s, cmp_i64) }
+view act shelf_sorted_i64_desc(s: @RawShelf) -> RawShelf { return shelf_sorted(s, cmp_i64_desc) }
+view act shelf_sort_stable_i64(s: @RawShelf) -> bool { return shelf_sort_stable(s, cmp_i64) }
+
+view act shelf_sort_u64(s: @RawShelf) { shelf_sort(s, cmp_u64) }
+view act shelf_sort_u64_desc(s: @RawShelf) { shelf_sort(s, cmp_u64_desc) }
+view act shelf_sorted_u64(s: @RawShelf) -> RawShelf { return shelf_sorted(s, cmp_u64) }
+
+view act shelf_sort_i32(s: @RawShelf) { shelf_sort(s, cmp_i32) }
+view act shelf_sort_i32_desc(s: @RawShelf) { shelf_sort(s, cmp_i32_desc) }
+view act shelf_sorted_i32(s: @RawShelf) -> RawShelf { return shelf_sorted(s, cmp_i32) }
+
+view act shelf_sort_f64(s: @RawShelf) { shelf_sort(s, cmp_f64) }
+view act shelf_sort_f64_desc(s: @RawShelf) { shelf_sort(s, cmp_f64_desc) }
+view act shelf_sorted_f64(s: @RawShelf) -> RawShelf { return shelf_sorted(s, cmp_f64) }
+
+view act shelf_sort_str(s: @RawShelf) { shelf_sort(s, cmp_str) }
+view act shelf_sort_str_desc(s: @RawShelf) { shelf_sort(s, cmp_str_desc) }
+view act shelf_sorted_str(s: @RawShelf) -> RawShelf { return shelf_sorted(s, cmp_str) }
+view act shelf_sort_stable_str(s: @RawShelf) -> bool { return shelf_sort_stable(s, cmp_str) }

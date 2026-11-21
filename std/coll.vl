@@ -1,6 +1,7 @@
 // Pure Velo standard collections library (zero C runtime dependencies).
 use "coll/shelf.vl"
 use "coll/shelf_ops.vl"
+use "coll/sort.vl"
 use "coll/ring.vl"
 use "coll/hash.vl"
 use "coll/map.vl"

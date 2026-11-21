@@ -85,6 +85,18 @@ def test_std_coll_map_ops():
     assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
     assert "PASS: std.coll.map_ops all assertions succeeded" in res.stdout
 
+def test_std_coll_sort():
+    test_vl = REPO_ROOT / "std" / "tests" / "coll" / "sort_test.vl"
+    res = subprocess.run(
+        [str(VELO_EXE), "run", str(test_vl)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True, encoding="utf-8", errors="replace",
+        env=get_env()
+    )
+    assert res.returncode == 0, f"run failed with code {res.returncode}:\n{res.stderr}\n{res.stdout}"
+    assert "PASS: std.coll.sort all assertions succeeded" in res.stdout
+
 def test_std_module_imports():
     test_vl = REPO_ROOT / "std" / "tests" / "std_module_import_test.vl"
     res = subprocess.run(
