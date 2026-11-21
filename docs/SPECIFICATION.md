@@ -245,16 +245,49 @@ if btn.on_click != null {
 }
 ```
 
-#### Inline Anonymous Functions:
-Anonymous functions can be defined inline with parameter types and optional return type (defaults to `void`):
-```rust
-btn.on_click = act(b: @Button) {
-    io.println("Clicked button: {b.id}")
-}
+#### Inline Anonymous Functions & Fat-Arrow Syntax:
+Velo supports first-class anonymous functions (`act`) using both single-expression fat-arrow syntax (`=>`) and multi-statement block syntax:
 
-let calc = act(x: i32, y: i32) -> i32 { return x * 2 + y }
-let val = calc(10, 5) // 25
-```
+* **Single-Expression Fat-Arrow Form (`act(params...) => expr`):**
+  Omitting the return type infers it automatically from the return expression:
+  ```velo
+  let doubler = act(x: i32) => x * 2
+  let sum = act(a: i32, b: i32) => a + b
+  ```
+
+* **Fat-Arrow Form with Explicit Return Type (`act(params...) -> Ret => expr`):**
+  ```velo
+  let add_ten = act(x: i32) -> i32 => x + 10
+  ```
+
+* **Full Block Anonymous Function Form (`act(params...) [-> Ret] { body }`):**
+  If `-> Ret` is omitted, the return type defaults to `void`:
+  ```velo
+  btn.on_click = act(b: @Button) {
+      io.println("Clicked button: {b.id}")
+  }
+
+  let calc = act(x: i32, y: i32) -> i32 {
+      return x * 2 + y
+  }
+  ```
+
+* **Named Fat-Arrow Functions (`act name(params...) [-> Ret] => expr`):**
+  Named function declarations also support single-expression fat-arrow syntax:
+  ```velo
+  act square(x: i32) => x * x
+  act cube(x: i32) -> i32 => x * x * x
+  ```
+
+* **Passing Anonymous Acts to Higher-Order Functions:**
+  Anonymous acts can be passed directly as arguments to any function expecting a matching `act(...) -> Ret` function pointer:
+  ```velo
+  act apply_int(val: i32, f: act(i32) -> i32) -> i32 {
+      return f(val)
+  }
+
+  let result = apply_int(7, act(n: i32) => n * 3) // 21
+  ```
 
 ### 2.7 Method Syntax / Uniform Function Call Syntax (UFCS)
 Velo supports pure Uniform Function Call Syntax (UFCS) without requiring `class`, `impl`, or object-oriented keywords. Any top-level function whose first parameter matches the receiver type can be called using method syntax (`receiver.method(args...)`):
@@ -1503,7 +1536,7 @@ act register_timer(ctx: @TimerContext, callback: act(@TimerContext) -> void) {
 ```
 
 > [!NOTE]
-> Non-escaping stack-frame closures or a standard `bind()` helper will be formalized in Task 77.2 as a first-class language/library mechanism without violating zone escape invariants.
+> Task 77.2 introduced first-class fat-arrow anonymous functions (`act(params...) => expr`) and block-form anonymous functions (`act(params...) [-> Ret] { body }`). Furthermore, standard library asynchronous APIs (`std.async.tcp` and `std.http.async_server`) were refactored to eliminate the legacy untyped `user_data: @void` callback baggage, utilizing clean function pointer signatures while preserving explicit context struct pointers (`@Context`) where stateful environments are required (Security Invariant I77.2).
 
 ### 11.2 Dynamic Interfaces, Traits, and Vtables
 

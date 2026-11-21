@@ -1,0 +1,85 @@
+// Example 39: Anonymous Functions, Fat-Arrow Acts, and Closures in Velo
+use std.io
+
+// 1. Higher-order function taking a function pointer / anonymous act
+act apply_i32(val: i32, f: act(i32) -> i32) -> i32 {
+    return f(val)
+}
+
+// 2. Named function using fat-arrow expression syntax
+act square(x: i32) => x * x
+
+// 3. Callback holder struct
+data TransformPipeline {
+    name: string
+    op: act(i32) -> i32
+}
+
+// 4. Idiomatic non-escaping closure context struct (explicit typed environment)
+data AccumulatorContext {
+    total: i32
+    step: i32
+}
+
+act run_step(ctx: @AccumulatorContext) {
+    ctx.total += ctx.step
+}
+
+act main() -> i32 {
+    io.println_str("=== Velo Example 39: Closures and Anonymous Acts ===")
+
+    // 1. Single-expression fat-arrow anonymous functions
+    let doubler = act(x: i32) => x * 2
+    let res1 = doubler(21)
+    io.println("doubler(21) = {res1}")
+
+    // 2. Explicit return type with fat-arrow
+    let add_ten = act(x: i32) -> i32 => x + 10
+    let res2 = add_ten(32)
+    io.println("add_ten(32) = {res2}")
+
+    // 3. Passing anonymous act directly to a higher-order function
+    let res3 = apply_i32(7, act(n: i32) => n * 3)
+    io.println("apply_i32(7, act(n) => n * 3) = {res3}")
+
+    // 4. Block-form anonymous function
+    let complex_calc = act(x: i32) -> i32 {
+        mut acc = x
+        acc = acc * 2
+        acc = acc + 5
+        return acc
+    }
+    let res4 = complex_calc(10)
+    io.println("complex_calc(10) = {res4}")
+
+    // 5. Named fat-arrow function
+    let sq = square(8)
+    io.println("square(8) = {sq}")
+
+    // 6. Callback stored in a struct
+    mut pipeline = TransformPipeline{
+        name: "Triple",
+        op: act(x: i32) => x * 3
+    }
+    if pipeline.op != null {
+        let op_fn = pipeline.op
+        let res5 = op_fn(9)
+        io.println("pipeline {pipeline.name}(9) = {res5}")
+    }
+
+    // 7. Idiomatic non-escaping closure pattern (stack context passed to callback)
+    mut acc = AccumulatorContext{
+        total: 100,
+        step: 25
+    }
+    let step_fn: act(@AccumulatorContext) -> void = run_step
+    step_fn(@acc)
+    step_fn(@acc)
+    io.println("Accumulator total after 2 steps = {acc.total}")
+
+    // 8. Void-returning fat-arrow act
+    let logger = act(msg: string) => io.println_str(msg)
+    logger("OK: Closures and anonymous acts executed successfully")
+
+    return 0
+}

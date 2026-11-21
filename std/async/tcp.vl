@@ -9,20 +9,19 @@ use "../mem/heap.vl"
 data AsyncTcpListener {
     socket: Socket
     loop_ptr: @EventLoop
-    on_connection: act(@AsyncTcpStream, @void) -> void
-    user_data: @void
+    on_connection: act(@AsyncTcpStream) -> void
+    tag: @void
     is_closed: bool
 }
 
 data AsyncTcpStream {
     socket: Socket
     loop_ptr: @EventLoop
-    on_data: act(@AsyncTcpStream, @u8, usize, @void) -> void
-    data_user_data: @void
-    on_close: act(@AsyncTcpStream, @void) -> void
-    close_user_data: @void
-    on_connect: act(@AsyncTcpStream, bool, @void) -> void
-    connect_user_data: @void
+    on_data: act(@AsyncTcpStream, @u8, usize) -> void
+    on_close: act(@AsyncTcpStream) -> void
+    on_connect: act(@AsyncTcpStream, bool) -> void
+    listener: @AsyncTcpListener
+    tag: @void
     is_connected: bool
     is_closed: bool
 }
@@ -49,7 +48,7 @@ act _async_stream_cb(fd: i64, events: u32, udata: @void) {
         loop_modify_io(stream.loop_ptr, fd, ASYNC_EVENT_READ)
         if stream.on_connect != null {
             let on_cn = stream.on_connect
-            on_cn(stream, true, stream.connect_user_data)
+            on_cn(stream, true)
         }
     }
 
@@ -70,12 +69,12 @@ act _async_stream_cb(fd: i64, events: u32, udata: @void) {
         if bytes_read > 0 {
             if stream.on_data != null {
                 let on_dt = stream.on_data
-                on_dt(stream, buf, bytes_read as usize, stream.data_user_data)
+                on_dt(stream, buf, bytes_read as usize)
             }
         } else if bytes_read == 0 or bytes_read < 0 {
             if stream.on_close != null {
                 let on_cl = stream.on_close
-                on_cl(stream, stream.close_user_data)
+                on_cl(stream)
             }
             async_tcp_stream_close(stream)
         }
@@ -89,7 +88,7 @@ act _async_stream_cb(fd: i64, events: u32, udata: @void) {
         if not stream.is_closed {
             if stream.on_close != null {
                 let on_cl = stream.on_close
-                on_cl(stream, stream.close_user_data)
+                on_cl(stream)
             }
             async_tcp_stream_close(stream)
         }
@@ -115,11 +114,10 @@ act _async_listener_cb(fd: i64, events: u32, udata: @void) {
             stream.socket = client_sock
             stream.loop_ptr = listener.loop_ptr
             stream.on_data = null
-            stream.data_user_data = null
             stream.on_close = null
-            stream.close_user_data = null
             stream.on_connect = null
-            stream.connect_user_data = null
+            stream.listener = listener
+            stream.tag = null
             stream.is_connected = true
             stream.is_closed = false
 
@@ -127,14 +125,14 @@ act _async_listener_cb(fd: i64, events: u32, udata: @void) {
 
             if listener.on_connection != null {
                 let on_conn = listener.on_connection
-                on_conn(stream, listener.user_data)
+                on_conn(stream)
             }
         }
     }
 }
 
 // Creates an asynchronous non-blocking TCP listener registered on the EventLoop
-act async_tcp_listen(el: @EventLoop, host: string, port: u16, on_connection: act(@AsyncTcpStream, @void) -> void, user_data: @void) -> @AsyncTcpListener {
+act async_tcp_listen(el: @EventLoop, host: string, port: u16, on_connection: act(@AsyncTcpStream) -> void) -> @AsyncTcpListener {
     if el == null { return null }
     mut sock = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
     if !socket_is_valid(@sock) { return null }
@@ -154,7 +152,7 @@ act async_tcp_listen(el: @EventLoop, host: string, port: u16, on_connection: act
     listener.socket = sock
     listener.loop_ptr = el
     listener.on_connection = on_connection
-    listener.user_data = user_data
+    listener.tag = null
     listener.is_closed = false
 
     loop_add_io(el, sock.fd, ASYNC_EVENT_READ, _async_listener_cb, listener as @void)
@@ -171,18 +169,16 @@ act async_tcp_listener_close(l: @AsyncTcpListener) {
 }
 
 // Sets the incoming data callback for an asynchronous stream
-act async_tcp_stream_on_data(s: @AsyncTcpStream, cb: act(@AsyncTcpStream, @u8, usize, @void) -> void, user_data: @void) {
+act async_tcp_stream_on_data(s: @AsyncTcpStream, cb: act(@AsyncTcpStream, @u8, usize) -> void) {
     if s != null {
         s.on_data = cb
-        s.data_user_data = user_data
     }
 }
 
 // Sets the disconnect/close callback for an asynchronous stream
-act async_tcp_stream_on_close(s: @AsyncTcpStream, cb: act(@AsyncTcpStream, @void) -> void, user_data: @void) {
+act async_tcp_stream_on_close(s: @AsyncTcpStream, cb: act(@AsyncTcpStream) -> void) {
     if s != null {
         s.on_close = cb
-        s.close_user_data = user_data
     }
 }
 
@@ -209,7 +205,7 @@ act async_tcp_stream_close(s: @AsyncTcpStream) {
 }
 
 // Initiates an asynchronous non-blocking connection to a remote host:port
-act async_tcp_connect(el: @EventLoop, host: string, port: u16, on_connect: act(@AsyncTcpStream, bool, @void) -> void, user_data: @void) -> @AsyncTcpStream {
+act async_tcp_connect(el: @EventLoop, host: string, port: u16, on_connect: act(@AsyncTcpStream, bool) -> void) -> @AsyncTcpStream {
     if el == null { return null }
     mut sock = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
     if !socket_is_valid(@sock) { return null }
@@ -221,15 +217,13 @@ act async_tcp_connect(el: @EventLoop, host: string, port: u16, on_connect: act(@
     stream.socket = sock
     stream.loop_ptr = el
     stream.on_data = null
-    stream.data_user_data = null
     stream.on_close = null
-    stream.close_user_data = null
     stream.on_connect = on_connect
-    stream.connect_user_data = user_data
+    stream.listener = null
+    stream.tag = null
     stream.is_connected = false
     stream.is_closed = false
 
     loop_add_io(el, sock.fd, ASYNC_EVENT_WRITE | ASYNC_EVENT_ERROR, _async_stream_cb, stream as @void)
     return stream
 }
-

@@ -170,6 +170,43 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
         cur = cur.next
     }
 
+    // Pass 2.5: Infer return types for functions with return_type == "auto"
+    mut changed = true
+    mut iter: usize = 0
+    loop changed and iter < 8 {
+        changed = false
+        iter += 1
+        cur = prog.first_decl
+        loop cur != null {
+            if cur.kind == DECL_FUNCTION and cur.return_type != null and cur.return_type == "auto" and cur.body != null {
+                enter_scope(st)
+                mut cur_p = cur.first_param
+                loop cur_p != null { define_parameter(st, cur_p.name, cur_p.type_name, cur_p.line, cur_p.col); cur_p = cur_p.next }
+                mut inf_ret = "void"
+                if cur.body.kind == STMT_BLOCK and cur.body.first_stmt != null and cur.body.first_stmt.kind == STMT_RETURN and cur.body.first_stmt.val_expr != null {
+                    inf_ret = infer_expr_type(st, cur.body.first_stmt.val_expr)
+                }
+                exit_scope(st)
+                if inf_ret != null and inf_ret != "auto" and inf_ret != "unknown" {
+                    cur.return_type = inf_ret
+                    let fn_sym = find_function(st, cur.name)
+                    if fn_sym != null { fn_sym.return_type = inf_ret }
+                    changed = true
+                }
+            }
+            cur = cur.next
+        }
+    }
+    cur = prog.first_decl
+    loop cur != null {
+        if cur.kind == DECL_FUNCTION and cur.return_type != null and cur.return_type == "auto" {
+            cur.return_type = "void"
+            let fn_sym = find_function(st, cur.name)
+            if fn_sym != null { fn_sym.return_type = "void" }
+        }
+        cur = cur.next
+    }
+
     // Pass 3: Validate function bodies, statements, and expressions
     cur = prog.first_decl
     loop cur != null {

@@ -6,18 +6,18 @@ mut g_connected: bool = false
 mut g_server_received: bool = false
 mut g_client_received: bool = false
 
-act on_server_data(stream: @AsyncTcpStream, data: @u8, len: usize, udata: @void) {
+act on_server_data(stream: @AsyncTcpStream, data: @u8, len: usize) {
     if len >= 10 and data[0] == 'P' as u8 and data[1] == 'I' as u8 and data[2] == 'N' as u8 and data[3] == 'G' as u8 {
         g_server_received = true
         async_tcp_stream_write_str(stream, "PONG_ASYNC")
     }
 }
 
-act on_server_connection(stream: @AsyncTcpStream, udata: @void) {
-    async_tcp_stream_on_data(stream, on_server_data, null)
+act on_server_connection(stream: @AsyncTcpStream) {
+    async_tcp_stream_on_data(stream, on_server_data)
 }
 
-act on_client_data(stream: @AsyncTcpStream, data: @u8, len: usize, udata: @void) {
+act on_client_data(stream: @AsyncTcpStream, data: @u8, len: usize) {
     if len >= 10 and data[0] == 'P' as u8 and data[1] == 'O' as u8 and data[2] == 'N' as u8 and data[3] == 'G' as u8 {
         g_client_received = true
         if stream.loop_ptr != null {
@@ -26,10 +26,10 @@ act on_client_data(stream: @AsyncTcpStream, data: @u8, len: usize, udata: @void)
     }
 }
 
-act on_client_connect(stream: @AsyncTcpStream, success: bool, udata: @void) {
+act on_client_connect(stream: @AsyncTcpStream, success: bool) {
     if success {
         g_connected = true
-        async_tcp_stream_on_data(stream, on_client_data, null)
+        async_tcp_stream_on_data(stream, on_client_data)
         async_tcp_stream_write_str(stream, "PING_ASYNC")
     }
 }
@@ -40,14 +40,14 @@ act main() -> i32 {
 
     let port: u16 = 29995
 
-    let listener = async_tcp_listen(@el, "127.0.0.1", port, on_server_connection, null)
+    let listener = async_tcp_listen(@el, "127.0.0.1", port, on_server_connection)
     if listener == null {
         io.println_str("async_tcp_listen failed")
         loop_free(@el)
         return 1
     }
 
-    let client = async_tcp_connect(@el, "127.0.0.1", port, on_client_connect, null)
+    let client = async_tcp_connect(@el, "127.0.0.1", port, on_client_connect)
     if client == null {
         io.println_str("async_tcp_connect failed")
         async_tcp_listener_close(listener)

@@ -261,6 +261,14 @@ act emit_return_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, inde
         if is_or_type(vt) { is_val_or = true }
     }
     if not has_active_defers(defers) {
+        if ret_c == "void" and stmt.val_expr != null {
+            sb_append_indent(sb, indent)
+            emit_c_expr(sb, st, stmt.val_expr)
+            sb_append_str(sb, ";\n")
+            sb_append_indent(sb, indent)
+            sb_append_str(sb, "return;\n")
+            return
+        }
         sb_append_indent(sb, indent)
         sb_append_str(sb, "return")
         if is_val_opt {

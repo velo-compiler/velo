@@ -31,8 +31,7 @@ data _AsyncHttpServerConn {
 data AsyncHttpServer {
     listener: @AsyncTcpListener
     loop_ptr: @EventLoop
-    on_request: act(@AsyncHttpExchange, @void) -> void
-    user_data: @void
+    on_request: act(@AsyncHttpExchange) -> void
     is_running: bool
     conns: @_AsyncHttpServerConn
     conn_cap: usize
@@ -129,9 +128,9 @@ act _async_http_release_conn(conn: @_AsyncHttpServerConn) {
     }
 }
 
-act _async_http_on_data(stream: @AsyncTcpStream, data: @u8, len: usize, udata: @void) {
-    if udata == null { return }
-    let conn = udata as @_AsyncHttpServerConn
+act _async_http_on_data(stream: @AsyncTcpStream, data: @u8, len: usize) {
+    if stream == null or stream.tag == null { return }
+    let conn = stream.tag as @_AsyncHttpServerConn
     _http_server_conn_append(conn, data, len)
 
     if not conn.has_header_end {
@@ -157,36 +156,35 @@ act _async_http_on_data(stream: @AsyncTcpStream, data: @u8, len: usize, udata: @
             let srv = conn.server_ptr
             if srv != null and srv.on_request != null {
                 let handler = srv.on_request
-                handler(ex, srv.user_data)
+                handler(ex)
             }
         }
     }
 }
 
-act _async_http_on_close(stream: @AsyncTcpStream, udata: @void) {
-    if udata != null {
-        let conn = udata as @_AsyncHttpServerConn
-        _async_http_release_conn(conn)
-    }
+act _async_http_on_close(stream: @AsyncTcpStream) {
+    if stream == null or stream.tag == null { return }
+    let conn = stream.tag as @_AsyncHttpServerConn
+    _async_http_release_conn(conn)
 }
 
-act _async_http_on_connection(stream: @AsyncTcpStream, udata: @void) {
-    if udata == null { return }
-    let server = udata as @AsyncHttpServer
+act _async_http_on_connection(stream: @AsyncTcpStream) {
+    if stream == null or stream.listener == null or stream.listener.tag == null { return }
+    let server = stream.listener.tag as @AsyncHttpServer
     let conn = _async_http_acquire_conn(server, stream)
+    stream.tag = conn as @void
 
-    async_tcp_stream_on_data(stream, _async_http_on_data, conn as @void)
-    async_tcp_stream_on_close(stream, _async_http_on_close, conn as @void)
+    async_tcp_stream_on_data(stream, _async_http_on_data)
+    async_tcp_stream_on_close(stream, _async_http_on_close)
 }
 
 // Binds an asynchronous non-blocking HTTP server to the specified host and port on the EventLoop
-act async_http_listen(el: @EventLoop, host: string, port: u16, on_request: act(@AsyncHttpExchange, @void) -> void, user_data: @void) -> @AsyncHttpServer {
+act async_http_listen(el: @EventLoop, host: string, port: u16, on_request: act(@AsyncHttpExchange) -> void) -> @AsyncHttpServer {
     if el == null or on_request == null { return null }
 
     let server = heap_alloc(async_http_server_sizeof()) as @AsyncHttpServer
     server.loop_ptr = el
     server.on_request = on_request
-    server.user_data = user_data
     server.is_running = true
 
     // Initialize 64 pre-allocated connection buffers for zero-alloc fast path
@@ -211,7 +209,7 @@ act async_http_listen(el: @EventLoop, host: string, port: u16, on_request: act(@
         }
     }
 
-    let listener = async_tcp_listen(el, host, port, _async_http_on_connection, server as @void)
+    let listener = async_tcp_listen(el, host, port, _async_http_on_connection)
     if listener == null {
         if server.conns != null {
             mut j: usize = 0
@@ -225,6 +223,7 @@ act async_http_listen(el: @EventLoop, host: string, port: u16, on_request: act(@
         heap_free(server as @u8)
         return null
     }
+    listener.tag = server as @void
     server.listener = listener
     return server
 }

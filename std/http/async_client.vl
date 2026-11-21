@@ -10,8 +10,7 @@ use "../mem/heap.vl"
 
 data _AsyncHttpClientState {
     loop_ptr: @EventLoop
-    on_response: act(HttpResponse, @void) -> void
-    user_data: @void
+    on_response: act(HttpResponse) -> void
     req_wire: string
     buf: @u8
     len: usize
@@ -51,9 +50,9 @@ act _http_client_state_append(state: @_AsyncHttpClientState, data: @u8, len: usi
     state.buf[state.len] = 0 as u8
 }
 
-act _async_http_client_on_data(stream: @AsyncTcpStream, data: @u8, len: usize, udata: @void) {
-    if udata == null { return }
-    let state = udata as @_AsyncHttpClientState
+act _async_http_client_on_data(stream: @AsyncTcpStream, data: @u8, len: usize) {
+    if stream == null or stream.tag == null { return }
+    let state = stream.tag as @_AsyncHttpClientState
     if state.is_done { return }
 
     _http_client_state_append(state, data, len)
@@ -72,26 +71,24 @@ act _async_http_client_on_data(stream: @AsyncTcpStream, data: @u8, len: usize, u
             state.is_done = true
             let resp = http_parse_response(state.buf as string)
             let on_resp = state.on_response
-            let u_data = state.user_data
 
             heap_free(state.buf)
             heap_free(state as @u8)
             async_tcp_stream_close(stream)
 
             if on_resp != null {
-                on_resp(resp, u_data)
+                on_resp(resp)
             }
         }
     }
 }
 
-act _async_http_client_on_close(stream: @AsyncTcpStream, udata: @void) {
-    if udata == null { return }
-    let state = udata as @_AsyncHttpClientState
+act _async_http_client_on_close(stream: @AsyncTcpStream) {
+    if stream == null or stream.tag == null { return }
+    let state = stream.tag as @_AsyncHttpClientState
     if not state.is_done {
         state.is_done = true
         let on_resp = state.on_response
-        let u_data = state.user_data
 
         mut resp: HttpResponse
         if state.len > 0 {
@@ -107,18 +104,17 @@ act _async_http_client_on_close(stream: @AsyncTcpStream, udata: @void) {
         heap_free(state as @u8)
 
         if on_resp != null {
-            on_resp(resp, u_data)
+            on_resp(resp)
         }
     }
 }
 
-act _async_http_client_on_connect(stream: @AsyncTcpStream, success: bool, udata: @void) {
-    if udata == null { return }
-    let state = udata as @_AsyncHttpClientState
+act _async_http_client_on_connect(stream: @AsyncTcpStream, success: bool) {
+    if stream == null or stream.tag == null { return }
+    let state = stream.tag as @_AsyncHttpClientState
 
     if not success {
         let on_resp = state.on_response
-        let u_data = state.user_data
         let fail_resp = http_response_make(503 as u16, "Failed to connect to host")
 
         if state.req_wire != null {
@@ -130,13 +126,10 @@ act _async_http_client_on_connect(stream: @AsyncTcpStream, success: bool, udata:
         heap_free(state as @u8)
 
         if on_resp != null {
-            on_resp(fail_resp, u_data)
+            on_resp(fail_resp)
         }
         return
     }
-
-    async_tcp_stream_on_data(stream, _async_http_client_on_data, state as @void)
-    async_tcp_stream_on_close(stream, _async_http_client_on_close, state as @void)
 
     if state.req_wire != null {
         async_tcp_stream_write_str(stream, state.req_wire)
@@ -146,7 +139,7 @@ act _async_http_client_on_connect(stream: @AsyncTcpStream, success: bool, udata:
 }
 
 // Sends an asynchronous non-blocking HTTP request and dispatches the response via callback
-act async_http_request(el: @EventLoop, method: string, url_str: string, headers: @HttpHeaderMap, body: string, on_response: act(HttpResponse, @void) -> void, user_data: @void) -> bool {
+act async_http_request(el: @EventLoop, method: string, url_str: string, headers: @HttpHeaderMap, body: string, on_response: act(HttpResponse) -> void) -> bool {
     if el == null or url_str == null or on_response == null { return false }
     let parsed_url = http_parse_url(url_str)
     if parsed_url.host == null or str.len(parsed_url.host) == 0 { return false }
@@ -195,7 +188,6 @@ act async_http_request(el: @EventLoop, method: string, url_str: string, headers:
     let state = heap_alloc(async_http_client_state_sizeof()) as @_AsyncHttpClientState
     state.loop_ptr = el
     state.on_response = on_response
-    state.user_data = user_data
     state.req_wire = wire_req
     state.cap = 4096
     state.buf = heap_alloc(state.cap)
@@ -205,29 +197,32 @@ act async_http_request(el: @EventLoop, method: string, url_str: string, headers:
     state.has_header_end = false
     state.is_done = false
 
-    let client = async_tcp_connect(el, parsed_url.host, parsed_url.port, _async_http_client_on_connect, state as @void)
+    let client = async_tcp_connect(el, parsed_url.host, parsed_url.port, _async_http_client_on_connect)
     if client == null {
         if state.req_wire != null { heap_free(state.req_wire as @u8) }
         if state.buf != null { heap_free(state.buf) }
         heap_free(state as @u8)
         return false
     }
+    client.tag = state as @void
+    async_tcp_stream_on_data(client, _async_http_client_on_data)
+    async_tcp_stream_on_close(client, _async_http_client_on_close)
     return true
 }
 
 // Sends an asynchronous non-blocking HTTP GET request
-act async_http_get(el: @EventLoop, url_str: string, on_response: act(HttpResponse, @void) -> void, user_data: @void) -> bool {
-    return async_http_request(el, "GET", url_str, null, "", on_response, user_data)
+act async_http_get(el: @EventLoop, url_str: string, on_response: act(HttpResponse) -> void) -> bool {
+    return async_http_request(el, "GET", url_str, null, "", on_response)
 }
 
 // Sends an asynchronous non-blocking HTTP POST request
-act async_http_post(el: @EventLoop, url_str: string, content_type: string, body: string, on_response: act(HttpResponse, @void) -> void, user_data: @void) -> bool {
+act async_http_post(el: @EventLoop, url_str: string, content_type: string, body: string, on_response: act(HttpResponse) -> void) -> bool {
     mut h: HttpHeaderMap
     headers_init(@h, 4)
     if content_type != null {
         headers_set(@h, "Content-Type", content_type)
     }
-    let res = async_http_request(el, "POST", url_str, @h, body, on_response, user_data)
+    let res = async_http_request(el, "POST", url_str, @h, body, on_response)
     headers_free(@h)
     return res
 }

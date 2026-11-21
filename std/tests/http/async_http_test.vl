@@ -7,7 +7,7 @@ mut g_get_passed: bool = false
 mut g_post_passed: bool = false
 mut g_json_passed: bool = false
 
-act on_server_request(ex: @AsyncHttpExchange, udata: @void) {
+act on_server_request(ex: @AsyncHttpExchange) {
     if ex.req.path == "/hello" {
         async_http_respond_text(ex, 200 as u16, "Hello Async World!")
     } else if ex.req.path == "/json" {
@@ -19,21 +19,21 @@ act on_server_request(ex: @AsyncHttpExchange, udata: @void) {
     }
 }
 
-act on_hello_response(resp: HttpResponse, udata: @void) {
+act on_hello_response(resp: HttpResponse) {
     if resp.status_code == (200 as u16) and resp.body == "Hello Async World!" {
         g_get_passed = true
     }
     http_response_free(@resp)
 }
 
-act on_post_response(resp: HttpResponse, udata: @void) {
+act on_post_response(resp: HttpResponse) {
     if resp.status_code == (200 as u16) and resp.body == "ASYNC_PAYLOAD_123" {
         g_post_passed = true
     }
     http_response_free(@resp)
 }
 
-act on_json_response(resp: HttpResponse, udata: @void) {
+act on_json_response(resp: HttpResponse) {
     if resp.status_code == (200 as u16) and resp.body == "{\"status\":\"ok\"}" {
         g_json_passed = true
     }
@@ -46,7 +46,7 @@ act main() -> i32 {
 
     let port: u16 = 29998
 
-    let server = async_http_listen(@el, "127.0.0.1", port, on_server_request, null)
+    let server = async_http_listen(@el, "127.0.0.1", port, on_server_request)
     if server == null {
         io.println_str("async_http_listen failed")
         loop_free(@el)
@@ -54,7 +54,7 @@ act main() -> i32 {
     }
 
     // Dispatch 1: GET /hello
-    if !async_http_get(@el, "http://127.0.0.1:29998/hello", on_hello_response, null) {
+    if !async_http_get(@el, "http://127.0.0.1:29998/hello", on_hello_response) {
         io.println_str("async_http_get failed to initiate")
         async_http_server_close(server)
         loop_free(@el)
@@ -62,7 +62,7 @@ act main() -> i32 {
     }
 
     // Dispatch 2: POST /echo
-    if !async_http_post(@el, "http://127.0.0.1:29998/echo", "text/plain", "ASYNC_PAYLOAD_123", on_post_response, null) {
+    if !async_http_post(@el, "http://127.0.0.1:29998/echo", "text/plain", "ASYNC_PAYLOAD_123", on_post_response) {
         io.println_str("async_http_post failed to initiate")
         async_http_server_close(server)
         loop_free(@el)
@@ -70,7 +70,7 @@ act main() -> i32 {
     }
 
     // Dispatch 3: GET /json
-    if !async_http_get(@el, "http://127.0.0.1:29998/json", on_json_response, null) {
+    if !async_http_get(@el, "http://127.0.0.1:29998/json", on_json_response) {
         io.println_str("async_http_get json failed to initiate")
         async_http_server_close(server)
         loop_free(@el)

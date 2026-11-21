@@ -99,8 +99,10 @@ act parse_function_decl(p: @Parser) -> @StmtNode {
     parser_consume(p, TOK_RPAREN, "Expected ')' after parameters")
 
     mut ret_type = "void"
+    mut has_ret = false
     if parser_match(p, TOK_ARROW) {
         ret_type = parse_type_annotation(p)
+        has_ret = true
     }
 
     if is_op {
@@ -108,7 +110,18 @@ act parse_function_decl(p: @Parser) -> @StmtNode {
     }
 
     parser_skip_newlines(p)
-    let body = parse_block(p)
+    mut body: @StmtNode = null
+    if parser_match(p, TOK_FAT_ARROW) {
+        parser_skip_newlines(p)
+        let expr = parse_expression(p)
+        let ret_stmt = make_return_stmt(expr, expr.line, expr.col)
+        body = make_block_stmt(ret_stmt, 1 as usize, expr.line, expr.col)
+        if not has_ret {
+            ret_type = "auto"
+        }
+    } else {
+        body = parse_block(p)
+    }
     mut node = make_function_decl(fname, first_param, count, ret_type, body, act_tok.line, act_tok.col)
     node.type_params = type_params
     node.op = op_kind

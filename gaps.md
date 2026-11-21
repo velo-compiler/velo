@@ -2234,13 +2234,34 @@ task: it converts "unfinished" into "chosen", which is a legitimate position.
   - `python -m pytest tests -q -m fast`: 46 passed, 1 xfailed in 3.00s.
   - `python -m pytest tests/test_platform_portability.py -v`: 12 passed in 0.53s.
 
-**77.2** Decide on closures. Either (a) implement non-escaping closures
+**77.2 [COMPLETED] ✅** Decide on closures. Either (a) implement non-escaping closures
 (bare function pointers + stack context, rejected by the escape checker when
 they outlive their frame) - the cheap, sound option - or (b) keep function
 pointers and add a `bind(fn, args...) -> act(...)` helper in `std` that
 allocates a trampoline in a caller-provided arena. Either way, replace the
 `user_data: @void` pattern in `std/async/tcp.vl` and `std/http/async_server.vl`
 with the chosen mechanism, and add `examples/39_closures.vl`.
+
+- *Former Defect:*
+  Velo anonymous functions only supported multi-statement block bodies (`act(...) [-> Ret] { ... }`) and lacked single-expression fat-arrow syntax (`=>`). Furthermore, asynchronous APIs across `std.async.tcp` and `std.http.async_server` enforced a pervasive, untyped `user_data: @void` parameter on every callback signature and dispatch call, forcing callers to write boilerplate and pass `null` or raw pointers, while leaking unsafe context handling into high-level APIs.
+- *Fix Applied:*
+  - Implemented single-expression fat-arrow syntax (`act(params...) => expr` and `act(params...) -> Ret => expr`) in `src/frontend/parser_primary.vl` and named function declarations in `src/frontend/parser_decl.vl`.
+  - Added semantic Pass 2.5 in `src/analysis/type_check_program.vl` that automatically deduces return types for functions with `return_type == "auto"` from their return expressions over a fixed-point iteration.
+  - Enhanced C code generation in `src/backend/outcome_gen.vl` so void-returning single-expression acts cleanly execute their expressions before returning without violating C99 void return constraints.
+  - Replaced the `user_data: @void` pattern in `std/async/tcp.vl`, `std/http/async_server.vl`, and `std/http/async_client.vl` with first-class `act` callbacks (`on_connection: act(@AsyncTcpStream) -> void`, `on_request: act(@AsyncHttpExchange) -> void`, `on_response: act(HttpResponse) -> void`), delegating internal server/stream bindings to an internal `tag: @void` slot.
+  - Added `examples/39_closures.vl` demonstrating single-expression fat-arrow acts, explicit return annotations, higher-order functions, callbacks in structs, named fat-arrow acts, and the idiomatic non-escaping typed stack context pattern (`@Context`).
+  - Added automated test suite `tests/test_closures.py` (8 test vectors in the `fast` CI lane).
+  - Maintained Gen2 == Gen3 bit-for-bit determinism (`d0aae9d8...`) and regenerated `bootstrap.c`.
+  - Updated `docs/SPECIFICATION.md` §2.6 and §11.1 documenting the new syntax and closure contracts.
+- *Residual Limitation (if any):*
+  Closures do not implicitly capture enclosing stack variables across frame lifetimes (preserving Security Invariant I77.2 and zero-overhead memory model); stateful environments are passed explicitly via typed context references (`@Context`).
+- *Verification:*
+  - `python -m pytest tests/test_closures.py tests/test_deliberate_limitations.py -v`: 15 passed in 11.27s.
+  - `python -m pytest tests/test_std_async.py tests/test_std_http.py -v`: 15 passed in 39.72s.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -v`: 6 passed in 41.58s.
+  - `python -m pytest tests -q -m fast`: 54 passed, 1 xfailed in 16.75s.
+  - `python -m pytest tests/test_platform_portability.py -v`: 12 passed in 0.57s.
+  - `python scripts/count_lines.py`: all compiler source files $\le 400$ lines.
 
 **77.3** Decide on interfaces. Minimum viable: `contract Name { act f(...) }`
 plus static dispatch only (no vtables) - monomorphization already exists
