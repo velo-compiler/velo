@@ -280,13 +280,14 @@ act try_adapt_int_literal(st: @SymbolTable, target_t: string, expr: @ExprNode, l
 
 // Validates and infers a struct literal expression, adapting field integer literals.
 act check_struct_literal(st: @SymbolTable, expr: @ExprNode) -> string {
-    let st_sym = find_struct(st, expr.type_name)
+    let resolved_name = resolve_import_rename(st, st.current_file, expr.type_name)
+    let st_sym = find_struct(st, resolved_name)
     if st_sym == null {
         report_error("semantic", expr.line, expr.col, "Instantiating unknown struct type")
         st.error_count += 1
         return "unknown"
     }
-    check_struct_privacy(st, st_sym, expr.line, expr.col)
+    check_struct_privacy(st, st_sym, expr.type_name, expr.line, expr.col)
     mut cur_init = expr.first_init
     loop cur_init != null {
         let f_sym = find_struct_field(st_sym, cur_init.name)
@@ -326,7 +327,7 @@ act check_struct_literal(st: @SymbolTable, expr: @ExprNode) -> string {
         }
         sf = sf.next
     }
-    return expr.type_name
+    return resolved_name
 }
 
 // Adapts unsuffixed integer argument literals and verifies argument type compatibility for function calls.

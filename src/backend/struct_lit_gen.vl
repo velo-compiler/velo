@@ -2,12 +2,14 @@
 // filling every omitted field (extracted from codegen_expr.vl to keep it lean).
 use "../ast/expr.vl"
 use "../analysis/symbol_table.vl"
+use "../analysis/privacy_checks.vl"
 use "../common/string_builder.vl"
 use "codegen_expr.vl"
 
 act emit_struct_lit_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    let resolved_type = resolve_import_rename(st, st.current_file, expr.type_name)
     sb_append_char(sb, '(')
-    sb_append_str(sb, expr.type_name)
+    sb_append_str(sb, resolved_type)
     sb_append_str(sb, "){ ")
     mut need_sep = false
     mut cur_init = expr.first_init
@@ -31,7 +33,7 @@ act emit_struct_lit_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) 
         need_sep = true
         cur_init = cur_init.next
     }
-    let st_sym = find_struct(st, expr.type_name)
+    let st_sym = find_struct(st, resolved_type)
     if st_sym != null {
         mut sf = st_sym.first_field
         loop sf != null {

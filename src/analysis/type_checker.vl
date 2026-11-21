@@ -57,7 +57,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.kind == EXPR_STRING { return "string" }; if expr.kind == EXPR_BOOL { return "bool" }; if expr.kind == EXPR_NULL { return "@void" }
     if expr.kind == EXPR_VARIANT {
         if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name }
-        let k_sym = find_kind_by_variant(st, expr.member_name); if k_sym != null { check_kind_privacy(st, k_sym, expr.line, expr.col); expr.type_name = k_sym.name; return k_sym.name }
+        let k_sym = find_kind_by_variant(st, expr.member_name); if k_sym != null { check_kind_privacy(st, k_sym, k_sym.name, expr.line, expr.col); expr.type_name = k_sym.name; return k_sym.name }
         report_error("semantic", expr.line, expr.col, "Cannot infer kind type for variant"); st.error_count += 1
         return "unknown"
     }
@@ -68,38 +68,41 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr.kind == EXPR_ARRAY_LIT { return infer_array_lit(st, expr) }
     if expr.kind == EXPR_TUPLE_LIT { return infer_tuple_lit(st, expr) }
     if expr.kind == EXPR_IDENT {
-        let sym = resolve_variable(st, expr.str_val)
+        let ren_name = resolve_import_rename(st, st.current_file, expr.str_val)
+        let sym = resolve_variable(st, ren_name)
         if sym == null {
-            if is_reflect_builtin(expr.str_val) { return check_reflect_bare_constant(st, expr) }
-            let fn_sym = find_function(st, expr.str_val)
+            if is_reflect_builtin(ren_name) { return check_reflect_bare_constant(st, expr) }
+            let fn_sym = find_function(st, ren_name)
             if fn_sym != null {
-                check_fn_privacy(st, fn_sym, expr.line, expr.col)
+                check_fn_privacy(st, fn_sym, expr.str_val, expr.line, expr.col)
                 mut sb = create_sb(64); sb_append_str(@sb, "act("); mut cur_p = fn_sym.first_param; mut p_idx: usize = 0
                 loop cur_p != null { if p_idx > 0 { sb_append_str(@sb, ", ") }; sb_append_str(@sb, cur_p.type_name); p_idx += 1; cur_p = cur_p.next }
                 sb_append_str(@sb, ") -> "); sb_append_str(@sb, fn_sym.return_type); return sb_to_string(@sb)
             }
-            if is_known_type(st, expr.str_val) { check_type_privacy(st, expr.str_val, expr.line, expr.col); return expr.str_val }
+            if is_known_type(st, ren_name) { check_type_privacy(st, ren_name, expr.line, expr.col); return ren_name }
             if expr.str_val == "assert" { return "act(bool, string) -> void" }
             if expr.str_val == "io" or expr.str_val == "mem" or expr.str_val == "fs" or expr.str_val == "str" or expr.str_val == "sys" or expr.str_val == "thread" or expr.str_val == "math" or expr.str_val == "time" or expr.str_val == "os" or expr.str_val == "simd" or expr.str_val == "shelf" or expr.str_val == "map" { return expr.str_val }
             report_error("semantic", expr.line, expr.col, "Undeclared identifier"); st.error_count += 1
             return "unknown"
         }
-        check_global_privacy(st, sym, expr.line, expr.col)
+        check_global_privacy(st, sym, expr.str_val, expr.line, expr.col)
         return sym.type_name
     }
 
     if expr.kind == EXPR_MEMBER {
         if expr.target.kind == EXPR_IDENT and expr.target.str_val == "math" and find_kind(st, expr.target.str_val) == null { return check_math_constant(st, expr) }; if expr.target.kind == EXPR_IDENT and expr.target.str_val == "time" and find_kind(st, expr.target.str_val) == null { return check_time_constant(st, expr) }; if expr.target.kind == EXPR_IDENT and expr.target.str_val == "os" and find_kind(st, expr.target.str_val) == null { return check_os_constant(st, expr) }; if expr.target.kind == EXPR_IDENT and expr.target.str_val == "fs" and find_kind(st, expr.target.str_val) == null { return check_fs_constant(st, expr) }; if expr.target.kind == EXPR_IDENT and expr.target.str_val == "simd" and find_kind(st, expr.target.str_val) == null { return check_simd_constant(st, expr) }
         if expr.target.kind == EXPR_IDENT {
+            let g_sym = find_aliased_global(st, expr.target.str_val, expr.member_name, expr.line, expr.col)
+            if g_sym != null { return g_sym.type_name }
             let k_sym = find_kind(st, expr.target.str_val)
             if k_sym != null {
-                check_kind_privacy(st, k_sym, expr.line, expr.col)
+                check_kind_privacy(st, k_sym, expr.target.str_val, expr.line, expr.col)
                 let v_sym = find_variant(k_sym, expr.member_name)
                 if v_sym != null { return k_sym.name }
             }
         }
         let target_type = infer_expr_type(st, expr.target)
-        let clean_type = strip_pointer_prefix(target_type)
+        let clean_type = resolve_import_rename(st, st.current_file, strip_pointer_prefix(target_type))
         if is_optional_type(target_type) {
             if expr.member_name == "has" { return "bool" }
             if expr.member_name == "val" { return optional_inner_type(target_type) }
@@ -171,6 +174,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     }
 
     if expr.kind == EXPR_CALL {
+        if is_module_alias_call(st, expr) { return check_aliased_member_call(st, expr) }
         if expr.callee.kind == EXPR_MEMBER {  // builtin intrinsics + str/sys receivers ride the member path
             let target = expr.callee.target
             let member = expr.callee.member_name
@@ -217,7 +221,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             }
             let fn_sym = find_function(st, expr.callee.member_name)
             if fn_sym != null {
-                check_fn_privacy(st, fn_sym, expr.line, expr.col)
+                check_fn_privacy(st, fn_sym, expr.callee.member_name, expr.line, expr.col)
                 if expr.arg_count + 1 != fn_sym.param_count { report_error("semantic", expr.line, expr.col, "Mismatched argument count in method call"); st.error_count += 1 }
                 if fn_sym.first_param != null { check_method_receiver(st, expr.callee.target, target_type, fn_sym.first_param.type_name) }
                 mut pcur = fn_sym.first_param
@@ -231,10 +235,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             if expr.first_arg != null {
                 let ct = infer_expr_type(st, expr.first_arg)
                 if ct != "bool" and ct != "unknown" { report_error("semantic", expr.line, expr.col, "assert condition must be a boolean expression"); st.error_count += 1 }
-                if expr.first_arg.next != null {
-                    let mt = infer_expr_type(st, expr.first_arg.next)
-                    if mt != "string" and mt != "unknown" { report_error("semantic", expr.line, expr.col, "assert message must be a string"); st.error_count += 1 }
-                }
+                if expr.first_arg.next != null and infer_expr_type(st, expr.first_arg.next) != "string" { report_error("semantic", expr.line, expr.col, "assert message must be a string"); st.error_count += 1 }
             }
             return "void"
         }
@@ -242,9 +243,10 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
         if expr.callee.kind == EXPR_IDENT and is_simd_constructor(expr.callee.str_val) { return check_simd_constructor(st, expr) }
         if expr.callee.kind == EXPR_IDENT and expr.callee.str_val == "sizeof" { if expr.arg_count != 1 { report_error("semantic", expr.line, expr.col, "sizeof takes exactly 1 argument"); st.error_count += 1 }; return "usize" }
         if expr.callee.kind == EXPR_IDENT {
-            let fn_sym = find_function(st, expr.callee.str_val)
+            let ren_callee = resolve_import_rename(st, st.current_file, expr.callee.str_val)
+            let fn_sym = find_function(st, ren_callee)
             if fn_sym != null {
-                check_fn_privacy(st, fn_sym, expr.line, expr.col)
+                check_fn_privacy(st, fn_sym, expr.callee.str_val, expr.line, expr.col)
                 if fn_sym.is_extern and st.strict_safety and st.current_unsafe_depth <= 0 {
                     report_error("semantic", expr.line, expr.col, "Call to foreign 'extern act' requires an 'unsafe { ... }' block when compiling with --strict-safety."); st.error_count += 1
                 }
@@ -292,8 +294,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             try_adapt_int_literal(st, succ_t, expr.right, expr.line, expr.col)
             let rt = infer_expr_type(st, expr.right)
             if not types_are_compatible(succ_t, rt) {
-                report_error("semantic", expr.line, expr.col, "Fallback type mismatch for 'or' expression")
-                st.error_count += 1
+                report_error("semantic", expr.line, expr.col, "Fallback type mismatch for 'or' expression"); st.error_count += 1
             }
             return succ_t
         }
@@ -307,8 +308,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
             try_adapt_int_literal(st, inner_t, expr.right, expr.line, expr.col)
             let rt = infer_expr_type(st, expr.right)
             if not types_are_compatible(inner_t, rt) {
-                report_error("semantic", expr.line, expr.col, "Right operand of '??' is incompatible with optional unwrapped type")
-                st.error_count += 1
+                report_error("semantic", expr.line, expr.col, "Right operand of '??' is incompatible with optional unwrapped type"); st.error_count += 1
             }
             return inner_t
         }

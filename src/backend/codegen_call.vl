@@ -24,8 +24,21 @@ use "fs_gen.vl"
 use "simd_gen.vl"
 use "reflect_gen.vl"
 use "codegen_expr.vl"
+use "../analysis/privacy_checks.vl"
 
 act emit_call_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
+    if is_module_alias_call(st, expr) {
+        sb_append_str(sb, expr.callee.member_name)
+        sb_append_char(sb, '(')
+        mut cur_a = expr.first_arg
+        loop cur_a != null {
+            emit_c_expr(sb, st, cur_a)
+            if cur_a.next != null { sb_append_str(sb, ", ") }
+            cur_a = cur_a.next
+        }
+        sb_append_char(sb, ')')
+        return
+    }
     if expr.callee.kind == EXPR_MEMBER and expr.callee.target.kind == EXPR_IDENT {
         let k_sym = find_kind(st, expr.callee.target.str_val)
         if k_sym != null {

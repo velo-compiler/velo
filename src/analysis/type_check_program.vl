@@ -114,15 +114,28 @@ act stmt_always_returns(st: @SymbolTable, stmt: @StmtNode) -> bool {
 
 // Executes multi-pass semantic analysis and type verification over an AST program.
 act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
+    // Pass 0: Collect all module import declarations
+    mut ucur = prog.first_decl
+    loop ucur != null {
+        if ucur.kind == DECL_USE {
+            ucur.next_use = st.first_use
+            st.first_use = ucur
+        }
+        ucur = ucur.next
+    }
+
     // Pass 1: Register all struct and kind declarations
     mut cur = prog.first_decl
     loop cur != null {
         if cur.kind == DECL_DATA {
+            st.current_file = cur.file_path
             let st_sym = register_struct(st, cur.name, cur.line, cur.col)
             st_sym.is_view = cur.is_view
             st_sym.file_path = cur.file_path
             mut cur_f = cur.first_field
             loop cur_f != null {
+                check_type_privacy(st, cur_f.type_name, cur_f.line, cur_f.col)
+                cur_f.type_name = normalize_type_rename(st, cur.file_path, cur_f.type_name)
                 struct_add_field(st_sym, cur_f.name, cur_f.type_name, cur_f.has_default, cur_f.default_value, cur_f.line, cur_f.col)
                 check_struct_default_field(st, cur_f)
                 cur_f = cur_f.next
@@ -178,11 +191,19 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
     cur = prog.first_decl
     loop cur != null {
         if cur.kind == DECL_FUNCTION or cur.kind == DECL_EXTERN {
+            st.current_file = cur.file_path
+            check_type_privacy(st, cur.return_type, cur.line, cur.col)
+            cur.return_type = normalize_type_rename(st, cur.file_path, cur.return_type)
             let fn_sym = register_function(st, cur.name, cur.return_type, cur.kind == DECL_EXTERN, cur.line, cur.col)
             fn_sym.is_view = cur.is_view
             fn_sym.file_path = cur.file_path
             mut cur_p = cur.first_param
-            loop cur_p != null { function_add_param(fn_sym, cur_p.name, cur_p.type_name); cur_p = cur_p.next }
+            loop cur_p != null {
+                check_type_privacy(st, cur_p.type_name, cur_p.line, cur_p.col)
+                cur_p.type_name = normalize_type_rename(st, cur.file_path, cur_p.type_name)
+                function_add_param(fn_sym, cur_p.name, cur_p.type_name)
+                cur_p = cur_p.next
+            }
         }
         cur = cur.next
     }
@@ -238,11 +259,9 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
             st.current_loop_depth = 0
             let prev_strict = st.strict_safety
             if cur.module_path != null and cur.module_path == "std" { st.strict_safety = false }
-            check_type_privacy(st, cur.return_type, cur.line, cur.col)
             enter_scope(st)
             mut cur_p = cur.first_param
             loop cur_p != null {
-                check_type_privacy(st, cur_p.type_name, cur_p.line, cur_p.col)
                 define_parameter(st, cur_p.name, cur_p.type_name, cur_p.line, cur_p.col)
                 cur_p = cur_p.next
             }

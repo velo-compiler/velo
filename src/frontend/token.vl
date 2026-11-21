@@ -97,6 +97,7 @@ let TOK_HASH: i32 = 92         // # (struct attribute marker)
 let TOK_QUESTION: i32 = 93     // ?
 let TOK_DOUBLE_QUESTION: i32 = 94 // ??
 let TOK_BANG: i32 = 95         // !
+let TOK_COLON_GT: i32 = 96     // :>
 
 // Represents a single token descriptor.
 // To avoid string copies during lexing, the token holds offset and length into the source buffer.
@@ -154,5 +155,6 @@ act token_name(kind: i32) -> string {
     if kind == TOK_UNSAFE { return "unsafe" }
     if kind == TOK_PACT { return "pact" }
     if kind == TOK_VIEW { return "view" }
+    if kind == TOK_COLON_GT { return ":>" }
     return "TOKEN"
 }

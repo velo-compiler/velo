@@ -44,6 +44,7 @@ act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
     cur = prog.first_decl
     loop cur != null {
         if cur.kind == DECL_FUNCTION {
+            st.current_file = cur.file_path
             emit_line_directive(@sb, st, cur.line)
             if cur.name == "main" {
                 if st.is_test { sb_append_str(@sb, "static int _velo_user_main(int argc, char** argv) {\n") } else { sb_append_str(@sb, "int main(int argc, char** argv) {\n") }

@@ -138,7 +138,7 @@ act verify_type_pact_constraints(st: @SymbolTable, type_params: string, type_arg
         if colon >= 0 {
             let pact_name = mono_trim(copy_slice_to_string(cur_param, (colon + 1) as usize, (str.len(cur_param) - colon - 1) as usize))
             let p_sym = find_pact(st, pact_name)
-            if p_sym != null { check_pact_privacy(st, p_sym, line, col) }
+            if p_sym != null { check_pact_privacy(st, p_sym, pact_name, line, col) }
             verify_single_pact_bound(st, cur_arg, pact_name, line, col)
         }
 

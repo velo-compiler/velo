@@ -12,41 +12,86 @@ use "parser_expr.vl"
 use "parser_stmt.vl"
 use "parser_decl_types.vl"
 
-// Parses a module import declaration (`use "path.vl"` or `use sys.io`).
+// Parses a module import declaration (`use "path.vl"` or `use "path.vl" :> alias` or `use "path.vl" :> { ... }`).
 act parse_use_decl(p: @Parser) -> @StmtNode {
     let use_tok = parser_consume(p, TOK_USE, "Expected 'use'")
+    mut mod_path = ""
     if parser_check(p, TOK_STRING_LIT) {
         let str_tok = parser_advance(p)
-        let mod_path = get_string_literal_text(p.source, str_tok)
-        parser_skip_newlines(p)
-        return make_use_decl(mod_path, use_tok.line, use_tok.col)
+        mod_path = get_string_literal_text(p.source, str_tok)
+    } else {
+        let first_part_tok = parser_consume(p, TOK_IDENTIFIER, "Expected module path after 'use'")
+        mod_path = copy_slice_to_string(p.source, first_part_tok.start, first_part_tok.length)
+
+        loop parser_match(p, TOK_DOT) {
+            let part_tok = parser_consume(p, TOK_IDENTIFIER, "Expected module component after '.'")
+            let part_str = copy_slice_to_string(p.source, part_tok.start, part_tok.length)
+            let total_len = str.len(mod_path) + 1 + str.len(part_str)
+            mut buf: @u8 = mem.alloc(@u8, total_len + 1)
+            mut i: usize = 0
+            loop i < str.len(mod_path) {
+                buf[i] = mod_path[i]
+                i += 1
+            }
+            buf[str.len(mod_path)] = '.'
+            mut j: usize = 0
+            loop j < str.len(part_str) {
+                buf[str.len(mod_path) + 1 + j] = part_str[j]
+                j += 1
+            }
+            buf[total_len] = 0 as u8
+            mod_path = buf as string
+        }
     }
 
-    let first_part_tok = parser_consume(p, TOK_IDENTIFIER, "Expected module path after 'use'")
-    mut mod_path = copy_slice_to_string(p.source, first_part_tok.start, first_part_tok.length)
+    mut node = make_use_decl(mod_path, use_tok.line, use_tok.col)
+    node.file_path = p.filename
 
-    loop parser_match(p, TOK_DOT) {
-        let part_tok = parser_consume(p, TOK_IDENTIFIER, "Expected module component after '.'")
-        let part_str = copy_slice_to_string(p.source, part_tok.start, part_tok.length)
-        let total_len = str.len(mod_path) + 1 + str.len(part_str)
-        mut buf: @u8 = mem.alloc(@u8, total_len + 1)
-        mut i: usize = 0
-        loop i < str.len(mod_path) {
-            buf[i] = mod_path[i]
-            i += 1
+    if parser_match(p, TOK_COLON_GT) {
+        if parser_check(p, TOK_IDENTIFIER) {
+            let alias_tok = parser_advance(p)
+            node.use_alias = copy_slice_to_string(p.source, alias_tok.start, alias_tok.length)
+        } else if parser_match(p, TOK_LBRACE) {
+            parser_skip_newlines(p)
+            mut last_item: @ImportItem = null
+            loop not parser_check(p, TOK_RBRACE) and not parser_check(p, TOK_EOF) {
+                let name_tok = parser_consume(p, TOK_IDENTIFIER, "Expected imported symbol name")
+                let orig_name = copy_slice_to_string(p.source, name_tok.start, name_tok.length)
+                mut local_name = orig_name
+                if parser_match(p, TOK_COLON_GT) {
+                    let ren_tok = parser_consume(p, TOK_IDENTIFIER, "Expected alias name after ':>'")
+                    local_name = copy_slice_to_string(p.source, ren_tok.start, ren_tok.length)
+                }
+                mut item: @ImportItem = mem.alloc(@ImportItem, 1)
+                item.orig_name = orig_name
+                item.local_name = local_name
+                item.line = name_tok.line
+                item.col = name_tok.col
+                item.next = null
+
+                if node.first_import == null {
+                    node.first_import = item
+                    last_item = item
+                } else {
+                    last_item.next = item
+                    last_item = item
+                }
+
+                parser_skip_newlines(p)
+                if not parser_match(p, TOK_COMMA) {
+                    break
+                }
+                parser_skip_newlines(p)
+            }
+            parser_consume(p, TOK_RBRACE, "Expected '}' after imported symbols list")
+        } else {
+            report_parse(p, p.filename, use_tok.line, use_tok.col, 2, "Expected alias identifier or '{' after ':>'")
+            p.had_error = true
         }
-        buf[str.len(mod_path)] = '.'
-        mut j: usize = 0
-        loop j < str.len(part_str) {
-            buf[str.len(mod_path) + 1 + j] = part_str[j]
-            j += 1
-        }
-        buf[total_len] = 0 as u8
-        mod_path = buf as string
     }
 
     parser_skip_newlines(p)
-    return make_use_decl(mod_path, use_tok.line, use_tok.col)
+    return node
 }
 
 // Parses a function declaration (`act Name[T](params) -> RetType { ... }` or `act op +(...)`).

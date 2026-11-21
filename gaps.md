@@ -2310,9 +2310,32 @@ with the chosen mechanism, and add `examples/39_closures.vl`.
   - `python -m pytest tests -q -m fast`: 69 passed, 1 xfailed in 18.25s.
   - `python scripts/count_lines.py`: all compiler source files $\le 400$ lines.
 
-**77.5** Add import aliasing (`use std.json as j`) and selective import
-(`use std.json { JsonValue, json_parse }`). Collisions are already reachable:
-`std/os/args.vl` and `std/cli/*` both define argument concepts.
+**77.5 [COMPLETED] ✅** Import aliasing and selective imports (`:>`):
+- *Former Defect:*
+  Imports were restricted to whole-module file imports (`use "path/to/mod.vl"`) that brought all declarations into the global namespace. When two imported modules declared symbols with identical names (e.g. `std/os/args.vl` and `std/cli/*`), name collisions could not be resolved without renaming symbols at declaration sites. Moreover, modules could not import only a specific subset of symbols or alias individual symbols locally.
+- *Fix Applied:*
+  - Adopted Velo's unique and easy syntax motto with the approved `:>` operator (`TOK_COLON_GT = 96` in `src/frontend/token.vl` and `src/frontend/lexer.vl`).
+  - Added AST structures: `data ImportItem { orig_name: string, local_name: string, line: i32, col: i32, next: @ImportItem }` and extended `StmtNode` in `src/ast/stmt.vl` with `use_alias`, `first_import`, `resolved_path`, and `next_use`.
+  - Updated parser in `src/frontend/parser_decl.vl` to support module aliasing (`use "path" :> alias`), selective importing (`use "path" :> { sym1, sym2 }`), and selective imports with local renaming (`use "path" :> { sym1 :> new_name, sym2 }`).
+  - Implemented semantic privacy and import scoping in `src/analysis/privacy_checks.vl`:
+    - Qualified module calls (`alias.fn(...)`) and global reads (`alias.GLOBAL`) type-check against the target module's exported declarations while blocking unimported bare access from the importing file.
+    - Selective import lists verify that only specified symbols are brought into bare scope; unlisted symbols trigger deterministic compiler errors: `'<Sym>' is not imported from '<file>' into '<current_file>'`.
+    - Renamed symbols map local names to original declaration names during lookup while hiding the original names in the importer's scope.
+  - Implemented type normalization (`normalize_type_rename`) for variable declarations, struct field types, and function signatures in `src/analysis/type_checker_stmt.vl` and `src/analysis/type_check_program.vl`.
+  - Updated C code generation (`src/backend/codegen_call.vl`, `src/backend/codegen_expr.vl`, `src/backend/struct_lit_gen.vl`, `src/backend/codegen_c.vl`) to lower aliased and renamed calls, globals, and struct instantiations to their canonical C definitions.
+  - Maintained Gen2 == Gen3 bit-for-bit determinism (`5C28C65AF380A7294FE7A3D2F90ADF1118ACD87C72AF7221B217D1AA95C3407E`) and refreshed `bootstrap.c`.
+  - Added test suite `tests/test_import_aliasing.py` (11 test vectors covering qualified alias calls, bare access blocking, selective imports, selective renames, struct literals, type annotations, parameters, multiple aliases, and syntax errors).
+  - Updated `docs/SPECIFICATION.md` §2.17 and §11.5 documenting `:>` import aliasing and selective imports.
+- *Residual Limitation (if any):*
+  Wildcard or glob imports (`use "..." :> *`) are intentionally omitted to maintain strict, deterministic, and traceable symbol provenance across modules.
+- *Verification:*
+  - `python -m pytest tests/test_import_aliasing.py -v`: 11 passed in 3.20s.
+  - `python -m pytest tests/test_module_privacy.py -v`: 8 passed in 2.15s.
+  - `python -m pytest tests/test_deliberate_limitations.py -v`: 7 passed in 0.03s.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -v`: 6 passed in 40.50s.
+  - `python -m pytest tests/test_platform_portability.py -v`: 12 passed in 0.53s.
+  - `python -m pytest tests -q -m fast`: 80 passed, 1 xfailed in 24.63s.
+  - `python scripts/count_lines.py`: all compiler source files $\le 400$ lines.
 
 **77.6** Allow expression `defer`: `defer fclose(f)` lowering to the existing
 block-defer path with a single call statement. Test in

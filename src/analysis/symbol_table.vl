@@ -143,6 +143,7 @@ data SymbolTable {
     current_loop_depth: i32
     current_file: string
     is_codegen: bool
+    first_use: @StmtNode
 }
 
 // Initializes the root Symbol Table.
@@ -155,6 +156,7 @@ act init_symbol_table(st: @SymbolTable) {
     st.zone_counter = 0; st.current_func_ret_type = ""; st.current_func_name = ""; st.current_zone_depth = 0
     st.strict_safety = false; st.current_unsafe_depth = 0
     st.current_loop_depth = 0; st.current_file = ""; st.is_codegen = false
+    st.first_use = null
 }
 
 // Registers a struct blueprint in the symbol table.

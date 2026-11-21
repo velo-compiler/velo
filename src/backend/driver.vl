@@ -285,6 +285,7 @@ act load_file_and_deps_ex(d: @CompilerDriver, raw_path: string, is_std: bool) {
                     resolved_path = resolve_std_module_path(dir, mod_path)
                     child_is_std = true
                 }
+                cur.resolved_path = resolved_path
                 load_file_and_deps_ex(d, resolved_path, child_is_std)
             }
         }
@@ -298,11 +299,8 @@ act load_file_and_deps_ex(d: @CompilerDriver, raw_path: string, is_std: bool) {
         decl.next = null
 
         mut skip = false
-        if decl.kind == DECL_USE {
-            let mod_path = decl.module_path
-            if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" and mod_path != "sys.thread" and mod_path != "sys.math" and mod_path != "sys.time" and mod_path != "sys.os" and mod_path != "sys.simd" {
-                skip = true
-            }
+        if decl.kind == DECL_USE and (decl.module_path == "sys.io" or decl.module_path == "sys.mem" or decl.module_path == "sys.fs" or decl.module_path == "sys.thread" or decl.module_path == "sys.math" or decl.module_path == "sys.time" or decl.module_path == "sys.os" or decl.module_path == "sys.simd") {
+            skip = true
         }
 
         if not skip {

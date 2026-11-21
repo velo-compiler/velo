@@ -69,6 +69,15 @@ data FieldNode {
     next: @FieldNode
 }
 
+// Represents an individual selectively imported symbol (`use "path" :> { Sym :> Alias }`).
+data ImportItem {
+    orig_name: string
+    local_name: string
+    line: i32
+    col: i32
+    next: @ImportItem
+}
+
 // Unified AST Statement & Declaration Node (allocated inside the active zone arena).
 data StmtNode {
     kind: i32
@@ -110,6 +119,9 @@ data StmtNode {
     variant_count: usize
     type_params: string
     module_path: string
+    use_alias: string
+    first_import: @ImportItem
+    resolved_path: string
     is_view: bool
     file_path: string
     // Struct layout attributes (`#align(N)` / `#packed`); DECL_DATA only
@@ -117,6 +129,7 @@ data StmtNode {
     is_packed: bool
     // Intrusive linked list pointer for sequence of statements / declarations
     next: @StmtNode
+    next_use: @StmtNode
 }
 
 // Represents the root AST node containing all top-level declarations.

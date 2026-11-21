@@ -32,6 +32,7 @@ use "codegen_call.vl"
 use "codegen_lit.vl"
 use "../analysis/scope.vl"
 use "../analysis/narrow_flow.vl"
+use "../analysis/privacy_checks.vl"
 
 act emit_if_branch(sb: @StringBuilder, st: @SymbolTable, branch: @ExprNode, target_t: string) {
     if is_optional_type(target_t) {
@@ -68,12 +69,13 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     if expr.kind == EXPR_BOOL { if expr.bool_val { sb_append_str(sb, "true") } else { sb_append_str(sb, "false") }; return }
     if expr.kind == EXPR_NULL { sb_append_str(sb, "NULL"); return }
     if expr.kind == EXPR_IDENT {
-        let sym = resolve_variable(st, expr.str_val)
+        let ren_name = resolve_import_rename(st, st.current_file, expr.str_val)
+        let sym = resolve_variable(st, ren_name)
         if sym != null and sym.is_narrowed {
             let inner = optional_inner_type(sym.orig_type)
-            if inner[0] != '@' and inner != "string" { sb_append_str(sb, expr.str_val); sb_append_str(sb, ".val"); return }
+            if inner[0] != '@' and inner != "string" { sb_append_str(sb, ren_name); sb_append_str(sb, ".val"); return }
         }
-        sb_append_str(sb, expr.str_val); return
+        sb_append_str(sb, ren_name); return
     }
     if expr.kind == EXPR_SHELF_LIT or expr.kind == EXPR_HEAP_SHELF_LIT { emit_shelf_literal(sb, st, expr); return }  // 5.2 (heap: slice 10)
     if expr.kind == EXPR_MAP_LIT or expr.kind == EXPR_HEAP_MAP_LIT { emit_map_literal(sb, st, expr); return }  // 5.2 slice 6 / 7.2
@@ -150,6 +152,8 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             if str.len(digits) > 0 { sb_append_str(sb, "("); sb_append_str(sb, digits); sb_append_str(sb, ")"); return }
         }
         if expr.target.kind == EXPR_IDENT {
+            let mod_use = find_module_alias(st, st.current_file, expr.target.str_val)
+            if mod_use != null { sb_append_str(sb, expr.member_name); return }
             let k_sym = find_kind(st, expr.target.str_val)
             if k_sym != null {
                 let v_sym = find_variant(k_sym, expr.member_name)
@@ -219,14 +223,9 @@ act emit_c_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
 
     // 5. Explicit cast (5.2 slice 2: a cast off a raw dyn unboxes instead)
     if expr.kind == EXPR_CAST {
-        if infer_expr_type(st, expr.operand) == "dyn" {
-            emit_dyn_unbox(sb, st, expr.operand, expr.type_name)
-            return
-        }
+        if infer_expr_type(st, expr.operand) == "dyn" { emit_dyn_unbox(sb, st, expr.operand, expr.type_name); return }
         sb_append_str(sb, "(("); sb_append_str(sb, map_type_to_c(expr.type_name)); sb_append_str(sb, ")(")
-        emit_c_expr(sb, st, expr.operand)
-        sb_append_str(sb, "))")
-        return
+        emit_c_expr(sb, st, expr.operand); sb_append_str(sb, "))"); return
     }
 
     // 6. Struct instantiation literal (omitted fields fall back to their declared defaults)

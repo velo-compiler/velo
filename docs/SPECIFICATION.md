@@ -694,6 +694,54 @@ view let MAX_LIMIT: i32 = 1000
 
 ---
 
+### 2.17 Import Aliasing & Selective Imports (`:>`)
+
+Velo uses the distinct, easy `:>` operator for import aliasing and selective symbol imports:
+
+#### 1. Module Aliasing
+Modules can be imported under a local namespace alias using `:> <alias>`:
+```velo
+use "std/math.vl" :> m
+
+act main() {
+    let r = m.add(10, 20)
+    let pi = m.PI
+}
+```
+* **Enforced Encapsulation:** When a module is imported under an alias, its declarations cannot be accessed bare from that importing file. Attempting bare access produces an informative compiler diagnostic:
+  ```
+  [Velo Error] semantic:<line>:<col> - '<Sym>' is not imported into '<importer>' (module '<file>' is imported under alias '<alias>'; use '<alias>.<Sym>')
+  ```
+
+#### 2. Selective Imports
+Specific declarations can be selectively imported using `:> { ... }`:
+```velo
+use "std/math.vl" :> { add, sub }
+
+act main() {
+    let a = add(10, 5) // OK
+    let b = sub(10, 5) // OK
+    // mul(10, 5)      // Compile Error: 'mul' is not imported from 'std/math.vl' into 'main.vl'
+}
+```
+* **Strict Whitelist:** Only the explicitly listed symbols are brought into bare scope. Accessing unlisted symbols from the target file triggers:
+  ```
+  [Velo Error] semantic:<line>:<col> - '<Sym>' is not imported from '<file>' into '<importer>'
+  ```
+
+#### 3. Selective Import with Renaming
+Symbols within a selective import list can be renamed using `OrigName :> LocalAlias`:
+```velo
+use "calc.vl" :> { add :> calc_add, Point :> Coord }
+
+act sum(c: Coord) -> i32 {
+    return calc_add(c.x, c.y)
+}
+```
+* **Original Name Hidden:** When a symbol is imported with a rename, only the local name is visible in the importing file. Referencing the original un-aliased name produces an unimported symbol error.
+
+---
+
 ## 3. Variables & Mutability
 
 ### 3.1 Immutable by Default
@@ -1703,13 +1751,12 @@ if os_is_windows() {
 
 ### 11.5 Import Aliasing and Selective Imports
 
-* **Absence:** Prior to Task 77.5, imports are whole-module declarations (`use path.to.module`) without symbol renaming or selective import braces.
-* **Architectural Rationale:** Simple flat import graphs and straightforward symbol lookup during early compiler design.
-* **The Cost:** Potential symbol collisions when two imported modules define symbols with identical names.
-* **Official Workaround:** Qualify module references through dedicated namespace prefixes in symbol names, or refactor colliding declarations into separate wrapper files.
-
-> [!NOTE]
-> Import aliasing (`use std.json as j`) and selective importing (`use std.json { JsonValue, json_parse }`) will be introduced in Task 77.5.
+* **Status:** Resolved in Task 77.5 via the `:>` operator (see §2.17).
+* **Syntax Delivered:**
+  - Module aliasing: `use "path/to/mod.vl" :> alias` (accessible via `alias.func()` and `alias.global_var`)
+  - Selective import: `use "path/to/mod.vl" :> { Sym1, Sym2 }`
+  - Selective import with rename: `use "path/to/mod.vl" :> { Sym1 :> NewName, Sym2 }`
+* **Scoping Guarantee:** The compiler enforces strict lexical and semantic encapsulation: aliased modules block bare access, selective imports reject unlisted symbols, and renamed symbols hide the original symbol name in the importer's scope.
 
 ### 11.6 Expression Defer
 
