@@ -1,0 +1,179 @@
+// Pure Velo Thompson NFA Simulation Virtual Machine.
+// Executes compiled regular expressions in linear time with zero backtracking.
+
+use "../mem/ops.vl"
+use "../str/slice.vl"
+use "defs.vl"
+
+// Tests if character ch matches character class at class_idx
+view act class_matches(pat: @Pattern, class_idx: i32, ch: u8) -> bool {
+    if class_idx < 0 or (class_idx as usize) >= pat.class_count { return false }
+    let cls = pat.classes[class_idx as usize]
+    mut in_range = false
+    mut i: usize = 0
+    loop i < cls.range_count {
+        let r = pat.ranges[cls.range_start + i]
+        if ch >= r.min_c and ch <= r.max_c {
+            in_range = true
+            break
+        }
+        i += 1
+    }
+    if cls.negated {
+        return !in_range
+    }
+    return in_range
+}
+
+// Epsilon-closure traversal: adds state and follows all epsilon / anchor transitions.
+act add_state_to_set(pat: @Pattern, s_idx: i32, curr_pos: usize, text_len: usize,
+                     out_list: @i32, count_ptr: @usize, matched_ptr: @bool) {
+    if s_idx < 0 or (s_idx as usize) >= pat.state_count { return }
+    if pat.scratch_visited[s_idx] == pat.step_id { return }
+    pat.scratch_visited[s_idx] = pat.step_id
+
+    let st = pat.states[s_idx]
+    if st.kind == PATT_STATE_MATCH {
+        matched_ptr[0] = true
+        return
+    }
+    if st.kind == PATT_STATE_SPLIT {
+        if st.out1 >= 0 {
+            add_state_to_set(pat, st.out1, curr_pos, text_len, out_list, count_ptr, matched_ptr)
+        }
+        if st.out2 >= 0 {
+            add_state_to_set(pat, st.out2, curr_pos, text_len, out_list, count_ptr, matched_ptr)
+        }
+        return
+    }
+    if st.kind == PATT_STATE_ANCHOR_START {
+        if curr_pos == 0 and st.out1 >= 0 {
+            add_state_to_set(pat, st.out1, curr_pos, text_len, out_list, count_ptr, matched_ptr)
+        }
+        return
+    }
+    if st.kind == PATT_STATE_ANCHOR_END {
+        if curr_pos == text_len and st.out1 >= 0 {
+            add_state_to_set(pat, st.out1, curr_pos, text_len, out_list, count_ptr, matched_ptr)
+        }
+        return
+    }
+    // Consuming states: PATT_STATE_CHAR, PATT_STATE_CLASS, PATT_STATE_DOT
+    let cnt = count_ptr[0]
+    out_list[cnt] = s_idx
+    count_ptr[0] = cnt + 1
+}
+
+// Simulates the NFA starting strictly at start_offset.
+// Returns true if a match is found, setting out_end to the furthest (greedy) match end.
+view act vm_match_at(pat: @Pattern, text: StrSlice, start_offset: usize, out_end: @usize) -> bool {
+    if pat == null or !pat.valid { return false }
+    let text_len = text.len
+    if start_offset > text_len { return false }
+
+    if pat.step_id >= 2000000000 {
+        set(pat.scratch_visited as @u8, 0 as u8, pat.state_count * 4)
+        pat.step_id = 1
+    }
+
+    mut has_match = false
+    mut best_end: usize = start_offset
+
+    pat.step_id += 1
+    mut curr_count: usize = 0
+    mut matched_init = false
+    add_state_to_set(pat, pat.start_state, start_offset, text_len, pat.scratch_curr, @curr_count, @matched_init)
+    if matched_init {
+        has_match = true
+        best_end = start_offset
+    }
+
+    mut pos = start_offset
+    loop pos < text_len {
+        if curr_count == 0 { break }
+        let ch = text.ptr[pos]
+        pat.step_id += 1
+        mut next_count: usize = 0
+        mut matched_step = false
+
+        mut i: usize = 0
+        loop i < curr_count {
+            let s_idx = pat.scratch_curr[i]
+            let st = pat.states[s_idx]
+            mut matched_char = false
+            if st.kind == PATT_STATE_CHAR {
+                if ch == st.c { matched_char = true }
+            } else if st.kind == PATT_STATE_CLASS {
+                if class_matches(pat, st.class_idx, ch) { matched_char = true }
+            } else if st.kind == PATT_STATE_DOT {
+                if ch != (10 as u8) { matched_char = true }
+            }
+            if matched_char and st.out1 >= 0 {
+                add_state_to_set(pat, st.out1, pos + 1, text_len, pat.scratch_next, @next_count, @matched_step)
+            }
+            i += 1
+        }
+
+        if matched_step {
+            has_match = true
+            best_end = pos + 1
+        }
+
+        mut k: usize = 0
+        loop k < next_count {
+            pat.scratch_curr[k] = pat.scratch_next[k]
+            k += 1
+        }
+        curr_count = next_count
+        pos += 1
+    }
+
+    if has_match {
+        if out_end != null { out_end[0] = best_end }
+        return true
+    }
+    return false
+}
+
+// Searches for the first leftmost-longest match at or after min_offset.
+view act vm_find(pat: @Pattern, text: StrSlice, min_offset: usize) -> PattMatch {
+    if pat == null or !pat.valid {
+        return PattMatch { ok: false, start: 0, end: 0, text: StrSlice { ptr: null, len: 0 } }
+    }
+    let text_len = text.len
+    if min_offset > text_len {
+        return PattMatch { ok: false, start: 0, end: 0, text: StrSlice { ptr: null, len: 0 } }
+    }
+
+    if pat.anchored_start {
+        if min_offset > 0 {
+            return PattMatch { ok: false, start: 0, end: 0, text: StrSlice { ptr: null, len: 0 } }
+        }
+        mut end_pos: usize = 0
+        if vm_match_at(pat, text, 0, @end_pos) {
+            return PattMatch {
+                ok: true,
+                start: 0,
+                end: end_pos,
+                text: slice_sub(text, 0, end_pos),
+            }
+        }
+        return PattMatch { ok: false, start: 0, end: 0, text: StrSlice { ptr: null, len: 0 } }
+    }
+
+    mut offset = min_offset
+    loop offset <= text_len {
+        mut end_pos: usize = 0
+        if vm_match_at(pat, text, offset, @end_pos) {
+            return PattMatch {
+                ok: true,
+                start: offset,
+                end: end_pos,
+                text: slice_sub(text, offset, end_pos),
+            }
+        }
+        offset += 1
+    }
+
+    return PattMatch { ok: false, start: 0, end: 0, text: StrSlice { ptr: null, len: 0 } }
+}

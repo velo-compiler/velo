@@ -1,0 +1,250 @@
+// Pure Velo Regular Expression Operations & API Methods.
+// Implements the 5 core methods: test, find, find_all, replace, split,
+// along with compilation helpers, one-liners, and result accessors.
+
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+use "../str/slice.vl"
+use "../coll/shelf.vl"
+use "defs.vl"
+use "parse.vl"
+use "vm.vl"
+
+// Compiles a string into an executable Thompson NFA Pattern.
+view act patt_comp(pat_str: string) -> Pattern {
+    return compile_pattern(slice_from_str(pat_str))
+}
+
+// Compiles a string slice into an executable Thompson NFA Pattern.
+view act patt_comp_slice(pat_slice: StrSlice) -> Pattern {
+    return compile_pattern(pat_slice)
+}
+
+// Converts a StrSlice into a newly heap-allocated null-terminated string.
+view act patt_slice_to_str(s: StrSlice) -> string {
+    if s.ptr == null or s.len == 0 { return "" }
+    mut buf: @u8 = heap_alloc(s.len + 1)
+    if buf == null { return "" }
+    copy(buf, s.ptr, s.len)
+    buf[s.len] = 0 as u8
+    return buf as string
+}
+
+// Extracts the matched text of a PattMatch into a newly heap-allocated string.
+view act patt_match_str(m: @PattMatch) -> string {
+    if m == null or !m.ok { return "" }
+    return patt_slice_to_str(m.text)
+}
+
+// Retrieves a PattMatch from a RawShelf produced by patt_find_all.
+view act patt_get_match(s: @RawShelf, idx: usize) -> PattMatch {
+    if s == null or idx >= s.len or s.data == null {
+        return PattMatch { ok: false, start: 0, end: 0, text: StrSlice { ptr: null, len: 0 } }
+    }
+    let ptr = (s.data + idx * s.elem_size) as @PattMatch
+    return ptr[0]
+}
+
+// Retrieves a StrSlice token from a RawShelf produced by patt_split.
+view act patt_get_slice(s: @RawShelf, idx: usize) -> StrSlice {
+    if s == null or idx >= s.len or s.data == null {
+        return StrSlice { ptr: null, len: 0 }
+    }
+    let ptr = (s.data + idx * s.elem_size) as @StrSlice
+    return ptr[0]
+}
+
+// 1. test: Returns true if the pattern matches anywhere in text (adhering to anchors).
+view act test(pat: @Pattern, text: string) -> bool {
+    let sl = slice_from_str(text)
+    let m = vm_find(pat, sl, 0)
+    return m.ok
+}
+
+view act patt_test(pat: @Pattern, text: string) -> bool {
+    return test(pat, text)
+}
+
+// 2. find: Returns the first leftmost-longest match descriptor in text.
+view act find(pat: @Pattern, text: string) -> PattMatch {
+    let sl = slice_from_str(text)
+    return vm_find(pat, sl, 0)
+}
+
+view act patt_find(pat: @Pattern, text: string) -> PattMatch {
+    return find(pat, text)
+}
+
+// 3. find_all: Finds all non-overlapping matches in text and returns them as a shelf of PattMatch.
+view act find_all(pat: @Pattern, text: string) -> RawShelf {
+    mut shelf = shelf_create(40, 8) // sizeof(PattMatch) = 40 bytes
+    if pat == null or !pat.valid or text == null { return shelf }
+    let sl = slice_from_str(text)
+    let text_len = sl.len
+    mut offset: usize = 0
+    loop offset <= text_len {
+        mut m = vm_find(pat, sl, offset)
+        if !m.ok { break }
+        let m_ptr: @PattMatch = @m
+        shelf_push(@shelf, m_ptr as @u8)
+        if m.end > m.start {
+            offset = m.end
+        } else {
+            offset = m.start + 1
+        }
+    }
+    return shelf
+}
+
+view act patt_find_all(pat: @Pattern, text: string) -> RawShelf {
+    return find_all(pat, text)
+}
+
+// 4. replace: Replaces all non-overlapping matches in text with repl.
+view act replace(pat: @Pattern, text: string, repl: string) -> string {
+    if text == null { return "" }
+    if repl == null { return text }
+    if pat == null or !pat.valid { return text }
+
+    let sl = slice_from_str(text)
+    let repl_sl = slice_from_str(repl)
+    let text_len = sl.len
+
+    // Pass 1: Count matches and calculate exact output size
+    mut match_count: usize = 0
+    mut matched_chars: usize = 0
+    mut offset: usize = 0
+    loop offset <= text_len {
+        mut m = vm_find(pat, sl, offset)
+        if !m.ok { break }
+        match_count += 1
+        matched_chars += (m.end - m.start)
+        if m.end > m.start {
+            offset = m.end
+        } else {
+            offset = m.start + 1
+        }
+    }
+
+    if match_count == 0 {
+        mut out_buf: @u8 = heap_alloc(text_len + 1)
+        if out_buf == null { return "" }
+        if text_len > 0 {
+            copy(out_buf, sl.ptr, text_len)
+        }
+        out_buf[text_len] = 0 as u8
+        return out_buf as string
+    }
+
+    let total_len = (text_len - matched_chars) + match_count * repl_sl.len
+    mut dest: @u8 = heap_alloc(total_len + 1)
+    if dest == null { return "" }
+
+    mut dest_idx: usize = 0
+    mut last_end: usize = 0
+    offset = 0
+    loop offset <= text_len {
+        mut m = vm_find(pat, sl, offset)
+        if !m.ok { break }
+        let prefix_len = m.start - last_end
+        if prefix_len > 0 {
+            copy(dest + dest_idx, sl.ptr + last_end, prefix_len)
+            dest_idx += prefix_len
+        }
+        if repl_sl.len > 0 {
+            copy(dest + dest_idx, repl_sl.ptr, repl_sl.len)
+            dest_idx += repl_sl.len
+        }
+        last_end = m.end
+        if m.end > m.start {
+            offset = m.end
+        } else {
+            offset = m.start + 1
+        }
+    }
+    let tail_len = text_len - last_end
+    if tail_len > 0 {
+        copy(dest + dest_idx, sl.ptr + last_end, tail_len)
+        dest_idx += tail_len
+    }
+    dest[total_len] = 0 as u8
+    return dest as string
+}
+
+view act patt_replace(pat: @Pattern, text: string, repl: string) -> string {
+    return replace(pat, text, repl)
+}
+
+// 5. split: Splits text around matches of the pattern, returning a shelf of StrSlice tokens.
+view act split(pat: @Pattern, text: string) -> RawShelf {
+    mut shelf = shelf_create(16, 8) // sizeof(StrSlice) = 16 bytes
+    if text == null { return shelf }
+    let sl = slice_from_str(text)
+    if pat == null or !pat.valid {
+        mut piece = sl
+        let p_ptr: @StrSlice = @piece
+        shelf_push(@shelf, p_ptr as @u8)
+        return shelf
+    }
+
+    mut last_end: usize = 0
+    mut offset: usize = 0
+    let text_len = sl.len
+    loop offset <= text_len {
+        mut m = vm_find(pat, sl, offset)
+        if !m.ok { break }
+        mut piece = slice_sub(sl, last_end, m.start)
+        let p_ptr: @StrSlice = @piece
+        shelf_push(@shelf, p_ptr as @u8)
+        last_end = m.end
+        if m.end > m.start {
+            offset = m.end
+        } else {
+            offset = m.start + 1
+        }
+    }
+    mut tail = slice_sub(sl, last_end, text_len)
+    let t_ptr: @StrSlice = @tail
+    shelf_push(@shelf, t_ptr as @u8)
+    return shelf
+}
+
+view act patt_split(pat: @Pattern, text: string) -> RawShelf {
+    return split(pat, text)
+}
+
+// One-liner convenience functions
+view act patt_test_str(text: string, pat_str: string) -> bool {
+    mut pat = patt_comp(pat_str)
+    let res = patt_test(@pat, text)
+    pattern_free(@pat)
+    return res
+}
+
+view act patt_find_str(text: string, pat_str: string) -> PattMatch {
+    mut pat = patt_comp(pat_str)
+    let res = patt_find(@pat, text)
+    pattern_free(@pat)
+    return res
+}
+
+view act patt_find_all_str(text: string, pat_str: string) -> RawShelf {
+    mut pat = patt_comp(pat_str)
+    let res = patt_find_all(@pat, text)
+    pattern_free(@pat)
+    return res
+}
+
+view act patt_replace_str(text: string, pat_str: string, repl: string) -> string {
+    mut pat = patt_comp(pat_str)
+    let res = patt_replace(@pat, text, repl)
+    pattern_free(@pat)
+    return res
+}
+
+view act patt_split_str(text: string, pat_str: string) -> RawShelf {
+    mut pat = patt_comp(pat_str)
+    let res = patt_split(@pat, text)
+    pattern_free(@pat)
+    return res
+}

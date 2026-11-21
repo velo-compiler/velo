@@ -1800,4 +1800,60 @@ if os_is_windows() {
 
 * **Status:** Resolved in Task 77.6 (see §2.18). Both single-expression defer (`defer fs.close(file)`) and multi-statement block defer (`defer { ... }`) are fully supported, executing in strict LIFO order upon scope exit. Control transfer statements (`return`, `break`, `continue`, `fail`) remain strictly prohibited inside defer.
 
+---
+
+## 12. Standard Pattern Matching Subsystem (`std.patt` / `std.text.regex`)
+
+Velo provides a linear-time, backtracking-free regular expression and pattern matching engine based on Thompson NFA state graph simulation (`std.patt`, with compatibility bridge `std.text.regex`).
+
+### 12.1 Security & Algorithmic Guarantees
+
+* **Zero Backtracking / ReDoS-Free:** Executes in strict $O(N \cdot M)$ linear time (where $N$ is pattern state count and $M$ is input byte length). Vulnerabilities stemming from catastrophic backtracking (e.g. `(a+)+b`) are mathematically impossible.
+* **POSIX ERE Subset:** Supports character literals, escapes (`\d`, `\D`, `\w`, `\W`, `\s`, `\S`, `\t`, `\n`, `\r`), character classes (`[a-z]`, `[^0-9]`), anchors (`^`, `$`), quantifiers (`*`, `+`, `?`), alternation (`|`), and parenthesized groups (`(...)`).
+* **Zero Allocation During Matching:** Scratch buffers for active NFA thread simulation and visited state generation sets are allocated once at pattern compilation (`patt_comp`), requiring zero heap allocations during subsequent match executions.
+
+### 12.2 Core API Methods
+
+The `std.patt` module exposes 5 core pattern operations supporting both free-function and Uniform Function Call Syntax (UFCS) on compiled `@Pattern`:
+
+1. **`test(pat: @Pattern, text: string) -> bool` / `patt_test`:** Returns `true` if the pattern matches anywhere in `text` (adhering to anchors `^` and `$`).
+2. **`find(pat: @Pattern, text: string) -> PattMatch` / `patt_find`:** Returns the first leftmost-longest match descriptor containing `ok: bool`, `start: usize`, `end: usize`, and `text: StrSlice`.
+3. **`find_all(pat: @Pattern, text: string) -> RawShelf` / `patt_find_all`:** Finds all non-overlapping matches in `text` and returns them as a dynamic shelf of `PattMatch`.
+4. **`replace(pat: @Pattern, text: string, repl: string) -> string` / `patt_replace`:** Replaces all non-overlapping matches with `repl`, allocating the exact resultant string buffer.
+5. **`split(pat: @Pattern, text: string) -> RawShelf` / `patt_split`:** Splits `text` around pattern matches, returning a dynamic shelf of `StrSlice` tokens.
+
+```velo
+use std.patt
+use std.io
+
+act main() {
+    mut pat = patt_comp("[0-9]+")
+
+    // 1. test
+    let has_digits = pat.test("item 42")
+
+    // 2. find
+    let m = pat.find("price is 99 dollars")
+    if m.ok {
+        io.println("Found match: start={m.start}, end={m.end}")
+    }
+
+    // 3. find_all
+    mut all = pat.find_all("10 apples, 20 oranges, 30 bananas")
+    io.println("Total matches: {all.len}")
+
+    // 4. replace
+    let masked = pat.replace("secret 123 code 456", "###")
+    io.println(masked) // "secret ### code ###"
+
+    // 5. split
+    mut csv_pat = patt_comp("[,;]+")
+    mut parts = csv_pat.split("apple,banana;cherry,,dates")
+
+    pattern_free(@pat)
+    pattern_free(@csv_pat)
+}
+```
+
+
 

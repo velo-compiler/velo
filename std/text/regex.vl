@@ -1,0 +1,2 @@
+// Pure Velo regular expressions (compatibility bridge to std.patt).
+use "../patt.vl"

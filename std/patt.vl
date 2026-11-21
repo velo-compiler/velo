@@ -1,0 +1,5 @@
+// Pure Velo pattern matching and regular expression library (zero C runtime dependencies).
+use "patt/defs.vl"
+use "patt/parse.vl"
+use "patt/vm.vl"
+use "patt/ops.vl"

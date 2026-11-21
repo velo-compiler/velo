@@ -1,0 +1,62 @@
+// Pure Velo Regular Expression / Pattern Matching Engine (Thompson NFA).
+// Definitions for NFA states, character classes, pattern descriptor, and match results.
+
+use "../str/slice.vl"
+
+// Match descriptor returned by find operations.
+view data PattMatch {
+    ok: bool
+    start: usize
+    end: usize
+    text: StrSlice
+}
+
+// Opcode constants for NfaState
+view let PATT_STATE_MATCH: i32 = 1
+view let PATT_STATE_CHAR: i32 = 2
+view let PATT_STATE_CLASS: i32 = 3
+view let PATT_STATE_DOT: i32 = 4
+view let PATT_STATE_SPLIT: i32 = 5
+view let PATT_STATE_ANCHOR_START: i32 = 6
+view let PATT_STATE_ANCHOR_END: i32 = 7
+
+// A single contiguous character range (e.g. 'a'..'z')
+view data CharRange {
+    min_c: u8
+    max_c: u8
+}
+
+// A character class containing one or more ranges with optional inversion (e.g. [^0-9])
+view data CharClass {
+    negated: bool
+    range_start: usize
+    range_count: usize
+}
+
+// A state in the Thompson NFA graph
+view data NfaState {
+    kind: i32
+    c: u8
+    out1: i32
+    out2: i32
+    class_idx: i32
+}
+
+// A compiled Thompson NFA pattern descriptor
+view data Pattern {
+    states: @NfaState
+    state_count: usize
+    state_cap: usize
+    start_state: i32
+    anchored_start: bool
+    anchored_end: bool
+    classes: @CharClass
+    class_count: usize
+    ranges: @CharRange
+    range_count: usize
+    scratch_curr: @i32
+    scratch_next: @i32
+    scratch_visited: @i32
+    step_id: i32
+    valid: bool
+}

@@ -1,0 +1,230 @@
+// Comprehensive unit test suite for std.patt / std.text.regex.
+// Verifies Thompson NFA compilation and the 5 core API methods:
+// test, find, find_all, replace, split, plus classes, escapes, and anchors.
+
+use "../../mem/page.vl"
+use "../../mem/heap.vl"
+use "../../str/slice.vl"
+use "../../coll/shelf.vl"
+use "../../patt.vl"
+
+extern act puts(s: string) -> i32
+
+act test_patt_test_basic() -> bool {
+    mut p1 = patt_comp("abc")
+    if !patt_test(@p1, "hello abc world") { pattern_free(@p1); return false }
+    if patt_test(@p1, "hello xyz world") { pattern_free(@p1); return false }
+    pattern_free(@p1)
+
+    // Anchors ^ and $
+    mut p2 = patt_comp("^hello")
+    if !patt_test(@p2, "hello world") { pattern_free(@p2); return false }
+    if patt_test(@p2, "world hello") { pattern_free(@p2); return false }
+    pattern_free(@p2)
+
+    mut p3 = patt_comp("world$")
+    if !patt_test(@p3, "hello world") { pattern_free(@p3); return false }
+    if patt_test(@p3, "world hello") { pattern_free(@p3); return false }
+    pattern_free(@p3)
+
+    return true
+}
+
+act test_patt_find_basic() -> bool {
+    mut pat = patt_comp("foo[0-9]+")
+    let m = patt_find(@pat, "prefix foo42 postfix")
+    if !m.ok { pattern_free(@pat); return false }
+    if m.start != 7 { pattern_free(@pat); return false }
+    if m.end != 12 { pattern_free(@pat); return false }
+    if !slice_eq_str(m.text, "foo42") { pattern_free(@pat); return false }
+
+    let m2 = patt_find(@pat, "no numbers here")
+    if m2.ok { pattern_free(@pat); return false }
+
+    pattern_free(@pat)
+    return true
+}
+
+act test_patt_find_all() -> bool {
+    mut pat = patt_comp("[0-9]+")
+    mut shelf = patt_find_all(@pat, "10 items, 20 boxes, 30 pallets")
+    if shelf.len != 3 {
+        shelf_free(@shelf)
+        pattern_free(@pat)
+        return false
+    }
+
+    let m0 = patt_get_match(@shelf, 0)
+    let m1 = patt_get_match(@shelf, 1)
+    let m2 = patt_get_match(@shelf, 2)
+
+    if !m0.ok or m0.start != 0 or m0.end != 2 or !slice_eq_str(m0.text, "10") {
+        shelf_free(@shelf); pattern_free(@pat); return false
+    }
+    if !m1.ok or m1.start != 10 or m1.end != 12 or !slice_eq_str(m1.text, "20") {
+        shelf_free(@shelf); pattern_free(@pat); return false
+    }
+    if !m2.ok or m2.start != 20 or m2.end != 22 or !slice_eq_str(m2.text, "30") {
+        shelf_free(@shelf); pattern_free(@pat); return false
+    }
+
+    shelf_free(@shelf)
+    pattern_free(@pat)
+    return true
+}
+
+act test_patt_replace() -> bool {
+    mut pat = patt_comp("[0-9]+")
+    let res = patt_replace(@pat, "item 1, item 2, item 3", "NUM")
+    let sl = slice_from_str(res)
+    let expected = "item NUM, item NUM, item NUM"
+    if !slice_eq_str(sl, expected) {
+        pattern_free(@pat)
+        return false
+    }
+
+    // When no matches occur, returns original string content
+    let res2 = patt_replace(@pat, "no digits here", "XXX")
+    if !slice_eq_str(slice_from_str(res2), "no digits here") {
+        pattern_free(@pat)
+        return false
+    }
+
+    pattern_free(@pat)
+    return true
+}
+
+act test_patt_split() -> bool {
+    mut pat = patt_comp(",")
+    mut shelf = patt_split(@pat, "apple,banana,cherry")
+    if shelf.len != 3 {
+        shelf_free(@shelf); pattern_free(@pat); return false
+    }
+
+    let s0 = patt_get_slice(@shelf, 0)
+    let s1 = patt_get_slice(@shelf, 1)
+    let s2 = patt_get_slice(@shelf, 2)
+
+    if !slice_eq_str(s0, "apple") or !slice_eq_str(s1, "banana") or !slice_eq_str(s2, "cherry") {
+        shelf_free(@shelf); pattern_free(@pat); return false
+    }
+    shelf_free(@shelf)
+    pattern_free(@pat)
+
+    // Regex multi-character delimiter
+    mut pat2 = patt_comp("[:;]+")
+    mut shelf2 = patt_split(@pat2, "one:two;;three:::four")
+    if shelf2.len != 4 {
+        shelf_free(@shelf2); pattern_free(@pat2); return false
+    }
+    if !slice_eq_str(patt_get_slice(@shelf2, 0), "one") or
+       !slice_eq_str(patt_get_slice(@shelf2, 1), "two") or
+       !slice_eq_str(patt_get_slice(@shelf2, 2), "three") or
+       !slice_eq_str(patt_get_slice(@shelf2, 3), "four") {
+        shelf_free(@shelf2); pattern_free(@pat2); return false
+    }
+    shelf_free(@shelf2)
+    pattern_free(@pat2)
+    return true
+}
+
+act test_patt_classes_and_escapes() -> bool {
+    // Digits \d and non-digits \D
+    if !patt_test_str("12345", "^\\d+$") { return false }
+    if patt_test_str("123a5", "^\\d+$") { return false }
+    if !patt_test_str("hello", "^\\D+$") { return false }
+    if patt_test_str("hel9o", "^\\D+$") { return false }
+
+    // Word chars \w and non-word \W
+    if !patt_test_str("velo_123", "^\\w+$") { return false }
+    if patt_test_str("velo 123", "^\\w+$") { return false }
+    if !patt_test_str("!@#$", "^\\W+$") { return false }
+
+    // Whitespace \s
+    if !patt_test_str("  \t \n", "^\\s+$") { return false }
+    if patt_test_str("  a \t", "^\\s+$") { return false }
+
+    // Custom classes and ranges [a-z0-9] and [^0-9]
+    if !patt_test_str("abc789", "^[a-z0-9]+$") { return false }
+    if patt_test_str("abc_789", "^[a-z0-9]+$") { return false }
+    if !patt_test_str("xyz", "^[^0-9]+$") { return false }
+    if patt_test_str("xy9z", "^[^0-9]+$") { return false }
+
+    return true
+}
+
+act test_patt_alternation_and_quantifiers() -> bool {
+    // Alternation |
+    if !patt_test_str("cat", "^(cat|dog)$") { return false }
+    if !patt_test_str("dog", "^(cat|dog)$") { return false }
+    if patt_test_str("bird", "^(cat|dog)$") { return false }
+
+    // Optional ?
+    if !patt_test_str("color", "^colou?r$") { return false }
+    if !patt_test_str("colour", "^colou?r$") { return false }
+    if patt_test_str("colouur", "^colou?r$") { return false }
+
+    // Zero-or-more *
+    if !patt_test_str("ac", "^ab*c$") { return false }
+    if !patt_test_str("abc", "^ab*c$") { return false }
+    if !patt_test_str("abbbbc", "^ab*c$") { return false }
+    if patt_test_str("abxc", "^ab*c$") { return false }
+
+    // One-or-more +
+    if patt_test_str("ac", "^ab+c$") { return false }
+    if !patt_test_str("abc", "^ab+c$") { return false }
+    if !patt_test_str("abbc", "^ab+c$") { return false }
+
+    // Dot .
+    if !patt_test_str("a_c", "^a.c$") { return false }
+    if !patt_test_str("a8c", "^a.c$") { return false }
+
+    return true
+}
+
+act test_patt_redos_linear_time() -> bool {
+    // Nested quantifiers (a+)+b on 30 'a's: catastrophic backtracking in naive engines (2^30 steps)
+    // Thompson NFA must evaluate in O(N*M) linear time.
+    let text = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    let matched = patt_test_str(text, "(a+)+b")
+    if matched { return false }
+    return true
+}
+
+act main() -> i32 {
+    if !test_patt_test_basic() {
+        puts("FAIL: test_patt_test_basic")
+        return 1
+    }
+    if !test_patt_find_basic() {
+        puts("FAIL: test_patt_find_basic")
+        return 1
+    }
+    if !test_patt_find_all() {
+        puts("FAIL: test_patt_find_all")
+        return 1
+    }
+    if !test_patt_replace() {
+        puts("FAIL: test_patt_replace")
+        return 1
+    }
+    if !test_patt_split() {
+        puts("FAIL: test_patt_split")
+        return 1
+    }
+    if !test_patt_classes_and_escapes() {
+        puts("FAIL: test_patt_classes_and_escapes")
+        return 1
+    }
+    if !test_patt_alternation_and_quantifiers() {
+        puts("FAIL: test_patt_alternation_and_quantifiers")
+        return 1
+    }
+    if !test_patt_redos_linear_time() {
+        puts("FAIL: test_patt_redos_linear_time")
+        return 1
+    }
+
+    puts("std.patt test suite: ALL PASSED")
+    return 0
+}
