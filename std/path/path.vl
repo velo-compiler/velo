@@ -8,33 +8,33 @@ use "../str/slice.vl"
 use "../str/builder.vl"
 
 // Path separator constants
-let PATH_SEP_POSIX: u8 = 47 as u8   // '/'
-let PATH_SEP_WIN: u8 = 92 as u8     // '\\'
+view let PATH_SEP_POSIX: u8 = 47 as u8   // '/'
+view let PATH_SEP_WIN: u8 = 92 as u8     // '\\'
 
 // Returns true if byte c is a path separator ('/' or '\\').
-act path_is_sep(c: u8) -> bool {
+view act path_is_sep(c: u8) -> bool {
     return c == PATH_SEP_POSIX or c == PATH_SEP_WIN
 }
 
 // Returns true if character is ASCII alpha ('a'..'z' or 'A'..'Z').
-act path_is_alpha(c: u8) -> bool {
+view act path_is_alpha(c: u8) -> bool {
     return (c >= 65 as u8 and c <= 90 as u8) or (c >= 97 as u8 and c <= 122 as u8)
 }
 
 // Returns true if slice begins with a Windows drive specifier (e.g. "C:" or "d:").
-act path_has_drive(p: StrSlice) -> bool {
+view act path_has_drive(p: StrSlice) -> bool {
     if p.len < 2 or p.ptr == null { return false }
     return path_is_alpha(p.ptr[0]) and p.ptr[1] == 58 as u8 // ':'
 }
 
 // Returns the length of the Windows drive prefix (2 for "C:", 0 if none).
-act path_drive_len(p: StrSlice) -> usize {
+view act path_drive_len(p: StrSlice) -> usize {
     if path_has_drive(p) { return 2 }
     return 0
 }
 
 // Returns true if the path is absolute (begins with '/' or '\\', or "C:/" / "C:\\").
-act path_is_abs(p: StrSlice) -> bool {
+view act path_is_abs(p: StrSlice) -> bool {
     if p.len == 0 or p.ptr == null { return false }
     if path_is_sep(p.ptr[0]) { return true }
     let dlen = path_drive_len(p)
@@ -44,7 +44,7 @@ act path_is_abs(p: StrSlice) -> bool {
 
 // Extracts the basename component of a path (e.g. "foo/bar/baz.vl" -> "baz.vl").
 // Trims any trailing separators. Never allocates memory.
-act path_basename(p: StrSlice) -> StrSlice {
+view act path_basename(p: StrSlice) -> StrSlice {
     if slice_is_empty(p) { return p }
     // Trim trailing separators
     mut end = p.len
@@ -65,7 +65,7 @@ act path_basename(p: StrSlice) -> StrSlice {
 
 // Extracts the directory component of a path (e.g. "foo/bar/baz.vl" -> "foo/bar").
 // Returns empty slice if no parent directory exists. Never allocates memory.
-act path_dirname(p: StrSlice) -> StrSlice {
+view act path_dirname(p: StrSlice) -> StrSlice {
     if slice_is_empty(p) {
         return p
     }
@@ -103,7 +103,7 @@ act path_dirname(p: StrSlice) -> StrSlice {
 
 // Extracts the file extension including leading dot (e.g. "baz.vl" -> ".vl").
 // Returns empty slice if no extension or if file is a dotfile (e.g. ".gitignore").
-act path_extname(p: StrSlice) -> StrSlice {
+view act path_extname(p: StrSlice) -> StrSlice {
     let base = path_basename(p)
     if slice_is_empty(base) {
         return base
@@ -120,7 +120,7 @@ act path_extname(p: StrSlice) -> StrSlice {
 }
 
 // Extracts filename stem without directory and without extension (e.g. "foo/bar/baz.vl" -> "baz").
-act path_stem(p: StrSlice) -> StrSlice {
+view act path_stem(p: StrSlice) -> StrSlice {
     let base = path_basename(p)
     let ext = path_extname(p)
     if ext.len == 0 {
@@ -130,7 +130,7 @@ act path_stem(p: StrSlice) -> StrSlice {
 }
 
 // Joins two path slices into a StrBuilder.
-act path_join_into(a: StrSlice, b: StrSlice, sb: @StrBuilder) {
+view act path_join_into(a: StrSlice, b: StrSlice, sb: @StrBuilder) {
     if sb == null { return }
     if slice_is_empty(a) {
         if !slice_is_empty(b) { sb_append_slice(sb, b) }
@@ -154,7 +154,7 @@ act path_join_into(a: StrSlice, b: StrSlice, sb: @StrBuilder) {
 }
 
 // Joins three path slices into a StrBuilder.
-act path_join3_into(a: StrSlice, b: StrSlice, c: StrSlice, sb: @StrBuilder) {
+view act path_join3_into(a: StrSlice, b: StrSlice, c: StrSlice, sb: @StrBuilder) {
     path_join_into(a, b, sb)
     let cur = sb_to_slice(sb)
     mut a_tmp = arena_init(4096)
@@ -167,7 +167,7 @@ act path_join3_into(a: StrSlice, b: StrSlice, c: StrSlice, sb: @StrBuilder) {
 }
 
 // Normalizes a path into a StrBuilder: unifies separators to '/', resolves '.' and '..'.
-act path_normalize_into(p: StrSlice, sb: @StrBuilder) {
+view act path_normalize_into(p: StrSlice, sb: @StrBuilder) {
     if sb == null { return }
     if slice_is_empty(p) {
         sb_append_byte(sb, 46 as u8) // '.'
@@ -267,7 +267,7 @@ act path_normalize_into(p: StrSlice, sb: @StrBuilder) {
 }
 
 // Normalizes a path slice and returns a newly allocated null-terminated heap string.
-act path_normalize(p: StrSlice) -> string {
+view act path_normalize(p: StrSlice) -> string {
     mut a = arena_init(4096)
     mut sb = sb_init(@a, 128)
     path_normalize_into(p, @sb)
@@ -282,7 +282,7 @@ act path_normalize(p: StrSlice) -> string {
 }
 
 // Joins two path slices and returns a newly allocated normalized null-terminated heap string.
-act path_join(a: StrSlice, b: StrSlice) -> string {
+view act path_join(a: StrSlice, b: StrSlice) -> string {
     if slice_is_empty(a) { return path_normalize(b) }
     if slice_is_empty(b) { return path_normalize(a) }
     if path_is_abs(b) { return path_normalize(b) }
@@ -306,7 +306,7 @@ act path_join(a: StrSlice, b: StrSlice) -> string {
 }
 
 // Joins three path slices and returns a newly allocated normalized null-terminated heap string.
-act path_join3(a: StrSlice, b: StrSlice, c: StrSlice) -> string {
+view act path_join3(a: StrSlice, b: StrSlice, c: StrSlice) -> string {
     let ab = path_join(a, b)
     let sl_ab = slice_from_str(ab)
     let res = path_join(sl_ab, c)
@@ -315,7 +315,7 @@ act path_join3(a: StrSlice, b: StrSlice, c: StrSlice) -> string {
 }
 
 // Converts all '/' separators in a path slice into '\\' and returns a heap-allocated string.
-act path_to_native(p: StrSlice) -> string {
+view act path_to_native(p: StrSlice) -> string {
     if slice_is_empty(p) {
         let empty_buf = heap_alloc(1) as @u8
         empty_buf[0] = 0 as u8
@@ -338,39 +338,39 @@ act path_to_native(p: StrSlice) -> string {
 }
 
 // Convenient string wrappers
-act path_is_abs_str(s: string) -> bool {
+view act path_is_abs_str(s: string) -> bool {
     return path_is_abs(slice_from_str(s))
 }
 
-act path_basename_str(s: string) -> StrSlice {
+view act path_basename_str(s: string) -> StrSlice {
     return path_basename(slice_from_str(s))
 }
 
-act path_dirname_str(s: string) -> StrSlice {
+view act path_dirname_str(s: string) -> StrSlice {
     return path_dirname(slice_from_str(s))
 }
 
-act path_extname_str(s: string) -> StrSlice {
+view act path_extname_str(s: string) -> StrSlice {
     return path_extname(slice_from_str(s))
 }
 
-act path_stem_str(s: string) -> StrSlice {
+view act path_stem_str(s: string) -> StrSlice {
     return path_stem(slice_from_str(s))
 }
 
-act path_join_str(a: string, b: string) -> string {
+view act path_join_str(a: string, b: string) -> string {
     return path_join(slice_from_str(a), slice_from_str(b))
 }
 
-act path_normalize_str(s: string) -> string {
+view act path_normalize_str(s: string) -> string {
     return path_normalize(slice_from_str(s))
 }
 
-act path_to_native_str(s: string) -> string {
+view act path_to_native_str(s: string) -> string {
     return path_to_native(slice_from_str(s))
 }
 
-act path_stem_to_str(s: string) -> string {
+view act path_stem_to_str(s: string) -> string {
     let sl = path_stem(slice_from_str(s))
     let buf = heap_alloc(sl.len + 1)
     if buf == null { return null }
@@ -379,7 +379,7 @@ act path_stem_to_str(s: string) -> string {
     return buf as string
 }
 
-act path_dirname_to_str(s: string) -> string {
+view act path_dirname_to_str(s: string) -> string {
     let sl = path_dirname(slice_from_str(s))
     if sl.len == 0 { return "." }
     let buf = heap_alloc(sl.len + 1)

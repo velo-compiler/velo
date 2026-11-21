@@ -33,7 +33,7 @@ act       data      mut       let       if        else
 loop      in        return    zone      extern    defer
 use       true      false     null      sizeof    as
 break     continue  on        and       or        not
-kind      fail
+kind      fail      pact      view
 ```
 
 Contextual keywords recognized in specific declaration or expression contexts include `aka`, `op`, and `unsafe`.
@@ -647,6 +647,50 @@ act main() {
   ```
   [Velo Error] semantic:<line>:<col> - Type '<ConcreteType>' does not satisfy pact '<PactName>': missing method '<method>'
   ```
+
+---
+
+### 2.16 Module Privacy & Export Control (`view`)
+
+Velo enforces strict file-level modular encapsulation by default. To make a top-level declaration accessible to other modules that import the defining file via `use`, the declaration must be explicitly prefixed with the 4-character keyword `view` (short for *viewable* / *public view*):
+
+```velo
+// math.vl
+view act add(a: i32, b: i32) -> i32 {
+    return a + b
+}
+
+// Unmarked declarations are strictly private to this file
+act internal_helper() -> i32 {
+    return 42
+}
+
+view data Point {
+    x: i32
+    y: i32
+}
+
+view kind Status {
+    Ok
+    Err
+}
+
+view pact Serializable {
+    act serialize(self: @Self) -> string
+}
+
+view let MAX_LIMIT: i32 = 1000
+```
+
+#### Module Privacy Rules:
+* **Private by Default:** Any top-level `act`, `data`, `kind`, `pact`, or `let` without the `view` modifier is private to the file in which it is declared.
+* **Prohibited on Non-Exportable Constructs:** Applying `view` to `use` or `test` declarations is a compile-time syntax error (`'view' cannot be applied to 'use'` / `'view' cannot be applied to 'test'`).
+* **Cross-Module Access Enforcement:** Attempting to call a private function, instantiate/reference a private struct, access a private enum kind, reference a private pact, or read a private global variable from an importing file triggers a compile-time semantic error:
+  ```
+  [Velo Error] semantic:<line>:<col> - '<Name>' is private to '<defining_file>' and cannot be accessed from '<importing_file>'
+  ```
+* **Intra-File Freedom:** Private declarations can be freely referenced anywhere within the file where they are defined.
+* **Standard Library:** All public functions, structs, kinds, and constants across `std/` are exported with `view`.
 
 ---
 
@@ -1635,15 +1679,9 @@ data AnyWriter {
 
 ### 11.3 Module Privacy and Export Control
 
-* **Absence:** Prior to Task 77.4, all top-level functions (`act`), data structures (`data`), and constants in an imported file are visible to any importing module.
-* **Architectural Rationale:** Avoided access-control overhead and complex visibility graph tracking during the compiler's initial bootstrap phases.
-* **The Cost:** Internal helper functions and implementation details cannot be hidden from consumers at compile time; accidental dependencies on internal symbols can occur.
-* **Official Workaround:**
-  1. Follow naming conventions: prefix private helper functions and structs with an underscore `_` (e.g. `_helper_parse_token()`).
-  2. Isolate internal subsystems in dedicated `internal/` subdirectories.
-
-> [!NOTE]
-> Explicit module privacy via the `pub` keyword (`pub act`, `pub data`) will be introduced in Task 77.4, making unmarked declarations private to their file by default.
+* **Status:** Implemented in Task 77.4.
+* **Mechanism:** Declarations are private by default to their defining file. Public exports are marked with the 4-character keyword `view` (`view act`, `view data`, `view kind`, `view pact`, `view let`).
+* **Semantic Enforcement:** Any cross-file access to an unmarked declaration produces a compile-time diagnostic: `'<Name>' is private to '<file>' and cannot be accessed from '<current_file>'`. See §2.16 for complete syntax and specification.
 
 ### 11.4 Preprocessor Directives and Conditional Compilation
 

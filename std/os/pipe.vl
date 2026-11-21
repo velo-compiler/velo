@@ -8,7 +8,7 @@ use "pipe_io.vl"
 use "args.vl"
 
 // Spawns a command line and captures both its stdout and stderr streams.
-act os_spawn_capture(arena: @Arena, cmd: string) -> ProcessOutput {
+view act os_spawn_capture(arena: @Arena, cmd: string) -> ProcessOutput {
     if arena == null or cmd == null {
         return ProcessOutput { stdout_str: "", stderr_str: "", exit_code: -1, success: false }
     }
@@ -44,7 +44,7 @@ act os_spawn_capture(arena: @Arena, cmd: string) -> ProcessOutput {
 }
 
 // Spawns an argument array and captures both its stdout and stderr streams.
-act os_spawn_capture_argv(arena: @Arena, argv: @string, argc: usize) -> ProcessOutput {
+view act os_spawn_capture_argv(arena: @Arena, argv: @string, argc: usize) -> ProcessOutput {
     if arena == null or argv == null or argc == 0 {
         return ProcessOutput { stdout_str: "", stderr_str: "", exit_code: -1, success: false }
     }
@@ -53,13 +53,13 @@ act os_spawn_capture_argv(arena: @Arena, argv: @string, argc: usize) -> ProcessO
 }
 
 // Spawns a command line and returns only its captured standard output string.
-act os_capture_stdout(arena: @Arena, cmd: string) -> string {
+view act os_capture_stdout(arena: @Arena, cmd: string) -> string {
     let out = os_spawn_capture(arena, cmd)
     return out.stdout_str
 }
 
 // Spawns an argument array and returns only its captured standard output string.
-act os_capture_stdout_argv(arena: @Arena, argv: @string, argc: usize) -> string {
+view act os_capture_stdout_argv(arena: @Arena, argv: @string, argc: usize) -> string {
     let out = os_spawn_capture_argv(arena, argv, argc)
     return out.stdout_str
 }

@@ -4,7 +4,7 @@ use "../mem/heap.vl"
 use "../str.vl"
 
 // Returns the number of lines in a multi-line string.
-act text_line_count(s: string) -> usize {
+view act text_line_count(s: string) -> usize {
     if s == null { return 0 }
     let slen = str.len(s)
     if slen == 0 { return 0 }
@@ -21,7 +21,7 @@ act text_line_count(s: string) -> usize {
 }
 
 // Returns the maximum column width among all lines in a multi-line string.
-act text_max_line_width(s: string) -> usize {
+view act text_max_line_width(s: string) -> usize {
     if s == null { return 0 }
     let slen = str.len(s)
     if slen == 0 { return 0 }
@@ -49,7 +49,7 @@ act text_max_line_width(s: string) -> usize {
 }
 
 // Calculates the visible display width of a string, ignoring ANSI escape sequences.
-act text_visible_width(s: string) -> usize {
+view act text_visible_width(s: string) -> usize {
     if s == null { return 0 }
     let slen = str.len(s)
     if slen == 0 { return 0 }
@@ -82,7 +82,7 @@ act text_visible_width(s: string) -> usize {
 }
 
 // Returns a new string with all ANSI escape sequences stripped out.
-act text_strip_ansi(s: string) -> string {
+view act text_strip_ansi(s: string) -> string {
     if s == null { return "" }
     let slen = str.len(s)
     if slen == 0 { return "" }

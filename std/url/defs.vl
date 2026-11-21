@@ -2,10 +2,10 @@
 use "../mem/heap.vl"
 use "../str.vl"
 
-let URL_MAX_LEN: usize = 4096
-let URL_MAX_PARAMS: usize = 128
+view let URL_MAX_LEN: usize = 4096
+view let URL_MAX_PARAMS: usize = 128
 
-data Url {
+view data Url {
     scheme: string       // e.g. "https", "http", "ftp", "mailto" (lowercased)
     username: string     // e.g. "alice" (unencoded)
     password: string     // e.g. "secret" (unencoded)
@@ -19,13 +19,13 @@ data Url {
     is_valid: bool       // true if successfully parsed
 }
 
-data UrlQueryParam {
+view data UrlQueryParam {
     key: string
     val: string
 }
 
 // Initializes a blank, valid Url with default empty strings.
-act url_new() -> Url {
+view act url_new() -> Url {
     return Url {
         scheme: "",
         username: "",

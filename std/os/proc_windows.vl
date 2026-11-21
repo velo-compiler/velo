@@ -6,7 +6,7 @@ use "../str/slice.vl"
 use "proc_types.vl"
 
 // Foreign interface to Windows kernel32.dll
-extern act CreateProcessA(
+view extern act CreateProcessA(
     lpApplicationName: @u8,
     lpCommandLine: @u8,
     lpProcessAttributes: @u8,
@@ -18,20 +18,20 @@ extern act CreateProcessA(
     lpStartupInfo: @u8,
     lpProcessInformation: @u8) -> i32
 
-extern act WaitForSingleObject(hHandle: @void, dwMilliseconds: u32) -> u32
-extern act GetExitCodeProcess(hProcess: @void, lpExitCode: @u32) -> i32
-extern act CloseHandle(hObject: @void) -> i32
-extern act TerminateProcess(hProcess: @void, uExitCode: u32) -> i32
+view extern act WaitForSingleObject(hHandle: @void, dwMilliseconds: u32) -> u32
+view extern act GetExitCodeProcess(hProcess: @void, lpExitCode: @u32) -> i32
+view extern act CloseHandle(hObject: @void) -> i32
+view extern act TerminateProcess(hProcess: @void, uExitCode: u32) -> i32
 
 // Little-endian serialization helpers for raw Win32 struct buffers
-act proc_write_u32_le(buf: @u8, offset: usize, val: u32) {
+view act proc_write_u32_le(buf: @u8, offset: usize, val: u32) {
     buf[offset] = (val & (255 as u32)) as u8
     buf[offset + 1] = ((val >> 8) & (255 as u32)) as u8
     buf[offset + 2] = ((val >> 16) & (255 as u32)) as u8
     buf[offset + 3] = ((val >> 24) & (255 as u32)) as u8
 }
 
-act proc_write_ptr_le(buf: @u8, offset: usize, ptr: @void) {
+view act proc_write_ptr_le(buf: @u8, offset: usize, ptr: @void) {
     let val = ptr as usize
     mut i: usize = 0
     loop i < 8 {
@@ -41,7 +41,7 @@ act proc_write_ptr_le(buf: @u8, offset: usize, ptr: @void) {
     }
 }
 
-act proc_read_u32_le(buf: @u8, offset: usize) -> u32 {
+view act proc_read_u32_le(buf: @u8, offset: usize) -> u32 {
     let b0 = buf[offset] as u32
     let b1 = (buf[offset + 1] as u32) << 8
     let b2 = (buf[offset + 2] as u32) << 16
@@ -49,7 +49,7 @@ act proc_read_u32_le(buf: @u8, offset: usize) -> u32 {
     return b0 | b1 | b2 | b3
 }
 
-act proc_read_ptr_le(buf: @u8, offset: usize) -> @void {
+view act proc_read_ptr_le(buf: @u8, offset: usize) -> @void {
     let b0 = buf[offset] as usize
     let b1 = (buf[offset + 1] as usize) << 8
     let b2 = (buf[offset + 2] as usize) << 16
@@ -63,7 +63,7 @@ act proc_read_ptr_le(buf: @u8, offset: usize) -> @void {
 }
 
 // Spawns a new child process with optional redirected standard stream handles.
-act os_spawn_ex(cmd: string, h_in: @void, h_out: @void, h_err: @void) -> ProcessHandle {
+view act os_spawn_ex(cmd: string, h_in: @void, h_out: @void, h_err: @void) -> ProcessHandle {
     if cmd == null {
         return ProcessHandle { pid: 0 as u32, handle: null, thread_handle: null, is_alive: false, signal: 0 }
     }
@@ -140,7 +140,7 @@ act os_spawn_ex(cmd: string, h_in: @void, h_out: @void, h_err: @void) -> Process
 
 // Waits up to timeout_ms milliseconds for the process to exit.
 // Returns exit code if terminated within timeout, or -1 if timed out or invalid.
-act os_process_wait_timeout(proc: @ProcessHandle, timeout_ms: u32) -> i32 {
+view act os_process_wait_timeout(proc: @ProcessHandle, timeout_ms: u32) -> i32 {
     if proc == null or proc.handle == null or !proc.is_alive {
         return -1
     }
@@ -165,7 +165,7 @@ act os_process_wait_timeout(proc: @ProcessHandle, timeout_ms: u32) -> i32 {
 }
 
 // Immediately terminates the running process with exit code 1.
-act os_process_kill(proc: @ProcessHandle) -> bool {
+view act os_process_kill(proc: @ProcessHandle) -> bool {
     if proc == null or proc.handle == null or !proc.is_alive {
         return false
     }
@@ -184,7 +184,7 @@ act os_process_kill(proc: @ProcessHandle) -> bool {
 }
 
 // Closes any remaining native handles without waiting.
-act os_process_close(proc: @ProcessHandle) {
+view act os_process_close(proc: @ProcessHandle) {
     if proc == null { return }
     if proc.thread_handle != null {
         CloseHandle(proc.thread_handle)
@@ -198,7 +198,7 @@ act os_process_close(proc: @ProcessHandle) {
 }
 
 // Returns true if cmd already begins with "cmd.exe /c " or "cmd /c ".
-act str_starts_with_cmd_shell(cmd: string) -> bool {
+view act str_starts_with_cmd_shell(cmd: string) -> bool {
     if cmd == null { return false }
     let len = raw_str_len(cmd as @u8)
     if len >= 11 and cmd[0] == 'c' and cmd[1] == 'm' and cmd[2] == 'd' and cmd[3] == '.' and cmd[4] == 'e' and cmd[5] == 'x' and cmd[6] == 'e' and cmd[7] == ' ' and cmd[8] == '/' and (cmd[9] == 'c' or cmd[9] == 'C') and cmd[10] == ' ' {
@@ -211,7 +211,7 @@ act str_starts_with_cmd_shell(cmd: string) -> bool {
 }
 
 // Executes a shell command string through the system command processor (cmd.exe /c).
-act os_shell_spawn_sync(cmd: string) -> ProcessResult {
+view act os_shell_spawn_sync(cmd: string) -> ProcessResult {
     if cmd == null {
         return ProcessResult { exit_code: -1, success: false }
     }

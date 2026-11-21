@@ -5,19 +5,19 @@ use "socket.vl"
 use "../mem/heap.vl"
 
 // High-level TCP server listener.
-data TcpListener {
+view data TcpListener {
     sock: Socket
     local_addr: SocketAddr
 }
 
 // High-level TCP connection stream.
-data TcpStream {
+view data TcpStream {
     sock: Socket
     peer_addr: SocketAddr
 }
 
 // Binds and starts listening for incoming TCP connections on the specified IP and port.
-act tcp_listen(ip: string, port: u16) -> @TcpListener {
+view act tcp_listen(ip: string, port: u16) -> @TcpListener {
     mut s = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
     if not socket_is_valid(@s) {
         return null
@@ -42,7 +42,7 @@ act tcp_listen(ip: string, port: u16) -> @TcpListener {
 }
 
 // Accepts an incoming connection from a TcpListener. Returns a connected TcpStream or null.
-act tcp_accept(listener: @TcpListener) -> @TcpStream {
+view act tcp_accept(listener: @TcpListener) -> @TcpStream {
     if listener == null or not socket_is_valid(@listener.sock) {
         return null
     }
@@ -60,7 +60,7 @@ act tcp_accept(listener: @TcpListener) -> @TcpStream {
 }
 
 // Establishes a TCP connection to a remote IP address and port. Returns a connected TcpStream or null.
-act tcp_connect(ip: string, port: u16) -> @TcpStream {
+view act tcp_connect(ip: string, port: u16) -> @TcpStream {
     mut s = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
     if not socket_is_valid(@s) {
         return null
@@ -78,19 +78,19 @@ act tcp_connect(ip: string, port: u16) -> @TcpStream {
 }
 
 // Reads up to max_len bytes from the TCP stream into buf. Returns bytes read, 0 on EOF, or -1 on error.
-act tcp_read(stream: @TcpStream, buf: @u8, max_len: usize) -> i32 {
+view act tcp_read(stream: @TcpStream, buf: @u8, max_len: usize) -> i32 {
     if stream == null { return -1 }
     return socket_recv(@stream.sock, buf, max_len)
 }
 
 // Writes up to len bytes from buf to the TCP stream. Returns bytes sent or -1 on error.
-act tcp_write(stream: @TcpStream, buf: @u8, len: usize) -> i32 {
+view act tcp_write(stream: @TcpStream, buf: @u8, len: usize) -> i32 {
     if stream == null { return -1 }
     return socket_send(@stream.sock, buf, len)
 }
 
 // Sends a string message across the TCP stream. Returns bytes sent or -1 on error.
-act tcp_write_str(stream: @TcpStream, text: string) -> i32 {
+view act tcp_write_str(stream: @TcpStream, text: string) -> i32 {
     if stream == null or text == null { return -1 }
     let len = str.len(text)
     if len == 0 { return 0 }
@@ -98,7 +98,7 @@ act tcp_write_str(stream: @TcpStream, text: string) -> i32 {
 }
 
 // Reads up to max_len bytes from the stream into a newly allocated null-terminated string.
-act tcp_read_str(stream: @TcpStream, max_len: usize) -> string {
+view act tcp_read_str(stream: @TcpStream, max_len: usize) -> string {
     if stream == null or max_len == 0 { return "" }
     mut buf: @u8 = heap_alloc(max_len + 1)
     if buf == null { return "" }
@@ -112,40 +112,40 @@ act tcp_read_str(stream: @TcpStream, max_len: usize) -> string {
 }
 
 // Configures non-blocking I/O mode on the TCP stream.
-act tcp_set_nonblocking(stream: @TcpStream, nonblocking: bool) -> bool {
+view act tcp_set_nonblocking(stream: @TcpStream, nonblocking: bool) -> bool {
     if stream == null { return false }
     return socket_set_nonblocking(@stream.sock, nonblocking)
 }
 
 // Sets the send and receive timeout on the stream in milliseconds.
-act tcp_set_timeout(stream: @TcpStream, ms: u32) -> bool {
+view act tcp_set_timeout(stream: @TcpStream, ms: u32) -> bool {
     if stream == null { return false }
     return socket_set_timeout(@stream.sock, ms)
 }
 
 // Closes the TCP connection and releases resources.
-act tcp_close(stream: @TcpStream) {
+view act tcp_close(stream: @TcpStream) {
     if stream == null { return }
     socket_close(@stream.sock)
     heap_free(stream as @u8)
 }
 
 // Closes the TCP listener socket and releases resources.
-act tcp_listener_close(listener: @TcpListener) {
+view act tcp_listener_close(listener: @TcpListener) {
     if listener == null { return }
     socket_close(@listener.sock)
     heap_free(listener as @u8)
 }
 
 // Binds and listens for incoming TCP connections, returning @TcpListener or error message.
-act tcp_open_listener(ip: string, port: u16) -> @TcpListener or string {
+view act tcp_open_listener(ip: string, port: u16) -> @TcpListener or string {
     let listener = tcp_listen(ip, port)
     if listener == null { fail "failed to bind tcp listener" }
     return listener
 }
 
 // Connects to a remote TCP endpoint, returning @TcpStream or error message.
-act tcp_open_stream(ip: string, port: u16) -> @TcpStream or string {
+view act tcp_open_stream(ip: string, port: u16) -> @TcpStream or string {
     let stream = tcp_connect(ip, port)
     if stream == null { fail "failed to connect tcp stream" }
     return stream

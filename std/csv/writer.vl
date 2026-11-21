@@ -8,14 +8,14 @@ use "../str/slice.vl"
 
 // CSV structural byte constants used by the generator.
 // (Named distinctly from reader.vl constants to avoid umbrella-symbol collisions.)
-let CSVW_COMMA: u8 = 44                  // ','
-let CSVW_DQUOTE: u8 = 34                 // '"'
-let CSVW_CRLF: u8 = 13                   // '\r'
+view let CSVW_COMMA: u8 = 44                  // ','
+view let CSVW_DQUOTE: u8 = 34                 // '"'
+view let CSVW_CRLF: u8 = 13                   // '\r'
 
 // Arena-backed CSV record writer state.
 // Tracks how many fields the current row already received so the generator
 // can insert field separators automatically.
-data CsvWriter {
+view data CsvWriter {
     sb: @StrBuilder,
     fields_in_row: usize,
     use_crlf: bool,
@@ -23,7 +23,7 @@ data CsvWriter {
 
 // Initializes a CSV writer over an existing arena-backed StrBuilder.
 // When use_crlf is true, record terminators are emitted as "\r\n", otherwise "\n".
-act csv_writer_init(sb: @StrBuilder, use_crlf: bool) -> CsvWriter {
+view act csv_writer_init(sb: @StrBuilder, use_crlf: bool) -> CsvWriter {
     return CsvWriter {
         sb: sb,
         fields_in_row: 0,
@@ -33,7 +33,7 @@ act csv_writer_init(sb: @StrBuilder, use_crlf: bool) -> CsvWriter {
 
 // Returns true when the field contains bytes that force RFC 4180 quoting:
 // comma, double quote, carriage return, or line feed.
-act csv_field_needs_quotes(s: StrSlice) -> bool {
+view act csv_field_needs_quotes(s: StrSlice) -> bool {
     if s.ptr == null or s.len == 0 {
         return false
     }
@@ -52,7 +52,7 @@ act csv_field_needs_quotes(s: StrSlice) -> bool {
 // Unquoted-able content is emitted verbatim (zero transformation);
 // content containing separators, quotes, or newlines is wrapped in double
 // quotes with inner quotes doubled.
-act csv_append_field(sb: @StrBuilder, s: StrSlice) {
+view act csv_append_field(sb: @StrBuilder, s: StrSlice) {
     if sb == null {
         return
     }
@@ -79,7 +79,7 @@ act csv_append_field(sb: @StrBuilder, s: StrSlice) {
 
 // Appends one field to the current record, automatically inserting the
 // field separator for all fields after the first.
-act csv_writer_field(w: @CsvWriter, s: StrSlice) {
+view act csv_writer_field(w: @CsvWriter, s: StrSlice) {
     if w == null or w.sb == null {
         return
     }
@@ -91,13 +91,13 @@ act csv_writer_field(w: @CsvWriter, s: StrSlice) {
 }
 
 // Appends one string field to the current record.
-act csv_writer_field_str(w: @CsvWriter, s: string) {
+view act csv_writer_field_str(w: @CsvWriter, s: string) {
     csv_writer_field(w, slice_from_str(s))
 }
 
 // Ends the current record by emitting the record terminator
 // ("\r\n" or "\n") and resetting the field counter.
-act csv_writer_end_row(w: @CsvWriter) {
+view act csv_writer_end_row(w: @CsvWriter) {
     if w == null or w.sb == null {
         return
     }
@@ -112,7 +112,7 @@ act csv_writer_end_row(w: @CsvWriter) {
 
 // Serializes a field into dst starting at byte offset at.
 // Returns the new offset after the (possibly quoted) field.
-act csv_write_field_into(dst: @u8, at: usize, s: StrSlice) -> usize {
+view act csv_write_field_into(dst: @u8, at: usize, s: StrSlice) -> usize {
     if dst == null {
         return at
     }
@@ -147,7 +147,7 @@ act csv_write_field_into(dst: @u8, at: usize, s: StrSlice) -> usize {
 }
 
 // Computes the byte length of a field once serialized.
-act csv_field_serialized_len(s: StrSlice) -> usize {
+view act csv_field_serialized_len(s: StrSlice) -> usize {
     if !csv_field_needs_quotes(s) {
         return s.len
     }
@@ -167,7 +167,7 @@ act csv_field_serialized_len(s: StrSlice) -> usize {
 // Serializes count fields (a @string array indexable as fields[i]) into a
 // single heap-allocated CSV record string with the requested terminator.
 // Returns an empty string for null arrays or count == 0.
-act csv_make_row_str(fields: @string, count: usize, use_crlf: bool) -> string {
+view act csv_make_row_str(fields: @string, count: usize, use_crlf: bool) -> string {
     if fields == null or count == 0 {
         return "" as string
     }
@@ -227,7 +227,7 @@ act csv_make_row_str(fields: @string, count: usize, use_crlf: bool) -> string {
 
 // Serializes a single field into a heap-allocated CSV-safe string
 // (quoting and quote-doubling applied when required). No terminator.
-act csv_escape_str(s: string) -> string {
+view act csv_escape_str(s: string) -> string {
     if s == null {
         return "" as string
     }

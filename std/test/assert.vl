@@ -2,7 +2,7 @@
 use "common.vl"
 
 // Base assertion: verifies condition is true.
-act assert(cond: bool, msg: string) -> bool {
+view act assert(cond: bool, msg: string) -> bool {
     if cond {
         test_record_pass()
         return true
@@ -12,7 +12,7 @@ act assert(cond: bool, msg: string) -> bool {
 }
 
 // Fatal precondition check: terminates the process immediately if condition is false.
-act assert_abort(cond: bool, msg: string) -> void {
+view act assert_abort(cond: bool, msg: string) -> void {
     if !cond {
         let err = test_concat3("ASSERTION FAILED: ", msg, "\n")
         println_str(err)
@@ -21,7 +21,7 @@ act assert_abort(cond: bool, msg: string) -> void {
 }
 
 // Asserts that a condition evaluates to true.
-act assert_true(cond: bool, msg: string) -> bool {
+view act assert_true(cond: bool, msg: string) -> bool {
     if cond {
         test_record_pass()
         return true
@@ -32,7 +32,7 @@ act assert_true(cond: bool, msg: string) -> bool {
 }
 
 // Asserts that a condition evaluates to false.
-act assert_false(cond: bool, msg: string) -> bool {
+view act assert_false(cond: bool, msg: string) -> bool {
     if !cond {
         test_record_pass()
         return true
@@ -43,7 +43,7 @@ act assert_false(cond: bool, msg: string) -> bool {
 }
 
 // Asserts equality between two signed 64-bit integers.
-act assert_eq_i64(actual: i64, expected: i64, msg: string) -> bool {
+view act assert_eq_i64(actual: i64, expected: i64, msg: string) -> bool {
     if actual == expected {
         test_record_pass()
         return true
@@ -56,7 +56,7 @@ act assert_eq_i64(actual: i64, expected: i64, msg: string) -> bool {
 }
 
 // Asserts inequality between two signed 64-bit integers.
-act assert_ne_i64(actual: i64, expected: i64, msg: string) -> bool {
+view act assert_ne_i64(actual: i64, expected: i64, msg: string) -> bool {
     if actual != expected {
         test_record_pass()
         return true
@@ -68,7 +68,7 @@ act assert_ne_i64(actual: i64, expected: i64, msg: string) -> bool {
 }
 
 // Asserts equality between two unsigned 64-bit integers.
-act assert_eq_u64(actual: u64, expected: u64, msg: string) -> bool {
+view act assert_eq_u64(actual: u64, expected: u64, msg: string) -> bool {
     if actual == expected {
         test_record_pass()
         return true
@@ -81,7 +81,7 @@ act assert_eq_u64(actual: u64, expected: u64, msg: string) -> bool {
 }
 
 // Asserts inequality between two unsigned 64-bit integers.
-act assert_ne_u64(actual: u64, expected: u64, msg: string) -> bool {
+view act assert_ne_u64(actual: u64, expected: u64, msg: string) -> bool {
     if actual != expected {
         test_record_pass()
         return true
@@ -93,7 +93,7 @@ act assert_ne_u64(actual: u64, expected: u64, msg: string) -> bool {
 }
 
 // Asserts equality between two 64-bit floats within an epsilon tolerance.
-act assert_eq_f64(actual: f64, expected: f64, epsilon: f64, msg: string) -> bool {
+view act assert_eq_f64(actual: f64, expected: f64, epsilon: f64, msg: string) -> bool {
     mut diff = actual - expected
     if diff < 0.0 { diff = -diff }
     if diff <= epsilon {
@@ -108,7 +108,7 @@ act assert_eq_f64(actual: f64, expected: f64, epsilon: f64, msg: string) -> bool
 }
 
 // Asserts equality between two strings.
-act assert_eq_str(actual: string, expected: string, msg: string) -> bool {
+view act assert_eq_str(actual: string, expected: string, msg: string) -> bool {
     if actual == null and expected == null {
         test_record_pass()
         return true
@@ -128,7 +128,7 @@ act assert_eq_str(actual: string, expected: string, msg: string) -> bool {
 }
 
 // Asserts inequality between two strings.
-act assert_ne_str(actual: string, expected: string, msg: string) -> bool {
+view act assert_ne_str(actual: string, expected: string, msg: string) -> bool {
     if actual == null and expected == null {
         let diag = test_concat2(msg, ": expected strings to differ, but both are null")
         test_record_fail(diag)
@@ -144,7 +144,7 @@ act assert_ne_str(actual: string, expected: string, msg: string) -> bool {
 }
 
 // Asserts that a haystack string contains the given needle substring.
-act assert_str_contains(haystack: string, needle: string, msg: string) -> bool {
+view act assert_str_contains(haystack: string, needle: string, msg: string) -> bool {
     if haystack != null and needle != null {
         if str.contains(haystack, needle) {
             test_record_pass()
@@ -161,7 +161,7 @@ act assert_str_contains(haystack: string, needle: string, msg: string) -> bool {
 }
 
 // Asserts that a string starts with the given prefix.
-act assert_str_starts_with(s: string, prefix: string, msg: string) -> bool {
+view act assert_str_starts_with(s: string, prefix: string, msg: string) -> bool {
     if s != null and prefix != null {
         if str.starts_with(s, prefix) {
             test_record_pass()
@@ -178,7 +178,7 @@ act assert_str_starts_with(s: string, prefix: string, msg: string) -> bool {
 }
 
 // Asserts that a string ends with the given suffix.
-act assert_str_ends_with(s: string, suffix: string, msg: string) -> bool {
+view act assert_str_ends_with(s: string, suffix: string, msg: string) -> bool {
     if s != null and suffix != null {
         if str.ends_with(s, suffix) {
             test_record_pass()
@@ -195,7 +195,7 @@ act assert_str_ends_with(s: string, suffix: string, msg: string) -> bool {
 }
 
 // Asserts that a pointer is null.
-act assert_null(ptr: @u8, msg: string) -> bool {
+view act assert_null(ptr: @u8, msg: string) -> bool {
     if ptr == null {
         test_record_pass()
         return true
@@ -206,7 +206,7 @@ act assert_null(ptr: @u8, msg: string) -> bool {
 }
 
 // Asserts that a pointer is not null.
-act assert_not_null(ptr: @u8, msg: string) -> bool {
+view act assert_not_null(ptr: @u8, msg: string) -> bool {
     if ptr != null {
         test_record_pass()
         return true

@@ -5,13 +5,13 @@ use "socket.vl"
 use "../mem/heap.vl"
 
 // High-level UDP socket container.
-data UdpSocket {
+view data UdpSocket {
     sock: Socket
     local_addr: SocketAddr
 }
 
 // Binds a UDP socket to a local IPv4 address and port. Returns an allocated UdpSocket or null.
-act udp_bind(ip: string, port: u16) -> @UdpSocket {
+view act udp_bind(ip: string, port: u16) -> @UdpSocket {
     mut s = socket_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
     if not socket_is_valid(@s) {
         return null
@@ -31,13 +31,13 @@ act udp_bind(ip: string, port: u16) -> @UdpSocket {
 }
 
 // Transmits a datagram to a specific remote destination IP and port. Returns bytes sent or -1.
-act udp_send_to(sock: @UdpSocket, buf: @u8, len: usize, dest_ip: string, dest_port: u16) -> i32 {
+view act udp_send_to(sock: @UdpSocket, buf: @u8, len: usize, dest_ip: string, dest_port: u16) -> i32 {
     if sock == null { return -1 }
     return socket_send_to(@sock.sock, buf, len, dest_ip, dest_port)
 }
 
 // Transmits a string datagram to a remote destination IP and port. Returns bytes sent or -1.
-act udp_send_str_to(sock: @UdpSocket, text: string, dest_ip: string, dest_port: u16) -> i32 {
+view act udp_send_str_to(sock: @UdpSocket, text: string, dest_ip: string, dest_port: u16) -> i32 {
     if sock == null or text == null { return -1 }
     let len = str.len(text)
     if len == 0 { return 0 }
@@ -45,13 +45,13 @@ act udp_send_str_to(sock: @UdpSocket, text: string, dest_ip: string, dest_port: 
 }
 
 // Receives a datagram from any sender, recording sender information in out_addr. Returns bytes received or -1.
-act udp_recv_from(sock: @UdpSocket, buf: @u8, max_len: usize, out_addr: @SocketAddr) -> i32 {
+view act udp_recv_from(sock: @UdpSocket, buf: @u8, max_len: usize, out_addr: @SocketAddr) -> i32 {
     if sock == null { return -1 }
     return socket_recv_from(@sock.sock, buf, max_len, out_addr)
 }
 
 // Receives a datagram as a newly allocated null-terminated string.
-act udp_recv_str_from(sock: @UdpSocket, max_len: usize, out_addr: @SocketAddr) -> string {
+view act udp_recv_str_from(sock: @UdpSocket, max_len: usize, out_addr: @SocketAddr) -> string {
     if sock == null or max_len == 0 { return "" }
     mut buf: @u8 = heap_alloc(max_len + 1)
     if buf == null { return "" }
@@ -65,19 +65,19 @@ act udp_recv_str_from(sock: @UdpSocket, max_len: usize, out_addr: @SocketAddr) -
 }
 
 // Enables or disables broadcasting on the UDP socket.
-act udp_set_broadcast(sock: @UdpSocket, enabled: bool) -> bool {
+view act udp_set_broadcast(sock: @UdpSocket, enabled: bool) -> bool {
     if sock == null { return false }
     return socket_set_broadcast(@sock.sock, enabled)
 }
 
 // Sets the send and receive timeout on the UDP socket in milliseconds.
-act udp_set_timeout(sock: @UdpSocket, ms: u32) -> bool {
+view act udp_set_timeout(sock: @UdpSocket, ms: u32) -> bool {
     if sock == null { return false }
     return socket_set_timeout(@sock.sock, ms)
 }
 
 // Closes the UDP socket and releases resources.
-act udp_close(sock: @UdpSocket) {
+view act udp_close(sock: @UdpSocket) {
     if sock == null { return }
     socket_close(@sock.sock)
     heap_free(sock as @u8)

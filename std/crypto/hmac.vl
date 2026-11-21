@@ -6,7 +6,7 @@ use "subtle.vl"
 use "../mem/heap.vl"
 
 // Computes a 32-byte HMAC-SHA256 authentication code into out_digest.
-act hmac_sha256(key: @u8, key_len: usize, data: @u8, data_len: usize, out_digest: @u8) {
+view act hmac_sha256(key: @u8, key_len: usize, data: @u8, data_len: usize, out_digest: @u8) {
     if out_digest == null { return }
 
     mut k: @u8 = heap_alloc(64)
@@ -65,7 +65,7 @@ act hmac_sha256(key: @u8, key_len: usize, data: @u8, data_len: usize, out_digest
 }
 
 // Computes a 64-character lowercase hex HMAC-SHA256 string for binary data.
-act hmac_sha256_hash(key: @u8, key_len: usize, data: @u8, data_len: usize) -> string {
+view act hmac_sha256_hash(key: @u8, key_len: usize, data: @u8, data_len: usize) -> string {
     mut digest: @u8 = heap_alloc(32)
     hmac_sha256(key, key_len, data, data_len, digest)
     let hex_res = bytes_to_hex(digest, 32)
@@ -75,7 +75,7 @@ act hmac_sha256_hash(key: @u8, key_len: usize, data: @u8, data_len: usize) -> st
 }
 
 // Computes a 64-character lowercase hex HMAC-SHA256 string for string inputs.
-act hmac_sha256_str(key: string, data: string) -> string {
+view act hmac_sha256_str(key: string, data: string) -> string {
     mut k_ptr: @u8 = null
     mut k_len: usize = 0
     if key != null {
@@ -95,7 +95,7 @@ act hmac_sha256_str(key: string, data: string) -> string {
 // Accepts either a 64-character hex string tag or a 32-byte raw binary tag string.
 // Returns true if authentic, false if corrupted, forged, or invalid length.
 // Executes in constant time with respect to tag content.
-act hmac_sha256_verify(key: string, data: string, tag: string) -> bool {
+view act hmac_sha256_verify(key: string, data: string, tag: string) -> bool {
     if tag == null { return false }
     let tag_len = str.len(tag)
 
@@ -135,7 +135,7 @@ act hmac_sha256_verify(key: string, data: string, tag: string) -> bool {
 }
 
 // Verifies in constant time that raw tag matches the 32-byte HMAC-SHA256 of binary data under key.
-act hmac_sha256_verify_bytes(key: @u8, key_len: usize, data: @u8, data_len: usize, tag: @u8, tag_len: usize) -> bool {
+view act hmac_sha256_verify_bytes(key: @u8, key_len: usize, data: @u8, data_len: usize, tag: @u8, tag_len: usize) -> bool {
     if tag == null { return false }
     mut computed: @u8 = heap_alloc(32)
     if computed == null { return false }

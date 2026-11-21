@@ -2221,7 +2221,7 @@ task: it converts "unfinished" into "chosen", which is a legitimate position.
   - Added Section 11: "Deliberate Limitations & Workarounds" to `docs/SPECIFICATION.md`:
     - §11.1 Closures and Environment Capture: documents absence, architectural rationale (preserving explicit region/zone memory model without hidden heap or reference counting), associated costs, and official workaround (bare function pointer with typed context struct `@Context`).
     - §11.2 Dynamic Interfaces, Traits, and Vtables: documents absence, architectural rationale (zero runtime indirection / cache efficiency via monomorphization), associated costs, and official workarounds (monomorphized generics and manual dispatch tables / tagged unions).
-    - §11.3 Module Privacy and Export Control: documents absence, rationale, costs, and official workarounds (underscore prefixing and subdirectory isolation) prior to the `pub` keyword in Task 77.4.
+    - §11.3 Module Privacy and Export Control: documents absence, rationale, costs, and official workarounds (underscore prefixing and subdirectory isolation) prior to the `view` keyword in Task 77.4.
     - §11.4 Preprocessor Directives and Conditional Compilation: documents absence, rationale (deterministic single-pass AST without preprocessor macro state), costs, and official workarounds (driver platform file suffixes and constant-folded runtime platform checks).
     - §11.5 Import Aliasing and Selective Imports: documents absence, costs, and workarounds prior to Task 77.5.
     - §11.6 Expression Defer: documents block requirement, costs, and single-expression workaround prior to Task 77.6.
@@ -2287,11 +2287,28 @@ with the chosen mechanism, and add `examples/39_closures.vl`.
   - `python -m pytest tests -q -m fast`: 61 passed, 1 xfailed in 18.52s.
   - `python scripts/count_lines.py`: all compiler source files $\le 400$ lines.
 
-**77.4** Add module privacy: `pub` prefix on `act`/`data` declarations, with
-unmarked declarations visible only inside their file. This is a breaking change;
-schedule it before 1.0 or never. Requires touching `symbol_table.vl` and every
-`std/` file's exported surface (mechanically: everything currently used
-cross-file gets `pub`).
+**77.4 [COMPLETED] ✅** Module privacy and export control (`view`):
+- *Former Defect:*
+  All top-level declarations (`act`, `data`, `kind`, `pact`, `let`) were globally visible across modules once imported with `use`. There was no mechanism to hide internal implementation details, helper functions, or internal state, forcing libraries to rely on naming conventions (such as `_` prefixes) without compile-time privacy guarantees.
+- *Fix Applied:*
+  - Adopted Velo's 4-character, "easy and unique" keyword motto and introduced `view` (`TOK_VIEW = 158` in `src/frontend/token.vl` and `src/frontend/lexer.vl`) to mark exported top-level declarations (`view act`, `view data`, `view kind`, `view pact`, `view let`).
+  - Added `is_view: bool` and `file_path: string` to AST `StmtNode` in `src/ast/stmt.vl` and updated top-level declaration parsing in `src/frontend/parser.vl` to parse `view` prefixes while disallowing `view` on `use` or `test` statements.
+  - Extended `SymbolTable` and symbols (`FunctionSym`, `StructSym`, `KindSym`, `PactSym`, `Symbol`) in `src/analysis/symbol_table.vl` with `is_view` and `file_path`.
+  - Added module privacy validation in `src/analysis/privacy_checks.vl`, checking cross-file access to functions, methods, struct literals, kinds, pact constraints, and global variables during semantic passes while exempting internal compiler translation units and code generation.
+  - Emitted deterministic compiler diagnostics on privacy violations:
+    `'<Name>' is private to '<file>' and cannot be accessed from '<current_file>'`.
+  - Updated all exported declarations across the standard library (`std/`, 2,285 declarations in 191 files) with `view`.
+  - Added automated test suite `tests/test_module_privacy.py` (8 test vectors covering exported/private functions, structs, kinds, pacts, globals, intra-file calls, and illegal `view` targets).
+  - Maintained Gen2 == Gen3 bit-for-bit determinism (`35B974AD0F2ED78B2195015809C8FAA73FE71F3A70113FEF48EC69E0D8AB33BB`) and refreshed `bootstrap.c`.
+  - Updated `docs/SPECIFICATION.md` §1.4, §2.16, and §11.3 documenting module privacy and export control.
+- *Residual Limitation (if any):*
+  Privacy is currently enforced at the file/module boundary. Granular package-level or friend-module visibility controls may be evaluated if complex sub-package hierarchies require non-file scoping in the future.
+- *Verification:*
+  - `python -m pytest tests/test_module_privacy.py -v`: 8 passed in 2.02s.
+  - `python -m pytest tests/test_platform_portability.py -v`: 12 passed in 0.53s.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -v`: 6 passed in 43.03s.
+  - `python -m pytest tests -q -m fast`: 69 passed, 1 xfailed in 18.25s.
+  - `python scripts/count_lines.py`: all compiler source files $\le 400$ lines.
 
 **77.5** Add import aliasing (`use std.json as j`) and selective import
 (`use std.json { JsonValue, json_parse }`). Collisions are already reachable:

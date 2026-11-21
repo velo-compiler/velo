@@ -6,7 +6,7 @@ use "../mem/arena.vl"
 use "value.vl"
 
 // Appends an item to the end of a JSON array in O(1) time.
-act json_array_push(arr: @JsonValue, item: @JsonValue) {
+view act json_array_push(arr: @JsonValue, item: @JsonValue) {
     if arr == null or item == null or arr.kind != JSON_ARRAY { return }
     item.next = null
     if arr.first_child == null {
@@ -20,13 +20,13 @@ act json_array_push(arr: @JsonValue, item: @JsonValue) {
 }
 
 // Returns the element count of a JSON array.
-act json_array_len(arr: @JsonValue) -> usize {
+view act json_array_len(arr: @JsonValue) -> usize {
     if arr == null or arr.kind != JSON_ARRAY { return 0 }
     return arr.count
 }
 
 // Returns the item at index idx in a JSON array, or null if out of bounds.
-act json_array_get(arr: @JsonValue, idx: usize) -> @JsonValue {
+view act json_array_get(arr: @JsonValue, idx: usize) -> @JsonValue {
     if arr == null or arr.kind != JSON_ARRAY or idx >= arr.count { return null }
     mut cur = arr.first_child
     mut i: usize = 0
@@ -38,7 +38,7 @@ act json_array_get(arr: @JsonValue, idx: usize) -> @JsonValue {
 }
 
 // Inserts or updates a key-value entry in a JSON object.
-act json_obj_put(obj: @JsonValue, key: StrSlice, val: @JsonValue) {
+view act json_obj_put(obj: @JsonValue, key: StrSlice, val: @JsonValue) {
     if obj == null or val == null or obj.kind != JSON_OBJECT { return }
     mut cur = obj.first_child
     loop cur != null {
@@ -69,12 +69,12 @@ act json_obj_put(obj: @JsonValue, key: StrSlice, val: @JsonValue) {
 }
 
 // Convenience helper inserting or updating a key-value entry from a string literal.
-act json_obj_put_str(obj: @JsonValue, key: string, val: @JsonValue) {
+view act json_obj_put_str(obj: @JsonValue, key: string, val: @JsonValue) {
     json_obj_put(obj, slice_from_str(key), val)
 }
 
 // Looks up a property by key slice in a JSON object, returning the value node or null.
-act json_obj_get(obj: @JsonValue, key: StrSlice) -> @JsonValue {
+view act json_obj_get(obj: @JsonValue, key: StrSlice) -> @JsonValue {
     if obj == null or obj.kind != JSON_OBJECT { return null }
     mut cur = obj.first_child
     loop cur != null {
@@ -85,46 +85,46 @@ act json_obj_get(obj: @JsonValue, key: StrSlice) -> @JsonValue {
 }
 
 // Looks up a property by string literal in a JSON object, returning the value node or null.
-act json_obj_get_str(obj: @JsonValue, key: string) -> @JsonValue {
+view act json_obj_get_str(obj: @JsonValue, key: string) -> @JsonValue {
     return json_obj_get(obj, slice_from_str(key))
 }
 
 // Returns true if the JSON object contains the given key.
-act json_obj_has(obj: @JsonValue, key: StrSlice) -> bool {
+view act json_obj_has(obj: @JsonValue, key: StrSlice) -> bool {
     return json_obj_get(obj, key) != null
 }
 
 // Returns true if the JSON object contains the given string key.
-act json_obj_has_str(obj: @JsonValue, key: string) -> bool {
+view act json_obj_has_str(obj: @JsonValue, key: string) -> bool {
     return json_obj_get_str(obj, key) != null
 }
 
 // Returns the property count of a JSON object.
-act json_obj_len(obj: @JsonValue) -> usize {
+view act json_obj_len(obj: @JsonValue) -> usize {
     if obj == null or obj.kind != JSON_OBJECT { return 0 }
     return obj.count
 }
 
 // Returns the integer value of a property in an object, or default_val if missing or non-integer.
-act json_obj_get_int(obj: @JsonValue, key: string, default_val: i64) -> i64 {
+view act json_obj_get_int(obj: @JsonValue, key: string, default_val: i64) -> i64 {
     let node = json_obj_get_str(obj, key)
     return json_as_int(node, default_val)
 }
 
 // Returns the float value of a property in an object, or default_val if missing or non-numeric.
-act json_obj_get_float(obj: @JsonValue, key: string, default_val: f64) -> f64 {
+view act json_obj_get_float(obj: @JsonValue, key: string, default_val: f64) -> f64 {
     let node = json_obj_get_str(obj, key)
     return json_as_float(node, default_val)
 }
 
 // Returns the boolean value of a property in an object, or default_val if missing or non-boolean.
-act json_obj_get_bool(obj: @JsonValue, key: string, default_val: bool) -> bool {
+view act json_obj_get_bool(obj: @JsonValue, key: string, default_val: bool) -> bool {
     let node = json_obj_get_str(obj, key)
     return json_as_bool(node, default_val)
 }
 
 // Returns the string slice value of a property in an object, or default_val if missing or non-string.
-act json_obj_get_str_val(obj: @JsonValue, key: string, default_val: string) -> StrSlice {
+view act json_obj_get_str_val(obj: @JsonValue, key: string, default_val: string) -> StrSlice {
     let node = json_obj_get_str(obj, key)
     if node != null and node.kind == JSON_STRING {
         return node.str_val
@@ -133,7 +133,7 @@ act json_obj_get_str_val(obj: @JsonValue, key: string, default_val: string) -> S
 }
 
 // Recursively checks if two JSON value trees are structurally and semantically identical.
-act json_value_eq(a: @JsonValue, b: @JsonValue) -> bool {
+view act json_value_eq(a: @JsonValue, b: @JsonValue) -> bool {
     if a == b { return true }
     if a == null or b == null { return false }
     if a.kind != b.kind { return false }
@@ -172,7 +172,7 @@ act json_value_eq(a: @JsonValue, b: @JsonValue) -> bool {
 }
 
 // Deeply clones a JSON value tree into the specified memory Arena.
-act json_value_clone(a: @Arena, v: @JsonValue) -> @JsonValue {
+view act json_value_clone(a: @Arena, v: @JsonValue) -> @JsonValue {
     if v == null { return null }
     if v.kind == JSON_NULL { return json_new_null(a) }
     if v.kind == JSON_BOOL { return json_new_bool(a, v.bool_val) }

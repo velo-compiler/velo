@@ -19,10 +19,10 @@ mut g_stderr_init: bool = false
 mut g_atexit_registered: bool = false
 mut g_fmt_buf: @u8 = null
 
-extern act atexit(func: act() -> void) -> i32
+view extern act atexit(func: act() -> void) -> i32
 
 // Ensures standard stream cleanup hook is registered on program exit.
-act io_ensure_atexit() {
+view act io_ensure_atexit() {
     if !g_atexit_registered {
         atexit(io_print_cleanup)
         g_atexit_registered = true
@@ -30,7 +30,7 @@ act io_ensure_atexit() {
 }
 
 // Lazily acquires or returns the singleton stdout BufferedWriter.
-act io_get_stdout_writer() -> @BufferedWriter {
+view act io_get_stdout_writer() -> @BufferedWriter {
     if !g_stdout_init {
         io_ensure_atexit()
         g_stdout_writer = writer_init(io_stdout_handle())
@@ -40,7 +40,7 @@ act io_get_stdout_writer() -> @BufferedWriter {
 }
 
 // Lazily acquires or returns the singleton stderr BufferedWriter.
-act io_get_stderr_writer() -> @BufferedWriter {
+view act io_get_stderr_writer() -> @BufferedWriter {
     if !g_stderr_init {
         io_ensure_atexit()
         g_stderr_writer = writer_init(io_stderr_handle())
@@ -50,7 +50,7 @@ act io_get_stderr_writer() -> @BufferedWriter {
 }
 
 // Lazily acquires a 64-byte OS virtual memory buffer for numeric formatting.
-act io_get_fmt_buf() -> @u8 {
+view act io_get_fmt_buf() -> @u8 {
     if g_fmt_buf == null {
         g_fmt_buf = os_page_alloc(64)
     }
@@ -58,7 +58,7 @@ act io_get_fmt_buf() -> @u8 {
 }
 
 // Explicitly flushes the stdout stream.
-act io_flush_stdout() -> bool {
+view act io_flush_stdout() -> bool {
     if g_stdout_init {
         return writer_flush(@g_stdout_writer)
     }
@@ -66,7 +66,7 @@ act io_flush_stdout() -> bool {
 }
 
 // Explicitly flushes the stderr stream.
-act io_flush_stderr() -> bool {
+view act io_flush_stderr() -> bool {
     if g_stderr_init {
         return writer_flush(@g_stderr_writer)
     }
@@ -74,14 +74,14 @@ act io_flush_stderr() -> bool {
 }
 
 // Explicitly flushes both stdout and stderr.
-act io_flush_all() -> bool {
+view act io_flush_all() -> bool {
     let ok_out = io_flush_stdout()
     let ok_err = io_flush_stderr()
     return ok_out and ok_err
 }
 
 // Releases standard stream resources and format buffer.
-act io_print_cleanup() {
+view act io_print_cleanup() {
     if g_stdout_init {
         writer_free(@g_stdout_writer)
         g_stdout_init = false
@@ -100,81 +100,81 @@ act io_print_cleanup() {
 // Generic Stream Print API (fprint / fprintln)
 // ============================================================================
 
-act fprint(w: @BufferedWriter, s: StrSlice) {
+view act fprint(w: @BufferedWriter, s: StrSlice) {
     if w == null { return }
     writer_write_slice(w, s)
 }
 
-act fprintln(w: @BufferedWriter, s: StrSlice) {
+view act fprintln(w: @BufferedWriter, s: StrSlice) {
     if w == null { return }
     writer_write_slice(w, s)
     writer_write_byte(w, 10 as u8) // '\n'
     writer_flush(w)
 }
 
-act fprint_str(w: @BufferedWriter, s: string) {
+view act fprint_str(w: @BufferedWriter, s: string) {
     fprint(w, slice_from_str(s))
 }
 
-act fprintln_str(w: @BufferedWriter, s: string) {
+view act fprintln_str(w: @BufferedWriter, s: string) {
     fprintln(w, slice_from_str(s))
 }
 
-act fprintln_empty(w: @BufferedWriter) {
+view act fprintln_empty(w: @BufferedWriter) {
     if w == null { return }
     writer_write_byte(w, 10 as u8)
     writer_flush(w)
 }
 
-act fprint_byte(w: @BufferedWriter, b: u8) {
+view act fprint_byte(w: @BufferedWriter, b: u8) {
     if w == null { return }
     writer_write_byte(w, b)
 }
 
-act fprintln_byte(w: @BufferedWriter, b: u8) {
+view act fprintln_byte(w: @BufferedWriter, b: u8) {
     if w == null { return }
     writer_write_byte(w, b)
     writer_write_byte(w, 10 as u8)
     writer_flush(w)
 }
 
-act fprint_i64(w: @BufferedWriter, val: i64) {
+view act fprint_i64(w: @BufferedWriter, val: i64) {
     let buf = io_get_fmt_buf()
     let s = format_i64(val, buf, 64)
     fprint(w, s)
 }
 
-act fprintln_i64(w: @BufferedWriter, val: i64) {
+view act fprintln_i64(w: @BufferedWriter, val: i64) {
     let buf = io_get_fmt_buf()
     let s = format_i64(val, buf, 64)
     fprintln(w, s)
 }
 
-act fprint_u64(w: @BufferedWriter, val: u64) {
+view act fprint_u64(w: @BufferedWriter, val: u64) {
     let buf = io_get_fmt_buf()
     let s = format_u64(val, buf, 64)
     fprint(w, s)
 }
 
-act fprintln_u64(w: @BufferedWriter, val: u64) {
+view act fprintln_u64(w: @BufferedWriter, val: u64) {
     let buf = io_get_fmt_buf()
     let s = format_u64(val, buf, 64)
     fprintln(w, s)
 }
 
-act fprint_f64(w: @BufferedWriter, val: f64, precision: i32) {
+view act fprint_f64(w: @BufferedWriter, val: f64, precision: i32) {
     let buf = io_get_fmt_buf()
     let s = format_f64(val, precision, buf, 64)
     fprint(w, s)
 }
 
-act fprintln_f64(w: @BufferedWriter, val: f64, precision: i32) {
+view act fprintln_f64(w: @BufferedWriter, val: f64, precision: i32) {
     let buf = io_get_fmt_buf()
     let s = format_f64(val, precision, buf, 64)
     fprintln(w, s)
 }
 
-act fprint_bool(w: @BufferedWriter, val: bool) {
+view act fprint_bool(w: @BufferedWriter, val: bool) {
     if val {
         fprint(w, slice_from_str("true"))
     } else {
@@ -182,7 +182,7 @@ act fprint_bool(w: @BufferedWriter, val: bool) {
     }
 }
 
-act fprintln_bool(w: @BufferedWriter, val: bool) {
+view act fprintln_bool(w: @BufferedWriter, val: bool) {
     if val {
         fprintln(w, slice_from_str("true"))
     } else {
@@ -194,63 +194,63 @@ act fprintln_bool(w: @BufferedWriter, val: bool) {
 // Standard Output Print API (print / println)
 // ============================================================================
 
-act print(s: StrSlice) {
+view act print(s: StrSlice) {
     fprint(io_get_stdout_writer(), s)
 }
 
-act println(s: StrSlice) {
+view act println(s: StrSlice) {
     fprintln(io_get_stdout_writer(), s)
 }
 
-act print_str(s: string) {
+view act print_str(s: string) {
     fprint_str(io_get_stdout_writer(), s)
 }
 
-act println_str(s: string) {
+view act println_str(s: string) {
     fprintln_str(io_get_stdout_writer(), s)
 }
 
-act println_empty() {
+view act println_empty() {
     fprintln_empty(io_get_stdout_writer())
 }
 
-act print_byte(b: u8) {
+view act print_byte(b: u8) {
     fprint_byte(io_get_stdout_writer(), b)
 }
 
-act println_byte(b: u8) {
+view act println_byte(b: u8) {
     fprintln_byte(io_get_stdout_writer(), b)
 }
 
-act print_i64(val: i64) {
+view act print_i64(val: i64) {
     fprint_i64(io_get_stdout_writer(), val)
 }
 
-act println_i64(val: i64) {
+view act println_i64(val: i64) {
     fprintln_i64(io_get_stdout_writer(), val)
 }
 
-act print_u64(val: u64) {
+view act print_u64(val: u64) {
     fprint_u64(io_get_stdout_writer(), val)
 }
 
-act println_u64(val: u64) {
+view act println_u64(val: u64) {
     fprintln_u64(io_get_stdout_writer(), val)
 }
 
-act print_f64(val: f64, precision: i32) {
+view act print_f64(val: f64, precision: i32) {
     fprint_f64(io_get_stdout_writer(), val, precision)
 }
 
-act println_f64(val: f64, precision: i32) {
+view act println_f64(val: f64, precision: i32) {
     fprintln_f64(io_get_stdout_writer(), val, precision)
 }
 
-act print_bool(val: bool) {
+view act print_bool(val: bool) {
     fprint_bool(io_get_stdout_writer(), val)
 }
 
-act println_bool(val: bool) {
+view act println_bool(val: bool) {
     fprintln_bool(io_get_stdout_writer(), val)
 }
 
@@ -258,63 +258,63 @@ act println_bool(val: bool) {
 // Standard Error Print API (eprint / eprintln)
 // ============================================================================
 
-act eprint(s: StrSlice) {
+view act eprint(s: StrSlice) {
     fprint(io_get_stderr_writer(), s)
 }
 
-act eprintln(s: StrSlice) {
+view act eprintln(s: StrSlice) {
     fprintln(io_get_stderr_writer(), s)
 }
 
-act eprint_str(s: string) {
+view act eprint_str(s: string) {
     fprint_str(io_get_stderr_writer(), s)
 }
 
-act eprintln_str(s: string) {
+view act eprintln_str(s: string) {
     fprintln_str(io_get_stderr_writer(), s)
 }
 
-act eprintln_empty() {
+view act eprintln_empty() {
     fprintln_empty(io_get_stderr_writer())
 }
 
-act eprint_byte(b: u8) {
+view act eprint_byte(b: u8) {
     fprint_byte(io_get_stderr_writer(), b)
 }
 
-act eprintln_byte(b: u8) {
+view act eprintln_byte(b: u8) {
     fprintln_byte(io_get_stderr_writer(), b)
 }
 
-act eprint_i64(val: i64) {
+view act eprint_i64(val: i64) {
     fprint_i64(io_get_stderr_writer(), val)
 }
 
-act eprintln_i64(val: i64) {
+view act eprintln_i64(val: i64) {
     fprintln_i64(io_get_stderr_writer(), val)
 }
 
-act eprint_u64(val: u64) {
+view act eprint_u64(val: u64) {
     fprint_u64(io_get_stderr_writer(), val)
 }
 
-act eprintln_u64(val: u64) {
+view act eprintln_u64(val: u64) {
     fprintln_u64(io_get_stderr_writer(), val)
 }
 
-act eprint_f64(val: f64, precision: i32) {
+view act eprint_f64(val: f64, precision: i32) {
     fprint_f64(io_get_stderr_writer(), val, precision)
 }
 
-act eprintln_f64(val: f64, precision: i32) {
+view act eprintln_f64(val: f64, precision: i32) {
     fprintln_f64(io_get_stderr_writer(), val, precision)
 }
 
-act eprint_bool(val: bool) {
+view act eprint_bool(val: bool) {
     fprint_bool(io_get_stderr_writer(), val)
 }
 
-act eprintln_bool(val: bool) {
+view act eprintln_bool(val: bool) {
     fprintln_bool(io_get_stderr_writer(), val)
 }
 

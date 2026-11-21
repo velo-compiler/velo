@@ -1,11 +1,11 @@
 // std.encoding.hex — Hexadecimal (Base16) encoder and decoder.
 use "../mem/heap.vl"
 
-let HEX_LOWER: string = "0123456789abcdef"
-let HEX_UPPER: string = "0123456789ABCDEF"
+view let HEX_LOWER: string = "0123456789abcdef"
+view let HEX_UPPER: string = "0123456789ABCDEF"
 
 // Encodes raw binary data into a hexadecimal string.
-act hex_encode(data: @u8, len: usize, upper: bool) -> string {
+view act hex_encode(data: @u8, len: usize, upper: bool) -> string {
     if data == null or len == 0 { return "" }
 
     let out_len = len * 2
@@ -30,13 +30,13 @@ act hex_encode(data: @u8, len: usize, upper: bool) -> string {
 }
 
 // Encodes a string into a hexadecimal string.
-act hex_encode_str(s: string, upper: bool) -> string {
+view act hex_encode_str(s: string, upper: bool) -> string {
     if s == null { return "" }
     return hex_encode(s as @u8, str.len(s), upper)
 }
 
 // Converts a single hex character to its nibble value (0..15) or 255 if invalid.
-act hex_char_to_nibble(c: u8) -> u8 {
+view act hex_char_to_nibble(c: u8) -> u8 {
     if c >= ('0' as u8) and c <= ('9' as u8) {
         return c - ('0' as u8)
     }
@@ -50,7 +50,7 @@ act hex_char_to_nibble(c: u8) -> u8 {
 }
 
 // Checks if a string contains valid even-length hexadecimal characters.
-act hex_is_valid(s: string) -> bool {
+view act hex_is_valid(s: string) -> bool {
     if s == null { return false }
     let len = str.len(s)
     if (len % 2) != 0 { return false }
@@ -66,7 +66,7 @@ act hex_is_valid(s: string) -> bool {
 }
 
 // Decodes a hexadecimal string into a heap byte buffer.
-act hex_decode(s: string, out_len: @usize) -> @u8 {
+view act hex_decode(s: string, out_len: @usize) -> @u8 {
     if s == null {
         if out_len != null { out_len[0] = 0 }
         return null
@@ -110,7 +110,7 @@ act hex_decode(s: string, out_len: @usize) -> @u8 {
 }
 
 // Decodes a hexadecimal string directly into a heap string.
-act hex_decode_str(s: string) -> string {
+view act hex_decode_str(s: string) -> string {
     mut out_len: usize = 0
     let bytes = hex_decode(s, @out_len)
     if bytes == null { return "" }
@@ -118,7 +118,7 @@ act hex_decode_str(s: string) -> string {
 }
 
 // Decodes a hexadecimal string into a heap string, returning decoded text or error message.
-act hex_to_str(s: string) -> string or string {
+view act hex_to_str(s: string) -> string or string {
     if s == null { fail "null hex string" }
     let len = str.len(s)
     if (len % 2) != 0 { fail "hex string length must be even" }

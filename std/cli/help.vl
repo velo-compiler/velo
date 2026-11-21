@@ -9,7 +9,7 @@ use "defs.vl"
 
 // Builds the padded flag label for definition index.
 // Layout: "  -o, --output <value>" for short aliased value flags.
-act cli_flag_label(p: @CliContext, idx: usize) -> string {
+view act cli_flag_label(p: @CliContext, idx: usize) -> string {
     if p == null or p.arena == null {
         return "" as string
     }
@@ -32,7 +32,7 @@ act cli_flag_label(p: @CliContext, idx: usize) -> string {
 }
 
 // Appends pad spaces so the current writer byte position reaches column.
-act cli_pad_to(sb: @StrBuilder, current: usize, column: usize) {
+view act cli_pad_to(sb: @StrBuilder, current: usize, column: usize) {
     if sb == null {
         return
     }
@@ -48,7 +48,7 @@ act cli_pad_to(sb: @StrBuilder, current: usize, column: usize) {
 }
 
 // Measures the byte length of a (possibly null) Velo string.
-act cli_byte_len(s: string) -> usize {
+view act cli_byte_len(s: string) -> usize {
     if s == null {
         return 0
     }
@@ -58,7 +58,7 @@ act cli_byte_len(s: string) -> usize {
 // Builds the complete help text (usage, description, aligned flag table with
 // defaults, subcommand table) into arena memory. Valid until the arena is
 // reset. The automatic --help flag is listed like any other flag.
-act cli_help_string(p: @CliContext) -> string {
+view act cli_help_string(p: @CliContext) -> string {
     if p == null or p.arena == null {
         return "" as string
     }
@@ -131,12 +131,12 @@ act cli_help_string(p: @CliContext) -> string {
 }
 
 // Prints the help text to stdout.
-act cli_print_help(p: @CliContext) {
+view act cli_print_help(p: @CliContext) {
     io.println_str(cli_help_string(p))
 }
 
 // Prints the configured program and version to stdout ("app 1.2.3").
-act cli_print_version(p: @CliContext) {
+view act cli_print_version(p: @CliContext) {
     if p == null or p.arena == null {
         return
     }
@@ -151,7 +151,7 @@ act cli_print_version(p: @CliContext) {
 
 // Prints recorded parse error diagnostics to stderr: the message plus a
 // help hint. Silently emits nothing when the parse succeeded.
-act cli_print_error(p: @CliContext) {
+view act cli_print_error(p: @CliContext) {
     if p == null or !p.had_error {
         return
     }

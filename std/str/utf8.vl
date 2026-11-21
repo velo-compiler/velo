@@ -4,11 +4,11 @@
 use "slice.vl"
 
 // Unicode replacement character constant (U+FFFD).
-let UTF8_REPLACEMENT_CHAR: u32 = 0xFFFD as u32
+view let UTF8_REPLACEMENT_CHAR: u32 = 0xFFFD as u32
 
 // Returns the number of bytes required to encode a Unicode code point in UTF-8.
 // Returns 0 if the rune is invalid (surrogate or > 0x10FFFF).
-act utf8_rune_byte_len(rune: u32) -> usize {
+view act utf8_rune_byte_len(rune: u32) -> usize {
     if rune <= 0x7F as u32 {
         return 1
     }
@@ -30,7 +30,7 @@ act utf8_rune_byte_len(rune: u32) -> usize {
 // Decodes the next Unicode code point from a UTF-8 byte stream.
 // Returns the number of bytes consumed (1..4) on success and writes the decoded code point to out_rune.
 // On malformed or truncated input, returns 0 and writes UTF8_REPLACEMENT_CHAR to out_rune.
-act utf8_decode_next(bytes: @u8, len: usize, out_rune: @u32) -> usize {
+view act utf8_decode_next(bytes: @u8, len: usize, out_rune: @u32) -> usize {
     if bytes == null or len == 0 {
         if out_rune != null {
             out_rune[0] = 0 as u32
@@ -161,7 +161,7 @@ act utf8_decode_next(bytes: @u8, len: usize, out_rune: @u32) -> usize {
 
 // Encodes a Unicode code point into UTF-8 bytes in out_bytes (up to out_cap).
 // Returns the number of bytes written (1..4), or 0 if rune is invalid or buffer is too small.
-act utf8_encode_rune(rune: u32, out_bytes: @u8, out_cap: usize) -> usize {
+view act utf8_encode_rune(rune: u32, out_bytes: @u8, out_cap: usize) -> usize {
     if out_bytes == null or out_cap == 0 {
         return 0
     }
@@ -209,7 +209,7 @@ act utf8_encode_rune(rune: u32, out_bytes: @u8, out_cap: usize) -> usize {
 }
 
 // Validates whether the entire byte sequence conforms to valid UTF-8.
-act utf8_is_valid(bytes: @u8, len: usize) -> bool {
+view act utf8_is_valid(bytes: @u8, len: usize) -> bool {
     if bytes == null {
         return len == 0
     }
@@ -227,7 +227,7 @@ act utf8_is_valid(bytes: @u8, len: usize) -> bool {
 
 // Returns the number of Unicode code points in the UTF-8 sequence.
 // If an invalid sequence is encountered, returns the count decoded up to the error.
-act utf8_rune_count(bytes: @u8, len: usize) -> usize {
+view act utf8_rune_count(bytes: @u8, len: usize) -> usize {
     if bytes == null or len == 0 {
         return 0
     }
@@ -246,11 +246,11 @@ act utf8_rune_count(bytes: @u8, len: usize) -> usize {
 }
 
 // Validates whether a StrSlice contains valid UTF-8.
-act utf8_slice_is_valid(s: StrSlice) -> bool {
+view act utf8_slice_is_valid(s: StrSlice) -> bool {
     return utf8_is_valid(s.ptr, s.len)
 }
 
 // Counts Unicode code points in a StrSlice.
-act utf8_slice_rune_count(s: StrSlice) -> usize {
+view act utf8_slice_rune_count(s: StrSlice) -> usize {
     return utf8_rune_count(s.ptr, s.len)
 }

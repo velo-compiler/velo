@@ -7,43 +7,43 @@ use "types.vl"
 use "../mem/heap.vl"
 
 // Linux epoll constants (<sys/epoll.h>)
-let EPOLLIN_LINUX: u32 = 1
-let EPOLLOUT_LINUX: u32 = 4
-let EPOLLERR_LINUX: u32 = 8
-let EPOLLHUP_LINUX: u32 = 16
-let EPOLLRDHUP_LINUX: u32 = 8192
-let EPOLLET_LINUX: u32 = 2147483648
+view let EPOLLIN_LINUX: u32 = 1
+view let EPOLLOUT_LINUX: u32 = 4
+view let EPOLLERR_LINUX: u32 = 8
+view let EPOLLHUP_LINUX: u32 = 16
+view let EPOLLRDHUP_LINUX: u32 = 8192
+view let EPOLLET_LINUX: u32 = 2147483648
 
-let EPOLL_CTL_ADD: i32 = 1
-let EPOLL_CTL_DEL: i32 = 2
-let EPOLL_CTL_MOD: i32 = 3
-let EPOLL_CLOEXEC: i32 = 524288
+view let EPOLL_CTL_ADD: i32 = 1
+view let EPOLL_CTL_DEL: i32 = 2
+view let EPOLL_CTL_MOD: i32 = 3
+view let EPOLL_CLOEXEC: i32 = 524288
 
 // Linux struct epoll_event layout (packed 12 bytes on x86-64)
-data EpollEvent #packed {
+view data EpollEvent #packed {
     events: u32
     fd: i64
 }
 
-extern act epoll_create1(flags: i32) -> i32
-extern act epoll_create(size: i32) -> i32
-extern act epoll_ctl(epfd: i32, op: i32, fd: i32, event: @EpollEvent) -> i32
-extern act epoll_wait(epfd: i32, events: @EpollEvent, maxevents: i32, timeout: i32) -> i32
-extern act close(fd: i32) -> i32
+view extern act epoll_create1(flags: i32) -> i32
+view extern act epoll_create(size: i32) -> i32
+view extern act epoll_ctl(epfd: i32, op: i32, fd: i32, event: @EpollEvent) -> i32
+view extern act epoll_wait(epfd: i32, events: @EpollEvent, maxevents: i32, timeout: i32) -> i32
+view extern act close(fd: i32) -> i32
 
-act epoll_event_sizeof() -> usize {
+view act epoll_event_sizeof() -> usize {
     let dummy: @EpollEvent = null
     return (dummy + 1) as usize
 }
 
-data Poller {
+view data Poller {
     epfd: i32
     events_buf: @EpollEvent
     count: usize
     cap: usize
 }
 
-act async_to_epoll_events(events: u32) -> u32 {
+view act async_to_epoll_events(events: u32) -> u32 {
     mut ep_ev: u32 = 0 as u32
     if (events & ASYNC_EVENT_READ) != (0 as u32) {
         ep_ev = ep_ev | EPOLLIN_LINUX | EPOLLRDHUP_LINUX
@@ -54,7 +54,7 @@ act async_to_epoll_events(events: u32) -> u32 {
     return ep_ev
 }
 
-act epoll_to_async_events(ep_ev: u32) -> u32 {
+view act epoll_to_async_events(ep_ev: u32) -> u32 {
     mut ev: u32 = 0 as u32
     if (ep_ev & EPOLLIN_LINUX) != (0 as u32) {
         ev = ev | ASYNC_EVENT_READ
@@ -71,7 +71,7 @@ act epoll_to_async_events(ep_ev: u32) -> u32 {
     return ev
 }
 
-act poller_init(initial_cap: usize) -> Poller {
+view act poller_init(initial_cap: usize) -> Poller {
     mut c = initial_cap
     if c < 4 { c = 4 }
     mut ep = epoll_create1(EPOLL_CLOEXEC)
@@ -87,7 +87,7 @@ act poller_init(initial_cap: usize) -> Poller {
     }
 }
 
-act poller_free(p: @Poller) {
+view act poller_free(p: @Poller) {
     if p == null { return }
     if p.epfd >= 0 {
         close(p.epfd)
@@ -101,7 +101,7 @@ act poller_free(p: @Poller) {
     p.cap = 0
 }
 
-act poller_ensure_cap(p: @Poller, needed: usize) {
+view act poller_ensure_cap(p: @Poller, needed: usize) {
     if p.cap >= needed { return }
     mut new_cap = p.cap * 2
     if new_cap < needed { new_cap = needed }
@@ -114,7 +114,7 @@ act poller_ensure_cap(p: @Poller, needed: usize) {
     p.cap = new_cap
 }
 
-act poller_add(p: @Poller, fd: i64, events: u32) -> bool {
+view act poller_add(p: @Poller, fd: i64, events: u32) -> bool {
     if p == null or p.epfd < 0 or fd < 0 { return false }
     mut ev = EpollEvent {
         events: async_to_epoll_events(events),
@@ -129,7 +129,7 @@ act poller_add(p: @Poller, fd: i64, events: u32) -> bool {
     return false
 }
 
-act poller_modify(p: @Poller, fd: i64, events: u32) -> bool {
+view act poller_modify(p: @Poller, fd: i64, events: u32) -> bool {
     if p == null or p.epfd < 0 or fd < 0 { return false }
     mut ev = EpollEvent {
         events: async_to_epoll_events(events),
@@ -139,7 +139,7 @@ act poller_modify(p: @Poller, fd: i64, events: u32) -> bool {
     return rc == 0
 }
 
-act poller_remove(p: @Poller, fd: i64) -> bool {
+view act poller_remove(p: @Poller, fd: i64) -> bool {
     if p == null or p.epfd < 0 or fd < 0 { return false }
     mut ev = EpollEvent {
         events: 0 as u32,
@@ -153,7 +153,7 @@ act poller_remove(p: @Poller, fd: i64) -> bool {
     return false
 }
 
-act poller_poll(p: @Poller, timeout_ms: i32, out_events: @AsyncEvent, max_events: usize) -> i32 {
+view act poller_poll(p: @Poller, timeout_ms: i32, out_events: @AsyncEvent, max_events: usize) -> i32 {
     if p == null or p.epfd < 0 or out_events == null or max_events == 0 { return 0 }
     if p.count == 0 {
         return 0

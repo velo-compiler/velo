@@ -21,19 +21,19 @@ use "../coll/shelf.vl"
 
 // Sentinel for "no open directory stream". Kept numeric and unchanged so
 // existing `iter.h_find == DIR_INVALID_HANDLE` comparisons keep compiling.
-let DIR_INVALID_HANDLE: usize = (0 - 1) as usize
+view let DIR_INVALID_HANDLE: usize = (0 - 1) as usize
 
 // Foreign interface to the runtime header's portable directory helpers.
 //
 // Both take a flat i64 out-buffer rather than returning a struct: the emitted C
 // defines Velo `data` types itself, so a struct shared with the header would be
 // declared twice (verified with a probe before choosing this shape).
-extern act velo_fs_list_dir_into(path: string, out: @i64) -> void
-extern act velo_dir_listing_free(out: @i64) -> void
-extern act velo_fs_entry_info_into(path: string, out: @i64) -> bool
+view extern act velo_fs_list_dir_into(path: string, out: @i64) -> void
+view extern act velo_dir_listing_free(out: @i64) -> void
+view extern act velo_fs_entry_info_into(path: string, out: @i64) -> bool
 
 // Self-contained directory entry record
-data DirEntry {
+view data DirEntry {
     name: @u8,
     name_len: usize,
     is_dir: bool,
@@ -42,7 +42,7 @@ data DirEntry {
 }
 
 // Directory stream iterator
-data DirIterator {
+view data DirIterator {
     h_find: usize,
     find_data: @u8,
     has_current: bool,
@@ -56,7 +56,7 @@ data DirIterator {
 }
 
 // Returns true if name is "." or ".."
-act dir_is_dot_or_dotdot(name: @u8) -> bool {
+view act dir_is_dot_or_dotdot(name: @u8) -> bool {
     if name == null { return false }
     if name[0] == 46 as u8 { // '.'
         if name[1] == 0 as u8 { return true } // "."
@@ -66,7 +66,7 @@ act dir_is_dot_or_dotdot(name: @u8) -> bool {
 }
 
 // Joins a directory path and a bare entry name into a fresh heap string.
-act dir_join_entry(dir_path: string, name: @u8) -> string {
+view act dir_join_entry(dir_path: string, name: @u8) -> string {
     let dlen = raw_str_len(dir_path as @u8)
     let nlen = raw_str_len(name)
     let buf = heap_alloc(dlen + nlen + 2)
@@ -84,7 +84,7 @@ act dir_join_entry(dir_path: string, name: @u8) -> string {
 }
 
 // Fills out_entry for the listing entry at `iter.index`.
-act dir_fill_entry(iter: @DirIterator, out_entry: @DirEntry) -> bool {
+view act dir_fill_entry(iter: @DirIterator, out_entry: @DirEntry) -> bool {
     if iter == null or out_entry == null or iter.listing == null { return false }
     let listing = iter.listing as @i64
     let count = listing[2] as usize
@@ -127,7 +127,7 @@ act dir_fill_entry(iter: @DirIterator, out_entry: @DirEntry) -> bool {
 }
 
 // Returns an iterator in the closed/empty state.
-act dir_iterator_empty() -> DirIterator {
+view act dir_iterator_empty() -> DirIterator {
     return DirIterator {
         h_find: DIR_INVALID_HANDLE,
         find_data: null,
@@ -140,7 +140,7 @@ act dir_iterator_empty() -> DirIterator {
 }
 
 // Opens a directory stream for iteration. Automatically skips "." and "..".
-act fs_dir_open(path: string) -> DirIterator {
+view act fs_dir_open(path: string) -> DirIterator {
     if path == null {
         return dir_iterator_empty()
     }
@@ -148,7 +148,7 @@ act fs_dir_open(path: string) -> DirIterator {
 }
 
 // Opens a directory stream from a StrSlice view.
-act fs_dir_open_slice(path: StrSlice) -> DirIterator {
+view act fs_dir_open_slice(path: StrSlice) -> DirIterator {
     if slice_is_empty(path) {
         return dir_iterator_empty()
     }
@@ -195,7 +195,7 @@ act fs_dir_open_slice(path: StrSlice) -> DirIterator {
 }
 
 // Advances the directory iterator to the next entry. Returns true if an entry is available.
-act fs_dir_next(iter: @DirIterator) -> bool {
+view act fs_dir_next(iter: @DirIterator) -> bool {
     if iter == null or iter.h_find == DIR_INVALID_HANDLE or iter.listing == null {
         return false
     }
@@ -210,13 +210,13 @@ act fs_dir_next(iter: @DirIterator) -> bool {
 }
 
 // Returns a pointer to the current entry of the iterator.
-act fs_dir_entry(iter: @DirIterator) -> @DirEntry {
+view act fs_dir_entry(iter: @DirIterator) -> @DirEntry {
     if iter == null or !iter.has_current { return null }
     return @iter.current
 }
 
 // Closes a directory iterator and releases OS resources.
-act fs_dir_close(iter: @DirIterator) {
+view act fs_dir_close(iter: @DirIterator) {
     if iter == null { return }
     if iter.listing != null {
         velo_dir_listing_free(iter.listing as @i64)
@@ -234,37 +234,37 @@ act fs_dir_close(iter: @DirIterator) {
 }
 
 // Returns a StrSlice view over the entry name.
-act entry_name(e: @DirEntry) -> StrSlice {
+view act entry_name(e: @DirEntry) -> StrSlice {
     if e == null or e.name == null { return StrSlice { ptr: null, len: 0 } }
     return slice_from_raw(e.name, e.name_len)
 }
 
 // Returns entry name as a null-terminated pointer.
-act entry_name_cstr(e: @DirEntry) -> @u8 {
+view act entry_name_cstr(e: @DirEntry) -> @u8 {
     if e == null { return null }
     return e.name
 }
 
 // Returns true if the entry is a directory.
-act entry_is_dir(e: @DirEntry) -> bool {
+view act entry_is_dir(e: @DirEntry) -> bool {
     if e == null { return false }
     return e.is_dir
 }
 
 // Returns true if the entry is a regular file.
-act entry_is_file(e: @DirEntry) -> bool {
+view act entry_is_file(e: @DirEntry) -> bool {
     if e == null { return false }
     return e.is_file
 }
 
 // Returns the file size of the entry in bytes.
-act entry_size(e: @DirEntry) -> i64 {
+view act entry_size(e: @DirEntry) -> i64 {
     if e == null { return 0 }
     return e.size
 }
 
 // High-level: Reads all entry names in a directory into a RawShelf of persistent StrSlice elements.
-act fs_read_dir_names(path: string, out_shelf: @RawShelf) -> bool {
+view act fs_read_dir_names(path: string, out_shelf: @RawShelf) -> bool {
     if path == null or out_shelf == null { return false }
     mut dir_it = fs_dir_open(path)
     if dir_it.h_find == DIR_INVALID_HANDLE { return false }
@@ -295,7 +295,7 @@ act fs_read_dir_names(path: string, out_shelf: @RawShelf) -> bool {
 }
 
 // Frees all persistent name slices stored in out_shelf by fs_read_dir_names, then frees the shelf.
-act fs_free_dir_names(shelf: @RawShelf) {
+view act fs_free_dir_names(shelf: @RawShelf) {
     if shelf == null { return }
     mut i: usize = 0
     loop i < shelf.len {
@@ -309,7 +309,7 @@ act fs_free_dir_names(shelf: @RawShelf) {
 }
 
 // High-level: Counts the number of entries in a directory (excluding . and ..).
-act fs_count_dir(path: string) -> i64 {
+view act fs_count_dir(path: string) -> i64 {
     if path == null { return 0 - 1 }
     mut dir_it = fs_dir_open(path)
     if dir_it.h_find == DIR_INVALID_HANDLE { return 0 - 1 }

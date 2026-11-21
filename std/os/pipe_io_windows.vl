@@ -8,32 +8,32 @@ use "proc_types.vl"
 use "proc.vl"
 
 // Foreign interface to Windows kernel32.dll
-extern act CreatePipe(
+view extern act CreatePipe(
     hReadPipe: @void,
     hWritePipe: @void,
     lpPipeAttributes: @u8,
     nSize: u32) -> i32
 
-extern act SetHandleInformation(
+view extern act SetHandleInformation(
     hObject: @void,
     dwMask: u32,
     dwFlags: u32) -> i32
 
-extern act ReadFile(
+view extern act ReadFile(
     hFile: @u8,
     lpBuffer: @u8,
     nBytesToRead: u32,
     lpBytesRead: @u32,
     lpOverlapped: @u8) -> i32
 
-extern act WriteFile(
+view extern act WriteFile(
     hFile: @u8,
     lpBuffer: @u8,
     nBytesToWrite: u32,
     lpBytesWritten: @u32,
     lpOverlapped: @u8) -> i32
 
-extern act PeekNamedPipe(
+view extern act PeekNamedPipe(
     hNamedPipe: @void,
     lpBuffer: @u8,
     nBufferSize: u32,
@@ -41,11 +41,11 @@ extern act PeekNamedPipe(
     lpTotalBytesAvail: @u32,
     lpBytesLeftThisMessage: @u32) -> i32
 
-extern act Sleep(dwMilliseconds: u32)
+view extern act Sleep(dwMilliseconds: u32)
 
 // Creates an anonymous OS pipe.
 // The write handle is inheritable by child processes; the read handle is not.
-act os_pipe_create() -> Pipe {
+view act os_pipe_create() -> Pipe {
     // SECURITY_ATTRIBUTES (24 bytes on x64)
     let sa = heap_alloc(32)
     if sa == null {
@@ -73,7 +73,7 @@ act os_pipe_create() -> Pipe {
 }
 
 // Reads up to count bytes from pipe into buf. Returns bytes read.
-act os_pipe_read(h_pipe: @void, buf: @u8, count: usize) -> usize {
+view act os_pipe_read(h_pipe: @void, buf: @u8, count: usize) -> usize {
     if h_pipe == null or buf == null or count == 0 {
         return 0
     }
@@ -90,7 +90,7 @@ act os_pipe_read(h_pipe: @void, buf: @u8, count: usize) -> usize {
 }
 
 // Writes count bytes from buf to pipe. Returns bytes written.
-act os_pipe_write(h_pipe: @void, buf: @u8, count: usize) -> usize {
+view act os_pipe_write(h_pipe: @void, buf: @u8, count: usize) -> usize {
     if h_pipe == null or buf == null or count == 0 {
         return 0
     }
@@ -107,7 +107,7 @@ act os_pipe_write(h_pipe: @void, buf: @u8, count: usize) -> usize {
 }
 
 // Closes read handle of pipe.
-act os_pipe_close_read(pipe: @Pipe) {
+view act os_pipe_close_read(pipe: @Pipe) {
     if pipe != null and pipe.read_handle != null {
         CloseHandle(pipe.read_handle)
         pipe.read_handle = null
@@ -115,7 +115,7 @@ act os_pipe_close_read(pipe: @Pipe) {
 }
 
 // Closes write handle of pipe.
-act os_pipe_close_write(pipe: @Pipe) {
+view act os_pipe_close_write(pipe: @Pipe) {
     if pipe != null and pipe.write_handle != null {
         CloseHandle(pipe.write_handle)
         pipe.write_handle = null
@@ -123,14 +123,14 @@ act os_pipe_close_write(pipe: @Pipe) {
 }
 
 // Closes both handles of pipe.
-act os_pipe_close(pipe: @Pipe) {
+view act os_pipe_close(pipe: @Pipe) {
     if pipe == null { return }
     os_pipe_close_read(pipe)
     os_pipe_close_write(pipe)
 }
 
 // Asynchronously drains stdout and stderr pipes until child process terminates.
-act os_pipe_drain_streams(arena: @Arena, h_out: @void, h_err: @void, proc: @ProcessHandle) -> ProcessOutput {
+view act os_pipe_drain_streams(arena: @Arena, h_out: @void, h_err: @void, proc: @ProcessHandle) -> ProcessOutput {
     mut out_sb = sb_init(arena, 256)
     mut err_sb = sb_init(arena, 256)
     let buf = heap_alloc(4096)

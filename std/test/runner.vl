@@ -3,7 +3,7 @@ use "common.vl"
 use "assert.vl"
 
 // Executes a named test function under the global runner context.
-act test_run(name: string, test_fn: act() -> void) -> bool {
+view act test_run(name: string, test_fn: act() -> void) -> bool {
     let initial_failed = g_test_failed_asserts
     g_current_case_failed = false
 
@@ -39,7 +39,7 @@ act test_run(name: string, test_fn: act() -> void) -> bool {
 
 // Prints a comprehensive test summary across all executed cases and assertions.
 // Returns 0 if all assertions and cases passed, 1 on any failure.
-act test_summary() -> i32 {
+view act test_summary() -> i32 {
     println_str("==================================================")
     println_str("Test Execution Summary:")
 

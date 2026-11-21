@@ -9,17 +9,17 @@ use "../mem/arena.vl"
 use "../os/args.vl"
 
 // Parser capacity limits (fixed arena tables sized at init).
-let CLI_MAX_FLAGS: usize = 40
-let CLI_MAX_SUBCOMMANDS: usize = 16
-let CLI_TRUE: u8 = 1
-let CLI_FALSE: u8 = 0
+view let CLI_MAX_FLAGS: usize = 40
+view let CLI_MAX_SUBCOMMANDS: usize = 16
+view let CLI_TRUE: u8 = 1
+view let CLI_FALSE: u8 = 0
 
 // CLI parser and result context. Built via cli_parser_init, populated via
 // cli_parser_* registration acts, consumed by cli_parse, and queried via
 // cli_flag_* and cli_positional_* accessors.
 // Flag metadata stored as parallel arrays; strings reference argv memory
 // (zero-copy) and help/default/error strings remain until arena reset.
-data CliContext {
+view data CliContext {
     arena: @Arena,
     program: string,
     version: string,
@@ -49,7 +49,7 @@ data CliContext {
 // (os_args / os_tokenize_cmdline). Automatically registers the conventional
 // boolean --help/-h flag at index 0. Program name defaults to argv[0];
 // override with cli_parser_program.
-act cli_parser_init(arena: @Arena, args: @Args) -> CliContext {
+view act cli_parser_init(arena: @Arena, args: @Args) -> CliContext {
     mut p = CliContext {
         arena: arena,
         program: "",
@@ -114,7 +114,7 @@ act cli_parser_init(arena: @Arena, args: @Args) -> CliContext {
 }
 
 // Overrides the program name and description used in help and error output.
-act cli_parser_program(p: @CliContext, program: string, description: string) {
+view act cli_parser_program(p: @CliContext, program: string, description: string) {
     if p == null {
         return
     }
@@ -127,7 +127,7 @@ act cli_parser_program(p: @CliContext, program: string, description: string) {
 }
 
 // Overrides the version string emitted by cli_print_version.
-act cli_parser_version(p: @CliContext, version: string) {
+view act cli_parser_version(p: @CliContext, version: string) {
     if p == null {
         return
     }
@@ -138,7 +138,7 @@ act cli_parser_version(p: @CliContext, version: string) {
 
 // Registers one option definition. Returns false when the parser tables are
 // full, the tables are missing, or the long name is a duplicate.
-act cli_parser_flag(p: @CliContext, long_name: string, short_name: string, takes_value: bool, required: bool, default_value: string, helps: string) -> bool {
+view act cli_parser_flag(p: @CliContext, long_name: string, short_name: string, takes_value: bool, required: bool, default_value: string, helps: string) -> bool {
     if p == null or p.longs == null or p.shorts == null or p.defaults == null or p.helps == null or p.values == null or p.seen == null or long_name == null or long_name == "" {
         return false
     }
@@ -189,7 +189,7 @@ act cli_parser_flag(p: @CliContext, long_name: string, short_name: string, takes
 
 // Registers one subcommand route. Returns false when the tables are full or
 // the name duplicates an existing subcommand.
-act cli_parser_subcommand(p: @CliContext, name: string, help: string) -> bool {
+view act cli_parser_subcommand(p: @CliContext, name: string, help: string) -> bool {
     if p == null or name == null or name == "" {
         return false
     }

@@ -7,7 +7,7 @@ use "../str/manip.vl"
 // Parses an unsigned 64-bit decimal integer from a string slice.
 // Accepts optional leading and trailing whitespace and an optional leading '+'.
 // Returns false on invalid characters, empty input, or integer overflow.
-act parse_u64(s: StrSlice, out_val: @u64) -> bool {
+view act parse_u64(s: StrSlice, out_val: @u64) -> bool {
     let trimmed = str_trim(s)
     if trimmed.ptr == null or trimmed.len == 0 {
         return false
@@ -52,7 +52,7 @@ act parse_u64(s: StrSlice, out_val: @u64) -> bool {
 // Accepts optional leading and trailing whitespace and an optional leading '+' or '-'.
 // Handles the full range from INT64_MIN (-9223372036854775808) to INT64_MAX (9223372036854775807).
 // Returns false on invalid characters, empty input, or integer overflow.
-act parse_i64(s: StrSlice, out_val: @i64) -> bool {
+view act parse_i64(s: StrSlice, out_val: @i64) -> bool {
     let trimmed = str_trim(s)
     if trimmed.ptr == null or trimmed.len == 0 {
         return false
@@ -109,7 +109,7 @@ act parse_i64(s: StrSlice, out_val: @i64) -> bool {
 
 // Parses an unsigned 64-bit integer with a specified base (2 to 36).
 // Handles optional prefix for base 16 ("0x"/"0X"), base 2 ("0b"/"0B"), and base 8 ("0o"/"0O").
-act parse_u64_radix(s: StrSlice, radix: u32, out_val: @u64) -> bool {
+view act parse_u64_radix(s: StrSlice, radix: u32, out_val: @u64) -> bool {
     if radix < 2 as u32 or radix > 36 as u32 {
         return false
     }
@@ -183,22 +183,22 @@ act parse_u64_radix(s: StrSlice, radix: u32, out_val: @u64) -> bool {
 }
 
 // Parses hexadecimal text into u64 (with or without "0x"/"0X" prefix).
-act parse_hex(s: StrSlice, out_val: @u64) -> bool {
+view act parse_hex(s: StrSlice, out_val: @u64) -> bool {
     return parse_u64_radix(s, 16 as u32, out_val)
 }
 
 // Parses binary text into u64 (with or without "0b"/"0B" prefix).
-act parse_bin(s: StrSlice, out_val: @u64) -> bool {
+view act parse_bin(s: StrSlice, out_val: @u64) -> bool {
     return parse_u64_radix(s, 2 as u32, out_val)
 }
 
 // Parses octal text into u64 (with or without "0o"/"0O" prefix).
-act parse_oct(s: StrSlice, out_val: @u64) -> bool {
+view act parse_oct(s: StrSlice, out_val: @u64) -> bool {
     return parse_u64_radix(s, 8 as u32, out_val)
 }
 
 // Parses signed 32-bit integer with range checking [-2147483648, 2147483647].
-act parse_i32(s: StrSlice, out_val: @i32) -> bool {
+view act parse_i32(s: StrSlice, out_val: @i32) -> bool {
     mut val: i64 = 0
     if !parse_i64(s, @val) {
         return false
@@ -213,7 +213,7 @@ act parse_i32(s: StrSlice, out_val: @i32) -> bool {
 }
 
 // Parses unsigned 32-bit integer with range checking [0, 4294967295].
-act parse_u32(s: StrSlice, out_val: @u32) -> bool {
+view act parse_u32(s: StrSlice, out_val: @u32) -> bool {
     mut val: u64 = 0
     if !parse_u64(s, @val) {
         return false
@@ -228,28 +228,28 @@ act parse_u32(s: StrSlice, out_val: @u32) -> bool {
 }
 
 // String literal convenience helpers
-act parse_i64_str(s: string, out_val: @i64) -> bool {
+view act parse_i64_str(s: string, out_val: @i64) -> bool {
     return parse_i64(slice_from_str(s), out_val)
 }
 
-act parse_u64_str(s: string, out_val: @u64) -> bool {
+view act parse_u64_str(s: string, out_val: @u64) -> bool {
     return parse_u64(slice_from_str(s), out_val)
 }
 
-act parse_hex_str(s: string, out_val: @u64) -> bool {
+view act parse_hex_str(s: string, out_val: @u64) -> bool {
     return parse_hex(slice_from_str(s), out_val)
 }
 
-act parse_i32_str(s: string, out_val: @i32) -> bool {
+view act parse_i32_str(s: string, out_val: @i32) -> bool {
     return parse_i32(slice_from_str(s), out_val)
 }
 
-act parse_u32_str(s: string, out_val: @u32) -> bool {
+view act parse_u32_str(s: string, out_val: @u32) -> bool {
     return parse_u32(slice_from_str(s), out_val)
 }
 
 // Parses a string into a signed 64-bit integer, returning i64 or error description.
-act parse_int(s: string) -> i64 or string {
+view act parse_int(s: string) -> i64 or string {
     if s == null { fail "null string" }
     mut val: i64 = 0
     if !parse_i64(slice_from_str(s), @val) {
@@ -259,7 +259,7 @@ act parse_int(s: string) -> i64 or string {
 }
 
 // Parses a string into an unsigned 64-bit integer, returning u64 or error description.
-act parse_uint(s: string) -> u64 or string {
+view act parse_uint(s: string) -> u64 or string {
     if s == null { fail "null string" }
     mut val: u64 = 0
     if !parse_u64(slice_from_str(s), @val) {
@@ -269,7 +269,7 @@ act parse_uint(s: string) -> u64 or string {
 }
 
 // Parses a string into a signed 32-bit integer, returning i32 or error description.
-act parse_int32(s: string) -> i32 or string {
+view act parse_int32(s: string) -> i32 or string {
     if s == null { fail "null string" }
     mut val: i32 = 0
     if !parse_i32(slice_from_str(s), @val) {
@@ -279,7 +279,7 @@ act parse_int32(s: string) -> i32 or string {
 }
 
 // Parses a string into an unsigned 32-bit integer, returning u32 or error description.
-act parse_uint32(s: string) -> u32 or string {
+view act parse_uint32(s: string) -> u32 or string {
     if s == null { fail "null string" }
     mut val: u32 = 0
     if !parse_u32(slice_from_str(s), @val) {
@@ -289,7 +289,7 @@ act parse_uint32(s: string) -> u32 or string {
 }
 
 // Parses a hexadecimal string into an unsigned 64-bit integer, returning u64 or error description.
-act parse_hex_uint(s: string) -> u64 or string {
+view act parse_hex_uint(s: string) -> u64 or string {
     if s == null { fail "null string" }
     mut val: u64 = 0
     if !parse_hex(slice_from_str(s), @val) {

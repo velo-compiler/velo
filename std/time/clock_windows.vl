@@ -3,29 +3,29 @@
 
 // Number of 100-nanosecond intervals between Windows FileTime epoch (1601-01-01)
 // and Unix epoch (1970-01-01): 11,644,473,600 seconds * 10,000,000.
-let WINDOWS_TO_UNIX_OFFSET: u64 = 116444736000000000 as u64
+view let WINDOWS_TO_UNIX_OFFSET: u64 = 116444736000000000 as u64
 
 // Foreign interface to Windows kernel services
-extern act QueryPerformanceCounter(lpPerformanceCount: @i64) -> i32
-extern act QueryPerformanceFrequency(lpFrequency: @i64) -> i32
-extern act GetSystemTimeAsFileTime(lpSystemTimeAsFileTime: @u64)
+view extern act QueryPerformanceCounter(lpPerformanceCount: @i64) -> i32
+view extern act QueryPerformanceFrequency(lpFrequency: @i64) -> i32
+view extern act GetSystemTimeAsFileTime(lpSystemTimeAsFileTime: @u64)
 
 // Returns the frequency of the performance counter in counts per second (Hz).
-act time_frequency() -> i64 {
+view act time_frequency() -> i64 {
     mut freq: i64 = 0
     QueryPerformanceFrequency(@freq)
     return freq
 }
 
 // Returns the current performance counter ticks.
-act time_monotonic_ticks() -> i64 {
+view act time_monotonic_ticks() -> i64 {
     mut counter: i64 = 0
     QueryPerformanceCounter(@counter)
     return counter
 }
 
 // Returns the current high-resolution monotonic time in nanoseconds.
-act time_monotonic_ns() -> u64 {
+view act time_monotonic_ns() -> u64 {
     mut counter: i64 = 0
     mut freq: i64 = 0
     QueryPerformanceCounter(@counter)
@@ -41,7 +41,7 @@ act time_monotonic_ns() -> u64 {
 }
 
 // Returns the current high-resolution monotonic time in microseconds.
-act time_monotonic_us() -> u64 {
+view act time_monotonic_us() -> u64 {
     mut counter: i64 = 0
     mut freq: i64 = 0
     QueryPerformanceCounter(@counter)
@@ -56,7 +56,7 @@ act time_monotonic_us() -> u64 {
 }
 
 // Returns the current high-resolution monotonic time in milliseconds.
-act time_monotonic_ms() -> u64 {
+view act time_monotonic_ms() -> u64 {
     mut counter: i64 = 0
     mut freq: i64 = 0
     QueryPerformanceCounter(@counter)
@@ -71,7 +71,7 @@ act time_monotonic_ms() -> u64 {
 }
 
 // Returns the current monotonic time in fractional seconds.
-act time_monotonic_s() -> f64 {
+view act time_monotonic_s() -> f64 {
     mut counter: i64 = 0
     mut freq: i64 = 0
     QueryPerformanceCounter(@counter)
@@ -83,7 +83,7 @@ act time_monotonic_s() -> f64 {
 }
 
 // Returns current UTC time in nanoseconds since the Unix epoch (1970-01-01 00:00:00 UTC).
-act time_now_epoch_ns() -> u64 {
+view act time_now_epoch_ns() -> u64 {
     mut ft: u64 = 0
     GetSystemTimeAsFileTime(@ft)
     if ft < WINDOWS_TO_UNIX_OFFSET {
@@ -94,7 +94,7 @@ act time_now_epoch_ns() -> u64 {
 }
 
 // Returns current UTC time in microseconds since the Unix epoch.
-act time_now_epoch_us() -> u64 {
+view act time_now_epoch_us() -> u64 {
     mut ft: u64 = 0
     GetSystemTimeAsFileTime(@ft)
     if ft < WINDOWS_TO_UNIX_OFFSET {
@@ -105,7 +105,7 @@ act time_now_epoch_us() -> u64 {
 }
 
 // Returns current UTC time in milliseconds since the Unix epoch.
-act time_now_epoch_ms() -> i64 {
+view act time_now_epoch_ms() -> i64 {
     mut ft: u64 = 0
     GetSystemTimeAsFileTime(@ft)
     if ft < WINDOWS_TO_UNIX_OFFSET {
@@ -116,7 +116,7 @@ act time_now_epoch_ms() -> i64 {
 }
 
 // Returns current UTC time in seconds since the Unix epoch.
-act time_now_epoch_s() -> i64 {
+view act time_now_epoch_s() -> i64 {
     mut ft: u64 = 0
     GetSystemTimeAsFileTime(@ft)
     if ft < WINDOWS_TO_UNIX_OFFSET {
@@ -127,7 +127,7 @@ act time_now_epoch_s() -> i64 {
 }
 
 // Returns the non-negative difference in nanoseconds between start and end.
-act time_diff_ns(start_ns: u64, end_ns: u64) -> u64 {
+view act time_diff_ns(start_ns: u64, end_ns: u64) -> u64 {
     if end_ns >= start_ns {
         return end_ns - start_ns
     }
@@ -135,7 +135,7 @@ act time_diff_ns(start_ns: u64, end_ns: u64) -> u64 {
 }
 
 // Returns the non-negative difference in milliseconds between start and end.
-act time_diff_ms(start_ms: u64, end_ms: u64) -> u64 {
+view act time_diff_ms(start_ms: u64, end_ms: u64) -> u64 {
     if end_ms >= start_ms {
         return end_ms - start_ms
     }

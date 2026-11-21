@@ -1,23 +1,23 @@
 // std.http.headers — Case-insensitive HTTP header container and lookup primitives.
 use "../mem/heap.vl"
 
-data HttpHeader {
+view data HttpHeader {
     name: string
     value: string
 }
 
-data HttpHeaderMap {
+view data HttpHeaderMap {
     headers: @HttpHeader
     count: usize
     cap: usize
 }
 
-act http_header_sizeof() -> usize {
+view act http_header_sizeof() -> usize {
     return 16
 }
 
 // Case-insensitive ASCII string comparison.
-act http_header_name_eq(a: string, b: string) -> bool {
+view act http_header_name_eq(a: string, b: string) -> bool {
     if a == null or b == null { return false }
     let len_a = str.len(a)
     let len_b = str.len(b)
@@ -36,7 +36,7 @@ act http_header_name_eq(a: string, b: string) -> bool {
 }
 
 // Initializes a header map with an initial capacity.
-act headers_init(m: @HttpHeaderMap, initial_cap: usize) {
+view act headers_init(m: @HttpHeaderMap, initial_cap: usize) {
     if m == null { return }
     mut c = initial_cap
     if c == 0 { c = 8 }
@@ -46,7 +46,7 @@ act headers_init(m: @HttpHeaderMap, initial_cap: usize) {
 }
 
 // Sets or replaces a header value (case-insensitive lookup).
-act headers_set(m: @HttpHeaderMap, name: string, value: string) {
+view act headers_set(m: @HttpHeaderMap, name: string, value: string) {
     if m == null or name == null { return }
     if m.headers == null { headers_init(m, 8) }
 
@@ -84,7 +84,7 @@ act headers_set(m: @HttpHeaderMap, name: string, value: string) {
 }
 
 // Retrieves a header's value by case-insensitive name, or returns "" if not found.
-act headers_get(m: @HttpHeaderMap, name: string) -> string {
+view act headers_get(m: @HttpHeaderMap, name: string) -> string {
     if m == null or m.headers == null or name == null { return "" }
     mut i: usize = 0
     loop i < m.count {
@@ -97,7 +97,7 @@ act headers_get(m: @HttpHeaderMap, name: string) -> string {
 }
 
 // Returns true if the header map contains the specified key.
-act headers_has(m: @HttpHeaderMap, name: string) -> bool {
+view act headers_has(m: @HttpHeaderMap, name: string) -> bool {
     if m == null or m.headers == null or name == null { return false }
     mut i: usize = 0
     loop i < m.count {
@@ -110,7 +110,7 @@ act headers_has(m: @HttpHeaderMap, name: string) -> bool {
 }
 
 // Releases memory held by the header map buffer.
-act headers_free(m: @HttpHeaderMap) {
+view act headers_free(m: @HttpHeaderMap) {
     if m == null { return }
     if m.headers != null {
         heap_free(m.headers as @u8)

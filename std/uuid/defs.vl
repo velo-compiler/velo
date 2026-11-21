@@ -2,28 +2,28 @@
 use "../mem/heap.vl"
 use "../str.vl"
 
-let UUID_BYTE_COUNT: usize = 16
-let UUID_STR_LEN: usize = 36         // "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-let UUID_SIMPLE_LEN: usize = 32      // "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-let UUID_URN_LEN: usize = 45         // "urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-let UUID_BRACED_LEN: usize = 38      // "{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}"
+view let UUID_BYTE_COUNT: usize = 16
+view let UUID_STR_LEN: usize = 36         // "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+view let UUID_SIMPLE_LEN: usize = 32      // "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+view let UUID_URN_LEN: usize = 45         // "urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+view let UUID_BRACED_LEN: usize = 38      // "{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}"
 
-let UUID_VERSION_UNKNOWN: i32 = 0
-let UUID_VERSION_V1: i32 = 1
-let UUID_VERSION_V2: i32 = 2
-let UUID_VERSION_V3: i32 = 3
-let UUID_VERSION_V4: i32 = 4
-let UUID_VERSION_V5: i32 = 5
-let UUID_VERSION_V6: i32 = 6
-let UUID_VERSION_V7: i32 = 7
-let UUID_VERSION_V8: i32 = 8
+view let UUID_VERSION_UNKNOWN: i32 = 0
+view let UUID_VERSION_V1: i32 = 1
+view let UUID_VERSION_V2: i32 = 2
+view let UUID_VERSION_V3: i32 = 3
+view let UUID_VERSION_V4: i32 = 4
+view let UUID_VERSION_V5: i32 = 5
+view let UUID_VERSION_V6: i32 = 6
+view let UUID_VERSION_V7: i32 = 7
+view let UUID_VERSION_V8: i32 = 8
 
-let UUID_VARIANT_NCS: i32 = 0
-let UUID_VARIANT_RFC4122: i32 = 1
-let UUID_VARIANT_MICROSOFT: i32 = 2
-let UUID_VARIANT_FUTURE: i32 = 3
+view let UUID_VARIANT_NCS: i32 = 0
+view let UUID_VARIANT_RFC4122: i32 = 1
+view let UUID_VARIANT_MICROSOFT: i32 = 2
+view let UUID_VARIANT_FUTURE: i32 = 3
 
-data Uuid {
+view data Uuid {
     b0: u8
     b1: u8
     b2: u8
@@ -43,7 +43,7 @@ data Uuid {
 }
 
 // Returns a zeroed Nil UUID: 00000000-0000-0000-0000-000000000000
-act uuid_nil() -> Uuid {
+view act uuid_nil() -> Uuid {
     return Uuid {
         b0: 0 as u8, b1: 0 as u8, b2: 0 as u8, b3: 0 as u8,
         b4: 0 as u8, b5: 0 as u8, b6: 0 as u8, b7: 0 as u8,
@@ -53,7 +53,7 @@ act uuid_nil() -> Uuid {
 }
 
 // Returns an all-ones Max UUID: ffffffff-ffff-ffff-ffff-ffffffffffff
-act uuid_max() -> Uuid {
+view act uuid_max() -> Uuid {
     return Uuid {
         b0: 0xFF as u8, b1: 0xFF as u8, b2: 0xFF as u8, b3: 0xFF as u8,
         b4: 0xFF as u8, b5: 0xFF as u8, b6: 0xFF as u8, b7: 0xFF as u8,
@@ -63,7 +63,7 @@ act uuid_max() -> Uuid {
 }
 
 // Returns true if all 16 bytes of the UUID are zero.
-act uuid_is_nil(u: @Uuid) -> bool {
+view act uuid_is_nil(u: @Uuid) -> bool {
     if u == null { return false }
     let ptr = u as @u8
     mut i: usize = 0
@@ -75,7 +75,7 @@ act uuid_is_nil(u: @Uuid) -> bool {
 }
 
 // Returns true if all 16 bytes of the UUID are 0xFF.
-act uuid_is_max(u: @Uuid) -> bool {
+view act uuid_is_max(u: @Uuid) -> bool {
     if u == null { return false }
     let ptr = u as @u8
     mut i: usize = 0
@@ -87,14 +87,14 @@ act uuid_is_max(u: @Uuid) -> bool {
 }
 
 // Returns the 4-bit UUID version (e.g. 4 for v4, 7 for v7).
-act uuid_version(u: @Uuid) -> i32 {
+view act uuid_version(u: @Uuid) -> i32 {
     if u == null { return UUID_VERSION_UNKNOWN }
     let ptr = u as @u8
     return ((ptr[6] >> 4) & (0x0F as u8)) as i32
 }
 
 // Returns the UUID variant per RFC 4122 / RFC 9562.
-act uuid_variant(u: @Uuid) -> i32 {
+view act uuid_variant(u: @Uuid) -> i32 {
     if u == null { return -1 }
     let ptr = u as @u8
     let b = ptr[8]
@@ -111,7 +111,7 @@ act uuid_variant(u: @Uuid) -> i32 {
 }
 
 // Returns true if two UUIDs have identical 16-byte values.
-act uuid_eq(a: @Uuid, b: @Uuid) -> bool {
+view act uuid_eq(a: @Uuid, b: @Uuid) -> bool {
     if a == null or b == null { return a == b }
     let pa = a as @u8
     let pb = b as @u8
@@ -124,7 +124,7 @@ act uuid_eq(a: @Uuid, b: @Uuid) -> bool {
 }
 
 // Compares two UUIDs lexicographically. Returns -1 if a < b, 0 if a == b, 1 if a > b.
-act uuid_cmp(a: @Uuid, b: @Uuid) -> i32 {
+view act uuid_cmp(a: @Uuid, b: @Uuid) -> i32 {
     if a == null and b == null { return 0 }
     if a == null { return -1 }
     if b == null { return 1 }

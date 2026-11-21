@@ -3,16 +3,16 @@ use "../crypto/chacha20poly1305.vl"
 use "../crypto/subtle.vl"
 use "../mem/heap.vl"
 
-let TLS_RECORD_CHANGE_CIPHER_SPEC: u8 = 0x14 as u8
-let TLS_RECORD_ALERT: u8              = 0x15 as u8
-let TLS_RECORD_HANDSHAKE: u8          = 0x16 as u8
-let TLS_RECORD_APPLICATION_DATA: u8   = 0x17 as u8
+view let TLS_RECORD_CHANGE_CIPHER_SPEC: u8 = 0x14 as u8
+view let TLS_RECORD_ALERT: u8              = 0x15 as u8
+view let TLS_RECORD_HANDSHAKE: u8          = 0x16 as u8
+view let TLS_RECORD_APPLICATION_DATA: u8   = 0x17 as u8
 
-let TLS_LEGACY_VERSION_MAJOR: u8 = 0x03 as u8
-let TLS_LEGACY_VERSION_MINOR: u8 = 0x03 as u8
+view let TLS_LEGACY_VERSION_MAJOR: u8 = 0x03 as u8
+view let TLS_LEGACY_VERSION_MINOR: u8 = 0x03 as u8
 
 // Constructs a 12-byte AEAD nonce by XORing the 12-byte IV with the 64-bit sequence number.
-act tls13_make_nonce(iv: @u8, seq: u64, out_nonce: @u8) {
+view act tls13_make_nonce(iv: @u8, seq: u64, out_nonce: @u8) {
     if iv == null or out_nonce == null { return }
     // First 4 bytes are untouched (seq number is 64-bit, padded with 4 zero bytes on left)
     out_nonce[0] = iv[0]
@@ -31,7 +31,7 @@ act tls13_make_nonce(iv: @u8, seq: u64, out_nonce: @u8) {
 
 // Encrypts a TLS 1.3 protected record into out_record.
 // Out buffer must have at least 5 + pt_len + 1 + 16 bytes.
-act tls13_encrypt_record(key: @u8, iv: @u8, seq: u64, content_type: u8, pt: @u8, pt_len: usize, out_record: @u8, out_rec_len: @usize) -> bool {
+view act tls13_encrypt_record(key: @u8, iv: @u8, seq: u64, content_type: u8, pt: @u8, pt_len: usize, out_record: @u8, out_rec_len: @usize) -> bool {
     if key == null or iv == null or out_record == null or out_rec_len == null { return false }
 
     let inner_len = pt_len + 1
@@ -74,7 +74,7 @@ act tls13_encrypt_record(key: @u8, iv: @u8, seq: u64, content_type: u8, pt: @u8,
 
 // Decrypts a TLS 1.3 protected record from record_buf.
 // Returns true on authenticated success, false on MAC mismatch or corruption.
-act tls13_decrypt_record(key: @u8, iv: @u8, seq: u64, record_buf: @u8, record_len: usize, out_pt: @u8, out_pt_len: @usize, out_content_type: @u8) -> bool {
+view act tls13_decrypt_record(key: @u8, iv: @u8, seq: u64, record_buf: @u8, record_len: usize, out_pt: @u8, out_pt_len: @usize, out_content_type: @u8) -> bool {
     if key == null or iv == null or record_buf == null or out_pt == null or out_pt_len == null or out_content_type == null {
         return false
     }

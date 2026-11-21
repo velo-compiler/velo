@@ -3,17 +3,17 @@
 use "clock.vl"
 use "duration.vl"
 
-extern act Sleep(dwMilliseconds: u32)
+view extern act Sleep(dwMilliseconds: u32)
 
 // Suspends the calling thread for at least the specified milliseconds.
-act time_sleep_ms(ms: u32) {
+view act time_sleep_ms(ms: u32) {
     Sleep(ms)
 }
 
 // Suspends the calling thread for at least the specified nanoseconds.
 // Uses a hybrid strategy: coarse Sleep for the bulk if duration >= 2ms,
 // followed by high-resolution monotonic polling for sub-millisecond precision.
-act time_sleep_ns(ns: u64) {
+view act time_sleep_ns(ns: u64) {
     if ns == 0 as u64 {
         return
     }
@@ -32,12 +32,12 @@ act time_sleep_ns(ns: u64) {
 }
 
 // Suspends the calling thread for at least the specified microseconds.
-act time_sleep_us(us: u64) {
+view act time_sleep_us(us: u64) {
     time_sleep_ns(us * 1000)
 }
 
 // Suspends the calling thread for at least the specified floating-point seconds.
-act time_sleep_s(s: f64) {
+view act time_sleep_s(s: f64) {
     if s <= 0.0 {
         return
     }
@@ -46,11 +46,11 @@ act time_sleep_s(s: f64) {
 }
 
 // Suspends the calling thread for the given Duration.
-act time_sleep_duration(d: Duration) {
+view act time_sleep_duration(d: Duration) {
     time_sleep_ns(d.nanos)
 }
 
 // Yields the current thread's remaining timeslice to another ready thread.
-act time_yield() {
+view act time_yield() {
     Sleep(0 as u32)
 }

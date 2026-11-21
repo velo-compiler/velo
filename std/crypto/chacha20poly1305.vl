@@ -15,7 +15,7 @@ use "hex.vl"
 // 1. Data Structures
 // =========================================================================
 
-data ChaCha20Poly1305Handle {
+view data ChaCha20Poly1305Handle {
     key: @u8,
     nonce: @u8,
     used: bool
@@ -25,31 +25,31 @@ data ChaCha20Poly1305Handle {
 // 2. ChaCha20 Core (RFC 8439 Section 2.1 - 2.4)
 // =========================================================================
 
-act chacha20_rotl32(v: u32, c: u32) -> u32 {
+view act chacha20_rotl32(v: u32, c: u32) -> u32 {
     return (v << c) | (v >> (32 - c))
 }
 
-act chacha20_load32_le(p: @u8, offset: usize) -> u32 {
+view act chacha20_load32_le(p: @u8, offset: usize) -> u32 {
     let b0 = p[offset] as u32; let b1 = p[offset + 1] as u32
     let b2 = p[offset + 2] as u32; let b3 = p[offset + 3] as u32
     return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)
 }
 
-act chacha20_store32_le(p: @u8, offset: usize, val: u32) {
+view act chacha20_store32_le(p: @u8, offset: usize, val: u32) {
     p[offset] = (val & 0xff) as u8
     p[offset + 1] = ((val >> 8) & 0xff) as u8
     p[offset + 2] = ((val >> 16) & 0xff) as u8
     p[offset + 3] = ((val >> 24) & 0xff) as u8
 }
 
-act chacha20_qr(w: @u32, a: usize, b: usize, c: usize, d: usize) {
+view act chacha20_qr(w: @u32, a: usize, b: usize, c: usize, d: usize) {
     w[a] = w[a] + w[b]; w[d] = chacha20_rotl32(w[d] ^ w[a], 16)
     w[c] = w[c] + w[d]; w[b] = chacha20_rotl32(w[b] ^ w[c], 12)
     w[a] = w[a] + w[b]; w[d] = chacha20_rotl32(w[d] ^ w[a], 8)
     w[c] = w[c] + w[d]; w[b] = chacha20_rotl32(w[b] ^ w[c], 7)
 }
 
-act chacha20_block(key: @u8, counter: u32, nonce: @u8, out_block: @u8) {
+view act chacha20_block(key: @u8, counter: u32, nonce: @u8, out_block: @u8) {
     let state: @u32 = heap_alloc(16 * 4) as @u32
     let w: @u32 = heap_alloc(16 * 4) as @u32
 
@@ -83,7 +83,7 @@ act chacha20_block(key: @u8, counter: u32, nonce: @u8, out_block: @u8) {
     heap_free(state as @void); heap_free(w as @void)
 }
 
-act chacha20_crypt(key: @u8, counter: u32, nonce: @u8, in_data: @u8, len: usize, out_data: @u8) {
+view act chacha20_crypt(key: @u8, counter: u32, nonce: @u8, in_data: @u8, len: usize, out_data: @u8) {
     if len == 0 { return }
     let block: @u8 = heap_alloc(64) as @u8
     mut curr_ctr = counter
@@ -108,7 +108,7 @@ act chacha20_crypt(key: @u8, counter: u32, nonce: @u8, in_data: @u8, len: usize,
 // 3. Poly1305 Authenticator (RFC 8439 Section 2.5)
 // =========================================================================
 
-act poly1305_mac(key: @u8, msg: @u8, msg_len: usize, out_tag: @u8) {
+view act poly1305_mac(key: @u8, msg: @u8, msg_len: usize, out_tag: @u8) {
     let r0 = ((key[0] as u64) | ((key[1] as u64) << 8) | ((key[2] as u64) << 16) | ((key[3] as u64) << 24)) & 0x03ffffff
     let r1 = (((key[3] as u64) >> 2) | ((key[4] as u64) << 6) | ((key[5] as u64) << 14) | ((key[6] as u64) << 22)) & 0x03ffff03
     let r2 = (((key[6] as u64) >> 4) | ((key[7] as u64) << 4) | ((key[8] as u64) << 12) | ((key[9] as u64) << 20)) & 0x03ffc0ff
@@ -195,7 +195,7 @@ act poly1305_mac(key: @u8, msg: @u8, msg_len: usize, out_tag: @u8) {
 // 4. ChaCha20-Poly1305 AEAD Construction (RFC 8439 Section 2.8)
 // =========================================================================
 
-act chacha20poly1305_build_mac_data(aad: @u8, aad_len: usize, ct: @u8, ct_len: usize, out_len: @usize) -> @u8 {
+view act chacha20poly1305_build_mac_data(aad: @u8, aad_len: usize, ct: @u8, ct_len: usize, out_len: @usize) -> @u8 {
     mut pad_aad: usize = 0
     if (aad_len % 16) != 0 { pad_aad = 16 - (aad_len % 16) }
     mut pad_ct: usize = 0
@@ -234,7 +234,7 @@ act chacha20poly1305_build_mac_data(aad: @u8, aad_len: usize, ct: @u8, ct_len: u
     return buf
 }
 
-act chacha20poly1305_encrypt(key: @u8, nonce: @u8, aad: @u8, aad_len: usize, plaintext: @u8, pt_len: usize, out_ciphertext: @u8, out_tag: @u8) {
+view act chacha20poly1305_encrypt(key: @u8, nonce: @u8, aad: @u8, aad_len: usize, plaintext: @u8, pt_len: usize, out_ciphertext: @u8, out_tag: @u8) {
     let poly_key_block: @u8 = heap_alloc(64) as @u8
     chacha20_block(key, 0, nonce, poly_key_block)
 
@@ -255,7 +255,7 @@ act chacha20poly1305_encrypt(key: @u8, nonce: @u8, aad: @u8, aad_len: usize, pla
     heap_free(poly_key_block as @void)
 }
 
-act chacha20poly1305_decrypt(key: @u8, nonce: @u8, aad: @u8, aad_len: usize, ciphertext: @u8, ct_len: usize, expected_tag: @u8, out_plaintext: @u8) -> bool {
+view act chacha20poly1305_decrypt(key: @u8, nonce: @u8, aad: @u8, aad_len: usize, ciphertext: @u8, ct_len: usize, expected_tag: @u8, out_plaintext: @u8) -> bool {
     let poly_key_block: @u8 = heap_alloc(64) as @u8
     chacha20_block(key, 0, nonce, poly_key_block)
 
@@ -288,7 +288,7 @@ act chacha20poly1305_decrypt(key: @u8, nonce: @u8, aad: @u8, aad_len: usize, cip
 // =========================================================================
 
 // Generates a 12-byte (96-bit) cryptographically secure random nonce.
-act chacha20poly1305_random_nonce(out_nonce: @u8) -> bool or string {
+view act chacha20poly1305_random_nonce(out_nonce: @u8) -> bool or string {
     if out_nonce == null { fail "null nonce buffer" }
     let res = crypto_random_bytes(out_nonce, 12)
     if !res.ok { fail res.err }
@@ -296,7 +296,7 @@ act chacha20poly1305_random_nonce(out_nonce: @u8) -> bool or string {
 }
 
 // Allocates and returns a 24-character hexadecimal representation of a random nonce.
-act chacha20poly1305_random_nonce_hex() -> string {
+view act chacha20poly1305_random_nonce_hex() -> string {
     let buf: @u8 = heap_alloc(12) as @u8
     if buf == null { return "" }
     let res = crypto_random_bytes(buf, 12)
@@ -310,7 +310,7 @@ act chacha20poly1305_random_nonce_hex() -> string {
 }
 
 // Creates an AEAD handle. If nonce is null, seeds a fresh random 12-byte nonce.
-act chacha20poly1305_handle_new(key: @u8, key_len: usize, nonce: @u8, nonce_len: usize) -> ?@ChaCha20Poly1305Handle {
+view act chacha20poly1305_handle_new(key: @u8, key_len: usize, nonce: @u8, nonce_len: usize) -> ?@ChaCha20Poly1305Handle {
     if key == null or key_len != 32 { return null }
     let h: @ChaCha20Poly1305Handle = heap_alloc(sizeof(ChaCha20Poly1305Handle)) as @ChaCha20Poly1305Handle
     if h == null { return null }
@@ -350,7 +350,7 @@ act chacha20poly1305_handle_new(key: @u8, key_len: usize, nonce: @u8, nonce_len:
 
 // Encrypts and authenticates plaintext using the handle.
 // REFUSES NONCE REUSE: If handle.used is true, immediately returns null without encrypting!
-act chacha20poly1305_handle_seal(handle: ?@ChaCha20Poly1305Handle, plaintext: @u8, pt_len: usize, aad: @u8, aad_len: usize, out_tag: @u8) -> ?@u8 {
+view act chacha20poly1305_handle_seal(handle: ?@ChaCha20Poly1305Handle, plaintext: @u8, pt_len: usize, aad: @u8, aad_len: usize, out_tag: @u8) -> ?@u8 {
     if handle == null { return null }
     let h = handle as @ChaCha20Poly1305Handle
     if h.used {
@@ -368,26 +368,26 @@ act chacha20poly1305_handle_seal(handle: ?@ChaCha20Poly1305Handle, plaintext: @u
 }
 
 // Decrypts and authenticates ciphertext using the handle's key and nonce.
-act chacha20poly1305_handle_open(handle: ?@ChaCha20Poly1305Handle, ciphertext: @u8, ct_len: usize, aad: @u8, aad_len: usize, tag: @u8, out_plaintext: @u8) -> bool {
+view act chacha20poly1305_handle_open(handle: ?@ChaCha20Poly1305Handle, ciphertext: @u8, ct_len: usize, aad: @u8, aad_len: usize, tag: @u8, out_plaintext: @u8) -> bool {
     if handle == null { return false }
     let h = handle as @ChaCha20Poly1305Handle
     return chacha20poly1305_decrypt(h.key, h.nonce, aad, aad_len, ciphertext, ct_len, tag, out_plaintext)
 }
 
 // Returns the 12-byte nonce associated with the handle.
-act chacha20poly1305_handle_nonce(handle: ?@ChaCha20Poly1305Handle) -> ?@u8 {
+view act chacha20poly1305_handle_nonce(handle: ?@ChaCha20Poly1305Handle) -> ?@u8 {
     if handle == null { return null }
     return (handle as @ChaCha20Poly1305Handle).nonce
 }
 
 // Returns whether the handle's nonce has already been consumed.
-act chacha20poly1305_handle_is_used(handle: ?@ChaCha20Poly1305Handle) -> bool {
+view act chacha20poly1305_handle_is_used(handle: ?@ChaCha20Poly1305Handle) -> bool {
     if handle == null { return true }
     return (handle as @ChaCha20Poly1305Handle).used
 }
 
 // Securely wipes and frees the AEAD handle.
-act chacha20poly1305_handle_free(handle: ?@ChaCha20Poly1305Handle) {
+view act chacha20poly1305_handle_free(handle: ?@ChaCha20Poly1305Handle) {
     if handle == null { return }
     let h = handle as @ChaCha20Poly1305Handle
     if h.key != null { crypto_zero(h.key, 32); heap_free(h.key as @void) }

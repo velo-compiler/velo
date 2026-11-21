@@ -6,7 +6,7 @@ use "../net/socket.vl"
 use "../net/addr.vl"
 use "../mem/heap.vl"
 
-data AsyncTcpListener {
+view data AsyncTcpListener {
     socket: Socket
     loop_ptr: @EventLoop
     on_connection: act(@AsyncTcpStream) -> void
@@ -14,7 +14,7 @@ data AsyncTcpListener {
     is_closed: bool
 }
 
-data AsyncTcpStream {
+view data AsyncTcpStream {
     socket: Socket
     loop_ptr: @EventLoop
     on_data: act(@AsyncTcpStream, @u8, usize) -> void
@@ -26,18 +26,18 @@ data AsyncTcpStream {
     is_closed: bool
 }
 
-act tcp_listener_sizeof() -> usize {
+view act tcp_listener_sizeof() -> usize {
     let dummy: @AsyncTcpListener = null
     return (dummy + 1) as usize
 }
 
-act tcp_stream_sizeof() -> usize {
+view act tcp_stream_sizeof() -> usize {
     let dummy: @AsyncTcpStream = null
     return (dummy + 1) as usize
 }
 
 // Low-level event dispatcher for streams
-act _async_stream_cb(fd: i64, events: u32, udata: @void) {
+view act _async_stream_cb(fd: i64, events: u32, udata: @void) {
     if udata == null { return }
     let stream = udata as @AsyncTcpStream
     if stream.is_closed { return }
@@ -96,7 +96,7 @@ act _async_stream_cb(fd: i64, events: u32, udata: @void) {
 }
 
 // Low-level event dispatcher for listening sockets
-act _async_listener_cb(fd: i64, events: u32, udata: @void) {
+view act _async_listener_cb(fd: i64, events: u32, udata: @void) {
     if udata == null { return }
     let listener = udata as @AsyncTcpListener
     if listener.is_closed { return }
@@ -132,7 +132,7 @@ act _async_listener_cb(fd: i64, events: u32, udata: @void) {
 }
 
 // Creates an asynchronous non-blocking TCP listener registered on the EventLoop
-act async_tcp_listen(el: @EventLoop, host: string, port: u16, on_connection: act(@AsyncTcpStream) -> void) -> @AsyncTcpListener {
+view act async_tcp_listen(el: @EventLoop, host: string, port: u16, on_connection: act(@AsyncTcpStream) -> void) -> @AsyncTcpListener {
     if el == null { return null }
     mut sock = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
     if !socket_is_valid(@sock) { return null }
@@ -160,7 +160,7 @@ act async_tcp_listen(el: @EventLoop, host: string, port: u16, on_connection: act
 }
 
 // Closes and unregisters an asynchronous TCP listener
-act async_tcp_listener_close(l: @AsyncTcpListener) {
+view act async_tcp_listener_close(l: @AsyncTcpListener) {
     if l == null or l.is_closed { return }
     l.is_closed = true
     loop_remove_io(l.loop_ptr, l.socket.fd)
@@ -169,34 +169,34 @@ act async_tcp_listener_close(l: @AsyncTcpListener) {
 }
 
 // Sets the incoming data callback for an asynchronous stream
-act async_tcp_stream_on_data(s: @AsyncTcpStream, cb: act(@AsyncTcpStream, @u8, usize) -> void) {
+view act async_tcp_stream_on_data(s: @AsyncTcpStream, cb: act(@AsyncTcpStream, @u8, usize) -> void) {
     if s != null {
         s.on_data = cb
     }
 }
 
 // Sets the disconnect/close callback for an asynchronous stream
-act async_tcp_stream_on_close(s: @AsyncTcpStream, cb: act(@AsyncTcpStream) -> void) {
+view act async_tcp_stream_on_close(s: @AsyncTcpStream, cb: act(@AsyncTcpStream) -> void) {
     if s != null {
         s.on_close = cb
     }
 }
 
 // Transmits binary payload over the asynchronous stream
-act async_tcp_stream_write(s: @AsyncTcpStream, data: @u8, len: usize) -> i32 {
+view act async_tcp_stream_write(s: @AsyncTcpStream, data: @u8, len: usize) -> i32 {
     if s == null or s.is_closed or data == null { return -1 }
     return socket_send(@s.socket, data, len)
 }
 
 // Transmits null-terminated string over the asynchronous stream
-act async_tcp_stream_write_str(s: @AsyncTcpStream, msg: string) -> i32 {
+view act async_tcp_stream_write_str(s: @AsyncTcpStream, msg: string) -> i32 {
     if s == null or s.is_closed or msg == null { return -1 }
     let len = str.len(msg)
     return socket_send(@s.socket, msg as @u8, len)
 }
 
 // Closes and unregisters an asynchronous stream
-act async_tcp_stream_close(s: @AsyncTcpStream) {
+view act async_tcp_stream_close(s: @AsyncTcpStream) {
     if s == null or s.is_closed { return }
     s.is_closed = true
     loop_remove_io(s.loop_ptr, s.socket.fd)
@@ -205,7 +205,7 @@ act async_tcp_stream_close(s: @AsyncTcpStream) {
 }
 
 // Initiates an asynchronous non-blocking connection to a remote host:port
-act async_tcp_connect(el: @EventLoop, host: string, port: u16, on_connect: act(@AsyncTcpStream, bool) -> void) -> @AsyncTcpStream {
+view act async_tcp_connect(el: @EventLoop, host: string, port: u16, on_connect: act(@AsyncTcpStream, bool) -> void) -> @AsyncTcpStream {
     if el == null { return null }
     mut sock = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
     if !socket_is_valid(@sock) { return null }

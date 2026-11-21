@@ -3,7 +3,7 @@ use "defs.vl"
 use "../str.vl"
 
 // Converts an ASCII hex digit (0-9, a-f, A-F) to its integer value (0..15), or -1 if invalid.
-act uuid_hex_digit(c: u8) -> i32 {
+view act uuid_hex_digit(c: u8) -> i32 {
     if c >= '0' as u8 and c <= '9' as u8 { return (c - ('0' as u8)) as i32 }
     if c >= 'a' as u8 and c <= 'f' as u8 { return ((c - ('a' as u8)) + 10) as i32 }
     if c >= 'A' as u8 and c <= 'F' as u8 { return ((c - ('A' as u8)) + 10) as i32 }
@@ -11,7 +11,7 @@ act uuid_hex_digit(c: u8) -> i32 {
 }
 
 // Parses 32 contiguous hex digits (without hyphens) from s starting at start_idx into ptr.
-act uuid_parse_32_hex(s: string, start_idx: usize, ptr: @u8) -> bool {
+view act uuid_parse_32_hex(s: string, start_idx: usize, ptr: @u8) -> bool {
     mut i: usize = 0
     loop i < 16 {
         let hi = uuid_hex_digit(s[start_idx + i * 2])
@@ -24,7 +24,7 @@ act uuid_parse_32_hex(s: string, start_idx: usize, ptr: @u8) -> bool {
 }
 
 // Parses standard 36-char hyphenated UUID (8-4-4-4-12) from s starting at start_idx into ptr.
-act uuid_parse_hyphenated(s: string, start_idx: usize, ptr: @u8) -> bool {
+view act uuid_parse_hyphenated(s: string, start_idx: usize, ptr: @u8) -> bool {
     // Validate hyphens at expected positions
     if s[start_idx + 8] != '-' as u8 or s[start_idx + 13] != '-' as u8 or s[start_idx + 18] != '-' as u8 or s[start_idx + 23] != '-' as u8 {
         return false
@@ -88,7 +88,7 @@ act uuid_parse_hyphenated(s: string, start_idx: usize, ptr: @u8) -> bool {
 // 2. Simple:     "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" (32 chars)
 // 3. Braced:     "{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}" (38 chars)
 // 4. URN:        "urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" (45 chars)
-act uuid_parse(s: string, out: @Uuid) -> bool {
+view act uuid_parse(s: string, out: @Uuid) -> bool {
     if s == null or out == null { return false }
     let len = str.len(s)
     let ptr = out as @u8
@@ -128,20 +128,20 @@ act uuid_parse(s: string, out: @Uuid) -> bool {
 }
 
 // Parses a UUID from string and returns the resulting Uuid struct (or uuid_nil() on error).
-act uuid_parse_str(s: string) -> Uuid {
+view act uuid_parse_str(s: string) -> Uuid {
     mut u = uuid_nil()
     uuid_parse(s, @u)
     return u
 }
 
 // Returns true if the string is a valid representation of a UUID in any supported format.
-act uuid_is_valid(s: string) -> bool {
+view act uuid_is_valid(s: string) -> bool {
     mut u = uuid_nil()
     return uuid_parse(s, @u)
 }
 
 // Parses a UUID string into a Uuid struct, returning Uuid or error message.
-act uuid_from_str(s: string) -> Uuid or string {
+view act uuid_from_str(s: string) -> Uuid or string {
     if s == null { fail "null uuid string" }
     mut u = uuid_nil()
     if !uuid_parse(s, @u) {

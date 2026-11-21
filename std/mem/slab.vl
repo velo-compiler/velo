@@ -3,7 +3,7 @@
 use "arena.vl"
 
 // Fixed-size memory block pool descriptor.
-data SlabPool {
+view data SlabPool {
     block_size: usize
     free_head: @u8
     allocated_count: usize
@@ -13,7 +13,7 @@ data SlabPool {
 
 // Initializes a fixed-size slab pool backed by an internal arena.
 // block_size is clamped to at least 8 bytes and rounded up to 8-byte alignment.
-act slab_init(block_size: usize, initial_capacity: usize) -> SlabPool {
+view act slab_init(block_size: usize, initial_capacity: usize) -> SlabPool {
     mut bsize = block_size
     // Minimum block size must accommodate an intrusive 64-bit pointer
     if bsize < 8 {
@@ -41,7 +41,7 @@ act slab_init(block_size: usize, initial_capacity: usize) -> SlabPool {
 
 // Allocates a fixed-size block from the slab pool.
 // Reuses previously freed blocks from the freelist in O(1) before expanding the arena.
-act slab_alloc(p: @SlabPool) -> @u8 {
+view act slab_alloc(p: @SlabPool) -> @u8 {
     if p == null {
         return null
     }
@@ -67,7 +67,7 @@ act slab_alloc(p: @SlabPool) -> @u8 {
 }
 
 // Returns a block to the slab pool for immediate O(1) reuse.
-act slab_free(p: @SlabPool, ptr: @u8) {
+view act slab_free(p: @SlabPool, ptr: @u8) {
     if p == null or ptr == null {
         return
     }
@@ -84,7 +84,7 @@ act slab_free(p: @SlabPool, ptr: @u8) {
 }
 
 // Destroys the slab pool and releases all underlying pages back to the OS.
-act slab_destroy(p: @SlabPool) {
+view act slab_destroy(p: @SlabPool) {
     if p != null {
         p.free_head = null
         p.allocated_count = 0

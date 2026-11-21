@@ -4,13 +4,13 @@
 use "../mem/ops.vl"
 
 // Read-only view over a contiguous sequence of UTF-8 or ASCII bytes.
-data StrSlice {
+view data StrSlice {
     ptr: @u8,
     len: usize,
 }
 
 // Calculates byte length of a null-terminated string without C strlen.
-act raw_str_len(p: @u8) -> usize {
+view act raw_str_len(p: @u8) -> usize {
     if p == null {
         return 0
     }
@@ -22,7 +22,7 @@ act raw_str_len(p: @u8) -> usize {
 }
 
 // Creates a StrSlice from a raw byte pointer and explicit length.
-act slice_from_raw(ptr: @u8, len: usize) -> StrSlice {
+view act slice_from_raw(ptr: @u8, len: usize) -> StrSlice {
     if ptr == null or len == 0 {
         return StrSlice { ptr: null, len: 0 }
     }
@@ -30,7 +30,7 @@ act slice_from_raw(ptr: @u8, len: usize) -> StrSlice {
 }
 
 // Creates a StrSlice view directly from a Velo string.
-act slice_from_str(s: string) -> StrSlice {
+view act slice_from_str(s: string) -> StrSlice {
     let p = s as @u8
     if p == null {
         return StrSlice { ptr: null, len: 0 }
@@ -40,17 +40,17 @@ act slice_from_str(s: string) -> StrSlice {
 }
 
 // Returns true if the slice is empty or null.
-act slice_is_empty(s: StrSlice) -> bool {
+view act slice_is_empty(s: StrSlice) -> bool {
     return s.len == 0 or s.ptr == null
 }
 
 // Returns the byte length of the slice.
-act slice_len(s: StrSlice) -> usize {
+view act slice_len(s: StrSlice) -> usize {
     return s.len
 }
 
 // Returns byte at index, or 0 if index is out of bounds.
-act slice_get(s: StrSlice, idx: usize) -> u8 {
+view act slice_get(s: StrSlice, idx: usize) -> u8 {
     if s.ptr == null or idx >= s.len {
         return 0 as u8
     }
@@ -59,7 +59,7 @@ act slice_get(s: StrSlice, idx: usize) -> u8 {
 
 // Returns a sub-slice from [start, end) clamped to [0, s.len].
 // Never allocates memory.
-act slice_sub(s: StrSlice, start: usize, end: usize) -> StrSlice {
+view act slice_sub(s: StrSlice, start: usize, end: usize) -> StrSlice {
     if s.ptr == null or s.len == 0 {
         return StrSlice { ptr: null, len: 0 }
     }
@@ -81,17 +81,17 @@ act slice_sub(s: StrSlice, start: usize, end: usize) -> StrSlice {
 }
 
 // Returns a sub-slice from [start, s.len).
-act slice_sub_from(s: StrSlice, start: usize) -> StrSlice {
+view act slice_sub_from(s: StrSlice, start: usize) -> StrSlice {
     return slice_sub(s, start, s.len)
 }
 
 // Returns a sub-slice from [0, end).
-act slice_sub_to(s: StrSlice, end: usize) -> StrSlice {
+view act slice_sub_to(s: StrSlice, end: usize) -> StrSlice {
     return slice_sub(s, 0, end)
 }
 
 // Returns true if both slices have identical byte content.
-act slice_eq(a: StrSlice, b: StrSlice) -> bool {
+view act slice_eq(a: StrSlice, b: StrSlice) -> bool {
     if a.len != b.len {
         return false
     }
@@ -108,12 +108,12 @@ act slice_eq(a: StrSlice, b: StrSlice) -> bool {
 }
 
 // Compares two slices for equality with a null-terminated string literal.
-act slice_eq_str(s: StrSlice, lit: string) -> bool {
+view act slice_eq_str(s: StrSlice, lit: string) -> bool {
     return slice_eq(s, slice_from_str(lit))
 }
 
 // Lexicographical comparison: returns <0 if a < b, 0 if a == b, >0 if a > b.
-act slice_cmp(a: StrSlice, b: StrSlice) -> i32 {
+view act slice_cmp(a: StrSlice, b: StrSlice) -> i32 {
     mut min_len = a.len
     if b.len < min_len {
         min_len = b.len
@@ -134,7 +134,7 @@ act slice_cmp(a: StrSlice, b: StrSlice) -> i32 {
 }
 
 // Checks if slice starts with a given prefix.
-act slice_starts_with(s: StrSlice, prefix: StrSlice) -> bool {
+view act slice_starts_with(s: StrSlice, prefix: StrSlice) -> bool {
     if prefix.len > s.len { return false }
     if prefix.len == 0 { return true }
     let sub = slice_sub(s, 0, prefix.len)
@@ -142,7 +142,7 @@ act slice_starts_with(s: StrSlice, prefix: StrSlice) -> bool {
 }
 
 // Checks if slice ends with a given suffix.
-act slice_ends_with(s: StrSlice, suffix: StrSlice) -> bool {
+view act slice_ends_with(s: StrSlice, suffix: StrSlice) -> bool {
     if suffix.len > s.len { return false }
     if suffix.len == 0 { return true }
     let sub = slice_sub(s, s.len - suffix.len, s.len)
@@ -151,7 +151,7 @@ act slice_ends_with(s: StrSlice, suffix: StrSlice) -> bool {
 
 // Copies slice bytes into a destination buffer up to dest_cap.
 // Returns the number of bytes copied.
-act slice_copy_to(s: StrSlice, dest: @u8, dest_cap: usize) -> usize {
+view act slice_copy_to(s: StrSlice, dest: @u8, dest_cap: usize) -> usize {
     if s.ptr == null or dest == null or dest_cap == 0 {
         return 0
     }
@@ -165,7 +165,7 @@ act slice_copy_to(s: StrSlice, dest: @u8, dest_cap: usize) -> usize {
 
 // Copies slice bytes into a destination buffer and writes a null terminator.
 // Writes at most dest_cap - 1 content bytes. Returns content bytes written.
-act slice_to_cstr(s: StrSlice, dest: @u8, dest_cap: usize) -> usize {
+view act slice_to_cstr(s: StrSlice, dest: @u8, dest_cap: usize) -> usize {
     if dest == null or dest_cap == 0 {
         return 0
     }

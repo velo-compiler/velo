@@ -2,7 +2,7 @@
 use "common.vl"
 use "../time/clock.vl"
 
-data BenchmarkResult {
+view data BenchmarkResult {
     name: string
     iterations: usize
     total_ms: u64
@@ -10,7 +10,7 @@ data BenchmarkResult {
 }
 
 // Executes a benchmark loop with warmup and computes nanoseconds per operation.
-act test_benchmark(name: string, iterations: usize, bench_fn: act() -> void) -> BenchmarkResult {
+view act test_benchmark(name: string, iterations: usize, bench_fn: act() -> void) -> BenchmarkResult {
     mut iters = iterations
     if iters == 0 { iters = 1 }
 
@@ -44,7 +44,7 @@ act test_benchmark(name: string, iterations: usize, bench_fn: act() -> void) -> 
 }
 
 // Prints formatted benchmark metrics.
-act test_print_benchmark(res: @BenchmarkResult) -> void {
+view act test_print_benchmark(res: @BenchmarkResult) -> void {
     if res == null { return }
     let iters_str = test_u64_to_str(res.iterations as u64)
     let ns_str = test_u64_to_str(res.ns_per_op)

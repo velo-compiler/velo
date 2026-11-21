@@ -6,7 +6,7 @@ use "../crypto/subtle.vl"
 use "../mem/heap.vl"
 
 // Computes the 32-byte Early Secret for a standard handshake without PSK (IKM = 32 zeros).
-act tls13_compute_early_secret(out_early_secret: @u8) {
+view act tls13_compute_early_secret(out_early_secret: @u8) {
     if out_early_secret == null { return }
     let zeros: @u8 = heap_alloc(32) as @u8
     crypto_zero(zeros, 32)
@@ -16,7 +16,7 @@ act tls13_compute_early_secret(out_early_secret: @u8) {
 }
 
 // Computes the 32-byte Handshake Secret from the early secret and the ECDHE shared secret.
-act tls13_compute_handshake_secret(dhe_shared: @u8, dhe_shared_len: usize, out_hs_secret: @u8) {
+view act tls13_compute_handshake_secret(dhe_shared: @u8, dhe_shared_len: usize, out_hs_secret: @u8) {
     if dhe_shared == null or out_hs_secret == null { return }
     let early_secret: @u8 = heap_alloc(32) as @u8
     tls13_compute_early_secret(early_secret)
@@ -35,7 +35,7 @@ act tls13_compute_handshake_secret(dhe_shared: @u8, dhe_shared_len: usize, out_h
 }
 
 // Derives client and server handshake traffic secrets from Handshake Secret and transcript hash.
-act tls13_derive_handshake_traffic_secrets(hs_secret: @u8, transcript_hash: @u8, out_client_hs: @u8, out_server_hs: @u8) {
+view act tls13_derive_handshake_traffic_secrets(hs_secret: @u8, transcript_hash: @u8, out_client_hs: @u8, out_server_hs: @u8) {
     if hs_secret == null or transcript_hash == null { return }
     if out_client_hs != null {
         tls13_derive_secret(hs_secret, "c hs traffic", transcript_hash, out_client_hs)
@@ -46,7 +46,7 @@ act tls13_derive_handshake_traffic_secrets(hs_secret: @u8, transcript_hash: @u8,
 }
 
 // Derives ChaCha20-Poly1305 traffic key (32 bytes) and IV (12 bytes) from a traffic secret.
-act tls13_derive_traffic_key_iv(traffic_secret: @u8, out_key: @u8, out_iv: @u8) {
+view act tls13_derive_traffic_key_iv(traffic_secret: @u8, out_key: @u8, out_iv: @u8) {
     if traffic_secret == null { return }
     let empty_ctx: @u8 = heap_alloc(1) as @u8
     if out_key != null {
@@ -61,7 +61,7 @@ act tls13_derive_traffic_key_iv(traffic_secret: @u8, out_key: @u8, out_iv: @u8) 
 // Computes the 32-byte Finished verify_data:
 // verify_data = HMAC-SHA256(finished_key, transcript_hash)
 // where finished_key = HKDF-Expand-Label(base_traffic_secret, "finished", "", 32)
-act tls13_compute_finished_verify_data(base_traffic_secret: @u8, transcript_hash: @u8, out_verify_data: @u8) {
+view act tls13_compute_finished_verify_data(base_traffic_secret: @u8, transcript_hash: @u8, out_verify_data: @u8) {
     if base_traffic_secret == null or transcript_hash == null or out_verify_data == null { return }
     let finished_key: @u8 = heap_alloc(32) as @u8
     let empty_ctx: @u8 = heap_alloc(1) as @u8
@@ -72,7 +72,7 @@ act tls13_compute_finished_verify_data(base_traffic_secret: @u8, transcript_hash
 }
 
 // Computes Master Secret from Handshake Secret.
-act tls13_compute_master_secret(hs_secret: @u8, out_master_secret: @u8) {
+view act tls13_compute_master_secret(hs_secret: @u8, out_master_secret: @u8) {
     if hs_secret == null or out_master_secret == null { return }
     let empty_hash: @u8 = heap_alloc(32) as @u8
     sha256_bytes(hs_secret, 0, empty_hash)
@@ -88,7 +88,7 @@ act tls13_compute_master_secret(hs_secret: @u8, out_master_secret: @u8) {
 }
 
 // Derives client and server application traffic secrets from Master Secret and transcript hash.
-act tls13_derive_app_traffic_secrets(master_secret: @u8, transcript_hash: @u8, out_client_app: @u8, out_server_app: @u8) {
+view act tls13_derive_app_traffic_secrets(master_secret: @u8, transcript_hash: @u8, out_client_app: @u8, out_server_app: @u8) {
     if master_secret == null or transcript_hash == null { return }
     if out_client_app != null {
         tls13_derive_secret(master_secret, "c ap traffic", transcript_hash, out_client_app)

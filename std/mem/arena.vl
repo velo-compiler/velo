@@ -4,14 +4,14 @@ use "page.vl"
 use "ops.vl"
 
 // Regional memory arena state descriptor.
-data Arena {
+view data Arena {
     buffer: @u8
     capacity: usize
     offset: usize
 }
 
 // Initializes a memory arena backed by raw OS virtual memory pages.
-act arena_init(capacity: usize) -> Arena {
+view act arena_init(capacity: usize) -> Arena {
     if capacity == 0 {
         return Arena{
             buffer: null,
@@ -29,7 +29,7 @@ act arena_init(capacity: usize) -> Arena {
 
 // Allocates an aligned contiguous block of memory from the arena.
 // align must be a power of two (1, 2, 4, 8, 16, etc.). Defaults to 1 if <= 1.
-act arena_alloc(a: @Arena, size: usize, align: usize) -> @u8 {
+view act arena_alloc(a: @Arena, size: usize, align: usize) -> @u8 {
     if a == null or a.buffer == null or size == 0 {
         return null
     }
@@ -51,7 +51,7 @@ act arena_alloc(a: @Arena, size: usize, align: usize) -> @u8 {
 }
 
 // Allocates an aligned block and zeroes all its memory.
-act arena_alloc_zeroed(a: @Arena, size: usize, align: usize) -> @u8 {
+view act arena_alloc_zeroed(a: @Arena, size: usize, align: usize) -> @u8 {
     let ptr = arena_alloc(a, size, align)
     if ptr != null and size > 0 {
         set(ptr, 0 as u8, size)
@@ -60,7 +60,7 @@ act arena_alloc_zeroed(a: @Arena, size: usize, align: usize) -> @u8 {
 }
 
 // Returns the number of bytes remaining in the arena buffer.
-act arena_remaining(a: @Arena) -> usize {
+view act arena_remaining(a: @Arena) -> usize {
     if a == null or a.buffer == null or a.offset >= a.capacity {
         return 0
     }
@@ -68,14 +68,14 @@ act arena_remaining(a: @Arena) -> usize {
 }
 
 // Resets the allocation offset to 0 in O(1) time without releasing the buffer.
-act arena_reset(a: @Arena) {
+view act arena_reset(a: @Arena) {
     if a != null {
         a.offset = 0
     }
 }
 
 // Releases the arena buffer back to the operating system kernel.
-act arena_free(a: @Arena) {
+view act arena_free(a: @Arena) {
     if a != null and a.buffer != null and a.capacity > 0 {
         os_page_free(a.buffer, a.capacity)
         a.buffer = null

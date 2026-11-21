@@ -2,10 +2,10 @@
 // Zero C runtime dependencies.
 
 // Foreign interface to Windows kernel32.dll
-extern act GetCommandLineA() -> @u8
+view extern act GetCommandLineA() -> @u8
 
 // Retrieves the raw command line string of the calling process.
-act os_raw_cmdline() -> string {
+view act os_raw_cmdline() -> string {
     let p = GetCommandLineA()
     if p == null {
         return ""

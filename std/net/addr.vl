@@ -3,24 +3,24 @@ use "types.vl"
 use "../mem/heap.vl"
 
 // Foreign C / Winsock bindings for system endian and string conversions
-extern act htons(hostshort: u16) -> u16
-extern act ntohs(netshort: u16) -> u16
-extern act htonl(hostlong: u32) -> u32
-extern act ntohl(netlong: u32) -> u32
-extern act inet_addr(cp: string) -> u32
+view extern act htons(hostshort: u16) -> u16
+view extern act ntohs(netshort: u16) -> u16
+view extern act htonl(hostlong: u32) -> u32
+view extern act ntohl(netlong: u32) -> u32
+view extern act inet_addr(cp: string) -> u32
 
 // Converts a 16-bit integer from host byte order to network byte order.
-act net_htons(val: u16) -> u16 {
+view act net_htons(val: u16) -> u16 {
     return ((val & 0x00FF as u16) << 8) | ((val >> 8) & 0x00FF as u16)
 }
 
 // Converts a 16-bit integer from network byte order to host byte order.
-act net_ntohs(val: u16) -> u16 {
+view act net_ntohs(val: u16) -> u16 {
     return net_htons(val)
 }
 
 // Converts a 32-bit integer from host byte order to network byte order.
-act net_htonl(val: u32) -> u32 {
+view act net_htonl(val: u32) -> u32 {
     let b0 = (val & 0x000000FF as u32) << 24
     let b1 = ((val >> 8) & 0x000000FF as u32) << 16
     let b2 = ((val >> 16) & 0x000000FF as u32) << 8
@@ -29,12 +29,12 @@ act net_htonl(val: u32) -> u32 {
 }
 
 // Converts a 32-bit integer from network byte order to host byte order.
-act net_ntohl(val: u32) -> u32 {
+view act net_ntohl(val: u32) -> u32 {
     return net_htonl(val)
 }
 
 // Parses an IPv4 string ("127.0.0.1", "0.0.0.0", "localhost") into network-order u32.
-act net_parse_ipv4(ip: string) -> u32 {
+view act net_parse_ipv4(ip: string) -> u32 {
     if ip == null { return 0 as u32 }
     if ip == "0.0.0.0" { return 0 as u32 }
     if ip == "127.0.0.1" or ip == "localhost" {
@@ -76,7 +76,7 @@ act net_parse_ipv4(ip: string) -> u32 {
 }
 
 // Helper formatting an 8-bit octet into decimal characters inside buf.
-act write_octet(buf: @u8, pos: usize, val: u8) -> usize {
+view act write_octet(buf: @u8, pos: usize, val: u8) -> usize {
     if val >= 100 as u8 {
         buf[pos] = (48 + (val / 100 as u8)) as u8
         buf[pos + 1] = (48 + ((val / 10 as u8) % 10 as u8)) as u8
@@ -93,7 +93,7 @@ act write_octet(buf: @u8, pos: usize, val: u8) -> usize {
 }
 
 // Formats a 32-bit network-byte-order IPv4 address into a dotted decimal string ("127.0.0.1").
-act net_format_ipv4(addr: u32) -> string {
+view act net_format_ipv4(addr: u32) -> string {
     let b0 = (addr & (0xFF as u32)) as u8
     let b1 = ((addr >> 8) & (0xFF as u32)) as u8
     let b2 = ((addr >> 16) & (0xFF as u32)) as u8
@@ -114,7 +114,7 @@ act net_format_ipv4(addr: u32) -> string {
 }
 
 // Initializes a native SockAddrIn structure with family AF_INET, network-order port, and IP.
-act sockaddr_in_init(out: @SockAddrIn, ip: string, port: u16) {
+view act sockaddr_in_init(out: @SockAddrIn, ip: string, port: u16) {
     if out == null { return }
     out.family = AF_INET as i16
     out.port = net_htons(port)
@@ -124,7 +124,7 @@ act sockaddr_in_init(out: @SockAddrIn, ip: string, port: u16) {
 }
 
 // Creates a SocketAddr record for high-level endpoint management.
-act socket_addr_make(ip: string, port: u16) -> SocketAddr {
+view act socket_addr_make(ip: string, port: u16) -> SocketAddr {
     return SocketAddr {
         ip: ip,
         port: port,

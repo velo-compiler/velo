@@ -22,36 +22,36 @@ use "../mem/heap.vl"
 // Non-blocking toggle via fcntl. F_GETFL/F_SETFL and O_NONBLOCK are the POSIX
 // mechanism; the numeric values are Linux's (macOS differs), which is recorded
 // in gaps.md as a residual until the platform split reaches constants too.
-let F_GETFL: i32 = 3
-let F_SETFL: i32 = 4
-let O_NONBLOCK: i32 = 2048
+view let F_GETFL: i32 = 3
+view let F_SETFL: i32 = 4
+view let O_NONBLOCK: i32 = 2048
 
 // Foreign BSD socket bindings
-extern act socket(af: i32, type_: i32, protocol: i32) -> i32
-extern act bind(s: i32, name: @SockAddrIn, namelen: u32) -> i32
-extern act listen(s: i32, backlog: i32) -> i32
-extern act accept(s: i32, addr: @SockAddrIn, addrlen: @u32) -> i32
-extern act recv(s: i32, buf: @u8, len: usize, flags: i32) -> isize
-extern act send(s: i32, buf: @u8, len: usize, flags: i32) -> isize
-extern act recvfrom(s: i32, buf: @u8, len: usize, flags: i32, from: @SockAddrIn, fromlen: @u32) -> isize
-extern act sendto(s: i32, buf: @u8, len: usize, flags: i32, to: @SockAddrIn, tolen: u32) -> isize
-extern act close(fd: i32) -> i32
-extern act fcntl(fd: i32, cmd: i32, arg: i32) -> i32
-extern act setsockopt(s: i32, level: i32, optname: i32, optval: @i32, optlen: u32) -> i32
-extern act connect(s: i32, name: @SockAddrIn, namelen: u32) -> i32
+view extern act socket(af: i32, type_: i32, protocol: i32) -> i32
+view extern act bind(s: i32, name: @SockAddrIn, namelen: u32) -> i32
+view extern act listen(s: i32, backlog: i32) -> i32
+view extern act accept(s: i32, addr: @SockAddrIn, addrlen: @u32) -> i32
+view extern act recv(s: i32, buf: @u8, len: usize, flags: i32) -> isize
+view extern act send(s: i32, buf: @u8, len: usize, flags: i32) -> isize
+view extern act recvfrom(s: i32, buf: @u8, len: usize, flags: i32, from: @SockAddrIn, fromlen: @u32) -> isize
+view extern act sendto(s: i32, buf: @u8, len: usize, flags: i32, to: @SockAddrIn, tolen: u32) -> isize
+view extern act close(fd: i32) -> i32
+view extern act fcntl(fd: i32, cmd: i32, arg: i32) -> i32
+view extern act setsockopt(s: i32, level: i32, optname: i32, optval: @i32, optlen: u32) -> i32
+view extern act connect(s: i32, name: @SockAddrIn, namelen: u32) -> i32
 
 // POSIX sockets need no process-wide initialisation, so this reports success
 // without doing anything. It exists so callers stay identical across variants.
-act net_ensure_init() -> bool {
+view act net_ensure_init() -> bool {
     return true
 }
 
 // POSIX sockets need no process-wide teardown.
-act net_shutdown() {
+view act net_shutdown() {
 }
 
 // Creates an un-bound, unconnected socket descriptor.
-act socket_create(family: i32, type_: i32, protocol: i32) -> Socket {
+view act socket_create(family: i32, type_: i32, protocol: i32) -> Socket {
     net_ensure_init()
     let fd = socket(family, type_, protocol)
     if fd < 0 {
@@ -73,12 +73,12 @@ act socket_create(family: i32, type_: i32, protocol: i32) -> Socket {
 }
 
 // Checks if a socket descriptor is open and valid.
-act socket_is_valid(s: @Socket) -> bool {
+view act socket_is_valid(s: @Socket) -> bool {
     return s != null and s.fd != INVALID_SOCKET and not s.is_closed
 }
 
 // Closes a socket and releases its system resources.
-act socket_close(s: @Socket) -> bool {
+view act socket_close(s: @Socket) -> bool {
     if s == null or s.is_closed or s.fd == INVALID_SOCKET {
         return false
     }
@@ -89,7 +89,7 @@ act socket_close(s: @Socket) -> bool {
 }
 
 // Configures non-blocking I/O mode on the socket.
-act socket_set_nonblocking(s: @Socket, nonblocking: bool) -> bool {
+view act socket_set_nonblocking(s: @Socket, nonblocking: bool) -> bool {
     if not socket_is_valid(s) { return false }
     let flags = fcntl(s.fd as i32, F_GETFL, 0)
     if flags < 0 { return false }
@@ -105,7 +105,7 @@ act socket_set_nonblocking(s: @Socket, nonblocking: bool) -> bool {
 }
 
 // Enables or disables local address reuse (SO_REUSEADDR).
-act socket_set_reuse_addr(s: @Socket, reuse: bool) -> bool {
+view act socket_set_reuse_addr(s: @Socket, reuse: bool) -> bool {
     if not socket_is_valid(s) { return false }
     mut val: i32 = 0
     if reuse { val = 1 }
@@ -114,7 +114,7 @@ act socket_set_reuse_addr(s: @Socket, reuse: bool) -> bool {
 }
 
 // Sets the send and receive timeout on the socket in milliseconds.
-act socket_set_timeout(s: @Socket, timeout_ms: u32) -> bool {
+view act socket_set_timeout(s: @Socket, timeout_ms: u32) -> bool {
     if not socket_is_valid(s) { return false }
     mut ms: i32 = timeout_ms as i32
     let r1 = setsockopt(s.fd as i32, SOL_SOCKET, SO_RCVTIMEO, @ms, 4)
@@ -128,7 +128,7 @@ act socket_set_timeout(s: @Socket, timeout_ms: u32) -> bool {
 // a platform-typed extern - `int` here, `SOCKET` on Windows - so a neutral file
 // holding the call cannot be correct on both targets. It belongs to the variant
 // that already owns the descriptor type.
-act socket_set_broadcast(s: @Socket, enabled: bool) -> bool {
+view act socket_set_broadcast(s: @Socket, enabled: bool) -> bool {
     if not socket_is_valid(s) { return false }
     mut val: i32 = 0
     if enabled { val = 1 }
@@ -137,7 +137,7 @@ act socket_set_broadcast(s: @Socket, enabled: bool) -> bool {
 }
 
 // Binds a socket to a local IPv4 address and port.
-act socket_bind(s: @Socket, ip: string, port: u16) -> bool {
+view act socket_bind(s: @Socket, ip: string, port: u16) -> bool {
     if not socket_is_valid(s) { return false }
     mut addr: SockAddrIn
     sockaddr_in_init(@addr, ip, port)
@@ -146,7 +146,7 @@ act socket_bind(s: @Socket, ip: string, port: u16) -> bool {
 }
 
 // Puts a stream socket into listening mode for incoming connections.
-act socket_listen(s: @Socket, backlog: i32) -> bool {
+view act socket_listen(s: @Socket, backlog: i32) -> bool {
     if not socket_is_valid(s) { return false }
     mut bl = backlog
     if bl <= 0 { bl = 128 }
@@ -155,7 +155,7 @@ act socket_listen(s: @Socket, backlog: i32) -> bool {
 }
 
 // Connects a stream socket to a remote server.
-act socket_connect(s: @Socket, ip: string, port: u16) -> bool {
+view act socket_connect(s: @Socket, ip: string, port: u16) -> bool {
     if not socket_is_valid(s) { return false }
     mut addr: SockAddrIn
     sockaddr_in_init(@addr, ip, port)
@@ -164,7 +164,7 @@ act socket_connect(s: @Socket, ip: string, port: u16) -> bool {
 }
 
 // Accepts an incoming connection on a listening socket.
-act socket_accept(s: @Socket, out_addr: @SocketAddr) -> Socket {
+view act socket_accept(s: @Socket, out_addr: @SocketAddr) -> Socket {
     if not socket_is_valid(s) {
         return Socket {
             fd: INVALID_SOCKET,
@@ -201,19 +201,19 @@ act socket_accept(s: @Socket, out_addr: @SocketAddr) -> Socket {
 }
 
 // Transmits bytes on a connected stream socket. Returns number of bytes sent or -1 on error.
-act socket_send(s: @Socket, buf: @u8, len: usize) -> i32 {
+view act socket_send(s: @Socket, buf: @u8, len: usize) -> i32 {
     if not socket_is_valid(s) or buf == null { return -1 }
     return send(s.fd as i32, buf, len, 0) as i32
 }
 
 // Receives bytes from a connected stream socket. Returns number of bytes read or -1 on error.
-act socket_recv(s: @Socket, buf: @u8, max_len: usize) -> i32 {
+view act socket_recv(s: @Socket, buf: @u8, max_len: usize) -> i32 {
     if not socket_is_valid(s) or buf == null { return -1 }
     return recv(s.fd as i32, buf, max_len, 0) as i32
 }
 
 // Sends a datagram to a specific remote destination. Returns bytes sent or -1 on error.
-act socket_send_to(s: @Socket, buf: @u8, len: usize, dest_ip: string, dest_port: u16) -> i32 {
+view act socket_send_to(s: @Socket, buf: @u8, len: usize, dest_ip: string, dest_port: u16) -> i32 {
     if not socket_is_valid(s) or buf == null { return -1 }
     mut addr: SockAddrIn
     sockaddr_in_init(@addr, dest_ip, dest_port)
@@ -221,7 +221,7 @@ act socket_send_to(s: @Socket, buf: @u8, len: usize, dest_ip: string, dest_port:
 }
 
 // Receives a datagram and captures the remote sender address. Returns bytes read or -1 on error.
-act socket_recv_from(s: @Socket, buf: @u8, max_len: usize, out_addr: @SocketAddr) -> i32 {
+view act socket_recv_from(s: @Socket, buf: @u8, max_len: usize, out_addr: @SocketAddr) -> i32 {
     if not socket_is_valid(s) or buf == null { return -1 }
     mut addr: SockAddrIn
     mut len: u32 = 16

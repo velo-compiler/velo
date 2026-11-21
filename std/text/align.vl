@@ -4,7 +4,7 @@ use "../mem/heap.vl"
 use "../str.vl"
 
 // Left-aligns a string within a field of the given width, padding the right side with pad_char.
-act text_align_left(s: string, width: usize, pad_char: u8) -> string {
+view act text_align_left(s: string, width: usize, pad_char: u8) -> string {
     if s == null { return text_repeat_char(pad_char, width) }
     let slen = str.len(s)
     if slen >= width { return s }
@@ -26,7 +26,7 @@ act text_align_left(s: string, width: usize, pad_char: u8) -> string {
 }
 
 // Right-aligns a string within a field of the given width, padding the left side with pad_char.
-act text_align_right(s: string, width: usize, pad_char: u8) -> string {
+view act text_align_right(s: string, width: usize, pad_char: u8) -> string {
     if s == null { return text_repeat_char(pad_char, width) }
     let slen = str.len(s)
     if slen >= width { return s }
@@ -50,7 +50,7 @@ act text_align_right(s: string, width: usize, pad_char: u8) -> string {
 }
 
 // Centers a string within a field of the given width, padding left and right with pad_char.
-act text_align_center(s: string, width: usize, pad_char: u8) -> string {
+view act text_align_center(s: string, width: usize, pad_char: u8) -> string {
     if s == null { return text_repeat_char(pad_char, width) }
     let slen = str.len(s)
     if slen >= width { return s }
@@ -82,7 +82,7 @@ act text_align_center(s: string, width: usize, pad_char: u8) -> string {
 }
 
 // Fully justifies a single line of words to exactly `width` columns by evenly distributing spaces.
-act text_justify(line: string, width: usize) -> string {
+view act text_justify(line: string, width: usize) -> string {
     if line == null or width == 0 { return "" }
     let len = str.len(line)
     if len == 0 { return text_repeat_char(' ' as u8, width) }

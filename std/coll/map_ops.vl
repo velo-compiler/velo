@@ -11,7 +11,7 @@ use "hash.vl"
 use "map.vl"
 
 // Rebuilds live rows in-place at the current capacity, purging all tombstones.
-act map_compact(m: @RawMap) -> bool {
+view act map_compact(m: @RawMap) -> bool {
     if m == null or m.cap == 0 or m.hashes == null {
         return false
     }
@@ -61,7 +61,7 @@ act map_compact(m: @RawMap) -> bool {
 }
 
 // Shrinks the map's capacity down to fit live elements, reclaiming unused memory.
-act map_shrink_to_fit(m: @RawMap) -> bool {
+view act map_shrink_to_fit(m: @RawMap) -> bool {
     if m == null or m.cap <= 8 {
         return false
     }
@@ -125,7 +125,7 @@ act map_shrink_to_fit(m: @RawMap) -> bool {
 
 // Removes key from the map, copying out the previous value.
 // Marks slot as a tombstone and triggers in-place compaction if tombstones exceed 50% cap.
-act map_take(m: @RawMap, key: @u8, out_val: @u8) -> bool {
+view act map_take(m: @RawMap, key: @u8, out_val: @u8) -> bool {
     if m == null or key == null or m.cap == 0 or m.hashes == null or m.len == 0 {
         return false
     }
@@ -157,12 +157,12 @@ act map_take(m: @RawMap, key: @u8, out_val: @u8) -> bool {
 }
 
 // Removes key from the map without copying out the value.
-act map_delete(m: @RawMap, key: @u8) -> bool {
+view act map_delete(m: @RawMap, key: @u8) -> bool {
     return map_take(m, key, null)
 }
 
 // Extracts all active keys into a fresh dynamic RawShelf in hash order.
-act map_keys_to_shelf(m: @RawMap) -> RawShelf {
+view act map_keys_to_shelf(m: @RawMap) -> RawShelf {
     if m == null or m.len == 0 or m.hashes == null {
         return shelf_create(8, 0)
     }
@@ -180,7 +180,7 @@ act map_keys_to_shelf(m: @RawMap) -> RawShelf {
 }
 
 // Extracts all active values into a fresh dynamic RawShelf in hash order.
-act map_values_to_shelf(m: @RawMap) -> RawShelf {
+view act map_values_to_shelf(m: @RawMap) -> RawShelf {
     if m == null or m.len == 0 or m.hashes == null {
         return shelf_create(8, 0)
     }
@@ -199,7 +199,7 @@ act map_values_to_shelf(m: @RawMap) -> RawShelf {
 
 // Copies all active keys and values into contiguous destination buffers.
 // Returns the total number of entries written.
-act map_copy_entries(m: @RawMap, out_keys: @u8, out_vals: @u8) -> usize {
+view act map_copy_entries(m: @RawMap, out_keys: @u8, out_vals: @u8) -> usize {
     if m == null or m.len == 0 or m.hashes == null { return 0 }
     mut count: usize = 0
     mut i: usize = 0
@@ -225,13 +225,13 @@ act map_copy_entries(m: @RawMap, out_keys: @u8, out_vals: @u8) -> usize {
 
 // --- Typed convenience helpers ---
 
-act map_delete_str(m: @RawMap, key: string) -> bool {
+view act map_delete_str(m: @RawMap, key: string) -> bool {
     mut k = key
     let pk: @string = @k
     return map_delete(m, pk as @u8)
 }
 
-act map_take_str_i64(m: @RawMap, key: string, out_val: @i64) -> bool {
+view act map_take_str_i64(m: @RawMap, key: string, out_val: @i64) -> bool {
     mut k = key
     let pk: @string = @k
     if out_val == null {
@@ -241,7 +241,7 @@ act map_take_str_i64(m: @RawMap, key: string, out_val: @i64) -> bool {
     return map_take(m, pk as @u8, p_out as @u8)
 }
 
-act map_take_str_slice(m: @RawMap, key: string, out_val: @StrSlice) -> bool {
+view act map_take_str_slice(m: @RawMap, key: string, out_val: @StrSlice) -> bool {
     mut k = key
     let pk: @string = @k
     if out_val == null {
@@ -251,13 +251,13 @@ act map_take_str_slice(m: @RawMap, key: string, out_val: @StrSlice) -> bool {
     return map_take(m, pk as @u8, p_out as @u8)
 }
 
-act map_delete_i64(m: @RawMap, key: i64) -> bool {
+view act map_delete_i64(m: @RawMap, key: i64) -> bool {
     mut k = key
     let pk: @i64 = @k
     return map_delete(m, pk as @u8)
 }
 
-act map_take_i64_i64(m: @RawMap, key: i64, out_val: @i64) -> bool {
+view act map_take_i64_i64(m: @RawMap, key: i64, out_val: @i64) -> bool {
     mut k = key
     let pk: @i64 = @k
     if out_val == null {
@@ -267,13 +267,13 @@ act map_take_i64_i64(m: @RawMap, key: i64, out_val: @i64) -> bool {
     return map_take(m, pk as @u8, p_out as @u8)
 }
 
-act map_delete_u64(m: @RawMap, key: u64) -> bool {
+view act map_delete_u64(m: @RawMap, key: u64) -> bool {
     mut k = key
     let pk: @u64 = @k
     return map_delete(m, pk as @u8)
 }
 
-act map_take_u64_u64(m: @RawMap, key: u64, out_val: @u64) -> bool {
+view act map_take_u64_u64(m: @RawMap, key: u64, out_val: @u64) -> bool {
     mut k = key
     let pk: @u64 = @k
     if out_val == null {

@@ -7,20 +7,20 @@ use "../str/builder.vl"
 use "proc_types.vl"
 use "proc.vl"
 
-data PipePollFd {
+view data PipePollFd {
     fd: i32,
     events: i16,
     revents: i16,
 }
 
-extern act pipe(pipefd: @i32) -> i32
-extern act read(fd: i32, buf: @u8, count: usize) -> isize
-extern act write(fd: i32, buf: @u8, count: usize) -> isize
-extern act close(fd: i32) -> i32
-extern act velo_posix_poll(fds: @void, nfds: u32, timeout: i32) -> i32
+view extern act pipe(pipefd: @i32) -> i32
+view extern act read(fd: i32, buf: @u8, count: usize) -> isize
+view extern act write(fd: i32, buf: @u8, count: usize) -> isize
+view extern act close(fd: i32) -> i32
+view extern act velo_posix_poll(fds: @void, nfds: u32, timeout: i32) -> i32
 
 // Creates an anonymous OS pipe on macOS.
-act os_pipe_create() -> Pipe {
+view act os_pipe_create() -> Pipe {
     let fds = heap_alloc(8) as @i32
     if fds == null {
         return Pipe { read_handle: null, write_handle: null }
@@ -36,7 +36,7 @@ act os_pipe_create() -> Pipe {
     return Pipe { read_handle: r_fd as @void, write_handle: w_fd as @void }
 }
 
-act os_pipe_read(h_pipe: @void, buf: @u8, count: usize) -> usize {
+view act os_pipe_read(h_pipe: @void, buf: @u8, count: usize) -> usize {
     if h_pipe == null or buf == null or count == 0 { return 0 }
     let fd = (h_pipe as usize) as i32
     let res = read(fd, buf, count)
@@ -44,7 +44,7 @@ act os_pipe_read(h_pipe: @void, buf: @u8, count: usize) -> usize {
     return res as usize
 }
 
-act os_pipe_write(h_pipe: @void, buf: @u8, count: usize) -> usize {
+view act os_pipe_write(h_pipe: @void, buf: @u8, count: usize) -> usize {
     if h_pipe == null or buf == null or count == 0 { return 0 }
     let fd = (h_pipe as usize) as i32
     let res = write(fd, buf, count)
@@ -52,7 +52,7 @@ act os_pipe_write(h_pipe: @void, buf: @u8, count: usize) -> usize {
     return res as usize
 }
 
-act os_pipe_close_read(pipe: @Pipe) {
+view act os_pipe_close_read(pipe: @Pipe) {
     if pipe != null and pipe.read_handle != null {
         let fd = (pipe.read_handle as usize) as i32
         close(fd)
@@ -60,7 +60,7 @@ act os_pipe_close_read(pipe: @Pipe) {
     }
 }
 
-act os_pipe_close_write(pipe: @Pipe) {
+view act os_pipe_close_write(pipe: @Pipe) {
     if pipe != null and pipe.write_handle != null {
         let fd = (pipe.write_handle as usize) as i32
         close(fd)
@@ -68,14 +68,14 @@ act os_pipe_close_write(pipe: @Pipe) {
     }
 }
 
-act os_pipe_close(pipe: @Pipe) {
+view act os_pipe_close(pipe: @Pipe) {
     if pipe == null { return }
     os_pipe_close_read(pipe)
     os_pipe_close_write(pipe)
 }
 
 // Asynchronously drains stdout and stderr pipes until child process terminates.
-act os_pipe_drain_streams(arena: @Arena, h_out: @void, h_err: @void, proc: @ProcessHandle) -> ProcessOutput {
+view act os_pipe_drain_streams(arena: @Arena, h_out: @void, h_err: @void, proc: @ProcessHandle) -> ProcessOutput {
     mut out_sb = sb_init(arena, 256)
     mut err_sb = sb_init(arena, 256)
     let buf = heap_alloc(4096)

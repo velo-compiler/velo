@@ -7,7 +7,7 @@ use "checked.vl"
 
 // Returns the absolute value of a 32-bit signed integer.
 // Saturates to INT32_MAX if x == INT32_MIN.
-act abs_i32(x: i32) -> i32 {
+view act abs_i32(x: i32) -> i32 {
     let min_val: i32 = (-2147483647 as i32) - (1 as i32)
     if x == min_val { return 2147483647 as i32 }
     if x < (0 as i32) { return -x }
@@ -16,7 +16,7 @@ act abs_i32(x: i32) -> i32 {
 
 // Returns the absolute value of a 64-bit signed integer.
 // Saturates to INT64_MAX if x == INT64_MIN.
-act abs_i64(x: i64) -> i64 {
+view act abs_i64(x: i64) -> i64 {
     let min_val: i64 = (-9223372036854775807 as i64) - (1 as i64)
     if x == min_val { return 9223372036854775807 as i64 }
     if x < (0 as i64) { return -x }
@@ -24,90 +24,90 @@ act abs_i64(x: i64) -> i64 {
 }
 
 // Returns the minimum of two 32-bit signed integers.
-act min_i32(a: i32, b: i32) -> i32 {
+view act min_i32(a: i32, b: i32) -> i32 {
     if a < b { return a }
     return b
 }
 
 // Returns the maximum of two 32-bit signed integers.
-act max_i32(a: i32, b: i32) -> i32 {
+view act max_i32(a: i32, b: i32) -> i32 {
     if a > b { return a }
     return b
 }
 
 // Returns the minimum of two 64-bit signed integers.
-act min_i64(a: i64, b: i64) -> i64 {
+view act min_i64(a: i64, b: i64) -> i64 {
     if a < b { return a }
     return b
 }
 
 // Returns the maximum of two 64-bit signed integers.
-act max_i64(a: i64, b: i64) -> i64 {
+view act max_i64(a: i64, b: i64) -> i64 {
     if a > b { return a }
     return b
 }
 
 // Returns the minimum of two 32-bit unsigned integers.
-act min_u32(a: u32, b: u32) -> u32 {
+view act min_u32(a: u32, b: u32) -> u32 {
     if a < b { return a }
     return b
 }
 
 // Returns the maximum of two 32-bit unsigned integers.
-act max_u32(a: u32, b: u32) -> u32 {
+view act max_u32(a: u32, b: u32) -> u32 {
     if a > b { return a }
     return b
 }
 
 // Returns the minimum of two 64-bit unsigned integers.
-act min_u64(a: u64, b: u64) -> u64 {
+view act min_u64(a: u64, b: u64) -> u64 {
     if a < b { return a }
     return b
 }
 
 // Returns the maximum of two 64-bit unsigned integers.
-act max_u64(a: u64, b: u64) -> u64 {
+view act max_u64(a: u64, b: u64) -> u64 {
     if a > b { return a }
     return b
 }
 
 // Clamps a 32-bit signed integer to the range [lo, hi].
-act clamp_i32(v: i32, lo: i32, hi: i32) -> i32 {
+view act clamp_i32(v: i32, lo: i32, hi: i32) -> i32 {
     if v < lo { return lo }
     if v > hi { return hi }
     return v
 }
 
 // Clamps a 64-bit signed integer to the range [lo, hi].
-act clamp_i64(v: i64, lo: i64, hi: i64) -> i64 {
+view act clamp_i64(v: i64, lo: i64, hi: i64) -> i64 {
     if v < lo { return lo }
     if v > hi { return hi }
     return v
 }
 
 // Clamps a 32-bit unsigned integer to the range [lo, hi].
-act clamp_u32(v: u32, lo: u32, hi: u32) -> u32 {
+view act clamp_u32(v: u32, lo: u32, hi: u32) -> u32 {
     if v < lo { return lo }
     if v > hi { return hi }
     return v
 }
 
 // Clamps a 64-bit unsigned integer to the range [lo, hi].
-act clamp_u64(v: u64, lo: u64, hi: u64) -> u64 {
+view act clamp_u64(v: u64, lo: u64, hi: u64) -> u64 {
     if v < lo { return lo }
     if v > hi { return hi }
     return v
 }
 
 // Returns the sign of a 32-bit signed integer: -1 if negative, 0 if zero, 1 if positive.
-act signum_i32(x: i32) -> i32 {
+view act signum_i32(x: i32) -> i32 {
     if x > (0 as i32) { return 1 as i32 }
     if x < (0 as i32) { return -1 as i32 }
     return 0 as i32
 }
 
 // Returns the sign of a 64-bit signed integer: -1 if negative, 0 if zero, 1 if positive.
-act signum_i64(x: i64) -> i64 {
+view act signum_i64(x: i64) -> i64 {
     if x > (0 as i64) { return 1 as i64 }
     if x < (0 as i64) { return -1 as i64 }
     return 0 as i64
@@ -116,33 +116,33 @@ act signum_i64(x: i64) -> i64 {
 // --- Saturating Arithmetic ---
 
 // Computes a + b, saturating at UINT32_MAX on overflow.
-act add_sat_u32(a: u32, b: u32) -> u32 {
+view act add_sat_u32(a: u32, b: u32) -> u32 {
     let sum = a + b
     if sum < a { return 0xFFFFFFFF as u32 }
     return sum
 }
 
 // Computes a + b, saturating at UINT64_MAX on overflow.
-act add_sat_u64(a: u64, b: u64) -> u64 {
+view act add_sat_u64(a: u64, b: u64) -> u64 {
     let sum = a + b
     if sum < a { return 0xFFFFFFFFFFFFFFFF as u64 }
     return sum
 }
 
 // Computes a - b, saturating at 0 on underflow.
-act sub_sat_u32(a: u32, b: u32) -> u32 {
+view act sub_sat_u32(a: u32, b: u32) -> u32 {
     if a < b { return 0 as u32 }
     return a - b
 }
 
 // Computes a - b, saturating at 0 on underflow.
-act sub_sat_u64(a: u64, b: u64) -> u64 {
+view act sub_sat_u64(a: u64, b: u64) -> u64 {
     if a < b { return 0 as u64 }
     return a - b
 }
 
 // Computes a + b, saturating at INT32_MIN on underflow or INT32_MAX on overflow.
-act add_sat_i32(a: i32, b: i32) -> i32 {
+view act add_sat_i32(a: i32, b: i32) -> i32 {
     let max_val: i32 = 2147483647 as i32
     let min_val: i32 = (-2147483647 as i32) - (1 as i32)
     if b > (0 as i32) and a > max_val - b { return max_val }
@@ -151,7 +151,7 @@ act add_sat_i32(a: i32, b: i32) -> i32 {
 }
 
 // Computes a + b, saturating at INT64_MIN on underflow or INT64_MAX on overflow.
-act add_sat_i64(a: i64, b: i64) -> i64 {
+view act add_sat_i64(a: i64, b: i64) -> i64 {
     let max_val: i64 = 9223372036854775807 as i64
     let min_val: i64 = (-9223372036854775807 as i64) - (1 as i64)
     if b > (0 as i64) and a > max_val - b { return max_val }
@@ -160,7 +160,7 @@ act add_sat_i64(a: i64, b: i64) -> i64 {
 }
 
 // Computes a - b, saturating at INT32_MIN on underflow or INT32_MAX on overflow.
-act sub_sat_i32(a: i32, b: i32) -> i32 {
+view act sub_sat_i32(a: i32, b: i32) -> i32 {
     let max_val: i32 = 2147483647 as i32
     let min_val: i32 = (-2147483647 as i32) - (1 as i32)
     if b < (0 as i32) and a > max_val + b { return max_val }
@@ -169,7 +169,7 @@ act sub_sat_i32(a: i32, b: i32) -> i32 {
 }
 
 // Computes a - b, saturating at INT64_MIN on underflow or INT64_MAX on overflow.
-act sub_sat_i64(a: i64, b: i64) -> i64 {
+view act sub_sat_i64(a: i64, b: i64) -> i64 {
     let max_val: i64 = 9223372036854775807 as i64
     let min_val: i64 = (-9223372036854775807 as i64) - (1 as i64)
     if b < (0 as i64) and a > max_val + b { return max_val }
@@ -178,7 +178,7 @@ act sub_sat_i64(a: i64, b: i64) -> i64 {
 }
 
 // Computes a * b, saturating at INT32_MIN on underflow or INT32_MAX on overflow.
-act mul_sat_i32(a: i32, b: i32) -> i32 {
+view act mul_sat_i32(a: i32, b: i32) -> i32 {
     let prod = (a as i64) * (b as i64)
     let max_val: i64 = 2147483647 as i64
     let min_val: i64 = (-2147483647 as i64) - (1 as i64)
@@ -188,7 +188,7 @@ act mul_sat_i32(a: i32, b: i32) -> i32 {
 }
 
 // Computes a * b, saturating at INT64_MIN on underflow or INT64_MAX on overflow.
-act mul_sat_i64(a: i64, b: i64) -> i64 {
+view act mul_sat_i64(a: i64, b: i64) -> i64 {
     if a == (0 as i64) or b == (0 as i64) { return 0 as i64 }
     if a == (1 as i64) { return b }
     if b == (1 as i64) { return a }
@@ -222,7 +222,7 @@ act mul_sat_i64(a: i64, b: i64) -> i64 {
 // --- Number Theory and Discrete Mathematics ---
 
 // Computes the Greatest Common Divisor of two 64-bit unsigned integers.
-act gcd_u64(a: u64, b: u64) -> u64 {
+view act gcd_u64(a: u64, b: u64) -> u64 {
     mut x = a
     mut y = b
     loop y != (0 as u64) {
@@ -234,14 +234,14 @@ act gcd_u64(a: u64, b: u64) -> u64 {
 }
 
 // Computes the Greatest Common Divisor of two 64-bit signed integers.
-act gcd_i64(a: i64, b: i64) -> i64 {
+view act gcd_i64(a: i64, b: i64) -> i64 {
     let ua = abs_i64(a) as u64
     let ub = abs_i64(b) as u64
     return gcd_u64(ua, ub) as i64
 }
 
 // Computes the Least Common Multiple of two 64-bit unsigned integers.
-act lcm_u64(a: u64, b: u64) -> u64 {
+view act lcm_u64(a: u64, b: u64) -> u64 {
     if a == (0 as u64) or b == (0 as u64) { return 0 as u64 }
     let g = gcd_u64(a, b)
     return (a / g) * b
@@ -249,7 +249,7 @@ act lcm_u64(a: u64, b: u64) -> u64 {
 
 // Computes the integer square root floor(sqrt(x)) for a 64-bit unsigned integer.
 // Uses an integer Newton-Raphson method with initial approximation from clz64.
-act isqrt_u64(x: u64) -> u64 {
+view act isqrt_u64(x: u64) -> u64 {
     if x <= (1 as u64) { return x }
     let leading = clz64(x)
     let shift = ((64 as u32) - leading) / (2 as u32)
@@ -263,12 +263,12 @@ act isqrt_u64(x: u64) -> u64 {
 }
 
 // Computes the integer square root floor(sqrt(x)) for a 32-bit unsigned integer.
-act isqrt_u32(x: u32) -> u32 {
+view act isqrt_u32(x: u32) -> u32 {
     return isqrt_u64(x as u64) as u32
 }
 
 // Computes base^exp for 64-bit unsigned integers via binary exponentiation.
-act pow_u64(base: u64, exp: u32) -> u64 {
+view act pow_u64(base: u64, exp: u32) -> u64 {
     if exp == (0 as u32) { return 1 as u64 }
     if base == (0 as u64) { return 0 as u64 }
     mut res: u64 = 1 as u64
@@ -287,7 +287,7 @@ act pow_u64(base: u64, exp: u32) -> u64 {
 }
 
 // Computes base^exp for 64-bit signed integers via binary exponentiation.
-act pow_i64(base: i64, exp: u32) -> i64 {
+view act pow_i64(base: i64, exp: u32) -> i64 {
     if exp == (0 as u32) { return 1 as i64 }
     if base == (0 as i64) { return 0 as i64 }
     mut res: i64 = 1 as i64
@@ -306,21 +306,21 @@ act pow_i64(base: i64, exp: u32) -> i64 {
 }
 
 // Computes ceil(a / b) for 64-bit unsigned integers without integer overflow.
-act div_ceil_u64(a: u64, b: u64) -> u64 {
+view act div_ceil_u64(a: u64, b: u64) -> u64 {
     if b == (0 as u64) { return 0 as u64 }
     if a == (0 as u64) { return 0 as u64 }
     return (1 as u64) + ((a - (1 as u64)) / b)
 }
 
 // Computes ceil(a / b) for 32-bit unsigned integers without integer overflow.
-act div_ceil_u32(a: u32, b: u32) -> u32 {
+view act div_ceil_u32(a: u32, b: u32) -> u32 {
     if b == (0 as u32) { return 0 as u32 }
     if a == (0 as u32) { return 0 as u32 }
     return (1 as u32) + ((a - (1 as u32)) / b)
 }
 
 // Computes ceil(a / b) for 64-bit signed integers (rounding towards positive infinity).
-act div_ceil_i64(a: i64, b: i64) -> i64 {
+view act div_ceil_i64(a: i64, b: i64) -> i64 {
     if b == (0 as i64) { return 0 as i64 }
     let q = a / b
     let rem = a % b

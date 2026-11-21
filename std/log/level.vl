@@ -1,23 +1,23 @@
 // std.log.level — Logging severity levels, string mappings, and ANSI colors.
 
-let LOG_TRACE: u8 = 0
-let LOG_DEBUG: u8 = 1
-let LOG_INFO: u8 = 2
-let LOG_WARN: u8 = 3
-let LOG_ERROR: u8 = 4
-let LOG_FATAL: u8 = 5
-let LOG_OFF: u8 = 6
+view let LOG_TRACE: u8 = 0
+view let LOG_DEBUG: u8 = 1
+view let LOG_INFO: u8 = 2
+view let LOG_WARN: u8 = 3
+view let LOG_ERROR: u8 = 4
+view let LOG_FATAL: u8 = 5
+view let LOG_OFF: u8 = 6
 
-let ANSI_RESET: string = "\x1b[0m"
-let ANSI_GRAY: string = "\x1b[90m"
-let ANSI_CYAN: string = "\x1b[36m"
-let ANSI_GREEN: string = "\x1b[32m"
-let ANSI_YELLOW: string = "\x1b[33m"
-let ANSI_RED: string = "\x1b[31m"
-let ANSI_BOLD_RED: string = "\x1b[1;31m"
+view let ANSI_RESET: string = "\x1b[0m"
+view let ANSI_GRAY: string = "\x1b[90m"
+view let ANSI_CYAN: string = "\x1b[36m"
+view let ANSI_GREEN: string = "\x1b[32m"
+view let ANSI_YELLOW: string = "\x1b[33m"
+view let ANSI_RED: string = "\x1b[31m"
+view let ANSI_BOLD_RED: string = "\x1b[1;31m"
 
 // Returns the uppercase string name for a given severity level.
-act log_level_name(level: u8) -> string {
+view act log_level_name(level: u8) -> string {
     if level == 0 as u8 { return "TRACE" }
     if level == 1 as u8 { return "DEBUG" }
     if level == 2 as u8 { return "INFO" }
@@ -29,7 +29,7 @@ act log_level_name(level: u8) -> string {
 }
 
 // Parses a string into a severity level (case-insensitive).
-act log_level_from_str(s: string) -> u8 {
+view act log_level_from_str(s: string) -> u8 {
     if s == null { return 2 as u8 }
     let len = str.len(s)
     if len == 0 { return 2 as u8 }
@@ -58,7 +58,7 @@ act log_level_from_str(s: string) -> u8 {
 }
 
 // Returns the ANSI color escape sequence associated with the severity level.
-act log_level_color(level: u8) -> string {
+view act log_level_color(level: u8) -> string {
     if level == 0 as u8 { return ANSI_GRAY }
     if level == 1 as u8 { return ANSI_CYAN }
     if level == 2 as u8 { return ANSI_GREEN }

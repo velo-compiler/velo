@@ -24,10 +24,10 @@ use "../str/slice.vl"
 // An `extern` declaration reuses the header's `static inline` definition --
 // C99 6.2.2p4 keeps internal linkage for an extern that follows a visible
 // static one, the mechanism Phase 70 / Task 70.1 established.
-extern act velo_fs_stat_into(path: string, out: @i64) -> bool
+view extern act velo_fs_stat_into(path: string, out: @i64) -> bool
 
 // OS File metadata descriptor
-data FileStat {
+view data FileStat {
     size: i64,
     is_dir: bool,
     is_file: bool,
@@ -39,7 +39,7 @@ data FileStat {
 }
 
 // Returns an empty FileStat indicating a non-existent or inaccessible file.
-act fs_stat_not_found() -> FileStat {
+view act fs_stat_not_found() -> FileStat {
     return FileStat {
         size: 0,
         is_dir: false,
@@ -53,7 +53,7 @@ act fs_stat_not_found() -> FileStat {
 }
 
 // Queries file metadata for a null-terminated path pointer.
-act fs_stat(path: @u8) -> FileStat {
+view act fs_stat(path: @u8) -> FileStat {
     if path == null {
         return fs_stat_not_found()
     }
@@ -92,7 +92,7 @@ act fs_stat(path: @u8) -> FileStat {
 }
 
 // Queries file metadata for a StrSlice view.
-act fs_stat_slice(path: StrSlice) -> FileStat {
+view act fs_stat_slice(path: StrSlice) -> FileStat {
     if slice_is_empty(path) {
         return fs_stat_not_found()
     }
@@ -109,7 +109,7 @@ act fs_stat_slice(path: StrSlice) -> FileStat {
 }
 
 // Queries file metadata for a Velo string.
-act fs_stat_str(path: string) -> FileStat {
+view act fs_stat_str(path: string) -> FileStat {
     if path == null {
         return fs_stat_not_found()
     }
@@ -117,43 +117,43 @@ act fs_stat_str(path: string) -> FileStat {
 }
 
 // Returns true if the file or directory exists.
-act fs_exists(path: string) -> bool {
+view act fs_exists(path: string) -> bool {
     let st = fs_stat_str(path)
     return st.exists
 }
 
 // Returns true if the slice path exists.
-act fs_exists_slice(path: StrSlice) -> bool {
+view act fs_exists_slice(path: StrSlice) -> bool {
     let st = fs_stat_slice(path)
     return st.exists
 }
 
 // Returns true if the path exists and is a regular file.
-act fs_is_file(path: string) -> bool {
+view act fs_is_file(path: string) -> bool {
     let st = fs_stat_str(path)
     return st.exists and st.is_file
 }
 
 // Returns true if the slice path exists and is a regular file.
-act fs_is_file_slice(path: StrSlice) -> bool {
+view act fs_is_file_slice(path: StrSlice) -> bool {
     let st = fs_stat_slice(path)
     return st.exists and st.is_file
 }
 
 // Returns true if the path exists and is a directory.
-act fs_is_dir(path: string) -> bool {
+view act fs_is_dir(path: string) -> bool {
     let st = fs_stat_str(path)
     return st.exists and st.is_dir
 }
 
 // Returns true if the slice path exists and is a directory.
-act fs_is_dir_slice(path: StrSlice) -> bool {
+view act fs_is_dir_slice(path: StrSlice) -> bool {
     let st = fs_stat_slice(path)
     return st.exists and st.is_dir
 }
 
 // Returns the file size in bytes, or -1 if the file does not exist.
-act fs_file_size(path: string) -> i64 {
+view act fs_file_size(path: string) -> i64 {
     let st = fs_stat_str(path)
     if !st.exists {
         return 0 - 1
@@ -162,7 +162,7 @@ act fs_file_size(path: string) -> i64 {
 }
 
 // Returns the file size in bytes from a slice, or -1 if the file does not exist.
-act fs_file_size_slice(path: StrSlice) -> i64 {
+view act fs_file_size_slice(path: StrSlice) -> i64 {
     let st = fs_stat_slice(path)
     if !st.exists {
         return 0 - 1
@@ -171,13 +171,13 @@ act fs_file_size_slice(path: StrSlice) -> i64 {
 }
 
 // Returns true if the file exists and is marked read-only.
-act fs_is_readonly(path: string) -> bool {
+view act fs_is_readonly(path: string) -> bool {
     let st = fs_stat_str(path)
     return st.exists and st.is_readonly
 }
 
 // Returns true if the slice path exists and is marked read-only.
-act fs_is_readonly_slice(path: StrSlice) -> bool {
+view act fs_is_readonly_slice(path: StrSlice) -> bool {
     let st = fs_stat_slice(path)
     return st.exists and st.is_readonly
 }

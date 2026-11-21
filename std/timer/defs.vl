@@ -2,39 +2,39 @@
 use "../time/clock.vl"
 use "../time/sleep.vl"
 
-let TIMER_NS_PER_US: u64 = 1000 as u64
-let TIMER_NS_PER_MS: u64 = 1000000 as u64
-let TIMER_NS_PER_SEC: u64 = 1000000000 as u64
-let TIMER_US_PER_MS: u64 = 1000 as u64
-let TIMER_MS_PER_SEC: u64 = 1000 as u64
+view let TIMER_NS_PER_US: u64 = 1000 as u64
+view let TIMER_NS_PER_MS: u64 = 1000000 as u64
+view let TIMER_NS_PER_SEC: u64 = 1000000000 as u64
+view let TIMER_US_PER_MS: u64 = 1000 as u64
+view let TIMER_MS_PER_SEC: u64 = 1000 as u64
 
 // Returns the current high-resolution monotonic timestamp in nanoseconds.
-act timer_now_ns() -> u64 {
+view act timer_now_ns() -> u64 {
     return time_monotonic_ns()
 }
 
 // Returns the current high-resolution monotonic timestamp in microseconds.
-act timer_now_us() -> u64 {
+view act timer_now_us() -> u64 {
     return time_monotonic_us()
 }
 
 // Returns the current high-resolution monotonic timestamp in milliseconds.
-act timer_now_ms() -> u64 {
+view act timer_now_ms() -> u64 {
     return time_monotonic_ms()
 }
 
 // Suspends the current thread for at least the specified number of milliseconds.
-act timer_sleep_ms(ms: u64) {
+view act timer_sleep_ms(ms: u64) {
     time_sleep_ms(ms as u32)
 }
 
 // Suspends the current thread for at least the specified number of nanoseconds.
-act timer_sleep_ns(ns: u64) {
+view act timer_sleep_ns(ns: u64) {
     time_sleep_ns(ns)
 }
 
 // High-precision busy wait for sub-millisecond durations without yielding thread quantum.
-act timer_spin_wait_ns(ns: u64) {
+view act timer_spin_wait_ns(ns: u64) {
     if ns == (0 as u64) { return }
     let start = time_monotonic_ns()
     loop (time_monotonic_ns() - start) < ns {
@@ -43,6 +43,6 @@ act timer_spin_wait_ns(ns: u64) {
 }
 
 // High-precision busy wait for microseconds.
-act timer_spin_wait_us(us: u64) {
+view act timer_spin_wait_us(us: u64) {
     timer_spin_wait_ns(us * TIMER_NS_PER_US)
 }

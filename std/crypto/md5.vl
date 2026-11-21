@@ -7,7 +7,7 @@ use "../mem/heap.vl"
 use "hex.vl"
 
 // MD5 streaming state context.
-data Md5State {
+view data Md5State {
     a: u32
     b: u32
     c: u32
@@ -17,29 +17,29 @@ data Md5State {
     total_bytes: u64
 }
 
-act md5_rotl32(x: u32, n: u32) -> u32 {
+view act md5_rotl32(x: u32, n: u32) -> u32 {
     return (x << n) | (x >> ((32 as u32) - n))
 }
 
-act md5_f(x: u32, y: u32, z: u32) -> u32 {
+view act md5_f(x: u32, y: u32, z: u32) -> u32 {
     return (x & y) | ((~x) & z)
 }
 
-act md5_g(x: u32, y: u32, z: u32) -> u32 {
+view act md5_g(x: u32, y: u32, z: u32) -> u32 {
     return (x & z) | (y & (~z))
 }
 
-act md5_h(x: u32, y: u32, z: u32) -> u32 {
+view act md5_h(x: u32, y: u32, z: u32) -> u32 {
     return x ^ y ^ z
 }
 
-act md5_i(x: u32, y: u32, z: u32) -> u32 {
+view act md5_i(x: u32, y: u32, z: u32) -> u32 {
     return y ^ (x | (~z))
 }
 
 mut g_md5_t: @u32 = null
 
-act md5_ensure_t() {
+view act md5_ensure_t() {
     if g_md5_t != null { return }
     g_md5_t = heap_alloc(64 * 4) as @u32
     g_md5_t[0] = 0xd76aa478 as u32; g_md5_t[1] = 0xe8c7b756 as u32; g_md5_t[2] = 0x242070db as u32; g_md5_t[3] = 0xc1bdceee as u32
@@ -60,13 +60,13 @@ act md5_ensure_t() {
     g_md5_t[60] = 0xf7537e82 as u32; g_md5_t[61] = 0xbd3af235 as u32; g_md5_t[62] = 0x2ad7d2bb as u32; g_md5_t[63] = 0xeb86d391 as u32
 }
 
-act md5_step(f_val: u32, a_in: u32, b_in: u32, x_k: u32, s_shift: u32, t_i: u32) -> u32 {
+view act md5_step(f_val: u32, a_in: u32, b_in: u32, x_k: u32, s_shift: u32, t_i: u32) -> u32 {
     let sum = a_in + f_val + x_k + t_i
     return b_in + md5_rotl32(sum, s_shift)
 }
 
 // Transforms a single 64-byte block for MD5.
-act md5_transform(s: @Md5State, block: @u8) {
+view act md5_transform(s: @Md5State, block: @u8) {
     md5_ensure_t()
     mut x: @u32 = heap_alloc(16 * 4) as @u32
 
@@ -160,7 +160,7 @@ act md5_transform(s: @Md5State, block: @u8) {
 }
 
 // Initializes an MD5 context with RFC 1321 initial state constants.
-act md5_init(s: @Md5State) {
+view act md5_init(s: @Md5State) {
     if s == null { return }
     s.a = 0x67452301 as u32
     s.b = 0xefcdab89 as u32
@@ -174,7 +174,7 @@ act md5_init(s: @Md5State) {
 }
 
 // Feeds binary data into the MD5 context.
-act md5_update(s: @Md5State, data: @u8, len: usize) {
+view act md5_update(s: @Md5State, data: @u8, len: usize) {
     if s == null or data == null or len == 0 { return }
     s.total_bytes = s.total_bytes + (len as u64)
 
@@ -191,7 +191,7 @@ act md5_update(s: @Md5State, data: @u8, len: usize) {
 }
 
 // Feeds string characters into the MD5 context.
-act md5_update_str(s: @Md5State, text: string) {
+view act md5_update_str(s: @Md5State, text: string) {
     if s == null or text == null { return }
     let len = str.len(text)
     if len == 0 { return }
@@ -199,7 +199,7 @@ act md5_update_str(s: @Md5State, text: string) {
 }
 
 // Finalizes the MD5 hash and writes 16 raw bytes into out_digest.
-act md5_final(s: @Md5State, out_digest: @u8) {
+view act md5_final(s: @Md5State, out_digest: @u8) {
     if s == null or out_digest == null { return }
 
     // 1. Append 0x80 bit
@@ -257,7 +257,7 @@ act md5_final(s: @Md5State, out_digest: @u8) {
 }
 
 // Computes 16 raw bytes of MD5 for a byte buffer.
-act md5_bytes(data: @u8, len: usize, out_digest: @u8) {
+view act md5_bytes(data: @u8, len: usize, out_digest: @u8) {
     mut s: Md5State
     s.buf = null
     md5_init(@s)
@@ -266,7 +266,7 @@ act md5_bytes(data: @u8, len: usize, out_digest: @u8) {
 }
 
 // Finalizes the MD5 context and returns a 32-character lowercase hexadecimal string.
-act md5_final_hex(s: @Md5State) -> string {
+view act md5_final_hex(s: @Md5State) -> string {
     mut digest: @u8 = heap_alloc(16)
     md5_final(s, digest)
     let hex_res = bytes_to_hex(digest, 16)
@@ -275,7 +275,7 @@ act md5_final_hex(s: @Md5State) -> string {
 }
 
 // Computes a 32-character lowercase hex string MD5 checksum.
-act md5_hash(data: @u8, len: usize) -> string {
+view act md5_hash(data: @u8, len: usize) -> string {
     mut digest: @u8 = heap_alloc(16)
     md5_bytes(data, len, digest)
     let hex_res = bytes_to_hex(digest, 16)
@@ -284,7 +284,7 @@ act md5_hash(data: @u8, len: usize) -> string {
 }
 
 // Computes a 32-character lowercase hex string MD5 checksum of a string.
-act md5_hash_str(text: string) -> string {
+view act md5_hash_str(text: string) -> string {
     if text == null { return md5_hash(null, 0) }
     return md5_hash(text as @u8, str.len(text))
 }

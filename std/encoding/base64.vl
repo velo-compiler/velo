@@ -1,33 +1,33 @@
 // std.encoding.base64 — RFC 4648 Base64 and URL-safe Base64 encoder/decoder.
 use "../mem/heap.vl"
 
-let B64_STD_CHARS: string = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
-let B64_URL_CHARS: string = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+view let B64_STD_CHARS: string = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+view let B64_URL_CHARS: string = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 // Encodes raw binary data into a standard Base64 string with padding.
-act base64_encode(data: @u8, len: usize) -> string {
+view act base64_encode(data: @u8, len: usize) -> string {
     return base64_encode_custom(data, len, B64_STD_CHARS, true)
 }
 
 // Encodes a string into a standard Base64 string.
-act base64_encode_str(s: string) -> string {
+view act base64_encode_str(s: string) -> string {
     if s == null { return "" }
     return base64_encode(s as @u8, str.len(s))
 }
 
 // Encodes raw binary data into a URL-safe Base64 string (optionally padded).
-act base64_url_encode(data: @u8, len: usize, pad: bool) -> string {
+view act base64_url_encode(data: @u8, len: usize, pad: bool) -> string {
     return base64_encode_custom(data, len, B64_URL_CHARS, pad)
 }
 
 // Encodes a string into a URL-safe Base64 string.
-act base64_url_encode_str(s: string, pad: bool) -> string {
+view act base64_url_encode_str(s: string, pad: bool) -> string {
     if s == null { return "" }
     return base64_url_encode(s as @u8, str.len(s), pad)
 }
 
 // Low-level configurable Base64 encoder.
-act base64_encode_custom(data: @u8, len: usize, table: string, pad: bool) -> string {
+view act base64_encode_custom(data: @u8, len: usize, table: string, pad: bool) -> string {
     if data == null or len == 0 { return "" }
 
     let full_triplets = len / 3
@@ -95,7 +95,7 @@ act base64_encode_custom(data: @u8, len: usize, table: string, pad: bool) -> str
 }
 
 // Decodes a Base64 character to its 6-bit index (supports both standard and URL-safe).
-act base64_char_to_val(c: u8) -> u32 {
+view act base64_char_to_val(c: u8) -> u32 {
     if c >= ('A' as u8) and c <= ('Z' as u8) {
         return (c - ('A' as u8)) as u32
     }
@@ -115,7 +115,7 @@ act base64_char_to_val(c: u8) -> u32 {
 }
 
 // Checks if a string is a valid Base64 encoded payload.
-act base64_is_valid(s: string) -> bool {
+view act base64_is_valid(s: string) -> bool {
     if s == null { return false }
     let len = str.len(s)
     if len == 0 { return true }
@@ -141,7 +141,7 @@ act base64_is_valid(s: string) -> bool {
 
 // Decodes a Base64 string into a raw heap byte buffer.
 // The actual decoded length is stored in out_len if provided.
-act base64_decode(s: string, out_len: @usize) -> @u8 {
+view act base64_decode(s: string, out_len: @usize) -> @u8 {
     if s == null {
         if out_len != null { out_len[0] = 0 }
         return null
@@ -219,7 +219,7 @@ act base64_decode(s: string, out_len: @usize) -> @u8 {
 }
 
 // Decodes a Base64 string directly into a heap string.
-act base64_decode_str(s: string) -> string {
+view act base64_decode_str(s: string) -> string {
     mut decoded_len: usize = 0
     let bytes = base64_decode(s, @decoded_len)
     if bytes == null { return "" }
@@ -227,7 +227,7 @@ act base64_decode_str(s: string) -> string {
 }
 
 // Decodes a Base64 string into a heap string, returning decoded text or error message.
-act base64_to_str(s: string) -> string or string {
+view act base64_to_str(s: string) -> string or string {
     if s == null { fail "null base64 string" }
     if !base64_is_valid(s) { fail "invalid base64 format or padding" }
     mut decoded_len: usize = 0
@@ -237,11 +237,11 @@ act base64_to_str(s: string) -> string or string {
 }
 
 // Decodes a URL-safe Base64 string directly into a heap string.
-act base64_url_decode_str(s: string) -> string {
+view act base64_url_decode_str(s: string) -> string {
     return base64_decode_str(s)
 }
 
 // Decodes a URL-safe Base64 string into a raw heap byte buffer.
-act base64_url_decode(s: string, out_len: @usize) -> @u8 {
+view act base64_url_decode(s: string, out_len: @usize) -> @u8 {
     return base64_decode(s, out_len)
 }

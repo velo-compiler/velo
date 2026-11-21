@@ -12,52 +12,52 @@
 // Task 70.1), so callers keep writing `use "types.vl"`.
 
 // Address Families
-let AF_UNSPEC: i32 = 0
-let AF_INET: i32 = 2
-let AF_INET6: i32 = 30 // Darwin sys/socket.h
+view let AF_UNSPEC: i32 = 0
+view let AF_INET: i32 = 2
+view let AF_INET6: i32 = 30 // Darwin sys/socket.h
 
 // Socket Types
-let SOCK_STREAM: i32 = 1
-let SOCK_DGRAM: i32 = 2
-let SOCK_RAW: i32 = 3
+view let SOCK_STREAM: i32 = 1
+view let SOCK_DGRAM: i32 = 2
+view let SOCK_RAW: i32 = 3
 
 // Protocols
-let IPPROTO_IP: i32 = 0
-let IPPROTO_TCP: i32 = 6
-let IPPROTO_UDP: i32 = 17
+view let IPPROTO_IP: i32 = 0
+view let IPPROTO_TCP: i32 = 6
+view let IPPROTO_UDP: i32 = 17
 
 // Socket Options Levels & Names (Darwin sys/socket.h)
-let SOL_SOCKET: i32 = 65535 // 0xffff on Darwin BSD sockets
-let SO_DEBUG: i32 = 1
-let SO_REUSEADDR: i32 = 4
-let SO_KEEPALIVE: i32 = 8
-let SO_DONTROUTE: i32 = 16
-let SO_BROADCAST: i32 = 32
-let SO_LINGER: i32 = 128
-let SO_OOBINLINE: i32 = 256
-let SO_SNDBUF: i32 = 4097
-let SO_RCVBUF: i32 = 4098
-let SO_SNDTIMEO: i32 = 4101
-let SO_RCVTIMEO: i32 = 4102
-let SO_ERROR: i32 = 4103
-let SO_TYPE: i32 = 4104
-let TCP_NODELAY: i32 = 1
+view let SOL_SOCKET: i32 = 65535 // 0xffff on Darwin BSD sockets
+view let SO_DEBUG: i32 = 1
+view let SO_REUSEADDR: i32 = 4
+view let SO_KEEPALIVE: i32 = 8
+view let SO_DONTROUTE: i32 = 16
+view let SO_BROADCAST: i32 = 32
+view let SO_LINGER: i32 = 128
+view let SO_OOBINLINE: i32 = 256
+view let SO_SNDBUF: i32 = 4097
+view let SO_RCVBUF: i32 = 4098
+view let SO_SNDTIMEO: i32 = 4101
+view let SO_RCVTIMEO: i32 = 4102
+view let SO_ERROR: i32 = 4103
+view let SO_TYPE: i32 = 4104
+view let TCP_NODELAY: i32 = 1
 
 // Non-blocking mode is set with fcntl(F_SETFL, O_NONBLOCK) on POSIX, not with
 // an ioctl. The value is kept only so the constant exists for callers that
 // reference it; the socket backend does not use it.
-let FIONBIO: i32 = -2147195266
+view let FIONBIO: i32 = -2147195266
 
 // Error Values
-let INVALID_SOCKET: i64 = -1
-let SOCKET_ERROR: i32 = -1
+view let INVALID_SOCKET: i64 = -1
+view let SOCKET_ERROR: i32 = -1
 
 // False: the backend uses BSD sockets with no WSAStartup/WSACleanup handshake
 // and close() rather than closesocket().
-let NET_WIN32_API: bool = false
+view let NET_WIN32_API: bool = false
 
 // IPv4 Internet socket address structure matching struct sockaddr_in (16 bytes).
-data SockAddrIn {
+view data SockAddrIn {
     family: i16
     port: u16
     addr: u32
@@ -66,7 +66,7 @@ data SockAddrIn {
 }
 
 // Low-level socket handle container.
-data Socket {
+view data Socket {
     fd: i64
     family: i32
     type_: i32
@@ -75,7 +75,7 @@ data Socket {
 }
 
 // High-level network endpoint address (IP string and port).
-data SocketAddr {
+view data SocketAddr {
     ip: string
     port: u16
     raw_ip: u32

@@ -3,7 +3,7 @@ use "../mem/heap.vl"
 use "hex.vl"
 
 // SHA-256 streaming state context.
-data Sha256State {
+view data Sha256State {
     h0: u32
     h1: u32
     h2: u32
@@ -18,37 +18,37 @@ data Sha256State {
 }
 
 // 32-bit right-rotation helper.
-act sha_rotr32(x: u32, n: u32) -> u32 {
+view act sha_rotr32(x: u32, n: u32) -> u32 {
     return (x >> n) | (x << ((32 as u32) - n))
 }
 
-act sha_ch(x: u32, y: u32, z: u32) -> u32 {
+view act sha_ch(x: u32, y: u32, z: u32) -> u32 {
     return (x & y) ^ ((~x) & z)
 }
 
-act sha_maj(x: u32, y: u32, z: u32) -> u32 {
+view act sha_maj(x: u32, y: u32, z: u32) -> u32 {
     return (x & y) ^ (x & z) ^ (y & z)
 }
 
-act sha_sigma0(x: u32) -> u32 {
+view act sha_sigma0(x: u32) -> u32 {
     return sha_rotr32(x, 2 as u32) ^ sha_rotr32(x, 13 as u32) ^ sha_rotr32(x, 22 as u32)
 }
 
-act sha_sigma1(x: u32) -> u32 {
+view act sha_sigma1(x: u32) -> u32 {
     return sha_rotr32(x, 6 as u32) ^ sha_rotr32(x, 11 as u32) ^ sha_rotr32(x, 25 as u32)
 }
 
-act sha_sig0(x: u32) -> u32 {
+view act sha_sig0(x: u32) -> u32 {
     return sha_rotr32(x, 7 as u32) ^ sha_rotr32(x, 18 as u32) ^ (x >> (3 as u32))
 }
 
-act sha_sig1(x: u32) -> u32 {
+view act sha_sig1(x: u32) -> u32 {
     return sha_rotr32(x, 17 as u32) ^ sha_rotr32(x, 19 as u32) ^ (x >> (10 as u32))
 }
 
 mut g_sha_k: @u32 = null
 
-act sha256_ensure_k() {
+view act sha256_ensure_k() {
     if g_sha_k != null { return }
     g_sha_k = heap_alloc(64 * 4) as @u32
     g_sha_k[0] = 0x428a2f98 as u32; g_sha_k[1] = 0x71374491 as u32; g_sha_k[2] = 0xb5c0fbcf as u32; g_sha_k[3] = 0xe9b5dba5 as u32
@@ -70,7 +70,7 @@ act sha256_ensure_k() {
 }
 
 // Transforms a single 64-byte block updating the 8 hash words.
-act sha256_transform(s: @Sha256State, block: @u8) {
+view act sha256_transform(s: @Sha256State, block: @u8) {
     sha256_ensure_k()
     mut w: @u32 = heap_alloc(64 * 4) as @u32
 
@@ -114,7 +114,7 @@ act sha256_transform(s: @Sha256State, block: @u8) {
 }
 
 // Initializes a SHA-256 context with standard NIST FIPS initial hash values.
-act sha256_init(s: @Sha256State) {
+view act sha256_init(s: @Sha256State) {
     if s == null { return }
     s.h0 = 0x6a09e667 as u32
     s.h1 = 0xbb67ae85 as u32
@@ -132,7 +132,7 @@ act sha256_init(s: @Sha256State) {
 }
 
 // Feeds binary data into the SHA-256 context.
-act sha256_update(s: @Sha256State, data: @u8, len: usize) {
+view act sha256_update(s: @Sha256State, data: @u8, len: usize) {
     if s == null or data == null or len == 0 { return }
     s.total_bytes = s.total_bytes + (len as u64)
 
@@ -149,7 +149,7 @@ act sha256_update(s: @Sha256State, data: @u8, len: usize) {
 }
 
 // Feeds a string into the SHA-256 context.
-act sha256_update_str(s: @Sha256State, text: string) {
+view act sha256_update_str(s: @Sha256State, text: string) {
     if s == null or text == null { return }
     let len = str.len(text)
     if len == 0 { return }
@@ -157,7 +157,7 @@ act sha256_update_str(s: @Sha256State, text: string) {
 }
 
 // Finalizes the hash, writes 32 digest bytes to out_digest, and cleans up context buffer.
-act sha256_final(s: @Sha256State, out_digest: @u8) {
+view act sha256_final(s: @Sha256State, out_digest: @u8) {
     if s == null or out_digest == null { return }
 
     // 1. Append 0x80 bit marker
@@ -219,7 +219,7 @@ act sha256_final(s: @Sha256State, out_digest: @u8) {
 }
 
 // Computes 32 raw bytes of SHA-256 for a byte slice.
-act sha256_bytes(data: @u8, len: usize, out_digest: @u8) {
+view act sha256_bytes(data: @u8, len: usize, out_digest: @u8) {
     mut s: Sha256State
     s.buf = null
     sha256_init(@s)
@@ -228,7 +228,7 @@ act sha256_bytes(data: @u8, len: usize, out_digest: @u8) {
 }
 
 // Finalizes the SHA-256 context and returns a 64-character lowercase hexadecimal string.
-act sha256_final_hex(s: @Sha256State) -> string {
+view act sha256_final_hex(s: @Sha256State) -> string {
     mut digest: @u8 = heap_alloc(32)
     sha256_final(s, digest)
     let hex_res = bytes_to_hex(digest, 32)
@@ -237,7 +237,7 @@ act sha256_final_hex(s: @Sha256State) -> string {
 }
 
 // Computes a 64-character lowercase hex string SHA-256 digest of binary data.
-act sha256_hash(data: @u8, len: usize) -> string {
+view act sha256_hash(data: @u8, len: usize) -> string {
     mut digest: @u8 = heap_alloc(32)
     sha256_bytes(data, len, digest)
     let hex_res = bytes_to_hex(digest, 32)
@@ -246,7 +246,7 @@ act sha256_hash(data: @u8, len: usize) -> string {
 }
 
 // Computes a 64-character lowercase hex string SHA-256 digest of a string.
-act sha256_hash_str(text: string) -> string {
+view act sha256_hash_str(text: string) -> string {
     if text == null { return sha256_hash(null, 0) }
     return sha256_hash(text as @u8, str.len(text))
 }

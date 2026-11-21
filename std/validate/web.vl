@@ -5,7 +5,7 @@ use "../str.vl"
 use "../mem/heap.vl"
 
 // Returns true if s is a valid RFC 5322 compliant email address.
-act validate_email(s: string) -> bool {
+view act validate_email(s: string) -> bool {
     if s == null { return false }
     let len = str.len(s)
     if len < 5 or len > 254 { return false }
@@ -71,7 +71,7 @@ act validate_email(s: string) -> bool {
 }
 
 // Returns true if s is a valid absolute HTTP, HTTPS, or FTP URL.
-act validate_url(s: string) -> bool {
+view act validate_url(s: string) -> bool {
     if s == null { return false }
     let len = str.len(s)
     if len < 10 { return false }
@@ -152,7 +152,7 @@ act validate_url(s: string) -> bool {
 }
 
 // Returns true if s is a valid 36-character hyphenated UUID or 32-character hexadecimal UUID.
-act validate_uuid(s: string) -> bool {
+view act validate_uuid(s: string) -> bool {
     if s == null { return false }
     let len = str.len(s)
 
@@ -182,7 +182,7 @@ act validate_uuid(s: string) -> bool {
 }
 
 // Returns true if s is a valid URL slug (lowercase alphanumeric words separated by hyphens).
-act validate_slug(s: string) -> bool {
+view act validate_slug(s: string) -> bool {
     if s == null { return false }
     let len = str.len(s)
     if len == 0 { return false }
@@ -213,7 +213,7 @@ act validate_slug(s: string) -> bool {
 }
 
 // Returns true if s is a valid semantic version string according to SemVer 2.0 (e.g. "1.2.3", "2.0.0-beta.1").
-act validate_semver(s: string) -> bool {
+view act validate_semver(s: string) -> bool {
     if s == null { return false }
     let len = str.len(s)
     if len < 5 { return false }

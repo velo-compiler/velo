@@ -8,16 +8,16 @@ use "../mem/heap.vl"
 use "value_ops.vl"
 
 // JSON Value kind tags
-let JSON_NULL: i32 = 0
-let JSON_BOOL: i32 = 1
-let JSON_INT: i32 = 2
-let JSON_FLOAT: i32 = 3
-let JSON_STRING: i32 = 4
-let JSON_ARRAY: i32 = 5
-let JSON_OBJECT: i32 = 6
+view let JSON_NULL: i32 = 0
+view let JSON_BOOL: i32 = 1
+view let JSON_INT: i32 = 2
+view let JSON_FLOAT: i32 = 3
+view let JSON_STRING: i32 = 4
+view let JSON_ARRAY: i32 = 5
+view let JSON_OBJECT: i32 = 6
 
 // Represents a node in the JSON DOM tree.
-data JsonValue {
+view data JsonValue {
     kind: i32,
     bool_val: bool,
     int_val: i64,
@@ -31,13 +31,13 @@ data JsonValue {
 }
 
 // Returns the byte size of JsonValue struct.
-act json_value_sizeof() -> usize {
+view act json_value_sizeof() -> usize {
     let dummy: @JsonValue = null
     return (dummy + 1) as usize
 }
 
 // Allocates and zero-initializes a JsonValue node inside a regional Arena.
-act json_alloc_arena(a: @Arena) -> @JsonValue {
+view act json_alloc_arena(a: @Arena) -> @JsonValue {
     if a == null { return null }
     let sz = json_value_sizeof()
     let raw = arena_alloc(a, sz, 8)
@@ -47,7 +47,7 @@ act json_alloc_arena(a: @Arena) -> @JsonValue {
 }
 
 // Allocates and zero-initializes a JsonValue node on the dynamic heap.
-act json_alloc_heap() -> @JsonValue {
+view act json_alloc_heap() -> @JsonValue {
     let sz = json_value_sizeof()
     let raw = heap_alloc(sz)
     if raw == null { return null }
@@ -56,101 +56,101 @@ act json_alloc_heap() -> @JsonValue {
 }
 
 // Arena-backed constructors
-act json_new_null(a: @Arena) -> @JsonValue {
+view act json_new_null(a: @Arena) -> @JsonValue {
     let v = json_alloc_arena(a)
     if v != null { v.kind = JSON_NULL }
     return v
 }
 
-act json_new_bool(a: @Arena, b: bool) -> @JsonValue {
+view act json_new_bool(a: @Arena, b: bool) -> @JsonValue {
     let v = json_alloc_arena(a)
     if v != null { v.kind = JSON_BOOL; v.bool_val = b }
     return v
 }
 
-act json_new_int(a: @Arena, val: i64) -> @JsonValue {
+view act json_new_int(a: @Arena, val: i64) -> @JsonValue {
     let v = json_alloc_arena(a)
     if v != null { v.kind = JSON_INT; v.int_val = val }
     return v
 }
 
-act json_new_float(a: @Arena, val: f64) -> @JsonValue {
+view act json_new_float(a: @Arena, val: f64) -> @JsonValue {
     let v = json_alloc_arena(a)
     if v != null { v.kind = JSON_FLOAT; v.float_val = val }
     return v
 }
 
-act json_new_str(a: @Arena, s: StrSlice) -> @JsonValue {
+view act json_new_str(a: @Arena, s: StrSlice) -> @JsonValue {
     let v = json_alloc_arena(a)
     if v != null { v.kind = JSON_STRING; v.str_val = s }
     return v
 }
 
-act json_new_str_lit(a: @Arena, s: string) -> @JsonValue {
+view act json_new_str_lit(a: @Arena, s: string) -> @JsonValue {
     return json_new_str(a, slice_from_str(s))
 }
 
-act json_new_array(a: @Arena) -> @JsonValue {
+view act json_new_array(a: @Arena) -> @JsonValue {
     let v = json_alloc_arena(a)
     if v != null { v.kind = JSON_ARRAY }
     return v
 }
 
-act json_new_object(a: @Arena) -> @JsonValue {
+view act json_new_object(a: @Arena) -> @JsonValue {
     let v = json_alloc_arena(a)
     if v != null { v.kind = JSON_OBJECT }
     return v
 }
 
 // Heap-backed constructors
-act json_heap_new_null() -> @JsonValue {
+view act json_heap_new_null() -> @JsonValue {
     let v = json_alloc_heap()
     if v != null { v.kind = JSON_NULL }
     return v
 }
 
-act json_heap_new_bool(b: bool) -> @JsonValue {
+view act json_heap_new_bool(b: bool) -> @JsonValue {
     let v = json_alloc_heap()
     if v != null { v.kind = JSON_BOOL; v.bool_val = b }
     return v
 }
 
-act json_heap_new_int(val: i64) -> @JsonValue {
+view act json_heap_new_int(val: i64) -> @JsonValue {
     let v = json_alloc_heap()
     if v != null { v.kind = JSON_INT; v.int_val = val }
     return v
 }
 
-act json_heap_new_float(val: f64) -> @JsonValue {
+view act json_heap_new_float(val: f64) -> @JsonValue {
     let v = json_alloc_heap()
     if v != null { v.kind = JSON_FLOAT; v.float_val = val }
     return v
 }
 
-act json_heap_new_str(s: StrSlice) -> @JsonValue {
+view act json_heap_new_str(s: StrSlice) -> @JsonValue {
     let v = json_alloc_heap()
     if v != null { v.kind = JSON_STRING; v.str_val = s }
     return v
 }
 
-act json_heap_new_str_lit(s: string) -> @JsonValue {
+view act json_heap_new_str_lit(s: string) -> @JsonValue {
     return json_heap_new_str(slice_from_str(s))
 }
 
-act json_heap_new_array() -> @JsonValue {
+view act json_heap_new_array() -> @JsonValue {
     let v = json_alloc_heap()
     if v != null { v.kind = JSON_ARRAY }
     return v
 }
 
-act json_heap_new_object() -> @JsonValue {
+view act json_heap_new_object() -> @JsonValue {
     let v = json_alloc_heap()
     if v != null { v.kind = JSON_OBJECT }
     return v
 }
 
 // Recursively frees a heap-allocated JsonValue tree.
-act json_heap_free(v: @JsonValue) {
+view act json_heap_free(v: @JsonValue) {
     if v == null { return }
     if v.kind == JSON_ARRAY or v.kind == JSON_OBJECT {
         mut c = v.first_child
@@ -164,57 +164,57 @@ act json_heap_free(v: @JsonValue) {
 }
 
 // Stack-allocated value initializers
-act json_null() -> JsonValue {
+view act json_null() -> JsonValue {
     let empty = slice_from_raw(null, 0)
     return JsonValue { kind: JSON_NULL, bool_val: false, int_val: 0, float_val: 0.0, str_val: empty, key: empty, first_child: null, last_child: null, next: null, count: 0 }
 }
 
-act json_bool(b: bool) -> JsonValue {
+view act json_bool(b: bool) -> JsonValue {
     let empty = slice_from_raw(null, 0)
     return JsonValue { kind: JSON_BOOL, bool_val: b, int_val: 0, float_val: 0.0, str_val: empty, key: empty, first_child: null, last_child: null, next: null, count: 0 }
 }
 
-act json_int(val: i64) -> JsonValue {
+view act json_int(val: i64) -> JsonValue {
     let empty = slice_from_raw(null, 0)
     return JsonValue { kind: JSON_INT, bool_val: false, int_val: val, float_val: 0.0, str_val: empty, key: empty, first_child: null, last_child: null, next: null, count: 0 }
 }
 
-act json_float(val: f64) -> JsonValue {
+view act json_float(val: f64) -> JsonValue {
     let empty = slice_from_raw(null, 0)
     return JsonValue { kind: JSON_FLOAT, bool_val: false, int_val: 0, float_val: val, str_val: empty, key: empty, first_child: null, last_child: null, next: null, count: 0 }
 }
 
-act json_str(s: StrSlice) -> JsonValue {
+view act json_str(s: StrSlice) -> JsonValue {
     let empty = slice_from_raw(null, 0)
     return JsonValue { kind: JSON_STRING, bool_val: false, int_val: 0, float_val: 0.0, str_val: s, key: empty, first_child: null, last_child: null, next: null, count: 0 }
 }
 
-act json_str_lit(s: string) -> JsonValue {
+view act json_str_lit(s: string) -> JsonValue {
     return json_str(slice_from_str(s))
 }
 
-act json_array() -> JsonValue {
+view act json_array() -> JsonValue {
     let empty = slice_from_raw(null, 0)
     return JsonValue { kind: JSON_ARRAY, bool_val: false, int_val: 0, float_val: 0.0, str_val: empty, key: empty, first_child: null, last_child: null, next: null, count: 0 }
 }
 
-act json_object() -> JsonValue {
+view act json_object() -> JsonValue {
     let empty = slice_from_raw(null, 0)
     return JsonValue { kind: JSON_OBJECT, bool_val: false, int_val: 0, float_val: 0.0, str_val: empty, key: empty, first_child: null, last_child: null, next: null, count: 0 }
 }
 
 // Kind check helpers
-act json_is_null(v: @JsonValue) -> bool { return v != null and v.kind == JSON_NULL }
-act json_is_bool(v: @JsonValue) -> bool { return v != null and v.kind == JSON_BOOL }
-act json_is_int(v: @JsonValue) -> bool { return v != null and v.kind == JSON_INT }
-act json_is_float(v: @JsonValue) -> bool { return v != null and v.kind == JSON_FLOAT }
-act json_is_number(v: @JsonValue) -> bool { return v != null and (v.kind == JSON_INT or v.kind == JSON_FLOAT) }
-act json_is_string(v: @JsonValue) -> bool { return v != null and v.kind == JSON_STRING }
-act json_is_array(v: @JsonValue) -> bool { return v != null and v.kind == JSON_ARRAY }
-act json_is_object(v: @JsonValue) -> bool { return v != null and v.kind == JSON_OBJECT }
+view act json_is_null(v: @JsonValue) -> bool { return v != null and v.kind == JSON_NULL }
+view act json_is_bool(v: @JsonValue) -> bool { return v != null and v.kind == JSON_BOOL }
+view act json_is_int(v: @JsonValue) -> bool { return v != null and v.kind == JSON_INT }
+view act json_is_float(v: @JsonValue) -> bool { return v != null and v.kind == JSON_FLOAT }
+view act json_is_number(v: @JsonValue) -> bool { return v != null and (v.kind == JSON_INT or v.kind == JSON_FLOAT) }
+view act json_is_string(v: @JsonValue) -> bool { return v != null and v.kind == JSON_STRING }
+view act json_is_array(v: @JsonValue) -> bool { return v != null and v.kind == JSON_ARRAY }
+view act json_is_object(v: @JsonValue) -> bool { return v != null and v.kind == JSON_OBJECT }
 
 // Returns display name for a JSON value kind.
-act json_type_name(kind: i32) -> StrSlice {
+view act json_type_name(kind: i32) -> StrSlice {
     if kind == 0 { return slice_from_str("null") }
     if kind == 1 { return slice_from_str("bool") }
     if kind == 2 { return slice_from_str("int") }
@@ -226,31 +226,31 @@ act json_type_name(kind: i32) -> StrSlice {
 }
 
 // Value accessors with fallback defaults
-act json_as_int(v: @JsonValue, default_val: i64) -> i64 {
+view act json_as_int(v: @JsonValue, default_val: i64) -> i64 {
     if v == null { return default_val }
     if v.kind == JSON_INT { return v.int_val }
     if v.kind == JSON_FLOAT { return v.float_val as i64 }
     return default_val
 }
 
-act json_as_float(v: @JsonValue, default_val: f64) -> f64 {
+view act json_as_float(v: @JsonValue, default_val: f64) -> f64 {
     if v == null { return default_val }
     if v.kind == JSON_FLOAT { return v.float_val }
     if v.kind == JSON_INT { return v.int_val as f64 }
     return default_val
 }
 
-act json_as_bool(v: @JsonValue, default_val: bool) -> bool {
+view act json_as_bool(v: @JsonValue, default_val: bool) -> bool {
     if v == null or v.kind != JSON_BOOL { return default_val }
     return v.bool_val
 }
 
-act json_as_str(v: @JsonValue) -> StrSlice {
+view act json_as_str(v: @JsonValue) -> StrSlice {
     if v == null or v.kind != JSON_STRING { return slice_from_raw(null, 0) }
     return v.str_val
 }
 
-act json_as_str_or(v: @JsonValue, default_val: StrSlice) -> StrSlice {
+view act json_as_str_or(v: @JsonValue, default_val: StrSlice) -> StrSlice {
     if v == null or v.kind != JSON_STRING { return default_val }
     return v.str_val
 }

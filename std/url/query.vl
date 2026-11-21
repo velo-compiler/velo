@@ -5,7 +5,7 @@ use "defs.vl"
 use "encode.vl"
 
 // Returns true if query contains the specified parameter key.
-act url_query_has(query: string, key: string) -> bool {
+view act url_query_has(query: string, key: string) -> bool {
     if query == null or key == null { return false }
     let qlen = str.len(query)
     let klen = str.len(key)
@@ -51,7 +51,7 @@ act url_query_has(query: string, key: string) -> bool {
 }
 
 // Retrieves the decoded value of a query parameter by key, or null if not found.
-act url_query_get(query: string, key: string) -> string {
+view act url_query_get(query: string, key: string) -> string {
     if query == null or key == null { return null }
     let qlen = str.len(query)
     let klen = str.len(key)
@@ -103,7 +103,7 @@ act url_query_get(query: string, key: string) -> string {
 
 // Parses a query string into caller-provided parallel arrays of keys and values.
 // Returns the number of parameters extracted (up to max_count).
-act url_query_parse(query: string, out_keys: @string, out_vals: @string, max_count: usize) -> usize {
+view act url_query_parse(query: string, out_keys: @string, out_vals: @string, max_count: usize) -> usize {
     if query == null or out_keys == null or out_vals == null or max_count == 0 { return 0 }
     let qlen = str.len(query)
     if qlen == 0 { return 0 }
@@ -155,7 +155,7 @@ act url_query_parse(query: string, out_keys: @string, out_vals: @string, max_cou
 }
 
 // Encodes a single key-value parameter into "key=val" using application/x-www-form-urlencoded.
-act url_query_encode_pair(key: string, val: string) -> string {
+view act url_query_encode_pair(key: string, val: string) -> string {
     if key == null { return "" }
     let ek = url_query_escape(key)
     mut ev = ""
@@ -189,7 +189,7 @@ act url_query_encode_pair(key: string, val: string) -> string {
 }
 
 // Sets or replaces a query parameter in query string, returning the updated query.
-act url_query_set(query: string, key: string, val: string) -> string {
+view act url_query_set(query: string, key: string, val: string) -> string {
     if key == null or str.len(key) == 0 { return query }
     let new_pair = url_query_encode_pair(key, val)
 
@@ -280,7 +280,7 @@ act url_query_set(query: string, key: string, val: string) -> string {
 }
 
 // Deletes all occurrences of a parameter key from query string, returning updated query.
-act url_query_del(query: string, key: string) -> string {
+view act url_query_del(query: string, key: string) -> string {
     if query == null or key == null { return query }
     let qlen = str.len(query)
     if qlen == 0 { return "" }

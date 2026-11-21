@@ -4,35 +4,35 @@ use "../mem/arena.vl"
 use "../str/slice.vl"
 
 // Foreign interface to Windows kernel32.dll
-extern act GetEnvironmentVariableA(lpName: @u8, lpBuffer: @u8, nSize: u32) -> u32
-extern act SetEnvironmentVariableA(lpName: @u8, lpValue: @u8) -> i32
-extern act GetCurrentProcessId() -> u32
-extern act ExitProcess(uExitCode: u32) -> void
-extern act GetCurrentDirectoryA(nBufferLength: u32, lpBuffer: @u8) -> u32
-extern act SetCurrentDirectoryA(lpPathName: @u8) -> i32
+view extern act GetEnvironmentVariableA(lpName: @u8, lpBuffer: @u8, nSize: u32) -> u32
+view extern act SetEnvironmentVariableA(lpName: @u8, lpValue: @u8) -> i32
+view extern act GetCurrentProcessId() -> u32
+view extern act ExitProcess(uExitCode: u32) -> void
+view extern act GetCurrentDirectoryA(nBufferLength: u32, lpBuffer: @u8) -> u32
+view extern act SetCurrentDirectoryA(lpPathName: @u8) -> i32
 
 // Returns the OS family name ("windows").
-act os_family() -> string {
+view act os_family() -> string {
     return "windows"
 }
 
 // Returns true if running on Windows.
-act os_is_windows() -> bool {
+view act os_is_windows() -> bool {
     return true
 }
 
 // Returns true if running on Linux.
-act os_is_linux() -> bool {
+view act os_is_linux() -> bool {
     return false
 }
 
 // Returns true if running on macOS.
-act os_is_macos() -> bool {
+view act os_is_macos() -> bool {
     return false
 }
 
 // Returns true if the environment variable with the given name exists.
-act os_has_env(name: string) -> bool {
+view act os_has_env(name: string) -> bool {
     if name == null { return false }
     let needed = GetEnvironmentVariableA(name as @u8, null, 0 as u32)
     return needed > (0 as u32)
@@ -40,7 +40,7 @@ act os_has_env(name: string) -> bool {
 
 // Copies the value of the environment variable into out_buf.
 // Returns the number of bytes written (excluding null terminator), or 0 on failure.
-act os_get_env_buf(name: string, out_buf: @u8, buf_cap: usize) -> usize {
+view act os_get_env_buf(name: string, out_buf: @u8, buf_cap: usize) -> usize {
     if name == null or out_buf == null or buf_cap == 0 { return 0 }
     let written = GetEnvironmentVariableA(name as @u8, out_buf, buf_cap as u32)
     if written == (0 as u32) or (written as usize) >= buf_cap {
@@ -51,7 +51,7 @@ act os_get_env_buf(name: string, out_buf: @u8, buf_cap: usize) -> usize {
 
 // Retrieves an environment variable as a null-terminated string allocated in arena.
 // Returns null if the variable does not exist or allocation fails.
-act os_get_env(arena: @Arena, name: string) -> string {
+view act os_get_env(arena: @Arena, name: string) -> string {
     if arena == null or name == null { return null }
     let needed = GetEnvironmentVariableA(name as @u8, null, 0 as u32)
     if needed == (0 as u32) {
@@ -69,32 +69,32 @@ act os_get_env(arena: @Arena, name: string) -> string {
 }
 
 // Sets the value of an environment variable. Returns true on success.
-act os_set_env(name: string, val: string) -> bool {
+view act os_set_env(name: string, val: string) -> bool {
     if name == null or val == null { return false }
     let res = SetEnvironmentVariableA(name as @u8, val as @u8)
     return res != 0
 }
 
 // Unsets (deletes) an environment variable. Returns true on success.
-act os_unset_env(name: string) -> bool {
+view act os_unset_env(name: string) -> bool {
     if name == null { return false }
     let res = SetEnvironmentVariableA(name as @u8, null)
     return res != 0
 }
 
 // Returns the process ID of the calling process.
-act os_get_pid() -> u32 {
+view act os_get_pid() -> u32 {
     return GetCurrentProcessId()
 }
 
 // Immediately terminates the calling process with the specified exit code.
-act os_exit(code: i32) -> void {
+view act os_exit(code: i32) -> void {
     ExitProcess(code as u32)
 }
 
 // Copies the current working directory into out_buf.
 // Returns the length written (excluding null terminator), or 0 on failure.
-act os_get_cwd_buf(out_buf: @u8, buf_cap: usize) -> usize {
+view act os_get_cwd_buf(out_buf: @u8, buf_cap: usize) -> usize {
     if out_buf == null or buf_cap == 0 { return 0 }
     let written = GetCurrentDirectoryA(buf_cap as u32, out_buf)
     if written == (0 as u32) or (written as usize) >= buf_cap {
@@ -105,7 +105,7 @@ act os_get_cwd_buf(out_buf: @u8, buf_cap: usize) -> usize {
 
 // Retrieves the current working directory allocated in arena.
 // Returns null on failure.
-act os_get_cwd(arena: @Arena) -> string {
+view act os_get_cwd(arena: @Arena) -> string {
     if arena == null { return null }
     let needed = GetCurrentDirectoryA(0 as u32, null)
     if needed == (0 as u32) {
@@ -123,7 +123,7 @@ act os_get_cwd(arena: @Arena) -> string {
 }
 
 // Sets the current working directory. Returns true on success.
-act os_set_cwd(path: string) -> bool {
+view act os_set_cwd(path: string) -> bool {
     if path == null { return false }
     let res = SetCurrentDirectoryA(path as @u8)
     return res != 0

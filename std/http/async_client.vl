@@ -8,7 +8,7 @@ use "async_server.vl"
 use "../async.vl"
 use "../mem/heap.vl"
 
-data _AsyncHttpClientState {
+view data _AsyncHttpClientState {
     loop_ptr: @EventLoop
     on_response: act(HttpResponse) -> void
     req_wire: string
@@ -21,12 +21,12 @@ data _AsyncHttpClientState {
     is_done: bool
 }
 
-act async_http_client_state_sizeof() -> usize {
+view act async_http_client_state_sizeof() -> usize {
     let dummy: @_AsyncHttpClientState = null
     return (dummy + 1) as usize
 }
 
-act _http_client_state_append(state: @_AsyncHttpClientState, data: @u8, len: usize) {
+view act _http_client_state_append(state: @_AsyncHttpClientState, data: @u8, len: usize) {
     if state == null or data == null or len == 0 { return }
     if state.len + len + 1 >= state.cap {
         let new_cap = (state.cap * 2) + len + 16
@@ -50,7 +50,7 @@ act _http_client_state_append(state: @_AsyncHttpClientState, data: @u8, len: usi
     state.buf[state.len] = 0 as u8
 }
 
-act _async_http_client_on_data(stream: @AsyncTcpStream, data: @u8, len: usize) {
+view act _async_http_client_on_data(stream: @AsyncTcpStream, data: @u8, len: usize) {
     if stream == null or stream.tag == null { return }
     let state = stream.tag as @_AsyncHttpClientState
     if state.is_done { return }
@@ -83,7 +83,7 @@ act _async_http_client_on_data(stream: @AsyncTcpStream, data: @u8, len: usize) {
     }
 }
 
-act _async_http_client_on_close(stream: @AsyncTcpStream) {
+view act _async_http_client_on_close(stream: @AsyncTcpStream) {
     if stream == null or stream.tag == null { return }
     let state = stream.tag as @_AsyncHttpClientState
     if not state.is_done {
@@ -109,7 +109,7 @@ act _async_http_client_on_close(stream: @AsyncTcpStream) {
     }
 }
 
-act _async_http_client_on_connect(stream: @AsyncTcpStream, success: bool) {
+view act _async_http_client_on_connect(stream: @AsyncTcpStream, success: bool) {
     if stream == null or stream.tag == null { return }
     let state = stream.tag as @_AsyncHttpClientState
 
@@ -139,7 +139,7 @@ act _async_http_client_on_connect(stream: @AsyncTcpStream, success: bool) {
 }
 
 // Sends an asynchronous non-blocking HTTP request and dispatches the response via callback
-act async_http_request(el: @EventLoop, method: string, url_str: string, headers: @HttpHeaderMap, body: string, on_response: act(HttpResponse) -> void) -> bool {
+view act async_http_request(el: @EventLoop, method: string, url_str: string, headers: @HttpHeaderMap, body: string, on_response: act(HttpResponse) -> void) -> bool {
     if el == null or url_str == null or on_response == null { return false }
     let parsed_url = http_parse_url(url_str)
     if parsed_url.host == null or str.len(parsed_url.host) == 0 { return false }
@@ -211,12 +211,12 @@ act async_http_request(el: @EventLoop, method: string, url_str: string, headers:
 }
 
 // Sends an asynchronous non-blocking HTTP GET request
-act async_http_get(el: @EventLoop, url_str: string, on_response: act(HttpResponse) -> void) -> bool {
+view act async_http_get(el: @EventLoop, url_str: string, on_response: act(HttpResponse) -> void) -> bool {
     return async_http_request(el, "GET", url_str, null, "", on_response)
 }
 
 // Sends an asynchronous non-blocking HTTP POST request
-act async_http_post(el: @EventLoop, url_str: string, content_type: string, body: string, on_response: act(HttpResponse) -> void) -> bool {
+view act async_http_post(el: @EventLoop, url_str: string, content_type: string, body: string, on_response: act(HttpResponse) -> void) -> bool {
     mut h: HttpHeaderMap
     headers_init(@h, 4)
     if content_type != null {

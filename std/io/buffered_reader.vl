@@ -8,10 +8,10 @@ use "../str/slice.vl"
 use "../str/builder.vl"
 use "handle.vl"
 
-let DEFAULT_READER_BUFFER_SIZE: usize = 4096
+view let DEFAULT_READER_BUFFER_SIZE: usize = 4096
 
 // Buffered reader descriptor
-data BufferedReader {
+view data BufferedReader {
     handle: FileHandle
     buf: @u8
     cap: usize
@@ -22,7 +22,7 @@ data BufferedReader {
 }
 
 // Initializes a buffered reader backed by an automatically allocated 4KB OS virtual page.
-act reader_init(h: FileHandle) -> BufferedReader {
+view act reader_init(h: FileHandle) -> BufferedReader {
     let buf = os_page_alloc(DEFAULT_READER_BUFFER_SIZE)
     return BufferedReader {
         handle: h,
@@ -36,7 +36,7 @@ act reader_init(h: FileHandle) -> BufferedReader {
 }
 
 // Initializes a buffered reader using a caller-provided buffer of specified capacity.
-act reader_init_with_buffer(h: FileHandle, buf: @u8, cap: usize) -> BufferedReader {
+view act reader_init_with_buffer(h: FileHandle, buf: @u8, cap: usize) -> BufferedReader {
     return BufferedReader {
         handle: h,
         buf: buf,
@@ -50,7 +50,7 @@ act reader_init_with_buffer(h: FileHandle, buf: @u8, cap: usize) -> BufferedRead
 
 // Refills the internal buffer from the underlying file handle.
 // Returns the number of bytes read into the buffer, 0 on EOF, or -1 on error.
-act reader_fill(r: @BufferedReader) -> isize {
+view act reader_fill(r: @BufferedReader) -> isize {
     if r == null or !io_is_valid_handle(r.handle) or r.buf == null or r.cap == 0 {
         return -1 as isize
     }
@@ -74,7 +74,7 @@ act reader_fill(r: @BufferedReader) -> isize {
 
 // Reads a single byte from the stream.
 // Returns true on success (populating out_byte), or false on EOF/error.
-act reader_read_byte(r: @BufferedReader, out_byte: @u8) -> bool {
+view act reader_read_byte(r: @BufferedReader, out_byte: @u8) -> bool {
     if r == null { return false }
     if r.pos >= r.limit {
         let n = reader_fill(r)
@@ -91,7 +91,7 @@ act reader_read_byte(r: @BufferedReader, out_byte: @u8) -> bool {
 
 // Peeks at the next byte without consuming it.
 // Returns true on success (populating out_byte), or false on EOF/error.
-act reader_peek_byte(r: @BufferedReader, out_byte: @u8) -> bool {
+view act reader_peek_byte(r: @BufferedReader, out_byte: @u8) -> bool {
     if r == null { return false }
     if r.pos >= r.limit {
         let n = reader_fill(r)
@@ -107,7 +107,7 @@ act reader_peek_byte(r: @BufferedReader, out_byte: @u8) -> bool {
 
 // Reads up to max_len bytes into dest.
 // Returns the actual number of bytes read.
-act reader_read(r: @BufferedReader, dest: @u8, max_len: usize) -> usize {
+view act reader_read(r: @BufferedReader, dest: @u8, max_len: usize) -> usize {
     if r == null or dest == null or max_len == 0 {
         return 0
     }
@@ -157,7 +157,7 @@ act reader_read(r: @BufferedReader, dest: @u8, max_len: usize) -> usize {
 
 // Reads bytes until newline '\n' into sb, stripping any trailing '\r'.
 // Returns true if at least one byte or a newline was read, or false on EOF.
-act reader_read_line(r: @BufferedReader, sb: @StrBuilder) -> bool {
+view act reader_read_line(r: @BufferedReader, sb: @StrBuilder) -> bool {
     if r == null or sb == null { return false }
     mut bytes_accumulated: usize = 0
     mut found_nl = false
@@ -207,7 +207,7 @@ act reader_read_line(r: @BufferedReader, sb: @StrBuilder) -> bool {
 
 // Reads the remainder of the stream into sb.
 // Returns total bytes read.
-act reader_read_all(r: @BufferedReader, sb: @StrBuilder) -> usize {
+view act reader_read_all(r: @BufferedReader, sb: @StrBuilder) -> usize {
     if r == null or sb == null { return 0 }
     let initial_len = sb.len
     loop {
@@ -226,20 +226,20 @@ act reader_read_all(r: @BufferedReader, sb: @StrBuilder) -> usize {
 }
 
 // Returns true if the reader has exhausted the stream (EOF and no buffered bytes remaining).
-act reader_is_eof(r: @BufferedReader) -> bool {
+view act reader_is_eof(r: @BufferedReader) -> bool {
     if r == null { return true }
     return r.pos >= r.limit and r.eof
 }
 
 // Returns the number of unconsumed bytes currently buffered in memory.
-act reader_buffered_count(r: @BufferedReader) -> usize {
+view act reader_buffered_count(r: @BufferedReader) -> usize {
     if r == null { return 0 }
     if r.pos >= r.limit { return 0 }
     return r.limit - r.pos
 }
 
 // Frees internal buffer resources if owned.
-act reader_free(r: @BufferedReader) -> bool {
+view act reader_free(r: @BufferedReader) -> bool {
     if r == null { return false }
     if r.owns_buf and r.buf != null and r.cap > 0 {
         os_page_free(r.buf, r.cap)

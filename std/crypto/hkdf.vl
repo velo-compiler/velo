@@ -9,7 +9,7 @@ use "../mem/heap.vl"
 // =========================================================================
 
 // HKDF-Extract(salt, IKM) -> PRK (32 bytes)
-act hkdf_sha256_extract(salt: @u8, salt_len: usize, ikm: @u8, ikm_len: usize, out_prk: @u8) {
+view act hkdf_sha256_extract(salt: @u8, salt_len: usize, ikm: @u8, ikm_len: usize, out_prk: @u8) {
     if out_prk == null { return }
     if salt == null or salt_len == 0 {
         let zero_salt: @u8 = heap_alloc(32) as @u8
@@ -22,7 +22,7 @@ act hkdf_sha256_extract(salt: @u8, salt_len: usize, ikm: @u8, ikm_len: usize, ou
 }
 
 // HKDF-Expand(PRK, info, L) -> OKM (L bytes)
-act hkdf_sha256_expand(prk: @u8, prk_len: usize, info: @u8, info_len: usize, out_okm: @u8, okm_len: usize) -> bool {
+view act hkdf_sha256_expand(prk: @u8, prk_len: usize, info: @u8, info_len: usize, out_okm: @u8, okm_len: usize) -> bool {
     if prk == null or out_okm == null or okm_len == 0 { return false }
     let n = (okm_len + 31) / 32
     if n > 255 { return false }
@@ -70,7 +70,7 @@ act hkdf_sha256_expand(prk: @u8, prk_len: usize, info: @u8, info_len: usize, out
 }
 
 // Full HKDF-SHA256 (Extract then Expand)
-act hkdf_sha256(salt: @u8, salt_len: usize, ikm: @u8, ikm_len: usize, info: @u8, info_len: usize, out_okm: @u8, okm_len: usize) -> bool {
+view act hkdf_sha256(salt: @u8, salt_len: usize, ikm: @u8, ikm_len: usize, info: @u8, info_len: usize, out_okm: @u8, okm_len: usize) -> bool {
     let prk: @u8 = heap_alloc(32) as @u8
     hkdf_sha256_extract(salt, salt_len, ikm, ikm_len, prk)
     let ok = hkdf_sha256_expand(prk, 32, info, info_len, out_okm, okm_len)
@@ -84,7 +84,7 @@ act hkdf_sha256(salt: @u8, salt_len: usize, ikm: @u8, ikm_len: usize, info: @u8,
 // =========================================================================
 
 // HKDF-Expand-Label(Secret, Label, Context, Length)
-act tls13_hkdf_expand_label(secret: @u8, label: string, context: @u8, context_len: usize, length: u16, out_key: @u8) -> bool {
+view act tls13_hkdf_expand_label(secret: @u8, label: string, context: @u8, context_len: usize, length: u16, out_key: @u8) -> bool {
     if secret == null or label == null or out_key == null { return false }
     let prefix = "tls13 "
     let label_len = str.len(label)
@@ -122,6 +122,6 @@ act tls13_hkdf_expand_label(secret: @u8, label: string, context: @u8, context_le
 }
 
 // Derive-Secret(Secret, Label, Messages) = HKDF-Expand-Label(Secret, Label, Transcript-Hash(Messages), HashLen)
-act tls13_derive_secret(secret: @u8, label: string, transcript_hash: @u8, out_secret: @u8) -> bool {
+view act tls13_derive_secret(secret: @u8, label: string, transcript_hash: @u8, out_secret: @u8) -> bool {
     return tls13_hkdf_expand_label(secret, label, transcript_hash, 32, 32 as u16, out_secret)
 }

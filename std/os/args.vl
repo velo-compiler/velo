@@ -6,19 +6,19 @@ use "../str/builder.vl"
 use "cmdline.vl"
 
 // Parsed command-line arguments container.
-data Args {
+view data Args {
     count: usize,
     items: @string,
     raw: string,
 }
 
 // Checks if a byte is a command-line space or horizontal tab delimiter.
-act is_cmd_space(b: u8) -> bool {
+view act is_cmd_space(b: u8) -> bool {
     return b == 32 as u8 or b == 9 as u8
 }
 
 // Counts the number of arguments present in a raw command line string.
-act os_count_cmdline_args(cmdline: string) -> usize {
+view act os_count_cmdline_args(cmdline: string) -> usize {
     if cmdline == null { return 0 }
     let ptr = cmdline as @u8
     let len = raw_str_len(ptr)
@@ -62,7 +62,7 @@ act os_count_cmdline_args(cmdline: string) -> usize {
 
 // Tokenizes a raw command line string according to standard Win32 quoting rules.
 // Allocates the argument array and all argument strings into arena.
-act os_tokenize_cmdline(arena: @Arena, cmdline: string) -> Args {
+view act os_tokenize_cmdline(arena: @Arena, cmdline: string) -> Args {
     if arena == null or cmdline == null {
         return Args { count: 0, items: null, raw: "" }
     }
@@ -139,19 +139,19 @@ act os_tokenize_cmdline(arena: @Arena, cmdline: string) -> Args {
 }
 
 // Retrieves and tokenizes the calling process's command-line arguments.
-act os_args(arena: @Arena) -> Args {
+view act os_args(arena: @Arena) -> Args {
     let raw = os_raw_cmdline()
     return os_tokenize_cmdline(arena, raw)
 }
 
 // Returns the number of arguments in args.
-act args_count(args: @Args) -> usize {
+view act args_count(args: @Args) -> usize {
     if args == null { return 0 }
     return args.count
 }
 
 // Returns the argument at index, or null if index is out of bounds.
-act args_get(args: @Args, index: usize) -> string {
+view act args_get(args: @Args, index: usize) -> string {
     if args == null or args.items == null or index >= args.count {
         return null
     }
@@ -159,7 +159,7 @@ act args_get(args: @Args, index: usize) -> string {
 }
 
 // Returns a StrSlice view over the argument at index, or empty slice if invalid.
-act args_get_slice(args: @Args, index: usize) -> StrSlice {
+view act args_get_slice(args: @Args, index: usize) -> StrSlice {
     let s = args_get(args, index)
     if s == null {
         return StrSlice { ptr: null, len: 0 }
@@ -168,7 +168,7 @@ act args_get_slice(args: @Args, index: usize) -> StrSlice {
 }
 
 // Returns true if args contains an argument matching flag exactly.
-act args_has_flag(args: @Args, flag: string) -> bool {
+view act args_has_flag(args: @Args, flag: string) -> bool {
     if args == null or flag == null { return false }
     mut i: usize = 0
     loop i < args.count {
@@ -182,7 +182,7 @@ act args_has_flag(args: @Args, flag: string) -> bool {
 }
 
 // Finds an option (e.g. "-o" or "--output") and returns its following value, or null.
-act args_find_option(args: @Args, opt: string) -> string {
+view act args_find_option(args: @Args, opt: string) -> string {
     if args == null or opt == null { return null }
     mut i: usize = 0
     loop i < args.count {
@@ -199,7 +199,7 @@ act args_find_option(args: @Args, opt: string) -> string {
 }
 
 // Determines whether an argument requires quotation marks for command-line embedding.
-act arg_needs_quotes(arg: string) -> bool {
+view act arg_needs_quotes(arg: string) -> bool {
     if arg == null { return true }
     let p = arg as @u8
     let len = raw_str_len(p)
@@ -217,7 +217,7 @@ act arg_needs_quotes(arg: string) -> bool {
 
 // Safely quotes an argument string for command-line invocation.
 // Follows Microsoft Win32 / POSIX backslash doubling and quote escaping rules.
-act os_quote_arg(arena: @Arena, arg: string) -> string {
+view act os_quote_arg(arena: @Arena, arg: string) -> string {
     if arena == null { return null }
     if arg == null {
         mut sb = sb_init(arena, 4)
@@ -282,7 +282,7 @@ act os_quote_arg(arena: @Arena, arg: string) -> string {
 }
 
 // Joins an array of command-line argument strings into a properly quoted command line.
-act os_join_argv(arena: @Arena, argv: @string, count: usize) -> string {
+view act os_join_argv(arena: @Arena, argv: @string, count: usize) -> string {
     if arena == null or argv == null or count == 0 {
         return ""
     }
@@ -308,7 +308,7 @@ act os_join_argv(arena: @Arena, argv: @string, count: usize) -> string {
 }
 
 // Joins an Args container into a properly quoted command-line string.
-act os_join_args(arena: @Arena, args: @Args) -> string {
+view act os_join_args(arena: @Arena, args: @Args) -> string {
     if args == null { return "" }
     return os_join_argv(arena, args.items, args.count)
 }

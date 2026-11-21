@@ -2,21 +2,21 @@
 use "../mem/heap.vl"
 use "../str.vl"
 
-let TEXT_MAX_WIDTH: usize = 4096
-let TEXT_DEFAULT_TAB_SIZE: usize = 4
+view let TEXT_MAX_WIDTH: usize = 4096
+view let TEXT_DEFAULT_TAB_SIZE: usize = 4
 
 // Returns true if byte is an ASCII horizontal space or tab.
-act text_is_space(c: u8) -> bool {
+view act text_is_space(c: u8) -> bool {
     return c == ' ' as u8 or c == '\t' as u8
 }
 
 // Returns true if byte is a line break character ('\n' or '\r').
-act text_is_newline(c: u8) -> bool {
+view act text_is_newline(c: u8) -> bool {
     return c == '\n' as u8 or c == '\r' as u8
 }
 
 // Allocates and returns a substring of s from start to start + len.
-act text_substr(s: string, start: usize, len: usize) -> string {
+view act text_substr(s: string, start: usize, len: usize) -> string {
     if s == null or len == 0 { return "" }
     let slen = str.len(s)
     if start >= slen { return "" }
@@ -36,7 +36,7 @@ act text_substr(s: string, start: usize, len: usize) -> string {
 }
 
 // Allocates and returns a string consisting of `count` copies of character `c`.
-act text_repeat_char(c: u8, count: usize) -> string {
+view act text_repeat_char(c: u8, count: usize) -> string {
     if count == 0 { return "" }
     mut buf: @u8 = heap_alloc(count + 1)
     if buf == null { return "" }

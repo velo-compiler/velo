@@ -4,7 +4,7 @@ use "../mem/heap.vl"
 use "../str.vl"
 
 // Prepends prefix to every non-empty line of text.
-act text_indent(s: string, prefix: string) -> string {
+view act text_indent(s: string, prefix: string) -> string {
     if s == null or prefix == null { return s }
     let slen = str.len(s)
     let plen = str.len(prefix)
@@ -50,7 +50,7 @@ act text_indent(s: string, prefix: string) -> string {
 }
 
 // Strips common leading whitespace from every line of multi-line text (like Python's textwrap.dedent).
-act text_dedent(s: string) -> string {
+view act text_dedent(s: string) -> string {
     if s == null { return "" }
     let slen = str.len(s)
     if slen == 0 { return "" }
@@ -127,7 +127,7 @@ act text_dedent(s: string) -> string {
 }
 
 // Expands tab characters into spaces based on tab stop intervals (default tab_size = 4 or 8).
-act text_expand_tabs(s: string, tab_size: usize) -> string {
+view act text_expand_tabs(s: string, tab_size: usize) -> string {
     if s == null { return "" }
     let slen = str.len(s)
     if slen == 0 { return "" }

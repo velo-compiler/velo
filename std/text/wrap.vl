@@ -4,7 +4,7 @@ use "../mem/heap.vl"
 use "../str.vl"
 
 // Wraps text to fit within `width` columns, with optional initial and subsequent prefixes.
-act text_wrap_prefix(input: string, width: usize, initial_prefix: string, subsequent_prefix: string) -> string {
+view act text_wrap_prefix(input: string, width: usize, initial_prefix: string, subsequent_prefix: string) -> string {
     if input == null or width == 0 { return "" }
     let slen = str.len(input)
     if slen == 0 { return "" }
@@ -151,17 +151,17 @@ act text_wrap_prefix(input: string, width: usize, initial_prefix: string, subseq
 }
 
 // Wraps text so that every line has at most `width` columns.
-act text_wrap(input: string, width: usize) -> string {
+view act text_wrap(input: string, width: usize) -> string {
     return text_wrap_prefix(input, width, "", "")
 }
 
 // Joins lines of text wrapped at column width `width` (alias for text_wrap).
-act text_fill(input: string, width: usize) -> string {
+view act text_fill(input: string, width: usize) -> string {
     return text_wrap(input, width)
 }
 
 // Truncates s to max_width characters, appending ellipsis if truncated.
-act text_truncate(s: string, max_width: usize, ellipsis: string) -> string {
+view act text_truncate(s: string, max_width: usize, ellipsis: string) -> string {
     if s == null or max_width == 0 { return "" }
     let slen = str.len(s)
     if slen <= max_width { return s }
@@ -193,7 +193,7 @@ act text_truncate(s: string, max_width: usize, ellipsis: string) -> string {
 }
 
 // Truncates multi-word text to max_width at word boundaries, appending placeholder if truncated.
-act text_shorten(s: string, max_width: usize, placeholder: string) -> string {
+view act text_shorten(s: string, max_width: usize, placeholder: string) -> string {
     if s == null or max_width == 0 { return "" }
     let slen = str.len(s)
     if slen == 0 { return "" }

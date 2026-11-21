@@ -3,7 +3,7 @@ use "headers.vl"
 use "url.vl"
 use "../mem/heap.vl"
 
-data HttpRequest {
+view data HttpRequest {
     method: string
     path: string
     version: string
@@ -12,7 +12,7 @@ data HttpRequest {
     content_length: usize
 }
 
-act http_u64_to_str(val: u64) -> string {
+view act http_u64_to_str(val: u64) -> string {
     if val == 0 as u64 { return "0" }
     mut temp: @u8 = heap_alloc(32)
     if temp == null { return "0" }
@@ -38,7 +38,7 @@ act http_u64_to_str(val: u64) -> string {
     return buf as string
 }
 
-act http_parse_u64(s: string) -> u64 {
+view act http_parse_u64(s: string) -> u64 {
     if s == null { return 0 as u64 }
     let len = str.len(s)
     mut res: u64 = 0
@@ -54,7 +54,7 @@ act http_parse_u64(s: string) -> u64 {
 }
 
 // Trims whitespace and CRLF from boundaries [start, end)
-act http_trim_bounds(s: string, start: usize, end: usize, out_pos: @usize, out_len: @usize) {
+view act http_trim_bounds(s: string, start: usize, end: usize, out_pos: @usize, out_len: @usize) {
     mut l = start
     loop l < end and (s[l] == ' ' as u8 or s[l] == '\t' as u8) {
         l += 1
@@ -68,7 +68,7 @@ act http_trim_bounds(s: string, start: usize, end: usize, out_pos: @usize, out_l
 }
 
 // Constructs a new default HTTP request.
-act http_request_make(method: string, path: string) -> HttpRequest {
+view act http_request_make(method: string, path: string) -> HttpRequest {
     mut req = HttpRequest {
         method: method,
         path: path,
@@ -82,7 +82,7 @@ act http_request_make(method: string, path: string) -> HttpRequest {
 }
 
 // Parses a raw HTTP/1.1 wire request string into an HttpRequest structure.
-act http_parse_request(raw: string) -> HttpRequest {
+view act http_parse_request(raw: string) -> HttpRequest {
     mut req = HttpRequest {
         method: "GET",
         path: "/",
@@ -206,7 +206,7 @@ act http_parse_request(raw: string) -> HttpRequest {
 }
 
 // Formats an HttpRequest into standard HTTP/1.1 wire protocol format.
-act http_format_request(req: @HttpRequest, host: string) -> string {
+view act http_format_request(req: @HttpRequest, host: string) -> string {
     if req == null { return "" }
     mut cap: usize = 256 + str.len(req.body)
     if req.headers.headers != null {
@@ -305,7 +305,7 @@ act http_format_request(req: @HttpRequest, host: string) -> string {
 }
 
 // Releases memory held by request headers.
-act http_request_free(req: @HttpRequest) {
+view act http_request_free(req: @HttpRequest) {
     if req == null { return }
     headers_free(@req.headers)
 }

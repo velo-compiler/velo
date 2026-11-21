@@ -9,13 +9,13 @@ use "value.vl"
 use "value_ops.vl"
 
 // Converts a 4-bit nibble 0..15 to lowercase hex ASCII character.
-act hex_to_ascii(h: u8) -> u8 {
+view act hex_to_ascii(h: u8) -> u8 {
     if h < 10 as u8 { return 48 as u8 + h }
     return 87 as u8 + h
 }
 
 // Writes an RFC 8259 escaped string literal ("...") into the builder.
-act json_write_escaped_str(sb: @StrBuilder, s: StrSlice) {
+view act json_write_escaped_str(sb: @StrBuilder, s: StrSlice) {
     sb_append_byte(sb, 34 as u8) // '"'
     if s.ptr != null and s.len > 0 {
         mut i: usize = 0
@@ -51,7 +51,7 @@ act json_write_escaped_str(sb: @StrBuilder, s: StrSlice) {
 }
 
 // Trims redundant trailing zeroes after decimal point in formatted float string.
-act trim_json_float(s: StrSlice) -> StrSlice {
+view act trim_json_float(s: StrSlice) -> StrSlice {
     mut dot_idx: usize = 0
     mut has_dot = false
     mut i: usize = 0
@@ -73,7 +73,7 @@ act trim_json_float(s: StrSlice) -> StrSlice {
 }
 
 // Emits newline and indentation spaces for pretty-printed formatting.
-act json_write_indent(sb: @StrBuilder, depth: i32, indent_size: i32) {
+view act json_write_indent(sb: @StrBuilder, depth: i32, indent_size: i32) {
     if indent_size <= 0 { return }
     sb_append_byte(sb, 10 as u8) // '\n'
     let total = depth * indent_size
@@ -85,7 +85,7 @@ act json_write_indent(sb: @StrBuilder, depth: i32, indent_size: i32) {
 }
 
 // Recursive AST node serializer handling compact and pretty-printed formatting.
-act json_write_internal(sb: @StrBuilder, v: @JsonValue, depth: i32, indent_size: i32) {
+view act json_write_internal(sb: @StrBuilder, v: @JsonValue, depth: i32, indent_size: i32) {
     if v == null or v.kind == JSON_NULL {
         sb_append_slice(sb, slice_from_str("null"))
         return
@@ -172,31 +172,31 @@ act json_write_internal(sb: @StrBuilder, v: @JsonValue, depth: i32, indent_size:
 }
 
 // Serializes a JsonValue tree into the provided StrBuilder with configurable indentation (0 for compact).
-act json_write(sb: @StrBuilder, v: @JsonValue, indent_size: i32) {
+view act json_write(sb: @StrBuilder, v: @JsonValue, indent_size: i32) {
     json_write_internal(sb, v, 0, indent_size)
 }
 
 // Serializes a JsonValue tree into compact JSON without whitespace.
-act json_write_compact(sb: @StrBuilder, v: @JsonValue) {
+view act json_write_compact(sb: @StrBuilder, v: @JsonValue) {
     json_write(sb, v, 0)
 }
 
 // Serializes a JsonValue tree into pretty-printed JSON with custom indentation.
-act json_write_pretty(sb: @StrBuilder, v: @JsonValue, indent_spaces: i32) {
+view act json_write_pretty(sb: @StrBuilder, v: @JsonValue, indent_spaces: i32) {
     mut ind = indent_spaces
     if ind <= 0 { ind = 2 }
     json_write(sb, v, ind)
 }
 
 // Serializes a JsonValue tree into a compact JSON StrSlice allocated inside arena.
-act json_stringify(a: @Arena, v: @JsonValue) -> StrSlice {
+view act json_stringify(a: @Arena, v: @JsonValue) -> StrSlice {
     mut sb = sb_init(a, 256)
     json_write(@sb, v, 0)
     return sb_to_slice(@sb)
 }
 
 // Serializes a JsonValue tree into a pretty-printed JSON StrSlice allocated inside arena.
-act json_stringify_pretty(a: @Arena, v: @JsonValue, indent_spaces: i32) -> StrSlice {
+view act json_stringify_pretty(a: @Arena, v: @JsonValue, indent_spaces: i32) -> StrSlice {
     mut sb = sb_init(a, 256)
     mut ind = indent_spaces
     if ind <= 0 { ind = 2 }
@@ -205,14 +205,14 @@ act json_stringify_pretty(a: @Arena, v: @JsonValue, indent_spaces: i32) -> StrSl
 }
 
 // Serializes a JsonValue tree into a compact null-terminated C string allocated inside arena.
-act json_stringify_str(a: @Arena, v: @JsonValue) -> string {
+view act json_stringify_str(a: @Arena, v: @JsonValue) -> string {
     mut sb = sb_init(a, 256)
     json_write(@sb, v, 0)
     return sb_to_cstr(@sb) as string
 }
 
 // Serializes a JsonValue tree into a pretty-printed null-terminated C string allocated inside arena.
-act json_stringify_pretty_str(a: @Arena, v: @JsonValue, indent_spaces: i32) -> string {
+view act json_stringify_pretty_str(a: @Arena, v: @JsonValue, indent_spaces: i32) -> string {
     mut sb = sb_init(a, 256)
     mut ind = indent_spaces
     if ind <= 0 { ind = 2 }

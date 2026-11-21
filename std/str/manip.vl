@@ -5,7 +5,7 @@ use "slice.vl"
 use "search.vl"
 
 // Single-byte delimiter split iterator state descriptor.
-data StrSplitIter {
+view data StrSplitIter {
     src: StrSlice,
     delim: u8,
     pos: usize,
@@ -13,7 +13,7 @@ data StrSplitIter {
 }
 
 // Multi-byte substring delimiter split iterator state descriptor.
-data StrSubSplitIter {
+view data StrSubSplitIter {
     src: StrSlice,
     delim: StrSlice,
     pos: usize,
@@ -21,22 +21,22 @@ data StrSubSplitIter {
 }
 
 // Returns true if byte b is an ASCII whitespace character (space, tab, newline, CR, VT, FF).
-act is_ascii_whitespace(b: u8) -> bool {
+view act is_ascii_whitespace(b: u8) -> bool {
     return b == 32 as u8 or (b >= 9 as u8 and b <= 13 as u8)
 }
 
 // Returns true if byte b is an ASCII uppercase letter ('A'..'Z').
-act is_ascii_upper(b: u8) -> bool {
+view act is_ascii_upper(b: u8) -> bool {
     return b >= 65 as u8 and b <= 90 as u8
 }
 
 // Returns true if byte b is an ASCII lowercase letter ('a'..'z').
-act is_ascii_lower(b: u8) -> bool {
+view act is_ascii_lower(b: u8) -> bool {
     return b >= 97 as u8 and b <= 122 as u8
 }
 
 // Converts an ASCII byte to lowercase if it is an uppercase letter.
-act to_ascii_lower(b: u8) -> u8 {
+view act to_ascii_lower(b: u8) -> u8 {
     if is_ascii_upper(b) {
         return (b + 32 as u8) as u8
     }
@@ -44,7 +44,7 @@ act to_ascii_lower(b: u8) -> u8 {
 }
 
 // Converts an ASCII byte to uppercase if it is a lowercase letter.
-act to_ascii_upper(b: u8) -> u8 {
+view act to_ascii_upper(b: u8) -> u8 {
     if is_ascii_lower(b) {
         return (b - 32 as u8) as u8
     }
@@ -52,7 +52,7 @@ act to_ascii_upper(b: u8) -> u8 {
 }
 
 // Trims leading ASCII whitespace from the slice without allocating memory.
-act str_trim_start(s: StrSlice) -> StrSlice {
+view act str_trim_start(s: StrSlice) -> StrSlice {
     if s.ptr == null or s.len == 0 {
         return s
     }
@@ -64,7 +64,7 @@ act str_trim_start(s: StrSlice) -> StrSlice {
 }
 
 // Trims trailing ASCII whitespace from the slice without allocating memory.
-act str_trim_end(s: StrSlice) -> StrSlice {
+view act str_trim_end(s: StrSlice) -> StrSlice {
     if s.ptr == null or s.len == 0 {
         return s
     }
@@ -76,12 +76,12 @@ act str_trim_end(s: StrSlice) -> StrSlice {
 }
 
 // Trims both leading and trailing ASCII whitespace from the slice without allocating memory.
-act str_trim(s: StrSlice) -> StrSlice {
+view act str_trim(s: StrSlice) -> StrSlice {
     return str_trim_end(str_trim_start(s))
 }
 
 // Trims leading occurrences of a specific byte from the slice.
-act str_trim_byte_start(s: StrSlice, b: u8) -> StrSlice {
+view act str_trim_byte_start(s: StrSlice, b: u8) -> StrSlice {
     if s.ptr == null or s.len == 0 {
         return s
     }
@@ -93,7 +93,7 @@ act str_trim_byte_start(s: StrSlice, b: u8) -> StrSlice {
 }
 
 // Trims trailing occurrences of a specific byte from the slice.
-act str_trim_byte_end(s: StrSlice, b: u8) -> StrSlice {
+view act str_trim_byte_end(s: StrSlice, b: u8) -> StrSlice {
     if s.ptr == null or s.len == 0 {
         return s
     }
@@ -105,12 +105,12 @@ act str_trim_byte_end(s: StrSlice, b: u8) -> StrSlice {
 }
 
 // Trims both leading and trailing occurrences of a specific byte from the slice.
-act str_trim_byte(s: StrSlice, b: u8) -> StrSlice {
+view act str_trim_byte(s: StrSlice, b: u8) -> StrSlice {
     return str_trim_byte_end(str_trim_byte_start(s, b), b)
 }
 
 // Initializes a stateful split iterator that splits s by a single byte delimiter.
-act str_split_init(s: StrSlice, delim: u8) -> StrSplitIter {
+view act str_split_init(s: StrSlice, delim: u8) -> StrSplitIter {
     return StrSplitIter {
         src: s,
         delim: delim,
@@ -121,7 +121,7 @@ act str_split_init(s: StrSlice, delim: u8) -> StrSplitIter {
 
 // Advances the split iterator to the next token.
 // Writes the token view to out_part and returns true. Returns false when iteration is complete.
-act str_split_next(iter: @StrSplitIter, out_part: @StrSlice) -> bool {
+view act str_split_next(iter: @StrSplitIter, out_part: @StrSlice) -> bool {
     if iter == null or iter.finished {
         return false
     }
@@ -151,7 +151,7 @@ act str_split_next(iter: @StrSplitIter, out_part: @StrSlice) -> bool {
 }
 
 // Initializes a stateful split iterator that splits s by a substring delimiter.
-act str_split_sub_init(s: StrSlice, delim: StrSlice) -> StrSubSplitIter {
+view act str_split_sub_init(s: StrSlice, delim: StrSlice) -> StrSubSplitIter {
     return StrSubSplitIter {
         src: s,
         delim: delim,
@@ -161,7 +161,7 @@ act str_split_sub_init(s: StrSlice, delim: StrSlice) -> StrSubSplitIter {
 }
 
 // Advances the substring split iterator to the next token.
-act str_split_sub_next(iter: @StrSubSplitIter, out_part: @StrSlice) -> bool {
+view act str_split_sub_next(iter: @StrSubSplitIter, out_part: @StrSlice) -> bool {
     if iter == null or iter.finished {
         return false
     }
@@ -198,7 +198,7 @@ act str_split_sub_next(iter: @StrSubSplitIter, out_part: @StrSlice) -> bool {
 }
 
 // Converts slice characters to lowercase ASCII, writing into dest buffer.
-act str_to_lower_ascii(s: StrSlice, dest: @u8) {
+view act str_to_lower_ascii(s: StrSlice, dest: @u8) {
     if s.ptr == null or dest == null { return }
     mut i: usize = 0
     loop i < s.len {
@@ -208,7 +208,7 @@ act str_to_lower_ascii(s: StrSlice, dest: @u8) {
 }
 
 // Converts slice characters to uppercase ASCII, writing into dest buffer.
-act str_to_upper_ascii(s: StrSlice, dest: @u8) {
+view act str_to_upper_ascii(s: StrSlice, dest: @u8) {
     if s.ptr == null or dest == null { return }
     mut i: usize = 0
     loop i < s.len {
@@ -218,7 +218,7 @@ act str_to_upper_ascii(s: StrSlice, dest: @u8) {
 }
 
 // Compares two slices for equality ignoring ASCII case.
-act str_eq_ignore_case_ascii(a: StrSlice, b: StrSlice) -> bool {
+view act str_eq_ignore_case_ascii(a: StrSlice, b: StrSlice) -> bool {
     if a.len != b.len {
         return false
     }
@@ -242,14 +242,14 @@ act str_eq_ignore_case_ascii(a: StrSlice, b: StrSlice) -> bool {
 }
 
 // Convenience helpers with string literals
-act str_trim_str(s: string) -> StrSlice {
+view act str_trim_str(s: string) -> StrSlice {
     return str_trim(slice_from_str(s))
 }
 
-act str_split_str_init(s: string, delim: u8) -> StrSplitIter {
+view act str_split_str_init(s: string, delim: u8) -> StrSplitIter {
     return str_split_init(slice_from_str(s), delim)
 }
 
-act str_eq_ignore_case_ascii_str(a: StrSlice, b: string) -> bool {
+view act str_eq_ignore_case_ascii_str(a: StrSlice, b: string) -> bool {
     return str_eq_ignore_case_ascii(a, slice_from_str(b))
 }

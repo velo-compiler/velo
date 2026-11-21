@@ -11,12 +11,12 @@ use "xoshiro.vl"
 // ---------------------------------------------------------------------------
 
 // Returns true or false with equal probability.
-act rand_bool(r: @Rng) -> bool {
+view act rand_bool(r: @Rng) -> bool {
     return (pcg64_next(@r.pcg) & (1 as u64)) != (0 as u64)
 }
 
 // Returns true with probability (numerator / denominator). E.g. (1, 4) = 25%.
-act rand_bool_weighted(r: @Rng, numerator: u64, denominator: u64) -> bool {
+view act rand_bool_weighted(r: @Rng, numerator: u64, denominator: u64) -> bool {
     if denominator == (0 as u64) { return false }
     if numerator >= denominator { return true }
     return pcg64_bounded(@r.pcg, denominator) < numerator
@@ -27,17 +27,17 @@ act rand_bool_weighted(r: @Rng, numerator: u64, denominator: u64) -> bool {
 // ---------------------------------------------------------------------------
 
 // Returns a uniformly random u64 in [0, 2^64).
-act rand_u64(r: @Rng) -> u64 {
+view act rand_u64(r: @Rng) -> u64 {
     return pcg64_next(@r.pcg)
 }
 
 // Returns a uniformly random u32 in [0, 2^32).
-act rand_u32(r: @Rng) -> u32 {
+view act rand_u32(r: @Rng) -> u32 {
     return (pcg64_next(@r.pcg) >> 32) as u32
 }
 
 // Returns a uniformly random u64 in [min, max] (inclusive). Panics if min > max.
-act rand_range_u64(r: @Rng, min: u64, max: u64) -> u64 {
+view act rand_range_u64(r: @Rng, min: u64, max: u64) -> u64 {
     if min >= max { return min }
     let diff: u64 = max - min
     if diff == 0xFFFFFFFFFFFFFFFF as u64 {
@@ -48,7 +48,7 @@ act rand_range_u64(r: @Rng, min: u64, max: u64) -> u64 {
 }
 
 // Returns a uniformly random i64 in [min, max] (inclusive).
-act rand_range_i64(r: @Rng, min: i64, max: i64) -> i64 {
+view act rand_range_i64(r: @Rng, min: i64, max: i64) -> i64 {
     if min >= max { return min }
     let diff: u64 = (max as u64) - (min as u64)
     if diff == 0xFFFFFFFFFFFFFFFF as u64 {
@@ -60,7 +60,7 @@ act rand_range_i64(r: @Rng, min: i64, max: i64) -> i64 {
 }
 
 // Returns a uniformly random i32 in [min, max] (inclusive).
-act rand_range_i32(r: @Rng, min: i32, max: i32) -> i32 {
+view act rand_range_i32(r: @Rng, min: i32, max: i32) -> i32 {
     if min >= max { return min }
     let range: u64 = ((max as i64) - (min as i64) + 1) as u64
     let r_u: u64 = pcg64_bounded(@r.pcg, range)
@@ -74,20 +74,20 @@ act rand_range_i32(r: @Rng, min: i32, max: i32) -> i32 {
 
 // Returns a uniformly random f64 in [0.0, 1.0) with 53 bits of precision.
 // Uses the "multiply by 2^-53" technique for a uniform distribution.
-act rand_f64(r: @Rng) -> f64 {
+view act rand_f64(r: @Rng) -> f64 {
     // Take 53 high bits and scale to [0, 1)
     let bits: u64 = pcg64_next(@r.pcg) >> 11
     return (bits as f64) * (1.1102230246251565e-16)
 }
 
 // Returns a uniformly random f64 in [0.0, 1.0) using Xoshiro256**.
-act rand_f64_x(r: @Xoshiro256) -> f64 {
+view act rand_f64_x(r: @Xoshiro256) -> f64 {
     let bits: u64 = xoshiro256_next(r) >> 11
     return (bits as f64) * (1.1102230246251565e-16)
 }
 
 // Returns a uniformly random f64 in [lo, hi).
-act rand_range_f64(r: @Rng, lo: f64, hi: f64) -> f64 {
+view act rand_range_f64(r: @Rng, lo: f64, hi: f64) -> f64 {
     if lo >= hi { return lo }
     return lo + rand_f64(r) * (hi - lo)
 }
@@ -97,7 +97,7 @@ act rand_range_f64(r: @Rng, lo: f64, hi: f64) -> f64 {
 // ---------------------------------------------------------------------------
 
 // Fills a caller-provided byte buffer with random bytes.
-act rand_fill(r: @Rng, buf: @u8, len: usize) {
+view act rand_fill(r: @Rng, buf: @u8, len: usize) {
     if buf == null or len == 0 { return }
     mut i: usize = 0
     loop i + 8 <= len {
@@ -124,7 +124,7 @@ act rand_fill(r: @Rng, buf: @u8, len: usize) {
 }
 
 // Allocates and returns a new heap string of byte_count random bytes.
-act rand_bytes(r: @Rng, byte_count: usize) -> @u8 {
+view act rand_bytes(r: @Rng, byte_count: usize) -> @u8 {
     if byte_count == 0 { return null }
     mut buf: @u8 = heap_alloc(byte_count)
     if buf == null { return null }
@@ -136,15 +136,15 @@ act rand_bytes(r: @Rng, byte_count: usize) -> @u8 {
 // String generation
 // ---------------------------------------------------------------------------
 
-let RAND_ALPHA_LOWER: string = "abcdefghijklmnopqrstuvwxyz"
-let RAND_ALPHA_UPPER: string = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-let RAND_DIGITS:      string = "0123456789"
-let RAND_ALPHANUMERIC: string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-let RAND_HEX_LOWER:   string = "0123456789abcdef"
+view let RAND_ALPHA_LOWER: string = "abcdefghijklmnopqrstuvwxyz"
+view let RAND_ALPHA_UPPER: string = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+view let RAND_DIGITS:      string = "0123456789"
+view let RAND_ALPHANUMERIC: string = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+view let RAND_HEX_LOWER:   string = "0123456789abcdef"
 
 // Returns a heap-allocated random string of given length, drawing characters
 // from the provided alphabet. Returns null if alphabet is empty or len is 0.
-act rand_string_from(r: @Rng, alphabet: string, len: usize) -> string {
+view act rand_string_from(r: @Rng, alphabet: string, len: usize) -> string {
     if alphabet == null or len == 0 { return null }
     let alpha_len = str.len(alphabet)
     if alpha_len == 0 { return null }
@@ -161,12 +161,12 @@ act rand_string_from(r: @Rng, alphabet: string, len: usize) -> string {
 }
 
 // Returns a random lowercase alphanumeric string of given length.
-act rand_string(r: @Rng, len: usize) -> string {
+view act rand_string(r: @Rng, len: usize) -> string {
     return rand_string_from(r, RAND_ALPHANUMERIC, len)
 }
 
 // Returns a random lowercase hexadecimal string of given length.
-act rand_hex_string(r: @Rng, len: usize) -> string {
+view act rand_hex_string(r: @Rng, len: usize) -> string {
     return rand_string_from(r, RAND_HEX_LOWER, len)
 }
 
@@ -175,7 +175,7 @@ act rand_hex_string(r: @Rng, len: usize) -> string {
 // ---------------------------------------------------------------------------
 
 // Fisher-Yates in-place shuffle of a u64 array of `count` elements.
-act rand_shuffle_u64(r: @Rng, arr: @u64, count: usize) {
+view act rand_shuffle_u64(r: @Rng, arr: @u64, count: usize) {
     if arr == null or count <= 1 { return }
     mut i: usize = count - 1
     loop i > 0 {
@@ -188,7 +188,7 @@ act rand_shuffle_u64(r: @Rng, arr: @u64, count: usize) {
 }
 
 // Fisher-Yates in-place shuffle of an i64 array of `count` elements.
-act rand_shuffle_i64(r: @Rng, arr: @i64, count: usize) {
+view act rand_shuffle_i64(r: @Rng, arr: @i64, count: usize) {
     if arr == null or count <= 1 { return }
     mut i: usize = count - 1
     loop i > 0 {
@@ -201,7 +201,7 @@ act rand_shuffle_i64(r: @Rng, arr: @i64, count: usize) {
 }
 
 // Fisher-Yates in-place shuffle of a byte buffer of `count` bytes.
-act rand_shuffle_bytes(r: @Rng, buf: @u8, count: usize) {
+view act rand_shuffle_bytes(r: @Rng, buf: @u8, count: usize) {
     if buf == null or count <= 1 { return }
     mut i: usize = count - 1
     loop i > 0 {
@@ -218,7 +218,7 @@ act rand_shuffle_bytes(r: @Rng, buf: @u8, count: usize) {
 // ---------------------------------------------------------------------------
 
 // Returns a uniformly random index in [0, count). Returns 0 if count == 0.
-act rand_index(r: @Rng, count: usize) -> usize {
+view act rand_index(r: @Rng, count: usize) -> usize {
     if count == 0 { return 0 }
     return pcg64_bounded(@r.pcg, count as u64) as usize
 }
@@ -228,12 +228,12 @@ act rand_index(r: @Rng, count: usize) -> usize {
 // ---------------------------------------------------------------------------
 
 // Returns a uniformly random u64 from Xoshiro256**.
-act rand_u64_x(r: @Xoshiro256) -> u64 {
+view act rand_u64_x(r: @Xoshiro256) -> u64 {
     return xoshiro256_next(r)
 }
 
 // Returns a uniformly random u64 in [min, max] from Xoshiro256**.
-act rand_range_u64_x(r: @Xoshiro256, min: u64, max: u64) -> u64 {
+view act rand_range_u64_x(r: @Xoshiro256, min: u64, max: u64) -> u64 {
     if min >= max { return min }
     let diff: u64 = max - min
     if diff == 0xFFFFFFFFFFFFFFFF as u64 {

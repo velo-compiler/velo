@@ -3,17 +3,17 @@ use "defs.vl"
 use "../mem/heap.vl"
 use "../str.vl"
 
-let UUID_HEX_CHARS_LOWER: string = "0123456789abcdef"
-let UUID_HEX_CHARS_UPPER: string = "0123456789ABCDEF"
+view let UUID_HEX_CHARS_LOWER: string = "0123456789abcdef"
+view let UUID_HEX_CHARS_UPPER: string = "0123456789ABCDEF"
 
 // Writes 2 hex characters for a byte b into buf at pos.
-act uuid_write_hex_byte(buf: @u8, pos: usize, b: u8, hex_table: string) {
+view act uuid_write_hex_byte(buf: @u8, pos: usize, b: u8, hex_table: string) {
     buf[pos] = hex_table[((b >> 4) & (0x0F as u8)) as usize]
     buf[pos + 1] = hex_table[(b & (0x0F as u8)) as usize]
 }
 
 // Writes the 36-character hyphenated UUID representation (8-4-4-4-12) into buf.
-act uuid_format_into(u: @Uuid, buf: @u8, hex_table: string) {
+view act uuid_format_into(u: @Uuid, buf: @u8, hex_table: string) {
     let ptr = u as @u8
 
     // Group 1: bytes 0..3 (indices 0..7)
@@ -52,7 +52,7 @@ act uuid_format_into(u: @Uuid, buf: @u8, hex_table: string) {
 }
 
 // Formats a UUID as standard lowercase hyphenated string: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-act uuid_to_string(u: @Uuid) -> string {
+view act uuid_to_string(u: @Uuid) -> string {
     if u == null { return "" }
     mut buf: @u8 = heap_alloc(UUID_STR_LEN + 1)
     if buf == null { return "" }
@@ -63,7 +63,7 @@ act uuid_to_string(u: @Uuid) -> string {
 }
 
 // Formats a UUID as uppercase hyphenated string: "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-act uuid_to_string_upper(u: @Uuid) -> string {
+view act uuid_to_string_upper(u: @Uuid) -> string {
     if u == null { return "" }
     mut buf: @u8 = heap_alloc(UUID_STR_LEN + 1)
     if buf == null { return "" }
@@ -74,7 +74,7 @@ act uuid_to_string_upper(u: @Uuid) -> string {
 }
 
 // Formats a UUID as a 32-character hex string without hyphens: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-act uuid_to_simple_string(u: @Uuid) -> string {
+view act uuid_to_simple_string(u: @Uuid) -> string {
     if u == null { return "" }
     mut buf: @u8 = heap_alloc(UUID_SIMPLE_LEN + 1)
     if buf == null { return "" }
@@ -90,7 +90,7 @@ act uuid_to_simple_string(u: @Uuid) -> string {
 }
 
 // Formats a UUID as a standard URN string: "urn:uuid:xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-act uuid_to_urn(u: @Uuid) -> string {
+view act uuid_to_urn(u: @Uuid) -> string {
     if u == null { return "" }
     mut buf: @u8 = heap_alloc(UUID_URN_LEN + 1)
     if buf == null { return "" }
@@ -114,7 +114,7 @@ act uuid_to_urn(u: @Uuid) -> string {
 
 // Writes the 36-character hyphenated UUID into a caller-provided buffer.
 // Requires buffer capacity >= 36 bytes. Returns true on success.
-act uuid_to_buffer(u: @Uuid, buf: @u8, len: usize) -> bool {
+view act uuid_to_buffer(u: @Uuid, buf: @u8, len: usize) -> bool {
     if u == null or buf == null or len < UUID_STR_LEN { return false }
     uuid_format_into(u, buf, UUID_HEX_CHARS_LOWER)
     if len > UUID_STR_LEN {

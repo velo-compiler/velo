@@ -2,7 +2,7 @@
 use "common.vl"
 use "assert.vl"
 
-data TestSuite {
+view data TestSuite {
     name: string
     total_cases: usize
     passed_cases: usize
@@ -14,7 +14,7 @@ data TestSuite {
 }
 
 // Instantiates a new TestSuite with the given title.
-act test_suite_new(name: string) -> TestSuite {
+view act test_suite_new(name: string) -> TestSuite {
     return TestSuite {
         name: name,
         total_cases: 0,
@@ -28,14 +28,14 @@ act test_suite_new(name: string) -> TestSuite {
 }
 
 // Configures suite verbosity.
-act test_suite_set_verbose(suite: @TestSuite, verbose: bool) -> void {
+view act test_suite_set_verbose(suite: @TestSuite, verbose: bool) -> void {
     if suite != null {
         suite.verbose = verbose
     }
 }
 
 // Executes an isolated test case callback and records its execution result into the suite.
-act test_case(suite: @TestSuite, name: string, test_fn: act() -> void) -> void {
+view act test_case(suite: @TestSuite, name: string, test_fn: act() -> void) -> void {
     if suite == null { return }
 
     let initial_failed_asserts = g_test_failed_asserts
@@ -86,7 +86,7 @@ act test_case(suite: @TestSuite, name: string, test_fn: act() -> void) -> void {
 }
 
 // Prints formatted suite summary and returns 0 on success, 1 on any failure.
-act test_suite_finish(suite: @TestSuite) -> i32 {
+view act test_suite_finish(suite: @TestSuite) -> i32 {
     if suite == null { return 1 }
 
     println_str("--------------------------------------------------")

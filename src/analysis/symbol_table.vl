@@ -20,6 +20,8 @@ data Symbol {
     pointer_origin_depth: i32
     orig_type: string
     is_narrowed: bool
+    is_view: bool
+    file_path: string
     next: @Symbol
 }
 
@@ -46,6 +48,8 @@ data StructSym {
     name: string
     first_field: @StructFieldSym
     field_count: usize
+    is_view: bool
+    file_path: string
     line: i32
     col: i32
     next: @StructSym
@@ -70,6 +74,8 @@ data KindSym {
     first_variant: @VariantSym
     variant_count: usize
     is_tagged_union: bool
+    is_view: bool
+    file_path: string
     line: i32
     col: i32
     next: @KindSym
@@ -89,6 +95,8 @@ data FunctionSym {
     first_param: @ParamSym
     param_count: usize
     is_extern: bool
+    is_view: bool
+    file_path: string
     line: i32
     col: i32
     next: @FunctionSym
@@ -99,6 +107,8 @@ data PactSym {
     name: string
     first_method: @StmtNode
     method_count: usize
+    is_view: bool
+    file_path: string
     line: i32
     col: i32
     next: @PactSym
@@ -131,6 +141,8 @@ data SymbolTable {
     strict_safety: bool
     current_unsafe_depth: i32
     current_loop_depth: i32
+    current_file: string
+    is_codegen: bool
 }
 
 // Initializes the root Symbol Table.
@@ -142,7 +154,7 @@ act init_symbol_table(st: @SymbolTable) {
     st.fresh_counter = 0; st.unsafe_shelf_index = false; st.unsafe_array_index = false; st.is_test = false; st.source_file = ""; st.no_line_directives = false
     st.zone_counter = 0; st.current_func_ret_type = ""; st.current_func_name = ""; st.current_zone_depth = 0
     st.strict_safety = false; st.current_unsafe_depth = 0
-    st.current_loop_depth = 0
+    st.current_loop_depth = 0; st.current_file = ""; st.is_codegen = false
 }
 
 // Registers a struct blueprint in the symbol table.

@@ -5,37 +5,37 @@ use "../time/sleep.vl"
 use "../net/socket.vl"
 
 // Windows WSAPOLLFD structure layout (16 bytes aligned)
-data PollFd {
+view data PollFd {
     fd: i64
     events: i16
     revents: i16
     pad: i32
 }
 
-extern act WSAPoll(fdarray: @PollFd, fds: u32, timeout: i32) -> i32
+view extern act WSAPoll(fdarray: @PollFd, fds: u32, timeout: i32) -> i32
 
-let POLLRDNORM_WIN: i16 = 256  // 0x0100
-let POLLRDBAND_WIN: i16 = 512  // 0x0200
-let POLLIN_WIN: i16 = 768      // POLLRDNORM | POLLRDBAND
-let POLLWRNORM_WIN: i16 = 16   // 0x0010
-let POLLOUT_WIN: i16 = 16      // 0x0010
-let POLLERR_WIN: i16 = 1       // 0x0001
-let POLLHUP_WIN: i16 = 2       // 0x0002
-let POLLNVAL_WIN: i16 = 4      // 0x0004
+view let POLLRDNORM_WIN: i16 = 256  // 0x0100
+view let POLLRDBAND_WIN: i16 = 512  // 0x0200
+view let POLLIN_WIN: i16 = 768      // POLLRDNORM | POLLRDBAND
+view let POLLWRNORM_WIN: i16 = 16   // 0x0010
+view let POLLOUT_WIN: i16 = 16      // 0x0010
+view let POLLERR_WIN: i16 = 1       // 0x0001
+view let POLLHUP_WIN: i16 = 2       // 0x0002
+view let POLLNVAL_WIN: i16 = 4      // 0x0004
 
-act pollfd_sizeof() -> usize {
+view act pollfd_sizeof() -> usize {
     let dummy: @PollFd = null
     return (dummy + 1) as usize
 }
 
 // Low-level socket polling container
-data Poller {
+view data Poller {
     fds: @PollFd
     count: usize
     cap: usize
 }
 
-act async_to_poll_events(events: u32) -> i16 {
+view act async_to_poll_events(events: u32) -> i16 {
     mut pe: i16 = 0 as i16
     if (events & ASYNC_EVENT_READ) != (0 as u32) {
         pe = (pe | POLLRDNORM_WIN | POLLRDBAND_WIN) as i16
@@ -46,7 +46,7 @@ act async_to_poll_events(events: u32) -> i16 {
     return pe
 }
 
-act poll_to_async_events(revents: i16) -> u32 {
+view act poll_to_async_events(revents: i16) -> u32 {
     mut ev: u32 = 0 as u32
     let r_i32 = revents as i32
     if (r_i32 & (POLLIN_WIN as i32)) != 0 {
@@ -65,7 +65,7 @@ act poll_to_async_events(revents: i16) -> u32 {
 }
 
 // Creates a new Poller with allocated capacity
-act poller_init(initial_cap: usize) -> Poller {
+view act poller_init(initial_cap: usize) -> Poller {
     net_ensure_init()
     mut c = initial_cap
     if c < 4 { c = 4 }
@@ -78,7 +78,7 @@ act poller_init(initial_cap: usize) -> Poller {
 }
 
 // Releases poller memory resources
-act poller_free(p: @Poller) {
+view act poller_free(p: @Poller) {
     if p == null { return }
     if p.fds != null {
         heap_free(p.fds as @u8)
@@ -88,7 +88,7 @@ act poller_free(p: @Poller) {
     p.cap = 0
 }
 
-act poller_ensure_cap(p: @Poller) {
+view act poller_ensure_cap(p: @Poller) {
     if p.count < p.cap { return }
     let new_cap = p.cap * 2
     let new_buf = heap_alloc(new_cap * pollfd_sizeof()) as @PollFd
@@ -104,7 +104,7 @@ act poller_ensure_cap(p: @Poller) {
 }
 
 // Registers a socket file descriptor with interest events
-act poller_add(p: @Poller, fd: i64, events: u32) -> bool {
+view act poller_add(p: @Poller, fd: i64, events: u32) -> bool {
     if p == null or fd < 0 { return false }
     mut i: usize = 0
     loop i < p.count {
@@ -127,7 +127,7 @@ act poller_add(p: @Poller, fd: i64, events: u32) -> bool {
 }
 
 // Updates registered interest events for an existing socket
-act poller_modify(p: @Poller, fd: i64, events: u32) -> bool {
+view act poller_modify(p: @Poller, fd: i64, events: u32) -> bool {
     if p == null { return false }
     mut i: usize = 0
     loop i < p.count {
@@ -142,7 +142,7 @@ act poller_modify(p: @Poller, fd: i64, events: u32) -> bool {
 }
 
 // Removes a socket file descriptor from the poller
-act poller_remove(p: @Poller, fd: i64) -> bool {
+view act poller_remove(p: @Poller, fd: i64) -> bool {
     if p == null { return false }
     mut i: usize = 0
     loop i < p.count {
@@ -159,7 +159,7 @@ act poller_remove(p: @Poller, fd: i64) -> bool {
 }
 
 // Polls active file descriptors for I/O readiness up to timeout_ms milliseconds
-act poller_poll(p: @Poller, timeout_ms: i32, out_events: @AsyncEvent, max_events: usize) -> i32 {
+view act poller_poll(p: @Poller, timeout_ms: i32, out_events: @AsyncEvent, max_events: usize) -> i32 {
     if p == null or out_events == null or max_events == 0 { return 0 }
     if p.count == 0 {
         if timeout_ms > 0 {

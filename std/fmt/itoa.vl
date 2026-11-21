@@ -6,7 +6,7 @@ use "../str/slice.vl"
 // Formats an unsigned 64-bit integer as decimal digits into buf.
 // Writes formatted characters starting at buf[0] and ensures null-termination if buf_len allows.
 // Returns a StrSlice view over the formatted digits, or an empty slice if buf is too small.
-act format_u64(val: u64, buf: @u8, buf_len: usize) -> StrSlice {
+view act format_u64(val: u64, buf: @u8, buf_len: usize) -> StrSlice {
     if buf == null or buf_len == 0 {
         return StrSlice { ptr: null, len: 0 }
     }
@@ -43,7 +43,7 @@ act format_u64(val: u64, buf: @u8, buf_len: usize) -> StrSlice {
 // Handles INT64_MIN (-9223372036854775808) correctly without overflow.
 // Writes formatted characters starting at buf[0] and ensures null-termination if buf_len allows.
 // Returns a StrSlice view over the formatted digits, or an empty slice if buf is too small.
-act format_i64(val: i64, buf: @u8, buf_len: usize) -> StrSlice {
+view act format_i64(val: i64, buf: @u8, buf_len: usize) -> StrSlice {
     if buf == null or buf_len == 0 {
         return StrSlice { ptr: null, len: 0 }
     }
@@ -95,7 +95,7 @@ act format_i64(val: i64, buf: @u8, buf_len: usize) -> StrSlice {
 
 // Formats an unsigned 64-bit integer as hexadecimal into buf.
 // Uses uppercase letters ('A'..'F') if upper is true, otherwise lowercase ('a'..'f').
-act format_hex(val: u64, upper: bool, buf: @u8, buf_len: usize) -> StrSlice {
+view act format_hex(val: u64, upper: bool, buf: @u8, buf_len: usize) -> StrSlice {
     if buf == null or buf_len == 0 {
         return StrSlice { ptr: null, len: 0 }
     }
@@ -138,7 +138,7 @@ act format_hex(val: u64, upper: bool, buf: @u8, buf_len: usize) -> StrSlice {
 }
 
 // Formats an unsigned 64-bit integer as binary ('0' and '1') into buf.
-act format_bin(val: u64, buf: @u8, buf_len: usize) -> StrSlice {
+view act format_bin(val: u64, buf: @u8, buf_len: usize) -> StrSlice {
     if buf == null or buf_len == 0 {
         return StrSlice { ptr: null, len: 0 }
     }
@@ -172,7 +172,7 @@ act format_bin(val: u64, buf: @u8, buf_len: usize) -> StrSlice {
 }
 
 // Formats an unsigned 64-bit integer as octal ('0'..'7') into buf.
-act format_oct(val: u64, buf: @u8, buf_len: usize) -> StrSlice {
+view act format_oct(val: u64, buf: @u8, buf_len: usize) -> StrSlice {
     if buf == null or buf_len == 0 {
         return StrSlice { ptr: null, len: 0 }
     }
@@ -206,7 +206,7 @@ act format_oct(val: u64, buf: @u8, buf_len: usize) -> StrSlice {
 }
 
 // Formats an unsigned 64-bit integer padded with leading zeroes up to min_digits.
-act format_u64_padded(val: u64, min_digits: usize, buf: @u8, buf_len: usize) -> StrSlice {
+view act format_u64_padded(val: u64, min_digits: usize, buf: @u8, buf_len: usize) -> StrSlice {
     if buf == null or buf_len == 0 {
         return StrSlice { ptr: null, len: 0 }
     }
@@ -235,7 +235,7 @@ act format_u64_padded(val: u64, min_digits: usize, buf: @u8, buf_len: usize) -> 
 }
 
 // Formats an unsigned 64-bit integer in hexadecimal padded with leading zeroes up to min_digits.
-act format_hex_padded(val: u64, min_digits: usize, upper: bool, buf: @u8, buf_len: usize) -> StrSlice {
+view act format_hex_padded(val: u64, min_digits: usize, upper: bool, buf: @u8, buf_len: usize) -> StrSlice {
     if buf == null or buf_len == 0 {
         return StrSlice { ptr: null, len: 0 }
     }

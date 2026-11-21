@@ -17,26 +17,26 @@ use "stat.vl"
 // Foreign interface to the runtime header's portable filesystem helpers.
 // Extern declarations reuse the header's `static inline` definitions (C99
 // 6.2.2p4, the mechanism Phase 70 / Task 70.1 established).
-extern act velo_fs_create_dir(path: string) -> bool
-extern act velo_fs_remove_dir(path: string) -> bool
-extern act velo_fs_remove(path: string) -> bool
-extern act velo_fs_rename(src: string, dst: string) -> bool
-extern act velo_fs_copy(src: string, dst: string) -> bool
+view extern act velo_fs_create_dir(path: string) -> bool
+view extern act velo_fs_remove_dir(path: string) -> bool
+view extern act velo_fs_remove(path: string) -> bool
+view extern act velo_fs_rename(src: string, dst: string) -> bool
+view extern act velo_fs_copy(src: string, dst: string) -> bool
 
 // Creates a single directory. Returns true on success.
-act fs_create_dir(path: @u8) -> bool {
+view act fs_create_dir(path: @u8) -> bool {
     if path == null { return false }
     return velo_fs_create_dir(path as string)
 }
 
 // Creates a single directory from a Velo string.
-act fs_create_dir_str(path: string) -> bool {
+view act fs_create_dir_str(path: string) -> bool {
     if path == null { return false }
     return fs_create_dir(path as @u8)
 }
 
 // Creates a single directory from a StrSlice view.
-act fs_create_dir_slice(path: StrSlice) -> bool {
+view act fs_create_dir_slice(path: StrSlice) -> bool {
     if slice_is_empty(path) { return false }
     let buf = heap_alloc(path.len + 1)
     if buf == null { return false }
@@ -49,7 +49,7 @@ act fs_create_dir_slice(path: StrSlice) -> bool {
 
 // Creates a directory and all non-existent parent directories (like mkdir -p).
 // Returns true if the directory exists or was created successfully.
-act fs_create_dir_all(path: string) -> bool {
+view act fs_create_dir_all(path: string) -> bool {
     if path == null { return false }
     let plen = raw_str_len(path as @u8)
     if plen == 0 { return false }
@@ -89,19 +89,19 @@ act fs_create_dir_all(path: string) -> bool {
 }
 
 // Removes an empty directory. Returns true on success.
-act fs_remove_dir(path: @u8) -> bool {
+view act fs_remove_dir(path: @u8) -> bool {
     if path == null { return false }
     return velo_fs_remove_dir(path as string)
 }
 
 // Removes an empty directory from a Velo string.
-act fs_remove_dir_str(path: string) -> bool {
+view act fs_remove_dir_str(path: string) -> bool {
     if path == null { return false }
     return fs_remove_dir(path as @u8)
 }
 
 // Removes an empty directory from a StrSlice view.
-act fs_remove_dir_slice(path: StrSlice) -> bool {
+view act fs_remove_dir_slice(path: StrSlice) -> bool {
     if slice_is_empty(path) { return false }
     let buf = heap_alloc(path.len + 1)
     if buf == null { return false }
@@ -113,19 +113,19 @@ act fs_remove_dir_slice(path: StrSlice) -> bool {
 }
 
 // Deletes a file. Returns true on success.
-act fs_remove_file(path: @u8) -> bool {
+view act fs_remove_file(path: @u8) -> bool {
     if path == null { return false }
     return velo_fs_remove(path as string)
 }
 
 // Deletes a file from a Velo string.
-act fs_remove_file_str(path: string) -> bool {
+view act fs_remove_file_str(path: string) -> bool {
     if path == null { return false }
     return fs_remove_file(path as @u8)
 }
 
 // Deletes a file from a StrSlice view.
-act fs_remove_file_slice(path: StrSlice) -> bool {
+view act fs_remove_file_slice(path: StrSlice) -> bool {
     if slice_is_empty(path) { return false }
     let buf = heap_alloc(path.len + 1)
     if buf == null { return false }
@@ -137,19 +137,19 @@ act fs_remove_file_slice(path: StrSlice) -> bool {
 }
 
 // Renames or moves a file/directory. Overwrites destination if it exists.
-act fs_rename(old_path: @u8, new_path: @u8) -> bool {
+view act fs_rename(old_path: @u8, new_path: @u8) -> bool {
     if old_path == null or new_path == null { return false }
     return velo_fs_rename(old_path as string, new_path as string)
 }
 
 // Renames or moves a file/directory from Velo strings.
-act fs_rename_str(old_path: string, new_path: string) -> bool {
+view act fs_rename_str(old_path: string, new_path: string) -> bool {
     if old_path == null or new_path == null { return false }
     return fs_rename(old_path as @u8, new_path as @u8)
 }
 
 // Renames or moves a file/directory from StrSlice views.
-act fs_rename_slice(old_path: StrSlice, new_path: StrSlice) -> bool {
+view act fs_rename_slice(old_path: StrSlice, new_path: StrSlice) -> bool {
     if slice_is_empty(old_path) or slice_is_empty(new_path) { return false }
     let b_old = heap_alloc(old_path.len + 1)
     let b_new = heap_alloc(new_path.len + 1)
@@ -170,7 +170,7 @@ act fs_rename_slice(old_path: StrSlice, new_path: StrSlice) -> bool {
 }
 
 // Copies a file. If overwrite is true, replaces existing destination.
-act fs_copy_file(src: @u8, dst: @u8, overwrite: bool) -> bool {
+view act fs_copy_file(src: @u8, dst: @u8, overwrite: bool) -> bool {
     if src == null or dst == null { return false }
     // CopyFileA's bFailIfExists is the semantic this signature always had: when
     // `overwrite` is false an existing destination is an ERROR, not a no-op.
@@ -183,13 +183,13 @@ act fs_copy_file(src: @u8, dst: @u8, overwrite: bool) -> bool {
 }
 
 // Copies a file from Velo strings.
-act fs_copy_file_str(src: string, dst: string, overwrite: bool) -> bool {
+view act fs_copy_file_str(src: string, dst: string, overwrite: bool) -> bool {
     if src == null or dst == null { return false }
     return fs_copy_file(src as @u8, dst as @u8, overwrite)
 }
 
 // Copies a file from StrSlice views.
-act fs_copy_file_slice(src: StrSlice, dst: StrSlice, overwrite: bool) -> bool {
+view act fs_copy_file_slice(src: StrSlice, dst: StrSlice, overwrite: bool) -> bool {
     if slice_is_empty(src) or slice_is_empty(dst) { return false }
     let b_src = heap_alloc(src.len + 1)
     let b_dst = heap_alloc(dst.len + 1)
@@ -210,7 +210,7 @@ act fs_copy_file_slice(src: StrSlice, dst: StrSlice, overwrite: bool) -> bool {
 }
 
 // Writes raw bytes to a file, replacing it if it exists.
-act fs_write_bytes(path: string, data: @u8, len: usize) -> bool {
+view act fs_write_bytes(path: string, data: @u8, len: usize) -> bool {
     if path == null { return false }
     let flags = IO_CREATE | IO_TRUNCATE | IO_WRITE
     let fh = io_file_open_str(path, flags)
@@ -228,7 +228,7 @@ act fs_write_bytes(path: string, data: @u8, len: usize) -> bool {
 }
 
 // Writes a string to a file, replacing it if it exists.
-act fs_write_str(path: string, content: string) -> bool {
+view act fs_write_str(path: string, content: string) -> bool {
     if content == null {
         return fs_write_bytes(path, null, 0)
     }
@@ -237,13 +237,13 @@ act fs_write_str(path: string, content: string) -> bool {
 }
 
 // Writes a StrSlice view to a file, replacing it if it exists.
-act fs_write_slice(path: string, content: StrSlice) -> bool {
+view act fs_write_slice(path: string, content: StrSlice) -> bool {
     return fs_write_bytes(path, content.ptr, content.len)
 }
 
 // Reads entire file into a newly allocated null-terminated heap buffer.
 // Sets out_len to the number of bytes read (excluding null terminator).
-act fs_read_bytes(path: string, out_len: @usize) -> @u8 {
+view act fs_read_bytes(path: string, out_len: @usize) -> @u8 {
     if path == null { return null }
     let fh = io_file_open_str(path, IO_READ)
     if !io_is_valid_handle(fh) { return null }
@@ -280,14 +280,14 @@ act fs_read_bytes(path: string, out_len: @usize) -> @u8 {
 }
 
 // Reads an entire file into a heap-allocated Velo string.
-act fs_read_to_str(path: string) -> string {
+view act fs_read_to_str(path: string) -> string {
     mut l: usize = 0
     let buf = fs_read_bytes(path, @l)
     return buf as string
 }
 
 // Reads an entire file into a string, returning file content or error description.
-act fs_read_file(path: string) -> string or string {
+view act fs_read_file(path: string) -> string or string {
     if path == null { fail "null file path" }
     let s = fs_read_to_str(path)
     if s == null { fail "failed to read file" }
@@ -295,14 +295,14 @@ act fs_read_file(path: string) -> string or string {
 }
 
 // Writes content to a file, returning true or error description.
-act fs_write_file(path: string, content: string) -> bool or string {
+view act fs_write_file(path: string, content: string) -> bool or string {
     if path == null { fail "null file path" }
     if !fs_write_str(path, content) { fail "failed to write file" }
     return true
 }
 
 // Appends content to a file, returning true or error description.
-act fs_append_file(path: string, content: string) -> bool or string {
+view act fs_append_file(path: string, content: string) -> bool or string {
     if path == null { fail "null file path" }
     let fh = io_file_open_str(path, IO_CREATE | IO_APPEND | IO_WRITE)
     if !io_is_valid_handle(fh) { fail "failed to open file for append" }

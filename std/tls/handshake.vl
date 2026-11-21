@@ -9,7 +9,7 @@ use "key_schedule.vl"
 use "record.vl"
 use "x509.vl"
 
-data TlsHandshakeState {
+view data TlsHandshakeState {
     stream: @TcpStream,
     server_name: string,
     verify_peer: bool,
@@ -41,7 +41,7 @@ data TlsHandshakeState {
     server_seq: u64
 }
 
-act tls_sha256_snapshot(src: @Sha256State, out_digest: @u8) {
+view act tls_sha256_snapshot(src: @Sha256State, out_digest: @u8) {
     mut copy: Sha256State
     copy.h0 = src.h0; copy.h1 = src.h1; copy.h2 = src.h2; copy.h3 = src.h3
     copy.h4 = src.h4; copy.h5 = src.h5; copy.h6 = src.h6; copy.h7 = src.h7
@@ -52,7 +52,7 @@ act tls_sha256_snapshot(src: @Sha256State, out_digest: @u8) {
     sha256_final(@copy, out_digest)
 }
 
-act tls_stream_read_exact(stream: @TcpStream, buf: @u8, count: usize) -> bool {
+view act tls_stream_read_exact(stream: @TcpStream, buf: @u8, count: usize) -> bool {
     mut pos: usize = 0
     loop pos < count {
         let n = tcp_read(stream, buf + pos, count - pos)
@@ -62,7 +62,7 @@ act tls_stream_read_exact(stream: @TcpStream, buf: @u8, count: usize) -> bool {
     return true
 }
 
-act tls_read_raw_record(stream: @TcpStream, out_buf: @u8, out_len: @usize, out_type: @u8) -> bool {
+view act tls_read_raw_record(stream: @TcpStream, out_buf: @u8, out_len: @usize, out_type: @u8) -> bool {
     let hdr: @u8 = heap_alloc(5) as @u8
     if !tls_stream_read_exact(stream, hdr, 5) {
         heap_free(hdr as @void)
@@ -82,7 +82,7 @@ act tls_read_raw_record(stream: @TcpStream, out_buf: @u8, out_len: @usize, out_t
     return true
 }
 
-act tls13_handshake_init(stream: @TcpStream, server_name: string, verify_peer: bool, pinned_der: @u8, pinned_len: usize, pinned_fp_hex: string) -> @TlsHandshakeState {
+view act tls13_handshake_init(stream: @TcpStream, server_name: string, verify_peer: bool, pinned_der: @u8, pinned_len: usize, pinned_fp_hex: string) -> @TlsHandshakeState {
     let s = heap_alloc(512) as @TlsHandshakeState
     s.stream = stream
     s.server_name = server_name
@@ -110,7 +110,7 @@ act tls13_handshake_init(stream: @TcpStream, server_name: string, verify_peer: b
     return s
 }
 
-act tls13_build_client_hello(s: @TlsHandshakeState, out_len: @usize) -> @u8 {
+view act tls13_build_client_hello(s: @TlsHandshakeState, out_len: @usize) -> @u8 {
     let sni_len = if s.server_name != null { str.len(s.server_name) } else { 0 as usize }
     let buf: @u8 = heap_alloc(512 + sni_len) as @u8
     buf[0] = 0x01 as u8
@@ -157,7 +157,7 @@ act tls13_build_client_hello(s: @TlsHandshakeState, out_len: @usize) -> @u8 {
 }
 
 // Parses ServerHello message, derives DHE shared secret and handshake traffic keys.
-act tls13_parse_server_hello(s: @TlsHandshakeState, hs: @u8, hs_len: usize) -> bool {
+view act tls13_parse_server_hello(s: @TlsHandshakeState, hs: @u8, hs_len: usize) -> bool {
     if hs == null or hs_len < 38 { s.error_reason = "TlsHandshakeFailed"; return false }
     if hs[0] != (0x02 as u8) { s.error_reason = "TlsHandshakeFailed"; return false }
 
@@ -221,7 +221,7 @@ act tls13_parse_server_hello(s: @TlsHandshakeState, hs: @u8, hs_len: usize) -> b
 }
 
 // Full TLS 1.3 client handshake execution.
-act tls13_client_handshake(s: @TlsHandshakeState) -> bool {
+view act tls13_client_handshake(s: @TlsHandshakeState) -> bool {
     // 1. Send ClientHello in plaintext record
     let ch_len: @usize = heap_alloc(8) as @usize
     let ch = tls13_build_client_hello(s, ch_len)

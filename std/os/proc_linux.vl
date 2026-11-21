@@ -5,16 +5,16 @@ use "../mem/ops.vl"
 use "../str/slice.vl"
 use "proc_types.vl"
 
-extern act fork() -> i32
-extern act velo_posix_execvp(file: string, argv: @string) -> i32
-extern act dup2(oldfd: i32, newfd: i32) -> i32
-extern act close(fd: i32) -> i32
-extern act _exit(status: i32)
-extern act waitpid(pid: i32, status: @i32, options: i32) -> i32
-extern act kill(pid: i32, sig: i32) -> i32
+view extern act fork() -> i32
+view extern act velo_posix_execvp(file: string, argv: @string) -> i32
+view extern act dup2(oldfd: i32, newfd: i32) -> i32
+view extern act close(fd: i32) -> i32
+view extern act _exit(status: i32)
+view extern act waitpid(pid: i32, status: @i32, options: i32) -> i32
+view extern act kill(pid: i32, sig: i32) -> i32
 
 // Spawns a new child process on Linux.
-act os_spawn_ex(cmd: string, h_in: @void, h_out: @void, h_err: @void) -> ProcessHandle {
+view act os_spawn_ex(cmd: string, h_in: @void, h_out: @void, h_err: @void) -> ProcessHandle {
     if cmd == null {
         return ProcessHandle {
             pid: 0 as u32,
@@ -111,7 +111,7 @@ act os_spawn_ex(cmd: string, h_in: @void, h_out: @void, h_err: @void) -> Process
 }
 
 // Decodes POSIX waitpid status into an exit code (WIFEXITED / WEXITSTATUS / WIFSIGNALED).
-act posix_decode_status(status: i32) -> i32 {
+view act posix_decode_status(status: i32) -> i32 {
     let sig = status & 127
     if sig == 0 {
         // Exited normally: return exit code (0..255)
@@ -125,7 +125,7 @@ act posix_decode_status(status: i32) -> i32 {
 }
 
 // Waits for process completion on Linux.
-act os_process_wait_timeout(proc: @ProcessHandle, timeout_ms: u32) -> i32 {
+view act os_process_wait_timeout(proc: @ProcessHandle, timeout_ms: u32) -> i32 {
     if proc == null or !proc.is_alive {
         return -1
     }
@@ -153,7 +153,7 @@ act os_process_wait_timeout(proc: @ProcessHandle, timeout_ms: u32) -> i32 {
 }
 
 // Terminates process on Linux via SIGKILL.
-act os_process_kill(proc: @ProcessHandle) -> bool {
+view act os_process_kill(proc: @ProcessHandle) -> bool {
     if proc == null or !proc.is_alive {
         return false
     }
@@ -166,14 +166,14 @@ act os_process_kill(proc: @ProcessHandle) -> bool {
 }
 
 // Closes process descriptor on Linux.
-act os_process_close(proc: @ProcessHandle) {
+view act os_process_close(proc: @ProcessHandle) {
     if proc != null {
         proc.is_alive = false
     }
 }
 
 // Executes a shell command string through the system command processor (sh -c).
-act os_shell_spawn_sync(cmd: string) -> ProcessResult {
+view act os_shell_spawn_sync(cmd: string) -> ProcessResult {
     if cmd == null {
         return ProcessResult { exit_code: -1, success: false }
     }

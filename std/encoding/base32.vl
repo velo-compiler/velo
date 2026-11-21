@@ -1,10 +1,10 @@
 // std.encoding.base32 — RFC 4648 Base32 encoder and decoder (standard alphabet A-Z, 2-7).
 use "../mem/heap.vl"
 
-let B32_ALPHABET: string = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+view let B32_ALPHABET: string = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 
 // Encodes raw binary data into an RFC 4648 Base32 string with padding.
-act base32_encode(data: @u8, len: usize) -> string {
+view act base32_encode(data: @u8, len: usize) -> string {
     if data == null or len == 0 { return "" }
 
     let full_blocks = len / 5
@@ -106,13 +106,13 @@ act base32_encode(data: @u8, len: usize) -> string {
 }
 
 // Encodes a string into an RFC 4648 Base32 string.
-act base32_encode_str(s: string) -> string {
+view act base32_encode_str(s: string) -> string {
     if s == null { return "" }
     return base32_encode(s as @u8, str.len(s))
 }
 
 // Decodes a single Base32 character into its 5-bit integer index (0..31).
-act base32_char_to_val(c: u8) -> u32 {
+view act base32_char_to_val(c: u8) -> u32 {
     if c >= ('A' as u8) and c <= ('Z' as u8) {
         return (c - ('A' as u8)) as u32
     }
@@ -126,7 +126,7 @@ act base32_char_to_val(c: u8) -> u32 {
 }
 
 // Checks if a string is a valid Base32 representation.
-act base32_is_valid(s: string) -> bool {
+view act base32_is_valid(s: string) -> bool {
     if s == null { return false }
     let len = str.len(s)
     if len == 0 { return true }
@@ -150,7 +150,7 @@ act base32_is_valid(s: string) -> bool {
 }
 
 // Decodes a Base32 string into a raw heap byte buffer.
-act base32_decode(s: string, out_len: @usize) -> @u8 {
+view act base32_decode(s: string, out_len: @usize) -> @u8 {
     if s == null {
         if out_len != null { out_len[0] = 0 }
         return null
@@ -207,7 +207,7 @@ act base32_decode(s: string, out_len: @usize) -> @u8 {
 }
 
 // Decodes a Base32 string directly into a heap string.
-act base32_decode_str(s: string) -> string {
+view act base32_decode_str(s: string) -> string {
     mut decoded_len: usize = 0
     let bytes = base32_decode(s, @decoded_len)
     if bytes == null { return "" }

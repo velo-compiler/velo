@@ -5,7 +5,7 @@ use "slice.vl"
 
 // Finds the first occurrence of byte b in haystack.
 // Returns 0-based index or -1 if not found.
-act str_index_of_byte(haystack: StrSlice, b: u8) -> isize {
+view act str_index_of_byte(haystack: StrSlice, b: u8) -> isize {
     if haystack.ptr == null or haystack.len == 0 {
         return -1 as isize
     }
@@ -21,7 +21,7 @@ act str_index_of_byte(haystack: StrSlice, b: u8) -> isize {
 
 // Finds the last occurrence of byte b in haystack.
 // Returns 0-based index or -1 if not found.
-act str_last_index_of_byte(haystack: StrSlice, b: u8) -> isize {
+view act str_last_index_of_byte(haystack: StrSlice, b: u8) -> isize {
     if haystack.ptr == null or haystack.len == 0 {
         return -1 as isize
     }
@@ -40,7 +40,7 @@ act str_last_index_of_byte(haystack: StrSlice, b: u8) -> isize {
 
 // Finds the first occurrence of needle in haystack.
 // Returns 0-based index, 0 if needle is empty, or -1 if not found.
-act str_index_of(haystack: StrSlice, needle: StrSlice) -> isize {
+view act str_index_of(haystack: StrSlice, needle: StrSlice) -> isize {
     if needle.len == 0 {
         return 0 as isize
     }
@@ -75,7 +75,7 @@ act str_index_of(haystack: StrSlice, needle: StrSlice) -> isize {
 
 // Finds the last occurrence of needle in haystack.
 // Returns 0-based index, haystack.len if needle is empty, or -1 if not found.
-act str_last_index_of(haystack: StrSlice, needle: StrSlice) -> isize {
+view act str_last_index_of(haystack: StrSlice, needle: StrSlice) -> isize {
     if needle.len == 0 {
         return haystack.len as isize
     }
@@ -111,17 +111,17 @@ act str_last_index_of(haystack: StrSlice, needle: StrSlice) -> isize {
 }
 
 // Returns true if needle occurs anywhere in haystack.
-act str_contains(haystack: StrSlice, needle: StrSlice) -> bool {
+view act str_contains(haystack: StrSlice, needle: StrSlice) -> bool {
     return str_index_of(haystack, needle) >= 0 as isize
 }
 
 // Returns true if byte b occurs anywhere in haystack.
-act str_contains_byte(haystack: StrSlice, b: u8) -> bool {
+view act str_contains_byte(haystack: StrSlice, b: u8) -> bool {
     return str_index_of_byte(haystack, b) >= 0 as isize
 }
 
 // Counts non-overlapping occurrences of needle in haystack.
-act str_count(haystack: StrSlice, needle: StrSlice) -> usize {
+view act str_count(haystack: StrSlice, needle: StrSlice) -> usize {
     if needle.len == 0 or needle.len > haystack.len {
         return 0
     }
@@ -140,7 +140,7 @@ act str_count(haystack: StrSlice, needle: StrSlice) -> usize {
 }
 
 // Counts occurrences of byte b in haystack.
-act str_count_byte(haystack: StrSlice, b: u8) -> usize {
+view act str_count_byte(haystack: StrSlice, b: u8) -> usize {
     if haystack.ptr == null or haystack.len == 0 {
         return 0
     }
@@ -156,42 +156,42 @@ act str_count_byte(haystack: StrSlice, b: u8) -> usize {
 }
 
 // Checks if string slice starts with prefix.
-act str_starts_with(s: StrSlice, prefix: StrSlice) -> bool {
+view act str_starts_with(s: StrSlice, prefix: StrSlice) -> bool {
     return slice_starts_with(s, prefix)
 }
 
 // Checks if string slice ends with suffix.
-act str_ends_with(s: StrSlice, suffix: StrSlice) -> bool {
+view act str_ends_with(s: StrSlice, suffix: StrSlice) -> bool {
     return slice_ends_with(s, suffix)
 }
 
 // String literal convenience helpers
-act str_index_of_str(haystack: StrSlice, needle: string) -> isize {
+view act str_index_of_str(haystack: StrSlice, needle: string) -> isize {
     return str_index_of(haystack, slice_from_str(needle))
 }
 
-act str_last_index_of_str(haystack: StrSlice, needle: string) -> isize {
+view act str_last_index_of_str(haystack: StrSlice, needle: string) -> isize {
     return str_last_index_of(haystack, slice_from_str(needle))
 }
 
-act str_contains_str(haystack: StrSlice, needle: string) -> bool {
+view act str_contains_str(haystack: StrSlice, needle: string) -> bool {
     return str_contains(haystack, slice_from_str(needle))
 }
 
-act str_starts_with_str(s: StrSlice, prefix: string) -> bool {
+view act str_starts_with_str(s: StrSlice, prefix: string) -> bool {
     return slice_starts_with(s, slice_from_str(prefix))
 }
 
-act str_ends_with_str(s: StrSlice, suffix: string) -> bool {
+view act str_ends_with_str(s: StrSlice, suffix: string) -> bool {
     return slice_ends_with(s, slice_from_str(suffix))
 }
 
-act str_count_str(haystack: StrSlice, needle: string) -> usize {
+view act str_count_str(haystack: StrSlice, needle: string) -> usize {
     return str_count(haystack, slice_from_str(needle))
 }
 
 // Finds the first occurrence of needle in haystack, returning 0-based index or error description.
-act str_find(haystack: string, needle: string) -> usize or string {
+view act str_find(haystack: string, needle: string) -> usize or string {
     if haystack == null or needle == null { fail "null string" }
     let idx = str_index_of(slice_from_str(haystack), slice_from_str(needle))
     if idx < 0 { fail "substring not found" }

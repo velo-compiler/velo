@@ -11,37 +11,37 @@ mut g_console_enabled: bool = true
 mut g_memory_sink_enabled: bool = false
 
 // Configures the minimum severity level to log (messages below this level are ignored).
-act log_set_level(level: u8) {
+view act log_set_level(level: u8) {
     g_current_log_level = level
 }
 
 // Returns the active minimum severity level.
-act log_get_level() -> u8 {
+view act log_get_level() -> u8 {
     return g_current_log_level
 }
 
 // Enables or disables ANSI color escape sequences in console output.
-act log_enable_colors(enable: bool) {
+view act log_enable_colors(enable: bool) {
     g_use_colors = enable
 }
 
 // Configures a destination file path for all log entries.
-act log_set_file(path: string) {
+view act log_set_file(path: string) {
     g_log_file = path
 }
 
 // Enables or disables logging output to the terminal console.
-act log_enable_console(enable: bool) {
+view act log_enable_console(enable: bool) {
     g_console_enabled = enable
 }
 
 // Enables or disables storing entries in the in-memory inspection sink.
-act log_enable_memory_sink(enable: bool) {
+view act log_enable_memory_sink(enable: bool) {
     g_memory_sink_enabled = enable
 }
 
 // Core logging dispatch mechanism.
-act log_dispatch(level: u8, target: string, message: string) {
+view act log_dispatch(level: u8, target: string, message: string) {
     if level < g_current_log_level {
         return
     }
@@ -66,40 +66,40 @@ act log_dispatch(level: u8, target: string, message: string) {
 }
 
 // Logs a message with TRACE severity for a specified target module.
-act log_trace(target: string, msg: string) {
+view act log_trace(target: string, msg: string) {
     log_dispatch(0 as u8, target, msg)
 }
 
 // Logs a message with DEBUG severity for a specified target module.
-act log_debug(target: string, msg: string) {
+view act log_debug(target: string, msg: string) {
     log_dispatch(1 as u8, target, msg)
 }
 
 // Logs a message with INFO severity for a specified target module.
-act log_info(target: string, msg: string) {
+view act log_info(target: string, msg: string) {
     log_dispatch(2 as u8, target, msg)
 }
 
 // Logs a message with WARN severity for a specified target module.
-act log_warn(target: string, msg: string) {
+view act log_warn(target: string, msg: string) {
     log_dispatch(3 as u8, target, msg)
 }
 
 // Logs a message with ERROR severity for a specified target module.
-act log_error(target: string, msg: string) {
+view act log_error(target: string, msg: string) {
     log_dispatch(4 as u8, target, msg)
 }
 
 // Logs a message with FATAL severity for a specified target module.
-act log_fatal(target: string, msg: string) {
+view act log_fatal(target: string, msg: string) {
     log_dispatch(5 as u8, target, msg)
 }
 
 // Top-level logging shortcuts with default "app" target:
-act trace(msg: string) { log_dispatch(0 as u8, "app", msg) }
-act debug(msg: string) { log_dispatch(1 as u8, "app", msg) }
-act info(msg: string)  { log_dispatch(2 as u8, "app", msg) }
-act warn(msg: string)  { log_dispatch(3 as u8, "app", msg) }
-act error(msg: string) { log_dispatch(4 as u8, "app", msg) }
-act fatal(msg: string) { log_dispatch(5 as u8, "app", msg) }
+view act trace(msg: string) { log_dispatch(0 as u8, "app", msg) }
+view act debug(msg: string) { log_dispatch(1 as u8, "app", msg) }
+view act info(msg: string)  { log_dispatch(2 as u8, "app", msg) }
+view act warn(msg: string)  { log_dispatch(3 as u8, "app", msg) }
+view act error(msg: string) { log_dispatch(4 as u8, "app", msg) }
+view act fatal(msg: string) { log_dispatch(5 as u8, "app", msg) }
 

@@ -10,14 +10,14 @@ use "value.vl"
 use "value_ops.vl"
 
 // Diagnostic error record containing error message and source location.
-data JsonParseError {
+view data JsonParseError {
     message: StrSlice,
     line: usize,
     col: usize,
 }
 
 // Internal parser state tracking lexer, arena allocator, and first recorded syntax error.
-data JsonParser {
+view data JsonParser {
     lex: JsonLexer,
     arena: @Arena,
     error: JsonParseError,
@@ -25,7 +25,7 @@ data JsonParser {
 }
 
 // Self-contained parsed JSON document with its own regional Arena memory lifecycle.
-data JsonDoc {
+view data JsonDoc {
     arena: Arena,
     root: @JsonValue,
     error: JsonParseError,
@@ -33,7 +33,7 @@ data JsonDoc {
 }
 
 // Checks if slice contains a backslash '\' character indicating escape sequences.
-act slice_has_escape(s: StrSlice) -> bool {
+view act slice_has_escape(s: StrSlice) -> bool {
     if s.ptr == null or s.len == 0 { return false }
     mut i: usize = 0
     loop i < s.len {
@@ -44,7 +44,7 @@ act slice_has_escape(s: StrSlice) -> bool {
 }
 
 // Records the first syntax error encountered during parsing.
-act parser_set_error(p: @JsonParser, msg: string, line: usize, col: usize) {
+view act parser_set_error(p: @JsonParser, msg: string, line: usize, col: usize) {
     if !p.had_error {
         p.had_error = true
         p.error = JsonParseError {
@@ -56,7 +56,7 @@ act parser_set_error(p: @JsonParser, msg: string, line: usize, col: usize) {
 }
 
 // Decodes string escapes into arena memory if needed, or returns unescaped slice directly.
-act parser_unescape_str(p: @JsonParser, raw: StrSlice) -> StrSlice {
+view act parser_unescape_str(p: @JsonParser, raw: StrSlice) -> StrSlice {
     if !slice_has_escape(raw) {
         return raw
     }
@@ -74,7 +74,7 @@ act parser_unescape_str(p: @JsonParser, raw: StrSlice) -> StrSlice {
 }
 
 // Recursively parses the next JSON value from the input stream.
-act json_parse_value(p: @JsonParser) -> @JsonValue {
+view act json_parse_value(p: @JsonParser) -> @JsonValue {
     if p.had_error { return null }
 
     let tok = json_lexer_next(@p.lex)
@@ -195,7 +195,7 @@ act json_parse_value(p: @JsonParser) -> @JsonValue {
 
 // Parses a JSON document from a StrSlice view into the provided memory Arena.
 // Returns the root JsonValue DOM node on success, or null on syntax error (populating out_err).
-act json_parse(a: @Arena, src: StrSlice, out_err: @JsonParseError) -> @JsonValue {
+view act json_parse(a: @Arena, src: StrSlice, out_err: @JsonParseError) -> @JsonValue {
     if a == null or src.ptr == null or src.len == 0 {
         if out_err != null {
             out_err.message = slice_from_str("Empty JSON input")
@@ -237,12 +237,12 @@ act json_parse(a: @Arena, src: StrSlice, out_err: @JsonParseError) -> @JsonValue
 }
 
 // Convenience wrapper parsing a JSON document from a null-terminated string literal.
-act json_parse_str(a: @Arena, src: string, out_err: @JsonParseError) -> @JsonValue {
+view act json_parse_str(a: @Arena, src: string, out_err: @JsonParseError) -> @JsonValue {
     return json_parse(a, slice_from_str(src), out_err)
 }
 
 // Parses a JSON document into a self-contained JsonDoc managing its own Arena lifecycle.
-act json_parse_doc(src: StrSlice, arena_cap: usize) -> JsonDoc {
+view act json_parse_doc(src: StrSlice, arena_cap: usize) -> JsonDoc {
     mut cap = arena_cap
     if cap < 4096 { cap = 65536 }
     mut a = arena_init(cap)
@@ -257,19 +257,19 @@ act json_parse_doc(src: StrSlice, arena_cap: usize) -> JsonDoc {
 }
 
 // Convenience wrapper parsing a JSON document from a null-terminated string into a JsonDoc.
-act json_parse_doc_str(src: string, arena_cap: usize) -> JsonDoc {
+view act json_parse_doc_str(src: string, arena_cap: usize) -> JsonDoc {
     return json_parse_doc(slice_from_str(src), arena_cap)
 }
 
 // Frees all memory associated with a parsed JsonDoc.
-act json_doc_free(doc: @JsonDoc) {
+view act json_doc_free(doc: @JsonDoc) {
     if doc != null {
         arena_reset(@doc.arena)
     }
 }
 
 // Validates whether the given string conforms to valid RFC 8259 JSON syntax without retaining the AST.
-act json_validate(src: StrSlice, out_err: @JsonParseError) -> bool {
+view act json_validate(src: StrSlice, out_err: @JsonParseError) -> bool {
     mut temp_arena = arena_init(16384)
     defer arena_reset(@temp_arena)
     let root = json_parse(@temp_arena, src, out_err)
@@ -277,12 +277,12 @@ act json_validate(src: StrSlice, out_err: @JsonParseError) -> bool {
 }
 
 // Convenience wrapper validating JSON syntax from a null-terminated string.
-act json_validate_str(src: string, out_err: @JsonParseError) -> bool {
+view act json_validate_str(src: string, out_err: @JsonParseError) -> bool {
     return json_validate(slice_from_str(src), out_err)
 }
 
 // Parses a JSON string into a managed JsonDoc, returning the document or error message.
-act json_from_str(src: string) -> JsonDoc or string {
+view act json_from_str(src: string) -> JsonDoc or string {
     if src == null { fail "null json string" }
     let doc = json_parse_doc_str(src, 65536)
     if !doc.ok {
@@ -292,7 +292,7 @@ act json_from_str(src: string) -> JsonDoc or string {
 }
 
 // Parses a JSON string using an explicit Arena, returning the root JsonValue or error message.
-act json_parse_val(a: @Arena, src: string) -> @JsonValue or string {
+view act json_parse_val(a: @Arena, src: string) -> @JsonValue or string {
     if a == null { fail "null arena" }
     if src == null { fail "null json string" }
     mut err = JsonParseError { message: slice_from_raw(null, 0), line: 0, col: 0 }

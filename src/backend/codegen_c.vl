@@ -16,6 +16,7 @@ use "codegen_decl.vl"
 
 // Emits complete C99 translation unit from an AST ProgramNode.
 act emit_translation_unit(st: @SymbolTable, prog: @ProgramNode) -> string {
+    st.is_codegen = true
     mut sb = create_sb(4096)
 
     // 1. Header inclusions

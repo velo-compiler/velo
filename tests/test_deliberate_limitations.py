@@ -53,7 +53,7 @@ def test_interfaces_absence_documented():
 def test_module_privacy_absence_documented():
     content = SPEC_FILE.read_text(encoding="utf-8")
     assert "11.3 Module Privacy and Export Control" in content
-    assert "pub" in content
+    assert "view" in content or "pub" in content
     assert "underscore" in content.lower() or "_helper" in content
 
 

@@ -5,7 +5,7 @@ use "defs.vl"
 use "encode.vl"
 
 // Converts ASCII uppercase characters to lowercase in a new string.
-act url_to_lower(s: string) -> string {
+view act url_to_lower(s: string) -> string {
     if s == null { return "" }
     let len = str.len(s)
     if len == 0 { return "" }
@@ -26,7 +26,7 @@ act url_to_lower(s: string) -> string {
 }
 
 // Parses an ASCII port number from a substring. Returns port (1..65535) or -1 on error.
-act url_parse_port(s: string, start: usize, len: usize) -> i32 {
+view act url_parse_port(s: string, start: usize, len: usize) -> i32 {
     if s == null or len == 0 { return -1 }
     mut val: i64 = 0
     mut i: usize = 0
@@ -46,7 +46,7 @@ act url_parse_port(s: string, start: usize, len: usize) -> i32 {
 }
 
 // Returns true if character is valid in an RFC 3986 scheme: ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
-act url_is_scheme_char(c: u8, is_first: bool) -> bool {
+view act url_is_scheme_char(c: u8, is_first: bool) -> bool {
     let is_alpha = (c >= 'a' as u8 and c <= 'z' as u8) or (c >= 'A' as u8 and c <= 'Z' as u8)
     if is_first { return is_alpha }
     if is_alpha or (c >= '0' as u8 and c <= '9' as u8) or c == '+' as u8 or c == '-' as u8 or c == '.' as u8 {
@@ -57,7 +57,7 @@ act url_is_scheme_char(c: u8, is_first: bool) -> bool {
 
 // Parses an RFC 3986 URL or relative reference into a Url structure.
 // Returns true on success, false if input is malformed.
-act url_parse(raw: string, out: @Url) -> bool {
+view act url_parse(raw: string, out: @Url) -> bool {
     if raw == null or out == null { return false }
     let len = str.len(raw)
     if len == 0 or len > URL_MAX_LEN {
@@ -283,14 +283,14 @@ act url_parse(raw: string, out: @Url) -> bool {
 }
 
 // Parses an RFC 3986 URL string and returns the resulting Url struct.
-act url_parse_str(raw: string) -> Url {
+view act url_parse_str(raw: string) -> Url {
     mut u = url_new()
     url_parse(raw, @u)
     return u
 }
 
 // Parses an RFC 3986 URL string, returning Url or error message.
-act url_from_str(raw: string) -> Url or string {
+view act url_from_str(raw: string) -> Url or string {
     if raw == null { fail "null url string" }
     mut u = url_new()
     if !url_parse(raw, @u) {

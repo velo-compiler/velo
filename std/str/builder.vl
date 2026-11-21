@@ -7,7 +7,7 @@ use "slice.vl"
 use "utf8.vl"
 
 // Regional string builder buffer descriptor.
-data StrBuilder {
+view data StrBuilder {
     buffer: @u8,
     len: usize,
     capacity: usize,
@@ -15,7 +15,7 @@ data StrBuilder {
 }
 
 // Initializes a dynamic StrBuilder backed by an Arena bump allocator.
-act sb_init(arena: @Arena, initial_cap: usize) -> StrBuilder {
+view act sb_init(arena: @Arena, initial_cap: usize) -> StrBuilder {
     mut cap = initial_cap
     if cap < 16 {
         cap = 16
@@ -33,7 +33,7 @@ act sb_init(arena: @Arena, initial_cap: usize) -> StrBuilder {
 }
 
 // Ensures the builder has space for at least needed_extra additional bytes.
-act sb_ensure_capacity(sb: @StrBuilder, needed_extra: usize) {
+view act sb_ensure_capacity(sb: @StrBuilder, needed_extra: usize) {
     if sb == null or sb.arena == null {
         return
     }
@@ -75,7 +75,7 @@ act sb_ensure_capacity(sb: @StrBuilder, needed_extra: usize) {
 }
 
 // Appends a single byte character to the builder.
-act sb_append_byte(sb: @StrBuilder, b: u8) {
+view act sb_append_byte(sb: @StrBuilder, b: u8) {
     if sb == null { return }
     sb_ensure_capacity(sb, 1)
     if sb.len < sb.capacity {
@@ -85,7 +85,7 @@ act sb_append_byte(sb: @StrBuilder, b: u8) {
 }
 
 // Appends a StrSlice to the builder.
-act sb_append_slice(sb: @StrBuilder, slice: StrSlice) {
+view act sb_append_slice(sb: @StrBuilder, slice: StrSlice) {
     if sb == null or slice.ptr == null or slice.len == 0 {
         return
     }
@@ -97,12 +97,12 @@ act sb_append_slice(sb: @StrBuilder, slice: StrSlice) {
 }
 
 // Appends a null-terminated string to the builder.
-act sb_append_string(sb: @StrBuilder, s: string) {
+view act sb_append_string(sb: @StrBuilder, s: string) {
     sb_append_slice(sb, slice_from_str(s))
 }
 
 // Appends a Unicode code point encoded as UTF-8 (1..4 bytes).
-act sb_append_rune(sb: @StrBuilder, rune: u32) {
+view act sb_append_rune(sb: @StrBuilder, rune: u32) {
     if sb == null { return }
     sb_ensure_capacity(sb, 4)
     let written = utf8_encode_rune(rune, sb.buffer + sb.len, sb.capacity - sb.len)
@@ -110,7 +110,7 @@ act sb_append_rune(sb: @StrBuilder, rune: u32) {
 }
 
 // Appends a signed 64-bit integer formatted as decimal digits.
-act sb_append_i64(sb: @StrBuilder, val: i64) {
+view act sb_append_i64(sb: @StrBuilder, val: i64) {
     if sb == null { return }
     if val == 0 as i64 {
         sb_append_byte(sb, 48 as u8) // '0'
@@ -147,7 +147,7 @@ act sb_append_i64(sb: @StrBuilder, val: i64) {
 }
 
 // Appends an unsigned 64-bit integer formatted as decimal digits.
-act sb_append_u64(sb: @StrBuilder, val: u64) {
+view act sb_append_u64(sb: @StrBuilder, val: u64) {
     if sb == null { return }
     if val == 0 as u64 {
         sb_append_byte(sb, 48 as u8)
@@ -174,26 +174,26 @@ act sb_append_u64(sb: @StrBuilder, val: u64) {
 }
 
 // Returns the current byte length of the accumulated string.
-act sb_len(sb: @StrBuilder) -> usize {
+view act sb_len(sb: @StrBuilder) -> usize {
     if sb == null { return 0 }
     return sb.len
 }
 
 // Returns the current allocated buffer capacity.
-act sb_capacity(sb: @StrBuilder) -> usize {
+view act sb_capacity(sb: @StrBuilder) -> usize {
     if sb == null { return 0 }
     return sb.capacity
 }
 
 // Resets builder length to 0, retaining allocated capacity.
-act sb_reset(sb: @StrBuilder) {
+view act sb_reset(sb: @StrBuilder) {
     if sb != null {
         sb.len = 0
     }
 }
 
 // Returns a StrSlice view over the accumulated bytes.
-act sb_to_slice(sb: @StrBuilder) -> StrSlice {
+view act sb_to_slice(sb: @StrBuilder) -> StrSlice {
     if sb == null or sb.buffer == null or sb.len == 0 {
         return StrSlice { ptr: null, len: 0 }
     }
@@ -201,7 +201,7 @@ act sb_to_slice(sb: @StrBuilder) -> StrSlice {
 }
 
 // Ensures null termination and returns raw pointer for C API / OS syscall compatibility.
-act sb_to_cstr(sb: @StrBuilder) -> @u8 {
+view act sb_to_cstr(sb: @StrBuilder) -> @u8 {
     if sb == null { return null }
     sb_ensure_capacity(sb, 1)
     if sb.buffer != null {

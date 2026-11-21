@@ -8,7 +8,7 @@ use "../str/slice.vl"
 use "hash.vl"
 
 // Raw open-addressing hash table descriptor.
-data RawMap {
+view data RawMap {
     keys: @u8
     vals: @u8
     hashes: @u64
@@ -21,7 +21,7 @@ data RawMap {
 }
 
 // Rounds n up to the next power of 2, minimum 8.
-act map_round_pow2(n: usize) -> usize {
+view act map_round_pow2(n: usize) -> usize {
     mut cap: usize = 8
     loop cap < n {
         cap = cap * 2
@@ -30,7 +30,7 @@ act map_round_pow2(n: usize) -> usize {
 }
 
 // Creates a new RawMap with given key size, value size, string-key flag, and initial capacity.
-act map_create(ksz: usize, vsz: usize, is_kstring: bool, initial_cap: usize) -> RawMap {
+view act map_create(ksz: usize, vsz: usize, is_kstring: bool, initial_cap: usize) -> RawMap {
     mut k_sz = ksz
     if is_kstring {
         k_sz = 8
@@ -69,7 +69,7 @@ act map_create(ksz: usize, vsz: usize, is_kstring: bool, initial_cap: usize) -> 
 }
 
 // Releases all allocated backing storage (keys, vals, hashes) and resets map fields.
-act map_free(m: @RawMap) {
+view act map_free(m: @RawMap) {
     if m == null { return }
     if m.keys != null {
         heap_free(m.keys)
@@ -89,35 +89,35 @@ act map_free(m: @RawMap) {
 }
 
 // Clears all entries from the map without deallocating backing storage.
-act map_clear(m: @RawMap) {
+view act map_clear(m: @RawMap) {
     if m == null or m.cap == 0 or m.hashes == null { return }
     set(m.hashes as @u8, 0 as u8, 8 * m.cap)
     m.len = 0
     m.tomb = 0
 }
 
-act map_len(m: @RawMap) -> usize {
+view act map_len(m: @RawMap) -> usize {
     if m == null { return 0 }
     return m.len
 }
 
-act map_cap(m: @RawMap) -> usize {
+view act map_cap(m: @RawMap) -> usize {
     if m == null { return 0 }
     return m.cap
 }
 
-act map_tomb_count(m: @RawMap) -> usize {
+view act map_tomb_count(m: @RawMap) -> usize {
     if m == null { return 0 }
     return m.tomb
 }
 
-act map_is_empty(m: @RawMap) -> bool {
+view act map_is_empty(m: @RawMap) -> bool {
     if m == null { return true }
     return m.len == 0
 }
 
 // Rebuilds live rows into fresh double-capacity tables.
-act map_grow(m: @RawMap) -> bool {
+view act map_grow(m: @RawMap) -> bool {
     if m == null { return false }
     mut new_cap: usize = 8
     if m.cap > 0 {
@@ -173,7 +173,7 @@ act map_grow(m: @RawMap) -> bool {
 
 // Upserts a key/value pair into the map (inserts new key or overwrites existing).
 // Recycles tombstones if encountered and auto-grows at 75% load factor.
-act map_put(m: @RawMap, key: @u8, val: @u8) -> bool {
+view act map_put(m: @RawMap, key: @u8, val: @u8) -> bool {
     if m == null or key == null or val == null { return false }
     if m.ksz == 0 or m.vsz == 0 { return false }
 
@@ -215,7 +215,7 @@ act map_put(m: @RawMap, key: @u8, val: @u8) -> bool {
 }
 
 // Returns a pointer to the value slot for the given key, or null if not found.
-act map_get(m: @RawMap, key: @u8) -> @u8 {
+view act map_get(m: @RawMap, key: @u8) -> @u8 {
     if m == null or key == null or m.cap == 0 or m.hashes == null { return null }
     let h = hash_map_key(key, m.ksz, m.kstring)
     mut at: usize = (h as usize) & (m.cap - 1)
@@ -232,7 +232,7 @@ act map_get(m: @RawMap, key: @u8) -> @u8 {
 }
 
 // Copies value out into caller buffer if key exists; returns true on success.
-act map_get_into(m: @RawMap, key: @u8, out_val: @u8) -> bool {
+view act map_get_into(m: @RawMap, key: @u8, out_val: @u8) -> bool {
     let p = map_get(m, key)
     if p == null { return false }
     if out_val != null {
@@ -242,17 +242,17 @@ act map_get_into(m: @RawMap, key: @u8, out_val: @u8) -> bool {
 }
 
 // Returns true if the key exists in the map.
-act map_has(m: @RawMap, key: @u8) -> bool {
+view act map_has(m: @RawMap, key: @u8) -> bool {
     return map_get(m, key) != null
 }
 
 // --- Typed convenience helpers ---
 
-act map_create_str(vsz: usize, initial_cap: usize) -> RawMap {
+view act map_create_str(vsz: usize, initial_cap: usize) -> RawMap {
     return map_create(8, vsz, true, initial_cap)
 }
 
-act map_put_str_i64(m: @RawMap, key: string, val: i64) -> bool {
+view act map_put_str_i64(m: @RawMap, key: string, val: i64) -> bool {
     mut k = key
     let pk: @string = @k
     mut v = val
@@ -260,7 +260,7 @@ act map_put_str_i64(m: @RawMap, key: string, val: i64) -> bool {
     return map_put(m, pk as @u8, pv as @u8)
 }
 
-act map_get_str_i64(m: @RawMap, key: string, out_val: @i64) -> bool {
+view act map_get_str_i64(m: @RawMap, key: string, out_val: @i64) -> bool {
     mut k = key
     let pk: @string = @k
     let pval = map_get(m, pk as @u8)
@@ -272,13 +272,13 @@ act map_get_str_i64(m: @RawMap, key: string, out_val: @i64) -> bool {
     return true
 }
 
-act map_has_str(m: @RawMap, key: string) -> bool {
+view act map_has_str(m: @RawMap, key: string) -> bool {
     mut k = key
     let pk: @string = @k
     return map_has(m, pk as @u8)
 }
 
-act map_put_str_slice(m: @RawMap, key: string, val: StrSlice) -> bool {
+view act map_put_str_slice(m: @RawMap, key: string, val: StrSlice) -> bool {
     mut k = key
     let pk: @string = @k
     mut v = val
@@ -286,7 +286,7 @@ act map_put_str_slice(m: @RawMap, key: string, val: StrSlice) -> bool {
     return map_put(m, pk as @u8, pv as @u8)
 }
 
-act map_get_str_slice(m: @RawMap, key: string, out_val: @StrSlice) -> bool {
+view act map_get_str_slice(m: @RawMap, key: string, out_val: @StrSlice) -> bool {
     mut k = key
     let pk: @string = @k
     let pval = map_get(m, pk as @u8)
@@ -298,11 +298,11 @@ act map_get_str_slice(m: @RawMap, key: string, out_val: @StrSlice) -> bool {
     return true
 }
 
-act map_create_i64(vsz: usize, initial_cap: usize) -> RawMap {
+view act map_create_i64(vsz: usize, initial_cap: usize) -> RawMap {
     return map_create(8, vsz, false, initial_cap)
 }
 
-act map_put_i64_i64(m: @RawMap, key: i64, val: i64) -> bool {
+view act map_put_i64_i64(m: @RawMap, key: i64, val: i64) -> bool {
     mut k = key
     let pk: @i64 = @k
     mut v = val
@@ -310,7 +310,7 @@ act map_put_i64_i64(m: @RawMap, key: i64, val: i64) -> bool {
     return map_put(m, pk as @u8, pv as @u8)
 }
 
-act map_get_i64_i64(m: @RawMap, key: i64, out_val: @i64) -> bool {
+view act map_get_i64_i64(m: @RawMap, key: i64, out_val: @i64) -> bool {
     mut k = key
     let pk: @i64 = @k
     let pval = map_get(m, pk as @u8)
@@ -322,13 +322,13 @@ act map_get_i64_i64(m: @RawMap, key: i64, out_val: @i64) -> bool {
     return true
 }
 
-act map_has_i64(m: @RawMap, key: i64) -> bool {
+view act map_has_i64(m: @RawMap, key: i64) -> bool {
     mut k = key
     let pk: @i64 = @k
     return map_has(m, pk as @u8)
 }
 
-act map_put_u64_u64(m: @RawMap, key: u64, val: u64) -> bool {
+view act map_put_u64_u64(m: @RawMap, key: u64, val: u64) -> bool {
     mut k = key
     let pk: @u64 = @k
     mut v = val
@@ -336,7 +336,7 @@ act map_put_u64_u64(m: @RawMap, key: u64, val: u64) -> bool {
     return map_put(m, pk as @u8, pv as @u8)
 }
 
-act map_get_u64_u64(m: @RawMap, key: u64, out_val: @u64) -> bool {
+view act map_get_u64_u64(m: @RawMap, key: u64, out_val: @u64) -> bool {
     mut k = key
     let pk: @u64 = @k
     let pval = map_get(m, pk as @u8)

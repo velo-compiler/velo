@@ -29,6 +29,8 @@ act mono_instantiate_struct(m: @Monomorphizer, tmpl: @GenericTemplate, type_args
     mut inst_s = make_data_decl(mangled_name, first_f, count, tmpl.node.align_bytes, tmpl.node.is_packed, tmpl.node.line, tmpl.node.col)
     inst_s.type_params = tmpl.type_params
     inst_s.type_name = type_args
+    inst_s.is_view = tmpl.node.is_view
+    inst_s.file_path = tmpl.node.file_path
     return inst_s
 }
 
@@ -50,7 +52,10 @@ act mono_instantiate_kind(m: @Monomorphizer, tmpl: @GenericTemplate, type_args: 
         count += 1
         cur_v = cur_v.next
     }
-    return make_kind_decl(mangled_name, first_v, count, tmpl.node.line, tmpl.node.col)
+    mut inst_k = make_kind_decl(mangled_name, first_v, count, tmpl.node.line, tmpl.node.col)
+    inst_k.is_view = tmpl.node.is_view
+    inst_k.file_path = tmpl.node.file_path
+    return inst_k
 }
 
 act mono_instantiate_func(m: @Monomorphizer, tmpl: @GenericTemplate, type_args: string, mangled_name: string) -> @StmtNode {
@@ -83,6 +88,8 @@ act mono_instantiate_func(m: @Monomorphizer, tmpl: @GenericTemplate, type_args: 
     mut inst_fn = make_function_decl(mangled_name, first_p, count, rt, body, tmpl.node.line, tmpl.node.col)
     inst_fn.type_params = tmpl.type_params
     inst_fn.type_name = type_args
+    inst_fn.is_view = tmpl.node.is_view
+    inst_fn.file_path = tmpl.node.file_path
     return inst_fn
 }
 

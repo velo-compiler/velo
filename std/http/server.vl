@@ -6,18 +6,18 @@ use "headers.vl"
 use "status.vl"
 use "../mem/heap.vl"
 
-data HttpServer {
+view data HttpServer {
     listener: @TcpListener
     port: u16
     is_running: bool
 }
 
-act http_server_sizeof() -> usize {
+view act http_server_sizeof() -> usize {
     return 24
 }
 
 // Binds an HTTP server to the specified IP address and port.
-act http_server_listen(ip: string, port: u16) -> @HttpServer {
+view act http_server_listen(ip: string, port: u16) -> @HttpServer {
     let l = tcp_listen(ip, port)
     if l == null { return null }
 
@@ -33,7 +33,7 @@ act http_server_listen(ip: string, port: u16) -> @HttpServer {
 }
 
 // Accepts an incoming HTTP connection, parses the request, and yields client stream and request.
-act http_server_accept(server: @HttpServer, out_client_stream: @@TcpStream, out_req: @HttpRequest) -> bool {
+view act http_server_accept(server: @HttpServer, out_client_stream: @@TcpStream, out_req: @HttpRequest) -> bool {
     if server == null or server.listener == null or not server.is_running {
         return false
     }
@@ -61,7 +61,7 @@ act http_server_accept(server: @HttpServer, out_client_stream: @@TcpStream, out_
 }
 
 // Sends an HTTP response with headers and body to the connected client, then closes the stream.
-act http_respond(stream: @TcpStream, status: u16, content_type: string, body: string) -> bool {
+view act http_respond(stream: @TcpStream, status: u16, content_type: string, body: string) -> bool {
     if stream == null { return false }
     mut res = http_response_make(status, body)
 
@@ -80,22 +80,22 @@ act http_respond(stream: @TcpStream, status: u16, content_type: string, body: st
 }
 
 // Sends a plain text response (text/plain; charset=utf-8).
-act http_respond_text(stream: @TcpStream, status: u16, text: string) -> bool {
+view act http_respond_text(stream: @TcpStream, status: u16, text: string) -> bool {
     return http_respond(stream, status, "text/plain; charset=utf-8", text)
 }
 
 // Sends a JSON response (application/json; charset=utf-8).
-act http_respond_json(stream: @TcpStream, status: u16, json_body: string) -> bool {
+view act http_respond_json(stream: @TcpStream, status: u16, json_body: string) -> bool {
     return http_respond(stream, status, "application/json; charset=utf-8", json_body)
 }
 
 // Sends an HTML response (text/html; charset=utf-8).
-act http_respond_html(stream: @TcpStream, status: u16, html_body: string) -> bool {
+view act http_respond_html(stream: @TcpStream, status: u16, html_body: string) -> bool {
     return http_respond(stream, status, "text/html; charset=utf-8", html_body)
 }
 
 // Shuts down the HTTP server listener and frees resources.
-act http_server_close(server: @HttpServer) {
+view act http_server_close(server: @HttpServer) {
     if server == null { return }
     server.is_running = false
     if server.listener != null {

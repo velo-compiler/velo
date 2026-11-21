@@ -7,12 +7,12 @@ use "proc.vl"
 use "args.vl"
 
 // Spawns a child process asynchronously in the background.
-act os_spawn(cmd: string) -> ProcessHandle {
+view act os_spawn(cmd: string) -> ProcessHandle {
     return os_spawn_ex(cmd, null, null, null)
 }
 
 // Spawns a child process asynchronously from an argument array.
-act os_spawn_argv(arena: @Arena, argv: @string, argc: usize) -> ProcessHandle {
+view act os_spawn_argv(arena: @Arena, argv: @string, argc: usize) -> ProcessHandle {
     if arena == null or argv == null or argc == 0 {
         return ProcessHandle { pid: 0 as u32, handle: null, thread_handle: null, is_alive: false, signal: 0 }
     }
@@ -21,18 +21,18 @@ act os_spawn_argv(arena: @Arena, argv: @string, argc: usize) -> ProcessHandle {
 }
 
 // Waits indefinitely for the child process to complete and returns its exit code.
-act os_process_wait(proc: @ProcessHandle) -> i32 {
+view act os_process_wait(proc: @ProcessHandle) -> i32 {
     return os_process_wait_timeout(proc, 0xFFFFFFFF as u32)
 }
 
 // Checks if the child process has terminated without blocking.
 // Returns the exit code if finished, or -1 if still running.
-act os_process_try_wait(proc: @ProcessHandle) -> i32 {
+view act os_process_try_wait(proc: @ProcessHandle) -> i32 {
     return os_process_wait_timeout(proc, 0 as u32)
 }
 
 // Returns the terminating signal of the child process on POSIX, or 0 on Windows.
-act os_process_signal(proc: @ProcessHandle) -> i32 {
+view act os_process_signal(proc: @ProcessHandle) -> i32 {
     if proc == null { return 0 }
     if proc.is_alive {
         os_process_try_wait(proc)
@@ -41,7 +41,7 @@ act os_process_signal(proc: @ProcessHandle) -> i32 {
 }
 
 // Spawns a child process synchronously, blocks until termination, and returns the result.
-act os_spawn_sync(cmd: string) -> ProcessResult {
+view act os_spawn_sync(cmd: string) -> ProcessResult {
     mut proc = os_spawn(cmd)
     if !proc.is_alive {
         return ProcessResult { exit_code: -1, success: false }
@@ -54,7 +54,7 @@ act os_spawn_sync(cmd: string) -> ProcessResult {
 }
 
 // Spawns a child process synchronously from an argument array, blocking until completion.
-act os_spawn_sync_argv(arena: @Arena, argv: @string, argc: usize) -> ProcessResult {
+view act os_spawn_sync_argv(arena: @Arena, argv: @string, argc: usize) -> ProcessResult {
     if arena == null or argv == null or argc == 0 {
         return ProcessResult { exit_code: -1, success: false }
     }
@@ -64,7 +64,7 @@ act os_spawn_sync_argv(arena: @Arena, argv: @string, argc: usize) -> ProcessResu
 
 // Executes a shell command synchronously and returns its exit code.
 // Zero-dependency pure-Velo replacement for C system().
-act os_system(cmd: string) -> i32 {
+view act os_system(cmd: string) -> i32 {
     let res = os_shell_spawn_sync(cmd)
     return res.exit_code
 }

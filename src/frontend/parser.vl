@@ -220,21 +220,49 @@ act parse_top_level_declaration(p: @Parser) -> @StmtNode {
         return null
     }
 
-    if parser_check(p, TOK_USE) { return parse_use_decl(p) }
-    if parser_check(p, TOK_DATA) { return parse_data_decl(p) }
-    if parser_check(p, TOK_PACT) { return parse_pact_decl(p) }
-    if parser_check(p, TOK_KIND) { return parse_kind_decl(p) }
-    if parser_check(p, TOK_ACT) { return parse_function_decl(p) }
-    if parser_check(p, TOK_TEST) { return parse_test_decl(p) }
-    if parser_check(p, TOK_EXTERN) { return parse_extern_decl(p) }
-    if parser_check(p, TOK_LET) or parser_check(p, TOK_MUT) { return parse_statement(p) }
-    // Contextual 'aka' keyword: `aka Alias = <primitive>` at top level.
-    let top_tok = parser_peek(p, 0)
-    if top_tok.kind == TOK_IDENTIFIER and top_tok.length == 3 {
-        let src = p.source
-        if src[top_tok.start] == 'a' and src[top_tok.start + 1] == 'k' and src[top_tok.start + 2] == 'a' {
-            return parse_type_alias_decl(p)
+    mut is_view = false
+    if parser_match(p, TOK_VIEW) {
+        is_view = true
+        parser_skip_newlines(p)
+    }
+
+    if parser_check(p, TOK_USE) {
+        if is_view {
+            report_parse(p, p.filename, parser_peek(p, 0).line, parser_peek(p, 0).col, 4, "'view' cannot be applied to 'use'")
+            p.had_error = true
         }
+        return parse_use_decl(p)
+    }
+    if parser_check(p, TOK_TEST) {
+        if is_view {
+            report_parse(p, p.filename, parser_peek(p, 0).line, parser_peek(p, 0).col, 4, "'view' cannot be applied to 'test'")
+            p.had_error = true
+        }
+        return parse_test_decl(p)
+    }
+
+    mut decl: @StmtNode = null
+    if parser_check(p, TOK_DATA) { decl = parse_data_decl(p) }
+    else if parser_check(p, TOK_PACT) { decl = parse_pact_decl(p) }
+    else if parser_check(p, TOK_KIND) { decl = parse_kind_decl(p) }
+    else if parser_check(p, TOK_ACT) { decl = parse_function_decl(p) }
+    else if parser_check(p, TOK_EXTERN) { decl = parse_extern_decl(p) }
+    else if parser_check(p, TOK_LET) or parser_check(p, TOK_MUT) { decl = parse_statement(p) }
+    else {
+        // Contextual 'aka' keyword: `aka Alias = <primitive>` at top level.
+        let top_tok = parser_peek(p, 0)
+        if top_tok.kind == TOK_IDENTIFIER and top_tok.length == 3 {
+            let src = p.source
+            if src[top_tok.start] == 'a' and src[top_tok.start + 1] == 'k' and src[top_tok.start + 2] == 'a' {
+                decl = parse_type_alias_decl(p)
+            }
+        }
+    }
+
+    if decl != null {
+        decl.is_view = is_view
+        decl.file_path = p.filename
+        return decl
     }
 
     let tok = parser_peek(p, 0)

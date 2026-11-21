@@ -7,7 +7,7 @@ use "handshake.vl"
 use "record.vl"
 
 // Client TLS configuration with secure defaults.
-data TlsClientConfig {
+view data TlsClientConfig {
     verify_peer: bool,
     server_name: string,
     pinned_cert_der: @u8,
@@ -16,7 +16,7 @@ data TlsClientConfig {
 }
 
 // Active TLS 1.3 client connection socket.
-data TlsSocket {
+view data TlsSocket {
     stream: @TcpStream,
     client_app_key: @u8,
     client_app_iv: @u8,
@@ -29,7 +29,7 @@ data TlsSocket {
 }
 
 // Allocates a TLS client configuration with secure defaults (verify_peer = true).
-act tls_config_new() -> @TlsClientConfig {
+view act tls_config_new() -> @TlsClientConfig {
     let cfg = heap_alloc(128) as @TlsClientConfig
     cfg.verify_peer = true
     cfg.server_name = ""
@@ -41,7 +41,7 @@ act tls_config_new() -> @TlsClientConfig {
 
 // Connects to a TLS 1.3 server at host:port.
 // Default policy is fail-closed with full peer verification enabled.
-act tls_connect(host: string, port: u16, config: @TlsClientConfig) -> @TlsSocket or string {
+view act tls_connect(host: string, port: u16, config: @TlsClientConfig) -> @TlsSocket or string {
     if host == null or port == 0 {
         fail "TlsHandshakeFailed"
     }
@@ -97,7 +97,7 @@ act tls_connect(host: string, port: u16, config: @TlsClientConfig) -> @TlsSocket
 }
 
 // Writes encrypted application data to the TLS connection.
-act tls_write(sock: @TlsSocket, data: @u8, len: usize) -> i32 or string {
+view act tls_write(sock: @TlsSocket, data: @u8, len: usize) -> i32 or string {
     if sock == null or !sock.is_connected or sock.stream == null {
         fail "TlsSocketClosed"
     }
@@ -122,13 +122,13 @@ act tls_write(sock: @TlsSocket, data: @u8, len: usize) -> i32 or string {
 }
 
 // Writes a string as encrypted application data.
-act tls_write_str(sock: @TlsSocket, text: string) -> i32 or string {
+view act tls_write_str(sock: @TlsSocket, text: string) -> i32 or string {
     if text == null { return 0 }
     return tls_write(sock, text as @u8, str.len(text))
 }
 
 // Reads and decrypts an application data record from the TLS connection into out_buf.
-act tls_read(sock: @TlsSocket, out_buf: @u8, max_len: usize) -> i32 or string {
+view act tls_read(sock: @TlsSocket, out_buf: @u8, max_len: usize) -> i32 or string {
     if sock == null or !sock.is_connected or sock.stream == null {
         fail "TlsSocketClosed"
     }
@@ -185,7 +185,7 @@ act tls_read(sock: @TlsSocket, out_buf: @u8, max_len: usize) -> i32 or string {
 }
 
 // Reads decrypted application data into a newly allocated string.
-act tls_read_str(sock: @TlsSocket, max_len: usize) -> string or string {
+view act tls_read_str(sock: @TlsSocket, max_len: usize) -> string or string {
     let buf: @u8 = heap_alloc(max_len + 1) as @u8
     let n = tls_read(sock, buf, max_len) or return
     buf[n as usize] = 0 as u8
@@ -194,7 +194,7 @@ act tls_read_str(sock: @TlsSocket, max_len: usize) -> string or string {
 }
 
 // Securely closes the TLS connection and wipes application keys.
-act tls_close(sock: @TlsSocket) {
+view act tls_close(sock: @TlsSocket) {
     if sock == null { return }
     if sock.stream != null {
         tcp_close(sock.stream)

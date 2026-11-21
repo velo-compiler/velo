@@ -4,7 +4,7 @@ use "poller.vl"
 use "../mem/heap.vl"
 use "../time/clock.vl"
 
-data EventLoop {
+view data EventLoop {
     poller: Poller
     watchers: @AsyncWatcher
     watcher_count: usize
@@ -25,28 +25,28 @@ data EventLoop {
     stop_requested: bool
 }
 
-act async_event_sizeof() -> usize {
+view act async_event_sizeof() -> usize {
     let dummy: @AsyncEvent = null
     return (dummy + 1) as usize
 }
 
-act async_watcher_sizeof() -> usize {
+view act async_watcher_sizeof() -> usize {
     let dummy: @AsyncWatcher = null
     return (dummy + 1) as usize
 }
 
-act async_timer_sizeof() -> usize {
+view act async_timer_sizeof() -> usize {
     let dummy: @AsyncTimer = null
     return (dummy + 1) as usize
 }
 
-act async_task_sizeof() -> usize {
+view act async_task_sizeof() -> usize {
     let dummy: @AsyncTask = null
     return (dummy + 1) as usize
 }
 
 // Creates and initializes a new EventLoop
-act loop_create() -> EventLoop {
+view act loop_create() -> EventLoop {
     let w_cap: usize = 16
     let t_cap: usize = 16
     let k_cap: usize = 16
@@ -72,7 +72,7 @@ act loop_create() -> EventLoop {
 }
 
 // Releases all resources allocated by the EventLoop
-act loop_free(el: @EventLoop) {
+view act loop_free(el: @EventLoop) {
     if el == null { return }
     poller_free(@el.poller)
     if el.watchers != null { heap_free(el.watchers as @u8); el.watchers = null }
@@ -85,7 +85,7 @@ act loop_free(el: @EventLoop) {
     el.task_count = 0
 }
 
-act loop_ensure_watcher_cap(el: @EventLoop) {
+view act loop_ensure_watcher_cap(el: @EventLoop) {
     if el.watcher_count < el.watcher_cap { return }
     let new_cap = el.watcher_cap * 2
     let new_buf = heap_alloc(new_cap * async_watcher_sizeof()) as @AsyncWatcher
@@ -97,7 +97,7 @@ act loop_ensure_watcher_cap(el: @EventLoop) {
     el.watcher_cap = new_cap
 }
 
-act loop_ensure_timer_cap(el: @EventLoop) {
+view act loop_ensure_timer_cap(el: @EventLoop) {
     if el.timer_count < el.timer_cap { return }
     let new_cap = el.timer_cap * 2
     let new_buf = heap_alloc(new_cap * async_timer_sizeof()) as @AsyncTimer
@@ -109,7 +109,7 @@ act loop_ensure_timer_cap(el: @EventLoop) {
     el.timer_cap = new_cap
 }
 
-act loop_ensure_task_cap(el: @EventLoop) {
+view act loop_ensure_task_cap(el: @EventLoop) {
     if el.task_count < el.task_cap { return }
     let new_cap = el.task_cap * 2
     let new_buf = heap_alloc(new_cap * async_task_sizeof()) as @AsyncTask
@@ -122,7 +122,7 @@ act loop_ensure_task_cap(el: @EventLoop) {
 }
 
 // Registers an I/O watcher on a socket descriptor with event callback
-act loop_add_io(el: @EventLoop, fd: i64, events: u32, on_event: act(i64, u32, @void) -> void, user_data: @void) -> bool {
+view act loop_add_io(el: @EventLoop, fd: i64, events: u32, on_event: act(i64, u32, @void) -> void, user_data: @void) -> bool {
     if el == null or fd < 0 { return false }
     mut i: usize = 0
     loop i < el.watcher_count {
@@ -148,7 +148,7 @@ act loop_add_io(el: @EventLoop, fd: i64, events: u32, on_event: act(i64, u32, @v
 }
 
 // Updates interest events for an existing registered socket descriptor
-act loop_modify_io(el: @EventLoop, fd: i64, events: u32) -> bool {
+view act loop_modify_io(el: @EventLoop, fd: i64, events: u32) -> bool {
     if el == null { return false }
     mut i: usize = 0
     loop i < el.watcher_count {
@@ -162,7 +162,7 @@ act loop_modify_io(el: @EventLoop, fd: i64, events: u32) -> bool {
 }
 
 // Removes a socket descriptor watcher from the loop
-act loop_remove_io(el: @EventLoop, fd: i64) -> bool {
+view act loop_remove_io(el: @EventLoop, fd: i64) -> bool {
     if el == null { return false }
     mut i: usize = 0
     loop i < el.watcher_count {
@@ -180,7 +180,7 @@ act loop_remove_io(el: @EventLoop, fd: i64) -> bool {
 }
 
 // Schedules a one-shot callback to fire after delay_ms milliseconds
-act loop_set_timeout(el: @EventLoop, delay_ms: u64, on_timeout: act(u64, @void) -> void, user_data: @void) -> u64 {
+view act loop_set_timeout(el: @EventLoop, delay_ms: u64, on_timeout: act(u64, @void) -> void, user_data: @void) -> u64 {
     if el == null or on_timeout == null { return 0 as u64 }
     loop_ensure_timer_cap(el)
     let tid = el.next_timer_id
@@ -200,7 +200,7 @@ act loop_set_timeout(el: @EventLoop, delay_ms: u64, on_timeout: act(u64, @void) 
 }
 
 // Schedules a recurring callback to fire periodically every interval_ms milliseconds
-act loop_set_interval(el: @EventLoop, interval_ms: u64, on_timeout: act(u64, @void) -> void, user_data: @void) -> u64 {
+view act loop_set_interval(el: @EventLoop, interval_ms: u64, on_timeout: act(u64, @void) -> void, user_data: @void) -> u64 {
     if el == null or on_timeout == null or interval_ms == (0 as u64) { return 0 as u64 }
     loop_ensure_timer_cap(el)
     let tid = el.next_timer_id
@@ -220,7 +220,7 @@ act loop_set_interval(el: @EventLoop, interval_ms: u64, on_timeout: act(u64, @vo
 }
 
 // Cancels a scheduled timer by id
-act loop_clear_timer(el: @EventLoop, timer_id: u64) -> bool {
+view act loop_clear_timer(el: @EventLoop, timer_id: u64) -> bool {
     if el == null or timer_id == (0 as u64) { return false }
     mut i: usize = 0
     loop i < el.timer_count {
@@ -234,7 +234,7 @@ act loop_clear_timer(el: @EventLoop, timer_id: u64) -> bool {
 }
 
 // Posts a deferred callback to execute cooperatively on the next event loop tick
-act loop_post(el: @EventLoop, on_task: act(@void) -> void, user_data: @void) -> u64 {
+view act loop_post(el: @EventLoop, on_task: act(@void) -> void, user_data: @void) -> u64 {
     if el == null or on_task == null { return 0 as u64 }
     loop_ensure_task_cap(el)
     let kid = el.next_task_id
@@ -251,7 +251,7 @@ act loop_post(el: @EventLoop, on_task: act(@void) -> void, user_data: @void) -> 
 }
 
 // Checks if the event loop has active watchers, pending timers, or tasks
-act loop_has_work(el: @EventLoop) -> bool {
+view act loop_has_work(el: @EventLoop) -> bool {
     if el == null { return false }
     if el.task_count > 0 { return true }
     mut i: usize = 0
@@ -268,14 +268,14 @@ act loop_has_work(el: @EventLoop) -> bool {
 }
 
 // Requests termination of the active loop_run() cycle
-act loop_stop(el: @EventLoop) {
+view act loop_stop(el: @EventLoop) {
     if el != null {
         el.stop_requested = true
     }
 }
 
 // Runs a single event loop iteration, processing posted tasks, I/O readiness, and timers
-act loop_run_once(el: @EventLoop, max_timeout_ms: i32) -> i32 {
+view act loop_run_once(el: @EventLoop, max_timeout_ms: i32) -> i32 {
     if el == null { return 0 }
     mut total_dispatched: i32 = 0
 
@@ -375,7 +375,7 @@ act loop_run_once(el: @EventLoop, max_timeout_ms: i32) -> i32 {
 }
 
 // Runs the event loop continuously until stopped or all tasks/watchers complete
-act loop_run(el: @EventLoop) {
+view act loop_run(el: @EventLoop) {
     if el == null { return }
     el.is_running = true
     el.stop_requested = false

@@ -19,6 +19,7 @@ use "../ast/int_types.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
+use "privacy_checks.vl"
 
 // Enforces mutability rules: assigning to an immutable (let) variable is rejected.
 act check_assign_mutability(st: @SymbolTable, target: @ExprNode, line: i32, col: i32) {
@@ -95,6 +96,7 @@ act check_statement(st: @SymbolTable, expected_ret_type: string, stmt: @StmtNode
             }
             let val_type = infer_expr_type(st, stmt.val_expr)
             if stmt.type_name != null and str.len(stmt.type_name) > 0 {
+                check_type_privacy(st, stmt.type_name, stmt.line, stmt.col)
                 // slice 11: contextual lexing routes a bare `shelf` annotation as an
                 // identifier, so the wall is name-based (Stage 1 raises in _map_type)
                 if strip_pointer_prefix(stmt.type_name) == "shelf" { report_error("semantic", stmt.line, stmt.col, "a bare 'shelf' needs an element type: use shelf[T]"); st.error_count += 1 }

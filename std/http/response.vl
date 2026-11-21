@@ -5,7 +5,7 @@ use "url.vl"
 use "request.vl"
 use "../mem/heap.vl"
 
-data HttpResponse {
+view data HttpResponse {
     status_code: u16
     status_text: string
     version: string
@@ -15,7 +15,7 @@ data HttpResponse {
 }
 
 // Constructs a new default HTTP response with status and body.
-act http_response_make(status: u16, body: string) -> HttpResponse {
+view act http_response_make(status: u16, body: string) -> HttpResponse {
     mut b = ""
     mut b_len: usize = 0
     if body != null {
@@ -35,7 +35,7 @@ act http_response_make(status: u16, body: string) -> HttpResponse {
 }
 
 // Parses a raw HTTP/1.1 response wire string into an HttpResponse structure.
-act http_parse_response(raw: string) -> HttpResponse {
+view act http_parse_response(raw: string) -> HttpResponse {
     mut res = HttpResponse {
         status_code: 200 as u16,
         status_text: "OK",
@@ -160,7 +160,7 @@ act http_parse_response(raw: string) -> HttpResponse {
 }
 
 // Formats an HttpResponse into standard HTTP/1.1 wire protocol format.
-act http_format_response(res: @HttpResponse) -> string {
+view act http_format_response(res: @HttpResponse) -> string {
     if res == null { return "" }
     mut cap: usize = 256 + str.len(res.body)
     if res.headers.headers != null {
@@ -244,7 +244,7 @@ act http_format_response(res: @HttpResponse) -> string {
 }
 
 // Releases memory held by response headers.
-act http_response_free(res: @HttpResponse) {
+view act http_response_free(res: @HttpResponse) {
     if res == null { return }
     headers_free(@res.headers)
 }

@@ -3,7 +3,7 @@
 // and safe overlap handling (memmove semantics).
 
 // Copies n bytes from src to dest. Safely handles overlapping ranges.
-act copy(dest: @u8, src: @u8, n: usize) {
+view act copy(dest: @u8, src: @u8, n: usize) {
     if dest == null or src == null or n == 0 or dest == src {
         return
     }
@@ -40,7 +40,7 @@ act copy(dest: @u8, src: @u8, n: usize) {
 }
 
 // Sets n bytes of memory starting at dest to val.
-act set(dest: @u8, val: u8, n: usize) {
+view act set(dest: @u8, val: u8, n: usize) {
     if dest == null or n == 0 {
         return
     }
@@ -67,7 +67,7 @@ act set(dest: @u8, val: u8, n: usize) {
 }
 
 // Compares n bytes between a and b. Returns true if bit-for-bit identical.
-act eq(a: @u8, b: @u8, n: usize) -> bool {
+view act eq(a: @u8, b: @u8, n: usize) -> bool {
     if a == b {
         return true
     }

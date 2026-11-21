@@ -2,7 +2,7 @@
 use "../mem/heap.vl"
 
 // Scans for CRLF CRLF (\r\n\r\n) or LF LF (\n\n) to locate header end
-act _http_scan_header_end(buf: @u8, len: usize, out_end: @usize) -> bool {
+view act _http_scan_header_end(buf: @u8, len: usize, out_end: @usize) -> bool {
     if buf == null or len < 4 { return false }
     mut i: usize = 0
     loop i + 3 < len {
@@ -21,7 +21,7 @@ act _http_scan_header_end(buf: @u8, len: usize, out_end: @usize) -> bool {
 }
 
 // Case-insensitive extractor for Content-Length header value
-act _http_extract_content_length(buf: @u8, header_end: usize) -> usize {
+view act _http_extract_content_length(buf: @u8, header_end: usize) -> usize {
     if buf == null or header_end < 16 { return 0 }
     let target = "content-length"
     let tlen: usize = 14
@@ -55,7 +55,7 @@ act _http_extract_content_length(buf: @u8, header_end: usize) -> usize {
     return 0
 }
 
-act _http_fast_write_u64(buf: @u8, pos: @usize, val: u64) {
+view act _http_fast_write_u64(buf: @u8, pos: @usize, val: u64) {
     if val == (0 as u64) {
         buf[pos[0]] = '0' as u8
         pos[0] = pos[0] + 1
@@ -77,7 +77,7 @@ act _http_fast_write_u64(buf: @u8, pos: @usize, val: u64) {
     pos[0] = pos[0] + digits
 }
 
-act _http_fast_write_str(buf: @u8, pos: @usize, s: string) {
+view act _http_fast_write_str(buf: @u8, pos: @usize, s: string) {
     if s == null { return }
     let len = str.len(s)
     mut i: usize = 0

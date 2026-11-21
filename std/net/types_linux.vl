@@ -10,52 +10,52 @@
 // Task 70.1), so callers keep writing `use "types.vl"`.
 
 // Address Families
-let AF_UNSPEC: i32 = 0
-let AF_INET: i32 = 2
-let AF_INET6: i32 = 10 // POSIX; Win32 uses 23
+view let AF_UNSPEC: i32 = 0
+view let AF_INET: i32 = 2
+view let AF_INET6: i32 = 10 // POSIX; Win32 uses 23
 
 // Socket Types
-let SOCK_STREAM: i32 = 1
-let SOCK_DGRAM: i32 = 2
-let SOCK_RAW: i32 = 3
+view let SOCK_STREAM: i32 = 1
+view let SOCK_DGRAM: i32 = 2
+view let SOCK_RAW: i32 = 3
 
 // Protocols
-let IPPROTO_IP: i32 = 0
-let IPPROTO_TCP: i32 = 6
-let IPPROTO_UDP: i32 = 17
+view let IPPROTO_IP: i32 = 0
+view let IPPROTO_TCP: i32 = 6
+view let IPPROTO_UDP: i32 = 17
 
 // Socket Options Levels & Names
-let SOL_SOCKET: i32 = 1 // POSIX; Win32 uses 65535
-let SO_DEBUG: i32 = 1
-let SO_REUSEADDR: i32 = 2 // POSIX; Win32 uses 4
-let SO_KEEPALIVE: i32 = 9
-let SO_DONTROUTE: i32 = 5
-let SO_BROADCAST: i32 = 6
-let SO_LINGER: i32 = 13
-let SO_OOBINLINE: i32 = 10
-let SO_SNDBUF: i32 = 7
-let SO_RCVBUF: i32 = 8
-let SO_SNDTIMEO: i32 = 21
-let SO_RCVTIMEO: i32 = 20
-let SO_ERROR: i32 = 4
-let SO_TYPE: i32 = 3
-let TCP_NODELAY: i32 = 1
+view let SOL_SOCKET: i32 = 1 // POSIX; Win32 uses 65535
+view let SO_DEBUG: i32 = 1
+view let SO_REUSEADDR: i32 = 2 // POSIX; Win32 uses 4
+view let SO_KEEPALIVE: i32 = 9
+view let SO_DONTROUTE: i32 = 5
+view let SO_BROADCAST: i32 = 6
+view let SO_LINGER: i32 = 13
+view let SO_OOBINLINE: i32 = 10
+view let SO_SNDBUF: i32 = 7
+view let SO_RCVBUF: i32 = 8
+view let SO_SNDTIMEO: i32 = 21
+view let SO_RCVTIMEO: i32 = 20
+view let SO_ERROR: i32 = 4
+view let SO_TYPE: i32 = 3
+view let TCP_NODELAY: i32 = 1
 
 // Non-blocking mode is set with fcntl(F_SETFL, O_NONBLOCK) on POSIX, not with
 // an ioctl. The value is kept only so the constant exists for callers that
 // reference it; the socket backend does not use it.
-let FIONBIO: i32 = -2147195266
+view let FIONBIO: i32 = -2147195266
 
 // Error Values
-let INVALID_SOCKET: i64 = -1
-let SOCKET_ERROR: i32 = -1
+view let INVALID_SOCKET: i64 = -1
+view let SOCKET_ERROR: i32 = -1
 
 // False: the backend uses BSD sockets with no WSAStartup/WSACleanup handshake
 // and close() rather than closesocket().
-let NET_WIN32_API: bool = false
+view let NET_WIN32_API: bool = false
 
 // IPv4 Internet socket address structure matching struct sockaddr_in (16 bytes).
-data SockAddrIn {
+view data SockAddrIn {
     family: i16
     port: u16
     addr: u32
@@ -64,7 +64,7 @@ data SockAddrIn {
 }
 
 // Low-level socket handle container.
-data Socket {
+view data Socket {
     fd: i64
     family: i32
     type_: i32
@@ -73,7 +73,7 @@ data Socket {
 }
 
 // High-level network endpoint address (IP string and port).
-data SocketAddr {
+view data SocketAddr {
     ip: string
     port: u16
     raw_ip: u32

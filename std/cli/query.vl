@@ -7,7 +7,7 @@ use "../str/slice.vl"
 use "defs.vl"
 
 // Returns true when cli_parse finished without recording an error.
-act cli_ok(p: @CliContext) -> bool {
+view act cli_ok(p: @CliContext) -> bool {
     if p == null {
         return false
     }
@@ -15,7 +15,7 @@ act cli_ok(p: @CliContext) -> bool {
 }
 
 // Returns the error message recorded by cli_parse ("" on success).
-act cli_error_msg(p: @CliContext) -> string {
+view act cli_error_msg(p: @CliContext) -> string {
     if p == null {
         return "" as string
     }
@@ -23,7 +23,7 @@ act cli_error_msg(p: @CliContext) -> string {
 }
 
 // Returns the offending token recorded at the error site ("" when none).
-act cli_error_token(p: @CliContext) -> string {
+view act cli_error_token(p: @CliContext) -> string {
     if p == null {
         return "" as string
     }
@@ -32,7 +32,7 @@ act cli_error_token(p: @CliContext) -> string {
 
 // Returns the definition index for a flag referenced by its long or short
 // name. Returns -1 when not registered.
-act cli_flag_index(p: @CliContext, name: string) -> i64 {
+view act cli_flag_index(p: @CliContext, name: string) -> i64 {
     if p == null or name == null {
         return (-1 as i64)
     }
@@ -62,7 +62,7 @@ act cli_flag_index(p: @CliContext, name: string) -> i64 {
 
 // Returns the flag's value when seen, its registered default when absent,
 // or "" when the flag is not registered at all.
-act cli_flag_str(p: @CliContext, name: string) -> string {
+view act cli_flag_str(p: @CliContext, name: string) -> string {
     if p == null {
         return "" as string
     }
@@ -78,12 +78,12 @@ act cli_flag_str(p: @CliContext, name: string) -> string {
 }
 
 // Returns true when a boolean flag (or any flag) appeared in the command line.
-act cli_flag_bool(p: @CliContext, name: string) -> bool {
+view act cli_flag_bool(p: @CliContext, name: string) -> bool {
     return cli_flag_seen(p, name)
 }
 
 // Returns true when the flag appeared. Unregistered names yield false.
-act cli_flag_seen(p: @CliContext, name: string) -> bool {
+view act cli_flag_seen(p: @CliContext, name: string) -> bool {
     if p == null {
         return false
     }
@@ -98,7 +98,7 @@ act cli_flag_seen(p: @CliContext, name: string) -> bool {
 // through std.fmt.atoi (supports +/-, whitespace, parse overflow checks).
 // Returns false for unregistered flags or unparsable values and writes
 // nothing to out_val on failure.
-act cli_flag_i64(p: @CliContext, name: string, out_val: @i64) -> bool {
+view act cli_flag_i64(p: @CliContext, name: string, out_val: @i64) -> bool {
     if p == null or out_val == null {
         return false
     }
@@ -110,7 +110,7 @@ act cli_flag_i64(p: @CliContext, name: string, out_val: @i64) -> bool {
 }
 
 // Returns the number of positional operands captured after flag parsing.
-act cli_positional_count(p: @CliContext) -> usize {
+view act cli_positional_count(p: @CliContext) -> usize {
     if p == null {
         return 0
     }
@@ -118,7 +118,7 @@ act cli_positional_count(p: @CliContext) -> usize {
 }
 
 // Returns the positional operand at index, or "" when out of bounds.
-act cli_positional(p: @CliContext, index: usize) -> string {
+view act cli_positional(p: @CliContext, index: usize) -> string {
     if p == null or p.positionals == null or index >= p.positional_count {
         return "" as string
     }
@@ -127,7 +127,7 @@ act cli_positional(p: @CliContext, index: usize) -> string {
 
 // Returns the routed subcommand name, or "" when none was routed or no
 // subcommands are registered.
-act cli_subcommand(p: @CliContext) -> string {
+view act cli_subcommand(p: @CliContext) -> string {
     if p == null {
         return "" as string
     }
@@ -136,7 +136,7 @@ act cli_subcommand(p: @CliContext) -> string {
 
 // Returns the help line registered with the routed (or named) subcommand,
 // or "" when there is no such subcommand.
-act cli_subcommand_help(p: @CliContext, name: string) -> string {
+view act cli_subcommand_help(p: @CliContext, name: string) -> string {
     if p == null or name == null {
         return "" as string
     }

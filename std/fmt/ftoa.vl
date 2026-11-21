@@ -7,7 +7,7 @@ use "../str/search.vl"
 use "itoa.vl"
 
 // Reinterprets IEEE 754 64-bit float bits as u64.
-act f64_to_bits(f: f64) -> u64 {
+view act f64_to_bits(f: f64) -> u64 {
     let pf: @f64 = @f
     let p_u8: @u8 = pf as @u8
     let pu: @u64 = p_u8 as @u64
@@ -15,7 +15,7 @@ act f64_to_bits(f: f64) -> u64 {
 }
 
 // Reinterprets u64 bits as IEEE 754 64-bit float.
-act bits_to_f64(bits: u64) -> f64 {
+view act bits_to_f64(bits: u64) -> f64 {
     let pb: @u64 = @bits
     let p_u8: @u8 = pb as @u8
     let pf: @f64 = p_u8 as @f64
@@ -23,7 +23,7 @@ act bits_to_f64(bits: u64) -> f64 {
 }
 
 // Returns true if val is an IEEE 754 Not-a-Number (NaN).
-act f64_is_nan(val: f64) -> bool {
+view act f64_is_nan(val: f64) -> bool {
     let bits = f64_to_bits(val)
     let exp = (bits >> 52) & 0x7FF as u64
     let mant = bits & 0xFFFFFFFFFFFFF as u64
@@ -31,7 +31,7 @@ act f64_is_nan(val: f64) -> bool {
 }
 
 // Returns true if val is positive or negative infinity.
-act f64_is_inf(val: f64) -> bool {
+view act f64_is_inf(val: f64) -> bool {
     let bits = f64_to_bits(val)
     let exp = (bits >> 52) & 0x7FF as u64
     let mant = bits & 0xFFFFFFFFFFFFF as u64
@@ -39,13 +39,13 @@ act f64_is_inf(val: f64) -> bool {
 }
 
 // Returns true if val is IEEE 754 negative zero (-0.0).
-act f64_is_neg_zero(val: f64) -> bool {
+view act f64_is_neg_zero(val: f64) -> bool {
     let bits = f64_to_bits(val)
     return bits == 0x8000000000000000 as u64
 }
 
 // Computes 10^n for f64 scaling.
-act pow10_f64(n: i32) -> f64 {
+view act pow10_f64(n: i32) -> f64 {
     if n == 0 { return 1.0 }
     mut pos_n = n
     if pos_n < 0 { pos_n = -n }
@@ -68,7 +68,7 @@ act pow10_f64(n: i32) -> f64 {
 // Formats an IEEE 754 64-bit float into decimal characters in buf.
 // Precision specifies the number of digits after the decimal point (-1 for default 6).
 // Handles NaN, +Inf, -Inf, -0.0, and rounds the last fractional digit accurately.
-act format_f64(val: f64, precision: i32, buf: @u8, buf_len: usize) -> StrSlice {
+view act format_f64(val: f64, precision: i32, buf: @u8, buf_len: usize) -> StrSlice {
     if buf == null or buf_len == 0 {
         return StrSlice { ptr: null, len: 0 }
     }
@@ -183,7 +183,7 @@ act format_f64(val: f64, precision: i32, buf: @u8, buf_len: usize) -> StrSlice {
 // Accepts optional leading and trailing whitespace, sign ('+' or '-'),
 // decimal point, scientific notation exponent ('e' or 'E'), and special strings
 // ("NaN", "Inf", "-Inf").
-act parse_f64(s: StrSlice, out_val: @f64) -> bool {
+view act parse_f64(s: StrSlice, out_val: @f64) -> bool {
     let trimmed = str_trim(s)
     if trimmed.ptr == null or trimmed.len == 0 {
         return false
@@ -294,6 +294,6 @@ act parse_f64(s: StrSlice, out_val: @f64) -> bool {
 }
 
 // String literal convenience helpers
-act parse_f64_str(s: string, out_val: @f64) -> bool {
+view act parse_f64_str(s: string, out_val: @f64) -> bool {
     return parse_f64(slice_from_str(s), out_val)
 }

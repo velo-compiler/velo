@@ -7,14 +7,14 @@ use "fast_writer.vl"
 use "../async.vl"
 use "../mem/heap.vl"
 
-data AsyncHttpExchange {
+view data AsyncHttpExchange {
     stream: @AsyncTcpStream
     req: HttpRequest
     is_responded: bool
     conn_ptr: @void
 }
 
-data _AsyncHttpServerConn {
+view data _AsyncHttpServerConn {
     stream: @AsyncTcpStream
     server_ptr: @AsyncHttpServer
     buf: @u8
@@ -28,7 +28,7 @@ data _AsyncHttpServerConn {
     ex: AsyncHttpExchange
 }
 
-data AsyncHttpServer {
+view data AsyncHttpServer {
     listener: @AsyncTcpListener
     loop_ptr: @EventLoop
     on_request: act(@AsyncHttpExchange) -> void
@@ -37,22 +37,22 @@ data AsyncHttpServer {
     conn_cap: usize
 }
 
-act async_http_exchange_sizeof() -> usize {
+view act async_http_exchange_sizeof() -> usize {
     let dummy: @AsyncHttpExchange = null
     return (dummy + 1) as usize
 }
 
-act async_http_server_sizeof() -> usize {
+view act async_http_server_sizeof() -> usize {
     let dummy: @AsyncHttpServer = null
     return (dummy + 1) as usize
 }
 
-act async_http_server_conn_sizeof() -> usize {
+view act async_http_server_conn_sizeof() -> usize {
     let dummy: @_AsyncHttpServerConn = null
     return (dummy + 1) as usize
 }
 
-act _http_server_conn_append(conn: @_AsyncHttpServerConn, data: @u8, len: usize) {
+view act _http_server_conn_append(conn: @_AsyncHttpServerConn, data: @u8, len: usize) {
     if conn == null or data == null or len == 0 { return }
     if conn.len + len + 1 >= conn.cap {
         let new_cap = (conn.cap * 2) + len + 16
@@ -79,7 +79,7 @@ act _http_server_conn_append(conn: @_AsyncHttpServerConn, data: @u8, len: usize)
     conn.buf[conn.len] = 0 as u8
 }
 
-act _async_http_acquire_conn(server: @AsyncHttpServer, stream: @AsyncTcpStream) -> @_AsyncHttpServerConn {
+view act _async_http_acquire_conn(server: @AsyncHttpServer, stream: @AsyncTcpStream) -> @_AsyncHttpServerConn {
     if server != null and server.conns != null {
         mut i: usize = 0
         loop i < server.conn_cap {
@@ -112,7 +112,7 @@ act _async_http_acquire_conn(server: @AsyncHttpServer, stream: @AsyncTcpStream) 
     return conn
 }
 
-act _async_http_release_conn(conn: @_AsyncHttpServerConn) {
+view act _async_http_release_conn(conn: @_AsyncHttpServerConn) {
     if conn == null { return }
     if conn.is_pooled {
         conn.in_use = false
@@ -128,7 +128,7 @@ act _async_http_release_conn(conn: @_AsyncHttpServerConn) {
     }
 }
 
-act _async_http_on_data(stream: @AsyncTcpStream, data: @u8, len: usize) {
+view act _async_http_on_data(stream: @AsyncTcpStream, data: @u8, len: usize) {
     if stream == null or stream.tag == null { return }
     let conn = stream.tag as @_AsyncHttpServerConn
     _http_server_conn_append(conn, data, len)
@@ -162,13 +162,13 @@ act _async_http_on_data(stream: @AsyncTcpStream, data: @u8, len: usize) {
     }
 }
 
-act _async_http_on_close(stream: @AsyncTcpStream) {
+view act _async_http_on_close(stream: @AsyncTcpStream) {
     if stream == null or stream.tag == null { return }
     let conn = stream.tag as @_AsyncHttpServerConn
     _async_http_release_conn(conn)
 }
 
-act _async_http_on_connection(stream: @AsyncTcpStream) {
+view act _async_http_on_connection(stream: @AsyncTcpStream) {
     if stream == null or stream.listener == null or stream.listener.tag == null { return }
     let server = stream.listener.tag as @AsyncHttpServer
     let conn = _async_http_acquire_conn(server, stream)
@@ -179,7 +179,7 @@ act _async_http_on_connection(stream: @AsyncTcpStream) {
 }
 
 // Binds an asynchronous non-blocking HTTP server to the specified host and port on the EventLoop
-act async_http_listen(el: @EventLoop, host: string, port: u16, on_request: act(@AsyncHttpExchange) -> void) -> @AsyncHttpServer {
+view act async_http_listen(el: @EventLoop, host: string, port: u16, on_request: act(@AsyncHttpExchange) -> void) -> @AsyncHttpServer {
     if el == null or on_request == null { return null }
 
     let server = heap_alloc(async_http_server_sizeof()) as @AsyncHttpServer
@@ -229,7 +229,7 @@ act async_http_listen(el: @EventLoop, host: string, port: u16, on_request: act(@
 }
 
 // Sends an HTTP response with headers and body to the client, then closes the connection
-act async_http_respond(ex: @AsyncHttpExchange, status: u16, content_type: string, body: string) -> bool {
+view act async_http_respond(ex: @AsyncHttpExchange, status: u16, content_type: string, body: string) -> bool {
     if ex == null or ex.stream == null or ex.is_responded { return false }
     ex.is_responded = true
 
@@ -298,22 +298,22 @@ act async_http_respond(ex: @AsyncHttpExchange, status: u16, content_type: string
 }
 
 // Responds with a text/plain payload
-act async_http_respond_text(ex: @AsyncHttpExchange, status: u16, text: string) -> bool {
+view act async_http_respond_text(ex: @AsyncHttpExchange, status: u16, text: string) -> bool {
     return async_http_respond(ex, status, "text/plain; charset=utf-8", text)
 }
 
 // Responds with an application/json payload
-act async_http_respond_json(ex: @AsyncHttpExchange, status: u16, json: string) -> bool {
+view act async_http_respond_json(ex: @AsyncHttpExchange, status: u16, json: string) -> bool {
     return async_http_respond(ex, status, "application/json; charset=utf-8", json)
 }
 
 // Responds with a text/html payload
-act async_http_respond_html(ex: @AsyncHttpExchange, status: u16, html: string) -> bool {
+view act async_http_respond_html(ex: @AsyncHttpExchange, status: u16, html: string) -> bool {
     return async_http_respond(ex, status, "text/html; charset=utf-8", html)
 }
 
 // Shuts down the asynchronous HTTP server listener and releases resources
-act async_http_server_close(server: @AsyncHttpServer) {
+view act async_http_server_close(server: @AsyncHttpServer) {
     if server == null or not server.is_running { return }
     server.is_running = false
     if server.listener != null {

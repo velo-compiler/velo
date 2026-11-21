@@ -8,22 +8,22 @@ use "../fmt/ftoa.vl"
 use "unescape.vl"
 
 // JSON token kinds
-let JSON_TOK_EOF: i32 = 0
-let JSON_TOK_OBJ_START: i32 = 1     // {
-let JSON_TOK_OBJ_END: i32 = 2       // }
-let JSON_TOK_ARR_START: i32 = 3     // [
-let JSON_TOK_ARR_END: i32 = 4       // ]
-let JSON_TOK_COLON: i32 = 5         // :
-let JSON_TOK_COMMA: i32 = 6         // ,
-let JSON_TOK_STRING: i32 = 7        // "..."
-let JSON_TOK_NUMBER: i32 = 8        // 123, -45.67, 1e-4
-let JSON_TOK_TRUE: i32 = 9          // true
-let JSON_TOK_FALSE: i32 = 10        // false
-let JSON_TOK_NULL: i32 = 11         // null
-let JSON_TOK_ERROR: i32 = 12        // Lexical / syntax error
+view let JSON_TOK_EOF: i32 = 0
+view let JSON_TOK_OBJ_START: i32 = 1     // {
+view let JSON_TOK_OBJ_END: i32 = 2       // }
+view let JSON_TOK_ARR_START: i32 = 3     // [
+view let JSON_TOK_ARR_END: i32 = 4       // ]
+view let JSON_TOK_COLON: i32 = 5         // :
+view let JSON_TOK_COMMA: i32 = 6         // ,
+view let JSON_TOK_STRING: i32 = 7        // "..."
+view let JSON_TOK_NUMBER: i32 = 8        // 123, -45.67, 1e-4
+view let JSON_TOK_TRUE: i32 = 9          // true
+view let JSON_TOK_FALSE: i32 = 10        // false
+view let JSON_TOK_NULL: i32 = 11         // null
+view let JSON_TOK_ERROR: i32 = 12        // Lexical / syntax error
 
 // Token produced by JsonLexer.
-data JsonToken {
+view data JsonToken {
     kind: i32,
     slice: StrSlice,
     line: usize,
@@ -31,7 +31,7 @@ data JsonToken {
 }
 
 // Zero-allocation streaming JSON tokenizer state.
-data JsonLexer {
+view data JsonLexer {
     src: @u8,
     len: usize,
     pos: usize,
@@ -40,18 +40,18 @@ data JsonLexer {
 }
 
 // Checks if byte is an ASCII decimal digit '0'..'9'.
-act is_ascii_digit(b: u8) -> bool {
+view act is_ascii_digit(b: u8) -> bool {
     return b >= 48 as u8 and b <= 57 as u8
 }
 
 // Checks if byte terminates a literal or number token (whitespace, comma, bracket, brace, colon).
-act json_is_term_char(b: u8) -> bool {
+view act json_is_term_char(b: u8) -> bool {
     return b == 32 as u8 or b == 9 as u8 or b == 10 as u8 or b == 13 as u8 or
            b == 44 as u8 or b == 93 as u8 or b == 125 as u8 or b == 58 as u8
 }
 
 // Initializes a JSON lexer from a StrSlice view.
-act json_lexer_init(src: StrSlice) -> JsonLexer {
+view act json_lexer_init(src: StrSlice) -> JsonLexer {
     return JsonLexer {
         src: src.ptr,
         len: src.len,
@@ -62,12 +62,12 @@ act json_lexer_init(src: StrSlice) -> JsonLexer {
 }
 
 // Initializes a JSON lexer from a null-terminated string.
-act json_lexer_init_str(src: string) -> JsonLexer {
+view act json_lexer_init_str(src: string) -> JsonLexer {
     return json_lexer_init(slice_from_str(src))
 }
 
 // Skips JSON whitespace (space, tab, LF, CR) and updates line and column numbers.
-act json_skip_whitespace(lex: @JsonLexer) {
+view act json_skip_whitespace(lex: @JsonLexer) {
     loop lex.pos < lex.len {
         let b = lex.src[lex.pos]
         if b == 32 as u8 or b == 9 as u8 {
@@ -86,7 +86,7 @@ act json_skip_whitespace(lex: @JsonLexer) {
 }
 
 // Constructs a JSON_TOK_ERROR token and advances lexer position by at least 1 byte if stuck.
-act json_make_error(lex: @JsonLexer, start_pos: usize, start_line: usize, start_col: usize) -> JsonToken {
+view act json_make_error(lex: @JsonLexer, start_pos: usize, start_line: usize, start_col: usize) -> JsonToken {
     if lex.pos == start_pos and lex.pos < lex.len {
         lex.pos += 1
         lex.col += 1
@@ -102,7 +102,7 @@ act json_make_error(lex: @JsonLexer, start_pos: usize, start_line: usize, start_
 }
 
 // Scans and returns the next JSON token from the input stream.
-act json_lexer_next(lex: @JsonLexer) -> JsonToken {
+view act json_lexer_next(lex: @JsonLexer) -> JsonToken {
     json_skip_whitespace(lex)
 
     if lex.pos >= lex.len {
@@ -314,7 +314,7 @@ act json_lexer_next(lex: @JsonLexer) -> JsonToken {
 }
 
 // Peeks at the next token without advancing lexer state.
-act json_lexer_peek(lex: @JsonLexer) -> JsonToken {
+view act json_lexer_peek(lex: @JsonLexer) -> JsonToken {
     let saved_pos = lex.pos
     let saved_line = lex.line
     let saved_col = lex.col
@@ -326,7 +326,7 @@ act json_lexer_peek(lex: @JsonLexer) -> JsonToken {
 }
 
 // Returns the interior string slice of a JSON_TOK_STRING token, stripping enclosing quotes.
-act json_token_str_value(tok: @JsonToken) -> StrSlice {
+view act json_token_str_value(tok: @JsonToken) -> StrSlice {
     if tok == null or tok.kind != JSON_TOK_STRING {
         if tok != null { return tok.slice }
         return slice_from_raw(null, 0)
@@ -338,7 +338,7 @@ act json_token_str_value(tok: @JsonToken) -> StrSlice {
 }
 
 // Returns true if a number token contains a decimal point '.' or scientific exponent 'e'/'E'.
-act json_token_is_float(tok: @JsonToken) -> bool {
+view act json_token_is_float(tok: @JsonToken) -> bool {
     if tok == null or tok.kind != JSON_TOK_NUMBER {
         return false
     }
@@ -354,7 +354,7 @@ act json_token_is_float(tok: @JsonToken) -> bool {
 }
 
 // Parses a JSON_TOK_NUMBER token as a signed 64-bit integer.
-act json_token_as_i64(tok: @JsonToken, out_val: @i64) -> bool {
+view act json_token_as_i64(tok: @JsonToken, out_val: @i64) -> bool {
     if tok == null or tok.kind != JSON_TOK_NUMBER {
         return false
     }
@@ -362,7 +362,7 @@ act json_token_as_i64(tok: @JsonToken, out_val: @i64) -> bool {
 }
 
 // Parses a JSON_TOK_NUMBER token as an IEEE 754 64-bit float.
-act json_token_as_f64(tok: @JsonToken, out_val: @f64) -> bool {
+view act json_token_as_f64(tok: @JsonToken, out_val: @f64) -> bool {
     if tok == null or tok.kind != JSON_TOK_NUMBER {
         return false
     }
@@ -370,7 +370,7 @@ act json_token_as_f64(tok: @JsonToken, out_val: @f64) -> bool {
 }
 
 // Returns a human-readable display string for a JSON token kind.
-act json_token_kind_name(kind: i32) -> StrSlice {
+view act json_token_kind_name(kind: i32) -> StrSlice {
     if kind == 0 { return slice_from_str("EOF") }
     if kind == 1 { return slice_from_str("{") }
     if kind == 2 { return slice_from_str("}") }

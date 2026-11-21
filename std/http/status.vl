@@ -1,44 +1,44 @@
 // std.http.status — Standard HTTP/1.1 status codes and reason phrase lookups.
 
-let STATUS_CONTINUE: u16 = 100
-let STATUS_SWITCHING_PROTOCOLS: u16 = 101
-let STATUS_OK: u16 = 200
-let STATUS_CREATED: u16 = 201
-let STATUS_ACCEPTED: u16 = 202
-let STATUS_NON_AUTHORITATIVE: u16 = 203
-let STATUS_NO_CONTENT: u16 = 204
-let STATUS_RESET_CONTENT: u16 = 205
-let STATUS_PARTIAL_CONTENT: u16 = 206
-let STATUS_MULTIPLE_CHOICES: u16 = 300
-let STATUS_MOVED_PERMANENTLY: u16 = 301
-let STATUS_FOUND: u16 = 302
-let STATUS_SEE_OTHER: u16 = 303
-let STATUS_NOT_MODIFIED: u16 = 304
-let STATUS_TEMPORARY_REDIRECT: u16 = 307
-let STATUS_PERMANENT_REDIRECT: u16 = 308
-let STATUS_BAD_REQUEST: u16 = 400
-let STATUS_UNAUTHORIZED: u16 = 401
-let STATUS_FORBIDDEN: u16 = 403
-let STATUS_NOT_FOUND: u16 = 404
-let STATUS_METHOD_NOT_ALLOWED: u16 = 405
-let STATUS_NOT_ACCEPTABLE: u16 = 406
-let STATUS_REQUEST_TIMEOUT: u16 = 408
-let STATUS_CONFLICT: u16 = 409
-let STATUS_GONE: u16 = 410
-let STATUS_LENGTH_REQUIRED: u16 = 411
-let STATUS_PAYLOAD_TOO_LARGE: u16 = 413
-let STATUS_URI_TOO_LONG: u16 = 414
-let STATUS_UNSUPPORTED_MEDIA_TYPE: u16 = 415
-let STATUS_TOO_MANY_REQUESTS: u16 = 429
-let STATUS_INTERNAL_SERVER_ERROR: u16 = 500
-let STATUS_NOT_IMPLEMENTED: u16 = 501
-let STATUS_BAD_GATEWAY: u16 = 502
-let STATUS_SERVICE_UNAVAILABLE: u16 = 503
-let STATUS_GATEWAY_TIMEOUT: u16 = 504
-let STATUS_HTTP_VERSION_NOT_SUPPORTED: u16 = 505
+view let STATUS_CONTINUE: u16 = 100
+view let STATUS_SWITCHING_PROTOCOLS: u16 = 101
+view let STATUS_OK: u16 = 200
+view let STATUS_CREATED: u16 = 201
+view let STATUS_ACCEPTED: u16 = 202
+view let STATUS_NON_AUTHORITATIVE: u16 = 203
+view let STATUS_NO_CONTENT: u16 = 204
+view let STATUS_RESET_CONTENT: u16 = 205
+view let STATUS_PARTIAL_CONTENT: u16 = 206
+view let STATUS_MULTIPLE_CHOICES: u16 = 300
+view let STATUS_MOVED_PERMANENTLY: u16 = 301
+view let STATUS_FOUND: u16 = 302
+view let STATUS_SEE_OTHER: u16 = 303
+view let STATUS_NOT_MODIFIED: u16 = 304
+view let STATUS_TEMPORARY_REDIRECT: u16 = 307
+view let STATUS_PERMANENT_REDIRECT: u16 = 308
+view let STATUS_BAD_REQUEST: u16 = 400
+view let STATUS_UNAUTHORIZED: u16 = 401
+view let STATUS_FORBIDDEN: u16 = 403
+view let STATUS_NOT_FOUND: u16 = 404
+view let STATUS_METHOD_NOT_ALLOWED: u16 = 405
+view let STATUS_NOT_ACCEPTABLE: u16 = 406
+view let STATUS_REQUEST_TIMEOUT: u16 = 408
+view let STATUS_CONFLICT: u16 = 409
+view let STATUS_GONE: u16 = 410
+view let STATUS_LENGTH_REQUIRED: u16 = 411
+view let STATUS_PAYLOAD_TOO_LARGE: u16 = 413
+view let STATUS_URI_TOO_LONG: u16 = 414
+view let STATUS_UNSUPPORTED_MEDIA_TYPE: u16 = 415
+view let STATUS_TOO_MANY_REQUESTS: u16 = 429
+view let STATUS_INTERNAL_SERVER_ERROR: u16 = 500
+view let STATUS_NOT_IMPLEMENTED: u16 = 501
+view let STATUS_BAD_GATEWAY: u16 = 502
+view let STATUS_SERVICE_UNAVAILABLE: u16 = 503
+view let STATUS_GATEWAY_TIMEOUT: u16 = 504
+view let STATUS_HTTP_VERSION_NOT_SUPPORTED: u16 = 505
 
 // Returns the canonical RFC reason phrase for a given standard HTTP status code.
-act http_status_text(code: u16) -> string {
+view act http_status_text(code: u16) -> string {
     if code == 200 as u16 { return "OK" }
     if code == 201 as u16 { return "Created" }
     if code == 202 as u16 { return "Accepted" }
@@ -67,27 +67,27 @@ act http_status_text(code: u16) -> string {
 }
 
 // Returns true if the status code indicates a 1xx Informational response.
-act http_is_informational(code: u16) -> bool {
+view act http_is_informational(code: u16) -> bool {
     return code >= (100 as u16) and code < (200 as u16)
 }
 
 // Returns true if the status code indicates a 2xx Successful response.
-act http_is_success(code: u16) -> bool {
+view act http_is_success(code: u16) -> bool {
     return code >= (200 as u16) and code < (300 as u16)
 }
 
 // Returns true if the status code indicates a 3xx Redirection response.
-act http_is_redirect(code: u16) -> bool {
+view act http_is_redirect(code: u16) -> bool {
     return code >= (300 as u16) and code < (400 as u16)
 }
 
 // Returns true if the status code indicates a 4xx Client Error response.
-act http_is_client_error(code: u16) -> bool {
+view act http_is_client_error(code: u16) -> bool {
     return code >= (400 as u16) and code < (500 as u16)
 }
 
 // Returns true if the status code indicates a 5xx Server Error response.
-act http_is_server_error(code: u16) -> bool {
+view act http_is_server_error(code: u16) -> bool {
     return code >= (500 as u16) and code < (600 as u16)
 }
 

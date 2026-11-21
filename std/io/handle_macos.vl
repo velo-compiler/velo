@@ -2,54 +2,54 @@
 // Backed directly by Darwin kernel syscalls (read, write, lseek, open, close, unlink).
 
 // Standard Handle and Seek Constants
-let INVALID_HANDLE: usize = (0 - 1) as usize
+view let INVALID_HANDLE: usize = (0 - 1) as usize
 
-let IO_SEEK_SET: i32 = 0
-let IO_SEEK_CUR: i32 = 1
-let IO_SEEK_END: i32 = 2
+view let IO_SEEK_SET: i32 = 0
+view let IO_SEEK_CUR: i32 = 1
+view let IO_SEEK_END: i32 = 2
 
 // File Open Mode Flags
-let IO_READ: u32 = 1
-let IO_WRITE: u32 = 2
-let IO_APPEND: u32 = 4
-let IO_CREATE: u32 = 8
-let IO_TRUNCATE: u32 = 16
+view let IO_READ: u32 = 1
+view let IO_WRITE: u32 = 2
+view let IO_APPEND: u32 = 4
+view let IO_CREATE: u32 = 8
+view let IO_TRUNCATE: u32 = 16
 
 // Strong typed OS file handle wrapper
-data FileHandle {
+view data FileHandle {
     os_handle: usize
 }
 
 // Foreign interface to macOS / Darwin kernel services
-extern act read(fd: i32, buf: @u8, count: usize) -> isize
-extern act write(fd: i32, buf: @u8, count: usize) -> isize
-extern act lseek(fd: i32, offset: i64, whence: i32) -> i64
-extern act close(fd: i32) -> i32
-extern act open(pathname: @u8, flags: i32, mode: u32) -> i32
-extern act unlink(pathname: @u8) -> i32
+view extern act read(fd: i32, buf: @u8, count: usize) -> isize
+view extern act write(fd: i32, buf: @u8, count: usize) -> isize
+view extern act lseek(fd: i32, offset: i64, whence: i32) -> i64
+view extern act close(fd: i32) -> i32
+view extern act open(pathname: @u8, flags: i32, mode: u32) -> i32
+view extern act unlink(pathname: @u8) -> i32
 
 // Retrieves raw OS standard input handle (STDIN_FILENO = 0)
-act io_stdin_handle() -> FileHandle {
+view act io_stdin_handle() -> FileHandle {
     return FileHandle { os_handle: 0 }
 }
 
 // Retrieves raw OS standard output handle (STDOUT_FILENO = 1)
-act io_stdout_handle() -> FileHandle {
+view act io_stdout_handle() -> FileHandle {
     return FileHandle { os_handle: 1 }
 }
 
 // Retrieves raw OS standard error handle (STDERR_FILENO = 2)
-act io_stderr_handle() -> FileHandle {
+view act io_stderr_handle() -> FileHandle {
     return FileHandle { os_handle: 2 }
 }
 
 // Checks if a handle is valid
-act io_is_valid_handle(h: FileHandle) -> bool {
+view act io_is_valid_handle(h: FileHandle) -> bool {
     return (h.os_handle as isize) >= 0 and h.os_handle != INVALID_HANDLE
 }
 
 // Performs a raw unbuffered write of data to the given OS handle.
-act io_raw_write(h: FileHandle, data: @u8, len: usize) -> usize {
+view act io_raw_write(h: FileHandle, data: @u8, len: usize) -> usize {
     if !io_is_valid_handle(h) or data == null or len == 0 {
         return 0
     }
@@ -70,7 +70,7 @@ act io_raw_write(h: FileHandle, data: @u8, len: usize) -> usize {
 
 // Performs a raw unbuffered read from the given OS handle into buf.
 // Returns the number of bytes read (> 0), 0 on EOF, or -1 on error.
-act io_raw_read(h: FileHandle, buf: @u8, max_len: usize) -> isize {
+view act io_raw_read(h: FileHandle, buf: @u8, max_len: usize) -> isize {
     if !io_is_valid_handle(h) or buf == null or max_len == 0 {
         return -1
     }
@@ -80,7 +80,7 @@ act io_raw_read(h: FileHandle, buf: @u8, max_len: usize) -> isize {
 // Repositions read/write file offset.
 // whence: SEEK_SET (0), SEEK_CUR (1), SEEK_END (2).
 // Returns new offset or -1 on error.
-act io_raw_seek(h: FileHandle, offset: i64, whence: i32) -> i64 {
+view act io_raw_seek(h: FileHandle, offset: i64, whence: i32) -> i64 {
     if !io_is_valid_handle(h) {
         return -1 as i64
     }
@@ -88,7 +88,7 @@ act io_raw_seek(h: FileHandle, offset: i64, whence: i32) -> i64 {
 }
 
 // Returns the file size in bytes, or -1 on error.
-act io_file_size(h: FileHandle) -> i64 {
+view act io_file_size(h: FileHandle) -> i64 {
     if !io_is_valid_handle(h) {
         return -1 as i64
     }
@@ -100,7 +100,7 @@ act io_file_size(h: FileHandle) -> i64 {
 }
 
 // Closes a file handle. Standard handles (0, 1, 2) are protected from closure.
-act io_file_close(h: FileHandle) -> bool {
+view act io_file_close(h: FileHandle) -> bool {
     if !io_is_valid_handle(h) {
         return false
     }
@@ -112,7 +112,7 @@ act io_file_close(h: FileHandle) -> bool {
 }
 
 // Opens a file by C-string path with mode_flags.
-act io_file_open(path: @u8, flags: u32) -> FileHandle {
+view act io_file_open(path: @u8, flags: u32) -> FileHandle {
     if path == null {
         return FileHandle { os_handle: INVALID_HANDLE }
     }
@@ -143,18 +143,18 @@ act io_file_open(path: @u8, flags: u32) -> FileHandle {
 }
 
 // Opens a file by Velo string path literal.
-act io_file_open_str(path: string, flags: u32) -> FileHandle {
+view act io_file_open_str(path: string, flags: u32) -> FileHandle {
     return io_file_open(path as @u8, flags)
 }
 
 // Deletes a file by C-string path.
-act io_file_delete(path: @u8) -> bool {
+view act io_file_delete(path: @u8) -> bool {
     if path == null { return false }
     let res = unlink(path)
     return res == 0
 }
 
 // Deletes a file by Velo string path literal.
-act io_file_delete_str(path: string) -> bool {
+view act io_file_delete_str(path: string) -> bool {
     return io_file_delete(path as @u8)
 }

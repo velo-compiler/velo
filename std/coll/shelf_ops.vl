@@ -9,7 +9,7 @@ use "shelf.vl"
 
 // Removes and returns the last element from the shelf into out_elem.
 // Returns true on success, or false if the shelf is empty.
-act shelf_pop(s: @RawShelf, out_elem: @u8) -> bool {
+view act shelf_pop(s: @RawShelf, out_elem: @u8) -> bool {
     if s == null or s.len == 0 {
         return false
     }
@@ -24,7 +24,7 @@ act shelf_pop(s: @RawShelf, out_elem: @u8) -> bool {
 
 // Deletes the element at the specified index, shifting subsequent elements left.
 // Preserves element order (O(N) operation). Returns true on success, or false if index is out of bounds.
-act shelf_delete_at(s: @RawShelf, index: usize) -> bool {
+view act shelf_delete_at(s: @RawShelf, index: usize) -> bool {
     if s == null or index >= s.len {
         return false
     }
@@ -40,7 +40,7 @@ act shelf_delete_at(s: @RawShelf, index: usize) -> bool {
 
 // Fast unordered removal (O(1) operation).
 // Replaces the element at index with the last element and decrements length.
-act shelf_swap_remove(s: @RawShelf, index: usize, out_elem: @u8) -> bool {
+view act shelf_swap_remove(s: @RawShelf, index: usize, out_elem: @u8) -> bool {
     if s == null or index >= s.len {
         return false
     }
@@ -60,7 +60,7 @@ act shelf_swap_remove(s: @RawShelf, index: usize, out_elem: @u8) -> bool {
 
 // Inserts an element at the specified index, shifting existing elements right.
 // Returns true on success, or false if index > len.
-act shelf_insert_at(s: @RawShelf, index: usize, elem_ptr: @u8) -> bool {
+view act shelf_insert_at(s: @RawShelf, index: usize, elem_ptr: @u8) -> bool {
     if s == null or elem_ptr == null or index > s.len {
         return false
     }
@@ -85,7 +85,7 @@ act shelf_insert_at(s: @RawShelf, index: usize, elem_ptr: @u8) -> bool {
 }
 
 // Swaps the contents of two elements in place.
-act shelf_swap(s: @RawShelf, i: usize, j: usize) -> bool {
+view act shelf_swap(s: @RawShelf, i: usize, j: usize) -> bool {
     if s == null or s.data == null or i >= s.len or j >= s.len {
         return false
     }
@@ -105,7 +105,7 @@ act shelf_swap(s: @RawShelf, i: usize, j: usize) -> bool {
 }
 
 // Reverses the elements of the shelf in place.
-act shelf_reverse(s: @RawShelf) {
+view act shelf_reverse(s: @RawShelf) {
     if s == null or s.len <= 1 {
         return
     }
@@ -119,7 +119,7 @@ act shelf_reverse(s: @RawShelf) {
 }
 
 // Shrinks the allocated capacity to match current length (clamped to minimum 8).
-act shelf_shrink_to_fit(s: @RawShelf) -> bool {
+view act shelf_shrink_to_fit(s: @RawShelf) -> bool {
     if s == null or s.data == null {
         return false
     }
@@ -140,7 +140,7 @@ act shelf_shrink_to_fit(s: @RawShelf) -> bool {
 }
 
 // Returns the total number of bytes occupied by active elements.
-act shelf_byte_len(s: @RawShelf) -> usize {
+view act shelf_byte_len(s: @RawShelf) -> usize {
     if s == null { return 0 }
     return s.len * s.elem_size
 }
@@ -149,7 +149,7 @@ act shelf_byte_len(s: @RawShelf) -> usize {
 // Typed Pop & Insert Helpers
 // ============================================================================
 
-act shelf_pop_i64(s: @RawShelf, out_val: @i64) -> bool {
+view act shelf_pop_i64(s: @RawShelf, out_val: @i64) -> bool {
     if out_val == null {
         return shelf_pop(s, null)
     }
@@ -157,7 +157,7 @@ act shelf_pop_i64(s: @RawShelf, out_val: @i64) -> bool {
     return shelf_pop(s, p_u8)
 }
 
-act shelf_pop_u64(s: @RawShelf, out_val: @u64) -> bool {
+view act shelf_pop_u64(s: @RawShelf, out_val: @u64) -> bool {
     if out_val == null {
         return shelf_pop(s, null)
     }
@@ -165,7 +165,7 @@ act shelf_pop_u64(s: @RawShelf, out_val: @u64) -> bool {
     return shelf_pop(s, p_u8)
 }
 
-act shelf_pop_f64(s: @RawShelf, out_val: @f64) -> bool {
+view act shelf_pop_f64(s: @RawShelf, out_val: @f64) -> bool {
     if out_val == null {
         return shelf_pop(s, null)
     }
@@ -173,7 +173,7 @@ act shelf_pop_f64(s: @RawShelf, out_val: @f64) -> bool {
     return shelf_pop(s, p_u8)
 }
 
-act shelf_pop_slice(s: @RawShelf, out_val: @StrSlice) -> bool {
+view act shelf_pop_slice(s: @RawShelf, out_val: @StrSlice) -> bool {
     if out_val == null {
         return shelf_pop(s, null)
     }
@@ -181,7 +181,7 @@ act shelf_pop_slice(s: @RawShelf, out_val: @StrSlice) -> bool {
     return shelf_pop(s, p_u8)
 }
 
-act shelf_insert_i64(s: @RawShelf, index: usize, val: i64) -> bool {
+view act shelf_insert_i64(s: @RawShelf, index: usize, val: i64) -> bool {
     mut v = val
     let pv: @i64 = @v
     return shelf_insert_at(s, index, pv as @u8)

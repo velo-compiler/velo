@@ -1,0 +1,121 @@
+// Privacy access verification algorithms and module export enforcement for Velo.
+use "../common/utils.vl"
+use "../common/diagnostics.vl"
+use "../common/string_builder.vl"
+use "../ast/types.vl"
+use "symbol_table.vl"
+
+// Returns the basename of a file path (e.g. "path/to/mod.vl" -> "mod.vl").
+act privacy_path_basename(p: string) -> string {
+    if p == null { return "" }
+    let plen = str.len(p)
+    mut idx = plen
+    loop idx > 0 {
+        idx -= 1
+        if p[idx] == '/' or p[idx] == '\\' {
+            let start = idx + 1
+            let blen = plen - start
+            return copy_slice_to_string(p, start, blen)
+        }
+    }
+    return p
+}
+
+// Returns true if the file path is within the compiler's self-hosted source tree.
+act is_compiler_file(f: string) -> bool {
+    if f == null { return false }
+    let flen = str.len(f)
+    if flen >= 4 and ((f[0] == 's' and f[1] == 'r' and f[2] == 'c' and (f[3] == '/' or f[3] == '\\')) or
+                      (f[0] == '.' and f[1] == '/' and f[2] == 's' and f[3] == 'r' and f[4] == 'c') or
+                      (f[0] == '.' and f[1] == '\\' and f[2] == 's' and f[3] == 'r' and f[4] == 'c')) {
+        return true
+    }
+    // Also check for normalized Windows path containing "/src/" or "\src\"
+    mut i: usize = 0
+    loop i + 4 < flen {
+        if (f[i] == '/' or f[i] == '\\') and f[i+1] == 's' and f[i+2] == 'r' and f[i+3] == 'c' and (f[i+4] == '/' or f[i+4] == '\\') {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// Checks if declaration access across files violates module privacy.
+// Unmarked declarations are private to the file where they are declared.
+// Declarations marked 'view' are exported to importing modules.
+act check_decl_privacy(st: @SymbolTable, name: string, is_view: bool, file_path: string, line: i32, col: i32) -> bool {
+    // Privacy is verified during semantic analysis; codegen expression lowering is exempt
+    if st.is_codegen { return true }
+
+    // Exported symbols are accessible everywhere
+    if is_view { return true }
+
+    // If either file path is null or empty, access is permitted (builtins / repl / single unit)
+    if file_path == null or str.len(file_path) == 0 { return true }
+    if st.current_file == null or str.len(st.current_file) == 0 { return true }
+
+    // Same file access is always permitted
+    if file_path == st.current_file { return true }
+
+    // Compiler internals across src/ files share the compiler compilation unit
+    if is_compiler_file(st.current_file) and is_compiler_file(file_path) { return true }
+
+    // Access to private declaration from another file is forbidden
+    let sym_base = privacy_path_basename(file_path)
+    let cur_base = privacy_path_basename(st.current_file)
+
+    mut sb = create_sb(128)
+    sb_append_char(@sb, '\'')
+    sb_append_str(@sb, name)
+    sb_append_str(@sb, "' is private to '")
+    sb_append_str(@sb, sym_base)
+    sb_append_str(@sb, "' and cannot be accessed from '")
+    sb_append_str(@sb, cur_base)
+    sb_append_char(@sb, '\'')
+
+    report_error("semantic", line, col, sb_to_string(@sb))
+    st.error_count += 1
+    return false
+}
+
+// Checks privacy for a resolved function symbol.
+act check_fn_privacy(st: @SymbolTable, fn_sym: @FunctionSym, line: i32, col: i32) -> bool {
+    if fn_sym == null { return true }
+    return check_decl_privacy(st, fn_sym.name, fn_sym.is_view, fn_sym.file_path, line, col)
+}
+
+// Checks privacy for a resolved struct symbol.
+act check_struct_privacy(st: @SymbolTable, st_sym: @StructSym, line: i32, col: i32) -> bool {
+    if st_sym == null { return true }
+    return check_decl_privacy(st, st_sym.name, st_sym.is_view, st_sym.file_path, line, col)
+}
+
+// Checks privacy for a resolved kind symbol.
+act check_kind_privacy(st: @SymbolTable, k_sym: @KindSym, line: i32, col: i32) -> bool {
+    if k_sym == null { return true }
+    return check_decl_privacy(st, k_sym.name, k_sym.is_view, k_sym.file_path, line, col)
+}
+
+// Checks privacy for a resolved pact contract symbol.
+act check_pact_privacy(st: @SymbolTable, p_sym: @PactSym, line: i32, col: i32) -> bool {
+    if p_sym == null { return true }
+    return check_decl_privacy(st, p_sym.name, p_sym.is_view, p_sym.file_path, line, col)
+}
+
+// Checks privacy for a resolved global variable symbol.
+act check_global_privacy(st: @SymbolTable, sym: @Symbol, line: i32, col: i32) -> bool {
+    if sym == null or sym.kind != SYM_GLOBAL { return true }
+    return check_decl_privacy(st, sym.name, sym.is_view, sym.file_path, line, col)
+}
+
+// Checks privacy when a type name (struct or kind) is referenced in code.
+act check_type_privacy(st: @SymbolTable, type_name: string, line: i32, col: i32) -> bool {
+    if type_name == null or str.len(type_name) == 0 { return true }
+    let clean = strip_pointer_prefix(type_name)
+    let st_sym = find_struct(st, clean)
+    if st_sym != null { return check_struct_privacy(st, st_sym, line, col) }
+    let k_sym = find_kind(st, clean)
+    if k_sym != null { return check_kind_privacy(st, k_sym, line, col) }
+    return true
+}

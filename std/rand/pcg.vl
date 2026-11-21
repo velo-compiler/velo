@@ -4,7 +4,7 @@
 use "defs.vl"
 
 // Rotates a u64 left by k bits.
-act pcg64_rotl(x: u64, k: u32) -> u64 {
+view act pcg64_rotl(x: u64, k: u32) -> u64 {
     let rk = k & (63 as u32)
     let lk = (64 as u32) - rk
     return (x << rk) | (x >> lk)
@@ -12,7 +12,7 @@ act pcg64_rotl(x: u64, k: u32) -> u64 {
 
 // Advances the PCG64 state and returns the next output u64 value.
 // Uses the PCG-RXS-M-XS (random xorshift, multiply, fixed xorshift) 64-bit output function.
-act pcg64_next(rng: @Pcg64) -> u64 {
+view act pcg64_next(rng: @Pcg64) -> u64 {
     let oldstate: u64 = rng.state
     rng.state = oldstate * (0x5851F42D4C957F2D as u64) + rng.inc
     let shift: u32 = ((oldstate >> 59) as u32) + (5 as u32)
@@ -22,7 +22,7 @@ act pcg64_next(rng: @Pcg64) -> u64 {
 
 // Returns a uniformly distributed u64 in [0, bound) with no modulo bias.
 // Uses the Lemire fast bounded rejection-sampling algorithm.
-act pcg64_bounded(rng: @Pcg64, bound: u64) -> u64 {
+view act pcg64_bounded(rng: @Pcg64, bound: u64) -> u64 {
     if bound <= (1 as u64) { return 0 as u64 }
     // threshold = (-bound) % bound (computed in u64)
     let neg_bound: u64 = (0 as u64) - bound
@@ -38,7 +38,7 @@ act pcg64_bounded(rng: @Pcg64, bound: u64) -> u64 {
 
 // Advances the PCG64 state by delta steps in O(log delta) time.
 // Useful for jumping forward in the sequence without generating each value.
-act pcg64_advance(rng: @Pcg64, delta: u64) {
+view act pcg64_advance(rng: @Pcg64, delta: u64) {
     mut acc_mult: u64 = 1 as u64
     mut acc_plus: u64 = 0 as u64
     mut cur_mult: u64 = 0x5851F42D4C957F2D as u64

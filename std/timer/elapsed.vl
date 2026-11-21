@@ -1,7 +1,7 @@
 // std.timer.elapsed - High-resolution monotonic interval timer.
 use "defs.vl"
 
-data Timer {
+view data Timer {
     start_ns: u64
     stop_ns: u64
     elapsed_accum_ns: u64
@@ -9,7 +9,7 @@ data Timer {
 }
 
 // Creates a new stopped Timer with zero elapsed time.
-act timer_new() -> Timer {
+view act timer_new() -> Timer {
     return Timer {
         start_ns: 0 as u64,
         stop_ns: 0 as u64,
@@ -19,7 +19,7 @@ act timer_new() -> Timer {
 }
 
 // Creates and immediately starts a new Timer running.
-act timer_start() -> Timer {
+view act timer_start() -> Timer {
     return Timer {
         start_ns: timer_now_ns(),
         stop_ns: 0 as u64,
@@ -29,7 +29,7 @@ act timer_start() -> Timer {
 }
 
 // Resets the timer to 0 elapsed time and stops running.
-act timer_reset(t: @Timer) {
+view act timer_reset(t: @Timer) {
     if t == null { return }
     t.start_ns = 0 as u64
     t.stop_ns = 0 as u64
@@ -38,7 +38,7 @@ act timer_reset(t: @Timer) {
 }
 
 // Resets elapsed time to 0 and immediately begins measuring.
-act timer_restart(t: @Timer) {
+view act timer_restart(t: @Timer) {
     if t == null { return }
     t.start_ns = timer_now_ns()
     t.stop_ns = 0 as u64
@@ -47,14 +47,14 @@ act timer_restart(t: @Timer) {
 }
 
 // Starts measuring time if currently stopped.
-act timer_start_running(t: @Timer) {
+view act timer_start_running(t: @Timer) {
     if t == null or t.is_running { return }
     t.start_ns = timer_now_ns()
     t.is_running = true
 }
 
 // Stops measuring time and records accumulated duration.
-act timer_stop(t: @Timer) {
+view act timer_stop(t: @Timer) {
     if t == null or not t.is_running { return }
     let now = timer_now_ns()
     if now >= t.start_ns {
@@ -65,14 +65,14 @@ act timer_stop(t: @Timer) {
 }
 
 // Resumes measuring time after being stopped, preserving previously accumulated duration.
-act timer_resume(t: @Timer) {
+view act timer_resume(t: @Timer) {
     if t == null or t.is_running { return }
     t.start_ns = timer_now_ns()
     t.is_running = true
 }
 
 // Returns the total elapsed time in nanoseconds.
-act timer_elapsed_ns(t: @Timer) -> u64 {
+view act timer_elapsed_ns(t: @Timer) -> u64 {
     if t == null { return 0 as u64 }
     if t.is_running {
         let now = timer_now_ns()
@@ -86,23 +86,23 @@ act timer_elapsed_ns(t: @Timer) -> u64 {
 }
 
 // Returns the total elapsed time in microseconds.
-act timer_elapsed_us(t: @Timer) -> u64 {
+view act timer_elapsed_us(t: @Timer) -> u64 {
     return timer_elapsed_ns(t) / TIMER_NS_PER_US
 }
 
 // Returns the total elapsed time in milliseconds.
-act timer_elapsed_ms(t: @Timer) -> u64 {
+view act timer_elapsed_ms(t: @Timer) -> u64 {
     return timer_elapsed_ns(t) / TIMER_NS_PER_MS
 }
 
 // Returns the total elapsed time as floating-point seconds.
-act timer_elapsed_secs(t: @Timer) -> f64 {
+view act timer_elapsed_secs(t: @Timer) -> f64 {
     let ns = timer_elapsed_ns(t)
     return (ns as f64) / 1000000000.0
 }
 
 // Returns elapsed nanoseconds since last start or lap, and restarts lap measurement without stopping.
-act timer_lap_ns(t: @Timer) -> u64 {
+view act timer_lap_ns(t: @Timer) -> u64 {
     if t == null { return 0 as u64 }
     let elapsed = timer_elapsed_ns(t)
     t.start_ns = timer_now_ns()
@@ -111,12 +111,12 @@ act timer_lap_ns(t: @Timer) -> u64 {
 }
 
 // Returns elapsed milliseconds since last start or lap, and restarts lap measurement.
-act timer_lap_ms(t: @Timer) -> u64 {
+view act timer_lap_ms(t: @Timer) -> u64 {
     return timer_lap_ns(t) / TIMER_NS_PER_MS
 }
 
 // Returns true if the timer is actively running.
-act timer_is_running(t: @Timer) -> bool {
+view act timer_is_running(t: @Timer) -> bool {
     if t == null { return false }
     return t.is_running
 }

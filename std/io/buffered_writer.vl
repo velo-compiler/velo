@@ -7,10 +7,10 @@ use "../mem/ops.vl"
 use "../str/slice.vl"
 use "handle.vl"
 
-let DEFAULT_BUFFER_SIZE: usize = 4096
+view let DEFAULT_BUFFER_SIZE: usize = 4096
 
 // Ring/linear buffered writer structure
-data BufferedWriter {
+view data BufferedWriter {
     handle: FileHandle
     buf: @u8
     cap: usize
@@ -19,7 +19,7 @@ data BufferedWriter {
 }
 
 // Initializes a buffered writer backed by an automatically allocated 4KB OS virtual page.
-act writer_init(h: FileHandle) -> BufferedWriter {
+view act writer_init(h: FileHandle) -> BufferedWriter {
     let buf = os_page_alloc(DEFAULT_BUFFER_SIZE)
     return BufferedWriter {
         handle: h,
@@ -31,7 +31,7 @@ act writer_init(h: FileHandle) -> BufferedWriter {
 }
 
 // Initializes a buffered writer using a caller-provided buffer of specified capacity.
-act writer_init_with_buffer(h: FileHandle, buf: @u8, cap: usize) -> BufferedWriter {
+view act writer_init_with_buffer(h: FileHandle, buf: @u8, cap: usize) -> BufferedWriter {
     return BufferedWriter {
         handle: h,
         buf: buf,
@@ -42,20 +42,20 @@ act writer_init_with_buffer(h: FileHandle, buf: @u8, cap: usize) -> BufferedWrit
 }
 
 // Returns the number of unwritten bytes currently buffered.
-act writer_pending(w: @BufferedWriter) -> usize {
+view act writer_pending(w: @BufferedWriter) -> usize {
     if w == null { return 0 }
     return w.count
 }
 
 // Returns the total buffer capacity in bytes.
-act writer_capacity(w: @BufferedWriter) -> usize {
+view act writer_capacity(w: @BufferedWriter) -> usize {
     if w == null { return 0 }
     return w.cap
 }
 
 // Flushes all buffered bytes to the underlying OS handle.
 // Returns true on full flush success, or false on partial write/error.
-act writer_flush(w: @BufferedWriter) -> bool {
+view act writer_flush(w: @BufferedWriter) -> bool {
     if w == null or !io_is_valid_handle(w.handle) {
         return false
     }
@@ -80,7 +80,7 @@ act writer_flush(w: @BufferedWriter) -> bool {
 
 // Writes len bytes from data into the buffered stream.
 // Automatically flushes when full, and bypasses the buffer for large writes.
-act writer_write(w: @BufferedWriter, data: @u8, len: usize) -> usize {
+view act writer_write(w: @BufferedWriter, data: @u8, len: usize) -> usize {
     if w == null or data == null or len == 0 or w.buf == null or w.cap == 0 {
         return 0
     }
@@ -129,7 +129,7 @@ act writer_write(w: @BufferedWriter, data: @u8, len: usize) -> usize {
 }
 
 // Writes a single byte into the buffered stream.
-act writer_write_byte(w: @BufferedWriter, b: u8) -> bool {
+view act writer_write_byte(w: @BufferedWriter, b: u8) -> bool {
     if w == null or w.buf == null or w.cap == 0 {
         return false
     }
@@ -144,7 +144,7 @@ act writer_write_byte(w: @BufferedWriter, b: u8) -> bool {
 }
 
 // Writes a StrSlice into the buffered stream.
-act writer_write_slice(w: @BufferedWriter, s: StrSlice) -> usize {
+view act writer_write_slice(w: @BufferedWriter, s: StrSlice) -> usize {
     if s.ptr == null or s.len == 0 {
         return 0
     }
@@ -152,13 +152,13 @@ act writer_write_slice(w: @BufferedWriter, s: StrSlice) -> usize {
 }
 
 // Writes a string literal into the buffered stream.
-act writer_write_str(w: @BufferedWriter, s: string) -> usize {
+view act writer_write_str(w: @BufferedWriter, s: string) -> usize {
     let slice = slice_from_str(s)
     return writer_write(w, slice.ptr, slice.len)
 }
 
 // Flushes any remaining bytes and releases internal buffer memory if owned.
-act writer_free(w: @BufferedWriter) -> bool {
+view act writer_free(w: @BufferedWriter) -> bool {
     if w == null {
         return false
     }

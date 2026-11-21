@@ -2,35 +2,35 @@
 use "../str.vl"
 
 // Returns true if val is within the closed interval [min_val, max_val].
-act validate_range_i64(val: i64, min_val: i64, max_val: i64) -> bool {
+view act validate_range_i64(val: i64, min_val: i64, max_val: i64) -> bool {
     return val >= min_val and val <= max_val
 }
 
 // Returns true if val is within the closed interval [min_val, max_val] and not NaN.
-act validate_range_f64(val: f64, min_val: f64, max_val: f64) -> bool {
+view act validate_range_f64(val: f64, min_val: f64, max_val: f64) -> bool {
     // In IEEE 754, NaN != NaN
     if val != val { return false }
     return val >= min_val and val <= max_val
 }
 
 // Returns true if val is strictly positive (> 0).
-act validate_positive_i64(val: i64) -> bool {
+view act validate_positive_i64(val: i64) -> bool {
     return val > 0
 }
 
 // Returns true if val is non-negative (>= 0).
-act validate_non_negative_i64(val: i64) -> bool {
+view act validate_non_negative_i64(val: i64) -> bool {
     return val >= 0
 }
 
 // Returns true if val is strictly negative (< 0).
-act validate_negative_i64(val: i64) -> bool {
+view act validate_negative_i64(val: i64) -> bool {
     return val < 0
 }
 
 // Validates a numeric string against the Luhn checksum formula (ISO/IEC 7812).
 // Spaces and hyphens are ignored; returns false if empty or invalid characters are present.
-act validate_luhn(number_str: string) -> bool {
+view act validate_luhn(number_str: string) -> bool {
     if number_str == null { return false }
     let len = str.len(number_str)
     if len == 0 { return false }
@@ -75,7 +75,7 @@ act validate_luhn(number_str: string) -> bool {
 }
 
 // Validates whether number_str is a plausible credit card number (13-19 digits, passes Luhn check).
-act validate_credit_card(number_str: string) -> bool {
+view act validate_credit_card(number_str: string) -> bool {
     if number_str == null { return false }
     let len = str.len(number_str)
     if len == 0 { return false }
@@ -100,7 +100,7 @@ act validate_credit_card(number_str: string) -> bool {
 }
 
 // Validates an ISBN-10 identifier (with optional hyphens, check digit can be 'X' or '0'-'9').
-act validate_isbn10(isbn: string) -> bool {
+view act validate_isbn10(isbn: string) -> bool {
     if isbn == null { return false }
     let len = str.len(isbn)
     if len == 0 { return false }
@@ -130,7 +130,7 @@ act validate_isbn10(isbn: string) -> bool {
 }
 
 // Validates an ISBN-13 identifier (13 digits, optional hyphens, modulo 10 checksum).
-act validate_isbn13(isbn: string) -> bool {
+view act validate_isbn13(isbn: string) -> bool {
     if isbn == null { return false }
     let len = str.len(isbn)
     if len == 0 { return false }

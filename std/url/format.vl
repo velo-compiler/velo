@@ -5,7 +5,7 @@ use "defs.vl"
 use "encode.vl"
 
 // Returns default well-known port for standard schemes, or explicit port if > 0.
-act url_port_or_default(u: @Url) -> i32 {
+view act url_port_or_default(u: @Url) -> i32 {
     if u == null { return 0 }
     if u.port > 0 { return u.port }
     if u.scheme == "http" or u.scheme == "ws" { return 80 }
@@ -16,7 +16,7 @@ act url_port_or_default(u: @Url) -> i32 {
 }
 
 // Converts a positive port number (1..65535) to a heap-allocated decimal string.
-act url_port_to_str(port: i32) -> string {
+view act url_port_to_str(port: i32) -> string {
     if port <= 0 { return "" }
     mut buf: @u8 = heap_alloc(12)
     if buf == null { return "" }
@@ -40,7 +40,7 @@ act url_port_to_str(port: i32) -> string {
 }
 
 // Appends string s into destination buffer at pos[0], advancing pos[0].
-act url_buf_append(buf: @u8, pos: @usize, s: string) {
+view act url_buf_append(buf: @u8, pos: @usize, s: string) {
     if buf == null or pos == null or s == null { return }
     let slen = str.len(s)
     if slen == 0 { return }
@@ -53,7 +53,7 @@ act url_buf_append(buf: @u8, pos: @usize, s: string) {
 }
 
 // Reconstructs the canonical RFC 3986 URL string from a Url structure.
-act url_to_string(u: @Url) -> string {
+view act url_to_string(u: @Url) -> string {
     if u == null { return "" }
 
     // Calculate upper bound for capacity
@@ -168,7 +168,7 @@ act url_to_string(u: @Url) -> string {
 }
 
 // Joins two path segments, ensuring exactly one slash separates them.
-act url_join_path(base_path: string, rel_path: string) -> string {
+view act url_join_path(base_path: string, rel_path: string) -> string {
     mut blen: usize = 0
     if base_path != null { blen = str.len(base_path) }
     mut rlen: usize = 0
@@ -238,7 +238,7 @@ act url_join_path(base_path: string, rel_path: string) -> string {
 }
 
 // Sets the path of a Url.
-act url_set_path(u: @Url, path: string) {
+view act url_set_path(u: @Url, path: string) {
     if u != null {
         if path != null {
             u.path = path
@@ -249,7 +249,7 @@ act url_set_path(u: @Url, path: string) {
 }
 
 // Sets the raw query of a Url.
-act url_set_query(u: @Url, raw_query: string) {
+view act url_set_query(u: @Url, raw_query: string) {
     if u != null {
         if raw_query != null {
             u.raw_query = raw_query
@@ -260,7 +260,7 @@ act url_set_query(u: @Url, raw_query: string) {
 }
 
 // Sets the explicit port number of a Url.
-act url_set_port(u: @Url, port: i32) {
+view act url_set_port(u: @Url, port: i32) {
     if u != null {
         if port > 0 and port <= 65535 {
             u.port = port
@@ -271,7 +271,7 @@ act url_set_port(u: @Url, port: i32) {
 }
 
 // Sets username and password credentials on a Url.
-act url_set_userinfo(u: @Url, user: string, pass: string) {
+view act url_set_userinfo(u: @Url, user: string, pass: string) {
     if u != null {
         if user != null {
             u.username = user

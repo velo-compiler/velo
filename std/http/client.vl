@@ -8,7 +8,7 @@ use "response.vl"
 use "../mem/heap.vl"
 
 // Sends an HTTP request with optional TLS configuration for https:// URLs.
-act http_request_with_tls(method: string, url_str: string, headers: @HttpHeaderMap, body: string, tls_cfg: @TlsClientConfig) -> HttpResponse {
+view act http_request_with_tls(method: string, url_str: string, headers: @HttpHeaderMap, body: string, tls_cfg: @TlsClientConfig) -> HttpResponse {
     let parsed_url = http_parse_url(url_str)
     let is_https = (parsed_url.scheme == "https")
     if !is_https and parsed_url.scheme != "http" {
@@ -176,22 +176,22 @@ act http_request_with_tls(method: string, url_str: string, headers: @HttpHeaderM
 }
 
 // Sends an HTTP request and waits for the server's response.
-act http_request(method: string, url_str: string, headers: @HttpHeaderMap, body: string) -> HttpResponse {
+view act http_request(method: string, url_str: string, headers: @HttpHeaderMap, body: string) -> HttpResponse {
     return http_request_with_tls(method, url_str, headers, body, null)
 }
 
 // Executes an HTTP GET request to the specified URL with custom TLS configuration.
-act http_get_with_tls(url_str: string, tls_cfg: @TlsClientConfig) -> HttpResponse {
+view act http_get_with_tls(url_str: string, tls_cfg: @TlsClientConfig) -> HttpResponse {
     return http_request_with_tls("GET", url_str, null, "", tls_cfg)
 }
 
 // Executes an HTTP GET request to the specified URL.
-act http_get(url_str: string) -> HttpResponse {
+view act http_get(url_str: string) -> HttpResponse {
     return http_request("GET", url_str, null, "")
 }
 
 // Executes an HTTP POST request with a payload and custom TLS configuration.
-act http_post_with_tls(url_str: string, content_type: string, body: string, tls_cfg: @TlsClientConfig) -> HttpResponse {
+view act http_post_with_tls(url_str: string, content_type: string, body: string, tls_cfg: @TlsClientConfig) -> HttpResponse {
     mut h = HttpHeaderMap { headers: null, count: 0, cap: 0 }
     headers_init(@h, 2)
     if content_type != null and str.len(content_type) > 0 {
@@ -203,12 +203,12 @@ act http_post_with_tls(url_str: string, content_type: string, body: string, tls_
 }
 
 // Executes an HTTP POST request with a payload and Content-Type header.
-act http_post(url_str: string, content_type: string, body: string) -> HttpResponse {
+view act http_post(url_str: string, content_type: string, body: string) -> HttpResponse {
     return http_post_with_tls(url_str, content_type, body, null)
 }
 
 // Executes an HTTP PUT request with a payload and Content-Type header.
-act http_put(url_str: string, content_type: string, body: string) -> HttpResponse {
+view act http_put(url_str: string, content_type: string, body: string) -> HttpResponse {
     mut h = HttpHeaderMap { headers: null, count: 0, cap: 0 }
     headers_init(@h, 2)
     if content_type != null and str.len(content_type) > 0 {
@@ -220,6 +220,6 @@ act http_put(url_str: string, content_type: string, body: string) -> HttpRespons
 }
 
 // Executes an HTTP DELETE request to the specified URL.
-act http_delete(url_str: string) -> HttpResponse {
+view act http_delete(url_str: string) -> HttpResponse {
     return http_request("DELETE", url_str, null, "")
 }

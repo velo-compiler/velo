@@ -5,7 +5,7 @@
 
 // Computes a + b. Writes wrapped sum to out_val if not null.
 // Returns true if no overflow occurred, false if overflow/underflow occurred.
-act checked_add_i32(a: i32, b: i32, out_val: @i32) -> bool {
+view act checked_add_i32(a: i32, b: i32, out_val: @i32) -> bool {
     let res = a + b
     if out_val != null { out_val[0] = res }
     let max_val: i32 = 2147483647 as i32
@@ -17,7 +17,7 @@ act checked_add_i32(a: i32, b: i32, out_val: @i32) -> bool {
 
 // Computes a - b. Writes wrapped difference to out_val if not null.
 // Returns true if no overflow occurred, false if overflow/underflow occurred.
-act checked_sub_i32(a: i32, b: i32, out_val: @i32) -> bool {
+view act checked_sub_i32(a: i32, b: i32, out_val: @i32) -> bool {
     let res = a - b
     if out_val != null { out_val[0] = res }
     let max_val: i32 = 2147483647 as i32
@@ -29,7 +29,7 @@ act checked_sub_i32(a: i32, b: i32, out_val: @i32) -> bool {
 
 // Computes a * b. Writes wrapped product to out_val if not null.
 // Returns true if no overflow occurred, false if overflow/underflow occurred.
-act checked_mul_i32(a: i32, b: i32, out_val: @i32) -> bool {
+view act checked_mul_i32(a: i32, b: i32, out_val: @i32) -> bool {
     let res = a * b
     if out_val != null { out_val[0] = res }
     let prod = (a as i64) * (b as i64)
@@ -41,7 +41,7 @@ act checked_mul_i32(a: i32, b: i32, out_val: @i32) -> bool {
 
 // Computes a / b without undefined behaviour.
 // Returns false on division by zero or when INT32_MIN / -1 overflows.
-act checked_div_i32(a: i32, b: i32, out_val: @i32) -> bool {
+view act checked_div_i32(a: i32, b: i32, out_val: @i32) -> bool {
     let min_val: i32 = (-2147483647 as i32) - (1 as i32)
     if b == (0 as i32) or (a == min_val and b == (-1 as i32)) { return false }
     if out_val != null { out_val[0] = a / b }
@@ -50,7 +50,7 @@ act checked_div_i32(a: i32, b: i32, out_val: @i32) -> bool {
 
 // Computes a % b without undefined behaviour.
 // Returns false on division by zero or when INT32_MIN % -1 overflows.
-act checked_rem_i32(a: i32, b: i32, out_val: @i32) -> bool {
+view act checked_rem_i32(a: i32, b: i32, out_val: @i32) -> bool {
     let min_val: i32 = (-2147483647 as i32) - (1 as i32)
     if b == (0 as i32) or (a == min_val and b == (-1 as i32)) { return false }
     if out_val != null { out_val[0] = a % b }
@@ -61,7 +61,7 @@ act checked_rem_i32(a: i32, b: i32, out_val: @i32) -> bool {
 
 // Computes a + b. Writes wrapped sum to out_val if not null.
 // Returns true if no overflow occurred, false if overflow/underflow occurred.
-act checked_add_i64(a: i64, b: i64, out_val: @i64) -> bool {
+view act checked_add_i64(a: i64, b: i64, out_val: @i64) -> bool {
     let res = a + b
     if out_val != null { out_val[0] = res }
     let max_val: i64 = 9223372036854775807 as i64
@@ -73,7 +73,7 @@ act checked_add_i64(a: i64, b: i64, out_val: @i64) -> bool {
 
 // Computes a - b. Writes wrapped difference to out_val if not null.
 // Returns true if no overflow occurred, false if overflow/underflow occurred.
-act checked_sub_i64(a: i64, b: i64, out_val: @i64) -> bool {
+view act checked_sub_i64(a: i64, b: i64, out_val: @i64) -> bool {
     let res = a - b
     if out_val != null { out_val[0] = res }
     let max_val: i64 = 9223372036854775807 as i64
@@ -85,7 +85,7 @@ act checked_sub_i64(a: i64, b: i64, out_val: @i64) -> bool {
 
 // Computes a * b. Writes wrapped product to out_val if not null.
 // Returns true if no overflow occurred, false if overflow/underflow occurred.
-act checked_mul_i64(a: i64, b: i64, out_val: @i64) -> bool {
+view act checked_mul_i64(a: i64, b: i64, out_val: @i64) -> bool {
     let res = a * b
     if out_val != null { out_val[0] = res }
     if a == (0 as i64) or b == (0 as i64) { return true }
@@ -115,7 +115,7 @@ act checked_mul_i64(a: i64, b: i64, out_val: @i64) -> bool {
 
 // Computes a / b without undefined behaviour.
 // Returns false on division by zero or when INT64_MIN / -1 overflows.
-act checked_div_i64(a: i64, b: i64, out_val: @i64) -> bool {
+view act checked_div_i64(a: i64, b: i64, out_val: @i64) -> bool {
     let min_val: i64 = (-9223372036854775807 as i64) - (1 as i64)
     if b == (0 as i64) or (a == min_val and b == (-1 as i64)) { return false }
     if out_val != null { out_val[0] = a / b }
@@ -124,7 +124,7 @@ act checked_div_i64(a: i64, b: i64, out_val: @i64) -> bool {
 
 // Computes a % b without undefined behaviour.
 // Returns false on division by zero or when INT64_MIN % -1 overflows.
-act checked_rem_i64(a: i64, b: i64, out_val: @i64) -> bool {
+view act checked_rem_i64(a: i64, b: i64, out_val: @i64) -> bool {
     let min_val: i64 = (-9223372036854775807 as i64) - (1 as i64)
     if b == (0 as i64) or (a == min_val and b == (-1 as i64)) { return false }
     if out_val != null { out_val[0] = a % b }
@@ -134,21 +134,21 @@ act checked_rem_i64(a: i64, b: i64, out_val: @i64) -> bool {
 // --- Unsigned Checked Arithmetic ---
 
 // Computes a + b. Returns true if no overflow occurred.
-act checked_add_u32(a: u32, b: u32, out_val: @u32) -> bool {
+view act checked_add_u32(a: u32, b: u32, out_val: @u32) -> bool {
     let res = a + b
     if out_val != null { out_val[0] = res }
     return res >= a
 }
 
 // Computes a - b. Returns true if no underflow occurred.
-act checked_sub_u32(a: u32, b: u32, out_val: @u32) -> bool {
+view act checked_sub_u32(a: u32, b: u32, out_val: @u32) -> bool {
     let res = a - b
     if out_val != null { out_val[0] = res }
     return a >= b
 }
 
 // Computes a * b. Returns true if no overflow occurred.
-act checked_mul_u32(a: u32, b: u32, out_val: @u32) -> bool {
+view act checked_mul_u32(a: u32, b: u32, out_val: @u32) -> bool {
     let res = a * b
     if out_val != null { out_val[0] = res }
     let prod = (a as u64) * (b as u64)
@@ -156,21 +156,21 @@ act checked_mul_u32(a: u32, b: u32, out_val: @u32) -> bool {
 }
 
 // Computes a + b. Returns true if no overflow occurred.
-act checked_add_u64(a: u64, b: u64, out_val: @u64) -> bool {
+view act checked_add_u64(a: u64, b: u64, out_val: @u64) -> bool {
     let res = a + b
     if out_val != null { out_val[0] = res }
     return res >= a
 }
 
 // Computes a - b. Returns true if no underflow occurred.
-act checked_sub_u64(a: u64, b: u64, out_val: @u64) -> bool {
+view act checked_sub_u64(a: u64, b: u64, out_val: @u64) -> bool {
     let res = a - b
     if out_val != null { out_val[0] = res }
     return a >= b
 }
 
 // Computes a * b. Returns true if no overflow occurred.
-act checked_mul_u64(a: u64, b: u64, out_val: @u64) -> bool {
+view act checked_mul_u64(a: u64, b: u64, out_val: @u64) -> bool {
     let res = a * b
     if out_val != null { out_val[0] = res }
     if a == (0 as u64) or b == (0 as u64) { return true }

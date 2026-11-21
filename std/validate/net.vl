@@ -3,7 +3,7 @@ use "../str.vl"
 
 // Returns true if s is a valid decimal IPv4 address (e.g. "192.168.1.1").
 // Strictly rejects leading zeros (e.g. "01"), out-of-range octets (>255), and malformed structures.
-act validate_ipv4(s: string) -> bool {
+view act validate_ipv4(s: string) -> bool {
     if s == null { return false }
     let len = str.len(s)
     if len < 7 or len > 15 { return false }
@@ -45,7 +45,7 @@ act validate_ipv4(s: string) -> bool {
 }
 
 // Returns true if s is a valid RFC 4291 IPv6 address (e.g. "2001:db8::1", "::1").
-act validate_ipv6(s: string) -> bool {
+view act validate_ipv6(s: string) -> bool {
     if s == null { return false }
     let len = str.len(s)
     if len < 2 or len > 39 { return false }
@@ -109,17 +109,17 @@ act validate_ipv6(s: string) -> bool {
 }
 
 // Returns true if s is a valid IPv4 or IPv6 address.
-act validate_ip(s: string) -> bool {
+view act validate_ip(s: string) -> bool {
     return validate_ipv4(s) or validate_ipv6(s)
 }
 
 // Returns true if port is a valid TCP/UDP port number in range [1, 65535].
-act validate_port(port: i64) -> bool {
+view act validate_port(port: i64) -> bool {
     return port >= 1 and port <= 65535
 }
 
 // Returns true if s is a valid 6-octet MAC address (e.g. "00:1A:2B:3C:4D:5E" or "00-1A-2B-3C-4D-5E").
-act validate_mac_address(s: string) -> bool {
+view act validate_mac_address(s: string) -> bool {
     if s == null { return false }
     let len = str.len(s)
     if len != 17 { return false }
@@ -148,7 +148,7 @@ act validate_mac_address(s: string) -> bool {
 }
 
 // Returns true if s is a valid RFC 1123 hostname (labels separated by dots, <= 253 total chars).
-act validate_hostname(s: string) -> bool {
+view act validate_hostname(s: string) -> bool {
     if s == null { return false }
     let len = str.len(s)
     if len == 0 or len > 253 { return false }
@@ -187,7 +187,7 @@ act validate_hostname(s: string) -> bool {
 }
 
 // Returns true if s is a valid Internet domain name (valid hostname with at least two labels and alpha TLD >= 2).
-act validate_domain(s: string) -> bool {
+view act validate_domain(s: string) -> bool {
     if not validate_hostname(s) { return false }
     let len = str.len(s)
     if len < 4 { return false }

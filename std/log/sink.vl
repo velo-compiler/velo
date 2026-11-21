@@ -4,7 +4,7 @@ use "record.vl"
 use "../mem/heap.vl"
 use "../io.vl"
 
-data LogMemorySink {
+view data LogMemorySink {
     last_message: string
     last_target: string
     last_level: u8
@@ -19,7 +19,7 @@ mut g_mem_sink: LogMemorySink = LogMemorySink {
 }
 
 // Pads a log level name to exactly 5 characters for aligned column layout.
-act log_level_padded(level: u8) -> string {
+view act log_level_padded(level: u8) -> string {
     if level == 0 as u8 { return "TRACE" }
     if level == 1 as u8 { return "DEBUG" }
     if level == 2 as u8 { return "INFO " }
@@ -30,7 +30,7 @@ act log_level_padded(level: u8) -> string {
 }
 
 // Formats a LogRecord into a single log line with optional ANSI terminal color codes.
-act log_format_record(rec: @LogRecord, use_colors: bool) -> string {
+view act log_format_record(rec: @LogRecord, use_colors: bool) -> string {
     if rec == null { return "" }
 
     let ts_len = str.len(rec.timestamp)
@@ -89,7 +89,7 @@ act log_format_record(rec: @LogRecord, use_colors: bool) -> string {
 }
 
 // Dispatches log record to stdout with optional ANSI color codes.
-act log_sink_console(rec: @LogRecord, use_colors: bool) {
+view act log_sink_console(rec: @LogRecord, use_colors: bool) {
     if rec == null { return }
     let line = log_format_record(rec, use_colors)
     println_str(line)
@@ -97,7 +97,7 @@ act log_sink_console(rec: @LogRecord, use_colors: bool) {
 }
 
 // Appends log record without color codes to a specified file.
-act log_sink_file(rec: @LogRecord, file_path: string) -> bool {
+view act log_sink_file(rec: @LogRecord, file_path: string) -> bool {
     if rec == null or file_path == null { return false }
     let f = fs.fopen(file_path, "a")
     if f == null { return false }
@@ -111,7 +111,7 @@ act log_sink_file(rec: @LogRecord, file_path: string) -> bool {
 }
 
 // Records log entry in global memory buffer for inspection/testing.
-act log_sink_memory(rec: @LogRecord) {
+view act log_sink_memory(rec: @LogRecord) {
     if rec == null { return }
     g_mem_sink.last_message = rec.message
     g_mem_sink.last_target = rec.target
@@ -120,27 +120,27 @@ act log_sink_memory(rec: @LogRecord) {
 }
 
 // Returns the last logged message in the memory sink.
-act log_get_last_message() -> string {
+view act log_get_last_message() -> string {
     return g_mem_sink.last_message
 }
 
 // Returns the last logged target module in the memory sink.
-act log_get_last_target() -> string {
+view act log_get_last_target() -> string {
     return g_mem_sink.last_target
 }
 
 // Returns the last logged severity level in the memory sink.
-act log_get_last_level() -> u8 {
+view act log_get_last_level() -> u8 {
     return g_mem_sink.last_level
 }
 
 // Returns the total count of messages logged to the memory sink.
-act log_get_record_count() -> usize {
+view act log_get_record_count() -> usize {
     return g_mem_sink.count
 }
 
 // Clears the memory sink.
-act log_clear_memory() {
+view act log_clear_memory() {
     g_mem_sink.last_message = ""
     g_mem_sink.last_target = ""
     g_mem_sink.last_level = 0 as u8

@@ -5,14 +5,14 @@
 use "defs.vl"
 
 // Rotates a u64 left by k bits.
-act xoshiro_rotl(x: u64, k: u32) -> u64 {
+view act xoshiro_rotl(x: u64, k: u32) -> u64 {
     let rk = k & (63 as u32)
     let lk = (64 as u32) - rk
     return (x << rk) | (x >> lk)
 }
 
 // Advances the Xoshiro256** state and returns the next output u64.
-act xoshiro256_next(rng: @Xoshiro256) -> u64 {
+view act xoshiro256_next(rng: @Xoshiro256) -> u64 {
     let result: u64 = xoshiro_rotl(rng.s1 * (5 as u64), 7 as u32) * (9 as u64)
     let t: u64 = rng.s1 << 17
     rng.s2 = rng.s2 ^ rng.s0
@@ -25,7 +25,7 @@ act xoshiro256_next(rng: @Xoshiro256) -> u64 {
 }
 
 // Returns a uniformly distributed u64 in [0, bound) with no modulo bias.
-act xoshiro256_bounded(rng: @Xoshiro256, bound: u64) -> u64 {
+view act xoshiro256_bounded(rng: @Xoshiro256, bound: u64) -> u64 {
     if bound <= (1 as u64) { return 0 as u64 }
     let neg_bound: u64 = (0 as u64) - bound
     let threshold: u64 = neg_bound % bound
@@ -41,7 +41,7 @@ act xoshiro256_bounded(rng: @Xoshiro256, bound: u64) -> u64 {
 // Xoshiro256** jump function: advances state by 2^128 steps.
 // Equivalent to calling xoshiro256_next() 2^128 times.
 // Use to create non-overlapping sequences for parallel independent streams.
-act xoshiro256_jump(rng: @Xoshiro256) {
+view act xoshiro256_jump(rng: @Xoshiro256) {
     let J0: u64 = 0x180EC6D33CFD0ABA as u64
     let J1: u64 = 0xD5A61266F0C9392C as u64
     let J2: u64 = 0xA9582618E03FC9AA as u64

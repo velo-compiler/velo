@@ -9,6 +9,7 @@ use "type_checker_stmt.vl"
 use "shelf_checks.vl"
 use "literal_check.vl"
 use "pact_checks.vl"
+use "privacy_checks.vl"
 use "../ast/int_types.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
@@ -118,6 +119,8 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
     loop cur != null {
         if cur.kind == DECL_DATA {
             let st_sym = register_struct(st, cur.name, cur.line, cur.col)
+            st_sym.is_view = cur.is_view
+            st_sym.file_path = cur.file_path
             mut cur_f = cur.first_field
             loop cur_f != null {
                 struct_add_field(st_sym, cur_f.name, cur_f.type_name, cur_f.has_default, cur_f.default_value, cur_f.line, cur_f.col)
@@ -128,6 +131,8 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
             mut is_tu = false; mut v = cur.first_variant
             loop v != null { if v.payload_type != null or v.field_count > 0 { is_tu = true }; v = v.next }
             let k_sym = register_kind(st, cur.name, is_tu, cur.line, cur.col)
+            k_sym.is_view = cur.is_view
+            k_sym.file_path = cur.file_path
             mut cv = cur.first_variant
             loop cv != null {
                 mut f_sym: @StructFieldSym = null; mut last_f: @StructFieldSym = null; mut cf = cv.first_field
@@ -142,7 +147,9 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
                 cv = cv.next
             }
         } else if cur.kind == DECL_PACT {
-            register_pact(st, cur.name, cur.first_stmt, cur.stmt_count, cur.line, cur.col)
+            let p_sym = register_pact(st, cur.name, cur.first_stmt, cur.stmt_count, cur.line, cur.col)
+            p_sym.is_view = cur.is_view
+            p_sym.file_path = cur.file_path
         }
         cur = cur.next
     }
@@ -151,6 +158,7 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
     cur = prog.first_decl
     loop cur != null {
         if cur.kind == STMT_VAR_DECL {
+            st.current_file = cur.file_path
             check_shelf_annotation(st, cur.type_name, cur.val_expr, cur.line, cur.col)  // 5.2: pin/reject
             check_map_annotation(st, cur.type_name, cur.val_expr, cur.line, cur.col)    // 5.2 slice 6: pin/reject
             mut inf_type = cur.type_name
@@ -158,6 +166,10 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
                 if cur.val_expr != null { inf_type = infer_expr_type(st, cur.val_expr) } else { inf_type = "i32" }
             }
             define_variable(st, cur.name, inf_type, cur.is_mut, cur.line, cur.col)
+            if st.global_scope != null and st.global_scope.first_sym != null {
+                st.global_scope.first_sym.is_view = cur.is_view
+                st.global_scope.first_sym.file_path = cur.file_path
+            }
         }
         cur = cur.next
     }
@@ -167,6 +179,8 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
     loop cur != null {
         if cur.kind == DECL_FUNCTION or cur.kind == DECL_EXTERN {
             let fn_sym = register_function(st, cur.name, cur.return_type, cur.kind == DECL_EXTERN, cur.line, cur.col)
+            fn_sym.is_view = cur.is_view
+            fn_sym.file_path = cur.file_path
             mut cur_p = cur.first_param
             loop cur_p != null { function_add_param(fn_sym, cur_p.name, cur_p.type_name); cur_p = cur_p.next }
         }
@@ -217,15 +231,21 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
     cur = prog.first_decl
     loop cur != null {
         if cur.kind == DECL_FUNCTION and cur.body != null {
+            st.current_file = cur.file_path
             st.current_func_ret_type = cur.return_type
             st.current_func_name = cur.name
             st.current_zone_depth = 0
             st.current_loop_depth = 0
             let prev_strict = st.strict_safety
             if cur.module_path != null and cur.module_path == "std" { st.strict_safety = false }
+            check_type_privacy(st, cur.return_type, cur.line, cur.col)
             enter_scope(st)
             mut cur_p = cur.first_param
-            loop cur_p != null { define_parameter(st, cur_p.name, cur_p.type_name, cur_p.line, cur_p.col); cur_p = cur_p.next }
+            loop cur_p != null {
+                check_type_privacy(st, cur_p.type_name, cur_p.line, cur_p.col)
+                define_parameter(st, cur_p.name, cur_p.type_name, cur_p.line, cur_p.col)
+                cur_p = cur_p.next
+            }
             check_statement(st, cur.return_type, cur.body)
             exit_scope(st)
             st.strict_safety = prev_strict
@@ -243,6 +263,7 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
             }
         }
         if cur.kind == DECL_TEST and cur.body != null {
+            st.current_file = cur.file_path
             st.current_func_ret_type = "void"
             st.current_func_name = cur.name
             st.current_zone_depth = 0

@@ -1,7 +1,7 @@
 // std.timer.countdown - Deadline and timeout trackers for bounded executions.
 use "defs.vl"
 
-data Countdown {
+view data Countdown {
     start_ns: u64
     deadline_ns: u64
     duration_ns: u64
@@ -9,7 +9,7 @@ data Countdown {
 }
 
 // Starts a countdown timer expiring in `duration_ns` nanoseconds.
-act countdown_start_ns(duration_ns: u64) -> Countdown {
+view act countdown_start_ns(duration_ns: u64) -> Countdown {
     let now = timer_now_ns()
     return Countdown {
         start_ns: now,
@@ -20,24 +20,24 @@ act countdown_start_ns(duration_ns: u64) -> Countdown {
 }
 
 // Starts a countdown timer expiring in `duration_ms` milliseconds.
-act countdown_start_ms(duration_ms: u64) -> Countdown {
+view act countdown_start_ms(duration_ms: u64) -> Countdown {
     return countdown_start_ns(duration_ms * TIMER_NS_PER_MS)
 }
 
 // Starts a countdown timer expiring in `seconds` floating-point seconds.
-act countdown_start_secs(seconds: f64) -> Countdown {
+view act countdown_start_secs(seconds: f64) -> Countdown {
     let ns = (seconds * 1000000000.0) as u64
     return countdown_start_ns(ns)
 }
 
 // Returns true if the countdown deadline has elapsed or has been cancelled.
-act countdown_is_expired(c: @Countdown) -> bool {
+view act countdown_is_expired(c: @Countdown) -> bool {
     if c == null or not c.is_active { return true }
     return timer_now_ns() >= c.deadline_ns
 }
 
 // Returns remaining time in nanoseconds until expiration (0 if expired).
-act countdown_remaining_ns(c: @Countdown) -> u64 {
+view act countdown_remaining_ns(c: @Countdown) -> u64 {
     if c == null or not c.is_active { return 0 as u64 }
     let now = timer_now_ns()
     if now >= c.deadline_ns {
@@ -47,12 +47,12 @@ act countdown_remaining_ns(c: @Countdown) -> u64 {
 }
 
 // Returns remaining time in milliseconds until expiration (0 if expired).
-act countdown_remaining_ms(c: @Countdown) -> u64 {
+view act countdown_remaining_ms(c: @Countdown) -> u64 {
     return countdown_remaining_ns(c) / TIMER_NS_PER_MS
 }
 
 // Resets the countdown deadline based on its original duration from the current time.
-act countdown_reset(c: @Countdown) {
+view act countdown_reset(c: @Countdown) {
     if c == null { return }
     let now = timer_now_ns()
     c.start_ns = now
@@ -61,7 +61,7 @@ act countdown_reset(c: @Countdown) {
 }
 
 // Restarts the countdown with a new duration in nanoseconds.
-act countdown_restart(c: @Countdown, new_duration_ns: u64) {
+view act countdown_restart(c: @Countdown, new_duration_ns: u64) {
     if c == null { return }
     let now = timer_now_ns()
     c.start_ns = now
@@ -71,24 +71,24 @@ act countdown_restart(c: @Countdown, new_duration_ns: u64) {
 }
 
 // Extends the active deadline by additional nanoseconds.
-act countdown_extend_ns(c: @Countdown, extra_ns: u64) {
+view act countdown_extend_ns(c: @Countdown, extra_ns: u64) {
     if c == null or not c.is_active { return }
     c.deadline_ns += extra_ns
 }
 
 // Extends the active deadline by additional milliseconds.
-act countdown_extend_ms(c: @Countdown, extra_ms: u64) {
+view act countdown_extend_ms(c: @Countdown, extra_ms: u64) {
     countdown_extend_ns(c, extra_ms * TIMER_NS_PER_MS)
 }
 
 // Cancels the countdown, marking it expired immediately.
-act countdown_cancel(c: @Countdown) {
+view act countdown_cancel(c: @Countdown) {
     if c == null { return }
     c.is_active = false
 }
 
 // Blocks execution until the countdown expires.
-act countdown_wait(c: @Countdown) {
+view act countdown_wait(c: @Countdown) {
     if c == null or not c.is_active { return }
     let rem = countdown_remaining_ns(c)
     if rem > (0 as u64) {

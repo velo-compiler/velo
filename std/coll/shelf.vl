@@ -7,7 +7,7 @@ use "../mem/ops.vl"
 use "../str/slice.vl"
 
 // Raw dynamic array descriptor storing homogeneous elements contiguously.
-data RawShelf {
+view data RawShelf {
     data: @u8
     elem_size: usize
     len: usize
@@ -15,7 +15,7 @@ data RawShelf {
 }
 
 // Creates a new RawShelf for elements of elem_size bytes with initial_cap capacity.
-act shelf_create(elem_size: usize, initial_cap: usize) -> RawShelf {
+view act shelf_create(elem_size: usize, initial_cap: usize) -> RawShelf {
     mut sz = elem_size
     if sz == 0 {
         sz = 1
@@ -34,7 +34,7 @@ act shelf_create(elem_size: usize, initial_cap: usize) -> RawShelf {
 }
 
 // Ensures the shelf has capacity for at least needed_extra additional elements.
-act shelf_ensure_capacity(s: @RawShelf, needed_extra: usize) {
+view act shelf_ensure_capacity(s: @RawShelf, needed_extra: usize) {
     if s == null { return }
     let required = s.len + needed_extra
     if required <= s.cap {
@@ -57,7 +57,7 @@ act shelf_ensure_capacity(s: @RawShelf, needed_extra: usize) {
 }
 
 // Appends an element pointed to by elem_ptr to the end of the shelf.
-act shelf_push(s: @RawShelf, elem_ptr: @u8) {
+view act shelf_push(s: @RawShelf, elem_ptr: @u8) {
     if s == null or elem_ptr == null {
         return
     }
@@ -72,7 +72,7 @@ act shelf_push(s: @RawShelf, elem_ptr: @u8) {
 }
 
 // Returns a pointer to the element at the specified index, or null if out of bounds.
-act shelf_get(s: @RawShelf, index: usize) -> @u8 {
+view act shelf_get(s: @RawShelf, index: usize) -> @u8 {
     if s == null or s.data == null or index >= s.len {
         return null
     }
@@ -81,7 +81,7 @@ act shelf_get(s: @RawShelf, index: usize) -> @u8 {
 }
 
 // Overwrites the element at the specified index with data at elem_ptr.
-act shelf_set(s: @RawShelf, index: usize, elem_ptr: @u8) -> bool {
+view act shelf_set(s: @RawShelf, index: usize, elem_ptr: @u8) -> bool {
     if s == null or s.data == null or elem_ptr == null or index >= s.len {
         return false
     }
@@ -92,31 +92,31 @@ act shelf_set(s: @RawShelf, index: usize, elem_ptr: @u8) -> bool {
 }
 
 // Returns the current number of elements in the shelf.
-act shelf_len(s: @RawShelf) -> usize {
+view act shelf_len(s: @RawShelf) -> usize {
     if s == null { return 0 }
     return s.len
 }
 
 // Returns the total allocated element capacity.
-act shelf_cap(s: @RawShelf) -> usize {
+view act shelf_cap(s: @RawShelf) -> usize {
     if s == null { return 0 }
     return s.cap
 }
 
 // Returns true if the shelf contains zero elements.
-act shelf_is_empty(s: @RawShelf) -> bool {
+view act shelf_is_empty(s: @RawShelf) -> bool {
     return shelf_len(s) == 0
 }
 
 // Resets the logical length to zero without deallocating buffer memory.
-act shelf_clear(s: @RawShelf) {
+view act shelf_clear(s: @RawShelf) {
     if s != null {
         s.len = 0
     }
 }
 
 // Releases the underlying heap memory and resets all shelf fields.
-act shelf_free(s: @RawShelf) {
+view act shelf_free(s: @RawShelf) {
     if s == null { return }
     if s.data != null {
         heap_free(s.data)
@@ -130,52 +130,52 @@ act shelf_free(s: @RawShelf) {
 // Typed Convenience Helpers
 // ============================================================================
 
-act shelf_push_i64(s: @RawShelf, val: i64) {
+view act shelf_push_i64(s: @RawShelf, val: i64) {
     mut v = val
     let pv: @i64 = @v
     shelf_push(s, pv as @u8)
 }
 
-act shelf_get_i64(s: @RawShelf, index: usize) -> i64 {
+view act shelf_get_i64(s: @RawShelf, index: usize) -> i64 {
     let ptr = shelf_get(s, index)
     if ptr == null { return 0 }
     let p_i64: @i64 = ptr as @i64
     return p_i64[0]
 }
 
-act shelf_push_u64(s: @RawShelf, val: u64) {
+view act shelf_push_u64(s: @RawShelf, val: u64) {
     mut v = val
     let pv: @u64 = @v
     shelf_push(s, pv as @u8)
 }
 
-act shelf_get_u64(s: @RawShelf, index: usize) -> u64 {
+view act shelf_get_u64(s: @RawShelf, index: usize) -> u64 {
     let ptr = shelf_get(s, index)
     if ptr == null { return 0 }
     let p_u64: @u64 = ptr as @u64
     return p_u64[0]
 }
 
-act shelf_push_f64(s: @RawShelf, val: f64) {
+view act shelf_push_f64(s: @RawShelf, val: f64) {
     mut v = val
     let pv: @f64 = @v
     shelf_push(s, pv as @u8)
 }
 
-act shelf_get_f64(s: @RawShelf, index: usize) -> f64 {
+view act shelf_get_f64(s: @RawShelf, index: usize) -> f64 {
     let ptr = shelf_get(s, index)
     if ptr == null { return 0.0 }
     let p_f64: @f64 = ptr as @f64
     return p_f64[0]
 }
 
-act shelf_push_slice(s: @RawShelf, slice: StrSlice) {
+view act shelf_push_slice(s: @RawShelf, slice: StrSlice) {
     mut sl = slice
     let psl: @StrSlice = @sl
     shelf_push(s, psl as @u8)
 }
 
-act shelf_get_slice(s: @RawShelf, index: usize) -> StrSlice {
+view act shelf_get_slice(s: @RawShelf, index: usize) -> StrSlice {
     let ptr = shelf_get(s, index)
     if ptr == null {
         return StrSlice { ptr: null, len: 0 }

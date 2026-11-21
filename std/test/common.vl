@@ -3,13 +3,13 @@ use "../mem/heap.vl"
 use "../io.vl"
 
 // ANSI color sequences for terminal reporting.
-let TEST_COLOR_RESET: string = "\x1b[0m"
-let TEST_COLOR_RED: string = "\x1b[31m"
-let TEST_COLOR_GREEN: string = "\x1b[32m"
-let TEST_COLOR_YELLOW: string = "\x1b[33m"
-let TEST_COLOR_CYAN: string = "\x1b[36m"
-let TEST_COLOR_BOLD: string = "\x1b[1m"
-let TEST_COLOR_DIM: string = "\x1b[2m"
+view let TEST_COLOR_RESET: string = "\x1b[0m"
+view let TEST_COLOR_RED: string = "\x1b[31m"
+view let TEST_COLOR_GREEN: string = "\x1b[32m"
+view let TEST_COLOR_YELLOW: string = "\x1b[33m"
+view let TEST_COLOR_CYAN: string = "\x1b[36m"
+view let TEST_COLOR_BOLD: string = "\x1b[1m"
+view let TEST_COLOR_DIM: string = "\x1b[2m"
 
 // Global test execution state.
 mut g_test_colors: bool = true
@@ -23,17 +23,17 @@ mut g_test_failed_cases: usize = 0
 mut g_current_case_failed: bool = false
 
 // Enables or disables ANSI terminal color escape codes.
-act test_set_colors(enable: bool) -> void {
+view act test_set_colors(enable: bool) -> void {
     g_test_colors = enable
 }
 
 // Enables or disables quiet mode (suppresses individual pass messages).
-act test_set_quiet(quiet: bool) -> void {
+view act test_set_quiet(quiet: bool) -> void {
     g_test_quiet = quiet
 }
 
 // Resets all global assertion and test counters.
-act test_reset() -> void {
+view act test_reset() -> void {
     g_test_total_asserts = 0
     g_test_passed_asserts = 0
     g_test_failed_asserts = 0
@@ -44,37 +44,37 @@ act test_reset() -> void {
 }
 
 // Retrieves the total number of assertions executed.
-act test_get_total_asserts() -> usize {
+view act test_get_total_asserts() -> usize {
     return g_test_total_asserts
 }
 
 // Retrieves the number of passed assertions.
-act test_get_passed_asserts() -> usize {
+view act test_get_passed_asserts() -> usize {
     return g_test_passed_asserts
 }
 
 // Retrieves the number of failed assertions.
-act test_get_failed_asserts() -> usize {
+view act test_get_failed_asserts() -> usize {
     return g_test_failed_asserts
 }
 
 // Retrieves the total number of test cases executed.
-act test_get_total_cases() -> usize {
+view act test_get_total_cases() -> usize {
     return g_test_total_cases
 }
 
 // Retrieves the number of passed test cases.
-act test_get_passed_cases() -> usize {
+view act test_get_passed_cases() -> usize {
     return g_test_passed_cases
 }
 
 // Retrieves the number of failed test cases.
-act test_get_failed_cases() -> usize {
+view act test_get_failed_cases() -> usize {
     return g_test_failed_cases
 }
 
 // Concatenates two strings on the heap.
-act test_concat2(a: string, b: string) -> string {
+view act test_concat2(a: string, b: string) -> string {
     let la = str.len(a)
     let lb = str.len(b)
     let buf: @u8 = heap_alloc(la + lb + 1)
@@ -89,7 +89,7 @@ act test_concat2(a: string, b: string) -> string {
 }
 
 // Concatenates three strings on the heap.
-act test_concat3(a: string, b: string, c: string) -> string {
+view act test_concat3(a: string, b: string, c: string) -> string {
     let la = str.len(a)
     let lb = str.len(b)
     let lc = str.len(c)
@@ -107,7 +107,7 @@ act test_concat3(a: string, b: string, c: string) -> string {
 }
 
 // Concatenates four strings on the heap.
-act test_concat4(a: string, b: string, c: string, d: string) -> string {
+view act test_concat4(a: string, b: string, c: string, d: string) -> string {
     let la = str.len(a)
     let lb = str.len(b)
     let lc = str.len(c)
@@ -128,7 +128,7 @@ act test_concat4(a: string, b: string, c: string, d: string) -> string {
 }
 
 // Concatenates five strings on the heap.
-act test_concat5(a: string, b: string, c: string, d: string, e: string) -> string {
+view act test_concat5(a: string, b: string, c: string, d: string, e: string) -> string {
     let la = str.len(a)
     let lb = str.len(b)
     let lc = str.len(c)
@@ -152,7 +152,7 @@ act test_concat5(a: string, b: string, c: string, d: string, e: string) -> strin
 }
 
 // Converts an unsigned 64-bit integer to a heap string.
-act test_u64_to_str(val: u64) -> string {
+view act test_u64_to_str(val: u64) -> string {
     if val == 0 as u64 {
         let b: @u8 = heap_alloc(2)
         b[0] = '0' as u8
@@ -180,7 +180,7 @@ act test_u64_to_str(val: u64) -> string {
 }
 
 // Converts a signed 64-bit integer to a heap string.
-act test_i64_to_str(val: i64) -> string {
+view act test_i64_to_str(val: i64) -> string {
     if val == 0 as i64 {
         let b: @u8 = heap_alloc(2)
         b[0] = '0' as u8
@@ -208,13 +208,13 @@ act test_i64_to_str(val: i64) -> string {
 }
 
 // Converts a boolean to a string ("true" or "false").
-act test_bool_to_str(val: bool) -> string {
+view act test_bool_to_str(val: bool) -> string {
     if val { return "true" }
     return "false"
 }
 
 // Converts a 64-bit float to a heap string with 4 decimal digits precision.
-act test_f64_to_str(val: f64) -> string {
+view act test_f64_to_str(val: f64) -> string {
     mut v = val
     mut sign_prefix = ""
     if v < 0.0 {
@@ -245,13 +245,13 @@ act test_f64_to_str(val: f64) -> string {
 }
 
 // Records an assertion pass.
-act test_record_pass() -> void {
+view act test_record_pass() -> void {
     g_test_total_asserts += 1
     g_test_passed_asserts += 1
 }
 
 // Records an assertion failure and prints a diagnostic line.
-act test_record_fail(diag: string) -> void {
+view act test_record_fail(diag: string) -> void {
     g_test_total_asserts += 1
     g_test_failed_asserts += 1
     g_current_case_failed = true

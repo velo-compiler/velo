@@ -10,7 +10,7 @@ use "../str/search.vl"
 use "defs.vl"
 
 // Records the first parse error. Later errors are ignored.
-act cli_error_tainted(p: @CliContext, msg: string, token: string) -> bool {
+view act cli_error_tainted(p: @CliContext, msg: string, token: string) -> bool {
     if p == null or p.had_error {
         return false
     }
@@ -29,7 +29,7 @@ act cli_error_tainted(p: @CliContext, msg: string, token: string) -> bool {
 }
 
 // Builds a small message into arena memory: prefix + body + suffix.
-act cli_build_msg(p: @CliContext, prefix: string, body: string, suffix: string) -> string {
+view act cli_build_msg(p: @CliContext, prefix: string, body: string, suffix: string) -> string {
     if p == null or p.arena == null {
         return "" as string
     }
@@ -41,7 +41,7 @@ act cli_build_msg(p: @CliContext, prefix: string, body: string, suffix: string) 
 }
 
 // Finds the flag definition index whose long name equals name. Returns -1 when absent.
-act cli_find_long(p: @CliContext, name: StrSlice) -> i64 {
+view act cli_find_long(p: @CliContext, name: StrSlice) -> i64 {
     if p == null {
         return (-1 as i64)
     }
@@ -58,7 +58,7 @@ act cli_find_long(p: @CliContext, name: StrSlice) -> i64 {
 
 // Finds the flag definition index whose single-character short alias equals c.
 // Returns -1 when absent.
-act cli_find_short(p: @CliContext, c: u8) -> i64 {
+view act cli_find_short(p: @CliContext, c: u8) -> i64 {
     if p == null {
         return (-1 as i64)
     }
@@ -78,7 +78,7 @@ act cli_find_short(p: @CliContext, c: u8) -> i64 {
 
 // Materializes a token slice (--flag=value remainder or -fvalue cluster tail)
 // as a null-terminated arena string for storage in the values table.
-act cli_materialize_value(p: @CliContext, v: StrSlice) -> string {
+view act cli_materialize_value(p: @CliContext, v: StrSlice) -> string {
     if p == null or p.arena == null {
         return "" as string
     }
@@ -95,7 +95,7 @@ act cli_materialize_value(p: @CliContext, v: StrSlice) -> string {
 }
 
 // Marks a boolean flag as seen.
-act cli_mark_seen(p: @CliContext, idx: usize) {
+view act cli_mark_seen(p: @CliContext, idx: usize) {
     if p == null or p.seen == null {
         return
     }
@@ -103,7 +103,7 @@ act cli_mark_seen(p: @CliContext, idx: usize) {
 }
 
 // Stores the value and marks a value flag as seen.
-act cli_store_value(p: @CliContext, idx: usize, value: string) {
+view act cli_store_value(p: @CliContext, idx: usize, value: string) {
     if p == null {
         return
     }
@@ -118,7 +118,7 @@ act cli_store_value(p: @CliContext, idx: usize, value: string) {
 // Resolves the value for flag index idx: an attached token tail when non-empty
 // (-fVALUE or --flag=VALUE remainder), otherwise the next argv token
 // (--flag value / -f value). Returns false after a missing-value error.
-act cli_resolve_value(p: @CliContext, idx: usize, token: string, attached: StrSlice, cursor: @usize) -> bool {
+view act cli_resolve_value(p: @CliContext, idx: usize, token: string, attached: StrSlice, cursor: @usize) -> bool {
     if attached.ptr != null and attached.len > 0 {
         cli_store_value(p, idx, cli_materialize_value(p, attached))
         return true
@@ -134,7 +134,7 @@ act cli_resolve_value(p: @CliContext, idx: usize, token: string, attached: StrSl
 
 // Returns true when two same-length names differ in at most two bytes,
 // catching single-character typos and transpose mistakes ("biuld"/"build").
-act cli_name_close(a: StrSlice, b: StrSlice) -> bool {
+view act cli_name_close(a: StrSlice, b: StrSlice) -> bool {
     if a.len != b.len or a.len == 0 {
         return false
     }
@@ -156,7 +156,7 @@ act cli_name_close(a: StrSlice, b: StrSlice) -> bool {
 // Suggests a registered long name that is an abbreviation of the unknown name,
 // an extension of it (pluralization, adjective suffix), or differs by at most
 // two bytes at equal length (single-character typos, transposes).
-act cli_unknown_long_error(p: @CliContext, token: string) -> string {
+view act cli_unknown_long_error(p: @CliContext, token: string) -> string {
     if p == null or p.arena == null {
         return "unknown flag" as string
     }
@@ -197,7 +197,7 @@ act cli_unknown_long_error(p: @CliContext, token: string) -> string {
 
 // Parses a --long-form token: --flag, --flag=value, or --flag value.
 // Returns false after recording an error.
-act cli_parse_long(p: @CliContext, token: string, cursor: @usize) -> bool {
+view act cli_parse_long(p: @CliContext, token: string, cursor: @usize) -> bool {
     let tok = slice_from_str(token)
     let body = slice_sub(tok, 2, tok.len)
 
@@ -241,7 +241,7 @@ act cli_parse_long(p: @CliContext, token: string, cursor: @usize) -> bool {
 }
 
 // Materializes a single flag character as an arena string for messages.
-act cli_decode_char(p: @CliContext, c: u8) -> string {
+view act cli_decode_char(p: @CliContext, c: u8) -> string {
     if p == null or p.arena == null {
         return "" as string
     }
@@ -256,7 +256,7 @@ act cli_decode_char(p: @CliContext, c: u8) -> string {
 
 // Parses a short-form token: -f, -abc clusters, -fVALUE attached values,
 // and -f value separated values. Returns false after recording an error.
-act cli_parse_short(p: @CliContext, token: string, cursor: @usize) -> bool {
+view act cli_parse_short(p: @CliContext, token: string, cursor: @usize) -> bool {
     let tok = slice_from_str(token)
     let cluster = slice_sub(tok, 1, tok.len)
     if cluster.len == 0 {
@@ -284,7 +284,7 @@ act cli_parse_short(p: @CliContext, token: string, cursor: @usize) -> bool {
 
 // Routes the first non-flag operand to a registered subcommand, or records an
 // unknown-subcommand error with prefix suggestions.
-act cli_route_subcommand(p: @CliContext, token: string) -> bool {
+view act cli_route_subcommand(p: @CliContext, token: string) -> bool {
     mut i: usize = 0
     loop i < p.sub_count {
         let name = p.sub_names[i]
@@ -322,7 +322,7 @@ act cli_route_subcommand(p: @CliContext, token: string) -> bool {
 // Parses the token stream of the parser's Args (starting at index 1, skipping
 // the program name). Returns true on success; false after any recorded error
 // (query via cli_error_msg / cli_error_token in query module).
-act cli_parse(p: @CliContext) -> bool {
+view act cli_parse(p: @CliContext) -> bool {
     if p == null or p.args == null {
         return cli_error_tainted(p, "parser not initialized", "")
     }

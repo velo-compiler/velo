@@ -5,7 +5,7 @@ use "hex.vl"
 mut g_crc32_table: @u32 = null
 
 // Computes the 256-element CRC-32 table using polynomial 0xEDB88320.
-act crc32_ensure_table() {
+view act crc32_ensure_table() {
     if g_crc32_table != null { return }
     g_crc32_table = heap_alloc(256 * 4) as @u32
     mut i: usize = 0
@@ -26,12 +26,12 @@ act crc32_ensure_table() {
 }
 
 // Returns the initial CRC accumulator value.
-act crc32_init() -> u32 {
+view act crc32_init() -> u32 {
     return 0xFFFFFFFF as u32
 }
 
 // Progressively feeds data into an active CRC-32 accumulator.
-act crc32_update(crc: u32, data: @u8, len: usize) -> u32 {
+view act crc32_update(crc: u32, data: @u8, len: usize) -> u32 {
     if data == null or len == 0 { return crc }
     crc32_ensure_table()
     mut c = crc
@@ -45,7 +45,7 @@ act crc32_update(crc: u32, data: @u8, len: usize) -> u32 {
 }
 
 // Feeds string characters into an active CRC-32 accumulator.
-act crc32_update_str(crc: u32, text: string) -> u32 {
+view act crc32_update_str(crc: u32, text: string) -> u32 {
     if text == null { return crc }
     let len = str.len(text)
     if len == 0 { return crc }
@@ -53,24 +53,24 @@ act crc32_update_str(crc: u32, text: string) -> u32 {
 }
 
 // Inverts the accumulator to produce the final IEEE 802.3 CRC-32 checksum.
-act crc32_final(crc: u32) -> u32 {
+view act crc32_final(crc: u32) -> u32 {
     return crc ^ (0xFFFFFFFF as u32)
 }
 
 // Computes the full CRC-32 checksum for a slice of bytes.
-act crc32_hash(data: @u8, len: usize) -> u32 {
+view act crc32_hash(data: @u8, len: usize) -> u32 {
     let acc = crc32_update(crc32_init(), data, len)
     return crc32_final(acc)
 }
 
 // Computes the full CRC-32 checksum for a string.
-act crc32_hash_str(text: string) -> u32 {
+view act crc32_hash_str(text: string) -> u32 {
     if text == null { return 0 as u32 }
     return crc32_hash(text as @u8, str.len(text))
 }
 
 // Formats a 32-bit CRC checksum into an 8-character uppercase/lowercase hexadecimal string.
-act crc32_hex(val: u32) -> string {
+view act crc32_hex(val: u32) -> string {
     mut bytes: @u8 = heap_alloc(4)
     bytes[0] = ((val >> 24) & (0xFF as u32)) as u8
     bytes[1] = ((val >> 16) & (0xFF as u32)) as u8

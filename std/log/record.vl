@@ -2,7 +2,7 @@
 use "../time/calendar.vl"
 use "../mem/heap.vl"
 
-data LogRecord {
+view data LogRecord {
     level: u8
     target: string
     message: string
@@ -10,7 +10,7 @@ data LogRecord {
 }
 
 // Generates an ISO formatted date-time string "YYYY-MM-DD HH:MM:SS" on the heap.
-act log_current_timestamp() -> string {
+view act log_current_timestamp() -> string {
     let dt = time_now_datetime()
     mut buf: @u8 = heap_alloc(24)
     if buf == null { return "0000-00-00 00:00:00" }
@@ -22,7 +22,7 @@ act log_current_timestamp() -> string {
 }
 
 // Constructs a new LogRecord with the current local/UTC timestamp.
-act log_record_make(level: u8, target: string, message: string) -> LogRecord {
+view act log_record_make(level: u8, target: string, message: string) -> LogRecord {
     mut tgt = "app"
     if target != null and str.len(target) > 0 {
         tgt = target

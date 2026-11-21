@@ -7,26 +7,26 @@ use "../mem/ops.vl"
 use "../str/slice.vl"
 
 // Map sentinel constants matching Velo hash table doctrine
-let HASH_EMPTY: u64 = 0 as u64
-let HASH_TOMBSTONE: u64 = 2 as u64
+view let HASH_EMPTY: u64 = 0 as u64
+view let HASH_TOMBSTONE: u64 = 2 as u64
 
 // 32-bit left rotation helper.
-act hash_rotl32(x: u32, r: u32) -> u32 {
+view act hash_rotl32(x: u32, r: u32) -> u32 {
     return (x << r) | (x >> (32 - r))
 }
 
 // 64-bit right rotation helper.
-act hash_rotr64(x: u64, r: u64) -> u64 {
+view act hash_rotr64(x: u64, r: u64) -> u64 {
     return (x >> r) | (x << (64 - r))
 }
 
 // 64-bit FNV-1a hash over a byte buffer.
-act hash_fnv1a(data: @u8, len: usize) -> u64 {
+view act hash_fnv1a(data: @u8, len: usize) -> u64 {
     return hash_fnv1a_with_seed(data, len, 0xcbf29ce484222325 as u64)
 }
 
 // 64-bit FNV-1a hash with custom seed.
-act hash_fnv1a_with_seed(data: @u8, len: usize, seed: u64) -> u64 {
+view act hash_fnv1a_with_seed(data: @u8, len: usize, seed: u64) -> u64 {
     mut h: u64 = seed
     let prime: u64 = 0x00000100000001b3 as u64
     if data == null { return h }
@@ -40,12 +40,12 @@ act hash_fnv1a_with_seed(data: @u8, len: usize, seed: u64) -> u64 {
 }
 
 // 32-bit FNV-1a hash over a byte buffer.
-act hash_fnv1a_32(data: @u8, len: usize) -> u32 {
+view act hash_fnv1a_32(data: @u8, len: usize) -> u32 {
     return hash_fnv1a_32_with_seed(data, len, 0x811c9dc5 as u32)
 }
 
 // 32-bit FNV-1a hash with custom seed.
-act hash_fnv1a_32_with_seed(data: @u8, len: usize, seed: u32) -> u32 {
+view act hash_fnv1a_32_with_seed(data: @u8, len: usize, seed: u32) -> u32 {
     mut h: u32 = seed
     let prime: u32 = 0x01000193 as u32
     if data == null { return h }
@@ -59,7 +59,7 @@ act hash_fnv1a_32_with_seed(data: @u8, len: usize, seed: u32) -> u32 {
 }
 
 // MurmurHash3 32-bit (x86) hash. Excellent avalanche distribution.
-act hash_murmur3_32(data: @u8, len: usize, seed: u32) -> u32 {
+view act hash_murmur3_32(data: @u8, len: usize, seed: u32) -> u32 {
     if data == null or len == 0 { return seed }
     let c1: u32 = 0xcc9e2d51 as u32
     let c2: u32 = 0x1b873593 as u32
@@ -112,7 +112,7 @@ act hash_murmur3_32(data: @u8, len: usize, seed: u32) -> u32 {
 }
 
 // DJB2 hash algorithm (Daniel J. Bernstein). Fast string and byte hash.
-act hash_djb2(data: @u8, len: usize) -> u64 {
+view act hash_djb2(data: @u8, len: usize) -> u64 {
     if data == null or len == 0 { return 5381 as u64 }
     mut h: u64 = 5381 as u64
     mut i: usize = 0
@@ -124,7 +124,7 @@ act hash_djb2(data: @u8, len: usize) -> u64 {
 }
 
 // SDBM hash algorithm (Sleepycat Software dbm).
-act hash_sdbm(data: @u8, len: usize) -> u64 {
+view act hash_sdbm(data: @u8, len: usize) -> u64 {
     if data == null or len == 0 { return 0 as u64 }
     mut h: u64 = 0 as u64
     mut i: usize = 0
@@ -136,7 +136,7 @@ act hash_sdbm(data: @u8, len: usize) -> u64 {
 }
 
 // SplitMix64 universal 64-bit integer hash / mixer.
-act hash_splitmix64(x: u64) -> u64 {
+view act hash_splitmix64(x: u64) -> u64 {
     mut z = x + (0x9e3779b97f4a7c15 as u64)
     z = (z ^ (z >> 30)) * (0xbf58476d1ce4e5b9 as u64)
     z = (z ^ (z >> 27)) * (0x94d049bb133111eb as u64)
@@ -144,17 +144,17 @@ act hash_splitmix64(x: u64) -> u64 {
 }
 
 // Hashes a 64-bit unsigned integer with full bit avalanche.
-act hash_u64(val: u64) -> u64 {
+view act hash_u64(val: u64) -> u64 {
     return hash_splitmix64(val)
 }
 
 // Hashes a 64-bit signed integer.
-act hash_i64(val: i64) -> u64 {
+view act hash_i64(val: i64) -> u64 {
     return hash_splitmix64(val as u64)
 }
 
 // Hashes a 32-bit unsigned integer with full bit avalanche.
-act hash_u32(val: u32) -> u32 {
+view act hash_u32(val: u32) -> u32 {
     mut z = val + (0x9e3779b9 as u32)
     z = ((z >> 16) ^ z) * (0x45d9f3b as u32)
     z = ((z >> 16) ^ z) * (0x45d9f3b as u32)
@@ -163,22 +163,22 @@ act hash_u32(val: u32) -> u32 {
 }
 
 // Hashes a 32-bit signed integer.
-act hash_i32(val: i32) -> u32 {
+view act hash_i32(val: i32) -> u32 {
     return hash_u32(val as u32)
 }
 
 // Hashes a pointer address.
-act hash_ptr(p: @void) -> u64 {
+view act hash_ptr(p: @void) -> u64 {
     return hash_splitmix64(p as usize as u64)
 }
 
 // Hashes a raw byte slice using FNV-1a.
-act hash_bytes(data: @u8, len: usize) -> u64 {
+view act hash_bytes(data: @u8, len: usize) -> u64 {
     return hash_fnv1a(data, len)
 }
 
 // Hashes a null-terminated string content.
-act hash_str(s: string) -> u64 {
+view act hash_str(s: string) -> u64 {
     if s == null { return 0 as u64 }
     let p = s as @u8
     mut len: usize = 0
@@ -189,12 +189,12 @@ act hash_str(s: string) -> u64 {
 }
 
 // Hashes a StrSlice.
-act hash_slice(s: StrSlice) -> u64 {
+view act hash_slice(s: StrSlice) -> u64 {
     return hash_fnv1a(s.ptr, s.len)
 }
 
 // Combines two 64-bit hashes using the golden ratio constant (Boost hash_combine).
-act hash_combine(seed: u64, next_hash: u64) -> u64 {
+view act hash_combine(seed: u64, next_hash: u64) -> u64 {
     let phi: u64 = 0x9e3779b97f4a7c15 as u64
     return seed ^ (next_hash + phi + (seed << 6) + (seed >> 2))
 }
@@ -202,27 +202,27 @@ act hash_combine(seed: u64, next_hash: u64) -> u64 {
 // --- Map Sentinel Marking Contract (for std.coll.map) ---
 
 // Marks a live hash by forcing bit 0 to 1 (odd value >= 1; never 0=EMPTY, never 2=TOMB).
-act hash_to_live_mark(h: u64) -> u64 {
+view act hash_to_live_mark(h: u64) -> u64 {
     return h | (1 as u64)
 }
 
 // Returns true if the stored slot hash represents an active live entry.
-act hash_is_live(h: u64) -> bool {
+view act hash_is_live(h: u64) -> bool {
     return (h & (1 as u64)) != (0 as u64)
 }
 
 // Returns true if the slot is completely empty.
-act hash_is_empty(h: u64) -> bool {
+view act hash_is_empty(h: u64) -> bool {
     return h == (0 as u64)
 }
 
 // Returns true if the slot holds a tombstone marker (deleted entry).
-act hash_is_tombstone(h: u64) -> bool {
+view act hash_is_tombstone(h: u64) -> bool {
     return h == (2 as u64)
 }
 
 // Computes live map key hash for arbitrary key bytes or string keys.
-act hash_map_key(key_ptr: @u8, ksz: usize, is_str: bool) -> u64 {
+view act hash_map_key(key_ptr: @u8, ksz: usize, is_str: bool) -> u64 {
     if key_ptr == null { return 1 as u64 }
     if is_str {
         let ps = key_ptr as @string
@@ -240,7 +240,7 @@ act hash_map_key(key_ptr: @u8, ksz: usize, is_str: bool) -> u64 {
 }
 
 // Compares two keys for equality according to map key doctrine.
-act hash_map_key_eq(a: @u8, b: @u8, ksz: usize, is_str: bool) -> bool {
+view act hash_map_key_eq(a: @u8, b: @u8, ksz: usize, is_str: bool) -> bool {
     if a == b { return true }
     if a == null or b == null { return false }
     if is_str {

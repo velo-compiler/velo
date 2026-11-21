@@ -4,36 +4,36 @@ use "../mem/arena.vl"
 use "../str/slice.vl"
 use "../str/manip.vl"
 
-extern act getenv(name: @u8) -> @u8
-extern act setenv(name: @u8, val: @u8, overwrite: i32) -> i32
-extern act unsetenv(name: @u8) -> i32
-extern act getpid() -> u32
-extern act _exit(code: i32) -> void
-extern act getcwd(buf: @u8, size: usize) -> @u8
-extern act chdir(path: @u8) -> i32
+view extern act getenv(name: @u8) -> @u8
+view extern act setenv(name: @u8, val: @u8, overwrite: i32) -> i32
+view extern act unsetenv(name: @u8) -> i32
+view extern act getpid() -> u32
+view extern act _exit(code: i32) -> void
+view extern act getcwd(buf: @u8, size: usize) -> @u8
+view extern act chdir(path: @u8) -> i32
 
 // Returns the OS family name ("linux").
-act os_family() -> string {
+view act os_family() -> string {
     return "linux"
 }
 
 // Returns true if running on Windows.
-act os_is_windows() -> bool {
+view act os_is_windows() -> bool {
     return false
 }
 
 // Returns true if running on Linux.
-act os_is_linux() -> bool {
+view act os_is_linux() -> bool {
     return true
 }
 
 // Returns true if running on macOS.
-act os_is_macos() -> bool {
+view act os_is_macos() -> bool {
     return false
 }
 
 // Returns true if the environment variable with the given name exists.
-act os_has_env(name: string) -> bool {
+view act os_has_env(name: string) -> bool {
     if name == null { return false }
     let ptr = getenv(name as @u8)
     return ptr != null
@@ -41,7 +41,7 @@ act os_has_env(name: string) -> bool {
 
 // Copies the value of the environment variable into out_buf.
 // Returns the number of bytes written (excluding null terminator), or 0 on failure.
-act os_get_env_buf(name: string, out_buf: @u8, buf_cap: usize) -> usize {
+view act os_get_env_buf(name: string, out_buf: @u8, buf_cap: usize) -> usize {
     if name == null or out_buf == null or buf_cap == 0 { return 0 }
     let ptr = getenv(name as @u8)
     if ptr == null { return 0 }
@@ -58,7 +58,7 @@ act os_get_env_buf(name: string, out_buf: @u8, buf_cap: usize) -> usize {
 
 // Retrieves an environment variable as a null-terminated string allocated in arena.
 // Returns null if the variable does not exist or allocation fails.
-act os_get_env(arena: @Arena, name: string) -> string {
+view act os_get_env(arena: @Arena, name: string) -> string {
     if arena == null or name == null { return null }
     let ptr = getenv(name as @u8)
     if ptr == null { return null }
@@ -75,32 +75,32 @@ act os_get_env(arena: @Arena, name: string) -> string {
 }
 
 // Sets the value of an environment variable. Returns true on success.
-act os_set_env(name: string, val: string) -> bool {
+view act os_set_env(name: string, val: string) -> bool {
     if name == null or val == null { return false }
     let res = setenv(name as @u8, val as @u8, 1)
     return res == 0
 }
 
 // Unsets (deletes) an environment variable. Returns true on success.
-act os_unset_env(name: string) -> bool {
+view act os_unset_env(name: string) -> bool {
     if name == null { return false }
     let res = unsetenv(name as @u8)
     return res == 0
 }
 
 // Returns the process ID of the calling process.
-act os_get_pid() -> u32 {
+view act os_get_pid() -> u32 {
     return getpid()
 }
 
 // Immediately terminates the calling process with the specified exit code.
-act os_exit(code: i32) -> void {
+view act os_exit(code: i32) -> void {
     _exit(code)
 }
 
 // Copies the current working directory into out_buf.
 // Returns the length written (excluding null terminator), or 0 on failure.
-act os_get_cwd_buf(out_buf: @u8, buf_cap: usize) -> usize {
+view act os_get_cwd_buf(out_buf: @u8, buf_cap: usize) -> usize {
     if out_buf == null or buf_cap == 0 { return 0 }
     let res = getcwd(out_buf, buf_cap)
     if res == null { return 0 }
@@ -109,7 +109,7 @@ act os_get_cwd_buf(out_buf: @u8, buf_cap: usize) -> usize {
 
 // Retrieves the current working directory allocated in arena.
 // Returns null on failure.
-act os_get_cwd(arena: @Arena) -> string {
+view act os_get_cwd(arena: @Arena) -> string {
     if arena == null { return null }
     let buf = arena_alloc(arena, 4096, 1)
     if buf == null { return null }
@@ -119,7 +119,7 @@ act os_get_cwd(arena: @Arena) -> string {
 }
 
 // Sets the current working directory. Returns true on success.
-act os_set_cwd(path: string) -> bool {
+view act os_set_cwd(path: string) -> bool {
     if path == null { return false }
     let res = chdir(path as @u8)
     return res == 0

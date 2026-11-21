@@ -18,7 +18,7 @@ mut g_ed_y: @i64 = null
 mut g_ed_i: @i64 = null
 mut g_ed_l: @i64 = null
 
-act ed25519_ensure_constants() {
+view act ed25519_ensure_constants() {
     if g_ed_d != null { return }
     g_ed_d = heap_alloc(16 * 8) as @i64
     g_ed_d[0] = 0x78a3 as i64; g_ed_d[1] = 0x1359 as i64; g_ed_d[2] = 0x4dca as i64; g_ed_d[3] = 0x75eb as i64
@@ -58,12 +58,12 @@ act ed25519_ensure_constants() {
     g_ed_l[31] = 0x10 as i64
 }
 
-act ed25519_set(r: @i64, a: @i64) {
+view act ed25519_set(r: @i64, a: @i64) {
     mut i: usize = 0
     loop i < 16 { r[i] = a[i]; i += 1 }
 }
 
-act ed25519_add(p: @i64, q: @i64) {
+view act ed25519_add(p: @i64, q: @i64) {
     ed25519_ensure_constants()
     let a: @i64 = heap_alloc(16 * 8) as @i64
     let b: @i64 = heap_alloc(16 * 8) as @i64
@@ -103,7 +103,7 @@ act ed25519_add(p: @i64, q: @i64) {
     heap_free(f as @void); heap_free(g as @void); heap_free(h as @void)
 }
 
-act ed25519_cswap(p: @i64, q: @i64, b: i32) {
+view act ed25519_cswap(p: @i64, q: @i64, b: i32) {
     mut i: usize = 0
     loop i < 4 {
         x25519_sel(p + i * 16, q + i * 16, b)
@@ -111,7 +111,7 @@ act ed25519_cswap(p: @i64, q: @i64, b: i32) {
     }
 }
 
-act ed25519_pack(r: @u8, p: @i64) {
+view act ed25519_pack(r: @u8, p: @i64) {
     let tx: @i64 = heap_alloc(16 * 8) as @i64
     let ty: @i64 = heap_alloc(16 * 8) as @i64
     let zi: @i64 = heap_alloc(16 * 8) as @i64
@@ -125,7 +125,7 @@ act ed25519_pack(r: @u8, p: @i64) {
     heap_free(tx as @void); heap_free(ty as @void); heap_free(zi as @void)
 }
 
-act ed25519_scalarmult(p: @i64, q: @i64, s: @u8) {
+view act ed25519_scalarmult(p: @i64, q: @i64, s: @u8) {
     crypto_zero(p as @u8, 64 * 8)
     p[16] = 1 as i64
     p[32] = 1 as i64
@@ -144,7 +144,7 @@ act ed25519_scalarmult(p: @i64, q: @i64, s: @u8) {
     }
 }
 
-act ed25519_scalarbase(p: @i64, s: @u8) {
+view act ed25519_scalarbase(p: @i64, s: @u8) {
     ed25519_ensure_constants()
     let q: @i64 = heap_alloc(64 * 8) as @i64
     crypto_zero(q as @u8, 64 * 8)
@@ -156,7 +156,7 @@ act ed25519_scalarbase(p: @i64, s: @u8) {
     heap_free(q as @void)
 }
 
-act ed25519_unpackneg(r: @i64, p: @u8) -> bool {
+view act ed25519_unpackneg(r: @i64, p: @u8) -> bool {
     ed25519_ensure_constants()
     let t: @i64 = heap_alloc(16 * 8) as @i64
     let chk: @i64 = heap_alloc(16 * 8) as @i64
@@ -214,7 +214,7 @@ act ed25519_unpackneg(r: @i64, p: @u8) -> bool {
     return true
 }
 
-act ed25519_reduce(r: @u8) {
+view act ed25519_reduce(r: @u8) {
     ed25519_ensure_constants()
     let x: @i64 = heap_alloc(64 * 8) as @i64
     mut i: usize = 0
@@ -261,7 +261,7 @@ act ed25519_reduce(r: @u8) {
 
 // Verifies an Ed25519 signature over msg using public_key.
 // signature is 64 bytes (R || S). public_key is 32 bytes.
-act ed25519_verify(public_key: @u8, msg: @u8, msg_len: usize, signature: @u8) -> bool {
+view act ed25519_verify(public_key: @u8, msg: @u8, msg_len: usize, signature: @u8) -> bool {
     if public_key == null or signature == null { return false }
     ed25519_ensure_constants()
 
@@ -303,7 +303,7 @@ act ed25519_verify(public_key: @u8, msg: @u8, msg_len: usize, signature: @u8) ->
 }
 
 // Convenience verification for hex public key and hex signature.
-act ed25519_verify_str(public_key_hex: string, msg: string, signature_hex: string) -> bool {
+view act ed25519_verify_str(public_key_hex: string, msg: string, signature_hex: string) -> bool {
     if public_key_hex == null or signature_hex == null { return false }
     if str.len(public_key_hex) != 64 or str.len(signature_hex) != 128 { return false }
 

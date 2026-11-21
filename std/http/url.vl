@@ -2,7 +2,7 @@
 use "../mem/heap.vl"
 use "../url.vl"
 
-data HttpUrl {
+view data HttpUrl {
     scheme: string
     host: string
     port: u16
@@ -12,7 +12,7 @@ data HttpUrl {
 }
 
 // Parses an HTTP or HTTPS URL into its constituent components.
-act http_parse_url(url_str: string) -> HttpUrl {
+view act http_parse_url(url_str: string) -> HttpUrl {
     mut res = HttpUrl {
         scheme: "http",
         host: "127.0.0.1",

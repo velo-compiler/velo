@@ -2,18 +2,18 @@
 // Backed directly by POSIX / Darwin kernel syscalls (mmap/munmap).
 
 // macOS Darwin mmap constants (sys/mman.h)
-let PROT_READ: i32 = 1
-let PROT_WRITE: i32 = 2
-let MAP_PRIVATE: i32 = 2
-let MAP_ANON: i32 = 4096 // 0x1000 on Darwin
-let MAP_ANONYMOUS: i32 = 4096
+view let PROT_READ: i32 = 1
+view let PROT_WRITE: i32 = 2
+view let MAP_PRIVATE: i32 = 2
+view let MAP_ANON: i32 = 4096 // 0x1000 on Darwin
+view let MAP_ANONYMOUS: i32 = 4096
 
 // Foreign interface to macOS virtual memory services
-extern act mmap(addr: @u8, length: usize, prot: i32, flags: i32, fd: i32, offset: usize) -> @u8
-extern act munmap(addr: @u8, length: usize) -> i32
+view extern act mmap(addr: @u8, length: usize, prot: i32, flags: i32, fd: i32, offset: usize) -> @u8
+view extern act munmap(addr: @u8, length: usize) -> i32
 
 // Allocates raw zero-initialized virtual memory pages directly from the Darwin kernel.
-act os_page_alloc(size_bytes: usize) -> @u8 {
+view act os_page_alloc(size_bytes: usize) -> @u8 {
     if size_bytes == 0 {
         return null
     }
@@ -25,7 +25,7 @@ act os_page_alloc(size_bytes: usize) -> @u8 {
 }
 
 // Releases virtual memory pages previously allocated with os_page_alloc.
-act os_page_free(ptr: @u8, size_bytes: usize) -> bool {
+view act os_page_free(ptr: @u8, size_bytes: usize) -> bool {
     if ptr == null {
         return false
     }
