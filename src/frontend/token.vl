@@ -49,6 +49,7 @@ let TOK_FAIL: i32 = 155        // Algebraic error handling: `fail` keyword
 let TOK_UNSAFE: i32 = 156      // 48.1: `unsafe` block keyword
 let TOK_PACT: i32 = 157        // 77.3: `pact` static contract keyword
 let TOK_VIEW: i32 = 158        // 77.4: `view` module privacy keyword
+let TOK_SIZEOF: i32 = 159      // `sizeof` keyword
 
 // Operators & Punctuation
 let TOK_AT: i32 = 50           // @
@@ -125,10 +126,22 @@ act token_name(kind: i32) -> string {
     if kind == TOK_IF { return "if" }
     if kind == TOK_ELSE { return "else" }
     if kind == TOK_LOOP { return "loop" }
+    if kind == TOK_IN { return "in" }
     if kind == TOK_RETURN { return "return" }
     if kind == TOK_ZONE { return "zone" }
     if kind == TOK_DEFER { return "defer" }
+    if kind == TOK_EXTERN { return "extern" }
     if kind == TOK_USE { return "use" }
+    if kind == TOK_TRUE { return "true" }
+    if kind == TOK_FALSE { return "false" }
+    if kind == TOK_NULL { return "null" }
+    if kind == TOK_AS { return "as" }
+    if kind == TOK_AND { return "and" }
+    if kind == TOK_OR { return "or" }
+    if kind == TOK_NOT { return "not" }
+    if kind == TOK_BREAK { return "break" }
+    if kind == TOK_CONTINUE { return "continue" }
+    if kind == TOK_FAIL { return "fail" }
     if kind == TOK_AT { return "@" }
     if kind == TOK_LBRACE { return "{" }
     if kind == TOK_RBRACE { return "}" }
@@ -155,6 +168,7 @@ act token_name(kind: i32) -> string {
     if kind == TOK_UNSAFE { return "unsafe" }
     if kind == TOK_PACT { return "pact" }
     if kind == TOK_VIEW { return "view" }
+    if kind == TOK_SIZEOF { return "sizeof" }
     if kind == TOK_COLON_GT { return ":>" }
     return "TOKEN"
 }

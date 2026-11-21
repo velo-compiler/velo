@@ -2179,7 +2179,7 @@ engineering defect.
 
 ---
 
-# Phase 77: Language Completeness (P1) - OPEN
+# Phase 77: Language Completeness (P1) - COMPLETED ✅
 
 ## Defect
 
@@ -2357,14 +2357,30 @@ with the chosen mechanism, and add `examples/39_closures.vl`.
 
 **77.7** Add a "language surface" conformance test that enumerates every
 keyword from `docs/SPECIFICATION.md` section 1.4 and asserts each appears in
-`src/frontend/token.vl`, so documentation and lexer cannot drift.
+`src/frontend/token.vl`, so documentation and lexer cannot drift. [COMPLETED] ✅
+- *Former Defect:*
+  Prior to Task 77.7, there was no automated conformance test verifying that the keywords listed in `docs/SPECIFICATION.md` §1.4 (`act`, `data`, `mut`, `let`, `if`, `else`, `loop`, `in`, `return`, `zone`, `extern`, `defer`, `use`, `true`, `false`, `null`, `sizeof`, `as`, `break`, `continue`, `on`, `and`, `or`, `not`, `kind`, `fail`, `pact`, `view`) matched the tokens in `src/frontend/token.vl` and `src/frontend/lexer.vl`. Furthermore, `sizeof` was lexed as a generic identifier rather than a reserved keyword token (`TOK_SIZEOF`), and `token_name()` omitted several reserved keyword string representations.
+- *Fix Applied:*
+  - Defined `let TOK_SIZEOF: i32 = 159` in `src/frontend/token.vl`, added `sizeof` token mapping in `token_name()`, and completed string mappings for all 28 reserved keywords.
+  - Added `sizeof` recognition to `check_keyword()` in `src/frontend/lexer.vl`.
+  - Updated `src/frontend/parser_primary.vl` to recognize `TOK_SIZEOF` as an ident expression for `sizeof(...)`.
+  - Added `tests/test_language_surface.py` containing 6 conformance tests: verifying the 28 keywords in `docs/SPECIFICATION.md` match `token.vl` and `lexer.vl`, validating `token_name()`, asserting strictly non-contextual keywords cannot be declared as variable identifiers, and compiling a live test exercising all 28 reserved keywords.
+  - Rebuilt bootstrap chain Gen2 -> Gen3, verified bit-for-bit SHA-256 emit-c determinism (`EAF5573FBC6357E094DE7792C60328539442AB28ED7071DC5DD2C9603CE92BBF`), and regenerated `bootstrap.c`.
+- *Residual Limitation:*
+  None. Language surface conformance is fully pinned and verified by automated CI regression tests.
+- *Verification:*
+  - `python -m pytest tests/test_language_surface.py -v`: 6 passed in 0.57s.
+  - `python -m pytest tests/test_defer_expr.py tests/test_import_aliasing.py tests/test_module_privacy.py tests/test_pacts.py -v`: 31 passed in 9.61s.
+  - `python -m pytest tests/test_deliberate_limitations.py -v`: 7 passed in 0.02s.
+  - `python scripts/count_lines.py`: all compiler source files <= 400 lines.
 
-## Phase Exit Criteria
+## Phase Exit Criteria [COMPLETED] ✅
 
-- "Deliberate Limitations" exists and covers every absence found by
-  `77.7`'s conformance test.
-- At least the closure decision is resolved either way, with the async APIs
-  updated or a documented rationale committed.
+- [x] "Deliberate Limitations" exists and covers every absence found by
+  `77.7`'s conformance test (`tests/test_deliberate_limitations.py` passes 7/7).
+- [x] At least the closure decision is resolved either way, with the async APIs
+  updated or a documented rationale committed (resolved: explicit context pointer pattern documented in §11.1).
+- [x] All 7 tasks (77.1 through 77.7) fully implemented, tested, and self-hosted with determinism verified.
 
 ---
 

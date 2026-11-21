@@ -304,8 +304,8 @@ act parse_primary(p: @Parser) -> @ExprNode {
         return make_array_lit_expr(first_elem, elem_count, lb.line, lb.col)
     }
 
-    // 8. Identifier variable reference
-    if parser_check(p, TOK_IDENTIFIER) {
+    // 8. Identifier variable reference or sizeof operator
+    if parser_check(p, TOK_IDENTIFIER) or parser_check(p, TOK_SIZEOF) {
         let tok = parser_advance(p)
         let name = copy_slice_to_string(p.source, tok.start, tok.length)
         return make_ident_expr(name, tok.line, tok.col)

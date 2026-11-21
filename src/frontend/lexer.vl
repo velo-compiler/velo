@@ -43,6 +43,7 @@ act check_keyword(source: string, start: usize, len: usize) -> i32 {
         if source[start] == 'b' and source[start + 1] == 'r' and source[start + 2] == 'e' and source[start + 3] == 'a' and source[start + 4] == 'k' { return TOK_BREAK }
         if source[start] == 's' and source[start + 1] == 'h' and source[start + 2] == 'e' and source[start + 3] == 'l' and source[start + 4] == 'f' { return TOK_SHELF }
     } else if len == 6 {
+        if source[start] == 's' and source[start + 1] == 'i' and source[start + 2] == 'z' and source[start + 3] == 'e' and source[start + 4] == 'o' and source[start + 5] == 'f' { return TOK_SIZEOF }
         if source[start] == 'r' and source[start + 1] == 'e' and source[start + 2] == 't' and source[start + 3] == 'u' and source[start + 4] == 'r' and source[start + 5] == 'n' { return TOK_RETURN }
         if source[start] == 'e' and source[start + 1] == 'x' and source[start + 2] == 't' and source[start + 3] == 'e' and source[start + 4] == 'r' and source[start + 5] == 'n' { return TOK_EXTERN }
         if source[start] == 'b' and source[start + 1] == 'i' and source[start + 2] == 't' and source[start + 3] == 's' and source[start + 4] == 'e' and source[start + 5] == 't' { return TOK_BITSET }

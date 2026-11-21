@@ -36,7 +36,7 @@ break     continue  on        and       or        not
 kind      fail      pact      view
 ```
 
-Contextual keywords recognized in specific declaration or expression contexts include `aka`, `op`, and `unsafe`.
+Contextual keywords recognized in specific declaration or expression contexts include `aka`, `op`, and `unsafe`. Additionally, certain keywords (such as `act`, `data`, `defer`, `loop`, `return`, `break`, `continue`, `on`, `extern`, `zone`, `use`) are recognized contextually as identifiers in struct field definitions, member accesses, parameters, and variable declarations where syntactic ambiguity does not arise. Non-contextual keywords (`mut`, `let`, `if`, `else`, `true`, `false`, `null`, `sizeof`, `view`, `pact`, `as`) are strictly reserved across all identifier positions.
 
 ### 1.5 Punctuation & Semicolons
 * Code blocks are delimited by curly braces `{` and `}`.

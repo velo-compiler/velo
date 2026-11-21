@@ -1116,95 +1116,97 @@ int32_t TOK_UNSAFE = 156;
 int32_t TOK_PACT = 157;
 #line 51 "src/main.vl"
 int32_t TOK_VIEW = 158;
-#line 54 "src/main.vl"
-int32_t TOK_AT = 50;
+#line 52 "src/main.vl"
+int32_t TOK_SIZEOF = 159;
 #line 55 "src/main.vl"
-int32_t TOK_PLUS = 51;
+int32_t TOK_AT = 50;
 #line 56 "src/main.vl"
-int32_t TOK_MINUS = 52;
+int32_t TOK_PLUS = 51;
 #line 57 "src/main.vl"
-int32_t TOK_STAR = 53;
+int32_t TOK_MINUS = 52;
 #line 58 "src/main.vl"
-int32_t TOK_SLASH = 54;
+int32_t TOK_STAR = 53;
 #line 59 "src/main.vl"
-int32_t TOK_PERCENT = 55;
+int32_t TOK_SLASH = 54;
 #line 60 "src/main.vl"
-int32_t TOK_DOT = 56;
+int32_t TOK_PERCENT = 55;
 #line 61 "src/main.vl"
-int32_t TOK_DOTDOT = 57;
+int32_t TOK_DOT = 56;
 #line 62 "src/main.vl"
-int32_t TOK_ARROW = 58;
+int32_t TOK_DOTDOT = 57;
 #line 63 "src/main.vl"
-int32_t TOK_COLON = 59;
+int32_t TOK_ARROW = 58;
 #line 64 "src/main.vl"
-int32_t TOK_COMMA = 60;
+int32_t TOK_COLON = 59;
 #line 65 "src/main.vl"
-int32_t TOK_ASSIGN = 61;
+int32_t TOK_COMMA = 60;
 #line 66 "src/main.vl"
-int32_t TOK_EQ = 62;
+int32_t TOK_ASSIGN = 61;
 #line 67 "src/main.vl"
-int32_t TOK_NEQ = 63;
+int32_t TOK_EQ = 62;
 #line 68 "src/main.vl"
-int32_t TOK_LT = 64;
+int32_t TOK_NEQ = 63;
 #line 69 "src/main.vl"
-int32_t TOK_LTE = 65;
+int32_t TOK_LT = 64;
 #line 70 "src/main.vl"
-int32_t TOK_GT = 66;
+int32_t TOK_LTE = 65;
 #line 71 "src/main.vl"
-int32_t TOK_GTE = 67;
+int32_t TOK_GT = 66;
 #line 72 "src/main.vl"
-int32_t TOK_PLUS_ASSIGN = 68;
+int32_t TOK_GTE = 67;
 #line 73 "src/main.vl"
-int32_t TOK_MINUS_ASSIGN = 69;
+int32_t TOK_PLUS_ASSIGN = 68;
 #line 74 "src/main.vl"
-int32_t TOK_STAR_ASSIGN = 70;
+int32_t TOK_MINUS_ASSIGN = 69;
 #line 75 "src/main.vl"
-int32_t TOK_SLASH_ASSIGN = 71;
+int32_t TOK_STAR_ASSIGN = 70;
 #line 76 "src/main.vl"
-int32_t TOK_LPAREN = 72;
+int32_t TOK_SLASH_ASSIGN = 71;
 #line 77 "src/main.vl"
-int32_t TOK_RPAREN = 73;
+int32_t TOK_LPAREN = 72;
 #line 78 "src/main.vl"
-int32_t TOK_LBRACE = 74;
+int32_t TOK_RPAREN = 73;
 #line 79 "src/main.vl"
-int32_t TOK_RBRACE = 75;
+int32_t TOK_LBRACE = 74;
 #line 80 "src/main.vl"
-int32_t TOK_LBRACKET = 76;
+int32_t TOK_RBRACE = 75;
 #line 81 "src/main.vl"
+int32_t TOK_LBRACKET = 76;
+#line 82 "src/main.vl"
 int32_t TOK_RBRACKET = 77;
-#line 84 "src/main.vl"
-int32_t TOK_AMP = 80;
 #line 85 "src/main.vl"
-int32_t TOK_PIPE = 81;
+int32_t TOK_AMP = 80;
 #line 86 "src/main.vl"
-int32_t TOK_CARET = 82;
+int32_t TOK_PIPE = 81;
 #line 87 "src/main.vl"
-int32_t TOK_TILDE = 83;
+int32_t TOK_CARET = 82;
 #line 88 "src/main.vl"
-int32_t TOK_SHL = 84;
+int32_t TOK_TILDE = 83;
 #line 89 "src/main.vl"
-int32_t TOK_SHR = 85;
+int32_t TOK_SHL = 84;
 #line 90 "src/main.vl"
-int32_t TOK_AMP_ASSIGN = 86;
+int32_t TOK_SHR = 85;
 #line 91 "src/main.vl"
-int32_t TOK_PIPE_ASSIGN = 87;
+int32_t TOK_AMP_ASSIGN = 86;
 #line 92 "src/main.vl"
-int32_t TOK_CARET_ASSIGN = 88;
+int32_t TOK_PIPE_ASSIGN = 87;
 #line 93 "src/main.vl"
-int32_t TOK_SHL_ASSIGN = 89;
+int32_t TOK_CARET_ASSIGN = 88;
 #line 94 "src/main.vl"
-int32_t TOK_SHR_ASSIGN = 90;
+int32_t TOK_SHL_ASSIGN = 89;
 #line 95 "src/main.vl"
-int32_t TOK_FAT_ARROW = 91;
+int32_t TOK_SHR_ASSIGN = 90;
 #line 96 "src/main.vl"
-int32_t TOK_HASH = 92;
+int32_t TOK_FAT_ARROW = 91;
 #line 97 "src/main.vl"
-int32_t TOK_QUESTION = 93;
+int32_t TOK_HASH = 92;
 #line 98 "src/main.vl"
-int32_t TOK_DOUBLE_QUESTION = 94;
+int32_t TOK_QUESTION = 93;
 #line 99 "src/main.vl"
-int32_t TOK_BANG = 95;
+int32_t TOK_DOUBLE_QUESTION = 94;
 #line 100 "src/main.vl"
+int32_t TOK_BANG = 95;
+#line 101 "src/main.vl"
 int32_t TOK_COLON_GT = 96;
 #line 16 "src/main.vl"
 bool g_diag_collector_active = false;
@@ -9623,234 +9625,299 @@ void slab_destroy(SlabPool* p) {
     }
 }
 
-#line 113 "src/main.vl"
+#line 114 "src/main.vl"
 const char* token_name(int32_t kind) {
-#line 114 "src/main.vl"
+#line 115 "src/main.vl"
     if ((kind == TOK_EOF)) {
-#line 114 "src/main.vl"
+#line 115 "src/main.vl"
         return "EOF";
     }
-#line 115 "src/main.vl"
+#line 116 "src/main.vl"
     if ((kind == TOK_NEWLINE)) {
-#line 115 "src/main.vl"
+#line 116 "src/main.vl"
         return "NEWLINE";
     }
-#line 116 "src/main.vl"
+#line 117 "src/main.vl"
     if ((kind == TOK_SEMICOLON)) {
-#line 116 "src/main.vl"
+#line 117 "src/main.vl"
         return ";";
     }
-#line 117 "src/main.vl"
+#line 118 "src/main.vl"
     if ((kind == TOK_IDENTIFIER)) {
-#line 117 "src/main.vl"
+#line 118 "src/main.vl"
         return "IDENTIFIER";
     }
-#line 118 "src/main.vl"
+#line 119 "src/main.vl"
     if ((kind == TOK_INT_LIT)) {
-#line 118 "src/main.vl"
+#line 119 "src/main.vl"
         return "INT_LIT";
     }
-#line 119 "src/main.vl"
+#line 120 "src/main.vl"
     if ((kind == TOK_FLOAT_LIT)) {
-#line 119 "src/main.vl"
+#line 120 "src/main.vl"
         return "FLOAT_LIT";
     }
-#line 120 "src/main.vl"
+#line 121 "src/main.vl"
     if ((kind == TOK_STRING_LIT)) {
-#line 120 "src/main.vl"
+#line 121 "src/main.vl"
         return "STRING_LIT";
     }
-#line 121 "src/main.vl"
+#line 122 "src/main.vl"
     if ((kind == TOK_ACT)) {
-#line 121 "src/main.vl"
+#line 122 "src/main.vl"
         return "act";
     }
-#line 122 "src/main.vl"
+#line 123 "src/main.vl"
     if ((kind == TOK_DATA)) {
-#line 122 "src/main.vl"
+#line 123 "src/main.vl"
         return "data";
     }
-#line 123 "src/main.vl"
+#line 124 "src/main.vl"
     if ((kind == TOK_MUT)) {
-#line 123 "src/main.vl"
+#line 124 "src/main.vl"
         return "mut";
     }
-#line 124 "src/main.vl"
+#line 125 "src/main.vl"
     if ((kind == TOK_LET)) {
-#line 124 "src/main.vl"
+#line 125 "src/main.vl"
         return "let";
     }
-#line 125 "src/main.vl"
+#line 126 "src/main.vl"
     if ((kind == TOK_IF)) {
-#line 125 "src/main.vl"
+#line 126 "src/main.vl"
         return "if";
     }
-#line 126 "src/main.vl"
+#line 127 "src/main.vl"
     if ((kind == TOK_ELSE)) {
-#line 126 "src/main.vl"
+#line 127 "src/main.vl"
         return "else";
     }
-#line 127 "src/main.vl"
+#line 128 "src/main.vl"
     if ((kind == TOK_LOOP)) {
-#line 127 "src/main.vl"
+#line 128 "src/main.vl"
         return "loop";
     }
-#line 128 "src/main.vl"
+#line 129 "src/main.vl"
+    if ((kind == TOK_IN)) {
+#line 129 "src/main.vl"
+        return "in";
+    }
+#line 130 "src/main.vl"
     if ((kind == TOK_RETURN)) {
-#line 128 "src/main.vl"
+#line 130 "src/main.vl"
         return "return";
     }
-#line 129 "src/main.vl"
+#line 131 "src/main.vl"
     if ((kind == TOK_ZONE)) {
-#line 129 "src/main.vl"
+#line 131 "src/main.vl"
         return "zone";
     }
-#line 130 "src/main.vl"
+#line 132 "src/main.vl"
     if ((kind == TOK_DEFER)) {
-#line 130 "src/main.vl"
+#line 132 "src/main.vl"
         return "defer";
     }
-#line 131 "src/main.vl"
+#line 133 "src/main.vl"
+    if ((kind == TOK_EXTERN)) {
+#line 133 "src/main.vl"
+        return "extern";
+    }
+#line 134 "src/main.vl"
     if ((kind == TOK_USE)) {
-#line 131 "src/main.vl"
+#line 134 "src/main.vl"
         return "use";
     }
-#line 132 "src/main.vl"
+#line 135 "src/main.vl"
+    if ((kind == TOK_TRUE)) {
+#line 135 "src/main.vl"
+        return "true";
+    }
+#line 136 "src/main.vl"
+    if ((kind == TOK_FALSE)) {
+#line 136 "src/main.vl"
+        return "false";
+    }
+#line 137 "src/main.vl"
+    if ((kind == TOK_NULL)) {
+#line 137 "src/main.vl"
+        return "null";
+    }
+#line 138 "src/main.vl"
+    if ((kind == TOK_AS)) {
+#line 138 "src/main.vl"
+        return "as";
+    }
+#line 139 "src/main.vl"
+    if ((kind == TOK_AND)) {
+#line 139 "src/main.vl"
+        return "and";
+    }
+#line 140 "src/main.vl"
+    if ((kind == TOK_OR)) {
+#line 140 "src/main.vl"
+        return "or";
+    }
+#line 141 "src/main.vl"
+    if ((kind == TOK_NOT)) {
+#line 141 "src/main.vl"
+        return "not";
+    }
+#line 142 "src/main.vl"
+    if ((kind == TOK_BREAK)) {
+#line 142 "src/main.vl"
+        return "break";
+    }
+#line 143 "src/main.vl"
+    if ((kind == TOK_CONTINUE)) {
+#line 143 "src/main.vl"
+        return "continue";
+    }
+#line 144 "src/main.vl"
+    if ((kind == TOK_FAIL)) {
+#line 144 "src/main.vl"
+        return "fail";
+    }
+#line 145 "src/main.vl"
     if ((kind == TOK_AT)) {
-#line 132 "src/main.vl"
+#line 145 "src/main.vl"
         return "@";
     }
-#line 133 "src/main.vl"
+#line 146 "src/main.vl"
     if ((kind == TOK_LBRACE)) {
-#line 133 "src/main.vl"
+#line 146 "src/main.vl"
         return "{";
     }
-#line 134 "src/main.vl"
+#line 147 "src/main.vl"
     if ((kind == TOK_RBRACE)) {
-#line 134 "src/main.vl"
+#line 147 "src/main.vl"
         return "}";
     }
-#line 135 "src/main.vl"
+#line 148 "src/main.vl"
     if ((kind == TOK_LPAREN)) {
-#line 135 "src/main.vl"
+#line 148 "src/main.vl"
         return "(";
     }
-#line 136 "src/main.vl"
+#line 149 "src/main.vl"
     if ((kind == TOK_RPAREN)) {
-#line 136 "src/main.vl"
+#line 149 "src/main.vl"
         return ")";
     }
-#line 137 "src/main.vl"
+#line 150 "src/main.vl"
     if ((kind == TOK_COLON)) {
-#line 137 "src/main.vl"
+#line 150 "src/main.vl"
         return ":";
     }
-#line 138 "src/main.vl"
+#line 151 "src/main.vl"
     if ((kind == TOK_ASSIGN)) {
-#line 138 "src/main.vl"
+#line 151 "src/main.vl"
         return "=";
     }
-#line 139 "src/main.vl"
+#line 152 "src/main.vl"
     if ((kind == TOK_ARROW)) {
-#line 139 "src/main.vl"
+#line 152 "src/main.vl"
         return "->";
     }
-#line 140 "src/main.vl"
+#line 153 "src/main.vl"
     if ((kind == TOK_AMP)) {
-#line 140 "src/main.vl"
+#line 153 "src/main.vl"
         return "&";
     }
-#line 141 "src/main.vl"
+#line 154 "src/main.vl"
     if ((kind == TOK_PIPE)) {
-#line 141 "src/main.vl"
+#line 154 "src/main.vl"
         return "|";
     }
-#line 142 "src/main.vl"
+#line 155 "src/main.vl"
     if ((kind == TOK_CARET)) {
-#line 142 "src/main.vl"
+#line 155 "src/main.vl"
         return "^";
     }
-#line 143 "src/main.vl"
+#line 156 "src/main.vl"
     if ((kind == TOK_TILDE)) {
-#line 143 "src/main.vl"
+#line 156 "src/main.vl"
         return "~";
     }
-#line 144 "src/main.vl"
+#line 157 "src/main.vl"
     if ((kind == TOK_SHL)) {
-#line 144 "src/main.vl"
+#line 157 "src/main.vl"
         return "<<";
     }
-#line 145 "src/main.vl"
+#line 158 "src/main.vl"
     if ((kind == TOK_SHR)) {
-#line 145 "src/main.vl"
+#line 158 "src/main.vl"
         return ">>";
     }
-#line 146 "src/main.vl"
+#line 159 "src/main.vl"
     if ((kind == TOK_ON)) {
-#line 146 "src/main.vl"
+#line 159 "src/main.vl"
         return "on";
     }
-#line 147 "src/main.vl"
+#line 160 "src/main.vl"
     if ((kind == TOK_FAT_ARROW)) {
-#line 147 "src/main.vl"
+#line 160 "src/main.vl"
         return "=>";
     }
-#line 148 "src/main.vl"
+#line 161 "src/main.vl"
     if ((kind == TOK_DOTDOTEQ)) {
-#line 148 "src/main.vl"
+#line 161 "src/main.vl"
         return "..=";
     }
-#line 149 "src/main.vl"
+#line 162 "src/main.vl"
     if ((kind == TOK_KIND)) {
-#line 149 "src/main.vl"
+#line 162 "src/main.vl"
         return "kind";
     }
-#line 150 "src/main.vl"
+#line 163 "src/main.vl"
     if ((kind == TOK_OP)) {
-#line 150 "src/main.vl"
+#line 163 "src/main.vl"
         return "op";
     }
-#line 151 "src/main.vl"
+#line 164 "src/main.vl"
     if ((kind == TOK_HASH)) {
-#line 151 "src/main.vl"
+#line 164 "src/main.vl"
         return "#";
     }
-#line 152 "src/main.vl"
+#line 165 "src/main.vl"
     if ((kind == TOK_QUESTION)) {
-#line 152 "src/main.vl"
+#line 165 "src/main.vl"
         return "?";
     }
-#line 153 "src/main.vl"
+#line 166 "src/main.vl"
     if ((kind == TOK_DOUBLE_QUESTION)) {
-#line 153 "src/main.vl"
+#line 166 "src/main.vl"
         return "??";
     }
-#line 154 "src/main.vl"
+#line 167 "src/main.vl"
     if ((kind == TOK_BANG)) {
-#line 154 "src/main.vl"
+#line 167 "src/main.vl"
         return "!";
     }
-#line 155 "src/main.vl"
+#line 168 "src/main.vl"
     if ((kind == TOK_UNSAFE)) {
-#line 155 "src/main.vl"
+#line 168 "src/main.vl"
         return "unsafe";
     }
-#line 156 "src/main.vl"
+#line 169 "src/main.vl"
     if ((kind == TOK_PACT)) {
-#line 156 "src/main.vl"
+#line 169 "src/main.vl"
         return "pact";
     }
-#line 157 "src/main.vl"
+#line 170 "src/main.vl"
     if ((kind == TOK_VIEW)) {
-#line 157 "src/main.vl"
+#line 170 "src/main.vl"
         return "view";
     }
-#line 158 "src/main.vl"
+#line 171 "src/main.vl"
+    if ((kind == TOK_SIZEOF)) {
+#line 171 "src/main.vl"
+        return "sizeof";
+    }
+#line 172 "src/main.vl"
     if ((kind == TOK_COLON_GT)) {
-#line 158 "src/main.vl"
+#line 172 "src/main.vl"
         return ":>";
     }
-#line 159 "src/main.vl"
+#line 173 "src/main.vl"
     return "TOKEN";
 }
 
@@ -12465,506 +12532,511 @@ int32_t check_keyword(const char* source, size_t start, size_t len) {
 #line 45 "src/main.vl"
     if (velo_cmp_eq_u_s(len, 6)) {
 #line 46 "src/main.vl"
-        if ((((((velo_cmp_eq_u_s(source[start], 'r') && velo_cmp_eq_u_s(source[(start + 1)], 'e')) && velo_cmp_eq_u_s(source[(start + 2)], 't')) && velo_cmp_eq_u_s(source[(start + 3)], 'u')) && velo_cmp_eq_u_s(source[(start + 4)], 'r')) && velo_cmp_eq_u_s(source[(start + 5)], 'n'))) {
+        if ((((((velo_cmp_eq_u_s(source[start], 's') && velo_cmp_eq_u_s(source[(start + 1)], 'i')) && velo_cmp_eq_u_s(source[(start + 2)], 'z')) && velo_cmp_eq_u_s(source[(start + 3)], 'e')) && velo_cmp_eq_u_s(source[(start + 4)], 'o')) && velo_cmp_eq_u_s(source[(start + 5)], 'f'))) {
 #line 46 "src/main.vl"
+            return TOK_SIZEOF;
+        }
+#line 47 "src/main.vl"
+        if ((((((velo_cmp_eq_u_s(source[start], 'r') && velo_cmp_eq_u_s(source[(start + 1)], 'e')) && velo_cmp_eq_u_s(source[(start + 2)], 't')) && velo_cmp_eq_u_s(source[(start + 3)], 'u')) && velo_cmp_eq_u_s(source[(start + 4)], 'r')) && velo_cmp_eq_u_s(source[(start + 5)], 'n'))) {
+#line 47 "src/main.vl"
             return TOK_RETURN;
         }
-#line 47 "src/main.vl"
+#line 48 "src/main.vl"
         if ((((((velo_cmp_eq_u_s(source[start], 'e') && velo_cmp_eq_u_s(source[(start + 1)], 'x')) && velo_cmp_eq_u_s(source[(start + 2)], 't')) && velo_cmp_eq_u_s(source[(start + 3)], 'e')) && velo_cmp_eq_u_s(source[(start + 4)], 'r')) && velo_cmp_eq_u_s(source[(start + 5)], 'n'))) {
-#line 47 "src/main.vl"
+#line 48 "src/main.vl"
             return TOK_EXTERN;
         }
-#line 48 "src/main.vl"
+#line 49 "src/main.vl"
         if ((((((velo_cmp_eq_u_s(source[start], 'b') && velo_cmp_eq_u_s(source[(start + 1)], 'i')) && velo_cmp_eq_u_s(source[(start + 2)], 't')) && velo_cmp_eq_u_s(source[(start + 3)], 's')) && velo_cmp_eq_u_s(source[(start + 4)], 'e')) && velo_cmp_eq_u_s(source[(start + 5)], 't'))) {
-#line 48 "src/main.vl"
+#line 49 "src/main.vl"
             return TOK_BITSET;
         }
-#line 49 "src/main.vl"
+#line 50 "src/main.vl"
         if ((((((velo_cmp_eq_u_s(source[start], 'u') && velo_cmp_eq_u_s(source[(start + 1)], 'n')) && velo_cmp_eq_u_s(source[(start + 2)], 's')) && velo_cmp_eq_u_s(source[(start + 3)], 'a')) && velo_cmp_eq_u_s(source[(start + 4)], 'f')) && velo_cmp_eq_u_s(source[(start + 5)], 'e'))) {
-#line 49 "src/main.vl"
+#line 50 "src/main.vl"
             return TOK_UNSAFE;
         }
     } else
-#line 50 "src/main.vl"
+#line 51 "src/main.vl"
     if (velo_cmp_eq_u_s(len, 8)) {
-#line 51 "src/main.vl"
+#line 52 "src/main.vl"
         if ((((((((velo_cmp_eq_u_s(source[start], 'c') && velo_cmp_eq_u_s(source[(start + 1)], 'o')) && velo_cmp_eq_u_s(source[(start + 2)], 'n')) && velo_cmp_eq_u_s(source[(start + 3)], 't')) && velo_cmp_eq_u_s(source[(start + 4)], 'i')) && velo_cmp_eq_u_s(source[(start + 5)], 'n')) && velo_cmp_eq_u_s(source[(start + 6)], 'u')) && velo_cmp_eq_u_s(source[(start + 7)], 'e'))) {
-#line 51 "src/main.vl"
+#line 52 "src/main.vl"
             return TOK_CONTINUE;
         }
     }
-#line 53 "src/main.vl"
+#line 54 "src/main.vl"
     return TOK_IDENTIFIER;
 }
 
-#line 57 "src/main.vl"
-void tokenize(Lexer* lex) {
 #line 58 "src/main.vl"
-    const char* src = lex->source;
+void tokenize(Lexer* lex) {
 #line 59 "src/main.vl"
+    const char* src = lex->source;
+#line 60 "src/main.vl"
     size_t len = lex->source_len;
-#line 61 "src/main.vl"
-    for (int32_t it = 0; ((lex->pos < len)); it++) {
 #line 62 "src/main.vl"
-        size_t start_pos = lex->pos;
+    for (int32_t it = 0; ((lex->pos < len)); it++) {
 #line 63 "src/main.vl"
-        int32_t start_line = lex->line;
+        size_t start_pos = lex->pos;
 #line 64 "src/main.vl"
-        int32_t start_col = lex->col;
+        int32_t start_line = lex->line;
 #line 65 "src/main.vl"
+        int32_t start_col = lex->col;
+#line 66 "src/main.vl"
         uint8_t c = src[lex->pos];
-#line 67 "src/main.vl"
-        if ((velo_cmp_eq_u_s(c, 0) || velo_cmp_eq_u_s(c, '\0'))) {
 #line 68 "src/main.vl"
+        if ((velo_cmp_eq_u_s(c, 0) || velo_cmp_eq_u_s(c, '\0'))) {
+#line 69 "src/main.vl"
             lex->pos = len;
         } else
-#line 70 "src/main.vl"
-        if (is_whitespace(c)) {
 #line 71 "src/main.vl"
-            lex->pos += 1;
+        if (is_whitespace(c)) {
 #line 72 "src/main.vl"
+            lex->pos += 1;
+#line 73 "src/main.vl"
             lex->col += 1;
         } else
-#line 74 "src/main.vl"
-        if (is_newline(c)) {
 #line 75 "src/main.vl"
-            lex->pos += 1;
+        if (is_newline(c)) {
 #line 76 "src/main.vl"
-            lex->line += 1;
+            lex->pos += 1;
 #line 77 "src/main.vl"
-            lex->col = 1;
+            lex->line += 1;
 #line 78 "src/main.vl"
-            if (can_terminate_stmt(lex->last_kind)) {
+            lex->col = 1;
 #line 79 "src/main.vl"
+            if (can_terminate_stmt(lex->last_kind)) {
+#line 80 "src/main.vl"
                 add_token(lex, TOK_NEWLINE, start_pos, 1, start_line, start_col);
             }
         } else
-#line 81 "src/main.vl"
-        if (((velo_cmp_eq_u_s(c, '/') && ((lex->pos + 1) < len)) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '/'))) {
 #line 82 "src/main.vl"
-            for (int32_t it = 0; (((lex->pos < len) && velo_cmp_ne_u_s(src[lex->pos], '\n'))); it++) {
+        if (((velo_cmp_eq_u_s(c, '/') && ((lex->pos + 1) < len)) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '/'))) {
 #line 83 "src/main.vl"
+            for (int32_t it = 0; (((lex->pos < len) && velo_cmp_ne_u_s(src[lex->pos], '\n'))); it++) {
+#line 84 "src/main.vl"
                 lex->pos += 1;
                 __loop_cont_117: __attribute__((unused));
             }
             __loop_break_117: __attribute__((unused));
         } else
-#line 85 "src/main.vl"
-        if (((velo_cmp_eq_u_s(c, '/') && ((lex->pos + 1) < len)) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '*'))) {
 #line 86 "src/main.vl"
-            lex->pos += 2;
+        if (((velo_cmp_eq_u_s(c, '/') && ((lex->pos + 1) < len)) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '*'))) {
 #line 87 "src/main.vl"
-            lex->col += 2;
+            lex->pos += 2;
 #line 88 "src/main.vl"
-            size_t depth = 1;
+            lex->col += 2;
 #line 89 "src/main.vl"
-            for (int32_t it = 0; ((((lex->pos + 1) < len) && velo_cmp_gt_u_s(depth, 0))); it++) {
+            size_t depth = 1;
 #line 90 "src/main.vl"
-                if ((velo_cmp_eq_u_s(src[lex->pos], '/') && velo_cmp_eq_u_s(src[(lex->pos + 1)], '*'))) {
+            for (int32_t it = 0; ((((lex->pos + 1) < len) && velo_cmp_gt_u_s(depth, 0))); it++) {
 #line 91 "src/main.vl"
-                    lex->pos += 2;
+                if ((velo_cmp_eq_u_s(src[lex->pos], '/') && velo_cmp_eq_u_s(src[(lex->pos + 1)], '*'))) {
 #line 92 "src/main.vl"
-                    lex->col += 2;
+                    lex->pos += 2;
 #line 93 "src/main.vl"
+                    lex->col += 2;
+#line 94 "src/main.vl"
                     depth += 1;
                 } else
-#line 94 "src/main.vl"
-                if ((velo_cmp_eq_u_s(src[lex->pos], '*') && velo_cmp_eq_u_s(src[(lex->pos + 1)], '/'))) {
 #line 95 "src/main.vl"
-                    lex->pos += 2;
+                if ((velo_cmp_eq_u_s(src[lex->pos], '*') && velo_cmp_eq_u_s(src[(lex->pos + 1)], '/'))) {
 #line 96 "src/main.vl"
-                    lex->col += 2;
+                    lex->pos += 2;
 #line 97 "src/main.vl"
+                    lex->col += 2;
+#line 98 "src/main.vl"
                     depth -= 1;
                 } else {
-#line 99 "src/main.vl"
-                    if (velo_cmp_eq_u_s(src[lex->pos], '\n')) {
 #line 100 "src/main.vl"
-                        lex->line += 1;
+                    if (velo_cmp_eq_u_s(src[lex->pos], '\n')) {
 #line 101 "src/main.vl"
+                        lex->line += 1;
+#line 102 "src/main.vl"
                         lex->col = 1;
                     } else {
-#line 103 "src/main.vl"
+#line 104 "src/main.vl"
                         lex->col += 1;
                     }
-#line 105 "src/main.vl"
+#line 106 "src/main.vl"
                     lex->pos += 1;
                 }
                 __loop_cont_118: __attribute__((unused));
             }
             __loop_break_118: __attribute__((unused));
-#line 108 "src/main.vl"
-            if (velo_cmp_gt_u_s(depth, 0)) {
 #line 109 "src/main.vl"
-                report_warning("lexer", start_line, start_col, "Unclosed block comment");
+            if (velo_cmp_gt_u_s(depth, 0)) {
 #line 110 "src/main.vl"
+                report_warning("lexer", start_line, start_col, "Unclosed block comment");
+#line 111 "src/main.vl"
                 pretty_render_block(lex->file_path, start_line, start_col, 2, "Unclosed block comment", "warning", lex->source);
             }
         } else
-#line 112 "src/main.vl"
-        if (is_ident_start(c)) {
 #line 113 "src/main.vl"
-            for (int32_t it = 0; (((lex->pos < len) && is_ident_part(src[lex->pos]))); it++) {
+        if (is_ident_start(c)) {
 #line 114 "src/main.vl"
-                lex->pos += 1;
+            for (int32_t it = 0; (((lex->pos < len) && is_ident_part(src[lex->pos]))); it++) {
 #line 115 "src/main.vl"
+                lex->pos += 1;
+#line 116 "src/main.vl"
                 lex->col += 1;
                 __loop_cont_119: __attribute__((unused));
             }
             __loop_break_119: __attribute__((unused));
-#line 117 "src/main.vl"
-            size_t tok_len = (lex->pos - start_pos);
 #line 118 "src/main.vl"
+            size_t tok_len = (lex->pos - start_pos);
+#line 119 "src/main.vl"
             int32_t kind = check_keyword(src, start_pos, tok_len);
-#line 120 "src/main.vl"
-            if (((((kind == TOK_SHELF) || (kind == TOK_MAP)) && (lex->last_kind != TOK_HEAP)) && ((lex->pos >= len) || velo_cmp_ne_u_s(src[lex->pos], '[')))) {
 #line 121 "src/main.vl"
+            if (((((kind == TOK_SHELF) || (kind == TOK_MAP)) && (lex->last_kind != TOK_HEAP)) && ((lex->pos >= len) || velo_cmp_ne_u_s(src[lex->pos], '[')))) {
+#line 122 "src/main.vl"
                 kind = TOK_IDENTIFIER;
             }
-#line 123 "src/main.vl"
+#line 124 "src/main.vl"
             add_token(lex, kind, start_pos, tok_len, start_line, start_col);
         } else
-#line 124 "src/main.vl"
-        if (is_digit(c)) {
 #line 125 "src/main.vl"
+        if (is_digit(c)) {
+#line 126 "src/main.vl"
             lex_number(lex, start_pos, start_line, start_col);
         } else
-#line 127 "src/main.vl"
-        if (velo_cmp_eq_u_s(c, '`')) {
 #line 128 "src/main.vl"
+        if (velo_cmp_eq_u_s(c, '`')) {
+#line 129 "src/main.vl"
             lex_raw_string(lex, start_pos, start_line, start_col);
         } else
-#line 130 "src/main.vl"
-        if (velo_cmp_eq_u_s(c, '"')) {
 #line 131 "src/main.vl"
+        if (velo_cmp_eq_u_s(c, '"')) {
+#line 132 "src/main.vl"
             lex_string(lex, start_pos, start_line, start_col);
         } else
-#line 133 "src/main.vl"
-        if (velo_cmp_eq_u_s(c, '\'')) {
 #line 134 "src/main.vl"
+        if (velo_cmp_eq_u_s(c, '\'')) {
+#line 135 "src/main.vl"
             lex_char(lex, start_pos, start_line, start_col);
         } else {
-#line 138 "src/main.vl"
-            size_t op_len = 1;
 #line 139 "src/main.vl"
+            size_t op_len = 1;
+#line 140 "src/main.vl"
             int32_t op_kind = TOK_EOF;
-#line 141 "src/main.vl"
+#line 142 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '@')) {
-#line 141 "src/main.vl"
+#line 142 "src/main.vl"
                 op_kind = TOK_AT;
             } else
-#line 142 "src/main.vl"
+#line 143 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '+')) {
-#line 143 "src/main.vl"
+#line 144 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '='))) {
-#line 143 "src/main.vl"
+#line 144 "src/main.vl"
                     op_len = 2;
-#line 143 "src/main.vl"
+#line 144 "src/main.vl"
                     op_kind = TOK_PLUS_ASSIGN;
                 } else {
-#line 144 "src/main.vl"
+#line 145 "src/main.vl"
                     op_kind = TOK_PLUS;
                 }
             } else
-#line 145 "src/main.vl"
+#line 146 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '-')) {
-#line 146 "src/main.vl"
+#line 147 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '>'))) {
-#line 146 "src/main.vl"
+#line 147 "src/main.vl"
                     op_len = 2;
-#line 146 "src/main.vl"
+#line 147 "src/main.vl"
                     op_kind = TOK_ARROW;
                 } else
-#line 147 "src/main.vl"
+#line 148 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '='))) {
-#line 147 "src/main.vl"
+#line 148 "src/main.vl"
                     op_len = 2;
-#line 147 "src/main.vl"
+#line 148 "src/main.vl"
                     op_kind = TOK_MINUS_ASSIGN;
                 } else {
-#line 148 "src/main.vl"
+#line 149 "src/main.vl"
                     op_kind = TOK_MINUS;
                 }
             } else
-#line 149 "src/main.vl"
+#line 150 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '*')) {
-#line 150 "src/main.vl"
+#line 151 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '='))) {
-#line 150 "src/main.vl"
+#line 151 "src/main.vl"
                     op_len = 2;
-#line 150 "src/main.vl"
+#line 151 "src/main.vl"
                     op_kind = TOK_STAR_ASSIGN;
                 } else {
-#line 151 "src/main.vl"
+#line 152 "src/main.vl"
                     op_kind = TOK_STAR;
                 }
             } else
-#line 152 "src/main.vl"
+#line 153 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '/')) {
-#line 153 "src/main.vl"
+#line 154 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '='))) {
-#line 153 "src/main.vl"
+#line 154 "src/main.vl"
                     op_len = 2;
-#line 153 "src/main.vl"
+#line 154 "src/main.vl"
                     op_kind = TOK_SLASH_ASSIGN;
                 } else {
-#line 154 "src/main.vl"
+#line 155 "src/main.vl"
                     op_kind = TOK_SLASH;
                 }
             } else
-#line 155 "src/main.vl"
+#line 156 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '%')) {
-#line 155 "src/main.vl"
+#line 156 "src/main.vl"
                 op_kind = TOK_PERCENT;
             } else
-#line 156 "src/main.vl"
-            if (velo_cmp_eq_u_s(c, '.')) {
 #line 157 "src/main.vl"
+            if (velo_cmp_eq_u_s(c, '.')) {
+#line 158 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '.'))) {
-#line 158 "src/main.vl"
+#line 159 "src/main.vl"
                     if ((((lex->pos + 2) < len) && velo_cmp_eq_u_s(src[(lex->pos + 2)], '='))) {
-#line 158 "src/main.vl"
+#line 159 "src/main.vl"
                         op_len = 3;
-#line 158 "src/main.vl"
+#line 159 "src/main.vl"
                         op_kind = TOK_DOTDOTEQ;
                     } else {
-#line 159 "src/main.vl"
+#line 160 "src/main.vl"
                         op_len = 2;
-#line 159 "src/main.vl"
+#line 160 "src/main.vl"
                         op_kind = TOK_DOTDOT;
                     }
                 } else {
-#line 160 "src/main.vl"
+#line 161 "src/main.vl"
                     op_kind = TOK_DOT;
                 }
             } else
-#line 161 "src/main.vl"
+#line 162 "src/main.vl"
             if (velo_cmp_eq_u_s(c, ':')) {
-#line 162 "src/main.vl"
+#line 163 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '>'))) {
-#line 162 "src/main.vl"
+#line 163 "src/main.vl"
                     op_len = 2;
-#line 162 "src/main.vl"
+#line 163 "src/main.vl"
                     op_kind = TOK_COLON_GT;
                 } else {
-#line 163 "src/main.vl"
+#line 164 "src/main.vl"
                     op_kind = TOK_COLON;
                 }
             } else
-#line 165 "src/main.vl"
+#line 166 "src/main.vl"
             if (velo_cmp_eq_u_s(c, ';')) {
-#line 165 "src/main.vl"
+#line 166 "src/main.vl"
                 op_kind = TOK_SEMICOLON;
             } else
-#line 166 "src/main.vl"
+#line 167 "src/main.vl"
             if (velo_cmp_eq_u_s(c, ',')) {
-#line 166 "src/main.vl"
+#line 167 "src/main.vl"
                 op_kind = TOK_COMMA;
             } else
-#line 167 "src/main.vl"
+#line 168 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '=')) {
-#line 168 "src/main.vl"
+#line 169 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '='))) {
-#line 168 "src/main.vl"
+#line 169 "src/main.vl"
                     op_len = 2;
-#line 168 "src/main.vl"
+#line 169 "src/main.vl"
                     op_kind = TOK_EQ;
                 } else
-#line 169 "src/main.vl"
+#line 170 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '>'))) {
-#line 169 "src/main.vl"
+#line 170 "src/main.vl"
                     op_len = 2;
-#line 169 "src/main.vl"
+#line 170 "src/main.vl"
                     op_kind = TOK_FAT_ARROW;
                 } else {
-#line 170 "src/main.vl"
+#line 171 "src/main.vl"
                     op_kind = TOK_ASSIGN;
                 }
             } else
-#line 171 "src/main.vl"
+#line 172 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '?')) {
-#line 172 "src/main.vl"
+#line 173 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '?'))) {
-#line 172 "src/main.vl"
+#line 173 "src/main.vl"
                     op_len = 2;
-#line 172 "src/main.vl"
+#line 173 "src/main.vl"
                     op_kind = TOK_DOUBLE_QUESTION;
                 } else {
-#line 173 "src/main.vl"
+#line 174 "src/main.vl"
                     op_kind = TOK_QUESTION;
                 }
             } else
-#line 174 "src/main.vl"
+#line 175 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '!')) {
-#line 175 "src/main.vl"
+#line 176 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '='))) {
-#line 175 "src/main.vl"
+#line 176 "src/main.vl"
                     op_len = 2;
-#line 175 "src/main.vl"
+#line 176 "src/main.vl"
                     op_kind = TOK_NEQ;
                 } else {
-#line 176 "src/main.vl"
+#line 177 "src/main.vl"
                     op_kind = TOK_BANG;
                 }
             } else
-#line 177 "src/main.vl"
-            if (velo_cmp_eq_u_s(c, '<')) {
 #line 178 "src/main.vl"
+            if (velo_cmp_eq_u_s(c, '<')) {
+#line 179 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '<'))) {
-#line 179 "src/main.vl"
+#line 180 "src/main.vl"
                     if ((((lex->pos + 2) < len) && velo_cmp_eq_u_s(src[(lex->pos + 2)], '='))) {
-#line 179 "src/main.vl"
+#line 180 "src/main.vl"
                         op_len = 3;
-#line 179 "src/main.vl"
+#line 180 "src/main.vl"
                         op_kind = TOK_SHL_ASSIGN;
                     } else {
-#line 180 "src/main.vl"
+#line 181 "src/main.vl"
                         op_len = 2;
-#line 180 "src/main.vl"
+#line 181 "src/main.vl"
                         op_kind = TOK_SHL;
                     }
                 } else
-#line 181 "src/main.vl"
+#line 182 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '='))) {
-#line 181 "src/main.vl"
+#line 182 "src/main.vl"
                     op_len = 2;
-#line 181 "src/main.vl"
+#line 182 "src/main.vl"
                     op_kind = TOK_LTE;
                 } else {
-#line 182 "src/main.vl"
+#line 183 "src/main.vl"
                     op_kind = TOK_LT;
                 }
             } else
-#line 183 "src/main.vl"
-            if (velo_cmp_eq_u_s(c, '>')) {
 #line 184 "src/main.vl"
+            if (velo_cmp_eq_u_s(c, '>')) {
+#line 185 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '>'))) {
-#line 185 "src/main.vl"
+#line 186 "src/main.vl"
                     if ((((lex->pos + 2) < len) && velo_cmp_eq_u_s(src[(lex->pos + 2)], '='))) {
-#line 185 "src/main.vl"
+#line 186 "src/main.vl"
                         op_len = 3;
-#line 185 "src/main.vl"
+#line 186 "src/main.vl"
                         op_kind = TOK_SHR_ASSIGN;
                     } else {
-#line 186 "src/main.vl"
+#line 187 "src/main.vl"
                         op_len = 2;
-#line 186 "src/main.vl"
+#line 187 "src/main.vl"
                         op_kind = TOK_SHR;
                     }
                 } else
-#line 187 "src/main.vl"
+#line 188 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '='))) {
-#line 187 "src/main.vl"
+#line 188 "src/main.vl"
                     op_len = 2;
-#line 187 "src/main.vl"
+#line 188 "src/main.vl"
                     op_kind = TOK_GTE;
                 } else {
-#line 188 "src/main.vl"
+#line 189 "src/main.vl"
                     op_kind = TOK_GT;
                 }
             } else
-#line 189 "src/main.vl"
+#line 190 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '&')) {
-#line 190 "src/main.vl"
+#line 191 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '='))) {
-#line 190 "src/main.vl"
+#line 191 "src/main.vl"
                     op_len = 2;
-#line 190 "src/main.vl"
+#line 191 "src/main.vl"
                     op_kind = TOK_AMP_ASSIGN;
                 } else {
-#line 191 "src/main.vl"
+#line 192 "src/main.vl"
                     op_kind = TOK_AMP;
                 }
             } else
-#line 192 "src/main.vl"
+#line 193 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '|')) {
-#line 193 "src/main.vl"
+#line 194 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '='))) {
-#line 193 "src/main.vl"
+#line 194 "src/main.vl"
                     op_len = 2;
-#line 193 "src/main.vl"
+#line 194 "src/main.vl"
                     op_kind = TOK_PIPE_ASSIGN;
                 } else {
-#line 194 "src/main.vl"
+#line 195 "src/main.vl"
                     op_kind = TOK_PIPE;
                 }
             } else
-#line 195 "src/main.vl"
+#line 196 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '^')) {
-#line 196 "src/main.vl"
+#line 197 "src/main.vl"
                 if ((((lex->pos + 1) < len) && velo_cmp_eq_u_s(src[(lex->pos + 1)], '='))) {
-#line 196 "src/main.vl"
+#line 197 "src/main.vl"
                     op_len = 2;
-#line 196 "src/main.vl"
+#line 197 "src/main.vl"
                     op_kind = TOK_CARET_ASSIGN;
                 } else {
-#line 197 "src/main.vl"
+#line 198 "src/main.vl"
                     op_kind = TOK_CARET;
                 }
             } else
-#line 198 "src/main.vl"
+#line 199 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '~')) {
-#line 198 "src/main.vl"
+#line 199 "src/main.vl"
                 op_kind = TOK_TILDE;
             } else
-#line 199 "src/main.vl"
+#line 200 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '(')) {
-#line 199 "src/main.vl"
+#line 200 "src/main.vl"
                 op_kind = TOK_LPAREN;
             } else
-#line 199 "src/main.vl"
+#line 200 "src/main.vl"
             if (velo_cmp_eq_u_s(c, ')')) {
-#line 199 "src/main.vl"
+#line 200 "src/main.vl"
                 op_kind = TOK_RPAREN;
             } else
-#line 200 "src/main.vl"
+#line 201 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '{')) {
-#line 200 "src/main.vl"
+#line 201 "src/main.vl"
                 op_kind = TOK_LBRACE;
             } else
-#line 200 "src/main.vl"
+#line 201 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '}')) {
-#line 200 "src/main.vl"
+#line 201 "src/main.vl"
                 op_kind = TOK_RBRACE;
             } else
-#line 201 "src/main.vl"
+#line 202 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '[')) {
-#line 201 "src/main.vl"
+#line 202 "src/main.vl"
                 op_kind = TOK_LBRACKET;
             } else
-#line 201 "src/main.vl"
+#line 202 "src/main.vl"
             if (velo_cmp_eq_u_s(c, ']')) {
-#line 201 "src/main.vl"
+#line 202 "src/main.vl"
                 op_kind = TOK_RBRACKET;
             } else
-#line 202 "src/main.vl"
+#line 203 "src/main.vl"
             if (velo_cmp_eq_u_s(c, '#')) {
-#line 202 "src/main.vl"
+#line 203 "src/main.vl"
                 op_kind = TOK_HASH;
             }
-#line 204 "src/main.vl"
-            if ((op_kind != TOK_EOF)) {
 #line 205 "src/main.vl"
-                add_token(lex, op_kind, start_pos, op_len, start_line, start_col);
+            if ((op_kind != TOK_EOF)) {
 #line 206 "src/main.vl"
-                lex->pos += op_len;
+                add_token(lex, op_kind, start_pos, op_len, start_line, start_col);
 #line 207 "src/main.vl"
+                lex->pos += op_len;
+#line 208 "src/main.vl"
                 lex->col += ((int32_t)(op_len));
             } else {
-#line 209 "src/main.vl"
-                report_warning("lexer", start_line, start_col, "Unknown character encountered");
 #line 210 "src/main.vl"
-                pretty_render_block(lex->file_path, start_line, start_col, 1, "Unknown character encountered", "warning", lex->source);
+                report_warning("lexer", start_line, start_col, "Unknown character encountered");
 #line 211 "src/main.vl"
-                lex->pos += 1;
+                pretty_render_block(lex->file_path, start_line, start_col, 1, "Unknown character encountered", "warning", lex->source);
 #line 212 "src/main.vl"
+                lex->pos += 1;
+#line 213 "src/main.vl"
                 lex->col += 1;
             }
         }
         __loop_cont_116: __attribute__((unused));
     }
     __loop_break_116: __attribute__((unused));
-#line 217 "src/main.vl"
+#line 218 "src/main.vl"
     add_token(lex, TOK_EOF, lex->pos, 0, lex->line, lex->col);
 }
 
@@ -17434,7 +17506,7 @@ ExprNode* parse_primary(Parser* p) {
         return make_array_lit_expr(first_elem, elem_count, lb.line, lb.col);
     }
 #line 308 "src/main.vl"
-    if (parser_check(p, TOK_IDENTIFIER)) {
+    if ((parser_check(p, TOK_IDENTIFIER) || parser_check(p, TOK_SIZEOF))) {
 #line 309 "src/main.vl"
         Token tok = parser_advance(p);
 #line 310 "src/main.vl"
