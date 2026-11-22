@@ -1,0 +1,198 @@
+// Pure Velo unit test suite for std.time.tz (timezone and local time subsystem).
+use "../../mem/arena.vl"
+use "../../str/slice.vl"
+use "../../io/print.vl"
+use "../../time/calendar.vl"
+use "../../time/tz.vl"
+
+act test_tz_constructors() -> bool {
+    let u = tz_utc()
+    if u.offset != 0 or u.dst { return false }
+    if u.name != "UTC" { return false }
+
+    let jst = tz_make("JST", 32400)
+    if jst.offset != 32400 or jst.dst { return false }
+    if jst.name != "JST" { return false }
+
+    let edt = tz_with_dst("EDT", -14400, true)
+    if edt.offset != -14400 or !edt.dst { return false }
+    if edt.name != "EDT" { return false }
+
+    return true
+}
+
+act test_tz_offsets_and_posix() -> bool {
+    if tz_parse_offset("+05:30") != 19800 { return false }
+    if tz_parse_offset("-05:00") != -18000 { return false }
+    if tz_parse_offset("+0900") != 32400 { return false }
+    if tz_parse_offset("+02") != 7200 { return false }
+    if tz_parse_offset("UTC") != 0 { return false }
+    if tz_parse_offset("Z") != 0 { return false }
+    if tz_parse_offset("") != 0 { return false }
+
+    let est = tz_parse_posix("EST5")
+    if est.offset != -18000 or est.dst { return false }
+    if est.name != "EST" { return false }
+
+    let jst2 = tz_parse_posix("JST-9")
+    if jst2.offset != 32400 or jst2.dst { return false }
+    if jst2.name != "JST" { return false }
+
+    return true
+}
+
+act test_time_conversions() -> bool {
+    // 2026-01-01 12:00:00 UTC (1767268800)
+    let utc_dt = time_epoch_to_datetime(1767268800)
+    if utc_dt.year != 2026 or utc_dt.month != 1 or utc_dt.day != 1 { return false }
+    if utc_dt.hour != 12 or utc_dt.minute != 0 or utc_dt.second != 0 { return false }
+
+    let ist = tz_make("IST", 19800) // +05:30
+    let ist_dt = time_to_local(@utc_dt, @ist)
+    if ist_dt.year != 2026 or ist_dt.month != 1 or ist_dt.day != 1 { return false }
+    if ist_dt.hour != 17 or ist_dt.minute != 30 or ist_dt.second != 0 { return false }
+
+    let back_utc = time_to_utc(@ist_dt, @ist)
+    if back_utc.year != 2026 or back_utc.month != 1 or back_utc.day != 1 { return false }
+    if back_utc.hour != 12 or back_utc.minute != 0 or back_utc.second != 0 { return false }
+
+    // Date change across midnight forward: 22:00 UTC + 05:30 -> next day 03:30
+    let late_utc = time_epoch_to_datetime(1767304800)
+    let late_ist = time_local(@late_utc, @ist)
+    if late_ist.year != 2026 or late_ist.month != 1 or late_ist.day != 2 { return false }
+    if late_ist.hour != 3 or late_ist.minute != 30 or late_ist.second != 0 { return false }
+
+    // Date change across midnight backward: 02:00 UTC on 2026-01-01 - 05:00 -> 2025-12-31 21:00
+    let est = tz_make("EST", -18000)
+    let early_utc = time_epoch_to_datetime(1767232800)
+    let early_est = time_to_local(@early_utc, @est)
+    if early_est.year != 2025 or early_est.month != 12 or early_est.day != 31 { return false }
+    if early_est.hour != 21 or early_est.minute != 0 or early_est.second != 0 { return false }
+
+    let early_back = time_to_utc(@early_est, @est)
+    if early_back.year != 2026 or early_back.month != 1 or early_back.day != 1 { return false }
+    if early_back.hour != 2 or early_back.minute != 0 { return false }
+
+    return true
+}
+
+act test_iso8601_tz_formatting() -> bool {
+    mut arena = arena_init(4096)
+    defer arena_reset(@arena)
+
+    let utc_dt = time_epoch_to_datetime(1767268800)
+    let ist = tz_make("IST", 19800)
+    let ist_dt = time_to_local(@utc_dt, @ist)
+
+    mut buf = arena_alloc(@arena, 64, 1)
+    let sl_ist = time_format_iso8601_tz(@ist_dt, @ist, buf, 64)
+    if !slice_eq_str(sl_ist, "2026-01-01T17:30:00+05:30") {
+        return false
+    }
+
+    let u = tz_utc()
+    mut buf2 = arena_alloc(@arena, 64, 1)
+    let sl_utc = time_format_iso8601_tz(@utc_dt, @u, buf2, 64)
+    if !slice_eq_str(sl_utc, "2026-01-01T12:00:00Z") {
+        return false
+    }
+
+    let est = tz_make("EST", -18000)
+    let early_utc = time_epoch_to_datetime(1767232800)
+    let early_est = time_to_local(@early_utc, @est)
+    mut buf3 = arena_alloc(@arena, 64, 1)
+    let sl_est = time_format_iso8601_tz(@early_est, @est, buf3, 64)
+    if !slice_eq_str(sl_est, "2025-12-31T21:00:00-05:00") {
+        return false
+    }
+
+    let s = time_format_iso8601_tz_str(@arena, @ist_dt, @ist)
+    if !slice_eq_str(slice_from_str(s), "2026-01-01T17:30:00+05:30") {
+        return false
+    }
+
+    return true
+}
+
+act test_tz_sys_and_local() -> bool {
+    let tz = tz_sys()
+    if tz.name == null { return false }
+
+    let now_local = time_now_local()
+    if now_local.year < 2026 { return false }
+    if now_local.month < 1 or now_local.month > 12 { return false }
+    if now_local.day < 1 or now_local.day > 31 { return false }
+    if now_local.hour < 0 or now_local.hour > 23 { return false }
+    if now_local.minute < 0 or now_local.minute > 59 { return false }
+
+    return true
+}
+
+act test_tzif_parsing() -> bool {
+    // Minimal 59-byte TZif v1 buffer: timecnt=1 at 0, ttinfo[0] = { utoff: -18000, isdst: 0, desigidx: 0 }, chars: "EST\0"
+    mut raw_tzif: [59]u8
+    raw_tzif[0] = 84 as u8   // 'T'
+    raw_tzif[1] = 90 as u8   // 'Z'
+    raw_tzif[2] = 105 as u8  // 'i'
+    raw_tzif[3] = 102 as u8  // 'f'
+    raw_tzif[4] = 0 as u8    // v1
+    // offsets 5..31 are 0
+    raw_tzif[35] = 1 as u8   // timecnt = 1
+    raw_tzif[39] = 1 as u8   // typecnt = 1
+    raw_tzif[43] = 4 as u8   // charcnt = 4
+    // transitions[0] = 0 (bytes 44..47)
+    // indices[0] = 0 (byte 48)
+    // ttinfo[0]: utoff = -18000 (0xFFFFB9B0)
+    raw_tzif[49] = 255 as u8
+    raw_tzif[50] = 255 as u8
+    raw_tzif[51] = 185 as u8
+    raw_tzif[52] = 176 as u8
+    raw_tzif[53] = 0 as u8   // isdst = 0
+    raw_tzif[54] = 0 as u8   // desigidx = 0
+    // chars: "EST\0"
+    raw_tzif[55] = 69 as u8  // 'E'
+    raw_tzif[56] = 83 as u8  // 'S'
+    raw_tzif[57] = 84 as u8  // 'T'
+    raw_tzif[58] = 0 as u8
+
+    let parsed = tz_parse_tzif_data(@raw_tzif[0], 59, 1000)
+    if parsed.offset != -18000 or parsed.dst { return false }
+    if parsed.name != "EST" { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_tz_constructors() {
+        println_str("FAIL: test_tz_constructors")
+        return 1
+    }
+
+    if !test_tz_offsets_and_posix() {
+        println_str("FAIL: test_tz_offsets_and_posix")
+        return 2
+    }
+
+    if !test_time_conversions() {
+        println_str("FAIL: test_time_conversions")
+        return 3
+    }
+
+    if !test_iso8601_tz_formatting() {
+        println_str("FAIL: test_iso8601_tz_formatting")
+        return 4
+    }
+
+    if !test_tz_sys_and_local() {
+        println_str("FAIL: test_tz_sys_and_local")
+        return 5
+    }
+
+    if !test_tzif_parsing() {
+        println_str("FAIL: test_tzif_parsing")
+        return 6
+    }
+
+    println_str("PASS: std.time.tz all tests passed")
+    return 0
+}

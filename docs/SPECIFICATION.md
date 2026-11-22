@@ -1907,6 +1907,68 @@ act main() {
 }
 ```
 
+---
+
+## 14. Standard Time & Timezone Subsystem (`std.time`)
+
+Velo provides high-resolution monotonic timing, wall-clock epoch timestamps, Gregorian civil calendar conversions, ISO-8601 formatting, and cross-platform timezone management with local time conversion (`std/time/tz.vl`).
+
+### 14.1 Timezone Representation (`Tz`)
+
+A timezone in Velo is represented by the `Tz` data structure:
+
+```velo
+view data Tz {
+    name: string   // Timezone name or offset descriptor (e.g. "UTC", "EST", "India Standard Time", "+05:30")
+    offset: i32    // Offset from UTC in seconds (positive east of UTC, negative west of UTC)
+    dst: bool      // True if daylight saving time (DST) is active
+}
+```
+
+### 14.2 Core Timezone Acts
+
+- **`tz_sys() -> Tz`:** Detects and returns the system local timezone of the host operating system. On Windows, this reads the system timezone configuration via Win32 `GetTimeZoneInformation`. On Linux and macOS, it reads `/etc/localtime` (or `/var/db/timezone/zoneinfo`) via direct `TZif` binary file parsing (RFC 8536 / RFC 4833) with fallback to POSIX `localtime_r`.
+- **`tz_utc() -> Tz`:** Returns the standard UTC timezone (`offset: 0`, `dst: false`, `name: "UTC"`).
+- **`tz_make(name: string, offset_sec: i32) -> Tz`:** Constructs a fixed-offset timezone descriptor (`dst: false`).
+- **`tz_with_dst(name: string, offset_sec: i32, dst: bool) -> Tz`:** Constructs a timezone descriptor with explicit DST status.
+- **`tz_parse_offset(str_offset: string) -> i32`:** Parses ISO offset strings (`"+05:30"`, `"-05:00"`, `"+0900"`, `"Z"`, `"UTC"`) into total seconds.
+- **`tz_parse_posix(tz_str: string) -> Tz`:** Parses POSIX-TZ environment variable strings (`"EST5EDT,M3.2.0,M11.1.0"`, `"JST-9"`, `"UTC0"`).
+- **`tz_parse_tzif_data(buf: @u8, len: usize, now_s: i64) -> Tz`:** Parses raw binary `TZif` v1, v2, or v3 data and resolves the active UTC offset and abbreviation for the given epoch timestamp.
+
+### 14.3 Local Time Conversions & Formatting
+
+- **`time_now_local() -> DateTime`:** Returns the current wall-clock date and time in the system's local timezone.
+- **`time_to_local(dt: @DateTime, tz: @Tz) -> DateTime`** (alias **`time_local`**): Converts a UTC `DateTime` to a local `DateTime` in the given `tz`.
+- **`time_to_utc(dt: @DateTime, tz: @Tz) -> DateTime`:** Converts a local `DateTime` in `tz` back to UTC.
+- **`time_format_iso8601_tz(dt: @DateTime, tz: @Tz, dest: @u8, dest_cap: usize) -> StrSlice`:** Formats a timestamp with timezone offset (`"2026-11-22T17:30:00+05:30"` or `"Z"`).
+- **`time_format_iso8601_tz_str(a: @Arena, dt: @DateTime, tz: @Tz) -> string`:** Regional Arena-allocated variant of `time_format_iso8601_tz`.
+
+```velo
+use std.time
+use std.io
+
+act main() {
+    // 1. Current system local time and zone
+    let sys_tz = tz_sys()
+    let local_dt = time_now_local()
+    io.println("System zone: " + sys_tz.name)
+
+    // 2. Convert UTC timestamp to custom timezone
+    let utc_dt = time_epoch_to_datetime(1767268800) // 2026-01-01 12:00:00 UTC
+    let tokyo = tz_make("JST", 9 * 3600)
+    let tokyo_dt = time_to_local(@utc_dt, @tokyo)
+
+    // 3. Convert back to UTC
+    let back_utc = time_to_utc(@tokyo_dt, @tokyo)
+
+    // 4. ISO-8601 with offset
+    mut buf: [32]u8
+    let s = time_format_iso8601_tz(@tokyo_dt, @tokyo, @buf[0], 32)
+    // s == "2026-01-01T21:00:00+09:00"
+}
+```
+
+
 
 
 

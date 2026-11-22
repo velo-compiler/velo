@@ -1,0 +1,208 @@
+// Pure Velo timezone and local time subsystem for Windows.
+// Reads local system timezone via Win32 GetTimeZoneInformation and provides
+// Tz representation, local-to-UTC / UTC-to-local conversions, and ISO-8601 formatting with offsets.
+use "clock.vl"
+use "calendar.vl"
+use "tz_tzif.vl"
+use "../str/slice.vl"
+use "../mem/heap.vl"
+use "../mem/arena.vl"
+
+// Win32 GetTimeZoneInformation foreign binding
+view extern act GetTimeZoneInformation(lpTimeZoneInformation: @u8) -> u32
+
+view let TIME_ZONE_ID_INVALID: u32 = 4294967295 as u32
+view let TIME_ZONE_ID_UNKNOWN: u32 = 0 as u32
+view let TIME_ZONE_ID_STANDARD: u32 = 1 as u32
+view let TIME_ZONE_ID_DAYLIGHT: u32 = 2 as u32
+
+// Returns the system local timezone detected from the host OS.
+view act tz_sys() -> Tz {
+    mut tzi_buf: [172]u8
+    let status = GetTimeZoneInformation(@tzi_buf[0])
+    if status == TIME_ZONE_ID_INVALID {
+        return tz_utc()
+    }
+
+    let ptr32 = (@tzi_buf[0]) as @i32
+    let bias = ptr32[0]
+
+    mut total_bias = bias
+    mut is_dst = false
+    mut name_off: usize = 4
+
+    if status == TIME_ZONE_ID_DAYLIGHT {
+        let daylight_bias = ((@tzi_buf[168]) as @i32)[0]
+        total_bias = bias + daylight_bias
+        is_dst = true
+        name_off = 88
+    } else {
+        let std_bias = ((@tzi_buf[84]) as @i32)[0]
+        total_bias = bias + std_bias
+        name_off = 4
+    }
+
+    // Win32: UTC = local + bias => local = UTC - bias => offset = -bias * 60
+    let offset_sec = -total_bias * 60
+
+    // Extract timezone name from WCHAR[32] (UTF-16 LE)
+    let wptr = (@tzi_buf[name_off]) as @u16
+    mut name_len: usize = 0
+    loop name_len < 32 and wptr[name_len] != (0 as u16) {
+        name_len += 1
+    }
+
+    mut tz_name: string = "UTC"
+    if name_len > 0 {
+        mut buf: @u8 = heap_alloc(name_len + 1) as @u8
+        if buf != null {
+            mut i: usize = 0
+            loop i < name_len {
+                let ch = wptr[i]
+                if ch < (128 as u16) {
+                    buf[i] = ch as u8
+                } else {
+                    buf[i] = '?' as u8
+                }
+                i += 1
+            }
+            buf[name_len] = 0 as u8
+            tz_name = buf as string
+        }
+    } else {
+        if offset_sec == 0 {
+            tz_name = "UTC"
+        } else {
+            tz_name = tz_format_offset_name(offset_sec)
+        }
+    }
+
+    return Tz {
+        name: tz_name,
+        offset: offset_sec,
+        dst: is_dst
+    }
+}
+
+// Converts a UTC DateTime to a target Tz timezone.
+view act time_to_local(dt: @DateTime, tz: @Tz) -> DateTime {
+    if dt == null {
+        return time_epoch_to_datetime(0)
+    }
+    mut off: i32 = 0
+    if tz != null {
+        off = tz.offset
+    }
+    let epoch_utc = time_datetime_to_epoch(dt)
+    let epoch_local = epoch_utc + (off as i64)
+    mut local_dt = time_epoch_to_datetime(epoch_local)
+    local_dt.millisecond = dt.millisecond
+    local_dt.nanosecond = dt.nanosecond
+    return local_dt
+}
+
+// Alias for time_to_local.
+view act time_local(dt: @DateTime, tz: @Tz) -> DateTime {
+    return time_to_local(dt, tz)
+}
+
+// Converts a local DateTime in timezone tz back to UTC.
+view act time_to_utc(dt: @DateTime, tz: @Tz) -> DateTime {
+    if dt == null {
+        return time_epoch_to_datetime(0)
+    }
+    mut off: i32 = 0
+    if tz != null {
+        off = tz.offset
+    }
+    let epoch_local = time_datetime_to_epoch(dt)
+    let epoch_utc = epoch_local - (off as i64)
+    mut utc_dt = time_epoch_to_datetime(epoch_utc)
+    utc_dt.millisecond = dt.millisecond
+    utc_dt.nanosecond = dt.nanosecond
+    return utc_dt
+}
+
+// Returns the current wall-clock date and time in the system local timezone.
+view act time_now_local() -> DateTime {
+    let tz = tz_sys()
+    let utc_dt = time_now_datetime()
+    return time_to_local(@utc_dt, @tz)
+}
+
+// Formats a DateTime with timezone offset into ISO-8601 string: "YYYY-MM-DDTHH:MM:SS+HH:MM" (25 bytes) or "Z" (20 bytes).
+view act time_format_iso8601_tz(dt: @DateTime, tz: @Tz, dest: @u8, dest_cap: usize) -> StrSlice {
+    if dest == null or dest_cap < 26 or dt == null {
+        return slice_from_raw(null, 0)
+    }
+
+    let y = dt.year
+    dest[0] = ('0' as u8) + (((y / 1000) % 10) as u8)
+    dest[1] = ('0' as u8) + (((y / 100) % 10) as u8)
+    dest[2] = ('0' as u8) + (((y / 10) % 10) as u8)
+    dest[3] = ('0' as u8) + ((y % 10) as u8)
+    dest[4] = '-' as u8
+
+    let m = dt.month
+    dest[5] = ('0' as u8) + ((m / 10) as u8)
+    dest[6] = ('0' as u8) + ((m % 10) as u8)
+    dest[7] = '-' as u8
+
+    let d = dt.day
+    dest[8] = ('0' as u8) + ((d / 10) as u8)
+    dest[9] = ('0' as u8) + ((d % 10) as u8)
+    dest[10] = 'T' as u8
+
+    let h = dt.hour
+    dest[11] = ('0' as u8) + ((h / 10) as u8)
+    dest[12] = ('0' as u8) + ((h % 10) as u8)
+    dest[13] = ':' as u8
+
+    let min = dt.minute
+    dest[14] = ('0' as u8) + ((min / 10) as u8)
+    dest[15] = ('0' as u8) + ((min % 10) as u8)
+    dest[16] = ':' as u8
+
+    let sec = dt.second
+    dest[17] = ('0' as u8) + ((sec / 10) as u8)
+    dest[18] = ('0' as u8) + ((sec % 10) as u8)
+
+    if tz == null or tz.offset == 0 {
+        dest[19] = 'Z' as u8
+        dest[20] = 0 as u8
+        return slice_from_raw(dest, 20)
+    }
+
+    mut off = tz.offset
+    mut sign = '+' as u8
+    if off < 0 {
+        sign = '-' as u8
+        off = -off
+    }
+    let total_mins = off / 60
+    let off_h = total_mins / 60
+    let off_m = total_mins % 60
+
+    dest[19] = sign
+    dest[20] = ('0' as u8) + (((off_h / 10) % 10) as u8)
+    dest[21] = ('0' as u8) + ((off_h % 10) as u8)
+    dest[22] = ':' as u8
+    dest[23] = ('0' as u8) + (((off_m / 10) % 10) as u8)
+    dest[24] = ('0' as u8) + ((off_m % 10) as u8)
+    dest[25] = 0 as u8
+
+    return slice_from_raw(dest, 25)
+}
+
+// Allocates and formats an ISO-8601 string with timezone offset from Arena regional memory.
+view act time_format_iso8601_tz_str(a: @Arena, dt: @DateTime, tz: @Tz) -> string {
+    if a == null or dt == null {
+        return ""
+    }
+    let buf = arena_alloc(a, 32, 1)
+    if buf == null {
+        return ""
+    }
+    let sl = time_format_iso8601_tz(dt, tz, buf, 32)
+    return buf as string
+}

@@ -2513,7 +2513,30 @@ both connect. [COMPLETED] ✅
 **78.4** Local time: `std/time/tz.vl` reading the platform zone database
 (`TZif` parsing for POSIX, registry/`GetTimeZoneInformation` for Windows), plus
 `time_local(dt, tz)` alongside the existing UTC `calendar.vl`. Minimum: fixed
-offset zones and DST rules for the system zone.
+offset zones and DST rules for the system zone. [COMPLETED] ✅
+- *Former Defect:*
+  Prior to Task 78.4, Velo lacked local time and timezone capabilities entirely. `std/time/calendar.vl` only handled decomposed UTC dates (`DateTime`), with no mechanism to query the host system timezone, convert between UTC and local time, parse timezone data (`TZif` / POSIX TZ), or format ISO-8601 timestamps with numeric offsets.
+- *Fix Applied:*
+  - Implemented cross-platform timezone subsystem in `std/time/tz_windows.vl`, `std/time/tz_linux.vl`, and `std/time/tz_macos.vl`, backed by shared `std/time/tz_tzif.vl`:
+    - Defined lightweight `Tz` descriptor struct (`name: string`, `offset: i32`, `dst: bool`).
+    - Windows: Win32 `GetTimeZoneInformation` reads system bias, standard/daylight bias, DST state, and UTF-16 LE timezone name from Windows kernel/registry.
+    - POSIX (Linux/macOS): reads `/etc/localtime` (and `/var/db/timezone/zoneinfo` on macOS), with binary `TZif` v1/v2/v3 parsing (RFC 8536 / RFC 4833) to resolve transitions, abbreviations, and UTC offset, with fallback to POSIX `localtime_r`.
+    - Added TZ and POSIX string parsing in `tz_parse_posix` and ISO offset parsing in `tz_parse_offset`.
+    - Added timezone constructors: `tz_utc()`, `tz_make(name, offset_sec)`, `tz_with_dst(name, offset_sec, dst)`.
+    - Added local time conversion acts: `time_now_local() -> DateTime`, `time_to_local(dt, tz)` / `time_local(dt, tz)`, and `time_to_utc(dt, tz)`.
+    - Added ISO-8601 timezone-aware formatting: `time_format_iso8601_tz` and `time_format_iso8601_tz_str`.
+  - Added `use "time/tz.vl"` to `std/time.vl` umbrella module.
+  - Added pure-Velo test suite in `std/tests/time/tz_test.vl`.
+  - Added pytest test coverage in `tests/test_std_time.py` (8 tests: clock, duration, sleep, calendar, module import, tz test suite, variant parity, and umbrella import).
+  - Documented Section 14 in `docs/SPECIFICATION.md`.
+- *Residual Limitation:*
+  Historical time-transition rule tables for dates before 1970 are limited by the platform zone database; system local time and modern date conversions across all world timezones are fully supported.
+- *Verification:*
+  - `python -m pytest tests/test_std_time.py -v`: 8 passed in 9.84s.
+  - `python -m pytest tests/test_std_timer.py -v`: 2 passed in 1.25s.
+  - `bin/velo.exe run std/tests/time/tz_test.vl`: passed with exit 0 (`PASS: std.time.tz all tests passed`).
+  - `bin/velo.exe run std/tests/time_module_import_test.vl`: passed with exit 0 (`PASS: use std.time umbrella module verified`).
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines; `std/time/tz_tzif.vl` (374 lines), `tz_windows.vl` (208 lines), `tz_linux.vl` (195 lines), `tz_macos.vl` (198 lines) are all <= 400 lines.
 
 **78.5** Compression: `std/compress/deflate.vl` (raw DEFLATE, then zlib
 wrapper) with `inflate` first - decompression is what HTTP clients need. Then
