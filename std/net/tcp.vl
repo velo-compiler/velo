@@ -2,6 +2,7 @@
 use "types.vl"
 use "addr.vl"
 use "socket.vl"
+use "dns.vl"
 use "../mem/heap.vl"
 
 // High-level TCP server listener.
@@ -59,21 +60,27 @@ view act tcp_accept(listener: @TcpListener) -> @TcpStream {
     return stream
 }
 
-// Establishes a TCP connection to a remote IP address and port. Returns a connected TcpStream or null.
-view act tcp_connect(ip: string, port: u16) -> @TcpStream {
+// Establishes a TCP connection to a remote IP address or hostname and port. Returns a connected TcpStream or null.
+view act tcp_connect(host_or_ip: string, port: u16) -> @TcpStream {
+    mut target_ip = host_or_ip
+    if not is_numeric_ipv4(host_or_ip) {
+        let resolved = net_lookup_ipv4(host_or_ip) or host_or_ip
+        target_ip = resolved
+    }
+
     mut s = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
     if not socket_is_valid(@s) {
         return null
     }
 
-    if not socket_connect(@s, ip, port) {
+    if not socket_connect(@s, target_ip, port) {
         socket_close(@s)
         return null
     }
 
     mut stream: @TcpStream = heap_alloc(sizeof(TcpStream)) as @TcpStream
     stream.sock = s
-    stream.peer_addr = socket_addr_make(ip, port)
+    stream.peer_addr = socket_addr_make(target_ip, port)
     return stream
 }
 

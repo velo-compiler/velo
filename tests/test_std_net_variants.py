@@ -86,7 +86,7 @@ def test_no_platform_neutral_file_calls_a_platform_typed_socket_function():
 
 def test_socket_variants_expose_the_same_public_api():
     """A variant that is missing a function breaks only its own target."""
-    pattern = re.compile(r"^act (\w+)\(", re.MULTILINE)
+    pattern = re.compile(r"^(?:view\s+)?act (\w+)\(", re.MULTILINE)
 
     def names(variant):
         path = REPO_ROOT / "std" / "net" / f"socket_{variant}.vl"

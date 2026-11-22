@@ -1,0 +1,85 @@
+use std.io
+use std.net
+use std.coll
+
+act main() -> i32 {
+    // 1. Resolve localhost to IPv4
+    let v4 = lookup_ipv4("localhost") or "FAILED"
+    if v4 != "127.0.0.1" {
+        io.println("FAIL: lookup_ipv4 localhost expected 127.0.0.1, got: {v4}")
+        return 1
+    }
+
+    // 2. Resolve localhost to IPv6
+    let v6 = lookup_ipv6("localhost") or "FAILED"
+    if v6 != "::1" {
+        io.println("FAIL: lookup_ipv6 localhost expected ::1, got: {v6}")
+        return 2
+    }
+
+    // 3. Resolve localhost with general lookup (auto v4 or v6)
+    let any_ip = lookup("localhost") or "FAILED"
+    if any_ip != "127.0.0.1" and any_ip != "::1" {
+        io.println("FAIL: lookup localhost expected 127.0.0.1 or ::1, got: {any_ip}")
+        return 3
+    }
+
+    // 4. Resolve all addresses for localhost
+    mut all_ips = lookup_all("localhost") or shelf_create(8, 0)
+    if all_ips.len < 1 {
+        shelf_free(@all_ips)
+        io.println("FAIL: lookup_all expected at least 1 IP")
+        return 4
+    }
+    mut has_loopback = false
+    mut i: usize = 0
+    loop i < all_ips.len {
+        let ip = net_shelf_get_str(@all_ips, i)
+        if ip == "127.0.0.1" or ip == "::1" {
+            has_loopback = true
+        }
+        i += 1
+    }
+    shelf_free(@all_ips)
+    if !has_loopback {
+        io.println("FAIL: lookup_all did not contain 127.0.0.1 or ::1")
+        return 5
+    }
+
+    // 5. Test error on non-existent domain
+    let bad = lookup("this-domain-definitely-does-not-exist-1234567.invalid") or "OK_FAILED"
+    if bad != "OK_FAILED" {
+        io.println("FAIL: expected lookup to fail on invalid domain")
+        return 6
+    }
+
+    // 6. Test tcp_connect using hostname 'localhost'
+    let listener = tcp_listen("127.0.0.1", 19876 as u16)
+    if listener == null {
+        io.println("FAIL: tcp_listen on port 19876 failed")
+        return 7
+    }
+
+    let client = tcp_connect("localhost", 19876 as u16)
+    if client == null {
+        socket_close(@listener.sock)
+        io.println("FAIL: tcp_connect to 'localhost' failed")
+        return 8
+    }
+
+    let server_stream = tcp_accept(listener)
+    if server_stream == null {
+        socket_close(@client.sock)
+        socket_close(@listener.sock)
+        io.println("FAIL: tcp_accept failed")
+        return 9
+    }
+
+    // Clean up
+    socket_close(@server_stream.sock)
+    socket_close(@client.sock)
+    socket_close(@listener.sock)
+
+    io.println("PASS: std.net.dns all tests passed")
+    return 0
+}

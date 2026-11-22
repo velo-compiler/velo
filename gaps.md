@@ -2483,7 +2483,32 @@ both platforms (Win32 `getaddrinfo`, POSIX `getaddrinfo`), then rewrite
 `std/net/tcp.vl:3` `tcp_connect` and `std/async/tcp.vl` to accept hostnames.
 This is arguably P0 for network use; it is listed P1 only because Phase 70
 already rewrites both files. Test: resolve `localhost` and an IP literal, assert
-both connect.
+both connect. [COMPLETED] ✅
+- *Former Defect:*
+  Prior to Task 78.3, Velo's networking subsystem lacked DNS resolution entirely. `std/net/addr.vl` used hardcoded loopback checks and `inet_addr`, preventing connection to domain names or hostnames. Every connection required a numeric IPv4 literal.
+- *Fix Applied:*
+  - Implemented cross-platform DNS resolution in `std/net/dns_windows.vl`, `std/net/dns_linux.vl`, and `std/net/dns_macos.vl`:
+    - Foreign bindings for `getaddrinfo`, `freeaddrinfo`, and `getnameinfo`.
+    - Correct platform memory layout for `struct addrinfo` (Windows: `canonname` at offset 24, `addr` at offset 32; POSIX: `addr` at offset 24, `canonname` at offset 32).
+    - Added 4 core DNS acts exported through `std/net.vl`:
+      1. `lookup(host: string) -> string or string`: auto-resolves to preferred IPv4 or IPv6 via `AF_UNSPEC`.
+      2. `lookup_ipv4(host: string) -> string or string`: strict IPv4 A-record query (`AF_INET`).
+      3. `lookup_ipv6(host: string) -> string or string`: strict IPv6 AAAA-record query (`AF_INET6`).
+      4. `lookup_all(host: string) -> RawShelf or string`: resolves and deduplicates all registered IP addresses into a dynamic shelf of strings.
+    - Added `net_shelf_get_str(shelf, idx)` accessor helper.
+  - Added `is_numeric_ipv4(s: string) -> bool` in `std/net/addr.vl`.
+  - Updated `tcp_connect` in `std/net/tcp.vl` and `async_tcp_connect` in `std/async/tcp.vl` to automatically resolve hostnames via `net_lookup_ipv4` before connecting.
+  - Added pure-Velo test suite in `std/tests/net/dns_test.vl`.
+  - Added pytest test suite `tests/test_std_dns.py` (6 tests: unit suite, IPv4/IPv6 resolution, aliased module calls, invalid domain error handling, hostname TCP connection, and platform variant parity).
+  - Updated `tests/test_std_net_variants.py` regex to support `view act`.
+  - Documented Section 13 in `docs/SPECIFICATION.md`.
+- *Residual Limitation:*
+  Advanced DNS record types (MX, TXT, SRV, reverse PTR lookups) are not yet implemented; standard A and AAAA lookups cover all standard client connections.
+- *Verification:*
+  - `python -m pytest tests/test_std_dns.py -v`: 6 passed in 9.64s.
+  - `python -m pytest tests/test_std_net.py tests/test_std_net_variants.py -v`: 8 passed in 7.62s.
+  - `bin/velo.exe run std/tests/net/dns_test.vl`: passed with exit 0 (`PASS: std.net.dns all tests passed`).
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines; `std/net/*.vl` files are all <= 235 lines.
 
 **78.4** Local time: `std/time/tz.vl` reading the platform zone database
 (`TZif` parsing for POSIX, registry/`GetTimeZoneInformation` for Windows), plus

@@ -1,0 +1,220 @@
+// std.net.dns (Windows) — Hostname resolution via Win32 getaddrinfo & getnameinfo.
+// Translates hostnames to IPv4 / IPv6 addresses and resolves all endpoints.
+
+use "types.vl"
+use "addr.vl"
+use "socket.vl"
+use "../mem/heap.vl"
+use "../coll/shelf.vl"
+
+view let NI_NUMERICHOST: i32 = 2
+
+// Windows addrinfo structure matching struct addrinfo (48 bytes on 64-bit)
+view data AddrInfo {
+    flags: i32
+    family: i32
+    socktype: i32
+    protocol: i32
+    addrlen: usize
+    canonname: @u8
+    addr: @u8
+    next: @AddrInfo
+}
+
+// Foreign Winsock bindings (ws2_32)
+view extern act getaddrinfo(nodename: string, servname: string, hints: @AddrInfo, res: @@AddrInfo) -> i32
+view extern act freeaddrinfo(ai: @AddrInfo)
+view extern act getnameinfo(sa: @u8, salen: i32, host: @u8, hostlen: u32, serv: @u8, servlen: u32, flags: i32) -> i32
+
+// Helper checking if a string shelf already contains a given string
+act shelf_has_str(s: @RawShelf, item: string) -> bool {
+    if s == null or s.data == null { return false }
+    mut i: usize = 0
+    loop i < s.len {
+        let ptr = (s.data + i * 8) as @string
+        if ptr[0] == item { return true }
+        i += 1
+    }
+    return false
+}
+
+// Retrieves a string from a RawShelf produced by net_lookup_all.
+view act net_shelf_get_str(s: @RawShelf, idx: usize) -> string {
+    if s == null or idx >= s.len or s.data == null { return "" }
+    let ptr = (s.data + idx * 8) as @string
+    return ptr[0]
+}
+
+// Resolves a hostname to its best IP address (IPv4 or IPv6, system default).
+view act net_lookup(host: string) -> string or string {
+    if host == null { fail "Host cannot be null" }
+    let hlen = str.len(host)
+    if hlen == 0 { fail "Host cannot be empty" }
+    net_ensure_init()
+
+    mut hints: AddrInfo
+    hints.flags = 0
+    hints.family = AF_UNSPEC
+    hints.socktype = SOCK_STREAM
+    hints.protocol = 0
+    hints.addrlen = 0
+    hints.canonname = null
+    hints.addr = null
+    hints.next = null
+
+    mut res_ptr: @AddrInfo = null
+    let rc = getaddrinfo(host, null, @hints, @res_ptr)
+    if rc != 0 or res_ptr == null {
+        fail "DNS lookup failed for host"
+    }
+
+    mut host_buf: @u8 = heap_alloc(64)
+    if host_buf == null {
+        freeaddrinfo(res_ptr)
+        fail "Out of memory"
+    }
+
+    let nrc = getnameinfo(res_ptr.addr, res_ptr.addrlen as i32, host_buf, 64 as u32, null, 0 as u32, NI_NUMERICHOST)
+    freeaddrinfo(res_ptr)
+
+    if nrc != 0 {
+        heap_free(host_buf)
+        fail "Failed to format IP address"
+    }
+
+    return host_buf as string
+}
+
+// Resolves a hostname strictly to an IPv4 address.
+view act net_lookup_ipv4(host: string) -> string or string {
+    if host == null { fail "Host cannot be null" }
+    let hlen = str.len(host)
+    if hlen == 0 { fail "Host cannot be empty" }
+    net_ensure_init()
+
+    mut hints: AddrInfo
+    hints.flags = 0
+    hints.family = AF_INET
+    hints.socktype = SOCK_STREAM
+    hints.protocol = 0
+    hints.addrlen = 0
+    hints.canonname = null
+    hints.addr = null
+    hints.next = null
+
+    mut res_ptr: @AddrInfo = null
+    let rc = getaddrinfo(host, null, @hints, @res_ptr)
+    if rc != 0 or res_ptr == null {
+        fail "IPv4 lookup failed for host"
+    }
+
+    mut host_buf: @u8 = heap_alloc(64)
+    if host_buf == null {
+        freeaddrinfo(res_ptr)
+        fail "Out of memory"
+    }
+
+    let nrc = getnameinfo(res_ptr.addr, res_ptr.addrlen as i32, host_buf, 64 as u32, null, 0 as u32, NI_NUMERICHOST)
+    freeaddrinfo(res_ptr)
+
+    if nrc != 0 {
+        heap_free(host_buf)
+        fail "Failed to format IPv4 address"
+    }
+
+    return host_buf as string
+}
+
+// Resolves a hostname strictly to an IPv6 address.
+view act net_lookup_ipv6(host: string) -> string or string {
+    if host == null { fail "Host cannot be null" }
+    let hlen = str.len(host)
+    if hlen == 0 { fail "Host cannot be empty" }
+    net_ensure_init()
+
+    mut hints: AddrInfo
+    hints.flags = 0
+    hints.family = AF_INET6
+    hints.socktype = SOCK_STREAM
+    hints.protocol = 0
+    hints.addrlen = 0
+    hints.canonname = null
+    hints.addr = null
+    hints.next = null
+
+    mut res_ptr: @AddrInfo = null
+    let rc = getaddrinfo(host, null, @hints, @res_ptr)
+    if rc != 0 or res_ptr == null {
+        fail "IPv6 lookup failed for host"
+    }
+
+    mut host_buf: @u8 = heap_alloc(64)
+    if host_buf == null {
+        freeaddrinfo(res_ptr)
+        fail "Out of memory"
+    }
+
+    let nrc = getnameinfo(res_ptr.addr, res_ptr.addrlen as i32, host_buf, 64 as u32, null, 0 as u32, NI_NUMERICHOST)
+    freeaddrinfo(res_ptr)
+
+    if nrc != 0 {
+        heap_free(host_buf)
+        fail "Failed to format IPv6 address"
+    }
+
+    return host_buf as string
+}
+
+// Resolves a hostname and returns all IP addresses as a shelf of strings.
+view act net_lookup_all(host: string) -> RawShelf or string {
+    if host == null { fail "Host cannot be null" }
+    let hlen = str.len(host)
+    if hlen == 0 { fail "Host cannot be empty" }
+    net_ensure_init()
+
+    mut hints: AddrInfo
+    hints.flags = 0
+    hints.family = AF_UNSPEC
+    hints.socktype = SOCK_STREAM
+    hints.protocol = 0
+    hints.addrlen = 0
+    hints.canonname = null
+    hints.addr = null
+    hints.next = null
+
+    mut res_ptr: @AddrInfo = null
+    let rc = getaddrinfo(host, null, @hints, @res_ptr)
+    if rc != 0 or res_ptr == null {
+        fail "DNS lookup failed for host"
+    }
+
+    mut shelf = shelf_create(8, 4) // sizeof(string) = 8 bytes
+    mut curr = res_ptr
+    loop curr != null {
+        mut host_buf: @u8 = heap_alloc(64)
+        if host_buf != null {
+            let nrc = getnameinfo(curr.addr, curr.addrlen as i32, host_buf, 64 as u32, null, 0 as u32, NI_NUMERICHOST)
+            if nrc == 0 {
+                let ip_str = host_buf as string
+                if not shelf_has_str(@shelf, ip_str) {
+                    mut s_val: string = ip_str
+                    let p_s: @string = @s_val
+                    shelf_push(@shelf, p_s as @u8)
+                } else {
+                    heap_free(host_buf)
+                }
+            } else {
+                heap_free(host_buf)
+            }
+        }
+        curr = curr.next
+    }
+    freeaddrinfo(res_ptr)
+
+    if shelf.len == 0 {
+        shelf_free(@shelf)
+        fail "No addresses found for host"
+    }
+
+    return shelf
+}

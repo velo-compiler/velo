@@ -1855,5 +1855,58 @@ act main() {
 }
 ```
 
+---
+
+## 13. Standard Networking & DNS Resolution Subsystem (`std.net`)
+
+Velo provides cross-platform socket networking (TCP client/server, UDP datagrams) with integrated system DNS resolution via `getaddrinfo` and `getnameinfo`.
+
+### 13.1 DNS Lookup Acts
+
+The `std.net` module provides 4 core hostname resolution acts supporting both direct calls and module-aliased calls (`use std.net :> net`):
+
+1. **`lookup(host: string) -> string or string`:** Resolves `host` to its preferred IP address (IPv4 or IPv6, depending on OS priority via `AF_UNSPEC`).
+2. **`lookup_ipv4(host: string) -> string or string`:** Specifically queries DNS for an IPv4 address (`AF_INET` / A record).
+3. **`lookup_ipv6(host: string) -> string or string`:** Specifically queries DNS for an IPv6 address (`AF_INET6` / AAAA record).
+4. **`lookup_all(host: string) -> RawShelf or string`:** Queries all available addresses registered for the hostname, returning a dynamic shelf of unique IP strings.
+
+```velo
+use std.net
+use std.io
+
+act main() {
+    // 1. Preferred IP (IPv4 or IPv6)
+    let ip = lookup("localhost") or fail
+
+    // 2. Guaranteed IPv4
+    let ip4 = lookup_ipv4("localhost") or fail // "127.0.0.1"
+
+    // 3. Guaranteed IPv6
+    let ip6 = lookup_ipv6("localhost") or fail // "::1"
+
+    // 4. All addresses (multi-homed)
+    mut ips = lookup_all("localhost") or fail
+    io.println("Total addresses: {ips.len}")
+    shelf_free(@ips)
+}
+```
+
+### 13.2 Hostname Connection Support
+
+Both synchronous (`tcp_connect`) and asynchronous (`async_tcp_connect`) TCP sockets accept domain names and hostnames interchangeably with numeric IP literals:
+
+```velo
+use std.net
+
+act main() {
+    // Connects via hostname resolution automatically
+    let stream = tcp_connect("localhost", 8080 as u16)
+    if stream != null {
+        tcp_close(stream)
+    }
+}
+```
+
+
 
 

@@ -4,6 +4,7 @@ use "loop.vl"
 use "../net/types.vl"
 use "../net/socket.vl"
 use "../net/addr.vl"
+use "../net/dns.vl"
 use "../mem/heap.vl"
 
 view data AsyncTcpListener {
@@ -207,11 +208,16 @@ view act async_tcp_stream_close(s: @AsyncTcpStream) {
 // Initiates an asynchronous non-blocking connection to a remote host:port
 view act async_tcp_connect(el: @EventLoop, host: string, port: u16, on_connect: act(@AsyncTcpStream, bool) -> void) -> @AsyncTcpStream {
     if el == null { return null }
+    mut target_ip = host
+    if not is_numeric_ipv4(host) {
+        let resolved = net_lookup_ipv4(host) or host
+        target_ip = resolved
+    }
     mut sock = socket_create(AF_INET, SOCK_STREAM, IPPROTO_TCP)
     if !socket_is_valid(@sock) { return null }
 
     socket_set_nonblocking(@sock, true)
-    socket_connect(@sock, host, port)
+    socket_connect(@sock, target_ip, port)
 
     let stream = heap_alloc(tcp_stream_sizeof()) as @AsyncTcpStream
     stream.socket = sock

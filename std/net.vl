@@ -1,8 +1,27 @@
 // Standard library umbrella module for std.net (pure Velo TCP & UDP networking).
 // Provides cross-platform socket creation, IP address parsing and formatting,
-// TCP client/server connection streams, and UDP datagram sockets.
+// TCP client/server connection streams, DNS resolution, and UDP datagram sockets.
+use "coll/shelf.vl"
 use "net/types.vl"
 use "net/addr.vl"
 use "net/socket.vl"
+use "net/dns.vl"
 use "net/tcp.vl"
 use "net/udp.vl"
+
+// Public API aliases for DNS lookup under net.* namespace
+view act lookup(host: string) -> string or string {
+    return net_lookup(host)
+}
+
+view act lookup_ipv4(host: string) -> string or string {
+    return net_lookup_ipv4(host)
+}
+
+view act lookup_ipv6(host: string) -> string or string {
+    return net_lookup_ipv6(host)
+}
+
+view act lookup_all(host: string) -> RawShelf or string {
+    return net_lookup_all(host)
+}
