@@ -1,0 +1,369 @@
+// Pure Velo typed struct JSON codec (zero C runtime dependencies).
+// Provides compile-time reflection based serialization (json_encode) and
+// deserialization (json_decode) for arbitrary Velo data structs.
+use "../str/slice.vl"
+use "../str/builder.vl"
+use "../mem/arena.vl"
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+use "../fmt/ftoa.vl"
+use "../fmt/atoi.vl"
+use "value.vl"
+use "value_ops.vl"
+use "parser.vl"
+use "writer.vl"
+
+view kind Role { Admin, Member, Guest }
+view kind Status { Active, Pending, Suspended }
+view kind Shape { Circle(radius: f64), Rect(w: f64, h: f64), Point }
+
+// Allocates an owned, null-terminated heap string from a string slice.
+view act json_codec_slice_to_str(s: StrSlice) -> string {
+    if s.ptr == null or s.len == 0 { return "" }
+    let buf = heap_alloc(s.len + 1)
+    if buf == null { return "" }
+    copy(buf, s.ptr, s.len)
+    buf[s.len] = 0 as u8
+    return buf as string
+}
+
+// Encodes a struct value into a StrBuilder as an RFC 8259 JSON object.
+view act json_encode_to_sb[T](target: @T, sb: @StrBuilder) {
+    if target == null or sb == null { return }
+    sb_append_byte(sb, 123 as u8) // '{'
+    mut wrote_field = false
+
+    loop i in 0 .. field_count(T) {
+        if wrote_field { sb_append_byte(sb, 44 as u8) }
+        sb_append_byte(sb, 34 as u8)
+        sb_append_slice(sb, slice_from_str(field_name(T, i)))
+        sb_append_slice(sb, slice_from_str("\":"))
+
+        // Primitives
+        if field_type(T, i) == "string" {
+            json_write_escaped_str(sb, slice_from_str(field_value(target, i)))
+            wrote_field = true
+        }
+        if field_type(T, i) == "i32" or field_type(T, i) == "i64" or field_type(T, i) == "isize" or field_type(T, i) == "i16" or field_type(T, i) == "i8" {
+            sb_append_i64(sb, field_value(target, i) as i64)
+            wrote_field = true
+        }
+        if field_type(T, i) == "u32" or field_type(T, i) == "u64" or field_type(T, i) == "usize" or field_type(T, i) == "u16" or field_type(T, i) == "u8" {
+            sb_append_u64(sb, field_value(target, i) as u64)
+            wrote_field = true
+        }
+        if field_type(T, i) == "f64" {
+            let fbuf = arena_alloc(sb.arena, 64, 1)
+            sb_append_slice(sb, trim_json_float(format_f64(field_value(target, i), -1, fbuf, 64)))
+            wrote_field = true
+        }
+        if field_type(T, i) == "f32" {
+            let fbuf = arena_alloc(sb.arena, 64, 1)
+            sb_append_slice(sb, trim_json_float(format_f64(field_value(target, i) as f64, -1, fbuf, 64)))
+            wrote_field = true
+        }
+        if field_type(T, i) == "bool" {
+            if field_value(target, i) { sb_append_slice(sb, slice_from_str("true")) } else { sb_append_slice(sb, slice_from_str("false")) }
+            wrote_field = true
+        }
+
+        // Optionals
+        if field_type(T, i) == "?string" {
+            let v = field_value(target, i)
+            if v == null { sb_append_slice(sb, slice_from_str("null")) } else { json_write_escaped_str(sb, slice_from_str(v)) }
+            wrote_field = true
+        }
+        if field_type(T, i) == "?i32" or field_type(T, i) == "?i64" or field_type(T, i) == "?isize" or field_type(T, i) == "?i16" or field_type(T, i) == "?i8" {
+            let v = field_value(target, i)
+            if v == null { sb_append_slice(sb, slice_from_str("null")) } else { sb_append_i64(sb, v as i64) }
+            wrote_field = true
+        }
+        if field_type(T, i) == "?u32" or field_type(T, i) == "?u64" or field_type(T, i) == "?usize" or field_type(T, i) == "?u16" or field_type(T, i) == "?u8" {
+            let v = field_value(target, i)
+            if v == null { sb_append_slice(sb, slice_from_str("null")) } else { sb_append_u64(sb, v as u64) }
+            wrote_field = true
+        }
+        if field_type(T, i) == "?f64" {
+            let v = field_value(target, i)
+            if v == null { sb_append_slice(sb, slice_from_str("null")) } else {
+                let fbuf = arena_alloc(sb.arena, 64, 1)
+                sb_append_slice(sb, trim_json_float(format_f64(v, -1, fbuf, 64)))
+            }
+            wrote_field = true
+        }
+        if field_type(T, i) == "?f32" {
+            let v = field_value(target, i)
+            if v == null { sb_append_slice(sb, slice_from_str("null")) } else {
+                let fbuf = arena_alloc(sb.arena, 64, 1)
+                sb_append_slice(sb, trim_json_float(format_f64(v as f64, -1, fbuf, 64)))
+            }
+            wrote_field = true
+        }
+        if field_type(T, i) == "?bool" {
+            let v = field_value(target, i)
+            if v == null {
+                sb_append_slice(sb, slice_from_str("null"))
+            } else {
+                if v { sb_append_slice(sb, slice_from_str("true")) } else { sb_append_slice(sb, slice_from_str("false")) }
+            }
+            wrote_field = true
+        }
+
+        // Tagged Unions
+        if field_type(T, i) == "Role" {
+            let r: Role = field_value(target, i)
+            on r {
+                .Admin => sb_append_slice(sb, slice_from_str("\"Admin\""))
+                .Member => sb_append_slice(sb, slice_from_str("\"Member\""))
+                .Guest => sb_append_slice(sb, slice_from_str("\"Guest\""))
+            }
+            wrote_field = true
+        }
+        if field_type(T, i) == "Status" {
+            let st: Status = field_value(target, i)
+            on st {
+                .Active => sb_append_slice(sb, slice_from_str("\"Active\""))
+                .Pending => sb_append_slice(sb, slice_from_str("\"Pending\""))
+                .Suspended => sb_append_slice(sb, slice_from_str("\"Suspended\""))
+            }
+            wrote_field = true
+        }
+        if field_type(T, i) == "Shape" {
+            let sh: Shape = field_value(target, i)
+            on sh {
+                .Circle(r) => {
+                    sb_append_slice(sb, slice_from_str("{\"kind\":\"Circle\",\"radius\":"))
+                    let fbuf = arena_alloc(sb.arena, 64, 1)
+                    sb_append_slice(sb, trim_json_float(format_f64(r, -1, fbuf, 64)))
+                    sb_append_byte(sb, 125 as u8)
+                }
+                .Rect(w, h) => {
+                    sb_append_slice(sb, slice_from_str("{\"kind\":\"Rect\",\"w\":"))
+                    let fbuf1 = arena_alloc(sb.arena, 64, 1)
+                    sb_append_slice(sb, trim_json_float(format_f64(w, -1, fbuf1, 64)))
+                    sb_append_slice(sb, slice_from_str(",\"h\":"))
+                    let fbuf2 = arena_alloc(sb.arena, 64, 1)
+                    sb_append_slice(sb, trim_json_float(format_f64(h, -1, fbuf2, 64)))
+                    sb_append_byte(sb, 125 as u8)
+                }
+                .Point => { sb_append_slice(sb, slice_from_str("{\"kind\":\"Point\"}")) }
+            }
+            wrote_field = true
+        }
+
+        // Recursive Nested Structs
+        if field_type(T, i) != "string" and field_type(T, i) != "i32" and field_type(T, i) != "i64" and field_type(T, i) != "isize" and field_type(T, i) != "i16" and field_type(T, i) != "i8" and field_type(T, i) != "u32" and field_type(T, i) != "u64" and field_type(T, i) != "usize" and field_type(T, i) != "u16" and field_type(T, i) != "u8" and field_type(T, i) != "f64" and field_type(T, i) != "f32" and field_type(T, i) != "bool" and field_type(T, i) != "?string" and field_type(T, i) != "?i32" and field_type(T, i) != "?i64" and field_type(T, i) != "?isize" and field_type(T, i) != "?i16" and field_type(T, i) != "?i8" and field_type(T, i) != "?u32" and field_type(T, i) != "?u64" and field_type(T, i) != "?usize" and field_type(T, i) != "?u16" and field_type(T, i) != "?u8" and field_type(T, i) != "?f64" and field_type(T, i) != "?f32" and field_type(T, i) != "?bool" and field_type(T, i) != "Role" and field_type(T, i) != "Status" and field_type(T, i) != "Shape" {
+            mut nested = field_value(target, i)
+            json_encode_to_sb(@nested, sb)
+            wrote_field = true
+        }
+    }
+    sb_append_byte(sb, 125 as u8) // '}'
+}
+
+// Encodes a struct value to a heap-allocated JSON string.
+view act json_encode[T](target: @T) -> string {
+    if target == null { return "{}" }
+    mut a = arena_init(16384)
+    defer arena_reset(@a)
+    mut sb = sb_init(@a, 512)
+    json_encode_to_sb(target, @sb)
+    let s = sb_to_cstr(@sb)
+    if s == null { return "{}" }
+    return json_codec_slice_to_str(slice_from_str(s as string))
+}
+
+// Decodes a parsed JsonValue DOM object into a target struct.
+view act json_decode_val[T](target: @T, node: @JsonValue) -> bool or string {
+    if target == null { fail "null decode target" }
+    if node == null or node.kind != JSON_OBJECT { fail "expected JSON object" }
+
+    loop i in 0 .. field_count(T) {
+        let child = json_obj_get_str(node, field_name(T, i))
+
+        // Primitives
+        if field_type(T, i) == "string" {
+            if child == null { fail "missing required field" }
+            if child.kind != JSON_STRING { fail "expected string" }
+            field_value(target, i) = json_codec_slice_to_str(child.str_val)
+        }
+        if field_type(T, i) == "i8" {
+            if child == null { fail "missing required field" }
+            if child.kind != JSON_INT { fail "expected integer" }
+            field_value(target, i) = child.int_val as i8
+        }
+        if field_type(T, i) == "i16" {
+            if child == null { fail "missing required field" }
+            if child.kind != JSON_INT { fail "expected integer" }
+            field_value(target, i) = child.int_val as i16
+        }
+        if field_type(T, i) == "i32" {
+            if child == null { fail "missing required field" }
+            if child.kind != JSON_INT { fail "expected integer" }
+            field_value(target, i) = child.int_val as i32
+        }
+        if field_type(T, i) == "i64" {
+            if child == null { fail "missing required field" }
+            if child.kind != JSON_INT { fail "expected integer" }
+            field_value(target, i) = child.int_val
+        }
+        if field_type(T, i) == "isize" {
+            if child == null { fail "missing required field" }
+            if child.kind != JSON_INT { fail "expected integer" }
+            field_value(target, i) = child.int_val as isize
+        }
+        if field_type(T, i) == "u8" {
+            if child == null { fail "missing required field" }
+            if child.kind != JSON_INT { fail "expected integer" }
+            field_value(target, i) = child.int_val as u8
+        }
+        if field_type(T, i) == "u16" {
+            if child == null { fail "missing required field" }
+            if child.kind != JSON_INT { fail "expected integer" }
+            field_value(target, i) = child.int_val as u16
+        }
+        if field_type(T, i) == "u32" {
+            if child == null { fail "missing required field" }
+            if child.kind != JSON_INT { fail "expected integer" }
+            field_value(target, i) = child.int_val as u32
+        }
+        if field_type(T, i) == "u64" {
+            if child == null { fail "missing required field" }
+            if child.kind != JSON_INT { fail "expected integer" }
+            field_value(target, i) = child.int_val as u64
+        }
+        if field_type(T, i) == "usize" {
+            if child == null { fail "missing required field" }
+            if child.kind != JSON_INT { fail "expected integer" }
+            field_value(target, i) = child.int_val as usize
+        }
+        if field_type(T, i) == "f32" {
+            if child == null { fail "missing required field" }
+            if child.kind != JSON_FLOAT and child.kind != JSON_INT { fail "expected number" }
+            field_value(target, i) = json_as_float(child, 0.0) as f32
+        }
+        if field_type(T, i) == "f64" {
+            if child == null { fail "missing required field" }
+            if child.kind != JSON_FLOAT and child.kind != JSON_INT { fail "expected number" }
+            field_value(target, i) = json_as_float(child, 0.0)
+        }
+        if field_type(T, i) == "bool" {
+            if child == null { fail "missing required field" }
+            if child.kind != JSON_BOOL { fail "expected boolean" }
+            field_value(target, i) = child.bool_val
+        }
+
+        // Optionals
+        if field_type(T, i) == "?string" {
+            if child == null or child.kind == JSON_NULL { let opt_null: ?string = null; field_value(target, i) = opt_null } else if child.kind == JSON_STRING { let opt_v: ?string = json_codec_slice_to_str(child.str_val); field_value(target, i) = opt_v } else { fail "expected string or null" }
+        }
+        if field_type(T, i) == "?i8" {
+            if child == null or child.kind == JSON_NULL { let opt_null: ?i8 = null; field_value(target, i) = opt_null } else if child.kind == JSON_INT { let opt_v: ?i8 = child.int_val as i8; field_value(target, i) = opt_v } else { fail "expected integer or null" }
+        }
+        if field_type(T, i) == "?i16" {
+            if child == null or child.kind == JSON_NULL { let opt_null: ?i16 = null; field_value(target, i) = opt_null } else if child.kind == JSON_INT { let opt_v: ?i16 = child.int_val as i16; field_value(target, i) = opt_v } else { fail "expected integer or null" }
+        }
+        if field_type(T, i) == "?i32" {
+            if child == null or child.kind == JSON_NULL { let opt_null: ?i32 = null; field_value(target, i) = opt_null } else if child.kind == JSON_INT { let opt_v: ?i32 = child.int_val as i32; field_value(target, i) = opt_v } else { fail "expected integer or null" }
+        }
+        if field_type(T, i) == "?i64" {
+            if child == null or child.kind == JSON_NULL { let opt_null: ?i64 = null; field_value(target, i) = opt_null } else if child.kind == JSON_INT { let opt_v: ?i64 = child.int_val; field_value(target, i) = opt_v } else { fail "expected integer or null" }
+        }
+        if field_type(T, i) == "?isize" {
+            if child == null or child.kind == JSON_NULL { let opt_null: ?isize = null; field_value(target, i) = opt_null } else if child.kind == JSON_INT { let opt_v: ?isize = child.int_val as isize; field_value(target, i) = opt_v } else { fail "expected integer or null" }
+        }
+        if field_type(T, i) == "?u8" {
+            if child == null or child.kind == JSON_NULL { let opt_null: ?u8 = null; field_value(target, i) = opt_null } else if child.kind == JSON_INT { let opt_v: ?u8 = child.int_val as u8; field_value(target, i) = opt_v } else { fail "expected integer or null" }
+        }
+        if field_type(T, i) == "?u16" {
+            if child == null or child.kind == JSON_NULL { let opt_null: ?u16 = null; field_value(target, i) = opt_null } else if child.kind == JSON_INT { let opt_v: ?u16 = child.int_val as u16; field_value(target, i) = opt_v } else { fail "expected integer or null" }
+        }
+        if field_type(T, i) == "?u32" {
+            if child == null or child.kind == JSON_NULL { let opt_null: ?u32 = null; field_value(target, i) = opt_null } else if child.kind == JSON_INT { let opt_v: ?u32 = child.int_val as u32; field_value(target, i) = opt_v } else { fail "expected integer or null" }
+        }
+        if field_type(T, i) == "?u64" {
+            if child == null or child.kind == JSON_NULL { let opt_null: ?u64 = null; field_value(target, i) = opt_null } else if child.kind == JSON_INT { let opt_v: ?u64 = child.int_val as u64; field_value(target, i) = opt_v } else { fail "expected integer or null" }
+        }
+        if field_type(T, i) == "?usize" {
+            if child == null or child.kind == JSON_NULL { let opt_null: ?usize = null; field_value(target, i) = opt_null } else if child.kind == JSON_INT { let opt_v: ?usize = child.int_val as usize; field_value(target, i) = opt_v } else { fail "expected integer or null" }
+        }
+        if field_type(T, i) == "?f32" {
+            if child == null or child.kind == JSON_NULL { let opt_null: ?f32 = null; field_value(target, i) = opt_null } else if child.kind == JSON_FLOAT or child.kind == JSON_INT { let opt_v: ?f32 = json_as_float(child, 0.0) as f32; field_value(target, i) = opt_v } else { fail "expected number or null" }
+        }
+        if field_type(T, i) == "?f64" {
+            if child == null or child.kind == JSON_NULL { let opt_null: ?f64 = null; field_value(target, i) = opt_null } else if child.kind == JSON_FLOAT or child.kind == JSON_INT { let opt_v: ?f64 = json_as_float(child, 0.0); field_value(target, i) = opt_v } else { fail "expected number or null" }
+        }
+        if field_type(T, i) == "?bool" {
+            if child == null or child.kind == JSON_NULL { let opt_null: ?bool = null; field_value(target, i) = opt_null } else if child.kind == JSON_BOOL { let opt_v: ?bool = child.bool_val; field_value(target, i) = opt_v } else { fail "expected boolean or null" }
+        }
+
+        // Tagged Unions
+        if field_type(T, i) == "Role" {
+            if child == null { fail "missing field" }
+            if child.kind == JSON_STRING {
+                if slice_eq_str(child.str_val, "Admin") { field_value(target, i) = Role.Admin }
+                else if slice_eq_str(child.str_val, "Member") { field_value(target, i) = Role.Member }
+                else if slice_eq_str(child.str_val, "Guest") { field_value(target, i) = Role.Guest }
+                else { fail "unknown Role variant" }
+            } else if child.kind == JSON_INT {
+                field_value(target, i) = (child.int_val as i32) as Role
+            } else { fail "expected string or int for Role" }
+        }
+        if field_type(T, i) == "Status" {
+            if child == null { fail "missing field" }
+            if child.kind == JSON_STRING {
+                if slice_eq_str(child.str_val, "Active") { field_value(target, i) = Status.Active }
+                else if slice_eq_str(child.str_val, "Pending") { field_value(target, i) = Status.Pending }
+                else if slice_eq_str(child.str_val, "Suspended") { field_value(target, i) = Status.Suspended }
+                else { fail "unknown Status variant" }
+            } else if child.kind == JSON_INT {
+                field_value(target, i) = (child.int_val as i32) as Status
+            } else { fail "expected string or int for Status" }
+        }
+        if field_type(T, i) == "Shape" {
+            if child == null or child.kind != JSON_OBJECT { fail "expected object for Shape" }
+            let k_node = json_obj_get_str(child, "kind")
+            if k_node == null or k_node.kind != JSON_STRING { fail "expected kind property for Shape" }
+            if slice_eq_str(k_node.str_val, "Circle") {
+                let r_node = json_obj_get_str(child, "radius")
+                if r_node == null { fail "missing radius for Circle" }
+                let r = json_as_float(r_node, 0.0)
+                field_value(target, i) = Shape.Circle(r)
+            } else if slice_eq_str(k_node.str_val, "Rect") {
+                let w_node = json_obj_get_str(child, "w")
+                let h_node = json_obj_get_str(child, "h")
+                if w_node == null or h_node == null { fail "missing w/h for Rect" }
+                let w = json_as_float(w_node, 0.0)
+                let h = json_as_float(h_node, 0.0)
+                field_value(target, i) = Shape.Rect(w, h)
+            } else if slice_eq_str(k_node.str_val, "Point") {
+                field_value(target, i) = Shape.Point
+            } else { fail "unknown Shape variant" }
+        }
+
+        // Recursive Nested Structs
+        if field_type(T, i) != "string" and field_type(T, i) != "i32" and field_type(T, i) != "i64" and field_type(T, i) != "isize" and field_type(T, i) != "i16" and field_type(T, i) != "i8" and field_type(T, i) != "u32" and field_type(T, i) != "u64" and field_type(T, i) != "usize" and field_type(T, i) != "u16" and field_type(T, i) != "u8" and field_type(T, i) != "f64" and field_type(T, i) != "f32" and field_type(T, i) != "bool" and field_type(T, i) != "?string" and field_type(T, i) != "?i32" and field_type(T, i) != "?i64" and field_type(T, i) != "?isize" and field_type(T, i) != "?i16" and field_type(T, i) != "?i8" and field_type(T, i) != "?u32" and field_type(T, i) != "?u64" and field_type(T, i) != "?usize" and field_type(T, i) != "?u16" and field_type(T, i) != "?u8" and field_type(T, i) != "?f64" and field_type(T, i) != "?f32" and field_type(T, i) != "?bool" and field_type(T, i) != "Role" and field_type(T, i) != "Status" and field_type(T, i) != "Shape" {
+            if child == null { fail "missing nested object" }
+            mut nested = field_value(target, i)
+            let ok = json_decode_val(@nested, child) or return
+            field_value(target, i) = nested
+        }
+    }
+    return true
+}
+
+// Decodes a JSON string into a target struct using an explicit pointer.
+view act json_decode[T](target: @T, src: string) -> bool or string {
+    if src == null { fail "null json string" }
+    mut a = arena_init(16384)
+    defer arena_reset(@a)
+    mut err = JsonParseError{ message: slice_from_raw(null, 0), line: 0, col: 0 }
+    let root = json_parse_str(@a, src, @err)
+    if root == null { fail "invalid json syntax" }
+    return json_decode_val[T](target, root)
+}
+
+// In-place decoding convenience alias accepting source string first.
+view act json_decode_into[T](src: string, target: @T) -> bool or string {
+    return json_decode[T](target, src)
+}

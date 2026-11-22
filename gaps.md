@@ -2559,11 +2559,25 @@ offset zones and DST rules for the system zone. [COMPLETED] ✅
   - `bin/velo.exe run std/tests/compress/compress_test.vl`: passed with exit 0 (`PASS: std.compress all tests passed`).
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines; all `std/compress/*.vl` files <= 307 lines.
 
-**78.6** Typed JSON: `std/json/codec.vl` exposing
-`json_encode(@T) -> string` / `json_decode(string) -> T or string` using the
-existing struct reflection (`src/backend/reflect_gen.vl`,
-`examples/37_struct_reflection.vl` prove the mechanism exists). Test with a
-nested struct containing optional fields and a tagged union.
+**78.6 [COMPLETED] ✅** Typed JSON: `std/json/codec.vl` exposing `json_encode(@T) -> string` / `json_decode(target: @T, src: string) -> bool or string` / `json_decode_into(src: string, target: @T) -> bool or string` using compile-time struct reflection (`field_count`, `field_name`, `field_type`, `field_value`).
+- *Former Defect:*
+  Standard library only provided a manual DOM-level AST parser and serializer (`std/json/value.vl`, `parser.vl`, `writer.vl`). Mapping JSON documents to and from strongly-typed Velo data structs required repetitive, error-prone manual boilerplate for reading each node and assigning struct fields.
+- *Fix Applied:*
+  - Implemented `std/json/codec.vl`: Compile-time reflection-based typed struct codec providing `json_encode[T](target: @T) -> string`, `json_encode_to_sb[T](target: @T, sb: @StrBuilder)`, `json_decode[T](target: @T, src: string) -> bool or string`, `json_decode_into[T](src: string, target: @T) -> bool or string`, and `json_decode_val[T](target: @T, node: @JsonValue) -> bool or string`.
+  - Added support for all numeric primitives (`i8`, `i16`, `i32`, `i64`, `isize`, `u8`, `u16`, `u32`, `u64`, `usize`, `f32`, `f64`), `bool`, and `string`.
+  - Added support for optional fields (`?string`, `?i8`..`?i64`, `?u8`..`?u64`, `?f32`, `?f64`, `?bool`), properly encoding and decoding `null` vs populated values.
+  - Added support for arbitrary recursive multi-level nested `data` structs.
+  - Added support for tagged unions, including unit enums (`Role`, `Status`) and payload sum types (`Shape`).
+  - Integrated `std/json/codec.vl` into the `std/json.vl` umbrella module.
+  - Added comprehensive pure-Velo unit test suite `std/tests/json/codec_test.vl` covering primitives round-trip, optionals (some/none), nested structs, tagged unions, and error handling.
+  - Added pytest test suite `tests/test_std_json_codec.py` validating bidirectional interop with Python's standard `json` module, and updated `tests/test_std_json.py`.
+  - Documented Section 16 in `docs/SPECIFICATION.md`.
+- *Residual Limitation:*
+  Custom tagged unions require pattern matching handling or explicit casting (unit enums to `i32`), as compile-time reflection intrinsics (`field_count`, `field_name`, `field_value`) operate specifically on `data` structs.
+- *Verification:*
+  - `python -m pytest tests/test_std_json.py tests/test_std_json_codec.py -v`: 9 passed in 17.76s.
+  - `bin/velo.exe run std/tests/json/codec_test.vl`: passed with exit 0 (`PASS: std.json.codec all unit tests passed`).
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines; `std/json/codec.vl` is 365 lines (<= 400).
 
 **78.7** Streaming CSV: change `std/csv/reader.vl` to accept an
 `@BufferedReader` incrementally, keeping the `StrSlice` constructor as a

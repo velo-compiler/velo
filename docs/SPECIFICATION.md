@@ -2025,6 +2025,83 @@ view act main() {
 }
 ```
 
+## 16. Standard JSON Subsystem (`std.json`)
+
+Velo provides an RFC 8259 compliant JSON processing subsystem with zero C runtime dependencies (`std/json/`). It offers DOM parsing, AST manipulation, compact and pretty serialization, and a compile-time reflection-based typed struct codec.
+
+### 16.1 DOM AST & Parsing
+
+- **`JsonValue`:** Represents a JSON node (null, bool, int, float, string, array, object) backed by zero-allocation `StrSlice` views and regional `Arena` allocation.
+- **`json_parse(arena: @Arena, src: StrSlice, err: @JsonParseError) -> @JsonValue`:** Parses JSON text into a DOM node tree.
+- **`json_parse_doc(src: StrSlice, arena_cap: usize) -> JsonDoc`:** Parses JSON text into a self-contained managed document.
+- **`json_stringify(arena: @Arena, val: @JsonValue) -> StrSlice`:** Compactly serializes a DOM node into JSON text.
+- **`json_pretty(arena: @Arena, val: @JsonValue, indent_size: i32) -> StrSlice`:** Formats a DOM node with indentation spaces and newlines.
+
+### 16.2 Typed Struct Codec (`std.json` / `std/json/codec.vl`)
+
+Uses compile-time struct reflection (`field_count`, `field_name`, `field_type`, `field_value`) to encode and decode native Velo structs without manual serialization boilerplate:
+
+- **`json_encode[T](target: @T) -> string`:** Serializes any data struct `@target` to an owned, heap-allocated JSON string.
+- **`json_encode_to_sb[T](target: @T, sb: @StrBuilder)`:** Streams serialized JSON directly into an existing `StrBuilder` (zero-copy composition).
+- **`json_decode[T](target: @T, src: string) -> bool or string`:** Parses JSON text and populates fields of `@target`. Returns `true` or an error diagnostic string.
+- **`json_decode_into[T](src: string, target: @T) -> bool or string`:** Convenience alias accepting the JSON source string first.
+- **`json_decode_val[T](target: @T, node: @JsonValue) -> bool or string`:** Decodes an existing parsed DOM object into `@target`.
+
+#### Supported Data Types
+
+1. **Primitives:** `string`, signed integers (`i8`, `i16`, `i32`, `i64`, `isize`), unsigned integers (`u8`, `u16`, `u32`, `u64`, `usize`), floating-point (`f32`, `f64`), and `bool`.
+2. **Optionals:** `?string`, `?i8`..`?i64`, `?u8`..`?u64`, `?f32`, `?f64`, `?bool`. Null JSON nodes or missing properties decode to `null`.
+3. **Nested Structs:** Arbitrary multi-level nested `data` structs are serialized and deserialized recursively.
+4. **Tagged Unions:** Unit variant enums (e.g. `Role`, `Status`) and payload sum types (e.g. `Shape`) serialize with variant tags and decode safely.
+
+### 16.3 Typed Codec Usage Example
+
+```velo
+use std.io
+use std.json
+
+view data Address {
+    city: string
+    zip: i32
+}
+
+view data UserProfile {
+    id: i64
+    name: string
+    is_active: bool
+    email: ?string
+    role: Role
+    addr: Address
+}
+
+act main() -> i32 {
+    let opt_email: ?string = "alice@example.org"
+    mut user = UserProfile{
+        id: 101,
+        name: "Alice",
+        is_active: true,
+        email: opt_email,
+        role: Role.Admin,
+        addr: Address{ city: "Berlin", zip: 10115 }
+    }
+
+    // 1. Serialization
+    let json_text = json_encode(@user)
+    io.println(json_text)
+
+    // 2. Deserialization
+    mut decoded: UserProfile
+    let res = json_decode(@decoded, json_text)
+    if !res.ok {
+        io.println("Decode error: {res.err}")
+        return 1
+    }
+    // decoded.id == 101, decoded.addr.city == "Berlin"
+    return 0
+}
+```
+
+
 
 
 

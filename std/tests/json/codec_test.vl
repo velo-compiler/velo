@@ -1,0 +1,298 @@
+// Unit test suite for std.json.codec (Typed struct reflection JSON codec).
+use "../../mem/page.vl"
+use "../../mem/arena.vl"
+use "../../str/slice.vl"
+use "../../str/builder.vl"
+use "../../io/print.vl"
+use "../../json/value.vl"
+use "../../json/value_ops.vl"
+use "../../json/parser.vl"
+use "../../json/writer.vl"
+use "../../json/codec.vl"
+
+view data PrimitivesStruct {
+    str_val: string
+    i8_val: i8
+    i16_val: i16
+    i32_val: i32
+    i64_val: i64
+    u8_val: u8
+    u16_val: u16
+    u32_val: u32
+    u64_val: u64
+    f32_val: f32
+    f64_val: f64
+    bool_val: bool
+}
+
+view data OptionalsStruct {
+    name: string
+    opt_str: ?string
+    opt_int: ?i32
+    opt_flt: ?f64
+    opt_bool: ?bool
+}
+
+view data GeoLoc {
+    lat: f64
+    lon: f64
+}
+
+view data FullAddress {
+    city: string
+    zip: i32
+    geo: GeoLoc
+}
+
+view data NestedUser {
+    name: string
+    addr: FullAddress
+}
+
+view data TaggedUnionHolder {
+    user_name: string
+    role: Role
+    status: Status
+    shape: Shape
+}
+
+act test_primitives_round_trip() -> bool {
+    mut p = PrimitivesStruct{
+        str_val: "Velo Language",
+        i8_val: -12 as i8,
+        i16_val: -1234 as i16,
+        i32_val: -123456,
+        i64_val: -9876543210i64,
+        u8_val: 200 as u8,
+        u16_val: 50000 as u16,
+        u32_val: 3000000000u32,
+        u64_val: 10000000000000u64,
+        f32_val: 3.25 as f32,
+        f64_val: 12345.6789,
+        bool_val: true
+    }
+
+    let encoded = json_encode(@p)
+    if encoded == null { return false }
+
+    mut dec: PrimitivesStruct
+    let res = json_decode(@dec, encoded)
+    if !res.ok { return false }
+
+    if !slice_eq_str(slice_from_str(dec.str_val), "Velo Language") { return false }
+    if dec.i8_val != -12 as i8 { return false }
+    if dec.i16_val != -1234 as i16 { return false }
+    if dec.i32_val != -123456 { return false }
+    if dec.i64_val != -9876543210i64 { return false }
+    if dec.u8_val != 200 as u8 { return false }
+    if dec.u16_val != 50000 as u16 { return false }
+    if dec.u32_val != 3000000000u32 { return false }
+    if dec.u64_val != 10000000000000u64 { return false }
+    if dec.bool_val != true { return false }
+
+    return true
+}
+
+act test_optionals_some_and_none() -> bool {
+    // 1. With non-null values
+    let s_val: ?string = "present"
+    let i_val: ?i32 = 77
+    let f_val: ?f64 = 99.5
+    let b_val: ?bool = true
+
+    mut o1 = OptionalsStruct{
+        name: "Alice",
+        opt_str: s_val,
+        opt_int: i_val,
+        opt_flt: f_val,
+        opt_bool: b_val
+    }
+
+    let enc1 = json_encode(@o1)
+    mut dec1: OptionalsStruct
+    let r1 = json_decode(@dec1, enc1)
+    if !r1.ok { return false }
+
+    if !slice_eq_str(slice_from_str(dec1.name), "Alice") { return false }
+    let ds = dec1.opt_str
+    if ds == null { return false }
+    if !slice_eq_str(slice_from_str(ds), "present") { return false }
+    let di = dec1.opt_int
+    if di == null { return false }
+    if di != 77 { return false }
+    let df = dec1.opt_flt
+    if df == null { return false }
+    if df < 99.4 or df > 99.6 { return false }
+    let db = dec1.opt_bool
+    if db == null { return false }
+    if db != true { return false }
+
+    // 2. With null values
+    let s_null: ?string = null
+    let i_null: ?i32 = null
+    let f_null: ?f64 = null
+    let b_null: ?bool = null
+
+    mut o2 = OptionalsStruct{
+        name: "Bob",
+        opt_str: s_null,
+        opt_int: i_null,
+        opt_flt: f_null,
+        opt_bool: b_null
+    }
+
+    let enc2 = json_encode(@o2)
+    mut dec2: OptionalsStruct
+    let r2 = json_decode(@dec2, enc2)
+    if !r2.ok { return false }
+
+    if !slice_eq_str(slice_from_str(dec2.name), "Bob") { return false }
+    if dec2.opt_str != null { return false }
+    if dec2.opt_int != null { return false }
+    if dec2.opt_flt != null { return false }
+    if dec2.opt_bool != null { return false }
+
+    return true
+}
+
+act test_nested_struct_multi_level() -> bool {
+    mut u = NestedUser{
+        name: "Charlie",
+        addr: FullAddress{
+            city: "Zurich",
+            zip: 8001,
+            geo: GeoLoc{
+                lat: 47.3769,
+                lon: 8.5417
+            }
+        }
+    }
+
+    let enc = json_encode(@u)
+    if enc == null { return false }
+
+    mut dec: NestedUser
+    let r = json_decode(@dec, enc)
+    if !r.ok { return false }
+
+    if !slice_eq_str(slice_from_str(dec.name), "Charlie") { return false }
+    if !slice_eq_str(slice_from_str(dec.addr.city), "Zurich") { return false }
+    if dec.addr.zip != 8001 { return false }
+    if dec.addr.geo.lat < 47.37 or dec.addr.geo.lat > 47.38 { return false }
+    if dec.addr.geo.lon < 8.54 or dec.addr.geo.lon > 8.55 { return false }
+
+    return true
+}
+
+act test_tagged_unions_round_trip() -> bool {
+    mut h1 = TaggedUnionHolder{
+        user_name: "AdminUser",
+        role: Role.Admin,
+        status: Status.Active,
+        shape: Shape.Circle(10.5)
+    }
+
+    let enc1 = json_encode(@h1)
+    mut dec1: TaggedUnionHolder
+    let r1 = json_decode(@dec1, enc1)
+    if !r1.ok { return false }
+
+    let r_dec1: Role = dec1.role
+    on r_dec1 {
+        .Admin => { }
+        .Member => return false
+        .Guest => return false
+    }
+
+    let st_dec1: Status = dec1.status
+    on st_dec1 {
+        .Active => { }
+        .Pending => return false
+        .Suspended => return false
+    }
+
+    let sh_dec1: Shape = dec1.shape
+    on sh_dec1 {
+        .Circle(radius) => {
+            if radius < 10.4 or radius > 10.6 { return false }
+        }
+        .Rect(w, h) => return false
+        .Point => return false
+    }
+
+    // Test second combination with Rect and Guest
+    mut h2 = TaggedUnionHolder{
+        user_name: "GuestUser",
+        role: Role.Guest,
+        status: Status.Pending,
+        shape: Shape.Rect(20.0, 30.0)
+    }
+
+    let enc2 = json_encode(@h2)
+    mut dec2: TaggedUnionHolder
+    let r2 = json_decode(@dec2, enc2)
+    if !r2.ok { return false }
+
+    let r_dec2: Role = dec2.role
+    on r_dec2 {
+        .Admin => return false
+        .Member => return false
+        .Guest => { }
+    }
+
+    let sh_dec2: Shape = dec2.shape
+    on sh_dec2 {
+        .Circle(radius) => return false
+        .Rect(w, h) => {
+            if w < 19.9 or w > 20.1 { return false }
+            if h < 29.9 or h > 30.1 { return false }
+        }
+        .Point => return false
+    }
+
+    return true
+}
+
+act test_error_handling() -> bool {
+    mut p: PrimitivesStruct
+
+    // Invalid JSON syntax
+    let r1 = json_decode(@p, "{invalid_json")
+    if r1.ok { return false }
+
+    // Non-object root
+    let r2 = json_decode(@p, "[1, 2, 3]")
+    if r2.ok { return false }
+
+    // Missing required field
+    let r3 = json_decode(@p, "{\"str_val\":\"hello\"}")
+    if r3.ok { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_primitives_round_trip() {
+        println_str("FAIL: test_primitives_round_trip")
+        return 1
+    }
+    if !test_optionals_some_and_none() {
+        println_str("FAIL: test_optionals_some_and_none")
+        return 2
+    }
+    if !test_nested_struct_multi_level() {
+        println_str("FAIL: test_nested_struct_multi_level")
+        return 3
+    }
+    if !test_tagged_unions_round_trip() {
+        println_str("FAIL: test_tagged_unions_round_trip")
+        return 4
+    }
+    if !test_error_handling() {
+        println_str("FAIL: test_error_handling")
+        return 5
+    }
+
+    println_str("PASS: std.json.codec all unit tests passed")
+    return 0
+}
