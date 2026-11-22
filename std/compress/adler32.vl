@@ -1,0 +1,54 @@
+// std.compress.adler32 — RFC 1950 Adler-32 checksum computation.
+use "../mem/heap.vl"
+use "../str/slice.vl"
+
+// Largest prime number smaller than 65536.
+view let ADLER_BASE: u32 = 65521 as u32
+
+// Largest number of bytes that can be accumulated without 32-bit overflow.
+view let ADLER_NMAX: usize = 5552
+
+// Computes the Adler-32 checksum of a memory buffer.
+view act adler32_calc(data: @u8, len: usize) -> u32 {
+    return adler32_update(1 as u32, data, len)
+}
+
+// Progressively updates an Adler-32 checksum with additional buffer data.
+view act adler32_update(adler: u32, data: @u8, len: usize) -> u32 {
+    if data == null or len == 0 { return adler }
+
+    mut s1 = adler & (0xFFFF as u32)
+    mut s2 = (adler >> (16 as u32)) & (0xFFFF as u32)
+
+    mut remaining = len
+    mut offset: usize = 0
+
+    loop remaining > 0 {
+        mut chunk = remaining
+        if chunk > ADLER_NMAX {
+            chunk = ADLER_NMAX
+        }
+        remaining -= chunk
+
+        mut i: usize = 0
+        loop i < chunk {
+            s1 += data[offset] as u32
+            s2 += s1
+            offset += 1
+            i += 1
+        }
+
+        s1 = s1 % ADLER_BASE
+        s2 = s2 % ADLER_BASE
+    }
+
+    return (s2 << (16 as u32)) | s1
+}
+
+// Computes the Adler-32 checksum of a string.
+view act adler32_calc_str(s: string) -> u32 {
+    if s == null { return 1 as u32 }
+    let len = str.len(s)
+    if len == 0 { return 1 as u32 }
+    return adler32_calc(s as @u8, len)
+}

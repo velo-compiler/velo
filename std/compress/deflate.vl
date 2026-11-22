@@ -1,0 +1,250 @@
+// std.compress.deflate — RFC 1951 raw DEFLATE encoder with LZ77 and Fixed Huffman compression.
+use "../mem/heap.vl"
+use "../coll/shelf.vl"
+use "../str/slice.vl"
+use "bitstream.vl"
+use "huffman.vl"
+
+// Returns the base length for literal codes 257..285 (RFC 1951 section 3.2.5).
+view act deflate_len_base(idx: usize) -> usize {
+    let arr: [29]i32 = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258]
+    if idx >= 29 { return 3 }
+    return arr[idx] as usize
+}
+
+// Returns the extra bits count for literal codes 257..285.
+view act deflate_len_extra(idx: usize) -> usize {
+    let arr: [29]i32 = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0]
+    if idx >= 29 { return 0 }
+    return arr[idx] as usize
+}
+
+// Returns the base distance for distance codes 0..29.
+view act deflate_dist_base(idx: usize) -> usize {
+    let arr: [30]i32 = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577]
+    if idx >= 30 { return 1 }
+    return arr[idx] as usize
+}
+
+// Returns the extra bits count for distance codes 0..29.
+view act deflate_dist_extra(idx: usize) -> usize {
+    let arr: [30]i32 = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13]
+    if idx >= 30 { return 0 }
+    return arr[idx] as usize
+}
+
+// Maps a match length (3..258) to its RFC 1951 length symbol and extra bits.
+view act deflate_find_len_code(l: usize, out_extra_bits: @usize, out_extra_val: @usize) -> usize {
+    mut i: i32 = 28
+    loop i >= 0 {
+        let base = deflate_len_base(i as usize)
+        if l >= base {
+            if out_extra_bits != null {
+                out_extra_bits[0] = deflate_len_extra(i as usize)
+            }
+            if out_extra_val != null {
+                out_extra_val[0] = l - base
+            }
+            return (257 + i) as usize
+        }
+        i -= 1
+    }
+    if out_extra_bits != null { out_extra_bits[0] = 0 }
+    if out_extra_val != null { out_extra_val[0] = 0 }
+    return 257
+}
+
+// Maps a match distance (1..32768) to its RFC 1951 distance symbol and extra bits.
+view act deflate_find_dist_code(d: usize, out_extra_bits: @usize, out_extra_val: @usize) -> usize {
+    mut i: i32 = 29
+    loop i >= 0 {
+        let base = deflate_dist_base(i as usize)
+        if d >= base {
+            if out_extra_bits != null {
+                out_extra_bits[0] = deflate_dist_extra(i as usize)
+            }
+            if out_extra_val != null {
+                out_extra_val[0] = d - base
+            }
+            return i as usize
+        }
+        i -= 1
+    }
+    if out_extra_bits != null { out_extra_bits[0] = 0 }
+    if out_extra_val != null { out_extra_val[0] = 0 }
+    return 0
+}
+
+// Compresses raw bytes using RFC 1951 DEFLATE (LZ77 match finder and Fixed Huffman coding).
+view act deflate(data: @u8, len: usize) -> RawShelf or string {
+    mut bw = bw_init(len + 64)
+
+    // Block header: BFINAL = 1, BTYPE = 01 (Fixed Huffman block) -> 3 bits: 0b011 = 3
+    bw_write_bits(@bw, 3 as u32, 3)
+
+    if data == null or len == 0 {
+        // Emit End of Block (symbol 256)
+        mut eob_len: usize = 0
+        let eob_code = huffman_get_fixed_lit(256, @eob_len)
+        bw_write_bits(@bw, eob_code, eob_len)
+        bw_flush(@bw)
+        return bw_to_shelf(@bw)
+    }
+
+    if len < 3 {
+        // Stream is too short for 3-byte LZ77 matches, emit literals directly
+        mut idx: usize = 0
+        loop idx < len {
+            let sym = data[idx] as usize
+            mut code_len: usize = 0
+            let code = huffman_get_fixed_lit(sym, @code_len)
+            bw_write_bits(@bw, code, code_len)
+            idx += 1
+        }
+        mut eob_len: usize = 0
+        let eob_code = huffman_get_fixed_lit(256, @eob_len)
+        bw_write_bits(@bw, eob_code, eob_len)
+        bw_flush(@bw)
+        return bw_to_shelf(@bw)
+    }
+
+    // LZ77 hash table with 4096 entries
+    let head: @i32 = heap_alloc(4096 * 4) as @i32
+    let prev: @i32 = heap_alloc(len * 4) as @i32
+    if head == null or prev == null {
+        if head != null { heap_free(head as @u8) }
+        if prev != null { heap_free(prev as @u8) }
+        bw_free(@bw)
+        fail "out of memory allocating deflate hash tables"
+    }
+
+    mut h_idx: usize = 0
+    loop h_idx < 4096 {
+        head[h_idx] = -1
+        h_idx += 1
+    }
+    mut p_idx: usize = 0
+    loop p_idx < len {
+        prev[p_idx] = -1
+        p_idx += 1
+    }
+
+    mut pos: usize = 0
+    loop pos < len {
+        mut match_len: usize = 0
+        mut match_dist: usize = 0
+
+        if pos + 2 < len {
+            let b0 = data[pos] as usize
+            let b1 = data[pos + 1] as usize
+            let b2 = data[pos + 2] as usize
+            let h = ((b0 << 8) ^ (b1 << 4) ^ b2) & 4095
+
+            let cand = head[h]
+            prev[pos] = cand
+            head[h] = pos as i32
+
+            mut cur_cand: i32 = cand
+            mut best_len: usize = 0
+            mut best_dist: usize = 0
+            mut steps: usize = 0
+
+            loop cur_cand >= 0 and steps < 32 {
+                steps += 1
+                let c_pos = cur_cand as usize
+                let dist = pos - c_pos
+                if dist > 32768 {
+                    break
+                }
+
+                mut m_len: usize = 0
+                let remaining = len - pos
+                mut max_m = remaining
+                if max_m > 258 { max_m = 258 }
+
+                loop m_len < max_m and data[pos + m_len] == data[c_pos + m_len] {
+                    m_len += 1
+                }
+
+                if m_len > best_len {
+                    best_len = m_len
+                    best_dist = dist
+                    if best_len >= 258 {
+                        break
+                    }
+                }
+
+                cur_cand = prev[c_pos]
+            }
+
+            if best_len >= 3 {
+                match_len = best_len
+                match_dist = best_dist
+            }
+        }
+
+        if match_len >= 3 {
+            mut extra_bits: usize = 0
+            mut extra_val: usize = 0
+            let sym = deflate_find_len_code(match_len, @extra_bits, @extra_val)
+
+            mut code_len: usize = 0
+            let code = huffman_get_fixed_lit(sym, @code_len)
+            bw_write_bits(@bw, code, code_len)
+            if extra_bits > 0 {
+                bw_write_bits(@bw, extra_val as u32, extra_bits)
+            }
+
+            mut dist_extra_bits: usize = 0
+            mut dist_extra_val: usize = 0
+            let dsym = deflate_find_dist_code(match_dist, @dist_extra_bits, @dist_extra_val)
+
+            mut dist_code_len: usize = 0
+            let dist_code = huffman_get_fixed_dist(dsym, @dist_code_len)
+            bw_write_bits(@bw, dist_code, dist_code_len)
+            if dist_extra_bits > 0 {
+                bw_write_bits(@bw, dist_extra_val as u32, dist_extra_bits)
+            }
+
+            // Insert intermediate skipped positions into hash chain
+            mut k: usize = 1
+            loop k < match_len {
+                if pos + k + 2 < len {
+                    let kb0 = data[pos + k] as usize
+                    let kb1 = data[pos + k + 1] as usize
+                    let kb2 = data[pos + k + 2] as usize
+                    let kh = ((kb0 << 8) ^ (kb1 << 4) ^ kb2) & 4095
+                    prev[pos + k] = head[kh]
+                    head[kh] = (pos + k) as i32
+                }
+                k += 1
+            }
+
+            pos += match_len
+        } else {
+            let sym = data[pos] as usize
+            mut code_len: usize = 0
+            let code = huffman_get_fixed_lit(sym, @code_len)
+            bw_write_bits(@bw, code, code_len)
+            pos += 1
+        }
+    }
+
+    heap_free(head as @u8)
+    heap_free(prev as @u8)
+
+    // Emit End of Block (symbol 256)
+    mut eob_len: usize = 0
+    let eob_code = huffman_get_fixed_lit(256, @eob_len)
+    bw_write_bits(@bw, eob_code, eob_len)
+    bw_flush(@bw)
+
+    return bw_to_shelf(@bw)
+}
+
+// Compresses a string into an RFC 1951 raw DEFLATE byte stream.
+view act deflate_str(s: string) -> RawShelf or string {
+    if s == null { return deflate(null, 0) }
+    let len = str.len(s)
+    return deflate(s as @u8, len)
+}

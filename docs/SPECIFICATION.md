@@ -1968,6 +1968,64 @@ act main() {
 }
 ```
 
+## 15. Standard Compression & Decompression Subsystem (`std.compress`)
+
+Velo provides pure native compression, decompression, framing, and checksum verification with zero C runtime dependencies (`std/compress/`). It fully conforms to:
+- **RFC 1951:** DEFLATE Compressed Data Format Specification (Stored, Fixed Huffman, and Dynamic Huffman blocks, LSB-first bitstream handling, sliding-window LZ77 match decoding and encoding).
+- **RFC 1950:** ZLIB Compressed Data Format Specification (CMF/FLG header integrity, check bit validation, big-endian Adler-32 checksum verification).
+- **RFC 1952:** GZIP File Format Specification (ID1/ID2 magic detection, compression method validation, header flag parsing for FTEXT/FHCRC/FEXTRA/FNAME/FCOMMENT, IEEE 802.3 CRC-32 verification, and little-endian ISIZE uncompressed length validation).
+
+### 15.1 Core Decompression Acts
+
+- **`gzip_decode(data: @u8, len: usize) -> RawShelf or string`:** Decompresses an RFC 1952 Gzip stream into a `RawShelf` of bytes after validating header flags, CRC-32, and ISIZE.
+- **`gzip_decode_str(data: @u8, len: usize) -> string or string`:** Decompresses an RFC 1952 Gzip stream directly into a null-terminated heap `string`.
+- **`zlib_decode(data: @u8, len: usize) -> RawShelf or string`:** Decompresses an RFC 1950 Zlib stream into a `RawShelf` of bytes after validating CMF/FLG headers and Adler-32.
+- **`zlib_decode_str(data: @u8, len: usize) -> string or string`:** Decompresses an RFC 1950 Zlib stream directly into a null-terminated heap `string`.
+- **`inflate(data: @u8, len: usize) -> RawShelf or string`:** Decompresses a raw RFC 1951 DEFLATE stream into a `RawShelf`.
+- **`inflate_str(data: @u8, len: usize) -> string or string`:** Decompresses a raw RFC 1951 DEFLATE stream directly into a null-terminated heap `string`.
+- **`inflate_from_str(s: string) -> string or string`:** Convenience wrapper decompressing a raw RFC 1951 DEFLATE string payload into a `string`.
+
+### 15.2 Core Compression Acts
+
+- **`gzip_encode(data: @u8, len: usize) -> RawShelf or string`:** Compresses raw bytes into an RFC 1952 Gzip stream complete with standard 10-byte header, CRC-32, and ISIZE footer.
+- **`gzip_encode_str(s: string) -> RawShelf or string`:** Compresses a string into an RFC 1952 Gzip stream.
+- **`zlib_encode(data: @u8, len: usize) -> RawShelf or string`:** Compresses raw bytes into an RFC 1950 Zlib stream with CMF/FLG header and Adler-32 footer.
+- **`zlib_encode_str(s: string) -> RawShelf or string`:** Compresses a string into an RFC 1950 Zlib stream.
+- **`deflate(data: @u8, len: usize) -> RawShelf or string`:** Compresses raw bytes into an RFC 1951 DEFLATE stream using LZ77 match search (3..258 length, 32KB window) and Fixed Huffman coding.
+- **`deflate_str(s: string) -> RawShelf or string`:** Compresses a string into an RFC 1951 DEFLATE stream.
+
+### 15.3 Checksums
+
+- **`adler32(data: @u8, len: usize) -> u32`:** Computes the 32-bit Adler-32 checksum ($s_1, s_2 \pmod{65521}$) over raw bytes.
+- **`adler32_str(s: string) -> u32`:** Computes the 32-bit Adler-32 checksum of a string.
+
+### 15.4 Usage Example
+
+```velo
+use std.compress
+use std.io
+
+view act main() {
+    let payload = "HTTP body text to compress and decompress across networks."
+
+    // 1. Gzip compression and decompression
+    let gz = gzip_encode_str(payload) or return
+    let decomp_text = gzip_decode_str(gz.data, gz.len) or return
+    // decomp_text == payload
+
+    // 2. Zlib compression and decompression
+    let zl = zlib_encode_str(payload) or return
+    let zl_text = zlib_decode_str(zl.data, zl.len) or return
+    // zl_text == payload
+
+    // 3. Raw DEFLATE
+    let def = deflate_str(payload) or return
+    let def_text = inflate_str(def.data, def.len) or return
+    // def_text == payload
+}
+```
+
+
 
 
 

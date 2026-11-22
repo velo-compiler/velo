@@ -1,0 +1,178 @@
+// std.compress.gzip — RFC 1952 Gzip framing, header/flags parsing, and CRC-32/ISIZE integrity.
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+use "../coll/shelf.vl"
+use "../str/slice.vl"
+use "../crypto/crc32.vl"
+use "inflate.vl"
+use "deflate.vl"
+
+// Decompresses an RFC 1952 Gzip byte stream into a RawShelf after verifying header, flags, CRC-32, and ISIZE.
+view act gzip_decode(data: @u8, len: usize) -> RawShelf or string {
+    if data == null or len < 18 {
+        fail "gzip payload too short (minimum 18 bytes required)"
+    }
+
+    // ID1 = 0x1F, ID2 = 0x8B
+    let id1 = data[0]
+    let id2 = data[1]
+    if id1 != (0x1F as u8) or id2 != (0x8B as u8) {
+        fail "invalid gzip magic header (not gzip)"
+    }
+
+    // Compression Method: 8 = Deflate
+    let cm = data[2]
+    if cm != (8 as u8) {
+        fail "unsupported gzip compression method (only deflate supported)"
+    }
+
+    // Flags byte
+    let flg = data[3] as u32
+    if (flg & (0xE0 as u32)) != (0 as u32) {
+        fail "reserved gzip flag bits are set"
+    }
+
+    mut offset: usize = 10
+
+    // FEXTRA: skip extra field if present
+    if (flg & (0x04 as u32)) != (0 as u32) {
+        if offset + 2 > len { fail "truncated gzip extra field header" }
+        let xlen = (data[offset] as usize) | ((data[offset + 1] as usize) << 8)
+        offset += 2 + xlen
+        if offset + 8 > len { fail "truncated gzip extra field payload" }
+    }
+
+    // FNAME: skip original file name if present (null-terminated)
+    if (flg & (0x08 as u32)) != (0 as u32) {
+        loop offset + 8 < len and data[offset] != (0 as u8) {
+            offset += 1
+        }
+        if offset + 8 >= len { fail "truncated gzip filename string" }
+        offset += 1 // skip null byte
+    }
+
+    // FCOMMENT: skip comment if present (null-terminated)
+    if (flg & (0x10 as u32)) != (0 as u32) {
+        loop offset + 8 < len and data[offset] != (0 as u8) {
+            offset += 1
+        }
+        if offset + 8 >= len { fail "truncated gzip comment string" }
+        offset += 1 // skip null byte
+    }
+
+    // FHCRC: skip header CRC16 if present
+    if (flg & (0x02 as u32)) != (0 as u32) {
+        offset += 2
+        if offset + 8 > len { fail "truncated gzip header crc" }
+    }
+
+    if offset + 8 > len {
+        fail "truncated gzip payload"
+    }
+
+    let deflate_len = len - 8 - offset
+    let deflate_ptr = (data as usize + offset) as @u8
+
+    mut decomp = inflate(deflate_ptr, deflate_len) or return
+
+    // Footer: 4-byte CRC32 followed by 4-byte ISIZE (both little-endian)
+    let c0 = data[len - 8] as u32
+    let c1 = data[len - 7] as u32
+    let c2 = data[len - 6] as u32
+    let c3 = data[len - 5] as u32
+    let expected_crc = c0 | (c1 << 8) | (c2 << 16) | (c3 << 24)
+
+    let s0 = data[len - 4] as u32
+    let s1 = data[len - 3] as u32
+    let s2 = data[len - 2] as u32
+    let s3 = data[len - 1] as u32
+    let expected_isize = s0 | (s1 << 8) | (s2 << 16) | (s3 << 24)
+
+    // Verify ISIZE (decompressed length mod 2^32)
+    let actual_isize = (decomp.len & 0xFFFFFFFF) as u32
+    if actual_isize != expected_isize {
+        shelf_free(@decomp)
+        fail "gzip ISIZE length mismatch"
+    }
+
+    // Verify CRC-32
+    let actual_crc = crc32_hash(decomp.data, decomp.len)
+    if actual_crc != expected_crc {
+        shelf_free(@decomp)
+        fail "gzip CRC-32 checksum mismatch"
+    }
+
+    return decomp
+}
+
+// Decompresses an RFC 1952 Gzip byte stream directly into a null-terminated heap string.
+view act gzip_decode_str(data: @u8, len: usize) -> string or string {
+    mut shelf = gzip_decode(data, len) or return
+    inflate_ensure_space(@shelf, 1)
+    if shelf.data != null {
+        shelf.data[shelf.len] = 0 as u8
+        return shelf.data as string
+    }
+    return ""
+}
+
+// Compresses raw bytes into an RFC 1952 Gzip stream with standard header, CRC-32, and ISIZE.
+view act gzip_encode(data: @u8, len: usize) -> RawShelf or string {
+    mut def_shelf = deflate(data, len) or return
+
+    let total_len = 10 + def_shelf.len + 8
+    let out_buf: @u8 = heap_alloc(total_len)
+    if out_buf == null {
+        shelf_free(@def_shelf)
+        fail "out of memory allocating gzip output buffer"
+    }
+
+    // Standard 10-byte Gzip header:
+    // ID1 = 0x1F, ID2 = 0x8B, CM = 8 (deflate), FLG = 0, MTIME = 0, XFL = 0, OS = 255 (unknown)
+    out_buf[0] = 0x1F as u8
+    out_buf[1] = 0x8B as u8
+    out_buf[2] = 8 as u8
+    out_buf[3] = 0 as u8
+    out_buf[4] = 0 as u8
+    out_buf[5] = 0 as u8
+    out_buf[6] = 0 as u8
+    out_buf[7] = 0 as u8
+    out_buf[8] = 0 as u8
+    out_buf[9] = 255 as u8
+
+    // Deflate payload
+    if def_shelf.len > 0 and def_shelf.data != null {
+        copy((out_buf as usize + 10) as @u8, def_shelf.data, def_shelf.len)
+    }
+
+    // Footer: 4-byte CRC-32 (little-endian)
+    let crc = crc32_hash(data, len)
+    let foot_idx = 10 + def_shelf.len
+    out_buf[foot_idx] = (crc & (0xFF as u32)) as u8
+    out_buf[foot_idx + 1] = ((crc >> 8) & (0xFF as u32)) as u8
+    out_buf[foot_idx + 2] = ((crc >> 16) & (0xFF as u32)) as u8
+    out_buf[foot_idx + 3] = ((crc >> 24) & (0xFF as u32)) as u8
+
+    // Footer: 4-byte ISIZE (little-endian)
+    let isize = (len & 0xFFFFFFFF) as u32
+    out_buf[foot_idx + 4] = (isize & (0xFF as u32)) as u8
+    out_buf[foot_idx + 5] = ((isize >> 8) & (0xFF as u32)) as u8
+    out_buf[foot_idx + 6] = ((isize >> 16) & (0xFF as u32)) as u8
+    out_buf[foot_idx + 7] = ((isize >> 24) & (0xFF as u32)) as u8
+
+    shelf_free(@def_shelf)
+
+    return RawShelf {
+        data: out_buf,
+        elem_size: 1,
+        len: total_len,
+        cap: total_len,
+    }
+}
+
+// Compresses a string into an RFC 1952 Gzip byte stream.
+view act gzip_encode_str(s: string) -> RawShelf or string {
+    if s == null { return gzip_encode(null, 0) }
+    let len = str.len(s)
+    return gzip_encode(s as @u8, len)
+}

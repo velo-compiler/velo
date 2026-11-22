@@ -1,0 +1,127 @@
+// std.compress.zlib — RFC 1950 Zlib framing, header verification, and Adler-32 integrity.
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+use "../coll/shelf.vl"
+use "../str/slice.vl"
+use "adler32.vl"
+use "inflate.vl"
+use "deflate.vl"
+
+// Decompresses an RFC 1950 Zlib byte stream into a RawShelf after validating header and Adler-32 checksum.
+view act zlib_decode(data: @u8, len: usize) -> RawShelf or string {
+    if data == null or len < 6 {
+        fail "zlib payload too short (minimum 6 bytes required)"
+    }
+
+    let cmf = data[0] as u32
+    let flg = data[1] as u32
+
+    // Validate header checksum: (CMF * 256 + FLG) % 31 == 0
+    if (((cmf * (256 as u32)) + flg) % (31 as u32)) != (0 as u32) {
+        fail "corrupted zlib header check bits"
+    }
+
+    // Compression method: 8 = Deflate
+    let cm = cmf & (0x0F as u32)
+    if cm != (8 as u32) {
+        fail "unsupported zlib compression method (only deflate is supported)"
+    }
+
+    // Window size: CINFO <= 7
+    let cinfo = (cmf >> (4 as u32)) & (0x0F as u32)
+    if cinfo > (7 as u32) {
+        fail "invalid zlib window size"
+    }
+
+    // Check for preset dictionary (bit 5 of FLG)
+    let fdict = (flg >> (5 as u32)) & (1 as u32)
+    mut deflate_offset: usize = 2
+    if fdict != (0 as u32) {
+        if len < 10 {
+            fail "truncated zlib payload with dictionary flag"
+        }
+        deflate_offset = 6 // skip 4-byte DICTID
+    }
+
+    if deflate_offset + 4 > len {
+        fail "truncated zlib stream"
+    }
+
+    let deflate_len = len - 4 - deflate_offset
+    let deflate_ptr = (data as usize + deflate_offset) as @u8
+
+    mut decomp = inflate(deflate_ptr, deflate_len) or return
+
+    // Extract expected 4-byte big-endian Adler-32 checksum
+    let b0 = data[len - 4] as u32
+    let b1 = data[len - 3] as u32
+    let b2 = data[len - 2] as u32
+    let b3 = data[len - 1] as u32
+    let expected_adler = (b0 << (24 as u32)) | (b1 << (16 as u32)) | (b2 << (8 as u32)) | b3
+
+    // Verify Adler-32 checksum of decompressed payload
+    let actual_adler = adler32_calc(decomp.data, decomp.len)
+    if actual_adler != expected_adler {
+        shelf_free(@decomp)
+        fail "zlib adler32 checksum mismatch"
+    }
+
+    return decomp
+}
+
+// Decompresses an RFC 1950 Zlib byte stream directly into a null-terminated heap string.
+view act zlib_decode_str(data: @u8, len: usize) -> string or string {
+    mut shelf = zlib_decode(data, len) or return
+    inflate_ensure_space(@shelf, 1)
+    if shelf.data != null {
+        shelf.data[shelf.len] = 0 as u8
+        return shelf.data as string
+    }
+    return ""
+}
+
+// Compresses raw bytes into an RFC 1950 Zlib byte stream with CMF/FLG header and Adler-32 footer.
+view act zlib_encode(data: @u8, len: usize) -> RawShelf or string {
+    mut def_shelf = deflate(data, len) or return
+
+    let total_len = 2 + def_shelf.len + 4
+    let out_buf: @u8 = heap_alloc(total_len)
+    if out_buf == null {
+        shelf_free(@def_shelf)
+        fail "out of memory allocating zlib output buffer"
+    }
+
+    // Header: CMF = 0x78 (deflate, 32K window), FLG = 0x01 (default compression, FCHECK = 1)
+    // (0x78 * 256 + 0x01) % 31 == 0
+    out_buf[0] = 0x78 as u8
+    out_buf[1] = 0x01 as u8
+
+    // Deflate payload
+    if def_shelf.len > 0 and def_shelf.data != null {
+        copy((out_buf as usize + 2) as @u8, def_shelf.data, def_shelf.len)
+    }
+
+    // Adler-32 footer (big-endian)
+    let adler = adler32_calc(data, len)
+    let foot_idx = 2 + def_shelf.len
+    out_buf[foot_idx] = ((adler >> (24 as u32)) & (0xFF as u32)) as u8
+    out_buf[foot_idx + 1] = ((adler >> (16 as u32)) & (0xFF as u32)) as u8
+    out_buf[foot_idx + 2] = ((adler >> (8 as u32)) & (0xFF as u32)) as u8
+    out_buf[foot_idx + 3] = (adler & (0xFF as u32)) as u8
+
+    shelf_free(@def_shelf)
+
+    return RawShelf {
+        data: out_buf,
+        elem_size: 1,
+        len: total_len,
+        cap: total_len,
+    }
+}
+
+// Compresses a string into an RFC 1950 Zlib byte stream.
+view act zlib_encode_str(s: string) -> RawShelf or string {
+    if s == null { return zlib_encode(null, 0) }
+    let len = str.len(s)
+    return zlib_encode(s as @u8, len)
+}

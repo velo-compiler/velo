@@ -1,0 +1,206 @@
+// std.compress.bitstream — LSB-first bitstream reader and writer for RFC 1951 DEFLATE.
+use "../mem/heap.vl"
+use "../mem/ops.vl"
+use "../coll/shelf.vl"
+
+// Bitstream reader reading least-significant-bit first.
+view data BitReader {
+    data: @u8,
+    len: usize,
+    pos: usize,
+    bit_buf: u32,
+    bit_cnt: usize,
+}
+
+// Initializes a bitstream reader over an input byte slice.
+view act br_init(r: @BitReader, data: @u8, len: usize) {
+    if r == null { return }
+    r.data = data
+    r.len = len
+    r.pos = 0
+    r.bit_buf = 0 as u32
+    r.bit_cnt = 0
+}
+
+// Reads n bits (0 <= n <= 24) from the bitstream. Returns -1 on unexpected end of data.
+view act br_read_bits(r: @BitReader, n: usize) -> i32 {
+    if r == null { return -1 }
+    if n == 0 { return 0 }
+    loop r.bit_cnt < n {
+        if r.pos >= r.len {
+            return -1
+        }
+        let b = r.data[r.pos] as u32
+        r.bit_buf = r.bit_buf | (b << (r.bit_cnt as u32))
+        r.pos += 1
+        r.bit_cnt += 8
+    }
+    let mask = (((1 as u32) << (n as u32)) - (1 as u32))
+    let val = (r.bit_buf & mask) as i32
+    r.bit_buf = r.bit_buf >> (n as u32)
+    r.bit_cnt -= n
+    return val
+}
+
+// Discards any pending fractional bits and rewinds unconsumed whole bytes to align to a byte boundary.
+view act br_align(r: @BitReader) {
+    if r == null { return }
+    let whole_bytes = r.bit_cnt / 8
+    if whole_bytes > 0 and r.pos >= whole_bytes {
+        r.pos -= whole_bytes
+    }
+    r.bit_buf = 0 as u32
+    r.bit_cnt = 0
+}
+
+// Returns the number of raw unread bytes remaining in the stream after byte alignment.
+view act br_bytes_remaining(r: @BitReader) -> usize {
+    if r == null { return 0 }
+    let whole_bytes = r.bit_cnt / 8
+    mut p = r.pos
+    if whole_bytes > 0 and p >= whole_bytes {
+        p -= whole_bytes
+    }
+    if p >= r.len { return 0 }
+    return r.len - p
+}
+
+// Bitstream writer packing bits least-significant-bit first into a dynamic byte buffer.
+view data BitWriter {
+    data: @u8,
+    len: usize,
+    cap: usize,
+    bit_buf: u32,
+    bit_cnt: usize,
+}
+
+// Allocates and initializes a new BitWriter.
+view act bw_init(initial_cap: usize) -> BitWriter {
+    mut cap = initial_cap
+    if cap < 64 { cap = 64 }
+    let buf: @u8 = heap_alloc(cap)
+    return BitWriter {
+        data: buf,
+        len: 0,
+        cap: cap,
+        bit_buf: 0 as u32,
+        bit_cnt: 0,
+    }
+}
+
+// Appends a single raw byte to the BitWriter buffer, growing dynamically if needed.
+view act bw_append_raw_byte(bw: @BitWriter, b: u8) {
+    if bw == null { return }
+    if bw.len >= bw.cap {
+        let new_cap = bw.cap * 2
+        let new_buf: @u8 = heap_realloc(bw.data, new_cap)
+        if new_buf != null {
+            bw.data = new_buf
+            bw.cap = new_cap
+        }
+    }
+    if bw.data != null and bw.len < bw.cap {
+        bw.data[bw.len] = b
+        bw.len += 1
+    }
+}
+
+// Writes n bits (0 <= n <= 24) to the bitstream LSB first.
+view act bw_write_bits(bw: @BitWriter, val: u32, n: usize) {
+    if bw == null or n == 0 { return }
+    let mask = (((1 as u32) << (n as u32)) - (1 as u32))
+    bw.bit_buf = bw.bit_buf | ((val & mask) << (bw.bit_cnt as u32))
+    bw.bit_cnt += n
+    loop bw.bit_cnt >= 8 {
+        let b = (bw.bit_buf & (0xFF as u32)) as u8
+        bw_append_raw_byte(bw, b)
+        bw.bit_buf = bw.bit_buf >> (8 as u32)
+        bw.bit_cnt -= 8
+    }
+}
+
+// Writes an aligned single byte to the stream (flushes bit buffer if non-empty).
+view act bw_write_byte(bw: @BitWriter, b: u8) {
+    if bw == null { return }
+    if bw.bit_cnt == 0 {
+        bw_append_raw_byte(bw, b)
+    } else {
+        bw_write_bits(bw, b as u32, 8)
+    }
+}
+
+// Writes a 16-bit unsigned integer in little-endian order.
+view act bw_write_u16_le(bw: @BitWriter, val: u16) {
+    let b0 = (val & (0xFF as u16)) as u8
+    let b1 = ((val >> (8 as u16)) & (0xFF as u16)) as u8
+    bw_write_byte(bw, b0)
+    bw_write_byte(bw, b1)
+}
+
+// Writes a 32-bit unsigned integer in little-endian order.
+view act bw_write_u32_le(bw: @BitWriter, val: u32) {
+    let b0 = (val & (0xFF as u32)) as u8
+    let b1 = ((val >> (8 as u32)) & (0xFF as u32)) as u8
+    let b2 = ((val >> (16 as u32)) & (0xFF as u32)) as u8
+    let b3 = ((val >> (24 as u32)) & (0xFF as u32)) as u8
+    bw_write_byte(bw, b0)
+    bw_write_byte(bw, b1)
+    bw_write_byte(bw, b2)
+    bw_write_byte(bw, b3)
+}
+
+// Writes a 32-bit unsigned integer in big-endian order (used for Adler-32).
+view act bw_write_u32_be(bw: @BitWriter, val: u32) {
+    let b0 = ((val >> (24 as u32)) & (0xFF as u32)) as u8
+    let b1 = ((val >> (16 as u32)) & (0xFF as u32)) as u8
+    let b2 = ((val >> (8 as u32)) & (0xFF as u32)) as u8
+    let b3 = (val & (0xFF as u32)) as u8
+    bw_write_byte(bw, b0)
+    bw_write_byte(bw, b1)
+    bw_write_byte(bw, b2)
+    bw_write_byte(bw, b3)
+}
+
+// Flushes any partially written byte (padding with 0 bits to byte boundary).
+view act bw_flush(bw: @BitWriter) {
+    if bw == null { return }
+    if bw.bit_cnt > 0 {
+        let b = (bw.bit_buf & (0xFF as u32)) as u8
+        bw_append_raw_byte(bw, b)
+        bw.bit_buf = 0 as u32
+        bw.bit_cnt = 0
+    }
+}
+
+// Disposes a BitWriter's heap buffer.
+view act bw_free(bw: @BitWriter) {
+    if bw == null { return }
+    if bw.data != null {
+        heap_free(bw.data)
+        bw.data = null
+    }
+    bw.len = 0
+    bw.cap = 0
+    bw.bit_buf = 0 as u32
+    bw.bit_cnt = 0
+}
+
+// Converts the BitWriter buffer into a standard RawShelf and resets the writer.
+view act bw_to_shelf(bw: @BitWriter) -> RawShelf {
+    if bw == null {
+        return shelf_create(1, 0)
+    }
+    bw_flush(bw)
+    let s = RawShelf {
+        data: bw.data,
+        elem_size: 1,
+        len: bw.len,
+        cap: bw.cap,
+    }
+    bw.data = null
+    bw.len = 0
+    bw.cap = 0
+    bw.bit_buf = 0 as u32
+    bw.bit_cnt = 0
+    return s
+}

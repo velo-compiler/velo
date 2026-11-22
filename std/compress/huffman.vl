@@ -1,0 +1,202 @@
+// std.compress.huffman — RFC 1951 canonical Huffman tree construction, decoding, and encoding tables.
+use "bitstream.vl"
+
+// Canonical Huffman table descriptor using Mark Adler's puff.c compact structure.
+view data HuffmanTable {
+    count: [16]i32,
+    symbol: [288]i32,
+}
+
+// Reverses the bottom n bits of val.
+view act huffman_reverse_bits(val: u32, n: usize) -> u32 {
+    mut res: u32 = 0 as u32
+    mut v = val
+    mut i: usize = 0
+    loop i < n {
+        res = (res << (1 as u32)) | (v & (1 as u32))
+        v = v >> (1 as u32)
+        i += 1
+    }
+    return res
+}
+
+// Builds a canonical Huffman table from an array of code lengths (RFC 1951 section 3.2.2).
+view act huffman_construct(h: @HuffmanTable, lengths: @i32, n: usize) -> bool {
+    if h == null or lengths == null { return false }
+
+    mut i: usize = 0
+    loop i < 16 {
+        h.count[i] = 0
+        i += 1
+    }
+    i = 0
+    loop i < 288 {
+        h.symbol[i] = 0
+        i += 1
+    }
+
+    // Count number of codes of each length
+    i = 0
+    loop i < n {
+        let l = lengths[i]
+        if l > 0 and l <= 15 {
+            h.count[l as usize] += 1
+        }
+        i += 1
+    }
+
+    // Check for root code validation
+    if h.count[0] == (n as i32) {
+        return true // complete empty table
+    }
+
+    // Compute offsets for each code length in symbol table
+    mut offs: [16]i32
+    offs[0] = 0
+    offs[1] = 0
+    i = 1
+    loop i < 15 {
+        offs[i + 1] = offs[i] + h.count[i]
+        i += 1
+    }
+
+    // Assign symbols to contiguous ranges
+    i = 0
+    loop i < n {
+        let l = lengths[i]
+        if l > 0 and l <= 15 {
+            let slot = offs[l as usize]
+            if slot >= 0 and slot < 288 {
+                h.symbol[slot as usize] = i as i32
+                offs[l as usize] += 1
+            }
+        }
+        i += 1
+    }
+
+    return true
+}
+
+// Decodes a single symbol from the bitstream using the canonical Huffman table. Returns -1 on error.
+view act huffman_decode(br: @BitReader, h: @HuffmanTable) -> i32 {
+    if br == null or h == null { return -1 }
+
+    mut code: i32 = 0
+    mut first: i32 = 0
+    mut index: i32 = 0
+    mut length: usize = 1
+
+    loop length <= 15 {
+        let bit = br_read_bits(br, 1)
+        if bit < 0 { return -1 }
+        code = code | bit
+        let cnt = h.count[length]
+        if (code - cnt) < first {
+            let sym_idx = index + (code - first)
+            if sym_idx >= 0 and sym_idx < 288 {
+                return h.symbol[sym_idx as usize]
+            }
+            return -1
+        }
+        index += cnt
+        first += cnt
+        first = first << 1
+        code = code << 1
+        length += 1
+    }
+
+    return -1
+}
+
+// Initializes standard fixed Huffman decoding tables (RFC 1951 section 3.2.6).
+view act huffman_init_fixed(lit_table: @HuffmanTable, dist_table: @HuffmanTable) {
+    if lit_table != null {
+        mut lit_lens: [288]i32
+        mut i: usize = 0
+        loop i < 144 { lit_lens[i] = 8; i += 1 }
+        loop i < 256 { lit_lens[i] = 9; i += 1 }
+        loop i < 280 { lit_lens[i] = 7; i += 1 }
+        loop i < 288 { lit_lens[i] = 8; i += 1 }
+        huffman_construct(lit_table, @lit_lens[0], 288)
+    }
+    if dist_table != null {
+        mut dist_lens: [32]i32
+        mut j: usize = 0
+        loop j < 32 { dist_lens[j] = 5; j += 1 }
+        huffman_construct(dist_table, @dist_lens[0], 32)
+    }
+}
+
+// Precomputed encoding tables for fixed Huffman blocks
+mut g_fixed_lit_code: @u32 = null
+mut g_fixed_lit_len: @u8 = null
+mut g_fixed_dist_code: @u32 = null
+mut g_fixed_dist_len: @u8 = null
+
+// Ensures fixed Huffman encoding tables are initialized.
+view act huffman_ensure_fixed_enc() {
+    if g_fixed_lit_code != null { return }
+
+    g_fixed_lit_code = heap_alloc(288 * 4) as @u32
+    g_fixed_lit_len = heap_alloc(288)
+    g_fixed_dist_code = heap_alloc(32 * 4) as @u32
+    g_fixed_dist_len = heap_alloc(32)
+    if g_fixed_lit_code == null or g_fixed_lit_len == null or g_fixed_dist_code == null or g_fixed_dist_len == null {
+        return
+    }
+
+    mut i: usize = 0
+    loop i < 144 {
+        g_fixed_lit_len[i] = 8 as u8
+        g_fixed_lit_code[i] = huffman_reverse_bits((0x30 + i) as u32, 8)
+        i += 1
+    }
+    loop i < 256 {
+        g_fixed_lit_len[i] = 9 as u8
+        g_fixed_lit_code[i] = huffman_reverse_bits((0x190 + (i - 144)) as u32, 9)
+        i += 1
+    }
+    loop i < 280 {
+        g_fixed_lit_len[i] = 7 as u8
+        g_fixed_lit_code[i] = huffman_reverse_bits((0x000 + (i - 256)) as u32, 7)
+        i += 1
+    }
+    loop i < 288 {
+        g_fixed_lit_len[i] = 8 as u8
+        g_fixed_lit_code[i] = huffman_reverse_bits((0x0C0 + (i - 280)) as u32, 8)
+        i += 1
+    }
+
+    mut d: usize = 0
+    loop d < 32 {
+        g_fixed_dist_len[d] = 5 as u8
+        g_fixed_dist_code[d] = huffman_reverse_bits(d as u32, 5)
+        d += 1
+    }
+}
+
+// Retrieves the bit code and length for a fixed literal or length symbol.
+view act huffman_get_fixed_lit(sym: usize, out_len: @usize) -> u32 {
+    huffman_ensure_fixed_enc()
+    if sym >= 288 {
+        if out_len != null { out_len[0] = 0 }
+        return 0 as u32
+    }
+    if out_len != null {
+        out_len[0] = g_fixed_lit_len[sym] as usize
+    }
+    return g_fixed_lit_code[sym]
+}
+
+// Retrieves the bit code and length for a fixed distance symbol.
+view act huffman_get_fixed_dist(sym: usize, out_len: @usize) -> u32 {
+    huffman_ensure_fixed_enc()
+    if sym >= 32 {
+        if out_len != null { out_len[0] = 0 }
+        return 0 as u32
+    }
+    if out_len != null {
+        out_len[0] = g_fixed_dist_len[sym] as usize
+    }
+    return g_fixed_dist_code[sym]
+}

@@ -1,0 +1,210 @@
+// Pure Velo unit and conformance test suite for std.compress (DEFLATE, Zlib, Gzip).
+use "../../io/print.vl"
+use "../../str/slice.vl"
+use "../../compress.vl"
+
+act test_adler32_vectors() -> bool {
+    let a0 = adler32_str("")
+    if a0 != (1 as u32) { return false }
+
+    let a1 = adler32_str("a")
+    if a1 != (0x00620062 as u32) { return false }
+
+    let a2 = adler32_str("123456789")
+    if a2 != (0x091E01DE as u32) { return false }
+
+    return true
+}
+
+act test_deflate_empty() -> bool {
+    let comp_res = deflate_str("")
+    if !comp_res.ok { return false }
+    let comp = comp_res.val
+    if comp.len != 2 { return false }
+
+    let decomp_res = inflate_str(comp.data, comp.len)
+    if !decomp_res.ok { return false }
+    if decomp_res.val != "" { return false }
+
+    return true
+}
+
+act test_deflate_short() -> bool {
+    let s1 = "x"
+    let c1_res = deflate_str(s1)
+    if !c1_res.ok { return false }
+    let d1_res = inflate_str(c1_res.val.data, c1_res.val.len)
+    if !d1_res.ok { return false }
+    if d1_res.val != s1 { return false }
+
+    let s2 = "ok"
+    let c2_res = deflate_str(s2)
+    if !c2_res.ok { return false }
+    let d2_res = inflate_str(c2_res.val.data, c2_res.val.len)
+    if !d2_res.ok { return false }
+    if d2_res.val != s2 { return false }
+
+    return true
+}
+
+act test_deflate_repetitive_lz77() -> bool {
+    let orig = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    let comp_res = deflate_str(orig)
+    if !comp_res.ok { return false }
+    let comp = comp_res.val
+    if comp.len >= str.len(orig) { return false }
+
+    let decomp_res = inflate_str(comp.data, comp.len)
+    if !decomp_res.ok { return false }
+    if decomp_res.val != orig { return false }
+
+    return true
+}
+
+act test_zlib_roundtrip() -> bool {
+    let msg = "Velo RFC 1950 Zlib test payload with structured content and repetition."
+    let enc_res = zlib_encode_str(msg)
+    if !enc_res.ok { return false }
+    let enc = enc_res.val
+    if enc.len <= 6 { return false }
+
+    let cmf = enc.data[0] as u32
+    let flg = enc.data[1] as u32
+    if cmf != (0x78 as u32) { return false }
+    if ((cmf * (256 as u32) + flg) % (31 as u32)) != (0 as u32) { return false }
+
+    let dec_res = zlib_decode_str(enc.data, enc.len)
+    if !dec_res.ok { return false }
+    if dec_res.val != msg { return false }
+
+    return true
+}
+
+act test_zlib_error_detection() -> bool {
+    let msg = "Hello Zlib"
+    let enc_res = zlib_encode_str(msg)
+    if !enc_res.ok { return false }
+    let enc = enc_res.val
+
+    // Corrupt FLG check bits
+    enc.data[1] = (enc.data[1] ^ (1 as u8))
+    let dec_bad_hdr = zlib_decode(enc.data, enc.len)
+    if dec_bad_hdr.ok { return false }
+
+    // Restore header and corrupt Adler-32 footer
+    enc.data[1] = (enc.data[1] ^ (1 as u8))
+    enc.data[enc.len - 1] = (enc.data[enc.len - 1] ^ (0xFF as u8))
+    let dec_bad_adler = zlib_decode(enc.data, enc.len)
+    if dec_bad_adler.ok { return false }
+
+    return true
+}
+
+act test_gzip_roundtrip() -> bool {
+    let msg = "Pure Velo Gzip (RFC 1952) compliance test case 1234567890."
+    let enc_res = gzip_encode_str(msg)
+    if !enc_res.ok { return false }
+    let enc = enc_res.val
+    if enc.len < 18 { return false }
+
+    // Check magic bytes
+    if enc.data[0] != (0x1F as u8) { return false }
+    if enc.data[1] != (0x8B as u8) { return false }
+    if enc.data[2] != (8 as u8) { return false }
+
+    let dec_res = gzip_decode_str(enc.data, enc.len)
+    if !dec_res.ok { return false }
+    if dec_res.val != msg { return false }
+
+    return true
+}
+
+act test_gzip_error_detection() -> bool {
+    let msg = "Gzip Magic Test"
+    let enc_res = gzip_encode_str(msg)
+    if !enc_res.ok { return false }
+    let enc = enc_res.val
+
+    // Corrupt ID1 magic byte
+    enc.data[0] = 0x00 as u8
+    let dec_bad_magic = gzip_decode(enc.data, enc.len)
+    if dec_bad_magic.ok { return false }
+    enc.data[0] = 0x1F as u8
+
+    // Corrupt CRC-32 footer (byte at len - 8)
+    enc.data[enc.len - 8] = (enc.data[enc.len - 8] ^ (0xFF as u8))
+    let dec_bad_crc = gzip_decode(enc.data, enc.len)
+    if dec_bad_crc.ok { return false }
+    enc.data[enc.len - 8] = (enc.data[enc.len - 8] ^ (0xFF as u8))
+
+    // Corrupt ISIZE footer (byte at len - 4)
+    enc.data[enc.len - 4] = (enc.data[enc.len - 4] ^ (0x01 as u8))
+    let dec_bad_isize = gzip_decode(enc.data, enc.len)
+    if dec_bad_isize.ok { return false }
+
+    return true
+}
+
+act test_truncated_inputs() -> bool {
+    let res1 = inflate(null, 0)
+    if !res1.ok { return false }
+
+    mut dummy: [4]u8 = [0x1F, 0x8B, 0x08, 0x00]
+    let res2 = gzip_decode(@dummy[0], 4)
+    if res2.ok { return false }
+
+    let res3 = zlib_decode(@dummy[0], 4)
+    if res3.ok { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    if !test_adler32_vectors() {
+        println_str("FAIL: test_adler32_vectors")
+        return 1
+    }
+
+    if !test_deflate_empty() {
+        println_str("FAIL: test_deflate_empty")
+        return 2
+    }
+
+    if !test_deflate_short() {
+        println_str("FAIL: test_deflate_short")
+        return 3
+    }
+
+    if !test_deflate_repetitive_lz77() {
+        println_str("FAIL: test_deflate_repetitive_lz77")
+        return 4
+    }
+
+    if !test_zlib_roundtrip() {
+        println_str("FAIL: test_zlib_roundtrip")
+        return 5
+    }
+
+    if !test_zlib_error_detection() {
+        println_str("FAIL: test_zlib_error_detection")
+        return 6
+    }
+
+    if !test_gzip_roundtrip() {
+        println_str("FAIL: test_gzip_roundtrip")
+        return 7
+    }
+
+    if !test_gzip_error_detection() {
+        println_str("FAIL: test_gzip_error_detection")
+        return 8
+    }
+
+    if !test_truncated_inputs() {
+        println_str("FAIL: test_truncated_inputs")
+        return 9
+    }
+
+    println_str("PASS: std.compress all tests passed")
+    return 0
+}
