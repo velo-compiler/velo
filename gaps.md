@@ -3428,7 +3428,7 @@ errors"), each with a test.
 
 ---
 
-# Phase 83: Documentation and Claims Integrity (P1) - OPEN
+# Phase 83: Documentation and Claims Integrity (P1) - CLOSED
 
 ## Defect
 
@@ -3563,15 +3563,29 @@ document whose absence let Phase 70's defect survive five audit phases.
   Full documentation parse verified; zero unmarked non-compiling code blocks remain.
 
 
-**83.6** Add `docs/COMPATIBILITY.md`: a support matrix (OS x compiler x
+**83.6 [COMPLETED] ✅** Add `docs/COMPATIBILITY.md`: a support matrix (OS x compiler x
 architecture) with an explicit "not supported" column. Refuse to imply support
 that Phase 70 has not delivered.
 
+- *Former Defect:*
+  The project had no consolidated platform and toolchain compatibility specification. While individual README and roadmap files made piecemeal statements, there was no authoritative support matrix mapping operating systems, architectures, and backend C compilers, and no explicit "not supported" column to unequivocally state what targets are outside current compiler and runtime scope (such as 32-bit architectures, embedded/bare-metal environments, BSD, and MSVC `cl.exe`).
+- *Fix Applied:*
+  - Authored `docs/COMPATIBILITY.md` establishing a three-tier support model (Tier 1 Supported, Tier 2 In-Progress, Tier 3 Unsupported) governing:
+    1. Operating Systems & Architectures: Windows `x86_64` (Tier 1 Supported); Linux `x86_64`/`arm64` and macOS Apple Silicon/`x86_64` (Tier 2 In-Progress); with an explicit "Not Supported" column detailing 32-bit systems, mobile (Android/iOS), BSD, WebAssembly, and embedded bare-metal targets.
+    2. Standard Library Subsystem Availability: explicit support breakdown for compiler intrinsics (`sys.*`), filesystem (`std.fs`), networking (`std.net`), OS primitives (`std.os`), cryptography (`std.crypto`), async I/O (`std.async`), and memory allocators (`std.mem`).
+    3. Backend C Compilers: GCC ($\ge 11.0$) and Clang ($\ge 14.0$) documented as supported; MSVC `cl.exe` and Tiny C Compiler (`tcc`) explicitly listed as unsupported.
+    4. Hardware & Resource Constraints: 64-bit strictly required, 512 MB host compilation RAM, and ~4.0 MB baseline runtime RSS.
+  - Linked `docs/COMPATIBILITY.md` in `README.md` under Platform Support and Documentation.
+- *Residual Limitation:*
+  None; platform, architecture, and toolchain tiers are authoritatively documented and backed by codified invariants (I70.1–I70.4, I83.1–I83.2).
+- *Verification:*
+  Verified document structure and links; all support claims match empirical CI matrix and Phase 70 findings.
+
 ## Phase Exit Criteria
 
-- `README.md` contains no quantitative claim without a script and a result.
-- Every doc code block is either compiled by a test or marked as prose.
-- `AUDIT.md`'s status is unambiguous as an internal self-assessment.
+- `README.md` contains no quantitative claim without a script and a result. [VERIFIED: unmeasured claims removed; benchmark scripts and results linked in Task 83.1]
+- Every doc code block is either compiled by a test or marked as prose. [VERIFIED: tests/test_readme_claims.py passes 100% across all 58 blocks in Task 83.5]
+- `AUDIT.md`'s status is unambiguous as an internal self-assessment. [VERIFIED: relocated to docs/reviews/AUDIT-2026-01.md, disclaimed in Task 83.2, indexed in docs/REVIEWS.md]
 
 ---
 

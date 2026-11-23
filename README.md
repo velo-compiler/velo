@@ -24,6 +24,8 @@ Today, Velo is built and measured for:
 | **Linux** | `x86_64`, `aarch64` | *Work in Progress* | Core compiler transpiles to C99; POSIX runtime facade and platform driver convergence in progress (see Phase 70). |
 | **macOS** | Apple Silicon, `x86_64` | *Work in Progress* | Core compiler transpiles to C99; Darwin runtime facade and platform driver convergence in progress (see Phase 70). |
 
+See [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) for the complete OS, architecture, C compiler, and standard library subsystem compatibility matrix.
+
 ---
 
 ## Key Features
@@ -203,6 +205,7 @@ All showcase projects are continuously verified for syntactic, semantic, and C-c
 * [Stage 2 Production Code Standards](docs/STAGE2_CODE_STANDARDS.md)
 * [Empirical Performance & Multi-Language Benchmarks](benchmark/RESULTS.md)
 * [Memory Footprint & RSS Audit](benchmark/MEMORY_RESULTS.md)
+* [Platform & Toolchain Compatibility Matrix](docs/COMPATIBILITY.md)
 * [Architectural Reviews & Audits Index](docs/REVIEWS.md)
 * [Contributing](CONTRIBUTING.md)
 * [Changelog](CHANGELOG.md)
