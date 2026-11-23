@@ -131,6 +131,7 @@ act parse_unary(p: @Parser) -> @ExprNode {
     if parser_check(p, TOK_AT) or parser_check(p, TOK_MINUS) or parser_check(p, TOK_NOT) or parser_check(p, TOK_BANG) or parser_check(p, TOK_TILDE) {
         let op_tok = parser_advance(p)
         let operand = parse_unary(p)
+        if operand == null { return null }
         if op_tok.kind == TOK_AT {
             return make_address_of_expr(operand, op_tok.line, op_tok.col)
         }

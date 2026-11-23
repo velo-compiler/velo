@@ -257,6 +257,7 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
             st.current_func_name = cur.name
             st.current_zone_depth = 0
             st.current_loop_depth = 0
+            st.check_depth = 0
             let prev_strict = st.strict_safety
             if cur.module_path != null and cur.module_path == "std" { st.strict_safety = false }
             enter_scope(st)
@@ -287,6 +288,7 @@ act check_program(st: @SymbolTable, prog: @ProgramNode) -> bool {
             st.current_func_name = cur.name
             st.current_zone_depth = 0
             st.current_loop_depth = 0
+            st.check_depth = 0
             enter_scope(st)
             check_statement(st, "void", cur.body)
             exit_scope(st)

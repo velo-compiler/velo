@@ -87,11 +87,17 @@ act tokenize(lex: @Lexer) {
             lex.pos += 2
             lex.col += 2
             mut depth: usize = 1
+            mut exceeded: bool = false
             loop lex.pos + 1 < len and depth > 0 {
                 if src[lex.pos] == '/' and src[lex.pos + 1] == '*' {
                     lex.pos += 2
                     lex.col += 2
                     depth += 1
+                    if depth > 128 and not exceeded {
+                        exceeded = true
+                        lex.had_error = true
+                        diag_stage_arg("lexer", "VELO-E0021", lex.line, lex.col, "block comment nesting depth exceeds limit of 128")
+                    }
                 } else if src[lex.pos] == '*' and src[lex.pos + 1] == '/' {
                     lex.pos += 2
                     lex.col += 2
@@ -106,7 +112,7 @@ act tokenize(lex: @Lexer) {
                     lex.pos += 1
                 }
             }
-            if depth > 0 {
+            if depth > 0 and not exceeded {
                 report_warning("lexer", start_line, start_col, "Unclosed block comment")
                 pretty_render_block(lex.file_path, start_line, start_col, 2, "Unclosed block comment", "warning", lex.source)
             }

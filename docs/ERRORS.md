@@ -40,6 +40,7 @@ Or browse the registry below.
 | [`VELO-E0018`](#velo-e0018-cannot-infer-element-type-of-empty-shelf-literal--annotate-it) | Semantic | Cannot infer element type of empty shelf literal — annotate it |
 | [`VELO-E0019`](#velo-e0019-cannot-infer-element-type-of-empty-ring-literal--annotate-it) | Semantic | Cannot infer element type of empty ring literal — annotate it |
 | [`VELO-E0020`](#velo-e0020-raw-pointer-dereference-requires-an-unsafe----block) | Semantic | Raw pointer dereference requires an 'unsafe { ... }' block |
+| [`VELO-E0021`](#velo-e0021-recursion-depth-limit-exceeded) | Robustness | Recursion depth limit exceeded |
 
 ---
 
@@ -540,4 +541,27 @@ act main() -> i32 {
     }
     return 0
 }
+```
+
+---
+
+### VELO-E0021: Recursion depth limit exceeded
+
+The compiler encountered recursive nesting (in lexer block comments, parser expressions, or type checker scopes) that exceeded the architectural recursion depth limit. This protects the compiler process from stack overflow (`0xC00000FD`) and memory exhaustion when processing pathological or adversarial inputs.
+
+- Lexer limit: 128 nested block comments (`/* ... */`)
+- Parser limit: 256 nested expression levels (parentheses, binary/unary operators, calls)
+- Checker limit: 128 nested block statement scopes (`{ ... }`)
+
+#### Erroneous Code
+```velo
+// More than 256 nested parentheses:
+let x = (((... 257 levels deep ...)));
+```
+
+#### Corrected Code
+Refactor deeply nested expressions into sequential intermediate bindings or break deeply nested block scopes into dedicated functions.
+```velo
+let a = (1 + 2)
+let b = (a * 3)
 ```

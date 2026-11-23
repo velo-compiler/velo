@@ -159,7 +159,6 @@ def generate_malformed_inputs() -> Generator[InputCase, None, None]:
         "deep_nesting_parens_10k",
         "nesting",
         "let x = " + "(" * 10000 + "1" + ")" * 10000 + ";",
-        xfail_reason="Unbounded recursion stack overflow (0xC00000FD) on 10k nesting; to be bounded with named diagnostic in Task 82.2",
     )
 
     # 4. 1 MB Identifiers

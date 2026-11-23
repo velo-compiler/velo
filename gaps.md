@@ -3318,8 +3318,29 @@ generator with every historical crash input from Phases 52-69 and this file.
 - *Verification:*
   `python -m pytest tests/test_compiler_no_crash.py -v` -> 86 passed, 4 xfailed in 2.47s.
 
-**82.2** Add depth limits to the lexer/parser/checker with a named diagnostic
+**82.2 [COMPLETED] ✅** Add depth limits to the lexer/parser/checker with a named diagnostic
 and a test at limit-1, limit, limit+1.
+
+- *Former Defect:*
+  Recursion in the lexer (nested block comments `/* ... */`), the parser (expression and statement nesting `parse_expression`, `parse_block`), and the type checker (`STMT_BLOCK` checking in `type_checker_stmt`) was unbounded. Pathological or adversarial inputs with deep nesting (such as 1,000+ nested parentheses or blocks) overflowed the C runtime stack, crashing abruptly with `STATUS_STACK_OVERFLOW` (`0xC00000FD`) or hanging indefinitely under Windows Error Reporting without emitting any Velo error message.
+- *Fix Applied:*
+  - Defined stable diagnostic code `VELO-E0021`: "Recursion depth limit exceeded" in `src/common/diagnostics.vl` and documented it in `docs/ERRORS.md`.
+  - Added explicit recursion depth ceilings across all three compilation stages:
+    1. Lexer: block comment nesting limit of 128 in `src/frontend/lexer.vl`. When depth exceeds 128, sets `lex.had_error = true` and emits `[VELO-E0021] Recursion depth limit exceeded: block comment nesting depth exceeds limit of 128`.
+    2. Parser: expression recursion depth limit of 256 in `src/frontend/parser_binary.vl` and block nesting depth limit of 256 in `src/frontend/parser_stmt.vl`. When exceeded, sets `p.had_error = true`, stops descent, and emits `[VELO-E0021] Recursion depth limit exceeded: expression/block nesting depth exceeds limit of 256`. Added cascade prevention in `src/frontend/parser_primary.vl` and `src/frontend/parser_expr.vl`.
+    3. Checker: statement block scope nesting limit of 128 in `src/analysis/type_checker_stmt.vl`. When exceeded, increments `st.error_count` and emits `[VELO-E0021] Recursion depth limit exceeded: block nesting depth exceeds limit of 128`.
+  - Added `tests/test_depth_limits.py`: 18 tests systematically verifying `limit - 1`, `limit`, and `limit + 1` across all three stages under both `velo check` and `velo emit-c`:
+    - Lexer: 127 (pass), 128 (pass), 129 (fail with `VELO-E0021`).
+    - Parser: 255 (pass), 256 (pass), 257 (fail with `VELO-E0021`).
+    - Checker: 127 (pass), 128 (pass), 129 (fail with `VELO-E0021`).
+  - Removed `xfail` on 10k-deep nesting in `tests/test_compiler_no_crash.py` as it now cleanly terminates with `VELO-E0021` in milliseconds.
+  - Rebuilt bootstrap chain deterministically (`Gen2 SHA-256 == Gen3 SHA-256 == beb184119c7dc87deb5f2fe1e75e2d0064466106cc7a2ca08762aeeaca282d59`), refreshed `bootstrap.c`.
+- *Residual Limitation:*
+  None for depth bounding; lexer, parser, and checker now have fail-closed depth bounds with named diagnostics.
+- *Verification:*
+  `python -m pytest tests/test_depth_limits.py -v` -> 18 passed in 0.48s.
+  `python -m pytest tests/test_compiler_no_crash.py -v` -> 88 passed, 2 xfailed in 13.62s.
+  `python -m pytest tests/test_bootstrap_snapshot.py -q` -> 6 passed in 31.82s.
 
 **82.3** Build an AFL/libFuzzer target for the C-transpiler path
 (`compile_source_to_c_all_opts` exposed via a thin C entry point), run it for a

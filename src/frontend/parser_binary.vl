@@ -133,7 +133,17 @@ act parse_coalesce(p: @Parser) -> @ExprNode {
 
 // Parses a complete expression matching the full Pratt operator precedence hierarchy.
 act parse_expression(p: @Parser) -> @ExprNode {
-    return parse_coalesce(p)
+    p.expr_depth += 1
+    if p.expr_depth > 256 {
+        let tok = parser_peek(p, 0)
+        diag_stage_arg("parser", "VELO-E0021", tok.line, tok.col, "expression nesting depth exceeds limit of 256")
+        p.had_error = true
+        p.expr_depth -= 1
+        return null
+    }
+    let res = parse_coalesce(p)
+    p.expr_depth -= 1
+    return res
 }
 
 // 6.3 S1: the parse-row report wrapper. Prints the pinned one-liner wire row

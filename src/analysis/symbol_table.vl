@@ -141,6 +141,7 @@ data SymbolTable {
     strict_safety: bool
     current_unsafe_depth: i32
     current_loop_depth: i32
+    check_depth: i32
     current_file: string
     is_codegen: bool
     first_use: @StmtNode
@@ -155,7 +156,7 @@ act init_symbol_table(st: @SymbolTable) {
     st.fresh_counter = 0; st.unsafe_shelf_index = false; st.unsafe_array_index = false; st.is_test = false; st.source_file = ""; st.no_line_directives = false
     st.zone_counter = 0; st.current_func_ret_type = ""; st.current_func_name = ""; st.current_zone_depth = 0
     st.strict_safety = false; st.current_unsafe_depth = 0
-    st.current_loop_depth = 0; st.current_file = ""; st.is_codegen = false
+    st.current_loop_depth = 0; st.check_depth = 0; st.current_file = ""; st.is_codegen = false
     st.first_use = null
 }
 

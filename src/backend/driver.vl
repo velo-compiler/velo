@@ -257,6 +257,7 @@ act load_file_and_deps_ex(d: @CompilerDriver, raw_path: string, is_std: bool) {
     mut lex = create_lexer(source, slen, slen + 2)
     lex.file_path = file_path
     tokenize(@lex)
+    if lex.had_error { d.error_count += 1 }
 
     if lex.dropped_count > 0 {
         let dropped = lex.dropped_count

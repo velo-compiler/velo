@@ -13,6 +13,13 @@ use "parser_stmt_match.vl"
 act parse_block(p: @Parser) -> @StmtNode {
     let lbrace = parser_consume(p, TOK_LBRACE, "Expected '{'")
     parser_skip_newlines(p)
+    p.stmt_depth += 1
+    if p.stmt_depth > 256 {
+        diag_stage_arg("parser", "VELO-E0021", lbrace.line, lbrace.col, "block nesting depth exceeds limit of 256")
+        p.had_error = true
+        p.stmt_depth -= 1
+        return null
+    }
 
     mut first_stmt: @StmtNode = null
     mut last_stmt: @StmtNode = null
@@ -34,6 +41,7 @@ act parse_block(p: @Parser) -> @StmtNode {
     }
 
     parser_consume(p, TOK_RBRACE, "Expected '}' at end of block")
+    p.stmt_depth -= 1
     return make_block_stmt(first_stmt, count, lbrace.line, lbrace.col)
 }
 

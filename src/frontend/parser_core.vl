@@ -19,6 +19,8 @@ data Parser {
     first_anon: @StmtNode
     last_anon: @StmtNode
     anon_count: usize
+    expr_depth: i32
+    stmt_depth: i32
 }
 
 // Initializes a Parser instance.
@@ -33,6 +35,8 @@ act init_parser(p: @Parser, filename: string, source: string, tokens: @Token, co
     p.first_anon = null
     p.last_anon = null
     p.anon_count = 0
+    p.expr_depth = 0
+    p.stmt_depth = 0
 }
 
 // Appends a lifted anonymous function declaration to the parser's collection.

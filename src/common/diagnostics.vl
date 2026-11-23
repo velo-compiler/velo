@@ -137,6 +137,7 @@ act error_code_message(code: string) -> string {
     if code == "VELO-E0018" { return "cannot infer element type of empty shelf literal — annotate it (e.g. let e: shelf[i32] = shelf[])" }
     if code == "VELO-E0019" { return "cannot infer element type of empty ring literal — annotate it (e.g. let r: ring[i32] = ring[])" }
     if code == "VELO-E0020" { return "Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety." }
+    if code == "VELO-E0021" { return "Recursion depth limit exceeded" }
     return "Unknown compiler diagnostic"
 }
 
@@ -190,6 +191,7 @@ act error_code_explain(code: string) -> string {
     if norm == "VELO-E0018" { return "VELO-E0018: cannot infer element type of empty shelf literal — annotate it\nAn empty shelf literal requires a type annotation." }
     if norm == "VELO-E0019" { return "VELO-E0019: cannot infer element type of empty ring literal — annotate it\nAn empty ring literal requires a type annotation." }
     if norm == "VELO-E0020" { return "VELO-E0020: Raw pointer dereference requires an 'unsafe { ... }' block\nWith --strict-safety, raw pointer dereferences must be enclosed in unsafe blocks." }
+    if norm == "VELO-E0021" { return "VELO-E0021: Recursion depth limit exceeded\nThe compiler encountered nesting (in lexer tokens, parser AST, or type checker analysis) that exceeded the maximum recursion depth limit." }
     return "Unknown error code. See docs/ERRORS.md for the full error registry."
 }
 

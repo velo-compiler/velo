@@ -15,6 +15,7 @@ data Lexer {
     token_cap: usize
     dropped_count: usize
     last_kind: i32
+    had_error: bool
 }
 
 // Determines if a token kind can terminate a statement (Go-style newline rule).
@@ -39,6 +40,6 @@ act add_token(lex: @Lexer, kind: i32, start: usize, len: usize, line: i32, col: 
 // Allocates and initializes a new Lexer instance.
 act create_lexer(source: string, source_len: usize, capacity: usize) -> Lexer {
     let buf: @Token = mem.alloc(@Token, capacity)
-    return Lexer{ file_path: "", source: source, source_len: source_len, pos: 0, line: 1, col: 1, tokens: buf, token_count: 0, token_cap: capacity, dropped_count: 0, last_kind: 0 }
+    return Lexer{ file_path: "", source: source, source_len: source_len, pos: 0, line: 1, col: 1, tokens: buf, token_count: 0, token_cap: capacity, dropped_count: 0, last_kind: 0, had_error: false }
 }
 

@@ -315,6 +315,7 @@ act parse_primary(p: @Parser) -> @ExprNode {
     if parser_check(p, TOK_LPAREN) {
         let lp_tok = parser_advance(p)
         let first_expr = parse_expression(p)
+        if first_expr == null { return null }
         if parser_match(p, TOK_COMMA) {
             mut first_arg: @ExprNode = first_expr
             mut last_arg: @ExprNode = first_expr
