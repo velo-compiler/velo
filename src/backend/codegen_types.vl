@@ -2,24 +2,86 @@
 use "../frontend/token.vl"
 use "../ast/types.vl"
 use "../common/utils.vl"
+use "../common/string_builder.vl"
 use "../common/act_types.vl"
 use "../analysis/misc_checks.vl"
 
+// Typed C representation metadata for code generation.
+data CType {
+    name: string
+    width: i32
+    is_signed: bool
+    needs_space: bool
+}
+
+// Constructs a typed CType descriptor.
+act make_ctype(name: string, width: i32, is_signed: bool, needs_space: bool) -> CType {
+    return CType {
+        name: name,
+        width: width,
+        is_signed: is_signed,
+        needs_space: needs_space,
+    }
+}
+
+// Renders a CType into a StringBuilder, adding trailing space if needs_space is set.
+act ctype_render(sb: @StringBuilder, ct: CType) {
+    if ct.name != null {
+        sb_append_str(sb, ct.name)
+    }
+    if ct.needs_space {
+        sb_append_char(sb, ' ')
+    }
+}
+
+// Emits a CType into a StringBuilder followed explicitly by a single space delimiter.
+act emit_type_then_space(sb: @StringBuilder, ct: CType) {
+    if ct.name != null {
+        sb_append_str(sb, ct.name)
+    }
+    sb_append_char(sb, ' ')
+}
+
+// Maps primitive Velo types to their canonical typed C99 CType.
+act primitive_type_to_ctype(type_name: string) -> CType {
+    if type_name == null or str.len(type_name) == 0 or type_name == "void" { return make_ctype("void", 0, false, false) }
+    if type_name == "i8" { return make_ctype("int8_t", 8, true, false) }
+    if type_name == "i16" { return make_ctype("int16_t", 16, true, false) }
+    if type_name == "i32" { return make_ctype("int32_t", 32, true, false) }
+    if type_name == "i64" { return make_ctype("int64_t", 64, true, false) }
+    if type_name == "u8" { return make_ctype("uint8_t", 8, false, false) }
+    if type_name == "u16" { return make_ctype("uint16_t", 16, false, false) }
+    if type_name == "u32" { return make_ctype("uint32_t", 32, false, false) }
+    if type_name == "u64" { return make_ctype("uint64_t", 64, false, false) }
+    if type_name == "f32" { return make_ctype("float", 32, true, false) }
+    if type_name == "f64" { return make_ctype("double", 64, true, false) }
+    if type_name == "bool" { return make_ctype("bool", 1, false, false) }
+    if type_name == "usize" { return make_ctype("size_t", 64, false, false) }
+    if type_name == "isize" { return make_ctype("ptrdiff_t", 64, true, false) }
+    if type_name == "string" { return make_ctype("const char*", 64, false, false) }
+    if type_name == "f32x4" { return make_ctype("f32x4", 128, true, false) }
+    if type_name == "i32x4" { return make_ctype("i32x4", 128, true, false) }
+    return make_ctype(null, 0, false, false)
+}
+
+// Maps any Velo type to its typed CType metadata.
+act map_type_to_ctype(type_name: string) -> CType {
+    let prim = primitive_type_to_ctype(type_name)
+    if prim.name != null { return prim }
+    let c_str = map_type_to_c(type_name)
+    return make_ctype(c_str, 64, false, false)
+}
+
 // Maps a Velo type name to its standard C99 type string.
 act map_type_to_c(type_name: string) -> string {
-    if type_name == null or str.len(type_name) == 0 or type_name == "void" { return "void" }
-    if type_name == "i8" { return "int8_t" }; if type_name == "i16" { return "int16_t" }; if type_name == "i32" { return "int32_t" }
-    if type_name == "i64" { return "int64_t" }; if type_name == "u8" { return "uint8_t" }; if type_name == "u16" { return "uint16_t" }
-    if type_name == "u32" { return "uint32_t" }; if type_name == "u64" { return "uint64_t" }; if type_name == "f32" { return "float" }
-    if type_name == "f64" { return "double" }; if type_name == "bool" { return "bool" }; if type_name == "usize" { return "size_t" }
-    if type_name == "isize" { return "ptrdiff_t" }; if type_name == "string" { return "const char*" }
-    if type_name == "f32x4" { return "f32x4" }; if type_name == "i32x4" { return "i32x4" }
+    let prim = primitive_type_to_ctype(type_name)
+    if prim.name != null { return prim.name }
     // 5.2 slice 2: the shelf[dyn] tagged box (VeloDyn lives in velo_runtime.h)
     if type_name == "dyn" { return "VeloDyn" }
     // §4.1: @Allocator in Velo → VeloZoneArena in C (the @ prefix adds the * making VeloZoneArena*)
     if type_name == "Allocator" { return "VeloZoneArena" }
     // §4.2: @Thread → VeloThreadCtx (@ adds *); @Mutex stays an opaque void*
-    if type_name == "Thread" { return "VeloThreadCtx" }; if type_name == "Mutex" { return "void" }; if type_name == "File" { return "FILE" }  // 5.4 S4: @File → FILE* (streaming handles pass straight through)
+    if type_name == "Thread" { return "VeloThreadCtx" }; if type_name == "Mutex" { return "void" }; if type_name == "File" { return "FILE" } // 5.4 S4: @File → FILE* (streaming handles pass straight through)
 
     if is_act_type(type_name) {
         return mangle_act_type(type_name)

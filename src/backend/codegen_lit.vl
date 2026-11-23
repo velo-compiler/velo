@@ -7,6 +7,7 @@ use "../analysis/literal_check.vl"
 use "../analysis/reflect_checks.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
+use "codegen_types.vl"
 
 // Emits an EXPR_INT literal node safely into a C99 string builder.
 act emit_c_int_literal(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
@@ -143,16 +144,16 @@ act is_literal_range_step(start_expr: @ExprNode, end_expr: @ExprNode, step_expr:
 // anything unrecognised is an internal error, not a licence to narrow. W1
 // (SPEC 7.2 item 9) requires the induction to be at least as wide as its
 // bounds, so every 64-bit type in the type system must be listed explicitly.
-act loop_var_c_type(type_name: string) -> string {
-    if type_name == null { return "int32_t " }
-    if type_name == "i64" { return "int64_t " }
-    if type_name == "u64" { return "uint64_t " }
-    if type_name == "usize" { return "size_t " }
-    if type_name == "isize" { return "ptrdiff_t " }
-    if type_name == "u32" { return "uint32_t " }
-    if type_name == "i16" { return "int16_t " }
-    if type_name == "u16" { return "uint16_t " }
-    if type_name == "i8" { return "int8_t " }
-    if type_name == "u8" { return "uint8_t " }
-    return "int32_t "
+act loop_var_c_type(type_name: string) -> CType {
+    if type_name == null { return make_ctype("int32_t", 32, true, true) }
+    if type_name == "i64" { return make_ctype("int64_t", 64, true, true) }
+    if type_name == "u64" { return make_ctype("uint64_t", 64, false, true) }
+    if type_name == "usize" { return make_ctype("size_t", 64, false, true) }
+    if type_name == "isize" { return make_ctype("ptrdiff_t", 64, true, true) }
+    if type_name == "u32" { return make_ctype("uint32_t", 32, false, true) }
+    if type_name == "i16" { return make_ctype("int16_t", 16, true, true) }
+    if type_name == "u16" { return make_ctype("uint16_t", 16, false, true) }
+    if type_name == "i8" { return make_ctype("int8_t", 8, true, true) }
+    if type_name == "u8" { return make_ctype("uint8_t", 8, false, true) }
+    return make_ctype("int32_t", 32, true, true)
 }

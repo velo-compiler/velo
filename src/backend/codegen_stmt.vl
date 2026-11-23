@@ -23,6 +23,7 @@ use "array_gen.vl"
 use "tuple_gen.vl"
 use "range_gen.vl"
 use "math_gen.vl"
+use "codegen_types.vl"
 
 // Block-Scope Cleanup Architecture (Phase 58: AUDIT-2026-11-07):
 // 1. Lexical Scope: defers execute at block exit '}', before C and symbol scopes close.
@@ -269,7 +270,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
                     if is_int_type(et) { is_cnt = true }
                 }
                 if is_cnt {
-                    sb_append_str(sb, "for ("); sb_append_str(sb, c_type); sb_append_str(sb, vname); sb_append_str(sb, " = 0, __cnt = (")
+                    sb_append_str(sb, "for ("); ctype_render(sb, c_type); sb_append_str(sb, vname); sb_append_str(sb, " = 0, __cnt = (")
                     emit_c_expr(sb, st, stmt.expr)
                     sb_append_str(sb, "); "); sb_append_str(sb, vname); sb_append_str(sb, " < __cnt; "); sb_append_str(sb, vname); sb_append_str(sb, "++) {\n")
                 } else {
@@ -278,12 +279,12 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
                         report_error("semantic", stmt.line, stmt.col, "Condition in 'loop' statement must be of type 'bool'")
                         st.error_count += 1; return
                     }
-                    sb_append_str(sb, "for ("); sb_append_str(sb, c_type); sb_append_str(sb, vname); sb_append_str(sb, " = 0; (")
+                    sb_append_str(sb, "for ("); ctype_render(sb, c_type); sb_append_str(sb, vname); sb_append_str(sb, " = 0; (")
                     emit_c_expr(sb, st, stmt.expr)
                     sb_append_str(sb, "); "); sb_append_str(sb, vname); sb_append_str(sb, "++) {\n")
                 }
             } else {
-                sb_append_str(sb, "for ("); sb_append_str(sb, c_type); sb_append_str(sb, vname); sb_append_str(sb, " = 0; ; "); sb_append_str(sb, vname); sb_append_str(sb, "++) {\n")
+                sb_append_str(sb, "for ("); ctype_render(sb, c_type); sb_append_str(sb, vname); sb_append_str(sb, " = 0; ; "); sb_append_str(sb, vname); sb_append_str(sb, "++) {\n")
             }
         } else {
             emit_range_loop_header(sb, st, stmt, c_type, vname)

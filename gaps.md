@@ -2975,11 +2975,34 @@ from driver, LSP, and pretty-printer paths).
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`driver.vl` at 394).
   - `python scripts/check_formatting.py`: all modified files formatted.
 
-**80.2** Replace `loop_var_c_type`'s string returns with a `CType` value
-(`{name, width, signed, needs_space}`) and a single `ctype_render`. Audit every
+**80.2 [COMPLETED] ✅** Replace `loop_var_c_type`'s string returns with a `CType` value
+(`{name, width, is_signed, needs_space}`) and a single `ctype_render`. Audit every
 `-> string` codegen helper and convert the top ten. Test: `emit-c` output for
 the Phase 68 loop matrix must stay byte-identical (`bootstrap.c` snapshot
 already enforces this).
+
+- *Former Defect:*
+  `loop_var_c_type(...)` in `src/backend/codegen_lit.vl:146-157` returned raw C type strings with embedded trailing spaces (`"int32_t "`, `"int64_t "`, `"uint64_t "`, `"size_t "`, `"ptrdiff_t "`, `"uint32_t "`, `"int16_t "`, `"uint16_t "`, `"int8_t "`, `"uint8_t "`). Call sites in `src/backend/codegen_stmt.vl` and `src/backend/range_gen.vl` relied on this undocumented formatting contract for whitespace delimitation between the C type and loop variable identifier, leaving codegen stringly typed and susceptible to formatting collisions or missing spaces if clean type names were passed.
+- *Fix Applied:*
+  - Defined structured `data CType { name: string, width: i32, is_signed: bool, needs_space: bool }` in `src/backend/codegen_types.vl`.
+  - Added constructors and emission helpers:
+    - `make_ctype(name: string, width: i32, is_signed: bool, needs_space: bool) -> CType`
+    - `ctype_render(sb: @StringBuilder, ct: CType)`: emits `ct.name`, appending `' '` if `ct.needs_space`.
+    - `emit_type_then_space(sb: @StringBuilder, ct: CType)`: explicitly appends `ct.name` and `' '`.
+    - `primitive_type_to_ctype(type_name: string) -> CType`: provides typed CType metadata for all 17 primitive Velo types (`i8`-`i64`, `u8`-`u64`, `f32`, `f64`, `bool`, `usize`, `isize`, `string`, `void`, `f32x4`, `i32x4`).
+    - `map_type_to_ctype(type_name: string) -> CType`: provides typed metadata for any Velo type.
+  - Converted `loop_var_c_type(type_name: string) -> CType` in `src/backend/codegen_lit.vl` to return pure type strings without embedded spaces, setting `needs_space = true` and bit width/signedness flags.
+  - Updated loop emission in `src/backend/codegen_stmt.vl` and `src/backend/range_gen.vl` to accept `CType` and format through `ctype_render(sb, c_type)`.
+  - Rebuilt bootstrap chain, verified Gen2 == Gen3 == `bootstrap.c` determinism, and added regression suite `tests/test_typed_codegen_returns.py`.
+- *Residual Limitation:*
+  High-level `map_type_to_c` still returns `string` for backward compatibility with external and non-converted codegen call sites, delegating primitive resolution to `primitive_type_to_ctype`.
+- *Verification:*
+  - `python -m pytest tests/test_typed_codegen_returns.py -v`: 4 passed in 0.42s.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -v`: 6 passed in 32.26s.
+  - `python -m pytest tests/test_loop_induction_width.py -q`: 29 passed in 12.96s.
+  - `scripts/check_determinism.py`: SHA-256 MATCH between Gen2 and Gen3 (`0d908c41615eb580edb7094a8695ed04a12481f1076cbfc015c3da42bb0f86e5`).
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`codegen_stmt.vl` at 394).
+  - `python scripts/check_formatting.py`: SUCCESS.
 
 **80.3** Replace the trailing-space convention with explicit emission helpers
 (`emit_type_then_space`), which makes `"int32_t "` structurally impossible.
