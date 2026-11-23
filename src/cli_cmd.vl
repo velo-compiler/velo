@@ -1,6 +1,7 @@
 // CLI command handlers for `velo run` and `velo build`.
 use std.io
 use "backend/driver.vl"
+use "backend/driver_determinism.vl"
 use "common/string_builder.vl"
 use "common/utils.vl"
 
@@ -9,7 +10,7 @@ act print_usage() {
     println_str("Velo Programming Language Compiler (Self-Hosted v2.0)")
     println_str("Usage:")
     println_str("  velo run <source.vl> [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release|--profile] [-O<level>] [--no-line-directives] [--unsafe-heap]")
-    println_str("  velo build <source.vl> [-o <bin>] [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release|--profile] [--no-line-directives] [--unsafe-heap]")
+    println_str("  velo build <source.vl> [-o <bin>] [--verify-determinism] [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release|--profile] [--no-line-directives] [--unsafe-heap]")
     println_str("  velo emit-c <source.vl> [-o <out.c>] [--no-line-directives] Emit generated C99 code")
     println_str("  velo check <source.vl> [--json] [--color auto|always|never]")
     println_str("  velo doc <source.vl> [-o <out>] [--json] Extract API documentation to Markdown or JSON")
@@ -135,6 +136,7 @@ act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_
     mut release_mode: bool = false
     mut profile_mode: bool = false
     mut unsafe_heap: bool = false
+    mut verify_determinism: bool = false
     mut opt_level = ""
     mut linker_sb = create_sb(256)
     mut i: i32 = 2
@@ -156,6 +158,8 @@ act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_
             profile_mode = true
         } else if arg == "--unsafe-heap" {
             unsafe_heap = true
+        } else if arg == "--verify-determinism" {
+            verify_determinism = true
         } else if arg == "-O" and i + 1 < argc {
             opt_level = argv[i + 1]
             i += 1
@@ -184,6 +188,11 @@ act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_
         }
         i += 1
     }
+    if verify_determinism and str.len(source_file) == 0 {
+        if fs_exists("src/main.vl") {
+            source_file = "src/main.vl"
+        }
+    }
     if str.len(source_file) == 0 {
         println_str("[Velo Error] 'build' requires a source file path")
         return 1
@@ -206,6 +215,13 @@ act handle_build_cmd_opts(argc: i32, argv: @string, unsafe_index: bool, no_line_
         sb_append_str(@u_sb, opt_flags); sb_append_str(@u_sb, " -DVELO_UNSAFE_HEAP"); opt_flags = sb_to_string(@u_sb)
     }
     let linker_flags = sb_to_string(@linker_sb)
+    if verify_determinism {
+        mut det_rc = 0
+        zone {
+            det_rc = verify_build_determinism(source_file, output_exe, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety)
+        }
+        return det_rc
+    }
     mut ok = false
     zone {
         ok = build_executable_all_opts(source_file, output_exe, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety)

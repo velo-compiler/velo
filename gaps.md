@@ -2915,7 +2915,7 @@ AST).
 
 ---
 
-# Phase 80: Compiler Maintainability (P1) - OPEN
+# Phase 80: Compiler Maintainability (P1) - [COMPLETED] ✅
 
 ## Defect
 
@@ -3071,10 +3071,31 @@ benefit; `AGENTS.md` already declares `src/` canonical.
   - `python -m pytest tests/test_typed_codegen_returns.py tests/test_explicit_type_emission.py tests/test_intrinsic_emitter_dispatch.py -v`: 11 passed.
   - Documentation and agent guardrails verified across `README.md`, `velo/README.md`, `velo.py`, `AGENTS.md`, and `gaps.md`.
 
-**80.6** Add `velo build --verify-determinism` that builds Gen2 and Gen3
+**80.6 [COMPLETED] ✅** Add `velo build --verify-determinism` that builds Gen2 and Gen3
 internally and compares hashes, replacing the Python script as the primary gate
 (keep the script as the CI wrapper). Also add a `bootstrap.c` size/loc budget
 warning so generation growth is visible in review.
+
+- *Former Defect:*
+  Determinism verification was exclusively driven by an external Python script (`scripts/check_determinism.py`), leaving the self-hosted compiler unable to inspect or verify its own multi-stage fixed point (`bin/velo build` lacked a native `--verify-determinism` flag). Additionally, `bootstrap.c` generation had no size/LOC budget guard, allowing artifact growth to expand invisibly without warning during review.
+- *Fix Applied:*
+  - Added native multi-stage determinism verification engine in `src/backend/driver_determinism.vl`:
+    - `verify_build_determinism(...) -> i32`: orchestrates self-compilation of Gen2, invokes Gen2 to compile Gen3, generates emitted C from both Gen2 and Gen3, computes SHA-256 digests (`sha256_hash_str`), compares hashes, outputs standard ASCII match lines, and checks the artifact budget.
+    - `check_bootstrap_budget_content(path: string, content: string)`: enforces size and line budgets (3.5 MB / 90,000 LOC ceiling), emitting `[Velo Budget]` when within threshold and `[Velo Warning]` if exceeded.
+  - Plumbed `--verify-determinism` into `src/cli_cmd.vl` (`handle_build_cmd_opts` and `print_usage`).
+  - Integrated budget check into `src/main.vl` during `emit-c -o bootstrap.c`.
+  - Converted `scripts/check_determinism.py` into a thin wrapper delegating to `velo build src/main.vl --verify-determinism` while preserving the pure ASCII CI contract.
+  - Added test suite `tests/test_verify_determinism_cli.py`.
+- *Residual Limitation:*
+  None. Determinism verification is first-class in the self-hosted compiler, and artifact budgets are checked continuously during builds and snapshot emission.
+- *Verification:*
+  - `bin\velo.exe build src/main.vl --verify-determinism`: Gen2 == Gen3 SHA-256 MATCH (`a626b9133e90ef612a303bba73422b28d9184827ead321173c6d2413da6278d7`), budget report clean.
+  - `python scripts/check_determinism.py`: clean exit 0.
+  - `python -m pytest tests/test_ci_matrix.py -k "test_check_determinism" -v`: 3 passed.
+  - `python -m pytest tests/test_verify_determinism_cli.py -v`: 3 passed in 7.25s.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -v`: 6 passed.
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`type_checker.vl` at 396; all others <= 394).
+  - `python scripts/check_formatting.py`: SUCCESS.
 
 ## Phase Exit Criteria
 

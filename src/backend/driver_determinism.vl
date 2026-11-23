@@ -1,0 +1,148 @@
+// Multi-stage bootstrap determinism verification and artifact budget monitoring (Task 80.6).
+// Verifies SHA-256 fixed-point between Gen2 and Gen3 emit-c outputs,
+// and enforces size/loc budgets on bootstrap.c.
+use std.io
+use std.fs
+use std.crypto
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "driver.vl"
+use "driver_cc.vl"
+use "driver_run.vl"
+
+// Checks size and LOC budget for generated bootstrap C artifacts.
+act check_bootstrap_budget_content(path: string, content: string) {
+    if content == null { return }
+    let size = str.len(content)
+    mut lines: usize = 0
+    mut i: usize = 0
+    loop i < size {
+        if content[i] == '\n' {
+            lines += 1
+        }
+        i += 1
+    }
+    // Budget: 3,500,000 bytes (3.5 MB) / 90,000 LOC
+    let max_lines: usize = 90000
+    let max_bytes: usize = 3500000
+    if lines > max_lines or size > max_bytes {
+        println_str("[Velo Warning] {path} budget exceeded: {size} bytes (budget {max_bytes}), {lines} lines (budget {max_lines})")
+    } else {
+        println_str("[Velo Budget] {path}: {size} bytes ({lines} lines) within budget")
+    }
+}
+
+// Checks budget for an existing file path on disk.
+act check_bootstrap_budget(path: string) {
+    if not fs_exists(path) { return }
+    let content = fs_read_to_str(path)
+    if content != null {
+        check_bootstrap_budget_content(path, content)
+    }
+}
+
+// Builds Gen2 and Gen3 compilers and verifies SHA-256 fixed-point determinism of emitted C.
+act verify_build_determinism(source_path: string, output_exe: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string, no_line_directives: bool, strict_safety: bool) -> i32 {
+    let exe_suffix = if is_windows_platform() { ".exe" } else { "" }
+    if not fs_exists("bin") {
+        fs_create_dir_all("bin")
+    }
+    if not fs_exists(".velo_cache") {
+        fs_create_dir_all(".velo_cache")
+    }
+
+    let gen2_exe = "bin/velo_gen2" + exe_suffix
+    let gen3_exe = "bin/velo_gen3" + exe_suffix
+    let gen2_c = ".velo_cache/verify_gen2.c"
+    let gen3_c = ".velo_cache/verify_gen3.c"
+
+    // 1. Build Gen2 compiler using current compiler
+    let ok_gen2 = build_executable_all_opts(source_path, gen2_exe, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety)
+    if not ok_gen2 {
+        println_str("[Velo Error] Failed to build Gen2 compiler: {gen2_exe}")
+        return 1
+    }
+
+    // 2. Build Gen3 compiler using Gen2
+    mut b3_sb = create_sb(128)
+    sb_append_str(@b3_sb, "build ")
+    sb_append_str(@b3_sb, quote_path(path_to_native_str(source_path)))
+    sb_append_str(@b3_sb, " -o ")
+    sb_append_str(@b3_sb, quote_path(path_to_native_str(gen3_exe)))
+    if cc != null and str.len(cc) > 0 and cc != "gcc" {
+        sb_append_str(@b3_sb, " --cc ")
+        sb_append_str(@b3_sb, cc)
+    }
+    if unsafe_index { sb_append_str(@b3_sb, " --unsafe-index") }
+    if no_line_directives { sb_append_str(@b3_sb, " --no-line-directives") }
+    if strict_safety { sb_append_str(@b3_sb, " --strict-safety") }
+    let gen2_build_cmd = assemble_runner_cmd(cc, gen2_exe, sb_to_string(@b3_sb))
+    let rc_gen3 = os_system(gen2_build_cmd)
+    if rc_gen3 != 0 {
+        println_str("[Velo Error] Gen2 failed to build Gen3 with exit code {rc_gen3}")
+        return 1
+    }
+
+    // 3. Emit C from Gen2
+    mut e2_sb = create_sb(128)
+    sb_append_str(@e2_sb, "emit-c ")
+    sb_append_str(@e2_sb, quote_path(path_to_native_str(source_path)))
+    sb_append_str(@e2_sb, " -o ")
+    sb_append_str(@e2_sb, quote_path(path_to_native_str(gen2_c)))
+    if unsafe_index { sb_append_str(@e2_sb, " --unsafe-index") }
+    if no_line_directives { sb_append_str(@e2_sb, " --no-line-directives") }
+    if strict_safety { sb_append_str(@e2_sb, " --strict-safety") }
+    let gen2_emit_cmd = assemble_runner_cmd(cc, gen2_exe, sb_to_string(@e2_sb))
+    let rc_emit2 = os_system(gen2_emit_cmd)
+    if rc_emit2 != 0 {
+        println_str("[Velo Error] Gen2 emit-c failed with exit code {rc_emit2}")
+        return 1
+    }
+
+    // 4. Emit C from Gen3
+    mut e3_sb = create_sb(128)
+    sb_append_str(@e3_sb, "emit-c ")
+    sb_append_str(@e3_sb, quote_path(path_to_native_str(source_path)))
+    sb_append_str(@e3_sb, " -o ")
+    sb_append_str(@e3_sb, quote_path(path_to_native_str(gen3_c)))
+    if unsafe_index { sb_append_str(@e3_sb, " --unsafe-index") }
+    if no_line_directives { sb_append_str(@e3_sb, " --no-line-directives") }
+    if strict_safety { sb_append_str(@e3_sb, " --strict-safety") }
+    let gen3_emit_cmd = assemble_runner_cmd(cc, gen3_exe, sb_to_string(@e3_sb))
+    let rc_emit3 = os_system(gen3_emit_cmd)
+    if rc_emit3 != 0 {
+        println_str("[Velo Error] Gen3 emit-c failed with exit code {rc_emit3}")
+        return 1
+    }
+
+    // 5. Read both emitted C files and compute SHA-256 hashes
+    let c2_text = fs_read_to_str(gen2_c)
+    let c3_text = fs_read_to_str(gen3_c)
+    if c2_text == null or c3_text == null {
+        println_str("[Velo Error] Failed to read emitted C artifacts for verification")
+        return 1
+    }
+
+    let h2 = sha256_hash_str(c2_text)
+    let h3 = sha256_hash_str(c3_text)
+
+    println_str("Gen2: {h2}")
+    println_str("Gen3: {h3}")
+
+    if h2 != h3 {
+        println_str("SHA-256 DIVERGED! Gen2 and Gen3 differ.")
+        return 1
+    }
+
+    println_str("SHA-256 MATCH - bootstrap chain is deterministic")
+
+    // 6. Check bootstrap.c budget
+    check_bootstrap_budget_content("bootstrap.c", c3_text)
+
+    // 7. If target binary specified and differs from gen3_exe, copy it
+    if output_exe != null and str.len(output_exe) > 0 and output_exe != gen3_exe {
+        fs_copy_file_str(gen3_exe, output_exe, true)
+    }
+
+    return 0
+}

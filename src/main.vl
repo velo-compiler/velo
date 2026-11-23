@@ -2,6 +2,7 @@
 use std.io
 use std.fs
 use "backend/driver.vl"
+use "backend/driver_determinism.vl"
 use "backend/check.vl"
 use "common/diagnostics.vl"
 use "common/manifest.vl"
@@ -105,6 +106,9 @@ act main(argc: i32, argv: @string) -> i32 {
                     if not ok {
                         println_str("[Velo Error] Failed to write output file: {out_file}")
                         return 1
+                    }
+                    if out_file == "bootstrap.c" or str.ends_with(out_file, "/bootstrap.c") or str.ends_with(out_file, "\\bootstrap.c") {
+                        check_bootstrap_budget_content(out_file, c_code)
                     }
                 } else {
                     println_str(c_code)

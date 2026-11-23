@@ -56,6 +56,18 @@ def emit_c(path: str, label: str):
 
 
 def main() -> int:
+    velo_exe = find_bin("velo")
+    if Path(velo_exe).exists():
+        proc = subprocess.run([velo_exe, "build", SRC, "--verify-determinism"], capture_output=True, cwd=str(ROOT))
+        stdout_text = proc.stdout.decode("ascii", errors="replace")
+        if proc.returncode == 0 and "SHA-256 MATCH" in stdout_text:
+            print(stdout_text, end="")
+            return 0
+        if proc.returncode != 0:
+            stderr_text = proc.stderr.decode("ascii", errors="replace")
+            print(f"velo build --verify-determinism failed with code {proc.returncode}:\n{stderr_text}\n{stdout_text}")
+            return proc.returncode
+
     g2_out = emit_c(find_bin("velo_gen2"), "Gen2")
     g3_out = emit_c(find_bin("velo_gen3"), "Gen3")
 
@@ -67,6 +79,14 @@ def main() -> int:
     if h2 == h3:
         # ASCII only: see the ENCODING CONTRACT above.
         print("SHA-256 MATCH - bootstrap chain is deterministic")
+        boot_path = ROOT / "bootstrap.c"
+        if boot_path.exists():
+            size = boot_path.stat().st_size
+            lines = len(boot_path.read_bytes().splitlines())
+            if size > 3500000 or lines > 90000:
+                print(f"[Velo Warning] bootstrap.c budget exceeded: {size} bytes (budget 3500000), {lines} lines (budget 90000)")
+            else:
+                print(f"[Velo Budget] bootstrap.c: {size} bytes ({lines} lines) within budget")
         return 0
     print("SHA-256 DIVERGED! Gen2 and Gen3 differ.")
     return 1

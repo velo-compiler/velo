@@ -30,8 +30,8 @@ Velo is a modern systems programming language built specifically for:
 ## Quick Look
 
 ```rust
-use sys.io
-use sys.mem
+use std.io
+use std.mem
 
 data Vec2 {
     x: f32
@@ -75,7 +75,7 @@ act main() {
         }
 
         mut step = 0
-        while step < 3 {
+        loop step < 3 {
             io.println("Frame: {step}")
             loop i in 0..count {
                 p: @Particle = @particles[i]
@@ -145,6 +145,9 @@ bin/velo.exe run main.vl
 
 # Compile to a standalone native executable
 bin/velo.exe build main.vl -o game.exe
+
+# Verify multi-stage compiler determinism (Gen2 == Gen3 SHA-256 fixed point)
+bin/velo.exe build src/main.vl --verify-determinism
 
 # View the generated C99/C11 code
 bin/velo.exe emit-c main.vl
