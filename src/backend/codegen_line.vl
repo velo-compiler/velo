@@ -4,11 +4,19 @@ use "../analysis/symbol_table.vl"
 
 // Emits normalized source file path to the string builder.
 act emit_source_path(sb: @StringBuilder, st: @SymbolTable) {
-    if st != null and st.source_file != null and str.len(st.source_file) > 0 {
+    mut target_file = ""
+    if st != null {
+        if st.current_file != null and str.len(st.current_file) > 0 {
+            target_file = st.current_file
+        } else if st.source_file != null and str.len(st.source_file) > 0 {
+            target_file = st.source_file
+        }
+    }
+    if str.len(target_file) > 0 {
         mut i: usize = 0
-        loop i < str.len(st.source_file) {
-            if st.source_file[i] == '\\' { sb_append_char(sb, '/') }
-            else { sb_append_char(sb, st.source_file[i]) }
+        loop i < str.len(target_file) {
+            if target_file[i] == '\\' { sb_append_char(sb, '/') }
+            else { sb_append_char(sb, target_file[i]) }
             i += 1
         }
     } else {

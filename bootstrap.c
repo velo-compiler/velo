@@ -43342,46 +43342,61 @@ void emit_simd_call(StringBuilder* sb, SymbolTable* st, ExprNode* expr) {
 #line 6 "src/main.vl"
 void emit_source_path(StringBuilder* sb, SymbolTable* st) {
 #line 7 "src/main.vl"
-    if ((((st != NULL) && (st->source_file != NULL)) && velo_cmp_gt_u_s(((usize)strlen(st->source_file)), 0))) {
+    const char* target_file = "";
 #line 8 "src/main.vl"
-        size_t i = 0;
+    if ((st != NULL)) {
 #line 9 "src/main.vl"
-        for (int32_t it = 0; ((i < ((usize)strlen(st->source_file)))); it++) {
+        if (((st->current_file != NULL) && velo_cmp_gt_u_s(((usize)strlen(st->current_file)), 0))) {
 #line 10 "src/main.vl"
-            if (velo_cmp_eq_u_s(st->source_file[i], '\\')) {
-#line 10 "src/main.vl"
+            target_file = st->current_file;
+        } else
+#line 11 "src/main.vl"
+        if (((st->source_file != NULL) && velo_cmp_gt_u_s(((usize)strlen(st->source_file)), 0))) {
+#line 12 "src/main.vl"
+            target_file = st->source_file;
+        }
+    }
+#line 15 "src/main.vl"
+    if (velo_cmp_gt_u_s(((usize)strlen(target_file)), 0)) {
+#line 16 "src/main.vl"
+        size_t i = 0;
+#line 17 "src/main.vl"
+        for (int32_t it = 0; ((i < ((usize)strlen(target_file)))); it++) {
+#line 18 "src/main.vl"
+            if (velo_cmp_eq_u_s(target_file[i], '\\')) {
+#line 18 "src/main.vl"
                 sb_append_char(sb, '/');
             } else {
-#line 11 "src/main.vl"
-                sb_append_char(sb, st->source_file[i]);
+#line 19 "src/main.vl"
+                sb_append_char(sb, target_file[i]);
             }
-#line 12 "src/main.vl"
+#line 20 "src/main.vl"
             i += 1;
             __loop_cont_431: __attribute__((unused));
         }
         __loop_break_431: __attribute__((unused));
     } else {
-#line 15 "src/main.vl"
+#line 23 "src/main.vl"
         sb_append_str(sb, "<source>");
     }
 }
 
-#line 20 "src/main.vl"
+#line 28 "src/main.vl"
 void emit_line_directive(StringBuilder* sb, SymbolTable* st, int32_t line) {
-#line 21 "src/main.vl"
+#line 29 "src/main.vl"
     if ((((st == NULL) || st->no_line_directives) || (line <= 0))) {
-#line 21 "src/main.vl"
+#line 29 "src/main.vl"
         return;
     }
-#line 22 "src/main.vl"
+#line 30 "src/main.vl"
     sb_append_str(sb, "#line ");
-#line 23 "src/main.vl"
+#line 31 "src/main.vl"
     sb_append_int(sb, line);
-#line 24 "src/main.vl"
+#line 32 "src/main.vl"
     sb_append_str(sb, " \"");
-#line 25 "src/main.vl"
+#line 33 "src/main.vl"
     emit_source_path(sb, st);
-#line 26 "src/main.vl"
+#line 34 "src/main.vl"
     sb_append_str(sb, "\"\n");
 }
 
@@ -50866,168 +50881,173 @@ void emit_test_functions(StringBuilder* sb, SymbolTable* st, ProgramNode* prog) 
 #line 44 "src/main.vl"
         if ((cur->kind == DECL_TEST)) {
 #line 45 "src/main.vl"
-            emit_line_directive(sb, st, cur->line);
+            if (((cur->file_path != NULL) && velo_cmp_gt_u_s(((usize)strlen(cur->file_path)), 0))) {
+#line 45 "src/main.vl"
+                st->current_file = cur->file_path;
+            }
 #line 46 "src/main.vl"
-            sb_append_str(sb, "static void _velo_test_");
+            emit_line_directive(sb, st, cur->line);
 #line 47 "src/main.vl"
-            sb_append_int(sb, ((int32_t)(idx)));
+            sb_append_str(sb, "static void _velo_test_");
 #line 48 "src/main.vl"
-            sb_append_str(sb, "(void) {\n");
+            sb_append_int(sb, ((int32_t)(idx)));
 #line 49 "src/main.vl"
-            st->current_func_ret_type = "void";
+            sb_append_str(sb, "(void) {\n");
 #line 50 "src/main.vl"
-            st->current_func_name = "";
+            st->current_func_ret_type = "void";
 #line 51 "src/main.vl"
+            st->current_func_name = "";
+#line 52 "src/main.vl"
             st->zone_counter = 0;
-#line 53 "src/main.vl"
-            enter_scope(st);
 #line 54 "src/main.vl"
-            DeferNode* defers = NULL;
+            enter_scope(st);
 #line 55 "src/main.vl"
+            DeferNode* defers = NULL;
+#line 56 "src/main.vl"
             emit_c_block_stmts(sb, st, cur->body, 1, (&(defers)));
-#line 57 "src/main.vl"
-            DeferNode* cur_d = defers;
 #line 58 "src/main.vl"
-            for (int32_t it = 0; ((cur_d != NULL)); it++) {
+            DeferNode* cur_d = defers;
 #line 59 "src/main.vl"
-                emit_c_cleanup(sb, st, cur_d, 1, (&(defers)));
+            for (int32_t it = 0; ((cur_d != NULL)); it++) {
 #line 60 "src/main.vl"
+                emit_c_cleanup(sb, st, cur_d, 1, (&(defers)));
+#line 61 "src/main.vl"
                 cur_d = cur_d->next;
                 __loop_cont_505: __attribute__((unused));
             }
             __loop_break_505: __attribute__((unused));
-#line 62 "src/main.vl"
+#line 63 "src/main.vl"
             exit_scope(st);
-#line 64 "src/main.vl"
-            sb_append_str(sb, "}\n\n");
 #line 65 "src/main.vl"
+            sb_append_str(sb, "}\n\n");
+#line 66 "src/main.vl"
             idx += 1;
         }
-#line 67 "src/main.vl"
+#line 68 "src/main.vl"
         cur = cur->next;
         __loop_cont_504: __attribute__((unused));
     }
     __loop_break_504: __attribute__((unused));
 }
 
-#line 72 "src/main.vl"
-void emit_test_harness_main(StringBuilder* sb, ProgramNode* prog) {
 #line 73 "src/main.vl"
-    size_t total = count_test_decls(prog);
+void emit_test_harness_main(StringBuilder* sb, ProgramNode* prog) {
 #line 74 "src/main.vl"
-    sb_append_str(sb, "int main(int argc, char** argv) {\n");
+    size_t total = count_test_decls(prog);
 #line 75 "src/main.vl"
-    sb_append_str(sb, "    g_velo_os_argc = argc;\n    g_velo_os_argv = argv;\n");
+    sb_append_str(sb, "int main(int argc, char** argv) {\n");
 #line 76 "src/main.vl"
+    sb_append_str(sb, "    g_velo_os_argc = argc;\n    g_velo_os_argv = argv;\n");
+#line 77 "src/main.vl"
     sb_append_str(sb, "    velo_mem_init();\n\n");
-#line 78 "src/main.vl"
-    if (velo_cmp_eq_u_s(total, 0)) {
 #line 79 "src/main.vl"
-        sb_append_str(sb, "    printf(\"\\nrunning 0 tests\\n\\ntest result: ok. 0 passed; 0 failed\\n\\n\");\n");
+    if (velo_cmp_eq_u_s(total, 0)) {
 #line 80 "src/main.vl"
-        sb_append_str(sb, "    return 0;\n}\n");
+        sb_append_str(sb, "    printf(\"\\nrunning 0 tests\\n\\ntest result: ok. 0 passed; 0 failed\\n\\n\");\n");
 #line 81 "src/main.vl"
+        sb_append_str(sb, "    return 0;\n}\n");
+#line 82 "src/main.vl"
         return;
     }
-#line 84 "src/main.vl"
-    sb_append_str(sb, "    const char* filter = NULL;\n");
 #line 85 "src/main.vl"
-    sb_append_str(sb, "    for (int i = 1; i < argc; i++) {\n");
+    sb_append_str(sb, "    const char* filter = NULL;\n");
 #line 86 "src/main.vl"
-    sb_append_str(sb, "        if ((strcmp(argv[i], \"--filter\") == 0 || strcmp(argv[i], \"-k\") == 0) && i + 1 < argc) {\n");
+    sb_append_str(sb, "    for (int i = 1; i < argc; i++) {\n");
 #line 87 "src/main.vl"
-    sb_append_str(sb, "            filter = argv[i + 1]; i++;\n");
+    sb_append_str(sb, "        if ((strcmp(argv[i], \"--filter\") == 0 || strcmp(argv[i], \"-k\") == 0) && i + 1 < argc) {\n");
 #line 88 "src/main.vl"
+    sb_append_str(sb, "            filter = argv[i + 1]; i++;\n");
+#line 89 "src/main.vl"
     sb_append_str(sb, "        }\n    }\n\n");
-#line 90 "src/main.vl"
-    sb_append_str(sb, "    struct { const char* name; void (*fn)(void); } tests[] = {\n");
 #line 91 "src/main.vl"
-    size_t idx = 0;
+    sb_append_str(sb, "    struct { const char* name; void (*fn)(void); } tests[] = {\n");
 #line 92 "src/main.vl"
-    StmtNode* cur = prog->first_decl;
+    size_t idx = 0;
 #line 93 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
+    StmtNode* cur = prog->first_decl;
 #line 94 "src/main.vl"
-        if ((cur->kind == DECL_TEST)) {
+    for (int32_t it = 0; ((cur != NULL)); it++) {
 #line 95 "src/main.vl"
-            sb_append_str(sb, "        { \"");
+        if ((cur->kind == DECL_TEST)) {
 #line 96 "src/main.vl"
-            sb_append_str(sb, cur->name);
+            sb_append_str(sb, "        { \"");
 #line 97 "src/main.vl"
-            sb_append_str(sb, "\", _velo_test_");
+            sb_append_str(sb, cur->name);
 #line 98 "src/main.vl"
-            sb_append_int(sb, ((int32_t)(idx)));
+            sb_append_str(sb, "\", _velo_test_");
 #line 99 "src/main.vl"
-            sb_append_str(sb, " },\n");
+            sb_append_int(sb, ((int32_t)(idx)));
 #line 100 "src/main.vl"
+            sb_append_str(sb, " },\n");
+#line 101 "src/main.vl"
             idx += 1;
         }
-#line 102 "src/main.vl"
+#line 103 "src/main.vl"
         cur = cur->next;
         __loop_cont_506: __attribute__((unused));
     }
     __loop_break_506: __attribute__((unused));
-#line 104 "src/main.vl"
-    sb_append_str(sb, "    };\n");
 #line 105 "src/main.vl"
-    sb_append_str(sb, "    int total_tests = (int)(sizeof(tests) / sizeof(tests[0]));\n");
+    sb_append_str(sb, "    };\n");
 #line 106 "src/main.vl"
+    sb_append_str(sb, "    int total_tests = (int)(sizeof(tests) / sizeof(tests[0]));\n");
+#line 107 "src/main.vl"
     sb_append_str(sb, "    int ran_tests = 0;\n    int passed = 0;\n    int failed = 0;\n    int filtered_out = 0;\n\n");
-#line 108 "src/main.vl"
-    sb_append_str(sb, "    for (int i = 0; i < total_tests; i++) {\n");
 #line 109 "src/main.vl"
-    sb_append_str(sb, "        if (filter && strstr(tests[i].name, filter) == NULL) { filtered_out++; continue; }\n");
-#line 110 "src/main.vl"
-    sb_append_str(sb, "        ran_tests++;\n    }\n\n");
-#line 112 "src/main.vl"
-    sb_append_str(sb, "    if (filtered_out > 0) {\n");
-#line 113 "src/main.vl"
-    sb_append_str(sb, "        printf(\"\\nrunning %d test%s (%d filtered out)\\n\", ran_tests, ran_tests == 1 ? \"\" : \"s\", filtered_out);\n");
-#line 114 "src/main.vl"
-    sb_append_str(sb, "    } else {\n");
-#line 115 "src/main.vl"
-    sb_append_str(sb, "        printf(\"\\nrunning %d test%s\\n\", ran_tests, ran_tests == 1 ? \"\" : \"s\");\n    }\n\n");
-#line 117 "src/main.vl"
     sb_append_str(sb, "    for (int i = 0; i < total_tests; i++) {\n");
+#line 110 "src/main.vl"
+    sb_append_str(sb, "        if (filter && strstr(tests[i].name, filter) == NULL) { filtered_out++; continue; }\n");
+#line 111 "src/main.vl"
+    sb_append_str(sb, "        ran_tests++;\n    }\n\n");
+#line 113 "src/main.vl"
+    sb_append_str(sb, "    if (filtered_out > 0) {\n");
+#line 114 "src/main.vl"
+    sb_append_str(sb, "        printf(\"\\nrunning %d test%s (%d filtered out)\\n\", ran_tests, ran_tests == 1 ? \"\" : \"s\", filtered_out);\n");
+#line 115 "src/main.vl"
+    sb_append_str(sb, "    } else {\n");
+#line 116 "src/main.vl"
+    sb_append_str(sb, "        printf(\"\\nrunning %d test%s\\n\", ran_tests, ran_tests == 1 ? \"\" : \"s\");\n    }\n\n");
 #line 118 "src/main.vl"
-    sb_append_str(sb, "        if (filter && strstr(tests[i].name, filter) == NULL) continue;\n");
+    sb_append_str(sb, "    for (int i = 0; i < total_tests; i++) {\n");
 #line 119 "src/main.vl"
-    sb_append_str(sb, "        VeloTestContext tc;\n        memset(&tc, 0, sizeof(tc));\n");
+    sb_append_str(sb, "        if (filter && strstr(tests[i].name, filter) == NULL) continue;\n");
 #line 120 "src/main.vl"
-    sb_append_str(sb, "        g_velo_current_test = &tc;\n");
+    sb_append_str(sb, "        VeloTestContext tc;\n        memset(&tc, 0, sizeof(tc));\n");
 #line 121 "src/main.vl"
-    sb_append_str(sb, "        if (setjmp(tc.jmp) == 0) {\n");
+    sb_append_str(sb, "        g_velo_current_test = &tc;\n");
 #line 122 "src/main.vl"
-    sb_append_str(sb, "            tests[i].fn();\n");
+    sb_append_str(sb, "        if (setjmp(tc.jmp) == 0) {\n");
 #line 123 "src/main.vl"
-    sb_append_str(sb, "            printf(\"test \\\"%s\\\" ... ok\\n\", tests[i].name);\n");
+    sb_append_str(sb, "            tests[i].fn();\n");
 #line 124 "src/main.vl"
-    sb_append_str(sb, "            passed++;\n");
+    sb_append_str(sb, "            printf(\"test \\\"%s\\\" ... ok\\n\", tests[i].name);\n");
 #line 125 "src/main.vl"
-    sb_append_str(sb, "        } else {\n");
+    sb_append_str(sb, "            passed++;\n");
 #line 126 "src/main.vl"
-    sb_append_str(sb, "            printf(\"test \\\"%s\\\" ... FAILED\\n\", tests[i].name);\n");
+    sb_append_str(sb, "        } else {\n");
 #line 127 "src/main.vl"
-    sb_append_str(sb, "            if (tc.failure_msg && tc.failure_msg[0]) {\n");
+    sb_append_str(sb, "            printf(\"test \\\"%s\\\" ... FAILED\\n\", tests[i].name);\n");
 #line 128 "src/main.vl"
-    sb_append_str(sb, "                printf(\"  assertion failed at %s:%d: assert(%s): %s\\n\", tc.failure_file ? tc.failure_file : \"\", tc.failure_line, tc.failure_expr ? tc.failure_expr : \"\", tc.failure_msg);\n");
+    sb_append_str(sb, "            if (tc.failure_msg && tc.failure_msg[0]) {\n");
 #line 129 "src/main.vl"
-    sb_append_str(sb, "            } else {\n");
+    sb_append_str(sb, "                printf(\"  assertion failed at %s:%d: assert(%s): %s\\n\", tc.failure_file ? tc.failure_file : \"\", tc.failure_line, tc.failure_expr ? tc.failure_expr : \"\", tc.failure_msg);\n");
 #line 130 "src/main.vl"
-    sb_append_str(sb, "                printf(\"  assertion failed at %s:%d: assert(%s)\\n\", tc.failure_file ? tc.failure_file : \"\", tc.failure_line, tc.failure_expr ? tc.failure_expr : \"\");\n");
+    sb_append_str(sb, "            } else {\n");
 #line 131 "src/main.vl"
-    sb_append_str(sb, "            }\n");
+    sb_append_str(sb, "                printf(\"  assertion failed at %s:%d: assert(%s)\\n\", tc.failure_file ? tc.failure_file : \"\", tc.failure_line, tc.failure_expr ? tc.failure_expr : \"\");\n");
 #line 132 "src/main.vl"
-    sb_append_str(sb, "            failed++;\n");
+    sb_append_str(sb, "            }\n");
 #line 133 "src/main.vl"
-    sb_append_str(sb, "        }\n");
+    sb_append_str(sb, "            failed++;\n");
 #line 134 "src/main.vl"
-    sb_append_str(sb, "        g_velo_current_test = NULL;\n");
+    sb_append_str(sb, "        }\n");
 #line 135 "src/main.vl"
+    sb_append_str(sb, "        g_velo_current_test = NULL;\n");
+#line 136 "src/main.vl"
     sb_append_str(sb, "        velo_mem_reset();\n    }\n\n");
-#line 137 "src/main.vl"
-    sb_append_str(sb, "    printf(\"\\ntest result: %s. %d passed; %d failed\\n\\n\", (failed == 0 ? \"ok\" : \"FAILED\"), passed, failed);\n");
 #line 138 "src/main.vl"
+    sb_append_str(sb, "    printf(\"\\ntest result: %s. %d passed; %d failed\\n\\n\", (failed == 0 ? \"ok\" : \"FAILED\"), passed, failed);\n");
+#line 139 "src/main.vl"
     sb_append_str(sb, "    return (failed == 0 ? 0 : 1);\n}\n");
 }
 
@@ -51833,48 +51853,53 @@ void emit_type_declarations(StringBuilder* sb, SymbolTable* st, ProgramNode* pro
 #line 358 "src/main.vl"
         if ((cur->kind == STMT_VAR_DECL)) {
 #line 359 "src/main.vl"
-            emit_line_directive(sb, st, cur->line);
+            if (((cur->file_path != NULL) && velo_cmp_gt_u_s(((usize)strlen(cur->file_path)), 0))) {
+#line 359 "src/main.vl"
+                st->current_file = cur->file_path;
+            }
 #line 360 "src/main.vl"
-            const char* inferred_type = cur->type_name;
+            emit_line_directive(sb, st, cur->line);
 #line 361 "src/main.vl"
+            const char* inferred_type = cur->type_name;
+#line 362 "src/main.vl"
             if (((inferred_type == NULL) || velo_cmp_eq_u_s(((usize)strlen(inferred_type)), 0))) {
-#line 362 "src/main.vl"
+#line 363 "src/main.vl"
                 if ((cur->val_expr != NULL)) {
-#line 362 "src/main.vl"
+#line 363 "src/main.vl"
                     inferred_type = infer_expr_type(st, cur->val_expr);
                 } else {
-#line 362 "src/main.vl"
+#line 363 "src/main.vl"
                     inferred_type = "i32";
                 }
             }
-#line 364 "src/main.vl"
-            if (is_fixed_array_type(inferred_type)) {
 #line 365 "src/main.vl"
+            if (is_fixed_array_type(inferred_type)) {
+#line 366 "src/main.vl"
                 emit_array_var_decl(sb, st, cur, 0);
             } else {
-#line 367 "src/main.vl"
+#line 368 "src/main.vl"
                 sb_append_str(sb, map_type_to_c(inferred_type));
-#line 367 "src/main.vl"
+#line 368 "src/main.vl"
                 sb_append_char(sb, ' ');
-#line 367 "src/main.vl"
+#line 368 "src/main.vl"
                 sb_append_str(sb, cur->name);
-#line 368 "src/main.vl"
+#line 369 "src/main.vl"
                 if ((cur->val_expr != NULL)) {
-#line 368 "src/main.vl"
+#line 369 "src/main.vl"
                     sb_append_str(sb, " = ");
-#line 368 "src/main.vl"
+#line 369 "src/main.vl"
                     emit_c_expr(sb, st, cur->val_expr);
                 }
-#line 369 "src/main.vl"
+#line 370 "src/main.vl"
                 sb_append_str(sb, ";\n");
             }
         }
-#line 372 "src/main.vl"
+#line 373 "src/main.vl"
         cur = cur->next;
         __loop_cont_531: __attribute__((unused));
     }
     __loop_break_531: __attribute__((unused));
-#line 374 "src/main.vl"
+#line 375 "src/main.vl"
     sb_append_line(sb, "", 0);
 }
 

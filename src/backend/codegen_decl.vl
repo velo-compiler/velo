@@ -356,6 +356,7 @@ act emit_type_declarations(sb: @StringBuilder, st: @SymbolTable, prog: @ProgramN
     cur = prog.first_decl
     loop cur != null {
         if cur.kind == STMT_VAR_DECL {
+            if cur.file_path != null and str.len(cur.file_path) > 0 { st.current_file = cur.file_path }
             emit_line_directive(sb, st, cur.line)
             mut inferred_type = cur.type_name
             if inferred_type == null or str.len(inferred_type) == 0 {

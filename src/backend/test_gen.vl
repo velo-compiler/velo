@@ -42,6 +42,7 @@ act emit_test_functions(sb: @StringBuilder, st: @SymbolTable, prog: @ProgramNode
     mut cur = prog.first_decl
     loop cur != null {
         if cur.kind == DECL_TEST {
+            if cur.file_path != null and str.len(cur.file_path) > 0 { st.current_file = cur.file_path }
             emit_line_directive(sb, st, cur.line)
             sb_append_str(sb, "static void _velo_test_")
             sb_append_int(sb, idx as i32)

@@ -2806,7 +2806,7 @@ language.
   - `python -m pytest tests/test_repl.py tests/test_content_hashed_cache.py tests/test_error_registry.py tests/test_fallback_diagnostics.py -q`: 53 passed in 15.11s.
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`repl.vl` at 296, `main.vl` at 256, `cli_cmd.vl` at 213).
 
-**79.5** Add a debug build story: `velo build --debug` currently maps to
+**79.5 [COMPLETED] ✅** Add a debug build story: `velo build --debug` currently maps to
 `-O0 -g` (`driver_cc.vl:247-263`). Verify with a real debugger session that
 `#line` + `-g` gives working breakpoints on Velo lines; document the exact
 `gdb`/`lldb` commands in `docs/DEBUGGING.md`. If DWARF line mapping is
@@ -2814,6 +2814,21 @@ inaccurate (likely, given generated temporaries), fix the emission so
 breakpoints land on the right Velo line. Add
 `tests/test_debug_line_mapping.py` asserting emitted `#line` numbers match
 source lines for a sample program.
+
+- *Former Defect:*
+  `emit_source_path` in `src/backend/codegen_line.vl` only checked `st.source_file`, ignoring `st.current_file`. When compiling programs with imported submodules or standard library modules, all emitted `#line <N> "<file>"` directives attributed every line to the root source file rather than the submodule file. Furthermore, `codegen_decl.vl` and `test_gen.vl` did not set `st.current_file` before emitting function entry `#line` directives, causing imported function declarations and test blocks to emit line numbers with the wrong file attribution. Breakpoint resolution in DWARF debuggers (GDB/LLDB) was corrupted for multi-file projects, and there was no centralized guide explaining debug workflows.
+- *Fix Applied:*
+  - Updated `emit_source_path` in `src/backend/codegen_line.vl` to prefer `st.current_file` when populated and non-empty, falling back to `st.source_file`.
+  - Updated `src/backend/codegen_decl.vl` and `src/backend/test_gen.vl` to set `st.current_file = cur.file_path` before emitting `#line` directives for function bodies and test entry points.
+  - Authored comprehensive guide in `docs/DEBUGGING.md` documenting `--debug` (`-O0 -g`), step-by-step GDB and LLDB debugging sessions (breakpoints, stepping, backtraces, local variable inspection), and CI testing verification.
+  - Added regression test suite in `tests/test_debug_line_mapping.py` verifying exact function and statement `#line` matching, `--no-line-directives` flag suppression, multi-file imported module path attribution, and live GDB breakpoint resolution/stopping at exact `.vl` source lines.
+- *Residual Limitation:*
+  Generated compiler temporaries (such as intermediate outcome struct unpacks) map to the enclosing Velo statement line rather than finer-grained column/expression offsets; this matches standard C/C++ compiler behavior with `#line`.
+- *Verification:*
+  - `python -m pytest tests/test_debug_line_mapping.py -v`: 4 passed in 0.98s (including live GDB breakpoint hit at `.vl:4`).
+  - `python -m pytest tests/test_bootstrap_snapshot.py -v`: 6 passed in 32.17s (Gen2 == Gen3 == `bootstrap.c` determinism verified).
+  - Combined suite: `python -m pytest tests/test_debug_line_mapping.py tests/test_repl.py tests/test_content_hashed_cache.py tests/test_error_registry.py tests/test_fallback_diagnostics.py -q`: 57 passed in 15.96s.
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`codegen_decl.vl` at 377, `test_gen.vl` at 140, `codegen_line.vl` at 36).
 
 **79.6** Add `velo fmt --check` to CI and a pre-commit hook script in
 `scripts/hooks/`.
