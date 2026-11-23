@@ -10,9 +10,10 @@ Guarantees:
 import subprocess
 from pathlib import Path
 import pytest
+from conftest import velo_exe
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-VELO_BIN = REPO_ROOT / "bin" / "velo.exe"
+VELO_BIN = velo_exe()
 
 
 def run_velo_compile(tmp_path: Path, source: str, stem: str = "probe") -> subprocess.CompletedProcess:

@@ -94,39 +94,66 @@ act main() {
 
 ---
 
-## Compiler Architecture (Stage 1)
+## Compiler Architecture (Self-Hosted)
 
-Velo Stage 1 uses a Python-based bootstrap transpiler that targets C99:
+Velo is a self-hosted compiler written entirely in Velo (`src/`). It compiles to portable C99/C11 code, which is then lowered to a native binary by GCC or Clang with zero external runtime dependencies.
 
 ```
 [ .vl Source Code ] 
        │
        ▼
-1. Lexer (Tokenizer)        --> Turns characters into Tokens
+1. Lexer (Tokenizer)        --> Turns characters into Tokens (src/frontend/)
        │
        ▼
-2. Parser (AST)           --> Builds Abstract Syntax Tree
+2. Parser (AST)             --> Builds Abstract Syntax Tree (src/ast/, src/frontend/)
        │
        ▼
-3. C-Emitter (Codegen)    --> Emits clean C99 code
+3. Type Checker & Semantics --> Verifies types, ownership, scopes (src/analysis/)
        │
        ▼
-4. GCC Driver (gcc.exe)   --> Produces native .exe binary
+4. C-Emitter (Codegen)      --> Emits clean C99/C11 code (src/backend/)
+       │
+       ▼
+5. C Compiler Driver        --> Produces native standalone binary (bin/velo.exe)
 ```
+
+> **Historical Note (Stage 1 Prototype):** The original Python prototype (`velo/` and `velo.py`) served as the initial bootstrap tool to build Stage 2. It has been demoted and retired as a frozen historical artifact (Task 80.5). The self-hosted compiler in `src/` and the self-contained C snapshot `bootstrap.c` are the canonical compiler toolchain.
 
 ---
 
-## CLI Usage (Preview)
+## Bootstrapping & Building from Source
+
+Velo bootstraps deterministically from a single standalone C file (`bootstrap.c`), requiring only GCC or Clang:
 
 ```bash
-# Run a Velo script immediately (transpile + build + run)
-python velo.py run main.vl
+# Windows (requires GCC, e.g. MSYS2 UCRT64)
+scripts\bootstrap.bat
 
-# Compile to a native standalone executable
-python velo.py build main.vl -o game.exe
+# Linux / macOS (requires gcc or clang)
+bash scripts/bootstrap.sh
+```
 
-# View the generated C code
-python velo.py emit-c main.vl
+This builds `bin/velo.exe` (or `bin/velo`), which is the full self-hosted Velo compiler.
+
+---
+
+## CLI Usage
+
+```bash
+# Run a Velo script immediately (compile + link + execute)
+bin/velo.exe run main.vl
+
+# Compile to a standalone native executable
+bin/velo.exe build main.vl -o game.exe
+
+# View the generated C99/C11 code
+bin/velo.exe emit-c main.vl
+
+# Check syntax and semantic analysis without compiling
+bin/velo.exe check main.vl
+
+# Format Velo source files to canonical style
+bin/velo.exe fmt src/main.vl
 ```
 
 ---

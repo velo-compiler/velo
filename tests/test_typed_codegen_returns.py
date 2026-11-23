@@ -16,19 +16,16 @@ import sys
 import tempfile
 from pathlib import Path
 import pytest
+from conftest import velo_exe, cc_env
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
-VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
+VELO_EXE = velo_exe()
 CODEGEN_LIT_VL = REPO_ROOT / "src" / "backend" / "codegen_lit.vl"
 CODEGEN_TYPES_VL = REPO_ROOT / "src" / "backend" / "codegen_types.vl"
 
 
 def get_build_env():
-    env = dict(os.environ)
-    ucrt_bin = r"C:\msys64\ucrt64\bin"
-    if os.path.exists(ucrt_bin) and ucrt_bin not in env.get("PATH", ""):
-        env["PATH"] = ucrt_bin + ";" + env.get("PATH", "")
-    return env
+    return cc_env()
 
 
 def test_structural_no_trailing_space_in_codegen_lit():

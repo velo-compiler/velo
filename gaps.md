@@ -3048,11 +3048,28 @@ ceiling as a consequence, not a design driver.
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`codegen_call.vl` at 229, `fs_gen.vl`/`os_gen.vl`/`time_gen.vl` at 12 each).
   - `python scripts/check_formatting.py`: SUCCESS.
 
-**80.5** Decide the Stage-1 question: either delete `velo/` + `velo.py` and
+**80.5 [COMPLETED] ✅** Decide the Stage-1 question: either delete `velo/` + `velo.py` and
 rewrite `examples/12_stage2_semantics_test.vl` against the self-hosted compiler,
 or demote it to an untested historical artifact. Keeping a frozen second
 compiler that still appears in the build and docs is a permanent tax with no
 benefit; `AGENTS.md` already declares `src/` canonical.
+
+- *Former Defect:*
+  `velo/` and `velo.py` remained advertised in `README.md` as the primary user-facing compiler CLI (`python velo.py run/build`), despite the compiler being fully self-hosted. Concurrently, `examples/12_stage2_semantics_test.vl` reached into private compiler AST/symbol-table modules (`src/ast/types.vl`, `src/analysis/symbol_table.vl`) without `pub` visibility, passing only under the Stage-1 Python runner (`velo.py`) while failing under both the self-hosted compiler (33 module privacy errors) and recent Python runs (`Unexpected top-level token 'view'`). This imposed an ongoing double-maintenance tax and presented a false parity signal.
+- *Fix Applied:*
+  - Formally demoted Stage 1 to an **untested historical artifact**:
+    - Created `velo/README.md` and added module docstring to `velo.py` explicitly retiring Stage 1 and declaring it frozen, unmaintained, and exempt from language parity and test maintenance obligations.
+    - Updated `README.md` to establish the self-hosted native compiler (`bin/velo.exe`, `scripts/bootstrap.bat`, `bootstrap.sh`) as the sole canonical compiler toolchain and primary CLI.
+    - Updated `AGENTS.md` to explicitly forbid dual-implementation maintenance and declare Stage 1 an untested historical artifact.
+    - Marked `examples/12_stage2_semantics_test.vl` as an archived Milestone 2.3 verification artifact.
+    - Updated `tests/test_stage2_semantics.py` by skipping outdated Stage 1 runner methods and implementing comprehensive native semantic checks (`bin/velo.exe check`) covering variable immutability, mutation permissions, undeclared identifier rejection, type mismatch rejection, and valid program semantic analysis.
+- *Residual Limitation:*
+  Historical Stage-1 files (`velo/` and `velo.py`) remain preserved in the repository root for git archaeology and provenance, rather than being deleted, avoiding high-churn edits across 50 legacy test files that contain historical Stage-1 assertions.
+- *Verification:*
+  - `python -m pytest tests/test_stage2_semantics.py -v`: 7 passed, 2 skipped in 0.39s.
+  - `python -m pytest tests/test_platform_portability.py -k "test_no_windows_compiler_filename_in_test_code" -v`: PASSED.
+  - `python -m pytest tests/test_typed_codegen_returns.py tests/test_explicit_type_emission.py tests/test_intrinsic_emitter_dispatch.py -v`: 11 passed.
+  - Documentation and agent guardrails verified across `README.md`, `velo/README.md`, `velo.py`, `AGENTS.md`, and `gaps.md`.
 
 **80.6** Add `velo build --verify-determinism` that builds Gen2 and Gen3
 internally and compares hashes, replacing the Python script as the primary gate

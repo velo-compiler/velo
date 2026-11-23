@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+"""
+HISTORICAL ARTIFACT — STAGE 1 BOOTSTRAP TRANSPILER (RETIRED)
+
+This Python-based implementation was the Stage 1 prototype used to bootstrap
+the self-hosted Stage 2 Velo compiler ('src/').
+
+Per Task 80.5 and AGENTS.md, Stage 1 is frozen, retired, and exempt from language
+parity and test maintenance requirements. The canonical compiler is in 'src/' and
+bootstraps via 'bootstrap.c'. Do not modify this file or 'velo/' for new language
+features.
+"""
 import os
 import sys
 import json

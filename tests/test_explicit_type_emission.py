@@ -15,18 +15,15 @@ import subprocess
 import sys
 from pathlib import Path
 import pytest
+from conftest import velo_exe, cc_env
 
 REPO_ROOT = Path(__file__).parent.parent.resolve()
-VELO_EXE = REPO_ROOT / "bin" / "velo.exe"
+VELO_EXE = velo_exe()
 SRC_BACKEND = REPO_ROOT / "src" / "backend"
 
 
 def get_build_env():
-    env = dict(os.environ)
-    ucrt_bin = r"C:\msys64\ucrt64\bin"
-    if os.path.exists(ucrt_bin) and ucrt_bin not in env.get("PATH", ""):
-        env["PATH"] = ucrt_bin + ";" + env.get("PATH", "")
-    return env
+    return cc_env()
 
 
 def test_structural_emit_type_helpers_adoption():

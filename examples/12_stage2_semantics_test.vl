@@ -1,4 +1,7 @@
-// Milestone 2.3 Live Verification: Symbol Table & Semantic Analysis in Velo
+// [HISTORICAL ARTIFACT]: Milestone 2.3 Live Verification: Symbol Table & Semantic Analysis in Velo
+// Written during early Stage 2 development to verify compiler AST and symbol tables via
+// the Stage 1 bootstrap transpiler before module visibility (pub) was enforced.
+// The canonical self-hosted compiler now validates semantics directly via 'velo check'.
 use std.io
 use "../src/frontend/token.vl"
 use "../src/frontend/lexer.vl"

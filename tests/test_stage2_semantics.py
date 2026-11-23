@@ -10,6 +10,7 @@ class TestStage2Semantics(unittest.TestCase):
         self.velo_py = self.root_dir / "velo.py"
         self.example = self.root_dir / "examples" / "12_stage2_semantics_test.vl"
 
+    @unittest.skip("Historical Stage-1 milestone verification artifact demoted per Task 80.5; Stage-1 is retired")
     def test_run_stage2_semantics(self):
         cmd = [sys.executable, str(self.velo_py), "run", str(self.example)]
         res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -28,6 +29,7 @@ class TestStage2Semantics(unittest.TestCase):
         self.assertIn("Bad code error count (expected >0): 1", res.stdout)
         self.assertIn("--- Milestone 2.3 Complete! ---", res.stdout)
 
+    @unittest.skip("Historical Stage-1 milestone verification artifact demoted per Task 80.5; Stage-1 is retired")
     def test_emit_c_stage2_semantics(self):
         cmd = [sys.executable, str(self.velo_py), "emit-c", str(self.example)]
         res = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -90,6 +92,50 @@ class TestStage2Semantics(unittest.TestCase):
         import tempfile
         with tempfile.NamedTemporaryFile("w", suffix=".vl", delete=False) as f:
             f.write("act main() {\n    mut num: i64 = 100\n    num = 50\n    mut count: i32 = 0\n    count += 1\n}\n")
+            fname = f.name
+        try:
+            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True, encoding="utf-8", errors="replace")
+            self.assertEqual(res.returncode, 0, f"Check failed: {res.stdout}")
+        finally:
+            Path(fname).unlink(missing_ok=True)
+
+    def test_undeclared_identifier_rejected(self):
+        velo_bin = velo_exe()
+        if not velo_bin.exists():
+            self.skipTest("bin/velo.exe not built")
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".vl", delete=False) as f:
+            f.write("act main() {\n    let val = undeclared_identifier_xyz\n}\n")
+            fname = f.name
+        try:
+            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True, encoding="utf-8", errors="replace")
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("Undeclared identifier", res.stdout)
+        finally:
+            Path(fname).unlink(missing_ok=True)
+
+    def test_type_mismatch_rejected(self):
+        velo_bin = velo_exe()
+        if not velo_bin.exists():
+            self.skipTest("bin/velo.exe not built")
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".vl", delete=False) as f:
+            f.write("act main() {\n    let num: i32 = \"string value\"\n}\n")
+            fname = f.name
+        try:
+            res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True, encoding="utf-8", errors="replace")
+            self.assertNotEqual(res.returncode, 0)
+            self.assertIn("Type mismatch", res.stdout)
+        finally:
+            Path(fname).unlink(missing_ok=True)
+
+    def test_valid_semantics_check(self):
+        velo_bin = velo_exe()
+        if not velo_bin.exists():
+            self.skipTest("bin/velo.exe not built")
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".vl", delete=False) as f:
+            f.write("data Point { x: f32, y: f32 }\nact scale(p: @Point, f: f32) -> f32 {\n    return (p.x + p.y) * f\n}\nact main() {\n    let pt = Point{ x: 1.0, y: 2.0 }\n    let ans = scale(@pt, 2.5)\n}\n")
             fname = f.name
         try:
             res = subprocess.run([str(velo_bin), "check", fname], capture_output=True, text=True, encoding="utf-8", errors="replace")
