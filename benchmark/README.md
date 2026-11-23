@@ -82,3 +82,20 @@ python benchmark/compile_speed.py --check-regression --threshold 20.0
 - **Clean Build**: Purges `.velo_cache` to measure full compiler pipeline duration and throughput (LOC/s).
 - **Incremental Build**: Exercises the content-hashed build cache (`.velo_cache`).
 - **Historical Tracking**: Records metrics to [`benchmark/compile_speed_history.json`](file:///c:/projects/easylang/benchmark/compile_speed_history.json).
+
+---
+
+## 🧠 Peak RSS Memory Profiler (`benchmark/memory.py`)
+
+Measures empirical peak Resident Set Size (RSS) across platforms (Windows `psapi`, Linux `/proc/status`, macOS `rusage`):
+
+```powershell
+# Run full memory audit across all 5 workloads:
+python benchmark/memory.py
+
+# Quick mode (reduced iterations and request counts):
+python benchmark/memory.py --quick
+```
+
+- **Output Report**: [`benchmark/MEMORY_RESULTS.md`](file:///c:/projects/easylang/benchmark/MEMORY_RESULTS.md).
+- **Workloads**: Minimal CLI baseline (Hello World), large-file scanning (`bootstrap.c`), JSON parsing & aggregation, async HTTP server under load, and compiler AST analysis (`velo check src/main.vl`).

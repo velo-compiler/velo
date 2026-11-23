@@ -3207,9 +3207,32 @@ regression.
   - `python -m pytest tests/test_compile_speed.py -v`: 5 passed in 0.83s.
   - Verified regression gate: exited 0 on mild slowdown (+10.0% <= 20.0%), exited 1 with `[REGRESSION FAILURE]` on severe slowdown (+40.0% > 20.0%).
 
-**81.4** Add `benchmark/memory.py` using per-workload peak RSS on all three
+**81.4 [COMPLETED] ✅** Add `benchmark/memory.py` using per-workload peak RSS on all three
 platforms; replace `README.md`'s "< 64KB" claim with measured numbers or delete
 the claim (Phase 83 owns the deletion decision).
+
+- *Former Defect:*
+  `README.md:15` claimed that Velo "Runs in < 64KB RAM", an unverified assertion contradicted by empirical measurements showing a 4.0–4.6 MB baseline working set RSS due to standard C runtime library initialization (`<stdio.h>`, `<stdlib.h>`). Furthermore, no cross-platform tool existed to measure peak Resident Set Size (RSS) across real workloads and compiler stages.
+- *Fix Applied:*
+  - Implemented `benchmark/memory.py`:
+    - Measures empirical peak Resident Set Size (RSS) across three operating systems: Windows (`psapi.GetProcessMemoryInfo` PeakWorkingSetSize), Linux (`/proc/{pid}/status` `VmHWM`), and macOS (`resource.getrusage` / `/usr/bin/time`).
+    - Profiles 5 distinct workloads:
+      1. Minimal CLI Baseline (Hello World): ~4.0 MB peak RSS.
+      2. Large File Scanning (`bootstrap.c`, ~3.25 MB): ~7.25 MB peak RSS.
+      3. Structured JSON Parsing & Aggregation: ~7.96 MB peak RSS.
+      4. Async HTTP Server under load: ~4.59 MB peak RSS.
+      5. Compiler Analysis Footprint (`velo check src/main.vl`, 140 files, 30.8k LOC): ~181.6 MB peak RSS.
+    - Generates empirical report `benchmark/MEMORY_RESULTS.md` with multi-language comparisons against C, Rust, Go, Node.js, and Python.
+    - Supports CLI options: `--quick`, `--skip-compiler`, `--output`, and `--json-output`.
+  - Replaced the unverified `< 64KB RAM` claim in `README.md:15` with empirical, measured figures: `* **Lean Memory Footprint** (~4 MB baseline RSS for native CLI utilities, < 8 MB for large-file I/O pipelines, compiles to clean C99).`
+  - Added regression test suite `tests/test_memory_benchmark.py` validating CLI arguments, peak RSS measurement logic, `MEMORY_RESULTS.md` generation, exclusion of `< 64KB` from `README.md`, and JSON export.
+  - Updated `benchmark/README.md` with memory profiler usage.
+- *Residual Limitation:*
+  Promoting microbenchmarks to `--bench` nightly tier belongs to Task 81.5.
+- *Verification:*
+  - `python benchmark/memory.py --quick`: executed all 5 workloads, measured peak RSS across peers, and generated `benchmark/MEMORY_RESULTS.md`.
+  - `python -m pytest tests/test_memory_benchmark.py -v`: 5 passed in 2.62s.
+  - Verified `README.md` contains 0 occurrences of `< 64KB` or `< 64 KB`.
 
 **81.5** Promote `tests/test_loop_performance.py`'s pattern into a
 `tests/benchmarks/` tier behind a `--bench` flag so it runs in CI nightly, not

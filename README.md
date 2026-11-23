@@ -12,7 +12,7 @@
 Velo is a modern systems programming language built specifically for:
 * **Real-Time Interactive Systems & Game Development** (0ms GC stutter, 120+ FPS guarantee).
 * **Ultra-Fast CLI Utilities** (Single portable `.exe`, 0.001s startup time).
-* **Embedded Systems & Microcontrollers** (Runs in < 64KB RAM, compiles to clean C99).
+* **Lean Memory Footprint** (~4 MB baseline RSS for native CLI utilities, < 8 MB for large-file I/O pipelines, compiles to clean C99).
 
 ---
 
