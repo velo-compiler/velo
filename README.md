@@ -195,6 +195,7 @@ All showcase projects are continuously verified for syntactic, semantic, and C-c
 * [Stage 1 Development Roadmap](docs/STAGE1_ROADMAP.md)
 * [Step 2 Development Roadmap](docs/STEP2_ROADMAP.md)
 * [Stage 2 Self-Hosting Architecture](docs/STAGE2_ARCHITECTURE.md)
+* [Standard Library Architecture & Platform Contract](docs/STDLIB_ARCHITECTURE.md)
 * [Stage 2 Development Roadmap](docs/STAGE2_ROADMAP.md)
 * [Stage 2 Production Code Standards](docs/STAGE2_CODE_STANDARDS.md)
 * [Empirical Performance & Multi-Language Benchmarks](benchmark/RESULTS.md)

@@ -3523,10 +3523,26 @@ and remove the claim of game-development readiness.
   All showcase targets checked and confirmed clean under `velo check` and `velo emit-c`.
 
 
-**83.4** Write `docs/STDLIB_ARCHITECTURE.md`: the platform-model contract
+**83.4 [COMPLETED] ✅** Write `docs/STDLIB_ARCHITECTURE.md`: the platform-model contract
 (facade + `_<plat>` variants), the intrinsic boundary (`sys.*` vs `std.*`), the
 allocation tiers (zone/heap/arena/page), and the error model. This is the
 document whose absence let Phase 70's defect survive five audit phases.
+
+- *Former Defect:*
+  The standard library had no foundational architecture specification. While `docs/ARCHITECTURE.md` documented the compiler pipeline, the standard library's platform model was undocumented. This absence allowed Win32-specific `extern` calls and Windows-only imports to leak directly into portable library facades, leading to the platform defect uncovered in Phase 70 where emitted C could not compile or link on POSIX targets.
+- *Fix Applied:*
+  - Authored comprehensive architecture document `docs/STDLIB_ARCHITECTURE.md` detailing:
+    1. The Platform-Model Contract: facade pattern (`std/<module>/<submodule>.vl`) paired with target sibling implementations (`<submodule>_windows.vl`, `_linux.vl`, `_macos.vl`, `_posix.vl`), compile-time platform resolution table, and strict Extern Isolation (Invariant I70.1).
+    2. The Intrinsic Boundary: explicit architectural demarcation between compiler intrinsics (`sys.*` in `src/common/intrinsics.vl` / `src/backend/intrinsic_emitter.vl`, lowered directly to C macros in `velo_runtime.h`) and standard library modules (`std.*` shipped as source in `std/`).
+    3. The 4 Memory Allocation Tiers: Stack-disciplined Zone Arena (`zone { ... }` with $O(1)$ bump-reset and zero GC latency), Custom Arena (`std.mem.arena`), Dynamic Heap (`std.mem.heap` paired with deterministic LIFO `defer`), and Virtual Page Allocations (`std.mem.page` via `VirtualAlloc`/`mmap`).
+    4. The Error Model & Resource Safety: Tagged union outcome pattern (`view kind FsOutcome`), pattern matching via `on`, LIFO `defer` cleanup guarantees, and platform error code translation (translating `GetLastError`/`errno` to canonical Velo error kinds at the facade boundary).
+    5. Codified living invariants (I70.1–I70.4, I83.1–I83.2) and test suite mappings.
+  - Linked `docs/STDLIB_ARCHITECTURE.md` in `README.md` under Documentation.
+- *Residual Limitation:*
+  None; the standard library contract, boundaries, allocation tiers, and error model are now thoroughly documented and governed by codified invariants.
+- *Verification:*
+  Verified document structure and links; `git status` shows clean documentation addition; all referenced architectural invariants verified against Phase 70.
+
 
 **83.5** Add `tests/test_readme_claims.py`: every code block in `README.md` and
 `docs/SPECIFICATION.md` must compile or be explicitly marked
