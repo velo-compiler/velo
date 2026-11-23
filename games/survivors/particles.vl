@@ -3,7 +3,7 @@
 use sys.mem
 use "raylib.vl"
 
-data DamageNum {
+view data DamageNum {
     x: f32
     y: f32
     val: i32
@@ -11,12 +11,12 @@ data DamageNum {
     active: bool
 }
 
-data ParticlePool {
+view data ParticlePool {
     nums: @DamageNum
     capacity: usize
 }
 
-act init_particle_pool() -> ParticlePool {
+view act init_particle_pool() -> ParticlePool {
     mut pp: ParticlePool
     pp.capacity = 40
     pp.nums = mem.alloc(@DamageNum, 40)
@@ -29,7 +29,7 @@ act init_particle_pool() -> ParticlePool {
     return pp
 }
 
-act spawn_damage_num(pp: @ParticlePool, x: f32, y: f32, val: i32) -> bool {
+view act spawn_damage_num(pp: @ParticlePool, x: f32, y: f32, val: i32) -> bool {
     mut i: usize = 0
     loop i < pp.capacity {
         let n = @pp.nums[i]
@@ -49,7 +49,7 @@ act spawn_damage_num(pp: @ParticlePool, x: f32, y: f32, val: i32) -> bool {
     return false
 }
 
-act update_particles(pp: @ParticlePool, dt: f32) {
+view act update_particles(pp: @ParticlePool, dt: f32) {
     mut i: usize = 0
     loop i < pp.capacity {
         let n = @pp.nums[i]
@@ -64,7 +64,7 @@ act update_particles(pp: @ParticlePool, dt: f32) {
     }
 }
 
-act draw_particles(pp: @ParticlePool, cam_x: f32, cam_y: f32, screen_w: f32, screen_h: f32) {
+view act draw_particles(pp: @ParticlePool, cam_x: f32, cam_y: f32, screen_w: f32, screen_h: f32) {
     mut i: usize = 0
     loop i < pp.capacity {
         let n = @pp.nums[i]

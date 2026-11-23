@@ -4,19 +4,19 @@ use sys.mem
 use "raylib.vl"
 use "math.vl"
 
-data Gem {
+view data Gem {
     x: f32
     y: f32
     value: i32
     active: bool
 }
 
-data GemPool {
+view data GemPool {
     gems: @Gem
     capacity: usize
 }
 
-act init_gem_pool() -> GemPool {
+view act init_gem_pool() -> GemPool {
     mut gp: GemPool
     gp.capacity = 140
     gp.gems = mem.alloc(@Gem, 140)
@@ -29,7 +29,7 @@ act init_gem_pool() -> GemPool {
     return gp
 }
 
-act spawn_gem(gp: @GemPool, x: f32, y: f32, value: i32) -> bool {
+view act spawn_gem(gp: @GemPool, x: f32, y: f32, value: i32) -> bool {
     mut i: usize = 0
     loop i < gp.capacity {
         let g = @gp.gems[i]
@@ -45,7 +45,7 @@ act spawn_gem(gp: @GemPool, x: f32, y: f32, value: i32) -> bool {
     return false
 }
 
-act update_gems(gp: @GemPool, px: f32, py: f32, magnet_r: f32, dt: f32) {
+view act update_gems(gp: @GemPool, px: f32, py: f32, magnet_r: f32, dt: f32) {
     let mag_r_sq = magnet_r * magnet_r
     mut i: usize = 0
     loop i < gp.capacity {
@@ -67,7 +67,7 @@ act update_gems(gp: @GemPool, px: f32, py: f32, magnet_r: f32, dt: f32) {
     }
 }
 
-act draw_gems(gp: @GemPool, cam_x: f32, cam_y: f32, screen_w: f32, screen_h: f32) {
+view act draw_gems(gp: @GemPool, cam_x: f32, cam_y: f32, screen_w: f32, screen_h: f32) {
     mut i: usize = 0
     loop i < gp.capacity {
         let g = @gp.gems[i]

@@ -1,22 +1,22 @@
 // VeloStudio Raylib 5.0 C-FFI Windowing, Input & 2D Graphics Engine
 
-data Color {
+view data Color {
     r: u8
     g: u8
     b: u8
     a: u8
 }
 
-act make_color(r: u8, g: u8, b: u8, a: u8) -> Color {
+view act make_color(r: u8, g: u8, b: u8, a: u8) -> Color {
     return Color{ r: r, g: g, b: b, a: a }
 }
 
-data Vector2 {
+view data Vector2 {
     x: f32
     y: f32
 }
 
-data Texture2D {
+view data Texture2D {
     id: u32
     width: i32
     height: i32
@@ -24,7 +24,7 @@ data Texture2D {
     format: i32
 }
 
-data Font {
+view data Font {
     baseSize: i32
     glyphCount: i32
     glyphPadding: i32
@@ -34,82 +34,82 @@ data Font {
 }
 
 // Window Management
-extern act InitWindow(width: i32, height: i32, title: string) -> void
-extern act CloseWindow() -> void
-extern act WindowShouldClose() -> bool
-extern act SetTargetFPS(fps: i32) -> void
-extern act SetWindowTitle(title: string) -> void
-extern act GetFPS() -> i32
+view extern act InitWindow(width: i32, height: i32, title: string) -> void
+view extern act CloseWindow() -> void
+view extern act WindowShouldClose() -> bool
+view extern act SetTargetFPS(fps: i32) -> void
+view extern act SetWindowTitle(title: string) -> void
+view extern act GetFPS() -> i32
 
 // Timing
-extern act GetFrameTime() -> f32
-extern act GetTime() -> f64
+view extern act GetFrameTime() -> f32
+view extern act GetTime() -> f64
 
 // Drawing Lifecycle
-extern act BeginDrawing() -> void
-extern act EndDrawing() -> void
-extern act ClearBackground(color: Color) -> void
+view extern act BeginDrawing() -> void
+view extern act EndDrawing() -> void
+view extern act ClearBackground(color: Color) -> void
 
 // Shapes & Primitives
-extern act DrawRectangle(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
-extern act DrawRectangleLines(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
-extern act DrawLine(startPosX: i32, startPosY: i32, endPosX: i32, endPosY: i32, color: Color) -> void
-extern act DrawCircle(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
+view extern act DrawRectangle(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
+view extern act DrawRectangleLines(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
+view extern act DrawLine(startPosX: i32, startPosY: i32, endPosX: i32, endPosY: i32, color: Color) -> void
+view extern act DrawCircle(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
 
 // Typography (Bitmap & Vector TrueType Fonts)
-extern act DrawText(text: string, posX: i32, posY: i32, fontSize: i32, color: Color) -> void
-extern act MeasureText(text: string, fontSize: i32) -> i32
-extern act LoadFontEx(fileName: string, fontSize: i32, fontChars: usize, glyphCount: i32) -> Font
-extern act SetTextureFilter(texture: Texture2D, filter: i32) -> void
-extern act DrawTextEx(font: Font, text: string, position: Vector2, fontSize: f32, spacing: f32, tint: Color) -> void
-extern act MeasureTextEx(font: Font, text: string, fontSize: f32, spacing: f32) -> Vector2
-extern act UnloadFont(font: Font) -> void
+view extern act DrawText(text: string, posX: i32, posY: i32, fontSize: i32, color: Color) -> void
+view extern act MeasureText(text: string, fontSize: i32) -> i32
+view extern act LoadFontEx(fileName: string, fontSize: i32, fontChars: usize, glyphCount: i32) -> Font
+view extern act SetTextureFilter(texture: Texture2D, filter: i32) -> void
+view extern act DrawTextEx(font: Font, text: string, position: Vector2, fontSize: f32, spacing: f32, tint: Color) -> void
+view extern act MeasureTextEx(font: Font, text: string, fontSize: f32, spacing: f32) -> Vector2
+view extern act UnloadFont(font: Font) -> void
 
-act draw_ui_text(font: Font, text: string, posX: i32, posY: i32, fontSize: f32, color: Color) {
+view act draw_ui_text(font: Font, text: string, posX: i32, posY: i32, fontSize: f32, color: Color) {
     let pos = Vector2{ x: posX as f32, y: posY as f32 }
     DrawTextEx(font, text, pos, fontSize, 1.0, color)
 }
 
-act measure_ui_text_width(font: Font, text: string, fontSize: f32) -> i32 {
+view act measure_ui_text_width(font: Font, text: string, fontSize: f32) -> i32 {
     let sz = MeasureTextEx(font, text, fontSize, 1.0)
     return sz.x as i32
 }
 
 // Mouse Input
-extern act GetMouseX() -> i32
-extern act GetMouseY() -> i32
-extern act IsMouseButtonPressed(button: i32) -> bool
-extern act IsMouseButtonDown(button: i32) -> bool
-extern act GetMouseWheelMove() -> f32
+view extern act GetMouseX() -> i32
+view extern act GetMouseY() -> i32
+view extern act IsMouseButtonPressed(button: i32) -> bool
+view extern act IsMouseButtonDown(button: i32) -> bool
+view extern act GetMouseWheelMove() -> f32
 
 // Keyboard Input
-extern act IsKeyPressed(key: i32) -> bool
-extern act IsKeyDown(key: i32) -> bool
-extern act GetCharPressed() -> i32
+view extern act IsKeyPressed(key: i32) -> bool
+view extern act IsKeyDown(key: i32) -> bool
+view extern act GetCharPressed() -> i32
 
 // Input Constants
-let MOUSE_BUTTON_LEFT: i32 = 0
-let MOUSE_BUTTON_RIGHT: i32 = 1
+view let MOUSE_BUTTON_LEFT: i32 = 0
+view let MOUSE_BUTTON_RIGHT: i32 = 1
 
-let KEY_BACKSPACE: i32 = 259
-let KEY_ENTER: i32 = 257
-let KEY_ESCAPE: i32 = 256
-let KEY_TAB: i32 = 258
-let KEY_RIGHT: i32 = 262
-let KEY_LEFT: i32 = 263
-let KEY_DOWN: i32 = 264
-let KEY_UP: i32 = 265
-let KEY_DELETE: i32 = 261
-let KEY_HOME: i32 = 268
-let KEY_END: i32 = 269
+view let KEY_BACKSPACE: i32 = 259
+view let KEY_ENTER: i32 = 257
+view let KEY_ESCAPE: i32 = 256
+view let KEY_TAB: i32 = 258
+view let KEY_RIGHT: i32 = 262
+view let KEY_LEFT: i32 = 263
+view let KEY_DOWN: i32 = 264
+view let KEY_UP: i32 = 265
+view let KEY_DELETE: i32 = 261
+view let KEY_HOME: i32 = 268
+view let KEY_END: i32 = 269
 
 // File Drag & Drop
-data FilePathList {
+view data FilePathList {
     count: u32
     paths: @string
 }
 
-extern act IsFileDropped() -> bool
-extern act LoadDroppedFiles() -> FilePathList
-extern act UnloadDroppedFiles(files: FilePathList) -> void
+view extern act IsFileDropped() -> bool
+view extern act LoadDroppedFiles() -> FilePathList
+view extern act UnloadDroppedFiles(files: FilePathList) -> void
 

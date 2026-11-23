@@ -3,14 +3,14 @@
 use sys.mem
 use sys.time
 
-data KeyValueEntry {
+view data KeyValueEntry {
     key: string
     value: string
     expire_at_ms: i64 // 0 = permanent (no expiration)
     active: bool
 }
 
-data KeyValueStore {
+view data KeyValueStore {
     allocator: @Allocator
     entries: @KeyValueEntry
     capacity: usize
@@ -21,7 +21,7 @@ data KeyValueStore {
     total_misses: i64
 }
 
-act store_copy_str(a: @Allocator, s: string) -> string {
+view act store_copy_str(a: @Allocator, s: string) -> string {
     let slen = str.len(s)
     if slen == 0 { return "" }
     mut buf: @u8 = mem.alloc_with(a, @u8, slen + 1)
@@ -34,11 +34,11 @@ act store_copy_str(a: @Allocator, s: string) -> string {
     return buf as string
 }
 
-act get_current_time_ms() -> i64 {
+view act get_current_time_ms() -> i64 {
     return time.now() / 1000
 }
 
-act hash_key(s: string) -> usize {
+view act hash_key(s: string) -> usize {
     let len = str.len(s)
     mut h: u32 = 2166136261
     mut i: usize = 0
@@ -49,7 +49,7 @@ act hash_key(s: string) -> usize {
     return (h as usize)
 }
 
-act store_init(capacity: usize) -> KeyValueStore {
+view act store_init(capacity: usize) -> KeyValueStore {
     mut s: KeyValueStore
     s.allocator = mem.current()
     s.capacity = capacity
@@ -73,7 +73,7 @@ act store_init(capacity: usize) -> KeyValueStore {
 }
 
 // Internal lookup: returns slot index if found, or slot for insertion if not found
-act store_find_slot(s: @KeyValueStore, key: string) -> i64 {
+view act store_find_slot(s: @KeyValueStore, key: string) -> i64 {
     let mask = s.capacity - 1
     let initial_idx = hash_key(key) & mask
     mut idx = initial_idx
@@ -95,7 +95,7 @@ act store_find_slot(s: @KeyValueStore, key: string) -> i64 {
     return first_free
 }
 
-act store_set(s: @KeyValueStore, key: string, val: string, ttl_ms: i64) -> bool {
+view act store_set(s: @KeyValueStore, key: string, val: string, ttl_ms: i64) -> bool {
     let slot_idx = store_find_slot(s, key)
     if slot_idx < 0 { return false } // Store full
 
@@ -115,7 +115,7 @@ act store_set(s: @KeyValueStore, key: string, val: string, ttl_ms: i64) -> bool 
     return true
 }
 
-act store_has(s: @KeyValueStore, key: string) -> bool {
+view act store_has(s: @KeyValueStore, key: string) -> bool {
     let slot_idx = store_find_slot(s, key)
     if slot_idx < 0 { return false }
     let e = @s.entries[slot_idx as usize]
@@ -133,7 +133,7 @@ act store_has(s: @KeyValueStore, key: string) -> bool {
     return true
 }
 
-act store_get(s: @KeyValueStore, key: string) -> string {
+view act store_get(s: @KeyValueStore, key: string) -> string {
     s.total_gets += 1
     let slot_idx = store_find_slot(s, key)
     if slot_idx < 0 {
@@ -161,7 +161,7 @@ act store_get(s: @KeyValueStore, key: string) -> string {
     return e.value
 }
 
-act store_del(s: @KeyValueStore, key: string) -> bool {
+view act store_del(s: @KeyValueStore, key: string) -> bool {
     let slot_idx = store_find_slot(s, key)
     if slot_idx < 0 { return false }
     let e = @s.entries[slot_idx as usize]
@@ -175,7 +175,7 @@ act store_del(s: @KeyValueStore, key: string) -> bool {
     return true
 }
 
-act store_expire(s: @KeyValueStore, key: string, ttl_sec: i64) -> bool {
+view act store_expire(s: @KeyValueStore, key: string, ttl_sec: i64) -> bool {
     let slot_idx = store_find_slot(s, key)
     if slot_idx < 0 { return false }
     let e = @s.entries[slot_idx as usize]
@@ -195,7 +195,7 @@ act store_expire(s: @KeyValueStore, key: string, ttl_sec: i64) -> bool {
     return true
 }
 
-act store_ttl(s: @KeyValueStore, key: string) -> i64 {
+view act store_ttl(s: @KeyValueStore, key: string) -> i64 {
     let slot_idx = store_find_slot(s, key)
     if slot_idx < 0 { return -2 } // Key does not exist
     let e = @s.entries[slot_idx as usize]
@@ -219,7 +219,7 @@ act store_ttl(s: @KeyValueStore, key: string) -> i64 {
     return (e.expire_at_ms - now + 999) / 1000
 }
 
-act store_persist(s: @KeyValueStore, key: string) -> bool {
+view act store_persist(s: @KeyValueStore, key: string) -> bool {
     let slot_idx = store_find_slot(s, key)
     if slot_idx < 0 { return false }
     let e = @s.entries[slot_idx as usize]
@@ -232,11 +232,11 @@ act store_persist(s: @KeyValueStore, key: string) -> bool {
     return false
 }
 
-act store_dbsize(s: @KeyValueStore) -> i32 {
+view act store_dbsize(s: @KeyValueStore) -> i32 {
     return s.count
 }
 
-act store_flushdb(s: @KeyValueStore) {
+view act store_flushdb(s: @KeyValueStore) {
     mut i: usize = 0
     loop i < s.capacity {
         let e = @s.entries[i]

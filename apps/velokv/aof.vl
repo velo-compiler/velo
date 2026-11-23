@@ -5,14 +5,14 @@ use sys.io
 use "store.vl"
 use "resp.vl"
 
-data AofLogger {
+view data AofLogger {
     filename: string
     file_handle: @File
     enabled: bool
     writes_count: i64
 }
 
-act aof_open(filename: string, enabled: bool) -> AofLogger {
+view act aof_open(filename: string, enabled: bool) -> AofLogger {
     mut aof: AofLogger
     aof.filename = filename
     aof.enabled = enabled
@@ -25,9 +25,9 @@ act aof_open(filename: string, enabled: bool) -> AofLogger {
     return aof
 }
 
-extern act fflush(stream: @File) -> i32
+view extern act fflush(stream: @File) -> i32
 
-act aof_log_command(aof: @AofLogger, cmd: string) {
+view act aof_log_command(aof: @AofLogger, cmd: string) {
     if not aof.enabled { return }
     let ok = fs.fwrite(aof.file_handle, cmd)
     if ok {
@@ -36,14 +36,14 @@ act aof_log_command(aof: @AofLogger, cmd: string) {
     }
 }
 
-act aof_close(aof: @AofLogger) {
+view act aof_close(aof: @AofLogger) {
     if aof.enabled {
         fs.fclose(aof.file_handle)
     }
 }
 
 // Replays AOF on startup: reads file, executes commands to reconstruct in-memory state
-act aof_replay(filename: string, store: @KeyValueStore) -> i32 {
+view act aof_replay(filename: string, store: @KeyValueStore) -> i32 {
     if not fs.exists(filename) {
         return 0
     }

@@ -3,7 +3,7 @@
 use "raylib.vl"
 use "math.vl"
 
-data Player {
+view data Player {
     x: f32
     y: f32
     radius: f32
@@ -20,7 +20,7 @@ data Player {
     alive: bool
 }
 
-act init_player() -> Player {
+view act init_player() -> Player {
     return Player{
         x: 0.0,
         y: 0.0,
@@ -39,7 +39,7 @@ act init_player() -> Player {
     }
 }
 
-act update_player(p: @Player, dt: f32) {
+view act update_player(p: @Player, dt: f32) {
     if not p.alive { return }
 
     if p.invuln_timer > 0.0 {
@@ -63,7 +63,7 @@ act update_player(p: @Player, dt: f32) {
     p.y += dy * p.speed * dt
 }
 
-act add_player_exp(p: @Player, amount: i32) -> bool {
+view act add_player_exp(p: @Player, amount: i32) -> bool {
     p.exp += amount
     if p.exp >= p.next_exp {
         p.exp -= p.next_exp
@@ -77,7 +77,7 @@ act add_player_exp(p: @Player, amount: i32) -> bool {
     return false
 }
 
-act damage_player(p: @Player, amount: f32) -> bool {
+view act damage_player(p: @Player, amount: f32) -> bool {
     if not p.alive { return false }
     if p.invuln_timer <= 0.0 {
         p.hp -= amount
@@ -91,7 +91,7 @@ act damage_player(p: @Player, amount: f32) -> bool {
     return false
 }
 
-act draw_player(p: @Player, sx: f32, sy: f32) {
+view act draw_player(p: @Player, sx: f32, sy: f32) {
     let ix = sx as i32
     let iy = sy as i32
 

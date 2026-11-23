@@ -4,7 +4,7 @@ use "raylib.vl"
 use "math3d.vl"
 use "world.vl"
 
-data Player {
+view data Player {
     pos: Vector3
     yaw: f32
     pitch: f32
@@ -14,7 +14,7 @@ data Player {
     step_timer: f32
 }
 
-act init_player() -> Player {
+view act init_player() -> Player {
     mut p: Player
     p.pos = Vector3{ x: 8.0, y: 14.0, z: 8.0 }
     p.yaw = 0.0
@@ -26,7 +26,7 @@ act init_player() -> Player {
     return p
 }
 
-act get_slot_block(slot: i32) -> u8 {
+view act get_slot_block(slot: i32) -> u8 {
     if slot == 1 { return BLOCK_GRASS }
     if slot == 2 { return BLOCK_DIRT }
     if slot == 3 { return BLOCK_STONE }
@@ -36,7 +36,7 @@ act get_slot_block(slot: i32) -> u8 {
     return BLOCK_GRASS
 }
 
-act get_player_camera(p: @Player) -> Camera3D {
+view act get_player_camera(p: @Player) -> Camera3D {
     mut cam: Camera3D
     let eye_pos = Vector3{ x: p.pos.x, y: p.pos.y + 1.6, z: p.pos.z }
     let dir = vec3_dir_from_angles(p.yaw, p.pitch)
@@ -48,7 +48,7 @@ act get_player_camera(p: @Player) -> Camera3D {
     return cam
 }
 
-act update_player(p: @Player, w: @VoxelWorld, dt: f32, cursor_locked: bool) -> bool {
+view act update_player(p: @Player, w: @VoxelWorld, dt: f32, cursor_locked: bool) -> bool {
     mut played_step = false
 
     // 1. Mouse look (only when cursor is locked)

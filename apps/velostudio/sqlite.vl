@@ -4,23 +4,23 @@ use sys.mem
 use sys.time
 
 // SQLite3 C API Bindings
-extern act sqlite3_open(filename: string, ppDb: @usize) -> i32
-extern act sqlite3_close(db: usize) -> i32
-extern act sqlite3_errmsg(db: usize) -> string
-extern act sqlite3_exec(db: usize, sql: string, callback: usize, arg: usize, errmsg: usize) -> i32
-extern act sqlite3_prepare_v2(db: usize, zSql: string, nByte: i32, ppStmt: @usize, pzTail: usize) -> i32
-extern act sqlite3_step(stmt: usize) -> i32
-extern act sqlite3_column_count(stmt: usize) -> i32
-extern act sqlite3_column_name(stmt: usize, col: i32) -> string
-extern act sqlite3_column_text(stmt: usize, col: i32) -> string
-extern act sqlite3_finalize(stmt: usize) -> i32
-extern act sqlite3_changes(db: usize) -> i32
+view extern act sqlite3_open(filename: string, ppDb: @usize) -> i32
+view extern act sqlite3_close(db: usize) -> i32
+view extern act sqlite3_errmsg(db: usize) -> string
+view extern act sqlite3_exec(db: usize, sql: string, callback: usize, arg: usize, errmsg: usize) -> i32
+view extern act sqlite3_prepare_v2(db: usize, zSql: string, nByte: i32, ppStmt: @usize, pzTail: usize) -> i32
+view extern act sqlite3_step(stmt: usize) -> i32
+view extern act sqlite3_column_count(stmt: usize) -> i32
+view extern act sqlite3_column_name(stmt: usize, col: i32) -> string
+view extern act sqlite3_column_text(stmt: usize, col: i32) -> string
+view extern act sqlite3_finalize(stmt: usize) -> i32
+view extern act sqlite3_changes(db: usize) -> i32
 
-let SQLITE_OK: i32 = 0
-let SQLITE_ROW: i32 = 100
-let SQLITE_DONE: i32 = 101
+view let SQLITE_OK: i32 = 0
+view let SQLITE_ROW: i32 = 100
+view let SQLITE_DONE: i32 = 101
 
-data QueryResult {
+view data QueryResult {
     col_count: i32
     row_count: i32
     col_names: @string
@@ -31,12 +31,12 @@ data QueryResult {
     affected_rows: i32
 }
 
-data TableMeta {
+view data TableMeta {
     name: string
     row_count: i32
 }
 
-act copy_c_str(s: string) -> string {
+view act copy_c_str(s: string) -> string {
     if s == null { return "" }
     let len = str.len(s)
     if len == 0 { return "" }
@@ -50,7 +50,7 @@ act copy_c_str(s: string) -> string {
     return dest as string
 }
 
-act sqlite_open_db(filename: string) -> usize {
+view act sqlite_open_db(filename: string) -> usize {
     mut db: usize = 0
     let rc = sqlite3_open(filename, @db)
     if rc != SQLITE_OK {
@@ -59,19 +59,19 @@ act sqlite_open_db(filename: string) -> usize {
     return db
 }
 
-act sqlite_close_db(db: usize) {
+view act sqlite_close_db(db: usize) {
     if db != 0 {
         sqlite3_close(db)
     }
 }
 
-act sqlite_execute_raw(db: usize, sql: string) -> bool {
+view act sqlite_execute_raw(db: usize, sql: string) -> bool {
     if db == 0 { return false }
     let rc = sqlite3_exec(db, sql, 0, 0, 0)
     return rc == SQLITE_OK
 }
 
-act sqlite_query(db: usize, sql: string, max_rows: i32) -> QueryResult {
+view act sqlite_query(db: usize, sql: string, max_rows: i32) -> QueryResult {
     mut res: QueryResult
     res.col_count = 0
     res.row_count = 0
@@ -157,7 +157,7 @@ act sqlite_query(db: usize, sql: string, max_rows: i32) -> QueryResult {
     return res
 }
 
-act sqlite_fetch_tables(db: usize, out_tables: @TableMeta, max_tables: i32) -> i32 {
+view act sqlite_fetch_tables(db: usize, out_tables: @TableMeta, max_tables: i32) -> i32 {
     if db == 0 { return 0 }
     let sql = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;"
     let q = sqlite_query(db, sql, max_tables)
@@ -186,7 +186,7 @@ act sqlite_fetch_tables(db: usize, out_tables: @TableMeta, max_tables: i32) -> i
     return count
 }
 
-act parse_int_safe(s: string) -> i32 {
+view act parse_int_safe(s: string) -> i32 {
     let len = str.len(s)
     if len == 0 { return 0 }
     mut acc: i64 = 0

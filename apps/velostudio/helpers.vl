@@ -4,7 +4,7 @@ use sys.mem
 use sys.fs
 use "sqlite.vl"
 
-act int_to_str(val: i64) -> string {
+view act int_to_str(val: i64) -> string {
     if val == 0 { return "0" }
     mut n = val
     mut is_neg = false
@@ -35,12 +35,12 @@ act int_to_str(val: i64) -> string {
     return res as string
 }
 
-act point_in_rect(px: i32, py: i32, rx: i32, ry: i32, rw: i32, rh: i32) -> bool {
+view act point_in_rect(px: i32, py: i32, rx: i32, ry: i32, rw: i32, rh: i32) -> bool {
     return px >= rx and px <= (rx + rw) and py >= ry and py <= (ry + rh)
 }
 
 // Exports active query result to a CSV file
-act export_query_csv(filename: string, q: @QueryResult) -> bool {
+view act export_query_csv(filename: string, q: @QueryResult) -> bool {
     if q.col_count <= 0 { return false }
     let fh: @File = fs.fopen(filename, "wb")
     if fh == null { return false }
@@ -78,7 +78,7 @@ act export_query_csv(filename: string, q: @QueryResult) -> bool {
     return true
 }
 
-data ProcessMemoryCounters {
+view data ProcessMemoryCounters {
     cb: u32
     page_fault_count: u32
     peak_working_set: usize
@@ -91,10 +91,10 @@ data ProcessMemoryCounters {
     peak_pagefile: usize
 }
 
-extern act GetCurrentProcess() -> usize
-extern act K32GetProcessMemoryInfo(hProcess: usize, ppsmps: @ProcessMemoryCounters, cb: u32) -> i32
+view extern act GetCurrentProcess() -> usize
+view extern act K32GetProcessMemoryInfo(hProcess: usize, ppsmps: @ProcessMemoryCounters, cb: u32) -> i32
 
-act get_live_memory_str() -> string {
+view act get_live_memory_str() -> string {
     mut pmc: ProcessMemoryCounters
     pmc.cb = 72 as u32
     let hProcess = GetCurrentProcess()

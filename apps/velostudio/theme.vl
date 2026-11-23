@@ -1,7 +1,7 @@
 // VeloStudio Theme and Visual Palette Definition
 use "raylib.vl"
 
-data StudioTheme {
+view data StudioTheme {
     bg_main: Color
     bg_sidebar: Color
     bg_header: Color
@@ -22,7 +22,7 @@ data StudioTheme {
     btn_hover: Color
 }
 
-act theme_init() -> StudioTheme {
+view act theme_init() -> StudioTheme {
     return StudioTheme{
         bg_main: make_color(18 as u8, 19 as u8, 22 as u8, 255 as u8),
         bg_sidebar: make_color(26 as u8, 27 as u8, 32 as u8, 255 as u8),

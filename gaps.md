@@ -3500,10 +3500,28 @@ reviewer scorecard.
   Verified directory structure (`docs/reviews/AUDIT-2026-01.md` and `docs/REVIEWS.md` exist; root `AUDIT.md` removed); links verified; `git status` shows clean tracking.
 
 
-**83.3** Track `games/` and `apps/` (or move them to a separate examples repo
+**83.3 [COMPLETED] ✅** Track `games/` and `apps/` (or move them to a separate examples repo
 and link it). The showcase is the strongest evidence the language works; leaving
 it untracked discards that evidence. If they are not ready, say so in the README
 and remove the claim of game-development readiness.
+
+- *Former Defect:*
+  Although 5 showcase applications (3 games and 2 systems apps) were tracked in git (`games/flappy_bird`, `games/survivors`, `games/velocraft`, `apps/velokv`, `apps/velostudio`), they were omitted from `README.md` and had fallen out of compatibility with the compiler after the introduction of `view` module privacy checks (Phase 77.4). Because declarations in helper modules lacked `view`, every showcase application failed semantic analysis with hundreds of privacy errors, rendering them unbuildable and untested in CI.
+- *Fix Applied:*
+  - Migrated all exported helper module declarations across all 5 showcase projects to Velo's `view` privacy model:
+    1. `games/flappy_bird`: `raylib.vl` updated with `view` for structs, colors, constants, and C-FFI externs.
+    2. `games/survivors`: `math.vl`, `raylib.vl`, `particles.vl`, `gems.vl`, `player.vl`, `enemies.vl`, `weapons.vl` updated with `view`.
+    3. `games/velocraft`: `math3d.vl`, `raylib.vl`, `voxel_ray.vl`, `fx.vl`, `player.vl`, `world.vl` updated with `view`.
+    4. `apps/velokv`: `resp.vl`, `store.vl`, `aof.vl`, `command.vl`, `net.vl` updated with `view`.
+    5. `apps/velostudio`: `raylib.vl`, `sqlite.vl`, `theme.vl`, `helpers.vl`, `sample_db.vl` updated with `view`.
+  - Added `tests/test_showcase.py`: automated test suite with 14 test cases verifying that `velo check` and `velo emit-c` succeed with code 0 on all showcase applications and their internal tests.
+  - Added dedicated **Showcase Applications & Games** section to `README.md` documenting all 5 projects with direct links and descriptions.
+- *Residual Limitation:*
+  None; all 5 showcase games and systems applications are tracked in git, documented in the README, and protected against compiler regression by CI tests.
+- *Verification:*
+  `python -m pytest tests/test_showcase.py -v` -> 14 passed in 0.43s.
+  All showcase targets checked and confirmed clean under `velo check` and `velo emit-c`.
+
 
 **83.4** Write `docs/STDLIB_ARCHITECTURE.md`: the platform-model contract
 (facade + `_<plat>` variants), the intrinsic boundary (`sys.*` vs `std.*`), the

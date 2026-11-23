@@ -170,6 +170,23 @@ bin/velo.exe fmt src/main.vl
 
 ---
 
+## Showcase Applications & Games
+
+The repository includes complete, native showcase applications and interactive games built with Velo:
+
+### 🎮 Games (`games/`)
+* **[Flappy Bird](games/flappy_bird/)**: 2D arcade flapper with 60 FPS physics, sprite rendering, and sound effects powered by Raylib 6.0 C-FFI.
+* **[Survivors](games/survivors/)**: 2D horde survival game with swarming AI entities, modular weapon systems, EXP progression, and zero-GC zone arena memory.
+* **[VeloCraft](games/velocraft/)**: 3D first-person voxel sandbox engine featuring mouse-look camera, procedural chunk generation, DDA block raycasting, and terrain physics.
+
+### 💼 Systems Applications (`apps/`)
+* **[VeloKV](apps/velokv/)**: High-performance, Redis-compatible in-memory key-value database featuring full RESP protocol parsing, concurrent networking, and Append-Only File (AOF) persistence.
+* **[VeloStudio](apps/velostudio/)**: Native desktop SQLite database manager with a graphical Raylib UI, table inspection, and C-FFI SQLite3 integration.
+
+All showcase projects are continuously verified for syntactic, semantic, and C-codegen compatibility by automated tests in [`tests/test_showcase.py`](tests/test_showcase.py).
+
+---
+
 ## Documentation
 
 * [Language Specification](docs/SPECIFICATION.md)

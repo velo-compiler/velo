@@ -4,7 +4,7 @@ use sys.mem
 use "raylib.vl"
 use "math.vl"
 
-act approx_sin(a: f32) -> f32 {
+view act approx_sin(a: f32) -> f32 {
     mut x = a
     loop x > 3.14159 { x -= 6.28318 }
     loop x < (0.0 - 3.14159) { x += 6.28318 }
@@ -12,11 +12,11 @@ act approx_sin(a: f32) -> f32 {
     return x * (1.0 - x2 * (0.166666 - x2 * 0.008333))
 }
 
-act approx_cos(a: f32) -> f32 {
+view act approx_cos(a: f32) -> f32 {
     return approx_sin(a + 1.57079)
 }
 
-data WandShot {
+view data WandShot {
     x: f32
     y: f32
     vx: f32
@@ -26,7 +26,7 @@ data WandShot {
     active: bool
 }
 
-data Weapons {
+view data Weapons {
     // 1. Orbiting Blades
     blades_level: i32
     blades_count: i32
@@ -49,7 +49,7 @@ data Weapons {
     aura_damage: f32
 }
 
-act init_weapons() -> Weapons {
+view act init_weapons() -> Weapons {
     mut w: Weapons
     w.blades_level = 1
     w.blades_count = 2
@@ -78,7 +78,7 @@ act init_weapons() -> Weapons {
     return w
 }
 
-act spawn_wand_shot(w: @Weapons, px: f32, py: f32, target_x: f32, target_y: f32) -> bool {
+view act spawn_wand_shot(w: @Weapons, px: f32, py: f32, target_x: f32, target_y: f32) -> bool {
     mut i: usize = 0
     loop i < w.wand_cap {
         let shot = @w.wand_shots[i]
@@ -99,7 +99,7 @@ act spawn_wand_shot(w: @Weapons, px: f32, py: f32, target_x: f32, target_y: f32)
     return false
 }
 
-act update_weapons(w: @Weapons, dt: f32) {
+view act update_weapons(w: @Weapons, dt: f32) {
     // 1. Orbiting blades rotation
     if w.blades_level > 0 {
         w.blades_angle += 3.6 * dt
@@ -127,7 +127,7 @@ act update_weapons(w: @Weapons, dt: f32) {
     }
 }
 
-act draw_weapons(w: @Weapons, player_wx: f32, player_wy: f32, cam_x: f32, cam_y: f32, screen_w: f32, screen_h: f32) {
+view act draw_weapons(w: @Weapons, player_wx: f32, player_wy: f32, cam_x: f32, cam_y: f32, screen_w: f32, screen_h: f32) {
     let px = player_wx - cam_x + screen_w * 0.5
     let py = player_wy - cam_y + screen_h * 0.5
 

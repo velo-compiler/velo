@@ -2,7 +2,7 @@
 
 use sys.mem
 
-data SockAddrIn {
+view data SockAddrIn {
     family: i16
     port: u16
     addr: u32
@@ -10,7 +10,7 @@ data SockAddrIn {
     zero2: i32
 }
 
-data ClientSession {
+view data ClientSession {
     fd: i64
     active: bool
     read_buf: @u8
@@ -18,7 +18,7 @@ data ClientSession {
     remote_port: u16
 }
 
-data ServerNetwork {
+view data ServerNetwork {
     server_fd: i64
     port: i32
     clients: @ClientSession
@@ -27,45 +27,45 @@ data ServerNetwork {
 }
 
 // Winsock2 API bindings
-extern act WSAStartup(wVersionRequired: u16, lpWSAData: @u8) -> i32
-extern act WSACleanup() -> i32
-extern act socket(af: i32, type_: i32, protocol: i32) -> i64
-extern act bind(s: i64, name: @SockAddrIn, namelen: i32) -> i32
-extern act listen(s: i64, backlog: i32) -> i32
-extern act accept(s: i64, addr: @SockAddrIn, addrlen: @i32) -> i64
-extern act recv(s: i64, buf: @u8, len: i32, flags: i32) -> i32
-extern act send(s: i64, buf: @u8, len: i32, flags: i32) -> i32
-extern act closesocket(s: i64) -> i32
-extern act ioctlsocket(s: i64, cmd: i32, argp: @u32) -> i32
-extern act setsockopt(s: i64, level: i32, optname: i32, optval: @i32, optlen: i32) -> i32
-extern act htons(hostshort: u16) -> u16
-extern act ntohs(netshort: u16) -> u16
-extern act connect(s: i64, name: @SockAddrIn, namelen: i32) -> i32
+view extern act WSAStartup(wVersionRequired: u16, lpWSAData: @u8) -> i32
+view extern act WSACleanup() -> i32
+view extern act socket(af: i32, type_: i32, protocol: i32) -> i64
+view extern act bind(s: i64, name: @SockAddrIn, namelen: i32) -> i32
+view extern act listen(s: i64, backlog: i32) -> i32
+view extern act accept(s: i64, addr: @SockAddrIn, addrlen: @i32) -> i64
+view extern act recv(s: i64, buf: @u8, len: i32, flags: i32) -> i32
+view extern act send(s: i64, buf: @u8, len: i32, flags: i32) -> i32
+view extern act closesocket(s: i64) -> i32
+view extern act ioctlsocket(s: i64, cmd: i32, argp: @u32) -> i32
+view extern act setsockopt(s: i64, level: i32, optname: i32, optval: @i32, optlen: i32) -> i32
+view extern act htons(hostshort: u16) -> u16
+view extern act ntohs(netshort: u16) -> u16
+view extern act connect(s: i64, name: @SockAddrIn, namelen: i32) -> i32
 
-let AF_INET: i32 = 2
-let SOCK_STREAM: i32 = 1
-let IPPROTO_TCP: i32 = 6
-let FIONBIO: i32 = -2147195266 // 0x8004667E: non-blocking I/O mode
-let SOL_SOCKET: i32 = 65535
-let SO_REUSEADDR: i32 = 4
+view let AF_INET: i32 = 2
+view let SOCK_STREAM: i32 = 1
+view let IPPROTO_TCP: i32 = 6
+view let FIONBIO: i32 = -2147195266 // 0x8004667E: non-blocking I/O mode
+view let SOL_SOCKET: i32 = 65535
+view let SO_REUSEADDR: i32 = 4
 
-act net_init() -> bool {
+view act net_init() -> bool {
     let wsadata: @u8 = mem.alloc(@u8, 512)
     let res = WSAStartup(0x0202, wsadata)
     return res == 0
 }
 
-act net_shutdown() {
+view act net_shutdown() {
     WSACleanup()
 }
 
-act set_nonblocking(fd: i64) -> bool {
+view act set_nonblocking(fd: i64) -> bool {
     mut mode: u32 = 1
     let res = ioctlsocket(fd, FIONBIO, @mode)
     return res == 0
 }
 
-act net_start_server(port: i32, max_clients: i32) -> ServerNetwork {
+view act net_start_server(port: i32, max_clients: i32) -> ServerNetwork {
     mut net: ServerNetwork
     net.server_fd = -1
     net.port = port
@@ -116,7 +116,7 @@ act net_start_server(port: i32, max_clients: i32) -> ServerNetwork {
     return net
 }
 
-act net_poll_accept(net: @ServerNetwork) -> i32 {
+view act net_poll_accept(net: @ServerNetwork) -> i32 {
     if net.server_fd < 0 { return -1 }
 
     mut client_addr: SockAddrIn
@@ -153,7 +153,7 @@ act net_poll_accept(net: @ServerNetwork) -> i32 {
     return slot
 }
 
-act net_close_client(net: @ServerNetwork, slot: i32) {
+view act net_close_client(net: @ServerNetwork, slot: i32) {
     if slot >= 0 and slot < net.max_clients {
         let c = @net.clients[slot as usize]
         if c.active {
@@ -166,7 +166,7 @@ act net_close_client(net: @ServerNetwork, slot: i32) {
     }
 }
 
-act net_read_client(c: @ClientSession) -> i32 {
+view act net_read_client(c: @ClientSession) -> i32 {
     if not c.active or c.fd < 0 { return -1 }
     let buf_ptr = (c.read_buf as usize + c.read_len as usize) as @u8
     let max_read = 4096 - c.read_len
@@ -183,7 +183,7 @@ act net_read_client(c: @ClientSession) -> i32 {
     return -1 // EWOULDBLOCK (no data available)
 }
 
-act net_send_response(c: @ClientSession, msg: string) -> bool {
+view act net_send_response(c: @ClientSession, msg: string) -> bool {
     if not c.active or c.fd < 0 { return false }
     let str_bytes = msg as @u8
     let len = str.len(msg) as i32
@@ -201,7 +201,7 @@ act net_send_response(c: @ClientSession, msg: string) -> bool {
     return true
 }
 
-act net_connect_local(port: i32) -> i64 {
+view act net_connect_local(port: i32) -> i64 {
     let s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)
     if s < 0 { return -1 }
 

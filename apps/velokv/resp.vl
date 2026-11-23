@@ -2,14 +2,14 @@
 
 use sys.mem
 
-data RedisCommand {
+view data RedisCommand {
     argc: i32
     args: @string
     consumed_bytes: i32
     valid: bool
 }
 
-act parse_int(s: string) -> i64 {
+view act parse_int(s: string) -> i64 {
     let len = str.len(s)
     if len == 0 { return 0 }
 
@@ -35,7 +35,7 @@ act parse_int(s: string) -> i64 {
     return acc
 }
 
-act slice_to_string(bytes: @u8, start: usize, len: usize) -> string {
+view act slice_to_string(bytes: @u8, start: usize, len: usize) -> string {
     if len == 0 { return "" }
     mut dest: @u8 = mem.alloc(@u8, len + 1)
     mut i: usize = 0
@@ -47,7 +47,7 @@ act slice_to_string(bytes: @u8, start: usize, len: usize) -> string {
     return dest as string
 }
 
-act find_crlf(bytes: @u8, start: usize, total_len: usize) -> i32 {
+view act find_crlf(bytes: @u8, start: usize, total_len: usize) -> i32 {
     mut i = start
     loop i + 1 < total_len {
         if bytes[i] == 13 and bytes[i + 1] == 10 { // \r\n
@@ -59,7 +59,7 @@ act find_crlf(bytes: @u8, start: usize, total_len: usize) -> i32 {
 }
 
 // Parses RESP2 Array (*N\r\n...) or Inline command (SET k v\r\n) from read buffer
-act parse_redis_command(buf: @u8, buf_len: i32) -> RedisCommand {
+view act parse_redis_command(buf: @u8, buf_len: i32) -> RedisCommand {
     mut cmd: RedisCommand
     cmd.argc = 0
     cmd.args = mem.alloc(@string, 16)
@@ -144,7 +144,7 @@ act parse_redis_command(buf: @u8, buf_len: i32) -> RedisCommand {
     return cmd
 }
 
-act int_to_str(val: i64) -> string {
+view act int_to_str(val: i64) -> string {
     if val == 0 { return "0" }
     mut n = val
     mut is_neg = false
@@ -176,27 +176,27 @@ act int_to_str(val: i64) -> string {
 }
 
 // RESP Serializers
-act resp_ok() -> string { return "+OK\r\n" }
-act resp_pong() -> string { return "+PONG\r\n" }
-act resp_nil() -> string { return "$-1\r\n" }
+view act resp_ok() -> string { return "+OK\r\n" }
+view act resp_pong() -> string { return "+PONG\r\n" }
+view act resp_nil() -> string { return "$-1\r\n" }
 
-act resp_simple(msg: string) -> string {
+view act resp_simple(msg: string) -> string {
     let s1 = str.concat("+", msg)
     return str.concat(s1, "\r\n")
 }
 
-act resp_err(err: string) -> string {
+view act resp_err(err: string) -> string {
     let s1 = str.concat("-ERR ", err)
     return str.concat(s1, "\r\n")
 }
 
-act resp_int(val: i64) -> string {
+view act resp_int(val: i64) -> string {
     let sval = int_to_str(val)
     let s1 = str.concat(":", sval)
     return str.concat(s1, "\r\n")
 }
 
-act resp_bulk(val: string) -> string {
+view act resp_bulk(val: string) -> string {
     let vlen = str.len(val)
     let slen = int_to_str(vlen as i64)
     let s1 = str.concat("$", slen)
@@ -205,7 +205,7 @@ act resp_bulk(val: string) -> string {
     return str.concat(s3, "\r\n")
 }
 
-act resp_array_header(count: i32) -> string {
+view act resp_array_header(count: i32) -> string {
     let scnt = int_to_str(count as i64)
     let s1 = str.concat("*", scnt)
     return str.concat(s1, "\r\n")

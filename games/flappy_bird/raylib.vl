@@ -1,17 +1,17 @@
 // Raylib 6.0 C-FFI Bindings for Velo.
 
-data Color {
+view data Color {
     r: u8
     g: u8
     b: u8
     a: u8
 }
 
-act make_color(r: u8, g: u8, b: u8, a: u8) -> Color {
+view act make_color(r: u8, g: u8, b: u8, a: u8) -> Color {
     return Color{ r: r, g: g, b: b, a: a }
 }
 
-data AudioStream {
+view data AudioStream {
     buffer: @void
     processor: @void
     sampleRate: u32
@@ -19,48 +19,48 @@ data AudioStream {
     channels: u32
 }
 
-data Sound {
+view data Sound {
     stream: AudioStream
     frameCount: u32
 }
 
 // Window Management
-extern act InitWindow(width: i32, height: i32, title: string) -> void
-extern act CloseWindow() -> void
-extern act WindowShouldClose() -> bool
-extern act SetTargetFPS(fps: i32) -> void
+view extern act InitWindow(width: i32, height: i32, title: string) -> void
+view extern act CloseWindow() -> void
+view extern act WindowShouldClose() -> bool
+view extern act SetTargetFPS(fps: i32) -> void
 
 // Audio Management
-extern act InitAudioDevice() -> void
-extern act CloseAudioDevice() -> void
-extern act LoadSound(fileName: string) -> Sound
-extern act PlaySound(sound: Sound) -> void
-extern act UnloadSound(sound: Sound) -> void
+view extern act InitAudioDevice() -> void
+view extern act CloseAudioDevice() -> void
+view extern act LoadSound(fileName: string) -> Sound
+view extern act PlaySound(sound: Sound) -> void
+view extern act UnloadSound(sound: Sound) -> void
 
 // Timing
-extern act GetFrameTime() -> f32
-extern act GetTime() -> f64
+view extern act GetFrameTime() -> f32
+view extern act GetTime() -> f64
 
 // Input Handling
-extern act IsKeyPressed(key: i32) -> bool
-extern act IsKeyDown(key: i32) -> bool
+view extern act IsKeyPressed(key: i32) -> bool
+view extern act IsKeyDown(key: i32) -> bool
 
 // Drawing
-extern act BeginDrawing() -> void
-extern act EndDrawing() -> void
-extern act ClearBackground(color: Color) -> void
-extern act DrawRectangle(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
-extern act DrawRectangleLines(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
-extern act DrawCircle(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
-extern act DrawCircleLines(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
-extern act DrawText(text: string, posX: i32, posY: i32, fontSize: i32, color: Color) -> void
-extern act MeasureText(text: string, fontSize: i32) -> i32
+view extern act BeginDrawing() -> void
+view extern act EndDrawing() -> void
+view extern act ClearBackground(color: Color) -> void
+view extern act DrawRectangle(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
+view extern act DrawRectangleLines(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
+view extern act DrawCircle(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
+view extern act DrawCircleLines(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
+view extern act DrawText(text: string, posX: i32, posY: i32, fontSize: i32, color: Color) -> void
+view extern act MeasureText(text: string, fontSize: i32) -> i32
 
 // Math & Random
-extern act GetRandomValue(min: i32, max: i32) -> i32
+view extern act GetRandomValue(min: i32, max: i32) -> i32
 
 // Raylib Key Codes
-let KEY_SPACE: i32 = 32
-let KEY_ENTER: i32 = 257
-let KEY_ESCAPE: i32 = 256
-let KEY_R: i32 = 82
+view let KEY_SPACE: i32 = 32
+view let KEY_ENTER: i32 = 257
+view let KEY_ESCAPE: i32 = 256
+view let KEY_R: i32 = 82

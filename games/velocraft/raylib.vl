@@ -1,28 +1,28 @@
 // Raylib 6.0 3D C-FFI Bindings for VeloCraft.
 
-data Color {
+view data Color {
     r: u8
     g: u8
     b: u8
     a: u8
 }
 
-act make_color(r: u8, g: u8, b: u8, a: u8) -> Color {
+view act make_color(r: u8, g: u8, b: u8, a: u8) -> Color {
     return Color{ r: r, g: g, b: b, a: a }
 }
 
-data Vector2 {
+view data Vector2 {
     x: f32
     y: f32
 }
 
-data Vector3 {
+view data Vector3 {
     x: f32
     y: f32
     z: f32
 }
 
-data Camera3D {
+view data Camera3D {
     position: Vector3
     target: Vector3
     up: Vector3
@@ -30,7 +30,7 @@ data Camera3D {
     projection: i32
 }
 
-data AudioStream {
+view data AudioStream {
     buffer: @void
     processor: @void
     sampleRate: u32
@@ -38,84 +38,84 @@ data AudioStream {
     channels: u32
 }
 
-data Sound {
+view data Sound {
     stream: AudioStream
     frameCount: u32
 }
 
 // Window Management
-extern act InitWindow(width: i32, height: i32, title: string) -> void
-extern act CloseWindow() -> void
-extern act WindowShouldClose() -> bool
-extern act SetTargetFPS(fps: i32) -> void
-extern act ToggleFullscreen() -> void
-extern act IsWindowFullscreen() -> bool
-extern act GetScreenWidth() -> i32
-extern act GetScreenHeight() -> i32
-extern act SetExitKey(key: i32) -> void
+view extern act InitWindow(width: i32, height: i32, title: string) -> void
+view extern act CloseWindow() -> void
+view extern act WindowShouldClose() -> bool
+view extern act SetTargetFPS(fps: i32) -> void
+view extern act ToggleFullscreen() -> void
+view extern act IsWindowFullscreen() -> bool
+view extern act GetScreenWidth() -> i32
+view extern act GetScreenHeight() -> i32
+view extern act SetExitKey(key: i32) -> void
 
 // Cursor Management
-extern act DisableCursor() -> void
-extern act EnableCursor() -> void
-extern act IsCursorHidden() -> bool
+view extern act DisableCursor() -> void
+view extern act EnableCursor() -> void
+view extern act IsCursorHidden() -> bool
 
 // Timing
-extern act GetFrameTime() -> f32
-extern act GetFPS() -> i32
-extern act DrawFPS(posX: i32, posY: i32) -> void
+view extern act GetFrameTime() -> f32
+view extern act GetFPS() -> i32
+view extern act DrawFPS(posX: i32, posY: i32) -> void
 
 // 3D Pipeline
-extern act BeginMode3D(camera: Camera3D) -> void
-extern act EndMode3D() -> void
-extern act DrawCube(position: Vector3, width: f32, height: f32, length: f32, color: Color) -> void
-extern act DrawCubeWires(position: Vector3, width: f32, height: f32, length: f32, color: Color) -> void
-extern act DrawGrid(slices: i32, spacing: f32) -> void
-extern act DrawSphere(centerPos: Vector3, radius: f32, color: Color) -> void
+view extern act BeginMode3D(camera: Camera3D) -> void
+view extern act EndMode3D() -> void
+view extern act DrawCube(position: Vector3, width: f32, height: f32, length: f32, color: Color) -> void
+view extern act DrawCubeWires(position: Vector3, width: f32, height: f32, length: f32, color: Color) -> void
+view extern act DrawGrid(slices: i32, spacing: f32) -> void
+view extern act DrawSphere(centerPos: Vector3, radius: f32, color: Color) -> void
 
 // 2D Drawing
-extern act BeginDrawing() -> void
-extern act EndDrawing() -> void
-extern act ClearBackground(color: Color) -> void
-extern act DrawRectangle(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
-extern act DrawRectangleLines(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
-extern act DrawCircle(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
-extern act DrawLine(startPosX: i32, startPosY: i32, endPosX: i32, endPosY: i32, color: Color) -> void
-extern act DrawText(text: string, posX: i32, posY: i32, fontSize: i32, color: Color) -> void
-extern act MeasureText(text: string, fontSize: i32) -> i32
+view extern act BeginDrawing() -> void
+view extern act EndDrawing() -> void
+view extern act ClearBackground(color: Color) -> void
+view extern act DrawRectangle(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
+view extern act DrawRectangleLines(posX: i32, posY: i32, width: i32, height: i32, color: Color) -> void
+view extern act DrawCircle(centerX: i32, centerY: i32, radius: f32, color: Color) -> void
+view extern act DrawLine(startPosX: i32, startPosY: i32, endPosX: i32, endPosY: i32, color: Color) -> void
+view extern act DrawText(text: string, posX: i32, posY: i32, fontSize: i32, color: Color) -> void
+view extern act MeasureText(text: string, fontSize: i32) -> i32
 
 // Input Handling
-extern act IsKeyPressed(key: i32) -> bool
-extern act IsKeyDown(key: i32) -> bool
-extern act IsMouseButtonPressed(button: i32) -> bool
-extern act IsMouseButtonDown(button: i32) -> bool
-extern act GetMouseDelta() -> Vector2
-extern act GetMouseWheelMove() -> f32
+view extern act IsKeyPressed(key: i32) -> bool
+view extern act IsKeyDown(key: i32) -> bool
+view extern act IsMouseButtonPressed(button: i32) -> bool
+view extern act IsMouseButtonDown(button: i32) -> bool
+view extern act GetMouseDelta() -> Vector2
+view extern act GetMouseWheelMove() -> f32
 
 // Audio Management
-extern act InitAudioDevice() -> void
-extern act CloseAudioDevice() -> void
-extern act LoadSound(fileName: string) -> Sound
-extern act PlaySound(sound: Sound) -> void
-extern act UnloadSound(sound: Sound) -> void
+view extern act InitAudioDevice() -> void
+view extern act CloseAudioDevice() -> void
+view extern act LoadSound(fileName: string) -> Sound
+view extern act PlaySound(sound: Sound) -> void
+view extern act UnloadSound(sound: Sound) -> void
 
 // Constants
-let MOUSE_BUTTON_LEFT: i32 = 0
-let MOUSE_BUTTON_RIGHT: i32 = 1
+view let MOUSE_BUTTON_LEFT: i32 = 0
+view let MOUSE_BUTTON_RIGHT: i32 = 1
 
-let KEY_SPACE: i32 = 32
-let KEY_ESCAPE: i32 = 256
-let KEY_ENTER: i32 = 257
-let KEY_TAB: i32 = 258
-let KEY_W: i32 = 87
-let KEY_A: i32 = 65
-let KEY_S: i32 = 83
-let KEY_D: i32 = 68
-let KEY_ONE: i32 = 49
-let KEY_TWO: i32 = 50
-let KEY_THREE: i32 = 51
-let KEY_FOUR: i32 = 52
-let KEY_FIVE: i32 = 53
-let KEY_SIX: i32 = 54
-let KEY_F: i32 = 70
-let KEY_F11: i32 = 300
-let KEY_T: i32 = 84
+view let KEY_SPACE: i32 = 32
+view let KEY_ESCAPE: i32 = 256
+view let KEY_ENTER: i32 = 257
+view let KEY_TAB: i32 = 258
+view let KEY_W: i32 = 87
+view let KEY_A: i32 = 65
+view let KEY_S: i32 = 83
+view let KEY_D: i32 = 68
+view let KEY_ONE: i32 = 49
+view let KEY_TWO: i32 = 50
+view let KEY_THREE: i32 = 51
+view let KEY_FOUR: i32 = 52
+view let KEY_FIVE: i32 = 53
+view let KEY_SIX: i32 = 54
+view let KEY_F: i32 = 70
+view let KEY_F11: i32 = 300
+view let KEY_T: i32 = 84

@@ -4,7 +4,7 @@ use sys.mem
 use "raylib.vl"
 use "math.vl"
 
-data Enemy {
+view data Enemy {
     x: f32
     y: f32
     hp: f32
@@ -17,14 +17,14 @@ data Enemy {
     active: bool
 }
 
-data EnemyPool {
+view data EnemyPool {
     enemies: @Enemy
     capacity: usize
     spawn_timer: f32
     total_spawned: i32
 }
 
-act init_enemy_pool() -> EnemyPool {
+view act init_enemy_pool() -> EnemyPool {
     mut ep: EnemyPool
     ep.capacity = 160
     ep.enemies = mem.alloc(@Enemy, 160)
@@ -39,7 +39,7 @@ act init_enemy_pool() -> EnemyPool {
     return ep
 }
 
-act spawn_single_enemy(ep: @EnemyPool, px: f32, py: f32, etype: i32, hp_mult: f32) -> bool {
+view act spawn_single_enemy(ep: @EnemyPool, px: f32, py: f32, etype: i32, hp_mult: f32) -> bool {
     mut i: usize = 0
     loop i < ep.capacity {
         let e = @ep.enemies[i]
@@ -83,7 +83,7 @@ act spawn_single_enemy(ep: @EnemyPool, px: f32, py: f32, etype: i32, hp_mult: f3
     return false
 }
 
-act update_enemies(ep: @EnemyPool, px: f32, py: f32, dt: f32, game_time: f32) {
+view act update_enemies(ep: @EnemyPool, px: f32, py: f32, dt: f32, game_time: f32) {
     // Wave Spawner
     ep.spawn_timer += dt
     mut spawn_interval: f32 = 0.65 - (game_time * 0.003)
@@ -127,7 +127,7 @@ act update_enemies(ep: @EnemyPool, px: f32, py: f32, dt: f32, game_time: f32) {
     }
 }
 
-act draw_enemies(ep: @EnemyPool, cam_x: f32, cam_y: f32, screen_w: f32, screen_h: f32) {
+view act draw_enemies(ep: @EnemyPool, cam_x: f32, cam_y: f32, screen_w: f32, screen_h: f32) {
     mut i: usize = 0
     loop i < ep.capacity {
         let e = @ep.enemies[i]

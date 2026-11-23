@@ -5,60 +5,60 @@ use "raylib.vl"
 use "math3d.vl"
 use "fx.vl"
 
-let BLOCK_AIR: u8 = 0
-let BLOCK_GRASS: u8 = 1
-let BLOCK_DIRT: u8 = 2
-let BLOCK_STONE: u8 = 3
-let BLOCK_WOOD: u8 = 4
-let BLOCK_LEAVES: u8 = 5
-let BLOCK_BRICK: u8 = 6
-let BLOCK_GOLD: u8 = 7
-let BLOCK_WATER: u8 = 8
-let BLOCK_FLOWER_RED: u8 = 9
-let BLOCK_FLOWER_YEL: u8 = 10
-let BLOCK_SAND: u8 = 11
+view let BLOCK_AIR: u8 = 0
+view let BLOCK_GRASS: u8 = 1
+view let BLOCK_DIRT: u8 = 2
+view let BLOCK_STONE: u8 = 3
+view let BLOCK_WOOD: u8 = 4
+view let BLOCK_LEAVES: u8 = 5
+view let BLOCK_BRICK: u8 = 6
+view let BLOCK_GOLD: u8 = 7
+view let BLOCK_WATER: u8 = 8
+view let BLOCK_FLOWER_RED: u8 = 9
+view let BLOCK_FLOWER_YEL: u8 = 10
+view let BLOCK_SAND: u8 = 11
 
-data Chunk {
+view data Chunk {
     cx: i32
     cz: i32
     blocks: @u8
     active: bool
 }
 
-data VoxelWorld {
+view data VoxelWorld {
     chunks: @Chunk
     center_cx: i32
     center_cz: i32
 }
 
-act is_solid_block(id: u8) -> bool {
+view act is_solid_block(id: u8) -> bool {
     if id == BLOCK_AIR or id == BLOCK_WATER or id == BLOCK_FLOWER_RED or id == BLOCK_FLOWER_YEL {
         return false
     }
     return true
 }
 
-act is_transparent(id: u8) -> bool {
+view act is_transparent(id: u8) -> bool {
     return id == BLOCK_AIR or id == BLOCK_WATER or id == BLOCK_FLOWER_RED or id == BLOCK_FLOWER_YEL
 }
 
-act floor_div16(v: i32) -> i32 {
+view act floor_div16(v: i32) -> i32 {
     if v >= 0 { return v / 16 }
     return (v - 15) / 16
 }
 
-act local_coord(v: i32, chunk_coord: i32) -> i32 {
+view act local_coord(v: i32, chunk_coord: i32) -> i32 {
     return v - chunk_coord * 16
 }
 
-act chunk_hash(cx: i32, cz: i32) -> i32 {
+view act chunk_hash(cx: i32, cz: i32) -> i32 {
     mut h = (cx * 73856093) ^ (cz * 19349663)
     if h < 0 { h = 0 - h }
     return h
 }
 
 // Multi-octave continuous heightmap for infinite terrain
-act get_terrain_height(wx: i32, wz: i32) -> i32 {
+view act get_terrain_height(wx: i32, wz: i32) -> i32 {
     let fx = (wx as f32) * 0.05
     let fz = (wz as f32) * 0.05
 
@@ -72,20 +72,20 @@ act get_terrain_height(wx: i32, wz: i32) -> i32 {
     return h_int
 }
 
-act chunk_get_local(ch: @Chunk, lx: i32, ly: i32, lz: i32) -> u8 {
+view act chunk_get_local(ch: @Chunk, lx: i32, ly: i32, lz: i32) -> u8 {
     if lx < 0 or lx > 15 or ly < 0 or ly > 15 or lz < 0 or lz > 15 { return 0 }
     let idx = ((ly * 16 + lz) * 16 + lx) as usize
     return ch.blocks[idx]
 }
 
-act chunk_set_local(ch: @Chunk, lx: i32, ly: i32, lz: i32, id: u8) {
+view act chunk_set_local(ch: @Chunk, lx: i32, ly: i32, lz: i32, id: u8) {
     if lx >= 0 and lx <= 15 and ly >= 0 and ly <= 15 and lz >= 0 and lz <= 15 {
         let idx = ((ly * 16 + lz) * 16 + lx) as usize
         ch.blocks[idx] = id
     }
 }
 
-act generate_chunk(ch: @Chunk, cx: i32, cz: i32) {
+view act generate_chunk(ch: @Chunk, cx: i32, cz: i32) {
     ch.cx = cx
     ch.cz = cz
     ch.active = true
@@ -169,7 +169,7 @@ act generate_chunk(ch: @Chunk, cx: i32, cz: i32) {
     }
 }
 
-act find_chunk_slot(w: @VoxelWorld, cx: i32, cz: i32) -> i32 {
+view act find_chunk_slot(w: @VoxelWorld, cx: i32, cz: i32) -> i32 {
     mut i: usize = 0
     loop i < 9 {
         let ch = @w.chunks[i]
@@ -179,7 +179,7 @@ act find_chunk_slot(w: @VoxelWorld, cx: i32, cz: i32) -> i32 {
     return -1
 }
 
-act world_get(w: @VoxelWorld, wx: i32, wy: i32, wz: i32) -> u8 {
+view act world_get(w: @VoxelWorld, wx: i32, wy: i32, wz: i32) -> u8 {
     if wy < 0 or wy > 15 { return BLOCK_AIR }
     let cx = floor_div16(wx)
     let cz = floor_div16(wz)
@@ -189,7 +189,7 @@ act world_get(w: @VoxelWorld, wx: i32, wy: i32, wz: i32) -> u8 {
     return chunk_get_local(ch, local_coord(wx, cx), wy, local_coord(wz, cz))
 }
 
-act world_set(w: @VoxelWorld, wx: i32, wy: i32, wz: i32, id: u8) {
+view act world_set(w: @VoxelWorld, wx: i32, wy: i32, wz: i32, id: u8) {
     if wy < 0 or wy > 15 { return }
     let cx = floor_div16(wx)
     let cz = floor_div16(wz)
@@ -199,7 +199,7 @@ act world_set(w: @VoxelWorld, wx: i32, wy: i32, wz: i32, id: u8) {
     }
 }
 
-act update_world_chunks(w: @VoxelWorld, player_x: f32, player_z: f32) {
+view act update_world_chunks(w: @VoxelWorld, player_x: f32, player_z: f32) {
     let pcx = floor_div16(player_x as i32)
     let pcz = floor_div16(player_z as i32)
     if pcx == w.center_cx and pcz == w.center_cz and w.chunks[0].active { return }
@@ -246,7 +246,7 @@ act update_world_chunks(w: @VoxelWorld, player_x: f32, player_z: f32) {
     }
 }
 
-act init_world() -> VoxelWorld {
+view act init_world() -> VoxelWorld {
     mut w: VoxelWorld
     w.chunks = mem.alloc(@Chunk, 9)
     w.center_cx = 999999
@@ -265,7 +265,7 @@ act init_world() -> VoxelWorld {
     return w
 }
 
-act get_block_color(id: u8) -> Color {
+view act get_block_color(id: u8) -> Color {
     if id == BLOCK_GRASS { return make_color(85, 175, 55, 255) }
     if id == BLOCK_DIRT { return make_color(135, 85, 45, 255) }
     if id == BLOCK_STONE { return make_color(130, 130, 135, 255) }
@@ -280,17 +280,17 @@ act get_block_color(id: u8) -> Color {
     return make_color(0, 0, 0, 0)
 }
 
-act is_water_visible(w: @VoxelWorld, wx: i32, wy: i32, wz: i32) -> bool {
+view act is_water_visible(w: @VoxelWorld, wx: i32, wy: i32, wz: i32) -> bool {
     if wy == 15 { return true }
     return world_get(w, wx, wy + 1, wz) == BLOCK_AIR or world_get(w, wx + 1, wy, wz) == BLOCK_AIR or world_get(w, wx - 1, wy, wz) == BLOCK_AIR or world_get(w, wx, wy, wz + 1) == BLOCK_AIR or world_get(w, wx, wy, wz - 1) == BLOCK_AIR
 }
 
-act is_block_visible(w: @VoxelWorld, wx: i32, wy: i32, wz: i32) -> bool {
+view act is_block_visible(w: @VoxelWorld, wx: i32, wy: i32, wz: i32) -> bool {
     if wy == 15 { return true }
     return is_transparent(world_get(w, wx + 1, wy, wz)) or is_transparent(world_get(w, wx - 1, wy, wz)) or is_transparent(world_get(w, wx, wy + 1, wz)) or is_transparent(world_get(w, wx, wy - 1, wz)) or is_transparent(world_get(w, wx, wy, wz + 1)) or is_transparent(world_get(w, wx, wy, wz - 1))
 }
 
-act draw_world(w: @VoxelWorld, light_mult: f32, tint: Color, sky_col: Color, cam_x: f32, cam_z: f32, anim_time: f32) {
+view act draw_world(w: @VoxelWorld, light_mult: f32, tint: Color, sky_col: Color, cam_x: f32, cam_z: f32, anim_time: f32) {
     let wire_col = make_color(20, 20, 25, 50)
     let max_dist_sq: f32 = 36.0 * 36.0
 

@@ -1,7 +1,7 @@
 // VeloStudio Sample Relational Database Generator (demo.db)
 use "sqlite.vl"
 
-act create_sample_database(filename: string) -> bool {
+view act create_sample_database(filename: string) -> bool {
     let db = sqlite_open_db(filename)
     if db == 0 { return false }
 

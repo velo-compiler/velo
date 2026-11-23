@@ -5,7 +5,7 @@ use "store.vl"
 use "resp.vl"
 use "aof.vl"
 
-act format_aof_set(key: string, val: string) -> string {
+view act format_aof_set(key: string, val: string) -> string {
     let klen = int_to_str(str.len(key) as i64)
     let vlen = int_to_str(str.len(val) as i64)
     mut s = "*3\r\n$3\r\nSET\r\n$"
@@ -20,7 +20,7 @@ act format_aof_set(key: string, val: string) -> string {
     return s
 }
 
-act format_aof_del(key: string) -> string {
+view act format_aof_del(key: string) -> string {
     let klen = int_to_str(str.len(key) as i64)
     mut s = "*2\r\n$3\r\nDEL\r\n$"
     s = str.concat(s, klen)
@@ -30,7 +30,7 @@ act format_aof_del(key: string) -> string {
     return s
 }
 
-act build_info_str(size: i32, total_cmds: i64, sets: i64, gets: i64, hits: i64, misses: i64) -> string {
+view act build_info_str(size: i32, total_cmds: i64, sets: i64, gets: i64, hits: i64, misses: i64) -> string {
     mut s = "# Server\r\nvelokv_version:1.0.0\r\nos:windows\r\narch:x86_64\r\n\r\n# Keyspace\r\ndb0:keys="
     s = str.concat(s, int_to_str(size as i64))
     s = str.concat(s, ",expires=0\r\n\r\n# Stats\r\ntotal_commands_processed=")
@@ -47,7 +47,7 @@ act build_info_str(size: i32, total_cmds: i64, sets: i64, gets: i64, hits: i64, 
     return s
 }
 
-act execute_command(cmd: @RedisCommand, store: @KeyValueStore, aof: @AofLogger) -> string {
+view act execute_command(cmd: @RedisCommand, store: @KeyValueStore, aof: @AofLogger) -> string {
     if cmd.argc <= 0 {
         return resp_err("empty command")
     }
