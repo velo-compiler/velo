@@ -59883,109 +59883,118 @@ void load_file_and_deps_ex(CompilerDriver* d, const char* raw_path, bool is_std)
 
 #line 324 "src/main.vl"
 void load_file_and_deps(CompilerDriver* d, const char* raw_path) {
-#line 325 "src/main.vl"
+#line 324 "src/main.vl"
     load_file_and_deps_ex(d, raw_path, false);
 }
 
-#line 329 "src/main.vl"
+#line 327 "src/main.vl"
 ProgramNode* resolve_and_parse(CompilerDriver* d, const char* file_path) {
-#line 330 "src/main.vl"
+#line 328 "src/main.vl"
     load_file_and_deps_ex(d, file_path, false);
-#line 331 "src/main.vl"
-    if ((velo_cmp_gt_u_s(d->error_count, 0) || (d->first_decl == NULL))) {
-#line 332 "src/main.vl"
+#line 329 "src/main.vl"
+    if (velo_cmp_gt_u_s(d->error_count, 0)) {
+#line 329 "src/main.vl"
         return NULL;
     }
-#line 334 "src/main.vl"
-    ProgramNode* prog = ((ProgramNode*)velo_mem_alloc(sizeof(ProgramNode), (size_t)(1)));
+#line 330 "src/main.vl"
+    if ((d->first_decl == NULL)) {
+#line 331 "src/main.vl"
+        report_error(file_path, 1, 1, "Source file contains no declarations");
+#line 332 "src/main.vl"
+        d->error_count += 1;
+#line 333 "src/main.vl"
+        return NULL;
+    }
 #line 335 "src/main.vl"
-    prog->first_decl = d->first_decl;
+    ProgramNode* prog = ((ProgramNode*)velo_mem_alloc(sizeof(ProgramNode), (size_t)(1)));
 #line 336 "src/main.vl"
-    prog->decl_count = d->total_decls;
+    prog->first_decl = d->first_decl;
 #line 337 "src/main.vl"
+    prog->decl_count = d->total_decls;
+#line 338 "src/main.vl"
     return prog;
 }
 
-#line 344 "src/main.vl"
-const char* compile_source_to_c_all_opts(const char* source_path, bool unsafe_index, bool is_test, bool no_line_directives, bool strict_safety) {
 #line 345 "src/main.vl"
-    CompilerDriver d;
+const char* compile_source_to_c_all_opts(const char* source_path, bool unsafe_index, bool is_test, bool no_line_directives, bool strict_safety) {
 #line 346 "src/main.vl"
+    CompilerDriver d;
+#line 347 "src/main.vl"
     init_driver((&(d)));
-#line 348 "src/main.vl"
-    ProgramNode* raw_prog = resolve_and_parse((&(d)), source_path);
 #line 349 "src/main.vl"
-    if (((raw_prog == NULL) || velo_cmp_gt_u_s(d.error_count, 0))) {
+    ProgramNode* raw_prog = resolve_and_parse((&(d)), source_path);
 #line 350 "src/main.vl"
+    if (((raw_prog == NULL) || velo_cmp_gt_u_s(d.error_count, 0))) {
+#line 351 "src/main.vl"
         return NULL;
     }
-#line 353 "src/main.vl"
+#line 354 "src/main.vl"
     ProgramNode* prog = monomorphize_program(raw_prog);
-#line 355 "src/main.vl"
-    SymbolTable st;
 #line 356 "src/main.vl"
+    SymbolTable st;
+#line 357 "src/main.vl"
     init_symbol_table((&(st)));
-#line 357 "src/main.vl"
-    st.unsafe_shelf_index = unsafe_index;
-#line 357 "src/main.vl"
-    st.unsafe_array_index = unsafe_index;
 #line 358 "src/main.vl"
-    st.is_test = is_test;
+    st.unsafe_shelf_index = unsafe_index;
+#line 358 "src/main.vl"
+    st.unsafe_array_index = unsafe_index;
 #line 359 "src/main.vl"
-    st.no_line_directives = no_line_directives;
+    st.is_test = is_test;
 #line 360 "src/main.vl"
-    st.strict_safety = strict_safety;
+    st.no_line_directives = no_line_directives;
 #line 361 "src/main.vl"
+    st.strict_safety = strict_safety;
+#line 362 "src/main.vl"
     st.source_file = source_path;
-#line 363 "src/main.vl"
-    bool sem_ok = check_program((&(st)), prog);
 #line 364 "src/main.vl"
-    if (((!sem_ok) || velo_cmp_gt_u_s(st.error_count, 0))) {
+    bool sem_ok = check_program((&(st)), prog);
 #line 365 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] Semantic analysis failed with %llu errors.", (unsigned long long)(st.error_count)));
+    if (((!sem_ok) || velo_cmp_gt_u_s(st.error_count, 0))) {
 #line 366 "src/main.vl"
+        println_str(velo_str_format("[Velo Error] Semantic analysis failed with %llu errors.", (unsigned long long)(st.error_count)));
+#line 367 "src/main.vl"
         return NULL;
     }
-#line 373 "src/main.vl"
-    const char* c_out = emit_translation_unit((&(st)), prog);
 #line 374 "src/main.vl"
-    if (velo_cmp_gt_u_s(st.error_count, 0)) {
+    const char* c_out = emit_translation_unit((&(st)), prog);
 #line 375 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] Code generation failed with %llu errors.", (unsigned long long)(st.error_count)));
+    if (velo_cmp_gt_u_s(st.error_count, 0)) {
 #line 376 "src/main.vl"
+        println_str(velo_str_format("[Velo Error] Code generation failed with %llu errors.", (unsigned long long)(st.error_count)));
+#line 377 "src/main.vl"
         return NULL;
     }
-#line 378 "src/main.vl"
+#line 379 "src/main.vl"
     return c_out;
 }
 
-#line 381 "src/main.vl"
-const char* compile_source_to_c_test_opts(const char* source_path, bool unsafe_index, bool is_test, bool no_line_directives) {
 #line 382 "src/main.vl"
+const char* compile_source_to_c_test_opts(const char* source_path, bool unsafe_index, bool is_test, bool no_line_directives) {
+#line 383 "src/main.vl"
     return compile_source_to_c_all_opts(source_path, unsafe_index, is_test, no_line_directives, false);
 }
 
-#line 384 "src/main.vl"
-const char* compile_source_to_c_test(const char* source_path, bool unsafe_index, bool is_test) {
 #line 385 "src/main.vl"
+const char* compile_source_to_c_test(const char* source_path, bool unsafe_index, bool is_test) {
+#line 386 "src/main.vl"
     return compile_source_to_c_all_opts(source_path, unsafe_index, is_test, false, false);
 }
 
-#line 387 "src/main.vl"
-const char* compile_source_to_c(const char* source_path, bool unsafe_index) {
 #line 388 "src/main.vl"
+const char* compile_source_to_c(const char* source_path, bool unsafe_index) {
+#line 389 "src/main.vl"
     return compile_source_to_c_all_opts(source_path, unsafe_index, false, false, false);
 }
 
-#line 390 "src/main.vl"
-const char* compile_source_to_c_opts(const char* source_path, bool unsafe_index, bool no_line_directives) {
 #line 391 "src/main.vl"
+const char* compile_source_to_c_opts(const char* source_path, bool unsafe_index, bool no_line_directives) {
+#line 392 "src/main.vl"
     return compile_source_to_c_all_opts(source_path, unsafe_index, false, no_line_directives, false);
 }
 
-#line 393 "src/main.vl"
-const char* compile_source_to_c_strict(const char* source_path, bool unsafe_index, bool no_line_directives, bool strict_safety) {
 #line 394 "src/main.vl"
+const char* compile_source_to_c_strict(const char* source_path, bool unsafe_index, bool no_line_directives, bool strict_safety) {
+#line 395 "src/main.vl"
     return compile_source_to_c_all_opts(source_path, unsafe_index, false, no_line_directives, strict_safety);
 }
 

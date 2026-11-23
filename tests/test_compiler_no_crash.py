@@ -215,7 +215,6 @@ def generate_malformed_inputs() -> Generator[InputCase, None, None]:
         "nul_at_start",
         "nul_bytes",
         b"\x00let x = 1;",
-        xfail_reason="Zero-declaration input (leading NUL byte) exits 1 without diagnostic message; to be addressed in Task 82.4",
     )
 
     # 7. Byte Order Marks (BOMs)

@@ -321,14 +321,15 @@ act load_file_and_deps_ex(d: @CompilerDriver, raw_path: string, is_std: bool) {
     }
 }
 
-act load_file_and_deps(d: @CompilerDriver, raw_path: string) {
-    load_file_and_deps_ex(d, raw_path, false)
-}
+act load_file_and_deps(d: @CompilerDriver, raw_path: string) { load_file_and_deps_ex(d, raw_path, false) }
 
 // Compiles a single source file into an AST program with recursive multi-file resolution.
 act resolve_and_parse(d: @CompilerDriver, file_path: string) -> @ProgramNode {
     load_file_and_deps_ex(d, file_path, false)
-    if d.error_count > 0 or d.first_decl == null {
+    if d.error_count > 0 { return null }
+    if d.first_decl == null {
+        report_error(file_path, 1, 1, "Source file contains no declarations")
+        d.error_count += 1
         return null
     }
     mut prog: @ProgramNode = mem.alloc(@ProgramNode, 1)

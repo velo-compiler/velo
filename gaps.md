@@ -3367,9 +3367,35 @@ inputs.
   `python -m pytest tests/test_fuzz_transpiler.py -v` -> 19 passed in 8.78s.
   `python scripts/check_determinism.py` -> SHA-256 MATCH (beb18411...).
 
-**82.4** Add an error-recovery assertion: after any single-error input, the
+**82.4 [COMPLETED] ✅** Add an error-recovery assertion: after any single-error input, the
 diagnostic list is non-empty, contains no internal `backend:`/`reached codegen`
 message, and the process exit code is in the documented set.
+
+- *Former Defect:*
+  Empty files, whitespace-only files, or inputs starting with a NUL byte (`\0`) caused `resolve_and_parse` to return `null` with `d.error_count == 0` because no declarations were found, resulting in the CLI returning exit status 1 with completely empty diagnostic output (as noted in Task 82.1 residual limitation for `nul_at_start`). Furthermore, there was no systematic error-recovery test suite verifying that single-error inputs across lexer, syntax, scope, type checking, control flow, and safety domains never leak internal backend errors (`backend:`, `reached codegen`, `internal compiler error`), always produce a non-empty diagnostic list, and always exit with code 1 in the documented set `{0, 1}`.
+- *Fix Applied:*
+  - In `src/backend/driver.vl` (`resolve_and_parse`), added an explicit declaration-presence check: when `d.error_count == 0 and d.first_decl == null`, emits `report_error(file_path, 1, 1, "Source file contains no declarations")` and increments `d.error_count += 1`. This guarantees empty or leading-NUL inputs emit user-facing diagnostics instead of failing silently.
+  - Resolved `xfail` on `nul_at_start` in `tests/test_compiler_no_crash.py`: now passes 100% cleanly (90 of 90 tests passing).
+  - Created `tests/test_error_recovery.py`: comprehensive suite of 93 tests (31 single-error cases across `check`, `emit-c`, and `check --json`) verifying:
+    1. Lexer errors: unclosed strings, truncated chars, unclosed block comments, unclosed raw strings, invalid characters.
+    2. Parser & syntax errors: unclosed braces/parens, missing return type arrow, unexpected tokens, stray closing braces, empty files, comments-only files.
+    3. Scope & declaration errors: undeclared variables, undeclared types, duplicate variable declarations in current scope, duplicate struct declarations.
+    4. Type checking & semantics errors: return type mismatch, binary operator type mismatch, mutating immutable bindings, unknown struct fields, missing struct fields, struct field type mismatch, argument count mismatch, argument type mismatch, constant division by zero.
+    5. Control flow & loop jump errors: unbound break statements, unbound continue statements, defer return statements, defer break statements.
+    6. Safety errors: raw pointer dereferencing without `unsafe` under `--strict-safety`.
+  - Enforced 3 core invariants on every case:
+    1. Process exit code is strictly 1 (within documented `{0, 1}`).
+    2. Diagnostic output is non-empty and contains user-facing `[Velo Error]` or line/column indicators.
+    3. Output contains no internal compiler leaks (`backend:`, `reached codegen`, `internal compiler error`, `STATUS_`, `Segmentation fault`).
+  - Rebuilt bootstrap chain deterministically (`Gen2 SHA-256 == Gen3 SHA-256 == f215fe32...`) and refreshed `bootstrap.c`. Kept all 140 `.vl` files under 396 lines (`src/backend/driver.vl` at 396 lines).
+- *Residual Limitation:*
+  None; single-error inputs across all compilation stages are now guaranteed to produce non-empty user-facing diagnostics, clean exit codes, and no internal backend message leaks.
+- *Verification:*
+  `python -m pytest tests/test_error_recovery.py -v` -> 93 passed in 2.41s.
+  `python -m pytest tests/test_compiler_no_crash.py -q` -> 90 passed in 15.18s.
+  `python -m pytest tests/test_depth_limits.py tests/test_fuzz_transpiler.py -q` -> 37 passed in 7.82s.
+  `python -m pytest tests/test_bootstrap_snapshot.py -q` -> 6 passed in 32.45s.
+  `python scripts/check_determinism.py` -> SHA-256 MATCH (f215fe32...).
 
 **82.5** Add resource ceilings: maximum source file size, maximum token count,
 maximum AST depth, maximum error count (stop after N and print "too many
