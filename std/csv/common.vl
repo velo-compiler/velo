@@ -1,0 +1,104 @@
+// std.csv.common — RFC 4180 structural constants, AST node definitions, and field accessors.
+use "../mem/arena.vl"
+use "../mem/ops.vl"
+use "../str/slice.vl"
+use "../io/buffered_reader.vl"
+
+view let CSV_COMMA: u8 = 44   // ','
+view let CSV_DQUOTE: u8 = 34  // '"'
+view let CSV_LF: u8 = 10      // '\n'
+view let CSV_CR: u8 = 13      // '\r'
+
+// Single parsed CSV field view into source buffer or arena memory.
+view data CsvField {
+    slice: StrSlice,
+    quoted: bool,
+    next: @CsvField,
+}
+
+// A fully parsed CSV record: intrusive linked list of field views.
+view data CsvRecord {
+    row: usize,
+    first: @CsvField,
+    count: usize,
+    ok: bool,
+}
+
+// Streaming CSV reader state over an in-memory buffer or an @BufferedReader stream.
+view data CsvReader {
+    stream: @BufferedReader,
+    src: StrSlice,
+    pos: usize,
+    row: usize,
+    had_error: bool,
+    err_row: usize,
+    err_msg: StrSlice,
+    is_stream: bool,
+    is_eof: bool,
+}
+
+// Returns the 1-based row number of the recorded parse error, or 0.
+view act csv_reader_error_row(r: @CsvReader) -> usize {
+    if r != null and r.had_error { return r.err_row }
+    return 0
+}
+
+// Returns a StrSlice view over the reader's recorded error message.
+view act csv_reader_error_msg(r: @CsvReader) -> StrSlice {
+    if r != null { return r.err_msg }
+    return slice_from_raw(null, 0)
+}
+
+// Records the first parse error encountered during record extraction.
+view act csv_set_error(r: @CsvReader, msg: string, row: usize) {
+    if !r.had_error {
+        r.had_error = true
+        r.err_row = row
+        r.err_msg = slice_from_str(msg)
+    }
+}
+
+view act csv_record_field_node(rec: @CsvRecord, index: usize) -> @CsvField {
+    if rec == null { return null }
+    mut cur: @CsvField = rec.first
+    mut idx = index
+    loop cur != null {
+        if idx == 0 { return cur }
+        idx -= 1
+        cur = cur.next
+    }
+    return null
+}
+
+// Returns the field view at index, or an empty slice when out of bounds.
+view act csv_record_field(rec: @CsvRecord, index: usize) -> StrSlice {
+    let n = csv_record_field_node(rec, index)
+    if n != null { return n.slice }
+    return slice_from_raw(null, 0)
+}
+
+// Returns true if the field at index was quoted in the source.
+view act csv_record_field_quoted(rec: @CsvRecord, index: usize) -> bool {
+    let n = csv_record_field_node(rec, index)
+    return n != null and n.quoted
+}
+
+// Materializes the field at index as a null-terminated string in arena memory.
+view act csv_record_field_str(rec: @CsvRecord, index: usize, arena: @Arena) -> string {
+    if rec == null or arena == null { return "" as string }
+    let v = csv_record_field(rec, index)
+    if v.len == 0 or v.ptr == null { return "" as string }
+    let buf = arena_alloc(arena, v.len + 1, 1)
+    if buf == null { return "" as string }
+    copy(buf, v.ptr, v.len)
+    buf[v.len] = 0 as u8
+    return buf as string
+}
+
+// Allocates a zero-initialized CsvField node inside a regional arena.
+view act csv_field_alloc(arena: @Arena) -> @CsvField {
+    if arena == null { return null }
+    let dummy: @CsvField = null
+    let raw = arena_alloc_zeroed(arena, (dummy + 1) as usize, 8)
+    return raw as @CsvField
+}

@@ -1,0 +1,160 @@
+// std.csv.stream — Incremental streaming CSV parser over @BufferedReader with bounded memory.
+use "../mem/arena.vl"
+use "../mem/ops.vl"
+use "../str/slice.vl"
+use "../str/builder.vl"
+use "../io/buffered_reader.vl"
+use "common.vl"
+
+// Consumes record terminator bytes from stream.
+view act csv_consume_newlines_stream(r: @CsvReader) {
+    mut b: u8 = 0 as u8
+    loop {
+        if !reader_peek_byte(r.stream, @b) {
+            r.is_eof = true
+            break
+        }
+        if b != CSV_LF and b != CSV_CR { break }
+        reader_read_byte(r.stream, @b)
+    }
+}
+
+// Parses a quoted field from @BufferedReader stream.
+view act csv_scan_quoted_stream(r: @CsvReader, arena: @Arena, out_slice: @StrSlice) -> bool {
+    mut dummy: u8 = 0 as u8
+    reader_read_byte(r.stream, @dummy)
+    mut sb = sb_init(arena, 32)
+    loop {
+        if r.stream.pos >= r.stream.limit {
+            if reader_fill(r.stream) <= 0 as isize {
+                csv_set_error(r, "unterminated quoted field", r.row + 1)
+                r.is_eof = true
+                return false
+            }
+        }
+        let start = r.stream.pos
+        mut cur = start
+        loop cur < r.stream.limit and r.stream.buf[cur] != CSV_DQUOTE { cur += 1 }
+        if cur > start {
+            sb_append_slice(@sb, slice_from_raw(r.stream.buf + start, cur - start))
+            r.stream.pos = cur
+        }
+        if cur < r.stream.limit and r.stream.buf[cur] == CSV_DQUOTE {
+            r.stream.pos += 1
+            mut next_b: u8 = 0 as u8
+            if reader_peek_byte(r.stream, @next_b) and next_b == CSV_DQUOTE {
+                reader_read_byte(r.stream, @next_b)
+                sb_append_byte(@sb, CSV_DQUOTE)
+            } else {
+                break
+            }
+        }
+    }
+    out_slice[0] = sb_to_slice(@sb)
+    return true
+}
+
+// Parses an unquoted field from @BufferedReader stream.
+view act csv_scan_unquoted_stream(r: @CsvReader, arena: @Arena, out_slice: @StrSlice) {
+    mut sb = sb_init(arena, 32)
+    loop {
+        if r.stream.pos >= r.stream.limit {
+            if reader_fill(r.stream) <= 0 as isize { break }
+        }
+        let start = r.stream.pos
+        mut cur = start
+        loop cur < r.stream.limit {
+            let c = r.stream.buf[cur]
+            if c == CSV_COMMA or c == CSV_LF or c == CSV_CR { break }
+            cur += 1
+        }
+        if cur > start {
+            sb_append_slice(@sb, slice_from_raw(r.stream.buf + start, cur - start))
+            r.stream.pos = cur
+        }
+        if cur < r.stream.limit { break }
+    }
+    out_slice[0] = sb_to_slice(@sb)
+}
+
+// Parses a single field from @BufferedReader stream.
+view act csv_parse_field_stream(r: @CsvReader, arena: @Arena, record_row: usize) -> @CsvField {
+    let node = csv_field_alloc(arena)
+    if node == null {
+        csv_set_error(r, "out of arena memory", record_row)
+        return null
+    }
+    mut fslice = slice_from_raw(null, 0)
+    mut quoted = false
+    mut first_b: u8 = 0 as u8
+    if reader_peek_byte(r.stream, @first_b) and first_b == CSV_DQUOTE {
+        quoted = true
+        if !csv_scan_quoted_stream(r, arena, @fslice) { return null }
+        mut next_c: u8 = 0 as u8
+        if reader_peek_byte(r.stream, @next_c) {
+            if next_c != CSV_COMMA and next_c != CSV_LF and next_c != CSV_CR {
+                csv_set_error(r, "stray data after closing quote", record_row)
+                r.is_eof = true
+                return null
+            }
+        }
+    } else {
+        csv_scan_unquoted_stream(r, arena, @fslice)
+    }
+    node.slice = fslice
+    node.quoted = quoted
+    node.next = null
+    return node
+}
+
+// Reads the next record from @BufferedReader stream into arena memory.
+view act csv_read_record_stream(r: @CsvReader, arena: @Arena, out: @CsvRecord) -> bool {
+    csv_consume_newlines_stream(r)
+    mut peek_b: u8 = 0 as u8
+    if !reader_peek_byte(r.stream, @peek_b) {
+        r.is_eof = true
+        return false
+    }
+    let record_row = r.row + 1
+    mut head: @CsvField = null
+    mut tail: @CsvField = null
+    mut count: usize = 0
+    loop {
+        let field_node = csv_parse_field_stream(r, arena, record_row)
+        if field_node == null { return false }
+        if head == null { head = field_node } else { tail.next = field_node }
+        tail = field_node
+        count += 1
+        mut c: u8 = 0 as u8
+        if reader_peek_byte(r.stream, @c) {
+            if c == CSV_COMMA {
+                reader_read_byte(r.stream, @c)
+                continue
+            }
+            if c == CSV_LF {
+                reader_read_byte(r.stream, @c)
+                break
+            }
+            if c == CSV_CR {
+                reader_read_byte(r.stream, @c)
+                mut next_c: u8 = 0 as u8
+                if reader_peek_byte(r.stream, @next_c) and next_c == CSV_LF {
+                    reader_read_byte(r.stream, @next_c)
+                }
+                break
+            }
+            csv_set_error(r, "unexpected character in record", record_row)
+            r.is_eof = true
+            return false
+        }
+        break
+    }
+    if out != null {
+        out.ok = true
+        out.row = record_row
+        out.count = count
+        out.first = head
+    }
+    r.row = record_row
+    return true
+}

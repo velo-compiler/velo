@@ -12,15 +12,15 @@ view let TEST_COLOR_BOLD: string = "\x1b[1m"
 view let TEST_COLOR_DIM: string = "\x1b[2m"
 
 // Global test execution state.
-mut g_test_colors: bool = true
-mut g_test_quiet: bool = false
-mut g_test_total_asserts: usize = 0
-mut g_test_passed_asserts: usize = 0
-mut g_test_failed_asserts: usize = 0
-mut g_test_total_cases: usize = 0
-mut g_test_passed_cases: usize = 0
-mut g_test_failed_cases: usize = 0
-mut g_current_case_failed: bool = false
+view mut g_test_colors: bool = true
+view mut g_test_quiet: bool = false
+view mut g_test_total_asserts: usize = 0
+view mut g_test_passed_asserts: usize = 0
+view mut g_test_failed_asserts: usize = 0
+view mut g_test_total_cases: usize = 0
+view mut g_test_passed_cases: usize = 0
+view mut g_test_failed_cases: usize = 0
+view mut g_current_case_failed: bool = false
 
 // Enables or disables ANSI terminal color escape codes.
 view act test_set_colors(enable: bool) -> void {

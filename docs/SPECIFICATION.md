@@ -2101,6 +2101,59 @@ act main() -> i32 {
 }
 ```
 
+## 17. Standard CSV Subsystem (`std.csv`)
+
+Velo provides an RFC 4180 compliant CSV parser and generator with zero C runtime dependencies (`std/csv/`). It supports incremental streaming over an `@BufferedReader` with strictly bounded memory, zero-copy in-memory slicing, quote unescaping, blank-line skipping, and robust error diagnostics.
+
+### 17.1 Reader Types & Functions
+
+- **`CsvReader`:** Parser state tracking either an in-memory `StrSlice` or an incremental `@BufferedReader` stream.
+- **`CsvRecord`:** Linked list of parsed `CsvField` nodes representing one row (`rec.row`, `rec.count`, `rec.first`, `rec.ok`).
+- **`CsvField`:** Field view containing `slice: StrSlice` and `quoted: bool`.
+- **`csv_reader_init(s: StrSlice) -> CsvReader`:** Initializes an in-memory CSV reader over a `StrSlice`. Unquoted and escape-free fields provide zero-allocation views directly into the source.
+- **`csv_reader_init_str(s: string) -> CsvReader`:** Convenience wrapper initializing an in-memory reader over a null-terminated string.
+- **`csv_reader_init_stream(br: @BufferedReader) -> CsvReader`:** Initializes an incremental streaming CSV reader. Reads data in 4KB chunks from the OS handle.
+- **`csv_read_record(r: @CsvReader, arena: @Arena, out: @CsvRecord) -> bool`:** Parses the next RFC 4180 record. Fields and record nodes are allocated in `arena`. Returns `true` if a record was parsed, `false` on EOF or error.
+- **`csv_reader_done(r: @CsvReader) -> bool`:** Returns `true` when all records have been consumed or a fatal parse error was encountered.
+- **`csv_record_field(rec: @CsvRecord, index: usize) -> StrSlice`:** Retrieves the field view at `index` (or empty slice if out of bounds).
+- **`csv_record_field_quoted(rec: @CsvRecord, index: usize) -> bool`:** Returns `true` if the field at `index` was quoted in the source.
+- **`csv_record_field_str(rec: @CsvRecord, index: usize, arena: @Arena) -> string`:** Materializes the field as a null-terminated string in `arena`.
+
+### 17.2 Bounded-Memory Streaming Protocol
+
+When streaming over a file or network stream with `csv_reader_init_stream`, peak RSS remains strictly bounded ($O(\text{row\_size})$) regardless of file size (e.g. 1,000,000+ rows) by resetting the per-record `Arena` after processing each row:
+
+```velo
+use std.csv
+use std.mem
+use std.io
+
+act process_large_csv(path: string) -> bool {
+    let fh = io_file_open_str(path, IO_READ)
+    if !io_is_valid_handle(fh) { return false }
+    mut br = reader_init(fh)
+    defer reader_free(@br)
+    defer io_file_close(fh)
+
+    mut r = csv_reader_init_stream(@br)
+    mut arena = arena_init(65536)
+    defer arena_free(@arena)
+
+    mut rec = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    loop csv_read_record(@r, @arena, @rec) {
+        // Access fields safely within this iteration
+        let col0 = csv_record_field(@rec, 0)
+        let col1 = csv_record_field(@rec, 1)
+
+        // Reset arena bump offset to 0 — reclaims all row memory in O(1)
+        arena_reset(@arena)
+    }
+
+    return !r.had_error
+}
+```
+
+
 
 
 

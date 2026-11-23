@@ -1,0 +1,268 @@
+// Tests for std.csv streaming reader over @BufferedReader
+use "../../csv/reader.vl"
+use "../../mem/arena.vl"
+use "../../io/handle.vl"
+use "../../io/buffered_reader.vl"
+use "../../io/buffered_writer.vl"
+use "../../test.vl"
+use "../../io.vl"
+
+act cleanup_files() {
+    io_file_delete_str("scratch_csv_stream_basic.csv")
+    io_file_delete_str("scratch_csv_stream_quoted.csv")
+    io_file_delete_str("scratch_csv_stream_empty.csv")
+    io_file_delete_str("scratch_csv_err1.csv")
+    io_file_delete_str("scratch_csv_err2.csv")
+    io_file_delete_str("scratch_csv_bounded.csv")
+}
+
+act write_file_content(path: string, content: string) -> bool {
+    let fh = io_file_open_str(path, IO_CREATE | IO_TRUNCATE | IO_WRITE)
+    if !io_is_valid_handle(fh) { return false }
+    let s_len = str.len(content)
+    io_raw_write(fh, content as @u8, s_len)
+    io_file_close(fh)
+    return true
+}
+
+act test_streaming_basic() -> bool {
+    let path = "scratch_csv_stream_basic.csv"
+    if !write_file_content(path, "a,b,c\n10,20,30\nx,y,z\n") {
+        return false
+    }
+
+    let fh = io_file_open_str(path, IO_READ)
+    if !io_is_valid_handle(fh) { return false }
+    defer io_file_delete_str(path)
+    defer io_file_close(fh)
+    mut br = reader_init(fh)
+    defer reader_free(@br)
+
+    mut r = csv_reader_init_stream(@br)
+    mut arena = arena_init(4096)
+    defer arena_free(@arena)
+
+    mut rec = CsvRecord { row: 0, first: null, count: 0, ok: false }
+
+    // Row 1
+    if !csv_read_record(@r, @arena, @rec) { return false }
+    if rec.row != 1 or rec.count != 3 { return false }
+    if csv_record_field_str(@rec, 0, @arena) != "a" { return false }
+    if csv_record_field_str(@rec, 1, @arena) != "b" { return false }
+    if csv_record_field_str(@rec, 2, @arena) != "c" { return false }
+    if csv_record_field_quoted(@rec, 0) { return false }
+    arena_reset(@arena)
+
+    // Row 2
+    if !csv_read_record(@r, @arena, @rec) { return false }
+    if rec.row != 2 or rec.count != 3 { return false }
+    if csv_record_field_str(@rec, 0, @arena) != "10" { return false }
+    if csv_record_field_str(@rec, 1, @arena) != "20" { return false }
+    if csv_record_field_str(@rec, 2, @arena) != "30" { return false }
+    arena_reset(@arena)
+
+    // Row 3
+    if !csv_read_record(@r, @arena, @rec) { return false }
+    if rec.row != 3 or rec.count != 3 { return false }
+    if csv_record_field_str(@rec, 0, @arena) != "x" { return false }
+    if csv_record_field_str(@rec, 1, @arena) != "y" { return false }
+    if csv_record_field_str(@rec, 2, @arena) != "z" { return false }
+    arena_reset(@arena)
+
+    // EOF
+    if csv_read_record(@r, @arena, @rec) { return false }
+    if !csv_reader_done(@r) { return false }
+
+    return true
+}
+
+act test_streaming_quoted_and_escapes() -> bool {
+    let path = "scratch_csv_stream_quoted.csv"
+    let content = "\"hello world\",plain,\"say \"\"yes\"\" now\"\n\"line1\nline2\",second\n"
+    if !write_file_content(path, content) { return false }
+
+    let fh = io_file_open_str(path, IO_READ)
+    if !io_is_valid_handle(fh) { return false }
+    defer io_file_delete_str(path)
+    defer io_file_close(fh)
+    mut br = reader_init(fh)
+    defer reader_free(@br)
+
+    mut r = csv_reader_init_stream(@br)
+    mut arena = arena_init(4096)
+    defer arena_free(@arena)
+
+    mut rec = CsvRecord { row: 0, first: null, count: 0, ok: false }
+
+    // Row 1: quoted, plain, doubled quotes
+    if !csv_read_record(@r, @arena, @rec) { return false }
+    if rec.row != 1 or rec.count != 3 { return false }
+    if !csv_record_field_quoted(@rec, 0) { return false }
+    if csv_record_field_str(@rec, 0, @arena) != "hello world" { return false }
+    if csv_record_field_quoted(@rec, 1) { return false }
+    if csv_record_field_str(@rec, 1, @arena) != "plain" { return false }
+    if !csv_record_field_quoted(@rec, 2) { return false }
+    if csv_record_field_str(@rec, 2, @arena) != "say \"yes\" now" { return false }
+    arena_reset(@arena)
+
+    // Row 2: multiline quoted field
+    if !csv_read_record(@r, @arena, @rec) { return false }
+    if rec.row != 2 or rec.count != 2 { return false }
+    if !csv_record_field_quoted(@rec, 0) { return false }
+    if csv_record_field_str(@rec, 0, @arena) != "line1\nline2" { return false }
+    if csv_record_field_str(@rec, 1, @arena) != "second" { return false }
+    arena_reset(@arena)
+
+    if csv_read_record(@r, @arena, @rec) { return false }
+    if !csv_reader_done(@r) { return false }
+
+    return true
+}
+
+act test_streaming_empty_and_crlf() -> bool {
+    let path = "scratch_csv_stream_empty.csv"
+    let content = "a,,c,\r\n\r\n\"\",end\r\n"
+    if !write_file_content(path, content) { return false }
+
+    let fh = io_file_open_str(path, IO_READ)
+    if !io_is_valid_handle(fh) { return false }
+    defer io_file_delete_str(path)
+    defer io_file_close(fh)
+    mut br = reader_init(fh)
+    defer reader_free(@br)
+
+    mut r = csv_reader_init_stream(@br)
+    mut arena = arena_init(4096)
+    defer arena_free(@arena)
+
+    mut rec = CsvRecord { row: 0, first: null, count: 0, ok: false }
+
+    // Row 1: empty interior and trailing
+    if !csv_read_record(@r, @arena, @rec) { return false }
+    if rec.row != 1 or rec.count != 4 { return false }
+    if csv_record_field_str(@rec, 0, @arena) != "a" { return false }
+    if csv_record_field_str(@rec, 1, @arena) != "" { return false }
+    if csv_record_field_str(@rec, 2, @arena) != "c" { return false }
+    if csv_record_field_str(@rec, 3, @arena) != "" { return false }
+    arena_reset(@arena)
+
+    // Row 2: empty quoted, blank line CRLF skipped
+    if !csv_read_record(@r, @arena, @rec) { return false }
+    if rec.row != 2 or rec.count != 2 { return false }
+    if !csv_record_field_quoted(@rec, 0) { return false }
+    if csv_record_field_str(@rec, 0, @arena) != "" { return false }
+    if csv_record_field_str(@rec, 1, @arena) != "end" { return false }
+    arena_reset(@arena)
+
+    if csv_read_record(@r, @arena, @rec) { return false }
+    if !csv_reader_done(@r) { return false }
+
+    return true
+}
+
+act test_streaming_errors() -> bool {
+    // 1. Unterminated quote
+    let path1 = "scratch_csv_err1.csv"
+    if !write_file_content(path1, "ok,1\n\"unterminated,2\n") { return false }
+
+    let fh1 = io_file_open_str(path1, IO_READ)
+    if !io_is_valid_handle(fh1) { return false }
+    defer io_file_delete_str(path1)
+    defer io_file_close(fh1)
+    mut br1 = reader_init(fh1)
+    defer reader_free(@br1)
+
+    mut r1 = csv_reader_init_stream(@br1)
+    mut arena = arena_init(4096)
+    defer arena_free(@arena)
+    mut rec = CsvRecord { row: 0, first: null, count: 0, ok: false }
+
+    if !csv_read_record(@r1, @arena, @rec) { return false }
+    arena_reset(@arena)
+    if csv_read_record(@r1, @arena, @rec) { return false }
+    if !r1.had_error { return false }
+    if csv_reader_error_row(@r1) != 2 { return false }
+
+    // 2. Stray data after quote
+    let path2 = "scratch_csv_err2.csv"
+    if !write_file_content(path2, "\"valid\"junk,1\n") { return false }
+
+    let fh2 = io_file_open_str(path2, IO_READ)
+    if !io_is_valid_handle(fh2) { return false }
+    defer io_file_delete_str(path2)
+    defer io_file_close(fh2)
+    mut br2 = reader_init(fh2)
+    defer reader_free(@br2)
+
+    mut r2 = csv_reader_init_stream(@br2)
+    arena_reset(@arena)
+    if csv_read_record(@r2, @arena, @rec) { return false }
+    if !r2.had_error { return false }
+
+    return true
+}
+
+act test_streaming_bounded_memory() -> bool {
+    let path = "scratch_csv_bounded.csv"
+    let fh_w = io_file_open_str(path, IO_CREATE | IO_TRUNCATE | IO_WRITE)
+    if !io_is_valid_handle(fh_w) { return false }
+    mut bw = writer_init(fh_w)
+
+    mut i: usize = 0
+    loop i < 10000 {
+        writer_write_str(@bw, "12345,row_test_data,\"quoted field \",9999\n")
+        i += 1
+    }
+    writer_flush(@bw)
+    writer_free(@bw)
+    io_file_close(fh_w)
+
+    let fh_r = io_file_open_str(path, IO_READ)
+    if !io_is_valid_handle(fh_r) { return false }
+    defer io_file_delete_str(path)
+    defer io_file_close(fh_r)
+    mut br = reader_init(fh_r)
+    defer reader_free(@br)
+
+    mut r = csv_reader_init_stream(@br)
+    mut arena = arena_init(4096)
+    defer arena_free(@arena)
+
+    mut rec = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    mut rows_read: usize = 0
+    mut max_arena_offset: usize = 0
+
+    loop csv_read_record(@r, @arena, @rec) {
+        rows_read += 1
+        if arena.offset > max_arena_offset {
+            max_arena_offset = arena.offset
+        }
+        arena_reset(@arena)
+    }
+
+    if rows_read != 10000 { return false }
+    if max_arena_offset > 512 { return false }
+
+    return true
+}
+
+act main() -> i32 {
+    cleanup_files()
+    defer cleanup_files()
+
+    test_reset()
+    test_set_quiet(true)
+
+    assert_true(test_streaming_basic(), "streaming basic records")
+    assert_true(test_streaming_quoted_and_escapes(), "streaming quoted and escapes")
+    assert_true(test_streaming_empty_and_crlf(), "streaming empty and crlf")
+    assert_true(test_streaming_errors(), "streaming error diagnostics")
+    assert_true(test_streaming_bounded_memory(), "streaming bounded memory reset")
+
+    if test_get_failed_asserts() != 0 {
+        return 1
+    }
+
+    io.println_str("OK: std.csv stream reader tests passed")
+    return 0
+}

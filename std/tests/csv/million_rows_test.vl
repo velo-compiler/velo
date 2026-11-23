@@ -1,0 +1,53 @@
+// 1,000,000-row streaming CSV benchmark and bounded memory validation
+use "../../csv/reader.vl"
+use "../../mem/arena.vl"
+use "../../io/handle.vl"
+use "../../io/buffered_reader.vl"
+use "../../io.vl"
+
+act main() -> i32 {
+    let path = "scratch_1m_rows.csv"
+    let fh = io_file_open_str(path, IO_READ)
+    if !io_is_valid_handle(fh) {
+        io.println_str("ERROR: cannot open scratch_1m_rows.csv")
+        return 1
+    }
+    mut br = reader_init(fh)
+    defer reader_free(@br)
+    defer io_file_close(fh)
+
+    mut r = csv_reader_init_stream(@br)
+    mut arena = arena_init(65536)
+    defer arena_free(@arena)
+
+    mut rec = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    mut row_count: usize = 0
+    mut max_offset: usize = 0
+
+    loop csv_read_record(@r, @arena, @rec) {
+        row_count += 1
+        if arena.offset > max_offset {
+            max_offset = arena.offset
+        }
+        arena_reset(@arena)
+    }
+
+    if r.had_error {
+        io.println_str("ERROR: parse error during streaming")
+        return 2
+    }
+
+    if row_count != 1000000 {
+        io.print_str("ERROR: expected 1000000 rows, got ")
+        io.print_u64(row_count as u64)
+        io.println()
+        return 3
+    }
+
+    io.print_str("OK: processed ")
+    io.print_u64(row_count as u64)
+    io.print_str(" rows; max row arena offset: ")
+    io.print_u64(max_offset as u64)
+    io.println()
+    return 0
+}

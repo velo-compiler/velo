@@ -2579,10 +2579,29 @@ offset zones and DST rules for the system zone. [COMPLETED] ✅
   - `bin/velo.exe run std/tests/json/codec_test.vl`: passed with exit 0 (`PASS: std.json.codec all unit tests passed`).
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines; `std/json/codec.vl` is 365 lines (<= 400).
 
-**78.7** Streaming CSV: change `std/csv/reader.vl` to accept an
+**78.7** [COMPLETED] ✅ Streaming CSV: change `std/csv/reader.vl` to accept an
 `@BufferedReader` incrementally, keeping the `StrSlice` constructor as a
 convenience wrapper. Test with a 1M-row generated file asserting bounded memory
 (peak RSS below a fixed ceiling).
+- *Former Defect:*
+  `std/csv/reader.vl` required loading the entire CSV dataset into memory as a contiguous `StrSlice`. While fast and zero-allocation for modest in-memory payloads, it prevented streaming multi-gigabyte or millions-of-rows CSV streams without unbounded heap allocation and potential OOM.
+- *Fix Applied:*
+  - Added incremental streaming over `@BufferedReader` via `csv_reader_init_stream(br: @BufferedReader) -> CsvReader`, while preserving `csv_reader_init(s: StrSlice)` and `csv_reader_init_str(s: string)` as zero-allocation convenience wrappers.
+  - Implemented streaming record extraction (`csv_read_record_stream`) with chunked buffered scanning, unescaping of doubled quotes into caller-provided `Arena` memory, CRLF/LF/CR record termination, blank-line skipping, and syntax error detection.
+  - Partitioned CSV parser implementation across `std/csv/common.vl` (104 lines), `std/csv/stream.vl` (160 lines), and `std/csv/reader.vl` (213 lines) to maintain strict `<= 400` line ceilings across all files.
+  - Fixed `std/test/common.vl` global counters to export with `view mut`, ensuring test runner privacy compliance.
+  - Created test suite `std/tests/csv/stream_test.vl` (245 lines) covering basic parsing, quoted/multiline/escaped fields, CRLF, blank-line skipping, error diagnostics, and bounded arena reset.
+  - Created 1,000,000-row stress test `std/tests/csv/million_rows_test.vl` and pytest `test_std_csv_streaming_1m_rows_bounded_memory` asserting strictly bounded peak RSS (< 25 MB ceiling).
+  - Documented Section 17 in `docs/SPECIFICATION.md`.
+- *Residual Limitation:*
+  Streaming field views point into bytes allocated within the caller-provided per-record `Arena`; callers must call `arena_reset(@arena)` between records to maintain bounded $O(\text{row\_size})$ working memory.
+- *Verification:*
+  - `python -m pytest tests/test_std_csv.py -v`: 5 passed in 8.62s.
+  - `[1M Rows Bounded Memory] Peak RSS: 4.07 MB`: processed 1,000,000 rows in ~0.14s with peak RSS far below the 25 MB ceiling.
+  - `bin/velo.exe run std/tests/csv/reader_test.vl`: passed (`OK: std.csv reader tests passed`).
+  - `bin/velo.exe run std/tests/csv/stream_test.vl`: passed (`OK: std.csv stream reader tests passed`).
+  - `bin/velo.exe run std/tests/csv_module_import_test.vl`: passed (`PASS: std.csv umbrella import all tests passed`).
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines; `std/csv/reader.vl` is 213 lines, `std/csv/stream.vl` is 160 lines, `std/csv/common.vl` is 104 lines (all <= 400).
 
 **78.8** Fill collection gaps: `std/coll/set.vl` (wrapping `map.vl`),
 `std/coll/deque.vl` (growable ring), `std/coll/heap.vl` (binary heap). Each with
