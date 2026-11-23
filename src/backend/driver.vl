@@ -28,6 +28,7 @@ use "codegen_stmt.vl"
 use "codegen_c.vl"
 use "docgen.vl"
 use "driver_cc.vl"
+use "driver_cache.vl"
 use "driver_run.vl"
 use "platform_resolve.vl"
 
@@ -234,7 +235,6 @@ act load_file_and_deps_ex(d: @CompilerDriver, raw_path: string, is_std: bool) {
         return
     }
     mark_file_visited(d, file_path)
-
 
     if not fs_exists(file_path) {
         println_str("[Velo Error] Source file does not exist: {file_path}")

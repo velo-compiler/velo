@@ -1,0 +1,148 @@
+// Content-hashed build cache for the Velo compiler driver (Task 79.3).
+// Keys .velo_cache artifacts by SHA-256 of the fully resolved source closure,
+// compiler version, and compilation flags (Security Invariant I79.2).
+extern act strcmp(s1: string, s2: string) -> i32
+
+use std.io
+use std.fs
+use std.mem
+use std.crypto
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "../common/version.vl"
+use "driver.vl"
+
+// Ensures the `.velo_cache` directory exists.
+act ensure_cache_dir() -> string {
+    if not fs_exists(".velo_cache") {
+        fs_create_dir_all(".velo_cache")
+    }
+    return ".velo_cache"
+}
+
+// Computes a deterministic SHA-256 hash over the fully resolved source closure, compiler version, and compilation flags.
+act compute_closure_hash(d: @CompilerDriver, opt_flags: string, linker_flags: string, cc: string, unsafe_index: bool, no_line_directives: bool, strict_safety: bool, is_test: bool) -> string {
+    mut count: usize = 0
+    mut cur = d.first_visited
+    loop cur != null {
+        count += 1
+        cur = cur.next
+    }
+    if count == 0 {
+        return sha256_hash_str("empty")
+    }
+
+    mut paths: @string = mem.alloc(@string, count)
+    mut idx: usize = 0
+    cur = d.first_visited
+    loop cur != null {
+        paths[idx] = cur.path
+        idx += 1
+        cur = cur.next
+    }
+
+    // Sort paths alphabetically for deterministic hash order
+    mut i: usize = 0
+    loop i < count {
+        mut j = i + 1
+        loop j < count {
+            if strcmp(paths[j], paths[i]) < 0 {
+                let tmp = paths[i]
+                paths[i] = paths[j]
+                paths[j] = tmp
+            }
+            j += 1
+        }
+        i += 1
+    }
+
+    mut s: Sha256State
+    s.buf = null
+    sha256_init(@s)
+
+    sha256_update_str(@s, "version:")
+    sha256_update_str(@s, VELO_VERSION)
+    sha256_update_str(@s, ";cc:")
+    if cc != null { sha256_update_str(@s, cc) }
+    sha256_update_str(@s, ";opt:")
+    if opt_flags != null { sha256_update_str(@s, opt_flags) }
+    sha256_update_str(@s, ";link:")
+    if linker_flags != null { sha256_update_str(@s, linker_flags) }
+    if unsafe_index { sha256_update_str(@s, ";unsafe_index") }
+    if no_line_directives { sha256_update_str(@s, ";no_line_directives") }
+    if strict_safety { sha256_update_str(@s, ";strict_safety") }
+    if is_test { sha256_update_str(@s, ";is_test") }
+
+    idx = 0
+    loop idx < count {
+        let fpath = paths[idx]
+        sha256_update_str(@s, ";file:")
+        sha256_update_str(@s, fpath)
+        sha256_update_str(@s, ";content:")
+        let content = fs_read_to_str(fpath)
+        if content != null {
+            sha256_update_str(@s, content)
+            heap_free_str(content)
+        }
+        idx += 1
+    }
+
+    return sha256_final_hex(@s)
+}
+
+// Resolves the full dependency closure of `source_path` and computes its SHA-256 hash.
+act compute_source_closure_hash(source_path: string, opt_flags: string, linker_flags: string, cc: string, unsafe_index: bool, no_line_directives: bool, strict_safety: bool, is_test: bool) -> string {
+    mut d: CompilerDriver
+    init_driver(@d)
+    load_file_and_deps_ex(@d, source_path, false)
+    if d.error_count > 0 {
+        return ""
+    }
+    return compute_closure_hash(@d, opt_flags, linker_flags, cc, unsafe_index, no_line_directives, strict_safety, is_test)
+}
+
+// Builds the cached C source file path keyed by stem and closure hash.
+act make_cached_c_path(stem: string, hash: string, is_test: bool) -> string {
+    ensure_cache_dir()
+    mut sb = create_sb(160)
+    sb_append_str(@sb, ".velo_cache/")
+    sb_append_str(@sb, stem)
+    sb_append_char(@sb, '_')
+    sb_append_str(@sb, hash)
+    if is_test {
+        sb_append_str(@sb, "_test.c")
+    } else {
+        sb_append_str(@sb, ".c")
+    }
+    return sb_to_string(@sb)
+}
+
+// Builds the cached executable path keyed by stem and closure hash.
+act make_cached_exe_path(stem: string, hash: string, is_test: bool) -> string {
+    ensure_cache_dir()
+    mut sb = create_sb(160)
+    sb_append_str(@sb, ".velo_cache/")
+    sb_append_str(@sb, stem)
+    sb_append_char(@sb, '_')
+    sb_append_str(@sb, hash)
+    if is_test {
+        sb_append_str(@sb, "_test.exe")
+    } else {
+        sb_append_str(@sb, ".exe")
+    }
+    return sb_to_string(@sb)
+}
+
+// Writes cache event to `.velo_cache/last_build.txt` for observability and tests.
+act record_cache_action(action: string, stem: string, hash: string) {
+    ensure_cache_dir()
+    mut sb = create_sb(128)
+    sb_append_str(@sb, "action=")
+    sb_append_str(@sb, action)
+    sb_append_str(@sb, "\nstem=")
+    sb_append_str(@sb, stem)
+    sb_append_str(@sb, "\nhash=")
+    sb_append_str(@sb, hash)
+    sb_append_char(@sb, '\n')
+    fs_write_str(".velo_cache/last_build.txt", sb_to_string(@sb))
+}

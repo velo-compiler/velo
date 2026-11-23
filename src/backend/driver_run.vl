@@ -8,25 +8,20 @@ use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "driver_cc.vl"
 use "driver.vl"
+use "driver_cache.vl"
 
 // Builds a native executable from a Velo source file by compiling to C and invoking the C compiler backend.
+// Content-hashes the build cache: keys .velo_cache artifacts by SHA-256 of the fully resolved source closure,
+// compiler version, and flags (Task 79.3 / Security Invariant I79.2).
 act build_executable_all_opts(source_path: string, output_exe: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string, no_line_directives: bool, strict_safety: bool) -> bool {
-    let c_code = compile_source_to_c_strict(source_path, unsafe_index, no_line_directives, strict_safety)
-    if c_code == null {
+    let stem = path_stem_to_str(source_path)
+    let hash = compute_source_closure_hash(source_path, opt_flags, linker_flags, cc, unsafe_index, no_line_directives, strict_safety, false)
+    if str.len(hash) == 0 {
         return false
     }
 
-    let stem = path_stem_to_str(source_path)
-    if not fs_exists(".velo_cache") {
-        fs_create_dir_all(".velo_cache")
-    }
-    mut c_path_sb = create_sb(128)
-    sb_append_str(@c_path_sb, ".velo_cache/")
-    sb_append_str(@c_path_sb, stem)
-    sb_append_str(@c_path_sb, ".c")
-    let c_file_path = sb_to_string(@c_path_sb)
-
-    fs_write_str(c_file_path, c_code)
+    let cached_exe = make_cached_exe_path(stem, hash, false)
+    let cached_c = make_cached_c_path(stem, hash, false)
 
     mut out_path = output_exe
     if out_path == null or str.len(out_path) == 0 {
@@ -37,11 +32,45 @@ act build_executable_all_opts(source_path: string, output_exe: string, unsafe_in
         out_path = sb_to_string(@out_sb)
     }
 
-    let cmd = assemble_compiler_cmd(cc, c_file_path, out_path, opt_flags, linker_flags)
+    // Cache hit: executable artifact already exists for this exact source closure and flag set
+    if fs_exists(cached_exe) {
+        record_cache_action("cache_hit", stem, hash)
+        if out_path != cached_exe {
+            let out_dir = path_dirname_to_str(out_path)
+            if out_dir != null and str.len(out_dir) > 0 and not fs_exists(out_dir) {
+                fs_create_dir_all(out_dir)
+            }
+            fs_copy_file_str(cached_exe, out_path, true)
+        }
+        return true
+    }
+
+    // Cache miss: compile to C and invoke backend C compiler
+    record_cache_action("recompile", stem, hash)
+    let c_code = compile_source_to_c_strict(source_path, unsafe_index, no_line_directives, strict_safety)
+    if c_code == null {
+        return false
+    }
+
+    fs_write_str(cached_c, c_code)
+
+    let cmd = assemble_compiler_cmd(cc, cached_c, cached_exe, opt_flags, linker_flags)
     let res = os_system(cmd)
     if res != 0 {
         println_str("[Velo Error] {cc} compilation failed with exit code {res}")
         return false
+    }
+
+    if not fs_exists(cached_exe) {
+        return false
+    }
+
+    if out_path != cached_exe {
+        let out_dir = path_dirname_to_str(out_path)
+        if out_dir != null and str.len(out_dir) > 0 and not fs_exists(out_dir) {
+            fs_create_dir_all(out_dir)
+        }
+        fs_copy_file_str(cached_exe, out_path, true)
     }
 
     return fs_exists(out_path)
@@ -58,18 +87,24 @@ act build_executable(source_path: string, output_exe: string, unsafe_index: bool
 // Compiles and runs a Velo source file.
 act run_source_file_all_opts(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, cc: string, no_line_directives: bool, strict_safety: bool) -> i32 {
     let stem = path_stem_to_str(source_path)
-    mut exe_sb = create_sb(128)
-    sb_append_str(@exe_sb, ".velo_cache/")
-    sb_append_str(@exe_sb, stem)
-    sb_append_str(@exe_sb, ".exe")
-    let exe_path = sb_to_string(@exe_sb)
+    let hash = compute_source_closure_hash(source_path, opt_flags, linker_flags, cc, unsafe_index, no_line_directives, strict_safety, false)
+    if str.len(hash) == 0 {
+        return 1
+    }
 
-    let ok = build_executable_all_opts(source_path, exe_path, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety)
+    let cached_exe = make_cached_exe_path(stem, hash, false)
+    if fs_exists(cached_exe) {
+        record_cache_action("cache_hit", stem, hash)
+        let run_cmd = assemble_runner_cmd(cc, cached_exe, null)
+        return os_system(run_cmd)
+    }
+
+    let ok = build_executable_all_opts(source_path, cached_exe, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety)
     if not ok {
         return 1
     }
 
-    let run_cmd = assemble_runner_cmd(cc, exe_path, null)
+    let run_cmd = assemble_runner_cmd(cc, cached_exe, null)
     return os_system(run_cmd)
 }
 
@@ -83,23 +118,33 @@ act run_source_file(source_path: string, unsafe_index: bool, opt_flags: string, 
 
 // Compiles and runs tests in a single Velo source file.
 act test_source_file_opts(source_path: string, unsafe_index: bool, opt_flags: string, linker_flags: string, filter_arg: string, cc: string, no_line_directives: bool) -> i32 {
+    let stem = path_stem_to_str(source_path)
+    let hash = compute_source_closure_hash(source_path, opt_flags, linker_flags, cc, unsafe_index, no_line_directives, false, true)
+    if str.len(hash) == 0 {
+        return 1
+    }
+
+    let cached_exe = make_cached_exe_path(stem, hash, true)
+    let cached_c = make_cached_c_path(stem, hash, true)
+
+    if fs_exists(cached_exe) {
+        record_cache_action("cache_hit", stem, hash)
+        mut extra_sb = create_sb(64)
+        if filter_arg != null and str.len(filter_arg) > 0 {
+            sb_append_str(@extra_sb, "--filter ")
+            sb_append_str(@extra_sb, filter_arg)
+        }
+        let run_cmd = assemble_runner_cmd(cc, cached_exe, sb_to_string(@extra_sb))
+        return os_system(run_cmd)
+    }
+
+    record_cache_action("recompile", stem, hash)
     let c_code = compile_source_to_c_test_opts(source_path, unsafe_index, true, no_line_directives)
     if c_code == null { return 1 }
 
-    let stem = path_stem_to_str(source_path)
-    if not fs_exists(".velo_cache") {
-        fs_create_dir_all(".velo_cache")
-    }
-    mut c_path_sb = create_sb(128)
-    sb_append_str(@c_path_sb, ".velo_cache/"); sb_append_str(@c_path_sb, stem); sb_append_str(@c_path_sb, "_test.c")
-    let c_file_path = sb_to_string(@c_path_sb)
-    fs_write_str(c_file_path, c_code)
+    fs_write_str(cached_c, c_code)
 
-    mut out_sb = create_sb(128)
-    sb_append_str(@out_sb, ".velo_cache/"); sb_append_str(@out_sb, stem); sb_append_str(@out_sb, "_test.exe")
-    let exe_path = sb_to_string(@out_sb)
-
-    let cmd = assemble_compiler_cmd(cc, c_file_path, exe_path, opt_flags, linker_flags)
+    let cmd = assemble_compiler_cmd(cc, cached_c, cached_exe, opt_flags, linker_flags)
     let res = os_system(cmd)
     if res != 0 {
         println_str("[Velo Error] {cc} compilation failed with exit code {res}")
@@ -111,7 +156,7 @@ act test_source_file_opts(source_path: string, unsafe_index: bool, opt_flags: st
         sb_append_str(@extra_sb, "--filter ")
         sb_append_str(@extra_sb, filter_arg)
     }
-    let run_cmd = assemble_runner_cmd(cc, exe_path, sb_to_string(@extra_sb))
+    let run_cmd = assemble_runner_cmd(cc, cached_exe, sb_to_string(@extra_sb))
     return os_system(run_cmd)
 }
 

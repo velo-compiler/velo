@@ -2765,10 +2765,24 @@ fallback. - [COMPLETED] ✅
   - `python -m pytest tests/test_error_registry.py tests/test_diagnostics_pretty.py tests/test_loop_context.py tests/test_mem_str_surface.py -q`: 217 passed in 16.87s.
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines (ceiling <= 400).
 
-**79.3** Content-hash the build cache: key `.velo_cache` artifacts by
+**79.3** [COMPLETED] ✅ Content-hash the build cache: key `.velo_cache` artifacts by
 SHA-256 of the fully resolved source closure (source + imported files +
 compiler version + flags). Test: touch an imported module, rebuild, assert
 recompilation happened; touch nothing, rebuild, assert it did not.
+- *Former Defect:*
+  Build artifacts in `.velo_cache` were named solely by source file stem (`.velo_cache/<stem>.c`, `.velo_cache/<stem>.exe`). The build system lacked content-addressed caching; every invocation re-emitted C code and re-invoked the backend C compiler, and modifications to imported dependencies could not be tracked by cache validity, violating Security Invariant I79.2 ("Cache validity is content-hash based, not name based. A stale cache must be impossible, not unlikely").
+- *Fix Applied:*
+  - Implemented `src/backend/driver_cache.vl`: computes deterministic SHA-256 hashes (`compute_source_closure_hash`, `compute_closure_hash`) across the fully resolved dependency closure (all files visited in topological import resolution sorted lexicographically by path, their full file contents, compiler version `VELO_VERSION`, and all compilation flags: `cc`, `opt_flags`, `linker_flags`, `unsafe_index`, `no_line_directives`, `strict_safety`, `is_test`).
+  - Keyed cached artifacts as `.velo_cache/<stem>_<hash>.c` and `.velo_cache/<stem>_<hash>.exe`.
+  - Integrated into `src/backend/driver_run.vl`: `build_executable_all_opts`, `run_source_file_all_opts`, and `test_source_file_opts` inspect `make_cached_exe_path(stem, hash, ...)`. On cache hit, C code emission and C compiler backend invocations are completely bypassed, and the cached executable is reused or copied to the requested target.
+  - Maintained event logging in `.velo_cache/last_build.txt` (`action=cache_hit` vs `action=recompile`) for test inspection and driver observability.
+- *Residual Limitation:*
+  External system C libraries or tools linked via `-l` or `-L` are tracked by their CLI flag strings rather than deep binary hashes of external system libraries (e.g. OS-level glibc/ucrt changes).
+- *Verification:*
+  - `python -m pytest tests/test_content_hashed_cache.py -v`: 6 passed (cache hit on identical files, recompile on dependency touch, flag sensitivity, no-op mtime touch preservation, transitive dependency invalidation, `velo run` caching).
+  - `python -m pytest tests/test_bootstrap_snapshot.py -v`: 6 passed in 31.90s (Gen2 == Gen3 == `bootstrap.c` determinism verified).
+  - `python -m pytest tests/test_content_hashed_cache.py tests/test_error_registry.py tests/test_fallback_diagnostics.py -v`: 43 passed in 14.02s.
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`driver.vl` at 393, `driver_run.vl` at 213, `driver_cache.vl` at 148).
 
 **79.4** Add a `velo repl`: read-eval-print over the existing frontend +
 `emit-c` + immediate `cc` of a single expression wrapper. Scope it to
