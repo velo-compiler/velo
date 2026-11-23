@@ -3459,11 +3459,28 @@ genuinely good.
 
 ## Tasks
 
-**83.1** Rewrite `README.md`'s "What is Velo?" targets to state what is
+**83.1 [COMPLETED] ✅** Rewrite `README.md`'s "What is Velo?" targets to state what is
 measured today: systems tooling, compilers, CLI utilities, constrained-memory
 batch jobs - and mark platform support explicitly (Windows: supported; Linux and
 macOS: work in progress, see Phase 70). Delete "< 64KB RAM", "0.001s startup",
 and "120+ FPS guarantee" until 81.3/81.4 produce numbers.
+
+- *Former Defect:*
+  `README.md` contained unmeasured, unprovable quantitative claims: "120+ FPS guarantee" for games without an engine or frame-time benchmark, "0.001s startup time" without an automated measurement script or CI tracking, and imprecise references to "< 64KB RAM" and "1-cycle reset" that contradicted the measured runtime baseline RSS (~4.0 MB minimum) and architectural O(1) zone reset semantics. Furthermore, platform support was presented without qualification, obscuring that Windows (`x86_64`) is the current primary supported target while Linux and macOS remain works in progress (Phase 70).
+- *Fix Applied:*
+  - Rewrote `README.md`'s "What is Velo?" targets to state what is measured today:
+    1. Systems Tooling & Self-Hosted Compilers (fully self-hosted in `src/`, deterministic Gen2 == Gen3 SHA-256 fixed point, standalone `bootstrap.c`).
+    2. Fast CLI Utilities & Developer Tooling (sub-second builds, native LSP, `velo fmt`, in-memory test runner).
+    3. Constrained-Memory Batch Jobs & Data Pipelines (stack-disciplined `zone` arena with O(1) instantaneous cleanup, ~4.0 MB baseline RSS, < 8.0 MB peak RSS under real-world I/O workloads).
+  - Deleted unmeasured claims: deleted "120+ FPS guarantee", "0.001s startup time", "< 64KB RAM", and "1-cycle reset".
+  - Added explicit Platform Support matrix in `README.md` distinguishing Windows (`x86_64`, Supported) from Linux and macOS (Work in Progress / Phase 70).
+  - Clarified `scripts/bootstrap.sh` in the bootstrap guide as work in progress.
+  - Linked empirical benchmark reports (`benchmark/RESULTS.md` and `benchmark/MEMORY_RESULTS.md`) directly in the `README.md` Documentation section.
+- *Residual Limitation:*
+  Linux and macOS runtime implementations remain work in progress per Phase 70 until cross-platform driver and stdlib abstractions are merged.
+- *Verification:*
+  Manual text inspection of `README.md` diff; verified absence of unmeasured claims via `git grep -E "64KB|0\.001|120\+ FPS|120 FPS" README.md`; quick-look code snippet verified via `bin/velo.exe check`.
+
 
 **83.2** Move `AUDIT.md` to `docs/reviews/AUDIT-2026-01.md`, label it as an
 internal self-assessment, and add the date. Add a `docs/REVIEWS.md` index that

@@ -9,10 +9,20 @@
 
 ## What is Velo?
 
-Velo is a modern systems programming language built specifically for:
-* **Real-Time Interactive Systems & Game Development** (0ms GC stutter, 120+ FPS guarantee).
-* **Ultra-Fast CLI Utilities** (Single portable `.exe`, 0.001s startup time).
-* **Lean Memory Footprint** (~4 MB baseline RSS for native CLI utilities, < 8 MB for large-file I/O pipelines, compiles to clean C99).
+Velo is a modern systems programming language designed for deterministic performance, zero garbage collection pauses, and direct hardware control.
+
+Today, Velo is built and measured for:
+* **Systems Tooling & Self-Hosted Compilers**: The Velo compiler (`src/`) is written entirely in Velo, self-hosts deterministically (Gen2 == Gen3 SHA-256 byte-for-byte), and bootstraps from a standalone C snapshot (`bootstrap.c`).
+* **Fast CLI Utilities & Developer Tooling**: Produces standalone native binaries with sub-second compilation, a built-in Language Server (LSP), code formatter (`velo fmt`), and in-memory test runner.
+* **Constrained-Memory Batch Jobs & Data Pipelines**: Zone-based arena memory management (`zone { ... }`) provides O(1) allocation and instant cleanup without garbage collection overhead, maintaining a lean ~4.0 MB baseline RSS and < 8.0 MB peak RSS under real-world I/O workloads (empirically measured in `benchmark/MEMORY_RESULTS.md`).
+
+### Platform Support
+
+| Platform | Architecture | Status | Notes |
+| :--- | :--- | :--- | :--- |
+| **Windows** | `x86_64` | **Supported** | Primary supported platform. Native compiler, CLI, and toolchain with GCC (MSYS2 UCRT64) or Clang. |
+| **Linux** | `x86_64`, `aarch64` | *Work in Progress* | Core compiler transpiles to C99; POSIX runtime facade and platform driver convergence in progress (see Phase 70). |
+| **macOS** | Apple Silicon, `x86_64` | *Work in Progress* | Core compiler transpiles to C99; Darwin runtime facade and platform driver convergence in progress (see Phase 70). |
 
 ---
 
@@ -20,7 +30,7 @@ Velo is a modern systems programming language built specifically for:
 
 * **Zero Garbage Collection Stutters**: No background GC pauses. Predictable, deterministic latency.
 * **The `@` Pointer System**: A clean, unambiguous pointer and address operator. `@T` is a pointer to `T`; `@val` is the memory address of `val`. Auto-dereference on member access (`ptr.field`).
-* **`zone` Arena Memory**: Hardware-level arena allocations with 1-cycle reset. Wipes all temporary frame memory instantly with zero leaks.
+* **`zone` Arena Memory**: Stack-disciplined arena allocations with O(1) instantaneous reset. Clears all temporary frame allocations on block exit with zero fragmentation and zero leaks.
 * **Clean & Modern Syntax**: Keyword-based (`act`, `data`, `mut`), curly braces `{}`, and optional semicolons.
 * **Direct C Interoperability**: Call any standard C library (OpenGL, Raylib, SQLite, SDL) with zero glue code.
 * **Native C Speed**: Generates clean, optimized C99/C11 code compiled by GCC or Clang.
@@ -61,8 +71,7 @@ act main() {
     count: usize = 5
     dt: f32 = 0.016
 
-    // 'zone' creates an ultra-fast hardware arena.
-    // Cleans up 100% of temporary memory in 1 CPU cycle on exit.
+    // 'zone' creates a fast arena that reclaims all frame allocations in O(1) time on block exit.
     zone {
         particles: @Particle = mem.alloc(@Particle, count)
 
@@ -129,7 +138,7 @@ Velo bootstraps deterministically from a single standalone C file (`bootstrap.c`
 # Windows (requires GCC, e.g. MSYS2 UCRT64)
 scripts\bootstrap.bat
 
-# Linux / macOS (requires gcc or clang)
+# Linux / macOS (requires gcc or clang - work in progress)
 bash scripts/bootstrap.sh
 ```
 
@@ -171,6 +180,8 @@ bin/velo.exe fmt src/main.vl
 * [Stage 2 Self-Hosting Architecture](docs/STAGE2_ARCHITECTURE.md)
 * [Stage 2 Development Roadmap](docs/STAGE2_ROADMAP.md)
 * [Stage 2 Production Code Standards](docs/STAGE2_CODE_STANDARDS.md)
+* [Empirical Performance & Multi-Language Benchmarks](benchmark/RESULTS.md)
+* [Memory Footprint & RSS Audit](benchmark/MEMORY_RESULTS.md)
 * [Contributing](CONTRIBUTING.md)
 * [Changelog](CHANGELOG.md)
 
