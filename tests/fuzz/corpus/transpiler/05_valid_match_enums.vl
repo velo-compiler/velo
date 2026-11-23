@@ -1,0 +1,17 @@
+enum Color {
+    Red,
+    Green,
+    Blue,
+}
+
+act get_code(c: Color) -> i32 {
+    match c {
+        Color.Red => return 1
+        Color.Green => return 2
+        Color.Blue => return 3
+    }
+}
+
+act main() -> i32 {
+    return get_code(Color.Green)
+}

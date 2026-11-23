@@ -1,0 +1,10 @@
+// Single-line comment
+/* Multi-line
+   block comment with nesting:
+   /* nested comment */
+*/
+act main() -> i32 {
+    let msg = "Hello from Velo transpiler!\n"
+    let raw = r"Raw string with \no \escapes"
+    return 0
+}

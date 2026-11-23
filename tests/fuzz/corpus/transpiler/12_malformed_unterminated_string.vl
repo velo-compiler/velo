@@ -1,0 +1,4 @@
+act main() -> i32 {
+    let s = "unterminated string literal
+    return 0
+}

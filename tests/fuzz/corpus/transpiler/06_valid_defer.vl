@@ -1,0 +1,5 @@
+act main() -> i32 {
+    mut x = 10
+    defer x = 20
+    return x
+}

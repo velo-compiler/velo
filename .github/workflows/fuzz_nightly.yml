@@ -1,0 +1,45 @@
+name: Nightly Fuzzing
+
+on:
+  schedule:
+    # Run every night at 02:00 UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  fuzz-transpiler:
+    name: libFuzzer Transpiler (Ubuntu Clang + ASan + UBSan)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
+      - name: Install Clang and LLVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libasan8 libubsan1
+
+      - name: Build libFuzzer target under ASan + UBSan
+        run: |
+          mkdir -p bin
+          clang -O1 -c -Dmain=velo_compiler_main -I runtime -I velo/runtime bootstrap.c -o bin/bootstrap_lib.o
+          clang -O2 -fsanitize=fuzzer,address,undefined -I runtime tests/fuzz/fuzz_transpiler.c bin/bootstrap_lib.o -o bin/fuzz_transpiler
+
+      - name: Run libFuzzer on committed corpus for fixed budget (60s)
+        run: |
+          ./bin/fuzz_transpiler tests/fuzz/corpus/transpiler -max_total_time=60 -max_len=65536 -close_fd_mask=3
+
+      - name: Run pytest fuzz suite
+        run: |
+          python3 -m pytest tests/test_fuzz_transpiler.py -v

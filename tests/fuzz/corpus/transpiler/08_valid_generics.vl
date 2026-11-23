@@ -1,0 +1,12 @@
+struct Box[T] {
+    val: T
+}
+
+act get_box_val[T](b: Box[T]) -> T {
+    return b.val
+}
+
+act main() -> i32 {
+    let b = Box[i32] { val: 42 }
+    return get_box_val[i32](b)
+}

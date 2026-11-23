@@ -1,0 +1,10 @@
+struct Point {
+    x: i32
+    y: i32
+}
+
+act main() -> i32 {
+    mut p = Point { x: 10, y: 20 }
+    let ptr: @Point = @p
+    return ptr.x + ptr.y
+}

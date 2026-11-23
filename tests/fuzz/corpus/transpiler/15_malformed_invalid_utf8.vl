@@ -1,0 +1,4 @@
+act main() -> i32 {
+    let s = "\xFF\xFE invalid utf8 \x80\x81\x82"
+    return 0
+}

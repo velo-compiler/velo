@@ -1,0 +1,13 @@
+act main() -> i32 {
+    mut x = 0
+    mut sum = 0
+    loop x < 10 {
+        if x == 5 {
+            x += 1
+            continue
+        }
+        sum += x
+        x += 1
+    }
+    return sum
+}

@@ -1,0 +1,4 @@
+act main() -> i32 {
+    let a = 10 / 0
+    return a
+}
