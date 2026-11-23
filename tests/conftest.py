@@ -162,12 +162,24 @@ def is_windows() -> bool:
 # `pytestmark = pytest.mark.fast`, which is a promise that it invokes no
 # compiler, and `-m fast` is what CI's push lane runs.
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--bench",
+        action="store_true",
+        default=False,
+        help="Run benchmark / performance microbenchmark tier (nightly CI)",
+    )
+
+
 def pytest_configure(config):
     config.addinivalue_line(
         "markers", "fast: pure-Python test that never invokes a C compiler"
     )
     config.addinivalue_line(
         "markers", "slow: test that compiles or runs a built binary"
+    )
+    config.addinivalue_line(
+        "markers", "bench: benchmark or microbenchmark test; skipped unless --bench is passed"
     )
 
 
@@ -187,10 +199,22 @@ _COMPILER_SIGNALS = (
 
 
 def pytest_collection_modifyitems(config, items):
-    """Mark tests that may invoke a compiler as `slow`, unless marked `fast`."""
+    """Mark tests that may invoke a compiler as `slow`, unless marked `fast`.
+    Skip tests marked with `bench` or located in tests/benchmarks/ unless --bench is specified."""
     import inspect
 
+    bench_enabled = config.getoption("--bench", False)
+    skip_bench = pytest.mark.skip(reason="Benchmark tier: run with pytest --bench")
+
     for item in items:
+        # Benchmark tier gating
+        is_bench = item.get_closest_marker("bench") is not None or "benchmarks" in str(item.fspath)
+        if is_bench:
+            item.add_marker(pytest.mark.bench)
+            if not bench_enabled:
+                item.add_marker(skip_bench)
+                continue
+
         if item.get_closest_marker("fast"):
             continue
         try:

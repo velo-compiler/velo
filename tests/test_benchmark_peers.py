@@ -46,7 +46,8 @@ def test_filescan_peers_parity():
         pytest.skip("bootstrap.c not found")
 
     target = str(BOOTSTRAP_C)
-    expected_line = "Scanned: lines=76931, words=285222, bytes=3259543"
+    file_bytes = BOOTSTRAP_C.stat().st_size
+    expected_line = f"Scanned: lines=76931, words=285222, bytes={file_bytes}"
 
     peers = [
         [str(BENCHMARK_DIR / f"filescan_velo{EXT}"), target],

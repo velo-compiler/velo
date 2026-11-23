@@ -73,7 +73,7 @@ that core and a usable product.
 | **78** | Standard Library Breadth | P1 | yes | 9 | 9 |
 | **79** | Tooling and Developer Experience | P1 | **COMPLETED** | 8 | 8 |
 | **80** | Compiler Maintainability | P1 | yes | 6 | 6 |
-| **81** | Performance and Benchmark Credibility | P1 | yes | 5 | 5 |
+| **81** | Performance and Benchmark Credibility | P1 | **COMPLETED** | 5 | 5 |
 | **82** | Compiler Robustness and Fuzzing | P1 | partial | 5 | 5 |
 | **83** | Documentation and Claims Integrity | P1 | yes | 6 | 3 |
 | **84** | Ecosystem, Governance, Showcase | P2 | yes | 5 | 4 |
@@ -3106,7 +3106,7 @@ warning so generation growth is visible in review.
 
 ---
 
-# Phase 81: Performance and Benchmark Credibility (P1) - OPEN
+# Phase 81: Performance and Benchmark Credibility (P1) - COMPLETED
 
 ## Defect
 
@@ -3234,9 +3234,27 @@ the claim (Phase 83 owns the deletion decision).
   - `python -m pytest tests/test_memory_benchmark.py -v`: 5 passed in 2.62s.
   - Verified `README.md` contains 0 occurrences of `< 64KB` or `< 64 KB`.
 
-**81.5** Promote `tests/test_loop_performance.py`'s pattern into a
+**81.5 [COMPLETED] ✅** Promote `tests/test_loop_performance.py`'s pattern into a
 `tests/benchmarks/` tier behind a `--bench` flag so it runs in CI nightly, not
 per-PR.
+
+- *Former Defect:*
+  Heavy performance microbenchmarks (such as 20M-iteration loop comparisons in `tests/test_loop_performance.py`) were mixed into the standard regression test suite, adding unnecessary compilation and execution latency to normal per-PR test runs. No dedicated benchmark tier or pytest selection flag existed for nightly CI performance runs.
+- *Fix Applied:*
+  - Added `--bench` CLI flag and `bench` marker support in `tests/conftest.py`:
+    - Tests marked `@pytest.mark.bench` or residing in `tests/benchmarks/` are automatically skipped in standard test runs with `"Benchmark tier: run with pytest --bench"`.
+    - Passing `--bench` activates the tier and executes all microbenchmarks.
+  - Created dedicated `tests/benchmarks/` tier:
+    - Promoted 20M-iteration loop performance tests into `tests/benchmarks/test_loop_benchmarks.py`.
+    - Added workload throughput cliff microbenchmarks in `tests/benchmarks/test_workload_benchmarks.py` asserting minimum throughput for file scanning (>= 30 MB/s) and JSON parsing (>= 1,000 iter/s).
+  - Marked performance tests in `tests/test_loop_performance.py` with `@pytest.mark.bench`, keeping determinism tests active for per-PR validation.
+  - Added regression test suite `tests/test_bench_flag.py` verifying tier skipping without `--bench` and successful execution with `--bench`.
+- *Residual Limitation:*
+  None. Full Phase 81 exit criteria achieved.
+- *Verification:*
+  - `python -m pytest tests/test_bench_flag.py -v`: 3 passed.
+  - `python -m pytest tests/benchmarks/test_loop_benchmarks.py -v`: 2 skipped in 0.03s without `--bench`; 2 passed in 5.06s with `--bench`.
+  - `python -m pytest tests/test_bench_flag.py tests/benchmarks/test_loop_benchmarks.py tests/benchmarks/test_workload_benchmarks.py tests/test_memory_benchmark.py tests/test_compile_speed.py tests/test_benchmark_results.py tests/test_benchmark_peers.py --bench -v`: all 24 passed in 17.28s.
 
 ## Phase Exit Criteria
 

@@ -89,6 +89,7 @@ ACCUMULATE_BODY = (
 )
 
 
+@pytest.mark.bench
 def test_inclusive_loop_has_no_performance_cliff():
     """An inclusive loop must not be dramatically slower than an exclusive one.
 
@@ -131,6 +132,7 @@ def test_inclusive_loop_has_no_performance_cliff():
     )
 
 
+@pytest.mark.bench
 def test_stepped_inclusive_loop_has_no_performance_cliff():
     """The step-aware terminator must not degrade stepped loops either."""
     plain, dir_a = build_temp(
