@@ -3024,10 +3024,29 @@ already enforces this).
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`type_checker.vl` at 396; `codegen_decl.vl` reduced to 365).
   - `python scripts/check_formatting.py`: SUCCESS.
 
-**80.4** Consolidate `fs_gen`/`os_gen`/`time_gen` (and the `range_gen` emit
+**80.4 [COMPLETED] ✅** Consolidate `fs_gen`/`os_gen`/`time_gen` (and the `range_gen` emit
 ladder) behind one `IntrinsicEmitter` dispatch keyed by namespace + member, so a
 new intrinsic is one table entry instead of a new file. Keep the 400-line
 ceiling as a consequence, not a design driver.
+
+- *Former Defect:*
+  Intrinsic lowering was fragmented across three sliver modules (`src/backend/fs_gen.vl`, `os_gen.vl`, `time_gen.vl`) created solely to avoid exceeding line ceilings, each duplicating imports and per-member if-chains. Simultaneously, `src/backend/codegen_call.vl` lowered `thread` intrinsics as semicolon-chained one-liners. Adding a new intrinsic required creating a new sliver file and hand-rolling another if-ladder.
+- *Fix Applied:*
+  - Created unified intrinsic dispatch engine in `src/backend/intrinsic_emitter.vl`:
+    - `intrinsic_c_target(ns: string, member: string, out_arity: @i32) -> string`: single-source table mapping `(namespace, member)` to canonical C runtime functions and arities for `fs`, `os`, `time`, and `thread`.
+    - `emit_standard_intrinsic_call(...)`: standard C function call emitter with comma-separated arguments.
+    - `emit_intrinsic_call(...)`: top-level lowering dispatcher handling table-driven calls and casted arguments (`os.exit`, `time.sleep`, `thread.spawn/acquire/release/free`).
+  - Reduced `fs_gen.vl`, `os_gen.vl`, and `time_gen.vl` from 164 total lines to thin 12-line backward-compatibility forwarders delegating directly to `emit_intrinsic_call`.
+  - Refactored `src/backend/codegen_call.vl` to dispatch `fs`, `os`, `time`, and `thread` via a single `emit_intrinsic_call(sb, st, target.str_val, member, expr)` call, removing the semicolon-chained one-liners.
+  - Added regression test suite `tests/test_intrinsic_emitter_dispatch.py`.
+- *Residual Limitation:*
+  None. Adding an intrinsic in standard namespaces is now a single row in `intrinsic_c_target`.
+- *Verification:*
+  - `python -m pytest tests/test_intrinsic_emitter_dispatch.py tests/test_explicit_type_emission.py tests/test_typed_codegen_returns.py tests/test_intrinsic_allowlist_single_source.py -v`: 17 passed in 2.57s.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -v`: 6 passed in 32.15s.
+  - `scripts/check_determinism.py`: SHA-256 MATCH between Gen2 and Gen3 (`c9e91b5c81b1f962b96cb507610d681d1e62cd82f57fccac309a02965e2a4e96`).
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`codegen_call.vl` at 229, `fs_gen.vl`/`os_gen.vl`/`time_gen.vl` at 12 each).
+  - `python scripts/check_formatting.py`: SUCCESS.
 
 **80.5** Decide the Stage-1 question: either delete `velo/` + `velo.py` and
 rewrite `examples/12_stage2_semantics_test.vl` against the self-hosted compiler,

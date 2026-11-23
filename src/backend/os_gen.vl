@@ -1,45 +1,12 @@
 // ============================================================================
-// 5.4 Extended File System & OS Primitives — sys.os call lowering onto the
-// runtime helpers (velo_runtime.h: velo_os_args / velo_os_get_env /
-// velo_os_set_env; exit lowers DIRECTLY onto C's exit — stdlib.h is in the
-// runtime).
-//
-// The per-member emit ladder lives HERE (time_gen.vl precedent — off
-// codegen_expr.vl's line budget). Emit shapes MUST mirror
-// velo/codegen_c.py::_emit_os_call byte-for-byte: single evaluation per
-// argument, args emit exactly once each, set_env splits at ONE ", ".
-// Args were compile-checked (arity + string/int walls) at inference by
-// src/analysis/os_checks.vl; unknown members never reach the emitter.
+// 5.4 Extended OS Primitives — sys.os call lowering forwarder.
+// Consolidates behind intrinsic_emitter.vl (Task 80.4).
 // ============================================================================
-use "../frontend/token.vl"
-use "../ast/types.vl"
 use "../ast/expr.vl"
-use "../ast/stmt.vl"
 use "../analysis/symbol_table.vl"
-use "../analysis/type_checker.vl"
 use "../common/string_builder.vl"
-use "codegen_types.vl"
-use "codegen_expr.vl"
+use "intrinsic_emitter.vl"
 
 act emit_os_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @ExprNode) {
-    if member == "args" { sb_append_str(sb, "velo_os_args()"); return }
-    if member == "get_env" {
-        sb_append_str(sb, "velo_os_get_env(")
-        emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, ")")
-        return
-    }
-    if member == "set_env" {
-        sb_append_str(sb, "velo_os_set_env(")
-        emit_c_expr(sb, st, expr.first_arg)
-        sb_append_str(sb, ", ")
-        emit_c_expr(sb, st, expr.first_arg.next)
-        sb_append_str(sb, ")")
-        return
-    }
-    // exit: direct C lowering — the process terminates with the int code.
-    sb_append_str(sb, "exit((int)(")
-    emit_c_expr(sb, st, expr.first_arg)
-    sb_append_str(sb, "))")
-    return
+    emit_intrinsic_call(sb, st, "os", member, expr)
 }

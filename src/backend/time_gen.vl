@@ -1,33 +1,12 @@
 // ============================================================================
-// 5.5 High-Resolution Clock & Timing — sys.time call lowering onto the
-// runtime helpers (velo_runtime.h: velo_time_now_us / velo_time_delta_us /
-// velo_time_sleep — the platform #if lives in the runtime, once, so both
-// stages emit the same call bytes).
-//
-// The per-member emit ladder lives HERE (math_gen.vl precedent — off
-// codegen_expr.vl's line budget). Emit shapes MUST mirror
-// velo/codegen_c.py::_emit_time_call byte-for-byte: the sleep duration
-// rides exactly one (long long)(...) widen. Args were compile-checked
-// (arity + ints-only wall) at inference by src/analysis/time_checks.vl;
-// unknown members never reach the emitter.
+// 5.5 High-Resolution Clock & Timing — sys.time call lowering forwarder.
+// Consolidates behind intrinsic_emitter.vl (Task 80.4).
 // ============================================================================
-use "../frontend/token.vl"
-use "../ast/types.vl"
 use "../ast/expr.vl"
-use "../ast/stmt.vl"
 use "../analysis/symbol_table.vl"
-use "../analysis/type_checker.vl"
 use "../common/string_builder.vl"
-use "codegen_types.vl"
-use "codegen_expr.vl"
+use "intrinsic_emitter.vl"
 
 act emit_time_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @ExprNode) {
-    if member == "now" { sb_append_str(sb, "velo_time_now_us()"); return }
-    if member == "delta" { sb_append_str(sb, "velo_time_delta_us()"); return }
-    // sleep_ms: one argument, ridden through (long long)(...) like every
-    // int widen (math-gen house shape: args emit exactly once each).
-    sb_append_str(sb, "velo_time_sleep((long long)(")
-    emit_c_expr(sb, st, expr.first_arg)
-    sb_append_str(sb, "))")
-    return
+    emit_intrinsic_call(sb, st, "time", member, expr)
 }

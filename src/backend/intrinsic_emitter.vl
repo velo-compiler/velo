@@ -1,0 +1,144 @@
+// ============================================================================
+// Unified Intrinsic Emitter and Dispatch Table (Task 80.4 / I80.1 / I80.2).
+// Consolidates sys.* intrinsic call lowering (fs, os, time, thread) behind
+// a single table-driven dispatch keyed by (namespace, member).
+//
+// Adding a new intrinsic requires only one table entry in intrinsic_c_target,
+// eliminating sliver modules and semicolon-chained if-ladders.
+// ============================================================================
+use "../frontend/token.vl"
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../analysis/symbol_table.vl"
+use "../analysis/type_checker.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "codegen_types.vl"
+use "codegen_expr.vl"
+
+// Emits a standard C runtime function call with comma-separated arguments.
+act emit_standard_intrinsic_call(sb: @StringBuilder, st: @SymbolTable, c_fn: string, expr: @ExprNode, arity: i32) {
+    sb_append_str(sb, c_fn)
+    sb_append_char(sb, '(')
+    if arity >= 1 and expr.first_arg != null {
+        emit_c_expr(sb, st, expr.first_arg)
+        if arity >= 2 and expr.first_arg.next != null {
+            sb_append_str(sb, ", ")
+            emit_c_expr(sb, st, expr.first_arg.next)
+            if arity >= 3 and expr.first_arg.next.next != null {
+                sb_append_str(sb, ", ")
+                emit_c_expr(sb, st, expr.first_arg.next.next)
+            }
+        }
+    }
+    sb_append_char(sb, ')')
+}
+
+// Maps an intrinsic namespace + member to its standard C99 runtime helper and arity.
+// Returns the C runtime function name, or null if custom lowering is required or unknown.
+act intrinsic_c_target(ns: string, member: string, out_arity: @i32) -> string {
+    if ns == null or member == null { return null }
+
+    // sys.fs family
+    if ns == "fs" {
+        if member == "read_file" { out_arity.@ = 1; return "velo_fs_read_file" }
+        if member == "write_file" { out_arity.@ = 2; return "velo_fs_write_file" }
+        if member == "exists" { out_arity.@ = 1; return "velo_fs_exists" }
+        if member == "size" { out_arity.@ = 1; return "velo_fs_size" }
+        if member == "remove" or member == "remove_file" { out_arity.@ = 1; return "velo_fs_remove" }
+        if member == "is_dir" { out_arity.@ = 1; return "velo_fs_is_dir" }
+        if member == "is_file" { out_arity.@ = 1; return "velo_fs_is_file" }
+        if member == "create_dir" { out_arity.@ = 1; return "velo_fs_create_dir" }
+        if member == "create_dir_all" { out_arity.@ = 1; return "velo_fs_create_dir_all" }
+        if member == "read_dir" { out_arity.@ = 1; return "velo_fs_read_dir" }
+        if member == "fopen" { out_arity.@ = 2; return "velo_fs_fopen" }
+        if member == "fclose" { out_arity.@ = 1; return "velo_fs_fclose" }
+        if member == "fread" { out_arity.@ = 2; return "velo_fs_fread" }
+        if member == "fwrite" { out_arity.@ = 2; return "velo_fs_fwrite" }
+        if member == "fseek" { out_arity.@ = 2; return "velo_fs_fseek" }
+        if member == "copy" { out_arity.@ = 2; return "velo_fs_copy" }
+        if member == "rename" { out_arity.@ = 2; return "velo_fs_rename" }
+        return null
+    }
+
+    // sys.os family
+    if ns == "os" {
+        if member == "args" { out_arity.@ = 0; return "velo_os_args" }
+        if member == "get_env" { out_arity.@ = 1; return "velo_os_get_env" }
+        if member == "set_env" { out_arity.@ = 2; return "velo_os_set_env" }
+        return null
+    }
+
+    // sys.time family
+    if ns == "time" {
+        if member == "now" { out_arity.@ = 0; return "velo_time_now_us" }
+        if member == "delta" { out_arity.@ = 0; return "velo_time_delta_us" }
+        return null
+    }
+
+    // sys.thread family
+    if ns == "thread" {
+        if member == "mutex" { out_arity.@ = 0; return "velo_mutex_create" }
+        if member == "join" { out_arity.@ = 1; return "velo_thread_join" }
+        return null
+    }
+
+    return null
+}
+
+// Lowers an intrinsic call expression onto its C99 representation.
+// Returns true if lowered as a recognized intrinsic; false otherwise.
+act emit_intrinsic_call(sb: @StringBuilder, st: @SymbolTable, ns: string, member: string, expr: @ExprNode) -> bool {
+    if ns == null or member == null { return false }
+
+    // 1. Check table-driven standard intrinsics
+    mut arity: i32 = 0
+    let c_fn = intrinsic_c_target(ns, member, @arity)
+    if c_fn != null {
+        emit_standard_intrinsic_call(sb, st, c_fn, expr, arity)
+        return true
+    }
+
+    // 2. Custom lowerings with type casts or non-uniform arguments
+    if ns == "os" and member == "exit" {
+        sb_append_str(sb, "exit((int)(")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, "))")
+        return true
+    }
+    if ns == "time" and (member == "sleep" or member == "sleep_ms") {
+        sb_append_str(sb, "velo_time_sleep((long long)(")
+        emit_c_expr(sb, st, expr.first_arg)
+        sb_append_str(sb, "))")
+        return true
+    }
+    if ns == "thread" {
+        if member == "spawn" {
+            sb_append_str(sb, "velo_thread_spawn((VeloThreadFn)(")
+            if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }
+            sb_append_str(sb, "))")
+            return true
+        }
+        if member == "acquire" {
+            sb_append_str(sb, "velo_mutex_acquire((void*)(")
+            if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }
+            sb_append_str(sb, "))")
+            return true
+        }
+        if member == "release" {
+            sb_append_str(sb, "velo_mutex_release((void*)(")
+            if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }
+            sb_append_str(sb, "))")
+            return true
+        }
+        if member == "free" {
+            sb_append_str(sb, "velo_mutex_destroy((void*)(")
+            if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }
+            sb_append_str(sb, "))")
+            return true
+        }
+    }
+
+    return false
+}

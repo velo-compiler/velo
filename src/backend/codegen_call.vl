@@ -21,6 +21,7 @@ use "math_gen.vl"
 use "time_gen.vl"
 use "os_gen.vl"
 use "fs_gen.vl"
+use "intrinsic_emitter.vl"
 use "simd_gen.vl"
 use "reflect_gen.vl"
 use "codegen_expr.vl"
@@ -107,9 +108,9 @@ act emit_call_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                     sb_append_str(sb, "))")
                     return
                 }
-                if member == "used" { sb_append_str(sb, "velo_mem_used()"); return } if member == "heap_used" { sb_append_str(sb, "velo_heap_used()"); return }  // compressed pair — 5.3 ceiling discipline
+                if member == "used" { sb_append_str(sb, "velo_mem_used()"); return } if member == "heap_used" { sb_append_str(sb, "velo_heap_used()"); return } // compressed pair — 5.3 ceiling discipline
                 // §4.1: mem.current() -> active arena; mem.alloc_with(a, @T, count) -> @T
-                if member == "current" { sb_append_str(sb, "velo_zone_active()"); return }  // §4.1/§4.2
+                if member == "current" { sb_append_str(sb, "velo_zone_active()"); return } // §4.1/§4.2
                 if member == "alloc_with" {
                     let elem_type = map_type_to_c(strip_pointer_prefix(infer_expr_type(st, expr.first_arg.next))); sb_append_str(sb, "(("); sb_append_str(sb, elem_type); sb_append_str(sb, "*)velo_alloc_with((VeloAllocator)(")
                     emit_c_expr(sb, st, expr.first_arg); sb_append_str(sb, "), sizeof("); sb_append_str(sb, elem_type); sb_append_str(sb, "), (size_t)(")
@@ -123,14 +124,12 @@ act emit_call_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
                 // error rather than emitting an unresolved C symbol.
                 report_error("internal", expr.line, expr.col, "internal compiler error: unknown mem member reached codegen"); st.error_count += 1; return
             }
-            // §4.2: spawn/join zero-arg i32 acts (@Thread = VeloThreadCtx*); @Mutex ops are opaque void*
-            if target.str_val == "thread" and member == "spawn" { sb_append_str(sb, "velo_thread_spawn((VeloThreadFn)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }; if target.str_val == "thread" and member == "join" { sb_append_str(sb, "velo_thread_join("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, ")"); return }
-            if target.str_val == "thread" and member == "mutex" { sb_append_str(sb, "velo_mutex_create()"); return }; if target.str_val == "thread" and member == "acquire" { sb_append_str(sb, "velo_mutex_acquire((void*)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }
-            if target.str_val == "thread" and member == "release" { sb_append_str(sb, "velo_mutex_release((void*)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }; if target.str_val == "thread" and member == "free" { sb_append_str(sb, "velo_mutex_destroy((void*)("); if expr.first_arg != null { emit_c_expr(sb, st, expr.first_arg) } else { sb_append_str(sb, "NULL") }; sb_append_str(sb, "))"); return }
-            if target.str_val == "fs" { emit_fs_call(sb, st, member, expr); return }  // 5.4 S2: the ladder lives in fs_gen.vl — legacy six moved in verbatim, joining the metadata family; checks ran at inference
-            if target.str_val == "str" { emit_str_call(sb, st, member, expr); return }  // 5.1/8.2: delegate to codegen_io.vl
-            if target.str_val == "math" { emit_math_call(sb, st, member, expr); return }  // 5.3 (S2): the ladder lives in math_gen.vl — compile-checks already ran at inference
-            if target.str_val == "time" { emit_time_call(sb, st, member, expr); return }; if target.str_val == "os" { emit_os_call(sb, st, member, expr); return }; if target.str_val == "simd" { emit_simd_call(sb, st, expr); return }; if target.str_val == "shelf" { emit_shelf_module_call(sb, st, member, expr); return }; if target.str_val == "map" { emit_map_module_call(sb, st, member, expr); return }
+            if emit_intrinsic_call(sb, st, target.str_val, member, expr) { return }
+            if target.str_val == "str" { emit_str_call(sb, st, member, expr); return }
+            if target.str_val == "math" { emit_math_call(sb, st, member, expr); return }
+            if target.str_val == "simd" { emit_simd_call(sb, st, expr); return }
+            if target.str_val == "shelf" { emit_shelf_module_call(sb, st, member, expr); return }
+            if target.str_val == "map" { emit_map_module_call(sb, st, member, expr); return }
             if target.str_val == "io" {
                 // Phase 52.4: only the exact intrinsics lower through emit_io_call.
                 if member == "print" or member == "println" { emit_io_call(sb, st, member, expr.first_arg); return }
@@ -144,11 +143,11 @@ act emit_call_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
             emit_shelf_member_call(sb, st, expr)
             return
         }
-        if is_map_form(infer_expr_type(st, expr.callee.target)) {  // 5.2 slice 6: put / get / has
+        if is_map_form(infer_expr_type(st, expr.callee.target)) { // 5.2 slice 6: put / get / has
             emit_map_member_call(sb, st, expr)
             return
         }
-        if is_ring_type(infer_expr_type(st, expr.callee.target)) or is_bitset_type(infer_expr_type(st, expr.callee.target)) { emit_coll9_call(sb, st, expr); return }  // 5.2 slice 9
+        if is_ring_type(infer_expr_type(st, expr.callee.target)) or is_bitset_type(infer_expr_type(st, expr.callee.target)) { emit_coll9_call(sb, st, expr); return } // 5.2 slice 9
     }
     if expr.callee.kind == EXPR_MEMBER {
         let target_type = infer_expr_type(st, expr.callee.target)
@@ -228,4 +227,3 @@ act emit_call_expr(sb: @StringBuilder, st: @SymbolTable, expr: @ExprNode) {
     }
     sb_append_char(sb, ')')
 }
-
