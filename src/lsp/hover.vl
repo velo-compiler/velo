@@ -22,6 +22,7 @@ use "../ast/stmt.vl"
 use "transport.vl"
 use "analysis.vl"
 use "doc_store.vl"
+use "../backend/doc_comments.vl"
 
 // Appends a StrSlice into a StringBuilder.
 act lsp_hover_append_slice(sb: @StringBuilder, sl: StrSlice) {
@@ -87,7 +88,7 @@ act lsp_find_local_in_stmt(stmt: @StmtNode, target: string, max_line: i32, out_t
 }
 
 // Formats Markdown representation of a top-level AST declaration.
-act lsp_format_decl_markdown(sb: @StringBuilder, decl: @StmtNode, filename: StrSlice) {
+act lsp_format_decl_markdown(sb: @StringBuilder, decl: @StmtNode, filename: StrSlice, source: string) {
     if decl.kind == DECL_FUNCTION {
         sb_append_str(sb, "**act** `")
         sb_append_str(sb, decl.name)
@@ -166,6 +167,13 @@ act lsp_format_decl_markdown(sb: @StringBuilder, decl: @StmtNode, filename: StrS
         sb_append_char(sb, ':')
         sb_append_int(sb, decl.line)
         sb_append_char(sb, '*')
+    }
+    if source != null and decl.line > 1 {
+        let doc = extract_doc_comment(source, decl.line)
+        if doc != null and str.len(doc) > 0 {
+            sb_append_str(sb, "\n\n")
+            sb_append_str(sb, doc)
+        }
     }
 }
 
@@ -251,7 +259,7 @@ act lsp_send_hover_result(id_node: @JsonValue, uri: string, text: string, line0:
                         if dcur.name != null and slice_eq_str(slice_from_str(target_name), dcur.name) {
                             let doc_path = lsp_uri_to_path(uri)
                             let bname = path_basename_str(doc_path)
-                            lsp_format_decl_markdown(@md_sb, dcur, bname)
+                            lsp_format_decl_markdown(@md_sb, dcur, bname, text)
                             found = true
                             break
                         }
@@ -293,7 +301,6 @@ act lsp_send_hover_result(id_node: @JsonValue, uri: string, text: string, line0:
     sb_append_str(@res_sb, ",\"result\":{\"contents\":{\"kind\":\"markdown\",\"value\":\"")
     let md_str = sb_to_string(@md_sb)
     lsp_json_escape(@res_sb, md_str)
-    mem.free(md_str as @u8)
     sb_append_str(@res_sb, "\"},\"range\":{\"start\":{\"line\":")
     sb_append_int(@res_sb, line0)
     sb_append_str(@res_sb, ",\"character\":")

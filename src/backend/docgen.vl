@@ -10,177 +10,8 @@ use "../ast/expr.vl"
 use "../ast/stmt.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
-
-// Scans backwards to extract block doc comments (/** ... */)
-act extract_block_doc(source: string, block_start: usize, block_end: usize) -> string {
-    mut sb = create_sb(512)
-    mut p = block_start
-    mut at_line_start = true
-    loop p < block_end {
-        let c = source[p]
-        if c == '\n' {
-            if sb.len > 0 {
-                sb_append_str(@sb, "\n> ")
-            }
-            at_line_start = true
-            p += 1
-        } else if at_line_start and (c == ' ' or c == '\t' or c == '\r' or c == '*') {
-            p += 1
-        } else {
-            at_line_start = false
-            sb_append_char(@sb, c)
-            p += 1
-        }
-    }
-    // Trim trailing empty line markers if any
-    loop sb.len > 0 and (sb.buffer[sb.len - 1] == ' ' or sb.buffer[sb.len - 1] == '\r' or sb.buffer[sb.len - 1] == '\n' or sb.buffer[sb.len - 1] == '>') {
-        sb.len -= 1
-    }
-    if sb.len > 0 {
-        sb.buffer[sb.len] = 0 as u8
-    }
-    return sb_to_string(@sb)
-}
-
-// Scans preceding lines of a declaration to extract doc comments (`///`, `//`, or `/** */`).
-act extract_doc_comment(source: string, target_line: i32) -> string {
-    if source == null or target_line <= 1 { return "" }
-    let slen = str.len(source)
-
-    // Locate the start offset of target_line (1-indexed)
-    mut cur_line: i32 = 1
-    mut line_start: usize = 0
-    mut i: usize = 0
-    loop i < slen and cur_line < target_line {
-        if source[i] == '\n' {
-            cur_line += 1
-            line_start = i + 1
-        }
-        i += 1
-    }
-
-    if line_start == 0 { return "" }
-
-    // Check if the preceding text right before line_start contains block comment end `*/`
-    mut p: usize = line_start - 1
-    loop p > 0 and (source[p] == '\n' or source[p] == '\r' or source[p] == ' ' or source[p] == '\t') {
-        p -= 1
-    }
-    if p >= 1 and source[p - 1] == '*' and source[p] == '/' {
-        // Find matching `/**`
-        mut b = p - 1
-        mut found_doc = false
-        loop b >= 2 and not found_doc {
-            if source[b - 2] == '/' and source[b - 1] == '*' and source[b] == '*' {
-                found_doc = true
-            } else {
-                b -= 1
-            }
-        }
-        if found_doc {
-            return extract_block_doc(source, b + 1, p - 1)
-        }
-    }
-
-    // Otherwise, check for one or more preceding single-line `///` or `//` comments
-    mut end_line = target_line - 1
-
-    // Find bounds of end_line
-    mut l_end = line_start - 1
-    if l_end == 0 { return "" }
-    mut l_start: usize = 0
-    mut k: usize = l_end
-    loop k > 0 {
-        k -= 1
-        if source[k] == '\n' {
-            l_start = k + 1
-            k = 0
-        }
-    }
-
-    // Check if line `end_line` starts with `//`
-    mut chk = l_start
-    loop chk < l_end and (source[chk] == ' ' or source[chk] == '\t' or source[chk] == '\r') {
-        chk += 1
-    }
-    if chk + 1 >= l_end or source[chk] != '/' or source[chk + 1] != '/' {
-        return ""
-    }
-
-    // Scan backwards to find the first consecutive doc comment line
-    mut scan_line = end_line
-    mut scan_start = l_start
-    mut scanning = true
-    loop scan_line > 1 and scanning {
-        if scan_start <= 1 {
-            scan_line = 1
-            scan_start = 0
-            scanning = false
-        } else {
-            let prev_e = scan_start - 1
-            mut prev_s: usize = 0
-            mut m: usize = prev_e
-            loop m > 0 {
-                m -= 1
-                if source[m] == '\n' {
-                    prev_s = m + 1
-                    m = 0
-                }
-            }
-            mut cp = prev_s
-            loop cp < prev_e and (source[cp] == ' ' or source[cp] == '\t' or source[cp] == '\r') {
-                cp += 1
-            }
-            if cp + 1 < prev_e and source[cp] == '/' and source[cp + 1] == '/' {
-                scan_line -= 1
-                scan_start = prev_s
-            } else {
-                scanning = false
-            }
-        }
-    }
-
-    // Extract lines from scan_line to end_line
-    mut sb = create_sb(1024)
-    mut cur_l = scan_line
-    mut cur_s = scan_start
-    loop cur_l <= end_line {
-        mut cur_e = cur_s
-        loop cur_e < slen and source[cur_e] != '\n' {
-            cur_e += 1
-        }
-
-        mut cstart = cur_s
-        loop cstart < cur_e and (source[cstart] == ' ' or source[cstart] == '\t' or source[cstart] == '\r') {
-            cstart += 1
-        }
-        if cstart + 1 < cur_e and source[cstart] == '/' and source[cstart + 1] == '/' {
-            cstart += 2
-            if cstart < cur_e and source[cstart] == '/' {
-                cstart += 1
-            }
-            if cstart < cur_e and source[cstart] == ' ' {
-                cstart += 1
-            }
-            mut cend = cur_e
-            loop cend > cstart and (source[cend - 1] == '\r' or source[cend - 1] == ' ') {
-                cend -= 1
-            }
-            if cend > cstart {
-                if sb.len > 0 {
-                    sb_append_str(@sb, "\n> ")
-                }
-                let line_str = copy_slice_to_string(source, cstart, cend - cstart)
-                sb_append_str(@sb, line_str)
-            }
-        }
-
-        cur_s = cur_e + 1
-        cur_l += 1
-    }
-
-    return sb_to_string(@sb)
-}
+use "doc_comments.vl"
+use "docgen_json.vl"
 
 // Generates complete GitHub-flavored Markdown API documentation from an AST program.
 act generate_markdown_docs(filename: string, source: string, prog: @ProgramNode) -> string {
@@ -316,8 +147,8 @@ act generate_markdown_docs(filename: string, source: string, prog: @ProgramNode)
     return sb_to_string(@sb)
 }
 
-// Generates Markdown documentation for a Velo source file.
-act generate_docs_for_source(source_path: string) -> string {
+// Generates Markdown or structured JSON documentation for a Velo source file.
+act generate_docs_for_source_all_opts(source_path: string, json_mode: bool) -> string {
     let source = fs_read_to_str(source_path)
     if source == null {
         println_str("[Velo Error] Failed to read source file: {source_path}")
@@ -343,5 +174,12 @@ act generate_docs_for_source(source_path: string) -> string {
         return null
     }
 
+    if json_mode {
+        return generate_json_docs(source_path, source, prog)
+    }
     return generate_markdown_docs(source_path, source, prog)
+}
+
+act generate_docs_for_source(source_path: string) -> string {
+    return generate_docs_for_source_all_opts(source_path, false)
 }

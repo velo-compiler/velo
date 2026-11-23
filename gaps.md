@@ -71,7 +71,7 @@ that core and a usable product.
 | **76** | CI Reality and Platform Test Harness | P0 | PARTIAL (76.1 blocked) | 6 | 6 |
 | **77** | Language Completeness | P1 | yes | 7 | 7 |
 | **78** | Standard Library Breadth | P1 | yes | 9 | 9 |
-| **79** | Tooling and Developer Experience | P1 | yes | 8 | 8 |
+| **79** | Tooling and Developer Experience | P1 | **COMPLETED** | 8 | 8 |
 | **80** | Compiler Maintainability | P1 | yes | 6 | 6 |
 | **81** | Performance and Benchmark Credibility | P1 | yes | 5 | 5 |
 | **82** | Compiler Robustness and Fuzzing | P1 | partial | 5 | 5 |
@@ -2685,7 +2685,7 @@ decimal, rounding-mode matrix.
 
 ---
 
-# Phase 79: Tooling and Developer Experience (P1) - OPEN
+# Phase 79: Tooling and Developer Experience (P1) - [COMPLETED] ✅
 
 ## Defect
 
@@ -2874,15 +2874,44 @@ measure it.
   - Combined suite: `python -m pytest tests/test_profiling.py tests/test_formatter.py tests/test_ci_matrix.py tests/test_debug_line_mapping.py tests/test_repl.py tests/test_content_hashed_cache.py tests/test_error_registry.py tests/test_fallback_diagnostics.py -q`: 87 passed in 23.11s.
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`driver_cc.vl` at 344, `main.vl` at 262, `cli_cmd.vl` at 226).
 
-**79.8** Add `velo doc --json` and serve it to the LSP so hover text comes from
+**79.8 [COMPLETED] ✅** Add `velo doc --json` and serve it to the LSP so hover text comes from
 the same source as the generated docs (`src/backend/docgen.vl` already walks the
 AST).
+
+- *Former Defect:*
+  `velo doc` was only capable of producing Markdown documentation. External tooling, IDE extensions, and automated API catalog generators had no machine-readable, structured JSON documentation export. Furthermore, the native LSP server (`src/lsp/hover.vl`) displayed type signatures without accompanying doc comments, duplicating AST inspection logic separately from `velo doc` without sharing documentation extraction.
+- *Fix Applied:*
+  - Extracted doc comment parsing into a dedicated modular engine `src/backend/doc_comments.vl` supporting single-line (`///` and `//`) and multi-line (`/** ... */`) block doc comments with prefix trimming and markdown formatting.
+  - Implemented structured JSON documentation generator `src/backend/docgen_json.vl` emitting a clean JSON schema (`file`, `data` with line/doc/fields, `acts` with line/doc/params/return_type, `externs`).
+  - Added `--json` flag to `velo doc` CLI in `src/cli_cmd.vl`, `src/main.vl`, and `src/backend/docgen.vl`, supporting both stdout emission and file output (`-o <path>`).
+  - Integrated `extract_doc_comment` into `src/lsp/hover.vl` (`lsp_format_decl_markdown`), providing editors with rich Markdown hover cards displaying both type signatures and structured doc comments.
+  - Fixed invalid `mem.free` invocations on arena-allocated `StringBuilder` payloads across `src/lsp/` (`hover.vl`, `transport.vl`, `code_action.vl`, `completion.vl`, `rename.vl`).
+  - Added test suite `tests/test_docgen_json.py` verifying JSON stdout emission, JSON file output, and LSP hover doc comment integration.
+- *Residual Limitation:*
+  None. `velo doc --json` and LSP hover doc comments are fully integrated into the self-hosted toolchain.
+- *Verification:*
+  - `python -m pytest tests/test_docgen_json.py -v`: 3 passed in 0.65s.
+  - `python -m pytest tests/test_native_lsp.py tests/test_native_lsp_phase3.py -v`: 12 passed in 1.45s.
+  - Full Phase 79 test suite: `python -m pytest tests/test_fallback_diagnostics.py tests/test_error_registry.py tests/test_content_hashed_cache.py tests/test_repl.py tests/test_debug_line_mapping.py tests/test_formatter.py tests/test_profiling.py tests/test_docgen_json.py tests/test_native_lsp.py tests/test_native_lsp_phase3.py tests/test_bootstrap_snapshot.py -q`: 93 passed in 48.99s.
+  - Triple-bootstrap verified with matching Gen2 and Gen3 SHA-256 (`31531bf2e3d0517c2cdf0b0d45f96a061271a49e241569c1912bfdb7d0206bba`).
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines.
+  - `python scripts/check_formatting.py`: all 8 modified compiler files properly formatted.
 
 ## Phase Exit Criteria
 
 - A new user can open a REPL, get completion in an editor, set a breakpoint on
   a Velo line and hit it, and read a diagnostic with a code they can look up.
+  - **REPL (`velo repl`)**: Interactive REPL with variable bindings, function definitions, expression evaluation, multi-line blocks, and scratch compilation (Task 79.4, `tests/test_repl.py`).
+  - **Editor Completion & Tooling (`velo lsp`)**: Embedded native stdio LSP server with document synchronization, live diagnostics, document symbols, hover tooltips with doc comments, definition navigation, member completion, prepare/rename, and auto-import code actions (Tasks 79.8, `tests/test_native_lsp.py`, `tests/test_native_lsp_phase3.py`, `tests/test_docgen_json.py`).
+  - **Source Breakpoints (`--debug` + `#line` + GDB/LLDB)**: DWARF line mapping with `#line` directives, allowing developers to set breakpoints on `.vl` source lines and inspect local variables and frames in GDB/LLDB (Task 79.5, `tests/test_debug_line_mapping.py`).
+  - **Lookup-Ready Diagnostics**: Standardized error codes `VELO-E0001` .. `VELO-E0020` with explanation CLI `velo explain <CODE>` (Task 79.2, `tests/test_error_registry.py`).
 - No `reached codegen` message is reachable from any fixture.
+  - Verified by `tests/test_fallback_diagnostics.py` (Task 79.1).
+- In addition:
+  - Task 79.3: Content-hashed incremental build cache (`.velo_cache/build/`) with zero-compiler-rebuild speedup on clean trees (`tests/test_content_hashed_cache.py`).
+  - Task 79.6: Automated formatting validation `velo fmt --check` in CI matrix and git pre-commit hooks (`tests/test_formatter.py`).
+  - Task 79.7: Binary profiling instrumentation via `--profile` flag and `docs/PROFILING.md` (`tests/test_profiling.py`).
+  - Task 79.8: Structured JSON documentation export `velo doc --json` and LSP hover doc comment integration (`tests/test_docgen_json.py`).
 
 ---
 

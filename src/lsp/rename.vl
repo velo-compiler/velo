@@ -93,7 +93,6 @@ act lsp_handle_prepare_rename(state: @LspServerState, id_node: @JsonValue, param
     sb_append_str(@sb, "}}}")
     let payload = sb_to_string(@sb)
     lsp_send_payload(payload)
-    mem.free(payload as @u8)
 
     if needs_free {
         mem.free(text as @u8)
@@ -282,7 +281,6 @@ act lsp_handle_rename(state: @LspServerState, id_node: @JsonValue, params: @Json
     sb_append_str(@sb, "]}}}")
     let payload = sb_to_string(@sb)
     lsp_send_payload(payload)
-    mem.free(payload as @u8)
 
     if needs_free {
         mem.free(text as @u8)
@@ -298,5 +296,4 @@ act lsp_send_null_rename(id_node: @JsonValue) {
     sb_append_str(@sb, ",\"result\":null}")
     let payload = sb_to_string(@sb)
     lsp_send_payload(payload)
-    mem.free(payload as @u8)
 }

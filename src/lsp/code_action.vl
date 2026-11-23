@@ -142,7 +142,6 @@ act lsp_handle_code_action(state: @LspServerState, id_node: @JsonValue, params: 
     sb_append_str(@sb, "]}")
     let payload = sb_to_string(@sb)
     lsp_send_payload(payload)
-    mem.free(payload as @u8)
 
     if needs_free {
         mem.free(text as @u8)
@@ -158,5 +157,4 @@ act lsp_send_empty_code_action(id_node: @JsonValue) {
     sb_append_str(@sb, ",\"result\":[]}")
     let payload = sb_to_string(@sb)
     lsp_send_payload(payload)
-    mem.free(payload as @u8)
 }

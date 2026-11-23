@@ -12,7 +12,7 @@ act print_usage() {
     println_str("  velo build <source.vl> [-o <bin>] [--cc gcc|clang|cl] [-l<lib>] [-L<dir>] [--debug|--release|--profile] [--no-line-directives] [--unsafe-heap]")
     println_str("  velo emit-c <source.vl> [-o <out.c>] [--no-line-directives] Emit generated C99 code")
     println_str("  velo check <source.vl> [--json] [--color auto|always|never]")
-    println_str("  velo doc <source.vl> [-o <out.md>] Extract API documentation to Markdown")
+    println_str("  velo doc <source.vl> [-o <out>] [--json] Extract API documentation to Markdown or JSON")
     println_str("  velo test [path] [--cc gcc|clang|cl] [--filter <pattern>] Run native tests")
     println_str("  velo pkg check [path]              Validate a velo.pkg package manifest")
     println_str("  velo pkg lock [path]               Generate or update velo.lock with dependency hashes")

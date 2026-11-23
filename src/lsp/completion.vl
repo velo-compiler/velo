@@ -316,7 +316,6 @@ act lsp_handle_completion(state: @LspServerState, id_node: @JsonValue, params: @
         sb_append_str(@sb, "]}")
         let payload = sb_to_string(@sb)
         lsp_send_payload(payload)
-        mem.free(payload as @u8)
     }
 
     diag_collector_stop()
@@ -336,5 +335,4 @@ act lsp_send_empty_completion(id_node: @JsonValue) {
     sb_append_str(@sb, ",\"result\":[]}")
     let payload = sb_to_string(@sb)
     lsp_send_payload(payload)
-    mem.free(payload as @u8)
 }

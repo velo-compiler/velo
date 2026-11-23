@@ -1,0 +1,153 @@
+// Structured JSON API documentation generator for Velo source modules.
+use std.io
+use std.mem
+use "../ast/types.vl"
+use "../ast/expr.vl"
+use "../ast/stmt.vl"
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "doc_comments.vl"
+
+// Escapes special characters for JSON string values.
+act doc_json_escape(sb: @StringBuilder, s: string) {
+    if s == null { return }
+    let n = str.len(s)
+    mut i: usize = 0
+    loop i < n {
+        let c = s[i]
+        if c == '"' {
+            sb_append_str(sb, "\\\"")
+        } else if c == '\\' {
+            sb_append_str(sb, "\\\\")
+        } else if c == '\n' {
+            sb_append_str(sb, "\\n")
+        } else if c == '\r' {
+            sb_append_str(sb, "\\r")
+        } else if c == '\t' {
+            sb_append_str(sb, "\\t")
+        } else {
+            sb_append_char(sb, c)
+        }
+        i += 1
+    }
+}
+
+// Generates structured JSON documentation from an AST program.
+act generate_json_docs(filename: string, source: string, prog: @ProgramNode) -> string {
+    mut sb = create_sb(4096)
+    sb_append_str(@sb, "{\"file\":\"")
+    doc_json_escape(@sb, filename)
+    sb_append_str(@sb, "\",\"data\":[")
+
+    // 1. Data structures
+    mut cur = prog.first_decl
+    mut first_struct = true
+    loop cur != null {
+        if cur.kind == DECL_DATA {
+            if not first_struct { sb_append_char(@sb, ',') }
+            first_struct = false
+            sb_append_str(@sb, "{\"name\":\"")
+            doc_json_escape(@sb, cur.name)
+            sb_append_str(@sb, "\",\"line\":")
+            sb_append_int(@sb, cur.line)
+            let doc = extract_doc_comment(source, cur.line)
+            sb_append_str(@sb, ",\"doc\":\"")
+            doc_json_escape(@sb, doc)
+            sb_append_str(@sb, "\",\"fields\":[")
+            mut cur_f = cur.first_field
+            mut first_field = true
+            loop cur_f != null {
+                if not first_field { sb_append_char(@sb, ',') }
+                first_field = false
+                sb_append_str(@sb, "{\"name\":\"")
+                doc_json_escape(@sb, cur_f.name)
+                sb_append_str(@sb, "\",\"type\":\"")
+                doc_json_escape(@sb, cur_f.type_name)
+                sb_append_str(@sb, "\"}")
+                cur_f = cur_f.next
+            }
+            sb_append_str(@sb, "]}")
+        }
+        cur = cur.next
+    }
+    sb_append_str(@sb, "],\"acts\":[")
+
+    // 2. Functions
+    cur = prog.first_decl
+    mut first_act = true
+    loop cur != null {
+        if cur.kind == DECL_FUNCTION and cur.name != "main" {
+            if not first_act { sb_append_char(@sb, ',') }
+            first_act = false
+            sb_append_str(@sb, "{\"name\":\"")
+            doc_json_escape(@sb, cur.name)
+            sb_append_str(@sb, "\",\"line\":")
+            sb_append_int(@sb, cur.line)
+            let doc = extract_doc_comment(source, cur.line)
+            sb_append_str(@sb, ",\"doc\":\"")
+            doc_json_escape(@sb, doc)
+            sb_append_str(@sb, "\",\"params\":[")
+            mut cur_p = cur.first_param
+            mut first_param = true
+            loop cur_p != null {
+                if not first_param { sb_append_char(@sb, ',') }
+                first_param = false
+                sb_append_str(@sb, "{\"name\":\"")
+                doc_json_escape(@sb, cur_p.name)
+                sb_append_str(@sb, "\",\"type\":\"")
+                doc_json_escape(@sb, cur_p.type_name)
+                sb_append_str(@sb, "\"}")
+                cur_p = cur_p.next
+            }
+            sb_append_str(@sb, "],\"return_type\":\"")
+            if cur.return_type != null and str.len(cur.return_type) > 0 {
+                doc_json_escape(@sb, cur.return_type)
+            } else {
+                sb_append_str(@sb, "void")
+            }
+            sb_append_str(@sb, "\"}")
+        }
+        cur = cur.next
+    }
+    sb_append_str(@sb, "],\"externs\":[")
+
+    // 3. Extern Declarations
+    cur = prog.first_decl
+    mut first_ext = true
+    loop cur != null {
+        if cur.kind == DECL_EXTERN {
+            if not first_ext { sb_append_char(@sb, ',') }
+            first_ext = false
+            sb_append_str(@sb, "{\"name\":\"")
+            doc_json_escape(@sb, cur.name)
+            sb_append_str(@sb, "\",\"line\":")
+            sb_append_int(@sb, cur.line)
+            let doc = extract_doc_comment(source, cur.line)
+            sb_append_str(@sb, ",\"doc\":\"")
+            doc_json_escape(@sb, doc)
+            sb_append_str(@sb, "\",\"params\":[")
+            mut cur_p = cur.first_param
+            mut first_param = true
+            loop cur_p != null {
+                if not first_param { sb_append_char(@sb, ',') }
+                first_param = false
+                sb_append_str(@sb, "{\"name\":\"")
+                doc_json_escape(@sb, cur_p.name)
+                sb_append_str(@sb, "\",\"type\":\"")
+                doc_json_escape(@sb, cur_p.type_name)
+                sb_append_str(@sb, "\"}")
+                cur_p = cur_p.next
+            }
+            sb_append_str(@sb, "],\"return_type\":\"")
+            if cur.return_type != null and str.len(cur.return_type) > 0 {
+                doc_json_escape(@sb, cur.return_type)
+            } else {
+                sb_append_str(@sb, "void")
+            }
+            sb_append_str(@sb, "\"}")
+        }
+        cur = cur.next
+    }
+    sb_append_str(@sb, "]}")
+    return sb_to_string(@sb)
+}

@@ -228,7 +228,6 @@ act lsp_send_null_definition(id_node: @JsonValue) {
     sb_append_str(@sb, ",\"result\":null}")
     let payload = sb_to_string(@sb)
     lsp_send_payload(payload)
-    mem.free(payload as @u8)
 }
 
 // Emits a single definition Location response.
@@ -264,6 +263,4 @@ act lsp_send_definition_location(id_node: @JsonValue, target_uri: string, line0:
 
     let payload = sb_to_string(@sb)
     lsp_send_payload(payload)
-    mem.free(payload as @u8)
 }
-
