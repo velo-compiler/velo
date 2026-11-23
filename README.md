@@ -182,6 +182,7 @@ bin/velo.exe fmt src/main.vl
 * [Stage 2 Production Code Standards](docs/STAGE2_CODE_STANDARDS.md)
 * [Empirical Performance & Multi-Language Benchmarks](benchmark/RESULTS.md)
 * [Memory Footprint & RSS Audit](benchmark/MEMORY_RESULTS.md)
+* [Architectural Reviews & Audits Index](docs/REVIEWS.md)
 * [Contributing](CONTRIBUTING.md)
 * [Changelog](CHANGELOG.md)
 

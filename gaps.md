@@ -3482,10 +3482,23 @@ and "120+ FPS guarantee" until 81.3/81.4 produce numbers.
   Manual text inspection of `README.md` diff; verified absence of unmeasured claims via `git grep -E "64KB|0\.001|120\+ FPS|120 FPS" README.md`; quick-look code snippet verified via `bin/velo.exe check`.
 
 
-**83.2** Move `AUDIT.md` to `docs/reviews/AUDIT-2026-01.md`, label it as an
+**83.2 [COMPLETED] ✅** Move `AUDIT.md` to `docs/reviews/AUDIT-2026-01.md`, label it as an
 internal self-assessment, and add the date. Add a `docs/REVIEWS.md` index that
 distinguishes internal from external reviews. Never present a self-review as a
 reviewer scorecard.
+
+- *Former Defect:*
+  `AUDIT.md` in the repository root presented an internal self-assessment as an independent third-party audit ("Reviewer Scorecard", "Auditor Persona: Senior Programming Language Reviewer...", "Reviewer's Final Verdict", "Audit conducted independently by Antigravity..."). This inflated presentation compromised documentation integrity, confusing internal developer milestone targets with verified external evaluation.
+- *Fix Applied:*
+  - Relocated `AUDIT.md` to `docs/reviews/AUDIT-2026-01.md` with explicit historical labeling: "Internal Architectural Self-Assessment: Velo (v2.0 Stage 2 Baseline, January 2026)".
+  - Replaced inflated reviewer persona language with transparent internal self-assessment headers, historical milestone metadata, and an explicit disclaimer distinguishing internal retrospective scorecards from independent external audits.
+  - Created `docs/REVIEWS.md`: central index cataloging external independent reviews (currently none) vs internal self-assessments (`AUDIT-2026-01.md`, `gaps.md`, `benchmark/RESULTS.md`, `benchmark/MEMORY_RESULTS.md`) and defining review integrity principles (Invariants I83.1 and I83.2).
+  - Linked `docs/REVIEWS.md` in `README.md` under Documentation.
+- *Residual Limitation:*
+  No independent external security audit has yet been conducted; external audit submissions are solicited via `docs/REVIEWS.md` and `SECURITY.md`.
+- *Verification:*
+  Verified directory structure (`docs/reviews/AUDIT-2026-01.md` and `docs/REVIEWS.md` exist; root `AUDIT.md` removed); links verified; `git status` shows clean tracking.
+
 
 **83.3** Track `games/` and `apps/` (or move them to a separate examples repo
 and link it). The showcase is the strongest evidence the language works; leaving
