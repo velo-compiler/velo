@@ -55,6 +55,7 @@ act init_driver(d: @CompilerDriver) {
     d.first_decl = null
     d.last_decl = null
     d.total_decls = 0
+    reset_diagnostic_counts()
 }
 
 // Checks if a module path has already been parsed.
@@ -252,16 +253,19 @@ act load_file_and_deps_ex(d: @CompilerDriver, raw_path: string, is_std: bool) {
     defer heap_free_str(source)
 
     let slen = str.len(source)
-    // Capacity must cover the absolute worst case: one token per source
-    // character, plus EOF. A fixed cap silently truncates large files.
-    mut lex = create_lexer(source, slen, slen + 2)
+    if slen > 16777216 {
+        report_error(file_path, 1, 1, "[VELO-E0022] Resource limit exceeded: source file exceeds maximum size of 16 MB")
+        d.error_count += 1; return
+    }
+    mut cap = slen + 2
+    if cap > 500000 { cap = 500000 }
+    mut lex = create_lexer(source, slen, cap)
     lex.file_path = file_path
     tokenize(@lex)
     if lex.had_error { d.error_count += 1 }
 
     if lex.dropped_count > 0 {
-        let dropped = lex.dropped_count
-        println_str("[Velo Error] {file_path}: lexer token buffer too small; {dropped} tokens were truncated. Split this file into smaller modules.")
+        report_error(file_path, 1, 1, "[VELO-E0022] Resource limit exceeded: token count exceeds limit of 500,000 tokens")
         d.error_count += 1
         return
     }
@@ -379,18 +383,8 @@ act compile_source_to_c_all_opts(source_path: string, unsafe_index: bool, is_tes
     return c_out
 }
 
-act compile_source_to_c_test_opts(source_path: string, unsafe_index: bool, is_test: bool, no_line_directives: bool) -> string {
-    return compile_source_to_c_all_opts(source_path, unsafe_index, is_test, no_line_directives, false)
-}
-act compile_source_to_c_test(source_path: string, unsafe_index: bool, is_test: bool) -> string {
-    return compile_source_to_c_all_opts(source_path, unsafe_index, is_test, false, false)
-}
-act compile_source_to_c(source_path: string, unsafe_index: bool) -> string {
-    return compile_source_to_c_all_opts(source_path, unsafe_index, false, false, false)
-}
-act compile_source_to_c_opts(source_path: string, unsafe_index: bool, no_line_directives: bool) -> string {
-    return compile_source_to_c_all_opts(source_path, unsafe_index, false, no_line_directives, false)
-}
-act compile_source_to_c_strict(source_path: string, unsafe_index: bool, no_line_directives: bool, strict_safety: bool) -> string {
-    return compile_source_to_c_all_opts(source_path, unsafe_index, false, no_line_directives, strict_safety)
-}
+act compile_source_to_c_test_opts(source_path: string, unsafe_index: bool, is_test: bool, no_line_directives: bool) -> string { return compile_source_to_c_all_opts(source_path, unsafe_index, is_test, no_line_directives, false) }
+act compile_source_to_c_test(source_path: string, unsafe_index: bool, is_test: bool) -> string { return compile_source_to_c_all_opts(source_path, unsafe_index, is_test, false, false) }
+act compile_source_to_c(source_path: string, unsafe_index: bool) -> string { return compile_source_to_c_all_opts(source_path, unsafe_index, false, false, false) }
+act compile_source_to_c_opts(source_path: string, unsafe_index: bool, no_line_directives: bool) -> string { return compile_source_to_c_all_opts(source_path, unsafe_index, false, no_line_directives, false) }
+act compile_source_to_c_strict(source_path: string, unsafe_index: bool, no_line_directives: bool, strict_safety: bool) -> string { return compile_source_to_c_all_opts(source_path, unsafe_index, false, no_line_directives, strict_safety) }

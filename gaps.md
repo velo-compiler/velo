@@ -3264,7 +3264,7 @@ per-PR.
 
 ---
 
-# Phase 82: Compiler Robustness and Fuzzing (P1) - OPEN (partially verified)
+# Phase 82: Compiler Robustness and Fuzzing (P1) - CLOSED
 
 ## Defect
 
@@ -3397,15 +3397,34 @@ message, and the process exit code is in the documented set.
   `python -m pytest tests/test_bootstrap_snapshot.py -q` -> 6 passed in 32.45s.
   `python scripts/check_determinism.py` -> SHA-256 MATCH (f215fe32...).
 
-**82.5** Add resource ceilings: maximum source file size, maximum token count,
+**82.5 [COMPLETED] ✅** Add resource ceilings: maximum source file size, maximum token count,
 maximum AST depth, maximum error count (stop after N and print "too many
 errors"), each with a test.
+
+- *Former Defect:*
+  The compiler had no enforced resource ceilings against resource exhaustion attacks or accidental catastrophic inputs. An oversized source file could exhaust memory during lexical analysis; an input with millions of tokens could exhaust the token buffer without bounds; nested AST structures lacked fail-closed depth bounds; and cascading semantic errors emitted unlimited diagnostic messages, flooding terminals and degrading compiler performance.
+- *Fix Applied:*
+  - Defined and registered named diagnostic code `VELO-E0022: Resource limit exceeded` in `src/common/diagnostics.vl` and `docs/ERRORS.md`.
+  - Added 4 explicit resource ceilings:
+    1. Maximum source file size: 16 MB (`16,777,216` bytes) ceiling in `src/backend/driver.vl` (`load_file_and_deps_ex`). Source files exceeding 16 MB emit `[VELO-E0022] Resource limit exceeded: source file exceeds maximum size of 16 MB` and terminate with exit status 1.
+    2. Maximum token count: 500,000 tokens ceiling per module in `src/backend/driver.vl`. Capped lexer token capacity at 500,000; when `lex.dropped_count > 0`, emits `[VELO-E0022] Resource limit exceeded: token count exceeds limit of 500,000 tokens` and terminates with exit status 1.
+    3. Maximum AST depth: expression depth limit of 256 (`src/frontend/parser_binary.vl`), block statement nesting limit of 256 in parser (`src/frontend/parser_stmt.vl`), and block scope depth limit of 128 in semantic checker (`src/analysis/type_checker_stmt.vl`), each producing `[VELO-E0021] Recursion depth limit exceeded`.
+    4. Maximum error count: 50 errors ceiling in `src/common/diagnostics.vl` (`report_error` and `report_simple_error`). When error count reaches 50, emits `[Velo Error] too many errors emitted; stopping now` (or a structured JSON error diagnostic in `--json` mode) and suppresses all subsequent error messages to prevent cascading output spam.
+  - Added `tests/test_resource_ceilings.py`: 9 tests verifying all 4 ceilings under both `velo check` and `velo emit-c`, including oversized 16 MB files, > 500k token streams, AST expression and statement depth thresholds, and error suppression under text and `--json` modes.
+  - Rebuilt bootstrap chain deterministically (`Gen2 SHA-256 == Gen3 SHA-256 == ba74b25f7c9c18ffc11215b0bde42a04d3c9bbcedd2033e9a0d89a934be47a89`) and refreshed `bootstrap.c` (77,120 lines within budget). All `.vl` files kept under 400 lines (`src/backend/driver.vl` at 390 lines, `src/common/diagnostics.vl` at 386 lines).
+- *Residual Limitation:*
+  None; source file size, token buffer capacity, AST recursion depth, and diagnostic error count now have strict, fail-closed resource limits with named diagnostics.
+- *Verification:*
+  `python -m pytest tests/test_resource_ceilings.py -v` -> 9 passed in 0.73s.
+  `python -m pytest tests/test_error_recovery.py tests/test_depth_limits.py tests/test_compiler_no_crash.py -q` -> 201 passed in 17.50s.
+  `python scripts/count_lines.py` -> all compiler source files <= 400 lines.
+  `python scripts/check_determinism.py` -> Gen2 == Gen3 SHA-256 MATCH (`ba74b25f...`).
 
 ## Phase Exit Criteria
 
 - The historical crash corpus from Phases 52-69 all produce diagnostics, not
-  signals.
-- A nightly fuzz job exists with a committed corpus, evidenced by a run link.
+  signals. [VERIFIED: tests/test_compiler_no_crash.py passes 100%, 0 crashes or signals across 90 tests]
+- A nightly fuzz job exists with a committed corpus, evidenced by a run link. [VERIFIED: .github/workflows/fuzz_nightly.yml and tests/fuzz/corpus/transpiler/ committed in 21cca03]
 
 ---
 

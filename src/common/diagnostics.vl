@@ -17,6 +17,12 @@ mut g_diag_collector_active: bool = false
 mut g_diag_head: @InMemDiag = null
 mut g_diag_tail: @InMemDiag = null
 mut g_diag_count: i32 = 0
+mut g_total_error_count: i32 = 0
+mut g_max_errors: i32 = 50
+
+act reset_diagnostic_counts() {
+    g_total_error_count = 0
+}
 
 // Activates the in-memory diagnostic collector.
 act diag_collector_start() {
@@ -42,6 +48,7 @@ act diag_collector_clear() {
     g_diag_head = null
     g_diag_tail = null
     g_diag_count = 0
+    g_total_error_count = 0
 }
 
 // Duplicates a null-terminated string to persistent heap memory.
@@ -86,6 +93,18 @@ act diag_collector_add(filename: string, line: i32, col: i32, severity: i32, mes
 //   col: 1-indexed source column number.
 //   message: Explanatory error message.
 act report_error(filename: string, line: i32, col: i32, message: string) {
+    if g_total_error_count >= g_max_errors {
+        if g_total_error_count == g_max_errors {
+            g_total_error_count += 1
+            if g_diag_collector_active {
+                diag_collector_add(filename, line, col, 1, "too many errors emitted; stopping now")
+            } else {
+                println_str("[Velo Error] too many errors emitted; stopping now")
+            }
+        }
+        return
+    }
+    g_total_error_count += 1
     if g_diag_collector_active {
         diag_collector_add(filename, line, col, 1, message)
         return
@@ -104,6 +123,18 @@ act report_warning(filename: string, line: i32, col: i32, message: string) {
 
 // Reports a general compiler error not bound to a specific source line.
 act report_simple_error(message: string) {
+    if g_total_error_count >= g_max_errors {
+        if g_total_error_count == g_max_errors {
+            g_total_error_count += 1
+            if g_diag_collector_active {
+                diag_collector_add("", 0, 0, 1, "too many errors emitted; stopping now")
+            } else {
+                println_str("[Velo Error] too many errors emitted; stopping now")
+            }
+        }
+        return
+    }
+    g_total_error_count += 1
     if g_diag_collector_active {
         diag_collector_add("", 0, 0, 1, message)
         return
@@ -138,6 +169,7 @@ act error_code_message(code: string) -> string {
     if code == "VELO-E0019" { return "cannot infer element type of empty ring literal — annotate it (e.g. let r: ring[i32] = ring[])" }
     if code == "VELO-E0020" { return "Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety." }
     if code == "VELO-E0021" { return "Recursion depth limit exceeded" }
+    if code == "VELO-E0022" { return "Resource limit exceeded" }
     return "Unknown compiler diagnostic"
 }
 
@@ -192,6 +224,7 @@ act error_code_explain(code: string) -> string {
     if norm == "VELO-E0019" { return "VELO-E0019: cannot infer element type of empty ring literal — annotate it\nAn empty ring literal requires a type annotation." }
     if norm == "VELO-E0020" { return "VELO-E0020: Raw pointer dereference requires an 'unsafe { ... }' block\nWith --strict-safety, raw pointer dereferences must be enclosed in unsafe blocks." }
     if norm == "VELO-E0021" { return "VELO-E0021: Recursion depth limit exceeded\nThe compiler encountered nesting (in lexer tokens, parser AST, or type checker analysis) that exceeded the maximum recursion depth limit." }
+    if norm == "VELO-E0022" { return "VELO-E0022: Resource limit exceeded\nThe input exceeded resource ceilings (source file size > 16 MB, token count > 500,000, AST depth > 256, or error count > 50)." }
     return "Unknown error code. See docs/ERRORS.md for the full error registry."
 }
 

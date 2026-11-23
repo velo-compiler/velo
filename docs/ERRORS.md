@@ -41,6 +41,7 @@ Or browse the registry below.
 | [`VELO-E0019`](#velo-e0019-cannot-infer-element-type-of-empty-ring-literal--annotate-it) | Semantic | Cannot infer element type of empty ring literal — annotate it |
 | [`VELO-E0020`](#velo-e0020-raw-pointer-dereference-requires-an-unsafe----block) | Semantic | Raw pointer dereference requires an 'unsafe { ... }' block |
 | [`VELO-E0021`](#velo-e0021-recursion-depth-limit-exceeded) | Robustness | Recursion depth limit exceeded |
+| [`VELO-E0022`](#velo-e0022-resource-limit-exceeded) | Robustness | Resource limit exceeded |
 
 ---
 
@@ -565,3 +566,23 @@ Refactor deeply nested expressions into sequential intermediate bindings or brea
 let a = (1 + 2)
 let b = (a * 3)
 ```
+
+---
+
+### VELO-E0022: Resource limit exceeded
+
+The compiler encountered an input exceeding architectural resource ceilings designed to prevent memory exhaustion, out-of-memory crashes, or denial-of-service from malformed or adversarial inputs.
+
+- Source file size limit: 16 MB (16,777,216 bytes)
+- Token count limit: 500,000 tokens per module
+- Maximum AST depth: 256 levels
+- Maximum error count: 50 errors (compilation stops with "too many errors emitted; stopping now")
+
+#### Erroneous Code
+```velo
+// A single source file larger than 16 MB, or generating > 500,000 tokens
+```
+
+#### Corrected Code
+Split large monolithic files or generated datasets into smaller modular source files, or fix preceding compiler errors so compilation stops producing diagnostic errors.
+

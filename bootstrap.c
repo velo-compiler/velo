@@ -1267,7 +1267,11 @@ InMemDiag* g_diag_head = NULL;
 InMemDiag* g_diag_tail = NULL;
 #line 19 "src/main.vl"
 int32_t g_diag_count = 0;
-#line 298 "src/main.vl"
+#line 20 "src/main.vl"
+int32_t g_total_error_count = 0;
+#line 21 "src/main.vl"
+int32_t g_max_errors = 50;
+#line 331 "src/main.vl"
 bool g_pretty_color = false;
 #line 8 "src/main.vl"
 int32_t TYPE_KIND_PRIMITIVE = 1;
@@ -1849,6 +1853,7 @@ void sb_append_float(StringBuilder* sb, float val);
 void sb_append_indent(StringBuilder* sb, int32_t indent);
 void sb_append_line(StringBuilder* sb, const char* s, int32_t indent);
 const char* sb_to_string(StringBuilder* sb);
+void reset_diagnostic_counts(void);
 void diag_collector_start(void);
 void diag_collector_stop(void);
 void diag_collector_clear(void);
@@ -11730,652 +11735,710 @@ const char* sb_to_string(StringBuilder* sb) {
     return ((const char*)(sb->buffer));
 }
 
-#line 22 "src/main.vl"
-void diag_collector_start(void) {
 #line 23 "src/main.vl"
-    diag_collector_clear();
+void reset_diagnostic_counts(void) {
 #line 24 "src/main.vl"
-    g_diag_collector_active = true;
+    g_total_error_count = 0;
 }
 
 #line 28 "src/main.vl"
-void diag_collector_stop(void) {
+void diag_collector_start(void) {
 #line 29 "src/main.vl"
+    diag_collector_clear();
+#line 30 "src/main.vl"
+    g_diag_collector_active = true;
+}
+
+#line 34 "src/main.vl"
+void diag_collector_stop(void) {
+#line 35 "src/main.vl"
     g_diag_collector_active = false;
 }
 
-#line 33 "src/main.vl"
+#line 39 "src/main.vl"
 void diag_collector_clear(void) {
-#line 34 "src/main.vl"
+#line 40 "src/main.vl"
     InMemDiag* cur = g_diag_head;
-#line 35 "src/main.vl"
+#line 41 "src/main.vl"
     for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 36 "src/main.vl"
+#line 42 "src/main.vl"
         InMemDiag* nxt = cur->next;
-#line 37 "src/main.vl"
+#line 43 "src/main.vl"
         if ((cur->filename != NULL)) {
-#line 37 "src/main.vl"
+#line 43 "src/main.vl"
             velo_heap_free((void*)(((uint8_t*)(cur->filename))));
         }
-#line 38 "src/main.vl"
+#line 44 "src/main.vl"
         if ((cur->message != NULL)) {
-#line 38 "src/main.vl"
+#line 44 "src/main.vl"
             velo_heap_free((void*)(((uint8_t*)(cur->message))));
         }
-#line 39 "src/main.vl"
+#line 45 "src/main.vl"
         velo_heap_free((void*)(((uint8_t*)(cur))));
-#line 40 "src/main.vl"
+#line 46 "src/main.vl"
         cur = nxt;
         __loop_cont_98: __attribute__((unused));
     }
     __loop_break_98: __attribute__((unused));
-#line 42 "src/main.vl"
+#line 48 "src/main.vl"
     g_diag_head = NULL;
-#line 43 "src/main.vl"
+#line 49 "src/main.vl"
     g_diag_tail = NULL;
-#line 44 "src/main.vl"
+#line 50 "src/main.vl"
     g_diag_count = 0;
+#line 51 "src/main.vl"
+    g_total_error_count = 0;
 }
 
-#line 48 "src/main.vl"
+#line 55 "src/main.vl"
 const char* diag_heap_copy(const char* s) {
-#line 49 "src/main.vl"
+#line 56 "src/main.vl"
     if ((s == NULL)) {
-#line 49 "src/main.vl"
+#line 56 "src/main.vl"
         return NULL;
     }
-#line 50 "src/main.vl"
+#line 57 "src/main.vl"
     size_t n = ((usize)strlen(s));
-#line 51 "src/main.vl"
+#line 58 "src/main.vl"
     uint8_t* buf = ((uint8_t*)velo_heap_alloc(sizeof(uint8_t), (size_t)((n + 1))));
-#line 52 "src/main.vl"
+#line 59 "src/main.vl"
     size_t i = 0;
-#line 53 "src/main.vl"
+#line 60 "src/main.vl"
     for (int32_t it = 0; ((i < n)); it++) {
-#line 54 "src/main.vl"
+#line 61 "src/main.vl"
         buf[i] = s[i];
-#line 55 "src/main.vl"
+#line 62 "src/main.vl"
         i += 1;
         __loop_cont_99: __attribute__((unused));
     }
     __loop_break_99: __attribute__((unused));
-#line 57 "src/main.vl"
+#line 64 "src/main.vl"
     buf[n] = ((uint8_t)(0));
-#line 58 "src/main.vl"
+#line 65 "src/main.vl"
     return ((const char*)(buf));
 }
 
-#line 62 "src/main.vl"
-void diag_collector_add(const char* filename, int32_t line, int32_t col, int32_t severity, const char* message) {
-#line 63 "src/main.vl"
-    InMemDiag* node = ((InMemDiag*)velo_heap_alloc(sizeof(InMemDiag), (size_t)(1)));
-#line 64 "src/main.vl"
-    node->filename = diag_heap_copy(filename);
-#line 65 "src/main.vl"
-    node->line = line;
-#line 66 "src/main.vl"
-    node->col = col;
-#line 67 "src/main.vl"
-    node->severity = severity;
-#line 68 "src/main.vl"
-    node->message = diag_heap_copy(message);
 #line 69 "src/main.vl"
-    node->next = NULL;
+void diag_collector_add(const char* filename, int32_t line, int32_t col, int32_t severity, const char* message) {
+#line 70 "src/main.vl"
+    InMemDiag* node = ((InMemDiag*)velo_heap_alloc(sizeof(InMemDiag), (size_t)(1)));
 #line 71 "src/main.vl"
-    if ((g_diag_head == NULL)) {
+    node->filename = diag_heap_copy(filename);
 #line 72 "src/main.vl"
-        g_diag_head = node;
+    node->line = line;
 #line 73 "src/main.vl"
+    node->col = col;
+#line 74 "src/main.vl"
+    node->severity = severity;
+#line 75 "src/main.vl"
+    node->message = diag_heap_copy(message);
+#line 76 "src/main.vl"
+    node->next = NULL;
+#line 78 "src/main.vl"
+    if ((g_diag_head == NULL)) {
+#line 79 "src/main.vl"
+        g_diag_head = node;
+#line 80 "src/main.vl"
         g_diag_tail = node;
     } else {
-#line 75 "src/main.vl"
+#line 82 "src/main.vl"
         g_diag_tail->next = node;
-#line 76 "src/main.vl"
+#line 83 "src/main.vl"
         g_diag_tail = node;
     }
-#line 78 "src/main.vl"
+#line 85 "src/main.vl"
     g_diag_count += 1;
 }
 
-#line 88 "src/main.vl"
+#line 95 "src/main.vl"
 void report_error(const char* filename, int32_t line, int32_t col, const char* message) {
-#line 89 "src/main.vl"
-    if (g_diag_collector_active) {
-#line 90 "src/main.vl"
-        diag_collector_add(filename, line, col, 1, message);
-#line 91 "src/main.vl"
+#line 96 "src/main.vl"
+    if ((g_total_error_count >= g_max_errors)) {
+#line 97 "src/main.vl"
+        if ((g_total_error_count == g_max_errors)) {
+#line 98 "src/main.vl"
+            g_total_error_count += 1;
+#line 99 "src/main.vl"
+            if (g_diag_collector_active) {
+#line 100 "src/main.vl"
+                diag_collector_add(filename, line, col, 1, "too many errors emitted; stopping now");
+            } else {
+#line 102 "src/main.vl"
+                println_str("[Velo Error] too many errors emitted; stopping now");
+            }
+        }
+#line 105 "src/main.vl"
         return;
     }
-#line 93 "src/main.vl"
+#line 107 "src/main.vl"
+    g_total_error_count += 1;
+#line 108 "src/main.vl"
+    if (g_diag_collector_active) {
+#line 109 "src/main.vl"
+        diag_collector_add(filename, line, col, 1, message);
+#line 110 "src/main.vl"
+        return;
+    }
+#line 112 "src/main.vl"
     println_str(velo_str_format("[Velo Error] %s:%lld:%lld - %s", (const char*)(filename), (long long)(line), (long long)(col), (const char*)(message)));
 }
 
-#line 97 "src/main.vl"
+#line 116 "src/main.vl"
 void report_warning(const char* filename, int32_t line, int32_t col, const char* message) {
-#line 98 "src/main.vl"
+#line 117 "src/main.vl"
     if (g_diag_collector_active) {
-#line 99 "src/main.vl"
+#line 118 "src/main.vl"
         diag_collector_add(filename, line, col, 2, message);
-#line 100 "src/main.vl"
+#line 119 "src/main.vl"
         return;
     }
-#line 102 "src/main.vl"
+#line 121 "src/main.vl"
     println_str(velo_str_format("[Velo Warning] %s:%lld:%lld - %s", (const char*)(filename), (long long)(line), (long long)(col), (const char*)(message)));
 }
 
-#line 106 "src/main.vl"
+#line 125 "src/main.vl"
 void report_simple_error(const char* message) {
-#line 107 "src/main.vl"
-    if (g_diag_collector_active) {
-#line 108 "src/main.vl"
-        diag_collector_add("", 0, 0, 1, message);
-#line 109 "src/main.vl"
+#line 126 "src/main.vl"
+    if ((g_total_error_count >= g_max_errors)) {
+#line 127 "src/main.vl"
+        if ((g_total_error_count == g_max_errors)) {
+#line 128 "src/main.vl"
+            g_total_error_count += 1;
+#line 129 "src/main.vl"
+            if (g_diag_collector_active) {
+#line 130 "src/main.vl"
+                diag_collector_add("", 0, 0, 1, "too many errors emitted; stopping now");
+            } else {
+#line 132 "src/main.vl"
+                println_str("[Velo Error] too many errors emitted; stopping now");
+            }
+        }
+#line 135 "src/main.vl"
         return;
     }
-#line 111 "src/main.vl"
+#line 137 "src/main.vl"
+    g_total_error_count += 1;
+#line 138 "src/main.vl"
+    if (g_diag_collector_active) {
+#line 139 "src/main.vl"
+        diag_collector_add("", 0, 0, 1, message);
+#line 140 "src/main.vl"
+        return;
+    }
+#line 142 "src/main.vl"
     println_str(velo_str_format("[Velo Error] %s", (const char*)(message)));
 }
 
-#line 119 "src/main.vl"
+#line 150 "src/main.vl"
 const char* error_code_message(const char* code) {
-#line 120 "src/main.vl"
+#line 151 "src/main.vl"
     if (((code != NULL && "VELO-E0001" != NULL) ? (strcmp(code, "VELO-E0001") == 0) : (code == "VELO-E0001"))) {
-#line 120 "src/main.vl"
+#line 151 "src/main.vl"
         return "Undeclared identifier";
     }
-#line 121 "src/main.vl"
+#line 152 "src/main.vl"
     if (((code != NULL && "VELO-E0002" != NULL) ? (strcmp(code, "VELO-E0002") == 0) : (code == "VELO-E0002"))) {
-#line 121 "src/main.vl"
+#line 152 "src/main.vl"
         return "Mismatched argument count in function call";
     }
-#line 122 "src/main.vl"
+#line 153 "src/main.vl"
     if (((code != NULL && "VELO-E0003" != NULL) ? (strcmp(code, "VELO-E0003") == 0) : (code == "VELO-E0003"))) {
-#line 122 "src/main.vl"
+#line 153 "src/main.vl"
         return "Array index out of bounds";
     }
-#line 123 "src/main.vl"
+#line 154 "src/main.vl"
     if (((code != NULL && "VELO-E0004" != NULL) ? (strcmp(code, "VELO-E0004") == 0) : (code == "VELO-E0004"))) {
-#line 123 "src/main.vl"
+#line 154 "src/main.vl"
         return "Array index must be an integer";
     }
-#line 124 "src/main.vl"
+#line 155 "src/main.vl"
     if (((code != NULL && "VELO-E0005" != NULL) ? (strcmp(code, "VELO-E0005") == 0) : (code == "VELO-E0005"))) {
-#line 124 "src/main.vl"
+#line 155 "src/main.vl"
         return "Division by zero";
     }
-#line 125 "src/main.vl"
+#line 156 "src/main.vl"
     if (((code != NULL && "VELO-E0006" != NULL) ? (strcmp(code, "VELO-E0006") == 0) : (code == "VELO-E0006"))) {
-#line 125 "src/main.vl"
+#line 156 "src/main.vl"
         return "Modulo by zero";
     }
-#line 126 "src/main.vl"
+#line 157 "src/main.vl"
     if (((code != NULL && "VELO-E0007" != NULL) ? (strcmp(code, "VELO-E0007") == 0) : (code == "VELO-E0007"))) {
-#line 126 "src/main.vl"
+#line 157 "src/main.vl"
         return "Instantiating unknown struct type";
     }
-#line 127 "src/main.vl"
+#line 158 "src/main.vl"
     if (((code != NULL && "VELO-E0008" != NULL) ? (strcmp(code, "VELO-E0008") == 0) : (code == "VELO-E0008"))) {
-#line 127 "src/main.vl"
+#line 158 "src/main.vl"
         return "Unknown field in struct literal";
     }
-#line 128 "src/main.vl"
+#line 159 "src/main.vl"
     if (((code != NULL && "VELO-E0009" != NULL) ? (strcmp(code, "VELO-E0009") == 0) : (code == "VELO-E0009"))) {
-#line 128 "src/main.vl"
+#line 159 "src/main.vl"
         return "Struct literal is missing field with no default";
     }
-#line 129 "src/main.vl"
+#line 160 "src/main.vl"
     if (((code != NULL && "VELO-E0010" != NULL) ? (strcmp(code, "VELO-E0010") == 0) : (code == "VELO-E0010"))) {
-#line 129 "src/main.vl"
+#line 160 "src/main.vl"
         return "Mismatched element type in array literal";
     }
-#line 130 "src/main.vl"
+#line 161 "src/main.vl"
     if (((code != NULL && "VELO-E0011" != NULL) ? (strcmp(code, "VELO-E0011") == 0) : (code == "VELO-E0011"))) {
-#line 130 "src/main.vl"
+#line 161 "src/main.vl"
         return "Cannot infer kind type for variant";
     }
-#line 131 "src/main.vl"
+#line 162 "src/main.vl"
     if (((code != NULL && "VELO-E0012" != NULL) ? (strcmp(code, "VELO-E0012") == 0) : (code == "VELO-E0012"))) {
-#line 131 "src/main.vl"
+#line 162 "src/main.vl"
         return "Mismatched argument count in variant constructor";
     }
-#line 132 "src/main.vl"
+#line 163 "src/main.vl"
     if (((code != NULL && "VELO-E0013" != NULL) ? (strcmp(code, "VELO-E0013") == 0) : (code == "VELO-E0013"))) {
-#line 132 "src/main.vl"
+#line 163 "src/main.vl"
         return "Tuple index out of bounds";
     }
-#line 133 "src/main.vl"
+#line 164 "src/main.vl"
     if (((code != NULL && "VELO-E0014" != NULL) ? (strcmp(code, "VELO-E0014") == 0) : (code == "VELO-E0014"))) {
-#line 133 "src/main.vl"
+#line 164 "src/main.vl"
         return "Range loop step must be greater than zero";
     }
-#line 134 "src/main.vl"
+#line 165 "src/main.vl"
     if (((code != NULL && "VELO-E0015" != NULL) ? (strcmp(code, "VELO-E0015") == 0) : (code == "VELO-E0015"))) {
-#line 134 "src/main.vl"
+#line 165 "src/main.vl"
         return "shelf elements cannot be null (use a @T pointer element)";
     }
-#line 135 "src/main.vl"
+#line 166 "src/main.vl"
     if (((code != NULL && "VELO-E0016" != NULL) ? (strcmp(code, "VELO-E0016") == 0) : (code == "VELO-E0016"))) {
-#line 135 "src/main.vl"
+#line 166 "src/main.vl"
         return "shelf[dyn] put: cannot box a void value";
     }
-#line 136 "src/main.vl"
+#line 167 "src/main.vl"
     if (((code != NULL && "VELO-E0017" != NULL) ? (strcmp(code, "VELO-E0017") == 0) : (code == "VELO-E0017"))) {
-#line 136 "src/main.vl"
+#line 167 "src/main.vl"
         return "map values cannot be null (use a @T pointer value)";
     }
-#line 137 "src/main.vl"
+#line 168 "src/main.vl"
     if (((code != NULL && "VELO-E0018" != NULL) ? (strcmp(code, "VELO-E0018") == 0) : (code == "VELO-E0018"))) {
-#line 137 "src/main.vl"
+#line 168 "src/main.vl"
         return "cannot infer element type of empty shelf literal — annotate it (e.g. let e: shelf[i32] = shelf[])";
     }
-#line 138 "src/main.vl"
+#line 169 "src/main.vl"
     if (((code != NULL && "VELO-E0019" != NULL) ? (strcmp(code, "VELO-E0019") == 0) : (code == "VELO-E0019"))) {
-#line 138 "src/main.vl"
+#line 169 "src/main.vl"
         return "cannot infer element type of empty ring literal — annotate it (e.g. let r: ring[i32] = ring[])";
     }
-#line 139 "src/main.vl"
+#line 170 "src/main.vl"
     if (((code != NULL && "VELO-E0020" != NULL) ? (strcmp(code, "VELO-E0020") == 0) : (code == "VELO-E0020"))) {
-#line 139 "src/main.vl"
+#line 170 "src/main.vl"
         return "Raw pointer dereference requires an 'unsafe { ... }' block when compiling with --strict-safety.";
     }
-#line 140 "src/main.vl"
+#line 171 "src/main.vl"
     if (((code != NULL && "VELO-E0021" != NULL) ? (strcmp(code, "VELO-E0021") == 0) : (code == "VELO-E0021"))) {
-#line 140 "src/main.vl"
+#line 171 "src/main.vl"
         return "Recursion depth limit exceeded";
     }
-#line 141 "src/main.vl"
+#line 172 "src/main.vl"
+    if (((code != NULL && "VELO-E0022" != NULL) ? (strcmp(code, "VELO-E0022") == 0) : (code == "VELO-E0022"))) {
+#line 172 "src/main.vl"
+        return "Resource limit exceeded";
+    }
+#line 173 "src/main.vl"
     return "Unknown compiler diagnostic";
 }
 
-#line 145 "src/main.vl"
+#line 177 "src/main.vl"
 const char* normalize_error_code(const char* raw) {
-#line 146 "src/main.vl"
+#line 178 "src/main.vl"
     if ((raw == NULL)) {
-#line 146 "src/main.vl"
+#line 178 "src/main.vl"
         return "";
     }
-#line 147 "src/main.vl"
+#line 179 "src/main.vl"
     size_t n = ((usize)strlen(raw));
-#line 148 "src/main.vl"
+#line 180 "src/main.vl"
     if (((((velo_cmp_eq_u_s(n, 10) && velo_cmp_eq_u_s(raw[0], 'V')) && velo_cmp_eq_u_s(raw[1], 'E')) && velo_cmp_eq_u_s(raw[2], 'L')) && velo_cmp_eq_u_s(raw[3], 'O'))) {
-#line 149 "src/main.vl"
+#line 181 "src/main.vl"
         return raw;
     }
-#line 151 "src/main.vl"
+#line 183 "src/main.vl"
     if ((velo_cmp_eq_u_s(n, 5) && (velo_cmp_eq_u_s(raw[0], 'E') || velo_cmp_eq_u_s(raw[0], 'e')))) {
-#line 152 "src/main.vl"
+#line 184 "src/main.vl"
         StringBuilder sb = create_sb(16);
-#line 153 "src/main.vl"
+#line 185 "src/main.vl"
         sb_append_str((&(sb)), "VELO-");
-#line 154 "src/main.vl"
+#line 186 "src/main.vl"
         sb_append_char((&(sb)), 'E');
-#line 155 "src/main.vl"
+#line 187 "src/main.vl"
         size_t i = 1;
-#line 156 "src/main.vl"
+#line 188 "src/main.vl"
         for (int32_t it = 0; ((i < n)); it++) {
-#line 157 "src/main.vl"
+#line 189 "src/main.vl"
             sb_append_char((&(sb)), raw[i]);
-#line 158 "src/main.vl"
+#line 190 "src/main.vl"
             i += 1;
             __loop_cont_100: __attribute__((unused));
         }
         __loop_break_100: __attribute__((unused));
-#line 160 "src/main.vl"
+#line 192 "src/main.vl"
         return sb_to_string((&(sb)));
     }
-#line 162 "src/main.vl"
+#line 194 "src/main.vl"
     if (velo_cmp_eq_u_s(n, 4)) {
-#line 163 "src/main.vl"
+#line 195 "src/main.vl"
         StringBuilder sb = create_sb(16);
-#line 164 "src/main.vl"
+#line 196 "src/main.vl"
         sb_append_str((&(sb)), "VELO-E");
-#line 165 "src/main.vl"
+#line 197 "src/main.vl"
         sb_append_str((&(sb)), raw);
-#line 166 "src/main.vl"
+#line 198 "src/main.vl"
         return sb_to_string((&(sb)));
     }
-#line 168 "src/main.vl"
+#line 200 "src/main.vl"
     return raw;
 }
 
-#line 172 "src/main.vl"
+#line 204 "src/main.vl"
 const char* error_code_explain(const char* code) {
-#line 173 "src/main.vl"
+#line 205 "src/main.vl"
     const char* norm = normalize_error_code(code);
-#line 174 "src/main.vl"
+#line 206 "src/main.vl"
     if (((norm != NULL && "VELO-E0001" != NULL) ? (strcmp(norm, "VELO-E0001") == 0) : (norm == "VELO-E0001"))) {
-#line 174 "src/main.vl"
+#line 206 "src/main.vl"
         return "VELO-E0001: Undeclared identifier\nAn identifier was referenced in an expression, but no symbol with that name exists in the current scope.";
     }
-#line 175 "src/main.vl"
+#line 207 "src/main.vl"
     if (((norm != NULL && "VELO-E0002" != NULL) ? (strcmp(norm, "VELO-E0002") == 0) : (norm == "VELO-E0002"))) {
-#line 175 "src/main.vl"
+#line 207 "src/main.vl"
         return "VELO-E0002: Mismatched argument count in function call\nA function or method call passed a different number of arguments than expected by its signature.";
     }
-#line 176 "src/main.vl"
+#line 208 "src/main.vl"
     if (((norm != NULL && "VELO-E0003" != NULL) ? (strcmp(norm, "VELO-E0003") == 0) : (norm == "VELO-E0003"))) {
-#line 176 "src/main.vl"
+#line 208 "src/main.vl"
         return "VELO-E0003: Array index out of bounds\nA fixed-size array was accessed with a constant index >= array length, or negative.";
     }
-#line 177 "src/main.vl"
+#line 209 "src/main.vl"
     if (((norm != NULL && "VELO-E0004" != NULL) ? (strcmp(norm, "VELO-E0004") == 0) : (norm == "VELO-E0004"))) {
-#line 177 "src/main.vl"
+#line 209 "src/main.vl"
         return "VELO-E0004: Array index must be an integer\nAn array subscript expression was provided with a non-integer index type.";
     }
-#line 178 "src/main.vl"
+#line 210 "src/main.vl"
     if (((norm != NULL && "VELO-E0005" != NULL) ? (strcmp(norm, "VELO-E0005") == 0) : (norm == "VELO-E0005"))) {
-#line 178 "src/main.vl"
+#line 210 "src/main.vl"
         return "VELO-E0005: Division by zero\nA division expression has a constant zero divisor.";
     }
-#line 179 "src/main.vl"
+#line 211 "src/main.vl"
     if (((norm != NULL && "VELO-E0006" != NULL) ? (strcmp(norm, "VELO-E0006") == 0) : (norm == "VELO-E0006"))) {
-#line 179 "src/main.vl"
+#line 211 "src/main.vl"
         return "VELO-E0006: Modulo by zero\nA modulo expression has a constant zero divisor.";
     }
-#line 180 "src/main.vl"
+#line 212 "src/main.vl"
     if (((norm != NULL && "VELO-E0007" != NULL) ? (strcmp(norm, "VELO-E0007") == 0) : (norm == "VELO-E0007"))) {
-#line 180 "src/main.vl"
+#line 212 "src/main.vl"
         return "VELO-E0007: Instantiating unknown struct type\nA struct literal refers to a struct type that has not been defined.";
     }
-#line 181 "src/main.vl"
+#line 213 "src/main.vl"
     if (((norm != NULL && "VELO-E0008" != NULL) ? (strcmp(norm, "VELO-E0008") == 0) : (norm == "VELO-E0008"))) {
-#line 181 "src/main.vl"
+#line 213 "src/main.vl"
         return "VELO-E0008: Unknown field in struct literal\nA struct literal specifies a field name not present in the struct definition.";
     }
-#line 182 "src/main.vl"
+#line 214 "src/main.vl"
     if (((norm != NULL && "VELO-E0009" != NULL) ? (strcmp(norm, "VELO-E0009") == 0) : (norm == "VELO-E0009"))) {
-#line 182 "src/main.vl"
+#line 214 "src/main.vl"
         return "VELO-E0009: Struct literal is missing field with no default\nA struct literal omitted a required field without a default value.";
     }
-#line 183 "src/main.vl"
+#line 215 "src/main.vl"
     if (((norm != NULL && "VELO-E0010" != NULL) ? (strcmp(norm, "VELO-E0010") == 0) : (norm == "VELO-E0010"))) {
-#line 183 "src/main.vl"
+#line 215 "src/main.vl"
         return "VELO-E0010: Mismatched element type in array literal\nElements of an array literal evaluate to incompatible types without an explicit annotation.";
     }
-#line 184 "src/main.vl"
+#line 216 "src/main.vl"
     if (((norm != NULL && "VELO-E0011" != NULL) ? (strcmp(norm, "VELO-E0011") == 0) : (norm == "VELO-E0011"))) {
-#line 184 "src/main.vl"
+#line 216 "src/main.vl"
         return "VELO-E0011: Cannot infer kind type for variant\nA bare variant literal cannot be resolved to an unambiguous kind type.";
     }
-#line 185 "src/main.vl"
+#line 217 "src/main.vl"
     if (((norm != NULL && "VELO-E0012" != NULL) ? (strcmp(norm, "VELO-E0012") == 0) : (norm == "VELO-E0012"))) {
-#line 185 "src/main.vl"
+#line 217 "src/main.vl"
         return "VELO-E0012: Mismatched argument count in variant constructor\nA variant constructor was called with an incorrect number of arguments.";
     }
-#line 186 "src/main.vl"
+#line 218 "src/main.vl"
     if (((norm != NULL && "VELO-E0013" != NULL) ? (strcmp(norm, "VELO-E0013") == 0) : (norm == "VELO-E0013"))) {
-#line 186 "src/main.vl"
+#line 218 "src/main.vl"
         return "VELO-E0013: Tuple index out of bounds\nA tuple index exceeds the number of elements in the tuple.";
     }
-#line 187 "src/main.vl"
+#line 219 "src/main.vl"
     if (((norm != NULL && "VELO-E0014" != NULL) ? (strcmp(norm, "VELO-E0014") == 0) : (norm == "VELO-E0014"))) {
-#line 187 "src/main.vl"
+#line 219 "src/main.vl"
         return "VELO-E0014: Range loop step must be greater than zero\nA range loop step was zero or negative.";
     }
-#line 188 "src/main.vl"
+#line 220 "src/main.vl"
     if (((norm != NULL && "VELO-E0015" != NULL) ? (strcmp(norm, "VELO-E0015") == 0) : (norm == "VELO-E0015"))) {
-#line 188 "src/main.vl"
+#line 220 "src/main.vl"
         return "VELO-E0015: shelf elements cannot be null (use a @T pointer element)\nA shelf literal cannot store bare untyped null.";
     }
-#line 189 "src/main.vl"
+#line 221 "src/main.vl"
     if (((norm != NULL && "VELO-E0016" != NULL) ? (strcmp(norm, "VELO-E0016") == 0) : (norm == "VELO-E0016"))) {
-#line 189 "src/main.vl"
+#line 221 "src/main.vl"
         return "VELO-E0016: shelf[dyn] put: cannot box a void value\nCannot box an expression that evaluates to void.";
     }
-#line 190 "src/main.vl"
+#line 222 "src/main.vl"
     if (((norm != NULL && "VELO-E0017" != NULL) ? (strcmp(norm, "VELO-E0017") == 0) : (norm == "VELO-E0017"))) {
-#line 190 "src/main.vl"
+#line 222 "src/main.vl"
         return "VELO-E0017: map values cannot be null (use a @T pointer value)\nA map literal cannot store bare untyped null values.";
     }
-#line 191 "src/main.vl"
+#line 223 "src/main.vl"
     if (((norm != NULL && "VELO-E0018" != NULL) ? (strcmp(norm, "VELO-E0018") == 0) : (norm == "VELO-E0018"))) {
-#line 191 "src/main.vl"
+#line 223 "src/main.vl"
         return "VELO-E0018: cannot infer element type of empty shelf literal — annotate it\nAn empty shelf literal requires a type annotation.";
     }
-#line 192 "src/main.vl"
+#line 224 "src/main.vl"
     if (((norm != NULL && "VELO-E0019" != NULL) ? (strcmp(norm, "VELO-E0019") == 0) : (norm == "VELO-E0019"))) {
-#line 192 "src/main.vl"
+#line 224 "src/main.vl"
         return "VELO-E0019: cannot infer element type of empty ring literal — annotate it\nAn empty ring literal requires a type annotation.";
     }
-#line 193 "src/main.vl"
+#line 225 "src/main.vl"
     if (((norm != NULL && "VELO-E0020" != NULL) ? (strcmp(norm, "VELO-E0020") == 0) : (norm == "VELO-E0020"))) {
-#line 193 "src/main.vl"
+#line 225 "src/main.vl"
         return "VELO-E0020: Raw pointer dereference requires an 'unsafe { ... }' block\nWith --strict-safety, raw pointer dereferences must be enclosed in unsafe blocks.";
     }
-#line 194 "src/main.vl"
+#line 226 "src/main.vl"
     if (((norm != NULL && "VELO-E0021" != NULL) ? (strcmp(norm, "VELO-E0021") == 0) : (norm == "VELO-E0021"))) {
-#line 194 "src/main.vl"
+#line 226 "src/main.vl"
         return "VELO-E0021: Recursion depth limit exceeded\nThe compiler encountered nesting (in lexer tokens, parser AST, or type checker analysis) that exceeded the maximum recursion depth limit.";
     }
-#line 195 "src/main.vl"
+#line 227 "src/main.vl"
+    if (((norm != NULL && "VELO-E0022" != NULL) ? (strcmp(norm, "VELO-E0022") == 0) : (norm == "VELO-E0022"))) {
+#line 227 "src/main.vl"
+        return "VELO-E0022: Resource limit exceeded\nThe input exceeded resource ceilings (source file size > 16 MB, token count > 500,000, AST depth > 256, or error count > 50).";
+    }
+#line 228 "src/main.vl"
     return "Unknown error code. See docs/ERRORS.md for the full error registry.";
 }
 
-#line 199 "src/main.vl"
+#line 232 "src/main.vl"
 void diag(const char* code, int32_t line, int32_t col) {
-#line 200 "src/main.vl"
+#line 233 "src/main.vl"
     diag_stage("semantic", code, line, col);
 }
 
-#line 204 "src/main.vl"
+#line 237 "src/main.vl"
 void diag_stage(const char* stage, const char* code, int32_t line, int32_t col) {
-#line 205 "src/main.vl"
+#line 238 "src/main.vl"
     const char* msg = error_code_message(code);
-#line 206 "src/main.vl"
+#line 239 "src/main.vl"
     report_error(stage, line, col, velo_str_format("[%s] %s", (const char*)(code), (const char*)(msg)));
 }
 
-#line 210 "src/main.vl"
+#line 243 "src/main.vl"
 void diag_arg(const char* code, int32_t line, int32_t col, const char* arg) {
-#line 211 "src/main.vl"
+#line 244 "src/main.vl"
     diag_stage_arg("semantic", code, line, col, arg);
 }
 
-#line 214 "src/main.vl"
+#line 247 "src/main.vl"
 void diag_stage_arg(const char* stage, const char* code, int32_t line, int32_t col, const char* arg) {
-#line 215 "src/main.vl"
+#line 248 "src/main.vl"
     const char* msg = error_code_message(code);
-#line 216 "src/main.vl"
+#line 249 "src/main.vl"
     report_error(stage, line, col, velo_str_format("[%s] %s: %s", (const char*)(code), (const char*)(msg), (const char*)(arg)));
 }
 
-#line 234 "src/main.vl"
+#line 267 "src/main.vl"
 const char* pretty_line_text(const char* source, int32_t want_line) {
-#line 235 "src/main.vl"
+#line 268 "src/main.vl"
     size_t n = ((usize)strlen(source));
-#line 237 "src/main.vl"
+#line 270 "src/main.vl"
     size_t start = 0;
-#line 238 "src/main.vl"
+#line 271 "src/main.vl"
     int32_t line_no = 1;
-#line 239 "src/main.vl"
+#line 272 "src/main.vl"
     for (int32_t it = 0; (((line_no < want_line) && (start < n))); it++) {
-#line 240 "src/main.vl"
+#line 273 "src/main.vl"
         if (velo_cmp_eq_u_s(source[start], '\n')) {
-#line 241 "src/main.vl"
+#line 274 "src/main.vl"
             line_no += 1;
         }
-#line 243 "src/main.vl"
+#line 276 "src/main.vl"
         start += 1;
         __loop_cont_101: __attribute__((unused));
     }
     __loop_break_101: __attribute__((unused));
-#line 246 "src/main.vl"
+#line 279 "src/main.vl"
     size_t end = start;
-#line 247 "src/main.vl"
+#line 280 "src/main.vl"
     for (int32_t it = 0; ((end < n)); it++) {
-#line 248 "src/main.vl"
+#line 281 "src/main.vl"
         if (velo_cmp_eq_u_s(source[end], '\n')) {
-#line 249 "src/main.vl"
+#line 282 "src/main.vl"
             goto __loop_break_102;
         }
-#line 251 "src/main.vl"
+#line 284 "src/main.vl"
         end += 1;
         __loop_cont_102: __attribute__((unused));
     }
     __loop_break_102: __attribute__((unused));
-#line 253 "src/main.vl"
+#line 286 "src/main.vl"
     if (((end > start) && velo_cmp_eq_u_s(source[(end - 1)], '\r'))) {
-#line 254 "src/main.vl"
+#line 287 "src/main.vl"
         end -= 1;
     }
-#line 257 "src/main.vl"
+#line 290 "src/main.vl"
     size_t raw_len = (end - start);
-#line 258 "src/main.vl"
+#line 291 "src/main.vl"
     uint8_t* buf = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)((raw_len + 1))));
-#line 259 "src/main.vl"
+#line 292 "src/main.vl"
     size_t w = 0;
-#line 260 "src/main.vl"
+#line 293 "src/main.vl"
     size_t k = start;
-#line 261 "src/main.vl"
+#line 294 "src/main.vl"
     for (int32_t it = 0; ((k < end)); it++) {
-#line 262 "src/main.vl"
+#line 295 "src/main.vl"
         if (velo_cmp_eq_u_s(source[k], '\t')) {
-#line 263 "src/main.vl"
+#line 296 "src/main.vl"
             buf[w] = ' ';
         } else {
-#line 265 "src/main.vl"
+#line 298 "src/main.vl"
             buf[w] = source[k];
         }
-#line 267 "src/main.vl"
+#line 300 "src/main.vl"
         w += 1;
-#line 268 "src/main.vl"
+#line 301 "src/main.vl"
         k += 1;
         __loop_cont_103: __attribute__((unused));
     }
     __loop_break_103: __attribute__((unused));
-#line 270 "src/main.vl"
+#line 303 "src/main.vl"
     buf[w] = ((uint8_t)(0));
-#line 271 "src/main.vl"
+#line 304 "src/main.vl"
     return ((const char*)(buf));
 }
 
-#line 275 "src/main.vl"
+#line 308 "src/main.vl"
 size_t pretty_digit_count(int32_t n) {
-#line 276 "src/main.vl"
+#line 309 "src/main.vl"
     if ((n <= 0)) {
-#line 277 "src/main.vl"
+#line 310 "src/main.vl"
         return 1;
     }
-#line 279 "src/main.vl"
+#line 312 "src/main.vl"
     int32_t v = n;
-#line 280 "src/main.vl"
+#line 313 "src/main.vl"
     size_t c = 1;
-#line 281 "src/main.vl"
+#line 314 "src/main.vl"
     for (int32_t it = 0; ((v > 9)); it++) {
-#line 282 "src/main.vl"
+#line 315 "src/main.vl"
         v /= 10;
-#line 283 "src/main.vl"
+#line 316 "src/main.vl"
         c += 1;
         __loop_cont_104: __attribute__((unused));
     }
     __loop_break_104: __attribute__((unused));
-#line 285 "src/main.vl"
+#line 318 "src/main.vl"
     return c;
 }
 
-#line 289 "src/main.vl"
+#line 322 "src/main.vl"
 void pretty_pad_spaces(StringBuilder* sb, size_t count) {
-#line 290 "src/main.vl"
+#line 323 "src/main.vl"
     size_t i = 0;
-#line 291 "src/main.vl"
+#line 324 "src/main.vl"
     for (int32_t it = 0; ((i < count)); it++) {
-#line 292 "src/main.vl"
+#line 325 "src/main.vl"
         sb_append_char(sb, ' ');
-#line 293 "src/main.vl"
+#line 326 "src/main.vl"
         i += 1;
         __loop_cont_105: __attribute__((unused));
     }
     __loop_break_105: __attribute__((unused));
 }
 
-#line 300 "src/main.vl"
+#line 333 "src/main.vl"
 void pretty_set_color(bool enabled) {
-#line 301 "src/main.vl"
+#line 334 "src/main.vl"
     g_pretty_color = enabled;
 }
 
-#line 304 "src/main.vl"
+#line 337 "src/main.vl"
 bool pretty_get_color(void) {
-#line 305 "src/main.vl"
+#line 338 "src/main.vl"
     return g_pretty_color;
 }
 
-#line 311 "src/main.vl"
+#line 344 "src/main.vl"
 void pretty_render_block(const char* file, int32_t line, int32_t col, size_t length, const char* message, const char* sev, const char* source) {
-#line 312 "src/main.vl"
+#line 345 "src/main.vl"
     if (g_diag_collector_active) {
-#line 313 "src/main.vl"
+#line 346 "src/main.vl"
         return;
     }
-#line 315 "src/main.vl"
+#line 348 "src/main.vl"
     if (g_pretty_color) {
-#line 316 "src/main.vl"
+#line 349 "src/main.vl"
         if (((sev != NULL && "error" != NULL) ? (strcmp(sev, "error") == 0) : (sev == "error"))) {
-#line 317 "src/main.vl"
+#line 350 "src/main.vl"
             println_str(velo_str_format("%s:%lld:%lld: [31merror[0m: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(message)));
         } else
-#line 318 "src/main.vl"
+#line 351 "src/main.vl"
         if (((sev != NULL && "warning" != NULL) ? (strcmp(sev, "warning") == 0) : (sev == "warning"))) {
-#line 319 "src/main.vl"
+#line 352 "src/main.vl"
             println_str(velo_str_format("%s:%lld:%lld: [33mwarning[0m: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(message)));
         } else {
-#line 321 "src/main.vl"
+#line 354 "src/main.vl"
             println_str(velo_str_format("%s:%lld:%lld: %s: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(sev), (const char*)(message)));
         }
     } else {
-#line 324 "src/main.vl"
+#line 357 "src/main.vl"
         println_str(velo_str_format("%s:%lld:%lld: %s: %s", (const char*)(file), (long long)(line), (long long)(col), (const char*)(sev), (const char*)(message)));
     }
-#line 326 "src/main.vl"
+#line 359 "src/main.vl"
     const char* src_line = pretty_line_text(source, line);
-#line 327 "src/main.vl"
+#line 360 "src/main.vl"
     println_str(velo_str_format("%lld | %s", (long long)(line), (const char*)(src_line)));
-#line 328 "src/main.vl"
+#line 361 "src/main.vl"
     size_t w = pretty_digit_count(line);
-#line 329 "src/main.vl"
+#line 362 "src/main.vl"
     size_t span_len = 1;
-#line 330 "src/main.vl"
+#line 363 "src/main.vl"
     if (velo_cmp_gt_u_s(length, 1)) {
-#line 331 "src/main.vl"
+#line 364 "src/main.vl"
         span_len = length;
     }
-#line 333 "src/main.vl"
+#line 366 "src/main.vl"
     StringBuilder pad = create_sb((((w + ((size_t)(col))) + span_len) + 16));
-#line 334 "src/main.vl"
+#line 367 "src/main.vl"
     pretty_pad_spaces((&(pad)), (w + 1));
-#line 335 "src/main.vl"
+#line 368 "src/main.vl"
     sb_append_str((&(pad)), "| ");
-#line 336 "src/main.vl"
+#line 369 "src/main.vl"
     size_t caret_pad = 0;
-#line 337 "src/main.vl"
+#line 370 "src/main.vl"
     if ((col > 1)) {
-#line 338 "src/main.vl"
+#line 371 "src/main.vl"
         caret_pad = ((size_t)((col - 1)));
     }
-#line 340 "src/main.vl"
+#line 373 "src/main.vl"
     pretty_pad_spaces((&(pad)), caret_pad);
-#line 341 "src/main.vl"
+#line 374 "src/main.vl"
     if (g_pretty_color) {
-#line 342 "src/main.vl"
+#line 375 "src/main.vl"
         sb_append_str((&(pad)), "[1m");
     }
-#line 344 "src/main.vl"
+#line 377 "src/main.vl"
     size_t s = 0;
-#line 345 "src/main.vl"
+#line 378 "src/main.vl"
     for (int32_t it = 0; ((s < span_len)); it++) {
-#line 346 "src/main.vl"
+#line 379 "src/main.vl"
         sb_append_char((&(pad)), '^');
-#line 347 "src/main.vl"
+#line 380 "src/main.vl"
         s += 1;
         __loop_cont_106: __attribute__((unused));
     }
     __loop_break_106: __attribute__((unused));
-#line 349 "src/main.vl"
+#line 382 "src/main.vl"
     if (g_pretty_color) {
-#line 350 "src/main.vl"
+#line 383 "src/main.vl"
         sb_append_str((&(pad)), "[0m");
     }
-#line 352 "src/main.vl"
+#line 385 "src/main.vl"
     println_str(sb_to_string((&(pad))));
 }
 
@@ -59425,576 +59488,594 @@ void init_driver(CompilerDriver* d) {
     d->last_decl = NULL;
 #line 57 "src/main.vl"
     d->total_decls = 0;
+#line 58 "src/main.vl"
+    reset_diagnostic_counts();
 }
 
-#line 61 "src/main.vl"
-bool is_file_visited(CompilerDriver* d, const char* path) {
 #line 62 "src/main.vl"
-    VisitedFile* cur = d->first_visited;
+bool is_file_visited(CompilerDriver* d, const char* path) {
 #line 63 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
+    VisitedFile* cur = d->first_visited;
 #line 64 "src/main.vl"
-        if (((cur->path != NULL && path != NULL) ? (strcmp(cur->path, path) == 0) : (cur->path == path))) {
+    for (int32_t it = 0; ((cur != NULL)); it++) {
 #line 65 "src/main.vl"
+        if (((cur->path != NULL && path != NULL) ? (strcmp(cur->path, path) == 0) : (cur->path == path))) {
+#line 66 "src/main.vl"
             return true;
         }
-#line 67 "src/main.vl"
+#line 68 "src/main.vl"
         cur = cur->next;
         __loop_cont_663: __attribute__((unused));
     }
     __loop_break_663: __attribute__((unused));
-#line 69 "src/main.vl"
+#line 70 "src/main.vl"
     return false;
 }
 
-#line 73 "src/main.vl"
-void mark_file_visited(CompilerDriver* d, const char* path) {
 #line 74 "src/main.vl"
-    VisitedFile* vf = ((VisitedFile*)velo_mem_alloc(sizeof(VisitedFile), (size_t)(1)));
+void mark_file_visited(CompilerDriver* d, const char* path) {
 #line 75 "src/main.vl"
-    vf->path = path;
+    VisitedFile* vf = ((VisitedFile*)velo_mem_alloc(sizeof(VisitedFile), (size_t)(1)));
 #line 76 "src/main.vl"
-    vf->next = d->first_visited;
+    vf->path = path;
 #line 77 "src/main.vl"
+    vf->next = d->first_visited;
+#line 78 "src/main.vl"
     d->first_visited = vf;
 }
 
-#line 83 "src/main.vl"
-bool is_windows_platform(void) {
 #line 84 "src/main.vl"
+bool is_windows_platform(void) {
+#line 85 "src/main.vl"
     return velo_str_eq(target_platform(), PLATFORM_WINDOWS);
 }
 
-#line 88 "src/main.vl"
+#line 89 "src/main.vl"
 bool should_skip_platform_file(const char* path) {
-#line 89 "src/main.vl"
+#line 90 "src/main.vl"
     if ((path == NULL)) {
-#line 89 "src/main.vl"
+#line 90 "src/main.vl"
         return false;
     }
-#line 90 "src/main.vl"
+#line 91 "src/main.vl"
     return is_foreign_variant(path, target_platform());
 }
 
-#line 106 "src/main.vl"
+#line 107 "src/main.vl"
 const char* resolve_platform_source_path(const char* path) {
-#line 107 "src/main.vl"
+#line 108 "src/main.vl"
     if ((path == NULL)) {
-#line 107 "src/main.vl"
+#line 108 "src/main.vl"
         return NULL;
     }
-#line 108 "src/main.vl"
-    if (is_platform_variant(path)) {
-#line 108 "src/main.vl"
-        return path;
-    }
 #line 109 "src/main.vl"
+    if (is_platform_variant(path)) {
+#line 109 "src/main.vl"
+        return path;
+    }
+#line 110 "src/main.vl"
     const char* platform = target_platform();
-#line 110 "src/main.vl"
+#line 111 "src/main.vl"
     if (velo_cmp_eq_u_s(((usize)strlen(platform)), 0)) {
-#line 110 "src/main.vl"
+#line 111 "src/main.vl"
         return path;
     }
-#line 111 "src/main.vl"
+#line 112 "src/main.vl"
     if (fs_exists(path)) {
-#line 111 "src/main.vl"
+#line 112 "src/main.vl"
         return path;
     }
-#line 113 "src/main.vl"
+#line 114 "src/main.vl"
     const char* variant = existing_variant_path(path, platform);
-#line 114 "src/main.vl"
+#line 115 "src/main.vl"
     if (velo_cmp_gt_u_s(((usize)strlen(variant)), 0)) {
-#line 114 "src/main.vl"
+#line 115 "src/main.vl"
         return variant;
     }
-#line 116 "src/main.vl"
-    if (foreign_variant_exists(path, platform)) {
 #line 117 "src/main.vl"
-        const char* other = foreign_variant_name(path, platform);
+    if (foreign_variant_exists(path, platform)) {
 #line 118 "src/main.vl"
+        const char* other = foreign_variant_name(path, platform);
+#line 119 "src/main.vl"
         println_str(velo_str_format("[Velo Error] %s has no implementation for platform '%s' (only %s exists); this module cannot be built for the current target.", (const char*)(path), (const char*)(platform), (const char*)(other)));
     }
-#line 120 "src/main.vl"
+#line 121 "src/main.vl"
     return path;
 }
 
-#line 124 "src/main.vl"
+#line 125 "src/main.vl"
 bool is_std_module(const char* mod_path) {
-#line 125 "src/main.vl"
-    if ((mod_path == NULL)) {
-#line 125 "src/main.vl"
-        return false;
-    }
 #line 126 "src/main.vl"
-    size_t len = ((usize)strlen(mod_path));
-#line 127 "src/main.vl"
-    if (velo_cmp_lt_u_s(len, 5)) {
-#line 127 "src/main.vl"
+    if ((mod_path == NULL)) {
+#line 126 "src/main.vl"
         return false;
     }
+#line 127 "src/main.vl"
+    size_t len = ((usize)strlen(mod_path));
 #line 128 "src/main.vl"
+    if (velo_cmp_lt_u_s(len, 5)) {
+#line 128 "src/main.vl"
+        return false;
+    }
+#line 129 "src/main.vl"
     return (((velo_cmp_eq_u_s(mod_path[0], 's') && velo_cmp_eq_u_s(mod_path[1], 't')) && velo_cmp_eq_u_s(mod_path[2], 'd')) && velo_cmp_eq_u_s(mod_path[3], '.'));
 }
 
-#line 132 "src/main.vl"
+#line 133 "src/main.vl"
 const char* std_module_to_rel_path(const char* mod_path) {
-#line 133 "src/main.vl"
+#line 134 "src/main.vl"
     if ((mod_path == NULL)) {
-#line 133 "src/main.vl"
+#line 134 "src/main.vl"
         return NULL;
     }
-#line 134 "src/main.vl"
-    size_t plen = ((usize)strlen(mod_path));
 #line 135 "src/main.vl"
-    uint8_t* buf = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)((plen + 4))));
+    size_t plen = ((usize)strlen(mod_path));
 #line 136 "src/main.vl"
-    size_t i = 0;
+    uint8_t* buf = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)((plen + 4))));
 #line 137 "src/main.vl"
-    for (int32_t it = 0; ((i < plen)); it++) {
+    size_t i = 0;
 #line 138 "src/main.vl"
-        uint8_t c = mod_path[i];
+    for (int32_t it = 0; ((i < plen)); it++) {
 #line 139 "src/main.vl"
-        if (velo_cmp_eq_u_s(c, '.')) {
+        uint8_t c = mod_path[i];
 #line 140 "src/main.vl"
+        if (velo_cmp_eq_u_s(c, '.')) {
+#line 141 "src/main.vl"
             buf[i] = '/';
         } else {
-#line 142 "src/main.vl"
+#line 143 "src/main.vl"
             buf[i] = c;
         }
-#line 144 "src/main.vl"
+#line 145 "src/main.vl"
         i += 1;
         __loop_cont_664: __attribute__((unused));
     }
     __loop_break_664: __attribute__((unused));
-#line 146 "src/main.vl"
-    buf[plen] = '.';
 #line 147 "src/main.vl"
-    buf[(plen + 1)] = 'v';
+    buf[plen] = '.';
 #line 148 "src/main.vl"
-    buf[(plen + 2)] = 'l';
+    buf[(plen + 1)] = 'v';
 #line 149 "src/main.vl"
-    buf[(plen + 3)] = ((uint8_t)(0));
+    buf[(plen + 2)] = 'l';
 #line 150 "src/main.vl"
+    buf[(plen + 3)] = ((uint8_t)(0));
+#line 151 "src/main.vl"
     return ((const char*)(buf));
 }
 
-#line 154 "src/main.vl"
-const char* resolve_binary_relative_std(const char* rel_file) {
 #line 155 "src/main.vl"
+const char* resolve_binary_relative_std(const char* rel_file) {
+#line 156 "src/main.vl"
     const char* exe = velo_host_exe_path();
-#line 156 "src/main.vl"
+#line 157 "src/main.vl"
     if (((exe == NULL) || velo_cmp_eq_u_s(((usize)strlen(exe)), 0))) {
-#line 156 "src/main.vl"
+#line 157 "src/main.vl"
         return "";
     }
-#line 157 "src/main.vl"
-    const char* cur_dir = path_dirname_to_str(exe);
 #line 158 "src/main.vl"
-    size_t hops = 0;
+    const char* cur_dir = path_dirname_to_str(exe);
 #line 159 "src/main.vl"
-    for (int32_t it = 0; (((velo_cmp_lt_u_s(hops, 3) && (cur_dir != NULL)) && velo_cmp_gt_u_s(((usize)strlen(cur_dir)), 0))); it++) {
+    size_t hops = 0;
 #line 160 "src/main.vl"
+    for (int32_t it = 0; (((velo_cmp_lt_u_s(hops, 3) && (cur_dir != NULL)) && velo_cmp_gt_u_s(((usize)strlen(cur_dir)), 0))); it++) {
+#line 161 "src/main.vl"
         const char* cand = path_join_str(cur_dir, rel_file);
-#line 161 "src/main.vl"
+#line 162 "src/main.vl"
         if (file_or_variant_exists(cand)) {
-#line 161 "src/main.vl"
+#line 162 "src/main.vl"
             return cand;
         }
-#line 162 "src/main.vl"
-        cur_dir = path_dirname_to_str(cur_dir);
 #line 163 "src/main.vl"
+        cur_dir = path_dirname_to_str(cur_dir);
+#line 164 "src/main.vl"
         hops += 1;
         __loop_cont_665: __attribute__((unused));
     }
     __loop_break_665: __attribute__((unused));
-#line 165 "src/main.vl"
+#line 166 "src/main.vl"
     return "";
 }
 
-#line 169 "src/main.vl"
-const char* resolve_std_module_path(const char* dir, const char* mod_path) {
 #line 170 "src/main.vl"
-    const char* rel_file = std_module_to_rel_path(mod_path);
+const char* resolve_std_module_path(const char* dir, const char* mod_path) {
 #line 171 "src/main.vl"
+    const char* rel_file = std_module_to_rel_path(mod_path);
+#line 172 "src/main.vl"
     const char* p1 = path_join_str(dir, rel_file);
-#line 172 "src/main.vl"
+#line 173 "src/main.vl"
     if (file_or_variant_exists(p1)) {
-#line 172 "src/main.vl"
+#line 173 "src/main.vl"
         return p1;
     }
-#line 174 "src/main.vl"
+#line 175 "src/main.vl"
     const char* p2 = path_join_str(dir, path_join_str("..", rel_file));
-#line 175 "src/main.vl"
+#line 176 "src/main.vl"
     if (file_or_variant_exists(p2)) {
-#line 175 "src/main.vl"
+#line 176 "src/main.vl"
         return p2;
     }
-#line 177 "src/main.vl"
+#line 178 "src/main.vl"
     const char* p3 = path_join_str(dir, path_join_str("../..", rel_file));
-#line 178 "src/main.vl"
+#line 179 "src/main.vl"
     if (file_or_variant_exists(p3)) {
-#line 178 "src/main.vl"
+#line 179 "src/main.vl"
         return p3;
     }
-#line 180 "src/main.vl"
+#line 181 "src/main.vl"
     if (file_or_variant_exists(rel_file)) {
-#line 180 "src/main.vl"
+#line 181 "src/main.vl"
         return path_normalize_str(rel_file);
     }
-#line 183 "src/main.vl"
-    const char* env_std = velo_host_getenv("VELO_STD");
 #line 184 "src/main.vl"
-    if (velo_cmp_gt_u_s(((usize)strlen(env_std)), 0)) {
+    const char* env_std = velo_host_getenv("VELO_STD");
 #line 185 "src/main.vl"
+    if (velo_cmp_gt_u_s(((usize)strlen(env_std)), 0)) {
+#line 186 "src/main.vl"
         const char* p_env1 = path_join_str(env_std, rel_file);
-#line 186 "src/main.vl"
+#line 187 "src/main.vl"
         if (file_or_variant_exists(p_env1)) {
-#line 186 "src/main.vl"
+#line 187 "src/main.vl"
             return p_env1;
         }
-#line 187 "src/main.vl"
-        if (velo_cmp_gt_u_s(((usize)strlen(rel_file)), 4)) {
 #line 188 "src/main.vl"
-            const char* sub = copy_slice_to_string(rel_file, 4, (((usize)strlen(rel_file)) - 4));
+        if (velo_cmp_gt_u_s(((usize)strlen(rel_file)), 4)) {
 #line 189 "src/main.vl"
+            const char* sub = copy_slice_to_string(rel_file, 4, (((usize)strlen(rel_file)) - 4));
+#line 190 "src/main.vl"
             const char* p_env2 = path_join_str(env_std, sub);
-#line 190 "src/main.vl"
+#line 191 "src/main.vl"
             if (file_or_variant_exists(p_env2)) {
-#line 190 "src/main.vl"
+#line 191 "src/main.vl"
                 return p_env2;
             }
         }
     }
-#line 195 "src/main.vl"
+#line 196 "src/main.vl"
     const char* p_bin = resolve_binary_relative_std(rel_file);
-#line 196 "src/main.vl"
+#line 197 "src/main.vl"
     if (velo_cmp_gt_u_s(((usize)strlen(p_bin)), 0)) {
-#line 196 "src/main.vl"
+#line 197 "src/main.vl"
         return p_bin;
     }
-#line 199 "src/main.vl"
-    const char* env_home = velo_host_getenv("VELO_HOME");
 #line 200 "src/main.vl"
-    if (velo_cmp_gt_u_s(((usize)strlen(env_home)), 0)) {
+    const char* env_home = velo_host_getenv("VELO_HOME");
 #line 201 "src/main.vl"
+    if (velo_cmp_gt_u_s(((usize)strlen(env_home)), 0)) {
+#line 202 "src/main.vl"
         const char* p_home = path_join_str(env_home, rel_file);
-#line 202 "src/main.vl"
+#line 203 "src/main.vl"
         if (fs_exists(p_home)) {
-#line 202 "src/main.vl"
+#line 203 "src/main.vl"
             return p_home;
         }
     }
-#line 206 "src/main.vl"
-    const char* u_prof = velo_host_getenv("USERPROFILE");
 #line 207 "src/main.vl"
-    if (velo_cmp_gt_u_s(((usize)strlen(u_prof)), 0)) {
+    const char* u_prof = velo_host_getenv("USERPROFILE");
 #line 208 "src/main.vl"
+    if (velo_cmp_gt_u_s(((usize)strlen(u_prof)), 0)) {
+#line 209 "src/main.vl"
         const char* pu = path_join_str(u_prof, path_join_str(".velo", rel_file));
-#line 209 "src/main.vl"
+#line 210 "src/main.vl"
         if (fs_exists(pu)) {
-#line 209 "src/main.vl"
+#line 210 "src/main.vl"
             return pu;
         }
     }
-#line 213 "src/main.vl"
-    const char* h_prof = velo_host_getenv("HOME");
 #line 214 "src/main.vl"
-    if (velo_cmp_gt_u_s(((usize)strlen(h_prof)), 0)) {
+    const char* h_prof = velo_host_getenv("HOME");
 #line 215 "src/main.vl"
+    if (velo_cmp_gt_u_s(((usize)strlen(h_prof)), 0)) {
+#line 216 "src/main.vl"
         const char* ph = path_join_str(h_prof, path_join_str(".velo", rel_file));
-#line 216 "src/main.vl"
+#line 217 "src/main.vl"
         if (fs_exists(ph)) {
-#line 216 "src/main.vl"
+#line 217 "src/main.vl"
             return ph;
         }
     }
-#line 220 "src/main.vl"
+#line 221 "src/main.vl"
     const char* p_sys1 = path_join_str("/usr/local/share/velo", rel_file);
-#line 221 "src/main.vl"
+#line 222 "src/main.vl"
     if (fs_exists(p_sys1)) {
-#line 221 "src/main.vl"
+#line 222 "src/main.vl"
         return p_sys1;
     }
-#line 222 "src/main.vl"
+#line 223 "src/main.vl"
     const char* p_sys2 = path_join_str("/usr/share/velo", rel_file);
-#line 223 "src/main.vl"
+#line 224 "src/main.vl"
     if (fs_exists(p_sys2)) {
-#line 223 "src/main.vl"
+#line 224 "src/main.vl"
         return p_sys2;
     }
-#line 225 "src/main.vl"
+#line 226 "src/main.vl"
     return p1;
 }
 
-#line 229 "src/main.vl"
-void load_file_and_deps_ex(CompilerDriver* d, const char* raw_path, bool is_std) {
 #line 230 "src/main.vl"
-    if (should_skip_platform_file(raw_path)) {
+void load_file_and_deps_ex(CompilerDriver* d, const char* raw_path, bool is_std) {
 #line 231 "src/main.vl"
+    if (should_skip_platform_file(raw_path)) {
+#line 232 "src/main.vl"
         return;
     }
-#line 233 "src/main.vl"
-    const char* target_path = resolve_platform_source_path(raw_path);
 #line 234 "src/main.vl"
-    const char* file_path = path_normalize_str(target_path);
+    const char* target_path = resolve_platform_source_path(raw_path);
 #line 235 "src/main.vl"
-    if (is_file_visited(d, file_path)) {
+    const char* file_path = path_normalize_str(target_path);
 #line 236 "src/main.vl"
+    if (is_file_visited(d, file_path)) {
+#line 237 "src/main.vl"
         return;
     }
-#line 238 "src/main.vl"
+#line 239 "src/main.vl"
     mark_file_visited(d, file_path);
-#line 240 "src/main.vl"
-    if ((!fs_exists(file_path))) {
 #line 241 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] Source file does not exist: %s", (const char*)(file_path)));
+    if ((!fs_exists(file_path))) {
 #line 242 "src/main.vl"
-        d->error_count += 1;
+        println_str(velo_str_format("[Velo Error] Source file does not exist: %s", (const char*)(file_path)));
 #line 243 "src/main.vl"
+        d->error_count += 1;
+#line 244 "src/main.vl"
         return;
     }
-#line 246 "src/main.vl"
-    const char* source = fs_read_to_str(file_path);
 #line 247 "src/main.vl"
-    if ((source == NULL)) {
+    const char* source = fs_read_to_str(file_path);
 #line 248 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] Failed to read source file: %s", (const char*)(file_path)));
+    if ((source == NULL)) {
 #line 249 "src/main.vl"
-        d->error_count += 1;
+        println_str(velo_str_format("[Velo Error] Failed to read source file: %s", (const char*)(file_path)));
 #line 250 "src/main.vl"
+        d->error_count += 1;
+#line 251 "src/main.vl"
         return;
     }
-#line 254 "src/main.vl"
+#line 255 "src/main.vl"
     size_t slen = ((usize)strlen(source));
+#line 256 "src/main.vl"
+    if (velo_cmp_gt_u_s(slen, 16777216)) {
 #line 257 "src/main.vl"
-    Lexer lex = create_lexer(source, slen, (slen + 2));
+        report_error(file_path, 1, 1, "[VELO-E0022] Resource limit exceeded: source file exceeds maximum size of 16 MB");
 #line 258 "src/main.vl"
-    lex.file_path = file_path;
-#line 259 "src/main.vl"
-    tokenize((&(lex)));
-#line 260 "src/main.vl"
-    if (lex.had_error) {
-#line 260 "src/main.vl"
         d->error_count += 1;
-    }
-#line 262 "src/main.vl"
-    if (velo_cmp_gt_u_s(lex.dropped_count, 0)) {
-#line 263 "src/main.vl"
-        size_t dropped = lex.dropped_count;
-#line 264 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] %s: lexer token buffer too small; %llu tokens were truncated. Split this file into smaller modules.", (const char*)(file_path), (unsigned long long)(dropped)));
-#line 265 "src/main.vl"
-        d->error_count += 1;
-#line 266 "src/main.vl"
-#line 252 "src/main.vl"
+#line 258 "src/main.vl"
+#line 253 "src/main.vl"
         heap_free_str(source);
         return;
     }
-#line 269 "src/main.vl"
-    Parser p;
-#line 270 "src/main.vl"
-    init_parser((&(p)), file_path, source, lex.tokens, lex.token_count);
-#line 271 "src/main.vl"
-    ProgramNode* prog = parse_program((&(p)));
-#line 272 "src/main.vl"
-    if (p.had_error) {
-#line 273 "src/main.vl"
+#line 260 "src/main.vl"
+    size_t cap = (slen + 2);
+#line 261 "src/main.vl"
+    if (velo_cmp_gt_u_s(cap, 500000)) {
+#line 261 "src/main.vl"
+        cap = 500000;
+    }
+#line 262 "src/main.vl"
+    Lexer lex = create_lexer(source, slen, cap);
+#line 263 "src/main.vl"
+    lex.file_path = file_path;
+#line 264 "src/main.vl"
+    tokenize((&(lex)));
+#line 265 "src/main.vl"
+    if (lex.had_error) {
+#line 265 "src/main.vl"
         d->error_count += 1;
     }
+#line 267 "src/main.vl"
+    if (velo_cmp_gt_u_s(lex.dropped_count, 0)) {
+#line 268 "src/main.vl"
+        report_error(file_path, 1, 1, "[VELO-E0022] Resource limit exceeded: token count exceeds limit of 500,000 tokens");
+#line 269 "src/main.vl"
+        d->error_count += 1;
+#line 270 "src/main.vl"
+#line 253 "src/main.vl"
+        heap_free_str(source);
+        return;
+    }
+#line 273 "src/main.vl"
+    Parser p;
+#line 274 "src/main.vl"
+    init_parser((&(p)), file_path, source, lex.tokens, lex.token_count);
+#line 275 "src/main.vl"
+    ProgramNode* prog = parse_program((&(p)));
 #line 276 "src/main.vl"
-    const char* dir = path_dirname_to_str(file_path);
-#line 279 "src/main.vl"
-    StmtNode* cur = prog->first_decl;
+    if (p.had_error) {
+#line 277 "src/main.vl"
+        d->error_count += 1;
+    }
 #line 280 "src/main.vl"
-    for (int32_t it = 0; ((cur != NULL)); it++) {
-#line 281 "src/main.vl"
-        if ((cur->kind == DECL_USE)) {
-#line 282 "src/main.vl"
-            const char* mod_path = cur->module_path;
+    const char* dir = path_dirname_to_str(file_path);
 #line 283 "src/main.vl"
-            if ((!is_intrinsic_namespace(mod_path))) {
+    StmtNode* cur = prog->first_decl;
 #line 284 "src/main.vl"
-                const char* resolved_path = path_join_str(dir, mod_path);
+    for (int32_t it = 0; ((cur != NULL)); it++) {
 #line 285 "src/main.vl"
-                bool child_is_std = is_std;
+        if ((cur->kind == DECL_USE)) {
 #line 286 "src/main.vl"
-                if (is_std_module(mod_path)) {
+            const char* mod_path = cur->module_path;
 #line 287 "src/main.vl"
-                    resolved_path = resolve_std_module_path(dir, mod_path);
+            if ((!is_intrinsic_namespace(mod_path))) {
 #line 288 "src/main.vl"
+                const char* resolved_path = path_join_str(dir, mod_path);
+#line 289 "src/main.vl"
+                bool child_is_std = is_std;
+#line 290 "src/main.vl"
+                if (is_std_module(mod_path)) {
+#line 291 "src/main.vl"
+                    resolved_path = resolve_std_module_path(dir, mod_path);
+#line 292 "src/main.vl"
                     child_is_std = true;
                 }
-#line 290 "src/main.vl"
+#line 294 "src/main.vl"
                 cur->resolved_path = resolved_path;
-#line 291 "src/main.vl"
+#line 295 "src/main.vl"
                 load_file_and_deps_ex(d, resolved_path, child_is_std);
             }
         }
-#line 294 "src/main.vl"
+#line 298 "src/main.vl"
         cur = cur->next;
         __loop_cont_666: __attribute__((unused));
     }
     __loop_break_666: __attribute__((unused));
-#line 298 "src/main.vl"
+#line 302 "src/main.vl"
     StmtNode* decl = prog->first_decl;
-#line 299 "src/main.vl"
-    for (int32_t it = 0; ((decl != NULL)); it++) {
-#line 300 "src/main.vl"
-        StmtNode* nxt = decl->next;
-#line 301 "src/main.vl"
-        decl->next = NULL;
 #line 303 "src/main.vl"
-        bool skip = false;
+    for (int32_t it = 0; ((decl != NULL)); it++) {
 #line 304 "src/main.vl"
-        if (((decl->kind == DECL_USE) && is_intrinsic_namespace(decl->module_path))) {
+        StmtNode* nxt = decl->next;
 #line 305 "src/main.vl"
+        decl->next = NULL;
+#line 307 "src/main.vl"
+        bool skip = false;
+#line 308 "src/main.vl"
+        if (((decl->kind == DECL_USE) && is_intrinsic_namespace(decl->module_path))) {
+#line 309 "src/main.vl"
             skip = true;
         }
-#line 308 "src/main.vl"
+#line 312 "src/main.vl"
         if ((!skip)) {
-#line 309 "src/main.vl"
+#line 313 "src/main.vl"
             if ((is_std && (decl->kind != DECL_USE))) {
-#line 309 "src/main.vl"
+#line 313 "src/main.vl"
                 decl->module_path = "std";
             }
-#line 310 "src/main.vl"
+#line 314 "src/main.vl"
             if ((d->first_decl == NULL)) {
-#line 311 "src/main.vl"
+#line 315 "src/main.vl"
                 d->first_decl = decl;
-#line 312 "src/main.vl"
+#line 316 "src/main.vl"
                 d->last_decl = decl;
             } else {
-#line 314 "src/main.vl"
+#line 318 "src/main.vl"
                 d->last_decl->next = decl;
-#line 315 "src/main.vl"
+#line 319 "src/main.vl"
                 d->last_decl = decl;
             }
-#line 317 "src/main.vl"
+#line 321 "src/main.vl"
             d->total_decls += 1;
         }
-#line 320 "src/main.vl"
+#line 324 "src/main.vl"
         decl = nxt;
         __loop_cont_667: __attribute__((unused));
     }
     __loop_break_667: __attribute__((unused));
-#line 252 "src/main.vl"
+#line 253 "src/main.vl"
     heap_free_str(source);
 }
 
-#line 324 "src/main.vl"
+#line 328 "src/main.vl"
 void load_file_and_deps(CompilerDriver* d, const char* raw_path) {
-#line 324 "src/main.vl"
+#line 328 "src/main.vl"
     load_file_and_deps_ex(d, raw_path, false);
 }
 
-#line 327 "src/main.vl"
-ProgramNode* resolve_and_parse(CompilerDriver* d, const char* file_path) {
-#line 328 "src/main.vl"
-    load_file_and_deps_ex(d, file_path, false);
-#line 329 "src/main.vl"
-    if (velo_cmp_gt_u_s(d->error_count, 0)) {
-#line 329 "src/main.vl"
-        return NULL;
-    }
-#line 330 "src/main.vl"
-    if ((d->first_decl == NULL)) {
 #line 331 "src/main.vl"
-        report_error(file_path, 1, 1, "Source file contains no declarations");
+ProgramNode* resolve_and_parse(CompilerDriver* d, const char* file_path) {
 #line 332 "src/main.vl"
-        d->error_count += 1;
+    load_file_and_deps_ex(d, file_path, false);
+#line 333 "src/main.vl"
+    if (velo_cmp_gt_u_s(d->error_count, 0)) {
 #line 333 "src/main.vl"
         return NULL;
     }
+#line 334 "src/main.vl"
+    if ((d->first_decl == NULL)) {
 #line 335 "src/main.vl"
-    ProgramNode* prog = ((ProgramNode*)velo_mem_alloc(sizeof(ProgramNode), (size_t)(1)));
+        report_error(file_path, 1, 1, "Source file contains no declarations");
 #line 336 "src/main.vl"
-    prog->first_decl = d->first_decl;
+        d->error_count += 1;
 #line 337 "src/main.vl"
+        return NULL;
+    }
+#line 339 "src/main.vl"
+    ProgramNode* prog = ((ProgramNode*)velo_mem_alloc(sizeof(ProgramNode), (size_t)(1)));
+#line 340 "src/main.vl"
+    prog->first_decl = d->first_decl;
+#line 341 "src/main.vl"
     prog->decl_count = d->total_decls;
-#line 338 "src/main.vl"
+#line 342 "src/main.vl"
     return prog;
 }
 
-#line 345 "src/main.vl"
-const char* compile_source_to_c_all_opts(const char* source_path, bool unsafe_index, bool is_test, bool no_line_directives, bool strict_safety) {
-#line 346 "src/main.vl"
-    CompilerDriver d;
-#line 347 "src/main.vl"
-    init_driver((&(d)));
 #line 349 "src/main.vl"
-    ProgramNode* raw_prog = resolve_and_parse((&(d)), source_path);
+const char* compile_source_to_c_all_opts(const char* source_path, bool unsafe_index, bool is_test, bool no_line_directives, bool strict_safety) {
 #line 350 "src/main.vl"
-    if (((raw_prog == NULL) || velo_cmp_gt_u_s(d.error_count, 0))) {
+    CompilerDriver d;
 #line 351 "src/main.vl"
-        return NULL;
-    }
+    init_driver((&(d)));
+#line 353 "src/main.vl"
+    ProgramNode* raw_prog = resolve_and_parse((&(d)), source_path);
 #line 354 "src/main.vl"
+    if (((raw_prog == NULL) || velo_cmp_gt_u_s(d.error_count, 0))) {
+#line 355 "src/main.vl"
+        return NULL;
+    }
+#line 358 "src/main.vl"
     ProgramNode* prog = monomorphize_program(raw_prog);
-#line 356 "src/main.vl"
-    SymbolTable st;
-#line 357 "src/main.vl"
-    init_symbol_table((&(st)));
-#line 358 "src/main.vl"
-    st.unsafe_shelf_index = unsafe_index;
-#line 358 "src/main.vl"
-    st.unsafe_array_index = unsafe_index;
-#line 359 "src/main.vl"
-    st.is_test = is_test;
 #line 360 "src/main.vl"
-    st.no_line_directives = no_line_directives;
+    SymbolTable st;
 #line 361 "src/main.vl"
-    st.strict_safety = strict_safety;
+    init_symbol_table((&(st)));
 #line 362 "src/main.vl"
-    st.source_file = source_path;
+    st.unsafe_shelf_index = unsafe_index;
+#line 362 "src/main.vl"
+    st.unsafe_array_index = unsafe_index;
+#line 363 "src/main.vl"
+    st.is_test = is_test;
 #line 364 "src/main.vl"
-    bool sem_ok = check_program((&(st)), prog);
+    st.no_line_directives = no_line_directives;
 #line 365 "src/main.vl"
-    if (((!sem_ok) || velo_cmp_gt_u_s(st.error_count, 0))) {
+    st.strict_safety = strict_safety;
 #line 366 "src/main.vl"
+    st.source_file = source_path;
+#line 368 "src/main.vl"
+    bool sem_ok = check_program((&(st)), prog);
+#line 369 "src/main.vl"
+    if (((!sem_ok) || velo_cmp_gt_u_s(st.error_count, 0))) {
+#line 370 "src/main.vl"
         println_str(velo_str_format("[Velo Error] Semantic analysis failed with %llu errors.", (unsigned long long)(st.error_count)));
-#line 367 "src/main.vl"
+#line 371 "src/main.vl"
         return NULL;
     }
-#line 374 "src/main.vl"
+#line 378 "src/main.vl"
     const char* c_out = emit_translation_unit((&(st)), prog);
-#line 375 "src/main.vl"
+#line 379 "src/main.vl"
     if (velo_cmp_gt_u_s(st.error_count, 0)) {
-#line 376 "src/main.vl"
+#line 380 "src/main.vl"
         println_str(velo_str_format("[Velo Error] Code generation failed with %llu errors.", (unsigned long long)(st.error_count)));
-#line 377 "src/main.vl"
+#line 381 "src/main.vl"
         return NULL;
     }
-#line 379 "src/main.vl"
+#line 383 "src/main.vl"
     return c_out;
 }
 
-#line 382 "src/main.vl"
+#line 386 "src/main.vl"
 const char* compile_source_to_c_test_opts(const char* source_path, bool unsafe_index, bool is_test, bool no_line_directives) {
-#line 383 "src/main.vl"
+#line 386 "src/main.vl"
     return compile_source_to_c_all_opts(source_path, unsafe_index, is_test, no_line_directives, false);
 }
 
-#line 385 "src/main.vl"
+#line 387 "src/main.vl"
 const char* compile_source_to_c_test(const char* source_path, bool unsafe_index, bool is_test) {
-#line 386 "src/main.vl"
+#line 387 "src/main.vl"
     return compile_source_to_c_all_opts(source_path, unsafe_index, is_test, false, false);
 }
 
 #line 388 "src/main.vl"
 const char* compile_source_to_c(const char* source_path, bool unsafe_index) {
-#line 389 "src/main.vl"
+#line 388 "src/main.vl"
     return compile_source_to_c_all_opts(source_path, unsafe_index, false, false, false);
 }
 
-#line 391 "src/main.vl"
+#line 389 "src/main.vl"
 const char* compile_source_to_c_opts(const char* source_path, bool unsafe_index, bool no_line_directives) {
-#line 392 "src/main.vl"
+#line 389 "src/main.vl"
     return compile_source_to_c_all_opts(source_path, unsafe_index, false, no_line_directives, false);
 }
 
-#line 394 "src/main.vl"
+#line 390 "src/main.vl"
 const char* compile_source_to_c_strict(const char* source_path, bool unsafe_index, bool no_line_directives, bool strict_safety) {
-#line 395 "src/main.vl"
+#line 390 "src/main.vl"
     return compile_source_to_c_all_opts(source_path, unsafe_index, false, no_line_directives, strict_safety);
 }
 
