@@ -8,6 +8,7 @@ use std.fs
 use "../common/string_builder.vl"
 use "../common/utils.vl"
 use "../common/diagnostics.vl"
+use "../common/intrinsics.vl"
 use "../frontend/token.vl"
 use "../frontend/lexer.vl"
 use "../frontend/parser.vl"
@@ -139,7 +140,7 @@ act lsp_analyze_document(uri: string, text: string, version: i32) {
                     loop cur != null {
                         if cur.kind == DECL_USE {
                             let mod_path = cur.module_path
-                            if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" and mod_path != "sys.thread" and mod_path != "sys.math" and mod_path != "sys.time" and mod_path != "sys.os" and mod_path != "sys.simd" {
+                            if !is_intrinsic_namespace(mod_path) {
                                 mut resolved = path_join_str(dir, mod_path)
                                 if is_std_module(mod_path) {
                                     resolved = resolve_std_module_path(dir, mod_path)
@@ -158,7 +159,7 @@ act lsp_analyze_document(uri: string, text: string, version: i32) {
                         mut skip = false
                         if decl.kind == DECL_USE {
                             let mod_path = decl.module_path
-                            if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" and mod_path != "sys.thread" and mod_path != "sys.math" and mod_path != "sys.time" and mod_path != "sys.os" and mod_path != "sys.simd" {
+                            if !is_intrinsic_namespace(mod_path) {
                                 skip = true
                             }
                         }
@@ -197,4 +198,3 @@ act lsp_analyze_document(uri: string, text: string, version: i32) {
 
     lsp_publish_collected_diagnostics(uri, version)
 }
-

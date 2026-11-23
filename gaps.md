@@ -2948,13 +2948,32 @@ frozen second implementation in Python still gates the build.
 
 ## Tasks
 
-**80.1** Extract the intrinsic allowlist into one `std`-visible table
+**80.1 [COMPLETED] ✅** Extract the intrinsic allowlist into one `std`-visible table
 (`src/common/intrinsics.vl`: `intrinsic_namespaces() -> @string` and
 `intrinsic_members(ns) -> @string`) and make all five current sites call it.
 Test: `tests/test_intrinsic_allowlist_single_source.py` asserts each site
 imports the table (grep-level) and that adding a namespace in one place changes
 all consumers (behavioural: resolve `sys.newthing` and assert the same verdict
 from driver, LSP, and pretty-printer paths).
+
+- *Former Defect:*
+  The `sys.*` intrinsic allowlist was duplicated across five distinct sites (`src/backend/driver.vl:281`, `:302`, `src/lsp/analysis.vl:142`, `:161`, and `src/backend/pretty_recon.vl:65`), each hardcoding eight string comparisons (`"sys.io"`, `"sys.mem"`, `"sys.fs"`, `"sys.thread"`, `"sys.math"`, `"sys.time"`, `"sys.os"`, `"sys.simd"`). Adding or altering an intrinsic namespace required modifying 5 scattered sites with high risk of behavioral drift between the compiler driver, LSP analysis, and pretty stream reconstructor.
+- *Fix Applied:*
+  - Created single-source intrinsic catalog `src/common/intrinsics.vl` defining canonical functions:
+    - `intrinsic_namespaces() -> @string`: returns null-terminated array of canonical `sys.*` namespaces.
+    - `intrinsic_members(ns: string) -> @string`: returns null-terminated array of member function names per namespace.
+    - `is_intrinsic_namespace(ns: string) -> bool`: iterates table to determine intrinsic namespace status.
+    - `is_intrinsic_member(ns: string, member: string) -> bool`: validates membership against canonical table.
+  - Replaced all 5 hardcoded disjunctions across `src/backend/driver.vl`, `src/lsp/analysis.vl`, and `src/backend/pretty_recon.vl` with `is_intrinsic_namespace(...)`.
+  - Added test suite `tests/test_intrinsic_allowlist_single_source.py` asserting single-source imports, zero hardcoded `"sys.io"` strings in consumers, table structure, and unified file resolution behavior between driver and LSP.
+- *Residual Limitation:*
+  None. The intrinsic allowlist is unified in `src/common/intrinsics.vl`.
+- *Verification:*
+  - `python -m pytest tests/test_intrinsic_allowlist_single_source.py -v`: 6 passed in 0.17s.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -v`: 6 passed in 32.54s (Gen2 == Gen3 == `bootstrap.c` determinism verified).
+  - Grep verification: `grep -c "sys.io" src/backend/driver.vl src/lsp/analysis.vl src/backend/pretty_recon.vl` yields 0.
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`driver.vl` at 394).
+  - `python scripts/check_formatting.py`: all modified files formatted.
 
 **80.2** Replace `loop_var_c_type`'s string returns with a `CType` value
 (`{name, width, signed, needs_space}`) and a single `ctype_render`. Audit every

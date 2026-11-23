@@ -1,0 +1,152 @@
+// Single-source intrinsic namespace and member allowlist table (Task 80.1 / I80.1).
+use std.mem
+use std.str
+use "utils.vl"
+
+// Returns a null-terminated array of canonical intrinsic namespace names.
+act intrinsic_namespaces() -> @string {
+    mut list: @string = mem.alloc(@string, 9)
+    list[0] = "sys.io"
+    list[1] = "sys.mem"
+    list[2] = "sys.fs"
+    list[3] = "sys.thread"
+    list[4] = "sys.math"
+    list[5] = "sys.time"
+    list[6] = "sys.os"
+    list[7] = "sys.simd"
+    list[8] = null
+    return list
+}
+
+// Returns a null-terminated array of canonical intrinsic member names for a namespace, or null if unknown.
+act intrinsic_members(ns: string) -> @string {
+    if ns == null { return null }
+    if slice_eq_str(slice_from_str(ns), "sys.io") {
+        mut list: @string = mem.alloc(@string, 7)
+        list[0] = "print"
+        list[1] = "println"
+        list[2] = "print_str"
+        list[3] = "println_str"
+        list[4] = "fprint"
+        list[5] = "fprintln"
+        list[6] = null
+        return list
+    }
+    if slice_eq_str(slice_from_str(ns), "sys.mem") {
+        mut list: @string = mem.alloc(@string, 11)
+        list[0] = "alloc"
+        list[1] = "heap_alloc"
+        list[2] = "free"
+        list[3] = "realloc"
+        list[4] = "alloc_with"
+        list[5] = "current"
+        list[6] = "create_arena"
+        list[7] = "destroy_arena"
+        list[8] = "copy"
+        list[9] = "move"
+        list[10] = null
+        return list
+    }
+    if slice_eq_str(slice_from_str(ns), "sys.fs") {
+        mut list: @string = mem.alloc(@string, 11)
+        list[0] = "read_to_str"
+        list[1] = "write_str"
+        list[2] = "append_str"
+        list[3] = "exists"
+        list[4] = "remove"
+        list[5] = "create_dir"
+        list[6] = "remove_dir"
+        list[7] = "rename"
+        list[8] = "copy"
+        list[9] = "list_dir"
+        list[10] = null
+        return list
+    }
+    if slice_eq_str(slice_from_str(ns), "sys.thread") {
+        mut list: @string = mem.alloc(@string, 7)
+        list[0] = "spawn"
+        list[1] = "join"
+        list[2] = "mutex"
+        list[3] = "acquire"
+        list[4] = "release"
+        list[5] = "free"
+        list[6] = null
+        return list
+    }
+    if slice_eq_str(slice_from_str(ns), "sys.math") {
+        mut list: @string = mem.alloc(@string, 12)
+        list[0] = "sqrt"
+        list[1] = "sin"
+        list[2] = "cos"
+        list[3] = "tan"
+        list[4] = "pow"
+        list[5] = "log"
+        list[6] = "exp"
+        list[7] = "abs"
+        list[8] = "floor"
+        list[9] = "ceil"
+        list[10] = "round"
+        list[11] = null
+        return list
+    }
+    if slice_eq_str(slice_from_str(ns), "sys.time") {
+        mut list: @string = mem.alloc(@string, 4)
+        list[0] = "now_ms"
+        list[1] = "now_us"
+        list[2] = "sleep_ms"
+        list[3] = null
+        return list
+    }
+    if slice_eq_str(slice_from_str(ns), "sys.os") {
+        mut list: @string = mem.alloc(@string, 7)
+        list[0] = "system"
+        list[1] = "spawn"
+        list[2] = "get_env"
+        list[3] = "exit"
+        list[4] = "platform"
+        list[5] = "getpid"
+        list[6] = null
+        return list
+    }
+    if slice_eq_str(slice_from_str(ns), "sys.simd") {
+        mut list: @string = mem.alloc(@string, 7)
+        list[0] = "load"
+        list[1] = "store"
+        list[2] = "add"
+        list[3] = "sub"
+        list[4] = "mul"
+        list[5] = "div"
+        list[6] = null
+        return list
+    }
+    return null
+}
+
+// Checks if a module path is one of the standard built-in sys.* intrinsic namespaces.
+act is_intrinsic_namespace(ns: string) -> bool {
+    if ns == null { return false }
+    let list = intrinsic_namespaces()
+    mut i: usize = 0
+    loop list[i] != null {
+        if slice_eq_str(slice_from_str(ns), list[i]) {
+            return true
+        }
+        i += 1
+    }
+    return false
+}
+
+// Checks if a given member belongs to an intrinsic namespace.
+act is_intrinsic_member(ns: string, member: string) -> bool {
+    if ns == null or member == null { return false }
+    let list = intrinsic_members(ns)
+    if list == null { return false }
+    mut i: usize = 0
+    loop list[i] != null {
+        if slice_eq_str(slice_from_str(member), list[i]) {
+            return true
+        }
+        i += 1
+    }
+    return false
+}

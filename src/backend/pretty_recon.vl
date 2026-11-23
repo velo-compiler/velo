@@ -14,6 +14,7 @@ use std.mem
 use std.fs
 use "../common/utils.vl"
 use "../common/diagnostics.vl"
+use "../common/intrinsics.vl"
 
 // Returns true if s starts with prefix (byte-by-byte comparison).
 act recon_starts_with(s: string, prefix: string) -> bool {
@@ -62,7 +63,7 @@ act recon_rfind(s: string, needle: string) -> i32 {
 
 // Returns true if mod_name is a standard built-in sys.* module that does not load external files.
 act recon_is_builtin_mod(mod_name: string) -> bool {
-    return mod_name == "sys.io" or mod_name == "sys.mem" or mod_name == "sys.fs" or mod_name == "sys.thread" or mod_name == "sys.math" or mod_name == "sys.time" or mod_name == "sys.os" or mod_name == "sys.simd"
+    return is_intrinsic_namespace(mod_name)
 }
 
 // Scans source text to check whether it contains any non-sys module imports.

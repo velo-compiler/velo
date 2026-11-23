@@ -23,6 +23,7 @@ use "../analysis/type_checker.vl"
 use "../analysis/type_check_program.vl"
 use "../common/string_builder.vl"
 use "../common/utils.vl"
+use "../common/intrinsics.vl"
 use "codegen_expr.vl"
 use "codegen_stmt.vl"
 use "codegen_c.vl"
@@ -278,7 +279,7 @@ act load_file_and_deps_ex(d: @CompilerDriver, raw_path: string, is_std: bool) {
     loop cur != null {
         if cur.kind == DECL_USE {
             let mod_path = cur.module_path
-            if mod_path != "sys.io" and mod_path != "sys.mem" and mod_path != "sys.fs" and mod_path != "sys.thread" and mod_path != "sys.math" and mod_path != "sys.time" and mod_path != "sys.os" and mod_path != "sys.simd" {
+            if !is_intrinsic_namespace(mod_path) {
                 mut resolved_path = path_join_str(dir, mod_path)
                 mut child_is_std = is_std
                 if is_std_module(mod_path) {
@@ -299,7 +300,7 @@ act load_file_and_deps_ex(d: @CompilerDriver, raw_path: string, is_std: bool) {
         decl.next = null
 
         mut skip = false
-        if decl.kind == DECL_USE and (decl.module_path == "sys.io" or decl.module_path == "sys.mem" or decl.module_path == "sys.fs" or decl.module_path == "sys.thread" or decl.module_path == "sys.math" or decl.module_path == "sys.time" or decl.module_path == "sys.os" or decl.module_path == "sys.simd") {
+        if decl.kind == DECL_USE and is_intrinsic_namespace(decl.module_path) {
             skip = true
         }
 
