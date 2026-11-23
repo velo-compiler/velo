@@ -1,0 +1,15 @@
+{
+  "runs": [
+    {
+      "commit": "b0dfc5e4c91e54600538a573150f28197c583b0c",
+      "short_commit": "b0dfc5e4",
+      "timestamp": "2026-11-23T12:32:08.521460+00:00",
+      "clean_sec": 17.18,
+      "incremental_sec": 0.35,
+      "total_loc": 30821,
+      "clean_loc_per_sec": 1793.9,
+      "incremental_loc_per_sec": 88109.2,
+      "platform": "Windows AMD64"
+    }
+  ]
+}

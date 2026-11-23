@@ -3185,9 +3185,27 @@ Section 1's positioning).
     - JSON parse: `active=7000, age=234000, score=622000` (1000 iters), `active=35000, age=1170000, score=3110000` (5000 iters).
     - HTTP server: verified 200 OK and expected payloads on `/plaintext` and `/json` for Velo, C, Rust, Go, Node.
 
-**81.3** Add `benchmark/compile_speed.py`: measure clean and incremental
+**81.3 [COMPLETED] ✅** Add `benchmark/compile_speed.py`: measure clean and incremental
 `velo build src/main.vl` time, track it per commit, and fail CI on a >20%
 regression.
+
+- *Former Defect:*
+  The self-hosted compiler had no compile-time speed measurement, historical tracking, or regression gating. While the project claimed "high velocity", compiling `src/main.vl` was never benchmarked across clean or incremental runs, allowing compile-time performance regressions to pass undetected in CI.
+- *Fix Applied:*
+  - Implemented `benchmark/compile_speed.py`:
+    - Measures both clean build duration (with `.velo_cache` purged) and incremental build duration (reusing content-hashed artifacts).
+    - Inspects source codebase size (140 files, 30,821 lines in `src/`) and computes throughput in LOC/s for clean and incremental builds.
+    - Persists historical timing and commit metadata to `benchmark/compile_speed_history.json`.
+    - Enforces automated regression gating via `--check-regression` and `--threshold <pct>` (default: 20%), failing with exit code 1 if clean build duration regresses by more than the threshold relative to the baseline commit.
+  - Added CLI options: `--source`, `--history-file`, `--runs`, `--check-regression`, `--threshold`, `--baseline-sec`, `--baseline-commit`, `--no-record`, and `--quick`.
+  - Added regression test suite `tests/test_compile_speed.py` validating CLI arguments, threshold evaluation logic, regression gating failure on slowdown, and JSON history serialization.
+  - Updated `benchmark/README.md` documenting compilation speed monitoring.
+- *Residual Limitation:*
+  Dedicated peak RSS memory profiling across all three platforms belongs to Task 81.4.
+- *Verification:*
+  - `python benchmark/compile_speed.py --quick`: clean build = 17.18s (1,793.9 LOC/s), incremental build = 0.35s (88,109.2 LOC/s, 49.1x cache speedup ratio). Recorded initial baseline to `benchmark/compile_speed_history.json`.
+  - `python -m pytest tests/test_compile_speed.py -v`: 5 passed in 0.83s.
+  - Verified regression gate: exited 0 on mild slowdown (+10.0% <= 20.0%), exited 1 with `[REGRESSION FAILURE]` on severe slowdown (+40.0% > 20.0%).
 
 **81.4** Add `benchmark/memory.py` using per-workload peak RSS on all three
 platforms; replace `README.md`'s "< 64KB" claim with measured numbers or delete

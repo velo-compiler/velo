@@ -64,3 +64,21 @@ The runner compiles all targets, executes the suite, prints real-time metrics to
 - [`benchmark/RESULTS.md`](file:///c:/projects/easylang/benchmark/RESULTS.md)
 
 The generated report includes complete host machine specifications (OS, CPU model and core count, total RAM) and exact toolchain versions for Velo, GCC, rustc, go, and node.
+
+---
+
+## ⏱️ Compiler Compile Speed Monitor (`benchmark/compile_speed.py`)
+
+Tracks clean and incremental compile time for `velo build src/main.vl` per commit and enforces a regression gate:
+
+```powershell
+# Measure clean and incremental build times and record to history:
+python benchmark/compile_speed.py
+
+# Check for regressions in CI (fails with exit code 1 on >20% slowdown):
+python benchmark/compile_speed.py --check-regression --threshold 20.0
+```
+
+- **Clean Build**: Purges `.velo_cache` to measure full compiler pipeline duration and throughput (LOC/s).
+- **Incremental Build**: Exercises the content-hashed build cache (`.velo_cache`).
+- **Historical Tracking**: Records metrics to [`benchmark/compile_speed_history.json`](file:///c:/projects/easylang/benchmark/compile_speed_history.json).
