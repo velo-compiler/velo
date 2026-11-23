@@ -3645,9 +3645,23 @@ test that tokenizes a fixture with both the grammar and the compiler lexer.
   - `bin\velo.exe check tests/fixtures/grammar_conformance.vl` (exit 0, check passed).
   - `python scripts/count_lines.py` (all compiler source files <= 400 lines).
 
-**84.2** Add `.github/ISSUE_TEMPLATE/bug.md` (with a "minimal `.vl` repro" and
+**84.2 [COMPLETED] ✅** Add `.github/ISSUE_TEMPLATE/bug.md` (with a "minimal `.vl` repro" and
 `velo version` field), `feature.md`, and `PULL_REQUEST_TEMPLATE.md` referencing
 the Phase 45-69 task contract.
+
+- *Former Defect:*
+  The repository lacked standardized GitHub issue templates (`.github/ISSUE_TEMPLATE/bug.md`, `feature.md`) and a pull request template (`.github/PULL_REQUEST_TEMPLATE.md`). Bug reports often arrived without minimal reproduction snippets or exact compiler versions, and pull requests lacked structured checklists enforcing the Phase 45-69 Task Execution Contract (unit-of-work scoping, `gaps.md` 4-part audit trail, triple-bootstrap determinism gate, UTF-8 without BOM encoding, and 400-line modular file limits).
+- *Fix Applied:*
+  - Added `.github/ISSUE_TEMPLATE/bug.md` featuring mandatory `velo version` diagnostic prompt, environment details, structured minimal `.vl` reproduction snippet block, steps to reproduce, and expected vs actual diagnostic output.
+  - Added `.github/ISSUE_TEMPLATE/feature.md` prompting for problem motivation, proposed Velo syntax with code snippets, runtime/memory tier specification (Zone arena vs heap shelf), zero-GC compliance, alternatives considered, and 400-line modular design adherence.
+  - Added `.github/ISSUE_TEMPLATE/config.yml` disabling blank issues and linking documentation and architecture roadmap (`gaps.md`).
+  - Added `.github/PULL_REQUEST_TEMPLATE.md` encoding the Phase 45-69 Task Execution Contract into an actionable contributor checklist: unit of work, conventional commit style, `gaps.md` audit trail (Former Defect, Fix Applied, Residual Limitation, Verification), regression tests, compiler triple-bootstrap determinism verification (`check_determinism.py` and `test_bootstrap_snapshot.py`), UTF-8 without BOM enforcement, and 400-line ceiling (`python scripts/count_lines.py`).
+  - Implemented regression test suite `tests/test_issue_and_pr_templates.py` asserting structural validity, required fields, and contract compliance across all templates.
+- *Residual Limitation:*
+  GitHub templates guide human contributors and automated bots via GitHub's Web and API interfaces, but cannot run client-side pre-commit git checks for local offline commits (local enforcement is handled by `scripts/` and pytest suites).
+- *Verification:*
+  - `python -m pytest tests/test_issue_and_pr_templates.py -v` (4 passed in 0.07s).
+  - Verified Markdown rendering, YAML front matter, and code block formatting.
 
 **84.3** Add `GOVERNANCE.md`: who decides, how a breaking change is approved,
 what "1.0" means, and the deprecation policy (minimum two minor versions).

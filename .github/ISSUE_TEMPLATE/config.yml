@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Velo Documentation
+    url: https://github.com/velo-lang/velo#readme
+    about: Please read the Velo documentation and specification before opening an issue.
+  - name: Architecture & Roadmap
+    url: https://github.com/velo-lang/velo/blob/master/gaps.md
+    about: Consult gaps.md for the active architectural registry and completed phases.
