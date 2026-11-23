@@ -74299,83 +74299,111 @@ bool need_space_between(FmtToken* prev, FmtToken* curr, FmtToken* pprev) {
 #line 78 "src/main.vl"
     if (((((ptext != NULL && "@" != NULL) ? (strcmp(ptext, "@") == 0) : (ptext == "@")) || ((ptext != NULL && "?" != NULL) ? (strcmp(ptext, "?") == 0) : (ptext == "?"))) || ((ptext != NULL && "!" != NULL) ? (strcmp(ptext, "!") == 0) : (ptext == "!")))) {
 #line 79 "src/main.vl"
-        return false;
-    }
+        if (((((ptext != NULL && "@" != NULL) ? (strcmp(ptext, "@") == 0) : (ptext == "@")) && (pprev != NULL)) && ((pprev->text != NULL && "." != NULL) ? (strcmp(pprev->text, ".") == 0) : (pprev->text == ".")))) {
+#line 80 "src/main.vl"
+            if ((is_binary_operator_str(ctext) || ((ctext != NULL && "{" != NULL) ? (strcmp(ctext, "{") == 0) : (ctext == "{")))) {
 #line 81 "src/main.vl"
-    if ((((ptext != NULL && "-" != NULL) ? (strcmp(ptext, "-") == 0) : (ptext == "-")) && is_unary_prefix_token(pprev, "-"))) {
-#line 82 "src/main.vl"
+                return true;
+            }
+        }
+#line 84 "src/main.vl"
         return false;
     }
 #line 86 "src/main.vl"
-    if (((ctext != NULL && "(" != NULL) ? (strcmp(ctext, "(") == 0) : (ctext == "("))) {
+    if ((((ptext != NULL && "-" != NULL) ? (strcmp(ptext, "-") == 0) : (ptext == "-")) && is_unary_prefix_token(pprev, "-"))) {
 #line 87 "src/main.vl"
+        return false;
+    }
+#line 91 "src/main.vl"
+    if (((ctext != NULL && "#" != NULL) ? (strcmp(ctext, "#") == 0) : (ctext == "#"))) {
+#line 92 "src/main.vl"
+        return true;
+    }
+#line 96 "src/main.vl"
+    if (((ctext != NULL && "(" != NULL) ? (strcmp(ctext, "(") == 0) : (ctext == "("))) {
+#line 97 "src/main.vl"
         if (((pkind == FMT_TOK_KEYWORD) && ((((((ptext != NULL && "if" != NULL) ? (strcmp(ptext, "if") == 0) : (ptext == "if")) || ((ptext != NULL && "loop" != NULL) ? (strcmp(ptext, "loop") == 0) : (ptext == "loop"))) || ((ptext != NULL && "return" != NULL) ? (strcmp(ptext, "return") == 0) : (ptext == "return"))) || ((ptext != NULL && "on" != NULL) ? (strcmp(ptext, "on") == 0) : (ptext == "on"))) || ((ptext != NULL && "as" != NULL) ? (strcmp(ptext, "as") == 0) : (ptext == "as"))))) {
-#line 88 "src/main.vl"
+#line 98 "src/main.vl"
             return true;
         }
-#line 90 "src/main.vl"
-        if ((((pkind == FMT_TOK_IDENT) || ((ptext != NULL && ")" != NULL) ? (strcmp(ptext, ")") == 0) : (ptext == ")"))) || ((ptext != NULL && "]" != NULL) ? (strcmp(ptext, "]") == 0) : (ptext == "]")))) {
-#line 91 "src/main.vl"
-            return false;
-        }
-#line 93 "src/main.vl"
-        return true;
-    }
-#line 95 "src/main.vl"
-    if (((ptext != NULL && "(" != NULL) ? (strcmp(ptext, "(") == 0) : (ptext == "("))) {
-#line 96 "src/main.vl"
-        return false;
-    }
 #line 100 "src/main.vl"
-    if (((ctext != NULL && "[" != NULL) ? (strcmp(ctext, "[") == 0) : (ctext == "["))) {
+        if (((((((pkind == FMT_TOK_IDENT) || ((ptext != NULL && ")" != NULL) ? (strcmp(ptext, ")") == 0) : (ptext == ")"))) || ((ptext != NULL && "]" != NULL) ? (strcmp(ptext, "]") == 0) : (ptext == "]"))) || ((ptext != NULL && "(" != NULL) ? (strcmp(ptext, "(") == 0) : (ptext == "("))) || ((ptext != NULL && "act" != NULL) ? (strcmp(ptext, "act") == 0) : (ptext == "act"))) || ((ptext != NULL && "test" != NULL) ? (strcmp(ptext, "test") == 0) : (ptext == "test")))) {
 #line 101 "src/main.vl"
-        if ((((pkind == FMT_TOK_IDENT) || ((ptext != NULL && ")" != NULL) ? (strcmp(ptext, ")") == 0) : (ptext == ")"))) || ((ptext != NULL && "]" != NULL) ? (strcmp(ptext, "]") == 0) : (ptext == "]")))) {
-#line 102 "src/main.vl"
             return false;
         }
+#line 103 "src/main.vl"
+        if (((pprev != NULL) && ((pprev->text != NULL && "." != NULL) ? (strcmp(pprev->text, ".") == 0) : (pprev->text == ".")))) {
 #line 104 "src/main.vl"
+            return false;
+        }
+#line 106 "src/main.vl"
         return true;
     }
-#line 106 "src/main.vl"
-    if (((ptext != NULL && "[" != NULL) ? (strcmp(ptext, "[") == 0) : (ptext == "["))) {
-#line 107 "src/main.vl"
+#line 108 "src/main.vl"
+    if (((ptext != NULL && "(" != NULL) ? (strcmp(ptext, "(") == 0) : (ptext == "("))) {
+#line 109 "src/main.vl"
         return false;
     }
-#line 111 "src/main.vl"
-    if (((ctext != NULL && "{" != NULL) ? (strcmp(ctext, "{") == 0) : (ctext == "{"))) {
-#line 112 "src/main.vl"
-        return true;
-    }
+#line 113 "src/main.vl"
+    if (((ctext != NULL && "[" != NULL) ? (strcmp(ctext, "[") == 0) : (ctext == "["))) {
 #line 114 "src/main.vl"
-    if (((ptext != NULL && "}" != NULL) ? (strcmp(ptext, "}") == 0) : (ptext == "}"))) {
+        if ((((((((pkind == FMT_TOK_IDENT) || ((ptext != NULL && ")" != NULL) ? (strcmp(ptext, ")") == 0) : (ptext == ")"))) || ((ptext != NULL && "]" != NULL) ? (strcmp(ptext, "]") == 0) : (ptext == "]"))) || ((ptext != NULL && "shelf" != NULL) ? (strcmp(ptext, "shelf") == 0) : (ptext == "shelf"))) || ((ptext != NULL && "map" != NULL) ? (strcmp(ptext, "map") == 0) : (ptext == "map"))) || ((ptext != NULL && "ring" != NULL) ? (strcmp(ptext, "ring") == 0) : (ptext == "ring"))) || ((ptext != NULL && "data" != NULL) ? (strcmp(ptext, "data") == 0) : (ptext == "data")))) {
 #line 115 "src/main.vl"
-        return true;
-    }
-#line 119 "src/main.vl"
-    if ((is_binary_operator_str(ctext) || is_binary_operator_str(ptext))) {
+            return false;
+        }
+#line 117 "src/main.vl"
+        if (((pprev != NULL) && ((pprev->text != NULL && "." != NULL) ? (strcmp(pprev->text, ".") == 0) : (pprev->text == ".")))) {
+#line 118 "src/main.vl"
+            return false;
+        }
 #line 120 "src/main.vl"
         return true;
     }
-#line 124 "src/main.vl"
-    if (((pkind == FMT_TOK_KEYWORD) || (ckind == FMT_TOK_KEYWORD))) {
-#line 125 "src/main.vl"
+#line 122 "src/main.vl"
+    if (((ptext != NULL && "[" != NULL) ? (strcmp(ptext, "[") == 0) : (ptext == "["))) {
+#line 123 "src/main.vl"
+        return false;
+    }
+#line 127 "src/main.vl"
+    if (((ctext != NULL && "{" != NULL) ? (strcmp(ctext, "{") == 0) : (ctext == "{"))) {
+#line 128 "src/main.vl"
         return true;
     }
-#line 129 "src/main.vl"
-    if (((ckind == FMT_TOK_COMMENT_LINE) || (ckind == FMT_TOK_COMMENT_BLOCK))) {
 #line 130 "src/main.vl"
-        return true;
+    if (((ptext != NULL && "{" != NULL) ? (strcmp(ptext, "{") == 0) : (ptext == "{"))) {
+#line 131 "src/main.vl"
+        return ((ctext != NULL && "}" != NULL) ? (strcmp(ctext, "}") != 0) : (ctext != "}"));
     }
+#line 133 "src/main.vl"
+    if (((ptext != NULL && "}" != NULL) ? (strcmp(ptext, "}") == 0) : (ptext == "}"))) {
 #line 134 "src/main.vl"
-    bool p_is_lit = (((((pkind == FMT_TOK_IDENT) || (pkind == FMT_TOK_NUMBER)) || (pkind == FMT_TOK_STRING)) || (pkind == FMT_TOK_CHAR)) || (pkind == FMT_TOK_RAW_STRING));
-#line 135 "src/main.vl"
-    bool c_is_lit = (((((ckind == FMT_TOK_IDENT) || (ckind == FMT_TOK_NUMBER)) || (ckind == FMT_TOK_STRING)) || (ckind == FMT_TOK_CHAR)) || (ckind == FMT_TOK_RAW_STRING));
-#line 136 "src/main.vl"
-    if ((p_is_lit && c_is_lit)) {
-#line 137 "src/main.vl"
         return true;
     }
-#line 140 "src/main.vl"
+#line 138 "src/main.vl"
+    if ((is_binary_operator_str(ctext) || is_binary_operator_str(ptext))) {
+#line 139 "src/main.vl"
+        return true;
+    }
+#line 143 "src/main.vl"
+    if (((pkind == FMT_TOK_KEYWORD) || (ckind == FMT_TOK_KEYWORD))) {
+#line 144 "src/main.vl"
+        return true;
+    }
+#line 148 "src/main.vl"
+    if (((ckind == FMT_TOK_COMMENT_LINE) || (ckind == FMT_TOK_COMMENT_BLOCK))) {
+#line 149 "src/main.vl"
+        return true;
+    }
+#line 153 "src/main.vl"
+    bool p_is_lit = (((((pkind == FMT_TOK_IDENT) || (pkind == FMT_TOK_NUMBER)) || (pkind == FMT_TOK_STRING)) || (pkind == FMT_TOK_CHAR)) || (pkind == FMT_TOK_RAW_STRING));
+#line 154 "src/main.vl"
+    bool c_is_lit = (((((ckind == FMT_TOK_IDENT) || (ckind == FMT_TOK_NUMBER)) || (ckind == FMT_TOK_STRING)) || (ckind == FMT_TOK_CHAR)) || (ckind == FMT_TOK_RAW_STRING));
+#line 155 "src/main.vl"
+    if ((p_is_lit && c_is_lit)) {
+#line 156 "src/main.vl"
+        return true;
+    }
+#line 159 "src/main.vl"
     return false;
 }
 
@@ -74643,118 +74671,124 @@ void print_fmt_diff(const char* path, const char* original, const char* formatte
 #line 141 "src/main.vl"
             println_str(velo_str_format("  Diff at line %lld:", (long long)(line)));
 #line 142 "src/main.vl"
-            println_str(velo_str_format("  - %s", (const char*)(o_line)));
+            if (((o_line != NULL && f_line != NULL) ? (strcmp(o_line, f_line) == 0) : (o_line == f_line))) {
 #line 143 "src/main.vl"
-            println_str(velo_str_format("  + %s", (const char*)(f_line)));
-#line 144 "src/main.vl"
+                println_str("  - line ending mismatch (CRLF vs LF)");
+            } else {
+#line 145 "src/main.vl"
+                println_str(velo_str_format("  - %s", (const char*)(o_line)));
+#line 146 "src/main.vl"
+                println_str(velo_str_format("  + %s", (const char*)(f_line)));
+            }
+#line 148 "src/main.vl"
             return;
         }
-#line 146 "src/main.vl"
+#line 150 "src/main.vl"
         if (velo_cmp_eq_u_s(oc, '\n')) {
-#line 146 "src/main.vl"
+#line 150 "src/main.vl"
             line += 1;
         }
-#line 147 "src/main.vl"
+#line 151 "src/main.vl"
         o_idx += 1;
-#line 148 "src/main.vl"
+#line 152 "src/main.vl"
         f_idx += 1;
         __loop_cont_865: __attribute__((unused));
     }
     __loop_break_865: __attribute__((unused));
-#line 150 "src/main.vl"
+#line 154 "src/main.vl"
     if (((o_idx < olen) || (f_idx < flen))) {
-#line 151 "src/main.vl"
+#line 155 "src/main.vl"
         println_str(velo_str_format("  Diff at line %lld: trailing whitespace or empty line mismatch", (long long)(line)));
     }
 }
 
-#line 156 "src/main.vl"
+#line 160 "src/main.vl"
 int32_t format_file(const char* file_path, bool check_mode) {
-#line 157 "src/main.vl"
-    if ((!fs_exists(file_path))) {
-#line 158 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] File not found: %s", (const char*)(file_path)));
-#line 159 "src/main.vl"
-        return 1;
-    }
 #line 161 "src/main.vl"
-    const char* content = fs_read_to_str(file_path);
+    if ((!fs_exists(file_path))) {
 #line 162 "src/main.vl"
-    if ((content == NULL)) {
+        println_str(velo_str_format("[Velo Error] File not found: %s", (const char*)(file_path)));
 #line 163 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] Failed to read file: %s", (const char*)(file_path)));
-#line 164 "src/main.vl"
         return 1;
     }
+#line 165 "src/main.vl"
+    const char* content = fs_read_to_str(file_path);
 #line 166 "src/main.vl"
-    const char* formatted = format_source(content);
+    if ((content == NULL)) {
 #line 167 "src/main.vl"
-    if (((content != NULL && formatted != NULL) ? (strcmp(content, formatted) == 0) : (content == formatted))) {
+        println_str(velo_str_format("[Velo Error] Failed to read file: %s", (const char*)(file_path)));
 #line 168 "src/main.vl"
-        return 0;
+        return 1;
     }
 #line 170 "src/main.vl"
-    if (check_mode) {
+    const char* formatted = format_source(content);
 #line 171 "src/main.vl"
-        print_fmt_diff(file_path, content, formatted);
+    if (((content != NULL && formatted != NULL) ? (strcmp(content, formatted) == 0) : (content == formatted))) {
 #line 172 "src/main.vl"
-        return 1;
+        return 0;
     }
 #line 174 "src/main.vl"
-    bool ok = fs_write_str(file_path, formatted);
+    if (check_mode) {
 #line 175 "src/main.vl"
-    if ((!ok)) {
+        print_fmt_diff(file_path, content, formatted);
 #line 176 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] Failed to write formatted file: %s", (const char*)(file_path)));
-#line 177 "src/main.vl"
         return 1;
     }
+#line 178 "src/main.vl"
+    bool ok = fs_write_str(file_path, formatted);
 #line 179 "src/main.vl"
-    println_str(velo_str_format("[Velo fmt] Formatted: %s", (const char*)(file_path)));
+    if ((!ok)) {
 #line 180 "src/main.vl"
+        println_str(velo_str_format("[Velo Error] Failed to write formatted file: %s", (const char*)(file_path)));
+#line 181 "src/main.vl"
+        return 1;
+    }
+#line 183 "src/main.vl"
+    println_str(velo_str_format("[Velo fmt] Formatted: %s", (const char*)(file_path)));
+#line 184 "src/main.vl"
     return 0;
 }
 
-#line 184 "src/main.vl"
-int32_t format_directory(const char* dir_path, bool check_mode) {
-#line 185 "src/main.vl"
-    DirIterator dir_it = fs_dir_open(dir_path);
-#line 186 "src/main.vl"
-    if ((dir_it.h_find == DIR_INVALID_HANDLE)) {
-#line 187 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] Failed to open directory: %s", (const char*)(dir_path)));
 #line 188 "src/main.vl"
+int32_t format_directory(const char* dir_path, bool check_mode) {
+#line 189 "src/main.vl"
+    DirIterator dir_it = fs_dir_open(dir_path);
+#line 190 "src/main.vl"
+    if ((dir_it.h_find == DIR_INVALID_HANDLE)) {
+#line 191 "src/main.vl"
+        println_str(velo_str_format("[Velo Error] Failed to open directory: %s", (const char*)(dir_path)));
+#line 192 "src/main.vl"
         return 1;
     }
-#line 190 "src/main.vl"
-    int32_t had_unformatted = 0;
-#line 191 "src/main.vl"
-    for (int32_t it = 0; (fs_dir_next((&(dir_it)))); it++) {
-#line 192 "src/main.vl"
-        DirEntry* entry = fs_dir_entry((&(dir_it)));
-#line 193 "src/main.vl"
-        const char* name = ((const char*)(entry->name));
 #line 194 "src/main.vl"
-        if (((((((name != NULL && "." != NULL) ? (strcmp(name, ".") != 0) : (name != ".")) && ((name != NULL && ".." != NULL) ? (strcmp(name, "..") != 0) : (name != ".."))) && ((name != NULL && ".git" != NULL) ? (strcmp(name, ".git") != 0) : (name != ".git"))) && ((name != NULL && ".velo_cache" != NULL) ? (strcmp(name, ".velo_cache") != 0) : (name != ".velo_cache"))) && ((name != NULL && "bin" != NULL) ? (strcmp(name, "bin") != 0) : (name != "bin")))) {
+    int32_t had_unformatted = 0;
 #line 195 "src/main.vl"
-            const char* full_path = path_join_str(dir_path, name);
+    for (int32_t it = 0; (fs_dir_next((&(dir_it)))); it++) {
 #line 196 "src/main.vl"
-            if (entry->is_dir) {
+        DirEntry* entry = fs_dir_entry((&(dir_it)));
 #line 197 "src/main.vl"
+        const char* name = ((const char*)(entry->name));
+#line 198 "src/main.vl"
+        if (((((((name != NULL && "." != NULL) ? (strcmp(name, ".") != 0) : (name != ".")) && ((name != NULL && ".." != NULL) ? (strcmp(name, "..") != 0) : (name != ".."))) && ((name != NULL && ".git" != NULL) ? (strcmp(name, ".git") != 0) : (name != ".git"))) && ((name != NULL && ".velo_cache" != NULL) ? (strcmp(name, ".velo_cache") != 0) : (name != ".velo_cache"))) && ((name != NULL && "bin" != NULL) ? (strcmp(name, "bin") != 0) : (name != "bin")))) {
+#line 199 "src/main.vl"
+            const char* full_path = path_join_str(dir_path, name);
+#line 200 "src/main.vl"
+            if (entry->is_dir) {
+#line 201 "src/main.vl"
                 int32_t sub_rc = format_directory(full_path, check_mode);
-#line 198 "src/main.vl"
+#line 202 "src/main.vl"
                 if ((sub_rc != 0)) {
-#line 198 "src/main.vl"
+#line 202 "src/main.vl"
                     had_unformatted = 1;
                 }
             } else
-#line 199 "src/main.vl"
+#line 203 "src/main.vl"
             if ((entry->is_file && velo_str_ends_with(name, ".vl"))) {
-#line 200 "src/main.vl"
+#line 204 "src/main.vl"
                 int32_t file_rc = format_file(full_path, check_mode);
-#line 201 "src/main.vl"
+#line 205 "src/main.vl"
                 if ((file_rc != 0)) {
-#line 201 "src/main.vl"
+#line 205 "src/main.vl"
                     had_unformatted = 1;
                 }
             }
@@ -74762,87 +74796,87 @@ int32_t format_directory(const char* dir_path, bool check_mode) {
         __loop_cont_870: __attribute__((unused));
     }
     __loop_break_870: __attribute__((unused));
-#line 205 "src/main.vl"
+#line 209 "src/main.vl"
     fs_dir_close((&(dir_it)));
-#line 206 "src/main.vl"
+#line 210 "src/main.vl"
     return had_unformatted;
 }
 
-#line 210 "src/main.vl"
-int32_t handle_fmt_cmd(int32_t argc, const char** argv) {
-#line 211 "src/main.vl"
-    bool check_mode = false;
-#line 212 "src/main.vl"
-    const char* target_path = "";
-#line 213 "src/main.vl"
-    int32_t i = 2;
 #line 214 "src/main.vl"
-    for (int32_t it = 0; ((i < argc)); it++) {
+int32_t handle_fmt_cmd(int32_t argc, const char** argv) {
 #line 215 "src/main.vl"
-        const char* arg = argv[i];
+    bool check_mode = false;
 #line 216 "src/main.vl"
-        if (((arg != NULL && "--check" != NULL) ? (strcmp(arg, "--check") == 0) : (arg == "--check"))) {
+    const char* target_path = "";
 #line 217 "src/main.vl"
+    int32_t i = 2;
+#line 218 "src/main.vl"
+    for (int32_t it = 0; ((i < argc)); it++) {
+#line 219 "src/main.vl"
+        const char* arg = argv[i];
+#line 220 "src/main.vl"
+        if (((arg != NULL && "--check" != NULL) ? (strcmp(arg, "--check") == 0) : (arg == "--check"))) {
+#line 221 "src/main.vl"
             check_mode = true;
         } else
-#line 218 "src/main.vl"
+#line 222 "src/main.vl"
         if ((((arg != NULL && "--write" != NULL) ? (strcmp(arg, "--write") == 0) : (arg == "--write")) || ((arg != NULL && "-w" != NULL) ? (strcmp(arg, "-w") == 0) : (arg == "-w")))) {
         } else
-#line 220 "src/main.vl"
-        if ((((arg != NULL && "--help" != NULL) ? (strcmp(arg, "--help") == 0) : (arg == "--help")) || ((arg != NULL && "-h" != NULL) ? (strcmp(arg, "-h") == 0) : (arg == "-h")))) {
-#line 221 "src/main.vl"
-            println_str("Usage: velo fmt [path] [--check]");
-#line 222 "src/main.vl"
-            println_str("Formats Velo source files with canonical indentation and spacing.");
-#line 223 "src/main.vl"
-            println_str("Options:");
 #line 224 "src/main.vl"
-            println_str("  --check    Verify formatting without modifying files (exits 1 if unformatted)");
+        if ((((arg != NULL && "--help" != NULL) ? (strcmp(arg, "--help") == 0) : (arg == "--help")) || ((arg != NULL && "-h" != NULL) ? (strcmp(arg, "-h") == 0) : (arg == "-h")))) {
 #line 225 "src/main.vl"
+            println_str("Usage: velo fmt [path] [--check]");
+#line 226 "src/main.vl"
+            println_str("Formats Velo source files with canonical indentation and spacing.");
+#line 227 "src/main.vl"
+            println_str("Options:");
+#line 228 "src/main.vl"
+            println_str("  --check    Verify formatting without modifying files (exits 1 if unformatted)");
+#line 229 "src/main.vl"
             return 0;
         } else
-#line 226 "src/main.vl"
+#line 230 "src/main.vl"
         if (velo_cmp_eq_u_s(((usize)strlen(target_path)), 0)) {
-#line 227 "src/main.vl"
+#line 231 "src/main.vl"
             target_path = arg;
         }
-#line 229 "src/main.vl"
+#line 233 "src/main.vl"
         i += 1;
         __loop_cont_871: __attribute__((unused));
     }
     __loop_break_871: __attribute__((unused));
-#line 231 "src/main.vl"
+#line 235 "src/main.vl"
     if (velo_cmp_eq_u_s(((usize)strlen(target_path)), 0)) {
-#line 232 "src/main.vl"
+#line 236 "src/main.vl"
         target_path = ".";
     }
-#line 234 "src/main.vl"
+#line 238 "src/main.vl"
     if (fs_is_dir(target_path)) {
-#line 235 "src/main.vl"
+#line 239 "src/main.vl"
         int32_t rc = format_directory(target_path, check_mode);
-#line 236 "src/main.vl"
+#line 240 "src/main.vl"
         if (((rc == 0) && check_mode)) {
-#line 237 "src/main.vl"
+#line 241 "src/main.vl"
             println_str("[Velo fmt] All files properly formatted.");
         }
-#line 239 "src/main.vl"
+#line 243 "src/main.vl"
         return rc;
     }
-#line 241 "src/main.vl"
+#line 245 "src/main.vl"
     if (fs_is_file(target_path)) {
-#line 242 "src/main.vl"
+#line 246 "src/main.vl"
         int32_t rc = format_file(target_path, check_mode);
-#line 243 "src/main.vl"
+#line 247 "src/main.vl"
         if (((rc == 0) && check_mode)) {
-#line 244 "src/main.vl"
+#line 248 "src/main.vl"
             println_str(velo_str_format("[Velo fmt] File is properly formatted: %s", (const char*)(target_path)));
         }
-#line 246 "src/main.vl"
+#line 250 "src/main.vl"
         return rc;
     }
-#line 248 "src/main.vl"
+#line 252 "src/main.vl"
     println_str(velo_str_format("[Velo Error] Path not found: %s", (const char*)(target_path)));
-#line 249 "src/main.vl"
+#line 253 "src/main.vl"
     return 1;
 }
 

@@ -1,0 +1,52 @@
+#!/bin/sh
+# Velo pre-commit hook: enforces canonical formatting via `velo fmt --check`.
+#
+# To install this hook for git in this repository:
+#   git config core.hooksPath scripts/hooks
+# Or copy/symlink to .git/hooks/pre-commit.
+
+set -e
+
+# Find the Velo compiler binary
+VELO_BIN=""
+if [ -n "$VELO_BIN_OVERRIDE" ] && [ -x "$VELO_BIN_OVERRIDE" ]; then
+    VELO_BIN="$VELO_BIN_OVERRIDE"
+elif [ -f "bin/velo.exe" ]; then
+    VELO_BIN="bin/velo.exe"
+elif [ -f "bin/velo" ]; then
+    VELO_BIN="bin/velo"
+elif command -v velo >/dev/null 2>&1; then
+    VELO_BIN="velo"
+fi
+
+# Locate staged .vl source files (Added, Copied, Modified)
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.vl$' || true)
+
+if [ -z "$STAGED_FILES" ]; then
+    exit 0
+fi
+
+if [ -z "$VELO_BIN" ]; then
+    echo "[Velo pre-commit] Warning: Velo binary not found (run scripts/bootstrap.bat or scripts/bootstrap.sh)."
+    echo "[Velo pre-commit] Skipping format check."
+    exit 0
+fi
+
+FAILED=0
+
+for file in $STAGED_FILES; do
+    if [ -f "$file" ]; then
+        if ! "$VELO_BIN" fmt "$file" --check; then
+            FAILED=1
+        fi
+    fi
+done
+
+if [ "$FAILED" -ne 0 ]; then
+    echo ""
+    echo "[Velo pre-commit] ERROR: Staged Velo source files are not properly formatted."
+    echo "[Velo pre-commit] Run 'velo fmt <file>' to format files before committing, then 'git add'."
+    exit 1
+fi
+
+exit 0

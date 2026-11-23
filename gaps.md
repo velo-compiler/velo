@@ -2830,8 +2830,26 @@ source lines for a sample program.
   - Combined suite: `python -m pytest tests/test_debug_line_mapping.py tests/test_repl.py tests/test_content_hashed_cache.py tests/test_error_registry.py tests/test_fallback_diagnostics.py -q`: 57 passed in 15.96s.
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`codegen_decl.vl` at 377, `test_gen.vl` at 140, `codegen_line.vl` at 36).
 
-**79.6** Add `velo fmt --check` to CI and a pre-commit hook script in
+**79.6 [COMPLETED] ✅** Add `velo fmt --check` to CI and a pre-commit hook script in
 `scripts/hooks/`.
+
+- *Former Defect:*
+  Although `velo fmt` existed in the toolchain (`src/tooling/formatter.vl`), there was no CI enforcement of code formatting (`velo fmt --check`) and no pre-commit hook in `scripts/hooks/` to prevent developers from committing unformatted Velo files. Furthermore, `formatter_rules.vl` contained several spacing bugs that mangled valid code: dropping leading space inside single-line blocks and struct literals (`Point {x:` instead of `Point { x:`), improperly inserting spaces before indexing brackets for keyword-named members (`r.data [0]`), collection types (`shelf [i32]`), function types (`act (i32)`), stripping space around binary operators following postfix dereferences (`ptr.@= 42`), and failing to distinguish CRLF vs LF line endings cleanly in diff output.
+- *Fix Applied:*
+  - Refined lexical spacing rules in `src/tooling/formatter_rules.vl` to preserve single-line `{ ... }` internal spacing, handle postfix dereference `@` before binary operators and braces, omit spaces before `[` for collections (`shelf`, `map`, `ring`, `data`), omit spaces before `(` for `act(...)` and `test`, preserve space before struct/data attributes (`#align`, `#packed`), and prevent extraneous space in nested parentheses `((...))`.
+  - Updated `src/tooling/formatter.vl` diff reporter to cleanly diagnose `line ending mismatch (CRLF vs LF)`.
+  - Created executable git pre-commit hooks `scripts/hooks/pre-commit` (POSIX shell) and `scripts/hooks/pre-commit.bat` (Windows cmd) that inspect staged `.vl` files via `git diff --cached --name-only --diff-filter=ACM` and enforce `velo fmt --check`, blocking unformatted commits with actionable error diagnostics.
+  - Added cross-platform runner script `scripts/check_formatting.py` adhering to the repository encoding contract, supporting `--staged`, `--changed`, and explicit paths.
+  - Wired formatting verification steps (`velo fmt --check`) into GitHub Actions CI workflows (`.github/workflows/ci.yml`) under the `linux` and `windows-gcc` job matrices.
+  - Added test coverage in `tests/test_formatter.py` validating spacing rules idempotency, pre-commit hook file structure, and `check_formatting.py` CLI exit codes.
+- *Residual Limitation:*
+  Pre-commit hooks must be activated locally by developers via standard git configuration (`git config core.hooksPath scripts/hooks`).
+- *Verification:*
+  - `python -m pytest tests/test_formatter.py -v`: 10 passed in 0.52s.
+  - `python -m pytest tests/test_ci_matrix.py tests/test_ci_evidence.py -v`: 19 passed, 1 xfailed in 5.67s.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -v`: 6 passed in 32.16s (Gen2 == Gen3 == `bootstrap.c` determinism verified).
+  - Combined suite: `python -m pytest tests/test_formatter.py tests/test_ci_matrix.py tests/test_debug_line_mapping.py tests/test_repl.py tests/test_content_hashed_cache.py tests/test_error_registry.py tests/test_fallback_diagnostics.py -q`: 82 passed in 21.92s.
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`formatter.vl` at 254, `formatter_rules.vl` at 160).
 
 **79.7** Add a profiler hook: `--profile` that emits `-pg` (GCC/Clang) or
 `/PROFILE` guidance, plus a documented `perf`/`Instruments` workflow in

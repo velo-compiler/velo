@@ -64,6 +64,10 @@ jobs:
         run: |
           python3 scripts/check_determinism.py
 
+      - name: Verify code formatting (velo fmt --check)
+        run: |
+          python3 scripts/check_formatting.py --changed
+
       - name: Run package and dependency graph test suite
         run: |
           python3 -m pytest tests/test_pkg_semver.py tests/test_pkg_tree_verify.py tests/test_pkg_install_fetches.py tests/test_pkg_publish.py tests/test_pkg_registry.py tests/test_pkg_resolve.py tests/test_pkg_security.py -q
@@ -113,6 +117,10 @@ jobs:
         run: |
           python3 scripts/check_determinism.py
 
+      - name: Verify code formatting (velo fmt --check)
+        run: |
+          python3 scripts/check_formatting.py --changed
+
       - name: Run test suite
         run: |
           python3 -m pytest tests -q
@@ -153,6 +161,10 @@ jobs:
       - name: Verify bootstrap determinism
         run: |
           python3 scripts/check_determinism.py
+
+      - name: Verify code formatting (velo fmt --check)
+        run: |
+          python3 scripts/check_formatting.py --changed
 
       - name: Run test suite
         run: |
@@ -202,6 +214,10 @@ jobs:
       - name: Verify bootstrap determinism
         run: |
           python scripts/check_determinism.py
+
+      - name: Verify code formatting (velo fmt --check)
+        run: |
+          python scripts/check_formatting.py --changed
 
       - name: Run test suite
         run: |
@@ -301,6 +317,10 @@ jobs:
       - name: Verify bootstrap determinism
         run: |
           python3 scripts/check_determinism.py
+
+      - name: Verify code formatting (velo fmt --check)
+        run: |
+          python3 scripts/check_formatting.py --changed
 
       # The gate runs under git, which is initialized regardless, so it diffs
       # the filesystem (catches new and empty directories) and git status

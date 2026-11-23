@@ -1,6 +1,7 @@
 import unittest
 import subprocess
 import os
+import sys
 import shutil
 from pathlib import Path
 from conftest import velo_exe
@@ -167,6 +168,84 @@ class TestVeloFormatter(unittest.TestCase):
         res = subprocess.run([str(self.velo_exe), "run", str(test_file)], capture_output=True, text=True, encoding="utf-8", errors="replace")
         self.assertEqual(res.returncode, 0, f"velo run failed: {res.stderr}")
         self.assertIn("formatted sum: 42", res.stdout)
+
+    def test_fmt_spacing_rules(self):
+        test_file = self.cache_dir / "spacing_test.vl"
+        sample_code = (
+            "data Point {\n"
+            "    x: i32\n"
+            "    y: i32\n"
+            "}\n"
+            "\n"
+            "data Vec4 #align(16) {\n"
+            "    x: f32\n"
+            "}\n"
+            "\n"
+            "act process(r: @Point, p: @i32) -> i32 {\n"
+            "    if r == null { return Point { x: 0, y: 0 }.x }\n"
+            "    let val = r.data[0]\n"
+            "    let s: shelf[i32] = shelf[1, 2]\n"
+            "    let nested = ((val + 10) * 2)\n"
+            "    p.@ = 42\n"
+            "    return val + nested\n"
+            "}\n"
+        )
+        test_file.write_text(sample_code, encoding="utf-8")
+
+        # Format once
+        res = subprocess.run([str(self.velo_exe), "fmt", str(test_file)], capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(res.returncode, 0)
+        formatted = test_file.read_text(encoding="utf-8")
+
+        self.assertIn("Point { x: 0, y: 0 }", formatted)
+        self.assertIn("data Vec4 #align(16)", formatted)
+        self.assertIn("r.data[0]", formatted)
+        self.assertIn("shelf[i32] = shelf[1, 2]", formatted)
+        self.assertIn("p.@ = 42", formatted)
+        self.assertIn("((val + 10) * 2)", formatted)
+
+        # Verify --check passes
+        res_check = subprocess.run([str(self.velo_exe), "fmt", str(test_file), "--check"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(res_check.returncode, 0)
+
+    def test_pre_commit_hook_files_exist(self):
+        hook_sh = self.root_dir / "scripts" / "hooks" / "pre-commit"
+        hook_bat = self.root_dir / "scripts" / "hooks" / "pre-commit.bat"
+        check_py = self.root_dir / "scripts" / "check_formatting.py"
+
+        self.assertTrue(hook_sh.exists(), "scripts/hooks/pre-commit must exist")
+        self.assertTrue(hook_bat.exists(), "scripts/hooks/pre-commit.bat must exist")
+        self.assertTrue(check_py.exists(), "scripts/check_formatting.py must exist")
+
+        content = hook_sh.read_text(encoding="utf-8")
+        self.assertTrue(content.startswith("#!/bin/sh"), "pre-commit must have #!/bin/sh shebang")
+        self.assertIn("velo", content)
+        self.assertIn("fmt", content)
+        self.assertIn("--check", content)
+
+    def test_check_formatting_script(self):
+        check_py = self.root_dir / "scripts" / "check_formatting.py"
+
+        # Help flag
+        res_help = subprocess.run([sys.executable, str(check_py), "--help"], capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(res_help.returncode, 0)
+        self.assertIn("--staged", res_help.stdout)
+
+        # Check explicitly formatted file
+        test_file = self.cache_dir / "clean.vl"
+        test_file.write_text("act hello() -> i32 {\n    return 0\n}\n", encoding="utf-8", newline="\n")
+
+        res_clean = subprocess.run([sys.executable, str(check_py), str(test_file)], capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(res_clean.returncode, 0)
+        self.assertIn("properly formatted", res_clean.stdout)
+
+        # Check unformatted file
+        bad_file = self.cache_dir / "bad.vl"
+        bad_file.write_text("act bad()->i32{return 1}\n", encoding="utf-8", newline="\n")
+
+        res_bad = subprocess.run([sys.executable, str(check_py), str(bad_file)], capture_output=True, text=True, encoding="utf-8", errors="replace")
+        self.assertEqual(res_bad.returncode, 1)
+        self.assertIn("unformatted file(s) detected", res_bad.stdout)
 
 if __name__ == "__main__":
     unittest.main()

@@ -139,8 +139,12 @@ act print_fmt_diff(path: string, original: string, formatted: string) {
             let o_line = copy_slice_to_string(original, o_start, o_end - o_start)
             let f_line = copy_slice_to_string(formatted, f_start, f_end - f_start)
             println_str("  Diff at line {line}:")
-            println_str("  - {o_line}")
-            println_str("  + {f_line}")
+            if o_line == f_line {
+                println_str("  - line ending mismatch (CRLF vs LF)")
+            } else {
+                println_str("  - {o_line}")
+                println_str("  + {f_line}")
+            }
             return
         }
         if oc == '\n' { line += 1 }

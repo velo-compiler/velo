@@ -76,10 +76,20 @@ act need_space_between(prev: @FmtToken, curr: @FmtToken, pprev: @FmtToken) -> bo
         return true
     }
     if ptext == "@" or ptext == "?" or ptext == "!" {
+        if ptext == "@" and pprev != null and pprev.text == "." {
+            if is_binary_operator_str(ctext) or ctext == "{" {
+                return true
+            }
+        }
         return false
     }
     if ptext == "-" and is_unary_prefix_token(pprev, "-") {
         return false
+    }
+
+    // Attributes (#align, #packed)
+    if ctext == "#" {
+        return true
     }
 
     // Parentheses
@@ -87,7 +97,10 @@ act need_space_between(prev: @FmtToken, curr: @FmtToken, pprev: @FmtToken) -> bo
         if pkind == FMT_TOK_KEYWORD and (ptext == "if" or ptext == "loop" or ptext == "return" or ptext == "on" or ptext == "as") {
             return true
         }
-        if pkind == FMT_TOK_IDENT or ptext == ")" or ptext == "]" {
+        if pkind == FMT_TOK_IDENT or ptext == ")" or ptext == "]" or ptext == "(" or ptext == "act" or ptext == "test" {
+            return false
+        }
+        if pprev != null and pprev.text == "." {
             return false
         }
         return true
@@ -98,7 +111,10 @@ act need_space_between(prev: @FmtToken, curr: @FmtToken, pprev: @FmtToken) -> bo
 
     // Brackets
     if ctext == "[" {
-        if pkind == FMT_TOK_IDENT or ptext == ")" or ptext == "]" {
+        if pkind == FMT_TOK_IDENT or ptext == ")" or ptext == "]" or ptext == "shelf" or ptext == "map" or ptext == "ring" or ptext == "data" {
+            return false
+        }
+        if pprev != null and pprev.text == "." {
             return false
         }
         return true
@@ -110,6 +126,9 @@ act need_space_between(prev: @FmtToken, curr: @FmtToken, pprev: @FmtToken) -> bo
     // Braces
     if ctext == "{" {
         return true
+    }
+    if ptext == "{" {
+        return ctext != "}"
     }
     if ptext == "}" {
         return true
