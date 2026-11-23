@@ -1,7 +1,7 @@
 // Node.js HTTP Benchmark Server (Equivalent to server_velo.vl)
 const http = require('node:http');
 
-const PORT = parseInt(process.env.PORT || '8081', 10);
+const PORT = parseInt(process.env.PORT || process.argv[2] || '8080', 10);
 const HOST = '127.0.0.1';
 
 const server = http.createServer((req, res) => {

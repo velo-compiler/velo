@@ -1,0 +1,66 @@
+// benchmark/json_velo.vl — JSON parsing and aggregation benchmark
+use std.io
+use std.json
+
+act run_json_benchmark(payload: string, iterations: i32) -> i32 {
+    mut total_active: i32 = 0
+    mut total_age: i32 = 0
+    mut total_score: i32 = 0
+
+    loop it in 0..iterations {
+        zone {
+            let doc = json_parse_doc_str(payload, 32768)
+            if doc.root != null and json_is_array(doc.root) {
+                let len = json_array_len(doc.root)
+                mut i: usize = 0
+                loop i < len {
+                    let item = json_array_get(doc.root, i)
+                    if item != null and json_is_object(item) {
+                        let active = json_obj_get_bool(item, "active", false)
+                        if active {
+                            total_active += 1
+                            let age = json_obj_get_int(item, "age", 0)
+                            total_age += age as i32
+                            let scores = json_obj_get_str(item, "scores")
+                            if scores != null and json_is_array(scores) and json_array_len(scores) > 0 {
+                                let s0 = json_array_get(scores, 0)
+                                if s0 != null {
+                                    total_score += json_as_int(s0, 0) as i32
+                                }
+                            }
+                        }
+                    }
+                    i += 1
+                }
+            }
+            json_doc_free(@doc)
+        }
+    }
+
+    io.println("Done {iterations} iterations: active={total_active}, age={total_age}, score={total_score}")
+    return 0
+}
+
+act parse_int_arg(s: string, default_val: i32) -> i32 {
+    if s == null { return default_val }
+    let len = str.len(s)
+    if len == 0 { return default_val }
+    mut n: i32 = 0
+    loop i in 0..len {
+        let ch = s[i]
+        if ch >= '0' and ch <= '9' {
+            n = (n * 10) + ((ch as i32) - ('0' as i32))
+        }
+    }
+    if n == 0 { return default_val }
+    return n
+}
+
+act main(argc: i32, argv: @string) -> i32 {
+    let payload = "[{\"id\":1,\"name\":\"Alice\",\"age\":28,\"active\":true,\"scores\":[85,92,78]},{\"id\":2,\"name\":\"Bob\",\"age\":34,\"active\":false,\"scores\":[70,75,80]},{\"id\":3,\"name\":\"Charlie\",\"age\":22,\"active\":true,\"scores\":[95,98,91]},{\"id\":4,\"name\":\"Diana\",\"age\":41,\"active\":true,\"scores\":[88,84,90]},{\"id\":5,\"name\":\"Evan\",\"age\":29,\"active\":false,\"scores\":[65,72,68]},{\"id\":6,\"name\":\"Fiona\",\"age\":31,\"active\":true,\"scores\":[92,89,94]},{\"id\":7,\"name\":\"George\",\"age\":50,\"active\":true,\"scores\":[79,83,85]},{\"id\":8,\"name\":\"Hannah\",\"age\":26,\"active\":false,\"scores\":[81,77,86]},{\"id\":9,\"name\":\"Ian\",\"age\":38,\"active\":true,\"scores\":[87,91,89]},{\"id\":10,\"name\":\"Julia\",\"age\":24,\"active\":true,\"scores\":[96,94,99]}]"
+    mut iters: i32 = 5000
+    if argc > 1 and argv[1] != null {
+        iters = parse_int_arg(argv[1], 5000)
+    }
+    return run_json_benchmark(payload, iters)
+}

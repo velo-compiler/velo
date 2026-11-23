@@ -1,68 +1,66 @@
-# ⚡ Velo 2.0 vs. Node.js (v24) HTTP Server Benchmark
+# 🚀 Velo 2.0 Multi-Language Benchmark Suite
 
-This directory contains an apples-to-apples, reproducible performance benchmark comparing the **Velo Asynchronous HTTP Server (`std.async` + `std.http`)** against **Node.js (`node:http`)**.
+This directory contains an automated, reproducible benchmark suite comparing **Velo 2.0** against peer systems languages and runtimes:
+- **C** (GCC 16.1 `-O3`)
+- **Rust** (`rustc -O`)
+- **Go** (`go build`)
+- **Node.js** (`node` v24)
 
----
-
-## 📁 Directory Structure
-
-| File | Description |
-| :--- | :--- |
-| [`server_velo.vl`](file:///c:/projects/easylang/benchmark/server_velo.vl) | High-performance Velo async HTTP server running on `127.0.0.1:8080` |
-| [`server_velo.exe`](file:///c:/projects/easylang/benchmark/server_velo.exe) | Compiled standalone native executable |
-| [`server_node.js`](file:///c:/projects/easylang/benchmark/server_node.js) | Equivalent native Node.js HTTP server running on `127.0.0.1:8081` |
-| [`run_benchmark.py`](file:///c:/projects/easylang/benchmark/run_benchmark.py) | Automated test harness measuring Throughput (RPS), Latencies, and Working Set RAM |
-| [`BENCHMARK_RESULTS.md`](file:///c:/projects/easylang/benchmark/BENCHMARK_RESULTS.md) | Auto-generated Markdown report from the latest run |
+All peer implementations execute the exact same workloads with verified identical output.
 
 ---
 
-## 🚀 How to Run the Benchmark
+## 📊 Workloads
 
-### 1. Automated Suite (Python Standard Library)
+1. **HTTP Server (`/plaintext` and `/json`)**:
+   - Evaluates async / event loop socket handling, concurrency under load, request throughput (req/s), latency percentiles (min, avg, p50, p95, p99, max), and memory footprint (baseline and peak RSS).
+   - Endpoints:
+     - `/plaintext`: returns `200 OK` with `Hello, World!`
+     - `/json`: returns `200 OK` with `{"message":"Hello, World!","status":"ok"}`
 
-No third-party packages required (uses Windows native `psapi.dll` for byte-accurate RAM measurement):
+2. **JSON Parsing & Aggregation**:
+   - Parses a 10-record structured JSON array repeatedly (default: 5,000 iterations).
+   - Filters records where `active == true`, accumulates age and array score fields.
+   - Output parity verification across all implementations: `Done 5000 iterations: active=35000, age=1170000, score=3110000`.
+
+3. **Large File Scanning & Word Count**:
+   - Reads and scans `bootstrap.c` (~3.25 MB, 76,000+ lines).
+   - Counts lines (`\n`), whitespace-separated words, and total bytes.
+   - Output parity verification across all implementations: `Scanned: lines=76931, words=285222, bytes=3259543`.
+
+---
+
+## 📁 Source Files
+
+| Workload | Velo | C | Rust | Go | Node.js |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **HTTP Server** | [`server_velo.vl`](file:///c:/projects/easylang/benchmark/server_velo.vl) | [`server_c.c`](file:///c:/projects/easylang/benchmark/server_c.c) | [`server_rust.rs`](file:///c:/projects/easylang/benchmark/server_rust.rs) | [`server_go.go`](file:///c:/projects/easylang/benchmark/server_go.go) | [`server_node.js`](file:///c:/projects/easylang/benchmark/server_node.js) |
+| **JSON Parse** | [`json_velo.vl`](file:///c:/projects/easylang/benchmark/json_velo.vl) | [`json_c.c`](file:///c:/projects/easylang/benchmark/json_c.c) | [`json_rust.rs`](file:///c:/projects/easylang/benchmark/json_rust.rs) | [`json_go.go`](file:///c:/projects/easylang/benchmark/json_go.go) | [`json_node.js`](file:///c:/projects/easylang/benchmark/json_node.js) |
+| **File Scan** | [`filescan_velo.vl`](file:///c:/projects/easylang/benchmark/filescan_velo.vl) | [`filescan_c.c`](file:///c:/projects/easylang/benchmark/filescan_c.c) | [`filescan_rust.rs`](file:///c:/projects/easylang/benchmark/filescan_rust.rs) | [`filescan_go.go`](file:///c:/projects/easylang/benchmark/filescan_go.go) | [`filescan_node.js`](file:///c:/projects/easylang/benchmark/filescan_node.js) |
+
+---
+
+## 🏃 Running the Benchmarks
+
+The benchmark runner is fully automated and uses Python's standard library:
 
 ```powershell
+# Full benchmark run across all workloads and languages:
 python benchmark/run_benchmark.py
+
+# Quick mode (reduced iterations for rapid verification / CI):
+python benchmark/run_benchmark.py --quick
+
+# Skip build step if binaries are already compiled:
+python benchmark/run_benchmark.py --skip-build
+
+# Compute-only benchmarks (skip HTTP servers):
+python benchmark/run_benchmark.py --skip-http
 ```
 
-This will automatically:
-1. Compile and launch `server_velo.exe` on port 8080.
-2. Launch `server_node.js` on port 8081.
-3. Warm up both servers with 100 requests.
-4. Execute concurrent load tests across `/plaintext` and `/json` endpoints.
-5. Print the comparison table and save [`BENCHMARK_RESULTS.md`](file:///c:/projects/easylang/benchmark/BENCHMARK_RESULTS.md).
-6. Cleanly terminate all background server processes.
+### 📄 Output
 
----
+The runner compiles all targets, executes the suite, prints real-time metrics to stdout, and auto-generates:
+- [`benchmark/RESULTS.md`](file:///c:/projects/easylang/benchmark/RESULTS.md)
 
-### 2. Manual Testing with Autocannon (Industry Standard)
-
-If you have `npx` installed, you can benchmark each server interactively:
-
-```powershell
-# In Terminal 1 (Start Velo):
-.\benchmark\server_velo.exe
-
-# In Terminal 2 (Start Node.js):
-node .\benchmark\server_node.js
-
-# In Terminal 3 (Run autocannon against Velo):
-npx autocannon -c 20 -d 5 http://127.0.0.1:8080/plaintext
-
-# In Terminal 3 (Run autocannon against Node.js):
-npx autocannon -c 20 -d 5 http://127.0.0.1:8081/plaintext
-```
-
----
-
-## 📊 Summary of Benchmark Findings
-
-| Characteristic | Velo 2.0 (`std.async`) | Node.js (v24) | Analysis |
-| :--- | :---: | :---: | :--- |
-| **Startup RAM** | **~4.3 MB** | ~36.5 MB | 🏆 **Velo uses 8.5x less memory** at startup |
-| **Peak RAM (Load)** | **~5 – 9 MB** | ~50 – 68 MB | 🏆 **Velo stays under 10 MB** under heavy concurrency |
-| **Deployment Size** | **~180 KB** binary | Node Runtime (~80 MB) | 🏆 Zero runtime dependencies or node_modules |
-| **Throughput** | **1,100 – 2,750 req/s** | 4,200 – 5,500 req/s | Node.js benefits from 15+ years of C++ `libuv` and `llhttp` optimizations |
-| **Cold Startup Time** | **< 10 ms** | ~150 – 300 ms | Instant native execution |
-
+The generated report includes complete host machine specifications (OS, CPU model and core count, total RAM) and exact toolchain versions for Velo, GCC, rustc, go, and node.

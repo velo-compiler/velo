@@ -1,0 +1,39 @@
+// benchmark/filescan_velo.vl — File scanning & word count benchmark
+use std.io
+use std.fs
+
+act scan_file(path: string) -> i32 {
+    let content = fs_read_to_str(path)
+    if content == null {
+        io.println("[Velo Error] Failed to read file: {path}")
+        return 1
+    }
+    let len = str.len(content)
+    mut lines: usize = 0
+    mut words: usize = 0
+    mut in_word: bool = false
+
+    loop i in 0..len {
+        let ch = content[i]
+        if ch == '\n' {
+            lines += 1
+        }
+        if ch == ' ' or ch == '\t' or ch == '\n' or ch == '\r' {
+            in_word = false
+        } else if not in_word {
+            in_word = true
+            words += 1
+        }
+    }
+
+    io.println("Scanned: lines={lines}, words={words}, bytes={len}")
+    return 0
+}
+
+act main(argc: i32, argv: @string) -> i32 {
+    mut target = "bootstrap.c"
+    if argc > 1 and argv[1] != null and str.len(argv[1]) > 0 {
+        target = argv[1]
+    }
+    return scan_file(target)
+}

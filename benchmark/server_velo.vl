@@ -3,7 +3,7 @@ use std.io
 use std.async
 use std.http
 
-act on_http_request(ex: @AsyncHttpExchange, udata: @void) {
+act on_http_request(ex: @AsyncHttpExchange) {
     if ex == null or ex.req.path == null { return }
     let path = ex.req.path
 
@@ -16,18 +16,36 @@ act on_http_request(ex: @AsyncHttpExchange, udata: @void) {
     }
 }
 
-act main() -> i32 {
-    let port: u16 = 8080
+act parse_port(s: string) -> u16 {
+    if s == null { return 8080 as u16 }
+    let len = str.len(s)
+    if len == 0 { return 8080 as u16 }
+    mut n: u16 = 0
+    loop i in 0..len {
+        let ch = s[i]
+        if ch >= '0' and ch <= '9' {
+            n = (n * (10 as u16)) + ((ch as u16) - ('0' as u16))
+        }
+    }
+    if n == (0 as u16) { return 8080 as u16 }
+    return n
+}
+
+act main(argc: i32, argv: @string) -> i32 {
+    mut port: u16 = 8080 as u16
+    if argc > 1 and argv[1] != null {
+        port = parse_port(argv[1])
+    }
     mut el = loop_create()
 
-    let server = async_http_listen(@el, "127.0.0.1", port, on_http_request, null)
+    let server = async_http_listen(@el, "127.0.0.1", port, on_http_request)
     if server == null {
-        io.println_str("[Velo] Failed to bind HTTP server to 127.0.0.1:8080")
+        io.println("[Velo] Failed to bind HTTP server to 127.0.0.1:{port}")
         loop_free(@el)
         return 1
     }
 
-    io.println_str("[Velo] Server listening on http://127.0.0.1:8080")
+    io.println("[Velo] Server listening on http://127.0.0.1:{port}")
     loop_run(@el)
 
     async_http_server_close(server)

@@ -3136,10 +3136,32 @@ that is slow to compile loses the "high velocity" claim outright.
 
 ## Tasks
 
-**81.1** Rewrite the benchmark as generated output: `benchmark/run_benchmark.py`
+**81.1 [COMPLETED] ✅** Rewrite the benchmark as generated output: `benchmark/run_benchmark.py`
 runs Velo, C, Rust, Go, and Node variants of the same three workloads and writes
 `benchmark/RESULTS.md` with a machine/version header. The static Markdown file
 becomes generated and is regenerated in CI (or on a schedule).
+
+- *Former Defect:*
+  `benchmark/BENCHMARK_RESULTS.md` was a static, hand-written markdown document comparing only Velo and Node.js on HTTP throughput. There were no peer comparisons against systems languages (C, Rust, Go), results were not auto-generated, and no toolchain or hardware versions were tracked, creating risk of performance claim drift.
+- *Fix Applied:*
+  - Re-architected `benchmark/run_benchmark.py` as an automated multi-language benchmark runner across 5 peer languages: Velo 2.0, C (GCC -O3), Rust (rustc -O), Go (go build), and Node.js.
+  - Implemented 3 complete workloads across all 5 languages with verified output parity:
+    1. HTTP Server (`/plaintext` and `/json`) under concurrent load measuring throughput, avg/p95 latency, and baseline/peak RAM.
+    2. JSON parsing, validation, and aggregation (5,000 iterations over 10-object records).
+    3. File scanning and word count (`bootstrap.c`, ~3.25 MB).
+  - Added automated environment inspection extracting OS, CPU architecture, logical core count, total RAM, and toolchain versions for Velo, GCC, rustc, go, and node.
+  - Generates `benchmark/RESULTS.md` dynamically with hardware/toolchain headers and benchmark result tables.
+  - Added CLI options: `--quick`, `--skip-build`, `--skip-http`, `--port`, `--output`.
+  - Added automated test suite `tests/test_benchmark_results.py` validating generated Markdown content, CLI help, and quick-mode generation.
+  - Updated `benchmark/README.md` and deleted obsolete static `benchmark/BENCHMARK_RESULTS.md`.
+- *Residual Limitation:*
+  Compile-time speed tracking and dedicated memory profiling suites belong to Tasks 81.3 and 81.4.
+- *Verification:*
+  - `python benchmark/run_benchmark.py`: successfully compiled and executed all 3 workloads across Velo, C, Rust, Go, and Node; generated `benchmark/RESULTS.md`.
+  - `python -m pytest tests/test_benchmark_results.py -v`: 3 passed in 1.99s.
+  - Verified exact output parity across all 5 languages:
+    - JSON Workload: `active=35000, age=1170000, score=3110000`.
+    - File Scan Workload: `lines=76931, words=285222, bytes=3259543`.
 
 **81.2** Add C, Rust, and Go peers for the HTTP workload, plus a JSON parse
 workload and a file-scanning workload (the actual intended use cases from
