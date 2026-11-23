@@ -16,6 +16,7 @@ its source is Velo (`src/**/*.vl`), and `bootstrap.c` is a generated C snapshot
 of that source, so a C compiler is all you need to build Velo from scratch.
 
 Please read the "Known limitations" section of [`CHANGELOG.md`](CHANGELOG.md)
+and the project decision and stability guidelines in [`GOVERNANCE.md`](GOVERNANCE.md)
 before proposing a feature. The toolchain is **pre-publication**: the standard
 library does not yet work outside Windows, and several subsystems are
 deliberately not built yet. The authoritative, itemized list with severity and

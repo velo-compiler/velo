@@ -3663,8 +3663,25 @@ the Phase 45-69 task contract.
   - `python -m pytest tests/test_issue_and_pr_templates.py -v` (4 passed in 0.07s).
   - Verified Markdown rendering, YAML front matter, and code block formatting.
 
-**84.3** Add `GOVERNANCE.md`: who decides, how a breaking change is approved,
+**84.3 [COMPLETED] ✅** Add `GOVERNANCE.md`: who decides, how a breaking change is approved,
 what "1.0" means, and the deprecation policy (minimum two minor versions).
+
+- *Former Defect:*
+  The project lacked a formal governance specification (`GOVERNANCE.md`). It was undocumented who had authority to decide technical disputes, what criteria and consensus were required to approve breaking language or standard library changes, what stability commitments the "1.0" release entails, and how deprecations must be handled over time.
+- *Fix Applied:*
+  - Authored `GOVERNANCE.md` establishing:
+    1. **Decision-Making Model ("Who Decides"):** Defined the authority and roles of Project Lead & Core Maintainers, Subsystem Stewards (Frontend, Semantic Analysis, Backend/Codegen, Stdlib, Tooling/LSP, Packaging), and Contributors. Established consensus-seeking arbitration anchored to core invariants (Zero-GC, Deterministic C99 Emit, Explicit Memory Tiers, and 400-line modular code limits).
+    2. **Breaking Change Approval Pipeline:** Codified a strict 5-stage pipeline for any syntax, semantic, or API changes: RFC Proposal -> Invariant Review -> Two-Maintainer Sign-Off -> Deprecation Notice -> Audit Trail Release.
+    3. **What "1.0" Means:** Defined explicit criteria for 1.0 General Availability: Language Specification Freeze (`docs/SPECIFICATION.md`), backward compatibility promise, cross-platform Tier 1 standard library (`docs/COMPATIBILITY.md`), deterministic self-hosting gate, tooling ecosystem maturity, and zero open P0/P1 items in `gaps.md`.
+    4. **Deprecation Policy ("Minimum Two Minor Versions"):** Formally mandated that no feature, keyword, syntax construct, or public API may be removed without being deprecated for a minimum of two consecutive minor releases (`vX.Y.0` through `vX.Y+2.0`), detailing the 3 lifecycle stages (Notice, Active Grace Period, Removal) and emergency security exception rules.
+  - Linked `GOVERNANCE.md` in `README.md` and `CONTRIBUTING.md`.
+  - Implemented automated verification suite `tests/test_governance.py` asserting structural validity, required sections, and cross-document link consistency.
+- *Residual Limitation:*
+  Governance rules require continuous human discipline and code review diligence from maintainers; automated tests enforce document presence and invariant links, but cannot replace technical discernment during RFC review.
+- *Verification:*
+  - `python -m pytest tests/test_governance.py -v` (6 passed in 0.07s).
+  - `python -m pytest tests/test_readme_claims.py -v` (58 passed in 2.28s).
+  - Verified Markdown rendering, section anchors, and cross-references.
 
 **84.4** Commit the website assets currently untracked, or delete them. A
 half-tracked site is a half-broken release process.

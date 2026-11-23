@@ -208,6 +208,7 @@ All showcase projects are continuously verified for syntactic, semantic, and C-c
 * [Platform & Toolchain Compatibility Matrix](docs/COMPATIBILITY.md)
 * [Architectural Reviews & Audits Index](docs/REVIEWS.md)
 * [Contributing](CONTRIBUTING.md)
+* [Governance & Evolution](GOVERNANCE.md)
 * [Changelog](CHANGELOG.md)
 
 ---
