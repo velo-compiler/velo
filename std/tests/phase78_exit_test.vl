@@ -1,0 +1,152 @@
+// End-to-End verification program fulfilling Phase 78 exit criteria:
+// 1. Sort a shelf (std.coll.sort)
+// 2. Resolve a hostname (std.net.dns)
+// 3. Connect to it via TCP (std.net.tcp)
+// 4. Parse a regex over the response (std.patt)
+// 5. Decompress a gzip body (std.compress.gzip)
+// 6. Decode JSON into a struct (std.json.codec)
+// 7. Format a local timestamp (std.time.tz)
+
+use std.io
+use std.mem
+use std.str
+use std.coll
+use std.net
+use std.patt
+use std.compress
+use std.json
+use std.time
+
+view data ApiResponse {
+    service: string
+    code: i32
+    ok: bool
+    amount_cents: i64
+}
+
+act main() -> i32 {
+    // -------------------------------------------------------------------------
+    // Step 1: Sort a shelf (std.coll.sort)
+    // -------------------------------------------------------------------------
+    mut sh = shelf_create(8, 5)
+    shelf_push_i64(@sh, 45)
+    shelf_push_i64(@sh, 12)
+    shelf_push_i64(@sh, 89)
+    shelf_push_i64(@sh, 23)
+    shelf_push_i64(@sh, 5)
+
+    shelf_sort_i64(@sh)
+    if shelf_get_i64(@sh, 0) != 5 or shelf_get_i64(@sh, 1) != 12 or
+       shelf_get_i64(@sh, 2) != 23 or shelf_get_i64(@sh, 3) != 45 or
+       shelf_get_i64(@sh, 4) != 89 {
+        shelf_free(@sh)
+        println_str("FAIL: Step 1 (shelf sort)")
+        return 1
+    }
+    shelf_free(@sh)
+
+    // -------------------------------------------------------------------------
+    // Step 2: Resolve a hostname (std.net.dns)
+    // -------------------------------------------------------------------------
+    let resolved_ip = lookup_ipv4("localhost") or "FAILED"
+    if resolved_ip != "127.0.0.1" {
+        println_str("FAIL: Step 2 (resolve hostname)")
+        return 2
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 3: Connect to it via TCP (std.net.tcp)
+    // -------------------------------------------------------------------------
+    let port: u16 = 29910 as u16
+    let listener = tcp_listen("127.0.0.1", port)
+    if listener == null {
+        println_str("FAIL: Step 3 (tcp_listen)")
+        return 3
+    }
+
+    let client = tcp_connect("localhost", port)
+    if client == null {
+        socket_close(@listener.sock)
+        println_str("FAIL: Step 3 (tcp_connect)")
+        return 4
+    }
+
+    let server_stream = tcp_accept(listener)
+    if server_stream == null {
+        socket_close(@client.sock)
+        socket_close(@listener.sock)
+        println_str("FAIL: Step 3 (tcp_accept)")
+        return 5
+    }
+
+    // Client requests, Server sends HTTP header response
+    let header_text = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nServer: Velo/2.0\r\n\r\n"
+    tcp_write_str(server_stream, header_text)
+    let received_header = tcp_read_str(client, 128)
+    // Clean up sockets
+    socket_close(@server_stream.sock)
+    socket_close(@client.sock)
+    socket_close(@listener.sock)
+
+    // -------------------------------------------------------------------------
+    // Step 4: Parse a regex over the response (std.patt)
+    // -------------------------------------------------------------------------
+    let match_res = patt_find_str(received_header, "HTTP/1.1 [0-9]+ OK")
+    if !match_res.ok {
+        println_str("FAIL: Step 4 (regex match)")
+        return 6
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 5: Decompress a gzip body (std.compress.gzip)
+    // -------------------------------------------------------------------------
+    let json_payload = "{\"service\":\"payment_gateway\",\"code\":200,\"ok\":true,\"amount_cents\":1999}"
+    mut compressed_shelf = gzip_encode_str(json_payload) or shelf_create(1, 0)
+    if compressed_shelf.len == 0 {
+        println_str("FAIL: Step 5 (gzip encode)")
+        return 7
+    }
+
+    let decompressed_json = gzip_decode_str(compressed_shelf.data, compressed_shelf.len) or ""
+    shelf_free(@compressed_shelf)
+    if str.len(decompressed_json) == 0 {
+        println_str("FAIL: Step 5 (gzip decode)")
+        return 8
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 6: Decode JSON into a struct (std.json.codec)
+    // -------------------------------------------------------------------------
+    mut resp = ApiResponse {
+        service: "",
+        code: 0,
+        ok: false,
+        amount_cents: 0i64,
+    }
+    let decode_ok = json_decode(@resp, decompressed_json) or false
+    if !decode_ok {
+        println_str("FAIL: Step 6 (json decode)")
+        return 9
+    }
+    if resp.service != "payment_gateway" or resp.code != 200 or !resp.ok or resp.amount_cents != 1999i64 {
+        println_str("FAIL: Step 6 (struct fields mismatch)")
+        return 10
+    }
+
+    // -------------------------------------------------------------------------
+    // Step 7: Format a local timestamp (std.time.tz)
+    // -------------------------------------------------------------------------
+    let local_dt = time_now_local()
+    let tz = tz_sys()
+    mut arena = arena_init(4096)
+    defer arena_reset(@arena)
+
+    let ts_str = time_format_iso8601_tz_str(@arena, @local_dt, @tz)
+    if str.len(ts_str) < 19 {
+        println_str("FAIL: Step 7 (formatted timestamp too short)")
+        return 11
+    }
+
+    println_str("PASS: Phase 78 exit criteria fully verified")
+    return 0
+}

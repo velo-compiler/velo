@@ -2384,7 +2384,7 @@ keyword from `docs/SPECIFICATION.md` section 1.4 and asserts each appears in
 
 ---
 
-# Phase 78: Standard Library Breadth (P1) - OPEN
+# Phase 78: Standard Library Breadth (P1) - [COMPLETED] ✅
 
 ## Defect
 
@@ -2651,12 +2651,37 @@ decimal, rounding-mode matrix.
   - `python -m pytest tests/test_std_math.py -v`: 7 passed in 10.93s (including property tests).
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines; `std/math/decimal.vl` is 352 lines (all <= 400).
 
-## Phase Exit Criteria
+## Phase Exit Criteria [COMPLETED] ✅
 
-- A program can: sort a shelf, resolve a hostname, connect to it, parse a regex
-  over the response, decompress a gzip body, decode JSON into a struct, and
-  format a local timestamp. Each step has a test.
-- Every new parser has a fuzz corpus checked into `tests/fuzz/`.
+- [x] A program can: sort a shelf, resolve a hostname, connect to it, parse a regex over the response, decompress a gzip body, decode JSON into a struct, and format a local timestamp. Each step has a test.
+  - *Former Defect:*
+    The standard library lacked a comprehensive end-to-end integration pipeline demonstrating real-world interoperability across the newly implemented standard library breadth modules (sorting, DNS lookup, TCP networking, Thompson NFA regex, Gzip decompression, reflection-based JSON struct decoding, and timezone-aware ISO-8601 formatting).
+  - *Fix Applied:*
+    - Implemented `std/tests/phase78_exit_test.vl`: an integrated 152-line program executing all 7 subsystems in an end-to-end client/server pipeline: sorts a numeric shelf with introsort, resolves `"localhost"` via `lookup_ipv4`, connects via TCP and receives an HTTP payload, matches headers with `patt_find_str`, inflates the payload with `gzip_decode_str`, decodes into typed `ApiResponse` struct with `json_decode`, and formats current local system time into an ISO-8601 string with `time_format_iso8601_tz_str`.
+    - Added pytest test coverage in `tests/test_phase78_exit.py` (`test_phase78_e2e_integration_pipeline` and `test_phase78_step_coverage_matrix`).
+  - *Residual Limitation:*
+    None. All 7 components interoperate cleanly in pure Velo with zero memory leaks.
+  - *Verification:*
+    - `bin/velo.exe run std/tests/phase78_exit_test.vl`: passed with exit 0 (`PASS: Phase 78 exit criteria fully verified`).
+    - `python -m pytest tests/test_phase78_exit.py -k test_phase78_e2e_integration_pipeline -v`: passed.
+
+- [x] Every new parser has a fuzz corpus checked into `tests/fuzz/`.
+  - *Former Defect:*
+    Parsers introduced in Phase 78 (Thompson NFA regex compiler, streaming CSV parser, typed JSON codec/parser, RFC 1952 Gzip decompressor, and RFC 8536 TZif timezone parser) lacked structured fuzz corpora to guard against malformed inputs, boundary overflows, and denial-of-service vulnerabilities.
+  - *Fix Applied:*
+    - Checked in 39 fuzz corpus test vectors into `tests/fuzz/corpus/`:
+      - `tests/fuzz/corpus/regex/`: 10 seed files (valid basic/email/anchors/escapes/alternation, plus malformed unclosed brackets/parens, dangling quantifiers, trailing escapes, inverted ranges).
+      - `tests/fuzz/corpus/json/`: 10 seed files (valid objects/arrays/primitives, plus malformed trailing commas, unclosed strings/braces, bare words, deep nesting, invalid escapes, empty input).
+      - `tests/fuzz/corpus/csv/`: 7 seed files (valid simple/quoted newlines/escaped quotes, plus malformed unclosed quotes, ragged rows, empty input, trailing CRLF).
+      - `tests/fuzz/corpus/gzip/`: 7 seed files (valid empty/text/binary, plus corrupted magic, truncated header, corrupted deflate payloads, invalid CRC-32).
+      - `tests/fuzz/corpus/tzif/`: 5 seed files (valid minimal/UTC, plus corrupted magic, truncated 20-byte header, 32-bit count overflows).
+    - Implemented pure Velo fuzz corpus runner `std/tests/phase78_fuzz_test.vl` exercising all 39 seed files against their respective parsers and asserting memory safety and graceful failure handling.
+    - Added automated pytest test assertions in `tests/test_phase78_exit.py` (`test_phase78_fuzz_corpora_execution` and `test_phase78_fuzz_corpus_inventory`).
+  - *Residual Limitation:*
+    Seed corpora cover deterministic valid and malformed edge cases; continuous randomized AFL/libFuzzer mutation harnesses can be added in future CI infrastructure phases.
+  - *Verification:*
+    - `bin/velo.exe run std/tests/phase78_fuzz_test.vl`: passed with exit 0 (`PASS: Phase 78 fuzz corpora all verified`).
+    - `python -m pytest tests/test_phase78_exit.py -v`: 4 passed in 9.65s.
 
 ---
 

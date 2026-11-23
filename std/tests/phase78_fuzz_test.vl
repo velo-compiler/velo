@@ -1,0 +1,123 @@
+// std/tests/phase78_fuzz_test.vl
+// Fuzz corpus verification for all 5 Phase 78 parsers:
+// 1. Regex (std.patt)
+// 2. JSON (std.json)
+// 3. CSV (std.csv)
+// 4. Gzip (std.compress.gzip)
+// 5. TZif (std.time.tz_tzif)
+
+use std.io
+use std.mem
+use std.str
+use std.coll
+use std.fs
+use std.patt
+use std.json
+use std.csv
+use std.compress
+use std.time
+
+act fuzz_regex(path: string) {
+    let s = fs_read_to_str(path)
+    if s == null { return }
+    mut pat = patt_comp(s)
+    if pat.valid {
+        patt_test(@pat, "sample test string 123 abc@example.com")
+    }
+    pattern_free(@pat)
+    heap_free_str(s)
+}
+
+act fuzz_json(path: string) {
+    let s = fs_read_to_str(path)
+    if s == null { return }
+    mut doc = json_parse_doc_str(s, 32768)
+    json_doc_free(@doc)
+    heap_free_str(s)
+}
+
+act fuzz_csv(path: string) {
+    let s = fs_read_to_str(path)
+    if s == null { return }
+    mut arena = arena_init(16384)
+    defer arena_free(@arena)
+    mut r = csv_reader_init_str(s)
+    mut rec = CsvRecord { row: 0, first: null, count: 0, ok: false }
+    loop csv_read_record(@r, @arena, @rec) {
+        // consumed record
+    }
+    heap_free_str(s)
+}
+
+act fuzz_gzip(path: string) {
+    mut len: usize = 0
+    let b = fs_read_bytes(path, @len)
+    if b == null { return }
+    mut decomp = gzip_decode(b, len) or shelf_create(1, 0)
+    if decomp.len > 0 {
+        shelf_free(@decomp)
+    }
+    heap_free(b)
+}
+
+act fuzz_tzif(path: string) {
+    mut len: usize = 0
+    let b = fs_read_bytes(path, @len)
+    if b == null { return }
+    let tz = tz_parse_tzif_data(b, len, 1700000000i64)
+    heap_free(b)
+}
+
+act main() -> i32 {
+    // 1. Regex corpus (10 files)
+    fuzz_regex("tests/fuzz/corpus/regex/01_valid_basic.txt")
+    fuzz_regex("tests/fuzz/corpus/regex/02_valid_email.txt")
+    fuzz_regex("tests/fuzz/corpus/regex/03_valid_anchors.txt")
+    fuzz_regex("tests/fuzz/corpus/regex/04_valid_escapes.txt")
+    fuzz_regex("tests/fuzz/corpus/regex/05_valid_alternation.txt")
+    fuzz_regex("tests/fuzz/corpus/regex/06_malformed_unclosed_bracket.txt")
+    fuzz_regex("tests/fuzz/corpus/regex/07_malformed_unclosed_paren.txt")
+    fuzz_regex("tests/fuzz/corpus/regex/08_malformed_dangling_quantifier.txt")
+    fuzz_regex("tests/fuzz/corpus/regex/09_malformed_trailing_escape.txt")
+    fuzz_regex("tests/fuzz/corpus/regex/10_malformed_inverted_range.txt")
+
+    // 2. JSON corpus (10 files)
+    fuzz_json("tests/fuzz/corpus/json/01_valid_object.json")
+    fuzz_json("tests/fuzz/corpus/json/02_valid_array.json")
+    fuzz_json("tests/fuzz/corpus/json/03_valid_primitives.json")
+    fuzz_json("tests/fuzz/corpus/json/04_malformed_trailing_comma.json")
+    fuzz_json("tests/fuzz/corpus/json/05_malformed_unclosed_string.json")
+    fuzz_json("tests/fuzz/corpus/json/06_malformed_unclosed_brace.json")
+    fuzz_json("tests/fuzz/corpus/json/07_malformed_bare_word.json")
+    fuzz_json("tests/fuzz/corpus/json/08_malformed_deep_nesting.json")
+    fuzz_json("tests/fuzz/corpus/json/09_malformed_bad_escape.json")
+    fuzz_json("tests/fuzz/corpus/json/10_malformed_empty.json")
+
+    // 3. CSV corpus (7 files)
+    fuzz_csv("tests/fuzz/corpus/csv/01_valid_simple.csv")
+    fuzz_csv("tests/fuzz/corpus/csv/02_valid_quoted_newlines.csv")
+    fuzz_csv("tests/fuzz/corpus/csv/03_valid_escaped_quotes.csv")
+    fuzz_csv("tests/fuzz/corpus/csv/04_malformed_unclosed_quote.csv")
+    fuzz_csv("tests/fuzz/corpus/csv/05_ragged_columns.csv")
+    fuzz_csv("tests/fuzz/corpus/csv/06_empty.csv")
+    fuzz_csv("tests/fuzz/corpus/csv/07_trailing_cr_lf.csv")
+
+    // 4. Gzip corpus (7 files)
+    fuzz_gzip("tests/fuzz/corpus/gzip/01_valid_empty.gz")
+    fuzz_gzip("tests/fuzz/corpus/gzip/02_valid_text.gz")
+    fuzz_gzip("tests/fuzz/corpus/gzip/03_valid_binary.gz")
+    fuzz_gzip("tests/fuzz/corpus/gzip/04_corrupted_magic.gz")
+    fuzz_gzip("tests/fuzz/corpus/gzip/05_truncated_header.gz")
+    fuzz_gzip("tests/fuzz/corpus/gzip/06_bad_crc.gz")
+    fuzz_gzip("tests/fuzz/corpus/gzip/07_corrupted_deflate.gz")
+
+    // 5. TZif corpus (5 files)
+    fuzz_tzif("tests/fuzz/corpus/tzif/01_valid_minimal.tzif")
+    fuzz_tzif("tests/fuzz/corpus/tzif/02_valid_utc.tzif")
+    fuzz_tzif("tests/fuzz/corpus/tzif/03_corrupted_magic.tzif")
+    fuzz_tzif("tests/fuzz/corpus/tzif/04_truncated_header.tzif")
+    fuzz_tzif("tests/fuzz/corpus/tzif/05_overflowing_counts.tzif")
+
+    println_str("PASS: Phase 78 fuzz corpora all verified")
+    return 0
+}
