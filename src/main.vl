@@ -10,6 +10,7 @@ use "backend/driver_pkg.vl"
 use "cli_cmd.vl"
 use "lsp/server.vl"
 use "tooling/formatter.vl"
+use "tooling/repl.vl"
 
 // Main CLI argument dispatcher.
 act main(argc: i32, argv: @string) -> i32 {
@@ -58,6 +59,10 @@ act main(argc: i32, argv: @string) -> i32 {
 
     if cmd == "lsp" or cmd == "--lsp" {
         return handle_lsp_command()
+    }
+
+    if cmd == "repl" or cmd == "--repl" {
+        return start_repl(argc, argv as @string, unsafe_index, no_line_directives, strict_safety)
     }
 
     if cmd == "run" {

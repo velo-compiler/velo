@@ -2784,11 +2784,27 @@ recompilation happened; touch nothing, rebuild, assert it did not.
   - `python -m pytest tests/test_content_hashed_cache.py tests/test_error_registry.py tests/test_fallback_diagnostics.py -v`: 43 passed in 14.02s.
   - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`driver.vl` at 393, `driver_run.vl` at 213, `driver_cache.vl` at 148).
 
-**79.4** Add a `velo repl`: read-eval-print over the existing frontend +
+**79.4** [COMPLETED] ✅ Add a `velo repl`: read-eval-print over the existing frontend +
 `emit-c` + immediate `cc` of a single expression wrapper. Scope it to
 statements and expressions, no module definition. This is cheap relative to its
 adoption value and is the single most-requested entry point for trying a
 language.
+- *Former Defect:*
+  Velo lacked an interactive Read-Eval-Print Loop (`velo repl`). Developers wanting to test expressions, explore language syntax, or inspect standard library behavior were forced to create scratch `.vl` files on disk and compile them with `velo run`.
+- *Fix Applied:*
+  - Implemented `src/tooling/repl.vl`: interactive REPL (`start_repl`) with standard prompt (`velo> `) and banner (`Velo REPL v{VELO_VERSION}`).
+  - Built byte-by-byte unbuffered line reading (`read_repl_line`) from standard input via portable `io_stdin_handle()`.
+  - Added expression and statement wrappers: value expressions are evaluated and formatted via `let _repl_res = (<expr>); io.println("{_repl_res}")`; statements (such as variable declarations `let ...`, `mut ...`, and mutations) execute directly and persist in session state across lines.
+  - Implemented REPL commands: `:help` (command documentation), `:vars` (active session statements/imports), `:reset` (clear session state), and `:quit`/`:q`/`:exit` (clean exit).
+  - Wired into `src/main.vl` as `velo repl` and documented in `src/cli_cmd.vl` (`print_usage`).
+  - Added robust error isolation: invalid syntax or type errors display compiler diagnostics without corrupting session state.
+- *Residual Limitation:*
+  Top-level custom module definitions (`module ...`) and multi-line declarations cannot be defined in the REPL; expressions, statements, and module imports (`use ...`) are supported.
+- *Verification:*
+  - `python -m pytest tests/test_repl.py -v`: 10 passed in 28.82s.
+  - `python -m pytest tests/test_bootstrap_snapshot.py -v`: 6 passed in 32.06s (Gen2 == Gen3 == `bootstrap.c` determinism verified).
+  - `python -m pytest tests/test_repl.py tests/test_content_hashed_cache.py tests/test_error_registry.py tests/test_fallback_diagnostics.py -q`: 53 passed in 15.11s.
+  - `python scripts/count_lines.py`: all compiler source files <= 396 lines (`repl.vl` at 296, `main.vl` at 256, `cli_cmd.vl` at 213).
 
 **79.5** Add a debug build story: `velo build --debug` currently maps to
 `-O0 -g` (`driver_cc.vl:247-263`). Verify with a real debugger session that

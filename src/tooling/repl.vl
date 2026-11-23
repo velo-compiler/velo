@@ -1,0 +1,296 @@
+// Interactive Read-Eval-Print Loop (REPL) for Velo (Task 79.4).
+// Scoped to statements and expressions, compiling through frontend + emit-c + cc wrapper.
+use std.io
+use std.fs
+use std.mem
+use "../common/string_builder.vl"
+use "../common/utils.vl"
+use "../common/version.vl"
+use "../backend/driver_cc.vl"
+use "../backend/driver_cache.vl"
+use "../backend/driver_run.vl"
+
+// Reads a single line from standard input into buf, terminating at newline '\n'.
+// Strips any carriage return '\r'. Returns number of characters read, or -1 on EOF.
+act read_repl_line(buf: @u8, max_len: usize) -> isize {
+    let stdin_h = io_stdin_handle()
+    if !io_is_valid_handle(stdin_h) { return -1 }
+    mut idx: usize = 0
+    mut ch: u8 = 0 as u8
+    loop idx + 1 < max_len {
+        let n = io_raw_read(stdin_h, @ch, 1)
+        if n <= 0 {
+            if idx > 0 { break }
+            return -1
+        }
+        if ch == 10 as u8 {
+            break
+        }
+        if ch != 13 as u8 {
+            buf[idx] = ch
+            idx += 1
+        }
+    }
+    buf[idx] = 0 as u8
+    return idx as isize
+}
+
+// Trims leading and trailing ASCII whitespace.
+act trim_repl_line(s: string) -> string {
+    if s == null { return "" }
+    let len = str.len(s)
+    if len == 0 { return "" }
+    mut start: usize = 0
+    loop start < len and (s[start] == ' ' or s[start] == '\t' or s[start] == '\r' or s[start] == '\n') {
+        start += 1
+    }
+    if start >= len { return "" }
+    mut end: usize = len
+    loop end > start and (s[end - 1] == ' ' or s[end - 1] == '\t' or s[end - 1] == '\r' or s[end - 1] == '\n') {
+        end -= 1
+    }
+    return copy_slice_to_string(s, start, end - start)
+}
+
+// Checks if string s starts with keyword kw.
+act starts_with_keyword(s: string, kw: string) -> bool {
+    if s == null or kw == null { return false }
+    let slen = str.len(s)
+    let kwlen = str.len(kw)
+    if slen < kwlen { return false }
+    mut i: usize = 0
+    loop i < kwlen {
+        if s[i] != kw[i] { return false }
+        i += 1
+    }
+    return true
+}
+
+// Checks if line is an import statement (`use ...`).
+act is_import_stmt(s: string) -> bool {
+    return starts_with_keyword(s, "use ")
+}
+
+// Checks if line contains an assignment operator (=, +=, -=, *=, /=, %=).
+act contains_assignment_op(s: string) -> bool {
+    if s == null { return false }
+    let len = str.len(s)
+    if len < 3 { return false }
+    mut i: usize = 0
+    loop i + 1 < len {
+        let c = s[i]
+        let next_c = s[i + 1]
+        if (c == '+' or c == '-' or c == '*' or c == '/' or c == '%') and next_c == '=' {
+            return true
+        }
+        if c == '=' {
+            mut prev_c: u8 = ' ' as u8
+            if i > 0 {
+                prev_c = s[i - 1]
+            }
+            if prev_c != '=' as u8 and prev_c != '!' as u8 and prev_c != '<' as u8 and prev_c != '>' as u8 and next_c != '=' {
+                return true
+            }
+        }
+        i += 1
+    }
+    return false
+}
+
+// Returns true if line is a variable declaration or assignment statement that modifies state.
+act is_stateful_stmt(s: string) -> bool {
+    if starts_with_keyword(s, "let ") or starts_with_keyword(s, "mut ") {
+        return true
+    }
+    return contains_assignment_op(s)
+}
+
+// Returns true if line should be evaluated as a statement rather than an expression wrapper.
+act is_statement(s: string) -> bool {
+    if is_import_stmt(s) or is_stateful_stmt(s) {
+        return true
+    }
+    if starts_with_keyword(s, "if ") or starts_with_keyword(s, "loop ") or starts_with_keyword(s, "defer ") or starts_with_keyword(s, "return ") or starts_with_keyword(s, "zone ") {
+        return true
+    }
+    if starts_with_keyword(s, "println(") or starts_with_keyword(s, "print(") or starts_with_keyword(s, "io.print") or starts_with_keyword(s, "println_") or starts_with_keyword(s, "print_") {
+        return true
+    }
+    let len = str.len(s)
+    if len > 0 {
+        let last = s[len - 1]
+        if last == ';' or last == '}' or last == '{' {
+            return true
+        }
+    }
+    return false
+}
+
+// Main interactive REPL command handler for `velo repl`.
+act start_repl(argc: i32, argv: @string, unsafe_index: bool, no_line_directives: bool, strict_safety: bool) -> i32 {
+    mut cc = "gcc"
+    mut debug_mode: bool = false
+    mut release_mode: bool = false
+    mut opt_level = ""
+    mut linker_sb = create_sb(256)
+    mut i: i32 = 2
+    loop i < argc {
+        let arg = argv[i]
+        if arg == "--cc" and i + 1 < argc { cc = argv[i + 1]; i += 1 }
+        else if str.len(arg) > 5 and arg[0] == '-' and arg[1] == '-' and arg[2] == 'c' and arg[3] == 'c' and arg[4] == '=' { cc = copy_slice_to_string(arg, 5, str.len(arg) - 5) }
+        else if arg == "--debug" { debug_mode = true }
+        else if arg == "--release" { release_mode = true }
+        else if arg == "-O" and i + 1 < argc { opt_level = argv[i + 1]; i += 1 }
+        else if str.len(arg) > 2 and arg[0] == '-' and arg[1] == 'O' { opt_level = copy_slice_to_string(arg, 2, str.len(arg) - 2) }
+        i += 1
+    }
+
+    let opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level)
+    let linker_flags = sb_to_string(@linker_sb)
+
+    println_str("Velo REPL v{VELO_VERSION}")
+    println_str("Type ':help' for commands, ':quit' or ':q' to exit.")
+
+    mut session_imports: @string = mem.alloc(@string, 64)
+    mut session_imports_count: usize = 0
+
+    mut session_stmts: @string = mem.alloc(@string, 256)
+    mut session_stmts_count: usize = 0
+
+    mut line_buf: @u8 = mem.alloc(@u8, 2048)
+    ensure_cache_dir()
+
+    mut running = true
+    loop running {
+        print_str("velo> ")
+        io_flush_stdout()
+
+        let n = read_repl_line(line_buf, 2048)
+        if n < 0 {
+            println_str("Goodbye!")
+            break
+        }
+
+        let raw_line = line_buf as string
+        let trimmed = trim_repl_line(raw_line)
+        if str.len(trimmed) == 0 {
+            continue
+        }
+
+        if trimmed == ":quit" or trimmed == ":exit" or trimmed == ":q" or trimmed == "quit" or trimmed == "exit" or trimmed == "quit()" or trimmed == "exit()" {
+            println_str("Goodbye!")
+            break
+        }
+
+        if trimmed == ":help" {
+            println_str("Velo REPL Commands:")
+            println_str("  :help          Display this help manual")
+            println_str("  :reset         Clear session variables and imports")
+            println_str("  :vars          Display active session statements")
+            println_str("  :quit, :q      Exit the REPL")
+            continue
+        }
+
+        if trimmed == ":reset" {
+            session_imports_count = 0
+            session_stmts_count = 0
+            println_str("[Velo REPL] Session reset.")
+            continue
+        }
+
+        if trimmed == ":vars" {
+            if session_imports_count == 0 and session_stmts_count == 0 {
+                println_str("No active session state.")
+            } else {
+                if session_imports_count > 0 {
+                    println_str("Imports:")
+                    mut ii: usize = 0
+                    loop ii < session_imports_count {
+                        println_str("  {session_imports[ii]}")
+                        ii += 1
+                    }
+                }
+                if session_stmts_count > 0 {
+                    println_str("Statements:")
+                    mut si: usize = 0
+                    loop si < session_stmts_count {
+                        let num = si + 1
+                        println_str("  {num}: {session_stmts[si]}")
+                        si += 1
+                    }
+                }
+            }
+            continue
+        }
+
+        if trimmed[0] == ':' {
+            println_str("Unknown REPL command '{trimmed}'. Type ':help' for available commands.")
+            continue
+        }
+
+        // Assemble scratch source file
+        mut sb = create_sb(2048)
+        sb_append_str(@sb, "// Velo REPL scratch session\n")
+        sb_append_str(@sb, "use std.io\n")
+        sb_append_str(@sb, "use std.math\n")
+        sb_append_str(@sb, "use std.str\n\n")
+
+        mut ii: usize = 0
+        loop ii < session_imports_count {
+            sb_append_str(@sb, session_imports[ii])
+            sb_append_char(@sb, '\n')
+            ii += 1
+        }
+        sb_append_char(@sb, '\n')
+
+        if is_import_stmt(trimmed) {
+            sb_append_str(@sb, trimmed)
+            sb_append_str(@sb, "\nact main() -> i32 { return 0 }\n")
+        } else {
+            sb_append_str(@sb, "act main() -> i32 {\n")
+            mut si: usize = 0
+            loop si < session_stmts_count {
+                sb_append_str(@sb, "    ")
+                sb_append_str(@sb, session_stmts[si])
+                sb_append_char(@sb, '\n')
+                si += 1
+            }
+            if is_statement(trimmed) {
+                sb_append_str(@sb, "    ")
+                sb_append_str(@sb, trimmed)
+                sb_append_char(@sb, '\n')
+            } else {
+                sb_append_str(@sb, "    let _repl_res = (")
+                sb_append_str(@sb, trimmed)
+                sb_append_str(@sb, ")\n")
+                sb_append_str(@sb, "    io.println(\"{_repl_res}\")\n")
+            }
+            sb_append_str(@sb, "    return 0\n}\n")
+        }
+
+        let source_code = sb_to_string(@sb)
+        let scratch_vl = ".velo_cache/repl_session.vl"
+        let scratch_exe = ".velo_cache/repl_session.exe"
+        fs_write_str(scratch_vl, source_code)
+
+        let ok = build_executable_all_opts(scratch_vl, scratch_exe, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety)
+        if ok {
+            let run_cmd = assemble_runner_cmd(cc, scratch_exe, null)
+            let res = os_system(run_cmd)
+            if res == 0 {
+                if is_import_stmt(trimmed) {
+                    if session_imports_count < 64 {
+                        session_imports[session_imports_count] = copy_slice_to_string(trimmed, 0, str.len(trimmed))
+                        session_imports_count += 1
+                    }
+                } else if is_stateful_stmt(trimmed) {
+                    if session_stmts_count < 256 {
+                        session_stmts[session_stmts_count] = copy_slice_to_string(trimmed, 0, str.len(trimmed))
+                        session_stmts_count += 1
+                    }
+                }
+            }
+        }
+    }
+    return 0
+}

@@ -2967,6 +2967,14 @@ void print_fmt_diff(const char* path, const char* original, const char* formatte
 int32_t format_file(const char* file_path, bool check_mode);
 int32_t format_directory(const char* dir_path, bool check_mode);
 int32_t handle_fmt_cmd(int32_t argc, const char** argv);
+ptrdiff_t read_repl_line(uint8_t* buf, size_t max_len);
+const char* trim_repl_line(const char* s);
+bool starts_with_keyword(const char* s, const char* kw);
+bool is_import_stmt(const char* s);
+bool contains_assignment_op(const char* s);
+bool is_stateful_stmt(const char* s);
+bool is_statement(const char* s);
+int32_t start_repl(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives, bool strict_safety);
 
 #line 34 "src/main.vl"
 FileHandle io_stdin_handle(void) {
@@ -67621,402 +67629,404 @@ void print_usage(void) {
 #line 27 "src/main.vl"
     println_str("  velo explain <code-or-id>          Explain compiler diagnostic code");
 #line 28 "src/main.vl"
-    println_str("  velo lsp                           Start Velo Language Server (LSP stdio)");
+    println_str("  velo repl                          Start interactive Velo REPL");
 #line 29 "src/main.vl"
-    println_str("  velo version                       Display compiler version");
+    println_str("  velo lsp                           Start Velo Language Server (LSP stdio)");
 #line 30 "src/main.vl"
+    println_str("  velo version                       Display compiler version");
+#line 31 "src/main.vl"
     println_str("  velo help                          Display this help manual");
 }
 
-#line 34 "src/main.vl"
-int32_t handle_run_cmd_opts(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives, bool strict_safety) {
 #line 35 "src/main.vl"
-    if ((argc < 3)) {
+int32_t handle_run_cmd_opts(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives, bool strict_safety) {
 #line 36 "src/main.vl"
-        println_str("[Velo Error] 'run' requires a source file path");
+    if ((argc < 3)) {
 #line 37 "src/main.vl"
+        println_str("[Velo Error] 'run' requires a source file path");
+#line 38 "src/main.vl"
         return 1;
     }
-#line 39 "src/main.vl"
-    const char* source_file = "";
 #line 40 "src/main.vl"
-    const char* cc = "gcc";
+    const char* source_file = "";
 #line 41 "src/main.vl"
-    bool debug_mode = false;
+    const char* cc = "gcc";
 #line 42 "src/main.vl"
-    bool release_mode = false;
+    bool debug_mode = false;
 #line 43 "src/main.vl"
-    bool unsafe_heap = false;
+    bool release_mode = false;
 #line 44 "src/main.vl"
-    const char* opt_level = "";
+    bool unsafe_heap = false;
 #line 45 "src/main.vl"
-    StringBuilder linker_sb = create_sb(256);
+    const char* opt_level = "";
 #line 46 "src/main.vl"
-    int32_t i = 2;
+    StringBuilder linker_sb = create_sb(256);
 #line 47 "src/main.vl"
-    for (int32_t it = 0; ((i < argc)); it++) {
+    int32_t i = 2;
 #line 48 "src/main.vl"
-        const char* arg = argv[i];
+    for (int32_t it = 0; ((i < argc)); it++) {
 #line 49 "src/main.vl"
-        if ((((arg != NULL && "--cc" != NULL) ? (strcmp(arg, "--cc") == 0) : (arg == "--cc")) && ((i + 1) < argc))) {
+        const char* arg = argv[i];
 #line 50 "src/main.vl"
-            cc = argv[(i + 1)];
+        if ((((arg != NULL && "--cc" != NULL) ? (strcmp(arg, "--cc") == 0) : (arg == "--cc")) && ((i + 1) < argc))) {
 #line 51 "src/main.vl"
+            cc = argv[(i + 1)];
+#line 52 "src/main.vl"
             i += 1;
         } else
-#line 52 "src/main.vl"
-        if ((((((velo_cmp_gt_u_s(((usize)strlen(arg)), 5) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], '-')) && velo_cmp_eq_u_s(arg[2], 'c')) && velo_cmp_eq_u_s(arg[3], 'c')) && velo_cmp_eq_u_s(arg[4], '='))) {
 #line 53 "src/main.vl"
+        if ((((((velo_cmp_gt_u_s(((usize)strlen(arg)), 5) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], '-')) && velo_cmp_eq_u_s(arg[2], 'c')) && velo_cmp_eq_u_s(arg[3], 'c')) && velo_cmp_eq_u_s(arg[4], '='))) {
+#line 54 "src/main.vl"
             cc = copy_slice_to_string(arg, 5, (((usize)strlen(arg)) - 5));
         } else
-#line 54 "src/main.vl"
-        if (((arg != NULL && "--debug" != NULL) ? (strcmp(arg, "--debug") == 0) : (arg == "--debug"))) {
 #line 55 "src/main.vl"
+        if (((arg != NULL && "--debug" != NULL) ? (strcmp(arg, "--debug") == 0) : (arg == "--debug"))) {
+#line 56 "src/main.vl"
             debug_mode = true;
         } else
-#line 56 "src/main.vl"
-        if (((arg != NULL && "--release" != NULL) ? (strcmp(arg, "--release") == 0) : (arg == "--release"))) {
 #line 57 "src/main.vl"
+        if (((arg != NULL && "--release" != NULL) ? (strcmp(arg, "--release") == 0) : (arg == "--release"))) {
+#line 58 "src/main.vl"
             release_mode = true;
         } else
-#line 58 "src/main.vl"
-        if (((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") == 0) : (arg == "--unsafe-heap"))) {
 #line 59 "src/main.vl"
+        if (((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") == 0) : (arg == "--unsafe-heap"))) {
+#line 60 "src/main.vl"
             unsafe_heap = true;
         } else
-#line 60 "src/main.vl"
-        if ((((arg != NULL && "-O" != NULL) ? (strcmp(arg, "-O") == 0) : (arg == "-O")) && ((i + 1) < argc))) {
 #line 61 "src/main.vl"
-            opt_level = argv[(i + 1)];
+        if ((((arg != NULL && "-O" != NULL) ? (strcmp(arg, "-O") == 0) : (arg == "-O")) && ((i + 1) < argc))) {
 #line 62 "src/main.vl"
+            opt_level = argv[(i + 1)];
+#line 63 "src/main.vl"
             i += 1;
         } else
-#line 63 "src/main.vl"
-        if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'O'))) {
 #line 64 "src/main.vl"
+        if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'O'))) {
+#line 65 "src/main.vl"
             opt_level = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
         } else
-#line 65 "src/main.vl"
+#line 66 "src/main.vl"
         if ((((arg != NULL && "-l" != NULL) ? (strcmp(arg, "-l") == 0) : (arg == "-l")) && ((i + 1) < argc))) {
-#line 66 "src/main.vl"
+#line 67 "src/main.vl"
             if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 66 "src/main.vl"
+#line 67 "src/main.vl"
                 sb_append_char((&(linker_sb)), ' ');
             }
-#line 67 "src/main.vl"
-            sb_append_str((&(linker_sb)), "-l");
 #line 68 "src/main.vl"
-            sb_append_str((&(linker_sb)), argv[(i + 1)]);
+            sb_append_str((&(linker_sb)), "-l");
 #line 69 "src/main.vl"
+            sb_append_str((&(linker_sb)), argv[(i + 1)]);
+#line 70 "src/main.vl"
             i += 1;
         } else
-#line 70 "src/main.vl"
+#line 71 "src/main.vl"
         if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'l'))) {
-#line 71 "src/main.vl"
+#line 72 "src/main.vl"
             if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 71 "src/main.vl"
+#line 72 "src/main.vl"
                 sb_append_char((&(linker_sb)), ' ');
             }
-#line 72 "src/main.vl"
+#line 73 "src/main.vl"
             sb_append_str((&(linker_sb)), arg);
         } else
-#line 73 "src/main.vl"
+#line 74 "src/main.vl"
         if ((((arg != NULL && "-L" != NULL) ? (strcmp(arg, "-L") == 0) : (arg == "-L")) && ((i + 1) < argc))) {
-#line 74 "src/main.vl"
+#line 75 "src/main.vl"
             if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 74 "src/main.vl"
+#line 75 "src/main.vl"
                 sb_append_char((&(linker_sb)), ' ');
             }
-#line 75 "src/main.vl"
-            sb_append_str((&(linker_sb)), "-L");
 #line 76 "src/main.vl"
-            sb_append_str((&(linker_sb)), quote_path(path_to_native_str(argv[(i + 1)])));
+            sb_append_str((&(linker_sb)), "-L");
 #line 77 "src/main.vl"
+            sb_append_str((&(linker_sb)), quote_path(path_to_native_str(argv[(i + 1)])));
+#line 78 "src/main.vl"
             i += 1;
         } else
-#line 78 "src/main.vl"
+#line 79 "src/main.vl"
         if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'L'))) {
-#line 79 "src/main.vl"
+#line 80 "src/main.vl"
             if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 79 "src/main.vl"
+#line 80 "src/main.vl"
                 sb_append_char((&(linker_sb)), ' ');
             }
-#line 80 "src/main.vl"
-            sb_append_str((&(linker_sb)), "-L");
 #line 81 "src/main.vl"
-            const char* raw_arg = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
+            sb_append_str((&(linker_sb)), "-L");
 #line 82 "src/main.vl"
+            const char* raw_arg = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
+#line 83 "src/main.vl"
             sb_append_str((&(linker_sb)), quote_path(path_to_native_str(raw_arg)));
         } else
-#line 83 "src/main.vl"
-        if (((((((((arg != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(arg, "--unsafe-shelf-index") != 0) : (arg != "--unsafe-shelf-index")) && ((arg != NULL && "--unsafe-array-index" != NULL) ? (strcmp(arg, "--unsafe-array-index") != 0) : (arg != "--unsafe-array-index"))) && ((arg != NULL && "--unsafe-index" != NULL) ? (strcmp(arg, "--unsafe-index") != 0) : (arg != "--unsafe-index"))) && ((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") != 0) : (arg != "--unsafe-heap"))) && ((arg != NULL && "--no-line-directives" != NULL) ? (strcmp(arg, "--no-line-directives") != 0) : (arg != "--no-line-directives"))) && ((arg != NULL && "--strict-safety" != NULL) ? (strcmp(arg, "--strict-safety") != 0) : (arg != "--strict-safety"))) && velo_cmp_eq_u_s(((usize)strlen(source_file)), 0))) {
 #line 84 "src/main.vl"
+        if (((((((((arg != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(arg, "--unsafe-shelf-index") != 0) : (arg != "--unsafe-shelf-index")) && ((arg != NULL && "--unsafe-array-index" != NULL) ? (strcmp(arg, "--unsafe-array-index") != 0) : (arg != "--unsafe-array-index"))) && ((arg != NULL && "--unsafe-index" != NULL) ? (strcmp(arg, "--unsafe-index") != 0) : (arg != "--unsafe-index"))) && ((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") != 0) : (arg != "--unsafe-heap"))) && ((arg != NULL && "--no-line-directives" != NULL) ? (strcmp(arg, "--no-line-directives") != 0) : (arg != "--no-line-directives"))) && ((arg != NULL && "--strict-safety" != NULL) ? (strcmp(arg, "--strict-safety") != 0) : (arg != "--strict-safety"))) && velo_cmp_eq_u_s(((usize)strlen(source_file)), 0))) {
+#line 85 "src/main.vl"
             source_file = arg;
         }
-#line 86 "src/main.vl"
+#line 87 "src/main.vl"
         i += 1;
         __loop_cont_760: __attribute__((unused));
     }
     __loop_break_760: __attribute__((unused));
-#line 88 "src/main.vl"
-    if (velo_cmp_eq_u_s(((usize)strlen(source_file)), 0)) {
 #line 89 "src/main.vl"
-        println_str("[Velo Error] 'run' requires a source file path");
+    if (velo_cmp_eq_u_s(((usize)strlen(source_file)), 0)) {
 #line 90 "src/main.vl"
+        println_str("[Velo Error] 'run' requires a source file path");
+#line 91 "src/main.vl"
         return 1;
     }
-#line 92 "src/main.vl"
-    if (((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl"))) && ((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") != 0) : (cc != "clang")))) {
 #line 93 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc', 'clang', or 'cl'.", (const char*)(cc)));
+    if (((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl"))) && ((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") != 0) : (cc != "clang")))) {
 #line 94 "src/main.vl"
+        println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc', 'clang', or 'cl'.", (const char*)(cc)));
+#line 95 "src/main.vl"
         return 1;
     }
-#line 96 "src/main.vl"
-    if ((debug_mode && release_mode)) {
 #line 97 "src/main.vl"
-        println_str("[Velo Error] Cannot specify both --debug and --release");
+    if ((debug_mode && release_mode)) {
 #line 98 "src/main.vl"
+        println_str("[Velo Error] Cannot specify both --debug and --release");
+#line 99 "src/main.vl"
         return 1;
     }
-#line 100 "src/main.vl"
-    const char* opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level);
 #line 101 "src/main.vl"
-    if (unsafe_heap) {
+    const char* opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level);
 #line 102 "src/main.vl"
+    if (unsafe_heap) {
+#line 103 "src/main.vl"
         StringBuilder u_sb = create_sb((((usize)strlen(opt_flags)) + 32));
-#line 103 "src/main.vl"
+#line 104 "src/main.vl"
         sb_append_str((&(u_sb)), opt_flags);
-#line 103 "src/main.vl"
+#line 104 "src/main.vl"
         sb_append_str((&(u_sb)), " -DVELO_UNSAFE_HEAP");
-#line 103 "src/main.vl"
+#line 104 "src/main.vl"
         opt_flags = sb_to_string((&(u_sb)));
     }
-#line 105 "src/main.vl"
-    const char* linker_flags = sb_to_string((&(linker_sb)));
 #line 106 "src/main.vl"
-    int32_t exit_code = 0;
+    const char* linker_flags = sb_to_string((&(linker_sb)));
 #line 107 "src/main.vl"
+    int32_t exit_code = 0;
+#line 108 "src/main.vl"
     {
         size_t __zone_wm_1 = velo_zone_push();
-#line 108 "src/main.vl"
+#line 109 "src/main.vl"
         exit_code = run_source_file_all_opts(source_file, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety);
         velo_zone_pop(__zone_wm_1);
     }
-#line 110 "src/main.vl"
+#line 111 "src/main.vl"
     return exit_code;
 }
 
-#line 113 "src/main.vl"
-int32_t handle_run_cmd(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives) {
 #line 114 "src/main.vl"
+int32_t handle_run_cmd(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives) {
+#line 115 "src/main.vl"
     return handle_run_cmd_opts(argc, argv, unsafe_index, no_line_directives, false);
 }
 
-#line 118 "src/main.vl"
-int32_t handle_build_cmd_opts(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives, bool strict_safety) {
 #line 119 "src/main.vl"
-    if ((argc < 3)) {
+int32_t handle_build_cmd_opts(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives, bool strict_safety) {
 #line 120 "src/main.vl"
-        println_str("[Velo Error] 'build' requires a source file path");
+    if ((argc < 3)) {
 #line 121 "src/main.vl"
+        println_str("[Velo Error] 'build' requires a source file path");
+#line 122 "src/main.vl"
         return 1;
     }
-#line 123 "src/main.vl"
-    const char* source_file = "";
 #line 124 "src/main.vl"
-    const char* output_exe = "";
+    const char* source_file = "";
 #line 125 "src/main.vl"
-    const char* cc = "gcc";
+    const char* output_exe = "";
 #line 126 "src/main.vl"
-    bool debug_mode = false;
+    const char* cc = "gcc";
 #line 127 "src/main.vl"
-    bool release_mode = false;
+    bool debug_mode = false;
 #line 128 "src/main.vl"
-    bool unsafe_heap = false;
+    bool release_mode = false;
 #line 129 "src/main.vl"
-    const char* opt_level = "";
+    bool unsafe_heap = false;
 #line 130 "src/main.vl"
-    StringBuilder linker_sb = create_sb(256);
+    const char* opt_level = "";
 #line 131 "src/main.vl"
-    int32_t i = 2;
+    StringBuilder linker_sb = create_sb(256);
 #line 132 "src/main.vl"
-    for (int32_t it = 0; ((i < argc)); it++) {
+    int32_t i = 2;
 #line 133 "src/main.vl"
-        const char* arg = argv[i];
+    for (int32_t it = 0; ((i < argc)); it++) {
 #line 134 "src/main.vl"
-        if ((((arg != NULL && "--cc" != NULL) ? (strcmp(arg, "--cc") == 0) : (arg == "--cc")) && ((i + 1) < argc))) {
+        const char* arg = argv[i];
 #line 135 "src/main.vl"
-            cc = argv[(i + 1)];
+        if ((((arg != NULL && "--cc" != NULL) ? (strcmp(arg, "--cc") == 0) : (arg == "--cc")) && ((i + 1) < argc))) {
 #line 136 "src/main.vl"
+            cc = argv[(i + 1)];
+#line 137 "src/main.vl"
             i += 1;
         } else
-#line 137 "src/main.vl"
-        if ((((((velo_cmp_gt_u_s(((usize)strlen(arg)), 5) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], '-')) && velo_cmp_eq_u_s(arg[2], 'c')) && velo_cmp_eq_u_s(arg[3], 'c')) && velo_cmp_eq_u_s(arg[4], '='))) {
 #line 138 "src/main.vl"
+        if ((((((velo_cmp_gt_u_s(((usize)strlen(arg)), 5) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], '-')) && velo_cmp_eq_u_s(arg[2], 'c')) && velo_cmp_eq_u_s(arg[3], 'c')) && velo_cmp_eq_u_s(arg[4], '='))) {
+#line 139 "src/main.vl"
             cc = copy_slice_to_string(arg, 5, (((usize)strlen(arg)) - 5));
         } else
-#line 139 "src/main.vl"
-        if ((((arg != NULL && "-o" != NULL) ? (strcmp(arg, "-o") == 0) : (arg == "-o")) && ((i + 1) < argc))) {
 #line 140 "src/main.vl"
-            output_exe = argv[(i + 1)];
+        if ((((arg != NULL && "-o" != NULL) ? (strcmp(arg, "-o") == 0) : (arg == "-o")) && ((i + 1) < argc))) {
 #line 141 "src/main.vl"
+            output_exe = argv[(i + 1)];
+#line 142 "src/main.vl"
             i += 1;
         } else
-#line 142 "src/main.vl"
-        if (((arg != NULL && "--debug" != NULL) ? (strcmp(arg, "--debug") == 0) : (arg == "--debug"))) {
 #line 143 "src/main.vl"
+        if (((arg != NULL && "--debug" != NULL) ? (strcmp(arg, "--debug") == 0) : (arg == "--debug"))) {
+#line 144 "src/main.vl"
             debug_mode = true;
         } else
-#line 144 "src/main.vl"
-        if (((arg != NULL && "--release" != NULL) ? (strcmp(arg, "--release") == 0) : (arg == "--release"))) {
 #line 145 "src/main.vl"
+        if (((arg != NULL && "--release" != NULL) ? (strcmp(arg, "--release") == 0) : (arg == "--release"))) {
+#line 146 "src/main.vl"
             release_mode = true;
         } else
-#line 146 "src/main.vl"
-        if (((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") == 0) : (arg == "--unsafe-heap"))) {
 #line 147 "src/main.vl"
+        if (((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") == 0) : (arg == "--unsafe-heap"))) {
+#line 148 "src/main.vl"
             unsafe_heap = true;
         } else
-#line 148 "src/main.vl"
-        if ((((arg != NULL && "-O" != NULL) ? (strcmp(arg, "-O") == 0) : (arg == "-O")) && ((i + 1) < argc))) {
 #line 149 "src/main.vl"
-            opt_level = argv[(i + 1)];
+        if ((((arg != NULL && "-O" != NULL) ? (strcmp(arg, "-O") == 0) : (arg == "-O")) && ((i + 1) < argc))) {
 #line 150 "src/main.vl"
+            opt_level = argv[(i + 1)];
+#line 151 "src/main.vl"
             i += 1;
         } else
-#line 151 "src/main.vl"
-        if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'O'))) {
 #line 152 "src/main.vl"
+        if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'O'))) {
+#line 153 "src/main.vl"
             opt_level = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
         } else
-#line 153 "src/main.vl"
+#line 154 "src/main.vl"
         if ((((arg != NULL && "-l" != NULL) ? (strcmp(arg, "-l") == 0) : (arg == "-l")) && ((i + 1) < argc))) {
-#line 154 "src/main.vl"
+#line 155 "src/main.vl"
             if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 154 "src/main.vl"
+#line 155 "src/main.vl"
                 sb_append_char((&(linker_sb)), ' ');
             }
-#line 155 "src/main.vl"
-            sb_append_str((&(linker_sb)), "-l");
 #line 156 "src/main.vl"
-            sb_append_str((&(linker_sb)), argv[(i + 1)]);
+            sb_append_str((&(linker_sb)), "-l");
 #line 157 "src/main.vl"
+            sb_append_str((&(linker_sb)), argv[(i + 1)]);
+#line 158 "src/main.vl"
             i += 1;
         } else
-#line 158 "src/main.vl"
+#line 159 "src/main.vl"
         if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'l'))) {
-#line 159 "src/main.vl"
+#line 160 "src/main.vl"
             if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 159 "src/main.vl"
+#line 160 "src/main.vl"
                 sb_append_char((&(linker_sb)), ' ');
             }
-#line 160 "src/main.vl"
+#line 161 "src/main.vl"
             sb_append_str((&(linker_sb)), arg);
         } else
-#line 161 "src/main.vl"
+#line 162 "src/main.vl"
         if ((((arg != NULL && "-L" != NULL) ? (strcmp(arg, "-L") == 0) : (arg == "-L")) && ((i + 1) < argc))) {
-#line 162 "src/main.vl"
+#line 163 "src/main.vl"
             if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 162 "src/main.vl"
+#line 163 "src/main.vl"
                 sb_append_char((&(linker_sb)), ' ');
             }
-#line 163 "src/main.vl"
-            sb_append_str((&(linker_sb)), "-L");
 #line 164 "src/main.vl"
-            sb_append_str((&(linker_sb)), quote_path(path_to_native_str(argv[(i + 1)])));
+            sb_append_str((&(linker_sb)), "-L");
 #line 165 "src/main.vl"
+            sb_append_str((&(linker_sb)), quote_path(path_to_native_str(argv[(i + 1)])));
+#line 166 "src/main.vl"
             i += 1;
         } else
-#line 166 "src/main.vl"
+#line 167 "src/main.vl"
         if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'L'))) {
-#line 167 "src/main.vl"
+#line 168 "src/main.vl"
             if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 167 "src/main.vl"
+#line 168 "src/main.vl"
                 sb_append_char((&(linker_sb)), ' ');
             }
-#line 168 "src/main.vl"
-            sb_append_str((&(linker_sb)), "-L");
 #line 169 "src/main.vl"
-            const char* raw_arg = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
+            sb_append_str((&(linker_sb)), "-L");
 #line 170 "src/main.vl"
+            const char* raw_arg = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
+#line 171 "src/main.vl"
             sb_append_str((&(linker_sb)), quote_path(path_to_native_str(raw_arg)));
         } else
-#line 171 "src/main.vl"
-        if (((((((((arg != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(arg, "--unsafe-shelf-index") != 0) : (arg != "--unsafe-shelf-index")) && ((arg != NULL && "--unsafe-array-index" != NULL) ? (strcmp(arg, "--unsafe-array-index") != 0) : (arg != "--unsafe-array-index"))) && ((arg != NULL && "--unsafe-index" != NULL) ? (strcmp(arg, "--unsafe-index") != 0) : (arg != "--unsafe-index"))) && ((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") != 0) : (arg != "--unsafe-heap"))) && ((arg != NULL && "--no-line-directives" != NULL) ? (strcmp(arg, "--no-line-directives") != 0) : (arg != "--no-line-directives"))) && ((arg != NULL && "--strict-safety" != NULL) ? (strcmp(arg, "--strict-safety") != 0) : (arg != "--strict-safety"))) && velo_cmp_eq_u_s(((usize)strlen(source_file)), 0))) {
 #line 172 "src/main.vl"
+        if (((((((((arg != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(arg, "--unsafe-shelf-index") != 0) : (arg != "--unsafe-shelf-index")) && ((arg != NULL && "--unsafe-array-index" != NULL) ? (strcmp(arg, "--unsafe-array-index") != 0) : (arg != "--unsafe-array-index"))) && ((arg != NULL && "--unsafe-index" != NULL) ? (strcmp(arg, "--unsafe-index") != 0) : (arg != "--unsafe-index"))) && ((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") != 0) : (arg != "--unsafe-heap"))) && ((arg != NULL && "--no-line-directives" != NULL) ? (strcmp(arg, "--no-line-directives") != 0) : (arg != "--no-line-directives"))) && ((arg != NULL && "--strict-safety" != NULL) ? (strcmp(arg, "--strict-safety") != 0) : (arg != "--strict-safety"))) && velo_cmp_eq_u_s(((usize)strlen(source_file)), 0))) {
+#line 173 "src/main.vl"
             source_file = arg;
         }
-#line 174 "src/main.vl"
+#line 175 "src/main.vl"
         i += 1;
         __loop_cont_761: __attribute__((unused));
     }
     __loop_break_761: __attribute__((unused));
-#line 176 "src/main.vl"
-    if (velo_cmp_eq_u_s(((usize)strlen(source_file)), 0)) {
 #line 177 "src/main.vl"
-        println_str("[Velo Error] 'build' requires a source file path");
+    if (velo_cmp_eq_u_s(((usize)strlen(source_file)), 0)) {
 #line 178 "src/main.vl"
+        println_str("[Velo Error] 'build' requires a source file path");
+#line 179 "src/main.vl"
         return 1;
     }
-#line 180 "src/main.vl"
-    if (((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl"))) && ((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") != 0) : (cc != "clang")))) {
 #line 181 "src/main.vl"
-        println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc', 'clang', or 'cl'.", (const char*)(cc)));
+    if (((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl"))) && ((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") != 0) : (cc != "clang")))) {
 #line 182 "src/main.vl"
+        println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc', 'clang', or 'cl'.", (const char*)(cc)));
+#line 183 "src/main.vl"
         return 1;
     }
-#line 184 "src/main.vl"
-    if ((debug_mode && release_mode)) {
 #line 185 "src/main.vl"
-        println_str("[Velo Error] Cannot specify both --debug and --release");
+    if ((debug_mode && release_mode)) {
 #line 186 "src/main.vl"
+        println_str("[Velo Error] Cannot specify both --debug and --release");
+#line 187 "src/main.vl"
         return 1;
     }
-#line 188 "src/main.vl"
-    const char* opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level);
 #line 189 "src/main.vl"
-    if (unsafe_heap) {
+    const char* opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level);
 #line 190 "src/main.vl"
+    if (unsafe_heap) {
+#line 191 "src/main.vl"
         StringBuilder u_sb = create_sb((((usize)strlen(opt_flags)) + 32));
-#line 191 "src/main.vl"
+#line 192 "src/main.vl"
         sb_append_str((&(u_sb)), opt_flags);
-#line 191 "src/main.vl"
+#line 192 "src/main.vl"
         sb_append_str((&(u_sb)), " -DVELO_UNSAFE_HEAP");
-#line 191 "src/main.vl"
+#line 192 "src/main.vl"
         opt_flags = sb_to_string((&(u_sb)));
     }
-#line 193 "src/main.vl"
-    const char* linker_flags = sb_to_string((&(linker_sb)));
 #line 194 "src/main.vl"
-    bool ok = false;
+    const char* linker_flags = sb_to_string((&(linker_sb)));
 #line 195 "src/main.vl"
+    bool ok = false;
+#line 196 "src/main.vl"
     {
         size_t __zone_wm_1 = velo_zone_push();
-#line 196 "src/main.vl"
-        ok = build_executable_all_opts(source_file, output_exe, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety);
 #line 197 "src/main.vl"
-        if (ok) {
+        ok = build_executable_all_opts(source_file, output_exe, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety);
 #line 198 "src/main.vl"
+        if (ok) {
+#line 199 "src/main.vl"
             println_str("[Velo] Successfully built binary!");
         } else {
-#line 200 "src/main.vl"
+#line 201 "src/main.vl"
             println_str("[Velo Error] Build failed.");
         }
         velo_zone_pop(__zone_wm_1);
     }
-#line 203 "src/main.vl"
-    if (ok) {
 #line 204 "src/main.vl"
+    if (ok) {
+#line 205 "src/main.vl"
         return 0;
     }
-#line 206 "src/main.vl"
+#line 207 "src/main.vl"
     return 1;
 }
 
-#line 209 "src/main.vl"
-int32_t handle_build_cmd(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives) {
 #line 210 "src/main.vl"
+int32_t handle_build_cmd(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives) {
+#line 211 "src/main.vl"
     return handle_build_cmd_opts(argc, argv, unsafe_index, no_line_directives, false);
 }
 
@@ -74812,169 +74822,703 @@ int32_t handle_fmt_cmd(int32_t argc, const char** argv) {
 }
 
 #line 15 "src/main.vl"
-int main(int argc, char** argv) {
-g_velo_os_argc = argc;
-g_velo_os_argv = argv;
+ptrdiff_t read_repl_line(uint8_t* buf, size_t max_len) {
 #line 16 "src/main.vl"
-    if ((argc < 2)) {
+    FileHandle stdin_h = io_stdin_handle();
 #line 17 "src/main.vl"
-        print_usage();
-#line 18 "src/main.vl"
-        return 0;
+    if ((!io_is_valid_handle(stdin_h))) {
+#line 17 "src/main.vl"
+        return (-1);
     }
+#line 18 "src/main.vl"
+    size_t idx = 0;
+#line 19 "src/main.vl"
+    uint8_t ch = ((uint8_t)(0));
+#line 20 "src/main.vl"
+    for (int32_t it = 0; (((idx + 1) < max_len)); it++) {
 #line 21 "src/main.vl"
-    const char* cmd = argv[1];
+        ptrdiff_t n = io_raw_read(stdin_h, (&(ch)), 1);
+#line 22 "src/main.vl"
+        if ((n <= 0)) {
+#line 23 "src/main.vl"
+            if (velo_cmp_gt_u_s(idx, 0)) {
+#line 23 "src/main.vl"
+                goto __loop_break_872;
+            }
 #line 24 "src/main.vl"
-    bool unsafe_index = false;
-#line 25 "src/main.vl"
-    bool unsafe_heap = false;
+            return (-1);
+        }
 #line 26 "src/main.vl"
-    bool no_line_directives = false;
+        if ((ch == ((uint8_t)(10)))) {
 #line 27 "src/main.vl"
-    bool strict_safety = false;
-#line 28 "src/main.vl"
-    int32_t si = 2;
+            goto __loop_break_872;
+        }
 #line 29 "src/main.vl"
-    for (int32_t it = 0; ((si < argc)); it++) {
+        if ((ch != ((uint8_t)(13)))) {
 #line 30 "src/main.vl"
-        if (((((argv[si] != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(argv[si], "--unsafe-shelf-index") == 0) : (argv[si] == "--unsafe-shelf-index")) || ((argv[si] != NULL && "--unsafe-array-index" != NULL) ? (strcmp(argv[si], "--unsafe-array-index") == 0) : (argv[si] == "--unsafe-array-index"))) || ((argv[si] != NULL && "--unsafe-index" != NULL) ? (strcmp(argv[si], "--unsafe-index") == 0) : (argv[si] == "--unsafe-index")))) {
-#line 30 "src/main.vl"
-            unsafe_index = true;
-        }
+            buf[idx] = ch;
 #line 31 "src/main.vl"
-        if (((argv[si] != NULL && "--unsafe-heap" != NULL) ? (strcmp(argv[si], "--unsafe-heap") == 0) : (argv[si] == "--unsafe-heap"))) {
-#line 31 "src/main.vl"
-            unsafe_heap = true;
+            idx += 1;
         }
-#line 32 "src/main.vl"
-        if (((argv[si] != NULL && "--no-line-directives" != NULL) ? (strcmp(argv[si], "--no-line-directives") == 0) : (argv[si] == "--no-line-directives"))) {
-#line 32 "src/main.vl"
-            no_line_directives = true;
-        }
-#line 33 "src/main.vl"
-        if (((argv[si] != NULL && "--strict-safety" != NULL) ? (strcmp(argv[si], "--strict-safety") == 0) : (argv[si] == "--strict-safety"))) {
-#line 33 "src/main.vl"
-            strict_safety = true;
-        }
-#line 34 "src/main.vl"
-        si += 1;
         __loop_cont_872: __attribute__((unused));
     }
     __loop_break_872: __attribute__((unused));
-#line 37 "src/main.vl"
-    if ((((cmd != NULL && "version" != NULL) ? (strcmp(cmd, "version") == 0) : (cmd == "version")) || ((cmd != NULL && "--version" != NULL) ? (strcmp(cmd, "--version") == 0) : (cmd == "--version")))) {
-#line 38 "src/main.vl"
-        println_str(velo_str_format("Velo v%s (%s)", (const char*)(VELO_VERSION), (const char*)(VELO_VERSION_LABEL)));
+#line 34 "src/main.vl"
+    buf[idx] = ((uint8_t)(0));
+#line 35 "src/main.vl"
+    return ((ptrdiff_t)(idx));
+}
+
 #line 39 "src/main.vl"
-        println_str(velo_str_format("Target: %s", (const char*)(VELO_TARGET_LABEL)));
+const char* trim_repl_line(const char* s) {
 #line 40 "src/main.vl"
-        return 0;
+    if ((s == NULL)) {
+#line 40 "src/main.vl"
+        return "";
+    }
+#line 41 "src/main.vl"
+    size_t len = ((usize)strlen(s));
+#line 42 "src/main.vl"
+    if (velo_cmp_eq_u_s(len, 0)) {
+#line 42 "src/main.vl"
+        return "";
     }
 #line 43 "src/main.vl"
-    if ((((cmd != NULL && "help" != NULL) ? (strcmp(cmd, "help") == 0) : (cmd == "help")) || ((cmd != NULL && "--help" != NULL) ? (strcmp(cmd, "--help") == 0) : (cmd == "--help")))) {
+    size_t start = 0;
 #line 44 "src/main.vl"
-        print_usage();
+    for (int32_t it = 0; (((start < len) && (((velo_cmp_eq_u_s(s[start], ' ') || velo_cmp_eq_u_s(s[start], '\t')) || velo_cmp_eq_u_s(s[start], '\r')) || velo_cmp_eq_u_s(s[start], '\n')))); it++) {
 #line 45 "src/main.vl"
-        return 0;
+        start += 1;
+        __loop_cont_873: __attribute__((unused));
+    }
+    __loop_break_873: __attribute__((unused));
+#line 47 "src/main.vl"
+    if ((start >= len)) {
+#line 47 "src/main.vl"
+        return "";
     }
 #line 48 "src/main.vl"
-    if ((((cmd != NULL && "explain" != NULL) ? (strcmp(cmd, "explain") == 0) : (cmd == "explain")) || ((cmd != NULL && "--explain" != NULL) ? (strcmp(cmd, "--explain") == 0) : (cmd == "--explain")))) {
+    size_t end = len;
 #line 49 "src/main.vl"
-        if ((argc < 3)) {
+    for (int32_t it = 0; (((end > start) && (((velo_cmp_eq_u_s(s[(end - 1)], ' ') || velo_cmp_eq_u_s(s[(end - 1)], '\t')) || velo_cmp_eq_u_s(s[(end - 1)], '\r')) || velo_cmp_eq_u_s(s[(end - 1)], '\n')))); it++) {
 #line 50 "src/main.vl"
-            println_str("Usage: velo explain <VELO-E####>");
-#line 51 "src/main.vl"
-            return 1;
-        }
-#line 53 "src/main.vl"
-        const char* code = argv[2];
-#line 54 "src/main.vl"
-        const char* explanation = error_code_explain(code);
-#line 55 "src/main.vl"
-        println_str(explanation);
+        end -= 1;
+        __loop_cont_874: __attribute__((unused));
+    }
+    __loop_break_874: __attribute__((unused));
+#line 52 "src/main.vl"
+    return copy_slice_to_string(s, start, (end - start));
+}
+
 #line 56 "src/main.vl"
+bool starts_with_keyword(const char* s, const char* kw) {
+#line 57 "src/main.vl"
+    if (((s == NULL) || (kw == NULL))) {
+#line 57 "src/main.vl"
+        return false;
+    }
+#line 58 "src/main.vl"
+    size_t slen = ((usize)strlen(s));
+#line 59 "src/main.vl"
+    size_t kwlen = ((usize)strlen(kw));
+#line 60 "src/main.vl"
+    if ((slen < kwlen)) {
+#line 60 "src/main.vl"
+        return false;
+    }
+#line 61 "src/main.vl"
+    size_t i = 0;
+#line 62 "src/main.vl"
+    for (int32_t it = 0; ((i < kwlen)); it++) {
+#line 63 "src/main.vl"
+        if ((s[i] != kw[i])) {
+#line 63 "src/main.vl"
+            return false;
+        }
+#line 64 "src/main.vl"
+        i += 1;
+        __loop_cont_875: __attribute__((unused));
+    }
+    __loop_break_875: __attribute__((unused));
+#line 66 "src/main.vl"
+    return true;
+}
+
+#line 70 "src/main.vl"
+bool is_import_stmt(const char* s) {
+#line 71 "src/main.vl"
+    return starts_with_keyword(s, "use ");
+}
+
+#line 75 "src/main.vl"
+bool contains_assignment_op(const char* s) {
+#line 76 "src/main.vl"
+    if ((s == NULL)) {
+#line 76 "src/main.vl"
+        return false;
+    }
+#line 77 "src/main.vl"
+    size_t len = ((usize)strlen(s));
+#line 78 "src/main.vl"
+    if (velo_cmp_lt_u_s(len, 3)) {
+#line 78 "src/main.vl"
+        return false;
+    }
+#line 79 "src/main.vl"
+    size_t i = 0;
+#line 80 "src/main.vl"
+    for (int32_t it = 0; (((i + 1) < len)); it++) {
+#line 81 "src/main.vl"
+        uint8_t c = s[i];
+#line 82 "src/main.vl"
+        uint8_t next_c = s[(i + 1)];
+#line 83 "src/main.vl"
+        if ((((((velo_cmp_eq_u_s(c, '+') || velo_cmp_eq_u_s(c, '-')) || velo_cmp_eq_u_s(c, '*')) || velo_cmp_eq_u_s(c, '/')) || velo_cmp_eq_u_s(c, '%')) && velo_cmp_eq_u_s(next_c, '='))) {
+#line 84 "src/main.vl"
+            return true;
+        }
+#line 86 "src/main.vl"
+        if (velo_cmp_eq_u_s(c, '=')) {
+#line 87 "src/main.vl"
+            uint8_t prev_c = ((uint8_t)(' '));
+#line 88 "src/main.vl"
+            if (velo_cmp_gt_u_s(i, 0)) {
+#line 89 "src/main.vl"
+                prev_c = s[(i - 1)];
+            }
+#line 91 "src/main.vl"
+            if ((((((prev_c != ((uint8_t)('='))) && (prev_c != ((uint8_t)('!')))) && (prev_c != ((uint8_t)('<')))) && (prev_c != ((uint8_t)('>')))) && velo_cmp_ne_u_s(next_c, '='))) {
+#line 92 "src/main.vl"
+                return true;
+            }
+        }
+#line 95 "src/main.vl"
+        i += 1;
+        __loop_cont_876: __attribute__((unused));
+    }
+    __loop_break_876: __attribute__((unused));
+#line 97 "src/main.vl"
+    return false;
+}
+
+#line 101 "src/main.vl"
+bool is_stateful_stmt(const char* s) {
+#line 102 "src/main.vl"
+    if ((starts_with_keyword(s, "let ") || starts_with_keyword(s, "mut "))) {
+#line 103 "src/main.vl"
+        return true;
+    }
+#line 105 "src/main.vl"
+    return contains_assignment_op(s);
+}
+
+#line 109 "src/main.vl"
+bool is_statement(const char* s) {
+#line 110 "src/main.vl"
+    if ((is_import_stmt(s) || is_stateful_stmt(s))) {
+#line 111 "src/main.vl"
+        return true;
+    }
+#line 113 "src/main.vl"
+    if (((((starts_with_keyword(s, "if ") || starts_with_keyword(s, "loop ")) || starts_with_keyword(s, "defer ")) || starts_with_keyword(s, "return ")) || starts_with_keyword(s, "zone "))) {
+#line 114 "src/main.vl"
+        return true;
+    }
+#line 116 "src/main.vl"
+    if (((((starts_with_keyword(s, "println(") || starts_with_keyword(s, "print(")) || starts_with_keyword(s, "io.print")) || starts_with_keyword(s, "println_")) || starts_with_keyword(s, "print_"))) {
+#line 117 "src/main.vl"
+        return true;
+    }
+#line 119 "src/main.vl"
+    size_t len = ((usize)strlen(s));
+#line 120 "src/main.vl"
+    if (velo_cmp_gt_u_s(len, 0)) {
+#line 121 "src/main.vl"
+        uint8_t last = s[(len - 1)];
+#line 122 "src/main.vl"
+        if (((velo_cmp_eq_u_s(last, ';') || velo_cmp_eq_u_s(last, '}')) || velo_cmp_eq_u_s(last, '{'))) {
+#line 123 "src/main.vl"
+            return true;
+        }
+    }
+#line 126 "src/main.vl"
+    return false;
+}
+
+#line 130 "src/main.vl"
+int32_t start_repl(int32_t argc, const char** argv, bool unsafe_index, bool no_line_directives, bool strict_safety) {
+#line 131 "src/main.vl"
+    const char* cc = "gcc";
+#line 132 "src/main.vl"
+    bool debug_mode = false;
+#line 133 "src/main.vl"
+    bool release_mode = false;
+#line 134 "src/main.vl"
+    const char* opt_level = "";
+#line 135 "src/main.vl"
+    StringBuilder linker_sb = create_sb(256);
+#line 136 "src/main.vl"
+    int32_t i = 2;
+#line 137 "src/main.vl"
+    for (int32_t it = 0; ((i < argc)); it++) {
+#line 138 "src/main.vl"
+        const char* arg = argv[i];
+#line 139 "src/main.vl"
+        if ((((arg != NULL && "--cc" != NULL) ? (strcmp(arg, "--cc") == 0) : (arg == "--cc")) && ((i + 1) < argc))) {
+#line 139 "src/main.vl"
+            cc = argv[(i + 1)];
+#line 139 "src/main.vl"
+            i += 1;
+        } else
+#line 140 "src/main.vl"
+        if ((((((velo_cmp_gt_u_s(((usize)strlen(arg)), 5) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], '-')) && velo_cmp_eq_u_s(arg[2], 'c')) && velo_cmp_eq_u_s(arg[3], 'c')) && velo_cmp_eq_u_s(arg[4], '='))) {
+#line 140 "src/main.vl"
+            cc = copy_slice_to_string(arg, 5, (((usize)strlen(arg)) - 5));
+        } else
+#line 141 "src/main.vl"
+        if (((arg != NULL && "--debug" != NULL) ? (strcmp(arg, "--debug") == 0) : (arg == "--debug"))) {
+#line 141 "src/main.vl"
+            debug_mode = true;
+        } else
+#line 142 "src/main.vl"
+        if (((arg != NULL && "--release" != NULL) ? (strcmp(arg, "--release") == 0) : (arg == "--release"))) {
+#line 142 "src/main.vl"
+            release_mode = true;
+        } else
+#line 143 "src/main.vl"
+        if ((((arg != NULL && "-O" != NULL) ? (strcmp(arg, "-O") == 0) : (arg == "-O")) && ((i + 1) < argc))) {
+#line 143 "src/main.vl"
+            opt_level = argv[(i + 1)];
+#line 143 "src/main.vl"
+            i += 1;
+        } else
+#line 144 "src/main.vl"
+        if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'O'))) {
+#line 144 "src/main.vl"
+            opt_level = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
+        }
+#line 145 "src/main.vl"
+        i += 1;
+        __loop_cont_877: __attribute__((unused));
+    }
+    __loop_break_877: __attribute__((unused));
+#line 148 "src/main.vl"
+    const char* opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level);
+#line 149 "src/main.vl"
+    const char* linker_flags = sb_to_string((&(linker_sb)));
+#line 151 "src/main.vl"
+    println_str(velo_str_format("Velo REPL v%s", (const char*)(VELO_VERSION)));
+#line 152 "src/main.vl"
+    println_str("Type ':help' for commands, ':quit' or ':q' to exit.");
+#line 154 "src/main.vl"
+    const char** session_imports = ((const char**)velo_mem_alloc(sizeof(const char*), (size_t)(64)));
+#line 155 "src/main.vl"
+    size_t session_imports_count = 0;
+#line 157 "src/main.vl"
+    const char** session_stmts = ((const char**)velo_mem_alloc(sizeof(const char*), (size_t)(256)));
+#line 158 "src/main.vl"
+    size_t session_stmts_count = 0;
+#line 160 "src/main.vl"
+    uint8_t* line_buf = ((uint8_t*)velo_mem_alloc(sizeof(uint8_t), (size_t)(2048)));
+#line 161 "src/main.vl"
+    ensure_cache_dir();
+#line 163 "src/main.vl"
+    bool running = true;
+#line 164 "src/main.vl"
+    for (int32_t it = 0; (running); it++) {
+#line 165 "src/main.vl"
+        print_str("velo> ");
+#line 166 "src/main.vl"
+        io_flush_stdout();
+#line 168 "src/main.vl"
+        ptrdiff_t n = read_repl_line(line_buf, 2048);
+#line 169 "src/main.vl"
+        if ((n < 0)) {
+#line 170 "src/main.vl"
+            println_str("Goodbye!");
+#line 171 "src/main.vl"
+            goto __loop_break_878;
+        }
+#line 174 "src/main.vl"
+        const char* raw_line = ((const char*)(line_buf));
+#line 175 "src/main.vl"
+        const char* trimmed = trim_repl_line(raw_line);
+#line 176 "src/main.vl"
+        if (velo_cmp_eq_u_s(((usize)strlen(trimmed)), 0)) {
+#line 177 "src/main.vl"
+            goto __loop_cont_878;
+        }
+#line 180 "src/main.vl"
+        if (((((((((trimmed != NULL && ":quit" != NULL) ? (strcmp(trimmed, ":quit") == 0) : (trimmed == ":quit")) || ((trimmed != NULL && ":exit" != NULL) ? (strcmp(trimmed, ":exit") == 0) : (trimmed == ":exit"))) || ((trimmed != NULL && ":q" != NULL) ? (strcmp(trimmed, ":q") == 0) : (trimmed == ":q"))) || ((trimmed != NULL && "quit" != NULL) ? (strcmp(trimmed, "quit") == 0) : (trimmed == "quit"))) || ((trimmed != NULL && "exit" != NULL) ? (strcmp(trimmed, "exit") == 0) : (trimmed == "exit"))) || ((trimmed != NULL && "quit()" != NULL) ? (strcmp(trimmed, "quit()") == 0) : (trimmed == "quit()"))) || ((trimmed != NULL && "exit()" != NULL) ? (strcmp(trimmed, "exit()") == 0) : (trimmed == "exit()")))) {
+#line 181 "src/main.vl"
+            println_str("Goodbye!");
+#line 182 "src/main.vl"
+            goto __loop_break_878;
+        }
+#line 185 "src/main.vl"
+        if (((trimmed != NULL && ":help" != NULL) ? (strcmp(trimmed, ":help") == 0) : (trimmed == ":help"))) {
+#line 186 "src/main.vl"
+            println_str("Velo REPL Commands:");
+#line 187 "src/main.vl"
+            println_str("  :help          Display this help manual");
+#line 188 "src/main.vl"
+            println_str("  :reset         Clear session variables and imports");
+#line 189 "src/main.vl"
+            println_str("  :vars          Display active session statements");
+#line 190 "src/main.vl"
+            println_str("  :quit, :q      Exit the REPL");
+#line 191 "src/main.vl"
+            goto __loop_cont_878;
+        }
+#line 194 "src/main.vl"
+        if (((trimmed != NULL && ":reset" != NULL) ? (strcmp(trimmed, ":reset") == 0) : (trimmed == ":reset"))) {
+#line 195 "src/main.vl"
+            session_imports_count = 0;
+#line 196 "src/main.vl"
+            session_stmts_count = 0;
+#line 197 "src/main.vl"
+            println_str("[Velo REPL] Session reset.");
+#line 198 "src/main.vl"
+            goto __loop_cont_878;
+        }
+#line 201 "src/main.vl"
+        if (((trimmed != NULL && ":vars" != NULL) ? (strcmp(trimmed, ":vars") == 0) : (trimmed == ":vars"))) {
+#line 202 "src/main.vl"
+            if ((velo_cmp_eq_u_s(session_imports_count, 0) && velo_cmp_eq_u_s(session_stmts_count, 0))) {
+#line 203 "src/main.vl"
+                println_str("No active session state.");
+            } else {
+#line 205 "src/main.vl"
+                if (velo_cmp_gt_u_s(session_imports_count, 0)) {
+#line 206 "src/main.vl"
+                    println_str("Imports:");
+#line 207 "src/main.vl"
+                    size_t ii = 0;
+#line 208 "src/main.vl"
+                    for (int32_t it = 0; ((ii < session_imports_count)); it++) {
+#line 209 "src/main.vl"
+                        println_str(velo_str_format("  %s", (const char*)(session_imports[ii])));
+#line 210 "src/main.vl"
+                        ii += 1;
+                        __loop_cont_879: __attribute__((unused));
+                    }
+                    __loop_break_879: __attribute__((unused));
+                }
+#line 213 "src/main.vl"
+                if (velo_cmp_gt_u_s(session_stmts_count, 0)) {
+#line 214 "src/main.vl"
+                    println_str("Statements:");
+#line 215 "src/main.vl"
+                    size_t si = 0;
+#line 216 "src/main.vl"
+                    for (int32_t it = 0; ((si < session_stmts_count)); it++) {
+#line 217 "src/main.vl"
+                        size_t num = (si + 1);
+#line 218 "src/main.vl"
+                        println_str(velo_str_format("  %llu: %s", (unsigned long long)(num), (const char*)(session_stmts[si])));
+#line 219 "src/main.vl"
+                        si += 1;
+                        __loop_cont_880: __attribute__((unused));
+                    }
+                    __loop_break_880: __attribute__((unused));
+                }
+            }
+#line 223 "src/main.vl"
+            goto __loop_cont_878;
+        }
+#line 226 "src/main.vl"
+        if (velo_cmp_eq_u_s(trimmed[0], ':')) {
+#line 227 "src/main.vl"
+            println_str(velo_str_format("Unknown REPL command '%s'. Type ':help' for available commands.", (const char*)(trimmed)));
+#line 228 "src/main.vl"
+            goto __loop_cont_878;
+        }
+#line 232 "src/main.vl"
+        StringBuilder sb = create_sb(2048);
+#line 233 "src/main.vl"
+        sb_append_str((&(sb)), "// Velo REPL scratch session\n");
+#line 234 "src/main.vl"
+        sb_append_str((&(sb)), "use std.io\n");
+#line 235 "src/main.vl"
+        sb_append_str((&(sb)), "use std.math\n");
+#line 236 "src/main.vl"
+        sb_append_str((&(sb)), "use std.str\n\n");
+#line 238 "src/main.vl"
+        size_t ii = 0;
+#line 239 "src/main.vl"
+        for (int32_t it = 0; ((ii < session_imports_count)); it++) {
+#line 240 "src/main.vl"
+            sb_append_str((&(sb)), session_imports[ii]);
+#line 241 "src/main.vl"
+            sb_append_char((&(sb)), '\n');
+#line 242 "src/main.vl"
+            ii += 1;
+            __loop_cont_881: __attribute__((unused));
+        }
+        __loop_break_881: __attribute__((unused));
+#line 244 "src/main.vl"
+        sb_append_char((&(sb)), '\n');
+#line 246 "src/main.vl"
+        if (is_import_stmt(trimmed)) {
+#line 247 "src/main.vl"
+            sb_append_str((&(sb)), trimmed);
+#line 248 "src/main.vl"
+            sb_append_str((&(sb)), "\nact main() -> i32 { return 0 }\n");
+        } else {
+#line 250 "src/main.vl"
+            sb_append_str((&(sb)), "act main() -> i32 {\n");
+#line 251 "src/main.vl"
+            size_t si = 0;
+#line 252 "src/main.vl"
+            for (int32_t it = 0; ((si < session_stmts_count)); it++) {
+#line 253 "src/main.vl"
+                sb_append_str((&(sb)), "    ");
+#line 254 "src/main.vl"
+                sb_append_str((&(sb)), session_stmts[si]);
+#line 255 "src/main.vl"
+                sb_append_char((&(sb)), '\n');
+#line 256 "src/main.vl"
+                si += 1;
+                __loop_cont_882: __attribute__((unused));
+            }
+            __loop_break_882: __attribute__((unused));
+#line 258 "src/main.vl"
+            if (is_statement(trimmed)) {
+#line 259 "src/main.vl"
+                sb_append_str((&(sb)), "    ");
+#line 260 "src/main.vl"
+                sb_append_str((&(sb)), trimmed);
+#line 261 "src/main.vl"
+                sb_append_char((&(sb)), '\n');
+            } else {
+#line 263 "src/main.vl"
+                sb_append_str((&(sb)), "    let _repl_res = (");
+#line 264 "src/main.vl"
+                sb_append_str((&(sb)), trimmed);
+#line 265 "src/main.vl"
+                sb_append_str((&(sb)), ")\n");
+#line 266 "src/main.vl"
+                sb_append_str((&(sb)), "    io.println(\"{_repl_res}\")\n");
+            }
+#line 268 "src/main.vl"
+            sb_append_str((&(sb)), "    return 0\n}\n");
+        }
+#line 271 "src/main.vl"
+        const char* source_code = sb_to_string((&(sb)));
+#line 272 "src/main.vl"
+        const char* scratch_vl = ".velo_cache/repl_session.vl";
+#line 273 "src/main.vl"
+        const char* scratch_exe = ".velo_cache/repl_session.exe";
+#line 274 "src/main.vl"
+        fs_write_str(scratch_vl, source_code);
+#line 276 "src/main.vl"
+        bool ok = build_executable_all_opts(scratch_vl, scratch_exe, unsafe_index, opt_flags, linker_flags, cc, no_line_directives, strict_safety);
+#line 277 "src/main.vl"
+        if (ok) {
+#line 278 "src/main.vl"
+            const char* run_cmd = assemble_runner_cmd(cc, scratch_exe, NULL);
+#line 279 "src/main.vl"
+            int32_t res = os_system(run_cmd);
+#line 280 "src/main.vl"
+            if ((res == 0)) {
+#line 281 "src/main.vl"
+                if (is_import_stmt(trimmed)) {
+#line 282 "src/main.vl"
+                    if (velo_cmp_lt_u_s(session_imports_count, 64)) {
+#line 283 "src/main.vl"
+                        session_imports[session_imports_count] = copy_slice_to_string(trimmed, 0, ((usize)strlen(trimmed)));
+#line 284 "src/main.vl"
+                        session_imports_count += 1;
+                    }
+                } else
+#line 286 "src/main.vl"
+                if (is_stateful_stmt(trimmed)) {
+#line 287 "src/main.vl"
+                    if (velo_cmp_lt_u_s(session_stmts_count, 256)) {
+#line 288 "src/main.vl"
+                        session_stmts[session_stmts_count] = copy_slice_to_string(trimmed, 0, ((usize)strlen(trimmed)));
+#line 289 "src/main.vl"
+                        session_stmts_count += 1;
+                    }
+                }
+            }
+        }
+        __loop_cont_878: __attribute__((unused));
+    }
+    __loop_break_878: __attribute__((unused));
+#line 295 "src/main.vl"
+    return 0;
+}
+
+#line 16 "src/main.vl"
+int main(int argc, char** argv) {
+g_velo_os_argc = argc;
+g_velo_os_argv = argv;
+#line 17 "src/main.vl"
+    if ((argc < 2)) {
+#line 18 "src/main.vl"
+        print_usage();
+#line 19 "src/main.vl"
         return 0;
     }
-#line 59 "src/main.vl"
-    if ((((cmd != NULL && "lsp" != NULL) ? (strcmp(cmd, "lsp") == 0) : (cmd == "lsp")) || ((cmd != NULL && "--lsp" != NULL) ? (strcmp(cmd, "--lsp") == 0) : (cmd == "--lsp")))) {
+#line 22 "src/main.vl"
+    const char* cmd = argv[1];
+#line 25 "src/main.vl"
+    bool unsafe_index = false;
+#line 26 "src/main.vl"
+    bool unsafe_heap = false;
+#line 27 "src/main.vl"
+    bool no_line_directives = false;
+#line 28 "src/main.vl"
+    bool strict_safety = false;
+#line 29 "src/main.vl"
+    int32_t si = 2;
+#line 30 "src/main.vl"
+    for (int32_t it = 0; ((si < argc)); it++) {
+#line 31 "src/main.vl"
+        if (((((argv[si] != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(argv[si], "--unsafe-shelf-index") == 0) : (argv[si] == "--unsafe-shelf-index")) || ((argv[si] != NULL && "--unsafe-array-index" != NULL) ? (strcmp(argv[si], "--unsafe-array-index") == 0) : (argv[si] == "--unsafe-array-index"))) || ((argv[si] != NULL && "--unsafe-index" != NULL) ? (strcmp(argv[si], "--unsafe-index") == 0) : (argv[si] == "--unsafe-index")))) {
+#line 31 "src/main.vl"
+            unsafe_index = true;
+        }
+#line 32 "src/main.vl"
+        if (((argv[si] != NULL && "--unsafe-heap" != NULL) ? (strcmp(argv[si], "--unsafe-heap") == 0) : (argv[si] == "--unsafe-heap"))) {
+#line 32 "src/main.vl"
+            unsafe_heap = true;
+        }
+#line 33 "src/main.vl"
+        if (((argv[si] != NULL && "--no-line-directives" != NULL) ? (strcmp(argv[si], "--no-line-directives") == 0) : (argv[si] == "--no-line-directives"))) {
+#line 33 "src/main.vl"
+            no_line_directives = true;
+        }
+#line 34 "src/main.vl"
+        if (((argv[si] != NULL && "--strict-safety" != NULL) ? (strcmp(argv[si], "--strict-safety") == 0) : (argv[si] == "--strict-safety"))) {
+#line 34 "src/main.vl"
+            strict_safety = true;
+        }
+#line 35 "src/main.vl"
+        si += 1;
+        __loop_cont_883: __attribute__((unused));
+    }
+    __loop_break_883: __attribute__((unused));
+#line 38 "src/main.vl"
+    if ((((cmd != NULL && "version" != NULL) ? (strcmp(cmd, "version") == 0) : (cmd == "version")) || ((cmd != NULL && "--version" != NULL) ? (strcmp(cmd, "--version") == 0) : (cmd == "--version")))) {
+#line 39 "src/main.vl"
+        println_str(velo_str_format("Velo v%s (%s)", (const char*)(VELO_VERSION), (const char*)(VELO_VERSION_LABEL)));
+#line 40 "src/main.vl"
+        println_str(velo_str_format("Target: %s", (const char*)(VELO_TARGET_LABEL)));
+#line 41 "src/main.vl"
+        return 0;
+    }
+#line 44 "src/main.vl"
+    if ((((cmd != NULL && "help" != NULL) ? (strcmp(cmd, "help") == 0) : (cmd == "help")) || ((cmd != NULL && "--help" != NULL) ? (strcmp(cmd, "--help") == 0) : (cmd == "--help")))) {
+#line 45 "src/main.vl"
+        print_usage();
+#line 46 "src/main.vl"
+        return 0;
+    }
+#line 49 "src/main.vl"
+    if ((((cmd != NULL && "explain" != NULL) ? (strcmp(cmd, "explain") == 0) : (cmd == "explain")) || ((cmd != NULL && "--explain" != NULL) ? (strcmp(cmd, "--explain") == 0) : (cmd == "--explain")))) {
+#line 50 "src/main.vl"
+        if ((argc < 3)) {
+#line 51 "src/main.vl"
+            println_str("Usage: velo explain <VELO-E####>");
+#line 52 "src/main.vl"
+            return 1;
+        }
+#line 54 "src/main.vl"
+        const char* code = argv[2];
+#line 55 "src/main.vl"
+        const char* explanation = error_code_explain(code);
+#line 56 "src/main.vl"
+        println_str(explanation);
+#line 57 "src/main.vl"
+        return 0;
+    }
 #line 60 "src/main.vl"
+    if ((((cmd != NULL && "lsp" != NULL) ? (strcmp(cmd, "lsp") == 0) : (cmd == "lsp")) || ((cmd != NULL && "--lsp" != NULL) ? (strcmp(cmd, "--lsp") == 0) : (cmd == "--lsp")))) {
+#line 61 "src/main.vl"
         return handle_lsp_command();
     }
-#line 63 "src/main.vl"
-    if (((cmd != NULL && "run" != NULL) ? (strcmp(cmd, "run") == 0) : (cmd == "run"))) {
 #line 64 "src/main.vl"
+    if ((((cmd != NULL && "repl" != NULL) ? (strcmp(cmd, "repl") == 0) : (cmd == "repl")) || ((cmd != NULL && "--repl" != NULL) ? (strcmp(cmd, "--repl") == 0) : (cmd == "--repl")))) {
+#line 65 "src/main.vl"
+        return start_repl(argc, ((const char**)(argv)), unsafe_index, no_line_directives, strict_safety);
+    }
+#line 68 "src/main.vl"
+    if (((cmd != NULL && "run" != NULL) ? (strcmp(cmd, "run") == 0) : (cmd == "run"))) {
+#line 69 "src/main.vl"
         return handle_run_cmd_opts(argc, ((const char**)(argv)), unsafe_index, no_line_directives, strict_safety);
     }
-#line 67 "src/main.vl"
+#line 72 "src/main.vl"
     if (((cmd != NULL && "emit-c" != NULL) ? (strcmp(cmd, "emit-c") == 0) : (cmd == "emit-c"))) {
-#line 68 "src/main.vl"
+#line 73 "src/main.vl"
         if ((argc < 3)) {
-#line 69 "src/main.vl"
+#line 74 "src/main.vl"
             println_str("[Velo Error] 'emit-c' requires a source file path");
-#line 70 "src/main.vl"
+#line 75 "src/main.vl"
             return 1;
         }
-#line 72 "src/main.vl"
-        const char* source_file = "";
-#line 73 "src/main.vl"
-        const char* out_file = "";
-#line 74 "src/main.vl"
-        int32_t i = 2;
-#line 75 "src/main.vl"
-        for (int32_t it = 0; ((i < argc)); it++) {
-#line 76 "src/main.vl"
-            const char* arg = argv[i];
 #line 77 "src/main.vl"
-            if (((((arg != NULL && "-o" != NULL) ? (strcmp(arg, "-o") == 0) : (arg == "-o")) || ((arg != NULL && "--output" != NULL) ? (strcmp(arg, "--output") == 0) : (arg == "--output"))) && ((i + 1) < argc))) {
+        const char* source_file = "";
 #line 78 "src/main.vl"
-                out_file = argv[(i + 1)];
+        const char* out_file = "";
 #line 79 "src/main.vl"
+        int32_t i = 2;
+#line 80 "src/main.vl"
+        for (int32_t it = 0; ((i < argc)); it++) {
+#line 81 "src/main.vl"
+            const char* arg = argv[i];
+#line 82 "src/main.vl"
+            if (((((arg != NULL && "-o" != NULL) ? (strcmp(arg, "-o") == 0) : (arg == "-o")) || ((arg != NULL && "--output" != NULL) ? (strcmp(arg, "--output") == 0) : (arg == "--output"))) && ((i + 1) < argc))) {
+#line 83 "src/main.vl"
+                out_file = argv[(i + 1)];
+#line 84 "src/main.vl"
                 i += 1;
             } else
-#line 80 "src/main.vl"
+#line 85 "src/main.vl"
             if (((((((((arg != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(arg, "--unsafe-shelf-index") != 0) : (arg != "--unsafe-shelf-index")) && ((arg != NULL && "--unsafe-array-index" != NULL) ? (strcmp(arg, "--unsafe-array-index") != 0) : (arg != "--unsafe-array-index"))) && ((arg != NULL && "--unsafe-index" != NULL) ? (strcmp(arg, "--unsafe-index") != 0) : (arg != "--unsafe-index"))) && ((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") != 0) : (arg != "--unsafe-heap"))) && ((arg != NULL && "--no-line-directives" != NULL) ? (strcmp(arg, "--no-line-directives") != 0) : (arg != "--no-line-directives"))) && ((arg != NULL && "--strict-safety" != NULL) ? (strcmp(arg, "--strict-safety") != 0) : (arg != "--strict-safety"))) && velo_cmp_eq_u_s(((usize)strlen(source_file)), 0))) {
-#line 81 "src/main.vl"
+#line 86 "src/main.vl"
                 source_file = arg;
             }
-#line 83 "src/main.vl"
+#line 88 "src/main.vl"
             i += 1;
-            __loop_cont_873: __attribute__((unused));
+            __loop_cont_884: __attribute__((unused));
         }
-        __loop_break_873: __attribute__((unused));
-#line 85 "src/main.vl"
+        __loop_break_884: __attribute__((unused));
+#line 90 "src/main.vl"
         if (velo_cmp_eq_u_s(((usize)strlen(source_file)), 0)) {
-#line 86 "src/main.vl"
+#line 91 "src/main.vl"
             println_str("[Velo Error] 'emit-c' requires a source file path");
-#line 87 "src/main.vl"
+#line 92 "src/main.vl"
             return 1;
         }
-#line 89 "src/main.vl"
+#line 94 "src/main.vl"
         {
             size_t __zone_wm_1 = velo_zone_push();
-#line 90 "src/main.vl"
-            const char* c_code = compile_source_to_c_strict(source_file, unsafe_index, no_line_directives, strict_safety);
-#line 91 "src/main.vl"
-            if ((c_code != NULL)) {
-#line 92 "src/main.vl"
-                if (unsafe_heap) {
-#line 93 "src/main.vl"
-                    StringBuilder c_sb = create_sb((((usize)strlen(c_code)) + 32));
-#line 94 "src/main.vl"
-                    sb_append_str((&(c_sb)), "#define VELO_UNSAFE_HEAP 1\n");
 #line 95 "src/main.vl"
-                    sb_append_str((&(c_sb)), c_code);
+            const char* c_code = compile_source_to_c_strict(source_file, unsafe_index, no_line_directives, strict_safety);
 #line 96 "src/main.vl"
+            if ((c_code != NULL)) {
+#line 97 "src/main.vl"
+                if (unsafe_heap) {
+#line 98 "src/main.vl"
+                    StringBuilder c_sb = create_sb((((usize)strlen(c_code)) + 32));
+#line 99 "src/main.vl"
+                    sb_append_str((&(c_sb)), "#define VELO_UNSAFE_HEAP 1\n");
+#line 100 "src/main.vl"
+                    sb_append_str((&(c_sb)), c_code);
+#line 101 "src/main.vl"
                     c_code = sb_to_string((&(c_sb)));
                 }
-#line 98 "src/main.vl"
+#line 103 "src/main.vl"
                 if (velo_cmp_gt_u_s(((usize)strlen(out_file)), 0)) {
-#line 99 "src/main.vl"
+#line 104 "src/main.vl"
                     bool ok = fs_write_str(out_file, c_code);
-#line 100 "src/main.vl"
+#line 105 "src/main.vl"
                     if ((!ok)) {
-#line 101 "src/main.vl"
+#line 106 "src/main.vl"
                         println_str(velo_str_format("[Velo Error] Failed to write output file: %s", (const char*)(out_file)));
-#line 102 "src/main.vl"
+#line 107 "src/main.vl"
                         {
                             int32_t __ret_val = 1;
                             velo_zone_pop(__zone_wm_1);
@@ -74982,11 +75526,11 @@ g_velo_os_argv = argv;
                         }
                     }
                 } else {
-#line 105 "src/main.vl"
+#line 110 "src/main.vl"
                     println_str(c_code);
                 }
             } else {
-#line 108 "src/main.vl"
+#line 113 "src/main.vl"
                 {
                     int32_t __ret_val = 1;
                     velo_zone_pop(__zone_wm_1);
@@ -74995,347 +75539,347 @@ g_velo_os_argv = argv;
             }
             velo_zone_pop(__zone_wm_1);
         }
-#line 111 "src/main.vl"
+#line 116 "src/main.vl"
         return 0;
     }
-#line 114 "src/main.vl"
+#line 119 "src/main.vl"
     if (((cmd != NULL && "build" != NULL) ? (strcmp(cmd, "build") == 0) : (cmd == "build"))) {
-#line 115 "src/main.vl"
+#line 120 "src/main.vl"
         return handle_build_cmd_opts(argc, ((const char**)(argv)), unsafe_index, no_line_directives, strict_safety);
     }
-#line 118 "src/main.vl"
+#line 123 "src/main.vl"
     if (((cmd != NULL && "check" != NULL) ? (strcmp(cmd, "check") == 0) : (cmd == "check"))) {
-#line 119 "src/main.vl"
+#line 124 "src/main.vl"
         if ((argc < 3)) {
-#line 120 "src/main.vl"
+#line 125 "src/main.vl"
             println_str("[Velo Error] 'check' requires a source file path");
-#line 121 "src/main.vl"
+#line 126 "src/main.vl"
             return 1;
         }
-#line 123 "src/main.vl"
-        const char* source_file = "";
-#line 124 "src/main.vl"
-        bool json_mode = false;
-#line 125 "src/main.vl"
-        bool color_always = false;
-#line 126 "src/main.vl"
-        int32_t i = 2;
-#line 127 "src/main.vl"
-        for (int32_t it = 0; ((i < argc)); it++) {
 #line 128 "src/main.vl"
-            const char* arg = argv[i];
+        const char* source_file = "";
 #line 129 "src/main.vl"
-            if (((arg != NULL && "--json" != NULL) ? (strcmp(arg, "--json") == 0) : (arg == "--json"))) {
+        bool json_mode = false;
 #line 130 "src/main.vl"
+        bool color_always = false;
+#line 131 "src/main.vl"
+        int32_t i = 2;
+#line 132 "src/main.vl"
+        for (int32_t it = 0; ((i < argc)); it++) {
+#line 133 "src/main.vl"
+            const char* arg = argv[i];
+#line 134 "src/main.vl"
+            if (((arg != NULL && "--json" != NULL) ? (strcmp(arg, "--json") == 0) : (arg == "--json"))) {
+#line 135 "src/main.vl"
                 json_mode = true;
             } else
-#line 131 "src/main.vl"
-            if (((arg != NULL && "--color=always" != NULL) ? (strcmp(arg, "--color=always") == 0) : (arg == "--color=always"))) {
-#line 132 "src/main.vl"
-                color_always = true;
-            } else
-#line 133 "src/main.vl"
-            if (((((arg != NULL && "--color" != NULL) ? (strcmp(arg, "--color") == 0) : (arg == "--color")) && ((i + 1) < argc)) && ((argv[(i + 1)] != NULL && "always" != NULL) ? (strcmp(argv[(i + 1)], "always") == 0) : (argv[(i + 1)] == "always")))) {
-#line 134 "src/main.vl"
-                color_always = true;
-#line 135 "src/main.vl"
-                i += 1;
-            } else
 #line 136 "src/main.vl"
-            if ((((arg != NULL && "--color=never" != NULL) ? (strcmp(arg, "--color=never") == 0) : (arg == "--color=never")) || ((arg != NULL && "--color=auto" != NULL) ? (strcmp(arg, "--color=auto") == 0) : (arg == "--color=auto")))) {
+            if (((arg != NULL && "--color=always" != NULL) ? (strcmp(arg, "--color=always") == 0) : (arg == "--color=always"))) {
+#line 137 "src/main.vl"
+                color_always = true;
             } else
 #line 138 "src/main.vl"
-            if (((((arg != NULL && "--color" != NULL) ? (strcmp(arg, "--color") == 0) : (arg == "--color")) && ((i + 1) < argc)) && (((argv[(i + 1)] != NULL && "never" != NULL) ? (strcmp(argv[(i + 1)], "never") == 0) : (argv[(i + 1)] == "never")) || ((argv[(i + 1)] != NULL && "auto" != NULL) ? (strcmp(argv[(i + 1)], "auto") == 0) : (argv[(i + 1)] == "auto"))))) {
+            if (((((arg != NULL && "--color" != NULL) ? (strcmp(arg, "--color") == 0) : (arg == "--color")) && ((i + 1) < argc)) && ((argv[(i + 1)] != NULL && "always" != NULL) ? (strcmp(argv[(i + 1)], "always") == 0) : (argv[(i + 1)] == "always")))) {
 #line 139 "src/main.vl"
+                color_always = true;
+#line 140 "src/main.vl"
                 i += 1;
             } else
-#line 140 "src/main.vl"
-            if (((((((((arg != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(arg, "--unsafe-shelf-index") != 0) : (arg != "--unsafe-shelf-index")) && ((arg != NULL && "--unsafe-array-index" != NULL) ? (strcmp(arg, "--unsafe-array-index") != 0) : (arg != "--unsafe-array-index"))) && ((arg != NULL && "--unsafe-index" != NULL) ? (strcmp(arg, "--unsafe-index") != 0) : (arg != "--unsafe-index"))) && ((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") != 0) : (arg != "--unsafe-heap"))) && ((arg != NULL && "--no-line-directives" != NULL) ? (strcmp(arg, "--no-line-directives") != 0) : (arg != "--no-line-directives"))) && ((arg != NULL && "--strict-safety" != NULL) ? (strcmp(arg, "--strict-safety") != 0) : (arg != "--strict-safety"))) && velo_cmp_eq_u_s(((usize)strlen(source_file)), 0))) {
 #line 141 "src/main.vl"
+            if ((((arg != NULL && "--color=never" != NULL) ? (strcmp(arg, "--color=never") == 0) : (arg == "--color=never")) || ((arg != NULL && "--color=auto" != NULL) ? (strcmp(arg, "--color=auto") == 0) : (arg == "--color=auto")))) {
+            } else
+#line 143 "src/main.vl"
+            if (((((arg != NULL && "--color" != NULL) ? (strcmp(arg, "--color") == 0) : (arg == "--color")) && ((i + 1) < argc)) && (((argv[(i + 1)] != NULL && "never" != NULL) ? (strcmp(argv[(i + 1)], "never") == 0) : (argv[(i + 1)] == "never")) || ((argv[(i + 1)] != NULL && "auto" != NULL) ? (strcmp(argv[(i + 1)], "auto") == 0) : (argv[(i + 1)] == "auto"))))) {
+#line 144 "src/main.vl"
+                i += 1;
+            } else
+#line 145 "src/main.vl"
+            if (((((((((arg != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(arg, "--unsafe-shelf-index") != 0) : (arg != "--unsafe-shelf-index")) && ((arg != NULL && "--unsafe-array-index" != NULL) ? (strcmp(arg, "--unsafe-array-index") != 0) : (arg != "--unsafe-array-index"))) && ((arg != NULL && "--unsafe-index" != NULL) ? (strcmp(arg, "--unsafe-index") != 0) : (arg != "--unsafe-index"))) && ((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") != 0) : (arg != "--unsafe-heap"))) && ((arg != NULL && "--no-line-directives" != NULL) ? (strcmp(arg, "--no-line-directives") != 0) : (arg != "--no-line-directives"))) && ((arg != NULL && "--strict-safety" != NULL) ? (strcmp(arg, "--strict-safety") != 0) : (arg != "--strict-safety"))) && velo_cmp_eq_u_s(((usize)strlen(source_file)), 0))) {
+#line 146 "src/main.vl"
                 source_file = arg;
             }
-#line 143 "src/main.vl"
+#line 148 "src/main.vl"
             i += 1;
-            __loop_cont_874: __attribute__((unused));
+            __loop_cont_885: __attribute__((unused));
         }
-        __loop_break_874: __attribute__((unused));
-#line 145 "src/main.vl"
+        __loop_break_885: __attribute__((unused));
+#line 150 "src/main.vl"
         if (velo_cmp_eq_u_s(((usize)strlen(source_file)), 0)) {
-#line 146 "src/main.vl"
+#line 151 "src/main.vl"
             println_str("[Velo Error] 'check' requires a source file path");
-#line 147 "src/main.vl"
+#line 152 "src/main.vl"
             return 1;
         }
-#line 149 "src/main.vl"
+#line 154 "src/main.vl"
         if (json_mode) {
-#line 150 "src/main.vl"
+#line 155 "src/main.vl"
             pretty_set_color(false);
-#line 151 "src/main.vl"
+#line 156 "src/main.vl"
             int32_t rc = 0;
-#line 152 "src/main.vl"
+#line 157 "src/main.vl"
             {
                 size_t __zone_wm_2 = velo_zone_push();
-#line 153 "src/main.vl"
+#line 158 "src/main.vl"
                 rc = run_check_json_opts(source_file, unsafe_index, strict_safety);
                 velo_zone_pop(__zone_wm_2);
             }
-#line 155 "src/main.vl"
+#line 160 "src/main.vl"
             return rc;
         }
-#line 157 "src/main.vl"
+#line 162 "src/main.vl"
         pretty_set_color(color_always);
-#line 158 "src/main.vl"
+#line 163 "src/main.vl"
         bool ok = false;
-#line 159 "src/main.vl"
+#line 164 "src/main.vl"
         {
             size_t __zone_wm_3 = velo_zone_push();
-#line 160 "src/main.vl"
+#line 165 "src/main.vl"
             ok = run_check_pretty_opts(source_file, unsafe_index, strict_safety);
             velo_zone_pop(__zone_wm_3);
         }
-#line 162 "src/main.vl"
+#line 167 "src/main.vl"
         if (ok) {
-#line 163 "src/main.vl"
+#line 168 "src/main.vl"
             println_str(velo_str_format("[Velo] Check passed: %s", (const char*)(source_file)));
-#line 164 "src/main.vl"
+#line 169 "src/main.vl"
             return 0;
         }
-#line 166 "src/main.vl"
+#line 171 "src/main.vl"
         return 1;
     }
-#line 169 "src/main.vl"
+#line 174 "src/main.vl"
     if (((cmd != NULL && "doc" != NULL) ? (strcmp(cmd, "doc") == 0) : (cmd == "doc"))) {
-#line 170 "src/main.vl"
+#line 175 "src/main.vl"
         if ((argc < 3)) {
-#line 171 "src/main.vl"
+#line 176 "src/main.vl"
             println_str("[Velo Error] 'doc' requires a source file path");
-#line 172 "src/main.vl"
+#line 177 "src/main.vl"
             return 1;
         }
-#line 174 "src/main.vl"
+#line 179 "src/main.vl"
         const char* source_file = argv[2];
-#line 175 "src/main.vl"
+#line 180 "src/main.vl"
         const char* output_file = "";
-#line 176 "src/main.vl"
+#line 181 "src/main.vl"
         if (((argc >= 5) && ((argv[3] != NULL && "-o" != NULL) ? (strcmp(argv[3], "-o") == 0) : (argv[3] == "-o")))) {
-#line 177 "src/main.vl"
+#line 182 "src/main.vl"
             output_file = argv[4];
         }
-#line 179 "src/main.vl"
+#line 184 "src/main.vl"
         {
             size_t __zone_wm_4 = velo_zone_push();
-#line 180 "src/main.vl"
+#line 185 "src/main.vl"
             const char* docs = generate_docs_for_source(source_file);
-#line 181 "src/main.vl"
+#line 186 "src/main.vl"
             if ((docs == NULL)) {
-#line 182 "src/main.vl"
+#line 187 "src/main.vl"
                 {
                     int32_t __ret_val = 1;
                     velo_zone_pop(__zone_wm_4);
                     return __ret_val;
                 }
             }
-#line 184 "src/main.vl"
+#line 189 "src/main.vl"
             if (velo_cmp_gt_u_s(((usize)strlen(output_file)), 0)) {
-#line 185 "src/main.vl"
+#line 190 "src/main.vl"
                 fs_write_str(output_file, docs);
-#line 186 "src/main.vl"
+#line 191 "src/main.vl"
                 println_str(velo_str_format("[Velo] Successfully generated documentation: %s", (const char*)(output_file)));
             } else {
-#line 188 "src/main.vl"
+#line 193 "src/main.vl"
                 print_str(docs);
-#line 188 "src/main.vl"
+#line 193 "src/main.vl"
                 io_flush_stdout();
             }
             velo_zone_pop(__zone_wm_4);
         }
-#line 191 "src/main.vl"
+#line 196 "src/main.vl"
         return 0;
     }
-#line 194 "src/main.vl"
-    if (((cmd != NULL && "test" != NULL) ? (strcmp(cmd, "test") == 0) : (cmd == "test"))) {
-#line 195 "src/main.vl"
-        const char* target_path = "";
-#line 196 "src/main.vl"
-        const char* filter_arg = "";
-#line 197 "src/main.vl"
-        const char* cc = "gcc";
-#line 198 "src/main.vl"
-        bool debug_mode = false;
 #line 199 "src/main.vl"
-        bool release_mode = false;
+    if (((cmd != NULL && "test" != NULL) ? (strcmp(cmd, "test") == 0) : (cmd == "test"))) {
 #line 200 "src/main.vl"
-        const char* opt_level = "";
+        const char* target_path = "";
 #line 201 "src/main.vl"
-        StringBuilder linker_sb = create_sb(256);
+        const char* filter_arg = "";
 #line 202 "src/main.vl"
-        int32_t i = 2;
+        const char* cc = "gcc";
 #line 203 "src/main.vl"
-        for (int32_t it = 0; ((i < argc)); it++) {
+        bool debug_mode = false;
 #line 204 "src/main.vl"
+        bool release_mode = false;
+#line 205 "src/main.vl"
+        const char* opt_level = "";
+#line 206 "src/main.vl"
+        StringBuilder linker_sb = create_sb(256);
+#line 207 "src/main.vl"
+        int32_t i = 2;
+#line 208 "src/main.vl"
+        for (int32_t it = 0; ((i < argc)); it++) {
+#line 209 "src/main.vl"
             const char* arg = argv[i];
-#line 205 "src/main.vl"
+#line 210 "src/main.vl"
             if ((((arg != NULL && "--cc" != NULL) ? (strcmp(arg, "--cc") == 0) : (arg == "--cc")) && ((i + 1) < argc))) {
-#line 205 "src/main.vl"
+#line 210 "src/main.vl"
                 cc = argv[(i + 1)];
-#line 205 "src/main.vl"
+#line 210 "src/main.vl"
                 i += 1;
             } else
-#line 206 "src/main.vl"
+#line 211 "src/main.vl"
             if ((((((velo_cmp_gt_u_s(((usize)strlen(arg)), 5) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], '-')) && velo_cmp_eq_u_s(arg[2], 'c')) && velo_cmp_eq_u_s(arg[3], 'c')) && velo_cmp_eq_u_s(arg[4], '='))) {
-#line 206 "src/main.vl"
+#line 211 "src/main.vl"
                 cc = copy_slice_to_string(arg, 5, (((usize)strlen(arg)) - 5));
             } else
-#line 207 "src/main.vl"
+#line 212 "src/main.vl"
             if (((arg != NULL && "--debug" != NULL) ? (strcmp(arg, "--debug") == 0) : (arg == "--debug"))) {
-#line 207 "src/main.vl"
+#line 212 "src/main.vl"
                 debug_mode = true;
             } else
-#line 208 "src/main.vl"
+#line 213 "src/main.vl"
             if (((arg != NULL && "--release" != NULL) ? (strcmp(arg, "--release") == 0) : (arg == "--release"))) {
-#line 208 "src/main.vl"
+#line 213 "src/main.vl"
                 release_mode = true;
             } else
-#line 209 "src/main.vl"
+#line 214 "src/main.vl"
             if (((((arg != NULL && "--filter" != NULL) ? (strcmp(arg, "--filter") == 0) : (arg == "--filter")) || ((arg != NULL && "-k" != NULL) ? (strcmp(arg, "-k") == 0) : (arg == "-k"))) && ((i + 1) < argc))) {
-#line 209 "src/main.vl"
+#line 214 "src/main.vl"
                 filter_arg = argv[(i + 1)];
-#line 209 "src/main.vl"
+#line 214 "src/main.vl"
                 i += 1;
             } else
-#line 210 "src/main.vl"
+#line 215 "src/main.vl"
             if ((((arg != NULL && "-O" != NULL) ? (strcmp(arg, "-O") == 0) : (arg == "-O")) && ((i + 1) < argc))) {
-#line 210 "src/main.vl"
+#line 215 "src/main.vl"
                 opt_level = argv[(i + 1)];
-#line 210 "src/main.vl"
+#line 215 "src/main.vl"
                 i += 1;
             } else
-#line 211 "src/main.vl"
+#line 216 "src/main.vl"
             if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'O'))) {
-#line 211 "src/main.vl"
+#line 216 "src/main.vl"
                 opt_level = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
             } else
-#line 212 "src/main.vl"
+#line 217 "src/main.vl"
             if ((((arg != NULL && "-l" != NULL) ? (strcmp(arg, "-l") == 0) : (arg == "-l")) && ((i + 1) < argc))) {
-#line 212 "src/main.vl"
+#line 217 "src/main.vl"
                 if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 212 "src/main.vl"
+#line 217 "src/main.vl"
                     sb_append_char((&(linker_sb)), ' ');
                 }
-#line 212 "src/main.vl"
+#line 217 "src/main.vl"
                 sb_append_str((&(linker_sb)), "-l");
-#line 212 "src/main.vl"
+#line 217 "src/main.vl"
                 sb_append_str((&(linker_sb)), argv[(i + 1)]);
-#line 212 "src/main.vl"
+#line 217 "src/main.vl"
                 i += 1;
             } else
-#line 213 "src/main.vl"
+#line 218 "src/main.vl"
             if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'l'))) {
-#line 213 "src/main.vl"
+#line 218 "src/main.vl"
                 if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 213 "src/main.vl"
+#line 218 "src/main.vl"
                     sb_append_char((&(linker_sb)), ' ');
                 }
-#line 213 "src/main.vl"
+#line 218 "src/main.vl"
                 sb_append_str((&(linker_sb)), arg);
             } else
-#line 214 "src/main.vl"
+#line 219 "src/main.vl"
             if ((((arg != NULL && "-L" != NULL) ? (strcmp(arg, "-L") == 0) : (arg == "-L")) && ((i + 1) < argc))) {
-#line 214 "src/main.vl"
+#line 219 "src/main.vl"
                 if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 214 "src/main.vl"
+#line 219 "src/main.vl"
                     sb_append_char((&(linker_sb)), ' ');
                 }
-#line 214 "src/main.vl"
+#line 219 "src/main.vl"
                 sb_append_str((&(linker_sb)), "-L");
-#line 214 "src/main.vl"
+#line 219 "src/main.vl"
                 sb_append_str((&(linker_sb)), quote_path(path_to_native_str(argv[(i + 1)])));
-#line 214 "src/main.vl"
+#line 219 "src/main.vl"
                 i += 1;
             } else
-#line 215 "src/main.vl"
+#line 220 "src/main.vl"
             if (((velo_cmp_gt_u_s(((usize)strlen(arg)), 2) && velo_cmp_eq_u_s(arg[0], '-')) && velo_cmp_eq_u_s(arg[1], 'L'))) {
-#line 215 "src/main.vl"
+#line 220 "src/main.vl"
                 if (velo_cmp_gt_u_s(linker_sb.len, 0)) {
-#line 215 "src/main.vl"
+#line 220 "src/main.vl"
                     sb_append_char((&(linker_sb)), ' ');
                 }
-#line 215 "src/main.vl"
+#line 220 "src/main.vl"
                 sb_append_str((&(linker_sb)), "-L");
-#line 215 "src/main.vl"
+#line 220 "src/main.vl"
                 const char* raw_path = copy_slice_to_string(arg, 2, (((usize)strlen(arg)) - 2));
-#line 215 "src/main.vl"
+#line 220 "src/main.vl"
                 sb_append_str((&(linker_sb)), quote_path(path_to_native_str(raw_path)));
             } else
-#line 216 "src/main.vl"
+#line 221 "src/main.vl"
             if ((((((arg != NULL && "--unsafe-shelf-index" != NULL) ? (strcmp(arg, "--unsafe-shelf-index") != 0) : (arg != "--unsafe-shelf-index")) && ((arg != NULL && "--unsafe-heap" != NULL) ? (strcmp(arg, "--unsafe-heap") != 0) : (arg != "--unsafe-heap"))) && ((arg != NULL && "--no-line-directives" != NULL) ? (strcmp(arg, "--no-line-directives") != 0) : (arg != "--no-line-directives"))) && velo_cmp_eq_u_s(((usize)strlen(target_path)), 0))) {
-#line 216 "src/main.vl"
+#line 221 "src/main.vl"
                 target_path = arg;
             }
-#line 217 "src/main.vl"
+#line 222 "src/main.vl"
             i += 1;
-            __loop_cont_875: __attribute__((unused));
+            __loop_cont_886: __attribute__((unused));
         }
-        __loop_break_875: __attribute__((unused));
-#line 219 "src/main.vl"
+        __loop_break_886: __attribute__((unused));
+#line 224 "src/main.vl"
         if (velo_cmp_eq_u_s(((usize)strlen(target_path)), 0)) {
-#line 219 "src/main.vl"
+#line 224 "src/main.vl"
             target_path = ".";
         }
-#line 220 "src/main.vl"
-        if (((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl"))) && ((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") != 0) : (cc != "clang")))) {
-#line 221 "src/main.vl"
-            println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc', 'clang', or 'cl'.", (const char*)(cc)));
-#line 222 "src/main.vl"
-            return 1;
-        }
-#line 224 "src/main.vl"
-        if ((debug_mode && release_mode)) {
 #line 225 "src/main.vl"
-            println_str("[Velo Error] Cannot specify both --debug and --release");
+        if (((((cc != NULL && "gcc" != NULL) ? (strcmp(cc, "gcc") != 0) : (cc != "gcc")) && ((cc != NULL && "cl" != NULL) ? (strcmp(cc, "cl") != 0) : (cc != "cl"))) && ((cc != NULL && "clang" != NULL) ? (strcmp(cc, "clang") != 0) : (cc != "clang")))) {
 #line 226 "src/main.vl"
+            println_str(velo_str_format("[Velo Error] Unknown C compiler backend '%s'. Expected 'gcc', 'clang', or 'cl'.", (const char*)(cc)));
+#line 227 "src/main.vl"
             return 1;
         }
-#line 228 "src/main.vl"
-        const char* opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level);
 #line 229 "src/main.vl"
-        if (unsafe_heap) {
+        if ((debug_mode && release_mode)) {
 #line 230 "src/main.vl"
-            StringBuilder u_sb = create_sb((((usize)strlen(opt_flags)) + 32));
+            println_str("[Velo Error] Cannot specify both --debug and --release");
 #line 231 "src/main.vl"
-            sb_append_str((&(u_sb)), opt_flags);
-#line 231 "src/main.vl"
-            sb_append_str((&(u_sb)), " -DVELO_UNSAFE_HEAP");
-#line 231 "src/main.vl"
-            opt_flags = sb_to_string((&(u_sb)));
+            return 1;
         }
 #line 233 "src/main.vl"
-        const char* linker_flags = sb_to_string((&(linker_sb)));
+        const char* opt_flags = resolve_opt_flags(debug_mode, release_mode, opt_level);
 #line 234 "src/main.vl"
-        int32_t rc = 0;
+        if (unsafe_heap) {
 #line 235 "src/main.vl"
+            StringBuilder u_sb = create_sb((((usize)strlen(opt_flags)) + 32));
+#line 236 "src/main.vl"
+            sb_append_str((&(u_sb)), opt_flags);
+#line 236 "src/main.vl"
+            sb_append_str((&(u_sb)), " -DVELO_UNSAFE_HEAP");
+#line 236 "src/main.vl"
+            opt_flags = sb_to_string((&(u_sb)));
+        }
+#line 238 "src/main.vl"
+        const char* linker_flags = sb_to_string((&(linker_sb)));
+#line 239 "src/main.vl"
+        int32_t rc = 0;
+#line 240 "src/main.vl"
         {
             size_t __zone_wm_5 = velo_zone_push();
-#line 236 "src/main.vl"
+#line 241 "src/main.vl"
             rc = test_target_opts(target_path, unsafe_index, opt_flags, linker_flags, filter_arg, cc, no_line_directives);
             velo_zone_pop(__zone_wm_5);
         }
-#line 238 "src/main.vl"
+#line 243 "src/main.vl"
         return rc;
     }
-#line 241 "src/main.vl"
+#line 246 "src/main.vl"
     if (((cmd != NULL && "pkg" != NULL) ? (strcmp(cmd, "pkg") == 0) : (cmd == "pkg"))) {
-#line 242 "src/main.vl"
+#line 247 "src/main.vl"
         return handle_pkg_command(argc, ((const char**)(argv)), unsafe_index);
     }
-#line 245 "src/main.vl"
+#line 250 "src/main.vl"
     if (((cmd != NULL && "fmt" != NULL) ? (strcmp(cmd, "fmt") == 0) : (cmd == "fmt"))) {
-#line 246 "src/main.vl"
+#line 251 "src/main.vl"
         return handle_fmt_cmd(argc, ((const char**)(argv)));
     }
-#line 249 "src/main.vl"
+#line 254 "src/main.vl"
     println_str(velo_str_format("[Velo Error] Unknown command: '%s'. Run 'velo help' for usage.", (const char*)(cmd)));
-#line 250 "src/main.vl"
+#line 255 "src/main.vl"
     return 1;
     return 0;
 }
