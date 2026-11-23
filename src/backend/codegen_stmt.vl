@@ -227,7 +227,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
     if stmt.kind == STMT_IF {
         let cond_t = infer_expr_type(st, stmt.expr)
         if cond_t != "bool" {
-            report_error("backend", stmt.line, stmt.col, "Condition in 'if' statement must be of type 'bool' (defense in depth)")
+            report_error("semantic", stmt.line, stmt.col, "Condition in 'if' statement must be of type 'bool'")
             st.error_count += 1; return
         }
         sb_append_indent(sb, indent); sb_append_str(sb, "if ("); emit_c_expr(sb, st, stmt.expr); sb_append_str(sb, ") {\n")
@@ -275,7 +275,7 @@ act emit_c_stmt(sb: @StringBuilder, st: @SymbolTable, stmt: @StmtNode, indent: i
                 } else {
                     let cond_t = infer_expr_type(st, stmt.expr)
                     if cond_t != "bool" {
-                        report_error("backend", stmt.line, stmt.col, "Condition in 'loop' statement must be of type 'bool' (defense in depth)")
+                        report_error("semantic", stmt.line, stmt.col, "Condition in 'loop' statement must be of type 'bool'")
                         st.error_count += 1; return
                     }
                     sb_append_str(sb, "for ("); sb_append_str(sb, c_type); sb_append_str(sb, vname); sb_append_str(sb, " = 0; (")

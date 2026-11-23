@@ -30,7 +30,7 @@ act emit_io_call(sb: @StringBuilder, st: @SymbolTable, member: string, first_arg
         sb_append_str(@msg, "io.")
         sb_append_str(@msg, member)
         sb_append_str(@msg, " expects at most 1 argument")
-        report_error("backend", first_arg.next.line, first_arg.next.col, sb_to_string(@msg))
+        report_error("semantic", first_arg.next.line, first_arg.next.col, sb_to_string(@msg))
         st.error_count += 1
         return
     }
@@ -68,7 +68,7 @@ act emit_io_call_body(sb: @StringBuilder, st: @SymbolTable, member: string, firs
         let arg_type = infer_expr_type(st, first_arg)
         // 5.2 slice 2: raw dyn prints nothing useful — cast (as) first
         if arg_type == "dyn" {
-            report_error("backend", first_arg.line, first_arg.col, dyn_gate_error())
+            report_error("semantic", first_arg.line, first_arg.col, dyn_gate_error())
             st.error_count += 1
             return
         }
@@ -159,11 +159,11 @@ act emit_io_call_body(sb: @StringBuilder, st: @SymbolTable, member: string, firs
 act emit_io_stdlib_call(sb: @StringBuilder, st: @SymbolTable, member: string, expr: @ExprNode) {
     let fn_sym = find_function(st, member)
     if fn_sym == null {
-        mut msg = create_sb(str.len(member) + 48)
+        mut msg = create_sb(str.len(member) + 32)
         sb_append_str(@msg, "unknown io member '")
         sb_append_str(@msg, member)
-        sb_append_str(@msg, "' reached codegen")
-        report_error("backend", expr.line, expr.col, sb_to_string(@msg))
+        sb_append_str(@msg, "'")
+        report_error("semantic", expr.line, expr.col, sb_to_string(@msg))
         st.error_count += 1
         return
     }

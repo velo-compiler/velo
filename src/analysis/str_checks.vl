@@ -10,6 +10,7 @@
 // pseudo-type "unknown" that used to reach codegen and GCC.
 use "type_checker.vl"
 use "symbol_table.vl"
+use "dyn_checks.vl"
 use "../common/diagnostics.vl"
 use "../common/string_builder.vl"
 use "../ast/expr.vl"
@@ -223,4 +224,30 @@ act is_interp_expr_resolvable(st: @SymbolTable, expr: @ExprNode) -> bool {
         return is_interp_expr_resolvable(st, expr.operand)
     }
     return false
+}
+
+// Scans a string literal for `{identifier}` interpolation and ensures raw dyn variables are unboxed with `as`.
+act check_string_lit_interp(st: @SymbolTable, expr: @ExprNode) {
+    if expr == null or expr.str_val == null { return }
+    let raw = expr.str_val
+    let len = str.len(raw)
+    mut i: usize = 0
+    loop i < len {
+        if raw[i] == '{' {
+            mut j = i + 1
+            loop j < len and raw[j] != '}' and raw[j] != '{' {
+                j += 1
+            }
+            if j < len and raw[j] == '}' and j > i + 1 {
+                let name = copy_slice_to_string(raw, i + 1, j - (i + 1))
+                let sym = resolve_variable(st, name)
+                if sym != null and sym.type_name == "dyn" {
+                    report_error("semantic", expr.line, expr.col, dyn_gate_error())
+                    st.error_count += 1
+                }
+                i = j
+            }
+        }
+        i += 1
+    }
 }

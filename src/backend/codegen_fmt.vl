@@ -196,7 +196,7 @@ act build_interp_fmt_and_args(st: @SymbolTable, raw: string, line: i32, col: i32
                 }
                 let c_expr_str = sb_to_string(@c_sb)
                 if resolved_type == "dyn" {
-                    report_error("backend", line, col, dyn_gate_error())
+                    report_error("semantic", line, col, dyn_gate_error())
                     st.error_count += 1
                 }
 

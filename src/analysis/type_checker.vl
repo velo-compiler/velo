@@ -54,7 +54,7 @@ act infer_expr_type(st: @SymbolTable, expr: @ExprNode) -> string {
     if expr == null { return "void" }
     if expr.kind == EXPR_INT { return infer_int_expr_type(st, expr) }
     if expr.kind == EXPR_FLOAT { if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name } return "f32" }
-    if expr.kind == EXPR_STRING { return "string" }; if expr.kind == EXPR_BOOL { return "bool" }; if expr.kind == EXPR_NULL { return "@void" }
+    if expr.kind == EXPR_STRING { check_string_lit_interp(st, expr); return "string" }; if expr.kind == EXPR_BOOL { return "bool" }; if expr.kind == EXPR_NULL { return "@void" }
     if expr.kind == EXPR_VARIANT {
         if expr.type_name != null and str.len(expr.type_name) > 0 { return expr.type_name }
         let k_sym = find_kind_by_variant(st, expr.member_name); if k_sym != null { check_kind_privacy(st, k_sym, k_sym.name, expr.line, expr.col); expr.type_name = k_sym.name; return k_sym.name }

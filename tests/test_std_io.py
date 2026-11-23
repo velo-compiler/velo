@@ -586,7 +586,7 @@ def test_std_io_documentation_examples_compile_and_run(tmp_path):
     spec_text = spec_md.read_text(encoding="utf-8")
     assert "## 10. Standard I/O Subsystem" in spec_text
 
-    section_10 = spec_text.split("## 10. Standard I/O Subsystem", 1)[1]
+    section_10 = spec_text.split("## 10. Standard I/O Subsystem", 1)[1].split("\n## 11.", 1)[0]
     code_blocks = re.findall(r"```velo\n(.*?)\n```", section_10, re.DOTALL)
     assert len(code_blocks) >= 3, f"expected at least 3 code examples in Section 10, got {len(code_blocks)}"
 
