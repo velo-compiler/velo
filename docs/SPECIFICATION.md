@@ -28,6 +28,7 @@ Identifiers name variables, functions, types, and fields.
 
 ### 1.4 Keywords
 The following keywords are reserved in Velo:
+<!-- not-compiled -->
 ```
 act       data      mut       let       if        else
 loop      in        return    zone      extern    defer
@@ -195,10 +196,12 @@ act swap[T](a: @T, b: @T) {
   let opt: Option[string] = .Some("ready")
   ```
 * **Call-Site Type Inference**: Generic functions can be called directly without explicit type arguments; Velo automatically infers `T` from argument types:
+  <!-- not-compiled -->
   ```rust
   let m = min(15, 25) // infers T = i32 -> calls min_i32
   ```
 * **Explicit Type Arguments**: Can also be supplied explicitly:
+  <!-- not-compiled -->
   ```rust
   let mf = min[f32](3.14, 2.71) // calls min_f32
   ```
@@ -208,6 +211,7 @@ act swap[T](a: @T, b: @T) {
 Velo supports first-class function pointer types using the canonical `act(...) -> Ret` syntax, harmonizing directly with the function definition keyword `act`.
 
 #### Function Type Signatures:
+<!-- not-compiled -->
 ```rust
 act(i32, i32) -> i32        // Takes two i32, returns i32
 act(@Button) -> void         // Takes pointer to Button, returns void
@@ -216,6 +220,7 @@ act() -> void                // Takes no arguments, returns void
 
 #### Storing & Passing Function Pointers:
 Named functions can be referenced as expressions and stored in variables or passed as arguments to higher-order functions:
+<!-- not-compiled -->
 ```rust
 act add(a: i32, b: i32) -> i32 { return a + b }
 
@@ -230,6 +235,7 @@ let sum = apply_binary(7, 8, add)
 
 #### Struct Callback Fields & Vtables:
 Structs can store function pointer fields for callbacks, event handlers, and manual vtables:
+<!-- not-compiled -->
 ```rust
 data Button {
     id: i32
@@ -262,6 +268,7 @@ Velo supports first-class anonymous functions (`act`) using both single-expressi
 
 * **Full Block Anonymous Function Form (`act(params...) [-> Ret] { body }`):**
   If `-> Ret` is omitted, the return type defaults to `void`:
+  <!-- not-compiled -->
   ```velo
   btn.on_click = act(b: @Button) {
       io.println("Clicked button: {b.id}")
@@ -281,6 +288,7 @@ Velo supports first-class anonymous functions (`act`) using both single-expressi
 
 * **Passing Anonymous Acts to Higher-Order Functions:**
   Anonymous acts can be passed directly as arguments to any function expecting a matching `act(...) -> Ret` function pointer:
+  <!-- not-compiled -->
   ```velo
   act apply_int(val: i32, f: act(i32) -> i32) -> i32 {
       return f(val)
@@ -292,6 +300,7 @@ Velo supports first-class anonymous functions (`act`) using both single-expressi
 ### 2.7 Method Syntax / Uniform Function Call Syntax (UFCS)
 Velo supports pure Uniform Function Call Syntax (UFCS) without requiring `class`, `impl`, or object-oriented keywords. Any top-level function whose first parameter matches the receiver type can be called using method syntax (`receiver.method(args...)`):
 
+<!-- not-compiled -->
 ```rust
 data Vector2 {
     x: f32
@@ -384,6 +393,7 @@ let v = Vec4{ x: 2.5 }   // v.y == 0.0, v.z == 0.0, v.w == 1.0
 ```
 
 #### Struct Layout Attributes (`#align(N)` / `#packed`):
+<!-- not-compiled -->
 ```rust
 data Vec4 #align(16) { ... }    // struct __attribute__((aligned(16))) Vec4 { ... };
 data Blob #packed { ... }       // struct __attribute__((packed)) Blob { ... };
@@ -430,6 +440,7 @@ backup = packet                 // lowers to memcpy(backup, packet, sizeof(packe
 
 Functions in Velo can return multiple values simultaneously using first-class tuples. Tuples require zero heap allocations and lower to anonymous C99 value structs:
 
+<!-- not-compiled -->
 ```rust
 // 1. Function returning multiple values
 act div_rem(n: i32, d: i32) -> (i32, i32) {
@@ -478,6 +489,7 @@ if maybe_count.has {
 #### Flow-Sensitive Type Narrowing:
 Velo features flow-sensitive type narrowing. Inside a null-check guard (`if x != null`), the compiler automatically narrows `x` from `?T` to `T`, allowing direct field, method, and operator access without manual unwrapping:
 
+<!-- not-compiled -->
 ```rust
 data Node {
     val: i32
@@ -504,6 +516,7 @@ act process_node(opt: ?@Node) -> i32 {
 
 Velo eliminates runtime exceptions and unhandled panics by providing first-class algebraic outcome types (`T or E`), representing either a successful value `T` or an error payload `E`:
 
+<!-- not-compiled -->
 ```rust
 // 1. Function returning an outcome type
 act parse_port(s: string) -> i32 or string {
@@ -624,6 +637,7 @@ act pair_inspect[T: Printable, U](item: @T, tag: U) {
 #### Implementing a Pact:
 In accordance with Velo's philosophy of structural elegance and zero boilerplate, types do not need explicit `implements` or `conforms` keywords. Any type that provides matching methods (via free functions using Uniform Function Call Syntax) automatically satisfies the pact:
 
+<!-- not-compiled -->
 ```velo
 data User {
     name: string
@@ -644,6 +658,7 @@ act main() {
 * **Zero Runtime Overhead**: Pacts are verified strictly at compile time during semantic analysis and monomorphization. No dynamic dispatch tables (vtables), pointer indirections, or runtime boxing overhead are introduced.
 * **UFCS Receiver Flexibility**: Pact methods can be satisfied by functions accepting either pointer receivers (`@T`) or value receivers (`T`), taking full advantage of Velo's automatic referencing and dereferencing.
 * **Deterministic Compiler Diagnostics**: When a concrete type fails to satisfy a pact constraint during generic instantiation, the compiler reports a clear, actionable error:
+  <!-- not-compiled -->
   ```
   [Velo Error] semantic:<line>:<col> - Type '<ConcreteType>' does not satisfy pact '<PactName>': missing method '<method>'
   ```
@@ -686,6 +701,7 @@ view let MAX_LIMIT: i32 = 1000
 * **Private by Default:** Any top-level `act`, `data`, `kind`, `pact`, or `let` without the `view` modifier is private to the file in which it is declared.
 * **Prohibited on Non-Exportable Constructs:** Applying `view` to `use` or `test` declarations is a compile-time syntax error (`'view' cannot be applied to 'use'` / `'view' cannot be applied to 'test'`).
 * **Cross-Module Access Enforcement:** Attempting to call a private function, instantiate/reference a private struct, access a private enum kind, reference a private pact, or read a private global variable from an importing file triggers a compile-time semantic error:
+  <!-- not-compiled -->
   ```
   [Velo Error] semantic:<line>:<col> - '<Name>' is private to '<defining_file>' and cannot be accessed from '<importing_file>'
   ```
@@ -700,6 +716,7 @@ Velo uses the distinct, easy `:>` operator for import aliasing and selective sym
 
 #### 1. Module Aliasing
 Modules can be imported under a local namespace alias using `:> <alias>`:
+<!-- not-compiled -->
 ```velo
 use "std/math.vl" :> m
 
@@ -709,12 +726,14 @@ act main() {
 }
 ```
 * **Enforced Encapsulation:** When a module is imported under an alias, its declarations cannot be accessed bare from that importing file. Attempting bare access produces an informative compiler diagnostic:
+  <!-- not-compiled -->
   ```
   [Velo Error] semantic:<line>:<col> - '<Sym>' is not imported into '<importer>' (module '<file>' is imported under alias '<alias>'; use '<alias>.<Sym>')
   ```
 
 #### 2. Selective Imports
 Specific declarations can be selectively imported using `:> { ... }`:
+<!-- not-compiled -->
 ```velo
 use "std/math.vl" :> { add, sub }
 
@@ -725,12 +744,14 @@ act main() {
 }
 ```
 * **Strict Whitelist:** Only the explicitly listed symbols are brought into bare scope. Accessing unlisted symbols from the target file triggers:
+  <!-- not-compiled -->
   ```
   [Velo Error] semantic:<line>:<col> - '<Sym>' is not imported from '<file>' into '<importer>'
   ```
 
 #### 3. Selective Import with Renaming
 Symbols within a selective import list can be renamed using `OrigName :> LocalAlias`:
+<!-- not-compiled -->
 ```velo
 use "calc.vl" :> { add :> calc_add, Point :> Coord }
 
@@ -748,6 +769,7 @@ The `defer` keyword registers a cleanup action to be executed automatically when
 
 #### 1. Single-Expression Defer
 For simple cleanup tasks (such as closing a file, releasing a mutex, or freeing memory), `defer` takes a single expression or call without curly braces:
+<!-- not-compiled -->
 ```velo
 act read_config(path: string) -> string {
     let file = fs.open(path, "r")
@@ -759,6 +781,7 @@ act read_config(path: string) -> string {
 
 #### 2. Multi-Statement Block Defer
 When cleanup requires multiple steps or statements, `defer` takes a block enclosed in curly braces:
+<!-- not-compiled -->
 ```velo
 act process_data(session_id: i32) {
     let log = fs.open("session.log", "a")
@@ -799,6 +822,7 @@ counter += 1 // OK
 
 ### 3.3 Type Inference
 Types can be inferred when an initial value is provided:
+<!-- not-compiled -->
 ```rust
 mut score = 100       // Inferred as i32
 ratio = 0.5           // Inferred as f32
@@ -846,15 +870,18 @@ Velo enforces strict, sound compile-time type checking for all call expressions 
 #### 4.2.1 Core Invariants
 * **No Implicit Narrowing or Truncation:** Passing a value of incompatible type (such as `f32`/`f64` to `i32`, `string` to `i32`, `bool` to `i32`, `i32` to `bool`, or a struct to a primitive) is strictly rejected at compile time during semantic analysis (`velo check`).
 * **Position-Aware Error Reporting:** Argument type mismatch errors pinpoint the 1-based argument position, expected parameter type, and actual argument type:
+  <!-- not-compiled -->
   ```
   [Velo Error] semantic:<line>:<col> - Type mismatch in call argument <position>: expected '<expected>', got '<actual>'
   ```
 * **Strict Arity Enforcement:** Calls must provide the exact number of arguments required by the target signature. Both too few and too many arguments are rejected at compile time:
+  <!-- not-compiled -->
   ```
   [Velo Error] semantic:<line>:<col> - Mismatched argument count in function call
   ```
 * **Contextual Integer Literal Adaptation:** Unsuffixed integer literals adapt to target integer parameter types if and only if the constant value fits within the target type's representable range (e.g. `255` adapts to `u8`, but `256` or `-1` is rejected for `u8`). Literal adaptation never crosses type family boundaries: float literals and boolean literals never adapt to integer parameters, and integer literals never adapt to boolean parameters.
 * **Explicit Casts (`as <type>`):** When intentional conversions are required, developers must supply explicit casts:
+  <!-- not-compiled -->
   ```rust
   act f(a: i32) {}
   act g(a: bool) {}
@@ -922,6 +949,7 @@ A `zone` block defines a hardware-level bump arena:
 * **Guarantees**: Zero GC pauses, zero fragmentation, zero memory leaks.
 * **Zone Escape Analysis**: The compiler statically ensures that pointers allocated in an inner `zone` or stack addresses cannot escape into outer variables or return values.
 
+<!-- not-compiled -->
 ```rust
 zone {
     // Allocated on the active thread-local arena
@@ -997,6 +1025,7 @@ act main() {
 ### 5.6 Unknown `mem.*` Members
 An unknown member reports the closed set and never reaches code generation:
 
+<!-- not-compiled -->
 ```
 unknown mem member 'malloc' (functions: alloc, heap_alloc, free, realloc, copy,
 move, set, overlaps, used, heap_used, current, alloc_with, create_arena, destroy_arena)
@@ -1048,6 +1077,7 @@ rationale.
 ### 6.1 String Interpolation
 Strings containing `{expression}` syntax are desugared at compile time into formatted output:
 
+<!-- not-compiled -->
 ```rust
 name = "Velo"
 speed = 100
@@ -1124,6 +1154,7 @@ act main() {
 ### 6.4 Unknown `str.*` Members
 An unknown member reports the closed set and never reaches code generation:
 
+<!-- not-compiled -->
 ```
 unknown str member 'substr' (functions: len, contains, starts_with, ends_with,
 index_of, trim, heap_trim, to_upper, heap_to_upper, to_lower, heap_to_lower,
@@ -1140,6 +1171,7 @@ codegen failure.
 
 ### 7.1 Conditionals (`if` / `else`)
 Parentheses around conditions are optional. Braces `{}` are mandatory:
+<!-- not-compiled -->
 ```rust
 if health <= 0 {
     io.println("Game Over")
@@ -1285,6 +1317,7 @@ This is **not a width problem**. It reproduces at `INT32_MAX`, at `UINT32_MAX`, 
 
 Therefore an inclusive range loop (`..=`) is lowered as an unbounded `for` whose exit test is emitted **after** the body, comparing the remaining distance against the step:
 
+<!-- not-compiled -->
 ```c
 /* ascending,  step 1  */   if (end - i < 1) break;   i++;
 /* descending, step 1  */   if (i - end < 1) break;   i--;
@@ -1316,6 +1349,7 @@ Two loop behaviours changed. Neither requires an edit for a correct program. Bot
 
 **W1 — the induction is now as wide as its bounds.** Previously a range loop whose bound was wider than `int32` could still emit an `int32_t` induction, and the loop then visited wrapped values:
 
+<!-- not-compiled -->
 ```rust
 let lim: isize = 3000000000
 loop i in 0..lim { ... }   // before: int32_t induction, visits -1294967296
@@ -1367,6 +1401,7 @@ act main() {
 The `on` statement performs pattern matching over scalar values, tagged unions, and strings:
 
 #### 1. Tagged Union Matching:
+<!-- not-compiled -->
 ```rust
 on event {
     .Quit => { io.println("Quit") }
@@ -1376,6 +1411,7 @@ on event {
 ```
 
 #### 2. String Pattern Matching:
+<!-- not-compiled -->
 ```rust
 on method {
     "GET" => { handle_get() }
@@ -1407,6 +1443,7 @@ Velo strictly defines the interaction between pattern matching branches and surr
    - The rejection is owned by **semantic analysis**, so `velo check` reports it (lane `semantic`, positioned at the offending statement) without running code generation. Code generation additionally asserts the invariant and reports an `internal compiler error` if an unbound `break`/`continue` ever reaches emission, which can only indicate a compiler defect.
    - The loop depth counter resets at every function boundary, so a loop in one function never authorizes a `break` or `continue` in another.
 
+<!-- not-compiled -->
 ```rust
 // 1. Break inside 'on' terminates enclosing loop
 loop i in 0..10 {
@@ -1479,6 +1516,7 @@ act scan_again() {
 ### 7.4 First-Class Conditional Expressions (`if-else`)
 `if-else` blocks can be used directly as expressions producing values:
 
+<!-- not-compiled -->
 ```rust
 let score = 88
 let grade = if score >= 90 { "A" } else if score >= 80 { "B" } else { "C" }
@@ -1738,6 +1776,7 @@ act register_timer(ctx: @TimerContext, callback: act(@TimerContext) -> void) {
   1. **Compile-Time Polymorphism:** Use monomorphized generics (`T`) for compile-time polymorphism.
   2. **Runtime Polymorphism:** Use tagged unions (`enum` or `data` with `kind` discriminant + `match`) or explicit struct-based function pointer tables (first-class vtables).
 
+<!-- not-compiled -->
 ```velo
 // 1. Compile-time generic polymorphism with pact constraints (monomorphized, zero overhead)
 pact Formatter {
@@ -1778,6 +1817,7 @@ data AnyWriter {
   1. **Platform-Suffixed Files:** Use the build driver's platform resolution suffix: `_windows.vl`, `_linux.vl`, `_macos.vl`, and `_posix.vl`. The driver selects the matching file at compile time without preprocessing.
   2. **Runtime Platform Checks:** Use standard library platform helpers: `os_is_windows()`, `os_platform_name()`. The compiler optimizes constant-folded branches during code generation.
 
+<!-- not-compiled -->
 ```velo
 // Clean cross-platform abstraction via runtime query
 if os_is_windows() {
@@ -1870,6 +1910,7 @@ The `std.net` module provides 4 core hostname resolution acts supporting both di
 3. **`lookup_ipv6(host: string) -> string or string`:** Specifically queries DNS for an IPv6 address (`AF_INET6` / AAAA record).
 4. **`lookup_all(host: string) -> RawShelf or string`:** Queries all available addresses registered for the hostname, returning a dynamic shelf of unique IP strings.
 
+<!-- not-compiled -->
 ```velo
 use std.net
 use std.io
@@ -2001,6 +2042,7 @@ Velo provides pure native compression, decompression, framing, and checksum veri
 
 ### 15.4 Usage Example
 
+<!-- not-compiled -->
 ```velo
 use std.compress
 use std.io

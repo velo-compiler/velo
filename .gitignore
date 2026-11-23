@@ -9,6 +9,7 @@ __pycache__/
 *.o
 *.obj
 *.pdb
+*.tmp
 
 # Editor
 .vscode/

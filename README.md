@@ -107,6 +107,7 @@ act main() {
 
 Velo is a self-hosted compiler written entirely in Velo (`src/`). It compiles to portable C99/C11 code, which is then lowered to a native binary by GCC or Clang with zero external runtime dependencies.
 
+<!-- not-compiled -->
 ```
 [ .vl Source Code ] 
        │
@@ -134,6 +135,7 @@ Velo is a self-hosted compiler written entirely in Velo (`src/`). It compiles to
 
 Velo bootstraps deterministically from a single standalone C file (`bootstrap.c`), requiring only GCC or Clang:
 
+<!-- not-compiled -->
 ```bash
 # Windows (requires GCC, e.g. MSYS2 UCRT64)
 scripts\bootstrap.bat
@@ -148,6 +150,7 @@ This builds `bin/velo.exe` (or `bin/velo`), which is the full self-hosted Velo c
 
 ## CLI Usage
 
+<!-- not-compiled -->
 ```bash
 # Run a Velo script immediately (compile + link + execute)
 bin/velo.exe run main.vl
